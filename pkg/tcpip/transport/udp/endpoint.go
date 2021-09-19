@@ -243,19 +243,29 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 			cm.HasTOS = true
 			cm.TOS = p.tos
 		}
+
+		if e.ops.GetReceivePacketInfo() {
+			cm.HasIPPacketInfo = true
+			cm.PacketInfo = p.packetInfo
+		}
 	case header.IPv6ProtocolNumber:
 		if e.ops.GetReceiveTClass() {
 			cm.HasTClass = true
 			// Although TClass is an 8-bit value it's read in the CMsg as a uint32.
 			cm.TClass = uint32(p.tos)
 		}
+
+		if e.ops.GetIPv6ReceivePacketInfo() {
+			cm.HasIPv6PacketInfo = true
+			cm.IPv6PacketInfo = tcpip.IPv6PacketInfo{
+				NIC:  p.packetInfo.NIC,
+				Addr: p.packetInfo.DestinationAddr,
+			}
+		}
 	default:
 		panic(fmt.Sprintf("unrecognized network protocol = %d", p.netProto))
 	}
-	if e.ops.GetReceivePacketInfo() {
-		cm.HasIPPacketInfo = true
-		cm.PacketInfo = p.packetInfo
-	}
+
 	if e.ops.GetReceiveOriginalDstAddress() {
 		cm.HasOriginalDstAddress = true
 		cm.OriginalDstAddress = p.destinationAddress

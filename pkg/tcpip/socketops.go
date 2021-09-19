@@ -170,9 +170,13 @@ type SocketOptions struct {
 	// message is passed with incoming packets.
 	receiveTClassEnabled uint32
 
-	// receivePacketInfoEnabled is used to specify if more inforamtion is
-	// provided with incoming packets such as interface index and address.
+	// receivePacketInfoEnabled is used to specify if more information is
+	// provided with incoming IPv4 packets.
 	receivePacketInfoEnabled uint32
+
+	// receivePacketInfoEnabled is used to specify if more information is
+	// provided with incoming IPv6 packets.
+	receiveIPv6PacketInfoEnabled uint32
 
 	// hdrIncludeEnabled is used to indicate for a raw endpoint that all packets
 	// being written have an IP header and the endpoint should not attach an IP
@@ -358,6 +362,16 @@ func (so *SocketOptions) GetReceivePacketInfo() bool {
 // SetReceivePacketInfo sets value for IP_PKTINFO option.
 func (so *SocketOptions) SetReceivePacketInfo(v bool) {
 	storeAtomicBool(&so.receivePacketInfoEnabled, v)
+}
+
+// GetIPv6ReceivePacketInfo gets value for IPV6_RECVPKTINFO option.
+func (so *SocketOptions) GetIPv6ReceivePacketInfo() bool {
+	return atomic.LoadUint32(&so.receiveIPv6PacketInfoEnabled) != 0
+}
+
+// SetIPv6ReceivePacketInfo sets value for IPV6_RECVPKTINFO option.
+func (so *SocketOptions) SetIPv6ReceivePacketInfo(v bool) {
+	storeAtomicBool(&so.receiveIPv6PacketInfoEnabled, v)
 }
 
 // GetHeaderIncluded gets value for IP_HDRINCL option.

@@ -1369,64 +1369,70 @@ func TestReadIncrementsPacketsReceived(t *testing.T) {
 
 func TestReadIPPacketInfo(t *testing.T) {
 	tests := []struct {
-		name              string
-		proto             tcpip.NetworkProtocolNumber
-		flow              testFlow
-		expectedLocalAddr tcpip.Address
-		expectedDestAddr  tcpip.Address
+		name    string
+		proto   tcpip.NetworkProtocolNumber
+		flow    testFlow
+		checker func(tcpip.NICID) checker.ControlMessagesChecker
 	}{
 		{
-			name:              "IPv4 unicast",
-			proto:             header.IPv4ProtocolNumber,
-			flow:              unicastV4,
-			expectedLocalAddr: stackAddr,
-			expectedDestAddr:  stackAddr,
+			name:  "IPv4 unicast",
+			proto: header.IPv4ProtocolNumber,
+			flow:  unicastV4,
+			checker: func(id tcpip.NICID) checker.ControlMessagesChecker {
+				return checker.ReceiveIPPacketInfo(tcpip.IPPacketInfo{
+					NIC:             id,
+					LocalAddr:       stackAddr,
+					DestinationAddr: stackAddr,
+				})
+			},
 		},
 		{
 			name:  "IPv4 multicast",
 			proto: header.IPv4ProtocolNumber,
 			flow:  multicastV4,
-			// This should actually be a unicast address assigned to the interface.
-			//
-			// TODO(gvisor.dev/issue/3556): This check is validating incorrect
-			// behaviour. We still include the test so that once the bug is
-			// resolved, this test will start to fail and the individual tasked
-			// with fixing this bug knows to also fix this test :).
-			expectedLocalAddr: multicastAddr,
-			expectedDestAddr:  multicastAddr,
+			checker: func(id tcpip.NICID) checker.ControlMessagesChecker {
+				return checker.ReceiveIPPacketInfo(tcpip.IPPacketInfo{
+					NIC: id,
+					// TODO(gvisor.dev/issue/3556): Check for a unicast address.
+					LocalAddr:       multicastAddr,
+					DestinationAddr: multicastAddr,
+				})
+			},
 		},
 		{
 			name:  "IPv4 broadcast",
 			proto: header.IPv4ProtocolNumber,
 			flow:  broadcast,
-			// This should actually be a unicast address assigned to the interface.
-			//
-			// TODO(gvisor.dev/issue/3556): This check is validating incorrect
-			// behaviour. We still include the test so that once the bug is
-			// resolved, this test will start to fail and the individual tasked
-			// with fixing this bug knows to also fix this test :).
-			expectedLocalAddr: broadcastAddr,
-			expectedDestAddr:  broadcastAddr,
+			checker: func(id tcpip.NICID) checker.ControlMessagesChecker {
+				return checker.ReceiveIPPacketInfo(tcpip.IPPacketInfo{
+					NIC: id,
+					// TODO(gvisor.dev/issue/3556): Check for a unicast address.
+					LocalAddr:       broadcastAddr,
+					DestinationAddr: broadcastAddr,
+				})
+			},
 		},
 		{
-			name:              "IPv6 unicast",
-			proto:             header.IPv6ProtocolNumber,
-			flow:              unicastV6,
-			expectedLocalAddr: stackV6Addr,
-			expectedDestAddr:  stackV6Addr,
+			name:  "IPv6 unicast",
+			proto: header.IPv6ProtocolNumber,
+			flow:  unicastV6,
+			checker: func(id tcpip.NICID) checker.ControlMessagesChecker {
+				return checker.ReceiveIPv6PacketInfo(tcpip.IPv6PacketInfo{
+					NIC:  id,
+					Addr: stackV6Addr,
+				})
+			},
 		},
 		{
 			name:  "IPv6 multicast",
 			proto: header.IPv6ProtocolNumber,
 			flow:  multicastV6,
-			// This should actually be a unicast address assigned to the interface.
-			//
-			// TODO(gvisor.dev/issue/3556): This check is validating incorrect
-			// behaviour. We still include the test so that once the bug is
-			// resolved, this test will start to fail and the individual tasked
-			// with fixing this bug knows to also fix this test :).
-			expectedLocalAddr: multicastV6Addr,
-			expectedDestAddr:  multicastV6Addr,
+			checker: func(id tcpip.NICID) checker.ControlMessagesChecker {
+				return checker.ReceiveIPv6PacketInfo(tcpip.IPv6PacketInfo{
+					NIC:  id,
+					Addr: multicastV6Addr,
+				})
+			},
 		},
 	}
 
@@ -1449,13 +1455,16 @@ func TestReadIPPacketInfo(t *testing.T) {
 				}
 			}
 
-			c.ep.SocketOptions().SetReceivePacketInfo(true)
+			switch f := test.flow.netProto(); f {
+			case header.IPv4ProtocolNumber:
+				c.ep.SocketOptions().SetReceivePacketInfo(true)
+			case header.IPv6ProtocolNumber:
+				c.ep.SocketOptions().SetIPv6ReceivePacketInfo(true)
+			default:
+				t.Fatalf("unhandled protocol number = %d", f)
+			}
 
-			testRead(c, test.flow, checker.ReceiveIPPacketInfo(tcpip.IPPacketInfo{
-				NIC:             1,
-				LocalAddr:       test.expectedLocalAddr,
-				DestinationAddr: test.expectedDestAddr,
-			}))
+			testRead(c, test.flow, test.checker(c.nicID))
 
 			if got := c.s.Stats().UDP.PacketsReceived.Value(); got != 1 {
 				t.Fatalf("Read did not increment PacketsReceived: got = %d, want = 1", got)

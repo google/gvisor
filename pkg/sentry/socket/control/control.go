@@ -355,6 +355,17 @@ func PackIPPacketInfo(t *kernel.Task, packetInfo *linux.ControlMessageIPPacketIn
 	)
 }
 
+// PackIPv6PacketInfo packs an IPV6_PKTINFO socket control message.
+func PackIPv6PacketInfo(t *kernel.Task, packetInfo *linux.ControlMessageIPv6PacketInfo, buf []byte) []byte {
+	return putCmsgStruct(
+		buf,
+		linux.SOL_IPV6,
+		linux.IPV6_PKTINFO,
+		t.Arch().Width(),
+		packetInfo,
+	)
+}
+
 // PackOriginalDstAddress packs an IP_RECVORIGINALDSTADDR socket control message.
 func PackOriginalDstAddress(t *kernel.Task, originalDstAddress linux.SockAddr, buf []byte) []byte {
 	var level uint32
@@ -412,6 +423,10 @@ func PackControlMessages(t *kernel.Task, cmsgs socket.ControlMessages, buf []byt
 		buf = PackIPPacketInfo(t, &cmsgs.IP.PacketInfo, buf)
 	}
 
+	if cmsgs.IP.HasIPv6PacketInfo {
+		buf = PackIPv6PacketInfo(t, &cmsgs.IP.IPv6PacketInfo, buf)
+	}
+
 	if cmsgs.IP.OriginalDstAddress != nil {
 		buf = PackOriginalDstAddress(t, cmsgs.IP.OriginalDstAddress, buf)
 	}
@@ -451,6 +466,10 @@ func CmsgsSpace(t *kernel.Task, cmsgs socket.ControlMessages) int {
 
 	if cmsgs.IP.HasIPPacketInfo {
 		space += cmsgSpace(t, linux.SizeOfControlMessageIPPacketInfo)
+	}
+
+	if cmsgs.IP.HasIPv6PacketInfo {
+		space += cmsgSpace(t, linux.SizeOfControlMessageIPv6PacketInfo)
 	}
 
 	if cmsgs.IP.OriginalDstAddress != nil {

@@ -56,6 +56,17 @@ func packetInfoToLinux(packetInfo tcpip.IPPacketInfo) linux.ControlMessageIPPack
 	return p
 }
 
+// ipv6PacketInfoToLinux converts IPv6PacketInfo from tcpip format to Linux
+// format.
+func ipv6PacketInfoToLinux(packetInfo tcpip.IPv6PacketInfo) linux.ControlMessageIPv6PacketInfo {
+	var p linux.ControlMessageIPv6PacketInfo
+	if n := copy(p.Addr[:], []byte(packetInfo.Addr)); n != len(p.Addr) {
+		panic(fmt.Sprintf("got copy(%x, %x) = %d, want = %d", p.Addr, packetInfo.Addr, n, len(p.Addr)))
+	}
+	p.NIC = uint32(packetInfo.NIC)
+	return p
+}
+
 // errOriginToLinux maps tcpip socket origin to Linux socket origin constants.
 func errOriginToLinux(origin tcpip.SockErrOrigin) uint8 {
 	switch origin {
@@ -114,7 +125,7 @@ func NewIPControlMessages(family int, cmgs tcpip.ControlMessages) IPControlMessa
 	if cmgs.HasOriginalDstAddress {
 		orgDstAddr, _ = ConvertAddress(family, cmgs.OriginalDstAddress)
 	}
-	return IPControlMessages{
+	cm := IPControlMessages{
 		HasTimestamp:       cmgs.HasTimestamp,
 		Timestamp:          cmgs.Timestamp,
 		HasInq:             cmgs.HasInq,
@@ -125,9 +136,16 @@ func NewIPControlMessages(family int, cmgs tcpip.ControlMessages) IPControlMessa
 		TClass:             cmgs.TClass,
 		HasIPPacketInfo:    cmgs.HasIPPacketInfo,
 		PacketInfo:         packetInfoToLinux(cmgs.PacketInfo),
+		HasIPv6PacketInfo:  cmgs.HasIPv6PacketInfo,
 		OriginalDstAddress: orgDstAddr,
 		SockErr:            sockErrCmsgToLinux(cmgs.SockErr),
 	}
+
+	if cm.HasIPv6PacketInfo {
+		cm.IPv6PacketInfo = ipv6PacketInfoToLinux(cmgs.IPv6PacketInfo)
+	}
+
+	return cm
 }
 
 // IPControlMessages contains socket control messages for IP sockets.
@@ -165,6 +183,12 @@ type IPControlMessages struct {
 
 	// PacketInfo holds interface and address data on an incoming packet.
 	PacketInfo linux.ControlMessageIPPacketInfo
+
+	// HasIPv6PacketInfo indicates whether IPv6PacketInfo is set.
+	HasIPv6PacketInfo bool
+
+	// PacketInfo holds interface and address data on an incoming packet.
+	IPv6PacketInfo linux.ControlMessageIPv6PacketInfo
 
 	// OriginalDestinationAddress holds the original destination address
 	// and port of the incoming packet.
