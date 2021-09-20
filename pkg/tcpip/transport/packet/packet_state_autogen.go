@@ -62,9 +62,8 @@ func (ep *endpoint) StateFields() []string {
 		"rcvBufSize",
 		"rcvClosed",
 		"rcvDisabled",
-		"netProto",
 		"closed",
-		"bound",
+		"boundNetProto",
 		"boundNIC",
 		"lastError",
 	}
@@ -81,11 +80,10 @@ func (ep *endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &ep.rcvBufSize)
 	stateSinkObject.Save(6, &ep.rcvClosed)
 	stateSinkObject.Save(7, &ep.rcvDisabled)
-	stateSinkObject.Save(8, &ep.netProto)
-	stateSinkObject.Save(9, &ep.closed)
-	stateSinkObject.Save(10, &ep.bound)
-	stateSinkObject.Save(11, &ep.boundNIC)
-	stateSinkObject.Save(12, &ep.lastError)
+	stateSinkObject.Save(8, &ep.closed)
+	stateSinkObject.Save(9, &ep.boundNetProto)
+	stateSinkObject.Save(10, &ep.boundNIC)
+	stateSinkObject.Save(11, &ep.lastError)
 }
 
 // +checklocksignore
@@ -98,11 +96,10 @@ func (ep *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(5, &ep.rcvBufSize)
 	stateSourceObject.Load(6, &ep.rcvClosed)
 	stateSourceObject.Load(7, &ep.rcvDisabled)
-	stateSourceObject.Load(8, &ep.netProto)
-	stateSourceObject.Load(9, &ep.closed)
-	stateSourceObject.Load(10, &ep.bound)
-	stateSourceObject.Load(11, &ep.boundNIC)
-	stateSourceObject.Load(12, &ep.lastError)
+	stateSourceObject.Load(8, &ep.closed)
+	stateSourceObject.Load(9, &ep.boundNetProto)
+	stateSourceObject.Load(10, &ep.boundNIC)
+	stateSourceObject.Load(11, &ep.lastError)
 	stateSourceObject.AfterLoad(ep.afterLoad)
 }
 
