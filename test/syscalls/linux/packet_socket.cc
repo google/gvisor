@@ -214,6 +214,11 @@ TEST_P(PacketSocketTest, RebindProtocol) {
   ASSERT_NO_FATAL_FAILURE(bind_to_network_protocol(ETH_P_IP));
   ASSERT_NO_FATAL_FAILURE(send_udp_message(++counter));
   ASSERT_NO_FATAL_FAILURE(test_recv(counter));
+
+  // A zero valued protocol number should not change the bound network protocol.
+  ASSERT_NO_FATAL_FAILURE(bind_to_network_protocol(0));
+  ASSERT_NO_FATAL_FAILURE(send_udp_message(++counter));
+  ASSERT_NO_FATAL_FAILURE(test_recv(counter));
 }
 
 INSTANTIATE_TEST_SUITE_P(AllPacketSocketTests, PacketSocketTest,
