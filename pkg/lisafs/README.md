@@ -1,5 +1,8 @@
 # Replacing 9P
 
+NOTE: LISAFS is **NOT** production ready. There are still some security concerns
+that must be resolved first.
+
 ## Background
 
 The Linux filesystem model consists of the following key aspects (modulo mounts,

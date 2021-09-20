@@ -115,7 +115,7 @@ type Client struct {
 	// channels is the set of all initialized channels.
 	channels []*channel
 
-	// availableChannels is a FIFO of inactive channels.
+	// availableChannels is a LIFO of inactive channels.
 	availableChannels []*channel
 
 	// -- below corresponds to sendRecvLegacy --
