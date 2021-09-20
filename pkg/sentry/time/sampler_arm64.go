@@ -30,9 +30,9 @@ func getDefaultArchOverheadCycles() TSCValue {
 	// frqRatio. defaultOverheadCycles of ARM equals to that on
 	// x86 devided by frqRatio
 	cntfrq := getCNTFRQ()
-	frqRatio := 1000000000 / cntfrq
+	frqRatio := 1000000000 / float64(cntfrq)
 	overheadCycles := (1 * 1000) / frqRatio
-	return overheadCycles
+	return TSCValue(overheadCycles)
 }
 
 // defaultOverheadTSC is the default estimated syscall overhead in TSC cycles.
