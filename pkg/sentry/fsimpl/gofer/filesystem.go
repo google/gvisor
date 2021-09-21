@@ -1612,6 +1612,9 @@ func (fs *filesystem) MountOptions() string {
 	if fs.opts.overlayfsStaleRead {
 		optsKV = append(optsKV, mopt{moptOverlayfsStaleRead, nil})
 	}
+	if fs.opts.lisaEnabled {
+		optsKV = append(optsKV, mopt{moptLisafs, nil})
+	}
 
 	opts := make([]string, 0, len(optsKV))
 	for _, opt := range optsKV {

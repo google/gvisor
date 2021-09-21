@@ -199,6 +199,7 @@ func (f *filesystemOptions) StateFields() []string {
 		"limitHostFDTranslation",
 		"overlayfsStaleRead",
 		"regularFilesUseSpecialFileFD",
+		"lisaEnabled",
 	}
 }
 
@@ -219,6 +220,7 @@ func (f *filesystemOptions) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(9, &f.limitHostFDTranslation)
 	stateSinkObject.Save(10, &f.overlayfsStaleRead)
 	stateSinkObject.Save(11, &f.regularFilesUseSpecialFileFD)
+	stateSinkObject.Save(12, &f.lisaEnabled)
 }
 
 func (f *filesystemOptions) afterLoad() {}
@@ -237,6 +239,7 @@ func (f *filesystemOptions) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(9, &f.limitHostFDTranslation)
 	stateSourceObject.Load(10, &f.overlayfsStaleRead)
 	stateSourceObject.Load(11, &f.regularFilesUseSpecialFileFD)
+	stateSourceObject.Load(12, &f.lisaEnabled)
 }
 
 func (i *InteropMode) StateTypeName() string {
