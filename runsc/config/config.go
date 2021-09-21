@@ -193,6 +193,9 @@ type Config struct {
 	// Enables VFS2.
 	VFS2 bool `flag:"vfs2"`
 
+	// Enable lisafs.
+	Lisafs bool `flag:"lisafs"`
+
 	// Enables FUSE usage.
 	FUSE bool `flag:"fuse"`
 

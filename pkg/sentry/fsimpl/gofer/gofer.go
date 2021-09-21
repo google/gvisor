@@ -83,6 +83,7 @@ const (
 	moptForcePageCache         = "force_page_cache"
 	moptLimitHostFDTranslation = "limit_host_fd_translation"
 	moptOverlayfsStaleRead     = "overlayfs_stale_read"
+	moptLisafs                 = "lisafs"
 )
 
 // Valid values for the "cache" mount option.
@@ -214,6 +215,10 @@ type filesystemOptions struct {
 	// way that application FDs representing "special files" such as sockets
 	// do. Note that this disables client caching and mmap for regular files.
 	regularFilesUseSpecialFileFD bool
+
+	// lisaEnabled indicates whether the client will use lisafs protocol to
+	// communicate with the server instead of 9P.
+	lisaEnabled bool
 }
 
 // InteropMode controls the client's interaction with other remote filesystem
@@ -426,6 +431,14 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	if _, ok := mopts[moptOverlayfsStaleRead]; ok {
 		delete(mopts, moptOverlayfsStaleRead)
 		fsopts.overlayfsStaleRead = true
+	}
+	if lisafs, ok := mopts[moptLisafs]; ok {
+		delete(mopts, moptLisafs)
+		fsopts.lisaEnabled, err = strconv.ParseBool(lisafs)
+		if err != nil {
+			ctx.Warningf("gofer.FilesystemType.GetFilesystem: invalid lisafs option: %s", lisafs)
+			return nil, nil, linuxerr.EINVAL
+		}
 	}
 	// fsopts.regularFilesUseSpecialFileFD can only be enabled by specifying
 	// "cache=none".
