@@ -402,11 +402,15 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 			return nil
 		}
 
-		// Drop the ACK if the accept queue is full.
+		// Drop the ACK if the accept queue is full. (eg, a reservation could no be
+		// made).
 		// https://github.com/torvalds/linux/blob/7acac4b3196/net/ipv4/tcp_ipv4.c#L1523
 		// We could abort the connection as well with a tunable as in
 		// https://github.com/torvalds/linux/blob/7acac4b3196/net/ipv4/tcp_minisocks.c#L788
-		if listenEP := h.listenEP; listenEP != nil && listenEP.acceptQueueIsFull() {
+		//
+		// The reservation must be released once the endpoint is moved to the accept
+		// queue (or if an error occurs). See endpoint.handleListenSegment.
+		if listenEP := h.listenEP; listenEP != nil && !listenEP.reserveAccepted() {
 			listenEP.stack.Stats().DroppedPackets.Increment()
 			return nil
 		}

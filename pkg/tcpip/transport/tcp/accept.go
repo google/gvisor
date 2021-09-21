@@ -395,11 +395,31 @@ func (e *endpoint) notifyAborted() {
 	e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
 }
 
-func (e *endpoint) acceptQueueIsFull() bool {
+// reserveAccepted attempts to reserve a spot in the accept queue for a pending
+// endpoint. It returns true if a reservation was made, and false otherwise.
+// Reservations are released once the endpoint found its way into the queue, or
+// if an error occured during that process.
+func (e *endpoint) reserveAccepted() bool {
 	e.acceptMu.Lock()
-	full := e.acceptQueue.isFull()
-	e.acceptMu.Unlock()
-	return full
+	defer e.acceptMu.Unlock()
+	if e.acceptQueue.isFull() {
+		return false
+	}
+	e.acceptQueue.reservations++
+	return true
+}
+
+func (e *endpoint) releaseAccepted() {
+	e.acceptMu.Lock()
+	defer e.acceptMu.Unlock()
+	e.acceptQueue.releaseAccepted()
+}
+
+func (a *acceptQueue) releaseAccepted() {
+	if a.reservations == 0 {
+		panic("there are no reservations to release")
+	}
+	a.reservations--
 }
 
 // +stateify savable
@@ -413,12 +433,19 @@ type acceptQueue struct {
 	// in progress.
 	pendingEndpoints map[*endpoint]struct{}
 
+	// reservations counts the number of endpoints that are currently being moved
+	// into the accept queue.
+	reservations int
+
 	// capacity is the maximum number of endpoints that can be in endpoints.
 	capacity int
 }
 
+// isFull returns true if the accept queue is full. It takes into account
+// reservations. The accept queue of an endpoint that is not currently listening
+// (capacity would be zero) is considered to be full.
 func (a *acceptQueue) isFull() bool {
-	return a.endpoints.Len() == a.capacity
+	return a.endpoints.Len()+a.reservations >= a.capacity
 }
 
 // handleListenSegment is called when a listening endpoint receives a segment
@@ -444,7 +471,9 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		return nil
 
 	case s.flags == header.TCPFlagSyn:
-		if e.acceptQueueIsFull() {
+		e.acceptMu.Lock()
+		if e.acceptQueue.isFull() {
+			e.acceptMu.Unlock()
 			e.stack.Stats().TCP.ListenOverflowSynDrop.Increment()
 			e.stats.ReceiveErrors.ListenOverflowSynDrop.Increment()
 			e.stack.Stats().DroppedPackets.Increment()
@@ -454,6 +483,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		opts := parseSynSegmentOptions(s)
 
 		useSynCookies, err := func() (bool, tcpip.Error) {
+			defer e.acceptMu.Unlock()
 			var alwaysUseSynCookies tcpip.TCPAlwaysUseSynCookies
 			if err := e.stack.TransportProtocolOption(header.TCPProtocolNumber, &alwaysUseSynCookies); err != nil {
 				panic(fmt.Sprintf("TransportProtocolOption(%d, %T) = %s", header.TCPProtocolNumber, alwaysUseSynCookies, err))
@@ -461,8 +491,6 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 			if alwaysUseSynCookies {
 				return true, nil
 			}
-			e.acceptMu.Lock()
-			defer e.acceptMu.Unlock()
 
 			// The capacity of the accepted queue would always be one greater than the
 			// listen backlog. But, the SYNRCVD connections count is always checked
@@ -485,7 +513,6 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 			go func() {
 				defer func() {
 					e.pendingAccepted.Done()
-
 					e.acceptMu.Lock()
 					defer e.acceptMu.Unlock()
 					delete(e.acceptQueue.pendingEndpoints, h.ep)
@@ -499,30 +526,28 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 					ctx.cleanupFailedHandshake(h)
 					return
 				}
+
 				ctx.cleanupCompletedHandshake(h)
 				h.ep.startAcceptedLoop()
 				e.stack.Stats().TCP.PassiveConnectionOpenings.Increment()
 
-				// Deliver the endpoint to the accept queue.
-				//
 				// Drop the lock before notifying to avoid deadlock in user-specified
 				// callbacks.
 				delivered := func() bool {
 					e.acceptMu.Lock()
 					defer e.acceptMu.Unlock()
-					for {
-						// The listener is transitioning out of the Listen state; bail.
-						if e.acceptQueue.capacity == 0 {
-							return false
-						}
-						if e.acceptQueue.isFull() {
-							e.acceptCond.Wait()
-							continue
-						}
-
-						e.acceptQueue.endpoints.PushBack(h.ep)
-						return true
+					// If we got here, it means that the handshake completed successfully.
+					// A reservation had to be made. See endpoint.synRcvdState. Release it
+					// here.
+					e.acceptQueue.releaseAccepted()
+					if e.acceptQueue.capacity == 0 {
+						// If the listener has transitioned out of the listen state after
+						// the handshake completed successfully, the new endpoint is reset
+						// instead.
+						return false
 					}
+					e.acceptQueue.endpoints.PushBack(h.ep)
+					return true
 				}()
 
 				if delivered {
@@ -534,6 +559,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 
 			return false, nil
 		}()
+
 		if err != nil {
 			return err
 		}
@@ -583,17 +609,11 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		return nil
 
 	case s.flags.Contains(header.TCPFlagAck):
-		// Keep hold of acceptMu until the new endpoint is in the accept queue (or
-		// if there is an error), to guarantee that we will keep our spot in the
-		// queue even if another handshake from the syn queue completes.
-		e.acceptMu.Lock()
-		if e.acceptQueue.isFull() {
-			// Silently drop the ack as the application can't accept
-			// the connection at this point. The ack will be
-			// retransmitted by the sender anyway and we can
-			// complete the connection at the time of retransmit if
-			// the backlog has space.
-			e.acceptMu.Unlock()
+		if !e.reserveAccepted() {
+			// Silently drop the ack as the application can't accept the connection at
+			// this point. The ack will be retransmitted by the sender if they send
+			// data and we can complete the connection at that time if the backlog
+			// has space.
 			e.stack.Stats().TCP.ListenOverflowAckDrop.Increment()
 			e.stats.ReceiveErrors.ListenOverflowAckDrop.Increment()
 			e.stack.Stats().DroppedPackets.Increment()
@@ -615,7 +635,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		// Validate the cookie.
 		data, ok := ctx.isCookieValid(s.id, iss, irs)
 		if !ok || int(data) >= len(mssTable) {
-			e.acceptMu.Unlock()
+			e.releaseAccepted()
 			e.stack.Stats().TCP.ListenOverflowInvalidSynCookieRcvd.Increment()
 			e.stack.Stats().DroppedPackets.Increment()
 
@@ -657,7 +677,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 
 		n, err := ctx.createConnectingEndpoint(s, rcvdSynOptions, &waiter.Queue{})
 		if err != nil {
-			e.acceptMu.Unlock()
+			e.releaseAccepted()
 			return err
 		}
 
@@ -669,9 +689,8 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 
 		if !n.reserveTupleLocked() {
 			n.mu.Unlock()
-			e.acceptMu.Unlock()
 			n.Close()
-
+			e.releaseAccepted()
 			e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
 			e.stats.FailedConnectionAttempts.Increment()
 			return nil
@@ -687,9 +706,8 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 			n.boundBindToDevice,
 		); err != nil {
 			n.mu.Unlock()
-			e.acceptMu.Unlock()
 			n.Close()
-
+			e.releaseAccepted()
 			e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
 			e.stats.FailedConnectionAttempts.Increment()
 			return err
@@ -724,7 +742,8 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		n.startAcceptedLoop()
 		e.stack.Stats().TCP.PassiveConnectionOpenings.Increment()
 
-		// Deliver the endpoint to the accept queue.
+		e.acceptMu.Lock()
+		e.acceptQueue.releaseAccepted()
 		e.acceptQueue.endpoints.PushBack(n)
 		e.acceptMu.Unlock()
 

@@ -556,14 +556,6 @@ type endpoint struct {
 	// acceptMu protects accepted.
 	acceptMu sync.Mutex `state:"nosave"`
 
-	// acceptCond is a condition variable that can be used to block on when
-	// accepted is full and an endpoint is ready to be delivered.
-	//
-	// We use this condition variable to block/unblock goroutines which
-	// tried to deliver an endpoint but couldn't because accept backlog was
-	// full ( See: endpoint.deliverAccepted ).
-	acceptCond *sync.Cond `state:"nosave"`
-
 	// accepted is used by a listening endpoint protocol goroutine to
 	// send newly accepted connections to the endpoint so that they can be
 	// read by Accept() calls.
@@ -870,7 +862,6 @@ func newEndpoint(s *stack.Stack, protocol *protocol, netProto tcpip.NetworkProto
 
 	e.segmentQueue.ep = e
 
-	e.acceptCond = sync.NewCond(&e.acceptMu)
 	e.keepalive.timer.init(e.stack.Clock(), &e.keepalive.waker)
 
 	return e
@@ -1092,11 +1083,7 @@ func (e *endpoint) closePendingAcceptableConnectionsLocked() {
 	}
 	e.acceptQueue.endpoints.Init()
 	e.acceptMu.Unlock()
-
-	e.acceptCond.Broadcast()
-
-	// Wait for reset of all endpoints that are still waiting to be delivered to
-	// the now closed accepted.
+	// Wait for all pending endpoints to be terminated.
 	e.pendingAccepted.Wait()
 }
 
@@ -2503,10 +2490,6 @@ func (e *endpoint) listen(backlog int) tcpip.Error {
 		e.rcvQueueInfo.RcvClosed = false
 		e.rcvQueueInfo.rcvQueueMu.Unlock()
 
-		// Notify any blocked goroutines that they can attempt to
-		// deliver endpoints again.
-		e.acceptCond.Broadcast()
-
 		return nil
 	}
 
@@ -2588,7 +2571,6 @@ func (e *endpoint) Accept(peerAddr *tcpip.FullAddress) (tcpip.Endpoint, *waiter.
 	if n == nil {
 		return nil, nil, &tcpip.ErrWouldBlock{}
 	}
-	e.acceptCond.Signal()
 	if peerAddr != nil {
 		*peerAddr = n.getRemoteAddress()
 	}
