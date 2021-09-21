@@ -17,6 +17,7 @@ package gofer
 import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/hostfd"
@@ -26,10 +27,13 @@ import (
 // handle represents a remote "open file descriptor", consisting of an opened
 // fid (p9.File) and optionally a host file descriptor.
 //
+// If lisafs is being used, fdLisa points to an open file on the server.
+//
 // These are explicitly not savable.
 type handle struct {
-	file p9file
-	fd   int32 // -1 if unavailable
+	fdLisa lisafs.ClientFD
+	file   p9file
+	fd     int32 // -1 if unavailable
 }
 
 // Preconditions: read || write.
@@ -65,13 +69,47 @@ func openHandle(ctx context.Context, file p9file, read, write, trunc bool) (hand
 	}, nil
 }
 
+// Preconditions: read || write.
+func openHandleLisa(ctx context.Context, fdLisa lisafs.ClientFD, read, write, trunc bool) (handle, error) {
+	var flags uint32
+	switch {
+	case read && write:
+		flags = unix.O_RDWR
+	case read:
+		flags = unix.O_RDONLY
+	case write:
+		flags = unix.O_WRONLY
+	default:
+		panic("tried to open unreadable and unwritable handle")
+	}
+	if trunc {
+		flags |= unix.O_TRUNC
+	}
+	openFD, hostFD, err := fdLisa.OpenAt(ctx, flags)
+	if err != nil {
+		return handle{fd: -1}, err
+	}
+	h := handle{
+		fdLisa: fdLisa.Client().NewFD(openFD),
+		fd:     int32(hostFD),
+	}
+	return h, nil
+}
+
 func (h *handle) isOpen() bool {
+	if h.fdLisa.Client() != nil {
+		return h.fdLisa.Ok()
+	}
 	return !h.file.isNil()
 }
 
 func (h *handle) close(ctx context.Context) {
-	h.file.close(ctx)
-	h.file = p9file{}
+	if h.fdLisa.Client() != nil {
+		h.fdLisa.CloseBatched(ctx)
+	} else {
+		h.file.close(ctx)
+		h.file = p9file{}
+	}
 	if h.fd >= 0 {
 		unix.Close(int(h.fd))
 		h.fd = -1
@@ -89,19 +127,27 @@ func (h *handle) readToBlocksAt(ctx context.Context, dsts safemem.BlockSeq, offs
 		return n, err
 	}
 	if dsts.NumBlocks() == 1 && !dsts.Head().NeedSafecopy() {
-		n, err := h.file.readAt(ctx, dsts.Head().ToSlice(), offset)
-		return uint64(n), err
+		if h.fdLisa.Client() != nil {
+			return h.fdLisa.Read(ctx, dsts.Head().ToSlice(), offset)
+		}
+		return h.file.readAt(ctx, dsts.Head().ToSlice(), offset)
 	}
 	// Buffer the read since p9.File.ReadAt() takes []byte.
 	buf := make([]byte, dsts.NumBytes())
-	n, err := h.file.readAt(ctx, buf, offset)
+	var n uint64
+	var err error
+	if h.fdLisa.Client() != nil {
+		n, err = h.fdLisa.Read(ctx, buf, offset)
+	} else {
+		n, err = h.file.readAt(ctx, buf, offset)
+	}
 	if n == 0 {
 		return 0, err
 	}
 	if cp, cperr := safemem.CopySeq(dsts, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf[:n]))); cperr != nil {
 		return cp, cperr
 	}
-	return uint64(n), err
+	return n, err
 }
 
 func (h *handle) writeFromBlocksAt(ctx context.Context, srcs safemem.BlockSeq, offset uint64) (uint64, error) {
@@ -115,8 +161,10 @@ func (h *handle) writeFromBlocksAt(ctx context.Context, srcs safemem.BlockSeq, o
 		return n, err
 	}
 	if srcs.NumBlocks() == 1 && !srcs.Head().NeedSafecopy() {
-		n, err := h.file.writeAt(ctx, srcs.Head().ToSlice(), offset)
-		return uint64(n), err
+		if h.fdLisa.Client() != nil {
+			return h.fdLisa.Write(ctx, srcs.Head().ToSlice(), offset)
+		}
+		return h.file.writeAt(ctx, srcs.Head().ToSlice(), offset)
 	}
 	// Buffer the write since p9.File.WriteAt() takes []byte.
 	buf := make([]byte, srcs.NumBytes())
@@ -124,12 +172,18 @@ func (h *handle) writeFromBlocksAt(ctx context.Context, srcs safemem.BlockSeq, o
 	if cp == 0 {
 		return 0, cperr
 	}
-	n, err := h.file.writeAt(ctx, buf[:cp], offset)
+	var n uint64
+	var err error
+	if h.fdLisa.Client() != nil {
+		n, err = h.fdLisa.Write(ctx, buf[:cp], offset)
+	} else {
+		n, err = h.file.writeAt(ctx, buf[:cp], offset)
+	}
 	// err takes precedence over cperr.
 	if err != nil {
-		return uint64(n), err
+		return n, err
 	}
-	return uint64(n), cperr
+	return n, cperr
 }
 
 type handleReadWriter struct {

@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/safemem"
@@ -112,10 +113,19 @@ func (d *dentry) prepareSaveRecursive(ctx context.Context) error {
 			return err
 		}
 	}
-	if !d.readFile.isNil() || !d.writeFile.isNil() {
-		d.fs.savedDentryRW[d] = savedDentryRW{
-			read:  !d.readFile.isNil(),
-			write: !d.writeFile.isNil(),
+	if d.fs.opts.lisaEnabled {
+		if d.readFDLisa.Ok() || d.writeFDLisa.Ok() {
+			d.fs.savedDentryRW[d] = savedDentryRW{
+				read:  d.readFDLisa.Ok(),
+				write: d.writeFDLisa.Ok(),
+			}
+		}
+	} else {
+		if !d.readFile.isNil() || !d.writeFile.isNil() {
+			d.fs.savedDentryRW[d] = savedDentryRW{
+				read:  !d.readFile.isNil(),
+				write: !d.writeFile.isNil(),
+			}
 		}
 	}
 	d.dirMu.Lock()
@@ -177,25 +187,37 @@ func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRest
 		return fmt.Errorf("no server FD available for filesystem with unique ID %q", fs.iopts.UniqueID)
 	}
 	fs.opts.fd = fd
-	if err := fs.dial(ctx); err != nil {
-		return err
-	}
 	fs.inoByQIDPath = make(map[uint64]uint64)
+	fs.inoByKey = make(map[inoKey]uint64)
 
-	// Restore the filesystem root.
-	ctx.UninterruptibleSleepStart(false)
-	attached, err := fs.client.Attach(fs.opts.aname)
-	ctx.UninterruptibleSleepFinish(false)
-	if err != nil {
-		return err
-	}
-	attachFile := p9file{attached}
-	qid, attrMask, attr, err := attachFile.getAttr(ctx, dentryAttrMask())
-	if err != nil {
-		return err
-	}
-	if err := fs.root.restoreFile(ctx, attachFile, qid, attrMask, &attr, &opts); err != nil {
-		return err
+	if fs.opts.lisaEnabled {
+		rootInode, err := fs.initClientLisa(ctx)
+		if err != nil {
+			return err
+		}
+		if err := fs.root.restoreFileLisa(ctx, rootInode, &opts); err != nil {
+			return err
+		}
+	} else {
+		if err := fs.dial(ctx); err != nil {
+			return err
+		}
+
+		// Restore the filesystem root.
+		ctx.UninterruptibleSleepStart(false)
+		attached, err := fs.client.Attach(fs.opts.aname)
+		ctx.UninterruptibleSleepFinish(false)
+		if err != nil {
+			return err
+		}
+		attachFile := p9file{attached}
+		qid, attrMask, attr, err := attachFile.getAttr(ctx, dentryAttrMask())
+		if err != nil {
+			return err
+		}
+		if err := fs.root.restoreFile(ctx, attachFile, qid, attrMask, &attr, &opts); err != nil {
+			return err
+		}
 	}
 
 	// Restore remaining dentries.
@@ -283,6 +305,55 @@ func (d *dentry) restoreFile(ctx context.Context, file p9file, qid p9.QID, attrM
 	return nil
 }
 
+func (d *dentry) restoreFileLisa(ctx context.Context, inode *lisafs.Inode, opts *vfs.CompleteRestoreOptions) error {
+	d.controlFDLisa = d.fs.clientLisa.NewFD(inode.ControlFD)
+
+	// Gofers do not preserve inoKey across checkpoint/restore, so:
+	//
+	// - We must assume that the remote filesystem did not change in a way that
+	// would invalidate dentries, since we can't revalidate dentries by
+	// checking inoKey.
+	//
+	// - We need to associate the new inoKey with the existing d.ino.
+	d.inoKey = inoKeyFromStat(&inode.Stat)
+	d.fs.inoMu.Lock()
+	d.fs.inoByKey[d.inoKey] = d.ino
+	d.fs.inoMu.Unlock()
+
+	// Check metadata stability before updating metadata.
+	d.metadataMu.Lock()
+	defer d.metadataMu.Unlock()
+	if d.isRegularFile() {
+		if opts.ValidateFileSizes {
+			if inode.Stat.Mask&linux.STATX_SIZE != 0 {
+				return fmt.Errorf("gofer.dentry(%q).restoreFile: file size validation failed: file size not available", genericDebugPathname(d))
+			}
+			if d.size != inode.Stat.Size {
+				return fmt.Errorf("gofer.dentry(%q).restoreFile: file size validation failed: size changed from %d to %d", genericDebugPathname(d), d.size, inode.Stat.Size)
+			}
+		}
+		if opts.ValidateFileModificationTimestamps {
+			if inode.Stat.Mask&linux.STATX_MTIME != 0 {
+				return fmt.Errorf("gofer.dentry(%q).restoreFile: mtime validation failed: mtime not available", genericDebugPathname(d))
+			}
+			if want := dentryTimestampFromLisa(inode.Stat.Mtime); d.mtime != want {
+				return fmt.Errorf("gofer.dentry(%q).restoreFile: mtime validation failed: mtime changed from %+v to %+v", genericDebugPathname(d), linux.NsecToStatxTimestamp(d.mtime), linux.NsecToStatxTimestamp(want))
+			}
+		}
+	}
+	if !d.cachedMetadataAuthoritative() {
+		d.updateFromLisaStatLocked(&inode.Stat)
+	}
+
+	if rw, ok := d.fs.savedDentryRW[d]; ok {
+		if err := d.ensureSharedHandle(ctx, rw.read, rw.write, false /* trunc */); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // Preconditions: d is not synthetic.
 func (d *dentry) restoreDescendantsRecursive(ctx context.Context, opts *vfs.CompleteRestoreOptions) error {
 	for _, child := range d.children {
@@ -305,19 +376,35 @@ func (d *dentry) restoreDescendantsRecursive(ctx context.Context, opts *vfs.Comp
 // only be detected by checking filesystem.syncableDentries). d.parent has been
 // restored.
 func (d *dentry) restoreRecursive(ctx context.Context, opts *vfs.CompleteRestoreOptions) error {
-	qid, file, attrMask, attr, err := d.parent.file.walkGetAttrOne(ctx, d.name)
-	if err != nil {
-		return err
-	}
-	if err := d.restoreFile(ctx, file, qid, attrMask, &attr, opts); err != nil {
-		return err
+	if d.fs.opts.lisaEnabled {
+		inode, err := d.parent.controlFDLisa.Walk(ctx, d.name)
+		if err != nil {
+			return err
+		}
+		if err := d.restoreFileLisa(ctx, inode, opts); err != nil {
+			return err
+		}
+	} else {
+		qid, file, attrMask, attr, err := d.parent.file.walkGetAttrOne(ctx, d.name)
+		if err != nil {
+			return err
+		}
+		if err := d.restoreFile(ctx, file, qid, attrMask, &attr, opts); err != nil {
+			return err
+		}
 	}
 	return d.restoreDescendantsRecursive(ctx, opts)
 }
 
 func (fd *specialFileFD) completeRestore(ctx context.Context) error {
 	d := fd.dentry()
-	h, err := openHandle(ctx, d.file, fd.vfsfd.IsReadable(), fd.vfsfd.IsWritable(), false /* trunc */)
+	var h handle
+	var err error
+	if d.fs.opts.lisaEnabled {
+		h, err = openHandleLisa(ctx, d.controlFDLisa, fd.vfsfd.IsReadable(), fd.vfsfd.IsWritable(), false /* trunc */)
+	} else {
+		h, err = openHandle(ctx, d.file, fd.vfsfd.IsReadable(), fd.vfsfd.IsWritable(), false /* trunc */)
+	}
 	if err != nil {
 		return err
 	}
