@@ -77,6 +77,68 @@ class PacketSocketTest : public ::testing::TestWithParam<int> {
   FileDescriptor socket_;
 };
 
+TEST_P(PacketSocketTest, GetSockName) {
+  {
+    // First check the local address of an unbound packet socket.
+    sockaddr_ll addr;
+    socklen_t addrlen = sizeof(addr);
+    ASSERT_THAT(getsockname(socket_.get(), reinterpret_cast<sockaddr*>(&addr),
+                            &addrlen),
+                SyscallSucceeds());
+    // sockaddr_ll ends with an 8 byte physical address field, but only the
+    // bytes that are used in the sockaddr_ll.sll_addr field are included in the
+    // address length. Seems Linux used to return the size of sockaddr_ll, but
+    // https://github.com/torvalds/linux/commit/0fb375fb9b93b7d822debc6a734052337ccfdb1f
+    // changed things to only return `sizeof(sockaddr_ll) + sll.sll_addr`.
+    ASSERT_THAT(addrlen, AnyOf(Eq(sizeof(addr)),
+                               Eq(sizeof(addr) - sizeof(addr.sll_addr))));
+    EXPECT_EQ(addr.sll_family, AF_PACKET);
+    EXPECT_EQ(addr.sll_ifindex, 0);
+    if (IsRunningOnGvisor() && !IsRunningWithHostinet()) {
+      // TODO(https://gvisor.dev/issue/6530): Do not assume all interfaces have
+      // an ethernet address.
+      EXPECT_EQ(addr.sll_halen, ETH_ALEN);
+    } else {
+      EXPECT_EQ(addr.sll_halen, 0);
+    }
+    EXPECT_EQ(ntohs(addr.sll_protocol), 0);
+    EXPECT_EQ(addr.sll_hatype, 0);
+  }
+  // Next we bind the socket to loopback before checking the local address.
+  const sockaddr_ll bind_addr = {
+      .sll_family = AF_PACKET,
+      .sll_protocol = htons(ETH_P_IP),
+      .sll_ifindex = ASSERT_NO_ERRNO_AND_VALUE(GetLoopbackIndex()),
+  };
+  ASSERT_THAT(bind(socket_.get(), reinterpret_cast<const sockaddr*>(&bind_addr),
+                   sizeof(bind_addr)),
+              SyscallSucceeds());
+  {
+    sockaddr_ll addr;
+    socklen_t addrlen = sizeof(addr);
+    ASSERT_THAT(getsockname(socket_.get(), reinterpret_cast<sockaddr*>(&addr),
+                            &addrlen),
+                SyscallSucceeds());
+    ASSERT_THAT(addrlen,
+                AnyOf(Eq(sizeof(addr)),
+                      Eq(sizeof(addr) - sizeof(addr.sll_addr) + ETH_ALEN)));
+    EXPECT_EQ(addr.sll_family, AF_PACKET);
+    EXPECT_EQ(addr.sll_ifindex, bind_addr.sll_ifindex);
+    EXPECT_EQ(addr.sll_halen, ETH_ALEN);
+    // Bound to loopback which has the all zeroes address.
+    for (int i = 0; i < addr.sll_halen; ++i) {
+      EXPECT_EQ(addr.sll_addr[i], 0) << "byte mismatch @ idx = " << i;
+    }
+    EXPECT_EQ(ntohs(addr.sll_protocol), htons(addr.sll_protocol));
+    if (IsRunningOnGvisor() && !IsRunningWithHostinet()) {
+      // TODO(https://gvisor.dev/issue/6621): Support populating sll_hatype.
+      EXPECT_EQ(addr.sll_hatype, 0);
+    } else {
+      EXPECT_EQ(addr.sll_hatype, ARPHRD_LOOPBACK);
+    }
+  }
+}
+
 TEST_P(PacketSocketTest, RebindProtocol) {
   const bool kEthHdrIncluded = GetParam() == SOCK_RAW;
 
@@ -162,10 +224,9 @@ TEST_P(PacketSocketTest, RebindProtocol) {
     // addresses only use 6 bytes. Linux used to return sizeof(sockaddr_ll)-2
     // here, but returns sizeof(sockaddr_ll) since
     // https://github.com/torvalds/linux/commit/b2cf86e1563e33a14a1c69b3e508d15dc12f804c.
-    ASSERT_THAT(src_len, ::testing::AnyOf(
-                             ::testing::Eq(sizeof(src)),
-                             ::testing::Eq(sizeof(src) - sizeof(src.sll_addr) +
-                                           ETH_ALEN)));
+    ASSERT_THAT(src_len,
+                AnyOf(Eq(sizeof(src)),
+                      Eq(sizeof(src) - sizeof(src.sll_addr) + ETH_ALEN)));
     EXPECT_EQ(src.sll_family, AF_PACKET);
     EXPECT_EQ(src.sll_ifindex, loopback_index);
     EXPECT_EQ(src.sll_halen, ETH_ALEN);
