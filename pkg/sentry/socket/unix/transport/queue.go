@@ -59,12 +59,14 @@ func (q *queue) Close() {
 // q.WriterQueue.Notify(waiter.WritableEvents)
 func (q *queue) Reset(ctx context.Context) {
 	q.mu.Lock()
-	for cur := q.dataList.Front(); cur != nil; cur = cur.Next() {
-		cur.Release(ctx)
-	}
+	dataList := q.dataList
 	q.dataList.Reset()
 	q.used = 0
 	q.mu.Unlock()
+
+	for cur := dataList.Front(); cur != nil; cur = cur.Next() {
+		cur.Release(ctx)
+	}
 }
 
 // DecRef implements RefCounter.DecRef.
