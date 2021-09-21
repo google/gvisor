@@ -318,8 +318,14 @@ func (ep *endpoint) Bind(addr tcpip.FullAddress) tcpip.Error {
 }
 
 // GetLocalAddress implements tcpip.Endpoint.GetLocalAddress.
-func (*endpoint) GetLocalAddress() (tcpip.FullAddress, tcpip.Error) {
-	return tcpip.FullAddress{}, &tcpip.ErrNotSupported{}
+func (ep *endpoint) GetLocalAddress() (tcpip.FullAddress, tcpip.Error) {
+	ep.mu.RLock()
+	defer ep.mu.RUnlock()
+
+	return tcpip.FullAddress{
+		NIC:  ep.boundNIC,
+		Port: uint16(ep.boundNetProto),
+	}, nil
 }
 
 // GetRemoteAddress implements tcpip.Endpoint.GetRemoteAddress.
