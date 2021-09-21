@@ -251,7 +251,9 @@ func (e *endpoint) Resume(s *stack.Stack) {
 		go func() {
 			connectedLoading.Wait()
 			bind()
+			e.acceptMu.Lock()
 			backlog := e.accepted.cap
+			e.acceptMu.Unlock()
 			if err := e.Listen(backlog); err != nil {
 				panic("endpoint listening failed: " + err.String())
 			}

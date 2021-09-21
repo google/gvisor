@@ -2088,6 +2088,66 @@ TEST_P(SimpleTcpSocketTest, ConnectUnspecifiedAddress) {
   }
 }
 
+TEST_P(SimpleTcpSocketTest, OnlyAcknowledgeBacklogConnections) {
+  // At some point, there was a bug in gVisor where a connection could be
+  // SYN-ACK'd by the server even if the accept queue was already full. This was
+  // possible because once the listener would process an ACK, it would move the
+  // new connection in the accept queue asynchronously. It created an
+  // opportunity where the listener could process another SYN before completing
+  // the delivery that would have filled the accept queue.
+  //
+  // This test checks that there is no such race.
+
+  std::array<std::optional<ScopedThread>, 100> threads;
+  for (auto& thread : threads) {
+    thread.emplace([]() {
+      FileDescriptor bound_s = ASSERT_NO_ERRNO_AND_VALUE(
+          Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+
+      sockaddr_storage bound_addr =
+          ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+      socklen_t bound_addrlen = sizeof(bound_addr);
+
+      ASSERT_THAT(bind(bound_s.get(), AsSockAddr(&bound_addr), bound_addrlen),
+                  SyscallSucceeds());
+
+      // Start listening. Use a zero backlog to only allow one connection in the
+      // accept queue.
+      ASSERT_THAT(listen(bound_s.get(), 0), SyscallSucceeds());
+
+      // Get the addresses the socket is bound to because the port is chosen by
+      // the stack.
+      ASSERT_THAT(
+          getsockname(bound_s.get(), AsSockAddr(&bound_addr), &bound_addrlen),
+          SyscallSucceeds());
+
+      // Establish a connection, but do not accept it.
+      FileDescriptor connected_s = ASSERT_NO_ERRNO_AND_VALUE(
+          Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+      ASSERT_THAT(connect(connected_s.get(),
+                          reinterpret_cast<const struct sockaddr*>(&bound_addr),
+                          bound_addrlen),
+                  SyscallSucceeds());
+
+      // Immediately attempt to establish another connection. Use non blocking
+      // socket because this is expected to timeout.
+      FileDescriptor connecting_s = ASSERT_NO_ERRNO_AND_VALUE(
+          Socket(GetParam(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
+      ASSERT_THAT(connect(connecting_s.get(),
+                          reinterpret_cast<const struct sockaddr*>(&bound_addr),
+                          bound_addrlen),
+                  SyscallFailsWithErrno(EINPROGRESS));
+
+      struct pollfd poll_fd = {
+          .fd = connecting_s.get(),
+          .events = POLLOUT,
+      };
+      EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, 10),
+                  SyscallSucceedsWithValue(0));
+    });
+  }
+}
+
 // Tests that send will return EWOULDBLOCK initially with large buffer and will
 // succeed after the send buffer size is increased.
 TEST_P(TcpSocketTest, SendUnblocksOnSendBufferIncrease) {
