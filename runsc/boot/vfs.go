@@ -208,7 +208,7 @@ func (c *containerMounter) mountAll(conf *config.Config, procArgs *kernel.Create
 // createMountNamespaceVFS2 creates the container's root mount and namespace.
 func (c *containerMounter) createMountNamespaceVFS2(ctx context.Context, conf *config.Config, creds *auth.Credentials) (*vfs.MountNamespace, error) {
 	fd := c.fds.remove()
-	data := p9MountData(fd, conf.FileAccess, true /* vfs2 */)
+	data := goferMountData(fd, conf.FileAccess, "/", true /* vfs2 */, conf.Lisafs)
 
 	// We can't check for overlayfs here because sandbox is chroot'ed and gofer
 	// can only send mount options for specs.Mounts (specs.Root is missing
@@ -515,7 +515,7 @@ func (c *containerMounter) getMountNameAndOptionsVFS2(conf *config.Config, m *mo
 			// but unlikely to be correct in this context.
 			return "", nil, false, fmt.Errorf("9P mount requires a connection FD")
 		}
-		data = p9MountData(m.fd, c.getMountAccessType(conf, m.mount), true /* vfs2 */)
+		data = goferMountData(m.fd, c.getMountAccessType(conf, m.mount), m.mount.Destination, true /* vfs2 */, conf.Lisafs)
 		internalData = gofer.InternalFilesystemOptions{
 			UniqueID: m.mount.Destination,
 		}
