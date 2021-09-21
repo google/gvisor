@@ -98,6 +98,12 @@ func (fd *regularFileFD) OnClose(ctx context.Context) error {
 	}
 	d.handleMu.RLock()
 	defer d.handleMu.RUnlock()
+	if d.fs.opts.lisaEnabled {
+		if !d.writeFDLisa.Ok() {
+			return nil
+		}
+		return d.writeFDLisa.Flush(ctx)
+	}
 	if d.writeFile.isNil() {
 		return nil
 	}
@@ -110,6 +116,9 @@ func (fd *regularFileFD) Allocate(ctx context.Context, mode, offset, length uint
 	return d.doAllocate(ctx, offset, length, func() error {
 		d.handleMu.RLock()
 		defer d.handleMu.RUnlock()
+		if d.fs.opts.lisaEnabled {
+			return d.writeFDLisa.Allocate(ctx, mode, offset, length)
+		}
 		return d.writeFile.allocate(ctx, p9.ToAllocateMode(mode), offset, length)
 	})
 }
@@ -282,8 +291,19 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 		// changes to the host.
 		if newMode := vfs.ClearSUIDAndSGID(oldMode); newMode != oldMode {
 			atomic.StoreUint32(&d.mode, newMode)
-			if err := d.file.setAttr(ctx, p9.SetAttrMask{Permissions: true}, p9.SetAttr{Permissions: p9.FileMode(newMode)}); err != nil {
-				return 0, offset, err
+			if d.fs.opts.lisaEnabled {
+				stat := linux.Statx{Mask: linux.STATX_MODE, Mode: uint16(newMode)}
+				failureMask, failureErr, err := d.controlFDLisa.SetStat(ctx, &stat)
+				if err != nil {
+					return 0, offset, err
+				}
+				if failureMask != 0 {
+					return 0, offset, failureErr
+				}
+			} else {
+				if err := d.file.setAttr(ctx, p9.SetAttrMask{Permissions: true}, p9.SetAttr{Permissions: p9.FileMode(newMode)}); err != nil {
+					return 0, offset, err
+				}
 			}
 		}
 	}
@@ -677,7 +697,7 @@ func regularFileSeekLocked(ctx context.Context, d *dentry, fdOffset, offset int6
 
 // Sync implements vfs.FileDescriptionImpl.Sync.
 func (fd *regularFileFD) Sync(ctx context.Context) error {
-	return fd.dentry().syncCachedFile(ctx, false /* lowSyncExpectations */)
+	return fd.dentry().syncCachedFile(ctx, false /* forFilesystemSync */, nil /* accFsyncFDIDsLisa */)
 }
 
 // ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.

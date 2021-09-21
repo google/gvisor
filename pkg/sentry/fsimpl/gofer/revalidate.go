@@ -15,7 +15,9 @@
 package gofer
 
 import (
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -234,28 +236,54 @@ func (fs *filesystem) revalidateHelper(ctx context.Context, vfsObj *vfs.VirtualF
 	}
 	// Lock metadata on all dentries *before* getting attributes for them.
 	state.lockAllMetadata()
-	stats, err := state.start.file.multiGetAttr(ctx, state.names)
-	if err != nil {
-		return err
+
+	var (
+		stats     []p9.FullStat
+		statsLisa []linux.Statx
+		numStats  int
+	)
+	if fs.opts.lisaEnabled {
+		var err error
+		statsLisa, err = state.start.controlFDLisa.WalkStat(ctx, state.names)
+		if err != nil {
+			return err
+		}
+		numStats = len(statsLisa)
+	} else {
+		var err error
+		stats, err = state.start.file.multiGetAttr(ctx, state.names)
+		if err != nil {
+			return err
+		}
+		numStats = len(stats)
 	}
 
 	i := -1
 	for d := state.popFront(); d != nil; d = state.popFront() {
 		i++
-		found := i < len(stats)
+		found := i < numStats
 		if i == 0 && len(state.names[0]) == 0 {
 			if found && !d.isSynthetic() {
 				// First dentry is where the search is starting, just update attributes
 				// since it cannot be replaced.
-				d.updateFromP9AttrsLocked(stats[i].Valid, &stats[i].Attr) // +checklocksforce: acquired by lockAllMetadata.
+				if fs.opts.lisaEnabled {
+					d.updateFromLisaStatLocked(&statsLisa[i]) // +checklocksforce: acquired by lockAllMetadata.
+				} else {
+					d.updateFromP9AttrsLocked(stats[i].Valid, &stats[i].Attr) // +checklocksforce: acquired by lockAllMetadata.
+				}
 			}
 			d.metadataMu.Unlock() // +checklocksforce: see above.
 			continue
 		}
 
-		// Note that synthetic dentries will always fails the comparison check
-		// below.
-		if !found || d.qidPath != stats[i].QID.Path {
+		// Note that synthetic dentries will always fail this comparison check.
+		var shouldInvalidate bool
+		if fs.opts.lisaEnabled {
+			shouldInvalidate = !found || d.inoKey != inoKeyFromStat(&statsLisa[i])
+		} else {
+			shouldInvalidate = !found || d.qidPath != stats[i].QID.Path
+		}
+		if shouldInvalidate {
 			d.metadataMu.Unlock() // +checklocksforce: see above.
 			if !found && d.isSynthetic() {
 				// We have a synthetic file, and no remote file has arisen to replace
@@ -298,7 +326,11 @@ func (fs *filesystem) revalidateHelper(ctx context.Context, vfsObj *vfs.VirtualF
 		}
 
 		// The file at this path hasn't changed. Just update cached metadata.
-		d.updateFromP9AttrsLocked(stats[i].Valid, &stats[i].Attr) // +checklocksforce: see above.
+		if fs.opts.lisaEnabled {
+			d.updateFromLisaStatLocked(&statsLisa[i]) // +checklocksforce: see above.
+		} else {
+			d.updateFromP9AttrsLocked(stats[i].Valid, &stats[i].Attr) // +checklocksforce: see above.
+		}
 		d.metadataMu.Unlock()
 	}
 

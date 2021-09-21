@@ -33,6 +33,7 @@ func TestDestroyIdempotent(t *testing.T) {
 		},
 		syncableDentries: make(map[*dentry]struct{}),
 		inoByQIDPath:     make(map[uint64]uint64),
+		inoByKey:         make(map[inoKey]uint64),
 	}
 
 	attr := &p9.Attr{

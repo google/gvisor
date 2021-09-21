@@ -57,6 +57,7 @@ go_library(
     srcs = [
         "channel.go",
         "client.go",
+        "client_file.go",
         "communicator.go",
         "connection.go",
         "control_fd_list.go",

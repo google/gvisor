@@ -223,6 +223,12 @@ func (rp *ResolvingPath) Final() bool {
 	return rp.curPart == 0 && !rp.pit.NextOk()
 }
 
+// Pit returns a copy of rp's current path iterator. Modifying the iterator
+// does not change rp.
+func (rp *ResolvingPath) Pit() fspath.Iterator {
+	return rp.pit
+}
+
 // Component returns the current path component in the stream represented by
 // rp.
 //
