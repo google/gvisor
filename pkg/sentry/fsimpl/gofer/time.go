@@ -17,11 +17,16 @@ package gofer
 import (
 	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
 func dentryTimestampFromP9(s, ns uint64) int64 {
 	return int64(s*1e9 + ns)
+}
+
+func dentryTimestampFromLisa(t linux.StatxTimestamp) int64 {
+	return t.Sec*1e9 + int64(t.Nsec)
 }
 
 // Preconditions: d.cachedMetadataAuthoritative() == true.

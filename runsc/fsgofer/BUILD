@@ -13,10 +13,12 @@ go_library(
     ],
     visibility = ["//runsc:__subpackages__"],
     deps = [
+        "//pkg/abi/linux",
         "//pkg/cleanup",
         "//pkg/fd",
         "//pkg/lisafs",
         "//pkg/log",
+        "//pkg/marshal/primitive",
         "//pkg/p9",
         "//pkg/sync",
         "//pkg/syserr",
@@ -37,5 +39,17 @@ go_test(
         "//runsc/specutils",
         "@com_github_syndtr_gocapability//capability:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+go_test(
+    name = "lisafs_test",
+    size = "small",
+    srcs = ["lisafs_test.go"],
+    deps = [
+        ":fsgofer",
+        "//pkg/lisafs",
+        "//pkg/lisafs/testsuite",
+        "//pkg/log",
     ],
 )

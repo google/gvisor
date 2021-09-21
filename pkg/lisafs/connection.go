@@ -289,6 +289,22 @@ func (c *Connection) RemoveFD(id FDID) {
 	}
 }
 
+// RemoveControlFDLocked is the same as RemoveFD with added preconditions.
+//
+// Preconditions:
+// * server's rename mutex must at least be read locked.
+// * id must be pointing to a control FD.
+func (c *Connection) RemoveControlFDLocked(id FDID) {
+	c.fdsMu.Lock()
+	fd := c.removeFDLocked(id)
+	c.fdsMu.Unlock()
+	if fd != nil {
+		// Drop the ref held by c. This can take arbitrarily long. So do not hold
+		// c.fdsMu while calling it.
+		fd.(*ControlFD).DecRefLocked()
+	}
+}
+
 // removeFDLocked makes c stop tracking the passed FDID. Note that the caller
 // must drop ref on the returned fd (preferably without holding c.fdsMu).
 //

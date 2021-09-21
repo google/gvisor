@@ -222,47 +222,88 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 		off := uint64(0)
 		const count = 64 * 1024 // for consistency with the vfs1 client
 		d.handleMu.RLock()
-		if d.readFile.isNil() {
+		if !d.isReadFileOk() {
 			// This should not be possible because a readable handle should
 			// have been opened when the calling directoryFD was opened.
 			d.handleMu.RUnlock()
 			panic("gofer.dentry.getDirents called without a readable handle")
 		}
+		// shouldSeek0 indicates whether the server should SEEK to 0 before reading
+		// directory entries.
+		shouldSeek0 := true
 		for {
-			p9ds, err := d.readFile.readdir(ctx, off, count)
-			if err != nil {
-				d.handleMu.RUnlock()
-				return nil, err
+			if d.fs.opts.lisaEnabled {
+				countLisa := int32(count)
+				if shouldSeek0 {
+					// See lisafs.Getdents64Req.Count.
+					countLisa = -countLisa
+					shouldSeek0 = false
+				}
+				lisafsDs, err := d.readFDLisa.Getdents64(ctx, countLisa)
+				if err != nil {
+					d.handleMu.RUnlock()
+					return nil, err
+				}
+				if len(lisafsDs) == 0 {
+					d.handleMu.RUnlock()
+					break
+				}
+				for i := range lisafsDs {
+					name := string(lisafsDs[i].Name)
+					if name == "." || name == ".." {
+						continue
+					}
+					dirent := vfs.Dirent{
+						Name: name,
+						Ino: d.fs.inoFromKey(inoKey{
+							ino:      uint64(lisafsDs[i].Ino),
+							devMinor: uint32(lisafsDs[i].DevMinor),
+							devMajor: uint32(lisafsDs[i].DevMajor),
+						}),
+						NextOff: int64(len(dirents) + 1),
+						Type:    uint8(lisafsDs[i].Type),
+					}
+					dirents = append(dirents, dirent)
+					if realChildren != nil {
+						realChildren[name] = struct{}{}
+					}
+				}
+			} else {
+				p9ds, err := d.readFile.readdir(ctx, off, count)
+				if err != nil {
+					d.handleMu.RUnlock()
+					return nil, err
+				}
+				if len(p9ds) == 0 {
+					d.handleMu.RUnlock()
+					break
+				}
+				for _, p9d := range p9ds {
+					if p9d.Name == "." || p9d.Name == ".." {
+						continue
+					}
+					dirent := vfs.Dirent{
+						Name:    p9d.Name,
+						Ino:     d.fs.inoFromQIDPath(p9d.QID.Path),
+						NextOff: int64(len(dirents) + 1),
+					}
+					// p9 does not expose 9P2000.U's DMDEVICE, DMNAMEDPIPE, or
+					// DMSOCKET.
+					switch p9d.Type {
+					case p9.TypeSymlink:
+						dirent.Type = linux.DT_LNK
+					case p9.TypeDir:
+						dirent.Type = linux.DT_DIR
+					default:
+						dirent.Type = linux.DT_REG
+					}
+					dirents = append(dirents, dirent)
+					if realChildren != nil {
+						realChildren[p9d.Name] = struct{}{}
+					}
+				}
+				off = p9ds[len(p9ds)-1].Offset
 			}
-			if len(p9ds) == 0 {
-				d.handleMu.RUnlock()
-				break
-			}
-			for _, p9d := range p9ds {
-				if p9d.Name == "." || p9d.Name == ".." {
-					continue
-				}
-				dirent := vfs.Dirent{
-					Name:    p9d.Name,
-					Ino:     d.fs.inoFromQIDPath(p9d.QID.Path),
-					NextOff: int64(len(dirents) + 1),
-				}
-				// p9 does not expose 9P2000.U's DMDEVICE, DMNAMEDPIPE, or
-				// DMSOCKET.
-				switch p9d.Type {
-				case p9.TypeSymlink:
-					dirent.Type = linux.DT_LNK
-				case p9.TypeDir:
-					dirent.Type = linux.DT_DIR
-				default:
-					dirent.Type = linux.DT_REG
-				}
-				dirents = append(dirents, dirent)
-				if realChildren != nil {
-					realChildren[p9d.Name] = struct{}{}
-				}
-			}
-			off = p9ds[len(p9ds)-1].Offset
 		}
 	}
 	// Emit entries for synthetic children.

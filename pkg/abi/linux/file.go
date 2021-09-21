@@ -242,7 +242,7 @@ const (
 
 // Statx represents struct statx.
 //
-// +marshal
+// +marshal slice:StatxSlice
 type Statx struct {
 	Mask           uint32
 	Blksize        uint32
@@ -270,6 +270,8 @@ type Statx struct {
 var SizeOfStatx = (*Statx)(nil).SizeBytes()
 
 // FileMode represents a mode_t.
+//
+// +marshal
 type FileMode uint16
 
 // Permissions returns just the permission bits.
