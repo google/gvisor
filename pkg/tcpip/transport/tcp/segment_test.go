@@ -34,7 +34,7 @@ func checkSegmentSize(t *testing.T, name string, seg *segment, want segmentSizeW
 		DataSize:   seg.data.Size(),
 		SegMemSize: seg.segMemSize(),
 	}
-	if diff := cmp.Diff(got, want); diff != "" {
+	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("%s differs (-want +got):\n%s", name, diff)
 	}
 }
