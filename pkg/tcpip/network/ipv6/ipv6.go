@@ -1024,7 +1024,8 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 	// We need to do a deep copy of the IP packet because
 	// WriteHeaderIncludedPacket takes ownership of the packet buffer, but we do
 	// not own it.
-	newHdr := header.IPv6(stack.PayloadSince(pkt.NetworkHeader()))
+	newPkt := pkt.DeepCopyForForwarding(int(r.MaxHeaderLength()))
+	newHdr := header.IPv6(newPkt.NetworkHeader().View())
 
 	// As per RFC 8200 section 3,
 	//
@@ -1032,11 +1033,13 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 	//                       each node that forwards the packet.
 	newHdr.SetHopLimit(hopLimit - 1)
 
-	switch err := r.WriteHeaderIncludedPacket(stack.NewPacketBuffer(stack.PacketBufferOptions{
-		ReserveHeaderBytes: int(r.MaxHeaderLength()),
-		Data:               buffer.View(newHdr).ToVectorisedView(),
-		IsForwardedPacket:  true,
-	})); err.(type) {
+	forwardToEp, ok := e.protocol.getEndpointForNIC(r.NICID())
+	if !ok {
+		// The interface was removed after we obtained the route.
+		return &ip.ErrOther{Err: &tcpip.ErrUnknownDevice{}}
+	}
+
+	switch err := forwardToEp.writePacket(r, newPkt, newPkt.TransportProtocolNumber, true /* headerIncluded */); err.(type) {
 	case nil:
 		return nil
 	case *tcpip.ErrMessageTooLong:
@@ -2080,6 +2083,13 @@ func (p *protocol) findEndpointWithAddress(addr tcpip.Address) *endpoint {
 	}
 
 	return nil
+}
+
+func (p *protocol) getEndpointForNIC(id tcpip.NICID) (*endpoint, bool) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	ep, ok := p.mu.eps[id]
+	return ep, ok
 }
 
 func (p *protocol) forgetEndpoint(nicID tcpip.NICID) {
