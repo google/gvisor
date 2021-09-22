@@ -30,7 +30,6 @@ func writeSpec(w io.Writer, cwd string, netns string, args []string) error {
 	spec := &specs.Spec{
 		Version: "1.0.0",
 		Process: &specs.Process{
-			Terminal: true,
 			User: specs.User{
 				UID: 0,
 				GID: 0,

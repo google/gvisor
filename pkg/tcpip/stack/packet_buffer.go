@@ -341,6 +341,37 @@ func (pk *PacketBuffer) CloneToInbound() *PacketBuffer {
 	return newPk
 }
 
+// DeepCopyForForwarding creates a deep copy of the packet buffer for
+// forwarding.
+//
+// The returned packet buffer will have the network and transport headers
+// set if the original packet buffer did.
+func (pk *PacketBuffer) DeepCopyForForwarding(reservedHeaderBytes int) *PacketBuffer {
+	newPkt := NewPacketBuffer(PacketBufferOptions{
+		ReserveHeaderBytes: reservedHeaderBytes,
+		Data:               PayloadSince(pk.NetworkHeader()).ToVectorisedView(),
+		IsForwardedPacket:  true,
+	})
+
+	{
+		consumeBytes := pk.NetworkHeader().View().Size()
+		if _, consumed := newPkt.NetworkHeader().Consume(consumeBytes); !consumed {
+			panic(fmt.Sprintf("expected to consume network header %d bytes from new packet", consumeBytes))
+		}
+		newPkt.NetworkProtocolNumber = pk.NetworkProtocolNumber
+	}
+
+	{
+		consumeBytes := pk.TransportHeader().View().Size()
+		if _, consumed := newPkt.TransportHeader().Consume(consumeBytes); !consumed {
+			panic(fmt.Sprintf("expected to consume transport header %d bytes from new packet", consumeBytes))
+		}
+		newPkt.TransportProtocolNumber = pk.TransportProtocolNumber
+	}
+
+	return newPkt
+}
+
 // headerInfo stores metadata about a header in a packet.
 type headerInfo struct {
 	// offset is the offset of the header in pk.buf relative to
