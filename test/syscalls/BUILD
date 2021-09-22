@@ -434,6 +434,11 @@ syscall_test(
 )
 
 syscall_test(
+    tags = ["container"],
+    test = "//test/syscalls/linux:proc_defaults_test",
+)
+
+syscall_test(
     test = "//test/syscalls/linux:proc_net_test",
 )
 
