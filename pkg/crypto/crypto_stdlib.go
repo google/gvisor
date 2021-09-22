@@ -19,14 +19,21 @@ package crypto
 
 import (
 	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/sha512"
+	"fmt"
 	"math/big"
 )
 
-// EcdsaVerify verifies the signature in r, s of hash using ECDSA and the
-// public key, pub. Its return value records whether the signature is valid.
-func EcdsaVerify(pub *ecdsa.PublicKey, hash []byte, r, s *big.Int) (bool, error) {
-	return ecdsa.Verify(pub, hash, r, s), nil
+// EcdsaP384Sha384Verify verifies the signature in r, s of hash using ECDSA
+// P384 + SHA 384 and the public key, pub. Its return value records whether
+// the signature is valid.
+func EcdsaP384Sha384Verify(pub *ecdsa.PublicKey, data []byte, r, s *big.Int) (bool, error) {
+	if pub.Curve != elliptic.P384() {
+		return false, fmt.Errorf("unsupported key curve: want P-384, got %v", pub.Curve)
+	}
+	digest := sha512.Sum384(data)
+	return ecdsa.Verify(pub, digest[:], r, s), nil
 }
 
 // SumSha384 returns the SHA384 checksum of the data.
