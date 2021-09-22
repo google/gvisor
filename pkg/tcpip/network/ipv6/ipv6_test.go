@@ -3373,7 +3373,8 @@ func TestForwarding(t *testing.T) {
 
 			ipHeaderLength := header.IPv6MinimumSize
 			icmpHeaderLength := header.ICMPv6MinimumSize
-			totalLength := ipHeaderLength + icmpHeaderLength + test.payloadLength + extHdrLen
+			payloadLength := icmpHeaderLength + test.payloadLength + extHdrLen
+			totalLength := ipHeaderLength + payloadLength
 			hdr := buffer.NewPrependable(totalLength)
 			hdr.Prepend(test.payloadLength)
 			icmpH := header.ICMPv6(hdr.Prepend(icmpHeaderLength))
@@ -3391,7 +3392,7 @@ func TestForwarding(t *testing.T) {
 			copy(hdr.Prepend(extHdrLen), extHdrBytes)
 			ip := header.IPv6(hdr.Prepend(ipHeaderLength))
 			ip.Encode(&header.IPv6Fields{
-				PayloadLength:     uint16(header.ICMPv6MinimumSize + test.payloadLength),
+				PayloadLength:     uint16(payloadLength),
 				TransportProtocol: transportProtocol,
 				HopLimit:          test.TTL,
 				SrcAddr:           test.sourceAddr,

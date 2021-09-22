@@ -167,6 +167,13 @@ func (p *protocol) findEndpointWithAddress(addr tcpip.Address) *endpoint {
 	return nil
 }
 
+func (p *protocol) getEndpointForNIC(id tcpip.NICID) (*endpoint, bool) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	ep, ok := p.mu.eps[id]
+	return ep, ok
+}
+
 func (p *protocol) forgetEndpoint(nicID tcpip.NICID) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -746,7 +753,8 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 	// We need to do a deep copy of the IP packet because
 	// WriteHeaderIncludedPacket takes ownership of the packet buffer, but we do
 	// not own it.
-	newHdr := header.IPv4(stack.PayloadSince(pkt.NetworkHeader()))
+	newPkt := pkt.DeepCopyForForwarding(int(r.MaxHeaderLength()))
+	newHdr := header.IPv4(newPkt.NetworkHeader().View())
 
 	// As per RFC 791 page 30, Time to Live,
 	//
@@ -755,12 +763,19 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 	//   Even if no local information is available on the time actually
 	//   spent, the field must be decremented by 1.
 	newHdr.SetTTL(ttl - 1)
+	// We perform a full checksum as we may have updated options above. The IP
+	// header is relatively small so this is not expected to be an expensive
+	// operation.
+	newHdr.SetChecksum(0)
+	newHdr.SetChecksum(^newHdr.CalculateChecksum())
 
-	switch err := r.WriteHeaderIncludedPacket(stack.NewPacketBuffer(stack.PacketBufferOptions{
-		ReserveHeaderBytes: int(r.MaxHeaderLength()),
-		Data:               buffer.View(newHdr).ToVectorisedView(),
-		IsForwardedPacket:  true,
-	})); err.(type) {
+	forwardToEp, ok := e.protocol.getEndpointForNIC(r.NICID())
+	if !ok {
+		// The interface was removed after we obtained the route.
+		return &ip.ErrOther{Err: &tcpip.ErrUnknownDevice{}}
+	}
+
+	switch err := forwardToEp.writePacket(r, newPkt, true /* headerIncluded */); err.(type) {
 	case nil:
 		return nil
 	case *tcpip.ErrMessageTooLong:
