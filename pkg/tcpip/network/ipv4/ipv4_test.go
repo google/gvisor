@@ -3373,3 +3373,139 @@ func TestCloseLocking(t *testing.T) {
 		}
 	}()
 }
+
+func TestIcmpRateLimit(t *testing.T) {
+	var (
+		host1IPv4Addr = tcpip.ProtocolAddress{
+			Protocol: ipv4.ProtocolNumber,
+			AddressWithPrefix: tcpip.AddressWithPrefix{
+				Address:   tcpip.Address(net.ParseIP("192.168.0.1").To4()),
+				PrefixLen: 24,
+			},
+		}
+		host2IPv4Addr = tcpip.ProtocolAddress{
+			Protocol: ipv4.ProtocolNumber,
+			AddressWithPrefix: tcpip.AddressWithPrefix{
+				Address:   tcpip.Address(net.ParseIP("192.168.0.2").To4()),
+				PrefixLen: 24,
+			},
+		}
+	)
+	const icmpBurst = 5
+	e := channel.New(1, defaultMTU, tcpip.LinkAddress(""))
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
+		Clock:              faketime.NewManualClock(),
+	})
+	s.SetICMPBurst(icmpBurst)
+
+	if err := s.CreateNIC(nicID, e); err != nil {
+		t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+	}
+	if err := s.AddProtocolAddress(nicID, host1IPv4Addr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("s.AddProtocolAddress(%d, %+v, {}): %s", nicID, host1IPv4Addr, err)
+	}
+	s.SetRouteTable([]tcpip.Route{
+		{
+			Destination: host1IPv4Addr.AddressWithPrefix.Subnet(),
+			NIC:         nicID,
+		},
+	})
+	tests := []struct {
+		name         string
+		createPacket func() buffer.View
+		check        func(*testing.T, *channel.Endpoint, int)
+	}{
+		{
+			name: "echo",
+			createPacket: func() buffer.View {
+				totalLength := header.IPv4MinimumSize + header.ICMPv4MinimumSize
+				hdr := buffer.NewPrependable(totalLength)
+				icmpH := header.ICMPv4(hdr.Prepend(header.ICMPv4MinimumSize))
+				icmpH.SetIdent(1)
+				icmpH.SetSequence(1)
+				icmpH.SetType(header.ICMPv4Echo)
+				icmpH.SetCode(header.ICMPv4UnusedCode)
+				icmpH.SetChecksum(0)
+				icmpH.SetChecksum(^header.Checksum(icmpH, 0))
+				ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
+				ip.Encode(&header.IPv4Fields{
+					TotalLength: uint16(totalLength),
+					Protocol:    uint8(header.ICMPv4ProtocolNumber),
+					TTL:         1,
+					SrcAddr:     host2IPv4Addr.AddressWithPrefix.Address,
+					DstAddr:     host1IPv4Addr.AddressWithPrefix.Address,
+				})
+				ip.SetChecksum(^ip.CalculateChecksum())
+				return hdr.View()
+			},
+			check: func(t *testing.T, e *channel.Endpoint, round int) {
+				p, ok := e.Read()
+				if !ok {
+					t.Fatalf("expected echo response, no packet read in endpoint in round %d", round)
+				}
+				if got, want := p.Proto, header.IPv4ProtocolNumber; got != want {
+					t.Errorf("got p.Proto = %d, want = %d", got, want)
+				}
+				checker.IPv4(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
+					checker.SrcAddr(host1IPv4Addr.AddressWithPrefix.Address),
+					checker.DstAddr(host2IPv4Addr.AddressWithPrefix.Address),
+					checker.ICMPv4(
+						checker.ICMPv4Type(header.ICMPv4EchoReply),
+					))
+			},
+		},
+		{
+			name: "dst unreachable",
+			createPacket: func() buffer.View {
+				totalLength := header.IPv4MinimumSize + header.UDPMinimumSize
+				hdr := buffer.NewPrependable(totalLength)
+				udpH := header.UDP(hdr.Prepend(header.UDPMinimumSize))
+				udpH.Encode(&header.UDPFields{
+					SrcPort: 100,
+					DstPort: 101,
+					Length:  header.UDPMinimumSize,
+				})
+				ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
+				ip.Encode(&header.IPv4Fields{
+					TotalLength: uint16(totalLength),
+					Protocol:    uint8(header.UDPProtocolNumber),
+					TTL:         1,
+					SrcAddr:     host2IPv4Addr.AddressWithPrefix.Address,
+					DstAddr:     host1IPv4Addr.AddressWithPrefix.Address,
+				})
+				ip.SetChecksum(^ip.CalculateChecksum())
+				return hdr.View()
+			},
+			check: func(t *testing.T, e *channel.Endpoint, round int) {
+				p, ok := e.Read()
+				if round >= icmpBurst {
+					if ok {
+						t.Errorf("got packet %x in round %d, expected ICMP rate limit to stop it", p.Pkt.Data().Views(), round)
+					}
+					return
+				}
+				if !ok {
+					t.Fatalf("expected unreachable in round %d, no packet read in endpoint", round)
+				}
+				checker.IPv4(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
+					checker.SrcAddr(host1IPv4Addr.AddressWithPrefix.Address),
+					checker.DstAddr(host2IPv4Addr.AddressWithPrefix.Address),
+					checker.ICMPv4(
+						checker.ICMPv4Type(header.ICMPv4DstUnreachable),
+					))
+			},
+		},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			for round := 0; round < icmpBurst+1; round++ {
+				e.InjectInbound(header.IPv4ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+					Data: testCase.createPacket().ToVectorisedView(),
+				}))
+				testCase.check(t, e, round)
+			}
+		})
+	}
+}

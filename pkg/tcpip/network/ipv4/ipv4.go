@@ -1215,6 +1215,9 @@ type protocol struct {
 		// eps is keyed by NICID to allow protocol methods to retrieve an endpoint
 		// when handling a packet, by looking at which NIC handled the packet.
 		eps map[tcpip.NICID]*endpoint
+
+		// ICMP types for which the stack's global rate limiting must apply.
+		icmpRateLimitedTypes map[header.ICMPv4Type]struct{}
 	}
 
 	// defaultTTL is the current default TTL for the protocol. Only the
@@ -1330,6 +1333,23 @@ func (*protocol) Parse(pkt *stack.PacketBuffer) (proto tcpip.TransportProtocolNu
 	return ipHdr.TransportProtocol(), !ipHdr.More() && ipHdr.FragmentOffset() == 0, true
 }
 
+// allowICMPReply reports whether an ICMP reply with provided type and code may
+// be sent following the rate mask options and global ICMP rate limiter.
+func (p *protocol) allowICMPReply(icmpType header.ICMPv4Type, code header.ICMPv4Code) bool {
+	// Mimic linux and never rate limit for PMTU discovery.
+	// https://github.com/torvalds/linux/blob/9e9fb7655ed585da8f468e29221f0ba194a5f613/net/ipv4/icmp.c#L288
+	if icmpType == header.ICMPv4DstUnreachable && code == header.ICMPv4FragmentationNeeded {
+		return true
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	if _, ok := p.mu.icmpRateLimitedTypes[icmpType]; ok {
+		return p.stack.AllowICMPMessage()
+	}
+	return true
+}
+
 // calculateNetworkMTU calculates the network-layer payload MTU based on the
 // link-layer payload mtu.
 func calculateNetworkMTU(linkMTU, networkHeaderSize uint32) (uint32, tcpip.Error) {
@@ -1409,6 +1429,14 @@ func NewProtocolWithOptions(opts Options) stack.NetworkProtocolFactory {
 		}
 		p.fragmentation = fragmentation.NewFragmentation(fragmentblockSize, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, ReassembleTimeout, s.Clock(), p)
 		p.mu.eps = make(map[tcpip.NICID]*endpoint)
+		// Set ICMP rate limiting to Linux defaults.
+		// See https://man7.org/linux/man-pages/man7/icmp.7.html.
+		p.mu.icmpRateLimitedTypes = map[header.ICMPv4Type]struct{}{
+			header.ICMPv4DstUnreachable: struct{}{},
+			header.ICMPv4SrcQuench:      struct{}{},
+			header.ICMPv4TimeExceeded:   struct{}{},
+			header.ICMPv4ParamProblem:   struct{}{},
+		}
 		return p
 	}
 }

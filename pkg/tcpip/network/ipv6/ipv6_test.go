@@ -3522,3 +3522,149 @@ func TestMultiCounterStatsInitialization(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestIcmpRateLimit(t *testing.T) {
+	var (
+		host1IPv6Addr = tcpip.ProtocolAddress{
+			Protocol: ProtocolNumber,
+			AddressWithPrefix: tcpip.AddressWithPrefix{
+				Address:   tcpip.Address(net.ParseIP("10::1").To16()),
+				PrefixLen: 64,
+			},
+		}
+		host2IPv6Addr = tcpip.ProtocolAddress{
+			Protocol: ProtocolNumber,
+			AddressWithPrefix: tcpip.AddressWithPrefix{
+				Address:   tcpip.Address(net.ParseIP("10::2").To16()),
+				PrefixLen: 64,
+			},
+		}
+	)
+	const icmpBurst = 5
+	e := channel.New(1, defaultMTU, tcpip.LinkAddress(""))
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
+		Clock:              faketime.NewManualClock(),
+	})
+	s.SetICMPBurst(icmpBurst)
+
+	if err := s.CreateNIC(nicID, e); err != nil {
+		t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+	}
+	if err := s.AddProtocolAddress(nicID, host1IPv6Addr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("s.AddProtocolAddress(%d, %+v, {}): %s", nicID, host1IPv6Addr, err)
+	}
+	s.SetRouteTable([]tcpip.Route{
+		{
+			Destination: host1IPv6Addr.AddressWithPrefix.Subnet(),
+			NIC:         nicID,
+		},
+	})
+	tests := []struct {
+		name         string
+		createPacket func() buffer.View
+		check        func(*testing.T, *channel.Endpoint, int)
+	}{
+		{
+			name: "echo",
+			createPacket: func() buffer.View {
+				totalLength := header.IPv6MinimumSize + header.ICMPv6MinimumSize
+				hdr := buffer.NewPrependable(totalLength)
+				icmpH := header.ICMPv6(hdr.Prepend(header.ICMPv6MinimumSize))
+				icmpH.SetIdent(1)
+				icmpH.SetSequence(1)
+				icmpH.SetType(header.ICMPv6EchoRequest)
+				icmpH.SetCode(header.ICMPv6UnusedCode)
+				icmpH.SetChecksum(0)
+				icmpH.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+					Header: icmpH,
+					Src:    host2IPv6Addr.AddressWithPrefix.Address,
+					Dst:    host1IPv6Addr.AddressWithPrefix.Address,
+				}))
+				payloadLength := hdr.UsedLength()
+				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+				ip.Encode(&header.IPv6Fields{
+					PayloadLength:     uint16(payloadLength),
+					TransportProtocol: header.ICMPv6ProtocolNumber,
+					HopLimit:          1,
+					SrcAddr:           host2IPv6Addr.AddressWithPrefix.Address,
+					DstAddr:           host1IPv6Addr.AddressWithPrefix.Address,
+				})
+				return hdr.View()
+			},
+			check: func(t *testing.T, e *channel.Endpoint, round int) {
+				p, ok := e.Read()
+				if !ok {
+					t.Fatalf("expected echo response, no packet read in endpoint in round %d", round)
+				}
+				if got, want := p.Proto, header.IPv6ProtocolNumber; got != want {
+					t.Errorf("got p.Proto = %d, want = %d", got, want)
+				}
+				checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
+					checker.SrcAddr(host1IPv6Addr.AddressWithPrefix.Address),
+					checker.DstAddr(host2IPv6Addr.AddressWithPrefix.Address),
+					checker.ICMPv6(
+						checker.ICMPv6Type(header.ICMPv6EchoReply),
+					))
+			},
+		},
+		{
+			name: "dst unreachable",
+			createPacket: func() buffer.View {
+				totalLength := header.IPv6MinimumSize + header.UDPMinimumSize
+				hdr := buffer.NewPrependable(totalLength)
+				udpH := header.UDP(hdr.Prepend(header.UDPMinimumSize))
+				udpH.Encode(&header.UDPFields{
+					SrcPort: 100,
+					DstPort: 101,
+					Length:  header.UDPMinimumSize,
+				})
+
+				// Calculate the UDP checksum and set it.
+				sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, host2IPv6Addr.AddressWithPrefix.Address, host1IPv6Addr.AddressWithPrefix.Address, header.UDPMinimumSize)
+				sum = header.Checksum(nil, sum)
+				udpH.SetChecksum(^udpH.CalculateChecksum(sum))
+
+				payloadLength := hdr.UsedLength()
+				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+				ip.Encode(&header.IPv6Fields{
+					PayloadLength:     uint16(payloadLength),
+					TransportProtocol: header.UDPProtocolNumber,
+					HopLimit:          1,
+					SrcAddr:           host2IPv6Addr.AddressWithPrefix.Address,
+					DstAddr:           host1IPv6Addr.AddressWithPrefix.Address,
+				})
+				return hdr.View()
+			},
+			check: func(t *testing.T, e *channel.Endpoint, round int) {
+				p, ok := e.Read()
+				if round >= icmpBurst {
+					if ok {
+						t.Errorf("got packet %x in round %d, expected ICMP rate limit to stop it", p.Pkt.Data().Views(), round)
+					}
+					return
+				}
+				if !ok {
+					t.Fatalf("expected unreachable in round %d, no packet read in endpoint", round)
+				}
+				checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
+					checker.SrcAddr(host1IPv6Addr.AddressWithPrefix.Address),
+					checker.DstAddr(host2IPv6Addr.AddressWithPrefix.Address),
+					checker.ICMPv6(
+						checker.ICMPv6Type(header.ICMPv6DstUnreachable),
+					))
+			},
+		},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			for round := 0; round < icmpBurst+1; round++ {
+				e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+					Data: testCase.createPacket().ToVectorisedView(),
+				}))
+				testCase.check(t, e, round)
+			}
+		})
+	}
+}

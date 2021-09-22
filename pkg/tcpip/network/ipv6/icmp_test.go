@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"golang.org/x/time/rate"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -1435,6 +1436,8 @@ func TestPacketQueing(t *testing.T) {
 				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 				Clock:              clock,
 			})
+			// Make sure ICMP rate limiting doesn't get in our way.
+			s.SetICMPLimit(rate.Inf)
 
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
