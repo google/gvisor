@@ -30,6 +30,10 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+// InitialRTO is the initial retransmission timeout.
+// https://github.com/torvalds/linux/blob/7c636d4d20f/include/net/tcp.h#L142
+const InitialRTO = time.Second
+
 // maxSegmentsPerWake is the maximum number of segments to process in the main
 // protocol goroutine per wake-up. Yielding [after this number of segments are
 // processed] allows other events to be processed as well (e.g., timeouts,
@@ -532,7 +536,7 @@ func (h *handshake) complete() tcpip.Error {
 	defer s.Done()
 
 	// Initialize the resend timer.
-	timer, err := newBackoffTimer(h.ep.stack.Clock(), time.Second, MaxRTO, resendWaker.Assert)
+	timer, err := newBackoffTimer(h.ep.stack.Clock(), InitialRTO, MaxRTO, resendWaker.Assert)
 	if err != nil {
 		return err
 	}
@@ -577,6 +581,9 @@ func (h *handshake) complete() tcpip.Error {
 			n := h.ep.fetchNotifications()
 			if (n&notifyClose)|(n&notifyAbort) != 0 {
 				return &tcpip.ErrAborted{}
+			}
+			if n&notifyShutdown != 0 {
+				return &tcpip.ErrConnectionReset{}
 			}
 			if n&notifyDrain != 0 {
 				for !h.ep.segmentQueue.empty() {
