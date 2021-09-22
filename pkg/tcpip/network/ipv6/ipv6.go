@@ -1990,6 +1990,9 @@ type protocol struct {
 		// eps is keyed by NICID to allow protocol methods to retrieve an endpoint
 		// when handling a packet, by looking at which NIC handled the packet.
 		eps map[tcpip.NICID]*endpoint
+
+		// ICMP types for which the stack's global rate limiting must apply.
+		icmpRateLimitedTypes map[header.ICMPv6Type]struct{}
 	}
 
 	ids    []uint32
@@ -2001,7 +2004,8 @@ type protocol struct {
 	// Must be accessed using atomic operations.
 	defaultTTL uint32
 
-	fragmentation *fragmentation.Fragmentation
+	fragmentation   *fragmentation.Fragmentation
+	icmpRateLimiter *stack.ICMPRateLimiter
 }
 
 // Number returns the ipv6 protocol number.
@@ -2177,6 +2181,18 @@ func (*protocol) Parse(pkt *stack.PacketBuffer) (proto tcpip.TransportProtocolNu
 	return proto, !fragMore && fragOffset == 0, true
 }
 
+// allowICMPReply reports whether an ICMP reply with provided type may
+// be sent following the rate mask options and global ICMP rate limiter.
+func (p *protocol) allowICMPReply(icmpType header.ICMPv6Type) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	if _, ok := p.mu.icmpRateLimitedTypes[icmpType]; ok {
+		return p.stack.AllowICMPMessage()
+	}
+	return true
+}
+
 // calculateNetworkMTU calculates the network-layer payload MTU based on the
 // link-layer payload MTU and the length of every IPv6 header.
 // Note that this is different than the Payload Length field of the IPv6 header,
@@ -2273,6 +2289,21 @@ func NewProtocolWithOptions(opts Options) stack.NetworkProtocolFactory {
 		p.fragmentation = fragmentation.NewFragmentation(header.IPv6FragmentExtHdrFragmentOffsetBytesPerUnit, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, ReassembleTimeout, s.Clock(), p)
 		p.mu.eps = make(map[tcpip.NICID]*endpoint)
 		p.SetDefaultTTL(DefaultTTL)
+		// Set default ICMP rate limiting to Linux defaults.
+		//
+		// Default: 0-1,3-127 (rate limit ICMPv6 errors except Packet Too Big)
+		// See https://www.kernel.org/doc/Documentation/networking/ip-sysctl.txt.
+		defaultIcmpTypes := make(map[header.ICMPv6Type]struct{})
+		for i := header.ICMPv6Type(0); i < header.ICMPv6EchoRequest; i++ {
+			switch i {
+			case header.ICMPv6PacketTooBig:
+				// Do not rate limit packet too big by default.
+			default:
+				defaultIcmpTypes[i] = struct{}{}
+			}
+		}
+		p.mu.icmpRateLimitedTypes = defaultIcmpTypes
+
 		return p
 	}
 }
