@@ -206,34 +206,28 @@ func (st *SNATTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, r *Rou
 		panic(fmt.Sprintf("%s unrecognized", hook))
 	}
 
-	switch protocol := pkt.TransportProtocolNumber; protocol {
-	case header.UDPProtocolNumber:
-		// Only calculate the checksum if offloading isn't supported.
-		requiresChecksum := r.RequiresTXTransportChecksum()
-		rewritePacket(
-			pkt.Network(),
-			header.UDP(pkt.TransportHeader().View()),
-			true, /* updateSRCFields */
-			requiresChecksum,
-			requiresChecksum,
-			st.Port,
-			st.Addr,
-		)
+	port := st.Port
 
-		pkt.NatDone = true
-	case header.TCPProtocolNumber:
-		if ct == nil {
-			return RuleAccept, 0
+	if port == 0 {
+		switch protocol := pkt.TransportProtocolNumber; protocol {
+		case header.UDPProtocolNumber:
+			if port == 0 {
+				port = header.UDP(pkt.TransportHeader().View()).SourcePort()
+			}
+		case header.TCPProtocolNumber:
+			if port == 0 {
+				port = header.TCP(pkt.TransportHeader().View()).SourcePort()
+			}
 		}
+	}
 
-		// Set up conection for matching NAT rule. Only the first
-		// packet of the connection comes here. Other packets will be
-		// manipulated in connection tracking.
-		if conn := ct.insertSNATConn(pkt, hook, st.Port, st.Addr); conn != nil {
-			ct.handlePacket(pkt, hook, r)
-		}
-	default:
-		return RuleDrop, 0
+	// Set up conection for matching NAT rule. Only the first packet of the
+	// connection comes here. Other packets will be manipulated in connection
+	// tracking.
+	//
+	// Does nothing if the protocol does not support connection tracking.
+	if conn := ct.insertSNATConn(pkt, hook, port, st.Addr); conn != nil {
+		ct.handlePacket(pkt, hook, r)
 	}
 
 	return RuleAccept, 0
