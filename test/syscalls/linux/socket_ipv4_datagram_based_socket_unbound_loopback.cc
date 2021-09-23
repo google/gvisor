@@ -18,11 +18,11 @@
 namespace gvisor {
 namespace testing {
 
-INSTANTIATE_TEST_SUITE_P(IPv4Sockets, IPv4DatagramBasedUnboundSocketTest,
-                         ::testing::ValuesIn(ApplyVecToVec<SocketKind>(
-                             {IPv4UDPUnboundSocket, IPv4RawUDPUnboundSocket},
-                             AllBitwiseCombinations(List<int>{
-                                 0, SOCK_NONBLOCK}))));
+INSTANTIATE_TEST_SUITE_P(
+    IPv4Sockets, IPv4DatagramBasedUnboundSocketTest,
+    ::testing::ValuesIn(ApplyVecToVec<SocketKind>(
+        {IPv4UDPUnboundSocket, IPv4RawUDPUnboundSocket, ICMPUnboundSocket},
+        AllBitwiseCombinations(List<int>{0, SOCK_NONBLOCK}))));
 
 }  // namespace testing
 }  // namespace gvisor
