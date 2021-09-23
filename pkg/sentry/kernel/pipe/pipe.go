@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -132,7 +131,7 @@ type Pipe struct {
 	totalWriters atomicbitops.Int32
 
 	// mu protects all pipe internal state below.
-	mu sync.Mutex `state:"nosave"`
+	mu pipeMutex `state:"nosave"`
 
 	// buf holds the pipe's data. buf is a circular buffer; the first valid
 	// byte in buf is at offset off, and the pipe contains size valid bytes.

@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // DefaultTraversalLimit provides a sensible default traversal limit that may
@@ -151,7 +150,7 @@ type MountNamespace struct {
 	root *Dirent
 
 	// mu protects mounts and mountID counter.
-	mu sync.Mutex `state:"nosave"`
+	mu namespaceMutex `state:"nosave"`
 
 	// mounts is a map of mounted Dirent -> Mount object. There are three
 	// possible cases:

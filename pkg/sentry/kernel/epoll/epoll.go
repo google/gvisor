@@ -108,7 +108,7 @@ type EventPoll struct {
 
 	// files is the map of all the files currently being observed, it is
 	// protected by mu.
-	mu    sync.Mutex `state:"nosave"`
+	mu    epollMutex `state:"nosave"`
 	files map[FileIdentifier]*pollEntry
 
 	// listsMu protects manipulation of the lists below. It needs to be a
@@ -128,7 +128,7 @@ type EventPoll struct {
 	//		called on it before it gets moved to the readyList.
 	//	disabledList -- when the entry is disabled. This happens when
 	//		a one-shot entry gets delivered via readEvents().
-	listsMu      sync.Mutex `state:"nosave"`
+	listsMu      epollListMutex `state:"nosave"`
 	readyList    pollEntryList
 	waitingList  pollEntryList
 	disabledList pollEntryList

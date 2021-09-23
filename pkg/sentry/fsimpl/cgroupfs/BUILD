@@ -4,6 +4,17 @@ load("//tools/go_generics:defs.bzl", "go_template_instance")
 licenses(["notice"])
 
 go_template_instance(
+    name = "task_mutex",
+    out = "task_mutex.go",
+    package = "cgroupfs",
+    prefix = "task",
+    substrs = {
+        "genericMark": "task",
+    },
+    template = "//pkg/sync/locking:generic_rwmutex",
+)
+
+go_template_instance(
     name = "dir_refs",
     out = "dir_refs.go",
     package = "cgroupfs",
@@ -27,6 +38,7 @@ go_library(
         "job.go",
         "memory.go",
         "pids.go",
+        "task_mutex.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
@@ -49,6 +61,7 @@ go_library(
         "//pkg/sentry/usage",
         "//pkg/sentry/vfs",
         "//pkg/sync",
+        "//pkg/sync/locking",
         "//pkg/usermem",
     ],
 )

@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // KeyKind indicates the type of a Key.
@@ -252,7 +251,7 @@ func (w *Waiter) woken() bool {
 // +stateify savable
 type bucket struct {
 	// mu protects waiters and contained Waiter state. See comment in Waiter.
-	mu sync.Mutex `state:"nosave"`
+	mu futexBucketMutex `state:"nosave"`
 
 	waiters waiterList `state:"zerovalue"`
 }

@@ -4,6 +4,72 @@ load("//tools/go_generics:defs.bzl", "go_template_instance")
 package(licenses = ["notice"])
 
 go_template_instance(
+    name = "aio_context_mutex",
+    out = "aio_context_mutex.go",
+    package = "mm",
+    prefix = "aioContext",
+    substrs = {
+        "genericMark": "aio_context",
+    },
+    template = "//pkg/sync/locking:generic_mutex",
+)
+
+go_template_instance(
+    name = "aio_manager_mutex",
+    out = "aio_manager_mutex.go",
+    package = "mm",
+    prefix = "aioManager",
+    substrs = {
+        "genericMark": "aioManager",
+    },
+    template = "//pkg/sync/locking:generic_mutex",
+)
+
+go_template_instance(
+    name = "mapping_mutex",
+    out = "mapping_mutex.go",
+    package = "mm",
+    prefix = "mapping",
+    substrs = {
+        "genericMark": "mapping",
+    },
+    template = "//pkg/sync/locking:generic_rwmutex",
+)
+
+go_template_instance(
+    name = "active_mutex",
+    out = "active_mutex.go",
+    package = "mm",
+    prefix = "active",
+    substrs = {
+        "genericMark": "active",
+    },
+    template = "//pkg/sync/locking:generic_rwmutex",
+)
+
+go_template_instance(
+    name = "metadata_mutex",
+    out = "metadata_mutex.go",
+    package = "mm",
+    prefix = "metadata",
+    substrs = {
+        "genericMark": "metadata",
+    },
+    template = "//pkg/sync/locking:generic_mutex",
+)
+
+go_template_instance(
+    name = "private_refs_mutex",
+    out = "private_refs_mutex.go",
+    package = "mm",
+    prefix = "privateRefs",
+    substrs = {
+        "genericMark": "private_refs",
+    },
+    template = "//pkg/sync/locking:generic_mutex",
+)
+
+go_template_instance(
     name = "file_refcount_set",
     out = "file_refcount_set.go",
     imports = {
@@ -98,6 +164,9 @@ go_template_instance(
 go_library(
     name = "mm",
     srcs = [
+        "aio_manager_mutex.go",
+        "aio_context_mutex.go",
+        "active_mutex.go",
         "address_space.go",
         "aio_context.go",
         "aio_context_state.go",
@@ -107,10 +176,13 @@ go_library(
         "io.go",
         "io_list.go",
         "lifecycle.go",
+        "mapping_mutex.go",
         "metadata.go",
+        "metadata_mutex.go",
         "mm.go",
         "pma.go",
         "pma_set.go",
+        "private_refs_mutex.go",
         "procfs.go",
         "save_restore.go",
         "shm.go",
@@ -144,6 +216,7 @@ go_library(
         "//pkg/sentry/platform",
         "//pkg/sentry/usage",
         "//pkg/sync",
+        "//pkg/sync/locking",
         "//pkg/tcpip/buffer",
         "//pkg/usermem",
     ],

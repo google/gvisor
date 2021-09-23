@@ -71,7 +71,7 @@ type Inotify struct {
 	// evMu *only* protects the events list. We need a separate lock while
 	// queuing events: using mu may violate lock ordering, since at that point
 	// the calling goroutine may already hold Watches.mu.
-	evMu sync.Mutex `state:"nosave"`
+	evMu inotifyEventMutex `state:"nosave"`
 
 	// A list of pending events for this inotify instance. Protected by evMu.
 	events eventList
@@ -81,7 +81,7 @@ type Inotify struct {
 	scratch []byte
 
 	// mu protects the fields below.
-	mu sync.Mutex `state:"nosave"`
+	mu inotifyMutex `state:"nosave"`
 
 	// nextWatchMinusOne is used to allocate watch descriptors on this Inotify
 	// instance. Note that Linux starts numbering watch descriptors from 1.

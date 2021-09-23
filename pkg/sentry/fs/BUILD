@@ -3,6 +3,17 @@ load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(licenses = ["notice"])
 
+go_template_instance(
+    name = "namespace_mutex",
+    out = "namespace_mutex.go",
+    package = "fs",
+    prefix = "namespace",
+    substrs = {
+        "genericMark": "namespace",
+    },
+    template = "//pkg/sync/locking:generic_mutex",
+)
+
 go_library(
     name = "fs",
     srcs = [
@@ -29,11 +40,14 @@ go_library(
         "inode_overlay.go",
         "inotify.go",
         "inotify_event.go",
+        "inotify_event_mutex.go",
+        "inotify_mutex.go",
         "inotify_watch.go",
         "mock.go",
         "mount.go",
         "mount_overlay.go",
         "mounts.go",
+        "namespace_mutex.go",
         "offset.go",
         "overlay.go",
         "path.go",
@@ -68,6 +82,7 @@ go_library(
         "//pkg/sentry/usage",
         "//pkg/state",
         "//pkg/sync",
+        "//pkg/sync/locking",
         "//pkg/usermem",
         "//pkg/waiter",
         "@org_golang_x_sys//unix:go_default_library",
@@ -96,6 +111,28 @@ go_template_instance(
         "Linker": "*Event",
         "Element": "*Event",
     },
+)
+
+go_template_instance(
+    name = "inotify_event_mutex",
+    out = "inotify_event_mutex.go",
+    package = "fs",
+    prefix = "inotifyEvent",
+    substrs = {
+        "genericMark": "inotifyEvent",
+    },
+    template = "//pkg/sync/locking:generic_mutex",
+)
+
+go_template_instance(
+    name = "inotify_mutex",
+    out = "inotify_mutex.go",
+    package = "fs",
+    prefix = "inotify",
+    substrs = {
+        "genericMark": "inotify",
+    },
+    template = "//pkg/sync/locking:generic_mutex",
 )
 
 go_test(

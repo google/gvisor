@@ -4,6 +4,28 @@ load("//tools/go_generics:defs.bzl", "go_template_instance")
 package(licenses = ["notice"])
 
 go_template_instance(
+    name = "epoll_mutex",
+    out = "epoll_mutex.go",
+    package = "epoll",
+    prefix = "epoll",
+    substrs = {
+        "genericMark": "epoll",
+    },
+    template = "//pkg/sync/locking:generic_mutex",
+)
+
+go_template_instance(
+    name = "epoll_list_mutex",
+    out = "epoll_list_mutex.go",
+    package = "epoll",
+    prefix = "epollList",
+    substrs = {
+        "genericMark": "epollList",
+    },
+    template = "//pkg/sync/locking:generic_mutex",
+)
+
+go_template_instance(
     name = "epoll_list",
     out = "epoll_list.go",
     package = "epoll",
@@ -19,7 +41,9 @@ go_library(
     name = "epoll",
     srcs = [
         "epoll.go",
+        "epoll_mutex.go",
         "epoll_list.go",
+        "epoll_list_mutex.go",
         "epoll_state.go",
     ],
     visibility = ["//pkg/sentry:internal"],
@@ -31,6 +55,7 @@ go_library(
         "//pkg/sentry/fs/anon",
         "//pkg/sentry/fs/fsutil",
         "//pkg/sync",
+        "//pkg/sync/locking",
         "//pkg/usermem",
         "//pkg/waiter",
         "@org_golang_x_sys//unix:go_default_library",

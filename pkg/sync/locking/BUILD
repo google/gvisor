@@ -49,6 +49,7 @@ go_test(
         "mutex_test.go",
     ],
     library = ":locking",
+    nogo = False,
 )
 
 go_template(

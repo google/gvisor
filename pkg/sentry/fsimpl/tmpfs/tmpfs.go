@@ -81,6 +81,7 @@ type filesystem struct {
 	usage usage.MemoryKind
 
 	// mu serializes changes to the Dentry tree.
+	//	mu filesystemRWMutex `state:"nosave"`
 	mu sync.RWMutex `state:"nosave"`
 
 	nextInoMinusOne atomicbitops.Uint64 // accessed using atomic memory operations

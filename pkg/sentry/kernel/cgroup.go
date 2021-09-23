@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // InvalidCgroupHierarchyID indicates an uninitialized hierarchy ID.
@@ -218,7 +217,7 @@ type CgroupRegistry struct {
 	//
 	lastHierarchyID atomicbitops.Uint32
 
-	mu sync.Mutex `state:"nosave"`
+	mu cgroupMutex `state:"nosave"`
 
 	// controllers is the set of currently known cgroup controllers on the
 	// system. Protected by mu.

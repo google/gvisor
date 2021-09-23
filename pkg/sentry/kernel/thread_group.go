@@ -159,7 +159,7 @@ type ThreadGroup struct {
 	// restarted by Task.Start.
 	liveGoroutines sync.WaitGroup `state:"nosave"`
 
-	timerMu sync.Mutex `state:"nosave"`
+	timerMu threadGroupTimerMutex `state:"nosave"`
 
 	// itimerRealTimer implements ITIMER_REAL for the thread group.
 	itimerRealTimer *ktime.Timer

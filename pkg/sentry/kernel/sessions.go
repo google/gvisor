@@ -217,10 +217,10 @@ func (pg *ProcessGroup) handleOrphan() {
 		if tg.processGroup != pg {
 			return
 		}
-		tg.signalHandlers.mu.Lock()
+		tg.signalHandlers.mu.NestedLock()
 		tg.leader.sendSignalLocked(SignalInfoPriv(linux.SIGHUP), true /* group */)
 		tg.leader.sendSignalLocked(SignalInfoPriv(linux.SIGCONT), true /* group */)
-		tg.signalHandlers.mu.Unlock()
+		tg.signalHandlers.mu.NestedUnlock()
 	})
 
 	return

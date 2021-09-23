@@ -189,7 +189,7 @@ type Kernel struct {
 	// runningTasksMu is used to exclude critical sections when the timer
 	// disables itself and when the first active task enables the timer,
 	// ensuring that tasks always see a valid cpuClock value.
-	runningTasksMu sync.Mutex `state:"nosave"`
+	runningTasksMu runningTasksMutex `state:"nosave"`
 
 	// runningTasks is the total count of tasks currently in
 	// TaskGoroutineRunningSys or TaskGoroutineRunningApp. i.e., they are

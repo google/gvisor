@@ -4,6 +4,17 @@ load("//tools/go_generics:defs.bzl", "go_template_instance")
 package(licenses = ["notice"])
 
 go_template_instance(
+    name = "calibrated_clock_mutex",
+    out = "calibrated_clock_mutex.go",
+    package = "time",
+    prefix = "calibratedClock",
+    substrs = {
+        "genericMark": "calibratedClock",
+    },
+    template = "//pkg/sync/locking:generic_rwmutex",
+)
+
+go_template_instance(
     name = "seqatomic_parameters",
     out = "seqatomic_parameters_unsafe.go",
     package = "time",
@@ -19,6 +30,7 @@ go_library(
     srcs = [
         "arith_arm64.go",
         "calibrated_clock.go",
+        "calibrated_clock_mutex.go",
         "clock_id.go",
         "clocks.go",
         "muldiv_amd64.s",
@@ -42,6 +54,7 @@ go_library(
         "//pkg/log",
         "//pkg/metric",
         "//pkg/sync",
+        "//pkg/sync/locking",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

@@ -8,6 +8,7 @@ go_binary(
         "main.go",
         "version.go",
     ],
+    gotags = ["lockdep"],
     pure = True,
     tags = ["staging"],
     visibility = [
@@ -36,13 +37,13 @@ go_binary(
         "main.go",
         "version.go",
     ],
+    gotags = ["lockdep"],
     static = True,
     visibility = [
         "//visibility:public",
     ],
     x_defs = {"main.version": "{STABLE_VERSION}"},
     deps = ["//runsc/cli"],
-    gotags = ["lockdep"],
 )
 
 sh_test(

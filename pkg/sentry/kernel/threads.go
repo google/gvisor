@@ -57,7 +57,7 @@ const InitTID ThreadID = 1
 type TaskSet struct {
 	// mu protects all relationships between tasks and thread groups in the
 	// TaskSet. (mu is approximately equivalent to Linux's tasklist_lock.)
-	mu sync.RWMutex `state:"nosave"`
+	mu taskSetRWMutex `state:"nosave"`
 
 	// Root is the root PID namespace, in which all tasks in the TaskSet are
 	// visible. The Root pointer is immutable.

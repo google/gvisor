@@ -38,8 +38,8 @@ func (t *Task) EnterInitialCgroups(parent *Task) {
 	}
 	joinSet := t.k.cgroupRegistry.computeInitialGroups(inherit)
 
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.mu.NestedLock()
+	defer t.mu.NestedUnlock()
 	// Transfer ownership of joinSet refs to the task's cgset.
 	t.cgroups = joinSet
 	for c, _ := range t.cgroups {

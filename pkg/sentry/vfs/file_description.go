@@ -60,7 +60,7 @@ type FileDescription struct {
 
 	// epolls is the set of epollInterests registered for this FileDescription.
 	// epolls is protected by epollMu.
-	epollMu sync.Mutex `state:"nosave"`
+	epollMu epollMutex `state:"nosave"`
 	epolls  map[*epollInterest]struct{}
 
 	// vd is the filesystem location at which this FileDescription was opened.

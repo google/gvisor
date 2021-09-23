@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/metric"
-	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // CalibratedClock implements a clock that tracks a reference clock.
@@ -33,7 +32,7 @@ import (
 type CalibratedClock struct {
 	// mu protects the fields below.
 	// TODO(mpratt): consider a sequence counter for read locking.
-	mu sync.RWMutex
+	mu calibratedClockRWMutex
 
 	// ref sample the reference clock that this clock is calibrated
 	// against.

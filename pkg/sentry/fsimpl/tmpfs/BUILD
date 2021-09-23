@@ -37,6 +37,28 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "inode_mutex",
+    out = "inode_mutex.go",
+    package = "tmpfs",
+    prefix = "inode",
+    substrs = {
+        "genericMark": "inode",
+    },
+    template = "//pkg/sync/locking:generic_mutex",
+)
+
+go_template_instance(
+    name = "filesystem_mutex",
+    out = "filesystem_mutex.go",
+    package = "tmpfs",
+    prefix = "filesystem",
+    substrs = {
+        "genericMark": "filesystem",
+    },
+    template = "//pkg/sync/locking:generic_rwmutex",
+)
+
 go_library(
     name = "tmpfs",
     srcs = [
@@ -44,7 +66,9 @@ go_library(
         "device_file.go",
         "directory.go",
         "filesystem.go",
+        "filesystem_mutex.go",
         "fstree.go",
+        "inode_mutex.go",
         "inode_refs.go",
         "named_pipe.go",
         "regular_file.go",
@@ -82,6 +106,7 @@ go_library(
         "//pkg/sentry/vfs",
         "//pkg/sentry/vfs/memxattr",
         "//pkg/sync",
+        "//pkg/sync/locking",
         "//pkg/usermem",
     ],
 )

@@ -19,7 +19,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -412,7 +411,7 @@ func (q *queueReceiver) Release(ctx context.Context) {
 type streamQueueReceiver struct {
 	queueReceiver
 
-	mu      sync.Mutex `state:"nosave"`
+	mu      streamQueueReceiverMutex `state:"nosave"`
 	buffer  []byte
 	control ControlMessages
 	addr    tcpip.FullAddress
@@ -754,7 +753,7 @@ type baseEndpoint struct {
 	//
 	// See the lock ordering comment in package kernel/epoll regarding when
 	// this lock can safely be held.
-	sync.Mutex `state:"nosave"`
+	endpointMutex `state:"nosave"`
 
 	// receiver allows Messages to be received.
 	receiver Receiver

@@ -60,7 +60,7 @@ type VirtualFilesystem struct {
 	// mountMu serializes mount mutations.
 	//
 	// mountMu is analogous to Linux's namespace_sem.
-	mountMu sync.Mutex `state:"nosave"`
+	mountMu virtualFilesystemMutex `state:"nosave"`
 
 	// mounts maps (mount parent, mount point) pairs to mounts. (Since mounts
 	// are uniquely namespaced, including mount parent in the key correctly
