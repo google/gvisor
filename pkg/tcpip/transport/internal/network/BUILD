@@ -9,6 +9,7 @@ go_library(
         "endpoint_state.go",
     ],
     visibility = [
+        "//pkg/tcpip/transport/icmp:__pkg__",
         "//pkg/tcpip/transport/raw:__pkg__",
         "//pkg/tcpip/transport/udp:__pkg__",
     ],
