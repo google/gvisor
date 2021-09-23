@@ -40,29 +40,45 @@ type Suite struct {
 }
 
 func (s *Suite) String() string {
-	conditions := make([]string, 0, len(s.Conditions))
-	for _, c := range s.Conditions {
-		conditions = append(conditions, c.String())
-	}
-	benchmarks := make([]string, 0, len(s.Benchmarks))
-	for _, b := range s.Benchmarks {
-		benchmarks = append(benchmarks, b.String())
-	}
+	var sb strings.Builder
+	s.debugString(&sb, "")
+	return sb.String()
+}
 
-	format := `Suite:
-Name: %s
-Conditions: %s
-Benchmarks: %s
-Official: %t
-Timestamp: %s
-`
+// writeLine writes a line of text to the given string builder with a prefix.
+func writeLine(sb *strings.Builder, prefix string, format string, values ...interface{}) {
+	if prefix != "" {
+		sb.WriteString(prefix)
+	}
+	sb.WriteString(fmt.Sprintf(format, values...))
+	sb.WriteString("\n")
+}
 
-	return fmt.Sprintf(format,
-		s.Name,
-		strings.Join(conditions, "\n"),
-		strings.Join(benchmarks, "\n"),
-		s.Official,
-		s.Timestamp)
+// debugString writes debug information to the given string builder with the
+// given prefix.
+func (s *Suite) debugString(sb *strings.Builder, prefix string) {
+	writeLine(sb, prefix, "Benchmark suite %s:", s.Name)
+	writeLine(sb, prefix, "Timestamp: %v", s.Timestamp)
+	if !s.Official {
+		writeLine(sb, prefix, " **** NOTE: Data is not official. **** ")
+	}
+	if numConditions := len(s.Conditions); numConditions == 0 {
+		writeLine(sb, prefix, "Conditions: None.")
+	} else {
+		writeLine(sb, prefix, "Conditions (%d):", numConditions)
+		for _, condition := range s.Conditions {
+			condition.debugString(sb, prefix+"  ")
+		}
+	}
+	if numBenchmarks := len(s.Benchmarks); numBenchmarks == 0 {
+		writeLine(sb, prefix, "Benchmarks: None.")
+	} else {
+		writeLine(sb, prefix, "Benchmarks (%d):", numBenchmarks)
+		for _, benchmark := range s.Benchmarks {
+			benchmark.debugString(sb, prefix+"  ")
+		}
+	}
+	sb.WriteString(fmt.Sprintf("End of data for benchmark suite %s.", s.Name))
 }
 
 // Benchmark represents an individual benchmark in a suite.
@@ -74,25 +90,31 @@ type Benchmark struct {
 
 // String implements the String method for Benchmark
 func (bm *Benchmark) String() string {
-	conditions := make([]string, 0, len(bm.Condition))
-	for _, c := range bm.Condition {
-		conditions = append(conditions, c.String())
-	}
-	metrics := make([]string, 0, len(bm.Metric))
-	for _, m := range bm.Metric {
-		metrics = append(metrics, m.String())
-	}
+	var sb strings.Builder
+	bm.debugString(&sb, "")
+	return sb.String()
+}
 
-	format := `Condition:
-Name: %s
-Conditions: %s
-Metrics: %s
-`
-
-	return fmt.Sprintf(format,
-		bm.Name,
-		strings.Join(conditions, "\n"),
-		strings.Join(metrics, "\n"))
+// debugString writes debug information to the given string builder with the
+// given prefix.
+func (bm *Benchmark) debugString(sb *strings.Builder, prefix string) {
+	writeLine(sb, prefix, "Benchmark: %s", bm.Name)
+	if numConditions := len(bm.Condition); numConditions == 0 {
+		writeLine(sb, prefix, "  Conditions: None.")
+	} else {
+		writeLine(sb, prefix, "  Conditions (%d):", numConditions)
+		for _, condition := range bm.Condition {
+			condition.debugString(sb, prefix+"    ")
+		}
+	}
+	if numMetrics := len(bm.Metric); numMetrics == 0 {
+		writeLine(sb, prefix, "  Metrics: None.")
+	} else {
+		writeLine(sb, prefix, "  Metrics (%d):", numMetrics)
+		for _, metric := range bm.Metric {
+			metric.debugString(sb, prefix+"    ")
+		}
+	}
 }
 
 // AddMetric adds a metric to an existing Benchmark.
@@ -142,7 +164,15 @@ func NewCondition(name, value string) *Condition {
 }
 
 func (c *Condition) String() string {
-	return fmt.Sprintf("Condition:\nName: %s Value: %s\n", c.Name, c.Value)
+	var sb strings.Builder
+	c.debugString(&sb, "")
+	return sb.String()
+}
+
+// debugString writes debug information to the given string builder with the
+// given prefix.
+func (c *Condition) debugString(sb *strings.Builder, prefix string) {
+	writeLine(sb, prefix, "Condition: %s = %s", c.Name, c.Value)
 }
 
 // Metric holds the actual metric data and unit information for this benchmark.
@@ -153,7 +183,15 @@ type Metric struct {
 }
 
 func (m *Metric) String() string {
-	return fmt.Sprintf("Metric:\nName: %s Unit: %s Sample: %e\n", m.Name, m.Unit, m.Sample)
+	var sb strings.Builder
+	m.debugString(&sb, "")
+	return sb.String()
+}
+
+// debugString writes debug information to the given string builder with the
+// given prefix.
+func (m *Metric) debugString(sb *strings.Builder, prefix string) {
+	writeLine(sb, prefix, "Metric %s: %f %s", m.Name, m.Sample, m.Unit)
 }
 
 // InitBigQuery initializes a BigQuery dataset/table in the project. If the dataset/table already exists, it is not duplicated.
