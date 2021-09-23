@@ -60,9 +60,8 @@ type endpoint struct {
 	waiterQueue *waiter.Queue
 	uniqueID    uint64
 	net         network.Endpoint
-	// TODO(b/142022063): Add ability to save and restore per endpoint stats.
-	stats tcpip.TransportEndpointStats `state:"nosave"`
-	ops   tcpip.SocketOptions
+	stats       tcpip.TransportEndpointStats
+	ops         tcpip.SocketOptions
 
 	// The following fields are used to manage the receive queue, and are
 	// protected by rcvMu.
