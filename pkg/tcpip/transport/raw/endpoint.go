@@ -70,7 +70,7 @@ type endpoint struct {
 	associated  bool
 
 	net   network.Endpoint
-	stats tcpip.TransportEndpointStats `state:"nosave"`
+	stats tcpip.TransportEndpointStats
 	ops   tcpip.SocketOptions
 
 	// The following fields are used to manage the receive queue and are
