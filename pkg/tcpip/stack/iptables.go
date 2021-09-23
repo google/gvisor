@@ -270,8 +270,8 @@ const (
 // must be dropped if false is returned.
 //
 // Precondition: The packet's network and transport header must be set.
-func (it *IPTables) CheckPrerouting(pkt *PacketBuffer, preroutingAddr tcpip.Address, inNicName string) bool {
-	return it.check(Prerouting, pkt, nil /* route */, preroutingAddr, inNicName, "" /* outNicName */)
+func (it *IPTables) CheckPrerouting(pkt *PacketBuffer, addressEP AddressableEndpoint, inNicName string) bool {
+	return it.check(Prerouting, pkt, nil /* route */, addressEP, inNicName, "" /* outNicName */)
 }
 
 // CheckInput performs the input hook on the packet.
@@ -281,7 +281,7 @@ func (it *IPTables) CheckPrerouting(pkt *PacketBuffer, preroutingAddr tcpip.Addr
 //
 // Precondition: The packet's network and transport header must be set.
 func (it *IPTables) CheckInput(pkt *PacketBuffer, inNicName string) bool {
-	return it.check(Input, pkt, nil /* route */, "" /* preroutingAddr */, inNicName, "" /* outNicName */)
+	return it.check(Input, pkt, nil /* route */, nil /* addressEP */, inNicName, "" /* outNicName */)
 }
 
 // CheckForward performs the forward hook on the packet.
@@ -291,7 +291,7 @@ func (it *IPTables) CheckInput(pkt *PacketBuffer, inNicName string) bool {
 //
 // Precondition: The packet's network and transport header must be set.
 func (it *IPTables) CheckForward(pkt *PacketBuffer, inNicName, outNicName string) bool {
-	return it.check(Forward, pkt, nil /* route */, "" /* preroutingAddr */, inNicName, outNicName)
+	return it.check(Forward, pkt, nil /* route */, nil /* addressEP */, inNicName, outNicName)
 }
 
 // CheckOutput performs the output hook on the packet.
@@ -301,7 +301,7 @@ func (it *IPTables) CheckForward(pkt *PacketBuffer, inNicName, outNicName string
 //
 // Precondition: The packet's network and transport header must be set.
 func (it *IPTables) CheckOutput(pkt *PacketBuffer, r *Route, outNicName string) bool {
-	return it.check(Output, pkt, r, "" /* preroutingAddr */, "" /* inNicName */, outNicName)
+	return it.check(Output, pkt, r, nil /* addressEP */, "" /* inNicName */, outNicName)
 }
 
 // CheckPostrouting performs the postrouting hook on the packet.
@@ -311,7 +311,7 @@ func (it *IPTables) CheckOutput(pkt *PacketBuffer, r *Route, outNicName string) 
 //
 // Precondition: The packet's network and transport header must be set.
 func (it *IPTables) CheckPostrouting(pkt *PacketBuffer, r *Route, outNicName string) bool {
-	return it.check(Postrouting, pkt, r, "" /* preroutingAddr */, "" /* inNicName */, outNicName)
+	return it.check(Postrouting, pkt, r, nil /* addressEP */, "" /* inNicName */, outNicName)
 }
 
 // check runs pkt through the rules for hook. It returns true when the packet
@@ -319,7 +319,7 @@ func (it *IPTables) CheckPostrouting(pkt *PacketBuffer, r *Route, outNicName str
 // dropped.
 //
 // Precondition: The packet's network and transport header must be set.
-func (it *IPTables) check(hook Hook, pkt *PacketBuffer, r *Route, preroutingAddr tcpip.Address, inNicName, outNicName string) bool {
+func (it *IPTables) check(hook Hook, pkt *PacketBuffer, r *Route, addressEP AddressableEndpoint, inNicName, outNicName string) bool {
 	if pkt.NetworkProtocolNumber != header.IPv4ProtocolNumber && pkt.NetworkProtocolNumber != header.IPv6ProtocolNumber {
 		return true
 	}
@@ -350,7 +350,7 @@ func (it *IPTables) check(hook Hook, pkt *PacketBuffer, r *Route, preroutingAddr
 			table = it.v4Tables[tableID]
 		}
 		ruleIdx := table.BuiltinChains[hook]
-		switch verdict := it.checkChain(hook, pkt, table, ruleIdx, r, preroutingAddr, inNicName, outNicName); verdict {
+		switch verdict := it.checkChain(hook, pkt, table, ruleIdx, r, addressEP, inNicName, outNicName); verdict {
 		// If the table returns Accept, move on to the next table.
 		case chainAccept:
 			continue
@@ -361,7 +361,7 @@ func (it *IPTables) check(hook Hook, pkt *PacketBuffer, r *Route, preroutingAddr
 			// Any Return from a built-in chain means we have to
 			// call the underflow.
 			underflow := table.Rules[table.Underflows[hook]]
-			switch v, _ := underflow.Target.Action(pkt, &it.connections, hook, r, preroutingAddr); v {
+			switch v, _ := underflow.Target.Action(pkt, &it.connections, hook, r, addressEP); v {
 			case RuleAccept:
 				continue
 			case RuleDrop:
@@ -453,7 +453,7 @@ func (it *IPTables) CheckPostroutingPackets(pkts PacketBufferList, r *Route, out
 func (it *IPTables) checkPackets(hook Hook, pkts PacketBufferList, r *Route, outNicName string) (drop map[*PacketBuffer]struct{}, natPkts map[*PacketBuffer]struct{}) {
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
 		if !pkt.NatDone {
-			if ok := it.check(hook, pkt, r, "" /* preroutingAddr */, "" /* inNicName */, outNicName); !ok {
+			if ok := it.check(hook, pkt, r, nil /* addressEP */, "" /* inNicName */, outNicName); !ok {
 				if drop == nil {
 					drop = make(map[*PacketBuffer]struct{})
 				}
@@ -473,11 +473,11 @@ func (it *IPTables) checkPackets(hook Hook, pkts PacketBufferList, r *Route, out
 // Preconditions:
 // * pkt is a IPv4 packet of at least length header.IPv4MinimumSize.
 // * pkt.NetworkHeader is not nil.
-func (it *IPTables) checkChain(hook Hook, pkt *PacketBuffer, table Table, ruleIdx int, r *Route, preroutingAddr tcpip.Address, inNicName, outNicName string) chainVerdict {
+func (it *IPTables) checkChain(hook Hook, pkt *PacketBuffer, table Table, ruleIdx int, r *Route, addressEP AddressableEndpoint, inNicName, outNicName string) chainVerdict {
 	// Start from ruleIdx and walk the list of rules until a rule gives us
 	// a verdict.
 	for ruleIdx < len(table.Rules) {
-		switch verdict, jumpTo := it.checkRule(hook, pkt, table, ruleIdx, r, preroutingAddr, inNicName, outNicName); verdict {
+		switch verdict, jumpTo := it.checkRule(hook, pkt, table, ruleIdx, r, addressEP, inNicName, outNicName); verdict {
 		case RuleAccept:
 			return chainAccept
 
@@ -494,7 +494,7 @@ func (it *IPTables) checkChain(hook Hook, pkt *PacketBuffer, table Table, ruleId
 				ruleIdx++
 				continue
 			}
-			switch verdict := it.checkChain(hook, pkt, table, jumpTo, r, preroutingAddr, inNicName, outNicName); verdict {
+			switch verdict := it.checkChain(hook, pkt, table, jumpTo, r, addressEP, inNicName, outNicName); verdict {
 			case chainAccept:
 				return chainAccept
 			case chainDrop:
@@ -520,7 +520,7 @@ func (it *IPTables) checkChain(hook Hook, pkt *PacketBuffer, table Table, ruleId
 // Preconditions:
 // * pkt is a IPv4 packet of at least length header.IPv4MinimumSize.
 // * pkt.NetworkHeader is not nil.
-func (it *IPTables) checkRule(hook Hook, pkt *PacketBuffer, table Table, ruleIdx int, r *Route, preroutingAddr tcpip.Address, inNicName, outNicName string) (RuleVerdict, int) {
+func (it *IPTables) checkRule(hook Hook, pkt *PacketBuffer, table Table, ruleIdx int, r *Route, addressEP AddressableEndpoint, inNicName, outNicName string) (RuleVerdict, int) {
 	rule := table.Rules[ruleIdx]
 
 	// Check whether the packet matches the IP header filter.
@@ -543,7 +543,7 @@ func (it *IPTables) checkRule(hook Hook, pkt *PacketBuffer, table Table, ruleIdx
 	}
 
 	// All the matchers matched, so run the target.
-	return rule.Target.Action(pkt, &it.connections, hook, r, preroutingAddr)
+	return rule.Target.Action(pkt, &it.connections, hook, r, addressEP)
 }
 
 // OriginalDst returns the original destination of redirected connections. It
