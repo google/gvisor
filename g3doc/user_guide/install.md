@@ -51,18 +51,17 @@ sudo apt-get install -y \
     apt-transport-https \
     ca-certificates \
     curl \
-    gnupg-agent \
-    software-properties-common
+    gnupg
 ```
 
 Next, configure the key used to sign archives and the repository.
 
 NOTE: The key was updated on 2021-07-13 to replace the expired key. If you get
-errors about the key being expired, run the `apt-key add` command below again.
+errors about the key being expired, run the `curl` command below again.
 
 ```bash
-curl -fsSL https://gvisor.dev/archive.key | sudo apt-key add -
-sudo add-apt-repository "deb [arch=amd64,arm64] https://storage.googleapis.com/gvisor/releases release main"
+curl -fsSL https://gvisor.dev/archive.key | sudo gpg --dearmor -o /usr/share/keyrings/gvisor-archive-keyring.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" | sudo tee /etc/apt/sources.list.d/gvisor.list > /dev/null
 ```
 
 Now the runsc package can be installed:
