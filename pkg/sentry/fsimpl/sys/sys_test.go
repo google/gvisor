@@ -87,3 +87,17 @@ func TestSysRootContainsExpectedEntries(t *testing.T) {
 		"power":    linux.DT_DIR,
 	})
 }
+
+func TestCgroupMountpointExists(t *testing.T) {
+	// Note: The mountpoint is only created if cgroups are available. This is
+	// the VFS2 implementation of sysfs and the test runs with VFS2 enabled, so
+	// we expect to see the mount point unconditionally.
+	s := newTestSystem(t)
+	defer s.Destroy()
+	pop := s.PathOpAtRoot("/fs")
+	s.AssertAllDirentTypes(s.ListDirents(pop), map[string]testutil.DirentType{
+		"cgroup": linux.DT_DIR,
+	})
+	pop = s.PathOpAtRoot("/fs/cgroup")
+	s.AssertAllDirentTypes(s.ListDirents(pop), map[string]testutil.DirentType{ /*empty*/ })
+}
