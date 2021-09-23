@@ -322,12 +322,3 @@ func (p *PageTables) Lookup(addr hostarch.Addr, findFirst bool) (virtual hostarc
 func (p *PageTables) MarkReadOnlyShared() {
 	p.readOnlyShared = true
 }
-
-// PrefaultRootTable touches the root table page to be sure that its physical
-// pages are mapped.
-//
-//go:nosplit
-//go:noinline
-func (p *PageTables) PrefaultRootTable() PTE {
-	return p.root[0]
-}

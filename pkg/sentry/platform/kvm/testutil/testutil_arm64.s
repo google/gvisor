@@ -28,6 +28,11 @@ TEXT ·Getpid(SB),NOSPLIT,$0
 	SVC
 	RET
 
+TEXT ·AddrOfGetpid(SB),NOSPLIT,$0-8
+	MOVD $·Getpid(SB), R0
+	MOVD R0, ret+0(FP)
+	RET
+
 TEXT ·Touch(SB),NOSPLIT,$0
 start:
 	MOVD 0(R8), R1
@@ -35,10 +40,20 @@ start:
 	SVC
 	B start
 
+TEXT ·AddrOfTouch(SB),NOSPLIT,$0-8
+	MOVD $·Touch(SB), R0
+	MOVD R0, ret+0(FP)
+	RET
+
 TEXT ·HaltLoop(SB),NOSPLIT,$0
 start:
 	HLT
 	B start
+
+TEXT ·AddOfHaltLoop(SB),NOSPLIT,$0-8
+	MOVD $·HaltLoop(SB), R0
+	MOVD R0, ret+0(FP)
+	RET
 
 // This function simulates a loop of syscall.
 TEXT ·SyscallLoop(SB),NOSPLIT,$0
@@ -46,9 +61,19 @@ start:
 	SVC
 	B start
 
+TEXT ·AddrOfSyscallLoop(SB),NOSPLIT,$0-8
+	MOVD $·SyscallLoop(SB), R0
+	MOVD R0, ret+0(FP)
+	RET
+
 TEXT ·SpinLoop(SB),NOSPLIT,$0
 start:
 	B start
+
+TEXT ·AddrOfSpinLoop(SB),NOSPLIT,$0-8
+	MOVD $·SpinLoop(SB), R0
+	MOVD R0, ret+0(FP)
+	RET
 
 TEXT ·TLSWorks(SB),NOSPLIT,$0-8
         NO_LOCAL_POINTERS
@@ -125,6 +150,11 @@ TEXT ·TwiddleRegsSyscall(SB),NOSPLIT,$0
 	SVC
 	RET // never reached
 
+TEXT ·AddrOfTwiddleRegsSyscall(SB),NOSPLIT,$0-8
+	MOVD $·TwiddleRegsSyscall(SB), R0
+	MOVD R0, ret+0(FP)
+	RET
+
 TEXT ·TwiddleRegsFault(SB),NOSPLIT,$0
 	TWIDDLE_REGS()
 	MSR R10, TPIDR_EL0
@@ -132,3 +162,8 @@ TEXT ·TwiddleRegsFault(SB),NOSPLIT,$0
 	// Branch to Register branches unconditionally to an address in <Rn>.
 	JMP (R6) // <=> br x6, must fault
 	RET // never reached
+
+TEXT ·AddrOfTwiddleRegsFault(SB),NOSPLIT,$0-8
+	MOVD $·TwiddleRegsFault(SB), R0
+	MOVD R0, ret+0(FP)
+	RET

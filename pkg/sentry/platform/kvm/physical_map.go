@@ -168,6 +168,9 @@ func computePhysicalRegions(excludedRegions []region) (physicalRegions []physica
 	}
 	addValidRegion(lastExcludedEnd, ring0.MaximumUserAddress-lastExcludedEnd)
 
+	// Do arch-specific actions on physical regions.
+	physicalRegions = archPhysicalRegions(physicalRegions)
+
 	// Dump our all physical regions.
 	for _, r := range physicalRegions {
 		log.Infof("physicalRegion: virtual [%x,%x) => physical [%x,%x)",

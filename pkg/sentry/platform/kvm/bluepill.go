@@ -61,6 +61,9 @@ var (
 	// This is called by bluepillHandler.
 	savedHandler uintptr
 
+	// savedSigsysHandler is a pointer to the previos handler of the SIGSYS signals.
+	savedSigsysHandler uintptr
+
 	// dieTrampolineAddr is the address of dieTrampoline.
 	dieTrampolineAddr uintptr
 )
