@@ -40,6 +40,14 @@ const (
 	Host2NICID   = 4
 )
 
+// Common NIC names used by tests.
+const (
+	Host1NICName   = "host1NIC"
+	RouterNIC1Name = "routerNIC1"
+	RouterNIC2Name = "routerNIC2"
+	Host2NICName   = "host2NIC"
+)
+
 // Common link addresses used by tests.
 const (
 	LinkAddr1 = tcpip.LinkAddress("\x02\x03\x03\x04\x05\x06")
@@ -211,17 +219,29 @@ func SetupRoutedStacks(t *testing.T, host1Stack, routerStack, host2Stack *stack.
 	host1NIC, routerNIC1 := pipe.New(LinkAddr1, LinkAddr2)
 	routerNIC2, host2NIC := pipe.New(LinkAddr3, LinkAddr4)
 
-	if err := host1Stack.CreateNIC(Host1NICID, NewEthernetEndpoint(host1NIC)); err != nil {
-		t.Fatalf("host1Stack.CreateNIC(%d, _): %s", Host1NICID, err)
+	{
+		opts := stack.NICOptions{Name: Host1NICName}
+		if err := host1Stack.CreateNICWithOptions(Host1NICID, NewEthernetEndpoint(host1NIC), opts); err != nil {
+			t.Fatalf("host1Stack.CreateNICWithOptions(%d, _, %#v): %s", Host1NICID, opts, err)
+		}
 	}
-	if err := routerStack.CreateNIC(RouterNICID1, NewEthernetEndpoint(routerNIC1)); err != nil {
-		t.Fatalf("routerStack.CreateNIC(%d, _): %s", RouterNICID1, err)
+	{
+		opts := stack.NICOptions{Name: RouterNIC1Name}
+		if err := routerStack.CreateNICWithOptions(RouterNICID1, NewEthernetEndpoint(routerNIC1), opts); err != nil {
+			t.Fatalf("routerStack.CreateNICWithOptions(%d, _, %#v): %s", RouterNICID1, opts, err)
+		}
 	}
-	if err := routerStack.CreateNIC(RouterNICID2, NewEthernetEndpoint(routerNIC2)); err != nil {
-		t.Fatalf("routerStack.CreateNIC(%d, _): %s", RouterNICID2, err)
+	{
+		opts := stack.NICOptions{Name: RouterNIC2Name}
+		if err := routerStack.CreateNICWithOptions(RouterNICID2, NewEthernetEndpoint(routerNIC2), opts); err != nil {
+			t.Fatalf("routerStack.CreateNICWithOptions(%d, _, %#v): %s", RouterNICID2, opts, err)
+		}
 	}
-	if err := host2Stack.CreateNIC(Host2NICID, NewEthernetEndpoint(host2NIC)); err != nil {
-		t.Fatalf("host2Stack.CreateNIC(%d, _): %s", Host2NICID, err)
+	{
+		opts := stack.NICOptions{Name: Host2NICName}
+		if err := host2Stack.CreateNICWithOptions(Host2NICID, NewEthernetEndpoint(host2NIC), opts); err != nil {
+			t.Fatalf("host2Stack.CreateNICWithOptions(%d, _, %#v): %s", Host2NICID, opts, err)
+		}
 	}
 
 	if err := routerStack.SetForwardingDefaultAndAllNICs(ipv4.ProtocolNumber, true); err != nil {

@@ -482,11 +482,11 @@ func (it *IPTables) checkRule(hook Hook, pkt *PacketBuffer, table Table, ruleIdx
 
 // OriginalDst returns the original destination of redirected connections. It
 // returns an error if the connection doesn't exist or isn't redirected.
-func (it *IPTables) OriginalDst(epID TransportEndpointID, netProto tcpip.NetworkProtocolNumber) (tcpip.Address, uint16, tcpip.Error) {
+func (it *IPTables) OriginalDst(epID TransportEndpointID, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber) (tcpip.Address, uint16, tcpip.Error) {
 	it.mu.RLock()
 	defer it.mu.RUnlock()
 	if !it.modified {
 		return "", 0, &tcpip.ErrNotConnected{}
 	}
-	return it.connections.originalDst(epID, netProto)
+	return it.connections.originalDst(epID, netProto, transProto)
 }
