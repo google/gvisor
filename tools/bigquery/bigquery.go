@@ -107,10 +107,7 @@ func (bm *Benchmark) AddMetric(metricName, unit string, sample float64) {
 
 // AddCondition adds a condition to an existing Benchmark.
 func (bm *Benchmark) AddCondition(name, value string) {
-	bm.Condition = append(bm.Condition, &Condition{
-		Name:  name,
-		Value: value,
-	})
+	bm.Condition = append(bm.Condition, NewCondition(name, value))
 }
 
 // NewBenchmark initializes a new benchmark.
@@ -134,6 +131,14 @@ func NewBenchmark(name string, iters int) *Benchmark {
 type Condition struct {
 	Name  string `bq:"name"`
 	Value string `bq:"value"`
+}
+
+// NewCondition returns a new Condition with the given name and value.
+func NewCondition(name, value string) *Condition {
+	return &Condition{
+		Name:  name,
+		Value: value,
+	}
 }
 
 func (c *Condition) String() string {
