@@ -748,7 +748,7 @@ func (e *endpoint) WritePacket(r *stack.Route, params stack.NetworkHeaderParams,
 	// iptables filtering. All packets that reach here are locally
 	// generated.
 	outNicName := e.protocol.stack.FindNICNameFromID(e.nic.ID())
-	if ok := e.protocol.stack.IPTables().Check(stack.Output, pkt, r, "" /* preroutingAddr */, "" /* inNicName */, outNicName); !ok {
+	if ok := e.protocol.stack.IPTables().CheckOutput(pkt, r, outNicName); !ok {
 		// iptables is telling us to drop the packet.
 		e.stats.ip.IPTablesOutputDropped.Increment()
 		return nil
@@ -788,7 +788,7 @@ func (e *endpoint) writePacket(r *stack.Route, pkt *stack.PacketBuffer, protocol
 	// Postrouting NAT can only change the source address, and does not alter the
 	// route or outgoing interface of the packet.
 	outNicName := e.protocol.stack.FindNICNameFromID(e.nic.ID())
-	if ok := e.protocol.stack.IPTables().Check(stack.Postrouting, pkt, r, "" /* preroutingAddr */, "" /* inNicName */, outNicName); !ok {
+	if ok := e.protocol.stack.IPTables().CheckPostrouting(pkt, r, outNicName); !ok {
 		// iptables is telling us to drop the packet.
 		e.stats.ip.IPTablesPostroutingDropped.Increment()
 		return nil
@@ -871,7 +871,7 @@ func (e *endpoint) WritePackets(r *stack.Route, pkts stack.PacketBufferList, par
 	// iptables filtering. All packets that reach here are locally
 	// generated.
 	outNicName := e.protocol.stack.FindNICNameFromID(e.nic.ID())
-	outputDropped, natPkts := e.protocol.stack.IPTables().CheckPackets(stack.Output, pkts, r, "" /* inNicName */, outNicName)
+	outputDropped, natPkts := e.protocol.stack.IPTables().CheckOutputPackets(pkts, r, outNicName)
 	stats.IPTablesOutputDropped.IncrementBy(uint64(len(outputDropped)))
 	for pkt := range outputDropped {
 		pkts.Remove(pkt)
@@ -897,7 +897,7 @@ func (e *endpoint) WritePackets(r *stack.Route, pkts stack.PacketBufferList, par
 	// We ignore the list of NAT-ed packets here because Postrouting NAT can only
 	// change the source address, and does not alter the route or outgoing
 	// interface of the packet.
-	postroutingDropped, _ := e.protocol.stack.IPTables().CheckPackets(stack.Postrouting, pkts, r, "" /* inNicName */, outNicName)
+	postroutingDropped, _ := e.protocol.stack.IPTables().CheckPostroutingPackets(pkts, r, outNicName)
 	stats.IPTablesPostroutingDropped.IncrementBy(uint64(len(postroutingDropped)))
 	for pkt := range postroutingDropped {
 		pkts.Remove(pkt)
@@ -984,7 +984,7 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 	if ep := e.protocol.findEndpointWithAddress(dstAddr); ep != nil {
 		inNicName := stk.FindNICNameFromID(e.nic.ID())
 		outNicName := stk.FindNICNameFromID(ep.nic.ID())
-		if ok := stk.IPTables().Check(stack.Forward, pkt, nil, "" /* preroutingAddr */, inNicName, outNicName); !ok {
+		if ok := stk.IPTables().CheckForward(pkt, inNicName, outNicName); !ok {
 			// iptables is telling us to drop the packet.
 			e.stats.ip.IPTablesForwardDropped.Increment()
 			return nil
@@ -1015,7 +1015,7 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 
 	inNicName := stk.FindNICNameFromID(e.nic.ID())
 	outNicName := stk.FindNICNameFromID(r.NICID())
-	if ok := stk.IPTables().Check(stack.Forward, pkt, nil, "" /* preroutingAddr */, inNicName, outNicName); !ok {
+	if ok := stk.IPTables().CheckForward(pkt, inNicName, outNicName); !ok {
 		// iptables is telling us to drop the packet.
 		e.stats.ip.IPTablesForwardDropped.Increment()
 		return nil
@@ -1100,7 +1100,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 
 		// Loopback traffic skips the prerouting chain.
 		inNicName := e.protocol.stack.FindNICNameFromID(e.nic.ID())
-		if ok := e.protocol.stack.IPTables().Check(stack.Prerouting, pkt, nil, e.MainAddress().Address, inNicName, "" /* outNicName */); !ok {
+		if ok := e.protocol.stack.IPTables().CheckPrerouting(pkt, e.MainAddress().Address, inNicName); !ok {
 			// iptables is telling us to drop the packet.
 			stats.IPTablesPreroutingDropped.Increment()
 			return
@@ -1183,7 +1183,7 @@ func (e *endpoint) handleValidatedPacket(h header.IPv6, pkt *stack.PacketBuffer,
 
 	// iptables filtering. All packets that reach here are intended for
 	// this machine and need not be forwarded.
-	if ok := e.protocol.stack.IPTables().Check(stack.Input, pkt, nil, "" /* preroutingAddr */, inNICName, "" /* outNicName */); !ok {
+	if ok := e.protocol.stack.IPTables().CheckInput(pkt, inNICName); !ok {
 		// iptables is telling us to drop the packet.
 		stats.IPTablesInputDropped.Increment()
 		return
