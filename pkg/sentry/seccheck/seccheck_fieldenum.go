@@ -67,6 +67,139 @@ func (fs *CloneFieldSet) AddFieldsLoadable(fields CloneFields) {
 	}
 }
 
+// A ExecveField represents a field in ExecveInfo.
+type ExecveField uint
+
+// ExecveFieldX represents ExecveInfo field X.
+const (
+	ExecveFieldCredentials ExecveField = iota
+	ExecveFieldBinaryPath
+	ExecveFieldArgv
+	ExecveFieldEnv
+	ExecveFieldBinaryMode
+	ExecveFieldBinarySHA256
+)
+
+// ExecveFields represents a set of fields in ExecveInfo in a literal-friendly form.
+// The zero value of ExecveFields represents an empty set.
+type ExecveFields struct {
+	Invoker TaskFields
+	Credentials bool
+	BinaryPath bool
+	Argv bool
+	Env bool
+	BinaryMode bool
+	BinarySHA256 bool
+}
+
+// ExecveFieldSet represents a set of fields in ExecveInfo in a compact form.
+// The zero value of ExecveFieldSet represents an empty set.
+type ExecveFieldSet struct {
+	Invoker TaskFieldSet
+	fields [1]uint32
+}
+
+// Contains returns true if f is present in the ExecveFieldSet.
+func (fs ExecveFieldSet) Contains(f ExecveField) bool {
+	return fs.fields[0] & (uint32(1) << uint(f)) != 0
+}
+
+// Add adds f to the ExecveFieldSet.
+func (fs *ExecveFieldSet) Add(f ExecveField) {
+	fs.fields[0] |= uint32(1) << uint(f)
+}
+
+// Remove removes f from the ExecveFieldSet.
+func (fs *ExecveFieldSet) Remove(f ExecveField) {
+	fs.fields[0] &^= uint32(1) << uint(f)
+}
+
+// Load returns a copy of the ExecveFieldSet.
+// Load is safe to call concurrently with AddFieldsLoadable, but not Add or Remove.
+func (fs *ExecveFieldSet) Load() (copied ExecveFieldSet) {
+	copied.Invoker = fs.Invoker.Load()
+	copied.fields[0] = atomic.LoadUint32(&fs.fields[0])
+	return
+}
+
+// AddFieldsLoadable adds the given fields to the ExecveFieldSet.
+// AddFieldsLoadable is safe to call concurrently with Load, but not other methods (including other calls to AddFieldsLoadable).
+func (fs *ExecveFieldSet) AddFieldsLoadable(fields ExecveFields) {
+	fs.Invoker.AddFieldsLoadable(fields.Invoker)
+	if fields.Credentials {
+		atomic.StoreUint32(&fs.fields[0], fs.fields[0] | (uint32(1) << uint(ExecveFieldCredentials)))
+	}
+	if fields.BinaryPath {
+		atomic.StoreUint32(&fs.fields[0], fs.fields[0] | (uint32(1) << uint(ExecveFieldBinaryPath)))
+	}
+	if fields.Argv {
+		atomic.StoreUint32(&fs.fields[0], fs.fields[0] | (uint32(1) << uint(ExecveFieldArgv)))
+	}
+	if fields.Env {
+		atomic.StoreUint32(&fs.fields[0], fs.fields[0] | (uint32(1) << uint(ExecveFieldEnv)))
+	}
+	if fields.BinaryMode {
+		atomic.StoreUint32(&fs.fields[0], fs.fields[0] | (uint32(1) << uint(ExecveFieldBinaryMode)))
+	}
+	if fields.BinarySHA256 {
+		atomic.StoreUint32(&fs.fields[0], fs.fields[0] | (uint32(1) << uint(ExecveFieldBinarySHA256)))
+	}
+}
+
+// A ExitNotifyParentField represents a field in ExitNotifyParentInfo.
+type ExitNotifyParentField uint
+
+// ExitNotifyParentFieldX represents ExitNotifyParentInfo field X.
+const (
+	ExitNotifyParentFieldExitStatus ExitNotifyParentField = iota
+)
+
+// ExitNotifyParentFields represents a set of fields in ExitNotifyParentInfo in a literal-friendly form.
+// The zero value of ExitNotifyParentFields represents an empty set.
+type ExitNotifyParentFields struct {
+	Exiter TaskFields
+	ExitStatus bool
+}
+
+// ExitNotifyParentFieldSet represents a set of fields in ExitNotifyParentInfo in a compact form.
+// The zero value of ExitNotifyParentFieldSet represents an empty set.
+type ExitNotifyParentFieldSet struct {
+	Exiter TaskFieldSet
+	fields [1]uint32
+}
+
+// Contains returns true if f is present in the ExitNotifyParentFieldSet.
+func (fs ExitNotifyParentFieldSet) Contains(f ExitNotifyParentField) bool {
+	return fs.fields[0] & (uint32(1) << uint(f)) != 0
+}
+
+// Add adds f to the ExitNotifyParentFieldSet.
+func (fs *ExitNotifyParentFieldSet) Add(f ExitNotifyParentField) {
+	fs.fields[0] |= uint32(1) << uint(f)
+}
+
+// Remove removes f from the ExitNotifyParentFieldSet.
+func (fs *ExitNotifyParentFieldSet) Remove(f ExitNotifyParentField) {
+	fs.fields[0] &^= uint32(1) << uint(f)
+}
+
+// Load returns a copy of the ExitNotifyParentFieldSet.
+// Load is safe to call concurrently with AddFieldsLoadable, but not Add or Remove.
+func (fs *ExitNotifyParentFieldSet) Load() (copied ExitNotifyParentFieldSet) {
+	copied.Exiter = fs.Exiter.Load()
+	copied.fields[0] = atomic.LoadUint32(&fs.fields[0])
+	return
+}
+
+// AddFieldsLoadable adds the given fields to the ExitNotifyParentFieldSet.
+// AddFieldsLoadable is safe to call concurrently with Load, but not other methods (including other calls to AddFieldsLoadable).
+func (fs *ExitNotifyParentFieldSet) AddFieldsLoadable(fields ExitNotifyParentFields) {
+	fs.Exiter.AddFieldsLoadable(fields.Exiter)
+	if fields.ExitStatus {
+		atomic.StoreUint32(&fs.fields[0], fs.fields[0] | (uint32(1) << uint(ExitNotifyParentFieldExitStatus)))
+	}
+}
+
 // A TaskField represents a field in TaskInfo.
 type TaskField uint
 

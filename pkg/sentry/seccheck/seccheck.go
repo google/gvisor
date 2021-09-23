@@ -29,6 +29,8 @@ type Point uint
 // PointX represents the checkpoint X.
 const (
 	PointClone Point = iota
+	PointExecve
+	PointExitNotifyParent
 	// Add new Points above this line.
 	pointLength
 
@@ -47,6 +49,8 @@ const (
 // registered concurrently with invocations of checkpoints).
 type Checker interface {
 	Clone(ctx context.Context, mask CloneFieldSet, info CloneInfo) error
+	Execve(ctx context.Context, mask ExecveFieldSet, info ExecveInfo) error
+	ExitNotifyParent(ctx context.Context, mask ExitNotifyParentFieldSet, info ExitNotifyParentInfo) error
 }
 
 // CheckerDefaults may be embedded by implementations of Checker to obtain
@@ -55,6 +59,16 @@ type CheckerDefaults struct{}
 
 // Clone implements Checker.Clone.
 func (CheckerDefaults) Clone(ctx context.Context, mask CloneFieldSet, info CloneInfo) error {
+	return nil
+}
+
+// Execve implements Checker.Execve.
+func (CheckerDefaults) Execve(ctx context.Context, mask ExecveFieldSet, info ExecveInfo) error {
+	return nil
+}
+
+// ExitNotifyParent implements Checker.ExitNotifyParent.
+func (CheckerDefaults) ExitNotifyParent(ctx context.Context, mask ExitNotifyParentFieldSet, info ExitNotifyParentInfo) error {
 	return nil
 }
 
@@ -69,7 +83,9 @@ type CheckerReq struct {
 
 	// All of the following fields indicate what fields in the corresponding
 	// XInfo struct will be requested at the corresponding checkpoint.
-	Clone CloneFields
+	Clone            CloneFields
+	Execve           ExecveFields
+	ExitNotifyParent ExitNotifyParentFields
 }
 
 // Global is the method receiver of all seccheck functions.
@@ -101,7 +117,9 @@ type state struct {
 	// corresponding XInfo struct have been requested by any registered
 	// checker, are accessed using atomic memory operations, and are mutated
 	// with registrationMu locked.
-	cloneReq CloneFieldSet
+	cloneReq            CloneFieldSet
+	execveReq           ExecveFieldSet
+	exitNotifyParentReq ExitNotifyParentFieldSet
 }
 
 // AppendChecker registers the given Checker to execute at checkpoints. The
@@ -110,7 +128,11 @@ type state struct {
 func (s *state) AppendChecker(c Checker, req *CheckerReq) {
 	s.registrationMu.Lock()
 	defer s.registrationMu.Unlock()
+
 	s.cloneReq.AddFieldsLoadable(req.Clone)
+	s.execveReq.AddFieldsLoadable(req.Execve)
+	s.exitNotifyParentReq.AddFieldsLoadable(req.ExitNotifyParent)
+
 	s.appendCheckerLocked(c)
 	for _, p := range req.Points {
 		word, bit := p/32, p%32
