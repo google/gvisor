@@ -193,36 +193,8 @@ func bluepillHandler(context unsafe.Pointer) {
 				return
 			}
 
-			// Increment the fault count.
-			atomic.AddUint32(&c.faults, 1)
-
-			// For MMIO, the physical address is the first data item.
-			physical = uintptr(c.runData.data[0])
-			virtual, ok := handleBluepillFault(c.machine, physical, physicalRegions, _KVM_MEM_FLAGS_NONE)
-			if !ok {
-				c.die(bluepillArchContext(context), "invalid physical address")
-				return
-			}
-
-			// We now need to fill in the data appropriately. KVM
-			// expects us to provide the result of the given MMIO
-			// operation in the runData struct. This is safe
-			// because, if a fault occurs here, the same fault
-			// would have occurred in guest mode. The kernel should
-			// not create invalid page table mappings.
-			data := (*[8]byte)(unsafe.Pointer(&c.runData.data[1]))
-			length := (uintptr)((uint32)(c.runData.data[2]))
-			write := (uint8)(((c.runData.data[2] >> 32) & 0xff)) != 0
-			for i := uintptr(0); i < length; i++ {
-				b := bytePtr(uintptr(virtual) + i)
-				if write {
-					// Write to the given address.
-					*b = data[i]
-				} else {
-					// Read from the given address.
-					data[i] = *b
-				}
-			}
+			c.die(bluepillArchContext(context), "exit_mmio")
+			return
 		case _KVM_EXIT_IRQ_WINDOW_OPEN:
 			bluepillStopGuest(c)
 		case _KVM_EXIT_SHUTDOWN:

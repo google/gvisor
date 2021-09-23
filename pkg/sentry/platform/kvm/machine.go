@@ -17,15 +17,19 @@ package kvm
 import (
 	"fmt"
 	"runtime"
+	gosync "sync"
 	"sync/atomic"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/procid"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
+	"gvisor.dev/gvisor/pkg/safecopy"
+	"gvisor.dev/gvisor/pkg/seccomp"
 	ktime "gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -34,6 +38,9 @@ import (
 type machine struct {
 	// fd is the vm fd.
 	fd int
+
+	// machinePoolIndex is the index in the machinePool array.
+	machinePoolIndex uint32
 
 	// nextSlot is the next slot for setMemoryRegion.
 	//
@@ -192,6 +199,10 @@ func (m *machine) newVCPU() *vCPU {
 	return c // Done.
 }
 
+// readOnlyGuestRegions contains regions that have to be mapped read-only into
+// the guest physical address space. Right now, it is used on arm64 only.
+var readOnlyGuestRegions []region
+
 // newMachine returns a new VM context.
 func newMachine(vm int) (*machine, error) {
 	// Create the machine.
@@ -227,6 +238,10 @@ func newMachine(vm int) (*machine, error) {
 	m.upperSharedPageTables.MarkReadOnlyShared()
 	m.kernel.PageTables = pagetables.NewWithUpper(newAllocator(), m.upperSharedPageTables, ring0.KernelStartAddress)
 
+	// Install seccomp rules to trap runtime mmap system calls. They will
+	// be handled by seccompMmapHandler.
+	seccompMmapRules(m)
+
 	// Apply the physical mappings. Note that these mappings may point to
 	// guest physical addresses that are not actually available. These
 	// physical pages are mapped on demand, see kernel_unsafe.go.
@@ -241,32 +256,11 @@ func newMachine(vm int) (*machine, error) {
 		return true // Keep iterating.
 	})
 
-	var physicalRegionsReadOnly []physicalRegion
-	var physicalRegionsAvailable []physicalRegion
-
-	physicalRegionsReadOnly = rdonlyRegionsForSetMem()
-	physicalRegionsAvailable = availableRegionsForSetMem()
-
-	// Map all read-only regions.
-	for _, r := range physicalRegionsReadOnly {
-		m.mapPhysical(r.physical, r.length, physicalRegionsReadOnly, _KVM_MEM_READONLY)
-	}
-
 	// Ensure that the currently mapped virtual regions are actually
 	// available in the VM. Note that this doesn't guarantee no future
 	// faults, however it should guarantee that everything is available to
 	// ensure successful vCPU entry.
-	applyVirtualRegions(func(vr virtualRegion) {
-		if excludeVirtualRegion(vr) {
-			return // skip region.
-		}
-
-		for _, r := range physicalRegionsReadOnly {
-			if vr.virtual == r.virtual {
-				return
-			}
-		}
-
+	mapRegion := func(vr region, flags uint32) {
 		for virtual := vr.virtual; virtual < vr.virtual+vr.length; {
 			physical, length, ok := translateToPhysical(virtual)
 			if !ok {
@@ -280,9 +274,32 @@ func newMachine(vm int) (*machine, error) {
 			}
 
 			// Ensure the physical range is mapped.
-			m.mapPhysical(physical, length, physicalRegionsAvailable, _KVM_MEM_FLAGS_NONE)
+			m.mapPhysical(physical, length, physicalRegions, flags)
 			virtual += length
 		}
+	}
+
+	for _, vr := range readOnlyGuestRegions {
+		mapRegion(vr, _KVM_MEM_READONLY)
+	}
+
+	applyVirtualRegions(func(vr virtualRegion) {
+		if excludeVirtualRegion(vr) {
+			return // skip region.
+		}
+		for _, r := range readOnlyGuestRegions {
+			if vr.virtual == r.virtual {
+				return
+			}
+		}
+		// Take into account that the stack can grow down.
+		if vr.filename == "[stack]" {
+			vr.virtual -= 1 << 20
+			vr.length += 1 << 20
+		}
+
+		mapRegion(vr.region, 0)
+
 	})
 
 	// Initialize architecture state.
@@ -351,6 +368,10 @@ func (m *machine) mapPhysical(physical, length uintptr, phyRegions []physicalReg
 // Precondition: all vCPUs must be returned to the machine.
 func (m *machine) Destroy() {
 	runtime.SetFinalizer(m, nil)
+
+	machinePoolMu.Lock()
+	machinePool[m.machinePoolIndex].Store(nil)
+	machinePoolMu.Unlock()
 
 	// Destroy vCPUs.
 	for _, c := range m.vCPUsByID {
@@ -682,4 +703,73 @@ func (c *vCPU) setSystemTimeLegacy() error {
 			return nil
 		}
 	}
+}
+
+const machinePoolSize = 16
+
+// machinePool is enumerated from the seccompMmapHandler signal handler
+var (
+	machinePool          [machinePoolSize]machineAtomicPtr
+	machinePoolLen       uint32
+	machinePoolMu        sync.Mutex
+	seccompMmapRulesOnce gosync.Once
+)
+
+func sigsysHandler()
+func addrOfSigsysHandler() uintptr
+
+// seccompMmapRules adds seccomp rules to trap mmap system calls that will be
+// handled in seccompMmapHandler.
+func seccompMmapRules(m *machine) {
+	seccompMmapRulesOnce.Do(func() {
+		// Install the handler.
+		if err := safecopy.ReplaceSignalHandler(unix.SIGSYS, addrOfSigsysHandler(), &savedSigsysHandler); err != nil {
+			panic(fmt.Sprintf("Unable to set handler for signal %d: %v", bluepillSignal, err))
+		}
+		rules := []seccomp.RuleSet{}
+		rules = append(rules, []seccomp.RuleSet{
+			// Trap mmap system calls and handle them in sigsysGoHandler
+			{
+				Rules: seccomp.SyscallRules{
+					unix.SYS_MMAP: {
+						{
+							seccomp.MatchAny{},
+							seccomp.MatchAny{},
+							seccomp.MatchAny{},
+							/* MAP_DENYWRITE is ignored and used only for filtering. */
+							seccomp.MaskedEqual(unix.MAP_DENYWRITE, 0),
+						},
+					},
+				},
+				Action: linux.SECCOMP_RET_TRAP,
+			},
+		}...)
+		instrs, err := seccomp.BuildProgram(rules, linux.SECCOMP_RET_ALLOW, linux.SECCOMP_RET_ALLOW)
+		if err != nil {
+			panic(fmt.Sprintf("failed to build rules: %v", err))
+		}
+		// Perform the actual installation.
+		if err := seccomp.SetFilter(instrs); err != nil {
+			panic(fmt.Sprintf("failed to set filter: %v", err))
+		}
+	})
+
+	machinePoolMu.Lock()
+	n := atomic.LoadUint32(&machinePoolLen)
+	i := uint32(0)
+	for ; i < n; i++ {
+		if machinePool[i].Load() == nil {
+			break
+		}
+	}
+	if i == n {
+		if i == machinePoolSize {
+			machinePoolMu.Unlock()
+			panic("machinePool is full")
+		}
+		atomic.AddUint32(&machinePoolLen, 1)
+	}
+	machinePool[i].Store(m)
+	m.machinePoolIndex = i
+	machinePoolMu.Unlock()
 }
