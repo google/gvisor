@@ -335,9 +335,7 @@ func (pk *PacketBuffer) CloneToInbound() *PacketBuffer {
 	// tell if a noop connection should be inserted at Input hook. Once conntrack
 	// redefines the manipulation field as mutable, we won't need the special noop
 	// connection.
-	if pk.NatDone {
-		newPk.NatDone = true
-	}
+	newPk.NatDone = pk.NatDone
 	return newPk
 }
 
@@ -347,7 +345,7 @@ func (pk *PacketBuffer) CloneToInbound() *PacketBuffer {
 // The returned packet buffer will have the network and transport headers
 // set if the original packet buffer did.
 func (pk *PacketBuffer) DeepCopyForForwarding(reservedHeaderBytes int) *PacketBuffer {
-	newPkt := NewPacketBuffer(PacketBufferOptions{
+	newPk := NewPacketBuffer(PacketBufferOptions{
 		ReserveHeaderBytes: reservedHeaderBytes,
 		Data:               PayloadSince(pk.NetworkHeader()).ToVectorisedView(),
 		IsForwardedPacket:  true,
@@ -355,21 +353,28 @@ func (pk *PacketBuffer) DeepCopyForForwarding(reservedHeaderBytes int) *PacketBu
 
 	{
 		consumeBytes := pk.NetworkHeader().View().Size()
-		if _, consumed := newPkt.NetworkHeader().Consume(consumeBytes); !consumed {
+		if _, consumed := newPk.NetworkHeader().Consume(consumeBytes); !consumed {
 			panic(fmt.Sprintf("expected to consume network header %d bytes from new packet", consumeBytes))
 		}
-		newPkt.NetworkProtocolNumber = pk.NetworkProtocolNumber
+		newPk.NetworkProtocolNumber = pk.NetworkProtocolNumber
 	}
 
 	{
 		consumeBytes := pk.TransportHeader().View().Size()
-		if _, consumed := newPkt.TransportHeader().Consume(consumeBytes); !consumed {
+		if _, consumed := newPk.TransportHeader().Consume(consumeBytes); !consumed {
 			panic(fmt.Sprintf("expected to consume transport header %d bytes from new packet", consumeBytes))
 		}
-		newPkt.TransportProtocolNumber = pk.TransportProtocolNumber
+		newPk.TransportProtocolNumber = pk.TransportProtocolNumber
 	}
 
-	return newPkt
+	// TODO(gvisor.dev/issue/5696): reimplement conntrack so that no need to
+	// maintain this flag in the packet. Currently conntrack needs this flag to
+	// tell if a noop connection should be inserted at Input hook. Once conntrack
+	// redefines the manipulation field as mutable, we won't need the special noop
+	// connection.
+	newPk.NatDone = pk.NatDone
+
+	return newPk
 }
 
 // headerInfo stores metadata about a header in a packet.

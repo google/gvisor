@@ -34,12 +34,16 @@ go_test(
         "//pkg/tcpip/checker",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/channel",
+        "//pkg/tcpip/network/arp",
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/network/ipv6",
         "//pkg/tcpip/stack",
         "//pkg/tcpip/tests/utils",
         "//pkg/tcpip/testutil",
+        "//pkg/tcpip/transport/tcp",
         "//pkg/tcpip/transport/udp",
+        "//pkg/waiter",
+        "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )
 
