@@ -8,6 +8,8 @@ go_fieldenum(
     name = "seccheck_fieldenum",
     srcs = [
         "clone.go",
+        "execve.go",
+        "exit.go",
         "task.go",
     ],
     out = "seccheck_fieldenum.go",
@@ -29,6 +31,8 @@ go_library(
     name = "seccheck",
     srcs = [
         "clone.go",
+        "execve.go",
+        "exit.go",
         "seccheck.go",
         "seccheck_fieldenum.go",
         "seqatomic_checkerslice_unsafe.go",

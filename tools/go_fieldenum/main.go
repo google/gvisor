@@ -55,6 +55,7 @@ func main() {
 
 	// Determine which types are marked "+fieldenum" and will consequently have
 	// code generated.
+	var typeNames []string
 	fieldEnumTypes := make(map[string]fieldEnumTypeInfo)
 	for _, f := range inputFiles {
 		for _, decl := range f.Decls {
@@ -75,6 +76,7 @@ func main() {
 					if !ok {
 						log.Fatalf("Type %s is marked +fieldenum, but is not a struct", name)
 					}
+					typeNames = append(typeNames, name)
 					fieldEnumTypes[name] = fieldEnumTypeInfo{
 						prefix:     prefix,
 						structType: st,
@@ -86,9 +88,10 @@ func main() {
 	}
 
 	// Collect information for each type for which code is being generated.
-	structInfos := make([]structInfo, 0, len(fieldEnumTypes))
+	structInfos := make([]structInfo, 0, len(typeNames))
 	needSyncAtomic := false
-	for typeName, typeInfo := range fieldEnumTypes {
+	for _, typeName := range typeNames {
+		typeInfo := fieldEnumTypes[typeName]
 		var si structInfo
 		si.name = typeName
 		si.prefix = typeInfo.prefix
@@ -202,13 +205,6 @@ func structFieldName(f *ast.Field) string {
 			panic(fmt.Sprintf("unexpected %T", texpr))
 		}
 	}
-}
-
-// Workaround for Go defect (map membership test isn't usable in an
-// expression).
-func fetContains(xs map[string]*ast.StructType, x string) bool {
-	_, ok := xs[x]
-	return ok
 }
 
 func (si *structInfo) writeTo(b *strings.Builder) {
