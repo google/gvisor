@@ -80,9 +80,10 @@ go_library(
 
 go_test(
     name = "tcp_x_test",
-    size = "medium",
+    size = "large",
     srcs = [
         "dual_stack_test.go",
+        "rcv_test.go",
         "sack_scoreboard_test.go",
         "tcp_noracedetector_test.go",
         "tcp_rack_test.go",
@@ -110,16 +111,6 @@ go_test(
         "//pkg/test/testutil",
         "//pkg/waiter",
         "@com_github_google_go_cmp//cmp:go_default_library",
-    ],
-)
-
-go_test(
-    name = "rcv_test",
-    size = "small",
-    srcs = ["rcv_test.go"],
-    deps = [
-        "//pkg/tcpip/header",
-        "//pkg/tcpip/seqnum",
     ],
 )
 
