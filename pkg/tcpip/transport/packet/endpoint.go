@@ -67,7 +67,7 @@ type endpoint struct {
 	waiterQueue *waiter.Queue
 	cooked      bool
 	ops         tcpip.SocketOptions
-	stats       tcpip.TransportEndpointStats `state:"nosave"`
+	stats       tcpip.TransportEndpointStats
 
 	// The following fields are used to manage the receive queue.
 	rcvMu sync.Mutex `state:"nosave"`

@@ -1305,6 +1305,195 @@ func (i *IPv6PacketInfo) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &i.NIC)
 }
 
+func (s *StatCounter) StateTypeName() string {
+	return "pkg/tcpip.StatCounter"
+}
+
+func (s *StatCounter) StateFields() []string {
+	return []string{
+		"count",
+	}
+}
+
+func (s *StatCounter) beforeSave() {}
+
+// +checklocksignore
+func (s *StatCounter) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.count)
+}
+
+func (s *StatCounter) afterLoad() {}
+
+// +checklocksignore
+func (s *StatCounter) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.count)
+}
+
+func (r *ReceiveErrors) StateTypeName() string {
+	return "pkg/tcpip.ReceiveErrors"
+}
+
+func (r *ReceiveErrors) StateFields() []string {
+	return []string{
+		"ReceiveBufferOverflow",
+		"MalformedPacketsReceived",
+		"ClosedReceiver",
+		"ChecksumErrors",
+	}
+}
+
+func (r *ReceiveErrors) beforeSave() {}
+
+// +checklocksignore
+func (r *ReceiveErrors) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.ReceiveBufferOverflow)
+	stateSinkObject.Save(1, &r.MalformedPacketsReceived)
+	stateSinkObject.Save(2, &r.ClosedReceiver)
+	stateSinkObject.Save(3, &r.ChecksumErrors)
+}
+
+func (r *ReceiveErrors) afterLoad() {}
+
+// +checklocksignore
+func (r *ReceiveErrors) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.ReceiveBufferOverflow)
+	stateSourceObject.Load(1, &r.MalformedPacketsReceived)
+	stateSourceObject.Load(2, &r.ClosedReceiver)
+	stateSourceObject.Load(3, &r.ChecksumErrors)
+}
+
+func (s *SendErrors) StateTypeName() string {
+	return "pkg/tcpip.SendErrors"
+}
+
+func (s *SendErrors) StateFields() []string {
+	return []string{
+		"SendToNetworkFailed",
+		"NoRoute",
+	}
+}
+
+func (s *SendErrors) beforeSave() {}
+
+// +checklocksignore
+func (s *SendErrors) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.SendToNetworkFailed)
+	stateSinkObject.Save(1, &s.NoRoute)
+}
+
+func (s *SendErrors) afterLoad() {}
+
+// +checklocksignore
+func (s *SendErrors) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.SendToNetworkFailed)
+	stateSourceObject.Load(1, &s.NoRoute)
+}
+
+func (r *ReadErrors) StateTypeName() string {
+	return "pkg/tcpip.ReadErrors"
+}
+
+func (r *ReadErrors) StateFields() []string {
+	return []string{
+		"ReadClosed",
+		"InvalidEndpointState",
+		"NotConnected",
+	}
+}
+
+func (r *ReadErrors) beforeSave() {}
+
+// +checklocksignore
+func (r *ReadErrors) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.ReadClosed)
+	stateSinkObject.Save(1, &r.InvalidEndpointState)
+	stateSinkObject.Save(2, &r.NotConnected)
+}
+
+func (r *ReadErrors) afterLoad() {}
+
+// +checklocksignore
+func (r *ReadErrors) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.ReadClosed)
+	stateSourceObject.Load(1, &r.InvalidEndpointState)
+	stateSourceObject.Load(2, &r.NotConnected)
+}
+
+func (w *WriteErrors) StateTypeName() string {
+	return "pkg/tcpip.WriteErrors"
+}
+
+func (w *WriteErrors) StateFields() []string {
+	return []string{
+		"WriteClosed",
+		"InvalidEndpointState",
+		"InvalidArgs",
+	}
+}
+
+func (w *WriteErrors) beforeSave() {}
+
+// +checklocksignore
+func (w *WriteErrors) StateSave(stateSinkObject state.Sink) {
+	w.beforeSave()
+	stateSinkObject.Save(0, &w.WriteClosed)
+	stateSinkObject.Save(1, &w.InvalidEndpointState)
+	stateSinkObject.Save(2, &w.InvalidArgs)
+}
+
+func (w *WriteErrors) afterLoad() {}
+
+// +checklocksignore
+func (w *WriteErrors) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &w.WriteClosed)
+	stateSourceObject.Load(1, &w.InvalidEndpointState)
+	stateSourceObject.Load(2, &w.InvalidArgs)
+}
+
+func (src *TransportEndpointStats) StateTypeName() string {
+	return "pkg/tcpip.TransportEndpointStats"
+}
+
+func (src *TransportEndpointStats) StateFields() []string {
+	return []string{
+		"PacketsReceived",
+		"PacketsSent",
+		"ReceiveErrors",
+		"ReadErrors",
+		"SendErrors",
+		"WriteErrors",
+	}
+}
+
+func (src *TransportEndpointStats) beforeSave() {}
+
+// +checklocksignore
+func (src *TransportEndpointStats) StateSave(stateSinkObject state.Sink) {
+	src.beforeSave()
+	stateSinkObject.Save(0, &src.PacketsReceived)
+	stateSinkObject.Save(1, &src.PacketsSent)
+	stateSinkObject.Save(2, &src.ReceiveErrors)
+	stateSinkObject.Save(3, &src.ReadErrors)
+	stateSinkObject.Save(4, &src.SendErrors)
+	stateSinkObject.Save(5, &src.WriteErrors)
+}
+
+func (src *TransportEndpointStats) afterLoad() {}
+
+// +checklocksignore
+func (src *TransportEndpointStats) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &src.PacketsReceived)
+	stateSourceObject.Load(1, &src.PacketsSent)
+	stateSourceObject.Load(2, &src.ReceiveErrors)
+	stateSourceObject.Load(3, &src.ReadErrors)
+	stateSourceObject.Load(4, &src.SendErrors)
+	stateSourceObject.Load(5, &src.WriteErrors)
+}
+
 func init() {
 	state.Register((*ErrAborted)(nil))
 	state.Register((*ErrAddressFamilyNotSupported)(nil))
@@ -1358,4 +1547,10 @@ func init() {
 	state.Register((*LingerOption)(nil))
 	state.Register((*IPPacketInfo)(nil))
 	state.Register((*IPv6PacketInfo)(nil))
+	state.Register((*StatCounter)(nil))
+	state.Register((*ReceiveErrors)(nil))
+	state.Register((*SendErrors)(nil))
+	state.Register((*ReadErrors)(nil))
+	state.Register((*WriteErrors)(nil))
+	state.Register((*TransportEndpointStats)(nil))
 }

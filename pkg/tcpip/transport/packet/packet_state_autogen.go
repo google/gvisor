@@ -58,6 +58,7 @@ func (ep *endpoint) StateFields() []string {
 		"waiterQueue",
 		"cooked",
 		"ops",
+		"stats",
 		"rcvList",
 		"rcvBufSize",
 		"rcvClosed",
@@ -76,14 +77,15 @@ func (ep *endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &ep.waiterQueue)
 	stateSinkObject.Save(2, &ep.cooked)
 	stateSinkObject.Save(3, &ep.ops)
-	stateSinkObject.Save(4, &ep.rcvList)
-	stateSinkObject.Save(5, &ep.rcvBufSize)
-	stateSinkObject.Save(6, &ep.rcvClosed)
-	stateSinkObject.Save(7, &ep.rcvDisabled)
-	stateSinkObject.Save(8, &ep.closed)
-	stateSinkObject.Save(9, &ep.boundNetProto)
-	stateSinkObject.Save(10, &ep.boundNIC)
-	stateSinkObject.Save(11, &ep.lastError)
+	stateSinkObject.Save(4, &ep.stats)
+	stateSinkObject.Save(5, &ep.rcvList)
+	stateSinkObject.Save(6, &ep.rcvBufSize)
+	stateSinkObject.Save(7, &ep.rcvClosed)
+	stateSinkObject.Save(8, &ep.rcvDisabled)
+	stateSinkObject.Save(9, &ep.closed)
+	stateSinkObject.Save(10, &ep.boundNetProto)
+	stateSinkObject.Save(11, &ep.boundNIC)
+	stateSinkObject.Save(12, &ep.lastError)
 }
 
 // +checklocksignore
@@ -92,14 +94,15 @@ func (ep *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &ep.waiterQueue)
 	stateSourceObject.Load(2, &ep.cooked)
 	stateSourceObject.Load(3, &ep.ops)
-	stateSourceObject.Load(4, &ep.rcvList)
-	stateSourceObject.Load(5, &ep.rcvBufSize)
-	stateSourceObject.Load(6, &ep.rcvClosed)
-	stateSourceObject.Load(7, &ep.rcvDisabled)
-	stateSourceObject.Load(8, &ep.closed)
-	stateSourceObject.Load(9, &ep.boundNetProto)
-	stateSourceObject.Load(10, &ep.boundNIC)
-	stateSourceObject.Load(11, &ep.lastError)
+	stateSourceObject.Load(4, &ep.stats)
+	stateSourceObject.Load(5, &ep.rcvList)
+	stateSourceObject.Load(6, &ep.rcvBufSize)
+	stateSourceObject.Load(7, &ep.rcvClosed)
+	stateSourceObject.Load(8, &ep.rcvDisabled)
+	stateSourceObject.Load(9, &ep.closed)
+	stateSourceObject.Load(10, &ep.boundNetProto)
+	stateSourceObject.Load(11, &ep.boundNIC)
+	stateSourceObject.Load(12, &ep.lastError)
 	stateSourceObject.AfterLoad(ep.afterLoad)
 }
 
