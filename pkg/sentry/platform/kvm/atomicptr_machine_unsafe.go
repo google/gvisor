@@ -1,4 +1,4 @@
-package futex
+package kvm
 
 import (
 	"sync/atomic"
@@ -13,15 +13,15 @@ import (
 // this case, do `dst.Store(src.Load())` instead.
 //
 // +stateify savable
-type AtomicPtrBucket struct {
-	ptr unsafe.Pointer `state:".(*bucket)"`
+type machineAtomicPtr struct {
+	ptr unsafe.Pointer `state:".(*machine)"`
 }
 
-func (p *AtomicPtrBucket) savePtr() *bucket {
+func (p *machineAtomicPtr) savePtr() *machine {
 	return p.Load()
 }
 
-func (p *AtomicPtrBucket) loadPtr(v *bucket) {
+func (p *machineAtomicPtr) loadPtr(v *machine) {
 	p.Store(v)
 }
 
@@ -29,11 +29,11 @@ func (p *AtomicPtrBucket) loadPtr(v *bucket) {
 // has been no previous call to Store.
 //
 //go:nosplit
-func (p *AtomicPtrBucket) Load() *bucket {
-	return (*bucket)(atomic.LoadPointer(&p.ptr))
+func (p *machineAtomicPtr) Load() *machine {
+	return (*machine)(atomic.LoadPointer(&p.ptr))
 }
 
 // Store sets the value returned by Load to x.
-func (p *AtomicPtrBucket) Store(x *bucket) {
+func (p *machineAtomicPtr) Store(x *machine) {
 	atomic.StorePointer(&p.ptr, (unsafe.Pointer)(x))
 }

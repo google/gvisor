@@ -4,3 +4,38 @@
 // +build go1.12,go1.12
 
 package kvm
+
+import (
+	"gvisor.dev/gvisor/pkg/state"
+)
+
+func (p *machineAtomicPtr) StateTypeName() string {
+	return "pkg/sentry/platform/kvm.machineAtomicPtr"
+}
+
+func (p *machineAtomicPtr) StateFields() []string {
+	return []string{
+		"ptr",
+	}
+}
+
+func (p *machineAtomicPtr) beforeSave() {}
+
+// +checklocksignore
+func (p *machineAtomicPtr) StateSave(stateSinkObject state.Sink) {
+	p.beforeSave()
+	var ptrValue *machine
+	ptrValue = p.savePtr()
+	stateSinkObject.SaveValue(0, ptrValue)
+}
+
+func (p *machineAtomicPtr) afterLoad() {}
+
+// +checklocksignore
+func (p *machineAtomicPtr) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.LoadValue(0, new(*machine), func(y interface{}) { p.loadPtr(y.(*machine)) })
+}
+
+func init() {
+	state.Register((*machineAtomicPtr)(nil))
+}

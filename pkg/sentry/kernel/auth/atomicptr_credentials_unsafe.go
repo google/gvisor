@@ -27,6 +27,8 @@ func (p *AtomicPtrCredentials) loadPtr(v *Credentials) {
 
 // Load returns the value set by the most recent Store. It returns nil if there
 // has been no previous call to Store.
+//
+//go:nosplit
 func (p *AtomicPtrCredentials) Load() *Credentials {
 	return (*Credentials)(atomic.LoadPointer(&p.ptr))
 }

@@ -309,22 +309,6 @@ func loadByte(ptr *byte) byte {
 	return *ptr
 }
 
-// prefaultFloatingPointState touches each page of the floating point state to
-// be sure that its physical pages are mapped.
-//
-// Otherwise the kernel can trigger KVM_EXIT_MMIO and an instruction that
-// triggered a fault will be emulated by the kvm kernel code, but it can't
-// emulate instructions like xsave and xrstor.
-//
-//go:nosplit
-func prefaultFloatingPointState(data *fpu.State) {
-	size := len(*data)
-	for i := 0; i < size; i += hostarch.PageSize {
-		loadByte(&(*data)[i])
-	}
-	loadByte(&(*data)[size-1])
-}
-
 // SwitchToUser unpacks architectural-details.
 func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *linux.SignalInfo) (hostarch.AccessType, error) {
 	// Check for canonical addresses.
@@ -355,11 +339,6 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *linux.SignalInfo)
 	// allocations occur.
 	entersyscall()
 	bluepill(c)
-	// The root table physical page has to be mapped to not fault in iret
-	// or sysret after switching into a user address space.  sysret and
-	// iret are in the upper half that is global and already mapped.
-	switchOpts.PageTables.PrefaultRootTable()
-	prefaultFloatingPointState(switchOpts.FloatingPointState)
 	vector = c.CPU.SwitchToUser(switchOpts)
 	exitsyscall()
 
@@ -521,4 +500,8 @@ func (m *machine) getNewVCPU() *vCPU {
 		return c
 	}
 	return nil
+}
+
+func archPhysicalRegions(physicalRegions []physicalRegion) []physicalRegion {
+	return physicalRegions
 }
