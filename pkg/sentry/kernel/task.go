@@ -513,7 +513,7 @@ type Task struct {
 	// netns is the task's network namespace. netns is never nil.
 	//
 	// netns is protected by mu.
-	netns *inet.Namespace
+	netns inet.NamespaceAtomicPtr
 
 	// If rseqPreempted is true, before the next call to p.Switch(),
 	// interrupt rseq critical regions as defined by rseqAddr and
