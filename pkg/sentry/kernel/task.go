@@ -511,8 +511,6 @@ type Task struct {
 	numaNodeMask uint64
 
 	// netns is the task's network namespace. netns is never nil.
-	//
-	// netns is protected by mu.
 	netns inet.NamespaceAtomicPtr
 
 	// If rseqPreempted is true, before the next call to p.Switch(),
