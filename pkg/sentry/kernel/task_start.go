@@ -140,7 +140,6 @@ func (ts *TaskSet) newTask(cfg *TaskConfig) (*Task, error) {
 		allowedCPUMask:     cfg.AllowedCPUMask.Copy(),
 		ioUsage:            &usage.IO{},
 		niceness:           cfg.Niceness,
-		netns:              cfg.NetworkNamespace,
 		utsns:              cfg.UTSNamespace,
 		ipcns:              cfg.IPCNamespace,
 		abstractSockets:    cfg.AbstractSocketNamespace,
@@ -152,6 +151,7 @@ func (ts *TaskSet) newTask(cfg *TaskConfig) (*Task, error) {
 		containerID:        cfg.ContainerID,
 		cgroups:            make(map[Cgroup]struct{}),
 	}
+	t.netns.Store(cfg.NetworkNamespace)
 	t.creds.Store(cfg.Credentials)
 	t.endStopCond.L = &t.tg.signalHandlers.mu
 	t.ptraceTracer.Store((*Task)(nil))
