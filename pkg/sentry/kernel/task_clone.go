@@ -444,7 +444,7 @@ func (t *Task) Unshare(flags int32) error {
 			t.mu.Unlock()
 			return linuxerr.EPERM
 		}
-		t.netns = inet.NewNamespace(t.netns)
+		t.netns.Store(inet.NewNamespace(t.netns.Load()))
 	}
 	if flags&linux.CLONE_NEWUTS != 0 {
 		if !haveCapSysAdmin {
