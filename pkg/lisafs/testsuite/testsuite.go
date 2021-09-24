@@ -330,8 +330,8 @@ func testRegularFileIO(ctx context.Context, t *testing.T, tester Tester, root li
 	defer closeFD(ctx, t, fd)
 	defer unix.Close(hostFD)
 
-	// Test Read/Write RPCs.
-	data := make([]byte, 100)
+	// Test Read/Write RPCs with 2MB of data to test IO in chunks.
+	data := make([]byte, 1<<21)
 	rand.Read(data)
 	if err := writeFD(ctx, t, fd, 0, data); err != nil {
 		t.Fatalf("write failed: %v", err)
