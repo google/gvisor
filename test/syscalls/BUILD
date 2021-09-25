@@ -434,6 +434,11 @@ syscall_test(
 )
 
 syscall_test(
+    tags = ["container"],
+    test = "//test/syscalls/linux:proc_isolated_test",
+)
+
+syscall_test(
     test = "//test/syscalls/linux:proc_net_test",
 )
 

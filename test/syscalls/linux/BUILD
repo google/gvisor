@@ -1793,6 +1793,20 @@ cc_binary(
 )
 
 cc_binary(
+    name = "proc_isolated_test",
+    testonly = 1,
+    srcs = ["proc_isolated.cc"],
+    linkstatic = 1,
+    deps = [
+        "@com_google_absl//absl/strings",
+        gtest,
+        "//test/util:fs_util",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
     name = "proc_net_test",
     testonly = 1,
     srcs = ["proc_net.cc"],
