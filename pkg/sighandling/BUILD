@@ -8,7 +8,7 @@ go_library(
         "sighandling.go",
         "sighandling_unsafe.go",
     ],
-    visibility = ["//pkg/sentry:internal"],
+    visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",
         "@org_golang_x_sys//unix:go_default_library",
