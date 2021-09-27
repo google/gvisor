@@ -139,18 +139,15 @@ func (f *fakeNetworkEndpoint) HandlePacket(pkt *stack.PacketBuffer) {
 
 	// Handle control packets.
 	if netHdr[protocolNumberOffset] == uint8(fakeControlProtocol) {
-		hdr, ok := pkt.Data().PullUp(fakeNetHeaderLen)
+		hdr, ok := pkt.Data().Consume(fakeNetHeaderLen)
 		if !ok {
 			return
 		}
-		// DeleteFront invalidates slices. Make a copy before trimming.
-		nb := append([]byte(nil), hdr...)
-		pkt.Data().DeleteFront(fakeNetHeaderLen)
 		f.dispatcher.DeliverTransportError(
-			tcpip.Address(nb[srcAddrOffset:srcAddrOffset+1]),
-			tcpip.Address(nb[dstAddrOffset:dstAddrOffset+1]),
+			tcpip.Address(hdr[srcAddrOffset:srcAddrOffset+1]),
+			tcpip.Address(hdr[dstAddrOffset:dstAddrOffset+1]),
 			fakeNetNumber,
-			tcpip.TransportProtocolNumber(nb[protocolNumberOffset]),
+			tcpip.TransportProtocolNumber(hdr[protocolNumberOffset]),
 			// Nothing checks the error.
 			nil, /* transport error */
 			pkt,

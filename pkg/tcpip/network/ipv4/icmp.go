@@ -167,14 +167,17 @@ func (e *endpoint) handleControl(errInfo stack.TransportError, pkt *stack.Packet
 	p := hdr.TransportProtocol()
 	dstAddr := hdr.DestinationAddress()
 	// Skip the ip header, then deliver the error.
-	pkt.Data().DeleteFront(hlen)
+	if _, ok := pkt.Data().Consume(hlen); !ok {
+		panic(fmt.Sprintf("could not consume the IP header of %d bytes", hlen))
+	}
 	e.dispatcher.DeliverTransportError(srcAddr, dstAddr, ProtocolNumber, p, errInfo, pkt)
 }
 
 func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 	received := e.stats.icmp.packetsReceived
 	// ICMP packets don't have their TransportHeader fields set. See
-	// icmp/protocol.go:protocol.Parse for a full explanation.
+	// icmp/protocol.go:protocol.Parse for a full explanation. Not all ICMP types
+	// require consuming the header, so we only call PullUp.
 	v, ok := pkt.Data().PullUp(header.ICMPv4MinimumSize)
 	if !ok {
 		received.invalid.Increment()
@@ -242,7 +245,8 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 
 		// DeliverTransportPacket will take ownership of pkt so don't use it beyond
 		// this point. Make a deep copy of the data before pkt gets sent as we will
-		// be modifying fields.
+		// be modifying fields. Both the ICMP header (with its type modified to
+		// EchoReply) and payload are reused in the reply packet.
 		//
 		// TODO(gvisor.dev/issue/4399): The copy may not be needed if there are no
 		// waiting endpoints. Consider moving responsibility for doing the copy to
@@ -331,6 +335,8 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 	case header.ICMPv4EchoReply:
 		received.echoReply.Increment()
 
+		// ICMP sockets expect the ICMP header to be present, so we don't consume
+		// the ICMP header.
 		e.dispatcher.DeliverTransportPacket(header.ICMPv4ProtocolNumber, pkt)
 
 	case header.ICMPv4DstUnreachable:
@@ -338,7 +344,9 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 
 		mtu := h.MTU()
 		code := h.Code()
-		pkt.Data().DeleteFront(header.ICMPv4MinimumSize)
+		if _, ok := pkt.Data().Consume(header.ICMPv4MinimumSize); !ok {
+			panic("could not consume ICMPv4MinimumSize bytes")
+		}
 		switch code {
 		case header.ICMPv4HostUnreachable:
 			e.handleControl(&icmpv4DestinationHostUnreachableSockError{}, pkt)

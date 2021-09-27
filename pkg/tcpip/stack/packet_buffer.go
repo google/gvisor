@@ -425,13 +425,14 @@ func (d PacketData) PullUp(size int) (tcpipbuffer.View, bool) {
 	return d.pk.buf.PullUp(d.pk.dataOffset(), size)
 }
 
-// DeleteFront removes count from the beginning of d. It panics if count >
-// d.Size(). All backing storage references after the front of the d are
-// invalidated.
-func (d PacketData) DeleteFront(count int) {
-	if !d.pk.buf.Remove(d.pk.dataOffset(), count) {
-		panic("count > d.Size()")
+// Consume is the same as PullUp except that is additionally consumes the
+// returned bytes. Subsequent PullUp or Consume will not return these bytes.
+func (d PacketData) Consume(size int) (tcpipbuffer.View, bool) {
+	v, ok := d.PullUp(size)
+	if ok {
+		d.pk.consumed += size
 	}
+	return v, ok
 }
 
 // CapLength reduces d to at most length bytes.
