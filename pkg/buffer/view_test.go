@@ -509,6 +509,24 @@ func TestView(t *testing.T) {
 	}
 }
 
+func TestViewClone(t *testing.T) {
+	const (
+		originalSize  = 90
+		bytesToDelete = 30
+	)
+	var v View
+	v.AppendOwned(bytes.Repeat([]byte{originalSize}, originalSize))
+
+	clonedV := v.Clone()
+	v.TrimFront(bytesToDelete)
+	if got, want := int(v.Size()), originalSize-bytesToDelete; got != want {
+		t.Errorf("original packet was not changed: size expected = %d, got = %d", want, got)
+	}
+	if got := clonedV.Size(); got != originalSize {
+		t.Errorf("cloned packet should not be modified: expected size = %d, got = %d", originalSize, got)
+	}
+}
+
 func TestViewPullUp(t *testing.T) {
 	for _, tc := range []struct {
 		desc   string
