@@ -66,6 +66,132 @@ func (s *SACKInfo) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &s.NumBlocks)
 }
 
+func (r *ReceiveErrors) StateTypeName() string {
+	return "pkg/tcpip/transport/tcp.ReceiveErrors"
+}
+
+func (r *ReceiveErrors) StateFields() []string {
+	return []string{
+		"ReceiveErrors",
+		"SegmentQueueDropped",
+		"ChecksumErrors",
+		"ListenOverflowSynDrop",
+		"ListenOverflowAckDrop",
+		"ZeroRcvWindowState",
+		"WantZeroRcvWindow",
+	}
+}
+
+func (r *ReceiveErrors) beforeSave() {}
+
+// +checklocksignore
+func (r *ReceiveErrors) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.ReceiveErrors)
+	stateSinkObject.Save(1, &r.SegmentQueueDropped)
+	stateSinkObject.Save(2, &r.ChecksumErrors)
+	stateSinkObject.Save(3, &r.ListenOverflowSynDrop)
+	stateSinkObject.Save(4, &r.ListenOverflowAckDrop)
+	stateSinkObject.Save(5, &r.ZeroRcvWindowState)
+	stateSinkObject.Save(6, &r.WantZeroRcvWindow)
+}
+
+func (r *ReceiveErrors) afterLoad() {}
+
+// +checklocksignore
+func (r *ReceiveErrors) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.ReceiveErrors)
+	stateSourceObject.Load(1, &r.SegmentQueueDropped)
+	stateSourceObject.Load(2, &r.ChecksumErrors)
+	stateSourceObject.Load(3, &r.ListenOverflowSynDrop)
+	stateSourceObject.Load(4, &r.ListenOverflowAckDrop)
+	stateSourceObject.Load(5, &r.ZeroRcvWindowState)
+	stateSourceObject.Load(6, &r.WantZeroRcvWindow)
+}
+
+func (s *SendErrors) StateTypeName() string {
+	return "pkg/tcpip/transport/tcp.SendErrors"
+}
+
+func (s *SendErrors) StateFields() []string {
+	return []string{
+		"SendErrors",
+		"SegmentSendToNetworkFailed",
+		"SynSendToNetworkFailed",
+		"Retransmits",
+		"FastRetransmit",
+		"Timeouts",
+	}
+}
+
+func (s *SendErrors) beforeSave() {}
+
+// +checklocksignore
+func (s *SendErrors) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.SendErrors)
+	stateSinkObject.Save(1, &s.SegmentSendToNetworkFailed)
+	stateSinkObject.Save(2, &s.SynSendToNetworkFailed)
+	stateSinkObject.Save(3, &s.Retransmits)
+	stateSinkObject.Save(4, &s.FastRetransmit)
+	stateSinkObject.Save(5, &s.Timeouts)
+}
+
+func (s *SendErrors) afterLoad() {}
+
+// +checklocksignore
+func (s *SendErrors) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.SendErrors)
+	stateSourceObject.Load(1, &s.SegmentSendToNetworkFailed)
+	stateSourceObject.Load(2, &s.SynSendToNetworkFailed)
+	stateSourceObject.Load(3, &s.Retransmits)
+	stateSourceObject.Load(4, &s.FastRetransmit)
+	stateSourceObject.Load(5, &s.Timeouts)
+}
+
+func (s *Stats) StateTypeName() string {
+	return "pkg/tcpip/transport/tcp.Stats"
+}
+
+func (s *Stats) StateFields() []string {
+	return []string{
+		"SegmentsReceived",
+		"SegmentsSent",
+		"FailedConnectionAttempts",
+		"ReceiveErrors",
+		"ReadErrors",
+		"SendErrors",
+		"WriteErrors",
+	}
+}
+
+func (s *Stats) beforeSave() {}
+
+// +checklocksignore
+func (s *Stats) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.SegmentsReceived)
+	stateSinkObject.Save(1, &s.SegmentsSent)
+	stateSinkObject.Save(2, &s.FailedConnectionAttempts)
+	stateSinkObject.Save(3, &s.ReceiveErrors)
+	stateSinkObject.Save(4, &s.ReadErrors)
+	stateSinkObject.Save(5, &s.SendErrors)
+	stateSinkObject.Save(6, &s.WriteErrors)
+}
+
+func (s *Stats) afterLoad() {}
+
+// +checklocksignore
+func (s *Stats) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.SegmentsReceived)
+	stateSourceObject.Load(1, &s.SegmentsSent)
+	stateSourceObject.Load(2, &s.FailedConnectionAttempts)
+	stateSourceObject.Load(3, &s.ReceiveErrors)
+	stateSourceObject.Load(4, &s.ReadErrors)
+	stateSourceObject.Load(5, &s.SendErrors)
+	stateSourceObject.Load(6, &s.WriteErrors)
+}
+
 func (s *sndQueueInfo) StateTypeName() string {
 	return "pkg/tcpip/transport/tcp.sndQueueInfo"
 }
@@ -199,6 +325,7 @@ func (e *endpoint) StateFields() []string {
 		"amss",
 		"sendTOS",
 		"gso",
+		"stats",
 		"tcpLingerTimeout",
 		"closed",
 		"txHash",
@@ -257,12 +384,13 @@ func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(41, &e.amss)
 	stateSinkObject.Save(42, &e.sendTOS)
 	stateSinkObject.Save(43, &e.gso)
-	stateSinkObject.Save(44, &e.tcpLingerTimeout)
-	stateSinkObject.Save(45, &e.closed)
-	stateSinkObject.Save(46, &e.txHash)
-	stateSinkObject.Save(47, &e.owner)
-	stateSinkObject.Save(48, &e.ops)
-	stateSinkObject.Save(49, &e.lastOutOfWindowAckTime)
+	stateSinkObject.Save(44, &e.stats)
+	stateSinkObject.Save(45, &e.tcpLingerTimeout)
+	stateSinkObject.Save(46, &e.closed)
+	stateSinkObject.Save(47, &e.txHash)
+	stateSinkObject.Save(48, &e.owner)
+	stateSinkObject.Save(49, &e.ops)
+	stateSinkObject.Save(50, &e.lastOutOfWindowAckTime)
 }
 
 // +checklocksignore
@@ -310,12 +438,13 @@ func (e *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(41, &e.amss)
 	stateSourceObject.Load(42, &e.sendTOS)
 	stateSourceObject.Load(43, &e.gso)
-	stateSourceObject.Load(44, &e.tcpLingerTimeout)
-	stateSourceObject.Load(45, &e.closed)
-	stateSourceObject.Load(46, &e.txHash)
-	stateSourceObject.Load(47, &e.owner)
-	stateSourceObject.Load(48, &e.ops)
-	stateSourceObject.Load(49, &e.lastOutOfWindowAckTime)
+	stateSourceObject.Load(44, &e.stats)
+	stateSourceObject.Load(45, &e.tcpLingerTimeout)
+	stateSourceObject.Load(46, &e.closed)
+	stateSourceObject.Load(47, &e.txHash)
+	stateSourceObject.Load(48, &e.owner)
+	stateSourceObject.Load(49, &e.ops)
+	stateSourceObject.Load(50, &e.lastOutOfWindowAckTime)
 	stateSourceObject.LoadValue(10, new(EndpointState), func(y interface{}) { e.loadState(y.(EndpointState)) })
 	stateSourceObject.AfterLoad(e.afterLoad)
 }
@@ -879,6 +1008,9 @@ func (e *segmentEntry) StateLoad(stateSourceObject state.Source) {
 func init() {
 	state.Register((*cubicState)(nil))
 	state.Register((*SACKInfo)(nil))
+	state.Register((*ReceiveErrors)(nil))
+	state.Register((*SendErrors)(nil))
+	state.Register((*Stats)(nil))
 	state.Register((*sndQueueInfo)(nil))
 	state.Register((*rcvQueueInfo)(nil))
 	state.Register((*accepted)(nil))
