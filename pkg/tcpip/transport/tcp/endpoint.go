@@ -205,6 +205,8 @@ type SACKInfo struct {
 }
 
 // ReceiveErrors collect segment receive errors within transport layer.
+//
+// +stateify savable
 type ReceiveErrors struct {
 	tcpip.ReceiveErrors
 
@@ -234,6 +236,8 @@ type ReceiveErrors struct {
 }
 
 // SendErrors collect segment send errors within the transport layer.
+//
+// +stateify savable
 type SendErrors struct {
 	tcpip.SendErrors
 
@@ -257,6 +261,8 @@ type SendErrors struct {
 }
 
 // Stats holds statistics about the endpoint.
+//
+// +stateify savable
 type Stats struct {
 	// SegmentsReceived is the number of TCP segments received that
 	// the transport layer successfully parsed.
@@ -612,8 +618,7 @@ type endpoint struct {
 
 	gso stack.GSO
 
-	// TODO(b/142022063): Add ability to save and restore per endpoint stats.
-	stats Stats `state:"nosave"`
+	stats Stats
 
 	// tcpLingerTimeout is the maximum amount of a time a socket
 	// a socket stays in TIME_WAIT state before being marked
