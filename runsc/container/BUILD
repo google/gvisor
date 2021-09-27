@@ -19,7 +19,7 @@ go_library(
         "//pkg/cleanup",
         "//pkg/log",
         "//pkg/sentry/control",
-        "//pkg/sentry/sighandling",
+        "//pkg/sighandling",
         "//pkg/sync",
         "//runsc/boot",
         "//runsc/cgroup",
