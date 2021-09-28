@@ -466,7 +466,7 @@ func (e *endpoint) writePacket(r *stack.Route, pkt *stack.PacketBuffer, headerIn
 	// Postrouting NAT can only change the source address, and does not alter the
 	// route or outgoing interface of the packet.
 	outNicName := e.protocol.stack.FindNICNameFromID(e.nic.ID())
-	if ok := e.protocol.stack.IPTables().CheckPostrouting(pkt, r, outNicName); !ok {
+	if ok := e.protocol.stack.IPTables().CheckPostrouting(pkt, r, e, outNicName); !ok {
 		// iptables is telling us to drop the packet.
 		e.stats.ip.IPTablesPostroutingDropped.Increment()
 		return nil
@@ -576,7 +576,7 @@ func (e *endpoint) WritePackets(r *stack.Route, pkts stack.PacketBufferList, par
 	// We ignore the list of NAT-ed packets here because Postrouting NAT can only
 	// change the source address, and does not alter the route or outgoing
 	// interface of the packet.
-	postroutingDropped, _ := e.protocol.stack.IPTables().CheckPostroutingPackets(pkts, r, outNicName)
+	postroutingDropped, _ := e.protocol.stack.IPTables().CheckPostroutingPackets(pkts, r, e, outNicName)
 	stats.IPTablesPostroutingDropped.IncrementBy(uint64(len(postroutingDropped)))
 	for pkt := range postroutingDropped {
 		pkts.Remove(pkt)

@@ -310,8 +310,8 @@ func (it *IPTables) CheckOutput(pkt *PacketBuffer, r *Route, outNicName string) 
 // must be dropped if false is returned.
 //
 // Precondition: The packet's network and transport header must be set.
-func (it *IPTables) CheckPostrouting(pkt *PacketBuffer, r *Route, outNicName string) bool {
-	return it.check(Postrouting, pkt, r, nil /* addressEP */, "" /* inNicName */, outNicName)
+func (it *IPTables) CheckPostrouting(pkt *PacketBuffer, r *Route, addressEP AddressableEndpoint, outNicName string) bool {
+	return it.check(Postrouting, pkt, r, addressEP, "" /* inNicName */, outNicName)
 }
 
 // check runs pkt through the rules for hook. It returns true when the packet
@@ -431,7 +431,7 @@ func (it *IPTables) startReaper(interval time.Duration) {
 //
 // Precondition:  The packets' network and transport header must be set.
 func (it *IPTables) CheckOutputPackets(pkts PacketBufferList, r *Route, outNicName string) (drop map[*PacketBuffer]struct{}, natPkts map[*PacketBuffer]struct{}) {
-	return it.checkPackets(Output, pkts, r, outNicName)
+	return it.checkPackets(Output, pkts, r, nil /* addressEP */, outNicName)
 }
 
 // CheckPostroutingPackets performs the postrouting hook on the packets.
@@ -439,8 +439,8 @@ func (it *IPTables) CheckOutputPackets(pkts PacketBufferList, r *Route, outNicNa
 // Returns a map of packets that must be dropped.
 //
 // Precondition:  The packets' network and transport header must be set.
-func (it *IPTables) CheckPostroutingPackets(pkts PacketBufferList, r *Route, outNicName string) (drop map[*PacketBuffer]struct{}, natPkts map[*PacketBuffer]struct{}) {
-	return it.checkPackets(Postrouting, pkts, r, outNicName)
+func (it *IPTables) CheckPostroutingPackets(pkts PacketBufferList, r *Route, addressEP AddressableEndpoint, outNicName string) (drop map[*PacketBuffer]struct{}, natPkts map[*PacketBuffer]struct{}) {
+	return it.checkPackets(Postrouting, pkts, r, addressEP, outNicName)
 }
 
 // checkPackets runs pkts through the rules for hook and returns a map of
@@ -450,10 +450,10 @@ func (it *IPTables) CheckPostroutingPackets(pkts PacketBufferList, r *Route, out
 // dropped.
 //
 // Precondition:  The packets' network and transport header must be set.
-func (it *IPTables) checkPackets(hook Hook, pkts PacketBufferList, r *Route, outNicName string) (drop map[*PacketBuffer]struct{}, natPkts map[*PacketBuffer]struct{}) {
+func (it *IPTables) checkPackets(hook Hook, pkts PacketBufferList, r *Route, addressEP AddressableEndpoint, outNicName string) (drop map[*PacketBuffer]struct{}, natPkts map[*PacketBuffer]struct{}) {
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
 		if !pkt.NatDone {
-			if ok := it.check(hook, pkt, r, nil /* addressEP */, "" /* inNicName */, outNicName); !ok {
+			if ok := it.check(hook, pkt, r, addressEP, "" /* inNicName */, outNicName); !ok {
 				if drop == nil {
 					drop = make(map[*PacketBuffer]struct{})
 				}
