@@ -18,9 +18,9 @@ go_library(
     ],
     visibility = ["//:sandbox"],
     deps = [
-        "//pkg/abi/linux",
         "//pkg/errors",
         "//pkg/errors/linuxerr",
+        "//pkg/sighandling",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

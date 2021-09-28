@@ -19,8 +19,8 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/ring0"
-	"gvisor.dev/gvisor/pkg/safecopy"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sighandling"
 )
 
 // bluepill enters guest mode.
@@ -97,7 +97,7 @@ func (c *vCPU) die(context *arch.SignalContext64, msg string) {
 
 func init() {
 	// Install the handler.
-	if err := safecopy.ReplaceSignalHandler(bluepillSignal, addrOfSighandler(), &savedHandler); err != nil {
+	if err := sighandling.ReplaceSignalHandler(bluepillSignal, addrOfSighandler(), &savedHandler); err != nil {
 		panic(fmt.Sprintf("Unable to set handler for signal %d: %v", bluepillSignal, err))
 	}
 
