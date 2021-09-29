@@ -525,10 +525,8 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 					e.acceptMu.Lock()
 					defer e.acceptMu.Unlock()
 					for {
-						if e.acceptQueue == (acceptQueue{}) {
-							// If the listener has transitioned out of the listen state
-							// (accepted is the zero value), the new endpoint is reset
-							// instead.
+						// The listener is transitioning out of the Listen state; bail.
+						if e.acceptQueue.capacity == 0 {
 							return false
 						}
 						if e.acceptQueue.isFull() {
