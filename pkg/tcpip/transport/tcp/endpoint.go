@@ -508,10 +508,6 @@ type endpoint struct {
 	// and dropped when it is.
 	segmentQueue segmentQueue `state:"wait"`
 
-	// synRcvdCount is the number of connections for this endpoint that are
-	// in SYN-RCVD state; this is only accessed atomically.
-	synRcvdCount int32
-
 	// userMSS if non-zero is the MSS value explicitly set by the user
 	// for this endpoint using the TCP_MAXSEG setsockopt.
 	userMSS uint16
