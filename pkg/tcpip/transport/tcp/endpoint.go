@@ -1085,10 +1085,6 @@ func (e *endpoint) closePendingAcceptableConnectionsLocked() {
 	e.acceptQueue = acceptQueue{}
 	e.acceptMu.Unlock()
 
-	if acceptedCopy == (acceptQueue{}) {
-		return
-	}
-
 	e.acceptCond.Broadcast()
 
 	// Reset all connections that are waiting to be accepted.
@@ -2486,20 +2482,18 @@ func (e *endpoint) listen(backlog int) tcpip.Error {
 	if e.EndpointState() == StateListen && !e.closed {
 		e.acceptMu.Lock()
 		defer e.acceptMu.Unlock()
-		if e.acceptQueue == (acceptQueue{}) {
-			// listen is called after shutdown.
-			e.shutdownFlags = 0
-			e.rcvQueueInfo.rcvQueueMu.Lock()
-			e.rcvQueueInfo.RcvClosed = false
-			e.rcvQueueInfo.rcvQueueMu.Unlock()
-		} else {
-			// Adjust the size of the backlog iff we can fit
-			// existing pending connections into the new one.
-			if e.acceptQueue.endpoints.Len() > backlog {
-				return &tcpip.ErrInvalidEndpointState{}
-			}
+
+		// Adjust the size of the backlog iff we can fit
+		// existing pending connections into the new one.
+		if e.acceptQueue.endpoints.Len() > backlog {
+			return &tcpip.ErrInvalidEndpointState{}
 		}
 		e.acceptQueue.capacity = backlog
+
+		e.shutdownFlags = 0
+		e.rcvQueueInfo.rcvQueueMu.Lock()
+		e.rcvQueueInfo.RcvClosed = false
+		e.rcvQueueInfo.rcvQueueMu.Unlock()
 
 		// Notify any blocked goroutines that they can attempt to
 		// deliver endpoints again.
@@ -2535,7 +2529,7 @@ func (e *endpoint) listen(backlog int) tcpip.Error {
 	// may be pre-populated with some previously accepted (but not Accepted)
 	// endpoints.
 	e.acceptMu.Lock()
-	if e.acceptQueue == (acceptQueue{}) {
+	if e.acceptQueue.capacity == 0 {
 		e.acceptQueue.capacity = backlog
 	}
 	e.acceptMu.Unlock()
