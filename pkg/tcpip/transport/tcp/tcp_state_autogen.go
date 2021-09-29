@@ -7,6 +7,36 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 )
 
+func (a *acceptQueue) StateTypeName() string {
+	return "pkg/tcpip/transport/tcp.acceptQueue"
+}
+
+func (a *acceptQueue) StateFields() []string {
+	return []string{
+		"endpoints",
+		"capacity",
+	}
+}
+
+func (a *acceptQueue) beforeSave() {}
+
+// +checklocksignore
+func (a *acceptQueue) StateSave(stateSinkObject state.Sink) {
+	a.beforeSave()
+	var endpointsValue []*endpoint
+	endpointsValue = a.saveEndpoints()
+	stateSinkObject.SaveValue(0, endpointsValue)
+	stateSinkObject.Save(1, &a.capacity)
+}
+
+func (a *acceptQueue) afterLoad() {}
+
+// +checklocksignore
+func (a *acceptQueue) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(1, &a.capacity)
+	stateSourceObject.LoadValue(0, new([]*endpoint), func(y interface{}) { a.loadEndpoints(y.([]*endpoint)) })
+}
+
 func (c *cubicState) StateTypeName() string {
 	return "pkg/tcpip/transport/tcp.cubicState"
 }
@@ -245,36 +275,6 @@ func (r *rcvQueueInfo) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.LoadWait(1, &r.rcvQueue)
 }
 
-func (a *accepted) StateTypeName() string {
-	return "pkg/tcpip/transport/tcp.accepted"
-}
-
-func (a *accepted) StateFields() []string {
-	return []string{
-		"endpoints",
-		"cap",
-	}
-}
-
-func (a *accepted) beforeSave() {}
-
-// +checklocksignore
-func (a *accepted) StateSave(stateSinkObject state.Sink) {
-	a.beforeSave()
-	var endpointsValue []*endpoint
-	endpointsValue = a.saveEndpoints()
-	stateSinkObject.SaveValue(0, endpointsValue)
-	stateSinkObject.Save(1, &a.cap)
-}
-
-func (a *accepted) afterLoad() {}
-
-// +checklocksignore
-func (a *accepted) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(1, &a.cap)
-	stateSourceObject.LoadValue(0, new([]*endpoint), func(y interface{}) { a.loadEndpoints(y.([]*endpoint)) })
-}
-
 func (e *endpoint) StateTypeName() string {
 	return "pkg/tcpip/transport/tcp.endpoint"
 }
@@ -317,7 +317,7 @@ func (e *endpoint) StateFields() []string {
 		"keepalive",
 		"userTimeout",
 		"deferAccept",
-		"accepted",
+		"acceptQueue",
 		"rcv",
 		"snd",
 		"connectingAddress",
@@ -375,7 +375,7 @@ func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(33, &e.keepalive)
 	stateSinkObject.Save(34, &e.userTimeout)
 	stateSinkObject.Save(35, &e.deferAccept)
-	stateSinkObject.Save(36, &e.accepted)
+	stateSinkObject.Save(36, &e.acceptQueue)
 	stateSinkObject.Save(37, &e.rcv)
 	stateSinkObject.Save(38, &e.snd)
 	stateSinkObject.Save(39, &e.connectingAddress)
@@ -428,7 +428,7 @@ func (e *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(33, &e.keepalive)
 	stateSourceObject.Load(34, &e.userTimeout)
 	stateSourceObject.Load(35, &e.deferAccept)
-	stateSourceObject.Load(36, &e.accepted)
+	stateSourceObject.Load(36, &e.acceptQueue)
 	stateSourceObject.LoadWait(37, &e.rcv)
 	stateSourceObject.LoadWait(38, &e.snd)
 	stateSourceObject.Load(39, &e.connectingAddress)
@@ -1003,6 +1003,7 @@ func (e *segmentEntry) StateLoad(stateSourceObject state.Source) {
 }
 
 func init() {
+	state.Register((*acceptQueue)(nil))
 	state.Register((*cubicState)(nil))
 	state.Register((*SACKInfo)(nil))
 	state.Register((*ReceiveErrors)(nil))
@@ -1010,7 +1011,6 @@ func init() {
 	state.Register((*Stats)(nil))
 	state.Register((*sndQueueInfo)(nil))
 	state.Register((*rcvQueueInfo)(nil))
-	state.Register((*accepted)(nil))
 	state.Register((*endpoint)(nil))
 	state.Register((*keepalive)(nil))
 	state.Register((*rackControl)(nil))
