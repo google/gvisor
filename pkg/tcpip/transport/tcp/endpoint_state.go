@@ -100,7 +100,7 @@ func (e *endpoint) beforeSave() {
 }
 
 // saveEndpoints is invoked by stateify.
-func (a *accepted) saveEndpoints() []*endpoint {
+func (a *acceptQueue) saveEndpoints() []*endpoint {
 	acceptedEndpoints := make([]*endpoint, a.endpoints.Len())
 	for i, e := 0, a.endpoints.Front(); e != nil; i, e = i+1, e.Next() {
 		acceptedEndpoints[i] = e.Value.(*endpoint)
@@ -109,7 +109,7 @@ func (a *accepted) saveEndpoints() []*endpoint {
 }
 
 // loadEndpoints is invoked by stateify.
-func (a *accepted) loadEndpoints(acceptedEndpoints []*endpoint) {
+func (a *acceptQueue) loadEndpoints(acceptedEndpoints []*endpoint) {
 	for _, ep := range acceptedEndpoints {
 		a.endpoints.PushBack(ep)
 	}
@@ -252,7 +252,7 @@ func (e *endpoint) Resume(s *stack.Stack) {
 			connectedLoading.Wait()
 			bind()
 			e.acceptMu.Lock()
-			backlog := e.accepted.cap
+			backlog := e.acceptQueue.capacity
 			e.acceptMu.Unlock()
 			if err := e.Listen(backlog); err != nil {
 				panic("endpoint listening failed: " + err.String())

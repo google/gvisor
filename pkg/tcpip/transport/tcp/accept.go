@@ -15,6 +15,7 @@
 package tcp
 
 import (
+	"container/list"
 	"crypto/sha1"
 	"encoding/binary"
 	"fmt"
@@ -409,13 +410,24 @@ func (e *endpoint) notifyAborted() {
 
 func (e *endpoint) acceptQueueIsFull() bool {
 	e.acceptMu.Lock()
-	full := e.accepted.acceptQueueIsFullLocked()
+	full := e.acceptQueue.isFull()
 	e.acceptMu.Unlock()
 	return full
 }
 
-func (a *accepted) acceptQueueIsFullLocked() bool {
-	return a.endpoints.Len() == a.cap
+// +stateify savable
+type acceptQueue struct {
+	// NB: this could be an endpointList, but ilist only permits endpoints to
+	// belong to one list at a time, and endpoints are already stored in the
+	// dispatcher's list.
+	endpoints list.List `state:".([]*endpoint)"`
+
+	// capacity is the maximum number of endpoints that can be in endpoints.
+	capacity int
+}
+
+func (a *acceptQueue) isFull() bool {
+	return a.endpoints.Len() == a.capacity
 }
 
 // handleListenSegment is called when a listening endpoint receives a segment
@@ -467,7 +479,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 			// listen backlog. But, the SYNRCVD connections count is always checked
 			// against the listen backlog value for Linux parity reason.
 			// https://github.com/torvalds/linux/blob/7acac4b3196/include/net/inet_connection_sock.h#L280
-			if len(ctx.pendingEndpoints) == e.accepted.cap-1 {
+			if len(ctx.pendingEndpoints) == e.acceptQueue.capacity-1 {
 				return true, nil
 			}
 
@@ -513,18 +525,18 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 					e.acceptMu.Lock()
 					defer e.acceptMu.Unlock()
 					for {
-						if e.accepted == (accepted{}) {
+						if e.acceptQueue == (acceptQueue{}) {
 							// If the listener has transitioned out of the listen state
 							// (accepted is the zero value), the new endpoint is reset
 							// instead.
 							return false
 						}
-						if e.accepted.acceptQueueIsFullLocked() {
+						if e.acceptQueue.isFull() {
 							e.acceptCond.Wait()
 							continue
 						}
 
-						e.accepted.endpoints.PushBack(h.ep)
+						e.acceptQueue.endpoints.PushBack(h.ep)
 						return true
 					}
 				}()
@@ -591,7 +603,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		// if there is an error), to guarantee that we will keep our spot in the
 		// queue even if another handshake from the syn queue completes.
 		e.acceptMu.Lock()
-		if e.accepted.acceptQueueIsFullLocked() {
+		if e.acceptQueue.isFull() {
 			// Silently drop the ack as the application can't accept
 			// the connection at this point. The ack will be
 			// retransmitted by the sender anyway and we can
@@ -729,7 +741,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		e.stack.Stats().TCP.PassiveConnectionOpenings.Increment()
 
 		// Deliver the endpoint to the accept queue.
-		e.accepted.endpoints.PushBack(n)
+		e.acceptQueue.endpoints.PushBack(n)
 		e.acceptMu.Unlock()
 
 		e.waiterQueue.Notify(waiter.ReadableEvents)

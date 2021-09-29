@@ -15,7 +15,6 @@
 package tcp
 
 import (
-	"container/list"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -317,18 +316,6 @@ type rcvQueueInfo struct {
 	rcvQueue segmentList `state:"wait"`
 }
 
-// +stateify savable
-type accepted struct {
-	// NB: this could be an endpointList, but ilist only permits endpoints to
-	// belong to one list at a time, and endpoints are already stored in the
-	// dispatcher's list.
-	endpoints list.List `state:".([]*endpoint)"`
-
-	// cap is the maximum number of endpoints that can be in the accepted endpoint
-	// list.
-	cap int
-}
-
 // endpoint represents a TCP endpoint. This struct serves as the interface
 // between users of the endpoint and the protocol implementation; it is legal to
 // have concurrent goroutines make calls into the endpoint, they are properly
@@ -344,7 +331,7 @@ type accepted struct {
 // The following three mutexes can be acquired independent of e.mu but if
 // acquired with e.mu then e.mu must be acquired first.
 //
-// e.acceptMu -> Protects e.accepted.
+// e.acceptMu -> Protects e.acceptQueue.
 // e.rcvQueueMu -> Protects e.rcvQueue and associated fields.
 // e.sndQueueMu -> Protects the e.sndQueue and associated fields.
 // e.lastErrorMu -> Protects the lastError field.
@@ -581,7 +568,7 @@ type endpoint struct {
 	// send newly accepted connections to the endpoint so that they can be
 	// read by Accept() calls.
 	// +checklocks:acceptMu
-	accepted accepted
+	acceptQueue acceptQueue
 
 	// The following are only used from the protocol goroutine, and
 	// therefore don't need locks to protect them.
@@ -911,7 +898,7 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 		// Check if there's anything in the accepted queue.
 		if (mask & waiter.ReadableEvents) != 0 {
 			e.acceptMu.Lock()
-			if e.accepted.endpoints.Len() != 0 {
+			if e.acceptQueue.endpoints.Len() != 0 {
 				result |= waiter.ReadableEvents
 			}
 			e.acceptMu.Unlock()
@@ -1094,11 +1081,11 @@ func (e *endpoint) closeNoShutdownLocked() {
 // handshake but not yet been delivered to the application.
 func (e *endpoint) closePendingAcceptableConnectionsLocked() {
 	e.acceptMu.Lock()
-	acceptedCopy := e.accepted
-	e.accepted = accepted{}
+	acceptedCopy := e.acceptQueue
+	e.acceptQueue = acceptQueue{}
 	e.acceptMu.Unlock()
 
-	if acceptedCopy == (accepted{}) {
+	if acceptedCopy == (acceptQueue{}) {
 		return
 	}
 
@@ -2499,9 +2486,8 @@ func (e *endpoint) listen(backlog int) tcpip.Error {
 	if e.EndpointState() == StateListen && !e.closed {
 		e.acceptMu.Lock()
 		defer e.acceptMu.Unlock()
-		if e.accepted == (accepted{}) {
+		if e.acceptQueue == (acceptQueue{}) {
 			// listen is called after shutdown.
-			e.accepted.cap = backlog
 			e.shutdownFlags = 0
 			e.rcvQueueInfo.rcvQueueMu.Lock()
 			e.rcvQueueInfo.RcvClosed = false
@@ -2509,11 +2495,11 @@ func (e *endpoint) listen(backlog int) tcpip.Error {
 		} else {
 			// Adjust the size of the backlog iff we can fit
 			// existing pending connections into the new one.
-			if e.accepted.endpoints.Len() > backlog {
+			if e.acceptQueue.endpoints.Len() > backlog {
 				return &tcpip.ErrInvalidEndpointState{}
 			}
-			e.accepted.cap = backlog
 		}
+		e.acceptQueue.capacity = backlog
 
 		// Notify any blocked goroutines that they can attempt to
 		// deliver endpoints again.
@@ -2549,8 +2535,8 @@ func (e *endpoint) listen(backlog int) tcpip.Error {
 	// may be pre-populated with some previously accepted (but not Accepted)
 	// endpoints.
 	e.acceptMu.Lock()
-	if e.accepted == (accepted{}) {
-		e.accepted.cap = backlog
+	if e.acceptQueue == (acceptQueue{}) {
+		e.acceptQueue.capacity = backlog
 	}
 	e.acceptMu.Unlock()
 
@@ -2590,8 +2576,8 @@ func (e *endpoint) Accept(peerAddr *tcpip.FullAddress) (tcpip.Endpoint, *waiter.
 	// Get the new accepted endpoint.
 	var n *endpoint
 	e.acceptMu.Lock()
-	if element := e.accepted.endpoints.Front(); element != nil {
-		n = e.accepted.endpoints.Remove(element).(*endpoint)
+	if element := e.acceptQueue.endpoints.Front(); element != nil {
+		n = e.acceptQueue.endpoints.Remove(element).(*endpoint)
 	}
 	e.acceptMu.Unlock()
 	if n == nil {
