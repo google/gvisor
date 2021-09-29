@@ -23,6 +23,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/errors"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/sighandling"
 )
 
 // SegvError is returned when a safecopy function receives SIGSEGV.
@@ -132,10 +133,10 @@ func initializeAddresses() {
 
 func init() {
 	initializeAddresses()
-	if err := ReplaceSignalHandler(unix.SIGSEGV, addrOfSignalHandler(), &savedSigSegVHandler); err != nil {
+	if err := sighandling.ReplaceSignalHandler(unix.SIGSEGV, addrOfSignalHandler(), &savedSigSegVHandler); err != nil {
 		panic(fmt.Sprintf("Unable to set handler for SIGSEGV: %v", err))
 	}
-	if err := ReplaceSignalHandler(unix.SIGBUS, addrOfSignalHandler(), &savedSigBusHandler); err != nil {
+	if err := sighandling.ReplaceSignalHandler(unix.SIGBUS, addrOfSignalHandler(), &savedSigBusHandler); err != nil {
 		panic(fmt.Sprintf("Unable to set handler for SIGBUS: %v", err))
 	}
 	linuxerr.AddErrorUnwrapper(func(e error) (*errors.Error, bool) {

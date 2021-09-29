@@ -28,9 +28,9 @@ import (
 	"gvisor.dev/gvisor/pkg/procid"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
-	"gvisor.dev/gvisor/pkg/safecopy"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	ktime "gvisor.dev/gvisor/pkg/sentry/time"
+	"gvisor.dev/gvisor/pkg/sighandling"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -723,7 +723,7 @@ func addrOfSigsysHandler() uintptr
 func seccompMmapRules(m *machine) {
 	seccompMmapRulesOnce.Do(func() {
 		// Install the handler.
-		if err := safecopy.ReplaceSignalHandler(unix.SIGSYS, addrOfSigsysHandler(), &savedSigsysHandler); err != nil {
+		if err := sighandling.ReplaceSignalHandler(unix.SIGSYS, addrOfSigsysHandler(), &savedSigsysHandler); err != nil {
 			panic(fmt.Sprintf("Unable to set handler for signal %d: %v", bluepillSignal, err))
 		}
 		rules := []seccomp.RuleSet{}
