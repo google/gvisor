@@ -293,6 +293,19 @@ func CheckStdlib(config *StdlibConfig, analyzers []*analysis.Analyzer) (allFindi
 		break
 	}
 
+	// Go standard library packages using Go 1.18 type parameter features.
+	//
+	// As of writing, analysis tooling is not updated to support type
+	// parameters and will choke on these packages. We skip these packages
+	// entirely for now.
+	//
+	// TODO(b/201686256): remove once tooling can handle type parameters.
+	usesTypeParams := map[string]struct{}{
+		"constraints": struct{}{}, // golang.org/issue/45458
+		"maps":        struct{}{}, // golang.org/issue/47649
+		"slices":      struct{}{}, // golang.org/issue/45955
+	}
+
 	// Aggregate all files by directory.
 	packages := make(map[string]*PackageConfig)
 	for _, file := range config.Srcs {
@@ -306,10 +319,17 @@ func CheckStdlib(config *StdlibConfig, analyzers []*analysis.Analyzer) (allFindi
 			continue // Not a file.
 		}
 		pkg := d[len(rootSrcPrefix):]
+
 		// Skip cmd packages and obvious test files: see above.
 		if strings.HasPrefix(pkg, "cmd/") || strings.HasSuffix(file, "_test.go") {
 			continue
 		}
+
+		if _, ok := usesTypeParams[pkg]; ok {
+			log.Printf("WARNING: Skipping package %q: type param analysis not yet supported", pkg)
+			continue
+		}
+
 		c, ok := packages[pkg]
 		if !ok {
 			c = &PackageConfig{
