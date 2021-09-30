@@ -304,6 +304,22 @@ var allowedSyscalls = seccomp.SyscallRules{
 			seccomp.EqualTo(unix.SPLICE_F_NONBLOCK), /* flags */
 		},
 	},
+	unix.SYS_TIMER_CREATE: []seccomp.Rule{
+		{
+			seccomp.EqualTo(unix.CLOCK_THREAD_CPUTIME_ID), /* which */
+			seccomp.MatchAny{},                            /* sevp */
+			seccomp.MatchAny{},                            /* timerid */
+		},
+	},
+	unix.SYS_TIMER_DELETE: []seccomp.Rule{},
+	unix.SYS_TIMER_SETTIME: []seccomp.Rule{
+		{
+			seccomp.MatchAny{}, /* timerid */
+			seccomp.EqualTo(0), /* flags */
+			seccomp.MatchAny{}, /* new_value */
+			seccomp.EqualTo(0), /* old_value */
+		},
+	},
 	unix.SYS_TGKILL: []seccomp.Rule{
 		{
 			seccomp.EqualTo(uint64(os.Getpid())),
