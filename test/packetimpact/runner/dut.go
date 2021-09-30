@@ -331,6 +331,22 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 				t.Logf("sniffer logs:\n%s", snifferOut)
 			}
 		})
+	}
+
+	// Arm the cleanup hook before we do anthing else. Otherwise failures below
+	// can cause the test to hang in the cleanup hook above.
+	t.Cleanup(func() {
+		// Wait 1 second before killing tcpdump to give it time to flush
+		// any packets. On linux tests killing it immediately can
+		// sometimes result in partial pcaps.
+		time.Sleep(1 * time.Second)
+		if logs, err := testbenchContainer.Exec(ctx, dockerutil.ExecOpts{}, "killall", baseSnifferArgs[0]); err != nil {
+			t.Errorf("failed to kill all sniffers: %s, logs: %s", err, logs)
+		}
+	})
+
+	for _, info := range dutInfos {
+		n := info.Net
 		// When the Linux kernel receives a SYN-ACK for a SYN it didn't send, it
 		// will respond with an RST. In most packetimpact tests, the SYN is sent
 		// by the raw socket, the kernel knows nothing about the connection, this
@@ -343,16 +359,6 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 			}
 		}
 	}
-
-	t.Cleanup(func() {
-		// Wait 1 second before killing tcpdump to give it time to flush
-		// any packets. On linux tests killing it immediately can
-		// sometimes result in partial pcaps.
-		time.Sleep(1 * time.Second)
-		if logs, err := testbenchContainer.Exec(ctx, dockerutil.ExecOpts{}, "killall", baseSnifferArgs[0]); err != nil {
-			t.Errorf("failed to kill all sniffers: %s, logs: %s", err, logs)
-		}
-	})
 
 	// FIXME(b/156449515): Some piece of the system has a race. The old
 	// bash script version had a sleep, so we have one too. The race should
