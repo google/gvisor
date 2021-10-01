@@ -403,29 +403,6 @@ func insertConn(tupleBkt *bucket, replyBkt *bucket, conn *conn) {
 	}
 }
 
-// handlePacket will manipulate the port and address of the packet if the
-// connection exists. Returns whether, after the packet traverses the tables,
-// it should create a new entry in the table.
-func (ct *ConnTrack) handlePacket(pkt *PacketBuffer, hook Hook, r *Route) bool {
-	switch hook {
-	case Prerouting, Input, Output, Postrouting:
-	default:
-		return false
-	}
-
-	if conn, dir := ct.connFor(pkt); conn != nil {
-		conn.handlePacket(pkt, hook, dir, r)
-		return false
-	}
-
-	// Connection not found for the packet.
-	//
-	// If this is the last hook in the data path for this packet (Input if
-	// incoming, Postrouting if outgoing), indicate that a connection should be
-	// inserted by the end of this hook.
-	return hook == Input || hook == Postrouting
-}
-
 func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, dir direction, r *Route) {
 	if pkt.NatDone {
 		return
