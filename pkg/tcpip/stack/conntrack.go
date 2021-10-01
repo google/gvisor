@@ -117,15 +117,18 @@ type conn struct {
 	// update the state of tcb. It is immutable.
 	tcbHook Hook
 
-	// mu protects all mutable state.
 	mu sync.Mutex `state:"nosave"`
 	// tcb is TCB control block. It is used to keep track of states
-	// of tcp connection and is protected by mu.
+	// of tcp connection.
+	//
+	// +checklocks:mu
 	tcb tcpconntrack.TCB
 	// lastUsed is the last time the connection saw a relevant packet, and
-	// is updated by each packet on the connection. It is protected by mu.
+	// is updated by each packet on the connection.
 	//
 	// TODO(gvisor.dev/issue/5939): do not use the ambient clock.
+	//
+	// +checklocks:mu
 	lastUsed time.Time `state:".(unixTime)"`
 }
 
@@ -159,7 +162,8 @@ func (cn *conn) timedOut(now time.Time) bool {
 
 // update the connection tracking state.
 //
-// Precondition: cn.mu must be held.
+// TODO(https://gvisor.dev/issue/6590): annotate r/w locking requirements.
+// +checklocks:cn.mu
 func (cn *conn) updateLocked(pkt *PacketBuffer, hook Hook) {
 	if pkt.TransportProtocolNumber != header.TCPProtocolNumber {
 		return
@@ -200,18 +204,18 @@ type ConnTrack struct {
 	// It is immutable.
 	seed uint32
 
+	mu sync.RWMutex `state:"nosave"`
 	// mu protects the buckets slice, but not buckets' contents. Only take
 	// the write lock if you are modifying the slice or saving for S/R.
-	mu sync.RWMutex `state:"nosave"`
-
-	// buckets is protected by mu.
+	//
+	// +checklocks:mu
 	buckets []bucket
 }
 
 // +stateify savable
 type bucket struct {
-	// mu protects tuples.
-	mu     sync.Mutex `state:"nosave"`
+	mu sync.Mutex `state:"nosave"`
+	// +checklocks:mu
 	tuples tupleList
 }
 
@@ -270,19 +274,20 @@ func (ct *ConnTrack) connFor(pkt *PacketBuffer) (*conn, direction) {
 }
 
 func (ct *ConnTrack) connForTID(tid tupleID) (*conn, direction) {
-	bucket := ct.bucket(tid)
+	bktID := ct.bucket(tid)
 	now := time.Now()
 
 	ct.mu.RLock()
 	defer ct.mu.RUnlock()
-	ct.buckets[bucket].mu.Lock()
-	defer ct.buckets[bucket].mu.Unlock()
+	bkt := &ct.buckets[bktID]
+	bkt.mu.Lock()
+	defer bkt.mu.Unlock()
 
 	// Iterate over the tuples in a bucket, cleaning up any unused
 	// connections we find.
-	for other := ct.buckets[bucket].tuples.Front(); other != nil; other = other.Next() {
+	for other := bkt.tuples.Front(); other != nil; other = other.Next() {
 		// Clean up any timed-out connections we happen to find.
-		if ct.reapTupleLocked(other, bucket, now) {
+		if ct.reapTupleLocked(other, bktID, bkt, now) {
 			// The tuple expired.
 			continue
 		}
@@ -344,27 +349,46 @@ func (ct *ConnTrack) insertSNATConn(pkt *PacketBuffer, hook Hook, port uint16, a
 
 // insertConn inserts conn into the appropriate table bucket.
 func (ct *ConnTrack) insertConn(conn *conn) {
-	// Lock the buckets in the correct order.
-	tupleBucket := ct.bucket(conn.original.tupleID)
-	replyBucket := ct.bucket(conn.reply.tupleID)
+	tupleBktID := ct.bucket(conn.original.tupleID)
+	replyBktID := ct.bucket(conn.reply.tupleID)
+
 	ct.mu.RLock()
 	defer ct.mu.RUnlock()
-	if tupleBucket < replyBucket {
-		ct.buckets[tupleBucket].mu.Lock()
-		ct.buckets[replyBucket].mu.Lock()
-	} else if tupleBucket > replyBucket {
-		ct.buckets[replyBucket].mu.Lock()
-		ct.buckets[tupleBucket].mu.Lock()
-	} else {
+
+	tupleBkt := &ct.buckets[tupleBktID]
+	if tupleBktID == replyBktID {
 		// Both tuples are in the same bucket.
-		ct.buckets[tupleBucket].mu.Lock()
+		tupleBkt.mu.Lock()
+		defer tupleBkt.mu.Unlock()
+		insertConn(tupleBkt, tupleBkt, conn)
+		return
 	}
 
+	// Lock the buckets in the correct order.
+	replyBkt := &ct.buckets[replyBktID]
+	if tupleBktID < replyBktID {
+		tupleBkt.mu.Lock()
+		defer tupleBkt.mu.Unlock()
+		replyBkt.mu.Lock()
+		defer replyBkt.mu.Unlock()
+	} else {
+		replyBkt.mu.Lock()
+		defer replyBkt.mu.Unlock()
+		tupleBkt.mu.Lock()
+		defer tupleBkt.mu.Unlock()
+	}
+	insertConn(tupleBkt, replyBkt, conn)
+}
+
+// TODO(https://gvisor.dev/issue/6590): annotate r/w locking requirements.
+// +checklocks:tupleBkt.mu
+// +checklocks:replyBkt.mu
+func insertConn(tupleBkt *bucket, replyBkt *bucket, conn *conn) {
 	// Now that we hold the locks, ensure the tuple hasn't been inserted by
 	// another thread.
 	// TODO(gvisor.dev/issue/5773): Should check conn.reply.tupleID, too?
 	alreadyInserted := false
-	for other := ct.buckets[tupleBucket].tuples.Front(); other != nil; other = other.Next() {
+	for other := tupleBkt.tuples.Front(); other != nil; other = other.Next() {
 		if other.tupleID == conn.original.tupleID {
 			alreadyInserted = true
 			break
@@ -373,14 +397,8 @@ func (ct *ConnTrack) insertConn(conn *conn) {
 
 	if !alreadyInserted {
 		// Add the tuple to the map.
-		ct.buckets[tupleBucket].tuples.PushFront(&conn.original)
-		ct.buckets[replyBucket].tuples.PushFront(&conn.reply)
-	}
-
-	// Unlocking can happen in any order.
-	ct.buckets[tupleBucket].mu.Unlock()
-	if tupleBucket != replyBucket {
-		ct.buckets[replyBucket].mu.Unlock() // +checklocksforce
+		tupleBkt.tuples.PushFront(&conn.original)
+		replyBkt.tuples.PushFront(&conn.reply)
 	}
 }
 
@@ -529,8 +547,10 @@ func (ct *ConnTrack) maybeInsertNoop(pkt *PacketBuffer, hook Hook) {
 		return
 	}
 	conn := newConn(tid, tid.reply(), manipNone, hook)
-	conn.updateLocked(pkt, hook)
 	ct.insertConn(conn)
+	conn.mu.Lock()
+	defer conn.mu.Unlock()
+	conn.updateLocked(pkt, hook)
 }
 
 // bucket gets the conntrack bucket for a tupleID.
@@ -582,14 +602,15 @@ func (ct *ConnTrack) reapUnused(start int, prevInterval time.Duration) (int, tim
 	defer ct.mu.RUnlock()
 	for i := 0; i < len(ct.buckets)/fractionPerReaping; i++ {
 		idx = (i + start) % len(ct.buckets)
-		ct.buckets[idx].mu.Lock()
-		for tuple := ct.buckets[idx].tuples.Front(); tuple != nil; tuple = tuple.Next() {
+		bkt := &ct.buckets[idx]
+		bkt.mu.Lock()
+		for tuple := bkt.tuples.Front(); tuple != nil; tuple = tuple.Next() {
 			checked++
-			if ct.reapTupleLocked(tuple, idx, now) {
+			if ct.reapTupleLocked(tuple, idx, bkt, now) {
 				expired++
 			}
 		}
-		ct.buckets[idx].mu.Unlock()
+		bkt.mu.Unlock()
 	}
 	// We already checked buckets[idx].
 	idx++
@@ -614,41 +635,45 @@ func (ct *ConnTrack) reapUnused(start int, prevInterval time.Duration) (int, tim
 // reapTupleLocked tries to remove tuple and its reply from the table. It
 // returns whether the tuple's connection has timed out.
 //
-// Preconditions:
-// * ct.mu is locked for reading.
-// * bucket is locked.
-func (ct *ConnTrack) reapTupleLocked(tuple *tuple, bucket int, now time.Time) bool {
+// Precondition: ct.mu is read locked and bkt.mu is write locked.
+// TODO(https://gvisor.dev/issue/6590): annotate r/w locking requirements.
+// +checklocks:ct.mu
+// +checklocks:bkt.mu
+func (ct *ConnTrack) reapTupleLocked(tuple *tuple, bktID int, bkt *bucket, now time.Time) bool {
 	if !tuple.conn.timedOut(now) {
 		return false
 	}
 
 	// To maintain lock order, we can only reap these tuples if the reply
 	// appears later in the table.
-	replyBucket := ct.bucket(tuple.reply())
-	if bucket > replyBucket {
+	replyBktID := ct.bucket(tuple.reply())
+	if bktID > replyBktID {
 		return true
 	}
 
 	// Don't re-lock if both tuples are in the same bucket.
-	differentBuckets := bucket != replyBucket
-	if differentBuckets {
-		ct.buckets[replyBucket].mu.Lock()
+	if bktID != replyBktID {
+		replyBkt := &ct.buckets[replyBktID]
+		replyBkt.mu.Lock()
+		removeConnFromBucket(replyBkt, tuple)
+		replyBkt.mu.Unlock()
+	} else {
+		removeConnFromBucket(bkt, tuple)
 	}
 
 	// We have the buckets locked and can remove both tuples.
-	if tuple.direction == dirOriginal {
-		ct.buckets[replyBucket].tuples.Remove(&tuple.conn.reply)
-	} else {
-		ct.buckets[replyBucket].tuples.Remove(&tuple.conn.original)
-	}
-	ct.buckets[bucket].tuples.Remove(tuple)
-
-	// Don't re-unlock if both tuples are in the same bucket.
-	if differentBuckets {
-		ct.buckets[replyBucket].mu.Unlock() // +checklocksforce
-	}
-
+	bkt.tuples.Remove(tuple)
 	return true
+}
+
+// TODO(https://gvisor.dev/issue/6590): annotate r/w locking requirements.
+// +checklocks:b.mu
+func removeConnFromBucket(b *bucket, tuple *tuple) {
+	if tuple.direction == dirOriginal {
+		b.tuples.Remove(&tuple.conn.reply)
+	} else {
+		b.tuples.Remove(&tuple.conn.original)
+	}
 }
 
 func (ct *ConnTrack) originalDst(epID TransportEndpointID, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber) (tcpip.Address, uint16, tcpip.Error) {
