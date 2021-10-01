@@ -162,7 +162,7 @@ func (rt *RedirectTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, r 
 		// packet of the connection comes here. Other packets will be
 		// manipulated in connection tracking.
 		if conn := ct.insertRedirectConn(pkt, hook, rt.Port, address); conn != nil {
-			ct.handlePacket(pkt, hook, r)
+			conn.handlePacket(pkt, hook, dirOriginal, r)
 		}
 	default:
 		return RuleDrop, 0
@@ -213,7 +213,7 @@ func snatAction(pkt *PacketBuffer, ct *ConnTrack, hook Hook, r *Route, port uint
 	//
 	// Does nothing if the protocol does not support connection tracking.
 	if conn := ct.insertSNATConn(pkt, hook, port, address); conn != nil {
-		ct.handlePacket(pkt, hook, r)
+		conn.handlePacket(pkt, hook, dirOriginal, r)
 	}
 
 	return RuleAccept, 0
