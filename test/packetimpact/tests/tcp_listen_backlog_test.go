@@ -285,20 +285,8 @@ func TestTCPListenBacklog(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 
-			// The pending connection in the SYN queue is now a zombie on gVisor.
-			//
-			// TODO(https://gvisor.dev/issues/6671): Stop retransmitting the SYN-ACK.
-			if i == 0 && !dut.Uname.IsLinux() {
-				seqNum := uint32(*conn.RemoteSeqNum(t) - 1)
-				if got, err := conn.Expect(t, testbench.TCP{SeqNum: &seqNum}, time.Second); err != nil {
-					t.Errorf("%d: expected TCP frame: %s", i, err)
-				} else if got, want := *got.Flags, header.TCPFlagSyn|header.TCPFlagAck; got != want {
-					t.Errorf("%d: got %s, want %s", i, got, want)
-				}
-			} else {
-				if got, err := conn.Expect(t, testbench.TCP{}, time.Second); err == nil {
-					t.Errorf("%d: expected no TCP frame, got %s", i, got)
-				}
+			if got, err := conn.Expect(t, testbench.TCP{}, time.Second); err == nil {
+				t.Errorf("%d: expected no TCP frame, got %s", i, got)
 			}
 		}(i)
 	}
