@@ -100,18 +100,6 @@ type listenContext struct {
 	// netProto indicates the network protocol(IPv4/v6) for the listening
 	// endpoint.
 	netProto tcpip.NetworkProtocolNumber
-
-	// pendingMu protects pendingEndpoints. This should only be accessed
-	// by the listening endpoint's worker goroutine.
-	pendingMu sync.Mutex
-	// pending is used to wait for all pendingEndpoints to finish when
-	// a socket is closed.
-	pending sync.WaitGroup
-	// pendingEndpoints is a set of all endpoints for which a handshake is
-	// in progress.
-	//
-	// +checklocks:pendingMu
-	pendingEndpoints map[*endpoint]struct{}
 }
 
 // timeStamp returns an 8-bit timestamp with a granularity of 64 seconds.
@@ -122,14 +110,13 @@ func timeStamp(clock tcpip.Clock) uint32 {
 // newListenContext creates a new listen context.
 func newListenContext(stk *stack.Stack, protocol *protocol, listenEP *endpoint, rcvWnd seqnum.Size, v6Only bool, netProto tcpip.NetworkProtocolNumber) *listenContext {
 	l := &listenContext{
-		stack:            stk,
-		protocol:         protocol,
-		rcvWnd:           rcvWnd,
-		hasher:           sha1.New(),
-		v6Only:           v6Only,
-		netProto:         netProto,
-		listenEP:         listenEP,
-		pendingEndpoints: make(map[*endpoint]struct{}),
+		stack:    stk,
+		protocol: protocol,
+		rcvWnd:   rcvWnd,
+		hasher:   sha1.New(),
+		v6Only:   v6Only,
+		netProto: netProto,
+		listenEP: listenEP,
 	}
 
 	for i := range l.nonce {
@@ -422,6 +409,10 @@ type acceptQueue struct {
 	// dispatcher's list.
 	endpoints list.List `state:".([]*endpoint)"`
 
+	// pendingEndpoints is a set of all endpoints for which a handshake is
+	// in progress.
+	pendingEndpoints map[*endpoint]struct{}
+
 	// capacity is the maximum number of endpoints that can be in endpoints.
 	capacity int
 }
@@ -473,13 +464,11 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 			e.acceptMu.Lock()
 			defer e.acceptMu.Unlock()
 
-			ctx.pendingMu.Lock()
-			defer ctx.pendingMu.Unlock()
 			// The capacity of the accepted queue would always be one greater than the
 			// listen backlog. But, the SYNRCVD connections count is always checked
 			// against the listen backlog value for Linux parity reason.
 			// https://github.com/torvalds/linux/blob/7acac4b3196/include/net/inet_connection_sock.h#L280
-			if len(ctx.pendingEndpoints) == e.acceptQueue.capacity-1 {
+			if len(e.acceptQueue.pendingEndpoints) == e.acceptQueue.capacity-1 {
 				return true, nil
 			}
 
@@ -490,15 +479,16 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 				return false, err
 			}
 
-			ctx.pendingEndpoints[h.ep] = struct{}{}
-			ctx.pending.Add(1)
+			e.acceptQueue.pendingEndpoints[h.ep] = struct{}{}
+			e.pendingAccepted.Add(1)
 
 			go func() {
 				defer func() {
-					ctx.pendingMu.Lock()
-					defer ctx.pendingMu.Unlock()
-					delete(ctx.pendingEndpoints, h.ep)
-					ctx.pending.Done()
+					e.pendingAccepted.Done()
+
+					e.acceptMu.Lock()
+					defer e.acceptMu.Unlock()
+					delete(e.acceptQueue.pendingEndpoints, h.ep)
 				}()
 
 				// Note that startHandshake returns a locked endpoint. The force call
@@ -514,11 +504,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 				e.stack.Stats().TCP.PassiveConnectionOpenings.Increment()
 
 				// Deliver the endpoint to the accept queue.
-				e.mu.Lock()
-				e.pendingAccepted.Add(1)
-				e.mu.Unlock()
-				defer e.pendingAccepted.Done()
-
+				//
 				// Drop the lock before notifying to avoid deadlock in user-specified
 				// callbacks.
 				delivered := func() bool {
@@ -760,14 +746,6 @@ func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) {
 
 	defer func() {
 		e.setEndpointState(StateClose)
-
-		// Close any endpoints in SYN-RCVD state.
-		ctx.pendingMu.Lock()
-		for n := range ctx.pendingEndpoints {
-			n.notifyProtocolGoroutine(notifyClose)
-		}
-		ctx.pendingMu.Unlock()
-		ctx.pending.Wait()
 
 		// Do cleanup if needed.
 		e.completeWorkerLocked()

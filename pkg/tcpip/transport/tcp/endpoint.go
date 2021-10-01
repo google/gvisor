@@ -1081,16 +1081,20 @@ func (e *endpoint) closeNoShutdownLocked() {
 // handshake but not yet been delivered to the application.
 func (e *endpoint) closePendingAcceptableConnectionsLocked() {
 	e.acceptMu.Lock()
-	acceptedCopy := e.acceptQueue
-	e.acceptQueue = acceptQueue{}
+	// Close any endpoints in SYN-RCVD state.
+	for n := range e.acceptQueue.pendingEndpoints {
+		n.notifyProtocolGoroutine(notifyClose)
+	}
+	e.acceptQueue.pendingEndpoints = nil
+	// Reset all connections that are waiting to be accepted.
+	for n := e.acceptQueue.endpoints.Front(); n != nil; n = n.Next() {
+		n.Value.(*endpoint).notifyProtocolGoroutine(notifyReset)
+	}
+	e.acceptQueue.endpoints.Init()
 	e.acceptMu.Unlock()
 
 	e.acceptCond.Broadcast()
 
-	// Reset all connections that are waiting to be accepted.
-	for n := acceptedCopy.endpoints.Front(); n != nil; n = n.Next() {
-		n.Value.(*endpoint).notifyProtocolGoroutine(notifyReset)
-	}
 	// Wait for reset of all endpoints that are still waiting to be delivered to
 	// the now closed accepted.
 	e.pendingAccepted.Wait()
@@ -2490,6 +2494,10 @@ func (e *endpoint) listen(backlog int) tcpip.Error {
 		}
 		e.acceptQueue.capacity = backlog
 
+		if e.acceptQueue.pendingEndpoints == nil {
+			e.acceptQueue.pendingEndpoints = make(map[*endpoint]struct{})
+		}
+
 		e.shutdownFlags = 0
 		e.rcvQueueInfo.rcvQueueMu.Lock()
 		e.rcvQueueInfo.RcvClosed = false
@@ -2529,6 +2537,9 @@ func (e *endpoint) listen(backlog int) tcpip.Error {
 	// may be pre-populated with some previously accepted (but not Accepted)
 	// endpoints.
 	e.acceptMu.Lock()
+	if e.acceptQueue.pendingEndpoints == nil {
+		e.acceptQueue.pendingEndpoints = make(map[*endpoint]struct{})
+	}
 	if e.acceptQueue.capacity == 0 {
 		e.acceptQueue.capacity = backlog
 	}
