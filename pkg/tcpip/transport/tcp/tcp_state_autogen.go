@@ -14,6 +14,7 @@ func (a *acceptQueue) StateTypeName() string {
 func (a *acceptQueue) StateFields() []string {
 	return []string{
 		"endpoints",
+		"pendingEndpoints",
 		"capacity",
 	}
 }
@@ -26,14 +27,16 @@ func (a *acceptQueue) StateSave(stateSinkObject state.Sink) {
 	var endpointsValue []*endpoint
 	endpointsValue = a.saveEndpoints()
 	stateSinkObject.SaveValue(0, endpointsValue)
-	stateSinkObject.Save(1, &a.capacity)
+	stateSinkObject.Save(1, &a.pendingEndpoints)
+	stateSinkObject.Save(2, &a.capacity)
 }
 
 func (a *acceptQueue) afterLoad() {}
 
 // +checklocksignore
 func (a *acceptQueue) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(1, &a.capacity)
+	stateSourceObject.Load(1, &a.pendingEndpoints)
+	stateSourceObject.Load(2, &a.capacity)
 	stateSourceObject.LoadValue(0, new([]*endpoint), func(y interface{}) { a.loadEndpoints(y.([]*endpoint)) })
 }
 
