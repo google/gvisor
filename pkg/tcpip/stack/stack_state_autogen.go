@@ -207,37 +207,37 @@ func (it *IPTables) StateTypeName() string {
 
 func (it *IPTables) StateFields() []string {
 	return []string{
+		"priorities",
+		"connections",
+		"reaperDone",
 		"mu",
 		"v4Tables",
 		"v6Tables",
 		"modified",
-		"priorities",
-		"connections",
-		"reaperDone",
 	}
 }
 
 // +checklocksignore
 func (it *IPTables) StateSave(stateSinkObject state.Sink) {
 	it.beforeSave()
-	stateSinkObject.Save(0, &it.mu)
-	stateSinkObject.Save(1, &it.v4Tables)
-	stateSinkObject.Save(2, &it.v6Tables)
-	stateSinkObject.Save(3, &it.modified)
-	stateSinkObject.Save(4, &it.priorities)
-	stateSinkObject.Save(5, &it.connections)
-	stateSinkObject.Save(6, &it.reaperDone)
+	stateSinkObject.Save(0, &it.priorities)
+	stateSinkObject.Save(1, &it.connections)
+	stateSinkObject.Save(2, &it.reaperDone)
+	stateSinkObject.Save(3, &it.mu)
+	stateSinkObject.Save(4, &it.v4Tables)
+	stateSinkObject.Save(5, &it.v6Tables)
+	stateSinkObject.Save(6, &it.modified)
 }
 
 // +checklocksignore
 func (it *IPTables) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &it.mu)
-	stateSourceObject.Load(1, &it.v4Tables)
-	stateSourceObject.Load(2, &it.v6Tables)
-	stateSourceObject.Load(3, &it.modified)
-	stateSourceObject.Load(4, &it.priorities)
-	stateSourceObject.Load(5, &it.connections)
-	stateSourceObject.Load(6, &it.reaperDone)
+	stateSourceObject.Load(0, &it.priorities)
+	stateSourceObject.Load(1, &it.connections)
+	stateSourceObject.Load(2, &it.reaperDone)
+	stateSourceObject.Load(3, &it.mu)
+	stateSourceObject.Load(4, &it.v4Tables)
+	stateSourceObject.Load(5, &it.v6Tables)
+	stateSourceObject.Load(6, &it.modified)
 	stateSourceObject.AfterLoad(it.afterLoad)
 }
 
