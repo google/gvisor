@@ -173,7 +173,7 @@ func (c *containerMounter) mountAll(conf *config.Config, procArgs *kernel.Create
 	rootProcArgs.Credentials = rootCreds
 	rootProcArgs.Umask = 0022
 	rootProcArgs.MaxSymlinkTraversals = linux.MaxSymlinkTraversals
-	rootCtx := procArgs.NewContext(c.k)
+	rootCtx := rootProcArgs.NewContext(c.k)
 
 	mns, err := c.createMountNamespaceVFS2(rootCtx, conf, rootCreds)
 	if err != nil {
