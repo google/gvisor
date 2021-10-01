@@ -268,6 +268,6 @@ func cpuInfoData(k *kernel.Kernel) string {
 	return buf.String()
 }
 
-func shmData(v uint64) dynamicInode {
+func ipcData(v uint64) dynamicInode {
 	return newStaticFile(strconv.FormatUint(v, 10))
 }
