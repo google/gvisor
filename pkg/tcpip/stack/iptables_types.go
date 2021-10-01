@@ -81,17 +81,6 @@ const (
 //
 // +stateify savable
 type IPTables struct {
-	// mu protects v4Tables, v6Tables, and modified.
-	mu sync.RWMutex
-	// v4Tables and v6tables map tableIDs to tables. They hold builtin
-	// tables only, not user tables. mu must be locked for accessing.
-	v4Tables [NumTables]Table
-	v6Tables [NumTables]Table
-	// modified is whether tables have been modified at least once. It is
-	// used to elide the iptables performance overhead for workloads that
-	// don't utilize iptables.
-	modified bool
-
 	// priorities maps each hook to a list of table names. The order of the
 	// list is the order in which each table should be visited for that
 	// hook. It is immutable.
@@ -101,6 +90,21 @@ type IPTables struct {
 
 	// reaperDone can be signaled to stop the reaper goroutine.
 	reaperDone chan struct{}
+
+	mu sync.RWMutex
+	// v4Tables and v6tables map tableIDs to tables. They hold builtin
+	// tables only, not user tables.
+	//
+	// +checklocks:mu
+	v4Tables [NumTables]Table
+	// +checklocks:mu
+	v6Tables [NumTables]Table
+	// modified is whether tables have been modified at least once. It is
+	// used to elide the iptables performance overhead for workloads that
+	// don't utilize iptables.
+	//
+	// +checklocks:mu
+	modified bool
 }
 
 // VisitTargets traverses all the targets of all tables and replaces each with

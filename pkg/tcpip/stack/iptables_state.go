@@ -26,11 +26,15 @@ type unixTime struct {
 
 // saveLastUsed is invoked by stateify.
 func (cn *conn) saveLastUsed() unixTime {
+	cn.mu.Lock()
+	defer cn.mu.Unlock()
 	return unixTime{cn.lastUsed.Unix(), cn.lastUsed.UnixNano()}
 }
 
 // loadLastUsed is invoked by stateify.
 func (cn *conn) loadLastUsed(unix unixTime) {
+	cn.mu.Lock()
+	defer cn.mu.Unlock()
 	cn.lastUsed = time.Unix(unix.second, unix.nano)
 }
 
