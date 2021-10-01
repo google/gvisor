@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <linux/msg.h>
 #include <linux/sem.h>
 #include <linux/shm.h>
 
@@ -71,6 +72,27 @@ TEST(ProcDefaults, PresenceOfSem) {
   ASSERT_EQ(semmns, SEMMNS);
   ASSERT_EQ(semopm, SEMOPM);
   ASSERT_EQ(semmni, SEMMNI);
+}
+
+TEST(ProcDefaults, PresenceOfMsgMniMaxMnb) {
+  uint64_t msgmni = 0;
+  uint64_t msgmax = 0;
+  uint64_t msgmnb = 0;
+
+  std::string proc_file;
+  proc_file = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/msgmni"));
+  ASSERT_FALSE(proc_file.empty());
+  ASSERT_TRUE(absl::SimpleAtoi(proc_file, &msgmni));
+  proc_file = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/msgmax"));
+  ASSERT_FALSE(proc_file.empty());
+  ASSERT_TRUE(absl::SimpleAtoi(proc_file, &msgmax));
+  proc_file = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/msgmnb"));
+  ASSERT_FALSE(proc_file.empty());
+  ASSERT_TRUE(absl::SimpleAtoi(proc_file, &msgmnb));
+
+  ASSERT_EQ(msgmni, MSGMNI);
+  ASSERT_EQ(msgmax, MSGMAX);
+  ASSERT_EQ(msgmnb, MSGMNB);
 }
 
 }  // namespace
