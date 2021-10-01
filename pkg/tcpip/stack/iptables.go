@@ -431,7 +431,9 @@ func (it *IPTables) startReaper(interval time.Duration) {
 //
 // Precondition:  The packets' network and transport header must be set.
 func (it *IPTables) CheckOutputPackets(pkts PacketBufferList, r *Route, outNicName string) (drop map[*PacketBuffer]struct{}, natPkts map[*PacketBuffer]struct{}) {
-	return it.checkPackets(Output, pkts, r, nil /* addressEP */, outNicName)
+	return checkPackets(pkts, func(pkt *PacketBuffer) bool {
+		return it.CheckOutput(pkt, r, outNicName)
+	})
 }
 
 // CheckPostroutingPackets performs the postrouting hook on the packets.
@@ -440,20 +442,15 @@ func (it *IPTables) CheckOutputPackets(pkts PacketBufferList, r *Route, outNicNa
 //
 // Precondition:  The packets' network and transport header must be set.
 func (it *IPTables) CheckPostroutingPackets(pkts PacketBufferList, r *Route, addressEP AddressableEndpoint, outNicName string) (drop map[*PacketBuffer]struct{}, natPkts map[*PacketBuffer]struct{}) {
-	return it.checkPackets(Postrouting, pkts, r, addressEP, outNicName)
+	return checkPackets(pkts, func(pkt *PacketBuffer) bool {
+		return it.CheckPostrouting(pkt, r, addressEP, outNicName)
+	})
 }
 
-// checkPackets runs pkts through the rules for hook and returns a map of
-// packets that should not go forward.
-//
-// NOTE: unlike the Check API the returned map contains packets that should be
-// dropped.
-//
-// Precondition:  The packets' network and transport header must be set.
-func (it *IPTables) checkPackets(hook Hook, pkts PacketBufferList, r *Route, addressEP AddressableEndpoint, outNicName string) (drop map[*PacketBuffer]struct{}, natPkts map[*PacketBuffer]struct{}) {
+func checkPackets(pkts PacketBufferList, f func(*PacketBuffer) bool) (drop map[*PacketBuffer]struct{}, natPkts map[*PacketBuffer]struct{}) {
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
 		if !pkt.NatDone {
-			if ok := it.check(hook, pkt, r, addressEP, "" /* inNicName */, outNicName); !ok {
+			if ok := f(pkt); !ok {
 				if drop == nil {
 					drop = make(map[*PacketBuffer]struct{})
 				}
