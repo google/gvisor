@@ -89,7 +89,6 @@ func (cn *conn) StateFields() []string {
 		"original",
 		"reply",
 		"manip",
-		"tcbHook",
 		"tcb",
 		"lastUsed",
 	}
@@ -102,12 +101,11 @@ func (cn *conn) StateSave(stateSinkObject state.Sink) {
 	cn.beforeSave()
 	var lastUsedValue unixTime
 	lastUsedValue = cn.saveLastUsed()
-	stateSinkObject.SaveValue(5, lastUsedValue)
+	stateSinkObject.SaveValue(4, lastUsedValue)
 	stateSinkObject.Save(0, &cn.original)
 	stateSinkObject.Save(1, &cn.reply)
 	stateSinkObject.Save(2, &cn.manip)
-	stateSinkObject.Save(3, &cn.tcbHook)
-	stateSinkObject.Save(4, &cn.tcb)
+	stateSinkObject.Save(3, &cn.tcb)
 }
 
 func (cn *conn) afterLoad() {}
@@ -117,9 +115,8 @@ func (cn *conn) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &cn.original)
 	stateSourceObject.Load(1, &cn.reply)
 	stateSourceObject.Load(2, &cn.manip)
-	stateSourceObject.Load(3, &cn.tcbHook)
-	stateSourceObject.Load(4, &cn.tcb)
-	stateSourceObject.LoadValue(5, new(unixTime), func(y interface{}) { cn.loadLastUsed(y.(unixTime)) })
+	stateSourceObject.Load(3, &cn.tcb)
+	stateSourceObject.LoadValue(4, new(unixTime), func(y interface{}) { cn.loadLastUsed(y.(unixTime)) })
 }
 
 func (ct *ConnTrack) StateTypeName() string {

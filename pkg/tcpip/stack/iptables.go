@@ -388,7 +388,7 @@ func (it *IPTables) check(hook Hook, pkt *PacketBuffer, r *Route, addressEP Addr
 	// binding is created: this usually does not map the packet, but exists
 	// to ensure we don't map another stream over an existing one."
 	if shouldTrack {
-		it.connections.maybeInsertNoop(pkt, hook)
+		it.connections.maybeInsertNoop(pkt)
 	}
 
 	// Every table returned Accept.
