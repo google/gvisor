@@ -271,7 +271,17 @@ const (
 //
 // Precondition: The packet's network and transport header must be set.
 func (it *IPTables) CheckPrerouting(pkt *PacketBuffer, addressEP AddressableEndpoint, inNicName string) bool {
-	return it.check(Prerouting, pkt, nil /* route */, addressEP, inNicName, "" /* outNicName */)
+	const hook = Prerouting
+
+	if it.shouldSkip(pkt.NetworkProtocolNumber) {
+		return true
+	}
+
+	if conn, dir := it.connections.connFor(pkt); conn != nil {
+		conn.handlePacket(pkt, hook, dir, nil /* route */)
+	}
+
+	return it.check(hook, pkt, nil /* route */, addressEP, inNicName, "" /* outNicName */)
 }
 
 // CheckInput performs the input hook on the packet.
@@ -281,7 +291,26 @@ func (it *IPTables) CheckPrerouting(pkt *PacketBuffer, addressEP AddressableEndp
 //
 // Precondition: The packet's network and transport header must be set.
 func (it *IPTables) CheckInput(pkt *PacketBuffer, inNicName string) bool {
-	return it.check(Input, pkt, nil /* route */, nil /* addressEP */, inNicName, "" /* outNicName */)
+	const hook = Input
+
+	if it.shouldSkip(pkt.NetworkProtocolNumber) {
+		return true
+	}
+
+	shouldTrack := true
+	if conn, dir := it.connections.connFor(pkt); conn != nil {
+		conn.handlePacket(pkt, hook, dir, nil /* route */)
+		shouldTrack = false
+	}
+
+	if !it.check(hook, pkt, nil /* route */, nil /* addressEP */, inNicName, "" /* outNicName */) {
+		return false
+	}
+
+	// This is the last hook a packet will perform so if the packet's
+	// connection is not tracked, we may need to add a no-op entry.
+	it.maybeinsertNoopConn(pkt, hook, shouldTrack)
+	return true
 }
 
 // CheckForward performs the forward hook on the packet.
@@ -291,6 +320,10 @@ func (it *IPTables) CheckInput(pkt *PacketBuffer, inNicName string) bool {
 //
 // Precondition: The packet's network and transport header must be set.
 func (it *IPTables) CheckForward(pkt *PacketBuffer, inNicName, outNicName string) bool {
+	if it.shouldSkip(pkt.NetworkProtocolNumber) {
+		return true
+	}
+
 	return it.check(Forward, pkt, nil /* route */, nil /* addressEP */, inNicName, outNicName)
 }
 
@@ -301,7 +334,17 @@ func (it *IPTables) CheckForward(pkt *PacketBuffer, inNicName, outNicName string
 //
 // Precondition: The packet's network and transport header must be set.
 func (it *IPTables) CheckOutput(pkt *PacketBuffer, r *Route, outNicName string) bool {
-	return it.check(Output, pkt, r, nil /* addressEP */, "" /* inNicName */, outNicName)
+	const hook = Output
+
+	if it.shouldSkip(pkt.NetworkProtocolNumber) {
+		return true
+	}
+
+	if conn, dir := it.connections.connFor(pkt); conn != nil {
+		conn.handlePacket(pkt, hook, dir, r)
+	}
+
+	return it.check(hook, pkt, r, nil /* addressEP */, "" /* inNicName */, outNicName)
 }
 
 // CheckPostrouting performs the postrouting hook on the packet.
@@ -311,7 +354,41 @@ func (it *IPTables) CheckOutput(pkt *PacketBuffer, r *Route, outNicName string) 
 //
 // Precondition: The packet's network and transport header must be set.
 func (it *IPTables) CheckPostrouting(pkt *PacketBuffer, r *Route, addressEP AddressableEndpoint, outNicName string) bool {
-	return it.check(Postrouting, pkt, r, addressEP, "" /* inNicName */, outNicName)
+	const hook = Postrouting
+
+	if it.shouldSkip(pkt.NetworkProtocolNumber) {
+		return true
+	}
+
+	shouldTrack := true
+	if conn, dir := it.connections.connFor(pkt); conn != nil {
+		conn.handlePacket(pkt, hook, dir, r)
+		shouldTrack = false
+	}
+
+	if !it.check(hook, pkt, r, addressEP, "" /* inNicName */, outNicName) {
+		return false
+	}
+
+	// This is the last hook a packet will perform so if the packet's
+	// connection is not tracked, we may need to add a no-op entry.
+	it.maybeinsertNoopConn(pkt, hook, shouldTrack)
+	return true
+}
+
+func (it *IPTables) shouldSkip(netProto tcpip.NetworkProtocolNumber) bool {
+	switch netProto {
+	case header.IPv4ProtocolNumber, header.IPv6ProtocolNumber:
+	default:
+		// IPTables only supports IPv4/IPv6.
+		return true
+	}
+
+	it.mu.RLock()
+	defer it.mu.RUnlock()
+	// Many users never configure iptables. Spare them the cost of rule
+	// traversal if rules have never been set.
+	return !it.modified
 }
 
 // check runs pkt through the rules for hook. It returns true when the packet
@@ -320,20 +397,8 @@ func (it *IPTables) CheckPostrouting(pkt *PacketBuffer, r *Route, addressEP Addr
 //
 // Precondition: The packet's network and transport header must be set.
 func (it *IPTables) check(hook Hook, pkt *PacketBuffer, r *Route, addressEP AddressableEndpoint, inNicName, outNicName string) bool {
-	if pkt.NetworkProtocolNumber != header.IPv4ProtocolNumber && pkt.NetworkProtocolNumber != header.IPv6ProtocolNumber {
-		return true
-	}
-	// Many users never configure iptables. Spare them the cost of rule
-	// traversal if rules have never been set.
 	it.mu.RLock()
 	defer it.mu.RUnlock()
-	if !it.modified {
-		return true
-	}
-
-	// Packets are manipulated only if connection and matching
-	// NAT rule exists.
-	shouldTrack := it.connections.handlePacket(pkt, hook, r)
 
 	// Go through each table containing the hook.
 	priorities := it.priorities[hook]
@@ -377,6 +442,10 @@ func (it *IPTables) check(hook Hook, pkt *PacketBuffer, r *Route, addressEP Addr
 		}
 	}
 
+	return true
+}
+
+func (it *IPTables) maybeinsertNoopConn(pkt *PacketBuffer, hook Hook, shouldTrack bool) {
 	// If this connection should be tracked, try to add an entry for it. If
 	// traversing the nat table didn't end in adding an entry,
 	// maybeInsertNoop will add a no-op entry for the connection. This is
@@ -390,9 +459,6 @@ func (it *IPTables) check(hook Hook, pkt *PacketBuffer, r *Route, addressEP Addr
 	if shouldTrack {
 		it.connections.maybeInsertNoop(pkt)
 	}
-
-	// Every table returned Accept.
-	return true
 }
 
 // beforeSave is invoked by stateify.
