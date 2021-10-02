@@ -113,7 +113,7 @@ type conn struct {
 	// TODO(gvisor.dev/issue/5696): Support updating manipulation type.
 	manip manipType
 
-	mu sync.Mutex `state:"nosave"`
+	mu sync.RWMutex `state:"nosave"`
 	// tcb is TCB control block. It is used to keep track of states
 	// of tcp connection.
 	//
@@ -143,8 +143,8 @@ func newConn(orig, reply tupleID, manip manipType) *conn {
 func (cn *conn) timedOut(now time.Time) bool {
 	const establishedTimeout = 5 * 24 * time.Hour
 	const defaultTimeout = 120 * time.Second
-	cn.mu.Lock()
-	defer cn.mu.Unlock()
+	cn.mu.RLock()
+	defer cn.mu.RUnlock()
 	if cn.tcb.State() == tcpconntrack.ResultAlive {
 		// Use the same default as Linux, which doesn't delete
 		// established connections for 5(!) days.
@@ -215,7 +215,7 @@ type ConnTrack struct {
 
 // +stateify savable
 type bucket struct {
-	mu sync.Mutex `state:"nosave"`
+	mu sync.RWMutex `state:"nosave"`
 	// +checklocks:mu
 	tuples tupleList
 }
@@ -279,20 +279,13 @@ func (ct *ConnTrack) connForTID(tid tupleID) (*conn, direction) {
 	now := time.Now()
 
 	ct.mu.RLock()
-	defer ct.mu.RUnlock()
 	bkt := &ct.buckets[bktID]
-	bkt.mu.Lock()
-	defer bkt.mu.Unlock()
+	ct.mu.RUnlock()
 
-	// Iterate over the tuples in a bucket, cleaning up any unused
-	// connections we find.
+	bkt.mu.RLock()
+	defer bkt.mu.RUnlock()
 	for other := bkt.tuples.Front(); other != nil; other = other.Next() {
-		// Clean up any timed-out connections we happen to find.
-		if ct.reapTupleLocked(other, bktID, bkt, now) {
-			// The tuple expired.
-			continue
-		}
-		if tid == other.tupleID {
+		if tid == other.tupleID && !other.conn.timedOut(now) {
 			return other.conn, other.direction
 		}
 	}
