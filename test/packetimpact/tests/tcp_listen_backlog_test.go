@@ -150,17 +150,10 @@ func TestTCPListenBacklog(t *testing.T) {
 		conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{})
 		defer conn.Close(t)
 		conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
-		if !dut.Uname.IsLinux() {
-			// TODO(https://gvisor.dev/issues/6683): Expect a RST.
-			if got, err := conn.Expect(t, testbench.TCP{}, time.Second); err == nil {
-				t.Errorf("expected no TCP frame, got %s", got)
-			}
-		} else {
-			if got, err := conn.Expect(t, testbench.TCP{}, time.Second); err != nil {
-				t.Errorf("expected TCP frame: %s", err)
-			} else if got, want := *got.Flags, header.TCPFlagRst; got != want {
-				t.Errorf("got %s, want %s", got, want)
-			}
+		if got, err := conn.Expect(t, testbench.TCP{}, time.Second); err != nil {
+			t.Errorf("expected TCP frame: %s", err)
+		} else if got, want := *got.Flags, header.TCPFlagRst; got != want {
+			t.Errorf("got %s, want %s", got, want)
 		}
 	}()
 
