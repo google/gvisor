@@ -144,13 +144,33 @@ func TestTCPListenBacklog(t *testing.T) {
 		}
 	}
 
+	// While the accept queue is still full, send an unexpected ACK from a new
+	// socket. The listener should reply with an RST.
+	func() {
+		conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{})
+		defer conn.Close(t)
+		conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
+		if !dut.Uname.IsLinux() {
+			// TODO(https://gvisor.dev/issues/6683): Expect a RST.
+			if got, err := conn.Expect(t, testbench.TCP{}, time.Second); err == nil {
+				t.Errorf("expected no TCP frame, got %s", got)
+			}
+		} else {
+			if got, err := conn.Expect(t, testbench.TCP{}, time.Second); err != nil {
+				t.Errorf("expected TCP frame: %s", err)
+			} else if got, want := *got.Flags, header.TCPFlagRst; got != want {
+				t.Errorf("got %s, want %s", got, want)
+			}
+		}
+	}()
+
 	func() {
 		// Now initiate a new connection when the accept queue is full.
-		connectingConn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{})
-		defer connectingConn.Close(t)
+		conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{})
+		defer conn.Close(t)
 		// Expect dut connection to drop the SYN.
-		connectingConn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn)})
-		if got, err := connectingConn.Expect(t, testbench.TCP{}, time.Second); err == nil {
+		conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn)})
+		if got, err := conn.Expect(t, testbench.TCP{}, time.Second); err == nil {
 			t.Fatalf("expected no TCP frame, got %s", got)
 		}
 	}()
