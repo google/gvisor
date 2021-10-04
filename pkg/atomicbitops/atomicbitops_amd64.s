@@ -16,28 +16,28 @@
 
 #include "textflag.h"
 
-TEXT ·AndUint32(SB),$0-12
+TEXT ·AndUint32(SB),NOSPLIT,$0-12
   MOVQ  addr+0(FP), BX
   MOVL  val+8(FP), AX
   LOCK
   ANDL   AX, 0(BX)
   RET
 
-TEXT ·OrUint32(SB),$0-12
+TEXT ·OrUint32(SB),NOSPLIT,$0-12
   MOVQ  addr+0(FP), BX
   MOVL  val+8(FP), AX
   LOCK
   ORL   AX, 0(BX)
   RET
 
-TEXT ·XorUint32(SB),$0-12
+TEXT ·XorUint32(SB),NOSPLIT,$0-12
   MOVQ  addr+0(FP), BX
   MOVL  val+8(FP), AX
   LOCK
   XORL   AX, 0(BX)
   RET
 
-TEXT ·CompareAndSwapUint32(SB),$0-20
+TEXT ·CompareAndSwapUint32(SB),NOSPLIT,$0-20
   MOVQ  addr+0(FP), DI
   MOVL  old+8(FP), AX
   MOVL  new+12(FP), DX
@@ -46,28 +46,28 @@ TEXT ·CompareAndSwapUint32(SB),$0-20
   MOVL  AX, ret+16(FP)
   RET
 
-TEXT ·AndUint64(SB),$0-16
+TEXT ·AndUint64(SB),NOSPLIT,$0-16
   MOVQ  addr+0(FP), BX
   MOVQ  val+8(FP), AX
   LOCK
   ANDQ   AX, 0(BX)
   RET
 
-TEXT ·OrUint64(SB),$0-16
+TEXT ·OrUint64(SB),NOSPLIT,$0-16
   MOVQ  addr+0(FP), BX
   MOVQ  val+8(FP), AX
   LOCK
   ORQ   AX, 0(BX)
   RET
 
-TEXT ·XorUint64(SB),$0-16
+TEXT ·XorUint64(SB),NOSPLIT,$0-16
   MOVQ  addr+0(FP), BX
   MOVQ  val+8(FP), AX
   LOCK
   XORQ   AX, 0(BX)
   RET
 
-TEXT ·CompareAndSwapUint64(SB),$0-32
+TEXT ·CompareAndSwapUint64(SB),NOSPLIT,$0-32
   MOVQ  addr+0(FP), DI
   MOVQ  old+8(FP), AX
   MOVQ  new+16(FP), DX
