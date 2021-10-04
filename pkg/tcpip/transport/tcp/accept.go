@@ -583,23 +583,6 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		return nil
 
 	case s.flags.Contains(header.TCPFlagAck):
-		// Keep hold of acceptMu until the new endpoint is in the accept queue (or
-		// if there is an error), to guarantee that we will keep our spot in the
-		// queue even if another handshake from the syn queue completes.
-		e.acceptMu.Lock()
-		if e.acceptQueue.isFull() {
-			// Silently drop the ack as the application can't accept
-			// the connection at this point. The ack will be
-			// retransmitted by the sender anyway and we can
-			// complete the connection at the time of retransmit if
-			// the backlog has space.
-			e.acceptMu.Unlock()
-			e.stack.Stats().TCP.ListenOverflowAckDrop.Increment()
-			e.stats.ReceiveErrors.ListenOverflowAckDrop.Increment()
-			e.stack.Stats().DroppedPackets.Increment()
-			return nil
-		}
-
 		iss := s.ackNumber - 1
 		irs := s.sequenceNumber - 1
 
@@ -615,7 +598,6 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		// Validate the cookie.
 		data, ok := ctx.isCookieValid(s.id, iss, irs)
 		if !ok || int(data) >= len(mssTable) {
-			e.acceptMu.Unlock()
 			e.stack.Stats().TCP.ListenOverflowInvalidSynCookieRcvd.Increment()
 			e.stack.Stats().DroppedPackets.Increment()
 
@@ -636,6 +618,24 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 			// ACK was received from the sender.
 			return replyWithReset(e.stack, s, e.sendTOS, e.ttl)
 		}
+
+		// Keep hold of acceptMu until the new endpoint is in the accept queue (or
+		// if there is an error), to guarantee that we will keep our spot in the
+		// queue even if another handshake from the syn queue completes.
+		e.acceptMu.Lock()
+		if e.acceptQueue.isFull() {
+			// Silently drop the ack as the application can't accept
+			// the connection at this point. The ack will be
+			// retransmitted by the sender anyway and we can
+			// complete the connection at the time of retransmit if
+			// the backlog has space.
+			e.acceptMu.Unlock()
+			e.stack.Stats().TCP.ListenOverflowAckDrop.Increment()
+			e.stats.ReceiveErrors.ListenOverflowAckDrop.Increment()
+			e.stack.Stats().DroppedPackets.Increment()
+			return nil
+		}
+
 		e.stack.Stats().TCP.ListenOverflowSynCookieRcvd.Increment()
 		// Create newly accepted endpoint and deliver it.
 		rcvdSynOptions := header.TCPSynOptions{
