@@ -119,7 +119,6 @@ func (r *Rx) PostBuffers(buffers []RxBuffer) bool {
 	}
 
 	r.tx.Flush()
-
 	return true
 }
 
@@ -131,7 +130,6 @@ func (r *Rx) PostBuffers(buffers []RxBuffer) bool {
 func (r *Rx) Dequeue(bufs []RxBuffer) ([]RxBuffer, uint32) {
 	for {
 		outBufs := bufs
-
 		// Pull the next descriptor from the rx pipe.
 		b := r.rx.Pull()
 		if b == nil {
