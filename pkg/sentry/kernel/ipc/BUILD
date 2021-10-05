@@ -5,6 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "ipc",
     srcs = [
+        "ns.go",
         "object.go",
         "registry.go",
     ],
