@@ -42,10 +42,10 @@ http_archive(
         # binaries of symbols, which we don't want.
         "//tools:rules_go_symbols.patch",
     ],
-    sha256 = "69de5c704a05ff37862f7e0f5534d4f479418afc21806c887db544a316f3cb6b",
+    sha256 = "8e968b5fcea1d2d64071872b12737bbb5514524ee5f0a4f54f5920266c261acb",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.27.0/rules_go-v0.27.0.tar.gz",
-        "https://github.com/bazelbuild/rules_go/releases/download/v0.27.0/rules_go-v0.27.0.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.28.0/rules_go-v0.28.0.zip",
+        "https://github.com/bazelbuild/rules_go/releases/download/v0.28.0/rules_go-v0.28.0.zip",
     ],
 )
 
@@ -69,7 +69,7 @@ load("@io_bazel_rules_go//go:deps.bzl", "go_register_toolchains", "go_rules_depe
 
 go_rules_dependencies()
 
-go_register_toolchains(go_version = "1.16.2")
+go_register_toolchains(go_version = "1.16.8")
 
 load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies", "go_repository")
 
@@ -113,11 +113,11 @@ cc_crosstool(name = "crosstool")
 # Load protobuf dependencies.
 http_archive(
     name = "rules_proto",
-    sha256 = "2a20fd8af3cad3fbab9fd3aec4a137621e0c31f858af213a7ae0f997723fc4a9",
-    strip_prefix = "rules_proto-a0761ed101b939e19d83b2da5f59034bffc19c12",
+    sha256 = "66bfdf8782796239d3875d37e7de19b1d94301e8972b3cbd2446b332429b4df1",
+    strip_prefix = "rules_proto-4.0.0",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/rules_proto/archive/a0761ed101b939e19d83b2da5f59034bffc19c12.tar.gz",
-        "https://github.com/bazelbuild/rules_proto/archive/a0761ed101b939e19d83b2da5f59034bffc19c12.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/rules_proto/archive/refs/tags/4.0.0.tar.gz",
+        "https://github.com/bazelbuild/rules_proto/archive/refs/tags/4.0.0.tar.gz",
     ],
 )
 
@@ -1256,7 +1256,7 @@ http_archive(
     strip_prefix = "abseil-cpp-278e0a071885a22dcd2fd1b5576cc44757299343",
     urls = [
         "https://mirror.bazel.build/github.com/abseil/abseil-cpp/archive/278e0a071885a22dcd2fd1b5576cc44757299343.tar.gz",
-        "https://github.com/abseil/abseil-cpp/archive/278e0a071885a22dcd2fd1b5576cc44757299343.tar.gz"
+        "https://github.com/abseil/abseil-cpp/archive/278e0a071885a22dcd2fd1b5576cc44757299343.tar.gz",
     ],
 )
 
@@ -1277,7 +1277,6 @@ grpc_deps()
 load("@com_github_grpc_grpc//bazel:grpc_extra_deps.bzl", "grpc_extra_deps")
 
 grpc_extra_deps()
-
 
 http_archive(
     name = "com_google_googletest",
@@ -1305,7 +1304,9 @@ http_archive(
     strip_prefix = "protobuf-3.17.3",
     urls = ["https://github.com/protocolbuffers/protobuf/archive/v3.17.3.zip"],
 )
+
 load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
+
 protobuf_deps()
 
 # Schemas for testing.
@@ -1635,7 +1636,7 @@ go_repository(
     importpath = "honnef.co/go/tools",
     sum = "h1:Tyybiul3hjaq0dkv+kcf5/MPTfo+ZBiEWrkhgxMPH54=",
     version = "v0.3.0-0.dev.0.20210801021341-453cb28c0b15",
- )
+)
 
 go_repository(
     name = "com_github_burntsushi_toml",
