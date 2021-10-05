@@ -646,6 +646,11 @@ func hostInetFilters() seccomp.SyscallRules {
 
 func controlServerFilters(fd int) seccomp.SyscallRules {
 	return seccomp.SyscallRules{
+		unix.SYS_ACCEPT4: []seccomp.Rule{
+			{
+				seccomp.EqualTo(fd),
+			},
+		},
 		unix.SYS_ACCEPT: []seccomp.Rule{
 			{
 				seccomp.EqualTo(fd),
