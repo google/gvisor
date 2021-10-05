@@ -306,10 +306,6 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, TestSendUnicastOnUnbound) {
 // set interface or group membership.
 TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
        TestSendMulticastSelfNoGroup) {
-  // FIXME(b/125485338): A group membership is not required for external
-  // multicast on gVisor.
-  SKIP_IF(IsRunningOnGvisor());
-
   SKIP_IF(!found_net_interfaces_);
 
   auto socket = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
@@ -434,10 +430,6 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
 // Check that multicast packets won't be delivered to another socket with no
 // set interface or group membership.
 TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, TestSendMulticastNoGroup) {
-  // FIXME(b/125485338): A group membership is not required for external
-  // multicast on gVisor.
-  SKIP_IF(IsRunningOnGvisor());
-
   SKIP_IF(!found_net_interfaces_);
 
   auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
