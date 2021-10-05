@@ -108,6 +108,12 @@ func (r *rx) cleanup() {
 	unix.Close(r.eventFD)
 }
 
+// notify writes to the tx.eventFD to indicate to the peer that there is data to
+// be read.
+func (r *rx) notify() {
+	unix.Write(r.eventFD, []byte{1, 0, 0, 0, 0, 0, 0, 0})
+}
+
 // postAndReceive posts the provided buffers (if any), and then tries to read
 // from the receive queue.
 //
