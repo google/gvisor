@@ -554,14 +554,26 @@ uint16_t ICMPChecksum(struct icmphdr icmphdr, const char* payload,
 inline sockaddr* AsSockAddr(sockaddr_storage* s) {
   return reinterpret_cast<sockaddr*>(s);
 }
+inline const sockaddr* AsSockAddr(const sockaddr_storage* s) {
+  return reinterpret_cast<const sockaddr*>(s);
+}
 inline sockaddr* AsSockAddr(sockaddr_in* s) {
   return reinterpret_cast<sockaddr*>(s);
+}
+inline const sockaddr* AsSockAddr(const sockaddr_in* s) {
+  return reinterpret_cast<const sockaddr*>(s);
 }
 inline sockaddr* AsSockAddr(sockaddr_in6* s) {
   return reinterpret_cast<sockaddr*>(s);
 }
+inline const sockaddr* AsSockAddr(const sockaddr_in6* s) {
+  return reinterpret_cast<const sockaddr*>(s);
+}
 inline sockaddr* AsSockAddr(sockaddr_un* s) {
   return reinterpret_cast<sockaddr*>(s);
+}
+inline const sockaddr* AsSockAddr(const sockaddr_un* s) {
+  return reinterpret_cast<const sockaddr*>(s);
 }
 
 PosixErrorOr<uint16_t> AddrPort(int family, sockaddr_storage const& addr);

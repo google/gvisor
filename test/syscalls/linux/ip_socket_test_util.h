@@ -115,25 +115,6 @@ SocketKind IPv4TCPUnboundSocket(int type);
 // created with AF_INET6, SOCK_STREAM, IPPROTO_TCP and the given type.
 SocketKind IPv6TCPUnboundSocket(int type);
 
-// IfAddrHelper is a helper class that determines the local interfaces present
-// and provides functions to obtain their names, index numbers, and IP address.
-class IfAddrHelper {
- public:
-  IfAddrHelper() : ifaddr_(nullptr) {}
-  ~IfAddrHelper() { Release(); }
-
-  PosixError Load();
-  void Release();
-
-  std::vector<std::string> InterfaceList(int family) const;
-
-  const sockaddr* GetAddr(int family, std::string name) const;
-  PosixErrorOr<int> GetIndex(std::string name) const;
-
- private:
-  struct ifaddrs* ifaddr_;
-};
-
 // GetAddr4Str returns the given IPv4 network address structure as a string.
 std::string GetAddr4Str(const in_addr* a);
 

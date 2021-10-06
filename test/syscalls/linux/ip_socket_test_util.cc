@@ -16,6 +16,7 @@
 
 #include <net/if.h>
 #include <netinet/in.h>
+#include <netpacket/packet.h>
 #include <sys/socket.h>
 
 #include <cstring>
@@ -196,75 +197,53 @@ SocketKind IPv6TCPUnboundSocket(int type) {
       UnboundSocketCreator(AF_INET6, type | SOCK_STREAM, IPPROTO_TCP)};
 }
 
-PosixError IfAddrHelper::Load() {
-  Release();
-#ifndef ANDROID
-  RETURN_ERROR_IF_SYSCALL_FAIL(getifaddrs(&ifaddr_));
-#else
-  // Android does not support getifaddrs in r22.
-  return PosixError(ENOSYS, "getifaddrs");
-#endif
-  return NoError();
-}
-
-void IfAddrHelper::Release() {
-  if (ifaddr_) {
-#ifndef ANDROID
-    // Android does not support freeifaddrs in r22.
-    freeifaddrs(ifaddr_);
-#endif
-    ifaddr_ = nullptr;
-  }
-}
-
-std::vector<std::string> IfAddrHelper::InterfaceList(int family) const {
-  std::vector<std::string> names;
-  for (auto ifa = ifaddr_; ifa != NULL; ifa = ifa->ifa_next) {
-    if (ifa->ifa_addr == NULL || ifa->ifa_addr->sa_family != family) {
-      continue;
-    }
-    names.emplace(names.end(), ifa->ifa_name);
-  }
-  return names;
-}
-
-const sockaddr* IfAddrHelper::GetAddr(int family, std::string name) const {
-  for (auto ifa = ifaddr_; ifa != NULL; ifa = ifa->ifa_next) {
-    if (ifa->ifa_addr == NULL || ifa->ifa_addr->sa_family != family) {
-      continue;
-    }
-    if (name == ifa->ifa_name) {
-      return ifa->ifa_addr;
-    }
-  }
-  return nullptr;
-}
-
-PosixErrorOr<int> IfAddrHelper::GetIndex(std::string name) const {
-  return InterfaceIndex(name);
-}
-
 std::string GetAddr4Str(const in_addr* a) {
   char str[INET_ADDRSTRLEN];
-  inet_ntop(AF_INET, a, str, sizeof(str));
-  return std::string(str);
+  return inet_ntop(AF_INET, a, str, sizeof(str));
 }
 
 std::string GetAddr6Str(const in6_addr* a) {
   char str[INET6_ADDRSTRLEN];
-  inet_ntop(AF_INET6, a, str, sizeof(str));
-  return std::string(str);
+  return inet_ntop(AF_INET6, a, str, sizeof(str));
 }
 
 std::string GetAddrStr(const sockaddr* a) {
-  if (a->sa_family == AF_INET) {
-    auto src = &(reinterpret_cast<const sockaddr_in*>(a)->sin_addr);
-    return GetAddr4Str(src);
-  } else if (a->sa_family == AF_INET6) {
-    auto src = &(reinterpret_cast<const sockaddr_in6*>(a)->sin6_addr);
-    return GetAddr6Str(src);
+  switch (a->sa_family) {
+    case AF_INET: {
+      return GetAddr4Str(&(reinterpret_cast<const sockaddr_in*>(a)->sin_addr));
+    }
+    case AF_INET6: {
+      return GetAddr6Str(
+          &(reinterpret_cast<const sockaddr_in6*>(a)->sin6_addr));
+    }
+    case AF_PACKET: {
+      const sockaddr_ll& ll = *reinterpret_cast<const sockaddr_ll*>(a);
+      std::ostringstream ss;
+      ss << std::hex;
+      ss << std::showbase;
+      ss << '{';
+      ss << " protocol=" << ntohs(ll.sll_protocol);
+      ss << " ifindex=" << ll.sll_ifindex;
+      ss << " hatype=" << ll.sll_hatype;
+      ss << " pkttype=" << static_cast<unsigned short>(ll.sll_pkttype);
+      if (ll.sll_halen != 0) {
+        ss << " addr=";
+        for (unsigned char i = 0; i < ll.sll_halen; ++i) {
+          if (i != 0) {
+            ss << ':';
+          }
+          ss << static_cast<unsigned short>(ll.sll_addr[i]);
+        }
+      }
+      ss << " }";
+      return ss.str();
+    }
+    default: {
+      std::ostringstream ss;
+      ss << "invalid(sa_family=" << a->sa_family << ")";
+      return ss.str();
+    }
   }
-  return std::string("<invalid>");
 }
 
 }  // namespace testing
