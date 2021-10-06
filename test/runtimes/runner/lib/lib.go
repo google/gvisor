@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -63,8 +64,7 @@ func RunTests(lang, image, excludeFile string, batchSize int, timeout time.Durat
 		fmt.Fprintf(os.Stderr, "%s\n", err.Error())
 		return 1
 	}
-
-	m := testing.MainStart(testDeps{}, tests, nil, nil)
+	m := mainStart(tests)
 	return m.Run()
 }
 
@@ -197,3 +197,21 @@ func (f testDeps) ImportPath() string                          { return "" }
 func (f testDeps) StartTestLog(io.Writer)                      {}
 func (f testDeps) StopTestLog() error                          { return nil }
 func (f testDeps) SetPanicOnExit0(bool)                        {}
+func (f testDeps) CoordinateFuzzing(time.Duration, int64, time.Duration, int64, int, []corpusEntry, []reflect.Type, string, string) error {
+	return nil
+}
+func (f testDeps) RunFuzzWorker(func(corpusEntry) error) error              { return nil }
+func (f testDeps) ReadCorpus(string, []reflect.Type) ([]corpusEntry, error) { return nil, nil }
+func (f testDeps) CheckCorpus([]interface{}, []reflect.Type) error          { return nil }
+func (f testDeps) ResetCoverage()                                           {}
+func (f testDeps) SnapshotCoverage()                                        {}
+
+// Copied from testing/fuzz.go.
+type corpusEntry = struct {
+	Parent     string
+	Name       string
+	Data       []byte
+	Values     []interface{}
+	Generation int
+	IsSeed     bool
+}
