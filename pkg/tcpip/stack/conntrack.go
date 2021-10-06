@@ -64,13 +64,21 @@ type tuple struct {
 	// tupleEntry is used to build an intrusive list of tuples.
 	tupleEntry
 
-	tupleID
-
 	// conn is the connection tracking entry this tuple belongs to.
 	conn *conn
 
 	// direction is the direction of the tuple.
 	direction direction
+
+	mu sync.RWMutex `state:"nosave"`
+	// +checklocks:mu
+	tupleID tupleID
+}
+
+func (t *tuple) id() tupleID {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.tupleID
 }
 
 // tupleID uniquely identifies a connection in one direction. It currently
@@ -103,17 +111,23 @@ func (ti tupleID) reply() tupleID {
 //
 // +stateify savable
 type conn struct {
+	ct *ConnTrack
+
 	// original is the tuple in original direction. It is immutable.
 	original tuple
 
-	// reply is the tuple in reply direction. It is immutable.
+	// reply is the tuple in reply direction.
 	reply tuple
 
-	// manip indicates if the packet should be manipulated. It is immutable.
-	// TODO(gvisor.dev/issue/5696): Support updating manipulation type.
-	manip manipType
-
 	mu sync.RWMutex `state:"nosave"`
+	// Indicates that the connection has been finalized and may handle replies.
+	//
+	// +checklocks:mu
+	finalized bool
+	// manip indicates if the packet should be manipulated.
+	//
+	// +checklocks:mu
+	manip manipType
 	// tcb is TCB control block. It is used to keep track of states
 	// of tcp connection.
 	//
@@ -126,17 +140,6 @@ type conn struct {
 	//
 	// +checklocks:mu
 	lastUsed time.Time `state:".(unixTime)"`
-}
-
-// newConn creates new connection.
-func newConn(orig, reply tupleID, manip manipType) *conn {
-	conn := conn{
-		manip:    manip,
-		lastUsed: time.Now(),
-	}
-	conn.original = tuple{conn: &conn, tupleID: orig}
-	conn.reply = tuple{conn: &conn, tupleID: reply, direction: dirReply}
-	return &conn
 }
 
 // timedOut returns whether the connection timed out based on its state.
@@ -235,168 +238,180 @@ func getTransportHeader(pkt *PacketBuffer) (header.ChecksummableTransport, bool)
 	return nil, false
 }
 
-// packetToTupleID converts packet to a tuple ID. It fails when pkt lacks a valid
-// TCP header.
-//
-// Preconditions: pkt.NetworkHeader() is valid.
-func packetToTupleID(pkt *PacketBuffer) (tupleID, tcpip.Error) {
-	netHeader := pkt.Network()
-	transportHeader, ok := getTransportHeader(pkt)
-	if !ok {
-		return tupleID{}, &tcpip.ErrUnknownProtocol{}
-	}
-
-	return tupleID{
-		srcAddr:    netHeader.SourceAddress(),
-		srcPort:    transportHeader.SourcePort(),
-		dstAddr:    netHeader.DestinationAddress(),
-		dstPort:    transportHeader.DestinationPort(),
-		transProto: pkt.TransportProtocolNumber,
-		netProto:   pkt.NetworkProtocolNumber,
-	}, nil
-}
-
 func (ct *ConnTrack) init() {
 	ct.mu.Lock()
 	defer ct.mu.Unlock()
 	ct.buckets = make([]bucket, numBuckets)
 }
 
-// connFor gets the conn for pkt if it exists, or returns nil
-// if it does not. It returns an error when pkt does not contain a valid TCP
-// header.
-// TODO(gvisor.dev/issue/6168): Support UDP.
-func (ct *ConnTrack) connFor(pkt *PacketBuffer) (*conn, direction) {
-	tid, err := packetToTupleID(pkt)
-	if err != nil {
-		return nil, dirOriginal
+func (ct *ConnTrack) getConnOrMaybeInsertNoop(pkt *PacketBuffer) *tuple {
+	netHeader := pkt.Network()
+	transportHeader, ok := getTransportHeader(pkt)
+	if !ok {
+		return nil
 	}
-	return ct.connForTID(tid)
-}
 
-func (ct *ConnTrack) connForTID(tid tupleID) (*conn, direction) {
+	tid := tupleID{
+		srcAddr:    netHeader.SourceAddress(),
+		srcPort:    transportHeader.SourcePort(),
+		dstAddr:    netHeader.DestinationAddress(),
+		dstPort:    transportHeader.DestinationPort(),
+		transProto: pkt.TransportProtocolNumber,
+		netProto:   pkt.NetworkProtocolNumber,
+	}
+
 	bktID := ct.bucket(tid)
-	now := time.Now()
 
 	ct.mu.RLock()
 	bkt := &ct.buckets[bktID]
 	ct.mu.RUnlock()
 
-	bkt.mu.RLock()
-	defer bkt.mu.RUnlock()
-	for other := bkt.tuples.Front(); other != nil; other = other.Next() {
-		if tid == other.tupleID && !other.conn.timedOut(now) {
-			return other.conn, other.direction
-		}
+	now := time.Now()
+	if t := bkt.connForTID(tid, now); t != nil {
+		return t
 	}
 
-	return nil, dirOriginal
+	bkt.mu.Lock()
+	defer bkt.mu.Unlock()
+
+	// Make sure a connection wasn't added between when we last checked the
+	// bucket and acquired the bucket's write lock.
+	if t := bkt.connForTIDRLocked(tid, now); t != nil {
+		return t
+	}
+
+	// This is the first packet we're seeing for the connection. Create an entry
+	// for this new connection.
+	conn := &conn{
+		ct:       ct,
+		original: tuple{tupleID: tid, direction: dirOriginal},
+		reply:    tuple{tupleID: tid.reply(), direction: dirReply},
+		manip:    manipNone,
+		lastUsed: now,
+	}
+	conn.original.conn = conn
+	conn.reply.conn = conn
+
+	// For now, we only map an entry for the packet's original tuple as NAT may be
+	// performed on this connection. Until the packet goes through all the hooks
+	// and its final address/port is known, we cannot know what the response
+	// packet's addresses/ports will look like.
+	//
+	// This is okay because the destination cannot send its response until it
+	// receives the packet; the packet will only be received once all the hooks
+	// have been performed.
+	//
+	// See (*conn).finalize.
+	bkt.tuples.PushFront(&conn.original)
+	return &conn.original
 }
 
-func (ct *ConnTrack) insertRedirectConn(pkt *PacketBuffer, hook Hook, port uint16, address tcpip.Address) *conn {
-	tid, err := packetToTupleID(pkt)
-	if err != nil {
-		return nil
-	}
-	if hook != Prerouting && hook != Output {
-		return nil
-	}
-
-	replyTID := tid.reply()
-	replyTID.srcAddr = address
-	replyTID.srcPort = port
-
-	conn, _ := ct.connForTID(tid)
-	if conn != nil {
-		// The connection is already tracked.
-		// TODO(gvisor.dev/issue/5696): Support updating an existing connection.
-		return nil
-	}
-	conn = newConn(tid, replyTID, manipDestination)
-	ct.insertConn(conn)
-	return conn
-}
-
-func (ct *ConnTrack) insertSNATConn(pkt *PacketBuffer, hook Hook, port uint16, address tcpip.Address) *conn {
-	tid, err := packetToTupleID(pkt)
-	if err != nil {
-		return nil
-	}
-	if hook != Input && hook != Postrouting {
-		return nil
-	}
-
-	replyTID := tid.reply()
-	replyTID.dstAddr = address
-	replyTID.dstPort = port
-
-	conn, _ := ct.connForTID(tid)
-	if conn != nil {
-		// The connection is already tracked.
-		// TODO(gvisor.dev/issue/5696): Support updating an existing connection.
-		return nil
-	}
-	conn = newConn(tid, replyTID, manipSource)
-	ct.insertConn(conn)
-	return conn
-}
-
-// insertConn inserts conn into the appropriate table bucket.
-func (ct *ConnTrack) insertConn(conn *conn) {
-	tupleBktID := ct.bucket(conn.original.tupleID)
-	replyBktID := ct.bucket(conn.reply.tupleID)
+func (ct *ConnTrack) connForTID(tid tupleID) *tuple {
+	bktID := ct.bucket(tid)
 
 	ct.mu.RLock()
-	defer ct.mu.RUnlock()
+	bkt := &ct.buckets[bktID]
+	ct.mu.RUnlock()
 
-	tupleBkt := &ct.buckets[tupleBktID]
-	if tupleBktID == replyBktID {
-		// Both tuples are in the same bucket.
-		tupleBkt.mu.Lock()
-		defer tupleBkt.mu.Unlock()
-		insertConn(tupleBkt, tupleBkt, conn)
+	return bkt.connForTID(tid, time.Now())
+}
+
+func (bkt *bucket) connForTID(tid tupleID, now time.Time) *tuple {
+	bkt.mu.RLock()
+	defer bkt.mu.RUnlock()
+	return bkt.connForTIDRLocked(tid, now)
+}
+
+// +checklocks:bkt.mu
+func (bkt *bucket) connForTIDRLocked(tid tupleID, now time.Time) *tuple {
+	for other := bkt.tuples.Front(); other != nil; other = other.Next() {
+		if tid == other.id() && !other.conn.timedOut(now) {
+			return other
+		}
+	}
+	return nil
+}
+
+func (ct *ConnTrack) finalize(cn *conn) {
+	tid := cn.reply.id()
+	id := ct.bucket(tid)
+
+	ct.mu.RLock()
+	bkt := &ct.buckets[id]
+	ct.mu.RUnlock()
+
+	bkt.mu.Lock()
+	defer bkt.mu.Unlock()
+
+	if t := bkt.connForTIDRLocked(tid, time.Now()); t != nil {
+		// Another connection for the reply already exists. We can't do much about
+		// this so we leave the connection cn represents in a state where it can
+		// send packets but its responses will be mapped to some other connection.
+		// This may be okay if the connection only expects to send packets without
+		// any responses.
 		return
 	}
 
-	// Lock the buckets in the correct order.
-	replyBkt := &ct.buckets[replyBktID]
-	if tupleBktID < replyBktID {
-		tupleBkt.mu.Lock()
-		defer tupleBkt.mu.Unlock()
-		replyBkt.mu.Lock()
-		defer replyBkt.mu.Unlock()
-	} else {
-		replyBkt.mu.Lock()
-		defer replyBkt.mu.Unlock()
-		tupleBkt.mu.Lock()
-		defer tupleBkt.mu.Unlock()
-	}
-	insertConn(tupleBkt, replyBkt, conn)
+	bkt.tuples.PushFront(&cn.reply)
 }
 
-// TODO(https://gvisor.dev/issue/6590): annotate r/w locking requirements.
-// +checklocks:tupleBkt.mu
-// +checklocks:replyBkt.mu
-func insertConn(tupleBkt *bucket, replyBkt *bucket, conn *conn) {
-	// Now that we hold the locks, ensure the tuple hasn't been inserted by
-	// another thread.
-	// TODO(gvisor.dev/issue/5773): Should check conn.reply.tupleID, too?
-	alreadyInserted := false
-	for other := tupleBkt.tuples.Front(); other != nil; other = other.Next() {
-		if other.tupleID == conn.original.tupleID {
-			alreadyInserted = true
-			break
+func (cn *conn) finalize() {
+	{
+		cn.mu.RLock()
+		finalized := cn.finalized
+		cn.mu.RUnlock()
+		if finalized {
+			return
 		}
 	}
 
-	if !alreadyInserted {
-		// Add the tuple to the map.
-		tupleBkt.tuples.PushFront(&conn.original)
-		replyBkt.tuples.PushFront(&conn.reply)
+	cn.mu.Lock()
+	finalized := cn.finalized
+	cn.finalized = true
+	cn.mu.Unlock()
+	if finalized {
+		return
+	}
+
+	cn.ct.finalize(cn)
+}
+
+// performNAT setups up the connection for the specified NAT.
+//
+// Generally, only the first packet of a connection reaches this method; other
+// other packets will be manipulated without needing to modify the connection.
+func (cn *conn) performNAT(pkt *PacketBuffer, hook Hook, r *Route, port uint16, address tcpip.Address, dnat bool) {
+	cn.performNATIfNoop(port, address, dnat)
+	cn.handlePacket(pkt, hook, r)
+}
+
+func (cn *conn) performNATIfNoop(port uint16, address tcpip.Address, dnat bool) {
+	cn.mu.Lock()
+	defer cn.mu.Unlock()
+
+	if cn.finalized {
+		return
+	}
+
+	if cn.manip != manipNone {
+		return
+	}
+
+	cn.reply.mu.Lock()
+	defer cn.reply.mu.Unlock()
+
+	if dnat {
+		cn.reply.tupleID.srcAddr = address
+		cn.reply.tupleID.srcPort = port
+		cn.manip = manipDestination
+	} else {
+		cn.reply.tupleID.dstAddr = address
+		cn.reply.tupleID.dstPort = port
+		cn.manip = manipSource
 	}
 }
 
-func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, dir direction, r *Route) {
+func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, r *Route) {
 	if pkt.NatDone {
 		return
 	}
@@ -417,26 +432,35 @@ func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, dir direction, r *Rou
 
 	updateSRCFields := false
 
+	dir := pkt.tuple.direction
+
+	cn.mu.Lock()
+	defer cn.mu.Unlock()
+
 	switch hook {
 	case Prerouting, Output:
 		if cn.manip == manipDestination && dir == dirOriginal {
-			newPort = cn.reply.srcPort
-			newAddr = cn.reply.srcAddr
+			id := cn.reply.id()
+			newPort = id.srcPort
+			newAddr = id.srcAddr
 			pkt.NatDone = true
 		} else if cn.manip == manipSource && dir == dirReply {
-			newPort = cn.original.srcPort
-			newAddr = cn.original.srcAddr
+			id := cn.original.id()
+			newPort = id.srcPort
+			newAddr = id.srcAddr
 			pkt.NatDone = true
 		}
 	case Input, Postrouting:
 		if cn.manip == manipSource && dir == dirOriginal {
-			newPort = cn.reply.dstPort
-			newAddr = cn.reply.dstAddr
+			id := cn.reply.id()
+			newPort = id.dstPort
+			newAddr = id.dstAddr
 			updateSRCFields = true
 			pkt.NatDone = true
 		} else if cn.manip == manipDestination && dir == dirReply {
-			newPort = cn.original.dstPort
-			newAddr = cn.original.dstAddr
+			id := cn.original.id()
+			newPort = id.dstPort
+			newAddr = id.dstAddr
 			updateSRCFields = true
 			pkt.NatDone = true
 		}
@@ -479,49 +503,10 @@ func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, dir direction, r *Rou
 		newAddr,
 	)
 
-	// Update the state of tcb.
-	cn.mu.Lock()
-	defer cn.mu.Unlock()
-
 	// Mark the connection as having been used recently so it isn't reaped.
 	cn.lastUsed = time.Now()
 	// Update connection state.
 	cn.updateLocked(pkt, dir)
-}
-
-// maybeInsertNoop tries to insert a no-op connection entry to keep connections
-// from getting clobbered when replies arrive. It only inserts if there isn't
-// already a connection for pkt.
-//
-// This should be called after traversing iptables rules only, to ensure that
-// pkt.NatDone is set correctly.
-func (ct *ConnTrack) maybeInsertNoop(pkt *PacketBuffer) {
-	// If there were a rule applying to this packet, it would be marked
-	// with NatDone.
-	if pkt.NatDone {
-		return
-	}
-
-	switch pkt.TransportProtocolNumber {
-	case header.TCPProtocolNumber, header.UDPProtocolNumber:
-	default:
-		// TODO(https://gvisor.dev/issue/5915): Track ICMP and other trackable
-		// connections.
-		return
-	}
-
-	// This is the first packet we're seeing for the TCP connection. Insert
-	// the noop entry (an identity mapping) so that the response doesn't
-	// get NATed, breaking the connection.
-	tid, err := packetToTupleID(pkt)
-	if err != nil {
-		return
-	}
-	conn := newConn(tid, tid.reply(), manipNone)
-	ct.insertConn(conn)
-	conn.mu.Lock()
-	defer conn.mu.Unlock()
-	conn.updateLocked(pkt, dirOriginal)
 }
 
 // bucket gets the conntrack bucket for a tupleID.
@@ -617,7 +602,7 @@ func (ct *ConnTrack) reapTupleLocked(tuple *tuple, bktID int, bkt *bucket, now t
 
 	// To maintain lock order, we can only reap these tuples if the reply
 	// appears later in the table.
-	replyBktID := ct.bucket(tuple.reply())
+	replyBktID := ct.bucket(tuple.id().reply())
 	if bktID > replyBktID {
 		return true
 	}
@@ -658,14 +643,19 @@ func (ct *ConnTrack) originalDst(epID TransportEndpointID, netProto tcpip.Networ
 		transProto: transProto,
 		netProto:   netProto,
 	}
-	conn, _ := ct.connForTID(tid)
-	if conn == nil {
+	t := ct.connForTID(tid)
+	if t == nil {
 		// Not a tracked connection.
 		return "", 0, &tcpip.ErrNotConnected{}
-	} else if conn.manip != manipDestination {
+	}
+
+	t.conn.mu.RLock()
+	defer t.conn.mu.RUnlock()
+	if t.conn.manip != manipDestination {
 		// Unmanipulated destination.
 		return "", 0, &tcpip.ErrInvalidOptionValue{}
 	}
 
-	return conn.original.dstAddr, conn.original.dstPort, nil
+	id := t.conn.original.id()
+	return id.dstAddr, id.dstPort, nil
 }

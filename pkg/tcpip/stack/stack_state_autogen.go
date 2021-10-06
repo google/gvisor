@@ -13,9 +13,9 @@ func (t *tuple) StateTypeName() string {
 func (t *tuple) StateFields() []string {
 	return []string{
 		"tupleEntry",
-		"tupleID",
 		"conn",
 		"direction",
+		"tupleID",
 	}
 }
 
@@ -25,9 +25,9 @@ func (t *tuple) beforeSave() {}
 func (t *tuple) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
 	stateSinkObject.Save(0, &t.tupleEntry)
-	stateSinkObject.Save(1, &t.tupleID)
-	stateSinkObject.Save(2, &t.conn)
-	stateSinkObject.Save(3, &t.direction)
+	stateSinkObject.Save(1, &t.conn)
+	stateSinkObject.Save(2, &t.direction)
+	stateSinkObject.Save(3, &t.tupleID)
 }
 
 func (t *tuple) afterLoad() {}
@@ -35,9 +35,9 @@ func (t *tuple) afterLoad() {}
 // +checklocksignore
 func (t *tuple) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.tupleEntry)
-	stateSourceObject.Load(1, &t.tupleID)
-	stateSourceObject.Load(2, &t.conn)
-	stateSourceObject.Load(3, &t.direction)
+	stateSourceObject.Load(1, &t.conn)
+	stateSourceObject.Load(2, &t.direction)
+	stateSourceObject.Load(3, &t.tupleID)
 }
 
 func (ti *tupleID) StateTypeName() string {
@@ -86,8 +86,10 @@ func (cn *conn) StateTypeName() string {
 
 func (cn *conn) StateFields() []string {
 	return []string{
+		"ct",
 		"original",
 		"reply",
+		"finalized",
 		"manip",
 		"tcb",
 		"lastUsed",
@@ -101,22 +103,26 @@ func (cn *conn) StateSave(stateSinkObject state.Sink) {
 	cn.beforeSave()
 	var lastUsedValue unixTime
 	lastUsedValue = cn.saveLastUsed()
-	stateSinkObject.SaveValue(4, lastUsedValue)
-	stateSinkObject.Save(0, &cn.original)
-	stateSinkObject.Save(1, &cn.reply)
-	stateSinkObject.Save(2, &cn.manip)
-	stateSinkObject.Save(3, &cn.tcb)
+	stateSinkObject.SaveValue(6, lastUsedValue)
+	stateSinkObject.Save(0, &cn.ct)
+	stateSinkObject.Save(1, &cn.original)
+	stateSinkObject.Save(2, &cn.reply)
+	stateSinkObject.Save(3, &cn.finalized)
+	stateSinkObject.Save(4, &cn.manip)
+	stateSinkObject.Save(5, &cn.tcb)
 }
 
 func (cn *conn) afterLoad() {}
 
 // +checklocksignore
 func (cn *conn) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &cn.original)
-	stateSourceObject.Load(1, &cn.reply)
-	stateSourceObject.Load(2, &cn.manip)
-	stateSourceObject.Load(3, &cn.tcb)
-	stateSourceObject.LoadValue(4, new(unixTime), func(y interface{}) { cn.loadLastUsed(y.(unixTime)) })
+	stateSourceObject.Load(0, &cn.ct)
+	stateSourceObject.Load(1, &cn.original)
+	stateSourceObject.Load(2, &cn.reply)
+	stateSourceObject.Load(3, &cn.finalized)
+	stateSourceObject.Load(4, &cn.manip)
+	stateSourceObject.Load(5, &cn.tcb)
+	stateSourceObject.LoadValue(6, new(unixTime), func(y interface{}) { cn.loadLastUsed(y.(unixTime)) })
 }
 
 func (ct *ConnTrack) StateTypeName() string {
@@ -145,29 +151,29 @@ func (ct *ConnTrack) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &ct.buckets)
 }
 
-func (b *bucket) StateTypeName() string {
+func (bkt *bucket) StateTypeName() string {
 	return "pkg/tcpip/stack.bucket"
 }
 
-func (b *bucket) StateFields() []string {
+func (bkt *bucket) StateFields() []string {
 	return []string{
 		"tuples",
 	}
 }
 
-func (b *bucket) beforeSave() {}
+func (bkt *bucket) beforeSave() {}
 
 // +checklocksignore
-func (b *bucket) StateSave(stateSinkObject state.Sink) {
-	b.beforeSave()
-	stateSinkObject.Save(0, &b.tuples)
+func (bkt *bucket) StateSave(stateSinkObject state.Sink) {
+	bkt.beforeSave()
+	stateSinkObject.Save(0, &bkt.tuples)
 }
 
-func (b *bucket) afterLoad() {}
+func (bkt *bucket) afterLoad() {}
 
 // +checklocksignore
-func (b *bucket) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &b.tuples)
+func (bkt *bucket) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &bkt.tuples)
 }
 
 func (u *unixTime) StateTypeName() string {

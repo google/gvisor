@@ -143,6 +143,8 @@ type PacketBuffer struct {
 
 	// NetworkPacketInfo holds an incoming packet's network-layer information.
 	NetworkPacketInfo NetworkPacketInfo
+
+	tuple *tuple
 }
 
 // NewPacketBuffer creates a new PacketBuffer with opts.
@@ -302,6 +304,7 @@ func (pk *PacketBuffer) Clone() *PacketBuffer {
 		NICID:                        pk.NICID,
 		RXTransportChecksumValidated: pk.RXTransportChecksumValidated,
 		NetworkPacketInfo:            pk.NetworkPacketInfo,
+		tuple:                        pk.tuple,
 	}
 }
 
@@ -329,13 +332,8 @@ func (pk *PacketBuffer) CloneToInbound() *PacketBuffer {
 		buf: pk.buf.Clone(),
 		// Treat unfilled header portion as reserved.
 		reserved: pk.AvailableHeaderBytes(),
+		tuple:    pk.tuple,
 	}
-	// TODO(gvisor.dev/issue/5696): reimplement conntrack so that no need to
-	// maintain this flag in the packet. Currently conntrack needs this flag to
-	// tell if a noop connection should be inserted at Input hook. Once conntrack
-	// redefines the manipulation field as mutable, we won't need the special noop
-	// connection.
-	newPk.NatDone = pk.NatDone
 	return newPk
 }
 
@@ -367,12 +365,7 @@ func (pk *PacketBuffer) DeepCopyForForwarding(reservedHeaderBytes int) *PacketBu
 		newPk.TransportProtocolNumber = pk.TransportProtocolNumber
 	}
 
-	// TODO(gvisor.dev/issue/5696): reimplement conntrack so that no need to
-	// maintain this flag in the packet. Currently conntrack needs this flag to
-	// tell if a noop connection should be inserted at Input hook. Once conntrack
-	// redefines the manipulation field as mutable, we won't need the special noop
-	// connection.
-	newPk.NatDone = pk.NatDone
+	newPk.tuple = pk.tuple
 
 	return newPk
 }
