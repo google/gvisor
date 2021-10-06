@@ -277,8 +277,9 @@ func (it *IPTables) CheckPrerouting(pkt *PacketBuffer, addressEP AddressableEndp
 		return true
 	}
 
-	if conn, dir := it.connections.connFor(pkt); conn != nil {
-		conn.handlePacket(pkt, hook, dir, nil /* route */)
+	if t := it.connections.getConnOrMaybeInsertNoop(pkt); t != nil {
+		pkt.tuple = t
+		t.conn.handlePacket(pkt, hook, nil /* route */)
 	}
 
 	return it.check(hook, pkt, nil /* route */, addressEP, inNicName, "" /* outNicName */)
@@ -297,20 +298,16 @@ func (it *IPTables) CheckInput(pkt *PacketBuffer, inNicName string) bool {
 		return true
 	}
 
-	shouldTrack := true
-	if conn, dir := it.connections.connFor(pkt); conn != nil {
-		conn.handlePacket(pkt, hook, dir, nil /* route */)
-		shouldTrack = false
+	if t := pkt.tuple; t != nil {
+		t.conn.handlePacket(pkt, hook, nil /* route */)
 	}
 
-	if !it.check(hook, pkt, nil /* route */, nil /* addressEP */, inNicName, "" /* outNicName */) {
-		return false
+	ret := it.check(hook, pkt, nil /* route */, nil /* addressEP */, inNicName, "" /* outNicName */)
+	if t := pkt.tuple; t != nil {
+		t.conn.finalize()
 	}
-
-	// This is the last hook a packet will perform so if the packet's
-	// connection is not tracked, we may need to add a no-op entry.
-	it.maybeinsertNoopConn(pkt, hook, shouldTrack)
-	return true
+	pkt.tuple = nil
+	return ret
 }
 
 // CheckForward performs the forward hook on the packet.
@@ -323,7 +320,6 @@ func (it *IPTables) CheckForward(pkt *PacketBuffer, inNicName, outNicName string
 	if it.shouldSkip(pkt.NetworkProtocolNumber) {
 		return true
 	}
-
 	return it.check(Forward, pkt, nil /* route */, nil /* addressEP */, inNicName, outNicName)
 }
 
@@ -340,8 +336,9 @@ func (it *IPTables) CheckOutput(pkt *PacketBuffer, r *Route, outNicName string) 
 		return true
 	}
 
-	if conn, dir := it.connections.connFor(pkt); conn != nil {
-		conn.handlePacket(pkt, hook, dir, r)
+	if t := it.connections.getConnOrMaybeInsertNoop(pkt); t != nil {
+		pkt.tuple = t
+		t.conn.handlePacket(pkt, hook, r)
 	}
 
 	return it.check(hook, pkt, r, nil /* addressEP */, "" /* inNicName */, outNicName)
@@ -360,20 +357,16 @@ func (it *IPTables) CheckPostrouting(pkt *PacketBuffer, r *Route, addressEP Addr
 		return true
 	}
 
-	shouldTrack := true
-	if conn, dir := it.connections.connFor(pkt); conn != nil {
-		conn.handlePacket(pkt, hook, dir, r)
-		shouldTrack = false
+	if t := pkt.tuple; t != nil {
+		t.conn.handlePacket(pkt, hook, r)
 	}
 
-	if !it.check(hook, pkt, r, addressEP, "" /* inNicName */, outNicName) {
-		return false
+	ret := it.check(hook, pkt, r, addressEP, "" /* inNicName */, outNicName)
+	if t := pkt.tuple; t != nil {
+		t.conn.finalize()
 	}
-
-	// This is the last hook a packet will perform so if the packet's
-	// connection is not tracked, we may need to add a no-op entry.
-	it.maybeinsertNoopConn(pkt, hook, shouldTrack)
-	return true
+	pkt.tuple = nil
+	return ret
 }
 
 func (it *IPTables) shouldSkip(netProto tcpip.NetworkProtocolNumber) bool {
@@ -426,7 +419,7 @@ func (it *IPTables) check(hook Hook, pkt *PacketBuffer, r *Route, addressEP Addr
 			// Any Return from a built-in chain means we have to
 			// call the underflow.
 			underflow := table.Rules[table.Underflows[hook]]
-			switch v, _ := underflow.Target.Action(pkt, &it.connections, hook, r, addressEP); v {
+			switch v, _ := underflow.Target.Action(pkt, hook, r, addressEP); v {
 			case RuleAccept:
 				continue
 			case RuleDrop:
@@ -443,22 +436,6 @@ func (it *IPTables) check(hook Hook, pkt *PacketBuffer, r *Route, addressEP Addr
 	}
 
 	return true
-}
-
-func (it *IPTables) maybeinsertNoopConn(pkt *PacketBuffer, hook Hook, shouldTrack bool) {
-	// If this connection should be tracked, try to add an entry for it. If
-	// traversing the nat table didn't end in adding an entry,
-	// maybeInsertNoop will add a no-op entry for the connection. This is
-	// needeed when establishing connections so that the SYN/ACK reply to an
-	// outgoing SYN is delivered to the correct endpoint rather than being
-	// redirected by a prerouting rule.
-	//
-	// From the iptables documentation: "If there is no rule, a `null'
-	// binding is created: this usually does not map the packet, but exists
-	// to ensure we don't map another stream over an existing one."
-	if shouldTrack {
-		it.connections.maybeInsertNoop(pkt)
-	}
 }
 
 // beforeSave is invoked by stateify.
@@ -606,7 +583,7 @@ func (it *IPTables) checkRule(hook Hook, pkt *PacketBuffer, table Table, ruleIdx
 	}
 
 	// All the matchers matched, so run the target.
-	return rule.Target.Action(pkt, &it.connections, hook, r, addressEP)
+	return rule.Target.Action(pkt, hook, r, addressEP)
 }
 
 // OriginalDst returns the original destination of redirected connections. It

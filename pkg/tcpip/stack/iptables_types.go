@@ -356,5 +356,5 @@ type Target interface {
 	// Action takes an action on the packet and returns a verdict on how
 	// traversal should (or should not) continue. If the return value is
 	// Jump, it also returns the index of the rule to jump to.
-	Action(*PacketBuffer, *ConnTrack, Hook, *Route, AddressableEndpoint) (RuleVerdict, int)
+	Action(*PacketBuffer, Hook, *Route, AddressableEndpoint) (RuleVerdict, int)
 }
