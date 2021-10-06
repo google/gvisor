@@ -2660,17 +2660,11 @@ cc_library(
 cc_library(
     name = "socket_ip_udp_unbound_external_networking",
     testonly = 1,
-    srcs = [
-        "socket_ip_udp_unbound_external_networking.cc",
-    ],
     hdrs = [
         "socket_ip_udp_unbound_external_networking.h",
     ],
     deps = [
         ":ip_socket_test_util",
-        "//test/util:socket_util",
-        "//test/util:test_util",
-        "@com_google_absl//absl/cleanup",
     ],
     alwayslink = 1,
 )
@@ -2686,6 +2680,9 @@ cc_library(
     ],
     deps = [
         ":socket_ip_udp_unbound_external_networking",
+        "//test/util:socket_util",
+        "//test/util:test_util",
+        "@com_google_absl//absl/cleanup",
         gtest,
     ],
     alwayslink = 1,
