@@ -78,11 +78,19 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
-// VFS2Enabled is set to true when VFS2 is enabled. Added as a global for allow
-// easy access everywhere. To be removed once VFS2 becomes the default.
+// VFS2Enabled is set to true when VFS2 is enabled. Added as a global to allow
+// easy access everywhere.
+//
+// TODO(gvisor.dev/issue/1624): Remove when VFS1 is no longer used.
 var VFS2Enabled = false
 
-// FUSEEnabled is set to true when FUSE is enabled. Added as a global for allow
+// LISAFSEnabled is set to true when lisafs protocol is enabled. Added as a
+// global to allow easy access everywhere.
+//
+// TODO(gvisor.dev/issue/6319): Remove when lisafs is default.
+var LISAFSEnabled = false
+
+// FUSEEnabled is set to true when FUSE is enabled. Added as a global to allow
 // easy access everywhere. To be removed once FUSE is completed.
 var FUSEEnabled = false
 
