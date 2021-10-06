@@ -5,7 +5,11 @@ package(licenses = ["notice"])
 go_library(
     name = "lib",
     testonly = 1,
-    srcs = ["lib.go"],
+    srcs = [
+        "go_test_dependency_go118.go",
+        "go_test_dependency_not_go118.go",
+        "lib.go",
+    ],
     visibility = ["//test/runtimes/runner:__pkg__"],
     deps = [
         "//pkg/log",
