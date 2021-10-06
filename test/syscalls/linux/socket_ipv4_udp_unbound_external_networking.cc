@@ -14,6 +14,8 @@
 
 #include "test/syscalls/linux/socket_ipv4_udp_unbound_external_networking.h"
 
+#include <net/if.h>
+
 #include "absl/cleanup/cleanup.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
@@ -986,37 +988,71 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
 // another interface.
 TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
        IpMulticastLoopbackBindToOneIfSetMcastIfToAnother) {
-  // FIXME (b/137790511): When bound to one interface it is not possible to set
-  // IP_MULTICAST_IF to a different interface.
-  SKIP_IF(IsRunningOnGvisor());
-
-  // Create sender and bind to eth interface.
-  auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
-  ASSERT_THAT(
-      bind(sender->get(), AsSockAddr(&eth_if_addr()), sizeof(eth_if_addr())),
-      SyscallSucceeds());
-
   // Run through all possible combinations of index and address for
   // IP_MULTICAST_IF that selects the loopback interface.
-  struct {
-    int imr_ifindex;
-    struct in_addr imr_address;
-  } test_data[] = {
-      {lo_if_idx(), {}},
-      {0, lo_if_addr().sin_addr},
-      {lo_if_idx(), lo_if_addr().sin_addr},
-      {lo_if_idx(), eth_if_addr().sin_addr},
+  ip_mreqn ifaces[] = {
+      {
+          .imr_address = {},
+          .imr_ifindex = lo_if_idx(),
+      },
+      {
+          .imr_address = lo_if_addr().sin_addr,
+          .imr_ifindex = 0,
+      },
+      {
+          .imr_address = lo_if_addr().sin_addr,
+          .imr_ifindex = lo_if_idx(),
+      },
+      {
+          .imr_address = eth_if_addr().sin_addr,
+          .imr_ifindex = lo_if_idx(),
+      },
   };
-  for (auto t : test_data) {
-    ip_mreqn iface = {};
-    iface.imr_ifindex = t.imr_ifindex;
-    iface.imr_address = t.imr_address;
-    EXPECT_THAT(setsockopt(sender->get(), IPPROTO_IP, IP_MULTICAST_IF, &iface,
-                           sizeof(iface)),
-                SyscallSucceeds())
-        << "imr_index=" << iface.imr_ifindex
-        << " imr_address=" << GetAddr4Str(&iface.imr_address);
+
+  {
+    auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+    ASSERT_THAT(
+        bind(sender->get(), AsSockAddr(&eth_if_addr()), sizeof(eth_if_addr())),
+        SyscallSucceeds());
+
+    for (const ip_mreqn& iface : ifaces) {
+      EXPECT_THAT(setsockopt(sender->get(), IPPROTO_IP, IP_MULTICAST_IF, &iface,
+                             sizeof(iface)),
+                  SyscallSucceeds())
+          << " imr_index=" << iface.imr_ifindex
+          << " imr_address=" << GetAddr4Str(&iface.imr_address);
+    }
+  }
+
+  {
+    char eth_if_name[IF_NAMESIZE];
+    memset(eth_if_name, 0xAA, sizeof(eth_if_name));
+    ASSERT_NE(if_indextoname(eth_if_idx(), eth_if_name), nullptr)
+        << strerror(errno);
+    auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+    ASSERT_THAT(setsockopt(sender->get(), SOL_SOCKET, SO_BINDTODEVICE,
+                           eth_if_name, sizeof(eth_if_name)),
+                SyscallSucceeds());
+
+    for (const ip_mreqn& iface : ifaces) {
+      // FIXME(b/137790511): Disallow mismatching IP_MULTICAST_IF and
+      // SO_BINDTODEVICE.
+      if (IsRunningOnGvisor()) {
+        EXPECT_THAT(setsockopt(sender->get(), IPPROTO_IP, IP_MULTICAST_IF,
+                               &iface, sizeof(iface)),
+                    SyscallSucceeds())
+            << " imr_index=" << iface.imr_ifindex
+            << " imr_address=" << GetAddr4Str(&iface.imr_address);
+      } else {
+        EXPECT_THAT(setsockopt(sender->get(), IPPROTO_IP, IP_MULTICAST_IF,
+                               &iface, sizeof(iface)),
+                    SyscallFailsWithErrno(EINVAL))
+            << " imr_index=" << iface.imr_ifindex
+            << " imr_address=" << GetAddr4Str(&iface.imr_address);
+      }
+    }
   }
 }
+
 }  // namespace testing
 }  // namespace gvisor
