@@ -926,11 +926,15 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
                           &receiver_addr_len),
               SyscallSucceeds());
   EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
-  int receiver_port =
+  const in_port_t receiver_port =
       reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port;
-  ip_mreqn group = {};
-  group.imr_multiaddr.s_addr = inet_addr(kMulticastAddress);
-  group.imr_ifindex = lo_if_idx();
+  const ip_mreqn group = {
+      .imr_multiaddr =
+          {
+              .s_addr = inet_addr(kMulticastAddress),
+          },
+      .imr_ifindex = lo_if_idx(),
+  };
   ASSERT_THAT(setsockopt(receiver->get(), IPPROTO_IP, IP_ADD_MEMBERSHIP, &group,
                          sizeof(group)),
               SyscallSucceeds());
@@ -938,9 +942,10 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
   // Set outgoing multicast interface config, with NIC and addr pointing to
   // different interfaces.
   auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
-  ip_mreqn iface = {};
-  iface.imr_ifindex = lo_if_idx();
-  iface.imr_address = eth_if_addr().sin_addr;
+  const ip_mreqn iface = {
+      .imr_address = eth_if_addr().sin_addr,
+      .imr_ifindex = lo_if_idx(),
+  };
   ASSERT_THAT(setsockopt(sender->get(), IPPROTO_IP, IP_MULTICAST_IF, &iface,
                          sizeof(iface)),
               SyscallSucceeds());
@@ -948,29 +953,33 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
   // Send a multicast packet.
   auto sendto_addr = V4Multicast();
   reinterpret_cast<sockaddr_in*>(&sendto_addr.addr)->sin_port = receiver_port;
-  char send_buf[4] = {};
+  char send_buf[4];
   ASSERT_THAT(
       RetryEINTR(sendto)(sender->get(), send_buf, sizeof(send_buf), 0,
                          AsSockAddr(&sendto_addr.addr), sendto_addr.addr_len),
       SyscallSucceedsWithValue(sizeof(send_buf)));
 
   // Receive a multicast packet.
-  char recv_buf[sizeof(send_buf)] = {};
+  char recv_buf[sizeof(send_buf) + 1];
   auto src_addr = V4EmptyAddress();
   ASSERT_THAT(
       RetryEINTR(recvfrom)(receiver->get(), recv_buf, sizeof(recv_buf), 0,
                            AsSockAddr(&src_addr.addr), &src_addr.addr_len),
-      SyscallSucceedsWithValue(sizeof(recv_buf)));
-  ASSERT_EQ(sizeof(struct sockaddr_in), src_addr.addr_len);
-  sockaddr_in* src_addr_in = reinterpret_cast<sockaddr_in*>(&src_addr.addr);
-
-  // FIXME (b/137781162): When sending a multicast packet use the proper logic
-  // to determine the packet's src-IP.
-  SKIP_IF(IsRunningOnGvisor());
+      SyscallSucceedsWithValue(sizeof(send_buf)));
+  ASSERT_EQ(src_addr.addr_len, sizeof(struct sockaddr_in));
 
   // Verify the received source address.
-  EXPECT_EQ(GetAddr4Str(&eth_if_addr().sin_addr),
-            GetAddr4Str(&src_addr_in->sin_addr));
+  //
+  // TODO(https://gvisor.dev/issue/6686): gVisor is a strong host, preventing
+  // the packet from being sent from the loopback device using the ethernet
+  // device's address.
+  if (IsRunningOnGvisor()) {
+    EXPECT_EQ(GetAddrStr(AsSockAddr(&src_addr.addr)),
+              GetAddr4Str(&lo_if_addr().sin_addr));
+  } else {
+    EXPECT_EQ(GetAddrStr(AsSockAddr(&src_addr.addr)),
+              GetAddr4Str(&eth_if_addr().sin_addr));
+  }
 }
 
 // Check that when we are bound to one interface we can set IP_MULTICAST_IF to
