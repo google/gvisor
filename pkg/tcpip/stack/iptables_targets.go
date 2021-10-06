@@ -29,7 +29,7 @@ type AcceptTarget struct {
 }
 
 // Action implements Target.Action.
-func (*AcceptTarget) Action(*PacketBuffer, *ConnTrack, Hook, *Route, AddressableEndpoint) (RuleVerdict, int) {
+func (*AcceptTarget) Action(*PacketBuffer, Hook, *Route, AddressableEndpoint) (RuleVerdict, int) {
 	return RuleAccept, 0
 }
 
@@ -40,7 +40,7 @@ type DropTarget struct {
 }
 
 // Action implements Target.Action.
-func (*DropTarget) Action(*PacketBuffer, *ConnTrack, Hook, *Route, AddressableEndpoint) (RuleVerdict, int) {
+func (*DropTarget) Action(*PacketBuffer, Hook, *Route, AddressableEndpoint) (RuleVerdict, int) {
 	return RuleDrop, 0
 }
 
@@ -52,7 +52,7 @@ type ErrorTarget struct {
 }
 
 // Action implements Target.Action.
-func (*ErrorTarget) Action(*PacketBuffer, *ConnTrack, Hook, *Route, AddressableEndpoint) (RuleVerdict, int) {
+func (*ErrorTarget) Action(*PacketBuffer, Hook, *Route, AddressableEndpoint) (RuleVerdict, int) {
 	log.Debugf("ErrorTarget triggered.")
 	return RuleDrop, 0
 }
@@ -67,7 +67,7 @@ type UserChainTarget struct {
 }
 
 // Action implements Target.Action.
-func (*UserChainTarget) Action(*PacketBuffer, *ConnTrack, Hook, *Route, AddressableEndpoint) (RuleVerdict, int) {
+func (*UserChainTarget) Action(*PacketBuffer, Hook, *Route, AddressableEndpoint) (RuleVerdict, int) {
 	panic("UserChainTarget should never be called.")
 }
 
@@ -79,7 +79,7 @@ type ReturnTarget struct {
 }
 
 // Action implements Target.Action.
-func (*ReturnTarget) Action(*PacketBuffer, *ConnTrack, Hook, *Route, AddressableEndpoint) (RuleVerdict, int) {
+func (*ReturnTarget) Action(*PacketBuffer, Hook, *Route, AddressableEndpoint) (RuleVerdict, int) {
 	return RuleReturn, 0
 }
 
@@ -97,7 +97,7 @@ type RedirectTarget struct {
 }
 
 // Action implements Target.Action.
-func (rt *RedirectTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, r *Route, addressEP AddressableEndpoint) (RuleVerdict, int) {
+func (rt *RedirectTarget) Action(pkt *PacketBuffer, hook Hook, r *Route, addressEP AddressableEndpoint) (RuleVerdict, int) {
 	// Sanity check.
 	if rt.NetworkProtocol != pkt.NetworkProtocolNumber {
 		panic(fmt.Sprintf(
@@ -154,15 +154,8 @@ func (rt *RedirectTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, r 
 
 		pkt.NatDone = true
 	case header.TCPProtocolNumber:
-		if ct == nil {
-			return RuleAccept, 0
-		}
-
-		// Set up conection for matching NAT rule. Only the first
-		// packet of the connection comes here. Other packets will be
-		// manipulated in connection tracking.
-		if conn := ct.insertRedirectConn(pkt, hook, rt.Port, address); conn != nil {
-			conn.handlePacket(pkt, hook, dirOriginal, r)
+		if t := pkt.tuple; t != nil {
+			t.conn.performNAT(pkt, hook, r, rt.Port, address, true /* dnat */)
 		}
 	default:
 		return RuleDrop, 0
@@ -181,7 +174,7 @@ type SNATTarget struct {
 	NetworkProtocol tcpip.NetworkProtocolNumber
 }
 
-func snatAction(pkt *PacketBuffer, ct *ConnTrack, hook Hook, r *Route, port uint16, address tcpip.Address) (RuleVerdict, int) {
+func snatAction(pkt *PacketBuffer, hook Hook, r *Route, port uint16, address tcpip.Address) (RuleVerdict, int) {
 	// Packet is already manipulated.
 	if pkt.NatDone {
 		return RuleAccept, 0
@@ -197,30 +190,21 @@ func snatAction(pkt *PacketBuffer, ct *ConnTrack, hook Hook, r *Route, port uint
 	if port == 0 {
 		switch protocol := pkt.TransportProtocolNumber; protocol {
 		case header.UDPProtocolNumber:
-			if port == 0 {
-				port = header.UDP(pkt.TransportHeader().View()).SourcePort()
-			}
+			port = header.UDP(pkt.TransportHeader().View()).SourcePort()
 		case header.TCPProtocolNumber:
-			if port == 0 {
-				port = header.TCP(pkt.TransportHeader().View()).SourcePort()
-			}
+			port = header.TCP(pkt.TransportHeader().View()).SourcePort()
 		}
 	}
 
-	// Set up conection for matching NAT rule. Only the first packet of the
-	// connection comes here. Other packets will be manipulated in connection
-	// tracking.
-	//
-	// Does nothing if the protocol does not support connection tracking.
-	if conn := ct.insertSNATConn(pkt, hook, port, address); conn != nil {
-		conn.handlePacket(pkt, hook, dirOriginal, r)
+	if t := pkt.tuple; t != nil {
+		t.conn.performNAT(pkt, hook, r, port, address, false /* dnat */)
 	}
 
 	return RuleAccept, 0
 }
 
 // Action implements Target.Action.
-func (st *SNATTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, r *Route, _ AddressableEndpoint) (RuleVerdict, int) {
+func (st *SNATTarget) Action(pkt *PacketBuffer, hook Hook, r *Route, _ AddressableEndpoint) (RuleVerdict, int) {
 	// Sanity check.
 	if st.NetworkProtocol != pkt.NetworkProtocolNumber {
 		panic(fmt.Sprintf(
@@ -236,7 +220,7 @@ func (st *SNATTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, r *Rou
 		panic(fmt.Sprintf("%s unrecognized", hook))
 	}
 
-	return snatAction(pkt, ct, hook, r, st.Port, st.Addr)
+	return snatAction(pkt, hook, r, st.Port, st.Addr)
 }
 
 // MasqueradeTarget modifies the source port/IP in the outgoing packets.
@@ -247,7 +231,7 @@ type MasqueradeTarget struct {
 }
 
 // Action implements Target.Action.
-func (mt *MasqueradeTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, r *Route, addressEP AddressableEndpoint) (RuleVerdict, int) {
+func (mt *MasqueradeTarget) Action(pkt *PacketBuffer, hook Hook, r *Route, addressEP AddressableEndpoint) (RuleVerdict, int) {
 	// Sanity check.
 	if mt.NetworkProtocol != pkt.NetworkProtocolNumber {
 		panic(fmt.Sprintf(
@@ -272,7 +256,7 @@ func (mt *MasqueradeTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, 
 
 	address := ep.AddressWithPrefix().Address
 	ep.DecRef()
-	return snatAction(pkt, ct, hook, r, 0 /* port */, address)
+	return snatAction(pkt, hook, r, 0 /* port */, address)
 }
 
 func rewritePacket(n header.Network, t header.ChecksummableTransport, updateSRCFields, fullChecksum, updatePseudoHeader bool, newPort uint16, newAddr tcpip.Address) {
