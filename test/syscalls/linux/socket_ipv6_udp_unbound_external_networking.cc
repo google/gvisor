@@ -18,8 +18,6 @@ namespace gvisor {
 namespace testing {
 
 TEST_P(IPv6UDPUnboundExternalNetworkingSocketTest, TestJoinLeaveMulticast) {
-  SKIP_IF(!found_net_interfaces_);
-
   auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto receiver = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 

@@ -2670,6 +2670,7 @@ cc_library(
         ":ip_socket_test_util",
         "//test/util:socket_util",
         "//test/util:test_util",
+        "@com_google_absl//absl/cleanup",
     ],
     alwayslink = 1,
 )

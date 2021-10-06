@@ -27,17 +27,16 @@ class IPUDPUnboundExternalNetworkingSocketTest : public SimpleSocketTest {
  protected:
   void SetUp() override;
 
-  IfAddrHelper if_helper_;
+  int lo_if_idx() const { return std::get<0>(lo_if_.value()); }
+  int eth_if_idx() const { return std::get<0>(eth_if_.value()); }
 
-  // found_net_interfaces_ is set to false if SetUp() could not obtain
-  // all interface infos that we need.
-  bool found_net_interfaces_;
+  const sockaddr_in& lo_if_addr() const { return std::get<1>(lo_if_.value()); }
+  const sockaddr_in& eth_if_addr() const {
+    return std::get<1>(eth_if_.value());
+  }
 
-  // Interface infos.
-  int lo_if_idx_;
-  int eth_if_idx_;
-  sockaddr_in lo_if_addr_;
-  sockaddr_in eth_if_addr_;
+ private:
+  std::optional<std::pair<int, sockaddr_in>> lo_if_, eth_if_;
 };
 
 }  // namespace testing
