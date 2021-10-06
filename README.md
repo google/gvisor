@@ -61,8 +61,9 @@ Make sure the following dependencies are installed:
 Build and install the `runsc` binary:
 
 ```sh
-make runsc
-sudo cp ./bazel-bin/runsc/linux_amd64_pure_stripped/runsc /usr/local/bin
+mkdir -p bin
+make copy TARGETS=runsc DESTINATION=bin/
+sudo cp ./bin/runsc /usr/local/bin
 ```
 
 ### Testing
