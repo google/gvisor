@@ -132,36 +132,12 @@ func (rt *RedirectTarget) Action(pkt *PacketBuffer, hook Hook, r *Route, address
 		panic("redirect target is supported only on output and prerouting hooks")
 	}
 
-	switch protocol := pkt.TransportProtocolNumber; protocol {
-	case header.UDPProtocolNumber:
-		udpHeader := header.UDP(pkt.TransportHeader().View())
-
-		if hook == Output {
-			// Only calculate the checksum if offloading isn't supported.
-			requiresChecksum := r.RequiresTXTransportChecksum()
-			rewritePacket(
-				pkt.Network(),
-				udpHeader,
-				false, /* updateSRCFields */
-				requiresChecksum,
-				requiresChecksum,
-				rt.Port,
-				address,
-			)
-		} else {
-			udpHeader.SetDestinationPort(rt.Port)
-		}
-
-		pkt.NatDone = true
-	case header.TCPProtocolNumber:
-		if t := pkt.tuple; t != nil {
-			t.conn.performNAT(pkt, hook, r, rt.Port, address, true /* dnat */)
-		}
-	default:
-		return RuleDrop, 0
+	if t := pkt.tuple; t != nil {
+		t.conn.performNAT(pkt, hook, r, rt.Port, address, true /* dnat */)
+		return RuleAccept, 0
 	}
 
-	return RuleAccept, 0
+	return RuleDrop, 0
 }
 
 // SNATTarget modifies the source port/IP in the outgoing packets.
