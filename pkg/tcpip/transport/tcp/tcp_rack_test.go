@@ -1059,16 +1059,17 @@ func TestRACKWithWindowFull(t *testing.T) {
 	for i := 0; i < numPkts; i++ {
 		c.ReceiveAndCheckPacketWithOptions(data, bytesRead, maxPayload, tsOptionSize)
 		bytesRead += maxPayload
-		if i == 0 {
-			// Send ACK for the first packet to establish RTT.
-			c.SendAck(seq, maxPayload)
-		}
 	}
 
-	// SACK for #10 packet.
-	start := c.IRS.Add(seqnum.Size(1 + (numPkts-1)*maxPayload))
+	// Expect retransmission of last packet due to TLP.
+	c.ReceiveAndCheckPacketWithOptions(data, (numPkts-1)*maxPayload, maxPayload, tsOptionSize)
+
+	// SACK for first and last packet.
+	start := c.IRS.Add(seqnum.Size(maxPayload))
 	end := start.Add(seqnum.Size(maxPayload))
-	c.SendAckWithSACK(seq, 2*maxPayload, []header.SACKBlock{{start, end}})
+	dsackStart := c.IRS.Add(seqnum.Size(1 + (numPkts-1)*maxPayload))
+	dsackEnd := dsackStart.Add(seqnum.Size(maxPayload))
+	c.SendAckWithSACK(seq, 2*maxPayload, []header.SACKBlock{{dsackStart, dsackEnd}, {start, end}})
 
 	var info tcpip.TCPInfoOption
 	if err := c.EP.GetSockOpt(&info); err != nil {
