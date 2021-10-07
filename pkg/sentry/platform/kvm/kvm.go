@@ -77,7 +77,11 @@ var (
 
 // OpenDevice opens the KVM device at /dev/kvm and returns the File.
 func OpenDevice() (*os.File, error) {
-	f, err := os.OpenFile("/dev/kvm", unix.O_RDWR, 0)
+	dev, ok := os.LookupEnv("GVISOR_KVM_DEV")
+	if !ok {
+		dev = "/dev/kvm"
+	}
+	f, err := os.OpenFile(dev, unix.O_RDWR, 0)
 	if err != nil {
 		return nil, fmt.Errorf("error opening /dev/kvm: %v", err)
 	}
