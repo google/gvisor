@@ -289,6 +289,12 @@ type TCPSenderState struct {
 
 	// RACKState holds the state related to RACK loss detection algorithm.
 	RACKState TCPRACKState
+
+	// RetransmitTS records the timestamp used to detect spurious recovery.
+	RetransmitTS uint32
+
+	// SpuriousRecovery indicates if the sender entered recovery spuriously.
+	SpuriousRecovery bool
 }
 
 // TCPSACKInfo holds TCP SACK related information for a given TCP endpoint.
