@@ -423,9 +423,9 @@ type ControlMessages struct {
 	// HasTimestamp indicates whether Timestamp is valid/set.
 	HasTimestamp bool
 
-	// Timestamp is the time (in ns) that the last packet used to create
-	// the read data was received.
-	Timestamp int64
+	// Timestamp is the time that the last packet used to create the read data
+	// was received.
+	Timestamp time.Time `state:".(int64)"`
 
 	// HasInq indicates whether Inq is valid/set.
 	HasInq bool
@@ -471,10 +471,10 @@ type ControlMessages struct {
 
 // PacketOwner is used to get UID and GID of the packet.
 type PacketOwner interface {
-	// UID returns KUID of the packet.
+	// KUID returns KUID of the packet.
 	KUID() uint32
 
-	// GID returns KGID of the packet.
+	// KGID returns KGID of the packet.
 	KGID() uint32
 }
 
@@ -1245,11 +1245,11 @@ type Route struct {
 // String implements the fmt.Stringer interface.
 func (r Route) String() string {
 	var out strings.Builder
-	fmt.Fprintf(&out, "%s", r.Destination)
+	_, _ = fmt.Fprintf(&out, "%s", r.Destination)
 	if len(r.Gateway) > 0 {
-		fmt.Fprintf(&out, " via %s", r.Gateway)
+		_, _ = fmt.Fprintf(&out, " via %s", r.Gateway)
 	}
-	fmt.Fprintf(&out, " nic %d", r.NIC)
+	_, _ = fmt.Fprintf(&out, " nic %d", r.NIC)
 	return out.String()
 }
 
@@ -1286,7 +1286,7 @@ func (s *StatCounter) Decrement() {
 }
 
 // Value returns the current value of the counter.
-func (s *StatCounter) Value(name ...string) uint64 {
+func (s *StatCounter) Value(...string) uint64 {
 	return s.count.Load()
 }
 

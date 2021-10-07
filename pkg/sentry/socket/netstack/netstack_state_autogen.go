@@ -45,7 +45,7 @@ func (s *socketOpsCommon) StateFields() []string {
 		"protocol",
 		"sockOptTimestamp",
 		"timestampValid",
-		"timestampNS",
+		"timestamp",
 		"sockOptInq",
 	}
 }
@@ -55,6 +55,9 @@ func (s *socketOpsCommon) beforeSave() {}
 // +checklocksignore
 func (s *socketOpsCommon) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
+	var timestampValue int64
+	timestampValue = s.saveTimestamp()
+	stateSinkObject.SaveValue(8, timestampValue)
 	stateSinkObject.Save(0, &s.SendReceiveTimeout)
 	stateSinkObject.Save(1, &s.Queue)
 	stateSinkObject.Save(2, &s.family)
@@ -63,7 +66,6 @@ func (s *socketOpsCommon) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &s.protocol)
 	stateSinkObject.Save(6, &s.sockOptTimestamp)
 	stateSinkObject.Save(7, &s.timestampValid)
-	stateSinkObject.Save(8, &s.timestampNS)
 	stateSinkObject.Save(9, &s.sockOptInq)
 }
 
@@ -79,8 +81,8 @@ func (s *socketOpsCommon) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(5, &s.protocol)
 	stateSourceObject.Load(6, &s.sockOptTimestamp)
 	stateSourceObject.Load(7, &s.timestampValid)
-	stateSourceObject.Load(8, &s.timestampNS)
 	stateSourceObject.Load(9, &s.sockOptInq)
+	stateSourceObject.LoadValue(8, new(int64), func(y interface{}) { s.loadTimestamp(y.(int64)) })
 }
 
 func (s *SocketVFS2) StateTypeName() string {
