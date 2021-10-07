@@ -180,7 +180,7 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 		Total: p.data.Size(),
 		ControlMessages: tcpip.ControlMessages{
 			HasTimestamp: true,
-			Timestamp:    p.receivedAt.UnixNano(),
+			Timestamp:    p.receivedAt,
 		},
 	}
 	if opts.NeedRemoteAddr {

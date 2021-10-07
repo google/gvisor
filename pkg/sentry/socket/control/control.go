@@ -29,9 +29,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
+	"time"
 )
-
-const maxInt = int(^uint(0) >> 1)
 
 // SCMCredentials represents a SCM_CREDENTIALS socket control message.
 type SCMCredentials interface {
@@ -78,7 +77,7 @@ func NewSCMRights(t *kernel.Task, fds []int32) (SCMRights, error) {
 }
 
 // Files implements SCMRights.Files.
-func (fs *RightsFiles) Files(ctx context.Context, max int) (RightsFiles, bool) {
+func (fs *RightsFiles) Files(_ context.Context, max int) (RightsFiles, bool) {
 	n := max
 	var trunc bool
 	if l := len(*fs); n > l {
@@ -124,7 +123,7 @@ func rightsFDs(t *kernel.Task, rights SCMRights, cloexec bool, max int) ([]int32
 			break
 		}
 
-		fds = append(fds, int32(fd))
+		fds = append(fds, fd)
 	}
 	return fds, trunc
 }
@@ -300,8 +299,8 @@ func alignSlice(buf []byte, align uint) []byte {
 }
 
 // PackTimestamp packs a SO_TIMESTAMP socket control message.
-func PackTimestamp(t *kernel.Task, timestamp int64, buf []byte) []byte {
-	timestampP := linux.NsecToTimeval(timestamp)
+func PackTimestamp(t *kernel.Task, timestamp time.Time, buf []byte) []byte {
+	timestampP := linux.NsecToTimeval(timestamp.UnixNano())
 	return putCmsgStruct(
 		buf,
 		linux.SOL_SOCKET,
@@ -545,7 +544,7 @@ func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte, width uint)
 				}
 				var ts linux.Timeval
 				ts.UnmarshalUnsafe(buf[i : i+linux.SizeOfTimeval])
-				cmsgs.IP.Timestamp = ts.ToNsecCapped()
+				cmsgs.IP.Timestamp = ts.ToTime()
 				cmsgs.IP.HasTimestamp = true
 				i += bits.AlignUp(length, width)
 

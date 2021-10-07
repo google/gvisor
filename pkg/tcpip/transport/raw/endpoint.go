@@ -202,7 +202,7 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 		Total: pkt.data.Size(),
 		ControlMessages: tcpip.ControlMessages{
 			HasTimestamp: true,
-			Timestamp:    pkt.receivedAt.UnixNano(),
+			Timestamp:    pkt.receivedAt,
 		},
 	}
 	if opts.NeedRemoteAddr {
@@ -483,10 +483,10 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		// overlapping slices.
 		var combinedVV buffer.VectorisedView
 		if info.NetProto == header.IPv4ProtocolNumber {
-			network, transport := pkt.NetworkHeader().View(), pkt.TransportHeader().View()
-			headers := make(buffer.View, 0, len(network)+len(transport))
-			headers = append(headers, network...)
-			headers = append(headers, transport...)
+			networkHeader, transportHeader := pkt.NetworkHeader().View(), pkt.TransportHeader().View()
+			headers := make(buffer.View, 0, len(networkHeader)+len(transportHeader))
+			headers = append(headers, networkHeader...)
+			headers = append(headers, transportHeader...)
 			combinedVV = headers.ToVectorisedView()
 		} else {
 			combinedVV = append(buffer.View(nil), pkt.TransportHeader().View()...).ToVectorisedView()

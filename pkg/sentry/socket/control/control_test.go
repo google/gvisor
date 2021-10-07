@@ -50,7 +50,7 @@ func TestParse(t *testing.T) {
 	want := socket.ControlMessages{
 		IP: socket.IPControlMessages{
 			HasTimestamp: true,
-			Timestamp:    ts.ToNsecCapped(),
+			Timestamp:    ts.ToTime(),
 		},
 	}
 	if diff := cmp.Diff(want, cmsg); diff != "" {

@@ -233,7 +233,7 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 	// Control Messages
 	cm := tcpip.ControlMessages{
 		HasTimestamp: true,
-		Timestamp:    p.receivedAt.UnixNano(),
+		Timestamp:    p.receivedAt,
 	}
 
 	switch p.netProto {

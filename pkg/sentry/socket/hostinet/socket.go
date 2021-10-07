@@ -111,7 +111,7 @@ func (s *socketOperations) Read(ctx context.Context, _ *fs.File, dst usermem.IOS
 		}
 		return readv(s.fd, safemem.IovecsFromBlockSeq(dsts))
 	}))
-	return int64(n), err
+	return n, err
 }
 
 // Write implements fs.FileOperations.Write.
@@ -134,7 +134,7 @@ func (s *socketOperations) Write(ctx context.Context, _ *fs.File, src usermem.IO
 		}
 		return writev(s.fd, safemem.IovecsFromBlockSeq(srcs))
 	}))
-	return int64(n), err
+	return n, err
 }
 
 // Socket implements socket.Provider.Socket.
@@ -180,7 +180,7 @@ func (p *socketProvider) Socket(t *kernel.Task, stypeflags linux.SockType, proto
 }
 
 // Pair implements socket.Provider.Pair.
-func (p *socketProvider) Pair(t *kernel.Task, stype linux.SockType, protocol int) (*fs.File, *fs.File, *syserr.Error) {
+func (p *socketProvider) Pair(*kernel.Task, linux.SockType, int) (*fs.File, *fs.File, *syserr.Error) {
 	// Not supported by AF_INET/AF_INET6.
 	return nil, nil, nil
 }
@@ -207,7 +207,7 @@ type socketOpsCommon struct {
 // Release implements fs.FileOperations.Release.
 func (s *socketOpsCommon) Release(context.Context) {
 	fdnotifier.RemoveFD(int32(s.fd))
-	unix.Close(s.fd)
+	_ = unix.Close(s.fd)
 }
 
 // Readiness implements waiter.Waitable.Readiness.
@@ -218,13 +218,13 @@ func (s *socketOpsCommon) Readiness(mask waiter.EventMask) waiter.EventMask {
 // EventRegister implements waiter.Waitable.EventRegister.
 func (s *socketOpsCommon) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
 	s.queue.EventRegister(e, mask)
-	fdnotifier.UpdateFD(int32(s.fd))
+	_ = fdnotifier.UpdateFD(int32(s.fd))
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
 func (s *socketOpsCommon) EventUnregister(e *waiter.Entry) {
 	s.queue.EventUnregister(e)
-	fdnotifier.UpdateFD(int32(s.fd))
+	_ = fdnotifier.UpdateFD(int32(s.fd))
 }
 
 // Connect implements socket.Socket.Connect.
@@ -316,7 +316,7 @@ func (s *socketOpsCommon) Accept(t *kernel.Task, peerRequested bool, flags int, 
 	if kernel.VFS2Enabled {
 		f, err := newVFS2Socket(t, s.family, s.stype, s.protocol, fd, uint32(flags&unix.SOCK_NONBLOCK))
 		if err != nil {
-			unix.Close(fd)
+			_ = unix.Close(fd)
 			return 0, nil, 0, err
 		}
 		defer f.DecRef(t)
@@ -328,7 +328,7 @@ func (s *socketOpsCommon) Accept(t *kernel.Task, peerRequested bool, flags int, 
 	} else {
 		f, err := newSocketFile(t, s.family, s.stype, s.protocol, fd, flags&unix.SOCK_NONBLOCK != 0)
 		if err != nil {
-			unix.Close(fd)
+			_ = unix.Close(fd)
 			return 0, nil, 0, err
 		}
 		defer f.DecRef(t)
@@ -343,7 +343,7 @@ func (s *socketOpsCommon) Accept(t *kernel.Task, peerRequested bool, flags int, 
 }
 
 // Bind implements socket.Socket.Bind.
-func (s *socketOpsCommon) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
+func (s *socketOpsCommon) Bind(_ *kernel.Task, sockaddr []byte) *syserr.Error {
 	if len(sockaddr) > sizeofSockaddr {
 		sockaddr = sockaddr[:sizeofSockaddr]
 	}
@@ -356,12 +356,12 @@ func (s *socketOpsCommon) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 }
 
 // Listen implements socket.Socket.Listen.
-func (s *socketOpsCommon) Listen(t *kernel.Task, backlog int) *syserr.Error {
+func (s *socketOpsCommon) Listen(_ *kernel.Task, backlog int) *syserr.Error {
 	return syserr.FromError(unix.Listen(s.fd, backlog))
 }
 
 // Shutdown implements socket.Socket.Shutdown.
-func (s *socketOpsCommon) Shutdown(t *kernel.Task, how int) *syserr.Error {
+func (s *socketOpsCommon) Shutdown(_ *kernel.Task, how int) *syserr.Error {
 	switch how {
 	case unix.SHUT_RD, unix.SHUT_WR, unix.SHUT_RDWR:
 		return syserr.FromError(unix.Shutdown(s.fd, how))
@@ -371,7 +371,7 @@ func (s *socketOpsCommon) Shutdown(t *kernel.Task, how int) *syserr.Error {
 }
 
 // GetSockOpt implements socket.Socket.GetSockOpt.
-func (s *socketOpsCommon) GetSockOpt(t *kernel.Task, level int, name int, outPtr hostarch.Addr, outLen int) (marshal.Marshallable, *syserr.Error) {
+func (s *socketOpsCommon) GetSockOpt(t *kernel.Task, level int, name int, _ hostarch.Addr, outLen int) (marshal.Marshallable, *syserr.Error) {
 	if outLen < 0 {
 		return nil, syserr.ErrInvalidArgument
 	}
@@ -401,7 +401,7 @@ func (s *socketOpsCommon) GetSockOpt(t *kernel.Task, level int, name int, outPtr
 		case linux.TCP_NODELAY:
 			optlen = sizeofInt32
 		case linux.TCP_INFO:
-			optlen = int(linux.SizeOfTCPInfo)
+			optlen = linux.SizeOfTCPInfo
 		}
 	}
 
@@ -579,7 +579,7 @@ func parseUnixControlMessages(unixControlMessages []unix.SocketControlMessage) s
 				controlMessages.IP.HasTimestamp = true
 				ts := linux.Timeval{}
 				ts.UnmarshalUnsafe(unixCmsg.Data[:linux.SizeOfTimeval])
-				controlMessages.IP.Timestamp = ts.ToNsecCapped()
+				controlMessages.IP.Timestamp = ts.ToTime()
 			}
 
 		case linux.SOL_IP:
