@@ -824,6 +824,8 @@ func (s *sender) StateFields() []string {
 		"state",
 		"cc",
 		"rc",
+		"spuriousRecovery",
+		"retransmitTS",
 	}
 }
 
@@ -846,6 +848,8 @@ func (s *sender) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(11, &s.state)
 	stateSinkObject.Save(12, &s.cc)
 	stateSinkObject.Save(13, &s.rc)
+	stateSinkObject.Save(14, &s.spuriousRecovery)
+	stateSinkObject.Save(15, &s.retransmitTS)
 }
 
 func (s *sender) afterLoad() {}
@@ -866,6 +870,8 @@ func (s *sender) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(11, &s.state)
 	stateSourceObject.Load(12, &s.cc)
 	stateSourceObject.Load(13, &s.rc)
+	stateSourceObject.Load(14, &s.spuriousRecovery)
+	stateSourceObject.Load(15, &s.retransmitTS)
 }
 
 func (r *rtt) StateTypeName() string {

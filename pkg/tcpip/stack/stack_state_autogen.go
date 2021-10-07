@@ -871,6 +871,8 @@ func (t *TCPSenderState) StateFields() []string {
 		"FastRecovery",
 		"Cubic",
 		"RACKState",
+		"RetransmitTS",
+		"SpuriousRecovery",
 	}
 }
 
@@ -900,6 +902,8 @@ func (t *TCPSenderState) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(18, &t.FastRecovery)
 	stateSinkObject.Save(19, &t.Cubic)
 	stateSinkObject.Save(20, &t.RACKState)
+	stateSinkObject.Save(21, &t.RetransmitTS)
+	stateSinkObject.Save(22, &t.SpuriousRecovery)
 }
 
 func (t *TCPSenderState) afterLoad() {}
@@ -927,6 +931,8 @@ func (t *TCPSenderState) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(18, &t.FastRecovery)
 	stateSourceObject.Load(19, &t.Cubic)
 	stateSourceObject.Load(20, &t.RACKState)
+	stateSourceObject.Load(21, &t.RetransmitTS)
+	stateSourceObject.Load(22, &t.SpuriousRecovery)
 }
 
 func (t *TCPSACKInfo) StateTypeName() string {
