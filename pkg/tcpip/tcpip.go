@@ -1865,6 +1865,10 @@ type TCPStats struct {
 	// SegmentsAckedWithDSACK is the number of segments acknowledged with
 	// DSACK.
 	SegmentsAckedWithDSACK *StatCounter
+
+	// SpuriousRecovery is the number of times the connection entered loss
+	// recovery spuriously.
+	SpuriousRecovery *StatCounter
 }
 
 // UDPStats collects UDP-specific stats.

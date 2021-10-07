@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -701,4 +702,258 @@ func TestRecoveryEntry(t *testing.T) {
 	if err := testutil.Poll(metricPollFn, 1*time.Second); err != nil {
 		t.Error(err)
 	}
+}
+
+func verifySpuriousRecoveryMetric(t *testing.T, c *context.Context, numSpuriousRecovery uint64) {
+	t.Helper()
+
+	metricPollFn := func() error {
+		tcpStats := c.Stack().Stats().TCP
+		stats := []struct {
+			stat *tcpip.StatCounter
+			name string
+			want uint64
+		}{
+			{tcpStats.SpuriousRecovery, "stats.TCP.SpuriousRecovery", numSpuriousRecovery},
+		}
+		for _, s := range stats {
+			if got, want := s.stat.Value(), s.want; got != want {
+				return fmt.Errorf("got %s.Value() = %d, want = %d", s.name, got, want)
+			}
+		}
+		return nil
+	}
+
+	if err := testutil.Poll(metricPollFn, 1*time.Second); err != nil {
+		t.Error(err)
+	}
+}
+
+func checkReceivedPacket(t *testing.T, c *context.Context, tcpHdr header.TCP, bytesRead uint32, b, data []byte) {
+	payloadLen := uint32(len(tcpHdr.Payload()))
+	checker.IPv4(t, b,
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.TCPSeqNum(uint32(c.IRS)+1+bytesRead),
+			checker.TCPAckNum(context.TestInitialSequenceNumber+1),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
+		),
+	)
+	pdata := data[bytesRead : bytesRead+payloadLen]
+	if p := tcpHdr.Payload(); !bytes.Equal(pdata, p) {
+		t.Fatalf("got data = %v, want = %v", p, pdata)
+	}
+}
+
+func buildTSOptionFromHeader(tcpHdr header.TCP) []byte {
+	parsedOpts := tcpHdr.ParsedOptions()
+	tsOpt := [12]byte{header.TCPOptionNOP, header.TCPOptionNOP}
+	header.EncodeTSOption(parsedOpts.TSEcr+1, parsedOpts.TSVal, tsOpt[2:])
+	return tsOpt[:]
+}
+
+func TestDetectSpuriousRecoveryWithRTO(t *testing.T) {
+	c := context.New(t, uint32(mtu))
+	defer c.Cleanup()
+
+	probeDone := make(chan struct{})
+	c.Stack().AddTCPProbe(func(s stack.TCPEndpointState) {
+		if s.Sender.RetransmitTS == 0 {
+			t.Fatalf("RetransmitTS did not get updated, got: 0 want > 0")
+		}
+		if !s.Sender.SpuriousRecovery {
+			t.Fatalf("Spurious recovery was not detected")
+		}
+		close(probeDone)
+	})
+
+	setStackSACKPermitted(t, c, true)
+	createConnectedWithSACKAndTS(c)
+	numPackets := 5
+	data := make([]byte, numPackets*maxPayload)
+	for i := range data {
+		data[i] = byte(i)
+	}
+	// Write the data.
+	var r bytes.Reader
+	r.Reset(data)
+	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
+		t.Fatalf("Write failed: %s", err)
+	}
+
+	var options []byte
+	var bytesRead uint32
+	for i := 0; i < numPackets; i++ {
+		b := c.GetPacket()
+		tcpHdr := header.TCP(header.IPv4(b).Payload())
+		checkReceivedPacket(t, c, tcpHdr, bytesRead, b, data)
+
+		// Get options only for the first packet. This will be sent with
+		// the ACK to indicate the acknowledgement is for the original
+		// packet.
+		if i == 0 && c.TimeStampEnabled {
+			options = buildTSOptionFromHeader(tcpHdr)
+		}
+		bytesRead += uint32(len(tcpHdr.Payload()))
+	}
+
+	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+	// Expect #5 segment with TLP.
+	c.ReceiveAndCheckPacketWithOptions(data, 4*maxPayload, maxPayload, tsOptionSize)
+
+	// Expect #1 segment because of RTO.
+	c.ReceiveAndCheckPacketWithOptions(data, 0, maxPayload, tsOptionSize)
+
+	info := tcpip.TCPInfoOption{}
+	if err := c.EP.GetSockOpt(&info); err != nil {
+		t.Fatalf("c.EP.GetSockOpt(&%T) = %s", info, err)
+	}
+
+	if info.CcState != tcpip.RTORecovery {
+		t.Fatalf("Loss recovery did not happen, got: %v want: %v", info.CcState, tcpip.RTORecovery)
+	}
+
+	// Acknowledge the data.
+	rcvWnd := seqnum.Size(30000)
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: c.Port,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  seq,
+		AckNum:  c.IRS.Add(1 + seqnum.Size(maxPayload)),
+		RcvWnd:  rcvWnd,
+		TCPOpts: options,
+	})
+
+	// Wait for the probe function to finish processing the
+	// ACK before the test completes.
+	<-probeDone
+
+	verifySpuriousRecoveryMetric(t, c, 1 /* numSpuriousRecovery */)
+}
+
+func TestSACKDetectSpuriousRecoveryWithDupACK(t *testing.T) {
+	c := context.New(t, uint32(mtu))
+	defer c.Cleanup()
+
+	numAck := 0
+	probeDone := make(chan struct{})
+	c.Stack().AddTCPProbe(func(s stack.TCPEndpointState) {
+		if numAck < 3 {
+			numAck++
+			return
+		}
+
+		if s.Sender.RetransmitTS == 0 {
+			t.Fatalf("RetransmitTS did not get updated, got: 0 want > 0")
+		}
+		if !s.Sender.SpuriousRecovery {
+			t.Fatalf("Spurious recovery was not detected")
+		}
+		close(probeDone)
+	})
+
+	setStackSACKPermitted(t, c, true)
+	createConnectedWithSACKAndTS(c)
+	numPackets := 5
+	data := make([]byte, numPackets*maxPayload)
+	for i := range data {
+		data[i] = byte(i)
+	}
+	// Write the data.
+	var r bytes.Reader
+	r.Reset(data)
+	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
+		t.Fatalf("Write failed: %s", err)
+	}
+
+	var options []byte
+	var bytesRead uint32
+	for i := 0; i < numPackets; i++ {
+		b := c.GetPacket()
+		tcpHdr := header.TCP(header.IPv4(b).Payload())
+		checkReceivedPacket(t, c, tcpHdr, bytesRead, b, data)
+
+		// Get options only for the first packet. This will be sent with
+		// the ACK to indicate the acknowledgement is for the original
+		// packet.
+		if i == 0 && c.TimeStampEnabled {
+			options = buildTSOptionFromHeader(tcpHdr)
+		}
+		bytesRead += uint32(len(tcpHdr.Payload()))
+	}
+
+	// Receive the retransmitted packet after TLP.
+	c.ReceiveAndCheckPacketWithOptions(data, 4*maxPayload, maxPayload, tsOptionSize)
+
+	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+	// Send ACK for #3 and #4 segments to avoid entering TLP.
+	start := c.IRS.Add(3*maxPayload + 1)
+	end := start.Add(2 * maxPayload)
+	c.SendAckWithSACK(seq, 0, []header.SACKBlock{{start, end}})
+
+	c.SendAck(seq, 0 /* bytesReceived */)
+	c.SendAck(seq, 0 /* bytesReceived */)
+
+	// Receive the retransmitted packet after three duplicate ACKs.
+	c.ReceiveAndCheckPacketWithOptions(data, 0, maxPayload, tsOptionSize)
+
+	info := tcpip.TCPInfoOption{}
+	if err := c.EP.GetSockOpt(&info); err != nil {
+		t.Fatalf("c.EP.GetSockOpt(&%T) = %s", info, err)
+	}
+
+	if info.CcState != tcpip.SACKRecovery {
+		t.Fatalf("Loss recovery did not happen, got: %v want: %v", info.CcState, tcpip.SACKRecovery)
+	}
+
+	// Acknowledge the data.
+	rcvWnd := seqnum.Size(30000)
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: c.Port,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  seq,
+		AckNum:  c.IRS.Add(1 + seqnum.Size(maxPayload)),
+		RcvWnd:  rcvWnd,
+		TCPOpts: options,
+	})
+
+	// Wait for the probe function to finish processing the
+	// ACK before the test completes.
+	<-probeDone
+
+	verifySpuriousRecoveryMetric(t, c, 1 /* numSpuriousRecovery */)
+}
+
+func TestNoSpuriousRecoveryWithDSACK(t *testing.T) {
+	c := context.New(t, uint32(mtu))
+	defer c.Cleanup()
+	setStackSACKPermitted(t, c, true)
+	createConnectedWithSACKAndTS(c)
+	numPackets := 5
+	data := sendAndReceiveWithSACK(t, c, numPackets, true /* enableRACK */)
+
+	// Receive the retransmitted packet after TLP.
+	c.ReceiveAndCheckPacketWithOptions(data, 4*maxPayload, maxPayload, tsOptionSize)
+
+	// Send ACK for #3 and #4 segments to avoid entering TLP.
+	start := c.IRS.Add(3*maxPayload + 1)
+	end := start.Add(2 * maxPayload)
+	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+	c.SendAckWithSACK(seq, 0, []header.SACKBlock{{start, end}})
+
+	c.SendAck(seq, 0 /* bytesReceived */)
+	c.SendAck(seq, 0 /* bytesReceived */)
+
+	// Receive the retransmitted packet after three duplicate ACKs.
+	c.ReceiveAndCheckPacketWithOptions(data, 0, maxPayload, tsOptionSize)
+
+	// Acknowledge the data with DSACK for #1 segment.
+	start = c.IRS.Add(maxPayload + 1)
+	end = start.Add(2 * maxPayload)
+	seq = seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+	c.SendAckWithSACK(seq, 6*maxPayload, []header.SACKBlock{{start, end}})
+
+	verifySpuriousRecoveryMetric(t, c, 0 /* numSpuriousRecovery */)
 }

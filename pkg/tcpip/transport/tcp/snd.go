@@ -144,6 +144,15 @@ type sender struct {
 	// probeTimer and probeWaker are used to schedule PTO for RACK TLP algorithm.
 	probeTimer timer       `state:"nosave"`
 	probeWaker sleep.Waker `state:"nosave"`
+
+	// spuriousRecovery indicates whether the sender entered recovery
+	// spuriously as described in RFC3522 Section 3.2.
+	spuriousRecovery bool
+
+	// retransmitTS is the timestamp at which the sender sends retransmitted
+	// segment after entering an RTO for the first time as described in
+	// RFC3522 Section 3.2.
+	retransmitTS uint32
 }
 
 // rtt is a synchronization wrapper used to appease stateify. See the comment
@@ -425,6 +434,13 @@ func (s *sender) retransmitTimerExpired() bool {
 		return true
 	}
 
+	// Initialize the variables used to detect spurious recovery after
+	// entering RTO.
+	//
+	// See: https://www.rfc-editor.org/rfc/rfc3522.html#section-3.2 Step 1.
+	s.spuriousRecovery = false
+	s.retransmitTS = 0
+
 	// TODO(b/147297758): Band-aid fix, retransmitTimer can fire in some edge cases
 	// when writeList is empty. Remove this once we have a proper fix for this
 	// issue.
@@ -494,6 +510,10 @@ func (s *sender) retransmitTimerExpired() bool {
 		// has already been updated when entered fast-recovery.
 		s.leaveRecovery()
 	}
+
+	// Record retransmitTS if the sender is not in recovery as per:
+	// https://datatracker.ietf.org/doc/html/rfc3522#section-3.2 Step 2
+	s.recordRetransmitTS()
 
 	s.state = tcpip.RTORecovery
 	s.cc.HandleRTOExpired()
@@ -958,6 +978,13 @@ func (s *sender) sendData() {
 }
 
 func (s *sender) enterRecovery() {
+	// Initialize the variables used to detect spurious recovery after
+	// entering recovery.
+	//
+	// See: https://www.rfc-editor.org/rfc/rfc3522.html#section-3.2 Step 1.
+	s.spuriousRecovery = false
+	s.retransmitTS = 0
+
 	s.FastRecovery.Active = true
 	// Save state to reflect we're now in fast recovery.
 	//
@@ -972,6 +999,11 @@ func (s *sender) enterRecovery() {
 	s.FastRecovery.MaxCwnd = s.SndCwnd + s.Outstanding
 	s.FastRecovery.HighRxt = s.SndUna
 	s.FastRecovery.RescueRxt = s.SndUna
+
+	// Record retransmitTS if the sender is not in recovery as per:
+	// https://datatracker.ietf.org/doc/html/rfc3522#section-3.2 Step 2
+	s.recordRetransmitTS()
+
 	if s.ep.SACKPermitted {
 		s.state = tcpip.SACKRecovery
 		s.ep.stack.Stats().TCP.SACKRecovery.Increment()
@@ -1147,13 +1179,15 @@ func (s *sender) isDupAck(seg *segment) bool {
 // Iterate the writeList and update RACK for each segment which is newly acked
 // either cumulatively or selectively. Loop through the segments which are
 // sacked, and update the RACK related variables and check for reordering.
+// Returns true when the DSACK block has been detected in the received ACK.
 //
 // See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.2
 // steps 2 and 3.
-func (s *sender) walkSACK(rcvdSeg *segment) {
+func (s *sender) walkSACK(rcvdSeg *segment) bool {
 	s.rc.setDSACKSeen(false)
 
 	// Look for DSACK block.
+	hasDSACK := false
 	idx := 0
 	n := len(rcvdSeg.parsedOptions.SACKBlocks)
 	if checkDSACK(rcvdSeg) {
@@ -1167,10 +1201,11 @@ func (s *sender) walkSACK(rcvdSeg *segment) {
 		s.rc.setDSACKSeen(true)
 		idx = 1
 		n--
+		hasDSACK = true
 	}
 
 	if n == 0 {
-		return
+		return hasDSACK
 	}
 
 	// Sort the SACK blocks. The first block is the most recent unacked
@@ -1193,6 +1228,7 @@ func (s *sender) walkSACK(rcvdSeg *segment) {
 			seg = seg.Next()
 		}
 	}
+	return hasDSACK
 }
 
 // checkDSACK checks if a DSACK is reported.
@@ -1239,6 +1275,85 @@ func checkDSACK(rcvdSeg *segment) bool {
 	return false
 }
 
+func (s *sender) recordRetransmitTS() {
+	// See: https://datatracker.ietf.org/doc/html/rfc3522#section-3.2
+	//
+	// The Eifel detection algorithm is used, only upon initiation of loss
+	// recovery, i.e., when either the timeout-based retransmit or the fast
+	// retransmit is sent. The Eifel detection algorithm MUST NOT be
+	// reinitiated after loss recovery has already started. In particular,
+	// it must not be reinitiated upon subsequent timeouts for the same
+	// segment, and not upon retransmitting segments other than the oldest
+	// outstanding segment, e.g., during selective loss recovery.
+	if s.inRecovery() {
+		return
+	}
+
+	// See: https://datatracker.ietf.org/doc/html/rfc3522#section-3.2 Step 2
+	//
+	// Set a "RetransmitTS" variable to the value of the Timestamp Value
+	// field of the Timestamps option included in the retransmit sent when
+	// loss recovery is initiated. A TCP sender must ensure that
+	// RetransmitTS does not get overwritten as loss recovery progresses,
+	// e.g., in case of a second timeout and subsequent second retransmit of
+	// the same octet.
+	s.retransmitTS = s.ep.tsValNow()
+}
+
+func (s *sender) detectSpuriousRecovery(hasDSACK bool, tsEchoReply uint32) {
+	// Return if the sender has already detected spurious recovery.
+	if s.spuriousRecovery {
+		return
+	}
+
+	// See: https://datatracker.ietf.org/doc/html/rfc3522#section-3.2 Step 4
+	//
+	// If the value of the Timestamp Echo Reply field of the acceptable ACK's
+	// Timestamps option is smaller than the value of RetransmitTS, then
+	// proceed to next step, else return.
+	if tsEchoReply >= s.retransmitTS {
+		return
+	}
+
+	// See: https://datatracker.ietf.org/doc/html/rfc3522#section-3.2 Step 5
+	//
+	// If the acceptable ACK carries a DSACK option [RFC2883], then return.
+	if hasDSACK {
+		return
+	}
+
+	// See: https://datatracker.ietf.org/doc/html/rfc3522#section-3.2 Step 5
+	//
+	// If during the lifetime of the TCP connection the TCP sender has
+	// previously received an ACK with a DSACK option, or the acceptable ACK
+	// does not acknowledge all outstanding data, then proceed to next step,
+	// else return.
+	numDSACK := s.ep.stack.Stats().TCP.SegmentsAckedWithDSACK.Value()
+	if numDSACK == 0 && s.SndUna == s.SndNxt {
+		return
+	}
+
+	// See: https://datatracker.ietf.org/doc/html/rfc3522#section-3.2 Step 6
+	//
+	// If the loss recovery has been initiated with a timeout-based
+	// retransmit, then set
+	//    SpuriousRecovery <- SPUR_TO (equal 1),
+	// else set
+	//    SpuriousRecovery <- dupacks+1
+	// Set the spurious recovery variable to true as we do not differentiate
+	// between fast, SACK or RTO recovery.
+	s.spuriousRecovery = true
+	s.ep.stack.Stats().TCP.SpuriousRecovery.Increment()
+}
+
+// Check if the sender is in RTORecovery, FastRecovery or SACKRecovery state.
+func (s *sender) inRecovery() bool {
+	if s.state == tcpip.RTORecovery || s.state == tcpip.FastRecovery || s.state == tcpip.SACKRecovery {
+		return true
+	}
+	return false
+}
+
 // handleRcvdSegment is called when a segment is received; it is responsible for
 // updating the send-related state.
 func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
@@ -1254,6 +1369,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 	}
 
 	// Insert SACKBlock information into our scoreboard.
+	hasDSACK := false
 	if s.ep.SACKPermitted {
 		for _, sb := range rcvdSeg.parsedOptions.SACKBlocks {
 			// Only insert the SACK block if the following holds
@@ -1288,7 +1404,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		//   RACK.fack, then the corresponding packet has been
 		//   reordered and RACK.reord is set to TRUE.
 		if s.ep.tcpRecovery&tcpip.TCPRACKLossDetection != 0 {
-			s.walkSACK(rcvdSeg)
+			hasDSACK = s.walkSACK(rcvdSeg)
 		}
 		s.SetPipe()
 	}
@@ -1417,6 +1533,11 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 
 		// Clear SACK information for all acked data.
 		s.ep.scoreboard.Delete(s.SndUna)
+
+		// Detect if the sender entered recovery spuriously.
+		if s.inRecovery() {
+			s.detectSpuriousRecovery(hasDSACK, rcvdSeg.parsedOptions.TSEcr)
+		}
 
 		// If we are not in fast recovery then update the congestion
 		// window based on the number of acknowledged packets.
