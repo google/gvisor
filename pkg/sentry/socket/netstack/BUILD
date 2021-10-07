@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "device.go",
         "netstack.go",
+        "netstack_state.go",
         "netstack_vfs2.go",
         "provider.go",
         "provider_vfs2.go",

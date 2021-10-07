@@ -21,6 +21,7 @@ import (
 	"bytes"
 	"fmt"
 	"sync/atomic"
+	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -51,8 +52,8 @@ type ControlMessages struct {
 func packetInfoToLinux(packetInfo tcpip.IPPacketInfo) linux.ControlMessageIPPacketInfo {
 	var p linux.ControlMessageIPPacketInfo
 	p.NIC = int32(packetInfo.NIC)
-	copy(p.LocalAddr[:], []byte(packetInfo.LocalAddr))
-	copy(p.DestinationAddr[:], []byte(packetInfo.DestinationAddr))
+	copy(p.LocalAddr[:], packetInfo.LocalAddr)
+	copy(p.DestinationAddr[:], packetInfo.DestinationAddr)
 	return p
 }
 
@@ -60,7 +61,7 @@ func packetInfoToLinux(packetInfo tcpip.IPPacketInfo) linux.ControlMessageIPPack
 // format.
 func ipv6PacketInfoToLinux(packetInfo tcpip.IPv6PacketInfo) linux.ControlMessageIPv6PacketInfo {
 	var p linux.ControlMessageIPv6PacketInfo
-	if n := copy(p.Addr[:], []byte(packetInfo.Addr)); n != len(p.Addr) {
+	if n := copy(p.Addr[:], packetInfo.Addr); n != len(p.Addr) {
 		panic(fmt.Sprintf("got copy(%x, %x) = %d, want = %d", p.Addr, packetInfo.Addr, n, len(p.Addr)))
 	}
 	p.NIC = uint32(packetInfo.NIC)
@@ -156,9 +157,9 @@ type IPControlMessages struct {
 	// HasTimestamp indicates whether Timestamp is valid/set.
 	HasTimestamp bool
 
-	// Timestamp is the time (in ns) that the last packet used to create
-	// the read data was received.
-	Timestamp int64
+	// Timestamp is the time that the last packet used to create the read data
+	// was received.
+	Timestamp time.Time `state:".(int64)"`
 
 	// HasInq indicates whether Inq is valid/set.
 	HasInq bool

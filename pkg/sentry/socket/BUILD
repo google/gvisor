@@ -4,7 +4,10 @@ package(licenses = ["notice"])
 
 go_library(
     name = "socket",
-    srcs = ["socket.go"],
+    srcs = [
+        "socket.go",
+        "socket_state.go",
+    ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

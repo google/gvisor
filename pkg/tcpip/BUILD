@@ -25,6 +25,7 @@ go_library(
         "stdclock.go",
         "stdclock_state.go",
         "tcpip.go",
+        "tcpip_state.go",
         "timer.go",
     ],
     visibility = ["//visibility:public"],
