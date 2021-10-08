@@ -2049,16 +2049,7 @@ func (d *dentry) listXattr(ctx context.Context, size uint64) ([]string, error) {
 	}
 
 	if d.fs.opts.lisaEnabled {
-		xattrs, err := d.controlFDLisa.ListXattr(ctx, size)
-		if err != nil {
-			return nil, err
-		}
-
-		res := make([]string, 0, len(xattrs))
-		for _, xattr := range xattrs {
-			res = append(res, xattr)
-		}
-		return res, nil
+		return d.controlFDLisa.ListXattr(ctx, size)
 	}
 
 	xattrMap, err := d.file.listXattr(ctx, size)
