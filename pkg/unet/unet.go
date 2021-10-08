@@ -23,6 +23,7 @@ import (
 	"sync/atomic"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/eventfd"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -55,15 +56,6 @@ func socket(packet bool) (int, error) {
 	return fd, nil
 }
 
-// eventFD returns a new event FD with initial value 0.
-func eventFD() (int, error) {
-	f, _, e := unix.Syscall(unix.SYS_EVENTFD2, 0, 0, 0)
-	if e != 0 {
-		return -1, e
-	}
-	return int(f), nil
-}
-
 // Socket is a connected unix domain socket.
 type Socket struct {
 	// gate protects use of fd.
@@ -78,7 +70,7 @@ type Socket struct {
 	// efd is an event FD that is signaled when the socket is closing.
 	//
 	// efd is immutable and remains valid until Close/Release.
-	efd int
+	efd eventfd.Eventfd
 
 	// race is an atomic variable used to avoid triggering the race
 	// detector. See comment in SocketPair below.
@@ -95,7 +87,7 @@ func NewSocket(fd int) (*Socket, error) {
 		return nil, err
 	}
 
-	efd, err := eventFD()
+	efd, err := eventfd.Create()
 	if err != nil {
 		return nil, err
 	}
@@ -110,16 +102,14 @@ func NewSocket(fd int) (*Socket, error) {
 // closing the event FD.
 func (s *Socket) finish() error {
 	// Signal any blocked or future polls.
-	//
-	// N.B. eventfd writes must be 8 bytes.
-	if _, err := unix.Write(s.efd, []byte{1, 0, 0, 0, 0, 0, 0, 0}); err != nil {
+	if err := s.efd.Notify(); err != nil {
 		return err
 	}
 
 	// Close the gate, blocking until all FD users leave.
 	s.gate.Close()
 
-	return unix.Close(s.efd)
+	return s.efd.Close()
 }
 
 // Close closes the socket.

@@ -43,7 +43,7 @@ func (s *Socket) wait(write bool) error {
 			},
 			{
 				// The eventfd, signaled when we are closing.
-				Fd:     int32(s.efd),
+				Fd:     int32(s.efd.FD()),
 				Events: unix.POLLIN,
 			},
 		}

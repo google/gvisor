@@ -18,6 +18,7 @@ import (
 	"math"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/eventfd"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/queue"
 )
@@ -32,7 +33,7 @@ type tx struct {
 	q            queue.Tx
 	ids          idManager
 	bufs         bufferManager
-	eventFD      int
+	eventFD      eventfd.Eventfd
 	sharedDataFD int
 }
 
@@ -148,7 +149,7 @@ func (t *tx) transmit(bufs ...buffer.View) bool {
 // notify writes to the tx.eventFD to indicate to the peer that there is data to
 // be read.
 func (t *tx) notify() {
-	unix.Write(t.eventFD, []byte{1, 0, 0, 0, 0, 0, 0, 0})
+	t.eventFD.Notify()
 }
 
 // getBuffer returns a memory region mapped to the full contents of the given

@@ -10,6 +10,7 @@ go_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/eventfd",
         "//pkg/sync",
         "@org_golang_x_sys//unix:go_default_library",
     ],
