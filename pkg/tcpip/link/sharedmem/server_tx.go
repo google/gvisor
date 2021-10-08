@@ -20,6 +20,7 @@ package sharedmem
 import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
+	"gvisor.dev/gvisor/pkg/eventfd"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/pipe"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/queue"
@@ -40,7 +41,7 @@ type serverTx struct {
 	data []byte
 
 	// eventFD is used to notify the peer when fill requests are fulfilled.
-	eventFD int
+	eventFD eventfd.Eventfd
 
 	// sharedData the memory region to use to enable/disable notifications.
 	sharedData []byte
@@ -80,16 +81,11 @@ func (s *serverTx) init(c *QueueConfig) error {
 
 	// Duplicate the eventFD so that caller can close it but we can still
 	// use it.
-	efd, err := unix.Dup(c.EventFD)
+	efd, err := c.EventFD.Dup()
 	if err != nil {
 		return err
 	}
-	cu.Add(func() { unix.Close(efd) })
-
-	// Set the eventfd as non-blocking.
-	if err := unix.SetNonblock(efd, true); err != nil {
-		return err
-	}
+	cu.Add(func() { efd.Close() })
 
 	cu.Release()
 
@@ -107,7 +103,7 @@ func (s *serverTx) cleanup() {
 	unix.Munmap(s.completionPipe.Bytes())
 	unix.Munmap(s.data)
 	unix.Munmap(s.sharedData)
-	unix.Close(s.eventFD)
+	s.eventFD.Close()
 }
 
 // fillPacket copies the data in the provided views into buffers pulled from the
@@ -175,5 +171,5 @@ func (s *serverTx) transmit(views []buffer.View) bool {
 }
 
 func (s *serverTx) notify() {
-	unix.Write(s.eventFD, []byte{1, 0, 0, 0, 0, 0, 0, 0})
+	s.eventFD.Notify()
 }

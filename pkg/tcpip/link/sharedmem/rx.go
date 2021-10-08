@@ -21,7 +21,7 @@ import (
 	"sync/atomic"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/tcpip/link/rawfile"
+	"gvisor.dev/gvisor/pkg/eventfd"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/queue"
 )
 
@@ -30,7 +30,7 @@ type rx struct {
 	data       []byte
 	sharedData []byte
 	q          queue.Rx
-	eventFD    int
+	eventFD    eventfd.Eventfd
 }
 
 // init initializes all state needed by the rx queue based on the information
@@ -68,22 +68,12 @@ func (r *rx) init(mtu uint32, c *QueueConfig) error {
 
 	// Duplicate the eventFD so that caller can close it but we can still
 	// use it.
-	efd, err := unix.Dup(c.EventFD)
+	efd, err := c.EventFD.Dup()
 	if err != nil {
 		unix.Munmap(txPipe)
 		unix.Munmap(rxPipe)
 		unix.Munmap(data)
 		unix.Munmap(sharedData)
-		return err
-	}
-
-	// Set the eventfd as non-blocking.
-	if err := unix.SetNonblock(efd, true); err != nil {
-		unix.Munmap(txPipe)
-		unix.Munmap(rxPipe)
-		unix.Munmap(data)
-		unix.Munmap(sharedData)
-		unix.Close(efd)
 		return err
 	}
 
@@ -105,13 +95,13 @@ func (r *rx) cleanup() {
 
 	unix.Munmap(r.data)
 	unix.Munmap(r.sharedData)
-	unix.Close(r.eventFD)
+	r.eventFD.Close()
 }
 
 // notify writes to the tx.eventFD to indicate to the peer that there is data to
 // be read.
 func (r *rx) notify() {
-	unix.Write(r.eventFD, []byte{1, 0, 0, 0, 0, 0, 0, 0})
+	r.eventFD.Notify()
 }
 
 // postAndReceive posts the provided buffers (if any), and then tries to read
@@ -128,8 +118,7 @@ func (r *rx) postAndReceive(b []queue.RxBuffer, stopRequested *uint32) ([]queue.
 	if len(b) != 0 && !r.q.PostBuffers(b) {
 		r.q.EnableNotification()
 		for !r.q.PostBuffers(b) {
-			var tmp [8]byte
-			rawfile.BlockingRead(r.eventFD, tmp[:])
+			r.eventFD.Wait()
 			if atomic.LoadUint32(stopRequested) != 0 {
 				r.q.DisableNotification()
 				return nil, 0
@@ -153,8 +142,7 @@ func (r *rx) postAndReceive(b []queue.RxBuffer, stopRequested *uint32) ([]queue.
 		}
 
 		// Wait for notification.
-		var tmp [8]byte
-		rawfile.BlockingRead(r.eventFD, tmp[:])
+		r.eventFD.Wait()
 		if atomic.LoadUint32(stopRequested) != 0 {
 			r.q.DisableNotification()
 			return nil, 0

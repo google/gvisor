@@ -21,9 +21,7 @@ import (
 	"os"
 	"path"
 
-	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/fd"
-	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/eventfd"
 	"gvisor.dev/gvisor/pkg/log"
 )
 
@@ -54,7 +52,7 @@ func NotifyCurrentMemcgPressureCallback(f func(), level string) (func(), error) 
 	}
 	defer eventControlFile.Close()
 
-	eventFD, err := newEventFD()
+	eventFD, err := eventfd.Create()
 	if err != nil {
 		return nil, err
 	}
@@ -75,20 +73,11 @@ func NotifyCurrentMemcgPressureCallback(f func(), level string) (func(), error) 
 	const stopVal = 1 << 63
 	stopCh := make(chan struct{})
 	go func() { // S/R-SAFE: f provides synchronization if necessary
-		rw := fd.NewReadWriter(eventFD.FD())
-		var buf [sizeofUint64]byte
 		for {
-			n, err := rw.Read(buf[:])
+			val, err := eventFD.Read()
 			if err != nil {
-				if err == unix.EINTR {
-					continue
-				}
 				panic(fmt.Sprintf("failed to read from memory pressure level eventfd: %v", err))
 			}
-			if n != sizeofUint64 {
-				panic(fmt.Sprintf("short read from memory pressure level eventfd: got %d bytes, wanted %d", n, sizeofUint64))
-			}
-			val := hostarch.ByteOrder.Uint64(buf[:])
 			if val >= stopVal {
 				// Assume this was due to the notifier's "destructor" (the
 				// function returned by NotifyCurrentMemcgPressureCallback
@@ -101,30 +90,7 @@ func NotifyCurrentMemcgPressureCallback(f func(), level string) (func(), error) 
 		}
 	}()
 	return func() {
-		rw := fd.NewReadWriter(eventFD.FD())
-		var buf [sizeofUint64]byte
-		hostarch.ByteOrder.PutUint64(buf[:], stopVal)
-		for {
-			n, err := rw.Write(buf[:])
-			if err != nil {
-				if err == unix.EINTR {
-					continue
-				}
-				panic(fmt.Sprintf("failed to write to memory pressure level eventfd: %v", err))
-			}
-			if n != sizeofUint64 {
-				panic(fmt.Sprintf("short write to memory pressure level eventfd: got %d bytes, wanted %d", n, sizeofUint64))
-			}
-			break
-		}
+		eventFD.Write(stopVal)
 		<-stopCh
 	}, nil
-}
-
-func newEventFD() (*fd.FD, error) {
-	f, _, e := unix.Syscall(unix.SYS_EVENTFD2, 0, 0, 0)
-	if e != 0 {
-		return nil, fmt.Errorf("failed to create eventfd: %v", e)
-	}
-	return fd.New(int(f)), nil
 }

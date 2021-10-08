@@ -20,7 +20,7 @@ package sharedmem
 import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
-	"gvisor.dev/gvisor/pkg/tcpip/link/rawfile"
+	"gvisor.dev/gvisor/pkg/eventfd"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/pipe"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/queue"
 )
@@ -38,7 +38,7 @@ type serverRx struct {
 	data []byte
 
 	// eventFD is used to notify the peer when transmission is completed.
-	eventFD int
+	eventFD eventfd.Eventfd
 
 	// sharedData the memory region to use to enable/disable notifications.
 	sharedData []byte
@@ -78,16 +78,11 @@ func (s *serverRx) init(c *QueueConfig) error {
 
 	// Duplicate the eventFD so that caller can close it but we can still
 	// use it.
-	efd, err := unix.Dup(c.EventFD)
+	efd, err := c.EventFD.Dup()
 	if err != nil {
 		return err
 	}
-	cu.Add(func() { unix.Close(efd) })
-
-	// Set the eventfd as non-blocking.
-	if err := unix.SetNonblock(efd, true); err != nil {
-		return err
-	}
+	cu.Add(func() { efd.Close() })
 
 	s.packetPipe.Init(packetPipeMem)
 	s.completionPipe.Init(completionPipeMem)
@@ -104,7 +99,7 @@ func (s *serverRx) cleanup() {
 	unix.Munmap(s.completionPipe.Bytes())
 	unix.Munmap(s.data)
 	unix.Munmap(s.sharedData)
-	unix.Close(s.eventFD)
+	s.eventFD.Close()
 }
 
 // completionNotificationSize is size in bytes of a completion notification sent
@@ -143,6 +138,5 @@ func (s *serverRx) receive() []byte {
 }
 
 func (s *serverRx) waitForPackets() {
-	var tmp [8]byte
-	rawfile.BlockingRead(s.eventFD, tmp[:])
+	s.eventFD.Wait()
 }
