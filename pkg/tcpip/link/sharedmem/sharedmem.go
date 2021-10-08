@@ -27,7 +27,7 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/eventfd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -49,7 +49,7 @@ type QueueConfig struct {
 
 	// EventFD is a file descriptor for the event that is signaled when
 	// data is becomes available in this queue.
-	EventFD int
+	EventFD eventfd.Eventfd
 
 	// TxPipeFD is a file descriptor for the tx pipe associated with the
 	// queue.
@@ -70,7 +70,7 @@ type QueueConfig struct {
 // of FDs matches when reconstructing the config when serialized or sent
 // as part of control messages.
 func (q *QueueConfig) FDs() []int {
-	return []int{q.DataFD, q.EventFD, q.TxPipeFD, q.RxPipeFD, q.SharedDataFD}
+	return []int{q.DataFD, q.EventFD.FD(), q.TxPipeFD, q.RxPipeFD, q.SharedDataFD}
 }
 
 // QueueConfigFromFDs constructs a QueueConfig out of a slice of ints where each
@@ -84,7 +84,7 @@ func QueueConfigFromFDs(fds []int) (QueueConfig, error) {
 	}
 	return QueueConfig{
 		DataFD:       fds[0],
-		EventFD:      fds[1],
+		EventFD:      eventfd.Wrap(fds[1]),
 		TxPipeFD:     fds[2],
 		RxPipeFD:     fds[3],
 		SharedDataFD: fds[4],
@@ -223,7 +223,7 @@ func (e *endpoint) Close() {
 	// Tell dispatch goroutine to stop, then write to the eventfd so that
 	// it wakes up in case it's sleeping.
 	atomic.StoreUint32(&e.stopRequested, 1)
-	unix.Write(e.rx.eventFD, []byte{1, 0, 0, 0, 0, 0, 0, 0})
+	e.rx.eventFD.Notify()
 
 	// Cleanup the queues inline if the worker hasn't started yet; we also
 	// know it won't start from now on because stopRequested is set to 1.

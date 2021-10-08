@@ -152,10 +152,22 @@ type PollEvent struct {
 // no data is available, it will block in a poll() syscall until the file
 // descriptor becomes readable.
 func BlockingRead(fd int, b []byte) (int, tcpip.Error) {
+	n, err := BlockingReadUntranslated(fd, b)
+	if err != 0 {
+		return n, TranslateErrno(err)
+	}
+	return n, nil
+}
+
+// BlockingReadUntranslated reads from a file descriptor that is set up as
+// non-blocking. If no data is available, it will block in a poll() syscall
+// until the file descriptor becomes readable. It returns the raw unix.Errno
+// value returned by the underlying syscalls.
+func BlockingReadUntranslated(fd int, b []byte) (int, unix.Errno) {
 	for {
 		n, _, e := unix.RawSyscall(unix.SYS_READ, uintptr(fd), uintptr(unsafe.Pointer(&b[0])), uintptr(len(b)))
 		if e == 0 {
-			return int(n), nil
+			return int(n), 0
 		}
 
 		event := PollEvent{
@@ -165,7 +177,7 @@ func BlockingRead(fd int, b []byte) (int, tcpip.Error) {
 
 		_, e = BlockingPoll(&event, 1, nil)
 		if e != 0 && e != unix.EINTR {
-			return 0, TranslateErrno(e)
+			return 0, e
 		}
 	}
 }

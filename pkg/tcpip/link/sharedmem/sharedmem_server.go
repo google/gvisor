@@ -20,7 +20,6 @@ package sharedmem
 import (
 	"sync/atomic"
 
-	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -122,7 +121,7 @@ func (e *serverEndpoint) Close() {
 	// Tell dispatch goroutine to stop, then write to the eventfd so that it wakes
 	// up in case it's sleeping.
 	atomic.StoreUint32(&e.stopRequested, 1)
-	unix.Write(e.rx.eventFD, []byte{1, 0, 0, 0, 0, 0, 0, 0})
+	e.rx.eventFD.Notify()
 
 	// Cleanup the queues inline if the worker hasn't started yet; we also know it
 	// won't start from now on because stopRequested is set to 1.

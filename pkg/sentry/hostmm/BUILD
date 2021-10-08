@@ -12,8 +12,7 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/fd",
-        "//pkg/hostarch",
+        "//pkg/eventfd",
         "//pkg/log",
         "@org_golang_x_sys//unix:go_default_library",
     ],

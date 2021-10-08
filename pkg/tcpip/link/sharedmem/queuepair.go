@@ -22,6 +22,7 @@ import (
 	"io/ioutil"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/eventfd"
 )
 
 const (
@@ -116,25 +117,25 @@ type queueSizes struct {
 
 func createQueueFDs(s queueSizes) (QueueConfig, error) {
 	success := false
-	var fd uintptr
+	var eventFD eventfd.Eventfd
 	var dataFD, txPipeFD, rxPipeFD, sharedDataFD int
 	defer func() {
 		if success {
 			return
 		}
 		closeFDs(QueueConfig{
-			EventFD:      int(fd),
+			EventFD:      eventFD,
 			DataFD:       dataFD,
 			TxPipeFD:     txPipeFD,
 			RxPipeFD:     rxPipeFD,
 			SharedDataFD: sharedDataFD,
 		})
 	}()
-	eventFD, _, errno := unix.RawSyscall(unix.SYS_EVENTFD2, 0, 0, 0)
-	if errno != 0 {
-		return QueueConfig{}, fmt.Errorf("eventfd failed: %v", error(errno))
+	eventFD, err := eventfd.Create()
+	if err != nil {
+		return QueueConfig{}, fmt.Errorf("eventfd failed: %v", err)
 	}
-	dataFD, err := createFile(s.dataSize, false)
+	dataFD, err = createFile(s.dataSize, false)
 	if err != nil {
 		return QueueConfig{}, fmt.Errorf("failed to create dataFD: %s", err)
 	}
@@ -152,7 +153,7 @@ func createQueueFDs(s queueSizes) (QueueConfig, error) {
 	}
 	success = true
 	return QueueConfig{
-		EventFD:      int(eventFD),
+		EventFD:      eventFD,
 		DataFD:       dataFD,
 		TxPipeFD:     txPipeFD,
 		RxPipeFD:     rxPipeFD,
@@ -191,7 +192,7 @@ func createFile(size int64, initQueue bool) (fd int, err error) {
 
 func closeFDs(c QueueConfig) {
 	unix.Close(c.DataFD)
-	unix.Close(c.EventFD)
+	c.EventFD.Close()
 	unix.Close(c.TxPipeFD)
 	unix.Close(c.RxPipeFD)
 	unix.Close(c.SharedDataFD)
