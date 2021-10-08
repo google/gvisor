@@ -1595,7 +1595,10 @@ func (d *dentry) checkXattrPermissions(creds *auth.Credentials, name string, ats
 	// (b/148380782). Allow all other extended attributes to be passed through
 	// to the remote filesystem. This is inconsistent with Linux's 9p client,
 	// but consistent with other filesystems (e.g. FUSE).
-	if strings.HasPrefix(name, linux.XATTR_SECURITY_PREFIX) || strings.HasPrefix(name, linux.XATTR_SYSTEM_PREFIX) {
+	//
+	// NOTE(b/202533394): Also disallow "trusted" namespace for now. This is
+	// consistent with the VFS1 gofer client.
+	if strings.HasPrefix(name, linux.XATTR_SECURITY_PREFIX) || strings.HasPrefix(name, linux.XATTR_SYSTEM_PREFIX) || strings.HasPrefix(name, linux.XATTR_TRUSTED_PREFIX) {
 		return linuxerr.EOPNOTSUPP
 	}
 	mode := linux.FileMode(atomic.LoadUint32(&d.mode))
