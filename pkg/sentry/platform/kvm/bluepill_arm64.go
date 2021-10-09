@@ -70,7 +70,7 @@ func bluepillArchExit(c *vCPU, context *arch.SignalContext64) {
 
 	lazyVfp := c.GetLazyVFP()
 	if lazyVfp != 0 {
-		fpsimd := fpsimdPtr(c.floatingPointState.BytePointer())
+		fpsimd := fpsimdPtr(c.FloatingPointState().BytePointer()) // escapes: no
 		context.Fpsimd64.Fpsr = fpsimd.Fpsr
 		context.Fpsimd64.Fpcr = fpsimd.Fpcr
 		context.Fpsimd64.Vregs = fpsimd.Vregs
@@ -90,12 +90,12 @@ func (c *vCPU) KernelSyscall() {
 
 	fpDisableTrap := ring0.CPACREL1()
 	if fpDisableTrap != 0 {
-		fpsimd := fpsimdPtr(c.floatingPointState.BytePointer())
+		fpsimd := fpsimdPtr(c.FloatingPointState().BytePointer()) // escapes: no
 		fpcr := ring0.GetFPCR()
 		fpsr := ring0.GetFPSR()
 		fpsimd.Fpcr = uint32(fpcr)
 		fpsimd.Fpsr = uint32(fpsr)
-		ring0.SaveVRegs(c.floatingPointState.BytePointer())
+		ring0.SaveVRegs(c.FloatingPointState().BytePointer()) // escapes: no
 	}
 
 	ring0.Halt()
@@ -114,12 +114,12 @@ func (c *vCPU) KernelException(vector ring0.Vector) {
 
 	fpDisableTrap := ring0.CPACREL1()
 	if fpDisableTrap != 0 {
-		fpsimd := fpsimdPtr(c.floatingPointState.BytePointer())
+		fpsimd := fpsimdPtr(c.FloatingPointState().BytePointer()) // escapes: no
 		fpcr := ring0.GetFPCR()
 		fpsr := ring0.GetFPSR()
 		fpsimd.Fpcr = uint32(fpcr)
 		fpsimd.Fpsr = uint32(fpsr)
-		ring0.SaveVRegs(c.floatingPointState.BytePointer())
+		ring0.SaveVRegs(c.FloatingPointState().BytePointer()) // escapes: no
 	}
 
 	ring0.Halt()

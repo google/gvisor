@@ -39,11 +39,6 @@ func sysenter()
 // assembly to get the ABI0 (i.e., primary) address.
 func addrOfSysenter() uintptr
 
-// swapgs swaps the current GS value.
-//
-// This must be called prior to sysret/iret.
-func swapgs()
-
 // jumpToKernel jumps to the kernel version of the current RIP.
 func jumpToKernel()
 
