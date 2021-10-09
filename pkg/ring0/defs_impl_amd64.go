@@ -73,6 +73,9 @@ type CPU struct {
 	// calls and exceptions via the Registers function.
 	registers arch.Registers
 
+	// floatingPointState holds floating point state.
+	floatingPointState fpu.State
+
 	// hooks are kernel hooks.
 	hooks Hooks
 }
@@ -84,6 +87,15 @@ type CPU struct {
 //go:nosplit
 func (c *CPU) Registers() *arch.Registers {
 	return &c.registers
+}
+
+// FloatingPointState returns the kernel floating point state.
+//
+// This is explicitly safe to call during KernelException and KernelSyscall.
+//
+//go:nosplit
+func (c *CPU) FloatingPointState() *fpu.State {
+	return &c.floatingPointState
 }
 
 // SwitchOpts are passed to the Switch function.
@@ -203,6 +215,11 @@ type CPUArchState struct {
 	errorType uintptr
 
 	*kernelEntry
+
+	// Copies of global variables, stored in CPU so that they can be used by
+	// syscall and exception handlers (in the upper address space).
+	hasXSAVE    bool
+	hasXSAVEOPT bool
 }
 
 // ErrorCode returns the last error code.
@@ -258,6 +275,9 @@ func Emit(w io.Writer) {
 	fmt.Fprintf(w, "#define CPU_ERROR_CODE       0x%02x\n", reflect.ValueOf(&c.errorCode).Pointer()-reflect.ValueOf(c).Pointer())
 	fmt.Fprintf(w, "#define CPU_ERROR_TYPE       0x%02x\n", reflect.ValueOf(&c.errorType).Pointer()-reflect.ValueOf(c).Pointer())
 	fmt.Fprintf(w, "#define CPU_ENTRY            0x%02x\n", reflect.ValueOf(&c.kernelEntry).Pointer()-reflect.ValueOf(c).Pointer())
+	fmt.Fprintf(w, "#define CPU_HAS_XSAVE        0x%02x\n", reflect.ValueOf(&c.hasXSAVE).Pointer()-reflect.ValueOf(c).Pointer())
+	fmt.Fprintf(w, "#define CPU_HAS_XSAVEOPT     0x%02x\n", reflect.ValueOf(&c.hasXSAVEOPT).Pointer()-reflect.ValueOf(c).Pointer())
+	fmt.Fprintf(w, "#define CPU_FPU_STATE        0x%02x\n", reflect.ValueOf(&c.floatingPointState).Pointer()-reflect.ValueOf(c).Pointer())
 
 	e := &kernelEntry{}
 	fmt.Fprintf(w, "\n// CPU entry offsets.\n")

@@ -128,6 +128,29 @@ TEXT ·wrfsmsr(SB),NOSPLIT,$0-8
 	BYTE $0x0f; BYTE $0x30;
 	RET
 
+// writeGS writes to the GS base.
+//
+// This is written in assembly because it must be callable from assembly (ABI0)
+// without an intermediate transition to ABIInternal.
+//
+// Preconditions: must be running in the lower address space, as it accesses
+// global data.
+TEXT ·writeGS(SB),NOSPLIT,$8-8
+	MOVQ addr+0(FP), AX
+
+	CMPB ·hasFSGSBASE(SB), $1
+	JNE msr
+
+	PUSHQ AX
+	CALL ·wrgsbase(SB)
+	POPQ AX
+	RET
+msr:
+	PUSHQ AX
+	CALL ·wrgsmsr(SB)
+	POPQ AX
+	RET
+
 // wrgsbase writes to the GS base.
 //
 // The code corresponds to:

@@ -175,6 +175,9 @@ type CPU struct {
 	// calls and exceptions via the Registers function.
 	registers arch.Registers
 
+	// floatingPointState holds floating point state.
+	floatingPointState fpu.State
+
 	// hooks are kernel hooks.
 	hooks Hooks
 }
@@ -186,6 +189,15 @@ type CPU struct {
 //go:nosplit
 func (c *CPU) Registers() *arch.Registers {
 	return &c.registers
+}
+
+// FloatingPointState returns the kernel floating point state.
+//
+// This is explicitly safe to call during KernelException and KernelSyscall.
+//
+//go:nosplit
+func (c *CPU) FloatingPointState() *fpu.State {
+	return &c.floatingPointState
 }
 
 // SwitchOpts are passed to the Switch function.

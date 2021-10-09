@@ -3,10 +3,13 @@
 // Automatically generated, do not edit.
 
 // CPU offsets.
-#define CPU_REGISTERS        0x28
+#define CPU_REGISTERS        0x30
 #define CPU_ERROR_CODE       0x10
 #define CPU_ERROR_TYPE       0x18
 #define CPU_ENTRY            0x20
+#define CPU_HAS_XSAVE        0x28
+#define CPU_HAS_XSAVEOPT     0x29
+#define CPU_FPU_STATE        0x108
 
 // CPU entry offsets.
 #define ENTRY_SCRATCH0       0x100

@@ -21,29 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/cpuid"
 )
 
-// LoadFloatingPoint loads floating point state by the most efficient mechanism
-// available (set by Init).
-var LoadFloatingPoint func(*byte)
-
-// SaveFloatingPoint saves floating point state by the most efficient mechanism
-// available (set by Init).
-var SaveFloatingPoint func(*byte)
-
-// fxrstor uses fxrstor64 to load floating point state.
-func fxrstor(*byte)
-
-// xrstor uses xrstor to load floating point state.
-func xrstor(*byte)
-
-// fxsave uses fxsave64 to save floating point state.
-func fxsave(*byte)
-
-// xsave uses xsave to save floating point state.
-func xsave(*byte)
-
-// xsaveopt uses xsaveopt to save floating point state.
-func xsaveopt(*byte)
-
 // writeFS sets the FS base address (selects one of wrfsbase or wrfsmsr).
 func writeFS(addr uintptr)
 
@@ -53,8 +30,8 @@ func wrfsbase(addr uintptr)
 // wrfsmsr writes to the GS_BASE MSR.
 func wrfsmsr(addr uintptr)
 
-// WriteGS sets the GS address (set by init).
-var WriteGS func(addr uintptr)
+// writeGS sets the GS address (selects one of wrgsbase or wrgsmsr).
+func writeGS(addr uintptr)
 
 // wrgsbase writes to the GS base address.
 func wrgsbase(addr uintptr)
@@ -106,19 +83,4 @@ func Init(featureSet *cpuid.FeatureSet) {
 	hasXSAVE = featureSet.UseXsave()
 	hasFSGSBASE = featureSet.HasFeature(cpuid.X86FeatureFSGSBase)
 	validXCR0Mask = uintptr(featureSet.ValidXCR0Mask())
-	if hasXSAVEOPT {
-		SaveFloatingPoint = xsaveopt
-		LoadFloatingPoint = xrstor
-	} else if hasXSAVE {
-		SaveFloatingPoint = xsave
-		LoadFloatingPoint = xrstor
-	} else {
-		SaveFloatingPoint = fxsave
-		LoadFloatingPoint = fxrstor
-	}
-	if hasFSGSBASE {
-		WriteGS = wrgsbase
-	} else {
-		WriteGS = wrgsmsr
-	}
 }
