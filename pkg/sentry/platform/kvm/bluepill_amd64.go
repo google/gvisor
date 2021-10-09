@@ -71,10 +71,6 @@ func (c *vCPU) KernelSyscall() {
 	if regs.Rax != ^uint64(0) {
 		regs.Rip -= 2 // Rewind.
 	}
-	// We only trigger a bluepill entry in the bluepill function, and can
-	// therefore be guaranteed that there is no floating point state to be
-	// loaded on resuming from halt. We only worry about saving on exit.
-	ring0.SaveFloatingPoint(c.floatingPointState.BytePointer()) // escapes: no.
 	// N.B. Since KernelSyscall is called when the kernel makes a syscall,
 	// FS_BASE is already set for correct execution of this function.
 	//
@@ -112,8 +108,6 @@ func (c *vCPU) KernelException(vector ring0.Vector) {
 		regs.Rip = 0
 	}
 	// See above.
-	ring0.SaveFloatingPoint(c.floatingPointState.BytePointer()) // escapes: no.
-	// See above.
 	ring0.HaltAndWriteFSBase(regs) // escapes: no, reload host segment.
 }
 
@@ -144,5 +138,5 @@ func bluepillArchExit(c *vCPU, context *arch.SignalContext64) {
 	// Set the context pointer to the saved floating point state. This is
 	// where the guest data has been serialized, the kernel will restore
 	// from this new pointer value.
-	context.Fpstate = uint64(uintptrValue(c.floatingPointState.BytePointer()))
+	context.Fpstate = uint64(uintptrValue(c.FloatingPointState().BytePointer())) // escapes: no.
 }

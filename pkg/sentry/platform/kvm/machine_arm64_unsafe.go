@@ -28,7 +28,6 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
-	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	ktime "gvisor.dev/gvisor/pkg/sentry/time"
 )
@@ -158,8 +157,6 @@ func (c *vCPU) initArchState() error {
 		// practice, this should not happen, however.
 		c.PCIDs = pagetables.NewPCIDs(fixedKernelPCID+1, poolPCIDs)
 	}
-
-	c.floatingPointState = fpu.NewState()
 
 	return c.setSystemTime()
 }

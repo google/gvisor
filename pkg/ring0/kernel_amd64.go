@@ -143,6 +143,9 @@ func (c *CPU) init(cpuID int) {
 
 	// Set mandatory flags.
 	c.registers.Eflags = KernelFlagsSet
+
+	c.hasXSAVE = hasXSAVE
+	c.hasXSAVEOPT = hasXSAVEOPT
 }
 
 // StackTop returns the kernel's stack address.
@@ -248,18 +251,20 @@ func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 	regs.Ss = uint64(Udata)   // Ditto.
 
 	// Perform the switch.
-	swapgs()                                                       // GS will be swapped on return.
-	WriteGS(uintptr(regs.Gs_base))                                 // escapes: no. Set application GS.
-	LoadFloatingPoint(switchOpts.FloatingPointState.BytePointer()) // escapes: no. Copy in floating point.
+	needIRET := uint64(0)
 	if switchOpts.FullRestore {
-		vector = iret(c, regs, uintptr(userCR3))
-	} else {
-		vector = sysret(c, regs, uintptr(userCR3))
+		needIRET = 1
 	}
-	SaveFloatingPoint(switchOpts.FloatingPointState.BytePointer()) // escapes: no. Copy out floating point.
-	RestoreKernelFPState()                                         // escapes: no. Restore kernel MXCSR.
+	vector = doSwitchToUser(c, regs, switchOpts.FloatingPointState.BytePointer(), userCR3, needIRET) // escapes: no.
 	return
 }
+
+func doSwitchToUser(
+	cpu *CPU, // +0(FP)
+	regs *arch.Registers, // +8(FP)
+	fpState *byte, // +16(FP)
+	userCR3 uint64, // +24(FP)
+	needIRET uint64) Vector // +32(FP), +40(FP)
 
 var (
 	sentryXCR0     uintptr
@@ -287,7 +292,7 @@ func initSentryXCR0() {
 //go:nosplit
 func startGo(c *CPU) {
 	// Save per-cpu.
-	WriteGS(kernelAddr(c.kernelEntry))
+	writeGS(kernelAddr(c.kernelEntry))
 
 	//
 	// TODO(mpratt): Note that per the note above, this should be done

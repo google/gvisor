@@ -116,6 +116,11 @@ type CPUArchState struct {
 	errorType uintptr
 
 	*kernelEntry
+
+	// Copies of global variables, stored in CPU so that they can be used by
+	// syscall and exception handlers (in the upper address space).
+	hasXSAVE    bool
+	hasXSAVEOPT bool
 }
 
 // ErrorCode returns the last error code.
