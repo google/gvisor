@@ -1162,19 +1162,19 @@ func TestInputHookWithLocalForwarding(t *testing.T) {
 	}
 }
 
-func TestSNAT(t *testing.T) {
-	const listenPort = 8080
+func TestNAT(t *testing.T) {
+	const listenPort uint16 = 8080
 
 	type endpointAndAddresses struct {
-		serverEP         tcpip.Endpoint
-		serverAddr       tcpip.Address
-		serverReadableCH chan struct{}
+		serverEP          tcpip.Endpoint
+		serverAddr        tcpip.FullAddress
+		serverReadableCH  chan struct{}
+		serverConnectAddr tcpip.Address
 
-		clientEP         tcpip.Endpoint
-		clientAddr       tcpip.Address
-		clientReadableCH chan struct{}
-
-		nattedClientAddr tcpip.Address
+		clientEP          tcpip.Endpoint
+		clientAddr        tcpip.Address
+		clientReadableCH  chan struct{}
+		clientConnectAddr tcpip.FullAddress
 	}
 
 	newEP := func(t *testing.T, s *stack.Stack, transProto tcpip.TransportProtocolNumber, netProto tcpip.NetworkProtocolNumber) (tcpip.Endpoint, chan struct{}) {
@@ -1195,52 +1195,239 @@ func TestSNAT(t *testing.T) {
 		return ep, ch
 	}
 
+	setupNAT := func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, hook stack.Hook, filter stack.IPHeaderFilter, target stack.Target) {
+		t.Helper()
+
+		ipv6 := netProto == ipv6.ProtocolNumber
+		ipt := s.IPTables()
+		table := ipt.GetTable(stack.NATID, ipv6)
+		ruleIdx := table.BuiltinChains[hook]
+		table.Rules[ruleIdx].Filter = filter
+		table.Rules[ruleIdx].Target = target
+		// Make sure the packet is not dropped by the next rule.
+		table.Rules[ruleIdx+1].Target = &stack.AcceptTarget{}
+		if err := ipt.ReplaceTable(stack.NATID, table, ipv6); err != nil {
+			t.Fatalf("ipt.ReplaceTable(%d, _, %t): %s", stack.NATID, ipv6, err)
+		}
+	}
+
+	setupDNAT := func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, target stack.Target) {
+		t.Helper()
+
+		setupNAT(
+			t,
+			s,
+			netProto,
+			stack.Prerouting,
+			stack.IPHeaderFilter{
+				Protocol:       transProto,
+				CheckProtocol:  true,
+				InputInterface: utils.RouterNIC2Name,
+			},
+			target)
+	}
+
+	setupSNAT := func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, target stack.Target) {
+		t.Helper()
+
+		setupNAT(
+			t,
+			s,
+			netProto,
+			stack.Postrouting,
+			stack.IPHeaderFilter{
+				Protocol:        transProto,
+				CheckProtocol:   true,
+				OutputInterface: utils.RouterNIC1Name,
+			},
+			target)
+	}
+
+	type natType struct {
+		name     string
+		setupNAT func(*testing.T, *stack.Stack, tcpip.NetworkProtocolNumber, tcpip.TransportProtocolNumber, tcpip.Address)
+	}
+
+	snatTypes := []natType{
+		{
+			name: "SNAT",
+			setupNAT: func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, natToAddr tcpip.Address) {
+				t.Helper()
+
+				setupSNAT(t, s, netProto, transProto, &stack.SNATTarget{NetworkProtocol: netProto, Addr: natToAddr})
+			},
+		},
+		{
+			name: "Masquerade",
+			setupNAT: func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, natToAddr tcpip.Address) {
+				t.Helper()
+
+				setupSNAT(t, s, netProto, transProto, &stack.MasqueradeTarget{NetworkProtocol: netProto})
+			},
+		},
+	}
+	dnatTypes := []natType{
+		{
+			name: "Redirect",
+			setupNAT: func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, natToAddr tcpip.Address) {
+				t.Helper()
+
+				setupDNAT(t, s, netProto, transProto, &stack.RedirectTarget{NetworkProtocol: netProto, Port: listenPort})
+			},
+		},
+	}
+
 	tests := []struct {
-		name       string
-		netProto   tcpip.NetworkProtocolNumber
+		name     string
+		netProto tcpip.NetworkProtocolNumber
+		// Setups up the stacks in such a way that:
+		//
+		// - Host2 is the client for all tests.
+		// - Host1 is the server when performing SNAT
+		//   + NAT will transform client-originating packets' source addresses to
+		//     the router's NIC1's address before reaching Host1.
+		// - Router is the server when performing DNAT (client will still attempt to
+		//   send packets to Host1).
+		//   + NAT will transform client-originating packets' destination addresses
+		//     to the router's NIC2's address.
 		epAndAddrs func(t *testing.T, host1Stack, routerStack, host2Stack *stack.Stack, proto tcpip.TransportProtocolNumber) endpointAndAddresses
+		natTypes   []natType
 	}{
 		{
-			name:     "IPv4 host1 server with host2 client",
+			name:     "IPv4 SNAT",
 			netProto: ipv4.ProtocolNumber,
 			epAndAddrs: func(t *testing.T, host1Stack, routerStack, host2Stack *stack.Stack, proto tcpip.TransportProtocolNumber) endpointAndAddresses {
 				t.Helper()
 
-				ep1, ep1WECH := newEP(t, host1Stack, proto, ipv4.ProtocolNumber)
+				listenerStack := host1Stack
+				serverAddr := tcpip.FullAddress{
+					Addr: utils.Host1IPv4Addr.AddressWithPrefix.Address,
+					Port: listenPort,
+				}
+				serverConnectAddr := utils.RouterNIC1IPv4Addr.AddressWithPrefix.Address
+				clientConnectPort := serverAddr.Port
+				ep1, ep1WECH := newEP(t, listenerStack, proto, ipv4.ProtocolNumber)
 				ep2, ep2WECH := newEP(t, host2Stack, proto, ipv4.ProtocolNumber)
 				return endpointAndAddresses{
-					serverEP:         ep1,
-					serverAddr:       utils.Host1IPv4Addr.AddressWithPrefix.Address,
-					serverReadableCH: ep1WECH,
+					serverEP:          ep1,
+					serverAddr:        serverAddr,
+					serverReadableCH:  ep1WECH,
+					serverConnectAddr: serverConnectAddr,
 
 					clientEP:         ep2,
 					clientAddr:       utils.Host2IPv4Addr.AddressWithPrefix.Address,
 					clientReadableCH: ep2WECH,
-
-					nattedClientAddr: utils.RouterNIC1IPv4Addr.AddressWithPrefix.Address,
+					clientConnectAddr: tcpip.FullAddress{
+						Addr: utils.Host1IPv4Addr.AddressWithPrefix.Address,
+						Port: clientConnectPort,
+					},
 				}
 			},
+			natTypes: snatTypes,
 		},
 		{
-			name:     "IPv6 host1 server with host2 client",
+			name:     "IPv4 DNAT",
+			netProto: ipv4.ProtocolNumber,
+			epAndAddrs: func(t *testing.T, host1Stack, routerStack, host2Stack *stack.Stack, proto tcpip.TransportProtocolNumber) endpointAndAddresses {
+				t.Helper()
+
+				// If we are performing DNAT, then the packet will be redirected
+				// to the router.
+				listenerStack := routerStack
+				serverAddr := tcpip.FullAddress{
+					Addr: utils.RouterNIC2IPv4Addr.AddressWithPrefix.Address,
+					Port: listenPort,
+				}
+				serverConnectAddr := utils.Host2IPv4Addr.AddressWithPrefix.Address
+				// DNAT will update the destination port to what the server is
+				// bound to.
+				clientConnectPort := serverAddr.Port + 1
+				ep1, ep1WECH := newEP(t, listenerStack, proto, ipv4.ProtocolNumber)
+				ep2, ep2WECH := newEP(t, host2Stack, proto, ipv4.ProtocolNumber)
+				return endpointAndAddresses{
+					serverEP:          ep1,
+					serverAddr:        serverAddr,
+					serverReadableCH:  ep1WECH,
+					serverConnectAddr: serverConnectAddr,
+
+					clientEP:         ep2,
+					clientAddr:       utils.Host2IPv4Addr.AddressWithPrefix.Address,
+					clientReadableCH: ep2WECH,
+					clientConnectAddr: tcpip.FullAddress{
+						Addr: utils.Host1IPv4Addr.AddressWithPrefix.Address,
+						Port: clientConnectPort,
+					},
+				}
+			},
+			natTypes: dnatTypes,
+		},
+		{
+			name:     "IPv6 SNAT",
 			netProto: ipv6.ProtocolNumber,
 			epAndAddrs: func(t *testing.T, host1Stack, routerStack, host2Stack *stack.Stack, proto tcpip.TransportProtocolNumber) endpointAndAddresses {
 				t.Helper()
 
-				ep1, ep1WECH := newEP(t, host1Stack, proto, ipv6.ProtocolNumber)
+				listenerStack := host1Stack
+				serverAddr := tcpip.FullAddress{
+					Addr: utils.Host1IPv6Addr.AddressWithPrefix.Address,
+					Port: listenPort,
+				}
+				serverConnectAddr := utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address
+				clientConnectPort := serverAddr.Port
+				ep1, ep1WECH := newEP(t, listenerStack, proto, ipv6.ProtocolNumber)
 				ep2, ep2WECH := newEP(t, host2Stack, proto, ipv6.ProtocolNumber)
 				return endpointAndAddresses{
-					serverEP:         ep1,
-					serverAddr:       utils.Host1IPv6Addr.AddressWithPrefix.Address,
-					serverReadableCH: ep1WECH,
+					serverEP:          ep1,
+					serverAddr:        serverAddr,
+					serverReadableCH:  ep1WECH,
+					serverConnectAddr: serverConnectAddr,
 
 					clientEP:         ep2,
 					clientAddr:       utils.Host2IPv6Addr.AddressWithPrefix.Address,
 					clientReadableCH: ep2WECH,
-
-					nattedClientAddr: utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address,
+					clientConnectAddr: tcpip.FullAddress{
+						Addr: utils.Host1IPv6Addr.AddressWithPrefix.Address,
+						Port: clientConnectPort,
+					},
 				}
 			},
+			natTypes: snatTypes,
+		},
+		{
+			name:     "IPv6 DNAT",
+			netProto: ipv6.ProtocolNumber,
+			epAndAddrs: func(t *testing.T, host1Stack, routerStack, host2Stack *stack.Stack, proto tcpip.TransportProtocolNumber) endpointAndAddresses {
+				t.Helper()
+
+				// If we are performing DNAT, then the packet will be redirected
+				// to the router.
+				listenerStack := routerStack
+				serverAddr := tcpip.FullAddress{
+					Addr: utils.RouterNIC2IPv6Addr.AddressWithPrefix.Address,
+					Port: listenPort,
+				}
+				serverConnectAddr := utils.Host2IPv6Addr.AddressWithPrefix.Address
+				// DNAT will update the destination port to what the server is
+				// bound to.
+				clientConnectPort := serverAddr.Port + 1
+				ep1, ep1WECH := newEP(t, listenerStack, proto, ipv6.ProtocolNumber)
+				ep2, ep2WECH := newEP(t, host2Stack, proto, ipv6.ProtocolNumber)
+				return endpointAndAddresses{
+					serverEP:          ep1,
+					serverAddr:        serverAddr,
+					serverReadableCH:  ep1WECH,
+					serverConnectAddr: serverConnectAddr,
+
+					clientEP:         ep2,
+					clientAddr:       utils.Host2IPv6Addr.AddressWithPrefix.Address,
+					clientReadableCH: ep2WECH,
+					clientConnectAddr: tcpip.FullAddress{
+						Addr: utils.Host1IPv6Addr.AddressWithPrefix.Address,
+						Port: clientConnectPort,
+					},
+				}
+			},
+			natTypes: dnatTypes,
 		},
 	}
 
@@ -1305,49 +1492,11 @@ func TestSNAT(t *testing.T) {
 		},
 	}
 
-	setupNAT := func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, target stack.Target) {
-		t.Helper()
-
-		ipv6 := netProto == ipv6.ProtocolNumber
-		ipt := s.IPTables()
-		filter := ipt.GetTable(stack.NATID, ipv6)
-		ruleIdx := filter.BuiltinChains[stack.Postrouting]
-		filter.Rules[ruleIdx].Filter = stack.IPHeaderFilter{OutputInterface: utils.RouterNIC1Name}
-		filter.Rules[ruleIdx].Target = target
-		// Make sure the packet is not dropped by the next rule.
-		filter.Rules[ruleIdx+1].Target = &stack.AcceptTarget{}
-		if err := ipt.ReplaceTable(stack.NATID, filter, ipv6); err != nil {
-			t.Fatalf("ipt.ReplaceTable(%d, _, %t): %s", stack.NATID, ipv6, err)
-		}
-	}
-
-	natTypes := []struct {
-		name     string
-		setupNAT func(*testing.T, *stack.Stack, tcpip.NetworkProtocolNumber, tcpip.Address)
-	}{
-		{
-			name: "SNAT",
-			setupNAT: func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, natToAddr tcpip.Address) {
-				t.Helper()
-
-				setupNAT(t, s, netProto, &stack.SNATTarget{NetworkProtocol: netProto, Addr: natToAddr})
-			},
-		},
-		{
-			name: "Masquerade",
-			setupNAT: func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, natToAddr tcpip.Address) {
-				t.Helper()
-
-				setupNAT(t, s, netProto, &stack.MasqueradeTarget{NetworkProtocol: netProto})
-			},
-		},
-	}
-
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			for _, subTest := range subTests {
 				t.Run(subTest.name, func(t *testing.T) {
-					for _, natType := range natTypes {
+					for _, natType := range test.natTypes {
 						t.Run(natType.name, func(t *testing.T) {
 							stackOpts := stack.Options{
 								NetworkProtocols:   []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol, ipv6.NewProtocol},
@@ -1361,11 +1510,10 @@ func TestSNAT(t *testing.T) {
 
 							epsAndAddrs := test.epAndAddrs(t, host1Stack, routerStack, host2Stack, subTest.proto)
 
-							natType.setupNAT(t, routerStack, test.netProto, epsAndAddrs.nattedClientAddr)
+							natType.setupNAT(t, routerStack, test.netProto, subTest.proto, epsAndAddrs.serverConnectAddr)
 
-							serverAddr := tcpip.FullAddress{Addr: epsAndAddrs.serverAddr, Port: listenPort}
-							if err := epsAndAddrs.serverEP.Bind(serverAddr); err != nil {
-								t.Fatalf("epsAndAddrs.serverEP.Bind(%#v): %s", serverAddr, err)
+							if err := epsAndAddrs.serverEP.Bind(epsAndAddrs.serverAddr); err != nil {
+								t.Fatalf("epsAndAddrs.serverEP.Bind(%#v): %s", epsAndAddrs.serverAddr, err)
 							}
 							clientAddr := tcpip.FullAddress{Addr: epsAndAddrs.clientAddr}
 							if err := epsAndAddrs.clientEP.Bind(clientAddr); err != nil {
@@ -1376,21 +1524,21 @@ func TestSNAT(t *testing.T) {
 								subTest.setupServer(t, epsAndAddrs.serverEP)
 							}
 							{
-								err := epsAndAddrs.clientEP.Connect(serverAddr)
+								err := epsAndAddrs.clientEP.Connect(epsAndAddrs.clientConnectAddr)
 								if diff := cmp.Diff(subTest.expectedConnectErr, err); diff != "" {
-									t.Fatalf("unexpected error from epsAndAddrs.clientEP.Connect(%#v), (-want, +got):\n%s", serverAddr, diff)
+									t.Fatalf("unexpected error from epsAndAddrs.clientEP.Connect(%#v), (-want, +got):\n%s", epsAndAddrs.clientConnectAddr, diff)
 								}
 							}
-							nattedClientAddr := tcpip.FullAddress{Addr: epsAndAddrs.nattedClientAddr}
+							serverConnectAddr := tcpip.FullAddress{Addr: epsAndAddrs.serverConnectAddr}
 							if addr, err := epsAndAddrs.clientEP.GetLocalAddress(); err != nil {
 								t.Fatalf("epsAndAddrs.clientEP.GetLocalAddress(): %s", err)
 							} else {
-								nattedClientAddr.Port = addr.Port
+								serverConnectAddr.Port = addr.Port
 							}
 
 							serverEP := epsAndAddrs.serverEP
 							serverCH := epsAndAddrs.serverReadableCH
-							if ep, ch := subTest.setupServerConn(t, serverEP, serverCH, nattedClientAddr); ep != nil {
+							if ep, ch := subTest.setupServerConn(t, serverEP, serverCH, serverConnectAddr); ep != nil {
 								defer ep.Close()
 								serverEP = ep
 								serverCH = ch
@@ -1455,13 +1603,13 @@ func TestSNAT(t *testing.T) {
 							{
 								data := []byte{1, 2, 3, 4}
 								write(epsAndAddrs.clientEP, data)
-								read(serverCH, serverEP, data, nattedClientAddr)
+								read(serverCH, serverEP, data, serverConnectAddr)
 							}
 
 							{
 								data := []byte{5, 6, 7, 8, 9, 10, 11, 12}
 								write(serverEP, data)
-								read(epsAndAddrs.clientReadableCH, epsAndAddrs.clientEP, data, serverAddr)
+								read(epsAndAddrs.clientReadableCH, epsAndAddrs.clientEP, data, epsAndAddrs.clientConnectAddr)
 							}
 						})
 					}
