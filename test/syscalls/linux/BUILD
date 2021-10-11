@@ -1980,6 +1980,7 @@ cc_binary(
     defines = select_system(),
     linkstatic = 1,
     deps = [
+        ":ip_socket_test_util",
         ":unix_domain_socket_test_util",
         "//test/util:capability_util",
         "//test/util:file_descriptor",

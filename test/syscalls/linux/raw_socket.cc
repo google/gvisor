@@ -25,6 +25,7 @@
 #include <algorithm>
 
 #include "gtest/gtest.h"
+#include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
@@ -38,6 +39,9 @@ namespace gvisor {
 namespace testing {
 
 namespace {
+
+using ::testing::IsNull;
+using ::testing::NotNull;
 
 // Fixture for tests parameterized by protocol.
 class RawSocketTest : public ::testing::TestWithParam<std::tuple<int, int>> {
@@ -1055,6 +1059,131 @@ TEST(RawSocketTest, BindReceive) {
   // Test that a raw socket only receives packets destined to the address it is
   // bound to.
   ASSERT_NO_FATAL_FAILURE(TestRawSocketMaybeBindReceive(true /* do_bind */));
+}
+
+TEST(RawSocketTest, ReceiveIPPacketInfo) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+
+  FileDescriptor raw =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_RAW, IPPROTO_UDP));
+
+  const sockaddr_in addr_ = {
+      .sin_family = AF_INET,
+      .sin_addr = {.s_addr = htonl(INADDR_LOOPBACK)},
+  };
+  ASSERT_THAT(
+      bind(raw.get(), reinterpret_cast<const sockaddr*>(&addr_), sizeof(addr_)),
+      SyscallSucceeds());
+
+  // Register to receive IP packet info.
+  constexpr int one = 1;
+  ASSERT_THAT(setsockopt(raw.get(), IPPROTO_IP, IP_PKTINFO, &one, sizeof(one)),
+              SyscallSucceeds());
+
+  constexpr char send_buf[] = "malformed UDP";
+  ASSERT_THAT(sendto(raw.get(), send_buf, sizeof(send_buf), 0 /* flags */,
+                     reinterpret_cast<const sockaddr*>(&addr_), sizeof(addr_)),
+              SyscallSucceedsWithValue(sizeof(send_buf)));
+
+  struct {
+    iphdr ip;
+    char data[sizeof(send_buf)];
+
+    // Extra space in the receive buffer should be unused.
+    char unused_space;
+  } ABSL_ATTRIBUTE_PACKED recv_buf;
+  iovec recv_iov = {
+      .iov_base = &recv_buf,
+      .iov_len = sizeof(recv_buf),
+  };
+  in_pktinfo received_pktinfo;
+  char recv_cmsg_buf[CMSG_SPACE(sizeof(received_pktinfo))];
+  msghdr recv_msg = {
+      .msg_iov = &recv_iov,
+      .msg_iovlen = 1,
+      .msg_control = recv_cmsg_buf,
+      .msg_controllen = CMSG_LEN(sizeof(received_pktinfo)),
+  };
+  ASSERT_THAT(RetryEINTR(recvmsg)(raw.get(), &recv_msg, 0),
+              SyscallSucceedsWithValue(sizeof(iphdr) + sizeof(send_buf)));
+  EXPECT_EQ(memcmp(send_buf, &recv_buf.data, sizeof(send_buf)), 0);
+  EXPECT_EQ(recv_buf.ip.version, static_cast<unsigned int>(IPVERSION));
+  // IHL holds the number of header bytes in 4 byte units.
+  EXPECT_EQ(recv_buf.ip.ihl, sizeof(iphdr) / 4);
+  EXPECT_EQ(ntohs(recv_buf.ip.tot_len), sizeof(iphdr) + sizeof(send_buf));
+  EXPECT_EQ(recv_buf.ip.protocol, IPPROTO_UDP);
+  EXPECT_EQ(ntohl(recv_buf.ip.saddr), INADDR_LOOPBACK);
+  EXPECT_EQ(ntohl(recv_buf.ip.daddr), INADDR_LOOPBACK);
+
+  cmsghdr* cmsg = CMSG_FIRSTHDR(&recv_msg);
+  ASSERT_THAT(cmsg, NotNull());
+  EXPECT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(received_pktinfo)));
+  EXPECT_EQ(cmsg->cmsg_level, IPPROTO_IP);
+  EXPECT_EQ(cmsg->cmsg_type, IP_PKTINFO);
+  memcpy(&received_pktinfo, CMSG_DATA(cmsg), sizeof(received_pktinfo));
+  EXPECT_EQ(received_pktinfo.ipi_ifindex,
+            ASSERT_NO_ERRNO_AND_VALUE(GetLoopbackIndex()));
+  EXPECT_EQ(ntohl(received_pktinfo.ipi_spec_dst.s_addr), INADDR_LOOPBACK);
+  EXPECT_EQ(ntohl(received_pktinfo.ipi_addr.s_addr), INADDR_LOOPBACK);
+
+  EXPECT_THAT(CMSG_NXTHDR(&recv_msg, cmsg), IsNull());
+}
+
+TEST(RawSocketTest, ReceiveIPv6PacketInfo) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+
+  FileDescriptor raw =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_RAW, IPPROTO_UDP));
+
+  const sockaddr_in6 addr_ = {
+      .sin6_family = AF_INET6,
+      .sin6_addr = in6addr_loopback,
+  };
+  ASSERT_THAT(
+      bind(raw.get(), reinterpret_cast<const sockaddr*>(&addr_), sizeof(addr_)),
+      SyscallSucceeds());
+
+  // Register to receive IPv6 packet info.
+  constexpr int one = 1;
+  ASSERT_THAT(
+      setsockopt(raw.get(), IPPROTO_IPV6, IPV6_RECVPKTINFO, &one, sizeof(one)),
+      SyscallSucceeds());
+
+  constexpr char send_buf[] = "malformed UDP";
+  ASSERT_THAT(sendto(raw.get(), send_buf, sizeof(send_buf), 0 /* flags */,
+                     reinterpret_cast<const sockaddr*>(&addr_), sizeof(addr_)),
+              SyscallSucceedsWithValue(sizeof(send_buf)));
+
+  char recv_buf[sizeof(send_buf) + 1];
+  iovec recv_iov = {
+      .iov_base = recv_buf,
+      .iov_len = sizeof(recv_buf),
+  };
+  in6_pktinfo received_pktinfo;
+  char recv_cmsg_buf[CMSG_SPACE(sizeof(received_pktinfo))];
+  msghdr recv_msg = {
+      .msg_iov = &recv_iov,
+      .msg_iovlen = 1,
+      .msg_control = recv_cmsg_buf,
+      .msg_controllen = CMSG_LEN(sizeof(received_pktinfo)),
+  };
+  ASSERT_THAT(RetryEINTR(recvmsg)(raw.get(), &recv_msg, 0),
+              SyscallSucceedsWithValue(sizeof(send_buf)));
+  EXPECT_EQ(memcmp(send_buf, recv_buf, sizeof(send_buf)), 0);
+
+  cmsghdr* cmsg = CMSG_FIRSTHDR(&recv_msg);
+  ASSERT_THAT(cmsg, NotNull());
+  EXPECT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(received_pktinfo)));
+  EXPECT_EQ(cmsg->cmsg_level, IPPROTO_IPV6);
+  EXPECT_EQ(cmsg->cmsg_type, IPV6_PKTINFO);
+  memcpy(&received_pktinfo, CMSG_DATA(cmsg), sizeof(received_pktinfo));
+  EXPECT_EQ(received_pktinfo.ipi6_ifindex,
+            ASSERT_NO_ERRNO_AND_VALUE(GetLoopbackIndex()));
+  ASSERT_EQ(memcmp(&received_pktinfo.ipi6_addr, &in6addr_loopback,
+                   sizeof(in6addr_loopback)),
+            0);
+
+  EXPECT_THAT(CMSG_NXTHDR(&recv_msg, cmsg), IsNull());
 }
 
 }  // namespace
