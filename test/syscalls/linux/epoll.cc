@@ -30,6 +30,7 @@
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
 #include "test/util/test_util.h"
+#include "test/util/thread_util.h"
 
 namespace gvisor {
 namespace testing {
@@ -494,6 +495,42 @@ TEST(EpollTest, PipeReaderHupAfterWriterClosed) {
               SyscallSucceedsWithValue(1));
   EXPECT_EQ(result[0].events, EPOLLHUP);
   EXPECT_EQ(result[0].data.u64, kMagicConstant);
+}
+
+TEST(EpollTest, DoubleLayerEpoll) {
+  DisableSave ds;
+  int pipefds[2];
+  ASSERT_THAT(pipe(pipefds), SyscallSucceeds());
+  FileDescriptor rfd(pipefds[0]);
+  FileDescriptor wfd(pipefds[1]);
+
+  auto epfd1 = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  ASSERT_NO_ERRNO(
+      RegisterEpollFD(epfd1.get(), rfd.get(), EPOLLIN | EPOLLHUP, rfd.get()));
+
+  auto epfd2 = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  ASSERT_NO_ERRNO(RegisterEpollFD(epfd2.get(), epfd1.get(), EPOLLIN | EPOLLHUP,
+                                  epfd1.get()));
+
+  // Write to wfd and then check if epoll events were generated correctly.
+  // Run this loop a couple of times to check if event in epfd1 is cleaned.
+  constexpr char data[] = "data";
+  for (int i = 0; i < 2; ++i) {
+    ScopedThread thread1([&wfd, &data]() {
+      sleep(1);
+      ASSERT_EQ(WriteFd(wfd.get(), data, sizeof(data)), sizeof(data));
+    });
+
+    struct epoll_event ret_events[2];
+    ASSERT_THAT(RetryEINTR(epoll_wait)(epfd2.get(), ret_events, 2, 2000),
+                SyscallSucceedsWithValue(1));
+    ASSERT_EQ(ret_events[0].data.fd, epfd1.get());
+    ASSERT_THAT(RetryEINTR(epoll_wait)(epfd1.get(), ret_events, 2, 2000),
+                SyscallSucceedsWithValue(1));
+    ASSERT_EQ(ret_events[0].data.fd, rfd.get());
+    char readBuf[sizeof(data)];
+    ASSERT_EQ(ReadFd(rfd.get(), readBuf, sizeof(data)), sizeof(data));
+  }
 }
 
 }  // namespace

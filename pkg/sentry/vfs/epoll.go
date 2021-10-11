@@ -135,12 +135,16 @@ func (ep *EpollInstance) Readiness(mask waiter.EventMask) waiter.EventMask {
 		return 0
 	}
 	ep.mu.Lock()
-	for epi := ep.ready.Front(); epi != nil; epi = epi.Next() {
+	var next *epollInterest
+	for epi := ep.ready.Front(); epi != nil; epi = next {
+		next = epi.Next()
 		wmask := waiter.EventMaskFromLinux(epi.mask)
 		if epi.key.file.Readiness(wmask)&wmask != 0 {
 			ep.mu.Unlock()
 			return waiter.ReadableEvents
 		}
+		ep.ready.Remove(epi)
+		epi.ready = false
 	}
 	ep.mu.Unlock()
 	return 0
