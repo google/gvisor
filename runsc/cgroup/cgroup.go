@@ -309,7 +309,13 @@ func NewFromSpec(spec *specs.Spec) (*Cgroup, error) {
 	if spec.Linux == nil || spec.Linux.CgroupsPath == "" {
 		return nil, nil
 	}
-	return new("self", spec.Linux.CgroupsPath)
+	return NewFromPath(spec.Linux.CgroupsPath)
+}
+
+// NewFromPath creates a new Cgroup instance from the specified relative path.
+// Cgroup paths are loaded based on the current process.
+func NewFromPath(cgroupsPath string) (*Cgroup, error) {
+	return new("self", cgroupsPath)
 }
 
 // NewFromPid loads cgroup for the given process.

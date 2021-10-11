@@ -77,6 +77,8 @@ const (
 	// shimAddressPath is the relative path to a file that contains the address
 	// to the shim UDS. See service.shimAddress.
 	shimAddressPath = "address"
+
+	cgroupParentAnnotation = "dev.gvisor.spec.cgroup-parent"
 )
 
 // New returns a new shim service that can be used via GRPC.
@@ -952,7 +954,7 @@ func newInit(path, workDir, namespace string, platform stdio.Platform, r *proc.C
 	if err != nil {
 		return nil, fmt.Errorf("update volume annotations: %w", err)
 	}
-	updated = updateCgroup(spec) || updated
+	updated = setPodCgroup(spec) || updated
 
 	if updated {
 		if err := utils.WriteSpec(r.Bundle, spec); err != nil {
@@ -980,12 +982,13 @@ func newInit(path, workDir, namespace string, platform stdio.Platform, r *proc.C
 	return p, nil
 }
 
-// updateCgroup updates cgroup path for the sandbox to make the sandbox join the
-// pod cgroup and not the pause container cgroup. Returns true if the spec was
-// modified. Ex.:
-//   /kubepods/burstable/pod123/abc => kubepods/burstable/pod123
+// setPodCgroup searches for the pod cgroup path inside the container's cgroup
+// path. If found, it's set as an annotation in the spec. This is done so that
+// the sandbox joins the pod cgroup. Otherwise, the sandbox would join the pause
+// container cgroup. Returns true if the spec was modified. Ex.:
+//   /kubepods/burstable/pod123/container123 => kubepods/burstable/pod123
 //
-func updateCgroup(spec *specs.Spec) bool {
+func setPodCgroup(spec *specs.Spec) bool {
 	if !utils.IsSandbox(spec) {
 		return false
 	}
@@ -1009,7 +1012,10 @@ func updateCgroup(spec *specs.Spec) bool {
 			if spec.Linux.CgroupsPath == path {
 				return false
 			}
-			spec.Linux.CgroupsPath = path
+			if spec.Annotations == nil {
+				spec.Annotations = make(map[string]string)
+			}
+			spec.Annotations[cgroupParentAnnotation] = path
 			return true
 		}
 	}
