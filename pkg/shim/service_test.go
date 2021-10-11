@@ -40,12 +40,12 @@ func TestCgroupPath(t *testing.T) {
 		{
 			name: "no-container",
 			path: "foo/pod123",
-			want: "foo/pod123",
+			want: "",
 		},
 		{
 			name: "no-container-absolute",
 			path: "/foo/pod123",
-			want: "/foo/pod123",
+			want: "",
 		},
 		{
 			name: "double-pod",
@@ -70,7 +70,7 @@ func TestCgroupPath(t *testing.T) {
 		{
 			name: "no-pod",
 			path: "/foo/nopod123/container",
-			want: "/foo/nopod123/container",
+			want: "",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -79,12 +79,12 @@ func TestCgroupPath(t *testing.T) {
 					CgroupsPath: tc.path,
 				},
 			}
-			updated := updateCgroup(&spec)
-			if spec.Linux.CgroupsPath != tc.want {
-				t.Errorf("updateCgroup(%q), want: %q, got: %q", tc.path, tc.want, spec.Linux.CgroupsPath)
+			updated := setPodCgroup(&spec)
+			if got := spec.Annotations[cgroupParentAnnotation]; got != tc.want {
+				t.Errorf("setPodCgroup(%q), want: %q, got: %q", tc.path, tc.want, got)
 			}
-			if shouldUpdate := tc.path != tc.want; shouldUpdate != updated {
-				t.Errorf("updateCgroup(%q)=%v, want: %v", tc.path, updated, shouldUpdate)
+			if shouldUpdate := len(tc.want) > 0; shouldUpdate != updated {
+				t.Errorf("setPodCgroup(%q)=%v, want: %v", tc.path, updated, shouldUpdate)
 			}
 		})
 	}
@@ -113,8 +113,8 @@ func TestCgroupNoUpdate(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if updated := updateCgroup(tc.spec); updated {
-				t.Errorf("updateCgroup(%+v), got: %v, want: false", tc.spec.Linux, updated)
+			if updated := setPodCgroup(tc.spec); updated {
+				t.Errorf("setPodCgroup(%+v), got: %v, want: false", tc.spec.Linux, updated)
 			}
 		})
 	}

@@ -44,6 +44,8 @@ import (
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
+const cgroupParentAnnotation = "dev.gvisor.spec.cgroup-parent"
+
 // validateID validates the container id.
 func validateID(id string) error {
 	// See libcontainer/factory_linux.go.
@@ -112,6 +114,16 @@ type Container struct {
 	// Sandbox is the sandbox this container is running in. It's set when the
 	// container is created and reset when the sandbox is destroyed.
 	Sandbox *sandbox.Sandbox `json:"sandbox"`
+
+	// CompatCgroup has the cgroup configuration for the container. For the single
+	// container case, container cgroup is set in `c.Sandbox` only. CompactCgroup
+	// is only set for multi-container, where the `c.Sandbox` cgroup represents
+	// the entire pod.
+	//
+	// Note that CompatCgroup is created only for compatibility with tools
+	// that expect container cgroups to exist. Setting limits here makes no change
+	// to the container in question.
+	CompatCgroup *cgroup.Cgroup `json:"compatCgroup"`
 
 	// Saver handles load from/save to the state file safely from multiple
 	// processes.
@@ -233,27 +245,12 @@ func New(conf *config.Config, args Args) (*Container, error) {
 		}
 		// Create and join cgroup before processes are created to ensure they are
 		// part of the cgroup from the start (and all their children processes).
-		cg, err := cgroup.NewFromSpec(args.Spec)
+		parentCgroup, subCgroup, err := c.setupCgroupForRoot(conf, args.Spec)
 		if err != nil {
 			return nil, err
 		}
-		if cg != nil {
-			// TODO(gvisor.dev/issue/3481): Remove when cgroups v2 is supported.
-			if !conf.Rootless && cgroup.IsOnlyV2() {
-				return nil, fmt.Errorf("cgroups V2 is not yet supported. Enable cgroups V1 and retry")
-			}
-			// If there is cgroup config, install it before creating sandbox process.
-			if err := cg.Install(args.Spec.Linux.Resources); err != nil {
-				switch {
-				case errors.Is(err, unix.EACCES) && conf.Rootless:
-					log.Warningf("Skipping cgroup configuration in rootless mode: %v", err)
-					cg = nil
-				default:
-					return nil, fmt.Errorf("configuring cgroup: %v", err)
-				}
-			}
-		}
-		if err := runInCgroup(cg, func() error {
+		c.CompatCgroup = subCgroup
+		if err := runInCgroup(parentCgroup, func() error {
 			ioFiles, specFile, err := c.createGoferProcess(args.Spec, conf, args.BundleDir, args.Attached)
 			if err != nil {
 				return err
@@ -269,7 +266,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 				UserLog:       args.UserLog,
 				IOFiles:       ioFiles,
 				MountsFile:    specFile,
-				Cgroup:        cg,
+				Cgroup:        parentCgroup,
 				Attached:      args.Attached,
 			}
 			sand, err := sandbox.New(conf, sandArgs)
@@ -295,6 +292,12 @@ func New(conf *config.Config, args Args) (*Container, error) {
 			return nil, err
 		}
 		c.Sandbox = sb.Sandbox
+
+		subCgroup, err := c.setupCgroupForSubcontainer(conf, args.Spec)
+		if err != nil {
+			return nil, err
+		}
+		c.CompatCgroup = subCgroup
 
 		// If the console control socket file is provided, then create a new
 		// pty master/slave pair and send the TTY to the sandbox process.
@@ -781,16 +784,16 @@ func (c *Container) saveLocked() error {
 // root containers), and waits for the container or sandbox and the gofer
 // to stop. If any of them doesn't stop before timeout, an error is returned.
 func (c *Container) stop() error {
-	var cgroup *cgroup.Cgroup
+	var parentCgroup *cgroup.Cgroup
 
 	if c.Sandbox != nil {
 		log.Debugf("Destroying container, cid: %s", c.ID)
 		if err := c.Sandbox.DestroyContainer(c.ID); err != nil {
 			return fmt.Errorf("destroying container %q: %v", c.ID, err)
 		}
-		// Only uninstall cgroup for sandbox stop.
+		// Only uninstall parentCgroup for sandbox stop.
 		if c.Sandbox.IsRootContainer(c.ID) {
-			cgroup = c.Sandbox.Cgroup
+			parentCgroup = c.Sandbox.Cgroup
 		}
 		// Only set sandbox to nil after it has been told to destroy the container.
 		c.Sandbox = nil
@@ -809,9 +812,16 @@ func (c *Container) stop() error {
 		return err
 	}
 
-	// Gofer is running in cgroups, so Cgroup.Uninstall has to be called after it.
-	if cgroup != nil {
-		if err := cgroup.Uninstall(); err != nil {
+	// Delete container cgroup if any.
+	if c.CompatCgroup != nil {
+		if err := c.CompatCgroup.Uninstall(); err != nil {
+			return err
+		}
+	}
+	// Gofer is running inside parentCgroup, so Cgroup.Uninstall has to be called
+	// after the gofer has stopped.
+	if parentCgroup != nil {
+		if err := parentCgroup.Uninstall(); err != nil {
 			return err
 		}
 	}
@@ -1207,4 +1217,78 @@ func (c *Container) populateStats(event *boot.EventOut) {
 	log.Debugf("Usage, container: %d, cgroups: %d, all: %d, total: %.0f", containerUsage, cgroupsUsage, allContainersUsage, total)
 	event.Event.Data.CPU.Usage.Total = uint64(total)
 	return
+}
+
+// setupCgroupForRoot configures and returns cgroup for the sandbox and the
+// root container. If `cgroupParentAnnotation` is set, use that path as the
+// sandbox cgroup and use Spec.Linux.CgroupsPath as the root container cgroup.
+func (c *Container) setupCgroupForRoot(conf *config.Config, spec *specs.Spec) (*cgroup.Cgroup, *cgroup.Cgroup, error) {
+	var parentCgroup *cgroup.Cgroup
+	if parentPath, ok := spec.Annotations[cgroupParentAnnotation]; ok {
+		var err error
+		parentCgroup, err = cgroup.NewFromPath(parentPath)
+		if err != nil {
+			return nil, nil, err
+		}
+	} else {
+		var err error
+		parentCgroup, err = cgroup.NewFromSpec(spec)
+		if parentCgroup == nil || err != nil {
+			return nil, nil, err
+		}
+	}
+
+	var err error
+	parentCgroup, err = cgroupInstall(conf, parentCgroup, spec.Linux.Resources)
+	if parentCgroup == nil || err != nil {
+		return nil, nil, err
+	}
+
+	subCgroup, err := c.setupCgroupForSubcontainer(conf, spec)
+	if err != nil {
+		_ = parentCgroup.Uninstall()
+		return nil, nil, err
+	}
+	return parentCgroup, subCgroup, nil
+}
+
+// setupCgroupForSubcontainer sets up empty cgroups for subcontainers. Since
+// subcontainers run exclusively inside the sandbox, subcontainer cgroups on the
+// host have no effect on them. However, some tools (e.g. cAdvisor) uses cgroups
+// paths to discover new containers and report stats for them.
+func (c *Container) setupCgroupForSubcontainer(conf *config.Config, spec *specs.Spec) (*cgroup.Cgroup, error) {
+	if isRoot(spec) {
+		if _, ok := spec.Annotations[cgroupParentAnnotation]; !ok {
+			return nil, nil
+		}
+	}
+
+	cg, err := cgroup.NewFromSpec(spec)
+	if cg == nil || err != nil {
+		return nil, err
+	}
+	// Use empty resources, just want the directory structure created.
+	return cgroupInstall(conf, cg, &specs.LinuxResources{})
+}
+
+// cgroupInstall creates cgroups dir structure and sets their respective
+// resources. In case of success, returns the cgroups instance and nil error.
+// For rootless, it's possible that cgroups operations fail, in this case the
+// error is suppressed and a nil cgroups instance is returned to indicate that
+// no cgroups was configured.
+func cgroupInstall(conf *config.Config, cg *cgroup.Cgroup, res *specs.LinuxResources) (*cgroup.Cgroup, error) {
+	// TODO(gvisor.dev/issue/3481): Remove when cgroups v2 is supported.
+	if !conf.Rootless && cgroup.IsOnlyV2() {
+		return nil, fmt.Errorf("cgroups V2 is not yet supported. Enable cgroups V1 and retry")
+	}
+	if err := cg.Install(res); err != nil {
+		switch {
+		case errors.Is(err, unix.EACCES) && conf.Rootless:
+			log.Warningf("Skipping cgroup configuration in rootless mode: %v", err)
+			return nil, nil
+		default:
+			return nil, fmt.Errorf("configuring cgroup: %v", err)
+		}
+	}
+	return cg, nil
 }
