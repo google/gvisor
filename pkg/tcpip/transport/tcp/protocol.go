@@ -66,6 +66,18 @@ const (
 	// DefaultSynRetries is the default value for the number of SYN retransmits
 	// before a connect is aborted.
 	DefaultSynRetries = 6
+
+	// DefaultKeepaliveIdle is the idle time for a connection before keep-alive
+	// probes are sent.
+	DefaultKeepaliveIdle = 2 * time.Hour
+
+	// DefaultKeepaliveInterval is the time between two successive keep-alive
+	// probes.
+	DefaultKeepaliveInterval = 75 * time.Second
+
+	// DefaultKeepaliveCount is the number of keep-alive probes that are sent
+	// before declaring the connection dead.
+	DefaultKeepaliveCount = 9
 )
 
 const (
