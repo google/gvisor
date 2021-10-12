@@ -1245,21 +1245,21 @@ func TestNAT(t *testing.T) {
 
 	type natType struct {
 		name     string
-		setupNAT func(*testing.T, *stack.Stack, tcpip.NetworkProtocolNumber, tcpip.TransportProtocolNumber, tcpip.Address)
+		setupNAT func(_ *testing.T, _ *stack.Stack, _ tcpip.NetworkProtocolNumber, _ tcpip.TransportProtocolNumber, snatAddr, dnatAddr tcpip.Address)
 	}
 
 	snatTypes := []natType{
 		{
 			name: "SNAT",
-			setupNAT: func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, natToAddr tcpip.Address) {
+			setupNAT: func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, snatAddr, _ tcpip.Address) {
 				t.Helper()
 
-				setupSNAT(t, s, netProto, transProto, &stack.SNATTarget{NetworkProtocol: netProto, Addr: natToAddr})
+				setupSNAT(t, s, netProto, transProto, &stack.SNATTarget{NetworkProtocol: netProto, Addr: snatAddr})
 			},
 		},
 		{
 			name: "Masquerade",
-			setupNAT: func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, natToAddr tcpip.Address) {
+			setupNAT: func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, _, _ tcpip.Address) {
 				t.Helper()
 
 				setupSNAT(t, s, netProto, transProto, &stack.MasqueradeTarget{NetworkProtocol: netProto})
@@ -1269,10 +1269,18 @@ func TestNAT(t *testing.T) {
 	dnatTypes := []natType{
 		{
 			name: "Redirect",
-			setupNAT: func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, natToAddr tcpip.Address) {
+			setupNAT: func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, _, _ tcpip.Address) {
 				t.Helper()
 
 				setupDNAT(t, s, netProto, transProto, &stack.RedirectTarget{NetworkProtocol: netProto, Port: listenPort})
+			},
+		},
+		{
+			name: "DNAT",
+			setupNAT: func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, _, dnatAddr tcpip.Address) {
+				t.Helper()
+
+				setupDNAT(t, s, netProto, transProto, &stack.DNATTarget{NetworkProtocol: netProto, Addr: dnatAddr, Port: listenPort})
 			},
 		},
 	}
@@ -1509,8 +1517,7 @@ func TestNAT(t *testing.T) {
 							utils.SetupRoutedStacks(t, host1Stack, routerStack, host2Stack)
 
 							epsAndAddrs := test.epAndAddrs(t, host1Stack, routerStack, host2Stack, subTest.proto)
-
-							natType.setupNAT(t, routerStack, test.netProto, subTest.proto, epsAndAddrs.serverConnectAddr)
+							natType.setupNAT(t, routerStack, test.netProto, subTest.proto, epsAndAddrs.serverConnectAddr, epsAndAddrs.serverAddr.Addr)
 
 							if err := epsAndAddrs.serverEP.Bind(epsAndAddrs.serverAddr); err != nil {
 								t.Fatalf("epsAndAddrs.serverEP.Bind(%#v): %s", epsAndAddrs.serverAddr, err)
