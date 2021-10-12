@@ -83,6 +83,45 @@ func (*ReturnTarget) Action(*PacketBuffer, Hook, *Route, AddressableEndpoint) (R
 	return RuleReturn, 0
 }
 
+// DNATTarget modifies the destination port/IP of packets.
+type DNATTarget struct {
+	// The new destination address for packets.
+	//
+	// Immutable.
+	Addr tcpip.Address
+
+	// The new destination port for packets.
+	//
+	// Immutable.
+	Port uint16
+
+	// NetworkProtocol is the network protocol the target is used with.
+	//
+	// Immutable.
+	NetworkProtocol tcpip.NetworkProtocolNumber
+}
+
+// Action implements Target.Action.
+func (rt *DNATTarget) Action(pkt *PacketBuffer, hook Hook, r *Route, addressEP AddressableEndpoint) (RuleVerdict, int) {
+	// Sanity check.
+	if rt.NetworkProtocol != pkt.NetworkProtocolNumber {
+		panic(fmt.Sprintf(
+			"DNATTarget.Action with NetworkProtocol %d called on packet with NetworkProtocolNumber %d",
+			rt.NetworkProtocol, pkt.NetworkProtocolNumber))
+	}
+
+	switch hook {
+	case Prerouting, Output:
+	case Input, Forward, Postrouting:
+		panic(fmt.Sprintf("%s not supported for DNAT", hook))
+	default:
+		panic(fmt.Sprintf("%s unrecognized", hook))
+	}
+
+	return natAction(pkt, hook, r, rt.Port, rt.Addr, true /* dnat */)
+
+}
+
 // RedirectTarget redirects the packet to this machine by modifying the
 // destination port/IP. Outgoing packets are redirected to the loopback device,
 // and incoming packets are redirected to the incoming interface (rather than
@@ -105,16 +144,6 @@ func (rt *RedirectTarget) Action(pkt *PacketBuffer, hook Hook, r *Route, address
 			rt.NetworkProtocol, pkt.NetworkProtocolNumber))
 	}
 
-	// Packet is already manipulated.
-	if pkt.NatDone {
-		return RuleAccept, 0
-	}
-
-	// Drop the packet if network and transport header are not set.
-	if pkt.NetworkHeader().View().IsEmpty() || pkt.TransportHeader().View().IsEmpty() {
-		return RuleDrop, 0
-	}
-
 	// Change the address to loopback (127.0.0.1 or ::1) in Output and to
 	// the primary address of the incoming interface in Prerouting.
 	var address tcpip.Address
@@ -132,12 +161,7 @@ func (rt *RedirectTarget) Action(pkt *PacketBuffer, hook Hook, r *Route, address
 		panic("redirect target is supported only on output and prerouting hooks")
 	}
 
-	if t := pkt.tuple; t != nil {
-		t.conn.performNAT(pkt, hook, r, rt.Port, address, true /* dnat */)
-		return RuleAccept, 0
-	}
-
-	return RuleDrop, 0
+	return natAction(pkt, hook, r, rt.Port, address, true /* dnat */)
 }
 
 // SNATTarget modifies the source port/IP in the outgoing packets.
@@ -150,7 +174,7 @@ type SNATTarget struct {
 	NetworkProtocol tcpip.NetworkProtocolNumber
 }
 
-func snatAction(pkt *PacketBuffer, hook Hook, r *Route, port uint16, address tcpip.Address) (RuleVerdict, int) {
+func natAction(pkt *PacketBuffer, hook Hook, r *Route, port uint16, address tcpip.Address, dnat bool) (RuleVerdict, int) {
 	// Packet is already manipulated.
 	if pkt.NatDone {
 		return RuleAccept, 0
@@ -158,6 +182,11 @@ func snatAction(pkt *PacketBuffer, hook Hook, r *Route, port uint16, address tcp
 
 	// Drop the packet if network and transport header are not set.
 	if pkt.NetworkHeader().View().IsEmpty() || pkt.TransportHeader().View().IsEmpty() {
+		return RuleDrop, 0
+	}
+
+	t := pkt.tuple
+	if t == nil {
 		return RuleDrop, 0
 	}
 
@@ -169,13 +198,12 @@ func snatAction(pkt *PacketBuffer, hook Hook, r *Route, port uint16, address tcp
 			port = header.UDP(pkt.TransportHeader().View()).SourcePort()
 		case header.TCPProtocolNumber:
 			port = header.TCP(pkt.TransportHeader().View()).SourcePort()
+		default:
+			panic(fmt.Sprintf("unsupported transport protocol = %d", pkt.TransportProtocolNumber))
 		}
 	}
 
-	if t := pkt.tuple; t != nil {
-		t.conn.performNAT(pkt, hook, r, port, address, false /* dnat */)
-	}
-
+	t.conn.performNAT(pkt, hook, r, port, address, dnat)
 	return RuleAccept, 0
 }
 
@@ -196,7 +224,7 @@ func (st *SNATTarget) Action(pkt *PacketBuffer, hook Hook, r *Route, _ Addressab
 		panic(fmt.Sprintf("%s unrecognized", hook))
 	}
 
-	return snatAction(pkt, hook, r, st.Port, st.Addr)
+	return natAction(pkt, hook, r, st.Port, st.Addr, false /* dnat */)
 }
 
 // MasqueradeTarget modifies the source port/IP in the outgoing packets.
@@ -232,7 +260,7 @@ func (mt *MasqueradeTarget) Action(pkt *PacketBuffer, hook Hook, r *Route, addre
 
 	address := ep.AddressWithPrefix().Address
 	ep.DecRef()
-	return snatAction(pkt, hook, r, 0 /* port */, address)
+	return natAction(pkt, hook, r, 0 /* port */, address, false /* dnat */)
 }
 
 func rewritePacket(n header.Network, t header.ChecksummableTransport, updateSRCFields, fullChecksum, updatePseudoHeader bool, newPort uint16, newAddr tcpip.Address) {
