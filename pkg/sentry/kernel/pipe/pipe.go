@@ -55,7 +55,7 @@ const (
 //
 // +stateify savable
 type Pipe struct {
-	waiter.Queue `state:"nosave"`
+	waiter.Queue
 
 	// isNamed indicates whether this is a named pipe.
 	//

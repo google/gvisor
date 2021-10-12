@@ -43,7 +43,7 @@ type TimerOperations struct {
 	fsutil.FileNoopFlush            `state:"nosave"`
 	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
 
-	events waiter.Queue `state:"zerovalue"`
+	events waiter.Queue
 	timer  *ktime.Timer
 
 	// val is the number of timer expirations since the last successful call to

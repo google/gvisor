@@ -45,7 +45,8 @@ type pipeOperations struct {
 	fsutil.FileNoIoctl              `state:"nosave"`
 	fsutil.FileNoSplice             `state:"nosave"`
 	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
-	waiter.Queue                    `state:"nosave"`
+
+	waiter.Queue
 
 	// flags are the flags used to open the pipe.
 	flags fs.FileFlags `state:".(fs.FileFlags)"`
