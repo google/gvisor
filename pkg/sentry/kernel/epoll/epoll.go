@@ -66,7 +66,7 @@ type pollEntry struct {
 	file     *refs.WeakRef  `state:"manual"`
 	id       FileIdentifier `state:"wait"`
 	userData [2]int32
-	waiter   waiter.Entry `state:"manual"`
+	waiter   waiter.Entry
 	mask     waiter.EventMask
 	flags    EntryFlags
 
@@ -102,7 +102,7 @@ type EventPoll struct {
 
 	// Wait queue is used to notify interested parties when the event poll
 	// object itself becomes readable or writable.
-	waiter.Queue `state:"zerovalue"`
+	waiter.Queue
 
 	// files is the map of all the files currently being observed, it is
 	// protected by mu.
@@ -453,15 +453,4 @@ func (e *EventPoll) RemoveEntry(ctx context.Context, id FileIdentifier) error {
 	entry.file.Drop(ctx)
 
 	return nil
-}
-
-// UnregisterEpollWaiters removes the epoll waiter objects from the waiting
-// queues. This is different from Release() as the file is not dereferenced.
-func (e *EventPoll) UnregisterEpollWaiters() {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	for _, entry := range e.files {
-		entry.id.File.EventUnregister(&entry.waiter)
-	}
 }

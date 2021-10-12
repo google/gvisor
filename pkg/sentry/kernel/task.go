@@ -158,7 +158,7 @@ type Task struct {
 	// signalQueue is protected by the signalMutex. Note that the task does
 	// not implement all queue methods, specifically the readiness checks.
 	// The task only broadcast a notification on signal delivery.
-	signalQueue waiter.Queue `state:"zerovalue"`
+	signalQueue waiter.Queue
 
 	// If groupStopPending is true, the task should participate in a group
 	// stop in the interrupt path.

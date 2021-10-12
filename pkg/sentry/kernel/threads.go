@@ -324,11 +324,7 @@ type threadGroupNode struct {
 	// eventQueue is notified whenever a event of interest to Task.Wait occurs
 	// in a child of this thread group, or a ptrace tracee of a task in this
 	// thread group. Events are defined in task_exit.go.
-	//
-	// Note that we cannot check and save this wait queue similarly to other
-	// wait queues, as the queue will not be empty by the time of saving, due
-	// to the wait sourced from Exec().
-	eventQueue waiter.Queue `state:"nosave"`
+	eventQueue waiter.Queue
 
 	// leader is the thread group's leader, which is the oldest task in the
 	// thread group; usually the last task in the thread group to call

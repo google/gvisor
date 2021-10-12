@@ -21,9 +21,7 @@ import (
 
 // afterLoad is invoked by stateify.
 func (p *pollEntry) afterLoad() {
-	p.waiter.Callback = p
 	p.file = refs.NewWeakRef(p.id.File, p)
-	p.id.File.EventRegister(&p.waiter, p.mask)
 }
 
 // afterLoad is invoked by stateify.

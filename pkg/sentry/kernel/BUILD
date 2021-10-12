@@ -255,7 +255,6 @@ go_library(
         "//pkg/sentry/hostcpu",
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel/auth",
-        "//pkg/sentry/kernel/epoll",
         "//pkg/sentry/kernel/futex",
         "//pkg/sentry/kernel/msgqueue",
         "//pkg/sentry/kernel/sched",

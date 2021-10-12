@@ -498,7 +498,6 @@ TEST(EpollTest, PipeReaderHupAfterWriterClosed) {
 }
 
 TEST(EpollTest, DoubleLayerEpoll) {
-  DisableSave ds;
   int pipefds[2];
   ASSERT_THAT(pipe(pipefds), SyscallSucceeds());
   FileDescriptor rfd(pipefds[0]);
@@ -522,10 +521,10 @@ TEST(EpollTest, DoubleLayerEpoll) {
     });
 
     struct epoll_event ret_events[2];
-    ASSERT_THAT(RetryEINTR(epoll_wait)(epfd2.get(), ret_events, 2, 2000),
+    ASSERT_THAT(RetryEINTR(epoll_wait)(epfd2.get(), ret_events, 2, 5000),
                 SyscallSucceedsWithValue(1));
     ASSERT_EQ(ret_events[0].data.fd, epfd1.get());
-    ASSERT_THAT(RetryEINTR(epoll_wait)(epfd1.get(), ret_events, 2, 2000),
+    ASSERT_THAT(RetryEINTR(epoll_wait)(epfd1.get(), ret_events, 2, 5000),
                 SyscallSucceedsWithValue(1));
     ASSERT_EQ(ret_events[0].data.fd, rfd.get());
     char readBuf[sizeof(data)];
