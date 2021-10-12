@@ -813,10 +813,9 @@ func newEndpoint(s *stack.Stack, protocol *protocol, netProto tcpip.NetworkProto
 		waiterQueue: waiterQueue,
 		state:       uint32(StateInitial),
 		keepalive: keepalive{
-			// Linux defaults.
-			idle:     2 * time.Hour,
-			interval: 75 * time.Second,
-			count:    9,
+			idle:     DefaultKeepaliveIdle,
+			interval: DefaultKeepaliveInterval,
+			count:    DefaultKeepaliveCount,
 		},
 		uniqueID:      s.UniqueID(),
 		txHash:        s.Rand().Uint32(),
