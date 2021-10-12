@@ -19,7 +19,6 @@ package cgroup
 import (
 	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -34,6 +33,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 const (
@@ -104,17 +104,21 @@ func setOptionalValueUint16(path, name string, val *uint16) error {
 
 func setValue(path, name, data string) error {
 	fullpath := filepath.Join(path, name)
+	log.Debugf("Setting %q to %q", fullpath, data)
+	return writeFile(fullpath, []byte(data), 0700)
+}
 
-	// Retry writes on EINTR; see:
-	//    https://github.com/golang/go/issues/38033
-	for {
-		err := ioutil.WriteFile(fullpath, []byte(data), 0700)
-		if err == nil {
-			return nil
-		} else if !errors.Is(err, unix.EINTR) {
-			return err
-		}
+// writeFile is similar to ioutil.WriteFile() but doesn't create the file if it
+// doesn't exist.
+func writeFile(path string, data []byte, perm os.FileMode) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, perm)
+	if err != nil {
+		return err
 	}
+	defer f.Close()
+
+	_, err = f.Write(data)
+	return err
 }
 
 func getValue(path, name string) (string, error) {
@@ -155,15 +159,8 @@ func fillFromAncestor(path string) (string, error) {
 		return "", err
 	}
 
-	// Retry writes on EINTR; see:
-	//    https://github.com/golang/go/issues/38033
-	for {
-		err := ioutil.WriteFile(path, []byte(val), 0700)
-		if err == nil {
-			break
-		} else if !errors.Is(err, unix.EINTR) {
-			return "", err
-		}
+	if err := writeFile(path, []byte(val), 0700); err != nil {
+		return "", nil
 	}
 	return val, nil
 }
@@ -371,21 +368,20 @@ func (c *Cgroup) Install(res *specs.LinuxResources) error {
 	}
 	for _, key := range missing {
 		ctrlr := controllers[key]
-		path := c.MakePath(key)
-		log.Debugf("Creating cgroup %q: %q", key, path)
-		if err := os.MkdirAll(path, 0755); err != nil {
-			if ctrlr.optional() && errors.Is(err, unix.EROFS) {
-				if err := ctrlr.skip(res); err != nil {
-					return err
-				}
-				log.Infof("Skipping cgroup %q", key)
-				continue
+
+		if skip, err := c.createController(key); skip && ctrlr.optional() {
+			if err := ctrlr.skip(res); err != nil {
+				return err
 			}
+			log.Infof("Skipping cgroup %q, err: %v", key, err)
+			continue
+		} else if err != nil {
 			return err
 		}
 
 		// Only set controllers that were created by me.
 		c.Own[key] = true
+		path := c.MakePath(key)
 		if err := ctrlr.set(res, path); err != nil {
 			return err
 		}
@@ -394,10 +390,29 @@ func (c *Cgroup) Install(res *specs.LinuxResources) error {
 	return nil
 }
 
+// createController creates the controller directory, checking that the
+// controller is enabled in the system. It returns a boolean indicating whether
+// the controller should be skipped (e.g. controller is disabled). In case it
+// should be skipped, it also returns the error it got.
+func (c *Cgroup) createController(name string) (bool, error) {
+	ctrlrPath := filepath.Join(cgroupRoot, name)
+	if _, err := os.Stat(ctrlrPath); err != nil {
+		return os.IsNotExist(err), err
+	}
+
+	path := c.MakePath(name)
+	log.Debugf("Creating cgroup %q: %q", name, path)
+	if err := os.MkdirAll(path, 0755); err != nil {
+		return false, err
+	}
+	return false, nil
+}
+
 // Uninstall removes the settings done in Install(). If cgroup path already
 // existed when Install() was called, Uninstall is a noop.
 func (c *Cgroup) Uninstall() error {
 	log.Debugf("Deleting cgroup %q", c.Name)
+	wait := sync.WaitGroupErr{}
 	for key := range controllers {
 		if !c.Own[key] {
 			// cgroup is managed by caller, don't touch it.
@@ -406,9 +421,8 @@ func (c *Cgroup) Uninstall() error {
 		path := c.MakePath(key)
 		log.Debugf("Removing cgroup controller for key=%q path=%q", key, path)
 
-		// If we try to remove the cgroup too soon after killing the
-		// sandbox we might get EBUSY, so we retry for a few seconds
-		// until it succeeds.
+		// If we try to remove the cgroup too soon after killing the sandbox we
+		// might get EBUSY, so we retry for a few seconds until it succeeds.
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
@@ -419,11 +433,18 @@ func (c *Cgroup) Uninstall() error {
 			}
 			return err
 		}
-		if err := backoff.Retry(fn, b); err != nil {
-			return fmt.Errorf("removing cgroup path %q: %w", path, err)
-		}
+		// Run deletions in parallel to remove all directories even if there are
+		// failures/timeouts in other directories.
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			if err := backoff.Retry(fn, b); err != nil {
+				wait.ReportError(fmt.Errorf("removing cgroup path %q: %w", path, err))
+				return
+			}
+		}()
 	}
-	return nil
+	return wait.Error()
 }
 
 // Join adds the current process to the all controllers. Returns function that
