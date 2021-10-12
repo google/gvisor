@@ -43,7 +43,7 @@ type Inotify struct {
 	// user, since we may aggressively reuse an id on S/R.
 	id uint64
 
-	waiter.Queue `state:"nosave"`
+	waiter.Queue
 
 	// evMu *only* protects the events list. We need a separate lock because
 	// while queuing events, a watch needs to lock the event queue, and using mu

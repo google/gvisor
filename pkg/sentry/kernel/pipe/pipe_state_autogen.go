@@ -40,6 +40,7 @@ func (p *Pipe) StateTypeName() string {
 
 func (p *Pipe) StateFields() []string {
 	return []string{
+		"Queue",
 		"isNamed",
 		"readers",
 		"writers",
@@ -56,26 +57,28 @@ func (p *Pipe) beforeSave() {}
 // +checklocksignore
 func (p *Pipe) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
-	stateSinkObject.Save(0, &p.isNamed)
-	stateSinkObject.Save(1, &p.readers)
-	stateSinkObject.Save(2, &p.writers)
-	stateSinkObject.Save(3, &p.buf)
-	stateSinkObject.Save(4, &p.off)
-	stateSinkObject.Save(5, &p.size)
-	stateSinkObject.Save(6, &p.max)
-	stateSinkObject.Save(7, &p.hadWriter)
+	stateSinkObject.Save(0, &p.Queue)
+	stateSinkObject.Save(1, &p.isNamed)
+	stateSinkObject.Save(2, &p.readers)
+	stateSinkObject.Save(3, &p.writers)
+	stateSinkObject.Save(4, &p.buf)
+	stateSinkObject.Save(5, &p.off)
+	stateSinkObject.Save(6, &p.size)
+	stateSinkObject.Save(7, &p.max)
+	stateSinkObject.Save(8, &p.hadWriter)
 }
 
 // +checklocksignore
 func (p *Pipe) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &p.isNamed)
-	stateSourceObject.Load(1, &p.readers)
-	stateSourceObject.Load(2, &p.writers)
-	stateSourceObject.Load(3, &p.buf)
-	stateSourceObject.Load(4, &p.off)
-	stateSourceObject.Load(5, &p.size)
-	stateSourceObject.Load(6, &p.max)
-	stateSourceObject.Load(7, &p.hadWriter)
+	stateSourceObject.Load(0, &p.Queue)
+	stateSourceObject.Load(1, &p.isNamed)
+	stateSourceObject.Load(2, &p.readers)
+	stateSourceObject.Load(3, &p.writers)
+	stateSourceObject.Load(4, &p.buf)
+	stateSourceObject.Load(5, &p.off)
+	stateSourceObject.Load(6, &p.size)
+	stateSourceObject.Load(7, &p.max)
+	stateSourceObject.Load(8, &p.hadWriter)
 	stateSourceObject.AfterLoad(p.afterLoad)
 }
 

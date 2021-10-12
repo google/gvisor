@@ -69,6 +69,7 @@ func (l *Locks) StateTypeName() string {
 func (l *Locks) StateFields() []string {
 	return []string{
 		"locks",
+		"blockedQueue",
 	}
 }
 
@@ -77,10 +78,8 @@ func (l *Locks) beforeSave() {}
 // +checklocksignore
 func (l *Locks) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
-	if !state.IsZeroValue(&l.blockedQueue) {
-		state.Failf("blockedQueue is %#v, expected zero", &l.blockedQueue)
-	}
 	stateSinkObject.Save(0, &l.locks)
+	stateSinkObject.Save(1, &l.blockedQueue)
 }
 
 func (l *Locks) afterLoad() {}
@@ -88,6 +87,7 @@ func (l *Locks) afterLoad() {}
 // +checklocksignore
 func (l *Locks) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.locks)
+	stateSourceObject.Load(1, &l.blockedQueue)
 }
 
 func (r *LockRange) StateTypeName() string {

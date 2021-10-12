@@ -54,7 +54,7 @@ type EventOperations struct {
 
 	// Queue is used to notify interested parties when the event object
 	// becomes readable or writable.
-	wq waiter.Queue `state:"zerovalue"`
+	wq waiter.Queue
 
 	// val is the current value of the event counter.
 	val uint64

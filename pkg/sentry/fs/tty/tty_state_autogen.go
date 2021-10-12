@@ -127,6 +127,8 @@ func (l *lineDiscipline) StateFields() []string {
 		"outQueue",
 		"termios",
 		"column",
+		"masterWaiter",
+		"replicaWaiter",
 	}
 }
 
@@ -135,17 +137,13 @@ func (l *lineDiscipline) beforeSave() {}
 // +checklocksignore
 func (l *lineDiscipline) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
-	if !state.IsZeroValue(&l.masterWaiter) {
-		state.Failf("masterWaiter is %#v, expected zero", &l.masterWaiter)
-	}
-	if !state.IsZeroValue(&l.replicaWaiter) {
-		state.Failf("replicaWaiter is %#v, expected zero", &l.replicaWaiter)
-	}
 	stateSinkObject.Save(0, &l.size)
 	stateSinkObject.Save(1, &l.inQueue)
 	stateSinkObject.Save(2, &l.outQueue)
 	stateSinkObject.Save(3, &l.termios)
 	stateSinkObject.Save(4, &l.column)
+	stateSinkObject.Save(5, &l.masterWaiter)
+	stateSinkObject.Save(6, &l.replicaWaiter)
 }
 
 func (l *lineDiscipline) afterLoad() {}
@@ -157,6 +155,8 @@ func (l *lineDiscipline) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &l.outQueue)
 	stateSourceObject.Load(3, &l.termios)
 	stateSourceObject.Load(4, &l.column)
+	stateSourceObject.Load(5, &l.masterWaiter)
+	stateSourceObject.Load(6, &l.replicaWaiter)
 }
 
 func (o *outputQueueTransformer) StateTypeName() string {

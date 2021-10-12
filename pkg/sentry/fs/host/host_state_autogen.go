@@ -115,6 +115,7 @@ func (i *inodeFileState) StateTypeName() string {
 func (i *inodeFileState) StateFields() []string {
 	return []string{
 		"descriptor",
+		"queue",
 		"sattr",
 		"savedUAttr",
 	}
@@ -125,19 +126,18 @@ func (i *inodeFileState) beforeSave() {}
 // +checklocksignore
 func (i *inodeFileState) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
-	if !state.IsZeroValue(&i.queue) {
-		state.Failf("queue is %#v, expected zero", &i.queue)
-	}
 	stateSinkObject.Save(0, &i.descriptor)
-	stateSinkObject.Save(1, &i.sattr)
-	stateSinkObject.Save(2, &i.savedUAttr)
+	stateSinkObject.Save(1, &i.queue)
+	stateSinkObject.Save(2, &i.sattr)
+	stateSinkObject.Save(3, &i.savedUAttr)
 }
 
 // +checklocksignore
 func (i *inodeFileState) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.LoadWait(0, &i.descriptor)
-	stateSourceObject.LoadWait(1, &i.sattr)
-	stateSourceObject.Load(2, &i.savedUAttr)
+	stateSourceObject.Load(1, &i.queue)
+	stateSourceObject.LoadWait(2, &i.sattr)
+	stateSourceObject.Load(3, &i.savedUAttr)
 	stateSourceObject.AfterLoad(i.afterLoad)
 }
 

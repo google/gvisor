@@ -132,7 +132,7 @@ type Locks struct {
 	locks LockSet
 
 	// blockedQueue is the queue of waiters that are waiting on a lock.
-	blockedQueue waiter.Queue `state:"zerovalue"`
+	blockedQueue waiter.Queue
 }
 
 // Blocker is the interface used for blocking locks. Passing a nil Blocker

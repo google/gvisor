@@ -833,6 +833,7 @@ func (i *Inotify) StateTypeName() string {
 func (i *Inotify) StateFields() []string {
 	return []string{
 		"id",
+		"Queue",
 		"events",
 		"scratch",
 		"nextWatch",
@@ -846,10 +847,11 @@ func (i *Inotify) beforeSave() {}
 func (i *Inotify) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.id)
-	stateSinkObject.Save(1, &i.events)
-	stateSinkObject.Save(2, &i.scratch)
-	stateSinkObject.Save(3, &i.nextWatch)
-	stateSinkObject.Save(4, &i.watches)
+	stateSinkObject.Save(1, &i.Queue)
+	stateSinkObject.Save(2, &i.events)
+	stateSinkObject.Save(3, &i.scratch)
+	stateSinkObject.Save(4, &i.nextWatch)
+	stateSinkObject.Save(5, &i.watches)
 }
 
 func (i *Inotify) afterLoad() {}
@@ -857,10 +859,11 @@ func (i *Inotify) afterLoad() {}
 // +checklocksignore
 func (i *Inotify) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.id)
-	stateSourceObject.Load(1, &i.events)
-	stateSourceObject.Load(2, &i.scratch)
-	stateSourceObject.Load(3, &i.nextWatch)
-	stateSourceObject.Load(4, &i.watches)
+	stateSourceObject.Load(1, &i.Queue)
+	stateSourceObject.Load(2, &i.events)
+	stateSourceObject.Load(3, &i.scratch)
+	stateSourceObject.Load(4, &i.nextWatch)
+	stateSourceObject.Load(5, &i.watches)
 }
 
 func (e *Event) StateTypeName() string {

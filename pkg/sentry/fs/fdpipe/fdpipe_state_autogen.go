@@ -13,6 +13,7 @@ func (p *pipeOperations) StateTypeName() string {
 
 func (p *pipeOperations) StateFields() []string {
 	return []string{
+		"Queue",
 		"flags",
 		"opener",
 		"readAheadBuffer",
@@ -24,16 +25,18 @@ func (p *pipeOperations) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
 	var flagsValue fs.FileFlags
 	flagsValue = p.saveFlags()
-	stateSinkObject.SaveValue(0, flagsValue)
-	stateSinkObject.Save(1, &p.opener)
-	stateSinkObject.Save(2, &p.readAheadBuffer)
+	stateSinkObject.SaveValue(1, flagsValue)
+	stateSinkObject.Save(0, &p.Queue)
+	stateSinkObject.Save(2, &p.opener)
+	stateSinkObject.Save(3, &p.readAheadBuffer)
 }
 
 // +checklocksignore
 func (p *pipeOperations) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadWait(1, &p.opener)
-	stateSourceObject.Load(2, &p.readAheadBuffer)
-	stateSourceObject.LoadValue(0, new(fs.FileFlags), func(y interface{}) { p.loadFlags(y.(fs.FileFlags)) })
+	stateSourceObject.Load(0, &p.Queue)
+	stateSourceObject.LoadWait(2, &p.opener)
+	stateSourceObject.Load(3, &p.readAheadBuffer)
+	stateSourceObject.LoadValue(1, new(fs.FileFlags), func(y interface{}) { p.loadFlags(y.(fs.FileFlags)) })
 	stateSourceObject.AfterLoad(p.afterLoad)
 }
 
