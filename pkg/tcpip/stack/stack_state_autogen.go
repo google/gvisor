@@ -90,7 +90,8 @@ func (cn *conn) StateFields() []string {
 		"original",
 		"reply",
 		"finalized",
-		"manip",
+		"sourceManip",
+		"destinationManip",
 		"tcb",
 		"lastUsed",
 	}
@@ -103,13 +104,14 @@ func (cn *conn) StateSave(stateSinkObject state.Sink) {
 	cn.beforeSave()
 	var lastUsedValue unixTime
 	lastUsedValue = cn.saveLastUsed()
-	stateSinkObject.SaveValue(6, lastUsedValue)
+	stateSinkObject.SaveValue(7, lastUsedValue)
 	stateSinkObject.Save(0, &cn.ct)
 	stateSinkObject.Save(1, &cn.original)
 	stateSinkObject.Save(2, &cn.reply)
 	stateSinkObject.Save(3, &cn.finalized)
-	stateSinkObject.Save(4, &cn.manip)
-	stateSinkObject.Save(5, &cn.tcb)
+	stateSinkObject.Save(4, &cn.sourceManip)
+	stateSinkObject.Save(5, &cn.destinationManip)
+	stateSinkObject.Save(6, &cn.tcb)
 }
 
 func (cn *conn) afterLoad() {}
@@ -120,9 +122,10 @@ func (cn *conn) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &cn.original)
 	stateSourceObject.Load(2, &cn.reply)
 	stateSourceObject.Load(3, &cn.finalized)
-	stateSourceObject.Load(4, &cn.manip)
-	stateSourceObject.Load(5, &cn.tcb)
-	stateSourceObject.LoadValue(6, new(unixTime), func(y interface{}) { cn.loadLastUsed(y.(unixTime)) })
+	stateSourceObject.Load(4, &cn.sourceManip)
+	stateSourceObject.Load(5, &cn.destinationManip)
+	stateSourceObject.Load(6, &cn.tcb)
+	stateSourceObject.LoadValue(7, new(unixTime), func(y interface{}) { cn.loadLastUsed(y.(unixTime)) })
 }
 
 func (ct *ConnTrack) StateTypeName() string {
