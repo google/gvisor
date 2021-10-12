@@ -499,7 +499,7 @@ TEST(EpollTest, PipeReaderHupAfterWriterClosed) {
 
 TEST(EpollTest, DoubleLayerEpoll) {
   int pipefds[2];
-  ASSERT_THAT(pipe(pipefds), SyscallSucceeds());
+  ASSERT_THAT(pipe2(pipefds, O_NONBLOCK), SyscallSucceeds());
   FileDescriptor rfd(pipefds[0]);
   FileDescriptor wfd(pipefds[1]);
 
