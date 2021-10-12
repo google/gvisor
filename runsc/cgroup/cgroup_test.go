@@ -129,6 +129,18 @@ func boolPtr(v bool) *bool {
 	return &v
 }
 
+func createDir(dir string, contents map[string]string) error {
+	for name := range contents {
+		path := filepath.Join(dir, name)
+		f, err := os.Create(path)
+		if err != nil {
+			return err
+		}
+		f.Close()
+	}
+	return nil
+}
+
 func checkDir(t *testing.T, dir string, contents map[string]string) {
 	all, err := ioutil.ReadDir(dir)
 	if err != nil {
@@ -254,6 +266,9 @@ func TestBlockIO(t *testing.T) {
 				t.Fatalf("error creating temporary directory: %v", err)
 			}
 			defer os.RemoveAll(dir)
+			if err := createDir(dir, tc.wants); err != nil {
+				t.Fatalf("createDir(): %v", err)
+			}
 
 			spec := &specs.LinuxResources{
 				BlockIO: tc.spec,
@@ -304,6 +319,9 @@ func TestCPU(t *testing.T) {
 				t.Fatalf("error creating temporary directory: %v", err)
 			}
 			defer os.RemoveAll(dir)
+			if err := createDir(dir, tc.wants); err != nil {
+				t.Fatalf("createDir(): %v", err)
+			}
 
 			spec := &specs.LinuxResources{
 				CPU: tc.spec,
@@ -343,6 +361,9 @@ func TestCPUSet(t *testing.T) {
 				t.Fatalf("error creating temporary directory: %v", err)
 			}
 			defer os.RemoveAll(dir)
+			if err := createDir(dir, tc.wants); err != nil {
+				t.Fatalf("createDir(): %v", err)
+			}
 
 			spec := &specs.LinuxResources{
 				CPU: tc.spec,
@@ -481,6 +502,9 @@ func TestHugeTlb(t *testing.T) {
 				t.Fatalf("error creating temporary directory: %v", err)
 			}
 			defer os.RemoveAll(dir)
+			if err := createDir(dir, tc.wants); err != nil {
+				t.Fatalf("createDir(): %v", err)
+			}
 
 			spec := &specs.LinuxResources{
 				HugepageLimits: tc.spec,
@@ -542,6 +566,9 @@ func TestMemory(t *testing.T) {
 				t.Fatalf("error creating temporary directory: %v", err)
 			}
 			defer os.RemoveAll(dir)
+			if err := createDir(dir, tc.wants); err != nil {
+				t.Fatalf("createDir(): %v", err)
+			}
 
 			spec := &specs.LinuxResources{
 				Memory: tc.spec,
@@ -584,6 +611,9 @@ func TestNetworkClass(t *testing.T) {
 				t.Fatalf("error creating temporary directory: %v", err)
 			}
 			defer os.RemoveAll(dir)
+			if err := createDir(dir, tc.wants); err != nil {
+				t.Fatalf("createDir(): %v", err)
+			}
 
 			spec := &specs.LinuxResources{
 				Network: tc.spec,
@@ -631,6 +661,9 @@ func TestNetworkPriority(t *testing.T) {
 				t.Fatalf("error creating temporary directory: %v", err)
 			}
 			defer os.RemoveAll(dir)
+			if err := createDir(dir, tc.wants); err != nil {
+				t.Fatalf("createDir(): %v", err)
+			}
 
 			spec := &specs.LinuxResources{
 				Network: tc.spec,
@@ -671,6 +704,9 @@ func TestPids(t *testing.T) {
 				t.Fatalf("error creating temporary directory: %v", err)
 			}
 			defer os.RemoveAll(dir)
+			if err := createDir(dir, tc.wants); err != nil {
+				t.Fatalf("createDir(): %v", err)
+			}
 
 			spec := &specs.LinuxResources{
 				Pids: tc.spec,

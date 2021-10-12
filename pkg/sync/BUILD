@@ -26,6 +26,7 @@ go_library(
         "rwmutex_unsafe.go",
         "seqcount.go",
         "sync.go",
+        "wait.go",
     ],
     marshal = False,
     stateify = False,
