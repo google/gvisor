@@ -66,7 +66,7 @@ func (mm *MemoryManager) HandleUserFault(ctx context.Context, addr hostarch.Addr
 	mm.activeMu.DowngradeLock()
 
 	// Map the faulted page into the active AddressSpace.
-	err = mm.mapASLocked(pseg, ar, false)
+	err = mm.mapASLocked(pseg, ar, true)
 	mm.activeMu.RUnlock()
 	return err
 }
