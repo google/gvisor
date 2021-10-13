@@ -152,22 +152,6 @@ func (t *tx) notify() {
 	t.eventFD.Notify()
 }
 
-// getBuffer returns a memory region mapped to the full contents of the given
-// file descriptor.
-func getBuffer(fd int) ([]byte, error) {
-	var s unix.Stat_t
-	if err := unix.Fstat(fd, &s); err != nil {
-		return nil, err
-	}
-
-	// Check that size doesn't overflow an int.
-	if s.Size > int64(^uint(0)>>1) {
-		return nil, unix.EDOM
-	}
-
-	return unix.Mmap(fd, 0, int(s.Size), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED|unix.MAP_FILE)
-}
-
 // idDescriptor is used by idManager to either point to a tx buffer (in case
 // the ID is assigned) or to the next free element (if the id is not assigned).
 type idDescriptor struct {

@@ -19,6 +19,7 @@ go_library(
         "//pkg/cleanup",
         "//pkg/eventfd",
         "//pkg/log",
+        "//pkg/memutil",
         "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
