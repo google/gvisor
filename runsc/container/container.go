@@ -1278,7 +1278,10 @@ func (c *Container) setupCgroupForSubcontainer(conf *config.Config, spec *specs.
 // no cgroups was configured.
 func cgroupInstall(conf *config.Config, cg *cgroup.Cgroup, res *specs.LinuxResources) (*cgroup.Cgroup, error) {
 	// TODO(gvisor.dev/issue/3481): Remove when cgroups v2 is supported.
-	if !conf.Rootless && cgroup.IsOnlyV2() {
+	if cgroup.IsOnlyV2() {
+		if conf.Rootless {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("cgroups V2 is not yet supported. Enable cgroups V1 and retry")
 	}
 	if err := cg.Install(res); err != nil {
