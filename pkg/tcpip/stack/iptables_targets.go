@@ -175,11 +175,6 @@ type SNATTarget struct {
 }
 
 func natAction(pkt *PacketBuffer, hook Hook, r *Route, port uint16, address tcpip.Address, dnat bool) (RuleVerdict, int) {
-	// Packet is already manipulated.
-	if pkt.NatDone {
-		return RuleAccept, 0
-	}
-
 	// Drop the packet if network and transport header are not set.
 	if pkt.NetworkHeader().View().IsEmpty() || pkt.TransportHeader().View().IsEmpty() {
 		return RuleDrop, 0

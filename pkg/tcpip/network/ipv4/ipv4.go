@@ -439,7 +439,7 @@ func (e *endpoint) WritePacket(r *stack.Route, params stack.NetworkHeaderParams,
 	// We should do this for every packet, rather than only NATted packets, but
 	// removing this check short circuits broadcasts before they are sent out to
 	// other hosts.
-	if pkt.NatDone {
+	if pkt.DNATDone {
 		netHeader := header.IPv4(pkt.NetworkHeader().View())
 		if ep := e.protocol.findEndpointWithAddress(netHeader.DestinationAddress()); ep != nil {
 			// Since we rewrote the packet but it is being routed back to us, we
