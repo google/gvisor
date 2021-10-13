@@ -409,18 +409,19 @@ func (cn *conn) performNATIfNoop(port uint16, address tcpip.Address, dnat bool) 
 	}
 }
 
-func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, r *Route) {
-	if pkt.NatDone {
-		return
-	}
-
+// handlePacket attempts to handle a packet and perform NAT if the connection
+// has had NAT performed on it.
+//
+// Returns true if the packet can skip the NAT table.
+func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, r *Route) bool {
 	transportHeader, ok := getTransportHeader(pkt)
 	if !ok {
-		return
+		return false
 	}
 
 	fullChecksum := false
 	updatePseudoHeader := false
+	natDone := &pkt.SNATDone
 	dnat := false
 	switch hook {
 	case Prerouting:
@@ -429,11 +430,13 @@ func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, r *Route) {
 		fullChecksum = true
 		updatePseudoHeader = true
 
+		natDone = &pkt.DNATDone
 		dnat = true
 	case Input:
 	case Forward:
 		panic("should not handle packet in the forwarding hook")
 	case Output:
+		natDone = &pkt.DNATDone
 		dnat = true
 		fallthrough
 	case Postrouting:
@@ -445,6 +448,10 @@ func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, r *Route) {
 		}
 	default:
 		panic(fmt.Sprintf("unrecognized hook = %d", hook))
+	}
+
+	if *natDone {
+		panic(fmt.Sprintf("packet already had NAT(dnat=%t) performed at hook=%s; pkt=%#v", dnat, hook, pkt))
 	}
 
 	// TODO(gvisor.dev/issue/5748): TCP checksums on inbound packets should be
@@ -490,7 +497,7 @@ func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, r *Route) {
 		return tuple.id(), true
 	}()
 	if !performManip {
-		return
+		return false
 	}
 
 	newPort := tid.dstPort
@@ -510,7 +517,8 @@ func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, r *Route) {
 		newAddr,
 	)
 
-	pkt.NatDone = true
+	*natDone = true
+	return true
 }
 
 // bucket gets the conntrack bucket for a tupleID.

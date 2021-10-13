@@ -1285,19 +1285,109 @@ func TestNAT(t *testing.T) {
 		},
 	}
 
+	setupTwiceNAT := func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, dnatAddr tcpip.Address, snatTarget stack.Target) {
+		t.Helper()
+
+		ipv6 := netProto == ipv6.ProtocolNumber
+		ipt := s.IPTables()
+
+		table := stack.Table{
+			Rules: []stack.Rule{
+				// Prerouting
+				{
+					Filter: stack.IPHeaderFilter{
+						Protocol:       transProto,
+						CheckProtocol:  true,
+						InputInterface: utils.RouterNIC2Name,
+					},
+					Target: &stack.DNATTarget{NetworkProtocol: netProto, Addr: dnatAddr, Port: listenPort},
+				},
+				{
+					Target: &stack.AcceptTarget{},
+				},
+
+				// Input
+				{
+					Target: &stack.AcceptTarget{},
+				},
+
+				// Forward
+				{
+					Target: &stack.AcceptTarget{},
+				},
+
+				// Output
+				{
+					Target: &stack.AcceptTarget{},
+				},
+
+				// Postrouting
+				{
+					Filter: stack.IPHeaderFilter{
+						Protocol:        transProto,
+						CheckProtocol:   true,
+						OutputInterface: utils.RouterNIC1Name,
+					},
+					Target: snatTarget,
+				},
+				{
+					Target: &stack.AcceptTarget{},
+				},
+			},
+			BuiltinChains: [stack.NumHooks]int{
+				stack.Prerouting:  0,
+				stack.Input:       2,
+				stack.Forward:     3,
+				stack.Output:      4,
+				stack.Postrouting: 5,
+			},
+		}
+
+		if err := ipt.ReplaceTable(stack.NATID, table, ipv6); err != nil {
+			t.Fatalf("ipt.ReplaceTable(%d, _, %t): %s", stack.NATID, ipv6, err)
+		}
+	}
+	twiceNATTypes := []natType{
+		{
+			name: "DNAT-Masquerade",
+			setupNAT: func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, snatAddr, dnatAddr tcpip.Address) {
+				t.Helper()
+
+				setupTwiceNAT(t, s, netProto, transProto, dnatAddr, &stack.MasqueradeTarget{NetworkProtocol: netProto})
+			},
+		},
+		{
+			name: "DNAT-SNAT",
+			setupNAT: func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, snatAddr, dnatAddr tcpip.Address) {
+				t.Helper()
+
+				setupTwiceNAT(t, s, netProto, transProto, dnatAddr, &stack.SNATTarget{NetworkProtocol: netProto, Addr: snatAddr})
+			},
+		},
+	}
+
 	tests := []struct {
 		name     string
 		netProto tcpip.NetworkProtocolNumber
 		// Setups up the stacks in such a way that:
 		//
 		// - Host2 is the client for all tests.
-		// - Host1 is the server when performing SNAT
+		// - When performing SNAT only:
+		//   + Host1 is the server.
 		//   + NAT will transform client-originating packets' source addresses to
 		//     the router's NIC1's address before reaching Host1.
-		// - Router is the server when performing DNAT (client will still attempt to
-		//   send packets to Host1).
+		// - When performing DNAT only:
+		//   + Router is the server.
+		//   + Client will send packets directed to Host1.
 		//   + NAT will transform client-originating packets' destination addresses
 		//     to the router's NIC2's address.
+		// - When performing Twice-NAT:
+		//   + Host1 is the server.
+		//   + Client will send packets directed to router's NIC2.
+		//   + NAT will transform client originating packets' destination addresses
+		//     to Host1's address.
+		//   + NAT will transform client-originating packets' source addresses to
+		//     the router's NIC1's address before reaching Host1.
 		epAndAddrs func(t *testing.T, host1Stack, routerStack, host2Stack *stack.Stack, proto tcpip.TransportProtocolNumber) endpointAndAddresses
 		natTypes   []natType
 	}{
@@ -1370,6 +1460,38 @@ func TestNAT(t *testing.T) {
 			natTypes: dnatTypes,
 		},
 		{
+			name:     "IPv4 Twice-NAT",
+			netProto: ipv4.ProtocolNumber,
+			epAndAddrs: func(t *testing.T, host1Stack, routerStack, host2Stack *stack.Stack, proto tcpip.TransportProtocolNumber) endpointAndAddresses {
+				t.Helper()
+
+				listenerStack := host1Stack
+				serverAddr := tcpip.FullAddress{
+					Addr: utils.Host1IPv4Addr.AddressWithPrefix.Address,
+					Port: listenPort,
+				}
+				serverConnectAddr := utils.RouterNIC1IPv4Addr.AddressWithPrefix.Address
+				clientConnectPort := serverAddr.Port
+				ep1, ep1WECH := newEP(t, listenerStack, proto, ipv4.ProtocolNumber)
+				ep2, ep2WECH := newEP(t, host2Stack, proto, ipv4.ProtocolNumber)
+				return endpointAndAddresses{
+					serverEP:          ep1,
+					serverAddr:        serverAddr,
+					serverReadableCH:  ep1WECH,
+					serverConnectAddr: serverConnectAddr,
+
+					clientEP:         ep2,
+					clientAddr:       utils.Host2IPv4Addr.AddressWithPrefix.Address,
+					clientReadableCH: ep2WECH,
+					clientConnectAddr: tcpip.FullAddress{
+						Addr: utils.RouterNIC2IPv4Addr.AddressWithPrefix.Address,
+						Port: clientConnectPort,
+					},
+				}
+			},
+			natTypes: twiceNATTypes,
+		},
+		{
 			name:     "IPv6 SNAT",
 			netProto: ipv6.ProtocolNumber,
 			epAndAddrs: func(t *testing.T, host1Stack, routerStack, host2Stack *stack.Stack, proto tcpip.TransportProtocolNumber) endpointAndAddresses {
@@ -1436,6 +1558,38 @@ func TestNAT(t *testing.T) {
 				}
 			},
 			natTypes: dnatTypes,
+		},
+		{
+			name:     "IPv6 Twice-NAT",
+			netProto: ipv6.ProtocolNumber,
+			epAndAddrs: func(t *testing.T, host1Stack, routerStack, host2Stack *stack.Stack, proto tcpip.TransportProtocolNumber) endpointAndAddresses {
+				t.Helper()
+
+				listenerStack := host1Stack
+				serverAddr := tcpip.FullAddress{
+					Addr: utils.Host1IPv6Addr.AddressWithPrefix.Address,
+					Port: listenPort,
+				}
+				serverConnectAddr := utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address
+				clientConnectPort := serverAddr.Port
+				ep1, ep1WECH := newEP(t, listenerStack, proto, ipv6.ProtocolNumber)
+				ep2, ep2WECH := newEP(t, host2Stack, proto, ipv6.ProtocolNumber)
+				return endpointAndAddresses{
+					serverEP:          ep1,
+					serverAddr:        serverAddr,
+					serverReadableCH:  ep1WECH,
+					serverConnectAddr: serverConnectAddr,
+
+					clientEP:         ep2,
+					clientAddr:       utils.Host2IPv6Addr.AddressWithPrefix.Address,
+					clientReadableCH: ep2WECH,
+					clientConnectAddr: tcpip.FullAddress{
+						Addr: utils.RouterNIC2IPv6Addr.AddressWithPrefix.Address,
+						Port: clientConnectPort,
+					},
+				}
+			},
+			natTypes: twiceNATTypes,
 		},
 	}
 
