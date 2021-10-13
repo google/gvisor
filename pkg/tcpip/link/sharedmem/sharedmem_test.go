@@ -210,6 +210,7 @@ func TestSimpleSend(t *testing.T) {
 	// Prepare route.
 	var r stack.RouteInfo
 	r.RemoteLinkAddress = remoteLinkAddr
+	r.LocalLinkAddress = localLinkAddr
 
 	for iters := 1000; iters > 0; iters-- {
 		func() {
@@ -227,8 +228,11 @@ func TestSimpleSend(t *testing.T) {
 				Data:               data.ToVectorisedView(),
 			})
 			copy(pkt.NetworkHeader().Push(hdrLen), hdrBuf)
-
 			proto := tcpip.NetworkProtocolNumber(rand.Intn(0x10000))
+			// Every PacketBuffer must have these set:
+			// See nic.writePacket.
+			pkt.EgressRoute = r
+			pkt.NetworkProtocolNumber = proto
 			if err := c.ep.WritePacket(r, proto, pkt); err != nil {
 				t.Fatalf("WritePacket failed: %v", err)
 			}
@@ -297,8 +301,11 @@ func TestPreserveSrcAddressInSend(t *testing.T) {
 		// the minimum size of the ethernet header.
 		ReserveHeaderBytes: header.EthernetMinimumSize,
 	})
-
 	proto := tcpip.NetworkProtocolNumber(rand.Intn(0x10000))
+	// Every PacketBuffer must have these set:
+	// See nic.writePacket.
+	pkt.EgressRoute = r
+	pkt.NetworkProtocolNumber = proto
 	if err := c.ep.WritePacket(r, proto, pkt); err != nil {
 		t.Fatalf("WritePacket failed: %v", err)
 	}
