@@ -35,6 +35,7 @@ go_library(
         "//pkg/tcpip/stack",
         "//pkg/tcpip/transport",
         "//pkg/tcpip/transport/internal/network",
+        "//pkg/tcpip/transport/internal/noop",
         "//pkg/tcpip/transport/packet",
         "//pkg/waiter",
     ],
