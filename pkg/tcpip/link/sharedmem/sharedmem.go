@@ -343,10 +343,10 @@ func (e *endpoint) writePacketLocked(r stack.RouteInfo, protocol tcpip.NetworkPr
 
 // WritePacket writes outbound packets to the file descriptor. If it is not
 // currently writable, the packet is dropped.
-func (e *endpoint) WritePacket(r stack.RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
+func (e *endpoint) WritePacket(_ stack.RouteInfo, _ tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if err := e.writePacketLocked(r, protocol, pkt); err != nil {
+	if err := e.writePacketLocked(pkt.EgressRoute, pkt.NetworkProtocolNumber, pkt); err != nil {
 		return err
 	}
 	e.tx.notify()
@@ -354,13 +354,13 @@ func (e *endpoint) WritePacket(r stack.RouteInfo, protocol tcpip.NetworkProtocol
 }
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.
-func (e *endpoint) WritePackets(r stack.RouteInfo, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
+func (e *endpoint) WritePackets(_ stack.RouteInfo, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
 	n := 0
 	var err tcpip.Error
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
-		if err = e.writePacketLocked(r, pkt.NetworkProtocolNumber, pkt); err != nil {
+		if err = e.writePacketLocked(pkt.EgressRoute, pkt.NetworkProtocolNumber, pkt); err != nil {
 			break
 		}
 		n++
