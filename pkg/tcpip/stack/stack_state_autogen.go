@@ -14,7 +14,7 @@ func (t *tuple) StateFields() []string {
 	return []string{
 		"tupleEntry",
 		"conn",
-		"direction",
+		"reply",
 		"tupleID",
 	}
 }
@@ -26,7 +26,7 @@ func (t *tuple) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
 	stateSinkObject.Save(0, &t.tupleEntry)
 	stateSinkObject.Save(1, &t.conn)
-	stateSinkObject.Save(2, &t.direction)
+	stateSinkObject.Save(2, &t.reply)
 	stateSinkObject.Save(3, &t.tupleID)
 }
 
@@ -36,7 +36,7 @@ func (t *tuple) afterLoad() {}
 func (t *tuple) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.tupleEntry)
 	stateSourceObject.Load(1, &t.conn)
-	stateSourceObject.Load(2, &t.direction)
+	stateSourceObject.Load(2, &t.reply)
 	stateSourceObject.Load(3, &t.tupleID)
 }
 
