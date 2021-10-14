@@ -350,18 +350,6 @@ cc_library(
 )
 
 cc_library(
-    name = "benchmark_main",
-    testonly = 1,
-    linkstatic = 1,
-    deps = [
-        ":test_util",
-        "@com_google_absl//absl/flags:flag",
-        gtest,
-        gbenchmark_internal,
-    ],
-)
-
-cc_library(
     name = "epoll_util",
     testonly = 1,
     srcs = ["epoll_util.cc"],
