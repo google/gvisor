@@ -180,8 +180,12 @@ var (
 // to get quote.
 const SizeOfQuoteInputData = 64
 
-// SignReport is a struct that gets signed quote from input data.
+// SignReport is a struct that gets signed quote from input data. The
+// serialized quote is copied to buf.
+// size is an input that specifies the size of buf. When returned, it's updated
+// to the size of quote.
 type SignReport struct {
-	data  [64]byte
-	quote []byte
+	data [64]byte
+	size uint32
+	buf  []byte
 }
