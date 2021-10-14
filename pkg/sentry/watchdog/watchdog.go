@@ -289,7 +289,7 @@ func (w *Watchdog) runTurn() {
 	// is off, it will discount the entire duration since last run from 'lastUpdateTime'.
 	discount := time.Duration(0)
 	if now.Sub(w.lastRun.Add(w.period)) > descheduleThreshold {
-		discount = now.Sub(w.lastRun)
+		discount = now.Sub(w.lastRun.Add(w.period))
 	}
 	w.lastRun = now
 
