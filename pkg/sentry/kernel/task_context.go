@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/ipc"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
@@ -73,7 +74,7 @@ func (t *Task) contextValue(key interface{}, isTaskGoroutine bool) interface{} {
 			defer t.mu.Unlock()
 		}
 		return t.utsns
-	case CtxIPCNamespace:
+	case ipc.CtxIPCNamespace:
 		if !isTaskGoroutine {
 			t.mu.Lock()
 			defer t.mu.Unlock()
