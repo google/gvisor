@@ -179,12 +179,6 @@ analyzers:
     internal:
       exclude:
         - pkg/gohacks/gohacks_unsafe.go # x ^ 0 always equals x.
-  SA5011: # Possible nil pointer dereference.
-    internal:
-      exclude:
-        # https://github.com/dominikh/go-tools/issues/924
-        - pkg/sentry/fs/fdpipe/pipe_opener_test.go
-        - pkg/tcpip/tests/integration/link_resolution_test.go
   ST1019: # Multiple imports of the same package.
     generated:
       exclude:
