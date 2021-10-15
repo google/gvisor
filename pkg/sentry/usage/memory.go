@@ -252,9 +252,9 @@ func (m *MemoryLocked) Copy() (MemoryStats, uint64) {
 	return ms, m.totalLocked()
 }
 
-// These options control how much total memory the is reported to the application.
-// They may only be set before the application starts executing, and must not
-// be modified.
+// These options control how much total memory the is reported to the
+// application. They may only be set before the application starts executing,
+// and must not be modified.
 var (
 	// MinimumTotalMemoryBytes is the minimum reported total system memory.
 	MinimumTotalMemoryBytes uint64 = 2 << 30 // 2 GB

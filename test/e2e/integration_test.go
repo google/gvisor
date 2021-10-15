@@ -29,6 +29,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -41,8 +42,12 @@ import (
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
-// defaultWait is the default wait time used for tests.
-const defaultWait = time.Minute
+const (
+	// defaultWait is the default wait time used for tests.
+	defaultWait = time.Minute
+
+	memInfoCmd = "cat /proc/meminfo | grep MemTotal: | awk '{print $2}'"
+)
 
 func TestMain(m *testing.M) {
 	dockerutil.EnsureSupportedDockerVersion()
@@ -255,16 +260,47 @@ func TestConnectToSelf(t *testing.T) {
 	}
 }
 
+func TestMemory(t *testing.T) {
+	// Find total amount of memory in the host.
+	host, err := exec.Command("sh", "-c", memInfoCmd).CombinedOutput()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := strconv.ParseUint(strings.TrimSpace(string(host)), 10, 64)
+	if err != nil {
+		t.Fatalf("failed to parse %q: %v", host, err)
+	}
+
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	out, err := d.Run(ctx, dockerutil.RunOpts{Image: "basic/alpine"}, "sh", "-c", memInfoCmd)
+	if err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	// Get memory from inside the container and ensure it matches the host.
+	got, err := strconv.ParseUint(strings.TrimSpace(out), 10, 64)
+	if err != nil {
+		t.Fatalf("failed to parse %q: %v", out, err)
+	}
+	if got != want {
+		t.Errorf("MemTotal got: %d, want: %d", got, want)
+	}
+}
+
 func TestMemLimit(t *testing.T) {
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
 
 	allocMemoryKb := 50 * 1024
-	out, err := d.Run(ctx, dockerutil.RunOpts{
+	opts := dockerutil.RunOpts{
 		Image:  "basic/alpine",
 		Memory: allocMemoryKb * 1024, // In bytes.
-	}, "sh", "-c", "cat /proc/meminfo | grep MemTotal: | awk '{print $2}'")
+	}
+	out, err := d.Run(ctx, opts, "sh", "-c", memInfoCmd)
 	if err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}

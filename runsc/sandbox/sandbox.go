@@ -758,6 +758,11 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	// shown as `exe`.
 	cmd.Args[0] = "runsc-sandbox"
 
+	mem, err := totalSystemMemory()
+	if err != nil {
+		return err
+	}
+
 	if s.Cgroup != nil {
 		cpuNum, err := s.Cgroup.NumCPU()
 		if err != nil {
@@ -785,16 +790,15 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		}
 		cmd.Args = append(cmd.Args, "--cpu-num", strconv.Itoa(cpuNum))
 
-		mem, err := s.Cgroup.MemoryLimit()
+		memLimit, err := s.Cgroup.MemoryLimit()
 		if err != nil {
 			return fmt.Errorf("getting memory limit from cgroups: %v", err)
 		}
-		// When memory limit is unset, a "large" number is returned. In that case,
-		// just stick with the default.
-		if mem < 0x7ffffffffffff000 {
-			cmd.Args = append(cmd.Args, "--total-memory", strconv.FormatUint(mem, 10))
+		if memLimit < mem {
+			mem = memLimit
 		}
 	}
+	cmd.Args = append(cmd.Args, "--total-memory", strconv.FormatUint(mem, 10))
 
 	if args.UserLog != "" {
 		f, err := os.OpenFile(args.UserLog, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0664)
