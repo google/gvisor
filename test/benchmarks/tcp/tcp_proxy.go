@@ -213,7 +213,7 @@ func newNetstackImpl(mode string) (impl, error) {
 		AddressWithPrefix: parsedAddr.WithPrefix(),
 	}
 	if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
-		return nil, fmt.Errorf("error adding IP address %+v to %q: %w", protocolAddr, *iface, err)
+		return nil, fmt.Errorf("error adding IP address %+v to %q: %s", protocolAddr, *iface, err)
 	}
 
 	subnet, err := tcpip.NewSubnet(parsedDest, parsedMask)
