@@ -706,7 +706,7 @@ TEST_P(TcpSocketTest, TcpInq) {
   std::vector<char> control(CMSG_SPACE(sizeof(int)));
   size = sizeof(buf);
   struct iovec iov;
-  for (int i = 0; size != 0; i += kChunk) {
+  while (size != 0) {
     msg.msg_control = &control[0];
     msg.msg_controllen = control.size();
 
