@@ -630,7 +630,7 @@ func makePipe() (c1, c2 net.Conn, stop func(), err error) {
 		AddressWithPrefix: ip.WithPrefix(),
 	}
 	if err := s.AddProtocolAddress(NICID, protocolAddr, stack.AddressProperties{}); err != nil {
-		return nil, nil, nil, fmt.Errorf("AddProtocolAddress(%d, %+v, {}): %w", NICID, protocolAddr, err)
+		return nil, nil, nil, fmt.Errorf("AddProtocolAddress(%d, %+v, {}): %s", NICID, protocolAddr, err)
 	}
 
 	l, err := ListenTCP(s, addr, ipv4.ProtocolNumber)
