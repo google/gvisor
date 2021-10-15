@@ -1,10 +1,11 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
 go_library(
     name = "sandbox",
     srcs = [
+        "memory.go",
         "network.go",
         "network_unsafe.go",
         "sandbox.go",
@@ -38,4 +39,11 @@ go_library(
         "@com_github_vishvananda_netlink//:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
+)
+
+go_test(
+    name = "sandbox_test",
+    size = "small",
+    srcs = ["memory_test.go"],
+    library = ":sandbox",
 )
