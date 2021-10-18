@@ -95,7 +95,7 @@ type regularFile struct {
 func (fs *filesystem) newRegularFile(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, parentDir *directory) *inode {
 	file := &regularFile{
 		memFile:         fs.mfp.MemoryFile(),
-		memoryUsageKind: usage.Tmpfs,
+		memoryUsageKind: fs.usage,
 		seals:           linux.F_SEAL_SEAL,
 	}
 	file.inode.init(file, fs, kuid, kgid, linux.S_IFREG|mode, parentDir)

@@ -377,6 +377,7 @@ func (fs *filesystem) StateFields() []string {
 		"clock",
 		"devMinor",
 		"mopts",
+		"usage",
 		"nextInoMinusOne",
 		"root",
 	}
@@ -392,8 +393,9 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &fs.clock)
 	stateSinkObject.Save(3, &fs.devMinor)
 	stateSinkObject.Save(4, &fs.mopts)
-	stateSinkObject.Save(5, &fs.nextInoMinusOne)
-	stateSinkObject.Save(6, &fs.root)
+	stateSinkObject.Save(5, &fs.usage)
+	stateSinkObject.Save(6, &fs.nextInoMinusOne)
+	stateSinkObject.Save(7, &fs.root)
 }
 
 func (fs *filesystem) afterLoad() {}
@@ -405,8 +407,9 @@ func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &fs.clock)
 	stateSourceObject.Load(3, &fs.devMinor)
 	stateSourceObject.Load(4, &fs.mopts)
-	stateSourceObject.Load(5, &fs.nextInoMinusOne)
-	stateSourceObject.Load(6, &fs.root)
+	stateSourceObject.Load(5, &fs.usage)
+	stateSourceObject.Load(6, &fs.nextInoMinusOne)
+	stateSourceObject.Load(7, &fs.root)
 }
 
 func (f *FilesystemOpts) StateTypeName() string {
@@ -418,6 +421,7 @@ func (f *FilesystemOpts) StateFields() []string {
 		"RootFileType",
 		"RootSymlinkTarget",
 		"FilesystemType",
+		"Usage",
 	}
 }
 
@@ -429,6 +433,7 @@ func (f *FilesystemOpts) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &f.RootFileType)
 	stateSinkObject.Save(1, &f.RootSymlinkTarget)
 	stateSinkObject.Save(2, &f.FilesystemType)
+	stateSinkObject.Save(3, &f.Usage)
 }
 
 func (f *FilesystemOpts) afterLoad() {}
@@ -438,6 +443,7 @@ func (f *FilesystemOpts) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.RootFileType)
 	stateSourceObject.Load(1, &f.RootSymlinkTarget)
 	stateSourceObject.Load(2, &f.FilesystemType)
+	stateSourceObject.Load(3, &f.Usage)
 }
 
 func (d *dentry) StateTypeName() string {
