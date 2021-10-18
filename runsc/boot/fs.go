@@ -984,7 +984,7 @@ func (c *containerMounter) createRestoreEnvironment(conf *config.Config) (*fs.Re
 
 	// Add root mount.
 	fd := c.fds.remove()
-	opts := goferMountData(fd, conf.FileAccess, "/", false /* vfs2 */, false /* lisafs */)
+	opts := goferMountData(fd, conf.FileAccess, "/", conf.VFS2, false /* lisafs */)
 
 	mf := fs.MountSourceFlags{}
 	if c.root.Readonly || conf.Overlay {
