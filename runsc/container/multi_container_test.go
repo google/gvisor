@@ -1624,6 +1624,7 @@ func TestMultiContainerGoferKilled(t *testing.T) {
 	defer cleanup()
 
 	conf := testutil.TestConfig(t)
+	conf.VFS2 = true
 	conf.RootDir = rootDir
 
 	sleep := []string{"sleep", "100"}
