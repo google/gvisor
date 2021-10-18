@@ -31,3 +31,8 @@ func findStdPkg(GOOS, GOARCH, path string) (io.ReadCloser, error) {
 	}
 	return os.Open(fmt.Sprintf("external/go_sdk/pkg/%s_%s/%s.a", GOOS, GOARCH, path))
 }
+
+// ReleaseTags returns nil, indicating that the defaults should be used.
+func ReleaseTags() ([]string, error) {
+	return nil, nil
+}

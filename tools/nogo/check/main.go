@@ -66,14 +66,22 @@ func run([]string) int {
 		return 1
 	}
 
+	releaseTags, err := nogo.ReleaseTags()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error determining release tags: %v", err)
+		return 1
+	}
+
 	// Run the configuration.
 	if *stdlibFile != "" {
 		// Perform stdlib analysis.
 		c := loadConfig(*stdlibFile, new(nogo.StdlibConfig)).(*nogo.StdlibConfig)
+		c.ReleaseTags = releaseTags
 		findings, factData, err = nogo.CheckStdlib(c, nogo.AllAnalyzers)
 	} else if *packageFile != "" {
 		// Perform standard analysis.
 		c := loadConfig(*packageFile, new(nogo.PackageConfig)).(*nogo.PackageConfig)
+		c.ReleaseTags = releaseTags
 		findings, factData, err = nogo.CheckPackage(c, nogo.AllAnalyzers, nil)
 	} else {
 		fmt.Fprintf(os.Stderr, "please provide at least one of package or stdlib!")
