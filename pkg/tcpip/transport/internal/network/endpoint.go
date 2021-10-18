@@ -363,8 +363,7 @@ func (e *Endpoint) Disconnect() {
 // configured multicast interface if no interface is specified and the
 // specified address is a multicast address.
 //
-// TODO(https://gvisor.dev/issue/6590): Annotate read lock requirement.
-// +checklocks:e.mu
+// +checklocksread:e.mu
 func (e *Endpoint) connectRouteRLocked(nicID tcpip.NICID, addr tcpip.FullAddress, netProto tcpip.NetworkProtocolNumber) (*stack.Route, tcpip.NICID, tcpip.Error) {
 	localAddr := e.Info().ID.LocalAddress
 	if e.isBroadcastOrMulticast(nicID, netProto, localAddr) {

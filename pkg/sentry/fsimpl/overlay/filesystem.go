@@ -86,7 +86,7 @@ func putDentrySlice(ds *[]*dentry) {
 // fs.renameMuRUnlockAndCheckDrop(&ds)" than "defer func() {
 // fs.renameMuRUnlockAndCheckDrop(ds) }()" to work around this.
 //
-// +checklocksrelease:fs.renameMu
+// +checklocksreleaseread:fs.renameMu
 func (fs *filesystem) renameMuRUnlockAndCheckDrop(ctx context.Context, dsp **[]*dentry) {
 	fs.renameMu.RUnlock()
 	if *dsp == nil {

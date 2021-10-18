@@ -183,8 +183,8 @@ type instructionWithReferrers interface {
 // checkFieldAccess checks the validity of a field access.
 //
 // This also enforces atomicity constraints for fields that must be accessed
-// atomically. The parameter isWrite indicates whether this field is used
-// downstream for a write operation.
+// atomically. The parameter isWrite indicates whether this field is used for
+// a write operation.
 func (pc *passContext) checkFieldAccess(inst instructionWithReferrers, structObj ssa.Value, field int, ls *lockState, isWrite bool) {
 	var (
 		lff         lockFieldFacts
@@ -200,13 +200,14 @@ func (pc *passContext) checkFieldAccess(inst instructionWithReferrers, structObj
 	for guardName, fl := range lgf.GuardedBy {
 		guardsFound++
 		r := fl.resolve(structObj)
-		if _, ok := ls.isHeld(r); ok {
+		if _, ok := ls.isHeld(r, isWrite); ok {
 			guardsHeld++
 			continue
 		}
 		if _, ok := pc.forced[pc.positionKey(inst.Pos())]; ok {
-			// Mark this as locked, since it has been forced.
-			ls.lockField(r)
+			// Mark this as locked, since it has been forced. All
+			// forces are treated as an exclusive lock.
+			ls.lockField(r, true /* exclusive */)
 			guardsHeld++
 			continue
 		}
@@ -301,7 +302,7 @@ func (pc *passContext) postFunctionCallUpdate(call callCommon, lff *lockFunction
 			continue
 		}
 		r := fg.resolveCall(call.Common().Args, call.Value())
-		if s, ok := ls.unlockField(r); !ok {
+		if s, ok := ls.unlockField(r, fg.Exclusive); !ok {
 			if _, ok := pc.forced[pc.positionKey(call.Pos())]; !ok {
 				pc.maybeFail(call.Pos(), "attempt to release %s (%s), but not held (locks: %s)", fieldName, s, ls.String())
 			}
@@ -315,12 +316,20 @@ func (pc *passContext) postFunctionCallUpdate(call callCommon, lff *lockFunction
 		}
 		// Acquire the lock per the annotation.
 		r := fg.resolveCall(call.Common().Args, call.Value())
-		if s, ok := ls.lockField(r); !ok {
+		if s, ok := ls.lockField(r, fg.Exclusive); !ok {
 			if _, ok := pc.forced[pc.positionKey(call.Pos())]; !ok {
 				pc.maybeFail(call.Pos(), "attempt to acquire %s (%s), but already held (locks: %s)", fieldName, s, ls.String())
 			}
 		}
 	}
+}
+
+// exclusiveStr returns a string describing exclusive requirements.
+func exclusiveStr(exclusive bool) string {
+	if exclusive {
+		return "exclusively"
+	}
+	return "non-exclusively"
 }
 
 // checkFunctionCall checks preconditions for function calls, and tracks the
@@ -332,12 +341,12 @@ func (pc *passContext) checkFunctionCall(call callCommon, fn *ssa.Function, lff 
 	// Check all guards required are held.
 	for fieldName, fg := range lff.HeldOnEntry {
 		r := fg.resolveCall(call.Common().Args, call.Value())
-		if s, ok := ls.isHeld(r); !ok {
+		if s, ok := ls.isHeld(r, fg.Exclusive); !ok {
 			if _, ok := pc.forced[pc.positionKey(call.Pos())]; !ok {
-				pc.maybeFail(call.Pos(), "must hold %s (%s) to call %s, but not held (locks: %s)", fieldName, s, fn.Name(), ls.String())
+				pc.maybeFail(call.Pos(), "must hold %s %s (%s) to call %s, but not held (locks: %s)", fieldName, exclusiveStr(fg.Exclusive), s, fn.Name(), ls.String())
 			} else {
 				// Force the lock to be acquired.
-				ls.lockField(r)
+				ls.lockField(r, fg.Exclusive)
 			}
 		}
 	}
@@ -348,19 +357,33 @@ func (pc *passContext) checkFunctionCall(call callCommon, fn *ssa.Function, lff 
 	// Check if it's a method dispatch for something in the sync package.
 	// See: https://godoc.org/golang.org/x/tools/go/ssa#Function
 	if fn.Package() != nil && fn.Package().Pkg.Name() == "sync" && fn.Signature.Recv() != nil {
+		isExclusive := false
 		switch fn.Name() {
-		case "Lock", "RLock":
-			if s, ok := ls.lockField(resolvedValue{value: call.Common().Args[0], valid: true}); !ok {
+		case "Lock":
+			isExclusive = true
+			fallthrough
+		case "RLock":
+			if s, ok := ls.lockField(resolvedValue{value: call.Common().Args[0], valid: true}, isExclusive); !ok {
 				if _, ok := pc.forced[pc.positionKey(call.Pos())]; !ok {
 					// Double locking a mutex that is already locked.
 					pc.maybeFail(call.Pos(), "%s already locked (locks: %s)", s, ls.String())
 				}
 			}
-		case "Unlock", "RUnlock":
-			if s, ok := ls.unlockField(resolvedValue{value: call.Common().Args[0], valid: true}); !ok {
+		case "Unlock":
+			isExclusive = true
+			fallthrough
+		case "RUnlock":
+			if s, ok := ls.unlockField(resolvedValue{value: call.Common().Args[0], valid: true}, isExclusive); !ok {
 				if _, ok := pc.forced[pc.positionKey(call.Pos())]; !ok {
 					// Unlocking something that is already unlocked.
-					pc.maybeFail(call.Pos(), "%s already unlocked (locks: %s)", s, ls.String())
+					pc.maybeFail(call.Pos(), "%s already unlocked or locked differently (locks: %s)", s, ls.String())
+				}
+			}
+		case "DowngradeLock":
+			if s, ok := ls.downgradeField(resolvedValue{value: call.Common().Args[0], valid: true}); !ok {
+				if _, ok := pc.forced[pc.positionKey(call.Pos())]; !ok {
+					// Downgrading something that may not be downgraded.
+					pc.maybeFail(call.Pos(), "%s already unlocked or not exclusive (locks: %s)", s, ls.String())
 				}
 			}
 		}
@@ -531,13 +554,13 @@ func (pc *passContext) checkBasicBlock(fn *ssa.Function, block *ssa.BasicBlock, 
 			// Validate held locks.
 			for fieldName, fg := range lff.HeldOnExit {
 				r := fg.resolveStatic(fn, rv)
-				if s, ok := rls.isHeld(r); !ok {
+				if s, ok := rls.isHeld(r, fg.Exclusive); !ok {
 					if _, ok := pc.forced[pc.positionKey(rv.Pos())]; !ok {
-						pc.maybeFail(rv.Pos(), "lock %s (%s) not held (locks: %s)", fieldName, s, rls.String())
+						pc.maybeFail(rv.Pos(), "lock %s (%s) not held %s (locks: %s)", fieldName, s, exclusiveStr(fg.Exclusive), rls.String())
 						failed = true
 					} else {
 						// Force the lock to be acquired.
-						rls.lockField(r)
+						rls.lockField(r, fg.Exclusive)
 					}
 				}
 			}
@@ -558,7 +581,7 @@ func (pc *passContext) checkBasicBlock(fn *ssa.Function, block *ssa.BasicBlock, 
 		if pls := pc.checkBasicBlock(fn, succ, lff, ls, seen); pls != nil {
 			if rls != nil && !rls.isCompatible(pls) {
 				if _, ok := pc.forced[pc.positionKey(fn.Pos())]; !ok {
-					pc.maybeFail(fn.Pos(), "incompatible return states (first: %s, second: %v)", rls.String(), pls.String())
+					pc.maybeFail(fn.Pos(), "incompatible return states (first: %s, second: %s)", rls.String(), pls.String())
 				}
 			}
 			rls = pls
@@ -601,11 +624,11 @@ func (pc *passContext) checkFunction(call callCommon, fn *ssa.Function, lff *loc
 		// The first is the method object itself so we skip that when looking
 		// for receiver/function parameters.
 		r := fg.resolveStatic(fn, call.Value())
-		if s, ok := ls.lockField(r); !ok {
+		if s, ok := ls.lockField(r, fg.Exclusive); !ok {
 			// This can only happen if the same value is declared
 			// multiple times, and should be caught by the earlier
 			// fact scanning. Keep it here as a sanity check.
-			pc.maybeFail(fn.Pos(), "lock %s (%s) acquired multiple times (locks: %s)", fieldName, s, ls.String())
+			pc.maybeFail(fn.Pos(), "lock %s (%s) acquired multiple times or differently (locks: %s)", fieldName, s, ls.String())
 		}
 	}
 

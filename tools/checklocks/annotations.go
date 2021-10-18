@@ -23,13 +23,16 @@ import (
 )
 
 const (
-	checkLocksAnnotation  = "// +checklocks:"
-	checkLocksAcquires    = "// +checklocksacquire:"
-	checkLocksReleases    = "// +checklocksrelease:"
-	checkLocksIgnore      = "// +checklocksignore"
-	checkLocksForce       = "// +checklocksforce"
-	checkLocksFail        = "// +checklocksfail"
-	checkAtomicAnnotation = "// +checkatomic"
+	checkLocksAnnotation     = "// +checklocks:"
+	checkLocksAnnotationRead = "// +checklocksread:"
+	checkLocksAcquires       = "// +checklocksacquire:"
+	checkLocksAcquiresRead   = "// +checklocksacquireread:"
+	checkLocksReleases       = "// +checklocksrelease:"
+	checkLocksReleasesRead   = "// +checklocksreleaseread:"
+	checkLocksIgnore         = "// +checklocksignore"
+	checkLocksForce          = "// +checklocksforce"
+	checkLocksFail           = "// +checklocksfail"
+	checkAtomicAnnotation    = "// +checkatomic"
 )
 
 // failData indicates an expected failure.

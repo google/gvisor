@@ -166,6 +166,9 @@ type functionGuard struct {
 
 	// FieldList is the traversal path to the object.
 	FieldList fieldList
+
+	// Exclusive indicates an exclusive lock is required.
+	Exclusive bool
 }
 
 // resolveReturn resolves a return value.
@@ -262,7 +265,7 @@ type lockFunctionFacts struct {
 func (*lockFunctionFacts) AFact() {}
 
 // checkGuard validates the guardName.
-func (lff *lockFunctionFacts) checkGuard(pc *passContext, d *ast.FuncDecl, guardName string, allowReturn bool) (functionGuard, bool) {
+func (lff *lockFunctionFacts) checkGuard(pc *passContext, d *ast.FuncDecl, guardName string, exclusive bool, allowReturn bool) (functionGuard, bool) {
 	if _, ok := lff.HeldOnEntry[guardName]; ok {
 		pc.maybeFail(d.Pos(), "annotation %s specified more than once, already required", guardName)
 		return functionGuard{}, false
@@ -271,13 +274,13 @@ func (lff *lockFunctionFacts) checkGuard(pc *passContext, d *ast.FuncDecl, guard
 		pc.maybeFail(d.Pos(), "annotation %s specified more than once, already acquired", guardName)
 		return functionGuard{}, false
 	}
-	fg, ok := pc.findFunctionGuard(d, guardName, allowReturn)
+	fg, ok := pc.findFunctionGuard(d, guardName, exclusive, allowReturn)
 	return fg, ok
 }
 
 // addGuardedBy adds a field to both HeldOnEntry and HeldOnExit.
-func (lff *lockFunctionFacts) addGuardedBy(pc *passContext, d *ast.FuncDecl, guardName string) {
-	if fg, ok := lff.checkGuard(pc, d, guardName, false /* allowReturn */); ok {
+func (lff *lockFunctionFacts) addGuardedBy(pc *passContext, d *ast.FuncDecl, guardName string, exclusive bool) {
+	if fg, ok := lff.checkGuard(pc, d, guardName, exclusive, false /* allowReturn */); ok {
 		if lff.HeldOnEntry == nil {
 			lff.HeldOnEntry = make(map[string]functionGuard)
 		}
@@ -290,8 +293,8 @@ func (lff *lockFunctionFacts) addGuardedBy(pc *passContext, d *ast.FuncDecl, gua
 }
 
 // addAcquires adds a field to HeldOnExit.
-func (lff *lockFunctionFacts) addAcquires(pc *passContext, d *ast.FuncDecl, guardName string) {
-	if fg, ok := lff.checkGuard(pc, d, guardName, true /* allowReturn */); ok {
+func (lff *lockFunctionFacts) addAcquires(pc *passContext, d *ast.FuncDecl, guardName string, exclusive bool) {
+	if fg, ok := lff.checkGuard(pc, d, guardName, exclusive, true /* allowReturn */); ok {
 		if lff.HeldOnExit == nil {
 			lff.HeldOnExit = make(map[string]functionGuard)
 		}
@@ -300,8 +303,8 @@ func (lff *lockFunctionFacts) addAcquires(pc *passContext, d *ast.FuncDecl, guar
 }
 
 // addReleases adds a field to HeldOnEntry.
-func (lff *lockFunctionFacts) addReleases(pc *passContext, d *ast.FuncDecl, guardName string) {
-	if fg, ok := lff.checkGuard(pc, d, guardName, false /* allowReturn */); ok {
+func (lff *lockFunctionFacts) addReleases(pc *passContext, d *ast.FuncDecl, guardName string, exclusive bool) {
+	if fg, ok := lff.checkGuard(pc, d, guardName, exclusive, false /* allowReturn */); ok {
 		if lff.HeldOnEntry == nil {
 			lff.HeldOnEntry = make(map[string]functionGuard)
 		}
@@ -310,7 +313,7 @@ func (lff *lockFunctionFacts) addReleases(pc *passContext, d *ast.FuncDecl, guar
 }
 
 // fieldListFor returns the fieldList for the given object.
-func (pc *passContext) fieldListFor(pos token.Pos, fieldObj types.Object, index int, fieldName string, checkMutex bool) (int, bool) {
+func (pc *passContext) fieldListFor(pos token.Pos, fieldObj types.Object, index int, fieldName string, checkMutex bool, exclusive bool) (int, bool) {
 	var lff lockFieldFacts
 	if !pc.pass.ImportObjectFact(fieldObj, &lff) {
 		// This should not happen: we export facts for all fields.
@@ -318,7 +321,11 @@ func (pc *passContext) fieldListFor(pos token.Pos, fieldObj types.Object, index 
 	}
 	// Check that it is indeed a mutex.
 	if checkMutex && !lff.IsMutex && !lff.IsRWMutex {
-		pc.maybeFail(pos, "field %s is not a mutex or an rwmutex", fieldName)
+		pc.maybeFail(pos, "field %s is not a Mutex or an RWMutex", fieldName)
+		return 0, false
+	}
+	if checkMutex && !exclusive && !lff.IsRWMutex {
+		pc.maybeFail(pos, "field %s must be a RWMutex, but it is not", fieldName)
 		return 0, false
 	}
 	// Return the resolution path.
@@ -329,14 +336,14 @@ func (pc *passContext) fieldListFor(pos token.Pos, fieldObj types.Object, index 
 }
 
 // resolveOneField resolves a field in a single struct.
-func (pc *passContext) resolveOneField(pos token.Pos, structType *types.Struct, fieldName string, checkMutex bool) (fl fieldList, fieldObj types.Object, ok bool) {
+func (pc *passContext) resolveOneField(pos token.Pos, structType *types.Struct, fieldName string, checkMutex bool, exclusive bool) (fl fieldList, fieldObj types.Object, ok bool) {
 	// Scan to match the next field.
 	for i := 0; i < structType.NumFields(); i++ {
 		fieldObj := structType.Field(i)
 		if fieldObj.Name() != fieldName {
 			continue
 		}
-		flOne, ok := pc.fieldListFor(pos, fieldObj, i, fieldName, checkMutex)
+		flOne, ok := pc.fieldListFor(pos, fieldObj, i, fieldName, checkMutex, exclusive)
 		if !ok {
 			return nil, nil, false
 		}
@@ -357,8 +364,8 @@ func (pc *passContext) resolveOneField(pos token.Pos, structType *types.Struct, 
 		// Need to check that there is a resolution path. If there is
 		// no resolution path that's not a failure: we just continue
 		// scanning the next embed to find a match.
-		flEmbed, okEmbed := pc.fieldListFor(pos, fieldObj, i, fieldName, false)
-		flCont, fieldObjCont, okCont := pc.resolveOneField(pos, structType, fieldName, checkMutex)
+		flEmbed, okEmbed := pc.fieldListFor(pos, fieldObj, i, fieldName, false, exclusive)
+		flCont, fieldObjCont, okCont := pc.resolveOneField(pos, structType, fieldName, checkMutex, exclusive)
 		if okEmbed && okCont {
 			fl = append(fl, flEmbed)
 			fl = append(fl, flCont...)
@@ -373,9 +380,9 @@ func (pc *passContext) resolveOneField(pos token.Pos, structType *types.Struct, 
 //
 // Note that this checks that the final element is a mutex of some kind, and
 // will fail appropriately.
-func (pc *passContext) resolveField(pos token.Pos, structType *types.Struct, parts []string) (fl fieldList, ok bool) {
+func (pc *passContext) resolveField(pos token.Pos, structType *types.Struct, parts []string, exclusive bool) (fl fieldList, ok bool) {
 	for partNumber, fieldName := range parts {
-		flOne, fieldObj, ok := pc.resolveOneField(pos, structType, fieldName, partNumber >= len(parts)-1 /* checkMutex */)
+		flOne, fieldObj, ok := pc.resolveOneField(pos, structType, fieldName, partNumber >= len(parts)-1 /* checkMutex */, exclusive)
 		if !ok {
 			// Error already reported.
 			return nil, false
@@ -474,15 +481,21 @@ func (pc *passContext) exportLockGuardFacts(structType *types.Struct, ss *ast.St
 							pc.maybeFail(fieldObj.Pos(), "annotation %s specified more than once", guardName)
 							return
 						}
-						fl, ok := pc.resolveField(fieldObj.Pos(), structType, strings.Split(guardName, "."))
+						fl, ok := pc.resolveField(fieldObj.Pos(), structType, strings.Split(guardName, "."), true /* exclusive */)
 						if ok {
-							// If we successfully resolved
-							// the field, then save it.
+							// If we successfully resolved the field, then save it.
 							if lgf.GuardedBy == nil {
 								lgf.GuardedBy = make(map[string]fieldList)
 							}
 							lgf.GuardedBy[guardName] = fl
 						}
+					},
+					// N.B. We support only the vanilla
+					// annotation on individual fields. If
+					// the field is a read lock, then we
+					// will allow read access by default.
+					checkLocksAnnotationRead: func(guardName string) {
+						pc.maybeFail(fieldObj.Pos(), "annotation %s not legal on fields", guardName)
 					},
 				})
 			}
@@ -514,7 +527,7 @@ func countFields(fl []*ast.Field) (count int) {
 }
 
 // matchFieldList attempts to match the given field.
-func (pc *passContext) matchFieldList(pos token.Pos, fl []*ast.Field, guardName string) (functionGuard, bool) {
+func (pc *passContext) matchFieldList(pos token.Pos, fl []*ast.Field, guardName string, exclusive bool) (functionGuard, bool) {
 	parts := strings.Split(guardName, ".")
 	parameterName := parts[0]
 	parameterNumber := 0
@@ -545,8 +558,9 @@ func (pc *passContext) matchFieldList(pos token.Pos, fl []*ast.Field, guardName 
 			}
 			fg := functionGuard{
 				ParameterNumber: parameterNumber,
+				Exclusive:       exclusive,
 			}
-			fl, ok := pc.resolveField(pos, structType, parts[1:])
+			fl, ok := pc.resolveField(pos, structType, parts[1:], exclusive)
 			fg.FieldList = fl
 			return fg, ok // If ok is false, already failed.
 		}
@@ -558,7 +572,7 @@ func (pc *passContext) matchFieldList(pos token.Pos, fl []*ast.Field, guardName 
 // particular string of the 'a.b'.
 //
 // This function will report any errors directly.
-func (pc *passContext) findFunctionGuard(d *ast.FuncDecl, guardName string, allowReturn bool) (functionGuard, bool) {
+func (pc *passContext) findFunctionGuard(d *ast.FuncDecl, guardName string, exclusive bool, allowReturn bool) (functionGuard, bool) {
 	var (
 		parameterList []*ast.Field
 		returnList    []*ast.Field
@@ -569,14 +583,14 @@ func (pc *passContext) findFunctionGuard(d *ast.FuncDecl, guardName string, allo
 	if d.Type.Params != nil {
 		parameterList = append(parameterList, d.Type.Params.List...)
 	}
-	if fg, ok := pc.matchFieldList(d.Pos(), parameterList, guardName); ok {
+	if fg, ok := pc.matchFieldList(d.Pos(), parameterList, guardName, exclusive); ok {
 		return fg, ok
 	}
 	if allowReturn {
 		if d.Type.Results != nil {
 			returnList = append(returnList, d.Type.Results.List...)
 		}
-		if fg, ok := pc.matchFieldList(d.Pos(), returnList, guardName); ok {
+		if fg, ok := pc.matchFieldList(d.Pos(), returnList, guardName, exclusive); ok {
 			// Fix this up to apply to the return value, as noted
 			// in fg.ParameterNumber. For the ssa analysis, we must
 			// record whether this has multiple results, since
@@ -610,9 +624,12 @@ func (pc *passContext) exportFunctionFacts(d *ast.FuncDecl) {
 				// extremely rare.
 				lff.Ignore = true
 			},
-			checkLocksAnnotation: func(guardName string) { lff.addGuardedBy(pc, d, guardName) },
-			checkLocksAcquires:   func(guardName string) { lff.addAcquires(pc, d, guardName) },
-			checkLocksReleases:   func(guardName string) { lff.addReleases(pc, d, guardName) },
+			checkLocksAnnotation:     func(guardName string) { lff.addGuardedBy(pc, d, guardName, true /* exclusive */) },
+			checkLocksAnnotationRead: func(guardName string) { lff.addGuardedBy(pc, d, guardName, false /* exclusive */) },
+			checkLocksAcquires:       func(guardName string) { lff.addAcquires(pc, d, guardName, true /* exclusive */) },
+			checkLocksAcquiresRead:   func(guardName string) { lff.addAcquires(pc, d, guardName, false /* exclusive */) },
+			checkLocksReleases:       func(guardName string) { lff.addReleases(pc, d, guardName, true /* exclusive */) },
+			checkLocksReleasesRead:   func(guardName string) { lff.addReleases(pc, d, guardName, false /* exclusive */) },
 		})
 	}
 

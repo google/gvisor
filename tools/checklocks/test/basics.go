@@ -108,14 +108,14 @@ type rwGuardStruct struct {
 
 func testRWValidRead(tc *rwGuardStruct) {
 	tc.rwMu.Lock()
-	tc.guardedField = 1
+	_ = tc.guardedField
 	tc.rwMu.Unlock()
 }
 
 func testRWValidWrite(tc *rwGuardStruct) {
-	tc.rwMu.RLock()
+	tc.rwMu.Lock()
 	tc.guardedField = 2
-	tc.rwMu.RUnlock()
+	tc.rwMu.Unlock()
 }
 
 func testRWInvalidWrite(tc *rwGuardStruct) {
