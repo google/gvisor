@@ -950,7 +950,7 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 	if kernel.VFS2Enabled {
 		// task.MountNamespaceVFS2() does not take a ref, so we must do so ourselves.
 		args.MountNamespaceVFS2 = tg.Leader().MountNamespaceVFS2()
-		if !args.MountNamespaceVFS2.TryIncRef() {
+		if args.MountNamespaceVFS2 == nil || !args.MountNamespaceVFS2.TryIncRef() {
 			return 0, fmt.Errorf("container %q has stopped", args.ContainerID)
 		}
 	} else {
