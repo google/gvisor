@@ -552,7 +552,7 @@ func TestRestoreEnvironment(t *testing.T) {
 						{
 							Dev:        "9pfs-/",
 							Flags:      fs.MountSourceFlags{ReadOnly: true},
-							DataString: "trans=fd,rfdno=0,wfdno=0,privateunixsocket=true",
+							DataString: "trans=fd,rfdno=0,wfdno=0",
 						},
 					},
 					"tmpfs": {
@@ -606,11 +606,11 @@ func TestRestoreEnvironment(t *testing.T) {
 						{
 							Dev:        "9pfs-/",
 							Flags:      fs.MountSourceFlags{ReadOnly: true},
-							DataString: "trans=fd,rfdno=0,wfdno=0,privateunixsocket=true",
+							DataString: "trans=fd,rfdno=0,wfdno=0",
 						},
 						{
 							Dev:        "9pfs-/dev/fd-foo",
-							DataString: "trans=fd,rfdno=1,wfdno=1,privateunixsocket=true,cache=remote_revalidating",
+							DataString: "trans=fd,rfdno=1,wfdno=1,cache=remote_revalidating",
 						},
 					},
 					"tmpfs": {
@@ -664,7 +664,7 @@ func TestRestoreEnvironment(t *testing.T) {
 						{
 							Dev:        "9pfs-/",
 							Flags:      fs.MountSourceFlags{ReadOnly: true},
-							DataString: "trans=fd,rfdno=0,wfdno=0,privateunixsocket=true",
+							DataString: "trans=fd,rfdno=0,wfdno=0",
 						},
 					},
 					"tmpfs": {
@@ -704,6 +704,7 @@ func TestRestoreEnvironment(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			conf := testConfig()
+			conf.VFS2 = true
 			var ioFDs []*fd.FD
 			for _, ioFD := range tc.ioFDs {
 				ioFDs = append(ioFDs, fd.New(ioFD))
@@ -713,7 +714,7 @@ func TestRestoreEnvironment(t *testing.T) {
 				spec:     tc.spec,
 				goferFDs: ioFDs,
 			}
-			mntr := newContainerMounter(&info, nil, &podMountHints{}, false /* vfs2Enabled */)
+			mntr := newContainerMounter(&info, nil, &podMountHints{}, conf.VFS2)
 			actualRenv, err := mntr.createRestoreEnvironment(conf)
 			if !tc.errorExpected && err != nil {
 				t.Fatalf("could not create restore environment for test:%s", tc.name)
