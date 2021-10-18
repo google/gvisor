@@ -209,7 +209,7 @@ func (f testDeps) SnapshotCoverage()                                        {}
 // Copied from testing/fuzz.go.
 type corpusEntry = struct {
 	Parent     string
-	Name       string
+	Path       string
 	Data       []byte
 	Values     []interface{}
 	Generation int
