@@ -48,7 +48,6 @@ go_library(
         "hook_string.go",
         "icmp_rate_limit.go",
         "iptables.go",
-        "iptables_state.go",
         "iptables_targets.go",
         "iptables_types.go",
         "neighbor_cache.go",

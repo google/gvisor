@@ -42,7 +42,7 @@ const reaperDelay = 5 * time.Second
 
 // DefaultTables returns a default set of tables. Each chain is set to accept
 // all packets.
-func DefaultTables(seed uint32) *IPTables {
+func DefaultTables(seed uint32, clock tcpip.Clock) *IPTables {
 	return &IPTables{
 		v4Tables: [NumTables]Table{
 			NATID: {
@@ -182,7 +182,8 @@ func DefaultTables(seed uint32) *IPTables {
 			Postrouting: {MangleID, NATID},
 		},
 		connections: ConnTrack{
-			seed: seed,
+			seed:  seed,
+			clock: clock,
 		},
 		reaperDone: make(chan struct{}, 1),
 	}

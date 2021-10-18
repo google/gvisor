@@ -122,14 +122,12 @@ type conn struct {
 	// lastUsed is the last time the connection saw a relevant packet, and
 	// is updated by each packet on the connection.
 	//
-	// TODO(gvisor.dev/issue/5939): do not use the ambient clock.
-	//
 	// +checklocks:mu
-	lastUsed time.Time `state:".(unixTime)"`
+	lastUsed tcpip.MonotonicTime
 }
 
 // timedOut returns whether the connection timed out based on its state.
-func (cn *conn) timedOut(now time.Time) bool {
+func (cn *conn) timedOut(now tcpip.MonotonicTime) bool {
 	const establishedTimeout = 5 * 24 * time.Hour
 	const defaultTimeout = 120 * time.Second
 	cn.mu.RLock()
@@ -190,6 +188,9 @@ type ConnTrack struct {
 	// It is immutable.
 	seed uint32
 
+	// clock provides timing used to determine conntrack reapings.
+	clock tcpip.Clock
+
 	mu sync.RWMutex `state:"nosave"`
 	// mu protects the buckets slice, but not buckets' contents. Only take
 	// the write lock if you are modifying the slice or saving for S/R.
@@ -248,7 +249,7 @@ func (ct *ConnTrack) getConnOrMaybeInsertNoop(pkt *PacketBuffer) *tuple {
 	bkt := &ct.buckets[bktID]
 	ct.mu.RUnlock()
 
-	now := time.Now()
+	now := ct.clock.NowMonotonic()
 	if t := bkt.connForTID(tid, now); t != nil {
 		return t
 	}
@@ -294,17 +295,17 @@ func (ct *ConnTrack) connForTID(tid tupleID) *tuple {
 	bkt := &ct.buckets[bktID]
 	ct.mu.RUnlock()
 
-	return bkt.connForTID(tid, time.Now())
+	return bkt.connForTID(tid, ct.clock.NowMonotonic())
 }
 
-func (bkt *bucket) connForTID(tid tupleID, now time.Time) *tuple {
+func (bkt *bucket) connForTID(tid tupleID, now tcpip.MonotonicTime) *tuple {
 	bkt.mu.RLock()
 	defer bkt.mu.RUnlock()
 	return bkt.connForTIDRLocked(tid, now)
 }
 
 // +checklocksread:bkt.mu
-func (bkt *bucket) connForTIDRLocked(tid tupleID, now time.Time) *tuple {
+func (bkt *bucket) connForTIDRLocked(tid tupleID, now tcpip.MonotonicTime) *tuple {
 	for other := bkt.tuples.Front(); other != nil; other = other.Next() {
 		if tid == other.id() && !other.conn.timedOut(now) {
 			return other
@@ -324,7 +325,7 @@ func (ct *ConnTrack) finalize(cn *conn) {
 	bkt.mu.Lock()
 	defer bkt.mu.Unlock()
 
-	if t := bkt.connForTIDRLocked(tid, time.Now()); t != nil {
+	if t := bkt.connForTIDRLocked(tid, ct.clock.NowMonotonic()); t != nil {
 		// Another connection for the reply already exists. We can't do much about
 		// this so we leave the connection cn represents in a state where it can
 		// send packets but its responses will be mapped to some other connection.
@@ -476,7 +477,7 @@ func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, r *Route) bool {
 		}
 
 		// Mark the connection as having been used recently so it isn't reaped.
-		cn.lastUsed = time.Now()
+		cn.lastUsed = cn.ct.clock.NowMonotonic()
 		// Update connection state.
 		cn.updateLocked(pkt, reply)
 
@@ -548,7 +549,7 @@ func (ct *ConnTrack) reapUnused(start int, prevInterval time.Duration) (int, tim
 	const minInterval = 10 * time.Millisecond
 	const maxInterval = maxFullTraversal / fractionPerReaping
 
-	now := time.Now()
+	now := ct.clock.NowMonotonic()
 	checked := 0
 	expired := 0
 	var idx int
@@ -592,7 +593,7 @@ func (ct *ConnTrack) reapUnused(start int, prevInterval time.Duration) (int, tim
 // Precondition: ct.mu is read locked and bkt.mu is write locked.
 // +checklocksread:ct.mu
 // +checklocks:bkt.mu
-func (ct *ConnTrack) reapTupleLocked(tuple *tuple, bktID int, bkt *bucket, now time.Time) bool {
+func (ct *ConnTrack) reapTupleLocked(tuple *tuple, bktID int, bkt *bucket, now tcpip.MonotonicTime) bool {
 	if !tuple.conn.timedOut(now) {
 		return false
 	}
