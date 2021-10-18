@@ -41,6 +41,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
+	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sentry/vfs/memxattr"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -74,6 +75,10 @@ type filesystem struct {
 	// filesystem. Immutable.
 	mopts string
 
+	// usage is the memory accounting category under which pages backing
+	// files in this filesystem are accounted.
+	usage usage.MemoryKind
+
 	// mu serializes changes to the Dentry tree.
 	mu sync.RWMutex `state:"nosave"`
 
@@ -106,6 +111,10 @@ type FilesystemOpts struct {
 	// tmpfs filesystem. This allows tmpfs to "impersonate" other
 	// filesystems, like ramdiskfs and cgroupfs.
 	FilesystemType vfs.FilesystemType
+
+	// Usage is the memory accounting category under which pages backing files in
+	// the filesystem are accounted.
+	Usage *usage.MemoryKind
 }
 
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
@@ -184,11 +193,16 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		return nil, nil, err
 	}
 	clock := time.RealtimeClockFromContext(ctx)
+	memUsage := usage.Tmpfs
+	if tmpfsOpts.Usage != nil {
+		memUsage = *tmpfsOpts.Usage
+	}
 	fs := filesystem{
 		mfp:      mfp,
 		clock:    clock,
 		devMinor: devMinor,
 		mopts:    opts.Data,
+		usage:    memUsage,
 	}
 	fs.vfsfs.Init(vfsObj, newFSType, &fs)
 
