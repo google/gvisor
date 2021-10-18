@@ -52,10 +52,11 @@ import (
 //
 // This contains everything required for stdlib analysis.
 type StdlibConfig struct {
-	Srcs   []string
-	GOOS   string
-	GOARCH string
-	Tags   []string
+	Srcs        []string
+	GOOS        string
+	GOARCH      string
+	BuildTags   []string
+	ReleaseTags []string // Use build.Default if nil.
 }
 
 // PackageConfig is serialized as the configuration.
@@ -65,7 +66,8 @@ type PackageConfig struct {
 	ImportPath  string
 	GoFiles     []string
 	NonGoFiles  []string
-	Tags        []string
+	BuildTags   []string
+	ReleaseTags []string // Use build.Default if nil.
 	GOOS        string
 	GOARCH      string
 	ImportMap   map[string]string
@@ -182,7 +184,10 @@ func (c *PackageConfig) shouldInclude(path string) (bool, error) {
 	ctx := build.Default
 	ctx.GOOS = c.GOOS
 	ctx.GOARCH = c.GOARCH
-	ctx.BuildTags = c.Tags
+	ctx.BuildTags = c.BuildTags
+	if c.ReleaseTags != nil {
+		ctx.ReleaseTags = c.ReleaseTags
+	}
 	return ctx.MatchFile(filepath.Dir(path), filepath.Base(path))
 }
 
@@ -333,10 +338,11 @@ func CheckStdlib(config *StdlibConfig, analyzers []*analysis.Analyzer) (allFindi
 		c, ok := packages[pkg]
 		if !ok {
 			c = &PackageConfig{
-				ImportPath: pkg,
-				GOOS:       config.GOOS,
-				GOARCH:     config.GOARCH,
-				Tags:       config.Tags,
+				ImportPath:  pkg,
+				GOOS:        config.GOOS,
+				GOARCH:      config.GOARCH,
+				BuildTags:   config.BuildTags,
+				ReleaseTags: config.ReleaseTags,
 			}
 			packages[pkg] = c
 		}
