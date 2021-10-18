@@ -29,7 +29,9 @@ type lockState struct {
 	// lockedMutexes is used to track which mutexes in a given struct are
 	// currently locked. Note that most of the heavy lifting is done by
 	// valueAsString below, which maps to specific structure fields, etc.
-	lockedMutexes []string
+	//
+	// The value indicates whether this is an exclusive lock.
+	lockedMutexes map[string]bool
 
 	// stored stores values that have been stored in memory, bound to
 	// FreeVars or passed as Parameterse.
@@ -51,7 +53,7 @@ type lockState struct {
 func newLockState() *lockState {
 	refs := int32(1) // Not shared.
 	return &lockState{
-		lockedMutexes: make([]string, 0),
+		lockedMutexes: make(map[string]bool),
 		used:          make(map[ssa.Value]struct{}),
 		stored:        make(map[ssa.Value]ssa.Value),
 		defers:        make([]*ssa.Defer, 0),
@@ -79,8 +81,10 @@ func (l *lockState) fork() *lockState {
 func (l *lockState) modify() {
 	if atomic.LoadInt32(l.refs) > 1 {
 		// Copy the lockedMutexes.
-		lm := make([]string, len(l.lockedMutexes))
-		copy(lm, l.lockedMutexes)
+		lm := make(map[string]bool)
+		for k, v := range l.lockedMutexes {
+			lm[k] = v
+		}
 		l.lockedMutexes = lm
 
 		// Copy the stored values.
@@ -106,55 +110,76 @@ func (l *lockState) modify() {
 }
 
 // isHeld indicates whether the field is held is not.
-func (l *lockState) isHeld(rv resolvedValue) (string, bool) {
+func (l *lockState) isHeld(rv resolvedValue, exclusiveRequired bool) (string, bool) {
 	if !rv.valid {
 		return rv.valueAsString(l), false
 	}
 	s := rv.valueAsString(l)
-	for _, k := range l.lockedMutexes {
-		if k == s {
-			return s, true
-		}
+	isExclusive, ok := l.lockedMutexes[s]
+	if !ok {
+		return s, false
 	}
-	return s, false
+	// Accept a weaker lock if exclusiveRequired is false.
+	if exclusiveRequired && !isExclusive {
+		return s, false
+	}
+	return s, true
 }
 
 // lockField locks the given field.
 //
 // If false is returned, the field was already locked.
-func (l *lockState) lockField(rv resolvedValue) (string, bool) {
+func (l *lockState) lockField(rv resolvedValue, exclusive bool) (string, bool) {
 	if !rv.valid {
 		return rv.valueAsString(l), false
 	}
 	s := rv.valueAsString(l)
-	for _, k := range l.lockedMutexes {
-		if k == s {
-			return s, false
-		}
+	if _, ok := l.lockedMutexes[s]; ok {
+		return s, false
 	}
 	l.modify()
-	l.lockedMutexes = append(l.lockedMutexes, s)
+	l.lockedMutexes[s] = exclusive
 	return s, true
 }
 
 // unlockField unlocks the given field.
 //
 // If false is returned, the field was not locked.
-func (l *lockState) unlockField(rv resolvedValue) (string, bool) {
+func (l *lockState) unlockField(rv resolvedValue, exclusive bool) (string, bool) {
 	if !rv.valid {
 		return rv.valueAsString(l), false
 	}
 	s := rv.valueAsString(l)
-	for i, k := range l.lockedMutexes {
-		if k == s {
-			// Copy the last lock in and truncate.
-			l.modify()
-			l.lockedMutexes[i] = l.lockedMutexes[len(l.lockedMutexes)-1]
-			l.lockedMutexes = l.lockedMutexes[:len(l.lockedMutexes)-1]
-			return s, true
-		}
+	wasExclusive, ok := l.lockedMutexes[s]
+	if !ok {
+		return s, false
 	}
-	return s, false
+	if wasExclusive != exclusive {
+		return s, false
+	}
+	l.modify()
+	delete(l.lockedMutexes, s)
+	return s, true
+}
+
+// downgradeField downgrades the given field.
+//
+// If false was returned, the field was not downgraded.
+func (l *lockState) downgradeField(rv resolvedValue) (string, bool) {
+	if !rv.valid {
+		return rv.valueAsString(l), false
+	}
+	s := rv.valueAsString(l)
+	wasExclusive, ok := l.lockedMutexes[s]
+	if !ok {
+		return s, false
+	}
+	if !wasExclusive {
+		return s, false
+	}
+	l.modify()
+	l.lockedMutexes[s] = false // Downgraded.
+	return s, true
 }
 
 // store records an alias.
@@ -165,16 +190,17 @@ func (l *lockState) store(addr ssa.Value, v ssa.Value) {
 
 // isSubset indicates other holds all the locks held by l.
 func (l *lockState) isSubset(other *lockState) bool {
-	held := 0 // Number in l, held by other.
-	for _, k := range l.lockedMutexes {
-		for _, ok := range other.lockedMutexes {
-			if k == ok {
-				held++
-				break
-			}
+	for k, isExclusive := range l.lockedMutexes {
+		otherExclusive, otherOk := other.lockedMutexes[k]
+		if !otherOk {
+			return false
+		}
+		// Accept weaker locks as a subset.
+		if isExclusive && !otherExclusive {
+			return false
 		}
 	}
-	return held >= len(l.lockedMutexes)
+	return true
 }
 
 // count indicates the number of locks held.
@@ -293,7 +319,12 @@ func (l *lockState) String() string {
 	if l.count() == 0 {
 		return "no locks held"
 	}
-	return strings.Join(l.lockedMutexes, ",")
+	keys := make([]string, 0, len(l.lockedMutexes))
+	for k, exclusive := range l.lockedMutexes {
+		// Include the exclusive status of each lock.
+		keys = append(keys, fmt.Sprintf("%s %s", k, exclusiveStr(exclusive)))
+	}
+	return strings.Join(keys, ",")
 }
 
 // pushDefer pushes a defer onto the stack.

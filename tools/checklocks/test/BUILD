@@ -16,6 +16,7 @@ go_library(
         "methods.go",
         "parameters.go",
         "return.go",
+        "rwmutex.go",
         "test.go",
     ],
 )
