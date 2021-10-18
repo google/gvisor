@@ -146,7 +146,6 @@ func (cn *conn) timedOut(now time.Time) bool {
 
 // update the connection tracking state.
 //
-// TODO(https://gvisor.dev/issue/6590): annotate r/w locking requirements.
 // +checklocks:cn.mu
 func (cn *conn) updateLocked(pkt *PacketBuffer, reply bool) {
 	if pkt.TransportProtocolNumber != header.TCPProtocolNumber {
@@ -304,7 +303,7 @@ func (bkt *bucket) connForTID(tid tupleID, now time.Time) *tuple {
 	return bkt.connForTIDRLocked(tid, now)
 }
 
-// +checklocks:bkt.mu
+// +checklocksread:bkt.mu
 func (bkt *bucket) connForTIDRLocked(tid tupleID, now time.Time) *tuple {
 	for other := bkt.tuples.Front(); other != nil; other = other.Next() {
 		if tid == other.id() && !other.conn.timedOut(now) {
@@ -591,8 +590,7 @@ func (ct *ConnTrack) reapUnused(start int, prevInterval time.Duration) (int, tim
 // returns whether the tuple's connection has timed out.
 //
 // Precondition: ct.mu is read locked and bkt.mu is write locked.
-// TODO(https://gvisor.dev/issue/6590): annotate r/w locking requirements.
-// +checklocks:ct.mu
+// +checklocksread:ct.mu
 // +checklocks:bkt.mu
 func (ct *ConnTrack) reapTupleLocked(tuple *tuple, bktID int, bkt *bucket, now time.Time) bool {
 	if !tuple.conn.timedOut(now) {
@@ -621,7 +619,6 @@ func (ct *ConnTrack) reapTupleLocked(tuple *tuple, bktID int, bkt *bucket, now t
 	return true
 }
 
-// TODO(https://gvisor.dev/issue/6590): annotate r/w locking requirements.
 // +checklocks:b.mu
 func removeConnFromBucket(b *bucket, tuple *tuple) {
 	if tuple.reply {

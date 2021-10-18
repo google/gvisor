@@ -74,7 +74,7 @@ func putDentrySlice(ds *[]*dentry) {
 // but dentry slices are allocated lazily, and it's much easier to say "defer
 // fs.renameMuRUnlockAndCheckCaching(&ds)" than "defer func() {
 // fs.renameMuRUnlockAndCheckCaching(ds) }()" to work around this.
-// +checklocksrelease:fs.renameMu
+// +checklocksreleaseread:fs.renameMu
 func (fs *filesystem) renameMuRUnlockAndCheckCaching(ctx context.Context, ds **[]*dentry) {
 	fs.renameMu.RUnlock()
 	if *ds == nil {
