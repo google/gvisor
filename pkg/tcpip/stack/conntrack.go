@@ -37,6 +37,11 @@ import (
 // Our hash table has 16K buckets.
 const numBuckets = 1 << 14
 
+const (
+	establishedTimeout   time.Duration = 5 * 24 * time.Hour
+	unestablishedTimeout time.Duration = 120 * time.Second
+)
+
 // tuple holds a connection's identifying and manipulating data in one
 // direction. It is immutable.
 //
@@ -128,8 +133,6 @@ type conn struct {
 
 // timedOut returns whether the connection timed out based on its state.
 func (cn *conn) timedOut(now tcpip.MonotonicTime) bool {
-	const establishedTimeout = 5 * 24 * time.Hour
-	const defaultTimeout = 120 * time.Second
 	cn.mu.RLock()
 	defer cn.mu.RUnlock()
 	if cn.tcb.State() == tcpconntrack.ResultAlive {
@@ -139,7 +142,7 @@ func (cn *conn) timedOut(now tcpip.MonotonicTime) bool {
 	}
 	// Use the same default as Linux, which lets connections in most states
 	// other than established remain for <= 120 seconds.
-	return now.Sub(cn.lastUsed) > defaultTimeout
+	return now.Sub(cn.lastUsed) > unestablishedTimeout
 }
 
 // update the connection tracking state.
@@ -403,7 +406,7 @@ func (cn *conn) performNATIfNoop(port uint16, address tcpip.Address, dnat bool) 
 // has had NAT performed on it.
 //
 // Returns true if the packet can skip the NAT table.
-func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, r *Route) bool {
+func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, rt *Route) bool {
 	transportHeader, ok := getTransportHeader(pkt)
 	if !ok {
 		return false
@@ -432,7 +435,7 @@ func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, r *Route) bool {
 	case Postrouting:
 		if pkt.TransportProtocolNumber == header.TCPProtocolNumber && pkt.GSOOptions.Type != GSONone && pkt.GSOOptions.NeedsCsum {
 			updatePseudoHeader = true
-		} else if r.RequiresTXTransportChecksum() {
+		} else if rt.RequiresTXTransportChecksum() {
 			fullChecksum = true
 			updatePseudoHeader = true
 		}
@@ -452,6 +455,11 @@ func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, r *Route) bool {
 	tid, performManip := func() (tupleID, bool) {
 		cn.mu.Lock()
 		defer cn.mu.Unlock()
+
+		// Mark the connection as having been used recently so it isn't reaped.
+		cn.lastUsed = cn.ct.clock.NowMonotonic()
+		// Update connection state.
+		cn.updateLocked(pkt, reply)
 
 		var tuple *tuple
 		if reply {
@@ -475,11 +483,6 @@ func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, r *Route) bool {
 
 			tuple = &cn.reply
 		}
-
-		// Mark the connection as having been used recently so it isn't reaped.
-		cn.lastUsed = cn.ct.clock.NowMonotonic()
-		// Update connection state.
-		cn.updateLocked(pkt, reply)
 
 		return tuple.id(), true
 	}()
@@ -598,24 +601,29 @@ func (ct *ConnTrack) reapTupleLocked(tuple *tuple, bktID int, bkt *bucket, now t
 		return false
 	}
 
-	// To maintain lock order, we can only reap these tuples if the reply
-	// appears later in the table.
+	// To maintain lock order, we can only reap both tuples if the reply appears
+	// later in the table.
 	replyBktID := ct.bucket(tuple.id().reply())
-	if bktID > replyBktID {
+	tuple.conn.mu.RLock()
+	replyTupleInserted := tuple.conn.finalized
+	tuple.conn.mu.RUnlock()
+	if bktID > replyBktID && replyTupleInserted {
 		return true
 	}
 
-	// Don't re-lock if both tuples are in the same bucket.
-	if bktID != replyBktID {
-		replyBkt := &ct.buckets[replyBktID]
-		replyBkt.mu.Lock()
-		removeConnFromBucket(replyBkt, tuple)
-		replyBkt.mu.Unlock()
-	} else {
-		removeConnFromBucket(bkt, tuple)
+	// Reap the reply.
+	if replyTupleInserted {
+		// Don't re-lock if both tuples are in the same bucket.
+		if bktID != replyBktID {
+			replyBkt := &ct.buckets[replyBktID]
+			replyBkt.mu.Lock()
+			removeConnFromBucket(replyBkt, tuple)
+			replyBkt.mu.Unlock()
+		} else {
+			removeConnFromBucket(bkt, tuple)
+		}
 	}
 
-	// We have the buckets locked and can remove both tuples.
 	bkt.tuples.Remove(tuple)
 	return true
 }
