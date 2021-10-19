@@ -562,11 +562,16 @@ func (ct *ConnTrack) reapUnused(start int, prevInterval time.Duration) (int, tim
 		idx = (i + start) % len(ct.buckets)
 		bkt := &ct.buckets[idx]
 		bkt.mu.Lock()
-		for tuple := bkt.tuples.Front(); tuple != nil; tuple = tuple.Next() {
+		for tuple := bkt.tuples.Front(); tuple != nil; {
+			// reapTupleLocked updates tuple's next pointer so we grab it here.
+			nextTuple := tuple.Next()
+
 			checked++
 			if ct.reapTupleLocked(tuple, idx, bkt, now) {
 				expired++
 			}
+
+			tuple = nextTuple
 		}
 		bkt.mu.Unlock()
 	}
