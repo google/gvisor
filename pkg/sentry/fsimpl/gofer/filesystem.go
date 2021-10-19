@@ -887,23 +887,28 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		} else {
 			_, err = parent.file.mkdir(ctx, name, p9.FileMode(mode), (p9.UID)(creds.EffectiveKUID), p9.GID(kgid))
 		}
-		if err != nil {
-			if !opts.ForSyntheticMountpoint || linuxerr.Equals(linuxerr.EEXIST, err) {
-				return nil, err
+		if err == nil {
+			if fs.opts.interop != InteropModeShared {
+				parent.incLinks()
 			}
-			ctx.Infof("Failed to create remote directory %q: %v; falling back to synthetic directory", name, err)
-			parent.createSyntheticChildLocked(&createSyntheticOpts{
-				name: name,
-				mode: linux.S_IFDIR | opts.Mode,
-				kuid: creds.EffectiveKUID,
-				kgid: creds.EffectiveKGID,
-			})
-			*ds = appendDentry(*ds, parent)
+			return childDirInode, nil
 		}
+
+		if !opts.ForSyntheticMountpoint || linuxerr.Equals(linuxerr.EEXIST, err) {
+			return nil, err
+		}
+		ctx.Infof("Failed to create remote directory %q: %v; falling back to synthetic directory", name, err)
+		parent.createSyntheticChildLocked(&createSyntheticOpts{
+			name: name,
+			mode: linux.S_IFDIR | opts.Mode,
+			kuid: creds.EffectiveKUID,
+			kgid: creds.EffectiveKGID,
+		})
+		*ds = appendDentry(*ds, parent)
 		if fs.opts.interop != InteropModeShared {
 			parent.incLinks()
 		}
-		return childDirInode, nil
+		return nil, nil
 	}, func(parent *dentry, name string) error {
 		if !opts.ForSyntheticMountpoint {
 			// Can't create non-synthetic files in synthetic directories.
