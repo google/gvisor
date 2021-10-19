@@ -524,6 +524,10 @@ func (c *cpusetController) StateTypeName() string {
 func (c *cpusetController) StateFields() []string {
 	return []string{
 		"controllerCommon",
+		"maxCpus",
+		"maxMems",
+		"cpus",
+		"mems",
 	}
 }
 
@@ -533,6 +537,10 @@ func (c *cpusetController) beforeSave() {}
 func (c *cpusetController) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	stateSinkObject.Save(0, &c.controllerCommon)
+	stateSinkObject.Save(1, &c.maxCpus)
+	stateSinkObject.Save(2, &c.maxMems)
+	stateSinkObject.Save(3, &c.cpus)
+	stateSinkObject.Save(4, &c.mems)
 }
 
 func (c *cpusetController) afterLoad() {}
@@ -540,6 +548,60 @@ func (c *cpusetController) afterLoad() {}
 // +checklocksignore
 func (c *cpusetController) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.controllerCommon)
+	stateSourceObject.Load(1, &c.maxCpus)
+	stateSourceObject.Load(2, &c.maxMems)
+	stateSourceObject.Load(3, &c.cpus)
+	stateSourceObject.Load(4, &c.mems)
+}
+
+func (d *cpusData) StateTypeName() string {
+	return "pkg/sentry/fsimpl/cgroupfs.cpusData"
+}
+
+func (d *cpusData) StateFields() []string {
+	return []string{
+		"c",
+	}
+}
+
+func (d *cpusData) beforeSave() {}
+
+// +checklocksignore
+func (d *cpusData) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.c)
+}
+
+func (d *cpusData) afterLoad() {}
+
+// +checklocksignore
+func (d *cpusData) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.c)
+}
+
+func (d *memsData) StateTypeName() string {
+	return "pkg/sentry/fsimpl/cgroupfs.memsData"
+}
+
+func (d *memsData) StateFields() []string {
+	return []string{
+		"c",
+	}
+}
+
+func (d *memsData) beforeSave() {}
+
+// +checklocksignore
+func (d *memsData) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.c)
+}
+
+func (d *memsData) afterLoad() {}
+
+// +checklocksignore
+func (d *memsData) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.c)
 }
 
 func (r *dirRefs) StateTypeName() string {
@@ -694,6 +756,8 @@ func init() {
 	state.Register((*cpuacctUsageUserData)(nil))
 	state.Register((*cpuacctUsageSysData)(nil))
 	state.Register((*cpusetController)(nil))
+	state.Register((*cpusData)(nil))
+	state.Register((*memsData)(nil))
 	state.Register((*dirRefs)(nil))
 	state.Register((*jobController)(nil))
 	state.Register((*jobIDData)(nil))
