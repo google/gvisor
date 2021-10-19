@@ -651,11 +651,6 @@ func controlServerFilters(fd int) seccomp.SyscallRules {
 				seccomp.EqualTo(fd),
 			},
 		},
-		unix.SYS_ACCEPT: []seccomp.Rule{
-			{
-				seccomp.EqualTo(fd),
-			},
-		},
 		unix.SYS_LISTEN: []seccomp.Rule{
 			{
 				seccomp.EqualTo(fd),
