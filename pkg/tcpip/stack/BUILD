@@ -132,6 +132,7 @@ go_test(
     name = "stack_test",
     size = "small",
     srcs = [
+        "conntrack_test.go",
         "forwarding_test.go",
         "neighbor_cache_test.go",
         "neighbor_entry_test.go",
