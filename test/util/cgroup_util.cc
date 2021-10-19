@@ -69,6 +69,9 @@ PosixError Cgroup::WriteControlFile(absl::string_view name,
                                     const std::string& value) const {
   ASSIGN_OR_RETURN_ERRNO(FileDescriptor fd, Open(Relpath(name), O_WRONLY));
   RETURN_ERROR_IF_SYSCALL_FAIL(WriteFd(fd.get(), value.c_str(), value.size()));
+  const std::string alias_path = absl::StrFormat("[cg#%d]/%s", id_, name);
+  std::cerr << absl::StreamFormat("echo '%s' > %s", value, alias_path)
+            << std::endl;
   return NoError();
 }
 

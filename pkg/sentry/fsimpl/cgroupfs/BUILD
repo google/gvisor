@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 licenses(["notice"])
@@ -18,6 +18,7 @@ go_library(
     name = "cgroupfs",
     srcs = [
         "base.go",
+        "bitmap.go",
         "cgroupfs.go",
         "cpu.go",
         "cpuacct.go",
@@ -29,10 +30,12 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/bitmap",
         "//pkg/context",
         "//pkg/coverage",
         "//pkg/errors/linuxerr",
         "//pkg/fspath",
+        "//pkg/hostarch",
         "//pkg/log",
         "//pkg/refs",
         "//pkg/refsvfs2",
@@ -46,4 +49,12 @@ go_library(
         "//pkg/sync",
         "//pkg/usermem",
     ],
+)
+
+go_test(
+    name = "cgroupfs_test",
+    size = "small",
+    srcs = ["bitmap_test.go"],
+    library = ":cgroupfs",
+    deps = ["//pkg/bitmap"],
 )

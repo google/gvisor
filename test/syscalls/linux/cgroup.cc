@@ -37,6 +37,8 @@ namespace {
 
 using ::testing::_;
 using ::testing::Contains;
+using ::testing::Each;
+using ::testing::Eq;
 using ::testing::Ge;
 using ::testing::Gt;
 using ::testing::Key;
@@ -383,6 +385,32 @@ PosixError WriteAndVerifyControlValue(const Cgroup& c, std::string_view path,
   return NoError();
 }
 
+PosixErrorOr<std::vector<bool>> ParseBitmap(std::string s) {
+  std::vector<bool> bitmap;
+  bitmap.reserve(64);
+  for (const std::string_view& t : absl::StrSplit(s, ',')) {
+    std::vector<std::string> parts = absl::StrSplit(t, absl::MaxSplits('-', 2));
+    if (parts.size() == 2) {
+      ASSIGN_OR_RETURN_ERRNO(int64_t start, Atoi<int64_t>(parts[0]));
+      ASSIGN_OR_RETURN_ERRNO(int64_t end, Atoi<int64_t>(parts[1]));
+      // Note: start and end are indices into bitmap.
+      if (end >= bitmap.size()) {
+        bitmap.resize(end + 1, false);
+      }
+      for (int i = start; i <= end; ++i) {
+        bitmap[i] = true;
+      }
+    } else {  // parts.size() == 1, 0 not possible.
+      ASSIGN_OR_RETURN_ERRNO(int64_t i, Atoi<int64_t>(parts[0]));
+      if (i >= bitmap.size()) {
+        bitmap.resize(i + 1, false);
+      }
+      bitmap[i] = true;
+    }
+  }
+  return bitmap;
+}
+
 TEST(JobCgroup, ReadWriteRead) {
   SKIP_IF(!CgroupsAvailable());
 
@@ -394,6 +422,59 @@ TEST(JobCgroup, ReadWriteRead) {
   EXPECT_NO_ERRNO(WriteAndVerifyControlValue(c, "job.id", -1));
   EXPECT_NO_ERRNO(WriteAndVerifyControlValue(c, "job.id", LLONG_MIN));
   EXPECT_NO_ERRNO(WriteAndVerifyControlValue(c, "job.id", LLONG_MAX));
+}
+
+TEST(CpusetCgroup, Defaults) {
+  SKIP_IF(!CgroupsAvailable());
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("cpuset"));
+
+  std::string cpus =
+      ASSERT_NO_ERRNO_AND_VALUE(c.ReadControlFile("cpuset.cpus"));
+  std::vector<bool> cpus_bitmap = ASSERT_NO_ERRNO_AND_VALUE(ParseBitmap(cpus));
+  EXPECT_GT(cpus_bitmap.size(), 0);
+  EXPECT_THAT(cpus_bitmap, Each(Eq(true)));
+
+  std::string mems =
+      ASSERT_NO_ERRNO_AND_VALUE(c.ReadControlFile("cpuset.mems"));
+  std::vector<bool> mems_bitmap = ASSERT_NO_ERRNO_AND_VALUE(ParseBitmap(mems));
+  EXPECT_GT(mems_bitmap.size(), 0);
+  EXPECT_THAT(mems_bitmap, Each(Eq(true)));
+}
+
+TEST(CpusetCgroup, SetMask) {
+  SKIP_IF(!CgroupsAvailable());
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("cpuset"));
+
+  std::string cpus =
+      ASSERT_NO_ERRNO_AND_VALUE(c.ReadControlFile("cpuset.cpus"));
+  std::vector<bool> cpus_bitmap = ASSERT_NO_ERRNO_AND_VALUE(ParseBitmap(cpus));
+
+  SKIP_IF(cpus_bitmap.size() <= 1);  // "Not enough CPUs"
+
+  int max_cpu = cpus_bitmap.size() - 1;
+  ASSERT_NO_ERRNO(
+      c.WriteControlFile("cpuset.cpus", absl::StrCat("1-", max_cpu)));
+  cpus_bitmap[0] = false;
+  cpus = ASSERT_NO_ERRNO_AND_VALUE(c.ReadControlFile("cpuset.cpus"));
+  std::vector<bool> cpus_bitmap_after =
+      ASSERT_NO_ERRNO_AND_VALUE(ParseBitmap(cpus));
+  EXPECT_EQ(cpus_bitmap_after, cpus_bitmap);
+}
+
+TEST(CpusetCgroup, SetEmptyMask) {
+  SKIP_IF(!CgroupsAvailable());
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("cpuset"));
+  ASSERT_NO_ERRNO(c.WriteControlFile("cpuset.cpus", ""));
+  std::string_view cpus = absl::StripAsciiWhitespace(
+      ASSERT_NO_ERRNO_AND_VALUE(c.ReadControlFile("cpuset.cpus")));
+  EXPECT_EQ(cpus, "");
+  ASSERT_NO_ERRNO(c.WriteControlFile("cpuset.mems", ""));
+  std::string_view mems = absl::StripAsciiWhitespace(
+      ASSERT_NO_ERRNO_AND_VALUE(c.ReadControlFile("cpuset.mems")));
+  EXPECT_EQ(mems, "");
 }
 
 TEST(ProcCgroups, Empty) {

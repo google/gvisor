@@ -269,7 +269,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		case controllerCPUAcct:
 			c = newCPUAcctController(fs)
 		case controllerCPUSet:
-			c = newCPUSetController(fs)
+			c = newCPUSetController(k, fs)
 		case controllerJob:
 			c = newJobController(fs)
 		case controllerMemory:
