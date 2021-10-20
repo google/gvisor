@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// FIXME(gvisor.dev/issue//6629): These tests don't pass on ARM64.
+// FIXME(gvisor.dev/issue/6629): These tests don't pass on ARM64.
 //
 //go:build amd64
 // +build amd64
