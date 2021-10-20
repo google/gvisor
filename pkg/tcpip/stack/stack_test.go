@@ -155,8 +155,18 @@ func (f *fakeNetworkEndpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		return
 	}
 
+	transProtoNum := tcpip.TransportProtocolNumber(netHdr[protocolNumberOffset])
+	switch err := f.proto.stack.ParsePacketBufferTransport(transProtoNum, pkt); err {
+	case stack.ParsedOK:
+	case stack.UnknownTransportProtocol, stack.TransportLayerParseError:
+		// The transport layer will handle unknown protocols and transport layer
+		// parsing errors.
+	default:
+		panic(fmt.Sprintf("unexpected error parsing transport header = %d", err))
+	}
+
 	// Dispatch the packet to the transport protocol.
-	f.dispatcher.DeliverTransportPacket(tcpip.TransportProtocolNumber(pkt.NetworkHeader().View()[protocolNumberOffset]), pkt)
+	f.dispatcher.DeliverTransportPacket(transProtoNum, pkt)
 }
 
 func (f *fakeNetworkEndpoint) MaxHeaderLength() uint16 {
@@ -218,6 +228,8 @@ func (*fakeNetworkEndpointStats) IsNetworkEndpointStats() {}
 // number of packets sent and received via endpoints of this protocol. The index
 // where packets are added is given by the packet's destination address MOD 10.
 type fakeNetworkProtocol struct {
+	stack *stack.Stack
+
 	packetCount     [10]int
 	sendPacketCount [10]int
 	defaultTTL      uint8
@@ -299,8 +311,8 @@ func (f *fakeNetworkEndpoint) SetForwarding(v bool) {
 	f.mu.forwarding = v
 }
 
-func fakeNetFactory(*stack.Stack) stack.NetworkProtocol {
-	return &fakeNetworkProtocol{}
+func fakeNetFactory(s *stack.Stack) stack.NetworkProtocol {
+	return &fakeNetworkProtocol{stack: s}
 }
 
 // linkEPWithMockedAttach is a stack.LinkEndpoint that tests can use to verify

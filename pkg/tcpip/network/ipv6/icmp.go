@@ -274,7 +274,7 @@ func isMLDValid(pkt *stack.PacketBuffer, iph header.IPv6, routerAlert *header.IP
 	if routerAlert == nil || routerAlert.Value != header.IPv6RouterAlertMLD {
 		return false
 	}
-	if pkt.Data().Size() < header.ICMPv6HeaderSize+header.MLDMinimumSize {
+	if pkt.TransportHeader().View().Size() < header.ICMPv6HeaderSize+header.MLDMinimumSize {
 		return false
 	}
 	if iph.HopLimit() != header.MLDHopLimit {
@@ -289,20 +289,17 @@ func isMLDValid(pkt *stack.PacketBuffer, iph header.IPv6, routerAlert *header.IP
 func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, routerAlert *header.IPv6RouterAlertOption) {
 	sent := e.stats.icmp.packetsSent
 	received := e.stats.icmp.packetsReceived
-	// ICMP packets don't have their TransportHeader fields set. See
-	// icmp/protocol.go:protocol.Parse for a full explanation.
-	v, ok := pkt.Data().PullUp(header.ICMPv6HeaderSize)
-	if !ok {
+	h := header.ICMPv6(pkt.TransportHeader().View())
+	if len(h) < header.ICMPv6MinimumSize {
 		received.invalid.Increment()
 		return
 	}
-	h := header.ICMPv6(v)
 	iph := header.IPv6(pkt.NetworkHeader().View())
 	srcAddr := iph.SourceAddress()
 	dstAddr := iph.DestinationAddress()
 
 	// Validate ICMPv6 checksum before processing the packet.
-	payload := pkt.Data().AsRange().SubRange(len(h))
+	payload := pkt.Data().AsRange()
 	if got, want := h.Checksum(), header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
 		Header:      h,
 		Src:         srcAddr,
@@ -329,12 +326,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 	switch icmpType := h.Type(); icmpType {
 	case header.ICMPv6PacketTooBig:
 		received.packetTooBig.Increment()
-		hdr, ok := pkt.Data().Consume(header.ICMPv6PacketTooBigMinimumSize)
-		if !ok {
-			received.invalid.Increment()
-			return
-		}
-		networkMTU, err := calculateNetworkMTU(header.ICMPv6(hdr).MTU(), header.IPv6MinimumSize)
+		networkMTU, err := calculateNetworkMTU(h.MTU(), header.IPv6MinimumSize)
 		if err != nil {
 			networkMTU = 0
 		}
@@ -342,13 +334,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 
 	case header.ICMPv6DstUnreachable:
 		received.dstUnreachable.Increment()
-		hdr, ok := pkt.Data().Consume(header.ICMPv6DstUnreachableMinimumSize)
-		if !ok {
-			received.invalid.Increment()
-			return
-		}
-		code := header.ICMPv6(hdr).Code()
-		switch code {
+		switch h.Code() {
 		case header.ICMPv6NetworkUnreachable:
 			e.handleControl(&icmpv6DestinationNetworkUnreachableSockError{}, pkt)
 		case header.ICMPv6PortUnreachable:
@@ -356,16 +342,12 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 		}
 	case header.ICMPv6NeighborSolicit:
 		received.neighborSolicit.Increment()
-		if !isNDPValid() || pkt.Data().Size() < header.ICMPv6NeighborSolicitMinimumSize {
+		if !isNDPValid() || len(h) < header.ICMPv6NeighborSolicitMinimumSize {
 			received.invalid.Increment()
 			return
 		}
 
-		// The remainder of payload must be only the neighbor solicitation, so
-		// payload.AsView() always returns the solicitation. Per RFC 6980 section 5,
-		// NDP messages cannot be fragmented. Also note that in the common case NDP
-		// datagrams are very small and AsView() will not incur allocations.
-		ns := header.NDPNeighborSolicit(payload.AsView())
+		ns := header.NDPNeighborSolicit(h.MessageBody())
 		targetAddr := ns.TargetAddress()
 
 		// As per RFC 4861 section 4.3, the Target Address MUST NOT be a multicast
@@ -578,16 +560,12 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 
 	case header.ICMPv6NeighborAdvert:
 		received.neighborAdvert.Increment()
-		if !isNDPValid() || pkt.Data().Size() < header.ICMPv6NeighborAdvertMinimumSize {
+		if !isNDPValid() || len(h) < header.ICMPv6NeighborAdvertMinimumSize {
 			received.invalid.Increment()
 			return
 		}
 
-		// The remainder of payload must be only the neighbor advertisement, so
-		// payload.AsView() always returns the advertisement. Per RFC 6980 section
-		// 5, NDP messages cannot be fragmented. Also note that in the common case
-		// NDP datagrams are very small and AsView() will not incur allocations.
-		na := header.NDPNeighborAdvert(payload.AsView())
+		na := header.NDPNeighborAdvert(h.MessageBody())
 
 		it, err := na.Options().Iter(false /* check */)
 		if err != nil {
@@ -674,12 +652,6 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 
 	case header.ICMPv6EchoRequest:
 		received.echoRequest.Increment()
-		icmpHdr, ok := pkt.TransportHeader().Consume(header.ICMPv6EchoMinimumSize)
-		if !ok {
-			received.invalid.Increment()
-			return
-		}
-
 		// As per RFC 4291 section 2.7, multicast addresses must not be used as
 		// source addresses in IPv6 packets.
 		localAddr := dstAddr
@@ -705,7 +677,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 		})
 		icmp := header.ICMPv6(replyPkt.TransportHeader().Push(header.ICMPv6EchoMinimumSize))
 		pkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
-		copy(icmp, icmpHdr)
+		copy(icmp, h)
 		icmp.SetType(header.ICMPv6EchoReply)
 		dataRange := replyPkt.Data().AsRange()
 		icmp.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
@@ -727,7 +699,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 
 	case header.ICMPv6EchoReply:
 		received.echoReply.Increment()
-		if pkt.Data().Size() < header.ICMPv6EchoMinimumSize {
+		if len(h) < header.ICMPv6EchoMinimumSize {
 			received.invalid.Increment()
 			return
 		}
@@ -747,7 +719,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 		//
 
 		// Is the NDP payload of sufficient size to hold a Router Solictation?
-		if !isNDPValid() || pkt.Data().Size()-header.ICMPv6HeaderSize < header.NDPRSMinimumSize {
+		if !isNDPValid() || len(h)-header.ICMPv6HeaderSize < header.NDPRSMinimumSize {
 			received.invalid.Increment()
 			return
 		}
@@ -757,9 +729,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 			return
 		}
 
-		// Note that in the common case NDP datagrams are very small and AsView()
-		// will not incur allocations.
-		rs := header.NDPRouterSolicit(payload.AsView())
+		rs := header.NDPRouterSolicit(h.MessageBody())
 		it, err := rs.Options().Iter(false /* check */)
 		if err != nil {
 			// Options are not valid as per the wire format, silently drop the packet.
@@ -803,7 +773,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 		//
 
 		// Is the NDP payload of sufficient size to hold a Router Advertisement?
-		if !isNDPValid() || pkt.Data().Size()-header.ICMPv6HeaderSize < header.NDPRAMinimumSize {
+		if !isNDPValid() || len(h)-header.ICMPv6HeaderSize < header.NDPRAMinimumSize {
 			received.invalid.Increment()
 			return
 		}
@@ -817,9 +787,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 			return
 		}
 
-		// Note that in the common case NDP datagrams are very small and AsView()
-		// will not incur allocations.
-		ra := header.NDPRouterAdvert(payload.AsView())
+		ra := header.NDPRouterAdvert(h.MessageBody())
 		it, err := ra.Options().Iter(false /* check */)
 		if err != nil {
 			// Options are not valid as per the wire format, silently drop the packet.
@@ -897,11 +865,11 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 		switch icmpType {
 		case header.ICMPv6MulticastListenerQuery:
 			e.mu.Lock()
-			e.mu.mld.handleMulticastListenerQuery(header.MLD(payload.AsView()))
+			e.mu.mld.handleMulticastListenerQuery(header.MLD(h.MessageBody()))
 			e.mu.Unlock()
 		case header.ICMPv6MulticastListenerReport:
 			e.mu.Lock()
-			e.mu.mld.handleMulticastListenerReport(header.MLD(payload.AsView()))
+			e.mu.mld.handleMulticastListenerReport(header.MLD(h.MessageBody()))
 			e.mu.Unlock()
 		case header.ICMPv6MulticastListenerDone:
 		default:
@@ -1182,18 +1150,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip
 	}
 
 	if pkt.TransportProtocolNumber == header.ICMPv6ProtocolNumber {
-		// TODO(gvisor.dev/issues/3810): Sort this out when ICMP headers are stored.
-		// Unfortunately at this time ICMP Packets do not have a transport
-		// header separated out. It is in the Data part so we need to
-		// separate it out now. We will just pretend it is a minimal length
-		// ICMP packet as we don't really care if any later bits of a
-		// larger ICMP packet are in the header view or in the Data view.
-		transport, ok := pkt.TransportHeader().Consume(header.ICMPv6MinimumSize)
-		if !ok {
-			return nil
-		}
-		typ := header.ICMPv6(transport).Type()
-		if typ.IsErrorType() || typ == header.ICMPv6RedirectMsg {
+		if typ := header.ICMPv6(pkt.TransportHeader().View()).Type(); typ.IsErrorType() || typ == header.ICMPv6RedirectMsg {
 			return nil
 		}
 	}
