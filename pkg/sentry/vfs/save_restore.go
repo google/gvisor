@@ -15,7 +15,6 @@
 package vfs
 
 import (
-	"fmt"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -23,6 +22,18 @@ import (
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
+
+// ErrCorruption indicates a failed restore due to external file system state in
+// corruption.
+type ErrCorruption struct {
+	// Err is the wrapped error.
+	Err error
+}
+
+// Error returns a sensible description of the restore error.
+func (e ErrCorruption) Error() string {
+	return "restore failed due to external file system state in corruption: " + e.Err.Error()
+}
 
 // FilesystemImplSaveRestoreExtension is an optional extension to
 // FilesystemImpl.
@@ -37,18 +48,14 @@ type FilesystemImplSaveRestoreExtension interface {
 
 // PrepareSave prepares all filesystems for serialization.
 func (vfs *VirtualFilesystem) PrepareSave(ctx context.Context) error {
-	failures := 0
 	for fs := range vfs.getFilesystems() {
 		if ext, ok := fs.impl.(FilesystemImplSaveRestoreExtension); ok {
 			if err := ext.PrepareSave(ctx); err != nil {
-				ctx.Warningf("%T.PrepareSave failed: %v", fs.impl, err)
-				failures++
+				fs.DecRef(ctx)
+				return err
 			}
 		}
 		fs.DecRef(ctx)
-	}
-	if failures != 0 {
-		return fmt.Errorf("%d filesystems failed to prepare for serialization", failures)
 	}
 	return nil
 }
@@ -56,18 +63,14 @@ func (vfs *VirtualFilesystem) PrepareSave(ctx context.Context) error {
 // CompleteRestore completes restoration from checkpoint for all filesystems
 // after deserialization.
 func (vfs *VirtualFilesystem) CompleteRestore(ctx context.Context, opts *CompleteRestoreOptions) error {
-	failures := 0
 	for fs := range vfs.getFilesystems() {
 		if ext, ok := fs.impl.(FilesystemImplSaveRestoreExtension); ok {
 			if err := ext.CompleteRestore(ctx, *opts); err != nil {
-				ctx.Warningf("%T.CompleteRestore failed: %v", fs.impl, err)
-				failures++
+				fs.DecRef(ctx)
+				return err
 			}
 		}
 		fs.DecRef(ctx)
-	}
-	if failures != 0 {
-		return fmt.Errorf("%d filesystems failed to complete restore after deserialization", failures)
 	}
 	return nil
 }
