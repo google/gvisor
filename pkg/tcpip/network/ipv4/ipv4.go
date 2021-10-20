@@ -984,7 +984,7 @@ func (e *endpoint) handleValidatedPacket(h header.IPv4, pkt *stack.PacketBuffer,
 		}
 
 		proto := h.Protocol()
-		resPkt, _, ready, err := e.protocol.fragmentation.Process(
+		resPkt, transProtoNum, ready, err := e.protocol.fragmentation.Process(
 			// As per RFC 791 section 2.3, the identification value is unique
 			// for a source-destination pair and protocol.
 			fragmentation.FragmentID{
@@ -1014,6 +1014,8 @@ func (e *endpoint) handleValidatedPacket(h header.IPv4, pkt *stack.PacketBuffer,
 		// to do it here.
 		h.SetTotalLength(uint16(pkt.Data().Size() + len(h)))
 		h.SetFlagsFragmentOffset(0, 0)
+
+		e.protocol.parseTransport(pkt, tcpip.TransportProtocolNumber(transProtoNum))
 
 		// Now that the packet is reassembled, it can be sent to raw sockets.
 		e.dispatcher.DeliverRawPacket(h.TransportProtocol(), pkt)
@@ -1310,17 +1312,27 @@ func (p *protocol) parseAndValidate(pkt *stack.PacketBuffer) (header.IPv4, bool)
 	}
 
 	if hasTransportHdr {
-		switch err := p.stack.ParsePacketBufferTransport(transProtoNum, pkt); err {
-		case stack.ParsedOK:
-		case stack.UnknownTransportProtocol, stack.TransportLayerParseError:
-			// The transport layer will handle unknown protocols and transport layer
-			// parsing errors.
-		default:
-			panic(fmt.Sprintf("unexpected error parsing transport header = %d", err))
-		}
+		p.parseTransport(pkt, transProtoNum)
 	}
 
 	return h, true
+}
+
+func (p *protocol) parseTransport(pkt *stack.PacketBuffer, transProtoNum tcpip.TransportProtocolNumber) {
+	if transProtoNum == header.ICMPv4ProtocolNumber {
+		// The transport layer will handle transport layer parsing errors.
+		_ = parse.ICMPv4(pkt)
+		return
+	}
+
+	switch err := p.stack.ParsePacketBufferTransport(transProtoNum, pkt); err {
+	case stack.ParsedOK:
+	case stack.UnknownTransportProtocol, stack.TransportLayerParseError:
+		// The transport layer will handle unknown protocols and transport layer
+		// parsing errors.
+	default:
+		panic(fmt.Sprintf("unexpected error parsing transport header = %d", err))
+	}
 }
 
 // Parse implements stack.NetworkProtocol.

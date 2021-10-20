@@ -1554,13 +1554,19 @@ func (e *endpoint) processExtensionHeaders(h header.IPv6, pkt *stack.PacketBuffe
 				return fmt.Errorf("could not consume %d bytes", trim)
 			}
 
+			proto := tcpip.TransportProtocolNumber(extHdr.Identifier)
+			// If the packet was reassembled from a fragment, it will not have a
+			// transport header set yet.
+			if pkt.TransportHeader().View().IsEmpty() {
+				e.protocol.parseTransport(pkt, proto)
+			}
+
 			stats.PacketsDelivered.Increment()
-			if p := tcpip.TransportProtocolNumber(extHdr.Identifier); p == header.ICMPv6ProtocolNumber {
-				pkt.TransportProtocolNumber = p
+			if proto == header.ICMPv6ProtocolNumber {
 				e.handleICMP(pkt, hasFragmentHeader, routerAlert)
 			} else {
 				stats.PacketsDelivered.Increment()
-				switch res := e.dispatcher.DeliverTransportPacket(p, pkt); res {
+				switch res := e.dispatcher.DeliverTransportPacket(proto, pkt); res {
 				case stack.TransportPacketHandled:
 				case stack.TransportPacketDestinationPortUnreachable:
 					// As per RFC 4443 section 3.1:
@@ -2161,17 +2167,27 @@ func (p *protocol) parseAndValidate(pkt *stack.PacketBuffer) (header.IPv6, bool)
 	}
 
 	if hasTransportHdr {
-		switch err := p.stack.ParsePacketBufferTransport(transProtoNum, pkt); err {
-		case stack.ParsedOK:
-		case stack.UnknownTransportProtocol, stack.TransportLayerParseError:
-			// The transport layer will handle unknown protocols and transport layer
-			// parsing errors.
-		default:
-			panic(fmt.Sprintf("unexpected error parsing transport header = %d", err))
-		}
+		p.parseTransport(pkt, transProtoNum)
 	}
 
 	return h, true
+}
+
+func (p *protocol) parseTransport(pkt *stack.PacketBuffer, transProtoNum tcpip.TransportProtocolNumber) {
+	if transProtoNum == header.ICMPv6ProtocolNumber {
+		// The transport layer will handle transport layer parsing errors.
+		_ = parse.ICMPv6(pkt)
+		return
+	}
+
+	switch err := p.stack.ParsePacketBufferTransport(transProtoNum, pkt); err {
+	case stack.ParsedOK:
+	case stack.UnknownTransportProtocol, stack.TransportLayerParseError:
+		// The transport layer will handle unknown protocols and transport layer
+		// parsing errors.
+	default:
+		panic(fmt.Sprintf("unexpected error parsing transport header = %d", err))
+	}
 }
 
 // Parse implements stack.NetworkProtocol.
