@@ -491,4 +491,5 @@ func init() {
 	initCPUInfo()
 	initHwCap()
 	initFeaturesFromString()
+	hostFeatureSet = getHostFeatureSet()
 }
