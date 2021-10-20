@@ -331,8 +331,11 @@ func (*fakeTransportProtocol) Wait() {}
 
 // Parse implements TransportProtocol.Parse.
 func (*fakeTransportProtocol) Parse(pkt *stack.PacketBuffer) bool {
-	_, ok := pkt.TransportHeader().Consume(fakeTransHeaderLen)
-	return ok
+	if _, ok := pkt.TransportHeader().Consume(fakeTransHeaderLen); ok {
+		pkt.TransportProtocolNumber = fakeTransNumber
+		return true
+	}
+	return false
 }
 
 func fakeTransFactory(s *stack.Stack) stack.TransportProtocol {

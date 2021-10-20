@@ -110,6 +110,16 @@ traverseExtensions:
 
 		switch extHdr := extHdr.(type) {
 		case header.IPv6FragmentExtHdr:
+			if extHdr.IsAtomic() {
+				// This fragment extension header indicates that this packet is an
+				// atomic fragment. An atomic fragment is a fragment that contains
+				// all the data required to reassemble a full packet. As per RFC 6946,
+				// atomic fragments must not interfere with "normal" fragmented traffic
+				// so we skip processing the fragment instead of feeding it through the
+				// reassembly process below.
+				continue
+			}
+
 			if fragID == 0 && fragOffset == 0 && !fragMore {
 				fragID = extHdr.ID()
 				fragOffset = extHdr.FragmentOffset()
@@ -174,4 +184,62 @@ func TCP(pkt *stack.PacketBuffer) bool {
 	_, ok = pkt.TransportHeader().Consume(hdrLen)
 	pkt.TransportProtocolNumber = header.TCPProtocolNumber
 	return ok
+}
+
+// ICMPv4 populates the packet buffer's transport header with an ICMPv4 header,
+// if present.
+//
+// Returns true if an ICMPv4 header was successfully parsed.
+func ICMPv4(pkt *stack.PacketBuffer) bool {
+	if _, ok := pkt.TransportHeader().Consume(header.ICMPv4MinimumSize); ok {
+		pkt.TransportProtocolNumber = header.ICMPv4ProtocolNumber
+		return true
+	}
+	return false
+}
+
+// ICMPv6 populates the packet buffer's transport header with an ICMPv4 header,
+// if present.
+//
+// Returns true if an ICMPv6 header was successfully parsed.
+func ICMPv6(pkt *stack.PacketBuffer) bool {
+	hdr, ok := pkt.Data().PullUp(header.ICMPv6MinimumSize)
+	if !ok {
+		return false
+	}
+
+	h := header.ICMPv6(hdr)
+	switch h.Type() {
+	case header.ICMPv6RouterSolicit,
+		header.ICMPv6RouterAdvert,
+		header.ICMPv6NeighborSolicit,
+		header.ICMPv6NeighborAdvert,
+		header.ICMPv6RedirectMsg:
+		size := pkt.Data().Size()
+		if _, ok := pkt.TransportHeader().Consume(size); !ok {
+			panic(fmt.Sprintf("expected to consume the full data of size = %d bytes into transport header", size))
+		}
+	case header.ICMPv6MulticastListenerQuery,
+		header.ICMPv6MulticastListenerReport,
+		header.ICMPv6MulticastListenerDone:
+		size := header.ICMPv6HeaderSize + header.MLDMinimumSize
+		if _, ok := pkt.TransportHeader().Consume(size); !ok {
+			return false
+		}
+	case header.ICMPv6DstUnreachable,
+		header.ICMPv6PacketTooBig,
+		header.ICMPv6TimeExceeded,
+		header.ICMPv6ParamProblem,
+		header.ICMPv6EchoRequest,
+		header.ICMPv6EchoReply:
+		fallthrough
+	default:
+		if _, ok := pkt.TransportHeader().Consume(header.ICMPv6MinimumSize); !ok {
+			// Checked above if the packet buffer holds at least the minimum size for
+			// an ICMPv6 packet.
+			panic(fmt.Sprintf("expected to consume %d bytes", header.ICMPv6MinimumSize))
+		}
+	}
+	pkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
+	return true
 }

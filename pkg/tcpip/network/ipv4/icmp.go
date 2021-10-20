@@ -175,18 +175,14 @@ func (e *endpoint) handleControl(errInfo stack.TransportError, pkt *stack.Packet
 
 func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 	received := e.stats.icmp.packetsReceived
-	// ICMP packets don't have their TransportHeader fields set. See
-	// icmp/protocol.go:protocol.Parse for a full explanation. Not all ICMP types
-	// require consuming the header, so we only call PullUp.
-	v, ok := pkt.Data().PullUp(header.ICMPv4MinimumSize)
-	if !ok {
+	h := header.ICMPv4(pkt.TransportHeader().View())
+	if len(h) < header.ICMPv4MinimumSize {
 		received.invalid.Increment()
 		return
 	}
-	h := header.ICMPv4(v)
 
 	// Only do in-stack processing if the checksum is correct.
-	if pkt.Data().AsRange().Checksum() != 0xffff {
+	if header.Checksum(h, pkt.Data().AsRange().Checksum()) != 0xffff {
 		received.invalid.Increment()
 		// It's possible that a raw socket expects to receive this regardless
 		// of checksum errors. If it's an echo request we know it's safe because
@@ -251,7 +247,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 		// TODO(gvisor.dev/issue/4399): The copy may not be needed if there are no
 		// waiting endpoints. Consider moving responsibility for doing the copy to
 		// DeliverTransportPacket so that is is only done when needed.
-		replyData := pkt.Data().AsRange().ToOwnedView()
+		replyData := stack.PayloadSince(pkt.TransportHeader())
 		ipHdr := header.IPv4(pkt.NetworkHeader().View())
 		localAddressBroadcast := pkt.NetworkPacketInfo.LocalAddressBroadcast
 
@@ -344,9 +340,6 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 
 		mtu := h.MTU()
 		code := h.Code()
-		if _, ok := pkt.Data().Consume(header.ICMPv4MinimumSize); !ok {
-			panic("could not consume ICMPv4MinimumSize bytes")
-		}
 		switch code {
 		case header.ICMPv4HostUnreachable:
 			e.handleControl(&icmpv4DestinationHostUnreachableSockError{}, pkt)
@@ -574,20 +567,6 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip
 
 	// Don't respond to icmp error packets.
 	if origIPHdr.Protocol() == uint8(header.ICMPv4ProtocolNumber) {
-		// TODO(gvisor.dev/issue/3810):
-		// Unfortunately the current stack pretty much always has ICMPv4 headers
-		// in the Data section of the packet but there is no guarantee that is the
-		// case. If this is the case grab the header to make it like all other
-		// packet types. When this is cleaned up the Consume should be removed.
-		if transportHeader.IsEmpty() {
-			var ok bool
-			transportHeader, ok = pkt.TransportHeader().Consume(header.ICMPv4MinimumSize)
-			if !ok {
-				return nil
-			}
-		} else if transportHeader.Size() < header.ICMPv4MinimumSize {
-			return nil
-		}
 		// We need to decide to explicitly name the packets we can respond to or
 		// the ones we can not respond to. The decision is somewhat arbitrary and
 		// if problems arise this could be reversed. It was judged less of a breach

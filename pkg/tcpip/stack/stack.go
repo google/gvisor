@@ -1865,12 +1865,6 @@ const (
 // ParsePacketBufferTransport parses the provided packet buffer's transport
 // header.
 func (s *Stack) ParsePacketBufferTransport(protocol tcpip.TransportProtocolNumber, pkt *PacketBuffer) ParseResult {
-	// ICMP packets don't have their TransportHeader fields set yet, parse it
-	// here. See icmp/protocol.go:protocol.Parse for a full explanation.
-	if protocol == header.ICMPv4ProtocolNumber || protocol == header.ICMPv6ProtocolNumber {
-		return ParsedOK
-	}
-
 	pkt.TransportProtocolNumber = protocol
 	// Parse the transport header if present.
 	state, ok := s.transportProtocols[protocol]

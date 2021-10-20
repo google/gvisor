@@ -833,24 +833,9 @@ func (n *nic) DeliverTransportPacket(protocol tcpip.TransportProtocolNumber, pkt
 
 	transProto := state.proto
 
-	// TransportHeader is empty only when pkt is an ICMP packet or was reassembled
-	// from fragments.
 	if pkt.TransportHeader().View().IsEmpty() {
-		// ICMP packets don't have their TransportHeader fields set yet, parse it
-		// here. See icmp/protocol.go:protocol.Parse for a full explanation.
-		if protocol == header.ICMPv4ProtocolNumber || protocol == header.ICMPv6ProtocolNumber {
-			// ICMP packets may be longer, but until icmp.Parse is implemented, here
-			// we parse it using the minimum size.
-			if _, ok := pkt.TransportHeader().Consume(transProto.MinimumPacketSize()); !ok {
-				n.stats.malformedL4RcvdPackets.Increment()
-				// We consider a malformed transport packet handled because there is
-				// nothing the caller can do.
-				return TransportPacketHandled
-			}
-		} else if !transProto.Parse(pkt) {
-			n.stats.malformedL4RcvdPackets.Increment()
-			return TransportPacketHandled
-		}
+		n.stats.malformedL4RcvdPackets.Increment()
+		return TransportPacketHandled
 	}
 
 	srcPort, dstPort, err := transProto.ParsePorts(pkt.TransportHeader().View())
