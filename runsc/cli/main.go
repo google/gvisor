@@ -229,6 +229,7 @@ func Main(version string) {
 	log.Infof("\t\tNetwork: %v, logging: %t", conf.Network, conf.LogPackets)
 	log.Infof("\t\tStrace: %t, max size: %d, syscalls: %s", conf.Strace, conf.StraceLogSize, conf.StraceSyscalls)
 	log.Infof("\t\tVFS2 enabled: %t, LISAFS: %t", conf.VFS2, conf.Lisafs)
+	log.Infof("\t\tDebug: %v", conf.Debug)
 	log.Infof("***************************")
 
 	if conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
