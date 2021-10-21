@@ -346,6 +346,7 @@ func (i *IPCNamespace) StateFields() []string {
 		"queues",
 		"semaphores",
 		"shms",
+		"posixQueues",
 	}
 }
 
@@ -359,6 +360,7 @@ func (i *IPCNamespace) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &i.queues)
 	stateSinkObject.Save(3, &i.semaphores)
 	stateSinkObject.Save(4, &i.shms)
+	stateSinkObject.Save(5, &i.posixQueues)
 }
 
 func (i *IPCNamespace) afterLoad() {}
@@ -370,6 +372,7 @@ func (i *IPCNamespace) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &i.queues)
 	stateSourceObject.Load(3, &i.semaphores)
 	stateSourceObject.Load(4, &i.shms)
+	stateSourceObject.Load(5, &i.posixQueues)
 }
 
 func (r *IPCNamespaceRefs) StateTypeName() string {

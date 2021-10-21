@@ -36,6 +36,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/devtmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/fuse"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/gofer"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/mqfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/overlay"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/proc"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sys"
@@ -94,6 +95,10 @@ func registerFilesystems(k *kernel.Kernel) error {
 	vfsObj.MustRegisterFilesystemType(verity.Name, &verity.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
 		AllowUserList:  true,
 		AllowUserMount: true,
+	})
+	vfsObj.MustRegisterFilesystemType(mqfs.Name, &mqfs.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
+		AllowUserMount: true,
+		AllowUserList:  true,
 	})
 
 	// Setup files in devtmpfs.
