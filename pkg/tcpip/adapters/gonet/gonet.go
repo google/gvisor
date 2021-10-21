@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"time"
@@ -471,9 +472,9 @@ func DialTCP(s *stack.Stack, addr tcpip.FullAddress, network tcpip.NetworkProtoc
 	return DialContextTCP(context.Background(), s, addr, network)
 }
 
-// DialContextTCP creates a new TCPConn connected to the specified address
-// with the option of adding cancellation and timeouts.
-func DialContextTCP(ctx context.Context, s *stack.Stack, addr tcpip.FullAddress, network tcpip.NetworkProtocolNumber) (*TCPConn, error) {
+// DialTCPWithBind creates a new TCPConn connected to the specified
+// remoteAddress with its local address bound to localAddr.
+func DialTCPWithBind(ctx context.Context, s *stack.Stack, localAddr, remoteAddr tcpip.FullAddress, network tcpip.NetworkProtocolNumber) (*TCPConn, error) {
 	// Create TCP endpoint, then connect.
 	var wq waiter.Queue
 	ep, err := s.NewEndpoint(tcp.ProtocolNumber, network, &wq)
@@ -494,7 +495,14 @@ func DialContextTCP(ctx context.Context, s *stack.Stack, addr tcpip.FullAddress,
 	default:
 	}
 
-	err = ep.Connect(addr)
+	// Bind before connect if requested.
+	if localAddr != (tcpip.FullAddress{}) {
+		if err = ep.Bind(localAddr); err != nil {
+			return nil, fmt.Errorf("ep.Bind(%+v) = %s", localAddr, err)
+		}
+	}
+
+	err = ep.Connect(remoteAddr)
 	if _, ok := err.(*tcpip.ErrConnectStarted); ok {
 		select {
 		case <-ctx.Done():
@@ -510,12 +518,18 @@ func DialContextTCP(ctx context.Context, s *stack.Stack, addr tcpip.FullAddress,
 		return nil, &net.OpError{
 			Op:   "connect",
 			Net:  "tcp",
-			Addr: fullToTCPAddr(addr),
+			Addr: fullToTCPAddr(remoteAddr),
 			Err:  errors.New(err.String()),
 		}
 	}
 
 	return NewTCPConn(&wq, ep), nil
+}
+
+// DialContextTCP creates a new TCPConn connected to the specified address
+// with the option of adding cancellation and timeouts.
+func DialContextTCP(ctx context.Context, s *stack.Stack, addr tcpip.FullAddress, network tcpip.NetworkProtocolNumber) (*TCPConn, error) {
+	return DialTCPWithBind(ctx, s, tcpip.FullAddress{} /* localAddr */, addr /* remoteAddr */, network)
 }
 
 // A UDPConn is a wrapper around a UDP tcpip.Endpoint that implements
