@@ -180,11 +180,9 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 	if *overlay {
 		args = append(args, "-overlay")
 	}
-	if *vfs2 {
-		args = append(args, "-vfs2")
-		if *fuse {
-			args = append(args, "-fuse")
-		}
+	args = append(args, fmt.Sprintf("-vfs2=%t", *vfs2))
+	if *vfs2 && *fuse {
+		args = append(args, "-fuse")
 	}
 	if *debug {
 		args = append(args, "-debug", "-log-packets=true")

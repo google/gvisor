@@ -407,9 +407,9 @@ var (
 func configsHelper(t *testing.T, opts ...configOption) map[string]*config.Config {
 	// Always load the default config.
 	cs := make(map[string]*config.Config)
-	testutil.TestConfig(t)
 	for _, o := range opts {
 		c := testutil.TestConfig(t)
+		c.VFS2 = false
 		switch o {
 		case overlay:
 			c.Overlay = true
@@ -2615,6 +2615,8 @@ func TestCat(t *testing.T) {
 	f.Close()
 
 	spec, conf := sleepSpecConf(t)
+	// TODO(gvisor.dev/issue/6742): Add VFS2 support.
+	conf.VFS2 = false
 
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {

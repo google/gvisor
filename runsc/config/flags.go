@@ -80,7 +80,7 @@ func RegisterFlags() {
 		flag.Bool("overlay", false, "wrap filesystem mounts with writable overlay. All modifications are stored in memory inside the sandbox.")
 		flag.Bool("verity", false, "specifies whether a verity file system will be mounted.")
 		flag.Bool("fsgofer-host-uds", false, "allow the gofer to mount Unix Domain Sockets.")
-		flag.Bool("vfs2", false, "enables VFSv2. This uses the new VFS layer that is faster than the previous one.")
+		flag.Bool("vfs2", true, "enables VFSv2. This uses the new VFS layer that is faster than the previous one.")
 		flag.Bool("fuse", false, "TEST ONLY; use while FUSE in VFSv2 is landing. This allows the use of the new experimental FUSE filesystem.")
 		flag.Bool("lisafs", false, "Enables lisafs protocol instead of 9P. This is only effective with VFS2.")
 		flag.Bool("cgroupfs", false, "Automatically mount cgroupfs.")
