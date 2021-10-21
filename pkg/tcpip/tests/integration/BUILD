@@ -143,3 +143,25 @@ go_test(
         "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )
+
+go_test(
+    name = "istio_test",
+    size = "small",
+    srcs = ["istio_test.go"],
+    deps = [
+        "//pkg/context",
+        "//pkg/rand",
+        "//pkg/sync",
+        "//pkg/tcpip",
+        "//pkg/tcpip/adapters/gonet",
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/link/loopback",
+        "//pkg/tcpip/link/pipe",
+        "//pkg/tcpip/link/sniffer",
+        "//pkg/tcpip/network/ipv4",
+        "//pkg/tcpip/stack",
+        "//pkg/tcpip/testutil",
+        "//pkg/tcpip/transport/tcp",
+        "@com_github_google_go_cmp//cmp:go_default_library",
+    ],
+)
