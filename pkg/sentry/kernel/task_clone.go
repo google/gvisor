@@ -103,6 +103,9 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	ipcns := t.IPCNamespace()
 	if args.Flags&linux.CLONE_NEWIPC != 0 {
 		ipcns = NewIPCNamespace(userns)
+		if VFS2Enabled {
+			ipcns.InitPosixQueues(t, t.k.VFS(), creds)
+		}
 	} else {
 		ipcns.IncRef()
 	}
@@ -464,6 +467,9 @@ func (t *Task) Unshare(flags int32) error {
 		// namespace"
 		t.ipcns.DecRef(t)
 		t.ipcns = NewIPCNamespace(creds.UserNamespace)
+		if VFS2Enabled {
+			t.ipcns.InitPosixQueues(t, t.k.VFS(), creds)
+		}
 	}
 	var oldFDTable *FDTable
 	if flags&linux.CLONE_FILES != 0 {
