@@ -43,7 +43,7 @@ func HostFeatureSet() *FeatureSet {
 	return hostFeatureSet
 }
 
-var hostFeatureSet = getHostFeatureSet()
+var hostFeatureSet *FeatureSet
 
 // ErrIncompatible is returned by FeatureSet.HostCompatible if fs is not a
 // subset of the host feature set.
