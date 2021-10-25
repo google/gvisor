@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package runtimeoptions contains the runtimeoptions proto for containerd 1.5
-// and above.
-package runtimeoptions
+// Package v14 contains the runtimeoptions proto for containerd 1.4 and earlier.
+// The package for runtimeoptions proto changed from "cri.runtimeoptions.v1" to
+// "runtimeoptions.v1" in 1.5, So keep both versions until 1.4 doesn't need to
+// be supported anymore.
+package v14

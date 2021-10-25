@@ -270,10 +270,11 @@ func TestHomeDir(t *testing.T) {
 
 const containerdRuntime = "runsc"
 
-// Template is the containerd configuration file that configures containerd with
-// the gVisor shim, Note that the v2 shim binary name must be
-// containerd-shim-<runtime>-v1.
-const template = `
+// containerdConfigv14 is the containerd (1.4-) configuration file that
+// configures the gVisor shim.
+//
+// Note that the v2 shim binary name must be containerd-shim-<runtime>-v1.
+const containerdConfigv14 = `
 disabled_plugins = ["restart"]
 [plugins.cri]
   disable_tcp_service = true
@@ -282,6 +283,25 @@ disabled_plugins = ["restart"]
 [plugins.cri.containerd.runtimes.` + containerdRuntime + `]
   runtime_type = "io.containerd.` + containerdRuntime + `.v1"
 [plugins.cri.containerd.runtimes.` + containerdRuntime + `.options]
+  TypeUrl = "io.containerd.` + containerdRuntime + `.v1.options"
+`
+
+// containerdConfig is the containerd (1.5+) configuration file that
+// configures the gVisor shim.
+//
+// Note that the v2 shim binary name must be containerd-shim-<runtime>-v1.
+const containerdConfig = `
+version=2
+disabled_plugins = ["io.containerd.internal.v1.restart"]
+[plugins."io.containerd.grpc.v1.cri"]
+  disable_tcp_service = true
+[plugins."io.containerd.runtime.v1.linux"]
+  shim_debug = true
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+  runtime_type = "io.containerd.runc.v2"
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.` + containerdRuntime + `]
+  runtime_type = "io.containerd.` + containerdRuntime + `.v1"
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.` + containerdRuntime + `.options]
   TypeUrl = "io.containerd.` + containerdRuntime + `.v1.options"
 `
 
@@ -362,8 +382,9 @@ func setup(t *testing.T) (*criutil.Crictl, func(), error) {
 	t.Logf("Using PATH: %v", modifiedPath)
 
 	// Generate the configuration for the test.
-	t.Logf("Using config: %s", template)
-	configFile, configCleanup, err := testutil.WriteTmpFile("containerd-config", template)
+	config := getContainerdConfig(major, minor)
+	t.Logf("Using config: %s", config)
+	configFile, configCleanup, err := testutil.WriteTmpFile("containerd-config", config)
 	if err != nil {
 		t.Fatalf("failed to write containerd config")
 	}
@@ -473,4 +494,11 @@ func getContainerd() string {
 		return "/usr/local/bin/containerd"
 	}
 	return "/usr/bin/containerd"
+}
+
+func getContainerdConfig(major, minor uint64) string {
+	if major == 1 && minor <= 4 {
+		return containerdConfigv14
+	}
+	return containerdConfig
 }

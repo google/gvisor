@@ -98,6 +98,9 @@ steps:
   - <<: *common
     label: ":docker: Containerd 1.4.3 tests"
     command: make containerd-test-1.4.3
+  - <<: *common
+    label: ":docker: Containerd 1.5.4 tests"
+    command: make containerd-test-1.5.4
 
   # Check the website builds.
   - <<: *common

@@ -19,15 +19,11 @@ set -xeo pipefail
 declare -r CONTAINERD_VERSION=${1:-1.3.0}
 declare -r CONTAINERD_MAJOR="$(echo ${CONTAINERD_VERSION} | awk -F '.' '{ print $1; }')"
 declare -r CONTAINERD_MINOR="$(echo ${CONTAINERD_VERSION} | awk -F '.' '{ print $2; }')"
+declare -r CRITOOLS_VERSION=${CRITOOLS_VERSION:-1.18.0}
 
-# We're running Go 1.16, but using pre-module containerd and cri-tools.
-export GO111MODULE=off
-
-# Default to an older version for crictl for containerd <= 1.2.
-if [[ "${CONTAINERD_MAJOR}" -eq 1 ]] && [[ "${CONTAINERD_MINOR}" -le 2 ]]; then
-  declare -r CRITOOLS_VERSION=${CRITOOLS_VERSION:-1.13.0}
-else
-  declare -r CRITOOLS_VERSION=${CRITOOLS_VERSION:-1.18.0}
+if [[ "${CONTAINERD_MAJOR}" -eq 1 ]] && [[ "${CONTAINERD_MINOR}" -le 4 ]]; then
+  # We're running Go 1.16, but using pre-module containerd and cri-tools.
+  export GO111MODULE=off
 fi
 
 # Helper for Go packages below.
