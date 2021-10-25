@@ -122,7 +122,7 @@ type OpenOpts struct {
 
 // FindOrCreate creates a new POSIX message queue or opens an existing queue.
 // See mq_open(2).
-func (r *Registry) FindOrCreate(ctx context.Context, opts OpenOpts, perm linux.FileMode, attr *linux.MqAttr) (*vfs.FileDescription, error) {
+func (r *Registry) FindOrCreate(ctx context.Context, opts OpenOpts, mode linux.FileMode, attr *linux.MqAttr) (*vfs.FileDescription, error) {
 	// mq_overview(7) mentions that: "Each message queue is identified by a name
 	// of the form '/somename'", but the mq_open(3) man pages mention:
 	//   "The mq_open() library function is implemented on top of a system call
@@ -182,11 +182,11 @@ func (r *Registry) FindOrCreate(ctx context.Context, opts OpenOpts, perm linux.F
 		return nil, linuxerr.ENOENT
 	}
 
-	q, err := r.newQueueLocked(auth.CredentialsFromContext(ctx), fs.FileOwnerFromContext(ctx), fs.FilePermsFromMode(perm), attr)
+	q, err := r.newQueueLocked(auth.CredentialsFromContext(ctx), fs.FileOwnerFromContext(ctx), fs.FilePermsFromMode(mode), attr)
 	if err != nil {
 		return nil, err
 	}
-	return r.impl.New(ctx, opts.Name, q, opts.Access, opts.Block, perm, flags)
+	return r.impl.New(ctx, opts.Name, q, opts.Access, opts.Block, mode.Permissions(), flags)
 }
 
 // newQueueLocked creates a new queue using the given attributes. If attr is nil
