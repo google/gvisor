@@ -1109,4 +1109,5 @@ func initFeaturesFromString() {
 func init() {
 	initCPUFreq()
 	initFeaturesFromString()
+	hostFeatureSet = getHostFeatureSet()
 }
