@@ -175,12 +175,19 @@ class FcntlSignalTest : public ::testing::Test {
 namespace {
 
 PosixErrorOr<Cleanup> SubprocessLock(std::string const& path, bool for_write,
-                                     bool blocking, bool retry_eintr, int fd,
-                                     off_t start, off_t length, pid_t* child) {
+                                     bool blocking, bool retry_eintr,
+                                     int* socket_pair, off_t start,
+                                     off_t length, pid_t* child) {
   std::vector<std::string> args = {
-      "/proc/self/exe",         "--child_set_lock_on", path,
-      "--child_set_lock_start", absl::StrCat(start),   "--child_set_lock_len",
-      absl::StrCat(length),     "--socket_fd",         absl::StrCat(fd)};
+      "/proc/self/exe",
+      "--child_set_lock_on",
+      path,
+      "--child_set_lock_start",
+      absl::StrCat(start),
+      "--child_set_lock_len",
+      absl::StrCat(length),
+      "--socket_fd",
+      absl::StrCat(socket_pair ? socket_pair[1] : -1)};
 
   if (for_write) {
     args.push_back("--child_set_lock_write");
@@ -204,6 +211,12 @@ PosixErrorOr<Cleanup> SubprocessLock(std::string const& path, bool for_write,
     return PosixError(execve_errno, "execve");
   }
 
+  if (socket_pair) {
+    // Wait for when a chill will start.
+    char c;
+    EXPECT_THAT(ReadFd(socket_pair[0], reinterpret_cast<void*>(&c), sizeof(c)),
+                SyscallSucceedsWithValue(sizeof(c)));
+  }
   return std::move(cleanup);
 }
 
@@ -540,10 +553,10 @@ TEST_F(FcntlLockTest, SetReadLockMultiProc) {
 
   // spawn a child process to take a read lock on the same file.
   pid_t child_pid = 0;
-  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(
-      SubprocessLock(file.path(), false /* write lock */,
-                     false /* nonblocking */, false /* no eintr retry */,
-                     -1 /* no socket fd */, fl.l_start, fl.l_len, &child_pid));
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(SubprocessLock(
+      file.path(), false /* write lock */, false /* nonblocking */,
+      false /* no eintr retry */, nullptr /* no socket fd */, fl.l_start,
+      fl.l_len, &child_pid));
 
   int status = 0;
   ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0), SyscallSucceeds());
@@ -568,10 +581,10 @@ TEST_F(FcntlLockTest, SetReadThenWriteLockMultiProc) {
   // with EAGAIN.  It's important that we keep the fd above open so that
   // that the other process will contend with the lock.
   pid_t child_pid = 0;
-  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(
-      SubprocessLock(file.path(), true /* write lock */,
-                     false /* nonblocking */, false /* no eintr retry */,
-                     -1 /* no socket fd */, fl.l_start, fl.l_len, &child_pid));
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(SubprocessLock(
+      file.path(), true /* write lock */, false /* nonblocking */,
+      false /* no eintr retry */, nullptr /* no socket fd */, fl.l_start,
+      fl.l_len, &child_pid));
 
   int status = 0;
   ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0), SyscallSucceeds());
@@ -584,10 +597,10 @@ TEST_F(FcntlLockTest, SetReadThenWriteLockMultiProc) {
   // Assert that another process can now acquire the lock.
 
   child_pid = 0;
-  auto cleanup2 = ASSERT_NO_ERRNO_AND_VALUE(
-      SubprocessLock(file.path(), true /* write lock */,
-                     false /* nonblocking */, false /* no eintr retry */,
-                     -1 /* no socket fd */, fl.l_start, fl.l_len, &child_pid));
+  auto cleanup2 = ASSERT_NO_ERRNO_AND_VALUE(SubprocessLock(
+      file.path(), true /* write lock */, false /* nonblocking */,
+      false /* no eintr retry */, nullptr /* no socket fd */, fl.l_start,
+      fl.l_len, &child_pid));
   ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0), SyscallSucceeds());
   EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
       << "Exited with code: " << status;
@@ -612,10 +625,10 @@ TEST_F(FcntlLockTest, SetWriteThenReadLockMultiProc) {
 
   // Same as SetReadThenWriteLockMultiProc.
   pid_t child_pid = 0;
-  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(
-      SubprocessLock(file.path(), false /* write lock */,
-                     false /* nonblocking */, false /* no eintr retry */,
-                     -1 /* no socket fd */, fl.l_start, fl.l_len, &child_pid));
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(SubprocessLock(
+      file.path(), false /* write lock */, false /* nonblocking */,
+      false /* no eintr retry */, nullptr /* no socket fd */, fl.l_start,
+      fl.l_len, &child_pid));
 
   int status = 0;
   ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0), SyscallSucceeds());
@@ -627,10 +640,10 @@ TEST_F(FcntlLockTest, SetWriteThenReadLockMultiProc) {
 
   // Same as SetReadThenWriteLockMultiProc.
   child_pid = 0;
-  auto cleanup2 = ASSERT_NO_ERRNO_AND_VALUE(
-      SubprocessLock(file.path(), false /* write lock */,
-                     false /* nonblocking */, false /* no eintr retry */,
-                     -1 /* no socket fd */, fl.l_start, fl.l_len, &child_pid));
+  auto cleanup2 = ASSERT_NO_ERRNO_AND_VALUE(SubprocessLock(
+      file.path(), false /* write lock */, false /* nonblocking */,
+      false /* no eintr retry */, nullptr /* no socket fd */, fl.l_start,
+      fl.l_len, &child_pid));
   ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0), SyscallSucceeds());
   EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
       << "Exited with code: " << status;
@@ -654,10 +667,10 @@ TEST_F(FcntlLockTest, SetWriteLockMultiProc) {
 
   // Same as SetReadWriteLockMultiProc.
   pid_t child_pid = 0;
-  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(
-      SubprocessLock(file.path(), true /* write lock */,
-                     false /* nonblocking */, false /* no eintr retry */,
-                     -1 /* no socket fd */, fl.l_start, fl.l_len, &child_pid));
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(SubprocessLock(
+      file.path(), true /* write lock */, false /* nonblocking */,
+      false /* no eintr retry */, nullptr /* no socket fd */, fl.l_start,
+      fl.l_len, &child_pid));
   int status = 0;
   ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0), SyscallSucceeds());
   EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == EAGAIN)
@@ -666,10 +679,10 @@ TEST_F(FcntlLockTest, SetWriteLockMultiProc) {
   fd.reset();  // Close the FD.
   // Same as SetReadWriteLockMultiProc.
   child_pid = 0;
-  auto cleanup2 = ASSERT_NO_ERRNO_AND_VALUE(
-      SubprocessLock(file.path(), true /* write lock */,
-                     false /* nonblocking */, false /* no eintr retry */,
-                     -1 /* no socket fd */, fl.l_start, fl.l_len, &child_pid));
+  auto cleanup2 = ASSERT_NO_ERRNO_AND_VALUE(SubprocessLock(
+      file.path(), true /* write lock */, false /* nonblocking */,
+      false /* no eintr retry */, nullptr /* no socket fd */, fl.l_start,
+      fl.l_len, &child_pid));
   ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0), SyscallSucceeds());
   EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
       << "Exited with code: " << status;
@@ -694,7 +707,7 @@ TEST_F(FcntlLockTest, SetLockIsRegional) {
   auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(
       SubprocessLock(file.path(), true /* write lock */,
                      false /* nonblocking */, false /* no eintr retry */,
-                     -1 /* no socket fd */, fl.l_len, 0, &child_pid));
+                     nullptr /* no socket fd */, fl.l_len, 0, &child_pid));
   int status = 0;
   ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0), SyscallSucceeds());
   EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
@@ -723,10 +736,10 @@ TEST_F(FcntlLockTest, SetLockUpgradeDowngrade) {
 
   // Same as SetReadWriteLockMultiProc.,
   pid_t child_pid = 0;
-  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(
-      SubprocessLock(file.path(), false /* write lock */,
-                     false /* nonblocking */, false /* no eintr retry */,
-                     -1 /* no socket fd */, fl.l_start, fl.l_len, &child_pid));
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(SubprocessLock(
+      file.path(), false /* write lock */, false /* nonblocking */,
+      false /* no eintr retry */, nullptr /* no socket fd */, fl.l_start,
+      fl.l_len, &child_pid));
 
   int status = 0;
   ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0), SyscallSucceeds());
@@ -739,10 +752,10 @@ TEST_F(FcntlLockTest, SetLockUpgradeDowngrade) {
 
   // Do the same stint as before, but this time it should succeed.
   child_pid = 0;
-  auto cleanup2 = ASSERT_NO_ERRNO_AND_VALUE(
-      SubprocessLock(file.path(), false /* write lock */,
-                     false /* nonblocking */, false /* no eintr retry */,
-                     -1 /* no socket fd */, fl.l_start, fl.l_len, &child_pid));
+  auto cleanup2 = ASSERT_NO_ERRNO_AND_VALUE(SubprocessLock(
+      file.path(), false /* write lock */, false /* nonblocking */,
+      false /* no eintr retry */, nullptr /* no socket fd */, fl.l_start,
+      fl.l_len, &child_pid));
 
   ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0), SyscallSucceeds());
   EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
@@ -774,10 +787,10 @@ TEST_F(FcntlLockTest, SetLockDroppedOnClose) {
 
   // Expect to be able to get the lock, given that the close above dropped it.
   pid_t child_pid = 0;
-  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(
-      SubprocessLock(file.path(), true /* write lock */,
-                     false /* nonblocking */, false /* no eintr retry */,
-                     -1 /* no socket fd */, fl.l_start, fl.l_len, &child_pid));
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(SubprocessLock(
+      file.path(), true /* write lock */, false /* nonblocking */,
+      false /* no eintr retry */, nullptr /* no socket fd */, fl.l_start,
+      fl.l_len, &child_pid));
 
   int status = 0;
   ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0), SyscallSucceeds());
@@ -811,9 +824,10 @@ TEST_F(FcntlLockTest, SetLockUnlock) {
   // Another process should fail to take a read lock on the entire file
   // due to the regional write lock.
   pid_t child_pid = 0;
-  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(SubprocessLock(
-      file.path(), false /* write lock */, false /* nonblocking */,
-      false /* no eintr retry */, -1 /* no socket fd */, 0, 0, &child_pid));
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(
+      SubprocessLock(file.path(), false /* write lock */,
+                     false /* nonblocking */, false /* no eintr retry */,
+                     nullptr /* no socket fd */, 0, 0, &child_pid));
 
   int status = 0;
   ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0), SyscallSucceeds());
@@ -827,9 +841,10 @@ TEST_F(FcntlLockTest, SetLockUnlock) {
 
   // Another process should now succeed to get a read lock on the entire file.
   child_pid = 0;
-  auto cleanup2 = ASSERT_NO_ERRNO_AND_VALUE(SubprocessLock(
-      file.path(), false /* write lock */, false /* nonblocking */,
-      false /* no eintr retry */, -1 /* no socket fd */, 0, 0, &child_pid));
+  auto cleanup2 = ASSERT_NO_ERRNO_AND_VALUE(
+      SubprocessLock(file.path(), false /* write lock */,
+                     false /* nonblocking */, false /* no eintr retry */,
+                     nullptr /* no socket fd */, 0, 0, &child_pid));
   ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0), SyscallSucceeds());
   EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
       << "Exited with code: " << status;
@@ -860,7 +875,7 @@ TEST_F(FcntlLockTest, SetLockAcrossRename) {
   pid_t child_pid = 0;
   auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(
       SubprocessLock(newpath, false /* write lock */, false /* nonblocking */,
-                     false /* no eintr retry */, -1 /* no socket fd */,
+                     false /* no eintr retry */, nullptr /* no socket fd */,
                      fl.l_start, fl.l_len, &child_pid));
 
   int status = 0;
@@ -898,7 +913,7 @@ TEST_F(FcntlLockTest, SetWriteLockThenBlockingWriteLock) {
   pid_t child_pid = 0;
   auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(SubprocessLock(
       file.path(), true /* write lock */, true /* Blocking Lock */,
-      true /* Retry on EINTR */, fds_[1] /* Socket fd for timing information */,
+      true /* Retry on EINTR */, fds_ /* Socket fd for timing information */,
       fl.l_start, fl.l_len, &child_pid));
 
   // We will wait kHoldLockForSec before we release our lock allowing the
@@ -950,7 +965,7 @@ TEST_F(FcntlLockTest, SetReadLockThenBlockingWriteLock) {
   pid_t child_pid = 0;
   auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(SubprocessLock(
       file.path(), true /* write lock */, true /* Blocking Lock */,
-      true /* Retry on EINTR */, fds_[1] /* Socket fd for timing information */,
+      true /* Retry on EINTR */, fds_ /* Socket fd for timing information */,
       fl.l_start, fl.l_len, &child_pid));
 
   // We will wait kHoldLockForSec before we release our lock allowing the
@@ -1003,7 +1018,7 @@ TEST_F(FcntlLockTest, SetWriteLockThenBlockingReadLock) {
   pid_t child_pid = 0;
   auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(SubprocessLock(
       file.path(), false /* read lock */, true /* Blocking Lock */,
-      true /* Retry on EINTR */, fds_[1] /* Socket fd for timing information */,
+      true /* Retry on EINTR */, fds_ /* Socket fd for timing information */,
       fl.l_start, fl.l_len, &child_pid));
 
   // We will wait kHoldLockForSec before we release our lock allowing the
@@ -1054,8 +1069,8 @@ TEST_F(FcntlLockTest, SetReadLockThenBlockingReadLock) {
   pid_t child_pid = 0;
   auto sp = ASSERT_NO_ERRNO_AND_VALUE(SubprocessLock(
       file.path(), false /* read lock */, true /* Blocking Lock */,
-      true /* Retry on EINTR */, -1 /* No fd, should not block */, fl.l_start,
-      fl.l_len, &child_pid));
+      true /* Retry on EINTR */, nullptr /* No fd, should not block */,
+      fl.l_start, fl.l_len, &child_pid));
 
   // We never release the lock and the subprocess should still obtain it without
   // blocking for any period of time.
@@ -1958,6 +1973,12 @@ int set_lock() {
   fl.l_start = absl::GetFlag(FLAGS_child_set_lock_start);
   fl.l_len = absl::GetFlag(FLAGS_child_set_lock_len);
 
+  if (socket_fd != -1) {
+    // Send signal to the parent.
+    char c = 0;
+    gvisor::testing::WriteFd(socket_fd, reinterpret_cast<void*>(&c),
+                                   sizeof(c));
+  }
   // Test the fcntl.
   int err = 0;
   int ret = 0;
