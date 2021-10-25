@@ -27,9 +27,6 @@
 namespace gvisor {
 namespace testing {
 
-// Return a new temp filename, intended to be unique system-wide.
-std::string NextTempBasename();
-
 // Returns an absolute path for a file in `dir` that does not yet exist.
 // Distinct calls to NewTempAbsPathInDir from the same process, even from
 // multiple threads, are guaranteed to return different paths. Distinct calls to

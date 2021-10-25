@@ -67,7 +67,6 @@ go_library(
         "//pkg/sentry/fsimpl/fuse",
         "//pkg/sentry/fsimpl/gofer",
         "//pkg/sentry/fsimpl/host",
-        "//pkg/sentry/fsimpl/mqfs",
         "//pkg/sentry/fsimpl/overlay",
         "//pkg/sentry/fsimpl/proc",
         "//pkg/sentry/fsimpl/sys",

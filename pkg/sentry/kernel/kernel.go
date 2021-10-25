@@ -58,7 +58,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/futex"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/ipc"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/sched"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
@@ -406,11 +405,6 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 		ctx := k.SupervisorContext()
 		if err := k.vfs.Init(ctx); err != nil {
 			return fmt.Errorf("failed to initialize VFS: %v", err)
-		}
-
-		err := k.rootIPCNamespace.InitPosixQueues(ctx, &k.vfs, auth.CredentialsFromContext(ctx))
-		if err != nil {
-			return fmt.Errorf("failed to create mqfs filesystem: %v", err)
 		}
 
 		pipeFilesystem, err := pipefs.NewFilesystem(&k.vfs)
@@ -843,7 +837,7 @@ func (ctx *createProcessContext) Value(key interface{}) interface{} {
 		return ctx.args.PIDNamespace
 	case CtxUTSNamespace:
 		return ctx.args.UTSNamespace
-	case ipc.CtxIPCNamespace:
+	case CtxIPCNamespace:
 		ipcns := ctx.args.IPCNamespace
 		ipcns.IncRef()
 		return ipcns
@@ -1671,7 +1665,7 @@ func (ctx supervisorContext) Value(key interface{}) interface{} {
 		return ctx.k.tasks.Root
 	case CtxUTSNamespace:
 		return ctx.k.rootUTSNamespace
-	case ipc.CtxIPCNamespace:
+	case CtxIPCNamespace:
 		ipcns := ctx.k.rootIPCNamespace
 		ipcns.IncRef()
 		return ipcns

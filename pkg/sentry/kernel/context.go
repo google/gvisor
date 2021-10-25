@@ -16,7 +16,6 @@ package kernel
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/ipc"
 )
 
 // contextID is the kernel package's type for context.Context.Value keys.
@@ -38,6 +37,9 @@ const (
 
 	// CtxUTSNamespace is a Context.Value key for a UTSNamespace.
 	CtxUTSNamespace
+
+	// CtxIPCNamespace is a Context.Value key for a IPCNamespace.
+	CtxIPCNamespace
 )
 
 // ContextCanTrace returns true if ctx is permitted to trace t, in the same sense
@@ -80,7 +82,7 @@ func UTSNamespaceFromContext(ctx context.Context) *UTSNamespace {
 // or nil if there is no such IPC namespace. It takes a reference on the
 // namespace.
 func IPCNamespaceFromContext(ctx context.Context) *IPCNamespace {
-	if v := ctx.Value(ipc.CtxIPCNamespace); v != nil {
+	if v := ctx.Value(CtxIPCNamespace); v != nil {
 		return v.(*IPCNamespace)
 	}
 	return nil
