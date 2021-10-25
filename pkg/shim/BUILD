@@ -19,6 +19,7 @@ go_library(
         "//pkg/shim/proc",
         "//pkg/shim/runsc",
         "//pkg/shim/runtimeoptions",
+        "//pkg/shim/runtimeoptions/v14",
         "//pkg/shim/utils",
         "//runsc/specutils",
         "@com_github_burntsushi_toml//:go_default_library",

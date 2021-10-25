@@ -14,12 +14,16 @@
 
 syntax = "proto3";
 
-package cri.runtimeoptions.v1;
+package runtimeoptions.v1;
 
 // This is a version of the runtimeoptions CRI API that is vendored.
+// Source: cri/pkg/api/runtimeoptions/v1/api.proto
 //
 // Importing the full CRI package is a nightmare.
 message Options {
+  // TypeUrl specifies the type of the content inside the config file.
   string type_url = 1;
+  // ConfigPath specifies the filesystem location of the config file
+  // used by the runtime.
   string config_path = 2;
 }

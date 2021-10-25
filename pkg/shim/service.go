@@ -49,6 +49,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
+	"gvisor.dev/gvisor/pkg/shim/runtimeoptions/v14"
 
 	"gvisor.dev/gvisor/pkg/shim/proc"
 	"gvisor.dev/gvisor/pkg/shim/runsc"
@@ -344,7 +345,15 @@ func (s *service) Create(ctx context.Context, r *taskAPI.CreateTaskRequest) (*ta
 				// A config file in runtime root is not required.
 				path = ""
 			}
-		case *runtimeoptions.Options: // containerd 1.3.x+
+		case *runtimeoptions.Options: // containerd 1.5+
+			if o.ConfigPath == "" {
+				break
+			}
+			if o.TypeUrl != optionsType {
+				return nil, fmt.Errorf("unsupported option type %q", o.TypeUrl)
+			}
+			path = o.ConfigPath
+		case *v14.Options: // containerd 1.4-
 			if o.ConfigPath == "" {
 				break
 			}

@@ -66,6 +66,7 @@ global:
     exclude:
       # Generated: exempt all.
       - pkg/shim/runtimeoptions/runtimeoptions_cri.go
+      - pkg/shim/runtimeoptions/v14/runtimeoptions_cri.go
 analyzers:
   asmdecl:
     external: # Enabled.

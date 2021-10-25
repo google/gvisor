@@ -309,6 +309,7 @@ containerd-test-%: load-basic_alpine load-basic_python load-basic_busybox load-b
 containerd-tests: ## Runs all supported containerd version tests.
 containerd-tests: containerd-test-1.3.9
 containerd-tests: containerd-test-1.4.3
+containerd-tests: containerd-test-1.5.4
 
 ##
 ## Benchmarks.
