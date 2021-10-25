@@ -34,8 +34,6 @@ namespace gvisor {
 namespace testing {
 namespace {
 
-using ::testing::_;
-
 // PosixQueue is a RAII class used to automatically clean POSIX message queues.
 class PosixQueue {
  public:
@@ -124,8 +122,13 @@ PosixError MqClose(mqd_t fd) {
 // Test simple opening and closing of a message queue.
 TEST(MqTest, Open) {
   SKIP_IF(IsRunningWithVFS1());
-  EXPECT_THAT(MqOpen(O_RDWR | O_CREAT | O_EXCL, 0777, nullptr),
-              IsPosixErrorOkAndHolds(_));
+  ASSERT_NO_ERRNO(MqOpen(O_RDWR | O_CREAT | O_EXCL, 0777, nullptr));
+}
+
+TEST(MqTest, ModeWithFileType) {
+  SKIP_IF(IsRunningWithVFS1());
+  // S_IFIFO should be ignored.
+  ASSERT_NO_ERRNO(MqOpen(O_RDWR | O_CREAT | O_EXCL, 0777 | S_IFIFO, nullptr));
 }
 
 // Test mq_open(2) after mq_unlink(2).
