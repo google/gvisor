@@ -16,65 +16,34 @@
 //go:build go1.1
 // +build go1.1
 
-package runtimeoptions
+package v14
 
 import (
 	"fmt"
 	"io"
-	math_bits "math/bits"
 	"reflect"
 	"strings"
 
-	"github.com/gogo/protobuf/proto"
+	proto "github.com/gogo/protobuf/proto"
 )
 
 // This is a compile-time assertion to ensure that this generated file
 // is compatible with the proto package it is being compiled against.
 // A compilation error at this line likely means your copy of the
 // proto package needs to be updated.
-const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
+const _ = proto.GoGoProtoPackageIsVersion2 // please upgrade the proto package
 
 type Options struct {
 	// TypeUrl specifies the type of the content inside the config file.
 	TypeUrl string `protobuf:"bytes,1,opt,name=type_url,json=typeUrl,proto3" json:"type_url,omitempty"`
 	// ConfigPath specifies the filesystem location of the config file
 	// used by the runtime.
-	ConfigPath           string   `protobuf:"bytes,2,opt,name=config_path,json=configPath,proto3" json:"config_path,omitempty"`
-	XXX_NoUnkeyedLiteral struct{} `json:"-"`
-	XXX_sizecache        int32    `json:"-"`
+	ConfigPath string `protobuf:"bytes,2,opt,name=config_path,json=configPath,proto3" json:"config_path,omitempty"`
 }
 
-func (m *Options) Reset()      { *m = Options{} }
-func (*Options) ProtoMessage() {}
-func (*Options) Descriptor() ([]byte, []int) {
-	return fileDescriptor_7700dd27e3487aa6, []int{0}
-}
-func (m *Options) XXX_Unmarshal(b []byte) error {
-	return m.Unmarshal(b)
-}
-func (m *Options) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	if deterministic {
-		return xxx_messageInfo_Options.Marshal(b, m, deterministic)
-	} else {
-		b = b[:cap(b)]
-		n, err := m.MarshalToSizedBuffer(b)
-		if err != nil {
-			return nil, err
-		}
-		return b[:n], nil
-	}
-}
-func (m *Options) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_Options.Merge(m, src)
-}
-func (m *Options) XXX_Size() int {
-	return m.Size()
-}
-func (m *Options) XXX_DiscardUnknown() {
-	xxx_messageInfo_Options.DiscardUnknown(m)
-}
-
-var xxx_messageInfo_Options proto.InternalMessageInfo
+func (m *Options) Reset()                    { *m = Options{} }
+func (*Options) ProtoMessage()               {}
+func (*Options) Descriptor() ([]byte, []int) { return fileDescriptorApi, []int{0} }
 
 func (m *Options) GetTypeUrl() string {
 	if m != nil {
@@ -91,35 +60,13 @@ func (m *Options) GetConfigPath() string {
 }
 
 func init() {
-	proto.RegisterType((*Options)(nil), "runtimeoptions.v1.Options")
-}
-
-func init() {
-	proto.RegisterFile("github.com/containerd/containerd/pkg/runtimeoptions/v1/api.proto", fileDescriptor_7700dd27e3487aa6)
-}
-
-var fileDescriptor_7700dd27e3487aa6 = []byte{
-	// 214 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0x72, 0x48, 0xcf, 0x2c, 0xc9,
-	0x28, 0x4d, 0xd2, 0x4b, 0xce, 0xcf, 0xd5, 0x4f, 0xce, 0xcf, 0x2b, 0x49, 0xcc, 0xcc, 0x4b, 0x2d,
-	0x4a, 0x41, 0x66, 0x16, 0x64, 0xa7, 0xeb, 0x17, 0x95, 0xe6, 0x95, 0x64, 0xe6, 0xa6, 0xe6, 0x17,
-	0x94, 0x64, 0xe6, 0xe7, 0x15, 0xeb, 0x97, 0x19, 0xea, 0x27, 0x16, 0x64, 0xea, 0x15, 0x14, 0xe5,
-	0x97, 0xe4, 0x0b, 0x09, 0xa2, 0x4a, 0xea, 0x95, 0x19, 0x4a, 0xe9, 0x22, 0x19, 0x9a, 0x9e, 0x9f,
-	0x9e, 0xaf, 0x0f, 0x56, 0x99, 0x54, 0x9a, 0x06, 0xe6, 0x81, 0x39, 0x60, 0x16, 0xc4, 0x04, 0x25,
-	0x57, 0x2e, 0x76, 0x7f, 0x88, 0x66, 0x21, 0x49, 0x2e, 0x8e, 0x92, 0xca, 0x82, 0xd4, 0xf8, 0xd2,
-	0xa2, 0x1c, 0x09, 0x46, 0x05, 0x46, 0x0d, 0xce, 0x20, 0x76, 0x10, 0x3f, 0xb4, 0x28, 0x47, 0x48,
-	0x9e, 0x8b, 0x3b, 0x39, 0x3f, 0x2f, 0x2d, 0x33, 0x3d, 0xbe, 0x20, 0xb1, 0x24, 0x43, 0x82, 0x09,
-	0x2c, 0xcb, 0x05, 0x11, 0x0a, 0x48, 0x2c, 0xc9, 0x70, 0x4a, 0x3b, 0xf1, 0x50, 0x8e, 0xf1, 0xc6,
-	0x43, 0x39, 0x86, 0x86, 0x47, 0x72, 0x8c, 0x27, 0x1e, 0xc9, 0x31, 0x5e, 0x78, 0x24, 0xc7, 0xf8,
-	0xe0, 0x91, 0x1c, 0xe3, 0x84, 0xc7, 0x72, 0x0c, 0x51, 0x1e, 0xe4, 0x79, 0xd4, 0x1a, 0x55, 0x24,
-	0xbe, 0xcc, 0x30, 0x89, 0x0d, 0xec, 0x6a, 0x63, 0x40, 0x00, 0x00, 0x00, 0xff, 0xff, 0x91, 0x3c,
-	0x3e, 0x79, 0x3b, 0x01, 0x00, 0x00,
+	proto.RegisterType((*Options)(nil), "cri.runtimeoptions.v1.Options")
 }
 
 func (m *Options) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
-	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	n, err := m.MarshalTo(dAtA)
 	if err != nil {
 		return nil, err
 	}
@@ -127,47 +74,36 @@ func (m *Options) Marshal() (dAtA []byte, err error) {
 }
 
 func (m *Options) MarshalTo(dAtA []byte) (int, error) {
-	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
-}
-
-func (m *Options) MarshalToSizedBuffer(dAtA []byte) (int, error) {
-	i := len(dAtA)
+	var i int
 	_ = i
 	var l int
 	_ = l
-	if len(m.ConfigPath) > 0 {
-		i -= len(m.ConfigPath)
-		copy(dAtA[i:], m.ConfigPath)
-		i = encodeVarintApi(dAtA, i, uint64(len(m.ConfigPath)))
-		i--
-		dAtA[i] = 0x12
-	}
 	if len(m.TypeUrl) > 0 {
-		i -= len(m.TypeUrl)
-		copy(dAtA[i:], m.TypeUrl)
-		i = encodeVarintApi(dAtA, i, uint64(len(m.TypeUrl)))
-		i--
 		dAtA[i] = 0xa
+		i++
+		i = encodeVarintApi(dAtA, i, uint64(len(m.TypeUrl)))
+		i += copy(dAtA[i:], m.TypeUrl)
 	}
-	return len(dAtA) - i, nil
+	if len(m.ConfigPath) > 0 {
+		dAtA[i] = 0x12
+		i++
+		i = encodeVarintApi(dAtA, i, uint64(len(m.ConfigPath)))
+		i += copy(dAtA[i:], m.ConfigPath)
+	}
+	return i, nil
 }
 
 func encodeVarintApi(dAtA []byte, offset int, v uint64) int {
-	offset -= sovApi(v)
-	base := offset
 	for v >= 1<<7 {
 		dAtA[offset] = uint8(v&0x7f | 0x80)
 		v >>= 7
 		offset++
 	}
 	dAtA[offset] = uint8(v)
-	return base
+	return offset + 1
 }
+
 func (m *Options) Size() (n int) {
-	if m == nil {
-		return 0
-	}
 	var l int
 	_ = l
 	l = len(m.TypeUrl)
@@ -182,11 +118,20 @@ func (m *Options) Size() (n int) {
 }
 
 func sovApi(x uint64) (n int) {
-	return (math_bits.Len64(x|1) + 6) / 7
+	for {
+		n++
+		x >>= 7
+		if x == 0 {
+			break
+		}
+	}
+	return n
 }
+
 func sozApi(x uint64) (n int) {
 	return sovApi(uint64((x << 1) ^ uint64((int64(x) >> 63))))
 }
+
 func (this *Options) String() string {
 	if this == nil {
 		return "nil"
@@ -198,6 +143,7 @@ func (this *Options) String() string {
 	}, "")
 	return s
 }
+
 func valueToStringApi(v interface{}) string {
 	rv := reflect.ValueOf(v)
 	if rv.IsNil() {
@@ -206,6 +152,7 @@ func valueToStringApi(v interface{}) string {
 	pv := reflect.Indirect(rv).Interface()
 	return fmt.Sprintf("*%v", pv)
 }
+
 func (m *Options) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
@@ -221,7 +168,7 @@ func (m *Options) Unmarshal(dAtA []byte) error {
 			}
 			b := dAtA[iNdEx]
 			iNdEx++
-			wire |= uint64(b&0x7F) << shift
+			wire |= (uint64(b) & 0x7F) << shift
 			if b < 0x80 {
 				break
 			}
@@ -249,7 +196,7 @@ func (m *Options) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				stringLen |= uint64(b&0x7F) << shift
+				stringLen |= (uint64(b) & 0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -259,9 +206,6 @@ func (m *Options) Unmarshal(dAtA []byte) error {
 				return ErrInvalidLengthApi
 			}
 			postIndex := iNdEx + intStringLen
-			if postIndex < 0 {
-				return ErrInvalidLengthApi
-			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
@@ -281,7 +225,7 @@ func (m *Options) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				stringLen |= uint64(b&0x7F) << shift
+				stringLen |= (uint64(b) & 0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -291,9 +235,6 @@ func (m *Options) Unmarshal(dAtA []byte) error {
 				return ErrInvalidLengthApi
 			}
 			postIndex := iNdEx + intStringLen
-			if postIndex < 0 {
-				return ErrInvalidLengthApi
-			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
@@ -305,7 +246,7 @@ func (m *Options) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
 				return ErrInvalidLengthApi
 			}
 			if (iNdEx + skippy) > l {
@@ -320,10 +261,10 @@ func (m *Options) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
+
 func skipApi(dAtA []byte) (n int, err error) {
 	l := len(dAtA)
 	iNdEx := 0
-	depth := 0
 	for iNdEx < l {
 		var wire uint64
 		for shift := uint(0); ; shift += 7 {
@@ -355,8 +296,10 @@ func skipApi(dAtA []byte) (n int, err error) {
 					break
 				}
 			}
+			return iNdEx, nil
 		case 1:
 			iNdEx += 8
+			return iNdEx, nil
 		case 2:
 			var length int
 			for shift := uint(0); ; shift += 7 {
@@ -373,34 +316,71 @@ func skipApi(dAtA []byte) (n int, err error) {
 					break
 				}
 			}
+			iNdEx += length
 			if length < 0 {
 				return 0, ErrInvalidLengthApi
 			}
-			iNdEx += length
+			return iNdEx, nil
 		case 3:
-			depth++
-		case 4:
-			if depth == 0 {
-				return 0, ErrUnexpectedEndOfGroupApi
+			for {
+				var innerWire uint64
+				var start int = iNdEx
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return 0, ErrIntOverflowApi
+					}
+					if iNdEx >= l {
+						return 0, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					innerWire |= (uint64(b) & 0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				innerWireType := int(innerWire & 0x7)
+				if innerWireType == 4 {
+					break
+				}
+				next, err := skipApi(dAtA[start:])
+				if err != nil {
+					return 0, err
+				}
+				iNdEx = start + next
 			}
-			depth--
+			return iNdEx, nil
+		case 4:
+			return iNdEx, nil
 		case 5:
 			iNdEx += 4
+			return iNdEx, nil
 		default:
 			return 0, fmt.Errorf("proto: illegal wireType %d", wireType)
 		}
-		if iNdEx < 0 {
-			return 0, ErrInvalidLengthApi
-		}
-		if depth == 0 {
-			return iNdEx, nil
-		}
 	}
-	return 0, io.ErrUnexpectedEOF
+	panic("unreachable")
 }
 
 var (
-	ErrInvalidLengthApi        = fmt.Errorf("proto: negative length found during unmarshaling")
-	ErrIntOverflowApi          = fmt.Errorf("proto: integer overflow")
-	ErrUnexpectedEndOfGroupApi = fmt.Errorf("proto: unexpected end of group")
+	ErrInvalidLengthApi = fmt.Errorf("proto: negative length found during unmarshaling")
+	ErrIntOverflowApi   = fmt.Errorf("proto: integer overflow")
 )
+
+func init() { proto.RegisterFile("api.proto", fileDescriptorApi) }
+
+var fileDescriptorApi = []byte{
+	// 183 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0xe2, 0x4c, 0x2c, 0xc8, 0xd4,
+	0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17, 0x12, 0x4d, 0x2e, 0xca, 0xd4, 0x2b, 0x2a, 0xcd, 0x2b, 0xc9,
+	0xcc, 0x4d, 0xcd, 0x2f, 0x28, 0xc9, 0xcc, 0xcf, 0x2b, 0xd6, 0x2b, 0x33, 0x94, 0xd2, 0x4d, 0xcf,
+	0x2c, 0xc9, 0x28, 0x4d, 0xd2, 0x4b, 0xce, 0xcf, 0xd5, 0x4f, 0xcf, 0x4f, 0xcf, 0xd7, 0x07, 0xab,
+	0x4e, 0x2a, 0x4d, 0x03, 0xf3, 0xc0, 0x1c, 0x30, 0x0b, 0x62, 0x8a, 0x92, 0x2b, 0x17, 0xbb, 0x3f,
+	0x44, 0xb3, 0x90, 0x24, 0x17, 0x47, 0x49, 0x65, 0x41, 0x6a, 0x7c, 0x69, 0x51, 0x8e, 0x04, 0xa3,
+	0x02, 0xa3, 0x06, 0x67, 0x10, 0x3b, 0x88, 0x1f, 0x5a, 0x94, 0x23, 0x24, 0xcf, 0xc5, 0x9d, 0x9c,
+	0x9f, 0x97, 0x96, 0x99, 0x1e, 0x5f, 0x90, 0x58, 0x92, 0x21, 0xc1, 0x04, 0x96, 0xe5, 0x82, 0x08,
+	0x05, 0x24, 0x96, 0x64, 0x38, 0xc9, 0x9c, 0x78, 0x28, 0xc7, 0x78, 0xe3, 0xa1, 0x1c, 0x43, 0xc3,
+	0x23, 0x39, 0xc6, 0x13, 0x8f, 0xe4, 0x18, 0x2f, 0x3c, 0x92, 0x63, 0x7c, 0xf0, 0x48, 0x8e, 0x71,
+	0xc2, 0x63, 0x39, 0x86, 0x24, 0x36, 0xb0, 0x5d, 0xc6, 0x80, 0x00, 0x00, 0x00, 0xff, 0xff, 0x07,
+	0x00, 0xf2, 0x18, 0xbe, 0x00, 0x00, 0x00,
+}
