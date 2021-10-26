@@ -34,17 +34,19 @@ TEST(StatfsTest, CannotStatBadPath) {
   EXPECT_THAT(statfs(temp_file.c_str(), &st), SyscallFailsWithErrno(ENOENT));
 }
 
-TEST(StatfsTest, InternalTmpfs) {
+TEST(StatfsTest, TempPath) {
   auto temp_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
 
   struct statfs st;
   EXPECT_THAT(statfs(temp_file.path().c_str(), &st), SyscallSucceeds());
+  EXPECT_GT(st.f_namelen, 0);
 }
 
 TEST(StatfsTest, InternalDevShm) {
   struct statfs st;
   EXPECT_THAT(statfs("/dev/shm", &st), SyscallSucceeds());
 
+  EXPECT_GT(st.f_namelen, 0);
   // This assumes that /dev/shm is tmpfs.
   // Note: We could be an overlay on some configurations.
   EXPECT_TRUE(st.f_type == TMPFS_MAGIC || st.f_type == OVERLAYFS_SUPER_MAGIC);
@@ -55,13 +57,14 @@ TEST(FstatfsTest, CannotStatBadFd) {
   EXPECT_THAT(fstatfs(-1, &st), SyscallFailsWithErrno(EBADF));
 }
 
-TEST(FstatfsTest, InternalTmpfs) {
+TEST(FstatfsTest, TempPath) {
   auto temp_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(temp_file.path(), O_RDONLY));
 
   struct statfs st;
   EXPECT_THAT(fstatfs(fd.get(), &st), SyscallSucceeds());
+  EXPECT_GT(st.f_namelen, 0);
 }
 
 TEST(FstatfsTest, CanStatFileWithOpath) {
@@ -81,6 +84,10 @@ TEST(FstatfsTest, InternalDevShm) {
 
   struct statfs st;
   EXPECT_THAT(fstatfs(fd.get(), &st), SyscallSucceeds());
+  EXPECT_GT(st.f_namelen, 0);
+  // This assumes that /dev/shm is tmpfs.
+  // Note: We could be an overlay on some configurations.
+  EXPECT_TRUE(st.f_type == TMPFS_MAGIC || st.f_type == OVERLAYFS_SUPER_MAGIC);
 }
 
 }  // namespace
