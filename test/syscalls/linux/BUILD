@@ -4209,6 +4209,7 @@ cc_binary(
     linkstatic = 1,
     deps = [
         "//test/util:capability_util",
+        "//test/util:cleanup",
         "//test/util:fs_util",
         "//test/util:mount_util",
         "//test/util:posix_error",

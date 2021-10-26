@@ -34,7 +34,6 @@ type rootInode struct {
 	kernfs.InodeNotSymlink
 	kernfs.InodeTemporary
 	kernfs.OrderedChildren
-	implStatFS
 
 	locks vfs.FileLocks
 }
@@ -77,13 +76,7 @@ func (*rootInode) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, v
 	return linuxerr.EPERM
 }
 
-// implStatFS provides an implementation of kernfs.Inode.StatFS for message
-// queues to be embedded in inodes.
-//
-// +stateify savable
-type implStatFS struct{}
-
 // StatFS implements kernfs.Inode.StatFS.
-func (*implStatFS) StatFS(context.Context, *vfs.Filesystem) (linux.Statfs, error) {
+func (*rootInode) StatFS(context.Context, *vfs.Filesystem) (linux.Statfs, error) {
 	return vfs.GenericStatFS(linux.MQUEUE_MAGIC), nil
 }

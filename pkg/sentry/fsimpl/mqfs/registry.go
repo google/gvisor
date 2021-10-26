@@ -57,16 +57,19 @@ func NewRegistryImpl(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *
 		return nil, err
 	}
 
-	var dentry kernfs.Dentry
 	fs := &filesystem{
 		devMinor: devMinor,
-		root:     &dentry,
 	}
 	fs.VFSFilesystem().Init(vfsObj, &FilesystemType{}, fs)
 	vfsfs := fs.VFSFilesystem()
+	// NewDisconnectedMount will obtain a ref on dentry and vfsfs which is
+	// transferred to mount. vfsfs was initiated with 1 ref already. So get rid
+	// of the extra ref.
+	defer vfsfs.DecRef(ctx)
 
+	// dentry is initialized with 1 ref which is transferred to fs.
+	var dentry kernfs.Dentry
 	dentry.InitRoot(&fs.Filesystem, fs.newRootInode(ctx, creds))
-	defer vfsfs.DecRef(ctx) // NewDisconnectedMount will obtain a ref on success.
 
 	mount, err := vfsObj.NewDisconnectedMount(vfsfs, dentry.VFSDentry(), &vfs.MountOptions{})
 	if err != nil {
@@ -82,7 +85,7 @@ func NewRegistryImpl(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *
 
 // Get implements mq.RegistryImpl.Get.
 func (r *RegistryImpl) Get(ctx context.Context, name string, access mq.AccessType, block bool, flags uint32) (*vfs.FileDescription, bool, error) {
-	inode, err := r.lookup(ctx, name)
+	inode, err := r.root.Inode().(*rootInode).Lookup(ctx, name)
 	if err != nil {
 		return nil, false, nil
 	}
@@ -120,7 +123,7 @@ func (r *RegistryImpl) Unlink(ctx context.Context, name string) error {
 	}
 
 	root := r.root.Inode().(*rootInode)
-	inode, err := r.lookup(ctx, name)
+	inode, err := root.Lookup(ctx, name)
 	if err != nil {
 		return err
 	}
@@ -131,16 +134,6 @@ func (r *RegistryImpl) Unlink(ctx context.Context, name string) error {
 func (r *RegistryImpl) Destroy(ctx context.Context) {
 	r.root.DecRef(ctx)
 	r.mount.DecRef(ctx)
-}
-
-// lookup retreives a kernfs.Inode using a name.
-func (r *RegistryImpl) lookup(ctx context.Context, name string) (kernfs.Inode, error) {
-	inode := r.root.Inode().(*rootInode)
-	lookup, err := inode.Lookup(ctx, name)
-	if err != nil {
-		return nil, err
-	}
-	return lookup, nil
 }
 
 // newFD returns a new file description created using the given queue and inode.
