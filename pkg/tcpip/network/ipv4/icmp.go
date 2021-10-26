@@ -572,6 +572,10 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip
 		// if problems arise this could be reversed. It was judged less of a breach
 		// of protocol to not respond to unknown non-error packets than to respond
 		// to unknown error packets so we take the first approach.
+		if len(transportHeader) < header.ICMPv4MinimumSize {
+			// The packet is malformed.
+			return nil
+		}
 		switch header.ICMPv4(transportHeader).Type() {
 		case
 			header.ICMPv4EchoReply,
