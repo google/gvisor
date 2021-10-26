@@ -411,11 +411,7 @@ func New(args Args) (*Loader, error) {
 			return nil, fmt.Errorf("failed to create hostfs filesystem: %w", err)
 		}
 		defer hostFilesystem.DecRef(k.SupervisorContext())
-		hostMount, err := k.VFS().NewDisconnectedMount(hostFilesystem, nil, &vfs.MountOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("failed to create hostfs mount: %w", err)
-		}
-		k.SetHostMount(hostMount)
+		k.SetHostMount(k.VFS().NewDisconnectedMount(hostFilesystem, nil, &vfs.MountOptions{}))
 	}
 
 	eid := execID{cid: args.ID}

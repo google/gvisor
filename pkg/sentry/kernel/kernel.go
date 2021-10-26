@@ -418,10 +418,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 			return fmt.Errorf("failed to create pipefs filesystem: %v", err)
 		}
 		defer pipeFilesystem.DecRef(ctx)
-		pipeMount, err := k.vfs.NewDisconnectedMount(pipeFilesystem, nil, &vfs.MountOptions{})
-		if err != nil {
-			return fmt.Errorf("failed to create pipefs mount: %v", err)
-		}
+		pipeMount := k.vfs.NewDisconnectedMount(pipeFilesystem, nil, &vfs.MountOptions{})
 		k.pipeMount = pipeMount
 
 		tmpfsFilesystem, tmpfsRoot, err := tmpfs.NewFilesystem(ctx, &k.vfs, auth.NewRootCredentials(k.rootUserNamespace))
@@ -430,22 +427,14 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 		}
 		defer tmpfsFilesystem.DecRef(ctx)
 		defer tmpfsRoot.DecRef(ctx)
-		shmMount, err := k.vfs.NewDisconnectedMount(tmpfsFilesystem, tmpfsRoot, &vfs.MountOptions{})
-		if err != nil {
-			return fmt.Errorf("failed to create tmpfs mount: %v", err)
-		}
-		k.shmMount = shmMount
+		k.shmMount = k.vfs.NewDisconnectedMount(tmpfsFilesystem, tmpfsRoot, &vfs.MountOptions{})
 
 		socketFilesystem, err := sockfs.NewFilesystem(&k.vfs)
 		if err != nil {
 			return fmt.Errorf("failed to create sockfs filesystem: %v", err)
 		}
 		defer socketFilesystem.DecRef(ctx)
-		socketMount, err := k.vfs.NewDisconnectedMount(socketFilesystem, nil, &vfs.MountOptions{})
-		if err != nil {
-			return fmt.Errorf("failed to create sockfs mount: %v", err)
-		}
-		k.socketMount = socketMount
+		k.socketMount = k.vfs.NewDisconnectedMount(socketFilesystem, nil, &vfs.MountOptions{})
 
 		k.socketsVFS2 = make(map[*vfs.FileDescription]*SocketRecord)
 

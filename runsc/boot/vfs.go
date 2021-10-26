@@ -769,10 +769,7 @@ func (c *containerMounter) mountSharedSubmountVFS2(ctx context.Context, conf *co
 	if err != nil {
 		return nil, err
 	}
-	newMnt, err := c.k.VFS().NewDisconnectedMount(source.vfsMount.Filesystem(), source.vfsMount.Root(), opts)
-	if err != nil {
-		return nil, err
-	}
+	newMnt := c.k.VFS().NewDisconnectedMount(source.vfsMount.Filesystem(), source.vfsMount.Root(), opts)
 	defer newMnt.DecRef(ctx)
 
 	root := mns.Root()

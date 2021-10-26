@@ -150,12 +150,7 @@ func (vfs *VirtualFilesystem) Init(ctx context.Context) error {
 	}
 	anonfs.vfsfs.Init(vfs, &anonFilesystemType{}, &anonfs)
 	defer anonfs.vfsfs.DecRef(ctx)
-	anonMount, err := vfs.NewDisconnectedMount(&anonfs.vfsfs, nil, &MountOptions{})
-	if err != nil {
-		// We should not be passing any MountOptions that would cause
-		// construction of this mount to fail.
-		panic(fmt.Sprintf("VirtualFilesystem.Init: anonfs mount failed: %v", err))
-	}
+	anonMount := vfs.NewDisconnectedMount(&anonfs.vfsfs, nil, &MountOptions{})
 	vfs.anonMount = anonMount
 
 	return nil
