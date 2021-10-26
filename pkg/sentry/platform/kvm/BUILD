@@ -1,5 +1,6 @@
-load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools:defs.bzl", "arch_genrule", "go_library", "go_test", "select_arch")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
+load("//tools/nogo:defs.bzl", "nogo_facts")
 
 package(licenses = ["notice"])
 
@@ -14,6 +15,37 @@ go_template_instance(
     },
 )
 
+nogo_facts(
+    name = "bluepill_impl",
+    srcs = [
+        "//pkg/ring0:aarch64.go",
+        "//pkg/ring0:defs.go",
+        "//pkg/ring0:defs_amd64.go",
+        "//pkg/ring0:defs_arm64.go",
+        "//pkg/ring0:entry_template.go",
+        "//pkg/ring0:x86.go",
+    ],
+    output = "bluepill_impl.s",
+    template = select_arch(
+        amd64 = "bluepill_amd64.s",
+        arm64 = "bluepill_arm64.s",
+    ),
+    deps = [
+        "//pkg/abi/linux",
+        "//pkg/cpuid",
+        "//pkg/hostarch",
+        "//pkg/ring0/pagetables",
+        "//pkg/sentry/arch",
+        "//pkg/sentry/arch/fpu",
+    ],
+)
+
+arch_genrule(
+    name = "bluepill_impl_arch",
+    src = ":bluepill_impl",
+    template = "bluepill_impl_%s.s",
+)
+
 go_library(
     name = "kvm",
     srcs = [
@@ -26,10 +58,8 @@ go_library(
         "bluepill_amd64.go",
         "bluepill_amd64_unsafe.go",
         "bluepill_arm64.go",
-        "bluepill_arm64.s",
         "bluepill_arm64_unsafe.go",
         "bluepill_fault.go",
-        "bluepill_impl_amd64.s",
         "bluepill_unsafe.go",
         "context.go",
         "filters_amd64.go",
@@ -51,6 +81,7 @@ go_library(
         "physical_map_amd64.go",
         "physical_map_arm64.go",
         "virtual_map.go",
+        ":bluepill_impl_arch",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
@@ -112,12 +143,4 @@ go_test(
         "//pkg/sentry/time",
         "@org_golang_x_sys//unix:go_default_library",
     ],
-)
-
-genrule(
-    name = "bluepill_impl_amd64",
-    srcs = ["bluepill_amd64.s"],
-    outs = ["bluepill_impl_amd64.s"],
-    cmd = "(echo -e '// build +amd64\\n' && $(location //pkg/ring0/gen_offsets) && cat $(SRCS)) > $@",
-    tools = ["//pkg/ring0/gen_offsets"],
 )

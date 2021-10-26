@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Binary gen_offsets is a helper for generating offset headers.
+// Binary nogo performs static analysis.
 package main
 
 import (
-	"os"
+	"gvisor.dev/gvisor/tools/nogo/cli"
 )
 
 func main() {
-	Emit(os.Stdout)
+	cli.Main()
 }

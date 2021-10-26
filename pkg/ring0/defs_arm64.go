@@ -137,6 +137,3 @@ type SwitchArchOpts struct {
 	// KernelASID indicates that the kernel ASID to be used on return,
 	KernelASID uint16
 }
-
-func init() {
-}

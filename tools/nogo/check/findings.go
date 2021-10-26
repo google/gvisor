@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package nogo
+package check
 
 import (
 	"encoding/gob"
@@ -27,7 +27,7 @@ import (
 
 // Finding is a single finding.
 type Finding struct {
-	Category AnalyzerName
+	Category string
 	Position token.Position
 	Message  string
 }

@@ -15,9 +15,98 @@
 #include "funcdata.h"
 #include "textflag.h"
 
-// NB: Offsets are programatically generated (see BUILD).
-//
-// This file is concatenated with the definitions.
+{{ with .CPU }}
+#define CPU_SELF             {{ .self.Offset }}
+#define CPU_REGISTERS        {{ .registers.Offset }}
+{{ end }}
+{{ with .CPUArchState }}
+#define CPU_STACK_TOP        ({{ .stack.Offset }} + {{ .stack.Size }})
+#define CPU_ERROR_CODE       {{ .errorCode.Offset }}
+#define CPU_ERROR_TYPE       {{ .errorType.Offset }}
+#define CPU_FAULT_ADDR       {{ .faultAddr.Offset }}
+#define CPU_FPSTATE_EL0      {{ .el0Fp.Offset }}
+#define CPU_TTBR0_KVM	     {{ .ttbr0Kvm.Offset }}
+#define CPU_TTBR0_APP        {{ .ttbr0App.Offset }}
+#define CPU_VECTOR_CODE      {{ .vecCode.Offset }}
+#define CPU_APP_ADDR         {{ .appAddr.Offset }}
+#define CPU_LAZY_VFP         {{ .lazyVFP.Offset }}
+#define CPU_APP_ASID         {{ .appASID.Offset }}
+{{ end }}
+
+// Bits.
+#define _KERNEL_FLAGS {{ .KernelFlagsSet.Value }}
+
+// Vectors.
+#define El1Sync                 {{ .El1Sync.Value }}
+#define El1Irq                  {{ .El1Irq.Value }}
+#define El1Fiq                  {{ .El1Fiq.Value }}
+#define El1Err                  {{ .El1Err.Value }}
+#define El0Sync                 {{ .El0Sync.Value }}
+#define El0Irq                  {{ .El0Irq.Value }}
+#define El0Fiq                  {{ .El0Fiq.Value }}
+#define El0Err                  {{ .El0Err.Value }}
+#define El1SyncDa               {{ .El1SyncDa.Value }}
+#define El1SyncIa               {{ .El1SyncIa.Value }}
+#define El1SyncSpPc             {{ .El1SyncSpPc.Value }}
+#define El1SyncUndef            {{ .El1SyncUndef.Value }}
+#define El1SyncDbg              {{ .El1SyncDbg.Value }}
+#define El1SyncInv              {{ .El1SyncInv.Value }}
+#define El0SyncSVC              {{ .El0SyncSVC.Value }}
+#define El0SyncDa               {{ .El0SyncDa.Value }}
+#define El0SyncIa               {{ .El0SyncIa.Value }}
+#define El0SyncFpsimdAcc        {{ .El0SyncFpsimdAcc.Value }}
+#define El0SyncSveAcc           {{ .El0SyncSveAcc.Value }}
+#define El0SyncFpsimdExc        {{ .El0SyncFpsimdExc.Value }}
+#define El0SyncSys              {{ .El0SyncSys.Value }}
+#define El0SyncSpPc             {{ .El0SyncSpPc.Value }}
+#define El0SyncUndef            {{ .El0SyncUndef.Value }}
+#define El0SyncDbg              {{ .El0SyncDbg.Value }}
+#define El0SyncWfx              {{ .El0SyncWfx.Value }}
+#define El0SyncInv              {{ .El0SyncInv.Value }}
+#define El0ErrNMI               {{ .El0ErrNMI.Value }}
+#define PageFault               {{ .PageFault.Value }}
+#define Syscall                 {{ .Syscall.Value }}
+#define VirtualizationException {{ .VirtualizationException.Value }}
+
+{{ with .import.linux.PtraceRegs }}
+#define PTRACE_R0       ({{ .Regs.Offset }} + 0*8)
+#define PTRACE_R1       ({{ .Regs.Offset }} + 1*8)
+#define PTRACE_R2       ({{ .Regs.Offset }} + 2*8)
+#define PTRACE_R3       ({{ .Regs.Offset }} + 3*8)
+#define PTRACE_R4       ({{ .Regs.Offset }} + 4*8)
+#define PTRACE_R5       ({{ .Regs.Offset }} + 5*8)
+#define PTRACE_R6       ({{ .Regs.Offset }} + 6*8)
+#define PTRACE_R7       ({{ .Regs.Offset }} + 7*8)
+#define PTRACE_R8       ({{ .Regs.Offset }} + 8*8)
+#define PTRACE_R9       ({{ .Regs.Offset }} + 9*8)
+#define PTRACE_R10      ({{ .Regs.Offset }} + 10*8)
+#define PTRACE_R11      ({{ .Regs.Offset }} + 11*8)
+#define PTRACE_R12      ({{ .Regs.Offset }} + 12*8)
+#define PTRACE_R13      ({{ .Regs.Offset }} + 13*8)
+#define PTRACE_R14      ({{ .Regs.Offset }} + 14*8)
+#define PTRACE_R15      ({{ .Regs.Offset }} + 15*8)
+#define PTRACE_R16      ({{ .Regs.Offset }} + 16*8)
+#define PTRACE_R17      ({{ .Regs.Offset }} + 17*8)
+#define PTRACE_R18      ({{ .Regs.Offset }} + 18*8)
+#define PTRACE_R19      ({{ .Regs.Offset }} + 19*8)
+#define PTRACE_R20      ({{ .Regs.Offset }} + 20*8)
+#define PTRACE_R21      ({{ .Regs.Offset }} + 21*8)
+#define PTRACE_R22      ({{ .Regs.Offset }} + 22*8)
+#define PTRACE_R23      ({{ .Regs.Offset }} + 23*8)
+#define PTRACE_R24      ({{ .Regs.Offset }} + 24*8)
+#define PTRACE_R25      ({{ .Regs.Offset }} + 25*8)
+#define PTRACE_R26      ({{ .Regs.Offset }} + 26*8)
+#define PTRACE_R27      ({{ .Regs.Offset }} + 27*8)
+#define PTRACE_R28      ({{ .Regs.Offset }} + 28*8)
+#define PTRACE_R29      ({{ .Regs.Offset }} + 29*8)
+#define PTRACE_R30      ({{ .Regs.Offset }} + 30*8)
+#define PTRACE_SP       {{ .Sp.Offset }}
+#define PTRACE_PC       {{ .Pc.Offset }}
+#define PTRACE_PSTATE   {{ .Pstate.Offset }}
+{{ end }}
+{{ with .import.arch.Registers }}
+#define PTRACE_TLS      {{ .TPIDR_EL0.Offset }}
+{{ end }}
 
 // Saves a register set.
 //

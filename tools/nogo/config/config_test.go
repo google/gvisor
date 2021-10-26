@@ -11,11 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.package nogo
-package nogo
+
+package config
 
 import (
 	"go/token"
 	"testing"
+
+	"gvisor.dev/gvisor/tools/nogo/check"
 )
 
 // TestShouldReport validates the suppression behavior of Config.ShouldReport.
@@ -50,7 +53,7 @@ func TestShouldReport(t *testing.T) {
 			// Omitting default-disabled-omitted-from-global here
 			// has no effect on configuration below.
 		},
-		Analyzers: map[AnalyzerName]AnalyzerConfig{
+		Analyzers: map[string]AnalyzerConfig{
 			"analyzer-suppressions": AnalyzerConfig{
 				// Suppress some.
 				"default-enabled": &ItemConfig{
@@ -73,12 +76,12 @@ func TestShouldReport(t *testing.T) {
 
 	cases := []struct {
 		name    string
-		finding Finding
+		finding check.Finding
 		want    bool
 	}{
 		{
 			name: "enabled",
-			finding: Finding{
+			finding: check.Finding{
 				Category: "foo",
 				Position: token.Position{
 					Filename: "default-enabled/file.go",
@@ -92,7 +95,7 @@ func TestShouldReport(t *testing.T) {
 		},
 		{
 			name: "ungrouped",
-			finding: Finding{
+			finding: check.Finding{
 				Category: "foo",
 				Position: token.Position{
 					Filename: "ungrouped/file.go",
@@ -106,7 +109,7 @@ func TestShouldReport(t *testing.T) {
 		},
 		{
 			name: "suppressed",
-			finding: Finding{
+			finding: check.Finding{
 				Category: "foo",
 				Position: token.Position{
 					Filename: "default-enabled/file.go",
@@ -120,7 +123,7 @@ func TestShouldReport(t *testing.T) {
 		},
 		{
 			name: "excluded",
-			finding: Finding{
+			finding: check.Finding{
 				Category: "foo",
 				Position: token.Position{
 					Filename: "default-enabled/excluded.go",
@@ -134,7 +137,7 @@ func TestShouldReport(t *testing.T) {
 		},
 		{
 			name: "disabled",
-			finding: Finding{
+			finding: check.Finding{
 				Category: "foo",
 				Position: token.Position{
 					Filename: "default-disabled/file.go",
@@ -148,7 +151,7 @@ func TestShouldReport(t *testing.T) {
 		},
 		{
 			name: "analyzer suppressed",
-			finding: Finding{
+			finding: check.Finding{
 				Category: "analyzer-suppressions",
 				Position: token.Position{
 					Filename: "default-enabled/file.go",
@@ -162,7 +165,7 @@ func TestShouldReport(t *testing.T) {
 		},
 		{
 			name: "analyzer suppressed not global",
-			finding: Finding{
+			finding: check.Finding{
 				// Doesn't apply outside of analyzer-suppressions.
 				Category: "foo",
 				Position: token.Position{
@@ -177,7 +180,7 @@ func TestShouldReport(t *testing.T) {
 		},
 		{
 			name: "analyzer suppressed grouped",
-			finding: Finding{
+			finding: check.Finding{
 				Category: "analyzer-suppressions",
 				Position: token.Position{
 					// Doesn't apply outside of default-enabled.
@@ -192,7 +195,7 @@ func TestShouldReport(t *testing.T) {
 		},
 		{
 			name: "analyzer excluded",
-			finding: Finding{
+			finding: check.Finding{
 				Category: "analyzer-suppressions",
 				Position: token.Position{
 					Filename: "default-enabled/limited-exclude.go",
@@ -206,7 +209,7 @@ func TestShouldReport(t *testing.T) {
 		},
 		{
 			name: "analyzer excluded not global",
-			finding: Finding{
+			finding: check.Finding{
 				// Doesn't apply outside of analyzer-suppressions.
 				Category: "foo",
 				Position: token.Position{
@@ -221,7 +224,7 @@ func TestShouldReport(t *testing.T) {
 		},
 		{
 			name: "analyzer excluded grouped",
-			finding: Finding{
+			finding: check.Finding{
 				Category: "analyzer-suppressions",
 				Position: token.Position{
 					// Doesn't apply outside of default-enabled.
@@ -236,7 +239,7 @@ func TestShouldReport(t *testing.T) {
 		},
 		{
 			name: "disabled-omitted",
-			finding: Finding{
+			finding: check.Finding{
 				Category: "foo",
 				Position: token.Position{
 					Filename: "default-disabled-omitted-from-global/file.go",
@@ -250,7 +253,7 @@ func TestShouldReport(t *testing.T) {
 		},
 		{
 			name: "default enabled applies to customized analyzer",
-			finding: Finding{
+			finding: check.Finding{
 				Category: "enabled-for-default-disabled",
 				Position: token.Position{
 					Filename: "default-enabled/file.go",
@@ -264,7 +267,7 @@ func TestShouldReport(t *testing.T) {
 		},
 		{
 			name: "default overridden in customized analyzer",
-			finding: Finding{
+			finding: check.Finding{
 				Category: "enabled-for-default-disabled",
 				Position: token.Position{
 					Filename: "default-disabled/file.go",
@@ -278,7 +281,7 @@ func TestShouldReport(t *testing.T) {
 		},
 		{
 			name: "default overridden in customized analyzer even when omitted from global",
-			finding: Finding{
+			finding: check.Finding{
 				Category: "enabled-for-default-disabled",
 				Position: token.Position{
 					Filename: "default-disabled-omitted-from-global/file.go",
