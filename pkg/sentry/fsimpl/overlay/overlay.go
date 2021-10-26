@@ -314,10 +314,7 @@ func clonePrivateMount(vfsObj *vfs.VirtualFilesystem, vd vfs.VirtualDentry, forc
 	if forceReadOnly {
 		opts.ReadOnly = true
 	}
-	newmnt, err := vfsObj.NewDisconnectedMount(oldmnt.Filesystem(), vd.Dentry(), &opts)
-	if err != nil {
-		return vfs.VirtualDentry{}, err
-	}
+	newmnt := vfsObj.NewDisconnectedMount(oldmnt.Filesystem(), vd.Dentry(), &opts)
 	// Take a reference on the dentry which will be owned by the returned
 	// VirtualDentry.
 	d := vd.Dentry()
