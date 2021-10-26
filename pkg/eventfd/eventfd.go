@@ -74,7 +74,7 @@ func (ev Eventfd) Write(val uint64) error {
 	var buf [sizeofUint64]byte
 	hostarch.ByteOrder.PutUint64(buf[:], val)
 	for {
-		n, err := unix.Write(ev.fd, buf[:])
+		n, err := nonBlockingWrite(ev.fd, buf[:])
 		if err == unix.EINTR {
 			continue
 		}

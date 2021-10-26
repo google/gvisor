@@ -6,6 +6,7 @@ go_library(
     name = "eventfd",
     srcs = [
         "eventfd.go",
+        "eventfd_unsafe.go",
     ],
     visibility = ["//:sandbox"],
     deps = [
