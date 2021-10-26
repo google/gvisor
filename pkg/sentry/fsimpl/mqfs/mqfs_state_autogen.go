@@ -35,7 +35,6 @@ func (fs *filesystem) StateFields() []string {
 	return []string{
 		"Filesystem",
 		"devMinor",
-		"root",
 	}
 }
 
@@ -46,7 +45,6 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	fs.beforeSave()
 	stateSinkObject.Save(0, &fs.Filesystem)
 	stateSinkObject.Save(1, &fs.devMinor)
-	stateSinkObject.Save(2, &fs.root)
 }
 
 func (fs *filesystem) afterLoad() {}
@@ -55,7 +53,6 @@ func (fs *filesystem) afterLoad() {}
 func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.Filesystem)
 	stateSourceObject.Load(1, &fs.devMinor)
-	stateSourceObject.Load(2, &fs.root)
 }
 
 func (q *queueInode) StateTypeName() string {
@@ -170,7 +167,6 @@ func (i *rootInode) StateFields() []string {
 		"InodeNotSymlink",
 		"InodeTemporary",
 		"OrderedChildren",
-		"implStatFS",
 		"locks",
 	}
 }
@@ -187,8 +183,7 @@ func (i *rootInode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &i.InodeNotSymlink)
 	stateSinkObject.Save(5, &i.InodeTemporary)
 	stateSinkObject.Save(6, &i.OrderedChildren)
-	stateSinkObject.Save(7, &i.implStatFS)
-	stateSinkObject.Save(8, &i.locks)
+	stateSinkObject.Save(7, &i.locks)
 }
 
 func (i *rootInode) afterLoad() {}
@@ -202,29 +197,7 @@ func (i *rootInode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(4, &i.InodeNotSymlink)
 	stateSourceObject.Load(5, &i.InodeTemporary)
 	stateSourceObject.Load(6, &i.OrderedChildren)
-	stateSourceObject.Load(7, &i.implStatFS)
-	stateSourceObject.Load(8, &i.locks)
-}
-
-func (i *implStatFS) StateTypeName() string {
-	return "pkg/sentry/fsimpl/mqfs.implStatFS"
-}
-
-func (i *implStatFS) StateFields() []string {
-	return []string{}
-}
-
-func (i *implStatFS) beforeSave() {}
-
-// +checklocksignore
-func (i *implStatFS) StateSave(stateSinkObject state.Sink) {
-	i.beforeSave()
-}
-
-func (i *implStatFS) afterLoad() {}
-
-// +checklocksignore
-func (i *implStatFS) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(7, &i.locks)
 }
 
 func (r *rootInodeRefs) StateTypeName() string {
@@ -258,6 +231,5 @@ func init() {
 	state.Register((*queueFD)(nil))
 	state.Register((*RegistryImpl)(nil))
 	state.Register((*rootInode)(nil))
-	state.Register((*implStatFS)(nil))
 	state.Register((*rootInodeRefs)(nil))
 }

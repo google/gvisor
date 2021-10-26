@@ -75,6 +75,7 @@ func (ft FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualF
 	impl.fs.MaxCachedDentries = maxCachedDentries
 
 	impl.fs.VFSFilesystem().IncRef()
+	impl.root.IncRef()
 	return impl.fs.VFSFilesystem(), impl.root.VFSDentry(), nil
 }
 
@@ -100,10 +101,6 @@ func maxCachedDentries(ctx context.Context, mopts map[string]string) (_ uint64, 
 type filesystem struct {
 	kernfs.Filesystem
 	devMinor uint32
-
-	// root is the filesystem's root dentry. Since we take a reference on it in
-	// GetFilesystem, we should release it when the fs is released.
-	root *kernfs.Dentry
 }
 
 // Release implements vfs.FilesystemImpl.Release.

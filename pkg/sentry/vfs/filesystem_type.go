@@ -28,7 +28,7 @@ import (
 type FilesystemType interface {
 	// GetFilesystem returns a Filesystem configured by the given options,
 	// along with its mount root. A reference is taken on the returned
-	// Filesystem and Dentry.
+	// Filesystem and Dentry whose ownership is transferred to the caller.
 	GetFilesystem(ctx context.Context, vfsObj *VirtualFilesystem, creds *auth.Credentials, source string, opts GetFilesystemOptions) (*Filesystem, *Dentry, error)
 
 	// Name returns the name of this FilesystemType.
