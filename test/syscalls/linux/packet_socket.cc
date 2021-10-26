@@ -94,7 +94,9 @@ TEST_P(PacketSocketTest, GetSockName) {
                                Eq(sizeof(addr) - sizeof(addr.sll_addr))));
     EXPECT_EQ(addr.sll_family, AF_PACKET);
     EXPECT_EQ(addr.sll_ifindex, 0);
-    if (IsRunningOnGvisor() && !IsRunningWithHostinet()) {
+
+    if (IsRunningOnGvisor() && !IsRunningWithHostinet() &&
+        GvisorPlatform() != Platform::kFuchsia) {
       // TODO(https://gvisor.dev/issue/6530): Do not assume all interfaces have
       // an ethernet address.
       EXPECT_EQ(addr.sll_halen, ETH_ALEN);
@@ -130,7 +132,8 @@ TEST_P(PacketSocketTest, GetSockName) {
       EXPECT_EQ(addr.sll_addr[i], 0) << "byte mismatch @ idx = " << i;
     }
     EXPECT_EQ(ntohs(addr.sll_protocol), htons(addr.sll_protocol));
-    if (IsRunningOnGvisor() && !IsRunningWithHostinet()) {
+    if (IsRunningOnGvisor() && !IsRunningWithHostinet() &&
+        GvisorPlatform() != Platform::kFuchsia) {
       // TODO(https://gvisor.dev/issue/6621): Support populating sll_hatype.
       EXPECT_EQ(addr.sll_hatype, 0);
     } else {
