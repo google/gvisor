@@ -81,7 +81,7 @@ const (
 	X86FeatureAVX
 	X86FeatureF16C
 	X86FeatureRDRAND
-	_ // ecx bit 31 is reserved.
+	X86FeatureHypervisor
 )
 
 // Block 1 constants are all of the "basic" feature bits returned by a cpuid in
