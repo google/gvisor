@@ -40,14 +40,9 @@ var mapsLine = regexp.MustCompile("([0-9a-f]+)-([0-9a-f]+) ([r-][w-][x-][sp]) ([
 // physical map. Virtual regions need to be excluded if get_user_pages will
 // fail on those addresses, preventing KVM from satisfying EPT faults.
 //
-// This includes the VVAR page because the VVAR page may be mapped as I/O
-// memory. And the VDSO page is knocked out because the VVAR page is not even
-// recorded in /proc/self/maps on older kernels; knocking out the VDSO page
-// prevents code in the VDSO from accessing the VVAR address.
-//
 // This is called by the physical map functions, not applyVirtualRegions.
 func excludeVirtualRegion(r virtualRegion) bool {
-	return r.filename == "[vvar]" || r.filename == "[vdso]"
+	return false
 }
 
 // applyVirtualRegions parses the process maps file.
