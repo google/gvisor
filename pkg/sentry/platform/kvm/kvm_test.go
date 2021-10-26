@@ -462,6 +462,22 @@ func TestRdtsc(t *testing.T) {
 	})
 }
 
+func TestKernelVDSO(t *testing.T) {
+	// Note that the target passed here is irrelevant, we never execute SwitchToUser.
+	applicationTest(t, true, testutil.AddrOfGetpid(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
+		// iteration does not include machine.Get() / machine.Put().
+		const n = 100
+		for i := 0; i < n; i++ {
+			bluepill(c)
+			time.Now()
+		}
+		if c.guestExits >= n {
+			t.Errorf("vdso calls trigger vmexit")
+		}
+		return false
+	})
+}
+
 func BenchmarkApplicationSyscall(b *testing.B) {
 	var (
 		i int // Iteration includes machine.Get() / machine.Put().
@@ -493,6 +509,18 @@ func BenchmarkKernelSyscall(b *testing.B) {
 		// iteration does not include machine.Get() / machine.Put().
 		for i := 0; i < b.N; i++ {
 			testutil.Getpid()
+		}
+		return false
+	})
+}
+
+func BenchmarkKernelVDSO(b *testing.B) {
+	// Note that the target passed here is irrelevant, we never execute SwitchToUser.
+	applicationTest(b, true, testutil.AddrOfGetpid(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
+		// iteration does not include machine.Get() / machine.Put().
+		for i := 0; i < b.N; i++ {
+			bluepill(c)
+			time.Now()
 		}
 		return false
 	})

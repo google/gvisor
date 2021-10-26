@@ -279,10 +279,13 @@ func (c *vCPU) fault(signal int32, info *linux.SignalInfo) (hostarch.AccessType,
 	// Reset the pointed SignalInfo.
 	*info = linux.SignalInfo{Signo: signal}
 	info.SetAddr(uint64(faultAddr))
-	accessType := hostarch.AccessType{
-		Read:    code&(1<<1) == 0,
-		Write:   code&(1<<1) != 0,
-		Execute: code&(1<<4) != 0,
+	accessType := hostarch.AccessType{}
+	if signal == int32(unix.SIGSEGV) {
+		accessType = hostarch.AccessType{
+			Read:    code&(1<<1) == 0,
+			Write:   code&(1<<1) != 0,
+			Execute: code&(1<<4) != 0,
+		}
 	}
 	if !accessType.Write && !accessType.Execute {
 		info.Code = 1 // SEGV_MAPERR.
