@@ -170,22 +170,3 @@ const (
 	KCOV_MODE_TRACE_PC  = 2
 	KCOV_MODE_TRACE_CMP = 3
 )
-
-// Attestation ioctls.
-var (
-	SIGN_ATTESTATION_REPORT = IOC(_IOC_READ, 's', 1, 65)
-)
-
-// SizeOfQuoteInputData is the number of bytes in the input data of ioctl call
-// to get quote.
-const SizeOfQuoteInputData = 64
-
-// SignReport is a struct that gets signed quote from input data. The
-// serialized quote is copied to buf.
-// size is an input that specifies the size of buf. When returned, it's updated
-// to the size of quote.
-type SignReport struct {
-	data [64]byte
-	size uint32
-	buf  []byte
-}
