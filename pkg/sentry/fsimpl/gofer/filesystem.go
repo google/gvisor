@@ -1696,7 +1696,7 @@ func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linu
 		if err := d.controlFDLisa.StatFSTo(ctx, &statFS); err != nil {
 			return linux.Statfs{}, err
 		}
-		if statFS.NameLength > maxFilenameLen {
+		if statFS.NameLength == 0 || statFS.NameLength > maxFilenameLen {
 			statFS.NameLength = maxFilenameLen
 		}
 		return linux.Statfs{
@@ -1705,6 +1705,7 @@ func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linu
 			// something completely random, use a standard value.
 			Type:            linux.V9FS_MAGIC,
 			BlockSize:       statFS.BlockSize,
+			FragmentSize:    statFS.BlockSize,
 			Blocks:          statFS.Blocks,
 			BlocksFree:      statFS.BlocksFree,
 			BlocksAvailable: statFS.BlocksAvailable,
@@ -1718,7 +1719,7 @@ func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linu
 		return linux.Statfs{}, err
 	}
 	nameLen := uint64(fsstat.NameLength)
-	if nameLen > maxFilenameLen {
+	if nameLen == 0 || nameLen > maxFilenameLen {
 		nameLen = maxFilenameLen
 	}
 	return linux.Statfs{
@@ -1727,6 +1728,7 @@ func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linu
 		// something completely random, use a standard value.
 		Type:            linux.V9FS_MAGIC,
 		BlockSize:       int64(fsstat.BlockSize),
+		FragmentSize:    int64(fsstat.BlockSize),
 		Blocks:          fsstat.Blocks,
 		BlocksFree:      fsstat.BlocksFree,
 		BlocksAvailable: fsstat.BlocksAvailable,
