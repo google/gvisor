@@ -22,6 +22,7 @@
 #include <string>
 
 #include "test/util/capability_util.h"
+#include "test/util/cleanup.h"
 #include "test/util/fs_util.h"
 #include "test/util/mount_util.h"
 #include "test/util/posix_error.h"
@@ -286,18 +287,25 @@ TEST(MqTest, Mount) {
 TEST(MqTest, MountSeveral) {
   SKIP_IF(IsRunningWithVFS1() ||
           !ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  constexpr int numMounts = 3;
 
+  // mountDirs should outlive mountCUs and queue so that its destructor succeeds
+  // in unlinking the mountpoints and does not interfere with queue destruction.
+  testing::TempPath mountDirs[numMounts];
+  testing::Cleanup mountCUs[numMounts];
   PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
       MqOpen(O_RDWR | O_CREAT | O_EXCL, 0777, nullptr));
 
-  auto const dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  // Assign the pointer so it doesn't get destroyed before the second mount is
-  // created.
-  auto mnt =
-      ASSERT_NO_ERRNO_AND_VALUE(Mount("none", dir1.path(), "mqueue", 0, "", 0));
+  for (int i = 0; i < numMounts; ++i) {
+    mountDirs[i] = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+    mountCUs[i] = ASSERT_NO_ERRNO_AND_VALUE(
+        Mount("none", mountDirs[i].path(), "mqueue", 0, "", 0));
+  }
 
-  auto const dir2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  ASSERT_NO_ERRNO(Mount("none", dir2.path(), "mqueue", 0, "", 0));
+  // Ensure that queue is visible from all mounts.
+  for (int i = 0; i < numMounts; ++i) {
+    ASSERT_NO_ERRNO(Stat(JoinPath(mountDirs[i].path(), queue.name())));
+  }
 }
 
 // Test mounting mqueue and opening a queue as normal file.
