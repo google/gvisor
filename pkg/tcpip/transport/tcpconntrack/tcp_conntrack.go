@@ -22,8 +22,8 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 )
 
-// Result is returned when the state of a TCB is updated in response to an
-// inbound or outbound segment.
+// Result is returned when the state of a TCB is updated in response to a
+// segment.
 type Result int
 
 const (
@@ -40,24 +40,24 @@ const (
 	// ResultReset indicates that the connection was reset.
 	ResultReset
 
-	// ResultClosedByPeer indicates that the connection was gracefully
-	// closed, and the inbound stream was closed first.
-	ResultClosedByPeer
+	// ResultClosedByResponder indicates that the connection was gracefully
+	// closed, and the reply stream was closed first.
+	ResultClosedByResponder
 
-	// ResultClosedBySelf indicates that the connection was gracefully
-	// closed, and the outbound stream was closed first.
-	ResultClosedBySelf
+	// ResultClosedByOriginator indicates that the connection was gracefully
+	// closed, and the original stream was closed first.
+	ResultClosedByOriginator
 )
 
 // TCB is a TCP Control Block. It holds state necessary to keep track of a TCP
 // connection and inform the caller when the connection has been closed.
 type TCB struct {
-	inbound  stream
-	outbound stream
+	reply    stream
+	original stream
 
 	// State handlers.
-	handlerInbound  func(*TCB, header.TCP) Result
-	handlerOutbound func(*TCB, header.TCP) Result
+	handlerReply    func(*TCB, header.TCP) Result
+	handlerOriginal func(*TCB, header.TCP) Result
 
 	// firstFin holds a pointer to the first stream to send a FIN.
 	firstFin *stream
@@ -68,38 +68,38 @@ type TCB struct {
 
 // Init initializes the state of the TCB according to the initial SYN.
 func (t *TCB) Init(initialSyn header.TCP) Result {
-	t.handlerInbound = synSentStateInbound
-	t.handlerOutbound = synSentStateOutbound
+	t.handlerReply = synSentStateReply
+	t.handlerOriginal = synSentStateOriginal
 
 	iss := seqnum.Value(initialSyn.SequenceNumber())
-	t.outbound.una = iss
-	t.outbound.nxt = iss.Add(logicalLen(initialSyn))
-	t.outbound.end = t.outbound.nxt
+	t.original.una = iss
+	t.original.nxt = iss.Add(logicalLen(initialSyn))
+	t.original.end = t.original.nxt
 
 	// Even though "end" is a sequence number, we don't know the initial
 	// receive sequence number yet, so we store the window size until we get
-	// a SYN from the peer.
-	t.inbound.una = 0
-	t.inbound.nxt = 0
-	t.inbound.end = seqnum.Value(initialSyn.WindowSize())
+	// a SYN from the server.
+	t.reply.una = 0
+	t.reply.nxt = 0
+	t.reply.end = seqnum.Value(initialSyn.WindowSize())
 	t.state = ResultConnecting
 	return t.state
 }
 
-// UpdateStateInbound updates the state of the TCB based on the supplied inbound
+// UpdateStateReply updates the state of the TCB based on the supplied reply
 // segment.
-func (t *TCB) UpdateStateInbound(tcp header.TCP) Result {
-	st := t.handlerInbound(t, tcp)
+func (t *TCB) UpdateStateReply(tcp header.TCP) Result {
+	st := t.handlerReply(t, tcp)
 	if st != ResultDrop {
 		t.state = st
 	}
 	return st
 }
 
-// UpdateStateOutbound updates the state of the TCB based on the supplied
-// outbound segment.
-func (t *TCB) UpdateStateOutbound(tcp header.TCP) Result {
-	st := t.handlerOutbound(t, tcp)
+// UpdateStateOriginal updates the state of the TCB based on the supplied
+// original segment.
+func (t *TCB) UpdateStateOriginal(tcp header.TCP) Result {
+	st := t.handlerOriginal(t, tcp)
 	if st != ResultDrop {
 		t.state = st
 	}
@@ -114,46 +114,47 @@ func (t *TCB) State() Result {
 // IsAlive returns true as long as the connection is established(Alive)
 // or connecting state.
 func (t *TCB) IsAlive() bool {
-	return !t.inbound.rstSeen && !t.outbound.rstSeen && (!t.inbound.closed() || !t.outbound.closed())
+	return !t.reply.rstSeen && !t.original.rstSeen && (!t.reply.closed() || !t.original.closed())
 }
 
-// OutboundSendSequenceNumber returns the snd.NXT for the outbound stream.
-func (t *TCB) OutboundSendSequenceNumber() seqnum.Value {
-	return t.outbound.nxt
+// OriginalSendSequenceNumber returns the snd.NXT for the original stream.
+func (t *TCB) OriginalSendSequenceNumber() seqnum.Value {
+	return t.original.nxt
 }
 
-// InboundSendSequenceNumber returns the snd.NXT for the inbound stream.
-func (t *TCB) InboundSendSequenceNumber() seqnum.Value {
-	return t.inbound.nxt
+// ReplySendSequenceNumber returns the snd.NXT for the reply stream.
+func (t *TCB) ReplySendSequenceNumber() seqnum.Value {
+	return t.reply.nxt
 }
 
 // adapResult modifies the supplied "Result" according to the state of the TCB;
 // if r is anything other than "Alive", or if one of the streams isn't closed
 // yet, it is returned unmodified. Otherwise it's converted to either
-// ClosedBySelf or ClosedByPeer depending on which stream was closed first.
+// ClosedByOriginator or ClosedByResponder depending on which stream was closed
+// first.
 func (t *TCB) adaptResult(r Result) Result {
 	// Check the unmodified case.
-	if r != ResultAlive || !t.inbound.closed() || !t.outbound.closed() {
+	if r != ResultAlive || !t.reply.closed() || !t.original.closed() {
 		return r
 	}
 
 	// Find out which was closed first.
-	if t.firstFin == &t.outbound {
-		return ResultClosedBySelf
+	if t.firstFin == &t.original {
+		return ResultClosedByOriginator
 	}
 
-	return ResultClosedByPeer
+	return ResultClosedByResponder
 }
 
-// synSentStateInbound is the state handler for inbound segments when the
+// synSentStateReply is the state handler for reply segments when the
 // connection is in SYN-SENT state.
-func synSentStateInbound(t *TCB, tcp header.TCP) Result {
+func synSentStateReply(t *TCB, tcp header.TCP) Result {
 	flags := tcp.Flags()
 	ackPresent := flags&header.TCPFlagAck != 0
 	ack := seqnum.Value(tcp.AckNumber())
 
 	// Ignore segment if ack is present but not acceptable.
-	if ackPresent && !(ack-1).InRange(t.outbound.una, t.outbound.nxt) {
+	if ackPresent && !(ack-1).InRange(t.original.una, t.original.nxt) {
 		return ResultConnecting
 	}
 
@@ -162,7 +163,7 @@ func synSentStateInbound(t *TCB, tcp header.TCP) Result {
 	// implicitly acceptable).
 	if flags&header.TCPFlagRst != 0 {
 		if ackPresent {
-			t.inbound.rstSeen = true
+			t.reply.rstSeen = true
 			return ResultReset
 		}
 		return ResultConnecting
@@ -175,62 +176,62 @@ func synSentStateInbound(t *TCB, tcp header.TCP) Result {
 
 	// Update state informed by this SYN.
 	irs := seqnum.Value(tcp.SequenceNumber())
-	t.inbound.una = irs
-	t.inbound.nxt = irs.Add(logicalLen(tcp))
-	t.inbound.end += irs
+	t.reply.una = irs
+	t.reply.nxt = irs.Add(logicalLen(tcp))
+	t.reply.end += irs
 
-	t.outbound.end = t.outbound.una.Add(seqnum.Size(tcp.WindowSize()))
+	t.original.end = t.original.una.Add(seqnum.Size(tcp.WindowSize()))
 
 	// If the ACK was set (it is acceptable), update our unacknowledgement
 	// tracking.
 	if ackPresent {
-		// Advance the "una" and "end" indices of the outbound stream.
-		if t.outbound.una.LessThan(ack) {
-			t.outbound.una = ack
+		// Advance the "una" and "end" indices of the original stream.
+		if t.original.una.LessThan(ack) {
+			t.original.una = ack
 		}
 
-		if end := ack.Add(seqnum.Size(tcp.WindowSize())); t.outbound.end.LessThan(end) {
-			t.outbound.end = end
+		if end := ack.Add(seqnum.Size(tcp.WindowSize())); t.original.end.LessThan(end) {
+			t.original.end = end
 		}
 	}
 
 	// Update handlers so that new calls will be handled by new state.
-	t.handlerInbound = allOtherInbound
-	t.handlerOutbound = allOtherOutbound
+	t.handlerReply = allOtherReply
+	t.handlerOriginal = allOtherOriginal
 
 	return ResultAlive
 }
 
-// synSentStateOutbound is the state handler for outbound segments when the
+// synSentStateOriginal is the state handler for original segments when the
 // connection is in SYN-SENT state.
-func synSentStateOutbound(t *TCB, tcp header.TCP) Result {
-	// Drop outbound segments that aren't retransmits of the original one.
+func synSentStateOriginal(t *TCB, tcp header.TCP) Result {
+	// Drop original segments that aren't retransmits of the original one.
 	if tcp.Flags() != header.TCPFlagSyn ||
-		tcp.SequenceNumber() != uint32(t.outbound.una) {
+		tcp.SequenceNumber() != uint32(t.original.una) {
 		return ResultDrop
 	}
 
 	// Update the receive window. We only remember the largest value seen.
-	if wnd := seqnum.Value(tcp.WindowSize()); wnd > t.inbound.end {
-		t.inbound.end = wnd
+	if wnd := seqnum.Value(tcp.WindowSize()); wnd > t.reply.end {
+		t.reply.end = wnd
 	}
 
 	return ResultConnecting
 }
 
-// update updates the state of inbound and outbound streams, given the supplied
-// inbound segment. For outbound segments, this same function can be called with
-// swapped inbound/outbound streams.
-func update(tcp header.TCP, inbound, outbound *stream, firstFin **stream) Result {
+// update updates the state of reply and original streams, given the supplied
+// reply segment. For original segments, this same function can be called with
+// swapped reply/original streams.
+func update(tcp header.TCP, reply, original *stream, firstFin **stream) Result {
 	// Ignore segments out of the window.
 	s := seqnum.Value(tcp.SequenceNumber())
-	if !inbound.acceptable(s, dataLen(tcp)) {
+	if !reply.acceptable(s, dataLen(tcp)) {
 		return ResultAlive
 	}
 
 	flags := tcp.Flags()
 	if flags&header.TCPFlagRst != 0 {
-		inbound.rstSeen = true
+		reply.rstSeen = true
 		return ResultReset
 	}
 
@@ -242,49 +243,49 @@ func update(tcp header.TCP, inbound, outbound *stream, firstFin **stream) Result
 
 	// Ignore segments that acknowledge not yet sent data.
 	ack := seqnum.Value(tcp.AckNumber())
-	if outbound.nxt.LessThan(ack) {
+	if original.nxt.LessThan(ack) {
 		return ResultAlive
 	}
 
-	// Advance the "una" and "end" indices of the outbound stream.
-	if outbound.una.LessThan(ack) {
-		outbound.una = ack
+	// Advance the "una" and "end" indices of the original stream.
+	if original.una.LessThan(ack) {
+		original.una = ack
 	}
 
-	if end := ack.Add(seqnum.Size(tcp.WindowSize())); outbound.end.LessThan(end) {
-		outbound.end = end
+	if end := ack.Add(seqnum.Size(tcp.WindowSize())); original.end.LessThan(end) {
+		original.end = end
 	}
 
-	// Advance the "nxt" index of the inbound stream.
+	// Advance the "nxt" index of the reply stream.
 	end := s.Add(logicalLen(tcp))
-	if inbound.nxt.LessThan(end) {
-		inbound.nxt = end
+	if reply.nxt.LessThan(end) {
+		reply.nxt = end
 	}
 
 	// Note the index of the FIN segment. And stash away a pointer to the
 	// first stream to see a FIN.
-	if flags&header.TCPFlagFin != 0 && !inbound.finSeen {
-		inbound.finSeen = true
-		inbound.fin = end - 1
+	if flags&header.TCPFlagFin != 0 && !reply.finSeen {
+		reply.finSeen = true
+		reply.fin = end - 1
 
 		if *firstFin == nil {
-			*firstFin = inbound
+			*firstFin = reply
 		}
 	}
 
 	return ResultAlive
 }
 
-// allOtherInbound is the state handler for inbound segments in all states
+// allOtherReply is the state handler for reply segments in all states
 // except SYN-SENT.
-func allOtherInbound(t *TCB, tcp header.TCP) Result {
-	return t.adaptResult(update(tcp, &t.inbound, &t.outbound, &t.firstFin))
+func allOtherReply(t *TCB, tcp header.TCP) Result {
+	return t.adaptResult(update(tcp, &t.reply, &t.original, &t.firstFin))
 }
 
-// allOtherOutbound is the state handler for outbound segments in all states
+// allOtherOriginal is the state handler for original segments in all states
 // except SYN-SENT.
-func allOtherOutbound(t *TCB, tcp header.TCP) Result {
-	return t.adaptResult(update(tcp, &t.outbound, &t.inbound, &t.firstFin))
+func allOtherOriginal(t *TCB, tcp header.TCP) Result {
+	return t.adaptResult(update(tcp, &t.original, &t.reply, &t.firstFin))
 }
 
 // streams holds the state of a TCP unidirectional stream.
@@ -345,7 +346,7 @@ func logicalLen(tcp header.TCP) seqnum.Size {
 
 // IsEmpty returns true if tcb is not initialized.
 func (t *TCB) IsEmpty() bool {
-	if t.inbound != (stream{}) || t.outbound != (stream{}) {
+	if t.reply != (stream{}) || t.original != (stream{}) {
 		return false
 	}
 
