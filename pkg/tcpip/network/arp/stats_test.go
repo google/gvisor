@@ -45,7 +45,10 @@ func TestMultiCounterStatsInitialization(t *testing.T) {
 	// expected to be bound by a MultiCounterStat.
 	refStack := s.Stats()
 	refEP := ep.stats.localStats
-	if err := testutil.ValidateMultiCounterStats(reflect.ValueOf(&ep.stats.arp).Elem(), []reflect.Value{reflect.ValueOf(&refEP.ARP).Elem(), reflect.ValueOf(&refStack.ARP).Elem()}); err != nil {
+	if err := testutil.ValidateMultiCounterStats(reflect.ValueOf(&ep.stats.arp).Elem(), []reflect.Value{reflect.ValueOf(&refEP.ARP).Elem(), reflect.ValueOf(&refStack.ARP).Elem()}, testutil.ValidateMultiCounterStatsOptions{
+		ExpectMultiCounterStat:            true,
+		ExpectMultiIntegralStatCounterMap: false,
+	}); err != nil {
 		t.Error(err)
 	}
 }

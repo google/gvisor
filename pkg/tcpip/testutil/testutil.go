@@ -77,12 +77,43 @@ func validateField(ref reflect.Value, refName string, m tcpip.MultiCounterStat, 
 	return nil
 }
 
-// ValidateMultiCounterStats verifies that every counter stored in multi is
-// correctly tracking its counterpart in the given counters.
-func ValidateMultiCounterStats(multi reflect.Value, counters []reflect.Value) error {
+func validateIntegralMapField(ref reflect.Value, refName string, m tcpip.MultiIntegralStatCounterMap, multiName string) error {
+	// The field names are expected to match (case insensitive).
+	if !strings.EqualFold(refName, multiName) {
+		return fmt.Errorf("wrong field name: got = %s, want = %s", multiName, refName)
+	}
+	s, ok := ref.Addr().Interface().(**tcpip.IntegralStatCounterMap)
+	if !ok {
+		return fmt.Errorf("field is not an IntegralStatCounterMap")
+	}
+
+	const key = 42
+
+	getValue := func() uint64 {
+		counter, ok := (*s).Get(key)
+		if !ok {
+			return 0
+		}
+		return counter.Value()
+	}
+
+	before := getValue()
+
+	m.Increment(key)
+
+	after := getValue()
+
+	if after != before+1 {
+		return fmt.Errorf("updates to the '%s MultiCounterStat' counters are not reflected in the '%s CounterStat'", multiName, refName)
+	}
+
+	return nil
+}
+
+func validateMultiCounterStats(multi reflect.Value, counters []reflect.Value) (foundMultiCounterStat, foundMultiIntegralStatCounterMap bool, err error) {
 	for _, c := range counters {
 		if err := checkFieldCounts(c, multi); err != nil {
-			return err
+			return false, false, err
 		}
 	}
 
@@ -90,21 +121,57 @@ func ValidateMultiCounterStats(multi reflect.Value, counters []reflect.Value) er
 		multiName := multi.Type().Field(i).Name
 		multiUnsafe := unsafeExposeUnexportedFields(multi.Field(i))
 
-		if m, ok := multiUnsafe.Addr().Interface().(*tcpip.MultiCounterStat); ok {
+		switch m := multiUnsafe.Addr().Interface().(type) {
+		case *tcpip.MultiCounterStat:
+			foundMultiCounterStat = true
 			for _, c := range counters {
 				if err := validateField(unsafeExposeUnexportedFields(c.Field(i)), c.Type().Field(i).Name, *m, multiName); err != nil {
-					return err
+					return false, false, err
 				}
 			}
-		} else {
+		case *tcpip.MultiIntegralStatCounterMap:
+			foundMultiIntegralStatCounterMap = true
+			for _, c := range counters {
+				if err := validateIntegralMapField(unsafeExposeUnexportedFields(c.Field(i)), c.Type().Field(i).Name, *m, multiName); err != nil {
+					return false, false, err
+				}
+			}
+		default:
 			var countersNextField []reflect.Value
 			for _, c := range counters {
 				countersNextField = append(countersNextField, c.Field(i))
 			}
-			if err := ValidateMultiCounterStats(multi.Field(i), countersNextField); err != nil {
-				return err
+			innerFoundMultiCounterStat, innerFoundMultiIntegralStatCounterMap, err := validateMultiCounterStats(multi.Field(i), countersNextField)
+			if err != nil {
+				return false, false, err
 			}
+			foundMultiCounterStat = foundMultiCounterStat || innerFoundMultiCounterStat
+			foundMultiIntegralStatCounterMap = foundMultiIntegralStatCounterMap || innerFoundMultiIntegralStatCounterMap
 		}
+	}
+
+	return foundMultiCounterStat, foundMultiIntegralStatCounterMap, nil
+}
+
+// ValidateMultiCounterStatsOptions holds options used when validating multi
+// counter stat structs.
+type ValidateMultiCounterStatsOptions struct {
+	ExpectMultiCounterStat            bool
+	ExpectMultiIntegralStatCounterMap bool
+}
+
+// ValidateMultiCounterStats verifies that every counter stored in multi is
+// correctly tracking its counterpart in the given counters.
+func ValidateMultiCounterStats(multi reflect.Value, counters []reflect.Value, options ValidateMultiCounterStatsOptions) error {
+	foundMultiCounterStat, foundMultiIntegralStatCounterMap, err := validateMultiCounterStats(multi, counters)
+	if err != nil {
+		return err
+	}
+	if foundMultiCounterStat != options.ExpectMultiCounterStat {
+		return fmt.Errorf("got %T presence: %t, want: %t", (*tcpip.MultiCounterStat)(nil), foundMultiCounterStat, options.ExpectMultiCounterStat)
+	}
+	if foundMultiIntegralStatCounterMap != options.ExpectMultiIntegralStatCounterMap {
+		return fmt.Errorf("got %T presence: %t, want: %t", (*tcpip.MultiIntegralStatCounterMap)(nil), foundMultiIntegralStatCounterMap, options.ExpectMultiIntegralStatCounterMap)
 	}
 
 	return nil

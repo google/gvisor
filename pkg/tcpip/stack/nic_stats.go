@@ -35,7 +35,7 @@ func (m *multiCounterNICPacketStats) init(a, b *tcpip.NICPacketStats) {
 	m.bytes.Init(a.Bytes, b.Bytes)
 }
 
-// LINT.ThenChange(../../tcpip.go:NICPacketStats)
+// LINT.ThenChange(../tcpip.go:NICPacketStats)
 
 // LINT.IfChange(multiCounterNICNeighborStats)
 
@@ -47,23 +47,23 @@ func (m *multiCounterNICNeighborStats) init(a, b *tcpip.NICNeighborStats) {
 	m.unreachableEntryLookups.Init(a.UnreachableEntryLookups, b.UnreachableEntryLookups)
 }
 
-// LINT.ThenChange(../../tcpip.go:NICNeighborStats)
+// LINT.ThenChange(../tcpip.go:NICNeighborStats)
 
 // LINT.IfChange(multiCounterNICStats)
 
 type multiCounterNICStats struct {
-	unknownL3ProtocolRcvdPackets tcpip.MultiCounterStat
-	unknownL4ProtocolRcvdPackets tcpip.MultiCounterStat
-	malformedL4RcvdPackets       tcpip.MultiCounterStat
-	tx                           multiCounterNICPacketStats
-	rx                           multiCounterNICPacketStats
-	disabledRx                   multiCounterNICPacketStats
-	neighbor                     multiCounterNICNeighborStats
+	unknownL3ProtocolRcvdPacketCounts tcpip.MultiIntegralStatCounterMap
+	unknownL4ProtocolRcvdPacketCounts tcpip.MultiIntegralStatCounterMap
+	malformedL4RcvdPackets            tcpip.MultiCounterStat
+	tx                                multiCounterNICPacketStats
+	rx                                multiCounterNICPacketStats
+	disabledRx                        multiCounterNICPacketStats
+	neighbor                          multiCounterNICNeighborStats
 }
 
 func (m *multiCounterNICStats) init(a, b *tcpip.NICStats) {
-	m.unknownL3ProtocolRcvdPackets.Init(a.UnknownL3ProtocolRcvdPackets, b.UnknownL3ProtocolRcvdPackets)
-	m.unknownL4ProtocolRcvdPackets.Init(a.UnknownL4ProtocolRcvdPackets, b.UnknownL4ProtocolRcvdPackets)
+	m.unknownL3ProtocolRcvdPacketCounts.Init(a.UnknownL3ProtocolRcvdPacketCounts, b.UnknownL3ProtocolRcvdPacketCounts)
+	m.unknownL4ProtocolRcvdPacketCounts.Init(a.UnknownL4ProtocolRcvdPacketCounts, b.UnknownL4ProtocolRcvdPacketCounts)
 	m.malformedL4RcvdPackets.Init(a.MalformedL4RcvdPackets, b.MalformedL4RcvdPackets)
 	m.tx.init(&a.Tx, &b.Tx)
 	m.rx.init(&a.Rx, &b.Rx)
@@ -71,4 +71,4 @@ func (m *multiCounterNICStats) init(a, b *tcpip.NICStats) {
 	m.neighbor.init(&a.Neighbor, &b.Neighbor)
 }
 
-// LINT.ThenChange(../../tcpip.go:NICStats)
+// LINT.ThenChange(../tcpip.go:NICStats)

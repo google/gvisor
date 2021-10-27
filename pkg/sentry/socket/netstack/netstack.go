@@ -81,9 +81,7 @@ func mustCreateGauge(name, description string) *tcpip.StatCounter {
 var Metrics = tcpip.Stats{
 	DroppedPackets: mustCreateMetric("/netstack/dropped_packets", "Number of packets dropped at the transport layer."),
 	NICs: tcpip.NICStats{
-		UnknownL3ProtocolRcvdPackets: mustCreateMetric("/netstack/nic/unknown_l3_protocol_received_packets", "Number of packets received that were for an unknown or unsupported L3 protocol."),
-		UnknownL4ProtocolRcvdPackets: mustCreateMetric("/netstack/nic/unknown_l4_protocol_received_packets", "Number of packets received that were for an unknown or unsupported L4 protocol."),
-		MalformedL4RcvdPackets:       mustCreateMetric("/netstack/nic/malformed_l4_received_packets", "Number of packets received that failed L4 header parsing."),
+		MalformedL4RcvdPackets: mustCreateMetric("/netstack/nic/malformed_l4_received_packets", "Number of packets received that failed L4 header parsing."),
 		Tx: tcpip.NICPacketStats{
 			Packets: mustCreateMetric("/netstack/nic/tx/packets", "Number of packets transmitted."),
 			Bytes:   mustCreateMetric("/netstack/nic/tx/bytes", "Number of bytes transmitted."),

@@ -3515,10 +3515,16 @@ func TestMultiCounterStatsInitialization(t *testing.T) {
 	// supposed to be bound.
 	refStack := s.Stats()
 	refEP := ep.stats.localStats
-	if err := testutil.ValidateMultiCounterStats(reflect.ValueOf(&ep.stats.ip).Elem(), []reflect.Value{reflect.ValueOf(&refStack.IP).Elem(), reflect.ValueOf(&refEP.IP).Elem()}); err != nil {
+	if err := testutil.ValidateMultiCounterStats(reflect.ValueOf(&ep.stats.ip).Elem(), []reflect.Value{reflect.ValueOf(&refStack.IP).Elem(), reflect.ValueOf(&refEP.IP).Elem()}, testutil.ValidateMultiCounterStatsOptions{
+		ExpectMultiCounterStat:            true,
+		ExpectMultiIntegralStatCounterMap: false,
+	}); err != nil {
 		t.Error(err)
 	}
-	if err := testutil.ValidateMultiCounterStats(reflect.ValueOf(&ep.stats.icmp).Elem(), []reflect.Value{reflect.ValueOf(&refStack.ICMP.V6).Elem(), reflect.ValueOf(&refEP.ICMP).Elem()}); err != nil {
+	if err := testutil.ValidateMultiCounterStats(reflect.ValueOf(&ep.stats.icmp).Elem(), []reflect.Value{reflect.ValueOf(&refStack.ICMP.V6).Elem(), reflect.ValueOf(&refEP.ICMP).Elem()}, testutil.ValidateMultiCounterStatsOptions{
+		ExpectMultiCounterStat:            true,
+		ExpectMultiIntegralStatCounterMap: false,
+	}); err != nil {
 		t.Error(err)
 	}
 }

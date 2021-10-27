@@ -206,6 +206,45 @@ func TestDisabledRxStatsWhenNICDisabled(t *testing.T) {
 	}
 }
 
+func TestPacketWithUnknownNetworkProtocolNumber(t *testing.T) {
+	nic := nic{
+		stats:   makeNICStats(tcpip.NICStats{}.FillIn()),
+		enabled: 1,
+	}
+	// IPv4 isn't recognized since we haven't initialized the NIC with an IPv4
+	// endpoint.
+	nic.DeliverNetworkPacket("", "", header.IPv4ProtocolNumber, NewPacketBuffer(PacketBufferOptions{
+		Data: buffer.View([]byte{1, 2, 3, 4}).ToVectorisedView(),
+	}))
+	var count uint64
+	if got, ok := nic.stats.local.UnknownL3ProtocolRcvdPacketCounts.Get(uint64(header.IPv4ProtocolNumber)); ok {
+		count = got.Value()
+	}
+	if count != 1 {
+		t.Errorf("got UnknownL3ProtocolRcvdPacketCounts[header.IPv4ProtocolNumber] = %d, want = 1", count)
+	}
+}
+
+func TestPacketWithUnknownTransportProtocolNumber(t *testing.T) {
+	nic := nic{
+		stack:   &Stack{},
+		stats:   makeNICStats(tcpip.NICStats{}.FillIn()),
+		enabled: 1,
+	}
+	// UDP isn't recognized since we haven't initialized the NIC with a UDP
+	// protocol.
+	nic.DeliverTransportPacket(header.UDPProtocolNumber, NewPacketBuffer(PacketBufferOptions{
+		Data: buffer.View([]byte{1, 2, 3, 4}).ToVectorisedView(),
+	}))
+	var count uint64
+	if got, ok := nic.stats.local.UnknownL4ProtocolRcvdPacketCounts.Get(uint64(header.UDPProtocolNumber)); ok {
+		count = got.Value()
+	}
+	if count != 1 {
+		t.Errorf("got UnknownL4ProtocolRcvdPacketCounts[header.UDPProtocolNumber] = %d, want = 1", count)
+	}
+}
+
 func TestMultiCounterStatsInitialization(t *testing.T) {
 	global := tcpip.NICStats{}.FillIn()
 	nic := nic{
@@ -213,7 +252,10 @@ func TestMultiCounterStatsInitialization(t *testing.T) {
 	}
 	multi := nic.stats.multiCounterNICStats
 	local := nic.stats.local
-	if err := testutil.ValidateMultiCounterStats(reflect.ValueOf(&multi).Elem(), []reflect.Value{reflect.ValueOf(&local).Elem(), reflect.ValueOf(&global).Elem()}); err != nil {
+	if err := testutil.ValidateMultiCounterStats(reflect.ValueOf(&multi).Elem(), []reflect.Value{reflect.ValueOf(&local).Elem(), reflect.ValueOf(&global).Elem()}, testutil.ValidateMultiCounterStatsOptions{
+		ExpectMultiCounterStat:            true,
+		ExpectMultiIntegralStatCounterMap: true,
+	}); err != nil {
 		t.Error(err)
 	}
 }
