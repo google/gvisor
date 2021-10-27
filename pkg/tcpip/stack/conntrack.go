@@ -164,9 +164,9 @@ func (cn *conn) updateLocked(pkt *PacketBuffer, reply bool) {
 	}
 
 	if reply {
-		cn.tcb.UpdateStateInbound(tcpHeader)
+		cn.tcb.UpdateStateReply(tcpHeader)
 	} else {
-		cn.tcb.UpdateStateOutbound(tcpHeader)
+		cn.tcb.UpdateStateOriginal(tcpHeader)
 	}
 }
 
