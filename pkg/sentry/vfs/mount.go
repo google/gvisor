@@ -178,12 +178,12 @@ func (vfs *VirtualFilesystem) NewMountNamespace(ctx context.Context, creds *auth
 // (which may be nil). The new Mount is not associated with any MountNamespace
 // and is not connected to any other Mounts. References are taken on fs and
 // root.
-func (vfs *VirtualFilesystem) NewDisconnectedMount(fs *Filesystem, root *Dentry, opts *MountOptions) (*Mount, error) {
+func (vfs *VirtualFilesystem) NewDisconnectedMount(fs *Filesystem, root *Dentry, opts *MountOptions) *Mount {
 	fs.IncRef()
 	if root != nil {
 		root.IncRef()
 	}
-	return newMount(vfs, fs, root, nil /* mntns */, opts), nil
+	return newMount(vfs, fs, root, nil /* mntns */, opts)
 }
 
 // MountDisconnected creates a Filesystem configured by the given arguments,
@@ -201,9 +201,7 @@ func (vfs *VirtualFilesystem) MountDisconnected(ctx context.Context, creds *auth
 	if err != nil {
 		return nil, err
 	}
-	defer root.DecRef(ctx)
-	defer fs.DecRef(ctx)
-	return vfs.NewDisconnectedMount(fs, root, opts)
+	return newMount(vfs, fs, root, nil /* mntns */, opts), nil
 }
 
 // ConnectMountAt connects mnt at the path represented by target.

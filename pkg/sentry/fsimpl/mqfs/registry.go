@@ -71,10 +71,7 @@ func NewRegistryImpl(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *
 	var dentry kernfs.Dentry
 	dentry.InitRoot(&fs.Filesystem, fs.newRootInode(ctx, creds))
 
-	mount, err := vfsObj.NewDisconnectedMount(vfsfs, dentry.VFSDentry(), &vfs.MountOptions{})
-	if err != nil {
-		return nil, err
-	}
+	mount := vfsObj.NewDisconnectedMount(vfsfs, dentry.VFSDentry(), &vfs.MountOptions{})
 
 	return &RegistryImpl{
 		root:  &dentry,
