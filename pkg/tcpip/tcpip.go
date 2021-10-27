@@ -1301,7 +1301,8 @@ func (s *StatCounter) String() string {
 
 // A MultiCounterStat keeps track of two counters at once.
 type MultiCounterStat struct {
-	a, b *StatCounter
+	a *StatCounter
+	b *StatCounter
 }
 
 // Init sets both internal counters to point to a and b.
@@ -1923,17 +1924,89 @@ type NICPacketStats struct {
 	// LINT.ThenChange(stack/nic_stats.go:multiCounterNICPacketStats)
 }
 
+// IntegralStatCounterMap holds a map associating integral keys with
+// StatCounters.
+type IntegralStatCounterMap struct {
+	mu sync.RWMutex
+	// +checklocks:mu
+	counterMap map[uint64]*StatCounter
+}
+
+// Keys returns all keys present in the map.
+func (m *IntegralStatCounterMap) Keys() []uint64 {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var keys []uint64
+	for k := range m.counterMap {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// Get returns the counter mapped by the provided key.
+func (m *IntegralStatCounterMap) Get(key uint64) (*StatCounter, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	counter, ok := m.counterMap[key]
+	return counter, ok
+}
+
+// Init initializes the map.
+func (m *IntegralStatCounterMap) Init() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.counterMap = make(map[uint64]*StatCounter)
+}
+
+// Increment increments the counter associated with the provided key.
+func (m *IntegralStatCounterMap) Increment(key uint64) {
+	m.mu.RLock()
+	counter, ok := m.counterMap[key]
+	m.mu.RUnlock()
+
+	if !ok {
+		m.mu.Lock()
+		counter, ok = m.counterMap[key]
+		if !ok {
+			counter = new(StatCounter)
+			m.counterMap[key] = counter
+		}
+		m.mu.Unlock()
+	}
+	counter.Increment()
+}
+
+// A MultiIntegralStatCounterMap keeps track of two integral counter maps at
+// once.
+type MultiIntegralStatCounterMap struct {
+	a *IntegralStatCounterMap
+	b *IntegralStatCounterMap
+}
+
+// Init sets the internal integral counter maps to point to a and b.
+func (m *MultiIntegralStatCounterMap) Init(a, b *IntegralStatCounterMap) {
+	m.a = a
+	m.b = b
+}
+
+// Increment increments the counter in each map corresponding to the
+// provided key.
+func (m *MultiIntegralStatCounterMap) Increment(key uint64) {
+	m.a.Increment(key)
+	m.b.Increment(key)
+}
+
 // NICStats holds NIC statistics.
 type NICStats struct {
 	// LINT.IfChange(NICStats)
 
-	// UnknownL3ProtocolRcvdPackets is the number of packets received that were
-	// for an unknown or unsupported network protocol.
-	UnknownL3ProtocolRcvdPackets *StatCounter
+	// UnknownL3ProtocolRcvdPacketCounts records the number of packets recieved
+	// for each unknown or unsupported netowrk protocol number.
+	UnknownL3ProtocolRcvdPacketCounts *IntegralStatCounterMap
 
-	// UnknownL4ProtocolRcvdPackets is the number of packets received that were
-	// for an unknown or unsupported transport protocol.
-	UnknownL4ProtocolRcvdPackets *StatCounter
+	// UnknownL4ProtocolRcvdPacketCounts records the number of packets recieved
+	// for each unknown or unsupported transport protocol number.
+	UnknownL4ProtocolRcvdPacketCounts *IntegralStatCounterMap
 
 	// MalformedL4RcvdPackets is the number of packets received by a NIC that
 	// could not be delivered to a transport endpoint because the L4 header could
@@ -2102,6 +2175,11 @@ func InitStatCounters(v reflect.Value) {
 		if s, ok := v.Addr().Interface().(**StatCounter); ok {
 			if *s == nil {
 				*s = new(StatCounter)
+			}
+		} else if s, ok := v.Addr().Interface().(**IntegralStatCounterMap); ok {
+			if *s == nil {
+				*s = new(IntegralStatCounterMap)
+				(*s).Init()
 			}
 		} else {
 			InitStatCounters(v)

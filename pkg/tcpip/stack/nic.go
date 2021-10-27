@@ -727,7 +727,7 @@ func (n *nic) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 
 	networkEndpoint, ok := n.networkEndpoints[protocol]
 	if !ok {
-		n.stats.unknownL3ProtocolRcvdPackets.Increment()
+		n.stats.unknownL3ProtocolRcvdPacketCounts.Increment(uint64(protocol))
 		return
 	}
 
@@ -827,7 +827,7 @@ func (n *nic) deliverOutboundPacket(remote tcpip.LinkAddress, pkt *PacketBuffer)
 func (n *nic) DeliverTransportPacket(protocol tcpip.TransportProtocolNumber, pkt *PacketBuffer) TransportPacketDisposition {
 	state, ok := n.stack.transportProtocols[protocol]
 	if !ok {
-		n.stats.unknownL4ProtocolRcvdPackets.Increment()
+		n.stats.unknownL4ProtocolRcvdPacketCounts.Increment(uint64(protocol))
 		return TransportPacketProtocolUnreachable
 	}
 
