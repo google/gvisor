@@ -175,73 +175,6 @@ func Time(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 	return uintptr(r), nil, nil
 }
 
-// clockNanosleepRestartBlock encapsulates the state required to restart
-// clock_nanosleep(2) via restart_syscall(2).
-//
-// +stateify savable
-type clockNanosleepRestartBlock struct {
-	c   ktime.Clock
-	end ktime.Time
-	rem hostarch.Addr
-}
-
-// Restart implements kernel.SyscallRestartBlock.Restart.
-func (n *clockNanosleepRestartBlock) Restart(t *kernel.Task) (uintptr, error) {
-	return 0, clockNanosleepUntil(t, n.c, n.end, n.rem, true)
-}
-
-// clockNanosleepUntil blocks until a specified time.
-//
-// If blocking is interrupted, the syscall is restarted with the original
-// arguments.
-func clockNanosleepUntil(t *kernel.Task, c ktime.Clock, end ktime.Time, rem hostarch.Addr, needRestartBlock bool) error {
-	notifier, tchan := ktime.NewChannelNotifier()
-	timer := ktime.NewTimer(c, notifier)
-
-	// Turn on the timer.
-	timer.Swap(ktime.Setting{
-		Period:  0,
-		Enabled: true,
-		Next:    end,
-	})
-
-	err := t.BlockWithTimer(nil, tchan)
-
-	timer.Destroy()
-
-	switch {
-	case linuxerr.Equals(linuxerr.ETIMEDOUT, err):
-		// Slept for entire timeout.
-		return nil
-	case err == linuxerr.ErrInterrupted:
-		// Interrupted.
-		remaining := end.Sub(c.Now())
-		if remaining <= 0 {
-			return nil
-		}
-
-		// Copy out remaining time.
-		if rem != 0 {
-			timeleft := linux.NsecToTimespec(remaining.Nanoseconds())
-			if err := copyTimespecOut(t, rem, &timeleft); err != nil {
-				return err
-			}
-		}
-		if needRestartBlock {
-			// Arrange for a restart with the remaining duration.
-			t.SetSyscallRestartBlock(&clockNanosleepRestartBlock{
-				c:   c,
-				end: end,
-				rem: rem,
-			})
-			return linuxerr.ERESTART_RESTARTBLOCK
-		}
-		return linuxerr.ERESTARTNOHAND
-	default:
-		panic(fmt.Sprintf("Impossible BlockWithTimer error %v", err))
-	}
-}
-
 // Nanosleep implements linux syscall Nanosleep(2).
 func Nanosleep(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
@@ -279,10 +212,12 @@ func ClockNanosleep(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 		return 0, nil, linuxerr.EINVAL
 	}
 
-	// Only allow clock constants also allowed by Linux.
+	// Only allow clock constants also allowed by Linux. (CLOCK_TAI is
+	// unimplemented.)
 	if clockID > 0 {
 		if clockID != linux.CLOCK_REALTIME &&
 			clockID != linux.CLOCK_MONOTONIC &&
+			clockID != linux.CLOCK_BOOTTIME &&
 			clockID != linux.CLOCK_PROCESS_CPUTIME_ID {
 			return 0, nil, linuxerr.EINVAL
 		}
@@ -299,6 +234,74 @@ func ClockNanosleep(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 
 	dur := time.Duration(req.ToNsecCapped()) * time.Nanosecond
 	return 0, nil, clockNanosleepUntil(t, c, c.Now().Add(dur), rem, true)
+}
+
+// clockNanosleepUntil blocks until a specified time.
+//
+// If blocking is interrupted, the syscall is restarted with the original
+// arguments.
+func clockNanosleepUntil(t *kernel.Task, c ktime.Clock, end ktime.Time, rem hostarch.Addr, needRestartBlock bool) error {
+	var err error
+	if c == t.Kernel().MonotonicClock() {
+		err = t.BlockWithDeadline(nil, true, end)
+	} else {
+		notifier, tchan := ktime.NewChannelNotifier()
+		timer := ktime.NewTimer(c, notifier)
+		timer.Swap(ktime.Setting{
+			Period:  0,
+			Enabled: true,
+			Next:    end,
+		})
+		err = t.BlockWithTimer(nil, tchan)
+		timer.Destroy()
+	}
+
+	switch {
+	case linuxerr.Equals(linuxerr.ETIMEDOUT, err):
+		// Slept for entire timeout.
+		return nil
+	case err == linuxerr.ErrInterrupted:
+		// Interrupted.
+		remaining := end.Sub(c.Now())
+		if remaining <= 0 {
+			return nil
+		}
+
+		// Copy out remaining time.
+		if rem != 0 {
+			timeleft := linux.NsecToTimespec(remaining.Nanoseconds())
+			if err := copyTimespecOut(t, rem, &timeleft); err != nil {
+				return err
+			}
+		}
+		if needRestartBlock {
+			// Arrange for a restart with the remaining duration.
+			t.SetSyscallRestartBlock(&clockNanosleepRestartBlock{
+				c:   c,
+				end: end,
+				rem: rem,
+			})
+			return linuxerr.ERESTART_RESTARTBLOCK
+		}
+		return linuxerr.ERESTARTNOHAND
+	default:
+		panic(fmt.Sprintf("Impossible BlockWithTimer error %v", err))
+	}
+}
+
+// clockNanosleepRestartBlock encapsulates the state required to restart
+// clock_nanosleep(2) via restart_syscall(2).
+//
+// +stateify savable
+type clockNanosleepRestartBlock struct {
+	c   ktime.Clock
+	end ktime.Time
+	rem hostarch.Addr
+}
+
+// Restart implements kernel.SyscallRestartBlock.Restart.
+func (n *clockNanosleepRestartBlock) Restart(t *kernel.Task) (uintptr, error) {
+	return 0, clockNanosleepUntil(t, n.c, n.end, n.rem, true)
 }
 
 // Gettimeofday implements linux syscall gettimeofday(2).
