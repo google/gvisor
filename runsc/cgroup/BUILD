@@ -9,9 +9,9 @@ go_library(
     deps = [
         "//pkg/cleanup",
         "//pkg/log",
-        "//pkg/sync",
         "@com_github_cenkalti_backoff//:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
+        "@org_golang_x_sync//errgroup:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
