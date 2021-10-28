@@ -34,6 +34,7 @@ type tx struct {
 	ids          idManager
 	bufs         bufferManager
 	eventFD      eventfd.Eventfd
+	sharedData   []byte
 	sharedDataFD int
 }
 
@@ -62,13 +63,22 @@ func (t *tx) init(mtu uint32, c *QueueConfig) error {
 		return err
 	}
 
+	sharedData, err := getBuffer(c.SharedDataFD)
+	if err != nil {
+		unix.Munmap(txPipe)
+		unix.Munmap(rxPipe)
+		unix.Munmap(data)
+	}
+
 	// Initialize state based on buffers.
-	t.q.Init(txPipe, rxPipe)
+	t.q.Init(txPipe, rxPipe, sharedDataPointer(sharedData))
 	t.ids.init()
 	t.bufs.init(0, len(data), int(mtu))
 	t.data = data
 	t.eventFD = c.EventFD
 	t.sharedDataFD = c.SharedDataFD
+	t.sharedData = sharedData
+
 	return nil
 }
 
@@ -149,7 +159,9 @@ func (t *tx) transmit(bufs ...buffer.View) bool {
 // notify writes to the tx.eventFD to indicate to the peer that there is data to
 // be read.
 func (t *tx) notify() {
-	t.eventFD.Notify()
+	if t.q.NotificationsEnabled() {
+		t.eventFD.Notify()
+	}
 }
 
 // idDescriptor is used by idManager to either point to a tx buffer (in case

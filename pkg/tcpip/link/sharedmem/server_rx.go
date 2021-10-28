@@ -18,6 +18,8 @@
 package sharedmem
 
 import (
+	"sync/atomic"
+
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/eventfd"
@@ -42,6 +44,10 @@ type serverRx struct {
 
 	// sharedData the memory region to use to enable/disable notifications.
 	sharedData []byte
+
+	// sharedEventFDState is the memory region in sharedData used to enable
+	// disable notifications on eventFD.
+	sharedEventFDState *uint32
 }
 
 // init initializes all state needed by the serverTx queue based on the
@@ -89,6 +95,7 @@ func (s *serverRx) init(c *QueueConfig) error {
 	s.data = data
 	s.eventFD = efd
 	s.sharedData = sharedData
+	s.sharedEventFDState = sharedDataPointer(sharedData)
 
 	cu.Release()
 	return nil
@@ -100,6 +107,18 @@ func (s *serverRx) cleanup() {
 	unix.Munmap(s.data)
 	unix.Munmap(s.sharedData)
 	s.eventFD.Close()
+}
+
+// EnableNotification updates the shared state such that the peer will notify
+// the eventfd when there are packets to be dequeued.
+func (s *serverRx) EnableNotification() {
+	atomic.StoreUint32(s.sharedEventFDState, queue.EventFDEnabled)
+}
+
+// DisableNotification updates the shared state such that the peer will not
+// notify the eventfd.
+func (s *serverRx) DisableNotification() {
+	atomic.StoreUint32(s.sharedEventFDState, queue.EventFDDisabled)
 }
 
 // completionNotificationSize is size in bytes of a completion notification sent
