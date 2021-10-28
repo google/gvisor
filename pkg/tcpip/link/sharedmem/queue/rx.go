@@ -49,9 +49,16 @@ const (
 	sizeOfConsumedBuffer = 28
 
 	// The following are the allowed states of the shared data area.
-	eventFDUninitialized = 0
-	eventFDDisabled      = 1
-	eventFDEnabled       = 2
+	// EventFDUinitialized is the value stored at the start of the shared data
+	// region when it hasn't been initialized.
+	EventFDUninitialized = 0
+	// EventFDDisabled is the value stored at the start of the shared data region
+	// when notifications using eventFD has been disabled.
+	EventFDDisabled = 1
+	// EventFDEnabled is the value stored at the start of the shared data region
+	// when eventFD should be notified as the peer might be blocked waiting on
+	// notifications.
+	EventFDEnabled = 2
 )
 
 // RxBuffer is the descriptor of a receive buffer.
@@ -84,13 +91,13 @@ func (r *Rx) Init(tx, rx []byte, sharedEventFDState *uint32) {
 // EnableNotification updates the shared state such that the peer will notify
 // the eventfd when there are packets to be dequeued.
 func (r *Rx) EnableNotification() {
-	atomic.StoreUint32(r.sharedEventFDState, eventFDEnabled)
+	atomic.StoreUint32(r.sharedEventFDState, EventFDEnabled)
 }
 
 // DisableNotification updates the shared state such that the peer will not
 // notify the eventfd.
 func (r *Rx) DisableNotification() {
-	atomic.StoreUint32(r.sharedEventFDState, eventFDDisabled)
+	atomic.StoreUint32(r.sharedEventFDState, EventFDDisabled)
 }
 
 // PostedBuffersLimit returns the maximum number of buffers that can be posted

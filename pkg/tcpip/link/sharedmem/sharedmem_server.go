@@ -287,8 +287,21 @@ func (e *serverEndpoint) dispatchLoop(d stack.NetworkDispatcher) {
 	for atomic.LoadUint32(&e.stopRequested) == 0 {
 		b := e.rx.receive()
 		if b == nil {
-			e.rx.waitForPackets()
-			continue
+			e.rx.EnableNotification()
+			// Now pull again to make sure we didn't receive any packets
+			// while notifications were not enabled.
+			for {
+				b = e.rx.receive()
+				if b != nil {
+					// Disable notifications as we only need to be notified when we are going
+					// to block on eventFD. This should prevent the peer from needlessly
+					// writing to eventFD when this end is already awake and processing
+					// packets.
+					e.rx.DisableNotification()
+					break
+				}
+				e.rx.waitForPackets()
+			}
 		}
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Data: buffer.View(b).ToVectorisedView(),
