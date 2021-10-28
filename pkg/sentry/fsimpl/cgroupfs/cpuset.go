@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -35,6 +36,8 @@ type cpusetController struct {
 
 	maxCpus uint32
 	maxMems uint32
+
+	mu sync.Mutex `state:"nosave"`
 
 	cpus *bitmap.Bitmap
 	mems *bitmap.Bitmap
@@ -71,6 +74,8 @@ type cpusData struct {
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (d *cpusData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	d.c.mu.Lock()
+	defer d.c.mu.Unlock()
 	fmt.Fprintf(buf, "%s\n", formatBitmap(d.c.cpus))
 	return nil
 }
@@ -101,6 +106,8 @@ func (d *cpusData) Write(ctx context.Context, src usermem.IOSequence, offset int
 		return 0, linuxerr.EINVAL
 	}
 
+	d.c.mu.Lock()
+	defer d.c.mu.Unlock()
 	d.c.cpus = b
 	return int64(n), nil
 }
@@ -112,6 +119,8 @@ type memsData struct {
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (d *memsData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	d.c.mu.Lock()
+	defer d.c.mu.Unlock()
 	fmt.Fprintf(buf, "%s\n", formatBitmap(d.c.mems))
 	return nil
 }
@@ -142,6 +151,8 @@ func (d *memsData) Write(ctx context.Context, src usermem.IOSequence, offset int
 		return 0, linuxerr.EINVAL
 	}
 
+	d.c.mu.Lock()
+	defer d.c.mu.Unlock()
 	d.c.mems = b
 	return int64(n), nil
 }
