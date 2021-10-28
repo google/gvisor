@@ -30,10 +30,10 @@ import (
 
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sync"
 )
 
 const (
@@ -412,7 +412,7 @@ func (c *Cgroup) createController(name string) (bool, error) {
 // existed when Install() was called, Uninstall is a noop.
 func (c *Cgroup) Uninstall() error {
 	log.Debugf("Deleting cgroup %q", c.Name)
-	wait := sync.WaitGroupErr{}
+	g, ctx := errgroup.WithContext(context.Background())
 	for key := range controllers {
 		if !c.Own[key] {
 			// cgroup is managed by caller, don't touch it.
@@ -423,7 +423,7 @@ func (c *Cgroup) Uninstall() error {
 
 		// If we try to remove the cgroup too soon after killing the sandbox we
 		// might get EBUSY, so we retry for a few seconds until it succeeds.
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 		b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
 		fn := func() error {
@@ -435,16 +435,14 @@ func (c *Cgroup) Uninstall() error {
 		}
 		// Run deletions in parallel to remove all directories even if there are
 		// failures/timeouts in other directories.
-		wait.Add(1)
-		go func() {
-			defer wait.Done()
+		g.Go(func() error {
 			if err := backoff.Retry(fn, b); err != nil {
-				wait.ReportError(fmt.Errorf("removing cgroup path %q: %w", path, err))
-				return
+				return fmt.Errorf("removing cgroup path %q: %w", path, err)
 			}
-		}()
+			return nil
+		})
 	}
-	return wait.Error()
+	return g.Wait()
 }
 
 // Join adds the current process to the all controllers. Returns function that
