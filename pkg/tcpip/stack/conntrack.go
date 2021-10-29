@@ -50,22 +50,14 @@ type tuple struct {
 	// tupleEntry is used to build an intrusive list of tuples.
 	tupleEntry
 
+	id tupleID
+
 	// conn is the connection tracking entry this tuple belongs to.
 	conn *conn
 
 	// reply is true iff the tuple's direction is opposite that of the first
 	// packet seen on the connection.
 	reply bool
-
-	mu sync.RWMutex `state:"nosave"`
-	// +checklocks:mu
-	tupleID tupleID
-}
-
-func (t *tuple) id() tupleID {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	return t.tupleID
 }
 
 // tupleID uniquely identifies a connection in one direction. It currently
@@ -103,14 +95,20 @@ type conn struct {
 	// original is the tuple in original direction. It is immutable.
 	original tuple
 
-	// reply is the tuple in reply direction.
-	reply tuple
-
 	mu sync.RWMutex `state:"nosave"`
-	// Indicates that the connection has been finalized and may handle replies.
+	// reply is the tuple in reply direction. It is immutable after
+	// initialization.
+	//
+	// See replyTupleID.
 	//
 	// +checklocks:mu
-	finalized bool
+	replyTuple *tuple
+	// replyTupleID is the tuple ID for the reply. It is used to construct
+	// the reply tuple when the connection is finalized so that the reply
+	// tuple's fields may be accessed without locks.
+	//
+	// +checklocks:mu
+	replyTupleID tupleID
 	// sourceManip indicates the packet's source is manipulated.
 	//
 	// +checklocks:mu
@@ -270,7 +268,7 @@ func getHeaders(pkt *PacketBuffer) (netHdr header.Network, transHdr header.Check
 			panic("should have dropped packets with IPv4 options")
 		}
 
-		if netHdr, transHdr, ok := getEmbeddedNetAndTransHeaders(pkt, header.IPv4MinimumSize, v4NetAndTransHdr, pkt.tuple.id().transProto); ok {
+		if netHdr, transHdr, ok := getEmbeddedNetAndTransHeaders(pkt, header.IPv4MinimumSize, v4NetAndTransHdr, pkt.tuple.id.transProto); ok {
 			return netHdr, transHdr, true, true
 		}
 	case header.ICMPv6ProtocolNumber:
@@ -283,7 +281,7 @@ func getHeaders(pkt *PacketBuffer) (netHdr header.Network, transHdr header.Check
 		// in the IPv6 packet should be a tracked protocol if we reach this point.
 		//
 		// TODO(https://gvisor.dev/issue/6789): Support extension headers.
-		transProto := pkt.tuple.id().transProto
+		transProto := pkt.tuple.id.transProto
 		if got := header.IPv6(h).TransportProtocol(); got != transProto {
 			panic(fmt.Sprintf("got TransportProtocol() = %d, want = %d", got, transProto))
 		}
@@ -424,13 +422,12 @@ func (ct *ConnTrack) getConnOrMaybeInsertNoop(pkt *PacketBuffer) *tuple {
 	// This is the first packet we're seeing for the connection. Create an entry
 	// for this new connection.
 	conn := &conn{
-		ct:       ct,
-		original: tuple{tupleID: tid},
-		reply:    tuple{tupleID: tid.reply(), reply: true},
-		lastUsed: now,
+		ct:           ct,
+		original:     tuple{id: tid},
+		replyTupleID: tid.reply(),
+		lastUsed:     now,
 	}
 	conn.original.conn = conn
-	conn.reply.conn = conn
 
 	// For now, we only map an entry for the packet's original tuple as NAT may be
 	// performed on this connection. Until the packet goes through all the hooks
@@ -465,15 +462,15 @@ func (bkt *bucket) connForTID(tid tupleID, now tcpip.MonotonicTime) *tuple {
 // +checklocksread:bkt.mu
 func (bkt *bucket) connForTIDRLocked(tid tupleID, now tcpip.MonotonicTime) *tuple {
 	for other := bkt.tuples.Front(); other != nil; other = other.Next() {
-		if tid == other.id() && !other.conn.timedOut(now) {
+		if tid == other.id && !other.conn.timedOut(now) {
 			return other
 		}
 	}
 	return nil
 }
 
-func (ct *ConnTrack) finalize(cn *conn) {
-	tid := cn.reply.id()
+func (ct *ConnTrack) finalize(reply *tuple) {
+	tid := reply.id
 	id := ct.bucket(tid)
 
 	ct.mu.RLock()
@@ -492,13 +489,13 @@ func (ct *ConnTrack) finalize(cn *conn) {
 		return
 	}
 
-	bkt.tuples.PushFront(&cn.reply)
+	bkt.tuples.PushFront(reply)
 }
 
 func (cn *conn) finalize() {
 	{
 		cn.mu.RLock()
-		finalized := cn.finalized
+		finalized := cn.replyTuple != nil
 		cn.mu.RUnlock()
 		if finalized {
 			return
@@ -506,14 +503,15 @@ func (cn *conn) finalize() {
 	}
 
 	cn.mu.Lock()
-	finalized := cn.finalized
-	cn.finalized = true
-	cn.mu.Unlock()
-	if finalized {
+	if cn.replyTuple != nil {
+		cn.mu.Unlock()
 		return
 	}
+	reply := &tuple{id: cn.replyTupleID, conn: cn, reply: true}
+	cn.replyTuple = reply
+	cn.mu.Unlock()
 
-	cn.ct.finalize(cn)
+	cn.ct.finalize(reply)
 }
 
 // performNAT setups up the connection for the specified NAT.
@@ -529,7 +527,7 @@ func (cn *conn) performNATIfNoop(port uint16, address tcpip.Address, dnat bool) 
 	cn.mu.Lock()
 	defer cn.mu.Unlock()
 
-	if cn.finalized {
+	if cn.replyTuple != nil {
 		return
 	}
 
@@ -545,15 +543,12 @@ func (cn *conn) performNATIfNoop(port uint16, address tcpip.Address, dnat bool) 
 		cn.sourceManip = true
 	}
 
-	cn.reply.mu.Lock()
-	defer cn.reply.mu.Unlock()
-
 	if dnat {
-		cn.reply.tupleID.srcAddr = address
-		cn.reply.tupleID.srcPort = port
+		cn.replyTupleID.srcAddr = address
+		cn.replyTupleID.srcPort = port
 	} else {
-		cn.reply.tupleID.dstAddr = address
-		cn.reply.tupleID.dstPort = port
+		cn.replyTupleID.dstAddr = address
+		cn.replyTupleID.dstPort = port
 	}
 }
 
@@ -616,7 +611,6 @@ func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, rt *Route) bool {
 		// Update connection state.
 		cn.updateLocked(pkt, reply)
 
-		var tuple *tuple
 		if reply {
 			if dnat {
 				if !cn.sourceManip {
@@ -626,20 +620,18 @@ func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, rt *Route) bool {
 				return tupleID{}, false
 			}
 
-			tuple = &cn.original
-		} else {
-			if dnat {
-				if !cn.destinationManip {
-					return tupleID{}, false
-				}
-			} else if !cn.sourceManip {
-				return tupleID{}, false
-			}
-
-			tuple = &cn.reply
+			return cn.original.id, true
 		}
 
-		return tuple.id(), true
+		if dnat {
+			if !cn.destinationManip {
+				return tupleID{}, false
+			}
+		} else if !cn.sourceManip {
+			return tupleID{}, false
+		}
+
+		return cn.replyTupleID, true
 	}()
 	if !performManip {
 		return false
@@ -736,9 +728,6 @@ func (ct *ConnTrack) bucket(id tupleID) int {
 
 // reapUnused deletes timed out entries from the conntrack map. The rules for
 // reaping are:
-// - Most reaping occurs in connFor, which is called on each packet. connFor
-//   cleans up the bucket the packet's connection maps to. Thus calls to
-//   reapUnused should be fast.
 // - Each call to reapUnused traverses a fraction of the conntrack table.
 //   Specifically, it traverses len(ct.buckets)/fractionPerReaping.
 // - After reaping, reapUnused decides when it should next run based on the
@@ -805,45 +794,48 @@ func (ct *ConnTrack) reapUnused(start int, prevInterval time.Duration) (int, tim
 // Precondition: ct.mu is read locked and bkt.mu is write locked.
 // +checklocksread:ct.mu
 // +checklocks:bkt.mu
-func (ct *ConnTrack) reapTupleLocked(tuple *tuple, bktID int, bkt *bucket, now tcpip.MonotonicTime) bool {
-	if !tuple.conn.timedOut(now) {
+func (ct *ConnTrack) reapTupleLocked(reapingTuple *tuple, bktID int, bkt *bucket, now tcpip.MonotonicTime) bool {
+	if !reapingTuple.conn.timedOut(now) {
 		return false
 	}
 
-	// To maintain lock order, we can only reap both tuples if the reply appears
-	// later in the table.
-	replyBktID := ct.bucket(tuple.id().reply())
-	tuple.conn.mu.RLock()
-	replyTupleInserted := tuple.conn.finalized
-	tuple.conn.mu.RUnlock()
-	if bktID > replyBktID && replyTupleInserted {
+	reapingTuple.conn.mu.RLock()
+	// To maintain lock order, we can only reap both tuples if the tuple for the
+	// other direction appears later in the table.
+	var otherTuple *tuple
+	if reapingTuple.reply {
+		otherTuple = &reapingTuple.conn.original
+	} else {
+		otherTuple = reapingTuple.conn.replyTuple
+	}
+	replyTupleInserted := reapingTuple.conn.replyTuple != nil
+	reapingTuple.conn.mu.RUnlock()
+
+	if !replyTupleInserted {
+		bkt.tuples.Remove(reapingTuple)
 		return true
 	}
 
-	// Reap the reply.
-	if replyTupleInserted {
+	otherTupleBktID := ct.bucket(otherTuple.id)
+	if bktID > otherTupleBktID {
+		return true
+	}
+
+	bkt.tuples.Remove(reapingTuple)
+
+	// Reap the other connection.
+
+	if bktID == otherTupleBktID {
 		// Don't re-lock if both tuples are in the same bucket.
-		if bktID != replyBktID {
-			replyBkt := &ct.buckets[replyBktID]
-			replyBkt.mu.Lock()
-			removeConnFromBucket(replyBkt, tuple)
-			replyBkt.mu.Unlock()
-		} else {
-			removeConnFromBucket(bkt, tuple)
-		}
+		bkt.tuples.Remove(otherTuple)
+		return true
 	}
 
-	bkt.tuples.Remove(tuple)
+	otherTupleBkt := &ct.buckets[otherTupleBktID]
+	otherTupleBkt.mu.Lock()
+	otherTupleBkt.tuples.Remove(otherTuple)
+	otherTupleBkt.mu.Unlock()
 	return true
-}
-
-// +checklocks:b.mu
-func removeConnFromBucket(b *bucket, tuple *tuple) {
-	if tuple.reply {
-		b.tuples.Remove(&tuple.conn.original)
-	} else {
-		b.tuples.Remove(&tuple.conn.reply)
-	}
 }
 
 func (ct *ConnTrack) originalDst(epID TransportEndpointID, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber) (tcpip.Address, uint16, tcpip.Error) {
@@ -870,6 +862,6 @@ func (ct *ConnTrack) originalDst(epID TransportEndpointID, netProto tcpip.Networ
 		return "", 0, &tcpip.ErrInvalidOptionValue{}
 	}
 
-	id := t.conn.original.id()
+	id := t.conn.original.id
 	return id.dstAddr, id.dstPort, nil
 }
