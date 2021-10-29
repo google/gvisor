@@ -23,7 +23,6 @@ import (
 	"testing"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/abi/linux/errno"
 	gErrors "gvisor.dev/gvisor/pkg/errors"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 )
@@ -121,7 +120,7 @@ func BenchmarkReturnLinuxerr(b *testing.B) {
 func BenchmarkConvertUnixLinuxerr(b *testing.B) {
 	var localError error
 	for i := b.N; i > 0; i-- {
-		localError = linuxerr.ErrorFromErrno(errno.Errno(unix.EINVAL))
+		localError = linuxerr.ErrorFromUnix(unix.EINVAL)
 	}
 	if localError != nil {
 		return
@@ -131,7 +130,7 @@ func BenchmarkConvertUnixLinuxerr(b *testing.B) {
 func BenchmarkConvertUnixLinuxerrZero(b *testing.B) {
 	var localError error
 	for i := b.N; i > 0; i-- {
-		localError = linuxerr.ErrorFromErrno(errno.Errno(0))
+		localError = linuxerr.ErrorFromUnix(unix.Errno(0))
 	}
 	if localError != nil {
 		return
@@ -179,7 +178,7 @@ func TestErrorTranslation(t *testing.T) {
 func TestSyscallErrnoToErrors(t *testing.T) {
 	for _, tc := range []struct {
 		errno syscall.Errno
-		err   *gErrors.Error
+		err   error
 	}{
 		{errno: syscall.EACCES, err: linuxerr.EACCES},
 		{errno: syscall.EAGAIN, err: linuxerr.EAGAIN},
@@ -200,9 +199,9 @@ func TestSyscallErrnoToErrors(t *testing.T) {
 		{errno: syscall.EWOULDBLOCK, err: linuxerr.EAGAIN},
 	} {
 		t.Run(tc.errno.Error(), func(t *testing.T) {
-			e := linuxerr.ErrorFromErrno(errno.Errno(tc.errno))
+			e := linuxerr.ErrorFromUnix(unix.Errno(tc.errno))
 			if e != tc.err {
-				t.Fatalf("Mismatch errors: want: %+v (%d) got: %+v %d", tc.err, tc.err.Errno(), e, e.Errno())
+				t.Fatalf("Mismatch errors: want: %+v %T got: %+v %T", tc.err, tc.err, e, e)
 			}
 		})
 	}
@@ -212,6 +211,7 @@ func TestSyscallErrnoToErrors(t *testing.T) {
 // unix.Errno and linuxerr.
 // TODO (b/34162363): Remove this.
 func TestEqualsMethod(t *testing.T) {
+	noError := linuxerr.ErrorFromUnix(unix.Errno(0))
 	for _, tc := range []struct {
 		name     string
 		linuxErr []*gErrors.Error
@@ -220,20 +220,20 @@ func TestEqualsMethod(t *testing.T) {
 	}{
 		{
 			name:     "compare nil",
-			linuxErr: []*gErrors.Error{nil, linuxerr.NOERROR},
-			err:      []error{nil, linuxerr.NOERROR, unix.Errno(0)},
+			linuxErr: []*gErrors.Error{nil},
+			err:      []error{nil, noError, unix.Errno(0)},
 			equal:    true,
 		},
 		{
 			name:     "linuxerr nil error not",
-			linuxErr: []*gErrors.Error{nil, linuxerr.NOERROR},
+			linuxErr: []*gErrors.Error{nil},
 			err:      []error{unix.Errno(1), linuxerr.EPERM, linuxerr.EACCES},
 			equal:    false,
 		},
 		{
 			name:     "linuxerr not nil error nil",
 			linuxErr: []*gErrors.Error{linuxerr.ENOENT},
-			err:      []error{nil, unix.Errno(0), linuxerr.NOERROR},
+			err:      []error{nil, unix.Errno(0)},
 			equal:    false,
 		},
 		{
@@ -250,7 +250,7 @@ func TestEqualsMethod(t *testing.T) {
 		},
 		{
 			name:     "other error",
-			linuxErr: []*gErrors.Error{nil, linuxerr.NOERROR, linuxerr.E2BIG, linuxerr.EINVAL},
+			linuxErr: []*gErrors.Error{nil, linuxerr.E2BIG, linuxerr.EINVAL},
 			err:      []error{fs.ErrInvalid, io.EOF},
 			equal:    false,
 		},

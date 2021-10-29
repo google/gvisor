@@ -23,7 +23,6 @@ import (
 	"sync/atomic"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/abi/linux/errno"
 	"gvisor.dev/gvisor/pkg/errors"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fd"
@@ -46,7 +45,7 @@ func ExtractErrno(err error) unix.Errno {
 	// Attempt to unwrap.
 	switch e := err.(type) {
 	case *errors.Error:
-		return unix.Errno(e.Errno())
+		return linuxerr.ToUnix(e)
 	case unix.Errno:
 		return e
 	case *os.PathError:
@@ -69,7 +68,7 @@ func newErr(err error) *Rlerror {
 
 // ExtractLinuxerrErrno extracts a *errors.Error from a error, best effort.
 // TODO(b/34162363): Merge this with ExtractErrno.
-func ExtractLinuxerrErrno(err error) *errors.Error {
+func ExtractLinuxerrErrno(err error) error {
 	switch err {
 	case os.ErrNotExist:
 		return linuxerr.ENOENT
@@ -84,9 +83,9 @@ func ExtractLinuxerrErrno(err error) *errors.Error {
 	// Attempt to unwrap.
 	switch e := err.(type) {
 	case *errors.Error:
-		return e
+		return linuxerr.ToError(e)
 	case unix.Errno:
-		return linuxerr.ErrorFromErrno(errno.Errno(e))
+		return linuxerr.ErrorFromUnix(e)
 	case *os.PathError:
 		return ExtractLinuxerrErrno(e.Err)
 	case *os.SyscallError:
@@ -103,7 +102,7 @@ func ExtractLinuxerrErrno(err error) *errors.Error {
 // newErrFromLinuxerr returns an Rlerror from the linuxerr list.
 // TODO(b/34162363): Merge this with newErr.
 func newErrFromLinuxerr(err error) *Rlerror {
-	return &Rlerror{Error: uint32(ExtractLinuxerrErrno(err).Errno())}
+	return &Rlerror{Error: uint32(ExtractErrno(err))}
 }
 
 // handler is implemented for server-handled messages.
