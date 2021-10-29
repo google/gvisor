@@ -72,8 +72,9 @@ type Sandbox struct {
 	// GID is the group ID in the parent namespace that the sandbox is running as.
 	GID int `json:"gid"`
 
-	// Cgroup has the cgroup configuration for the sandbox.
-	Cgroup *cgroup.Cgroup `json:"cgroup"`
+	// CgroupJSON contains the cgroup configuration that the sandbox is part of
+	// and allow serialization of the configuration into json
+	CgroupJSON cgroup.CgroupJSON `json:"cgroup"`
 
 	// OriginalOOMScoreAdj stores the value of oom_score_adj when the sandbox
 	// started, before it may be modified.
@@ -124,7 +125,7 @@ type Args struct {
 	MountsFile *os.File
 
 	// Gcgroup is the cgroup that the sandbox is part of.
-	Cgroup *cgroup.Cgroup
+	Cgroup cgroup.Cgroup
 
 	// Attached indicates that the sandbox lifecycle is attached with the caller.
 	// If the caller exits, the sandbox should exit too.
@@ -134,7 +135,7 @@ type Args struct {
 // New creates the sandbox process. The caller must call Destroy() on the
 // sandbox.
 func New(conf *config.Config, args *Args) (*Sandbox, error) {
-	s := &Sandbox{ID: args.ID, Cgroup: args.Cgroup}
+	s := &Sandbox{ID: args.ID, CgroupJSON: cgroup.CgroupJSON{Cgroup: args.Cgroup}}
 	// The Cleanup object cleans up partially created sandboxes when an error
 	// occurs. Any errors occurring during cleanup itself are ignored.
 	c := cleanup.Make(func() {
@@ -328,7 +329,7 @@ func (s *Sandbox) Processes(cid string) ([]*control.Process, error) {
 }
 
 // NewCGroup returns the sandbox's Cgroup, or an error if it does not have one.
-func (s *Sandbox) NewCGroup() (*cgroup.Cgroup, error) {
+func (s *Sandbox) NewCGroup() (cgroup.Cgroup, error) {
 	return cgroup.NewFromPid(s.Pid)
 }
 
@@ -763,8 +764,8 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		return err
 	}
 
-	if s.Cgroup != nil {
-		cpuNum, err := s.Cgroup.NumCPU()
+	if s.CgroupJSON.Cgroup != nil {
+		cpuNum, err := s.CgroupJSON.Cgroup.NumCPU()
 		if err != nil {
 			return fmt.Errorf("getting cpu count from cgroups: %v", err)
 		}
@@ -774,7 +775,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 			// leaving two cores as reasonable default.
 			const minCPUs = 2
 
-			quota, err := s.Cgroup.CPUQuota()
+			quota, err := s.CgroupJSON.Cgroup.CPUQuota()
 			if err != nil {
 				return fmt.Errorf("getting cpu qouta from cgroups: %v", err)
 			}
@@ -790,7 +791,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		}
 		cmd.Args = append(cmd.Args, "--cpu-num", strconv.Itoa(cpuNum))
 
-		memLimit, err := s.Cgroup.MemoryLimit()
+		memLimit, err := s.CgroupJSON.Cgroup.MemoryLimit()
 		if err != nil {
 			return fmt.Errorf("getting memory limit from cgroups: %v", err)
 		}

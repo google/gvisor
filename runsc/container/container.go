@@ -123,7 +123,7 @@ type Container struct {
 	// Note that CompatCgroup is created only for compatibility with tools
 	// that expect container cgroups to exist. Setting limits here makes no change
 	// to the container in question.
-	CompatCgroup *cgroup.Cgroup `json:"compatCgroup"`
+	CompatCgroup cgroup.CgroupJSON `json:"compatCgroup"`
 
 	// Saver handles load from/save to the state file safely from multiple
 	// processes.
@@ -249,7 +249,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 		if err != nil {
 			return nil, err
 		}
-		c.CompatCgroup = subCgroup
+		c.CompatCgroup = cgroup.CgroupJSON{Cgroup: subCgroup}
 		if err := runInCgroup(parentCgroup, func() error {
 			ioFiles, specFile, err := c.createGoferProcess(args.Spec, conf, args.BundleDir, args.Attached)
 			if err != nil {
@@ -297,7 +297,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 		if err != nil {
 			return nil, err
 		}
-		c.CompatCgroup = subCgroup
+		c.CompatCgroup = cgroup.CgroupJSON{Cgroup: subCgroup}
 
 		// If the console control socket file is provided, then create a new
 		// pty master/slave pair and send the TTY to the sandbox process.
@@ -365,7 +365,7 @@ func (c *Container) Start(conf *config.Config) error {
 	} else {
 		// Join cgroup to start gofer process to ensure it's part of the cgroup from
 		// the start (and all their children processes).
-		if err := runInCgroup(c.Sandbox.Cgroup, func() error {
+		if err := runInCgroup(c.Sandbox.CgroupJSON.Cgroup, func() error {
 			// Create the gofer process.
 			goferFiles, mountsFile, err := c.createGoferProcess(c.Spec, conf, c.BundleDir, false)
 			if err != nil {
@@ -784,7 +784,7 @@ func (c *Container) saveLocked() error {
 // root containers), and waits for the container or sandbox and the gofer
 // to stop. If any of them doesn't stop before timeout, an error is returned.
 func (c *Container) stop() error {
-	var parentCgroup *cgroup.Cgroup
+	var parentCgroup cgroup.Cgroup
 
 	if c.Sandbox != nil {
 		log.Debugf("Destroying container, cid: %s", c.ID)
@@ -793,7 +793,7 @@ func (c *Container) stop() error {
 		}
 		// Only uninstall parentCgroup for sandbox stop.
 		if c.Sandbox.IsRootContainer(c.ID) {
-			parentCgroup = c.Sandbox.Cgroup
+			parentCgroup = c.Sandbox.CgroupJSON.Cgroup
 		}
 		// Only set sandbox to nil after it has been told to destroy the container.
 		c.Sandbox = nil
@@ -813,8 +813,8 @@ func (c *Container) stop() error {
 	}
 
 	// Delete container cgroup if any.
-	if c.CompatCgroup != nil {
-		if err := c.CompatCgroup.Uninstall(); err != nil {
+	if c.CompatCgroup.Cgroup != nil {
+		if err := c.CompatCgroup.Cgroup.Uninstall(); err != nil {
 			return err
 		}
 	}
@@ -1059,7 +1059,7 @@ func isRoot(spec *specs.Spec) bool {
 
 // runInCgroup executes fn inside the specified cgroup. If cg is nil, execute
 // it in the current context.
-func runInCgroup(cg *cgroup.Cgroup, fn func() error) error {
+func runInCgroup(cg cgroup.Cgroup, fn func() error) error {
 	if cg == nil {
 		return fn()
 	}
@@ -1222,8 +1222,8 @@ func (c *Container) populateStats(event *boot.EventOut) {
 // setupCgroupForRoot configures and returns cgroup for the sandbox and the
 // root container. If `cgroupParentAnnotation` is set, use that path as the
 // sandbox cgroup and use Spec.Linux.CgroupsPath as the root container cgroup.
-func (c *Container) setupCgroupForRoot(conf *config.Config, spec *specs.Spec) (*cgroup.Cgroup, *cgroup.Cgroup, error) {
-	var parentCgroup *cgroup.Cgroup
+func (c *Container) setupCgroupForRoot(conf *config.Config, spec *specs.Spec) (cgroup.Cgroup, cgroup.Cgroup, error) {
+	var parentCgroup cgroup.Cgroup
 	if parentPath, ok := spec.Annotations[cgroupParentAnnotation]; ok {
 		var err error
 		parentCgroup, err = cgroup.NewFromPath(parentPath)
@@ -1256,7 +1256,7 @@ func (c *Container) setupCgroupForRoot(conf *config.Config, spec *specs.Spec) (*
 // subcontainers run exclusively inside the sandbox, subcontainer cgroups on the
 // host have no effect on them. However, some tools (e.g. cAdvisor) uses cgroups
 // paths to discover new containers and report stats for them.
-func (c *Container) setupCgroupForSubcontainer(conf *config.Config, spec *specs.Spec) (*cgroup.Cgroup, error) {
+func (c *Container) setupCgroupForSubcontainer(conf *config.Config, spec *specs.Spec) (cgroup.Cgroup, error) {
 	if isRoot(spec) {
 		if _, ok := spec.Annotations[cgroupParentAnnotation]; !ok {
 			return nil, nil
@@ -1276,7 +1276,7 @@ func (c *Container) setupCgroupForSubcontainer(conf *config.Config, spec *specs.
 // For rootless, it's possible that cgroups operations fail, in this case the
 // error is suppressed and a nil cgroups instance is returned to indicate that
 // no cgroups was configured.
-func cgroupInstall(conf *config.Config, cg *cgroup.Cgroup, res *specs.LinuxResources) (*cgroup.Cgroup, error) {
+func cgroupInstall(conf *config.Config, cg cgroup.Cgroup, res *specs.LinuxResources) (cgroup.Cgroup, error) {
 	// TODO(gvisor.dev/issue/3481): Remove when cgroups v2 is supported.
 	if cgroup.IsOnlyV2() {
 		if conf.Rootless {
