@@ -1809,6 +1809,17 @@ func TestNATICMPError(t *testing.T) {
 		ip.SetChecksum(^ip.CalculateChecksum())
 	}
 
+	ip6Hdr := func(v buffer.View, payloadLen int, transProto tcpip.TransportProtocolNumber, srcAddr, dstAddr tcpip.Address) {
+		ip := header.IPv6(v)
+		ip.Encode(&header.IPv6Fields{
+			PayloadLength:     uint16(payloadLen),
+			TransportProtocol: transProto,
+			HopLimit:          64,
+			SrcAddr:           srcAddr,
+			DstAddr:           dstAddr,
+		})
+	}
+
 	tests := []struct {
 		name            string
 		netProto        tcpip.NetworkProtocolNumber
@@ -1956,6 +1967,150 @@ func TestNATICMPError(t *testing.T) {
 				{
 					name:           "Echo Reply",
 					val:            uint8(header.ICMPv4EchoReply),
+					expectResponse: false,
+				},
+			},
+		},
+		{
+			name:      "IPv6",
+			netProto:  ipv6.ProtocolNumber,
+			host1Addr: utils.Host1IPv6Addr.AddressWithPrefix.Address,
+			icmpError: func(t *testing.T, original buffer.View, icmpType uint8) buffer.View {
+				payloadLen := header.ICMPv6MinimumSize + len(original)
+				hdr := buffer.NewPrependable(header.IPv6MinimumSize + payloadLen)
+				icmp := header.ICMPv6(hdr.Prepend(payloadLen))
+				icmp.SetType(header.ICMPv6Type(icmpType))
+				if n := copy(icmp.Payload(), original); n != len(original) {
+					t.Fatalf("got copy(...) = %d, want = %d", n, len(original))
+				}
+				icmp.SetChecksum(0)
+				icmp.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+					Header: icmp,
+					Src:    utils.Host1IPv6Addr.AddressWithPrefix.Address,
+					Dst:    utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address,
+				}))
+				ip6Hdr(hdr.Prepend(header.IPv6MinimumSize),
+					payloadLen,
+					header.ICMPv6ProtocolNumber,
+					utils.Host1IPv6Addr.AddressWithPrefix.Address,
+					utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address,
+				)
+				return hdr.View()
+			},
+			decrementTTL: func(v buffer.View) {
+				ip := header.IPv6(v)
+				ip.SetHopLimit(ip.HopLimit() - 1)
+			},
+			checkNATedError: func(t *testing.T, v buffer.View, original buffer.View, icmpType uint8) {
+				checker.IPv6(t, v,
+					checker.SrcAddr(utils.RouterNIC2IPv6Addr.AddressWithPrefix.Address),
+					checker.DstAddr(utils.Host2IPv6Addr.AddressWithPrefix.Address),
+					checker.ICMPv6(
+						checker.ICMPv6Type(header.ICMPv6Type(icmpType)),
+						checker.ICMPv6Payload(original),
+					),
+				)
+			},
+			transportTypes: []transportTypeTest{
+				{
+					name:  "UDP",
+					proto: header.UDPProtocolNumber,
+					buf: func() buffer.View {
+						hdr := buffer.NewPrependable(header.IPv6MinimumSize + header.UDPMinimumSize)
+						udp := header.UDP(hdr.Prepend(header.UDPMinimumSize))
+						udp.SetSourcePort(srcPort)
+						udp.SetDestinationPort(dstPort)
+						udp.SetChecksum(0)
+						udp.SetChecksum(^udp.CalculateChecksum(header.PseudoHeaderChecksum(
+							header.UDPProtocolNumber,
+							utils.Host2IPv6Addr.AddressWithPrefix.Address,
+							utils.RouterNIC2IPv6Addr.AddressWithPrefix.Address,
+							uint16(len(udp)),
+						)))
+						ip6Hdr(hdr.Prepend(header.IPv6MinimumSize),
+							header.UDPMinimumSize,
+							header.UDPProtocolNumber,
+							utils.Host2IPv6Addr.AddressWithPrefix.Address,
+							utils.RouterNIC2IPv6Addr.AddressWithPrefix.Address,
+						)
+						return hdr.View()
+					}(),
+					checkNATed: func(t *testing.T, v buffer.View) {
+						checker.IPv6(t, v,
+							checker.SrcAddr(utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address),
+							checker.DstAddr(utils.Host1IPv6Addr.AddressWithPrefix.Address),
+							checker.UDP(
+								checker.SrcPort(srcPort),
+								checker.DstPort(dstPort),
+							),
+						)
+					},
+				},
+				{
+					name:  "TCP",
+					proto: header.TCPProtocolNumber,
+					buf: func() buffer.View {
+						hdr := buffer.NewPrependable(header.IPv6MinimumSize + header.TCPMinimumSize)
+						tcp := header.TCP(hdr.Prepend(header.TCPMinimumSize))
+						tcp.SetSourcePort(srcPort)
+						tcp.SetDestinationPort(dstPort)
+						tcp.SetDataOffset(header.TCPMinimumSize)
+						tcp.SetChecksum(0)
+						tcp.SetChecksum(^tcp.CalculateChecksum(header.PseudoHeaderChecksum(
+							header.TCPProtocolNumber,
+							utils.Host2IPv6Addr.AddressWithPrefix.Address,
+							utils.RouterNIC2IPv6Addr.AddressWithPrefix.Address,
+							uint16(len(tcp)),
+						)))
+						ip6Hdr(hdr.Prepend(header.IPv6MinimumSize),
+							header.TCPMinimumSize,
+							header.TCPProtocolNumber,
+							utils.Host2IPv6Addr.AddressWithPrefix.Address,
+							utils.RouterNIC2IPv6Addr.AddressWithPrefix.Address,
+						)
+						return hdr.View()
+					}(),
+					checkNATed: func(t *testing.T, v buffer.View) {
+						checker.IPv6(t, v,
+							checker.SrcAddr(utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address),
+							checker.DstAddr(utils.Host1IPv6Addr.AddressWithPrefix.Address),
+							checker.TCP(
+								checker.SrcPort(srcPort),
+								checker.DstPort(dstPort),
+							),
+						)
+					},
+				},
+			},
+			icmpTypes: []icmpTypeTest{
+				{
+					name:           "Destination Unreachable",
+					val:            uint8(header.ICMPv6DstUnreachable),
+					expectResponse: true,
+				},
+				{
+					name:           "Packet Too Big",
+					val:            uint8(header.ICMPv6PacketTooBig),
+					expectResponse: true,
+				},
+				{
+					name:           "Time Exceeded",
+					val:            uint8(header.ICMPv6TimeExceeded),
+					expectResponse: true,
+				},
+				{
+					name:           "Parameter Problem",
+					val:            uint8(header.ICMPv6ParamProblem),
+					expectResponse: true,
+				},
+				{
+					name:           "Echo Request",
+					val:            uint8(header.ICMPv6EchoRequest),
+					expectResponse: false,
+				},
+				{
+					name:           "Echo Reply",
+					val:            uint8(header.ICMPv6EchoReply),
 					expectResponse: false,
 				},
 			},
