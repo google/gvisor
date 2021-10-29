@@ -19,7 +19,7 @@ import (
 	"runtime/debug"
 	"sync/atomic"
 
-	"gvisor.dev/gvisor/pkg/abi/linux/errno"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fdchannel"
@@ -510,7 +510,7 @@ func (cs *connState) handle(m message) (r message) {
 		// It will be removed a followup, when all the unix.Errno errors are
 		// replaced with linuxerr.
 		if rlError, ok := r.(*Rlerror); ok {
-			e := linuxerr.ErrorFromErrno(errno.Errno(rlError.Error))
+			e := linuxerr.ErrorFromUnix(unix.Errno(rlError.Error))
 			r = newErrFromLinuxerr(e)
 		}
 	} else {
