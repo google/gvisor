@@ -292,11 +292,11 @@ func (t *TransportEndpointInfo) AddrNetProtoLocked(addr tcpip.FullAddress, v6onl
 	switch len(t.ID.LocalAddress) {
 	case header.IPv4AddressSize:
 		if len(addr.Addr) == header.IPv6AddressSize {
-			return tcpip.FullAddress{}, 0, &tcpip.ErrInvalidEndpointState{}
+			return tcpip.FullAddress{}, 0, tcpip.ErrInvalidEndpointState
 		}
 	case header.IPv6AddressSize:
 		if len(addr.Addr) == header.IPv4AddressSize {
-			return tcpip.FullAddress{}, 0, &tcpip.ErrNetworkUnreachable{}
+			return tcpip.FullAddress{}, 0, tcpip.ErrNetworkUnreachable
 		}
 	}
 
@@ -304,10 +304,10 @@ func (t *TransportEndpointInfo) AddrNetProtoLocked(addr tcpip.FullAddress, v6onl
 	case netProto == t.NetProto:
 	case netProto == header.IPv4ProtocolNumber && t.NetProto == header.IPv6ProtocolNumber:
 		if v6only {
-			return tcpip.FullAddress{}, 0, &tcpip.ErrNoRoute{}
+			return tcpip.FullAddress{}, 0, tcpip.ErrNoRoute
 		}
 	default:
-		return tcpip.FullAddress{}, 0, &tcpip.ErrInvalidEndpointState{}
+		return tcpip.FullAddress{}, 0, tcpip.ErrInvalidEndpointState
 	}
 
 	return addr, netProto, nil
@@ -431,7 +431,7 @@ func (s *Stack) UniqueID() uint64 {
 func (s *Stack) SetNetworkProtocolOption(network tcpip.NetworkProtocolNumber, option tcpip.SettableNetworkProtocolOption) tcpip.Error {
 	netProto, ok := s.networkProtocols[network]
 	if !ok {
-		return &tcpip.ErrUnknownProtocol{}
+		return tcpip.ErrUnknownProtocol
 	}
 	return netProto.SetOption(option)
 }
@@ -448,7 +448,7 @@ func (s *Stack) SetNetworkProtocolOption(network tcpip.NetworkProtocolNumber, op
 func (s *Stack) NetworkProtocolOption(network tcpip.NetworkProtocolNumber, option tcpip.GettableNetworkProtocolOption) tcpip.Error {
 	netProto, ok := s.networkProtocols[network]
 	if !ok {
-		return &tcpip.ErrUnknownProtocol{}
+		return tcpip.ErrUnknownProtocol
 	}
 	return netProto.Option(option)
 }
@@ -460,7 +460,7 @@ func (s *Stack) NetworkProtocolOption(network tcpip.NetworkProtocolNumber, optio
 func (s *Stack) SetTransportProtocolOption(transport tcpip.TransportProtocolNumber, option tcpip.SettableTransportProtocolOption) tcpip.Error {
 	transProtoState, ok := s.transportProtocols[transport]
 	if !ok {
-		return &tcpip.ErrUnknownProtocol{}
+		return tcpip.ErrUnknownProtocol
 	}
 	return transProtoState.proto.SetOption(option)
 }
@@ -475,7 +475,7 @@ func (s *Stack) SetTransportProtocolOption(transport tcpip.TransportProtocolNumb
 func (s *Stack) TransportProtocolOption(transport tcpip.TransportProtocolNumber, option tcpip.GettableTransportProtocolOption) tcpip.Error {
 	transProtoState, ok := s.transportProtocols[transport]
 	if !ok {
-		return &tcpip.ErrUnknownProtocol{}
+		return tcpip.ErrUnknownProtocol
 	}
 	return transProtoState.proto.Option(option)
 }
@@ -514,7 +514,7 @@ func (s *Stack) SetNICForwarding(id tcpip.NICID, protocol tcpip.NetworkProtocolN
 
 	nic, ok := s.nics[id]
 	if !ok {
-		return &tcpip.ErrUnknownNICID{}
+		return tcpip.ErrUnknownNICID
 	}
 
 	return nic.setForwarding(protocol, enable)
@@ -527,7 +527,7 @@ func (s *Stack) NICForwarding(id tcpip.NICID, protocol tcpip.NetworkProtocolNumb
 
 	nic, ok := s.nics[id]
 	if !ok {
-		return false, &tcpip.ErrUnknownNICID{}
+		return false, tcpip.ErrUnknownNICID
 	}
 
 	return nic.forwarding(protocol)
@@ -617,7 +617,7 @@ func (s *Stack) RemoveRoutes(match func(tcpip.Route) bool) {
 func (s *Stack) NewEndpoint(transport tcpip.TransportProtocolNumber, network tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, tcpip.Error) {
 	t, ok := s.transportProtocols[transport]
 	if !ok {
-		return nil, &tcpip.ErrUnknownProtocol{}
+		return nil, tcpip.ErrUnknownProtocol
 	}
 
 	return t.proto.NewEndpoint(network, waiterQueue)
@@ -628,7 +628,7 @@ func (s *Stack) NewEndpoint(transport tcpip.TransportProtocolNumber, network tcp
 // of address.
 func (s *Stack) NewRawEndpoint(transport tcpip.TransportProtocolNumber, network tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue, associated bool) (tcpip.Endpoint, tcpip.Error) {
 	if s.rawFactory == nil {
-		return nil, &tcpip.ErrNotPermitted{}
+		return nil, tcpip.ErrNotPermitted
 	}
 
 	if !associated {
@@ -637,7 +637,7 @@ func (s *Stack) NewRawEndpoint(transport tcpip.TransportProtocolNumber, network 
 
 	t, ok := s.transportProtocols[transport]
 	if !ok {
-		return nil, &tcpip.ErrUnknownProtocol{}
+		return nil, tcpip.ErrUnknownProtocol
 	}
 
 	return t.proto.NewRawEndpoint(network, waiterQueue)
@@ -647,7 +647,7 @@ func (s *Stack) NewRawEndpoint(transport tcpip.TransportProtocolNumber, network 
 // netProto.
 func (s *Stack) NewPacketEndpoint(cooked bool, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, tcpip.Error) {
 	if s.rawFactory == nil {
-		return nil, &tcpip.ErrNotPermitted{}
+		return nil, tcpip.ErrNotPermitted
 	}
 
 	return s.rawFactory.NewPacketEndpoint(s, cooked, netProto, waiterQueue)
@@ -684,14 +684,14 @@ func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOp
 
 	// Make sure id is unique.
 	if _, ok := s.nics[id]; ok {
-		return &tcpip.ErrDuplicateNICID{}
+		return tcpip.ErrDuplicateNICID
 	}
 
 	// Make sure name is unique, unless unnamed.
 	if opts.Name != "" {
 		for _, n := range s.nics {
 			if n.Name() == opts.Name {
-				return &tcpip.ErrDuplicateNICID{}
+				return tcpip.ErrDuplicateNICID
 			}
 		}
 	}
@@ -736,7 +736,7 @@ func (s *Stack) EnableNIC(id tcpip.NICID) tcpip.Error {
 
 	nic, ok := s.nics[id]
 	if !ok {
-		return &tcpip.ErrUnknownNICID{}
+		return tcpip.ErrUnknownNICID
 	}
 
 	return nic.enable()
@@ -749,7 +749,7 @@ func (s *Stack) DisableNIC(id tcpip.NICID) tcpip.Error {
 
 	nic, ok := s.nics[id]
 	if !ok {
-		return &tcpip.ErrUnknownNICID{}
+		return tcpip.ErrUnknownNICID
 	}
 
 	nic.disable()
@@ -783,10 +783,10 @@ func (s *Stack) RemoveNIC(id tcpip.NICID) tcpip.Error {
 func (s *Stack) removeNICLocked(id tcpip.NICID) tcpip.Error {
 	nic, ok := s.nics[id]
 	if !ok {
-		return &tcpip.ErrUnknownNICID{}
+		return tcpip.ErrUnknownNICID
 	}
 	if nic.IsLoopback() {
-		return &tcpip.ErrNotSupported{}
+		return tcpip.ErrNotSupported
 	}
 	delete(s.nics, id)
 
@@ -879,12 +879,12 @@ func (s *Stack) NICInfo() map[tcpip.NICID]NICInfo {
 		}
 
 		for proto := range s.networkProtocols {
-			switch forwarding, err := nic.forwarding(proto); err.(type) {
+			switch forwarding, err := nic.forwarding(proto); err {
 			case nil:
 				info.Forwarding[proto] = forwarding
-			case *tcpip.ErrUnknownProtocol:
+			case tcpip.ErrUnknownProtocol:
 				panic(fmt.Sprintf("expected network protocol %d to be available on NIC %d", proto, nic.ID()))
-			case *tcpip.ErrNotSupported:
+			case tcpip.ErrNotSupported:
 				// Not all network protocols support forwarding.
 			default:
 				panic(fmt.Sprintf("nic(id=%d).forwarding(%d): %s", nic.ID(), proto, err))
@@ -919,7 +919,7 @@ func (s *Stack) AddProtocolAddress(id tcpip.NICID, protocolAddress tcpip.Protoco
 
 	nic, ok := s.nics[id]
 	if !ok {
-		return &tcpip.ErrUnknownNICID{}
+		return tcpip.ErrUnknownNICID
 	}
 
 	return nic.addAddress(protocolAddress, properties)
@@ -928,6 +928,7 @@ func (s *Stack) AddProtocolAddress(id tcpip.NICID, protocolAddress tcpip.Protoco
 // RemoveAddress removes an existing network-layer address from the specified
 // NIC.
 func (s *Stack) RemoveAddress(id tcpip.NICID, addr tcpip.Address) tcpip.Error {
+	fmt.Printf("RemoveAddress called\n")
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -935,7 +936,7 @@ func (s *Stack) RemoveAddress(id tcpip.NICID, addr tcpip.Address) tcpip.Error {
 		return nic.removeAddress(addr)
 	}
 
-	return &tcpip.ErrUnknownNICID{}
+	return tcpip.ErrUnknownNICID
 }
 
 // AllAddresses returns a map of NICIDs to their protocol addresses (primary
@@ -961,7 +962,7 @@ func (s *Stack) GetMainNICAddress(id tcpip.NICID, protocol tcpip.NetworkProtocol
 
 	nic, ok := s.nics[id]
 	if !ok {
-		return tcpip.AddressWithPrefix{}, &tcpip.ErrUnknownNICID{}
+		return tcpip.AddressWithPrefix{}, tcpip.ErrUnknownNICID
 	}
 
 	return nic.PrimaryAddress(protocol)
@@ -1059,12 +1060,12 @@ func (s *Stack) HandleLocal() bool {
 }
 
 func isNICForwarding(nic *nic, proto tcpip.NetworkProtocolNumber) bool {
-	switch forwarding, err := nic.forwarding(proto); err.(type) {
+	switch forwarding, err := nic.forwarding(proto); err {
 	case nil:
 		return forwarding
-	case *tcpip.ErrUnknownProtocol:
+	case tcpip.ErrUnknownProtocol:
 		panic(fmt.Sprintf("expected network protocol %d to be available on NIC %d", proto, nic.ID()))
-	case *tcpip.ErrNotSupported:
+	case tcpip.ErrNotSupported:
 		// Not all network protocols support forwarding.
 		return false
 	default:
@@ -1119,9 +1120,9 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 		}
 
 		if isLoopback {
-			return nil, &tcpip.ErrBadLocalAddress{}
+			return nil, tcpip.ErrBadLocalAddress
 		}
-		return nil, &tcpip.ErrNetworkUnreachable{}
+		return nil, tcpip.ErrNetworkUnreachable
 	}
 
 	onlyGlobalAddresses := !header.IsV6LinkLocalUnicastAddress(localAddr) && !isLinkLocal
@@ -1197,7 +1198,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 				}
 			}
 
-			return nil, &tcpip.ErrNoRoute{}
+			return nil, tcpip.ErrNoRoute
 		}
 
 		if id == 0 {
@@ -1217,12 +1218,12 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 	}
 
 	if needRoute {
-		return nil, &tcpip.ErrNoRoute{}
+		return nil, tcpip.ErrNoRoute
 	}
 	if header.IsV6LoopbackAddress(remoteAddr) {
-		return nil, &tcpip.ErrBadLocalAddress{}
+		return nil, tcpip.ErrBadLocalAddress
 	}
-	return nil, &tcpip.ErrNetworkUnreachable{}
+	return nil, tcpip.ErrNetworkUnreachable
 }
 
 // CheckNetworkProtocol checks if a given network protocol is enabled in the
@@ -1237,7 +1238,7 @@ func (s *Stack) CheckNetworkProtocol(protocol tcpip.NetworkProtocolNumber) bool 
 func (s *Stack) CheckDuplicateAddress(nicID tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addr tcpip.Address, h DADCompletionHandler) (DADCheckAddressDisposition, tcpip.Error) {
 	nic, ok := s.nics[nicID]
 	if !ok {
-		return 0, &tcpip.ErrUnknownNICID{}
+		return 0, tcpip.ErrUnknownNICID
 	}
 
 	return nic.checkDuplicateAddress(protocol, addr, h)
@@ -1281,7 +1282,7 @@ func (s *Stack) SetPromiscuousMode(nicID tcpip.NICID, enable bool) tcpip.Error {
 
 	nic, ok := s.nics[nicID]
 	if !ok {
-		return &tcpip.ErrUnknownNICID{}
+		return tcpip.ErrUnknownNICID
 	}
 
 	nic.setPromiscuousMode(enable)
@@ -1297,7 +1298,7 @@ func (s *Stack) SetSpoofing(nicID tcpip.NICID, enable bool) tcpip.Error {
 
 	nic, ok := s.nics[nicID]
 	if !ok {
-		return &tcpip.ErrUnknownNICID{}
+		return tcpip.ErrUnknownNICID
 	}
 
 	nic.setSpoofing(enable)
@@ -1332,7 +1333,7 @@ func (s *Stack) GetLinkAddress(nicID tcpip.NICID, addr, localAddr tcpip.Address,
 	nic, ok := s.nics[nicID]
 	s.mu.RUnlock()
 	if !ok {
-		return &tcpip.ErrUnknownNICID{}
+		return tcpip.ErrUnknownNICID
 	}
 
 	return nic.getLinkAddress(addr, localAddr, protocol, onResolve)
@@ -1345,7 +1346,7 @@ func (s *Stack) Neighbors(nicID tcpip.NICID, protocol tcpip.NetworkProtocolNumbe
 	s.mu.RUnlock()
 
 	if !ok {
-		return nil, &tcpip.ErrUnknownNICID{}
+		return nil, tcpip.ErrUnknownNICID
 	}
 
 	return nic.neighbors(protocol)
@@ -1358,7 +1359,7 @@ func (s *Stack) AddStaticNeighbor(nicID tcpip.NICID, protocol tcpip.NetworkProto
 	s.mu.RUnlock()
 
 	if !ok {
-		return &tcpip.ErrUnknownNICID{}
+		return tcpip.ErrUnknownNICID
 	}
 
 	return nic.addStaticNeighbor(addr, protocol, linkAddr)
@@ -1373,7 +1374,7 @@ func (s *Stack) RemoveNeighbor(nicID tcpip.NICID, protocol tcpip.NetworkProtocol
 	s.mu.RUnlock()
 
 	if !ok {
-		return &tcpip.ErrUnknownNICID{}
+		return tcpip.ErrUnknownNICID
 	}
 
 	return nic.removeNeighbor(protocol, addr)
@@ -1386,7 +1387,7 @@ func (s *Stack) ClearNeighbors(nicID tcpip.NICID, protocol tcpip.NetworkProtocol
 	s.mu.RUnlock()
 
 	if !ok {
-		return &tcpip.ErrUnknownNICID{}
+		return tcpip.ErrUnknownNICID
 	}
 
 	return nic.clearNeighbors(protocol)
@@ -1568,7 +1569,7 @@ func (s *Stack) RegisterPacketEndpoint(nicID tcpip.NICID, netProto tcpip.Network
 	// Capture on a specific device.
 	nic, ok := s.nics[nicID]
 	if !ok {
-		return &tcpip.ErrUnknownNICID{}
+		return tcpip.ErrUnknownNICID
 	}
 	if err := nic.registerPacketEndpoint(netProto, ep); err != nil {
 		return err
@@ -1611,7 +1612,7 @@ func (s *Stack) WritePacketToRemote(nicID tcpip.NICID, remote tcpip.LinkAddress,
 	nic, ok := s.nics[nicID]
 	s.mu.Unlock()
 	if !ok {
-		return &tcpip.ErrUnknownDevice{}
+		return tcpip.ErrUnknownDevice
 	}
 	pkt := NewPacketBuffer(PacketBufferOptions{
 		ReserveHeaderBytes: int(nic.MaxHeaderLength()),
@@ -1629,7 +1630,7 @@ func (s *Stack) WriteRawPacket(nicID tcpip.NICID, proto tcpip.NetworkProtocolNum
 	nic, ok := s.nics[nicID]
 	s.mu.RUnlock()
 	if !ok {
-		return &tcpip.ErrUnknownNICID{}
+		return tcpip.ErrUnknownNICID
 	}
 
 	pkt := NewPacketBuffer(PacketBufferOptions{
@@ -1703,7 +1704,7 @@ func (s *Stack) JoinGroup(protocol tcpip.NetworkProtocolNumber, nicID tcpip.NICI
 	if nic, ok := s.nics[nicID]; ok {
 		return nic.joinGroup(protocol, multicastAddr)
 	}
-	return &tcpip.ErrUnknownNICID{}
+	return tcpip.ErrUnknownNICID
 }
 
 // LeaveGroup leaves the given multicast group on the given NIC.
@@ -1714,7 +1715,7 @@ func (s *Stack) LeaveGroup(protocol tcpip.NetworkProtocolNumber, nicID tcpip.NIC
 	if nic, ok := s.nics[nicID]; ok {
 		return nic.leaveGroup(protocol, multicastAddr)
 	}
-	return &tcpip.ErrUnknownNICID{}
+	return tcpip.ErrUnknownNICID
 }
 
 // IsInGroup returns true if the NIC with ID nicID has joined the multicast
@@ -1726,7 +1727,7 @@ func (s *Stack) IsInGroup(nicID tcpip.NICID, multicastAddr tcpip.Address) (bool,
 	if nic, ok := s.nics[nicID]; ok {
 		return nic.isInGroup(multicastAddr), nil
 	}
-	return false, &tcpip.ErrUnknownNICID{}
+	return false, tcpip.ErrUnknownNICID
 }
 
 // IPTables returns the stack's iptables.
@@ -1772,7 +1773,7 @@ func (s *Stack) GetNetworkEndpoint(nicID tcpip.NICID, proto tcpip.NetworkProtoco
 
 	nic, ok := s.nics[nicID]
 	if !ok {
-		return nil, &tcpip.ErrUnknownNICID{}
+		return nil, tcpip.ErrUnknownNICID
 	}
 
 	return nic.getNetworkEndpoint(proto), nil
@@ -1785,7 +1786,7 @@ func (s *Stack) NUDConfigurations(id tcpip.NICID, proto tcpip.NetworkProtocolNum
 	s.mu.RUnlock()
 
 	if !ok {
-		return NUDConfigurations{}, &tcpip.ErrUnknownNICID{}
+		return NUDConfigurations{}, tcpip.ErrUnknownNICID
 	}
 
 	return nic.nudConfigs(proto)
@@ -1801,7 +1802,7 @@ func (s *Stack) SetNUDConfigurations(id tcpip.NICID, proto tcpip.NetworkProtocol
 	s.mu.RUnlock()
 
 	if !ok {
-		return &tcpip.ErrUnknownNICID{}
+		return tcpip.ErrUnknownNICID
 	}
 
 	return nic.setNUDConfigs(proto, c)

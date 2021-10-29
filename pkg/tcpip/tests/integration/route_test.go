@@ -132,7 +132,7 @@ func TestLocalPing(t *testing.T) {
 			netProto:           ipv4.ProtocolNumber,
 			linkEndpoint:       loopback.New,
 			icmpBuf:            ipv4ICMPBuf,
-			expectedConnectErr: &tcpip.ErrNoRoute{},
+			expectedConnectErr: tcpip.ErrNoRoute,
 			checkLinkEndpoint:  func(*testing.T, stack.LinkEndpoint) {},
 		},
 		{
@@ -141,7 +141,7 @@ func TestLocalPing(t *testing.T) {
 			netProto:           ipv6.ProtocolNumber,
 			linkEndpoint:       loopback.New,
 			icmpBuf:            ipv6ICMPBuf,
-			expectedConnectErr: &tcpip.ErrNoRoute{},
+			expectedConnectErr: tcpip.ErrNoRoute,
 			checkLinkEndpoint:  func(*testing.T, stack.LinkEndpoint) {},
 		},
 		{
@@ -150,7 +150,7 @@ func TestLocalPing(t *testing.T) {
 			netProto:           ipv4.ProtocolNumber,
 			linkEndpoint:       channelEP,
 			icmpBuf:            ipv4ICMPBuf,
-			expectedConnectErr: &tcpip.ErrNoRoute{},
+			expectedConnectErr: tcpip.ErrNoRoute,
 			checkLinkEndpoint:  channelEPCheck,
 		},
 		{
@@ -159,7 +159,7 @@ func TestLocalPing(t *testing.T) {
 			netProto:           ipv6.ProtocolNumber,
 			linkEndpoint:       channelEP,
 			icmpBuf:            ipv6ICMPBuf,
-			expectedConnectErr: &tcpip.ErrNoRoute{},
+			expectedConnectErr: tcpip.ErrNoRoute,
 			checkLinkEndpoint:  channelEPCheck,
 		},
 	}
@@ -282,7 +282,7 @@ func TestLocalUDP(t *testing.T) {
 		{
 			name:             "Unassigned local address",
 			addAddress:       false,
-			expectedWriteErr: &tcpip.ErrNoRoute{},
+			expectedWriteErr: tcpip.ErrNoRoute,
 		},
 		{
 			name:             "Assigned local address",

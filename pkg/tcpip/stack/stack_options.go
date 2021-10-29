@@ -56,11 +56,11 @@ func (s *Stack) SetOption(option interface{}) tcpip.Error {
 		// Make sure we don't allow lowering the buffer below minimum
 		// required for stack to work.
 		if v.Min < MinBufferSize {
-			return &tcpip.ErrInvalidOptionValue{}
+			return tcpip.ErrInvalidOptionValue
 		}
 
 		if v.Default < v.Min || v.Default > v.Max {
-			return &tcpip.ErrInvalidOptionValue{}
+			return tcpip.ErrInvalidOptionValue
 		}
 
 		s.mu.Lock()
@@ -72,11 +72,11 @@ func (s *Stack) SetOption(option interface{}) tcpip.Error {
 		// Make sure we don't allow lowering the buffer below minimum
 		// required for stack to work.
 		if v.Min < MinBufferSize {
-			return &tcpip.ErrInvalidOptionValue{}
+			return tcpip.ErrInvalidOptionValue
 		}
 
 		if v.Default < v.Min || v.Default > v.Max {
-			return &tcpip.ErrInvalidOptionValue{}
+			return tcpip.ErrInvalidOptionValue
 		}
 
 		s.mu.Lock()
@@ -86,7 +86,7 @@ func (s *Stack) SetOption(option interface{}) tcpip.Error {
 
 	case TCPInvalidRateLimitOption:
 		if v < 0 {
-			return &tcpip.ErrInvalidOptionValue{}
+			return tcpip.ErrInvalidOptionValue
 		}
 		s.mu.Lock()
 		s.tcpInvalidRateLimit = time.Duration(v)
@@ -94,7 +94,7 @@ func (s *Stack) SetOption(option interface{}) tcpip.Error {
 		return nil
 
 	default:
-		return &tcpip.ErrUnknownProtocolOption{}
+		return tcpip.ErrUnknownProtocolOption
 	}
 }
 
@@ -120,6 +120,6 @@ func (s *Stack) Option(option interface{}) tcpip.Error {
 		return nil
 
 	default:
-		return &tcpip.ErrUnknownProtocolOption{}
+		return tcpip.ErrUnknownProtocolOption
 	}
 }

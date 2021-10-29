@@ -395,7 +395,7 @@ func (r *receiver) handleRcvdSegmentClosing(s *segment, state EndpointState, clo
 		// trigger a RST.
 		endDataSeq := s.sequenceNumber.Add(seqnum.Size(s.data.Size()))
 		if state != StateCloseWait && rcvClosed && r.RcvNxt.LessThan(endDataSeq) {
-			return true, &tcpip.ErrConnectionAborted{}
+			return true, tcpip.ErrConnectionAborted
 		}
 		if state == StateFinWait1 {
 			break
@@ -424,7 +424,7 @@ func (r *receiver) handleRcvdSegmentClosing(s *segment, state EndpointState, clo
 		// the last actual data octet in a segment in
 		// which it occurs.
 		if closed && (!s.flags.Contains(header.TCPFlagFin) || s.sequenceNumber.Add(s.logicalLen()) != r.RcvNxt+1) {
-			return true, &tcpip.ErrConnectionAborted{}
+			return true, tcpip.ErrConnectionAborted
 		}
 	}
 

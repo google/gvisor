@@ -306,7 +306,7 @@ func pickEphemeralPort(offset uint32, first, count uint16, testPort PortTester) 
 		}
 	}
 
-	return 0, &tcpip.ErrNoPortAvailable{}
+	return 0, tcpip.ErrNoPortAvailable
 }
 
 // ReservePort marks a port/IP combination as reserved so that it cannot be
@@ -325,7 +325,7 @@ func (pm *PortManager) ReservePort(rng *rand.Rand, res Reservation, testPort Por
 	// protocols.
 	if res.Port != 0 {
 		if !pm.reserveSpecificPortLocked(res, true /* portSpecified */) {
-			return 0, &tcpip.ErrPortInUse{}
+			return 0, tcpip.ErrPortInUse
 		}
 		if testPort != nil {
 			ok, err := testPort(res.Port)
@@ -335,7 +335,7 @@ func (pm *PortManager) ReservePort(rng *rand.Rand, res Reservation, testPort Por
 			}
 			if !ok {
 				pm.releasePortLocked(res)
-				return 0, &tcpip.ErrPortInUse{}
+				return 0, tcpip.ErrPortInUse
 			}
 		}
 		return res.Port, nil
@@ -516,7 +516,7 @@ func (pm *PortManager) PortRange() (uint16, uint16) {
 // (inclusive).
 func (pm *PortManager) SetPortRange(start uint16, end uint16) tcpip.Error {
 	if start > end {
-		return &tcpip.ErrInvalidPortRange{}
+		return tcpip.ErrInvalidPortRange
 	}
 	pm.ephemeralMu.Lock()
 	defer pm.ephemeralMu.Unlock()

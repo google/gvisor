@@ -347,7 +347,7 @@ func (t *testInterface) setEnabled(v bool) {
 }
 
 func (*testInterface) WritePacketToRemote(tcpip.LinkAddress, tcpip.NetworkProtocolNumber, *stack.PacketBuffer) tcpip.Error {
-	return &tcpip.ErrNotSupported{}
+	return tcpip.ErrNotSupported
 }
 
 func (*testInterface) HandleNeighborProbe(tcpip.NetworkProtocolNumber, tcpip.Address, tcpip.LinkAddress) tcpip.Error {
@@ -540,8 +540,8 @@ func TestEnableWhenNICDisabled(t *testing.T) {
 			// fail.
 			nic.setEnabled(false)
 			err := ep.Enable()
-			if _, ok := err.(*tcpip.ErrNotPermitted); !ok {
-				t.Fatalf("got ep.Enable() = %s, want = %s", err, &tcpip.ErrNotPermitted{})
+			if err != tcpip.ErrNotPermitted {
+				t.Fatalf("got ep.Enable() = %s, want = %s", err, tcpip.ErrNotPermitted)
 			}
 			// ep should consider the NIC's enabled status when determining its own
 			// enabled status so we "enable" the NIC to read just the endpoint's
@@ -1385,7 +1385,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 				ip.SetHeaderLength(header.IPv4MinimumSize - 1)
 				return hdr.View().ToVectorisedView()
 			},
-			expectedErr: &tcpip.ErrMalformedHeader{},
+			expectedErr: tcpip.ErrMalformedHeader,
 		},
 		{
 			name:         "IPv4 too small",
@@ -1403,7 +1403,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 				})
 				return buffer.View(ip[:len(ip)-1]).ToVectorisedView()
 			},
-			expectedErr: &tcpip.ErrMalformedHeader{},
+			expectedErr: tcpip.ErrMalformedHeader,
 		},
 		{
 			name:         "IPv4 minimum size",
@@ -1663,7 +1663,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 				})
 				return buffer.View(ip[:len(ip)-1]).ToVectorisedView()
 			},
-			expectedErr: &tcpip.ErrMalformedHeader{},
+			expectedErr: tcpip.ErrMalformedHeader,
 		},
 	}
 

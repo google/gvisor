@@ -95,12 +95,12 @@ func (p *protocol) HandleUnknownDestinationPacket(id stack.TransportEndpointID, 
 
 // SetOption implements stack.TransportProtocol.SetOption.
 func (*protocol) SetOption(tcpip.SettableTransportProtocolOption) tcpip.Error {
-	return &tcpip.ErrUnknownProtocolOption{}
+	return tcpip.ErrUnknownProtocolOption
 }
 
 // Option implements stack.TransportProtocol.Option.
 func (*protocol) Option(tcpip.GettableTransportProtocolOption) tcpip.Error {
-	return &tcpip.ErrUnknownProtocolOption{}
+	return tcpip.ErrUnknownProtocolOption
 }
 
 // Close implements stack.TransportProtocol.Close.

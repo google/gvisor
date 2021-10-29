@@ -501,7 +501,7 @@ func (s *SocketOperations) WriteTo(_ context.Context, _ *fs.File, dst io.Writer,
 func (s *SocketOperations) Write(ctx context.Context, _ *fs.File, src usermem.IOSequence, _ int64) (int64, error) {
 	r := src.Reader(ctx)
 	n, err := s.Endpoint.Write(r, tcpip.WriteOptions{})
-	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
+	if err == tcpip.ErrWouldBlock {
 		return 0, linuxerr.ErrWouldBlock
 	}
 	if err != nil {
@@ -545,7 +545,7 @@ func (s *SocketOperations) ReadFrom(_ context.Context, _ *fs.File, r io.Reader, 
 		// so we can't release the lock while copying data.
 		Atomic: true,
 	})
-	if _, ok := err.(*tcpip.ErrBadBuffer); ok {
+	if err == tcpip.ErrBadBuffer {
 		return n, f.err
 	}
 	return n, tcpip.TranslateNetstackError(err).ToError()
@@ -597,7 +597,7 @@ func (s *socketOpsCommon) Connect(t *kernel.Task, sockaddr []byte, blocking bool
 
 	if family == linux.AF_UNSPEC {
 		err := s.Endpoint.Disconnect()
-		if _, ok := err.(*tcpip.ErrNotSupported); ok {
+		if err == tcpip.ErrNotSupported {
 			return syserr.ErrAddressFamilyNotSupported
 		}
 		return tcpip.TranslateNetstackError(err)
@@ -619,9 +619,9 @@ func (s *socketOpsCommon) Connect(t *kernel.Task, sockaddr []byte, blocking bool
 	s.EventRegister(&e, waiter.WritableEvents)
 	defer s.EventUnregister(&e)
 
-	switch err := s.Endpoint.Connect(addr); err.(type) {
-	case *tcpip.ErrConnectStarted, *tcpip.ErrAlreadyConnecting:
-	case *tcpip.ErrNoPortAvailable:
+	switch err := s.Endpoint.Connect(addr); err {
+	case tcpip.ErrConnectStarted, tcpip.ErrAlreadyConnecting:
+	case tcpip.ErrNoPortAvailable:
 		if (s.family == unix.AF_INET || s.family == unix.AF_INET6) && s.skType == linux.SOCK_STREAM {
 			// TCP unlike UDP returns EADDRNOTAVAIL when it can't
 			// find an available local ephemeral port.
@@ -687,7 +687,7 @@ func (s *socketOpsCommon) Bind(_ *kernel.Task, sockaddr []byte) *syserr.Error {
 
 	// Issue the bind request to the endpoint.
 	err := s.Endpoint.Bind(addr)
-	if _, ok := err.(*tcpip.ErrNoPortAvailable); ok {
+	if err == tcpip.ErrNoPortAvailable {
 		// Bind always returns EADDRINUSE irrespective of if the specified port was
 		// already bound or if an ephemeral port was requested but none were
 		// available.
@@ -696,7 +696,7 @@ func (s *socketOpsCommon) Bind(_ *kernel.Task, sockaddr []byte) *syserr.Error {
 		// UDP connect returns EAGAIN on ephemeral port exhaustion.
 		//
 		// TCP connect returns EADDRNOTAVAIL on ephemeral port exhaustion.
-		err = &tcpip.ErrPortInUse{}
+		err = tcpip.ErrPortInUse
 	}
 
 	return tcpip.TranslateNetstackError(err)
@@ -720,7 +720,7 @@ func (s *socketOpsCommon) blockingAccept(t *kernel.Task, peerAddr *tcpip.FullAdd
 	// get a notification.
 	for {
 		ep, wq, err := s.Endpoint.Accept(peerAddr)
-		if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
+		if err != tcpip.ErrWouldBlock {
 			return ep, wq, tcpip.TranslateNetstackError(err)
 		}
 
@@ -739,7 +739,7 @@ func (s *SocketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 	}
 	ep, wq, terr := s.Endpoint.Accept(peerAddr)
 	if terr != nil {
-		if _, ok := terr.(*tcpip.ErrWouldBlock); !ok || !blocking {
+		if terr != tcpip.ErrWouldBlock || !blocking {
 			return 0, nil, 0, tcpip.TranslateNetstackError(terr)
 		}
 
@@ -2675,7 +2675,7 @@ func (s *socketOpsCommon) nonBlockingRead(ctx context.Context, dst usermem.IOSeq
 	defer s.readMu.Unlock()
 
 	res, err := s.Endpoint.Read(w, readOptions)
-	if _, ok := err.(*tcpip.ErrBadBuffer); ok && dst.NumBytes() == 0 {
+	if err == tcpip.ErrBadBuffer && dst.NumBytes() == 0 {
 		err = nil
 	}
 	if err != nil {
@@ -2934,10 +2934,10 @@ func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []b
 			return int(total), tcpip.TranslateNetstackError(err)
 		}
 		block := true
-		switch err.(type) {
+		switch err {
 		case nil:
 			block = total != src.NumBytes()
-		case *tcpip.ErrWouldBlock:
+		case tcpip.ErrWouldBlock:
 		default:
 			block = false
 		}

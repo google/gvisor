@@ -281,8 +281,8 @@ func addReachableEntryWithRemoved(nudDisp *testNUDDispatcher, clock *faketime.Ma
 	_, ch, err := linkRes.neigh.entry(entry.Addr, "", func(r LinkResolutionResult) {
 		gotLinkResolutionResult = r
 	})
-	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-		return fmt.Errorf("got linkRes.neigh.entry(%s, '', _) = %v, want = %s", entry.Addr, err, &tcpip.ErrWouldBlock{})
+	if err != tcpip.ErrWouldBlock {
+		return fmt.Errorf("got linkRes.neigh.entry(%s, '', _) = %v, want = %s", entry.Addr, err, tcpip.ErrWouldBlock)
 	}
 
 	{
@@ -428,8 +428,8 @@ func TestNeighborCacheRemoveEntry(t *testing.T) {
 
 	{
 		_, _, err := linkRes.neigh.entry(entry.Addr, "", nil)
-		if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-			t.Errorf("got linkRes.neigh.entry(%s, '', nil) = %v, want = %s", entry.Addr, err, &tcpip.ErrWouldBlock{})
+		if err != tcpip.ErrWouldBlock {
+			t.Errorf("got linkRes.neigh.entry(%s, '', nil) = %v, want = %s", entry.Addr, err, tcpip.ErrWouldBlock)
 		}
 	}
 }
@@ -1156,10 +1156,10 @@ func TestNeighborCacheConcurrent(t *testing.T) {
 			wg.Add(1)
 			go func(entry NeighborEntry) {
 				defer wg.Done()
-				switch e, _, err := linkRes.neigh.entry(entry.Addr, "", nil); err.(type) {
-				case nil, *tcpip.ErrWouldBlock:
+				switch e, _, err := linkRes.neigh.entry(entry.Addr, "", nil); err {
+				case nil, tcpip.ErrWouldBlock:
 				default:
-					t.Errorf("got linkRes.neigh.entry(%s, '', nil) = (%+v, _, %s), want (_, _, nil) or (_, _, %s)", entry.Addr, e, err, &tcpip.ErrWouldBlock{})
+					t.Errorf("got linkRes.neigh.entry(%s, '', nil) = (%+v, _, %s), want (_, _, nil) or (_, _, %s)", entry.Addr, e, err, tcpip.ErrWouldBlock)
 				}
 			}(entry)
 		}
@@ -1308,12 +1308,12 @@ func TestNeighborCacheResolutionFailed(t *testing.T) {
 	entry.Addr += "2"
 	{
 		_, ch, err := linkRes.neigh.entry(entry.Addr, "", func(r LinkResolutionResult) {
-			if diff := cmp.Diff(LinkResolutionResult{Err: &tcpip.ErrTimeout{}}, r); diff != "" {
+			if diff := cmp.Diff(LinkResolutionResult{Err: tcpip.ErrTimeout}, r); diff != "" {
 				t.Fatalf("got link resolution result mismatch (-want +got):\n%s", diff)
 			}
 		})
-		if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-			t.Fatalf("got linkRes.neigh.entry(%s, '', _) = %v, want = %s", entry.Addr, err, &tcpip.ErrWouldBlock{})
+		if err != tcpip.ErrWouldBlock {
+			t.Fatalf("got linkRes.neigh.entry(%s, '', _) = %v, want = %s", entry.Addr, err, tcpip.ErrWouldBlock)
 		}
 		waitFor := config.DelayFirstProbeTime + typicalLatency*time.Duration(config.MaxMulticastProbes)
 		clock.Advance(waitFor)
@@ -1348,12 +1348,12 @@ func TestNeighborCacheResolutionTimeout(t *testing.T) {
 	}
 
 	_, ch, err := linkRes.neigh.entry(entry.Addr, "", func(r LinkResolutionResult) {
-		if diff := cmp.Diff(LinkResolutionResult{Err: &tcpip.ErrTimeout{}}, r); diff != "" {
+		if diff := cmp.Diff(LinkResolutionResult{Err: tcpip.ErrTimeout}, r); diff != "" {
 			t.Fatalf("got link resolution result mismatch (-want +got):\n%s", diff)
 		}
 	})
-	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-		t.Fatalf("got linkRes.neigh.entry(%s, '', _) = %v, want = %s", entry.Addr, err, &tcpip.ErrWouldBlock{})
+	if err != tcpip.ErrWouldBlock {
+		t.Fatalf("got linkRes.neigh.entry(%s, '', _) = %v, want = %s", entry.Addr, err, tcpip.ErrWouldBlock)
 	}
 	waitFor := config.RetransmitTimer * time.Duration(config.MaxMulticastProbes)
 	clock.Advance(waitFor)
@@ -1383,12 +1383,12 @@ func TestNeighborCacheRetryResolution(t *testing.T) {
 	// Perform address resolution with a faulty link, which will fail.
 	{
 		_, ch, err := linkRes.neigh.entry(entry.Addr, "", func(r LinkResolutionResult) {
-			if diff := cmp.Diff(LinkResolutionResult{Err: &tcpip.ErrTimeout{}}, r); diff != "" {
+			if diff := cmp.Diff(LinkResolutionResult{Err: tcpip.ErrTimeout}, r); diff != "" {
 				t.Fatalf("got link resolution result mismatch (-want +got):\n%s", diff)
 			}
 		})
-		if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-			t.Fatalf("got linkRes.neigh.entry(%s, '', _) = %v, want = %s", entry.Addr, err, &tcpip.ErrWouldBlock{})
+		if err != tcpip.ErrWouldBlock {
+			t.Fatalf("got linkRes.neigh.entry(%s, '', _) = %v, want = %s", entry.Addr, err, tcpip.ErrWouldBlock)
 		}
 
 		{
@@ -1467,8 +1467,8 @@ func TestNeighborCacheRetryResolution(t *testing.T) {
 				t.Fatalf("got link resolution result mismatch (-want +got):\n%s", diff)
 			}
 		})
-		if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-			t.Fatalf("got linkRes.neigh.entry(%s, '', _) = %v, want = %s", entry.Addr, err, &tcpip.ErrWouldBlock{})
+		if err != tcpip.ErrWouldBlock {
+			t.Fatalf("got linkRes.neigh.entry(%s, '', _) = %v, want = %s", entry.Addr, err, tcpip.ErrWouldBlock)
 		}
 		if incompleteEntry.State != Incomplete {
 			t.Fatalf("got entry.State = %s, want = %s", incompleteEntry.State, Incomplete)
@@ -1566,8 +1566,8 @@ func BenchmarkCacheClear(b *testing.B) {
 					b.Fatalf("got link resolution result mismatch (-want +got):\n%s", diff)
 				}
 			})
-			if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-				b.Fatalf("got linkRes.neigh.entry(%s, '', _) = %v, want = %s", entry.Addr, err, &tcpip.ErrWouldBlock{})
+			if err != tcpip.ErrWouldBlock {
+				b.Fatalf("got linkRes.neigh.entry(%s, '', _) = %v, want = %s", entry.Addr, err, tcpip.ErrWouldBlock)
 			}
 
 			select {

@@ -32,46 +32,46 @@ const maxErrno = 134
 func TranslateErrno(e unix.Errno) tcpip.Error {
 	switch e {
 	case unix.EEXIST:
-		return &tcpip.ErrDuplicateAddress{}
+		return tcpip.ErrDuplicateAddress
 	case unix.ENETUNREACH:
-		return &tcpip.ErrNoRoute{}
+		return tcpip.ErrNoRoute
 	case unix.EINVAL:
-		return &tcpip.ErrInvalidEndpointState{}
+		return tcpip.ErrInvalidEndpointState
 	case unix.EALREADY:
-		return &tcpip.ErrAlreadyConnecting{}
+		return tcpip.ErrAlreadyConnecting
 	case unix.EISCONN:
-		return &tcpip.ErrAlreadyConnected{}
+		return tcpip.ErrAlreadyConnected
 	case unix.EADDRINUSE:
-		return &tcpip.ErrPortInUse{}
+		return tcpip.ErrPortInUse
 	case unix.EADDRNOTAVAIL:
-		return &tcpip.ErrBadLocalAddress{}
+		return tcpip.ErrBadLocalAddress
 	case unix.EPIPE:
-		return &tcpip.ErrClosedForSend{}
+		return tcpip.ErrClosedForSend
 	case unix.EWOULDBLOCK:
-		return &tcpip.ErrWouldBlock{}
+		return tcpip.ErrWouldBlock
 	case unix.ECONNREFUSED:
-		return &tcpip.ErrConnectionRefused{}
+		return tcpip.ErrConnectionRefused
 	case unix.ETIMEDOUT:
-		return &tcpip.ErrTimeout{}
+		return tcpip.ErrTimeout
 	case unix.EINPROGRESS:
-		return &tcpip.ErrConnectStarted{}
+		return tcpip.ErrConnectStarted
 	case unix.EDESTADDRREQ:
-		return &tcpip.ErrDestinationRequired{}
+		return tcpip.ErrDestinationRequired
 	case unix.ENOTSUP:
-		return &tcpip.ErrNotSupported{}
+		return tcpip.ErrNotSupported
 	case unix.ENOTTY:
-		return &tcpip.ErrQueueSizeNotSupported{}
+		return tcpip.ErrQueueSizeNotSupported
 	case unix.ENOTCONN:
-		return &tcpip.ErrNotConnected{}
+		return tcpip.ErrNotConnected
 	case unix.ECONNRESET:
-		return &tcpip.ErrConnectionReset{}
+		return tcpip.ErrConnectionReset
 	case unix.ECONNABORTED:
-		return &tcpip.ErrConnectionAborted{}
+		return tcpip.ErrConnectionAborted
 	case unix.EMSGSIZE:
-		return &tcpip.ErrMessageTooLong{}
+		return tcpip.ErrMessageTooLong
 	case unix.ENOBUFS:
-		return &tcpip.ErrNoBufferSpace{}
+		return tcpip.ErrNoBufferSpace
 	default:
-		return &tcpip.ErrInvalidEndpointState{}
+		return tcpip.ErrInvalidEndpointState
 	}
 }

@@ -152,7 +152,7 @@ func (n *neighborCache) entry(remoteAddr, localAddr tcpip.Address, onResolve fun
 			entry.mu.done = make(chan struct{})
 		}
 		entry.handlePacketQueuedLocked(localAddr)
-		return entry.mu.neigh, entry.mu.done, &tcpip.ErrWouldBlock{}
+		return entry.mu.neigh, entry.mu.done, tcpip.ErrWouldBlock
 	default:
 		panic(fmt.Sprintf("Invalid cache entry state: %s", s))
 	}

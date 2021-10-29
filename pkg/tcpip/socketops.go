@@ -622,7 +622,7 @@ func (so *SocketOptions) GetBindToDevice() int32 {
 // zero, the socket device binding is removed.
 func (so *SocketOptions) SetBindToDevice(bindToDevice int32) Error {
 	if bindToDevice != 0 && !so.handler.HasNIC(bindToDevice) {
-		return &ErrUnknownDevice{}
+		return ErrUnknownDevice
 	}
 
 	atomic.StoreInt32(&so.bindToDevice, bindToDevice)

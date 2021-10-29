@@ -187,7 +187,7 @@ func TestTransportDemuxerRegister(t *testing.T) {
 		proto tcpip.NetworkProtocolNumber
 		want  tcpip.Error
 	}{
-		{"failure", ipv6.ProtocolNumber, &tcpip.ErrUnknownProtocol{}},
+		{"failure", ipv6.ProtocolNumber, tcpip.ErrUnknownProtocol},
 		{"success", ipv4.ProtocolNumber, nil},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -222,14 +222,14 @@ func TestTransportDemuxerRegisterMultiple(t *testing.T) {
 	}{
 		{"zeroFlags", []test{
 			{ports.Flags{}, nil},
-			{ports.Flags{}, &tcpip.ErrPortInUse{}},
+			{ports.Flags{}, tcpip.ErrPortInUse},
 		}},
 		{"multibindFlags", []test{
 			// Allow multiple registrations same TransportEndpointID with multibind flags.
 			{ports.Flags{LoadBalanced: true, MostRecent: true}, nil},
 			{ports.Flags{LoadBalanced: true, MostRecent: true}, nil},
 			// Disallow registration w/same ID for a non-multibindflag.
-			{ports.Flags{TupleOnly: true}, &tcpip.ErrPortInUse{}},
+			{ports.Flags{TupleOnly: true}, tcpip.ErrPortInUse},
 		}},
 	} {
 		t.Run(subtest.name, func(t *testing.T) {

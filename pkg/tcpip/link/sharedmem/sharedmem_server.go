@@ -225,7 +225,7 @@ func (e *serverEndpoint) WriteRawPacket(pkt *stack.PacketBuffer) tcpip.Error {
 	defer e.mu.Unlock()
 	ok := e.tx.transmit(views)
 	if !ok {
-		return &tcpip.ErrWouldBlock{}
+		return tcpip.ErrWouldBlock
 	}
 	e.tx.notify()
 	return nil
@@ -240,7 +240,7 @@ func (e *serverEndpoint) writePacketLocked(r stack.RouteInfo, protocol tcpip.Net
 	views := pkt.Views()
 	ok := e.tx.transmit(views)
 	if !ok {
-		return &tcpip.ErrWouldBlock{}
+		return tcpip.ErrWouldBlock
 	}
 
 	return nil

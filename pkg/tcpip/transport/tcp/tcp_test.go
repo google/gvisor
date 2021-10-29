@@ -88,7 +88,7 @@ func (e *endpointTester) CheckReadFull(t *testing.T, count int, notifyRead <-cha
 	}
 	for w.N != 0 {
 		_, err := e.ep.Read(&w, tcpip.ReadOptions{})
-		if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+		if cmp.Equal(tcpip.ErrWouldBlock, err) {
 			// Wait for receive to be notified.
 			select {
 			case <-notifyRead:
@@ -131,7 +131,7 @@ func TestGiveUpConnect(t *testing.T) {
 
 	{
 		err := ep.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort})
-		if d := cmp.Diff(&tcpip.ErrConnectStarted{}, err); d != "" {
+		if d := cmp.Diff(tcpip.ErrConnectStarted, err); d != "" {
 			t.Fatalf("ep.Connect(...) mismatch (-want +got):\n%s", d)
 		}
 	}
@@ -146,7 +146,7 @@ func TestGiveUpConnect(t *testing.T) {
 	// and stats updates.
 	{
 		err := ep.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort})
-		if d := cmp.Diff(&tcpip.ErrAborted{}, err); d != "" {
+		if d := cmp.Diff(tcpip.ErrAborted, err); d != "" {
 			t.Fatalf("ep.Connect(...) mismatch (-want +got):\n%s", d)
 		}
 	}
@@ -177,7 +177,7 @@ func TestConnectICMPError(t *testing.T) {
 
 	{
 		err := ep.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort})
-		if d := cmp.Diff(&tcpip.ErrConnectStarted{}, err); d != "" {
+		if d := cmp.Diff(tcpip.ErrConnectStarted, err); d != "" {
 			t.Fatalf("ep.Connect(...) mismatch (-want +got):\n%s", d)
 		}
 	}
@@ -200,7 +200,7 @@ func TestConnectICMPError(t *testing.T) {
 
 	for {
 		if err := wep.LastErrorLocked(); err != nil {
-			if d := cmp.Diff(&tcpip.ErrNoRoute{}, err); d != "" {
+			if d := cmp.Diff(tcpip.ErrNoRoute, err); d != "" {
 				t.Errorf("ep.LastErrorLocked() mismatch (-want +got):\n%s", d)
 			}
 			break
@@ -273,7 +273,7 @@ func TestActiveFailedConnectionAttemptIncrement(t *testing.T) {
 
 	{
 		err := c.EP.Connect(tcpip.FullAddress{NIC: 2, Addr: context.TestAddr, Port: context.TestPort})
-		if d := cmp.Diff(&tcpip.ErrNoRoute{}, err); d != "" {
+		if d := cmp.Diff(tcpip.ErrNoRoute, err); d != "" {
 			t.Errorf("c.EP.Connect(...) mismatch (-want +got):\n%s", d)
 		}
 	}
@@ -464,7 +464,7 @@ func TestTCPResetSentForACKWhenNotUsingSynCookies(t *testing.T) {
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
-	if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+	if cmp.Equal(tcpip.ErrWouldBlock, err) {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -1007,7 +1007,7 @@ func TestUserSuppliedMSSOnConnect(t *testing.T) {
 					connectAddr := tcpip.FullAddress{Addr: ip.connectAddr, Port: context.TestPort}
 					{
 						err := c.EP.Connect(connectAddr)
-						if d := cmp.Diff(&tcpip.ErrConnectStarted{}, err); d != "" {
+						if d := cmp.Diff(tcpip.ErrConnectStarted, err); d != "" {
 							t.Fatalf("Connect(%+v) mismatch (-want +got):\n%s", connectAddr, d)
 						}
 					}
@@ -1434,8 +1434,8 @@ func TestListenerReadinessOnEvent(t *testing.T) {
 	wq.EventRegister(&entry, waiter.EventOut)
 	defer wq.EventUnregister(&entry)
 
-	switch err := conn.Connect(address).(type) {
-	case *tcpip.ErrConnectStarted:
+	switch err := conn.Connect(address); err {
+	case tcpip.ErrConnectStarted:
 	default:
 		t.Fatalf("Connect(%#v): %v", address, err)
 	}
@@ -1618,7 +1618,7 @@ func TestConnectBindToDevice(t *testing.T) {
 			defer c.WQ.EventUnregister(&waitEntry)
 
 			err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort})
-			if d := cmp.Diff(&tcpip.ErrConnectStarted{}, err); d != "" {
+			if d := cmp.Diff(tcpip.ErrConnectStarted, err); d != "" {
 				t.Fatalf("c.EP.Connect(...) mismatch (-want +got):\n%s", d)
 			}
 
@@ -1679,7 +1679,7 @@ func TestShutdownConnectingSocket(t *testing.T) {
 
 			// Start connection attempt.
 			addr := tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort}
-			if d := cmp.Diff(&tcpip.ErrConnectStarted{}, c.EP.Connect(addr)); d != "" {
+			if d := cmp.Diff(tcpip.ErrConnectStarted, c.EP.Connect(addr)); d != "" {
 				t.Fatalf("Connect(...) mismatch (-want +got):\n%s", d)
 			}
 
@@ -1712,7 +1712,7 @@ func TestShutdownConnectingSocket(t *testing.T) {
 			}
 
 			ept := endpointTester{c.EP}
-			ept.CheckReadError(t, &tcpip.ErrConnectionReset{})
+			ept.CheckReadError(t, tcpip.ErrConnectionReset)
 
 			// If the endpoint is not properly shutdown, it'll re-attempt to connect
 			// by sending another ACK packet.
@@ -1744,7 +1744,7 @@ func TestSynSent(t *testing.T) {
 
 			addr := tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort}
 			err := c.EP.Connect(addr)
-			if d := cmp.Diff(&tcpip.ErrConnectStarted{}, err); d != "" {
+			if d := cmp.Diff(tcpip.ErrConnectStarted, err); d != "" {
 				t.Fatalf("Connect(...) mismatch (-want +got):\n%s", d)
 			}
 
@@ -1790,9 +1790,9 @@ func TestSynSent(t *testing.T) {
 
 			ept := endpointTester{c.EP}
 			if test.reset {
-				ept.CheckReadError(t, &tcpip.ErrConnectionRefused{})
+				ept.CheckReadError(t, tcpip.ErrConnectionRefused)
 			} else {
-				ept.CheckReadError(t, &tcpip.ErrAborted{})
+				ept.CheckReadError(t, tcpip.ErrAborted)
 			}
 
 			if got := c.Stack().Stats().TCP.CurrentConnected.Value(); got != 0 {
@@ -1818,7 +1818,7 @@ func TestOutOfOrderReceive(t *testing.T) {
 	defer c.WQ.EventUnregister(&we)
 
 	ept := endpointTester{c.EP}
-	ept.CheckReadError(t, &tcpip.ErrWouldBlock{})
+	ept.CheckReadError(t, tcpip.ErrWouldBlock)
 
 	// Send second half of data first, with seqnum 3 ahead of expected.
 	data := []byte{1, 2, 3, 4, 5, 6}
@@ -1844,7 +1844,7 @@ func TestOutOfOrderReceive(t *testing.T) {
 
 	// Wait 200ms and check that no data has been received.
 	time.Sleep(200 * time.Millisecond)
-	ept.CheckReadError(t, &tcpip.ErrWouldBlock{})
+	ept.CheckReadError(t, tcpip.ErrWouldBlock)
 
 	// Send the first 3 bytes now.
 	c.SendPacket(data[:3], &context.Headers{
@@ -1883,7 +1883,7 @@ func TestOutOfOrderFlood(t *testing.T) {
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, rcvBufSz)
 
 	ept := endpointTester{c.EP}
-	ept.CheckReadError(t, &tcpip.ErrWouldBlock{})
+	ept.CheckReadError(t, tcpip.ErrWouldBlock)
 
 	// Send 100 packets before the actual one that is expected.
 	data := []byte{1, 2, 3, 4, 5, 6}
@@ -1960,7 +1960,7 @@ func TestRstOnCloseWithUnreadData(t *testing.T) {
 	defer c.WQ.EventUnregister(&we)
 
 	ept := endpointTester{c.EP}
-	ept.CheckReadError(t, &tcpip.ErrWouldBlock{})
+	ept.CheckReadError(t, tcpip.ErrWouldBlock)
 
 	data := []byte{1, 2, 3}
 	iss := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
@@ -2029,7 +2029,7 @@ func TestRstOnCloseWithUnreadDataFinConvertRst(t *testing.T) {
 	defer c.WQ.EventUnregister(&we)
 
 	ept := endpointTester{c.EP}
-	ept.CheckReadError(t, &tcpip.ErrWouldBlock{})
+	ept.CheckReadError(t, tcpip.ErrWouldBlock)
 
 	data := []byte{1, 2, 3}
 	iss := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
@@ -2116,13 +2116,13 @@ func TestShutdownRead(t *testing.T) {
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
 
 	ept := endpointTester{c.EP}
-	ept.CheckReadError(t, &tcpip.ErrWouldBlock{})
+	ept.CheckReadError(t, tcpip.ErrWouldBlock)
 
 	if err := c.EP.Shutdown(tcpip.ShutdownRead); err != nil {
 		t.Fatalf("Shutdown failed: %s", err)
 	}
 
-	ept.CheckReadError(t, &tcpip.ErrClosedForReceive{})
+	ept.CheckReadError(t, tcpip.ErrClosedForReceive)
 	var want uint64 = 1
 	if got := c.EP.Stats().(*tcp.Stats).ReadErrors.ReadClosed.Value(); got != want {
 		t.Fatalf("got EP stats Stats.ReadErrors.ReadClosed got %d want %d", got, want)
@@ -2141,7 +2141,7 @@ func TestFullWindowReceive(t *testing.T) {
 	defer c.WQ.EventUnregister(&we)
 
 	ept := endpointTester{c.EP}
-	ept.CheckReadError(t, &tcpip.ErrWouldBlock{})
+	ept.CheckReadError(t, tcpip.ErrWouldBlock)
 
 	// Fill up the window w/ tcp.SegOverheadFactor*rcvBufSz as netstack multiplies
 	// the provided buffer value by tcp.SegOverheadFactor to calculate the actual
@@ -2273,10 +2273,10 @@ func TestSmallReceiveBufferReadiness(t *testing.T) {
 				t.Fatalf("NewEndpoint failed: %s", err)
 			}
 			defer client.Close()
-			switch err := client.Connect(localAddress).(type) {
+			switch err := client.Connect(localAddress); err {
 			case nil:
 				t.Fatal("Connect returned nil error")
-			case *tcpip.ErrConnectStarted:
+			case tcpip.ErrConnectStarted:
 			default:
 				t.Fatalf("Connect failed: %s", err)
 			}
@@ -2305,12 +2305,12 @@ func TestSmallReceiveBufferReadiness(t *testing.T) {
 				var b [64 << 10]byte
 				var r bytes.Reader
 				r.Reset(b[:])
-				switch n, err := server.Write(&r, tcpip.WriteOptions{}); err.(type) {
+				switch n, err := server.Write(&r, tcpip.WriteOptions{}); err {
 				case nil:
 					t.Logf("wrote %d bytes", n)
 					total += n
 					continue
-				case *tcpip.ErrWouldBlock:
+				case tcpip.ErrWouldBlock:
 					select {
 					case <-serverCh:
 						continue
@@ -2339,11 +2339,11 @@ func TestSmallReceiveBufferReadiness(t *testing.T) {
 					var total int64
 					defer t.Logf("wrote %d bytes in total", total)
 					for r.Len() != 0 {
-						switch n, err := server.Write(&r, tcpip.WriteOptions{}); err.(type) {
+						switch n, err := server.Write(&r, tcpip.WriteOptions{}); err {
 						case nil:
 							t.Logf("wrote %d bytes", n)
 							total += n
-						case *tcpip.ErrWouldBlock:
+						case tcpip.ErrWouldBlock:
 							for {
 								t.Logf("waiting on server")
 								select {
@@ -2377,14 +2377,14 @@ func TestSmallReceiveBufferReadiness(t *testing.T) {
 					total := 0
 					defer t.Logf("read %d bytes in total", total)
 					for {
-						switch res, err := client.Read(ioutil.Discard, tcpip.ReadOptions{}); err.(type) {
+						switch res, err := client.Read(ioutil.Discard, tcpip.ReadOptions{}); err {
 						case nil:
 							t.Logf("read %d bytes", res.Count)
 							total += res.Count
 							t.Logf("read total %d bytes till now", total)
-						case *tcpip.ErrClosedForReceive:
+						case tcpip.ErrClosedForReceive:
 							return nil
-						case *tcpip.ErrWouldBlock:
+						case tcpip.ErrWouldBlock:
 							for {
 								t.Logf("waiting on client")
 								select {
@@ -2507,7 +2507,7 @@ func TestNoWindowShrinking(t *testing.T) {
 	defer c.WQ.EventUnregister(&we)
 
 	ept := endpointTester{c.EP}
-	ept.CheckReadError(t, &tcpip.ErrWouldBlock{})
+	ept.CheckReadError(t, tcpip.ErrWouldBlock)
 
 	// Send a 1 byte payload so that we can record the current receive window.
 	// Send a payload of half the size of rcvBufSize.
@@ -2825,7 +2825,7 @@ func TestScaledWindowAccept(t *testing.T) {
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
-	if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+	if cmp.Equal(tcpip.ErrWouldBlock, err) {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -2897,7 +2897,7 @@ func TestNonScaledWindowAccept(t *testing.T) {
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
-	if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+	if cmp.Equal(tcpip.ErrWouldBlock, err) {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -3429,7 +3429,7 @@ func TestSetTTL(t *testing.T) {
 
 			{
 				err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort})
-				if d := cmp.Diff(&tcpip.ErrConnectStarted{}, err); d != "" {
+				if d := cmp.Diff(tcpip.ErrConnectStarted, err); d != "" {
 					t.Fatalf("c.EP.Connect(...) mismatch (-want +got):\n%s", d)
 				}
 			}
@@ -3489,7 +3489,7 @@ func TestPassiveSendMSSLessThanMTU(t *testing.T) {
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
-	if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+	if cmp.Equal(tcpip.ErrWouldBlock, err) {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -3543,7 +3543,7 @@ func TestSynCookiePassiveSendMSSLessThanMTU(t *testing.T) {
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
-	if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+	if cmp.Equal(tcpip.ErrWouldBlock, err) {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -3618,7 +3618,7 @@ func TestSynOptionsOnActiveConnect(t *testing.T) {
 
 	{
 		err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort})
-		if d := cmp.Diff(&tcpip.ErrConnectStarted{}, err); d != "" {
+		if d := cmp.Diff(tcpip.ErrConnectStarted, err); d != "" {
 			t.Fatalf("c.EP.Connect(...) mismatch (-want +got):\n%s", d)
 		}
 	}
@@ -3731,19 +3731,19 @@ func TestReceiveOnResetConnection(t *testing.T) {
 
 loop:
 	for {
-		switch _, err := c.EP.Read(ioutil.Discard, tcpip.ReadOptions{}); err.(type) {
-		case *tcpip.ErrWouldBlock:
+		switch _, err := c.EP.Read(ioutil.Discard, tcpip.ReadOptions{}); err {
+		case tcpip.ErrWouldBlock:
 			<-ch
 			// Expect the state to be StateError and subsequent Reads to fail with HardError.
 			_, err := c.EP.Read(ioutil.Discard, tcpip.ReadOptions{})
-			if d := cmp.Diff(&tcpip.ErrConnectionReset{}, err); d != "" {
+			if d := cmp.Diff(tcpip.ErrConnectionReset, err); d != "" {
 				t.Fatalf("c.EP.Read() mismatch (-want +got):\n%s", d)
 			}
 			break loop
-		case *tcpip.ErrConnectionReset:
+		case tcpip.ErrConnectionReset:
 			break loop
 		default:
-			t.Fatalf("got c.EP.Read(nil) = %v, want = %s", err, &tcpip.ErrConnectionReset{})
+			t.Fatalf("got c.EP.Read(nil) = %v, want = %s", err, tcpip.ErrConnectionReset)
 		}
 	}
 
@@ -3797,7 +3797,7 @@ func TestSendOnResetConnection(t *testing.T) {
 	var r bytes.Reader
 	r.Reset(make([]byte, 10))
 	_, err := c.EP.Write(&r, tcpip.WriteOptions{})
-	if d := cmp.Diff(&tcpip.ErrConnectionReset{}, err); d != "" {
+	if d := cmp.Diff(tcpip.ErrConnectionReset, err); d != "" {
 		t.Fatalf("c.EP.Write(...) mismatch (-want +got):\n%s", d)
 	}
 }
@@ -4711,7 +4711,7 @@ func TestReadAfterClosedState(t *testing.T) {
 	defer c.WQ.EventUnregister(&we)
 
 	ept := endpointTester{c.EP}
-	ept.CheckReadError(t, &tcpip.ErrWouldBlock{})
+	ept.CheckReadError(t, tcpip.ErrWouldBlock)
 
 	// Shutdown immediately for write, check that we get a FIN.
 	if err := c.EP.Shutdown(tcpip.ShutdownWrite); err != nil {
@@ -4791,11 +4791,11 @@ func TestReadAfterClosedState(t *testing.T) {
 
 	// Now that we drained the queue, check that functions fail with the
 	// right error code.
-	ept.CheckReadError(t, &tcpip.ErrClosedForReceive{})
+	ept.CheckReadError(t, tcpip.ErrClosedForReceive)
 	var buf bytes.Buffer
 	{
 		_, err := c.EP.Read(&buf, tcpip.ReadOptions{Peek: true})
-		if d := cmp.Diff(&tcpip.ErrClosedForReceive{}, err); d != "" {
+		if d := cmp.Diff(tcpip.ErrClosedForReceive, err); d != "" {
 			t.Fatalf("c.EP.Read(_, {Peek: true}) mismatch (-want +got):\n%s", d)
 		}
 	}
@@ -4840,7 +4840,7 @@ func TestReusePort(t *testing.T) {
 	}
 	{
 		err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort})
-		if d := cmp.Diff(&tcpip.ErrConnectStarted{}, err); d != "" {
+		if d := cmp.Diff(tcpip.ErrConnectStarted, err); d != "" {
 			t.Fatalf("c.EP.Connect(...) mismatch (-want +got):\n%s", d)
 		}
 	}
@@ -4991,7 +4991,7 @@ func TestBindToDeviceOption(t *testing.T) {
 		getBindToDevice      int32
 	}{
 		{"GetDefaultValue", nil, nil, 0},
-		{"BindToNonExistent", nicIDPtr(999), &tcpip.ErrUnknownDevice{}, 0},
+		{"BindToNonExistent", nicIDPtr(999), tcpip.ErrUnknownDevice, 0},
 		{"BindToExistent", nicIDPtr(321), nil, 321},
 		{"UnbindToDevice", nicIDPtr(0), nil, 0},
 	}
@@ -5087,7 +5087,7 @@ func TestSelfConnect(t *testing.T) {
 
 	{
 		err := ep.Connect(tcpip.FullAddress{Addr: context.StackAddr, Port: context.StackPort})
-		if d := cmp.Diff(&tcpip.ErrConnectStarted{}, err); d != "" {
+		if d := cmp.Diff(tcpip.ErrConnectStarted, err); d != "" {
 			t.Fatalf("ep.Connect(...) mismatch (-want +got):\n%s", d)
 		}
 	}
@@ -5248,9 +5248,9 @@ func TestConnectAvoidsBoundPorts(t *testing.T) {
 													t.Fatalf("Bind(%d) failed: %s", i, err)
 												}
 											}
-											var want tcpip.Error = &tcpip.ErrConnectStarted{}
+											var want tcpip.Error = tcpip.ErrConnectStarted
 											if collides {
-												want = &tcpip.ErrNoPortAvailable{}
+												want = tcpip.ErrNoPortAvailable
 											}
 											if err := makeEP(candidateNetwork).Connect(tcpip.FullAddress{Addr: address(t, candidateAddressType, false), Port: 31337}); err != want {
 												t.Fatalf("got ep.Connect(..) = %s, want = %s", err, want)
@@ -5381,7 +5381,7 @@ func TestStackSetCongestionControl(t *testing.T) {
 	}{
 		{"reno", nil},
 		{"cubic", nil},
-		{"blahblah", &tcpip.ErrNoSuchFile{}},
+		{"blahblah", tcpip.ErrNoSuchFile},
 	}
 
 	for _, tc := range testCases {
@@ -5467,7 +5467,7 @@ func TestEndpointSetCongestionControl(t *testing.T) {
 	}{
 		{"reno", nil},
 		{"cubic", nil},
-		{"blahblah", &tcpip.ErrNoSuchFile{}},
+		{"blahblah", tcpip.ErrNoSuchFile},
 	}
 
 	for _, connected := range []bool{false, true} {
@@ -5574,7 +5574,7 @@ func TestKeepalive(t *testing.T) {
 
 	// Check that the connection is still alive.
 	ept := endpointTester{c.EP}
-	ept.CheckReadError(t, &tcpip.ErrWouldBlock{})
+	ept.CheckReadError(t, tcpip.ErrWouldBlock)
 
 	// Send some data and wait before ACKing it. Keepalives should be disabled
 	// during this period.
@@ -5660,7 +5660,7 @@ func TestKeepalive(t *testing.T) {
 		t.Errorf("got c.Stack().Stats().TCP.EstablishedTimedout.Value() = %d, want = 1", got)
 	}
 
-	ept.CheckReadError(t, &tcpip.ErrTimeout{})
+	ept.CheckReadError(t, tcpip.ErrTimeout)
 
 	if got := c.Stack().Stats().TCP.CurrentEstablished.Value(); got != 0 {
 		t.Errorf("got stats.TCP.CurrentEstablished.Value() = %d, want = 0", got)
@@ -5810,7 +5810,7 @@ func TestListenBacklogFull(t *testing.T) {
 
 	for i := 0; i < listenBacklog; i++ {
 		_, _, err = c.EP.Accept(nil)
-		if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+		if cmp.Equal(tcpip.ErrWouldBlock, err) {
 			// Wait for connection to be established.
 			select {
 			case <-ch:
@@ -5827,7 +5827,7 @@ func TestListenBacklogFull(t *testing.T) {
 
 	// Now verify that there are no more connections that can be accepted.
 	_, _, err = c.EP.Accept(nil)
-	if !cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+	if !cmp.Equal(tcpip.ErrWouldBlock, err) {
 		select {
 		case <-ch:
 			t.Fatalf("unexpected endpoint delivered on Accept: %+v", c.EP)
@@ -5839,7 +5839,7 @@ func TestListenBacklogFull(t *testing.T) {
 	executeHandshake(t, c, context.TestPort+lastPortOffset, false /*synCookieInUse */)
 
 	newEP, _, err := c.EP.Accept(nil)
-	if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+	if cmp.Equal(tcpip.ErrWouldBlock, err) {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -6152,7 +6152,7 @@ func TestListenSynRcvdQueueFull(t *testing.T) {
 
 	// Try to accept the connections in the backlog.
 	newEP, _, err := c.EP.Accept(nil)
-	if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+	if cmp.Equal(tcpip.ErrWouldBlock, err) {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -6223,7 +6223,7 @@ func TestListenBacklogFullSynCookieInUse(t *testing.T) {
 	defer c.WQ.EventUnregister(&we)
 
 	_, _, err = c.EP.Accept(nil)
-	if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+	if cmp.Equal(tcpip.ErrWouldBlock, err) {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -6239,7 +6239,7 @@ func TestListenBacklogFullSynCookieInUse(t *testing.T) {
 
 	// Now verify that there are no more connections that can be accepted.
 	_, _, err = c.EP.Accept(nil)
-	if !cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+	if !cmp.Equal(tcpip.ErrWouldBlock, err) {
 		select {
 		case <-ch:
 			t.Fatalf("unexpected endpoint delivered on Accept: %+v", c.EP)
@@ -6431,7 +6431,7 @@ func TestPassiveConnectionAttemptIncrement(t *testing.T) {
 
 	// Verify that there is only one acceptable connection at this point.
 	_, _, err = c.EP.Accept(nil)
-	if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+	if cmp.Equal(tcpip.ErrWouldBlock, err) {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -6515,7 +6515,7 @@ func TestPassiveFailedConnectionAttemptIncrement(t *testing.T) {
 
 	// Now check that there is one acceptable connections.
 	_, _, err = c.EP.Accept(nil)
-	if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+	if cmp.Equal(tcpip.ErrWouldBlock, err) {
 		// Wait for connection to be established.
 		<-ch
 		_, _, err = c.EP.Accept(nil)
@@ -6590,7 +6590,7 @@ func TestEndpointBindListenAcceptState(t *testing.T) {
 	}
 
 	ept := endpointTester{ep}
-	ept.CheckReadError(t, &tcpip.ErrNotConnected{})
+	ept.CheckReadError(t, tcpip.ErrNotConnected)
 	if got := ep.Stats().(*tcp.Stats).ReadErrors.NotConnected.Value(); got != 1 {
 		t.Errorf("got EP stats Stats.ReadErrors.NotConnected got %d want %d", got, 1)
 	}
@@ -6610,7 +6610,7 @@ func TestEndpointBindListenAcceptState(t *testing.T) {
 	defer wq.EventUnregister(&we)
 
 	aep, _, err := ep.Accept(nil)
-	if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+	if cmp.Equal(tcpip.ErrWouldBlock, err) {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -6628,7 +6628,7 @@ func TestEndpointBindListenAcceptState(t *testing.T) {
 	}
 	{
 		err := aep.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort})
-		if d := cmp.Diff(&tcpip.ErrAlreadyConnected{}, err); d != "" {
+		if d := cmp.Diff(tcpip.ErrAlreadyConnected, err); d != "" {
 			t.Errorf("Connect(...) mismatch (-want +got):\n%s", d)
 		}
 	}
@@ -6749,7 +6749,7 @@ func TestReceiveBufferAutoTuningApplicationLimited(t *testing.T) {
 	// window increases to the full available buffer size.
 	for {
 		_, err := c.EP.Read(ioutil.Discard, tcpip.ReadOptions{})
-		if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+		if cmp.Equal(tcpip.ErrWouldBlock, err) {
 			break
 		}
 	}
@@ -6880,7 +6880,7 @@ func TestReceiveBufferAutoTuning(t *testing.T) {
 		totalCopied := 0
 		for {
 			res, err := c.EP.Read(ioutil.Discard, tcpip.ReadOptions{})
-			if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+			if cmp.Equal(tcpip.ErrWouldBlock, err) {
 				break
 			}
 			totalCopied += res.Count
@@ -7069,7 +7069,7 @@ func TestTCPTimeWaitRSTIgnored(t *testing.T) {
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
-	if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+	if cmp.Equal(tcpip.ErrWouldBlock, err) {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -7188,7 +7188,7 @@ func TestTCPTimeWaitOutOfOrder(t *testing.T) {
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
-	if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+	if cmp.Equal(tcpip.ErrWouldBlock, err) {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -7295,7 +7295,7 @@ func TestTCPTimeWaitNewSyn(t *testing.T) {
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
-	if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+	if cmp.Equal(tcpip.ErrWouldBlock, err) {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -7385,7 +7385,7 @@ func TestTCPTimeWaitNewSyn(t *testing.T) {
 
 	// Try to accept the connection.
 	c.EP, _, err = ep.Accept(nil)
-	if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+	if cmp.Equal(tcpip.ErrWouldBlock, err) {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -7459,7 +7459,7 @@ func TestTCPTimeWaitDuplicateFINExtendsTimeWait(t *testing.T) {
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
-	if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+	if cmp.Equal(tcpip.ErrWouldBlock, err) {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -7609,7 +7609,7 @@ func TestTCPCloseWithData(t *testing.T) {
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
-	if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+	if cmp.Equal(tcpip.ErrWouldBlock, err) {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -7805,7 +7805,7 @@ func TestTCPUserTimeout(t *testing.T) {
 	)
 
 	ept := endpointTester{c.EP}
-	ept.CheckReadError(t, &tcpip.ErrTimeout{})
+	ept.CheckReadError(t, tcpip.ErrTimeout)
 
 	if got, want := c.Stack().Stats().TCP.EstablishedTimedout.Value(), origEstablishedTimedout+1; got != want {
 		t.Errorf("got c.Stack().Stats().TCP.EstablishedTimedout = %d, want = %d", got, want)
@@ -7849,7 +7849,7 @@ func TestKeepaliveWithUserTimeout(t *testing.T) {
 
 	// Check that the connection is still alive.
 	ept := endpointTester{c.EP}
-	ept.CheckReadError(t, &tcpip.ErrWouldBlock{})
+	ept.CheckReadError(t, tcpip.ErrWouldBlock)
 
 	// Now receive 1 keepalives, but don't ACK it.
 	b := c.GetPacket()
@@ -7889,7 +7889,7 @@ func TestKeepaliveWithUserTimeout(t *testing.T) {
 		),
 	)
 
-	ept.CheckReadError(t, &tcpip.ErrTimeout{})
+	ept.CheckReadError(t, tcpip.ErrTimeout)
 	if got, want := c.Stack().Stats().TCP.EstablishedTimedout.Value(), origEstablishedTimedout+1; got != want {
 		t.Errorf("got c.Stack().Stats().TCP.EstablishedTimedout = %d, want = %d", got, want)
 	}
@@ -8044,7 +8044,7 @@ func TestTCPDeferAccept(t *testing.T) {
 	irs, iss := executeHandshake(t, c, context.TestPort, false /* synCookiesInUse */)
 
 	_, _, err := c.EP.Accept(nil)
-	if d := cmp.Diff(&tcpip.ErrWouldBlock{}, err); d != "" {
+	if d := cmp.Diff(tcpip.ErrWouldBlock, err); d != "" {
 		t.Fatalf("c.EP.Accept(nil) mismatch (-want +got):\n%s", d)
 	}
 
@@ -8103,7 +8103,7 @@ func TestTCPDeferAcceptTimeout(t *testing.T) {
 	irs, iss := executeHandshake(t, c, context.TestPort, false /* synCookiesInUse */)
 
 	_, _, err := c.EP.Accept(nil)
-	if d := cmp.Diff(&tcpip.ErrWouldBlock{}, err); d != "" {
+	if d := cmp.Diff(tcpip.ErrWouldBlock, err); d != "" {
 		t.Fatalf("c.EP.Accept(nil) mismatch (-want +got):\n%s", d)
 	}
 
@@ -8231,8 +8231,8 @@ func TestSetStackTimeWaitReuse(t *testing.T) {
 		{int(tcpip.TCPTimeWaitReuseDisabled), nil},
 		{int(tcpip.TCPTimeWaitReuseGlobal), nil},
 		{int(tcpip.TCPTimeWaitReuseLoopbackOnly), nil},
-		{int(tcpip.TCPTimeWaitReuseLoopbackOnly) + 1, &tcpip.ErrInvalidOptionValue{}},
-		{int(tcpip.TCPTimeWaitReuseDisabled) - 1, &tcpip.ErrInvalidOptionValue{}},
+		{int(tcpip.TCPTimeWaitReuseLoopbackOnly) + 1, tcpip.ErrInvalidOptionValue},
+		{int(tcpip.TCPTimeWaitReuseDisabled) - 1, tcpip.ErrInvalidOptionValue},
 	}
 
 	for _, tc := range testCases {
@@ -8344,12 +8344,12 @@ func TestSetRTO(t *testing.T) {
 		{
 			name:   "invalid minRTO",
 			minRTO: maxRTO + time.Second,
-			err:    &tcpip.ErrInvalidOptionValue{},
+			err:    tcpip.ErrInvalidOptionValue,
 		},
 		{
 			name:   "invalid maxRTO",
 			maxRTO: minRTO - time.Millisecond,
-			err:    &tcpip.ErrInvalidOptionValue{},
+			err:    tcpip.ErrInvalidOptionValue,
 		},
 		{
 			name:   "valid minRTO",
@@ -8467,7 +8467,7 @@ func TestSendBufferTuning(t *testing.T) {
 				var r bytes.Reader
 				r.Reset(data[bytesRead : bytesRead+maxPayload])
 				_, err := c.EP.Write(&r, tcpip.WriteOptions{})
-				if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+				if cmp.Equal(tcpip.ErrWouldBlock, err) {
 					break
 				}
 
@@ -8569,7 +8569,7 @@ func TestTimestampSynCookies(t *testing.T) {
 	we, ch := waiter.NewChannelEntry(nil)
 	wq.EventRegister(&we, waiter.ReadableEvents)
 	defer wq.EventUnregister(&we)
-	if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+	if cmp.Equal(tcpip.ErrWouldBlock, err) {
 		// Wait for connection to be established.
 		select {
 		case <-ch:

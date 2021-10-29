@@ -131,13 +131,13 @@ func (f *packetsPendingLinkResolution) enqueue(r *Route, proto tcpip.NetworkProt
 	// To make sure B does not interleave with A and C, we make sure A and C are
 	// done while holding the lock.
 	routeInfo, ch, err := r.resolvedFields(nil)
-	switch err.(type) {
+	switch err {
 	case nil:
 		// The route resolved immediately, so we don't need to wait for link
 		// resolution to send the packet.
 		f.mu.Unlock()
 		return f.nic.writePacketBuffer(routeInfo, proto, pkt)
-	case *tcpip.ErrWouldBlock:
+	case tcpip.ErrWouldBlock:
 		// We need to wait for link resolution to complete.
 	default:
 		f.mu.Unlock()
@@ -180,7 +180,7 @@ func (f *packetsPendingLinkResolution) enqueue(r *Route, proto tcpip.NetworkProt
 	if len(cancelledPackets) != 0 {
 		// Dequeue the pending packets in a new goroutine to not hold up the current
 		// goroutine as handing link resolution failures may be a costly operation.
-		go f.dequeuePackets(cancelledPackets, "" /* linkAddr */, &tcpip.ErrAborted{})
+		go f.dequeuePackets(cancelledPackets, "" /* linkAddr */, tcpip.ErrAborted)
 	}
 
 	return pkt.len(), nil

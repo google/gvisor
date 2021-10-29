@@ -90,7 +90,7 @@ func (e *endpoint) SendDADMessage(addr tcpip.Address, _ []byte) tcpip.Error {
 
 func (e *endpoint) Enable() tcpip.Error {
 	if !e.nic.Enabled() {
-		return &tcpip.ErrNotPermitted{}
+		return tcpip.ErrNotPermitted
 	}
 
 	e.setEnabled(true)
@@ -137,7 +137,7 @@ func (e *endpoint) MaxHeaderLength() uint16 {
 func (*endpoint) Close() {}
 
 func (*endpoint) WritePacket(*stack.Route, stack.NetworkHeaderParams, *stack.PacketBuffer) tcpip.Error {
-	return &tcpip.ErrNotSupported{}
+	return tcpip.ErrNotSupported
 }
 
 // NetworkProtocolNumber implements stack.NetworkEndpoint.NetworkProtocolNumber.
@@ -147,11 +147,11 @@ func (*endpoint) NetworkProtocolNumber() tcpip.NetworkProtocolNumber {
 
 // WritePackets implements stack.NetworkEndpoint.WritePackets.
 func (*endpoint) WritePackets(*stack.Route, stack.PacketBufferList, stack.NetworkHeaderParams) (int, tcpip.Error) {
-	return 0, &tcpip.ErrNotSupported{}
+	return 0, tcpip.ErrNotSupported
 }
 
 func (*endpoint) WriteHeaderIncludedPacket(*stack.Route, *stack.PacketBuffer) tcpip.Error {
-	return &tcpip.ErrNotSupported{}
+	return tcpip.ErrNotSupported
 }
 
 func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
@@ -187,9 +187,9 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		remoteAddr := tcpip.Address(h.ProtocolAddressSender())
 		remoteLinkAddr := tcpip.LinkAddress(h.HardwareAddressSender())
 
-		switch err := e.nic.HandleNeighborProbe(header.IPv4ProtocolNumber, remoteAddr, remoteLinkAddr); err.(type) {
+		switch err := e.nic.HandleNeighborProbe(header.IPv4ProtocolNumber, remoteAddr, remoteLinkAddr); err {
 		case nil:
-		case *tcpip.ErrNotSupported:
+		case tcpip.ErrNotSupported:
 			// The stack may support ARP but the NIC may not need link resolution.
 		default:
 			panic(fmt.Sprintf("unexpected error when informing NIC of neighbor probe message: %s", err))
@@ -249,9 +249,9 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 			Override: false,
 			// ARP does not distinguish between router and non-router hosts.
 			IsRouter: false,
-		}); err.(type) {
+		}); err {
 		case nil:
-		case *tcpip.ErrNotSupported:
+		case tcpip.ErrNotSupported:
 		// The stack may support ARP but the NIC may not need link resolution.
 		default:
 			panic(fmt.Sprintf("unexpected error when informing NIC of neighbor confirmation message: %s", err))
@@ -324,13 +324,13 @@ func (e *endpoint) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remot
 
 		if len(addr.Address) == 0 {
 			stats.outgoingRequestInterfaceHasNoLocalAddressErrors.Increment()
-			return &tcpip.ErrNetworkUnreachable{}
+			return tcpip.ErrNetworkUnreachable
 		}
 
 		localAddr = addr.Address
 	} else if !e.nic.CheckLocalAddress(header.IPv4ProtocolNumber, localAddr) {
 		stats.outgoingRequestBadLocalAddressErrors.Increment()
-		return &tcpip.ErrBadLocalAddress{}
+		return tcpip.ErrBadLocalAddress
 	}
 
 	return e.sendARPRequest(localAddr, targetAddr, remoteLinkAddr)
@@ -377,12 +377,12 @@ func (*endpoint) ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAddress, bo
 
 // SetOption implements stack.NetworkProtocol.SetOption.
 func (*protocol) SetOption(tcpip.SettableNetworkProtocolOption) tcpip.Error {
-	return &tcpip.ErrUnknownProtocolOption{}
+	return tcpip.ErrUnknownProtocolOption
 }
 
 // Option implements stack.NetworkProtocol.Option.
 func (*protocol) Option(tcpip.GettableNetworkProtocolOption) tcpip.Error {
-	return &tcpip.ErrUnknownProtocolOption{}
+	return tcpip.ErrUnknownProtocolOption
 }
 
 // Close implements stack.TransportProtocol.Close.

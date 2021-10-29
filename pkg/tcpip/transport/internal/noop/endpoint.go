@@ -64,52 +64,52 @@ func (*endpoint) SetOwner(tcpip.PacketOwner) {
 
 // Read implements tcpip.Endpoint.Read.
 func (*endpoint) Read(io.Writer, tcpip.ReadOptions) (tcpip.ReadResult, tcpip.Error) {
-	return tcpip.ReadResult{}, &tcpip.ErrNotPermitted{}
+	return tcpip.ReadResult{}, tcpip.ErrNotPermitted
 }
 
 // Write implements tcpip.Endpoint.Write.
 func (*endpoint) Write(tcpip.Payloader, tcpip.WriteOptions) (int64, tcpip.Error) {
-	return 0, &tcpip.ErrNotPermitted{}
+	return 0, tcpip.ErrNotPermitted
 }
 
 // Disconnect implements tcpip.Endpoint.Disconnect.
 func (*endpoint) Disconnect() tcpip.Error {
-	return &tcpip.ErrNotSupported{}
+	return tcpip.ErrNotSupported
 }
 
 // Connect implements tcpip.Endpoint.Connect.
 func (*endpoint) Connect(tcpip.FullAddress) tcpip.Error {
-	return &tcpip.ErrNotPermitted{}
+	return tcpip.ErrNotPermitted
 }
 
 // Shutdown implements tcpip.Endpoint.Shutdown.
 func (*endpoint) Shutdown(tcpip.ShutdownFlags) tcpip.Error {
-	return &tcpip.ErrNotPermitted{}
+	return tcpip.ErrNotPermitted
 }
 
 // Listen implements tcpip.Endpoint.Listen.
 func (*endpoint) Listen(int) tcpip.Error {
-	return &tcpip.ErrNotSupported{}
+	return tcpip.ErrNotSupported
 }
 
 // Accept implements tcpip.Endpoint.Accept.
 func (*endpoint) Accept(*tcpip.FullAddress) (tcpip.Endpoint, *waiter.Queue, tcpip.Error) {
-	return nil, nil, &tcpip.ErrNotSupported{}
+	return nil, nil, tcpip.ErrNotSupported
 }
 
 // Bind implements tcpip.Endpoint.Bind.
 func (*endpoint) Bind(tcpip.FullAddress) tcpip.Error {
-	return &tcpip.ErrNotPermitted{}
+	return tcpip.ErrNotPermitted
 }
 
 // GetLocalAddress implements tcpip.Endpoint.GetLocalAddress.
 func (*endpoint) GetLocalAddress() (tcpip.FullAddress, tcpip.Error) {
-	return tcpip.FullAddress{}, &tcpip.ErrNotSupported{}
+	return tcpip.FullAddress{}, tcpip.ErrNotSupported
 }
 
 // GetRemoteAddress implements tcpip.Endpoint.GetRemoteAddress.
 func (*endpoint) GetRemoteAddress() (tcpip.FullAddress, tcpip.Error) {
-	return tcpip.FullAddress{}, &tcpip.ErrNotConnected{}
+	return tcpip.FullAddress{}, tcpip.ErrNotConnected
 }
 
 // Readiness implements tcpip.Endpoint.Readiness.
@@ -119,21 +119,21 @@ func (*endpoint) Readiness(waiter.EventMask) waiter.EventMask {
 
 // SetSockOpt implements tcpip.Endpoint.SetSockOpt.
 func (*endpoint) SetSockOpt(tcpip.SettableSocketOption) tcpip.Error {
-	return &tcpip.ErrUnknownProtocolOption{}
+	return tcpip.ErrUnknownProtocolOption
 }
 
 func (*endpoint) SetSockOptInt(tcpip.SockOptInt, int) tcpip.Error {
-	return &tcpip.ErrUnknownProtocolOption{}
+	return tcpip.ErrUnknownProtocolOption
 }
 
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
 func (*endpoint) GetSockOpt(tcpip.GettableSocketOption) tcpip.Error {
-	return &tcpip.ErrUnknownProtocolOption{}
+	return tcpip.ErrUnknownProtocolOption
 }
 
 // GetSockOptInt implements tcpip.Endpoint.GetSockOptInt.
 func (*endpoint) GetSockOptInt(tcpip.SockOptInt) (int, tcpip.Error) {
-	return 0, &tcpip.ErrUnknownProtocolOption{}
+	return 0, tcpip.ErrUnknownProtocolOption
 }
 
 // HandlePacket implements stack.RawTransportEndpoint.HandlePacket.

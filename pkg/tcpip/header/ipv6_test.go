@@ -331,7 +331,7 @@ func TestScopeForIPv6Address(t *testing.T) {
 			name:  "IPv4",
 			addr:  "\x01\x02\x03\x04",
 			scope: header.GlobalScope,
-			err:   &tcpip.ErrBadAddress{},
+			err:   tcpip.ErrBadAddress,
 		},
 	}
 

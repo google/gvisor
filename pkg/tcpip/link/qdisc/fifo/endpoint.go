@@ -168,7 +168,7 @@ func (e *endpoint) SupportedGSO() stack.SupportedGSO {
 func (e *endpoint) WritePacket(r stack.RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
 	d := e.dispatchers[int(pkt.Hash)%len(e.dispatchers)]
 	if !d.q.enqueue(pkt) {
-		return &tcpip.ErrNoBufferSpace{}
+		return tcpip.ErrNoBufferSpace
 	}
 	d.newPacketWaker.Assert()
 	return nil
@@ -190,7 +190,7 @@ func (e *endpoint) WritePackets(r stack.RouteInfo, pkts stack.PacketBufferList, 
 			if enqueued > 0 {
 				d.newPacketWaker.Assert()
 			}
-			return enqueued, &tcpip.ErrNoBufferSpace{}
+			return enqueued, tcpip.ErrNoBufferSpace
 		}
 		pkt = nxt
 		enqueued++

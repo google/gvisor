@@ -263,8 +263,8 @@ func TestLoopbackAcceptAllInSubnetUDP(t *testing.T) {
 				if diff := cmp.Diff(data, buf.Bytes()); diff != "" {
 					t.Errorf("got UDP payload mismatch (-want +got):\n%s", diff)
 				}
-			} else if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-				t.Fatalf("got rep.Read = (%v, %s) [with data %x], want = (_, %s)", res, err, buf.Bytes(), &tcpip.ErrWouldBlock{})
+			} else if err != tcpip.ErrWouldBlock {
+				t.Fatalf("got rep.Read = (%v, %s) [with data %x], want = (_, %s)", res, err, buf.Bytes(), tcpip.ErrWouldBlock)
 			}
 		})
 	}
@@ -328,8 +328,8 @@ func TestLoopbackSubnetLifetimeBoundToAddr(t *testing.T) {
 			ReserveHeaderBytes: int(r.MaxHeaderLength()),
 			Data:               data.ToVectorisedView(),
 		}))
-		if _, ok := err.(*tcpip.ErrInvalidEndpointState); !ok {
-			t.Fatalf("got r.WritePacket(%#v, _) = %s, want = %s", params, err, &tcpip.ErrInvalidEndpointState{})
+		if err != tcpip.ErrInvalidEndpointState {
+			t.Fatalf("got r.WritePacket(%#v, _) = %s, want = %s", params, err, tcpip.ErrInvalidEndpointState)
 		}
 	}
 }
@@ -476,15 +476,15 @@ func TestLoopbackAcceptAllInSubnetTCP(t *testing.T) {
 			}
 			{
 				err := connectingEndpoint.Connect(connectAddr)
-				if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
+				if err != tcpip.ErrConnectStarted {
 					t.Fatalf("connectingEndpoint.Connect(%#v): %s", connectAddr, err)
 				}
 			}
 
 			if !test.expectAccept {
 				_, _, err := listeningEndpoint.Accept(nil)
-				if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-					t.Fatalf("got listeningEndpoint.Accept(nil) = %s, want = %s", err, &tcpip.ErrWouldBlock{})
+				if err != tcpip.ErrWouldBlock {
+					t.Fatalf("got listeningEndpoint.Accept(nil) = %s, want = %s", err, tcpip.ErrWouldBlock)
 				}
 				return
 			}

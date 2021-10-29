@@ -222,9 +222,9 @@ func (e *endpoint) SetForwarding(forwarding bool) {
 		return
 	}
 
-	switch err := e.leaveGroupLocked(header.IPv4AllRoutersGroup).(type) {
+	switch err := e.leaveGroupLocked(header.IPv4AllRoutersGroup); err {
 	case nil:
-	case *tcpip.ErrBadLocalAddress:
+	case tcpip.ErrBadLocalAddress:
 		// The endpoint may have already left the multicast group.
 	default:
 		panic(fmt.Sprintf("e.leaveGroupLocked(%s): %s", header.IPv4AllRoutersGroup, err))
@@ -239,7 +239,7 @@ func (e *endpoint) Enable() tcpip.Error {
 	// If the NIC is not enabled, the endpoint can't do anything meaningful so
 	// don't enable the endpoint.
 	if !e.nic.Enabled() {
-		return &tcpip.ErrNotPermitted{}
+		return tcpip.ErrNotPermitted
 	}
 
 	// If the endpoint is already enabled, there is nothing for it to do.
@@ -307,8 +307,8 @@ func (e *endpoint) disableLocked() {
 	}
 
 	// The endpoint may have already left the multicast group.
-	switch err := e.leaveGroupLocked(header.IPv4AllSystems).(type) {
-	case nil, *tcpip.ErrBadLocalAddress:
+	switch err := e.leaveGroupLocked(header.IPv4AllSystems); err {
+	case nil, tcpip.ErrBadLocalAddress:
 	default:
 		panic(fmt.Sprintf("unexpected error when leaving group = %s: %s", header.IPv4AllSystems, err))
 	}
@@ -318,8 +318,8 @@ func (e *endpoint) disableLocked() {
 	e.mu.igmp.softLeaveAll()
 
 	// The address may have already been removed.
-	switch err := e.mu.addressableEndpointState.RemovePermanentAddress(ipv4BroadcastAddr.Address); err.(type) {
-	case nil, *tcpip.ErrBadLocalAddress:
+	switch err := e.mu.addressableEndpointState.RemovePermanentAddress(ipv4BroadcastAddr.Address); err {
+	case nil, tcpip.ErrBadLocalAddress:
 	default:
 		panic(fmt.Sprintf("unexpected error when removing address = %s: %s", ipv4BroadcastAddr.Address, err))
 	}
@@ -369,12 +369,12 @@ func (e *endpoint) addIPHeader(srcAddr, dstAddr tcpip.Address, pkt *stack.Packet
 	}
 	hdrLen += optLen
 	if hdrLen > header.IPv4MaximumHeaderSize {
-		return &tcpip.ErrMessageTooLong{}
+		return tcpip.ErrMessageTooLong
 	}
 	ipH := header.IPv4(pkt.NetworkHeader().Push(hdrLen))
 	length := pkt.Size()
 	if length > math.MaxUint16 {
-		return &tcpip.ErrMessageTooLong{}
+		return tcpip.ErrMessageTooLong
 	}
 	// RFC 6864 section 4.3 mandates uniqueness of ID values for non-atomic
 	// datagrams. Since the DF bit is never being set here, all datagrams
@@ -486,7 +486,7 @@ func (e *endpoint) writePacket(r *stack.Route, pkt *stack.PacketBuffer, headerIn
 		if h.Flags()&header.IPv4FlagDontFragment != 0 && pkt.NetworkPacketInfo.IsForwardedPacket {
 			// TODO(gvisor.dev/issue/5919): Handle error condition in which DontFragment
 			// is set but the packet must be fragmented for the non-forwarding case.
-			return &tcpip.ErrMessageTooLong{}
+			return tcpip.ErrMessageTooLong
 		}
 		sent, remain, err := e.handleFragments(r, networkMTU, pkt, func(fragPkt *stack.PacketBuffer) tcpip.Error {
 			// TODO(gvisor.dev/issue/3884): Evaluate whether we want to send each
@@ -600,17 +600,17 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBu
 	// checks.
 	h, ok := pkt.Data().PullUp(header.IPv4MinimumSize)
 	if !ok {
-		return &tcpip.ErrMalformedHeader{}
+		return tcpip.ErrMalformedHeader
 	}
 
 	hdrLen := header.IPv4(h).HeaderLength()
 	if hdrLen < header.IPv4MinimumSize {
-		return &tcpip.ErrMalformedHeader{}
+		return tcpip.ErrMalformedHeader
 	}
 
 	h, ok = pkt.Data().PullUp(int(hdrLen))
 	if !ok {
-		return &tcpip.ErrMalformedHeader{}
+		return tcpip.ErrMalformedHeader
 	}
 	ipH := header.IPv4(h)
 
@@ -644,7 +644,7 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBu
 	// wire format. We also want to check if the header's fields are valid before
 	// sending the packet.
 	if !parse.IPv4(pkt) || !header.IPv4(pkt.NetworkHeader().View()).IsValid(pktSize) {
-		return &tcpip.ErrMalformedHeader{}
+		return tcpip.ErrMalformedHeader
 	}
 
 	return e.writePacket(r, pkt, true /* headerIncluded */)
@@ -731,9 +731,9 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 	}
 
 	r, err := stk.FindRoute(0, "", dstAddr, ProtocolNumber, false /* multicastLoop */)
-	switch err.(type) {
+	switch err {
 	case nil:
-	case *tcpip.ErrNoRoute, *tcpip.ErrNetworkUnreachable:
+	case tcpip.ErrNoRoute, tcpip.ErrNetworkUnreachable:
 		// We return the original error rather than the result of returning
 		// the ICMP packet because the original error is more relevant to
 		// the caller.
@@ -775,13 +775,13 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 	forwardToEp, ok := e.protocol.getEndpointForNIC(r.NICID())
 	if !ok {
 		// The interface was removed after we obtained the route.
-		return &ip.ErrOther{Err: &tcpip.ErrUnknownDevice{}}
+		return &ip.ErrOther{Err: tcpip.ErrUnknownDevice}
 	}
 
-	switch err := forwardToEp.writePacket(r, newPkt, true /* headerIncluded */); err.(type) {
+	switch err := forwardToEp.writePacket(r, newPkt, true /* headerIncluded */); err {
 	case nil:
 		return nil
-	case *tcpip.ErrMessageTooLong:
+	case tcpip.ErrMessageTooLong:
 		// As per RFC 792, page 4, Destination Unreachable:
 		//
 		//   Another case is when a datagram must be fragmented to be forwarded by a
@@ -1176,7 +1176,7 @@ func (e *endpoint) JoinGroup(addr tcpip.Address) tcpip.Error {
 // Precondition: e.mu must be locked.
 func (e *endpoint) joinGroupLocked(addr tcpip.Address) tcpip.Error {
 	if !header.IsV4MulticastAddress(addr) {
-		return &tcpip.ErrBadAddress{}
+		return tcpip.ErrBadAddress
 	}
 
 	e.mu.igmp.joinGroup(addr)
@@ -1263,7 +1263,7 @@ func (p *protocol) SetOption(option tcpip.SettableNetworkProtocolOption) tcpip.E
 		p.SetDefaultTTL(uint8(*v))
 		return nil
 	default:
-		return &tcpip.ErrUnknownProtocolOption{}
+		return tcpip.ErrUnknownProtocolOption
 	}
 }
 
@@ -1274,7 +1274,7 @@ func (p *protocol) Option(option tcpip.GettableNetworkProtocolOption) tcpip.Erro
 		*v = tcpip.DefaultTTLOption(p.DefaultTTL())
 		return nil
 	default:
-		return &tcpip.ErrUnknownProtocolOption{}
+		return tcpip.ErrUnknownProtocolOption
 	}
 }
 
@@ -1370,7 +1370,7 @@ func (p *protocol) allowICMPReply(icmpType header.ICMPv4Type, code header.ICMPv4
 // link-layer payload mtu.
 func calculateNetworkMTU(linkMTU, networkHeaderSize uint32) (uint32, tcpip.Error) {
 	if linkMTU < header.IPv4MinimumMTU {
-		return 0, &tcpip.ErrInvalidEndpointState{}
+		return 0, tcpip.ErrInvalidEndpointState
 	}
 
 	// As per RFC 791 section 3.1, an IPv4 header cannot exceed 60 bytes in
@@ -1378,7 +1378,7 @@ func calculateNetworkMTU(linkMTU, networkHeaderSize uint32) (uint32, tcpip.Error
 	//   The maximal internet header is 60 octets, and a typical internet header
 	//   is 20 octets, allowing a margin for headers of higher level protocols.
 	if networkHeaderSize > header.IPv4MaximumHeaderSize {
-		return 0, &tcpip.ErrMalformedHeader{}
+		return 0, tcpip.ErrMalformedHeader
 	}
 
 	networkMTU := linkMTU

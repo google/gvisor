@@ -190,7 +190,7 @@ func (a *AddressableEndpointState) addAndAcquireAddressLocked(addr tcpip.Address
 			// We are adding a non-permanent address but the address exists. No need
 			// to go any further since we can only promote existing temporary/expired
 			// addresses to permanent.
-			return nil, &tcpip.ErrDuplicateAddress{}
+			return nil, tcpip.ErrDuplicateAddress
 		}
 
 		addrState.mu.Lock()
@@ -198,7 +198,7 @@ func (a *AddressableEndpointState) addAndAcquireAddressLocked(addr tcpip.Address
 			addrState.mu.Unlock()
 			// We are adding a permanent address but a permanent address already
 			// exists.
-			return nil, &tcpip.ErrDuplicateAddress{}
+			return nil, tcpip.ErrDuplicateAddress
 		}
 
 		if addrState.mu.refs == 0 {
@@ -306,7 +306,7 @@ func (a *AddressableEndpointState) RemovePermanentAddress(addr tcpip.Address) tc
 func (a *AddressableEndpointState) removePermanentAddressLocked(addr tcpip.Address) tcpip.Error {
 	addrState, ok := a.mu.endpoints[addr]
 	if !ok {
-		return &tcpip.ErrBadLocalAddress{}
+		return tcpip.ErrBadLocalAddress
 	}
 
 	return a.removePermanentEndpointLocked(addrState)
@@ -317,7 +317,7 @@ func (a *AddressableEndpointState) removePermanentAddressLocked(addr tcpip.Addre
 func (a *AddressableEndpointState) RemovePermanentEndpoint(ep AddressEndpoint) tcpip.Error {
 	addrState, ok := ep.(*addressState)
 	if !ok || addrState.addressableEndpointState != a {
-		return &tcpip.ErrInvalidEndpointState{}
+		return tcpip.ErrInvalidEndpointState
 	}
 
 	a.mu.Lock()
@@ -331,7 +331,7 @@ func (a *AddressableEndpointState) RemovePermanentEndpoint(ep AddressEndpoint) t
 // Precondition: a.mu must be write locked.
 func (a *AddressableEndpointState) removePermanentEndpointLocked(addrState *addressState) tcpip.Error {
 	if !addrState.GetKind().IsPermanent() {
-		return &tcpip.ErrBadLocalAddress{}
+		return tcpip.ErrBadLocalAddress
 	}
 
 	addrState.SetKind(PermanentExpired)
@@ -598,8 +598,8 @@ func (a *AddressableEndpointState) Cleanup() {
 	for _, ep := range a.mu.endpoints {
 		// removePermanentEndpointLocked returns *tcpip.ErrBadLocalAddress if ep is
 		// not a permanent address.
-		switch err := a.removePermanentEndpointLocked(ep); err.(type) {
-		case nil, *tcpip.ErrBadLocalAddress:
+		switch err := a.removePermanentEndpointLocked(ep); err {
+		case nil, tcpip.ErrBadLocalAddress:
 		default:
 			panic(fmt.Sprintf("unexpected error from removePermanentEndpointLocked(%s): %s", ep.addr, err))
 		}

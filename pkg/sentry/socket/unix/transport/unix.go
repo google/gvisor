@@ -879,12 +879,12 @@ func (e *baseEndpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 		e.Lock()
 		if !e.Connected() {
 			e.Unlock()
-			return -1, &tcpip.ErrNotConnected{}
+			return -1, tcpip.ErrNotConnected
 		}
 		v = int(e.receiver.RecvQueuedSize())
 		e.Unlock()
 		if v < 0 {
-			return -1, &tcpip.ErrQueueSizeNotSupported{}
+			return -1, tcpip.ErrQueueSizeNotSupported
 		}
 		return v, nil
 
@@ -892,25 +892,25 @@ func (e *baseEndpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 		e.Lock()
 		if !e.Connected() {
 			e.Unlock()
-			return -1, &tcpip.ErrNotConnected{}
+			return -1, tcpip.ErrNotConnected
 		}
 		v := e.connected.SendQueuedSize()
 		e.Unlock()
 		if v < 0 {
-			return -1, &tcpip.ErrQueueSizeNotSupported{}
+			return -1, tcpip.ErrQueueSizeNotSupported
 		}
 		return int(v), nil
 
 	default:
 		log.Warningf("Unsupported socket option: %d", opt)
-		return -1, &tcpip.ErrUnknownProtocolOption{}
+		return -1, tcpip.ErrUnknownProtocolOption
 	}
 }
 
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
 func (e *baseEndpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
 	log.Warningf("Unsupported socket option: %T", opt)
-	return &tcpip.ErrUnknownProtocolOption{}
+	return tcpip.ErrUnknownProtocolOption
 }
 
 // LastError implements Endpoint.LastError.
@@ -973,7 +973,7 @@ func (e *baseEndpoint) GetRemoteAddress() (tcpip.FullAddress, tcpip.Error) {
 	if c != nil {
 		return c.GetLocalAddress()
 	}
-	return tcpip.FullAddress{}, &tcpip.ErrNotConnected{}
+	return tcpip.FullAddress{}, tcpip.ErrNotConnected
 }
 
 // Release implements BoundEndpoint.Release.

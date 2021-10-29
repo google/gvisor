@@ -250,7 +250,7 @@ func (l *listenContext) startHandshake(s *segment, opts header.TCPSynOptions, qu
 			ep.mu.Unlock()
 			ep.Close()
 
-			return nil, &tcpip.ErrConnectionAborted{}
+			return nil, tcpip.ErrConnectionAborted
 		}
 
 		// Propagate any inheritable options from the listening endpoint
@@ -261,7 +261,7 @@ func (l *listenContext) startHandshake(s *segment, opts header.TCPSynOptions, qu
 			ep.mu.Unlock()
 			ep.Close()
 
-			return nil, &tcpip.ErrConnectionAborted{}
+			return nil, tcpip.ErrConnectionAborted
 		}
 
 		deferAccept = l.listenEP.deferAccept

@@ -561,7 +561,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip
 	netEP, ok := p.mu.eps[route.NICID()]
 	p.mu.Unlock()
 	if !ok {
-		return &tcpip.ErrNotConnected{}
+		return tcpip.ErrNotConnected
 	}
 
 	transportHeader := pkt.TransportHeader().View()

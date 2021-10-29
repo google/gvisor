@@ -90,7 +90,7 @@ func (m *InjectableEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber,
 func (m *InjectableEndpoint) WritePackets(r stack.RouteInfo, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
 	endpoint, ok := m.routes[r.RemoteAddress]
 	if !ok {
-		return 0, &tcpip.ErrNoRoute{}
+		return 0, tcpip.ErrNoRoute
 	}
 	return endpoint.WritePackets(r, pkts, protocol)
 }
@@ -102,7 +102,7 @@ func (m *InjectableEndpoint) WritePacket(r stack.RouteInfo, protocol tcpip.Netwo
 	if endpoint, ok := m.routes[r.RemoteAddress]; ok {
 		return endpoint.WritePacket(r, protocol, pkt)
 	}
-	return &tcpip.ErrNoRoute{}
+	return tcpip.ErrNoRoute
 }
 
 // InjectOutbound writes outbound packets to the appropriate
@@ -110,7 +110,7 @@ func (m *InjectableEndpoint) WritePacket(r stack.RouteInfo, protocol tcpip.Netwo
 func (m *InjectableEndpoint) InjectOutbound(dest tcpip.Address, packet []byte) tcpip.Error {
 	endpoint, ok := m.routes[dest]
 	if !ok {
-		return &tcpip.ErrNoRoute{}
+		return tcpip.ErrNoRoute
 	}
 	return endpoint.InjectOutbound(dest, packet)
 }
@@ -133,7 +133,7 @@ func (*InjectableEndpoint) AddHeader(local, remote tcpip.LinkAddress, protocol t
 
 // WriteRawPacket implements stack.LinkEndpoint.
 func (*InjectableEndpoint) WriteRawPacket(*stack.PacketBuffer) tcpip.Error {
-	return &tcpip.ErrNotSupported{}
+	return tcpip.ErrNotSupported
 }
 
 // NewInjectableEndpoint creates a new multi-endpoint injectable endpoint.

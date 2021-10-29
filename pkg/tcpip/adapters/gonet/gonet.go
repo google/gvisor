@@ -249,7 +249,7 @@ func NewTCPConn(wq *waiter.Queue, ep tcpip.Endpoint) *TCPConn {
 func (l *TCPListener) Accept() (net.Conn, error) {
 	n, wq, err := l.ep.Accept(nil)
 
-	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
+	if err == tcpip.ErrWouldBlock {
 		// Create wait queue entry that notifies a channel.
 		waitEntry, notifyCh := waiter.NewChannelEntry(nil)
 		l.wq.EventRegister(&waitEntry, waiter.ReadableEvents)
@@ -258,7 +258,7 @@ func (l *TCPListener) Accept() (net.Conn, error) {
 		for {
 			n, wq, err = l.ep.Accept(nil)
 
-			if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
+			if err != tcpip.ErrWouldBlock {
 				break
 			}
 
@@ -299,14 +299,14 @@ func commonRead(b []byte, ep tcpip.Endpoint, wq *waiter.Queue, deadline <-chan s
 	opts := tcpip.ReadOptions{NeedRemoteAddr: addr != nil}
 	res, err := ep.Read(&w, opts)
 
-	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
+	if err == tcpip.ErrWouldBlock {
 		// Create wait queue entry that notifies a channel.
 		waitEntry, notifyCh := waiter.NewChannelEntry(nil)
 		wq.EventRegister(&waitEntry, waiter.ReadableEvents)
 		defer wq.EventUnregister(&waitEntry)
 		for {
 			res, err = ep.Read(&w, opts)
-			if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
+			if err != tcpip.ErrWouldBlock {
 				break
 			}
 			select {
@@ -317,7 +317,7 @@ func commonRead(b []byte, ep tcpip.Endpoint, wq *waiter.Queue, deadline <-chan s
 		}
 	}
 
-	if _, ok := err.(*tcpip.ErrClosedForReceive); ok {
+	if err == tcpip.ErrClosedForReceive {
 		return 0, io.EOF
 	}
 
@@ -357,7 +357,7 @@ func (c *TCPConn) Write(b []byte) (int, error) {
 	}
 
 	// We must handle two soft failure conditions simultaneously:
-	//  1. Write may write nothing and return *tcpip.ErrWouldBlock.
+	//  1. Write may write nothing and return tcpip.ErrWouldBlock.
 	//     If this happens, we need to register for notifications if we have
 	//     not already and wait to try again.
 	//  2. Write may write fewer than the full number of bytes and return
@@ -377,9 +377,9 @@ func (c *TCPConn) Write(b []byte) (int, error) {
 		r.Reset(b[nbytes:])
 		n, err := c.ep.Write(&r, tcpip.WriteOptions{})
 		nbytes += int(n)
-		switch err.(type) {
+		switch err {
 		case nil:
-		case *tcpip.ErrWouldBlock:
+		case tcpip.ErrWouldBlock:
 			if ch == nil {
 				entry, ch = waiter.NewChannelEntry(nil)
 
@@ -503,7 +503,7 @@ func DialTCPWithBind(ctx context.Context, s *stack.Stack, localAddr, remoteAddr 
 	}
 
 	err = ep.Connect(remoteAddr)
-	if _, ok := err.(*tcpip.ErrConnectStarted); ok {
+	if err == tcpip.ErrConnectStarted {
 		select {
 		case <-ctx.Done():
 			ep.Close()
@@ -663,7 +663,7 @@ func (c *UDPConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 	var r bytes.Reader
 	r.Reset(b)
 	n, err := c.ep.Write(&r, writeOptions)
-	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
+	if err == tcpip.ErrWouldBlock {
 		// Create wait queue entry that notifies a channel.
 		waitEntry, notifyCh := waiter.NewChannelEntry(nil)
 		c.wq.EventRegister(&waitEntry, waiter.WritableEvents)
@@ -676,7 +676,7 @@ func (c *UDPConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 			}
 
 			n, err = c.ep.Write(&r, writeOptions)
-			if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
+			if err != tcpip.ErrWouldBlock {
 				break
 			}
 		}

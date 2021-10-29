@@ -103,7 +103,7 @@ func (*MockLinkEndpoint) AddHeader(_, _ tcpip.LinkAddress, _ tcpip.NetworkProtoc
 
 // WriteRawPacket implements stack.LinkEndpoint.
 func (*MockLinkEndpoint) WriteRawPacket(*stack.PacketBuffer) tcpip.Error {
-	return &tcpip.ErrNotSupported{}
+	return tcpip.ErrNotSupported
 }
 
 // MakeRandPkt generates a randomized packet. transportHeaderLength indicates

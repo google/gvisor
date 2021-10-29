@@ -24,7 +24,6 @@ go_library(
         "socketops.go",
         "stdclock.go",
         "stdclock_state.go",
-        "syserr.go",
         "tcpip.go",
         "tcpip_state.go",
         "timer.go",

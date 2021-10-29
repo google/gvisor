@@ -865,14 +865,14 @@ func (ct *ConnTrack) originalDst(epID TransportEndpointID, netProto tcpip.Networ
 	t := ct.connForTID(tid)
 	if t == nil {
 		// Not a tracked connection.
-		return "", 0, &tcpip.ErrNotConnected{}
+		return "", 0, tcpip.ErrNotConnected
 	}
 
 	t.conn.mu.RLock()
 	defer t.conn.mu.RUnlock()
 	if !t.conn.destinationManip {
 		// Unmanipulated destination.
-		return "", 0, &tcpip.ErrInvalidOptionValue{}
+		return "", 0, tcpip.ErrInvalidOptionValue
 	}
 
 	id := t.conn.original.id()

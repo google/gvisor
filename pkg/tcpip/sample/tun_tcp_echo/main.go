@@ -90,7 +90,7 @@ func echo(wq *waiter.Queue, ep tcpip.Endpoint) {
 	for {
 		_, err := ep.Read(&w, tcpip.ReadOptions{})
 		if err != nil {
-			if _, ok := err.(*tcpip.ErrWouldBlock); ok {
+			if err == tcpip.ErrWouldBlock {
 				<-notifyCh
 				continue
 			}
@@ -222,7 +222,7 @@ func main() {
 	for {
 		n, wq, err := ep.Accept(nil)
 		if err != nil {
-			if _, ok := err.(*tcpip.ErrWouldBlock); ok {
+			if err == tcpip.ErrWouldBlock {
 				<-notifyCh
 				continue
 			}

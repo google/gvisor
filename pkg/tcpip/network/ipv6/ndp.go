@@ -616,7 +616,7 @@ type slaacPrefixState struct {
 func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, addressEndpoint stack.AddressEndpoint) tcpip.Error {
 	// addr must be a valid unicast IPv6 address.
 	if !header.IsV6UnicastAddress(addr) {
-		return &tcpip.ErrAddressFamilyNotSupported{}
+		return tcpip.ErrAddressFamilyNotSupported
 	}
 
 	if addressEndpoint.GetKind() != stack.PermanentTentative {

@@ -379,11 +379,11 @@ func (e *endpoint) dupTentativeAddrDetected(addr tcpip.Address, holderLinkAddr t
 
 	addressEndpoint := e.getAddressRLocked(addr)
 	if addressEndpoint == nil {
-		return &tcpip.ErrBadAddress{}
+		return tcpip.ErrBadAddress
 	}
 
 	if addressEndpoint.GetKind() != stack.PermanentTentative {
-		return &tcpip.ErrInvalidEndpointState{}
+		return tcpip.ErrInvalidEndpointState
 	}
 
 	switch result := e.mu.ndp.dad.ExtendIfNonceEqualLocked(addr, nonce); result {
@@ -488,9 +488,9 @@ func (e *endpoint) SetForwarding(forwarding bool) {
 		}
 	} else {
 		for _, g := range allRoutersGroups {
-			switch err := e.leaveGroupLocked(g).(type) {
+			switch err := e.leaveGroupLocked(g); err {
 			case nil:
-			case *tcpip.ErrBadLocalAddress:
+			case tcpip.ErrBadLocalAddress:
 				// The endpoint may have already left the multicast group.
 			default:
 				panic(fmt.Sprintf("e.leaveGroupLocked(%s): %s", g, err))
@@ -509,7 +509,7 @@ func (e *endpoint) Enable() tcpip.Error {
 	// If the NIC is not enabled, the endpoint can't do anything meaningful so
 	// don't enable the endpoint.
 	if !e.nic.Enabled() {
-		return &tcpip.ErrNotPermitted{}
+		return tcpip.ErrNotPermitted
 	}
 
 	// If the endpoint is already enabled, there is nothing for it to do.
@@ -634,8 +634,8 @@ func (e *endpoint) disableLocked() {
 	e.mu.ndp.cleanupState()
 
 	// The endpoint may have already left the multicast group.
-	switch err := e.leaveGroupLocked(header.IPv6AllNodesMulticastAddress).(type) {
-	case nil, *tcpip.ErrBadLocalAddress:
+	switch err := e.leaveGroupLocked(header.IPv6AllNodesMulticastAddress); err {
+	case nil, tcpip.ErrBadLocalAddress:
 	default:
 		panic(fmt.Sprintf("unexpected error when leaving group = %s: %s", header.IPv6AllNodesMulticastAddress, err))
 	}
@@ -677,7 +677,7 @@ func addIPHeader(srcAddr, dstAddr tcpip.Address, pkt *stack.PacketBuffer, params
 	extHdrsLen := extensionHeaders.Length()
 	length := pkt.Size() + extensionHeaders.Length()
 	if length > math.MaxUint16 {
-		return &tcpip.ErrMessageTooLong{}
+		return tcpip.ErrMessageTooLong
 	}
 	header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize + extHdrsLen)).Encode(&header.IPv6Fields{
 		PayloadLength:     uint16(length),
@@ -715,13 +715,13 @@ func (e *endpoint) handleFragments(r *stack.Route, networkMTU uint32, pkt *stack
 		// of 8 as per RFC 8200 section 4.5:
 		//   Each complete fragment, except possibly the last ("rightmost") one, is
 		//   an integer multiple of 8 octets long.
-		return 0, 1, &tcpip.ErrMessageTooLong{}
+		return 0, 1, tcpip.ErrMessageTooLong
 	}
 
 	if fragmentPayloadLen < uint32(pkt.TransportHeader().View().Size()) {
 		// As per RFC 8200 Section 4.5, the Transport Header is expected to be small
 		// enough to fit in the first fragment.
-		return 0, 1, &tcpip.ErrMessageTooLong{}
+		return 0, 1, tcpip.ErrMessageTooLong
 	}
 
 	pf := fragmentation.MakePacketFragmenter(pkt, fragmentPayloadLen, calculateFragmentReserve(pkt))
@@ -807,7 +807,7 @@ func (e *endpoint) writePacket(r *stack.Route, pkt *stack.PacketBuffer, protocol
 			// As per RFC 2460, section 4.5:
 			//   Unlike IPv4, fragmentation in IPv6 is performed only by source nodes,
 			//   not by routers along a packet's delivery path.
-			return &tcpip.ErrMessageTooLong{}
+			return tcpip.ErrMessageTooLong
 		}
 		sent, remain, err := e.handleFragments(r, networkMTU, pkt, protocol, func(fragPkt *stack.PacketBuffer) tcpip.Error {
 			// TODO(gvisor.dev/issue/3884): Evaluate whether we want to send each
@@ -920,7 +920,7 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBu
 	// The packet already has an IP header, but there are a few required checks.
 	h, ok := pkt.Data().PullUp(header.IPv6MinimumSize)
 	if !ok {
-		return &tcpip.ErrMalformedHeader{}
+		return tcpip.ErrMalformedHeader
 	}
 	ipH := header.IPv6(h)
 
@@ -941,7 +941,7 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBu
 	// sending the packet.
 	proto, _, _, _, ok := parse.IPv6(pkt)
 	if !ok || !header.IPv6(pkt.NetworkHeader().View()).IsValid(pktSize) {
-		return &tcpip.ErrMalformedHeader{}
+		return tcpip.ErrMalformedHeader
 	}
 
 	return e.writePacket(r, pkt, proto, true /* headerIncluded */)
@@ -1003,9 +1003,9 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 	}
 
 	r, err := stk.FindRoute(0, "", dstAddr, ProtocolNumber, false /* multicastLoop */)
-	switch err.(type) {
+	switch err {
 	case nil:
-	case *tcpip.ErrNoRoute, *tcpip.ErrNetworkUnreachable:
+	case tcpip.ErrNoRoute, tcpip.ErrNetworkUnreachable:
 		// We return the original error rather than the result of returning the
 		// ICMP packet because the original error is more relevant to the caller.
 		_ = e.protocol.returnError(&icmpReasonNetUnreachable{}, pkt)
@@ -1039,13 +1039,13 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 	forwardToEp, ok := e.protocol.getEndpointForNIC(r.NICID())
 	if !ok {
 		// The interface was removed after we obtained the route.
-		return &ip.ErrOther{Err: &tcpip.ErrUnknownDevice{}}
+		return &ip.ErrOther{Err: tcpip.ErrUnknownDevice}
 	}
 
-	switch err := forwardToEp.writePacket(r, newPkt, newPkt.TransportProtocolNumber, true /* headerIncluded */); err.(type) {
+	switch err := forwardToEp.writePacket(r, newPkt, newPkt.TransportProtocolNumber, true /* headerIncluded */); err {
 	case nil:
 		return nil
-	case *tcpip.ErrMessageTooLong:
+	case tcpip.ErrMessageTooLong:
 		// As per RFC 4443, section 3.2:
 		//   A Packet Too Big MUST be sent by a router in response to a packet that
 		//   it cannot forward because the packet is larger than the MTU of the
@@ -1694,7 +1694,7 @@ func (e *endpoint) RemovePermanentAddress(addr tcpip.Address) tcpip.Error {
 
 	addressEndpoint := e.getAddressRLocked(addr)
 	if addressEndpoint == nil || !addressEndpoint.GetKind().IsPermanent() {
-		return &tcpip.ErrBadLocalAddress{}
+		return tcpip.ErrBadLocalAddress
 	}
 
 	return e.removePermanentEndpointLocked(addressEndpoint, true /* allowSLAACInvalidation */, &stack.DADAborted{})
@@ -1733,7 +1733,7 @@ func (e *endpoint) removePermanentEndpointInnerLocked(addressEndpoint stack.Addr
 	snmc := header.SolicitedNodeAddr(addr.Address)
 	err := e.leaveGroupLocked(snmc)
 	// The endpoint may have already left the multicast group.
-	if _, ok := err.(*tcpip.ErrBadLocalAddress); ok {
+	if err != tcpip.ErrBadAddress {
 		err = nil
 	}
 	return err
@@ -1957,7 +1957,7 @@ func (e *endpoint) JoinGroup(addr tcpip.Address) tcpip.Error {
 // Precondition: e.mu must be locked.
 func (e *endpoint) joinGroupLocked(addr tcpip.Address) tcpip.Error {
 	if !header.IsV6MulticastAddress(addr) {
-		return &tcpip.ErrBadAddress{}
+		return tcpip.ErrBadAddress
 	}
 
 	e.mu.mld.joinGroup(addr)
@@ -2122,7 +2122,7 @@ func (p *protocol) SetOption(option tcpip.SettableNetworkProtocolOption) tcpip.E
 		p.SetDefaultTTL(uint8(*v))
 		return nil
 	default:
-		return &tcpip.ErrUnknownProtocolOption{}
+		return tcpip.ErrUnknownProtocolOption
 	}
 }
 
@@ -2133,7 +2133,7 @@ func (p *protocol) Option(option tcpip.GettableNetworkProtocolOption) tcpip.Erro
 		*v = tcpip.DefaultTTLOption(p.DefaultTTL())
 		return nil
 	default:
-		return &tcpip.ErrUnknownProtocolOption{}
+		return tcpip.ErrUnknownProtocolOption
 	}
 }
 
@@ -2222,7 +2222,7 @@ func (p *protocol) allowICMPReply(icmpType header.ICMPv6Type) bool {
 // which includes the length of the extension headers.
 func calculateNetworkMTU(linkMTU, networkHeadersLen uint32) (uint32, tcpip.Error) {
 	if linkMTU < header.IPv6MinimumMTU {
-		return 0, &tcpip.ErrInvalidEndpointState{}
+		return 0, tcpip.ErrInvalidEndpointState
 	}
 
 	// As per RFC 7112 section 5, we should discard packets if their IPv6 header
@@ -2233,7 +2233,7 @@ func calculateNetworkMTU(linkMTU, networkHeadersLen uint32) (uint32, tcpip.Error
 	//   bytes ensures that the header chain length does not exceed the IPv6
 	//   minimum MTU.
 	if networkHeadersLen > header.IPv6MinimumMTU {
-		return 0, &tcpip.ErrMalformedHeader{}
+		return 0, tcpip.ErrMalformedHeader
 	}
 
 	networkMTU := linkMTU - networkHeadersLen

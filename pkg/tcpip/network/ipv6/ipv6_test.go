@@ -1074,8 +1074,8 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 
 			// Should not have any more UDP packets.
 			res, err := ep.Read(ioutil.Discard, tcpip.ReadOptions{})
-			if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-				t.Fatalf("got Read = (%v, %v), want = (_, %s)", res, err, &tcpip.ErrWouldBlock{})
+			if err != tcpip.ErrWouldBlock {
+				t.Fatalf("got Read = (%v, %v), want = (_, %s)", res, err, tcpip.ErrWouldBlock)
 			}
 		})
 	}
@@ -2071,8 +2071,8 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 			}
 
 			res, err := ep.Read(ioutil.Discard, tcpip.ReadOptions{})
-			if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-				t.Fatalf("(last) got Read = (%v, %v), want = (_, %s)", res, err, &tcpip.ErrWouldBlock{})
+			if err != tcpip.ErrWouldBlock {
+				t.Fatalf("(last) got Read = (%v, %v), want = (_, %s)", res, err, tcpip.ErrWouldBlock)
 			}
 		})
 	}
@@ -2631,7 +2631,7 @@ func TestWriteStats(t *testing.T) {
 		t.Run(writer.name, func(t *testing.T) {
 			for _, test := range tests {
 				t.Run(test.name, func(t *testing.T) {
-					ep := iptestutil.NewMockLinkEndpoint(header.IPv6MinimumMTU, &tcpip.ErrInvalidEndpointState{}, test.allowPackets)
+					ep := iptestutil.NewMockLinkEndpoint(header.IPv6MinimumMTU, tcpip.ErrInvalidEndpointState, test.allowPackets)
 					rt := buildRoute(t, ep)
 					var pkts stack.PacketBufferList
 					for i := 0; i < nPackets; i++ {
@@ -2961,8 +2961,8 @@ func TestFragmentationErrors(t *testing.T) {
 			transHdrLen:    0,
 			allowPackets:   0,
 			outgoingErrors: 1,
-			mockError:      &tcpip.ErrAborted{},
-			wantError:      &tcpip.ErrAborted{},
+			mockError:      tcpip.ErrAborted,
+			wantError:      tcpip.ErrAborted,
 		},
 		{
 			description:    "Error on first frag",
@@ -2971,8 +2971,8 @@ func TestFragmentationErrors(t *testing.T) {
 			transHdrLen:    0,
 			allowPackets:   0,
 			outgoingErrors: 3,
-			mockError:      &tcpip.ErrAborted{},
-			wantError:      &tcpip.ErrAborted{},
+			mockError:      tcpip.ErrAborted,
+			wantError:      tcpip.ErrAborted,
 		},
 		{
 			description:    "Error on second frag",
@@ -2981,8 +2981,8 @@ func TestFragmentationErrors(t *testing.T) {
 			transHdrLen:    0,
 			allowPackets:   1,
 			outgoingErrors: 2,
-			mockError:      &tcpip.ErrAborted{},
-			wantError:      &tcpip.ErrAborted{},
+			mockError:      tcpip.ErrAborted,
+			wantError:      tcpip.ErrAborted,
 		},
 		{
 			description:    "Error when MTU is smaller than transport header",
@@ -2992,7 +2992,7 @@ func TestFragmentationErrors(t *testing.T) {
 			allowPackets:   0,
 			outgoingErrors: 1,
 			mockError:      nil,
-			wantError:      &tcpip.ErrMessageTooLong{},
+			wantError:      tcpip.ErrMessageTooLong,
 		},
 		{
 			description:    "Error when MTU is smaller than IPv6 minimum MTU",
@@ -3002,7 +3002,7 @@ func TestFragmentationErrors(t *testing.T) {
 			allowPackets:   0,
 			outgoingErrors: 1,
 			mockError:      nil,
-			wantError:      &tcpip.ErrInvalidEndpointState{},
+			wantError:      tcpip.ErrInvalidEndpointState,
 		},
 	}
 

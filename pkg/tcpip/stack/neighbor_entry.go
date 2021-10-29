@@ -239,7 +239,7 @@ func (e *neighborEntry) removeLocked() {
 	// - manual address removal during resolution
 	//
 	// - neighbor cache eviction during resolution
-	e.notifyCompletionLocked(&tcpip.ErrAborted{})
+	e.notifyCompletionLocked(tcpip.ErrAborted)
 }
 
 // setStateLocked transitions the entry to the specified state immediately.
@@ -314,7 +314,7 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 		e.mu.timer = timer{
 			done: &done,
 			timer: e.cache.nic.stack.Clock().AfterFunc(immediateDuration, func() {
-				var err tcpip.Error = &tcpip.ErrTimeout{}
+				var err tcpip.Error = tcpip.ErrTimeout
 				if remaining != 0 {
 					err = e.cache.linkRes.LinkAddressRequest(addr, "" /* localAddr */, linkAddr)
 				}
@@ -385,7 +385,7 @@ func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
 		e.mu.timer = timer{
 			done: &done,
 			timer: e.cache.nic.stack.Clock().AfterFunc(immediateDuration, func() {
-				var err tcpip.Error = &tcpip.ErrTimeout{}
+				var err tcpip.Error = tcpip.ErrTimeout
 				if remaining != 0 {
 					// As per RFC 4861 section 7.2.2:
 					//

@@ -105,7 +105,7 @@ func connect(s *stack.Stack, addr tcpip.FullAddress) (*testConnection, tcpip.Err
 	wq.EventRegister(&entry, waiter.WritableEvents)
 
 	err = ep.Connect(addr)
-	if _, ok := err.(*tcpip.ErrConnectStarted); ok {
+	if err == tcpip.ErrConnectStarted {
 		<-ch
 		err = ep.LastError()
 	}
@@ -728,11 +728,11 @@ func TestTCPDialError(t *testing.T) {
 
 	switch _, err := DialTCP(s, addr, ipv4.ProtocolNumber); err := err.(type) {
 	case *net.OpError:
-		if err.Err.Error() != (&tcpip.ErrNoRoute{}).String() {
-			t.Errorf("got DialTCP() = %s, want = %s", err, &tcpip.ErrNoRoute{})
+		if err.Err.Error() != (tcpip.ErrNoRoute).String() {
+			t.Errorf("got DialTCP() = %s, want = %s", err, tcpip.ErrNoRoute)
 		}
 	default:
-		t.Errorf("got DialTCP(...) = %v, want %s", err, &tcpip.ErrNoRoute{})
+		t.Errorf("got DialTCP(...) = %v, want %s", err, tcpip.ErrNoRoute)
 	}
 }
 

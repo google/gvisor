@@ -456,7 +456,7 @@ func (r *Route) isValidForOutgoingRLocked() bool {
 // WritePacket writes the packet through the given route.
 func (r *Route) WritePacket(params NetworkHeaderParams, pkt *PacketBuffer) tcpip.Error {
 	if !r.isValidForOutgoing() {
-		return &tcpip.ErrInvalidEndpointState{}
+		return tcpip.ErrInvalidEndpointState
 	}
 
 	return r.outgoingNIC.getNetworkEndpoint(r.NetProto()).WritePacket(r, params, pkt)
@@ -466,7 +466,7 @@ func (r *Route) WritePacket(params NetworkHeaderParams, pkt *PacketBuffer) tcpip
 // the number of packets written.
 func (r *Route) WritePackets(pkts PacketBufferList, params NetworkHeaderParams) (int, tcpip.Error) {
 	if !r.isValidForOutgoing() {
-		return 0, &tcpip.ErrInvalidEndpointState{}
+		return 0, tcpip.ErrInvalidEndpointState
 	}
 
 	return r.outgoingNIC.getNetworkEndpoint(r.NetProto()).WritePackets(r, pkts, params)
@@ -476,7 +476,7 @@ func (r *Route) WritePackets(pkts PacketBufferList, params NetworkHeaderParams) 
 // header through the given route.
 func (r *Route) WriteHeaderIncludedPacket(pkt *PacketBuffer) tcpip.Error {
 	if !r.isValidForOutgoing() {
-		return &tcpip.ErrInvalidEndpointState{}
+		return tcpip.ErrInvalidEndpointState
 	}
 
 	return r.outgoingNIC.getNetworkEndpoint(r.NetProto()).WriteHeaderIncludedPacket(r, pkt)

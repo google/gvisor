@@ -93,12 +93,12 @@ func (*fakeTransportEndpoint) Read(io.Writer, tcpip.ReadOptions) (tcpip.ReadResu
 
 func (f *fakeTransportEndpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcpip.Error) {
 	if len(f.route.RemoteAddress()) == 0 {
-		return 0, &tcpip.ErrNoRoute{}
+		return 0, tcpip.ErrNoRoute
 	}
 
 	v := make([]byte, p.Len())
 	if _, err := io.ReadFull(p, v); err != nil {
-		return 0, &tcpip.ErrBadBuffer{}
+		return 0, tcpip.ErrBadBuffer
 	}
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -115,27 +115,27 @@ func (f *fakeTransportEndpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions
 
 // SetSockOpt sets a socket option. Currently not supported.
 func (*fakeTransportEndpoint) SetSockOpt(tcpip.SettableSocketOption) tcpip.Error {
-	return &tcpip.ErrInvalidEndpointState{}
+	return tcpip.ErrInvalidEndpointState
 }
 
 // SetSockOptInt sets a socket option. Currently not supported.
 func (*fakeTransportEndpoint) SetSockOptInt(tcpip.SockOptInt, int) tcpip.Error {
-	return &tcpip.ErrInvalidEndpointState{}
+	return tcpip.ErrInvalidEndpointState
 }
 
 // GetSockOptInt implements tcpip.Endpoint.GetSockOptInt.
 func (*fakeTransportEndpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
-	return -1, &tcpip.ErrUnknownProtocolOption{}
+	return -1, tcpip.ErrUnknownProtocolOption
 }
 
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
 func (*fakeTransportEndpoint) GetSockOpt(tcpip.GettableSocketOption) tcpip.Error {
-	return &tcpip.ErrInvalidEndpointState{}
+	return tcpip.ErrInvalidEndpointState
 }
 
 // Disconnect implements tcpip.Endpoint.Disconnect.
 func (*fakeTransportEndpoint) Disconnect() tcpip.Error {
-	return &tcpip.ErrNotSupported{}
+	return tcpip.ErrNotSupported
 }
 
 func (f *fakeTransportEndpoint) Connect(addr tcpip.FullAddress) tcpip.Error {
@@ -144,7 +144,7 @@ func (f *fakeTransportEndpoint) Connect(addr tcpip.FullAddress) tcpip.Error {
 	// Find the route.
 	r, err := f.proto.stack.FindRoute(addr.NIC, "", addr.Addr, fakeNetNumber, false /* multicastLoop */)
 	if err != nil {
-		return &tcpip.ErrNoRoute{}
+		return tcpip.ErrNoRoute
 	}
 
 	// Try to register so that we can start receiving packets.
@@ -285,7 +285,7 @@ func (f *fakeTransportProtocol) NewEndpoint(netProto tcpip.NetworkProtocolNumber
 }
 
 func (*fakeTransportProtocol) NewRawEndpoint(tcpip.NetworkProtocolNumber, *waiter.Queue) (tcpip.Endpoint, tcpip.Error) {
-	return nil, &tcpip.ErrUnknownProtocol{}
+	return nil, tcpip.ErrUnknownProtocol
 }
 
 func (*fakeTransportProtocol) MinimumPacketSize() int {
@@ -306,7 +306,7 @@ func (f *fakeTransportProtocol) SetOption(option tcpip.SettableTransportProtocol
 		f.opts.good = bool(*v)
 		return nil
 	default:
-		return &tcpip.ErrUnknownProtocolOption{}
+		return tcpip.ErrUnknownProtocolOption
 	}
 }
 
@@ -316,7 +316,7 @@ func (f *fakeTransportProtocol) Option(option tcpip.GettableTransportProtocolOpt
 		*v = tcpip.TCPModerateReceiveBufferOption(f.opts.good)
 		return nil
 	default:
-		return &tcpip.ErrUnknownProtocolOption{}
+		return tcpip.ErrUnknownProtocolOption
 	}
 }
 

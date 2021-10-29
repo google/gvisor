@@ -323,7 +323,7 @@ func (e *endpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.Net
 }
 
 // WriteRawPacket implements stack.LinkEndpoint.
-func (*endpoint) WriteRawPacket(*stack.PacketBuffer) tcpip.Error { return &tcpip.ErrNotSupported{} }
+func (*endpoint) WriteRawPacket(*stack.PacketBuffer) tcpip.Error { return tcpip.ErrNotSupported }
 
 // +checklocks:e.mu
 func (e *endpoint) writePacketLocked(r stack.RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
@@ -335,7 +335,7 @@ func (e *endpoint) writePacketLocked(r stack.RouteInfo, protocol tcpip.NetworkPr
 	// Transmit the packet.
 	ok := e.tx.transmit(views...)
 	if !ok {
-		return &tcpip.ErrWouldBlock{}
+		return tcpip.ErrWouldBlock
 	}
 
 	return nil

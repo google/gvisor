@@ -675,6 +675,7 @@ func (c *Context) SendV6PacketWithAddrs(payload []byte, h *Headers, src, dst tcp
 	c.linkEP.InjectInbound(ipv6.ProtocolNumber, pkt)
 }
 
+//
 // CreateConnected creates a connected TCP endpoint.
 func (c *Context) CreateConnected(iss seqnum.Value, rcvWnd seqnum.Size, epRcvBuf int) {
 	c.CreateConnectedWithRawOptions(iss, rcvWnd, epRcvBuf, nil)
@@ -697,7 +698,7 @@ func (c *Context) Connect(iss seqnum.Value, rcvWnd seqnum.Size, options []byte) 
 	defer c.WQ.EventUnregister(&waitEntry)
 
 	err := c.EP.Connect(tcpip.FullAddress{Addr: TestAddr, Port: TestPort})
-	if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
+	if err != tcpip.ErrConnectStarted {
 		c.t.Fatalf("Unexpected return value from Connect: %v", err)
 	}
 
@@ -917,7 +918,7 @@ func (c *Context) CreateConnectedWithOptions(wantOptions header.TCPSynOptions, d
 
 	testFullAddr := tcpip.FullAddress{Addr: TestAddr, Port: TestPort}
 	err = c.EP.Connect(testFullAddr)
-	if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
+	if err != tcpip.ErrConnectStarted {
 		c.t.Fatalf("c.ep.Connect(%v) = %v", testFullAddr, err)
 	}
 	// Receive SYN packet.
@@ -1087,7 +1088,7 @@ func (c *Context) AcceptWithOptions(wndScale int, synOptions header.TCPSynOption
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
-	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
+	if err == tcpip.ErrWouldBlock {
 		// Wait for connection to be established.
 		select {
 		case <-ch:

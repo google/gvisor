@@ -28,6 +28,8 @@ import (
 )
 
 // Error represents an internal error.
+//
+// +stateify savable
 type Error struct {
 	// message is the human readable form of this Error.
 	message string

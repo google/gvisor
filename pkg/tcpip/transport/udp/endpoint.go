@@ -214,10 +214,10 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 	e.rcvMu.Lock()
 
 	if e.rcvList.Empty() {
-		var err tcpip.Error = &tcpip.ErrWouldBlock{}
+		var err tcpip.Error = tcpip.ErrWouldBlock
 		if e.rcvClosed {
 			e.stats.ReadErrors.ReadClosed.Increment()
-			err = &tcpip.ErrClosedForReceive{}
+			err = tcpip.ErrClosedForReceive
 		}
 		e.rcvMu.Unlock()
 		return tcpip.ReadResult{}, err
@@ -281,7 +281,7 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 
 	n, err := p.data.ReadTo(dst, opts.Peek)
 	if n == 0 && err != nil {
-		return res, &tcpip.ErrBadBuffer{}
+		return res, tcpip.ErrBadBuffer
 	}
 	res.Count = n
 	return res, nil
@@ -301,11 +301,11 @@ func (e *endpoint) prepareForWriteInner(to *tcpip.FullAddress) (retry bool, err 
 
 	case transport.DatagramEndpointStateBound:
 		if to == nil {
-			return false, &tcpip.ErrDestinationRequired{}
+			return false, tcpip.ErrDestinationRequired
 		}
 		return false, nil
 	default:
-		return false, &tcpip.ErrInvalidEndpointState{}
+		return false, tcpip.ErrInvalidEndpointState
 	}
 
 	e.mu.RUnlock()
@@ -330,16 +330,16 @@ func (e *endpoint) prepareForWriteInner(to *tcpip.FullAddress) (retry bool, err 
 // if the data cannot be written.
 func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcpip.Error) {
 	n, err := e.write(p, opts)
-	switch err.(type) {
+	switch err {
 	case nil:
 		e.stats.PacketsSent.Increment()
-	case *tcpip.ErrMessageTooLong, *tcpip.ErrInvalidOptionValue:
+	case tcpip.ErrMessageTooLong, tcpip.ErrInvalidOptionValue:
 		e.stats.WriteErrors.InvalidArgs.Increment()
-	case *tcpip.ErrClosedForSend:
+	case tcpip.ErrClosedForSend:
 		e.stats.WriteErrors.WriteClosed.Increment()
-	case *tcpip.ErrInvalidEndpointState:
+	case tcpip.ErrInvalidEndpointState:
 		e.stats.WriteErrors.InvalidEndpointState.Increment()
-	case *tcpip.ErrNoRoute, *tcpip.ErrBroadcastDisabled, *tcpip.ErrNetworkUnreachable:
+	case tcpip.ErrNoRoute, tcpip.ErrBroadcastDisabled, tcpip.ErrNetworkUnreachable:
 		// Errors indicating any problem with IP routing of the packet.
 		e.stats.SendErrors.NoRoute.Increment()
 	default:
@@ -370,12 +370,12 @@ func (e *endpoint) prepareForWrite(p tcpip.Payloader, opts tcpip.WriteOptions) (
 	if opts.To != nil {
 		if opts.To.Port == 0 {
 			// Port 0 is an invalid port to send to.
-			return udpPacketInfo{}, &tcpip.ErrInvalidEndpointState{}
+			return udpPacketInfo{}, tcpip.ErrInvalidEndpointState
 		}
 
 		dst = *opts.To
 	} else if !connected {
-		return udpPacketInfo{}, &tcpip.ErrDestinationRequired{}
+		return udpPacketInfo{}, tcpip.ErrDestinationRequired
 	}
 
 	ctx, err := e.net.AcquireContextForWrite(opts)
@@ -387,14 +387,14 @@ func (e *endpoint) prepareForWrite(p tcpip.Payloader, opts tcpip.WriteOptions) (
 	v := make([]byte, p.Len())
 	if _, err := io.ReadFull(p, v); err != nil {
 		ctx.Release()
-		return udpPacketInfo{}, &tcpip.ErrBadBuffer{}
+		return udpPacketInfo{}, tcpip.ErrBadBuffer
 	}
 	if len(v) > header.UDPMaximumPacketSize {
 		// Payload can't possibly fit in a packet.
 		so := e.SocketOptions()
 		if so.GetRecvError() {
 			so.QueueLocalErr(
-				&tcpip.ErrMessageTooLong{},
+				tcpip.ErrMessageTooLong,
 				e.net.NetProto(),
 				header.UDPMaximumPacketSize,
 				dst,
@@ -402,7 +402,7 @@ func (e *endpoint) prepareForWrite(p tcpip.Payloader, opts tcpip.WriteOptions) (
 			)
 		}
 		ctx.Release()
-		return udpPacketInfo{}, &tcpip.ErrMessageTooLong{}
+		return udpPacketInfo{}, tcpip.ErrMessageTooLong
 	}
 
 	return udpPacketInfo{
@@ -647,7 +647,7 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) tcpip.Error {
 
 // ConnectEndpoint is not supported.
 func (*endpoint) ConnectEndpoint(tcpip.Endpoint) tcpip.Error {
-	return &tcpip.ErrInvalidEndpointState{}
+	return tcpip.ErrInvalidEndpointState
 }
 
 // Shutdown closes the read and/or write end of the endpoint connection
@@ -658,7 +658,7 @@ func (e *endpoint) Shutdown(flags tcpip.ShutdownFlags) tcpip.Error {
 
 	switch state := e.net.State(); state {
 	case transport.DatagramEndpointStateInitial, transport.DatagramEndpointStateClosed:
-		return &tcpip.ErrNotConnected{}
+		return tcpip.ErrNotConnected
 	case transport.DatagramEndpointStateBound, transport.DatagramEndpointStateConnected:
 	default:
 		panic(fmt.Sprintf("unhandled state = %s", state))
@@ -688,12 +688,12 @@ func (e *endpoint) Shutdown(flags tcpip.ShutdownFlags) tcpip.Error {
 
 // Listen is not supported by UDP, it just fails.
 func (*endpoint) Listen(int) tcpip.Error {
-	return &tcpip.ErrNotSupported{}
+	return tcpip.ErrNotSupported
 }
 
 // Accept is not supported by UDP, it just fails.
 func (*endpoint) Accept(*tcpip.FullAddress) (tcpip.Endpoint, *waiter.Queue, tcpip.Error) {
-	return nil, nil, &tcpip.ErrNotSupported{}
+	return nil, nil, tcpip.ErrNotSupported
 }
 
 func (e *endpoint) registerWithStack(netProtos []tcpip.NetworkProtocolNumber, id stack.TransportEndpointID) (stack.TransportEndpointID, tcpip.NICID, tcpip.Error) {
@@ -737,7 +737,7 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) tcpip.Error {
 	// Don't allow binding once endpoint is not in the initial state
 	// anymore.
 	if e.net.State() != transport.DatagramEndpointStateInitial {
-		return &tcpip.ErrInvalidEndpointState{}
+		return tcpip.ErrInvalidEndpointState
 	}
 
 	err := e.net.BindAndThen(addr, func(boundNetProto tcpip.NetworkProtocolNumber, boundAddr tcpip.Address) tcpip.Error {
@@ -807,7 +807,7 @@ func (e *endpoint) GetRemoteAddress() (tcpip.FullAddress, tcpip.Error) {
 
 	addr, connected := e.net.GetRemoteAddress()
 	if !connected || e.remotePort == 0 {
-		return tcpip.FullAddress{}, &tcpip.ErrNotConnected{}
+		return tcpip.FullAddress{}, tcpip.ErrNotConnected
 	}
 
 	addr.Port = e.remotePort
@@ -991,7 +991,7 @@ func (e *endpoint) HandleError(transErr stack.TransportError, pkt *stack.PacketB
 	switch transErr.Kind() {
 	case stack.DestinationPortUnreachableTransportError:
 		if e.net.State() == transport.DatagramEndpointStateConnected {
-			e.onICMPError(&tcpip.ErrConnectionRefused{}, transErr, pkt)
+			e.onICMPError(tcpip.ErrConnectionRefused, transErr, pkt)
 		}
 	}
 }

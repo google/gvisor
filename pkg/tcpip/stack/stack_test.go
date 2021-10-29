@@ -205,7 +205,7 @@ func (*fakeNetworkEndpoint) WritePackets(*stack.Route, stack.PacketBufferList, s
 }
 
 func (*fakeNetworkEndpoint) WriteHeaderIncludedPacket(*stack.Route, *stack.PacketBuffer) tcpip.Error {
-	return &tcpip.ErrNotSupported{}
+	return tcpip.ErrNotSupported
 }
 
 func (f *fakeNetworkEndpoint) Close() {
@@ -267,7 +267,7 @@ func (f *fakeNetworkProtocol) SetOption(option tcpip.SettableNetworkProtocolOpti
 		f.defaultTTL = uint8(*v)
 		return nil
 	default:
-		return &tcpip.ErrUnknownProtocolOption{}
+		return tcpip.ErrUnknownProtocolOption
 	}
 }
 
@@ -277,7 +277,7 @@ func (f *fakeNetworkProtocol) Option(option tcpip.GettableNetworkProtocolOption)
 		*v = tcpip.DefaultTTLOption(f.defaultTTL)
 		return nil
 	default:
-		return &tcpip.ErrUnknownProtocolOption{}
+		return tcpip.ErrUnknownProtocolOption
 	}
 }
 
@@ -657,8 +657,8 @@ func testRoute(t *testing.T, s *stack.Stack, nic tcpip.NICID, srcAddr, dstAddr, 
 
 func testNoRoute(t *testing.T, s *stack.Stack, nic tcpip.NICID, srcAddr, dstAddr tcpip.Address) {
 	_, err := s.FindRoute(nic, srcAddr, dstAddr, fakeNetNumber, false /* multicastLoop */)
-	if _, ok := err.(*tcpip.ErrNoRoute); !ok {
-		t.Fatalf("FindRoute returned unexpected error, got = %v, want = %s", err, &tcpip.ErrNoRoute{})
+	if err != tcpip.ErrNoRoute {
+		t.Fatalf("FindRoute returned unexpected error, got = %v, want = %s", err, tcpip.ErrNoRoute)
 	}
 }
 
@@ -707,8 +707,8 @@ func TestDisableUnknownNIC(t *testing.T) {
 	})
 
 	err := s.DisableNIC(1)
-	if _, ok := err.(*tcpip.ErrUnknownNICID); !ok {
-		t.Fatalf("got s.DisableNIC(1) = %v, want = %s", err, &tcpip.ErrUnknownNICID{})
+	if err != tcpip.ErrUnknownNICID {
+		t.Fatalf("got s.DisableNIC(1) = %v, want = %s", err, tcpip.ErrUnknownNICID)
 	}
 }
 
@@ -767,8 +767,8 @@ func TestRemoveUnknownNIC(t *testing.T) {
 	})
 
 	err := s.RemoveNIC(1)
-	if _, ok := err.(*tcpip.ErrUnknownNICID); !ok {
-		t.Fatalf("got s.RemoveNIC(1) = %v, want = %s", err, &tcpip.ErrUnknownNICID{})
+	if err != tcpip.ErrUnknownNICID {
+		t.Fatalf("got s.RemoveNIC(1) = %v, want = %s", err, tcpip.ErrUnknownNICID)
 	}
 }
 
@@ -781,7 +781,7 @@ func TestRemoveNIC(t *testing.T) {
 		{
 			name:      "loopback",
 			linkep:    loopback.New(),
-			expectErr: &tcpip.ErrNotSupported{},
+			expectErr: tcpip.ErrNotSupported,
 		},
 		{
 			name:      "channel",
@@ -1005,15 +1005,15 @@ func TestRouteWithDownNIC(t *testing.T) {
 				if err := test.downFn(s, nicID1); err != nil {
 					t.Fatalf("test.downFn(_, %d): %s", nicID1, err)
 				}
-				testFailingSend(t, r1, buf, &tcpip.ErrInvalidEndpointState{})
+				testFailingSend(t, r1, buf, tcpip.ErrInvalidEndpointState)
 				testSend(t, r2, ep2, buf)
 
 				// Writes with Routes that use NIC2 after being brought down should fail.
 				if err := test.downFn(s, nicID2); err != nil {
 					t.Fatalf("test.downFn(_, %d): %s", nicID2, err)
 				}
-				testFailingSend(t, r1, buf, &tcpip.ErrInvalidEndpointState{})
-				testFailingSend(t, r2, buf, &tcpip.ErrInvalidEndpointState{})
+				testFailingSend(t, r1, buf, tcpip.ErrInvalidEndpointState)
+				testFailingSend(t, r2, buf, tcpip.ErrInvalidEndpointState)
 
 				if upFn := test.upFn; upFn != nil {
 					// Writes with Routes that use NIC1 after being brought up should
@@ -1026,7 +1026,7 @@ func TestRouteWithDownNIC(t *testing.T) {
 						t.Fatalf("test.upFn(_, %d): %s", nicID1, err)
 					}
 					testSend(t, r1, ep1, buf)
-					testFailingSend(t, r2, buf, &tcpip.ErrInvalidEndpointState{})
+					testFailingSend(t, r2, buf, tcpip.ErrInvalidEndpointState)
 				}
 			})
 		}
@@ -1186,12 +1186,12 @@ func TestAddressRemoval(t *testing.T) {
 		t.Fatal("RemoveAddress failed:", err)
 	}
 	testFailingRecv(t, fakeNet, localAddrByte, ep, buf)
-	testFailingSendTo(t, s, remoteAddr, nil, &tcpip.ErrNoRoute{})
+	testFailingSendTo(t, s, remoteAddr, nil, tcpip.ErrNoRoute)
 
 	// Check that removing the same address fails.
 	err := s.RemoveAddress(1, localAddr)
-	if _, ok := err.(*tcpip.ErrBadLocalAddress); !ok {
-		t.Fatalf("RemoveAddress returned unexpected error, got = %v, want = %s", err, &tcpip.ErrBadLocalAddress{})
+	if err != tcpip.ErrBadLocalAddress {
+		t.Fatalf("RemoveAddress returned unexpected error, got = %v, want = %s", err, tcpip.ErrBadLocalAddress)
 	}
 }
 
@@ -1245,14 +1245,14 @@ func TestAddressRemovalWithRouteHeld(t *testing.T) {
 		t.Fatal("RemoveAddress failed:", err)
 	}
 	testFailingRecv(t, fakeNet, localAddrByte, ep, buf)
-	testFailingSend(t, r, nil, &tcpip.ErrInvalidEndpointState{})
-	testFailingSendTo(t, s, remoteAddr, nil, &tcpip.ErrNoRoute{})
+	testFailingSend(t, r, nil, tcpip.ErrInvalidEndpointState)
+	testFailingSendTo(t, s, remoteAddr, nil, tcpip.ErrNoRoute)
 
 	// Check that removing the same address fails.
 	{
 		err := s.RemoveAddress(1, localAddr)
-		if _, ok := err.(*tcpip.ErrBadLocalAddress); !ok {
-			t.Fatalf("RemoveAddress returned unexpected error, got = %v, want = %s", err, &tcpip.ErrBadLocalAddress{})
+		if err != tcpip.ErrBadLocalAddress {
+			t.Fatalf("RemoveAddress returned unexpected error, got = %v, want = %s", err, tcpip.ErrBadLocalAddress)
 		}
 	}
 }
@@ -1347,7 +1347,7 @@ func TestEndpointExpiration(t *testing.T) {
 					// FIXME(b/139841518):Spoofing doesn't work if there is no primary address.
 					// testSendTo(t, s, remoteAddr, ep, nil)
 				} else {
-					testFailingSendTo(t, s, remoteAddr, nil, &tcpip.ErrNoRoute{})
+					testFailingSendTo(t, s, remoteAddr, nil, tcpip.ErrNoRoute)
 				}
 
 				// 2. Add Address, everything should work.
@@ -1382,7 +1382,7 @@ func TestEndpointExpiration(t *testing.T) {
 					// FIXME(b/139841518):Spoofing doesn't work if there is no primary address.
 					// testSendTo(t, s, remoteAddr, ep, nil)
 				} else {
-					testFailingSendTo(t, s, remoteAddr, nil, &tcpip.ErrNoRoute{})
+					testFailingSendTo(t, s, remoteAddr, nil, tcpip.ErrNoRoute)
 				}
 
 				// 4. Add Address back, everything should work again.
@@ -1421,8 +1421,8 @@ func TestEndpointExpiration(t *testing.T) {
 					testSend(t, r, ep, nil)
 					testSendTo(t, s, remoteAddr, ep, nil)
 				} else {
-					testFailingSend(t, r, nil, &tcpip.ErrInvalidEndpointState{})
-					testFailingSendTo(t, s, remoteAddr, nil, &tcpip.ErrNoRoute{})
+					testFailingSend(t, r, nil, tcpip.ErrInvalidEndpointState)
+					testFailingSendTo(t, s, remoteAddr, nil, tcpip.ErrNoRoute)
 				}
 
 				// 7. Add Address back, everything should work again.
@@ -1458,7 +1458,7 @@ func TestEndpointExpiration(t *testing.T) {
 					// FIXME(b/139841518):Spoofing doesn't work if there is no primary address.
 					// testSendTo(t, s, remoteAddr, ep, nil)
 				} else {
-					testFailingSendTo(t, s, remoteAddr, nil, &tcpip.ErrNoRoute{})
+					testFailingSendTo(t, s, remoteAddr, nil, tcpip.ErrNoRoute)
 				}
 			})
 		}
@@ -1501,8 +1501,8 @@ func TestPromiscuousMode(t *testing.T) {
 
 	// Check that we can't get a route as there is no local address.
 	_, err := s.FindRoute(0, "", "\x02", fakeNetNumber, false /* multicastLoop */)
-	if _, ok := err.(*tcpip.ErrNoRoute); !ok {
-		t.Fatalf("FindRoute returned unexpected error: got = %v, want = %s", err, &tcpip.ErrNoRoute{})
+	if err != tcpip.ErrNoRoute {
+		t.Fatalf("FindRoute returned unexpected error: got = %v, want = %s", err, tcpip.ErrNoRoute)
 	}
 
 	// Set promiscuous mode to false, then check that packet can't be
@@ -1722,7 +1722,7 @@ func TestSpoofingNoAddress(t *testing.T) {
 		t.Errorf("FindRoute succeeded with route %+v when it should have failed", r)
 	}
 	// Sending a packet fails.
-	testFailingSendTo(t, s, dstAddr, nil, &tcpip.ErrNoRoute{})
+	testFailingSendTo(t, s, dstAddr, nil, tcpip.ErrNoRoute)
 
 	// With address spoofing enabled, FindRoute permits any address to be used
 	// as the source.
@@ -1758,8 +1758,8 @@ func TestOutgoingBroadcastWithEmptyRouteTable(t *testing.T) {
 	// If there is no endpoint, it won't work.
 	{
 		_, err := s.FindRoute(1, header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, false /* multicastLoop */)
-		if _, ok := err.(*tcpip.ErrNetworkUnreachable); !ok {
-			t.Fatalf("got FindRoute(1, %s, %s, %d) = %s, want = %s", header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, err, &tcpip.ErrNetworkUnreachable{})
+		if err != tcpip.ErrNetworkUnreachable {
+			t.Fatalf("got FindRoute(1, %s, %s, %d) = %s, want = %s", header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, err, tcpip.ErrNetworkUnreachable)
 		}
 	}
 
@@ -1782,8 +1782,8 @@ func TestOutgoingBroadcastWithEmptyRouteTable(t *testing.T) {
 	// If the NIC doesn't exist, it won't work.
 	{
 		_, err := s.FindRoute(2, header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, false /* multicastLoop */)
-		if _, ok := err.(*tcpip.ErrNetworkUnreachable); !ok {
-			t.Fatalf("got FindRoute(2, %v, %v, %d) = %v want = %v", header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, err, &tcpip.ErrNetworkUnreachable{})
+		if err != tcpip.ErrNetworkUnreachable {
+			t.Fatalf("got FindRoute(2, %v, %v, %d) = %v want = %v", header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, err, tcpip.ErrNetworkUnreachable)
 		}
 	}
 }
@@ -1929,9 +1929,9 @@ func TestMulticastOrIPv6LinkLocalNeedsNoRoute(t *testing.T) {
 				anyAddr = header.IPv6Any
 			}
 
-			var want tcpip.Error = &tcpip.ErrNetworkUnreachable{}
+			var want tcpip.Error = tcpip.ErrNetworkUnreachable
 			if tc.routeNeeded {
-				want = &tcpip.ErrNoRoute{}
+				want = tcpip.ErrNoRoute
 			}
 
 			// If there is no endpoint, it won't work.
@@ -1952,8 +1952,8 @@ func TestMulticastOrIPv6LinkLocalNeedsNoRoute(t *testing.T) {
 
 			if r, err := s.FindRoute(1, anyAddr, tc.address, fakeNetNumber, false /* multicastLoop */); tc.routeNeeded {
 				// Route table is empty but we need a route, this should cause an error.
-				if _, ok := err.(*tcpip.ErrNoRoute); !ok {
-					t.Fatalf("got FindRoute(1, %v, %v, %v) = %v, want = %v", anyAddr, tc.address, fakeNetNumber, err, &tcpip.ErrNoRoute{})
+				if err != tcpip.ErrNoRoute {
+					t.Fatalf("got FindRoute(1, %v, %v, %v) = %v, want = %v", anyAddr, tc.address, fakeNetNumber, err, tcpip.ErrNoRoute)
 				}
 			} else {
 				if err != nil {
@@ -2093,22 +2093,22 @@ func TestGetMainNICAddressErrors(t *testing.T) {
 	}
 
 	const unknownNICID = nicID + 1
-	switch addr, err := s.GetMainNICAddress(unknownNICID, ipv4.ProtocolNumber); err.(type) {
-	case *tcpip.ErrUnknownNICID:
+	switch addr, err := s.GetMainNICAddress(unknownNICID, ipv4.ProtocolNumber); err {
+	case tcpip.ErrUnknownNICID:
 	default:
 		t.Errorf("got s.GetMainNICAddress(%d, %d) = (%s, %T), want = (_, tcpip.ErrUnknownNICID)", unknownNICID, ipv4.ProtocolNumber, addr, err)
 	}
 
 	// ARP is not an addressable network endpoint.
-	switch addr, err := s.GetMainNICAddress(nicID, arp.ProtocolNumber); err.(type) {
-	case *tcpip.ErrNotSupported:
+	switch addr, err := s.GetMainNICAddress(nicID, arp.ProtocolNumber); err {
+	case tcpip.ErrNotSupported:
 	default:
 		t.Errorf("got s.GetMainNICAddress(%d, %d) = (%s, %T), want = (_, tcpip.ErrNotSupported)", nicID, arp.ProtocolNumber, addr, err)
 	}
 
 	const unknownProtocolNumber = 1234
-	switch addr, err := s.GetMainNICAddress(nicID, unknownProtocolNumber); err.(type) {
-	case *tcpip.ErrUnknownProtocol:
+	switch addr, err := s.GetMainNICAddress(nicID, unknownProtocolNumber); err {
+	case tcpip.ErrUnknownProtocol:
 	default:
 		t.Errorf("got s.GetMainNICAddress(%d, %d) = (%s, %T), want = (_, tcpip.ErrUnknownProtocol)", nicID, unknownProtocolNumber, addr, err)
 	}
@@ -2261,7 +2261,7 @@ func TestCreateNICWithOptions(t *testing.T) {
 				{
 					nicID: tcpip.NICID(1),
 					opts:  stack.NICOptions{Name: "eth2"},
-					err:   &tcpip.ErrDuplicateNICID{},
+					err:   tcpip.ErrDuplicateNICID,
 				},
 			},
 		},
@@ -2276,7 +2276,7 @@ func TestCreateNICWithOptions(t *testing.T) {
 				{
 					nicID: tcpip.NICID(2),
 					opts:  stack.NICOptions{Name: "lo"},
-					err:   &tcpip.ErrDuplicateNICID{},
+					err:   tcpip.ErrDuplicateNICID,
 				},
 			},
 		},
@@ -2306,7 +2306,7 @@ func TestCreateNICWithOptions(t *testing.T) {
 				{
 					nicID: tcpip.NICID(1),
 					opts:  stack.NICOptions{},
-					err:   &tcpip.ErrDuplicateNICID{},
+					err:   tcpip.ErrDuplicateNICID,
 				},
 			},
 		},
@@ -3330,6 +3330,7 @@ func TestLeaveIPv6SolicitedNodeAddrBeforeAddrRemoval(t *testing.T) {
 	}
 
 	if err := s.RemoveAddress(nicID, addr1); err != nil {
+		t.Logf("this is the error")
 		t.Fatalf("RemoveAddress(%d, %s) = %s", nicID, addr1, err)
 	}
 }
@@ -3524,11 +3525,11 @@ func TestStackReceiveBufferSizeOption(t *testing.T) {
 		err  tcpip.Error
 	}{
 		// Invalid configurations.
-		{"min_below_zero", tcpip.ReceiveBufferSizeOption{Min: -1, Default: sMin, Max: sMin}, &tcpip.ErrInvalidOptionValue{}},
-		{"min_zero", tcpip.ReceiveBufferSizeOption{Min: 0, Default: sMin, Max: sMin}, &tcpip.ErrInvalidOptionValue{}},
-		{"default_below_min", tcpip.ReceiveBufferSizeOption{Min: sMin, Default: sMin - 1, Max: sMin - 1}, &tcpip.ErrInvalidOptionValue{}},
-		{"default_above_max", tcpip.ReceiveBufferSizeOption{Min: sMin, Default: sMin + 1, Max: sMin}, &tcpip.ErrInvalidOptionValue{}},
-		{"max_below_min", tcpip.ReceiveBufferSizeOption{Min: sMin, Default: sMin + 1, Max: sMin - 1}, &tcpip.ErrInvalidOptionValue{}},
+		{"min_below_zero", tcpip.ReceiveBufferSizeOption{Min: -1, Default: sMin, Max: sMin}, tcpip.ErrInvalidOptionValue},
+		{"min_zero", tcpip.ReceiveBufferSizeOption{Min: 0, Default: sMin, Max: sMin}, tcpip.ErrInvalidOptionValue},
+		{"default_below_min", tcpip.ReceiveBufferSizeOption{Min: sMin, Default: sMin - 1, Max: sMin - 1}, tcpip.ErrInvalidOptionValue},
+		{"default_above_max", tcpip.ReceiveBufferSizeOption{Min: sMin, Default: sMin + 1, Max: sMin}, tcpip.ErrInvalidOptionValue},
+		{"max_below_min", tcpip.ReceiveBufferSizeOption{Min: sMin, Default: sMin + 1, Max: sMin - 1}, tcpip.ErrInvalidOptionValue},
 
 		// Valid Configurations
 		{"in_ascending_order", tcpip.ReceiveBufferSizeOption{Min: sMin, Default: sMin + 1, Max: sMin + 2}, nil},
@@ -3564,11 +3565,11 @@ func TestStackSendBufferSizeOption(t *testing.T) {
 		err  tcpip.Error
 	}{
 		// Invalid configurations.
-		{"min_below_zero", tcpip.SendBufferSizeOption{Min: -1, Default: sMin, Max: sMin}, &tcpip.ErrInvalidOptionValue{}},
-		{"min_zero", tcpip.SendBufferSizeOption{Min: 0, Default: sMin, Max: sMin}, &tcpip.ErrInvalidOptionValue{}},
-		{"default_below_min", tcpip.SendBufferSizeOption{Min: 0, Default: sMin - 1, Max: sMin - 1}, &tcpip.ErrInvalidOptionValue{}},
-		{"default_above_max", tcpip.SendBufferSizeOption{Min: 0, Default: sMin + 1, Max: sMin}, &tcpip.ErrInvalidOptionValue{}},
-		{"max_below_min", tcpip.SendBufferSizeOption{Min: sMin, Default: sMin + 1, Max: sMin - 1}, &tcpip.ErrInvalidOptionValue{}},
+		{"min_below_zero", tcpip.SendBufferSizeOption{Min: -1, Default: sMin, Max: sMin}, tcpip.ErrInvalidOptionValue},
+		{"min_zero", tcpip.SendBufferSizeOption{Min: 0, Default: sMin, Max: sMin}, tcpip.ErrInvalidOptionValue},
+		{"default_below_min", tcpip.SendBufferSizeOption{Min: 0, Default: sMin - 1, Max: sMin - 1}, tcpip.ErrInvalidOptionValue},
+		{"default_above_max", tcpip.SendBufferSizeOption{Min: 0, Default: sMin + 1, Max: sMin}, tcpip.ErrInvalidOptionValue},
+		{"max_below_min", tcpip.SendBufferSizeOption{Min: sMin, Default: sMin + 1, Max: sMin - 1}, tcpip.ErrInvalidOptionValue},
 
 		// Valid Configurations
 		{"in_ascending_order", tcpip.SendBufferSizeOption{Min: sMin, Default: sMin + 1, Max: sMin + 2}, nil},
@@ -4156,7 +4157,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			forwardingEnabled:     false,
 			addrNIC:               nicID1,
 			localAddrWithPrefix:   fakeNetCfg.nic2AddrWithPrefix,
-			findRouteErr:          &tcpip.ErrNoRoute{},
+			findRouteErr:          tcpip.ErrNoRoute,
 			dependentOnForwarding: false,
 		},
 		{
@@ -4165,7 +4166,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			forwardingEnabled:     true,
 			addrNIC:               nicID1,
 			localAddrWithPrefix:   fakeNetCfg.nic2AddrWithPrefix,
-			findRouteErr:          &tcpip.ErrNoRoute{},
+			findRouteErr:          tcpip.ErrNoRoute,
 			dependentOnForwarding: false,
 		},
 		{
@@ -4174,7 +4175,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			forwardingEnabled:     false,
 			addrNIC:               nicID1,
 			localAddrWithPrefix:   fakeNetCfg.nic1AddrWithPrefix,
-			findRouteErr:          &tcpip.ErrNoRoute{},
+			findRouteErr:          tcpip.ErrNoRoute,
 			dependentOnForwarding: false,
 		},
 		{
@@ -4210,7 +4211,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			forwardingEnabled:     false,
 			addrNIC:               nicID2,
 			localAddrWithPrefix:   fakeNetCfg.nic1AddrWithPrefix,
-			findRouteErr:          &tcpip.ErrNoRoute{},
+			findRouteErr:          tcpip.ErrNoRoute,
 			dependentOnForwarding: false,
 		},
 		{
@@ -4219,7 +4220,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			forwardingEnabled:     true,
 			addrNIC:               nicID2,
 			localAddrWithPrefix:   fakeNetCfg.nic1AddrWithPrefix,
-			findRouteErr:          &tcpip.ErrNoRoute{},
+			findRouteErr:          tcpip.ErrNoRoute,
 			dependentOnForwarding: false,
 		},
 		{
@@ -4243,7 +4244,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			netCfg:                fakeNetCfg,
 			forwardingEnabled:     false,
 			localAddrWithPrefix:   fakeNetCfg.nic1AddrWithPrefix,
-			findRouteErr:          &tcpip.ErrNoRoute{},
+			findRouteErr:          tcpip.ErrNoRoute,
 			dependentOnForwarding: false,
 		},
 		{
@@ -4259,7 +4260,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			netCfg:                ipv6LinkLocalNIC1WithGlobalRemote,
 			forwardingEnabled:     false,
 			addrNIC:               nicID1,
-			findRouteErr:          &tcpip.ErrNoRoute{},
+			findRouteErr:          tcpip.ErrNoRoute,
 			dependentOnForwarding: false,
 		},
 		{
@@ -4267,7 +4268,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			netCfg:                ipv6LinkLocalNIC1WithGlobalRemote,
 			forwardingEnabled:     true,
 			addrNIC:               nicID1,
-			findRouteErr:          &tcpip.ErrNoRoute{},
+			findRouteErr:          tcpip.ErrNoRoute,
 			dependentOnForwarding: false,
 		},
 		{
@@ -4275,7 +4276,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			netCfg:                ipv6LinkLocalNIC1WithGlobalRemote,
 			forwardingEnabled:     false,
 			localAddrWithPrefix:   ipv6LinkLocalNIC1WithGlobalRemote.nic1AddrWithPrefix,
-			findRouteErr:          &tcpip.ErrNoRoute{},
+			findRouteErr:          tcpip.ErrNoRoute,
 			dependentOnForwarding: false,
 		},
 		{
@@ -4283,7 +4284,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			netCfg:                ipv6LinkLocalNIC1WithGlobalRemote,
 			forwardingEnabled:     true,
 			localAddrWithPrefix:   ipv6LinkLocalNIC1WithGlobalRemote.nic1AddrWithPrefix,
-			findRouteErr:          &tcpip.ErrNoRoute{},
+			findRouteErr:          tcpip.ErrNoRoute,
 			dependentOnForwarding: false,
 		},
 		{
@@ -4315,7 +4316,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			netCfg:                ipv6GlobalNIC1WithLinkLocalRemote,
 			forwardingEnabled:     false,
 			localAddrWithPrefix:   ipv6GlobalNIC1WithLinkLocalRemote.nic1AddrWithPrefix,
-			findRouteErr:          &tcpip.ErrNetworkUnreachable{},
+			findRouteErr:          tcpip.ErrNetworkUnreachable,
 			dependentOnForwarding: false,
 		},
 		{
@@ -4323,7 +4324,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			netCfg:                ipv6GlobalNIC1WithLinkLocalRemote,
 			forwardingEnabled:     true,
 			localAddrWithPrefix:   ipv6GlobalNIC1WithLinkLocalRemote.nic1AddrWithPrefix,
-			findRouteErr:          &tcpip.ErrNetworkUnreachable{},
+			findRouteErr:          tcpip.ErrNetworkUnreachable,
 			dependentOnForwarding: false,
 		},
 		{
@@ -4331,7 +4332,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			netCfg:                ipv6GlobalNIC1WithLinkLocalMulticastRemote,
 			forwardingEnabled:     false,
 			localAddrWithPrefix:   ipv6GlobalNIC1WithLinkLocalMulticastRemote.nic1AddrWithPrefix,
-			findRouteErr:          &tcpip.ErrNetworkUnreachable{},
+			findRouteErr:          tcpip.ErrNetworkUnreachable,
 			dependentOnForwarding: false,
 		},
 		{
@@ -4339,7 +4340,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			netCfg:                ipv6GlobalNIC1WithLinkLocalMulticastRemote,
 			forwardingEnabled:     true,
 			localAddrWithPrefix:   ipv6GlobalNIC1WithLinkLocalMulticastRemote.nic1AddrWithPrefix,
-			findRouteErr:          &tcpip.ErrNetworkUnreachable{},
+			findRouteErr:          tcpip.ErrNetworkUnreachable,
 			dependentOnForwarding: false,
 		},
 		{
@@ -4452,8 +4453,8 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			}
 			{
 				err := send(r, data)
-				if _, ok := err.(*tcpip.ErrInvalidEndpointState); !ok {
-					t.Fatalf("got send(_, _) = %s, want = %s", err, &tcpip.ErrInvalidEndpointState{})
+				if err != tcpip.ErrInvalidEndpointState {
+					t.Fatalf("got send(_, _) = %s, want = %s", err, tcpip.ErrInvalidEndpointState)
 				}
 			}
 			if n := ep1.Drain(); n != 0 {
@@ -4517,8 +4518,8 @@ func TestWritePacketToRemote(t *testing.T) {
 
 	t.Run("InvalidNICID", func(t *testing.T) {
 		err := s.WritePacketToRemote(234, linkAddr2, header.IPv4ProtocolNumber, buffer.View([]byte{1}).ToVectorisedView())
-		if _, ok := err.(*tcpip.ErrUnknownDevice); !ok {
-			t.Fatalf("s.WritePacketToRemote(_, _, _, _) = %s, want = %s", err, &tcpip.ErrUnknownDevice{})
+		if err != tcpip.ErrUnknownDevice {
+			t.Fatalf("s.WritePacketToRemote(_, _, _, _) = %s, want = %s", err, tcpip.ErrUnknownDevice)
 		}
 		pkt, ok := e.Read()
 		if got, want := ok, false; got != want {
@@ -4617,14 +4618,14 @@ func TestGetLinkAddressErrors(t *testing.T) {
 
 	{
 		err := s.GetLinkAddress(unknownNICID, "", "", ipv4.ProtocolNumber, nil)
-		if _, ok := err.(*tcpip.ErrUnknownNICID); !ok {
-			t.Errorf("got s.GetLinkAddress(%d, '', '', %d, nil) = %s, want = %s", unknownNICID, ipv4.ProtocolNumber, err, &tcpip.ErrUnknownNICID{})
+		if err != tcpip.ErrUnknownNICID {
+			t.Errorf("got s.GetLinkAddress(%d, '', '', %d, nil) = %s, want = %s", unknownNICID, ipv4.ProtocolNumber, err, tcpip.ErrUnknownNICID)
 		}
 	}
 	{
 		err := s.GetLinkAddress(nicID, "", "", ipv4.ProtocolNumber, nil)
-		if _, ok := err.(*tcpip.ErrNotSupported); !ok {
-			t.Errorf("got s.GetLinkAddress(%d, '', '', %d, nil) = %s, want = %s", unknownNICID, ipv4.ProtocolNumber, err, &tcpip.ErrNotSupported{})
+		if err != tcpip.ErrNotSupported {
+			t.Errorf("got s.GetLinkAddress(%d, '', '', %d, nil) = %s, want = %s", unknownNICID, ipv4.ProtocolNumber, err, tcpip.ErrNotSupported)
 		}
 	}
 }

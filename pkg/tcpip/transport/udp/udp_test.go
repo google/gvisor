@@ -577,7 +577,7 @@ func TestBindToDeviceOption(t *testing.T) {
 		getBindToDevice      int32
 	}{
 		{"GetDefaultValue", nil, nil, 0},
-		{"BindToNonExistent", nicIDPtr(999), &tcpip.ErrUnknownDevice{}, 0},
+		{"BindToNonExistent", nicIDPtr(999), tcpip.ErrUnknownDevice, 0},
 		{"BindToExistent", nicIDPtr(321), nil, 321},
 		{"UnbindToDevice", nicIDPtr(0), nil, 0},
 	}
@@ -617,7 +617,7 @@ func testReadInternal(c *testContext, flow testFlow, packetShouldBeDropped, expe
 
 	var buf bytes.Buffer
 	res, err := c.ep.Read(&buf, tcpip.ReadOptions{NeedRemoteAddr: true})
-	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
+	if err == tcpip.ErrWouldBlock {
 		// Wait for data to become available.
 		select {
 		case <-ch:
@@ -723,8 +723,8 @@ func TestBindReservedPort(t *testing.T) {
 		defer ep.Close()
 		{
 			err := ep.Bind(addr)
-			if _, ok := err.(*tcpip.ErrPortInUse); !ok {
-				t.Fatalf("got ep.Bind(...) = %s, want = %s", err, &tcpip.ErrPortInUse{})
+			if err != tcpip.ErrPortInUse {
+				t.Fatalf("got ep.Bind(...) = %s, want = %s", err, tcpip.ErrPortInUse)
 			}
 		}
 	}
@@ -739,8 +739,8 @@ func TestBindReservedPort(t *testing.T) {
 		// above, since the endpoint is dual-stack.
 		{
 			err := ep.Bind(tcpip.FullAddress{Port: addr.Port})
-			if _, ok := err.(*tcpip.ErrPortInUse); !ok {
-				t.Fatalf("got ep.Bind(...) = %s, want = %s", err, &tcpip.ErrPortInUse{})
+			if err != tcpip.ErrPortInUse {
+				t.Fatalf("got ep.Bind(...) = %s, want = %s", err, tcpip.ErrPortInUse)
 			}
 		}
 		// We can bind an ipv4 address on this port, though.
@@ -834,7 +834,7 @@ func TestV4ReadSelfSource(t *testing.T) {
 		wantInvalidSource uint64
 	}{
 		{"HandleLocal", false, nil, 0},
-		{"NoHandleLocal", true, &tcpip.ErrWouldBlock{}, 1},
+		{"NoHandleLocal", true, tcpip.ErrWouldBlock, 1},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			c := newDualTestContextWithHandleLocal(t, defaultMTU, tt.handleLocal)
@@ -1112,7 +1112,7 @@ func TestDualWriteConnectedToV6(t *testing.T) {
 	testWrite(c, unicastV6)
 
 	// Write to V4 mapped address.
-	testFailingWrite(c, unicastV4in6, &tcpip.ErrNetworkUnreachable{})
+	testFailingWrite(c, unicastV4in6, tcpip.ErrNetworkUnreachable)
 	const want = 1
 	if got := c.ep.Stats().(*tcpip.TransportEndpointStats).SendErrors.NoRoute.Value(); got != want {
 		c.t.Fatalf("Endpoint stat not updated. got %d want %d", got, want)
@@ -1133,7 +1133,7 @@ func TestDualWriteConnectedToV4Mapped(t *testing.T) {
 	testWrite(c, unicastV4in6)
 
 	// Write to v6 address.
-	testFailingWrite(c, unicastV6, &tcpip.ErrInvalidEndpointState{})
+	testFailingWrite(c, unicastV6, tcpip.ErrInvalidEndpointState)
 }
 
 func TestV4WriteOnV6Only(t *testing.T) {
@@ -1143,7 +1143,7 @@ func TestV4WriteOnV6Only(t *testing.T) {
 	c.createEndpointForFlow(unicastV6Only)
 
 	// Write to V4 mapped address.
-	testFailingWrite(c, unicastV4in6, &tcpip.ErrNoRoute{})
+	testFailingWrite(c, unicastV4in6, tcpip.ErrNoRoute)
 }
 
 func TestV6WriteOnBoundToV4Mapped(t *testing.T) {
@@ -1158,7 +1158,7 @@ func TestV6WriteOnBoundToV4Mapped(t *testing.T) {
 	}
 
 	// Write to v6 address.
-	testFailingWrite(c, unicastV6, &tcpip.ErrInvalidEndpointState{})
+	testFailingWrite(c, unicastV6, tcpip.ErrInvalidEndpointState)
 }
 
 func TestV6WriteOnConnected(t *testing.T) {
@@ -1219,7 +1219,7 @@ func TestWriteOnConnectedInvalidPort(t *testing.T) {
 
 			{
 				err := c.ep.LastError()
-				if _, ok := err.(*tcpip.ErrConnectionRefused); !ok {
+				if err != tcpip.ErrConnectionRefused {
 					c.t.Fatalf("expected c.ep.LastError() == ErrConnectionRefused, got: %+v", err)
 				}
 			}
@@ -2353,21 +2353,21 @@ func TestShutdownWrite(t *testing.T) {
 		t.Fatalf("Shutdown failed: %s", err)
 	}
 
-	testFailingWrite(c, unicastV6, &tcpip.ErrClosedForSend{})
+	testFailingWrite(c, unicastV6, tcpip.ErrClosedForSend)
 }
 
 func (c *testContext) checkEndpointWriteStats(incr uint64, want tcpip.TransportEndpointStats, err tcpip.Error) {
 	got := c.ep.Stats().(*tcpip.TransportEndpointStats).Clone()
-	switch err.(type) {
+	switch err {
 	case nil:
 		want.PacketsSent.IncrementBy(incr)
-	case *tcpip.ErrMessageTooLong, *tcpip.ErrInvalidOptionValue:
+	case tcpip.ErrMessageTooLong, tcpip.ErrInvalidOptionValue:
 		want.WriteErrors.InvalidArgs.IncrementBy(incr)
-	case *tcpip.ErrClosedForSend:
+	case tcpip.ErrClosedForSend:
 		want.WriteErrors.WriteClosed.IncrementBy(incr)
-	case *tcpip.ErrInvalidEndpointState:
+	case tcpip.ErrInvalidEndpointState:
 		want.WriteErrors.InvalidEndpointState.IncrementBy(incr)
-	case *tcpip.ErrNoRoute, *tcpip.ErrBroadcastDisabled, *tcpip.ErrNetworkUnreachable:
+	case tcpip.ErrNoRoute, tcpip.ErrBroadcastDisabled, tcpip.ErrNetworkUnreachable:
 		want.SendErrors.NoRoute.IncrementBy(incr)
 	default:
 		want.SendErrors.SendToNetworkFailed.IncrementBy(incr)
@@ -2379,9 +2379,9 @@ func (c *testContext) checkEndpointWriteStats(incr uint64, want tcpip.TransportE
 
 func (c *testContext) checkEndpointReadStats(incr uint64, want tcpip.TransportEndpointStats, err tcpip.Error) {
 	got := c.ep.Stats().(*tcpip.TransportEndpointStats).Clone()
-	switch err.(type) {
-	case nil, *tcpip.ErrWouldBlock:
-	case *tcpip.ErrClosedForReceive:
+	switch err {
+	case nil, tcpip.ErrWouldBlock:
+	case tcpip.ErrClosedForReceive:
 		want.ReadErrors.ReadClosed.IncrementBy(incr)
 	default:
 		c.t.Errorf("Endpoint error missing stats update err %v", err)
@@ -2556,10 +2556,10 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 			}
 			opts := tcpip.WriteOptions{To: &to}
 			expectedErrWithoutBcastOpt := func(err tcpip.Error) tcpip.Error {
-				if _, ok := err.(*tcpip.ErrBroadcastDisabled); ok {
+				if err == tcpip.ErrBroadcastDisabled {
 					return nil
 				}
-				return &tcpip.ErrBroadcastDisabled{}
+				return tcpip.ErrBroadcastDisabled
 			}
 			if !test.requiresBroadcastOpt {
 				expectedErrWithoutBcastOpt = nil

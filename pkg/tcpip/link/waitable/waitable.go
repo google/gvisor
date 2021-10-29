@@ -148,4 +148,4 @@ func (e *Endpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.Net
 }
 
 // WriteRawPacket implements stack.LinkEndpoint.
-func (*Endpoint) WriteRawPacket(*stack.PacketBuffer) tcpip.Error { return &tcpip.ErrNotSupported{} }
+func (*Endpoint) WriteRawPacket(*stack.PacketBuffer) tcpip.Error { return tcpip.ErrNotSupported }

@@ -182,10 +182,10 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 	// If there's no data to read, return that read would block or that the
 	// endpoint is closed.
 	if e.rcvList.Empty() {
-		var err tcpip.Error = &tcpip.ErrWouldBlock{}
+		var err tcpip.Error = tcpip.ErrWouldBlock
 		if e.rcvClosed {
 			e.stats.ReadErrors.ReadClosed.Increment()
-			err = &tcpip.ErrClosedForReceive{}
+			err = tcpip.ErrClosedForReceive
 		}
 		e.rcvMu.Unlock()
 		return tcpip.ReadResult{}, err
@@ -229,7 +229,7 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 
 	n, err := pkt.data.ReadTo(dst, opts.Peek)
 	if n == 0 && err != nil {
-		return res, &tcpip.ErrBadBuffer{}
+		return res, tcpip.ErrBadBuffer
 	}
 	res.Count = n
 	return res, nil
@@ -240,27 +240,27 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 	netProto := e.net.NetProto()
 	// We can create, but not write to, unassociated IPv6 endpoints.
 	if !e.associated && netProto == header.IPv6ProtocolNumber {
-		return 0, &tcpip.ErrInvalidOptionValue{}
+		return 0, tcpip.ErrInvalidOptionValue
 	}
 
 	if opts.To != nil {
 		// Raw sockets do not support sending to a IPv4 address on a IPv6 endpoint.
 		if netProto == header.IPv6ProtocolNumber && len(opts.To.Addr) != header.IPv6AddressSize {
-			return 0, &tcpip.ErrInvalidOptionValue{}
+			return 0, tcpip.ErrInvalidOptionValue
 		}
 	}
 
 	n, err := e.write(p, opts)
-	switch err.(type) {
+	switch err {
 	case nil:
 		e.stats.PacketsSent.Increment()
-	case *tcpip.ErrMessageTooLong, *tcpip.ErrInvalidOptionValue:
+	case tcpip.ErrMessageTooLong, tcpip.ErrInvalidOptionValue:
 		e.stats.WriteErrors.InvalidArgs.Increment()
-	case *tcpip.ErrClosedForSend:
+	case tcpip.ErrClosedForSend:
 		e.stats.WriteErrors.WriteClosed.Increment()
-	case *tcpip.ErrInvalidEndpointState:
+	case tcpip.ErrInvalidEndpointState:
 		e.stats.WriteErrors.InvalidEndpointState.Increment()
-	case *tcpip.ErrNoRoute, *tcpip.ErrBroadcastDisabled, *tcpip.ErrNetworkUnreachable:
+	case tcpip.ErrNoRoute, tcpip.ErrBroadcastDisabled, tcpip.ErrNetworkUnreachable:
 		// Errors indicating any problem with IP routing of the packet.
 		e.stats.SendErrors.NoRoute.Increment()
 	default:
@@ -279,7 +279,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 	// TODO(https://gvisor.dev/issue/6538): Avoid this allocation.
 	payloadBytes := make([]byte, p.Len())
 	if _, err := io.ReadFull(p, payloadBytes); err != nil {
-		return 0, &tcpip.ErrBadBuffer{}
+		return 0, tcpip.ErrBadBuffer
 	}
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -297,7 +297,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 
 // Disconnect implements tcpip.Endpoint.Disconnect.
 func (*endpoint) Disconnect() tcpip.Error {
-	return &tcpip.ErrNotSupported{}
+	return tcpip.ErrNotSupported
 }
 
 // Connect implements tcpip.Endpoint.Connect.
@@ -306,7 +306,7 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) tcpip.Error {
 
 	// Raw sockets do not support connecting to a IPv4 address on a IPv6 endpoint.
 	if netProto == header.IPv6ProtocolNumber && len(addr.Addr) != header.IPv6AddressSize {
-		return &tcpip.ErrAddressFamilyNotSupported{}
+		return tcpip.ErrAddressFamilyNotSupported
 	}
 
 	return e.net.ConnectAndThen(addr, func(_ tcpip.NetworkProtocolNumber, _, _ stack.TransportEndpointID) tcpip.Error {
@@ -325,19 +325,19 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) tcpip.Error {
 // Shutdown implements tcpip.Endpoint.Shutdown. It's a noop for raw sockets.
 func (e *endpoint) Shutdown(tcpip.ShutdownFlags) tcpip.Error {
 	if e.net.State() != transport.DatagramEndpointStateConnected {
-		return &tcpip.ErrNotConnected{}
+		return tcpip.ErrNotConnected
 	}
 	return nil
 }
 
 // Listen implements tcpip.Endpoint.Listen.
 func (*endpoint) Listen(int) tcpip.Error {
-	return &tcpip.ErrNotSupported{}
+	return tcpip.ErrNotSupported
 }
 
 // Accept implements tcpip.Endpoint.Accept.
 func (*endpoint) Accept(*tcpip.FullAddress) (tcpip.Endpoint, *waiter.Queue, tcpip.Error) {
-	return nil, nil, &tcpip.ErrNotSupported{}
+	return nil, nil, tcpip.ErrNotSupported
 }
 
 // Bind implements tcpip.Endpoint.Bind.
@@ -367,7 +367,7 @@ func (e *endpoint) GetLocalAddress() (tcpip.FullAddress, tcpip.Error) {
 // GetRemoteAddress implements tcpip.Endpoint.GetRemoteAddress.
 func (*endpoint) GetRemoteAddress() (tcpip.FullAddress, tcpip.Error) {
 	// Even a connected socket doesn't return a remote address.
-	return tcpip.FullAddress{}, &tcpip.ErrNotConnected{}
+	return tcpip.FullAddress{}, tcpip.ErrNotConnected
 }
 
 // Readiness implements tcpip.Endpoint.Readiness.

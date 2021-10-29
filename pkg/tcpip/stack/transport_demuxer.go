@@ -430,7 +430,7 @@ func (ep *multiPortEndpoint) singleRegisterEndpoint(t TransportEndpoint, flags p
 	if len(ep.endpoints) != 0 {
 		// If it was previously bound, we need to check if we can bind again.
 		if ep.flags.TotalRefs() > 0 && bits&ep.flags.SharedFlags() == 0 {
-			return &tcpip.ErrPortInUse{}
+			return tcpip.ErrPortInUse
 		}
 	}
 
@@ -449,7 +449,7 @@ func (ep *multiPortEndpoint) singleCheckEndpoint(flags ports.Flags) tcpip.Error 
 	if len(ep.endpoints) != 0 {
 		// If it was previously bound, we need to check if we can bind again.
 		if ep.flags.TotalRefs() > 0 && bits&ep.flags.SharedFlags() == 0 {
-			return &tcpip.ErrPortInUse{}
+			return tcpip.ErrPortInUse
 		}
 	}
 
@@ -482,7 +482,7 @@ func (d *transportDemuxer) singleRegisterEndpoint(netProto tcpip.NetworkProtocol
 
 	eps, ok := d.protocol[protocolIDs{netProto, protocol}]
 	if !ok {
-		return &tcpip.ErrUnknownProtocol{}
+		return tcpip.ErrUnknownProtocol
 	}
 
 	eps.mu.Lock()
@@ -512,7 +512,7 @@ func (d *transportDemuxer) singleCheckEndpoint(netProto tcpip.NetworkProtocolNum
 
 	eps, ok := d.protocol[protocolIDs{netProto, protocol}]
 	if !ok {
-		return &tcpip.ErrUnknownProtocol{}
+		return tcpip.ErrUnknownProtocol
 	}
 
 	eps.mu.RLock()
@@ -685,7 +685,7 @@ func (d *transportDemuxer) findTransportEndpoint(netProto tcpip.NetworkProtocolN
 func (d *transportDemuxer) registerRawEndpoint(netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, ep RawTransportEndpoint) tcpip.Error {
 	eps, ok := d.protocol[protocolIDs{netProto, transProto}]
 	if !ok {
-		return &tcpip.ErrNotSupported{}
+		return tcpip.ErrNotSupported
 	}
 
 	eps.mu.Lock()

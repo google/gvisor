@@ -32,19 +32,19 @@ func TestTranslateErrno(t *testing.T) {
 	}{
 		{
 			errno:      unix.Errno(0),
-			translated: &tcpip.ErrInvalidEndpointState{},
+			translated: tcpip.ErrInvalidEndpointState,
 		},
 		{
 			errno:      unix.Errno(maxErrno),
-			translated: &tcpip.ErrInvalidEndpointState{},
+			translated: tcpip.ErrInvalidEndpointState,
 		},
 		{
 			errno:      unix.Errno(514),
-			translated: &tcpip.ErrInvalidEndpointState{},
+			translated: tcpip.ErrInvalidEndpointState,
 		},
 		{
 			errno:      unix.EEXIST,
-			translated: &tcpip.ErrDuplicateAddress{},
+			translated: tcpip.ErrDuplicateAddress,
 		},
 	} {
 		got := TranslateErrno(test.errno)

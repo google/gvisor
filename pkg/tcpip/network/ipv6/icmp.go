@@ -413,8 +413,8 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 				//
 				// TODO(gvisor.dev/issue/4046): Handle the scenario when a duplicate
 				// address is detected for an assigned address.
-				switch err := e.dupTentativeAddrDetected(targetAddr, holderLinkAddress, nonce); err.(type) {
-				case nil, *tcpip.ErrBadAddress, *tcpip.ErrInvalidEndpointState:
+				switch err := e.dupTentativeAddrDetected(targetAddr, holderLinkAddress, nonce); err {
+				case nil, tcpip.ErrBadAddress, tcpip.ErrInvalidEndpointState:
 				default:
 					panic(fmt.Sprintf("unexpected error handling duplicate tentative address: %s", err))
 				}
@@ -455,9 +455,9 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 			received.invalid.Increment()
 			return
 		} else {
-			switch err := e.nic.HandleNeighborProbe(ProtocolNumber, srcAddr, sourceLinkAddr); err.(type) {
+			switch err := e.nic.HandleNeighborProbe(ProtocolNumber, srcAddr, sourceLinkAddr); err {
 			case nil:
-			case *tcpip.ErrNotSupported:
+			case tcpip.ErrNotSupported:
 			// The stack may support ICMPv6 but the NIC may not need link resolution.
 			default:
 				panic(fmt.Sprintf("unexpected error when informing NIC of neighbor probe message: %s", err))
@@ -608,8 +608,8 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 			//
 			// TODO(gvisor.dev/issue/4046): Handle the scenario when a duplicate
 			// address is detected for an assigned address.
-			switch err := e.dupTentativeAddrDetected(targetAddr, targetLinkAddr, nonce); err.(type) {
-			case nil, *tcpip.ErrBadAddress, *tcpip.ErrInvalidEndpointState:
+			switch err := e.dupTentativeAddrDetected(targetAddr, targetLinkAddr, nonce); err {
+			case nil, tcpip.ErrBadAddress, tcpip.ErrInvalidEndpointState:
 				return
 			default:
 				panic(fmt.Sprintf("unexpected error handling duplicate tentative address: %s", err))
@@ -643,9 +643,9 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 			Solicited: na.SolicitedFlag(),
 			Override:  na.OverrideFlag(),
 			IsRouter:  na.RouterFlag(),
-		}); err.(type) {
+		}); err {
 		case nil:
-		case *tcpip.ErrNotSupported:
+		case tcpip.ErrNotSupported:
 		// The stack may support ICMPv6 but the NIC may not need link resolution.
 		default:
 			panic(fmt.Sprintf("unexpected error when informing NIC of neighbor confirmation message: %s", err))
@@ -758,9 +758,9 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 
 			// A RS with a specified source IP address modifies the neighbor table
 			// in the same way a regular probe would.
-			switch err := e.nic.HandleNeighborProbe(ProtocolNumber, srcAddr, sourceLinkAddr); err.(type) {
+			switch err := e.nic.HandleNeighborProbe(ProtocolNumber, srcAddr, sourceLinkAddr); err {
 			case nil:
-			case *tcpip.ErrNotSupported:
+			case tcpip.ErrNotSupported:
 			// The stack may support ICMPv6 but the NIC may not need link resolution.
 			default:
 				panic(fmt.Sprintf("unexpected error when informing NIC of neighbor probe message: %s", err))
@@ -811,9 +811,9 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 		// If the RA has the source link layer option, update the link address
 		// cache with the link address for the advertised router.
 		if len(sourceLinkAddr) != 0 {
-			switch err := e.nic.HandleNeighborProbe(ProtocolNumber, routerAddr, sourceLinkAddr); err.(type) {
+			switch err := e.nic.HandleNeighborProbe(ProtocolNumber, routerAddr, sourceLinkAddr); err {
 			case nil:
-			case *tcpip.ErrNotSupported:
+			case tcpip.ErrNotSupported:
 			// The stack may support ICMPv6 but the NIC may not need link resolution.
 			default:
 				panic(fmt.Sprintf("unexpected error when informing NIC of neighbor probe message: %s", err))
@@ -900,14 +900,14 @@ func (e *endpoint) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remot
 		// Find an address that we can use as our source address.
 		addressEndpoint := e.AcquireOutgoingPrimaryAddress(remoteAddr, false /* allowExpired */)
 		if addressEndpoint == nil {
-			return &tcpip.ErrNetworkUnreachable{}
+			return tcpip.ErrNetworkUnreachable
 		}
 
 		localAddr = addressEndpoint.AddressWithPrefix().Address
 		addressEndpoint.DecRef()
 	} else if !e.checkLocalAddress(localAddr) {
 		// The provided local address is not assigned to us.
-		return &tcpip.ErrBadLocalAddress{}
+		return tcpip.ErrBadLocalAddress
 	}
 
 	return e.sendNDPNS(localAddr, remoteAddr, targetAddr, remoteLinkAddr, header.NDPOptionsSerializer{
@@ -1148,7 +1148,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip
 	netEP, ok := p.mu.eps[route.NICID()]
 	p.mu.Unlock()
 	if !ok {
-		return &tcpip.ErrNotConnected{}
+		return tcpip.ErrNotConnected
 	}
 
 	if pkt.TransportProtocolNumber == header.ICMPv6ProtocolNumber {

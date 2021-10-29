@@ -193,7 +193,7 @@ func TestForwarding(t *testing.T) {
 		{
 			name:               "TCP",
 			proto:              tcp.ProtocolNumber,
-			expectedConnectErr: &tcpip.ErrConnectStarted{},
+			expectedConnectErr: tcpip.ErrConnectStarted,
 			setupServer: func(t *testing.T, ep tcpip.Endpoint) {
 				t.Helper()
 
@@ -207,7 +207,7 @@ func TestForwarding(t *testing.T) {
 				var addr tcpip.FullAddress
 				for {
 					newEP, wq, err := ep.Accept(&addr)
-					if _, ok := err.(*tcpip.ErrWouldBlock); ok {
+					if err == tcpip.ErrWouldBlock {
 						<-ch
 						continue
 					}
@@ -307,7 +307,7 @@ func TestForwarding(t *testing.T) {
 							var err tcpip.Error
 							opts := tcpip.ReadOptions{NeedRemoteAddr: subTest.needRemoteAddr}
 							res, err = ep.Read(&buf, opts)
-							if _, ok := err.(*tcpip.ErrWouldBlock); ok {
+							if err == tcpip.ErrWouldBlock {
 								<-ch
 								continue
 							}

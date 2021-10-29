@@ -1000,7 +1000,7 @@ func (e *endpoint) Close() {
 		if isResetState {
 			// Close the endpoint without doing full shutdown and
 			// send a RST.
-			e.resetConnectionLocked(&tcpip.ErrConnectionAborted{})
+			e.resetConnectionLocked(tcpip.ErrConnectionAborted)
 			e.closeNoShutdownLocked()
 
 			// Wake up worker to close the endpoint.
@@ -1303,7 +1303,7 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 	// can remove segments from the list through commitRead().
 	first, last, serr := e.startRead()
 	if serr != nil {
-		if _, ok := serr.(*tcpip.ErrClosedForReceive); ok {
+		if serr == tcpip.ErrClosedForReceive {
 			e.stats.ReadErrors.ReadClosed.Increment()
 		}
 		return tcpip.ReadResult{}, serr
@@ -1343,7 +1343,7 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 
 	// If something is read, we must report it. Report error when nothing is read.
 	if done == 0 && err != nil {
-		return tcpip.ReadResult{}, &tcpip.ErrBadBuffer{}
+		return tcpip.ReadResult{}, tcpip.ErrBadBuffer
 	}
 	return tcpip.ReadResult{
 		Count: done,
@@ -1364,7 +1364,7 @@ func (e *endpoint) startRead() (first, last *segment, err tcpip.Error) {
 	// on a receive. It can expect to read any data after the handshake
 	// is complete. RFC793, section 3.9, p58.
 	if e.EndpointState() == StateSynSent {
-		return nil, nil, &tcpip.ErrWouldBlock{}
+		return nil, nil, tcpip.ErrWouldBlock
 	}
 
 	// The endpoint can be read if it's connected, or if it's already closed
@@ -1380,17 +1380,17 @@ func (e *endpoint) startRead() (first, last *segment, err tcpip.Error) {
 			if err := e.hardErrorLocked(); err != nil {
 				return nil, nil, err
 			}
-			return nil, nil, &tcpip.ErrClosedForReceive{}
+			return nil, nil, tcpip.ErrClosedForReceive
 		}
 		e.stats.ReadErrors.NotConnected.Increment()
-		return nil, nil, &tcpip.ErrNotConnected{}
+		return nil, nil, tcpip.ErrNotConnected
 	}
 
 	if e.rcvQueueInfo.RcvBufUsed == 0 {
 		if e.rcvQueueInfo.RcvClosed || !e.EndpointState().connected() {
-			return nil, nil, &tcpip.ErrClosedForReceive{}
+			return nil, nil, tcpip.ErrClosedForReceive
 		}
-		return nil, nil, &tcpip.ErrWouldBlock{}
+		return nil, nil, tcpip.ErrWouldBlock
 	}
 
 	return e.rcvQueueInfo.rcvQueue.Front(), e.rcvQueueInfo.rcvQueue.Back(), nil
@@ -1449,26 +1449,26 @@ func (e *endpoint) isEndpointWritableLocked() (int, tcpip.Error) {
 		if err := e.hardErrorLocked(); err != nil {
 			return 0, err
 		}
-		return 0, &tcpip.ErrClosedForSend{}
+		return 0, tcpip.ErrClosedForSend
 	case !s.connecting() && !s.connected():
-		return 0, &tcpip.ErrClosedForSend{}
+		return 0, tcpip.ErrClosedForSend
 	case s.connecting():
 		// As per RFC793, page 56, a send request arriving when in connecting
 		// state, can be queued to be completed after the state becomes
 		// connected. Return an error code for the caller of endpoint Write to
 		// try again, until the connection handshake is complete.
-		return 0, &tcpip.ErrWouldBlock{}
+		return 0, tcpip.ErrWouldBlock
 	}
 
 	// Check if the connection has already been closed for sends.
 	if e.sndQueueInfo.SndClosed {
-		return 0, &tcpip.ErrClosedForSend{}
+		return 0, tcpip.ErrClosedForSend
 	}
 
 	sndBufSize := e.getSendBufferSize()
 	avail := sndBufSize - e.sndQueueInfo.SndBufUsed
 	if avail <= 0 {
-		return 0, &tcpip.ErrWouldBlock{}
+		return 0, tcpip.ErrWouldBlock
 	}
 	return avail, nil
 }
@@ -1500,7 +1500,7 @@ func (e *endpoint) readFromPayloader(p tcpip.Payloader, opts tcpip.WriteOptions,
 	v := make([]byte, avail)
 	n, err := p.Read(v)
 	if err != nil && err != io.EOF {
-		return nil, &tcpip.ErrBadBuffer{}
+		return nil, tcpip.ErrBadBuffer
 	}
 	return v[:n], nil
 }
@@ -1761,7 +1761,7 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 	case tcpip.MaxSegOption:
 		userMSS := v
 		if userMSS < header.TCPMinimumMSS || userMSS > header.TCPMaximumMSS {
-			return &tcpip.ErrInvalidOptionValue{}
+			return tcpip.ErrInvalidOptionValue
 		}
 		e.LockUser()
 		e.userMSS = uint16(userMSS)
@@ -1772,7 +1772,7 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 		// Return not supported if attempting to set this option to
 		// anything other than path MTU discovery disabled.
 		if v != tcpip.PMTUDiscoveryDont {
-			return &tcpip.ErrNotSupported{}
+			return tcpip.ErrNotSupported
 		}
 
 	case tcpip.TTLOption:
@@ -1782,7 +1782,7 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 
 	case tcpip.TCPSynCountOption:
 		if v < 1 || v > 255 {
-			return &tcpip.ErrInvalidOptionValue{}
+			return tcpip.ErrInvalidOptionValue
 		}
 		e.LockUser()
 		e.maxSynRetries = uint8(v)
@@ -1798,7 +1798,7 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 				return nil
 			default:
 				e.UnlockUser()
-				return &tcpip.ErrInvalidOptionValue{}
+				return tcpip.ErrInvalidOptionValue
 			}
 		}
 		var rs tcpip.TCPReceiveBufferSizeRangeOption
@@ -1865,7 +1865,7 @@ func (e *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 
 		// Linux returns ENOENT when an invalid congestion
 		// control algorithm is specified.
-		return &tcpip.ErrNoSuchFile{}
+		return tcpip.ErrNoSuchFile
 
 	case *tcpip.TCPLingerTimeoutOption:
 		e.LockUser()
@@ -1914,7 +1914,7 @@ func (e *endpoint) readyReceiveSize() (int, tcpip.Error) {
 
 	// The endpoint cannot be in listen state.
 	if e.EndpointState() == StateListen {
-		return 0, &tcpip.ErrInvalidEndpointState{}
+		return 0, tcpip.ErrInvalidEndpointState
 	}
 
 	e.rcvQueueInfo.rcvQueueMu.Lock()
@@ -1982,7 +1982,7 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 		return 1, nil
 
 	default:
-		return -1, &tcpip.ErrUnknownProtocolOption{}
+		return -1, tcpip.ErrUnknownProtocolOption
 	}
 }
 
@@ -2064,7 +2064,7 @@ func (e *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
 		}
 
 	default:
-		return &tcpip.ErrUnknownProtocolOption{}
+		return tcpip.ErrUnknownProtocolOption
 	}
 	return nil
 }
@@ -2081,7 +2081,7 @@ func (e *endpoint) checkV4MappedLocked(addr tcpip.FullAddress) (tcpip.FullAddres
 
 // Disconnect implements tcpip.Endpoint.Disconnect.
 func (*endpoint) Disconnect() tcpip.Error {
-	return &tcpip.ErrNotSupported{}
+	return tcpip.ErrNotSupported
 }
 
 // Connect connects the endpoint to its peer.
@@ -2123,7 +2123,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) tcp
 			return nil
 		}
 		// Otherwise return that it's already connected.
-		return &tcpip.ErrAlreadyConnected{}
+		return tcpip.ErrAlreadyConnected
 	}
 
 	nicID := addr.NIC
@@ -2136,7 +2136,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) tcp
 		}
 
 		if nicID != 0 && nicID != e.boundNICID {
-			return &tcpip.ErrNoRoute{}
+			return tcpip.ErrNoRoute
 		}
 
 		nicID = e.boundNICID
@@ -2148,16 +2148,16 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) tcp
 	case StateConnecting, StateSynSent, StateSynRecv:
 		// A connection request has already been issued but hasn't completed
 		// yet.
-		return &tcpip.ErrAlreadyConnecting{}
+		return tcpip.ErrAlreadyConnecting
 
 	case StateError:
 		if err := e.hardErrorLocked(); err != nil {
 			return err
 		}
-		return &tcpip.ErrConnectionAborted{}
+		return tcpip.ErrConnectionAborted
 
 	default:
-		return &tcpip.ErrInvalidEndpointState{}
+		return tcpip.ErrInvalidEndpointState
 	}
 
 	// Find a route to the desired destination.
@@ -2237,7 +2237,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) tcp
 				Dest:         addr,
 			}
 			if _, err := e.stack.ReservePort(e.stack.Rand(), portRes, nil /* testPort */); err != nil {
-				if _, ok := err.(*tcpip.ErrPortInUse); !ok || !reuse {
+				if err != tcpip.ErrPortInUse || !reuse {
 					return false, nil
 				}
 				transEPID := e.TransportEndpointInfo.ID
@@ -2301,7 +2301,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) tcp
 					Dest:         addr,
 				}
 				e.stack.ReleasePort(portRes)
-				if _, ok := err.(*tcpip.ErrPortInUse); ok {
+				if err != tcpip.ErrPortInUse {
 					return false, nil
 				}
 				return false, err
@@ -2360,12 +2360,12 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) tcp
 		go e.protocolMainLoop(handshake, nil) // S/R-SAFE: will be drained before save.
 	}
 
-	return &tcpip.ErrConnectStarted{}
+	return tcpip.ErrConnectStarted
 }
 
 // ConnectEndpoint is not supported.
 func (*endpoint) ConnectEndpoint(tcpip.Endpoint) tcpip.Error {
-	return &tcpip.ErrInvalidEndpointState{}
+	return tcpip.ErrInvalidEndpointState
 }
 
 // Shutdown closes the read and/or write end of the endpoint connection to its
@@ -2379,7 +2379,7 @@ func (e *endpoint) Shutdown(flags tcpip.ShutdownFlags) tcpip.Error {
 		// enter the error state. But this logic cannot belong to the shutdownLocked
 		// method because that method is called during a close(2) (and closing a
 		// connecting socket is not an error).
-		e.resetConnectionLocked(&tcpip.ErrConnectionReset{})
+		e.resetConnectionLocked(tcpip.ErrConnectionReset)
 		e.notifyProtocolGoroutine(notifyShutdown)
 		e.waiterQueue.Notify(waiter.WritableEvents | waiter.EventHUp | waiter.EventErr)
 		return nil
@@ -2403,7 +2403,7 @@ func (e *endpoint) shutdownLocked(flags tcpip.ShutdownFlags) tcpip.Error {
 			// If we're fully closed and we have unread data we need to abort
 			// the connection with a RST.
 			if e.shutdownFlags&tcpip.ShutdownWrite != 0 && rcvBufUsed > 0 {
-				e.resetConnectionLocked(&tcpip.ErrConnectionAborted{})
+				e.resetConnectionLocked(tcpip.ErrConnectionAborted)
 				// Wake up worker to terminate loop.
 				e.notifyProtocolGoroutine(notifyTickleWorker)
 				return nil
@@ -2420,7 +2420,7 @@ func (e *endpoint) shutdownLocked(flags tcpip.ShutdownFlags) tcpip.Error {
 				// Already closed.
 				e.sndQueueInfo.sndQueueMu.Unlock()
 				if e.EndpointState() == StateTimeWait {
-					return &tcpip.ErrNotConnected{}
+					return tcpip.ErrNotConnected
 				}
 				return nil
 			}
@@ -2461,7 +2461,7 @@ func (e *endpoint) shutdownLocked(flags tcpip.ShutdownFlags) tcpip.Error {
 		}
 		return nil
 	default:
-		return &tcpip.ErrNotConnected{}
+		return tcpip.ErrNotConnected
 	}
 }
 
@@ -2489,7 +2489,7 @@ func (e *endpoint) listen(backlog int) tcpip.Error {
 		// Adjust the size of the backlog iff we can fit
 		// existing pending connections into the new one.
 		if e.acceptQueue.endpoints.Len() > backlog {
-			return &tcpip.ErrInvalidEndpointState{}
+			return tcpip.ErrInvalidEndpointState
 		}
 		e.acceptQueue.capacity = backlog
 
@@ -2521,7 +2521,7 @@ func (e *endpoint) listen(backlog int) tcpip.Error {
 	// Endpoint must be bound before it can transition to listen mode.
 	if e.EndpointState() != StateBound {
 		e.stats.ReadErrors.InvalidEndpointState.Increment()
-		return &tcpip.ErrInvalidEndpointState{}
+		return tcpip.ErrInvalidEndpointState
 	}
 
 	// Register the endpoint.
@@ -2574,7 +2574,7 @@ func (e *endpoint) Accept(peerAddr *tcpip.FullAddress) (tcpip.Endpoint, *waiter.
 	e.rcvQueueInfo.rcvQueueMu.Unlock()
 	// Endpoint must be in listen state before it can accept connections.
 	if rcvClosed || e.EndpointState() != StateListen {
-		return nil, nil, &tcpip.ErrInvalidEndpointState{}
+		return nil, nil, tcpip.ErrInvalidEndpointState
 	}
 
 	// Get the new accepted endpoint.
@@ -2585,7 +2585,7 @@ func (e *endpoint) Accept(peerAddr *tcpip.FullAddress) (tcpip.Endpoint, *waiter.
 	}
 	e.acceptMu.Unlock()
 	if n == nil {
-		return nil, nil, &tcpip.ErrWouldBlock{}
+		return nil, nil, tcpip.ErrWouldBlock
 	}
 	e.acceptCond.Signal()
 	if peerAddr != nil {
@@ -2607,7 +2607,7 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) (err tcpip.Error) {
 	// anymore. This is because once the endpoint goes into a connected or
 	// listen state, it is already bound.
 	if e.EndpointState() != StateInitial {
-		return &tcpip.ErrAlreadyBound{}
+		return tcpip.ErrAlreadyBound
 	}
 
 	e.BindAddr = addr.Addr
@@ -2635,7 +2635,7 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) (err tcpip.Error) {
 	if len(addr.Addr) != 0 {
 		nic = e.stack.CheckLocalAddress(addr.NIC, netProto, addr.Addr)
 		if nic == 0 {
-			return &tcpip.ErrBadLocalAddress{}
+			return tcpip.ErrBadLocalAddress
 		}
 		e.TransportEndpointInfo.ID.LocalAddress = addr.Addr
 	}
@@ -2703,7 +2703,7 @@ func (e *endpoint) GetRemoteAddress() (tcpip.FullAddress, tcpip.Error) {
 	defer e.UnlockUser()
 
 	if !e.EndpointState().connected() {
-		return tcpip.FullAddress{}, &tcpip.ErrNotConnected{}
+		return tcpip.FullAddress{}, tcpip.ErrNotConnected
 	}
 
 	return e.getRemoteAddress(), nil
@@ -2784,9 +2784,9 @@ func (e *endpoint) HandleError(transErr stack.TransportError, pkt *stack.PacketB
 	case stack.PacketTooBigTransportError:
 		handlePacketTooBig(transErr.Info())
 	case stack.DestinationHostUnreachableTransportError:
-		e.onICMPError(&tcpip.ErrNoRoute{}, transErr, pkt)
+		e.onICMPError(tcpip.ErrNoRoute, transErr, pkt)
 	case stack.DestinationNetworkUnreachableTransportError:
-		e.onICMPError(&tcpip.ErrNetworkUnreachable{}, transErr, pkt)
+		e.onICMPError(tcpip.ErrNetworkUnreachable, transErr, pkt)
 	}
 }
 

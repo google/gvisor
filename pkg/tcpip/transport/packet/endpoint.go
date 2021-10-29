@@ -161,10 +161,10 @@ func (ep *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResul
 	// If there's no data to read, return that read would block or that the
 	// endpoint is closed.
 	if ep.rcvList.Empty() {
-		var err tcpip.Error = &tcpip.ErrWouldBlock{}
+		var err tcpip.Error = tcpip.ErrWouldBlock
 		if ep.rcvClosed {
 			ep.stats.ReadErrors.ReadClosed.Increment()
-			err = &tcpip.ErrClosedForReceive{}
+			err = tcpip.ErrClosedForReceive
 		}
 		ep.rcvMu.Unlock()
 		return tcpip.ReadResult{}, err
@@ -194,7 +194,7 @@ func (ep *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResul
 
 	n, err := packet.data.ReadTo(dst, opts.Peek)
 	if n == 0 && err != nil {
-		return res, &tcpip.ErrBadBuffer{}
+		return res, tcpip.ErrBadBuffer
 	}
 	res.Count = n
 	return res, nil
@@ -202,7 +202,7 @@ func (ep *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResul
 
 func (ep *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcpip.Error) {
 	if !ep.stack.PacketEndpointWriteSupported() {
-		return 0, &tcpip.ErrNotSupported{}
+		return 0, tcpip.ErrNotSupported
 	}
 
 	ep.mu.Lock()
@@ -211,7 +211,7 @@ func (ep *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tc
 	proto := ep.boundNetProto
 	ep.mu.Unlock()
 	if closed {
-		return 0, &tcpip.ErrClosedForSend{}
+		return 0, tcpip.ErrClosedForSend
 	}
 
 	var remote tcpip.LinkAddress
@@ -228,13 +228,13 @@ func (ep *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tc
 	}
 
 	if nicID == 0 {
-		return 0, &tcpip.ErrInvalidOptionValue{}
+		return 0, tcpip.ErrInvalidOptionValue
 	}
 
 	// TODO(https://gvisor.dev/issue/6538): Avoid this allocation.
 	payloadBytes := make(buffer.View, p.Len())
 	if _, err := io.ReadFull(p, payloadBytes); err != nil {
-		return 0, &tcpip.ErrBadBuffer{}
+		return 0, tcpip.ErrBadBuffer
 	}
 
 	if err := func() tcpip.Error {
@@ -251,31 +251,31 @@ func (ep *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tc
 // Disconnect implements tcpip.Endpoint.Disconnect. Packet sockets cannot be
 // disconnected, and this function always returns tpcip.ErrNotSupported.
 func (*endpoint) Disconnect() tcpip.Error {
-	return &tcpip.ErrNotSupported{}
+	return tcpip.ErrNotSupported
 }
 
 // Connect implements tcpip.Endpoint.Connect. Packet sockets cannot be
 // connected, and this function always returnes *tcpip.ErrNotSupported.
 func (*endpoint) Connect(tcpip.FullAddress) tcpip.Error {
-	return &tcpip.ErrNotSupported{}
+	return tcpip.ErrNotSupported
 }
 
 // Shutdown implements tcpip.Endpoint.Shutdown. Packet sockets cannot be used
 // with Shutdown, and this function always returns *tcpip.ErrNotSupported.
 func (*endpoint) Shutdown(tcpip.ShutdownFlags) tcpip.Error {
-	return &tcpip.ErrNotSupported{}
+	return tcpip.ErrNotSupported
 }
 
 // Listen implements tcpip.Endpoint.Listen. Packet sockets cannot be used with
 // Listen, and this function always returns *tcpip.ErrNotSupported.
 func (*endpoint) Listen(int) tcpip.Error {
-	return &tcpip.ErrNotSupported{}
+	return tcpip.ErrNotSupported
 }
 
 // Accept implements tcpip.Endpoint.Accept. Packet sockets cannot be used with
 // Accept, and this function always returns *tcpip.ErrNotSupported.
 func (*endpoint) Accept(*tcpip.FullAddress) (tcpip.Endpoint, *waiter.Queue, tcpip.Error) {
-	return nil, nil, &tcpip.ErrNotSupported{}
+	return nil, nil, tcpip.ErrNotSupported
 }
 
 // Bind implements tcpip.Endpoint.Bind.
@@ -331,7 +331,7 @@ func (ep *endpoint) GetLocalAddress() (tcpip.FullAddress, tcpip.Error) {
 // GetRemoteAddress implements tcpip.Endpoint.GetRemoteAddress.
 func (*endpoint) GetRemoteAddress() (tcpip.FullAddress, tcpip.Error) {
 	// Even a connected socket doesn't return a remote address.
-	return tcpip.FullAddress{}, &tcpip.ErrNotConnected{}
+	return tcpip.FullAddress{}, tcpip.ErrNotConnected
 }
 
 // Readiness implements tcpip.Endpoint.Readiness.
@@ -360,13 +360,13 @@ func (ep *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 		return nil
 
 	default:
-		return &tcpip.ErrUnknownProtocolOption{}
+		return tcpip.ErrUnknownProtocolOption
 	}
 }
 
 // SetSockOptInt implements tcpip.Endpoint.SetSockOptInt.
 func (*endpoint) SetSockOptInt(tcpip.SockOptInt, int) tcpip.Error {
-	return &tcpip.ErrUnknownProtocolOption{}
+	return tcpip.ErrUnknownProtocolOption
 }
 
 func (ep *endpoint) LastError() tcpip.Error {
@@ -387,7 +387,7 @@ func (ep *endpoint) UpdateLastError(err tcpip.Error) {
 
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
 func (*endpoint) GetSockOpt(tcpip.GettableSocketOption) tcpip.Error {
-	return &tcpip.ErrNotSupported{}
+	return tcpip.ErrNotSupported
 }
 
 // GetSockOptInt implements tcpip.Endpoint.GetSockOptInt.
@@ -404,7 +404,7 @@ func (ep *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 		return v, nil
 
 	default:
-		return -1, &tcpip.ErrUnknownProtocolOption{}
+		return -1, tcpip.ErrUnknownProtocolOption
 	}
 }
 

@@ -241,8 +241,8 @@ func (n *nic) disableLocked() {
 		// This matches linux's behaviour at the time of writing:
 		// https://github.com/torvalds/linux/blob/71c061d2443814de15e177489d5cc00a4a253ef3/net/core/neighbour.c#L371
 		netProto := ep.NetworkProtocolNumber()
-		switch err := n.clearNeighbors(netProto); err.(type) {
-		case nil, *tcpip.ErrNotSupported:
+		switch err := n.clearNeighbors(netProto); err {
+		case nil, tcpip.ErrNotSupported:
 		default:
 			panic(fmt.Sprintf("n.clearNeighbors(%d): %s", netProto, err))
 		}
@@ -336,10 +336,10 @@ func (n *nic) writePacketBuffer(r RouteInfo, protocol tcpip.NetworkProtocolNumbe
 
 func (n *nic) enqueuePacketBuffer(r *Route, protocol tcpip.NetworkProtocolNumber, pkt pendingPacketBuffer) (int, tcpip.Error) {
 	routeInfo, _, err := r.resolvedFields(nil)
-	switch err.(type) {
+	switch err {
 	case nil:
 		return n.writePacketBuffer(routeInfo, protocol, pkt)
-	case *tcpip.ErrWouldBlock:
+	case tcpip.ErrWouldBlock:
 		// As per relevant RFCs, we should queue packets while we wait for link
 		// resolution to complete.
 		//
@@ -519,12 +519,12 @@ func (n *nic) getAddressOrCreateTempInner(protocol tcpip.NetworkProtocolNumber, 
 func (n *nic) addAddress(protocolAddress tcpip.ProtocolAddress, properties AddressProperties) tcpip.Error {
 	ep, ok := n.networkEndpoints[protocolAddress.Protocol]
 	if !ok {
-		return &tcpip.ErrUnknownProtocol{}
+		return tcpip.ErrUnknownProtocol
 	}
 
 	addressableEndpoint, ok := ep.(AddressableEndpoint)
 	if !ok {
-		return &tcpip.ErrNotSupported{}
+		return tcpip.ErrNotSupported
 	}
 
 	addressEndpoint, err := addressableEndpoint.AddAndAcquirePermanentAddress(protocolAddress.AddressWithPrefix, properties)
@@ -572,12 +572,12 @@ func (n *nic) primaryAddresses() []tcpip.ProtocolAddress {
 func (n *nic) PrimaryAddress(proto tcpip.NetworkProtocolNumber) (tcpip.AddressWithPrefix, tcpip.Error) {
 	ep, ok := n.networkEndpoints[proto]
 	if !ok {
-		return tcpip.AddressWithPrefix{}, &tcpip.ErrUnknownProtocol{}
+		return tcpip.AddressWithPrefix{}, tcpip.ErrUnknownProtocol
 	}
 
 	addressableEndpoint, ok := ep.(AddressableEndpoint)
 	if !ok {
-		return tcpip.AddressWithPrefix{}, &tcpip.ErrNotSupported{}
+		return tcpip.AddressWithPrefix{}, tcpip.ErrNotSupported
 	}
 
 	return addressableEndpoint.MainAddress(), nil
@@ -585,27 +585,33 @@ func (n *nic) PrimaryAddress(proto tcpip.NetworkProtocolNumber) (tcpip.AddressWi
 
 // removeAddress removes an address from n.
 func (n *nic) removeAddress(addr tcpip.Address) tcpip.Error {
+	fmt.Printf("removeAddress called\n")
 	for _, ep := range n.networkEndpoints {
 		addressableEndpoint, ok := ep.(AddressableEndpoint)
 		if !ok {
 			continue
 		}
 
-		switch err := addressableEndpoint.RemovePermanentAddress(addr); err.(type) {
-		case *tcpip.ErrBadLocalAddress:
+		fmt.Printf("type addressable endpoint: %T: addr: %T\n", addressableEndpoint, addr)
+
+		switch err := addressableEndpoint.RemovePermanentAddress(addr); err {
+		case tcpip.ErrBadLocalAddress:
+			fmt.Printf("removeAddress continue err: %v\n", err)
 			continue
 		default:
+			fmt.Printf("returning err %+v\n", err)
 			return err
 		}
 	}
 
-	return &tcpip.ErrBadLocalAddress{}
+	fmt.Printf("returning bad local address.\n")
+	return tcpip.ErrBadLocalAddress
 }
 
 func (n *nic) getLinkAddress(addr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, onResolve func(LinkResolutionResult)) tcpip.Error {
 	linkRes, ok := n.linkAddrResolvers[protocol]
 	if !ok {
-		return &tcpip.ErrNotSupported{}
+		return tcpip.ErrNotSupported
 	}
 
 	if linkAddr, ok := linkRes.resolver.ResolveStaticAddress(addr); ok {
@@ -622,7 +628,7 @@ func (n *nic) neighbors(protocol tcpip.NetworkProtocolNumber) ([]NeighborEntry, 
 		return linkRes.neigh.entries(), nil
 	}
 
-	return nil, &tcpip.ErrNotSupported{}
+	return nil, tcpip.ErrNotSupported
 }
 
 func (n *nic) addStaticNeighbor(addr tcpip.Address, protocol tcpip.NetworkProtocolNumber, linkAddress tcpip.LinkAddress) tcpip.Error {
@@ -631,18 +637,18 @@ func (n *nic) addStaticNeighbor(addr tcpip.Address, protocol tcpip.NetworkProtoc
 		return nil
 	}
 
-	return &tcpip.ErrNotSupported{}
+	return tcpip.ErrNotSupported
 }
 
 func (n *nic) removeNeighbor(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) tcpip.Error {
 	if linkRes, ok := n.linkAddrResolvers[protocol]; ok {
 		if !linkRes.neigh.removeEntry(addr) {
-			return &tcpip.ErrBadAddress{}
+			return tcpip.ErrBadAddress
 		}
 		return nil
 	}
 
-	return &tcpip.ErrNotSupported{}
+	return tcpip.ErrNotSupported
 }
 
 func (n *nic) clearNeighbors(protocol tcpip.NetworkProtocolNumber) tcpip.Error {
@@ -651,7 +657,7 @@ func (n *nic) clearNeighbors(protocol tcpip.NetworkProtocolNumber) tcpip.Error {
 		return nil
 	}
 
-	return &tcpip.ErrNotSupported{}
+	return tcpip.ErrNotSupported
 }
 
 // joinGroup adds a new endpoint for the given multicast address, if none
@@ -664,12 +670,12 @@ func (n *nic) joinGroup(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address
 
 	ep, ok := n.networkEndpoints[protocol]
 	if !ok {
-		return &tcpip.ErrNotSupported{}
+		return tcpip.ErrNotSupported
 	}
 
 	gep, ok := ep.(GroupAddressableEndpoint)
 	if !ok {
-		return &tcpip.ErrNotSupported{}
+		return tcpip.ErrNotSupported
 	}
 
 	return gep.JoinGroup(addr)
@@ -680,12 +686,12 @@ func (n *nic) joinGroup(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address
 func (n *nic) leaveGroup(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) tcpip.Error {
 	ep, ok := n.networkEndpoints[protocol]
 	if !ok {
-		return &tcpip.ErrNotSupported{}
+		return tcpip.ErrNotSupported
 	}
 
 	gep, ok := ep.(GroupAddressableEndpoint)
 	if !ok {
-		return &tcpip.ErrNotSupported{}
+		return tcpip.ErrNotSupported
 	}
 
 	return gep.LeaveGroup(addr)
@@ -943,7 +949,7 @@ func (n *nic) nudConfigs(protocol tcpip.NetworkProtocolNumber) (NUDConfiguration
 		return linkRes.neigh.config(), nil
 	}
 
-	return NUDConfigurations{}, &tcpip.ErrNotSupported{}
+	return NUDConfigurations{}, tcpip.ErrNotSupported
 }
 
 // setNUDConfigs sets the NUD configurations for n.
@@ -957,7 +963,7 @@ func (n *nic) setNUDConfigs(protocol tcpip.NetworkProtocolNumber, c NUDConfigura
 		return nil
 	}
 
-	return &tcpip.ErrNotSupported{}
+	return tcpip.ErrNotSupported
 }
 
 func (n *nic) registerPacketEndpoint(netProto tcpip.NetworkProtocolNumber, ep PacketEndpoint) tcpip.Error {
@@ -1005,7 +1011,7 @@ func (n *nic) HandleNeighborProbe(protocol tcpip.NetworkProtocolNumber, addr tcp
 		return nil
 	}
 
-	return &tcpip.ErrNotSupported{}
+	return tcpip.ErrNotSupported
 }
 
 // HandleNeighborConfirmation implements NetworkInterface.
@@ -1015,7 +1021,7 @@ func (n *nic) HandleNeighborConfirmation(protocol tcpip.NetworkProtocolNumber, a
 		return nil
 	}
 
-	return &tcpip.ErrNotSupported{}
+	return tcpip.ErrNotSupported
 }
 
 // CheckLocalAddress implements NetworkInterface.
@@ -1035,7 +1041,7 @@ func (n *nic) CheckLocalAddress(protocol tcpip.NetworkProtocolNumber, addr tcpip
 func (n *nic) checkDuplicateAddress(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address, h DADCompletionHandler) (DADCheckAddressDisposition, tcpip.Error) {
 	d, ok := n.duplicateAddressDetectors[protocol]
 	if !ok {
-		return 0, &tcpip.ErrNotSupported{}
+		return 0, tcpip.ErrNotSupported
 	}
 
 	return d.CheckDuplicateAddress(addr, h), nil
@@ -1044,12 +1050,12 @@ func (n *nic) checkDuplicateAddress(protocol tcpip.NetworkProtocolNumber, addr t
 func (n *nic) setForwarding(protocol tcpip.NetworkProtocolNumber, enable bool) tcpip.Error {
 	ep := n.getNetworkEndpoint(protocol)
 	if ep == nil {
-		return &tcpip.ErrUnknownProtocol{}
+		return tcpip.ErrUnknownProtocol
 	}
 
 	forwardingEP, ok := ep.(ForwardingNetworkEndpoint)
 	if !ok {
-		return &tcpip.ErrNotSupported{}
+		return tcpip.ErrNotSupported
 	}
 
 	forwardingEP.SetForwarding(enable)
@@ -1059,12 +1065,12 @@ func (n *nic) setForwarding(protocol tcpip.NetworkProtocolNumber, enable bool) t
 func (n *nic) forwarding(protocol tcpip.NetworkProtocolNumber) (bool, tcpip.Error) {
 	ep := n.getNetworkEndpoint(protocol)
 	if ep == nil {
-		return false, &tcpip.ErrUnknownProtocol{}
+		return false, tcpip.ErrUnknownProtocol
 	}
 
 	forwardingEP, ok := ep.(ForwardingNetworkEndpoint)
 	if !ok {
-		return false, &tcpip.ErrNotSupported{}
+		return false, tcpip.ErrNotSupported
 	}
 
 	return forwardingEP.Forwarding(), nil

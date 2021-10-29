@@ -148,7 +148,7 @@ func (r *ForwarderRequest) CreateEndpoint(queue *waiter.Queue) (tcpip.Endpoint, 
 	defer r.mu.Unlock()
 
 	if r.segment == nil {
-		return nil, &tcpip.ErrInvalidEndpointState{}
+		return nil, tcpip.ErrInvalidEndpointState
 	}
 
 	f := r.forwarder

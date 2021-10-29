@@ -155,7 +155,7 @@ func (mld *mldState) leaveGroup(groupAddress tcpip.Address) tcpip.Error {
 		return nil
 	}
 
-	return &tcpip.ErrBadLocalAddress{}
+	return tcpip.ErrBadLocalAddress
 }
 
 // softLeaveAll leaves all groups from the perspective of MLD, but remains

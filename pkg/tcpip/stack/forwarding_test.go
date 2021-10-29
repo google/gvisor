@@ -138,7 +138,7 @@ func (*fwdTestNetworkEndpoint) WritePackets(*Route, PacketBufferList, NetworkHea
 func (f *fwdTestNetworkEndpoint) WriteHeaderIncludedPacket(r *Route, pkt *PacketBuffer) tcpip.Error {
 	// The network header should not already be populated.
 	if _, ok := pkt.NetworkHeader().Consume(fwdTestNetHeaderLen); !ok {
-		return &tcpip.ErrMalformedHeader{}
+		return tcpip.ErrMalformedHeader
 	}
 
 	return f.nic.WritePacket(r, fwdTestNetNumber, pkt)
@@ -204,11 +204,11 @@ func (f *fwdTestNetworkProtocol) NewEndpoint(nic NetworkInterface, dispatcher Tr
 }
 
 func (*fwdTestNetworkProtocol) SetOption(tcpip.SettableNetworkProtocolOption) tcpip.Error {
-	return &tcpip.ErrUnknownProtocolOption{}
+	return tcpip.ErrUnknownProtocolOption
 }
 
 func (*fwdTestNetworkProtocol) Option(tcpip.GettableNetworkProtocolOption) tcpip.Error {
-	return &tcpip.ErrUnknownProtocolOption{}
+	return tcpip.ErrUnknownProtocolOption
 }
 
 func (*fwdTestNetworkProtocol) Close() {}
@@ -339,7 +339,7 @@ func (e *fwdTestLinkEndpoint) WritePackets(r RouteInfo, pkts PacketBufferList, p
 }
 
 func (*fwdTestLinkEndpoint) WriteRawPacket(*PacketBuffer) tcpip.Error {
-	return &tcpip.ErrNotSupported{}
+	return tcpip.ErrNotSupported
 }
 
 // Wait implements stack.LinkEndpoint.Wait.

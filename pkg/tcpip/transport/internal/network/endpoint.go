@@ -259,15 +259,15 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 
 	// MSG_MORE is unimplemented. This also means that MSG_EOR is a no-op.
 	if opts.More {
-		return WriteContext{}, &tcpip.ErrInvalidOptionValue{}
+		return WriteContext{}, tcpip.ErrInvalidOptionValue
 	}
 
 	if e.State() == transport.DatagramEndpointStateClosed {
-		return WriteContext{}, &tcpip.ErrInvalidEndpointState{}
+		return WriteContext{}, tcpip.ErrInvalidEndpointState
 	}
 
 	if e.writeShutdown {
-		return WriteContext{}, &tcpip.ErrClosedForSend{}
+		return WriteContext{}, tcpip.ErrClosedForSend
 	}
 
 	route := e.connectedRoute
@@ -275,7 +275,7 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 		// If the user doesn't specify a destination, they should have
 		// connected to another address.
 		if e.State() != transport.DatagramEndpointStateConnected {
-			return WriteContext{}, &tcpip.ErrDestinationRequired{}
+			return WriteContext{}, tcpip.ErrDestinationRequired
 		}
 
 		route.Acquire()
@@ -289,7 +289,7 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 		info := e.Info()
 		if info.BindNICID != 0 {
 			if nicID != 0 && nicID != info.BindNICID {
-				return WriteContext{}, &tcpip.ErrNoRoute{}
+				return WriteContext{}, tcpip.ErrNoRoute
 			}
 
 			nicID = info.BindNICID
@@ -311,7 +311,7 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 
 	if !e.ops.GetBroadcast() && route.IsOutboundBroadcast() {
 		route.Release()
-		return WriteContext{}, &tcpip.ErrBroadcastDisabled{}
+		return WriteContext{}, tcpip.ErrBroadcastDisabled
 	}
 
 	var tos uint8
@@ -418,12 +418,12 @@ func (e *Endpoint) ConnectAndThen(addr tcpip.FullAddress, f func(netProto tcpip.
 		}
 
 		if nicID != 0 && nicID != info.BindNICID {
-			return &tcpip.ErrInvalidEndpointState{}
+			return tcpip.ErrInvalidEndpointState
 		}
 
 		nicID = info.BindNICID
 	default:
-		return &tcpip.ErrInvalidEndpointState{}
+		return tcpip.ErrInvalidEndpointState
 	}
 
 	addr, netProto, err := e.checkV4Mapped(addr)
@@ -468,7 +468,7 @@ func (e *Endpoint) Shutdown() tcpip.Error {
 
 	switch state := e.State(); state {
 	case transport.DatagramEndpointStateInitial, transport.DatagramEndpointStateClosed:
-		return &tcpip.ErrNotConnected{}
+		return tcpip.ErrNotConnected
 	case transport.DatagramEndpointStateBound, transport.DatagramEndpointStateConnected:
 		e.writeShutdown = true
 		return nil
@@ -513,7 +513,7 @@ func (e *Endpoint) BindAndThen(addr tcpip.FullAddress, f func(tcpip.NetworkProto
 	// Don't allow binding once endpoint is not in the initial state
 	// anymore.
 	if e.State() != transport.DatagramEndpointStateInitial {
-		return &tcpip.ErrInvalidEndpointState{}
+		return tcpip.ErrInvalidEndpointState
 	}
 
 	addr, netProto, err := e.checkV4Mapped(addr)
@@ -525,7 +525,7 @@ func (e *Endpoint) BindAndThen(addr tcpip.FullAddress, f func(tcpip.NetworkProto
 	if len(addr.Addr) != 0 && !e.isBroadcastOrMulticast(addr.NIC, netProto, addr.Addr) {
 		nicID = e.stack.CheckLocalAddress(nicID, netProto, addr.Addr)
 		if nicID == 0 {
-			return &tcpip.ErrBadLocalAddress{}
+			return tcpip.ErrBadLocalAddress
 		}
 	}
 
@@ -594,7 +594,7 @@ func (e *Endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 		// Return not supported if the value is not disabling path
 		// MTU discovery.
 		if v != tcpip.PMTUDiscoveryDont {
-			return &tcpip.ErrNotSupported{}
+			return tcpip.ErrNotSupported
 		}
 
 	case tcpip.MulticastTTLOption:
@@ -653,7 +653,7 @@ func (e *Endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 		return v, nil
 
 	default:
-		return -1, &tcpip.ErrUnknownProtocolOption{}
+		return -1, tcpip.ErrUnknownProtocolOption
 	}
 }
 
@@ -680,17 +680,17 @@ func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 
 		if nic != 0 {
 			if !e.stack.CheckNIC(nic) {
-				return &tcpip.ErrBadLocalAddress{}
+				return tcpip.ErrBadLocalAddress
 			}
 		} else {
 			nic = e.stack.CheckLocalAddress(0, netProto, addr)
 			if nic == 0 {
-				return &tcpip.ErrBadLocalAddress{}
+				return tcpip.ErrBadLocalAddress
 			}
 		}
 
 		if info := e.Info(); info.BindNICID != 0 && info.BindNICID != nic {
-			return &tcpip.ErrInvalidEndpointState{}
+			return tcpip.ErrInvalidEndpointState
 		}
 
 		e.multicastNICID = nic
@@ -698,7 +698,7 @@ func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 
 	case *tcpip.AddMembershipOption:
 		if !header.IsV4MulticastAddress(v.MulticastAddr) && !header.IsV6MulticastAddress(v.MulticastAddr) {
-			return &tcpip.ErrInvalidOptionValue{}
+			return tcpip.ErrInvalidOptionValue
 		}
 
 		nicID := v.NIC
@@ -714,7 +714,7 @@ func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 			nicID = e.stack.CheckLocalAddress(nicID, e.netProto, v.InterfaceAddr)
 		}
 		if nicID == 0 {
-			return &tcpip.ErrUnknownDevice{}
+			return tcpip.ErrUnknownDevice
 		}
 
 		memToInsert := multicastMembership{nicID: nicID, multicastAddr: v.MulticastAddr}
@@ -723,7 +723,7 @@ func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 		defer e.mu.Unlock()
 
 		if _, ok := e.multicastMemberships[memToInsert]; ok {
-			return &tcpip.ErrPortInUse{}
+			return tcpip.ErrPortInUse
 		}
 
 		if err := e.stack.JoinGroup(e.netProto, nicID, v.MulticastAddr); err != nil {
@@ -734,7 +734,7 @@ func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 
 	case *tcpip.RemoveMembershipOption:
 		if !header.IsV4MulticastAddress(v.MulticastAddr) && !header.IsV6MulticastAddress(v.MulticastAddr) {
-			return &tcpip.ErrInvalidOptionValue{}
+			return tcpip.ErrInvalidOptionValue
 		}
 
 		nicID := v.NIC
@@ -749,7 +749,7 @@ func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 			nicID = e.stack.CheckLocalAddress(nicID, e.netProto, v.InterfaceAddr)
 		}
 		if nicID == 0 {
-			return &tcpip.ErrUnknownDevice{}
+			return tcpip.ErrUnknownDevice
 		}
 
 		memToRemove := multicastMembership{nicID: nicID, multicastAddr: v.MulticastAddr}
@@ -758,7 +758,7 @@ func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 		defer e.mu.Unlock()
 
 		if _, ok := e.multicastMemberships[memToRemove]; !ok {
-			return &tcpip.ErrBadLocalAddress{}
+			return tcpip.ErrBadLocalAddress
 		}
 
 		if err := e.stack.LeaveGroup(e.netProto, nicID, v.MulticastAddr); err != nil {
@@ -785,7 +785,7 @@ func (e *Endpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
 		e.mu.Unlock()
 
 	default:
-		return &tcpip.ErrUnknownProtocolOption{}
+		return tcpip.ErrUnknownProtocolOption
 	}
 	return nil
 }

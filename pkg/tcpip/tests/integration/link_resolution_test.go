@@ -237,9 +237,9 @@ func TestTCPLinkResolutionFailure(t *testing.T) {
 			name:             "IPv4 without resolvable remote",
 			netProto:         ipv4.ProtocolNumber,
 			remoteAddr:       utils.Ipv4Addr3.AddressWithPrefix.Address,
-			expectedWriteErr: &tcpip.ErrNoRoute{},
+			expectedWriteErr: tcpip.ErrNoRoute,
 			sockError: tcpip.SockError{
-				Err: &tcpip.ErrNoRoute{},
+				Err: tcpip.ErrNoRoute,
 				Dst: tcpip.FullAddress{
 					NIC:  host1NICID,
 					Addr: utils.Ipv4Addr3.AddressWithPrefix.Address,
@@ -262,9 +262,9 @@ func TestTCPLinkResolutionFailure(t *testing.T) {
 			name:             "IPv6 without resolvable remote",
 			netProto:         ipv6.ProtocolNumber,
 			remoteAddr:       utils.Ipv6Addr3.AddressWithPrefix.Address,
-			expectedWriteErr: &tcpip.ErrNoRoute{},
+			expectedWriteErr: tcpip.ErrNoRoute,
 			sockError: tcpip.SockError{
-				Err: &tcpip.ErrNoRoute{},
+				Err: tcpip.ErrNoRoute,
 				Dst: tcpip.FullAddress{
 					NIC:  host1NICID,
 					Addr: utils.Ipv6Addr3.AddressWithPrefix.Address,
@@ -328,8 +328,8 @@ func TestTCPLinkResolutionFailure(t *testing.T) {
 			remoteAddr.Addr = test.remoteAddr
 			{
 				err := clientEP.Connect(remoteAddr)
-				if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
-					t.Fatalf("got clientEP.Connect(%#v) = %s, want = %s", remoteAddr, err, &tcpip.ErrConnectStarted{})
+				if err != tcpip.ErrConnectStarted {
+					t.Fatalf("got clientEP.Connect(%#v) = %s, want = %s", remoteAddr, err, tcpip.ErrConnectStarted)
 				}
 			}
 
@@ -675,27 +675,27 @@ func TestGetLinkAddress(t *testing.T) {
 			name:        "IPv4 not resolvable",
 			netProto:    ipv4.ProtocolNumber,
 			remoteAddr:  utils.Ipv4Addr3.AddressWithPrefix.Address,
-			expectedErr: &tcpip.ErrTimeout{},
+			expectedErr: tcpip.ErrTimeout,
 		},
 		{
 			name:        "IPv6 not resolvable",
 			netProto:    ipv6.ProtocolNumber,
 			remoteAddr:  utils.Ipv6Addr3.AddressWithPrefix.Address,
-			expectedErr: &tcpip.ErrTimeout{},
+			expectedErr: tcpip.ErrTimeout,
 		},
 		{
 			name:        "IPv4 bad local address",
 			netProto:    ipv4.ProtocolNumber,
 			remoteAddr:  utils.Ipv4Addr2.AddressWithPrefix.Address,
 			localAddr:   utils.Ipv4Addr2.AddressWithPrefix.Address,
-			expectedErr: &tcpip.ErrBadLocalAddress{},
+			expectedErr: tcpip.ErrBadLocalAddress,
 		},
 		{
 			name:        "IPv6 bad local address",
 			netProto:    ipv6.ProtocolNumber,
 			remoteAddr:  utils.Ipv6Addr2.AddressWithPrefix.Address,
 			localAddr:   utils.Ipv6Addr2.AddressWithPrefix.Address,
-			expectedErr: &tcpip.ErrBadLocalAddress{},
+			expectedErr: tcpip.ErrBadLocalAddress,
 		},
 	}
 
@@ -713,8 +713,8 @@ func TestGetLinkAddress(t *testing.T) {
 			err := host1Stack.GetLinkAddress(host1NICID, test.remoteAddr, test.localAddr, test.netProto, func(r stack.LinkResolutionResult) {
 				ch <- r
 			})
-			if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-				t.Fatalf("got host1Stack.GetLinkAddress(%d, %s, '', %d, _) = %s, want = %s", host1NICID, test.remoteAddr, test.netProto, err, &tcpip.ErrWouldBlock{})
+			if err != tcpip.ErrWouldBlock {
+				t.Fatalf("got host1Stack.GetLinkAddress(%d, %s, '', %d, _) = %s, want = %s", host1NICID, test.remoteAddr, test.netProto, err, tcpip.ErrWouldBlock)
 			}
 			wantRes := stack.LinkResolutionResult{Err: test.expectedErr}
 			if test.expectedErr == nil {
@@ -796,7 +796,7 @@ func TestRouteResolvedFields(t *testing.T) {
 			localAddr:             utils.Ipv4Addr1.AddressWithPrefix.Address,
 			remoteAddr:            utils.Ipv4Addr3.AddressWithPrefix.Address,
 			immediatelyResolvable: false,
-			expectedErr:           &tcpip.ErrTimeout{},
+			expectedErr:           tcpip.ErrTimeout,
 		},
 		{
 			name:                  "IPv6 not resolvable",
@@ -804,7 +804,7 @@ func TestRouteResolvedFields(t *testing.T) {
 			localAddr:             utils.Ipv6Addr1.AddressWithPrefix.Address,
 			remoteAddr:            utils.Ipv6Addr3.AddressWithPrefix.Address,
 			immediatelyResolvable: false,
-			expectedErr:           &tcpip.ErrTimeout{},
+			expectedErr:           tcpip.ErrTimeout,
 		},
 	}
 
@@ -840,8 +840,8 @@ func TestRouteResolvedFields(t *testing.T) {
 				err := r.ResolvedFields(func(r stack.ResolvedFieldsResult) {
 					ch <- r
 				})
-				if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-					t.Errorf("got r.ResolvedFields(_) = %s, want = %s", err, &tcpip.ErrWouldBlock{})
+				if err != tcpip.ErrWouldBlock {
+					t.Errorf("got r.ResolvedFields(_) = %s, want = %s", err, tcpip.ErrWouldBlock)
 				}
 
 				nudConfigs, err := host1Stack.NUDConfigurations(host1NICID, test.netProto)
@@ -979,7 +979,7 @@ func TestWritePacketsLinkResolution(t *testing.T) {
 				var rOpts tcpip.ReadOptions
 				res, err := serverEP.Read(&writer, rOpts)
 				if err != nil {
-					if _, ok := err.(*tcpip.ErrWouldBlock); ok {
+					if err == tcpip.ErrWouldBlock {
 						// Should not have anymore bytes to read after we read the sent
 						// number of bytes.
 						if count == len(data) {
@@ -1331,8 +1331,8 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 				err := host1Stack.GetLinkAddress(utils.Host1NICID, test.neighborAddr, "", test.netProto, func(r stack.LinkResolutionResult) {
 					ch <- r
 				})
-				if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-					t.Fatalf("got host1Stack.GetLinkAddress(%d, %s, '', %d, _) = %s, want = %s", utils.Host1NICID, test.neighborAddr, test.netProto, err, &tcpip.ErrWouldBlock{})
+				if err != tcpip.ErrWouldBlock {
+					t.Fatalf("got host1Stack.GetLinkAddress(%d, %s, '', %d, _) = %s, want = %s", utils.Host1NICID, test.neighborAddr, test.netProto, err, tcpip.ErrWouldBlock)
 				}
 				if diff := cmp.Diff(stack.LinkResolutionResult{LinkAddress: utils.LinkAddr2, Err: nil}, <-ch); diff != "" {
 					t.Fatalf("link resolution mismatch (-want +got):\n%s", diff)
@@ -1384,8 +1384,8 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 			}
 			{
 				err := clientEP.Connect(listenerAddr)
-				if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
-					t.Fatalf("got clientEP.Connect(%#v) = %s, want = %s", listenerAddr, err, &tcpip.ErrConnectStarted{})
+				if err != tcpip.ErrConnectStarted {
+					t.Fatalf("got clientEP.Connect(%#v) = %s, want = %s", listenerAddr, err, tcpip.ErrConnectStarted)
 				}
 			}
 

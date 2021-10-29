@@ -159,10 +159,10 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 	e.rcvMu.Lock()
 
 	if e.rcvList.Empty() {
-		var err tcpip.Error = &tcpip.ErrWouldBlock{}
+		var err tcpip.Error = tcpip.ErrWouldBlock
 		if e.rcvClosed {
 			e.stats.ReadErrors.ReadClosed.Increment()
-			err = &tcpip.ErrClosedForReceive{}
+			err = tcpip.ErrClosedForReceive
 		}
 		e.rcvMu.Unlock()
 		return tcpip.ReadResult{}, err
@@ -189,7 +189,7 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 
 	n, err := p.data.ReadTo(dst, opts.Peek)
 	if n == 0 && err != nil {
-		return res, &tcpip.ErrBadBuffer{}
+		return res, tcpip.ErrBadBuffer
 	}
 	res.Count = n
 	return res, nil
@@ -208,11 +208,11 @@ func (e *endpoint) prepareForWriteInner(to *tcpip.FullAddress) (retry bool, err 
 		return false, nil
 	case transport.DatagramEndpointStateBound:
 		if to == nil {
-			return false, &tcpip.ErrDestinationRequired{}
+			return false, tcpip.ErrDestinationRequired
 		}
 		return false, nil
 	default:
-		return false, &tcpip.ErrInvalidEndpointState{}
+		return false, tcpip.ErrInvalidEndpointState
 	}
 
 	e.mu.RUnlock()
@@ -237,16 +237,16 @@ func (e *endpoint) prepareForWriteInner(to *tcpip.FullAddress) (retry bool, err 
 // if the data cannot be written.
 func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcpip.Error) {
 	n, err := e.write(p, opts)
-	switch err.(type) {
+	switch err {
 	case nil:
 		e.stats.PacketsSent.Increment()
-	case *tcpip.ErrMessageTooLong, *tcpip.ErrInvalidOptionValue:
+	case tcpip.ErrMessageTooLong, tcpip.ErrInvalidOptionValue:
 		e.stats.WriteErrors.InvalidArgs.Increment()
-	case *tcpip.ErrClosedForSend:
+	case tcpip.ErrClosedForSend:
 		e.stats.WriteErrors.WriteClosed.Increment()
-	case *tcpip.ErrInvalidEndpointState:
+	case tcpip.ErrInvalidEndpointState:
 		e.stats.WriteErrors.InvalidEndpointState.Increment()
-	case *tcpip.ErrNoRoute, *tcpip.ErrBroadcastDisabled, *tcpip.ErrNetworkUnreachable:
+	case tcpip.ErrNoRoute, tcpip.ErrBroadcastDisabled, tcpip.ErrNetworkUnreachable:
 		// Errors indicating any problem with IP routing of the packet.
 		e.stats.SendErrors.NoRoute.Increment()
 	default:
@@ -286,7 +286,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 	// TODO(https://gvisor.dev/issue/6538): Avoid this allocation.
 	v := make([]byte, p.Len())
 	if _, err := io.ReadFull(p, v); err != nil {
-		return 0, &tcpip.ErrBadBuffer{}
+		return 0, tcpip.ErrBadBuffer
 	}
 
 	switch netProto, pktInfo := e.net.NetProto(), ctx.PacketInfo(); netProto {
@@ -348,7 +348,7 @@ func (e *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
 
 func send4(s *stack.Stack, ctx *network.WriteContext, ident uint16, data buffer.View, maxHeaderLength uint16) tcpip.Error {
 	if len(data) < header.ICMPv4MinimumSize {
-		return &tcpip.ErrInvalidEndpointState{}
+		return tcpip.ErrInvalidEndpointState
 	}
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -366,7 +366,7 @@ func send4(s *stack.Stack, ctx *network.WriteContext, ident uint16, data buffer.
 
 	// Linux performs these basic checks.
 	if icmpv4.Type() != header.ICMPv4Echo || icmpv4.Code() != 0 {
-		return &tcpip.ErrInvalidEndpointState{}
+		return tcpip.ErrInvalidEndpointState
 	}
 
 	icmpv4.SetChecksum(0)
@@ -389,7 +389,7 @@ func send4(s *stack.Stack, ctx *network.WriteContext, ident uint16, data buffer.
 
 func send6(s *stack.Stack, ctx *network.WriteContext, ident uint16, data buffer.View, src, dst tcpip.Address, maxHeaderLength uint16) tcpip.Error {
 	if len(data) < header.ICMPv6EchoMinimumSize {
-		return &tcpip.ErrInvalidEndpointState{}
+		return tcpip.ErrInvalidEndpointState
 	}
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -405,7 +405,7 @@ func send6(s *stack.Stack, ctx *network.WriteContext, ident uint16, data buffer.
 	data = data[header.ICMPv6MinimumSize:]
 
 	if icmpv6.Type() != header.ICMPv6EchoRequest || icmpv6.Code() != 0 {
-		return &tcpip.ErrInvalidEndpointState{}
+		return tcpip.ErrInvalidEndpointState
 	}
 
 	pkt.Data().AppendView(data)
@@ -434,7 +434,7 @@ func send6(s *stack.Stack, ctx *network.WriteContext, ident uint16, data buffer.
 
 // Disconnect implements tcpip.Endpoint.Disconnect.
 func (*endpoint) Disconnect() tcpip.Error {
-	return &tcpip.ErrNotSupported{}
+	return tcpip.ErrNotSupported
 }
 
 // Connect connects the endpoint to its peer. Specifying a NIC is optional.
@@ -466,7 +466,7 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) tcpip.Error {
 
 // ConnectEndpoint is not supported.
 func (*endpoint) ConnectEndpoint(tcpip.Endpoint) tcpip.Error {
-	return &tcpip.ErrInvalidEndpointState{}
+	return tcpip.ErrInvalidEndpointState
 }
 
 // Shutdown closes the read and/or write end of the endpoint connection
@@ -477,7 +477,7 @@ func (e *endpoint) Shutdown(flags tcpip.ShutdownFlags) tcpip.Error {
 
 	switch state := e.net.State(); state {
 	case transport.DatagramEndpointStateInitial, transport.DatagramEndpointStateClosed:
-		return &tcpip.ErrNotConnected{}
+		return tcpip.ErrNotConnected
 	case transport.DatagramEndpointStateBound, transport.DatagramEndpointStateConnected:
 	default:
 		panic(fmt.Sprintf("unhandled state = %s", state))
@@ -505,12 +505,12 @@ func (e *endpoint) Shutdown(flags tcpip.ShutdownFlags) tcpip.Error {
 
 // Listen is not supported by UDP, it just fails.
 func (*endpoint) Listen(int) tcpip.Error {
-	return &tcpip.ErrNotSupported{}
+	return tcpip.ErrNotSupported
 }
 
 // Accept is not supported by UDP, it just fails.
 func (*endpoint) Accept(*tcpip.FullAddress) (tcpip.Endpoint, *waiter.Queue, tcpip.Error) {
-	return nil, nil, &tcpip.ErrNotSupported{}
+	return nil, nil, tcpip.ErrNotSupported
 }
 
 func (e *endpoint) registerWithStack(netProto tcpip.NetworkProtocolNumber, id stack.TransportEndpointID) (stack.TransportEndpointID, tcpip.Error) {
@@ -525,10 +525,10 @@ func (e *endpoint) registerWithStack(netProto tcpip.NetworkProtocolNumber, id st
 	_, err := e.stack.PickEphemeralPort(e.stack.Rand(), func(p uint16) (bool, tcpip.Error) {
 		id.LocalPort = p
 		err := e.stack.RegisterTransportEndpoint([]tcpip.NetworkProtocolNumber{netProto}, e.transProto, id, e, ports.Flags{}, bindToDevice)
-		switch err.(type) {
+		switch err {
 		case nil:
 			return true, nil
-		case *tcpip.ErrPortInUse:
+		case tcpip.ErrPortInUse:
 			return false, nil
 		default:
 			return false, err
@@ -542,7 +542,7 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) tcpip.Error {
 	// Don't allow binding once endpoint is not in the initial state
 	// anymore.
 	if e.net.State() != transport.DatagramEndpointStateInitial {
-		return &tcpip.ErrInvalidEndpointState{}
+		return tcpip.ErrInvalidEndpointState
 	}
 
 	err := e.net.BindAndThen(addr, func(boundNetProto tcpip.NetworkProtocolNumber, boundAddr tcpip.Address) tcpip.Error {
@@ -580,7 +580,7 @@ func (e *endpoint) isBroadcastOrMulticast(nicID tcpip.NICID, addr tcpip.Address)
 // Specifying a NIC is optional.
 func (e *endpoint) Bind(addr tcpip.FullAddress) tcpip.Error {
 	if len(addr.Addr) != 0 && e.isBroadcastOrMulticast(addr.NIC, addr.Addr) {
-		return &tcpip.ErrBadLocalAddress{}
+		return tcpip.ErrBadLocalAddress
 	}
 
 	e.mu.Lock()
@@ -608,7 +608,7 @@ func (e *endpoint) GetRemoteAddress() (tcpip.FullAddress, tcpip.Error) {
 		return addr, nil
 	}
 
-	return tcpip.FullAddress{}, &tcpip.ErrNotConnected{}
+	return tcpip.FullAddress{}, tcpip.ErrNotConnected
 }
 
 // Readiness returns the current readiness of the endpoint. For example, if

@@ -259,7 +259,7 @@ func (p *protocol) SetOption(option tcpip.SettableTransportProtocolOption) tcpip
 
 	case *tcpip.TCPSendBufferSizeRangeOption:
 		if v.Min <= 0 || v.Default < v.Min || v.Default > v.Max {
-			return &tcpip.ErrInvalidOptionValue{}
+			return tcpip.ErrInvalidOptionValue
 		}
 		p.mu.Lock()
 		p.sendBufferSize = *v
@@ -268,7 +268,7 @@ func (p *protocol) SetOption(option tcpip.SettableTransportProtocolOption) tcpip
 
 	case *tcpip.TCPReceiveBufferSizeRangeOption:
 		if v.Min <= 0 || v.Default < v.Min || v.Default > v.Max {
-			return &tcpip.ErrInvalidOptionValue{}
+			return tcpip.ErrInvalidOptionValue
 		}
 		p.mu.Lock()
 		p.recvBufferSize = *v
@@ -286,7 +286,7 @@ func (p *protocol) SetOption(option tcpip.SettableTransportProtocolOption) tcpip
 		}
 		// linux returns ENOENT when an invalid congestion control
 		// is specified.
-		return &tcpip.ErrNoSuchFile{}
+		return tcpip.ErrNoSuchFile
 
 	case *tcpip.TCPModerateReceiveBufferOption:
 		p.mu.Lock()
@@ -316,7 +316,7 @@ func (p *protocol) SetOption(option tcpip.SettableTransportProtocolOption) tcpip
 
 	case *tcpip.TCPTimeWaitReuseOption:
 		if *v < tcpip.TCPTimeWaitReuseDisabled || *v > tcpip.TCPTimeWaitReuseLoopbackOnly {
-			return &tcpip.ErrInvalidOptionValue{}
+			return tcpip.ErrInvalidOptionValue
 		}
 		p.mu.Lock()
 		p.timeWaitReuse = *v
@@ -331,7 +331,7 @@ func (p *protocol) SetOption(option tcpip.SettableTransportProtocolOption) tcpip
 		} else if minRTO := time.Duration(*v); minRTO <= p.maxRTO {
 			p.minRTO = minRTO
 		} else {
-			return &tcpip.ErrInvalidOptionValue{}
+			return tcpip.ErrInvalidOptionValue
 		}
 		return nil
 
@@ -343,7 +343,7 @@ func (p *protocol) SetOption(option tcpip.SettableTransportProtocolOption) tcpip
 		} else if maxRTO := time.Duration(*v); maxRTO >= p.minRTO {
 			p.maxRTO = maxRTO
 		} else {
-			return &tcpip.ErrInvalidOptionValue{}
+			return tcpip.ErrInvalidOptionValue
 		}
 		return nil
 
@@ -361,7 +361,7 @@ func (p *protocol) SetOption(option tcpip.SettableTransportProtocolOption) tcpip
 
 	case *tcpip.TCPSynRetriesOption:
 		if *v < 1 || *v > 255 {
-			return &tcpip.ErrInvalidOptionValue{}
+			return tcpip.ErrInvalidOptionValue
 		}
 		p.mu.Lock()
 		p.synRetries = uint8(*v)
@@ -369,7 +369,7 @@ func (p *protocol) SetOption(option tcpip.SettableTransportProtocolOption) tcpip
 		return nil
 
 	default:
-		return &tcpip.ErrUnknownProtocolOption{}
+		return tcpip.ErrUnknownProtocolOption
 	}
 }
 
@@ -473,7 +473,7 @@ func (p *protocol) Option(option tcpip.GettableTransportProtocolOption) tcpip.Er
 		return nil
 
 	default:
-		return &tcpip.ErrUnknownProtocolOption{}
+		return tcpip.ErrUnknownProtocolOption
 	}
 }
 

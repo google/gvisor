@@ -70,24 +70,24 @@ func TestNUDFunctions(t *testing.T) {
 			nicID:                 nicID + 1,
 			netProtoFactory:       []stack.NetworkProtocolFactory{ipv6.NewProtocol},
 			extraLinkCapabilities: stack.CapabilityResolutionRequired,
-			expectedErr:           &tcpip.ErrUnknownNICID{},
+			expectedErr:           tcpip.ErrUnknownNICID,
 		},
 		{
 			name:        "No network protocol",
 			nicID:       nicID,
-			expectedErr: &tcpip.ErrNotSupported{},
+			expectedErr: tcpip.ErrNotSupported,
 		},
 		{
 			name:            "With IPv6",
 			nicID:           nicID,
 			netProtoFactory: []stack.NetworkProtocolFactory{ipv6.NewProtocol},
-			expectedErr:     &tcpip.ErrNotSupported{},
+			expectedErr:     tcpip.ErrNotSupported,
 		},
 		{
 			name:                  "With resolution capability",
 			nicID:                 nicID,
 			extraLinkCapabilities: stack.CapabilityResolutionRequired,
-			expectedErr:           &tcpip.ErrNotSupported{},
+			expectedErr:           tcpip.ErrNotSupported,
 		},
 		{
 			name:                  "With IPv6 and resolution capability",
@@ -160,7 +160,7 @@ func TestNUDFunctions(t *testing.T) {
 
 					// Removing a neighbor that does not exist should give us a bad address
 					// error.
-					wantErr = &tcpip.ErrBadAddress{}
+					wantErr = tcpip.ErrBadAddress
 				}
 			}
 

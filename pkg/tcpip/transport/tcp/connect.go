@@ -239,7 +239,7 @@ func (h *handshake) synSentState(s *segment) tcpip.Error {
 			h.ep.workerCleanup = true
 			// Although the RFC above calls out ECONNRESET, Linux actually returns
 			// ECONNREFUSED here so we do as well.
-			return &tcpip.ErrConnectionRefused{}
+			return tcpip.ErrConnectionRefused
 		}
 		return nil
 	}
@@ -320,7 +320,7 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 		// RFC 793, page 37, states that in the SYN-RCVD state, a reset
 		// is acceptable if the sequence number is in the window.
 		if s.sequenceNumber.InWindow(h.ackNum, h.rcvWnd) {
-			return &tcpip.ErrConnectionRefused{}
+			return tcpip.ErrConnectionRefused
 		}
 		return nil
 	}
@@ -352,7 +352,7 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 		h.ep.sendRaw(buffer.VectorisedView{}, header.TCPFlagRst|header.TCPFlagAck, seq, ack, 0)
 
 		if !h.active {
-			return &tcpip.ErrInvalidEndpointState{}
+			return tcpip.ErrInvalidEndpointState
 		}
 
 		h.resetState()
@@ -572,10 +572,10 @@ func (h *handshake) complete() tcpip.Error {
 		case &h.ep.notificationWaker:
 			n := h.ep.fetchNotifications()
 			if (n&notifyClose)|(n&notifyAbort) != 0 {
-				return &tcpip.ErrAborted{}
+				return tcpip.ErrAborted
 			}
 			if n&notifyShutdown != 0 {
-				return &tcpip.ErrConnectionReset{}
+				return tcpip.ErrConnectionReset
 			}
 			if n&notifyDrain != 0 {
 				for !h.ep.segmentQueue.empty() {
@@ -601,7 +601,7 @@ func (h *handshake) complete() tcpip.Error {
 				}
 				// Flag the handshake failure as aborted if the lastError is
 				// cleared because of a socket layer call.
-				return &tcpip.ErrConnectionAborted{}
+				return tcpip.ErrConnectionAborted
 			}
 		case &h.ep.newSegmentWaker:
 			if err := h.processSegments(); err != nil {
@@ -655,7 +655,7 @@ type backoffTimer struct {
 
 func newBackoffTimer(clock tcpip.Clock, timeout, maxTimeout time.Duration, f func()) (*backoffTimer, tcpip.Error) {
 	if timeout > maxTimeout {
-		return nil, &tcpip.ErrTimeout{}
+		return nil, tcpip.ErrTimeout
 	}
 	bt := &backoffTimer{timeout: timeout, maxTimeout: maxTimeout}
 	bt.t = clock.AfterFunc(timeout, f)
@@ -665,7 +665,7 @@ func newBackoffTimer(clock tcpip.Clock, timeout, maxTimeout time.Duration, f fun
 func (bt *backoffTimer) reset() tcpip.Error {
 	bt.timeout *= 2
 	if bt.timeout > bt.maxTimeout {
-		return &tcpip.ErrTimeout{}
+		return tcpip.ErrTimeout
 	}
 	bt.t.Reset(bt.timeout)
 	return nil
@@ -982,8 +982,8 @@ func (e *endpoint) resetConnectionLocked(err tcpip.Error) {
 	// other than receiving a reset.
 	e.setEndpointState(StateError)
 	e.hardError = err
-	switch err.(type) {
-	case *tcpip.ErrConnectionReset, *tcpip.ErrTimeout:
+	switch err {
+	case tcpip.ErrConnectionReset, tcpip.ErrTimeout:
 	default:
 		// The exact sequence number to be used for the RST is the same as the
 		// one used by Linux. We need to handle the case of window being shrunk
@@ -1107,7 +1107,7 @@ func (e *endpoint) handleReset(s *segment) (ok bool, err tcpip.Error) {
 		//  delete the TCB, and return.
 		case StateCloseWait:
 			e.transitionToStateCloseLocked()
-			e.hardError = &tcpip.ErrAborted{}
+			e.hardError = tcpip.ErrAborted
 			e.notifyProtocolGoroutine(notifyTickleWorker)
 			return false, nil
 		default:
@@ -1120,7 +1120,7 @@ func (e *endpoint) handleReset(s *segment) (ok bool, err tcpip.Error) {
 			// handleSegment is invoked from the processor goroutine
 			// rather than the worker goroutine.
 			e.notifyProtocolGoroutine(notifyResetByPeer)
-			return false, &tcpip.ErrConnectionReset{}
+			return false, tcpip.ErrConnectionReset
 		}
 	}
 	return true, nil
@@ -1266,13 +1266,13 @@ func (e *endpoint) keepaliveTimerExpired() tcpip.Error {
 	if userTimeout != 0 && e.stack.Clock().NowMonotonic().Sub(e.rcv.lastRcvdAckTime) >= userTimeout && e.keepalive.unacked > 0 {
 		e.keepalive.Unlock()
 		e.stack.Stats().TCP.EstablishedTimedout.Increment()
-		return &tcpip.ErrTimeout{}
+		return tcpip.ErrTimeout
 	}
 
 	if e.keepalive.unacked >= e.keepalive.count {
 		e.keepalive.Unlock()
 		e.stack.Stats().TCP.EstablishedTimedout.Increment()
-		return &tcpip.ErrTimeout{}
+		return tcpip.ErrTimeout
 	}
 
 	// RFC1122 4.2.3.6: TCP keepalive is a dataless ACK with
@@ -1352,7 +1352,7 @@ func (e *endpoint) handleWakeup(w, closeWaker *sleep.Waker, closeTimer *tcpip.Ti
 	case &e.snd.resendWaker:
 		if !e.snd.retransmitTimerExpired() {
 			e.stack.Stats().TCP.EstablishedTimedout.Increment()
-			return &tcpip.ErrTimeout{}
+			return tcpip.ErrTimeout
 		}
 	case closeWaker:
 		// This means the socket is being closed due to the
@@ -1381,11 +1381,11 @@ func (e *endpoint) handleWakeup(w, closeWaker *sleep.Waker, closeTimer *tcpip.Ti
 		}
 
 		if n&notifyReset != 0 || n&notifyAbort != 0 {
-			return &tcpip.ErrConnectionAborted{}
+			return tcpip.ErrConnectionAborted
 		}
 
 		if n&notifyResetByPeer != 0 {
-			return &tcpip.ErrConnectionReset{}
+			return tcpip.ErrConnectionReset
 		}
 
 		if n&notifyClose != 0 && e.closed {

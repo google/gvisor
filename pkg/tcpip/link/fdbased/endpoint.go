@@ -506,7 +506,7 @@ func (e *endpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.Net
 }
 
 // WriteRawPacket implements stack.LinkEndpoint.
-func (*endpoint) WriteRawPacket(*stack.PacketBuffer) tcpip.Error { return &tcpip.ErrNotSupported{} }
+func (*endpoint) WriteRawPacket(*stack.PacketBuffer) tcpip.Error { return tcpip.ErrNotSupported }
 
 // WritePacket writes outbound packets to the file descriptor. If it is not
 // currently writable, the packet is dropped.

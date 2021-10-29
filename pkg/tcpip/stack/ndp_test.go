@@ -543,8 +543,8 @@ func TestDADResolve(t *testing.T) {
 			// tentative address.
 			{
 				r, err := s.FindRoute(nicID, "", addr2, header.IPv6ProtocolNumber, false)
-				if _, ok := err.(*tcpip.ErrNoRoute); !ok {
-					t.Errorf("got FindRoute(%d, '', %s, %d, false) = (%+v, %v), want = (_, %s)", nicID, addr2, header.IPv6ProtocolNumber, r, err, &tcpip.ErrNoRoute{})
+				if err != tcpip.ErrNoRoute {
+					t.Errorf("got FindRoute(%d, '', %s, %d, false) = (%+v, %v), want = (_, %s)", nicID, addr2, header.IPv6ProtocolNumber, r, err, tcpip.ErrNoRoute)
 				}
 				if r != nil {
 					r.Release()
@@ -552,8 +552,8 @@ func TestDADResolve(t *testing.T) {
 			}
 			{
 				r, err := s.FindRoute(nicID, addr1, addr2, header.IPv6ProtocolNumber, false)
-				if _, ok := err.(*tcpip.ErrNoRoute); !ok {
-					t.Errorf("got FindRoute(%d, %s, %s, %d, false) = (%+v, %v), want = (_, %s)", nicID, addr1, addr2, header.IPv6ProtocolNumber, r, err, &tcpip.ErrNoRoute{})
+				if err != tcpip.ErrNoRoute {
+					t.Errorf("got FindRoute(%d, %s, %s, %d, false) = (%+v, %v), want = (_, %s)", nicID, addr1, addr2, header.IPv6ProtocolNumber, r, err, tcpip.ErrNoRoute)
 				}
 				if r != nil {
 					r.Release()
@@ -3345,8 +3345,8 @@ func TestAutoGenAddrJobDeprecation(t *testing.T) {
 
 	{
 		err := ep.Connect(dstAddr)
-		if _, ok := err.(*tcpip.ErrNoRoute); !ok {
-			t.Errorf("got ep.Connect(%+v) = %s, want = %s", dstAddr, err, &tcpip.ErrNoRoute{})
+		if err != tcpip.ErrNoRoute {
+			t.Errorf("got ep.Connect(%+v) = %s, want = %s", dstAddr, err, tcpip.ErrNoRoute)
 		}
 	}
 }

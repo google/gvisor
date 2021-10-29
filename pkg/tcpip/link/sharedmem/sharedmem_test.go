@@ -381,8 +381,8 @@ func TestFillTxQueue(t *testing.T) {
 		Data:               buf.ToVectorisedView(),
 	})
 	err := c.ep.WritePacket(r, header.IPv4ProtocolNumber, pkt)
-	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-		t.Fatalf("got WritePacket(...) = %v, want %s", err, &tcpip.ErrWouldBlock{})
+	if err != tcpip.ErrWouldBlock {
+		t.Fatalf("got WritePacket(...) = %v, want %s", err, tcpip.ErrWouldBlock)
 	}
 }
 
@@ -450,8 +450,8 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 		Data:               buf.ToVectorisedView(),
 	})
 	err := c.ep.WritePacket(r, header.IPv4ProtocolNumber, pkt)
-	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-		t.Fatalf("got WritePacket(...) = %v, want %s", err, &tcpip.ErrWouldBlock{})
+	if err != tcpip.ErrWouldBlock {
+		t.Fatalf("got WritePacket(...) = %v, want %s", err, tcpip.ErrWouldBlock)
 	}
 }
 
@@ -495,8 +495,8 @@ func TestFillTxMemory(t *testing.T) {
 		Data:               buf.ToVectorisedView(),
 	})
 	err := c.ep.WritePacket(r, header.IPv4ProtocolNumber, pkt)
-	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-		t.Fatalf("got WritePacket(...) = %v, want %s", err, &tcpip.ErrWouldBlock{})
+	if err != tcpip.ErrWouldBlock {
+		t.Fatalf("got WritePacket(...) = %v, want %s", err, tcpip.ErrWouldBlock)
 	}
 }
 
@@ -537,8 +537,8 @@ func TestFillTxMemoryWithMultiBuffer(t *testing.T) {
 			Data:               buffer.NewView(bufferSize).ToVectorisedView(),
 		})
 		err := c.ep.WritePacket(r, header.IPv4ProtocolNumber, pkt)
-		if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-			t.Fatalf("got WritePacket(...) = %v, want %s", err, &tcpip.ErrWouldBlock{})
+		if err != tcpip.ErrWouldBlock {
+			t.Fatalf("got WritePacket(...) = %v, want %s", err, tcpip.ErrWouldBlock)
 		}
 	}
 

@@ -61,7 +61,7 @@ func (p *protocol) netProto() tcpip.NetworkProtocolNumber {
 // stack.TransportProtocol.NewEndpoint.
 func (p *protocol) NewEndpoint(netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, tcpip.Error) {
 	if netProto != p.netProto() {
-		return nil, &tcpip.ErrUnknownProtocol{}
+		return nil, tcpip.ErrUnknownProtocol
 	}
 	return newEndpoint(p.stack, netProto, p.number, waiterQueue)
 }
@@ -70,7 +70,7 @@ func (p *protocol) NewEndpoint(netProto tcpip.NetworkProtocolNumber, waiterQueue
 // stack.TransportProtocol.NewRawEndpoint.
 func (p *protocol) NewRawEndpoint(netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, tcpip.Error) {
 	if netProto != p.netProto() {
-		return nil, &tcpip.ErrUnknownProtocol{}
+		return nil, tcpip.ErrUnknownProtocol
 	}
 	return raw.NewEndpoint(p.stack, netProto, p.number, waiterQueue)
 }
@@ -107,12 +107,12 @@ func (*protocol) HandleUnknownDestinationPacket(stack.TransportEndpointID, *stac
 
 // SetOption implements stack.TransportProtocol.SetOption.
 func (*protocol) SetOption(tcpip.SettableTransportProtocolOption) tcpip.Error {
-	return &tcpip.ErrUnknownProtocolOption{}
+	return tcpip.ErrUnknownProtocolOption
 }
 
 // Option implements stack.TransportProtocol.Option.
 func (*protocol) Option(tcpip.GettableTransportProtocolOption) tcpip.Error {
-	return &tcpip.ErrUnknownProtocolOption{}
+	return tcpip.ErrUnknownProtocolOption
 }
 
 // Close implements stack.TransportProtocol.Close.

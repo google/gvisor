@@ -1220,23 +1220,23 @@ func TestLinkAddressRequest(t *testing.T) {
 			name:           "Unicast with unassigned address",
 			localAddr:      lladdr1,
 			remoteLinkAddr: linkAddr1,
-			expectedErr:    &tcpip.ErrBadLocalAddress{},
+			expectedErr:    tcpip.ErrBadLocalAddress,
 		},
 		{
 			name:           "Multicast with unassigned address",
 			localAddr:      lladdr1,
 			remoteLinkAddr: "",
-			expectedErr:    &tcpip.ErrBadLocalAddress{},
+			expectedErr:    tcpip.ErrBadLocalAddress,
 		},
 		{
 			name:           "Unicast with no local address available",
 			remoteLinkAddr: linkAddr1,
-			expectedErr:    &tcpip.ErrNetworkUnreachable{},
+			expectedErr:    tcpip.ErrNetworkUnreachable,
 		},
 		{
 			name:           "Multicast with no local address available",
 			remoteLinkAddr: "",
-			expectedErr:    &tcpip.ErrNetworkUnreachable{},
+			expectedErr:    tcpip.ErrNetworkUnreachable,
 		},
 	}
 

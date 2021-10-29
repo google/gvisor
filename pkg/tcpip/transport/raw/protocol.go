@@ -47,5 +47,5 @@ func (CreateOnlyFactory) NewUnassociatedEndpoint(stk *stack.Stack, _ tcpip.Netwo
 // NewPacketEndpoint implements stack.RawFactory.NewPacketEndpoint.
 func (CreateOnlyFactory) NewPacketEndpoint(*stack.Stack, bool, tcpip.NetworkProtocolNumber, *waiter.Queue) (tcpip.Endpoint, tcpip.Error) {
 	// This isn't needed by anything, so it isn't implemented.
-	return nil, &tcpip.ErrNotPermitted{}
+	return nil, tcpip.ErrNotPermitted
 }
