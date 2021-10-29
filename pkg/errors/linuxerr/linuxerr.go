@@ -34,41 +34,41 @@ const maxErrno uint32 = errno.EHWPOISON + 1
 // (e.g. unix.Errno(EPERM.Errno()) == unix.EPERM is true). Converting unix/syscall.Errno
 // to the errors should be done via the lookup methods provided.
 var (
-	NOERROR = errors.New(errno.NOERRNO, "not an error")
-	EPERM   = errors.New(errno.EPERM, "operation not permitted")
-	ENOENT  = errors.New(errno.ENOENT, "no such file or directory")
-	ESRCH   = errors.New(errno.ESRCH, "no such process")
-	EINTR   = errors.New(errno.EINTR, "interrupted system call")
-	EIO     = errors.New(errno.EIO, "I/O error")
-	ENXIO   = errors.New(errno.ENXIO, "no such device or address")
-	E2BIG   = errors.New(errno.E2BIG, "argument list too long")
-	ENOEXEC = errors.New(errno.ENOEXEC, "exec format error")
-	EBADF   = errors.New(errno.EBADF, "bad file number")
-	ECHILD  = errors.New(errno.ECHILD, "no child processes")
-	EAGAIN  = errors.New(errno.EAGAIN, "try again")
-	ENOMEM  = errors.New(errno.ENOMEM, "out of memory")
-	EACCES  = errors.New(errno.EACCES, "permission denied")
-	EFAULT  = errors.New(errno.EFAULT, "bad address")
-	ENOTBLK = errors.New(errno.ENOTBLK, "block device required")
-	EBUSY   = errors.New(errno.EBUSY, "device or resource busy")
-	EEXIST  = errors.New(errno.EEXIST, "file exists")
-	EXDEV   = errors.New(errno.EXDEV, "cross-device link")
-	ENODEV  = errors.New(errno.ENODEV, "no such device")
-	ENOTDIR = errors.New(errno.ENOTDIR, "not a directory")
-	EISDIR  = errors.New(errno.EISDIR, "is a directory")
-	EINVAL  = errors.New(errno.EINVAL, "invalid argument")
-	ENFILE  = errors.New(errno.ENFILE, "file table overflow")
-	EMFILE  = errors.New(errno.EMFILE, "too many open files")
-	ENOTTY  = errors.New(errno.ENOTTY, "not a typewriter")
-	ETXTBSY = errors.New(errno.ETXTBSY, "text file busy")
-	EFBIG   = errors.New(errno.EFBIG, "file too large")
-	ENOSPC  = errors.New(errno.ENOSPC, "no space left on device")
-	ESPIPE  = errors.New(errno.ESPIPE, "illegal seek")
-	EROFS   = errors.New(errno.EROFS, "read-only file system")
-	EMLINK  = errors.New(errno.EMLINK, "too many links")
-	EPIPE   = errors.New(errno.EPIPE, "broken pipe")
-	EDOM    = errors.New(errno.EDOM, "math argument out of domain of func")
-	ERANGE  = errors.New(errno.ERANGE, "math result not representable")
+	noError *errors.Error = nil
+	EPERM                 = errors.New(errno.EPERM, "operation not permitted")
+	ENOENT                = errors.New(errno.ENOENT, "no such file or directory")
+	ESRCH                 = errors.New(errno.ESRCH, "no such process")
+	EINTR                 = errors.New(errno.EINTR, "interrupted system call")
+	EIO                   = errors.New(errno.EIO, "I/O error")
+	ENXIO                 = errors.New(errno.ENXIO, "no such device or address")
+	E2BIG                 = errors.New(errno.E2BIG, "argument list too long")
+	ENOEXEC               = errors.New(errno.ENOEXEC, "exec format error")
+	EBADF                 = errors.New(errno.EBADF, "bad file number")
+	ECHILD                = errors.New(errno.ECHILD, "no child processes")
+	EAGAIN                = errors.New(errno.EAGAIN, "try again")
+	ENOMEM                = errors.New(errno.ENOMEM, "out of memory")
+	EACCES                = errors.New(errno.EACCES, "permission denied")
+	EFAULT                = errors.New(errno.EFAULT, "bad address")
+	ENOTBLK               = errors.New(errno.ENOTBLK, "block device required")
+	EBUSY                 = errors.New(errno.EBUSY, "device or resource busy")
+	EEXIST                = errors.New(errno.EEXIST, "file exists")
+	EXDEV                 = errors.New(errno.EXDEV, "cross-device link")
+	ENODEV                = errors.New(errno.ENODEV, "no such device")
+	ENOTDIR               = errors.New(errno.ENOTDIR, "not a directory")
+	EISDIR                = errors.New(errno.EISDIR, "is a directory")
+	EINVAL                = errors.New(errno.EINVAL, "invalid argument")
+	ENFILE                = errors.New(errno.ENFILE, "file table overflow")
+	EMFILE                = errors.New(errno.EMFILE, "too many open files")
+	ENOTTY                = errors.New(errno.ENOTTY, "not a typewriter")
+	ETXTBSY               = errors.New(errno.ETXTBSY, "text file busy")
+	EFBIG                 = errors.New(errno.EFBIG, "file too large")
+	ENOSPC                = errors.New(errno.ENOSPC, "no space left on device")
+	ESPIPE                = errors.New(errno.ESPIPE, "illegal seek")
+	EROFS                 = errors.New(errno.EROFS, "read-only file system")
+	EMLINK                = errors.New(errno.EMLINK, "too many links")
+	EPIPE                 = errors.New(errno.EPIPE, "broken pipe")
+	EDOM                  = errors.New(errno.EDOM, "math argument out of domain of func")
+	ERANGE                = errors.New(errno.ERANGE, "math result not representable")
 
 	// Errno values from include/uapi/asm-generic/errno.h.
 	EDEADLK         = errors.New(errno.EDEADLK, "resource deadlock would occur")
@@ -186,7 +186,7 @@ var errNotValidError = errors.New(errno.Errno(maxErrno), "not a valid error")
 // errnos (especially uint32(sycall.Errno)) and *errors.Error.
 var errorSlice = []*errors.Error{
 	// Errno values from include/uapi/asm-generic/errno-base.h.
-	errno.NOERRNO: NOERROR,
+	errno.NOERRNO: noError,
 	errno.EPERM:   EPERM,
 	errno.ENOENT:  ENOENT,
 	errno.ESRCH:   ESRCH,
@@ -324,32 +324,45 @@ var errorSlice = []*errors.Error{
 	errno.EHWPOISON:       EHWPOISON,
 }
 
-// ErrorFromErrno gets an error from the list and panics if an invalid entry is requested.
-func ErrorFromErrno(e errno.Errno) *errors.Error {
-	err := errorSlice[e]
+// ErrorFromUnix returns a linuxerr from a unix.Errno.
+func ErrorFromUnix(err unix.Errno) error {
+	if err == unix.Errno(0) {
+		return nil
+	}
+	e := errorSlice[errno.Errno(err)]
 	// Done this way because a single comparison in benchmarks is 2-3 faster
 	// than something like ( if err == nil && err > 0 ).
-	if err != errNotValidError {
-		return err
+	if e == errNotValidError {
+		panic(fmt.Sprintf("invalid error requested with errno: %v", e))
 	}
-	panic(fmt.Sprintf("invalid error requested with errno: %d", e))
+	return e
 }
 
-// Equals compars a linuxerr to a given error
-// TODO(b/34162363): Remove when syserror is removed.
-func Equals(e *errors.Error, err error) bool {
-	if err == nil {
-		return e == NOERROR || e == nil
+// ToError converts a linuxerr to an error type.
+func ToError(err *errors.Error) error {
+	if err == noError {
+		return nil
 	}
-	if e == nil {
-		return err == NOERROR || err == unix.Errno(0)
-	}
+	return err
+}
 
-	switch err.(type) {
-	case *errors.Error:
-		return e == err
-	case unix.Errno, error:
-		return unix.Errno(e.Errno()) == err
+// ToUnix converts a linuxerr to a unix.Errno.
+func ToUnix(e *errors.Error) unix.Errno {
+	var unixErr unix.Errno
+	if e != noError {
+		unixErr = unix.Errno(e.Errno())
 	}
-	return false
+	return unixErr
+}
+
+// Equals compars a linuxerr to a given error.
+func Equals(e *errors.Error, err error) bool {
+	var unixErr unix.Errno
+	if e != noError {
+		unixErr = unix.Errno(e.Errno())
+	}
+	if err == nil {
+		err = noError
+	}
+	return e == err || unixErr == err
 }
