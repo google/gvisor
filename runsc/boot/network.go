@@ -78,6 +78,11 @@ type DefaultRoute struct {
 	Name  string
 }
 
+type Neighbor struct {
+	IP net.IP
+	HardwareAddr net.HardwareAddr
+}
+
 // FDBasedLink configures an fd-based link.
 type FDBasedLink struct {
 	Name               string
@@ -90,6 +95,7 @@ type FDBasedLink struct {
 	RXChecksumOffload  bool
 	LinkAddress        net.HardwareAddr
 	QDisc              config.QueueingDiscipline
+	Neighbors          []Neighbor
 
 	// NumChannels controls how many underlying FD's are to be used to
 	// create this endpoint.
@@ -240,6 +246,11 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 				return err
 			}
 			routes = append(routes, route)
+		}
+
+		for _, neigh := range link.Neighbors {
+			proto, tcpipAddr := ipToAddressAndProto(neigh.IP)
+			n.Stack.AddStaticNeighbor(nicID, proto, tcpipAddr, tcpip.LinkAddress(neigh.HardwareAddr))
 		}
 	}
 
