@@ -86,7 +86,7 @@ func (t *Task) contextValue(key interface{}, isTaskGoroutine bool) interface{} {
 		return t
 	case auth.CtxCredentials:
 		return t.creds.Load()
-	case context.CtxThreadGroupID:
+	case auth.CtxThreadGroupID:
 		return int32(t.tg.ID())
 	case fs.CtxRoot:
 		if !isTaskGoroutine {

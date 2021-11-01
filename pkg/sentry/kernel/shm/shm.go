@@ -444,7 +444,7 @@ func (s *Shm) AddMapping(ctx context.Context, _ memmap.MappingSpace, _ hostarch.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.attachTime = ktime.NowFromContext(ctx)
-	if pid, ok := context.ThreadGroupIDFromContext(ctx); ok {
+	if pid, ok := auth.ThreadGroupIDFromContext(ctx); ok {
 		s.lastAttachDetachPID = pid
 	} else {
 		// AddMapping is called during a syscall, so ctx should always be a task
@@ -468,7 +468,7 @@ func (s *Shm) RemoveMapping(ctx context.Context, _ memmap.MappingSpace, _ hostar
 
 	// If called from a non-task context we also won't have a threadgroup
 	// id. Silently skip updating the lastAttachDetachPid in that case.
-	if pid, ok := context.ThreadGroupIDFromContext(ctx); ok {
+	if pid, ok := auth.ThreadGroupIDFromContext(ctx); ok {
 		s.lastAttachDetachPID = pid
 	} else {
 		log.Debugf("Couldn't obtain pid when removing mapping to %s, not updating the last detach pid.", s.debugLocked())

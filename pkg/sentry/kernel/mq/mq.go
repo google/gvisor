@@ -399,7 +399,7 @@ func (q *Queue) Flush(ctx context.Context) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	pid, ok := context.ThreadGroupIDFromContext(ctx)
+	pid, ok := auth.ThreadGroupIDFromContext(ctx)
 	if ok {
 		if q.subscriber != nil && pid == q.subscriber.pid {
 			q.subscriber = nil
