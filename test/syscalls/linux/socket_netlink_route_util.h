@@ -39,6 +39,9 @@ PosixErrorOr<std::vector<Link>> DumpLinks();
 // Returns the loopback link on the system. ENOENT if not found.
 PosixErrorOr<Link> LoopbackLink();
 
+// Returns an Ethernet link on the system. ENOENT if not found.
+PosixErrorOr<Link> EthernetLink();
+
 // LinkAddLocalAddr adds a new IFA_LOCAL address to the interface.
 PosixError LinkAddLocalAddr(int index, int family, int prefixlen,
                             const void* addr, int addrlen);
@@ -67,6 +70,27 @@ PosixError LinkAdd(const std::string name, const std::string kind);
 
 // LinkDel delete interface
 PosixError LinkDel(const std::string name);
+
+// NeighSet adds a new or updates an existing neighbor.
+PosixError NeighSet(int index, int family,
+                    const void* addr, int addrlen,
+                    const void* lladdr, int lladdrlen);
+
+// NeighAddExclusive adds a new neighbor with NLM_F_EXCL flag
+// to the interface.
+PosixError NeighAddExclusive(int index, int family,
+                             const void* addr, int addrlen,
+                             const void* lladdr, int lladdrlen);
+
+// NeighReplace replaces an existing neighbor.
+PosixError NeighReplace(int index, int family,
+                        const void* addr, int addrlen,
+                        const void* lladdr, int lladdrlen);
+
+// NeighDel removes a neighbor.
+PosixError NeighDel(int index, int family,
+                    const void* addr, int addrlen);
+
 }  // namespace testing
 }  // namespace gvisor
 

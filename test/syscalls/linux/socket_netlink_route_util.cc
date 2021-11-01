@@ -92,6 +92,82 @@ PosixError LinkModifyLocalAddr(int index, int family, int prefixlen,
   return NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len);
 }
 
+// Types of neighbor modifications that may be performed.
+enum class NeighModification {
+  kSet,
+  kAddExclusive,
+  kReplace,
+  kDelete,
+};
+
+// Populates |hdr| with appripriate values for the modification type.
+PosixError PopulateNdmsghdr(NeighModification modification,
+                            struct nlmsghdr* hdr) {
+  switch (modification) {
+    case NeighModification::kSet:
+      hdr->nlmsg_type = RTM_NEWNEIGH;
+      hdr->nlmsg_flags = NLM_F_REQUEST | NLM_F_CREATE | NLM_F_REPLACE | NLM_F_ACK;
+      return NoError();
+    case NeighModification::kAddExclusive:
+      hdr->nlmsg_type = RTM_NEWNEIGH;
+      hdr->nlmsg_flags = NLM_F_REQUEST | NLM_F_CREATE | NLM_F_EXCL | NLM_F_ACK;
+      return NoError();
+    case NeighModification::kReplace:
+      hdr->nlmsg_type = RTM_NEWNEIGH;
+      hdr->nlmsg_flags = NLM_F_REQUEST | NLM_F_REPLACE | NLM_F_ACK;
+      return NoError();
+    case NeighModification::kDelete:
+      hdr->nlmsg_type = RTM_DELNEIGH;
+      hdr->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+      return NoError();
+  }
+
+  return PosixError(EINVAL);
+}
+
+// Adds or removes the specified neighbor from the specified interface.
+PosixError NeighModify(int index, int family,
+                       const void* addr, int addrlen,
+                       const void* lladdr, int lladdrlen,
+                       NeighModification modification) {
+  ASSIGN_OR_RETURN_ERRNO(FileDescriptor fd, NetlinkBoundSocket(NETLINK_ROUTE));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct ndmsg ndm;
+    char attrbuf[512];
+  };
+
+  struct request req = {};
+  PosixError err = PopulateNdmsghdr(modification, &req.hdr);
+  if (!err.ok()) {
+    return err;
+  }
+  req.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(req.ndm));
+  req.hdr.nlmsg_seq = kSeq;
+  req.ndm.ndm_ifindex = index;
+  req.ndm.ndm_family = family;
+  req.ndm.ndm_state = NUD_PERMANENT;
+
+  struct rtattr* rta_a = reinterpret_cast<struct rtattr*>(
+      reinterpret_cast<int8_t*>(&req) + NLMSG_ALIGN(req.hdr.nlmsg_len));
+  rta_a->rta_type = NDA_DST;
+  rta_a->rta_len = RTA_LENGTH(addrlen);
+  memcpy(RTA_DATA(rta_a), addr, addrlen);
+  req.hdr.nlmsg_len = NLMSG_ALIGN(req.hdr.nlmsg_len) + RTA_LENGTH(addrlen);
+
+  if (lladdr) {
+    struct rtattr* rta_ll = reinterpret_cast<struct rtattr*>(
+        reinterpret_cast<int8_t*>(&req) + NLMSG_ALIGN(req.hdr.nlmsg_len));
+    rta_ll->rta_type = NDA_LLADDR;
+    rta_ll->rta_len = RTA_LENGTH(lladdrlen);
+    memcpy(RTA_DATA(rta_ll), lladdr, lladdrlen);
+    req.hdr.nlmsg_len = NLMSG_ALIGN(NLMSG_ALIGN(req.hdr.nlmsg_len) + RTA_LENGTH(lladdrlen));
+  }
+
+  return NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len);
+}
+
 }  // namespace
 
 PosixError DumpLinks(
@@ -304,5 +380,33 @@ PosixError LinkDel(const std::string name) {
 
   return NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len);
 }
+
+PosixError NeighSet(int index, int family,
+                   const void* addr, int addrlen,
+                   const void* lladdr, int lladdrlen) {
+  return NeighModify(index, family, addr, addrlen, lladdr, lladdrlen,
+                     NeighModification::kSet);
+}
+
+PosixError NeighAddExclusive(int index, int family,
+                             const void* addr, int addrlen,
+                             const void* lladdr, int lladdrlen) {
+  return NeighModify(index, family, addr, addrlen, lladdr, lladdrlen,
+                     NeighModification::kAddExclusive);
+}
+
+PosixError NeighReplace(int index, int family,
+                        const void* addr, int addrlen,
+                        const void* lladdr, int lladdrlen) {
+  return NeighModify(index, family, addr, addrlen, lladdr, lladdrlen,
+                     NeighModification::kReplace);
+}
+
+PosixError NeighDel(int index, int family,
+                    const void* addr, int addrlen) {
+  return NeighModify(index, family, addr, addrlen, NULL, 0,
+                     NeighModification::kDelete);
+}
+
 }  // namespace testing
 }  // namespace gvisor

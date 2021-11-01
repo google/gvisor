@@ -220,6 +220,99 @@ func (s *Stack) RemoveInterfaceAddr(idx int32, addr inet.InterfaceAddr) error {
 	return nil
 }
 
+func (s *Stack) appendNeighbor(ns []inet.Neighbor, id tcpip.NICID, family uint8, protocol tcpip.NetworkProtocolNumber) ([]inet.Neighbor, error) {
+	ne, err := s.Stack.Neighbors(id, protocol); if _, ok := err.(*tcpip.ErrNotSupported); ok {
+		return ns, nil
+	} else if err != nil {
+		return ns, syserr.TranslateNetstackError(err).ToError()
+	}
+
+	for _, ni := range ne {
+		var State uint16 = 0
+
+		switch ni.State {
+		case stack.Unknown:
+			State = linux.NUD_NONE
+		case stack.Incomplete:
+			State = linux.NUD_INCOMPLETE
+		case stack.Reachable:
+			State = linux.NUD_REACHABLE
+		case stack.Stale:
+			State = linux.NUD_STALE
+		case stack.Delay:
+			State = linux.NUD_DELAY
+		case stack.Probe:
+			State = linux.NUD_PROBE
+		case stack.Static:
+			State = linux.NUD_PERMANENT
+		case stack.Unreachable:
+			State = linux.NUD_FAILED
+		}
+
+		ns = append(ns, inet.Neighbor{
+			Family: family,
+			Idx: int32(id),
+			Addr: []byte(ni.Addr),
+			LinkAddr: []byte(ni.LinkAddr),
+			State: State,
+		})
+	}
+
+	return ns, nil
+}
+
+// Neighbors implements inet.Stack.Neighbors.
+func (s *Stack) Neighbors() ([]inet.Neighbor, error) {
+	var err error
+	ns := []inet.Neighbor{}
+	for id, _ := range s.Stack.NICInfo() {
+		ns, err = s.appendNeighbor(ns, id, linux.AF_INET, ipv4.ProtocolNumber); if err != nil {
+			return nil, err
+		}
+		ns, err = s.appendNeighbor(ns, id, linux.AF_INET6, ipv6.ProtocolNumber); if err != nil {
+			return nil, err
+		}
+	}
+
+	return ns, nil
+}
+
+func (s *Stack) AddNeighbor(n inet.Neighbor) error {
+	var protocol tcpip.NetworkProtocolNumber
+
+	switch n.Family {
+	case linux.AF_INET:
+		protocol = ipv4.ProtocolNumber
+	case linux.AF_INET6:
+		protocol = ipv6.ProtocolNumber
+	default:
+		panic(fmt.Sprintf("AddStaticNeighbor(%v) failed: unsupported family", n.Family))
+	}
+
+	if n.State != linux.NUD_PERMANENT {
+		return syserr.ErrInvalidArgument.ToError()
+	}
+
+	err := s.Stack.AddStaticNeighbor(tcpip.NICID(n.Idx), protocol, tcpip.Address(n.Addr), tcpip.LinkAddress(n.LinkAddr))
+	return syserr.TranslateNetstackError(err).ToError()
+}
+
+func (s *Stack) RemoveNeighbor(n inet.Neighbor) error {
+	var protocol tcpip.NetworkProtocolNumber
+
+	switch n.Family {
+	case linux.AF_INET:
+		protocol = ipv4.ProtocolNumber
+	case linux.AF_INET6:
+		protocol = ipv6.ProtocolNumber
+	default:
+		panic(fmt.Sprintf("RemoveNeighbor(%v) failed: unsupported family", n.Family))
+	}
+
+	err := s.Stack.RemoveNeighbor(tcpip.NICID(n.Idx), protocol, tcpip.Address(n.Addr))
+	return syserr.TranslateNetstackError(err).ToError()
+}
+
 // TCPReceiveBufferSize implements inet.Stack.TCPReceiveBufferSize.
 func (s *Stack) TCPReceiveBufferSize() (inet.TCPBufferSize, error) {
 	var rs tcpip.TCPReceiveBufferSizeRangeOption

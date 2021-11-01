@@ -45,6 +45,12 @@ type Stack interface {
 	// identified by idx.
 	RemoveInterfaceAddr(idx int32, addr InterfaceAddr) error
 
+	AddNeighbor(neighbor Neighbor) error
+
+	RemoveNeighbor(neighbor Neighbor) error
+
+	Neighbors() ([]Neighbor, error)
+
 	// SupportsIPv6 returns true if the stack supports IPv6 connectivity.
 	SupportsIPv6() bool
 
@@ -138,6 +144,14 @@ type InterfaceAddr struct {
 
 	// Addr is the actual address.
 	Addr []byte
+}
+
+type Neighbor struct {
+	Family uint8
+	Idx int32
+	State uint16
+	Addr []byte
+	LinkAddr []byte
 }
 
 // TCPBufferSize contains settings controlling TCP buffer sizing.

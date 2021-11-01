@@ -346,6 +346,130 @@ func (p *Protocol) dumpAddrs(ctx context.Context, msg *netlink.Message, ms *netl
 	return nil
 }
 
+// dumpNeighbors handles RTM_GETNEIGH dump requests.
+func (p *Protocol) dumpNeighbors(ctx context.Context, msg *netlink.Message, ms *netlink.MessageSet) *syserr.Error {
+	// RTM_GETNEIGH dump requests need not contain anything more than the
+	// netlink header and 1 byte protocol family common to all
+	// NETLINK_ROUTE requests.
+
+	// The RTM_GETNEIGH dump response is a set of RTM_NEWNEIGH messages each
+	// containing an NeighborMessage followed by a set of netlink
+	// attributes.
+
+	// We always send back an NLMSG_DONE.
+	ms.Multi = true
+
+	stack := inet.StackFromContext(ctx)
+	if stack == nil {
+		// No network devices.
+		return nil
+	}
+
+	nas, err := stack.Neighbors(); if err != nil {
+		return syserr.FromError(err)
+	}
+
+	for _, na := range nas {
+		m := ms.AddMessage(linux.NetlinkMessageHeader{
+			Type: linux.RTM_NEWNEIGH,
+		})
+
+		m.Put(&linux.NeighborMessage{
+			Family:    na.Family,
+			IfIndex:   na.Idx,
+			State:     na.State,
+		})
+
+		m.PutAttr(linux.NDA_DST, primitive.AsByteSlice(na.Addr))
+		if len(na.LinkAddr) > 0 {
+			m.PutAttr(linux.NDA_LLADDR, primitive.AsByteSlice(na.LinkAddr))
+		}
+	}
+
+	return nil
+}
+
+// newNeigh handles RTM_NEWNEIGH requests.
+func (p *Protocol) newNeigh(ctx context.Context, msg *netlink.Message, ms *netlink.MessageSet) *syserr.Error {
+	stack := inet.StackFromContext(ctx)
+	if stack == nil {
+		// No network stack.
+		return syserr.ErrProtocolNotSupported
+	}
+
+	var nm linux.NeighborMessage
+	attrs, ok := msg.GetData(&nm)
+	if !ok {
+		return syserr.ErrInvalidArgument
+	}
+
+	var addr []byte
+	var llAddr []byte
+
+	for !attrs.Empty() {
+		ahdr, value, rest, ok := attrs.ParseFirst()
+		if !ok {
+			return syserr.ErrInvalidArgument
+		}
+		attrs = rest
+
+		switch ahdr.Type {
+		case linux.NDA_DST:
+			addr = value
+		case linux.NDA_LLADDR:
+			llAddr = value
+		default:
+			return syserr.ErrNotSupported
+		}
+	}
+
+	return syserr.FromError(stack.AddNeighbor(inet.Neighbor{
+		Family: nm.Family,
+		Idx: nm.IfIndex,
+		Addr: addr,
+		State: nm.State,
+		LinkAddr: llAddr,
+	}))
+}
+
+// delNeigh handles RTM_DELNEIGH requests.
+func (p *Protocol) delNeigh(ctx context.Context, msg *netlink.Message, ms *netlink.MessageSet) *syserr.Error {
+	stack := inet.StackFromContext(ctx)
+	if stack == nil {
+		// No network stack.
+		return syserr.ErrProtocolNotSupported
+	}
+
+	var nm linux.NeighborMessage
+	attrs, ok := msg.GetData(&nm)
+	if !ok {
+		return syserr.ErrInvalidArgument
+	}
+
+	var addr []byte
+
+	for !attrs.Empty() {
+		ahdr, value, rest, ok := attrs.ParseFirst()
+		if !ok {
+			return syserr.ErrInvalidArgument
+		}
+		attrs = rest
+
+		switch ahdr.Type {
+		case linux.NDA_DST:
+			addr = value
+		default:
+			return syserr.ErrNotSupported
+		}
+	}
+
+	return syserr.FromError(stack.RemoveNeighbor(inet.Neighbor{
+		Family: nm.Family,
+		Idx: nm.IfIndex,
+		Addr: addr,
+	}))
+}
+
 // commonPrefixLen reports the length of the longest IP address prefix.
 // This is a simplied version from Golang's src/net/addrselect.go.
 func commonPrefixLen(a, b []byte) (cpl int) {
@@ -642,6 +766,8 @@ func (p *Protocol) ProcessMessage(ctx context.Context, msg *netlink.Message, ms 
 			return p.dumpAddrs(ctx, msg, ms)
 		case linux.RTM_GETROUTE:
 			return p.dumpRoutes(ctx, msg, ms)
+		case linux.RTM_GETNEIGH:
+			return p.dumpNeighbors(ctx, msg, ms)
 		default:
 			return syserr.ErrNotSupported
 		}
@@ -659,6 +785,10 @@ func (p *Protocol) ProcessMessage(ctx context.Context, msg *netlink.Message, ms 
 			return p.newAddr(ctx, msg, ms)
 		case linux.RTM_DELADDR:
 			return p.delAddr(ctx, msg, ms)
+		case linux.RTM_NEWNEIGH:
+			return p.newNeigh(ctx, msg, ms)
+		case linux.RTM_DELNEIGH:
+			return p.delNeigh(ctx, msg, ms)
 		default:
 			return syserr.ErrNotSupported
 		}

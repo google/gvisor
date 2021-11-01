@@ -338,6 +338,21 @@ func (*Stack) RemoveInterfaceAddr(int32, inet.InterfaceAddr) error {
 	return linuxerr.EACCES
 }
 
+// Neighbors implements inet.Stack.Neighbors.
+func (s *Stack) Neighbors() ([]inet.Neighbor, error) {
+	return nil, linuxerr.EACCES
+}
+
+// AddNeighbor implements inet.Stack.AddNeighbor.
+func (s *Stack) AddNeighbor(inet.Neighbor) error {
+	return linuxerr.EACCES
+}
+
+// RemoveNeighbor implements inet.Stack.RemoveNeighbor.
+func (s *Stack) RemoveNeighbor(inet.Neighbor) error {
+	return linuxerr.EACCES
+}
+
 // SupportsIPv6 implements inet.Stack.SupportsIPv6.
 func (s *Stack) SupportsIPv6() bool {
 	return s.supportsIPv6
