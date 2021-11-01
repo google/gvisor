@@ -115,6 +115,40 @@ TEST(MountTest, OpenFileBusy) {
   EXPECT_THAT(umount(dir.path().c_str()), SyscallFailsWithErrno(EBUSY));
 }
 
+TEST(MountTest, UmountNoFollow) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  auto const mountPoint = NewTempAbsPathInDir(dir.path());
+  ASSERT_THAT(mkdir(mountPoint.c_str(), 0777), SyscallSucceeds());
+
+  // Create a symlink in dir which will point to the actual mountpoint.
+  const std::string symlinkInDir = NewTempAbsPathInDir(dir.path());
+  EXPECT_THAT(symlink(mountPoint.c_str(), symlinkInDir.c_str()),
+              SyscallSucceeds());
+
+  // Create a symlink to the dir.
+  const std::string symlinkToDir = NewTempAbsPath();
+  EXPECT_THAT(symlink(dir.path().c_str(), symlinkToDir.c_str()),
+              SyscallSucceeds());
+
+  // Should fail with ELOOP when UMOUNT_NOFOLLOW is specified and the last
+  // component is a symlink.
+  auto mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", mountPoint, "tmpfs", 0, "mode=0700", 0));
+  EXPECT_THAT(umount2(symlinkInDir.c_str(), UMOUNT_NOFOLLOW),
+              SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(unlink(symlinkInDir.c_str()), SyscallSucceeds());
+
+  // UMOUNT_NOFOLLOW should only apply to the last path component. A symlink in
+  // non-last path component should be just fine.
+  EXPECT_THAT(umount2(JoinPath(symlinkToDir, Basename(mountPoint)).c_str(),
+                      UMOUNT_NOFOLLOW),
+              SyscallSucceeds());
+  mount.Release();
+}
+
 TEST(MountTest, UmountDetach) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
