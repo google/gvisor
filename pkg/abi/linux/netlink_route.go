@@ -165,6 +165,16 @@ const (
 	IFLA_GSO_MAX_SIZE    = 41
 )
 
+// Interface link info attributes, from uapi/linux/if_link.h.
+const (
+	IFLA_INFO_UNSPEC     = 0
+	IFLA_INFO_KIND       = 1
+	IFLA_INFO_DATA       = 2
+	IFLA_INFO_XSTATS     = 3
+	IFLA_INFO_SLAVE_KIND = 4
+	IFLA_INFO_SLAVE_DATA = 5
+)
+
 // InterfaceAddrMessage is struct ifaddrmsg, from uapi/linux/if_addr.h.
 //
 // +marshal

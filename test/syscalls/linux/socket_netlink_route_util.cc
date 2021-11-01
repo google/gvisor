@@ -148,6 +148,16 @@ PosixErrorOr<Link> LoopbackLink() {
   return PosixError(ENOENT, "loopback link not found");
 }
 
+PosixErrorOr<Link> EthernetLink() {
+  ASSIGN_OR_RETURN_ERRNO(auto links, DumpLinks());
+  for (const auto& link : links) {
+    if (link.type == ARPHRD_ETHER) {
+      return link;
+    }
+  }
+  return PosixError(ENOENT, "Ethernet link not found");
+}
+
 PosixError LinkAddLocalAddr(int index, int family, int prefixlen,
                             const void* addr, int addrlen) {
   return LinkModifyLocalAddr(index, family, prefixlen, addr, addrlen,
@@ -219,5 +229,80 @@ PosixError LinkSetMacAddr(int index, const void* addr, int addrlen) {
   return NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len);
 }
 
+PosixError LinkAdd(const std::string name, const std::string kind) {
+  ASSIGN_OR_RETURN_ERRNO(FileDescriptor fd, NetlinkBoundSocket(NETLINK_ROUTE));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct ifinfomsg ifm;
+    char buf[1024];
+  };
+
+  struct request req = {};
+  size_t rta_len = 0;
+
+  req.ifm.ifi_family = AF_UNSPEC;
+  req.ifm.ifi_type = ARPHRD_ETHER;
+  req.ifm.ifi_flags = IFF_BROADCAST;
+
+  struct rtattr *rta_name = reinterpret_cast<struct rtattr*>(
+    req.buf);
+
+  rta_name->rta_type = IFLA_IFNAME;
+  rta_name->rta_len = RTA_LENGTH(name.size() + 1);
+  strcpy((char*)RTA_DATA(rta_name), name.c_str());
+  rta_len += RTA_ALIGN(rta_name->rta_len);
+
+  struct rtattr *rta_info = reinterpret_cast<struct rtattr*>(
+    req.buf + rta_len);
+
+  rta_info->rta_type = IFLA_LINKINFO;
+
+  {
+    struct rtattr *rta_info_kind = reinterpret_cast<struct rtattr*>(
+      RTA_DATA(rta_info));
+    rta_info_kind->rta_type = IFLA_INFO_KIND;
+    rta_info_kind->rta_len = RTA_LENGTH(kind.size());
+    char * rta_info_kind_d = reinterpret_cast<char *>(
+      RTA_DATA(rta_info_kind));
+    strcpy(rta_info_kind_d, kind.c_str());
+
+    rta_info->rta_len = RTA_LENGTH(RTA_ALIGN(rta_info_kind->rta_len));
+  }
+
+  rta_len += rta_info->rta_len;
+
+  req.hdr.nlmsg_type = RTM_NEWLINK;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_CREATE | NLM_F_EXCL | NLM_F_ACK;
+  req.hdr.nlmsg_seq = kSeq;
+  req.hdr.nlmsg_len = NLMSG_LENGTH(RTA_ALIGN(sizeof(req.ifm)) + rta_len);
+
+  return NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len);
+}
+
+PosixError LinkDel(const std::string name) {
+  ASSIGN_OR_RETURN_ERRNO(FileDescriptor fd, NetlinkBoundSocket(NETLINK_ROUTE));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct ifinfomsg ifm;
+    struct rtattr rtattr;
+    char ifname[IFNAMSIZ];
+    char pad[NLMSG_ALIGNTO + RTA_ALIGNTO];
+  };
+
+  struct request req = {};
+  req.hdr.nlmsg_type = RTM_DELLINK;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+  req.hdr.nlmsg_seq = kSeq;
+  req.ifm.ifi_family = AF_UNSPEC;
+  req.rtattr.rta_type = IFLA_IFNAME;
+  req.rtattr.rta_len = RTA_LENGTH(name.size() + 1);
+  strncpy(req.ifname, name.c_str(), sizeof(req.ifname));
+  req.hdr.nlmsg_len =
+    NLMSG_LENGTH(sizeof(req.ifm)) + NLMSG_ALIGN(req.rtattr.rta_len);
+
+  return NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len);
+}
 }  // namespace testing
 }  // namespace gvisor

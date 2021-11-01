@@ -354,7 +354,6 @@ TEST(NetlinkRouteTest, RemoveLinkByIndexNotFound) {
 
 TEST(NetlinkRouteTest, RemoveLinkByNameNotFound) {
   const std::string name = "nodevice?!";
-
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
@@ -379,6 +378,28 @@ TEST(NetlinkRouteTest, RemoveLinkByNameNotFound) {
       NLMSG_LENGTH(sizeof(req.ifm)) + NLMSG_ALIGN(req.rtattr.rta_len);
 
   EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq, &req, sizeof(req)),
+              PosixErrorIs(ENODEV, _));
+}
+
+TEST(NetlinkRouteTest, AddLink) {
+  const std::string name1 = "dummy1";
+  const std::string name2 = "dummy2";
+  const std::string kind = "dummy";
+
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+
+  // Add two links
+  EXPECT_NO_ERRNO(LinkAdd(name1, kind));
+  EXPECT_NO_ERRNO(LinkAdd(name2, kind));
+  // Second add with same name should fail.
+  EXPECT_THAT(LinkAdd(name1, kind),
+              PosixErrorIs(EEXIST, _));
+
+  // Delete both links
+  EXPECT_NO_ERRNO(LinkDel(name2));
+  EXPECT_NO_ERRNO(LinkDel(name1));
+  // Second del with same name should fail.
+  EXPECT_THAT(LinkDel(name1),
               PosixErrorIs(ENODEV, _));
 }
 

@@ -27,6 +27,9 @@ type Stack interface {
 	// integers.
 	Interfaces() map[int32]Interface
 
+	// AddDummyInterface adds a new dummy network interface
+	AddDummyInterface(name string) (int32, error)
+
 	// RemoveInterface removes the specified network interface.
 	RemoveInterface(idx int32) error
 

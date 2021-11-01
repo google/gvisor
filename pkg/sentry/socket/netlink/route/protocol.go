@@ -161,6 +161,77 @@ func (p *Protocol) getLink(ctx context.Context, msg *netlink.Message, ms *netlin
 	return nil
 }
 
+// newLink handles RTM_NEWLINK requests.
+func (p *Protocol) newLink(ctx context.Context, msg *netlink.Message, ms *netlink.MessageSet) *syserr.Error {
+	stack := inet.StackFromContext(ctx)
+	if stack == nil {
+		// No network devices.
+		return nil
+	}
+
+	// Parse message.
+	var ifi linux.InterfaceInfoMessage
+	attrs, ok := msg.GetData(&ifi)
+	if !ok {
+		return syserr.ErrInvalidArgument
+	}
+
+	if attrs.Empty() {
+		return nil
+	}
+
+	// Parse attributes.
+	var name []byte
+	var kind string
+
+	for !attrs.Empty() {
+		ahdr, value, rest, ok := attrs.ParseFirst()
+		if !ok {
+			return syserr.ErrInvalidArgument
+		}
+		attrs = rest
+
+		switch ahdr.Type {
+		case linux.IFLA_IFNAME:
+			if len(value) < 1 {
+				return syserr.ErrInvalidArgument
+			}
+			name = value[:len(value)-1]
+		case linux.IFLA_LINKINFO:
+			attrs := netlink.AttrsView(value)
+			for !attrs.Empty() {
+				ahdr, value, rest, ok := attrs.ParseFirst()
+				if !ok {
+					return syserr.ErrInvalidArgument
+				}
+				attrs = rest
+
+				switch ahdr.Type {
+				case linux.IFLA_INFO_KIND:
+					if len(value) < 1 {
+						return syserr.ErrInvalidArgument
+					}
+					kind = string(value)
+				}
+			}
+		}
+	}
+
+	var ret *syserr.Error = nil
+
+	switch kind {
+	case "dummy":
+		_, err := stack.AddDummyInterface(string(name))
+		if err != nil {
+			ret = syserr.FromError(err)
+		}
+	default:
+		ret = syserr.ErrInvalidArgument
+	}
+
+	return ret
+}
+
 // delLink handles RTM_DELLINK requests.
 func (p *Protocol) delLink(ctx context.Context, msg *netlink.Message, ms *netlink.MessageSet) *syserr.Error {
 	stack := inet.StackFromContext(ctx)
@@ -578,6 +649,8 @@ func (p *Protocol) ProcessMessage(ctx context.Context, msg *netlink.Message, ms 
 		switch hdr.Type {
 		case linux.RTM_GETLINK:
 			return p.getLink(ctx, msg, ms)
+		case linux.RTM_NEWLINK:
+			return p.newLink(ctx, msg, ms)
 		case linux.RTM_DELLINK:
 			return p.delLink(ctx, msg, ms)
 		case linux.RTM_GETROUTE:

@@ -62,6 +62,11 @@ PosixError LinkChangeFlags(int index, unsigned int flags, unsigned int change);
 // LinkSetMacAddr sets IFLA_ADDRESS attribute of the interface.
 PosixError LinkSetMacAddr(int index, const void* addr, int addrlen);
 
+// LinkAdd adds a new interface with NLM_F_EXCL flag
+PosixError LinkAdd(const std::string name, const std::string kind);
+
+// LinkDel delete interface
+PosixError LinkDel(const std::string name);
 }  // namespace testing
 }  // namespace gvisor
 

@@ -309,6 +309,11 @@ func (s *Stack) Interfaces() map[int32]inet.Interface {
 	return interfaces
 }
 
+// AddDummyInterface implements inet.Stack.AddDummyInterface.
+func (s *Stack) AddDummyInterface(name string) (int32, error) {
+	return -1, linuxerr.EACCES
+}
+
 // RemoveInterface implements inet.Stack.RemoveInterface.
 func (*Stack) RemoveInterface(int32) error {
 	return linuxerr.EACCES

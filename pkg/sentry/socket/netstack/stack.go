@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/link/dummy"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -69,6 +70,17 @@ func (s *Stack) Interfaces() map[int32]inet.Interface {
 		}
 	}
 	return is
+}
+
+func (s *Stack) AddDummyInterface(name string) (int32, error) {
+	var idx tcpip.NICID = s.nextInterfaceIndex()
+
+	dummyEP := dummy.New()
+	if err := s.Stack.CreateNICWithOptions(idx, dummyEP, stack.NICOptions{Name: name}); err != nil {
+		return -1, syserr.TranslateNetstackError(err).ToError()
+	}
+
+	return int32(idx), nil
 }
 
 // RemoveInterface implements inet.Stack.RemoveInterface.
@@ -144,6 +156,10 @@ func convertAddr(addr inet.InterfaceAddr) (tcpip.ProtocolAddress, error) {
 		},
 	}
 	return protocolAddress, nil
+}
+
+func (s *Stack) nextInterfaceIndex() tcpip.NICID {
+	return tcpip.NICID(s.Stack.UniqueID())
 }
 
 // AddInterfaceAddr implements inet.Stack.AddInterfaceAddr.
