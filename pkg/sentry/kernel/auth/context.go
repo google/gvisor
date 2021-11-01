@@ -24,6 +24,10 @@ type contextID int
 const (
 	// CtxCredentials is a Context.Value key for Credentials.
 	CtxCredentials contextID = iota
+
+	// CtxThreadGroupID is the current thread group ID when a context represents
+	// a task context. The value is represented as an int32.
+	CtxThreadGroupID contextID = iota
 )
 
 // CredentialsFromContext returns a copy of the Credentials used by ctx, or a
@@ -33,6 +37,15 @@ func CredentialsFromContext(ctx context.Context) *Credentials {
 		return v.(*Credentials)
 	}
 	return NewAnonymousCredentials()
+}
+
+// ThreadGroupIDFromContext returns the current thread group ID when ctx
+// represents a task context.
+func ThreadGroupIDFromContext(ctx context.Context) (tgid int32, ok bool) {
+	if tgid := ctx.Value(CtxThreadGroupID); tgid != nil {
+		return tgid.(int32), true
+	}
+	return 0, false
 }
 
 // ContextWithCredentials returns a copy of ctx carrying creds.
