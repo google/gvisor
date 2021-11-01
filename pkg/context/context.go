@@ -29,26 +29,6 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 )
 
-type contextID int
-
-// Globally accessible values from a context. These keys are defined in the
-// context package to resolve dependency cycles by not requiring the caller to
-// import packages usually required to get these information.
-const (
-	// CtxThreadGroupID is the current thread group ID when a context represents
-	// a task context. The value is represented as an int32.
-	CtxThreadGroupID contextID = iota
-)
-
-// ThreadGroupIDFromContext returns the current thread group ID when ctx
-// represents a task context.
-func ThreadGroupIDFromContext(ctx Context) (tgid int32, ok bool) {
-	if tgid := ctx.Value(CtxThreadGroupID); tgid != nil {
-		return tgid.(int32), true
-	}
-	return 0, false
-}
-
 // A Context represents a thread of execution (hereafter "goroutine" to reflect
 // Go idiosyncrasy). It carries state associated with the goroutine across API
 // boundaries.
