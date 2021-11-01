@@ -136,14 +136,14 @@ func Umount2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	if err != nil {
 		return 0, nil, err
 	}
-	tpop, err := getTaskPathOperation(t, linux.AT_FDCWD, path, disallowEmptyPath, nofollowFinalSymlink)
+	tpop, err := getTaskPathOperation(t, linux.AT_FDCWD, path, disallowEmptyPath, shouldFollowFinalSymlink(flags&linux.UMOUNT_NOFOLLOW == 0))
 	if err != nil {
 		return 0, nil, err
 	}
 	defer tpop.Release(t)
 
 	opts := vfs.UmountOptions{
-		Flags: uint32(flags),
+		Flags: uint32(flags &^ linux.UMOUNT_NOFOLLOW),
 	}
 
 	return 0, nil, t.Kernel().VFS().UmountAt(t, creds, &tpop.pop, &opts)
