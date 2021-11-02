@@ -1053,3 +1053,7 @@ syscall_test(
 syscall_test(
     test = "//test/syscalls/linux:verity_mount_test",
 )
+
+syscall_test(
+    test = "//test/syscalls/linux:deleted_test",
+)

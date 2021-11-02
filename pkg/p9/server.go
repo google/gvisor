@@ -34,6 +34,8 @@ type Server struct {
 	// attacher provides the attach function.
 	attacher Attacher
 
+	options AttacherOptions
+
 	// pathTree is the full set of paths opened on this server.
 	//
 	// These may be across different connections, but rename operations
@@ -48,10 +50,15 @@ type Server struct {
 	renameMu sync.RWMutex
 }
 
-// NewServer returns a new server.
+// NewServer returns a new server. attacher may be nil.
 func NewServer(attacher Attacher) *Server {
+	opts := AttacherOptions{}
+	if attacher != nil {
+		opts = attacher.ServerOptions()
+	}
 	return &Server{
 		attacher: attacher,
+		options:  opts,
 		pathTree: newPathNode(),
 	}
 }

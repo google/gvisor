@@ -4432,3 +4432,18 @@ cc_binary(
         "@com_google_absl//absl/container:flat_hash_set",
     ],
 )
+
+cc_binary(
+    name = "deleted_test",
+    testonly = 1,
+    srcs = ["deleted.cc"],
+    linkstatic = 1,
+    deps = [
+        "//test/util:file_descriptor",
+        "//test/util:fs_util",
+        gtest,
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)

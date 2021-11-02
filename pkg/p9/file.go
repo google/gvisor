@@ -21,13 +21,37 @@ import (
 	"gvisor.dev/gvisor/pkg/fd"
 )
 
+// AttacherOptions contains Attacher configuration.
+type AttacherOptions struct {
+	// SetAttrOnDeleted is set to true if it's safe to call File.SetAttr for
+	// deleted files.
+	SetAttrOnDeleted bool
+
+	// AllocateOnDeleted is set to true if it's safe to call File.Allocate for
+	// deleted files.
+	AllocateOnDeleted bool
+}
+
+// NoServerOptions partially implements Attacher with empty AttacherOptions.
+type NoServerOptions struct{}
+
+// ServerOptions implements Attacher.
+func (*NoServerOptions) ServerOptions() AttacherOptions {
+	return AttacherOptions{}
+}
+
 // Attacher is provided by the server.
 type Attacher interface {
 	// Attach returns a new File.
 	//
-	// The client-side attach will be translate to a series of walks from
+	// The client-side attach will be translated to a series of walks from
 	// the file returned by this Attach call.
 	Attach() (File, error)
+
+	// ServerOptions returns configuration options for this attach point.
+	//
+	// This is never caller in the client-side.
+	ServerOptions() AttacherOptions
 }
 
 // File is a set of operations corresponding to a single node.
@@ -301,7 +325,7 @@ type File interface {
 type DefaultWalkGetAttr struct{}
 
 // WalkGetAttr implements File.WalkGetAttr.
-func (DefaultWalkGetAttr) WalkGetAttr([]string) ([]QID, File, AttrMask, Attr, error) {
+func (*DefaultWalkGetAttr) WalkGetAttr([]string) ([]QID, File, AttrMask, Attr, error) {
 	return nil, nil, AttrMask{}, Attr{}, unix.ENOSYS
 }
 
@@ -309,7 +333,7 @@ func (DefaultWalkGetAttr) WalkGetAttr([]string) ([]QID, File, AttrMask, Attr, er
 type DisallowClientCalls struct{}
 
 // SetAttrClose implements File.SetAttrClose.
-func (DisallowClientCalls) SetAttrClose(SetAttrMask, SetAttr) error {
+func (*DisallowClientCalls) SetAttrClose(SetAttrMask, SetAttr) error {
 	panic("SetAttrClose should not be called on the server")
 }
 
@@ -319,6 +343,11 @@ type DisallowServerCalls struct{}
 // Renamed implements File.Renamed.
 func (*DisallowServerCalls) Renamed(File, string) {
 	panic("Renamed should not be called on the client")
+}
+
+// ServerOptions implements Attacher.
+func (*DisallowServerCalls) ServerOptions() AttacherOptions {
+	panic("ServerOptions should not be called on the client")
 }
 
 // DefaultMultiGetAttr implements File.MultiGetAttr() on top of File.
