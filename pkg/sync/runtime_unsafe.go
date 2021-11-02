@@ -19,6 +19,7 @@ package sync
 import (
 	"fmt"
 	"reflect"
+	"sync/atomic"
 	"unsafe"
 )
 
@@ -35,11 +36,37 @@ func Gopark(unlockf func(uintptr, unsafe.Pointer) bool, lock unsafe.Pointer, rea
 //go:linkname gopark runtime.gopark
 func gopark(unlockf func(uintptr, unsafe.Pointer) bool, lock unsafe.Pointer, reason uint8, traceEv byte, traceskip int)
 
-// Goready is runtime.goready.
+// Wakep is runtime.wakep.
 //
 //go:nosplit
-func Goready(gp uintptr, traceskip int) {
+func Wakep() {
+	wakep()
+}
+
+// addrOfSpinning returns the global location of runtime.sched.nmspinning.
+func addrOfSpinning() *int32
+
+// nmspinning is the global location of runtime.sched.nmspinning.
+var nmspinning = addrOfSpinning()
+
+//go:linkname wakep runtime.wakep
+func wakep()
+
+// Goready is runtime.goready.
+//
+// The additional wakep argument controls whether a new thread will be kicked to
+// execute the P. This should be true in most circumstances. However, if the
+// current thread is about to sleep, then this can be false for efficiency.
+//
+//go:nosplit
+func Goready(gp uintptr, traceskip int, wakep bool) {
+	if !wakep {
+		atomic.AddInt32(nmspinning, 1)
+	}
 	goready(gp, traceskip)
+	if !wakep {
+		atomic.AddInt32(nmspinning, -1)
+	}
 }
 
 //go:linkname goready runtime.goready

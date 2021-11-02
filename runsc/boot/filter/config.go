@@ -35,8 +35,7 @@ var allowedSyscalls = seccomp.SyscallRules{
 			seccomp.EqualTo(unix.O_CLOEXEC),
 		},
 	},
-	unix.SYS_EPOLL_CREATE1: {},
-	unix.SYS_EPOLL_CTL:     {},
+	unix.SYS_EPOLL_CTL: {},
 	unix.SYS_EPOLL_PWAIT: []seccomp.Rule{
 		{
 			seccomp.MatchAny{},

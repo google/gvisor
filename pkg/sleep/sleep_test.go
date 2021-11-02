@@ -17,6 +17,8 @@ package sleep
 import (
 	"math/rand"
 	"runtime"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -67,7 +69,7 @@ func AssertedWakerAfterTwoAsserts(t *testing.T) {
 func NotAssertedWakerWithSleeper(t *testing.T) {
 	var w Waker
 	var s Sleeper
-	s.AddWaker(&w, 0)
+	s.AddWaker(&w)
 	if w.IsAsserted() {
 		t.Fatalf("Non-asserted waker is reported as asserted")
 	}
@@ -83,7 +85,7 @@ func NotAssertedWakerWithSleeper(t *testing.T) {
 func NotAssertedWakerAfterWake(t *testing.T) {
 	var w Waker
 	var s Sleeper
-	s.AddWaker(&w, 0)
+	s.AddWaker(&w)
 	w.Assert()
 	s.Fetch(true)
 	if w.IsAsserted() {
@@ -101,9 +103,9 @@ func AssertedWakerBeforeAdd(t *testing.T) {
 	var w Waker
 	var s Sleeper
 	w.Assert()
-	s.AddWaker(&w, 0)
+	s.AddWaker(&w)
 
-	if _, ok := s.Fetch(false); !ok {
+	if s.Fetch(false) == nil {
 		t.Fatalf("Fetch failed even though asserted waker was added")
 	}
 }
@@ -128,7 +130,7 @@ func ClearedWaker(t *testing.T) {
 func ClearedWakerWithSleeper(t *testing.T) {
 	var w Waker
 	var s Sleeper
-	s.AddWaker(&w, 0)
+	s.AddWaker(&w)
 	w.Clear()
 	if w.IsAsserted() {
 		t.Fatalf("Cleared waker is reported as asserted")
@@ -145,7 +147,7 @@ func ClearedWakerWithSleeper(t *testing.T) {
 func ClearedWakerAssertedWithSleeper(t *testing.T) {
 	var w Waker
 	var s Sleeper
-	s.AddWaker(&w, 0)
+	s.AddWaker(&w)
 	w.Assert()
 	w.Clear()
 	if w.IsAsserted() {
@@ -163,7 +165,7 @@ func TestBlock(t *testing.T) {
 	var w Waker
 	var s Sleeper
 
-	s.AddWaker(&w, 0)
+	s.AddWaker(&w)
 
 	// Assert waker after one second.
 	before := time.Now()
@@ -173,7 +175,7 @@ func TestBlock(t *testing.T) {
 	}()
 
 	// Fetch the result and make sure it took at least 500ms.
-	if _, ok := s.Fetch(true); !ok {
+	if s.Fetch(true) == nil {
 		t.Fatalf("Fetch failed unexpectedly")
 	}
 	if d := time.Now().Sub(before); d < 500*time.Millisecond {
@@ -182,7 +184,7 @@ func TestBlock(t *testing.T) {
 
 	// Check that already-asserted waker completes inline.
 	w.Assert()
-	if _, ok := s.Fetch(true); !ok {
+	if s.Fetch(true) == nil {
 		t.Fatalf("Fetch failed unexpectedly")
 	}
 
@@ -195,7 +197,7 @@ func TestBlock(t *testing.T) {
 		time.Sleep(1 * time.Second)
 		w.Assert()
 	}()
-	if _, ok := s.Fetch(true); !ok {
+	if s.Fetch(true) == nil {
 		t.Fatalf("Fetch failed unexpectedly")
 	}
 	if d := time.Now().Sub(before); d < 500*time.Millisecond {
@@ -209,30 +211,30 @@ func TestNonBlock(t *testing.T) {
 	var s Sleeper
 
 	// Don't block when there's no waker.
-	if _, ok := s.Fetch(false); ok {
+	if s.Fetch(false) != nil {
 		t.Fatalf("Fetch succeeded when there is no waker")
 	}
 
 	// Don't block when waker isn't asserted.
-	s.AddWaker(&w, 0)
-	if _, ok := s.Fetch(false); ok {
+	s.AddWaker(&w)
+	if s.Fetch(false) != nil {
 		t.Fatalf("Fetch succeeded when waker was not asserted")
 	}
 
 	// Don't block when waker was asserted, but isn't anymore.
 	w.Assert()
 	w.Clear()
-	if _, ok := s.Fetch(false); ok {
+	if s.Fetch(false) != nil {
 		t.Fatalf("Fetch succeeded when waker was not asserted anymore")
 	}
 
 	// Don't block when waker was consumed by previous Fetch().
 	w.Assert()
-	if _, ok := s.Fetch(false); !ok {
+	if s.Fetch(false) == nil {
 		t.Fatalf("Fetch failed even though waker was asserted")
 	}
 
-	if _, ok := s.Fetch(false); ok {
+	if s.Fetch(false) != nil {
 		t.Fatalf("Fetch succeeded when waker had been consumed")
 	}
 }
@@ -244,24 +246,27 @@ func TestMultiple(t *testing.T) {
 	w1 := Waker{}
 	w2 := Waker{}
 
-	s.AddWaker(&w1, 0)
-	s.AddWaker(&w2, 1)
+	s.AddWaker(&w1)
+	s.AddWaker(&w2)
 
 	w1.Assert()
 	w2.Assert()
 
-	v, ok := s.Fetch(false)
-	if !ok {
+	v := s.Fetch(false)
+	if v == nil {
 		t.Fatalf("Fetch failed when there are asserted wakers")
 	}
 
-	if v != 0 && v != 1 {
+	if v != &w1 && v != &w2 {
 		t.Fatalf("Unexpected waker id: %v", v)
 	}
 
-	want := 1 - v
-	v, ok = s.Fetch(false)
-	if !ok {
+	want := &w1
+	if v == want {
+		want = &w2 // Other waiter.
+	}
+	v = s.Fetch(false)
+	if v == nil {
 		t.Fatalf("Fetch failed when there is an asserted waker")
 	}
 
@@ -281,7 +286,7 @@ func TestDoneFunction(t *testing.T) {
 		s := Sleeper{}
 		w := make([]Waker, n)
 		for j := 0; j < n; j++ {
-			s.AddWaker(&w[j], j)
+			s.AddWaker(&w[j])
 		}
 		s.Done()
 	}
@@ -293,7 +298,7 @@ func TestDoneFunction(t *testing.T) {
 			s := Sleeper{}
 			w := make([]Waker, n)
 			for j := 0; j < n; j++ {
-				s.AddWaker(&w[j], j)
+				s.AddWaker(&w[j])
 			}
 			w[i].Assert()
 			s.Done()
@@ -307,7 +312,7 @@ func TestDoneFunction(t *testing.T) {
 			s := Sleeper{}
 			w := make([]Waker, n)
 			for j := 0; j < n; j++ {
-				s.AddWaker(&w[j], j)
+				s.AddWaker(&w[j])
 			}
 			w[i].Assert()
 			w[i].Clear()
@@ -322,7 +327,7 @@ func TestDoneFunction(t *testing.T) {
 			s := Sleeper{}
 			w := make([]Waker, n)
 			for j := 0; j < n; j++ {
-				s.AddWaker(&w[j], j)
+				s.AddWaker(&w[j])
 			}
 
 			// Pick the number of asserted elements, then assert
@@ -336,19 +341,58 @@ func TestDoneFunction(t *testing.T) {
 	}
 }
 
+// TestAssertFetch tests basic assert fetch functionality.
+func TestAssertFetch(t *testing.T) {
+	const sleeperWakers = 100
+	const wakeRequests = 1000
+	const seedAsserts = 10
+
+	ws := make([]Waker, sleeperWakers)
+	ss := make([]Sleeper, sleeperWakers)
+	for i := 0; i < sleeperWakers; i++ {
+		ss[i].AddWaker(&ws[i])
+		defer ss[i].Done()
+	}
+	var (
+		count int32
+		wg    sync.WaitGroup
+	)
+	for i := 0; i < sleeperWakers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			ss[i].Fetch(true /* block */)
+			for n := 0; n < wakeRequests; n++ {
+				atomic.AddInt32(&count, 1)
+				ss[i].AssertAndFetch(&ws[(i+1)%sleeperWakers])
+			}
+			ws[(i+1)%sleeperWakers].Assert() // Final wake-up.
+		}(i)
+	}
+
+	// Fire the first assertion.
+	ws[0].Assert()
+	wg.Wait()
+
+	// Check what we got.
+	if want := int32(sleeperWakers * wakeRequests); count != want {
+		t.Errorf("unexpected count: got %d, wanted %d", count, want)
+	}
+}
+
 // TestRace tests that multiple wakers can continuously send wake requests to
 // the sleeper.
 func TestRace(t *testing.T) {
 	const wakers = 100
 	const wakeRequests = 10000
 
-	counts := make([]int, wakers)
+	counts := make(map[*Waker]int, wakers)
 	w := make([]Waker, wakers)
 	s := Sleeper{}
 
 	// Associate each waker and start goroutines that will assert them.
 	for i := range w {
-		s.AddWaker(&w[i], i)
+		s.AddWaker(&w[i])
 		go func(w *Waker) {
 			n := 0
 			for n < wakeRequests {
@@ -364,13 +408,13 @@ func TestRace(t *testing.T) {
 
 	// Wait for all wake up notifications from all wakers.
 	for i := 0; i < wakers*wakeRequests; i++ {
-		v, _ := s.Fetch(true)
+		v := s.Fetch(true)
 		counts[v]++
 	}
 
 	// Check that we got the right number for each.
-	for i, v := range counts {
-		if v != wakeRequests {
+	for i := range w {
+		if v := counts[&w[i]]; v != wakeRequests {
 			t.Errorf("Waker %v only got %v wakes", i, v)
 		}
 	}
@@ -384,7 +428,7 @@ func TestRaceInOrder(t *testing.T) {
 
 	// Associate each waker and start goroutines that will assert them.
 	for i := range w {
-		s.AddWaker(&w[i], i)
+		s.AddWaker(&w[i])
 	}
 	go func() {
 		for i := range w {
@@ -393,10 +437,10 @@ func TestRaceInOrder(t *testing.T) {
 	}()
 
 	// Wait for all wake up notifications from all wakers.
-	for want := range w {
-		got, _ := s.Fetch(true)
-		if got != want {
-			t.Fatalf("got %d want %d", got, want)
+	for i := range w {
+		got := s.Fetch(true)
+		if want := &w[i]; got != want {
+			t.Fatalf("got %v want %v", got, want)
 		}
 	}
 }
@@ -408,7 +452,7 @@ func BenchmarkSleeperMultiSelect(b *testing.B) {
 	s := Sleeper{}
 	w := make([]Waker, count)
 	for i := range w {
-		s.AddWaker(&w[i], i)
+		s.AddWaker(&w[i])
 	}
 
 	b.ResetTimer()
@@ -444,7 +488,7 @@ func BenchmarkGoMultiSelect(b *testing.B) {
 func BenchmarkSleeperSingleSelect(b *testing.B) {
 	s := Sleeper{}
 	w := Waker{}
-	s.AddWaker(&w, 0)
+	s.AddWaker(&w)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -494,16 +538,47 @@ func BenchmarkGoAssertNonWaiting(b *testing.B) {
 // a new goroutine doesn't run immediately (i.e., the creator of a new goroutine
 // is allowed to go to sleep before the new goroutine has a chance to run).
 func BenchmarkSleeperWaitOnSingleSelect(b *testing.B) {
-	s := Sleeper{}
-	w := Waker{}
-	s.AddWaker(&w, 0)
-	for i := 0; i < b.N; i++ {
-		go func() {
+	var (
+		s  Sleeper
+		w  Waker
+		ns Sleeper
+		nw Waker
+	)
+	ns.AddWaker(&nw)
+	s.AddWaker(&w)
+	go func() {
+		for i := 0; i < b.N; i++ {
+			ns.Fetch(true)
 			w.Assert()
-		}()
+		}
+	}()
+	for i := 0; i < b.N; i++ {
+		nw.Assert()
 		s.Fetch(true)
 	}
+}
 
+// BenchmarkSleeperWaitOnSingleSelectSync is a modification of the similarly
+// named benchmark, except it uses the synchronous AssertAndFetch.
+func BenchmarkSleeperWaitOnSingleSelectSync(b *testing.B) {
+	var (
+		s  Sleeper
+		w  Waker
+		ns Sleeper
+		nw Waker
+	)
+	ns.AddWaker(&nw)
+	s.AddWaker(&w)
+	go func() {
+		ns.Fetch(true)
+		defer w.Assert()
+		for i := 0; i < b.N-1; i++ {
+			ns.AssertAndFetch(&w)
+		}
+	}()
+	for i := 0; i < b.N; i++ {
+		s.AssertAndFetch(&nw)
+	}
 }
 
 // BenchmarkGoWaitOnSingleSelect measures how long it takes to wait on one
@@ -511,11 +586,13 @@ func BenchmarkSleeperWaitOnSingleSelect(b *testing.B) {
 // goroutine doesn't run immediately (i.e., the creator of a new goroutine is
 // allowed to go to sleep before the new goroutine has a chance to run).
 func BenchmarkGoWaitOnSingleSelect(b *testing.B) {
-	ch := make(chan struct{}, 1)
-	for i := 0; i < b.N; i++ {
-		go func() {
+	ch := make(chan struct{})
+	go func() {
+		for i := 0; i < b.N; i++ {
 			ch <- struct{}{}
-		}()
+		}
+	}()
+	for i := 0; i < b.N; i++ {
 		<-ch
 	}
 }
@@ -526,18 +603,55 @@ func BenchmarkGoWaitOnSingleSelect(b *testing.B) {
 // allowed to go to sleep before the new goroutine has a chance to run).
 func BenchmarkSleeperWaitOnMultiSelect(b *testing.B) {
 	const count = 4
-	s := Sleeper{}
+	var (
+		s  Sleeper
+		ns Sleeper
+		nw Waker
+	)
+	ns.AddWaker(&nw)
 	w := make([]Waker, count)
 	for i := range w {
-		s.AddWaker(&w[i], i)
+		s.AddWaker(&w[i])
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		go func() {
+	go func() {
+		for i := 0; i < b.N; i++ {
+			ns.Fetch(true)
 			w[count-1].Assert()
-		}()
+		}
+	}()
+	for i := 0; i < b.N; i++ {
+		nw.Assert()
 		s.Fetch(true)
+	}
+}
+
+// BenchmarkSleeperWaitOnMultiSelectSync is a modification of the similarly
+// named benchmark, except it uses the synchronous AssertAndFetch.
+func BenchmarkSleeperWaitOnMultiSelectSync(b *testing.B) {
+	const count = 4
+	var (
+		s  Sleeper
+		ns Sleeper
+		nw Waker
+	)
+	ns.AddWaker(&nw)
+	w := make([]Waker, count)
+	for i := range w {
+		s.AddWaker(&w[i])
+	}
+
+	b.ResetTimer()
+	go func() {
+		ns.Fetch(true)
+		defer w[count-1].Assert()
+		for i := 0; i < b.N-1; i++ {
+			ns.AssertAndFetch(&w[count-1])
+		}
+	}()
+	for i := 0; i < b.N; i++ {
+		s.AssertAndFetch(&nw)
 	}
 }
 
@@ -549,14 +663,16 @@ func BenchmarkGoWaitOnMultiSelect(b *testing.B) {
 	const count = 4
 	ch := make([]chan struct{}, count)
 	for i := range ch {
-		ch[i] = make(chan struct{}, 1)
+		ch[i] = make(chan struct{})
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		go func() {
+	go func() {
+		for i := 0; i < b.N; i++ {
 			ch[count-1] <- struct{}{}
-		}()
+		}
+	}()
+	for i := 0; i < b.N; i++ {
 		select {
 		case <-ch[0]:
 		case <-ch[1]:

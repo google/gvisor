@@ -22,6 +22,8 @@ go_library(
         "race_amd64.s",
         "race_arm64.s",
         "race_unsafe.go",
+        "runtime_amd64.s",
+        "runtime_arm64.s",
         "runtime_unsafe.go",
         "rwmutex_unsafe.go",
         "seqcount.go",
