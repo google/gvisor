@@ -4,7 +4,7 @@ package(licenses = ["notice"])
 
 go_library(
     name = "cgroup",
-    srcs = ["cgroup.go"],
+    srcs = ["cgroup.go", "cgroup_v2.go"],
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/cleanup",
@@ -19,7 +19,7 @@ go_library(
 go_test(
     name = "cgroup_test",
     size = "small",
-    srcs = ["cgroup_test.go"],
+    srcs = ["cgroup_test.go", "cgroup_v2_test.go"],
     library = ":cgroup",
     tags = ["local"],
     deps = [
