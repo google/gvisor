@@ -12,7 +12,7 @@ MOCK_SRC_PACKAGE = "gvisor.dev/gvisor/pkg/p9"
 # mockgen_reflect is a source file that contains mock generation code that
 # imports the p9 package and generates a specification via reflection. The
 # usual generation path must be split into two distinct parts because the full
-# source tree is not available to all build targets. Only declared depencies
+# source tree is not available to all build targets. Only declared dependencies
 # are available (and even then, not the Go source files).
 genrule(
     name = "mockgen_reflect",

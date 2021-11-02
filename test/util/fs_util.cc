@@ -188,6 +188,14 @@ PosixError MknodAt(const FileDescriptor& dfd, absl::string_view path, int mode,
   return NoError();
 }
 
+PosixError Unlink(absl::string_view path) {
+  int res = unlink(std::string(path).c_str());
+  if (res < 0) {
+    return PosixError(errno, absl::StrCat("unlink ", path));
+  }
+  return NoError();
+}
+
 PosixError UnlinkAt(const FileDescriptor& dfd, absl::string_view path,
                     int flags) {
   int res = unlinkat(dfd.get(), std::string(path).c_str(), flags);

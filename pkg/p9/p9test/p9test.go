@@ -307,6 +307,7 @@ func NewHarness(t *testing.T) (*Harness, *p9.Client) {
 	}
 
 	// Start the server, synchronized on exit.
+	h.Attacher.EXPECT().ServerOptions().Return(p9.AttacherOptions{}).Times(1)
 	server := p9.NewServer(h.Attacher)
 	h.wg.Add(1)
 	go func() {

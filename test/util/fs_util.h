@@ -71,6 +71,7 @@ PosixError MknodAt(const FileDescriptor& dfd, absl::string_view path, int mode,
                    dev_t dev);
 
 // Unlink the file.
+PosixError Unlink(absl::string_view path);
 PosixError UnlinkAt(const FileDescriptor& dfd, absl::string_view path,
                     int flags);
 
