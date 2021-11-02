@@ -140,6 +140,17 @@ func (a *attachPoint) Attach() (p9.File, error) {
 	return lf, nil
 }
 
+// ServerOptions implements p9.Attacher. It's safe to call SetAttr and Allocate
+// on deleted files because fsgofer either uses an existing FD or opens a new
+// one using the magic symlink in `/proc/[pid]/fd` and cannot mistakely open
+// a file that was created in the same path as the delete file.
+func (a *attachPoint) ServerOptions() p9.AttacherOptions {
+	return p9.AttacherOptions{
+		SetAttrOnDeleted:  true,
+		AllocateOnDeleted: true,
+	}
+}
+
 // makeQID returns a unique QID for the given stat buffer.
 func (a *attachPoint) makeQID(stat *unix.Stat_t) p9.QID {
 	a.deviceMu.Lock()
