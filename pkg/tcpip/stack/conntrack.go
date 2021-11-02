@@ -119,22 +119,24 @@ type conn struct {
 	//
 	// +checklocks:mu
 	destinationManip bool
+
+	stateMu sync.RWMutex `state:"nosave"`
 	// tcb is TCB control block. It is used to keep track of states
 	// of tcp connection.
 	//
-	// +checklocks:mu
+	// +checklocks:stateMu
 	tcb tcpconntrack.TCB
 	// lastUsed is the last time the connection saw a relevant packet, and
 	// is updated by each packet on the connection.
 	//
-	// +checklocks:mu
+	// +checklocks:stateMu
 	lastUsed tcpip.MonotonicTime
 }
 
 // timedOut returns whether the connection timed out based on its state.
 func (cn *conn) timedOut(now tcpip.MonotonicTime) bool {
-	cn.mu.RLock()
-	defer cn.mu.RUnlock()
+	cn.stateMu.RLock()
+	defer cn.stateMu.RUnlock()
 	if cn.tcb.State() == tcpconntrack.ResultAlive {
 		// Use the same default as Linux, which doesn't delete
 		// established connections for 5(!) days.
@@ -147,7 +149,7 @@ func (cn *conn) timedOut(now tcpip.MonotonicTime) bool {
 
 // update the connection tracking state.
 //
-// +checklocks:cn.mu
+// +checklocks:cn.stateMu
 func (cn *conn) updateLocked(pkt *PacketBuffer, reply bool) {
 	if pkt.TransportProtocolNumber != header.TCPProtocolNumber {
 		return
@@ -607,14 +609,17 @@ func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, rt *Route) bool {
 	// packets are fragmented.
 
 	reply := pkt.tuple.reply
-	tid, performManip := func() (tupleID, bool) {
-		cn.mu.Lock()
-		defer cn.mu.Unlock()
 
-		// Mark the connection as having been used recently so it isn't reaped.
-		cn.lastUsed = cn.ct.clock.NowMonotonic()
-		// Update connection state.
-		cn.updateLocked(pkt, reply)
+	cn.stateMu.Lock()
+	// Mark the connection as having been used recently so it isn't reaped.
+	cn.lastUsed = cn.ct.clock.NowMonotonic()
+	// Update connection state.
+	cn.updateLocked(pkt, reply)
+	cn.stateMu.Unlock()
+
+	tid, performManip := func() (tupleID, bool) {
+		cn.mu.RLock()
+		defer cn.mu.RUnlock()
 
 		var tuple *tuple
 		if reply {
