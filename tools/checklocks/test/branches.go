@@ -54,3 +54,19 @@ func testInconsistentBranching(tc *oneGuardStruct) { // +checklocksfail:2
 		tc.mu.Unlock() // +checklocksforce
 	}
 }
+
+func testUnboundedLocks(tc []*oneGuardStruct) {
+	for _, l := range tc {
+		l.mu.Lock()
+	}
+	// This test should have the above *not fail*, though the exact
+	// lock state cannot be tracked through the below. Therefore, we
+	// expect the next loop to actually fail, and we force the unlock
+	// loop to succeed in exactly the same way.
+	for _, l := range tc {
+		l.guardedField = 1 // +checklocksfail
+	}
+	for _, l := range tc {
+		l.mu.Unlock() // +checklocksforce
+	}
+}

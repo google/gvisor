@@ -32,6 +32,7 @@ const (
 	checkLocksIgnore         = "// +checklocksignore"
 	checkLocksForce          = "// +checklocksforce"
 	checkLocksFail           = "// +checklocksfail"
+	checkLocksAlias          = "// +checklocksalias:"
 	checkAtomicAnnotation    = "// +checkatomic"
 )
 

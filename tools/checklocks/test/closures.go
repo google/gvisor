@@ -53,6 +53,15 @@ func testClosureInline(tc *oneGuardStruct) {
 	tc.mu.Unlock()
 }
 
+// +checklocksignore
+func testClosureIgnore(tc *oneGuardStruct) {
+	// Inherit the checklocksignore.
+	x := func() {
+		tc.guardedField = 1
+	}
+	x()
+}
+
 func testAnonymousInvalid(tc *oneGuardStruct) {
 	// Invalid, as per testClosureInvalid above.
 	callAnonymous(func(tc *oneGuardStruct) {
@@ -87,6 +96,15 @@ func testAnonymousInline(tc *oneGuardStruct) {
 		tc.guardedField = 1
 	}(tc)
 	tc.mu.Unlock()
+}
+
+// +checklocksignore
+func testAnonymousIgnore(tc *oneGuardStruct) {
+	// Inherit the checklocksignore.
+	x := func(tc *oneGuardStruct) {
+		tc.guardedField = 1
+	}
+	x(tc)
 }
 
 //go:noinline
