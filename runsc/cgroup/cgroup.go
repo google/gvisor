@@ -19,6 +19,7 @@ package cgroup
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -286,7 +287,19 @@ func loadPathsHelper(cgroup, mountinfo io.Reader) (map[string]string, error) {
 	return paths, nil
 }
 
-// Cgroup represents a group inside all controllers. For example:
+// Cgroup represents a cgroup configuration.
+type Cgroup interface {
+	Install(res *specs.LinuxResources) error
+	Uninstall() error
+	Join() (func(), error)
+	CPUQuota() (float64, error)
+	CPUUsage() (uint64, error)
+	NumCPU() (int, error)
+	MemoryLimit() (uint64, error)
+	MakePath(controllerName string) string
+}
+
+// cgroupV1 represents a group inside all controllers. For example:
 //   Name='/foo/bar' maps to /sys/fs/cgroup/<controller>/foo/bar on
 //   all controllers.
 //
@@ -294,7 +307,7 @@ func loadPathsHelper(cgroup, mountinfo io.Reader) (map[string]string, error) {
 // location. For example:
 //   Name='foo/bar' and Parent[ctrl]="/user.slice", then it will map to
 //   /sys/fs/cgroup/<ctrl>/user.slice/foo/bar
-type Cgroup struct {
+type cgroupV1 struct {
 	Name    string            `json:"name"`
 	Parents map[string]string `json:"parents"`
 	Own     map[string]bool   `json:"own"`
@@ -302,7 +315,7 @@ type Cgroup struct {
 
 // NewFromSpec creates a new Cgroup instance if the spec includes a cgroup path.
 // Returns nil otherwise. Cgroup paths are loaded based on the current process.
-func NewFromSpec(spec *specs.Spec) (*Cgroup, error) {
+func NewFromSpec(spec *specs.Spec) (Cgroup, error) {
 	if spec.Linux == nil || spec.Linux.CgroupsPath == "" {
 		return nil, nil
 	}
@@ -311,16 +324,16 @@ func NewFromSpec(spec *specs.Spec) (*Cgroup, error) {
 
 // NewFromPath creates a new Cgroup instance from the specified relative path.
 // Cgroup paths are loaded based on the current process.
-func NewFromPath(cgroupsPath string) (*Cgroup, error) {
+func NewFromPath(cgroupsPath string) (Cgroup, error) {
 	return new("self", cgroupsPath)
 }
 
 // NewFromPid loads cgroup for the given process.
-func NewFromPid(pid int) (*Cgroup, error) {
+func NewFromPid(pid int) (Cgroup, error) {
 	return new(strconv.Itoa(pid), "")
 }
 
-func new(pid, cgroupsPath string) (*Cgroup, error) {
+func new(pid, cgroupsPath string) (Cgroup, error) {
 	var parents map[string]string
 
 	// If path is relative, load cgroup paths for the process to build the
@@ -332,7 +345,7 @@ func new(pid, cgroupsPath string) (*Cgroup, error) {
 			return nil, fmt.Errorf("finding current cgroups: %w", err)
 		}
 	}
-	cg := &Cgroup{
+	cg := &cgroupV1{
 		Name:    cgroupsPath,
 		Parents: parents,
 		Own:     make(map[string]bool),
@@ -341,10 +354,39 @@ func new(pid, cgroupsPath string) (*Cgroup, error) {
 	return cg, nil
 }
 
+// CgroupJSON is a wrapper for Cgroup that can be encoded to JSON.
+type CgroupJSON struct {
+	Cgroup Cgroup `json:"cgroup"`
+}
+
+type cgroupJSONv1 struct {
+	Cgroup *cgroupV1 `json:"cgroup"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.UnmarshalJSON
+func (c *CgroupJSON) UnmarshalJSON(data []byte) error {
+	v1 := cgroupJSONv1{}
+	err := json.Unmarshal(data, &v1)
+	if v1.Cgroup != nil {
+		c.Cgroup = v1.Cgroup
+	}
+	return err
+}
+
+// MarshalJSON implements json.Marshaler.MarshalJSON
+func (c *CgroupJSON) MarshalJSON() ([]byte, error) {
+	if c.Cgroup == nil {
+		v1 := cgroupJSONv1{}
+		return json.Marshal(&v1)
+	}
+	v1 := cgroupJSONv1{Cgroup: c.Cgroup.(*cgroupV1)}
+	return json.Marshal(&v1)
+}
+
 // Install creates and configures cgroups according to 'res'. If cgroup path
 // already exists, it means that the caller has already provided a
 // pre-configured cgroups, and 'res' is ignored.
-func (c *Cgroup) Install(res *specs.LinuxResources) error {
+func (c *cgroupV1) Install(res *specs.LinuxResources) error {
 	log.Debugf("Installing cgroup path %q", c.Name)
 
 	// Clean up partially created cgroups on error. Errors during cleanup itself
@@ -369,7 +411,7 @@ func (c *Cgroup) Install(res *specs.LinuxResources) error {
 	for _, key := range missing {
 		ctrlr := controllers[key]
 
-		if skip, err := c.createController(key); skip && ctrlr.optional() {
+		if skip, err := createController(c, key); skip && ctrlr.optional() {
 			if err := ctrlr.skip(res); err != nil {
 				return err
 			}
@@ -394,7 +436,7 @@ func (c *Cgroup) Install(res *specs.LinuxResources) error {
 // controller is enabled in the system. It returns a boolean indicating whether
 // the controller should be skipped (e.g. controller is disabled). In case it
 // should be skipped, it also returns the error it got.
-func (c *Cgroup) createController(name string) (bool, error) {
+func createController(c Cgroup, name string) (bool, error) {
 	ctrlrPath := filepath.Join(cgroupRoot, name)
 	if _, err := os.Stat(ctrlrPath); err != nil {
 		return os.IsNotExist(err), err
@@ -410,7 +452,7 @@ func (c *Cgroup) createController(name string) (bool, error) {
 
 // Uninstall removes the settings done in Install(). If cgroup path already
 // existed when Install() was called, Uninstall is a noop.
-func (c *Cgroup) Uninstall() error {
+func (c *cgroupV1) Uninstall() error {
 	log.Debugf("Deleting cgroup %q", c.Name)
 	g, ctx := errgroup.WithContext(context.Background())
 	for key := range controllers {
@@ -447,7 +489,7 @@ func (c *Cgroup) Uninstall() error {
 
 // Join adds the current process to the all controllers. Returns function that
 // restores cgroup to the original state.
-func (c *Cgroup) Join() (func(), error) {
+func (c *cgroupV1) Join() (func(), error) {
 	// First save the current state so it can be restored.
 	paths, err := loadPaths("self")
 	if err != nil {
@@ -492,7 +534,7 @@ func (c *Cgroup) Join() (func(), error) {
 }
 
 // CPUQuota returns the CFS CPU quota.
-func (c *Cgroup) CPUQuota() (float64, error) {
+func (c *cgroupV1) CPUQuota() (float64, error) {
 	path := c.MakePath("cpu")
 	quota, err := getInt(path, "cpu.cfs_quota_us")
 	if err != nil {
@@ -509,7 +551,7 @@ func (c *Cgroup) CPUQuota() (float64, error) {
 }
 
 // CPUUsage returns the total CPU usage of the cgroup.
-func (c *Cgroup) CPUUsage() (uint64, error) {
+func (c *cgroupV1) CPUUsage() (uint64, error) {
 	path := c.MakePath("cpuacct")
 	usage, err := getValue(path, "cpuacct.usage")
 	if err != nil {
@@ -519,7 +561,7 @@ func (c *Cgroup) CPUUsage() (uint64, error) {
 }
 
 // NumCPU returns the number of CPUs configured in 'cpuset/cpuset.cpus'.
-func (c *Cgroup) NumCPU() (int, error) {
+func (c *cgroupV1) NumCPU() (int, error) {
 	path := c.MakePath("cpuset")
 	cpuset, err := getValue(path, "cpuset.cpus")
 	if err != nil {
@@ -529,7 +571,7 @@ func (c *Cgroup) NumCPU() (int, error) {
 }
 
 // MemoryLimit returns the memory limit.
-func (c *Cgroup) MemoryLimit() (uint64, error) {
+func (c *cgroupV1) MemoryLimit() (uint64, error) {
 	path := c.MakePath("memory")
 	limStr, err := getValue(path, "memory.limit_in_bytes")
 	if err != nil {
@@ -539,7 +581,7 @@ func (c *Cgroup) MemoryLimit() (uint64, error) {
 }
 
 // MakePath builds a path to the given controller.
-func (c *Cgroup) MakePath(controllerName string) string {
+func (c *cgroupV1) MakePath(controllerName string) string {
 	path := c.Name
 	if parent, ok := c.Parents[controllerName]; ok {
 		path = filepath.Join(parent, c.Name)
