@@ -1,4 +1,4 @@
-// Copyright 2020 The gVisor Authors.
+// Copyright 2021 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,32 +14,20 @@
 
 package test
 
-import (
-	"sync"
-)
+import "sync"
 
-// badFieldsStruct verifies that refering invalid fields fails.
-type badFieldsStruct struct {
+type lockerStruct struct {
+	mu sync.Locker
 	// +checklocks:mu
-	x int // +checklocksfail
+	guardedField int
 }
 
-// redundantStruct verifies that redundant annotations fail.
-type redundantStruct struct {
-	mu sync.Mutex
-
-	// +checklocks:mu
-	// +checklocks:mu
-	x int // +checklocksfail
+func testLockerValid(tc *lockerStruct) {
+	tc.mu.Lock()
+	tc.guardedField = 1
+	tc.mu.Unlock()
 }
 
-// conflictsStruct verifies that conflicting annotations fail.
-type conflictsStruct struct {
-	// +checkatomicignore
-	// +checkatomic
-	x int // +checklocksfail
-
-	// +checkatomic
-	// +checkatomicignore
-	y int // +checklocksfail
+func testLockerInvalid(tc *lockerStruct) {
+	tc.guardedField = 1 // +checklocksfail
 }

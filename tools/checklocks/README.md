@@ -1,6 +1,6 @@
 # CheckLocks Analyzer
 
-<!--* freshness: { owner: 'gvisor-eng' reviewed: '2021-03-21' } *-->
+<!--* freshness: { owner: 'gvisor-eng' reviewed: '2021-10-15' } *-->
 
 Checklocks is an analyzer for lock and atomic constraints. The analyzer relies
 on explicit annotations to identify fields that should be checked for access.
@@ -99,29 +99,6 @@ func abc() {
 ```
 
 ### Explicitly Not Supported
-
-1.  Checking for embedded mutexes as sync.Locker rather than directly as
-    'sync.Mutex'. In other words, the checker will not track mutex Lock and
-    Unlock() methods where the mutex is behind an interface dispatch.
-
-An example that we won't handle is shown below (this in fact will fail to
-build):
-
-```go
-type A struct {
-  mu sync.Locker
-
-  // +checklocks:mu
-  x int
-}
-
-func abc() {
-   mu sync.Mutex
-   a := A{mu: &mu}
-   a.x = 1 // This won't be flagged by copylocks checker.
-}
-
-```
 
 1.  The checker will not support guards on anything other than the cases
     described above. For example, global mutexes cannot be referred to by

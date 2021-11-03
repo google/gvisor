@@ -5,6 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "test",
     srcs = [
+        "aliases.go",
         "alignment.go",
         "anon.go",
         "atomics.go",
@@ -13,6 +14,7 @@ go_library(
         "closures.go",
         "defer.go",
         "incompat.go",
+        "locker.go",
         "methods.go",
         "parameters.go",
         "return.go",

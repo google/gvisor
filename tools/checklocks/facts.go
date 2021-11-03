@@ -164,6 +164,9 @@ type functionGuard struct {
 	// that the field must be extracted from a tuple.
 	NeedsExtract bool
 
+	// IsAlias indicates that this guard is an alias.
+	IsAlias bool
+
 	// FieldList is the traversal path to the object.
 	FieldList fieldList
 
@@ -312,6 +315,36 @@ func (lff *lockFunctionFacts) addReleases(pc *passContext, d *ast.FuncDecl, guar
 	}
 }
 
+// addAlias adds an alias.
+func (lff *lockFunctionFacts) addAlias(pc *passContext, d *ast.FuncDecl, guardName string) {
+	// Parse the alias.
+	parts := strings.Split(guardName, "=")
+	if len(parts) != 2 {
+		pc.maybeFail(d.Pos(), "invalid annotation %s for alias", guardName)
+		return
+	}
+
+	// Parse the actual guard.
+	fg, ok := lff.checkGuard(pc, d, parts[0], true /* exclusive */, true /* allowReturn */)
+	if !ok {
+		return
+	}
+	fg.IsAlias = true
+
+	// Find the existing specification.
+	_, entryOk := lff.HeldOnEntry[parts[1]]
+	if entryOk {
+		lff.HeldOnEntry[guardName] = fg
+	}
+	_, exitOk := lff.HeldOnExit[parts[1]]
+	if exitOk {
+		lff.HeldOnExit[guardName] = fg
+	}
+	if !entryOk && !exitOk {
+		pc.maybeFail(d.Pos(), "alias annotation %s does not refer to an existing guard", guardName)
+	}
+}
+
 // fieldListFor returns the fieldList for the given object.
 func (pc *passContext) fieldListFor(pos token.Pos, fieldObj types.Object, index int, fieldName string, checkMutex bool, exclusive bool) (int, bool) {
 	var lff lockFieldFacts
@@ -403,6 +436,7 @@ func (pc *passContext) resolveField(pos token.Pos, structType *types.Struct, par
 var (
 	mutexRE   = regexp.MustCompile("((.*/)|^)sync.(CrossGoroutineMutex|Mutex)")
 	rwMutexRE = regexp.MustCompile("((.*/)|^)sync.(CrossGoroutineRWMutex|RWMutex)")
+	lockerRE  = regexp.MustCompile("((.*/)|^)sync.Locker")
 )
 
 // exportLockFieldFacts finds all struct fields that are mutexes, and ensures
@@ -426,9 +460,14 @@ func (pc *passContext) exportLockFieldFacts(structType *types.Struct, ss *ast.St
 			lff.IsMutex = true
 		case rwMutexRE.MatchString(s):
 			lff.IsRWMutex = true
+		case lockerRE.MatchString(s):
+			lff.IsMutex = true
 		}
 		// Save whether this is a pointer.
 		_, lff.IsPointer = fieldObj.Type().Underlying().(*types.Pointer)
+		if !lff.IsPointer {
+			_, lff.IsPointer = fieldObj.Type().Underlying().(*types.Interface)
+		}
 		// We must always export the lockFieldFacts, since traversal
 		// can take place along any object in the struct.
 		pc.pass.ExportObjectFact(fieldObj, lff)
@@ -630,6 +669,7 @@ func (pc *passContext) exportFunctionFacts(d *ast.FuncDecl) {
 			checkLocksAcquiresRead:   func(guardName string) { lff.addAcquires(pc, d, guardName, false /* exclusive */) },
 			checkLocksReleases:       func(guardName string) { lff.addReleases(pc, d, guardName, true /* exclusive */) },
 			checkLocksReleasesRead:   func(guardName string) { lff.addReleases(pc, d, guardName, false /* exclusive */) },
+			checkLocksAlias:          func(guardName string) { lff.addAlias(pc, d, guardName) },
 		})
 	}
 

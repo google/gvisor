@@ -131,11 +131,6 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		var lff lockFunctionFacts
 		pc.pass.ImportObjectFact(fn.Object(), &lff)
 
-		// Do we ignore this?
-		if lff.Ignore {
-			continue
-		}
-
 		// Check the basic blocks in the function.
 		pc.checkFunction(nil, fn, &lff, nil, false /* force */)
 	}
