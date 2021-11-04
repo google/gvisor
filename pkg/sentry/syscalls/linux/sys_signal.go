@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/signalfd"
-	"gvisor.dev/gvisor/pkg/syserr"
 )
 
 // "For a process to have permission to send a signal it must
@@ -348,7 +347,7 @@ func Sigaltstack(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 
 // Pause implements linux syscall pause(2).
 func Pause(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	return 0, nil, syserr.ConvertIntr(t.Block(nil), linuxerr.ERESTARTNOHAND)
+	return 0, nil, linuxerr.ConvertIntr(t.Block(nil), linuxerr.ERESTARTNOHAND)
 }
 
 // RtSigpending implements linux syscall rt_sigpending(2).
@@ -496,7 +495,7 @@ func RtSigsuspend(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 	t.SetSavedSignalMask(oldmask)
 
 	// Perform the wait.
-	return 0, nil, syserr.ConvertIntr(t.Block(nil), linuxerr.ERESTARTNOHAND)
+	return 0, nil, linuxerr.ConvertIntr(t.Block(nil), linuxerr.ERESTARTNOHAND)
 }
 
 // RestartSyscall implements the linux syscall restart_syscall(2).
