@@ -131,7 +131,7 @@ func (p *provider) Socket(t *kernel.Task, stype linux.SockType, protocol int) (*
 		}
 	}
 	if e != nil {
-		return nil, syserr.TranslateNetstackError(e)
+		return nil, tcpip.TranslateNetstackError(e)
 	}
 
 	return New(t, p.family, stype, int(transProto), wq, ep)
@@ -162,7 +162,7 @@ func packetSocket(t *kernel.Task, epStack *Stack, stype linux.SockType, protocol
 	wq := &waiter.Queue{}
 	ep, err := epStack.Stack.NewPacketEndpoint(cooked, netProto, wq)
 	if err != nil {
-		return nil, syserr.TranslateNetstackError(err)
+		return nil, tcpip.TranslateNetstackError(err)
 	}
 
 	return New(t, linux.AF_PACKET, stype, protocol, wq, ep)

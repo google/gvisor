@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -69,7 +70,7 @@ func (e *endpoint) BidirectionalConnect(ctx context.Context, ce transport.Connec
 	}
 	if ce.Listening() {
 		ce.Unlock()
-		return syserr.ErrInvalidEndpointState
+		return tcpip.SyserrInvalidEndpointState
 	}
 
 	c, err := e.newConnectedEndpoint(ctx, ce.Type(), ce.WaiterQueue())

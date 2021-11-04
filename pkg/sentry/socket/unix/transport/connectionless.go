@@ -109,7 +109,7 @@ func (e *connectionlessEndpoint) SendMsg(ctx context.Context, data [][]byte, c C
 
 	connected, err := to.UnidirectionalConnect(ctx)
 	if err != nil {
-		return 0, syserr.ErrInvalidEndpointState
+		return 0, tcpip.SyserrInvalidEndpointState
 	}
 	defer connected.Release(ctx)
 
@@ -148,12 +148,12 @@ func (e *connectionlessEndpoint) Connect(ctx context.Context, server BoundEndpoi
 
 // Listen starts listening on the connection.
 func (*connectionlessEndpoint) Listen(int) *syserr.Error {
-	return syserr.ErrNotSupported
+	return tcpip.SyserrNotSupported
 }
 
 // Accept accepts a new connection.
 func (*connectionlessEndpoint) Accept(*tcpip.FullAddress) (Endpoint, *syserr.Error) {
-	return nil, syserr.ErrNotSupported
+	return nil, tcpip.SyserrNotSupported
 }
 
 // Bind binds the connection.
@@ -168,11 +168,11 @@ func (e *connectionlessEndpoint) Bind(addr tcpip.FullAddress, commit func() *sys
 	e.Lock()
 	defer e.Unlock()
 	if e.isBound() {
-		return syserr.ErrAlreadyBound
+		return tcpip.SyserrAlreadyBound
 	}
 	if addr.Addr == "" {
 		// The empty string is not permitted.
-		return syserr.ErrBadLocalAddress
+		return tcpip.SyserrBadLocalAddress
 	}
 	if commit != nil {
 		if err := commit(); err != nil {

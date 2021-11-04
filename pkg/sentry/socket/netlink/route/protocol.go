@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink"
 	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 // commandKind describes the operational class of a message type.
@@ -360,7 +361,7 @@ func parseForDestination(msg *netlink.Message) ([]byte, *syserr.Error) {
 	// commit bc234301af12. Note we don't check this flag for backward
 	// compatibility.
 	if rtMsg.Flags != 0 && rtMsg.Flags != linux.RTM_F_LOOKUP_TABLE {
-		return nil, syserr.ErrNotSupported
+		return nil, tcpip.SyserrNotSupported
 	}
 
 	// Expect first attribute is RTA_DST.
@@ -393,7 +394,7 @@ func (p *Protocol) dumpRoutes(ctx context.Context, msg *netlink.Message, ms *net
 		route, err := fillRoute(routeTables, dst)
 		if err != nil {
 			// TODO(gvisor.dev/issue/1237): return NLMSG_ERROR with ENETUNREACH.
-			return syserr.ErrNotSupported
+			return tcpip.SyserrNotSupported
 		}
 		routeTables = append([]inet.Route{}, route)
 	} else if hdr.Flags&linux.NLM_F_DUMP == linux.NLM_F_DUMP {
@@ -401,7 +402,7 @@ func (p *Protocol) dumpRoutes(ctx context.Context, msg *netlink.Message, ms *net
 		ms.Multi = true
 	} else {
 		// TODO(b/68878065): Only above cases are supported.
-		return syserr.ErrNotSupported
+		return tcpip.SyserrNotSupported
 	}
 
 	for _, rt := range routeTables {
@@ -489,7 +490,7 @@ func (p *Protocol) newAddr(ctx context.Context, msg *netlink.Message, ms *netlin
 			}
 		case linux.IFA_ADDRESS:
 		default:
-			return syserr.ErrNotSupported
+			return tcpip.SyserrNotSupported
 		}
 	}
 	return nil
@@ -530,11 +531,11 @@ func (p *Protocol) delAddr(ctx context.Context, msg *netlink.Message, ms *netlin
 				Addr:      value,
 			})
 			if err != nil {
-				return syserr.ErrBadLocalAddress
+				return tcpip.SyserrBadLocalAddress
 			}
 		case linux.IFA_ADDRESS:
 		default:
-			return syserr.ErrNotSupported
+			return tcpip.SyserrNotSupported
 		}
 	}
 
@@ -572,7 +573,7 @@ func (p *Protocol) ProcessMessage(ctx context.Context, msg *netlink.Message, ms 
 		case linux.RTM_GETROUTE:
 			return p.dumpRoutes(ctx, msg, ms)
 		default:
-			return syserr.ErrNotSupported
+			return tcpip.SyserrNotSupported
 		}
 	} else if hdr.Flags&linux.NLM_F_REQUEST == linux.NLM_F_REQUEST {
 		switch hdr.Type {
@@ -587,10 +588,10 @@ func (p *Protocol) ProcessMessage(ctx context.Context, msg *netlink.Message, ms 
 		case linux.RTM_DELADDR:
 			return p.delAddr(ctx, msg, ms)
 		default:
-			return syserr.ErrNotSupported
+			return tcpip.SyserrNotSupported
 		}
 	}
-	return syserr.ErrNotSupported
+	return tcpip.SyserrNotSupported
 }
 
 // init registers the NETLINK_ROUTE provider.
