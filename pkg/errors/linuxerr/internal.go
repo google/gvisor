@@ -118,3 +118,12 @@ func SyscallRestartErrorFromReturn(rv uintptr) (*errors.Error, bool) {
 	err, ok := restartMap[int(rv)]
 	return err, ok
 }
+
+// ConvertIntr converts the provided error code (err) to another one (intr) if
+// the first error corresponds to an interrupted operation.
+func ConvertIntr(err, intr error) error {
+	if err == ErrInterrupted {
+		return intr
+	}
+	return err
+}

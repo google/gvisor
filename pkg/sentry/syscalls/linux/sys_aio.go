@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/eventfd"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
-	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -138,7 +137,7 @@ func IoGetevents(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 				if count > 0 || linuxerr.Equals(linuxerr.ETIMEDOUT, err) {
 					return uintptr(count), nil, nil
 				}
-				return 0, nil, syserr.ConvertIntr(err, linuxerr.EINTR)
+				return 0, nil, linuxerr.ConvertIntr(err, linuxerr.EINTR)
 			}
 		}
 

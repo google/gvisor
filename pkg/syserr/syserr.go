@@ -74,15 +74,6 @@ func NewDynamic(message string, linuxTranslation errno.Errno) *Error {
 	return &Error{message: message, errno: linuxTranslation}
 }
 
-// NewWithoutTranslation creates a new Error. If translation is attempted on
-// the error, translation will fail.
-//
-// NewWithoutTranslation may be called at any time, but static errors should
-// be declared as global variables and dynamic errors should be used sparingly.
-func NewWithoutTranslation(message string) *Error {
-	return &Error{message: message, noTranslation: true}
-}
-
 func newWithHost(message string, linuxTranslation errno.Errno, hostErrno unix.Errno) *Error {
 	e := New(message, linuxTranslation)
 	addLinuxHostTranslation(hostErrno, e)
@@ -291,13 +282,4 @@ func FromError(err error) *Error {
 
 	msg := fmt.Sprintf("err: %s type: %T", err.Error(), err)
 	panic(msg)
-}
-
-// ConvertIntr converts the provided error code (err) to another one (intr) if
-// the first error corresponds to an interrupted operation.
-func ConvertIntr(err, intr error) error {
-	if err == linuxerr.ErrInterrupted {
-		return intr
-	}
-	return err
 }
