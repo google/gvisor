@@ -30,20 +30,61 @@ import (
 
 // Analyzer is the main entrypoint.
 var Analyzer = &analysis.Analyzer{
-	Name:      "checklocks",
-	Doc:       "checks lock preconditions on functions and fields",
-	Run:       run,
-	Requires:  []*analysis.Analyzer{buildssa.Analyzer},
-	FactTypes: []analysis.Fact{(*atomicAlignment)(nil), (*lockFieldFacts)(nil), (*lockGuardFacts)(nil), (*lockFunctionFacts)(nil)},
+	Name:     "checklocks",
+	Doc:      "checks lock preconditions on functions and fields",
+	Run:      run,
+	Requires: []*analysis.Analyzer{buildssa.Analyzer},
+	FactTypes: []analysis.Fact{
+		(*atomicAlignment)(nil),
+		(*lockGuardFacts)(nil),
+		(*lockFunctionFacts)(nil),
+	},
+}
+
+// objectObservations tracks lock correlations.
+type objectObservations struct {
+	counts map[types.Object]int
+	total  int
 }
 
 // passContext is a pass with additional expected failures.
 type passContext struct {
-	pass       *analysis.Pass
-	failures   map[positionKey]*failData
-	exemptions map[positionKey]struct{}
-	forced     map[positionKey]struct{}
-	functions  map[*ssa.Function]struct{}
+	pass         *analysis.Pass
+	failures     map[positionKey]*failData
+	exemptions   map[positionKey]struct{}
+	forced       map[positionKey]struct{}
+	functions    map[*ssa.Function]struct{}
+	observations map[types.Object]*objectObservations
+}
+
+// observationsFor retrieves observations for the given object.
+func (pc *passContext) observationsFor(obj types.Object) *objectObservations {
+	if pc.observations == nil {
+		pc.observations = make(map[types.Object]*objectObservations)
+	}
+	oo, ok := pc.observations[obj]
+	if !ok {
+		oo = &objectObservations{
+			counts: make(map[types.Object]int),
+		}
+		pc.observations[obj] = oo
+	}
+	return oo
+}
+
+// forAllGlobals applies the given function to all globals.
+func (pc *passContext) forAllGlobals(fn func(ts *ast.ValueSpec)) {
+	for _, f := range pc.pass.Files {
+		for _, decl := range f.Decls {
+			d, ok := decl.(*ast.GenDecl)
+			if !ok || d.Tok != token.VAR {
+				continue
+			}
+			for _, gs := range d.Specs {
+				fn(gs.(*ast.ValueSpec))
+			}
+		}
+	}
 }
 
 // forAllTypes applies the given function over all types.
@@ -88,16 +129,17 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	pc.extractLineFailures()
 
 	// Find all struct declarations and export relevant facts.
-	pc.forAllTypes(func(ts *ast.TypeSpec) {
-		if ss, ok := ts.Type.(*ast.StructType); ok {
-			structType := pc.pass.TypesInfo.TypeOf(ts.Name).Underlying().(*types.Struct)
-			pc.exportLockFieldFacts(structType, ss)
+	pc.forAllGlobals(func(vs *ast.ValueSpec) {
+		if ss, ok := vs.Type.(*ast.StructType); ok {
+			structType := pc.pass.TypesInfo.TypeOf(vs.Type).Underlying().(*types.Struct)
+			pc.structLockGuardFacts(structType, ss)
 		}
+		pc.globalLockGuardFacts(vs)
 	})
 	pc.forAllTypes(func(ts *ast.TypeSpec) {
 		if ss, ok := ts.Type.(*ast.StructType); ok {
 			structType := pc.pass.TypesInfo.TypeOf(ts.Name).Underlying().(*types.Struct)
-			pc.exportLockGuardFacts(structType, ss)
+			pc.structLockGuardFacts(structType, ss)
 		}
 	})
 
@@ -112,7 +154,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 
 	// Find all function declarations and export relevant facts.
 	pc.forAllFunctions(func(fn *ast.FuncDecl) {
-		pc.exportFunctionFacts(fn)
+		pc.functionFacts(fn)
 	})
 
 	// Scan all code looking for invalid accesses.
@@ -143,6 +185,9 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		var nolff lockFunctionFacts
 		pc.checkFunction(nil, fn, &nolff, nil, false /* force */)
 	}
+
+	// Check for inferred checklocks annotations.
+	pc.checkInferred()
 
 	// Check for expected failures.
 	pc.checkFailures()

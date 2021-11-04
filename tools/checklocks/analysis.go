@@ -168,19 +168,19 @@ func resolveStruct(typ types.Type) (*types.Struct, bool) {
 
 func findField(typ types.Type, field int) (types.Object, bool) {
 	structType, ok := resolveStruct(typ)
-	if !ok {
+	if !ok || field >= structType.NumFields() {
 		return nil, false
 	}
 	return structType.Field(field), true
 }
 
-// instructionWithReferrers is a generalization over ssa.Field, ssa.FieldAddr.
-type instructionWithReferrers interface {
-	ssa.Instruction
+// almostInst is a generalization over ssa.Field, ssa.FieldAddr, ssa.Global.
+type almostInst interface {
+	Pos() token.Pos
 	Referrers() *[]ssa.Instruction
 }
 
-// checkFieldAccess checks the validity of a field access.
+// checkGuards checks the guards held.
 //
 // This also enforces atomicity constraints for fields that must be accessed
 // atomically. The parameter isWrite indicates whether this field is used
@@ -188,41 +188,46 @@ type instructionWithReferrers interface {
 //
 // Note that this function is not called if lff.Ignore is true, since it cannot
 // discover any local anonymous functions or closures.
-func (pc *passContext) checkFieldAccess(inst instructionWithReferrers, structObj ssa.Value, field int, ls *lockState, isWrite bool) {
+func (pc *passContext) checkGuards(inst almostInst, from ssa.Value, accessObj types.Object, ls *lockState, isWrite bool) {
 	var (
-		lff         lockFieldFacts
 		lgf         lockGuardFacts
 		guardsFound int
-		guardsHeld  int
+		guardsHeld  = make(map[string]struct{}) // Keyed by resolved string.
 	)
 
-	fieldObj, _ := findField(structObj.Type(), field)
-	pc.pass.ImportObjectFact(fieldObj, &lff)
-	pc.pass.ImportObjectFact(fieldObj, &lgf)
+	// Load the facts for the object accessed.
+	pc.pass.ImportObjectFact(accessObj, &lgf)
 
-	for guardName, fl := range lgf.GuardedBy {
+	// Check guards held.
+	for guardName, fgr := range lgf.GuardedBy {
 		guardsFound++
-		r := fl.resolve(structObj)
+		r := fgr.resolveField(pc, ls, from)
+		if !r.valid() {
+			// See above; this cannot be forced.
+			pc.maybeFail(inst.Pos(), "field %s cannot be resolved", guardName)
+			continue
+		}
 		s, ok := ls.isHeld(r, isWrite)
 		if ok {
-			guardsHeld++
+			guardsHeld[s] = struct{}{}
 			continue
 		}
 		if _, ok := pc.forced[pc.positionKey(inst.Pos())]; ok {
 			// Mark this as locked, since it has been forced. All
 			// forces are treated as an exclusive lock.
-			ls.lockField(r, true /* exclusive */)
-			guardsHeld++
+			s, _ := ls.lockField(r, true /* exclusive */)
+			guardsHeld[s] = struct{}{}
 			continue
 		}
 		// Note that we may allow this if the disposition is atomic,
 		// and we are allowing atomic reads only. This will fall into
 		// the atomic disposition check below, which asserts that the
-		// access is atomic. Further, guardsHeld < guardsFound will be
-		// true for this case, so we require it to be read-only.
+		// access is atomic. Further, len(guardsHeld) < guardsFound
+		// will be true for this case, so we require it to be
+		// read-only.
 		if lgf.AtomicDisposition != atomicRequired {
 			// There is no force key, no atomic access and no lock held.
-			pc.maybeFail(inst.Pos(), "invalid field access, must hold %s (%s) when accessing %s (locks: %s)", guardName, s, fieldObj.Name(), ls.String())
+			pc.maybeFail(inst.Pos(), "invalid field access, %s (%s) must be locked when accessing %s (locks: %s)", guardName, s, accessObj.Name(), ls.String())
 		}
 	}
 
@@ -230,25 +235,75 @@ func (pc *passContext) checkFieldAccess(inst instructionWithReferrers, structObj
 	switch lgf.AtomicDisposition {
 	case atomicRequired:
 		// Check that this is used safely as an input.
-		readOnly := guardsHeld < guardsFound
+		readOnly := len(guardsHeld) < guardsFound
 		if refs := inst.Referrers(); refs != nil {
 			for _, otherInst := range *refs {
-				pc.checkAtomicCall(otherInst, fieldObj, true, readOnly)
+				pc.checkAtomicCall(otherInst, accessObj, true, readOnly)
 			}
 		}
 		// Check that this is not otherwise written non-atomically,
 		// even if we do hold all the locks.
 		if isWrite {
-			pc.maybeFail(inst.Pos(), "non-atomic write of field %s, writes must still be atomic with locks held (locks: %s)", fieldObj.Name(), ls.String())
+			pc.maybeFail(inst.Pos(), "non-atomic write of field %s, writes must still be atomic with locks held (locks: %s)", accessObj.Name(), ls.String())
 		}
 	case atomicDisallow:
 		// Check that this is *not* used atomically.
 		if refs := inst.Referrers(); refs != nil {
 			for _, otherInst := range *refs {
-				pc.checkAtomicCall(otherInst, fieldObj, false, false)
+				pc.checkAtomicCall(otherInst, accessObj, false, false)
 			}
 		}
 	}
+
+	// Check inferred locks.
+	if accessObj.Pkg() == pc.pass.Pkg {
+		oo := pc.observationsFor(accessObj)
+		oo.total++
+		for s, info := range ls.lockedMutexes {
+			// Is this an object for which we have facts? If there
+			// is no ability to name this object, then we don't
+			// bother with any inferrence. We also ignore any self
+			// references (e.g. accessing a mutex while you are
+			// holding that exact mutex).
+			if info.object == nil || accessObj == info.object {
+				continue
+			}
+			// Has this already been held?
+			if _, ok := guardsHeld[s]; ok {
+				oo.counts[info.object]++
+				continue
+			}
+			// Is this a global? Record directly.
+			if _, ok := from.(*ssa.Global); ok {
+				oo.counts[info.object]++
+				continue
+			}
+			// Is the object a sibling to the accessObj? We need to
+			// check all fields and see if they match. We accept
+			// only siblings and globals for this recommendation.
+			structType, ok := resolveStruct(from.Type())
+			if !ok {
+				continue
+			}
+			for i := 0; i < structType.NumFields(); i++ {
+				if fieldObj := structType.Field(i); fieldObj == info.object {
+					// Add to the maybe list.
+					oo.counts[info.object]++
+				}
+			}
+		}
+	}
+}
+
+// checkFieldAccess checks the validity of a field access.
+func (pc *passContext) checkFieldAccess(inst almostInst, structObj ssa.Value, field int, ls *lockState, isWrite bool) {
+	fieldObj, _ := findField(structObj.Type(), field)
+	pc.checkGuards(inst, structObj, fieldObj, ls, isWrite)
+}
+
+// checkGlobalAccess checks the validity of a global access.
+func (pc *passContext) checkGlobalAccess(g *ssa.Global, ls *lockState, isWrite bool) {
+	pc.checkGuards(g, g, g.Object(), ls, isWrite)
 }
 
 func (pc *passContext) checkCall(call callCommon, lff *lockFunctionFacts, ls *lockState) {
@@ -320,8 +375,13 @@ func (pc *passContext) postFunctionCallUpdate(call callCommon, lff *lockFunction
 		if fg.IsAlias && !aliases {
 			continue
 		}
-		r := fg.resolveCall(call.Common().Args, call.Value())
-		if s, ok := ls.unlockField(r, fg.Exclusive); !ok {
+		r := fg.Resolver.resolveCall(pc, ls, call.Common().Args, call.Value())
+		if !r.valid() {
+			// See above: this cannot be forced.
+			pc.maybeFail(call.Pos(), "field %s cannot be resolved", fieldName)
+			continue
+		}
+		if s, ok := ls.unlockField(r, fg.Exclusive); !ok && !lff.Ignore {
 			if _, ok := pc.forced[pc.positionKey(call.Pos())]; !ok && !lff.Ignore {
 				pc.maybeFail(call.Pos(), "attempt to release %s (%s), but not held (locks: %s)", fieldName, s, ls.String())
 			}
@@ -337,8 +397,8 @@ func (pc *passContext) postFunctionCallUpdate(call callCommon, lff *lockFunction
 			continue
 		}
 		// Acquire the lock per the annotation.
-		r := fg.resolveCall(call.Common().Args, call.Value())
-		if s, ok := ls.lockField(r, fg.Exclusive); !ok {
+		r := fg.Resolver.resolveCall(pc, ls, call.Common().Args, call.Value())
+		if s, ok := ls.lockField(r, fg.Exclusive); !ok && !lff.Ignore {
 			if _, ok := pc.forced[pc.positionKey(call.Pos())]; !ok && !lff.Ignore {
 				pc.maybeFail(call.Pos(), "attempt to acquire %s (%s), but already held (locks: %s)", fieldName, s, ls.String())
 			}
@@ -361,17 +421,15 @@ func exclusiveStr(exclusive bool) string {
 // instruction order).
 func (pc *passContext) checkFunctionCall(call callCommon, fn *types.Func, lff *lockFunctionFacts, ls *lockState) {
 	// Extract the "receiver" properly.
-	var rcvr ssa.Value
+	var args []ssa.Value
 	if call.Common().Method != nil {
 		// This is an interface dispatch for sync.Locker.
-		rcvr = call.Common().Value
-	} else if args := call.Common().Args; len(args) > 0 && fn.Type().(*types.Signature).Recv() != nil {
+		args = append([]ssa.Value{call.Common().Value}, call.Common().Args...)
+	} else {
 		// This matches the signature for the relevant
 		// sync.Lock/sync.Unlock functions below.
-		rcvr = args[0]
+		args = call.Common().Args
 	}
-	// Note that at this point, rcvr may be nil, but it should not match any
-	// of the function signatures below where rcvr may be used.
 
 	// Check all guards required are held. Note that this explicitly does
 	// not include aliases, hence false being passed below.
@@ -379,7 +437,7 @@ func (pc *passContext) checkFunctionCall(call callCommon, fn *types.Func, lff *l
 		if fg.IsAlias {
 			continue
 		}
-		r := fg.resolveCall(call.Common().Args, call.Value())
+		r := fg.Resolver.resolveCall(pc, ls, args, call.Value())
 		if s, ok := ls.isHeld(r, fg.Exclusive); !ok {
 			if _, ok := pc.forced[pc.positionKey(call.Pos())]; !ok && !lff.Ignore {
 				pc.maybeFail(call.Pos(), "must hold %s %s (%s) to call %s, but not held (locks: %s)", fieldName, exclusiveStr(fg.Exclusive), s, fn.Name(), ls.String())
@@ -395,15 +453,16 @@ func (pc *passContext) checkFunctionCall(call callCommon, fn *types.Func, lff *l
 
 	// Check if it's a method dispatch for something in the sync package.
 	// See: https://godoc.org/golang.org/x/tools/go/ssa#Function
-	if fn.Pkg() != nil && fn.Pkg().Name() == "sync" {
+	if fn.Pkg() != nil && fn.Pkg().Name() == "sync" && len(args) > 0 {
+		rv := makeResolvedValue(args[0], nil)
 		isExclusive := false
 		switch fn.Name() {
 		case "Lock":
 			isExclusive = true
 			fallthrough
 		case "RLock":
-			if s, ok := ls.lockField(resolvedValue{value: rcvr, valid: true}, isExclusive); !ok {
-				if _, ok := pc.forced[pc.positionKey(call.Pos())]; !ok && !lff.Ignore {
+			if s, ok := ls.lockField(rv, isExclusive); !ok && !lff.Ignore {
+				if _, ok := pc.forced[pc.positionKey(call.Pos())]; !ok {
 					// Double locking a mutex that is already locked.
 					pc.maybeFail(call.Pos(), "%s already locked (locks: %s)", s, ls.String())
 				}
@@ -412,14 +471,14 @@ func (pc *passContext) checkFunctionCall(call callCommon, fn *types.Func, lff *l
 			isExclusive = true
 			fallthrough
 		case "RUnlock":
-			if s, ok := ls.unlockField(resolvedValue{value: rcvr, valid: true}, isExclusive); !ok {
-				if _, ok := pc.forced[pc.positionKey(call.Pos())]; !ok && !lff.Ignore {
+			if s, ok := ls.unlockField(rv, isExclusive); !ok && !lff.Ignore {
+				if _, ok := pc.forced[pc.positionKey(call.Pos())]; !ok {
 					// Unlocking something that is already unlocked.
 					pc.maybeFail(call.Pos(), "%s already unlocked or locked differently (locks: %s)", s, ls.String())
 				}
 			}
 		case "DowngradeLock":
-			if s, ok := ls.downgradeField(resolvedValue{value: call.Common().Args[0], valid: true}); !ok {
+			if s, ok := ls.downgradeField(rv); !ok {
 				if _, ok := pc.forced[pc.positionKey(call.Pos())]; !ok && !lff.Ignore {
 					// Downgrading something that may not be downgraded.
 					pc.maybeFail(call.Pos(), "%s already unlocked or not exclusive (locks: %s)", s, ls.String())
@@ -497,6 +556,24 @@ type callCommon interface {
 // checkInstruction checks the legality the single instruction based on the
 // current lockState.
 func (pc *passContext) checkInstruction(inst ssa.Instruction, lff *lockFunctionFacts, ls *lockState) (*ssa.Return, *lockState) {
+	// Record any observed globals, and check for violations. The global
+	// value is not itself an instruction, but we check all referrers to
+	// see where they are consumed.
+	var stackLocal [16]*ssa.Value
+	ops := inst.Operands(stackLocal[:])
+	for _, v := range ops {
+		if v == nil {
+			continue
+		}
+		g, ok := (*v).(*ssa.Global)
+		if !ok {
+			continue
+		}
+		_, isWrite := inst.(*ssa.Store)
+		pc.checkGlobalAccess(g, ls, isWrite)
+	}
+
+	// Process the instruction.
 	switch x := inst.(type) {
 	case *ssa.Store:
 		// Record that this value is holding this other value. This is
@@ -611,7 +688,12 @@ func (pc *passContext) checkBasicBlock(fn *ssa.Function, block *ssa.BasicBlock, 
 			failed := false
 			// Validate held locks.
 			for fieldName, fg := range lff.HeldOnExit {
-				r := fg.resolveStatic(fn, rv)
+				r := fg.Resolver.resolveStatic(pc, ls, fn, rv)
+				if !r.valid() {
+					// This cannot be forced, since we have no reference.
+					pc.maybeFail(rv.Pos(), "lock %s cannot be resolved", fieldName)
+					continue
+				}
 				if s, ok := rls.isHeld(r, fg.Exclusive); !ok {
 					if _, ok := pc.forced[pc.positionKey(rv.Pos())]; !ok && !lff.Ignore {
 						pc.maybeFail(rv.Pos(), "lock %s (%s) not held %s (locks: %s)", fieldName, s, exclusiveStr(fg.Exclusive), rls.String())
@@ -684,7 +766,12 @@ func (pc *passContext) checkFunction(call callCommon, fn *ssa.Function, lff *loc
 	for fieldName, fg := range lff.HeldOnEntry {
 		// The first is the method object itself so we skip that when looking
 		// for receiver/function parameters.
-		r := fg.resolveStatic(fn, call.Value())
+		r := fg.Resolver.resolveStatic(pc, ls, fn, call.Value())
+		if !r.valid() {
+			// See above: this cannot be forced.
+			pc.maybeFail(fn.Pos(), "lock %s cannot be resolved", fieldName)
+			continue
+		}
 		if s, ok := ls.lockField(r, fg.Exclusive); !ok && !lff.Ignore {
 			// This can only happen if the same value is declared
 			// multiple times, and should be caught by the earlier
@@ -708,5 +795,26 @@ func (pc *passContext) checkFunction(call callCommon, fn *ssa.Function, lff *loc
 	// are doing inline analysis for e.g. an anonymous function.
 	if call != nil && parent != nil {
 		pc.postFunctionCallUpdate(call, lff, parent, true /* aliases */)
+	}
+}
+
+// checkInferred checks for any inferred lock annotations.
+func (pc *passContext) checkInferred() {
+	for obj, oo := range pc.observations {
+		var lgf lockGuardFacts
+		pc.pass.ImportObjectFact(obj, &lgf)
+		for other, count := range oo.counts {
+			// Is this already a guard?
+			if _, ok := lgf.GuardedBy[other.Name()]; ok {
+				continue
+			}
+			// Check to see if this field is used with a given lock
+			// held above the threshold. If yes, provide a helpful
+			// hint that this may something you wish to annotate.
+			const threshold = 0.9
+			if usage := float64(count) / float64(oo.total); usage >= threshold {
+				pc.maybeFail(obj.Pos(), "may require checklocks annotation for %s, used with lock held %2.0f%% of the time", other.Name(), usage*100)
+			}
+		}
 	}
 }

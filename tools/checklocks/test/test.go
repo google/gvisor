@@ -51,7 +51,7 @@ type twoLocksStruct struct {
 // twoLocksDoubleGuardStruct has two locks and a single field with two guards.
 type twoLocksDoubleGuardStruct struct {
 	mu       sync.Mutex
-	secondMu sync.Mutex
+	secondMu sync.Mutex // +checklocksignore: mu is inferred as requisite.
 	// +checklocks:mu
 	// +checklocks:secondMu
 	doubleGuardedField int

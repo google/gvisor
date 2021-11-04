@@ -103,7 +103,7 @@ type testMethodsWithEmbedded struct {
 
 	// +checklocks:mu
 	guardedField int
-	p            *testMethodsWithParameters
+	p            *testMethodsWithParameters // +checklocksignore: Inferred as protected by mu.
 }
 
 // +checklocks:t.mu
