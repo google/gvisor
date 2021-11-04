@@ -48,6 +48,7 @@ global:
       - "duplicate import"
       # These will never be annotated.
       - "unexpected call to atomic function"
+      - "may require checklocks annotation for"
       # Generated proto code creates declarations like 'var start int = iNdEx'
       - "should omit type .* from declaration; it will be inferred from the right-hand side"
   internal:
@@ -63,6 +64,7 @@ global:
       - "unexpected call to atomic function.*"
       - "return with unexpected locks held.*"
       - "incompatible return states.*"
+      - "may require checklocks annotation for.*"
     exclude:
       # Generated: exempt all.
       - pkg/shim/runtimeoptions/runtimeoptions_cri.go

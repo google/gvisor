@@ -1,6 +1,6 @@
 # CheckLocks Analyzer
 
-<!--* freshness: { owner: 'gvisor-eng' reviewed: '2021-10-15' } *-->
+<!--* freshness: { owner: 'gvisor-eng' reviewed: '2021-10-20' } *-->
 
 Checklocks is an analyzer for lock and atomic constraints. The analyzer relies
 on explicit annotations to identify fields that should be checked for access.
@@ -75,7 +75,26 @@ annotation refers either to something that is not a 'sync.Mutex' or
 'sync.RWMutex' or where the field does not exist at all. This will prevent the
 annotations from becoming stale over time as fields are renamed, etc.
 
-# Currently not supported
+## Lock suggestions
+
+Based on locks held during field access, the analyzer will suggest annotations.
+These can be ignored with the standard `+checklocksignore` annotation.
+
+The annotation will be generated when the lock is held the vast majority of the
+time the field is accessed. Note that it is possible for this frequency to be
+greater than 100%, if the lock is held multiple times. For example:
+
+```go
+func foo(ts1 *testStruct, ts2 *testStruct) {
+  ts1.Lock()
+  ts2.Lock()
+  ts1.gaurdedField = 1 // 200% locks held.
+  ts1.Unlock()
+  ts2.Unlock()
+}
+```
+
+## Currently not supported
 
 1.  Anonymous functions are not correctly evaluated. The analyzer does not
     currently support specifying annotations on anonymous functions as a result
