@@ -202,13 +202,13 @@ func (s *SocketVFS2) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 		// Is it abstract?
 		if p[0] == 0 {
 			if t.IsNetworkNamespaced() {
-				return syserr.ErrInvalidEndpointState
+				return tcpip.SyserrInvalidEndpointState
 			}
 			asn := t.AbstractSockets()
 			name := p[1:]
 			if err := asn.Bind(t, name, bep, s); err != nil {
-				// syserr.ErrPortInUse corresponds to EADDRINUSE.
-				return syserr.ErrPortInUse
+				// tcpip.SyserrPortInUse corresponds to EADDRINUSE.
+				return tcpip.SyserrPortInUse
 			}
 			s.abstractName = name
 			s.abstractNamespace = asn

@@ -167,7 +167,7 @@ func extractPath(sockaddr []byte) (string, *syserr.Error) {
 func (s *socketOpsCommon) GetPeerName(t *kernel.Task) (linux.SockAddr, uint32, *syserr.Error) {
 	addr, err := s.ep.GetRemoteAddress()
 	if err != nil {
-		return nil, 0, syserr.TranslateNetstackError(err)
+		return nil, 0, tcpip.TranslateNetstackError(err)
 	}
 
 	a, l := socket.ConvertAddress(linux.AF_UNIX, addr)
@@ -179,7 +179,7 @@ func (s *socketOpsCommon) GetPeerName(t *kernel.Task) (linux.SockAddr, uint32, *
 func (s *socketOpsCommon) GetSockName(t *kernel.Task) (linux.SockAddr, uint32, *syserr.Error) {
 	addr, err := s.ep.GetLocalAddress()
 	if err != nil {
-		return nil, 0, syserr.TranslateNetstackError(err)
+		return nil, 0, tcpip.TranslateNetstackError(err)
 	}
 
 	a, l := socket.ConvertAddress(linux.AF_UNIX, addr)
@@ -288,13 +288,13 @@ func (s *SocketOperations) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 		// Is it abstract?
 		if p[0] == 0 {
 			if t.IsNetworkNamespaced() {
-				return syserr.ErrInvalidEndpointState
+				return tcpip.SyserrInvalidEndpointState
 			}
 			asn := t.AbstractSockets()
 			name := p[1:]
 			if err := asn.Bind(t, name, bep, s); err != nil {
-				// syserr.ErrPortInUse corresponds to EADDRINUSE.
-				return syserr.ErrPortInUse
+				// tcpip.SyserrPortInUse corresponds to EADDRINUSE.
+				return tcpip.SyserrPortInUse
 			}
 			s.abstractName = name
 			s.abstractNamespace = asn
@@ -326,7 +326,7 @@ func (s *SocketOperations) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 				d, err = t.MountNamespace().FindInode(t, root, cwd, subPath, &remainingTraversals)
 				if err != nil {
 					// No path available.
-					return syserr.ErrNoSuchFile
+					return tcpip.SyserrNoSuchFile
 				}
 				defer d.DecRef(t)
 				name = p[lastSlash+1:]
@@ -340,7 +340,7 @@ func (s *SocketOperations) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 			// unresolved until VFS2 replaces this code.
 			childDir, err := d.Bind(t, t.FSContext().RootDirectory(), name, bep, fs.FilePermissions{User: fs.PermMask{Read: true}})
 			if err != nil {
-				return syserr.ErrPortInUse
+				return tcpip.SyserrPortInUse
 			}
 			childDir.DecRef(t)
 		}
@@ -477,7 +477,7 @@ func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []b
 			if s.State() == linux.SS_CONNECTED {
 				return 0, syserr.ErrAlreadyConnected
 			}
-			return 0, syserr.ErrNotSupported
+			return 0, tcpip.SyserrNotSupported
 		default:
 			ep, err := extractEndpoint(t, to)
 			if err != nil {

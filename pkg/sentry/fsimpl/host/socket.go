@@ -97,7 +97,7 @@ func (c *ConnectedEndpoint) initFromOptions() *syserr.Error {
 
 	if family != unix.AF_UNIX {
 		// We only allow Unix sockets.
-		return syserr.ErrInvalidEndpointState
+		return tcpip.SyserrInvalidEndpointState
 	}
 
 	stype, err := unix.GetsockoptInt(c.fd, unix.SOL_SOCKET, unix.SO_TYPE)
@@ -147,7 +147,7 @@ func (c *ConnectedEndpoint) Send(ctx context.Context, data [][]byte, controlMess
 	defer c.mu.RUnlock()
 
 	if !controlMessages.Empty() {
-		return 0, false, syserr.ErrInvalidEndpointState
+		return 0, false, tcpip.SyserrInvalidEndpointState
 	}
 
 	// Since stream sockets don't preserve message boundaries, we can write
