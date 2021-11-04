@@ -26,7 +26,6 @@ import (
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -188,7 +187,7 @@ func doPoll(t *kernel.Task, addr hostarch.Addr, nfds uint, timeout time.Duration
 		pfd[i].Events |= linux.POLLHUP | linux.POLLERR
 	}
 	remainingTimeout, n, err := pollBlock(t, pfd, timeout)
-	err = syserr.ConvertIntr(err, linuxerr.EINTR)
+	err = linuxerr.ConvertIntr(err, linuxerr.EINTR)
 
 	// The poll entries are copied out regardless of whether
 	// any are set or not. This aligns with the Linux behavior.
@@ -298,7 +297,7 @@ func doSelect(t *kernel.Task, nfds int, readFDs, writeFDs, exceptFDs hostarch.Ad
 
 	// Do the syscall, then count the number of bits set.
 	if _, _, err = pollBlock(t, pfd, timeout); err != nil {
-		return 0, syserr.ConvertIntr(err, linuxerr.EINTR)
+		return 0, linuxerr.ConvertIntr(err, linuxerr.EINTR)
 	}
 
 	// r, w, and e are currently event mask bitsets; unset bits corresponding

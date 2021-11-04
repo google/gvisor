@@ -269,7 +269,7 @@ func Connect(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	}
 
 	blocking := !file.Flags().NonBlocking
-	return 0, nil, syserr.ConvertIntr(s.Connect(t, a, blocking).ToError(), linuxerr.ERESTARTSYS)
+	return 0, nil, linuxerr.ConvertIntr(s.Connect(t, a, blocking).ToError(), linuxerr.ERESTARTSYS)
 }
 
 // accept is the implementation of the accept syscall. It is called by accept
@@ -300,7 +300,7 @@ func accept(t *kernel.Task, fd int32, addr hostarch.Addr, addrLen hostarch.Addr,
 	peerRequested := addrLen != 0
 	nfd, peer, peerLen, e := s.Accept(t, peerRequested, flags, blocking)
 	if e != nil {
-		return 0, syserr.ConvertIntr(e.ToError(), linuxerr.ERESTARTSYS)
+		return 0, linuxerr.ConvertIntr(e.ToError(), linuxerr.ERESTARTSYS)
 	}
 	if peerRequested {
 		// NOTE(magi): Linux does not give you an error if it can't
@@ -762,7 +762,7 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr hostarch.Addr, flags 
 	if msg.ControlLen == 0 && msg.NameLen == 0 {
 		n, mflags, _, _, cms, err := s.RecvMsg(t, dst, int(flags), haveDeadline, deadline, false, 0)
 		if err != nil {
-			return 0, syserr.ConvertIntr(err.ToError(), linuxerr.ERESTARTSYS)
+			return 0, linuxerr.ConvertIntr(err.ToError(), linuxerr.ERESTARTSYS)
 		}
 		if !cms.Unix.Empty() {
 			mflags |= linux.MSG_CTRUNC
@@ -784,7 +784,7 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr hostarch.Addr, flags 
 	}
 	n, mflags, sender, senderLen, cms, e := s.RecvMsg(t, dst, int(flags), haveDeadline, deadline, msg.NameLen != 0, msg.ControlLen)
 	if e != nil {
-		return 0, syserr.ConvertIntr(e.ToError(), linuxerr.ERESTARTSYS)
+		return 0, linuxerr.ConvertIntr(e.ToError(), linuxerr.ERESTARTSYS)
 	}
 	defer cms.Release(t)
 
@@ -873,7 +873,7 @@ func recvFrom(t *kernel.Task, fd int32, bufPtr hostarch.Addr, bufLen uint64, fla
 	n, _, sender, senderLen, cm, e := s.RecvMsg(t, dst, int(flags), haveDeadline, deadline, nameLenPtr != 0, 0)
 	cm.Release(t)
 	if e != nil {
-		return 0, syserr.ConvertIntr(e.ToError(), linuxerr.ERESTARTSYS)
+		return 0, linuxerr.ConvertIntr(e.ToError(), linuxerr.ERESTARTSYS)
 	}
 
 	// Copy the address to the caller.
