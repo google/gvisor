@@ -76,7 +76,7 @@ func (p *providerVFS2) Socket(t *kernel.Task, stype linux.SockType, protocol int
 		}
 	}
 	if e != nil {
-		return nil, syserr.TranslateNetstackError(e)
+		return nil, tcpip.TranslateNetstackError(e)
 	}
 
 	return NewVFS2(t, p.family, stype, int(transProto), wq, ep)
@@ -107,7 +107,7 @@ func packetSocketVFS2(t *kernel.Task, epStack *Stack, stype linux.SockType, prot
 	wq := &waiter.Queue{}
 	ep, err := epStack.Stack.NewPacketEndpoint(cooked, netProto, wq)
 	if err != nil {
-		return nil, syserr.TranslateNetstackError(err)
+		return nil, tcpip.TranslateNetstackError(err)
 	}
 
 	return NewVFS2(t, linux.AF_PACKET, stype, protocol, wq, ep)

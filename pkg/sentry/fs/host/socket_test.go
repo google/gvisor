@@ -25,7 +25,6 @@ import (
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
-	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -178,11 +177,11 @@ func TestListen(t *testing.T) {
 	socket2 := sfile2.FileOperations.(socket.Socket)
 
 	// Socketpairs can not be listened to.
-	if err := socket1.Listen(nil, 64); err != syserr.ErrInvalidEndpointState {
-		t.Fatalf("socket1.Listen(nil, 64) => %v, want syserr.ErrInvalidEndpointState", err)
+	if err := socket1.Listen(nil, 64); err != tcpip.SyserrInvalidEndpointState {
+		t.Fatalf("socket1.Listen(nil, 64) => %v, want tcpip.SyserrInvalidEndpointState", err)
 	}
-	if err := socket2.Listen(nil, 64); err != syserr.ErrInvalidEndpointState {
-		t.Fatalf("socket2.Listen(nil, 64) => %v, want syserr.ErrInvalidEndpointState", err)
+	if err := socket2.Listen(nil, 64); err != tcpip.SyserrInvalidEndpointState {
+		t.Fatalf("socket2.Listen(nil, 64) => %v, want tcpip.SyserrInvalidEndpointState", err)
 	}
 
 	// Create a Unix socket, do not bind it.
@@ -198,8 +197,8 @@ func TestListen(t *testing.T) {
 	socket3 := sfile3.FileOperations.(socket.Socket)
 
 	// This socket is not bound so we can't listen on it.
-	if err := socket3.Listen(nil, 64); err != syserr.ErrInvalidEndpointState {
-		t.Fatalf("socket3.Listen(nil, 64) => %v, want syserr.ErrInvalidEndpointState", err)
+	if err := socket3.Listen(nil, 64); err != tcpip.SyserrInvalidEndpointState {
+		t.Fatalf("socket3.Listen(nil, 64) => %v, want tcpip.SyserrInvalidEndpointState", err)
 	}
 }
 
