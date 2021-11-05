@@ -38,12 +38,12 @@ func (StubMarshallable) SizeBytes() int {
 }
 
 // MarshalBytes implements Marshallable.MarshalBytes.
-func (StubMarshallable) MarshalBytes(dst []byte) {
+func (StubMarshallable) MarshalBytes(dst []byte) []byte {
 	panic("Please implement your own MarshalBytes function")
 }
 
 // UnmarshalBytes implements Marshallable.UnmarshalBytes.
-func (StubMarshallable) UnmarshalBytes(src []byte) {
+func (StubMarshallable) UnmarshalBytes(src []byte) []byte {
 	panic("Please implement your own UnmarshalBytes function")
 }
 
@@ -53,12 +53,12 @@ func (StubMarshallable) Packed() bool {
 }
 
 // MarshalUnsafe implements Marshallable.MarshalUnsafe.
-func (StubMarshallable) MarshalUnsafe(dst []byte) {
+func (StubMarshallable) MarshalUnsafe(dst []byte) []byte {
 	panic("Please implement your own MarshalUnsafe function")
 }
 
 // UnmarshalUnsafe implements Marshallable.UnmarshalUnsafe.
-func (StubMarshallable) UnmarshalUnsafe(src []byte) {
+func (StubMarshallable) UnmarshalUnsafe(src []byte) []byte {
 	panic("Please implement your own UnmarshalUnsafe function")
 }
 

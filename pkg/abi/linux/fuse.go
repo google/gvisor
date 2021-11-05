@@ -352,6 +352,22 @@ type FUSEEntryOut struct {
 	Attr FUSEAttr
 }
 
+// CString represents a null terminated string which can be marshalled.
+type CString string
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (s *CString) MarshalBytes(buf []byte) []byte {
+	copy(buf, *s)
+	buf[len(*s)] = 0 // null char
+	return buf[s.SizeBytes():]
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (s *CString) SizeBytes() int {
+	// 1 extra byte for null-terminated string.
+	return len(*s) + 1
+}
+
 // FUSELookupIn is the request sent by the kernel to the daemon
 // to look up a file name.
 //
@@ -360,18 +376,17 @@ type FUSELookupIn struct {
 	marshal.StubMarshallable
 
 	// Name is a file name to be looked up.
-	Name string
+	Name CString
 }
 
 // MarshalBytes serializes r.name to the dst buffer.
-func (r *FUSELookupIn) MarshalBytes(buf []byte) {
-	copy(buf, r.Name)
+func (r *FUSELookupIn) MarshalBytes(buf []byte) []byte {
+	return r.Name.MarshalBytes(buf)
 }
 
 // SizeBytes is the size of the memory representation of FUSELookupIn.
-// 1 extra byte for null-terminated string.
 func (r *FUSELookupIn) SizeBytes() int {
-	return len(r.Name) + 1
+	return r.Name.SizeBytes()
 }
 
 // MAX_NON_LFS indicates the maximum offset without large file support.
@@ -530,19 +545,18 @@ type FUSECreateIn struct {
 	CreateMeta FUSECreateMeta
 
 	// Name is the name of the node to create.
-	Name string
+	Name CString
 }
 
 // MarshalBytes serializes r.CreateMeta and r.Name to the dst buffer.
-func (r *FUSECreateIn) MarshalBytes(buf []byte) {
-	r.CreateMeta.MarshalBytes(buf[:r.CreateMeta.SizeBytes()])
-	copy(buf[r.CreateMeta.SizeBytes():], r.Name)
+func (r *FUSECreateIn) MarshalBytes(buf []byte) []byte {
+	buf = r.CreateMeta.MarshalBytes(buf)
+	return r.Name.MarshalBytes(buf)
 }
 
 // SizeBytes is the size of the memory representation of FUSECreateIn.
-// 1 extra byte for null-terminated string.
 func (r *FUSECreateIn) SizeBytes() int {
-	return r.CreateMeta.SizeBytes() + len(r.Name) + 1
+	return r.CreateMeta.SizeBytes() + r.Name.SizeBytes()
 }
 
 // FUSEMknodMeta contains all the static fields of FUSEMknodIn,
@@ -573,19 +587,18 @@ type FUSEMknodIn struct {
 	MknodMeta FUSEMknodMeta
 
 	// Name is the name of the node to create.
-	Name string
+	Name CString
 }
 
 // MarshalBytes serializes r.MknodMeta and r.Name to the dst buffer.
-func (r *FUSEMknodIn) MarshalBytes(buf []byte) {
-	r.MknodMeta.MarshalBytes(buf[:r.MknodMeta.SizeBytes()])
-	copy(buf[r.MknodMeta.SizeBytes():], r.Name)
+func (r *FUSEMknodIn) MarshalBytes(buf []byte) []byte {
+	buf = r.MknodMeta.MarshalBytes(buf)
+	return r.Name.MarshalBytes(buf)
 }
 
 // SizeBytes is the size of the memory representation of FUSEMknodIn.
-// 1 extra byte for null-terminated string.
 func (r *FUSEMknodIn) SizeBytes() int {
-	return r.MknodMeta.SizeBytes() + len(r.Name) + 1
+	return r.MknodMeta.SizeBytes() + r.Name.SizeBytes()
 }
 
 // FUSESymLinkIn is the request sent by the kernel to the daemon,
@@ -596,30 +609,30 @@ type FUSESymLinkIn struct {
 	marshal.StubMarshallable
 
 	// Name of symlink to create.
-	Name string
+	Name CString
 
 	// Target of the symlink.
-	Target string
+	Target CString
 }
 
 // MarshalBytes serializes r.Name and r.Target to the dst buffer.
-// Left null-termination at end of r.Name and r.Target.
-func (r *FUSESymLinkIn) MarshalBytes(buf []byte) {
-	copy(buf, r.Name)
-	copy(buf[len(r.Name)+1:], r.Target)
+func (r *FUSESymLinkIn) MarshalBytes(buf []byte) []byte {
+	buf = r.Name.MarshalBytes(buf)
+	return r.Target.MarshalBytes(buf)
 }
 
 // SizeBytes is the size of the memory representation of FUSESymLinkIn.
-// 2 extra bytes for null-terminated string.
 func (r *FUSESymLinkIn) SizeBytes() int {
-	return len(r.Name) + len(r.Target) + 2
+	return r.Name.SizeBytes() + r.Target.SizeBytes()
 }
 
 // FUSEEmptyIn is used by operations without request body.
 type FUSEEmptyIn struct{ marshal.StubMarshallable }
 
 // MarshalBytes do nothing for marshal.
-func (r *FUSEEmptyIn) MarshalBytes(buf []byte) {}
+func (r *FUSEEmptyIn) MarshalBytes(buf []byte) []byte {
+	return buf
+}
 
 // SizeBytes is 0 for empty request.
 func (r *FUSEEmptyIn) SizeBytes() int {
@@ -649,19 +662,18 @@ type FUSEMkdirIn struct {
 	MkdirMeta FUSEMkdirMeta
 
 	// Name of the directory to create.
-	Name string
+	Name CString
 }
 
 // MarshalBytes serializes r.MkdirMeta and r.Name to the dst buffer.
-func (r *FUSEMkdirIn) MarshalBytes(buf []byte) {
-	r.MkdirMeta.MarshalBytes(buf[:r.MkdirMeta.SizeBytes()])
-	copy(buf[r.MkdirMeta.SizeBytes():], r.Name)
+func (r *FUSEMkdirIn) MarshalBytes(buf []byte) []byte {
+	buf = r.MkdirMeta.MarshalBytes(buf)
+	return r.Name.MarshalBytes(buf)
 }
 
 // SizeBytes is the size of the memory representation of FUSEMkdirIn.
-// 1 extra byte for null-terminated Name string.
 func (r *FUSEMkdirIn) SizeBytes() int {
-	return r.MkdirMeta.SizeBytes() + len(r.Name) + 1
+	return r.MkdirMeta.SizeBytes() + r.Name.SizeBytes()
 }
 
 // FUSERmDirIn is the request sent by the kernel to the daemon
@@ -672,17 +684,17 @@ type FUSERmDirIn struct {
 	marshal.StubMarshallable
 
 	// Name is a directory name to be removed.
-	Name string
+	Name CString
 }
 
 // MarshalBytes serializes r.name to the dst buffer.
-func (r *FUSERmDirIn) MarshalBytes(buf []byte) {
-	copy(buf, r.Name)
+func (r *FUSERmDirIn) MarshalBytes(buf []byte) []byte {
+	return r.Name.MarshalBytes(buf)
 }
 
 // SizeBytes is the size of the memory representation of FUSERmDirIn.
 func (r *FUSERmDirIn) SizeBytes() int {
-	return len(r.Name) + 1
+	return r.Name.SizeBytes()
 }
 
 // FUSEDirents is a list of Dirents received from the FUSE daemon server.
@@ -738,7 +750,7 @@ func (r *FUSEDirents) SizeBytes() int {
 }
 
 // UnmarshalBytes deserializes FUSEDirents from the src buffer.
-func (r *FUSEDirents) UnmarshalBytes(src []byte) {
+func (r *FUSEDirents) UnmarshalBytes(src []byte) []byte {
 	for {
 		if len(src) <= (*FUSEDirentMeta)(nil).SizeBytes() {
 			break
@@ -754,11 +766,10 @@ func (r *FUSEDirents) UnmarshalBytes(src []byte) {
 		// to do this. Linux allocates 1 page to store all the dirents and then
 		// simply reads them from the page.
 		var dirent FUSEDirent
-		dirent.UnmarshalBytes(src)
+		src = dirent.UnmarshalBytes(src)
 		r.Dirents = append(r.Dirents, &dirent)
-
-		src = src[dirent.SizeBytes():]
 	}
+	return src
 }
 
 // SizeBytes is the size of the memory representation of FUSEDirent.
@@ -772,20 +783,20 @@ func (r *FUSEDirent) SizeBytes() int {
 }
 
 // UnmarshalBytes deserializes FUSEDirent from the src buffer.
-func (r *FUSEDirent) UnmarshalBytes(src []byte) {
-	r.Meta.UnmarshalBytes(src)
-	src = src[r.Meta.SizeBytes():]
+func (r *FUSEDirent) UnmarshalBytes(src []byte) []byte {
+	src = r.Meta.UnmarshalBytes(src)
 
 	if r.Meta.NameLen > FUSE_NAME_MAX {
 		// The name is too long and therefore invalid. We don't
 		// need to unmarshal the name since it'll be thrown away.
-		return
+		return src
 	}
 
 	buf := make([]byte, r.Meta.NameLen)
 	name := primitive.ByteSlice(buf)
 	name.UnmarshalBytes(src[:r.Meta.NameLen])
 	r.Name = string(name)
+	return src[r.Meta.NameLen:]
 }
 
 // FATTR_* consts are the attribute flags defined in include/uapi/linux/fuse.h.
@@ -863,17 +874,15 @@ type FUSEUnlinkIn struct {
 	marshal.StubMarshallable
 
 	// Name of the node to unlink.
-	Name string
+	Name CString
 }
 
-// MarshalBytes serializes r.name to the dst buffer, which should
-// have size len(r.Name) + 1 and last byte set to 0.
-func (r *FUSEUnlinkIn) MarshalBytes(buf []byte) {
-	copy(buf, r.Name)
+// MarshalBytes serializes r.name to the dst buffer.
+func (r *FUSEUnlinkIn) MarshalBytes(buf []byte) []byte {
+	return r.Name.MarshalBytes(buf)
 }
 
 // SizeBytes is the size of the memory representation of FUSEUnlinkIn.
-// 1 extra byte for null-terminated Name string.
 func (r *FUSEUnlinkIn) SizeBytes() int {
-	return len(r.Name) + 1
+	return r.Name.SizeBytes()
 }

@@ -138,7 +138,7 @@ func ExtractHostInterfaces(links []syscall.NetlinkMessage, addrs []syscall.Netli
 			return fmt.Errorf("RTM_GETLINK returned RTM_NEWLINK message with invalid data length (%d bytes, expected at least %d bytes)", len(link.Data), unix.SizeofIfInfomsg)
 		}
 		var ifinfo linux.InterfaceInfoMessage
-		ifinfo.UnmarshalUnsafe(link.Data[:ifinfo.SizeBytes()])
+		ifinfo.UnmarshalUnsafe(link.Data)
 		inetIF := inet.Interface{
 			DeviceType: ifinfo.Type,
 			Flags:      ifinfo.Flags,
@@ -169,7 +169,7 @@ func ExtractHostInterfaces(links []syscall.NetlinkMessage, addrs []syscall.Netli
 			return fmt.Errorf("RTM_GETADDR returned RTM_NEWADDR message with invalid data length (%d bytes, expected at least %d bytes)", len(addr.Data), unix.SizeofIfAddrmsg)
 		}
 		var ifaddr linux.InterfaceAddrMessage
-		ifaddr.UnmarshalUnsafe(addr.Data[:ifaddr.SizeBytes()])
+		ifaddr.UnmarshalUnsafe(addr.Data)
 		inetAddr := inet.InterfaceAddr{
 			Family:    ifaddr.Family,
 			PrefixLen: ifaddr.PrefixLen,
@@ -201,7 +201,7 @@ func ExtractHostRoutes(routeMsgs []syscall.NetlinkMessage) ([]inet.Route, error)
 		}
 
 		var ifRoute linux.RouteMessage
-		ifRoute.UnmarshalUnsafe(routeMsg.Data[:ifRoute.SizeBytes()])
+		ifRoute.UnmarshalUnsafe(routeMsg.Data)
 		inetRoute := inet.Route{
 			Family:   ifRoute.Family,
 			DstLen:   ifRoute.DstLen,

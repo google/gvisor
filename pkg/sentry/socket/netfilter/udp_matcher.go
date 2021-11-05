@@ -59,7 +59,7 @@ func (udpMarshaler) unmarshal(_ *kernel.Task, buf []byte, filter stack.IPHeaderF
 	// For alignment reasons, the match's total size may exceed what's
 	// strictly necessary to hold matchData.
 	var matchData linux.XTUDP
-	matchData.UnmarshalUnsafe(buf[:matchData.SizeBytes()])
+	matchData.UnmarshalUnsafe(buf)
 	nflog("parseMatchers: parsed XTUDP: %+v", matchData)
 
 	if matchData.InverseFlags != 0 {

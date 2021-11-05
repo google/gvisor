@@ -80,9 +80,8 @@ func marshalEntryMatch(name string, data []byte) []byte {
 	copy(matcher.Name[:], name)
 
 	buf := make([]byte, size)
-	entryLen := matcher.XTEntryMatch.SizeBytes()
-	matcher.XTEntryMatch.MarshalUnsafe(buf[:entryLen])
-	copy(buf[entryLen:], matcher.Data)
+	bufRemain := matcher.XTEntryMatch.MarshalUnsafe(buf)
+	copy(bufRemain, matcher.Data)
 	return buf
 }
 

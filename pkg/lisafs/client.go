@@ -313,7 +313,7 @@ func (c *Client) SyncFDs(ctx context.Context, fds []FDID) error {
 // implicit conversion to an interface leads to an allocation.
 //
 // Precondition: reqMarshal and respUnmarshal must be non-nil.
-func (c *Client) SndRcvMessage(m MID, payloadLen uint32, reqMarshal func(dst []byte), respUnmarshal func(src []byte), respFDs []int) error {
+func (c *Client) SndRcvMessage(m MID, payloadLen uint32, reqMarshal func(dst []byte) []byte, respUnmarshal func(src []byte) []byte, respFDs []int) error {
 	if !c.IsSupported(m) {
 		return unix.EOPNOTSUPP
 	}

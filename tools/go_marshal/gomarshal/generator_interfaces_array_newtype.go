@@ -56,24 +56,26 @@ func (g *interfaceGenerator) emitMarshallableForArrayNewtype(n *ast.Ident, a *as
 	g.emit("}\n\n")
 
 	g.emit("// MarshalBytes implements marshal.Marshallable.MarshalBytes.\n")
-	g.emit("func (%s *%s) MarshalBytes(dst []byte) {\n", g.r, g.typeName())
+	g.emit("func (%s *%s) MarshalBytes(dst []byte) []byte {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.emit("for idx := 0; idx < %s; idx++ {\n", lenExpr)
 		g.inIndent(func() {
 			g.marshalScalar(fmt.Sprintf("%s[idx]", g.r), elt.Name, "dst")
 		})
 		g.emit("}\n")
+		g.emit("return dst\n")
 	})
 	g.emit("}\n\n")
 
 	g.emit("// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.\n")
-	g.emit("func (%s *%s) UnmarshalBytes(src []byte) {\n", g.r, g.typeName())
+	g.emit("func (%s *%s) UnmarshalBytes(src []byte) []byte {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.emit("for idx := 0; idx < %s; idx++ {\n", lenExpr)
 		g.inIndent(func() {
 			g.unmarshalScalar(fmt.Sprintf("%s[idx]", g.r), elt.Name, "src")
 		})
 		g.emit("}\n")
+		g.emit("return src\n")
 	})
 	g.emit("}\n\n")
 
@@ -87,16 +89,20 @@ func (g *interfaceGenerator) emitMarshallableForArrayNewtype(n *ast.Ident, a *as
 	g.emit("}\n\n")
 
 	g.emit("// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.\n")
-	g.emit("func (%s *%s) MarshalUnsafe(dst []byte) {\n", g.r, g.typeName())
+	g.emit("func (%s *%s) MarshalUnsafe(dst []byte) []byte {\n", g.r, g.typeName())
 	g.inIndent(func() {
-		g.emit("gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&%s[0]), uintptr(%s.SizeBytes()))\n", g.r, g.r)
+		g.emit("size := %s.SizeBytes()\n", g.r)
+		g.emit("gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&%s[0]), uintptr(size))\n", g.r)
+		g.emit("return dst[size:]\n")
 	})
 	g.emit("}\n\n")
 
 	g.emit("// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.\n")
-	g.emit("func (%s *%s) UnmarshalUnsafe(src []byte) {\n", g.r, g.typeName())
+	g.emit("func (%s *%s) UnmarshalUnsafe(src []byte) []byte {\n", g.r, g.typeName())
 	g.inIndent(func() {
-		g.emit("gohacks.Memmove(unsafe.Pointer(%s), unsafe.Pointer(&src[0]), uintptr(%s.SizeBytes()))\n", g.r, g.r)
+		g.emit("size := %s.SizeBytes()\n", g.r)
+		g.emit("gohacks.Memmove(unsafe.Pointer(%s), unsafe.Pointer(&src[0]), uintptr(size))\n", g.r)
+		g.emit("return src[size:]\n")
 	})
 	g.emit("}\n\n")
 

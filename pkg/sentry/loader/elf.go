@@ -212,8 +212,7 @@ func parseHeader(ctx context.Context, f fullReader) (elfInfo, error) {
 	phdrs := make([]elf.ProgHeader, hdr.Phnum)
 	for i := range phdrs {
 		var prog64 linux.ElfProg64
-		prog64.UnmarshalUnsafe(phdrBuf[:prog64Size])
-		phdrBuf = phdrBuf[prog64Size:]
+		phdrBuf = prog64.UnmarshalUnsafe(phdrBuf)
 		phdrs[i] = elf.ProgHeader{
 			Type:   elf.ProgType(prog64.Type),
 			Flags:  elf.ProgFlag(prog64.Flags),

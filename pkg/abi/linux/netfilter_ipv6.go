@@ -84,23 +84,21 @@ func (ke *KernelIP6TGetEntries) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (ke *KernelIP6TGetEntries) MarshalBytes(dst []byte) {
-	ke.IPTGetEntries.MarshalUnsafe(dst)
-	marshalledUntil := ke.IPTGetEntries.SizeBytes()
+func (ke *KernelIP6TGetEntries) MarshalBytes(dst []byte) []byte {
+	dst = ke.IPTGetEntries.MarshalUnsafe(dst)
 	for i := range ke.Entrytable {
-		ke.Entrytable[i].MarshalBytes(dst[marshalledUntil:])
-		marshalledUntil += ke.Entrytable[i].SizeBytes()
+		dst = ke.Entrytable[i].MarshalBytes(dst)
 	}
+	return dst
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (ke *KernelIP6TGetEntries) UnmarshalBytes(src []byte) {
-	ke.IPTGetEntries.UnmarshalUnsafe(src)
-	unmarshalledUntil := ke.IPTGetEntries.SizeBytes()
+func (ke *KernelIP6TGetEntries) UnmarshalBytes(src []byte) []byte {
+	src = ke.IPTGetEntries.UnmarshalUnsafe(src)
 	for i := range ke.Entrytable {
-		ke.Entrytable[i].UnmarshalBytes(src[unmarshalledUntil:])
-		unmarshalledUntil += ke.Entrytable[i].SizeBytes()
+		src = ke.Entrytable[i].UnmarshalBytes(src)
 	}
+	return src
 }
 
 var _ marshal.Marshallable = (*KernelIP6TGetEntries)(nil)
@@ -166,16 +164,18 @@ func (ke *KernelIP6TEntry) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (ke *KernelIP6TEntry) MarshalBytes(dst []byte) {
-	ke.Entry.MarshalUnsafe(dst)
-	ke.Elems.MarshalBytes(dst[ke.Entry.SizeBytes():])
+func (ke *KernelIP6TEntry) MarshalBytes(dst []byte) []byte {
+	dst = ke.Entry.MarshalUnsafe(dst)
+	return ke.Elems.MarshalBytes(dst)
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (ke *KernelIP6TEntry) UnmarshalBytes(src []byte) {
-	ke.Entry.UnmarshalUnsafe(src)
-	ke.Elems.UnmarshalBytes(src[ke.Entry.SizeBytes():])
+func (ke *KernelIP6TEntry) UnmarshalBytes(src []byte) []byte {
+	src = ke.Entry.UnmarshalUnsafe(src)
+	return ke.Elems.UnmarshalBytes(src)
 }
+
+var _ marshal.Marshallable = (*KernelIP6TEntry)(nil)
 
 // IP6TIP contains information for matching a packet's IP header.
 // It corresponds to struct ip6t_ip6 in

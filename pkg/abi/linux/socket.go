@@ -555,9 +555,6 @@ type ControlMessageIPv6PacketInfo struct {
 // ControlMessageCredentials struct.
 var SizeOfControlMessageCredentials = (*ControlMessageCredentials)(nil).SizeBytes()
 
-// A ControlMessageRights is an SCM_RIGHTS socket control message.
-type ControlMessageRights []int32
-
 // SizeOfControlMessageRight is the size of a single element in
 // ControlMessageRights.
 const SizeOfControlMessageRight = 4

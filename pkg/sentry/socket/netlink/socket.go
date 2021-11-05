@@ -223,7 +223,7 @@ func ExtractSockAddr(b []byte) (*linux.SockAddrNetlink, *syserr.Error) {
 	}
 
 	var sa linux.SockAddrNetlink
-	sa.UnmarshalUnsafe(b[:sa.SizeBytes()])
+	sa.UnmarshalUnsafe(b)
 
 	if sa.Family != linux.AF_NETLINK {
 		return nil, syserr.ErrInvalidArgument

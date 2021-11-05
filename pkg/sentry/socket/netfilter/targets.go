@@ -199,7 +199,7 @@ func (*standardTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (
 		return nil, syserr.ErrInvalidArgument
 	}
 	var standardTarget linux.XTStandardTarget
-	standardTarget.UnmarshalUnsafe(buf[:standardTarget.SizeBytes()])
+	standardTarget.UnmarshalUnsafe(buf)
 
 	if standardTarget.Verdict < 0 {
 		// A Verdict < 0 indicates a non-jump verdict.
@@ -253,7 +253,6 @@ func (*errorTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (tar
 		return nil, syserr.ErrInvalidArgument
 	}
 	var errTgt linux.XTErrorTarget
-	buf = buf[:linux.SizeOfXTErrorTarget]
 	errTgt.UnmarshalUnsafe(buf)
 
 	// Error targets are used in 2 cases:
@@ -316,7 +315,6 @@ func (*redirectTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (
 	}
 
 	var rt linux.XTRedirectTarget
-	buf = buf[:linux.SizeOfXTRedirectTarget]
 	rt.UnmarshalUnsafe(buf)
 
 	// Copy linux.XTRedirectTarget to stack.RedirectTarget.
@@ -405,8 +403,7 @@ func (*nfNATTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (tar
 	}
 
 	var natRange linux.NFNATRange
-	buf = buf[linux.SizeOfXTEntryTarget:nfNATMarshalledSize]
-	natRange.UnmarshalUnsafe(buf)
+	natRange.UnmarshalUnsafe(buf[linux.SizeOfXTEntryTarget:])
 
 	// We don't support port or address ranges.
 	if natRange.MinAddr != natRange.MaxAddr {
@@ -477,7 +474,6 @@ func (*snatTargetMakerV4) unmarshal(buf []byte, filter stack.IPHeaderFilter) (ta
 	}
 
 	var st linux.XTSNATTarget
-	buf = buf[:linux.SizeOfXTSNATTarget]
 	st.UnmarshalUnsafe(buf)
 
 	// Copy linux.XTSNATTarget to stack.SNATTarget.
@@ -557,8 +553,7 @@ func (*snatTargetMakerV6) unmarshal(buf []byte, filter stack.IPHeaderFilter) (ta
 	}
 
 	var natRange linux.NFNATRange
-	buf = buf[linux.SizeOfXTEntryTarget:nfNATMarshalledSize]
-	natRange.UnmarshalUnsafe(buf)
+	natRange.UnmarshalUnsafe(buf[linux.SizeOfXTEntryTarget:])
 
 	// TODO(gvisor.dev/issue/5697): Support port or address ranges.
 	if natRange.MinAddr != natRange.MaxAddr {
@@ -621,7 +616,9 @@ func parseTarget(filter stack.IPHeaderFilter, optVal []byte, ipv6 bool) (stack.T
 		return nil, syserr.ErrInvalidArgument
 	}
 	var target linux.XTEntryTarget
-	target.UnmarshalUnsafe(optVal[:target.SizeBytes()])
+	// Do not advance optVal as targetMake.unmarshal() may unmarshal
+	// XTEntryTarget again but with some added fields.
+	target.UnmarshalUnsafe(optVal)
 
 	return unmarshalTarget(target, filter, optVal)
 }

@@ -18,6 +18,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -45,10 +46,10 @@ type RightsFilesVFS2 []*vfs.FileDescription
 
 // NewSCMRightsVFS2 creates a new SCM_RIGHTS socket control message
 // representation using local sentry FDs.
-func NewSCMRightsVFS2(t *kernel.Task, fds []int32) (SCMRightsVFS2, error) {
+func NewSCMRightsVFS2(t *kernel.Task, fds []primitive.Int32) (SCMRightsVFS2, error) {
 	files := make(RightsFilesVFS2, 0, len(fds))
 	for _, fd := range fds {
-		file := t.GetFileVFS2(fd)
+		file := t.GetFileVFS2(int32(fd))
 		if file == nil {
 			files.Release(t)
 			return nil, linuxerr.EBADF

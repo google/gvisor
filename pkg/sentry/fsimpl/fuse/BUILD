@@ -77,8 +77,7 @@ go_test(
     deps = [
         "//pkg/abi/linux",
         "//pkg/errors/linuxerr",
-        "//pkg/hostarch",
-        "//pkg/marshal",
+        "//pkg/marshal/primitive",
         "//pkg/sentry/fsimpl/testutil",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",

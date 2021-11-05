@@ -53,18 +53,24 @@ func (m *MsgDynamic) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (m *MsgDynamic) MarshalBytes(dst []byte) {
-	m.N.MarshalUnsafe(dst)
-	dst = dst[m.N.SizeBytes():]
-	MarshalUnsafeMsg1Slice(m.Arr, dst)
+func (m *MsgDynamic) MarshalBytes(dst []byte) []byte {
+	dst = m.N.MarshalUnsafe(dst)
+	n, err := MarshalUnsafeMsg1Slice(m.Arr, dst)
+	if err != nil {
+		panic(err)
+	}
+	return dst[n:]
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (m *MsgDynamic) UnmarshalBytes(src []byte) {
-	m.N.UnmarshalUnsafe(src)
-	src = src[m.N.SizeBytes():]
+func (m *MsgDynamic) UnmarshalBytes(src []byte) []byte {
+	src = m.N.UnmarshalUnsafe(src)
 	m.Arr = make([]MsgSimple, m.N)
-	UnmarshalUnsafeMsg1Slice(m.Arr, src)
+	n, err := UnmarshalUnsafeMsg1Slice(m.Arr, src)
+	if err != nil {
+		panic(err)
+	}
+	return src[n:]
 }
 
 // Randomize randomizes the contents of m.
@@ -90,21 +96,18 @@ func (v *P9Version) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (v *P9Version) MarshalBytes(dst []byte) {
-	v.MSize.MarshalUnsafe(dst)
-	dst = dst[v.MSize.SizeBytes():]
+func (v *P9Version) MarshalBytes(dst []byte) []byte {
+	dst = v.MSize.MarshalUnsafe(dst)
 	versionLen := primitive.Uint16(len(v.Version))
-	versionLen.MarshalUnsafe(dst)
-	dst = dst[versionLen.SizeBytes():]
-	copy(dst, v.Version)
+	dst = versionLen.MarshalUnsafe(dst)
+	return dst[copy(dst, v.Version):]
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (v *P9Version) UnmarshalBytes(src []byte) {
-	v.MSize.UnmarshalUnsafe(src)
-	src = src[v.MSize.SizeBytes():]
+func (v *P9Version) UnmarshalBytes(src []byte) []byte {
+	src = v.MSize.UnmarshalUnsafe(src)
 	var versionLen primitive.Uint16
-	versionLen.UnmarshalUnsafe(src)
-	src = src[versionLen.SizeBytes():]
+	src = versionLen.UnmarshalUnsafe(src)
 	v.Version = string(src[:versionLen])
+	return src[versionLen:]
 }

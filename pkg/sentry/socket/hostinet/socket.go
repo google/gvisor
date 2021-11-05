@@ -578,7 +578,7 @@ func parseUnixControlMessages(unixControlMessages []unix.SocketControlMessage) s
 			case linux.SO_TIMESTAMP:
 				controlMessages.IP.HasTimestamp = true
 				ts := linux.Timeval{}
-				ts.UnmarshalUnsafe(unixCmsg.Data[:linux.SizeOfTimeval])
+				ts.UnmarshalUnsafe(unixCmsg.Data)
 				controlMessages.IP.Timestamp = ts.ToTime()
 			}
 
@@ -587,18 +587,18 @@ func parseUnixControlMessages(unixControlMessages []unix.SocketControlMessage) s
 			case linux.IP_TOS:
 				controlMessages.IP.HasTOS = true
 				var tos primitive.Uint8
-				tos.UnmarshalUnsafe(unixCmsg.Data[:tos.SizeBytes()])
+				tos.UnmarshalUnsafe(unixCmsg.Data)
 				controlMessages.IP.TOS = uint8(tos)
 
 			case linux.IP_PKTINFO:
 				controlMessages.IP.HasIPPacketInfo = true
 				var packetInfo linux.ControlMessageIPPacketInfo
-				packetInfo.UnmarshalUnsafe(unixCmsg.Data[:packetInfo.SizeBytes()])
+				packetInfo.UnmarshalUnsafe(unixCmsg.Data)
 				controlMessages.IP.PacketInfo = packetInfo
 
 			case linux.IP_RECVORIGDSTADDR:
 				var addr linux.SockAddrInet
-				addr.UnmarshalUnsafe(unixCmsg.Data[:addr.SizeBytes()])
+				addr.UnmarshalUnsafe(unixCmsg.Data)
 				controlMessages.IP.OriginalDstAddress = &addr
 
 			case unix.IP_RECVERR:
@@ -612,12 +612,12 @@ func parseUnixControlMessages(unixControlMessages []unix.SocketControlMessage) s
 			case linux.IPV6_TCLASS:
 				controlMessages.IP.HasTClass = true
 				var tclass primitive.Uint32
-				tclass.UnmarshalUnsafe(unixCmsg.Data[:tclass.SizeBytes()])
+				tclass.UnmarshalUnsafe(unixCmsg.Data)
 				controlMessages.IP.TClass = uint32(tclass)
 
 			case linux.IPV6_RECVORIGDSTADDR:
 				var addr linux.SockAddrInet6
-				addr.UnmarshalUnsafe(unixCmsg.Data[:addr.SizeBytes()])
+				addr.UnmarshalUnsafe(unixCmsg.Data)
 				controlMessages.IP.OriginalDstAddress = &addr
 
 			case unix.IPV6_RECVERR:
@@ -631,7 +631,7 @@ func parseUnixControlMessages(unixControlMessages []unix.SocketControlMessage) s
 			case linux.TCP_INQ:
 				controlMessages.IP.HasInq = true
 				var inq primitive.Int32
-				inq.UnmarshalUnsafe(unixCmsg.Data[:linux.SizeOfControlMessageInq])
+				inq.UnmarshalUnsafe(unixCmsg.Data)
 				controlMessages.IP.Inq = int32(inq)
 			}
 		}

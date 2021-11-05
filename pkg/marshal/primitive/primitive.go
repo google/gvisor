@@ -76,13 +76,13 @@ func (b *ByteSlice) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (b *ByteSlice) MarshalBytes(dst []byte) {
-	copy(dst, *b)
+func (b *ByteSlice) MarshalBytes(dst []byte) []byte {
+	return dst[copy(dst, *b):]
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (b *ByteSlice) UnmarshalBytes(src []byte) {
-	copy(*b, src)
+func (b *ByteSlice) UnmarshalBytes(src []byte) []byte {
+	return src[copy(*b, src):]
 }
 
 // Packed implements marshal.Marshallable.Packed.
@@ -91,13 +91,13 @@ func (b *ByteSlice) Packed() bool {
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (b *ByteSlice) MarshalUnsafe(dst []byte) {
-	b.MarshalBytes(dst)
+func (b *ByteSlice) MarshalUnsafe(dst []byte) []byte {
+	return b.MarshalBytes(dst)
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (b *ByteSlice) UnmarshalUnsafe(src []byte) {
-	b.UnmarshalBytes(src)
+func (b *ByteSlice) UnmarshalUnsafe(src []byte) []byte {
+	return b.UnmarshalBytes(src)
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
