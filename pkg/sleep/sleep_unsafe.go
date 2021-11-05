@@ -37,15 +37,15 @@
 //
 //	// One time set-up.
 //	s := sleep.Sleeper{}
-//	s.AddWaker(&w1, constant1)
-//	s.AddWaker(&w2, constant2)
+//	s.AddWaker(&w1)
+//	s.AddWaker(&w2)
 //
 //	// Called repeatedly.
 //	for {
-//		switch id, _ := s.Fetch(true); id {
-//		case constant1:
+//		switch s.Fetch(true) {
+//		case &w1:
 //			// Do work triggered by w1 being asserted.
-//		case constant2:
+//		case &w2:
 //			// Do work triggered by w2 being asserted.
 //		}
 //	}
@@ -119,13 +119,18 @@ type Sleeper struct {
 	waitingG uintptr
 }
 
-// AddWaker associates the given waker to the sleeper. id is the value to be
-// returned when the sleeper is woken by the given waker.
-func (s *Sleeper) AddWaker(w *Waker, id int) {
+// AddWaker associates the given waker to the sleeper.
+func (s *Sleeper) AddWaker(w *Waker) {
+	if w.allWakersNext != nil {
+		panic("waker has non-nil allWakersNext; owned by another sleeper?")
+	}
+	if w.next != nil {
+		panic("waker has non-nil next; queued in another sleeper?")
+	}
+
 	// Add the waker to the list of all wakers.
 	w.allWakersNext = s.allWakers
 	s.allWakers = w
-	w.id = id
 
 	// Try to associate the waker with the sleeper. If it's already
 	// asserted, we simply enqueue it in the "ready" list.
@@ -213,28 +218,26 @@ func commitSleep(g uintptr, waitingG unsafe.Pointer) bool {
 	return sync.RaceUncheckedAtomicCompareAndSwapUintptr((*uintptr)(waitingG), preparingG, g)
 }
 
-// Fetch fetches the next wake-up notification. If a notification is immediately
-// available, it is returned right away. Otherwise, the behavior depends on the
-// value of 'block': if true, the current goroutine blocks until a notification
-// arrives, then returns it; if false, returns 'ok' as false.
-//
-// When 'ok' is true, the value of 'id' corresponds to the id associated with
-// the waker; when 'ok' is false, 'id' is undefined.
+// Fetch fetches the next wake-up notification. If a notification is
+// immediately available, the asserted waker is returned immediately.
+// Otherwise, the behavior depends on the value of 'block': if true, the
+// current goroutine blocks until a notification arrives and returns the
+// asserted waker; if false, nil will be returned.
 //
 // N.B. This method is *not* thread-safe. Only one goroutine at a time is
 //      allowed to call this method.
-func (s *Sleeper) Fetch(block bool) (id int, ok bool) {
+func (s *Sleeper) Fetch(block bool) *Waker {
 	for {
 		w := s.nextWaker(block)
 		if w == nil {
-			return -1, false
+			return nil
 		}
 
 		// Reassociate the waker with the sleeper. If the waker was
 		// still asserted we can return it, otherwise try the next one.
 		old := (*Sleeper)(atomic.SwapPointer(&w.s, usleeper(s)))
 		if old == &assertedSleeper {
-			return w.id, true
+			return w
 		}
 	}
 }
@@ -243,51 +246,34 @@ func (s *Sleeper) Fetch(block bool) (id int, ok bool) {
 // removes the association with all wakers so that they can be safely reused
 // by another sleeper after Done() returns.
 func (s *Sleeper) Done() {
-	// Remove all associations that we can, and build a list of the ones
-	// we could not. An association can be removed right away from waker w
-	// if w.s has a pointer to the sleeper, that is, the waker is not
-	// asserted yet. By atomically switching w.s to nil, we guarantee that
-	// subsequent calls to Assert() on the waker will not result in it being
-	// queued to this sleeper.
-	var pending *Waker
-	w := s.allWakers
-	for w != nil {
-		next := w.allWakersNext
-		for {
-			t := atomic.LoadPointer(&w.s)
-			if t != usleeper(s) {
-				w.allWakersNext = pending
-				pending = w
-				break
-			}
-
-			if atomic.CompareAndSwapPointer(&w.s, t, nil) {
-				break
-			}
+	// Remove all associations that we can, and build a list of the ones we
+	// could not. An association can be removed right away from waker w if
+	// w.s has a pointer to the sleeper, that is, the waker is not asserted
+	// yet. By atomically switching w.s to nil, we guarantee that
+	// subsequent calls to Assert() on the waker will not result in it
+	// being queued.
+	for w := s.allWakers; w != nil; w = s.allWakers {
+		next := w.allWakersNext // Before zapping.
+		if atomic.CompareAndSwapPointer(&w.s, usleeper(s), nil) {
+			w.allWakersNext = nil
+			w.next = nil
+			s.allWakers = next // Move ahead.
+			continue
 		}
-		w = next
-	}
 
-	// The associations that we could not remove are either asserted, or in
-	// the process of being asserted, or have been asserted and cleared
-	// before being pulled from the sleeper lists. We must wait for them all
-	// to make it to the sleeper lists, so that we know that the wakers
-	// won't do any more work towards waking this sleeper up.
-	for pending != nil {
-		pulled := s.nextWaker(true)
-
-		// Remove the waker we just pulled from the list of associated
-		// wakers.
-		prev := &pending
-		for w := *prev; w != nil; w = *prev {
-			if pulled == w {
-				*prev = w.allWakersNext
-				break
+		// Dequeue exactly one waiter from the list, it may not be
+		// this one but we know this one is in the process. We must
+		// leave it in the asserted state but drop it from our lists.
+		if w := s.nextWaker(true); w != nil {
+			prev := &s.allWakers
+			for *prev != w {
+				prev = &((*prev).allWakersNext)
 			}
-			prev = &w.allWakersNext
+			*prev = (*prev).allWakersNext
+			w.allWakersNext = nil
+			w.next = nil
 		}
 	}
-	s.allWakers = nil
 }
 
 // enqueueAssertedWaker enqueues an asserted waker to the "ready" circular list
@@ -349,10 +335,6 @@ type Waker struct {
 	// allWakersNext is used to form a linked list of all wakers associated
 	// to a given sleeper.
 	allWakersNext *Waker
-
-	// id is the value to be returned to sleepers when they wake up due to
-	// this waker being asserted.
-	id int
 }
 
 // Assert moves the waker to an asserted state, if it isn't asserted yet. When
