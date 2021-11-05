@@ -489,9 +489,7 @@ func BenchmarkGoAssertNonWaiting(b *testing.B) {
 }
 
 // BenchmarkSleeperWaitOnSingleSelect measures how long it takes to wait on one
-// waker channel while another goroutine wakes up the sleeper. This assumes that
-// a new goroutine doesn't run immediately (i.e., the creator of a new goroutine
-// is allowed to go to sleep before the new goroutine has a chance to run).
+// waker channel while another goroutine wakes up the sleeper.
 func BenchmarkSleeperWaitOnSingleSelect(b *testing.B) {
 	var (
 		s  Sleeper
@@ -514,25 +512,24 @@ func BenchmarkSleeperWaitOnSingleSelect(b *testing.B) {
 }
 
 // BenchmarkGoWaitOnSingleSelect measures how long it takes to wait on one
-// channel while another goroutine wakes up the sleeper. This assumes that a new
-// goroutine doesn't run immediately (i.e., the creator of a new goroutine is
-// allowed to go to sleep before the new goroutine has a chance to run).
+// channel while another goroutine wakes up the sleeper.
 func BenchmarkGoWaitOnSingleSelect(b *testing.B) {
-	ch := make(chan struct{})
+	ch := make(chan struct{}, 1)
+	nch := make(chan struct{}, 1)
 	go func() {
 		for i := 0; i < b.N; i++ {
+			<-nch
 			ch <- struct{}{}
 		}
 	}()
 	for i := 0; i < b.N; i++ {
+		nch <- struct{}{}
 		<-ch
 	}
 }
 
 // BenchmarkSleeperWaitOnMultiSelect measures how long it takes to wait on 4
-// wakers while another goroutine wakes up the sleeper. This assumes that a new
-// goroutine doesn't run immediately (i.e., the creator of a new goroutine is
-// allowed to go to sleep before the new goroutine has a chance to run).
+// wakers while another goroutine wakes up the sleeper.
 func BenchmarkSleeperWaitOnMultiSelect(b *testing.B) {
 	const count = 4
 	var (
@@ -560,23 +557,30 @@ func BenchmarkSleeperWaitOnMultiSelect(b *testing.B) {
 }
 
 // BenchmarkGoWaitOnMultiSelect measures how long it takes to wait on 4 channels
-// while another goroutine wakes up the sleeper. This assumes that a new
-// goroutine doesn't run immediately (i.e., the creator of a new goroutine is
-// allowed to go to sleep before the new goroutine has a chance to run).
+// while another goroutine wakes up the sleeper.
 func BenchmarkGoWaitOnMultiSelect(b *testing.B) {
 	const count = 4
 	ch := make([]chan struct{}, count)
+	nch := make([]chan struct{}, count)
 	for i := range ch {
-		ch[i] = make(chan struct{})
+		ch[i] = make(chan struct{}, 1)
+		nch[i] = make(chan struct{}, 1)
 	}
 
 	b.ResetTimer()
 	go func() {
 		for i := 0; i < b.N; i++ {
+			select {
+			case <-nch[0]:
+			case <-nch[1]:
+			case <-nch[2]:
+			case <-nch[3]:
+			}
 			ch[count-1] <- struct{}{}
 		}
 	}()
 	for i := 0; i < b.N; i++ {
+		nch[count-1] <- struct{}{}
 		select {
 		case <-ch[0]:
 		case <-ch[1]:
