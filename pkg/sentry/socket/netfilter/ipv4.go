@@ -141,10 +141,9 @@ func modifyEntries4(task *kernel.Task, stk *stack.Stack, optVal []byte, replace 
 			nflog("optVal has insufficient size for entry %d", len(optVal))
 			return nil, syserr.ErrInvalidArgument
 		}
-		var entry linux.IPTEntry
-		entry.UnmarshalUnsafe(optVal[:entry.SizeBytes()])
 		initialOptValLen := len(optVal)
-		optVal = optVal[entry.SizeBytes():]
+		var entry linux.IPTEntry
+		optVal = entry.UnmarshalUnsafe(optVal)
 
 		if entry.TargetOffset < linux.SizeOfIPTEntry {
 			nflog("entry has too-small target offset %d", entry.TargetOffset)

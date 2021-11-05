@@ -595,19 +595,19 @@ func UnmarshalSockAddr(family int, data []byte) linux.SockAddr {
 	switch family {
 	case unix.AF_INET:
 		var addr linux.SockAddrInet
-		addr.UnmarshalUnsafe(data[:addr.SizeBytes()])
+		addr.UnmarshalUnsafe(data)
 		return &addr
 	case unix.AF_INET6:
 		var addr linux.SockAddrInet6
-		addr.UnmarshalUnsafe(data[:addr.SizeBytes()])
+		addr.UnmarshalUnsafe(data)
 		return &addr
 	case unix.AF_UNIX:
 		var addr linux.SockAddrUnix
-		addr.UnmarshalUnsafe(data[:addr.SizeBytes()])
+		addr.UnmarshalUnsafe(data)
 		return &addr
 	case unix.AF_NETLINK:
 		var addr linux.SockAddrNetlink
-		addr.UnmarshalUnsafe(data[:addr.SizeBytes()])
+		addr.UnmarshalUnsafe(data)
 		return &addr
 	default:
 		panic(fmt.Sprintf("Unsupported socket family %v", family))
@@ -738,7 +738,7 @@ func AddressAndFamily(addr []byte) (tcpip.FullAddress, uint16, *syserr.Error) {
 		if len(addr) < sockAddrInetSize {
 			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
 		}
-		a.UnmarshalUnsafe(addr[:sockAddrInetSize])
+		a.UnmarshalUnsafe(addr)
 
 		out := tcpip.FullAddress{
 			Addr: BytesToIPAddress(a.Addr[:]),
@@ -751,7 +751,7 @@ func AddressAndFamily(addr []byte) (tcpip.FullAddress, uint16, *syserr.Error) {
 		if len(addr) < sockAddrInet6Size {
 			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
 		}
-		a.UnmarshalUnsafe(addr[:sockAddrInet6Size])
+		a.UnmarshalUnsafe(addr)
 
 		out := tcpip.FullAddress{
 			Addr: BytesToIPAddress(a.Addr[:]),
@@ -767,7 +767,7 @@ func AddressAndFamily(addr []byte) (tcpip.FullAddress, uint16, *syserr.Error) {
 		if len(addr) < sockAddrLinkSize {
 			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
 		}
-		a.UnmarshalUnsafe(addr[:sockAddrLinkSize])
+		a.UnmarshalUnsafe(addr)
 		// TODO(https://gvisor.dev/issue/6530): Do not assume all interfaces have
 		// an ethernet address.
 		if a.Family != linux.AF_PACKET || a.HardwareAddrLen != header.EthernetAddressSize {

@@ -489,7 +489,7 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentr
 
 // Lookup implements kernfs.Inode.Lookup.
 func (i *inode) Lookup(ctx context.Context, name string) (kernfs.Inode, error) {
-	in := linux.FUSELookupIn{Name: name}
+	in := linux.FUSELookupIn{Name: linux.CString(name)}
 	return i.newEntry(ctx, name, 0, linux.FUSE_LOOKUP, &in)
 }
 
@@ -520,7 +520,7 @@ func (i *inode) NewFile(ctx context.Context, name string, opts vfs.OpenOptions) 
 			Mode:  uint32(opts.Mode) | linux.S_IFREG,
 			Umask: uint32(kernelTask.FSContext().Umask()),
 		},
-		Name: name,
+		Name: linux.CString(name),
 	}
 	return i.newEntry(ctx, name, linux.S_IFREG, linux.FUSE_CREATE, &in)
 }
@@ -533,7 +533,7 @@ func (i *inode) NewNode(ctx context.Context, name string, opts vfs.MknodOptions)
 			Rdev:  linux.MakeDeviceID(uint16(opts.DevMajor), opts.DevMinor),
 			Umask: uint32(kernel.TaskFromContext(ctx).FSContext().Umask()),
 		},
-		Name: name,
+		Name: linux.CString(name),
 	}
 	return i.newEntry(ctx, name, opts.Mode.FileType(), linux.FUSE_MKNOD, &in)
 }
@@ -541,8 +541,8 @@ func (i *inode) NewNode(ctx context.Context, name string, opts vfs.MknodOptions)
 // NewSymlink implements kernfs.Inode.NewSymlink.
 func (i *inode) NewSymlink(ctx context.Context, name, target string) (kernfs.Inode, error) {
 	in := linux.FUSESymLinkIn{
-		Name:   name,
-		Target: target,
+		Name:   linux.CString(name),
+		Target: linux.CString(target),
 	}
 	return i.newEntry(ctx, name, linux.S_IFLNK, linux.FUSE_SYMLINK, &in)
 }
@@ -554,7 +554,7 @@ func (i *inode) Unlink(ctx context.Context, name string, child kernfs.Inode) err
 		log.Warningf("fusefs.Inode.newEntry: couldn't get kernel task from context", i.nodeID)
 		return linuxerr.EINVAL
 	}
-	in := linux.FUSEUnlinkIn{Name: name}
+	in := linux.FUSEUnlinkIn{Name: linux.CString(name)}
 	req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.nodeID, linux.FUSE_UNLINK, &in)
 	res, err := i.fs.conn.Call(kernelTask, req)
 	if err != nil {
@@ -571,7 +571,7 @@ func (i *inode) NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) 
 			Mode:  uint32(opts.Mode),
 			Umask: uint32(kernel.TaskFromContext(ctx).FSContext().Umask()),
 		},
-		Name: name,
+		Name: linux.CString(name),
 	}
 	return i.newEntry(ctx, name, linux.S_IFDIR, linux.FUSE_MKDIR, &in)
 }
@@ -581,7 +581,7 @@ func (i *inode) RmDir(ctx context.Context, name string, child kernfs.Inode) erro
 	fusefs := i.fs
 	task, creds := kernel.TaskFromContext(ctx), auth.CredentialsFromContext(ctx)
 
-	in := linux.FUSERmDirIn{Name: name}
+	in := linux.FUSERmDirIn{Name: linux.CString(name)}
 	req := fusefs.conn.NewRequest(creds, uint32(task.ThreadID()), i.nodeID, linux.FUSE_RMDIR, &in)
 	res, err := i.fs.conn.Call(task, req)
 	if err != nil {

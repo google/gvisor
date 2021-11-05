@@ -82,15 +82,15 @@ func (b *MsgBuf) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (b *MsgBuf) MarshalBytes(dst []byte) {
-	b.Type.MarshalUnsafe(dst)
-	b.Text.MarshalBytes(dst[b.Type.SizeBytes():])
+func (b *MsgBuf) MarshalBytes(dst []byte) []byte {
+	dst = b.Type.MarshalUnsafe(dst)
+	return b.Text.MarshalBytes(dst)
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (b *MsgBuf) UnmarshalBytes(src []byte) {
-	b.Type.UnmarshalUnsafe(src)
-	b.Text.UnmarshalBytes(src[b.Type.SizeBytes():])
+func (b *MsgBuf) UnmarshalBytes(src []byte) []byte {
+	src = b.Type.UnmarshalUnsafe(src)
+	return b.Text.UnmarshalBytes(src)
 }
 
 // MsgInfo is equivelant to struct msginfo. Source: include/uapi/linux/msg.h

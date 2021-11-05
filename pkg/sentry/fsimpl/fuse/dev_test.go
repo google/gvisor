@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -215,11 +216,9 @@ func fuseClientRun(t *testing.T, s *testutil.System, k *kernel.Kernel, conn *con
 	if err != nil {
 		t.Fatal(err)
 	}
-	testObj := &testPayload{
-		data: rand.Uint32(),
-	}
 
-	req := conn.NewRequest(creds, pid, inode, echoTestOpcode, testObj)
+	testObj := primitive.Uint32(rand.Uint32())
+	req := conn.NewRequest(creds, pid, inode, echoTestOpcode, &testObj)
 
 	// Queue up a request.
 	// Analogous to Call except it doesn't block on the task.
@@ -232,7 +231,7 @@ func fuseClientRun(t *testing.T, s *testutil.System, k *kernel.Kernel, conn *con
 		t.Fatalf("Server responded with an error: %v", err)
 	}
 
-	var respTestPayload testPayload
+	var respTestPayload primitive.Uint32
 	if err := resp.UnmarshalPayload(&respTestPayload); err != nil {
 		t.Fatalf("Unmarshalling payload error: %v", err)
 	}
@@ -242,8 +241,8 @@ func fuseClientRun(t *testing.T, s *testutil.System, k *kernel.Kernel, conn *con
 			req.hdr.Unique, resp.hdr.Unique)
 	}
 
-	if respTestPayload.data != testObj.data {
-		t.Fatalf("read incorrect data. Data expected: %v, but got %v", testObj.data, respTestPayload.data)
+	if respTestPayload != testObj {
+		t.Fatalf("read incorrect data. Data expected: %d, but got %d", testObj, respTestPayload)
 	}
 
 }
@@ -256,8 +255,8 @@ func fuseServerRun(t *testing.T, s *testutil.System, k *kernel.Kernel, fd *vfs.F
 
 	// Create the tasks that the server will be using.
 	tc := k.NewThreadGroup(nil, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
-	var readPayload testPayload
 
+	var readPayload primitive.Uint32
 	serverTask, err := testutil.CreateTask(s.Ctx, "fuse-server", tc, s.MntNs, s.Root, s.Root)
 	if err != nil {
 		t.Fatal(err)
@@ -291,8 +290,8 @@ func fuseServerRun(t *testing.T, s *testutil.System, k *kernel.Kernel, fd *vfs.F
 		}
 
 		var readFUSEHeaderIn linux.FUSEHeaderIn
-		readFUSEHeaderIn.UnmarshalUnsafe(inBuf[:inHdrLen])
-		readPayload.UnmarshalUnsafe(inBuf[inHdrLen : inHdrLen+payloadLen])
+		inBuf = readFUSEHeaderIn.UnmarshalUnsafe(inBuf)
+		readPayload.UnmarshalUnsafe(inBuf)
 
 		if readFUSEHeaderIn.Opcode != echoTestOpcode {
 			t.Fatalf("read incorrect data. Header: %v, Payload: %v", readFUSEHeaderIn, readPayload)

@@ -28,18 +28,18 @@ func (g *interfaceGenerator) emitMarshallableForDynamicType() {
 	g.emit("}\n\n")
 
 	g.emit("// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.\n")
-	g.emit("func (%s *%s) MarshalUnsafe(dst []byte) {\n", g.r, g.typeName())
+	g.emit("func (%s *%s) MarshalUnsafe(dst []byte) []byte {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.emit("// Type %s doesn't have a packed layout in memory, fallback to MarshalBytes.\n", g.typeName())
-		g.emit("%s.MarshalBytes(dst)\n", g.r)
+		g.emit("return %s.MarshalBytes(dst)\n", g.r)
 	})
 	g.emit("}\n\n")
 
 	g.emit("// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.\n")
-	g.emit("func (%s *%s) UnmarshalUnsafe(src []byte) {\n", g.r, g.typeName())
+	g.emit("func (%s *%s) UnmarshalUnsafe(src []byte) []byte {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.emit("// Type %s doesn't have a packed layout in memory, fallback to UnmarshalBytes.\n", g.typeName())
-		g.emit("%s.UnmarshalBytes(src)\n", g.r)
+		g.emit("return %s.UnmarshalBytes(src)\n", g.r)
 	})
 	g.emit("}\n\n")
 
