@@ -59,13 +59,15 @@ type Marshallable interface {
 	// likely make use of the type of these fields).
 	SizeBytes() int
 
-	// MarshalBytes serializes a copy of a type to dst.
+	// MarshalBytes serializes a copy of a type to dst and returns the remaining
+	// buffer.
 	// Precondition: dst must be at least SizeBytes() in length.
-	MarshalBytes(dst []byte)
+	MarshalBytes(dst []byte) []byte
 
-	// UnmarshalBytes deserializes a type from src.
+	// UnmarshalBytes deserializes a type from src and returns the remaining
+	// buffer.
 	// Precondition: src must be at least SizeBytes() in length.
-	UnmarshalBytes(src []byte)
+	UnmarshalBytes(src []byte) []byte
 
 	// Packed returns true if the marshalled size of the type is the same as the
 	// size it occupies in memory. This happens when the type has no fields
@@ -86,7 +88,7 @@ type Marshallable interface {
 	// return false, MarshalUnsafe should fall back to the safer but slower
 	// MarshalBytes.
 	// Precondition: dst must be at least SizeBytes() in length.
-	MarshalUnsafe(dst []byte)
+	MarshalUnsafe(dst []byte) []byte
 
 	// UnmarshalUnsafe deserializes a type by directly copying to the underlying
 	// memory allocated for the object by the runtime.
@@ -96,7 +98,7 @@ type Marshallable interface {
 	// UnmarshalUnsafe should fall back to the safer but slower unmarshal
 	// mechanism implemented in UnmarshalBytes.
 	// Precondition: src must be at least SizeBytes() in length.
-	UnmarshalUnsafe(src []byte)
+	UnmarshalUnsafe(src []byte) []byte
 
 	// CopyIn deserializes a Marshallable type from a task's memory. This may
 	// only be called from a task goroutine. This is more efficient than calling

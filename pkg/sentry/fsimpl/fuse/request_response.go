@@ -41,7 +41,7 @@ type fuseInitRes struct {
 }
 
 // UnmarshalBytes deserializes src to the initOut attribute in a fuseInitRes.
-func (r *fuseInitRes) UnmarshalBytes(src []byte) {
+func (r *fuseInitRes) UnmarshalBytes(src []byte) []byte {
 	out := &r.initOut
 
 	// Introduced before FUSE kernel version 7.13.
@@ -70,7 +70,7 @@ func (r *fuseInitRes) UnmarshalBytes(src []byte) {
 		out.MaxPages = uint16(hostarch.ByteOrder.Uint16(src[:2]))
 		src = src[2:]
 	}
-	_ = src // Remove unused warning.
+	return src
 }
 
 // SizeBytes is the size of the payload of the FUSE_INIT response.

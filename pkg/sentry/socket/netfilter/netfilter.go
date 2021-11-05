@@ -176,9 +176,7 @@ func setHooksAndUnderflow(info *linux.IPTGetinfo, table stack.Table, offset uint
 // net/ipv4/netfilter/ip_tables.c:translate_table for reference.
 func SetEntries(task *kernel.Task, stk *stack.Stack, optVal []byte, ipv6 bool) *syserr.Error {
 	var replace linux.IPTReplace
-	replaceBuf := optVal[:linux.SizeOfIPTReplace]
-	optVal = optVal[linux.SizeOfIPTReplace:]
-	replace.UnmarshalBytes(replaceBuf)
+	optVal = replace.UnmarshalBytes(optVal)
 
 	var table stack.Table
 	switch replace.Name.String() {
@@ -306,8 +304,7 @@ func parseMatchers(task *kernel.Task, filter stack.IPHeaderFilter, optVal []byte
 			return nil, fmt.Errorf("optVal has insufficient size for entry match: %d", len(optVal))
 		}
 		var match linux.XTEntryMatch
-		buf := optVal[:match.SizeBytes()]
-		match.UnmarshalUnsafe(buf)
+		match.UnmarshalUnsafe(optVal)
 		nflog("set entries: parsed entry match %q: %+v", match.Name.String(), match)
 
 		// Check some invariants.

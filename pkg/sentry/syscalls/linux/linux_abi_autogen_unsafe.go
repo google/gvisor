@@ -28,19 +28,19 @@ func (d *direntHdr) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (d *direntHdr) MarshalBytes(dst []byte) {
-    d.OldHdr.MarshalBytes(dst[:d.OldHdr.SizeBytes()])
-    dst = dst[d.OldHdr.SizeBytes():]
+func (d *direntHdr) MarshalBytes(dst []byte) []byte {
+    dst = d.OldHdr.MarshalBytes(dst)
     dst[0] = byte(d.Typ)
     dst = dst[1:]
+    return dst
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (d *direntHdr) UnmarshalBytes(src []byte) {
-    d.OldHdr.UnmarshalBytes(src[:d.OldHdr.SizeBytes()])
-    src = src[d.OldHdr.SizeBytes():]
+func (d *direntHdr) UnmarshalBytes(src []byte) []byte {
+    src = d.OldHdr.UnmarshalBytes(src)
     d.Typ = uint8(src[0])
     src = src[1:]
+    return src
 }
 
 // Packed implements marshal.Marshallable.Packed.
@@ -50,15 +50,15 @@ func (d *direntHdr) Packed() bool {
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (d *direntHdr) MarshalUnsafe(dst []byte) {
+func (d *direntHdr) MarshalUnsafe(dst []byte) []byte {
     // Type direntHdr doesn't have a packed layout in memory, fallback to MarshalBytes.
-    d.MarshalBytes(dst)
+    return d.MarshalBytes(dst)
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (d *direntHdr) UnmarshalUnsafe(src []byte) {
+func (d *direntHdr) UnmarshalUnsafe(src []byte) []byte {
     // Type direntHdr doesn't have a packed layout in memory, fallback to UnmarshalBytes.
-    d.UnmarshalBytes(src)
+    return d.UnmarshalBytes(src)
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -103,23 +103,25 @@ func (o *oldDirentHdr) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (o *oldDirentHdr) MarshalBytes(dst []byte) {
+func (o *oldDirentHdr) MarshalBytes(dst []byte) []byte {
     hostarch.ByteOrder.PutUint64(dst[:8], uint64(o.Ino))
     dst = dst[8:]
     hostarch.ByteOrder.PutUint64(dst[:8], uint64(o.Off))
     dst = dst[8:]
     hostarch.ByteOrder.PutUint16(dst[:2], uint16(o.Reclen))
     dst = dst[2:]
+    return dst
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (o *oldDirentHdr) UnmarshalBytes(src []byte) {
+func (o *oldDirentHdr) UnmarshalBytes(src []byte) []byte {
     o.Ino = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
     o.Off = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
     o.Reclen = uint16(hostarch.ByteOrder.Uint16(src[:2]))
     src = src[2:]
+    return src
 }
 
 // Packed implements marshal.Marshallable.Packed.
@@ -129,15 +131,15 @@ func (o *oldDirentHdr) Packed() bool {
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (o *oldDirentHdr) MarshalUnsafe(dst []byte) {
+func (o *oldDirentHdr) MarshalUnsafe(dst []byte) []byte {
     // Type oldDirentHdr doesn't have a packed layout in memory, fallback to MarshalBytes.
-    o.MarshalBytes(dst)
+    return o.MarshalBytes(dst)
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (o *oldDirentHdr) UnmarshalUnsafe(src []byte) {
+func (o *oldDirentHdr) UnmarshalUnsafe(src []byte) []byte {
     // Type oldDirentHdr doesn't have a packed layout in memory, fallback to UnmarshalBytes.
-    o.UnmarshalBytes(src)
+    return o.UnmarshalBytes(src)
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -182,19 +184,21 @@ func (r *rlimit64) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (r *rlimit64) MarshalBytes(dst []byte) {
+func (r *rlimit64) MarshalBytes(dst []byte) []byte {
     hostarch.ByteOrder.PutUint64(dst[:8], uint64(r.Cur))
     dst = dst[8:]
     hostarch.ByteOrder.PutUint64(dst[:8], uint64(r.Max))
     dst = dst[8:]
+    return dst
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (r *rlimit64) UnmarshalBytes(src []byte) {
+func (r *rlimit64) UnmarshalBytes(src []byte) []byte {
     r.Cur = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
     r.Max = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
+    return src
 }
 
 // Packed implements marshal.Marshallable.Packed.
@@ -204,13 +208,17 @@ func (r *rlimit64) Packed() bool {
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (r *rlimit64) MarshalUnsafe(dst []byte) {
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(r),  uintptr(r.SizeBytes()))
+func (r *rlimit64) MarshalUnsafe(dst []byte) []byte {
+    size := r.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(r), uintptr(size))
+    return dst[size:]
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (r *rlimit64) UnmarshalUnsafe(src []byte) {
-    gohacks.Memmove(unsafe.Pointer(r), unsafe.Pointer(&src[0]), uintptr(r.SizeBytes()))
+func (r *rlimit64) UnmarshalUnsafe(src []byte) []byte {
+    size := r.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(r), unsafe.Pointer(&src[0]), uintptr(size))
+    return src[size:]
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -275,15 +283,17 @@ func (s *SchedParam) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (s *SchedParam) MarshalBytes(dst []byte) {
+func (s *SchedParam) MarshalBytes(dst []byte) []byte {
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(s.schedPriority))
     dst = dst[4:]
+    return dst
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (s *SchedParam) UnmarshalBytes(src []byte) {
+func (s *SchedParam) UnmarshalBytes(src []byte) []byte {
     s.schedPriority = int32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
+    return src
 }
 
 // Packed implements marshal.Marshallable.Packed.
@@ -293,13 +303,17 @@ func (s *SchedParam) Packed() bool {
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (s *SchedParam) MarshalUnsafe(dst []byte) {
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(s),  uintptr(s.SizeBytes()))
+func (s *SchedParam) MarshalUnsafe(dst []byte) []byte {
+    size := s.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(s), uintptr(size))
+    return dst[size:]
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (s *SchedParam) UnmarshalUnsafe(src []byte) {
-    gohacks.Memmove(unsafe.Pointer(s), unsafe.Pointer(&src[0]), uintptr(s.SizeBytes()))
+func (s *SchedParam) UnmarshalUnsafe(src []byte) []byte {
+    size := s.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(s), unsafe.Pointer(&src[0]), uintptr(size))
+    return src[size:]
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -365,23 +379,25 @@ func (u *userSockFprog) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (u *userSockFprog) MarshalBytes(dst []byte) {
+func (u *userSockFprog) MarshalBytes(dst []byte) []byte {
     hostarch.ByteOrder.PutUint16(dst[:2], uint16(u.Len))
     dst = dst[2:]
     // Padding: dst[:sizeof(byte)*6] ~= [6]byte{0}
     dst = dst[1*(6):]
     hostarch.ByteOrder.PutUint64(dst[:8], uint64(u.Filter))
     dst = dst[8:]
+    return dst
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (u *userSockFprog) UnmarshalBytes(src []byte) {
+func (u *userSockFprog) UnmarshalBytes(src []byte) []byte {
     u.Len = uint16(hostarch.ByteOrder.Uint16(src[:2]))
     src = src[2:]
     // Padding: ~ copy([6]byte(u._), src[:sizeof(byte)*6])
     src = src[1*(6):]
     u.Filter = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
+    return src
 }
 
 // Packed implements marshal.Marshallable.Packed.
@@ -391,13 +407,17 @@ func (u *userSockFprog) Packed() bool {
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (u *userSockFprog) MarshalUnsafe(dst []byte) {
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(u),  uintptr(u.SizeBytes()))
+func (u *userSockFprog) MarshalUnsafe(dst []byte) []byte {
+    size := u.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(u), uintptr(size))
+    return dst[size:]
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (u *userSockFprog) UnmarshalUnsafe(src []byte) {
-    gohacks.Memmove(unsafe.Pointer(u), unsafe.Pointer(&src[0]), uintptr(u.SizeBytes()))
+func (u *userSockFprog) UnmarshalUnsafe(src []byte) []byte {
+    size := u.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(u), unsafe.Pointer(&src[0]), uintptr(size))
+    return src[size:]
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -462,7 +482,7 @@ func (m *MessageHeader64) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (m *MessageHeader64) MarshalBytes(dst []byte) {
+func (m *MessageHeader64) MarshalBytes(dst []byte) []byte {
     hostarch.ByteOrder.PutUint64(dst[:8], uint64(m.Name))
     dst = dst[8:]
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(m.NameLen))
@@ -481,10 +501,11 @@ func (m *MessageHeader64) MarshalBytes(dst []byte) {
     dst = dst[4:]
     // Padding: dst[:sizeof(int32)] ~= int32(0)
     dst = dst[4:]
+    return dst
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (m *MessageHeader64) UnmarshalBytes(src []byte) {
+func (m *MessageHeader64) UnmarshalBytes(src []byte) []byte {
     m.Name = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
     m.NameLen = uint32(hostarch.ByteOrder.Uint32(src[:4]))
@@ -503,6 +524,7 @@ func (m *MessageHeader64) UnmarshalBytes(src []byte) {
     src = src[4:]
     // Padding: var _ int32 ~= src[:sizeof(int32)]
     src = src[4:]
+    return src
 }
 
 // Packed implements marshal.Marshallable.Packed.
@@ -512,13 +534,17 @@ func (m *MessageHeader64) Packed() bool {
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (m *MessageHeader64) MarshalUnsafe(dst []byte) {
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(m),  uintptr(m.SizeBytes()))
+func (m *MessageHeader64) MarshalUnsafe(dst []byte) []byte {
+    size := m.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(m), uintptr(size))
+    return dst[size:]
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (m *MessageHeader64) UnmarshalUnsafe(src []byte) {
-    gohacks.Memmove(unsafe.Pointer(m), unsafe.Pointer(&src[0]), uintptr(m.SizeBytes()))
+func (m *MessageHeader64) UnmarshalUnsafe(src []byte) []byte {
+    size := m.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(m), unsafe.Pointer(&src[0]), uintptr(size))
+    return src[size:]
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -584,23 +610,23 @@ func (m *multipleMessageHeader64) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (m *multipleMessageHeader64) MarshalBytes(dst []byte) {
-    m.msgHdr.MarshalBytes(dst[:m.msgHdr.SizeBytes()])
-    dst = dst[m.msgHdr.SizeBytes():]
+func (m *multipleMessageHeader64) MarshalBytes(dst []byte) []byte {
+    dst = m.msgHdr.MarshalBytes(dst)
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(m.msgLen))
     dst = dst[4:]
     // Padding: dst[:sizeof(int32)] ~= int32(0)
     dst = dst[4:]
+    return dst
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (m *multipleMessageHeader64) UnmarshalBytes(src []byte) {
-    m.msgHdr.UnmarshalBytes(src[:m.msgHdr.SizeBytes()])
-    src = src[m.msgHdr.SizeBytes():]
+func (m *multipleMessageHeader64) UnmarshalBytes(src []byte) []byte {
+    src = m.msgHdr.UnmarshalBytes(src)
     m.msgLen = uint32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
     // Padding: var _ int32 ~= src[:sizeof(int32)]
     src = src[4:]
+    return src
 }
 
 // Packed implements marshal.Marshallable.Packed.
@@ -610,23 +636,25 @@ func (m *multipleMessageHeader64) Packed() bool {
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (m *multipleMessageHeader64) MarshalUnsafe(dst []byte) {
+func (m *multipleMessageHeader64) MarshalUnsafe(dst []byte) []byte {
     if m.msgHdr.Packed() {
-        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(m),  uintptr(m.SizeBytes()))
-    } else {
-        // Type multipleMessageHeader64 doesn't have a packed layout in memory, fallback to MarshalBytes.
-        m.MarshalBytes(dst)
+        size := m.SizeBytes()
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(m), uintptr(size))
+        return dst[size:]
     }
+    // Type multipleMessageHeader64 doesn't have a packed layout in memory, fallback to MarshalBytes.
+    return m.MarshalBytes(dst)
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (m *multipleMessageHeader64) UnmarshalUnsafe(src []byte) {
+func (m *multipleMessageHeader64) UnmarshalUnsafe(src []byte) []byte {
     if m.msgHdr.Packed() {
-        gohacks.Memmove(unsafe.Pointer(m), unsafe.Pointer(&src[0]), uintptr(m.SizeBytes()))
-    } else {
-        // Type multipleMessageHeader64 doesn't have a packed layout in memory, fallback to UnmarshalBytes.
-        m.UnmarshalBytes(src)
+        size := m.SizeBytes()
+        gohacks.Memmove(unsafe.Pointer(m), unsafe.Pointer(&src[0]), uintptr(size))
+        return src[size:]
     }
+    // Type multipleMessageHeader64 doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    return m.UnmarshalBytes(src)
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.

@@ -660,7 +660,7 @@ func (s *socketOpsCommon) Bind(_ *kernel.Task, sockaddr []byte) *syserr.Error {
 		if len(sockaddr) < sockAddrLinkSize {
 			return syserr.ErrInvalidArgument
 		}
-		a.UnmarshalBytes(sockaddr[:sockAddrLinkSize])
+		a.UnmarshalBytes(sockaddr)
 
 		addr = tcpip.FullAddress{
 			NIC:  tcpip.NICID(a.InterfaceIndex),
@@ -1839,7 +1839,7 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 		}
 
 		var v linux.Timeval
-		v.UnmarshalBytes(optVal[:linux.SizeOfTimeval])
+		v.UnmarshalBytes(optVal)
 		if v.Usec < 0 || v.Usec >= int64(time.Second/time.Microsecond) {
 			return syserr.ErrDomain
 		}
@@ -1852,7 +1852,7 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 		}
 
 		var v linux.Timeval
-		v.UnmarshalBytes(optVal[:linux.SizeOfTimeval])
+		v.UnmarshalBytes(optVal)
 		if v.Usec < 0 || v.Usec >= int64(time.Second/time.Microsecond) {
 			return syserr.ErrDomain
 		}
@@ -1883,7 +1883,7 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 		}
 
 		var v linux.Linger
-		v.UnmarshalBytes(optVal[:linux.SizeOfLinger])
+		v.UnmarshalBytes(optVal)
 
 		if v != (linux.Linger{}) {
 			socket.SetSockOptEmitUnimplementedEvent(t, name)
@@ -2222,12 +2222,12 @@ func copyInMulticastRequest(optVal []byte, allowAddr bool) (linux.InetMulticastR
 
 	if len(optVal) >= inetMulticastRequestWithNICSize {
 		var req linux.InetMulticastRequestWithNIC
-		req.UnmarshalUnsafe(optVal[:inetMulticastRequestWithNICSize])
+		req.UnmarshalUnsafe(optVal)
 		return req, nil
 	}
 
 	var req linux.InetMulticastRequestWithNIC
-	req.InetMulticastRequest.UnmarshalUnsafe(optVal[:inetMulticastRequestSize])
+	req.InetMulticastRequest.UnmarshalUnsafe(optVal)
 	return req, nil
 }
 
@@ -2237,7 +2237,7 @@ func copyInMulticastV6Request(optVal []byte) (linux.Inet6MulticastRequest, *syse
 	}
 
 	var req linux.Inet6MulticastRequest
-	req.UnmarshalUnsafe(optVal[:inet6MulticastRequestSize])
+	req.UnmarshalUnsafe(optVal)
 	return req, nil
 }
 

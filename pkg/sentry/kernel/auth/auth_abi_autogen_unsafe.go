@@ -23,13 +23,15 @@ func (gid *GID) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (gid *GID) MarshalBytes(dst []byte) {
+func (gid *GID) MarshalBytes(dst []byte) []byte {
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(*gid))
+    return dst[4:]
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (gid *GID) UnmarshalBytes(src []byte) {
+func (gid *GID) UnmarshalBytes(src []byte) []byte {
     *gid = GID(uint32(hostarch.ByteOrder.Uint32(src[:4])))
+    return src[4:]
 }
 
 // Packed implements marshal.Marshallable.Packed.
@@ -40,13 +42,17 @@ func (gid *GID) Packed() bool {
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (gid *GID) MarshalUnsafe(dst []byte) {
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(gid), uintptr(gid.SizeBytes()))
+func (gid *GID) MarshalUnsafe(dst []byte) []byte {
+    size := gid.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(gid), uintptr(size))
+    return dst[size:]
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (gid *GID) UnmarshalUnsafe(src []byte) {
-    gohacks.Memmove(unsafe.Pointer(gid), unsafe.Pointer(&src[0]), uintptr(gid.SizeBytes()))
+func (gid *GID) UnmarshalUnsafe(src []byte) []byte {
+    size := gid.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(gid), unsafe.Pointer(&src[0]), uintptr(size))
+    return src[size:]
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -190,13 +196,15 @@ func (uid *UID) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (uid *UID) MarshalBytes(dst []byte) {
+func (uid *UID) MarshalBytes(dst []byte) []byte {
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(*uid))
+    return dst[4:]
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (uid *UID) UnmarshalBytes(src []byte) {
+func (uid *UID) UnmarshalBytes(src []byte) []byte {
     *uid = UID(uint32(hostarch.ByteOrder.Uint32(src[:4])))
+    return src[4:]
 }
 
 // Packed implements marshal.Marshallable.Packed.
@@ -207,13 +215,17 @@ func (uid *UID) Packed() bool {
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (uid *UID) MarshalUnsafe(dst []byte) {
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(uid), uintptr(uid.SizeBytes()))
+func (uid *UID) MarshalUnsafe(dst []byte) []byte {
+    size := uid.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(uid), uintptr(size))
+    return dst[size:]
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (uid *UID) UnmarshalUnsafe(src []byte) {
-    gohacks.Memmove(unsafe.Pointer(uid), unsafe.Pointer(&src[0]), uintptr(uid.SizeBytes()))
+func (uid *UID) UnmarshalUnsafe(src []byte) []byte {
+    size := uid.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(uid), unsafe.Pointer(&src[0]), uintptr(size))
+    return src[size:]
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.

@@ -73,7 +73,7 @@ func (ownerMarshaler) unmarshal(task *kernel.Task, buf []byte, filter stack.IPHe
 	// For alignment reasons, the match's total size may
 	// exceed what's strictly necessary to hold matchData.
 	var matchData linux.IPTOwnerInfo
-	matchData.UnmarshalUnsafe(buf[:linux.SizeOfIPTOwnerInfo])
+	matchData.UnmarshalUnsafe(buf)
 	nflog("parsed IPTOwnerInfo: %+v", matchData)
 
 	var owner OwnerMatcher
