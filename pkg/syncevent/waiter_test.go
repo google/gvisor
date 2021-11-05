@@ -105,7 +105,7 @@ func BenchmarkWaiterNotifyRedundant(b *testing.B) {
 func BenchmarkSleeperNotifyRedundant(b *testing.B) {
 	var s sleep.Sleeper
 	var w sleep.Waker
-	s.AddWaker(&w, 0)
+	s.AddWaker(&w)
 	w.Assert()
 
 	b.ResetTimer()
@@ -146,7 +146,7 @@ func BenchmarkWaiterNotifyWaitAck(b *testing.B) {
 func BenchmarkSleeperNotifyWaitAck(b *testing.B) {
 	var s sleep.Sleeper
 	var w sleep.Waker
-	s.AddWaker(&w, 0)
+	s.AddWaker(&w)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -197,7 +197,7 @@ func BenchmarkSleeperMultiNotifyWaitAck(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		w := wakerPool.Get().(*sleep.Waker)
-		s.AddWaker(w, 0)
+		s.AddWaker(w)
 		w.Assert()
 		s.Fetch(true)
 		s.Done()
@@ -237,7 +237,7 @@ func BenchmarkSleeperTempNotifyWaitAck(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		s := sleeperPool.Get().(*sleep.Sleeper)
-		s.AddWaker(&w, 0)
+		s.AddWaker(&w)
 		w.Assert()
 		s.Fetch(true)
 		s.Done()
@@ -266,14 +266,14 @@ func BenchmarkSleeperNotifyWaitMultiAck(b *testing.B) {
 	var s sleep.Sleeper
 	var ws [3]sleep.Waker
 	for i := range ws {
-		s.AddWaker(&ws[i], i)
+		s.AddWaker(&ws[i])
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ws[0].Assert()
-		if id, _ := s.Fetch(true); id != 0 {
-			b.Fatalf("Fetch: got %d, wanted 0", id)
+		if v := s.Fetch(true); v != &ws[0] {
+			b.Fatalf("Fetch: got %v, wanted %v", v, &ws[0])
 		}
 	}
 }
@@ -325,7 +325,7 @@ func BenchmarkWaiterNotifyAsyncWaitAck(b *testing.B) {
 func BenchmarkSleeperNotifyAsyncWaitAck(b *testing.B) {
 	var s sleep.Sleeper
 	var w sleep.Waker
-	s.AddWaker(&w, 0)
+	s.AddWaker(&w)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -374,7 +374,7 @@ func BenchmarkSleeperNotifyAsyncWaitMultiAck(b *testing.B) {
 	var s sleep.Sleeper
 	var ws [3]sleep.Waker
 	for i := range ws {
-		s.AddWaker(&ws[i], i)
+		s.AddWaker(&ws[i])
 	}
 
 	b.ResetTimer()
@@ -382,8 +382,8 @@ func BenchmarkSleeperNotifyAsyncWaitMultiAck(b *testing.B) {
 		go func() {
 			ws[0].Assert()
 		}()
-		if id, _ := s.Fetch(true); id != 0 {
-			b.Fatalf("Fetch: got %d, expected 0", id)
+		if v := s.Fetch(true); v != &ws[0] {
+			b.Fatalf("Fetch: got %v, expected %v", v, &ws[0])
 		}
 	}
 }

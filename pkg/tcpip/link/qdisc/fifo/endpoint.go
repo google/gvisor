@@ -73,20 +73,19 @@ func New(lower stack.LinkEndpoint, n int, queueLen int) stack.LinkEndpoint {
 }
 
 func (q *queueDispatcher) dispatchLoop() {
-	const newPacketWakerID = 1
-	const closeWakerID = 2
 	s := sleep.Sleeper{}
-	s.AddWaker(&q.newPacketWaker, newPacketWakerID)
-	s.AddWaker(&q.closeWaker, closeWakerID)
+	s.AddWaker(&q.newPacketWaker)
+	s.AddWaker(&q.closeWaker)
 	defer s.Done()
 
 	const batchSize = 32
 	var batch stack.PacketBufferList
 	for {
-		id, ok := s.Fetch(true)
-		if ok && id == closeWakerID {
+		w := s.Fetch(true)
+		if w == &q.closeWaker {
 			return
 		}
+		// Must otherwise be the newPacketWaker.
 		for pkt := q.q.dequeue(); pkt != nil; pkt = q.q.dequeue() {
 			batch.PushBack(pkt)
 			if batch.Len() < batchSize && !q.q.empty() {
