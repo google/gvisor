@@ -1,4 +1,4 @@
-# gVisor Networking Security
+# Networking Security
 
 In our
 [first blog post](https://gvisor.dev/blog/2019/11/18/gvisor-security-basics-part-1/),

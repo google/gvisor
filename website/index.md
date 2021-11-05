@@ -47,4 +47,21 @@
   </div>
 </div>
 
+<hr/>
+
+<div class="row">
+  <div class="col-md-3"></div>
+  <div class="col-md-6">
+{% for post in site.posts limit:1 %}
+  <h4>Most Recent Post: <a href="{{ post.url }}">{{ post.title }}</a></h4>
+  <div class="blog-meta">
+    {% include byline.html authors=post.authors date=post.date %}
+  </div>
+  <p>{{ post.excerpt | strip_html }}</p>
+  <p><a class="button" href="{{ post.url }}">Read More &raquo;</a></p>
+{% endfor %}
+  </div>
+  <div class="col-md-3"></div>
+<div class="row">
+
 </div> <!-- container -->

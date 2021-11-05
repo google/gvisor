@@ -1,4 +1,4 @@
-# gVisor Security Basics - Part 1
+# Security Basics - Part 1
 
 This blog is a space for engineers and community members to share perspectives
 and deep dives on technology and design within the gVisor project. Though our

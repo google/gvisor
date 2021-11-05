@@ -1,4 +1,4 @@
-# gVisor RACK
+# RACK
 
 gVisor has implemented the [RACK](https://datatracker.ietf.org/doc/html/rfc8985)
 (Recent ACKnowledgement) TCP loss-detection algorithm in our network stack,
