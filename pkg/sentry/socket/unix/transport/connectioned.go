@@ -44,7 +44,7 @@ type ConnectingEndpoint interface {
 
 	// Type returns the socket type, typically either SockStream or
 	// SockSeqpacket. The connection attempt must be aborted if this
-	// value doesn't match the ConnectableEndpoint's type.
+	// value doesn't match the BoundEndpoint's type.
 	Type() linux.SockType
 
 	// GetLocalAddress returns the bound path.
@@ -69,7 +69,7 @@ type ConnectingEndpoint interface {
 }
 
 // connectionedEndpoint is a Unix-domain connected or connectable endpoint and implements
-// ConnectingEndpoint, ConnectableEndpoint and tcpip.Endpoint.
+// ConnectingEndpoint, BoundEndpoint and tcpip.Endpoint.
 //
 // connectionedEndpoints must be in connected state in order to transfer data.
 //
