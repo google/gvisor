@@ -132,7 +132,7 @@ func (g *interfaceGenerator) marshalScalar(accessor, typ, bufVar string) {
 		g.emit("hostarch.ByteOrder.PutUint64(%s[:8], uint64(%s))\n", bufVar, accessor)
 		g.shift(bufVar, 8)
 	default:
-		g.emit("%s = %s.MarshalBytes(%s)\n", bufVar, accessor, bufVar)
+		g.emit("%s = %s.MarshalUnsafe(%s)\n", bufVar, accessor, bufVar)
 	}
 }
 
@@ -158,7 +158,7 @@ func (g *interfaceGenerator) unmarshalScalar(accessor, typ, bufVar string) {
 		g.emit("%s = %s(hostarch.ByteOrder.Uint64(%s[:8]))\n", accessor, typ, bufVar)
 		g.shift(bufVar, 8)
 	default:
-		g.emit("%s = %s.UnmarshalBytes(%s)\n", bufVar, accessor, bufVar)
+		g.emit("%s = %s.UnmarshalUnsafe(%s)\n", bufVar, accessor, bufVar)
 		g.recordPotentiallyNonPackedField(accessor)
 	}
 }
