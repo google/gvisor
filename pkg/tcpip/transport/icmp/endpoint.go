@@ -354,6 +354,7 @@ func send4(s *stack.Stack, ctx *network.WriteContext, ident uint16, data buffer.
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: header.ICMPv4MinimumSize + int(maxHeaderLength),
 	})
+	defer pkt.DecRef()
 
 	icmpv4 := header.ICMPv4(pkt.TransportHeader().Push(header.ICMPv4MinimumSize))
 	pkt.TransportProtocolNumber = header.ICMPv4ProtocolNumber
@@ -394,6 +395,7 @@ func send6(s *stack.Stack, ctx *network.WriteContext, ident uint16, data buffer.
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: header.ICMPv6MinimumSize + int(maxHeaderLength),
 	})
+	defer pkt.DecRef()
 
 	icmpv6 := header.ICMPv6(pkt.TransportHeader().Push(header.ICMPv6MinimumSize))
 	pkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber

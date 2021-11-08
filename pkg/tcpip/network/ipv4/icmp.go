@@ -239,7 +239,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 	case header.ICMPv4Echo:
 		received.echoRequest.Increment()
 
-		// DeliverTransportPacket will take ownership of pkt so don't use it beyond
+		// DeliverTransportPacket may modify pkt so don't use it beyond
 		// this point. Make a deep copy of the data before pkt gets sent as we will
 		// be modifying fields. Both the ICMP header (with its type modified to
 		// EchoReply) and payload are reused in the reply packet.
@@ -320,6 +320,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 			ReserveHeaderBytes: int(r.MaxHeaderLength()),
 			Data:               replyVV,
 		})
+		defer replyPkt.DecRef()
 		replyPkt.TransportProtocolNumber = header.ICMPv4ProtocolNumber
 
 		if err := r.WriteHeaderIncludedPacket(replyPkt); err != nil {
@@ -667,6 +668,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip
 		ReserveHeaderBytes: int(route.MaxHeaderLength()) + header.ICMPv4MinimumSize,
 		Data:               payload,
 	})
+	defer icmpPkt.DecRef()
 
 	icmpPkt.TransportProtocolNumber = header.ICMPv4ProtocolNumber
 

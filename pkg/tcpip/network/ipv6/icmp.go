@@ -525,6 +525,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			ReserveHeaderBytes: int(r.MaxHeaderLength()) + neighborAdvertSize,
 		})
+		defer pkt.DecRef()
 		pkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
 		packet := header.ICMPv6(pkt.TransportHeader().Push(neighborAdvertSize))
 		packet.SetType(header.ICMPv6NeighborAdvert)
@@ -675,6 +676,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 			ReserveHeaderBytes: int(r.MaxHeaderLength()) + header.ICMPv6EchoMinimumSize,
 			Data:               pkt.Data().ExtractVV(),
 		})
+		defer replyPkt.DecRef()
 		icmp := header.ICMPv6(replyPkt.TransportHeader().Push(header.ICMPv6EchoMinimumSize))
 		pkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
 		copy(icmp, h)
@@ -1213,6 +1215,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip
 		ReserveHeaderBytes: int(route.MaxHeaderLength()) + header.ICMPv6ErrorHeaderSize,
 		Data:               payload,
 	})
+	defer newPkt.DecRef()
 	newPkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
 
 	icmpHdr := header.ICMPv6(newPkt.TransportHeader().Push(header.ICMPv6DstUnreachableMinimumSize))

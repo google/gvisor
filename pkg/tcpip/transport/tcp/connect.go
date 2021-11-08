@@ -850,6 +850,7 @@ func sendTCPBatch(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso 
 		pkt.GSOOptions = gso
 		pkts.PushBack(pkt)
 	}
+	defer pkts.DecRef()
 
 	if tf.ttl == 0 {
 		tf.ttl = r.DefaultTTL()
@@ -878,6 +879,7 @@ func sendTCP(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso stack
 		ReserveHeaderBytes: header.TCPMinimumSize + int(r.MaxHeaderLength()) + optLen,
 		Data:               data,
 	})
+	defer pkt.DecRef()
 	pkt.GSOOptions = gso
 	pkt.Hash = tf.txHash
 	pkt.Owner = owner
