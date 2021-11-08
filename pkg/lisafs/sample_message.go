@@ -55,22 +55,14 @@ func (m *MsgDynamic) SizeBytes() int {
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (m *MsgDynamic) MarshalBytes(dst []byte) []byte {
 	dst = m.N.MarshalUnsafe(dst)
-	n, err := MarshalUnsafeMsg1Slice(m.Arr, dst)
-	if err != nil {
-		panic(err)
-	}
-	return dst[n:]
+	return MarshalUnsafeMsg1Slice(m.Arr, dst)
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (m *MsgDynamic) UnmarshalBytes(src []byte) []byte {
 	src = m.N.UnmarshalUnsafe(src)
 	m.Arr = make([]MsgSimple, m.N)
-	n, err := UnmarshalUnsafeMsg1Slice(m.Arr, src)
-	if err != nil {
-		panic(err)
-	}
-	return src[n:]
+	return UnmarshalUnsafeMsg1Slice(m.Arr, src)
 }
 
 // Randomize randomizes the contents of m.

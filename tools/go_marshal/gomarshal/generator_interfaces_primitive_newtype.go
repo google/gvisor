@@ -264,36 +264,36 @@ func (g *interfaceGenerator) emitMarshallableSliceForPrimitiveNewtype(nt *ast.Id
 	g.emit("}\n\n")
 
 	g.emit("// MarshalUnsafe%s is like %s.MarshalUnsafe, but for a []%s.\n", slice.ident, g.typeName(), g.typeName())
-	g.emit("func MarshalUnsafe%s(src []%s, dst []byte) (int, error) {\n", slice.ident, g.typeName())
+	g.emit("func MarshalUnsafe%s(src []%s, dst []byte) []byte {\n", slice.ident, g.typeName())
 	g.inIndent(func() {
 		g.emit("count := len(src)\n")
 		g.emit("if count == 0 {\n")
 		g.inIndent(func() {
-			g.emit("return 0, nil\n")
+			g.emit("return dst\n")
 		})
 		g.emit("}\n")
 		g.emit("size := (*%s)(nil).SizeBytes()\n\n", g.typeName())
 
-		g.emit("dst = dst[:size*count]\n")
-		g.emit("gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(dst)))\n")
-		g.emit("return size*count, nil\n")
+		g.emit("buf := dst[:size*count]\n")
+		g.emit("gohacks.Memmove(unsafe.Pointer(&buf[0]), unsafe.Pointer(&src[0]), uintptr(len(buf)))\n")
+		g.emit("return dst[size*count:]\n")
 	})
 	g.emit("}\n\n")
 
 	g.emit("// UnmarshalUnsafe%s is like %s.UnmarshalUnsafe, but for a []%s.\n", slice.ident, g.typeName(), g.typeName())
-	g.emit("func UnmarshalUnsafe%s(dst []%s, src []byte) (int, error) {\n", slice.ident, g.typeName())
+	g.emit("func UnmarshalUnsafe%s(dst []%s, src []byte) []byte {\n", slice.ident, g.typeName())
 	g.inIndent(func() {
 		g.emit("count := len(dst)\n")
 		g.emit("if count == 0 {\n")
 		g.inIndent(func() {
-			g.emit("return 0, nil\n")
+			g.emit("return src\n")
 		})
 		g.emit("}\n")
 		g.emit("size := (*%s)(nil).SizeBytes()\n\n", g.typeName())
 
-		g.emit("src = src[:(size*count)]\n")
-		g.emit("gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(src)))\n")
-		g.emit("return size*count, nil\n")
+		g.emit("buf := src[:size*count]\n")
+		g.emit("gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&buf[0]), uintptr(len(buf)))\n")
+		g.emit("return src[size*count:]\n")
 	})
 	g.emit("}\n\n")
 }

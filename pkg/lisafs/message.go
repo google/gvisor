@@ -307,11 +307,7 @@ func (m *MountResp) MarshalBytes(dst []byte) []byte {
 	dst = m.MaxMessageSize.MarshalUnsafe(dst)
 	numSupported := primitive.Uint16(len(m.SupportedMs))
 	dst = numSupported.MarshalBytes(dst)
-	n, err := MarshalUnsafeMIDSlice(m.SupportedMs, dst)
-	if err != nil {
-		panic(err)
-	}
-	return dst[n:]
+	return MarshalUnsafeMIDSlice(m.SupportedMs, dst)
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
@@ -320,12 +316,12 @@ func (m *MountResp) UnmarshalBytes(src []byte) []byte {
 	src = m.MaxMessageSize.UnmarshalUnsafe(src)
 	var numSupported primitive.Uint16
 	src = numSupported.UnmarshalBytes(src)
-	m.SupportedMs = make([]MID, numSupported)
-	n, err := UnmarshalUnsafeMIDSlice(m.SupportedMs, src)
-	if err != nil {
-		panic(err)
+	if cap(m.SupportedMs) < int(numSupported) {
+		m.SupportedMs = make([]MID, numSupported)
+	} else {
+		m.SupportedMs = m.SupportedMs[:numSupported]
 	}
-	return src[n:]
+	return UnmarshalUnsafeMIDSlice(m.SupportedMs, src)
 }
 
 // ChannelResp is the response to the create channel request.
@@ -440,11 +436,7 @@ func (w *WalkResp) MarshalBytes(dst []byte) []byte {
 	numInodes := primitive.Uint32(len(w.Inodes))
 	dst = numInodes.MarshalUnsafe(dst)
 
-	n, err := MarshalUnsafeInodeSlice(w.Inodes, dst)
-	if err != nil {
-		panic(err)
-	}
-	return dst[n:]
+	return MarshalUnsafeInodeSlice(w.Inodes, dst)
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
@@ -459,11 +451,7 @@ func (w *WalkResp) UnmarshalBytes(src []byte) []byte {
 	} else {
 		w.Inodes = w.Inodes[:numInodes]
 	}
-	n, err := UnmarshalUnsafeInodeSlice(w.Inodes, src)
-	if err != nil {
-		panic(err)
-	}
-	return src[n:]
+	return UnmarshalUnsafeInodeSlice(w.Inodes, src)
 }
 
 // WalkStatResp is used to communicate stat results for WalkStat.
@@ -481,11 +469,7 @@ func (w *WalkStatResp) MarshalBytes(dst []byte) []byte {
 	numStats := primitive.Uint32(len(w.Stats))
 	dst = numStats.MarshalUnsafe(dst)
 
-	n, err := linux.MarshalUnsafeStatxSlice(w.Stats, dst)
-	if err != nil {
-		panic(err)
-	}
-	return dst[n:]
+	return linux.MarshalUnsafeStatxSlice(w.Stats, dst)
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
@@ -498,11 +482,7 @@ func (w *WalkStatResp) UnmarshalBytes(src []byte) []byte {
 	} else {
 		w.Stats = w.Stats[:numStats]
 	}
-	n, err := linux.UnmarshalUnsafeStatxSlice(w.Stats, src)
-	if err != nil {
-		panic(err)
-	}
-	return src[n:]
+	return linux.UnmarshalUnsafeStatxSlice(w.Stats, src)
 }
 
 // OpenAtReq is used to open existing FDs with the specified flags.
@@ -578,11 +558,7 @@ func (f *FdArray) SizeBytes() int {
 func (f *FdArray) MarshalBytes(dst []byte) []byte {
 	arrLen := primitive.Uint32(len(*f))
 	dst = arrLen.MarshalUnsafe(dst)
-	n, err := MarshalUnsafeFDIDSlice(*f, dst)
-	if err != nil {
-		panic(err)
-	}
-	return dst[n:]
+	return MarshalUnsafeFDIDSlice(*f, dst)
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
@@ -594,11 +570,7 @@ func (f *FdArray) UnmarshalBytes(src []byte) []byte {
 	} else {
 		*f = (*f)[:arrLen]
 	}
-	n, err := UnmarshalUnsafeFDIDSlice(*f, src)
-	if err != nil {
-		panic(err)
-	}
-	return src[n:]
+	return UnmarshalUnsafeFDIDSlice(*f, src)
 }
 
 // CloseReq is used to close(2) FDs.
