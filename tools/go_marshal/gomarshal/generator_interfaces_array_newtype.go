@@ -139,11 +139,11 @@ func (g *interfaceGenerator) emitMarshallableForArrayNewtype(n *ast.Ident, a *as
 	g.emit("}\n\n")
 
 	g.emit("// WriteTo implements io.WriterTo.WriteTo.\n")
-	g.emit("func (%s *%s) WriteTo(w io.Writer) (int64, error) {\n", g.r, g.typeName())
+	g.emit("func (%s *%s) WriteTo(writer io.Writer) (int64, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.emitCastToByteSlice(g.r, "buf", fmt.Sprintf("%s.SizeBytes()", g.r))
 
-		g.emit("length, err := w.Write(buf)\n")
+		g.emit("length, err := writer.Write(buf)\n")
 		g.emitKeepAlive(g.r)
 		g.emit("return int64(length), err\n")
 
