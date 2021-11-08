@@ -413,6 +413,7 @@ func (e *endpoint) dispatchLoop(d stack.NetworkDispatcher) {
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Data: buffer.View(b).ToVectorisedView(),
 		})
+		defer pkt.DecRef()
 
 		var src, dst tcpip.LinkAddress
 		var proto tcpip.NetworkProtocolNumber

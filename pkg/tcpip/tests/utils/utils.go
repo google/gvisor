@@ -370,9 +370,11 @@ func rxICMPv4Echo(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8, ty hea
 	})
 	ip.SetChecksum(^ip.CalculateChecksum())
 
-	e.InjectInbound(header.IPv4ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+	newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: hdr.View().ToVectorisedView(),
-	}))
+	})
+	defer newPkt.DecRef()
+	e.InjectInbound(header.IPv4ProtocolNumber, newPkt)
 }
 
 // RxICMPv4EchoRequest constructs and injects an ICMPv4 echo request packet on
@@ -408,9 +410,11 @@ func rxICMPv6Echo(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8, ty hea
 		DstAddr:           dst,
 	})
 
-	e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+	newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: hdr.View().ToVectorisedView(),
-	}))
+	})
+	defer newPkt.DecRef()
+	e.InjectInbound(header.IPv6ProtocolNumber, newPkt)
 }
 
 // RxICMPv6EchoRequest constructs and injects an ICMPv6 echo request packet on

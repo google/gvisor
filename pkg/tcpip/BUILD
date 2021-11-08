@@ -58,6 +58,8 @@ deps_test(
         "//pkg/state/wire",
         "//pkg/sync",
         "//pkg/waiter",
+        "//pkg/refsvfs2",
+        "//pkg/refs",
         "//pkg/syserr",
         "//pkg/abi/linux/errno",
         "//pkg/errors",

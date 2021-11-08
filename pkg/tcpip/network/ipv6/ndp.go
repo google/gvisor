@@ -1807,6 +1807,7 @@ func (ndp *ndpState) startSolicitingRouters() {
 				ReserveHeaderBytes: int(ndp.ep.MaxHeaderLength()),
 				Data:               buffer.View(icmpData).ToVectorisedView(),
 			})
+			defer pkt.DecRef()
 
 			sent := ndp.ep.stats.icmp.packetsSent
 			if err := addIPHeader(localAddr, header.IPv6AllRoutersLinkLocalMulticastAddress, pkt, stack.NetworkHeaderParams{
@@ -1924,6 +1925,7 @@ func (e *endpoint) sendNDPNS(srcAddr, dstAddr, targetAddr tcpip.Address, remoteL
 		ReserveHeaderBytes: int(e.MaxHeaderLength()),
 		Data:               buffer.View(icmp).ToVectorisedView(),
 	})
+	defer pkt.DecRef()
 
 	if err := addIPHeader(srcAddr, dstAddr, pkt, stack.NetworkHeaderParams{
 		Protocol: header.ICMPv6ProtocolNumber,

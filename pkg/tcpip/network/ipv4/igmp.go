@@ -322,6 +322,7 @@ func (igmp *igmpState) writePacket(destAddress tcpip.Address, groupAddress tcpip
 		ReserveHeaderBytes: int(igmp.ep.MaxHeaderLength()),
 		Data:               buffer.View(igmpData).ToVectorisedView(),
 	})
+	defer pkt.DecRef()
 
 	addressEndpoint := igmp.ep.acquireOutgoingPrimaryAddressRLocked(destAddress, false /* allowExpired */)
 	if addressEndpoint == nil {

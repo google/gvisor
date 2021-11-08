@@ -39,6 +39,17 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "packet_buffer_refs",
+    out = "packet_buffer_refs.go",
+    package = "stack",
+    prefix = "packetBuffer",
+    template = "//pkg/refsvfs2:refs_template",
+    types = {
+        "T": "PacketBuffer",
+    },
+)
+
 go_library(
     name = "stack",
     srcs = [
@@ -59,6 +70,7 @@ go_library(
         "nud.go",
         "packet_buffer.go",
         "packet_buffer_list.go",
+        "packet_buffer_refs.go",
         "packet_buffer_unsafe.go",
         "pending_packets.go",
         "rand.go",
@@ -78,6 +90,7 @@ go_library(
         "//pkg/ilist",
         "//pkg/log",
         "//pkg/rand",
+        "//pkg/refsvfs2",
         "//pkg/sleep",
         "//pkg/sync",
         "//pkg/tcpip",

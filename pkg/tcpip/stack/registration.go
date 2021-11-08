@@ -102,12 +102,12 @@ type TransportEndpoint interface {
 	// HandlePacket is called by the stack when new packets arrive to this
 	// transport endpoint. It sets the packet buffer's transport header.
 	//
-	// HandlePacket takes ownership of the packet.
+	// HandlePacket may modify the packet.
 	HandlePacket(TransportEndpointID, *PacketBuffer)
 
 	// HandleError is called when the transport endpoint receives an error.
 	//
-	// HandleError takes ownership of the packet buffer.
+	// HandleError takes may modify the packet buffer.
 	HandleError(TransportError, *PacketBuffer)
 
 	// Abort initiates an expedited endpoint teardown. It puts the endpoint
@@ -135,7 +135,7 @@ type RawTransportEndpoint interface {
 	// this transport endpoint. The packet contains all data from the link
 	// layer up.
 	//
-	// HandlePacket takes ownership of the packet.
+	// HandlePacket may modify the packet.
 	HandlePacket(*PacketBuffer)
 }
 
@@ -153,7 +153,7 @@ type PacketEndpoint interface {
 	// linkHeader may have a length of 0, in which case the PacketEndpoint
 	// should construct its own ethernet header for applications.
 	//
-	// HandlePacket takes ownership of pkt.
+	// HandlePacket may modify pkt.
 	HandlePacket(nicID tcpip.NICID, addr tcpip.LinkAddress, netProto tcpip.NetworkProtocolNumber, pkt *PacketBuffer)
 }
 
@@ -202,7 +202,7 @@ type TransportProtocol interface {
 	// protocol that don't match any existing endpoint. For example,
 	// it is targeted at a port that has no listeners.
 	//
-	// HandleUnknownDestinationPacket takes ownership of the packet if it handles
+	// HandleUnknownDestinationPacket may modify the packet if it handles
 	// the issue.
 	HandleUnknownDestinationPacket(TransportEndpointID, *PacketBuffer) UnknownDestinationPacketDisposition
 
@@ -257,13 +257,13 @@ type TransportDispatcher interface {
 	//
 	// pkt.NetworkHeader must be set before calling DeliverTransportPacket.
 	//
-	// DeliverTransportPacket takes ownership of the packet.
+	// DeliverTransportPacket may modify the packet.
 	DeliverTransportPacket(tcpip.TransportProtocolNumber, *PacketBuffer) TransportPacketDisposition
 
 	// DeliverTransportError delivers an error to the appropriate transport
 	// endpoint.
 	//
-	// DeliverTransportError takes ownership of the packet buffer.
+	// DeliverTransportError may modify the packet buffer.
 	DeliverTransportError(local, remote tcpip.Address, _ tcpip.NetworkProtocolNumber, _ tcpip.TransportProtocolNumber, _ TransportError, _ *PacketBuffer)
 
 	// DeliverRawPacket delivers a packet to any subscribed raw sockets.
@@ -570,14 +570,14 @@ type NetworkInterface interface {
 	// WritePacket writes a packet with the given protocol through the given
 	// route.
 	//
-	// WritePacket takes ownership of the packet buffer. The packet buffer's
+	// WritePacket may modify the packet buffer. The packet buffer's
 	// network and transport header must be set.
 	WritePacket(*Route, tcpip.NetworkProtocolNumber, *PacketBuffer) tcpip.Error
 
 	// WritePackets writes packets with the given protocol through the given
 	// route. Must not be called with an empty list of packet buffers.
 	//
-	// WritePackets takes ownership of the packet buffers.
+	// WritePackets may modify the packet buffers.
 	//
 	// Right now, WritePackets is used only when the software segmentation
 	// offload is enabled. If it will be used for something else, syscall filters
@@ -636,23 +636,23 @@ type NetworkEndpoint interface {
 	MaxHeaderLength() uint16
 
 	// WritePacket writes a packet to the given destination address and
-	// protocol. It takes ownership of pkt. pkt.TransportHeader must have
+	// protocol. It may modify pkt. pkt.TransportHeader must have
 	// already been set.
 	WritePacket(r *Route, params NetworkHeaderParams, pkt *PacketBuffer) tcpip.Error
 
 	// WritePackets writes packets to the given destination address and
-	// protocol. pkts must not be zero length. It takes ownership of pkts and
+	// protocol. pkts must not be zero length. It may modify pkts and
 	// underlying packets.
 	WritePackets(r *Route, pkts PacketBufferList, params NetworkHeaderParams) (int, tcpip.Error)
 
 	// WriteHeaderIncludedPacket writes a packet that includes a network
-	// header to the given destination address. It takes ownership of pkt.
+	// header to the given destination address. It may modify pkt.
 	WriteHeaderIncludedPacket(r *Route, pkt *PacketBuffer) tcpip.Error
 
 	// HandlePacket is called by the link layer when new packets arrive to
 	// this network endpoint. It sets pkt.NetworkHeader.
 	//
-	// HandlePacket takes ownership of pkt.
+	// HandlePacket may modify pkt.
 	HandlePacket(pkt *PacketBuffer)
 
 	// Close is called when the endpoint is removed from a stack.
@@ -748,7 +748,7 @@ type NetworkDispatcher interface {
 	// DeliverNetworkPacket. Some packets do not have link headers (e.g.
 	// packets sent via loopback), and won't have the field set.
 	//
-	// DeliverNetworkPacket takes ownership of pkt.
+	// DeliverNetworkPacket may modify pkt.
 	DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer)
 }
 
@@ -836,7 +836,7 @@ type LinkEndpoint interface {
 
 	// WritePacket writes a packet with the given protocol and route.
 	//
-	// WritePacket takes ownership of the packet buffer. The packet buffer's
+	// WritePacket may modify the packet buffer. The packet buffer's
 	// network and transport header must be set.
 	//
 	// To participate in transparent bridging, a LinkEndpoint implementation
@@ -847,7 +847,7 @@ type LinkEndpoint interface {
 	// WritePackets writes packets with the given protocol and route. Must not be
 	// called with an empty list of packet buffers.
 	//
-	// WritePackets takes ownership of the packet buffers.
+	// WritePackets may modify the packet buffers.
 	//
 	// Right now, WritePackets is used only when the software segmentation
 	// offload is enabled. If it will be used for something else, syscall filters
@@ -859,7 +859,7 @@ type LinkEndpoint interface {
 	// If the link-layer has its own header, the payload must already include the
 	// header.
 	//
-	// WriteRawPacket takes ownership of the packet.
+	// WriteRawPacket may modify the packet.
 	WriteRawPacket(*PacketBuffer) tcpip.Error
 }
 

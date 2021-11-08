@@ -421,6 +421,7 @@ func (c *Context) SendICMPPacket(typ header.ICMPv4Type, code header.ICMPv4Code, 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
 	})
+	defer pkt.DecRef()
 	c.linkEP.InjectInbound(ipv4.ProtocolNumber, pkt)
 }
 
@@ -477,6 +478,7 @@ func (c *Context) SendSegment(s buffer.VectorisedView) {
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: s,
 	})
+	defer pkt.DecRef()
 	c.linkEP.InjectInbound(ipv4.ProtocolNumber, pkt)
 }
 
@@ -486,6 +488,7 @@ func (c *Context) SendPacket(payload []byte, h *Headers) {
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: c.BuildSegment(payload, h),
 	})
+	defer pkt.DecRef()
 	c.linkEP.InjectInbound(ipv4.ProtocolNumber, pkt)
 }
 

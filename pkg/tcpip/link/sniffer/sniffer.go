@@ -209,6 +209,7 @@ func logPacket(prefix string, dir direction, protocol tcpip.NetworkProtocolNumbe
 	vv := buffer.NewVectorisedView(pkt.Size(), pkt.Views())
 	vv.TrimFront(len(pkt.LinkHeader().View()))
 	pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{Data: vv})
+	defer pkt.DecRef()
 	switch protocol {
 	case header.IPv4ProtocolNumber:
 		if ok := parse.IPv4(pkt); !ok {

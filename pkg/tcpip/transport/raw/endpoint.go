@@ -286,6 +286,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 		ReserveHeaderBytes: int(ctx.PacketInfo().MaxHeaderLength),
 		Data:               buffer.View(payloadBytes).ToVectorisedView(),
 	})
+	defer pkt.DecRef()
 
 	if err := ctx.WritePacket(pkt, e.ops.GetHeaderIncluded()); err != nil {
 		return 0, err

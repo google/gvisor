@@ -440,6 +440,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 		ReserveHeaderBytes: header.UDPMinimumSize + int(pktInfo.MaxHeaderLength),
 		Data:               udpInfo.data.ToVectorisedView(),
 	})
+	defer pkt.DecRef()
 
 	// Initialize the UDP header.
 	udp := header.UDP(pkt.TransportHeader().Push(header.UDPMinimumSize))

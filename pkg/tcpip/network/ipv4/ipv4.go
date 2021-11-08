@@ -119,6 +119,7 @@ func (e *endpoint) HandleLinkResolutionFailure(pkt *stack.PacketBuffer) {
 	pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buffer.NewVectorisedView(pkt.Size(), pkt.Views()),
 	})
+	defer pkt.DecRef()
 	pkt.NICID = e.nic.ID()
 	pkt.NetworkProtocolNumber = ProtocolNumber
 	// Use the same control type as an ICMPv4 destination host unreachable error
@@ -534,6 +535,7 @@ func (e *endpoint) WritePackets(r *stack.Route, pkts stack.PacketBufferList, par
 			// removed once the fragmentation is done.
 			originalPkt := pkt
 			if _, _, err := e.handleFragments(r, networkMTU, pkt, func(fragPkt *stack.PacketBuffer) tcpip.Error {
+				fragPkt.IncRef()
 				// Modify the packet list in place with the new fragments.
 				pkts.InsertAfter(pkt, fragPkt)
 				pkt = fragPkt
@@ -751,10 +753,11 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 	}
 
 	// We need to do a deep copy of the IP packet because
-	// WriteHeaderIncludedPacket takes ownership of the packet buffer, but we do
+	// WriteHeaderIncludedPacket may modify the packet buffer, but we do
 	// not own it.
 	newPkt := pkt.DeepCopyForForwarding(int(r.MaxHeaderLength()))
 	newHdr := header.IPv4(newPkt.NetworkHeader().View())
+	defer newPkt.DecRef()
 
 	// As per RFC 791 page 30, Time to Live,
 	//
@@ -859,6 +862,7 @@ func (e *endpoint) handleLocalPacket(pkt *stack.PacketBuffer, canSkipRXChecksum 
 	stats.PacketsReceived.Increment()
 
 	pkt = pkt.CloneToInbound()
+	defer pkt.DecRef()
 	pkt.RXTransportChecksumValidated = canSkipRXChecksum
 
 	h, ok := e.protocol.parseAndValidate(pkt)

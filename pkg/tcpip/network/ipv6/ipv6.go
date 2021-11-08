@@ -296,6 +296,7 @@ func (e *endpoint) HandleLinkResolutionFailure(pkt *stack.PacketBuffer) {
 	pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buffer.NewVectorisedView(pkt.Size(), pkt.Views()),
 	})
+	defer pkt.DecRef()
 	pkt.NICID = e.nic.ID()
 	pkt.NetworkProtocolNumber = ProtocolNumber
 	e.handleControl(&icmpv6DestinationAddressUnreachableSockError{}, pkt)
@@ -855,6 +856,7 @@ func (e *endpoint) WritePackets(r *stack.Route, pkts stack.PacketBufferList, par
 			// removed once the fragmentation is done.
 			originalPkt := pb
 			if _, _, err := e.handleFragments(r, networkMTU, pb, params.Protocol, func(fragPkt *stack.PacketBuffer) tcpip.Error {
+				fragPkt.IncRef()
 				// Modify the packet list in place with the new fragments.
 				pkts.InsertAfter(pb, fragPkt)
 				pb = fragPkt
@@ -1025,6 +1027,7 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 	// WriteHeaderIncludedPacket takes ownership of the packet buffer, but we do
 	// not own it.
 	newPkt := pkt.DeepCopyForForwarding(int(r.MaxHeaderLength()))
+	defer newPkt.DecRef()
 	newHdr := header.IPv6(newPkt.NetworkHeader().View())
 
 	// As per RFC 8200 section 3,
@@ -1118,6 +1121,7 @@ func (e *endpoint) handleLocalPacket(pkt *stack.PacketBuffer, canSkipRXChecksum 
 	stats.PacketsReceived.Increment()
 
 	pkt = pkt.CloneToInbound()
+	defer pkt.DecRef()
 	pkt.RXTransportChecksumValidated = canSkipRXChecksum
 
 	h, ok := e.protocol.parseAndValidate(pkt)

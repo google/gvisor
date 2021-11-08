@@ -76,6 +76,7 @@ func (d *Device) Release(ctx context.Context) {
 
 	// Decrease refcount if there is an endpoint associated with this file.
 	if d.endpoint != nil {
+		d.endpoint.Drain()
 		d.endpoint.RemoveNotify(d.notifyHandle)
 		d.endpoint.DecRef(ctx)
 		d.endpoint = nil
@@ -231,6 +232,7 @@ func (d *Device) Write(data []byte) (int64, error) {
 		ReserveHeaderBytes: len(ethHdr),
 		Data:               buffer.View(data).ToVectorisedView(),
 	})
+	defer pkt.DecRef()
 	copy(pkt.LinkHeader().Push(len(ethHdr)), ethHdr)
 	endpoint.InjectLinkAddr(protocol, remote, pkt)
 	return dataLen, nil

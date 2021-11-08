@@ -94,9 +94,7 @@ func (q *queueDispatcher) dispatchLoop() {
 			// We pass a protocol of zero here because each packet carries its
 			// NetworkProtocol.
 			q.lower.WritePackets(stack.RouteInfo{}, batch, 0 /* protocol */)
-			for pkt := batch.Front(); pkt != nil; pkt = pkt.Next() {
-				batch.Remove(pkt)
-			}
+			batch.DecRef()
 			batch.Reset()
 		}
 	}
