@@ -29,7 +29,7 @@ func (d *direntHdr) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (d *direntHdr) MarshalBytes(dst []byte) []byte {
-    dst = d.OldHdr.MarshalBytes(dst)
+    dst = d.OldHdr.MarshalUnsafe(dst)
     dst[0] = byte(d.Typ)
     dst = dst[1:]
     return dst
@@ -37,7 +37,7 @@ func (d *direntHdr) MarshalBytes(dst []byte) []byte {
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (d *direntHdr) UnmarshalBytes(src []byte) []byte {
-    src = d.OldHdr.UnmarshalBytes(src)
+    src = d.OldHdr.UnmarshalUnsafe(src)
     d.Typ = uint8(src[0])
     src = src[1:]
     return src
@@ -611,7 +611,7 @@ func (m *multipleMessageHeader64) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (m *multipleMessageHeader64) MarshalBytes(dst []byte) []byte {
-    dst = m.msgHdr.MarshalBytes(dst)
+    dst = m.msgHdr.MarshalUnsafe(dst)
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(m.msgLen))
     dst = dst[4:]
     // Padding: dst[:sizeof(int32)] ~= int32(0)
@@ -621,7 +621,7 @@ func (m *multipleMessageHeader64) MarshalBytes(dst []byte) []byte {
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (m *multipleMessageHeader64) UnmarshalBytes(src []byte) []byte {
-    src = m.msgHdr.UnmarshalBytes(src)
+    src = m.msgHdr.UnmarshalUnsafe(src)
     m.msgLen = uint32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
     // Padding: var _ int32 ~= src[:sizeof(int32)]

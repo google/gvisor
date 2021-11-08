@@ -249,9 +249,9 @@ func (s *Stat) MarshalBytes(dst []byte) []byte {
     dst = dst[4:]
     hostarch.ByteOrder.PutUint64(dst[:8], uint64(s.Blocks))
     dst = dst[8:]
-    dst = s.ATime.MarshalBytes(dst)
-    dst = s.MTime.MarshalBytes(dst)
-    dst = s.CTime.MarshalBytes(dst)
+    dst = s.ATime.MarshalUnsafe(dst)
+    dst = s.MTime.MarshalUnsafe(dst)
+    dst = s.CTime.MarshalUnsafe(dst)
     // Padding: dst[:sizeof(int32)*2] ~= [2]int32{0}
     dst = dst[4*(2):]
     return dst
@@ -283,9 +283,9 @@ func (s *Stat) UnmarshalBytes(src []byte) []byte {
     src = src[4:]
     s.Blocks = int64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    src = s.ATime.UnmarshalBytes(src)
-    src = s.MTime.UnmarshalBytes(src)
-    src = s.CTime.UnmarshalBytes(src)
+    src = s.ATime.UnmarshalUnsafe(src)
+    src = s.MTime.UnmarshalUnsafe(src)
+    src = s.CTime.UnmarshalUnsafe(src)
     // Padding: ~ copy([2]int32(s._), src[:sizeof(int32)*2])
     src = src[4*(2):]
     return src
@@ -522,9 +522,9 @@ func (s *SemidDS) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (s *SemidDS) MarshalBytes(dst []byte) []byte {
-    dst = s.SemPerm.MarshalBytes(dst)
-    dst = s.SemOTime.MarshalBytes(dst)
-    dst = s.SemCTime.MarshalBytes(dst)
+    dst = s.SemPerm.MarshalUnsafe(dst)
+    dst = s.SemOTime.MarshalUnsafe(dst)
+    dst = s.SemCTime.MarshalUnsafe(dst)
     hostarch.ByteOrder.PutUint64(dst[:8], uint64(s.SemNSems))
     dst = dst[8:]
     hostarch.ByteOrder.PutUint64(dst[:8], uint64(s.unused3))
@@ -536,9 +536,9 @@ func (s *SemidDS) MarshalBytes(dst []byte) []byte {
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (s *SemidDS) UnmarshalBytes(src []byte) []byte {
-    src = s.SemPerm.UnmarshalBytes(src)
-    src = s.SemOTime.UnmarshalBytes(src)
-    src = s.SemCTime.UnmarshalBytes(src)
+    src = s.SemPerm.UnmarshalUnsafe(src)
+    src = s.SemOTime.UnmarshalUnsafe(src)
+    src = s.SemCTime.UnmarshalUnsafe(src)
     s.SemNSems = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
     s.unused3 = uint64(hostarch.ByteOrder.Uint64(src[:8]))

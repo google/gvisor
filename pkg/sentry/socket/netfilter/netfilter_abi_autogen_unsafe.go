@@ -27,15 +27,15 @@ func (n *nfNATTarget) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (n *nfNATTarget) MarshalBytes(dst []byte) []byte {
-    dst = n.Target.MarshalBytes(dst)
-    dst = n.Range.MarshalBytes(dst)
+    dst = n.Target.MarshalUnsafe(dst)
+    dst = n.Range.MarshalUnsafe(dst)
     return dst
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (n *nfNATTarget) UnmarshalBytes(src []byte) []byte {
-    src = n.Target.UnmarshalBytes(src)
-    src = n.Range.UnmarshalBytes(src)
+    src = n.Target.UnmarshalUnsafe(src)
+    src = n.Range.UnmarshalUnsafe(src)
     return src
 }
 

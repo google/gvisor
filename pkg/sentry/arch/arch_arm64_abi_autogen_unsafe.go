@@ -39,7 +39,7 @@ func (f *FpsimdContext) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (f *FpsimdContext) MarshalBytes(dst []byte) []byte {
-    dst = f.Head.MarshalBytes(dst)
+    dst = f.Head.MarshalUnsafe(dst)
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(f.Fpsr))
     dst = dst[4:]
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(f.Fpcr))
@@ -53,7 +53,7 @@ func (f *FpsimdContext) MarshalBytes(dst []byte) []byte {
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (f *FpsimdContext) UnmarshalBytes(src []byte) []byte {
-    src = f.Head.UnmarshalBytes(src)
+    src = f.Head.UnmarshalUnsafe(src)
     f.Fpsr = uint32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
     f.Fpcr = uint32(hostarch.ByteOrder.Uint32(src[:4]))
@@ -200,7 +200,7 @@ func (s *SignalContext64) MarshalBytes(dst []byte) []byte {
         dst[0] = byte(s._pad[idx])
         dst = dst[1:]
     }
-    dst = s.Fpsimd64.MarshalBytes(dst)
+    dst = s.Fpsimd64.MarshalUnsafe(dst)
     return dst
 }
 
@@ -222,7 +222,7 @@ func (s *SignalContext64) UnmarshalBytes(src []byte) []byte {
         s._pad[idx] = src[0]
         src = src[1:]
     }
-    src = s.Fpsimd64.UnmarshalBytes(src)
+    src = s.Fpsimd64.UnmarshalUnsafe(src)
     return src
 }
 
@@ -351,8 +351,8 @@ func (u *UContext64) MarshalBytes(dst []byte) []byte {
     dst = dst[8:]
     hostarch.ByteOrder.PutUint64(dst[:8], uint64(u.Link))
     dst = dst[8:]
-    dst = u.Stack.MarshalBytes(dst)
-    dst = u.Sigset.MarshalBytes(dst)
+    dst = u.Stack.MarshalUnsafe(dst)
+    dst = u.Sigset.MarshalUnsafe(dst)
     for idx := 0; idx < 120; idx++ {
         dst[0] = byte(u._pad[idx])
         dst = dst[1:]
@@ -361,7 +361,7 @@ func (u *UContext64) MarshalBytes(dst []byte) []byte {
         dst[0] = byte(u._pad2[idx])
         dst = dst[1:]
     }
-    dst = u.MContext.MarshalBytes(dst)
+    dst = u.MContext.MarshalUnsafe(dst)
     return dst
 }
 
@@ -371,8 +371,8 @@ func (u *UContext64) UnmarshalBytes(src []byte) []byte {
     src = src[8:]
     u.Link = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    src = u.Stack.UnmarshalBytes(src)
-    src = u.Sigset.UnmarshalBytes(src)
+    src = u.Stack.UnmarshalUnsafe(src)
+    src = u.Sigset.UnmarshalUnsafe(src)
     for idx := 0; idx < 120; idx++ {
         u._pad[idx] = src[0]
         src = src[1:]
@@ -381,7 +381,7 @@ func (u *UContext64) UnmarshalBytes(src []byte) []byte {
         u._pad2[idx] = src[0]
         src = src[1:]
     }
-    src = u.MContext.UnmarshalBytes(src)
+    src = u.MContext.UnmarshalUnsafe(src)
     return src
 }
 

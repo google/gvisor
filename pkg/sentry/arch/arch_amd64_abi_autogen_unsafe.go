@@ -85,7 +85,7 @@ func (s *SignalContext64) MarshalBytes(dst []byte) []byte {
     dst = dst[8:]
     hostarch.ByteOrder.PutUint64(dst[:8], uint64(s.Trapno))
     dst = dst[8:]
-    dst = s.Oldmask.MarshalBytes(dst)
+    dst = s.Oldmask.MarshalUnsafe(dst)
     hostarch.ByteOrder.PutUint64(dst[:8], uint64(s.Cr2))
     dst = dst[8:]
     hostarch.ByteOrder.PutUint64(dst[:8], uint64(s.Fpstate))
@@ -147,7 +147,7 @@ func (s *SignalContext64) UnmarshalBytes(src []byte) []byte {
     src = src[8:]
     s.Trapno = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    src = s.Oldmask.UnmarshalBytes(src)
+    src = s.Oldmask.UnmarshalUnsafe(src)
     s.Cr2 = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
     s.Fpstate = uint64(hostarch.ByteOrder.Uint64(src[:8]))
@@ -282,9 +282,9 @@ func (u *UContext64) MarshalBytes(dst []byte) []byte {
     dst = dst[8:]
     hostarch.ByteOrder.PutUint64(dst[:8], uint64(u.Link))
     dst = dst[8:]
-    dst = u.Stack.MarshalBytes(dst)
-    dst = u.MContext.MarshalBytes(dst)
-    dst = u.Sigset.MarshalBytes(dst)
+    dst = u.Stack.MarshalUnsafe(dst)
+    dst = u.MContext.MarshalUnsafe(dst)
+    dst = u.Sigset.MarshalUnsafe(dst)
     return dst
 }
 
@@ -294,9 +294,9 @@ func (u *UContext64) UnmarshalBytes(src []byte) []byte {
     src = src[8:]
     u.Link = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    src = u.Stack.UnmarshalBytes(src)
-    src = u.MContext.UnmarshalBytes(src)
-    src = u.Sigset.UnmarshalBytes(src)
+    src = u.Stack.UnmarshalUnsafe(src)
+    src = u.MContext.UnmarshalUnsafe(src)
+    src = u.Sigset.UnmarshalUnsafe(src)
     return src
 }
 

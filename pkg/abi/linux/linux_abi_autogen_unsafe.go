@@ -1264,15 +1264,15 @@ func (s *SockErrCMsgIPv4) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (s *SockErrCMsgIPv4) MarshalBytes(dst []byte) []byte {
-    dst = s.SockExtendedErr.MarshalBytes(dst)
-    dst = s.Offender.MarshalBytes(dst)
+    dst = s.SockExtendedErr.MarshalUnsafe(dst)
+    dst = s.Offender.MarshalUnsafe(dst)
     return dst
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (s *SockErrCMsgIPv4) UnmarshalBytes(src []byte) []byte {
-    src = s.SockExtendedErr.UnmarshalBytes(src)
-    src = s.Offender.UnmarshalBytes(src)
+    src = s.SockExtendedErr.UnmarshalUnsafe(src)
+    src = s.Offender.UnmarshalUnsafe(src)
     return src
 }
 
@@ -1394,15 +1394,15 @@ func (s *SockErrCMsgIPv6) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (s *SockErrCMsgIPv6) MarshalBytes(dst []byte) []byte {
-    dst = s.SockExtendedErr.MarshalBytes(dst)
-    dst = s.Offender.MarshalBytes(dst)
+    dst = s.SockExtendedErr.MarshalUnsafe(dst)
+    dst = s.Offender.MarshalUnsafe(dst)
     return dst
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (s *SockErrCMsgIPv6) UnmarshalBytes(src []byte) []byte {
-    src = s.SockExtendedErr.UnmarshalBytes(src)
-    src = s.Offender.UnmarshalBytes(src)
+    src = s.SockExtendedErr.UnmarshalUnsafe(src)
+    src = s.Offender.UnmarshalUnsafe(src)
     return src
 }
 
@@ -1984,10 +1984,10 @@ func (s *Statx) MarshalBytes(dst []byte) []byte {
     dst = dst[8:]
     hostarch.ByteOrder.PutUint64(dst[:8], uint64(s.AttributesMask))
     dst = dst[8:]
-    dst = s.Atime.MarshalBytes(dst)
-    dst = s.Btime.MarshalBytes(dst)
-    dst = s.Ctime.MarshalBytes(dst)
-    dst = s.Mtime.MarshalBytes(dst)
+    dst = s.Atime.MarshalUnsafe(dst)
+    dst = s.Btime.MarshalUnsafe(dst)
+    dst = s.Ctime.MarshalUnsafe(dst)
+    dst = s.Mtime.MarshalUnsafe(dst)
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(s.RdevMajor))
     dst = dst[4:]
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(s.RdevMinor))
@@ -2025,10 +2025,10 @@ func (s *Statx) UnmarshalBytes(src []byte) []byte {
     src = src[8:]
     s.AttributesMask = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    src = s.Atime.UnmarshalBytes(src)
-    src = s.Btime.UnmarshalBytes(src)
-    src = s.Ctime.UnmarshalBytes(src)
-    src = s.Mtime.UnmarshalBytes(src)
+    src = s.Atime.UnmarshalUnsafe(src)
+    src = s.Btime.UnmarshalUnsafe(src)
+    src = s.Ctime.UnmarshalUnsafe(src)
+    src = s.Mtime.UnmarshalUnsafe(src)
     s.RdevMajor = uint32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
     s.RdevMinor = uint32(hostarch.ByteOrder.Uint32(src[:4]))
@@ -2810,7 +2810,7 @@ func (f *FUSEEntryOut) MarshalBytes(dst []byte) []byte {
     dst = dst[4:]
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(f.AttrValidNSec))
     dst = dst[4:]
-    dst = f.Attr.MarshalBytes(dst)
+    dst = f.Attr.MarshalUnsafe(dst)
     return dst
 }
 
@@ -2828,7 +2828,7 @@ func (f *FUSEEntryOut) UnmarshalBytes(src []byte) []byte {
     src = src[4:]
     f.AttrValidNSec = uint32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
-    src = f.Attr.UnmarshalBytes(src)
+    src = f.Attr.UnmarshalUnsafe(src)
     return src
 }
 
@@ -3058,7 +3058,7 @@ func (f *FUSEGetAttrOut) MarshalBytes(dst []byte) []byte {
     dst = dst[4:]
     // Padding: dst[:sizeof(uint32)] ~= uint32(0)
     dst = dst[4:]
-    dst = f.Attr.MarshalBytes(dst)
+    dst = f.Attr.MarshalUnsafe(dst)
     return dst
 }
 
@@ -3070,7 +3070,7 @@ func (f *FUSEGetAttrOut) UnmarshalBytes(src []byte) []byte {
     src = src[4:]
     // Padding: var _ uint32 ~= src[:sizeof(uint32)]
     src = src[4:]
-    src = f.Attr.UnmarshalBytes(src)
+    src = f.Attr.UnmarshalUnsafe(src)
     return src
 }
 
@@ -3194,8 +3194,8 @@ func (f *FUSEHeaderIn) SizeBytes() int {
 func (f *FUSEHeaderIn) MarshalBytes(dst []byte) []byte {
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(f.Len))
     dst = dst[4:]
-    dst = f.Opcode.MarshalBytes(dst)
-    dst = f.Unique.MarshalBytes(dst)
+    dst = f.Opcode.MarshalUnsafe(dst)
+    dst = f.Unique.MarshalUnsafe(dst)
     hostarch.ByteOrder.PutUint64(dst[:8], uint64(f.NodeID))
     dst = dst[8:]
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(f.UID))
@@ -3213,8 +3213,8 @@ func (f *FUSEHeaderIn) MarshalBytes(dst []byte) []byte {
 func (f *FUSEHeaderIn) UnmarshalBytes(src []byte) []byte {
     f.Len = uint32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
-    src = f.Opcode.UnmarshalBytes(src)
-    src = f.Unique.UnmarshalBytes(src)
+    src = f.Opcode.UnmarshalUnsafe(src)
+    src = f.Unique.UnmarshalUnsafe(src)
     f.NodeID = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
     f.UID = uint32(hostarch.ByteOrder.Uint32(src[:4]))
@@ -3349,7 +3349,7 @@ func (f *FUSEHeaderOut) MarshalBytes(dst []byte) []byte {
     dst = dst[4:]
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(f.Error))
     dst = dst[4:]
-    dst = f.Unique.MarshalBytes(dst)
+    dst = f.Unique.MarshalUnsafe(dst)
     return dst
 }
 
@@ -3359,7 +3359,7 @@ func (f *FUSEHeaderOut) UnmarshalBytes(src []byte) []byte {
     src = src[4:]
     f.Error = int32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
-    src = f.Unique.UnmarshalBytes(src)
+    src = f.Unique.UnmarshalUnsafe(src)
     return src
 }
 
@@ -5754,10 +5754,10 @@ func (m *MsqidDS) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (m *MsqidDS) MarshalBytes(dst []byte) []byte {
-    dst = m.MsgPerm.MarshalBytes(dst)
-    dst = m.MsgStime.MarshalBytes(dst)
-    dst = m.MsgRtime.MarshalBytes(dst)
-    dst = m.MsgCtime.MarshalBytes(dst)
+    dst = m.MsgPerm.MarshalUnsafe(dst)
+    dst = m.MsgStime.MarshalUnsafe(dst)
+    dst = m.MsgRtime.MarshalUnsafe(dst)
+    dst = m.MsgCtime.MarshalUnsafe(dst)
     hostarch.ByteOrder.PutUint64(dst[:8], uint64(m.MsgCbytes))
     dst = dst[8:]
     hostarch.ByteOrder.PutUint64(dst[:8], uint64(m.MsgQnum))
@@ -5777,10 +5777,10 @@ func (m *MsqidDS) MarshalBytes(dst []byte) []byte {
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (m *MsqidDS) UnmarshalBytes(src []byte) []byte {
-    src = m.MsgPerm.UnmarshalBytes(src)
-    src = m.MsgStime.UnmarshalBytes(src)
-    src = m.MsgRtime.UnmarshalBytes(src)
-    src = m.MsgCtime.UnmarshalBytes(src)
+    src = m.MsgPerm.UnmarshalUnsafe(src)
+    src = m.MsgStime.UnmarshalUnsafe(src)
+    src = m.MsgRtime.UnmarshalUnsafe(src)
+    src = m.MsgCtime.UnmarshalUnsafe(src)
     m.MsgCbytes = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
     m.MsgQnum = uint64(hostarch.ByteOrder.Uint64(src[:8]))
@@ -6331,7 +6331,7 @@ func (i *IPTEntry) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (i *IPTEntry) MarshalBytes(dst []byte) []byte {
-    dst = i.IP.MarshalBytes(dst)
+    dst = i.IP.MarshalUnsafe(dst)
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(i.NFCache))
     dst = dst[4:]
     hostarch.ByteOrder.PutUint16(dst[:2], uint16(i.TargetOffset))
@@ -6340,13 +6340,13 @@ func (i *IPTEntry) MarshalBytes(dst []byte) []byte {
     dst = dst[2:]
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(i.Comeback))
     dst = dst[4:]
-    dst = i.Counters.MarshalBytes(dst)
+    dst = i.Counters.MarshalUnsafe(dst)
     return dst
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (i *IPTEntry) UnmarshalBytes(src []byte) []byte {
-    src = i.IP.UnmarshalBytes(src)
+    src = i.IP.UnmarshalUnsafe(src)
     i.NFCache = uint32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
     i.TargetOffset = uint16(hostarch.ByteOrder.Uint16(src[:2]))
@@ -6355,7 +6355,7 @@ func (i *IPTEntry) UnmarshalBytes(src []byte) []byte {
     src = src[2:]
     i.Comeback = uint32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
-    src = i.Counters.UnmarshalBytes(src)
+    src = i.Counters.UnmarshalUnsafe(src)
     return src
 }
 
@@ -6477,7 +6477,7 @@ func (i *IPTGetEntries) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (i *IPTGetEntries) MarshalBytes(dst []byte) []byte {
-    dst = i.Name.MarshalBytes(dst)
+    dst = i.Name.MarshalUnsafe(dst)
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(i.Size))
     dst = dst[4:]
     // Padding: dst[:sizeof(byte)*4] ~= [4]byte{0}
@@ -6487,7 +6487,7 @@ func (i *IPTGetEntries) MarshalBytes(dst []byte) []byte {
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (i *IPTGetEntries) UnmarshalBytes(src []byte) []byte {
-    src = i.Name.UnmarshalBytes(src)
+    src = i.Name.UnmarshalUnsafe(src)
     i.Size = uint32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
     // Padding: ~ copy([4]byte(i._), src[:sizeof(byte)*4])
@@ -6614,7 +6614,7 @@ func (i *IPTGetinfo) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (i *IPTGetinfo) MarshalBytes(dst []byte) []byte {
-    dst = i.Name.MarshalBytes(dst)
+    dst = i.Name.MarshalUnsafe(dst)
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(i.ValidHooks))
     dst = dst[4:]
     for idx := 0; idx < NF_INET_NUMHOOKS; idx++ {
@@ -6634,7 +6634,7 @@ func (i *IPTGetinfo) MarshalBytes(dst []byte) []byte {
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (i *IPTGetinfo) UnmarshalBytes(src []byte) []byte {
-    src = i.Name.UnmarshalBytes(src)
+    src = i.Name.UnmarshalUnsafe(src)
     i.ValidHooks = uint32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
     for idx := 0; idx < NF_INET_NUMHOOKS; idx++ {
@@ -6776,10 +6776,10 @@ func (i *IPTIP) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (i *IPTIP) MarshalBytes(dst []byte) []byte {
-    dst = i.Src.MarshalBytes(dst)
-    dst = i.Dst.MarshalBytes(dst)
-    dst = i.SrcMask.MarshalBytes(dst)
-    dst = i.DstMask.MarshalBytes(dst)
+    dst = i.Src.MarshalUnsafe(dst)
+    dst = i.Dst.MarshalUnsafe(dst)
+    dst = i.SrcMask.MarshalUnsafe(dst)
+    dst = i.DstMask.MarshalUnsafe(dst)
     for idx := 0; idx < IFNAMSIZ; idx++ {
         dst[0] = byte(i.InputInterface[idx])
         dst = dst[1:]
@@ -6807,10 +6807,10 @@ func (i *IPTIP) MarshalBytes(dst []byte) []byte {
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (i *IPTIP) UnmarshalBytes(src []byte) []byte {
-    src = i.Src.UnmarshalBytes(src)
-    src = i.Dst.UnmarshalBytes(src)
-    src = i.SrcMask.UnmarshalBytes(src)
-    src = i.DstMask.UnmarshalBytes(src)
+    src = i.Src.UnmarshalUnsafe(src)
+    src = i.Dst.UnmarshalUnsafe(src)
+    src = i.SrcMask.UnmarshalUnsafe(src)
+    src = i.DstMask.UnmarshalUnsafe(src)
     for idx := 0; idx < IFNAMSIZ; idx++ {
         i.InputInterface[idx] = src[0]
         src = src[1:]
@@ -7057,7 +7057,7 @@ func (i *IPTReplace) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (i *IPTReplace) MarshalBytes(dst []byte) []byte {
-    dst = i.Name.MarshalBytes(dst)
+    dst = i.Name.MarshalUnsafe(dst)
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(i.ValidHooks))
     dst = dst[4:]
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(i.NumEntries))
@@ -7081,7 +7081,7 @@ func (i *IPTReplace) MarshalBytes(dst []byte) []byte {
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (i *IPTReplace) UnmarshalBytes(src []byte) []byte {
-    src = i.Name.UnmarshalBytes(src)
+    src = i.Name.UnmarshalUnsafe(src)
     i.ValidHooks = uint32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
     i.NumEntries = uint32(hostarch.ByteOrder.Uint32(src[:4]))
@@ -7332,7 +7332,7 @@ func (n *NfNATIPV4MultiRangeCompat) SizeBytes() int {
 func (n *NfNATIPV4MultiRangeCompat) MarshalBytes(dst []byte) []byte {
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(n.RangeSize))
     dst = dst[4:]
-    dst = n.RangeIPV4.MarshalBytes(dst)
+    dst = n.RangeIPV4.MarshalUnsafe(dst)
     return dst
 }
 
@@ -7340,7 +7340,7 @@ func (n *NfNATIPV4MultiRangeCompat) MarshalBytes(dst []byte) []byte {
 func (n *NfNATIPV4MultiRangeCompat) UnmarshalBytes(src []byte) []byte {
     n.RangeSize = uint32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
-    src = n.RangeIPV4.UnmarshalBytes(src)
+    src = n.RangeIPV4.UnmarshalUnsafe(src)
     return src
 }
 
@@ -7784,7 +7784,7 @@ func (x *XTEntryMatch) SizeBytes() int {
 func (x *XTEntryMatch) MarshalBytes(dst []byte) []byte {
     hostarch.ByteOrder.PutUint16(dst[:2], uint16(x.MatchSize))
     dst = dst[2:]
-    dst = x.Name.MarshalBytes(dst)
+    dst = x.Name.MarshalUnsafe(dst)
     dst[0] = byte(x.Revision)
     dst = dst[1:]
     return dst
@@ -7794,7 +7794,7 @@ func (x *XTEntryMatch) MarshalBytes(dst []byte) []byte {
 func (x *XTEntryMatch) UnmarshalBytes(src []byte) []byte {
     x.MatchSize = uint16(hostarch.ByteOrder.Uint16(src[:2]))
     src = src[2:]
-    src = x.Name.UnmarshalBytes(src)
+    src = x.Name.UnmarshalUnsafe(src)
     x.Revision = uint8(src[0])
     src = src[1:]
     return src
@@ -7919,7 +7919,7 @@ func (x *XTEntryTarget) SizeBytes() int {
 func (x *XTEntryTarget) MarshalBytes(dst []byte) []byte {
     hostarch.ByteOrder.PutUint16(dst[:2], uint16(x.TargetSize))
     dst = dst[2:]
-    dst = x.Name.MarshalBytes(dst)
+    dst = x.Name.MarshalUnsafe(dst)
     dst[0] = byte(x.Revision)
     dst = dst[1:]
     return dst
@@ -7929,7 +7929,7 @@ func (x *XTEntryTarget) MarshalBytes(dst []byte) []byte {
 func (x *XTEntryTarget) UnmarshalBytes(src []byte) []byte {
     x.TargetSize = uint16(hostarch.ByteOrder.Uint16(src[:2]))
     src = src[2:]
-    src = x.Name.UnmarshalBytes(src)
+    src = x.Name.UnmarshalUnsafe(src)
     x.Revision = uint8(src[0])
     src = src[1:]
     return src
@@ -8054,8 +8054,8 @@ func (x *XTErrorTarget) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (x *XTErrorTarget) MarshalBytes(dst []byte) []byte {
-    dst = x.Target.MarshalBytes(dst)
-    dst = x.Name.MarshalBytes(dst)
+    dst = x.Target.MarshalUnsafe(dst)
+    dst = x.Name.MarshalUnsafe(dst)
     // Padding: dst[:sizeof(byte)*2] ~= [2]byte{0}
     dst = dst[1*(2):]
     return dst
@@ -8063,8 +8063,8 @@ func (x *XTErrorTarget) MarshalBytes(dst []byte) []byte {
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (x *XTErrorTarget) UnmarshalBytes(src []byte) []byte {
-    src = x.Target.UnmarshalBytes(src)
-    src = x.Name.UnmarshalBytes(src)
+    src = x.Target.UnmarshalUnsafe(src)
+    src = x.Name.UnmarshalUnsafe(src)
     // Padding: ~ copy([2]byte(x._), src[:sizeof(byte)*2])
     src = src[1*(2):]
     return src
@@ -8187,7 +8187,7 @@ func (x *XTGetRevision) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (x *XTGetRevision) MarshalBytes(dst []byte) []byte {
-    dst = x.Name.MarshalBytes(dst)
+    dst = x.Name.MarshalUnsafe(dst)
     dst[0] = byte(x.Revision)
     dst = dst[1:]
     return dst
@@ -8195,7 +8195,7 @@ func (x *XTGetRevision) MarshalBytes(dst []byte) []byte {
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (x *XTGetRevision) UnmarshalBytes(src []byte) []byte {
-    src = x.Name.UnmarshalBytes(src)
+    src = x.Name.UnmarshalUnsafe(src)
     x.Revision = uint8(src[0])
     src = src[1:]
     return src
@@ -8320,8 +8320,8 @@ func (x *XTRedirectTarget) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (x *XTRedirectTarget) MarshalBytes(dst []byte) []byte {
-    dst = x.Target.MarshalBytes(dst)
-    dst = x.NfRange.MarshalBytes(dst)
+    dst = x.Target.MarshalUnsafe(dst)
+    dst = x.NfRange.MarshalUnsafe(dst)
     // Padding: dst[:sizeof(byte)*4] ~= [4]byte{0}
     dst = dst[1*(4):]
     return dst
@@ -8329,8 +8329,8 @@ func (x *XTRedirectTarget) MarshalBytes(dst []byte) []byte {
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (x *XTRedirectTarget) UnmarshalBytes(src []byte) []byte {
-    src = x.Target.UnmarshalBytes(src)
-    src = x.NfRange.UnmarshalBytes(src)
+    src = x.Target.UnmarshalUnsafe(src)
+    src = x.NfRange.UnmarshalUnsafe(src)
     // Padding: ~ copy([4]byte(x._), src[:sizeof(byte)*4])
     src = src[1*(4):]
     return src
@@ -8455,8 +8455,8 @@ func (x *XTSNATTarget) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (x *XTSNATTarget) MarshalBytes(dst []byte) []byte {
-    dst = x.Target.MarshalBytes(dst)
-    dst = x.NfRange.MarshalBytes(dst)
+    dst = x.Target.MarshalUnsafe(dst)
+    dst = x.NfRange.MarshalUnsafe(dst)
     // Padding: dst[:sizeof(byte)*4] ~= [4]byte{0}
     dst = dst[1*(4):]
     return dst
@@ -8464,8 +8464,8 @@ func (x *XTSNATTarget) MarshalBytes(dst []byte) []byte {
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (x *XTSNATTarget) UnmarshalBytes(src []byte) []byte {
-    src = x.Target.UnmarshalBytes(src)
-    src = x.NfRange.UnmarshalBytes(src)
+    src = x.Target.UnmarshalUnsafe(src)
+    src = x.NfRange.UnmarshalUnsafe(src)
     // Padding: ~ copy([4]byte(x._), src[:sizeof(byte)*4])
     src = src[1*(4):]
     return src
@@ -8589,7 +8589,7 @@ func (x *XTStandardTarget) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (x *XTStandardTarget) MarshalBytes(dst []byte) []byte {
-    dst = x.Target.MarshalBytes(dst)
+    dst = x.Target.MarshalUnsafe(dst)
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(x.Verdict))
     dst = dst[4:]
     // Padding: dst[:sizeof(byte)*4] ~= [4]byte{0}
@@ -8599,7 +8599,7 @@ func (x *XTStandardTarget) MarshalBytes(dst []byte) []byte {
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (x *XTStandardTarget) UnmarshalBytes(src []byte) []byte {
-    src = x.Target.UnmarshalBytes(src)
+    src = x.Target.UnmarshalUnsafe(src)
     x.Verdict = int32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
     // Padding: ~ copy([4]byte(x._), src[:sizeof(byte)*4])
@@ -8964,7 +8964,7 @@ func (i *IP6TEntry) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (i *IP6TEntry) MarshalBytes(dst []byte) []byte {
-    dst = i.IPv6.MarshalBytes(dst)
+    dst = i.IPv6.MarshalUnsafe(dst)
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(i.NFCache))
     dst = dst[4:]
     hostarch.ByteOrder.PutUint16(dst[:2], uint16(i.TargetOffset))
@@ -8975,13 +8975,13 @@ func (i *IP6TEntry) MarshalBytes(dst []byte) []byte {
     dst = dst[4:]
     // Padding: dst[:sizeof(byte)*4] ~= [4]byte{0}
     dst = dst[1*(4):]
-    dst = i.Counters.MarshalBytes(dst)
+    dst = i.Counters.MarshalUnsafe(dst)
     return dst
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (i *IP6TEntry) UnmarshalBytes(src []byte) []byte {
-    src = i.IPv6.UnmarshalBytes(src)
+    src = i.IPv6.UnmarshalUnsafe(src)
     i.NFCache = uint32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
     i.TargetOffset = uint16(hostarch.ByteOrder.Uint16(src[:2]))
@@ -8992,7 +8992,7 @@ func (i *IP6TEntry) UnmarshalBytes(src []byte) []byte {
     src = src[4:]
     // Padding: ~ copy([4]byte(i._), src[:sizeof(byte)*4])
     src = src[1*(4):]
-    src = i.Counters.UnmarshalBytes(src)
+    src = i.Counters.UnmarshalUnsafe(src)
     return src
 }
 
@@ -9121,10 +9121,10 @@ func (i *IP6TIP) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (i *IP6TIP) MarshalBytes(dst []byte) []byte {
-    dst = i.Src.MarshalBytes(dst)
-    dst = i.Dst.MarshalBytes(dst)
-    dst = i.SrcMask.MarshalBytes(dst)
-    dst = i.DstMask.MarshalBytes(dst)
+    dst = i.Src.MarshalUnsafe(dst)
+    dst = i.Dst.MarshalUnsafe(dst)
+    dst = i.SrcMask.MarshalUnsafe(dst)
+    dst = i.DstMask.MarshalUnsafe(dst)
     for idx := 0; idx < IFNAMSIZ; idx++ {
         dst[0] = byte(i.InputInterface[idx])
         dst = dst[1:]
@@ -9156,10 +9156,10 @@ func (i *IP6TIP) MarshalBytes(dst []byte) []byte {
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (i *IP6TIP) UnmarshalBytes(src []byte) []byte {
-    src = i.Src.UnmarshalBytes(src)
-    src = i.Dst.UnmarshalBytes(src)
-    src = i.SrcMask.UnmarshalBytes(src)
-    src = i.DstMask.UnmarshalBytes(src)
+    src = i.Src.UnmarshalUnsafe(src)
+    src = i.Dst.UnmarshalUnsafe(src)
+    src = i.SrcMask.UnmarshalUnsafe(src)
+    src = i.DstMask.UnmarshalUnsafe(src)
     for idx := 0; idx < IFNAMSIZ; idx++ {
         i.InputInterface[idx] = src[0]
         src = src[1:]
@@ -9308,7 +9308,7 @@ func (i *IP6TReplace) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (i *IP6TReplace) MarshalBytes(dst []byte) []byte {
-    dst = i.Name.MarshalBytes(dst)
+    dst = i.Name.MarshalUnsafe(dst)
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(i.ValidHooks))
     dst = dst[4:]
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(i.NumEntries))
@@ -9332,7 +9332,7 @@ func (i *IP6TReplace) MarshalBytes(dst []byte) []byte {
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (i *IP6TReplace) UnmarshalBytes(src []byte) []byte {
-    src = i.Name.UnmarshalBytes(src)
+    src = i.Name.UnmarshalUnsafe(src)
     i.ValidHooks = uint32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
     i.NumEntries = uint32(hostarch.ByteOrder.Uint32(src[:4]))
@@ -9584,8 +9584,8 @@ func (n *NFNATRange) SizeBytes() int {
 func (n *NFNATRange) MarshalBytes(dst []byte) []byte {
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(n.Flags))
     dst = dst[4:]
-    dst = n.MinAddr.MarshalBytes(dst)
-    dst = n.MaxAddr.MarshalBytes(dst)
+    dst = n.MinAddr.MarshalUnsafe(dst)
+    dst = n.MaxAddr.MarshalUnsafe(dst)
     hostarch.ByteOrder.PutUint16(dst[:2], uint16(n.MinProto))
     dst = dst[2:]
     hostarch.ByteOrder.PutUint16(dst[:2], uint16(n.MaxProto))
@@ -9597,8 +9597,8 @@ func (n *NFNATRange) MarshalBytes(dst []byte) []byte {
 func (n *NFNATRange) UnmarshalBytes(src []byte) []byte {
     n.Flags = uint32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
-    src = n.MinAddr.UnmarshalBytes(src)
-    src = n.MaxAddr.UnmarshalBytes(src)
+    src = n.MinAddr.UnmarshalUnsafe(src)
+    src = n.MaxAddr.UnmarshalUnsafe(src)
     n.MinProto = uint16(hostarch.ByteOrder.Uint16(src[:2]))
     src = src[2:]
     n.MaxProto = uint16(hostarch.ByteOrder.Uint16(src[:2]))
@@ -9824,7 +9824,7 @@ func (n *NetlinkErrorMessage) SizeBytes() int {
 func (n *NetlinkErrorMessage) MarshalBytes(dst []byte) []byte {
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(n.Error))
     dst = dst[4:]
-    dst = n.Header.MarshalBytes(dst)
+    dst = n.Header.MarshalUnsafe(dst)
     return dst
 }
 
@@ -9832,7 +9832,7 @@ func (n *NetlinkErrorMessage) MarshalBytes(dst []byte) []byte {
 func (n *NetlinkErrorMessage) UnmarshalBytes(src []byte) []byte {
     n.Error = int32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
-    src = n.Header.UnmarshalBytes(src)
+    src = n.Header.UnmarshalUnsafe(src)
     return src
 }
 
@@ -10815,8 +10815,8 @@ func (r *Rusage) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (r *Rusage) MarshalBytes(dst []byte) []byte {
-    dst = r.UTime.MarshalBytes(dst)
-    dst = r.STime.MarshalBytes(dst)
+    dst = r.UTime.MarshalUnsafe(dst)
+    dst = r.STime.MarshalUnsafe(dst)
     hostarch.ByteOrder.PutUint64(dst[:8], uint64(r.MaxRSS))
     dst = dst[8:]
     hostarch.ByteOrder.PutUint64(dst[:8], uint64(r.IXRSS))
@@ -10850,8 +10850,8 @@ func (r *Rusage) MarshalBytes(dst []byte) []byte {
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (r *Rusage) UnmarshalBytes(src []byte) []byte {
-    src = r.UTime.UnmarshalBytes(src)
-    src = r.STime.UnmarshalBytes(src)
+    src = r.UTime.UnmarshalUnsafe(src)
+    src = r.STime.UnmarshalUnsafe(src)
     r.MaxRSS = int64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
     r.IXRSS = int64(hostarch.ByteOrder.Uint64(src[:8]))
@@ -11656,12 +11656,12 @@ func (s *ShmidDS) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (s *ShmidDS) MarshalBytes(dst []byte) []byte {
-    dst = s.ShmPerm.MarshalBytes(dst)
+    dst = s.ShmPerm.MarshalUnsafe(dst)
     hostarch.ByteOrder.PutUint64(dst[:8], uint64(s.ShmSegsz))
     dst = dst[8:]
-    dst = s.ShmAtime.MarshalBytes(dst)
-    dst = s.ShmDtime.MarshalBytes(dst)
-    dst = s.ShmCtime.MarshalBytes(dst)
+    dst = s.ShmAtime.MarshalUnsafe(dst)
+    dst = s.ShmDtime.MarshalUnsafe(dst)
+    dst = s.ShmCtime.MarshalUnsafe(dst)
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(s.ShmCpid))
     dst = dst[4:]
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(s.ShmLpid))
@@ -11677,12 +11677,12 @@ func (s *ShmidDS) MarshalBytes(dst []byte) []byte {
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (s *ShmidDS) UnmarshalBytes(src []byte) []byte {
-    src = s.ShmPerm.UnmarshalBytes(src)
+    src = s.ShmPerm.UnmarshalUnsafe(src)
     s.ShmSegsz = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    src = s.ShmAtime.UnmarshalBytes(src)
-    src = s.ShmDtime.UnmarshalBytes(src)
-    src = s.ShmCtime.UnmarshalBytes(src)
+    src = s.ShmAtime.UnmarshalUnsafe(src)
+    src = s.ShmDtime.UnmarshalUnsafe(src)
+    src = s.ShmCtime.UnmarshalUnsafe(src)
     s.ShmCpid = int32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
     s.ShmLpid = int32(hostarch.ByteOrder.Uint32(src[:4]))
@@ -11819,7 +11819,7 @@ func (s *SigAction) MarshalBytes(dst []byte) []byte {
     dst = dst[8:]
     hostarch.ByteOrder.PutUint64(dst[:8], uint64(s.Restorer))
     dst = dst[8:]
-    dst = s.Mask.MarshalBytes(dst)
+    dst = s.Mask.MarshalUnsafe(dst)
     return dst
 }
 
@@ -11831,7 +11831,7 @@ func (s *SigAction) UnmarshalBytes(src []byte) []byte {
     src = src[8:]
     s.Restorer = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    src = s.Mask.UnmarshalBytes(src)
+    src = s.Mask.UnmarshalUnsafe(src)
     return src
 }
 
@@ -12737,8 +12737,8 @@ func (c *ControlMessageIPPacketInfo) SizeBytes() int {
 func (c *ControlMessageIPPacketInfo) MarshalBytes(dst []byte) []byte {
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(c.NIC))
     dst = dst[4:]
-    dst = c.LocalAddr.MarshalBytes(dst)
-    dst = c.DestinationAddr.MarshalBytes(dst)
+    dst = c.LocalAddr.MarshalUnsafe(dst)
+    dst = c.DestinationAddr.MarshalUnsafe(dst)
     return dst
 }
 
@@ -12746,8 +12746,8 @@ func (c *ControlMessageIPPacketInfo) MarshalBytes(dst []byte) []byte {
 func (c *ControlMessageIPPacketInfo) UnmarshalBytes(src []byte) []byte {
     c.NIC = int32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
-    src = c.LocalAddr.UnmarshalBytes(src)
-    src = c.DestinationAddr.UnmarshalBytes(src)
+    src = c.LocalAddr.UnmarshalUnsafe(src)
+    src = c.DestinationAddr.UnmarshalUnsafe(src)
     return src
 }
 
@@ -12868,7 +12868,7 @@ func (c *ControlMessageIPv6PacketInfo) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (c *ControlMessageIPv6PacketInfo) MarshalBytes(dst []byte) []byte {
-    dst = c.Addr.MarshalBytes(dst)
+    dst = c.Addr.MarshalUnsafe(dst)
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(c.NIC))
     dst = dst[4:]
     return dst
@@ -12876,7 +12876,7 @@ func (c *ControlMessageIPv6PacketInfo) MarshalBytes(dst []byte) []byte {
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (c *ControlMessageIPv6PacketInfo) UnmarshalBytes(src []byte) []byte {
-    src = c.Addr.UnmarshalBytes(src)
+    src = c.Addr.UnmarshalUnsafe(src)
     c.NIC = uint32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
     return src
@@ -13100,7 +13100,7 @@ func (i *Inet6MulticastRequest) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (i *Inet6MulticastRequest) MarshalBytes(dst []byte) []byte {
-    dst = i.MulticastAddr.MarshalBytes(dst)
+    dst = i.MulticastAddr.MarshalUnsafe(dst)
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(i.InterfaceIndex))
     dst = dst[4:]
     return dst
@@ -13108,7 +13108,7 @@ func (i *Inet6MulticastRequest) MarshalBytes(dst []byte) []byte {
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (i *Inet6MulticastRequest) UnmarshalBytes(src []byte) []byte {
-    src = i.MulticastAddr.UnmarshalBytes(src)
+    src = i.MulticastAddr.UnmarshalUnsafe(src)
     i.InterfaceIndex = int32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
     return src
@@ -13333,15 +13333,15 @@ func (i *InetMulticastRequest) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (i *InetMulticastRequest) MarshalBytes(dst []byte) []byte {
-    dst = i.MulticastAddr.MarshalBytes(dst)
-    dst = i.InterfaceAddr.MarshalBytes(dst)
+    dst = i.MulticastAddr.MarshalUnsafe(dst)
+    dst = i.InterfaceAddr.MarshalUnsafe(dst)
     return dst
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (i *InetMulticastRequest) UnmarshalBytes(src []byte) []byte {
-    src = i.MulticastAddr.UnmarshalBytes(src)
-    src = i.InterfaceAddr.UnmarshalBytes(src)
+    src = i.MulticastAddr.UnmarshalUnsafe(src)
+    src = i.InterfaceAddr.UnmarshalUnsafe(src)
     return src
 }
 
@@ -13462,7 +13462,7 @@ func (i *InetMulticastRequestWithNIC) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (i *InetMulticastRequestWithNIC) MarshalBytes(dst []byte) []byte {
-    dst = i.InetMulticastRequest.MarshalBytes(dst)
+    dst = i.InetMulticastRequest.MarshalUnsafe(dst)
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(i.InterfaceIndex))
     dst = dst[4:]
     return dst
@@ -13470,7 +13470,7 @@ func (i *InetMulticastRequestWithNIC) MarshalBytes(dst []byte) []byte {
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (i *InetMulticastRequestWithNIC) UnmarshalBytes(src []byte) []byte {
-    src = i.InetMulticastRequest.UnmarshalBytes(src)
+    src = i.InetMulticastRequest.UnmarshalUnsafe(src)
     i.InterfaceIndex = int32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
     return src
@@ -13697,7 +13697,7 @@ func (s *SockAddrInet) MarshalBytes(dst []byte) []byte {
     dst = dst[2:]
     hostarch.ByteOrder.PutUint16(dst[:2], uint16(s.Port))
     dst = dst[2:]
-    dst = s.Addr.MarshalBytes(dst)
+    dst = s.Addr.MarshalUnsafe(dst)
     // Padding: dst[:sizeof(uint8)*8] ~= [8]uint8{0}
     dst = dst[1*(8):]
     return dst
@@ -13709,7 +13709,7 @@ func (s *SockAddrInet) UnmarshalBytes(src []byte) []byte {
     src = src[2:]
     s.Port = uint16(hostarch.ByteOrder.Uint16(src[:2]))
     src = src[2:]
-    src = s.Addr.UnmarshalBytes(src)
+    src = s.Addr.UnmarshalUnsafe(src)
     // Padding: ~ copy([8]uint8(s._), src[:sizeof(uint8)*8])
     src = src[1*(8):]
     return src
@@ -14571,15 +14571,15 @@ func (i *ItimerVal) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (i *ItimerVal) MarshalBytes(dst []byte) []byte {
-    dst = i.Interval.MarshalBytes(dst)
-    dst = i.Value.MarshalBytes(dst)
+    dst = i.Interval.MarshalUnsafe(dst)
+    dst = i.Value.MarshalUnsafe(dst)
     return dst
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (i *ItimerVal) UnmarshalBytes(src []byte) []byte {
-    src = i.Interval.UnmarshalBytes(src)
-    src = i.Value.UnmarshalBytes(src)
+    src = i.Interval.UnmarshalUnsafe(src)
+    src = i.Value.UnmarshalUnsafe(src)
     return src
 }
 
@@ -14701,15 +14701,15 @@ func (i *Itimerspec) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (i *Itimerspec) MarshalBytes(dst []byte) []byte {
-    dst = i.Interval.MarshalBytes(dst)
-    dst = i.Value.MarshalBytes(dst)
+    dst = i.Interval.MarshalUnsafe(dst)
+    dst = i.Value.MarshalUnsafe(dst)
     return dst
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (i *Itimerspec) UnmarshalBytes(src []byte) []byte {
-    src = i.Interval.UnmarshalBytes(src)
-    src = i.Value.UnmarshalBytes(src)
+    src = i.Interval.UnmarshalUnsafe(src)
+    src = i.Value.UnmarshalUnsafe(src)
     return src
 }
 
@@ -15476,19 +15476,19 @@ func (t *Tms) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (t *Tms) MarshalBytes(dst []byte) []byte {
-    dst = t.UTime.MarshalBytes(dst)
-    dst = t.STime.MarshalBytes(dst)
-    dst = t.CUTime.MarshalBytes(dst)
-    dst = t.CSTime.MarshalBytes(dst)
+    dst = t.UTime.MarshalUnsafe(dst)
+    dst = t.STime.MarshalUnsafe(dst)
+    dst = t.CUTime.MarshalUnsafe(dst)
+    dst = t.CSTime.MarshalUnsafe(dst)
     return dst
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (t *Tms) UnmarshalBytes(src []byte) []byte {
-    src = t.UTime.UnmarshalBytes(src)
-    src = t.STime.UnmarshalBytes(src)
-    src = t.CUTime.UnmarshalBytes(src)
-    src = t.CSTime.UnmarshalBytes(src)
+    src = t.UTime.UnmarshalUnsafe(src)
+    src = t.STime.UnmarshalUnsafe(src)
+    src = t.CUTime.UnmarshalUnsafe(src)
+    src = t.CSTime.UnmarshalUnsafe(src)
     return src
 }
 
