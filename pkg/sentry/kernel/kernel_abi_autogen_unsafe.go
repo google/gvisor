@@ -96,7 +96,7 @@ func (tid *ThreadID) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, er
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (tid *ThreadID) WriteTo(w io.Writer) (int64, error) {
+func (tid *ThreadID) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -104,7 +104,7 @@ func (tid *ThreadID) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = tid.SizeBytes()
     hdr.Cap = tid.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that tid
     // must live until the use above.
     runtime.KeepAlive(tid) // escapes: replaced by intrinsic.

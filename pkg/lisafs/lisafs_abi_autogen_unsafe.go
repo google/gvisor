@@ -266,7 +266,7 @@ func (f *FDID) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (f *FDID) WriteTo(w io.Writer) (int64, error) {
+func (f *FDID) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -274,7 +274,7 @@ func (f *FDID) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = f.SizeBytes()
     hdr.Cap = f.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
     runtime.KeepAlive(f) // escapes: replaced by intrinsic.
@@ -1296,7 +1296,7 @@ func (gid *GID) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) 
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (gid *GID) WriteTo(w io.Writer) (int64, error) {
+func (gid *GID) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -1304,7 +1304,7 @@ func (gid *GID) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = gid.SizeBytes()
     hdr.Cap = gid.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that gid
     // must live until the use above.
     runtime.KeepAlive(gid) // escapes: replaced by intrinsic.
@@ -1906,7 +1906,7 @@ func (m *MID) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (m *MID) WriteTo(w io.Writer) (int64, error) {
+func (m *MID) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -1914,7 +1914,7 @@ func (m *MID) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = m.SizeBytes()
     hdr.Cap = m.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that m
     // must live until the use above.
     runtime.KeepAlive(m) // escapes: replaced by intrinsic.
@@ -3713,7 +3713,7 @@ func (uid *UID) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) 
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (uid *UID) WriteTo(w io.Writer) (int64, error) {
+func (uid *UID) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -3721,7 +3721,7 @@ func (uid *UID) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = uid.SizeBytes()
     hdr.Cap = uid.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that uid
     // must live until the use above.
     runtime.KeepAlive(uid) // escapes: replaced by intrinsic.

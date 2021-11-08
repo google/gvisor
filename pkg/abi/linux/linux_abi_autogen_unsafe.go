@@ -1934,7 +1934,7 @@ func (m *FileMode) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, erro
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (m *FileMode) WriteTo(w io.Writer) (int64, error) {
+func (m *FileMode) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -1942,7 +1942,7 @@ func (m *FileMode) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = m.SizeBytes()
     hdr.Cap = m.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that m
     // must live until the use above.
     runtime.KeepAlive(m) // escapes: replaced by intrinsic.
@@ -4001,7 +4001,7 @@ func (f *FUSEOpID) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, erro
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (f *FUSEOpID) WriteTo(w io.Writer) (int64, error) {
+func (f *FUSEOpID) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -4009,7 +4009,7 @@ func (f *FUSEOpID) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = f.SizeBytes()
     hdr.Cap = f.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
     runtime.KeepAlive(f) // escapes: replaced by intrinsic.
@@ -4096,7 +4096,7 @@ func (f *FUSEOpcode) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, er
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (f *FUSEOpcode) WriteTo(w io.Writer) (int64, error) {
+func (f *FUSEOpcode) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -4104,7 +4104,7 @@ func (f *FUSEOpcode) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = f.SizeBytes()
     hdr.Cap = f.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
     runtime.KeepAlive(f) // escapes: replaced by intrinsic.
@@ -5460,7 +5460,7 @@ func (n *NumaPolicy) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, er
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (n *NumaPolicy) WriteTo(w io.Writer) (int64, error) {
+func (n *NumaPolicy) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -5468,7 +5468,7 @@ func (n *NumaPolicy) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = n.SizeBytes()
     hdr.Cap = n.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that n
     // must live until the use above.
     runtime.KeepAlive(n) // escapes: replaced by intrinsic.
@@ -6206,7 +6206,7 @@ func (en *ErrorName) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, er
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (en *ErrorName) WriteTo(w io.Writer) (int64, error) {
+func (en *ErrorName) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -6214,7 +6214,7 @@ func (en *ErrorName) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = en.SizeBytes()
     hdr.Cap = en.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that en
     // must live until the use above.
     runtime.KeepAlive(en) // escapes: replaced by intrinsic.
@@ -6307,7 +6307,7 @@ func (en *ExtensionName) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (en *ExtensionName) WriteTo(w io.Writer) (int64, error) {
+func (en *ExtensionName) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -6315,7 +6315,7 @@ func (en *ExtensionName) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = en.SizeBytes()
     hdr.Cap = en.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that en
     // must live until the use above.
     runtime.KeepAlive(en) // escapes: replaced by intrinsic.
@@ -7660,7 +7660,7 @@ func (tn *TableName) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, er
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (tn *TableName) WriteTo(w io.Writer) (int64, error) {
+func (tn *TableName) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -7668,7 +7668,7 @@ func (tn *TableName) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = tn.SizeBytes()
     hdr.Cap = tn.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that tn
     // must live until the use above.
     runtime.KeepAlive(tn) // escapes: replaced by intrinsic.
@@ -12256,7 +12256,7 @@ func (s *SignalSet) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, err
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (s *SignalSet) WriteTo(w io.Writer) (int64, error) {
+func (s *SignalSet) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -12264,7 +12264,7 @@ func (s *SignalSet) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = s.SizeBytes()
     hdr.Cap = s.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
     runtime.KeepAlive(s) // escapes: replaced by intrinsic.
@@ -13077,7 +13077,7 @@ func (i *Inet6Addr) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, err
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (i *Inet6Addr) WriteTo(w io.Writer) (int64, error) {
+func (i *Inet6Addr) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -13085,7 +13085,7 @@ func (i *Inet6Addr) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = i.SizeBytes()
     hdr.Cap = i.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
     runtime.KeepAlive(i) // escapes: replaced by intrinsic.
@@ -13309,7 +13309,7 @@ func (i *InetAddr) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, erro
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (i *InetAddr) WriteTo(w io.Writer) (int64, error) {
+func (i *InetAddr) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -13317,7 +13317,7 @@ func (i *InetAddr) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = i.SizeBytes()
     hdr.Cap = i.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
     runtime.KeepAlive(i) // escapes: replaced by intrinsic.
@@ -14547,7 +14547,7 @@ func (c *ClockT) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error)
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (c *ClockT) WriteTo(w io.Writer) (int64, error) {
+func (c *ClockT) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -14555,7 +14555,7 @@ func (c *ClockT) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = c.SizeBytes()
     hdr.Cap = c.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that c
     // must live until the use above.
     runtime.KeepAlive(c) // escapes: replaced by intrinsic.
@@ -15005,7 +15005,7 @@ func (t *TimeT) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) 
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (t *TimeT) WriteTo(w io.Writer) (int64, error) {
+func (t *TimeT) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -15013,7 +15013,7 @@ func (t *TimeT) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = t.SizeBytes()
     hdr.Cap = t.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that t
     // must live until the use above.
     runtime.KeepAlive(t) // escapes: replaced by intrinsic.
@@ -15100,7 +15100,7 @@ func (t *TimerID) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (t *TimerID) WriteTo(w io.Writer) (int64, error) {
+func (t *TimerID) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -15108,7 +15108,7 @@ func (t *TimerID) WriteTo(w io.Writer) (int64, error) {
     hdr.Len = t.SizeBytes()
     hdr.Cap = t.SizeBytes()
 
-    length, err := w.Write(buf)
+    length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that t
     // must live until the use above.
     runtime.KeepAlive(t) // escapes: replaced by intrinsic.
