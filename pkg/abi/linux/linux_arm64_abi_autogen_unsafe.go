@@ -189,29 +189,29 @@ func CopyEpollEventSliceOut(cc marshal.CopyContext, addr hostarch.Addr, src []Ep
 }
 
 // MarshalUnsafeEpollEventSlice is like EpollEvent.MarshalUnsafe, but for a []EpollEvent.
-func MarshalUnsafeEpollEventSlice(src []EpollEvent, dst []byte) (int, error) {
+func MarshalUnsafeEpollEventSlice(src []EpollEvent, dst []byte) []byte {
     count := len(src)
     if count == 0 {
-        return 0, nil
+        return dst
     }
-    size := (*EpollEvent)(nil).SizeBytes()
 
-    dst = dst[:size*count]
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(dst)))
-    return size * count, nil
+    size := (*EpollEvent)(nil).SizeBytes()
+    buf := dst[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&buf[0]), unsafe.Pointer(&src[0]), uintptr(len(buf)))
+    return dst[size*count:]
 }
 
 // UnmarshalUnsafeEpollEventSlice is like EpollEvent.UnmarshalUnsafe, but for a []EpollEvent.
-func UnmarshalUnsafeEpollEventSlice(dst []EpollEvent, src []byte) (int, error) {
+func UnmarshalUnsafeEpollEventSlice(dst []EpollEvent, src []byte) []byte {
     count := len(dst)
     if count == 0 {
-        return 0, nil
+        return src
     }
-    size := (*EpollEvent)(nil).SizeBytes()
 
-    src = src[:(size*count)]
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(src)))
-    return count*size, nil
+    size := (*EpollEvent)(nil).SizeBytes()
+    buf := src[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&buf[0]), uintptr(len(buf)))
+    return src[size*count:]
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.

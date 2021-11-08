@@ -164,29 +164,29 @@ func CopyGIDSliceOut(cc marshal.CopyContext, addr hostarch.Addr, src []GID) (int
 }
 
 // MarshalUnsafeGIDSlice is like GID.MarshalUnsafe, but for a []GID.
-func MarshalUnsafeGIDSlice(src []GID, dst []byte) (int, error) {
+func MarshalUnsafeGIDSlice(src []GID, dst []byte) []byte {
     count := len(src)
     if count == 0 {
-        return 0, nil
+        return dst
     }
     size := (*GID)(nil).SizeBytes()
 
-    dst = dst[:size*count]
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(dst)))
-    return size*count, nil
+    buf := dst[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&buf[0]), unsafe.Pointer(&src[0]), uintptr(len(buf)))
+    return dst[size*count:]
 }
 
 // UnmarshalUnsafeGIDSlice is like GID.UnmarshalUnsafe, but for a []GID.
-func UnmarshalUnsafeGIDSlice(dst []GID, src []byte) (int, error) {
+func UnmarshalUnsafeGIDSlice(dst []GID, src []byte) []byte {
     count := len(dst)
     if count == 0 {
-        return 0, nil
+        return src
     }
     size := (*GID)(nil).SizeBytes()
 
-    src = src[:(size*count)]
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(src)))
-    return size*count, nil
+    buf := src[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&buf[0]), uintptr(len(buf)))
+    return src[size*count:]
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.

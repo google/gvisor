@@ -546,29 +546,29 @@ func CopyBPFInstructionSliceOut(cc marshal.CopyContext, addr hostarch.Addr, src 
 }
 
 // MarshalUnsafeBPFInstructionSlice is like BPFInstruction.MarshalUnsafe, but for a []BPFInstruction.
-func MarshalUnsafeBPFInstructionSlice(src []BPFInstruction, dst []byte) (int, error) {
+func MarshalUnsafeBPFInstructionSlice(src []BPFInstruction, dst []byte) []byte {
     count := len(src)
     if count == 0 {
-        return 0, nil
+        return dst
     }
-    size := (*BPFInstruction)(nil).SizeBytes()
 
-    dst = dst[:size*count]
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(dst)))
-    return size * count, nil
+    size := (*BPFInstruction)(nil).SizeBytes()
+    buf := dst[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&buf[0]), unsafe.Pointer(&src[0]), uintptr(len(buf)))
+    return dst[size*count:]
 }
 
 // UnmarshalUnsafeBPFInstructionSlice is like BPFInstruction.UnmarshalUnsafe, but for a []BPFInstruction.
-func UnmarshalUnsafeBPFInstructionSlice(dst []BPFInstruction, src []byte) (int, error) {
+func UnmarshalUnsafeBPFInstructionSlice(dst []BPFInstruction, src []byte) []byte {
     count := len(dst)
     if count == 0 {
-        return 0, nil
+        return src
     }
-    size := (*BPFInstruction)(nil).SizeBytes()
 
-    src = src[:(size*count)]
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(src)))
-    return count*size, nil
+    size := (*BPFInstruction)(nil).SizeBytes()
+    buf := src[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&buf[0]), uintptr(len(buf)))
+    return src[size*count:]
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -725,29 +725,29 @@ func CopyCapUserDataSliceOut(cc marshal.CopyContext, addr hostarch.Addr, src []C
 }
 
 // MarshalUnsafeCapUserDataSlice is like CapUserData.MarshalUnsafe, but for a []CapUserData.
-func MarshalUnsafeCapUserDataSlice(src []CapUserData, dst []byte) (int, error) {
+func MarshalUnsafeCapUserDataSlice(src []CapUserData, dst []byte) []byte {
     count := len(src)
     if count == 0 {
-        return 0, nil
+        return dst
     }
-    size := (*CapUserData)(nil).SizeBytes()
 
-    dst = dst[:size*count]
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(dst)))
-    return size * count, nil
+    size := (*CapUserData)(nil).SizeBytes()
+    buf := dst[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&buf[0]), unsafe.Pointer(&src[0]), uintptr(len(buf)))
+    return dst[size*count:]
 }
 
 // UnmarshalUnsafeCapUserDataSlice is like CapUserData.UnmarshalUnsafe, but for a []CapUserData.
-func UnmarshalUnsafeCapUserDataSlice(dst []CapUserData, src []byte) (int, error) {
+func UnmarshalUnsafeCapUserDataSlice(dst []CapUserData, src []byte) []byte {
     count := len(dst)
     if count == 0 {
-        return 0, nil
+        return src
     }
-    size := (*CapUserData)(nil).SizeBytes()
 
-    src = src[:(size*count)]
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(src)))
-    return count*size, nil
+    size := (*CapUserData)(nil).SizeBytes()
+    buf := src[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&buf[0]), uintptr(len(buf)))
+    return src[size*count:]
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -2231,45 +2231,45 @@ func CopyStatxSliceOut(cc marshal.CopyContext, addr hostarch.Addr, src []Statx) 
 }
 
 // MarshalUnsafeStatxSlice is like Statx.MarshalUnsafe, but for a []Statx.
-func MarshalUnsafeStatxSlice(src []Statx, dst []byte) (int, error) {
+func MarshalUnsafeStatxSlice(src []Statx, dst []byte) []byte {
     count := len(src)
     if count == 0 {
-        return 0, nil
+        return dst
     }
-    size := (*Statx)(nil).SizeBytes()
 
     if !src[0].Packed() {
         // Type Statx doesn't have a packed layout in memory, fall back to MarshalBytes.
         for idx := 0; idx < count; idx++ {
             dst = src[idx].MarshalBytes(dst)
         }
-        return size * count, nil
+        return dst
     }
 
-    dst = dst[:size*count]
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(dst)))
-    return size * count, nil
+    size := (*Statx)(nil).SizeBytes()
+    buf := dst[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&buf[0]), unsafe.Pointer(&src[0]), uintptr(len(buf)))
+    return dst[size*count:]
 }
 
 // UnmarshalUnsafeStatxSlice is like Statx.UnmarshalUnsafe, but for a []Statx.
-func UnmarshalUnsafeStatxSlice(dst []Statx, src []byte) (int, error) {
+func UnmarshalUnsafeStatxSlice(dst []Statx, src []byte) []byte {
     count := len(dst)
     if count == 0 {
-        return 0, nil
+        return src
     }
-    size := (*Statx)(nil).SizeBytes()
 
     if !dst[0].Packed() {
         // Type Statx doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         for idx := 0; idx < count; idx++ {
             src = dst[idx].UnmarshalBytes(src)
         }
-        return size * count, nil
+        return src
     }
 
-    src = src[:(size*count)]
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(src)))
-    return count*size, nil
+    size := (*Statx)(nil).SizeBytes()
+    buf := src[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&buf[0]), uintptr(len(buf)))
+    return src[size*count:]
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -10670,29 +10670,29 @@ func CopyPollFDSliceOut(cc marshal.CopyContext, addr hostarch.Addr, src []PollFD
 }
 
 // MarshalUnsafePollFDSlice is like PollFD.MarshalUnsafe, but for a []PollFD.
-func MarshalUnsafePollFDSlice(src []PollFD, dst []byte) (int, error) {
+func MarshalUnsafePollFDSlice(src []PollFD, dst []byte) []byte {
     count := len(src)
     if count == 0 {
-        return 0, nil
+        return dst
     }
-    size := (*PollFD)(nil).SizeBytes()
 
-    dst = dst[:size*count]
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(dst)))
-    return size * count, nil
+    size := (*PollFD)(nil).SizeBytes()
+    buf := dst[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&buf[0]), unsafe.Pointer(&src[0]), uintptr(len(buf)))
+    return dst[size*count:]
 }
 
 // UnmarshalUnsafePollFDSlice is like PollFD.UnmarshalUnsafe, but for a []PollFD.
-func UnmarshalUnsafePollFDSlice(dst []PollFD, src []byte) (int, error) {
+func UnmarshalUnsafePollFDSlice(dst []PollFD, src []byte) []byte {
     count := len(dst)
     if count == 0 {
-        return 0, nil
+        return src
     }
-    size := (*PollFD)(nil).SizeBytes()
 
-    src = src[:(size*count)]
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(src)))
-    return count*size, nil
+    size := (*PollFD)(nil).SizeBytes()
+    buf := src[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&buf[0]), uintptr(len(buf)))
+    return src[size*count:]
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -11389,29 +11389,29 @@ func CopySembufSliceOut(cc marshal.CopyContext, addr hostarch.Addr, src []Sembuf
 }
 
 // MarshalUnsafeSembufSlice is like Sembuf.MarshalUnsafe, but for a []Sembuf.
-func MarshalUnsafeSembufSlice(src []Sembuf, dst []byte) (int, error) {
+func MarshalUnsafeSembufSlice(src []Sembuf, dst []byte) []byte {
     count := len(src)
     if count == 0 {
-        return 0, nil
+        return dst
     }
-    size := (*Sembuf)(nil).SizeBytes()
 
-    dst = dst[:size*count]
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(dst)))
-    return size * count, nil
+    size := (*Sembuf)(nil).SizeBytes()
+    buf := dst[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&buf[0]), unsafe.Pointer(&src[0]), uintptr(len(buf)))
+    return dst[size*count:]
 }
 
 // UnmarshalUnsafeSembufSlice is like Sembuf.UnmarshalUnsafe, but for a []Sembuf.
-func UnmarshalUnsafeSembufSlice(dst []Sembuf, src []byte) (int, error) {
+func UnmarshalUnsafeSembufSlice(dst []Sembuf, src []byte) []byte {
     count := len(dst)
     if count == 0 {
-        return 0, nil
+        return src
     }
-    size := (*Sembuf)(nil).SizeBytes()
 
-    src = src[:(size*count)]
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(src)))
-    return count*size, nil
+    size := (*Sembuf)(nil).SizeBytes()
+    buf := src[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&buf[0]), uintptr(len(buf)))
+    return src[size*count:]
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -15265,29 +15265,29 @@ func CopyTimespecSliceOut(cc marshal.CopyContext, addr hostarch.Addr, src []Time
 }
 
 // MarshalUnsafeTimespecSlice is like Timespec.MarshalUnsafe, but for a []Timespec.
-func MarshalUnsafeTimespecSlice(src []Timespec, dst []byte) (int, error) {
+func MarshalUnsafeTimespecSlice(src []Timespec, dst []byte) []byte {
     count := len(src)
     if count == 0 {
-        return 0, nil
+        return dst
     }
-    size := (*Timespec)(nil).SizeBytes()
 
-    dst = dst[:size*count]
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(dst)))
-    return size * count, nil
+    size := (*Timespec)(nil).SizeBytes()
+    buf := dst[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&buf[0]), unsafe.Pointer(&src[0]), uintptr(len(buf)))
+    return dst[size*count:]
 }
 
 // UnmarshalUnsafeTimespecSlice is like Timespec.UnmarshalUnsafe, but for a []Timespec.
-func UnmarshalUnsafeTimespecSlice(dst []Timespec, src []byte) (int, error) {
+func UnmarshalUnsafeTimespecSlice(dst []Timespec, src []byte) []byte {
     count := len(dst)
     if count == 0 {
-        return 0, nil
+        return src
     }
-    size := (*Timespec)(nil).SizeBytes()
 
-    src = src[:(size*count)]
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(src)))
-    return count*size, nil
+    size := (*Timespec)(nil).SizeBytes()
+    buf := src[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&buf[0]), uintptr(len(buf)))
+    return src[size*count:]
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -15440,29 +15440,29 @@ func CopyTimevalSliceOut(cc marshal.CopyContext, addr hostarch.Addr, src []Timev
 }
 
 // MarshalUnsafeTimevalSlice is like Timeval.MarshalUnsafe, but for a []Timeval.
-func MarshalUnsafeTimevalSlice(src []Timeval, dst []byte) (int, error) {
+func MarshalUnsafeTimevalSlice(src []Timeval, dst []byte) []byte {
     count := len(src)
     if count == 0 {
-        return 0, nil
+        return dst
     }
-    size := (*Timeval)(nil).SizeBytes()
 
-    dst = dst[:size*count]
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(dst)))
-    return size * count, nil
+    size := (*Timeval)(nil).SizeBytes()
+    buf := dst[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&buf[0]), unsafe.Pointer(&src[0]), uintptr(len(buf)))
+    return dst[size*count:]
 }
 
 // UnmarshalUnsafeTimevalSlice is like Timeval.UnmarshalUnsafe, but for a []Timeval.
-func UnmarshalUnsafeTimevalSlice(dst []Timeval, src []byte) (int, error) {
+func UnmarshalUnsafeTimevalSlice(dst []Timeval, src []byte) []byte {
     count := len(dst)
     if count == 0 {
-        return 0, nil
+        return src
     }
-    size := (*Timeval)(nil).SizeBytes()
 
-    src = src[:(size*count)]
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(src)))
-    return count*size, nil
+    size := (*Timeval)(nil).SizeBytes()
+    buf := src[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&buf[0]), uintptr(len(buf)))
+    return src[size*count:]
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
