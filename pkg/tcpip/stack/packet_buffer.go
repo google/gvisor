@@ -88,6 +88,8 @@ type PacketBufferOptions struct {
 type PacketBuffer struct {
 	_ sync.NoCopy
 
+	packetBufferRefs
+
 	// PacketBufferEntry is used to build an intrusive list of
 	// PacketBuffers.
 	PacketBufferEntry
@@ -149,6 +151,8 @@ type PacketBuffer struct {
 	NetworkPacketInfo NetworkPacketInfo
 
 	tuple *tuple
+
+	preserveObject bool
 }
 
 // NewPacketBuffer creates a new PacketBuffer with opts.
@@ -166,7 +170,19 @@ func NewPacketBuffer(opts PacketBufferOptions) *PacketBuffer {
 	if opts.IsForwardedPacket {
 		pk.NetworkPacketInfo.IsForwardedPacket = opts.IsForwardedPacket
 	}
+	pk.InitRefs()
 	return pk
+}
+
+// DecRef overrides refsvfs2 DecRef and passes a nil destroy function.
+func (pk *PacketBuffer) DecRef() {
+	pk.packetBufferRefs.DecRef(nil)
+}
+
+// PreserveObject marks this PacketBuffer so it is not recycled by internal
+// pooling.
+func (pk *PacketBuffer) PreserveObject() {
+	pk.preserveObject = true
 }
 
 // ReservedHeaderBytes returns the number of bytes initially reserved for
@@ -291,7 +307,7 @@ func (pk *PacketBuffer) headerView(typ headerType) tcpipbuffer.View {
 // Clone makes a semi-deep copy of pk. The underlying packet payload is
 // shared. Hence, no modifications is done to underlying packet payload.
 func (pk *PacketBuffer) Clone() *PacketBuffer {
-	return &PacketBuffer{
+	newPk := &PacketBuffer{
 		PacketBufferEntry:            pk.PacketBufferEntry,
 		buf:                          pk.buf.Clone(),
 		reserved:                     pk.reserved,
@@ -311,6 +327,8 @@ func (pk *PacketBuffer) Clone() *PacketBuffer {
 		NetworkPacketInfo:            pk.NetworkPacketInfo,
 		tuple:                        pk.tuple,
 	}
+	newPk.InitRefs()
+	return newPk
 }
 
 // Network returns the network header as a header.Network.
@@ -339,6 +357,7 @@ func (pk *PacketBuffer) CloneToInbound() *PacketBuffer {
 		reserved: pk.AvailableHeaderBytes(),
 		tuple:    pk.tuple,
 	}
+	newPk.InitRefs()
 	return newPk
 }
 
@@ -373,6 +392,22 @@ func (pk *PacketBuffer) DeepCopyForForwarding(reservedHeaderBytes int) *PacketBu
 	newPk.tuple = pk.tuple
 
 	return newPk
+}
+
+// IncRef increases the reference count on each PacketBuffer
+// stored in the PacketBufferList.
+func (pk *PacketBufferList) IncRef() {
+	for pb := pk.Front(); pb != nil; pb = pb.Next() {
+		pb.IncRef()
+	}
+}
+
+// DecRef decreases the reference count on each PacketBuffer
+// stored in the PacketBufferList.
+func (pk *PacketBufferList) DecRef() {
+	for pb := pk.Front(); pb != nil; pb = pb.Next() {
+		pb.DecRef()
+	}
 }
 
 // headerInfo stores metadata about a header in a packet.
@@ -460,7 +495,7 @@ func (d PacketData) AppendView(v tcpipbuffer.View) {
 	d.pk.buf.AppendOwned(v)
 }
 
-// MergeFragment appends the data portion of frag to dst. It takes ownership of
+// MergeFragment appends the data portion of frag to dst. It modifies
 // frag and frag should not be used again.
 func MergeFragment(dst, frag *PacketBuffer) {
 	frag.buf.TrimFront(int64(frag.dataOffset()))

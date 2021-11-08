@@ -460,6 +460,30 @@ func (e *PacketBufferEntry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &e.prev)
 }
 
+func (r *packetBufferRefs) StateTypeName() string {
+	return "pkg/tcpip/stack.packetBufferRefs"
+}
+
+func (r *packetBufferRefs) StateFields() []string {
+	return []string{
+		"refCount",
+	}
+}
+
+func (r *packetBufferRefs) beforeSave() {}
+
+// +checklocksignore
+func (r *packetBufferRefs) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.refCount)
+}
+
+// +checklocksignore
+func (r *packetBufferRefs) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(r.afterLoad)
+}
+
 func (t *TransportEndpointID) StateTypeName() string {
 	return "pkg/tcpip/stack.TransportEndpointID"
 }
@@ -1251,6 +1275,7 @@ func init() {
 	state.Register((*neighborEntryEntry)(nil))
 	state.Register((*PacketBufferList)(nil))
 	state.Register((*PacketBufferEntry)(nil))
+	state.Register((*packetBufferRefs)(nil))
 	state.Register((*TransportEndpointID)(nil))
 	state.Register((*GSOType)(nil))
 	state.Register((*GSO)(nil))

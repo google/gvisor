@@ -194,6 +194,7 @@ func (d *packetMMapDispatcher) dispatch() (bool, tcpip.Error) {
 	pbuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buffer.View(pkt).ToVectorisedView(),
 	})
+	defer pbuf.DecRef()
 	if d.e.hdrSize > 0 {
 		if _, ok := pbuf.LinkHeader().Consume(d.e.hdrSize); !ok {
 			panic(fmt.Sprintf("LinkHeader().Consume(%d) must succeed", d.e.hdrSize))

@@ -149,6 +149,7 @@ func (r *reassembler) process(first, last uint16, more bool, proto uint8, pkt *s
 			r.proto = proto
 		}
 
+		pkt.IncRef()
 		break
 	}
 	if !holeFound {
@@ -166,6 +167,7 @@ func (r *reassembler) process(first, last uint16, more bool, proto uint8, pkt *s
 	})
 
 	resPkt := r.holes[0].pkt
+	resPkt.DecRef()
 	for i := 1; i < len(r.holes); i++ {
 		stack.MergeFragment(resPkt, r.holes[i].pkt)
 	}

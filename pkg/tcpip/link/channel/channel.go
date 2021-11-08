@@ -81,6 +81,18 @@ func (q *queue) ReadContext(ctx context.Context) (PacketInfo, bool) {
 }
 
 func (q *queue) Write(p PacketInfo) bool {
+	// q holds the PacketBuffer.
+
+	// Ideally, Write() should take a reference here, since it is adding
+	// the underlying PacketBuffer to the channel. However, in practice,
+	// calls to Read() are not necessarily symetric with calls
+	// to Write() (e.g writing to this endpoint and then exiting). This
+	// causes tests and analyzers to detect erroneous "leaks" for expected
+	// behavior. To prevent this, we allow the refcount to go to zero, and
+	// make a call to  PreserveObject(), which prevents the PacketBuffer
+	// pooling implementation from reclaiming this instance, even when
+	// the refcount goes to zero.
+	p.Pkt.PreserveObject()
 	wrote := false
 	select {
 	case q.c <- p:

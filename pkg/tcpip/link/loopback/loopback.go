@@ -104,6 +104,7 @@ func (e *endpoint) WriteRawPacket(pkt *stack.PacketBuffer) tcpip.Error {
 	newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: data,
 	})
+	defer newPkt.DecRef()
 	e.dispatcher.DeliverNetworkPacket("" /* remote */, "" /* local */, pkt.NetworkProtocolNumber, newPkt)
 
 	return nil

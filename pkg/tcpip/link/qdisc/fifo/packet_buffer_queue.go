@@ -54,13 +54,13 @@ func (q *packetBufferQueue) setLimit(limit int) {
 // enqueue adds the given packet to the queue.
 //
 // Returns true when the PacketBuffer is successfully added to the queue, in
-// which case ownership of the reference is transferred to the queue. And
-// returns false if the queue is full, in which case ownership is retained by
-// the caller.
+// which case the queue acquires a reference to the PacketBuffer, and
+// returns false if the queue is full.
 func (q *packetBufferQueue) enqueue(s *stack.PacketBuffer) bool {
 	q.mu.Lock()
 	r := q.used < q.limit
 	if r {
+		s.IncRef()
 		q.list.PushBack(s)
 		q.used++
 	}
@@ -70,7 +70,7 @@ func (q *packetBufferQueue) enqueue(s *stack.PacketBuffer) bool {
 }
 
 // dequeue removes and returns the next PacketBuffer from queue, if one exists.
-// Ownership is transferred to the caller.
+// Caller is responsible for calling DecRef on the PacketBuffer.
 func (q *packetBufferQueue) dequeue() *stack.PacketBuffer {
 	q.mu.Lock()
 	s := q.list.Front()
