@@ -79,7 +79,7 @@ func sockTypeToP9(t linux.SockType) (p9.ConnectFlags, bool) {
 	return 0, false
 }
 
-// BidirectionalConnect implements ConnectableEndpoint.BidirectionalConnect.
+// BidirectionalConnect implements BoundEndpoint.BidirectionalConnect.
 func (e *endpoint) BidirectionalConnect(ctx context.Context, ce transport.ConnectingEndpoint, returnConnect func(transport.Receiver, transport.ConnectedEndpoint)) *syserr.Error {
 	cf, ok := sockTypeToP9(ce.Type())
 	if !ok {
