@@ -197,3 +197,46 @@ func TestConvertMemorySwapToCgroupV2Value(t *testing.T) {
 		}
 	}
 }
+
+func TestParseCPUQuota(t *testing.T) {
+	cases := []struct {
+		quota    string
+		expected float64
+		expErr   bool
+	}{
+		{
+			quota:    "max 100000\n",
+			expected: -1,
+		},
+		{
+			quota:    "10000 100000",
+			expected: 0.1,
+		},
+		{
+			quota:    "20000 100000\n",
+			expected: 0.2,
+		},
+
+		{
+			quota:    "-1",
+			expected: -1,
+			expErr:   true,
+		},
+	}
+
+	for _, c := range cases {
+		res, err := parseCPUQuota(c.quota)
+		if c.expErr {
+			if err == nil {
+				t.Errorf("quota: %q, expected error, got %.2f, nil", c.quota, res)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("quota: %q, expected success, got error %s", c.quota, err)
+		}
+		if res != c.expected {
+			t.Errorf("quota: %q, expected %.2f, got error %.2f", c.quota, c.expected, res)
+		}
+	}
+}

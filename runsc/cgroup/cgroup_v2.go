@@ -234,9 +234,19 @@ func (c *cgroupV2) CPUQuota() (float64, error) {
 	if err != nil {
 		return -1, err
 	}
-	data := strings.SplitN(cpuMax, " ", 2)
+
+	return parseCPUQuota(cpuMax)
+}
+
+func parseCPUQuota(cpuMax string) (float64, error) {
+	data := strings.SplitN(strings.TrimSpace(cpuMax), " ", 2)
 	if len(data) != 2 {
 		return -1, fmt.Errorf("invalid cpu.max data %q", cpuMax)
+	}
+
+	// no cpu limit if quota is max
+	if data[0] == "max" {
+		return -1, nil
 	}
 
 	quota, err := strconv.ParseInt(data[0], 10, 64)
@@ -253,6 +263,7 @@ func (c *cgroupV2) CPUQuota() (float64, error) {
 		return -1, err
 	}
 	return float64(quota) / float64(period), nil
+
 }
 
 // CPUUsage returns the total CPU usage of the cgroup.
