@@ -483,18 +483,39 @@ func (ct *ConnTrack) finalize(cn *conn) {
 	ct.mu.RUnlock()
 
 	bkt.mu.Lock()
-	defer bkt.mu.Unlock()
 
 	if t := bkt.connForTIDRLocked(tid, ct.clock.NowMonotonic()); t != nil {
-		// Another connection for the reply already exists. We can't do much about
-		// this so we leave the connection cn represents in a state where it can
-		// send packets but its responses will be mapped to some other connection.
-		// This may be okay if the connection only expects to send packets without
-		// any responses.
-		return
+		isReply := t.reply
+		var origTuple, replyTuple *tuple
+		if isReply {
+			origTuple = &t.conn.original
+			replyTuple = t
+			bkt.tuples.Remove(replyTuple)
+			bkt.mu.Unlock()
+			ct.mu.RLock()
+			origID := ct.bucket(origTuple.id())
+			origBkt := &ct.buckets[origID]
+			ct.mu.RUnlock()
+			origBkt.mu.Lock()
+			origBkt.tuples.Remove(origTuple)
+			origBkt.mu.Unlock()
+		} else {
+			origTuple = t
+			replyTuple = &t.conn.reply
+			bkt.tuples.Remove(origTuple)
+			bkt.mu.Unlock()
+			ct.mu.RLock()
+			replyID := ct.bucket(replyTuple.id())
+			replyBkt := &ct.buckets[replyID]
+			ct.mu.RUnlock()
+			replyBkt.mu.Lock()
+			replyBkt.tuples.Remove(replyTuple)
+			replyBkt.mu.Unlock()
+		}
+		bkt.mu.Lock()
 	}
-
 	bkt.tuples.PushFront(&cn.reply)
+	bkt.mu.Unlock()
 }
 
 func (cn *conn) finalize() {
