@@ -32,10 +32,25 @@ steps:
   # Check that the Go branch builds.
   - <<: *common
     label: ":golang: Go branch"
+    env:
+      NETSTACK: "pkg/tcpip pkg/tcpip/adapters/gonet pkg/tcpip/buffer pkg/tcpip/header pkg/tcpip/link/channel pkg/tcpip/network/ipv4 pkg/tcpip/network/ipv6 pkg/tcpip/stack pkg/tcpip/transport/icmp pkg/tcpip/transport/tcp pkg/tcpip/transport/udp pkg/waiter"
     commands:
       - tools/go_branch.sh
       - git checkout go && git clean -xf .
-      - go build ./...
+      - GOOS=linux   GOARCH=amd64  go build ./...
+      - GOOS=linux   GOARCH=arm64  go build ./...
+      - GOOS=linux   GOARCH=mips   go build $$NETSTACK
+      - GOOS=linux   GOARCH=mips64 go build $$NETSTACK
+      - GOOS=linux   GOARCH=ppc    go build $$NETSTACK
+      - GOOS=linux   GOARCH=ppc64  go build $$NETSTACK
+      - GOOS=freebsd GOARCH=amd64  go build $$NETSTACK
+      - GOOS=freebsd GOARCH=arm64  go build $$NETSTACK
+      - GOOS=openbsd GOARCH=amd64  go build $$NETSTACK
+      - GOOS=openbsd GOARCH=arm64  go build $$NETSTACK
+      - GOOS=windows GOARCH=amd64  go build $$NETSTACK
+      - GOOS=windows GOARCH=arm64  go build $$NETSTACK
+      - GOOS=darwin  GOARCH=amd64  go build $$NETSTACK
+      - GOOS=darwin  GOARCH=arm64  go build $$NETSTACK
 
   # Release workflow.
   - <<: *common
