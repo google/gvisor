@@ -419,11 +419,6 @@ func New(opts Options) *Stack {
 	return s
 }
 
-// newJob returns a tcpip.Job using the Stack clock.
-func (s *Stack) newJob(l sync.Locker, f func()) *tcpip.Job {
-	return tcpip.NewJob(s.clock, l, f)
-}
-
 // UniqueID returns a unique identifier.
 func (s *Stack) UniqueID() uint64 {
 	return s.uniqueIDGenerator.UniqueID()
@@ -1842,11 +1837,6 @@ func (s *Stack) FindNICNameFromID(id tcpip.NICID) string {
 	}
 
 	return nic.Name()
-}
-
-// NewJob returns a new tcpip.Job using the stack's clock.
-func (s *Stack) NewJob(l sync.Locker, f func()) *tcpip.Job {
-	return tcpip.NewJob(s.clock, l, f)
 }
 
 // ParseResult indicates the result of a parsing attempt.

@@ -150,7 +150,7 @@ func (igmp *igmpState) init(ep *endpoint) {
 		MaxUnsolicitedReportDelay: UnsolicitedReportIntervalMax,
 	})
 	igmp.igmpV1Present = igmpV1PresentDefault
-	igmp.igmpV1Job = ep.protocol.stack.NewJob(&ep.mu, func() {
+	igmp.igmpV1Job = tcpip.NewJob(ep.protocol.stack.Clock(), &ep.mu, func() {
 		igmp.setV1Present(false)
 	})
 }

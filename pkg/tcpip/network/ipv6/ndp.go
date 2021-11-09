@@ -870,7 +870,7 @@ func (ndp *ndpState) handleOffLinkRouteDiscovery(route offLinkRoute, lifetime ti
 
 			state := offLinkRouteState{
 				prf: prf,
-				invalidationJob: ndp.ep.protocol.stack.NewJob(&ndp.ep.mu, func() {
+				invalidationJob: tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, func() {
 					ndp.invalidateOffLinkRoute(route)
 				}),
 			}
@@ -917,7 +917,7 @@ func (ndp *ndpState) rememberOnLinkPrefix(prefix tcpip.Subnet, l time.Duration) 
 	ndpDisp.OnOnLinkPrefixDiscovered(ndp.ep.nic.ID(), prefix)
 
 	state := onLinkPrefixState{
-		invalidationJob: ndp.ep.protocol.stack.NewJob(&ndp.ep.mu, func() {
+		invalidationJob: tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, func() {
 			ndp.invalidateOnLinkPrefix(prefix)
 		}),
 	}
@@ -1062,7 +1062,7 @@ func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 	}
 
 	state := slaacPrefixState{
-		deprecationJob: ndp.ep.protocol.stack.NewJob(&ndp.ep.mu, func() {
+		deprecationJob: tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, func() {
 			state, ok := ndp.slaacPrefixes[prefix]
 			if !ok {
 				panic(fmt.Sprintf("ndp: must have a slaacPrefixes entry for the deprecated SLAAC prefix %s", prefix))
@@ -1070,7 +1070,7 @@ func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 
 			ndp.deprecateSLAACAddress(state.stableAddr.addressEndpoint)
 		}),
-		invalidationJob: ndp.ep.protocol.stack.NewJob(&ndp.ep.mu, func() {
+		invalidationJob: tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, func() {
 			state, ok := ndp.slaacPrefixes[prefix]
 			if !ok {
 				panic(fmt.Sprintf("ndp: must have a slaacPrefixes entry for the invalidated SLAAC prefix %s", prefix))
@@ -1335,7 +1335,7 @@ func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *sla
 	}
 
 	state := tempSLAACAddrState{
-		deprecationJob: ndp.ep.protocol.stack.NewJob(&ndp.ep.mu, func() {
+		deprecationJob: tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, func() {
 			prefixState, ok := ndp.slaacPrefixes[prefix]
 			if !ok {
 				panic(fmt.Sprintf("ndp: must have a slaacPrefixes entry for %s to deprecate temporary address %s", prefix, generatedAddr))
@@ -1348,7 +1348,7 @@ func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *sla
 
 			ndp.deprecateSLAACAddress(tempAddrState.addressEndpoint)
 		}),
-		invalidationJob: ndp.ep.protocol.stack.NewJob(&ndp.ep.mu, func() {
+		invalidationJob: tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, func() {
 			prefixState, ok := ndp.slaacPrefixes[prefix]
 			if !ok {
 				panic(fmt.Sprintf("ndp: must have a slaacPrefixes entry for %s to invalidate temporary address %s", prefix, generatedAddr))
@@ -1361,7 +1361,7 @@ func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *sla
 
 			ndp.invalidateTempSLAACAddr(prefixState.tempAddrs, generatedAddr.Address, tempAddrState)
 		}),
-		regenJob: ndp.ep.protocol.stack.NewJob(&ndp.ep.mu, func() {
+		regenJob: tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, func() {
 			prefixState, ok := ndp.slaacPrefixes[prefix]
 			if !ok {
 				panic(fmt.Sprintf("ndp: must have a slaacPrefixes entry for %s to regenerate temporary address after %s", prefix, generatedAddr))
