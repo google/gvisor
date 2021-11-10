@@ -37,7 +37,7 @@ type ExitNotifyParentInfo struct {
 
 // ExitNotifyParentReq returns fields required by the ExitNotifyParent
 // checkpoint.
-func (s *state) ExitNotifyParentReq() ExitNotifyParentFieldSet {
+func (s *State) ExitNotifyParentReq() ExitNotifyParentFieldSet {
 	return s.exitNotifyParentReq.Load()
 }
 
@@ -47,7 +47,7 @@ func (s *state) ExitNotifyParentReq() ExitNotifyParentFieldSet {
 // not waiting for exit acknowledgement from a non-parent ptracer, becomes the
 // last non-dead thread in its thread group and notifies its parent of its
 // exiting.
-func (s *state) ExitNotifyParent(ctx context.Context, mask ExitNotifyParentFieldSet, info *ExitNotifyParentInfo) error {
+func (s *State) ExitNotifyParent(ctx context.Context, mask ExitNotifyParentFieldSet, info *ExitNotifyParentInfo) error {
 	for _, c := range s.getCheckers() {
 		if err := c.ExitNotifyParent(ctx, mask, *info); err != nil {
 			return err
