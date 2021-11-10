@@ -19,32 +19,32 @@ import (
 	"time"
 )
 
-// TcpipAfterFunc waits for duration to elapse according to clock then runs fn.
+// AfterFunc waits for duration to elapse according to clock then runs fn.
 // The timer is started immediately and will fire exactly once.
-func TcpipAfterFunc(clock Clock, duration time.Duration, fn func()) *TcpipTimer {
-	timer := &TcpipTimer{
+func AfterFunc(clock Clock, duration time.Duration, fn func()) *VariableTimer {
+	timer := &VariableTimer{
 		clock: clock,
 	}
 	timer.notifier = functionNotifier{
 		fn: func() {
 			// tcpip.Timer.Stop() explicitly states that the function is called in a
 			// separate goroutine that Stop() does not synchronize with.
-			// Timer.Destroy() synchronizes with calls to TimerListener.Notify().
+			// Timer.Destroy() synchronizes with calls to Listener.NotifyTimer().
 			// This is semantically meaningful because, in the former case, it's
 			// legal to call tcpip.Timer.Stop() while holding locks that may also be
 			// taken by the function, but this isn't so in the latter case. Most
-			// immediately, Timer calls TimerListener.Notify() while holding
+			// immediately, Timer calls Listener.NotifyTimer() while holding
 			// Timer.mu. A deadlock occurs without spawning a goroutine:
 			//   T1: (Timer expires)
 			//     => Timer.Tick()           <- Timer.mu.Lock() called
-			//     => TimerListener.Notify()
+			//     => Listener.NotifyTimer()
 			//     => Timer.Stop()
 			//     => Timer.Destroy()        <- Timer.mu.Lock() called, deadlock!
 			//
 			// Spawning a goroutine avoids the deadlock:
 			//   T1: (Timer expires)
 			//     => Timer.Tick()           <- Timer.mu.Lock() called
-			//     => TimerListener.Notify() <- Launches T2
+			//     => Listener.NotifyTimer() <- Launches T2
 			//   T2:
 			//     => Timer.Stop()
 			//     => Timer.Destroy()        <- Timer.mu.Lock() called, blocks
@@ -62,12 +62,12 @@ func TcpipAfterFunc(clock Clock, duration time.Duration, fn func()) *TcpipTimer 
 	return timer
 }
 
-// TcpipTimer is a resettable timer with variable duration expirations.
+// VariableTimer is a resettable timer with variable duration expirations.
 // Implements tcpip.Timer, which does not define a Destroy method; instead, all
 // resources are released after timer expiration and calls to Timer.Stop.
 //
 // Must be created by AfterFunc.
-type TcpipTimer struct {
+type VariableTimer struct {
 	// clock is the time source. clock is immutable.
 	clock Clock
 
@@ -85,7 +85,7 @@ type TcpipTimer struct {
 }
 
 // Stop implements tcpip.Timer.Stop.
-func (r *TcpipTimer) Stop() bool {
+func (r *VariableTimer) Stop() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -99,7 +99,7 @@ func (r *TcpipTimer) Stop() bool {
 }
 
 // Reset implements tcpip.Timer.Reset.
-func (r *TcpipTimer) Reset(d time.Duration) {
+func (r *VariableTimer) Reset(d time.Duration) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -121,11 +121,8 @@ type functionNotifier struct {
 	fn func()
 }
 
-// Notify implements ktime.TimerListener.Notify.
-func (f *functionNotifier) Notify(uint64, Setting) (Setting, bool) {
+// NotifyTimer implements ktime.TimerListener.NotifyTimer.
+func (f *functionNotifier) NotifyTimer(uint64, Setting) (Setting, bool) {
 	f.fn()
 	return Setting{}, false
 }
-
-// Destroy implements ktime.TimerListener.Destroy.
-func (f *functionNotifier) Destroy() {}

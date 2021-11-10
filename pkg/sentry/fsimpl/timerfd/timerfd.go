@@ -47,7 +47,7 @@ type TimerFileDescription struct {
 }
 
 var _ vfs.FileDescriptionImpl = (*TimerFileDescription)(nil)
-var _ ktime.TimerListener = (*TimerFileDescription)(nil)
+var _ ktime.Listener = (*TimerFileDescription)(nil)
 
 // New returns a new timer fd.
 func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, clock ktime.Clock, flags uint32) (*vfs.FileDescription, error) {
@@ -136,12 +136,9 @@ func (tfd *TimerFileDescription) Release(context.Context) {
 	tfd.timer.Destroy()
 }
 
-// Notify implements ktime.TimerListener.Notify.
-func (tfd *TimerFileDescription) Notify(exp uint64, setting ktime.Setting) (ktime.Setting, bool) {
+// NotifyTimer implements ktime.TimerListener.NotifyTimer.
+func (tfd *TimerFileDescription) NotifyTimer(exp uint64, setting ktime.Setting) (ktime.Setting, bool) {
 	atomic.AddUint64(&tfd.val, exp)
 	tfd.events.Notify(waiter.ReadableEvents)
 	return ktime.Setting{}, false
 }
-
-// Destroy implements ktime.TimerListener.Destroy.
-func (tfd *TimerFileDescription) Destroy() {}

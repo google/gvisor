@@ -352,8 +352,8 @@ func newKernelCPUClockTicker(k *Kernel) *kernelCPUClockTicker {
 	}
 }
 
-// Notify implements ktime.TimerListener.Notify.
-func (ticker *kernelCPUClockTicker) Notify(exp uint64, setting ktime.Setting) (ktime.Setting, bool) {
+// NotifyTimer implements ktime.TimerListener.NotifyTimer.
+func (ticker *kernelCPUClockTicker) NotifyTimer(exp uint64, setting ktime.Setting) (ktime.Setting, bool) {
 	// Only increment cpuClock by 1 regardless of the number of expirations.
 	// This approximately compensates for cases where thread throttling or bad
 	// Go runtime scheduling prevents the kernelCPUClockTicker goroutine, and
@@ -470,10 +470,6 @@ func (ticker *kernelCPUClockTicker) Notify(exp uint64, setting ktime.Setting) (k
 	}
 
 	return setting, false
-}
-
-// Destroy implements ktime.TimerListener.Destroy.
-func (ticker *kernelCPUClockTicker) Destroy() {
 }
 
 // randInt31n returns a random integer in [0, n).
