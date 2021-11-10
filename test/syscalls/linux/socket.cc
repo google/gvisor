@@ -183,6 +183,16 @@ TEST(SocketTest, UnixSCMRightsOnlyPassedOnce) {
   ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 }
 
+TEST(SocketTest, Permission) {
+  SKIP_IF(IsRunningWithVFS1());
+
+  FileDescriptor socket =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_DGRAM, 0));
+
+  auto stat = ASSERT_NO_ERRNO_AND_VALUE(Fstat(socket.get()));
+  EXPECT_EQ(0777, stat.st_mode & ~S_IFMT);
+}
+
 using SocketOpenTest = ::testing::TestWithParam<int>;
 
 // UDS cannot be opened.
