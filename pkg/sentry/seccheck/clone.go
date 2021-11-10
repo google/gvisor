@@ -38,12 +38,12 @@ type CloneInfo struct {
 }
 
 // CloneReq returns fields required by the Clone checkpoint.
-func (s *state) CloneReq() CloneFieldSet {
+func (s *State) CloneReq() CloneFieldSet {
 	return s.cloneReq.Load()
 }
 
 // Clone is called at the Clone checkpoint.
-func (s *state) Clone(ctx context.Context, mask CloneFieldSet, info *CloneInfo) error {
+func (s *State) Clone(ctx context.Context, mask CloneFieldSet, info *CloneInfo) error {
 	for _, c := range s.getCheckers() {
 		if err := c.Clone(ctx, mask, *info); err != nil {
 			return err

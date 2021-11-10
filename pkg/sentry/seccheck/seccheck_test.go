@@ -36,14 +36,14 @@ func (c *testChecker) Clone(ctx context.Context, mask CloneFieldSet, info CloneI
 }
 
 func TestNoChecker(t *testing.T) {
-	var s state
+	var s State
 	if s.Enabled(PointClone) {
 		t.Errorf("Enabled(PointClone): got true, wanted false")
 	}
 }
 
 func TestCheckerNotRegisteredForPoint(t *testing.T) {
-	var s state
+	var s State
 	s.AppendChecker(&testChecker{}, &CheckerReq{})
 	if s.Enabled(PointClone) {
 		t.Errorf("Enabled(PointClone): got true, wanted false")
@@ -51,7 +51,7 @@ func TestCheckerNotRegisteredForPoint(t *testing.T) {
 }
 
 func TestCheckerRegistered(t *testing.T) {
-	var s state
+	var s State
 	checkerCalled := false
 	s.AppendChecker(&testChecker{onClone: func(ctx context.Context, mask CloneFieldSet, info CloneInfo) error {
 		checkerCalled = true
@@ -78,7 +78,7 @@ func TestCheckerRegistered(t *testing.T) {
 }
 
 func TestMultipleCheckersRegistered(t *testing.T) {
-	var s state
+	var s State
 	checkersCalled := [2]bool{}
 	s.AppendChecker(&testChecker{onClone: func(ctx context.Context, mask CloneFieldSet, info CloneInfo) error {
 		checkersCalled[0] = true
@@ -127,7 +127,7 @@ func TestCheckpointReturnsFirstCheckerError(t *testing.T) {
 	errFirstChecker := errors.New("first Checker error")
 	errSecondChecker := errors.New("second Checker error")
 
-	var s state
+	var s State
 	checkersCalled := [2]bool{}
 	s.AppendChecker(&testChecker{onClone: func(ctx context.Context, mask CloneFieldSet, info CloneInfo) error {
 		checkersCalled[0] = true

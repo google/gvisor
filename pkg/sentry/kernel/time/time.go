@@ -113,6 +113,12 @@ func (t Time) Nanoseconds() int64 {
 	return t.ns
 }
 
+// Microseconds returns microseconds elapsed since the zero time in t's Clock
+// domain. If t represents walltime, this is microseconds since the Unix epoch.
+func (t Time) Microseconds() int64 {
+	return t.ns / 1000
+}
+
 // Seconds returns seconds elapsed since the zero time in t's Clock domain. If
 // t represents walltime, this is seconds since Unix epoch.
 func (t Time) Seconds() int64 {

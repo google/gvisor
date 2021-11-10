@@ -89,10 +89,10 @@ type CheckerReq struct {
 }
 
 // Global is the method receiver of all seccheck functions.
-var Global state
+var Global State
 
-// state is the type of global, and is separated out for testing.
-type state struct {
+// State is the type of global, and is separated out for testing.
+type State struct {
 	// registrationMu serializes all changes to the set of registered Checkers
 	// for all checkpoints.
 	registrationMu sync.Mutex
@@ -125,7 +125,7 @@ type state struct {
 // AppendChecker registers the given Checker to execute at checkpoints. The
 // Checker will execute after all previously-registered Checkers, and only if
 // those Checkers return a nil error.
-func (s *state) AppendChecker(c Checker, req *CheckerReq) {
+func (s *State) AppendChecker(c Checker, req *CheckerReq) {
 	s.registrationMu.Lock()
 	defer s.registrationMu.Unlock()
 
@@ -141,17 +141,17 @@ func (s *state) AppendChecker(c Checker, req *CheckerReq) {
 }
 
 // Enabled returns true if any Checker is registered for the given checkpoint.
-func (s *state) Enabled(p Point) bool {
+func (s *State) Enabled(p Point) bool {
 	word, bit := p/32, p%32
 	return atomic.LoadUint32(&s.enabledPoints[word])&(uint32(1)<<bit) != 0
 }
 
-func (s *state) getCheckers() []Checker {
+func (s *State) getCheckers() []Checker {
 	return SeqAtomicLoadCheckerSlice(&s.registrationSeq, &s.checkers)
 }
 
 // Preconditions: s.registrationMu must be locked.
-func (s *state) appendCheckerLocked(c Checker) {
+func (s *State) appendCheckerLocked(c Checker) {
 	s.registrationSeq.BeginWrite()
 	s.checkers = append(s.checkers, c)
 	s.registrationSeq.EndWrite()
