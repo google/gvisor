@@ -6,8 +6,8 @@ go_library(
     name = "time",
     srcs = [
         "context.go",
-        "tcpip.go",
         "time.go",
+        "util.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
