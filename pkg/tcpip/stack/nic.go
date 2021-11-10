@@ -740,6 +740,11 @@ func (n *nic) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 
 	// Deliver to interested packet endpoints without holding NIC lock.
 	var packetEPPkt *PacketBuffer
+	defer func() {
+		if packetEPPkt != nil {
+			packetEPPkt.DecRef()
+		}
+	}()
 	deliverPacketEPs := func(ep PacketEndpoint) {
 		if packetEPPkt == nil {
 			// Packet endpoints hold the full packet.
@@ -754,7 +759,6 @@ func (n *nic) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 			packetEPPkt = NewPacketBuffer(PacketBufferOptions{
 				Data: PayloadSince(pkt.LinkHeader()).ToVectorisedView(),
 			})
-			defer packetEPPkt.DecRef()
 			// If a link header was populated in the original packet buffer, then
 			// populate it in the packet buffer we provide to packet endpoints as
 			// packet endpoints inspect link headers.
@@ -799,6 +803,11 @@ func (n *nic) deliverOutboundPacket(remote tcpip.LinkAddress, pkt *PacketBuffer)
 	local := n.LinkAddress()
 
 	var packetEPPkt *PacketBuffer
+	defer func() {
+		if packetEPPkt != nil {
+			packetEPPkt.DecRef()
+		}
+	}()
 	eps.forEach(func(ep PacketEndpoint) {
 		if packetEPPkt == nil {
 			// Packet endpoints hold the full packet.
@@ -814,7 +823,6 @@ func (n *nic) deliverOutboundPacket(remote tcpip.LinkAddress, pkt *PacketBuffer)
 				ReserveHeaderBytes: pkt.AvailableHeaderBytes(),
 				Data:               PayloadSince(pkt.NetworkHeader()).ToVectorisedView(),
 			})
-			defer packetEPPkt.DecRef()
 			// Add the link layer header as outgoing packets are intercepted before
 			// the link layer header is created and packet endpoints are interested
 			// in the link header.
