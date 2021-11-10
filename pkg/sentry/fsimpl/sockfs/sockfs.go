@@ -117,7 +117,7 @@ func NewDentry(ctx context.Context, mnt *vfs.Mount) *vfs.Dentry {
 	fs := mnt.Filesystem().Impl().(*filesystem)
 
 	// File mode matches net/socket.c:sock_alloc.
-	filemode := linux.FileMode(linux.S_IFSOCK | 0600)
+	filemode := linux.FileMode(linux.S_IFSOCK | 0777)
 	i := &inode{}
 	i.InodeAttrs.Init(ctx, auth.CredentialsFromContext(ctx), linux.UNNAMED_MAJOR, fs.devMinor, fs.Filesystem.NextIno(), filemode)
 
