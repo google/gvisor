@@ -50,12 +50,12 @@ type ExecveInfo struct {
 }
 
 // ExecveReq returns fields required by the Execve checkpoint.
-func (s *state) ExecveReq() ExecveFieldSet {
+func (s *State) ExecveReq() ExecveFieldSet {
 	return s.execveReq.Load()
 }
 
 // Execve is called at the Execve checkpoint.
-func (s *state) Execve(ctx context.Context, mask ExecveFieldSet, info *ExecveInfo) error {
+func (s *State) Execve(ctx context.Context, mask ExecveFieldSet, info *ExecveInfo) error {
 	for _, c := range s.getCheckers() {
 		if err := c.Execve(ctx, mask, *info); err != nil {
 			return err
