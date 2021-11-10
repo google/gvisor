@@ -37,6 +37,7 @@ go_test(
     deps = [
         "//pkg/abi/linux",
         "//pkg/binary",
+        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/sentry/socket",
         "@com_github_google_go_cmp//cmp:go_default_library",
