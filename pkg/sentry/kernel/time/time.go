@@ -277,10 +277,10 @@ func (*ClockEventsQueue) Readiness(mask waiter.EventMask) waiter.EventMask {
 	return 0
 }
 
-// A TimerListener receives expirations from a Timer.
-type TimerListener interface {
-	// Notify is called when its associated Timer expires. exp is the number of
-	// expirations. setting is the next timer Setting.
+// Listener receives expirations from a Timer.
+type Listener interface {
+	// NotifyTimer is called when its associated Timer expires. exp is the number
+	// of expirations. setting is the next timer Setting.
 	//
 	// Notify is called with the associated Timer's mutex locked, so Notify
 	// must not take any locks that precede Timer.mu in lock order.
@@ -289,10 +289,7 @@ type TimerListener interface {
 	// rather than the passed one.
 	//
 	// Preconditions: exp > 0.
-	Notify(exp uint64, setting Setting) (newSetting Setting, update bool)
-
-	// Destroy is called when the timer is destroyed.
-	Destroy()
+	NotifyTimer(exp uint64, setting Setting) (newSetting Setting, update bool)
 }
 
 // Setting contains user-controlled mutable Timer properties.
@@ -415,7 +412,7 @@ type Timer struct {
 	clock Clock
 
 	// listener is notified of expirations. listener is immutable.
-	listener TimerListener
+	listener Listener
 
 	// mu protects the following mutable fields.
 	mu sync.Mutex `state:"nosave"`
@@ -449,7 +446,7 @@ const timerTickEvents = ClockEventSet | ClockEventRateIncrease
 // NewTimer returns a new Timer that will obtain time from clock and send
 // expirations to listener. The Timer is initially stopped and has no first
 // expiration or period configured.
-func NewTimer(clock Clock, listener TimerListener) *Timer {
+func NewTimer(clock Clock, listener Listener) *Timer {
 	t := &Timer{
 		clock:    clock,
 		listener: listener,
@@ -488,7 +485,6 @@ func (t *Timer) Destroy() {
 	// before closing t.events to instruct the Timer goroutine to exit.
 	t.clock.EventUnregister(&t.entry)
 	close(t.events)
-	t.listener.Destroy()
 }
 
 func (t *Timer) runGoroutine() {
@@ -517,7 +513,7 @@ func (t *Timer) Tick() {
 	s, exp := t.setting.At(now)
 	t.setting = s
 	if exp > 0 {
-		if newS, ok := t.listener.Notify(exp, t.setting); ok {
+		if newS, ok := t.listener.NotifyTimer(exp, t.setting); ok {
 			t.setting = newS
 		}
 	}
@@ -574,7 +570,7 @@ func (t *Timer) Get() (Time, Setting) {
 	s, exp := t.setting.At(now)
 	t.setting = s
 	if exp > 0 {
-		if newS, ok := t.listener.Notify(exp, t.setting); ok {
+		if newS, ok := t.listener.NotifyTimer(exp, t.setting); ok {
 			t.setting = newS
 		}
 	}
@@ -610,7 +606,7 @@ func (t *Timer) SwapAnd(s Setting, f func()) (Time, Setting) {
 	}
 	oldS, oldExp := t.setting.At(now)
 	if oldExp > 0 {
-		t.listener.Notify(oldExp, oldS)
+		t.listener.NotifyTimer(oldExp, oldS)
 		// N.B. The returned Setting doesn't matter because we're about
 		// to overwrite.
 	}
@@ -620,7 +616,7 @@ func (t *Timer) SwapAnd(s Setting, f func()) (Time, Setting) {
 	newS, newExp := s.At(now)
 	t.setting = newS
 	if newExp > 0 {
-		if newS, ok := t.listener.Notify(newExp, t.setting); ok {
+		if newS, ok := t.listener.NotifyTimer(newExp, t.setting); ok {
 			t.setting = newS
 		}
 	}
@@ -658,35 +654,26 @@ func (t *Timer) Clock() Clock {
 	return t.clock
 }
 
-// ChannelNotifier is a TimerListener that sends a message on an empty struct
-// channel.
+// ChannelNotifier is a Listener that sends on a channel.
 //
 // ChannelNotifier cannot be saved or loaded.
-type ChannelNotifier struct {
-	// tchan must be a buffered channel.
-	tchan chan struct{}
-}
+type ChannelNotifier chan struct{}
 
 // NewChannelNotifier creates a new channel notifier.
 //
 // If the notifier is used with a timer, Timer.Destroy will close the channel
 // returned here.
-func NewChannelNotifier() (TimerListener, <-chan struct{}) {
+func NewChannelNotifier() (Listener, <-chan struct{}) {
 	tchan := make(chan struct{}, 1)
-	return &ChannelNotifier{tchan}, tchan
+	return ChannelNotifier(tchan), tchan
 }
 
-// Notify implements ktime.TimerListener.Notify.
-func (c *ChannelNotifier) Notify(uint64, Setting) (Setting, bool) {
+// NotifyTimer implements Listener.NotifyTimer.
+func (c ChannelNotifier) NotifyTimer(uint64, Setting) (Setting, bool) {
 	select {
-	case c.tchan <- struct{}{}:
+	case c <- struct{}{}:
 	default:
 	}
 
 	return Setting{}, false
-}
-
-// Destroy implements ktime.TimerListener.Destroy and will close the channel.
-func (c *ChannelNotifier) Destroy() {
-	close(c.tchan)
 }

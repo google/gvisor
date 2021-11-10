@@ -115,8 +115,8 @@ func (it *IntervalTimer) signalRejectedLocked() {
 	it.overrunCur++
 }
 
-// Notify implements ktime.TimerListener.Notify.
-func (it *IntervalTimer) Notify(exp uint64, setting ktime.Setting) (ktime.Setting, bool) {
+// NotifyTimer implements ktime.TimerListener.NotifyTimer.
+func (it *IntervalTimer) NotifyTimer(exp uint64, setting ktime.Setting) (ktime.Setting, bool) {
 	if it.target == nil {
 		return ktime.Setting{}, false
 	}
@@ -149,11 +149,6 @@ func (it *IntervalTimer) Notify(exp uint64, setting ktime.Setting) (ktime.Settin
 	}
 
 	return ktime.Setting{}, false
-}
-
-// Destroy implements ktime.TimerListener.Destroy. Users of Timer should call
-// DestroyTimer instead.
-func (it *IntervalTimer) Destroy() {
 }
 
 // IntervalTimerCreate implements timer_create(2).

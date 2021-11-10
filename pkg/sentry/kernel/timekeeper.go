@@ -200,7 +200,7 @@ func (t *Timekeeper) NowMonotonic() tcpip.MonotonicTime {
 
 // AfterFunc implements tcpip.Clock.
 func (t *Timekeeper) AfterFunc(d time.Duration, f func()) tcpip.Timer {
-	return ktime.TcpipAfterFunc(t.realtimeClock, d, f)
+	return ktime.AfterFunc(t.realtimeClock, d, f)
 }
 
 // startUpdater starts an update goroutine that keeps the clocks updated.
