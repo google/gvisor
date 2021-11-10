@@ -22,6 +22,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 )
@@ -56,4 +57,24 @@ func TestParse(t *testing.T) {
 	if diff := cmp.Diff(want, cmsg); diff != "" {
 		t.Errorf("unexpected message parsed, (-want, +got):\n%s", diff)
 	}
+}
+
+func TestParseRightsNegativeLength(t *testing.T) {
+	// Craft the control message to parse.
+	length := uint64(linux.SizeOfControlMessageHeader) + 128
+	hdr := linux.ControlMessageHeader{
+		Length: uint64(0xffffffff8f000000),
+		Level:  linux.SOL_SOCKET,
+		Type:   linux.SCM_RIGHTS,
+	}
+	hdrBuf := make([]byte, 0, length)
+	hdrBuf = binary.Marshal(hdrBuf, hostarch.ByteOrder, &hdr)
+
+	buf := make([]byte, length)
+	copy(buf, hdrBuf)
+	cmsg, err := Parse(nil, nil, buf, 8 /* width */)
+	if err != linuxerr.EINVAL {
+		t.Fatalf("Parse(_, _, %+v, _): %v", cmsg, err)
+	}
+
 }

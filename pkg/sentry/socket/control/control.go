@@ -503,7 +503,7 @@ func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte, width uint)
 		}
 
 		length := int(h.Length) - linux.SizeOfControlMessageHeader
-		if length > len(buf) {
+		if length < 0 || length > len(buf) {
 			return socket.ControlMessages{}, linuxerr.EINVAL
 		}
 
