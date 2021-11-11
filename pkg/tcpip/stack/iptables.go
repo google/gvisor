@@ -16,6 +16,7 @@ package stack
 
 import (
 	"fmt"
+	"math/rand"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -42,7 +43,7 @@ const reaperDelay = 5 * time.Second
 
 // DefaultTables returns a default set of tables. Each chain is set to accept
 // all packets.
-func DefaultTables(seed uint32, clock tcpip.Clock) *IPTables {
+func DefaultTables(clock tcpip.Clock, rand *rand.Rand) *IPTables {
 	return &IPTables{
 		v4Tables: [NumTables]Table{
 			NATID: {
@@ -182,8 +183,9 @@ func DefaultTables(seed uint32, clock tcpip.Clock) *IPTables {
 			Postrouting: {MangleID, NATID},
 		},
 		connections: ConnTrack{
-			seed:  seed,
+			seed:  rand.Uint32(),
 			clock: clock,
+			rand:  rand,
 		},
 		reaperDone: make(chan struct{}, 1),
 	}
