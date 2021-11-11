@@ -267,7 +267,6 @@ func (c *vCPU) fault(signal int32, info *linux.SignalInfo) (hostarch.AccessType,
 	bluepill(c) // Probably no-op, but may not be.
 	faultAddr := c.GetFaultAddr()
 	code, user := c.ErrorCode()
-
 	if !user {
 		// The last fault serviced by this CPU was not a user
 		// fault, so we can't reliably trust the faultAddr or
@@ -278,6 +277,14 @@ func (c *vCPU) fault(signal int32, info *linux.SignalInfo) (hostarch.AccessType,
 	// Reset the pointed SignalInfo.
 	*info = linux.SignalInfo{Signo: signal}
 	info.SetAddr(uint64(faultAddr))
+	accessType := hostarch.AccessType{}
+	if signal == int32(unix.SIGSEGV) {
+		accessType = hostarch.AccessType{
+			Read:    !isWriteFault(uint64(code)),
+			Write:   isWriteFault(uint64(code)),
+			Execute: isInstructionAbort(uint64(code)),
+		}
+	}
 
 	ret := code & _ESR_ELx_FSC
 	switch ret {
@@ -287,12 +294,6 @@ func (c *vCPU) fault(signal int32, info *linux.SignalInfo) (hostarch.AccessType,
 		info.Code = 2 // SEGV_ACCERR.
 	default:
 		info.Code = 2
-	}
-
-	accessType := hostarch.AccessType{
-		Read:    !isWriteFault(uint64(code)),
-		Write:   isWriteFault(uint64(code)),
-		Execute: isInstructionAbort(uint64(code)),
 	}
 
 	return accessType, platform.ErrContextSignal
