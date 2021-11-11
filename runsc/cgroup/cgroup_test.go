@@ -864,6 +864,12 @@ func TestOptional(t *testing.T) {
 		err   string
 	}{
 		{
+			name:  "pids",
+			ctrlr: &pids{},
+			spec:  &specs.LinuxResources{Pids: &specs.LinuxPids{Limit: 1}},
+			err:   "Pids.Limit set but pids cgroup controller not found",
+		},
+		{
 			name:  "net-cls",
 			ctrlr: &networkClass{},
 			spec:  &specs.LinuxResources{Network: &specs.LinuxNetwork{ClassID: uint32Ptr(1)}},
