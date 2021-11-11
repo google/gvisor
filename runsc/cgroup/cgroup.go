@@ -57,7 +57,7 @@ var controllers = map[string]controller{
 	"devices":    &noop{},
 	"freezer":    &noop{},
 	"perf_event": &noop{},
-	"rdma":       &noop{isOptional: true},
+	"rdma":       &noop{},
 	"systemd":    &noop{},
 }
 
@@ -599,12 +599,10 @@ type controller interface {
 	skip(*specs.LinuxResources) error
 }
 
-type noop struct {
-	isOptional bool
-}
+type noop struct{}
 
 func (n *noop) optional() bool {
-	return n.isOptional
+	return true
 }
 
 func (*noop) set(*specs.LinuxResources, string) error {
@@ -612,9 +610,6 @@ func (*noop) set(*specs.LinuxResources, string) error {
 }
 
 func (n *noop) skip(*specs.LinuxResources) error {
-	if !n.isOptional {
-		panic("cgroup controller is not optional")
-	}
 	return nil
 }
 
@@ -808,8 +803,17 @@ func (*networkPrio) skip(spec *specs.LinuxResources) error {
 	return nil
 }
 
-type pids struct {
-	mandatory
+type pids struct{}
+
+func (*pids) optional() bool {
+	return true
+}
+
+func (*pids) skip(spec *specs.LinuxResources) error {
+	if spec != nil && spec.Pids != nil && spec.Pids.Limit > 0 {
+		return fmt.Errorf("Pids.Limit set but pids cgroup controller not found")
+	}
+	return nil
 }
 
 func (*pids) set(spec *specs.LinuxResources, path string) error {
