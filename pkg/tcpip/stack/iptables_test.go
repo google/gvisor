@@ -15,6 +15,7 @@
 package stack
 
 import (
+	"math/rand"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -39,7 +40,7 @@ func TestNATedConnectionReap(t *testing.T) {
 	)
 
 	clock := faketime.NewManualClock()
-	iptables := DefaultTables(0 /* seed */, clock)
+	iptables := DefaultTables(clock, rand.New(rand.NewSource(0 /* seed */)))
 
 	table := Table{
 		Rules: []Rule{

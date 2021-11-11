@@ -17,6 +17,7 @@ package stack
 import (
 	"encoding/binary"
 	"fmt"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -195,6 +196,7 @@ type ConnTrack struct {
 
 	// clock provides timing used to determine conntrack reapings.
 	clock tcpip.Clock
+	rand  *rand.Rand
 
 	mu sync.RWMutex `state:"nosave"`
 	// mu protects the buckets slice, but not buckets' contents. Only take
@@ -491,6 +493,9 @@ func (ct *ConnTrack) finalize(cn *conn) {
 		// send packets but its responses will be mapped to some other connection.
 		// This may be okay if the connection only expects to send packets without
 		// any responses.
+		//
+		// TODO(https://gvisor.dev/issue/6850): Investigate handling this clash
+		// better.
 		return
 	}
 
@@ -522,12 +527,17 @@ func (cn *conn) finalize() {
 //
 // Generally, only the first packet of a connection reaches this method; other
 // other packets will be manipulated without needing to modify the connection.
-func (cn *conn) performNAT(pkt *PacketBuffer, hook Hook, r *Route, port uint16, address tcpip.Address, dnat bool) {
-	cn.performNATIfNoop(port, address, dnat)
+func (cn *conn) performNAT(pkt *PacketBuffer, hook Hook, r *Route, ports portRange, address tcpip.Address, dnat bool) {
+	cn.performNATIfNoop(ports, address, dnat)
 	cn.handlePacket(pkt, hook, r)
 }
 
-func (cn *conn) performNATIfNoop(port uint16, address tcpip.Address, dnat bool) {
+type portRange struct {
+	start uint16
+	size  uint16
+}
+
+func (cn *conn) performNATIfNoop(ports portRange, address tcpip.Address, dnat bool) {
 	cn.mu.Lock()
 	defer cn.mu.Unlock()
 
@@ -535,28 +545,78 @@ func (cn *conn) performNATIfNoop(port uint16, address tcpip.Address, dnat bool) 
 		return
 	}
 
+	cn.reply.mu.Lock()
+	defer cn.reply.mu.Unlock()
+
+	var port *uint16
 	if dnat {
 		if cn.destinationManip {
 			return
 		}
 		cn.destinationManip = true
+
+		cn.reply.tupleID.srcAddr = address
+		port = &cn.reply.tupleID.srcPort
 	} else {
 		if cn.sourceManip {
 			return
 		}
 		cn.sourceManip = true
-	}
 
-	cn.reply.mu.Lock()
-	defer cn.reply.mu.Unlock()
-
-	if dnat {
-		cn.reply.tupleID.srcAddr = address
-		cn.reply.tupleID.srcPort = port
-	} else {
 		cn.reply.tupleID.dstAddr = address
-		cn.reply.tupleID.dstPort = port
+		port = &cn.reply.tupleID.dstPort
 	}
+
+	// Does the current port fit in the range?
+	if end := ports.start + ports.size - 1; *port >= ports.start && *port <= end {
+		// Yes, is the current reply tuple unique?
+		if other := cn.ct.connForTID(cn.reply.tupleID); other == nil {
+			// Yes! No need to change the port.
+			return
+		}
+	}
+
+	// Try our best to find a port that results in a unique reply tuple.
+	//
+	// We limit the number of attempts to find a unique tuple to not waste a lot
+	// of time looking for a unique tuple.
+	//
+	// Matches linux behaviour introduced in
+	// https://github.com/torvalds/linux/commit/a504b703bb1da526a01593da0e4be2af9d9f5fa8.
+	const maxAttemptsForInitialRound uint16 = 128
+	const minAttemptsToContinue = 16
+
+	allowedInitialAttempts := maxAttemptsForInitialRound
+	if allowedInitialAttempts > ports.size {
+		allowedInitialAttempts = ports.size
+	}
+
+	for maxAttempts := allowedInitialAttempts; ; maxAttempts /= 2 {
+		// Start reach round with a random initial port in the range.
+		initial := ports.start + uint16(cn.ct.rand.Uint32())%ports.size
+
+		for i := uint16(0); i < maxAttempts; i++ {
+			*port = initial + i%ports.size
+
+			if other := cn.ct.connForTID(cn.reply.tupleID); other == nil {
+				// We found a unique tuple!
+				return
+			}
+		}
+
+		if maxAttempts == ports.size {
+			// We already tried all the ports in the range so no need to keep trying.
+			return
+		}
+
+		if maxAttempts < minAttemptsToContinue {
+			return
+		}
+	}
+
+	// We did not find a unique tuple, use the last used port anyways.
+	// TODO(https://gvisor.dev/issue/6850): Handle not finding a unique tuple
+	// better (e.g. remove the connection and drop the packet).
 }
 
 // handlePacket attempts to handle a packet and perform NAT if the connection

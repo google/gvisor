@@ -16,6 +16,8 @@ package iptables_test
 
 import (
 	"bytes"
+	"fmt"
+	"math"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -1780,6 +1782,123 @@ func TestNAT(t *testing.T) {
 	}
 }
 
+func encodeIPv4Header(v buffer.View, totalLen int, transProto tcpip.TransportProtocolNumber, srcAddr, dstAddr tcpip.Address) {
+	ip := header.IPv4(v)
+	ip.Encode(&header.IPv4Fields{
+		TotalLength: uint16(totalLen),
+		Protocol:    uint8(transProto),
+		TTL:         64,
+		SrcAddr:     srcAddr,
+		DstAddr:     dstAddr,
+	})
+	ip.SetChecksum(^ip.CalculateChecksum())
+}
+
+func encodeIPv6Header(v buffer.View, payloadLen int, transProto tcpip.TransportProtocolNumber, srcAddr, dstAddr tcpip.Address) {
+	ip := header.IPv6(v)
+	ip.Encode(&header.IPv6Fields{
+		PayloadLength:     uint16(payloadLen),
+		TransportProtocol: transProto,
+		HopLimit:          64,
+		SrcAddr:           srcAddr,
+		DstAddr:           dstAddr,
+	})
+}
+
+func udpv4Packet(srcAddr, dstAddr tcpip.Address, srcPort, dstPort uint16, dataSize int) buffer.View {
+	udpSize := header.UDPMinimumSize + dataSize
+	hdr := buffer.NewPrependable(header.IPv4MinimumSize + udpSize)
+	udp := header.UDP(hdr.Prepend(udpSize))
+	udp.SetSourcePort(srcPort)
+	udp.SetDestinationPort(dstPort)
+	udp.SetChecksum(0)
+	udp.SetChecksum(^udp.CalculateChecksum(header.PseudoHeaderChecksum(
+		header.UDPProtocolNumber,
+		srcAddr,
+		dstAddr,
+		uint16(len(udp)),
+	)))
+	encodeIPv4Header(
+		hdr.Prepend(header.IPv4MinimumSize),
+		hdr.UsedLength(),
+		header.UDPProtocolNumber,
+		srcAddr,
+		dstAddr,
+	)
+	return hdr.View()
+}
+
+func tcpv4Packet(srcAddr, dstAddr tcpip.Address, srcPort, dstPort uint16, dataSize int) buffer.View {
+	tcpSize := header.TCPMinimumSize + dataSize
+	hdr := buffer.NewPrependable(header.IPv4MinimumSize + tcpSize)
+	tcp := header.TCP(hdr.Prepend(tcpSize))
+	tcp.SetSourcePort(srcPort)
+	tcp.SetDestinationPort(dstPort)
+	tcp.SetDataOffset(header.TCPMinimumSize)
+	tcp.SetChecksum(0)
+	tcp.SetChecksum(^tcp.CalculateChecksum(header.PseudoHeaderChecksum(
+		header.TCPProtocolNumber,
+		srcAddr,
+		dstAddr,
+		uint16(len(tcp)),
+	)))
+	encodeIPv4Header(
+		hdr.Prepend(header.IPv4MinimumSize),
+		hdr.UsedLength(),
+		header.TCPProtocolNumber,
+		srcAddr,
+		dstAddr,
+	)
+	return hdr.View()
+}
+
+func udpv6Packet(srcAddr, dstAddr tcpip.Address, srcPort, dstPort uint16, dataSize int) buffer.View {
+	udpSize := header.UDPMinimumSize + dataSize
+	hdr := buffer.NewPrependable(header.IPv6MinimumSize + udpSize)
+	udp := header.UDP(hdr.Prepend(udpSize))
+	udp.SetSourcePort(srcPort)
+	udp.SetDestinationPort(dstPort)
+	udp.SetChecksum(0)
+	udp.SetChecksum(^udp.CalculateChecksum(header.PseudoHeaderChecksum(
+		header.UDPProtocolNumber,
+		srcAddr,
+		dstAddr,
+		uint16(len(udp)),
+	)))
+	encodeIPv6Header(
+		hdr.Prepend(header.IPv6MinimumSize),
+		len(udp),
+		header.UDPProtocolNumber,
+		srcAddr,
+		dstAddr,
+	)
+	return hdr.View()
+}
+
+func tcpv6Packet(srcAddr, dstAddr tcpip.Address, srcPort, dstPort uint16, dataSize int) buffer.View {
+	tcpSize := header.TCPMinimumSize + dataSize
+	hdr := buffer.NewPrependable(header.IPv6MinimumSize + tcpSize)
+	tcp := header.TCP(hdr.Prepend(tcpSize))
+	tcp.SetSourcePort(srcPort)
+	tcp.SetDestinationPort(dstPort)
+	tcp.SetDataOffset(header.TCPMinimumSize)
+	tcp.SetChecksum(0)
+	tcp.SetChecksum(^tcp.CalculateChecksum(header.PseudoHeaderChecksum(
+		header.TCPProtocolNumber,
+		srcAddr,
+		dstAddr,
+		uint16(len(tcp)),
+	)))
+	encodeIPv6Header(
+		hdr.Prepend(header.IPv6MinimumSize),
+		len(tcp),
+		header.TCPProtocolNumber,
+		srcAddr,
+		dstAddr,
+	)
+	return hdr.View()
+}
+
 func TestNATICMPError(t *testing.T) {
 	const (
 		srcPort  = 1234
@@ -1798,29 +1917,6 @@ func TestNATICMPError(t *testing.T) {
 		proto      tcpip.TransportProtocolNumber
 		buf        buffer.View
 		checkNATed func(*testing.T, buffer.View)
-	}
-
-	ipHdr := func(v buffer.View, totalLen int, transProto tcpip.TransportProtocolNumber, srcAddr, dstAddr tcpip.Address) {
-		ip := header.IPv4(v)
-		ip.Encode(&header.IPv4Fields{
-			TotalLength: uint16(totalLen),
-			Protocol:    uint8(transProto),
-			TTL:         64,
-			SrcAddr:     srcAddr,
-			DstAddr:     dstAddr,
-		})
-		ip.SetChecksum(^ip.CalculateChecksum())
-	}
-
-	ip6Hdr := func(v buffer.View, payloadLen int, transProto tcpip.TransportProtocolNumber, srcAddr, dstAddr tcpip.Address) {
-		ip := header.IPv6(v)
-		ip.Encode(&header.IPv6Fields{
-			PayloadLength:     uint16(payloadLen),
-			TransportProtocol: transProto,
-			HopLimit:          64,
-			SrcAddr:           srcAddr,
-			DstAddr:           dstAddr,
-		})
 	}
 
 	tests := []struct {
@@ -1847,7 +1943,7 @@ func TestNATICMPError(t *testing.T) {
 				icmp.SetType(header.ICMPv4Type(icmpType))
 				icmp.SetChecksum(0)
 				icmp.SetChecksum(header.ICMPv4Checksum(icmp, 0))
-				ipHdr(
+				encodeIPv4Header(
 					hdr.Prepend(header.IPv4MinimumSize),
 					hdr.UsedLength(),
 					header.ICMPv4ProtocolNumber,
@@ -1878,26 +1974,7 @@ func TestNATICMPError(t *testing.T) {
 					name:  "UDP",
 					proto: header.UDPProtocolNumber,
 					buf: func() buffer.View {
-						udpSize := header.UDPMinimumSize + dataSize
-						hdr := buffer.NewPrependable(header.IPv4MinimumSize + udpSize)
-						udp := header.UDP(hdr.Prepend(udpSize))
-						udp.SetSourcePort(srcPort)
-						udp.SetDestinationPort(dstPort)
-						udp.SetChecksum(0)
-						udp.SetChecksum(^udp.CalculateChecksum(header.PseudoHeaderChecksum(
-							header.UDPProtocolNumber,
-							utils.Host2IPv4Addr.AddressWithPrefix.Address,
-							utils.RouterNIC2IPv4Addr.AddressWithPrefix.Address,
-							uint16(len(udp)),
-						)))
-						ipHdr(
-							hdr.Prepend(header.IPv4MinimumSize),
-							hdr.UsedLength(),
-							header.UDPProtocolNumber,
-							utils.Host2IPv4Addr.AddressWithPrefix.Address,
-							utils.RouterNIC2IPv4Addr.AddressWithPrefix.Address,
-						)
-						return hdr.View()
+						return udpv4Packet(utils.Host2IPv4Addr.AddressWithPrefix.Address, utils.RouterNIC2IPv4Addr.AddressWithPrefix.Address, srcPort, dstPort, dataSize)
 					}(),
 					checkNATed: func(t *testing.T, v buffer.View) {
 						checker.IPv4(t, v,
@@ -1914,27 +1991,7 @@ func TestNATICMPError(t *testing.T) {
 					name:  "TCP",
 					proto: header.TCPProtocolNumber,
 					buf: func() buffer.View {
-						tcpSize := header.TCPMinimumSize + dataSize
-						hdr := buffer.NewPrependable(header.IPv4MinimumSize + tcpSize)
-						tcp := header.TCP(hdr.Prepend(tcpSize))
-						tcp.SetSourcePort(srcPort)
-						tcp.SetDestinationPort(dstPort)
-						tcp.SetDataOffset(header.TCPMinimumSize)
-						tcp.SetChecksum(0)
-						tcp.SetChecksum(^tcp.CalculateChecksum(header.PseudoHeaderChecksum(
-							header.TCPProtocolNumber,
-							utils.Host2IPv4Addr.AddressWithPrefix.Address,
-							utils.RouterNIC2IPv4Addr.AddressWithPrefix.Address,
-							uint16(len(tcp)),
-						)))
-						ipHdr(
-							hdr.Prepend(header.IPv4MinimumSize),
-							hdr.UsedLength(),
-							header.TCPProtocolNumber,
-							utils.Host2IPv4Addr.AddressWithPrefix.Address,
-							utils.RouterNIC2IPv4Addr.AddressWithPrefix.Address,
-						)
-						return hdr.View()
+						return tcpv4Packet(utils.Host2IPv4Addr.AddressWithPrefix.Address, utils.RouterNIC2IPv4Addr.AddressWithPrefix.Address, srcPort, dstPort, dataSize)
 					}(),
 					checkNATed: func(t *testing.T, v buffer.View) {
 						checker.IPv4(t, v,
@@ -1994,7 +2051,7 @@ func TestNATICMPError(t *testing.T) {
 					Src:    utils.Host1IPv6Addr.AddressWithPrefix.Address,
 					Dst:    utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address,
 				}))
-				ip6Hdr(
+				encodeIPv6Header(
 					hdr.Prepend(header.IPv6MinimumSize),
 					payloadLen,
 					header.ICMPv6ProtocolNumber,
@@ -2022,26 +2079,7 @@ func TestNATICMPError(t *testing.T) {
 					name:  "UDP",
 					proto: header.UDPProtocolNumber,
 					buf: func() buffer.View {
-						udpSize := header.UDPMinimumSize + dataSize
-						hdr := buffer.NewPrependable(header.IPv6MinimumSize + udpSize)
-						udp := header.UDP(hdr.Prepend(udpSize))
-						udp.SetSourcePort(srcPort)
-						udp.SetDestinationPort(dstPort)
-						udp.SetChecksum(0)
-						udp.SetChecksum(^udp.CalculateChecksum(header.PseudoHeaderChecksum(
-							header.UDPProtocolNumber,
-							utils.Host2IPv6Addr.AddressWithPrefix.Address,
-							utils.RouterNIC2IPv6Addr.AddressWithPrefix.Address,
-							uint16(len(udp)),
-						)))
-						ip6Hdr(
-							hdr.Prepend(header.IPv6MinimumSize),
-							len(udp),
-							header.UDPProtocolNumber,
-							utils.Host2IPv6Addr.AddressWithPrefix.Address,
-							utils.RouterNIC2IPv6Addr.AddressWithPrefix.Address,
-						)
-						return hdr.View()
+						return udpv6Packet(utils.Host2IPv6Addr.AddressWithPrefix.Address, utils.RouterNIC2IPv6Addr.AddressWithPrefix.Address, srcPort, dstPort, dataSize)
 					}(),
 					checkNATed: func(t *testing.T, v buffer.View) {
 						checker.IPv6(t, v,
@@ -2058,27 +2096,7 @@ func TestNATICMPError(t *testing.T) {
 					name:  "TCP",
 					proto: header.TCPProtocolNumber,
 					buf: func() buffer.View {
-						tcpSize := header.TCPMinimumSize + dataSize
-						hdr := buffer.NewPrependable(header.IPv6MinimumSize + tcpSize)
-						tcp := header.TCP(hdr.Prepend(tcpSize))
-						tcp.SetSourcePort(srcPort)
-						tcp.SetDestinationPort(dstPort)
-						tcp.SetDataOffset(header.TCPMinimumSize)
-						tcp.SetChecksum(0)
-						tcp.SetChecksum(^tcp.CalculateChecksum(header.PseudoHeaderChecksum(
-							header.TCPProtocolNumber,
-							utils.Host2IPv6Addr.AddressWithPrefix.Address,
-							utils.RouterNIC2IPv6Addr.AddressWithPrefix.Address,
-							uint16(len(tcp)),
-						)))
-						ip6Hdr(
-							hdr.Prepend(header.IPv6MinimumSize),
-							len(tcp),
-							header.TCPProtocolNumber,
-							utils.Host2IPv6Addr.AddressWithPrefix.Address,
-							utils.RouterNIC2IPv6Addr.AddressWithPrefix.Address,
-						)
-						return hdr.View()
+						return tcpv6Packet(utils.Host2IPv6Addr.AddressWithPrefix.Address, utils.RouterNIC2IPv6Addr.AddressWithPrefix.Address, srcPort, dstPort, dataSize)
 					}(),
 					checkNATed: func(t *testing.T, v buffer.View) {
 						checker.IPv6(t, v,
@@ -2260,6 +2278,285 @@ func TestNATICMPError(t *testing.T) {
 									}
 									test.decrementTTL(buf)
 									test.checkNATedError(t, stack.PayloadSince(pkt.Pkt.NetworkHeader()), buf, icmpType.val)
+								})
+							}
+						})
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestSNATHandlePortConflicts(t *testing.T) {
+	const dstPort = 5432
+
+	type portRange struct {
+		first uint16
+		last  uint16
+	}
+
+	type transportTypeTest struct {
+		name       string
+		proto      tcpip.TransportProtocolNumber
+		buf        func(tcpip.Address, uint16) buffer.View
+		checkNATed func(*testing.T, buffer.View, uint16, bool, portRange)
+	}
+
+	compareSrcPort := func(t *testing.T, gotPort uint16, originalSrcPort uint16, firstPacket bool, expectedRange portRange) {
+		t.Helper()
+
+		if firstPacket {
+			if gotPort != originalSrcPort {
+				t.Errorf("got port = %d, want = %d", gotPort, originalSrcPort)
+			}
+			return
+		}
+
+		if gotPort < expectedRange.first || gotPort > expectedRange.last {
+			t.Errorf("got port = %d, want in range [%d, %d]", gotPort, expectedRange.first, expectedRange.last)
+		}
+	}
+
+	tests := []struct {
+		name           string
+		netProto       tcpip.NetworkProtocolNumber
+		routerNIC1Addr tcpip.Address
+		srcAddrs       []tcpip.Address
+		transportTypes []transportTypeTest
+	}{
+		{
+			name:           "IPv4",
+			netProto:       ipv4.ProtocolNumber,
+			routerNIC1Addr: utils.RouterNIC1IPv4Addr.AddressWithPrefix.Address,
+			srcAddrs: []tcpip.Address{
+				utils.Ipv4Addr1.AddressWithPrefix.Address,
+				utils.Ipv4Addr2.AddressWithPrefix.Address,
+				utils.Ipv4Addr3.AddressWithPrefix.Address,
+			},
+			transportTypes: []transportTypeTest{
+				{
+					name:  "UDP",
+					proto: header.UDPProtocolNumber,
+					buf: func(srcAddr tcpip.Address, srcPort uint16) buffer.View {
+						return udpv4Packet(srcAddr, utils.Host1IPv4Addr.AddressWithPrefix.Address, srcPort, dstPort, 0 /* dataSize */)
+					},
+					checkNATed: func(t *testing.T, v buffer.View, originalSrcPort uint16, firstPacket bool, expectedRange portRange) {
+						checker.IPv4(t, v,
+							checker.SrcAddr(utils.RouterNIC1IPv4Addr.AddressWithPrefix.Address),
+							checker.DstAddr(utils.Host1IPv4Addr.AddressWithPrefix.Address),
+							checker.UDP(
+								checker.DstPort(dstPort),
+							),
+						)
+
+						if !t.Failed() {
+							compareSrcPort(t, header.UDP(header.IPv4(v).Payload()).SourcePort(), originalSrcPort, firstPacket, expectedRange)
+						}
+					},
+				},
+				{
+					name:  "TCP",
+					proto: header.TCPProtocolNumber,
+					buf: func(srcAddr tcpip.Address, srcPort uint16) buffer.View {
+						return tcpv4Packet(srcAddr, utils.Host1IPv4Addr.AddressWithPrefix.Address, srcPort, dstPort, 0 /* dataSize */)
+					},
+					checkNATed: func(t *testing.T, v buffer.View, originalSrcPort uint16, firstPacket bool, expectedRange portRange) {
+						checker.IPv4(t, v,
+							checker.SrcAddr(utils.RouterNIC1IPv4Addr.AddressWithPrefix.Address),
+							checker.DstAddr(utils.Host1IPv4Addr.AddressWithPrefix.Address),
+							checker.TCP(
+								checker.DstPort(dstPort),
+							),
+						)
+
+						if !t.Failed() {
+							compareSrcPort(t, header.TCP(header.IPv4(v).Payload()).SourcePort(), originalSrcPort, firstPacket, expectedRange)
+						}
+					},
+				},
+			},
+		},
+		{
+			name:           "IPv6",
+			netProto:       ipv6.ProtocolNumber,
+			routerNIC1Addr: utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address,
+			srcAddrs: []tcpip.Address{
+				utils.Ipv6Addr1.AddressWithPrefix.Address,
+				utils.Ipv6Addr2.AddressWithPrefix.Address,
+				utils.Ipv6Addr2.AddressWithPrefix.Address,
+			},
+			transportTypes: []transportTypeTest{
+				{
+					name:  "UDP",
+					proto: header.UDPProtocolNumber,
+					buf: func(srcAddr tcpip.Address, srcPort uint16) buffer.View {
+						return udpv6Packet(srcAddr, utils.Host1IPv6Addr.AddressWithPrefix.Address, srcPort, dstPort, 0 /* dataSize */)
+					},
+					checkNATed: func(t *testing.T, v buffer.View, originalSrcPort uint16, firstPacket bool, expectedRange portRange) {
+						checker.IPv6(t, v,
+							checker.SrcAddr(utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address),
+							checker.DstAddr(utils.Host1IPv6Addr.AddressWithPrefix.Address),
+							checker.UDP(
+								checker.DstPort(dstPort),
+							),
+						)
+
+						if !t.Failed() {
+							compareSrcPort(t, header.UDP(header.IPv6(v).Payload()).SourcePort(), originalSrcPort, firstPacket, expectedRange)
+						}
+					},
+				},
+				{
+					name:  "TCP",
+					proto: header.TCPProtocolNumber,
+					buf: func(srcAddr tcpip.Address, srcPort uint16) buffer.View {
+						return tcpv6Packet(srcAddr, utils.Host1IPv6Addr.AddressWithPrefix.Address, srcPort, dstPort, 0 /* dataSize */)
+					},
+					checkNATed: func(t *testing.T, v buffer.View, originalSrcPort uint16, firstPacket bool, expectedRange portRange) {
+						checker.IPv6(t, v,
+							checker.SrcAddr(utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address),
+							checker.DstAddr(utils.Host1IPv6Addr.AddressWithPrefix.Address),
+							checker.TCP(
+								checker.DstPort(dstPort),
+							),
+						)
+
+						if !t.Failed() {
+							compareSrcPort(t, header.TCP(header.IPv6(v).Payload()).SourcePort(), originalSrcPort, firstPacket, expectedRange)
+						}
+					},
+				},
+			},
+		},
+	}
+
+	natTypes := []struct {
+		name   string
+		target func(tcpip.NetworkProtocolNumber, tcpip.Address) stack.Target
+	}{
+		{
+			name: "Masquerade",
+			target: func(netProto tcpip.NetworkProtocolNumber, _ tcpip.Address) stack.Target {
+				return &stack.MasqueradeTarget{NetworkProtocol: netProto}
+			},
+		},
+		{
+			name: "SNAT",
+			target: func(netProto tcpip.NetworkProtocolNumber, addr tcpip.Address) stack.Target {
+				return &stack.SNATTarget{NetworkProtocol: netProto, Addr: addr}
+			},
+		},
+	}
+
+	srcPortRanges := []struct {
+		name          string
+		originalRange portRange
+		targetRange   portRange
+	}{
+		{
+			name:          "Less than 512",
+			originalRange: portRange{first: 1, last: 511},
+			targetRange:   portRange{first: 1, last: 511},
+		},
+		{
+			name:          "Greater than or equal to 512 but less than 1024",
+			originalRange: portRange{first: 512, last: 1023},
+			targetRange:   portRange{first: 1, last: 1023},
+		},
+		{
+			name:          "Greater than or equal to 1024",
+			originalRange: portRange{first: 1024, last: math.MaxUint16},
+			targetRange:   portRange{first: 1024, last: math.MaxUint16},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			for _, transportType := range test.transportTypes {
+				t.Run(transportType.name, func(t *testing.T) {
+					for _, natType := range natTypes {
+						t.Run(natType.name, func(t *testing.T) {
+							for _, srcPortRange := range srcPortRanges {
+								t.Run(srcPortRange.name, func(t *testing.T) {
+									for _, srcPort := range [2]uint16{srcPortRange.originalRange.first, srcPortRange.originalRange.last} {
+										t.Run(fmt.Sprintf("OriginalSrcPort=%d", srcPort), func(t *testing.T) {
+											s := stack.New(stack.Options{
+												NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+												TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol, tcp.NewProtocol},
+											})
+
+											ep1 := channel.New(1, header.IPv6MinimumMTU, "")
+											ep2 := channel.New(1, header.IPv6MinimumMTU, "")
+											utils.SetupRouterStack(t, s, ep1, ep2)
+
+											ipv6 := test.netProto == ipv6.ProtocolNumber
+											ipt := s.IPTables()
+
+											table := stack.Table{
+												Rules: []stack.Rule{
+													// Prerouting
+													{
+														Target: &stack.AcceptTarget{},
+													},
+
+													// Input
+													{
+														Target: &stack.AcceptTarget{},
+													},
+
+													// Forward
+													{
+														Target: &stack.AcceptTarget{},
+													},
+
+													// Output
+													{
+														Target: &stack.AcceptTarget{},
+													},
+
+													// Postrouting
+													{
+														Filter: stack.IPHeaderFilter{
+															Protocol:        transportType.proto,
+															CheckProtocol:   true,
+															OutputInterface: utils.RouterNIC1Name,
+														},
+														Target: natType.target(test.netProto, test.routerNIC1Addr),
+													},
+													{
+														Target: &stack.AcceptTarget{},
+													},
+												},
+												BuiltinChains: [stack.NumHooks]int{
+													stack.Prerouting:  0,
+													stack.Input:       1,
+													stack.Forward:     2,
+													stack.Output:      3,
+													stack.Postrouting: 4,
+												},
+											}
+
+											if err := ipt.ReplaceTable(stack.NATID, table, ipv6); err != nil {
+												t.Fatalf("ipt.ReplaceTable(%d, _, %t): %s", stack.NATID, ipv6, err)
+											}
+
+											for i, srcAddr := range test.srcAddrs {
+												t.Run(fmt.Sprintf("Packet#%d", i), func(t *testing.T) {
+													ep2.InjectInbound(test.netProto, stack.NewPacketBuffer(stack.PacketBufferOptions{
+														Data: transportType.buf(srcAddr, srcPort).ToVectorisedView(),
+													}))
+
+													pkt, ok := ep1.Read()
+													if !ok {
+														t.Fatal("expected to read a packet on ep1")
+													}
+													pktView := stack.PayloadSince(pkt.Pkt.NetworkHeader())
+													transportType.checkNATed(t, pktView, srcPort, i == 0, srcPortRange.targetRange)
+												})
+											}
+										})
+									}
 								})
 							}
 						})

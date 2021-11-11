@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"math/rand"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -58,8 +59,8 @@ var nameToID = map[string]stack.TableID{
 
 // DefaultLinuxTables returns the rules of stack.DefaultTables() wrapped for
 // compatibility with netfilter extensions.
-func DefaultLinuxTables(seed uint32, clock tcpip.Clock) *stack.IPTables {
-	tables := stack.DefaultTables(seed, clock)
+func DefaultLinuxTables(clock tcpip.Clock, rand *rand.Rand) *stack.IPTables {
+	tables := stack.DefaultTables(clock, rand)
 	tables.VisitTargets(func(oldTarget stack.Target) stack.Target {
 		switch val := oldTarget.(type) {
 		case *stack.AcceptTarget:
