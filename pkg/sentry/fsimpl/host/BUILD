@@ -31,6 +31,7 @@ go_library(
         "connected_endpoint_refs.go",
         "control.go",
         "host.go",
+        "host_unsafe.go",
         "inode_refs.go",
         "ioctl_unsafe.go",
         "save_restore.go",

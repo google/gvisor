@@ -134,9 +134,15 @@ var allowedSyscalls = seccomp.SyscallRules{
 	},
 	unix.SYS_GETTID:       {},
 	unix.SYS_GETTIMEOFDAY: {},
-	// SYS_IOCTL is needed for terminal support, but we only allow
-	// setting/getting termios and winsize.
 	unix.SYS_IOCTL: []seccomp.Rule{
+		// These commands are needed for host FD.
+		{
+			seccomp.MatchAny{}, /* fd */
+			seccomp.EqualTo(linux.FIONREAD),
+			seccomp.MatchAny{}, /* int* */
+		},
+		// These commands are needed for terminal support, but we only allow
+		// setting/getting termios and winsize.
 		{
 			seccomp.MatchAny{}, /* fd */
 			seccomp.EqualTo(linux.TCGETS),

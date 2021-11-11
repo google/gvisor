@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/hostfd"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -909,4 +910,22 @@ func (f *fileDescription) EventUnregister(e *waiter.Entry) {
 // Readiness uses the poll() syscall to check the status of the underlying FD.
 func (f *fileDescription) Readiness(mask waiter.EventMask) waiter.EventMask {
 	return fdnotifier.NonBlockingPoll(int32(f.inode.hostFD), mask)
+}
+
+// Ioctl queries the underlying FD for allowed ioctl commands.
+func (f *fileDescription) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+	switch cmd := args[1].Int(); cmd {
+	case linux.FIONREAD:
+		v, err := ioctlFionread(f.inode.hostFD)
+		if err != nil {
+			return 0, err
+		}
+
+		var buf [4]byte
+		hostarch.ByteOrder.PutUint32(buf[:], v)
+		_, err = uio.CopyOut(ctx, args[2].Pointer(), buf[:], usermem.IOOpts{})
+		return 0, err
+	}
+
+	return f.FileDescriptionDefaultImpl.Ioctl(ctx, uio, args)
 }
