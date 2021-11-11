@@ -242,7 +242,7 @@ func (kcov *Kcov) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) erro
 
 	if kcov.mappable == nil {
 		// Set up the kcov area.
-		fr, err := kcov.mfp.MemoryFile().Allocate(kcov.size*8, usage.Anonymous)
+		fr, err := kcov.mfp.MemoryFile().Allocate(kcov.size*8, pgalloc.AllocOpts{Kind: usage.Anonymous})
 		if err != nil {
 			return err
 		}

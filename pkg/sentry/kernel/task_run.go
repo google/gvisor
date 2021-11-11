@@ -330,7 +330,7 @@ func (app *runApp) execute(t *Task) taskRunState {
 			}
 
 			// Faults are common, log only at debug level.
-			t.Debugf("Unhandled user fault: addr=%x ip=%x access=%v err=%v", addr, t.Arch().IP(), at, err)
+			t.Debugf("Unhandled user fault: addr=%x ip=%x access=%v sig=%v err=%v", addr, t.Arch().IP(), at, sig, err)
 			t.DebugDumpState()
 
 			// Continue to signal handling.

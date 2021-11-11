@@ -207,7 +207,7 @@ func (r *Registry) newShmLocked(ctx context.Context, pid int32, key ipc.Key, cre
 	}
 
 	effectiveSize := uint64(hostarch.Addr(size).MustRoundUp())
-	fr, err := mfp.MemoryFile().Allocate(effectiveSize, usage.Anonymous)
+	fr, err := mfp.MemoryFile().Allocate(effectiveSize, pgalloc.AllocOpts{Kind: usage.Anonymous})
 	if err != nil {
 		return nil, err
 	}

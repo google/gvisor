@@ -73,7 +73,7 @@ func TestUsageASUpdates(t *testing.T) {
 func (mm *MemoryManager) realDataAS() uint64 {
 	var sz uint64
 	for seg := mm.vmas.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
-		vma := seg.Value()
+		vma := seg.ValuePtr()
 		if vma.isPrivateDataLocked() {
 			sz += uint64(seg.Range().Length())
 		}
