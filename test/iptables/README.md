@@ -17,7 +17,7 @@ iptables require some extra Docker configuration to work. Enable IPv6 in
 And if you're running manually (i.e. not using the `make` target), you'll need
 to:
 
-*   Enable iptables via `modprobe iptables_filter && modprobe ip6table_filter`.
+*   Enable iptables via `modprobe iptable_filter && modprobe ip6table_filter`.
 *   Enable `--net-raw` in your chosen runtime in `/etc/docker/daemon.json` (make
     sure to restart Docker if you change this file).
 
@@ -61,7 +61,7 @@ Your test is now runnable with bazel!
 Build and install `runsc`. Re-run this when you modify gVisor:
 
 ```bash
-$ bazel build //runsc && sudo cp bazel-bin/runsc/linux_amd64_pure_stripped/runsc $(which runsc)
+$ bazel build //runsc && sudo cp bazel-out/k8-fastbuild-ST-4c64f0b3d5c7/bin/runsc/runsc_/runsc $(which runsc)
 ```
 
 Build the testing Docker container. Re-run this when you modify the test code in
