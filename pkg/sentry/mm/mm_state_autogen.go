@@ -404,11 +404,11 @@ func (mm *MemoryManager) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.AfterLoad(mm.afterLoad)
 }
 
-func (vma *vma) StateTypeName() string {
+func (v *vma) StateTypeName() string {
 	return "pkg/sentry/mm.vma"
 }
 
-func (vma *vma) StateFields() []string {
+func (v *vma) StateFields() []string {
 	return []string{
 		"mappable",
 		"off",
@@ -419,40 +419,43 @@ func (vma *vma) StateFields() []string {
 		"numaNodemask",
 		"id",
 		"hint",
+		"lastFault",
 	}
 }
 
-func (vma *vma) beforeSave() {}
+func (v *vma) beforeSave() {}
 
 // +checklocksignore
-func (vma *vma) StateSave(stateSinkObject state.Sink) {
-	vma.beforeSave()
+func (v *vma) StateSave(stateSinkObject state.Sink) {
+	v.beforeSave()
 	var realPermsValue int
-	realPermsValue = vma.saveRealPerms()
+	realPermsValue = v.saveRealPerms()
 	stateSinkObject.SaveValue(2, realPermsValue)
-	stateSinkObject.Save(0, &vma.mappable)
-	stateSinkObject.Save(1, &vma.off)
-	stateSinkObject.Save(3, &vma.dontfork)
-	stateSinkObject.Save(4, &vma.mlockMode)
-	stateSinkObject.Save(5, &vma.numaPolicy)
-	stateSinkObject.Save(6, &vma.numaNodemask)
-	stateSinkObject.Save(7, &vma.id)
-	stateSinkObject.Save(8, &vma.hint)
+	stateSinkObject.Save(0, &v.mappable)
+	stateSinkObject.Save(1, &v.off)
+	stateSinkObject.Save(3, &v.dontfork)
+	stateSinkObject.Save(4, &v.mlockMode)
+	stateSinkObject.Save(5, &v.numaPolicy)
+	stateSinkObject.Save(6, &v.numaNodemask)
+	stateSinkObject.Save(7, &v.id)
+	stateSinkObject.Save(8, &v.hint)
+	stateSinkObject.Save(9, &v.lastFault)
 }
 
-func (vma *vma) afterLoad() {}
+func (v *vma) afterLoad() {}
 
 // +checklocksignore
-func (vma *vma) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &vma.mappable)
-	stateSourceObject.Load(1, &vma.off)
-	stateSourceObject.Load(3, &vma.dontfork)
-	stateSourceObject.Load(4, &vma.mlockMode)
-	stateSourceObject.Load(5, &vma.numaPolicy)
-	stateSourceObject.Load(6, &vma.numaNodemask)
-	stateSourceObject.Load(7, &vma.id)
-	stateSourceObject.Load(8, &vma.hint)
-	stateSourceObject.LoadValue(2, new(int), func(y interface{}) { vma.loadRealPerms(y.(int)) })
+func (v *vma) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &v.mappable)
+	stateSourceObject.Load(1, &v.off)
+	stateSourceObject.Load(3, &v.dontfork)
+	stateSourceObject.Load(4, &v.mlockMode)
+	stateSourceObject.Load(5, &v.numaPolicy)
+	stateSourceObject.Load(6, &v.numaNodemask)
+	stateSourceObject.Load(7, &v.id)
+	stateSourceObject.Load(8, &v.hint)
+	stateSourceObject.Load(9, &v.lastFault)
+	stateSourceObject.LoadValue(2, new(int), func(y interface{}) { v.loadRealPerms(y.(int)) })
 }
 
 func (p *pma) StateTypeName() string {

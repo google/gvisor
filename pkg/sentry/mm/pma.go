@@ -16,6 +16,7 @@ package mm
 
 import (
 	"fmt"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -23,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/safecopy"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 )
 
@@ -204,6 +206,15 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 		}
 	}
 
+	opts := pgalloc.AllocOpts{Kind: usage.Anonymous, Dir: pgalloc.BottomUp}
+	vma := vseg.ValuePtr()
+	if uintptr(ar.Start) < atomic.LoadUintptr(&vma.lastFault) {
+		// Detect cases where memory is accessed downwards and change memory file
+		// allocation order to increase the chances that pages are coalesced.
+		opts.Dir = pgalloc.TopDown
+	}
+	atomic.StoreUintptr(&vma.lastFault, uintptr(ar.Start))
+
 	mf := mm.mfp.MemoryFile()
 	// Limit the range we allocate to ar, aligned to privateAllocUnit.
 	maskAR := privateAligned(ar)
@@ -230,7 +241,7 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 				if vma.mappable == nil {
 					// Private anonymous mappings get pmas by allocating.
 					allocAR := optAR.Intersect(maskAR)
-					fr, err := mf.Allocate(uint64(allocAR.Length()), usage.Anonymous)
+					fr, err := mf.Allocate(uint64(allocAR.Length()), opts)
 					if err != nil {
 						return pstart, pgap, err
 					}

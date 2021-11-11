@@ -150,7 +150,7 @@ func NewSharedAnonMappable(length uint64, mfp pgalloc.MemoryFileProvider) (*Spec
 	if !ok {
 		return nil, linuxerr.EINVAL
 	}
-	fr, err := mfp.MemoryFile().Allocate(uint64(alignedLen), usage.Anonymous)
+	fr, err := mfp.MemoryFile().Allocate(uint64(alignedLen), pgalloc.AllocOpts{Kind: usage.Anonymous})
 	if err != nil {
 		return nil, err
 	}
