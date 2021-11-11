@@ -657,7 +657,7 @@ func (rw *regularFileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64,
 		case gap.Ok():
 			// Allocate memory for the write.
 			gapMR := gap.Range().Intersect(pgMR)
-			fr, err := rw.file.memFile.Allocate(gapMR.Length(), rw.file.memoryUsageKind)
+			fr, err := rw.file.memFile.Allocate(gapMR.Length(), pgalloc.AllocOpts{Kind: rw.file.memoryUsageKind})
 			if err != nil {
 				retErr = err
 				goto exitLoop

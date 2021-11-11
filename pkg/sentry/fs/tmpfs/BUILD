@@ -28,6 +28,7 @@ go_library(
         "//pkg/sentry/kernel/pipe",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/memmap",
+        "//pkg/sentry/pgalloc",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/usage",
         "//pkg/sync",

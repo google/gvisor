@@ -36,6 +36,8 @@
 package mm
 
 import (
+	"sync/atomic"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
@@ -254,6 +256,9 @@ type MemoryManager struct {
 
 // vma represents a virtual memory area.
 //
+// Note: new fields added to this struct must be added to vma.Copy and
+// vmaSetFunctions.Merge.
+//
 // +stateify savable
 type vma struct {
 	// mappable is the virtual memory object mapped by this vma. If mappable is
@@ -314,6 +319,13 @@ type vma struct {
 	// If hint is non-empty, it is a description of the vma printed in
 	// /proc/[pid]/maps. hint takes priority over id.MappedName().
 	hint string
+
+	// lastFault records the last address that was paged faulted. It hints at
+	// which direction addresses in this vma are being accessed.
+	//
+	// This field can be read atomically, and written with mm.activeMu locked for
+	// writing and mm.mapping locked.
+	lastFault uintptr
 }
 
 const (
@@ -401,6 +413,25 @@ func (v *vma) loadRealPerms(b int) {
 	}
 	if b&vmaGrowsDown > 0 {
 		v.growsDown = true
+	}
+}
+
+func (v *vma) copy() vma {
+	return vma{
+		mappable:       v.mappable,
+		off:            v.off,
+		realPerms:      v.realPerms,
+		effectivePerms: v.effectivePerms,
+		maxPerms:       v.maxPerms,
+		private:        v.private,
+		growsDown:      v.growsDown,
+		dontfork:       v.dontfork,
+		mlockMode:      v.mlockMode,
+		numaPolicy:     v.numaPolicy,
+		numaNodemask:   v.numaNodemask,
+		id:             v.id,
+		hint:           v.hint,
+		lastFault:      atomic.LoadUintptr(&v.lastFault),
 	}
 }
 

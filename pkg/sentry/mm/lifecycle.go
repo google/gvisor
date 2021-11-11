@@ -93,7 +93,7 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 	dontforks := false
 	dstvgap := mm2.vmas.FirstGap()
 	for srcvseg := mm.vmas.FirstSegment(); srcvseg.Ok(); srcvseg = srcvseg.NextSegment() {
-		vma := srcvseg.Value() // makes a copy of the vma
+		vma := srcvseg.ValuePtr().copy()
 		vmaAR := srcvseg.Range()
 
 		if vma.dontfork {

@@ -16,6 +16,7 @@ package mm
 
 import (
 	"fmt"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -412,15 +413,15 @@ func (mm *MemoryManager) removeVMAsLocked(ctx context.Context, ar hostarch.AddrR
 // canWriteMappableLocked is equivalent to Linux's VM_SHARED.
 //
 // Preconditions: mm.mappingMu must be locked.
-func (vma *vma) canWriteMappableLocked() bool {
-	return !vma.private && vma.maxPerms.Write
+func (v *vma) canWriteMappableLocked() bool {
+	return !v.private && v.maxPerms.Write
 }
 
 // isPrivateDataLocked identify the data segments - private, writable, not stack
 //
 // Preconditions: mm.mappingMu must be locked.
-func (vma *vma) isPrivateDataLocked() bool {
-	return vma.realPerms.Write && vma.private && !vma.growsDown
+func (v *vma) isPrivateDataLocked() bool {
+	return v.realPerms.Write && v.private && !v.growsDown
 }
 
 // vmaSetFunctions implements segment.Functions for vmaSet.
@@ -438,6 +439,7 @@ func (vmaSetFunctions) ClearValue(vma *vma) {
 	vma.mappable = nil
 	vma.id = nil
 	vma.hint = ""
+	atomic.StoreUintptr(&vma.lastFault, 0)
 }
 
 func (vmaSetFunctions) Merge(ar1 hostarch.AddrRange, vma1 vma, ar2 hostarch.AddrRange, vma2 vma) (vma, bool) {

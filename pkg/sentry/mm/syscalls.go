@@ -518,9 +518,8 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 		//
 		// We can't use createVMALocked because it calls Mappable.AddMapping,
 		// whereas we've already called Mappable.CopyMapping (which is
-		// consistent with Linux). Call vseg.Value() (rather than
-		// vseg.ValuePtr()) to make a copy of the vma.
-		vma := vseg.Value()
+		// consistent with Linux).
+		vma := vseg.ValuePtr().copy()
 		if vma.mappable != nil {
 			vma.off = vseg.mappableOffsetAt(oldAR.Start)
 		}
@@ -553,11 +552,8 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 	// 2. We can't call vma.mappable.RemoveMapping, because pmas are still at
 	// oldAR, so calling RemoveMapping could cause us to miss an invalidation
 	// overlapping oldAR.
-	//
-	// Call vseg.Value() (rather than vseg.ValuePtr()) to make a copy of the
-	// vma.
 	vseg = mm.vmas.Isolate(vseg, oldAR)
-	vma := vseg.Value()
+	vma := vseg.ValuePtr().copy()
 	mm.vmas.Remove(vseg)
 	vseg = mm.vmas.Insert(mm.vmas.FindGap(newAR.Start), newAR, vma)
 	mm.usageAS = mm.usageAS - uint64(oldAR.Length()) + uint64(newAR.Length())
