@@ -612,6 +612,16 @@ func TestStickyDir(t *testing.T) {
 	runIntegrationTest(t, nil, "./test_sticky")
 }
 
+func TestHostFD(t *testing.T) {
+	if vfs2Used, err := dockerutil.UsingVFS2(); err != nil {
+		t.Fatalf("failed to read config for runtime %s: %v", dockerutil.Runtime(), err)
+	} else if !vfs2Used {
+		t.Skip("test fails on VFS1.")
+	}
+
+	runIntegrationTest(t, nil, "./host_fd")
+}
+
 func runIntegrationTest(t *testing.T, capAdd []string, args ...string) {
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
