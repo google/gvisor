@@ -43,12 +43,12 @@ func fdReadVec(fd int, bufs [][]byte, control []byte, peek bool, maxlen int64) (
 	var msg unix.Msghdr
 	if len(control) != 0 {
 		msg.Control = &control[0]
-		msg.Controllen = uint64(len(control))
+		msg.SetControllen(len(control))
 	}
 
 	if len(iovecs) != 0 {
 		msg.Iov = &iovecs[0]
-		msg.Iovlen = uint64(len(iovecs))
+		msg.SetIovlen(len(iovecs))
 	}
 
 	rawN, _, e := unix.RawSyscall(unix.SYS_RECVMSG, uintptr(fd), uintptr(unsafe.Pointer(&msg)), flags)
@@ -66,10 +66,10 @@ func fdReadVec(fd int, bufs [][]byte, control []byte, peek bool, maxlen int64) (
 	controlTrunc = msg.Flags&unix.MSG_CTRUNC == unix.MSG_CTRUNC
 
 	if n > length {
-		return length, n, msg.Controllen, controlTrunc, nil
+		return length, n, uint64(msg.Controllen), controlTrunc, nil
 	}
 
-	return n, n, msg.Controllen, controlTrunc, nil
+	return n, n, uint64(msg.Controllen), controlTrunc, nil
 }
 
 // fdWriteVec sends from bufs to fd.
@@ -91,7 +91,7 @@ func fdWriteVec(fd int, bufs [][]byte, maxlen int64, truncate bool) (int64, int6
 	var msg unix.Msghdr
 	if len(iovecs) > 0 {
 		msg.Iov = &iovecs[0]
-		msg.Iovlen = uint64(len(iovecs))
+		msg.SetIovlen(len(iovecs))
 	}
 
 	n, _, e := unix.RawSyscall(unix.SYS_SENDMSG, uintptr(fd), uintptr(unsafe.Pointer(&msg)), unix.MSG_DONTWAIT|unix.MSG_NOSIGNAL)
