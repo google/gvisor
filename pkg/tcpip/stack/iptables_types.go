@@ -81,11 +81,6 @@ const (
 //
 // +stateify savable
 type IPTables struct {
-	// priorities maps each hook to a list of table names. The order of the
-	// list is the order in which each table should be visited for that
-	// hook. It is immutable.
-	priorities [NumHooks][]TableID
-
 	connections ConnTrack
 
 	// reaperDone can be signaled to stop the reaper goroutine.
