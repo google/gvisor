@@ -274,7 +274,7 @@ func (it *IPTables) CheckPrerouting(pkt *PacketBuffer, addressEP AddressableEndp
 		return true
 	}
 
-	pkt.tuple = it.connections.getConnOrMaybeInsertNoop(pkt)
+	pkt.tuple = it.connections.getConnAndUpdate(pkt)
 
 	for _, check := range [...]checkTableFn{
 		it.checkMangleRLocked,
@@ -349,7 +349,7 @@ func (it *IPTables) CheckOutput(pkt *PacketBuffer, r *Route, outNicName string) 
 		return true
 	}
 
-	pkt.tuple = it.connections.getConnOrMaybeInsertNoop(pkt)
+	pkt.tuple = it.connections.getConnAndUpdate(pkt)
 
 	for _, check := range [...]checkTableFn{
 		it.checkMangleRLocked,

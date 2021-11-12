@@ -35,7 +35,7 @@ func TestReap(t *testing.T) {
 	// the connection won't be considered established. Thus the timeout for
 	// reaping is unestablishedTimeout.
 	pkt1 := genTCPPacket()
-	pkt1.tuple = ct.getConnOrMaybeInsertNoop(pkt1)
+	pkt1.tuple = ct.getConnAndUpdate(pkt1)
 	// We set rt.routeInfo.Loop to avoid a panic when handlePacket calls
 	// rt.RequiresTXTransportChecksum.
 	var rt Route
@@ -49,7 +49,7 @@ func TestReap(t *testing.T) {
 	// lastUsed, but per #6748 didn't.
 	clock.Advance(unestablishedTimeout / 2)
 	pkt2 := genTCPPacket()
-	pkt2.tuple = ct.getConnOrMaybeInsertNoop(pkt2)
+	pkt2.tuple = ct.getConnAndUpdate(pkt2)
 	if pkt2.tuple.conn.handlePacket(pkt2, Output, &rt) {
 		t.Fatal("handlePacket() shouldn't perform any NAT")
 	}
