@@ -6,7 +6,8 @@ go_library(
     name = "sighandling",
     srcs = [
         "sighandling.go",
-        "sighandling_unsafe.go",
+        "sighandling_darwin.go",
+        "sighandling_linux_unsafe.go",
     ],
     visibility = ["//:sandbox"],
     deps = [
