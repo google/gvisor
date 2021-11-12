@@ -134,6 +134,7 @@ func (ct *ConnTrack) StateFields() []string {
 	return []string{
 		"seed",
 		"clock",
+		"rand",
 		"buckets",
 	}
 }
@@ -145,7 +146,8 @@ func (ct *ConnTrack) StateSave(stateSinkObject state.Sink) {
 	ct.beforeSave()
 	stateSinkObject.Save(0, &ct.seed)
 	stateSinkObject.Save(1, &ct.clock)
-	stateSinkObject.Save(2, &ct.buckets)
+	stateSinkObject.Save(2, &ct.rand)
+	stateSinkObject.Save(3, &ct.buckets)
 }
 
 func (ct *ConnTrack) afterLoad() {}
@@ -154,7 +156,8 @@ func (ct *ConnTrack) afterLoad() {}
 func (ct *ConnTrack) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &ct.seed)
 	stateSourceObject.Load(1, &ct.clock)
-	stateSourceObject.Load(2, &ct.buckets)
+	stateSourceObject.Load(2, &ct.rand)
+	stateSourceObject.Load(3, &ct.buckets)
 }
 
 func (bkt *bucket) StateTypeName() string {

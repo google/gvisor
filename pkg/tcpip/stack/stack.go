@@ -238,7 +238,7 @@ type Options struct {
 	// DefaultIPTables is an optional iptables rules constructor that is called
 	// if IPTables is nil. If both fields are nil, iptables will allow all
 	// traffic.
-	DefaultIPTables func(seed uint32, clock tcpip.Clock) *IPTables
+	DefaultIPTables func(clock tcpip.Clock, rand *rand.Rand) *IPTables
 
 	// SecureRNG is a cryptographically secure random number generator.
 	SecureRNG io.Reader
@@ -353,12 +353,11 @@ func New(opts Options) *Stack {
 	}
 	randomGenerator := rand.New(randSrc)
 
-	seed := randomGenerator.Uint32()
 	if opts.IPTables == nil {
 		if opts.DefaultIPTables == nil {
 			opts.DefaultIPTables = DefaultTables
 		}
-		opts.IPTables = opts.DefaultIPTables(seed, clock)
+		opts.IPTables = opts.DefaultIPTables(clock, randomGenerator)
 	}
 
 	opts.NUDConfigs.resetInvalidFields()
@@ -376,7 +375,7 @@ func New(opts Options) *Stack {
 		handleLocal:                  opts.HandleLocal,
 		tables:                       opts.IPTables,
 		icmpRateLimiter:              NewICMPRateLimiter(clock),
-		seed:                         seed,
+		seed:                         randomGenerator.Uint32(),
 		nudConfigs:                   opts.NUDConfigs,
 		uniqueIDGenerator:            opts.UniqueID,
 		nudDisp:                      opts.NUDDisp,
