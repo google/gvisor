@@ -149,9 +149,13 @@ func (cn *conn) timedOut(now tcpip.MonotonicTime) bool {
 }
 
 // update the connection tracking state.
-//
-// +checklocks:cn.stateMu
-func (cn *conn) updateLocked(pkt *PacketBuffer, reply bool) {
+func (cn *conn) update(pkt *PacketBuffer, reply bool) {
+	cn.stateMu.Lock()
+	defer cn.stateMu.Unlock()
+
+	// Mark the connection as having been used recently so it isn't reaped.
+	cn.lastUsed = cn.ct.clock.NowMonotonic()
+
 	if pkt.TransportProtocolNumber != header.TCPProtocolNumber {
 		return
 	}
@@ -394,60 +398,72 @@ func (ct *ConnTrack) init() {
 	ct.buckets = make([]bucket, numBuckets)
 }
 
-func (ct *ConnTrack) getConnOrMaybeInsertNoop(pkt *PacketBuffer) *tuple {
-	tid, isICMPError, ok := getTupleID(pkt)
-	if !ok {
-		return nil
+// getConnAndUpdate attempts to get a connection or creates one if no
+// connection exists for the packet and packet's protocol is trackable.
+//
+// If the packet's protocol is trackable, the connection's state is updated to
+// match the contents of the packet.
+func (ct *ConnTrack) getConnAndUpdate(pkt *PacketBuffer) *tuple {
+	// Get or (maybe) create a connection.
+	t := func() *tuple {
+		tid, isICMPError, ok := getTupleID(pkt)
+		if !ok {
+			return nil
+		}
+
+		bktID := ct.bucket(tid)
+
+		ct.mu.RLock()
+		bkt := &ct.buckets[bktID]
+		ct.mu.RUnlock()
+
+		now := ct.clock.NowMonotonic()
+		if t := bkt.connForTID(tid, now); t != nil {
+			return t
+		}
+
+		if isICMPError {
+			// Do not create a noop entry in response to an ICMP error.
+			return nil
+		}
+
+		bkt.mu.Lock()
+		defer bkt.mu.Unlock()
+
+		// Make sure a connection wasn't added between when we last checked the
+		// bucket and acquired the bucket's write lock.
+		if t := bkt.connForTIDRLocked(tid, now); t != nil {
+			return t
+		}
+
+		// This is the first packet we're seeing for the connection. Create an entry
+		// for this new connection.
+		conn := &conn{
+			ct:       ct,
+			original: tuple{tupleID: tid},
+			reply:    tuple{tupleID: tid.reply(), reply: true},
+			lastUsed: now,
+		}
+		conn.original.conn = conn
+		conn.reply.conn = conn
+
+		// For now, we only map an entry for the packet's original tuple as NAT may be
+		// performed on this connection. Until the packet goes through all the hooks
+		// and its final address/port is known, we cannot know what the response
+		// packet's addresses/ports will look like.
+		//
+		// This is okay because the destination cannot send its response until it
+		// receives the packet; the packet will only be received once all the hooks
+		// have been performed.
+		//
+		// See (*conn).finalize.
+		bkt.tuples.PushFront(&conn.original)
+		return &conn.original
+	}()
+	if t != nil {
+		t.conn.update(pkt, t.reply)
 	}
-
-	bktID := ct.bucket(tid)
-
-	ct.mu.RLock()
-	bkt := &ct.buckets[bktID]
-	ct.mu.RUnlock()
-
-	now := ct.clock.NowMonotonic()
-	if t := bkt.connForTID(tid, now); t != nil {
-		return t
-	}
-
-	if isICMPError {
-		// Do not create a noop entry in response to an ICMP error.
-		return nil
-	}
-
-	bkt.mu.Lock()
-	defer bkt.mu.Unlock()
-
-	// Make sure a connection wasn't added between when we last checked the
-	// bucket and acquired the bucket's write lock.
-	if t := bkt.connForTIDRLocked(tid, now); t != nil {
-		return t
-	}
-
-	// This is the first packet we're seeing for the connection. Create an entry
-	// for this new connection.
-	conn := &conn{
-		ct:       ct,
-		original: tuple{tupleID: tid},
-		reply:    tuple{tupleID: tid.reply(), reply: true},
-		lastUsed: now,
-	}
-	conn.original.conn = conn
-	conn.reply.conn = conn
-
-	// For now, we only map an entry for the packet's original tuple as NAT may be
-	// performed on this connection. Until the packet goes through all the hooks
-	// and its final address/port is known, we cannot know what the response
-	// packet's addresses/ports will look like.
-	//
-	// This is okay because the destination cannot send its response until it
-	// receives the packet; the packet will only be received once all the hooks
-	// have been performed.
-	//
-	// See (*conn).finalize.
-	bkt.tuples.PushFront(&conn.original)
-	return &conn.original
+	return t
 }
 
 func (ct *ConnTrack) connForTID(tid tupleID) *tuple {
@@ -669,13 +685,6 @@ func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, rt *Route) bool {
 	// packets are fragmented.
 
 	reply := pkt.tuple.reply
-
-	cn.stateMu.Lock()
-	// Mark the connection as having been used recently so it isn't reaped.
-	cn.lastUsed = cn.ct.clock.NowMonotonic()
-	// Update connection state.
-	cn.updateLocked(pkt, reply)
-	cn.stateMu.Unlock()
 
 	tid, performManip := func() (tupleID, bool) {
 		cn.mu.RLock()
