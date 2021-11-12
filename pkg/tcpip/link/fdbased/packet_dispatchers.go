@@ -284,13 +284,16 @@ func (d *recvMMsgDispatcher) dispatch() (bool, tcpip.Error) {
 		return false, err
 	}
 	// Process each of received packets.
+	// Keep a list of packets so we can DecRef outside of the loop.
+	var pkts stack.PacketBufferList
+
+	defer func() { pkts.DecRef() }()
 	for k := 0; k < nMsgs; k++ {
 		n := int(d.msgHdrs[k].Len)
-
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Data: d.bufs[k].pullViews(n),
 		})
-		defer pkt.DecRef()
+		pkts.PushBack(pkt)
 
 		// Mark that this iovec has been processed.
 		d.msgHdrs[k].Msg.Iovlen = 0
