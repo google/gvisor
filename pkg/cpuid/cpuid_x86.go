@@ -167,7 +167,7 @@ const (
 	X86FeatureOSPKE
 	X86FeatureWAITPKG
 	X86FeatureAVX512_VBMI2
-	_ // ecx bit 7 is reserved
+	X86FeatureCET_SS
 	X86FeatureGFNI
 	X86FeatureVAES
 	X86FeatureVPCLMULQDQ
@@ -236,8 +236,7 @@ const (
 	X86FeaturePERFCTR_TSC
 	X86FeaturePERFCTR_LLC
 	X86FeatureMWAITX
-	// TODO(b/152776797): Some CPUs set this but it is not documented anywhere.
-	X86FeatureBlock5Bit30
+	X86FeatureADMSKEXTN
 	_ // ecx bit 31 is reserved.
 )
 
@@ -443,7 +442,7 @@ var x86FeatureParseOnlyStrings = map[Feature]string{
 	X86FeaturePREFETCHWT1: "prefetchwt1",
 
 	// Block 5.
-	X86FeatureBlock5Bit30: "block5_bit30",
+	X86FeatureADMSKEXTN: "ad_msk_extn",
 }
 
 // intelCacheDescriptors describe the caches and TLBs on the system. They are
