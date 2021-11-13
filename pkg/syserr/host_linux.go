@@ -26,26 +26,21 @@ import (
 
 const maxErrno = 134
 
-type linuxHostTranslation struct {
-	err *Error
-	ok  bool
-}
-
-var linuxHostTranslations [maxErrno]linuxHostTranslation
+var linuxHostTranslations [maxErrno]*Error
 
 // FromHost translates a unix.Errno to a corresponding Error value.
 func FromHost(err unix.Errno) *Error {
-	if int(err) >= len(linuxHostTranslations) || !linuxHostTranslations[err].ok {
+	if int(err) >= len(linuxHostTranslations) || linuxHostTranslations[err] == nil {
 		panic(fmt.Sprintf("unknown host errno %q (%d)", err.Error(), err))
 	}
-	return linuxHostTranslations[err].err
+	return linuxHostTranslations[err]
 }
 
 func addHostTranslation(host unix.Errno, trans *Error) {
-	if linuxHostTranslations[host].ok {
+	if linuxHostTranslations[host] != nil {
 		panic(fmt.Sprintf("duplicate translation for host errno %q (%d)", host.Error(), host))
 	}
-	linuxHostTranslations[host] = linuxHostTranslation{err: trans, ok: true}
+	linuxHostTranslations[host] = trans
 }
 
 // TODO(b/34162363): Remove or replace most of these errors.

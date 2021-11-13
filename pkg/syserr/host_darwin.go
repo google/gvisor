@@ -25,26 +25,21 @@ import (
 
 const maxErrno = 107
 
-type darwinHostTranslation struct {
-	err *Error
-	ok  bool
-}
-
-var darwinHostTranslations [maxErrno]darwinHostTranslation
+var darwinHostTranslations [maxErrno]*Error
 
 // FromHost translates a unix.Errno to a corresponding Error value.
 func FromHost(err unix.Errno) *Error {
-	if int(err) >= len(darwinHostTranslations) || !darwinHostTranslations[err].ok {
+	if int(err) >= len(darwinHostTranslations) || darwinHostTranslations[err] == nil {
 		panic(fmt.Sprintf("unknown host errno %q (%d)", err.Error(), err))
 	}
-	return darwinHostTranslations[err].err
+	return darwinHostTranslations[err]
 }
 
 // TODO(gvisor.dev/issue/1270): We currently only add translations for errors
 // that exist both on Darwin and Linux.
 func addHostTranslation(host unix.Errno, trans *Error) {
-	if darwinHostTranslations[host].ok {
+	if darwinHostTranslations[host] != nil {
 		panic(fmt.Sprintf("duplicate translation for host errno %q (%d)", host.Error(), host))
 	}
-	darwinHostTranslations[host] = darwinHostTranslation{err: trans, ok: true}
+	darwinHostTranslations[host] = trans
 }
