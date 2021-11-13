@@ -24,7 +24,6 @@ func (f *File) beforeSave() {
 
 // afterLoad is invoked by stateify.
 func (f *File) afterLoad() {
-	f.mu.Init()
 	if f.flags.Async && f.async != nil {
 		f.async.Register(f)
 	}

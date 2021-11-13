@@ -18,7 +18,6 @@ import (
 	"math"
 	"sync/atomic"
 
-	"gvisor.dev/gvisor/pkg/amutex"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/refs"
@@ -91,7 +90,7 @@ type File struct {
 	// mu is dual-purpose: first, to make read(2) and write(2) thread-safe
 	// in conformity with POSIX, and second, to cancel operations before they
 	// begin in response to interruptions (i.e. signals).
-	mu amutex.AbortableMutex `state:"nosave"`
+	mu sync.Mutex `state:"nosave"`
 
 	// FileOperations implements file system specific behavior for this File.
 	FileOperations FileOperations `state:"wait"`
@@ -113,7 +112,6 @@ func NewFile(ctx context.Context, dirent *Dirent, flags FileFlags, fops FileOper
 		FileOperations: fops,
 		flags:          flags,
 	}
-	f.mu.Init()
 	f.EnableLeakCheck("fs.File")
 	return &f
 }
@@ -197,9 +195,7 @@ func (f *File) EventUnregister(e *waiter.Entry) {
 //
 // Returns linuxerr.ErrInterrupted if seeking was interrupted.
 func (f *File) Seek(ctx context.Context, whence SeekWhence, offset int64) (int64, error) {
-	if !f.mu.Lock(ctx) {
-		return 0, linuxerr.ErrInterrupted
-	}
+	f.mu.Lock()
 	defer f.mu.Unlock()
 
 	newOffset, err := f.FileOperations.Seek(ctx, f, whence, offset)
@@ -219,9 +215,7 @@ func (f *File) Seek(ctx context.Context, whence SeekWhence, offset int64) (int64
 //
 // Returns linuxerr.ErrInterrupted if reading was interrupted.
 func (f *File) Readdir(ctx context.Context, serializer DentrySerializer) error {
-	if !f.mu.Lock(ctx) {
-		return linuxerr.ErrInterrupted
-	}
+	f.mu.Lock()
 	defer f.mu.Unlock()
 
 	offset, err := f.FileOperations.Readdir(ctx, f, serializer)
@@ -236,17 +230,13 @@ func (f *File) Readdir(ctx context.Context, serializer DentrySerializer) error {
 func (f *File) Readv(ctx context.Context, dst usermem.IOSequence) (int64, error) {
 	start := fsmetric.StartReadWait()
 	defer fsmetric.FinishReadWait(fsmetric.ReadWait, start)
-
-	if !f.mu.Lock(ctx) {
-		return 0, linuxerr.ErrInterrupted
-	}
-
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	fsmetric.Reads.Increment()
 	n, err := f.FileOperations.Read(ctx, f, dst, f.offset)
 	if n > 0 && !f.flags.NonSeekable {
 		atomic.AddInt64(&f.offset, n)
 	}
-	f.mu.Unlock()
 	return n, err
 }
 
@@ -258,14 +248,10 @@ func (f *File) Readv(ctx context.Context, dst usermem.IOSequence) (int64, error)
 func (f *File) Preadv(ctx context.Context, dst usermem.IOSequence, offset int64) (int64, error) {
 	start := fsmetric.StartReadWait()
 	defer fsmetric.FinishReadWait(fsmetric.ReadWait, start)
-
-	if !f.mu.Lock(ctx) {
-		return 0, linuxerr.ErrInterrupted
-	}
-
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	fsmetric.Reads.Increment()
 	n, err := f.FileOperations.Read(ctx, f, dst, offset)
-	f.mu.Unlock()
 	return n, err
 }
 
@@ -278,15 +264,13 @@ func (f *File) Preadv(ctx context.Context, dst usermem.IOSequence, offset int64)
 //
 // Returns linuxerr.ErrInterrupted if writing was interrupted.
 func (f *File) Writev(ctx context.Context, src usermem.IOSequence) (int64, error) {
-	if !f.mu.Lock(ctx) {
-		return 0, linuxerr.ErrInterrupted
-	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	unlockAppendMu := f.Dirent.Inode.lockAppendMu(f.Flags().Append)
 	// Handle append mode.
 	if f.Flags().Append {
 		if err := f.offsetForAppend(ctx, &f.offset); err != nil {
 			unlockAppendMu()
-			f.mu.Unlock()
 			return 0, err
 		}
 	}
@@ -296,7 +280,6 @@ func (f *File) Writev(ctx context.Context, src usermem.IOSequence) (int64, error
 	switch {
 	case ok && limit == 0:
 		unlockAppendMu()
-		f.mu.Unlock()
 		return 0, linuxerr.ErrExceedsFileSizeLimit
 	case ok:
 		src = src.TakeFirst64(limit)
@@ -308,7 +291,6 @@ func (f *File) Writev(ctx context.Context, src usermem.IOSequence) (int64, error
 		atomic.StoreInt64(&f.offset, f.offset+n)
 	}
 	unlockAppendMu()
-	f.mu.Unlock()
 	return n, err
 }
 
@@ -383,11 +365,8 @@ func (f *File) checkLimit(ctx context.Context, offset int64) (int64, bool) {
 //
 // Returns linuxerr.ErrInterrupted if syncing was interrupted.
 func (f *File) Fsync(ctx context.Context, start int64, end int64, syncType SyncType) error {
-	if !f.mu.Lock(ctx) {
-		return linuxerr.ErrInterrupted
-	}
+	f.mu.Lock()
 	defer f.mu.Unlock()
-
 	return f.FileOperations.Fsync(ctx, f, start, end, syncType)
 }
 
@@ -395,11 +374,8 @@ func (f *File) Fsync(ctx context.Context, start int64, end int64, syncType SyncT
 //
 // Returns linuxerr.ErrInterrupted if syncing was interrupted.
 func (f *File) Flush(ctx context.Context) error {
-	if !f.mu.Lock(ctx) {
-		return linuxerr.ErrInterrupted
-	}
+	f.mu.Lock()
 	defer f.mu.Unlock()
-
 	return f.FileOperations.Flush(ctx, f)
 }
 
@@ -407,11 +383,8 @@ func (f *File) Flush(ctx context.Context) error {
 //
 // Returns linuxerr.ErrInterrupted if interrupted.
 func (f *File) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
-	if !f.mu.Lock(ctx) {
-		return linuxerr.ErrInterrupted
-	}
+	f.mu.Lock()
 	defer f.mu.Unlock()
-
 	return f.FileOperations.ConfigureMMap(ctx, f, opts)
 }
 
@@ -419,11 +392,8 @@ func (f *File) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
 //
 // Returns linuxerr.ErrInterrupted if interrupted.
 func (f *File) UnstableAttr(ctx context.Context) (UnstableAttr, error) {
-	if !f.mu.Lock(ctx) {
-		return UnstableAttr{}, linuxerr.ErrInterrupted
-	}
+	f.mu.Lock()
 	defer f.mu.Unlock()
-
 	return f.FileOperations.UnstableAttr(ctx, f)
 }
 

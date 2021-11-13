@@ -219,7 +219,6 @@ go_library(
         "//pkg/abi",
         "//pkg/abi/linux",
         "//pkg/abi/linux/errno",
-        "//pkg/amutex",
         "//pkg/bitmap",
         "//pkg/bits",
         "//pkg/bpf",
