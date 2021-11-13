@@ -13,7 +13,8 @@ func (s *SignalOperations) StateTypeName() string {
 func (s *SignalOperations) StateFields() []string {
 	return []string{
 		"target",
-		"mask",
+		"queue",
+		"entry",
 	}
 }
 
@@ -23,7 +24,8 @@ func (s *SignalOperations) beforeSave() {}
 func (s *SignalOperations) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.target)
-	stateSinkObject.Save(1, &s.mask)
+	stateSinkObject.Save(1, &s.queue)
+	stateSinkObject.Save(2, &s.entry)
 }
 
 func (s *SignalOperations) afterLoad() {}
@@ -31,7 +33,8 @@ func (s *SignalOperations) afterLoad() {}
 // +checklocksignore
 func (s *SignalOperations) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.target)
-	stateSourceObject.Load(1, &s.mask)
+	stateSourceObject.Load(1, &s.queue)
+	stateSourceObject.Load(2, &s.entry)
 }
 
 func init() {

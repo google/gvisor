@@ -17,7 +17,8 @@ func (sfd *SignalFileDescription) StateFields() []string {
 		"DentryMetadataFileDescriptionImpl",
 		"NoLockFD",
 		"target",
-		"mask",
+		"queue",
+		"entry",
 	}
 }
 
@@ -31,7 +32,8 @@ func (sfd *SignalFileDescription) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &sfd.DentryMetadataFileDescriptionImpl)
 	stateSinkObject.Save(3, &sfd.NoLockFD)
 	stateSinkObject.Save(4, &sfd.target)
-	stateSinkObject.Save(5, &sfd.mask)
+	stateSinkObject.Save(5, &sfd.queue)
+	stateSinkObject.Save(6, &sfd.entry)
 }
 
 func (sfd *SignalFileDescription) afterLoad() {}
@@ -43,7 +45,8 @@ func (sfd *SignalFileDescription) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &sfd.DentryMetadataFileDescriptionImpl)
 	stateSourceObject.Load(3, &sfd.NoLockFD)
 	stateSourceObject.Load(4, &sfd.target)
-	stateSourceObject.Load(5, &sfd.mask)
+	stateSourceObject.Load(5, &sfd.queue)
+	stateSourceObject.Load(6, &sfd.entry)
 }
 
 func init() {

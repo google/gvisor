@@ -99,8 +99,8 @@ func (p *pipeOperations) init() error {
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (p *pipeOperations) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
-	p.Queue.EventRegister(e, mask)
+func (p *pipeOperations) EventRegister(e *waiter.Entry) {
+	p.Queue.EventRegister(e)
 	fdnotifier.UpdateFD(int32(p.file.FD()))
 }
 

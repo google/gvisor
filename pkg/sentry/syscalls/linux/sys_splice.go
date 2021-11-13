@@ -57,10 +57,10 @@ func doSplice(t *kernel.Task, outFile, inFile *fs.File, opts fs.SpliceOpts, nonB
 		// these cases in turn before returning to the splice operation.
 		if inFile.Readiness(EventMaskRead) == 0 {
 			if inCh == nil {
-				inCh = make(chan struct{}, 1)
-				inW, _ := waiter.NewChannelEntry(inCh)
-				inFile.EventRegister(&inW, EventMaskRead)
-				defer inFile.EventUnregister(&inW)
+				var e waiter.Entry
+				e, inCh = waiter.NewChannelEntry(EventMaskRead)
+				inFile.EventRegister(&e)
+				defer inFile.EventUnregister(&e)
 				// Need to refresh readiness.
 				continue
 			}
@@ -73,10 +73,10 @@ func doSplice(t *kernel.Task, outFile, inFile *fs.File, opts fs.SpliceOpts, nonB
 		// can be "ready" but will reject writes of certain sizes with
 		// EWOULDBLOCK.
 		if outCh == nil {
-			outCh = make(chan struct{}, 1)
-			outW, _ := waiter.NewChannelEntry(outCh)
-			outFile.EventRegister(&outW, EventMaskWrite)
-			defer outFile.EventUnregister(&outW)
+			var e waiter.Entry
+			e, outCh = waiter.NewChannelEntry(EventMaskWrite)
+			outFile.EventRegister(&e)
+			defer outFile.EventUnregister(&e)
 			// We might be ready to write now. Try again before
 			// blocking.
 			continue

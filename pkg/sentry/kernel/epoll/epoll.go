@@ -113,7 +113,7 @@ type EventPoll struct {
 	// different lock to avoid circular lock acquisition order involving
 	// the wait queue mutexes and mu. The full order is mu, observed file
 	// wait queue mutex, then listsMu; this allows listsMu to be acquired
-	// when (*pollEntry).Callback is called.
+	// when (*pollEntry).NotifyEvent is called.
 	//
 	// An entry is always in one of the following lists:
 	//	readyList -- when there's a chance that it's ready to have
@@ -122,8 +122,8 @@ type EventPoll struct {
 	//		readEvents() functions always call the entry's file
 	//		Readiness() function to confirm it's ready.
 	//	waitingList -- when there's no chance that the entry is ready,
-	//		so it's waiting for the (*pollEntry).Callback to be called
-	//		on it before it gets moved to the readyList.
+	//		so it's waiting for the (*pollEntry).NotifyEvent to be
+	//		called on it before it gets moved to the readyList.
 	//	disabledList -- when the entry is disabled. This happens when
 	//		a one-shot entry gets delivered via readEvents().
 	listsMu      sync.Mutex `state:"nosave"`
@@ -275,11 +275,11 @@ func (e *EventPoll) ReadEvents(max int) []linux.EpollEvent {
 	return ret
 }
 
-// Callback implements waiter.EntryCallback.Callback.
+// NotifyEvent implements waiter.EventListener.NotifyEvent.
 //
-// Callback is called when one of the files we're polling becomes ready. It
+// NotifyEvent is called when one of the files we're polling becomes ready. It
 // moves said file to the readyList if it's currently in the waiting list.
-func (p *pollEntry) Callback(*waiter.Entry, waiter.EventMask) {
+func (p *pollEntry) NotifyEvent(waiter.EventMask) {
 	e := p.epoll
 
 	e.listsMu.Lock()
@@ -309,11 +309,12 @@ func (e *EventPoll) initEntryReadiness(entry *pollEntry) {
 
 	// Register for event notifications.
 	f := entry.id.File
-	f.EventRegister(&entry.waiter, entry.mask)
+	entry.waiter.Init(entry, entry.mask)
+	f.EventRegister(&entry.waiter)
 
 	// Check if the file happens to already be in a ready state.
 	if ready := f.Readiness(entry.mask) & entry.mask; ready != 0 {
-		entry.Callback(&entry.waiter, ready)
+		entry.NotifyEvent(ready)
 	}
 }
 
@@ -385,7 +386,7 @@ func (e *EventPoll) AddEntry(id FileIdentifier, flags EntryFlags, mask waiter.Ev
 		flags:    flags,
 		mask:     mask,
 	}
-	entry.waiter.Callback = entry
+	entry.waiter.Init(entry, mask)
 	e.files[id] = entry
 	entry.file = refs.NewWeakRef(id.File, entry)
 
@@ -408,7 +409,8 @@ func (e *EventPoll) UpdateEntry(id FileIdentifier, flags EntryFlags, mask waiter
 	}
 
 	// Unregister the old mask and remove entry from the list it's in, so
-	// (*pollEntry).Callback is guaranteed to not be called on this entry anymore.
+	// (*pollEntry).NotifyEvent is guaranteed to not be called on this
+	// entry anymore.
 	entry.id.File.EventUnregister(&entry.waiter)
 
 	// Remove entry from whatever list it's in. This ensure that no other

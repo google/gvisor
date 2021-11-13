@@ -3053,8 +3053,8 @@ func (e *endpoint) Stats() tcpip.EndpointStats {
 
 // Wait implements stack.TransportEndpoint.Wait.
 func (e *endpoint) Wait() {
-	waitEntry, notifyCh := waiter.NewChannelEntry(nil)
-	e.waiterQueue.EventRegister(&waitEntry, waiter.EventHUp)
+	waitEntry, notifyCh := waiter.NewChannelEntry(waiter.EventHUp)
+	e.waiterQueue.EventRegister(&waitEntry)
 	defer e.waiterQueue.EventUnregister(&waitEntry)
 	for {
 		e.LockUser()

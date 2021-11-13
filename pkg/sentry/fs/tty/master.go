@@ -128,8 +128,8 @@ func (mf *masterFileOperations) Release(ctx context.Context) {
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (mf *masterFileOperations) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
-	mf.t.ld.masterWaiter.EventRegister(e, mask)
+func (mf *masterFileOperations) EventRegister(e *waiter.Entry) {
+	mf.t.ld.masterWaiter.EventRegister(e)
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.

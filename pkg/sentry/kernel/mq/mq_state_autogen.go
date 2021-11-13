@@ -98,8 +98,7 @@ func (q *Queue) StateFields() []string {
 	return []string{
 		"owner",
 		"perms",
-		"senders",
-		"receivers",
+		"queue",
 		"messages",
 		"subscriber",
 		"messageCount",
@@ -116,14 +115,13 @@ func (q *Queue) StateSave(stateSinkObject state.Sink) {
 	q.beforeSave()
 	stateSinkObject.Save(0, &q.owner)
 	stateSinkObject.Save(1, &q.perms)
-	stateSinkObject.Save(2, &q.senders)
-	stateSinkObject.Save(3, &q.receivers)
-	stateSinkObject.Save(4, &q.messages)
-	stateSinkObject.Save(5, &q.subscriber)
-	stateSinkObject.Save(6, &q.messageCount)
-	stateSinkObject.Save(7, &q.maxMessageCount)
-	stateSinkObject.Save(8, &q.maxMessageSize)
-	stateSinkObject.Save(9, &q.byteCount)
+	stateSinkObject.Save(2, &q.queue)
+	stateSinkObject.Save(3, &q.messages)
+	stateSinkObject.Save(4, &q.subscriber)
+	stateSinkObject.Save(5, &q.messageCount)
+	stateSinkObject.Save(6, &q.maxMessageCount)
+	stateSinkObject.Save(7, &q.maxMessageSize)
+	stateSinkObject.Save(8, &q.byteCount)
 }
 
 func (q *Queue) afterLoad() {}
@@ -132,14 +130,13 @@ func (q *Queue) afterLoad() {}
 func (q *Queue) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &q.owner)
 	stateSourceObject.Load(1, &q.perms)
-	stateSourceObject.Load(2, &q.senders)
-	stateSourceObject.Load(3, &q.receivers)
-	stateSourceObject.Load(4, &q.messages)
-	stateSourceObject.Load(5, &q.subscriber)
-	stateSourceObject.Load(6, &q.messageCount)
-	stateSourceObject.Load(7, &q.maxMessageCount)
-	stateSourceObject.Load(8, &q.maxMessageSize)
-	stateSourceObject.Load(9, &q.byteCount)
+	stateSourceObject.Load(2, &q.queue)
+	stateSourceObject.Load(3, &q.messages)
+	stateSourceObject.Load(4, &q.subscriber)
+	stateSourceObject.Load(5, &q.messageCount)
+	stateSourceObject.Load(6, &q.maxMessageCount)
+	stateSourceObject.Load(7, &q.maxMessageSize)
+	stateSourceObject.Load(8, &q.byteCount)
 }
 
 func (m *Message) StateTypeName() string {

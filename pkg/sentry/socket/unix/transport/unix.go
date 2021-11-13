@@ -774,8 +774,8 @@ type baseEndpoint struct {
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (e *baseEndpoint) EventRegister(we *waiter.Entry, mask waiter.EventMask) {
-	e.Queue.EventRegister(we, mask)
+func (e *baseEndpoint) EventRegister(we *waiter.Entry) {
+	e.Queue.EventRegister(we)
 	e.Lock()
 	c := e.connected
 	e.Unlock()

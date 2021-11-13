@@ -12,9 +12,9 @@ func (e *Entry) StateTypeName() string {
 
 func (e *Entry) StateFields() []string {
 	return []string{
-		"Callback",
-		"mask",
 		"waiterEntry",
+		"eventListener",
+		"mask",
 	}
 }
 
@@ -23,18 +23,18 @@ func (e *Entry) beforeSave() {}
 // +checklocksignore
 func (e *Entry) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
-	stateSinkObject.Save(0, &e.Callback)
-	stateSinkObject.Save(1, &e.mask)
-	stateSinkObject.Save(2, &e.waiterEntry)
+	stateSinkObject.Save(0, &e.waiterEntry)
+	stateSinkObject.Save(1, &e.eventListener)
+	stateSinkObject.Save(2, &e.mask)
 }
 
 func (e *Entry) afterLoad() {}
 
 // +checklocksignore
 func (e *Entry) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &e.Callback)
-	stateSourceObject.Load(1, &e.mask)
-	stateSourceObject.Load(2, &e.waiterEntry)
+	stateSourceObject.Load(0, &e.waiterEntry)
+	stateSourceObject.Load(1, &e.eventListener)
+	stateSourceObject.Load(2, &e.mask)
 }
 
 func (q *Queue) StateTypeName() string {

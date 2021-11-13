@@ -150,8 +150,8 @@ func WaitEpoll(t *kernel.Task, fd int32, max int, timeoutInNanos int64) ([]linux
 		haveDeadline = true
 	}
 
-	w, ch := waiter.NewChannelEntry(nil)
-	e.EventRegister(&w, waiter.ReadableEvents)
+	w, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+	e.EventRegister(&w)
 	defer e.EventUnregister(&w)
 
 	// Try to read the events again until we succeed, timeout or get

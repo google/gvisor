@@ -265,7 +265,7 @@ func (*NoClockEvents) Readiness(mask waiter.EventMask) waiter.EventMask {
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (*NoClockEvents) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
+func (*NoClockEvents) EventRegister(e *waiter.Entry) {
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
@@ -473,8 +473,8 @@ func (t *Timer) init() {
 	// If t.kicker is nil, the Timer goroutine can't be running, so we can't
 	// race with it.
 	t.kicker = time.NewTimer(0)
-	t.entry, t.events = waiter.NewChannelEntry(nil)
-	t.clock.EventRegister(&t.entry, timerTickEvents)
+	t.entry, t.events = waiter.NewChannelEntry(timerTickEvents)
+	t.clock.EventRegister(&t.entry)
 	go t.runGoroutine() // S/R-SAFE: synchronized by t.mu
 }
 
