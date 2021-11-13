@@ -108,8 +108,8 @@ func (t *TimerOperations) Readiness(mask waiter.EventMask) waiter.EventMask {
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (t *TimerOperations) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
-	t.events.EventRegister(e, mask)
+func (t *TimerOperations) EventRegister(e *waiter.Entry) {
+	t.events.EventRegister(e)
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.

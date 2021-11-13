@@ -1182,8 +1182,8 @@ func TestNAT(t *testing.T) {
 	newEP := func(t *testing.T, s *stack.Stack, transProto tcpip.TransportProtocolNumber, netProto tcpip.NetworkProtocolNumber) (tcpip.Endpoint, chan struct{}) {
 		t.Helper()
 		var wq waiter.Queue
-		we, ch := waiter.NewChannelEntry(nil)
-		wq.EventRegister(&we, waiter.ReadableEvents)
+		we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+		wq.EventRegister(&we)
 		t.Cleanup(func() {
 			wq.EventUnregister(&we)
 		})
@@ -1647,8 +1647,8 @@ func TestNAT(t *testing.T) {
 						t.Errorf("accepted address mismatch (-want +got):\n%s", diff)
 					}
 
-					we, newCH := waiter.NewChannelEntry(nil)
-					wq.EventRegister(&we, waiter.ReadableEvents)
+					we, newCH := waiter.NewChannelEntry(waiter.ReadableEvents)
+					wq.EventRegister(&we)
 					return newEP, newCH
 				}
 			},

@@ -131,7 +131,7 @@ func (mnt *Mount) afterLoad() {
 func (epi *epollInterest) afterLoad() {
 	// Mark all epollInterests as ready after restore so that the next call to
 	// EpollInstance.ReadEvents() rechecks their readiness.
-	epi.Callback(nil, waiter.EventMaskFromLinux(epi.mask))
+	epi.waiter.NotifyEvent(waiter.EventMaskFromLinux(epi.mask))
 }
 
 // beforeSave is called by stateify.

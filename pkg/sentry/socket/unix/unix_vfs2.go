@@ -121,8 +121,8 @@ func (s *SocketVFS2) GetSockOpt(t *kernel.Task, level, name int, outPtr hostarch
 // connections are ready to be accept, it will block until one becomes ready.
 func (s *SocketVFS2) blockingAccept(t *kernel.Task, peerAddr *tcpip.FullAddress) (transport.Endpoint, *syserr.Error) {
 	// Register for notifications.
-	e, ch := waiter.NewChannelEntry(nil)
-	s.socketOpsCommon.EventRegister(&e, waiter.ReadableEvents)
+	e, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+	s.socketOpsCommon.EventRegister(&e)
 	defer s.socketOpsCommon.EventUnregister(&e)
 
 	// Try to accept the connection; if it fails, then wait until we get a
@@ -315,8 +315,8 @@ func (s *SocketVFS2) Readiness(mask waiter.EventMask) waiter.EventMask {
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (s *SocketVFS2) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
-	s.socketOpsCommon.EventRegister(e, mask)
+func (s *SocketVFS2) EventRegister(e *waiter.Entry) {
+	s.socketOpsCommon.EventRegister(e)
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.

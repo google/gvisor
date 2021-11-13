@@ -63,7 +63,7 @@ type regularFileFD struct {
 
 	// If copiedUp is false, lowerWaiters contains all waiter.Entries
 	// registered with cachedFD. lowerWaiters is protected by mu.
-	lowerWaiters map[*waiter.Entry]waiter.EventMask
+	lowerWaiters map[*waiter.Entry]struct{}
 }
 
 func (fd *regularFileFD) getCurrentFD(ctx context.Context) (*vfs.FileDescription, error) {
@@ -101,12 +101,10 @@ func (fd *regularFileFD) currentFDLocked(ctx context.Context) (*vfs.FileDescript
 		}
 		if len(fd.lowerWaiters) != 0 {
 			ready := upperFD.Readiness(^waiter.EventMask(0))
-			for e, mask := range fd.lowerWaiters {
+			for e := range fd.lowerWaiters {
 				fd.cachedFD.EventUnregister(e)
-				upperFD.EventRegister(e, mask)
-				if m := ready & mask; m != 0 {
-					e.Callback.Callback(e, m)
-				}
+				upperFD.EventRegister(e)
+				e.NotifyEvent(ready)
 			}
 		}
 		fd.cachedFD.DecRef(ctx)
@@ -256,7 +254,7 @@ func (fd *regularFileFD) Readiness(mask waiter.EventMask) waiter.EventMask {
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (fd *regularFileFD) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
+func (fd *regularFileFD) EventRegister(e *waiter.Entry) {
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
 	wrappedFD, err := fd.currentFDLocked(context.Background())
@@ -267,12 +265,12 @@ func (fd *regularFileFD) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
 		log.Warningf("overlay.regularFileFD.EventRegister: currentFDLocked failed: %v", err)
 		wrappedFD = fd.cachedFD
 	}
-	wrappedFD.EventRegister(e, mask)
+	wrappedFD.EventRegister(e)
 	if !fd.copiedUp {
 		if fd.lowerWaiters == nil {
-			fd.lowerWaiters = make(map[*waiter.Entry]waiter.EventMask)
+			fd.lowerWaiters = make(map[*waiter.Entry]struct{})
 		}
-		fd.lowerWaiters[e] = mask
+		fd.lowerWaiters[e] = struct{}{}
 	}
 }
 

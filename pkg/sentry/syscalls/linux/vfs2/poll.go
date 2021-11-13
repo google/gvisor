@@ -76,8 +76,8 @@ func initReadiness(t *kernel.Task, pfd *linux.PollFD, state *pollState, ch chan 
 		defer file.DecRef(t)
 	} else {
 		state.file = file
-		state.waiter, _ = waiter.NewChannelEntry(ch)
-		file.EventRegister(&state.waiter, waiter.EventMaskFromLinux(uint32(pfd.Events)))
+		state.waiter.Init(waiter.ChannelNotifier(ch), waiter.EventMaskFromLinux(uint32(pfd.Events)))
+		file.EventRegister(&state.waiter)
 	}
 
 	r := file.Readiness(waiter.EventMaskFromLinux(uint32(pfd.Events)))

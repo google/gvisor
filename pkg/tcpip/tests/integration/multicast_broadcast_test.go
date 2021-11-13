@@ -501,8 +501,8 @@ func TestReuseAddrAndBroadcast(t *testing.T) {
 				// packet.
 				for i := 0; i < 2; i++ {
 					var wq waiter.Queue
-					we, ch := waiter.NewChannelEntry(nil)
-					wq.EventRegister(&we, waiter.ReadableEvents)
+					we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+					wq.EventRegister(&we)
 					ep, err := s.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &wq)
 					if err != nil {
 						t.Fatalf("(eps[%d]) NewEndpoint(%d, %d, _): %s", len(eps), udp.ProtocolNumber, ipv4.ProtocolNumber, err)

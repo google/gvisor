@@ -266,8 +266,8 @@ func (efd *EventFileDescription) Readiness(mask waiter.EventMask) waiter.EventMa
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (efd *EventFileDescription) EventRegister(entry *waiter.Entry, mask waiter.EventMask) {
-	efd.queue.EventRegister(entry, mask)
+func (efd *EventFileDescription) EventRegister(entry *waiter.Entry) {
+	efd.queue.EventRegister(entry)
 
 	efd.mu.Lock()
 	defer efd.mu.Unlock()

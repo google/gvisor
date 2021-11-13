@@ -264,8 +264,8 @@ func (e *EventOperations) Readiness(mask waiter.EventMask) waiter.EventMask {
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (e *EventOperations) EventRegister(entry *waiter.Entry, mask waiter.EventMask) {
-	e.wq.EventRegister(entry, mask)
+func (e *EventOperations) EventRegister(entry *waiter.Entry) {
+	e.wq.EventRegister(entry)
 
 	e.mu.Lock()
 	defer e.mu.Unlock()

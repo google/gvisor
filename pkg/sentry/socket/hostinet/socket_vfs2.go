@@ -89,8 +89,8 @@ func (s *socketVFS2) Readiness(mask waiter.EventMask) waiter.EventMask {
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (s *socketVFS2) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
-	s.socketOpsCommon.EventRegister(e, mask)
+func (s *socketVFS2) EventRegister(e *waiter.Entry) {
+	s.socketOpsCommon.EventRegister(e)
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.

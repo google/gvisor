@@ -163,8 +163,8 @@ func (l *Locks) LockRegion(uid UniqueID, ownerPID int32, t LockType, r LockRange
 		// continue blocking.
 		res := l.locks.lock(uid, ownerPID, t, r)
 		if !res && block != nil {
-			e, ch := waiter.NewChannelEntry(nil)
-			l.blockedQueue.EventRegister(&e, EventMaskAll)
+			e, ch := waiter.NewChannelEntry(EventMaskAll)
+			l.blockedQueue.EventRegister(&e)
 			l.mu.Unlock()
 			if err := block.Block(ch); err != nil {
 				// We were interrupted, the caller can translate this to EINTR if applicable.

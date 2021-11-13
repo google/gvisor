@@ -692,8 +692,8 @@ func (c *Context) Connect(iss seqnum.Value, rcvWnd seqnum.Size, options []byte) 
 	c.t.Helper()
 
 	// Start connection attempt.
-	waitEntry, notifyCh := waiter.NewChannelEntry(nil)
-	c.WQ.EventRegister(&waitEntry, waiter.WritableEvents)
+	waitEntry, notifyCh := waiter.NewChannelEntry(waiter.WritableEvents)
+	c.WQ.EventRegister(&waitEntry)
 	defer c.WQ.EventUnregister(&waitEntry)
 
 	err := c.EP.Connect(tcpip.FullAddress{Addr: TestAddr, Port: TestPort})
@@ -911,8 +911,8 @@ func (c *Context) CreateConnectedWithOptions(wantOptions header.TCPSynOptions, d
 	}
 
 	// Start connection attempt.
-	waitEntry, notifyCh := waiter.NewChannelEntry(nil)
-	c.WQ.EventRegister(&waitEntry, waiter.WritableEvents)
+	waitEntry, notifyCh := waiter.NewChannelEntry(waiter.WritableEvents)
+	c.WQ.EventRegister(&waitEntry)
 	defer c.WQ.EventUnregister(&waitEntry)
 
 	testFullAddr := tcpip.FullAddress{Addr: TestAddr, Port: TestPort}
@@ -1082,8 +1082,8 @@ func (c *Context) AcceptWithOptions(wndScale int, synOptions header.TCPSynOption
 	rep := c.PassiveConnectWithOptions(100, wndScale, synOptions, delay)
 
 	// Try to accept the connection.
-	we, ch := waiter.NewChannelEntry(nil)
-	wq.EventRegister(&we, waiter.ReadableEvents)
+	we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+	wq.EventRegister(&we)
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)

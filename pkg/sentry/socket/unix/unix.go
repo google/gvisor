@@ -207,8 +207,8 @@ func (s *socketOpsCommon) Listen(t *kernel.Task, backlog int) *syserr.Error {
 // connections are ready to be accept, it will block until one becomes ready.
 func (s *SocketOperations) blockingAccept(t *kernel.Task, peerAddr *tcpip.FullAddress) (transport.Endpoint, *syserr.Error) {
 	// Register for notifications.
-	e, ch := waiter.NewChannelEntry(nil)
-	s.EventRegister(&e, waiter.ReadableEvents)
+	e, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+	s.EventRegister(&e)
 	defer s.EventUnregister(&e)
 
 	// Try to accept the connection; if it fails, then wait until we get a
@@ -502,8 +502,8 @@ func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []b
 
 	// We'll have to block. Register for notification and keep trying to
 	// send all the data.
-	e, ch := waiter.NewChannelEntry(nil)
-	s.EventRegister(&e, waiter.WritableEvents)
+	e, ch := waiter.NewChannelEntry(waiter.WritableEvents)
+	s.EventRegister(&e)
 	defer s.EventUnregister(&e)
 
 	total := n
@@ -544,8 +544,8 @@ func (s *socketOpsCommon) Readiness(mask waiter.EventMask) waiter.EventMask {
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (s *socketOpsCommon) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
-	s.ep.EventRegister(e, mask)
+func (s *socketOpsCommon) EventRegister(e *waiter.Entry) {
+	s.ep.EventRegister(e)
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
@@ -677,8 +677,8 @@ func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags 
 
 	// We'll have to block. Register for notification and keep trying to
 	// send all the data.
-	e, ch := waiter.NewChannelEntry(nil)
-	s.EventRegister(&e, waiter.ReadableEvents)
+	e, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+	s.EventRegister(&e)
 	defer s.EventUnregister(&e)
 
 	for {

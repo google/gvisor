@@ -892,8 +892,8 @@ func (f *fileDescription) ConfigureMMap(_ context.Context, opts *memmap.MMapOpts
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (f *fileDescription) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
-	f.inode.queue.EventRegister(e, mask)
+func (f *fileDescription) EventRegister(e *waiter.Entry) {
+	f.inode.queue.EventRegister(e)
 	if f.inode.mayBlock {
 		fdnotifier.UpdateFD(int32(f.inode.hostFD))
 	}

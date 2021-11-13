@@ -586,8 +586,8 @@ func (fd *FileDescription) Readiness(mask waiter.EventMask) waiter.EventMask {
 // EventRegister implements waiter.Waitable.EventRegister.
 //
 // It registers e for I/O readiness events in mask.
-func (fd *FileDescription) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
-	fd.impl.EventRegister(e, mask)
+func (fd *FileDescription) EventRegister(e *waiter.Entry) {
+	fd.impl.EventRegister(e)
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.

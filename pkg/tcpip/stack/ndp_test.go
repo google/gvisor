@@ -2964,8 +2964,8 @@ func addrForNewConnectionTo(t *testing.T, s *stack.Stack, addr tcpip.FullAddress
 	t.Helper()
 
 	wq := waiter.Queue{}
-	we, ch := waiter.NewChannelEntry(nil)
-	wq.EventRegister(&we, waiter.ReadableEvents)
+	we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+	wq.EventRegister(&we)
 	defer wq.EventUnregister(&we)
 	defer close(ch)
 	ep, err := s.NewEndpoint(header.UDPProtocolNumber, header.IPv6ProtocolNumber, &wq)
@@ -2998,8 +2998,8 @@ func addrForNewConnectionWithAddr(t *testing.T, s *stack.Stack, addr tcpip.FullA
 	t.Helper()
 
 	wq := waiter.Queue{}
-	we, ch := waiter.NewChannelEntry(nil)
-	wq.EventRegister(&we, waiter.ReadableEvents)
+	we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+	wq.EventRegister(&we)
 	defer wq.EventUnregister(&we)
 	defer close(ch)
 	ep, err := s.NewEndpoint(header.UDPProtocolNumber, header.IPv6ProtocolNumber, &wq)
@@ -3332,8 +3332,8 @@ func TestAutoGenAddrJobDeprecation(t *testing.T) {
 		t.Fatal(err)
 	}
 	wq := waiter.Queue{}
-	we, ch := waiter.NewChannelEntry(nil)
-	wq.EventRegister(&we, waiter.ReadableEvents)
+	we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+	wq.EventRegister(&we)
 	defer wq.EventUnregister(&we)
 	defer close(ch)
 	ep, err := s.NewEndpoint(header.UDPProtocolNumber, header.IPv6ProtocolNumber, &wq)
