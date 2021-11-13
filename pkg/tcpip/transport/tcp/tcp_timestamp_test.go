@@ -45,8 +45,8 @@ func TestTimeStampEnabledConnect(t *testing.T) {
 	rep := createConnectedWithTimestampOption(c)
 
 	// Register for read and validate that we have data to read.
-	we, ch := waiter.NewChannelEntry(nil)
-	c.WQ.EventRegister(&we, waiter.ReadableEvents)
+	we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+	c.WQ.EventRegister(&we)
 	defer c.WQ.EventUnregister(&we)
 
 	// The following tests ensure that TS option once enabled behaves
@@ -272,8 +272,8 @@ func TestSegmentNotDroppedWhenTimestampMissing(t *testing.T) {
 	rep := createConnectedWithTimestampOption(c)
 
 	// Register for read.
-	we, ch := waiter.NewChannelEntry(nil)
-	c.WQ.EventRegister(&we, waiter.ReadableEvents)
+	we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+	c.WQ.EventRegister(&we)
 	defer c.WQ.EventUnregister(&we)
 
 	droppedPacketsStat := c.Stack().Stats().DroppedPackets

@@ -101,8 +101,8 @@ func connect(s *stack.Stack, addr tcpip.FullAddress) (*testConnection, tcpip.Err
 		return nil, err
 	}
 
-	entry, ch := waiter.NewChannelEntry(nil)
-	wq.EventRegister(&entry, waiter.WritableEvents)
+	entry, ch := waiter.NewChannelEntry(waiter.WritableEvents)
+	wq.EventRegister(&entry)
 
 	err = ep.Connect(addr)
 	if _, ok := err.(*tcpip.ErrConnectStarted); ok {
@@ -114,7 +114,8 @@ func connect(s *stack.Stack, addr tcpip.FullAddress) (*testConnection, tcpip.Err
 	}
 
 	wq.EventUnregister(&entry)
-	wq.EventRegister(&entry, waiter.ReadableEvents)
+	entry, ch = waiter.NewChannelEntry(waiter.ReadableEvents)
+	wq.EventRegister(&entry)
 
 	return &testConnection{wq, &entry, ch, ep}, nil
 }

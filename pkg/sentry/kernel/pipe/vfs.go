@@ -228,8 +228,8 @@ func (fd *VFSPipeFD) Allocate(ctx context.Context, mode, offset, length uint64) 
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (fd *VFSPipeFD) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
-	fd.pipe.EventRegister(e, mask)
+func (fd *VFSPipeFD) EventRegister(e *waiter.Entry) {
+	fd.pipe.EventRegister(e)
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.

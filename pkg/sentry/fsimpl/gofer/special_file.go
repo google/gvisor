@@ -165,13 +165,13 @@ func (fd *specialFileFD) Readiness(mask waiter.EventMask) waiter.EventMask {
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (fd *specialFileFD) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
+func (fd *specialFileFD) EventRegister(e *waiter.Entry) {
 	if fd.haveQueue {
-		fd.queue.EventRegister(e, mask)
+		fd.queue.EventRegister(e)
 		fdnotifier.UpdateFD(fd.handle.fd)
 		return
 	}
-	fd.fileDescription.EventRegister(e, mask)
+	fd.fileDescription.EventRegister(e)
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.

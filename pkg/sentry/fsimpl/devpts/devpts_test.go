@@ -56,12 +56,6 @@ func TestSimpleMasterToReplica(t *testing.T) {
 	}
 }
 
-type callback func(*waiter.Entry, waiter.EventMask)
-
-func (cb callback) Callback(entry *waiter.Entry, mask waiter.EventMask) {
-	cb(entry, mask)
-}
-
 func TestEchoDeadlock(t *testing.T) {
 	ctx := contexttest.Context(t)
 	termios := linux.DefaultReplicaTermios
@@ -69,11 +63,11 @@ func TestEchoDeadlock(t *testing.T) {
 	ld := newLineDiscipline(termios)
 	outBytes := make([]byte, 32)
 	dst := usermem.BytesIOSequence(outBytes)
-	entry := &waiter.Entry{Callback: callback(func(*waiter.Entry, waiter.EventMask) {
+	entry := waiter.NewFunctionEntry(waiter.ReadableEvents, func(waiter.EventMask) {
 		ld.inputQueueRead(ctx, dst)
-	})}
-	ld.masterWaiter.EventRegister(entry, waiter.ReadableEvents)
-	defer ld.masterWaiter.EventUnregister(entry)
+	})
+	ld.masterWaiter.EventRegister(&entry)
+	defer ld.masterWaiter.EventUnregister(&entry)
 	inBytes := []byte("hello, tty\n")
 	n, err := ld.inputQueueWrite(ctx, usermem.BytesIOSequence(inBytes))
 	if err != nil {

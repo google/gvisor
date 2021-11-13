@@ -157,8 +157,8 @@ func (i *Inotify) Allocate(ctx context.Context, mode, offset, length uint64) err
 }
 
 // EventRegister implements waiter.Waitable.
-func (i *Inotify) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
-	i.queue.EventRegister(e, mask)
+func (i *Inotify) EventRegister(e *waiter.Entry) {
+	i.queue.EventRegister(e)
 }
 
 // EventUnregister implements waiter.Waitable.

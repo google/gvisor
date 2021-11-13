@@ -149,8 +149,8 @@ func newFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags, iops *i
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (f *fileOperations) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
-	f.iops.fileState.queue.EventRegister(e, mask)
+func (f *fileOperations) EventRegister(e *waiter.Entry) {
+	f.iops.fileState.queue.EventRegister(e)
 	fdnotifier.UpdateFD(int32(f.iops.fileState.FD()))
 }
 

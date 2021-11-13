@@ -45,8 +45,8 @@ func TestV4MappedConnectOnV6Only(t *testing.T) {
 
 func testV4Connect(t *testing.T, c *context.Context, checkers ...checker.NetworkChecker) {
 	// Start connection attempt.
-	we, ch := waiter.NewChannelEntry(nil)
-	c.WQ.EventRegister(&we, waiter.WritableEvents)
+	we, ch := waiter.NewChannelEntry(waiter.WritableEvents)
+	c.WQ.EventRegister(&we)
 	defer c.WQ.EventUnregister(&we)
 
 	err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestV4MappedAddr, Port: context.TestPort})
@@ -152,8 +152,8 @@ func TestV4ConnectWhenBoundToV4Mapped(t *testing.T) {
 
 func testV6Connect(t *testing.T, c *context.Context, checkers ...checker.NetworkChecker) {
 	// Start connection attempt to IPv6 address.
-	we, ch := waiter.NewChannelEntry(nil)
-	c.WQ.EventRegister(&we, waiter.WritableEvents)
+	we, ch := waiter.NewChannelEntry(waiter.WritableEvents)
+	c.WQ.EventRegister(&we)
 	defer c.WQ.EventUnregister(&we)
 
 	err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestV6Addr, Port: context.TestPort})
@@ -387,8 +387,8 @@ func testV4Accept(t *testing.T, c *context.Context) {
 	})
 
 	// Try to accept the connection.
-	we, ch := waiter.NewChannelEntry(nil)
-	c.WQ.EventRegister(&we, waiter.ReadableEvents)
+	we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+	c.WQ.EventRegister(&we)
 	defer c.WQ.EventUnregister(&we)
 
 	nep, _, err := c.EP.Accept(nil)
@@ -521,8 +521,8 @@ func TestV6AcceptOnV6(t *testing.T) {
 	})
 
 	// Try to accept the connection.
-	we, ch := waiter.NewChannelEntry(nil)
-	c.WQ.EventRegister(&we, waiter.ReadableEvents)
+	we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+	c.WQ.EventRegister(&we)
 	defer c.WQ.EventUnregister(&we)
 	var addr tcpip.FullAddress
 	_, _, err := c.EP.Accept(&addr)
@@ -608,8 +608,8 @@ func testV4ListenClose(t *testing.T, c *context.Context) {
 	}
 
 	// Try to accept the connection.
-	we, ch := waiter.NewChannelEntry(nil)
-	c.WQ.EventRegister(&we, waiter.ReadableEvents)
+	we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+	c.WQ.EventRegister(&we)
 	defer c.WQ.EventUnregister(&we)
 	nep, _, err := c.EP.Accept(nil)
 	if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {

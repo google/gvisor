@@ -19,15 +19,6 @@ import (
 	"testing"
 )
 
-type callbackStub struct {
-	f func(e *Entry, m EventMask)
-}
-
-// Callback implements EntryCallback.Callback.
-func (c *callbackStub) Callback(e *Entry, m EventMask) {
-	c.f(e, m)
-}
-
 func TestEmptyQueue(t *testing.T) {
 	var q Queue
 
@@ -36,8 +27,8 @@ func TestEmptyQueue(t *testing.T) {
 
 	// Register then unregister a waiter, then notify the queue.
 	cnt := 0
-	e := Entry{Callback: &callbackStub{func(*Entry, EventMask) { cnt++ }}}
-	q.EventRegister(&e, EventIn)
+	e := NewFunctionEntry(EventIn, func(EventMask) { cnt++ })
+	q.EventRegister(&e)
 	q.EventUnregister(&e)
 	q.Notify(EventIn)
 	if cnt != 0 {
@@ -49,8 +40,8 @@ func TestMask(t *testing.T) {
 	// Register a waiter.
 	var q Queue
 	var cnt int
-	e := Entry{Callback: &callbackStub{func(*Entry, EventMask) { cnt++ }}}
-	q.EventRegister(&e, EventIn|EventErr)
+	e := NewFunctionEntry(EventIn|EventErr, func(EventMask) { cnt++ })
+	q.EventRegister(&e)
 
 	// Notify with an overlapping mask.
 	cnt = 0
@@ -100,20 +91,16 @@ func TestConcurrentRegistration(t *testing.T) {
 	// Create goroutines that will all register/unregister concurrently.
 	for i := 0; i < concurrency; i++ {
 		go func() {
-			var e Entry
-			e.Callback = &callbackStub{func(entry *Entry, mask EventMask) {
+			e := NewFunctionEntry(EventIn|EventErr, func(mask EventMask) {
 				cnt++
-				if entry != &e {
-					t.Errorf("entry = %p, want %p", entry, &e)
-				}
 				if mask != EventIn {
 					t.Errorf("mask = %#x want %#x", mask, EventIn)
 				}
-			}}
+			})
 
 			// Wait for notification, then register.
 			<-ch1
-			q.EventRegister(&e, EventIn|EventErr)
+			q.EventRegister(&e)
 
 			// Tell main goroutine that we're done registering.
 			ch2 <- struct{}{}
@@ -160,18 +147,14 @@ func TestConcurrentNotification(t *testing.T) {
 
 	// Register waiters.
 	for i := 0; i < waiterCount; i++ {
-		var e Entry
-		e.Callback = &callbackStub{func(entry *Entry, mask EventMask) {
+		e := NewFunctionEntry(EventIn|EventErr, func(mask EventMask) {
 			atomic.AddInt32(&cnt, 1)
-			if entry != &e {
-				t.Errorf("entry = %p, want %p", entry, &e)
-			}
 			if mask != EventIn {
 				t.Errorf("mask = %#x want %#x", mask, EventIn)
 			}
-		}}
+		})
 
-		q.EventRegister(&e, EventIn|EventErr)
+		q.EventRegister(&e)
 	}
 
 	// Launch notifiers.

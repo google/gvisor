@@ -1094,9 +1094,9 @@ func (*runInterruptAfterSignalDeliveryStop) execute(t *Task) taskRunState {
 }
 
 // SignalRegister registers a waiter for pending signals.
-func (t *Task) SignalRegister(e *waiter.Entry, mask waiter.EventMask) {
+func (t *Task) SignalRegister(e *waiter.Entry) {
 	t.tg.signalHandlers.mu.Lock()
-	t.signalQueue.EventRegister(e, mask)
+	t.signalQueue.EventRegister(e)
 	t.tg.signalHandlers.mu.Unlock()
 }
 

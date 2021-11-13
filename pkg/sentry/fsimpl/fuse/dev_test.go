@@ -180,8 +180,8 @@ func ReadTest(serverTask *kernel.Task, fd *vfs.FileDescription, inIOseq usermem.
 	dev := fd.Impl().(*DeviceFD)
 
 	// Register for notifications.
-	w, ch := waiter.NewChannelEntry(nil)
-	dev.EventRegister(&w, waiter.ReadableEvents)
+	w, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+	dev.EventRegister(&w)
 	for {
 		// Issue the request and break out if it completes with anything other than
 		// "would block".

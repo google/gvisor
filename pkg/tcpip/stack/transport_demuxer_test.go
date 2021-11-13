@@ -353,8 +353,8 @@ func TestBindToDeviceDistribution(t *testing.T) {
 					for i, endpoint := range test.endpoints {
 						// Try to receive the data.
 						wq := waiter.Queue{}
-						we, ch := waiter.NewChannelEntry(nil)
-						wq.EventRegister(&we, waiter.ReadableEvents)
+						we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+						wq.EventRegister(&we)
 						t.Cleanup(func() {
 							wq.EventUnregister(&we)
 							close(ch)

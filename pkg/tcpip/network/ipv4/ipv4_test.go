@@ -2724,8 +2724,8 @@ func TestReceiveFragments(t *testing.T) {
 			}
 
 			wq := waiter.Queue{}
-			we, ch := waiter.NewChannelEntry(nil)
-			wq.EventRegister(&we, waiter.ReadableEvents)
+			we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+			wq.EventRegister(&we)
 			defer wq.EventUnregister(&we)
 			defer close(ch)
 			ep, err := s.NewEndpoint(udp.ProtocolNumber, header.IPv4ProtocolNumber, &wq)

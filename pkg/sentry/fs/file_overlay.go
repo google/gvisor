@@ -100,14 +100,14 @@ func (f *overlayFileOperations) Release(ctx context.Context) {
 }
 
 // EventRegister implements FileOperations.EventRegister.
-func (f *overlayFileOperations) EventRegister(we *waiter.Entry, mask waiter.EventMask) {
+func (f *overlayFileOperations) EventRegister(we *waiter.Entry) {
 	f.upperMu.Lock()
 	defer f.upperMu.Unlock()
 	if f.upper != nil {
-		f.upper.EventRegister(we, mask)
+		f.upper.EventRegister(we)
 		return
 	}
-	f.lower.EventRegister(we, mask)
+	f.lower.EventRegister(we)
 }
 
 // EventUnregister implements FileOperations.Unregister.

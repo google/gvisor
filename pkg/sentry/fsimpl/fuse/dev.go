@@ -378,8 +378,8 @@ func (fd *DeviceFD) readinessLocked(mask waiter.EventMask) waiter.EventMask {
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (fd *DeviceFD) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
-	fd.waitQueue.EventRegister(e, mask)
+func (fd *DeviceFD) EventRegister(e *waiter.Entry) {
+	fd.waitQueue.EventRegister(e)
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.

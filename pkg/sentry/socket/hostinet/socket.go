@@ -216,8 +216,8 @@ func (s *socketOpsCommon) Readiness(mask waiter.EventMask) waiter.EventMask {
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (s *socketOpsCommon) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
-	s.queue.EventRegister(e, mask)
+func (s *socketOpsCommon) EventRegister(e *waiter.Entry) {
+	s.queue.EventRegister(e)
 	_ = fdnotifier.UpdateFD(int32(s.fd))
 }
 
@@ -249,9 +249,9 @@ func (s *socketOpsCommon) Connect(t *kernel.Task, sockaddr []byte, blocking bool
 	// level SOL-SOCKET to determine whether connect() completed successfully
 	// (SO_ERROR is zero) or unsuccessfully (SO_ERROR is one of the usual error
 	// codes listed here, explaining the reason for the failure)." - connect(2)
-	e, ch := waiter.NewChannelEntry(nil)
 	writableMask := waiter.WritableEvents
-	s.EventRegister(&e, writableMask)
+	e, ch := waiter.NewChannelEntry(writableMask)
+	s.EventRegister(&e)
 	defer s.EventUnregister(&e)
 	if s.Readiness(writableMask)&writableMask == 0 {
 		if err := t.Block(ch); err != nil {
@@ -294,8 +294,8 @@ func (s *socketOpsCommon) Accept(t *kernel.Task, peerRequested bool, flags int, 
 				}
 			} else {
 				var e waiter.Entry
-				e, ch = waiter.NewChannelEntry(nil)
-				s.EventRegister(&e, waiter.ReadableEvents)
+				e, ch = waiter.NewChannelEntry(waiter.ReadableEvents)
+				s.EventRegister(&e)
 				defer s.EventUnregister(&e)
 			}
 			fd, syscallErr = accept4(s.fd, peerAddrPtr, peerAddrlenPtr, unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC)
@@ -546,8 +546,8 @@ func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags 
 				}
 			} else {
 				var e waiter.Entry
-				e, ch = waiter.NewChannelEntry(nil)
-				s.EventRegister(&e, waiter.ReadableEvents)
+				e, ch = waiter.NewChannelEntry(waiter.ReadableEvents)
+				s.EventRegister(&e)
 				defer s.EventUnregister(&e)
 			}
 			n, err = copyToDst()
@@ -721,8 +721,8 @@ func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []b
 				}
 			} else {
 				var e waiter.Entry
-				e, ch = waiter.NewChannelEntry(nil)
-				s.EventRegister(&e, waiter.WritableEvents)
+				e, ch = waiter.NewChannelEntry(waiter.WritableEvents)
+				s.EventRegister(&e)
 				defer s.EventUnregister(&e)
 			}
 			n, err = src.CopyInTo(t, sendmsgFromBlocks)

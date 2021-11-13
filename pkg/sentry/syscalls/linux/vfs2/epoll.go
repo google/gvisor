@@ -163,8 +163,8 @@ func waitEpoll(t *kernel.Task, epfd int32, eventsAddr hostarch.Addr, maxEvents i
 		// expires, or an interrupt arrives.
 		if ch == nil {
 			var w waiter.Entry
-			w, ch = waiter.NewChannelEntry(nil)
-			epfile.EventRegister(&w, waiter.ReadableEvents)
+			w, ch = waiter.NewChannelEntry(waiter.ReadableEvents)
+			epfile.EventRegister(&w)
 			defer epfile.EventUnregister(&w)
 		} else {
 			// Set up the timer if a timeout was specified.

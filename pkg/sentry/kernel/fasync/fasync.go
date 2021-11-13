@@ -95,8 +95,8 @@ type FileAsync struct {
 	recipientT  *kernel.Task
 }
 
-// Callback sends a signal.
-func (a *FileAsync) Callback(e *waiter.Entry, mask waiter.EventMask) {
+// NotifyEvent implements waiter.EventListener.NotifyEvent.
+func (a *FileAsync) NotifyEvent(mask waiter.EventMask) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if !a.registered {
@@ -149,19 +149,14 @@ func (a *FileAsync) Register(w waiter.Waitable) {
 	a.regMu.Lock()
 	defer a.regMu.Unlock()
 	a.mu.Lock()
-
 	if a.registered {
 		a.mu.Unlock()
 		panic("registering already registered file")
 	}
-
-	if a.e.Callback == nil {
-		a.e.Callback = a
-	}
+	a.e.Init(a, waiter.ReadableEvents|waiter.WritableEvents|waiter.EventErr|waiter.EventHUp)
 	a.registered = true
-
 	a.mu.Unlock()
-	w.EventRegister(&a.e, waiter.ReadableEvents|waiter.WritableEvents|waiter.EventErr|waiter.EventHUp)
+	w.EventRegister(&a.e)
 }
 
 // Unregister stops monitoring a file.

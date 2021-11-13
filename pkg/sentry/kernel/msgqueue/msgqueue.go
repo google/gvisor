@@ -277,8 +277,8 @@ func (q *Queue) Send(ctx context.Context, m Message, b Blocker, wait bool, pid i
 	// Slow path: at this point, the queue was found to be full, and we were
 	// asked to block.
 
-	e, ch := waiter.NewChannelEntry(nil)
-	q.senders.EventRegister(&e, waiter.EventOut)
+	e, ch := waiter.NewChannelEntry(waiter.EventOut)
+	q.senders.EventRegister(&e)
 	defer q.senders.EventUnregister(&e)
 
 	// Note: we need to check again before blocking the first time since space
@@ -373,8 +373,8 @@ func (q *Queue) Receive(ctx context.Context, b Blocker, mType int64, maxSize int
 	// Slow path: at this point, the queue was found to be empty, and we were
 	// asked to block.
 
-	e, ch := waiter.NewChannelEntry(nil)
-	q.receivers.EventRegister(&e, waiter.EventIn)
+	e, ch := waiter.NewChannelEntry(waiter.EventIn)
+	q.receivers.EventRegister(&e)
 	defer q.receivers.EventUnregister(&e)
 
 	// Note: we need to check again before blocking the first time since a

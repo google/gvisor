@@ -32,7 +32,6 @@ import (
 //
 // +stateify savable
 type SignalOperations struct {
-	fsutil.FileNoopRelease          `state:"nosave"`
 	fsutil.FilePipeSeek             `state:"nosave"`
 	fsutil.FileNotDirReaddir        `state:"nosave"`
 	fsutil.FileNoIoctl              `state:"nosave"`
@@ -52,11 +51,14 @@ type SignalOperations struct {
 	// will undoubtedly become very complicated quickly.
 	target *kernel.Task
 
+	// queue is the set of listeners.
+	queue waiter.Queue
+
 	// mu protects below.
 	mu sync.Mutex `state:"nosave"`
 
-	// mask is the signal mask. Protected by mu.
-	mask linux.SignalSet
+	// entry is the entry reigstered with the target.
+	entry waiter.Entry
 }
 
 // New creates a new signalfd object with the supplied mask.
@@ -68,28 +70,31 @@ func New(ctx context.Context, mask linux.SignalSet) (*fs.File, error) {
 	}
 	// name matches fs/signalfd.c:signalfd4.
 	dirent := fs.NewDirent(ctx, anon.NewInode(ctx), "anon_inode:[signalfd]")
-	return fs.NewFile(ctx, dirent, fs.FileFlags{Read: true, Write: true}, &SignalOperations{
-		target: t,
-		mask:   mask,
-	}), nil
+	s := &SignalOperations{target: t}
+	s.entry.Init(s, waiter.EventMask(mask))
+	s.target.SignalRegister(&s.entry)
+	return fs.NewFile(ctx, dirent, fs.FileFlags{Read: true, Write: true}, s), nil
 }
 
 // Release implements fs.FileOperations.Release.
-func (s *SignalOperations) Release(context.Context) {}
+func (s *SignalOperations) Release(context.Context) {
+	s.target.SignalUnregister(&s.entry)
+}
 
 // Mask returns the signal mask.
 func (s *SignalOperations) Mask() linux.SignalSet {
 	s.mu.Lock()
-	mask := s.mask
-	s.mu.Unlock()
-	return mask
+	defer s.mu.Unlock()
+	return linux.SignalSet(s.entry.Mask())
 }
 
 // SetMask sets the signal mask.
 func (s *SignalOperations) SetMask(mask linux.SignalSet) {
 	s.mu.Lock()
-	s.mask = mask
-	s.mu.Unlock()
+	defer s.mu.Unlock()
+	s.target.SignalUnregister(&s.entry)
+	s.entry.Init(s, waiter.EventMask(mask))
+	s.target.SignalRegister(&s.entry)
 }
 
 // Read implements fs.FileOperations.Read.
@@ -129,13 +134,16 @@ func (s *SignalOperations) Readiness(mask waiter.EventMask) waiter.EventMask {
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (s *SignalOperations) EventRegister(entry *waiter.Entry, _ waiter.EventMask) {
-	// Register for the signal set; ignore the passed events.
-	s.target.SignalRegister(entry, waiter.EventMask(s.Mask()))
+func (s *SignalOperations) EventRegister(e *waiter.Entry) {
+	s.queue.EventRegister(e)
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
-func (s *SignalOperations) EventUnregister(entry *waiter.Entry) {
-	// Unregister the original entry.
-	s.target.SignalUnregister(entry)
+func (s *SignalOperations) EventUnregister(e *waiter.Entry) {
+	s.queue.EventUnregister(e)
+}
+
+// NotifyEvent implements waiter.EventListener.NotifyEvent.
+func (s *SignalOperations) NotifyEvent(mask waiter.EventMask) {
+	s.queue.Notify(waiter.EventIn)
 }

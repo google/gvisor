@@ -855,8 +855,8 @@ func (t *Task) Wait(opts *WaitOptions) (*WaitResult, error) {
 	if opts.BlockInterruptErr == nil {
 		return t.waitOnce(opts)
 	}
-	w, ch := waiter.NewChannelEntry(nil)
-	t.tg.eventQueue.EventRegister(&w, opts.Events)
+	w, ch := waiter.NewChannelEntry(opts.Events)
+	t.tg.eventQueue.EventRegister(&w)
 	defer t.tg.eventQueue.EventUnregister(&w)
 	for {
 		wr, err := t.waitOnce(opts)

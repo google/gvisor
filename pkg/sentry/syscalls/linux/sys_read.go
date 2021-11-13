@@ -313,8 +313,8 @@ func readv(t *kernel.Task, f *fs.File, dst usermem.IOSequence) (int64, error) {
 	}
 
 	// Register for notifications.
-	w, ch := waiter.NewChannelEntry(nil)
-	f.EventRegister(&w, EventMaskRead)
+	w, ch := waiter.NewChannelEntry(EventMaskRead)
+	f.EventRegister(&w)
 
 	total := n
 	for {
@@ -359,8 +359,8 @@ func preadv(t *kernel.Task, f *fs.File, dst usermem.IOSequence, offset int64) (i
 	}
 
 	// Register for notifications.
-	w, ch := waiter.NewChannelEntry(nil)
-	f.EventRegister(&w, EventMaskRead)
+	w, ch := waiter.NewChannelEntry(EventMaskRead)
+	f.EventRegister(&w)
 
 	total := n
 	for {

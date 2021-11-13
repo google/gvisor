@@ -283,8 +283,8 @@ func writev(t *kernel.Task, f *fs.File, src usermem.IOSequence) (int64, error) {
 	}
 
 	// Register for notifications.
-	w, ch := waiter.NewChannelEntry(nil)
-	f.EventRegister(&w, EventMaskWrite)
+	w, ch := waiter.NewChannelEntry(EventMaskWrite)
+	f.EventRegister(&w)
 
 	total := n
 	for {
@@ -329,8 +329,8 @@ func pwritev(t *kernel.Task, f *fs.File, src usermem.IOSequence, offset int64) (
 	}
 
 	// Register for notifications.
-	w, ch := waiter.NewChannelEntry(nil)
-	f.EventRegister(&w, EventMaskWrite)
+	w, ch := waiter.NewChannelEntry(EventMaskWrite)
+	f.EventRegister(&w)
 
 	total := n
 	for {

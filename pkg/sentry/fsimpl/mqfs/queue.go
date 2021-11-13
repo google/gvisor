@@ -135,8 +135,8 @@ func (fd *queueFD) Readiness(mask waiter.EventMask) waiter.EventMask {
 }
 
 // EventRegister implements Waitable.EventRegister.
-func (fd *queueFD) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
-	fd.queue.EventRegister(e, mask)
+func (fd *queueFD) EventRegister(e *waiter.Entry) {
+	fd.queue.EventRegister(e)
 }
 
 // EventUnregister implements Waitable.EventUnregister.

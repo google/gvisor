@@ -263,13 +263,8 @@ type Queue struct {
 	// mu protects all the fields below.
 	mu sync.Mutex `state:"nosave"`
 
-	// senders is a queue of currently blocked senders. Senders are notified
-	// when space isi available in the queue for a new message.
-	senders waiter.Queue
-
-	// receivers is a queue of currently blocked receivers. Receivers are
-	// notified when a new message is inserted in the queue.
-	receivers waiter.Queue
+	// queue is the queue of waiters.
+	queue waiter.Queue
 
 	// messages is a list of messages currently in the queue.
 	messages msgList
@@ -423,25 +418,17 @@ func (q *Queue) Readiness(mask waiter.EventMask) waiter.EventMask {
 }
 
 // EventRegister implements Waitable.EventRegister.
-func (q *Queue) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
+func (q *Queue) EventRegister(e *waiter.Entry) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-
-	if mask&waiter.WritableEvents != 0 {
-		q.senders.EventRegister(e, waiter.EventOut)
-	}
-	if mask&waiter.ReadableEvents != 0 {
-		q.receivers.EventRegister(e, waiter.EventIn)
-	}
+	q.queue.EventRegister(e)
 }
 
 // EventUnregister implements Waitable.EventUnregister.
 func (q *Queue) EventUnregister(e *waiter.Entry) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-
-	q.senders.EventUnregister(e)
-	q.receivers.EventUnregister(e)
+	q.queue.EventUnregister(e)
 }
 
 // HasPermissions returns true if the given credentials meet the access

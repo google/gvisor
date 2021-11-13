@@ -182,8 +182,8 @@ func (f *File) Readiness(mask waiter.EventMask) waiter.EventMask {
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (f *File) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
-	f.FileOperations.EventRegister(e, mask)
+func (f *File) EventRegister(e *waiter.Entry) {
+	f.FileOperations.EventRegister(e)
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.

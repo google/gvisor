@@ -44,11 +44,14 @@ type SignalFileDescription struct {
 	// will undoubtedly become very complicated quickly.
 	target *kernel.Task
 
-	// mu protects mask.
+	// queue is the queue for listeners.
+	queue waiter.Queue
+
+	// mu protects entry.
 	mu sync.Mutex `state:"nosave"`
 
-	// mask is the signal mask. Protected by mu.
-	mask linux.SignalSet
+	// entry is the entry in the task signal queue.
+	entry waiter.Entry
 }
 
 var _ vfs.FileDescriptionImpl = (*SignalFileDescription)(nil)
@@ -59,13 +62,15 @@ func New(vfsObj *vfs.VirtualFilesystem, target *kernel.Task, mask linux.SignalSe
 	defer vd.DecRef(target)
 	sfd := &SignalFileDescription{
 		target: target,
-		mask:   mask,
 	}
+	sfd.entry.Init(sfd, waiter.EventMask(mask))
+	sfd.target.SignalRegister(&sfd.entry)
 	if err := sfd.vfsfd.Init(sfd, flags, vd.Mount(), vd.Dentry(), &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
 		DenyPRead:         true,
 		DenyPWrite:        true,
 	}); err != nil {
+		sfd.target.SignalUnregister(&sfd.entry)
 		return nil, err
 	}
 	return &sfd.vfsfd, nil
@@ -75,14 +80,16 @@ func New(vfsObj *vfs.VirtualFilesystem, target *kernel.Task, mask linux.SignalSe
 func (sfd *SignalFileDescription) Mask() linux.SignalSet {
 	sfd.mu.Lock()
 	defer sfd.mu.Unlock()
-	return sfd.mask
+	return linux.SignalSet(sfd.entry.Mask())
 }
 
 // SetMask sets the signal mask.
 func (sfd *SignalFileDescription) SetMask(mask linux.SignalSet) {
 	sfd.mu.Lock()
 	defer sfd.mu.Unlock()
-	sfd.mask = mask
+	sfd.target.SignalUnregister(&sfd.entry)
+	sfd.entry.Init(sfd, waiter.EventMask(mask))
+	sfd.target.SignalRegister(&sfd.entry)
 }
 
 // Read implements vfs.FileDescriptionImpl.Read.
@@ -117,25 +124,28 @@ func (sfd *SignalFileDescription) Read(ctx context.Context, dst usermem.IOSequen
 func (sfd *SignalFileDescription) Readiness(mask waiter.EventMask) waiter.EventMask {
 	sfd.mu.Lock()
 	defer sfd.mu.Unlock()
-	if mask&waiter.ReadableEvents != 0 && sfd.target.PendingSignals()&sfd.mask != 0 {
+	if mask&waiter.ReadableEvents != 0 && sfd.target.PendingSignals()&linux.SignalSet(sfd.entry.Mask()) != 0 {
 		return waiter.ReadableEvents // Pending signals.
 	}
 	return 0
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (sfd *SignalFileDescription) EventRegister(entry *waiter.Entry, _ waiter.EventMask) {
-	sfd.mu.Lock()
-	defer sfd.mu.Unlock()
-	// Register for the signal set; ignore the passed events.
-	sfd.target.SignalRegister(entry, waiter.EventMask(sfd.mask))
+func (sfd *SignalFileDescription) EventRegister(e *waiter.Entry) {
+	sfd.queue.EventRegister(e)
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
-func (sfd *SignalFileDescription) EventUnregister(entry *waiter.Entry) {
-	// Unregister the original entry.
-	sfd.target.SignalUnregister(entry)
+func (sfd *SignalFileDescription) EventUnregister(e *waiter.Entry) {
+	sfd.queue.EventUnregister(e)
+}
+
+// NotifyEvent implements waiter.EventListener.NotifyEvent.
+func (sfd *SignalFileDescription) NotifyEvent(mask waiter.EventMask) {
+	sfd.queue.Notify(waiter.EventIn) // Always notify data available.
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (sfd *SignalFileDescription) Release(context.Context) {}
+func (sfd *SignalFileDescription) Release(context.Context) {
+	sfd.target.SignalUnregister(&sfd.entry)
+}
