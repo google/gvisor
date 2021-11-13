@@ -62,20 +62,6 @@ func (v Addr) MustRoundUp() Addr {
 	return addr
 }
 
-// HugeRoundDown returns the address rounded down to the nearest huge page
-// boundary.
-func (v Addr) HugeRoundDown() Addr {
-	return v & ^Addr(HugePageSize-1)
-}
-
-// HugeRoundUp returns the address rounded up to the nearest huge page boundary.
-// ok is true iff rounding up did not wrap around.
-func (v Addr) HugeRoundUp() (addr Addr, ok bool) {
-	addr = Addr(v + HugePageSize - 1).HugeRoundDown()
-	ok = addr >= v
-	return
-}
-
 // PageOffset returns the offset of v into the current page.
 func (v Addr) PageOffset() uint64 {
 	return uint64(v & Addr(PageSize-1))

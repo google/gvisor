@@ -12,6 +12,7 @@ go_library(
         "memcpy_amd64.s",
         "memcpy_arm64.s",
         "safecopy.go",
+        "safecopy_stub.go",
         "safecopy_unsafe.go",
         "sighandler_amd64.s",
         "sighandler_arm64.s",

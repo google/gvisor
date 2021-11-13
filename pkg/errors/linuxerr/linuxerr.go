@@ -18,9 +18,6 @@
 package linuxerr
 
 import (
-	"fmt"
-
-	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux/errno"
 	"gvisor.dev/gvisor/pkg/errors"
 )
@@ -324,45 +321,10 @@ var errorSlice = []*errors.Error{
 	errno.EHWPOISON:       EHWPOISON,
 }
 
-// ErrorFromUnix returns a linuxerr from a unix.Errno.
-func ErrorFromUnix(err unix.Errno) error {
-	if err == unix.Errno(0) {
-		return nil
-	}
-	e := errorSlice[errno.Errno(err)]
-	// Done this way because a single comparison in benchmarks is 2-3 faster
-	// than something like ( if err == nil && err > 0 ).
-	if e == errNotValidError {
-		panic(fmt.Sprintf("invalid error requested with errno: %v", e))
-	}
-	return e
-}
-
 // ToError converts a linuxerr to an error type.
 func ToError(err *errors.Error) error {
 	if err == noError {
 		return nil
 	}
 	return err
-}
-
-// ToUnix converts a linuxerr to a unix.Errno.
-func ToUnix(e *errors.Error) unix.Errno {
-	var unixErr unix.Errno
-	if e != noError {
-		unixErr = unix.Errno(e.Errno())
-	}
-	return unixErr
-}
-
-// Equals compars a linuxerr to a given error.
-func Equals(e *errors.Error, err error) bool {
-	var unixErr unix.Errno
-	if e != noError {
-		unixErr = unix.Errno(e.Errno())
-	}
-	if err == nil {
-		err = noError
-	}
-	return e == err || unixErr == err
 }

@@ -12,34 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build darwin
-// +build darwin
+//go:build !linux && !windows
+// +build !linux,!windows
 
 package syserr
 
 import (
-	"fmt"
-
 	"golang.org/x/sys/unix"
 )
 
-const maxErrno = 107
-
-var darwinHostTranslations [maxErrno]*Error
+const maxErrno = 0
 
 // FromHost translates a unix.Errno to a corresponding Error value.
 func FromHost(err unix.Errno) *Error {
-	if int(err) >= len(darwinHostTranslations) || darwinHostTranslations[err] == nil {
-		panic(fmt.Sprintf("unknown host errno %q (%d)", err.Error(), err))
-	}
-	return darwinHostTranslations[err]
+	panic("FromHost is implemented only on Linux")
 }
 
-// TODO(gvisor.dev/issue/1270): We currently only add translations for errors
-// that exist both on Darwin and Linux.
 func addHostTranslation(host unix.Errno, trans *Error) {
-	if darwinHostTranslations[host] != nil {
-		panic(fmt.Sprintf("duplicate translation for host errno %q (%d)", host.Error(), host))
-	}
-	darwinHostTranslations[host] = trans
+	panic("addHostTranslation is implemented only on Linux")
 }

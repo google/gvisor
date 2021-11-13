@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build !windows
+// +build !windows
+
 #include "textflag.h"
 
 // handleSwapUint32Fault returns the value stored in DI. Control is transferred

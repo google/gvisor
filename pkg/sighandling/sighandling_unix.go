@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build darwin
-// +build darwin
+//go:build !linux && !windows
+// +build !linux,!windows
 
 package sighandling
 
@@ -25,8 +25,9 @@ import (
 
 // IgnoreChildStop sets the SA_NOCLDSTOP flag, causing child processes to not
 // generate SIGCHLD when they stop.
+// TODO(gvisor.dev/issue/1270): Implement on Darwin.
 func IgnoreChildStop() error {
-	return errors.New("IgnoreChildStop not supported on Darwin")
+	return errors.New("IgnoreChildStop only supported on Linux")
 }
 
 // ReplaceSignalHandler replaces the existing signal handler for the provided
@@ -35,6 +36,7 @@ func IgnoreChildStop() error {
 // use of signal.Notify is not appropriate.
 //
 // It stores the value of the previously set handler in previous.
+// TODO(gvisor.dev/issue/1270): Implement on Darwin.
 func ReplaceSignalHandler(sig unix.Signal, handler uintptr, previous *uintptr) error {
-	return errors.New("ReplaceSignalHandler not supported on Darwin")
+	return errors.New("ReplaceSignalHandler only supported on Linux")
 }

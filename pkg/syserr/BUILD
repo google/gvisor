@@ -5,8 +5,9 @@ package(licenses = ["notice"])
 go_library(
     name = "syserr",
     srcs = [
-        "host_darwin.go",
         "host_linux.go",
+        "host_stub.go",
+        "host_unix.go",
         "syserr.go",
     ],
     visibility = ["//visibility:public"],

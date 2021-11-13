@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "internal.go",
         "linuxerr.go",
+        "linuxerr_unix.go",
     ],
     visibility = ["//visibility:public"],
     deps = [

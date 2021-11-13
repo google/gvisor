@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build linux
+// +build linux
+
 // Package sighandling contains helpers for handling signals to applications.
 package sighandling
 

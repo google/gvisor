@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build !windows
+// +build !windows
+
 // Package safecopy provides an efficient implementation of functions to access
 // memory that may result in SIGSEGV or SIGBUS being sent to the accessor.
 package safecopy

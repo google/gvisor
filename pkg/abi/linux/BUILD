@@ -65,6 +65,7 @@ go_library(
         "signalfd.go",
         "socket.go",
         "splice.go",
+        "stub_32bit.go",
         "tcp.go",
         "time.go",
         "timer.go",

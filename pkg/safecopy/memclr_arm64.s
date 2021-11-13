@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build !windows
+// +build !windows
+
 #include "textflag.h"
 
 // handleMemclrFault returns (the value stored in R0, the value stored in R1).

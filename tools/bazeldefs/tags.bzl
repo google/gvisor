@@ -41,6 +41,9 @@ archs = [
 
 oses = [
     "_linux",
+
+    # Pseudo-OS that effectively means "everything but Windows."
+    "_unix",
 ]
 
 generic = [

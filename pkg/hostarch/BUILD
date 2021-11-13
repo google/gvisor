@@ -28,9 +28,11 @@ go_library(
     srcs = [
         "access_type.go",
         "addr.go",
+        "addr_64bit.go",
         "addr_range.go",
         "addr_range_seq_unsafe.go",
         "hostarch.go",
+        "hostarch_32bit.go",
         "hostarch_arm64.go",
         "hostarch_x86.go",
     ],
