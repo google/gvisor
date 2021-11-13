@@ -782,21 +782,31 @@ func (r *FUSEDirent) SizeBytes() int {
 	return (dataSize + (FUSE_DIRENT_ALIGN - 1)) & ^(FUSE_DIRENT_ALIGN - 1)
 }
 
+// shiftNextDirent advances buf to the start of the next dirent, per
+// FUSE ABI. buf should begin at the start of a dirent.
+func (r *FUSEDirent) shiftNextDirent(buf []byte) []byte {
+	nextOff := r.SizeBytes()
+	if nextOff > len(buf) { // Handle overflow.
+		return buf[len(buf):]
+	}
+	return buf[nextOff:]
+}
+
 // UnmarshalBytes deserializes FUSEDirent from the src buffer.
 func (r *FUSEDirent) UnmarshalBytes(src []byte) []byte {
-	src = r.Meta.UnmarshalBytes(src)
+	srcP := r.Meta.UnmarshalBytes(src)
 
 	if r.Meta.NameLen > FUSE_NAME_MAX {
 		// The name is too long and therefore invalid. We don't
 		// need to unmarshal the name since it'll be thrown away.
-		return src
+		return r.shiftNextDirent(src)
 	}
 
 	buf := make([]byte, r.Meta.NameLen)
 	name := primitive.ByteSlice(buf)
-	name.UnmarshalBytes(src[:r.Meta.NameLen])
+	name.UnmarshalBytes(srcP[:r.Meta.NameLen])
 	r.Name = string(name)
-	return src[r.Meta.NameLen:]
+	return r.shiftNextDirent(src)
 }
 
 // FATTR_* consts are the attribute flags defined in include/uapi/linux/fuse.h.
