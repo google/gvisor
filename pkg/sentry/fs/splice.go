@@ -25,6 +25,7 @@ import (
 // Splice moves data to this file, directly from another.
 //
 // Offsets are updated only if DstOffset and SrcOffset are set.
+// +checklocksignore
 func Splice(ctx context.Context, dst *File, src *File, opts SpliceOpts) (int64, error) {
 	// Verify basic file flag permissions.
 	if !dst.Flags().Write || !src.Flags().Read {
@@ -53,44 +54,28 @@ func Splice(ctx context.Context, dst *File, src *File, opts SpliceOpts) (int64, 
 		switch {
 		case dst.UniqueID < src.UniqueID:
 			// Acquire dst first.
-			if !dst.mu.Lock(ctx) {
-				return 0, linuxerr.ErrInterrupted
-			}
-			if !src.mu.Lock(ctx) {
-				dst.mu.Unlock()
-				return 0, linuxerr.ErrInterrupted
-			}
+			dst.mu.Lock()
+			src.mu.Lock()
 		case dst.UniqueID > src.UniqueID:
 			// Acquire src first.
-			if !src.mu.Lock(ctx) {
-				return 0, linuxerr.ErrInterrupted
-			}
-			if !dst.mu.Lock(ctx) {
-				src.mu.Unlock()
-				return 0, linuxerr.ErrInterrupted
-			}
+			src.mu.Lock()
+			dst.mu.Lock()
 		case dst.UniqueID == src.UniqueID:
 			// Acquire only one lock; it's the same file. This is a
 			// bit of a edge case, but presumably it's possible.
-			if !dst.mu.Lock(ctx) {
-				return 0, linuxerr.ErrInterrupted
-			}
-			srcLock = false // Only need one unlock.
+			dst.mu.Lock()
+			srcLock = false
 		}
 		// Use both offsets (locked).
 		opts.DstStart = dst.offset
 		opts.SrcStart = src.offset
 	case dstLock:
 		// Acquire only dst.
-		if !dst.mu.Lock(ctx) {
-			return 0, linuxerr.ErrInterrupted
-		}
+		dst.mu.Lock()
 		opts.DstStart = dst.offset // Safe: locked.
 	case srcLock:
 		// Acquire only src.
-		if !src.mu.Lock(ctx) {
-			return 0, linuxerr.ErrInterrupted
-		}
+		src.mu.Lock()
 		opts.SrcStart = src.offset // Safe: locked.
 	}
 
