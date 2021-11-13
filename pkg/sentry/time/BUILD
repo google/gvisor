@@ -27,10 +27,12 @@ go_library(
         "sampler.go",
         "sampler_amd64.go",
         "sampler_arm64.go",
-        "sampler_unsafe.go",
         "seqatomic_parameters_unsafe.go",
         "tsc_amd64.s",
         "tsc_arm64.s",
+        "vdso.go",
+        "vdso_amd64.s",
+        "vdso_arm64.s",
     ],
     visibility = ["//:sandbox"],
     deps = [
@@ -49,6 +51,11 @@ go_test(
         "calibrated_clock_test.go",
         "parameters_test.go",
         "sampler_test.go",
+        "vdso_test.go",
     ],
     library = ":time",
+    deps = [
+        "//pkg/abi/linux",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
 )
