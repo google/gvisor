@@ -74,7 +74,7 @@ func (s *Stack) Interfaces() map[int32]inet.Interface {
 // RemoveInterface implements inet.Stack.RemoveInterface.
 func (s *Stack) RemoveInterface(idx int32) error {
 	nic := tcpip.NICID(idx)
-	return tcpip.TranslateNetstackError(s.Stack.RemoveNIC(nic)).ToError()
+	return syserr.TranslateNetstackError(s.Stack.RemoveNIC(nic)).ToError()
 }
 
 // InterfaceAddrs implements inet.Stack.InterfaceAddrs.
@@ -156,7 +156,7 @@ func (s *Stack) AddInterfaceAddr(idx int32, addr inet.InterfaceAddr) error {
 	// Attach address to interface.
 	nicID := tcpip.NICID(idx)
 	if err := s.Stack.AddProtocolAddress(nicID, protocolAddress, stack.AddressProperties{}); err != nil {
-		return tcpip.TranslateNetstackError(err).ToError()
+		return syserr.TranslateNetstackError(err).ToError()
 	}
 
 	// Add route for local network if it doesn't exist already.
@@ -188,7 +188,7 @@ func (s *Stack) RemoveInterfaceAddr(idx int32, addr inet.InterfaceAddr) error {
 	// Remove addresses matching the address and prefix.
 	nicID := tcpip.NICID(idx)
 	if err := s.Stack.RemoveAddress(nicID, protocolAddress.AddressWithPrefix.Address); err != nil {
-		return tcpip.TranslateNetstackError(err).ToError()
+		return syserr.TranslateNetstackError(err).ToError()
 	}
 
 	// Remove the corresponding local network route if it exists.
@@ -212,7 +212,7 @@ func (s *Stack) TCPReceiveBufferSize() (inet.TCPBufferSize, error) {
 		Min:     rs.Min,
 		Default: rs.Default,
 		Max:     rs.Max,
-	}, tcpip.TranslateNetstackError(err).ToError()
+	}, syserr.TranslateNetstackError(err).ToError()
 }
 
 // SetTCPReceiveBufferSize implements inet.Stack.SetTCPReceiveBufferSize.
@@ -222,7 +222,7 @@ func (s *Stack) SetTCPReceiveBufferSize(size inet.TCPBufferSize) error {
 		Default: size.Default,
 		Max:     size.Max,
 	}
-	return tcpip.TranslateNetstackError(s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, &rs)).ToError()
+	return syserr.TranslateNetstackError(s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, &rs)).ToError()
 }
 
 // TCPSendBufferSize implements inet.Stack.TCPSendBufferSize.
@@ -233,7 +233,7 @@ func (s *Stack) TCPSendBufferSize() (inet.TCPBufferSize, error) {
 		Min:     ss.Min,
 		Default: ss.Default,
 		Max:     ss.Max,
-	}, tcpip.TranslateNetstackError(err).ToError()
+	}, syserr.TranslateNetstackError(err).ToError()
 }
 
 // SetTCPSendBufferSize implements inet.Stack.SetTCPSendBufferSize.
@@ -243,27 +243,27 @@ func (s *Stack) SetTCPSendBufferSize(size inet.TCPBufferSize) error {
 		Default: size.Default,
 		Max:     size.Max,
 	}
-	return tcpip.TranslateNetstackError(s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, &ss)).ToError()
+	return syserr.TranslateNetstackError(s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, &ss)).ToError()
 }
 
 // TCPSACKEnabled implements inet.Stack.TCPSACKEnabled.
 func (s *Stack) TCPSACKEnabled() (bool, error) {
 	var sack tcpip.TCPSACKEnabled
 	err := s.Stack.TransportProtocolOption(tcp.ProtocolNumber, &sack)
-	return bool(sack), tcpip.TranslateNetstackError(err).ToError()
+	return bool(sack), syserr.TranslateNetstackError(err).ToError()
 }
 
 // SetTCPSACKEnabled implements inet.Stack.SetTCPSACKEnabled.
 func (s *Stack) SetTCPSACKEnabled(enabled bool) error {
 	opt := tcpip.TCPSACKEnabled(enabled)
-	return tcpip.TranslateNetstackError(s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, &opt)).ToError()
+	return syserr.TranslateNetstackError(s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, &opt)).ToError()
 }
 
 // TCPRecovery implements inet.Stack.TCPRecovery.
 func (s *Stack) TCPRecovery() (inet.TCPLossRecovery, error) {
 	var recovery tcpip.TCPRecovery
 	if err := s.Stack.TransportProtocolOption(tcp.ProtocolNumber, &recovery); err != nil {
-		return 0, tcpip.TranslateNetstackError(err).ToError()
+		return 0, syserr.TranslateNetstackError(err).ToError()
 	}
 	return inet.TCPLossRecovery(recovery), nil
 }
@@ -271,7 +271,7 @@ func (s *Stack) TCPRecovery() (inet.TCPLossRecovery, error) {
 // SetTCPRecovery implements inet.Stack.SetTCPRecovery.
 func (s *Stack) SetTCPRecovery(recovery inet.TCPLossRecovery) error {
 	opt := tcpip.TCPRecovery(recovery)
-	return tcpip.TranslateNetstackError(s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, &opt)).ToError()
+	return syserr.TranslateNetstackError(s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, &opt)).ToError()
 }
 
 // Statistics implements inet.Stack.Statistics.
@@ -479,5 +479,5 @@ func (s *Stack) PortRange() (uint16, uint16) {
 
 // SetPortRange implements inet.Stack.SetPortRange.
 func (s *Stack) SetPortRange(start uint16, end uint16) error {
-	return tcpip.TranslateNetstackError(s.Stack.SetPortRange(start, end)).ToError()
+	return syserr.TranslateNetstackError(s.Stack.SetPortRange(start, end)).ToError()
 }

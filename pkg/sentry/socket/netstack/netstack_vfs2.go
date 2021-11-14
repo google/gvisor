@@ -134,7 +134,7 @@ func (s *SocketVFS2) Write(ctx context.Context, src usermem.IOSequence, opts vfs
 		return 0, linuxerr.ErrWouldBlock
 	}
 	if err != nil {
-		return 0, tcpip.TranslateNetstackError(err).ToError()
+		return 0, syserr.TranslateNetstackError(err).ToError()
 	}
 
 	if n < src.NumBytes() {
@@ -155,7 +155,7 @@ func (s *SocketVFS2) Accept(t *kernel.Task, peerRequested bool, flags int, block
 	ep, wq, terr := s.Endpoint.Accept(peerAddr)
 	if terr != nil {
 		if _, ok := terr.(*tcpip.ErrWouldBlock); !ok || !blocking {
-			return 0, nil, 0, tcpip.TranslateNetstackError(terr)
+			return 0, nil, 0, syserr.TranslateNetstackError(terr)
 		}
 
 		var err *syserr.Error
