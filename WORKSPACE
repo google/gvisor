@@ -564,6 +564,13 @@ go_repository(
     version = "v0.27.0",
 )
 
+go_repository(
+    name = "com_github_google_gopacket",
+    importpath = "github.com/google/gopacket",
+    sum = "h1:ves8RnFZPGiFnTS0uPQStjwru6uO6h+nlr9j6fL7kF8=",
+    version = "v1.1.19",
+)
+
 rules_proto_dependencies()
 
 rules_proto_toolchains()
@@ -1439,8 +1446,8 @@ go_repository(
 go_repository(
     name = "com_github_vishvananda_netns",
     importpath = "github.com/vishvananda/netns",
-    sum = "h1:p4VB7kIXpOQvVn1ZaTIVp+3vuYAXFe3OJEvjbUYJLaA=",
-    version = "v0.0.0-20210104183010-2eb08e3e575f",
+    sum = "h1:gga7acRE695APm9hlsSMoOoE65U4/TcqNj90mc69Rlg=",
+    version = "v0.0.0-20211101163701-50045581ed74",
 )
 
 go_repository(

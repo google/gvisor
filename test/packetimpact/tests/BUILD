@@ -417,6 +417,7 @@ validate_all_tests()
     name = t.name,
     timeout = t.timeout if hasattr(t, "timeout") else "moderate",
     expect_netstack_failure = hasattr(t, "expect_netstack_failure"),
+    legacy_runner = t.legacy_runner if hasattr(t, "legacy_runner") else False,
     num_duts = t.num_duts if hasattr(t, "num_duts") else 1,
 ) for t in ALL_TESTS]
 

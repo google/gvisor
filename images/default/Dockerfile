@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y curl gnupg2 git \
         openjdk-11-jdk-headless zip unzip \
         apt-transport-https ca-certificates gnupg-agent \
         software-properties-common \
-        pkg-config libffi-dev patch diffutils libssl-dev
+        pkg-config libffi-dev patch diffutils libssl-dev iptables
 
 # Install Docker client for the website build.
 RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
