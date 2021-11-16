@@ -26,7 +26,13 @@ import (
 // IgnoreChildStop sets the SA_NOCLDSTOP flag, causing child processes to not
 // generate SIGCHLD when they stop.
 func IgnoreChildStop() error {
-	return errors.New("IgnoreChildStop not supported on Darwin")
+	oldSa, err := gvunix.Sigaction(unix.SIGCHLD, nil)
+	if err != nil {
+		return err
+	}
+	oldSa.Flags.NoChildStop = true
+	_, err = gvunix.Sigaction(unix.SIGCHLD, &oldSa)
+	return err
 }
 
 // ReplaceSignalHandler replaces the existing signal handler for the provided
@@ -37,4 +43,28 @@ func IgnoreChildStop() error {
 // It stores the value of the previously set handler in previous.
 func ReplaceSignalHandler(sig unix.Signal, handler uintptr, previous *uintptr) error {
 	return errors.New("ReplaceSignalHandler not supported on Darwin")
+	// var sa linux.SigAction
+	// const maskLen = 8
+
+	// // Get the existing signal handler information, and save the current
+	// // handler. Once we replace it, we will use this pointer to fall back to
+	// // it when we receive other signals.
+	// if _, _, e := unix.RawSyscall6(unix.SYS_RT_SIGACTION, uintptr(sig), 0, uintptr(unsafe.Pointer(&sa)), maskLen, 0, 0); e != 0 {
+	// 	return e
+	// }
+
+	// // Fail if there isn't a previous handler.
+	// if sa.Handler == 0 {
+	// 	return fmt.Errorf("previous handler for signal %x isn't set", sig)
+	// }
+
+	// *previous = uintptr(sa.Handler)
+
+	// // Install our own handler.
+	// sa.Handler = uint64(handler)
+	// if _, _, e := unix.RawSyscall6(unix.SYS_RT_SIGACTION, uintptr(sig), uintptr(unsafe.Pointer(&sa)), 0, maskLen, 0, 0); e != 0 {
+	// 	return e
+	// }
+
+	// return nil
 }
