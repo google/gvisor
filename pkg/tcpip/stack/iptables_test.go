@@ -18,15 +18,16 @@ import (
 	"math/rand"
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 )
 
 const (
-	nattedDstPort = 1
-	srcPort       = 2
-	dstPort       = 3
+	nattedPort = 1
+	srcPort    = 2
+	dstPort    = 3
 
 	// The network protocol used for these tests doesn't matter as the tests are
 	// not targetting anything protocol specific.
@@ -35,12 +36,12 @@ const (
 )
 
 var (
-	nattedDstAddr = testutil.MustParse6("a::1")
-	srcAddr       = testutil.MustParse6("b::2")
-	dstAddr       = testutil.MustParse6("c::3")
+	nattedAddr = testutil.MustParse6("a::1")
+	srcAddr    = testutil.MustParse6("b::2")
+	dstAddr    = testutil.MustParse6("c::3")
 )
 
-func v6PacketBuffer() *PacketBuffer {
+func v6PacketBufferWithSrcAddr(srcAddr tcpip.Address) *PacketBuffer {
 	pkt := NewPacketBuffer(PacketBufferOptions{
 		ReserveHeaderBytes: header.IPv6MinimumSize + header.UDPMinimumSize,
 	})
@@ -67,6 +68,10 @@ func v6PacketBuffer() *PacketBuffer {
 	return pkt
 }
 
+func v6PacketBuffer() *PacketBuffer {
+	return v6PacketBufferWithSrcAddr(srcAddr)
+}
+
 // TestNATedConnectionReap tests that NATed connections are properly reaped.
 func TestNATedConnectionReap(t *testing.T) {
 	clock := faketime.NewManualClock()
@@ -76,7 +81,7 @@ func TestNATedConnectionReap(t *testing.T) {
 		Rules: []Rule{
 			// Prerouting
 			{
-				Target: &DNATTarget{NetworkProtocol: netProto, Addr: nattedDstAddr, Port: nattedDstPort},
+				Target: &DNATTarget{NetworkProtocol: netProto, Addr: nattedAddr, Port: nattedPort},
 			},
 			{
 				Target: &AcceptTarget{},
@@ -314,6 +319,112 @@ func TestNATAlwaysPerformed(t *testing.T) {
 			if srcManip != manipPerformedNoop {
 				t.Errorf("got destManip = %d, want = %d", destManip, manipPerformedNoop)
 			}
+		})
+	}
+}
+
+func TestNATConflict(t *testing.T) {
+	otherSrcAddr := testutil.MustParse6("d::4")
+
+	tests := []struct {
+		name          string
+		checkIPTables func(*testing.T, *IPTables, *PacketBuffer, bool)
+	}{
+		{
+			name: "Prerouting and Input",
+			checkIPTables: func(t *testing.T, iptables *IPTables, pkt *PacketBuffer, lastHookOK bool) {
+				t.Helper()
+
+				if !iptables.CheckPrerouting(pkt, nil /* addressEP */, "" /* inNicName */) {
+					t.Fatal("got ipt.CheckPrerouting(...) = false, want = true")
+				}
+				if got := iptables.CheckInput(pkt, "" /* inNicName */); got != lastHookOK {
+					t.Fatalf("got ipt.CheckInput(...) = %t, want = %t", got, lastHookOK)
+				}
+			},
+		},
+		{
+			name: "Output and Postrouting",
+			checkIPTables: func(t *testing.T, iptables *IPTables, pkt *PacketBuffer, lastHookOK bool) {
+				t.Helper()
+
+				// Output and Postrouting hooks depends on a route but if the route is
+				// local, we don't need anything else from it.
+				r := Route{
+					routeInfo: routeInfo{
+						Loop: PacketLoop,
+					},
+				}
+				if !iptables.CheckOutput(pkt, &r, "" /* outNicName */) {
+					t.Fatal("got iptables.CheckOutput(...) = false, want = true")
+				}
+				if got := iptables.CheckPostrouting(pkt, &r, nil /* addressEP */, "" /* outNicName */); got != lastHookOK {
+					t.Fatalf("got iptables.CheckPostrouting(...) = %t, want = %t", got, lastHookOK)
+				}
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+
+			clock := faketime.NewManualClock()
+			iptables := DefaultTables(clock, rand.New(rand.NewSource(0 /* seed */)))
+
+			table := Table{
+				Rules: []Rule{
+					// Prerouting
+					{
+						Target: &AcceptTarget{},
+					},
+
+					// Input
+					{
+						Target: &SNATTarget{NetworkProtocol: header.IPv6ProtocolNumber, Addr: nattedAddr, Port: nattedPort},
+					},
+					{
+						Target: &AcceptTarget{},
+					},
+
+					// Forward
+					{
+						Target: &AcceptTarget{},
+					},
+
+					// Output
+					{
+						Target: &AcceptTarget{},
+					},
+
+					// Postrouting
+					{
+						Target: &SNATTarget{NetworkProtocol: header.IPv6ProtocolNumber, Addr: nattedAddr, Port: nattedPort},
+					},
+					{
+						Target: &AcceptTarget{},
+					},
+				},
+				BuiltinChains: [NumHooks]int{
+					Prerouting:  0,
+					Input:       1,
+					Forward:     3,
+					Output:      4,
+					Postrouting: 5,
+				},
+			}
+			if err := iptables.ReplaceTable(NATID, table, ipv6); err != nil {
+				t.Fatalf("ipt.ReplaceTable(%d, _, true): %s", NATID, err)
+			}
+
+			// Create and finalize the connection.
+			test.checkIPTables(t, iptables, v6PacketBufferWithSrcAddr(srcAddr), true /* lastHookOK */)
+
+			// A packet from a different source that get NATed to the same tuple as
+			// the connection created above should be dropped when finalizing.
+			test.checkIPTables(t, iptables, v6PacketBufferWithSrcAddr(otherSrcAddr), false /* lastHookOK */)
+
+			// A packet from the original source should be NATed as normal.
+			test.checkIPTables(t, iptables, v6PacketBufferWithSrcAddr(srcAddr), true /* lastHookOK */)
 		})
 	}
 }
