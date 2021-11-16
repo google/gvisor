@@ -29,15 +29,17 @@ import (
 // server may implement an older version of FUSE protocol, which contains a
 // linux.FUSEInitOut with less attributes.
 //
-// Dynamically-sized objects cannot be marshalled.
+// +marshal dynamic
 type fuseInitRes struct {
-	marshal.StubMarshallable
-
 	// initOut contains the response from the FUSE server.
 	initOut linux.FUSEInitOut
 
 	// initLen is the total length of bytes of the response.
 	initLen uint32
+}
+
+func (r *fuseInitRes) MarshalBytes(src []byte) []byte {
+	panic("Unimplemented, fuseInitRes should never be marshalled")
 }
 
 // UnmarshalBytes deserializes src to the initOut attribute in a fuseInitRes.
@@ -123,9 +125,8 @@ func (conn *connection) NewRequest(creds *auth.Credentials, pid uint32, ino uint
 
 	buf := make([]byte, hdr.Len)
 
-	// TODO(gVisor.dev/issue/3698): Use the unsafe version once go_marshal is safe to use again.
-	hdr.MarshalBytes(buf[:hdrLen])
-	payload.MarshalBytes(buf[hdrLen:])
+	hdr.MarshalUnsafe(buf[:hdrLen])
+	payload.MarshalUnsafe(buf[hdrLen:])
 
 	return &Request{
 		id:   hdr.Unique,
@@ -224,7 +225,6 @@ func (r *Response) UnmarshalPayload(m marshal.Marshallable) error {
 		return nil
 	}
 
-	// TODO(gVisor.dev/issue/3698): Use the unsafe version once go_marshal is safe to use again.
-	m.UnmarshalBytes(r.data[hdrLen:])
+	m.UnmarshalUnsafe(r.data[hdrLen:])
 	return nil
 }
