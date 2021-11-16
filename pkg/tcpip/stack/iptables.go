@@ -312,9 +312,9 @@ func (it *IPTables) CheckInput(pkt *PacketBuffer, inNicName string) bool {
 	}
 
 	if t := pkt.tuple; t != nil {
-		t.conn.finalize()
+		pkt.tuple = nil
+		return t.conn.finalize()
 	}
-	pkt.tuple = nil
 	return true
 }
 
@@ -388,9 +388,9 @@ func (it *IPTables) CheckPostrouting(pkt *PacketBuffer, r *Route, addressEP Addr
 	}
 
 	if t := pkt.tuple; t != nil {
-		t.conn.finalize()
+		pkt.tuple = nil
+		return t.conn.finalize()
 	}
-	pkt.tuple = nil
 	return true
 }
 
