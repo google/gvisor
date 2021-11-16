@@ -413,13 +413,13 @@ func (e *endpoint) dispatchLoop(d stack.NetworkDispatcher) {
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Data: buffer.View(b).ToVectorisedView(),
 		})
-		defer pkt.DecRef()
 
 		var src, dst tcpip.LinkAddress
 		var proto tcpip.NetworkProtocolNumber
 		if e.addr != "" {
 			hdr, ok := pkt.LinkHeader().Consume(header.EthernetMinimumSize)
 			if !ok {
+				pkt.DecRef()
 				continue
 			}
 			eth := header.Ethernet(hdr)
@@ -432,6 +432,7 @@ func (e *endpoint) dispatchLoop(d stack.NetworkDispatcher) {
 			// IP version information is at the first octet, so pulling up 1 byte.
 			h, ok := pkt.Data().PullUp(1)
 			if !ok {
+				pkt.DecRef()
 				continue
 			}
 			switch header.IPVersion(h) {
@@ -440,12 +441,14 @@ func (e *endpoint) dispatchLoop(d stack.NetworkDispatcher) {
 			case header.IPv6Version:
 				proto = header.IPv6ProtocolNumber
 			default:
+				pkt.DecRef()
 				continue
 			}
 		}
 
 		// Send packet up the stack.
 		d.DeliverNetworkPacket(src, dst, proto, pkt)
+		pkt.DecRef()
 	}
 
 	e.mu.Lock()
