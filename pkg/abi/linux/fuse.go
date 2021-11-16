@@ -15,7 +15,6 @@
 package linux
 
 import (
-	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 )
 
@@ -353,6 +352,8 @@ type FUSEEntryOut struct {
 }
 
 // CString represents a null terminated string which can be marshalled.
+//
+// +marshal dynamic
 type CString string
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
@@ -360,6 +361,11 @@ func (s *CString) MarshalBytes(buf []byte) []byte {
 	copy(buf, *s)
 	buf[len(*s)] = 0 // null char
 	return buf[s.SizeBytes():]
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (s *CString) UnmarshalBytes(buf []byte) []byte {
+	panic("Unimplemented, CString is never unmarshalled")
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -371,20 +377,23 @@ func (s *CString) SizeBytes() int {
 // FUSELookupIn is the request sent by the kernel to the daemon
 // to look up a file name.
 //
-// Dynamically-sized objects cannot be marshalled.
+// +marshal dynamic
 type FUSELookupIn struct {
-	marshal.StubMarshallable
-
 	// Name is a file name to be looked up.
 	Name CString
 }
 
-// MarshalBytes serializes r.name to the dst buffer.
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (r *FUSELookupIn) UnmarshalBytes(buf []byte) []byte {
+	panic("Unimplemented, FUSELookupIn is never unmarshalled")
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (r *FUSELookupIn) MarshalBytes(buf []byte) []byte {
 	return r.Name.MarshalBytes(buf)
 }
 
-// SizeBytes is the size of the memory representation of FUSELookupIn.
+// SizeBytes implements marshal.Marshallable.SizeBytes.
 func (r *FUSELookupIn) SizeBytes() int {
 	return r.Name.SizeBytes()
 }
@@ -537,10 +546,8 @@ type FUSECreateMeta struct {
 // FUSECreateIn contains all the arguments sent by the kernel to the daemon, to
 // atomically create and open a new regular file.
 //
-// Dynamically-sized objects cannot be marshalled.
+// +marshal dynamic
 type FUSECreateIn struct {
-	marshal.StubMarshallable
-
 	// CreateMeta contains mode, rdev and umash field for FUSE_MKNODS.
 	CreateMeta FUSECreateMeta
 
@@ -548,13 +555,18 @@ type FUSECreateIn struct {
 	Name CString
 }
 
-// MarshalBytes serializes r.CreateMeta and r.Name to the dst buffer.
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (r *FUSECreateIn) MarshalBytes(buf []byte) []byte {
 	buf = r.CreateMeta.MarshalBytes(buf)
 	return r.Name.MarshalBytes(buf)
 }
 
-// SizeBytes is the size of the memory representation of FUSECreateIn.
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (r *FUSECreateIn) UnmarshalBytes(buf []byte) []byte {
+	panic("Unimplemented, FUSECreateIn is never unmarshalled")
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
 func (r *FUSECreateIn) SizeBytes() int {
 	return r.CreateMeta.SizeBytes() + r.Name.SizeBytes()
 }
@@ -579,35 +591,35 @@ type FUSEMknodMeta struct {
 // FUSEMknodIn contains all the arguments sent by the kernel
 // to the daemon, to create a new file node.
 //
-// Dynamically-sized objects cannot be marshalled.
+// +marshal dynamic
 type FUSEMknodIn struct {
-	marshal.StubMarshallable
-
 	// MknodMeta contains mode, rdev and umash field for FUSE_MKNODS.
 	MknodMeta FUSEMknodMeta
-
 	// Name is the name of the node to create.
 	Name CString
 }
 
-// MarshalBytes serializes r.MknodMeta and r.Name to the dst buffer.
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (r *FUSEMknodIn) MarshalBytes(buf []byte) []byte {
 	buf = r.MknodMeta.MarshalBytes(buf)
 	return r.Name.MarshalBytes(buf)
 }
 
-// SizeBytes is the size of the memory representation of FUSEMknodIn.
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (r *FUSEMknodIn) UnmarshalBytes(buf []byte) []byte {
+	panic("Unimplemented, FUSEMknodIn is never unmarshalled")
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
 func (r *FUSEMknodIn) SizeBytes() int {
 	return r.MknodMeta.SizeBytes() + r.Name.SizeBytes()
 }
 
-// FUSESymLinkIn is the request sent by the kernel to the daemon,
+// FUSESymlinkIn is the request sent by the kernel to the daemon,
 // to create a symbolic link.
 //
-// Dynamically-sized objects cannot be marshalled.
-type FUSESymLinkIn struct {
-	marshal.StubMarshallable
-
+// +marshal dynamic
+type FUSESymlinkIn struct {
 	// Name of symlink to create.
 	Name CString
 
@@ -615,26 +627,38 @@ type FUSESymLinkIn struct {
 	Target CString
 }
 
-// MarshalBytes serializes r.Name and r.Target to the dst buffer.
-func (r *FUSESymLinkIn) MarshalBytes(buf []byte) []byte {
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (r *FUSESymlinkIn) MarshalBytes(buf []byte) []byte {
 	buf = r.Name.MarshalBytes(buf)
 	return r.Target.MarshalBytes(buf)
 }
 
-// SizeBytes is the size of the memory representation of FUSESymLinkIn.
-func (r *FUSESymLinkIn) SizeBytes() int {
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (r *FUSESymlinkIn) UnmarshalBytes(buf []byte) []byte {
+	panic("Unimplemented, FUSEMknodIn is never unmarshalled")
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (r *FUSESymlinkIn) SizeBytes() int {
 	return r.Name.SizeBytes() + r.Target.SizeBytes()
 }
 
 // FUSEEmptyIn is used by operations without request body.
-type FUSEEmptyIn struct{ marshal.StubMarshallable }
+//
+// +marshal dynamic
+type FUSEEmptyIn struct{}
 
-// MarshalBytes do nothing for marshal.
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (r *FUSEEmptyIn) MarshalBytes(buf []byte) []byte {
 	return buf
 }
 
-// SizeBytes is 0 for empty request.
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (r *FUSEEmptyIn) UnmarshalBytes(buf []byte) []byte {
+	panic("Unimplemented, FUSEEmptyIn is never unmarshalled")
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
 func (r *FUSEEmptyIn) SizeBytes() int {
 	return 0
 }
@@ -646,7 +670,6 @@ func (r *FUSEEmptyIn) SizeBytes() int {
 type FUSEMkdirMeta struct {
 	// Mode of the directory of create.
 	Mode uint32
-
 	// Umask is the user file creation mask.
 	Umask uint32
 }
@@ -654,24 +677,26 @@ type FUSEMkdirMeta struct {
 // FUSEMkdirIn contains all the arguments sent by the kernel
 // to the daemon, to create a new directory.
 //
-// Dynamically-sized objects cannot be marshalled.
+// +marshal dynamic
 type FUSEMkdirIn struct {
-	marshal.StubMarshallable
-
 	// MkdirMeta contains Mode and Umask of the directory to create.
 	MkdirMeta FUSEMkdirMeta
-
 	// Name of the directory to create.
 	Name CString
 }
 
-// MarshalBytes serializes r.MkdirMeta and r.Name to the dst buffer.
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (r *FUSEMkdirIn) MarshalBytes(buf []byte) []byte {
 	buf = r.MkdirMeta.MarshalBytes(buf)
 	return r.Name.MarshalBytes(buf)
 }
 
-// SizeBytes is the size of the memory representation of FUSEMkdirIn.
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (r *FUSEMkdirIn) UnmarshalBytes(buf []byte) []byte {
+	panic("Unimplemented, FUSEMkdirIn is never unmarshalled")
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
 func (r *FUSEMkdirIn) SizeBytes() int {
 	return r.MkdirMeta.SizeBytes() + r.Name.SizeBytes()
 }
@@ -679,20 +704,23 @@ func (r *FUSEMkdirIn) SizeBytes() int {
 // FUSERmDirIn is the request sent by the kernel to the daemon
 // when trying to remove a directory.
 //
-// Dynamically-sized objects cannot be marshalled.
+// +marshal dynamic
 type FUSERmDirIn struct {
-	marshal.StubMarshallable
-
 	// Name is a directory name to be removed.
 	Name CString
 }
 
-// MarshalBytes serializes r.name to the dst buffer.
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (r *FUSERmDirIn) MarshalBytes(buf []byte) []byte {
 	return r.Name.MarshalBytes(buf)
 }
 
-// SizeBytes is the size of the memory representation of FUSERmDirIn.
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (r *FUSERmDirIn) UnmarshalBytes(buf []byte) []byte {
+	panic("Unimplemented, FUSERmDirIn is never unmarshalled")
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
 func (r *FUSERmDirIn) SizeBytes() int {
 	return r.Name.SizeBytes()
 }
@@ -700,23 +728,18 @@ func (r *FUSERmDirIn) SizeBytes() int {
 // FUSEDirents is a list of Dirents received from the FUSE daemon server.
 // It is used for FUSE_READDIR.
 //
-// Dynamically-sized objects cannot be marshalled.
+// +marshal dynamic
 type FUSEDirents struct {
-	marshal.StubMarshallable
-
 	Dirents []*FUSEDirent
 }
 
 // FUSEDirent is a Dirent received from the FUSE daemon server.
 // It is used for FUSE_READDIR.
 //
-// Dynamically-sized objects cannot be marshalled.
+// +marshal dynamic
 type FUSEDirent struct {
-	marshal.StubMarshallable
-
 	// Meta contains all the static fields of FUSEDirent.
 	Meta FUSEDirentMeta
-
 	// Name is the filename of the dirent.
 	Name string
 }
@@ -728,18 +751,15 @@ type FUSEDirent struct {
 type FUSEDirentMeta struct {
 	// Inode of the dirent.
 	Ino uint64
-
 	// Offset of the dirent.
 	Off uint64
-
 	// NameLen is the length of the dirent name.
 	NameLen uint32
-
 	// Type of the dirent.
 	Type uint32
 }
 
-// SizeBytes is the size of the memory representation of FUSEDirents.
+// SizeBytes implements marshal.Marshallable.SizeBytes.
 func (r *FUSEDirents) SizeBytes() int {
 	var sizeBytes int
 	for _, dirent := range r.Dirents {
@@ -747,6 +767,11 @@ func (r *FUSEDirents) SizeBytes() int {
 	}
 
 	return sizeBytes
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (r *FUSEDirents) MarshalBytes(buf []byte) []byte {
+	panic("Unimplemented, FUSEDirents is never marshalled")
 }
 
 // UnmarshalBytes deserializes FUSEDirents from the src buffer.
@@ -772,7 +797,7 @@ func (r *FUSEDirents) UnmarshalBytes(src []byte) []byte {
 	return src
 }
 
-// SizeBytes is the size of the memory representation of FUSEDirent.
+// SizeBytes implements marshal.Marshallable.SizeBytes.
 func (r *FUSEDirent) SizeBytes() int {
 	dataSize := r.Meta.SizeBytes() + len(r.Name)
 
@@ -780,6 +805,11 @@ func (r *FUSEDirent) SizeBytes() int {
 	// of FUSE_DIRENT_ALIGN. Similar to the fuse dirent alignment
 	// in linux/fuse.h.
 	return (dataSize + (FUSE_DIRENT_ALIGN - 1)) & ^(FUSE_DIRENT_ALIGN - 1)
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (r *FUSEDirent) MarshalBytes(buf []byte) []byte {
+	panic("Unimplemented, FUSEDirent is never marshalled")
 }
 
 // shiftNextDirent advances buf to the start of the next dirent, per
@@ -792,7 +822,7 @@ func (r *FUSEDirent) shiftNextDirent(buf []byte) []byte {
 	return buf[nextOff:]
 }
 
-// UnmarshalBytes deserializes FUSEDirent from the src buffer.
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (r *FUSEDirent) UnmarshalBytes(src []byte) []byte {
 	srcP := r.Meta.UnmarshalBytes(src)
 
@@ -879,20 +909,23 @@ type FUSESetAttrIn struct {
 // FUSEUnlinkIn is the request sent by the kernel to the daemon
 // when trying to unlink a node.
 //
-// Dynamically-sized objects cannot be marshalled.
+// +marshal dynamic
 type FUSEUnlinkIn struct {
-	marshal.StubMarshallable
-
 	// Name of the node to unlink.
 	Name CString
 }
 
-// MarshalBytes serializes r.name to the dst buffer.
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (r *FUSEUnlinkIn) MarshalBytes(buf []byte) []byte {
 	return r.Name.MarshalBytes(buf)
 }
 
-// SizeBytes is the size of the memory representation of FUSEUnlinkIn.
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (r *FUSEUnlinkIn) UnmarshalBytes(buf []byte) []byte {
+	panic("Unimplemented, FUSEUnlinkIn is never unmarshalled")
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
 func (r *FUSEUnlinkIn) SizeBytes() int {
 	return r.Name.SizeBytes()
 }
