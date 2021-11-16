@@ -540,7 +540,7 @@ func (i *inode) NewNode(ctx context.Context, name string, opts vfs.MknodOptions)
 
 // NewSymlink implements kernfs.Inode.NewSymlink.
 func (i *inode) NewSymlink(ctx context.Context, name, target string) (kernfs.Inode, error) {
-	in := linux.FUSESymLinkIn{
+	in := linux.FUSESymlinkIn{
 		Name:   linux.CString(name),
 		Target: linux.CString(target),
 	}
