@@ -89,7 +89,8 @@ func (cn *conn) StateFields() []string {
 		"ct",
 		"original",
 		"reply",
-		"finalized",
+		"finalizeOnce",
+		"finalizeResult",
 		"sourceManip",
 		"destinationManip",
 		"tcb",
@@ -105,11 +106,12 @@ func (cn *conn) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &cn.ct)
 	stateSinkObject.Save(1, &cn.original)
 	stateSinkObject.Save(2, &cn.reply)
-	stateSinkObject.Save(3, &cn.finalized)
-	stateSinkObject.Save(4, &cn.sourceManip)
-	stateSinkObject.Save(5, &cn.destinationManip)
-	stateSinkObject.Save(6, &cn.tcb)
-	stateSinkObject.Save(7, &cn.lastUsed)
+	stateSinkObject.Save(3, &cn.finalizeOnce)
+	stateSinkObject.Save(4, &cn.finalizeResult)
+	stateSinkObject.Save(5, &cn.sourceManip)
+	stateSinkObject.Save(6, &cn.destinationManip)
+	stateSinkObject.Save(7, &cn.tcb)
+	stateSinkObject.Save(8, &cn.lastUsed)
 }
 
 func (cn *conn) afterLoad() {}
@@ -119,11 +121,12 @@ func (cn *conn) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &cn.ct)
 	stateSourceObject.Load(1, &cn.original)
 	stateSourceObject.Load(2, &cn.reply)
-	stateSourceObject.Load(3, &cn.finalized)
-	stateSourceObject.Load(4, &cn.sourceManip)
-	stateSourceObject.Load(5, &cn.destinationManip)
-	stateSourceObject.Load(6, &cn.tcb)
-	stateSourceObject.Load(7, &cn.lastUsed)
+	stateSourceObject.Load(3, &cn.finalizeOnce)
+	stateSourceObject.Load(4, &cn.finalizeResult)
+	stateSourceObject.Load(5, &cn.sourceManip)
+	stateSourceObject.Load(6, &cn.destinationManip)
+	stateSourceObject.Load(7, &cn.tcb)
+	stateSourceObject.Load(8, &cn.lastUsed)
 }
 
 func (ct *ConnTrack) StateTypeName() string {

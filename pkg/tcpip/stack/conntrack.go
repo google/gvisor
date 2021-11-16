@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"math/rand"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -108,6 +109,17 @@ const (
 	manipPerformedNoop
 )
 
+type finalizeResult uint32
+
+const (
+	// A finalizeResult must be explicitly set so we don't make use of the zero
+	// value.
+	_ finalizeResult = iota
+
+	finalizeResultSuccess
+	finalizeResultConflict
+)
+
 // conn is a tracked connection.
 //
 // +stateify savable
@@ -120,11 +132,13 @@ type conn struct {
 	// reply is the tuple in reply direction.
 	reply tuple
 
-	mu sync.RWMutex `state:"nosave"`
-	// Indicates that the connection has been finalized and may handle replies.
+	finalizeOnce sync.Once
+	// Holds a finalizeResult.
 	//
-	// +checklocks:mu
-	finalized bool
+	// +checkatomics
+	finalizeResult uint32
+
+	mu sync.RWMutex `state:"nosave"`
 	// sourceManip indicates the source manipulation type.
 	//
 	// +checklocks:mu
@@ -505,51 +519,66 @@ func (bkt *bucket) connForTIDRLocked(tid tupleID, now tcpip.MonotonicTime) *tupl
 	return nil
 }
 
-func (ct *ConnTrack) finalize(cn *conn) {
-	tid := cn.reply.id()
-	id := ct.bucket(tid)
-
+func (ct *ConnTrack) finalize(cn *conn) finalizeResult {
 	ct.mu.RLock()
-	bkt := &ct.buckets[id]
+	buckets := ct.buckets
 	ct.mu.RUnlock()
 
+	{
+		tid := cn.reply.id()
+		id := ct.bucket(tid)
+
+		bkt := &buckets[id]
+		bkt.mu.Lock()
+		if bkt.connForTIDRLocked(tid, ct.clock.NowMonotonic()) == nil {
+			bkt.tuples.PushFront(&cn.reply)
+			bkt.mu.Unlock()
+			return finalizeResultSuccess
+		}
+		bkt.mu.Unlock()
+	}
+
+	// Another connection for the reply already exists. Remove the original and
+	// let the caller know we failed.
+	//
+	// TODO(https://gvisor.dev/issue/6850): Investigate handling this clash
+	// better.
+
+	tid := cn.original.id()
+	id := ct.bucket(tid)
+	bkt := &buckets[id]
 	bkt.mu.Lock()
 	defer bkt.mu.Unlock()
-
-	if t := bkt.connForTIDRLocked(tid, ct.clock.NowMonotonic()); t != nil {
-		// Another connection for the reply already exists. We can't do much about
-		// this so we leave the connection cn represents in a state where it can
-		// send packets but its responses will be mapped to some other connection.
-		// This may be okay if the connection only expects to send packets without
-		// any responses.
-		//
-		// TODO(https://gvisor.dev/issue/6850): Investigate handling this clash
-		// better.
-		return
-	}
-
-	bkt.tuples.PushFront(&cn.reply)
+	bkt.tuples.Remove(&cn.original)
+	return finalizeResultConflict
 }
 
-func (cn *conn) finalize() {
-	{
-		cn.mu.RLock()
-		finalized := cn.finalized
-		cn.mu.RUnlock()
-		if finalized {
-			return
-		}
-	}
+func (cn *conn) getFinalizeResult() finalizeResult {
+	return finalizeResult(atomic.LoadUint32(&cn.finalizeResult))
+}
 
-	cn.mu.Lock()
-	finalized := cn.finalized
-	cn.finalized = true
-	cn.mu.Unlock()
-	if finalized {
-		return
-	}
+// finalize attempts to finalize the connection and returns true iff the
+// connection was successfully finalized.
+//
+// If the connection failed to finalize, the caller should drop the packet
+// associated with the connection.
+//
+// If multiple goroutines attempt to finalize at the same time, only one
+// goroutine will perform the work to finalize the connection, but all
+// goroutines will block until the finalizing goroutine finishes finalizing.
+func (cn *conn) finalize() bool {
+	cn.finalizeOnce.Do(func() {
+		atomic.StoreUint32(&cn.finalizeResult, uint32(cn.ct.finalize(cn)))
+	})
 
-	cn.ct.finalize(cn)
+	switch res := cn.getFinalizeResult(); res {
+	case finalizeResultSuccess:
+		return true
+	case finalizeResultConflict:
+		return false
+	default:
+		panic(fmt.Sprintf("unhandled result = %d", res))
+	}
 }
 
 func (cn *conn) maybePerformNoopNAT(dnat bool) {
@@ -919,9 +948,7 @@ func (ct *ConnTrack) reapTupleLocked(reapingTuple *tuple, bktID int, bkt *bucket
 	}
 
 	otherTupleBktID := ct.bucket(otherTuple.id())
-	reapingTuple.conn.mu.RLock()
-	replyTupleInserted := reapingTuple.conn.finalized
-	reapingTuple.conn.mu.RUnlock()
+	replyTupleInserted := reapingTuple.conn.getFinalizeResult() == finalizeResultSuccess
 
 	// To maintain lock order, we can only reap both tuples if the tuple for the
 	// other direction appears later in the table.
