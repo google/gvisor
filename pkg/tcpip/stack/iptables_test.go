@@ -18,27 +18,57 @@ import (
 	"math/rand"
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 )
+
+const (
+	nattedDstPort = 1
+	srcPort       = 2
+	dstPort       = 3
+
+	// The network protocol used for these tests doesn't matter as the tests are
+	// not targetting anything protocol specific.
+	ipv6     = true
+	netProto = header.IPv6ProtocolNumber
+)
+
+var (
+	nattedDstAddr = testutil.MustParse6("a::1")
+	srcAddr       = testutil.MustParse6("b::2")
+	dstAddr       = testutil.MustParse6("c::3")
+)
+
+func v6PacketBuffer() *PacketBuffer {
+	pkt := NewPacketBuffer(PacketBufferOptions{
+		ReserveHeaderBytes: header.IPv6MinimumSize + header.UDPMinimumSize,
+	})
+	udp := header.UDP(pkt.TransportHeader().Push(header.UDPMinimumSize))
+	udp.SetSourcePort(srcPort)
+	udp.SetDestinationPort(dstPort)
+	udp.SetChecksum(0)
+	udp.SetChecksum(^udp.CalculateChecksum(header.PseudoHeaderChecksum(
+		header.UDPProtocolNumber,
+		srcAddr,
+		dstAddr,
+		uint16(len(udp)),
+	)))
+	pkt.TransportProtocolNumber = header.UDPProtocolNumber
+	ip := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize))
+	ip.Encode(&header.IPv6Fields{
+		PayloadLength:     uint16(len(udp)),
+		TransportProtocol: header.UDPProtocolNumber,
+		HopLimit:          64,
+		SrcAddr:           srcAddr,
+		DstAddr:           dstAddr,
+	})
+	pkt.NetworkProtocolNumber = header.IPv6ProtocolNumber
+	return pkt
+}
 
 // TestNATedConnectionReap tests that NATed connections are properly reaped.
 func TestNATedConnectionReap(t *testing.T) {
-	// Note that the network protocol used for this test doesn't matter as this
-	// test focuses on reaping, not anything related to a specific network
-	// protocol.
-
-	const (
-		nattedDstPort = 1
-		srcPort       = 2
-		dstPort       = 3
-
-		nattedDstAddr = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
-		srcAddr       = tcpip.Address("\x0b\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
-		dstAddr       = tcpip.Address("\x0c\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03")
-	)
-
 	clock := faketime.NewManualClock()
 	iptables := DefaultTables(clock, rand.New(rand.NewSource(0 /* seed */)))
 
@@ -46,7 +76,7 @@ func TestNATedConnectionReap(t *testing.T) {
 		Rules: []Rule{
 			// Prerouting
 			{
-				Target: &DNATTarget{NetworkProtocol: header.IPv6ProtocolNumber, Addr: nattedDstAddr, Port: nattedDstPort},
+				Target: &DNATTarget{NetworkProtocol: netProto, Addr: nattedDstAddr, Port: nattedDstPort},
 			},
 			{
 				Target: &AcceptTarget{},
@@ -80,7 +110,7 @@ func TestNATedConnectionReap(t *testing.T) {
 			Postrouting: 5,
 		},
 	}
-	if err := iptables.ReplaceTable(NATID, table, true /* ipv6 */); err != nil {
+	if err := iptables.ReplaceTable(NATID, table, ipv6); err != nil {
 		t.Fatalf("ipt.ReplaceTable(%d, _, true): %s", NATID, err)
 	}
 
@@ -88,29 +118,7 @@ func TestNATedConnectionReap(t *testing.T) {
 	// on the first change to IPTables.
 	iptables.reaperDone <- struct{}{}
 
-	pkt := NewPacketBuffer(PacketBufferOptions{
-		ReserveHeaderBytes: header.IPv6MinimumSize + header.UDPMinimumSize,
-	})
-	udp := header.UDP(pkt.TransportHeader().Push(header.UDPMinimumSize))
-	udp.SetSourcePort(srcPort)
-	udp.SetDestinationPort(dstPort)
-	udp.SetChecksum(0)
-	udp.SetChecksum(^udp.CalculateChecksum(header.PseudoHeaderChecksum(
-		header.UDPProtocolNumber,
-		srcAddr,
-		dstAddr,
-		uint16(len(udp)),
-	)))
-	pkt.TransportProtocolNumber = header.UDPProtocolNumber
-	ip := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize))
-	ip.Encode(&header.IPv6Fields{
-		PayloadLength:     uint16(len(udp)),
-		TransportProtocol: header.UDPProtocolNumber,
-		HopLimit:          64,
-		SrcAddr:           srcAddr,
-		DstAddr:           dstAddr,
-	})
-	pkt.NetworkProtocolNumber = header.IPv6ProtocolNumber
+	pkt := v6PacketBuffer()
 
 	originalTID, _, ok := getTupleID(pkt)
 	if !ok {
@@ -218,4 +226,94 @@ func TestNATedConnectionReap(t *testing.T) {
 	}
 	checkNoTupleInBucket(originalBkt, originalTID, false /* reply */)
 	checkNoTupleInBucket(replyBkt, replyTID, true /* reply */)
+}
+
+// TestNATAlwaysPerformed tests that a connection will have a noop-NAT
+// performed on it when no rule matches its associated packet.
+func TestNATAlwaysPerformed(t *testing.T) {
+	tests := []struct {
+		name     string
+		dnatHook func(*testing.T, *IPTables, *PacketBuffer)
+		snatHook func(*testing.T, *IPTables, *PacketBuffer)
+	}{
+		{
+			name: "Prerouting and Input",
+			dnatHook: func(t *testing.T, iptables *IPTables, pkt *PacketBuffer) {
+				t.Helper()
+
+				if !iptables.CheckPrerouting(pkt, nil /* addressEP */, "" /* inNicName */) {
+					t.Fatal("got iptables.CheckPrerouting(...) = false, want = true")
+				}
+			},
+			snatHook: func(t *testing.T, iptables *IPTables, pkt *PacketBuffer) {
+				t.Helper()
+
+				if !iptables.CheckInput(pkt, "" /* inNicName */) {
+					t.Fatal("got iptables.CheckInput(...) = false, want = true")
+				}
+			},
+		},
+		{
+			name: "Output and Postrouting",
+			dnatHook: func(t *testing.T, iptables *IPTables, pkt *PacketBuffer) {
+				t.Helper()
+
+				// Output hook depends on a route but if the route is local, we don't
+				// need anything else from it.
+				r := Route{
+					routeInfo: routeInfo{
+						Loop: PacketLoop,
+					},
+				}
+				if !iptables.CheckOutput(pkt, &r, "" /* outNicName */) {
+					t.Fatal("got iptables.CheckOutput(...) = false, want = true")
+				}
+			},
+			snatHook: func(t *testing.T, iptables *IPTables, pkt *PacketBuffer) {
+				t.Helper()
+
+				// Postrouting hook depends on a route but if the route is local, we
+				// don't need anything else from it.
+				r := Route{
+					routeInfo: routeInfo{
+						Loop: PacketLoop,
+					},
+				}
+				if !iptables.CheckPostrouting(pkt, &r, nil /* addressEP */, "" /* outNicName */) {
+					t.Fatal("got iptables.CheckPostrouting(...) = false, want = true")
+				}
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			clock := faketime.NewManualClock()
+			iptables := DefaultTables(clock, rand.New(rand.NewSource(0 /* seed */)))
+
+			// Just to make sure the iptables is not short circuited.
+			if err := iptables.ReplaceTable(NATID, iptables.GetTable(NATID, ipv6), ipv6); err != nil {
+				t.Fatalf("ipt.ReplaceTable(%d, _, true): %s", NATID, err)
+			}
+
+			pkt := v6PacketBuffer()
+
+			test.dnatHook(t, iptables, pkt)
+			conn := pkt.tuple.conn
+			conn.mu.RLock()
+			destManip := conn.destinationManip
+			conn.mu.RUnlock()
+			if destManip != manipPerformedNoop {
+				t.Errorf("got destManip = %d, want = %d", destManip, manipPerformedNoop)
+			}
+
+			test.snatHook(t, iptables, pkt)
+			conn.mu.RLock()
+			srcManip := conn.sourceManip
+			conn.mu.RUnlock()
+			if srcManip != manipPerformedNoop {
+				t.Errorf("got destManip = %d, want = %d", destManip, manipPerformedNoop)
+			}
+		})
+	}
 }
