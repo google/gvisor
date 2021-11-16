@@ -425,11 +425,43 @@ func (it *IPTables) checkMangleRLocked(hook Hook, pkt *PacketBuffer, r *Route, a
 //
 // +checklocksread:it.mu
 func (it *IPTables) checkNATRLocked(hook Hook, pkt *PacketBuffer, r *Route, addressEP AddressableEndpoint, inNicName, outNicName string) bool {
-	if t := pkt.tuple; t != nil && t.conn.handlePacket(pkt, hook, r) {
+	t := pkt.tuple
+	if t != nil && t.conn.handlePacket(pkt, hook, r) {
 		return true
 	}
 
-	return it.checkRLocked(NATID, hook, pkt, r, addressEP, inNicName, outNicName)
+	if !it.checkRLocked(NATID, hook, pkt, r, addressEP, inNicName, outNicName) {
+		return false
+	}
+
+	if t == nil {
+		return true
+	}
+
+	var dnat bool
+	var natDone *bool
+	switch hook {
+	case Prerouting, Output:
+		dnat = true
+		natDone = &pkt.DNATDone
+	case Input, Postrouting:
+		dnat = false
+		natDone = &pkt.SNATDone
+	case Forward:
+		panic("should not attempt NAT in forwarding")
+	default:
+		panic(fmt.Sprintf("unhandled hook = %d", hook))
+	}
+
+	// Make sure the connection is NATed.
+	//
+	// If the packet was already NATed, the connection must be NATed.
+	if !*natDone {
+		t.conn.maybePerformNoopNAT(dnat)
+		_ = t.conn.handlePacket(pkt, hook, r)
+	}
+
+	return true
 }
 
 // checkFilterRLocked runs the packet through the filter table.
