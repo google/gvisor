@@ -22,7 +22,9 @@ go_library(
         "waiter_list.go",
     ],
     visibility = ["//visibility:public"],
-    deps = ["//pkg/sync"],
+    deps = [
+        "//pkg/sync",
+    ],
 )
 
 go_test(

@@ -24,33 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 )
 
-type sleeper struct {
-	context.Context
-	ch chan struct{}
-}
-
-func newSleeperContext(t *testing.T) context.Context {
-	return &sleeper{
-		Context: contexttest.Context(t),
-		ch:      make(chan struct{}),
-	}
-}
-
-func (s *sleeper) SleepStart() <-chan struct{} {
-	return s.ch
-}
-
-func (s *sleeper) SleepFinish(bool) {
-}
-
-func (s *sleeper) Cancel() {
-	s.ch <- struct{}{}
-}
-
-func (s *sleeper) Interrupted() bool {
-	return len(s.ch) != 0
-}
-
 type openResult struct {
 	*fs.File
 	error
@@ -96,6 +69,7 @@ func newAnonPipe(t *testing.T) *Pipe {
 // blockDuration. This is useful for checking that a goroutine that is supposed
 // to be executing a blocking operation is actually blocking.
 func assertRecvBlocks(t *testing.T, c <-chan struct{}, blockDuration time.Duration, failMsg string) {
+	t.Helper()
 	select {
 	case <-c:
 		t.Fatalf(failMsg)
@@ -105,7 +79,7 @@ func assertRecvBlocks(t *testing.T, c <-chan struct{}, blockDuration time.Durati
 }
 
 func TestReadOpenBlocksForWriteOpen(t *testing.T) {
-	ctx := newSleeperContext(t)
+	ctx := contexttest.Context(t)
 	f := NewInodeOperations(ctx, perms, newNamedPipe(t))
 
 	rDone := make(chan struct{})
@@ -123,7 +97,7 @@ func TestReadOpenBlocksForWriteOpen(t *testing.T) {
 }
 
 func TestWriteOpenBlocksForReadOpen(t *testing.T) {
-	ctx := newSleeperContext(t)
+	ctx := contexttest.Context(t)
 	f := NewInodeOperations(ctx, perms, newNamedPipe(t))
 
 	wDone := make(chan struct{})
@@ -141,7 +115,7 @@ func TestWriteOpenBlocksForReadOpen(t *testing.T) {
 }
 
 func TestMultipleWriteOpenDoesntCountAsReadOpen(t *testing.T) {
-	ctx := newSleeperContext(t)
+	ctx := contexttest.Context(t)
 	f := NewInodeOperations(ctx, perms, newNamedPipe(t))
 
 	rDone1 := make(chan struct{})
@@ -163,7 +137,7 @@ func TestMultipleWriteOpenDoesntCountAsReadOpen(t *testing.T) {
 }
 
 func TestClosedReaderBlocksWriteOpen(t *testing.T) {
-	ctx := newSleeperContext(t)
+	ctx := contexttest.Context(t)
 	f := NewInodeOperations(ctx, perms, newNamedPipe(t))
 
 	rFile, _ := testOpenOrDie(ctx, t, f, fs.FileFlags{Read: true, NonBlocking: true}, nil)
@@ -184,7 +158,7 @@ func TestClosedReaderBlocksWriteOpen(t *testing.T) {
 }
 
 func TestReadWriteOpenNeverBlocks(t *testing.T) {
-	ctx := newSleeperContext(t)
+	ctx := contexttest.Context(t)
 	f := NewInodeOperations(ctx, perms, newNamedPipe(t))
 
 	rwDone := make(chan struct{})
@@ -195,7 +169,7 @@ func TestReadWriteOpenNeverBlocks(t *testing.T) {
 }
 
 func TestReadWriteOpenUnblocksReadOpen(t *testing.T) {
-	ctx := newSleeperContext(t)
+	ctx := contexttest.Context(t)
 	f := NewInodeOperations(ctx, perms, newNamedPipe(t))
 
 	rDone := make(chan struct{})
@@ -209,7 +183,7 @@ func TestReadWriteOpenUnblocksReadOpen(t *testing.T) {
 }
 
 func TestReadWriteOpenUnblocksWriteOpen(t *testing.T) {
-	ctx := newSleeperContext(t)
+	ctx := contexttest.Context(t)
 	f := NewInodeOperations(ctx, perms, newNamedPipe(t))
 
 	wDone := make(chan struct{})
@@ -223,7 +197,7 @@ func TestReadWriteOpenUnblocksWriteOpen(t *testing.T) {
 }
 
 func TestBlockedOpenIsCancellable(t *testing.T) {
-	ctx := newSleeperContext(t)
+	ctx := contexttest.Context(t)
 	f := NewInodeOperations(ctx, perms, newNamedPipe(t))
 
 	done := make(chan openResult)
@@ -235,7 +209,8 @@ func TestBlockedOpenIsCancellable(t *testing.T) {
 		// Ok.
 	}
 
-	ctx.(*sleeper).Cancel()
+	ctx.Interrupt()
+
 	// If the cancel on the sleeper didn't work, the open for read would never
 	// return.
 	res := <-done
@@ -246,7 +221,7 @@ func TestBlockedOpenIsCancellable(t *testing.T) {
 }
 
 func TestNonblockingReadOpenFileNoWriters(t *testing.T) {
-	ctx := newSleeperContext(t)
+	ctx := contexttest.Context(t)
 	f := NewInodeOperations(ctx, perms, newNamedPipe(t))
 
 	if _, err := testOpen(ctx, t, f, fs.FileFlags{Read: true, NonBlocking: true}, nil); err != nil {
@@ -255,7 +230,7 @@ func TestNonblockingReadOpenFileNoWriters(t *testing.T) {
 }
 
 func TestNonblockingWriteOpenFileNoReaders(t *testing.T) {
-	ctx := newSleeperContext(t)
+	ctx := contexttest.Context(t)
 	f := NewInodeOperations(ctx, perms, newNamedPipe(t))
 
 	if _, err := testOpen(ctx, t, f, fs.FileFlags{Write: true, NonBlocking: true}, nil); !linuxerr.Equals(linuxerr.ENXIO, err) {
@@ -264,7 +239,7 @@ func TestNonblockingWriteOpenFileNoReaders(t *testing.T) {
 }
 
 func TestNonBlockingReadOpenWithWriter(t *testing.T) {
-	ctx := newSleeperContext(t)
+	ctx := contexttest.Context(t)
 	f := NewInodeOperations(ctx, perms, newNamedPipe(t))
 
 	wDone := make(chan struct{})
@@ -283,7 +258,7 @@ func TestNonBlockingReadOpenWithWriter(t *testing.T) {
 }
 
 func TestNonBlockingWriteOpenWithReader(t *testing.T) {
-	ctx := newSleeperContext(t)
+	ctx := contexttest.Context(t)
 	f := NewInodeOperations(ctx, perms, newNamedPipe(t))
 
 	rDone := make(chan struct{})
@@ -302,7 +277,7 @@ func TestNonBlockingWriteOpenWithReader(t *testing.T) {
 }
 
 func TestAnonReadOpen(t *testing.T) {
-	ctx := newSleeperContext(t)
+	ctx := contexttest.Context(t)
 	f := NewInodeOperations(ctx, perms, newAnonPipe(t))
 
 	if _, err := testOpen(ctx, t, f, fs.FileFlags{Read: true}, nil); err != nil {
@@ -311,7 +286,7 @@ func TestAnonReadOpen(t *testing.T) {
 }
 
 func TestAnonWriteOpen(t *testing.T) {
-	ctx := newSleeperContext(t)
+	ctx := contexttest.Context(t)
 	f := NewInodeOperations(ctx, perms, newAnonPipe(t))
 
 	if _, err := testOpen(ctx, t, f, fs.FileFlags{Write: true}, nil); err != nil {

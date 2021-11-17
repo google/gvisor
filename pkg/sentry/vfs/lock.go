@@ -39,15 +39,9 @@ type FileLocks struct {
 }
 
 // LockBSD tries to acquire a BSD-style lock on the entire file.
-func (fl *FileLocks) LockBSD(ctx context.Context, uid fslock.UniqueID, ownerID int32, t fslock.LockType, block fslock.Blocker) error {
-	if fl.bsd.LockRegion(uid, ownerID, t, fslock.LockRange{0, fslock.LockEOF}, block) {
-		return nil
-	}
-
-	// Return an appropriate error for the unsuccessful lock attempt, depending on
-	// whether this is a blocking or non-blocking operation.
-	if block == nil {
-		return linuxerr.ErrWouldBlock
+func (fl *FileLocks) LockBSD(ctx context.Context, uid fslock.UniqueID, ownerID int32, t fslock.LockType, block bool) error {
+	if err := fl.bsd.LockRegion(ctx, uid, ownerID, t, fslock.LockRange{0, fslock.LockEOF}, block); err == nil || err == linuxerr.ErrWouldBlock {
+		return err
 	}
 	return linuxerr.ERESTARTSYS
 }
@@ -61,15 +55,9 @@ func (fl *FileLocks) UnlockBSD(uid fslock.UniqueID) {
 }
 
 // LockPOSIX tries to acquire a POSIX-style lock on a file region.
-func (fl *FileLocks) LockPOSIX(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, r fslock.LockRange, block fslock.Blocker) error {
-	if fl.posix.LockRegion(uid, ownerPID, t, r, block) {
-		return nil
-	}
-
-	// Return an appropriate error for the unsuccessful lock attempt, depending on
-	// whether this is a blocking or non-blocking operation.
-	if block == nil {
-		return linuxerr.ErrWouldBlock
+func (fl *FileLocks) LockPOSIX(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, r fslock.LockRange, block bool) error {
+	if err := fl.posix.LockRegion(ctx, uid, ownerPID, t, r, block); err == nil || err == linuxerr.ErrWouldBlock {
+		return err
 	}
 	return linuxerr.ERESTARTSYS
 }

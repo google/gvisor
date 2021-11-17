@@ -56,6 +56,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -135,48 +136,31 @@ type Locks struct {
 	blockedQueue waiter.Queue
 }
 
-// Blocker is the interface used for blocking locks. Passing a nil Blocker
-// will be treated as non-blocking.
-type Blocker interface {
-	Block(C <-chan struct{}) error
-}
-
-const (
-	// EventMaskAll is the mask we will always use for locks, by using the
-	// same mask all the time we can wake up everyone anytime the lock
-	// changes state.
-	EventMaskAll waiter.EventMask = 0xFFFF
-)
-
-// LockRegion attempts to acquire a typed lock for the uid on a region
-// of a file. Returns true if successful in locking the region. If false
-// is returned, the caller should normally interpret this as "try again later" if
-// acquiring the lock in a non-blocking mode or "interrupted" if in a blocking mode.
-// Blocker is the interface used to provide blocking behavior, passing a nil Blocker
-// will result in non-blocking behavior.
-func (l *Locks) LockRegion(uid UniqueID, ownerPID int32, t LockType, r LockRange, block Blocker) bool {
+// LockRegion attempts to acquire a typed lock for the uid on a region of a
+// file. Returns nil if successful in locking the region, otherwise an
+// appropriate error is returned.
+func (l *Locks) LockRegion(ctx context.Context, uid UniqueID, ownerPID int32, t LockType, r LockRange, block bool) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	for {
-		l.mu.Lock()
 
 		// Blocking locks must run in a loop because we'll be woken up whenever an unlock event
 		// happens for this lock. We will then attempt to take the lock again and if it fails
 		// continue blocking.
-		res := l.locks.lock(uid, ownerPID, t, r)
-		if !res && block != nil {
-			e, ch := waiter.NewChannelEntry(EventMaskAll)
-			l.blockedQueue.EventRegister(&e)
-			l.mu.Unlock()
-			if err := block.Block(ch); err != nil {
-				// We were interrupted, the caller can translate this to EINTR if applicable.
-				l.blockedQueue.EventUnregister(&e)
-				return false
+		err := l.locks.lock(uid, ownerPID, t, r)
+		if err == linuxerr.ErrWouldBlock && block {
+			// Note: we release the lock in EventRegister below, in
+			// order to avoid a possible race.
+			ok := ctx.BlockOn(l, waiter.EventIn)
+			l.mu.Lock() // +checklocksforce: see above.
+			if ok {
+				continue // Try again now that someone has unlocked.
 			}
-			l.blockedQueue.EventUnregister(&e)
-			continue // Try again now that someone has unlocked.
+			// Must be interrupted.
+			return linuxerr.ErrInterrupted
 		}
 
-		l.mu.Unlock()
-		return res
+		return err
 	}
 }
 
@@ -184,8 +168,24 @@ func (l *Locks) LockRegion(uid UniqueID, ownerPID int32, t LockType, r LockRange
 // F_GETLK (and does not care about storing PIDs as a result).
 //
 // TODO(gvisor.dev/issue/1624): Delete.
-func (l *Locks) LockRegionVFS1(uid UniqueID, t LockType, r LockRange, block Blocker) bool {
-	return l.LockRegion(uid, 0 /* ownerPID */, t, r, block)
+func (l *Locks) LockRegionVFS1(ctx context.Context, uid UniqueID, t LockType, r LockRange, block bool) error {
+	return l.LockRegion(ctx, uid, 0 /* ownerPID */, t, r, block)
+}
+
+// Readiness always returns zero.
+func (l *Locks) Readiness(waiter.EventMask) waiter.EventMask {
+	return 0
+}
+
+// EventRegister implements waiter.Waitable.EventRegister.
+func (l *Locks) EventRegister(e *waiter.Entry) {
+	defer l.mu.Unlock() // +checklocksforce: see above.
+	l.blockedQueue.EventRegister(e)
+}
+
+// EventUnregister implements waiter.Waitable.EventUnregister.
+func (l *Locks) EventUnregister(e *waiter.Entry) {
+	l.blockedQueue.EventUnregister(e)
 }
 
 // UnlockRegion attempts to release a lock for the uid on a region of a file.
@@ -197,7 +197,9 @@ func (l *Locks) UnlockRegion(uid UniqueID, r LockRange) {
 	l.locks.unlock(uid, r)
 
 	// Now that we've released the lock, we need to wake up any waiters.
-	l.blockedQueue.Notify(EventMaskAll)
+	// We track how many notifications have happened since the last attempt
+	// to acquire the lock, in order to ensure that we avoid races.
+	l.blockedQueue.Notify(waiter.EventIn)
 }
 
 // makeLock returns a new typed Lock that has either uid as its only reader
@@ -332,11 +334,11 @@ func (l *Lock) isOnlyReader(uid UniqueID) bool {
 	return ok
 }
 
-// lock returns true if uid took a lock of type t on the entire range of
-// LockRange.
+// lock returns nil if uid took a lock of type t on the entire range of
+// LockRange. Otherwise, linuxerr.ErrWouldBlock is returned.
 //
 // Preconditions: r.Start <= r.End (will panic otherwise).
-func (l *LockSet) lock(uid UniqueID, ownerPID int32, t LockType, r LockRange) bool {
+func (l *LockSet) lock(uid UniqueID, ownerPID int32, t LockType, r LockRange) error {
 	if r.Start > r.End {
 		panic(fmt.Sprintf("lock: r.Start %d > r.End %d", r.Start, r.End))
 	}
@@ -344,15 +346,16 @@ func (l *LockSet) lock(uid UniqueID, ownerPID int32, t LockType, r LockRange) bo
 	// Don't attempt to insert anything with a range of 0 and treat this
 	// as a successful no-op.
 	if r.Length() == 0 {
-		return true
+		return nil
 	}
 
-	// Do a first-pass check.  We *could* hold onto the segments we
-	// checked if canLock would return true, but traversing the segment
-	// set should be fast and this keeps things simple.
+	// Do a first-pass check. We *could* hold onto the segments we checked
+	// if canLock would return true, but traversing the segment set should
+	// be fast and this keeps things simple.
 	if !l.canLock(uid, t, r) {
-		return false
+		return linuxerr.ErrWouldBlock
 	}
+
 	// Get our starting point.
 	seg, gap := l.Find(r.Start)
 	if gap.Ok() {
@@ -381,7 +384,8 @@ func (l *LockSet) lock(uid UniqueID, ownerPID int32, t LockType, r LockRange) bo
 			seg = gap.NextSegment()
 		}
 	}
-	return true
+
+	return nil
 }
 
 // unlock is always successful.  If uid has no locks held for the range LockRange,

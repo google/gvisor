@@ -433,7 +433,7 @@ func (fd *LockFD) Locks() *FileLocks {
 }
 
 // LockBSD implements FileDescriptionImpl.LockBSD.
-func (fd *LockFD) LockBSD(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, block fslock.Blocker) error {
+func (fd *LockFD) LockBSD(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, block bool) error {
 	return fd.locks.LockBSD(ctx, uid, ownerPID, t, block)
 }
 
@@ -444,7 +444,7 @@ func (fd *LockFD) UnlockBSD(ctx context.Context, uid fslock.UniqueID) error {
 }
 
 // LockPOSIX implements FileDescriptionImpl.LockPOSIX.
-func (fd *LockFD) LockPOSIX(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, r fslock.LockRange, block fslock.Blocker) error {
+func (fd *LockFD) LockPOSIX(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, r fslock.LockRange, block bool) error {
 	return fd.locks.LockPOSIX(ctx, uid, ownerPID, t, r, block)
 }
 
@@ -470,7 +470,7 @@ func (NoLockFD) SupportsLocks() bool {
 }
 
 // LockBSD implements FileDescriptionImpl.LockBSD.
-func (NoLockFD) LockBSD(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, block fslock.Blocker) error {
+func (NoLockFD) LockBSD(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, block bool) error {
 	return linuxerr.ENOLCK
 }
 
@@ -480,7 +480,7 @@ func (NoLockFD) UnlockBSD(ctx context.Context, uid fslock.UniqueID) error {
 }
 
 // LockPOSIX implements FileDescriptionImpl.LockPOSIX.
-func (NoLockFD) LockPOSIX(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, r fslock.LockRange, block fslock.Blocker) error {
+func (NoLockFD) LockPOSIX(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, r fslock.LockRange, block bool) error {
 	return linuxerr.ENOLCK
 }
 
@@ -506,7 +506,7 @@ func (BadLockFD) SupportsLocks() bool {
 }
 
 // LockBSD implements FileDescriptionImpl.LockBSD.
-func (BadLockFD) LockBSD(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, block fslock.Blocker) error {
+func (BadLockFD) LockBSD(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, block bool) error {
 	return linuxerr.EBADF
 }
 
@@ -516,7 +516,7 @@ func (BadLockFD) UnlockBSD(ctx context.Context, uid fslock.UniqueID) error {
 }
 
 // LockPOSIX implements FileDescriptionImpl.LockPOSIX.
-func (BadLockFD) LockPOSIX(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, r fslock.LockRange, block fslock.Blocker) error {
+func (BadLockFD) LockPOSIX(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, r fslock.LockRange, block bool) error {
 	return linuxerr.EBADF
 }
 

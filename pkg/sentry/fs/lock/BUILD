@@ -43,6 +43,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/log",
         "//pkg/sync",
         "//pkg/waiter",
@@ -58,5 +59,8 @@ go_test(
         "lock_test.go",
     ],
     library = ":lock",
-    deps = ["@org_golang_x_sys//unix:go_default_library"],
+    deps = [
+        "//pkg/errors/linuxerr",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
 )

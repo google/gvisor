@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -35,21 +34,8 @@ import (
 //
 // +stateify savable
 type VFSPipe struct {
-	// mu protects the fields below.
-	mu sync.Mutex `state:"nosave"`
-
 	// pipe is the underlying pipe.
 	pipe Pipe
-
-	// Channels for synchronizing the creation of new readers and writers
-	// of this fifo. See waitFor and newHandleLocked.
-	//
-	// These are not saved/restored because all waiters are unblocked on
-	// save, and either automatically restart (via ERESTARTSYS) or return
-	// EINTR on resume. On restarts via ERESTARTSYS, the appropriate
-	// channel will be recreated.
-	rWakeup chan struct{} `state:"nosave"`
-	wWakeup chan struct{} `state:"nosave"`
 }
 
 // NewVFSPipe returns an initialized VFSPipe.
@@ -84,9 +70,6 @@ func (*VFSPipe) Allocate(context.Context, uint64, uint64, uint64) error {
 
 // Open opens the pipe represented by vp.
 func (vp *VFSPipe) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, statusFlags uint32, locks *vfs.FileLocks) (*vfs.FileDescription, error) {
-	vp.mu.Lock()
-	defer vp.mu.Unlock()
-
 	readable := vfs.MayReadFileWithOpenFlags(statusFlags)
 	writable := vfs.MayWriteFileWithOpenFlags(statusFlags)
 	if !readable && !writable {
@@ -111,30 +94,26 @@ func (vp *VFSPipe) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, s
 	switch {
 	case readable && writable:
 		// Pipes opened for read-write always succeed without blocking.
-		newHandleLocked(&vp.rWakeup)
-		newHandleLocked(&vp.wWakeup)
 
 	case readable:
-		newHandleLocked(&vp.rWakeup)
 		// If this pipe is being opened as blocking and there's no
 		// writer, we have to wait for a writer to open the other end.
-		if vp.pipe.isNamed && statusFlags&linux.O_NONBLOCK == 0 && !vp.pipe.HasWriters() && !waitFor(&vp.mu, &vp.wWakeup, ctx) {
-			fd.DecRef(ctx)
-			return nil, linuxerr.EINTR
+		for vp.pipe.isNamed && statusFlags&linux.O_NONBLOCK == 0 && !vp.pipe.HasWriters() {
+			if !ctx.BlockOn((*waitQueue)(&vp.pipe), waiter.ReadableEvents) {
+				fd.DecRef(ctx)
+				return nil, linuxerr.EINTR
+			}
 		}
 
 	case writable:
-		newHandleLocked(&vp.wWakeup)
-
-		if vp.pipe.isNamed && !vp.pipe.HasReaders() {
+		for vp.pipe.isNamed && !vp.pipe.HasReaders() {
 			// Non-blocking, write-only opens fail with ENXIO when the read
 			// side isn't open yet.
 			if statusFlags&linux.O_NONBLOCK != 0 {
 				fd.DecRef(ctx)
 				return nil, linuxerr.ENXIO
 			}
-			// Wait for a reader to open the other end.
-			if !waitFor(&vp.mu, &vp.rWakeup, ctx) {
+			if !ctx.BlockOn((*waitQueue)(&vp.pipe), waiter.WritableEvents) {
 				fd.DecRef(ctx)
 				return nil, linuxerr.EINTR
 			}
@@ -205,7 +184,7 @@ func (fd *VFSPipeFD) Release(context.Context) {
 		panic("invalid pipe flags: must be readable, writable, or both")
 	}
 
-	fd.pipe.Notify(event)
+	fd.pipe.queue.Notify(event)
 }
 
 // Readiness implements waiter.Waitable.Readiness.
@@ -230,6 +209,9 @@ func (fd *VFSPipeFD) Allocate(ctx context.Context, mode, offset, length uint64) 
 // EventRegister implements waiter.Waitable.EventRegister.
 func (fd *VFSPipeFD) EventRegister(e *waiter.Entry) {
 	fd.pipe.EventRegister(e)
+
+	// Notify synchronously.
+	e.NotifyEvent(fd.Readiness(^waiter.EventMask(0)))
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
@@ -294,7 +276,7 @@ func (fd *VFSPipeFD) SpliceToNonPipe(ctx context.Context, out *vfs.FileDescripti
 	fd.pipe.mu.Unlock()
 
 	if n > 0 {
-		fd.pipe.Notify(waiter.WritableEvents)
+		fd.pipe.queue.Notify(waiter.WritableEvents)
 	}
 	return n, err
 }
@@ -319,7 +301,7 @@ func (fd *VFSPipeFD) SpliceFromNonPipe(ctx context.Context, in *vfs.FileDescript
 	fd.pipe.mu.Unlock()
 
 	if n > 0 {
-		fd.pipe.Notify(waiter.ReadableEvents)
+		fd.pipe.queue.Notify(waiter.ReadableEvents)
 	}
 	return n, err
 }
@@ -337,8 +319,8 @@ func (fd *VFSPipeFD) CopyIn(ctx context.Context, addr hostarch.Addr, dst []byte,
 }
 
 // CopyOut implements usermem.IO.CopyOut. Note that it is the caller's
-// responsibility to call fd.pipe.Notify(waiter.ReadableEvents) after the write
-// is completed.
+// responsibility to call fd.pipe.queue.Notify(waiter.ReadableEvents) after the
+// write is completed.
 //
 // Preconditions: fd.pipe.mu must be locked.
 func (fd *VFSPipeFD) CopyOut(ctx context.Context, addr hostarch.Addr, src []byte, opts usermem.IOOpts) (int, error) {
@@ -360,7 +342,7 @@ func (fd *VFSPipeFD) ZeroOut(ctx context.Context, addr hostarch.Addr, toZero int
 
 // CopyInTo implements usermem.IO.CopyInTo. Note that it is the caller's
 // responsibility to call fd.pipe.consumeLocked() and
-// fd.pipe.Notify(waiter.WritableEvents) after the read is completed.
+// fd.pipe.queue.Notify(waiter.WritableEvents) after the read is completed.
 //
 // Preconditions: fd.pipe.mu must be locked.
 func (fd *VFSPipeFD) CopyInTo(ctx context.Context, ars hostarch.AddrRangeSeq, dst safemem.Writer, opts usermem.IOOpts) (int64, error) {
@@ -370,8 +352,8 @@ func (fd *VFSPipeFD) CopyInTo(ctx context.Context, ars hostarch.AddrRangeSeq, ds
 }
 
 // CopyOutFrom implements usermem.IO.CopyOutFrom. Note that it is the caller's
-// responsibility to call fd.pipe.Notify(waiter.ReadableEvents) after the write
-// is completed.
+// responsibility to call fd.pipe.queue.Notify(waiter.ReadableEvents) after the
+// write is completed.
 //
 // Preconditions: fd.pipe.mu must be locked.
 func (fd *VFSPipeFD) CopyOutFrom(ctx context.Context, ars hostarch.AddrRangeSeq, src safemem.Reader, opts usermem.IOOpts) (int64, error) {
@@ -432,9 +414,9 @@ func spliceOrTee(ctx context.Context, dst, src *VFSPipeFD, count int64, removeFr
 	src.pipe.mu.Unlock()
 
 	if n > 0 {
-		dst.pipe.Notify(waiter.ReadableEvents)
+		dst.pipe.queue.Notify(waiter.ReadableEvents)
 		if removeFromSrc {
-			src.pipe.Notify(waiter.WritableEvents)
+			src.pipe.queue.Notify(waiter.WritableEvents)
 		}
 	}
 	return n, err

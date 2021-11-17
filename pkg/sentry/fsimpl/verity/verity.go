@@ -1520,7 +1520,7 @@ func (fd *fileDescription) SupportsLocks() bool {
 }
 
 // LockBSD implements vfs.FileDescriptionImpl.LockBSD.
-func (fd *fileDescription) LockBSD(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, block fslock.Blocker) error {
+func (fd *fileDescription) LockBSD(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, block bool) error {
 	return fd.lowerFD.LockBSD(ctx, ownerPID, t, block)
 }
 
@@ -1530,7 +1530,7 @@ func (fd *fileDescription) UnlockBSD(ctx context.Context, uid fslock.UniqueID) e
 }
 
 // LockPOSIX implements vfs.FileDescriptionImpl.LockPOSIX.
-func (fd *fileDescription) LockPOSIX(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, r fslock.LockRange, block fslock.Blocker) error {
+func (fd *fileDescription) LockPOSIX(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, r fslock.LockRange, block bool) error {
 	return fd.lowerFD.LockPOSIX(ctx, uid, ownerPID, t, r, block)
 }
 

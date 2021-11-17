@@ -458,13 +458,13 @@ type FileDescriptionImpl interface {
 	SupportsLocks() bool
 
 	// LockBSD tries to acquire a BSD-style advisory file lock.
-	LockBSD(ctx context.Context, uid lock.UniqueID, ownerPID int32, t lock.LockType, block lock.Blocker) error
+	LockBSD(ctx context.Context, uid lock.UniqueID, ownerPID int32, t lock.LockType, block bool) error
 
 	// UnlockBSD releases a BSD-style advisory file lock.
 	UnlockBSD(ctx context.Context, uid lock.UniqueID) error
 
 	// LockPOSIX tries to acquire a POSIX-style advisory file lock.
-	LockPOSIX(ctx context.Context, uid lock.UniqueID, ownerPID int32, t lock.LockType, r lock.LockRange, block lock.Blocker) error
+	LockPOSIX(ctx context.Context, uid lock.UniqueID, ownerPID int32, t lock.LockType, r lock.LockRange, block bool) error
 
 	// UnlockPOSIX releases a POSIX-style advisory file lock.
 	UnlockPOSIX(ctx context.Context, uid lock.UniqueID, ComputeLockRange lock.LockRange) error
@@ -827,9 +827,9 @@ func (fd *FileDescription) SupportsLocks() bool {
 }
 
 // LockBSD tries to acquire a BSD-style advisory file lock.
-func (fd *FileDescription) LockBSD(ctx context.Context, ownerPID int32, lockType lock.LockType, blocker lock.Blocker) error {
+func (fd *FileDescription) LockBSD(ctx context.Context, ownerPID int32, lockType lock.LockType, block bool) error {
 	atomic.StoreUint32(&fd.usedLockBSD, 1)
-	return fd.impl.LockBSD(ctx, fd, ownerPID, lockType, blocker)
+	return fd.impl.LockBSD(ctx, fd, ownerPID, lockType, block)
 }
 
 // UnlockBSD releases a BSD-style advisory file lock.
@@ -838,7 +838,7 @@ func (fd *FileDescription) UnlockBSD(ctx context.Context) error {
 }
 
 // LockPOSIX locks a POSIX-style file range lock.
-func (fd *FileDescription) LockPOSIX(ctx context.Context, uid lock.UniqueID, ownerPID int32, t lock.LockType, r lock.LockRange, block lock.Blocker) error {
+func (fd *FileDescription) LockPOSIX(ctx context.Context, uid lock.UniqueID, ownerPID int32, t lock.LockType, r lock.LockRange, block bool) error {
 	return fd.impl.LockPOSIX(ctx, uid, ownerPID, t, r, block)
 }
 
