@@ -120,7 +120,7 @@ func (q *queue) Enqueue(ctx context.Context, data [][]byte, c ControlMessages, f
 
 	if q.closed {
 		q.mu.Unlock()
-		return 0, false, tcpip.SyserrClosedForSend
+		return 0, false, syserr.ErrClosedForSend
 	}
 
 	for _, d := range data {
@@ -188,7 +188,7 @@ func (q *queue) Dequeue() (e *message, notify bool, err *syserr.Error) {
 	if q.dataList.Front() == nil {
 		err := syserr.ErrWouldBlock
 		if q.closed {
-			err = tcpip.SyserrClosedForReceive
+			err = syserr.ErrClosedForReceive
 			if q.unread {
 				err = syserr.ErrConnectionReset
 			}
@@ -219,7 +219,7 @@ func (q *queue) Peek() (*message, *syserr.Error) {
 	if q.dataList.Front() == nil {
 		err := syserr.ErrWouldBlock
 		if q.closed {
-			if err = tcpip.SyserrClosedForReceive; q.unread {
+			if err = syserr.ErrClosedForReceive; q.unread {
 				err = syserr.ErrConnectionReset
 			}
 		}

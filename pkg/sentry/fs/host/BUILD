@@ -77,6 +77,7 @@ go_test(
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/unix/transport",
+        "//pkg/syserr",
         "//pkg/tcpip",
         "//pkg/usermem",
         "//pkg/waiter",

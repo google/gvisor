@@ -260,7 +260,7 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 
 	// Check if ce is e to avoid a deadlock.
 	if ce, ok := ce.(*connectionedEndpoint); ok && ce == e {
-		return tcpip.SyserrInvalidEndpointState
+		return syserr.ErrInvalidEndpointState
 	}
 
 	// Do a dance to safely acquire locks on both endpoints.
@@ -281,7 +281,7 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 	if ce.Listening() {
 		e.Unlock()
 		ce.Unlock()
-		return tcpip.SyserrInvalidEndpointState
+		return syserr.ErrInvalidEndpointState
 	}
 
 	// Check bound state.
@@ -384,7 +384,7 @@ func (e *connectionedEndpoint) Listen(backlog int) *syserr.Error {
 		// Adjust the size of the channel iff we can fix existing
 		// pending connections into the new one.
 		if len(e.acceptedChan) > backlog {
-			return tcpip.SyserrInvalidEndpointState
+			return syserr.ErrInvalidEndpointState
 		}
 		origChan := e.acceptedChan
 		e.acceptedChan = make(chan *connectionedEndpoint, backlog)
@@ -395,7 +395,7 @@ func (e *connectionedEndpoint) Listen(backlog int) *syserr.Error {
 		return nil
 	}
 	if !e.isBound() {
-		return tcpip.SyserrInvalidEndpointState
+		return syserr.ErrInvalidEndpointState
 	}
 
 	// Normal case.
@@ -409,7 +409,7 @@ func (e *connectionedEndpoint) Accept(peerAddr *tcpip.FullAddress) (Endpoint, *s
 
 	if !e.Listening() {
 		e.Unlock()
-		return nil, tcpip.SyserrInvalidEndpointState
+		return nil, syserr.ErrInvalidEndpointState
 	}
 
 	select {
@@ -422,7 +422,7 @@ func (e *connectionedEndpoint) Accept(peerAddr *tcpip.FullAddress) (Endpoint, *s
 			if c != nil {
 				addr, err := c.GetLocalAddress()
 				if err != nil {
-					return nil, tcpip.TranslateNetstackError(err)
+					return nil, syserr.TranslateNetstackError(err)
 				}
 				*peerAddr = addr
 			}
@@ -448,11 +448,11 @@ func (e *connectionedEndpoint) Bind(addr tcpip.FullAddress, commit func() *syser
 	e.Lock()
 	defer e.Unlock()
 	if e.isBound() || e.Listening() {
-		return tcpip.SyserrAlreadyBound
+		return syserr.ErrAlreadyBound
 	}
 	if addr.Addr == "" {
 		// The empty string is not permitted.
-		return tcpip.SyserrBadLocalAddress
+		return syserr.ErrBadLocalAddress
 	}
 	if commit != nil {
 		if err := commit(); err != nil {
@@ -471,7 +471,7 @@ func (e *connectionedEndpoint) SendMsg(ctx context.Context, data [][]byte, c Con
 	// Stream sockets do not support specifying the endpoint. Seqpacket
 	// sockets ignore the passed endpoint.
 	if e.stype == linux.SOCK_STREAM && to != nil {
-		return 0, tcpip.SyserrNotSupported
+		return 0, syserr.ErrNotSupported
 	}
 	return e.baseEndpoint.SendMsg(ctx, data, c, to)
 }

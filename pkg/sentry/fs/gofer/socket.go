@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs/host"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/syserr"
-	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -96,7 +95,7 @@ func (e *endpoint) BidirectionalConnect(ctx context.Context, ce transport.Connec
 	}
 	if ce.Listening() {
 		ce.Unlock()
-		return tcpip.SyserrInvalidEndpointState
+		return syserr.ErrInvalidEndpointState
 	}
 
 	hostFile, err := e.file.Connect(cf)
