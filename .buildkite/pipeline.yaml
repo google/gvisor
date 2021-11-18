@@ -17,7 +17,6 @@ _templates:
       # BENCHMARKS_OFFICIAL is set from hooks/pre-command, based
       # on whether this is executing on the master branch.
       BENCHMARKS_DATASET: buildkite
-      BENCHMARKS_PLATFORMS: "ptrace kvm"
       BENCHMARKS_PROJECT: gvisor-benchmarks
       BENCHMARKS_TABLE: benchmarks
       BENCHMARKS_UPLOAD: true
@@ -61,8 +60,8 @@ steps:
     label: ":test_tube: Unit tests"
     command: make unit-tests
   - <<: *common
-    label: ":test_tube: runsc tests"
-    command: make runsc-tests
+    label: ":test_tube: Container tests"
+    command: make container-tests
 
   # All system call tests.
   - <<: *common

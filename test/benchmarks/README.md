@@ -26,8 +26,7 @@ To run, use the Makefile:
 -   Additionally, you can benchmark several platforms in one command:
 
 ```
-make benchmark-platforms BENCHMARKS_PLATFORMS=ptrace,kvm \
-BENCHMARKS_TARGET=//path/to/target"
+make benchmark-platforms BENCHMARKS_TARGET=//path/to/target"
 ```
 
 The above command will install runtimes/run benchmarks on ptrace and kvm as well
