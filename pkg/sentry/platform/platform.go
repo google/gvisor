@@ -447,6 +447,14 @@ func Register(name string, platform Constructor) {
 	platforms[name] = platform
 }
 
+// List lists available platforms.
+func List() (available []string) {
+	for name, _ := range platforms {
+		available = append(available, name)
+	}
+	return
+}
+
 // Lookup looks up the platform constructor by name.
 func Lookup(name string) (Constructor, error) {
 	p, ok := platforms[name]
