@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/syserr"
-	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 // Protocol is the implementation of a netlink socket protocol.
@@ -105,7 +104,7 @@ func (*socketProvider) Socket(t *kernel.Task, stype linux.SockType, protocol int
 // Pair implements socket.Provider.Pair by returning an error.
 func (*socketProvider) Pair(*kernel.Task, linux.SockType, int) (*fs.File, *fs.File, *syserr.Error) {
 	// Netlink sockets never supports creating socket pairs.
-	return nil, nil, tcpip.SyserrNotSupported
+	return nil, nil, syserr.ErrNotSupported
 }
 
 // LINT.ThenChange(./provider_vfs2.go)

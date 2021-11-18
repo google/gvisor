@@ -92,7 +92,7 @@ func sockErrCmsgToLinux(sockErr *tcpip.SockError) linux.SockErrCMsg {
 	}
 
 	ee := linux.SockExtendedErr{
-		Errno:  uint32(tcpip.TranslateNetstackError(sockErr.Err).ToLinux()),
+		Errno:  uint32(syserr.TranslateNetstackError(sockErr.Err).ToLinux()),
 		Origin: errOriginToLinux(sockErr.Cause.Origin()),
 		Type:   sockErr.Cause.Type(),
 		Code:   sockErr.Cause.Code(),

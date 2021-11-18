@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "host_darwin.go",
         "host_linux.go",
+        "netstack.go",
         "syserr.go",
     ],
     visibility = ["//visibility:public"],
@@ -15,6 +16,7 @@ go_library(
         "//pkg/errors",
         "//pkg/errors/linuxerr",
         "//pkg/safecopy",
+        "//pkg/tcpip",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

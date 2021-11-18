@@ -312,19 +312,19 @@ func (s *socketOpsCommon) Connect(t *kernel.Task, sockaddr []byte, blocking bool
 // Accept implements socket.Socket.Accept.
 func (s *socketOpsCommon) Accept(t *kernel.Task, peerRequested bool, flags int, blocking bool) (int32, linux.SockAddr, uint32, *syserr.Error) {
 	// Netlink sockets never support accept.
-	return 0, nil, 0, tcpip.SyserrNotSupported
+	return 0, nil, 0, syserr.ErrNotSupported
 }
 
 // Listen implements socket.Socket.Listen.
 func (s *socketOpsCommon) Listen(t *kernel.Task, backlog int) *syserr.Error {
 	// Netlink sockets never support listen.
-	return tcpip.SyserrNotSupported
+	return syserr.ErrNotSupported
 }
 
 // Shutdown implements socket.Socket.Shutdown.
 func (s *socketOpsCommon) Shutdown(t *kernel.Task, how int) *syserr.Error {
 	// Netlink sockets never support shutdown.
-	return tcpip.SyserrNotSupported
+	return syserr.ErrNotSupported
 }
 
 // GetSockOpt implements socket.Socket.GetSockOpt.
