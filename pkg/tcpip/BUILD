@@ -39,6 +39,12 @@ go_library(
 
 deps_test(
     name = "netstack_deps_test",
+    # NOTE: Try not to let allowed or allowed_prefixes to grow large.
+    #
+    # Netstack is intentionally somewhat separate from the rest of gVisor; it is
+    # intended to be usable separately as a library. Therefore we limit its
+    # dependencies to a small set of packages. If you're adding dependencies,
+    # consider whether netstack should really depend on them.
     allowed = [
         # gVisor deps.
         "//pkg/atomicbitops",
@@ -69,6 +75,9 @@ deps_test(
     ],
     targets = [
         "//pkg/tcpip",
+        "//pkg/tcpip/adapters/gonet",
+        "//pkg/tcpip/buffer",
+        "//pkg/tcpip/link/channel",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/fdbased",
         "//pkg/tcpip/link/loopback",
