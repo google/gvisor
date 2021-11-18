@@ -60,6 +60,7 @@ func Main(version string) {
 	// Help and flags commands are generated automatically.
 	help := cmd.NewHelp(subcommands.DefaultCommander)
 	help.Register(new(cmd.Syscalls))
+	help.Register(new(cmd.Platforms))
 	subcommands.Register(help, "")
 	subcommands.Register(subcommands.FlagsCommand(), "")
 
