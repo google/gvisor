@@ -20,6 +20,21 @@ _templates:
       BENCHMARKS_PROJECT: gvisor-benchmarks
       BENCHMARKS_TABLE: benchmarks
       BENCHMARKS_UPLOAD: true
+  netstack_test: &netstack_test
+    env:
+      PACKAGES: >
+        ./pkg/tcpip
+        ./pkg/tcpip/adapters/gonet
+        ./pkg/tcpip/buffer
+        ./pkg/tcpip/header
+        ./pkg/tcpip/link/channel
+        ./pkg/tcpip/network/ipv4
+        ./pkg/tcpip/network/ipv6
+        ./pkg/tcpip/stack
+        ./pkg/tcpip/transport/icmp
+        ./pkg/tcpip/transport/tcp
+        ./pkg/tcpip/transport/udp
+        ./pkg/waiter
 
 steps:
   # Run basic smoke tests before preceding to other tests.
@@ -35,6 +50,43 @@ steps:
       - tools/go_branch.sh
       - git checkout go && git clean -xf .
       - go build ./...
+
+  # Check that commonly used netstack packages build on various platforms.
+  - <<: *common
+    <<: *netstack_test
+    label: ":mac: Netstack on Mac"
+    commands:
+      - tools/go_branch.sh
+      - git checkout go && git clean -xf .
+      - GOOS=darwin GOARCH=arm64 go build $$PACKAGES
+  - <<: *common
+    <<: *netstack_test
+    label: ":windows: Netstack on Windows"
+    commands:
+      - tools/go_branch.sh
+      - git checkout go && git clean -xf .
+      - GOOS=windows GOARCH=amd64 go build $$PACKAGES
+  - <<: *common
+    <<: *netstack_test
+    label: ":freebsd: Netstack on FreeBSD"
+    commands:
+      - tools/go_branch.sh
+      - git checkout go && git clean -xf .
+      - GOOS=freebsd GOARCH=amd64 go build $$PACKAGES
+  - <<: *common
+    <<: *netstack_test
+    label: ":openbsd: Netstack on OpenBSD"
+    commands:
+      - tools/go_branch.sh
+      - git checkout go && git clean -xf .
+      - GOOS=openbsd GOARCH=amd64 go build $$PACKAGES
+  - <<: *common
+    <<: *netstack_test
+    label: ":older_man: Netstack on 32-bit Linux"
+    commands:
+      - tools/go_branch.sh
+      - git checkout go && git clean -xf .
+      - GOOS=linux GOARCH=mips go build $$PACKAGES
 
   # Release workflow.
   - <<: *common
