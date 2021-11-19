@@ -20,6 +20,8 @@ _templates:
       BENCHMARKS_PROJECT: gvisor-benchmarks
       BENCHMARKS_TABLE: benchmarks
       BENCHMARKS_UPLOAD: true
+  source_test: &source_test
+    if: build.env("STAGED_BINARIES") == null
   netstack_test: &netstack_test
     env:
       PACKAGES: >
@@ -39,10 +41,12 @@ _templates:
 steps:
   # Run basic smoke tests before preceding to other tests.
   - <<: *common
+    <<: *source_test
     label: ":fire: Smoke tests"
     command: make smoke-tests
   - wait
   - <<: *common
+    <<: *source_test
     label: ":fire: Smoke race tests"
     command: make smoke-race-tests
 
@@ -50,6 +54,7 @@ steps:
   # as a GitHub action in order to preserve this maintaince across forks. However, providing the
   # action here may provide easier debuggability and diagnosis on failure.
   - <<: *common
+    <<: *source_test
     label: ":golang: Go branch"
     commands:
       - tools/go_branch.sh
@@ -58,6 +63,7 @@ steps:
 
   # Check that commonly used netstack packages build on various platforms.
   - <<: *common
+    <<: *source_test
     <<: *netstack_test
     label: ":mac: Netstack on Mac"
     commands:
@@ -65,6 +71,7 @@ steps:
       - git checkout go && git clean -xf .
       - GOOS=darwin GOARCH=arm64 go build $$PACKAGES
   - <<: *common
+    <<: *source_test
     <<: *netstack_test
     label: ":windows: Netstack on Windows"
     commands:
@@ -72,6 +79,7 @@ steps:
       - git checkout go && git clean -xf .
       - GOOS=windows GOARCH=amd64 go build $$PACKAGES
   - <<: *common
+    <<: *source_test
     <<: *netstack_test
     label: ":freebsd: Netstack on FreeBSD"
     commands:
@@ -79,6 +87,7 @@ steps:
       - git checkout go && git clean -xf .
       - GOOS=freebsd GOARCH=amd64 go build $$PACKAGES
   - <<: *common
+    <<: *source_test
     <<: *netstack_test
     label: ":openbsd: Netstack on OpenBSD"
     commands:
@@ -86,6 +95,7 @@ steps:
       - git checkout go && git clean -xf .
       - GOOS=openbsd GOARCH=amd64 go build $$PACKAGES
   - <<: *common
+    <<: *source_test
     <<: *netstack_test
     label: ":older_man: Netstack on 32-bit Linux"
     commands:
@@ -95,6 +105,7 @@ steps:
 
   # Release workflow.
   - <<: *common
+    <<: *source_test
     label: ":ship: Release tests"
     commands:
       - make BAZEL_OPTIONS=--config=x86_64 artifacts/x86_64
@@ -103,28 +114,39 @@ steps:
 
   # Images tests.
   - <<: *common
+    <<: *source_test
     label: ":docker: Images (x86_64)"
     command: make ARCH=x86_64 load-all-images
   - <<: *common
+    <<: *source_test
     label: ":docker: Images (aarch64)"
     command: make ARCH=aarch64 load-all-images
 
   # Basic unit tests.
   - <<: *common
+    <<: *source_test
     label: ":golang: Nogo tests"
     command: make nogo-tests
   - <<: *common
+    <<: *source_test
     label: ":test_tube: Unit tests"
     command: make unit-tests
   - <<: *common
+    <<: *source_test
     label: ":test_tube: Unit tests (cgroupv2)"
     command: make unit-tests
     agents:
       queue: "cgroupv2"
+
+  # Containerd tests.
   - <<: *common
     label: ":test_tube: Container tests"
     command: make container-tests
   - <<: *common
+    # This variant is not really a source test, but we annotate it as such to
+    # avoid running binary-only tests for all variants of cgroups. It is
+    # sufficient to run cgroupv2 variants only for source changes.
+    <<: *source_test
     label: ":test_tube: Container tests (cgroupv2)"
     command: make container-tests
     agents:
@@ -147,6 +169,8 @@ steps:
     label: ":docker: Docker tests"
     command: make docker-tests
   - <<: *common
+    # See above: not truly a source test.
+    <<: *source_test
     label: ":docker: Docker tests (cgroupv2)"
     command: make docker-tests
     agents:
@@ -161,9 +185,11 @@ steps:
     label: ":satellite: SWGSO tests"
     command: make swgso-tests
   - <<: *common
+    <<: *source_test
     label: ":coffee: Do tests"
     command: make do-tests
   - <<: *common
+    <<: *source_test
     label: ":person_in_lotus_position: KVM tests"
     command: make kvm-tests
   - <<: *common
@@ -179,14 +205,18 @@ steps:
     label: ":docker: Containerd 1.5.4 tests"
     command: make containerd-test-1.5.4
   - <<: *common
+    # See above: not truly a source test.
+    <<: *source_test
     label: ":docker: Containerd 1.5.4 tests (cgroupv2)"
     command: make containerd-test-1.5.4
     agents:
       queue: "cgroupv2"
   - <<: *common
+    <<: *source_test
     label: ":docker: Containerd 1.6.0-rc.4 tests"
     command: make containerd-test-1.6.0-rc.4
   - <<: *common
+    <<: *source_test
     label: ":docker: Containerd 1.6.0-rc.4 tests (cgroupv2)"
     command: make containerd-test-1.6.0-rc.4
     agents:
@@ -194,17 +224,21 @@ steps:
 
   # Check the website builds.
   - <<: *common
+    <<: *source_test
     label: ":earth_americas: Website tests"
     command: make website-build
 
   # Networking tests.
   - <<: *common
+    <<: *source_test
     label: ":table_tennis_paddle_and_ball: IPTables tests"
     command: make iptables-tests
   - <<: *common
+    <<: *source_test
     label: ":construction_worker: Packetdrill tests"
     command: make packetdrill-tests
   - <<: *common
+    <<: *source_test
     label: ":hammer: Packetimpact tests"
     command: make packetimpact-tests
 
@@ -259,11 +293,13 @@ steps:
 
   # ARM tests.
   - <<: *common
+    <<: *source_test
     label: ":mechanical_arm: ARM"
     command: make arm-qemu-smoke-test
 
   # Build everything.
   - <<: *common
+    <<: *source_test
     label: ":world_map: Build everything"
     command: "make build OPTIONS=--build_tag_filters=-nogo TARGETS=//..."
 
