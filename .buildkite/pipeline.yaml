@@ -114,6 +114,16 @@ steps:
   - <<: *common
     label: ":test_tube: Container tests"
     command: make container-tests
+  - <<: *common
+    label: ":test_tube: Unit tests (cgroup2)"
+    command: make unit-tests
+    agents:
+            queue: "cgroupv2" 
+  - <<: *common
+    label: ":test_tube: Container tests (cgroup2)"
+    command: make container-tests
+    agents:
+            queue: "cgroupv2" 
 
   # All system call tests.
   - <<: *common
@@ -125,6 +135,8 @@ steps:
   - <<: *common
     label: ":docker: Docker tests"
     command: make docker-tests
+    agents:
+            queue: "cgroupv2" 
   - <<: *common
     label: ":goggles: Overlay tests"
     command: make overlay-tests
@@ -152,6 +164,8 @@ steps:
   - <<: *common
     label: ":docker: Containerd 1.5.4 tests"
     command: make containerd-test-1.5.4
+    agents:
+            queue: "cgroupv2" 
 
   # Check the website builds.
   - <<: *common
