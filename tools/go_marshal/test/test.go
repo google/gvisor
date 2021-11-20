@@ -39,7 +39,7 @@ type Type1 struct {
 
 // Type2 is a test data type.
 //
-// +marshal
+// +marshal boundCheck
 type Type2 struct {
 	n int64
 	c byte
@@ -134,12 +134,12 @@ type Stat struct {
 
 // InetAddr is an example marshallable newtype on an array.
 //
-// +marshal
+// +marshal boundCheck
 type InetAddr [4]byte
 
 // SignalSet is an example marshallable newtype on a primitive.
 //
-// +marshal slice:SignalSetSlice:inner
+// +marshal slice:SignalSetSlice:inner boundCheck
 type SignalSet uint64
 
 // SignalSetAlias is an example newtype on another marshallable type.

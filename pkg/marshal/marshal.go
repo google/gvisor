@@ -132,6 +132,26 @@ type Marshallable interface {
 	CopyOutN(cc CopyContext, addr hostarch.Addr, limit int) (int, error)
 }
 
+// CheckedMarshallable represents operations on a type that can be marshalled
+// to and from memory and additionally does bound checking.
+type CheckedMarshallable interface {
+	// CheckedMarshal is the same as Marshallable.MarshalUnsafe but without the
+	// precondition that dst must at least have some appropriate length. Similar
+	// to Marshallable.MarshalBytes, it returns a shifted slice according to how
+	// much data is consumed. Additionally it returns a bool indicating whether
+	// marshalling was successful. Unsuccessful marshalling doesn't consume any
+	// data.
+	CheckedMarshal(dst []byte) ([]byte, bool)
+
+	// CheckedUnmarshal is the same as Marshallable.UmarshalUnsafe but without
+	// the precondition that src must at least have some appropriate length.
+	// Similar to Marshallable.UnmarshalBytes, it returns a shifted slice
+	// according to how much data is consumed. Additionally it returns a bool
+	// indicating whether marshalling was successful. Unsuccessful marshalling
+	// doesn't consume any data.
+	CheckedUnmarshal(src []byte) ([]byte, bool)
+}
+
 // go-marshal generates additional functions for a type based on additional
 // clauses to the +marshal directive. They are documented below.
 //
@@ -187,3 +207,12 @@ type Marshallable interface {
 // func CopyInt32SliceIn(cc marshal.CopyContext, addr hostarch.Addr, dst []Int32) (int, error) { ... }
 //
 // This may help avoid a cast depending on how the generated functions are used.
+//
+// Bound Checking
+// ==============
+//
+// Some users might want to do bound checking on marshal and unmarshal. This is
+// is useful when the user does not control the buffer size. To prevent
+// repeated bound checking code around Marshallable, users can add a
+// "boundCheck" clause to the +marshal directive. go_marshal will generate the
+// CheckedMarshallable interface methods on the type.

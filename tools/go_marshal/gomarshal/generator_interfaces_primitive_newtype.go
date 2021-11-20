@@ -211,6 +211,36 @@ func (g *interfaceGenerator) emitMarshallableForPrimitiveNewtype(nt *ast.Ident) 
 	g.emit("}\n\n")
 }
 
+func (g *interfaceGenerator) emitCheckedMarshallableForPrimitiveNewtype() {
+	g.emit("// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.\n")
+	g.emit("func (%s *%s) CheckedMarshal(dst []byte) ([]byte, bool) {\n", g.r, g.typeName())
+	g.inIndent(func() {
+		g.emit("size := %s.SizeBytes()\n", g.r)
+		g.emit("if size > len(dst) {\n")
+		g.inIndent(func() {
+			g.emit("return dst, false\n")
+		})
+		g.emit("}\n")
+		g.emit("gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(%s), uintptr(size))\n", g.r)
+		g.emit("return dst[size:], true\n")
+	})
+	g.emit("}\n\n")
+
+	g.emit("// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.\n")
+	g.emit("func (%s *%s) CheckedUnmarshal(src []byte) ([]byte, bool) {\n", g.r, g.typeName())
+	g.inIndent(func() {
+		g.emit("size := %s.SizeBytes()\n", g.r)
+		g.emit("if size > len(src) {\n")
+		g.inIndent(func() {
+			g.emit("return src, false\n")
+		})
+		g.emit("}\n")
+		g.emit("gohacks.Memmove(unsafe.Pointer(%s), unsafe.Pointer(&src[0]), uintptr(size))\n", g.r)
+		g.emit("return src[size:], true\n")
+	})
+	g.emit("}\n\n")
+}
+
 func (g *interfaceGenerator) emitMarshallableSliceForPrimitiveNewtype(nt *ast.Ident, slice *sliceAPI) {
 	g.recordUsedImport("marshal")
 	g.recordUsedImport("hostarch")

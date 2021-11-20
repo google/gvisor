@@ -36,6 +36,9 @@ type Connection struct {
 	// associated with it for its entire lifetime.
 	server *Server
 
+	// maxMessageSize is the cached value of server.impl.MaxMessageSize().
+	maxMessageSize uint32
+
 	// mounted is a one way flag indicating whether this connection has been
 	// mounted correctly and the server is initialized properly.
 	mounted bool
@@ -72,12 +75,13 @@ type Connection struct {
 // required. The connection must be started separately.
 func (s *Server) CreateConnection(sock *unet.Socket, readonly bool) (*Connection, error) {
 	c := &Connection{
-		sockComm: newSockComm(sock),
-		server:   s,
-		readonly: readonly,
-		channels: make([]*channel, 0, maxChannels()),
-		fds:      make(map[FDID]genericFD),
-		nextFDID: InvalidFDID + 1,
+		sockComm:       newSockComm(sock),
+		server:         s,
+		maxMessageSize: s.impl.MaxMessageSize(),
+		readonly:       readonly,
+		channels:       make([]*channel, 0, maxChannels()),
+		fds:            make(map[FDID]genericFD),
+		nextFDID:       InvalidFDID + 1,
 	}
 
 	alloc, err := flipcall.NewPacketWindowAllocator()
@@ -153,6 +157,10 @@ func (c *Connection) respondError(comm Communicator, err unix.Errno) (MID, uint3
 }
 
 func (c *Connection) handleMsg(comm Communicator, m MID, payloadLen uint32) (MID, uint32, []int) {
+	if payloadLen > c.maxMessageSize {
+		log.Warningf("received payload is too large: %d bytes", payloadLen)
+		return c.respondError(comm, unix.EIO)
+	}
 	if !c.reqGate.Enter() {
 		// c.close() has been called; the connection is shutting down.
 		return c.respondError(comm, unix.ECONNRESET)
@@ -176,6 +184,11 @@ func (c *Connection) handleMsg(comm Communicator, m MID, payloadLen uint32) (MID
 	if err != nil {
 		closeFDs(fds)
 		return c.respondError(comm, p9.ExtractErrno(err))
+	}
+	if respPayloadLen > c.maxMessageSize {
+		log.Warningf("handler for message %d responded with payload which is too large: %d bytes", m, respPayloadLen)
+		closeFDs(fds)
+		return c.respondError(comm, unix.EIO)
 	}
 
 	return m, respPayloadLen, fds

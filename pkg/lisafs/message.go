@@ -154,10 +154,6 @@ func MaxMessageSize() uint32 {
 	return uint32(hostarch.HugePageSize - os.Getpagesize())
 }
 
-// TODO(gvisor.dev/issue/6450): Once this is resolved:
-// * Update manual implementations and function signatures.
-// * Update RPC handlers and appropriate callers to handle errors correctly.
-
 // UID represents a user ID.
 //
 // +marshal
@@ -182,7 +178,7 @@ func (gid GID) Ok() bool {
 func NoopMarshal(b []byte) []byte { return b }
 
 // NoopUnmarshal is a noop implementation of marshal.Marshallable.UnmarshalBytes.
-func NoopUnmarshal(b []byte) []byte { return b }
+func NoopUnmarshal(b []byte) ([]byte, bool) { return b, true }
 
 // SizedString represents a string in memory. The marshalled string bytes are
 // preceded by a uint32 signifying the string length.
@@ -201,13 +197,16 @@ func (s *SizedString) MarshalBytes(dst []byte) []byte {
 	return dst[copy(dst[:strLen], *s):]
 }
 
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (s *SizedString) UnmarshalBytes(src []byte) []byte {
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (s *SizedString) CheckedUnmarshal(src []byte) ([]byte, bool) {
 	var strLen primitive.Uint32
-	src = strLen.UnmarshalUnsafe(src)
+	srcRemain, ok := strLen.CheckedUnmarshal(src)
+	if !ok || len(srcRemain) < int(strLen) {
+		return src, false
+	}
 	// Take the hit, this leads to an allocation + memcpy. No way around it.
-	*s = SizedString(src[:strLen])
-	return src[strLen:]
+	*s = SizedString(srcRemain[:strLen])
+	return srcRemain[strLen:], true
 }
 
 // StringArray represents an array of SizedStrings in memory. The marshalled
@@ -235,10 +234,13 @@ func (s *StringArray) MarshalBytes(dst []byte) []byte {
 	return dst
 }
 
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (s *StringArray) UnmarshalBytes(src []byte) []byte {
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (s *StringArray) CheckedUnmarshal(src []byte) ([]byte, bool) {
 	var arrLen primitive.Uint32
-	src = arrLen.UnmarshalUnsafe(src)
+	srcRemain, ok := arrLen.CheckedUnmarshal(src)
+	if !ok {
+		return src, false
+	}
 
 	if cap(*s) < int(arrLen) {
 		*s = make([]string, arrLen)
@@ -248,10 +250,13 @@ func (s *StringArray) UnmarshalBytes(src []byte) []byte {
 
 	for i := primitive.Uint32(0); i < arrLen; i++ {
 		var sstr SizedString
-		src = sstr.UnmarshalBytes(src)
+		srcRemain, ok = sstr.CheckedUnmarshal(srcRemain)
+		if !ok {
+			return src, false
+		}
 		(*s)[i] = string(sstr)
 	}
-	return src
+	return srcRemain, true
 }
 
 // Inode represents an inode on the remote filesystem.
@@ -278,9 +283,9 @@ func (m *MountReq) MarshalBytes(dst []byte) []byte {
 	return m.MountPath.MarshalBytes(dst)
 }
 
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (m *MountReq) UnmarshalBytes(src []byte) []byte {
-	return m.MountPath.UnmarshalBytes(src)
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (m *MountReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	return m.MountPath.CheckedUnmarshal(src)
 }
 
 // MountResp represents a Mount response.
@@ -310,23 +315,30 @@ func (m *MountResp) MarshalBytes(dst []byte) []byte {
 	return MarshalUnsafeMIDSlice(m.SupportedMs, dst)
 }
 
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (m *MountResp) UnmarshalBytes(src []byte) []byte {
-	src = m.Root.UnmarshalUnsafe(src)
-	src = m.MaxMessageSize.UnmarshalUnsafe(src)
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (m *MountResp) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	m.SupportedMs = m.SupportedMs[:0]
+	if m.SizeBytes() > len(src) {
+		return src, false
+	}
+	srcRemain := m.Root.UnmarshalUnsafe(src)
+	srcRemain = m.MaxMessageSize.UnmarshalUnsafe(srcRemain)
 	var numSupported primitive.Uint16
-	src = numSupported.UnmarshalBytes(src)
+	srcRemain = numSupported.UnmarshalBytes(srcRemain)
+	if int(numSupported)*(*MID)(nil).SizeBytes() > len(srcRemain) {
+		return src, false
+	}
 	if cap(m.SupportedMs) < int(numSupported) {
 		m.SupportedMs = make([]MID, numSupported)
 	} else {
 		m.SupportedMs = m.SupportedMs[:numSupported]
 	}
-	return UnmarshalUnsafeMIDSlice(m.SupportedMs, src)
+	return UnmarshalUnsafeMIDSlice(m.SupportedMs, srcRemain), true
 }
 
 // ChannelResp is the response to the create channel request.
 //
-// +marshal
+// +marshal boundCheck
 type ChannelResp struct {
 	dataOffset int64
 	dataLength uint64
@@ -341,14 +353,14 @@ type ErrorResp struct {
 
 // StatReq requests the stat results for the specified FD.
 //
-// +marshal
+// +marshal boundCheck
 type StatReq struct {
 	FD FDID
 }
 
 // SetStatReq is used to set attributeds on FDs.
 //
-// +marshal
+// +marshal boundCheck
 type SetStatReq struct {
 	FD    FDID
 	_     uint32
@@ -366,7 +378,7 @@ type SetStatReq struct {
 // set attribute operation. If multiple operations failed then any of those
 // errnos can be returned.
 //
-// +marshal
+// +marshal boundCheck
 type SetStatResp struct {
 	FailureMask  uint32
 	FailureErrNo uint32
@@ -390,10 +402,17 @@ func (w *WalkReq) MarshalBytes(dst []byte) []byte {
 	return w.Path.MarshalBytes(dst)
 }
 
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (w *WalkReq) UnmarshalBytes(src []byte) []byte {
-	src = w.DirFD.UnmarshalUnsafe(src)
-	return w.Path.UnmarshalBytes(src)
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (w *WalkReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	w.Path = w.Path[:0]
+	if w.SizeBytes() > len(src) {
+		return src, false
+	}
+	srcRemain := w.DirFD.UnmarshalUnsafe(src)
+	if srcRemain, ok := w.Path.CheckedUnmarshal(srcRemain); ok {
+		return srcRemain, true
+	}
+	return src, false
 }
 
 // WalkStatus is used to indicate the reason for partial/unsuccessful server
@@ -439,19 +458,25 @@ func (w *WalkResp) MarshalBytes(dst []byte) []byte {
 	return MarshalUnsafeInodeSlice(w.Inodes, dst)
 }
 
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (w *WalkResp) UnmarshalBytes(src []byte) []byte {
-	src = w.Status.UnmarshalUnsafe(src)
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (w *WalkResp) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	w.Inodes = w.Inodes[:0]
+	if w.SizeBytes() > len(src) {
+		return src, false
+	}
+	srcRemain := w.Status.UnmarshalUnsafe(src)
 
 	var numInodes primitive.Uint32
-	src = numInodes.UnmarshalUnsafe(src)
-
+	srcRemain = numInodes.UnmarshalUnsafe(srcRemain)
+	if int(numInodes)*(*Inode)(nil).SizeBytes() > len(srcRemain) {
+		return src, false
+	}
 	if cap(w.Inodes) < int(numInodes) {
 		w.Inodes = make([]Inode, numInodes)
 	} else {
 		w.Inodes = w.Inodes[:numInodes]
 	}
-	return UnmarshalUnsafeInodeSlice(w.Inodes, src)
+	return UnmarshalUnsafeInodeSlice(w.Inodes, srcRemain), true
 }
 
 // WalkStatResp is used to communicate stat results for WalkStat.
@@ -472,22 +497,29 @@ func (w *WalkStatResp) MarshalBytes(dst []byte) []byte {
 	return linux.MarshalUnsafeStatxSlice(w.Stats, dst)
 }
 
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (w *WalkStatResp) UnmarshalBytes(src []byte) []byte {
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (w *WalkStatResp) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	w.Stats = w.Stats[:0]
+	if w.SizeBytes() > len(src) {
+		return src, false
+	}
 	var numStats primitive.Uint32
-	src = numStats.UnmarshalUnsafe(src)
+	srcRemain := numStats.UnmarshalUnsafe(src)
 
+	if int(numStats)*linux.SizeOfStatx > len(srcRemain) {
+		return src, false
+	}
 	if cap(w.Stats) < int(numStats) {
 		w.Stats = make([]linux.Statx, numStats)
 	} else {
 		w.Stats = w.Stats[:numStats]
 	}
-	return linux.UnmarshalUnsafeStatxSlice(w.Stats, src)
+	return linux.UnmarshalUnsafeStatxSlice(w.Stats, srcRemain), true
 }
 
 // OpenAtReq is used to open existing FDs with the specified flags.
 //
-// +marshal
+// +marshal boundCheck
 type OpenAtReq struct {
 	FD    FDID
 	Flags uint32
@@ -495,7 +527,7 @@ type OpenAtReq struct {
 
 // OpenAtResp is used to communicate the newly created FD.
 //
-// +marshal
+// +marshal boundCheck
 type OpenAtResp struct {
 	NewFD FDID
 }
@@ -512,32 +544,39 @@ type createCommon struct {
 // OpenCreateAtReq is used to make OpenCreateAt requests.
 type OpenCreateAtReq struct {
 	createCommon
-	Name  SizedString
 	Flags primitive.Uint32
+	Name  SizedString
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (o *OpenCreateAtReq) SizeBytes() int {
-	return o.createCommon.SizeBytes() + o.Name.SizeBytes() + o.Flags.SizeBytes()
+	return o.createCommon.SizeBytes() + o.Flags.SizeBytes() + o.Name.SizeBytes()
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (o *OpenCreateAtReq) MarshalBytes(dst []byte) []byte {
 	dst = o.createCommon.MarshalUnsafe(dst)
-	dst = o.Name.MarshalBytes(dst)
-	return o.Flags.MarshalUnsafe(dst)
+	dst = o.Flags.MarshalUnsafe(dst)
+	return o.Name.MarshalBytes(dst)
 }
 
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (o *OpenCreateAtReq) UnmarshalBytes(src []byte) []byte {
-	src = o.createCommon.UnmarshalUnsafe(src)
-	src = o.Name.UnmarshalBytes(src)
-	return o.Flags.UnmarshalUnsafe(src)
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (o *OpenCreateAtReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	o.Name = ""
+	if o.SizeBytes() > len(src) {
+		return src, false
+	}
+	srcRemain := o.createCommon.UnmarshalUnsafe(src)
+	srcRemain = o.Flags.UnmarshalUnsafe(srcRemain)
+	if srcRemain, ok := o.Name.CheckedUnmarshal(srcRemain); ok {
+		return srcRemain, true
+	}
+	return src, false
 }
 
 // OpenCreateAtResp is used to communicate successful OpenCreateAt results.
 //
-// +marshal
+// +marshal boundCheck
 type OpenCreateAtResp struct {
 	Child Inode
 	NewFD FDID
@@ -561,16 +600,23 @@ func (f *FdArray) MarshalBytes(dst []byte) []byte {
 	return MarshalUnsafeFDIDSlice(*f, dst)
 }
 
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (f *FdArray) UnmarshalBytes(src []byte) []byte {
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (f *FdArray) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	*f = (*f)[:0]
+	if f.SizeBytes() > len(src) {
+		return src, false
+	}
 	var arrLen primitive.Uint32
-	src = arrLen.UnmarshalUnsafe(src)
+	srcRemain := arrLen.UnmarshalUnsafe(src)
+	if int(arrLen)*(*FDID)(nil).SizeBytes() > len(srcRemain) {
+		return src, false
+	}
 	if cap(*f) < int(arrLen) {
 		*f = make(FdArray, arrLen)
 	} else {
 		*f = (*f)[:arrLen]
 	}
-	return UnmarshalUnsafeFDIDSlice(*f, src)
+	return UnmarshalUnsafeFDIDSlice(*f, srcRemain), true
 }
 
 // CloseReq is used to close(2) FDs.
@@ -588,9 +634,9 @@ func (c *CloseReq) MarshalBytes(dst []byte) []byte {
 	return c.FDs.MarshalBytes(dst)
 }
 
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (c *CloseReq) UnmarshalBytes(src []byte) []byte {
-	return c.FDs.UnmarshalBytes(src)
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (c *CloseReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	return c.FDs.CheckedUnmarshal(src)
 }
 
 // FsyncReq is used to fsync(2) FDs.
@@ -608,14 +654,14 @@ func (f *FsyncReq) MarshalBytes(dst []byte) []byte {
 	return f.FDs.MarshalBytes(dst)
 }
 
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (f *FsyncReq) UnmarshalBytes(src []byte) []byte {
-	return f.FDs.UnmarshalBytes(src)
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (f *FsyncReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	return f.FDs.CheckedUnmarshal(src)
 }
 
 // PReadReq is used to pread(2) on an FD.
 //
-// +marshal
+// +marshal boundCheck
 type PReadReq struct {
 	Offset uint64
 	FD     FDID
@@ -639,13 +685,16 @@ func (r *PReadResp) MarshalBytes(dst []byte) []byte {
 	return dst[copy(dst[:r.NumBytes], r.Buf[:r.NumBytes]):]
 }
 
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (r *PReadResp) UnmarshalBytes(src []byte) []byte {
-	src = r.NumBytes.UnmarshalUnsafe(src)
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (r *PReadResp) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	srcRemain, ok := r.NumBytes.CheckedUnmarshal(src)
+	if !ok || int(r.NumBytes) > len(srcRemain) || int(r.NumBytes) > len(r.Buf) {
+		return src, false
+	}
 
 	// We expect the client to have already allocated r.Buf. r.Buf probably
 	// (optimally) points to usermem. Directly copy into that.
-	return src[copy(r.Buf[:r.NumBytes], src[:r.NumBytes]):]
+	return srcRemain[copy(r.Buf[:r.NumBytes], srcRemain[:r.NumBytes]):], true
 }
 
 // PWriteReq is used to pwrite(2) on an FD.
@@ -669,21 +718,28 @@ func (w *PWriteReq) MarshalBytes(dst []byte) []byte {
 	return dst[copy(dst[:w.NumBytes], w.Buf[:w.NumBytes]):]
 }
 
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (w *PWriteReq) UnmarshalBytes(src []byte) []byte {
-	src = w.Offset.UnmarshalUnsafe(src)
-	src = w.FD.UnmarshalUnsafe(src)
-	src = w.NumBytes.UnmarshalUnsafe(src)
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (w *PWriteReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	w.NumBytes = 0
+	if w.SizeBytes() > len(src) {
+		return src, false
+	}
+	srcRemain := w.Offset.UnmarshalUnsafe(src)
+	srcRemain = w.FD.UnmarshalUnsafe(srcRemain)
+	srcRemain = w.NumBytes.UnmarshalUnsafe(srcRemain)
 
 	// This is an optimization. Assuming that the server is making this call, it
 	// is safe to just point to src rather than allocating and copying.
-	w.Buf = src[:w.NumBytes]
-	return src[w.NumBytes:]
+	if int(w.NumBytes) > len(srcRemain) {
+		return src, false
+	}
+	w.Buf = srcRemain[:w.NumBytes]
+	return srcRemain[w.NumBytes:], true
 }
 
 // PWriteResp is used to return the result of pwrite(2).
 //
-// +marshal
+// +marshal boundCheck
 type PWriteResp struct {
 	Count uint64
 }
@@ -705,15 +761,22 @@ func (m *MkdirAtReq) MarshalBytes(dst []byte) []byte {
 	return m.Name.MarshalBytes(dst)
 }
 
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (m *MkdirAtReq) UnmarshalBytes(src []byte) []byte {
-	src = m.createCommon.UnmarshalUnsafe(src)
-	return m.Name.UnmarshalBytes(src)
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (m *MkdirAtReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	m.Name = ""
+	if m.SizeBytes() > len(src) {
+		return src, false
+	}
+	srcRemain := m.createCommon.UnmarshalUnsafe(src)
+	if srcRemain, ok := m.Name.CheckedUnmarshal(srcRemain); ok {
+		return srcRemain, true
+	}
+	return src, false
 }
 
 // MkdirAtResp is the response to a successful MkdirAt request.
 //
-// +marshal
+// +marshal boundCheck
 type MkdirAtResp struct {
 	ChildDir Inode
 }
@@ -721,35 +784,42 @@ type MkdirAtResp struct {
 // MknodAtReq is used to make MknodAt requests.
 type MknodAtReq struct {
 	createCommon
-	Name  SizedString
 	Minor primitive.Uint32
 	Major primitive.Uint32
+	Name  SizedString
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (m *MknodAtReq) SizeBytes() int {
-	return m.createCommon.SizeBytes() + m.Name.SizeBytes() + m.Minor.SizeBytes() + m.Major.SizeBytes()
+	return m.createCommon.SizeBytes() + m.Minor.SizeBytes() + m.Major.SizeBytes() + m.Name.SizeBytes()
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (m *MknodAtReq) MarshalBytes(dst []byte) []byte {
 	dst = m.createCommon.MarshalUnsafe(dst)
-	dst = m.Name.MarshalBytes(dst)
 	dst = m.Minor.MarshalUnsafe(dst)
-	return m.Major.MarshalUnsafe(dst)
+	dst = m.Major.MarshalUnsafe(dst)
+	return m.Name.MarshalBytes(dst)
 }
 
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (m *MknodAtReq) UnmarshalBytes(src []byte) []byte {
-	src = m.createCommon.UnmarshalUnsafe(src)
-	src = m.Name.UnmarshalBytes(src)
-	src = m.Minor.UnmarshalUnsafe(src)
-	return m.Major.UnmarshalUnsafe(src)
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (m *MknodAtReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	m.Name = ""
+	if m.SizeBytes() > len(src) {
+		return src, false
+	}
+	srcRemain := m.createCommon.UnmarshalUnsafe(src)
+	srcRemain = m.Minor.UnmarshalUnsafe(srcRemain)
+	srcRemain = m.Major.UnmarshalUnsafe(srcRemain)
+	if srcRemain, ok := m.Name.CheckedUnmarshal(srcRemain); ok {
+		return srcRemain, true
+	}
+	return src, false
 }
 
 // MknodAtResp is the response to a successful MknodAt request.
 //
-// +marshal
+// +marshal boundCheck
 type MknodAtResp struct {
 	Child Inode
 }
@@ -757,38 +827,49 @@ type MknodAtResp struct {
 // SymlinkAtReq is used to make SymlinkAt request.
 type SymlinkAtReq struct {
 	DirFD  FDID
-	Name   SizedString
-	Target SizedString
 	UID    UID
 	GID    GID
+	Name   SizedString
+	Target SizedString
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (s *SymlinkAtReq) SizeBytes() int {
-	return s.DirFD.SizeBytes() + s.Name.SizeBytes() + s.Target.SizeBytes() + s.UID.SizeBytes() + s.GID.SizeBytes()
+	return s.DirFD.SizeBytes() + s.UID.SizeBytes() + s.GID.SizeBytes() + s.Name.SizeBytes() + s.Target.SizeBytes()
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (s *SymlinkAtReq) MarshalBytes(dst []byte) []byte {
 	dst = s.DirFD.MarshalUnsafe(dst)
-	dst = s.Name.MarshalBytes(dst)
-	dst = s.Target.MarshalBytes(dst)
 	dst = s.UID.MarshalUnsafe(dst)
-	return s.GID.MarshalUnsafe(dst)
+	dst = s.GID.MarshalUnsafe(dst)
+	dst = s.Name.MarshalBytes(dst)
+	return s.Target.MarshalBytes(dst)
 }
 
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (s *SymlinkAtReq) UnmarshalBytes(src []byte) []byte {
-	src = s.DirFD.UnmarshalUnsafe(src)
-	src = s.Name.UnmarshalBytes(src)
-	src = s.Target.UnmarshalBytes(src)
-	src = s.UID.UnmarshalUnsafe(src)
-	return s.GID.UnmarshalUnsafe(src)
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (s *SymlinkAtReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	s.Name = ""
+	s.Target = ""
+	if s.SizeBytes() > len(src) {
+		return src, false
+	}
+	srcRemain := s.DirFD.UnmarshalUnsafe(src)
+	srcRemain = s.UID.UnmarshalUnsafe(srcRemain)
+	srcRemain = s.GID.UnmarshalUnsafe(srcRemain)
+	var ok bool
+	if srcRemain, ok = s.Name.CheckedUnmarshal(srcRemain); !ok {
+		return src, false
+	}
+	if srcRemain, ok = s.Target.CheckedUnmarshal(srcRemain); !ok {
+		return src, false
+	}
+	return srcRemain, true
 }
 
 // SymlinkAtResp is the response to a successful SymlinkAt request.
 //
-// +marshal
+// +marshal boundCheck
 type SymlinkAtResp struct {
 	Symlink Inode
 }
@@ -812,30 +893,37 @@ func (l *LinkAtReq) MarshalBytes(dst []byte) []byte {
 	return l.Name.MarshalBytes(dst)
 }
 
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (l *LinkAtReq) UnmarshalBytes(src []byte) []byte {
-	src = l.DirFD.UnmarshalUnsafe(src)
-	src = l.Target.UnmarshalUnsafe(src)
-	return l.Name.UnmarshalBytes(src)
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (l *LinkAtReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	l.Name = ""
+	if l.SizeBytes() > len(src) {
+		return src, false
+	}
+	srcRemain := l.DirFD.UnmarshalUnsafe(src)
+	srcRemain = l.Target.UnmarshalUnsafe(srcRemain)
+	if srcRemain, ok := l.Name.CheckedUnmarshal(srcRemain); ok {
+		return srcRemain, true
+	}
+	return src, false
 }
 
 // LinkAtResp is used to respond to a successful LinkAt request.
 //
-// +marshal
+// +marshal boundCheck
 type LinkAtResp struct {
 	Link Inode
 }
 
 // FStatFSReq is used to request StatFS results for the specified FD.
 //
-// +marshal
+// +marshal boundCheck
 type FStatFSReq struct {
 	FD FDID
 }
 
 // StatFS is responded to a successful FStatFS request.
 //
-// +marshal
+// +marshal boundCheck
 type StatFS struct {
 	Type            uint64
 	BlockSize       int64
@@ -849,7 +937,7 @@ type StatFS struct {
 
 // FAllocateReq is used to request to fallocate(2) an FD. This has no response.
 //
-// +marshal
+// +marshal boundCheck
 type FAllocateReq struct {
 	FD     FDID
 	_      uint32
@@ -860,7 +948,7 @@ type FAllocateReq struct {
 
 // ReadLinkAtReq is used to readlinkat(2) at the specified FD.
 //
-// +marshal
+// +marshal boundCheck
 type ReadLinkAtReq struct {
 	FD FDID
 }
@@ -880,21 +968,21 @@ func (r *ReadLinkAtResp) MarshalBytes(dst []byte) []byte {
 	return r.Target.MarshalBytes(dst)
 }
 
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (r *ReadLinkAtResp) UnmarshalBytes(src []byte) []byte {
-	return r.Target.UnmarshalBytes(src)
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (r *ReadLinkAtResp) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	return r.Target.CheckedUnmarshal(src)
 }
 
 // FlushReq is used to make Flush requests.
 //
-// +marshal
+// +marshal boundCheck
 type FlushReq struct {
 	FD FDID
 }
 
 // ConnectReq is used to make a Connect request.
 //
-// +marshal
+// +marshal boundCheck
 type ConnectReq struct {
 	FD FDID
 	// SockType is used to specify the socket type to connect to. As a special
@@ -906,27 +994,34 @@ type ConnectReq struct {
 // UnlinkAtReq is used to make UnlinkAt request.
 type UnlinkAtReq struct {
 	DirFD FDID
-	Name  SizedString
 	Flags primitive.Uint32
+	Name  SizedString
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (u *UnlinkAtReq) SizeBytes() int {
-	return u.DirFD.SizeBytes() + u.Name.SizeBytes() + u.Flags.SizeBytes()
+	return u.DirFD.SizeBytes() + u.Flags.SizeBytes() + u.Name.SizeBytes()
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (u *UnlinkAtReq) MarshalBytes(dst []byte) []byte {
 	dst = u.DirFD.MarshalUnsafe(dst)
-	dst = u.Name.MarshalBytes(dst)
-	return u.Flags.MarshalUnsafe(dst)
+	dst = u.Flags.MarshalUnsafe(dst)
+	return u.Name.MarshalBytes(dst)
 }
 
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (u *UnlinkAtReq) UnmarshalBytes(src []byte) []byte {
-	src = u.DirFD.UnmarshalUnsafe(src)
-	src = u.Name.UnmarshalBytes(src)
-	return u.Flags.UnmarshalUnsafe(src)
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (u *UnlinkAtReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	u.Name = ""
+	if u.SizeBytes() > len(src) {
+		return src, false
+	}
+	srcRemain := u.DirFD.UnmarshalUnsafe(src)
+	srcRemain = u.Flags.UnmarshalUnsafe(srcRemain)
+	if srcRemain, ok := u.Name.CheckedUnmarshal(srcRemain); ok {
+		return srcRemain, true
+	}
+	return src, false
 }
 
 // RenameAtReq is used to make Rename requests. Note that the request takes in
@@ -949,16 +1044,23 @@ func (r *RenameAtReq) MarshalBytes(dst []byte) []byte {
 	return r.NewName.MarshalBytes(dst)
 }
 
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (r *RenameAtReq) UnmarshalBytes(src []byte) []byte {
-	src = r.Renamed.UnmarshalUnsafe(src)
-	src = r.NewDir.UnmarshalUnsafe(src)
-	return r.NewName.UnmarshalBytes(src)
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (r *RenameAtReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	r.NewName = ""
+	if r.SizeBytes() > len(src) {
+		return src, false
+	}
+	srcRemain := r.Renamed.UnmarshalUnsafe(src)
+	srcRemain = r.NewDir.UnmarshalUnsafe(srcRemain)
+	if srcRemain, ok := r.NewName.CheckedUnmarshal(srcRemain); ok {
+		return srcRemain, true
+	}
+	return src, false
 }
 
 // Getdents64Req is used to make Getdents64 requests.
 //
-// +marshal
+// +marshal boundCheck
 type Getdents64Req struct {
 	DirFD FDID
 	// Count is the number of bytes to read. A negative value of Count is used to
@@ -993,14 +1095,21 @@ func (d *Dirent64) MarshalBytes(dst []byte) []byte {
 	return d.Name.MarshalBytes(dst)
 }
 
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (d *Dirent64) UnmarshalBytes(src []byte) []byte {
-	src = d.Ino.UnmarshalUnsafe(src)
-	src = d.DevMinor.UnmarshalUnsafe(src)
-	src = d.DevMajor.UnmarshalUnsafe(src)
-	src = d.Off.UnmarshalUnsafe(src)
-	src = d.Type.UnmarshalUnsafe(src)
-	return d.Name.UnmarshalBytes(src)
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (d *Dirent64) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	d.Name = ""
+	if d.SizeBytes() > len(src) {
+		return src, false
+	}
+	srcRemain := d.Ino.UnmarshalUnsafe(src)
+	srcRemain = d.DevMinor.UnmarshalUnsafe(srcRemain)
+	srcRemain = d.DevMajor.UnmarshalUnsafe(srcRemain)
+	srcRemain = d.Off.UnmarshalUnsafe(srcRemain)
+	srcRemain = d.Type.UnmarshalUnsafe(srcRemain)
+	if srcRemain, ok := d.Name.CheckedUnmarshal(srcRemain); ok {
+		return srcRemain, true
+	}
+	return src, false
 }
 
 // Getdents64Resp is used to communicate getdents64 results.
@@ -1027,20 +1136,27 @@ func (g *Getdents64Resp) MarshalBytes(dst []byte) []byte {
 	return dst
 }
 
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (g *Getdents64Resp) UnmarshalBytes(src []byte) []byte {
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (g *Getdents64Resp) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	g.Dirents = g.Dirents[:0]
+	if g.SizeBytes() > len(src) {
+		return src, false
+	}
 	var numDirents primitive.Uint32
-	src = numDirents.UnmarshalUnsafe(src)
+	srcRemain := numDirents.UnmarshalUnsafe(src)
 	if cap(g.Dirents) < int(numDirents) {
 		g.Dirents = make([]Dirent64, numDirents)
 	} else {
 		g.Dirents = g.Dirents[:numDirents]
 	}
 
+	var ok bool
 	for i := range g.Dirents {
-		src = g.Dirents[i].UnmarshalBytes(src)
+		if srcRemain, ok = g.Dirents[i].CheckedUnmarshal(srcRemain); !ok {
+			return src, false
+		}
 	}
-	return src
+	return srcRemain, true
 }
 
 // FGetXattrReq is used to make FGetXattr requests. The response to this is
@@ -1063,11 +1179,18 @@ func (g *FGetXattrReq) MarshalBytes(dst []byte) []byte {
 	return g.Name.MarshalBytes(dst)
 }
 
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (g *FGetXattrReq) UnmarshalBytes(src []byte) []byte {
-	src = g.FD.UnmarshalUnsafe(src)
-	src = g.BufSize.UnmarshalUnsafe(src)
-	return g.Name.UnmarshalBytes(src)
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (g *FGetXattrReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	g.Name = ""
+	if g.SizeBytes() > len(src) {
+		return src, false
+	}
+	srcRemain := g.FD.UnmarshalUnsafe(src)
+	srcRemain = g.BufSize.UnmarshalUnsafe(srcRemain)
+	if srcRemain, ok := g.Name.CheckedUnmarshal(srcRemain); ok {
+		return srcRemain, true
+	}
+	return src, false
 }
 
 // FGetXattrResp is used to respond to FGetXattr request.
@@ -1085,9 +1208,9 @@ func (g *FGetXattrResp) MarshalBytes(dst []byte) []byte {
 	return g.Value.MarshalBytes(dst)
 }
 
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (g *FGetXattrResp) UnmarshalBytes(src []byte) []byte {
-	return g.Value.UnmarshalBytes(src)
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (g *FGetXattrResp) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	return g.Value.CheckedUnmarshal(src)
 }
 
 // FSetXattrReq is used to make FSetXattr requests. It has no response.
@@ -1111,12 +1234,23 @@ func (s *FSetXattrReq) MarshalBytes(dst []byte) []byte {
 	return s.Value.MarshalBytes(dst)
 }
 
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (s *FSetXattrReq) UnmarshalBytes(src []byte) []byte {
-	src = s.FD.UnmarshalUnsafe(src)
-	src = s.Flags.UnmarshalUnsafe(src)
-	src = s.Name.UnmarshalBytes(src)
-	return s.Value.UnmarshalBytes(src)
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (s *FSetXattrReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	s.Name = ""
+	s.Value = ""
+	if s.SizeBytes() > len(src) {
+		return src, false
+	}
+	srcRemain := s.FD.UnmarshalUnsafe(src)
+	srcRemain = s.Flags.UnmarshalUnsafe(srcRemain)
+	var ok bool
+	if srcRemain, ok = s.Name.CheckedUnmarshal(srcRemain); !ok {
+		return src, false
+	}
+	if srcRemain, ok = s.Value.CheckedUnmarshal(srcRemain); !ok {
+		return src, false
+	}
+	return srcRemain, true
 }
 
 // FRemoveXattrReq is used to make FRemoveXattr requests. It has no response.
@@ -1136,15 +1270,22 @@ func (r *FRemoveXattrReq) MarshalBytes(dst []byte) []byte {
 	return r.Name.MarshalBytes(dst)
 }
 
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (r *FRemoveXattrReq) UnmarshalBytes(src []byte) []byte {
-	src = r.FD.UnmarshalUnsafe(src)
-	return r.Name.UnmarshalBytes(src)
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (r *FRemoveXattrReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	r.Name = ""
+	if r.SizeBytes() > len(src) {
+		return src, false
+	}
+	srcRemain := r.FD.UnmarshalUnsafe(src)
+	if srcRemain, ok := r.Name.CheckedUnmarshal(srcRemain); ok {
+		return srcRemain, true
+	}
+	return src, false
 }
 
 // FListXattrReq is used to make FListXattr requests.
 //
-// +marshal
+// +marshal boundCheck
 type FListXattrReq struct {
 	FD   FDID
 	_    uint32
@@ -1166,7 +1307,7 @@ func (l *FListXattrResp) MarshalBytes(dst []byte) []byte {
 	return l.Xattrs.MarshalBytes(dst)
 }
 
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (l *FListXattrResp) UnmarshalBytes(src []byte) []byte {
-	return l.Xattrs.UnmarshalBytes(src)
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (l *FListXattrResp) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	return l.Xattrs.CheckedUnmarshal(src)
 }

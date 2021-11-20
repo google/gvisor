@@ -101,7 +101,7 @@ func NewClient(sock *unet.Socket, mountPath string) (*Client, *Inode, error) {
 		MountPath: SizedString(mountPath),
 	}
 	var mountResp MountResp
-	if err := c.SndRcvMessage(Mount, uint32(mountMsg.SizeBytes()), mountMsg.MarshalBytes, mountResp.UnmarshalBytes, nil); err != nil {
+	if err := c.SndRcvMessage(Mount, uint32(mountMsg.SizeBytes()), mountMsg.MarshalBytes, mountResp.CheckedUnmarshal, nil); err != nil {
 		return nil, nil, err
 	}
 
@@ -223,7 +223,7 @@ func (c *Client) Close() {
 func (c *Client) createChannel() (*channel, error) {
 	var chanResp ChannelResp
 	var fds [2]int
-	if err := c.SndRcvMessage(Channel, 0, NoopMarshal, chanResp.UnmarshalUnsafe, fds[:]); err != nil {
+	if err := c.SndRcvMessage(Channel, 0, NoopMarshal, chanResp.CheckedUnmarshal, fds[:]); err != nil {
 		return nil, err
 	}
 	if fds[0] < 0 || fds[1] < 0 {
@@ -313,12 +313,12 @@ func (c *Client) SyncFDs(ctx context.Context, fds []FDID) error {
 // implicit conversion to an interface leads to an allocation.
 //
 // Precondition: reqMarshal and respUnmarshal must be non-nil.
-func (c *Client) SndRcvMessage(m MID, payloadLen uint32, reqMarshal func(dst []byte) []byte, respUnmarshal func(src []byte) []byte, respFDs []int) error {
+func (c *Client) SndRcvMessage(m MID, payloadLen uint32, reqMarshal func(dst []byte) []byte, respUnmarshal func(src []byte) ([]byte, bool), respFDs []int) error {
 	if !c.IsSupported(m) {
 		return unix.EOPNOTSUPP
 	}
 	if payloadLen > c.maxMessageSize {
-		log.Warningf("message %d has message size = %d which is larger than client.maxMessageSize = %d", m, payloadLen, c.maxMessageSize)
+		log.Warningf("message %d has payload which is too large: %d bytes", m, payloadLen)
 		return unix.EIO
 	}
 	wantFDs := len(respFDs)
@@ -357,6 +357,11 @@ func (c *Client) SndRcvMessage(m MID, payloadLen uint32, reqMarshal func(dst []b
 		closeFDs(respFDs)
 		return err
 	}
+	if respPayloadLen > c.maxMessageSize {
+		log.Warningf("server response for message %d is too large: %d bytes", respM, respPayloadLen)
+		closeFDs(respFDs)
+		return unix.EIO
+	}
 	if respM == Error {
 		closeFDs(respFDs)
 		var resp ErrorResp
@@ -370,7 +375,10 @@ func (c *Client) SndRcvMessage(m MID, payloadLen uint32, reqMarshal func(dst []b
 	}
 
 	// Success. The payload must be unmarshalled *before* comm is released.
-	respUnmarshal(comm.PayloadBuf(respPayloadLen))
+	if _, ok := respUnmarshal(comm.PayloadBuf(respPayloadLen)); !ok {
+		log.Warningf("server response unmarshalling for %d message failed", respM)
+		return unix.EIO
+	}
 	return nil
 }
 

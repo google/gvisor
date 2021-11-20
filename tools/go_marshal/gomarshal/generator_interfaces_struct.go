@@ -435,6 +435,32 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 	g.emit("}\n\n")
 }
 
+func (g *interfaceGenerator) emitCheckedMarshallableForStruct() {
+	g.emit("// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.\n")
+	g.emit("func (%s *%s) CheckedMarshal(dst []byte) ([]byte, bool) {\n", g.r, g.typeName())
+	g.inIndent(func() {
+		g.emit("if %s.SizeBytes() > len(dst) {\n", g.r)
+		g.inIndent(func() {
+			g.emit("return dst, false\n")
+		})
+		g.emit("}\n")
+		g.emit("return %s.MarshalUnsafe(dst), true\n", g.r)
+	})
+	g.emit("}\n\n")
+
+	g.emit("// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.\n")
+	g.emit("func (%s *%s) CheckedUnmarshal(src []byte) ([]byte, bool) {\n", g.r, g.typeName())
+	g.inIndent(func() {
+		g.emit("if %s.SizeBytes() > len(src) {\n", g.r)
+		g.inIndent(func() {
+			g.emit("return src, false\n")
+		})
+		g.emit("}\n")
+		g.emit("return %s.UnmarshalUnsafe(src), true\n", g.r)
+	})
+	g.emit("}\n\n")
+}
+
 func (g *interfaceGenerator) emitMarshallableSliceForStruct(st *ast.StructType, slice *sliceAPI) {
 	thisPacked := g.isStructPacked(st)
 

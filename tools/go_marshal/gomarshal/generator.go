@@ -217,10 +217,11 @@ type sliceAPI struct {
 // marshallableType carries information about a type marked with the '+marshal'
 // directive.
 type marshallableType struct {
-	spec    *ast.TypeSpec
-	slice   *sliceAPI
-	recv    string
-	dynamic bool
+	spec       *ast.TypeSpec
+	slice      *sliceAPI
+	recv       string
+	dynamic    bool
+	boundCheck bool
 }
 
 func newMarshallableType(fset *token.FileSet, tagLine *ast.Comment, spec *ast.TypeSpec) *marshallableType {
@@ -257,6 +258,9 @@ func newMarshallableType(fset *token.FileSet, tagLine *ast.Comment, spec *ast.Ty
 			continue
 		} else if tag == "dynamic" {
 			mt.dynamic = true
+			continue
+		} else if tag == "boundCheck" {
+			mt.boundCheck = true
 			continue
 		}
 
@@ -391,6 +395,9 @@ func (g *Generator) generateOne(t *marshallableType, fset *token.FileSet) *inter
 		if t.slice != nil {
 			abortAt(fset.Position(t.slice.comment.Slash), "Slice API is not supported for dynamic types because it assumes that each slice element is statically sized.")
 		}
+		if t.boundCheck {
+			abortAt(fset.Position(t.slice.comment.Slash), "Can not generate Checked methods for dynamic types. Has to be implemented manually.")
+		}
 		// No validation needed, assume the user knows what they are doing.
 		i.emitMarshallableForDynamicType()
 		return i
@@ -399,12 +406,18 @@ func (g *Generator) generateOne(t *marshallableType, fset *token.FileSet) *inter
 	case *ast.StructType:
 		i.validateStruct(t.spec, ty)
 		i.emitMarshallableForStruct(ty)
+		if t.boundCheck {
+			i.emitCheckedMarshallableForStruct()
+		}
 		if t.slice != nil {
 			i.emitMarshallableSliceForStruct(ty, t.slice)
 		}
 	case *ast.Ident:
 		i.validatePrimitiveNewtype(ty)
 		i.emitMarshallableForPrimitiveNewtype(ty)
+		if t.boundCheck {
+			i.emitCheckedMarshallableForPrimitiveNewtype()
+		}
 		if t.slice != nil {
 			i.emitMarshallableSliceForPrimitiveNewtype(ty, t.slice)
 		}
@@ -412,6 +425,9 @@ func (g *Generator) generateOne(t *marshallableType, fset *token.FileSet) *inter
 		i.validateArrayNewtype(t.spec.Name, ty)
 		// After validate, we can safely call arrayLen.
 		i.emitMarshallableForArrayNewtype(t.spec.Name, ty, ty.Elt.(*ast.Ident))
+		if t.boundCheck {
+			i.emitCheckedMarshallableForArrayNewtype()
+		}
 		if t.slice != nil {
 			abortAt(fset.Position(t.slice.comment.Slash), "Array type marked as '+marshal slice:...', but this is not supported. Perhaps fold one of the dimensions?")
 		}
@@ -426,7 +442,7 @@ func (g *Generator) generateOne(t *marshallableType, fset *token.FileSet) *inter
 // implementations type t.
 func (g *Generator) generateOneTestSuite(t *marshallableType) *testGenerator {
 	i := newTestGenerator(t.spec, t.recv)
-	i.emitTests(t.slice)
+	i.emitTests(t.slice, t.boundCheck)
 	return i
 }
 
