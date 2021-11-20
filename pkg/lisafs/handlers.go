@@ -85,7 +85,9 @@ func ErrorHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, 
 // has been successfully mounted can other channels be created.
 func MountHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
 	var req MountReq
-	req.UnmarshalBytes(comm.PayloadBuf(payloadLen))
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
 
 	mountPath := path.Clean(string(req.MountPath))
 	if !filepath.IsAbs(mountPath) {
@@ -160,7 +162,9 @@ func ChannelHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32
 // FStatHandler handles the FStat RPC.
 func FStatHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
 	var req StatReq
-	req.UnmarshalUnsafe(comm.PayloadBuf(payloadLen))
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
 
 	fd, err := c.lookupFD(req.FD)
 	if err != nil {
@@ -185,7 +189,9 @@ func SetStatHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32
 	}
 
 	var req SetStatReq
-	req.UnmarshalUnsafe(comm.PayloadBuf(payloadLen))
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
 
 	fd, err := c.LookupControlFD(req.FD)
 	if err != nil {
@@ -203,7 +209,9 @@ func SetStatHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32
 // WalkHandler handles the Walk RPC.
 func WalkHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
 	var req WalkReq
-	req.UnmarshalBytes(comm.PayloadBuf(payloadLen))
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
 
 	fd, err := c.LookupControlFD(req.DirFD)
 	if err != nil {
@@ -225,7 +233,9 @@ func WalkHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, e
 // WalkStatHandler handles the WalkStat RPC.
 func WalkStatHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
 	var req WalkReq
-	req.UnmarshalBytes(comm.PayloadBuf(payloadLen))
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
 
 	fd, err := c.LookupControlFD(req.DirFD)
 	if err != nil {
@@ -256,7 +266,9 @@ func WalkStatHandler(c *Connection, comm Communicator, payloadLen uint32) (uint3
 // OpenAtHandler handles the OpenAt RPC.
 func OpenAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
 	var req OpenAtReq
-	req.UnmarshalUnsafe(comm.PayloadBuf(payloadLen))
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
 
 	// Only keep allowed open flags.
 	if allowedFlags := req.Flags & allowedOpenFlags; allowedFlags != req.Flags {
@@ -291,7 +303,9 @@ func OpenCreateAtHandler(c *Connection, comm Communicator, payloadLen uint32) (u
 		return 0, unix.EROFS
 	}
 	var req OpenCreateAtReq
-	req.UnmarshalBytes(comm.PayloadBuf(payloadLen))
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
 
 	// Only keep allowed open flags.
 	if allowedFlags := req.Flags & allowedOpenFlags; allowedFlags != req.Flags {
@@ -319,7 +333,9 @@ func OpenCreateAtHandler(c *Connection, comm Communicator, payloadLen uint32) (u
 // CloseHandler handles the Close RPC.
 func CloseHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
 	var req CloseReq
-	req.UnmarshalBytes(comm.PayloadBuf(payloadLen))
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
 	for _, fd := range req.FDs {
 		c.RemoveFD(fd)
 	}
@@ -331,7 +347,9 @@ func CloseHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, 
 // FSyncHandler handles the FSync RPC.
 func FSyncHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
 	var req FsyncReq
-	req.UnmarshalBytes(comm.PayloadBuf(payloadLen))
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
 
 	// Return the first error we encounter, but sync everything we can
 	// regardless.
@@ -363,7 +381,10 @@ func PWriteHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32,
 	// Note that it is an optimized Unmarshal operation which avoids any buffer
 	// allocation and copying. req.Buf just points to payload. This is safe to do
 	// as the handler owns payload and req's lifetime is limited to the handler.
-	req.UnmarshalBytes(comm.PayloadBuf(payloadLen))
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
+
 	fd, err := c.LookupOpenFD(req.FD)
 	if err != nil {
 		return 0, err
@@ -377,7 +398,9 @@ func PWriteHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32,
 // PReadHandler handles the PRead RPC.
 func PReadHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
 	var req PReadReq
-	req.UnmarshalUnsafe(comm.PayloadBuf(payloadLen))
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
 
 	fd, err := c.LookupOpenFD(req.FD)
 	if err != nil {
@@ -396,7 +419,9 @@ func MkdirAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32
 		return 0, unix.EROFS
 	}
 	var req MkdirAtReq
-	req.UnmarshalBytes(comm.PayloadBuf(payloadLen))
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
 
 	name := string(req.Name)
 	if err := checkSafeName(name); err != nil {
@@ -420,7 +445,9 @@ func MknodAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32
 		return 0, unix.EROFS
 	}
 	var req MknodAtReq
-	req.UnmarshalBytes(comm.PayloadBuf(payloadLen))
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
 
 	name := string(req.Name)
 	if err := checkSafeName(name); err != nil {
@@ -444,7 +471,9 @@ func SymlinkAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint
 		return 0, unix.EROFS
 	}
 	var req SymlinkAtReq
-	req.UnmarshalBytes(comm.PayloadBuf(payloadLen))
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
 
 	name := string(req.Name)
 	if err := checkSafeName(name); err != nil {
@@ -468,7 +497,9 @@ func LinkAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32,
 		return 0, unix.EROFS
 	}
 	var req LinkAtReq
-	req.UnmarshalBytes(comm.PayloadBuf(payloadLen))
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
 
 	name := string(req.Name)
 	if err := checkSafeName(name); err != nil {
@@ -494,7 +525,9 @@ func LinkAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32,
 // FStatFSHandler handles the FStatFS RPC.
 func FStatFSHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
 	var req FStatFSReq
-	req.UnmarshalUnsafe(comm.PayloadBuf(payloadLen))
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
 
 	fd, err := c.LookupControlFD(req.FD)
 	if err != nil {
@@ -510,7 +543,9 @@ func FAllocateHandler(c *Connection, comm Communicator, payloadLen uint32) (uint
 		return 0, unix.EROFS
 	}
 	var req FAllocateReq
-	req.UnmarshalUnsafe(comm.PayloadBuf(payloadLen))
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
 
 	fd, err := c.LookupOpenFD(req.FD)
 	if err != nil {
@@ -526,7 +561,9 @@ func FAllocateHandler(c *Connection, comm Communicator, payloadLen uint32) (uint
 // ReadLinkAtHandler handles the ReadLinkAt RPC.
 func ReadLinkAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
 	var req ReadLinkAtReq
-	req.UnmarshalUnsafe(comm.PayloadBuf(payloadLen))
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
 
 	fd, err := c.LookupControlFD(req.FD)
 	if err != nil {
@@ -542,7 +579,9 @@ func ReadLinkAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uin
 // FlushHandler handles the Flush RPC.
 func FlushHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
 	var req FlushReq
-	req.UnmarshalUnsafe(comm.PayloadBuf(payloadLen))
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
 
 	fd, err := c.LookupOpenFD(req.FD)
 	if err != nil {
@@ -556,7 +595,9 @@ func FlushHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, 
 // ConnectHandler handles the Connect RPC.
 func ConnectHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
 	var req ConnectReq
-	req.UnmarshalUnsafe(comm.PayloadBuf(payloadLen))
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
 
 	fd, err := c.LookupControlFD(req.FD)
 	if err != nil {
@@ -575,7 +616,9 @@ func UnlinkAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint3
 		return 0, unix.EROFS
 	}
 	var req UnlinkAtReq
-	req.UnmarshalBytes(comm.PayloadBuf(payloadLen))
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
 
 	name := string(req.Name)
 	if err := checkSafeName(name); err != nil {
@@ -599,7 +642,9 @@ func RenameAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint3
 		return 0, unix.EROFS
 	}
 	var req RenameAtReq
-	req.UnmarshalBytes(comm.PayloadBuf(payloadLen))
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
 
 	newName := string(req.NewName)
 	if err := checkSafeName(newName); err != nil {
@@ -682,7 +727,9 @@ func (fd *ControlFD) renameRecursiveLocked(newDir *ControlFD, newName string, pi
 // Getdents64Handler handles the Getdents64 RPC.
 func Getdents64Handler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
 	var req Getdents64Req
-	req.UnmarshalUnsafe(comm.PayloadBuf(payloadLen))
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
 
 	fd, err := c.LookupOpenFD(req.DirFD)
 	if err != nil {
@@ -704,7 +751,9 @@ func Getdents64Handler(c *Connection, comm Communicator, payloadLen uint32) (uin
 // FGetXattrHandler handles the FGetXattr RPC.
 func FGetXattrHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
 	var req FGetXattrReq
-	req.UnmarshalBytes(comm.PayloadBuf(payloadLen))
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
 
 	fd, err := c.LookupControlFD(req.FD)
 	if err != nil {
@@ -720,7 +769,9 @@ func FSetXattrHandler(c *Connection, comm Communicator, payloadLen uint32) (uint
 		return 0, unix.EROFS
 	}
 	var req FSetXattrReq
-	req.UnmarshalBytes(comm.PayloadBuf(payloadLen))
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
 
 	fd, err := c.LookupControlFD(req.FD)
 	if err != nil {
@@ -733,7 +784,9 @@ func FSetXattrHandler(c *Connection, comm Communicator, payloadLen uint32) (uint
 // FListXattrHandler handles the FListXattr RPC.
 func FListXattrHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
 	var req FListXattrReq
-	req.UnmarshalUnsafe(comm.PayloadBuf(payloadLen))
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
 
 	fd, err := c.LookupControlFD(req.FD)
 	if err != nil {
@@ -749,7 +802,9 @@ func FRemoveXattrHandler(c *Connection, comm Communicator, payloadLen uint32) (u
 		return 0, unix.EROFS
 	}
 	var req FRemoveXattrReq
-	req.UnmarshalBytes(comm.PayloadBuf(payloadLen))
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
 
 	fd, err := c.LookupControlFD(req.FD)
 	if err != nil {

@@ -34,7 +34,6 @@ var _ marshal.Marshallable = (*MsgSimple)(nil)
 var _ marshal.Marshallable = (*OpenAtReq)(nil)
 var _ marshal.Marshallable = (*OpenAtResp)(nil)
 var _ marshal.Marshallable = (*OpenCreateAtResp)(nil)
-var _ marshal.Marshallable = (*P9Version)(nil)
 var _ marshal.Marshallable = (*PReadReq)(nil)
 var _ marshal.Marshallable = (*PWriteResp)(nil)
 var _ marshal.Marshallable = (*ReadLinkAtReq)(nil)
@@ -281,6 +280,26 @@ func (f *FDID) WriteTo(writer io.Writer) (int64, error) {
     return int64(length), err
 }
 
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (f *FDID) CheckedMarshal(dst []byte) ([]byte, bool) {
+    size := f.SizeBytes()
+    if size > len(dst) {
+        return dst, false
+    }
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(f), uintptr(size))
+    return dst[size:], true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (f *FDID) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    size := f.SizeBytes()
+    if size > len(src) {
+        return src, false
+    }
+    gohacks.Memmove(unsafe.Pointer(f), unsafe.Pointer(&src[0]), uintptr(size))
+    return src[size:], true
+}
+
 // CopyFDIDSliceIn copies in a slice of FDID objects from the task's memory.
 //go:nosplit
 func CopyFDIDSliceIn(cc marshal.CopyContext, addr hostarch.Addr, dst []FDID) (int, error) {
@@ -458,6 +477,22 @@ func (c *ChannelResp) WriteTo(writer io.Writer) (int64, error) {
     return int64(length), err
 }
 
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (c *ChannelResp) CheckedMarshal(dst []byte) ([]byte, bool) {
+    if c.SizeBytes() > len(dst) {
+        return dst, false
+    }
+    return c.MarshalUnsafe(dst), true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (c *ChannelResp) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    if c.SizeBytes() > len(src) {
+        return src, false
+    }
+    return c.UnmarshalUnsafe(src), true
+}
+
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (c *ConnectReq) SizeBytes() int {
     return 4 +
@@ -587,6 +622,22 @@ func (c *ConnectReq) WriteTo(writer io.Writer) (int64, error) {
     // must live until the use above.
     runtime.KeepAlive(c) // escapes: replaced by intrinsic.
     return int64(length), err
+}
+
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (c *ConnectReq) CheckedMarshal(dst []byte) ([]byte, bool) {
+    if c.SizeBytes() > len(dst) {
+        return dst, false
+    }
+    return c.MarshalUnsafe(dst), true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (c *ConnectReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    if c.SizeBytes() > len(src) {
+        return src, false
+    }
+    return c.UnmarshalUnsafe(src), true
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -827,6 +878,22 @@ func (f *FAllocateReq) WriteTo(writer io.Writer) (int64, error) {
     return int64(length), err
 }
 
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (f *FAllocateReq) CheckedMarshal(dst []byte) ([]byte, bool) {
+    if f.SizeBytes() > len(dst) {
+        return dst, false
+    }
+    return f.MarshalUnsafe(dst), true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (f *FAllocateReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    if f.SizeBytes() > len(src) {
+        return src, false
+    }
+    return f.UnmarshalUnsafe(src), true
+}
+
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (f *FListXattrReq) SizeBytes() int {
     return 12 +
@@ -962,6 +1029,22 @@ func (f *FListXattrReq) WriteTo(writer io.Writer) (int64, error) {
     return int64(length), err
 }
 
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (f *FListXattrReq) CheckedMarshal(dst []byte) ([]byte, bool) {
+    if f.SizeBytes() > len(dst) {
+        return dst, false
+    }
+    return f.MarshalUnsafe(dst), true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (f *FListXattrReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    if f.SizeBytes() > len(src) {
+        return src, false
+    }
+    return f.UnmarshalUnsafe(src), true
+}
+
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (f *FStatFSReq) SizeBytes() int {
     return 0 +
@@ -1089,6 +1172,22 @@ func (f *FStatFSReq) WriteTo(writer io.Writer) (int64, error) {
     return int64(length), err
 }
 
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (f *FStatFSReq) CheckedMarshal(dst []byte) ([]byte, bool) {
+    if f.SizeBytes() > len(dst) {
+        return dst, false
+    }
+    return f.MarshalUnsafe(dst), true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (f *FStatFSReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    if f.SizeBytes() > len(src) {
+        return src, false
+    }
+    return f.UnmarshalUnsafe(src), true
+}
+
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (f *FlushReq) SizeBytes() int {
     return 0 +
@@ -1214,6 +1313,22 @@ func (f *FlushReq) WriteTo(writer io.Writer) (int64, error) {
     // must live until the use above.
     runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return int64(length), err
+}
+
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (f *FlushReq) CheckedMarshal(dst []byte) ([]byte, bool) {
+    if f.SizeBytes() > len(dst) {
+        return dst, false
+    }
+    return f.MarshalUnsafe(dst), true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (f *FlushReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    if f.SizeBytes() > len(src) {
+        return src, false
+    }
+    return f.UnmarshalUnsafe(src), true
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -1440,6 +1555,22 @@ func (g *Getdents64Req) WriteTo(writer io.Writer) (int64, error) {
     // must live until the use above.
     runtime.KeepAlive(g) // escapes: replaced by intrinsic.
     return int64(length), err
+}
+
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (g *Getdents64Req) CheckedMarshal(dst []byte) ([]byte, bool) {
+    if g.SizeBytes() > len(dst) {
+        return dst, false
+    }
+    return g.MarshalUnsafe(dst), true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (g *Getdents64Req) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    if g.SizeBytes() > len(src) {
+        return src, false
+    }
+    return g.UnmarshalUnsafe(src), true
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -1826,6 +1957,22 @@ func (l *LinkAtResp) WriteTo(writer io.Writer) (int64, error) {
     return int64(length), err
 }
 
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (l *LinkAtResp) CheckedMarshal(dst []byte) ([]byte, bool) {
+    if l.SizeBytes() > len(dst) {
+        return dst, false
+    }
+    return l.MarshalUnsafe(dst), true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (l *LinkAtResp) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    if l.SizeBytes() > len(src) {
+        return src, false
+    }
+    return l.UnmarshalUnsafe(src), true
+}
+
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 //go:nosplit
 func (m *MID) SizeBytes() int {
@@ -2126,6 +2273,22 @@ func (m *MkdirAtResp) WriteTo(writer io.Writer) (int64, error) {
     return int64(length), err
 }
 
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (m *MkdirAtResp) CheckedMarshal(dst []byte) ([]byte, bool) {
+    if m.SizeBytes() > len(dst) {
+        return dst, false
+    }
+    return m.MarshalUnsafe(dst), true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (m *MkdirAtResp) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    if m.SizeBytes() > len(src) {
+        return src, false
+    }
+    return m.UnmarshalUnsafe(src), true
+}
+
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (m *MknodAtResp) SizeBytes() int {
     return 0 +
@@ -2251,6 +2414,22 @@ func (m *MknodAtResp) WriteTo(writer io.Writer) (int64, error) {
     // must live until the use above.
     runtime.KeepAlive(m) // escapes: replaced by intrinsic.
     return int64(length), err
+}
+
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (m *MknodAtResp) CheckedMarshal(dst []byte) ([]byte, bool) {
+    if m.SizeBytes() > len(dst) {
+        return dst, false
+    }
+    return m.MarshalUnsafe(dst), true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (m *MknodAtResp) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    if m.SizeBytes() > len(src) {
+        return src, false
+    }
+    return m.UnmarshalUnsafe(src), true
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -2384,6 +2563,22 @@ func (o *OpenAtReq) WriteTo(writer io.Writer) (int64, error) {
     return int64(length), err
 }
 
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (o *OpenAtReq) CheckedMarshal(dst []byte) ([]byte, bool) {
+    if o.SizeBytes() > len(dst) {
+        return dst, false
+    }
+    return o.MarshalUnsafe(dst), true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (o *OpenAtReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    if o.SizeBytes() > len(src) {
+        return src, false
+    }
+    return o.UnmarshalUnsafe(src), true
+}
+
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (o *OpenAtResp) SizeBytes() int {
     return 0 +
@@ -2509,6 +2704,22 @@ func (o *OpenAtResp) WriteTo(writer io.Writer) (int64, error) {
     // must live until the use above.
     runtime.KeepAlive(o) // escapes: replaced by intrinsic.
     return int64(length), err
+}
+
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (o *OpenAtResp) CheckedMarshal(dst []byte) ([]byte, bool) {
+    if o.SizeBytes() > len(dst) {
+        return dst, false
+    }
+    return o.MarshalUnsafe(dst), true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (o *OpenAtResp) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    if o.SizeBytes() > len(src) {
+        return src, false
+    }
+    return o.UnmarshalUnsafe(src), true
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -2643,6 +2854,22 @@ func (o *OpenCreateAtResp) WriteTo(writer io.Writer) (int64, error) {
     // must live until the use above.
     runtime.KeepAlive(o) // escapes: replaced by intrinsic.
     return int64(length), err
+}
+
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (o *OpenCreateAtResp) CheckedMarshal(dst []byte) ([]byte, bool) {
+    if o.SizeBytes() > len(dst) {
+        return dst, false
+    }
+    return o.MarshalUnsafe(dst), true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (o *OpenCreateAtResp) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    if o.SizeBytes() > len(src) {
+        return src, false
+    }
+    return o.UnmarshalUnsafe(src), true
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -2780,6 +3007,22 @@ func (p *PReadReq) WriteTo(writer io.Writer) (int64, error) {
     return int64(length), err
 }
 
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (p *PReadReq) CheckedMarshal(dst []byte) ([]byte, bool) {
+    if p.SizeBytes() > len(dst) {
+        return dst, false
+    }
+    return p.MarshalUnsafe(dst), true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (p *PReadReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    if p.SizeBytes() > len(src) {
+        return src, false
+    }
+    return p.UnmarshalUnsafe(src), true
+}
+
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (p *PWriteResp) SizeBytes() int {
     return 8
@@ -2873,6 +3116,22 @@ func (p *PWriteResp) WriteTo(writer io.Writer) (int64, error) {
     // must live until the use above.
     runtime.KeepAlive(p) // escapes: replaced by intrinsic.
     return int64(length), err
+}
+
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (p *PWriteResp) CheckedMarshal(dst []byte) ([]byte, bool) {
+    if p.SizeBytes() > len(dst) {
+        return dst, false
+    }
+    return p.MarshalUnsafe(dst), true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (p *PWriteResp) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    if p.SizeBytes() > len(src) {
+        return src, false
+    }
+    return p.UnmarshalUnsafe(src), true
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -3000,6 +3259,22 @@ func (r *ReadLinkAtReq) WriteTo(writer io.Writer) (int64, error) {
     // must live until the use above.
     runtime.KeepAlive(r) // escapes: replaced by intrinsic.
     return int64(length), err
+}
+
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (r *ReadLinkAtReq) CheckedMarshal(dst []byte) ([]byte, bool) {
+    if r.SizeBytes() > len(dst) {
+        return dst, false
+    }
+    return r.MarshalUnsafe(dst), true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (r *ReadLinkAtReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    if r.SizeBytes() > len(src) {
+        return src, false
+    }
+    return r.UnmarshalUnsafe(src), true
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -3157,6 +3432,22 @@ func (s *SetStatReq) WriteTo(writer io.Writer) (int64, error) {
     return int64(length), err
 }
 
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (s *SetStatReq) CheckedMarshal(dst []byte) ([]byte, bool) {
+    if s.SizeBytes() > len(dst) {
+        return dst, false
+    }
+    return s.MarshalUnsafe(dst), true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (s *SetStatReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    if s.SizeBytes() > len(src) {
+        return src, false
+    }
+    return s.UnmarshalUnsafe(src), true
+}
+
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (s *SetStatResp) SizeBytes() int {
     return 8
@@ -3254,6 +3545,22 @@ func (s *SetStatResp) WriteTo(writer io.Writer) (int64, error) {
     // must live until the use above.
     runtime.KeepAlive(s) // escapes: replaced by intrinsic.
     return int64(length), err
+}
+
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (s *SetStatResp) CheckedMarshal(dst []byte) ([]byte, bool) {
+    if s.SizeBytes() > len(dst) {
+        return dst, false
+    }
+    return s.MarshalUnsafe(dst), true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (s *SetStatResp) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    if s.SizeBytes() > len(src) {
+        return src, false
+    }
+    return s.UnmarshalUnsafe(src), true
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -3377,6 +3684,22 @@ func (s *StatFS) WriteTo(writer io.Writer) (int64, error) {
     // must live until the use above.
     runtime.KeepAlive(s) // escapes: replaced by intrinsic.
     return int64(length), err
+}
+
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (s *StatFS) CheckedMarshal(dst []byte) ([]byte, bool) {
+    if s.SizeBytes() > len(dst) {
+        return dst, false
+    }
+    return s.MarshalUnsafe(dst), true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (s *StatFS) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    if s.SizeBytes() > len(src) {
+        return src, false
+    }
+    return s.UnmarshalUnsafe(src), true
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -3506,6 +3829,22 @@ func (s *StatReq) WriteTo(writer io.Writer) (int64, error) {
     return int64(length), err
 }
 
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (s *StatReq) CheckedMarshal(dst []byte) ([]byte, bool) {
+    if s.SizeBytes() > len(dst) {
+        return dst, false
+    }
+    return s.MarshalUnsafe(dst), true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (s *StatReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    if s.SizeBytes() > len(src) {
+        return src, false
+    }
+    return s.UnmarshalUnsafe(src), true
+}
+
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (s *SymlinkAtResp) SizeBytes() int {
     return 0 +
@@ -3631,6 +3970,22 @@ func (s *SymlinkAtResp) WriteTo(writer io.Writer) (int64, error) {
     // must live until the use above.
     runtime.KeepAlive(s) // escapes: replaced by intrinsic.
     return int64(length), err
+}
+
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (s *SymlinkAtResp) CheckedMarshal(dst []byte) ([]byte, bool) {
+    if s.SizeBytes() > len(dst) {
+        return dst, false
+    }
+    return s.MarshalUnsafe(dst), true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (s *SymlinkAtResp) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    if s.SizeBytes() > len(src) {
+        return src, false
+    }
+    return s.UnmarshalUnsafe(src), true
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -4104,61 +4459,6 @@ func UnmarshalUnsafeMsg1Slice(dst []MsgSimple, src []byte) []byte {
     buf := src[:size*count]
     gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&buf[0]), uintptr(len(buf)))
     return src[size*count:]
-}
-
-// Packed implements marshal.Marshallable.Packed.
-//go:nosplit
-func (v *P9Version) Packed() bool {
-    // Type P9Version is dynamic so it might have slice/string headers. Hence, it is not packed.
-    return false
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (v *P9Version) MarshalUnsafe(dst []byte) []byte {
-    // Type P9Version doesn't have a packed layout in memory, fallback to MarshalBytes.
-    return v.MarshalBytes(dst)
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (v *P9Version) UnmarshalUnsafe(src []byte) []byte {
-    // Type P9Version doesn't have a packed layout in memory, fallback to UnmarshalBytes.
-    return v.UnmarshalBytes(src)
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
-func (v *P9Version) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
-    // Type P9Version doesn't have a packed layout in memory, fall back to MarshalBytes.
-    buf := cc.CopyScratchBuffer(v.SizeBytes()) // escapes: okay.
-    v.MarshalBytes(buf) // escapes: fallback.
-    return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
-func (v *P9Version) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
-    return v.CopyOutN(cc, addr, v.SizeBytes())
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
-func (v *P9Version) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
-    // Type P9Version doesn't have a packed layout in memory, fall back to UnmarshalBytes.
-    buf := cc.CopyScratchBuffer(v.SizeBytes()) // escapes: okay.
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Unmarshal unconditionally. If we had a short copy-in, this results in a
-    // partially unmarshalled struct.
-    v.UnmarshalBytes(buf) // escapes: fallback.
-    return length, err
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (v *P9Version) WriteTo(writer io.Writer) (int64, error) {
-    // Type P9Version doesn't have a packed layout in memory, fall back to MarshalBytes.
-    buf := make([]byte, v.SizeBytes())
-    v.MarshalBytes(buf)
-    length, err := writer.Write(buf)
-    return int64(length), err
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.

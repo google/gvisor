@@ -2160,6 +2160,22 @@ func (s *Statx) WriteTo(writer io.Writer) (int64, error) {
     return int64(length), err
 }
 
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (s *Statx) CheckedMarshal(dst []byte) ([]byte, bool) {
+    if s.SizeBytes() > len(dst) {
+        return dst, false
+    }
+    return s.MarshalUnsafe(dst), true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (s *Statx) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    if s.SizeBytes() > len(src) {
+        return src, false
+    }
+    return s.UnmarshalUnsafe(src), true
+}
+
 // CopyStatxSliceIn copies in a slice of Statx objects from the task's memory.
 func CopyStatxSliceIn(cc marshal.CopyContext, addr hostarch.Addr, dst []Statx) (int, error) {
     count := len(dst)

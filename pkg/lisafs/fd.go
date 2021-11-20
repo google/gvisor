@@ -26,7 +26,7 @@ import (
 // FDID (file descriptor identifier) is used to identify FDs on a connection.
 // Each connection has its own FDID namespace.
 //
-// +marshal slice:FDIDSlice
+// +marshal boundCheck slice:FDIDSlice
 type FDID uint32
 
 // InvalidFDID represents an invalid FDID.

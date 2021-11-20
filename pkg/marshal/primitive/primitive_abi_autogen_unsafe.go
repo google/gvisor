@@ -117,6 +117,26 @@ func (i *Int16) WriteTo(writer io.Writer) (int64, error) {
     return int64(length), err
 }
 
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (i *Int16) CheckedMarshal(dst []byte) ([]byte, bool) {
+    size := i.SizeBytes()
+    if size > len(dst) {
+        return dst, false
+    }
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i), uintptr(size))
+    return dst[size:], true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (i *Int16) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    size := i.SizeBytes()
+    if size > len(src) {
+        return src, false
+    }
+    gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(size))
+    return src[size:], true
+}
+
 // CopyInt16SliceIn copies in a slice of int16 objects from the task's memory.
 //go:nosplit
 func CopyInt16SliceIn(cc marshal.CopyContext, addr hostarch.Addr, dst []int16) (int, error) {
@@ -288,6 +308,26 @@ func (i *Int32) WriteTo(writer io.Writer) (int64, error) {
     // must live until the use above.
     runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return int64(length), err
+}
+
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (i *Int32) CheckedMarshal(dst []byte) ([]byte, bool) {
+    size := i.SizeBytes()
+    if size > len(dst) {
+        return dst, false
+    }
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i), uintptr(size))
+    return dst[size:], true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (i *Int32) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    size := i.SizeBytes()
+    if size > len(src) {
+        return src, false
+    }
+    gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(size))
+    return src[size:], true
 }
 
 // CopyInt32SliceIn copies in a slice of int32 objects from the task's memory.
@@ -463,6 +503,26 @@ func (i *Int64) WriteTo(writer io.Writer) (int64, error) {
     return int64(length), err
 }
 
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (i *Int64) CheckedMarshal(dst []byte) ([]byte, bool) {
+    size := i.SizeBytes()
+    if size > len(dst) {
+        return dst, false
+    }
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i), uintptr(size))
+    return dst[size:], true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (i *Int64) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    size := i.SizeBytes()
+    if size > len(src) {
+        return src, false
+    }
+    gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(size))
+    return src[size:], true
+}
+
 // CopyInt64SliceIn copies in a slice of int64 objects from the task's memory.
 //go:nosplit
 func CopyInt64SliceIn(cc marshal.CopyContext, addr hostarch.Addr, dst []int64) (int, error) {
@@ -634,6 +694,26 @@ func (i *Int8) WriteTo(writer io.Writer) (int64, error) {
     // must live until the use above.
     runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return int64(length), err
+}
+
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (i *Int8) CheckedMarshal(dst []byte) ([]byte, bool) {
+    size := i.SizeBytes()
+    if size > len(dst) {
+        return dst, false
+    }
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i), uintptr(size))
+    return dst[size:], true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (i *Int8) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    size := i.SizeBytes()
+    if size > len(src) {
+        return src, false
+    }
+    gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(size))
+    return src[size:], true
 }
 
 // CopyInt8SliceIn copies in a slice of int8 objects from the task's memory.
@@ -809,6 +889,26 @@ func (u *Uint16) WriteTo(writer io.Writer) (int64, error) {
     return int64(length), err
 }
 
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (u *Uint16) CheckedMarshal(dst []byte) ([]byte, bool) {
+    size := u.SizeBytes()
+    if size > len(dst) {
+        return dst, false
+    }
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(u), uintptr(size))
+    return dst[size:], true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (u *Uint16) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    size := u.SizeBytes()
+    if size > len(src) {
+        return src, false
+    }
+    gohacks.Memmove(unsafe.Pointer(u), unsafe.Pointer(&src[0]), uintptr(size))
+    return src[size:], true
+}
+
 // CopyUint16SliceIn copies in a slice of uint16 objects from the task's memory.
 //go:nosplit
 func CopyUint16SliceIn(cc marshal.CopyContext, addr hostarch.Addr, dst []uint16) (int, error) {
@@ -980,6 +1080,26 @@ func (u *Uint32) WriteTo(writer io.Writer) (int64, error) {
     // must live until the use above.
     runtime.KeepAlive(u) // escapes: replaced by intrinsic.
     return int64(length), err
+}
+
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (u *Uint32) CheckedMarshal(dst []byte) ([]byte, bool) {
+    size := u.SizeBytes()
+    if size > len(dst) {
+        return dst, false
+    }
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(u), uintptr(size))
+    return dst[size:], true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (u *Uint32) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    size := u.SizeBytes()
+    if size > len(src) {
+        return src, false
+    }
+    gohacks.Memmove(unsafe.Pointer(u), unsafe.Pointer(&src[0]), uintptr(size))
+    return src[size:], true
 }
 
 // CopyUint32SliceIn copies in a slice of uint32 objects from the task's memory.
@@ -1155,6 +1275,26 @@ func (u *Uint64) WriteTo(writer io.Writer) (int64, error) {
     return int64(length), err
 }
 
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (u *Uint64) CheckedMarshal(dst []byte) ([]byte, bool) {
+    size := u.SizeBytes()
+    if size > len(dst) {
+        return dst, false
+    }
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(u), uintptr(size))
+    return dst[size:], true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (u *Uint64) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    size := u.SizeBytes()
+    if size > len(src) {
+        return src, false
+    }
+    gohacks.Memmove(unsafe.Pointer(u), unsafe.Pointer(&src[0]), uintptr(size))
+    return src[size:], true
+}
+
 // CopyUint64SliceIn copies in a slice of uint64 objects from the task's memory.
 //go:nosplit
 func CopyUint64SliceIn(cc marshal.CopyContext, addr hostarch.Addr, dst []uint64) (int, error) {
@@ -1326,6 +1466,26 @@ func (u *Uint8) WriteTo(writer io.Writer) (int64, error) {
     // must live until the use above.
     runtime.KeepAlive(u) // escapes: replaced by intrinsic.
     return int64(length), err
+}
+
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (u *Uint8) CheckedMarshal(dst []byte) ([]byte, bool) {
+    size := u.SizeBytes()
+    if size > len(dst) {
+        return dst, false
+    }
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(u), uintptr(size))
+    return dst[size:], true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (u *Uint8) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    size := u.SizeBytes()
+    if size > len(src) {
+        return src, false
+    }
+    gohacks.Memmove(unsafe.Pointer(u), unsafe.Pointer(&src[0]), uintptr(size))
+    return src[size:], true
 }
 
 // CopyUint8SliceIn copies in a slice of uint8 objects from the task's memory.

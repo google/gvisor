@@ -65,6 +65,24 @@ func (m *MsgDynamic) UnmarshalBytes(src []byte) []byte {
 	return UnmarshalUnsafeMsg1Slice(m.Arr, src)
 }
 
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (m *MsgDynamic) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	m.Arr = m.Arr[:0]
+	if m.SizeBytes() > len(src) {
+		return nil, false
+	}
+	src = m.N.UnmarshalUnsafe(src)
+	if int(m.N) > cap(m.Arr) {
+		m.Arr = make([]MsgSimple, m.N)
+	} else {
+		m.Arr = m.Arr[:m.N]
+	}
+	if int(m.N)*(*MsgSimple)(nil).SizeBytes() > len(src) {
+		return nil, false
+	}
+	return UnmarshalUnsafeMsg1Slice(m.Arr, src), true
+}
+
 // Randomize randomizes the contents of m.
 func (m *MsgDynamic) Randomize(arrLen int) {
 	m.N = primitive.Uint32(arrLen)
@@ -75,8 +93,6 @@ func (m *MsgDynamic) Randomize(arrLen int) {
 }
 
 // P9Version mimics p9.TVersion and p9.Rversion.
-//
-// +marshal dynamic
 type P9Version struct {
 	MSize   primitive.Uint32
 	Version string
@@ -95,11 +111,18 @@ func (v *P9Version) MarshalBytes(dst []byte) []byte {
 	return dst[copy(dst, v.Version):]
 }
 
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (v *P9Version) UnmarshalBytes(src []byte) []byte {
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (v *P9Version) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	v.Version = ""
+	if v.SizeBytes() > len(src) {
+		return nil, false
+	}
 	src = v.MSize.UnmarshalUnsafe(src)
 	var versionLen primitive.Uint16
 	src = versionLen.UnmarshalUnsafe(src)
+	if int(versionLen) > len(src) {
+		return nil, false
+	}
 	v.Version = string(src[:versionLen])
-	return src[versionLen:]
+	return src[versionLen:], true
 }

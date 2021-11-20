@@ -82,7 +82,7 @@ func (f *ClientFD) OpenAt(ctx context.Context, flags uint32) (FDID, int, error) 
 	var respFD [1]int
 	var resp OpenAtResp
 	ctx.UninterruptibleSleepStart(false)
-	err := f.client.SndRcvMessage(OpenAt, uint32(req.SizeBytes()), req.MarshalUnsafe, resp.UnmarshalUnsafe, respFD[:])
+	err := f.client.SndRcvMessage(OpenAt, uint32(req.SizeBytes()), req.MarshalUnsafe, resp.CheckedUnmarshal, respFD[:])
 	ctx.UninterruptibleSleepFinish(false)
 	return resp.NewFD, respFD[0], err
 }
@@ -100,7 +100,7 @@ func (f *ClientFD) OpenCreateAt(ctx context.Context, name string, flags uint32, 
 	var respFD [1]int
 	var resp OpenCreateAtResp
 	ctx.UninterruptibleSleepStart(false)
-	err := f.client.SndRcvMessage(OpenCreateAt, uint32(req.SizeBytes()), req.MarshalBytes, resp.UnmarshalUnsafe, respFD[:])
+	err := f.client.SndRcvMessage(OpenCreateAt, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, respFD[:])
 	ctx.UninterruptibleSleepFinish(false)
 	return resp.Child, resp.NewFD, respFD[0], err
 }
@@ -109,7 +109,7 @@ func (f *ClientFD) OpenCreateAt(ctx context.Context, name string, flags uint32, 
 func (f *ClientFD) StatTo(ctx context.Context, stat *linux.Statx) error {
 	req := StatReq{FD: f.fd}
 	ctx.UninterruptibleSleepStart(false)
-	err := f.client.SndRcvMessage(FStat, uint32(req.SizeBytes()), req.MarshalUnsafe, stat.UnmarshalUnsafe, nil)
+	err := f.client.SndRcvMessage(FStat, uint32(req.SizeBytes()), req.MarshalUnsafe, stat.CheckedUnmarshal, nil)
 	ctx.UninterruptibleSleepFinish(false)
 	return err
 }
@@ -178,10 +178,10 @@ func (f *ClientFD) Read(ctx context.Context, dst []byte, offset uint64) (uint64,
 
 		// This will be unmarshalled into. Already set Buf so that we don't need to
 		// allocate a temporary buffer during unmarshalling.
-		// PReadResp.UnmarshalBytes expects this to be set.
+		// PReadResp.CheckedUnmarshal expects this to be set.
 		resp.Buf = buf
 		ctx.UninterruptibleSleepStart(false)
-		err := f.client.SndRcvMessage(PRead, uint32(req.SizeBytes()), req.MarshalUnsafe, resp.UnmarshalBytes, nil)
+		err := f.client.SndRcvMessage(PRead, uint32(req.SizeBytes()), req.MarshalUnsafe, resp.CheckedUnmarshal, nil)
 		ctx.UninterruptibleSleepFinish(false)
 		return uint64(resp.NumBytes), err
 	})
@@ -205,7 +205,7 @@ func (f *ClientFD) Write(ctx context.Context, src []byte, offset uint64) (uint64
 
 		var resp PWriteResp
 		ctx.UninterruptibleSleepStart(false)
-		err := f.client.SndRcvMessage(PWrite, uint32(req.SizeBytes()), req.MarshalBytes, resp.UnmarshalUnsafe, nil)
+		err := f.client.SndRcvMessage(PWrite, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, nil)
 		ctx.UninterruptibleSleepFinish(false)
 		return resp.Count, err
 	})
@@ -222,7 +222,7 @@ func (f *ClientFD) MkdirAt(ctx context.Context, name string, mode linux.FileMode
 
 	var resp MkdirAtResp
 	ctx.UninterruptibleSleepStart(false)
-	err := f.client.SndRcvMessage(MkdirAt, uint32(req.SizeBytes()), req.MarshalBytes, resp.UnmarshalUnsafe, nil)
+	err := f.client.SndRcvMessage(MkdirAt, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, nil)
 	ctx.UninterruptibleSleepFinish(false)
 	return &resp.ChildDir, err
 }
@@ -239,7 +239,7 @@ func (f *ClientFD) SymlinkAt(ctx context.Context, name, target string, uid UID, 
 
 	var resp SymlinkAtResp
 	ctx.UninterruptibleSleepStart(false)
-	err := f.client.SndRcvMessage(SymlinkAt, uint32(req.SizeBytes()), req.MarshalBytes, resp.UnmarshalUnsafe, nil)
+	err := f.client.SndRcvMessage(SymlinkAt, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, nil)
 	ctx.UninterruptibleSleepFinish(false)
 	return &resp.Symlink, err
 }
@@ -254,7 +254,7 @@ func (f *ClientFD) LinkAt(ctx context.Context, targetFD FDID, name string) (*Ino
 
 	var resp LinkAtResp
 	ctx.UninterruptibleSleepStart(false)
-	err := f.client.SndRcvMessage(LinkAt, uint32(req.SizeBytes()), req.MarshalBytes, resp.UnmarshalUnsafe, nil)
+	err := f.client.SndRcvMessage(LinkAt, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, nil)
 	ctx.UninterruptibleSleepFinish(false)
 	return &resp.Link, err
 }
@@ -272,7 +272,7 @@ func (f *ClientFD) MknodAt(ctx context.Context, name string, mode linux.FileMode
 
 	var resp MknodAtResp
 	ctx.UninterruptibleSleepStart(false)
-	err := f.client.SndRcvMessage(MknodAt, uint32(req.SizeBytes()), req.MarshalBytes, resp.UnmarshalUnsafe, nil)
+	err := f.client.SndRcvMessage(MknodAt, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, nil)
 	ctx.UninterruptibleSleepFinish(false)
 	return &resp.Child, err
 }
@@ -298,7 +298,7 @@ func (f *ClientFD) SetStat(ctx context.Context, stat *linux.Statx) (uint32, erro
 
 	var resp SetStatResp
 	ctx.UninterruptibleSleepStart(false)
-	err := f.client.SndRcvMessage(SetStat, uint32(req.SizeBytes()), req.MarshalUnsafe, resp.UnmarshalUnsafe, nil)
+	err := f.client.SndRcvMessage(SetStat, uint32(req.SizeBytes()), req.MarshalUnsafe, resp.CheckedUnmarshal, nil)
 	ctx.UninterruptibleSleepFinish(false)
 	return resp.FailureMask, unix.Errno(resp.FailureErrNo), err
 }
@@ -312,7 +312,7 @@ func (f *ClientFD) WalkMultiple(ctx context.Context, names []string) (WalkStatus
 
 	var resp WalkResp
 	ctx.UninterruptibleSleepStart(false)
-	err := f.client.SndRcvMessage(Walk, uint32(req.SizeBytes()), req.MarshalBytes, resp.UnmarshalBytes, nil)
+	err := f.client.SndRcvMessage(Walk, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, nil)
 	ctx.UninterruptibleSleepFinish(false)
 	return resp.Status, resp.Inodes, err
 }
@@ -327,7 +327,7 @@ func (f *ClientFD) Walk(ctx context.Context, name string) (*Inode, error) {
 	var inode [1]Inode
 	resp := WalkResp{Inodes: inode[:]}
 	ctx.UninterruptibleSleepStart(false)
-	err := f.client.SndRcvMessage(Walk, uint32(req.SizeBytes()), req.MarshalBytes, resp.UnmarshalBytes, nil)
+	err := f.client.SndRcvMessage(Walk, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, nil)
 	ctx.UninterruptibleSleepFinish(false)
 	if err != nil {
 		return nil, err
@@ -363,7 +363,7 @@ func (f *ClientFD) WalkStat(ctx context.Context, names []string) ([]linux.Statx,
 
 	var resp WalkStatResp
 	ctx.UninterruptibleSleepStart(false)
-	err := f.client.SndRcvMessage(WalkStat, uint32(req.SizeBytes()), req.MarshalBytes, resp.UnmarshalBytes, nil)
+	err := f.client.SndRcvMessage(WalkStat, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, nil)
 	ctx.UninterruptibleSleepFinish(false)
 	return resp.Stats, err
 }
@@ -372,7 +372,7 @@ func (f *ClientFD) WalkStat(ctx context.Context, names []string) ([]linux.Statx,
 func (f *ClientFD) StatFSTo(ctx context.Context, statFS *StatFS) error {
 	req := FStatFSReq{FD: f.fd}
 	ctx.UninterruptibleSleepStart(false)
-	err := f.client.SndRcvMessage(FStatFS, uint32(req.SizeBytes()), req.MarshalUnsafe, statFS.UnmarshalUnsafe, nil)
+	err := f.client.SndRcvMessage(FStatFS, uint32(req.SizeBytes()), req.MarshalUnsafe, statFS.CheckedUnmarshal, nil)
 	ctx.UninterruptibleSleepFinish(false)
 	return err
 }
@@ -396,7 +396,7 @@ func (f *ClientFD) ReadLinkAt(ctx context.Context) (string, error) {
 	req := ReadLinkAtReq{FD: f.fd}
 	var resp ReadLinkAtResp
 	ctx.UninterruptibleSleepStart(false)
-	err := f.client.SndRcvMessage(ReadLinkAt, uint32(req.SizeBytes()), req.MarshalUnsafe, resp.UnmarshalBytes, nil)
+	err := f.client.SndRcvMessage(ReadLinkAt, uint32(req.SizeBytes()), req.MarshalUnsafe, resp.CheckedUnmarshal, nil)
 	ctx.UninterruptibleSleepFinish(false)
 	return string(resp.Target), err
 }
@@ -465,7 +465,7 @@ func (f *ClientFD) Getdents64(ctx context.Context, count int32) ([]Dirent64, err
 
 	var resp Getdents64Resp
 	ctx.UninterruptibleSleepStart(false)
-	err := f.client.SndRcvMessage(Getdents64, uint32(req.SizeBytes()), req.MarshalUnsafe, resp.UnmarshalBytes, nil)
+	err := f.client.SndRcvMessage(Getdents64, uint32(req.SizeBytes()), req.MarshalUnsafe, resp.CheckedUnmarshal, nil)
 	ctx.UninterruptibleSleepFinish(false)
 	return resp.Dirents, err
 }
@@ -479,7 +479,7 @@ func (f *ClientFD) ListXattr(ctx context.Context, size uint64) ([]string, error)
 
 	var resp FListXattrResp
 	ctx.UninterruptibleSleepStart(false)
-	err := f.client.SndRcvMessage(FListXattr, uint32(req.SizeBytes()), req.MarshalUnsafe, resp.UnmarshalBytes, nil)
+	err := f.client.SndRcvMessage(FListXattr, uint32(req.SizeBytes()), req.MarshalUnsafe, resp.CheckedUnmarshal, nil)
 	ctx.UninterruptibleSleepFinish(false)
 	return resp.Xattrs, err
 }
@@ -494,7 +494,7 @@ func (f *ClientFD) GetXattr(ctx context.Context, name string, size uint64) (stri
 
 	var resp FGetXattrResp
 	ctx.UninterruptibleSleepStart(false)
-	err := f.client.SndRcvMessage(FGetXattr, uint32(req.SizeBytes()), req.MarshalBytes, resp.UnmarshalBytes, nil)
+	err := f.client.SndRcvMessage(FGetXattr, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, nil)
 	ctx.UninterruptibleSleepFinish(false)
 	return string(resp.Value), err
 }
