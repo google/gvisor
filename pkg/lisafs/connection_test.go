@@ -119,7 +119,9 @@ func TestUnsupportedMessage(t *testing.T) {
 
 func dynamicMsgHandler(c *lisafs.Connection, comm lisafs.Communicator, payloadLen uint32) (uint32, error) {
 	var req lisafs.MsgDynamic
-	req.UnmarshalBytes(comm.PayloadBuf(payloadLen))
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
 
 	// Just echo back the message.
 	respPayloadLen := uint32(req.SizeBytes())
@@ -144,7 +146,7 @@ func TestStress(t *testing.T) {
 					req.Randomize(100)
 
 					var resp lisafs.MsgDynamic
-					if err := c.SndRcvMessage(dynamicMsgID, uint32(req.SizeBytes()), req.MarshalBytes, resp.UnmarshalBytes, nil); err != nil {
+					if err := c.SndRcvMessage(dynamicMsgID, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, nil); err != nil {
 						t.Errorf("SndRcvMessage: received unexpected error %v", err)
 						return
 					}
@@ -163,7 +165,9 @@ func versionHandler(c *lisafs.Connection, comm lisafs.Communicator, payloadLen u
 	// To be fair, usually handlers will create their own objects and return a
 	// pointer to those. Might be tempting to reuse above variables, but don't.
 	var rv lisafs.P9Version
-	rv.UnmarshalBytes(comm.PayloadBuf(payloadLen))
+	if _, ok := rv.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
 
 	// Create a new response.
 	sv := lisafs.P9Version{
@@ -186,7 +190,7 @@ func BenchmarkSendRecv(b *testing.B) {
 	var recvV lisafs.P9Version
 	runServerClient(b, func(c *lisafs.Client) {
 		for i := 0; i < b.N; i++ {
-			if err := c.SndRcvMessage(versionMsgID, uint32(sendV.SizeBytes()), sendV.MarshalBytes, recvV.UnmarshalBytes, nil); err != nil {
+			if err := c.SndRcvMessage(versionMsgID, uint32(sendV.SizeBytes()), sendV.MarshalBytes, recvV.CheckedUnmarshal, nil); err != nil {
 				b.Fatalf("unexpected error occurred: %v", err)
 			}
 		}

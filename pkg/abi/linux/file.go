@@ -242,7 +242,7 @@ const (
 
 // Statx represents struct statx.
 //
-// +marshal slice:StatxSlice
+// +marshal boundCheck slice:StatxSlice
 type Statx struct {
 	Mask           uint32
 	Blksize        uint32

@@ -25,42 +25,42 @@ import (
 
 // Int8 is a marshal.Marshallable implementation for int8.
 //
-// +marshal slice:Int8Slice:inner
+// +marshal boundCheck slice:Int8Slice:inner
 type Int8 int8
 
 // Uint8 is a marshal.Marshallable implementation for uint8.
 //
-// +marshal slice:Uint8Slice:inner
+// +marshal boundCheck slice:Uint8Slice:inner
 type Uint8 uint8
 
 // Int16 is a marshal.Marshallable implementation for int16.
 //
-// +marshal slice:Int16Slice:inner
+// +marshal boundCheck slice:Int16Slice:inner
 type Int16 int16
 
 // Uint16 is a marshal.Marshallable implementation for uint16.
 //
-// +marshal slice:Uint16Slice:inner
+// +marshal boundCheck slice:Uint16Slice:inner
 type Uint16 uint16
 
 // Int32 is a marshal.Marshallable implementation for int32.
 //
-// +marshal slice:Int32Slice:inner
+// +marshal boundCheck slice:Int32Slice:inner
 type Int32 int32
 
 // Uint32 is a marshal.Marshallable implementation for uint32.
 //
-// +marshal slice:Uint32Slice:inner
+// +marshal boundCheck slice:Uint32Slice:inner
 type Uint32 uint32
 
 // Int64 is a marshal.Marshallable implementation for int64.
 //
-// +marshal slice:Int64Slice:inner
+// +marshal boundCheck slice:Int64Slice:inner
 type Int64 int64
 
 // Uint64 is a marshal.Marshallable implementation for uint64.
 //
-// +marshal slice:Uint64Slice:inner
+// +marshal boundCheck slice:Uint64Slice:inner
 type Uint64 uint64
 
 // ByteSlice is a marshal.Marshallable implementation for []byte.

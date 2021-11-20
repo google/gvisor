@@ -216,7 +216,37 @@ func (g *testGenerator) emitTestSizeBytesOnTypedNilPtr() {
 	})
 }
 
-func (g *testGenerator) emitTests(slice *sliceAPI) {
+func (g *testGenerator) emitTestBoundCheck() {
+	g.inTestFunction("TestCheckedMethods", func() {
+		g.emit("var x %s\n", g.typeName())
+		g.emit("size := x.SizeBytes()\n")
+		g.emit("b := make([]byte, size)\n\n")
+
+		g.emit("if _, ok := x.CheckedMarshal(b[:size-1]); ok {\n")
+		g.inIndent(func() {
+			g.emit("t.Errorf(\"CheckedMarshal should have failed because buffer is small\")\n")
+		})
+		g.emit("}\n")
+		g.emit("if _, ok := x.CheckedMarshal(b); !ok {\n")
+		g.inIndent(func() {
+			g.emit("t.Errorf(\"CheckedMarshal should have succeeded because buffer size is okay\")\n")
+		})
+		g.emit("}\n\n")
+
+		g.emit("if _, ok := x.CheckedUnmarshal(b[:size-1]); ok {\n")
+		g.inIndent(func() {
+			g.emit("t.Errorf(\"CheckedUnmarshal should have failed because buffer is small\")\n")
+		})
+		g.emit("}\n")
+		g.emit("if _, ok := x.CheckedUnmarshal(b); !ok {\n")
+		g.inIndent(func() {
+			g.emit("t.Errorf(\"CheckedUnmarshal should have succeeded because buffer size is okay\")\n")
+		})
+		g.emit("}\n")
+	})
+}
+
+func (g *testGenerator) emitTests(slice *sliceAPI, boundCheck bool) {
 	g.emitTestNonZeroSize()
 	g.emitTestSuspectAlignment()
 	g.emitTestMarshalUnmarshalPreservesData()
@@ -225,6 +255,9 @@ func (g *testGenerator) emitTests(slice *sliceAPI) {
 
 	if slice != nil {
 		g.emitTestMarshalUnmarshalSlicePreservesData(slice)
+	}
+	if boundCheck {
+		g.emitTestBoundCheck()
 	}
 }
 
