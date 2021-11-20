@@ -7,9 +7,13 @@ function install_pkgs() {
     fi
   done
 }
-install_pkgs make "linux-headers-$(uname -r)" linux-libc-dev \
-  graphviz jq curl binutils gnupg gnupg-agent gcc pkg-config \
-  apt-transport-https ca-certificates software-properties-common
+install_pkgs make linux-libc-dev graphviz jq curl binutils gnupg gnupg-agent \
+  gcc pkg-config apt-transport-https ca-certificates software-properties-common
+
+# Install headers, only if available.
+if test -n "$(apt-cache search --names-only "^linux-headers-$(uname -r)$")"; then
+  install_pkgs "linux-headers-$(uname -r)"
+fi
 
 # Setup for parallelization with PARTITION and TOTAL_PARTITIONS.
 export PARTITION=${BUILDKITE_PARALLEL_JOB:-0}
