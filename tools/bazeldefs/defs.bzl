@@ -27,8 +27,11 @@ def select_arch(amd64 = "amd64", arm64 = "arm64", default = None, **kwargs):
         values["//conditions:default"] = default
     return select(values, **kwargs)
 
-def select_system(linux = ["__linux__"], **kwargs):
-    return linux  # Only Linux supported.
+def select_system(linux = ["__linux__"], darwin = [], **kwargs):
+    return select({
+        "@bazel_tools//src/conditions:darwin": darwin,
+        "//conditions:default": linux,
+    })
 
 def default_installer():
     return None
