@@ -156,4 +156,7 @@ def select_goarch():
     return select_arch(amd64 = "amd64", arm64 = "arm64")
 
 def select_goos():
-    return select_system(linux = "linux")
+    return select_system(
+        linux = "linux",
+        darwin = "darwin",
+    )

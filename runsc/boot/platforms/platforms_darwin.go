@@ -1,4 +1,4 @@
-// Copyright 2019 The gVisor Authors.
+// Copyright 2021 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,23 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build linux
-// +build linux
+//go:build darwin
+// +build darwin
 
-// Package platforms imports all available platform packages.
 package platforms
 
-import (
-	// Import platforms that runsc might use.
-	_ "gvisor.dev/gvisor/pkg/sentry/platform/kvm"
-	_ "gvisor.dev/gvisor/pkg/sentry/platform/ptrace"
-	_ "gvisor.dev/gvisor/runsc/boot/platforms/nonstandard"
-)
-
-const (
-	// Ptrace runs the sandbox with the ptrace platform.
-	Ptrace = "ptrace"
-
-	// KVM runs the sandbox with the KVM platform.
-	KVM = "kvm"
-)
+// This file makes the platforms package buildable on Darwin.
