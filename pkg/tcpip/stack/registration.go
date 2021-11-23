@@ -51,6 +51,8 @@ type TransportEndpointID struct {
 }
 
 // NetworkPacketInfo holds information about a network layer packet.
+//
+// +stateify savable
 type NetworkPacketInfo struct {
 	// LocalAddressBroadcast is true if the packet's local address is a broadcast
 	// address.
