@@ -32,6 +32,7 @@ type Install struct {
 	ConfigFile   string
 	Runtime      string
 	Experimental bool
+	CgroupDriver string
 }
 
 // Name implements subcommands.Command.Name.
@@ -55,6 +56,7 @@ func (i *Install) SetFlags(fs *flag.FlagSet) {
 	fs.StringVar(&i.ConfigFile, "config_file", "/etc/docker/daemon.json", "path to Docker daemon config file")
 	fs.StringVar(&i.Runtime, "runtime", "runsc", "runtime name")
 	fs.BoolVar(&i.Experimental, "experimental", false, "enable experimental features")
+	fs.StringVar(&i.CgroupDriver, "cgroupdriver", "", "docker cgroup driver")
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -93,6 +95,17 @@ func (i *Install) Execute(_ context.Context, f *flag.FlagSet, _ ...interface{}) 
 	// Set experimental if required.
 	if i.Experimental {
 		c["experimental"] = true
+	}
+
+	if i.CgroupDriver != "" {
+		v, ok := c["exec-opts"]
+		if ok {
+			log.Printf("%v", v)
+			opts := v.([]interface{})
+			c["exec-opts"] = append(opts, fmt.Sprintf("native.cgroupdriver=%s", i.CgroupDriver))
+		} else {
+			c["exec-opts"] = []string{fmt.Sprintf("native.cgroupdriver=%s", i.CgroupDriver)}
+		}
 	}
 
 	// Write out the runtime.
