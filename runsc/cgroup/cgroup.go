@@ -20,6 +20,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -445,7 +446,7 @@ func createController(c Cgroup, name string) (bool, error) {
 	path := c.MakePath(name)
 	log.Debugf("Creating cgroup %q: %q", name, path)
 	if err := os.MkdirAll(path, 0755); err != nil {
-		return false, err
+		return errors.Is(err, unix.EROFS), err
 	}
 	return false, nil
 }
