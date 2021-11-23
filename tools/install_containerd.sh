@@ -27,7 +27,7 @@ if [[ "${CONTAINERD_MAJOR}" -eq 1 ]] && [[ "${CONTAINERD_MINOR}" -le 4 ]]; then
 fi
 
 # containerd < 1.4 doesn't work with cgroupv2 setup, so we check for that here
-if [[ "$(stat -f -c %T /sys/fs/cgroup 2>/dev/null)" -eq "cgroup2fs" && "${CONTAINERD_MAJOR}" -eq 1 && "${CONTAINERD_MINOR}" -lt 4 ]]; then
+if [[ "$(stat -f -c %T /sys/fs/cgroup 2>/dev/null)" == "cgroup2fs" && "${CONTAINERD_MAJOR}" -eq 1 && "${CONTAINERD_MINOR}" -lt 4 ]]; then
 	echo "containerd < 1.4 does not work with cgroup2"
 	exit 1
 fi
