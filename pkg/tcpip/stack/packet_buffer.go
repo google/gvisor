@@ -15,6 +15,7 @@ package stack
 
 import (
 	"fmt"
+	"io"
 
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -91,6 +92,8 @@ type PacketBufferOptions struct {
 // `consumed` value is stored for each header, and it gets incremented by the
 // consumed length. PacketBuffer adds this value to `reserved` to compute the
 // starting offset of each header in `buf`.
+//
+// +stateify savable
 type PacketBuffer struct {
 	_ sync.NoCopy
 
@@ -432,6 +435,8 @@ func (pk *PacketBufferList) DecRef() {
 }
 
 // headerInfo stores metadata about a header in a packet.
+//
+// +stateify savable
 type headerInfo struct {
 	// offset is the offset of the header in pk.buf relative to
 	// pk.buf[pk.reserved]. See the PacketBuffer struct for details.
@@ -469,6 +474,8 @@ func (h PacketHeader) Consume(size int) (v tcpipbuffer.View, consumed bool) {
 }
 
 // PacketData represents the data portion of a PacketBuffer.
+//
+// +stateify savable
 type PacketData struct {
 	pk *PacketBuffer
 }
@@ -487,6 +494,28 @@ func (d PacketData) Consume(size int) (tcpipbuffer.View, bool) {
 		d.pk.consumed += size
 	}
 	return v, ok
+}
+
+// ReadTo reads bytes from d to dst. It also removes these bytes from d
+// unless peek is true.
+func (d PacketData) ReadTo(dst io.Writer, peek bool) (int, error) {
+	var err error
+	done := 0
+	for _, v := range d.Views() {
+		var n int
+		n, err = dst.Write(v)
+		done += n
+		if err != nil {
+			break
+		}
+		if n != len(v) {
+			panic(fmt.Sprintf("io.Writer.Write succeeded with incomplete write: %d != %d", n, len(v)))
+		}
+	}
+	if !peek {
+		d.pk.buf.TrimFront(int64(done))
+	}
+	return done, err
 }
 
 // CapLength reduces d to at most length bytes.
