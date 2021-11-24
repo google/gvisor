@@ -16,7 +16,10 @@ package vfs2
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/mqfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/mq"
 )
@@ -75,6 +78,95 @@ func MqUnlink(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		return 0, nil, err
 	}
 	return 0, nil, t.IPCNamespace().PosixQueues().Remove(t, name)
+}
+
+// MqTimedSend implements mq_timedsend(2).
+func MqTimedSend(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	fd := args[0].Int()
+	msgAddr := args[1].Pointer()
+	size := args[2].SizeT()
+	priority := args[3].Uint()
+	timespecAddr := args[4].Pointer()
+
+	msgStr, err := t.CopyInString(msgAddr, int(size)+1)
+	if err != nil {
+		return 0, nil, linuxerr.EINVAL
+	}
+	msg := mq.Message{
+		Text:     msgStr,
+		Size:     uint64(size),
+		Priority: priority,
+	}
+
+	timeout, err := copyTimespecInToDuration(t, timespecAddr)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	file := t.GetFileVFS2(fd)
+	if file == nil {
+		return 0, nil, linuxerr.EBADF
+	}
+	defer file.DecRef(t)
+
+	qFD, ok := file.Impl().(*mqfs.QueueFD)
+	if !ok {
+		return 0, nil, linuxerr.EBADF
+	}
+
+	q := qFD.Queue()
+	if uint64(size) > q.Queue().MaxMsgSize() {
+		return 0, nil, linuxerr.EMSGSIZE
+	}
+	return 0, nil, q.Send(t, msg, t, timeout)
+}
+
+// MqTimedReceive implements mq_timedreceive(2).
+func MqTimedReceive(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	fd := args[0].Int()
+	msgAddr := args[1].Pointer()
+	size := args[2].SizeT()
+	priorityAddr := args[3].Pointer()
+	timespecAddr := args[4].Pointer()
+
+	timeout, err := copyTimespecInToDuration(t, timespecAddr)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	file := t.GetFileVFS2(fd)
+	if file == nil {
+		return 0, nil, linuxerr.EBADF
+	}
+	defer file.DecRef(t)
+
+	qFD, ok := file.Impl().(*mqfs.QueueFD)
+	if !ok {
+		return 0, nil, linuxerr.EBADF
+	}
+
+	q := qFD.Queue()
+	if uint64(size) < q.Queue().MaxMsgSize() {
+		return 0, nil, linuxerr.EMSGSIZE
+	}
+
+	msg, err := q.Receive(t, t, timeout)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	n, err := primitive.CopyStringOut(t, msgAddr, msg.Text)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	if priorityAddr != 0 {
+		_, err := primitive.CopyUint32Out(t, priorityAddr, msg.Priority)
+		if err != nil {
+			return 0, nil, err
+		}
+	}
+	return uintptr(n), nil, nil
 }
 
 func openOpts(name string, rOnly, wOnly, readWrite, create, exclusive, block bool) mq.OpenOpts {
