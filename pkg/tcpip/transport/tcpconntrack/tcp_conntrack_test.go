@@ -35,7 +35,7 @@ func connected(t *testing.T, iss, irs uint32, isw, irw uint16) *tcpconntrack.TCB
 	})
 
 	tcb := tcpconntrack.TCB{}
-	tcb.Init(tcp)
+	tcb.Init(tcp, dataLen(tcp))
 
 	// Receive SYN-ACK.
 	tcp.Encode(&header.TCPFields{
@@ -46,7 +46,7 @@ func connected(t *testing.T, iss, irs uint32, isw, irw uint16) *tcpconntrack.TCB
 		WindowSize: isw,
 	})
 
-	if r := tcb.UpdateStateReply(tcp); r != tcpconntrack.ResultAlive {
+	if r := tcb.UpdateStateReply(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
 		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
 	}
 
@@ -59,7 +59,7 @@ func connected(t *testing.T, iss, irs uint32, isw, irw uint16) *tcpconntrack.TCB
 		WindowSize: irw,
 	})
 
-	if r := tcb.UpdateStateOriginal(tcp); r != tcpconntrack.ResultAlive {
+	if r := tcb.UpdateStateOriginal(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
 		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
 	}
 
@@ -78,7 +78,7 @@ func TestConnectionRefused(t *testing.T) {
 	})
 
 	tcb := tcpconntrack.TCB{}
-	tcb.Init(tcp)
+	tcb.Init(tcp, dataLen(tcp))
 
 	// Receive RST.
 	tcp.Encode(&header.TCPFields{
@@ -89,7 +89,7 @@ func TestConnectionRefused(t *testing.T) {
 		WindowSize: 50000,
 	})
 
-	if r := tcb.UpdateStateReply(tcp); r != tcpconntrack.ResultReset {
+	if r := tcb.UpdateStateReply(tcp, dataLen(tcp)); r != tcpconntrack.ResultReset {
 		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultReset)
 	}
 }
@@ -106,7 +106,7 @@ func TestConnectionRefusedInSynRcvd(t *testing.T) {
 	})
 
 	tcb := tcpconntrack.TCB{}
-	tcb.Init(tcp)
+	tcb.Init(tcp, dataLen(tcp))
 
 	// Receive SYN.
 	tcp.Encode(&header.TCPFields{
@@ -117,7 +117,7 @@ func TestConnectionRefusedInSynRcvd(t *testing.T) {
 		WindowSize: 50000,
 	})
 
-	if r := tcb.UpdateStateReply(tcp); r != tcpconntrack.ResultAlive {
+	if r := tcb.UpdateStateReply(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
 		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
 	}
 
@@ -130,7 +130,7 @@ func TestConnectionRefusedInSynRcvd(t *testing.T) {
 		WindowSize: 50000,
 	})
 
-	if r := tcb.UpdateStateReply(tcp); r != tcpconntrack.ResultReset {
+	if r := tcb.UpdateStateReply(tcp, dataLen(tcp)); r != tcpconntrack.ResultReset {
 		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultReset)
 	}
 }
@@ -147,7 +147,7 @@ func TestConnectionResetInSynRcvd(t *testing.T) {
 	})
 
 	tcb := tcpconntrack.TCB{}
-	tcb.Init(tcp)
+	tcb.Init(tcp, dataLen(tcp))
 
 	// Receive SYN.
 	tcp.Encode(&header.TCPFields{
@@ -158,7 +158,7 @@ func TestConnectionResetInSynRcvd(t *testing.T) {
 		WindowSize: 50000,
 	})
 
-	if r := tcb.UpdateStateReply(tcp); r != tcpconntrack.ResultAlive {
+	if r := tcb.UpdateStateReply(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
 		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
 	}
 
@@ -170,7 +170,7 @@ func TestConnectionResetInSynRcvd(t *testing.T) {
 		Flags:      header.TCPFlagRst,
 	})
 
-	if r := tcb.UpdateStateOriginal(tcp); r != tcpconntrack.ResultReset {
+	if r := tcb.UpdateStateOriginal(tcp, dataLen(tcp)); r != tcpconntrack.ResultReset {
 		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultReset)
 	}
 }
@@ -187,10 +187,10 @@ func TestRetransmitOnSynSent(t *testing.T) {
 	})
 
 	tcb := tcpconntrack.TCB{}
-	tcb.Init(tcp)
+	tcb.Init(tcp, dataLen(tcp))
 
 	// Retransmit the same SYN.
-	if r := tcb.UpdateStateOriginal(tcp); r != tcpconntrack.ResultConnecting {
+	if r := tcb.UpdateStateOriginal(tcp, dataLen(tcp)); r != tcpconntrack.ResultConnecting {
 		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultConnecting)
 	}
 }
@@ -207,7 +207,7 @@ func TestRetransmitOnSynRcvd(t *testing.T) {
 	})
 
 	tcb := tcpconntrack.TCB{}
-	tcb.Init(tcp)
+	tcb.Init(tcp, dataLen(tcp))
 
 	// Receive SYN. This will cause the state to go to SYN-RCVD.
 	tcp.Encode(&header.TCPFields{
@@ -218,7 +218,7 @@ func TestRetransmitOnSynRcvd(t *testing.T) {
 		WindowSize: 50000,
 	})
 
-	if r := tcb.UpdateStateReply(tcp); r != tcpconntrack.ResultAlive {
+	if r := tcb.UpdateStateReply(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
 		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
 	}
 
@@ -231,7 +231,7 @@ func TestRetransmitOnSynRcvd(t *testing.T) {
 		WindowSize: 30000,
 	})
 
-	if r := tcb.UpdateStateOriginal(tcp); r != tcpconntrack.ResultAlive {
+	if r := tcb.UpdateStateOriginal(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
 		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
 	}
 
@@ -244,7 +244,7 @@ func TestRetransmitOnSynRcvd(t *testing.T) {
 		WindowSize: 30000,
 	})
 
-	if r := tcb.UpdateStateOriginal(tcp); r != tcpconntrack.ResultAlive {
+	if r := tcb.UpdateStateOriginal(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
 		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
 	}
 }
@@ -262,7 +262,7 @@ func TestClosedByOriginator(t *testing.T) {
 		WindowSize: 30000,
 	})
 
-	if r := tcb.UpdateStateOriginal(tcp); r != tcpconntrack.ResultAlive {
+	if r := tcb.UpdateStateOriginal(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
 		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
 	}
 
@@ -275,7 +275,7 @@ func TestClosedByOriginator(t *testing.T) {
 		WindowSize: 50000,
 	})
 
-	if r := tcb.UpdateStateReply(tcp); r != tcpconntrack.ResultAlive {
+	if r := tcb.UpdateStateReply(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
 		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
 	}
 
@@ -288,7 +288,7 @@ func TestClosedByOriginator(t *testing.T) {
 		WindowSize: 30000,
 	})
 
-	if r := tcb.UpdateStateOriginal(tcp); r != tcpconntrack.ResultClosedByOriginator {
+	if r := tcb.UpdateStateOriginal(tcp, dataLen(tcp)); r != tcpconntrack.ResultClosedByOriginator {
 		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultClosedByOriginator)
 	}
 }
@@ -306,7 +306,7 @@ func TestClosedByResponder(t *testing.T) {
 		WindowSize: 50000,
 	})
 
-	if r := tcb.UpdateStateReply(tcp); r != tcpconntrack.ResultAlive {
+	if r := tcb.UpdateStateReply(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
 		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
 	}
 
@@ -319,7 +319,7 @@ func TestClosedByResponder(t *testing.T) {
 		WindowSize: 30000,
 	})
 
-	if r := tcb.UpdateStateOriginal(tcp); r != tcpconntrack.ResultAlive {
+	if r := tcb.UpdateStateOriginal(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
 		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
 	}
 
@@ -332,7 +332,7 @@ func TestClosedByResponder(t *testing.T) {
 		WindowSize: 50000,
 	})
 
-	if r := tcb.UpdateStateReply(tcp); r != tcpconntrack.ResultClosedByResponder {
+	if r := tcb.UpdateStateReply(tcp, dataLen(tcp)); r != tcpconntrack.ResultClosedByResponder {
 		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultClosedByResponder)
 	}
 }
@@ -356,9 +356,9 @@ func TestSendAndReceiveDataClosedByOriginator(t *testing.T) {
 			Flags:      header.TCPFlagAck,
 			WindowSize: 30000,
 		})
-		sseq += uint32(len(tcp)) - header.TCPMinimumSize
+		sseq += uint32(dataLen(tcp)) - header.TCPMinimumSize
 
-		if r := tcb.UpdateStateOriginal(tcp); r != tcpconntrack.ResultAlive {
+		if r := tcb.UpdateStateOriginal(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
 			t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
 		}
 
@@ -371,7 +371,7 @@ func TestSendAndReceiveDataClosedByOriginator(t *testing.T) {
 			WindowSize: 50000,
 		})
 
-		if r := tcb.UpdateStateReply(tcp[:header.TCPMinimumSize]); r != tcpconntrack.ResultAlive {
+		if r := tcb.UpdateStateReply(tcp[:header.TCPMinimumSize], dataLen(tcp)); r != tcpconntrack.ResultAlive {
 			t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
 		}
 	}
@@ -385,9 +385,9 @@ func TestSendAndReceiveDataClosedByOriginator(t *testing.T) {
 			Flags:      header.TCPFlagAck,
 			WindowSize: 50000,
 		})
-		rseq += uint32(len(tcp)) - header.TCPMinimumSize
+		rseq += uint32(dataLen(tcp))
 
-		if r := tcb.UpdateStateReply(tcp); r != tcpconntrack.ResultAlive {
+		if r := tcb.UpdateStateReply(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
 			t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
 		}
 
@@ -400,7 +400,7 @@ func TestSendAndReceiveDataClosedByOriginator(t *testing.T) {
 			WindowSize: 30000,
 		})
 
-		if r := tcb.UpdateStateOriginal(tcp[:header.TCPMinimumSize]); r != tcpconntrack.ResultAlive {
+		if r := tcb.UpdateStateOriginal(tcp[:header.TCPMinimumSize], dataLen(tcp)); r != tcpconntrack.ResultAlive {
 			t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
 		}
 	}
@@ -416,7 +416,7 @@ func TestSendAndReceiveDataClosedByOriginator(t *testing.T) {
 	})
 	sseq++
 
-	if r := tcb.UpdateStateOriginal(tcp); r != tcpconntrack.ResultAlive {
+	if r := tcb.UpdateStateOriginal(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
 		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
 	}
 
@@ -430,7 +430,7 @@ func TestSendAndReceiveDataClosedByOriginator(t *testing.T) {
 	})
 	rseq++
 
-	if r := tcb.UpdateStateReply(tcp); r != tcpconntrack.ResultAlive {
+	if r := tcb.UpdateStateReply(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
 		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
 	}
 
@@ -443,7 +443,7 @@ func TestSendAndReceiveDataClosedByOriginator(t *testing.T) {
 		WindowSize: 30000,
 	})
 
-	if r := tcb.UpdateStateOriginal(tcp); r != tcpconntrack.ResultClosedByOriginator {
+	if r := tcb.UpdateStateOriginal(tcp, dataLen(tcp)); r != tcpconntrack.ResultClosedByOriginator {
 		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultClosedByOriginator)
 	}
 }
@@ -460,7 +460,7 @@ func TestIgnoreBadResetOnSynSent(t *testing.T) {
 	})
 
 	tcb := tcpconntrack.TCB{}
-	tcb.Init(tcp)
+	tcb.Init(tcp, dataLen(tcp))
 
 	// Receive a RST with a bad ACK, it should not cause the connection to
 	// be reset.
@@ -476,7 +476,7 @@ func TestIgnoreBadResetOnSynSent(t *testing.T) {
 				WindowSize: 50000,
 			})
 
-			if r := tcb.UpdateStateReply(tcp); r != tcpconntrack.ResultConnecting {
+			if r := tcb.UpdateStateReply(tcp, dataLen(tcp)); r != tcpconntrack.ResultConnecting {
 				t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
 			}
 		}
@@ -492,7 +492,7 @@ func TestIgnoreBadResetOnSynSent(t *testing.T) {
 		WindowSize: 50000,
 	})
 
-	if r := tcb.UpdateStateReply(tcp); r != tcpconntrack.ResultAlive {
+	if r := tcb.UpdateStateReply(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
 		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
 	}
 
@@ -505,7 +505,13 @@ func TestIgnoreBadResetOnSynSent(t *testing.T) {
 		WindowSize: 30000,
 	})
 
-	if r := tcb.UpdateStateOriginal(tcp); r != tcpconntrack.ResultAlive {
+	if r := tcb.UpdateStateOriginal(tcp, dataLen(tcp)); r != tcpconntrack.ResultAlive {
 		t.Fatalf("Bad result: got %v, want %v", r, tcpconntrack.ResultAlive)
 	}
+}
+
+// dataLen returns the length of the TCP payload assuming that both the header
+// and payload are in tcp.
+func dataLen(tcp header.TCP) int {
+	return len(tcp) - int(tcp.DataOffset())
 }
