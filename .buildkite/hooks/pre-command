@@ -24,7 +24,8 @@ export TOTAL_PARTITIONS=${BUILDKITE_PARALLEL_JOB_COUNT:-1}
 
 # Ensure Docker has experimental enabled.
 EXPERIMENTAL=$(sudo docker version --format='{{.Server.Experimental}}')
-if test "${EXPERIMENTAL}" != "true"; then
+CGDRIVER=$(sudo docker info --format='{{.CgroupDriver}}')
+if test "${EXPERIMENTAL}" != "true" || test "${CGDRIVER}" != "cgroupfs"; then
   make sudo TARGETS=//runsc:runsc ARGS="install --experimental=true --cgroupdriver=cgroupfs"
   sudo systemctl restart docker
 fi
