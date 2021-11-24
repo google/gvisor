@@ -193,14 +193,14 @@ func (cn *conn) update(pkt *PacketBuffer, reply bool) {
 	// client. However, we only need to know whether the connection is
 	// established or not, so the client/server distinction isn't important.
 	if cn.tcb.IsEmpty() {
-		cn.tcb.Init(tcpHeader)
+		cn.tcb.Init(tcpHeader, pkt.Data().Size())
 		return
 	}
 
 	if reply {
-		cn.tcb.UpdateStateReply(tcpHeader)
+		cn.tcb.UpdateStateReply(tcpHeader, pkt.Data().Size())
 	} else {
-		cn.tcb.UpdateStateOriginal(tcpHeader)
+		cn.tcb.UpdateStateOriginal(tcpHeader, pkt.Data().Size())
 	}
 }
 
