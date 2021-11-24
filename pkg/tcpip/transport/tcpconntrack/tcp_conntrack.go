@@ -55,9 +55,10 @@ type TCB struct {
 	reply    stream
 	original stream
 
-	// State handlers.
-	handlerReply    func(*TCB, header.TCP) Result
-	handlerOriginal func(*TCB, header.TCP) Result
+	// State handlers. hdr is not guaranteed to contain bytes beyond the TCP
+	// header itself, i.e. it may not contain the payload.
+	handlerReply    func(tcb *TCB, hdr header.TCP, dataLen int) Result
+	handlerOriginal func(tcb *TCB, hdr header.TCP, dataLen int) Result
 
 	// firstFin holds a pointer to the first stream to send a FIN.
 	firstFin *stream
@@ -67,13 +68,13 @@ type TCB struct {
 }
 
 // Init initializes the state of the TCB according to the initial SYN.
-func (t *TCB) Init(initialSyn header.TCP) Result {
+func (t *TCB) Init(initialSyn header.TCP, dataLen int) Result {
 	t.handlerReply = synSentStateReply
 	t.handlerOriginal = synSentStateOriginal
 
 	iss := seqnum.Value(initialSyn.SequenceNumber())
 	t.original.una = iss
-	t.original.nxt = iss.Add(logicalLen(initialSyn))
+	t.original.nxt = iss.Add(logicalLen(initialSyn, dataLen))
 	t.original.end = t.original.nxt
 
 	// Even though "end" is a sequence number, we don't know the initial
@@ -88,8 +89,8 @@ func (t *TCB) Init(initialSyn header.TCP) Result {
 
 // UpdateStateReply updates the state of the TCB based on the supplied reply
 // segment.
-func (t *TCB) UpdateStateReply(tcp header.TCP) Result {
-	st := t.handlerReply(t, tcp)
+func (t *TCB) UpdateStateReply(tcp header.TCP, dataLen int) Result {
+	st := t.handlerReply(t, tcp, dataLen)
 	if st != ResultDrop {
 		t.state = st
 	}
@@ -98,8 +99,8 @@ func (t *TCB) UpdateStateReply(tcp header.TCP) Result {
 
 // UpdateStateOriginal updates the state of the TCB based on the supplied
 // original segment.
-func (t *TCB) UpdateStateOriginal(tcp header.TCP) Result {
-	st := t.handlerOriginal(t, tcp)
+func (t *TCB) UpdateStateOriginal(tcp header.TCP, dataLen int) Result {
+	st := t.handlerOriginal(t, tcp, dataLen)
 	if st != ResultDrop {
 		t.state = st
 	}
@@ -148,7 +149,7 @@ func (t *TCB) adaptResult(r Result) Result {
 
 // synSentStateReply is the state handler for reply segments when the
 // connection is in SYN-SENT state.
-func synSentStateReply(t *TCB, tcp header.TCP) Result {
+func synSentStateReply(t *TCB, tcp header.TCP, dataLen int) Result {
 	flags := tcp.Flags()
 	ackPresent := flags&header.TCPFlagAck != 0
 	ack := seqnum.Value(tcp.AckNumber())
@@ -177,7 +178,7 @@ func synSentStateReply(t *TCB, tcp header.TCP) Result {
 	// Update state informed by this SYN.
 	irs := seqnum.Value(tcp.SequenceNumber())
 	t.reply.una = irs
-	t.reply.nxt = irs.Add(logicalLen(tcp))
+	t.reply.nxt = irs.Add(logicalLen(tcp, dataLen))
 	t.reply.end += irs
 
 	t.original.end = t.original.una.Add(seqnum.Size(tcp.WindowSize()))
@@ -204,7 +205,7 @@ func synSentStateReply(t *TCB, tcp header.TCP) Result {
 
 // synSentStateOriginal is the state handler for original segments when the
 // connection is in SYN-SENT state.
-func synSentStateOriginal(t *TCB, tcp header.TCP) Result {
+func synSentStateOriginal(t *TCB, tcp header.TCP, _ int) Result {
 	// Drop original segments that aren't retransmits of the original one.
 	if tcp.Flags() != header.TCPFlagSyn ||
 		tcp.SequenceNumber() != uint32(t.original.una) {
@@ -222,10 +223,10 @@ func synSentStateOriginal(t *TCB, tcp header.TCP) Result {
 // update updates the state of reply and original streams, given the supplied
 // reply segment. For original segments, this same function can be called with
 // swapped reply/original streams.
-func update(tcp header.TCP, reply, original *stream, firstFin **stream) Result {
+func update(tcp header.TCP, reply, original *stream, firstFin **stream, dataLen int) Result {
 	// Ignore segments out of the window.
 	s := seqnum.Value(tcp.SequenceNumber())
-	if !reply.acceptable(s, dataLen(tcp)) {
+	if !reply.acceptable(s, seqnum.Size(dataLen)) {
 		return ResultAlive
 	}
 
@@ -257,7 +258,7 @@ func update(tcp header.TCP, reply, original *stream, firstFin **stream) Result {
 	}
 
 	// Advance the "nxt" index of the reply stream.
-	end := s.Add(logicalLen(tcp))
+	end := s.Add(logicalLen(tcp, dataLen))
 	if reply.nxt.LessThan(end) {
 		reply.nxt = end
 	}
@@ -278,14 +279,14 @@ func update(tcp header.TCP, reply, original *stream, firstFin **stream) Result {
 
 // allOtherReply is the state handler for reply segments in all states
 // except SYN-SENT.
-func allOtherReply(t *TCB, tcp header.TCP) Result {
-	return t.adaptResult(update(tcp, &t.reply, &t.original, &t.firstFin))
+func allOtherReply(t *TCB, tcp header.TCP, dataLen int) Result {
+	return t.adaptResult(update(tcp, &t.reply, &t.original, &t.firstFin, dataLen))
 }
 
 // allOtherOriginal is the state handler for original segments in all states
 // except SYN-SENT.
-func allOtherOriginal(t *TCB, tcp header.TCP) Result {
-	return t.adaptResult(update(tcp, &t.original, &t.reply, &t.firstFin))
+func allOtherOriginal(t *TCB, tcp header.TCP, dataLen int) Result {
+	return t.adaptResult(update(tcp, &t.original, &t.reply, &t.firstFin, dataLen))
 }
 
 // streams holds the state of a TCP unidirectional stream.
@@ -326,22 +327,16 @@ func (s *stream) closed() bool {
 	return s.finSeen && s.fin.LessThan(s.una)
 }
 
-// dataLen returns the length of the TCP segment payload.
-func dataLen(tcp header.TCP) seqnum.Size {
-	return seqnum.Size(len(tcp) - int(tcp.DataOffset()))
-}
-
 // logicalLen calculates the logical length of the TCP segment.
-func logicalLen(tcp header.TCP) seqnum.Size {
-	l := dataLen(tcp)
+func logicalLen(tcp header.TCP, dataLen int) seqnum.Size {
 	flags := tcp.Flags()
 	if flags&header.TCPFlagSyn != 0 {
-		l++
+		dataLen++
 	}
 	if flags&header.TCPFlagFin != 0 {
-		l++
+		dataLen++
 	}
-	return l
+	return seqnum.Size(dataLen)
 }
 
 // IsEmpty returns true if tcb is not initialized.
