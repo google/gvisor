@@ -29,6 +29,7 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/containerd/cgroups"
 	cgroupsstats "github.com/containerd/cgroups/stats/v1"
+	cgroupsv2 "github.com/containerd/cgroups/v2"
 	"github.com/containerd/console"
 	"github.com/containerd/containerd/api/events"
 	"github.com/containerd/containerd/api/types/task"
@@ -82,6 +83,15 @@ const (
 	cgroupParentAnnotation = "dev.gvisor.spec.cgroup-parent"
 )
 
+type oomPoller interface {
+	io.Closer
+	// add adds `cg` cgroup to oom poller. `cg` is cgroups.Cgroup in v1 and
+	// `cgroupsv2.Manager` in v2
+	add(id string, cg interface{}) error
+	// run monitors oom event and notifies the shim about them
+	run(ctx context.Context)
+}
+
 // New returns a new shim service that can be used via GRPC.
 func New(ctx context.Context, id string, publisher shim.Publisher, cancel func()) (shim.Shim, error) {
 	var opts shim.Opts
@@ -89,7 +99,15 @@ func New(ctx context.Context, id string, publisher shim.Publisher, cancel func()
 		opts = ctxOpts.(shim.Opts)
 	}
 
-	ep, err := newOOMEpoller(publisher)
+	var (
+		ep  oomPoller
+		err error
+	)
+	if cgroups.Mode() == cgroups.Unified {
+		ep, err = newOOMv2Poller(publisher)
+	} else {
+		ep, err = newOOMEpoller(publisher)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +179,7 @@ type service struct {
 	ec chan proc.Exit
 
 	// oomPoller monitors the sandbox's cgroup for OOM notifications.
-	oomPoller *epoller
+	oomPoller oomPoller
 
 	// cancel is a function that needs to be called before the shim stops. The
 	// function is provided by the caller to New().
@@ -473,7 +491,19 @@ func (s *service) Create(ctx context.Context, r *taskAPI.CreateTaskRequest) (*ta
 	// sandbox create since the sandbox process will be created here.
 	pid := process.Pid()
 	if pid > 0 {
-		cg, err := cgroups.Load(cgroups.V1, cgroups.PidPath(pid))
+		var (
+			cg  interface{}
+			err error
+		)
+		if cgroups.Mode() == cgroups.Unified {
+			var cgPath string
+			cgPath, err = cgroupsv2.PidGroupPath(pid)
+			if err == nil {
+				cg, err = cgroupsv2.LoadManager("/sys/fs/cgroup", cgPath)
+			}
+		} else {
+			cg, err = cgroups.Load(cgroups.V1, cgroups.PidPath(pid))
+		}
 		if err != nil {
 			return nil, fmt.Errorf("loading cgroup for %d: %w", pid, err)
 		}

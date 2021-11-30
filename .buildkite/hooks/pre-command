@@ -1,14 +1,16 @@
 # Install packages we need. Docker must be installed and configured,
 # as should Go itself. We just install some extra bits and pieces.
 function install_pkgs() {
+  export DEBIAN_FRONTEND=noninteractive
   while true; do
-    if sudo apt-get update && sudo apt-get install -y "$@"; then
+    if sudo -E apt-get update && sudo -E apt-get install -y "$@"; then
       break
     fi
   done
 }
 install_pkgs make linux-libc-dev graphviz jq curl binutils gnupg gnupg-agent \
-  gcc pkg-config apt-transport-https ca-certificates software-properties-common
+  gcc pkg-config apt-transport-https ca-certificates software-properties-common \
+  jq
 
 # Install headers, only if available.
 if test -n "$(apt-cache search --names-only "^linux-headers-$(uname -r)$")"; then
@@ -22,8 +24,9 @@ export TOTAL_PARTITIONS=${BUILDKITE_PARALLEL_JOB_COUNT:-1}
 
 # Ensure Docker has experimental enabled.
 EXPERIMENTAL=$(sudo docker version --format='{{.Server.Experimental}}')
-if test "${EXPERIMENTAL}" != "true"; then
-  make sudo TARGETS=//runsc:runsc ARGS="install --experimental=true"
+CGDRIVER=$(sudo docker info --format='{{.CgroupDriver}}')
+if test "${EXPERIMENTAL}" != "true" || test "${CGDRIVER}" != "cgroupfs"; then
+  make sudo TARGETS=//runsc:runsc ARGS="install --experimental=true --cgroupdriver=cgroupfs"
   sudo systemctl restart docker
 fi
 
