@@ -380,6 +380,7 @@ func (fs *filesystem) StateFields() []string {
 		"usage",
 		"nextInoMinusOne",
 		"root",
+		"maxFilenameLen",
 	}
 }
 
@@ -396,6 +397,7 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &fs.usage)
 	stateSinkObject.Save(6, &fs.nextInoMinusOne)
 	stateSinkObject.Save(7, &fs.root)
+	stateSinkObject.Save(8, &fs.maxFilenameLen)
 }
 
 func (fs *filesystem) afterLoad() {}
@@ -410,6 +412,7 @@ func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(5, &fs.usage)
 	stateSourceObject.Load(6, &fs.nextInoMinusOne)
 	stateSourceObject.Load(7, &fs.root)
+	stateSourceObject.Load(8, &fs.maxFilenameLen)
 }
 
 func (f *FilesystemOpts) StateTypeName() string {
@@ -422,6 +425,7 @@ func (f *FilesystemOpts) StateFields() []string {
 		"RootSymlinkTarget",
 		"FilesystemType",
 		"Usage",
+		"MaxFilenameLen",
 	}
 }
 
@@ -434,6 +438,7 @@ func (f *FilesystemOpts) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &f.RootSymlinkTarget)
 	stateSinkObject.Save(2, &f.FilesystemType)
 	stateSinkObject.Save(3, &f.Usage)
+	stateSinkObject.Save(4, &f.MaxFilenameLen)
 }
 
 func (f *FilesystemOpts) afterLoad() {}
@@ -444,6 +449,7 @@ func (f *FilesystemOpts) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &f.RootSymlinkTarget)
 	stateSourceObject.Load(2, &f.FilesystemType)
 	stateSourceObject.Load(3, &f.Usage)
+	stateSourceObject.Load(4, &f.MaxFilenameLen)
 }
 
 func (d *dentry) StateTypeName() string {

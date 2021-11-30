@@ -85,6 +85,8 @@ type filesystem struct {
 	nextInoMinusOne uint64 // accessed using atomic memory operations
 
 	root *dentry
+
+	maxFilenameLen int
 }
 
 // Name implements vfs.FilesystemType.Name.
@@ -115,6 +117,9 @@ type FilesystemOpts struct {
 	// Usage is the memory accounting category under which pages backing files in
 	// the filesystem are accounted.
 	Usage *usage.MemoryKind
+
+	// MaxFilenameLen is the maximum filename length allowed by the tmpfs.
+	MaxFilenameLen int
 }
 
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
@@ -126,8 +131,8 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 	rootFileType := uint16(linux.S_IFDIR)
 	newFSType := vfs.FilesystemType(&fstype)
-	tmpfsOpts, ok := opts.InternalData.(FilesystemOpts)
-	if ok {
+	tmpfsOpts, tmpfsOptsOk := opts.InternalData.(FilesystemOpts)
+	if tmpfsOptsOk {
 		if tmpfsOpts.RootFileType != 0 {
 			rootFileType = tmpfsOpts.RootFileType
 		}
@@ -198,13 +203,17 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		memUsage = *tmpfsOpts.Usage
 	}
 	fs := filesystem{
-		mfp:      mfp,
-		clock:    clock,
-		devMinor: devMinor,
-		mopts:    opts.Data,
-		usage:    memUsage,
+		mfp:            mfp,
+		clock:          clock,
+		devMinor:       devMinor,
+		mopts:          opts.Data,
+		usage:          memUsage,
+		maxFilenameLen: linux.NAME_MAX,
 	}
 	fs.vfsfs.Init(vfsObj, newFSType, &fs)
+	if tmpfsOptsOk && tmpfsOpts.MaxFilenameLen > 0 {
+		fs.maxFilenameLen = tmpfsOpts.MaxFilenameLen
+	}
 
 	var root *dentry
 	switch rootFileType {
