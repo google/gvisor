@@ -117,9 +117,9 @@ func (fs *filesystem) Sync(ctx context.Context) error {
 	return retErr
 }
 
-// maxFilenameLen is the maximum length of a filename. This is dictated by 9P's
+// MaxFilenameLen is the maximum length of a filename. This is dictated by 9P's
 // encoding of strings, which uses 2 bytes for the length prefix.
-const maxFilenameLen = (1 << 16) - 1
+const MaxFilenameLen = (1 << 16) - 1
 
 // dentrySlicePool is a pool of *[]*dentry used to store dentries for which
 // dentry.checkCachingLocked() must be called. The pool holds pointers to
@@ -275,7 +275,7 @@ func (fs *filesystem) getChildAndWalkPathLocked(ctx context.Context, parent *den
 	// Note that pit is a copy of the iterator that does not affect rp.
 	pit := rp.Pit()
 	first := pit.String()
-	if len(first) > maxFilenameLen {
+	if len(first) > MaxFilenameLen {
 		return nil, linuxerr.ENAMETOOLONG
 	}
 	if child, ok := parent.children[first]; ok || parent.isSynthetic() {
@@ -368,7 +368,7 @@ func (fs *filesystem) getChildAndWalkPathLocked(ctx context.Context, parent *den
 // * name is not "." or "..".
 // * parent and the dentry at name have been revalidated.
 func (fs *filesystem) getChildLocked(ctx context.Context, parent *dentry, name string, ds **[]*dentry) (*dentry, error) {
-	if len(name) > maxFilenameLen {
+	if len(name) > MaxFilenameLen {
 		return nil, linuxerr.ENAMETOOLONG
 	}
 	if child, ok := parent.children[name]; ok || parent.isSynthetic() {
@@ -511,7 +511,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 	parent.dirMu.Lock()
 	defer parent.dirMu.Unlock()
 
-	if len(name) > maxFilenameLen {
+	if len(name) > MaxFilenameLen {
 		return linuxerr.ENAMETOOLONG
 	}
 	// Check for existence only if caching information is available. Otherwise,
@@ -1696,8 +1696,8 @@ func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linu
 		if err := d.controlFDLisa.StatFSTo(ctx, &statFS); err != nil {
 			return linux.Statfs{}, err
 		}
-		if statFS.NameLength == 0 || statFS.NameLength > maxFilenameLen {
-			statFS.NameLength = maxFilenameLen
+		if statFS.NameLength == 0 || statFS.NameLength > MaxFilenameLen {
+			statFS.NameLength = MaxFilenameLen
 		}
 		return linux.Statfs{
 			// This is primarily for distinguishing a gofer file system in
@@ -1719,8 +1719,8 @@ func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linu
 		return linux.Statfs{}, err
 	}
 	nameLen := uint64(fsstat.NameLength)
-	if nameLen == 0 || nameLen > maxFilenameLen {
-		nameLen = maxFilenameLen
+	if nameLen == 0 || nameLen > MaxFilenameLen {
+		nameLen = MaxFilenameLen
 	}
 	return linux.Statfs{
 		// This is primarily for distinguishing a gofer file system in
