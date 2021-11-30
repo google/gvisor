@@ -15,11 +15,13 @@
 package control
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"runtime"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/urpc"
@@ -166,6 +168,30 @@ func NewMemoryUsageRecord(usageFile, platformFile os.File) (*MemoryUsageRecord, 
 
 	runtime.SetFinalizer(&m, finalizer)
 	return &m, nil
+}
+
+// GetFileIoStats writes the read times in nanoseconds to out.
+func (*Usage) GetFileIoStats(_ *struct{}, out *string) error {
+	fileIoStats := struct {
+		// The total amount of time spent reading. The map maps gopher prefixes
+		// to the total time spent reading. Times not included in a known prefix
+		// are placed in the "/" prefix.
+		ReadWait map[string]uint64 `json:"ReadWait"`
+		// The total amount of time spent reading. The map maps gopher prefixes
+		// to the total time spent reading. Times not included in a known prefix
+		// are placed in the "/" prefix.
+		ReadWait9P map[string]uint64 `json:"ReadWait9P"`
+	}{
+		ReadWait:   map[string]uint64{"/": fsmetric.ReadWait.Value()},
+		ReadWait9P: map[string]uint64{"/": fsmetric.GoferReadWait9P.Value()},
+	}
+
+	m, err := json.Marshal(fileIoStats)
+	if err != nil {
+		return err
+	}
+	*out = string(m)
+	return nil
 }
 
 func finalizer(m *MemoryUsageRecord) {
