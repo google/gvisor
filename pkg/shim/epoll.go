@@ -81,9 +81,13 @@ func (e *epoller) run(ctx context.Context) {
 	}
 }
 
-func (e *epoller) add(id string, cg cgroups.Cgroup) error {
+func (e *epoller) add(id string, cgx interface{}) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	cg, ok := cgx.(cgroups.Cgroup)
+	if !ok {
+		return fmt.Errorf("expected cgroups.Cgroup, got: %T", cgx)
+	}
 	fd, err := cg.OOMEventFD()
 	if err != nil {
 		return err

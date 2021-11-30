@@ -777,7 +777,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 
 			quota, err := s.CgroupJSON.Cgroup.CPUQuota()
 			if err != nil {
-				return fmt.Errorf("getting cpu qouta from cgroups: %v", err)
+				return fmt.Errorf("getting cpu quota from cgroups: %v", err)
 			}
 			if n := int(math.Ceil(quota)); n > 0 {
 				if n < minCPUs {

@@ -86,8 +86,15 @@ func TestMemCgroup(t *testing.T) {
 		// or after looping below (so the application can start).
 		time.Sleep(100 * time.Millisecond)
 
+		var path string
+
 		// Read the cgroup memory limit.
-		path := filepath.Join("/sys/fs/cgroup/memory/docker", gid, "memory.limit_in_bytes")
+		if cgroup.IsOnlyV2() {
+			path = filepath.Join("/sys/fs/cgroup/docker", gid, "memory.max")
+		} else {
+			path = filepath.Join("/sys/fs/cgroup/memory/docker", gid, "memory.limit_in_bytes")
+		}
+		// Read the cgroup memory limit.
 		outRaw, err := ioutil.ReadFile(path)
 		if err != nil {
 			// It's possible that the container does not exist yet.
@@ -103,8 +110,14 @@ func TestMemCgroup(t *testing.T) {
 			continue
 		}
 
+		if cgroup.IsOnlyV2() {
+			// v2 does not have max_usage_in_bytes equivalent, so memory.current is the
+			// next best thing that we can use
+			path = filepath.Join("/sys/fs/cgroup/docker", gid, "memory.current")
+		} else {
+			path = filepath.Join("/sys/fs/cgroup/memory/docker", gid, "memory.max_usage_in_bytes")
+		}
 		// Read the cgroup memory usage.
-		path = filepath.Join("/sys/fs/cgroup/memory/docker", gid, "memory.max_usage_in_bytes")
 		outRaw, err = ioutil.ReadFile(path)
 		if err != nil {
 			t.Fatalf("error reading usage: %v", err)
@@ -126,7 +139,10 @@ func TestMemCgroup(t *testing.T) {
 }
 
 // TestCgroup sets cgroup options and checks that cgroup was properly configured.
-func TestCgroup(t *testing.T) {
+func TestCgroupV1(t *testing.T) {
+	if cgroup.IsOnlyV2() {
+		t.Skip("skipping cgroupv1 attribute testing in cgroupv2 setup")
+	}
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
@@ -305,6 +321,154 @@ func TestCgroup(t *testing.T) {
 		if err := verifyPid(pid, path); err != nil {
 			t.Errorf("cgroup control %q processes: %v", ctrl, err)
 		}
+	}
+}
+
+// TestCgroupV2 sets cgroup options and checks that cgroup was properly configured with
+// cgroupv2 setup
+func TestCgroupV2(t *testing.T) {
+	if !cgroup.IsOnlyV2() {
+		t.Skip("skipping cgroupv2 attribute testing in cgroupv1 setup")
+	}
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	// This is not a comprehensive list of attributes.
+	//
+	// Note that we are specifically missing cpusets, which fail if specified.
+	// In any case, it's unclear if cpusets can be reliably tested here: these
+	// are often run on a single core virtual machine, and there is only a single
+	// CPU available in our current set, and every container's set.
+	attrs := []struct {
+		field          string
+		value          int64
+		file           string
+		want           string
+		skipIfNotFound bool
+	}{
+		{
+			field: "cpu-shares",
+			value: 3333,
+			file:  "cpu.weight",
+			want:  "128",
+		},
+		{
+			field: "cpu-period",
+			value: 2000,
+			file:  "cpu.max",
+			want:  "max 2000",
+		},
+		{
+			field: "memory",
+			value: 1 << 30,
+			file:  "memory.max",
+			want:  "1073741824",
+		},
+		{
+			field: "memory-reservation",
+			value: 500 << 20,
+			file:  "memory.low",
+			want:  "524288000",
+		},
+		{
+			field: "memory-swap",
+			value: 1 << 31,
+			file:  "memory.swap.max",
+			// memory.swap.max is only the swap value, unlike cgroupv1
+			want:           fmt.Sprintf("%d", 1<<31-1<<30),
+			skipIfNotFound: true, // swap may be disabled on the machine.
+		},
+		{
+			field:          "blkio-weight",
+			value:          750,
+			file:           "io.bfq.weight",
+			want:           fmt.Sprintf("default %d", 750),
+			skipIfNotFound: true, // blkio groups may not be available.
+		},
+		{
+			field: "pids-limit",
+			value: 1000,
+			file:  "pids.max",
+			want:  "1000",
+		},
+	}
+
+	// Make configs.
+	conf, hostconf, _ := d.ConfigsFrom(dockerutil.RunOpts{
+		Image: "basic/alpine",
+	}, "sleep", "10000")
+
+	// Add Cgroup arguments to configs.
+	for _, attr := range attrs {
+		switch attr.field {
+		case "cpu-shares":
+			hostconf.Resources.CPUShares = attr.value
+		case "cpu-period":
+			hostconf.Resources.CPUPeriod = attr.value
+		case "cpu-quota":
+			hostconf.Resources.CPUQuota = attr.value
+		case "kernel-memory":
+			hostconf.Resources.KernelMemory = attr.value
+		case "memory":
+			hostconf.Resources.Memory = attr.value
+		case "memory-reservation":
+			hostconf.Resources.MemoryReservation = attr.value
+		case "memory-swap":
+			hostconf.Resources.MemorySwap = attr.value
+		case "memory-swappiness":
+			val := attr.value
+			hostconf.Resources.MemorySwappiness = &val
+		case "blkio-weight":
+			// detect existence of io.bfq.weight as this is not always loaded
+			_, err := ioutil.ReadFile(filepath.Join("/sys/fs/cgroup/docker", attr.file))
+			if err == nil || !attr.skipIfNotFound {
+				hostconf.Resources.BlkioWeight = uint16(attr.value)
+			}
+		case "pids-limit":
+			val := attr.value
+			hostconf.Resources.PidsLimit = &val
+		}
+	}
+
+	// Create container.
+	if err := d.CreateFrom(ctx, "basic/alpine", conf, hostconf, nil); err != nil {
+		t.Fatalf("create failed with: %v", err)
+	}
+
+	// Start container.
+	if err := d.Start(ctx); err != nil {
+		t.Fatalf("start failed with: %v", err)
+	}
+
+	// Lookup the relevant cgroup ID.
+	gid := d.ID()
+	t.Logf("cgroup ID: %s", gid)
+
+	// Check list of attributes defined above.
+	for _, attr := range attrs {
+		path := filepath.Join("/sys/fs/cgroup/docker", gid, attr.file)
+		out, err := ioutil.ReadFile(path)
+		if err != nil {
+			if os.IsNotExist(err) && attr.skipIfNotFound {
+				t.Logf("skipped %s", attr.file)
+				continue
+			}
+			t.Fatalf("failed to read %q: %v", path, err)
+		}
+		if got := strings.TrimSpace(string(out)); got != attr.want {
+			t.Errorf("field: %q, cgroup attribute %s, got: %q, want: %q", attr.field, attr.file, got, attr.want)
+		}
+	}
+
+	// Check that sandbox is inside cgroup.
+	pid, err := d.SandboxPid(ctx)
+	if err != nil {
+		t.Fatalf("SandboxPid: %v", err)
+	}
+	path := filepath.Join("/sys/fs/cgroup/docker", gid, "cgroup.procs")
+	if err := verifyPid(pid, path); err != nil {
+		t.Errorf("cgroup control processes: %v", err)
 	}
 }
 
