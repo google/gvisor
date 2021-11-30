@@ -69,7 +69,7 @@ afterSymlink:
 		rp.Advance()
 		return d.parent, nil
 	}
-	if len(name) > linux.NAME_MAX {
+	if len(name) > d.inode.fs.maxFilenameLen {
 		return nil, linuxerr.ENAMETOOLONG
 	}
 	child, ok := dir.childMap[name]
@@ -163,7 +163,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 	if name == "." || name == ".." {
 		return linuxerr.EEXIST
 	}
-	if len(name) > linux.NAME_MAX {
+	if len(name) > fs.maxFilenameLen {
 		return linuxerr.ENAMETOOLONG
 	}
 	if _, ok := parentDir.childMap[name]; ok {
@@ -371,7 +371,7 @@ afterTrailingSymlink:
 	if name == "." || name == ".." {
 		return nil, linuxerr.EISDIR
 	}
-	if len(name) > linux.NAME_MAX {
+	if len(name) > fs.maxFilenameLen {
 		return nil, linuxerr.ENAMETOOLONG
 	}
 	// Determine whether or not we need to create a file.
