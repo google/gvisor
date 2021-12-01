@@ -357,66 +357,76 @@ func getTupleIDForPacketInICMPError(pkt *PacketBuffer, getNetAndTransHdr netAndT
 	return tupleID{}, false
 }
 
-func getTupleID(pkt *PacketBuffer) (tid tupleID, isICMPError bool, ok bool) {
+type getTupleIDDisposition int
+
+const (
+	getTupleIDNotOK getTupleIDDisposition = iota
+	getTupleIDOKAndAllowNewConn
+	getTupleIDOKAndDontAllowNewConn
+)
+
+func getTupleID(pkt *PacketBuffer) (tupleID, getTupleIDDisposition) {
 	switch pkt.TransportProtocolNumber {
 	case header.TCPProtocolNumber:
 		if transHeader := header.TCP(pkt.TransportHeader().View()); len(transHeader) >= header.TCPMinimumSize {
-			return getTupleIDForRegularPacket(pkt.Network(), pkt.NetworkProtocolNumber, transHeader, pkt.TransportProtocolNumber), false, true
+			return getTupleIDForRegularPacket(pkt.Network(), pkt.NetworkProtocolNumber, transHeader, pkt.TransportProtocolNumber), getTupleIDOKAndAllowNewConn
 		}
 	case header.UDPProtocolNumber:
 		if transHeader := header.UDP(pkt.TransportHeader().View()); len(transHeader) >= header.UDPMinimumSize {
-			return getTupleIDForRegularPacket(pkt.Network(), pkt.NetworkProtocolNumber, transHeader, pkt.TransportProtocolNumber), false, true
+			return getTupleIDForRegularPacket(pkt.Network(), pkt.NetworkProtocolNumber, transHeader, pkt.TransportProtocolNumber), getTupleIDOKAndAllowNewConn
 		}
 	case header.ICMPv4ProtocolNumber:
 		icmp := header.ICMPv4(pkt.TransportHeader().View())
 		if len(icmp) < header.ICMPv4MinimumSize {
-			return tupleID{}, false, false
+			return tupleID{}, getTupleIDNotOK
 		}
 
 		switch icmp.Type() {
 		case header.ICMPv4DstUnreachable, header.ICMPv4TimeExceeded, header.ICMPv4ParamProblem:
 		default:
-			return tupleID{}, false, false
+			return tupleID{}, getTupleIDNotOK
 		}
 
 		h, ok := pkt.Data().PullUp(header.IPv4MinimumSize)
 		if !ok {
-			return tupleID{}, false, false
+			return tupleID{}, getTupleIDNotOK
 		}
 
 		ipv4 := header.IPv4(h)
 		if ipv4.HeaderLength() > header.IPv4MinimumSize {
 			// TODO(https://gvisor.dev/issue/6765): Handle IPv4 options.
-			return tupleID{}, false, false
+			return tupleID{}, getTupleIDNotOK
 		}
 
 		if tid, ok := getTupleIDForPacketInICMPError(pkt, v4NetAndTransHdr, header.IPv4ProtocolNumber, header.IPv4MinimumSize, ipv4.TransportProtocol()); ok {
-			return tid, true, true
+			// Do not create a new connection in response to an ICMP error.
+			return tid, getTupleIDOKAndDontAllowNewConn
 		}
 	case header.ICMPv6ProtocolNumber:
 		icmp := header.ICMPv6(pkt.TransportHeader().View())
 		if len(icmp) < header.ICMPv6MinimumSize {
-			return tupleID{}, false, false
+			return tupleID{}, getTupleIDNotOK
 		}
 
 		switch icmp.Type() {
 		case header.ICMPv6DstUnreachable, header.ICMPv6PacketTooBig, header.ICMPv6TimeExceeded, header.ICMPv6ParamProblem:
 		default:
-			return tupleID{}, false, false
+			return tupleID{}, getTupleIDNotOK
 		}
 
 		h, ok := pkt.Data().PullUp(header.IPv6MinimumSize)
 		if !ok {
-			return tupleID{}, false, false
+			return tupleID{}, getTupleIDNotOK
 		}
 
 		// TODO(https://gvisor.dev/issue/6789): Handle extension headers.
 		if tid, ok := getTupleIDForPacketInICMPError(pkt, v6NetAndTransHdr, header.IPv6ProtocolNumber, header.IPv6MinimumSize, header.IPv6(h).TransportProtocol()); ok {
-			return tid, true, true
+			// Do not create a new connection in response to an ICMP error.
+			return tid, getTupleIDOKAndDontAllowNewConn
 		}
 	}
 
-	return tupleID{}, false, false
+	return tupleID{}, getTupleIDNotOK
 }
 
 func (ct *ConnTrack) init() {
@@ -433,9 +443,17 @@ func (ct *ConnTrack) init() {
 func (ct *ConnTrack) getConnAndUpdate(pkt *PacketBuffer) *tuple {
 	// Get or (maybe) create a connection.
 	t := func() *tuple {
-		tid, isICMPError, ok := getTupleID(pkt)
-		if !ok {
+		var allowNewConn bool
+		tid, res := getTupleID(pkt)
+		switch res {
+		case getTupleIDNotOK:
 			return nil
+		case getTupleIDOKAndAllowNewConn:
+			allowNewConn = true
+		case getTupleIDOKAndDontAllowNewConn:
+			allowNewConn = false
+		default:
+			panic(fmt.Sprintf("unhandled %[1]T = %[1]d", res))
 		}
 
 		bktID := ct.bucket(tid)
@@ -449,8 +467,7 @@ func (ct *ConnTrack) getConnAndUpdate(pkt *PacketBuffer) *tuple {
 			return t
 		}
 
-		if isICMPError {
-			// Do not create a noop entry in response to an ICMP error.
+		if !allowNewConn {
 			return nil
 		}
 
