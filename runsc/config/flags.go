@@ -126,7 +126,8 @@ func NewFromFlags() (*Config, error) {
 	if len(conf.RootDir) == 0 {
 		// If not set, set default root dir to something (hopefully) user-writeable.
 		conf.RootDir = "/var/run/runsc"
-		if runtimeDir, ok := os.LookupEnv("XDG_RUNTIME_DIR"); ok {
+		// NOTE: empty values for XDG_RUNTIME_DIR should be ignored.
+		if runtimeDir := os.Getenv("XDG_RUNTIME_DIR"); runtimeDir != "" {
 			conf.RootDir = filepath.Join(runtimeDir, "runsc")
 		}
 	}
