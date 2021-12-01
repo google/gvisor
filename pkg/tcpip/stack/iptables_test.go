@@ -125,9 +125,9 @@ func TestNATedConnectionReap(t *testing.T) {
 
 	pkt := v6PacketBuffer()
 
-	originalTID, _, ok := getTupleID(pkt)
-	if !ok {
-		t.Fatal("failed to get original tuple ID")
+	originalTID, res := getTupleID(pkt)
+	if res != getTupleIDOKAndAllowNewConn {
+		t.Fatalf("got getTupleID(...) = (%#v, %d), want = (_, %d)", originalTID, res, getTupleIDOKAndAllowNewConn)
 	}
 
 	if !iptables.CheckPrerouting(pkt, nil /* addressEP */, "" /* inNicName */) {
@@ -137,9 +137,9 @@ func TestNATedConnectionReap(t *testing.T) {
 		t.Fatal("got ipt.CheckInput(...) = false, want = true")
 	}
 
-	invertedReplyTID, _, ok := getTupleID(pkt)
-	if !ok {
-		t.Fatal("failed to get NATed packet's tuple ID")
+	invertedReplyTID, res := getTupleID(pkt)
+	if res != getTupleIDOKAndAllowNewConn {
+		t.Fatalf("got getTupleID(...) = (%#v, %d), want = (_, %d)", invertedReplyTID, res, getTupleIDOKAndAllowNewConn)
 	}
 	if invertedReplyTID == originalTID {
 		t.Fatalf("NAT not performed; got invertedReplyTID = %#v", invertedReplyTID)
