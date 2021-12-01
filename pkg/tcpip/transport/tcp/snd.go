@@ -1344,6 +1344,13 @@ func (s *sender) detectSpuriousRecovery(hasDSACK bool, tsEchoReply uint32) {
 	// between fast, SACK or RTO recovery.
 	s.spuriousRecovery = true
 	s.ep.stack.Stats().TCP.SpuriousRecovery.Increment()
+
+	// RFC 3522 will detect all kinds of spurious recoveries (fast, SACK and
+	// timeout). Increment the metric for RTO only as we want to track the
+	// number of timeout recoveries.
+	if s.state == tcpip.RTORecovery {
+		s.ep.stack.Stats().TCP.SpuriousRTORecovery.Increment()
+	}
 }
 
 // Check if the sender is in RTORecovery, FastRecovery or SACKRecovery state.
