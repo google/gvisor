@@ -297,11 +297,47 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 	if err != nil {
 		return err
 	}
+	vfs.mountMu.Lock()
+	vdDentry := vd.dentry
+	vdDentry.mu.Lock()
+	for {
+		if vd.mount.umounted || vdDentry.dead {
+			vdDentry.mu.Unlock()
+			vfs.mountMu.Unlock()
+			vd.DecRef(ctx)
+			return linuxerr.ENOENT
+		}
+		// vd might have been mounted over between vfs.GetDentryAt() and
+		// vfs.mountMu.Lock().
+		if !vdDentry.isMounted() {
+			break
+		}
+		nextmnt := vfs.mounts.Lookup(vd.mount, vdDentry)
+		if nextmnt == nil {
+			break
+		}
+		// It's possible that nextmnt has been umounted but not disconnected,
+		// in which case vfs no longer holds a reference on it, and the last
+		// reference may be concurrently dropped even though we're holding
+		// vfs.mountMu.
+		if !nextmnt.tryIncMountedRef() {
+			break
+		}
+		// This can't fail since we're holding vfs.mountMu.
+		nextmnt.root.IncRef()
+		vdDentry.mu.Unlock()
+		vd.DecRef(ctx)
+		vd = VirtualDentry{
+			mount:  nextmnt,
+			dentry: nextmnt.root,
+		}
+		vdDentry.mu.Lock()
+	}
 	defer vd.DecRef(ctx)
+
 	if vd.dentry != vd.mount.root {
 		return linuxerr.EINVAL
 	}
-	vfs.mountMu.Lock()
 	if mntns := MountNamespaceFromContext(ctx); mntns != nil {
 		defer mntns.DecRef(ctx)
 		if mntns != vd.mount.ns {
@@ -326,7 +362,7 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 			vfs.mountMu.Unlock()
 			return linuxerr.EBUSY
 		}
-		// We are holding a reference on vd.mount.
+		// We are holding a reference on mp.mount.
 		expectedRefs := int64(1)
 		if !vd.mount.umounted {
 			expectedRefs = 2
@@ -342,6 +378,7 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 		disconnectHierarchy: true,
 	}, nil, nil)
 	vfs.mounts.seq.EndWrite()
+	vdDentry.mu.Unlock()
 	vfs.mountMu.Unlock()
 	for _, vd := range vdsToDecRef {
 		vd.DecRef(ctx)
