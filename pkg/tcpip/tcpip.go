@@ -1870,6 +1870,9 @@ type TCPStats struct {
 	// SpuriousRecovery is the number of times the connection entered loss
 	// recovery spuriously.
 	SpuriousRecovery *StatCounter
+
+	// SpuriousRTORecovery is the number of spurious RTOs.
+	SpuriousRTORecovery *StatCounter
 }
 
 // UDPStats collects UDP-specific stats.
