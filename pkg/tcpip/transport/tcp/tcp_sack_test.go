@@ -704,7 +704,7 @@ func TestRecoveryEntry(t *testing.T) {
 	}
 }
 
-func verifySpuriousRecoveryMetric(t *testing.T, c *context.Context, numSpuriousRecovery uint64) {
+func verifySpuriousRecoveryMetric(t *testing.T, c *context.Context, numSpuriousRecovery, numSpuriousRTO uint64) {
 	t.Helper()
 
 	metricPollFn := func() error {
@@ -715,6 +715,7 @@ func verifySpuriousRecoveryMetric(t *testing.T, c *context.Context, numSpuriousR
 			want uint64
 		}{
 			{tcpStats.SpuriousRecovery, "stats.TCP.SpuriousRecovery", numSpuriousRecovery},
+			{tcpStats.SpuriousRTORecovery, "stats.TCP.SpuriousRTORecovery", numSpuriousRTO},
 		}
 		for _, s := range stats {
 			if got, want := s.stat.Value(), s.want; got != want {
@@ -829,7 +830,7 @@ func TestDetectSpuriousRecoveryWithRTO(t *testing.T) {
 	// ACK before the test completes.
 	<-probeDone
 
-	verifySpuriousRecoveryMetric(t, c, 1 /* numSpuriousRecovery */)
+	verifySpuriousRecoveryMetric(t, c, 1 /* numSpuriousRecovery */, 1 /* numSpuriousRTO */)
 }
 
 func TestSACKDetectSpuriousRecoveryWithDupACK(t *testing.T) {
@@ -923,7 +924,7 @@ func TestSACKDetectSpuriousRecoveryWithDupACK(t *testing.T) {
 	// ACK before the test completes.
 	<-probeDone
 
-	verifySpuriousRecoveryMetric(t, c, 1 /* numSpuriousRecovery */)
+	verifySpuriousRecoveryMetric(t, c, 1 /* numSpuriousRecovery */, 0 /* numSpuriousRTO */)
 }
 
 func TestNoSpuriousRecoveryWithDSACK(t *testing.T) {
@@ -955,5 +956,5 @@ func TestNoSpuriousRecoveryWithDSACK(t *testing.T) {
 	seq = seqnum.Value(context.TestInitialSequenceNumber).Add(1)
 	c.SendAckWithSACK(seq, 6*maxPayload, []header.SACKBlock{{start, end}})
 
-	verifySpuriousRecoveryMetric(t, c, 0 /* numSpuriousRecovery */)
+	verifySpuriousRecoveryMetric(t, c, 0 /* numSpuriousRecovery */, 0 /* numSpuriousRTO */)
 }
