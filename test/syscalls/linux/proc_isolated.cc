@@ -26,6 +26,51 @@ namespace gvisor {
 namespace testing {
 namespace {
 
+TEST(ProcFilesystems, PresenceOfMqueue) {
+  SKIP_IF(IsRunningWithVFS1());
+
+  // Source: include/linux/ipc_namespace.h
+  const uint64_t expected_msg_default = 10;
+  const uint64_t expected_msg_max = 10;
+  const uint64_t expected_msgsize_default = 8192;
+  const uint64_t expected_msgsize_max = 8192;
+  const uint64_t expected_queues_max = 256;
+
+  uint64_t msg_default = 0;
+  uint64_t msg_max = 0;
+  uint64_t msgsize_default = 0;
+  uint64_t msgsize_max = 0;
+  uint64_t queues_max = 0;
+
+  std::string proc_file;
+  proc_file =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/fs/mqueue/msg_default"));
+  ASSERT_FALSE(proc_file.empty());
+  ASSERT_TRUE(absl::SimpleAtoi(proc_file, &msg_default));
+  proc_file =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/fs/mqueue/msg_max"));
+  ASSERT_FALSE(proc_file.empty());
+  ASSERT_TRUE(absl::SimpleAtoi(proc_file, &msg_max));
+  proc_file = ASSERT_NO_ERRNO_AND_VALUE(
+      GetContents("/proc/sys/fs/mqueue/msgsize_default"));
+  ASSERT_FALSE(proc_file.empty());
+  ASSERT_TRUE(absl::SimpleAtoi(proc_file, &msgsize_default));
+  proc_file =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/fs/mqueue/msgsize_max"));
+  ASSERT_FALSE(proc_file.empty());
+  ASSERT_TRUE(absl::SimpleAtoi(proc_file, &msgsize_max));
+  proc_file =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/fs/mqueue/queues_max"));
+  ASSERT_FALSE(proc_file.empty());
+  ASSERT_TRUE(absl::SimpleAtoi(proc_file, &queues_max));
+
+  ASSERT_EQ(msg_default, expected_msg_default);
+  ASSERT_EQ(msg_max, expected_msg_max);
+  ASSERT_EQ(msgsize_default, expected_msgsize_default);
+  ASSERT_EQ(msgsize_max, expected_msgsize_max);
+  ASSERT_EQ(queues_max, expected_queues_max);
+}
+
 TEST(ProcDefaults, PresenceOfShmMaxMniAll) {
   uint64_t shmmax = 0;
   uint64_t shmall = 0;
