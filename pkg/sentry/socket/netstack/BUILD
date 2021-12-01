@@ -45,6 +45,7 @@ go_library(
         "//pkg/syserr",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
+        "//pkg/tcpip/link/dummy",
         "//pkg/tcpip/link/tun",
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/network/ipv6",

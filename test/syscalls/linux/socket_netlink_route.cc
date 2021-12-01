@@ -354,7 +354,6 @@ TEST(NetlinkRouteTest, RemoveLinkByIndexNotFound) {
 
 TEST(NetlinkRouteTest, RemoveLinkByNameNotFound) {
   const std::string name = "nodevice?!";
-
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
@@ -380,6 +379,152 @@ TEST(NetlinkRouteTest, RemoveLinkByNameNotFound) {
 
   EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq, &req, sizeof(req)),
               PosixErrorIs(ENODEV, _));
+}
+
+TEST(NetlinkRouteTest, AddLink) {
+  const std::string name1 = "dummy1";
+  const std::string name2 = "dummy2";
+  const std::string kind = "dummy";
+
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+
+  // Add two links
+  EXPECT_NO_ERRNO(LinkAdd(name1, kind));
+  EXPECT_NO_ERRNO(LinkAdd(name2, kind));
+  // Second add with same name should fail.
+  EXPECT_THAT(LinkAdd(name1, kind), PosixErrorIs(EEXIST, _));
+
+  // Delete both links
+  EXPECT_NO_ERRNO(LinkDel(name2));
+  EXPECT_NO_ERRNO(LinkDel(name1));
+  // Second del with same name should fail.
+  EXPECT_THAT(LinkDel(name1), PosixErrorIs(ENODEV, _));
+}
+
+// SetNeighRequest tests a RTM_NEWNEIGH + NLM_F_CREATE|NLM_F_REPLACE request.
+TEST(NetlinkRouteTest, SetNeighRequest) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+
+  ASSERT_NO_ERRNO(LinkAdd("dummy1", "dummy"));
+
+  Link link = ASSERT_NO_ERRNO_AND_VALUE(EthernetLink());
+
+  struct in_addr addr;
+  ASSERT_EQ(inet_pton(AF_INET, "10.0.0.1", &addr), 1);
+
+  char lladdr[6] = {0x01, 0, 0, 0, 0, 0};
+
+  // Create should succeed, as no such neighbor exists in the kernel.
+  EXPECT_NO_ERRNO(NeighSet(link.index, AF_INET, &addr, sizeof(addr), lladdr,
+                           sizeof(lladdr)));
+}
+
+// GetNeighDump tests a RTM_GETNEIGH + NLM_F_DUMP request.
+TEST(NetlinkRouteTest, GetNeighDump) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  // Add neighbor entry to be dumped.
+  ASSERT_NO_ERRNO(LinkAdd("dummy1", "dummy"));
+
+  Link link = ASSERT_NO_ERRNO_AND_VALUE(EthernetLink());
+
+  struct in_addr addr;
+  ASSERT_EQ(inet_pton(AF_INET, "10.0.0.1", &addr), 1);
+
+  char lladdr[6] = {0x01, 0, 0, 0, 0, 0};
+
+  // Create should succeed, as no such neighbor exists in the kernel.
+  ASSERT_NO_ERRNO(NeighSet(link.index, AF_INET, &addr, sizeof(addr), lladdr,
+                           sizeof(lladdr)));
+
+  uint32_t port = ASSERT_NO_ERRNO_AND_VALUE(NetlinkPortID(fd.get()));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct ndmsg ndm;
+    char buf[256];
+  };
+
+  struct request req = {};
+  req.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(struct ndmsg));
+  req.hdr.nlmsg_type = RTM_GETNEIGH;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+  req.hdr.nlmsg_seq = kSeq;
+  req.ndm.ndm_family = AF_UNSPEC;
+
+  bool found = false;
+  bool verified = true;
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, &req, sizeof(req),
+      [&](const struct nlmsghdr* hdr) {
+        // Validate the reponse to RTM_GETNEIGH + NLM_F_DUMP.
+        EXPECT_THAT(hdr->nlmsg_type, AnyOf(Eq(RTM_NEWNEIGH), Eq(NLMSG_DONE)));
+
+        EXPECT_TRUE((hdr->nlmsg_flags & NLM_F_MULTI) == NLM_F_MULTI)
+            << std::hex << hdr->nlmsg_flags;
+
+        EXPECT_EQ(hdr->nlmsg_seq, kSeq);
+        EXPECT_EQ(hdr->nlmsg_pid, port);
+
+        // The test should not proceed if it's not a RTM_NEWNEIGH message.
+        if (hdr->nlmsg_type != RTM_NEWNEIGH) {
+          return;
+        }
+
+        // RTM_NEWNEIGH contains at least the header and ndmsg.
+        ASSERT_GE(hdr->nlmsg_len, NLMSG_SPACE(sizeof(struct ndmsg)));
+        const struct ndmsg* msg =
+            reinterpret_cast<const struct ndmsg*>(NLMSG_DATA(hdr));
+        std::cout << "Found neighbor =" << msg->ndm_ifindex
+                  << ", state=" << msg->ndm_state
+                  << ", flags=" << msg->ndm_flags << ", type=" << msg->ndm_type;
+
+        found = true;
+
+        int len = RTM_PAYLOAD(hdr);
+        bool ndDstFound = false;
+
+        for (struct rtattr* attr = RTM_RTA(msg); RTA_OK(attr, len);
+             attr = RTA_NEXT(attr, len)) {
+          if (attr->rta_type == NDA_DST) {
+            char addr[INET_ADDRSTRLEN] = {};
+            inet_ntop(AF_INET, RTA_DATA(attr), addr, sizeof(addr));
+            std::cout << ", dst=" << addr;
+            ndDstFound = true;
+          }
+        }
+
+        std::cout << std::endl;
+
+        verified = ndDstFound && verified;
+      },
+      false));
+  // Found RTA_DST and RTA_LLADDR for each neighbour entry.
+  EXPECT_TRUE(found && verified);
+}
+
+// ReplaceNeighRequest tests a RTM_DELNEIGH request.
+TEST(NetlinkRouteTest, DelNeighRequest) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+
+  // Add neighbor entry to be dumped.
+  ASSERT_NO_ERRNO(LinkAdd("dummy1", "dummy"));
+
+  Link link = ASSERT_NO_ERRNO_AND_VALUE(EthernetLink());
+
+  struct in_addr addr;
+  ASSERT_EQ(inet_pton(AF_INET, "10.0.0.1", &addr), 1);
+
+  char lladdr[6] = {0x01, 0, 0, 0, 0, 0};
+
+  // Create should succeed, as no such neighbor exists in the kernel.
+  ASSERT_NO_ERRNO(NeighSet(link.index, AF_INET, &addr, sizeof(addr), lladdr,
+                           sizeof(lladdr)));
+
+  EXPECT_NO_ERRNO(NeighDel(link.index, AF_INET, &addr, sizeof(addr)));
 }
 
 TEST(NetlinkRouteTest, MsgHdrMsgUnsuppType) {

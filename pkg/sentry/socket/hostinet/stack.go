@@ -309,6 +309,11 @@ func (s *Stack) Interfaces() map[int32]inet.Interface {
 	return interfaces
 }
 
+// AddDummyInterface implements inet.Stack.AddDummyInterface.
+func (s *Stack) AddDummyInterface(name string) (int32, error) {
+	return -1, linuxerr.EACCES
+}
+
 // RemoveInterface implements inet.Stack.RemoveInterface.
 func (*Stack) RemoveInterface(int32) error {
 	return linuxerr.EACCES
@@ -330,6 +335,21 @@ func (*Stack) AddInterfaceAddr(int32, inet.InterfaceAddr) error {
 
 // RemoveInterfaceAddr implements inet.Stack.RemoveInterfaceAddr.
 func (*Stack) RemoveInterfaceAddr(int32, inet.InterfaceAddr) error {
+	return linuxerr.EACCES
+}
+
+// Neighbors implements inet.Stack.Neighbors.
+func (s *Stack) Neighbors() ([]inet.Neighbor, error) {
+	return nil, linuxerr.EACCES
+}
+
+// AddNeighbor implements inet.Stack.AddNeighbor.
+func (s *Stack) AddNeighbor(inet.Neighbor) error {
+	return linuxerr.EACCES
+}
+
+// RemoveNeighbor implements inet.Stack.RemoveNeighbor.
+func (s *Stack) RemoveNeighbor(inet.Neighbor) error {
 	return linuxerr.EACCES
 }
 

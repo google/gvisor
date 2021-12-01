@@ -165,6 +165,16 @@ const (
 	IFLA_GSO_MAX_SIZE    = 41
 )
 
+// Interface link info attributes, from uapi/linux/if_link.h.
+const (
+	IFLA_INFO_UNSPEC     = 0
+	IFLA_INFO_KIND       = 1
+	IFLA_INFO_DATA       = 2
+	IFLA_INFO_XSTATS     = 3
+	IFLA_INFO_SLAVE_KIND = 4
+	IFLA_INFO_SLAVE_DATA = 5
+)
+
 // InterfaceAddrMessage is struct ifaddrmsg, from uapi/linux/if_addr.h.
 //
 // +marshal
@@ -352,3 +362,67 @@ type RtAttr struct {
 
 // SizeOfRtAttr is the size of RtAttr.
 const SizeOfRtAttr = 4
+
+// NeighborMessage is struct ifaddrmsg, from uapi/linux/if_addr.h.
+//
+// +marshal
+type NeighborMessage struct {
+	Family  uint8
+	Pad1    uint8
+	Pad2    uint16
+	IfIndex int32
+	State   uint16
+	Flags   uint8
+	Type    uint8
+}
+
+// Neighbor attributes, from uapi/linux/if_addr.h.
+const (
+	NDA_UNSPEC       = 0
+	NDA_DST          = 1
+	NDA_LLADDR       = 2
+	NDA_CACHEINFO    = 3
+	NDA_PROBES       = 4
+	NDA_VLAN         = 5
+	NDA_PORT         = 6
+	NDA_VNI          = 7
+	NDA_IFINDEX      = 8
+	NDA_MASTER       = 9
+	NDA_LINK_NETNSID = 10
+	NDA_SRC_VNI      = 11
+	NDA_PROTOCOL     = 12 /* Originator of entry */
+)
+
+// Neighbor Cache Entry Flags, from uapi/linux/neighbour.h
+const (
+	NTF_USE         = 0x01
+	NTF_SELF        = 0x02
+	NTF_MASTER      = 0x04
+	NTF_PROXY       = 0x08 /* == ATF_PUBL */
+	NTF_EXT_LEARNED = 0x10
+	NTF_OFFLOADED   = 0x20
+	NTF_STICKY      = 0x40
+	NTF_ROUTER      = 0x80
+)
+
+// Neighbor Cache Entry States.
+const (
+	NUD_INCOMPLETE = 0x01
+	NUD_REACHABLE  = 0x02
+	NUD_STALE      = 0x04
+	NUD_DELAY      = 0x08
+	NUD_PROBE      = 0x10
+	NUD_FAILED     = 0x20
+
+	/* Dummy states */
+	NUD_NOARP     = 0x40
+	NUD_PERMANENT = 0x80
+	NUD_NONE      = 0x00
+)
+
+type NeighborCacheInfo struct {
+	Confirmed uint32
+	Used      uint32
+	Updated   uint32
+	RefCount  uint32
+}
