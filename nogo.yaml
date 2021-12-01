@@ -113,6 +113,8 @@ analyzers:
         - tools/bigquery/bigquery.go          # False positive.
   printf:
     external: # Enabled.
+      suppress:
+        - "fmt.Fprintln arg list ends with redundant newline"
   shift:
     generated: # Disabled for generated code; these shifts are well-defined.
       exclude: [".*"]
