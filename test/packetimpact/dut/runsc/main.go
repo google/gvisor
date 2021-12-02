@@ -20,6 +20,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -49,7 +50,7 @@ type runsc struct {
 var _ dut.DUT = (*runsc)(nil)
 
 func main() {
-	ifaces, err := dut.Init()
+	ifaces, err := dut.Init(flag.CommandLine)
 	if err != nil {
 		log.Fatal(err)
 	}

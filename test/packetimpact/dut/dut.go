@@ -39,6 +39,10 @@ const (
 	completeFd = 3
 	// PosixServerPort is the port the posix server should listen on.
 	PosixServerPort = 54321
+	// CtrlIface is the command switch name for passing name of the control interface.
+	CtrlIface = "ctrl_iface"
+	// TestIface is the command switch name for passing name of the test interface.
+	TestIface = "test_iface"
 )
 
 // Ifaces describe the names of the interfaces on DUT.
@@ -51,18 +55,15 @@ type Ifaces struct {
 
 // Init puts the current process into the target network namespace, the user of
 // this library should call this function in the beginning.
-func Init() (Ifaces, error) {
+func Init(fs *flag.FlagSet) (Ifaces, error) {
 	// The DUT might create child processes, we don't want this fd to leak into
 	// those processes as it keeps the pipe open and the testbench will hang
 	// waiting for an EOF on the pipe.
 	unix.CloseOnExec(completeFd)
 	var ifaces Ifaces
-	// Parse command line flags. It is effectively the same as using top-level
-	// functions in flag package, but more explicit that we exit if the parsing
-	// failed.
-	fs := flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
-	fs.StringVar(&ifaces.Ctrl, "ctrl_iface", "", "the name of the control interface")
-	fs.StringVar(&ifaces.Test, "test_iface", "", "the name of the test interface")
+	// Parse command line flags that is defined by the caller and us.
+	fs.StringVar(&ifaces.Ctrl, CtrlIface, "", "the name of the control interface")
+	fs.StringVar(&ifaces.Test, TestIface, "", "the name of the test interface")
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		return Ifaces{}, err
 	}

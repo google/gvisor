@@ -41,7 +41,12 @@ go_binary(
     name = "main",
     testonly = True,
     srcs = ["main.go"],
+    visibility = [
+        "//test/packetimpact:__subpackages__",
+        "//turquoise/connectivity/netstack/gvisor_tests/packetimpact:__subpackages__",
+    ],
     deps = [
+        "//test/packetimpact/dut",
         "//test/packetimpact/internal/testing",
         "//test/packetimpact/netdevs/netlink",
         "//test/packetimpact/testbench",

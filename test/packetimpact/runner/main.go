@@ -30,6 +30,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 
 	"github.com/google/gopacket"
@@ -38,10 +39,24 @@ import (
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/test/packetimpact/dut"
 	"gvisor.dev/gvisor/test/packetimpact/internal/testing"
 	netdevs "gvisor.dev/gvisor/test/packetimpact/netdevs/netlink"
 	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
+
+type dutArgList []string
+
+// String implements flag.Value.
+func (l *dutArgList) String() string {
+	return strings.Join(*l, " ")
+}
+
+// Set implements flag.Value.
+func (l *dutArgList) Set(value string) error {
+	*l = append(*l, value)
+	return nil
+}
 
 func main() {
 	const procSelfExe = "/proc/self/exe"
@@ -88,6 +103,7 @@ func main() {
 		runtime         string
 		partition       int
 		totalPartitions int
+		dutArgs         dutArgList
 	)
 	fs := flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
 	fs.StringVar(&dutBinary, "dut_binary", "", "path to the DUT binary")
@@ -95,6 +111,7 @@ func main() {
 	fs.BoolVar(&expectFailure, "expect_failure", false, "whether the test is expected to fail")
 	fs.IntVar(&numDUTs, "num_duts", 1, "number of DUTs to create")
 	fs.StringVar(&variant, "variant", "", "test variant could be native, gvisor or fuchsia")
+	fs.Var(&dutArgs, "dut_arg", "argument to the DUT binary")
 	// The following args are passed by CI environment which are not used by us.
 	fs.StringVar(&runtime, "runtime", "", "docker runtime to use (unused)")
 	fs.IntVar(&partition, "partition", 1, "1-indexed partition (unused)")
@@ -107,9 +124,9 @@ func main() {
 
 	// Create all the DUTs.
 	infoCh := make(chan testbench.DUTInfo, numDUTs)
-	var duts []*dut
+	var duts []*dutProcess
 	for i := 0; i < numDUTs; i++ {
-		d, err := newDUT(ctx, i, dutBinary)
+		d, err := newDUT(ctx, i, dutBinary, dutArgs)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -194,15 +211,18 @@ func main() {
 	}
 }
 
-type dut struct {
+type dutProcess struct {
 	cmd       *exec.Cmd
 	id        int
 	completeR *os.File
 	dutNetNS  netNS
 }
 
-func newDUT(ctx context.Context, id int, dutBinary string) (*dut, error) {
-	cmd := exec.CommandContext(ctx, dutBinary, "--ctrl_iface", dutSide.ifaceName(ctrlLink, id), "--test_iface", dutSide.ifaceName(testLink, id))
+func newDUT(ctx context.Context, id int, dutBinary string, dutArgs dutArgList) (*dutProcess, error) {
+	cmd := exec.CommandContext(ctx, dutBinary, append([]string{
+		"--" + dut.CtrlIface, dutSide.ifaceName(ctrlLink, id),
+		"--" + dut.TestIface, dutSide.ifaceName(testLink, id),
+	}, dutArgs...)...)
 
 	// Create the pipe for completion signal
 	completeR, completeW, err := os.Pipe()
@@ -297,10 +317,10 @@ func newDUT(ctx context.Context, id int, dutBinary string) (*dut, error) {
 		}
 	}
 
-	return &dut{cmd: cmd, id: id, completeR: completeR, dutNetNS: dutNetNS}, nil
+	return &dutProcess{cmd: cmd, id: id, completeR: completeR, dutNetNS: dutNetNS}, nil
 }
 
-func (d *dut) bootstrap(ctx context.Context) (testbench.DUTInfo, func() error, error) {
+func (d *dutProcess) bootstrap(ctx context.Context) (testbench.DUTInfo, func() error, error) {
 	if err := d.dutNetNS.Do(func() error {
 		return d.cmd.Start()
 	}); err != nil {
@@ -335,16 +355,16 @@ func (d *dut) bootstrap(ctx context.Context) (testbench.DUTInfo, func() error, e
 	return dutInfo, d.cmd.Wait, nil
 }
 
-func (d *dut) name() string {
+func (d *dutProcess) name() string {
 	return fmt.Sprintf("dut-%d", d.id)
 }
 
-func (d *dut) peerIface() string {
+func (d *dutProcess) peerIface() string {
 	return tbSide.ifaceName(testLink, d.id)
 }
 
 // writePcap creates the packet capture while the test is running.
-func (d *dut) writePcap(ctx context.Context, testName string) error {
+func (d *dutProcess) writePcap(ctx context.Context, testName string) error {
 	iface := d.peerIface()
 	// Create the pcap file.
 	fileName, err := testing.UndeclaredOutput(fmt.Sprintf("%s_%s.pcap", testName, iface))
