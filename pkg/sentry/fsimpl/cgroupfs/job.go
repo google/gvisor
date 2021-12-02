@@ -55,7 +55,7 @@ func (d *jobIDData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
 func (d *jobIDData) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
-	val, n, err := parseInt64FromString(ctx, src, offset)
+	val, n, err := parseInt64FromString(ctx, src)
 	if err != nil {
 		return n, err
 	}
