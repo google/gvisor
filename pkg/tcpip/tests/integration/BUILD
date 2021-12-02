@@ -40,6 +40,7 @@ go_test(
         "//pkg/tcpip/stack",
         "//pkg/tcpip/tests/utils",
         "//pkg/tcpip/testutil",
+        "//pkg/tcpip/transport/icmp",
         "//pkg/tcpip/transport/tcp",
         "//pkg/tcpip/transport/udp",
         "//pkg/waiter",

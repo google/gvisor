@@ -17,6 +17,7 @@ package stack
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
 	"math/rand"
 	"sync"
 	"sync/atomic"
@@ -70,29 +71,38 @@ func (t *tuple) id() tupleID {
 	return t.tupleID
 }
 
-// tupleID uniquely identifies a connection in one direction. It currently
-// contains enough information to distinguish between any TCP or UDP
-// connection, and will need to be extended to support other protocols.
+// tupleID uniquely identifies a trackable connection in one direction.
 //
 // +stateify savable
 type tupleID struct {
-	srcAddr    tcpip.Address
-	srcPort    uint16
-	dstAddr    tcpip.Address
-	dstPort    uint16
-	transProto tcpip.TransportProtocolNumber
-	netProto   tcpip.NetworkProtocolNumber
+	srcAddr tcpip.Address
+	// The source port of a packet in the original direction is overloaded with
+	// the ident of an Echo Request packet.
+	//
+	// This also matches the behaviour of sending packets on Linux where the
+	// socket's source port value is used for the source port of outgoing packets
+	// for TCP/UDP and the ident field for outgoing Echo Requests on Ping sockets:
+	//
+	//   IPv4: https://github.com/torvalds/linux/blob/c5c17547b778975b3d83a73c8d84e8fb5ecf3ba5/net/ipv4/ping.c#L810
+	//   IPv6: https://github.com/torvalds/linux/blob/c5c17547b778975b3d83a73c8d84e8fb5ecf3ba5/net/ipv6/ping.c#L133
+	srcPortOrEchoRequestIdent uint16
+	dstAddr                   tcpip.Address
+	// The opposite of srcPortOrEchoRequestIdent; the destination port of a packet
+	// in the reply direction is overloaded with the ident of an Echo Reply.
+	dstPortOrEchoReplyIdent uint16
+	transProto              tcpip.TransportProtocolNumber
+	netProto                tcpip.NetworkProtocolNumber
 }
 
 // reply creates the reply tupleID.
 func (ti tupleID) reply() tupleID {
 	return tupleID{
-		srcAddr:    ti.dstAddr,
-		srcPort:    ti.dstPort,
-		dstAddr:    ti.srcAddr,
-		dstPort:    ti.srcPort,
-		transProto: ti.transProto,
-		netProto:   ti.netProto,
+		srcAddr:                   ti.dstAddr,
+		srcPortOrEchoRequestIdent: ti.dstPortOrEchoReplyIdent,
+		dstAddr:                   ti.srcAddr,
+		dstPortOrEchoReplyIdent:   ti.srcPortOrEchoRequestIdent,
+		transProto:                ti.transProto,
+		netProto:                  ti.netProto,
 	}
 }
 
@@ -284,7 +294,7 @@ func getEmbeddedNetAndTransHeaders(pkt *PacketBuffer, netHdrLength int, getNetAn
 	return nil, nil, false
 }
 
-func getHeaders(pkt *PacketBuffer) (netHdr header.Network, transHdr header.ChecksummableTransport, isICMPError bool, ok bool) {
+func getHeaders(pkt *PacketBuffer) (netHdr header.Network, transHdr header.Transport, isICMPError bool, ok bool) {
 	switch pkt.TransportProtocolNumber {
 	case header.TCPProtocolNumber:
 		if tcpHeader := header.TCP(pkt.TransportHeader().View()); len(tcpHeader) >= header.TCPMinimumSize {
@@ -295,6 +305,19 @@ func getHeaders(pkt *PacketBuffer) (netHdr header.Network, transHdr header.Check
 			return pkt.Network(), udpHeader, false, true
 		}
 	case header.ICMPv4ProtocolNumber:
+		icmpHeader := header.ICMPv4(pkt.TransportHeader().View())
+		if len(icmpHeader) < header.ICMPv4MinimumSize {
+			break
+		}
+
+		switch icmpType := icmpHeader.Type(); icmpType {
+		case header.ICMPv4Echo, header.ICMPv4EchoReply:
+			return pkt.Network(), icmpHeader, false, true
+		case header.ICMPv4DstUnreachable, header.ICMPv4TimeExceeded, header.ICMPv4ParamProblem:
+		default:
+			panic(fmt.Sprintf("unexpected ICMPv4 type = %d", icmpType))
+		}
+
 		h, ok := pkt.Data().PullUp(header.IPv4MinimumSize)
 		if !ok {
 			panic(fmt.Sprintf("should have a valid IPv4 packet; only have %d bytes, want at least %d bytes", pkt.Data().Size(), header.IPv4MinimumSize))
@@ -333,24 +356,24 @@ func getHeaders(pkt *PacketBuffer) (netHdr header.Network, transHdr header.Check
 
 func getTupleIDForRegularPacket(netHdr header.Network, netProto tcpip.NetworkProtocolNumber, transHdr header.Transport, transProto tcpip.TransportProtocolNumber) tupleID {
 	return tupleID{
-		srcAddr:    netHdr.SourceAddress(),
-		srcPort:    transHdr.SourcePort(),
-		dstAddr:    netHdr.DestinationAddress(),
-		dstPort:    transHdr.DestinationPort(),
-		transProto: transProto,
-		netProto:   netProto,
+		srcAddr:                   netHdr.SourceAddress(),
+		srcPortOrEchoRequestIdent: transHdr.SourcePort(),
+		dstAddr:                   netHdr.DestinationAddress(),
+		dstPortOrEchoReplyIdent:   transHdr.DestinationPort(),
+		transProto:                transProto,
+		netProto:                  netProto,
 	}
 }
 
 func getTupleIDForPacketInICMPError(pkt *PacketBuffer, getNetAndTransHdr netAndTransHeadersFunc, netProto tcpip.NetworkProtocolNumber, netLen int, transProto tcpip.TransportProtocolNumber) (tupleID, bool) {
 	if netHdr, transHdr, ok := getEmbeddedNetAndTransHeaders(pkt, netLen, getNetAndTransHdr, transProto); ok {
 		return tupleID{
-			srcAddr:    netHdr.DestinationAddress(),
-			srcPort:    transHdr.DestinationPort(),
-			dstAddr:    netHdr.SourceAddress(),
-			dstPort:    transHdr.SourcePort(),
-			transProto: transProto,
-			netProto:   netProto,
+			srcAddr:                   netHdr.DestinationAddress(),
+			srcPortOrEchoRequestIdent: transHdr.DestinationPort(),
+			dstAddr:                   netHdr.SourceAddress(),
+			dstPortOrEchoReplyIdent:   transHdr.SourcePort(),
+			transProto:                transProto,
+			netProto:                  netProto,
 		}, true
 	}
 
@@ -364,6 +387,24 @@ const (
 	getTupleIDOKAndAllowNewConn
 	getTupleIDOKAndDontAllowNewConn
 )
+
+func getTupleIDForEchoPacket(pkt *PacketBuffer, ident uint16, request bool) tupleID {
+	netHdr := pkt.Network()
+	tid := tupleID{
+		srcAddr:    netHdr.SourceAddress(),
+		dstAddr:    netHdr.DestinationAddress(),
+		transProto: pkt.TransportProtocolNumber,
+		netProto:   pkt.NetworkProtocolNumber,
+	}
+
+	if request {
+		tid.srcPortOrEchoRequestIdent = ident
+	} else {
+		tid.dstPortOrEchoReplyIdent = ident
+	}
+
+	return tid
+}
 
 func getTupleID(pkt *PacketBuffer) (tupleID, getTupleIDDisposition) {
 	switch pkt.TransportProtocolNumber {
@@ -382,8 +423,16 @@ func getTupleID(pkt *PacketBuffer) (tupleID, getTupleIDDisposition) {
 		}
 
 		switch icmp.Type() {
+		case header.ICMPv4Echo:
+			return getTupleIDForEchoPacket(pkt, icmp.Ident(), true /* request */), getTupleIDOKAndAllowNewConn
+		case header.ICMPv4EchoReply:
+			// Do not create a new connection in response to a reply packet as only
+			// the first packet of a connection should create a conntrack entry but
+			// a reply is never the first packet sent for a connection.
+			return getTupleIDForEchoPacket(pkt, icmp.Ident(), false /* request */), getTupleIDOKAndDontAllowNewConn
 		case header.ICMPv4DstUnreachable, header.ICMPv4TimeExceeded, header.ICMPv4ParamProblem:
 		default:
+			// Unsupported ICMP type for NAT-ing.
 			return tupleID{}, getTupleIDNotOK
 		}
 
@@ -614,9 +663,9 @@ func (cn *conn) maybePerformNoopNAT(dnat bool) {
 	}
 }
 
-type portRange struct {
+type portOrIdentRange struct {
 	start uint16
-	size  uint16
+	size  uint32
 }
 
 // performNAT setups up the connection for the specified NAT and rewrites the
@@ -628,7 +677,15 @@ type portRange struct {
 //
 // Generally, only the first packet of a connection reaches this method; other
 // packets will be manipulated without needing to modify the connection.
-func (cn *conn) performNAT(pkt *PacketBuffer, hook Hook, r *Route, ports portRange, natAddress tcpip.Address, dnat bool) {
+func (cn *conn) performNAT(pkt *PacketBuffer, hook Hook, r *Route, portsOrIdents portOrIdentRange, natAddress tcpip.Address, dnat bool) {
+	lastPortOrIdent := func() uint16 {
+		lastPortOrIdent := uint32(portsOrIdents.start) + portsOrIdents.size - 1
+		if lastPortOrIdent > math.MaxUint16 {
+			panic(fmt.Sprintf("got lastPortOrIdent = %d, want <= MaxUint16(=%d); portsOrIdents=%#v", lastPortOrIdent, math.MaxUint16, portsOrIdents))
+		}
+		return uint16(lastPortOrIdent)
+	}()
+
 	// Make sure the packet is re-written after performing NAT.
 	defer func() {
 		// handlePacket returns true if the packet may skip the NAT table as the
@@ -645,15 +702,15 @@ func (cn *conn) performNAT(pkt *PacketBuffer, hook Hook, r *Route, ports portRan
 
 	var manip *manipType
 	var address *tcpip.Address
-	var port *uint16
+	var portOrIdent *uint16
 	if dnat {
 		manip = &cn.destinationManip
 		address = &cn.reply.tupleID.srcAddr
-		port = &cn.reply.tupleID.srcPort
+		portOrIdent = &cn.reply.tupleID.srcPortOrEchoRequestIdent
 	} else {
 		manip = &cn.sourceManip
 		address = &cn.reply.tupleID.dstAddr
-		port = &cn.reply.tupleID.dstPort
+		portOrIdent = &cn.reply.tupleID.dstPortOrEchoReplyIdent
 	}
 
 	if *manip != manipNotPerformed {
@@ -662,8 +719,8 @@ func (cn *conn) performNAT(pkt *PacketBuffer, hook Hook, r *Route, ports portRan
 	*manip = manipPerformed
 	*address = natAddress
 
-	// Does the current port fit in the range?
-	if end := ports.start + ports.size - 1; *port >= ports.start && *port <= end {
+	// Does the current port/ident fit in the range?
+	if portsOrIdents.start <= *portOrIdent && *portOrIdent <= lastPortOrIdent {
 		// Yes, is the current reply tuple unique?
 		if other := cn.ct.connForTID(cn.reply.tupleID); other == nil {
 			// Yes! No need to change the port.
@@ -671,27 +728,32 @@ func (cn *conn) performNAT(pkt *PacketBuffer, hook Hook, r *Route, ports portRan
 		}
 	}
 
-	// Try our best to find a port that results in a unique reply tuple.
+	// Try our best to find a port/ident that results in a unique reply tuple.
 	//
 	// We limit the number of attempts to find a unique tuple to not waste a lot
 	// of time looking for a unique tuple.
 	//
 	// Matches linux behaviour introduced in
 	// https://github.com/torvalds/linux/commit/a504b703bb1da526a01593da0e4be2af9d9f5fa8.
-	const maxAttemptsForInitialRound uint16 = 128
+	const maxAttemptsForInitialRound uint32 = 128
 	const minAttemptsToContinue = 16
 
 	allowedInitialAttempts := maxAttemptsForInitialRound
-	if allowedInitialAttempts > ports.size {
-		allowedInitialAttempts = ports.size
+	if allowedInitialAttempts > portsOrIdents.size {
+		allowedInitialAttempts = portsOrIdents.size
 	}
 
 	for maxAttempts := allowedInitialAttempts; ; maxAttempts /= 2 {
-		// Start reach round with a random initial port in the range.
-		initial := ports.start + uint16(cn.ct.rand.Uint32())%ports.size
+		// Start reach round with a random initial port/ident offset.
+		randOffset := cn.ct.rand.Uint32()
 
-		for i := uint16(0); i < maxAttempts; i++ {
-			*port = initial + i%ports.size
+		for i := uint32(0); i < maxAttempts; i++ {
+			newPortOrIdentU32 := uint32(portsOrIdents.start) + (randOffset+i)%portsOrIdents.size
+			if newPortOrIdentU32 > math.MaxUint16 {
+				panic(fmt.Sprintf("got newPortOrIdentU32 = %d, want <= MaxUint16(=%d); portsOrIdents=%#v, randOffset=%d", newPortOrIdentU32, math.MaxUint16, portsOrIdents, randOffset))
+			}
+
+			*portOrIdent = uint16(newPortOrIdentU32)
 
 			if other := cn.ct.connForTID(cn.reply.tupleID); other == nil {
 				// We found a unique tuple!
@@ -699,8 +761,9 @@ func (cn *conn) performNAT(pkt *PacketBuffer, hook Hook, r *Route, ports portRan
 			}
 		}
 
-		if maxAttempts == ports.size {
-			// We already tried all the ports in the range so no need to keep trying.
+		if maxAttempts == portsOrIdents.size {
+			// We already tried all the ports/idents in the range so no need to keep
+			// trying.
 			return
 		}
 
@@ -795,10 +858,10 @@ func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, rt *Route) bool {
 		panic(fmt.Sprintf("unhandled manip = %d", manip))
 	}
 
-	newPort := tid.dstPort
+	newPort := tid.dstPortOrEchoReplyIdent
 	newAddr := tid.dstAddr
 	if dnat {
-		newPort = tid.srcPort
+		newPort = tid.srcPortOrEchoRequestIdent
 		newAddr = tid.srcAddr
 	}
 
@@ -871,9 +934,9 @@ func (ct *ConnTrack) bucket(id tupleID) int {
 	h.Write([]byte(id.srcAddr))
 	h.Write([]byte(id.dstAddr))
 	shortBuf := make([]byte, 2)
-	binary.LittleEndian.PutUint16(shortBuf, id.srcPort)
+	binary.LittleEndian.PutUint16(shortBuf, id.srcPortOrEchoRequestIdent)
 	h.Write([]byte(shortBuf))
-	binary.LittleEndian.PutUint16(shortBuf, id.dstPort)
+	binary.LittleEndian.PutUint16(shortBuf, id.dstPortOrEchoReplyIdent)
 	h.Write([]byte(shortBuf))
 	binary.LittleEndian.PutUint16(shortBuf, uint16(id.transProto))
 	h.Write([]byte(shortBuf))
@@ -998,12 +1061,12 @@ func (ct *ConnTrack) originalDst(epID TransportEndpointID, netProto tcpip.Networ
 	// Lookup the connection. The reply's original destination
 	// describes the original address.
 	tid := tupleID{
-		srcAddr:    epID.LocalAddress,
-		srcPort:    epID.LocalPort,
-		dstAddr:    epID.RemoteAddress,
-		dstPort:    epID.RemotePort,
-		transProto: transProto,
-		netProto:   netProto,
+		srcAddr:                   epID.LocalAddress,
+		srcPortOrEchoRequestIdent: epID.LocalPort,
+		dstAddr:                   epID.RemoteAddress,
+		dstPortOrEchoReplyIdent:   epID.RemotePort,
+		transProto:                transProto,
+		netProto:                  netProto,
 	}
 	t := ct.connForTID(tid)
 	if t == nil {
@@ -1019,5 +1082,5 @@ func (ct *ConnTrack) originalDst(epID TransportEndpointID, netProto tcpip.Networ
 	}
 
 	id := t.conn.original.id()
-	return id.dstAddr, id.dstPort, nil
+	return id.dstAddr, id.dstPortOrEchoReplyIdent, nil
 }
