@@ -82,7 +82,6 @@ func (d *cpusData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
 func (d *cpusData) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
-	src = src.DropFirst64(offset)
 	if src.NumBytes() > hostarch.PageSize {
 		return 0, linuxerr.EINVAL
 	}
@@ -127,7 +126,6 @@ func (d *memsData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
 func (d *memsData) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
-	src = src.DropFirst64(offset)
 	if src.NumBytes() > hostarch.PageSize {
 		return 0, linuxerr.EINVAL
 	}

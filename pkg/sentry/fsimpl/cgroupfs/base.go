@@ -234,11 +234,10 @@ func (d *tasksData) Write(ctx context.Context, src usermem.IOSequence, offset in
 
 // parseInt64FromString interprets src as string encoding a int64 value, and
 // returns the parsed value.
-func parseInt64FromString(ctx context.Context, src usermem.IOSequence, offset int64) (val, len int64, err error) {
+func parseInt64FromString(ctx context.Context, src usermem.IOSequence) (val, len int64, err error) {
 	const maxInt64StrLen = 20 // i.e. len(fmt.Sprintf("%d", math.MinInt64)) == 20
 
 	t := kernel.TaskFromContext(ctx)
-	src = src.DropFirst64(offset)
 
 	buf := t.CopyScratchBuffer(maxInt64StrLen)
 	n, err := src.CopyIn(ctx, buf)
