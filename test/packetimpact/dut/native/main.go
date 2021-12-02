@@ -20,6 +20,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -40,7 +41,7 @@ type native struct {
 }
 
 func main() {
-	ifaces, err := dut.Init()
+	ifaces, err := dut.Init(flag.CommandLine)
 	if err != nil {
 		log.Fatal(err)
 	}

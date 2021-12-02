@@ -33,6 +33,10 @@ go_library(
     name = "dut",
     testonly = True,
     srcs = ["dut.go"],
+    visibility = [
+        "//test/packetimpact:__subpackages__",
+        "//turquoise/connectivity/netstack/gvisor_tests/packetimpact:__subpackages__",
+    ],
     deps = [
         "//test/packetimpact/testbench",
         "@org_golang_x_sync//errgroup:go_default_library",
