@@ -1164,6 +1164,181 @@ func TestInputHookWithLocalForwarding(t *testing.T) {
 	}
 }
 
+func setupNAT(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, hook stack.Hook, filter stack.IPHeaderFilter, target stack.Target) {
+	t.Helper()
+
+	ipv6 := netProto == ipv6.ProtocolNumber
+	ipt := s.IPTables()
+	table := ipt.GetTable(stack.NATID, ipv6)
+	ruleIdx := table.BuiltinChains[hook]
+	table.Rules[ruleIdx].Filter = filter
+	table.Rules[ruleIdx].Target = target
+	// Make sure the packet is not dropped by the next rule.
+	table.Rules[ruleIdx+1].Target = &stack.AcceptTarget{}
+	if err := ipt.ReplaceTable(stack.NATID, table, ipv6); err != nil {
+		t.Fatalf("ipt.ReplaceTable(%d, _, %t): %s", stack.NATID, ipv6, err)
+	}
+}
+
+func setupDNAT(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, target stack.Target) {
+	t.Helper()
+
+	setupNAT(
+		t,
+		s,
+		netProto,
+		stack.Prerouting,
+		stack.IPHeaderFilter{
+			Protocol:       transProto,
+			CheckProtocol:  true,
+			InputInterface: utils.RouterNIC2Name,
+		},
+		target)
+}
+
+func setupSNAT(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, target stack.Target) {
+	t.Helper()
+
+	setupNAT(
+		t,
+		s,
+		netProto,
+		stack.Postrouting,
+		stack.IPHeaderFilter{
+			Protocol:        transProto,
+			CheckProtocol:   true,
+			OutputInterface: utils.RouterNIC1Name,
+		},
+		target)
+}
+
+func setupTwiceNAT(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, dnatAddr tcpip.Address, dnatTarget, snatTarget stack.Target) {
+	t.Helper()
+
+	ipv6 := netProto == ipv6.ProtocolNumber
+	ipt := s.IPTables()
+
+	table := stack.Table{
+		Rules: []stack.Rule{
+			// Prerouting
+			{
+				Filter: stack.IPHeaderFilter{
+					Protocol:       transProto,
+					CheckProtocol:  true,
+					InputInterface: utils.RouterNIC2Name,
+				},
+				Target: dnatTarget,
+			},
+			{
+				Target: &stack.AcceptTarget{},
+			},
+
+			// Input
+			{
+				Target: &stack.AcceptTarget{},
+			},
+
+			// Forward
+			{
+				Target: &stack.AcceptTarget{},
+			},
+
+			// Output
+			{
+				Target: &stack.AcceptTarget{},
+			},
+
+			// Postrouting
+			{
+				Filter: stack.IPHeaderFilter{
+					Protocol:        transProto,
+					CheckProtocol:   true,
+					OutputInterface: utils.RouterNIC1Name,
+				},
+				Target: snatTarget,
+			},
+			{
+				Target: &stack.AcceptTarget{},
+			},
+		},
+		BuiltinChains: [stack.NumHooks]int{
+			stack.Prerouting:  0,
+			stack.Input:       2,
+			stack.Forward:     3,
+			stack.Output:      4,
+			stack.Postrouting: 5,
+		},
+	}
+
+	if err := ipt.ReplaceTable(stack.NATID, table, ipv6); err != nil {
+		t.Fatalf("ipt.ReplaceTable(%d, _, %t): %s", stack.NATID, ipv6, err)
+	}
+}
+
+type natType struct {
+	name     string
+	setupNAT func(_ *testing.T, _ *stack.Stack, _ tcpip.NetworkProtocolNumber, _ tcpip.TransportProtocolNumber, snatAddr, dnatAddr tcpip.Address, dnatPort uint16)
+}
+
+var (
+	snatTypes = []natType{
+		{
+			name: "SNAT",
+			setupNAT: func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, snatAddr, _ tcpip.Address, _ uint16) {
+				t.Helper()
+
+				setupSNAT(t, s, netProto, transProto, &stack.SNATTarget{NetworkProtocol: netProto, Addr: snatAddr})
+			},
+		},
+		{
+			name: "Masquerade",
+			setupNAT: func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, _, _ tcpip.Address, _ uint16) {
+				t.Helper()
+
+				setupSNAT(t, s, netProto, transProto, &stack.MasqueradeTarget{NetworkProtocol: netProto})
+			},
+		},
+	}
+
+	dnatTypes = []natType{
+		{
+			name: "Redirect",
+			setupNAT: func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, _, _ tcpip.Address, dnatPort uint16) {
+				t.Helper()
+
+				setupDNAT(t, s, netProto, transProto, &stack.RedirectTarget{NetworkProtocol: netProto, Port: dnatPort})
+			},
+		},
+		{
+			name: "DNAT",
+			setupNAT: func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, _, dnatAddr tcpip.Address, dnatPort uint16) {
+				t.Helper()
+
+				setupDNAT(t, s, netProto, transProto, &stack.DNATTarget{NetworkProtocol: netProto, Addr: dnatAddr, Port: dnatPort})
+			},
+		},
+	}
+
+	twiceNATTypes = []natType{
+		{
+			name: "DNAT-Masquerade",
+			setupNAT: func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, snatAddr, dnatAddr tcpip.Address, dnatPort uint16) {
+				t.Helper()
+
+				setupTwiceNAT(t, s, netProto, transProto, dnatAddr, &stack.DNATTarget{NetworkProtocol: netProto, Addr: dnatAddr, Port: dnatPort}, &stack.MasqueradeTarget{NetworkProtocol: netProto})
+			},
+		},
+		{
+			name: "DNAT-SNAT",
+			setupNAT: func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, snatAddr, dnatAddr tcpip.Address, dnatPort uint16) {
+				t.Helper()
+
+				setupTwiceNAT(t, s, netProto, transProto, dnatAddr, &stack.DNATTarget{NetworkProtocol: netProto, Addr: dnatAddr, Port: dnatPort}, &stack.SNATTarget{NetworkProtocol: netProto, Addr: snatAddr})
+			},
+		},
+	}
+)
+
 func TestNAT(t *testing.T) {
 	const listenPort uint16 = 8080
 
@@ -1195,177 +1370,6 @@ func TestNAT(t *testing.T) {
 		t.Cleanup(ep.Close)
 
 		return ep, ch
-	}
-
-	setupNAT := func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, hook stack.Hook, filter stack.IPHeaderFilter, target stack.Target) {
-		t.Helper()
-
-		ipv6 := netProto == ipv6.ProtocolNumber
-		ipt := s.IPTables()
-		table := ipt.GetTable(stack.NATID, ipv6)
-		ruleIdx := table.BuiltinChains[hook]
-		table.Rules[ruleIdx].Filter = filter
-		table.Rules[ruleIdx].Target = target
-		// Make sure the packet is not dropped by the next rule.
-		table.Rules[ruleIdx+1].Target = &stack.AcceptTarget{}
-		if err := ipt.ReplaceTable(stack.NATID, table, ipv6); err != nil {
-			t.Fatalf("ipt.ReplaceTable(%d, _, %t): %s", stack.NATID, ipv6, err)
-		}
-	}
-
-	setupDNAT := func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, target stack.Target) {
-		t.Helper()
-
-		setupNAT(
-			t,
-			s,
-			netProto,
-			stack.Prerouting,
-			stack.IPHeaderFilter{
-				Protocol:       transProto,
-				CheckProtocol:  true,
-				InputInterface: utils.RouterNIC2Name,
-			},
-			target)
-	}
-
-	setupSNAT := func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, target stack.Target) {
-		t.Helper()
-
-		setupNAT(
-			t,
-			s,
-			netProto,
-			stack.Postrouting,
-			stack.IPHeaderFilter{
-				Protocol:        transProto,
-				CheckProtocol:   true,
-				OutputInterface: utils.RouterNIC1Name,
-			},
-			target)
-	}
-
-	type natType struct {
-		name     string
-		setupNAT func(_ *testing.T, _ *stack.Stack, _ tcpip.NetworkProtocolNumber, _ tcpip.TransportProtocolNumber, snatAddr, dnatAddr tcpip.Address)
-	}
-
-	snatTypes := []natType{
-		{
-			name: "SNAT",
-			setupNAT: func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, snatAddr, _ tcpip.Address) {
-				t.Helper()
-
-				setupSNAT(t, s, netProto, transProto, &stack.SNATTarget{NetworkProtocol: netProto, Addr: snatAddr})
-			},
-		},
-		{
-			name: "Masquerade",
-			setupNAT: func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, _, _ tcpip.Address) {
-				t.Helper()
-
-				setupSNAT(t, s, netProto, transProto, &stack.MasqueradeTarget{NetworkProtocol: netProto})
-			},
-		},
-	}
-	dnatTypes := []natType{
-		{
-			name: "Redirect",
-			setupNAT: func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, _, _ tcpip.Address) {
-				t.Helper()
-
-				setupDNAT(t, s, netProto, transProto, &stack.RedirectTarget{NetworkProtocol: netProto, Port: listenPort})
-			},
-		},
-		{
-			name: "DNAT",
-			setupNAT: func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, _, dnatAddr tcpip.Address) {
-				t.Helper()
-
-				setupDNAT(t, s, netProto, transProto, &stack.DNATTarget{NetworkProtocol: netProto, Addr: dnatAddr, Port: listenPort})
-			},
-		},
-	}
-
-	setupTwiceNAT := func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, dnatAddr tcpip.Address, snatTarget stack.Target) {
-		t.Helper()
-
-		ipv6 := netProto == ipv6.ProtocolNumber
-		ipt := s.IPTables()
-
-		table := stack.Table{
-			Rules: []stack.Rule{
-				// Prerouting
-				{
-					Filter: stack.IPHeaderFilter{
-						Protocol:       transProto,
-						CheckProtocol:  true,
-						InputInterface: utils.RouterNIC2Name,
-					},
-					Target: &stack.DNATTarget{NetworkProtocol: netProto, Addr: dnatAddr, Port: listenPort},
-				},
-				{
-					Target: &stack.AcceptTarget{},
-				},
-
-				// Input
-				{
-					Target: &stack.AcceptTarget{},
-				},
-
-				// Forward
-				{
-					Target: &stack.AcceptTarget{},
-				},
-
-				// Output
-				{
-					Target: &stack.AcceptTarget{},
-				},
-
-				// Postrouting
-				{
-					Filter: stack.IPHeaderFilter{
-						Protocol:        transProto,
-						CheckProtocol:   true,
-						OutputInterface: utils.RouterNIC1Name,
-					},
-					Target: snatTarget,
-				},
-				{
-					Target: &stack.AcceptTarget{},
-				},
-			},
-			BuiltinChains: [stack.NumHooks]int{
-				stack.Prerouting:  0,
-				stack.Input:       2,
-				stack.Forward:     3,
-				stack.Output:      4,
-				stack.Postrouting: 5,
-			},
-		}
-
-		if err := ipt.ReplaceTable(stack.NATID, table, ipv6); err != nil {
-			t.Fatalf("ipt.ReplaceTable(%d, _, %t): %s", stack.NATID, ipv6, err)
-		}
-	}
-	twiceNATTypes := []natType{
-		{
-			name: "DNAT-Masquerade",
-			setupNAT: func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, snatAddr, dnatAddr tcpip.Address) {
-				t.Helper()
-
-				setupTwiceNAT(t, s, netProto, transProto, dnatAddr, &stack.MasqueradeTarget{NetworkProtocol: netProto})
-			},
-		},
-		{
-			name: "DNAT-SNAT",
-			setupNAT: func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, snatAddr, dnatAddr tcpip.Address) {
-				t.Helper()
-
-				setupTwiceNAT(t, s, netProto, transProto, dnatAddr, &stack.SNATTarget{NetworkProtocol: netProto, Addr: snatAddr})
-			},
-		},
 	}
 
 	tests := []struct {
@@ -1673,7 +1677,7 @@ func TestNAT(t *testing.T) {
 							utils.SetupRoutedStacks(t, host1Stack, routerStack, host2Stack)
 
 							epsAndAddrs := test.epAndAddrs(t, host1Stack, routerStack, host2Stack, subTest.proto)
-							natType.setupNAT(t, routerStack, test.netProto, subTest.proto, epsAndAddrs.serverConnectAddr, epsAndAddrs.serverAddr.Addr)
+							natType.setupNAT(t, routerStack, test.netProto, subTest.proto, epsAndAddrs.serverConnectAddr, epsAndAddrs.serverAddr.Addr, listenPort)
 
 							if err := epsAndAddrs.serverEP.Bind(epsAndAddrs.serverAddr); err != nil {
 								t.Fatalf("epsAndAddrs.serverEP.Bind(%#v): %s", epsAndAddrs.serverAddr, err)
