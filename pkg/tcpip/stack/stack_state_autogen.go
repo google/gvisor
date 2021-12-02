@@ -47,9 +47,9 @@ func (ti *tupleID) StateTypeName() string {
 func (ti *tupleID) StateFields() []string {
 	return []string{
 		"srcAddr",
-		"srcPort",
+		"srcPortOrEchoRequestIdent",
 		"dstAddr",
-		"dstPort",
+		"dstPortOrEchoReplyIdent",
 		"transProto",
 		"netProto",
 	}
@@ -61,9 +61,9 @@ func (ti *tupleID) beforeSave() {}
 func (ti *tupleID) StateSave(stateSinkObject state.Sink) {
 	ti.beforeSave()
 	stateSinkObject.Save(0, &ti.srcAddr)
-	stateSinkObject.Save(1, &ti.srcPort)
+	stateSinkObject.Save(1, &ti.srcPortOrEchoRequestIdent)
 	stateSinkObject.Save(2, &ti.dstAddr)
-	stateSinkObject.Save(3, &ti.dstPort)
+	stateSinkObject.Save(3, &ti.dstPortOrEchoReplyIdent)
 	stateSinkObject.Save(4, &ti.transProto)
 	stateSinkObject.Save(5, &ti.netProto)
 }
@@ -73,9 +73,9 @@ func (ti *tupleID) afterLoad() {}
 // +checklocksignore
 func (ti *tupleID) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &ti.srcAddr)
-	stateSourceObject.Load(1, &ti.srcPort)
+	stateSourceObject.Load(1, &ti.srcPortOrEchoRequestIdent)
 	stateSourceObject.Load(2, &ti.dstAddr)
-	stateSourceObject.Load(3, &ti.dstPort)
+	stateSourceObject.Load(3, &ti.dstPortOrEchoReplyIdent)
 	stateSourceObject.Load(4, &ti.transProto)
 	stateSourceObject.Load(5, &ti.netProto)
 }

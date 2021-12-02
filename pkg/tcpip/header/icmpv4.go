@@ -185,6 +185,13 @@ func (b ICMPv4) SetIdent(ident uint16) {
 	binary.BigEndian.PutUint16(b[icmpv4IdentOffset:], ident)
 }
 
+// SetIdentWithChecksumUpdate sets the Ident field and updates the checksum.
+func (b ICMPv4) SetIdentWithChecksumUpdate(new uint16) {
+	old := b.Ident()
+	b.SetIdent(new)
+	b.SetChecksum(^checksumUpdate2ByteAlignedUint16(^b.Checksum(), old, new))
+}
+
 // Sequence retrieves the Sequence field from an ICMPv4 message.
 func (b ICMPv4) Sequence() uint16 {
 	return binary.BigEndian.Uint16(b[icmpv4SequenceOffset:])
