@@ -53,6 +53,7 @@ go_library(
         "//pkg/sentry/fs/lock",
         "//pkg/sentry/fsbridge",
         "//pkg/sentry/fsimpl/eventfd",
+        "//pkg/sentry/fsimpl/mqfs",
         "//pkg/sentry/fsimpl/pipefs",
         "//pkg/sentry/fsimpl/signalfd",
         "//pkg/sentry/fsimpl/timerfd",

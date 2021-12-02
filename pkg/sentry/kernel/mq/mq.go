@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -287,58 +288,6 @@ type Queue struct {
 	byteCount uint64
 }
 
-// View is a view into a message queue. Views should only be used in file
-// descriptions, but not inodes, because we use inodes to retreive the actual
-// queue, and only FDs are responsible for providing user functionality.
-type View interface {
-	// TODO: Add Send and Receive when mq_timedsend(2) and mq_timedreceive(2)
-	// are implemented.
-
-	// Flush checks if the calling process has attached a notification request
-	// to this queue, if yes, then the request is removed, and another process
-	// can attach a request.
-	Flush(ctx context.Context)
-
-	waiter.Waitable
-}
-
-// ReaderWriter provides a send and receive view into a queue.
-type ReaderWriter struct {
-	*Queue
-
-	block bool
-}
-
-// Reader provides a send-only view into a queue.
-type Reader struct {
-	*Queue
-
-	block bool
-}
-
-// Writer provides a receive-only view into a queue.
-type Writer struct {
-	*Queue
-
-	block bool
-}
-
-// NewView creates a new view into a queue and returns it.
-func NewView(q *Queue, access AccessType, block bool) (View, error) {
-	switch access {
-	case ReadWrite:
-		return ReaderWriter{Queue: q, block: block}, nil
-	case WriteOnly:
-		return Writer{Queue: q, block: block}, nil
-	case ReadOnly:
-		return Reader{Queue: q, block: block}, nil
-	default:
-		// This case can't happen, due to O_RDONLY flag being 0 and O_WRONLY
-		// being 1, so one of them must be true.
-		return nil, linuxerr.EINVAL
-	}
-}
-
 // Message holds a message exchanged through a Queue via mq_timedsend(2) and
 // mq_timedreceive(2), and additional info relating to the message.
 //
@@ -366,8 +315,154 @@ type Subscriber struct {
 	pid int32
 }
 
+// Blocker is used for blocking Queue.Send, and Queue.Receive calls, and serves
+// as an abstracted version of kernel.Task. kernel.Task is not directly used to
+// prevent circular dependency.
+type Blocker interface {
+	BlockWithTimeout(C chan struct{}, haveTimeout bool, timeout time.Duration) (time.Duration, error)
+}
+
+// send adds a given message to the queue, and returns an error if sending
+// fails. See mq_timedsend(2).
+func (q *Queue) send(ctx context.Context, msg Message, b Blocker, timeout time.Duration, block bool) error {
+	// Fast path: attempt a non-blocking push.
+	if err := q.push(ctx, msg); err != linuxerr.EWOULDBLOCK {
+		return err
+	}
+
+	if !block {
+		return linuxerr.EAGAIN
+	}
+	if timeout == 0 {
+		return linuxerr.ETIMEDOUT
+	}
+
+	// Slow path: the queue was found to be full, and we were asked to block.
+
+	e, ch := waiter.NewChannelEntry(waiter.EventOut)
+	q.queue.EventRegister(&e)
+	defer q.queue.EventUnregister(&e)
+
+	// We need to check again before blocking since space may have become
+	// available.
+	for {
+		if err := q.push(ctx, msg); err != linuxerr.EWOULDBLOCK {
+			return err
+		}
+
+		remaining, err := b.BlockWithTimeout(ch, timeout >= 0, timeout)
+		if err != nil {
+			return err
+		}
+		timeout = remaining
+	}
+}
+
+// push adds a message to the queue's message list based on its priority, and
+// notifies waiting receivers that a message has been inserted. An error is
+// returned if adding the message would cause the queue to exceed max capacity.
+func (q *Queue) push(ctx context.Context, msg Message) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	// Unlike SysV, POSIX message queues only care about the overall message
+	// count, but not the overall size.
+	if q.messageCount >= q.maxMessageCount {
+		return linuxerr.EWOULDBLOCK
+	}
+
+	// mq_send(3) man pages mention:
+	//   "Messages are placed on the queue in decreasing order of priority,
+	//    with newer messages of the same priority being placed after older
+	//    messages with the same priority."
+	// To make retreival easier, we arrange messages on insertion.
+
+	// Insert at the back if the queue is empty, or if all messages have a
+	// higher priority.
+	if q.messages.Empty() || q.messages.Back().Priority >= msg.Priority {
+		q.messages.PushBack(&msg)
+	} else {
+		entry := q.messages.Front()
+		for entry.Priority >= msg.Priority {
+			entry = entry.Next()
+		}
+
+		// We already checked if we should be at the back, so we don't have to
+		// worry about entry being nil.
+		q.messages.InsertBefore(entry, &msg)
+	}
+
+	q.messageCount++
+	q.byteCount += msg.Size
+
+	// Notify waiting receivers.
+	q.queue.Notify(waiter.EventIn)
+
+	return nil
+}
+
+// receive returns the message with the highest priority from the queue. See
+// mq_timedreceive(2).
+func (q *Queue) receive(ctx context.Context, b Blocker, timeout time.Duration, block bool) (*Message, error) {
+	// Fast path: attempt a non-blocking pop.
+	if msg, err := q.pop(ctx); err != linuxerr.EWOULDBLOCK {
+		return msg, err
+	}
+
+	if !block {
+		return nil, linuxerr.EAGAIN
+	}
+	if timeout == 0 {
+		return nil, linuxerr.ETIMEDOUT
+	}
+
+	// Slow path: the queue was found to be empty, and we were asked to block.
+
+	e, ch := waiter.NewChannelEntry(waiter.EventIn)
+	q.queue.EventRegister(&e)
+	defer q.queue.EventUnregister(&e)
+
+	// We need to check again before blocking since space may have become
+	// available.
+	for {
+		if msg, err := q.pop(ctx); err != linuxerr.EWOULDBLOCK {
+			return msg, err
+		}
+
+		remaining, err := b.BlockWithTimeout(ch, timeout >= 0, timeout)
+		if err != nil {
+			return nil, err
+		}
+		timeout = remaining
+	}
+}
+
+// pop removes the highest priority message from the queue and returns it. An
+// error EWOULDBLOCK is returned if the queue is empty.
+func (q *Queue) pop(ctx context.Context) (*Message, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	if q.messages.Empty() {
+		return nil, linuxerr.EWOULDBLOCK
+	}
+
+	// Messages are ordered on insertion, so the head of the linked list always
+	// has the highest priority.
+	msg := q.messages.Front()
+
+	q.messages.Remove(msg)
+	q.messageCount--
+	q.byteCount -= msg.Size
+
+	// Notify waiting senders.
+	q.queue.Notify(waiter.EventOut)
+
+	return msg, nil
+}
+
 // Generate implements vfs.DynamicBytesSource.Generate. Queue is used as a
-// DynamicBytesSource for mqfs's queueInode.
+// DynamicBytesSource for mqfs's QueueInode.
 func (q *Queue) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -441,4 +536,9 @@ func (q *Queue) HasPermissions(creds *auth.Credentials, req fs.PermMask) bool {
 		p = q.perms.Group
 	}
 	return p.SupersetOf(req)
+}
+
+// MaxMsgSize implements View.MaxMsgSize.
+func (q *Queue) MaxMsgSize() uint64 {
+	return q.maxMessageSize
 }
