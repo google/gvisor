@@ -380,7 +380,11 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		}
 	} else {
 		// Read inFile to buffer, then write the contents to outFile.
-		buf := make([]byte, count)
+		bufSize := count
+		if count > pipe.DefaultPipeSize {
+			bufSize = count
+		}
+		buf := make([]byte, bufSize)
 		for {
 			var readN int64
 			if offset != -1 {
