@@ -59,6 +59,17 @@ doc(
     permalink = "/blog/2021/08/31/gvisor-rack/",
 )
 
+doc(
+    name = "tune_gvisor_for_production_adoption",
+    src = "2021-12-02-running-gvisor-in-production-at-scale-in-ant.md",
+    authors = [
+        "jianfengt",
+        "yonghe",
+    ],
+    layout = "post",
+    permalink = "/blog/2021/12/02/running-gvisor-in-production-at-scale-in-ant/",
+)
+
 docs(
     name = "posts",
     deps = [
