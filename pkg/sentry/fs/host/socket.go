@@ -156,9 +156,7 @@ func NewSocketWithDirent(ctx context.Context, d *fs.Dirent, f *fd.FD, flags fs.F
 	f.Release()
 
 	e.Init()
-
-	ep := transport.NewExternal(ctx, e.stype, uniqueid.GlobalProviderFromContext(ctx), &q, e, e)
-
+	ep := transport.NewExternal(e.stype, uniqueid.GlobalProviderFromContext(ctx), &q, e, e)
 	return unixsocket.NewWithDirent(ctx, d, ep, e.stype, flags), nil
 }
 
@@ -188,9 +186,7 @@ func newSocket(ctx context.Context, orgfd int, saveable bool) (*fs.File, error) 
 
 	e.srfd = srfd
 	e.Init()
-
-	ep := transport.NewExternal(ctx, e.stype, uniqueid.GlobalProviderFromContext(ctx), &q, e, e)
-
+	ep := transport.NewExternal(e.stype, uniqueid.GlobalProviderFromContext(ctx), &q, e, e)
 	return unixsocket.New(ctx, ep, e.stype), nil
 }
 
@@ -397,4 +393,4 @@ func (c *ConnectedEndpoint) SetReceiveBufferSize(v int64) (newSz int64) {
 	return atomic.LoadInt64(&c.sndbuf)
 }
 
-// LINT.ThenChange(../../fsimpl/host/socket.go)
+// LINT.ThenChange(../../socket/unix/transport/host.go)

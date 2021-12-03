@@ -53,6 +53,7 @@ go_library(
         "//pkg/sentry/fs/lock",
         "//pkg/sentry/fsbridge",
         "//pkg/sentry/fsimpl/eventfd",
+        "//pkg/sentry/fsimpl/host",
         "//pkg/sentry/fsimpl/pipefs",
         "//pkg/sentry/fsimpl/signalfd",
         "//pkg/sentry/fsimpl/timerfd",
@@ -77,5 +78,6 @@ go_library(
         "//pkg/syserr",
         "//pkg/usermem",
         "//pkg/waiter",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
