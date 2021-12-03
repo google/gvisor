@@ -44,6 +44,7 @@ type SocketVFS2 struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.LockFD
+	vfs.SpliceInFD
 
 	socketVFS2Refs
 	socketOpsCommon

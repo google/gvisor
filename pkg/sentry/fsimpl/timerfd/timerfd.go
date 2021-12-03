@@ -36,6 +36,7 @@ type TimerFileDescription struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
+	vfs.NoSpliceInFD
 
 	events waiter.Queue
 	timer  *ktime.Timer

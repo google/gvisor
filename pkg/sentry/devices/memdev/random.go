@@ -53,6 +53,7 @@ type randomFD struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
+	vfs.SpliceInFD
 
 	// off is the "file offset". off is accessed using atomic memory
 	// operations.

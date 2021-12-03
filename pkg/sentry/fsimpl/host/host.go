@@ -649,6 +649,7 @@ type fileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
 	vfs.LockFD
+	vfs.SpliceInFD
 
 	// inode is vfsfd.Dentry().Impl().(*kernfs.Dentry).Inode().(*inode), but
 	// cached to reduce indirections and casting. fileDescription does not hold

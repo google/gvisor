@@ -36,6 +36,7 @@ type socketVFS2 struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
 	vfs.LockFD
+	vfs.SpliceInFD
 
 	// We store metadata for hostinet sockets internally. Technically, we should
 	// access metadata (e.g. through stat, chmod) on the host for correctness,

@@ -60,6 +60,7 @@ type tunFD struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
+	vfs.SpliceInFD
 
 	device tun.Device
 }

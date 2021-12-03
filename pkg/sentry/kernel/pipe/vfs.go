@@ -186,6 +186,7 @@ type VFSPipeFD struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.LockFD
+	vfs.SpliceInFD
 
 	pipe *Pipe
 }

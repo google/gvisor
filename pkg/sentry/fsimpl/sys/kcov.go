@@ -67,6 +67,7 @@ func (i *kcovInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.D
 type kcovFD struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.NoLockFD
+	vfs.SpliceInFD
 
 	vfsfd vfs.FileDescription
 	inode *kcovInode

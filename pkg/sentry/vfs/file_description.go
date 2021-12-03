@@ -473,6 +473,9 @@ type FileDescriptionImpl interface {
 
 	// TestPOSIX returns information about whether the specified lock can be held, in the style of the F_GETLK fcntl.
 	TestPOSIX(ctx context.Context, uid lock.UniqueID, t lock.LockType, r lock.LockRange) (linux.Flock, error)
+
+	// SpliceInSupported returns true if splice into this descriptor is allowed.
+	SpliceInSupported() bool
 }
 
 // Dirent holds the information contained in struct linux_dirent64.

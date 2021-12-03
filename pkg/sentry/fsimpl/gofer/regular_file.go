@@ -45,6 +45,7 @@ func (d *dentry) isRegularFile() bool {
 // +stateify savable
 type regularFileFD struct {
 	fileDescription
+	vfs.SpliceInFD
 
 	// off is the file offset. off is protected by mu.
 	mu  sync.Mutex `state:"nosave"`

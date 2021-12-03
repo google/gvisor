@@ -61,6 +61,7 @@ type queueFD struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.DynamicBytesFileDescriptionImpl
 	vfs.LockFD
+	vfs.NoSpliceInFD
 
 	vfsfd vfs.FileDescription
 	inode kernfs.Inode

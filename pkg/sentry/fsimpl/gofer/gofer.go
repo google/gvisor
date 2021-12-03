@@ -2443,6 +2443,7 @@ type fileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
 	vfs.LockFD
+	vfs.SpliceInFD
 
 	lockLogging sync.Once `state:"nosave"`
 }

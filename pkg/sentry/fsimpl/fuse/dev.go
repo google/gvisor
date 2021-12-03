@@ -57,6 +57,7 @@ type DeviceFD struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
+	vfs.SpliceInFD
 
 	// nextOpID is used to create new requests.
 	nextOpID linux.FUSEOpID
