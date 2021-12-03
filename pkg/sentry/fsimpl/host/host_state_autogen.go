@@ -6,30 +6,6 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (r *ConnectedEndpointRefs) StateTypeName() string {
-	return "pkg/sentry/fsimpl/host.ConnectedEndpointRefs"
-}
-
-func (r *ConnectedEndpointRefs) StateFields() []string {
-	return []string{
-		"refCount",
-	}
-}
-
-func (r *ConnectedEndpointRefs) beforeSave() {}
-
-// +checklocksignore
-func (r *ConnectedEndpointRefs) StateSave(stateSinkObject state.Sink) {
-	r.beforeSave()
-	stateSinkObject.Save(0, &r.refCount)
-}
-
-// +checklocksignore
-func (r *ConnectedEndpointRefs) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(r.afterLoad)
-}
-
 func (v *virtualOwner) StateTypeName() string {
 	return "pkg/sentry/fsimpl/host.virtualOwner"
 }
@@ -247,39 +223,6 @@ func (r *inodeRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
-func (c *ConnectedEndpoint) StateTypeName() string {
-	return "pkg/sentry/fsimpl/host.ConnectedEndpoint"
-}
-
-func (c *ConnectedEndpoint) StateFields() []string {
-	return []string{
-		"ConnectedEndpointRefs",
-		"fd",
-		"addr",
-		"stype",
-	}
-}
-
-func (c *ConnectedEndpoint) beforeSave() {}
-
-// +checklocksignore
-func (c *ConnectedEndpoint) StateSave(stateSinkObject state.Sink) {
-	c.beforeSave()
-	stateSinkObject.Save(0, &c.ConnectedEndpointRefs)
-	stateSinkObject.Save(1, &c.fd)
-	stateSinkObject.Save(2, &c.addr)
-	stateSinkObject.Save(3, &c.stype)
-}
-
-// +checklocksignore
-func (c *ConnectedEndpoint) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &c.ConnectedEndpointRefs)
-	stateSourceObject.Load(1, &c.fd)
-	stateSourceObject.Load(2, &c.addr)
-	stateSourceObject.Load(3, &c.stype)
-	stateSourceObject.AfterLoad(c.afterLoad)
-}
-
 func (t *TTYFileDescription) StateTypeName() string {
 	return "pkg/sentry/fsimpl/host.TTYFileDescription"
 }
@@ -315,13 +258,11 @@ func (t *TTYFileDescription) StateLoad(stateSourceObject state.Source) {
 }
 
 func init() {
-	state.Register((*ConnectedEndpointRefs)(nil))
 	state.Register((*virtualOwner)(nil))
 	state.Register((*inode)(nil))
 	state.Register((*filesystemType)(nil))
 	state.Register((*filesystem)(nil))
 	state.Register((*fileDescription)(nil))
 	state.Register((*inodeRefs)(nil))
-	state.Register((*ConnectedEndpoint)(nil))
 	state.Register((*TTYFileDescription)(nil))
 }

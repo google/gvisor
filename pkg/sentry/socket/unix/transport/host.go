@@ -1,4 +1,4 @@
-// Copyright 2020 The gVisor Authors.
+// Copyright 2021 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package host
+package transport
 
 import (
 	"fmt"
@@ -24,9 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/socket/control"
-	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
-	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -34,32 +31,37 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// Create a new host-backed endpoint from the given fd and its corresponding
-// notification queue.
-func newEndpoint(ctx context.Context, hostFD int, queue *waiter.Queue) (transport.Endpoint, error) {
-	// Set up an external transport.Endpoint using the host fd.
-	addr := fmt.Sprintf("hostfd:[%d]", hostFD)
-	e, err := NewConnectedEndpoint(hostFD, addr)
-	if err != nil {
-		return nil, err.ToError()
-	}
-	ep := transport.NewExternal(ctx, e.stype, uniqueid.GlobalProviderFromContext(ctx), queue, e, e)
-	return ep, nil
+// SCMRights implements RightsControlMessage with host FDs.
+type SCMRights struct {
+	FDs []int
 }
 
-// ConnectedEndpoint is an implementation of transport.ConnectedEndpoint and
-// transport.Receiver. It is backed by a host fd that was imported at sentry
-// startup. This fd is shared with a hostfs inode, which retains ownership of
-// it.
+// Clone implements RightsControlMessage.Clone.
+func (c *SCMRights) Clone() RightsControlMessage {
+	// Host rights never need to be cloned.
+	return nil
+}
+
+// Release implements RightsControlMessage.Release.
+func (c *SCMRights) Release(ctx context.Context) {
+	for _, fd := range c.FDs {
+		unix.Close(fd)
+	}
+	c.FDs = nil
+}
+
+// HostConnectedEndpoint is an implementation of ConnectedEndpoint and
+// Receiver. It is backed by a host fd that was imported at sentry startup.
+// This fd is shared with a hostfs inode, which retains ownership of it.
 //
-// ConnectedEndpoint is saveable, since we expect that the host will provide
-// the same fd upon restore.
+// HostConnectedEndpoint is saveable, since we expect that the host will
+// provide the same fd upon restore.
 //
 // As of this writing, we only allow Unix sockets to be imported.
 //
 // +stateify savable
-type ConnectedEndpoint struct {
-	ConnectedEndpointRefs
+type HostConnectedEndpoint struct {
+	HostConnectedEndpointRefs
 
 	// mu protects fd below.
 	mu sync.RWMutex `state:"nosave"`
@@ -82,14 +84,14 @@ type ConnectedEndpoint struct {
 	stype linux.SockType
 }
 
-// init performs initialization required for creating new ConnectedEndpoints and
-// for restoring them.
-func (c *ConnectedEndpoint) init() *syserr.Error {
+// init performs initialization required for creating new
+// HostConnectedEndpoints and for restoring them.
+func (c *HostConnectedEndpoint) init() *syserr.Error {
 	c.InitRefs()
 	return c.initFromOptions()
 }
 
-func (c *ConnectedEndpoint) initFromOptions() *syserr.Error {
+func (c *HostConnectedEndpoint) initFromOptions() *syserr.Error {
 	family, err := unix.GetsockoptInt(c.fd, unix.SOL_SOCKET, unix.SO_DOMAIN)
 	if err != nil {
 		return syserr.FromError(err)
@@ -120,14 +122,14 @@ func (c *ConnectedEndpoint) initFromOptions() *syserr.Error {
 	return nil
 }
 
-// NewConnectedEndpoint creates a new ConnectedEndpoint backed by a host fd
-// imported at sentry startup,
+// NewHostConnectedEndpoint creates a new HostConnectedEndpoint backed by a
+// host fd imported at sentry startup.
 //
-// The caller is responsible for calling Init(). Additionaly, Release needs to
-// be called twice because ConnectedEndpoint is both a transport.Receiver and
-// transport.ConnectedEndpoint.
-func NewConnectedEndpoint(hostFD int, addr string) (*ConnectedEndpoint, *syserr.Error) {
-	e := ConnectedEndpoint{
+// The caller is responsible for calling Init(). Additionally, Release needs to
+// be called twice because HostConnectedEndpoint is both a Receiver and
+// HostConnectedEndpoint.
+func NewHostConnectedEndpoint(hostFD int, addr string) (*HostConnectedEndpoint, *syserr.Error) {
+	e := HostConnectedEndpoint{
 		fd:   hostFD,
 		addr: addr,
 	}
@@ -136,13 +138,18 @@ func NewConnectedEndpoint(hostFD int, addr string) (*ConnectedEndpoint, *syserr.
 		return nil, err
 	}
 
-	// ConnectedEndpointRefs start off with a single reference. We need two.
+	// HostConnectedEndpointRefs start off with a single reference. We need two.
 	e.IncRef()
 	return &e, nil
 }
 
-// Send implements transport.ConnectedEndpoint.Send.
-func (c *ConnectedEndpoint) Send(ctx context.Context, data [][]byte, controlMessages transport.ControlMessages, from tcpip.FullAddress) (int64, bool, *syserr.Error) {
+// SockType returns the underlying socket type.
+func (c *HostConnectedEndpoint) SockType() linux.SockType {
+	return c.stype
+}
+
+// Send implements ConnectedEndpoint.Send.
+func (c *HostConnectedEndpoint) Send(ctx context.Context, data [][]byte, controlMessages ControlMessages, from tcpip.FullAddress) (int64, bool, *syserr.Error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -172,11 +179,11 @@ func (c *ConnectedEndpoint) Send(ctx context.Context, data [][]byte, controlMess
 	return n, false, syserr.FromError(err)
 }
 
-// SendNotify implements transport.ConnectedEndpoint.SendNotify.
-func (c *ConnectedEndpoint) SendNotify() {}
+// SendNotify implements ConnectedEndpoint.SendNotify.
+func (c *HostConnectedEndpoint) SendNotify() {}
 
-// CloseSend implements transport.ConnectedEndpoint.CloseSend.
-func (c *ConnectedEndpoint) CloseSend() {
+// CloseSend implements ConnectedEndpoint.CloseSend.
+func (c *HostConnectedEndpoint) CloseSend() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -187,30 +194,30 @@ func (c *ConnectedEndpoint) CloseSend() {
 	}
 }
 
-// CloseNotify implements transport.ConnectedEndpoint.CloseNotify.
-func (c *ConnectedEndpoint) CloseNotify() {}
+// CloseNotify implements ConnectedEndpoint.CloseNotify.
+func (c *HostConnectedEndpoint) CloseNotify() {}
 
-// Writable implements transport.ConnectedEndpoint.Writable.
-func (c *ConnectedEndpoint) Writable() bool {
+// Writable implements ConnectedEndpoint.Writable.
+func (c *HostConnectedEndpoint) Writable() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	return fdnotifier.NonBlockingPoll(int32(c.fd), waiter.WritableEvents)&waiter.WritableEvents != 0
 }
 
-// Passcred implements transport.ConnectedEndpoint.Passcred.
-func (c *ConnectedEndpoint) Passcred() bool {
+// Passcred implements ConnectedEndpoint.Passcred.
+func (c *HostConnectedEndpoint) Passcred() bool {
 	// We don't support credential passing for host sockets.
 	return false
 }
 
-// GetLocalAddress implements transport.ConnectedEndpoint.GetLocalAddress.
-func (c *ConnectedEndpoint) GetLocalAddress() (tcpip.FullAddress, tcpip.Error) {
+// GetLocalAddress implements ConnectedEndpoint.GetLocalAddress.
+func (c *HostConnectedEndpoint) GetLocalAddress() (tcpip.FullAddress, tcpip.Error) {
 	return tcpip.FullAddress{Addr: tcpip.Address(c.addr)}, nil
 }
 
-// EventUpdate implements transport.ConnectedEndpoint.EventUpdate.
-func (c *ConnectedEndpoint) EventUpdate() {
+// EventUpdate implements ConnectedEndpoint.EventUpdate.
+func (c *HostConnectedEndpoint) EventUpdate() {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if c.fd != -1 {
@@ -218,8 +225,8 @@ func (c *ConnectedEndpoint) EventUpdate() {
 	}
 }
 
-// Recv implements transport.Receiver.Recv.
-func (c *ConnectedEndpoint) Recv(ctx context.Context, data [][]byte, creds bool, numRights int, peek bool) (int64, int64, transport.ControlMessages, bool, tcpip.FullAddress, bool, *syserr.Error) {
+// Recv implements Receiver.Recv.
+func (c *HostConnectedEndpoint) Recv(ctx context.Context, data [][]byte, creds bool, numRights int, peek bool) (int64, int64, ControlMessages, bool, tcpip.FullAddress, bool, *syserr.Error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -238,7 +245,7 @@ func (c *ConnectedEndpoint) Recv(ctx context.Context, data [][]byte, creds bool,
 		err = nil
 	}
 	if err != nil {
-		return 0, 0, transport.ControlMessages{}, false, tcpip.FullAddress{}, false, syserr.FromError(err)
+		return 0, 0, ControlMessages{}, false, tcpip.FullAddress{}, false, syserr.FromError(err)
 	}
 
 	// There is no need for the callee to call RecvNotify because fdReadVec uses
@@ -251,25 +258,25 @@ func (c *ConnectedEndpoint) Recv(ctx context.Context, data [][]byte, creds bool,
 
 	// Avoid extra allocations in the case where there isn't any control data.
 	if len(cm) == 0 {
-		return rl, ml, transport.ControlMessages{}, cTrunc, tcpip.FullAddress{Addr: tcpip.Address(c.addr)}, false, nil
+		return rl, ml, ControlMessages{}, cTrunc, tcpip.FullAddress{Addr: tcpip.Address(c.addr)}, false, nil
 	}
 
 	fds, err := cm.ExtractFDs()
 	if err != nil {
-		return 0, 0, transport.ControlMessages{}, false, tcpip.FullAddress{}, false, syserr.FromError(err)
+		return 0, 0, ControlMessages{}, false, tcpip.FullAddress{}, false, syserr.FromError(err)
 	}
 
 	if len(fds) == 0 {
-		return rl, ml, transport.ControlMessages{}, cTrunc, tcpip.FullAddress{Addr: tcpip.Address(c.addr)}, false, nil
+		return rl, ml, ControlMessages{}, cTrunc, tcpip.FullAddress{Addr: tcpip.Address(c.addr)}, false, nil
 	}
-	return rl, ml, control.NewVFS2(nil, nil, newSCMRights(fds)), cTrunc, tcpip.FullAddress{Addr: tcpip.Address(c.addr)}, false, nil
+	return rl, ml, ControlMessages{Rights: &SCMRights{fds}}, cTrunc, tcpip.FullAddress{Addr: tcpip.Address(c.addr)}, false, nil
 }
 
-// RecvNotify implements transport.Receiver.RecvNotify.
-func (c *ConnectedEndpoint) RecvNotify() {}
+// RecvNotify implements Receiver.RecvNotify.
+func (c *HostConnectedEndpoint) RecvNotify() {}
 
-// CloseRecv implements transport.Receiver.CloseRecv.
-func (c *ConnectedEndpoint) CloseRecv() {
+// CloseRecv implements Receiver.CloseRecv.
+func (c *HostConnectedEndpoint) CloseRecv() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -280,47 +287,46 @@ func (c *ConnectedEndpoint) CloseRecv() {
 	}
 }
 
-// Readable implements transport.Receiver.Readable.
-func (c *ConnectedEndpoint) Readable() bool {
+// Readable implements Receiver.Readable.
+func (c *HostConnectedEndpoint) Readable() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	return fdnotifier.NonBlockingPoll(int32(c.fd), waiter.ReadableEvents)&waiter.ReadableEvents != 0
 }
 
-// SendQueuedSize implements transport.Receiver.SendQueuedSize.
-func (c *ConnectedEndpoint) SendQueuedSize() int64 {
+// SendQueuedSize implements Receiver.SendQueuedSize.
+func (c *HostConnectedEndpoint) SendQueuedSize() int64 {
 	// TODO(gvisor.dev/issue/273): SendQueuedSize isn't supported for host
 	// sockets because we don't allow the sentry to call ioctl(2).
 	return -1
 }
 
-// RecvQueuedSize implements transport.Receiver.RecvQueuedSize.
-func (c *ConnectedEndpoint) RecvQueuedSize() int64 {
+// RecvQueuedSize implements Receiver.RecvQueuedSize.
+func (c *HostConnectedEndpoint) RecvQueuedSize() int64 {
 	// TODO(gvisor.dev/issue/273): RecvQueuedSize isn't supported for host
 	// sockets because we don't allow the sentry to call ioctl(2).
 	return -1
 }
 
-// SendMaxQueueSize implements transport.Receiver.SendMaxQueueSize.
-func (c *ConnectedEndpoint) SendMaxQueueSize() int64 {
+// SendMaxQueueSize implements Receiver.SendMaxQueueSize.
+func (c *HostConnectedEndpoint) SendMaxQueueSize() int64 {
 	return atomic.LoadInt64(&c.sndbuf)
 }
 
-// RecvMaxQueueSize implements transport.Receiver.RecvMaxQueueSize.
-func (c *ConnectedEndpoint) RecvMaxQueueSize() int64 {
+// RecvMaxQueueSize implements Receiver.RecvMaxQueueSize.
+func (c *HostConnectedEndpoint) RecvMaxQueueSize() int64 {
 	// N.B. Unix sockets don't use the receive buffer. We'll claim it is
 	// the same size as the send buffer.
 	return atomic.LoadInt64(&c.sndbuf)
 }
 
-func (c *ConnectedEndpoint) destroyLocked() {
+func (c *HostConnectedEndpoint) destroyLocked() {
 	c.fd = -1
 }
 
-// Release implements transport.ConnectedEndpoint.Release and
-// transport.Receiver.Release.
-func (c *ConnectedEndpoint) Release(ctx context.Context) {
+// Release implements ConnectedEndpoint.Release and Receiver.Release.
+func (c *HostConnectedEndpoint) Release(ctx context.Context) {
 	c.DecRef(func() {
 		c.mu.Lock()
 		c.destroyLocked()
@@ -328,18 +334,18 @@ func (c *ConnectedEndpoint) Release(ctx context.Context) {
 	})
 }
 
-// CloseUnread implements transport.ConnectedEndpoint.CloseUnread.
-func (c *ConnectedEndpoint) CloseUnread() {}
+// CloseUnread implements ConnectedEndpoint.CloseUnread.
+func (c *HostConnectedEndpoint) CloseUnread() {}
 
-// SetSendBufferSize implements transport.ConnectedEndpoint.SetSendBufferSize.
-func (c *ConnectedEndpoint) SetSendBufferSize(v int64) (newSz int64) {
+// SetSendBufferSize implements ConnectedEndpoint.SetSendBufferSize.
+func (c *HostConnectedEndpoint) SetSendBufferSize(v int64) (newSz int64) {
 	// gVisor does not permit setting of SO_SNDBUF for host backed unix
 	// domain sockets.
 	return atomic.LoadInt64(&c.sndbuf)
 }
 
-// SetReceiveBufferSize implements transport.ConnectedEndpoint.SetReceiveBufferSize.
-func (c *ConnectedEndpoint) SetReceiveBufferSize(v int64) (newSz int64) {
+// SetReceiveBufferSize implements ConnectedEndpoint.SetReceiveBufferSize.
+func (c *HostConnectedEndpoint) SetReceiveBufferSize(v int64) (newSz int64) {
 	// gVisor does not permit setting of SO_RCVBUF for host backed unix
 	// domain sockets. Receive buffer does not have any effect for unix
 	// sockets and we claim to be the same as send buffer.
@@ -347,13 +353,13 @@ func (c *ConnectedEndpoint) SetReceiveBufferSize(v int64) (newSz int64) {
 }
 
 // SCMConnectedEndpoint represents an endpoint backed by a host fd that was
-// passed through a gofer Unix socket. It resembles ConnectedEndpoint, with the
+// passed through a gofer Unix socket. It resembles HostConnectedEndpoint, with the
 // following differences:
 // - SCMConnectedEndpoint is not saveable, because the host cannot guarantee
 // the same descriptor number across S/R.
 // - SCMConnectedEndpoint holds ownership of its fd and notification queue.
 type SCMConnectedEndpoint struct {
-	ConnectedEndpoint
+	HostConnectedEndpoint
 
 	queue *waiter.Queue
 }
@@ -363,8 +369,7 @@ func (e *SCMConnectedEndpoint) Init() error {
 	return fdnotifier.AddFD(int32(e.fd), e.queue)
 }
 
-// Release implements transport.ConnectedEndpoint.Release and
-// transport.Receiver.Release.
+// Release implements ConnectedEndpoint.Release and Receiver.Release.
 func (e *SCMConnectedEndpoint) Release(ctx context.Context) {
 	e.DecRef(func() {
 		e.mu.Lock()
@@ -381,11 +386,11 @@ func (e *SCMConnectedEndpoint) Release(ctx context.Context) {
 // was passed through a Unix socket.
 //
 // The caller is responsible for calling Init(). Additionaly, Release needs to
-// be called twice because ConnectedEndpoint is both a transport.Receiver and
-// transport.ConnectedEndpoint.
-func NewSCMEndpoint(ctx context.Context, hostFD int, queue *waiter.Queue, addr string) (*SCMConnectedEndpoint, *syserr.Error) {
+// be called twice because ConnectedEndpoint is both a Receiver and
+// ConnectedEndpoint.
+func NewSCMEndpoint(hostFD int, queue *waiter.Queue, addr string) (*SCMConnectedEndpoint, *syserr.Error) {
 	e := SCMConnectedEndpoint{
-		ConnectedEndpoint: ConnectedEndpoint{
+		HostConnectedEndpoint: HostConnectedEndpoint{
 			fd:   hostFD,
 			addr: addr,
 		},

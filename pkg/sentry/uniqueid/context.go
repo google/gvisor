@@ -18,7 +18,6 @@ package uniqueid
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 )
 
 // contextID is the kernel package's type for context.Context.Value keys.
@@ -38,14 +37,21 @@ const (
 	CtxInotifyCookie
 )
 
+// Provider generates a sequence of unique identifiers useful for,
+// among other things, lock ordering.
+type Provider interface {
+	// UniqueID returns a new unique identifier.
+	UniqueID() uint64
+}
+
 // GlobalFromContext returns a system-wide unique identifier from ctx.
 func GlobalFromContext(ctx context.Context) uint64 {
 	return ctx.Value(CtxGlobalUniqueID).(uint64)
 }
 
 // GlobalProviderFromContext returns a system-wide unique identifier from ctx.
-func GlobalProviderFromContext(ctx context.Context) transport.UniqueIDProvider {
-	return ctx.Value(CtxGlobalUniqueIDProvider).(transport.UniqueIDProvider)
+func GlobalProviderFromContext(ctx context.Context) Provider {
+	return ctx.Value(CtxGlobalUniqueIDProvider).(Provider)
 }
 
 // InotifyCookie generates a unique inotify event cookie from ctx.

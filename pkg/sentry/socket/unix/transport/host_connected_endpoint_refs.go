@@ -1,4 +1,4 @@
-package host
+package transport
 
 import (
 	"fmt"
@@ -11,11 +11,11 @@ import (
 // stack traces). This is false by default and should only be set to true for
 // debugging purposes, as it can generate an extremely large amount of output
 // and drastically degrade performance.
-const ConnectedEndpointenableLogging = false
+const HostConnectedEndpointenableLogging = false
 
 // obj is used to customize logging. Note that we use a pointer to T so that
 // we do not copy the entire object when passed as a format parameter.
-var ConnectedEndpointobj *ConnectedEndpoint
+var HostConnectedEndpointobj *HostConnectedEndpoint
 
 // Refs implements refs.RefCounter. It keeps a reference count using atomic
 // operations and calls the destructor when the count reaches zero.
@@ -29,7 +29,7 @@ var ConnectedEndpointobj *ConnectedEndpoint
 // interfaces manually.
 //
 // +stateify savable
-type ConnectedEndpointRefs struct {
+type HostConnectedEndpointRefs struct {
 	// refCount is composed of two fields:
 	//
 	//	[32-bit speculative references]:[32-bit real references]
@@ -42,38 +42,38 @@ type ConnectedEndpointRefs struct {
 
 // InitRefs initializes r with one reference and, if enabled, activates leak
 // checking.
-func (r *ConnectedEndpointRefs) InitRefs() {
+func (r *HostConnectedEndpointRefs) InitRefs() {
 	atomic.StoreInt64(&r.refCount, 1)
 	refsvfs2.Register(r)
 }
 
 // RefType implements refsvfs2.CheckedObject.RefType.
-func (r *ConnectedEndpointRefs) RefType() string {
-	return fmt.Sprintf("%T", ConnectedEndpointobj)[1:]
+func (r *HostConnectedEndpointRefs) RefType() string {
+	return fmt.Sprintf("%T", HostConnectedEndpointobj)[1:]
 }
 
 // LeakMessage implements refsvfs2.CheckedObject.LeakMessage.
-func (r *ConnectedEndpointRefs) LeakMessage() string {
+func (r *HostConnectedEndpointRefs) LeakMessage() string {
 	return fmt.Sprintf("[%s %p] reference count of %d instead of 0", r.RefType(), r, r.ReadRefs())
 }
 
 // LogRefs implements refsvfs2.CheckedObject.LogRefs.
-func (r *ConnectedEndpointRefs) LogRefs() bool {
-	return ConnectedEndpointenableLogging
+func (r *HostConnectedEndpointRefs) LogRefs() bool {
+	return HostConnectedEndpointenableLogging
 }
 
 // ReadRefs returns the current number of references. The returned count is
 // inherently racy and is unsafe to use without external synchronization.
-func (r *ConnectedEndpointRefs) ReadRefs() int64 {
+func (r *HostConnectedEndpointRefs) ReadRefs() int64 {
 	return atomic.LoadInt64(&r.refCount)
 }
 
 // IncRef implements refs.RefCounter.IncRef.
 //
 //go:nosplit
-func (r *ConnectedEndpointRefs) IncRef() {
+func (r *HostConnectedEndpointRefs) IncRef() {
 	v := atomic.AddInt64(&r.refCount, 1)
-	if ConnectedEndpointenableLogging {
+	if HostConnectedEndpointenableLogging {
 		refsvfs2.LogIncRef(r, v)
 	}
 	if v <= 1 {
@@ -88,7 +88,7 @@ func (r *ConnectedEndpointRefs) IncRef() {
 // other TryIncRef calls from genuine references held.
 //
 //go:nosplit
-func (r *ConnectedEndpointRefs) TryIncRef() bool {
+func (r *HostConnectedEndpointRefs) TryIncRef() bool {
 	const speculativeRef = 1 << 32
 	if v := atomic.AddInt64(&r.refCount, speculativeRef); int32(v) == 0 {
 
@@ -97,7 +97,7 @@ func (r *ConnectedEndpointRefs) TryIncRef() bool {
 	}
 
 	v := atomic.AddInt64(&r.refCount, -speculativeRef+1)
-	if ConnectedEndpointenableLogging {
+	if HostConnectedEndpointenableLogging {
 		refsvfs2.LogTryIncRef(r, v)
 	}
 	return true
@@ -115,9 +115,9 @@ func (r *ConnectedEndpointRefs) TryIncRef() bool {
 //	A: TryIncRef [transform speculative to real]
 //
 //go:nosplit
-func (r *ConnectedEndpointRefs) DecRef(destroy func()) {
+func (r *HostConnectedEndpointRefs) DecRef(destroy func()) {
 	v := atomic.AddInt64(&r.refCount, -1)
-	if ConnectedEndpointenableLogging {
+	if HostConnectedEndpointenableLogging {
 		refsvfs2.LogDecRef(r, v)
 	}
 	switch {
@@ -133,7 +133,7 @@ func (r *ConnectedEndpointRefs) DecRef(destroy func()) {
 	}
 }
 
-func (r *ConnectedEndpointRefs) afterLoad() {
+func (r *HostConnectedEndpointRefs) afterLoad() {
 	if r.ReadRefs() > 0 {
 		refsvfs2.Register(r)
 	}

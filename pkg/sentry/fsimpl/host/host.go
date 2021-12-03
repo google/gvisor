@@ -36,6 +36,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	unixsocket "gvisor.dev/gvisor/pkg/sentry/socket/unix"
+	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
+	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -625,6 +627,19 @@ func (i *inode) open(ctx context.Context, d *kernfs.Dentry, mnt *vfs.Mount, file
 		log.Warningf("cannot import host fd %d with file type %o", i.hostFD, fileType)
 		return nil, linuxerr.EPERM
 	}
+}
+
+// Create a new host-backed endpoint from the given fd and its corresponding
+// notification queue.
+func newEndpoint(ctx context.Context, hostFD int, queue *waiter.Queue) (transport.Endpoint, error) {
+	// Set up an external transport.Endpoint using the host fd.
+	addr := fmt.Sprintf("hostfd:[%d]", hostFD)
+	e, err := transport.NewHostConnectedEndpoint(hostFD, addr)
+	if err != nil {
+		return nil, err.ToError()
+	}
+	ep := transport.NewExternal(e.SockType(), uniqueid.GlobalProviderFromContext(ctx), queue, e, e)
+	return ep, nil
 }
 
 // fileDescription is embedded by host fd implementations of FileDescriptionImpl.

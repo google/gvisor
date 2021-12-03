@@ -126,11 +126,3 @@ func PackRightsVFS2(t *kernel.Task, rights SCMRightsVFS2, cloexec bool, buf []by
 	align := t.Arch().Width()
 	return putCmsg(buf, flags, linux.SCM_RIGHTS, align, fds)
 }
-
-// NewVFS2 creates default control messages if needed.
-func NewVFS2(t *kernel.Task, socketOrEndpoint interface{}, rights SCMRightsVFS2) transport.ControlMessages {
-	return transport.ControlMessages{
-		Credentials: makeCreds(t, socketOrEndpoint),
-		Rights:      rights,
-	}
-}
