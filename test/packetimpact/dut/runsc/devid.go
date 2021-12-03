@@ -21,15 +21,14 @@ package main
 import (
 	"fmt"
 	"log"
+	"net"
 	"os"
-
-	"github.com/vishvananda/netlink"
 )
 
 func main() {
-	link, err := netlink.LinkByName(os.Args[1])
+	iface, err := net.InterfaceByName(os.Args[1])
 	if err != nil {
-		log.Fatalf("could not find the link: %s", err)
+		log.Fatalf("could not find link %s: %s", os.Args[1], err)
 	}
-	fmt.Printf("%d", link.Attrs().Index)
+	fmt.Printf("%d", iface.Index)
 }

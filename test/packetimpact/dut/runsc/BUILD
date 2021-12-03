@@ -29,5 +29,4 @@ go_binary(
     name = "devid",
     testonly = True,
     srcs = ["devid.go"],
-    deps = ["@com_github_vishvananda_netlink//:go_default_library"],
 )
