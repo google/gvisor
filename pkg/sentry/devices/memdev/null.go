@@ -48,6 +48,7 @@ type nullFD struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
+	vfs.SpliceInFD
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.

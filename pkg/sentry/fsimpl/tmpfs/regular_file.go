@@ -332,6 +332,7 @@ func (*regularFile) InvalidateUnsavable(context.Context) error {
 // +stateify savable
 type regularFileFD struct {
 	fileDescription
+	vfs.SpliceInFD
 
 	// off is the file offset. off is accessed using atomic memory operations.
 	// offMu serializes operations that may mutate off.

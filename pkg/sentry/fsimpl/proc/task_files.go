@@ -434,6 +434,7 @@ type memFD struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
 	vfs.LockFD
+	vfs.SpliceInFD
 
 	inode *memInode
 
@@ -678,6 +679,7 @@ type statusFD struct {
 	statusFDLowerBase
 	vfs.DynamicBytesFileDescriptionImpl
 	vfs.LockFD
+	vfs.NoSpliceInFD
 
 	vfsfd vfs.FileDescription
 
@@ -1173,6 +1175,7 @@ func (i *namespaceInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *ker
 type namespaceFD struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.LockFD
+	vfs.NoSpliceInFD
 
 	vfsfd vfs.FileDescription
 	inode *namespaceInode

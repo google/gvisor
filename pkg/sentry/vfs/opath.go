@@ -31,6 +31,7 @@ type opathFD struct {
 	vfsfd FileDescription
 	FileDescriptionDefaultImpl
 	BadLockFD
+	NoSpliceInFD
 }
 
 // Release implements FileDescriptionImpl.Release.

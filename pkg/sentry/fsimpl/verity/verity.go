@@ -989,6 +989,7 @@ func (d *dentry) readlink(ctx context.Context) (string, error) {
 type fileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
+	vfs.NoSpliceInFD
 
 	// d is the corresponding dentry to the fileDescription.
 	d *dentry

@@ -50,6 +50,7 @@ func (d *dentry) readlink(ctx context.Context) (string, error) {
 // +stateify savable
 type regularFileFD struct {
 	fileDescription
+	vfs.SpliceInFD
 
 	// If copiedUp is false, cachedFD represents
 	// fileDescription.dentry().lowerVDs[0]; otherwise, cachedFD represents

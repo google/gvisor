@@ -29,6 +29,7 @@ import (
 
 type regularFileFD struct {
 	fileDescription
+	vfs.SpliceInFD
 
 	// off is the file offset.
 	off int64

@@ -102,6 +102,7 @@ type replicaFileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
 	vfs.LockFD
+	vfs.NoSpliceInFD
 
 	inode *replicaInode
 }

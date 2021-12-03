@@ -199,6 +199,11 @@ func (DirectoryFileDescriptionDefaultImpl) Write(ctx context.Context, src userme
 	return 0, linuxerr.EISDIR
 }
 
+// SpliceInSupported implements FileDescriptionImpl.SpliceInSupported.
+func (DirectoryFileDescriptionDefaultImpl) SpliceInSupported() bool {
+	return false
+}
+
 // DentryMetadataFileDescriptionImpl may be embedded by implementations of
 // FileDescriptionImpl for which FileDescriptionOptions.UseDentryMetadata is
 // true to obtain implementations of Stat and SetStat that panic.
@@ -529,4 +534,26 @@ func (BadLockFD) UnlockPOSIX(ctx context.Context, uid fslock.UniqueID, r fslock.
 // TestPOSIX implements FileDescriptionImpl.TestPOSIX.
 func (BadLockFD) TestPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, r fslock.LockRange) (linux.Flock, error) {
 	return linux.Flock{}, linuxerr.EBADF
+}
+
+// SpliceInFD implements SpliceInSupported of FileDescriptionImpl interface
+// returning true.
+//
+// +stateify savable
+type SpliceInFD struct{}
+
+// SpliceInSupported implements FileDescriptionImpl.SpliceInSupported.
+func (SpliceInFD) SpliceInSupported() bool {
+	return true
+}
+
+// NoSpliceInFD implements SpliceInSupported of FileDescriptionImpl interface
+// returning false.
+//
+// +stateify savable
+type NoSpliceInFD struct{}
+
+// SpliceInSupported implements FileDescriptionImpl.SpliceInSupported.
+func (NoSpliceInFD) SpliceInSupported() bool {
+	return false
 }

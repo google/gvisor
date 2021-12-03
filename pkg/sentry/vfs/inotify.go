@@ -58,6 +58,7 @@ type Inotify struct {
 	FileDescriptionDefaultImpl
 	DentryMetadataFileDescriptionImpl
 	NoLockFD
+	NoSpliceInFD
 
 	// Unique identifier for this inotify instance. We don't just reuse the
 	// inotify fd because fds can be duped. These should not be exposed to the

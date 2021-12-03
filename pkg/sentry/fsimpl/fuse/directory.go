@@ -28,6 +28,7 @@ import (
 
 type directoryFD struct {
 	fileDescription
+	vfs.NoSpliceInFD
 }
 
 // Allocate implements directoryFD.Allocate.

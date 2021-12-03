@@ -34,6 +34,7 @@ type SignalFileDescription struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
+	vfs.NoSpliceInFD
 
 	// target is the original signal target task.
 	//

@@ -89,6 +89,7 @@ type DynamicBytesFD struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.DynamicBytesFileDescriptionImpl
 	vfs.LockFD
+	vfs.NoSpliceInFD
 
 	vfsfd vfs.FileDescription
 	inode Inode
