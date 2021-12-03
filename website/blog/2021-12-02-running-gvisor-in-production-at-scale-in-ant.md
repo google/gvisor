@@ -25,11 +25,13 @@ overhead; another 25% have <3% overhead. Some of our most valued application are
 the focus of our optimization, and get even better performance compared with
 runc.
 
-The rest of this blog is organized as follows: - First, we analyze the cost of
-different syscall paths in gVisor. - Then, a way to profile a whole picture of a
-instance is proposed to find out if some slow syscall paths are encountered. -
-Some invisible overhead in Go runtime is discussed. - At last, a short summary
-on performance optimization with some other factors on production adoption.
+The rest of this blog is organized as follows:
+*  First, we analyze the cost of different syscall paths in gVisor.
+*  Then, a way to profile a whole picture of a instance is proposed to find out
+   if some slow syscall paths are encountered. Some invisible overhead in Go
+   runtime is discussed.
+*  At last, a short summary on performance optimization with some other factors
+   on production adoption.
 
 For convenience of discussion, we are targeting KVM-based, or hypervisor-based
 platforms, unless explicitly stated.
@@ -114,14 +116,14 @@ on a Intel(R) Xeon(R) CPU E5-2650 v2 platform, using
 As we can see, for KVM platform, the syscall interception costs more than 10x
 than a native Linux syscall.
 
-             | getpid benchmark (ns)
+getpid       | benchmark (ns)
 ------------ | ---------------------
 Native       | 62
 Native-KPTI  | 236
 runsc-KVM    | 830
 runsc-ptrace | 6249
 
-*   "Native" stands for using vanilla linux kernel.
+\*   "Native" stands for using vanilla linux kernel.
 
 To understand the structural cost of syscall interception, we did a
 [quantitative analysis](https://github.com/google/gvisor/issues/2354) on kvm
