@@ -394,7 +394,6 @@ benchmark-platforms: load-benchmarks $(RUNTIME_BIN) ## Runs benchmarks for runc 
 	@set -xe; for PLATFORM in $$($(RUNTIME_BIN) help platforms); do \
 	  export PLATFORM; \
 	  $(call run_benchmark,$${PLATFORM},--platform=$${PLATFORM} $(BENCH_RUNTIME_ARGS) --vfs2); \
-	  $(call run_benchmark,$${PLATFORM}_vfs1,--platform=$${PLATFORM} $(BENCH_RUNTIME_ARGS)); \
 	done
 	@$(call run_benchmark,runc)
 .PHONY: benchmark-platforms
