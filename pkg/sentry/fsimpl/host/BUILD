@@ -14,30 +14,14 @@ go_template_instance(
     },
 )
 
-go_template_instance(
-    name = "connected_endpoint_refs",
-    out = "connected_endpoint_refs.go",
-    package = "host",
-    prefix = "ConnectedEndpoint",
-    template = "//pkg/refsvfs2:refs_template",
-    types = {
-        "T": "ConnectedEndpoint",
-    },
-)
-
 go_library(
     name = "host",
     srcs = [
-        "connected_endpoint_refs.go",
-        "control.go",
         "host.go",
         "host_unsafe.go",
         "inode_refs.go",
         "ioctl_unsafe.go",
         "save_restore.go",
-        "socket.go",
-        "socket_iovec.go",
-        "socket_unsafe.go",
         "tty.go",
         "util.go",
         "util_unsafe.go",

@@ -17,18 +17,12 @@ package transport
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
-
-// UniqueIDProvider generates a sequence of unique identifiers useful for,
-// among other things, lock ordering.
-type UniqueIDProvider interface {
-	// UniqueID returns a new unique identifier.
-	UniqueID() uint64
-}
 
 // A ConnectingEndpoint is a connectioned unix endpoint that is attempting to
 // establish a bidirectional connection with a BoundEndpoint.
@@ -96,7 +90,7 @@ type connectionedEndpoint struct {
 	id uint64
 
 	// idGenerator is used to generate new unique endpoint identifiers.
-	idGenerator UniqueIDProvider
+	idGenerator uniqueid.Provider
 
 	// stype is used by connecting sockets to ensure that they are the
 	// same type. The value is typically either tcpip.SockSeqpacket or
@@ -117,11 +111,11 @@ var (
 )
 
 // NewConnectioned creates a new unbound connectionedEndpoint.
-func NewConnectioned(ctx context.Context, stype linux.SockType, uid UniqueIDProvider) Endpoint {
+func NewConnectioned(ctx context.Context, stype linux.SockType, uid uniqueid.Provider) Endpoint {
 	return newConnectioned(ctx, stype, uid)
 }
 
-func newConnectioned(ctx context.Context, stype linux.SockType, uid UniqueIDProvider) *connectionedEndpoint {
+func newConnectioned(ctx context.Context, stype linux.SockType, uid uniqueid.Provider) *connectionedEndpoint {
 	ep := &connectionedEndpoint{
 		baseEndpoint: baseEndpoint{Queue: &waiter.Queue{}},
 		id:           uid.UniqueID(),
@@ -136,7 +130,7 @@ func newConnectioned(ctx context.Context, stype linux.SockType, uid UniqueIDProv
 }
 
 // NewPair allocates a new pair of connected unix-domain connectionedEndpoints.
-func NewPair(ctx context.Context, stype linux.SockType, uid UniqueIDProvider) (Endpoint, Endpoint) {
+func NewPair(ctx context.Context, stype linux.SockType, uid uniqueid.Provider) (Endpoint, Endpoint) {
 	a := newConnectioned(ctx, stype, uid)
 	b := newConnectioned(ctx, stype, uid)
 
@@ -169,7 +163,7 @@ func NewPair(ctx context.Context, stype linux.SockType, uid UniqueIDProvider) (E
 
 // NewExternal creates a new externally backed Endpoint. It behaves like a
 // socketpair.
-func NewExternal(ctx context.Context, stype linux.SockType, uid UniqueIDProvider, queue *waiter.Queue, receiver Receiver, connected ConnectedEndpoint) Endpoint {
+func NewExternal(stype linux.SockType, uid uniqueid.Provider, queue *waiter.Queue, receiver Receiver, connected ConnectedEndpoint) Endpoint {
 	ep := &connectionedEndpoint{
 		baseEndpoint: baseEndpoint{Queue: queue, receiver: receiver, connected: connected},
 		id:           uid.UniqueID(),
