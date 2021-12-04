@@ -334,10 +334,6 @@ ALL_TESTS = [
     PacketimpactTestInfo(
         name = "generic_dgram_socket_send_recv",
         timeout = "long",
-        # This test has assumed the presense of the default interface and the
-        # default route installed by docker, using the docker until the test
-        # is migrated.
-        legacy_runner = True,
     ),
 ]
 
