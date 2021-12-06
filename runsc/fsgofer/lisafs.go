@@ -476,14 +476,12 @@ func (fd *controlFDLisa) OpenCreate(c *lisafs.Connection, comm lisafs.Communicat
 
 		// Set the owners as requested by the client.
 		if err := unix.Fchownat(childFD.hostFD, "", int(uid), int(gid), unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW); err != nil {
-			log.Infof("ayush: Fchownat %v", err)
 			return err
 		}
 
 		// Do not use the stat result from tryOpen because the owners might have
 		// changed. initInode() will stat the FD again and use fresh results.
 		if err := childFD.initInode(&resp.Child); err != nil {
-			log.Infof("ayush: initInode %v", err)
 			return err
 		}
 
@@ -491,7 +489,6 @@ func (fd *controlFDLisa) OpenCreate(c *lisafs.Connection, comm lisafs.Communicat
 		flags |= openFlags
 		newHostFD, err := unix.Openat(int(procSelfFD.FD()), strconv.Itoa(childFD.hostFD), int(flags)&^unix.O_NOFOLLOW, 0)
 		if err != nil {
-			log.Infof("ayush: Openat %v", err)
 			return err
 		}
 		cu.Release()
