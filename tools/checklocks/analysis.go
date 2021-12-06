@@ -83,21 +83,24 @@ func (pc *passContext) checkTypeAlignment(pkg *types.Package, typ *types.Named) 
 	_ = pc.typeAlignment(pkg, typ.Obj())
 }
 
+// atomicRules specify read constraints.
+type atomicRules int
+
+const (
+	nonAtomic atomicRules = iota
+	readWriteAtomic
+	readOnlyAtomic
+	mixedAtomic
+)
+
 // checkAtomicCall checks for an atomic access.
 //
 // inst is the instruction analyzed, obj is used only for maybeFail.
-//
-// If mustBeAtomic is true, then we assert that the instruction *is* an atomic
-// fucnction call. If it is false, then we assert that it is *not* an atomic
-// dispatch.
-//
-// If readOnly is true, then only atomic read access are allowed. Note that
-// readOnly is only meaningful if mustBeAtomic is set.
-func (pc *passContext) checkAtomicCall(inst ssa.Instruction, obj types.Object, mustBeAtomic, readOnly bool) {
+func (pc *passContext) checkAtomicCall(inst ssa.Instruction, obj types.Object, ar atomicRules) {
 	switch x := inst.(type) {
 	case *ssa.Call:
 		if x.Common().IsInvoke() {
-			if mustBeAtomic {
+			if ar != nonAtomic {
 				// This is an illegal interface dispatch.
 				pc.maybeFail(inst.Pos(), "dynamic dispatch with atomic-only field")
 			}
@@ -105,7 +108,7 @@ func (pc *passContext) checkAtomicCall(inst ssa.Instruction, obj types.Object, m
 		}
 		fn, ok := x.Common().Value.(*ssa.Function)
 		if !ok {
-			if mustBeAtomic {
+			if ar != nonAtomic {
 				// This is an illegal call to a non-static function.
 				pc.maybeFail(inst.Pos(), "dispatch to non-static function with atomic-only field")
 			}
@@ -113,7 +116,7 @@ func (pc *passContext) checkAtomicCall(inst ssa.Instruction, obj types.Object, m
 		}
 		pkg := fn.Package()
 		if pkg == nil {
-			if mustBeAtomic {
+			if ar != nonAtomic {
 				// This is a call to some shared wrapper function.
 				pc.maybeFail(inst.Pos(), "dispatch to shared function or wrapper")
 			}
@@ -124,33 +127,44 @@ func (pc *passContext) checkAtomicCall(inst ssa.Instruction, obj types.Object, m
 			return
 		}
 		if name := pkg.Pkg.Name(); name != "atomic" && name != "atomicbitops" {
-			if mustBeAtomic {
+			if ar != nonAtomic {
 				// This is an illegal call to a non-atomic package function.
 				pc.maybeFail(inst.Pos(), "dispatch to non-atomic function with atomic-only field")
 			}
 			return
 		}
-		if !mustBeAtomic {
+		if ar == nonAtomic {
 			// We are *not* expecting an atomic dispatch.
 			if _, ok := pc.forced[pc.positionKey(inst.Pos())]; !ok {
 				pc.maybeFail(inst.Pos(), "unexpected call to atomic function")
 			}
 		}
-		if !strings.HasPrefix(fn.Name(), "Load") && readOnly {
+		if !strings.HasPrefix(fn.Name(), "Load") && ar == readOnlyAtomic {
 			// We are not allowing any reads in this context.
 			if _, ok := pc.forced[pc.positionKey(inst.Pos())]; !ok {
 				pc.maybeFail(inst.Pos(), "unexpected call to atomic write function, is a lock missing?")
 			}
 			return
 		}
-	default:
-		if mustBeAtomic {
-			// This is something else entirely.
-			if _, ok := pc.forced[pc.positionKey(inst.Pos())]; !ok {
-				pc.maybeFail(inst.Pos(), "illegal use of atomic-only field by %T instruction", inst)
-			}
+		return // Don't hit common case.
+	case *ssa.ChangeType:
+		// Allow casts for atomic values, but nothing else.
+		if refs := x.Referrers(); refs != nil && len(*refs) == 1 {
+			pc.checkAtomicCall((*refs)[0], obj, ar)
 			return
 		}
+	case *ssa.UnOp:
+		if x.Op == token.MUL && ar == mixedAtomic {
+			// This is allowed; this is a strict reading.
+			return
+		}
+	}
+	if ar != nonAtomic {
+		// This is something else entirely.
+		if _, ok := pc.forced[pc.positionKey(inst.Pos())]; !ok {
+			pc.maybeFail(inst.Pos(), "illegal use of atomic-only field by %T instruction", inst)
+		}
+		return
 	}
 }
 
@@ -235,10 +249,17 @@ func (pc *passContext) checkGuards(inst almostInst, from ssa.Value, accessObj ty
 	switch lgf.AtomicDisposition {
 	case atomicRequired:
 		// Check that this is used safely as an input.
-		readOnly := len(guardsHeld) < guardsFound
+		ar := readWriteAtomic
+		if guardsFound > 0 {
+			if len(guardsHeld) < guardsFound {
+				ar = readOnlyAtomic
+			} else {
+				ar = mixedAtomic
+			}
+		}
 		if refs := inst.Referrers(); refs != nil {
 			for _, otherInst := range *refs {
-				pc.checkAtomicCall(otherInst, accessObj, true, readOnly)
+				pc.checkAtomicCall(otherInst, accessObj, ar)
 			}
 		}
 		// Check that this is not otherwise written non-atomically,
@@ -250,7 +271,7 @@ func (pc *passContext) checkGuards(inst almostInst, from ssa.Value, accessObj ty
 		// Check that this is *not* used atomically.
 		if refs := inst.Referrers(); refs != nil {
 			for _, otherInst := range *refs {
-				pc.checkAtomicCall(otherInst, accessObj, false, false)
+				pc.checkAtomicCall(otherInst, accessObj, nonAtomic)
 			}
 		}
 	}
