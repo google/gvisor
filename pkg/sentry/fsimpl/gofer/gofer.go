@@ -1173,7 +1173,7 @@ func (d *dentry) updateFromLisaStatLocked(stat *linux.Statx) {
 		atomic.StoreUint32(&d.uid, dentryUIDFromLisaUID(lisafs.UID(stat.UID)))
 	}
 	if stat.Mask&linux.STATX_GID != 0 {
-		atomic.StoreUint32(&d.uid, dentryGIDFromLisaGID(lisafs.GID(stat.GID)))
+		atomic.StoreUint32(&d.gid, dentryGIDFromLisaGID(lisafs.GID(stat.GID)))
 	}
 	if stat.Blksize != 0 {
 		atomic.StoreUint32(&d.blockSize, stat.Blksize)
