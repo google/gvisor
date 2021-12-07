@@ -544,8 +544,8 @@ func (s *socketOpsCommon) Readiness(mask waiter.EventMask) waiter.EventMask {
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (s *socketOpsCommon) EventRegister(e *waiter.Entry) {
-	s.ep.EventRegister(e)
+func (s *socketOpsCommon) EventRegister(e *waiter.Entry) error {
+	return s.ep.EventRegister(e)
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.

@@ -216,15 +216,21 @@ func (s *socketOpsCommon) Readiness(mask waiter.EventMask) waiter.EventMask {
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (s *socketOpsCommon) EventRegister(e *waiter.Entry) {
+func (s *socketOpsCommon) EventRegister(e *waiter.Entry) error {
 	s.queue.EventRegister(e)
-	_ = fdnotifier.UpdateFD(int32(s.fd))
+	if err := fdnotifier.UpdateFD(int32(s.fd)); err != nil {
+		s.queue.EventUnregister(e)
+		return err
+	}
+	return nil
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
 func (s *socketOpsCommon) EventUnregister(e *waiter.Entry) {
 	s.queue.EventUnregister(e)
-	_ = fdnotifier.UpdateFD(int32(s.fd))
+	if err := fdnotifier.UpdateFD(int32(s.fd)); err != nil {
+		panic(err)
+	}
 }
 
 // Connect implements socket.Socket.Connect.

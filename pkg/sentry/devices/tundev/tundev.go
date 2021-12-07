@@ -152,8 +152,9 @@ func (fd *tunFD) Readiness(mask waiter.EventMask) waiter.EventMask {
 }
 
 // EventRegister implements watier.Waitable.EventRegister.
-func (fd *tunFD) EventRegister(e *waiter.Entry) {
+func (fd *tunFD) EventRegister(e *waiter.Entry) error {
 	fd.device.EventRegister(e)
+	return nil
 }
 
 // EventUnregister implements watier.Waitable.EventUnregister.

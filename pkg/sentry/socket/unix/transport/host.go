@@ -217,12 +217,15 @@ func (c *HostConnectedEndpoint) GetLocalAddress() (tcpip.FullAddress, tcpip.Erro
 }
 
 // EventUpdate implements ConnectedEndpoint.EventUpdate.
-func (c *HostConnectedEndpoint) EventUpdate() {
+func (c *HostConnectedEndpoint) EventUpdate() error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if c.fd != -1 {
-		fdnotifier.UpdateFD(int32(c.fd))
+		if err := fdnotifier.UpdateFD(int32(c.fd)); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // Recv implements Receiver.Recv.

@@ -103,8 +103,9 @@ func (mfd *masterFileDescription) Release(ctx context.Context) {
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (mfd *masterFileDescription) EventRegister(e *waiter.Entry) {
+func (mfd *masterFileDescription) EventRegister(e *waiter.Entry) error {
 	mfd.t.ld.masterWaiter.EventRegister(e)
+	return nil
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.

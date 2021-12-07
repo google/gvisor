@@ -907,18 +907,24 @@ func (f *fileDescription) ConfigureMMap(_ context.Context, opts *memmap.MMapOpts
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (f *fileDescription) EventRegister(e *waiter.Entry) {
+func (f *fileDescription) EventRegister(e *waiter.Entry) error {
 	f.inode.queue.EventRegister(e)
 	if f.inode.mayBlock {
-		fdnotifier.UpdateFD(int32(f.inode.hostFD))
+		if err := fdnotifier.UpdateFD(int32(f.inode.hostFD)); err != nil {
+			f.inode.queue.EventUnregister(e)
+			return err
+		}
 	}
+	return nil
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
 func (f *fileDescription) EventUnregister(e *waiter.Entry) {
 	f.inode.queue.EventUnregister(e)
 	if f.inode.mayBlock {
-		fdnotifier.UpdateFD(int32(f.inode.hostFD))
+		if err := fdnotifier.UpdateFD(int32(f.inode.hostFD)); err != nil {
+			panic(fmt.Sprint("UpdateFD:", err))
+		}
 	}
 }
 

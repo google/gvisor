@@ -265,7 +265,8 @@ func (*NoClockEvents) Readiness(mask waiter.EventMask) waiter.EventMask {
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (*NoClockEvents) EventRegister(e *waiter.Entry) {
+func (*NoClockEvents) EventRegister(e *waiter.Entry) error {
+	return nil
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
@@ -276,6 +277,12 @@ func (*NoClockEvents) EventUnregister(e *waiter.Entry) {
 // defining waiter.Waitable.Readiness as required by Clock.
 type ClockEventsQueue struct {
 	waiter.Queue
+}
+
+// EventRegister implements waiter.Waitable.
+func (c *ClockEventsQueue) EventRegister(e *waiter.Entry) error {
+	c.Queue.EventRegister(e)
+	return nil
 }
 
 // Readiness implements waiter.Waitable.Readiness.
@@ -474,7 +481,9 @@ func (t *Timer) init() {
 	// race with it.
 	t.kicker = time.NewTimer(0)
 	t.entry, t.events = waiter.NewChannelEntry(timerTickEvents)
-	t.clock.EventRegister(&t.entry)
+	if err := t.clock.EventRegister(&t.entry); err != nil {
+		panic(err)
+	}
 	go t.runGoroutine() // S/R-SAFE: synchronized by t.mu
 }
 
