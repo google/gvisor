@@ -15,6 +15,7 @@
 package vfs
 
 import (
+	"fmt"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -145,6 +146,8 @@ func (fd *FileDescription) beforeSave() {
 // afterLoad is called by stateify.
 func (fd *FileDescription) afterLoad() {
 	if fd.statusFlags&linux.O_ASYNC != 0 && fd.asyncHandler != nil {
-		fd.asyncHandler.Register(fd)
+		if err := fd.asyncHandler.Register(fd); err != nil {
+			panic(fmt.Sprint("asyncHandler.Register:", err))
+		}
 	}
 }

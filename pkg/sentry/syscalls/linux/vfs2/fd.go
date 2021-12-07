@@ -228,8 +228,12 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		}
 		return uintptr(a.(*fasync.FileAsync).Signal()), nil, nil
 	case linux.F_SETSIG:
-		a := file.SetAsyncHandler(fasync.NewVFS2(int(fd))).(*fasync.FileAsync)
-		return 0, nil, a.SetSignal(linux.Signal(args[2].Int()))
+		a, err := file.SetAsyncHandler(fasync.NewVFS2(int(fd)))
+		if err != nil {
+			return 0, nil, err
+		}
+		async := a.(*fasync.FileAsync)
+		return 0, nil, async.SetSignal(linux.Signal(args[2].Int()))
 	default:
 		// Everything else is not yet supported.
 		return 0, nil, linuxerr.EINVAL
@@ -272,9 +276,13 @@ func setAsyncOwner(t *kernel.Task, fd int, file *vfs.FileDescription, ownerType,
 		return linuxerr.EINVAL
 	}
 
-	a := file.SetAsyncHandler(fasync.NewVFS2(fd)).(*fasync.FileAsync)
+	a, err := file.SetAsyncHandler(fasync.NewVFS2(fd))
+	if err != nil {
+		return err
+	}
+	async := a.(*fasync.FileAsync)
 	if pid == 0 {
-		a.ClearOwner()
+		async.ClearOwner()
 		return nil
 	}
 
@@ -284,21 +292,21 @@ func setAsyncOwner(t *kernel.Task, fd int, file *vfs.FileDescription, ownerType,
 		if task == nil {
 			return linuxerr.ESRCH
 		}
-		a.SetOwnerTask(t, task)
+		async.SetOwnerTask(t, task)
 		return nil
 	case linux.F_OWNER_PID:
 		tg := t.PIDNamespace().ThreadGroupWithID(kernel.ThreadID(pid))
 		if tg == nil {
 			return linuxerr.ESRCH
 		}
-		a.SetOwnerThreadGroup(t, tg)
+		async.SetOwnerThreadGroup(t, tg)
 		return nil
 	case linux.F_OWNER_PGRP:
 		pg := t.PIDNamespace().ProcessGroupWithID(kernel.ProcessGroupID(pid))
 		if pg == nil {
 			return linuxerr.ESRCH
 		}
-		a.SetOwnerProcessGroup(t, pg)
+		async.SetOwnerProcessGroup(t, pg)
 		return nil
 	default:
 		return linuxerr.EINVAL

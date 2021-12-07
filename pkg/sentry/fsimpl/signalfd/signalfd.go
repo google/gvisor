@@ -131,8 +131,9 @@ func (sfd *SignalFileDescription) Readiness(mask waiter.EventMask) waiter.EventM
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (sfd *SignalFileDescription) EventRegister(e *waiter.Entry) {
+func (sfd *SignalFileDescription) EventRegister(e *waiter.Entry) error {
 	sfd.queue.EventRegister(e)
+	return nil
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.

@@ -617,7 +617,7 @@ type ConnectedEndpoint interface {
 
 	// EventUpdate lets the ConnectedEndpoint know that event registrations
 	// have changed.
-	EventUpdate()
+	EventUpdate() error
 
 	// SendQueuedSize returns the total amount of data currently queued for
 	// sending. SendQueuedSize should return -1 if the operation isn't
@@ -712,7 +712,9 @@ func (e *connectedEndpoint) Writable() bool {
 }
 
 // EventUpdate implements ConnectedEndpoint.EventUpdate.
-func (*connectedEndpoint) EventUpdate() {}
+func (*connectedEndpoint) EventUpdate() error {
+	return nil
+}
 
 // SendQueuedSize implements ConnectedEndpoint.SendQueuedSize.
 func (e *connectedEndpoint) SendQueuedSize() int64 {
@@ -774,14 +776,17 @@ type baseEndpoint struct {
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (e *baseEndpoint) EventRegister(we *waiter.Entry) {
+func (e *baseEndpoint) EventRegister(we *waiter.Entry) error {
 	e.Queue.EventRegister(we)
 	e.Lock()
 	c := e.connected
 	e.Unlock()
 	if c != nil {
-		c.EventUpdate()
+		if err := c.EventUpdate(); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.

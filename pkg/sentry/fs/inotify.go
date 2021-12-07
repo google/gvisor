@@ -351,3 +351,9 @@ func (i *Inotify) RmWatch(ctx context.Context, wd int32) error {
 
 	return nil
 }
+
+// EventRegister implements waiter.Waitable.
+func (i *Inotify) EventRegister(e *waiter.Entry) error {
+	i.Queue.EventRegister(e)
+	return nil
+}

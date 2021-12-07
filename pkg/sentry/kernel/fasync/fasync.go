@@ -145,7 +145,7 @@ func (a *FileAsync) NotifyEvent(mask waiter.EventMask) {
 // Register sets the file which will be monitored for IO events.
 //
 // The file must not be currently registered.
-func (a *FileAsync) Register(w waiter.Waitable) {
+func (a *FileAsync) Register(w waiter.Waitable) error {
 	a.regMu.Lock()
 	defer a.regMu.Unlock()
 	a.mu.Lock()
@@ -156,7 +156,7 @@ func (a *FileAsync) Register(w waiter.Waitable) {
 	a.e.Init(a, waiter.ReadableEvents|waiter.WritableEvents|waiter.EventErr|waiter.EventHUp)
 	a.registered = true
 	a.mu.Unlock()
-	w.EventRegister(&a.e)
+	return w.EventRegister(&a.e)
 }
 
 // Unregister stops monitoring a file.

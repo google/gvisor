@@ -444,3 +444,9 @@ func (p *Pipe) SetFifoSize(size int64) (int64, error) {
 	p.max = size
 	return size, nil
 }
+
+// EventRegister implements waiter.Waitable.
+func (p *Pipe) EventRegister(e *waiter.Entry) error {
+	p.Queue.EventRegister(e)
+	return nil
+}

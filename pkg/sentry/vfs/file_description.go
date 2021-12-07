@@ -282,7 +282,9 @@ func (fd *FileDescription) SetStatusFlags(ctx context.Context, creds *auth.Crede
 		// Use fd.statusFlags instead of oldFlags, which may have become outdated,
 		// to avoid double registering/unregistering.
 		if fd.statusFlags&linux.O_ASYNC == 0 && flags&linux.O_ASYNC != 0 {
-			fd.asyncHandler.Register(fd)
+			if err := fd.asyncHandler.Register(fd); err != nil {
+				return err
+			}
 		} else if fd.statusFlags&linux.O_ASYNC != 0 && flags&linux.O_ASYNC == 0 {
 			fd.asyncHandler.Unregister(fd)
 		}
@@ -586,8 +588,8 @@ func (fd *FileDescription) Readiness(mask waiter.EventMask) waiter.EventMask {
 // EventRegister implements waiter.Waitable.EventRegister.
 //
 // It registers e for I/O readiness events in mask.
-func (fd *FileDescription) EventRegister(e *waiter.Entry) {
-	fd.impl.EventRegister(e)
+func (fd *FileDescription) EventRegister(e *waiter.Entry) error {
+	return fd.impl.EventRegister(e)
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
@@ -883,7 +885,7 @@ func (fd *FileDescription) ComputeLockRange(ctx context.Context, start uint64, l
 // implemented by pkg/sentry/fasync:FileAsync, but we unfortunately need this
 // interface to avoid circular dependencies.
 type FileAsync interface {
-	Register(w waiter.Waitable)
+	Register(w waiter.Waitable) error
 	Unregister(w waiter.Waitable)
 }
 
@@ -896,16 +898,18 @@ func (fd *FileDescription) AsyncHandler() FileAsync {
 
 // SetAsyncHandler sets fd.asyncHandler if it has not been set before and
 // returns it.
-func (fd *FileDescription) SetAsyncHandler(newHandler func() FileAsync) FileAsync {
+func (fd *FileDescription) SetAsyncHandler(newHandler func() FileAsync) (FileAsync, error) {
 	fd.flagsMu.Lock()
 	defer fd.flagsMu.Unlock()
 	if fd.asyncHandler == nil {
 		fd.asyncHandler = newHandler()
 		if fd.statusFlags&linux.O_ASYNC != 0 {
-			fd.asyncHandler.Register(fd)
+			if err := fd.asyncHandler.Register(fd); err != nil {
+				return nil, err
+			}
 		}
 	}
-	return fd.asyncHandler
+	return fd.asyncHandler, nil
 }
 
 // CopyRegularFileData copies data from srcFD to dstFD until reading from srcFD

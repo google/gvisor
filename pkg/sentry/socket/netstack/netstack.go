@@ -3393,4 +3393,10 @@ func (s *socketOpsCommon) Type() (family int, skType linux.SockType, protocol in
 	return s.family, s.skType, s.protocol
 }
 
+// EventRegister implements waiter.Waitable.
+func (s *socketOpsCommon) EventRegister(e *waiter.Entry) error {
+	s.Queue.EventRegister(e)
+	return nil
+}
+
 // LINT.ThenChange(./netstack_vfs2.go)

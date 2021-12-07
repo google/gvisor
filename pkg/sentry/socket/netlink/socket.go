@@ -187,8 +187,8 @@ func (s *socketOpsCommon) Readiness(mask waiter.EventMask) waiter.EventMask {
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (s *socketOpsCommon) EventRegister(e *waiter.Entry) {
-	s.ep.EventRegister(e)
+func (s *socketOpsCommon) EventRegister(e *waiter.Entry) error {
+	return s.ep.EventRegister(e)
 	// Writable readiness never changes, so no registration is needed.
 }
 
@@ -543,7 +543,9 @@ func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags 
 	// We'll have to block. Register for notification and keep trying to
 	// receive all the data.
 	e, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
-	s.EventRegister(&e)
+	if err := s.EventRegister(&e); err != nil {
+		return 0, 0, from, fromLen, socket.ControlMessages{}, syserr.FromError(err)
+	}
 	defer s.EventUnregister(&e)
 
 	for {

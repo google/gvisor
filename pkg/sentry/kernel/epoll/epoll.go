@@ -456,3 +456,9 @@ func (e *EventPoll) RemoveEntry(ctx context.Context, id FileIdentifier) error {
 
 	return nil
 }
+
+// EventRegister implements waiter.Waitable.
+func (e *EventPoll) EventRegister(entry *waiter.Entry) error {
+	e.Queue.EventRegister(entry)
+	return nil
+}

@@ -60,16 +60,16 @@ type pollState struct {
 // stored in pfd.FD. If a channel is passed in, the waiter entry in "state" is
 // used to register with the file for event notifications, and a reference to
 // the file is stored in "state".
-func initReadiness(t *kernel.Task, pfd *linux.PollFD, state *pollState, ch chan struct{}) {
+func initReadiness(t *kernel.Task, pfd *linux.PollFD, state *pollState, ch chan struct{}) error {
 	if pfd.FD < 0 {
 		pfd.REvents = 0
-		return
+		return nil
 	}
 
 	file := t.GetFileVFS2(pfd.FD)
 	if file == nil {
 		pfd.REvents = linux.POLLNVAL
-		return
+		return nil
 	}
 
 	if ch == nil {
@@ -77,11 +77,14 @@ func initReadiness(t *kernel.Task, pfd *linux.PollFD, state *pollState, ch chan 
 	} else {
 		state.file = file
 		state.waiter.Init(waiter.ChannelNotifier(ch), waiter.EventMaskFromLinux(uint32(pfd.Events)))
-		file.EventRegister(&state.waiter)
+		if err := file.EventRegister(&state.waiter); err != nil {
+			return err
+		}
 	}
 
 	r := file.Readiness(waiter.EventMaskFromLinux(uint32(pfd.Events)))
 	pfd.REvents = int16(r.ToLinux()) & pfd.Events
+	return nil
 }
 
 // releaseState releases all the pollState in "state".
@@ -113,7 +116,9 @@ func pollBlock(t *kernel.Task, pfd []linux.PollFD, timeout time.Duration) (time.
 	defer releaseState(t, state)
 	n := uintptr(0)
 	for i := range pfd {
-		initReadiness(t, &pfd[i], &state[i], ch)
+		if err := initReadiness(t, &pfd[i], &state[i], ch); err != nil {
+			return timeout, 0, err
+		}
 		if pfd[i].REvents != 0 {
 			n++
 			ch = nil

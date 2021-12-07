@@ -134,8 +134,9 @@ func (s *SignalOperations) Readiness(mask waiter.EventMask) waiter.EventMask {
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (s *SignalOperations) EventRegister(e *waiter.Entry) {
+func (s *SignalOperations) EventRegister(e *waiter.Entry) error {
 	s.queue.EventRegister(e)
+	return nil
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
