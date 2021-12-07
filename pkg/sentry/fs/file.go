@@ -159,7 +159,8 @@ func (f *File) SetFlags(newFlags SettableFileFlags) {
 	f.flags.Append = newFlags.Append
 	if f.async != nil {
 		if newFlags.Async && !f.flags.Async {
-			f.async.Register(f)
+			// Ignore error given that VFS1 will not be here much longer.
+			_ = f.async.Register(f)
 		}
 		if !newFlags.Async && f.flags.Async {
 			f.async.Unregister(f)
@@ -180,8 +181,8 @@ func (f *File) Readiness(mask waiter.EventMask) waiter.EventMask {
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (f *File) EventRegister(e *waiter.Entry) {
-	f.FileOperations.EventRegister(e)
+func (f *File) EventRegister(e *waiter.Entry) error {
+	return f.FileOperations.EventRegister(e)
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
@@ -424,23 +425,25 @@ func (f *File) Msync(ctx context.Context, mr memmap.MappableRange) error {
 
 // A FileAsync sends signals to its owner when w is ready for IO.
 type FileAsync interface {
-	Register(w waiter.Waitable)
+	Register(w waiter.Waitable) error
 	Unregister(w waiter.Waitable)
 }
 
 // Async gets the stored FileAsync or creates a new one with the supplied
 // function. If the supplied function is nil, no FileAsync is created and the
 // current value is returned.
-func (f *File) Async(newAsync func() FileAsync) FileAsync {
+func (f *File) Async(newAsync func() FileAsync) (FileAsync, error) {
 	f.flagsMu.Lock()
 	defer f.flagsMu.Unlock()
 	if f.async == nil && newAsync != nil {
 		f.async = newAsync()
 		if f.flags.Async {
-			f.async.Register(f)
+			if err := f.async.Register(f); err != nil {
+				return nil, err
+			}
 		}
 	}
-	return f.async
+	return f.async, nil
 }
 
 // lockedReader implements io.Reader and io.ReaderAt.

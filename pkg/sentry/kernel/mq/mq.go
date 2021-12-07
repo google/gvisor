@@ -418,10 +418,11 @@ func (q *Queue) Readiness(mask waiter.EventMask) waiter.EventMask {
 }
 
 // EventRegister implements Waitable.EventRegister.
-func (q *Queue) EventRegister(e *waiter.Entry) {
+func (q *Queue) EventRegister(e *waiter.Entry) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.queue.EventRegister(e)
+	return nil
 }
 
 // EventUnregister implements Waitable.EventUnregister.

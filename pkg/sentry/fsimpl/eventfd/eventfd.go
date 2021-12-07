@@ -16,6 +16,7 @@
 package eventfd
 
 import (
+	"fmt"
 	"math"
 	"sync"
 
@@ -266,14 +267,18 @@ func (efd *EventFileDescription) Readiness(mask waiter.EventMask) waiter.EventMa
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (efd *EventFileDescription) EventRegister(entry *waiter.Entry) {
+func (efd *EventFileDescription) EventRegister(entry *waiter.Entry) error {
 	efd.queue.EventRegister(entry)
 
 	efd.mu.Lock()
 	defer efd.mu.Unlock()
 	if efd.hostfd >= 0 {
-		fdnotifier.UpdateFD(int32(efd.hostfd))
+		if err := fdnotifier.UpdateFD(int32(efd.hostfd)); err != nil {
+			efd.queue.EventUnregister(entry)
+			return err
+		}
 	}
+	return nil
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
@@ -283,6 +288,8 @@ func (efd *EventFileDescription) EventUnregister(entry *waiter.Entry) {
 	efd.mu.Lock()
 	defer efd.mu.Unlock()
 	if efd.hostfd >= 0 {
-		fdnotifier.UpdateFD(int32(efd.hostfd))
+		if err := fdnotifier.UpdateFD(int32(efd.hostfd)); err != nil {
+			panic(fmt.Sprint("UpdateFD:", err))
+		}
 	}
 }

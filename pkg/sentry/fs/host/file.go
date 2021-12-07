@@ -149,15 +149,21 @@ func newFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags, iops *i
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (f *fileOperations) EventRegister(e *waiter.Entry) {
+func (f *fileOperations) EventRegister(e *waiter.Entry) error {
 	f.iops.fileState.queue.EventRegister(e)
-	fdnotifier.UpdateFD(int32(f.iops.fileState.FD()))
+	if err := fdnotifier.UpdateFD(int32(f.iops.fileState.FD())); err != nil {
+		f.iops.fileState.queue.EventUnregister(e)
+		return err
+	}
+	return nil
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
 func (f *fileOperations) EventUnregister(e *waiter.Entry) {
 	f.iops.fileState.queue.EventUnregister(e)
-	fdnotifier.UpdateFD(int32(f.iops.fileState.FD()))
+	if err := fdnotifier.UpdateFD(int32(f.iops.fileState.FD())); err != nil {
+		panic(fmt.Sprint("UpdateFD:", err))
+	}
 }
 
 // Readiness uses the poll() syscall to check the status of the underlying FD.

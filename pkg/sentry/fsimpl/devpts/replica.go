@@ -112,8 +112,9 @@ var _ vfs.FileDescriptionImpl = (*replicaFileDescription)(nil)
 func (rfd *replicaFileDescription) Release(ctx context.Context) {}
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (rfd *replicaFileDescription) EventRegister(e *waiter.Entry) {
+func (rfd *replicaFileDescription) EventRegister(e *waiter.Entry) error {
 	rfd.inode.t.ld.replicaWaiter.EventRegister(e)
+	return nil
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.

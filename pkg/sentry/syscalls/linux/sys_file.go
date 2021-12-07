@@ -649,7 +649,11 @@ func Ioctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		return 0, nil, nil
 
 	case linux.FIOGETOWN, linux.SIOCGPGRP:
-		_, err := primitive.CopyInt32Out(t, args[2].Pointer(), fGetOwn(t, file))
+		owner, err := fGetOwn(t, file)
+		if err != nil {
+			return 0, nil, err
+		}
+		_, err = primitive.CopyInt32Out(t, args[2].Pointer(), owner)
 		return 0, nil, err
 
 	default:
@@ -860,10 +864,13 @@ func Dup3(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 	return uintptr(newfd), nil, nil
 }
 
-func fGetOwnEx(t *kernel.Task, file *fs.File) linux.FOwnerEx {
-	ma := file.Async(nil)
+func fGetOwnEx(t *kernel.Task, file *fs.File) (linux.FOwnerEx, error) {
+	ma, err := file.Async(nil)
+	if err != nil {
+		return linux.FOwnerEx{}, err
+	}
 	if ma == nil {
-		return linux.FOwnerEx{}
+		return linux.FOwnerEx{}, nil
 	}
 	a := ma.(*fasync.FileAsync)
 	ot, otg, opg := a.Owner()
@@ -872,28 +879,31 @@ func fGetOwnEx(t *kernel.Task, file *fs.File) linux.FOwnerEx {
 		return linux.FOwnerEx{
 			Type: linux.F_OWNER_TID,
 			PID:  int32(t.PIDNamespace().IDOfTask(ot)),
-		}
+		}, nil
 	case otg != nil:
 		return linux.FOwnerEx{
 			Type: linux.F_OWNER_PID,
 			PID:  int32(t.PIDNamespace().IDOfThreadGroup(otg)),
-		}
+		}, nil
 	case opg != nil:
 		return linux.FOwnerEx{
 			Type: linux.F_OWNER_PGRP,
 			PID:  int32(t.PIDNamespace().IDOfProcessGroup(opg)),
-		}
+		}, nil
 	default:
-		return linux.FOwnerEx{}
+		return linux.FOwnerEx{}, nil
 	}
 }
 
-func fGetOwn(t *kernel.Task, file *fs.File) int32 {
-	owner := fGetOwnEx(t, file)
-	if owner.Type == linux.F_OWNER_PGRP {
-		return -owner.PID
+func fGetOwn(t *kernel.Task, file *fs.File) (int32, error) {
+	owner, err := fGetOwnEx(t, file)
+	if err != nil {
+		return 0, err
 	}
-	return owner.PID
+	if owner.Type == linux.F_OWNER_PGRP {
+		return -owner.PID, nil
+	}
+	return owner.PID, nil
 }
 
 // fSetOwn sets the file's owner with the semantics of F_SETOWN in Linux.
@@ -901,17 +911,21 @@ func fGetOwn(t *kernel.Task, file *fs.File) int32 {
 // If who is positive, it represents a PID. If negative, it represents a PGID.
 // If the PID or PGID is invalid, the owner is silently unset.
 func fSetOwn(t *kernel.Task, fd int, file *fs.File, who int32) error {
-	a := file.Async(fasync.New(fd)).(*fasync.FileAsync)
+	a, err := file.Async(fasync.New(fd))
+	if err != nil {
+		return err
+	}
+	async := a.(*fasync.FileAsync)
 	if who < 0 {
 		// Check for overflow before flipping the sign.
 		if who-1 > who {
 			return linuxerr.EINVAL
 		}
 		pg := t.PIDNamespace().ProcessGroupWithID(kernel.ProcessGroupID(-who))
-		a.SetOwnerProcessGroup(t, pg)
+		async.SetOwnerProcessGroup(t, pg)
 	} else {
 		tg := t.PIDNamespace().ThreadGroupWithID(kernel.ThreadID(who))
-		a.SetOwnerThreadGroup(t, tg)
+		async.SetOwnerThreadGroup(t, tg)
 	}
 	return nil
 }
@@ -1046,13 +1060,20 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			return 0, nil, linuxerr.EINVAL
 		}
 	case linux.F_GETOWN:
-		return uintptr(fGetOwn(t, file)), nil, nil
+		owner, err := fGetOwn(t, file)
+		if err != nil {
+			return 0, nil, err
+		}
+		return uintptr(owner), nil, nil
 	case linux.F_SETOWN:
 		return 0, nil, fSetOwn(t, int(fd), file, args[2].Int())
 	case linux.F_GETOWN_EX:
 		addr := args[2].Pointer()
-		owner := fGetOwnEx(t, file)
-		_, err := owner.CopyOut(t, addr)
+		owner, err := fGetOwnEx(t, file)
+		if err != nil {
+			return 0, nil, err
+		}
+		_, err = owner.CopyOut(t, addr)
 		return 0, nil, err
 	case linux.F_SETOWN_EX:
 		addr := args[2].Pointer()
@@ -1061,28 +1082,32 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		if err != nil {
 			return 0, nil, err
 		}
-		a := file.Async(fasync.New(int(fd))).(*fasync.FileAsync)
+		a, err := file.Async(fasync.New(int(fd)))
+		if err != nil {
+			return 0, nil, err
+		}
+		async := a.(*fasync.FileAsync)
 		switch owner.Type {
 		case linux.F_OWNER_TID:
 			task := t.PIDNamespace().TaskWithID(kernel.ThreadID(owner.PID))
 			if task == nil {
 				return 0, nil, linuxerr.ESRCH
 			}
-			a.SetOwnerTask(t, task)
+			async.SetOwnerTask(t, task)
 			return 0, nil, nil
 		case linux.F_OWNER_PID:
 			tg := t.PIDNamespace().ThreadGroupWithID(kernel.ThreadID(owner.PID))
 			if tg == nil {
 				return 0, nil, linuxerr.ESRCH
 			}
-			a.SetOwnerThreadGroup(t, tg)
+			async.SetOwnerThreadGroup(t, tg)
 			return 0, nil, nil
 		case linux.F_OWNER_PGRP:
 			pg := t.PIDNamespace().ProcessGroupWithID(kernel.ProcessGroupID(owner.PID))
 			if pg == nil {
 				return 0, nil, linuxerr.ESRCH
 			}
-			a.SetOwnerProcessGroup(t, pg)
+			async.SetOwnerProcessGroup(t, pg)
 			return 0, nil, nil
 		default:
 			return 0, nil, linuxerr.EINVAL
@@ -1111,11 +1136,19 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		n, err := sz.SetFifoSize(int64(args[2].Int()))
 		return uintptr(n), nil, err
 	case linux.F_GETSIG:
-		a := file.Async(fasync.New(int(fd))).(*fasync.FileAsync)
-		return uintptr(a.Signal()), nil, nil
+		a, err := file.Async(fasync.New(int(fd)))
+		if err != nil {
+			return 0, nil, err
+		}
+		async := a.(*fasync.FileAsync)
+		return uintptr(async.Signal()), nil, nil
 	case linux.F_SETSIG:
-		a := file.Async(fasync.New(int(fd))).(*fasync.FileAsync)
-		return 0, nil, a.SetSignal(linux.Signal(args[2].Int()))
+		a, err := file.Async(fasync.New(int(fd)))
+		if err != nil {
+			return 0, nil, err
+		}
+		async := a.(*fasync.FileAsync)
+		return 0, nil, async.SetSignal(linux.Signal(args[2].Int()))
 	default:
 		// Everything else is not yet supported.
 		return 0, nil, linuxerr.EINVAL

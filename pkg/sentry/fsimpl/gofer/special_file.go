@@ -15,6 +15,7 @@
 package gofer
 
 import (
+	"fmt"
 	"sync/atomic"
 
 	"golang.org/x/sys/unix"
@@ -165,20 +166,25 @@ func (fd *specialFileFD) Readiness(mask waiter.EventMask) waiter.EventMask {
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (fd *specialFileFD) EventRegister(e *waiter.Entry) {
+func (fd *specialFileFD) EventRegister(e *waiter.Entry) error {
 	if fd.haveQueue {
 		fd.queue.EventRegister(e)
-		fdnotifier.UpdateFD(fd.handle.fd)
-		return
+		if err := fdnotifier.UpdateFD(fd.handle.fd); err != nil {
+			fd.queue.EventUnregister(e)
+			return err
+		}
+		return nil
 	}
-	fd.fileDescription.EventRegister(e)
+	return fd.fileDescription.EventRegister(e)
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
 func (fd *specialFileFD) EventUnregister(e *waiter.Entry) {
 	if fd.haveQueue {
 		fd.queue.EventUnregister(e)
-		fdnotifier.UpdateFD(fd.handle.fd)
+		if err := fdnotifier.UpdateFD(fd.handle.fd); err != nil {
+			panic(fmt.Sprint("UpdateFD:", err))
+		}
 		return
 	}
 	fd.fileDescription.EventUnregister(e)
