@@ -59,7 +59,7 @@ func New(lower stack.LinkEndpoint, n int, queueLen int) stack.LinkEndpoint {
 	// Create the required dispatchers
 	for i := 0; i < n; i++ {
 		qd := &queueDispatcher{
-			q:     &packetBufferQueue{limit: queueLen},
+			q:     newPacketBufferQueue(queueLen),
 			lower: lower,
 		}
 		e.dispatchers = append(e.dispatchers, qd)

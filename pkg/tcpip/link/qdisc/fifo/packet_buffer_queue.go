@@ -23,15 +23,26 @@ import (
 //
 type packetBufferQueue struct {
 	mu    sync.Mutex
-	list  stack.PacketBufferList
+	list  []*stack.PacketBuffer
+	front int
+	back  int
 	limit int
-	used  int
+}
+
+func newPacketBufferQueue(limit int) *packetBufferQueue {
+	p := &packetBufferQueue{
+		limit: limit,
+		list:  make([]*stack.PacketBuffer, limit),
+		front: -1,
+		back:  -1,
+	}
+	return p
 }
 
 // emptyLocked determines if the queue is empty.
 // Preconditions: q.mu must be held.
 func (q *packetBufferQueue) emptyLocked() bool {
-	return q.used == 0
+	return q.front == -1
 }
 
 // empty determines if the queue is empty.
@@ -43,14 +54,6 @@ func (q *packetBufferQueue) empty() bool {
 	return r
 }
 
-// setLimit updates the limit. No PacketBuffers are immediately dropped in case
-// the queue becomes full due to the new limit.
-func (q *packetBufferQueue) setLimit(limit int) {
-	q.mu.Lock()
-	q.limit = limit
-	q.mu.Unlock()
-}
-
 // enqueue adds the given packet to the queue.
 //
 // Returns true when the PacketBuffer is successfully added to the queue, in
@@ -58,27 +61,36 @@ func (q *packetBufferQueue) setLimit(limit int) {
 // returns false if the queue is full.
 func (q *packetBufferQueue) enqueue(s *stack.PacketBuffer) bool {
 	q.mu.Lock()
-	r := q.used < q.limit
-	if r {
-		s.IncRef()
-		q.list.PushBack(s)
-		q.used++
+	defer q.mu.Unlock()
+	if (q.back+1)%q.limit == q.front {
+		return false
+	} else if q.front == -1 {
+		q.front = 0
+		q.back = 0
+	} else {
+		q.back = (q.back + 1) % q.limit
 	}
-	q.mu.Unlock()
 
-	return r
+	s.IncRef()
+	q.list[q.back] = s
+	return true
 }
 
 // dequeue removes and returns the next PacketBuffer from queue, if one exists.
 // Caller is responsible for calling DecRef on the PacketBuffer.
 func (q *packetBufferQueue) dequeue() *stack.PacketBuffer {
 	q.mu.Lock()
-	s := q.list.Front()
-	if s != nil {
-		q.list.Remove(s)
-		q.used--
+	defer q.mu.Unlock()
+	if q.front == -1 {
+		return nil
 	}
-	q.mu.Unlock()
-
+	s := q.list[q.front]
+	q.list[q.front] = nil
+	if q.front == q.back {
+		q.front = -1
+		q.back = -1
+	} else {
+		q.front = (q.front + 1) % q.limit
+	}
 	return s
 }

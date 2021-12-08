@@ -17,3 +17,17 @@ go_library(
         "//pkg/tcpip/stack",
     ],
 )
+
+go_test(
+    name = "qdisc_test",
+    size = "small",
+    srcs = ["qdisc_test.go"],
+    deps = [
+        ":fifo",
+        "//pkg/sync",
+        "//pkg/tcpip",
+        "//pkg/tcpip/buffer",
+        "//pkg/tcpip/link/channel",
+        "//pkg/tcpip/stack",
+    ],
+)

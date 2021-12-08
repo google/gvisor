@@ -833,6 +833,7 @@ func sendTCPBatch(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso 
 	size := data.Size()
 	hdrSize := header.TCPMinimumSize + int(r.MaxHeaderLength()) + optLen
 	var pkts stack.PacketBufferList
+	pktsToDecRef := make([]*stack.PacketBuffer, n)
 	for i := 0; i < n; i++ {
 		packetSize := mss
 		if packetSize > size {
@@ -848,9 +849,8 @@ func sendTCPBatch(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso 
 		buildTCPHdr(r, tf, pkt, gso)
 		tf.seq = tf.seq.Add(seqnum.Size(packetSize))
 		pkt.GSOOptions = gso
-		pkts.PushBack(pkt)
+		pktsToDecRef[i] = pkt
 	}
-	defer pkts.DecRef()
 
 	if tf.ttl == 0 {
 		tf.ttl = r.DefaultTTL()
@@ -860,6 +860,9 @@ func sendTCPBatch(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso 
 		r.Stats().TCP.SegmentSendErrors.IncrementBy(uint64(n - sent))
 	}
 	r.Stats().TCP.SegmentsSent.IncrementBy(uint64(sent))
+	for _, pkt := range pktsToDecRef {
+		pkt.DecRef()
+	}
 	return err
 }
 

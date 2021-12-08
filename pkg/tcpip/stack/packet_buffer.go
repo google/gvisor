@@ -429,6 +429,9 @@ func (pk *PacketBufferList) DecRef() {
 	pb := pk.Front()
 	for pb != nil {
 		next := pb.Next()
+		// if pb.refCount == 1 {
+		// 	pk.Remove(pb)
+		// }
 		pb.DecRef()
 		pb = next
 	}
