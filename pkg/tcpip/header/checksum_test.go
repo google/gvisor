@@ -368,7 +368,7 @@ func TestChecksummableTransportUpdatePort(t *testing.T) {
 		origDstPort := uint16(rand.Uint32())
 		newPort := uint16(rand.Uint32())
 
-		t.Run(fmt.Sprintf("OrigSrcPort=%d,OrigDstPort=%d,NewPort=%d", origSrcPort, origDstPort, newPort), func(*testing.T) {
+		t.Run(fmt.Sprintf("OrigSrcPort=%d,OrigDstPort=%d,NewPort=%d", origSrcPort, origDstPort, newPort), func(t *testing.T) {
 			for _, test := range tests {
 				t.Run(test.name, func(t *testing.T) {
 					for _, subTest := range []struct {
