@@ -300,14 +300,16 @@ func getHeaders(pkt *PacketBuffer) (netHdr header.Network, transHdr header.Trans
 		if tcpHeader := header.TCP(pkt.TransportHeader().View()); len(tcpHeader) >= header.TCPMinimumSize {
 			return pkt.Network(), tcpHeader, false, true
 		}
+		return nil, nil, false, false
 	case header.UDPProtocolNumber:
 		if udpHeader := header.UDP(pkt.TransportHeader().View()); len(udpHeader) >= header.UDPMinimumSize {
 			return pkt.Network(), udpHeader, false, true
 		}
+		return nil, nil, false, false
 	case header.ICMPv4ProtocolNumber:
 		icmpHeader := header.ICMPv4(pkt.TransportHeader().View())
 		if len(icmpHeader) < header.ICMPv4MinimumSize {
-			break
+			return nil, nil, false, false
 		}
 
 		switch icmpType := icmpHeader.Type(); icmpType {
@@ -331,7 +333,21 @@ func getHeaders(pkt *PacketBuffer) (netHdr header.Network, transHdr header.Trans
 		if netHdr, transHdr, ok := getEmbeddedNetAndTransHeaders(pkt, header.IPv4MinimumSize, v4NetAndTransHdr, pkt.tuple.id().transProto); ok {
 			return netHdr, transHdr, true, true
 		}
+		return nil, nil, false, false
 	case header.ICMPv6ProtocolNumber:
+		icmpHeader := header.ICMPv6(pkt.TransportHeader().View())
+		if len(icmpHeader) < header.ICMPv6MinimumSize {
+			return nil, nil, false, false
+		}
+
+		switch icmpType := icmpHeader.Type(); icmpType {
+		case header.ICMPv6EchoRequest, header.ICMPv6EchoReply:
+			return pkt.Network(), icmpHeader, false, true
+		case header.ICMPv6DstUnreachable, header.ICMPv6PacketTooBig, header.ICMPv6TimeExceeded, header.ICMPv6ParamProblem:
+		default:
+			panic(fmt.Sprintf("unexpected ICMPv6 type = %d", icmpType))
+		}
+
 		h, ok := pkt.Data().PullUp(header.IPv6MinimumSize)
 		if !ok {
 			panic(fmt.Sprintf("should have a valid IPv6 packet; only have %d bytes, want at least %d bytes", pkt.Data().Size(), header.IPv6MinimumSize))
@@ -349,9 +365,10 @@ func getHeaders(pkt *PacketBuffer) (netHdr header.Network, transHdr header.Trans
 		if netHdr, transHdr, ok := getEmbeddedNetAndTransHeaders(pkt, header.IPv6MinimumSize, v6NetAndTransHdr, transProto); ok {
 			return netHdr, transHdr, true, true
 		}
+		return nil, nil, false, false
+	default:
+		panic(fmt.Sprintf("unexpected transport protocol = %d", pkt.TransportProtocolNumber))
 	}
-
-	return nil, nil, false, false
 }
 
 func getTupleIDForRegularPacket(netHdr header.Network, netProto tcpip.NetworkProtocolNumber, transHdr header.Transport, transProto tcpip.TransportProtocolNumber) tupleID {
@@ -458,6 +475,13 @@ func getTupleID(pkt *PacketBuffer) (tupleID, getTupleIDDisposition) {
 		}
 
 		switch icmp.Type() {
+		case header.ICMPv6EchoRequest:
+			return getTupleIDForEchoPacket(pkt, icmp.Ident(), true /* request */), getTupleIDOKAndAllowNewConn
+		case header.ICMPv6EchoReply:
+			// Do not create a new connection in response to a reply packet as only
+			// the first packet of a connection should create a conntrack entry but
+			// a reply is never the first packet sent for a connection.
+			return getTupleIDForEchoPacket(pkt, icmp.Ident(), false /* request */), getTupleIDOKAndDontAllowNewConn
 		case header.ICMPv6DstUnreachable, header.ICMPv6PacketTooBig, header.ICMPv6TimeExceeded, header.ICMPv6ParamProblem:
 		default:
 			return tupleID{}, getTupleIDNotOK

@@ -240,6 +240,13 @@ func (b ICMPv6) SetIdent(ident uint16) {
 	binary.BigEndian.PutUint16(b[icmpv6IdentOffset:], ident)
 }
 
+// SetIdentWithChecksumUpdate sets the Ident field and updates the checksum.
+func (b ICMPv6) SetIdentWithChecksumUpdate(new uint16) {
+	old := b.Ident()
+	b.SetIdent(new)
+	b.SetChecksum(^checksumUpdate2ByteAlignedUint16(^b.Checksum(), old, new))
+}
+
 // Sequence retrieves the Sequence field from an ICMPv6 message.
 func (b ICMPv6) Sequence() uint16 {
 	return binary.BigEndian.Uint16(b[icmpv6SequenceOffset:])
@@ -283,4 +290,10 @@ func ICMPv6Checksum(params ICMPv6ChecksumParams) uint16 {
 	xsum = Checksum(h[4:], xsum)
 
 	return ^xsum
+}
+
+// UpdateChecksumPseudoHeaderAddress updates the checksum to reflect an
+// updated address in the pseudo header.
+func (b ICMPv6) UpdateChecksumPseudoHeaderAddress(old, new tcpip.Address) {
+	b.SetChecksum(^checksumUpdate2ByteAlignedAddress(^b.Checksum(), old, new))
 }
