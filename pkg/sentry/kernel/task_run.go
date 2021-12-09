@@ -199,10 +199,10 @@ func (app *runApp) execute(t *Task) taskRunState {
 	if t.haveSyscallReturn {
 		if sre, ok := linuxerr.SyscallRestartErrorFromReturn(t.Arch().Return()); ok {
 			if sre == linuxerr.ERESTART_RESTARTBLOCK {
-				t.Debugf("Restarting syscall %d with restart block after errno %d: not interrupted by handled signal", t.Arch().SyscallNo(), sre)
+				t.Debugf("Restarting syscall %d with restart block: not interrupted by handled signal", t.Arch().SyscallNo())
 				t.Arch().RestartSyscallWithRestartBlock()
 			} else {
-				t.Debugf("Restarting syscall %d after errno %d: not interrupted by handled signal", t.Arch().SyscallNo(), sre)
+				t.Debugf("Restarting syscall %d: not interrupted by handled signal", t.Arch().SyscallNo())
 				t.Arch().RestartSyscall()
 			}
 		}
