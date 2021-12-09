@@ -177,7 +177,7 @@ func (t *Task) deliverSignal(info *linux.SignalInfo, act linux.SigAction) taskRu
 					t.Debugf("Not restarting syscall %d after errno %d: interrupted by signal %d", t.Arch().SyscallNo(), sre, info.Signo)
 					t.Arch().SetReturn(uintptr(-ExtractErrno(linuxerr.EINTR, -1)))
 				default:
-					t.Debugf("Restarting syscall %d after errno %d: interrupted by signal %d", t.Arch().SyscallNo(), sre, info.Signo)
+					t.Debugf("Restarting syscall %d: interrupted by signal %d", t.Arch().SyscallNo(), info.Signo)
 					t.Arch().RestartSyscall()
 				}
 			}
