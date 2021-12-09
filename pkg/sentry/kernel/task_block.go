@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // BlockWithTimeout blocks t until an event is received from C, the application
@@ -62,7 +63,16 @@ func (t *Task) BlockWithTimeout(C chan struct{}, haveTimeout bool, timeout time.
 	return remainingTimeout, err
 }
 
-// BlockWithDeadline blocks t until an event is received from C, the
+// BlockWithTimeoutOn implements context.Context.BlockWithTimeoutOn.
+func (t *Task) BlockWithTimeoutOn(w waiter.Waitable, mask waiter.EventMask, timeout time.Duration) (time.Duration, bool) {
+	e, ch := waiter.NewChannelEntry(mask)
+	w.EventRegister(&e)
+	defer w.EventUnregister(&e)
+	left, err := t.BlockWithTimeout(ch, true, timeout)
+	return left, err == nil
+}
+
+// BlockWithDeadline blocks t until it is woken by an event, the
 // application monotonic clock indicates a time of deadline (only if
 // haveDeadline is true), or t is interrupted. It returns nil if an event is
 // received from C, ETIMEDOUT if the deadline expired, and
@@ -113,6 +123,15 @@ func (t *Task) Block(C <-chan struct{}) error {
 	return t.block(C, nil)
 }
 
+// BlockOn implements context.Context.BlockOn.
+func (t *Task) BlockOn(w waiter.Waitable, mask waiter.EventMask) bool {
+	e, ch := waiter.NewChannelEntry(mask)
+	w.EventRegister(&e)
+	defer w.EventUnregister(&e)
+	err := t.Block(ch)
+	return err == nil
+}
+
 // block blocks a task on one of many events.
 // N.B. defer is too expensive to be used here.
 //
@@ -131,7 +150,8 @@ func (t *Task) block(C <-chan struct{}, timerChan <-chan struct{}) error {
 	}
 
 	// Deactive our address space, we don't need it.
-	interrupt := t.SleepStart()
+	t.prepareSleep()
+	defer t.completeSleep()
 
 	// If the request is not completed, but the timer has already expired,
 	// then ensure that we run through a scheduler cycle. This is because
@@ -148,44 +168,38 @@ func (t *Task) block(C <-chan struct{}, timerChan <-chan struct{}) error {
 	select {
 	case <-C:
 		region.End()
-		t.SleepFinish(true)
 		// Woken by event.
 		return nil
 
-	case <-interrupt:
+	case <-t.interruptChan:
 		region.End()
-		t.SleepFinish(false)
+		// Ensure that Task.interrupted() will return true once we return to
+		// the task run loop.
+		t.interruptSelf()
 		// Return the indicated error on interrupt.
 		return linuxerr.ErrInterrupted
 
 	case <-timerChan:
 		region.End()
-		t.SleepFinish(true)
 		// We've timed out.
 		return linuxerr.ETIMEDOUT
 	}
 }
 
-// SleepStart implements context.ChannelSleeper.SleepStart.
-func (t *Task) SleepStart() <-chan struct{} {
+// prepareSleep prepares to sleep.
+func (t *Task) prepareSleep() {
 	t.assertTaskGoroutine()
 	t.Deactivate()
 	t.accountTaskGoroutineEnter(TaskGoroutineBlockedInterruptible)
-	return t.interruptChan
 }
 
-// SleepFinish implements context.ChannelSleeper.SleepFinish.
-func (t *Task) SleepFinish(success bool) {
-	if !success {
-		// Our caller received from t.interruptChan; we need to re-send to it
-		// to ensure that t.interrupted() is still true.
-		t.interruptSelf()
-	}
+// completeSleep reactivates the address space.
+func (t *Task) completeSleep() {
 	t.accountTaskGoroutineLeave(TaskGoroutineBlockedInterruptible)
 	t.Activate()
 }
 
-// Interrupted implements context.ChannelSleeper.Interrupted.
+// Interrupted implements context.Context.Interrupted.
 func (t *Task) Interrupted() bool {
 	if t.interrupted() {
 		return true
@@ -245,4 +259,9 @@ func (t *Task) interruptSelf() {
 	// platform.Context.Interrupt() is unnecessary since a task goroutine
 	// calling interruptSelf() cannot also be blocked in
 	// platform.Context.Switch().
+}
+
+// Interrupt implements context.Blocker.Interrupt.
+func (t *Task) Interrupt() {
+	t.interrupt()
 }

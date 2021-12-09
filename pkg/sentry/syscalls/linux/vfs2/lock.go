@@ -37,18 +37,13 @@ func Flock(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	nonblocking := operation&linux.LOCK_NB != 0
 	operation &^= linux.LOCK_NB
 
-	var blocker lock.Blocker
-	if !nonblocking {
-		blocker = t
-	}
-
 	switch operation {
 	case linux.LOCK_EX:
-		if err := file.LockBSD(t, int32(t.TGIDInRoot()), lock.WriteLock, blocker); err != nil {
+		if err := file.LockBSD(t, int32(t.TGIDInRoot()), lock.WriteLock, !nonblocking /* block */); err != nil {
 			return 0, nil, err
 		}
 	case linux.LOCK_SH:
-		if err := file.LockBSD(t, int32(t.TGIDInRoot()), lock.ReadLock, blocker); err != nil {
+		if err := file.LockBSD(t, int32(t.TGIDInRoot()), lock.ReadLock, !nonblocking /* block */); err != nil {
 			return 0, nil, err
 		}
 	case linux.LOCK_UN:

@@ -450,6 +450,8 @@ func (fd *FileDescription) StateFields() []string {
 	}
 }
 
+func (fd *FileDescription) beforeSave() {}
+
 // +checklocksignore
 func (fd *FileDescription) StateSave(stateSinkObject state.Sink) {
 	fd.beforeSave()
@@ -465,6 +467,8 @@ func (fd *FileDescription) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(9, &fd.impl)
 }
 
+func (fd *FileDescription) afterLoad() {}
+
 // +checklocksignore
 func (fd *FileDescription) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fd.FileDescriptionRefs)
@@ -477,7 +481,6 @@ func (fd *FileDescription) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(7, &fd.writable)
 	stateSourceObject.Load(8, &fd.usedLockBSD)
 	stateSourceObject.Load(9, &fd.impl)
-	stateSourceObject.AfterLoad(fd.afterLoad)
 }
 
 func (f *FileDescriptionOptions) StateTypeName() string {

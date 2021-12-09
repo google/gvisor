@@ -40,7 +40,7 @@ func (p *Pipe) StateTypeName() string {
 
 func (p *Pipe) StateFields() []string {
 	return []string{
-		"Queue",
+		"queue",
 		"isNamed",
 		"readers",
 		"writers",
@@ -57,7 +57,7 @@ func (p *Pipe) beforeSave() {}
 // +checklocksignore
 func (p *Pipe) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
-	stateSinkObject.Save(0, &p.Queue)
+	stateSinkObject.Save(0, &p.queue)
 	stateSinkObject.Save(1, &p.isNamed)
 	stateSinkObject.Save(2, &p.readers)
 	stateSinkObject.Save(3, &p.writers)
@@ -70,7 +70,7 @@ func (p *Pipe) StateSave(stateSinkObject state.Sink) {
 
 // +checklocksignore
 func (p *Pipe) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &p.Queue)
+	stateSourceObject.Load(0, &p.queue)
 	stateSourceObject.Load(1, &p.isNamed)
 	stateSourceObject.Load(2, &p.readers)
 	stateSourceObject.Load(3, &p.writers)

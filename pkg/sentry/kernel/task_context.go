@@ -19,7 +19,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -35,17 +34,17 @@ import (
 )
 
 // Deadline implements context.Context.Deadline.
-func (t *Task) Deadline() (time.Time, bool) {
+func (*Task) Deadline() (time.Time, bool) {
 	return time.Time{}, false
 }
 
 // Done implements context.Context.Done.
-func (t *Task) Done() <-chan struct{} {
+func (*Task) Done() <-chan struct{} {
 	return nil
 }
 
 // Err implements context.Context.Err.
-func (t *Task) Err() error {
+func (*Task) Err() error {
 	return nil
 }
 
@@ -138,12 +137,22 @@ func (t *Task) contextValue(key interface{}, isTaskGoroutine bool) interface{} {
 	}
 }
 
+// fallbackContext adds a level of indirection for embedding to resolve
+// ambiguity for method resolution. We favor context.NoTask.
+type fallbackTask struct {
+	*Task
+}
+
 // taskAsyncContext implements context.Context for a goroutine that performs
 // work on behalf of a Task, but is not the task goroutine.
 type taskAsyncContext struct {
-	context.NoopSleeper
+	context.NoTask
+	fallbackTask
+}
 
-	t *Task
+// Value implements context.Context.Value.
+func (t *taskAsyncContext) Value(key interface{}) interface{} {
+	return t.fallbackTask.contextValue(key, false /* isTaskGoroutine */)
 }
 
 // AsyncContext returns a context.Context representing t. The returned
@@ -151,45 +160,7 @@ type taskAsyncContext struct {
 // goroutine; for example, signal delivery to t will not interrupt goroutines
 // that are blocking using the returned context.Context.
 func (t *Task) AsyncContext() context.Context {
-	return taskAsyncContext{t: t}
-}
-
-// Debugf implements log.Logger.Debugf.
-func (ctx taskAsyncContext) Debugf(format string, v ...interface{}) {
-	ctx.t.Debugf(format, v...)
-}
-
-// Infof implements log.Logger.Infof.
-func (ctx taskAsyncContext) Infof(format string, v ...interface{}) {
-	ctx.t.Infof(format, v...)
-}
-
-// Warningf implements log.Logger.Warningf.
-func (ctx taskAsyncContext) Warningf(format string, v ...interface{}) {
-	ctx.t.Warningf(format, v...)
-}
-
-// IsLogging implements log.Logger.IsLogging.
-func (ctx taskAsyncContext) IsLogging(level log.Level) bool {
-	return ctx.t.IsLogging(level)
-}
-
-// Deadline implements context.Context.Deadline.
-func (ctx taskAsyncContext) Deadline() (time.Time, bool) {
-	return time.Time{}, false
-}
-
-// Done implements context.Context.Done.
-func (ctx taskAsyncContext) Done() <-chan struct{} {
-	return nil
-}
-
-// Err implements context.Context.Err.
-func (ctx taskAsyncContext) Err() error {
-	return nil
-}
-
-// Value implements context.Context.Value.
-func (ctx taskAsyncContext) Value(key interface{}) interface{} {
-	return ctx.t.contextValue(key, false /* isTaskGoroutine */)
+	return &taskAsyncContext{
+		fallbackTask: fallbackTask{t},
+	}
 }

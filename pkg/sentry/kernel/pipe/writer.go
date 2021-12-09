@@ -34,7 +34,7 @@ func (w *Writer) Release(context.Context) {
 	w.Pipe.wClose()
 
 	// Wake up readers.
-	w.Pipe.Notify(waiter.EventHUp)
+	w.Pipe.queue.Notify(waiter.EventHUp)
 }
 
 // Readiness returns the ready events in the underlying pipe.
