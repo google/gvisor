@@ -32,6 +32,7 @@ func (p *pipeOperations) beforeSave() {
 		}
 		p.readAheadBuffer = append(p.readAheadBuffer, data...)
 	} else if p.flags.Write {
+		// It's not really possible to evaluate what can be reopened on restore.
 		file, err := p.opener.NonBlockingOpen(context.Background(), fs.PermMask{Write: true})
 		if err != nil {
 			panic(&fs.ErrSaveRejection{

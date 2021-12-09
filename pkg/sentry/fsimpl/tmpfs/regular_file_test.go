@@ -140,32 +140,32 @@ func TestLocks(t *testing.T) {
 
 	uid1 := 123
 	uid2 := 456
-	if err := fd.Impl().LockBSD(ctx, uid1, 0 /* ownerPID */, lock.ReadLock, nil); err != nil {
+	if err := fd.Impl().LockBSD(ctx, uid1, 0 /* ownerPID */, lock.ReadLock, false /* block */); err != nil {
 		t.Fatalf("fd.Impl().LockBSD failed: err = %v", err)
 	}
-	if err := fd.Impl().LockBSD(ctx, uid2, 0 /* ownerPID */, lock.ReadLock, nil); err != nil {
+	if err := fd.Impl().LockBSD(ctx, uid2, 0 /* ownerPID */, lock.ReadLock, false /* block */); err != nil {
 		t.Fatalf("fd.Impl().LockBSD failed: err = %v", err)
 	}
-	if got, want := fd.Impl().LockBSD(ctx, uid2, 0 /* ownerPID */, lock.WriteLock, nil), linuxerr.ErrWouldBlock; got != want {
+	if got, want := fd.Impl().LockBSD(ctx, uid2, 0 /* ownerPID */, lock.WriteLock, false /* block */), linuxerr.ErrWouldBlock; got != want {
 		t.Fatalf("fd.Impl().LockBSD failed: got = %v, want = %v", got, want)
 	}
 	if err := fd.Impl().UnlockBSD(ctx, uid1); err != nil {
 		t.Fatalf("fd.Impl().UnlockBSD failed: err = %v", err)
 	}
-	if err := fd.Impl().LockBSD(ctx, uid2, 0 /* ownerPID */, lock.WriteLock, nil); err != nil {
+	if err := fd.Impl().LockBSD(ctx, uid2, 0 /* ownerPID */, lock.WriteLock, false /* block */); err != nil {
 		t.Fatalf("fd.Impl().LockBSD failed: err = %v", err)
 	}
 
-	if err := fd.Impl().LockPOSIX(ctx, uid1, 0 /* ownerPID */, lock.ReadLock, lock.LockRange{Start: 0, End: 1}, nil); err != nil {
+	if err := fd.Impl().LockPOSIX(ctx, uid1, 0 /* ownerPID */, lock.ReadLock, lock.LockRange{Start: 0, End: 1}, false /* block */); err != nil {
 		t.Fatalf("fd.Impl().LockPOSIX failed: err = %v", err)
 	}
-	if err := fd.Impl().LockPOSIX(ctx, uid2, 0 /* ownerPID */, lock.ReadLock, lock.LockRange{Start: 1, End: 2}, nil); err != nil {
+	if err := fd.Impl().LockPOSIX(ctx, uid2, 0 /* ownerPID */, lock.ReadLock, lock.LockRange{Start: 1, End: 2}, false /* block */); err != nil {
 		t.Fatalf("fd.Impl().LockPOSIX failed: err = %v", err)
 	}
-	if err := fd.Impl().LockPOSIX(ctx, uid1, 0 /* ownerPID */, lock.WriteLock, lock.LockRange{Start: 0, End: 1}, nil); err != nil {
+	if err := fd.Impl().LockPOSIX(ctx, uid1, 0 /* ownerPID */, lock.WriteLock, lock.LockRange{Start: 0, End: 1}, false /* block */); err != nil {
 		t.Fatalf("fd.Impl().LockPOSIX failed: err = %v", err)
 	}
-	if got, want := fd.Impl().LockPOSIX(ctx, uid2, 0 /* ownerPID */, lock.ReadLock, lock.LockRange{Start: 0, End: 1}, nil), linuxerr.ErrWouldBlock; got != want {
+	if got, want := fd.Impl().LockPOSIX(ctx, uid2, 0 /* ownerPID */, lock.ReadLock, lock.LockRange{Start: 0, End: 1}, false /* block */), linuxerr.ErrWouldBlock; got != want {
 		t.Fatalf("fd.Impl().LockPOSIX failed: got = %v, want = %v", got, want)
 	}
 	if err := fd.Impl().UnlockPOSIX(ctx, uid1, lock.LockRange{Start: 0, End: 1}); err != nil {
