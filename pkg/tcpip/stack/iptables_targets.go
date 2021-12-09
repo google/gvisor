@@ -208,7 +208,7 @@ func snatAction(pkt *PacketBuffer, hook Hook, r *Route, port uint16, address tcp
 		if port == 0 {
 			portsOrIdents = targetPortRangeForTCPAndUDP(header.TCP(pkt.TransportHeader().View()).SourcePort())
 		}
-	case header.ICMPv4ProtocolNumber:
+	case header.ICMPv4ProtocolNumber, header.ICMPv6ProtocolNumber:
 		// Allow NAT-ing to any 16-bit value for ICMP's Ident field to match Linux
 		// behaviour.
 		//
@@ -289,20 +289,20 @@ func (mt *MasqueradeTarget) Action(pkt *PacketBuffer, hook Hook, r *Route, addre
 	return snatAction(pkt, hook, r, 0 /* port */, address)
 }
 
-func rewritePacket(n header.Network, t header.Transport, updateSRCFields, fullChecksum, updatePseudoHeader bool, newPort uint16, newAddr tcpip.Address) {
+func rewritePacket(n header.Network, t header.Transport, updateSRCFields, fullChecksum, updatePseudoHeader bool, newPortOrIdent uint16, newAddr tcpip.Address) {
 	switch t := t.(type) {
 	case header.ChecksummableTransport:
 		if updateSRCFields {
 			if fullChecksum {
-				t.SetSourcePortWithChecksumUpdate(newPort)
+				t.SetSourcePortWithChecksumUpdate(newPortOrIdent)
 			} else {
-				t.SetSourcePort(newPort)
+				t.SetSourcePort(newPortOrIdent)
 			}
 		} else {
 			if fullChecksum {
-				t.SetDestinationPortWithChecksumUpdate(newPort)
+				t.SetDestinationPortWithChecksumUpdate(newPortOrIdent)
 			} else {
-				t.SetDestinationPort(newPort)
+				t.SetDestinationPort(newPortOrIdent)
 			}
 		}
 
@@ -320,15 +320,37 @@ func rewritePacket(n header.Network, t header.Transport, updateSRCFields, fullCh
 		switch icmpType := t.Type(); icmpType {
 		case header.ICMPv4Echo:
 			if updateSRCFields {
-				t.SetIdentWithChecksumUpdate(newPort)
+				t.SetIdentWithChecksumUpdate(newPortOrIdent)
 			}
 		case header.ICMPv4EchoReply:
 			if !updateSRCFields {
-				t.SetIdentWithChecksumUpdate(newPort)
+				t.SetIdentWithChecksumUpdate(newPortOrIdent)
 			}
 		default:
 			panic(fmt.Sprintf("unexpected ICMPv4 type = %d", icmpType))
 		}
+	case header.ICMPv6:
+		switch icmpType := t.Type(); icmpType {
+		case header.ICMPv6EchoRequest:
+			if updateSRCFields {
+				t.SetIdentWithChecksumUpdate(newPortOrIdent)
+			}
+		case header.ICMPv6EchoReply:
+			if !updateSRCFields {
+				t.SetIdentWithChecksumUpdate(newPortOrIdent)
+			}
+		default:
+			panic(fmt.Sprintf("unexpected ICMPv4 type = %d", icmpType))
+		}
+
+		var oldAddr tcpip.Address
+		if updateSRCFields {
+			oldAddr = n.SourceAddress()
+		} else {
+			oldAddr = n.DestinationAddress()
+		}
+
+		t.UpdateChecksumPseudoHeaderAddress(oldAddr, newAddr)
 	default:
 		panic(fmt.Sprintf("unhandled transport = %#v", t))
 	}
