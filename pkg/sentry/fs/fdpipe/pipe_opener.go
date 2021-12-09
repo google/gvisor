@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // NonBlockingOpener is a generic host file opener used to retry opening host
@@ -37,8 +38,11 @@ type NonBlockingOpener interface {
 // Open blocks until a host pipe can be opened or the action was cancelled.
 // On success, returns fs.FileOperations wrapping the opened host pipe.
 func Open(ctx context.Context, opener NonBlockingOpener, flags fs.FileFlags) (fs.FileOperations, error) {
-	p := &pipeOpenState{}
-	canceled := false
+	var (
+		p        pipeOpenState
+		q        waiter.NeverReady
+		canceled bool
+	)
 	for {
 		if file, err := p.TryOpen(ctx, opener, flags); err != linuxerr.ErrWouldBlock {
 			return file, err
@@ -54,24 +58,9 @@ func Open(ctx context.Context, opener NonBlockingOpener, flags fs.FileFlags) (fs
 			return nil, linuxerr.ErrInterrupted
 		}
 
-		cancel := ctx.SleepStart()
-		select {
-		case <-cancel:
-			// The cancellation request received here really says
-			// "cancel from now on (or ASAP)". Any environmental
-			// changes happened before receiving it, that might have
-			// caused open to not block anymore, should still be
-			// respected. So we cannot just return here. We have to
-			// give open another try below first.
+		// Block for up to the requested amount of time.
+		if left, ok := ctx.BlockWithTimeoutOn(&q, waiter.ReadableEvents, 100*time.Millisecond); !ok && left != 0 {
 			canceled = true
-			ctx.SleepFinish(false)
-		case <-time.After(100 * time.Millisecond):
-			// If we would block, then delay retrying for a bit, since there
-			// is no way to know when the pipe would be ready to be
-			// re-opened. This is identical to sending an event notification
-			// to stop blocking in Task.Block, given that this routine will
-			// stop retrying if a cancelation is received.
-			ctx.SleepFinish(true)
 		}
 	}
 }

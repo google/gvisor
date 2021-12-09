@@ -67,13 +67,14 @@ type EventMask uint64
 // Events that waiters can wait on. The meaning is the same as those in the
 // poll() syscall.
 const (
-	EventIn     EventMask = 0x01   // POLLIN
-	EventPri    EventMask = 0x02   // POLLPRI
-	EventOut    EventMask = 0x04   // POLLOUT
-	EventErr    EventMask = 0x08   // POLLERR
-	EventHUp    EventMask = 0x10   // POLLHUP
-	EventRdNorm EventMask = 0x0040 // POLLRDNORM
-	EventWrNorm EventMask = 0x0100 // POLLWRNORM
+	EventIn       EventMask = 0x01   // POLLIN
+	EventPri      EventMask = 0x02   // POLLPRI
+	EventOut      EventMask = 0x04   // POLLOUT
+	EventErr      EventMask = 0x08   // POLLERR
+	EventHUp      EventMask = 0x10   // POLLHUP
+	EventRdNorm   EventMask = 0x0040 // POLLRDNORM
+	EventWrNorm   EventMask = 0x0100 // POLLWRNORM
+	EventInternal EventMask = 0x1000
 
 	allEvents      EventMask = 0x1f | EventRdNorm | EventWrNorm
 	ReadableEvents EventMask = EventIn | EventRdNorm
@@ -241,22 +242,19 @@ func (q *Queue) Notify(mask EventMask) {
 // Events returns the set of events being waited on. It is the union of the
 // masks of all registered entries.
 func (q *Queue) Events() EventMask {
-	ret := EventMask(0)
-
 	q.mu.RLock()
+	defer q.mu.RUnlock()
+	ret := EventMask(0)
 	for e := q.list.Front(); e != nil; e = e.Next() {
 		ret |= e.mask
 	}
-	q.mu.RUnlock()
-
 	return ret
 }
 
 // IsEmpty returns if the wait queue is empty or not.
 func (q *Queue) IsEmpty() bool {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
+	q.mu.RLock()
+	defer q.mu.RUnlock()
 	return q.list.Front() == nil
 }
 
@@ -280,4 +278,25 @@ func (*AlwaysReady) EventRegister(*Entry) error {
 // EventUnregister doesn't do anything because this object doesn't need to issue
 // notifications because its readiness never changes.
 func (*AlwaysReady) EventUnregister(e *Entry) {
+}
+
+// NeverReady implements the Waitable interface but is never ready. Otherwise,
+// this is exactly the same as AlwaysReady.
+type NeverReady struct {
+}
+
+// Readiness always returns the input mask because this object is always ready.
+func (*NeverReady) Readiness(mask EventMask) EventMask {
+	return mask
+}
+
+// EventRegister doesn't do anything because this object doesn't need to issue
+// notifications because its readiness never changes.
+func (*NeverReady) EventRegister(e *Entry) error {
+	return nil
+}
+
+// EventUnregister doesn't do anything because this object doesn't need to issue
+// notifications because its readiness never changes.
+func (*NeverReady) EventUnregister(e *Entry) {
 }

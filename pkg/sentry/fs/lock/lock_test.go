@@ -17,6 +17,8 @@ package lock
 import (
 	"reflect"
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 )
 
 type entry struct {
@@ -182,13 +184,11 @@ func TestSetLock(t *testing.T) {
 		uid UniqueID
 		// lock type requested.
 		lockType LockType
-
-		// success is true if taking the above
-		// lock should succeed.
-		success bool
+		// err is the expected results.
+		err error
 
 		// Expected layout of the set after locking
-		// if success is true.
+		// if err is nil.
 		after []entry
 	}{
 		{
@@ -197,7 +197,6 @@ func TestSetLock(t *testing.T) {
 			end:      0,
 			uid:      0,
 			lockType: ReadLock,
-			success:  true,
 		},
 		{
 			name:     "set zero length WriteLock on empty set",
@@ -205,7 +204,6 @@ func TestSetLock(t *testing.T) {
 			end:      0,
 			uid:      0,
 			lockType: WriteLock,
-			success:  true,
 		},
 		{
 			name:     "set ReadLock on empty set",
@@ -213,7 +211,6 @@ func TestSetLock(t *testing.T) {
 			end:      LockEOF,
 			uid:      0,
 			lockType: ReadLock,
-			success:  true,
 			// + ----------------------------------------- +
 			// | Readers 0                                 |
 			// + ----------------------------------------- +
@@ -231,7 +228,6 @@ func TestSetLock(t *testing.T) {
 			end:      LockEOF,
 			uid:      0,
 			lockType: WriteLock,
-			success:  true,
 			// + ----------------------------------------- +
 			// | Writer  0                                 |
 			// + ----------------------------------------- +
@@ -259,7 +255,6 @@ func TestSetLock(t *testing.T) {
 			end:      4096,
 			uid:      0,
 			lockType: ReadLock,
-			success:  true,
 			// + ----------- + --------------------------- +
 			// | Readers 0   | Writer 0                    |
 			// + ----------- + --------------------------- +
@@ -291,7 +286,6 @@ func TestSetLock(t *testing.T) {
 			end:      4096,
 			uid:      0,
 			lockType: WriteLock,
-			success:  true,
 			// + ----------- + --------------------------- +
 			// | Writer 0    | Readers 0                   |
 			// + ----------- + --------------------------- +
@@ -323,7 +317,7 @@ func TestSetLock(t *testing.T) {
 			end:      4096,
 			uid:      1,
 			lockType: ReadLock,
-			success:  false,
+			err:      linuxerr.ErrWouldBlock,
 		},
 		{
 			name: "set WriteLock on ReadLock different uid",
@@ -341,7 +335,7 @@ func TestSetLock(t *testing.T) {
 			end:      4096,
 			uid:      1,
 			lockType: WriteLock,
-			success:  false,
+			err:      linuxerr.ErrWouldBlock,
 		},
 		{
 			name: "split ReadLock for overlapping lock at start 0",
@@ -359,7 +353,6 @@ func TestSetLock(t *testing.T) {
 			end:      4096,
 			uid:      1,
 			lockType: ReadLock,
-			success:  true,
 			// + -------------- + --------------------------- +
 			// | Readers 0 & 1  | Readers 0                   |
 			// + -------------- + --------------------------- +
@@ -391,7 +384,6 @@ func TestSetLock(t *testing.T) {
 			end:      8192,
 			uid:      1,
 			lockType: ReadLock,
-			success:  true,
 			// + ---------- + -------------- + ----------- +
 			// | Readers 0  | Readers 0 & 1  | Readers 0   |
 			// + ---------- + -------------- + ----------- +
@@ -427,7 +419,6 @@ func TestSetLock(t *testing.T) {
 			end:      8192,
 			uid:      0,
 			lockType: ReadLock,
-			success:  true,
 			// + ----------------------------------------- +
 			// | Readers 0                                 |
 			// + ----------------------------------------- +
@@ -455,7 +446,6 @@ func TestSetLock(t *testing.T) {
 			end:      LockEOF,
 			uid:      0,
 			lockType: ReadLock,
-			success:  true,
 			// Note that this is not merged after lock does a Split.  This is
 			// fine because the two locks will still *behave* as one.  In other
 			// words we can fragment any lock all we want and semantically it
@@ -492,7 +482,6 @@ func TestSetLock(t *testing.T) {
 			end:      4096,
 			uid:      1,
 			lockType: ReadLock,
-			success:  true,
 			// + --------- + ------------- + ------------- +
 			// | Reader 1  | Readers 0 & 1 | Reader 0      |
 			// + ----------+ ------------- + ------------- +
@@ -536,7 +525,6 @@ func TestSetLock(t *testing.T) {
 			end:      4096,
 			uid:      0,
 			lockType: WriteLock,
-			success:  true,
 			// + ------------- + -------- + ------------- +
 			// | Readers 0 & 1 | Writer 0 | Readers 0 & 2 |
 			// + ------------- + -------- + ------------- +
@@ -580,7 +568,6 @@ func TestSetLock(t *testing.T) {
 			end:      3072,
 			uid:      0,
 			lockType: WriteLock,
-			success:  true,
 			// + ------------- + -------- + --- + ------------- +
 			// | Readers 0 & 1 | Writer 0 | gap | Readers 0 & 2 |
 			// + ------------- + -------- + --- + ------------- +
@@ -620,7 +607,7 @@ func TestSetLock(t *testing.T) {
 			end:      2048,
 			uid:      0,
 			lockType: WriteLock,
-			success:  false,
+			err:      linuxerr.ErrWouldBlock,
 		},
 		{
 			name: "take WriteLock on whole file if all uids are the same",
@@ -650,7 +637,6 @@ func TestSetLock(t *testing.T) {
 			end:      LockEOF,
 			uid:      0,
 			lockType: WriteLock,
-			success:  true,
 			// We do not manually merge locks.  Semantically a fragmented lock
 			// held by the same uid will behave as one lock so it makes no difference.
 			//
@@ -676,7 +662,7 @@ func TestSetLock(t *testing.T) {
 			l := fill(test.before)
 
 			r := LockRange{Start: test.start, End: test.end}
-			success := l.lock(test.uid, 0 /* ownerPID */, test.lockType, r)
+			err := l.lock(test.uid, 0 /* ownerPID */, test.lockType, r)
 			var got []entry
 			for seg := l.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
 				got = append(got, entry{
@@ -685,12 +671,12 @@ func TestSetLock(t *testing.T) {
 				})
 			}
 
-			if success != test.success {
-				t.Errorf("setlock(%v, %+v, %d, %d) got success %v, want %v", test.before, r, test.uid, test.lockType, success, test.success)
+			if err != test.err {
+				t.Errorf("setlock(%v, %+v, %d, %d) got err %v, want %v", test.before, r, test.uid, test.lockType, err, test.err)
 				return
 			}
 
-			if success {
+			if err == nil {
 				if !equals(got, test.after) {
 					t.Errorf("got set %+v, want %+v", got, test.after)
 				}

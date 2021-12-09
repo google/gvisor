@@ -806,28 +806,27 @@ type CreateProcessArgs struct {
 
 // NewContext returns a context.Context that represents the task that will be
 // created by args.NewContext(k).
-func (args *CreateProcessArgs) NewContext(k *Kernel) *createProcessContext {
+func (args *CreateProcessArgs) NewContext(k *Kernel) context.Context {
 	return &createProcessContext{
-		Logger: log.Log(),
-		k:      k,
-		args:   args,
+		Context: context.Background(),
+		kernel:  k,
+		args:    args,
 	}
 }
 
 // createProcessContext is a context.Context that represents the context
 // associated with a task that is being created.
 type createProcessContext struct {
-	context.NoopSleeper
-	log.Logger
-	k    *Kernel
-	args *CreateProcessArgs
+	context.Context
+	kernel *Kernel
+	args   *CreateProcessArgs
 }
 
 // Value implements context.Context.Value.
 func (ctx *createProcessContext) Value(key interface{}) interface{} {
 	switch key {
 	case CtxKernel:
-		return ctx.k
+		return ctx.kernel
 	case CtxPIDNamespace:
 		return ctx.args.PIDNamespace
 	case CtxUTSNamespace:
@@ -852,34 +851,34 @@ func (ctx *createProcessContext) Value(key interface{}) interface{} {
 		root.IncRef()
 		return root
 	case vfs.CtxMountNamespace:
-		if ctx.k.globalInit == nil {
+		if ctx.kernel.globalInit == nil {
 			return nil
 		}
-		mntns := ctx.k.GlobalInit().Leader().MountNamespaceVFS2()
+		mntns := ctx.kernel.GlobalInit().Leader().MountNamespaceVFS2()
 		mntns.IncRef()
 		return mntns
 	case fs.CtxDirentCacheLimiter:
-		return ctx.k.DirentCacheLimiter
+		return ctx.kernel.DirentCacheLimiter
 	case inet.CtxStack:
-		return ctx.k.RootNetworkNamespace().Stack()
+		return ctx.kernel.RootNetworkNamespace().Stack()
 	case ktime.CtxRealtimeClock:
-		return ctx.k.RealtimeClock()
+		return ctx.kernel.RealtimeClock()
 	case limits.CtxLimits:
 		return ctx.args.Limits
 	case pgalloc.CtxMemoryFile:
-		return ctx.k.mf
+		return ctx.kernel.mf
 	case pgalloc.CtxMemoryFileProvider:
-		return ctx.k
+		return ctx.kernel
 	case platform.CtxPlatform:
-		return ctx.k
+		return ctx.kernel
 	case uniqueid.CtxGlobalUniqueID:
-		return ctx.k.UniqueID()
+		return ctx.kernel.UniqueID()
 	case uniqueid.CtxGlobalUniqueIDProvider:
-		return ctx.k
+		return ctx.kernel
 	case uniqueid.CtxInotifyCookie:
-		return ctx.k.GenerateInotifyCookie()
+		return ctx.kernel.GenerateInotifyCookie()
 	case unimpl.CtxEvents:
-		return ctx.k
+		return ctx.kernel
 	default:
 		return nil
 	}
@@ -1539,9 +1538,9 @@ func (k *Kernel) MemoryFile() *pgalloc.MemoryFile {
 // Callers are responsible for ensuring that the returned Context is not used
 // concurrently with changes to the Kernel.
 func (k *Kernel) SupervisorContext() context.Context {
-	return supervisorContext{
+	return &supervisorContext{
+		Kernel: k,
 		Logger: log.Log(),
-		k:      k,
 	}
 }
 
@@ -1641,13 +1640,28 @@ func (k *Kernel) ListSockets() []*SocketRecord {
 
 // supervisorContext is a privileged context.
 type supervisorContext struct {
-	context.NoopSleeper
+	context.NoTask
 	log.Logger
-	k *Kernel
+	*Kernel
+}
+
+// Deadline implements context.Context.Deadline.
+func (*Kernel) Deadline() (time.Time, bool) {
+	return time.Time{}, false
+}
+
+// Done implements context.Context.Done.
+func (*Kernel) Done() <-chan struct{} {
+	return nil
+}
+
+// Err implements context.Context.Err.
+func (*Kernel) Err() error {
+	return nil
 }
 
 // Value implements context.Context.
-func (ctx supervisorContext) Value(key interface{}) interface{} {
+func (ctx *supervisorContext) Value(key interface{}) interface{} {
 	switch key {
 	case CtxCanTrace:
 		// The supervisor context can trace anything. (None of
@@ -1655,60 +1669,60 @@ func (ctx supervisorContext) Value(key interface{}) interface{} {
 		// permissions are required for certain file accesses.)
 		return func(*Task, bool) bool { return true }
 	case CtxKernel:
-		return ctx.k
+		return ctx.Kernel
 	case CtxPIDNamespace:
-		return ctx.k.tasks.Root
+		return ctx.Kernel.tasks.Root
 	case CtxUTSNamespace:
-		return ctx.k.rootUTSNamespace
+		return ctx.Kernel.rootUTSNamespace
 	case ipc.CtxIPCNamespace:
-		ipcns := ctx.k.rootIPCNamespace
+		ipcns := ctx.Kernel.rootIPCNamespace
 		ipcns.IncRef()
 		return ipcns
 	case auth.CtxCredentials:
 		// The supervisor context is global root.
-		return auth.NewRootCredentials(ctx.k.rootUserNamespace)
+		return auth.NewRootCredentials(ctx.Kernel.rootUserNamespace)
 	case fs.CtxRoot:
-		if ctx.k.globalInit != nil {
-			return ctx.k.globalInit.mounts.Root()
+		if ctx.Kernel.globalInit != nil {
+			return ctx.Kernel.globalInit.mounts.Root()
 		}
 		return nil
 	case vfs.CtxRoot:
-		if ctx.k.globalInit == nil {
+		if ctx.Kernel.globalInit == nil {
 			return vfs.VirtualDentry{}
 		}
-		root := ctx.k.GlobalInit().Leader().MountNamespaceVFS2().Root()
+		root := ctx.Kernel.GlobalInit().Leader().MountNamespaceVFS2().Root()
 		root.IncRef()
 		return root
 	case vfs.CtxMountNamespace:
-		if ctx.k.globalInit == nil {
+		if ctx.Kernel.globalInit == nil {
 			return nil
 		}
-		mntns := ctx.k.GlobalInit().Leader().MountNamespaceVFS2()
+		mntns := ctx.Kernel.GlobalInit().Leader().MountNamespaceVFS2()
 		mntns.IncRef()
 		return mntns
 	case fs.CtxDirentCacheLimiter:
-		return ctx.k.DirentCacheLimiter
+		return ctx.Kernel.DirentCacheLimiter
 	case inet.CtxStack:
-		return ctx.k.RootNetworkNamespace().Stack()
+		return ctx.Kernel.RootNetworkNamespace().Stack()
 	case ktime.CtxRealtimeClock:
-		return ctx.k.RealtimeClock()
+		return ctx.Kernel.RealtimeClock()
 	case limits.CtxLimits:
 		// No limits apply.
 		return limits.NewLimitSet()
 	case pgalloc.CtxMemoryFile:
-		return ctx.k.mf
+		return ctx.Kernel.mf
 	case pgalloc.CtxMemoryFileProvider:
-		return ctx.k
+		return ctx.Kernel
 	case platform.CtxPlatform:
-		return ctx.k
+		return ctx.Kernel
 	case uniqueid.CtxGlobalUniqueID:
-		return ctx.k.UniqueID()
+		return ctx.Kernel.UniqueID()
 	case uniqueid.CtxGlobalUniqueIDProvider:
-		return ctx.k
+		return ctx.Kernel
 	case uniqueid.CtxInotifyCookie:
-		return ctx.k.GenerateInotifyCookie()
+		return ctx.Kernel.GenerateInotifyCookie()
 	case unimpl.CtxEvents:
-		return ctx.k
+		return ctx.Kernel
 	default:
 		return nil
 	}
