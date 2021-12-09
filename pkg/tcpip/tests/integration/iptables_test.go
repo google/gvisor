@@ -1372,6 +1372,32 @@ func TestNATEcho(t *testing.T) {
 		)
 	}
 
+	v6EchoPkt := func(srcAddr, dstAddr tcpip.Address, reply bool) buffer.View {
+		icmpType := header.ICMPv6EchoRequest
+		if reply {
+			icmpType = header.ICMPv6EchoReply
+		}
+
+		return icmpv6Packet(srcAddr, dstAddr, icmpType, ident)
+	}
+
+	checkV6EchoPkt := func(t *testing.T, v buffer.View, srcAddr, dstAddr tcpip.Address, reply bool) {
+		t.Helper()
+
+		icmpType := header.ICMPv6EchoRequest
+		if reply {
+			icmpType = header.ICMPv6EchoReply
+		}
+
+		checker.IPv6(t, v,
+			checker.SrcAddr(srcAddr),
+			checker.DstAddr(dstAddr),
+			checker.ICMPv6(
+				checker.ICMPv6Type(icmpType),
+			),
+		)
+	}
+
 	type natTypeTest struct {
 		name                                   string
 		natTypes                               []natType
@@ -1419,6 +1445,40 @@ func TestNATEcho(t *testing.T) {
 					requestDst:         utils.RouterNIC2IPv4Addr.AddressWithPrefix.Address,
 					expectedRequestSrc: utils.RouterNIC1IPv4Addr.AddressWithPrefix.Address,
 					expectedRequestDst: utils.Host1IPv4Addr.AddressWithPrefix.Address,
+				},
+			},
+		},
+		{
+			name:         "IPv6",
+			netProto:     header.IPv6ProtocolNumber,
+			transProto:   header.ICMPv6ProtocolNumber,
+			echoPkt:      v6EchoPkt,
+			checkEchoPkt: checkV6EchoPkt,
+
+			natTypes: []natTypeTest{
+				{
+					name:               "SNAT",
+					natTypes:           snatTypes,
+					requestSrc:         utils.Host2IPv6Addr.AddressWithPrefix.Address,
+					requestDst:         utils.Host1IPv6Addr.AddressWithPrefix.Address,
+					expectedRequestSrc: utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address,
+					expectedRequestDst: utils.Host1IPv6Addr.AddressWithPrefix.Address,
+				},
+				{
+					name:               "DNAT",
+					natTypes:           []natType{dnatTarget},
+					requestSrc:         utils.Host2IPv6Addr.AddressWithPrefix.Address,
+					requestDst:         utils.RouterNIC2IPv6Addr.AddressWithPrefix.Address,
+					expectedRequestSrc: utils.Host2IPv6Addr.AddressWithPrefix.Address,
+					expectedRequestDst: utils.Host1IPv6Addr.AddressWithPrefix.Address,
+				},
+				{
+					name:               "Twice-NAT",
+					natTypes:           twiceNATTypes,
+					requestSrc:         utils.Host2IPv6Addr.AddressWithPrefix.Address,
+					requestDst:         utils.RouterNIC2IPv6Addr.AddressWithPrefix.Address,
+					expectedRequestSrc: utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address,
+					expectedRequestDst: utils.Host1IPv6Addr.AddressWithPrefix.Address,
 				},
 			},
 		},
@@ -2057,6 +2117,27 @@ func tcpv6Packet(srcAddr, dstAddr tcpip.Address, srcPort, dstPort uint16, dataSi
 	return hdr.View()
 }
 
+func icmpv6Packet(srcAddr, dstAddr tcpip.Address, icmpType header.ICMPv6Type, ident uint16) buffer.View {
+	hdr := buffer.NewPrependable(header.IPv6MinimumSize + header.ICMPv6MinimumSize)
+	icmp := header.ICMPv6(hdr.Prepend(header.ICMPv6MinimumSize))
+	icmp.SetType(icmpType)
+	icmp.SetIdent(ident)
+	icmp.SetChecksum(0)
+	icmp.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+		Header: icmp,
+		Src:    srcAddr,
+		Dst:    dstAddr,
+	}))
+	encodeIPv6Header(
+		hdr.Prepend(header.IPv6MinimumSize),
+		len(icmp),
+		header.ICMPv6ProtocolNumber,
+		srcAddr,
+		dstAddr,
+	)
+	return hdr.View()
+}
+
 func TestNATICMPError(t *testing.T) {
 	const (
 		srcPort  = 1234
@@ -2654,6 +2735,27 @@ func TestSNATHandlePortOrIdentConflicts(t *testing.T) {
 						}
 					},
 					srcPortOrIdentRanges: srcPortRanges,
+				},
+				{
+					name:  "ICMP Echo",
+					proto: header.ICMPv6ProtocolNumber,
+					buf: func(srcAddr tcpip.Address, ident uint16) buffer.View {
+						return icmpv6Packet(srcAddr, utils.Host1IPv6Addr.AddressWithPrefix.Address, header.ICMPv6EchoRequest, ident)
+					},
+					checkNATed: func(t *testing.T, v buffer.View, originalIdent uint16, firstPacket bool, expectedRange portOrIdentRange) {
+						checker.IPv6(t, v,
+							checker.SrcAddr(utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address),
+							checker.DstAddr(utils.Host1IPv6Addr.AddressWithPrefix.Address),
+							checker.ICMPv6(
+								checker.ICMPv6Type(header.ICMPv6EchoRequest),
+							),
+						)
+
+						if !t.Failed() {
+							compareSrcPortOrIdent(t, header.ICMPv6(header.IPv6(v).Payload()).Ident(), originalIdent, firstPacket, expectedRange)
+						}
+					},
+					srcPortOrIdentRanges: identRanges,
 				},
 			},
 		},
