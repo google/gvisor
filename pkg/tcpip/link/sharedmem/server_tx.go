@@ -162,8 +162,8 @@ func (s *serverTx) fillPacket(views []buffer.View, buffers []queue.RxBuffer) (fi
 }
 
 func (s *serverTx) transmit(views []buffer.View) bool {
-	buffers := make([]queue.RxBuffer, 8)
-	buffers, totalCopied := s.fillPacket(views, buffers)
+	var bufs [8]queue.RxBuffer
+	buffers, totalCopied := s.fillPacket(views, bufs[:])
 	b := s.completionPipe.Push(queue.RxCompletionSize(len(buffers)))
 	if b == nil {
 		return false
