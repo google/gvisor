@@ -6,6 +6,7 @@ doctool/test-make-doc.js,b/68848110,Expected to fail.
 internet/test-dgram-multicast-set-interface-lo.js,b/162798882,
 internet/test-doctool-versions.js,,Broken test
 internet/test-uv-threadpool-schedule.js,,Broken test
+internet/test-dns.js,,Broken test
 parallel/test-dgram-bind-fd.js,b/132447356,
 parallel/test-dgram-socket-buffer-size.js,b/68847921,
 parallel/test-dns-channel-timeout.js,b/161893056,
