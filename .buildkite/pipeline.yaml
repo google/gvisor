@@ -258,51 +258,51 @@ steps:
   # Run all benchmarks.
   - <<: *benchmarks
     label: ":bazel: ABSL build benchmarks"
-    command: make benchmark-platforms BENCHMARKS_FILTER="ABSL/page_cache.clean" BENCHMARKS_SUITE=absl BENCHMARKS_TARGETS=test/benchmarks/fs:bazel_test
+    command: make -i benchmark-platforms BENCHMARKS_FILTER="ABSL/page_cache.clean" BENCHMARKS_SUITE=absl BENCHMARKS_TARGETS=test/benchmarks/fs:bazel_test
   - <<: *benchmarks
     label: ":go: runsc build benchmarks"
-    command: make benchmark-platforms BENCHMARKS_FILTER="Runsc/page_cache.clean/filesystem.bind" BENCHMARKS_SUITE=runsc BENCHMARKS_TARGETS=test/benchmarks/fs:bazel_test
+    command: make -i benchmark-platforms BENCHMARKS_FILTER="Runsc/page_cache.clean/filesystem.bind" BENCHMARKS_SUITE=runsc BENCHMARKS_TARGETS=test/benchmarks/fs:bazel_test
   - <<: *benchmarks
     label: ":metal: FFMPEG benchmarks"
-    command: make benchmark-platforms BENCHMARKS_SUITE=ffmpeg BENCHMARKS_TARGETS=test/benchmarks/media:ffmpeg_test
+    command: make -i benchmark-platforms BENCHMARKS_SUITE=ffmpeg BENCHMARKS_TARGETS=test/benchmarks/media:ffmpeg_test
   # For fio, running with --test.benchtime=Xs scales the written/read
   # bytes to several GB. This is not a problem for root/bind/volume mounts,
   # but for tmpfs mounts, the size can grow to more memory than the machine
   # has availabe. Fix the runs to 1GB written/read for the benchmark.
   - <<: *benchmarks
     label: ":floppy_disk: FIO benchmarks (read/write)"
-    command: make benchmark-platforms BENCHMARKS_SUITE=fio BENCHMARKS_TARGETS=test/benchmarks/fs:fio_test BENCHMARKS_FILTER=Fio/operation\.[rw][er] BENCHMARKS_OPTIONS=--test.benchtime=1000x
+    command: make -i benchmark-platforms BENCHMARKS_SUITE=fio BENCHMARKS_TARGETS=test/benchmarks/fs:fio_test BENCHMARKS_FILTER=Fio/operation\.[rw][er] BENCHMARKS_OPTIONS=--test.benchtime=1000x
   # For rand(read|write) fio benchmarks, running 15s does not overwhelm the system for tmpfs mounts.
   - <<: *benchmarks
     label: ":cd: FIO benchmarks (randread/randwrite)"
-    command: make benchmark-platforms BENCHMARKS_SUITE=fio BENCHMARKS_TARGETS=test/benchmarks/fs:fio_test BENCHMARKS_FILTER=Fio/operation\.rand BENCHMARKS_OPTIONS=--test.benchtime=15s
+    command: make -i benchmark-platforms BENCHMARKS_SUITE=fio BENCHMARKS_TARGETS=test/benchmarks/fs:fio_test BENCHMARKS_FILTER=Fio/operation\.rand BENCHMARKS_OPTIONS=--test.benchtime=15s
   - <<: *benchmarks
     label: ":globe_with_meridians: HTTPD benchmarks"
-    command: make benchmark-platforms BENCHMARKS_FILTER="Continuous" BENCHMARKS_SUITE=httpd BENCHMARKS_TARGETS=test/benchmarks/network:httpd_test
+    command: make -i benchmark-platforms BENCHMARKS_FILTER="Continuous" BENCHMARKS_SUITE=httpd BENCHMARKS_TARGETS=test/benchmarks/network:httpd_test
   - <<: *benchmarks
     label: ":piedpiper: iperf benchmarks"
-    command: make benchmark-platforms BENCHMARKS_SUITE=iperf BENCHMARKS_TARGETS=test/benchmarks/network:iperf_test
+    command: make -i benchmark-platforms BENCHMARKS_SUITE=iperf BENCHMARKS_TARGETS=test/benchmarks/network:iperf_test
   - <<: *benchmarks
     label: ":nginx: nginx benchmarks"
-    command: make benchmark-platforms BENCHMARKS_FILTER="Continuous" BENCHMARKS_SUITE=nginx BENCHMARKS_TARGETS=test/benchmarks/network:nginx_test
+    command: make -i benchmark-platforms BENCHMARKS_FILTER="Continuous" BENCHMARKS_SUITE=nginx BENCHMARKS_TARGETS=test/benchmarks/network:nginx_test
   - <<: *benchmarks
     label: ":node: node benchmarks"
-    command: make benchmark-platforms BENCHMARKS_SUITE=node BENCHMARKS_TARGETS=test/benchmarks/network:node_test
+    command: make -i benchmark-platforms BENCHMARKS_SUITE=node BENCHMARKS_TARGETS=test/benchmarks/network:node_test
   - <<: *benchmarks
     label: ":redis: Redis benchmarks"
-    command: make benchmark-platforms BENCHMARKS_SUITE=redis BENCHMARKS_TARGETS=test/benchmarks/database:redis_test BENCHMARKS_OPTIONS=-test.benchtime=15s
+    command: make -i benchmark-platforms BENCHMARKS_SUITE=redis BENCHMARKS_TARGETS=test/benchmarks/database:redis_test BENCHMARKS_OPTIONS=-test.benchtime=15s
   - <<: *benchmarks
     label: ":ruby: Ruby benchmarks"
-    command: make benchmark-platforms BENCHMARKS_SUITE=ruby BENCHMARKS_TARGETS=test/benchmarks/network:ruby_test
+    command: make -i benchmark-platforms BENCHMARKS_SUITE=ruby BENCHMARKS_TARGETS=test/benchmarks/network:ruby_test
   - <<: *benchmarks
     label: ":weight_lifter: Size benchmarks"
-    command: make benchmark-platforms  BENCHMARKS_SUITE=size BENCHMARKS_TARGETS=test/benchmarks/base:size_test
+    command: make -i benchmark-platforms  BENCHMARKS_SUITE=size BENCHMARKS_TARGETS=test/benchmarks/base:size_test
   - <<: *benchmarks
     label: ":speedboat: Startup benchmarks"
-    command: make benchmark-platforms BENCHMARKS_SUITE=startup BENCHMARKS_TARGETS=test/benchmarks/base:startup_test
+    command: make -i benchmark-platforms BENCHMARKS_SUITE=startup BENCHMARKS_TARGETS=test/benchmarks/base:startup_test
   - <<: *benchmarks
     label: ":computer: sysbench benchmarks"
-    command: make benchmark-platforms BENCHMARKS_SUITE=sysbench BENCHMARKS_TARGETS=test/benchmarks/base:sysbench_test
+    command: make -i benchmark-platforms BENCHMARKS_SUITE=sysbench BENCHMARKS_TARGETS=test/benchmarks/base:sysbench_test
   - <<: *benchmarks
     label: ":tensorflow: TensorFlow benchmarks"
-    command: make benchmark-platforms BENCHMARKS_SUITE=tensorflow BENCHMARKS_TARGETS=test/benchmarks/ml:tensorflow_test
+    command: make -i benchmark-platforms BENCHMARKS_SUITE=tensorflow BENCHMARKS_TARGETS=test/benchmarks/ml:tensorflow_test
