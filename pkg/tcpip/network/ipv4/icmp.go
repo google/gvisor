@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/header/parse"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -255,6 +256,12 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 		e.dispatcher.DeliverTransportPacket(header.ICMPv4ProtocolNumber, pkt)
 		pkt = nil
 
+		sent := e.stats.icmp.packetsSent
+		if !e.protocol.allowICMPReply(header.ICMPv4EchoReply, header.ICMPv4UnusedCode) {
+			sent.rateLimited.Increment()
+			return
+		}
+
 		// Take the base of the incoming request IP header but replace the options.
 		replyHeaderLength := uint8(header.IPv4MinimumSize + len(newOptions))
 		replyIPHdr := header.IPv4(append(iph[:header.IPv4MinimumSize:header.IPv4MinimumSize], newOptions...))
@@ -275,9 +282,10 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 		}
 		defer r.Release()
 
-		sent := e.stats.icmp.packetsSent
-		if !e.protocol.allowICMPReply(header.ICMPv4EchoReply, header.ICMPv4UnusedCode) {
-			sent.rateLimited.Increment()
+		outgoingEP, ok := e.protocol.getEndpointForNIC(r.NICID())
+		if !ok {
+			// The outgoing NIC went away.
+			sent.dropped.Increment()
 			return
 		}
 
@@ -308,6 +316,9 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 		replyIPHdr.SetSourceAddress(r.LocalAddress())
 		replyIPHdr.SetDestinationAddress(r.RemoteAddress())
 		replyIPHdr.SetTTL(r.DefaultTTL())
+		replyIPHdr.SetTotalLength(uint16(len(replyIPHdr) + len(replyData)))
+		replyIPHdr.SetChecksum(0)
+		replyIPHdr.SetChecksum(^replyIPHdr.CalculateChecksum())
 
 		replyICMPHdr := header.ICMPv4(replyData)
 		replyICMPHdr.SetType(header.ICMPv4EchoReply)
@@ -321,9 +332,16 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 			Data:               replyVV,
 		})
 		defer replyPkt.DecRef()
-		replyPkt.TransportProtocolNumber = header.ICMPv4ProtocolNumber
+		// Populate the network/transport headers in the packet buffer so the
+		// ICMP packet goes through IPTables.
+		if ok := parse.IPv4(replyPkt); !ok {
+			panic("expected to parse IPv4 header we just created")
+		}
+		if ok := parse.ICMPv4(replyPkt); !ok {
+			panic("expected to parse ICMPv4 header we just created")
+		}
 
-		if err := r.WriteHeaderIncludedPacket(replyPkt); err != nil {
+		if err := outgoingEP.writePacket(r, replyPkt); err != nil {
 			sent.dropped.Increment()
 			return
 		}

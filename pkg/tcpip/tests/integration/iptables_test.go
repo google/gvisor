@@ -971,7 +971,7 @@ func TestForwardingHook(t *testing.T) {
 	}
 }
 
-func TestInputHookWithLocalForwarding(t *testing.T) {
+func TestFilteringEchoPacketsWithLocalForwarding(t *testing.T) {
 	const (
 		nicID1 = 1
 		nicID2 = 2
@@ -1018,37 +1018,58 @@ func TestInputHookWithLocalForwarding(t *testing.T) {
 		},
 	}
 
+	type droppedEcho int
+	const (
+		_ droppedEcho = iota
+		noneDropped
+		echoRequestDroppedAtInput
+		echoRequestDroppedAtForward
+		echoReplyDropped
+	)
+
 	subTests := []struct {
-		name        string
-		setupFilter func(*testing.T, *stack.Stack, tcpip.NetworkProtocolNumber)
-		expectDrop  bool
+		name         string
+		setupFilter  func(*testing.T, *stack.Stack, tcpip.NetworkProtocolNumber)
+		expectResult droppedEcho
 	}{
 		{
-			name:        "Accept",
-			setupFilter: func(*testing.T, *stack.Stack, tcpip.NetworkProtocolNumber) { /* no filter */ },
-			expectDrop:  false,
+			name:         "Accept",
+			setupFilter:  func(*testing.T, *stack.Stack, tcpip.NetworkProtocolNumber) { /* no filter */ },
+			expectResult: noneDropped,
 		},
 
 		{
-			name:        "Drop",
-			setupFilter: setupDropFilter(stack.Input, stack.IPHeaderFilter{}),
-			expectDrop:  true,
+			name:         "Input Drop",
+			setupFilter:  setupDropFilter(stack.Input, stack.IPHeaderFilter{}),
+			expectResult: echoRequestDroppedAtInput,
 		},
 		{
-			name:        "Drop with input NIC filtering on arrival NIC",
-			setupFilter: setupDropFilter(stack.Input, stack.IPHeaderFilter{InputInterface: nic1Name}),
-			expectDrop:  true,
+			name:         "Input Drop with input NIC filtering on arrival NIC",
+			setupFilter:  setupDropFilter(stack.Input, stack.IPHeaderFilter{InputInterface: nic1Name}),
+			expectResult: echoRequestDroppedAtInput,
 		},
 		{
-			name:        "Drop with input NIC filtering on delivered NIC",
-			setupFilter: setupDropFilter(stack.Input, stack.IPHeaderFilter{InputInterface: nic2Name}),
-			expectDrop:  false,
+			name:         "Input Drop with input NIC filtering on delivered NIC",
+			setupFilter:  setupDropFilter(stack.Input, stack.IPHeaderFilter{InputInterface: nic2Name}),
+			expectResult: noneDropped,
 		},
 
 		{
-			name:        "Drop with input NIC filtering on other NIC",
-			setupFilter: setupDropFilter(stack.Input, stack.IPHeaderFilter{InputInterface: otherNICName}),
-			expectDrop:  false,
+			name:         "Input Drop with input NIC filtering on other NIC",
+			setupFilter:  setupDropFilter(stack.Input, stack.IPHeaderFilter{InputInterface: otherNICName}),
+			expectResult: noneDropped,
+		},
+
+		{
+			name:         "Forward Drop",
+			setupFilter:  setupDropFilter(stack.Forward, stack.IPHeaderFilter{}),
+			expectResult: echoRequestDroppedAtForward,
+		},
+
+		{
+			name:         "Output Drop",
+			setupFilter:  setupDropFilter(stack.Output, stack.IPHeaderFilter{}),
+			expectResult: echoReplyDropped,
 		},
 	}
 
@@ -1121,8 +1142,34 @@ func TestInputHookWithLocalForwarding(t *testing.T) {
 					if got := ip1Stats.ValidPacketsReceived.Value(); got != 1 {
 						t.Errorf("got ip1Stats.ValidPacketsReceived.Value() = %d, want = 1", got)
 					}
-					if got, want := ip1Stats.PacketsSent.Value(), boolToInt(!subTest.expectDrop); got != want {
-						t.Errorf("got ip1Stats.PacketsSent.Value() = %d, want = %d", got, want)
+
+					expectedIP1StatIPTablesForawrdDropped := uint64(0)
+					expectedIP1StatIPTablesOutputDropped := uint64(0)
+					expectedIP1StatPacketsSent := uint64(0)
+					expectedIP2StatValidPacketsReceived := uint64(1)
+					expectedIP2StatIPTablesInputDropped := uint64(0)
+					switch subTest.expectResult {
+					case noneDropped:
+						expectedIP1StatPacketsSent = 1
+					case echoRequestDroppedAtInput:
+						expectedIP2StatIPTablesInputDropped = 1
+					case echoRequestDroppedAtForward:
+						expectedIP1StatIPTablesForawrdDropped = 1
+						expectedIP2StatValidPacketsReceived = 0
+					case echoReplyDropped:
+						expectedIP1StatIPTablesOutputDropped = 1
+					default:
+						t.Fatalf("unhandled expectResult = %d", subTest.expectResult)
+					}
+
+					if got := ip1Stats.IPTablesForwardDropped.Value(); got != expectedIP1StatIPTablesForawrdDropped {
+						t.Errorf("got ip1Stats.IPTablesForwardDropped.Value() = %d, want = %d", got, expectedIP1StatIPTablesForawrdDropped)
+					}
+					if got := ip1Stats.IPTablesOutputDropped.Value(); got != expectedIP1StatIPTablesOutputDropped {
+						t.Errorf("got ip1Stats.IPTablesOutputDropped.Value() = %d, want = %d", got, expectedIP1StatIPTablesOutputDropped)
+					}
+					if got := ip1Stats.PacketsSent.Value(); got != expectedIP1StatPacketsSent {
+						t.Errorf("got ip1Stats.PacketsSent.Value() = %d, want = %d", got, expectedIP1StatPacketsSent)
 					}
 
 					ep2, err := s.GetNetworkEndpoint(nicID2, test.netProto)
@@ -1138,19 +1185,20 @@ func TestInputHookWithLocalForwarding(t *testing.T) {
 					if got := ip2Stats.PacketsReceived.Value(); got != 0 {
 						t.Errorf("got ip2Stats.PacketsReceived.Value() = %d, want = 0", got)
 					}
-					if got := ip2Stats.ValidPacketsReceived.Value(); got != 1 {
-						t.Errorf("got ip2Stats.ValidPacketsReceived.Value() = %d, want = 1", got)
+					if got := ip2Stats.ValidPacketsReceived.Value(); got != expectedIP2StatValidPacketsReceived {
+						t.Errorf("got ip2Stats.ValidPacketsReceived.Value() = %d, want = %d", got, expectedIP2StatValidPacketsReceived)
 					}
-					if got, want := ip2Stats.IPTablesInputDropped.Value(), boolToInt(subTest.expectDrop); got != want {
-						t.Errorf("got ip2Stats.IPTablesInputDropped.Value() = %d, want = %d", got, want)
+					if got := ip2Stats.IPTablesInputDropped.Value(); got != expectedIP2StatIPTablesInputDropped {
+						t.Errorf("got ip2Stats.IPTablesInputDropped.Value() = %d, want = %d", got, expectedIP2StatIPTablesInputDropped)
 					}
 					if got := ip2Stats.PacketsSent.Value(); got != 0 {
 						t.Errorf("got ip2Stats.PacketsSent.Value() = %d, want = 0", got)
 					}
 
-					if p := e1.Read(); (p != nil) == subTest.expectDrop {
-						t.Errorf("got e1.Read() = %#v, want = (_ == nil) = %t", p, !subTest.expectDrop)
-					} else if !subTest.expectDrop {
+					expectPacket := subTest.expectResult == noneDropped
+					if p := e1.Read(); (p != nil) != expectPacket {
+						t.Errorf("got e1.Read() = %#v, want = (_ == nil) = %t", p, expectPacket)
+					} else if expectPacket {
 						test.checker(t, stack.PayloadSince(p.NetworkHeader()))
 					}
 					if p := e2.Read(); p != nil {
