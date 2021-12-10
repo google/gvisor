@@ -5,7 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "fifo",
     srcs = [
-        "endpoint.go",
+        "fifo.go",
         "packet_buffer_queue.go",
     ],
     visibility = ["//visibility:public"],
@@ -13,7 +13,6 @@ go_library(
         "//pkg/sleep",
         "//pkg/sync",
         "//pkg/tcpip",
-        "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
     ],
 )

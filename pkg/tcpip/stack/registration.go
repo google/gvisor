@@ -775,6 +775,42 @@ const (
 	CapabilityLoopback
 )
 
+// LinkWriter is an interface that supports sending packets via a data-link
+// layer endpoint.
+type LinkWriter interface {
+	// WritePacket writes a packet with the given protocol and route.
+	//
+	// WritePacket may modify the packet buffer. The packet buffer's
+	// network and transport header must be set.
+	//
+	// To participate in transparent bridging, a LinkEndpoint implementation
+	// should call eth.Encode with header.EthernetFields.SrcAddr set to
+	// r.LocalLinkAddress if it is provided.
+	WritePacket(RouteInfo, tcpip.NetworkProtocolNumber, *PacketBuffer) tcpip.Error
+
+	// WritePackets writes packets with the given protocol and route. Must not be
+	// called with an empty list of packet buffers.
+	//
+	// WritePackets may modify the packet buffers.
+	//
+	// Right now, WritePackets is used only when the software segmentation
+	// offload is enabled. If it will be used for something else, syscall filters
+	// may need to be updated.
+	WritePackets(RouteInfo, PacketBufferList, tcpip.NetworkProtocolNumber) (int, tcpip.Error)
+}
+
+// LinkRawWriter is an interface that must be implemented by all Link endpoints
+// to support emitting pre-formed packets which include the Link header.
+type LinkRawWriter interface {
+	// WriteRawPacket writes a packet directly to the link.
+	//
+	// If the link-layer has its own header, the payload must already include the
+	// header.
+	//
+	// WriteRawPacket may modify the packet.
+	WriteRawPacket(*PacketBuffer) tcpip.Error
+}
+
 // NetworkLinkEndpoint is a data-link layer that supports sending network
 // layer packets.
 type NetworkLinkEndpoint interface {
@@ -793,15 +829,6 @@ type NetworkLinkEndpoint interface {
 	// LinkAddress returns the link address (typically a MAC) of the
 	// endpoint.
 	LinkAddress() tcpip.LinkAddress
-}
-
-// LinkEndpoint is the interface implemented by data link layer protocols (e.g.,
-// ethernet, loopback, raw) and used by network layer protocols to send packets
-// out through the implementer's data link endpoint. When a link header exists,
-// it sets each PacketBuffer's LinkHeader field before passing it up the
-// stack.
-type LinkEndpoint interface {
-	NetworkLinkEndpoint
 
 	// Capabilities returns the set of capabilities supported by the
 	// endpoint.
@@ -835,34 +862,23 @@ type LinkEndpoint interface {
 
 	// AddHeader adds a link layer header to pkt if required.
 	AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer)
+}
 
-	// WritePacket writes a packet with the given protocol and route.
-	//
-	// WritePacket may modify the packet buffer. The packet buffer's
-	// network and transport header must be set.
-	//
-	// To participate in transparent bridging, a LinkEndpoint implementation
-	// should call eth.Encode with header.EthernetFields.SrcAddr set to
-	// r.LocalLinkAddress if it is provided.
-	WritePacket(RouteInfo, tcpip.NetworkProtocolNumber, *PacketBuffer) tcpip.Error
+// QueueingDiscipline provides a queueing strategy for outgoing packets (e.g
+// FIFO, LIFO, Random Early Drop etc).
+type QueueingDiscipline interface {
+	LinkWriter
+}
 
-	// WritePackets writes packets with the given protocol and route. Must not be
-	// called with an empty list of packet buffers.
-	//
-	// WritePackets may modify the packet buffers.
-	//
-	// Right now, WritePackets is used only when the software segmentation
-	// offload is enabled. If it will be used for something else, syscall filters
-	// may need to be updated.
-	WritePackets(RouteInfo, PacketBufferList, tcpip.NetworkProtocolNumber) (int, tcpip.Error)
-
-	// WriteRawPacket writes a packet directly to the link.
-	//
-	// If the link-layer has its own header, the payload must already include the
-	// header.
-	//
-	// WriteRawPacket may modify the packet.
-	WriteRawPacket(*PacketBuffer) tcpip.Error
+// LinkEndpoint is the interface implemented by data link layer protocols (e.g.,
+// ethernet, loopback, raw) and used by network layer protocols to send packets
+// out through the implementer's data link endpoint. When a link header exists,
+// it sets each PacketBuffer's LinkHeader field before passing it up the
+// stack.
+type LinkEndpoint interface {
+	NetworkLinkEndpoint
+	LinkWriter
+	LinkRawWriter
 }
 
 // InjectableLinkEndpoint is a LinkEndpoint where inbound packets are
