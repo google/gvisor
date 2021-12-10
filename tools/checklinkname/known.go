@@ -73,6 +73,9 @@ var knownLinknames = map[string]map[string]linknameSignatures{
 		"throw": linknameSignatures{
 			local: "func(s string)",
 		},
+		"wakep": linknameSignatures{
+			local: "func()",
+		},
 	},
 	"sync": map[string]linknameSignatures{
 		"runtime_canSpin": linknameSignatures{

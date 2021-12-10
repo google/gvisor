@@ -17,6 +17,8 @@ package sleep
 import (
 	"math/rand"
 	"runtime"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -332,6 +334,50 @@ func TestDoneFunction(t *testing.T) {
 	}
 }
 
+// TestAssertFetch tests basic assert fetch functionality.
+func TestAssertFetch(t *testing.T) {
+	const sleeperWakers = 100
+	const wakeRequests = 1000
+	const seedAsserts = 10
+
+	ws := make([]Waker, sleeperWakers)
+	ss := make([]Sleeper, sleeperWakers)
+	for i := 0; i < sleeperWakers; i++ {
+		ss[i].AddWaker(&ws[i])
+	}
+	defer func() {
+		for i := 0; i < sleeperWakers; i++ {
+			defer ss[i].Done()
+		}
+	}()
+	var (
+		count int32
+		wg    sync.WaitGroup
+	)
+	for i := 0; i < sleeperWakers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			ss[i].Fetch(true /* block */)
+			w := &ws[(i+1)%sleeperWakers]
+			for n := 0; n < wakeRequests; n++ {
+				atomic.AddInt32(&count, 1)
+				ss[i].AssertAndFetch(w)
+			}
+			w.Assert() // Final wake-up.
+		}(i)
+	}
+
+	// Fire the first assertion.
+	ws[0].Assert()
+	wg.Wait()
+
+	// Check what we got.
+	if want := int32(sleeperWakers * wakeRequests); count != want {
+		t.Errorf("unexpected count: got %d, wanted %d", count, want)
+	}
+}
+
 // TestRace tests that multiple wakers can continuously send wake requests to
 // the sleeper.
 func TestRace(t *testing.T) {
@@ -511,6 +557,29 @@ func BenchmarkSleeperWaitOnSingleSelect(b *testing.B) {
 	}
 }
 
+// BenchmarkSleeperWaitOnSingleSelectSync is a modification of the similarly
+// named benchmark, except it uses the synchronous AssertAndFetch.
+func BenchmarkSleeperWaitOnSingleSelectSync(b *testing.B) {
+	var (
+		s  Sleeper
+		w  Waker
+		ns Sleeper
+		nw Waker
+	)
+	ns.AddWaker(&nw)
+	s.AddWaker(&w)
+	go func() {
+		ns.Fetch(true)
+		defer w.Assert()
+		for i := 0; i < b.N-1; i++ {
+			ns.AssertAndFetch(&w)
+		}
+	}()
+	for i := 0; i < b.N; i++ {
+		s.AssertAndFetch(&nw)
+	}
+}
+
 // BenchmarkGoWaitOnSingleSelect measures how long it takes to wait on one
 // channel while another goroutine wakes up the sleeper.
 func BenchmarkGoWaitOnSingleSelect(b *testing.B) {
@@ -553,6 +622,34 @@ func BenchmarkSleeperWaitOnMultiSelect(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		nw.Assert()
 		s.Fetch(true)
+	}
+}
+
+// BenchmarkSleeperWaitOnMultiSelectSync is a modification of the similarly
+// named benchmark, except it uses the synchronous AssertAndFetch.
+func BenchmarkSleeperWaitOnMultiSelectSync(b *testing.B) {
+	const count = 4
+	var (
+		s  Sleeper
+		ns Sleeper
+		nw Waker
+	)
+	ns.AddWaker(&nw)
+	w := make([]Waker, count)
+	for i := range w {
+		s.AddWaker(&w[i])
+	}
+
+	b.ResetTimer()
+	go func() {
+		ns.Fetch(true)
+		defer w[count-1].Assert()
+		for i := 0; i < b.N-1; i++ {
+			ns.AssertAndFetch(&w[count-1])
+		}
+	}()
+	for i := 0; i < b.N; i++ {
+		s.AssertAndFetch(&nw)
 	}
 }
 

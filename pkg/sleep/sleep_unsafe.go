@@ -98,10 +98,14 @@ var (
 // returns. These restrictions allow this to be implemented lock-free.
 //
 // This struct is thread-compatible.
+//
+// +stateify savable
 type Sleeper struct {
+	_ sync.NoCopy
+
 	// sharedList is a "stack" of asserted wakers. They atomically add
 	// themselves to the front of this list as they become asserted.
-	sharedList unsafe.Pointer
+	sharedList unsafe.Pointer `state:".(*Waker)"`
 
 	// localList is a list of asserted wakers that is only accessible to the
 	// waiter, and thus doesn't have to be accessed atomically. When
@@ -116,7 +120,17 @@ type Sleeper struct {
 
 	// waitingG holds the G that is sleeping, if any. It is used by wakers
 	// to determine which G, if any, they should wake.
-	waitingG uintptr
+	waitingG uintptr `state:"zero"`
+}
+
+// saveSharedList is invoked by stateify.
+func (s *Sleeper) saveSharedList() *Waker {
+	return (*Waker)(atomic.LoadPointer(&s.sharedList))
+}
+
+// loadSharedList is invoked by stateify.
+func (s *Sleeper) loadSharedList(w *Waker) {
+	atomic.StorePointer(&s.sharedList, unsafe.Pointer(w))
 }
 
 // AddWaker associates the given waker to the sleeper.
@@ -137,7 +151,7 @@ func (s *Sleeper) AddWaker(w *Waker) {
 	for {
 		p := (*Sleeper)(atomic.LoadPointer(&w.s))
 		if p == &assertedSleeper {
-			s.enqueueAssertedWaker(w)
+			s.enqueueAssertedWaker(w, true /* wakep */)
 			return
 		}
 
@@ -148,8 +162,11 @@ func (s *Sleeper) AddWaker(w *Waker) {
 }
 
 // nextWaker returns the next waker in the notification list, blocking if
-// needed.
-func (s *Sleeper) nextWaker(block bool) *Waker {
+// needed. The parameter wakepOrSleep indicates that if the operation does not
+// block, then we will need to explicitly wake a runtime P.
+//
+// Precondition: wakepOrSleep may be true iff block is true.
+func (s *Sleeper) nextWaker(block, wakepOrSleep bool) *Waker {
 	// Attempt to replenish the local list if it's currently empty.
 	if s.localList == nil {
 		for atomic.LoadPointer(&s.sharedList) == nil {
@@ -172,6 +189,10 @@ func (s *Sleeper) nextWaker(block bool) *Waker {
 				atomic.StoreUintptr(&s.waitingG, 0)
 				break
 			}
+
+			// Since we are sleeping for sure, we no longer
+			// need to wakep once we get a value.
+			wakepOrSleep = false
 
 			// Try to commit the sleep and report it to the
 			// tracer as a select.
@@ -203,6 +224,11 @@ func (s *Sleeper) nextWaker(block bool) *Waker {
 	w := s.localList
 	s.localList = w.next
 
+	// Do we need to wake a P?
+	if wakepOrSleep {
+		sync.Wakep()
+	}
+
 	return w
 }
 
@@ -218,17 +244,13 @@ func commitSleep(g uintptr, waitingG unsafe.Pointer) bool {
 	return sync.RaceUncheckedAtomicCompareAndSwapUintptr((*uintptr)(waitingG), preparingG, g)
 }
 
-// Fetch fetches the next wake-up notification. If a notification is
-// immediately available, the asserted waker is returned immediately.
-// Otherwise, the behavior depends on the value of 'block': if true, the
-// current goroutine blocks until a notification arrives and returns the
-// asserted waker; if false, nil will be returned.
+// fetch is the backing implementation for Fetch and AssertAndFetch.
 //
-// N.B. This method is *not* thread-safe. Only one goroutine at a time is
-//      allowed to call this method.
-func (s *Sleeper) Fetch(block bool) *Waker {
+// Preconditions are the same as nextWaker.
+//go:nosplit
+func (s *Sleeper) fetch(block, wakepOrSleep bool) *Waker {
 	for {
-		w := s.nextWaker(block)
+		w := s.nextWaker(block, wakepOrSleep)
 		if w == nil {
 			return nil
 		}
@@ -240,6 +262,31 @@ func (s *Sleeper) Fetch(block bool) *Waker {
 			return w
 		}
 	}
+}
+
+// Fetch fetches the next wake-up notification. If a notification is
+// immediately available, the asserted waker is returned immediately.
+// Otherwise, the behavior depends on the value of 'block': if true, the
+// current goroutine blocks until a notification arrives and returns the
+// asserted waker; if false, nil will be returned.
+//
+// N.B. This method is *not* thread-safe. Only one goroutine at a time is
+//      allowed to call this method.
+func (s *Sleeper) Fetch(block bool) *Waker {
+	return s.fetch(block, false /* wakepOrSleep */)
+}
+
+// AssertAndFetch asserts the given waker and fetches the next wake-up notification.
+// Note that this will always be blocking, since there is no value in joining a
+// non-blocking operation.
+//
+// N.B. Like Fetch, this method is *not* thread-safe. This will also yield the current
+//      P to the next goroutine, avoiding associated scheduled overhead.
+//+checkescapes:all
+//go:nosplit
+func (s *Sleeper) AssertAndFetch(n *Waker) *Waker {
+	n.assert(false /* wakep */)
+	return s.fetch(true /* block */, true /* wakepOrSleep*/)
 }
 
 // Done is used to indicate that the caller won't use this Sleeper anymore. It
@@ -264,7 +311,7 @@ func (s *Sleeper) Done() {
 		// Dequeue exactly one waiter from the list, it may not be
 		// this one but we know this one is in the process. We must
 		// leave it in the asserted state but drop it from our lists.
-		if w := s.nextWaker(true); w != nil {
+		if w := s.nextWaker(true, false); w != nil {
 			prev := &s.allWakers
 			for *prev != w {
 				prev = &((*prev).allWakersNext)
@@ -278,7 +325,7 @@ func (s *Sleeper) Done() {
 
 // enqueueAssertedWaker enqueues an asserted waker to the "ready" circular list
 // of wakers that want to notify the sleeper.
-func (s *Sleeper) enqueueAssertedWaker(w *Waker) {
+func (s *Sleeper) enqueueAssertedWaker(w *Waker, wakep bool) {
 	// Add the new waker to the front of the list.
 	for {
 		v := (*Waker)(atomic.LoadPointer(&s.sharedList))
@@ -298,7 +345,7 @@ func (s *Sleeper) enqueueAssertedWaker(w *Waker) {
 	case 0, preparingG:
 	default:
 		// We managed to get a G. Wake it up.
-		sync.Goready(g, 0)
+		sync.Goready(g, 0, wakep)
 	}
 }
 
@@ -315,6 +362,8 @@ func (s *Sleeper) enqueueAssertedWaker(w *Waker) {
 //
 // Note, it is not safe to copy a Waker as its fields are modified by value
 // (the pointer fields are individually modified with atomic operations).
+//
+// +stateify savable
 type Waker struct {
 	_ sync.NoCopy
 
@@ -327,7 +376,7 @@ type Waker struct {
 	// otherwise -- the waker is not asserted, and is associated with the
 	//     given sleeper. Once it transitions to asserted state, the
 	//     associated sleeper will be woken.
-	s unsafe.Pointer
+	s unsafe.Pointer `state:".(wakerState)"`
 
 	// next is used to form a linked list of asserted wakers in a sleeper.
 	next *Waker
@@ -337,9 +386,32 @@ type Waker struct {
 	allWakersNext *Waker
 }
 
-// Assert moves the waker to an asserted state, if it isn't asserted yet. When
-// asserted, the waker will cause its matching sleeper to wake up.
-func (w *Waker) Assert() {
+type wakerState struct {
+	asserted bool
+	other    *Sleeper
+}
+
+// saveS is invoked by stateify.
+func (w *Waker) saveS() wakerState {
+	s := (*Sleeper)(atomic.LoadPointer(&w.s))
+	if s == &assertedSleeper {
+		return wakerState{asserted: true}
+	}
+	return wakerState{other: s}
+}
+
+// loadS is invoked by stateify.
+func (w *Waker) loadS(ws wakerState) {
+	if ws.asserted {
+		atomic.StorePointer(&w.s, unsafe.Pointer(&assertedSleeper))
+	} else {
+		atomic.StorePointer(&w.s, unsafe.Pointer(ws.other))
+	}
+}
+
+// assert is the implementation for Assert.
+//go:nosplit
+func (w *Waker) assert(wakep bool) {
 	// Nothing to do if the waker is already asserted. This check allows us
 	// to complete this case (already asserted) without any interlocked
 	// operations on x86.
@@ -352,8 +424,14 @@ func (w *Waker) Assert() {
 	case nil:
 	case &assertedSleeper:
 	default:
-		s.enqueueAssertedWaker(w)
+		s.enqueueAssertedWaker(w, wakep)
 	}
+}
+
+// Assert moves the waker to an asserted state, if it isn't asserted yet. When
+// asserted, the waker will cause its matching sleeper to wake up.
+func (w *Waker) Assert() {
+	w.assert(true /* wakep */)
 }
 
 // Clear moves the waker to then non-asserted state and returns whether it was

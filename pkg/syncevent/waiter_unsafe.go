@@ -169,7 +169,7 @@ func (w *Waiter) NotifyPending() {
 	// so. Swap is needed here to ensure that only one call to NotifyPending
 	// calls goready.
 	if g := atomic.SwapUintptr(&w.g, 0); g > preparingG {
-		sync.Goready(g, 0)
+		sync.Goready(g, 0, true /* wakep */)
 	}
 }
 
