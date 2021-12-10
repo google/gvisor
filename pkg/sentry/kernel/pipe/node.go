@@ -75,7 +75,7 @@ func (i *inodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags fs.Fi
 	case flags.Read && !flags.Write: // O_RDONLY.
 		r := i.p.Open(ctx, d, flags)
 		for i.p.isNamed && !flags.NonBlocking && !i.p.HasWriters() {
-			if !ctx.BlockOn((*waitQueue)(i.p), waiter.EventInternal) {
+			if !ctx.BlockOn((*waitWriters)(i.p), waiter.EventInternal) {
 				r.DecRef(ctx)
 				return nil, linuxerr.ErrInterrupted
 			}
@@ -95,7 +95,7 @@ func (i *inodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags fs.Fi
 				w.DecRef(ctx)
 				return nil, linuxerr.ENXIO
 			}
-			if !ctx.BlockOn((*waitQueue)(i.p), waiter.EventInternal) {
+			if !ctx.BlockOn((*waitReaders)(i.p), waiter.EventInternal) {
 				w.DecRef(ctx)
 				return nil, linuxerr.ErrInterrupted
 			}
