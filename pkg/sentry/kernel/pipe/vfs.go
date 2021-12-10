@@ -99,7 +99,7 @@ func (vp *VFSPipe) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, s
 		// If this pipe is being opened as blocking and there's no
 		// writer, we have to wait for a writer to open the other end.
 		for vp.pipe.isNamed && statusFlags&linux.O_NONBLOCK == 0 && !vp.pipe.HasWriters() {
-			if !ctx.BlockOn((*waitQueue)(&vp.pipe), waiter.EventInternal) {
+			if !ctx.BlockOn((*waitWriters)(&vp.pipe), waiter.EventInternal) {
 				fd.DecRef(ctx)
 				return nil, linuxerr.EINTR
 			}
@@ -113,7 +113,7 @@ func (vp *VFSPipe) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, s
 				fd.DecRef(ctx)
 				return nil, linuxerr.ENXIO
 			}
-			if !ctx.BlockOn((*waitQueue)(&vp.pipe), waiter.EventInternal) {
+			if !ctx.BlockOn((*waitReaders)(&vp.pipe), waiter.EventInternal) {
 				fd.DecRef(ctx)
 				return nil, linuxerr.EINTR
 			}

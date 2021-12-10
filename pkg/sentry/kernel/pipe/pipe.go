@@ -49,23 +49,23 @@ const (
 	atomicIOBytes = 4096
 )
 
-// waitQueue is a wrapper around Pipe.
+// waitReaders is a wrapper around Pipe.
 //
 // This is used for ctx.Block operations that require the synchronization of
 // readers and writers, along with the careful grabbing and releasing of locks.
-type waitQueue Pipe
+type waitReaders Pipe
 
 // Readiness implements waiter.Waitable.Readiness.
-func (wq *waitQueue) Readiness(mask waiter.EventMask) waiter.EventMask {
+func (wq *waitReaders) Readiness(mask waiter.EventMask) waiter.EventMask {
 	return ((*Pipe)(wq)).rwReadiness() & mask
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (wq *waitQueue) EventRegister(e *waiter.Entry) error {
+func (wq *waitReaders) EventRegister(e *waiter.Entry) error {
 	((*Pipe)(wq)).queue.EventRegister(e)
 
 	// Notify synchronously.
-	if ((*Pipe)(wq)).HasReaders() || ((*Pipe)(wq)).HasWriters() {
+	if ((*Pipe)(wq)).HasReaders() {
 		e.NotifyEvent(waiter.EventInternal)
 	}
 
@@ -73,7 +73,35 @@ func (wq *waitQueue) EventRegister(e *waiter.Entry) error {
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
-func (wq *waitQueue) EventUnregister(e *waiter.Entry) {
+func (wq *waitReaders) EventUnregister(e *waiter.Entry) {
+	((*Pipe)(wq)).queue.EventUnregister(e)
+}
+
+// waitWriters is a wrapper around Pipe.
+//
+// This is used for ctx.Block operations that require the synchronization of
+// readers and writers, along with the careful grabbing and releasing of locks.
+type waitWriters Pipe
+
+// Readiness implements waiter.Waitable.Readiness.
+func (wq *waitWriters) Readiness(mask waiter.EventMask) waiter.EventMask {
+	return ((*Pipe)(wq)).rwReadiness() & mask
+}
+
+// EventRegister implements waiter.Waitable.EventRegister.
+func (wq *waitWriters) EventRegister(e *waiter.Entry) error {
+	((*Pipe)(wq)).queue.EventRegister(e)
+
+	// Notify synchronously.
+	if ((*Pipe)(wq)).HasWriters() {
+		e.NotifyEvent(waiter.EventInternal)
+	}
+
+	return nil
+}
+
+// EventUnregister implements waiter.Waitable.EventUnregister.
+func (wq *waitWriters) EventUnregister(e *waiter.Entry) {
 	((*Pipe)(wq)).queue.EventUnregister(e)
 }
 
