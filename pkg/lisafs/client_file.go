@@ -84,7 +84,7 @@ func (f *ClientFD) OpenAt(ctx context.Context, flags uint32) (FDID, int, error) 
 	ctx.UninterruptibleSleepStart(false)
 	err := f.client.SndRcvMessage(OpenAt, uint32(req.SizeBytes()), req.MarshalUnsafe, resp.CheckedUnmarshal, respFD[:])
 	ctx.UninterruptibleSleepFinish(false)
-	return resp.NewFD, respFD[0], err
+	return resp.OpenFD, respFD[0], err
 }
 
 // OpenCreateAt makes the OpenCreateAt RPC.

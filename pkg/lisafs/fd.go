@@ -333,25 +333,25 @@ func (fd *OpenFD) Init(cfd *ControlFD, flags uint32, impl OpenFDImpl) {
 type ControlFDImpl interface {
 	FD() *ControlFD
 	Close(c *Connection)
-	Stat(c *Connection, comm Communicator) (uint32, error)
-	SetStat(c *Connection, comm Communicator, stat SetStatReq) (uint32, error)
-	Walk(c *Connection, comm Communicator, path StringArray) (uint32, error)
-	WalkStat(c *Connection, comm Communicator, path StringArray) (uint32, error)
-	Open(c *Connection, comm Communicator, flags uint32) (uint32, error)
-	OpenCreate(c *Connection, comm Communicator, mode linux.FileMode, uid UID, gid GID, name string, flags uint32) (uint32, error)
-	Mkdir(c *Connection, comm Communicator, mode linux.FileMode, uid UID, gid GID, name string) (uint32, error)
-	Mknod(c *Connection, comm Communicator, mode linux.FileMode, uid UID, gid GID, name string, minor uint32, major uint32) (uint32, error)
-	Symlink(c *Connection, comm Communicator, name string, target string, uid UID, gid GID) (uint32, error)
-	Link(c *Connection, comm Communicator, dir ControlFDImpl, name string) (uint32, error)
-	StatFS(c *Connection, comm Communicator) (uint32, error)
-	Readlink(c *Connection, comm Communicator) (uint32, error)
-	Connect(c *Connection, comm Communicator, sockType uint32) error
+	Stat(c *Connection) (linux.Statx, error)
+	SetStat(c *Connection, stat SetStatReq) (uint32, error)
+	Walk(c *Connection, path StringArray, recordInode func(Inode)) (WalkStatus, error)
+	WalkStat(c *Connection, path StringArray, recordStat func(linux.Statx)) error
+	Open(c *Connection, flags uint32) (FDID, int, error)
+	OpenCreate(c *Connection, mode linux.FileMode, uid UID, gid GID, name string, flags uint32) (Inode, FDID, int, error)
+	Mkdir(c *Connection, mode linux.FileMode, uid UID, gid GID, name string) (Inode, error)
+	Mknod(c *Connection, mode linux.FileMode, uid UID, gid GID, name string, minor uint32, major uint32) (Inode, error)
+	Symlink(c *Connection, name string, target string, uid UID, gid GID) (Inode, error)
+	Link(c *Connection, dir ControlFDImpl, name string) (Inode, error)
+	StatFS(c *Connection) (StatFS, error)
+	Readlink(c *Connection, getLinkBuf func(uint32) []byte) (uint32, error)
+	Connect(c *Connection, sockType uint32) (int, error)
 	Unlink(c *Connection, name string, flags uint32) error
 	RenameLocked(c *Connection, newDir ControlFDImpl, newName string) (func(ControlFDImpl), func(), error)
-	GetXattr(c *Connection, comm Communicator, name string, size uint32) (uint32, error)
+	GetXattr(c *Connection, name string, dataBuf []byte) (uint32, error)
 	SetXattr(c *Connection, name string, value string, flags uint32) error
-	ListXattr(c *Connection, comm Communicator, size uint64) (uint32, error)
-	RemoveXattr(c *Connection, comm Communicator, name string) error
+	ListXattr(c *Connection, size uint64) (StringArray, error)
+	RemoveXattr(c *Connection, name string) error
 }
 
 // OpenFDImpl contains implementation details for a OpenFD. Implementations of
@@ -364,11 +364,11 @@ type ControlFDImpl interface {
 type OpenFDImpl interface {
 	FD() *OpenFD
 	Close(c *Connection)
-	Stat(c *Connection, comm Communicator) (uint32, error)
+	Stat(c *Connection) (linux.Statx, error)
 	Sync(c *Connection) error
-	Write(c *Connection, comm Communicator, buf []byte, off uint64) (uint32, error)
-	Read(c *Connection, comm Communicator, off uint64, count uint32) (uint32, error)
+	Write(c *Connection, buf []byte, off uint64) (uint64, error)
+	Read(c *Connection, off uint64, dataBuf []byte) (uint32, error)
 	Allocate(c *Connection, mode, off, length uint64) error
 	Flush(c *Connection) error
-	Getdent64(c *Connection, comm Communicator, count uint32, seek0 bool) (uint32, error)
+	Getdent64(c *Connection, count uint32, seek0 bool, recordDirent func(Dirent64)) error
 }
