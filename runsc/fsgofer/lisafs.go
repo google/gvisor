@@ -16,7 +16,6 @@ package fsgofer
 
 import (
 	"io"
-	"math"
 	"path"
 	"strconv"
 	"sync/atomic"
@@ -28,7 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
-	"gvisor.dev/gvisor/pkg/p9"
 )
 
 // LisafsServer implements lisafs.ServerImpl for fsgofer.
@@ -174,25 +172,18 @@ func (fd *controlFDLisa) Close(c *lisafs.Connection) {
 }
 
 // Stat implements lisafs.ControlFDImpl.Stat.
-func (fd *controlFDLisa) Stat(c *lisafs.Connection, comm lisafs.Communicator) (uint32, error) {
+func (fd *controlFDLisa) Stat(c *lisafs.Connection) (linux.Statx, error) {
 	var resp linux.Statx
-	if err := fstatTo(fd.hostFD, &resp); err != nil {
-		return 0, err
-	}
-
-	respLen := uint32(resp.SizeBytes())
-	resp.MarshalUnsafe(comm.PayloadBuf(respLen))
-	return respLen, nil
+	return resp, fstatTo(fd.hostFD, &resp)
 }
 
 // SetStat implements lisafs.ControlFDImpl.SetStat.
-func (fd *controlFDLisa) SetStat(c *lisafs.Connection, comm lisafs.Communicator, stat lisafs.SetStatReq) (uint32, error) {
-	var resp lisafs.SetStatResp
+func (fd *controlFDLisa) SetStat(c *lisafs.Connection, stat lisafs.SetStatReq) (failureMask uint32, failureErr error) {
 	if stat.Mask&unix.STATX_MODE != 0 {
 		if err := unix.Fchmod(fd.hostFD, stat.Mode&^unix.S_IFMT); err != nil {
-			log.Debugf("SetStat fchmod failed %q, err: %v", fd.FilePath(), err)
-			resp.FailureMask |= unix.STATX_MODE
-			resp.FailureErrNo = uint32(p9.ExtractErrno(err))
+			log.Warningf("SetStat fchmod failed %q, err: %v", fd.FilePath(), err)
+			failureMask |= unix.STATX_MODE
+			failureErr = err
 		}
 	}
 
@@ -203,9 +194,9 @@ func (fd *controlFDLisa) SetStat(c *lisafs.Connection, comm lisafs.Communicator,
 			err = unix.Ftruncate(writableFD, int64(stat.Size))
 		}
 		if err != nil {
-			log.Debugf("SetStat ftruncate failed %q, err: %v", fd.FilePath(), err)
-			resp.FailureMask |= unix.STATX_SIZE
-			resp.FailureErrNo = uint32(p9.ExtractErrno(err))
+			log.Warningf("SetStat ftruncate failed %q, err: %v", fd.FilePath(), err)
+			failureMask |= unix.STATX_SIZE
+			failureErr = err
 		}
 	}
 
@@ -229,9 +220,9 @@ func (fd *controlFDLisa) SetStat(c *lisafs.Connection, comm lisafs.Communicator,
 			// name.
 			c.Server().WithRenameReadLock(func() error {
 				if err := utimensat(fd.ParentLocked().(*controlFDLisa).hostFD, fd.NameLocked(), utimes, unix.AT_SYMLINK_NOFOLLOW); err != nil {
-					log.Debugf("SetStat utimens failed %q, err: %v", fd.FilePathLocked(), err)
-					resp.FailureMask |= (stat.Mask & (unix.STATX_ATIME | unix.STATX_MTIME))
-					resp.FailureErrNo = uint32(p9.ExtractErrno(err))
+					log.Warningf("SetStat utimens failed %q, err: %v", fd.FilePathLocked(), err)
+					failureMask |= (stat.Mask & (unix.STATX_ATIME | unix.STATX_MTIME))
+					failureErr = err
 				}
 				return nil
 			})
@@ -240,19 +231,19 @@ func (fd *controlFDLisa) SetStat(c *lisafs.Connection, comm lisafs.Communicator,
 			if fd.IsRegular() {
 				// For regular files, utimensat(2) requires the FD to be open for
 				// writing, see BUGS section.
-				writableFD, err := fd.getWritableFD()
-				if err != nil {
-					return 0, err
+				if writableFD, err := fd.getWritableFD(); err == nil {
+					hostFD = writableFD
+				} else {
+					log.Warningf("SetStat getWritableFD failed %q, err: %v", fd.FilePath(), err)
 				}
-				hostFD = writableFD
 			}
 			// Directories and regular files can operate directly on the fd
 			// using empty name.
 			err := utimensat(hostFD, "", utimes, 0)
 			if err != nil {
-				log.Debugf("SetStat utimens failed %q, err: %v", fd.FilePath(), err)
-				resp.FailureMask |= (stat.Mask & (unix.STATX_ATIME | unix.STATX_MTIME))
-				resp.FailureErrNo = uint32(p9.ExtractErrno(err))
+				log.Warningf("SetStat utimens failed %q, err: %v", fd.FilePath(), err)
+				failureMask |= (stat.Mask & (unix.STATX_ATIME | unix.STATX_MTIME))
+				failureErr = err
 			}
 		}
 	}
@@ -269,36 +260,22 @@ func (fd *controlFDLisa) SetStat(c *lisafs.Connection, comm lisafs.Communicator,
 			gid = int(stat.GID)
 		}
 		if err := unix.Fchownat(fd.hostFD, "", uid, gid, unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW); err != nil {
-			log.Debugf("SetStat fchown failed %q, err: %v", fd.FilePath(), err)
-			resp.FailureMask |= stat.Mask & (unix.STATX_UID | unix.STATX_GID)
-			resp.FailureErrNo = uint32(p9.ExtractErrno(err))
+			log.Warningf("SetStat fchown failed %q, err: %v", fd.FilePath(), err)
+			failureMask |= stat.Mask & (unix.STATX_UID | unix.STATX_GID)
+			failureErr = err
 		}
 	}
 
-	respLen := uint32(resp.SizeBytes())
-	resp.MarshalUnsafe(comm.PayloadBuf(respLen))
-	return respLen, nil
+	return
 }
 
 // Walk implements lisafs.ControlFDImpl.Walk.
-func (fd *controlFDLisa) Walk(c *lisafs.Connection, comm lisafs.Communicator, path lisafs.StringArray) (uint32, error) {
-	// We need to generate inodes for each component walked. We will manually
-	// marshal the inodes into the payload buffer as they are generated to avoid
-	// the slice allocation. The memory format should be lisafs.WalkResp's.
-	var numInodes primitive.Uint32
-	var status lisafs.WalkStatus
-	maxPayloadSize := status.SizeBytes() + numInodes.SizeBytes() + (len(path) * (*lisafs.Inode)(nil).SizeBytes())
-	if maxPayloadSize > math.MaxUint32 {
-		// Too much to walk, can't do.
-		return 0, unix.EIO
-	}
-	payloadBuf := comm.PayloadBuf(uint32(maxPayloadSize))
-	payloadPos := status.SizeBytes() + numInodes.SizeBytes()
-
+func (fd *controlFDLisa) Walk(c *lisafs.Connection, path lisafs.StringArray, recordInode func(lisafs.Inode)) (lisafs.WalkStatus, error) {
 	s := c.Server()
 	s.RenameMu.RLock()
 	defer s.RenameMu.RUnlock()
 
+	status := lisafs.WalkSuccess
 	curDirFD := fd
 	cu := cleanup.Make(func() {
 		// Destroy all newly created FDs until now. Walk upward from curDirFD to
@@ -329,38 +306,18 @@ func (fd *controlFDLisa) Walk(c *lisafs.Connection, comm lisafs.Communicator, pa
 			return 0, err
 		}
 
-		// Write inode to payloadBuf and update state.
 		var childInode lisafs.Inode
 		child.initInodeWithStat(&childInode, &childStat)
-		childInode.MarshalUnsafe(payloadBuf[payloadPos:])
-		payloadPos += childInode.SizeBytes()
-		numInodes++
+		recordInode(childInode)
 		curDirFD = child
 	}
 	cu.Release()
 
-	// lisafs.WalkResp writes the walk status followed by the number of inodes in
-	// the beginning.
-	status.MarshalUnsafe(payloadBuf)
-	numInodes.MarshalUnsafe(payloadBuf[status.SizeBytes():])
-	return uint32(payloadPos), nil
+	return status, nil
 }
 
 // WalkStat implements lisafs.ControlFDImpl.WalkStat.
-func (fd *controlFDLisa) WalkStat(c *lisafs.Connection, comm lisafs.Communicator, path lisafs.StringArray) (uint32, error) {
-	// We may need to generate statx for dirFD + each component walked. We will
-	// manually marshal the statx results into the payload buffer as they are
-	// generated to avoid the slice allocation. The memory format should be the
-	// same as lisafs.WalkStatResp's.
-	var numStats primitive.Uint32
-	maxPayloadSize := numStats.SizeBytes() + (len(path) * linux.SizeOfStatx)
-	if maxPayloadSize > math.MaxUint32 {
-		// Too much to walk, can't do.
-		return 0, unix.EIO
-	}
-	payloadBuf := comm.PayloadBuf(uint32(maxPayloadSize))
-	payloadPos := numStats.SizeBytes()
-
+func (fd *controlFDLisa) WalkStat(c *lisafs.Connection, path lisafs.StringArray, recordStat func(linux.Statx)) error {
 	s := c.Server()
 	s.RenameMu.RLock()
 	defer s.RenameMu.RUnlock()
@@ -379,18 +336,16 @@ func (fd *controlFDLisa) WalkStat(c *lisafs.Connection, comm lisafs.Communicator
 	if len(path) > 0 && len(path[0]) == 0 {
 		// Write stat results for dirFD if the first path component is "".
 		if err := unix.Fstat(fd.hostFD, &unixStat); err != nil {
-			return 0, err
+			return err
 		}
 		unixToLinuxStat(&unixStat, &stat)
-		stat.MarshalUnsafe(payloadBuf[payloadPos:])
-		payloadPos += stat.SizeBytes()
+		recordStat(stat)
 		path = path[1:]
-		numStats++
 	}
 
 	// Don't attempt walking if parent is a symlink.
 	if fd.IsSymlink() {
-		return 0, nil
+		return nil
 	}
 	for _, name := range path {
 		curFD, err := unix.Openat(curDirFD, name, unix.O_PATH|openFlags, 0)
@@ -400,19 +355,16 @@ func (fd *controlFDLisa) WalkStat(c *lisafs.Connection, comm lisafs.Communicator
 			break
 		}
 		if err != nil {
-			return 0, err
+			return err
 		}
 		closeCurDirFD()
 		curDirFD = curFD
 
-		// Write stat results for curFD.
 		if err := unix.Fstat(curFD, &unixStat); err != nil {
-			return 0, err
+			return err
 		}
 		unixToLinuxStat(&unixStat, &stat)
-		stat.MarshalUnsafe(payloadBuf[payloadPos:])
-		payloadPos += stat.SizeBytes()
-		numStats++
+		recordStat(stat)
 
 		// Symlinks terminate walk. This client gets the symlink stat result, but
 		// will have to invoke Walk again with the resolved path.
@@ -421,42 +373,40 @@ func (fd *controlFDLisa) WalkStat(c *lisafs.Connection, comm lisafs.Communicator
 		}
 	}
 
-	// lisafs.WalkStatResp writes the number of stats in the beginning.
-	numStats.MarshalUnsafe(payloadBuf)
-	return uint32(payloadPos), nil
+	return nil
 }
 
 // Open implements lisafs.ControlFDImpl.Open.
-func (fd *controlFDLisa) Open(c *lisafs.Connection, comm lisafs.Communicator, flags uint32) (uint32, error) {
+func (fd *controlFDLisa) Open(c *lisafs.Connection, flags uint32) (lisafs.FDID, int, error) {
 	flags |= openFlags
 	newHostFD, err := unix.Openat(int(procSelfFD.FD()), strconv.Itoa(fd.hostFD), int(flags)&^unix.O_NOFOLLOW, 0)
 	if err != nil {
-		return 0, err
+		return lisafs.InvalidFDID, -1, err
 	}
-	newFD := fd.newOpenFDLisa(newHostFD, flags)
+	openFD := fd.newOpenFDLisa(newHostFD, flags)
 
+	hostOpenFD := -1
 	if fd.IsRegular() {
 		// Donate FD for regular files only. Since FD donation is a destructive
 		// operation, we should duplicate the to-be-donated FD. Eat the error if
 		// one occurs, it is better to have an FD without a host FD, than failing
 		// the Open attempt.
-		if dupFD, err := unix.Dup(newFD.hostFD); err == nil {
-			_ = comm.DonateFD(dupFD)
+		if dupFD, err := unix.Dup(openFD.hostFD); err == nil {
+			hostOpenFD = dupFD
 		}
 	}
 
-	resp := lisafs.OpenAtResp{NewFD: newFD.ID()}
-	respLen := uint32(resp.SizeBytes())
-	resp.MarshalUnsafe(comm.PayloadBuf(respLen))
-	return respLen, nil
+	return openFD.ID(), hostOpenFD, nil
 }
 
 // OpenCreate implements lisafs.ControlFDImpl.OpenCreate.
-func (fd *controlFDLisa) OpenCreate(c *lisafs.Connection, comm lisafs.Communicator, mode linux.FileMode, uid lisafs.UID, gid lisafs.GID, name string, flags uint32) (uint32, error) {
+func (fd *controlFDLisa) OpenCreate(c *lisafs.Connection, mode linux.FileMode, uid lisafs.UID, gid lisafs.GID, name string, flags uint32) (lisafs.Inode, lisafs.FDID, int, error) {
 	// Need to hold rename mutex for reading while performing the walk. Also keep
 	// holding it while the cleanup is still possible.
-	var resp lisafs.OpenCreateAtResp
-	var newFD *openFDLisa
+	var (
+		childIno lisafs.Inode
+		newFD    *openFDLisa
+	)
 	if err := c.Server().WithRenameReadLock(func() error {
 		createFlags := unix.O_CREAT | unix.O_EXCL | unix.O_RDONLY | unix.O_NONBLOCK | openFlags
 		childHostFD, err := unix.Openat(fd.hostFD, name, createFlags, uint32(mode&^linux.FileTypeMask))
@@ -481,7 +431,7 @@ func (fd *controlFDLisa) OpenCreate(c *lisafs.Connection, comm lisafs.Communicat
 
 		// Do not use the stat result from tryOpen because the owners might have
 		// changed. initInode() will stat the FD again and use fresh results.
-		if err := childFD.initInode(&resp.Child); err != nil {
+		if err := childFD.initInode(&childIno); err != nil {
 			return err
 		}
 
@@ -494,29 +444,26 @@ func (fd *controlFDLisa) OpenCreate(c *lisafs.Connection, comm lisafs.Communicat
 		cu.Release()
 
 		newFD = childFD.newOpenFDLisa(newHostFD, uint32(flags))
-		resp.NewFD = newFD.ID()
 		return nil
 	}); err != nil {
-		return 0, err
+		return lisafs.Inode{}, lisafs.InvalidFDID, -1, err
 	}
 
 	// Donate FD because open(O_CREAT|O_EXCL) always creates a regular file.
 	// Since FD donation is a destructive operation, we should duplicate the
 	// to-be-donated FD. Eat the error if one occurs, it is better to have an FD
 	// without a host FD, than failing the Open attempt.
+	hostOpenFD := -1
 	if dupFD, err := unix.Dup(newFD.hostFD); err == nil {
-		_ = comm.DonateFD(dupFD)
+		hostOpenFD = dupFD
 	}
-
-	respLen := uint32(resp.SizeBytes())
-	resp.MarshalUnsafe(comm.PayloadBuf(respLen))
-	return respLen, nil
+	return childIno, newFD.ID(), hostOpenFD, nil
 }
 
 // Mkdir implements lisafs.ControlFDImpl.Mkdir.
-func (fd *controlFDLisa) Mkdir(c *lisafs.Connection, comm lisafs.Communicator, mode linux.FileMode, uid lisafs.UID, gid lisafs.GID, name string) (uint32, error) {
-	var resp lisafs.MkdirAtResp
-	if err := c.Server().WithRenameReadLock(func() error {
+func (fd *controlFDLisa) Mkdir(c *lisafs.Connection, mode linux.FileMode, uid lisafs.UID, gid lisafs.GID, name string) (lisafs.Inode, error) {
+	var childIno lisafs.Inode
+	return childIno, c.Server().WithRenameReadLock(func() error {
 		if err := unix.Mkdirat(fd.hostFD, name, uint32(mode&^linux.FileTypeMask)); err != nil {
 			return err
 		}
@@ -539,33 +486,27 @@ func (fd *controlFDLisa) Mkdir(c *lisafs.Connection, comm lisafs.Communicator, m
 		}
 
 		childDir := newControlFDLisaLocked(c, childDirFd, fd, name, linux.ModeDirectory)
-		if err := childDir.initInode(&resp.ChildDir); err != nil {
+		if err := childDir.initInode(&childIno); err != nil {
 			c.RemoveControlFDLocked(childDir.ID())
 			return err
 		}
 		cu.Release()
 
 		return nil
-	}); err != nil {
-		return 0, err
-	}
-
-	respLen := uint32(resp.SizeBytes())
-	resp.MarshalUnsafe(comm.PayloadBuf(respLen))
-	return respLen, nil
+	})
 }
 
 // Mknod implements lisafs.ControlFDImpl.Mknod.
-func (fd *controlFDLisa) Mknod(c *lisafs.Connection, comm lisafs.Communicator, mode linux.FileMode, uid lisafs.UID, gid lisafs.GID, name string, minor uint32, major uint32) (uint32, error) {
+func (fd *controlFDLisa) Mknod(c *lisafs.Connection, mode linux.FileMode, uid lisafs.UID, gid lisafs.GID, name string, minor uint32, major uint32) (lisafs.Inode, error) {
 	// From mknod(2) man page:
 	// "EPERM: [...] if the filesystem containing pathname does not support
 	// the type of node requested."
 	if mode.FileType() != linux.ModeRegular {
-		return 0, unix.EPERM
+		return lisafs.Inode{}, unix.EPERM
 	}
 
-	var resp lisafs.MknodAtResp
-	if err := c.Server().WithRenameReadLock(func() error {
+	var childIno lisafs.Inode
+	return childIno, c.Server().WithRenameReadLock(func() error {
 		if err := unix.Mknodat(fd.hostFD, name, uint32(mode), 0); err != nil {
 			return err
 		}
@@ -588,25 +529,19 @@ func (fd *controlFDLisa) Mknod(c *lisafs.Connection, comm lisafs.Communicator, m
 		}
 
 		child := newControlFDLisaLocked(c, childFD, fd, name, mode)
-		if err := child.initInode(&resp.Child); err != nil {
+		if err := child.initInode(&childIno); err != nil {
 			c.RemoveControlFDLocked(child.ID())
 			return err
 		}
 		cu.Release()
 		return nil
-	}); err != nil {
-		return 0, err
-	}
-
-	respLen := uint32(resp.SizeBytes())
-	resp.MarshalUnsafe(comm.PayloadBuf(respLen))
-	return respLen, nil
+	})
 }
 
 // Symlink implements lisafs.ControlFDImpl.Symlink.
-func (fd *controlFDLisa) Symlink(c *lisafs.Connection, comm lisafs.Communicator, name string, target string, uid lisafs.UID, gid lisafs.GID) (uint32, error) {
-	var resp lisafs.SymlinkAtResp
-	if err := c.Server().WithRenameReadLock(func() error {
+func (fd *controlFDLisa) Symlink(c *lisafs.Connection, name string, target string, uid lisafs.UID, gid lisafs.GID) (lisafs.Inode, error) {
+	var childIno lisafs.Inode
+	return childIno, c.Server().WithRenameReadLock(func() error {
 		if err := unix.Symlinkat(target, fd.hostFD, name); err != nil {
 			return err
 		}
@@ -629,25 +564,19 @@ func (fd *controlFDLisa) Symlink(c *lisafs.Connection, comm lisafs.Communicator,
 		}
 
 		symlink := newControlFDLisaLocked(c, symlinkFD, fd, name, linux.ModeSymlink)
-		if err := symlink.initInode(&resp.Symlink); err != nil {
+		if err := symlink.initInode(&childIno); err != nil {
 			c.RemoveControlFDLocked(symlink.ID())
 			return err
 		}
 		cu.Release()
 		return nil
-	}); err != nil {
-		return 0, err
-	}
-
-	respLen := uint32(resp.SizeBytes())
-	resp.MarshalUnsafe(comm.PayloadBuf(respLen))
-	return respLen, nil
+	})
 }
 
 // Link implements lisafs.ControlFDImpl.Link.
-func (fd *controlFDLisa) Link(c *lisafs.Connection, comm lisafs.Communicator, dir lisafs.ControlFDImpl, name string) (uint32, error) {
-	var resp lisafs.LinkAtResp
-	if err := c.Server().WithRenameReadLock(func() error {
+func (fd *controlFDLisa) Link(c *lisafs.Connection, dir lisafs.ControlFDImpl, name string) (lisafs.Inode, error) {
+	var childIno lisafs.Inode
+	return childIno, c.Server().WithRenameReadLock(func() error {
 		dirFD := dir.(*controlFDLisa)
 		if err := unix.Linkat(fd.hostFD, "", dirFD.hostFD, name, unix.AT_EMPTY_PATH); err != nil {
 			return err
@@ -668,25 +597,19 @@ func (fd *controlFDLisa) Link(c *lisafs.Connection, comm lisafs.Communicator, di
 		}
 		cu.Release()
 
-		linkFD.initInodeWithStat(&resp.Link, &linkStat)
+		linkFD.initInodeWithStat(&childIno, &linkStat)
 		return nil
-	}); err != nil {
-		return 0, err
-	}
-
-	respLen := uint32(resp.SizeBytes())
-	resp.MarshalUnsafe(comm.PayloadBuf(respLen))
-	return respLen, nil
+	})
 }
 
 // StatFS implements lisafs.ControlFDImpl.StatFS.
-func (fd *controlFDLisa) StatFS(c *lisafs.Connection, comm lisafs.Communicator) (uint32, error) {
+func (fd *controlFDLisa) StatFS(c *lisafs.Connection) (lisafs.StatFS, error) {
 	var s unix.Statfs_t
 	if err := unix.Fstatfs(fd.hostFD, &s); err != nil {
-		return 0, err
+		return lisafs.StatFS{}, err
 	}
 
-	resp := lisafs.StatFS{
+	return lisafs.StatFS{
 		Type:            uint64(s.Type),
 		BlockSize:       s.Bsize,
 		Blocks:          s.Blocks,
@@ -695,40 +618,31 @@ func (fd *controlFDLisa) StatFS(c *lisafs.Connection, comm lisafs.Communicator) 
 		Files:           s.Files,
 		FilesFree:       s.Ffree,
 		NameLength:      uint64(s.Namelen),
-	}
-	respLen := uint32(resp.SizeBytes())
-	resp.MarshalUnsafe(comm.PayloadBuf(respLen))
-	return respLen, nil
+	}, nil
 }
 
 // Readlink implements lisafs.ControlFDImpl.Readlink.
-func (fd *controlFDLisa) Readlink(c *lisafs.Connection, comm lisafs.Communicator) (uint32, error) {
-	// We will manually marshal lisafs.ReadLinkAtResp, which just contains a
-	// lisafs.SizedString. Let unix.Readlinkat directly write into the payload
-	// buffer and manually write the string size before it.
-
+func (fd *controlFDLisa) Readlink(c *lisafs.Connection, getLinkBuf func(uint32) []byte) (uint32, error) {
 	// This is similar to what os.Readlink does.
-	const limit = primitive.Uint32(1024 * 1024)
-	for linkLen := primitive.Uint32(128); linkLen < limit; linkLen *= 2 {
-		b := comm.PayloadBuf(uint32(linkLen) + uint32(linkLen.SizeBytes()))
-		n, err := unix.Readlinkat(fd.hostFD, "", b[linkLen.SizeBytes():])
+	const limit = uint32(1024 * 1024)
+	for linkLen := uint32(128); linkLen < limit; linkLen *= 2 {
+		b := getLinkBuf(linkLen)
+		n, err := unix.Readlinkat(fd.hostFD, "", b)
 		if err != nil {
 			return 0, err
 		}
 		if n < int(linkLen) {
-			linkLen = primitive.Uint32(n)
-			linkLen.MarshalUnsafe(b[:linkLen.SizeBytes()])
-			return uint32(linkLen) + uint32(linkLen.SizeBytes()), nil
+			return uint32(n), nil
 		}
 	}
 	return 0, unix.ENOMEM
 }
 
 // Connect implements lisafs.ControlFDImpl.Connect.
-func (fd *controlFDLisa) Connect(c *lisafs.Connection, comm lisafs.Communicator, sockType uint32) error {
+func (fd *controlFDLisa) Connect(c *lisafs.Connection, sockType uint32) (int, error) {
 	s := c.ServerImpl().(*LisafsServer)
 	if !s.config.HostUDS {
-		return unix.ECONNREFUSED
+		return -1, unix.ECONNREFUSED
 	}
 
 	// Lock RenameMu so that the hostPath read stays valid and is not tampered
@@ -742,29 +656,27 @@ func (fd *controlFDLisa) Connect(c *lisafs.Connection, comm lisafs.Communicator,
 	// in order to actually connect to this socket.
 	hostPath := fd.FilePathLocked()
 	if len(hostPath) > 108 { // UNIX_PATH_MAX = 108 is defined in afunix.h.
-		return unix.ECONNREFUSED
+		return -1, unix.ECONNREFUSED
 	}
 
 	// Only the following types are supported.
 	switch sockType {
 	case unix.SOCK_STREAM, unix.SOCK_DGRAM, unix.SOCK_SEQPACKET:
 	default:
-		return unix.ENXIO
+		return -1, unix.ENXIO
 	}
 
 	sock, err := unix.Socket(unix.AF_UNIX, int(sockType), 0)
 	if err != nil {
-		return err
-	}
-	if err := comm.DonateFD(sock); err != nil {
-		return err
+		return -1, err
 	}
 
 	sa := unix.SockaddrUnix{Name: hostPath}
 	if err := unix.Connect(sock, &sa); err != nil {
-		return err
+		unix.Close(sock)
+		return -1, err
 	}
-	return nil
+	return sock, nil
 }
 
 // Unlink implements lisafs.ControlFDImpl.Unlink.
@@ -781,25 +693,15 @@ func (fd *controlFDLisa) RenameLocked(c *lisafs.Connection, newDir lisafs.Contro
 }
 
 // GetXattr implements lisafs.ControlFDImpl.GetXattr.
-func (fd *controlFDLisa) GetXattr(c *lisafs.Connection, comm lisafs.Communicator, name string, size uint32) (uint32, error) {
+func (fd *controlFDLisa) GetXattr(c *lisafs.Connection, name string, dataBuf []byte) (uint32, error) {
 	if !c.ServerImpl().(*LisafsServer).config.EnableVerityXattr {
 		return 0, unix.EOPNOTSUPP
 	}
 	if _, ok := verityXattrs[name]; !ok {
 		return 0, unix.EOPNOTSUPP
 	}
-
-	// Manually marshal lisafs.FGetXattrResp to avoid allocations and copying.
-	var valueLen primitive.Uint32
-	buf := comm.PayloadBuf(uint32(valueLen.SizeBytes()) + size)
-	n, err := unix.Fgetxattr(fd.hostFD, name, buf[valueLen.SizeBytes():])
-	if err != nil {
-		return 0, err
-	}
-	valueLen = primitive.Uint32(n)
-	valueLen.MarshalBytes(buf[:valueLen.SizeBytes()])
-
-	return uint32(valueLen.SizeBytes() + n), nil
+	n, err := unix.Fgetxattr(fd.hostFD, name, dataBuf)
+	return uint32(n), err
 }
 
 // SetXattr implements lisafs.ControlFDImpl.SetXattr.
@@ -814,12 +716,12 @@ func (fd *controlFDLisa) SetXattr(c *lisafs.Connection, name string, value strin
 }
 
 // ListXattr implements lisafs.ControlFDImpl.ListXattr.
-func (fd *controlFDLisa) ListXattr(c *lisafs.Connection, comm lisafs.Communicator, size uint64) (uint32, error) {
-	return 0, unix.EOPNOTSUPP
+func (fd *controlFDLisa) ListXattr(c *lisafs.Connection, size uint64) (lisafs.StringArray, error) {
+	return nil, unix.EOPNOTSUPP
 }
 
 // RemoveXattr implements lisafs.ControlFDImpl.RemoveXattr.
-func (fd *controlFDLisa) RemoveXattr(c *lisafs.Connection, comm lisafs.Communicator, name string) error {
+func (fd *controlFDLisa) RemoveXattr(c *lisafs.Connection, name string) error {
 	return unix.EOPNOTSUPP
 }
 
@@ -858,15 +760,9 @@ func (fd *openFDLisa) Close(c *lisafs.Connection) {
 }
 
 // Stat implements lisafs.OpenFDImpl.Stat.
-func (fd *openFDLisa) Stat(c *lisafs.Connection, comm lisafs.Communicator) (uint32, error) {
+func (fd *openFDLisa) Stat(c *lisafs.Connection) (linux.Statx, error) {
 	var resp linux.Statx
-	if err := fstatTo(fd.hostFD, &resp); err != nil {
-		return 0, err
-	}
-
-	respLen := uint32(resp.SizeBytes())
-	resp.MarshalUnsafe(comm.PayloadBuf(respLen))
-	return respLen, nil
+	return resp, fstatTo(fd.hostFD, &resp)
 }
 
 // Sync implements lisafs.OpenFDImpl.Sync.
@@ -875,39 +771,20 @@ func (fd *openFDLisa) Sync(c *lisafs.Connection) error {
 }
 
 // Write implements lisafs.OpenFDImpl.Write.
-func (fd *openFDLisa) Write(c *lisafs.Connection, comm lisafs.Communicator, buf []byte, off uint64) (uint32, error) {
+func (fd *openFDLisa) Write(c *lisafs.Connection, buf []byte, off uint64) (uint64, error) {
 	rw := rwfd.NewReadWriter(fd.hostFD)
 	n, err := rw.WriteAt(buf, int64(off))
-	if err != nil {
-		return 0, err
-	}
-
-	resp := &lisafs.PWriteResp{Count: uint64(n)}
-	respLen := uint32(resp.SizeBytes())
-	resp.MarshalUnsafe(comm.PayloadBuf(respLen))
-	return respLen, nil
+	return uint64(n), err
 }
 
 // Read implements lisafs.OpenFDImpl.Read.
-func (fd *openFDLisa) Read(c *lisafs.Connection, comm lisafs.Communicator, off uint64, count uint32) (uint32, error) {
-	// To save an allocation and a copy, we directly read into the payload
-	// buffer. The rest of the response message is manually marshalled.
-	var resp lisafs.PReadResp
-	respMetaSize := uint32(resp.NumBytes.SizeBytes())
-	maxRespLen := respMetaSize + count
-
-	payloadBuf := comm.PayloadBuf(maxRespLen)
+func (fd *openFDLisa) Read(c *lisafs.Connection, off uint64, dataBuf []byte) (uint32, error) {
 	rw := rwfd.NewReadWriter(fd.hostFD)
-	n, err := rw.ReadAt(payloadBuf[respMetaSize:], int64(off))
+	n, err := rw.ReadAt(dataBuf, int64(off))
 	if err != nil && err != io.EOF {
 		return 0, err
 	}
-
-	// Write the response metadata onto the payload buffer. The response contents
-	// already have been written immediately after it.
-	resp.NumBytes = primitive.Uint32(n)
-	resp.NumBytes.MarshalUnsafe(payloadBuf[:respMetaSize])
-	return respMetaSize + uint32(n), nil
+	return uint32(n), nil
 }
 
 // Allocate implements lisafs.OpenFDImpl.Allocate.
@@ -921,22 +798,12 @@ func (fd *openFDLisa) Flush(c *lisafs.Connection) error {
 }
 
 // Getdent64 implements lisafs.OpenFDImpl.Getdent64.
-func (fd *openFDLisa) Getdent64(c *lisafs.Connection, comm lisafs.Communicator, count uint32, seek0 bool) (uint32, error) {
+func (fd *openFDLisa) Getdent64(c *lisafs.Connection, count uint32, seek0 bool, recordDirent func(lisafs.Dirent64)) error {
 	if seek0 {
 		if _, err := unix.Seek(fd.hostFD, 0, 0); err != nil {
-			return 0, err
+			return err
 		}
 	}
-
-	// We will manually marshal the response lisafs.Getdents64Resp.
-
-	// numDirents is the number of dirents marshalled into the payload.
-	var numDirents primitive.Uint32
-	// The payload starts with numDirents, dirents go right after that.
-	// payloadBufPos represents the position at which to write the next dirent.
-	payloadBufPos := uint32(numDirents.SizeBytes())
-	// Request enough payloadBuf for 10 dirents, we will extend when needed.
-	payloadBuf := comm.PayloadBuf(payloadBufPos + 10*unixDirentMaxSize)
 
 	var direntsBuf [8192]byte
 	var bytesRead int
@@ -954,7 +821,7 @@ func (fd *openFDLisa) Getdent64(c *lisafs.Connection, comm lisafs.Communicator, 
 				// dirents collected till now.
 				break
 			}
-			return 0, err
+			return err
 		}
 		if n <= 0 {
 			break
@@ -979,26 +846,14 @@ func (fd *openFDLisa) Getdent64(c *lisafs.Connection, comm lisafs.Communicator, 
 			}
 			dirent.DevMinor = primitive.Uint32(unix.Minor(stat.Dev))
 			dirent.DevMajor = primitive.Uint32(unix.Major(stat.Dev))
-
-			// Paste the dirent into the payload buffer without having the dirent
-			// escape. Request a larger buffer if needed.
-			if int(payloadBufPos)+dirent.SizeBytes() > len(payloadBuf) {
-				// Ask for 10 large dirents worth of more space.
-				payloadBuf = comm.PayloadBuf(payloadBufPos + 10*unixDirentMaxSize)
-			}
-			dirent.MarshalBytes(payloadBuf[payloadBufPos:])
-			payloadBufPos += uint32(dirent.SizeBytes())
-			numDirents++
+			recordDirent(dirent)
 			return true
 		})
 		if statErr != nil {
-			return 0, statErr
+			return statErr
 		}
 	}
-
-	// The number of dirents goes at the beginning of the payload.
-	numDirents.MarshalUnsafe(payloadBuf)
-	return payloadBufPos, nil
+	return nil
 }
 
 // tryStepLocked tries to walk via open() with different modes as documented.

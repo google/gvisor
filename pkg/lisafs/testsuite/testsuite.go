@@ -141,14 +141,14 @@ func openCreateFile(ctx context.Context, t *testing.T, fdLisa lisafs.ClientFD, n
 }
 
 func openFile(ctx context.Context, t *testing.T, fdLisa lisafs.ClientFD, flags uint32, isReg bool) (lisafs.ClientFD, int) {
-	newFD, hostFD, err := fdLisa.OpenAt(ctx, flags)
+	openFD, hostFD, err := fdLisa.OpenAt(ctx, flags)
 	if err != nil {
 		t.Fatalf("OpenAt failed: %v", err)
 	}
 	if hostFD == -1 && isReg {
 		t.Error("no host FD donated")
 	}
-	return fdLisa.Client().NewFD(newFD), hostFD
+	return fdLisa.Client().NewFD(openFD), hostFD
 }
 
 func unlinkFile(ctx context.Context, t *testing.T, dir lisafs.ClientFD, name string, isDir bool) {
@@ -592,7 +592,8 @@ func testGetdents(ctx context.Context, t *testing.T, tester Tester, root lisafs.
 	}
 
 	// Use opened directory FD for getdents.
-	openDirFile, _ := openFile(ctx, t, tempDir, unix.O_RDONLY, false /* isReg */)
+	openDirFile, dirHostFD := openFile(ctx, t, tempDir, unix.O_RDONLY, false /* isReg */)
+	unix.Close(dirHostFD)
 	defer closeFD(ctx, t, openDirFile)
 
 	dirents := make([]lisafs.Dirent64, 0, n)
