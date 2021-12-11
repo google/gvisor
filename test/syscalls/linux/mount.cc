@@ -220,6 +220,28 @@ TEST(MountTest, UmountDetach) {
       OpenAt(mounted_dir.get(), "..", O_DIRECTORY | O_RDONLY));
 }
 
+TEST(MountTest, UmountMountsStackedOnDot) {
+  SKIP_IF(IsRunningWithVFS1());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  // Verify that unmounting at "." properly unmounts the mount at the top of
+  // mount stack.
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  TEST_CHECK_SUCCESS(chdir(dir.path().c_str()));
+  const struct stat before = ASSERT_NO_ERRNO_AND_VALUE(Stat("."));
+
+  TEST_CHECK_SUCCESS(mount("", dir.path().c_str(), "tmpfs", 0, "mode=0700"));
+  TEST_CHECK_SUCCESS(mount("", dir.path().c_str(), "tmpfs", 0, "mode=0700"));
+
+  // Unmount the second mount at "."
+  TEST_CHECK_SUCCESS(umount2(".", MNT_DETACH));
+
+  // Unmount the first mount at "."; this will fail if umount does not resolve
+  // "." to the topmost mount.
+  TEST_CHECK_SUCCESS(umount2(".", MNT_DETACH));
+  const struct stat after2 = ASSERT_NO_ERRNO_AND_VALUE(Stat("."));
+  EXPECT_TRUE(before.st_dev == after2.st_dev && before.st_ino == after2.st_ino);
+}
+
 TEST(MountTest, ActiveSubmountBusy) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 

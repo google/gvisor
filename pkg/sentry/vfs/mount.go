@@ -297,10 +297,21 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 	if err != nil {
 		return err
 	}
-	defer vd.DecRef(ctx)
-	if vd.dentry != vd.mount.root {
+	defer func() {
+		vd.DecRef(ctx)
+	}()
+	// Linux passes the LOOKUP_MOUNPOINT flag to user_path_at in ksys_umount to resolve to the
+	// toppmost mount in the stack located at the specified path. vfs.GetMountAt() imitiates this
+	// behavior. See fs/namei.c:user_path_at(...) and fs/namespace.c:ksys_umount(...).
+	if vd.dentry.isMounted() {
+		if realmnt := vfs.getMountAt(ctx, vd.mount, vd.dentry); realmnt != nil {
+			vd.mount.DecRef(ctx)
+			vd.mount = realmnt
+		}
+	} else if vd.dentry != vd.mount.root {
 		return linuxerr.EINVAL
 	}
+
 	vfs.mountMu.Lock()
 	if mntns := MountNamespaceFromContext(ctx); mntns != nil {
 		defer mntns.DecRef(ctx)
@@ -346,8 +357,8 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 	for _, vd := range vdsToDecRef {
 		vd.DecRef(ctx)
 	}
-	for _, mnt := range mountsToDecRef {
-		mnt.DecRef(ctx)
+	for _, m := range mountsToDecRef {
+		m.DecRef(ctx)
 	}
 	return nil
 }
