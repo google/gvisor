@@ -2587,25 +2587,25 @@ func (o *OpenAtResp) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (o *OpenAtResp) MarshalBytes(dst []byte) []byte {
-    dst = o.NewFD.MarshalUnsafe(dst)
+    dst = o.OpenFD.MarshalUnsafe(dst)
     return dst
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (o *OpenAtResp) UnmarshalBytes(src []byte) []byte {
-    src = o.NewFD.UnmarshalUnsafe(src)
+    src = o.OpenFD.UnmarshalUnsafe(src)
     return src
 }
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
 func (o *OpenAtResp) Packed() bool {
-    return o.NewFD.Packed()
+    return o.OpenFD.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (o *OpenAtResp) MarshalUnsafe(dst []byte) []byte {
-    if o.NewFD.Packed() {
+    if o.OpenFD.Packed() {
         size := o.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(o), uintptr(size))
         return dst[size:]
@@ -2616,7 +2616,7 @@ func (o *OpenAtResp) MarshalUnsafe(dst []byte) []byte {
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (o *OpenAtResp) UnmarshalUnsafe(src []byte) []byte {
-    if o.NewFD.Packed() {
+    if o.OpenFD.Packed() {
         size := o.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(o), unsafe.Pointer(&src[0]), uintptr(size))
         return src[size:]
@@ -2628,7 +2628,7 @@ func (o *OpenAtResp) UnmarshalUnsafe(src []byte) []byte {
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
 func (o *OpenAtResp) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
-    if !o.NewFD.Packed() {
+    if !o.OpenFD.Packed() {
         // Type OpenAtResp doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := cc.CopyScratchBuffer(o.SizeBytes()) // escapes: okay.
         o.MarshalBytes(buf) // escapes: fallback.
@@ -2658,7 +2658,7 @@ func (o *OpenAtResp) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, e
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
 func (o *OpenAtResp) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
-    if !o.NewFD.Packed() {
+    if !o.OpenFD.Packed() {
         // Type OpenAtResp doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := cc.CopyScratchBuffer(o.SizeBytes()) // escapes: okay.
         length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
@@ -2684,7 +2684,7 @@ func (o *OpenAtResp) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, er
 
 // WriteTo implements io.WriterTo.WriteTo.
 func (o *OpenAtResp) WriteTo(writer io.Writer) (int64, error) {
-    if !o.NewFD.Packed() {
+    if !o.OpenFD.Packed() {
         // Type OpenAtResp doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, o.SizeBytes())
         o.MarshalBytes(buf)

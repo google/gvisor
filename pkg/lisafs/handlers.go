@@ -16,20 +16,25 @@ package lisafs
 
 import (
 	"fmt"
+	"math"
 	"path"
 	"path/filepath"
 	"strings"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/flipcall"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
+	"gvisor.dev/gvisor/pkg/p9"
 )
 
 const (
 	allowedOpenFlags     = unix.O_ACCMODE | unix.O_TRUNC
 	setStatSupportedMask = unix.STATX_MODE | unix.STATX_UID | unix.STATX_GID | unix.STATX_SIZE | unix.STATX_ATIME | unix.STATX_MTIME
+	// unixDirentMaxSize is the maximum size of unix.Dirent for amd64.
+	unixDirentMaxSize = 280
 )
 
 // RPCHandler defines a handler that is invoked when the associated message is
@@ -172,14 +177,21 @@ func FStatHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, 
 	}
 	defer fd.DecRef(nil)
 
+	var resp linux.Statx
 	switch t := fd.(type) {
 	case *ControlFD:
-		return t.impl.Stat(c, comm)
+		resp, err = t.impl.Stat(c)
 	case *OpenFD:
-		return t.impl.Stat(c, comm)
+		resp, err = t.impl.Stat(c)
 	default:
 		panic(fmt.Sprintf("unknown fd type %T", t))
 	}
+	if err != nil {
+		return 0, err
+	}
+	respLen := uint32(resp.SizeBytes())
+	resp.MarshalUnsafe(comm.PayloadBuf(respLen))
+	return respLen, nil
 }
 
 // SetStatHandler handles the SetStat RPC.
@@ -203,7 +215,14 @@ func SetStatHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32
 		return 0, unix.EPERM
 	}
 
-	return fd.impl.SetStat(c, comm, req)
+	failureMask, failureErr := fd.impl.SetStat(c, req)
+	resp := SetStatResp{
+		FailureMask:  failureMask,
+		FailureErrNo: uint32(p9.ExtractErrno(failureErr)),
+	}
+	respLen := uint32(resp.SizeBytes())
+	resp.MarshalUnsafe(comm.PayloadBuf(respLen))
+	return respLen, nil
 }
 
 // WalkHandler handles the Walk RPC.
@@ -227,7 +246,33 @@ func WalkHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, e
 		}
 	}
 
-	return fd.impl.Walk(c, comm, req.Path)
+	// We need to generate inodes for each component walked. We will manually
+	// marshal the inodes into the payload buffer as they are generated to avoid
+	// the slice allocation. The memory format should be WalkResp's.
+	var (
+		status    WalkStatus
+		numInodes primitive.Uint32
+	)
+	maxPayloadSize := status.SizeBytes() + numInodes.SizeBytes() + (len(req.Path) * (*Inode)(nil).SizeBytes())
+	if maxPayloadSize > math.MaxUint32 {
+		// Too much to walk, can't do.
+		return 0, unix.EIO
+	}
+	payloadBuf := comm.PayloadBuf(uint32(maxPayloadSize))
+	payloadPos := status.SizeBytes() + numInodes.SizeBytes()
+	if status, err = fd.impl.Walk(c, req.Path, func(i Inode) {
+		i.MarshalUnsafe(payloadBuf[payloadPos:])
+		payloadPos += i.SizeBytes()
+		numInodes++
+	}); err != nil {
+		return 0, err
+	}
+
+	// WalkResp writes the walk status followed by the number of inodes in the
+	// beginning.
+	payloadBuf = status.MarshalUnsafe(payloadBuf)
+	numInodes.MarshalUnsafe(payloadBuf)
+	return uint32(payloadPos), nil
 }
 
 // WalkStatHandler handles the WalkStat RPC.
@@ -260,7 +305,28 @@ func WalkStatHandler(c *Connection, comm Communicator, payloadLen uint32) (uint3
 		}
 	}
 
-	return fd.impl.WalkStat(c, comm, req.Path)
+	// We will manually marshal the statx results into the payload buffer as they
+	// are generated to avoid the slice allocation. The memory format should be
+	// the same as WalkStatResp's.
+	var numStats primitive.Uint32
+	maxPayloadSize := numStats.SizeBytes() + (len(req.Path) * linux.SizeOfStatx)
+	if maxPayloadSize > math.MaxUint32 {
+		// Too much to walk, can't do.
+		return 0, unix.EIO
+	}
+	payloadBuf := comm.PayloadBuf(uint32(maxPayloadSize))
+	payloadPos := numStats.SizeBytes()
+	if err = fd.impl.WalkStat(c, req.Path, func(s linux.Statx) {
+		s.MarshalUnsafe(payloadBuf[payloadPos:])
+		payloadPos += s.SizeBytes()
+		numStats++
+	}); err != nil {
+		return 0, err
+	}
+
+	// WalkStatResp writes the number of stats in the beginning.
+	numStats.MarshalUnsafe(payloadBuf)
+	return uint32(payloadPos), nil
 }
 
 // OpenAtHandler handles the OpenAt RPC.
@@ -294,7 +360,22 @@ func OpenAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32,
 		}
 	}
 
-	return fd.impl.Open(c, comm, req.Flags)
+	var (
+		resp       OpenAtResp
+		hostOpenFD int
+	)
+	resp.OpenFD, hostOpenFD, err = fd.impl.Open(c, req.Flags)
+	if err != nil {
+		return 0, err
+	}
+	if hostOpenFD >= 0 {
+		if err := comm.DonateFD(hostOpenFD); err != nil {
+			return 0, err
+		}
+	}
+	respLen := uint32(resp.SizeBytes())
+	resp.MarshalUnsafe(comm.PayloadBuf(respLen))
+	return respLen, nil
 }
 
 // OpenCreateAtHandler handles the OpenCreateAt RPC.
@@ -327,7 +408,22 @@ func OpenCreateAtHandler(c *Connection, comm Communicator, payloadLen uint32) (u
 		return 0, unix.ENOTDIR
 	}
 
-	return fd.impl.OpenCreate(c, comm, req.Mode, req.UID, req.GID, name, uint32(req.Flags))
+	var (
+		resp       OpenCreateAtResp
+		hostOpenFD int
+	)
+	resp.Child, resp.NewFD, hostOpenFD, err = fd.impl.OpenCreate(c, req.Mode, req.UID, req.GID, name, uint32(req.Flags))
+	if err != nil {
+		return 0, err
+	}
+	if hostOpenFD >= 0 {
+		if err := comm.DonateFD(hostOpenFD); err != nil {
+			return 0, err
+		}
+	}
+	respLen := uint32(resp.SizeBytes())
+	resp.MarshalUnsafe(comm.PayloadBuf(respLen))
+	return respLen, nil
 }
 
 // CloseHandler handles the Close RPC.
@@ -392,7 +488,14 @@ func PWriteHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32,
 	if !fd.writable {
 		return 0, unix.EBADF
 	}
-	return fd.impl.Write(c, comm, req.Buf, uint64(req.Offset))
+	var resp PWriteResp
+	resp.Count, err = fd.impl.Write(c, req.Buf, uint64(req.Offset))
+	if err != nil {
+		return 0, err
+	}
+	respLen := uint32(resp.SizeBytes())
+	resp.MarshalUnsafe(comm.PayloadBuf(respLen))
+	return respLen, nil
 }
 
 // PReadHandler handles the PRead RPC.
@@ -410,7 +513,22 @@ func PReadHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, 
 	if !fd.readable {
 		return 0, unix.EBADF
 	}
-	return fd.impl.Read(c, comm, req.Offset, req.Count)
+
+	// To save an allocation and a copy, we directly read into the payload
+	// buffer. The rest of the response message is manually marshalled.
+	var resp PReadResp
+	respMetaSize := uint32(resp.NumBytes.SizeBytes())
+	payloadBuf := comm.PayloadBuf(respMetaSize + req.Count)
+	n, err := fd.impl.Read(c, req.Offset, payloadBuf[respMetaSize:])
+	if err != nil {
+		return 0, err
+	}
+
+	// Write the response metadata onto the payload buffer. The response contents
+	// already have been written immediately after it.
+	resp.NumBytes = primitive.Uint32(n)
+	resp.NumBytes.MarshalUnsafe(payloadBuf)
+	return respMetaSize + uint32(n), nil
 }
 
 // MkdirAtHandler handles the MkdirAt RPC.
@@ -436,7 +554,14 @@ func MkdirAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32
 	if !fd.IsDir() {
 		return 0, unix.ENOTDIR
 	}
-	return fd.impl.Mkdir(c, comm, req.Mode, req.UID, req.GID, name)
+	var resp MkdirAtResp
+	resp.ChildDir, err = fd.impl.Mkdir(c, req.Mode, req.UID, req.GID, name)
+	if err != nil {
+		return 0, err
+	}
+	respLen := uint32(resp.SizeBytes())
+	resp.MarshalUnsafe(comm.PayloadBuf(respLen))
+	return respLen, nil
 }
 
 // MknodAtHandler handles the MknodAt RPC.
@@ -462,7 +587,14 @@ func MknodAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32
 	if !fd.IsDir() {
 		return 0, unix.ENOTDIR
 	}
-	return fd.impl.Mknod(c, comm, req.Mode, req.UID, req.GID, name, uint32(req.Minor), uint32(req.Major))
+	var resp MknodAtResp
+	resp.Child, err = fd.impl.Mknod(c, req.Mode, req.UID, req.GID, name, uint32(req.Minor), uint32(req.Major))
+	if err != nil {
+		return 0, err
+	}
+	respLen := uint32(resp.SizeBytes())
+	resp.MarshalUnsafe(comm.PayloadBuf(respLen))
+	return respLen, nil
 }
 
 // SymlinkAtHandler handles the SymlinkAt RPC.
@@ -488,7 +620,14 @@ func SymlinkAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint
 	if !fd.IsDir() {
 		return 0, unix.ENOTDIR
 	}
-	return fd.impl.Symlink(c, comm, name, string(req.Target), req.UID, req.GID)
+	var resp SymlinkAtResp
+	resp.Symlink, err = fd.impl.Symlink(c, name, string(req.Target), req.UID, req.GID)
+	if err != nil {
+		return 0, err
+	}
+	respLen := uint32(resp.SizeBytes())
+	resp.MarshalUnsafe(comm.PayloadBuf(respLen))
+	return respLen, nil
 }
 
 // LinkAtHandler handles the LinkAt RPC.
@@ -519,7 +658,14 @@ func LinkAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32,
 	if err != nil {
 		return 0, err
 	}
-	return targetFD.impl.Link(c, comm, fd.impl, name)
+	var resp LinkAtResp
+	resp.Link, err = targetFD.impl.Link(c, fd.impl, name)
+	if err != nil {
+		return 0, err
+	}
+	respLen := uint32(resp.SizeBytes())
+	resp.MarshalUnsafe(comm.PayloadBuf(respLen))
+	return respLen, nil
 }
 
 // FStatFSHandler handles the FStatFS RPC.
@@ -534,7 +680,14 @@ func FStatFSHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32
 		return 0, err
 	}
 	defer fd.DecRef(nil)
-	return fd.impl.StatFS(c, comm)
+	var resp StatFS
+	resp, err = fd.impl.StatFS(c)
+	if err != nil {
+		return 0, err
+	}
+	respLen := uint32(resp.SizeBytes())
+	resp.MarshalUnsafe(comm.PayloadBuf(respLen))
+	return respLen, nil
 }
 
 // FAllocateHandler handles the FAllocate RPC.
@@ -573,7 +726,21 @@ func ReadLinkAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uin
 	if !fd.IsSymlink() {
 		return 0, unix.EINVAL
 	}
-	return fd.impl.Readlink(c, comm)
+
+	// We will manually marshal ReadLinkAtResp, which just contains a
+	// SizedString. Let Readlinkat directly write into the payload buffer and
+	// manually write the string size before it.
+	var linkLen primitive.Uint32
+	respMetaSize := uint32(linkLen.SizeBytes())
+	n, err := fd.impl.Readlink(c, func(dataLen uint32) []byte {
+		return comm.PayloadBuf(dataLen + respMetaSize)[respMetaSize:]
+	})
+	if err != nil {
+		return 0, err
+	}
+	linkLen = primitive.Uint32(n)
+	linkLen.MarshalUnsafe(comm.PayloadBuf(respMetaSize))
+	return respMetaSize + n, nil
 }
 
 // FlushHandler handles the Flush RPC.
@@ -607,7 +774,14 @@ func ConnectHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32
 	if !fd.IsSocket() {
 		return 0, unix.ENOTSOCK
 	}
-	return 0, fd.impl.Connect(c, comm, req.SockType)
+	sock, err := fd.impl.Connect(c, req.SockType)
+	if err != nil {
+		return 0, err
+	}
+	if err := comm.DonateFD(sock); err != nil {
+		return 0, err
+	}
+	return 0, nil
 }
 
 // UnlinkAtHandler handles the UnlinkAt RPC.
@@ -745,7 +919,34 @@ func Getdents64Handler(c *Connection, comm Communicator, payloadLen uint32) (uin
 		seek0 = true
 		req.Count = -req.Count
 	}
-	return fd.impl.Getdent64(c, comm, uint32(req.Count), seek0)
+
+	// We will manually marshal the response Getdents64Resp.
+
+	// numDirents is the number of dirents marshalled into the payload.
+	var numDirents primitive.Uint32
+	// The payload starts with numDirents, dirents go right after that.
+	// payloadBufPos represents the position at which to write the next dirent.
+	payloadBufPos := uint32(numDirents.SizeBytes())
+	// Request enough payloadBuf for 10 dirents, we will extend when needed.
+	// unix.Dirent is 280 bytes for amd64.
+	payloadBuf := comm.PayloadBuf(payloadBufPos + 10*unixDirentMaxSize)
+	if err := fd.impl.Getdent64(c, uint32(req.Count), seek0, func(dirent Dirent64) {
+		// Paste the dirent into the payload buffer without having the dirent
+		// escape. Request a larger buffer if needed.
+		if int(payloadBufPos)+dirent.SizeBytes() > len(payloadBuf) {
+			// Ask for 10 large dirents worth of more space.
+			payloadBuf = comm.PayloadBuf(payloadBufPos + 10*unixDirentMaxSize)
+		}
+		dirent.MarshalBytes(payloadBuf[payloadBufPos:])
+		payloadBufPos += uint32(dirent.SizeBytes())
+		numDirents++
+	}); err != nil {
+		return 0, err
+	}
+
+	// The number of dirents goes at the beginning of the payload.
+	numDirents.MarshalUnsafe(payloadBuf)
+	return payloadBufPos, nil
 }
 
 // FGetXattrHandler handles the FGetXattr RPC.
@@ -760,7 +961,19 @@ func FGetXattrHandler(c *Connection, comm Communicator, payloadLen uint32) (uint
 		return 0, err
 	}
 	defer fd.DecRef(nil)
-	return fd.impl.GetXattr(c, comm, string(req.Name), uint32(req.BufSize))
+
+	// Manually marshal FGetXattrResp to avoid allocations and copying.
+	// FGetXattrResp simply is a wrapper around SizedString.
+	var valueLen primitive.Uint32
+	respMetaSize := uint32(valueLen.SizeBytes())
+	payloadBuf := comm.PayloadBuf(respMetaSize + uint32(req.BufSize))
+	n, err := fd.impl.GetXattr(c, string(req.Name), payloadBuf[respMetaSize:])
+	if err != nil {
+		return 0, err
+	}
+	valueLen = primitive.Uint32(n)
+	valueLen.MarshalBytes(payloadBuf)
+	return respMetaSize + n, nil
 }
 
 // FSetXattrHandler handles the FSetXattr RPC.
@@ -793,7 +1006,13 @@ func FListXattrHandler(c *Connection, comm Communicator, payloadLen uint32) (uin
 		return 0, err
 	}
 	defer fd.DecRef(nil)
-	return fd.impl.ListXattr(c, comm, req.Size)
+	var resp FListXattrResp
+	if resp.Xattrs, err = fd.impl.ListXattr(c, req.Size); err != nil {
+		return 0, err
+	}
+	respLen := uint32(resp.SizeBytes())
+	resp.MarshalBytes(comm.PayloadBuf(respLen))
+	return respLen, nil
 }
 
 // FRemoveXattrHandler handles the FRemoveXattr RPC.
@@ -811,7 +1030,7 @@ func FRemoveXattrHandler(c *Connection, comm Communicator, payloadLen uint32) (u
 		return 0, err
 	}
 	defer fd.DecRef(nil)
-	return 0, fd.impl.RemoveXattr(c, comm, string(req.Name))
+	return 0, fd.impl.RemoveXattr(c, string(req.Name))
 }
 
 // checkSafeName validates the name and returns nil or returns an error.

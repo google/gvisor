@@ -529,7 +529,7 @@ type OpenAtReq struct {
 //
 // +marshal boundCheck
 type OpenAtResp struct {
-	NewFD FDID
+	OpenFD FDID
 }
 
 // +marshal
