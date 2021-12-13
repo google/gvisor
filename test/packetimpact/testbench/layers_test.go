@@ -16,6 +16,7 @@ package testbench
 
 import (
 	"bytes"
+	"encoding/hex"
 	"net"
 	"testing"
 
@@ -724,5 +725,54 @@ func TestIPv6ExtHdrOptions(t *testing.T) {
 				t.Fatalf("mismatching bytes, gotBytes: %x, wantBytes: %x", gotBytes, tt.wantBytes)
 			}
 		})
+	}
+}
+
+func TestEthernetPadding(t *testing.T) {
+	packet := []byte{
+		0x3a, 0xd6, 0x90, 0x36, 0x18, 0xce, 0x64, 0x4f, 0x16, 0x3f,
+		0x5f, 0x0f, 0x08, 0x00, 0x45, 0x00, 0x00, 0x2c, 0xf5, 0x0e,
+		0x00, 0x00, 0x40, 0x06, 0x2d, 0xba, 0xac, 0x00, 0x00, 0x02,
+		0xac, 0x00, 0x00, 0x01, 0x7c, 0x3e, 0xe3, 0x91, 0x2b, 0xe4,
+		0xb0, 0xe7, 0x9a, 0xcb, 0x04, 0x43, 0x60, 0x12, 0x72, 0x00,
+		0xf2, 0x67, 0x00, 0x00, 0x02, 0x04, 0x05, 0xb4, 0x00, 0x00,
+	}
+	parsed := parse(parseEther, packet)
+	wanted := Layers{
+		&Ether{
+			SrcAddr: LinkAddress(tcpip.LinkAddress("\x64\x4f\x16\x3f\x5f\x0f")),
+			DstAddr: LinkAddress(tcpip.LinkAddress("\x3a\xd6\x90\x36\x18\xce")),
+			Type:    NetworkProtocolNumber(header.IPv4ProtocolNumber),
+		},
+		&IPv4{
+			IHL:            Uint8(20),
+			TOS:            Uint8(0),
+			TotalLength:    Uint16(44),
+			ID:             Uint16(0xf50e),
+			Flags:          Uint8(0),
+			FragmentOffset: Uint16(0),
+			TTL:            Uint8(64),
+			Protocol:       Uint8(uint8(header.TCPProtocolNumber)),
+			Checksum:       Uint16(0x2dba),
+			SrcAddr:        Address(tcpip.Address("\xac\x00\x00\x02")),
+			DstAddr:        Address(tcpip.Address("\xac\x00\x00\x01")),
+		},
+		&TCP{
+			SrcPort:       Uint16(31806),
+			DstPort:       Uint16(58257),
+			SeqNum:        Uint32(736407783),
+			AckNum:        Uint32(2596996163),
+			DataOffset:    Uint8(24),
+			Flags:         TCPFlags(header.TCPFlagSyn | header.TCPFlagAck),
+			WindowSize:    Uint16(29184),
+			Checksum:      Uint16(0xf267),
+			UrgentPointer: Uint16(0),
+		},
+		&Payload{
+			Bytes: []byte{},
+		},
+	}
+	if !parsed.match(wanted) {
+		t.Fatalf("parse(parseEther, %s) = %s, want %s)", hex.Dump(packet), parsed, wanted)
 	}
 }
