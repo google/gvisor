@@ -297,6 +297,11 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 	if err != nil {
 		return err
 	}
+	// This defer statement is encapsulated in a function because vd.mount can be
+	// modified in the block below. The arguments to defer are evaluated during
+	// the construction of a defer statement, so if vd.DecRef() was not
+	// encapsulated, the vd structure and its underlying pointers _at this point_
+	// would be copied and DecRefd at the end of this function.
 	defer func() {
 		vd.DecRef(ctx)
 	}()
