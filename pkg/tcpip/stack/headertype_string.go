@@ -21,13 +21,14 @@ func _() {
 	// An "invalid array index" compiler error signifies that the constant values have changed.
 	// Re-run the stringer command to generate them again.
 	var x [1]struct{}
-	_ = x[linkHeader-0]
-	_ = x[networkHeader-1]
-	_ = x[transportHeader-2]
-	_ = x[numHeaderType-3]
+	_ = x[virtioNetHeader-0]
+	_ = x[linkHeader-1]
+	_ = x[networkHeader-2]
+	_ = x[transportHeader-3]
+	_ = x[numHeaderType-4]
 }
 
-const _headerType_name = "linkHeadernetworkHeadertransportHeadernumHeaderType"
+const _headerType_name = "virtioNetHeaderlinkHeadernetworkHeadertransportHeadernumHeaderType"
 
 var _headerType_index = [...]uint8{0, 10, 23, 38, 51}
 

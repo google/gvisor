@@ -14,7 +14,9 @@ go_library(
         "sharedmem_unsafe.go",
         "tx.go",
     ],
-    visibility = ["//visibility:public"],
+    visibility = [
+        "//visibility:public",
+    ],
     deps = [
         "//pkg/cleanup",
         "//pkg/eventfd",

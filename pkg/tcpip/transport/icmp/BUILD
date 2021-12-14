@@ -26,6 +26,7 @@ go_library(
     imports = ["gvisor.dev/gvisor/pkg/tcpip/buffer"],
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/log",
         "//pkg/sleep",
         "//pkg/sync",
         "//pkg/tcpip",

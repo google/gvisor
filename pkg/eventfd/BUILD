@@ -8,7 +8,10 @@ go_library(
         "eventfd.go",
         "eventfd_unsafe.go",
     ],
-    visibility = ["//:sandbox"],
+    visibility = [
+        "//:sandbox",
+        "//cloud/cluster/node/network/client/go:__pkg__",
+    ],
     deps = [
         "//pkg/hostarch",
         "//pkg/tcpip/link/rawfile",
