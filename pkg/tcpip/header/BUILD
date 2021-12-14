@@ -26,6 +26,7 @@ go_library(
         "ndpoptionidentifier_string.go",
         "tcp.go",
         "udp.go",
+        "virtionet.go",
     ],
     visibility = ["//visibility:public"],
     deps = [

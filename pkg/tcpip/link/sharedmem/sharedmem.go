@@ -129,6 +129,10 @@ type Options struct {
 	// RXChecksumOffload if true, indicates that this endpoints capability
 	// set should include CapabilityRXChecksumOffload.
 	RXChecksumOffload bool
+
+	// VirtioNetHeaderRequired if true, indicates that all outbound packets should have
+	// a virtio header and inbound packets should have a virtio header as well.
+	VirtioNetHeaderRequired bool
 }
 
 type endpoint struct {
@@ -155,6 +159,10 @@ type endpoint struct {
 	// hdrSize is the size of the link layer header if any.
 	// hdrSize is immutable.
 	hdrSize uint32
+
+	// virtioNetHeaderRequired if true indicates that a virtio header is expected
+	// in all inbound/outbound packets.
+	virtioNetHeaderRequired bool
 
 	// rx is the receive queue.
 	rx rx
@@ -186,11 +194,12 @@ type endpoint struct {
 // into buffers of "bufferSize" bytes.
 func New(opts Options) (stack.LinkEndpoint, error) {
 	e := &endpoint{
-		mtu:        opts.MTU,
-		bufferSize: opts.BufferSize,
-		addr:       opts.LinkAddress,
-		peerFD:     opts.PeerFD,
-		onClosed:   opts.OnClosed,
+		mtu:                     opts.MTU,
+		bufferSize:              opts.BufferSize,
+		addr:                    opts.LinkAddress,
+		peerFD:                  opts.PeerFD,
+		onClosed:                opts.OnClosed,
+		virtioNetHeaderRequired: opts.VirtioNetHeaderRequired,
 	}
 
 	if err := e.tx.init(opts.BufferSize, &opts.TX); err != nil {
@@ -215,6 +224,11 @@ func New(opts Options) (stack.LinkEndpoint, error) {
 		e.hdrSize = header.EthernetMinimumSize
 		e.caps |= stack.CapabilityResolutionRequired
 	}
+
+	if opts.VirtioNetHeaderRequired {
+		e.hdrSize += header.VirtioNetHeaderSize
+	}
+
 	return e, nil
 }
 
@@ -322,6 +336,11 @@ func (e *endpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.Net
 	eth.Encode(ethHdr)
 }
 
+func (e *endpoint) AddVirtioNetHeader(pkt *stack.PacketBuffer) {
+	virtio := header.VirtioNetHeader(pkt.VirtioNetHeader().Push(header.VirtioNetHeaderSize))
+	virtio.Encode(&header.VirtioNetHeaderFields{})
+}
+
 // WriteRawPacket implements stack.LinkEndpoint.
 func (*endpoint) WriteRawPacket(*stack.PacketBuffer) tcpip.Error { return &tcpip.ErrNotSupported{} }
 
@@ -329,6 +348,9 @@ func (*endpoint) WriteRawPacket(*stack.PacketBuffer) tcpip.Error { return &tcpip
 func (e *endpoint) writePacketLocked(r stack.RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
 	if e.addr != "" {
 		e.AddHeader(r.LocalLinkAddress, r.RemoteLinkAddress, protocol, pkt)
+	}
+	if e.virtioNetHeaderRequired {
+		e.AddVirtioNetHeader(pkt)
 	}
 
 	views := pkt.Views()
@@ -413,6 +435,14 @@ func (e *endpoint) dispatchLoop(d stack.NetworkDispatcher) {
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Data: buffer.View(b).ToVectorisedView(),
 		})
+
+		if e.virtioNetHeaderRequired {
+			_, ok := pkt.VirtioNetHeader().Consume(header.VirtioNetHeaderSize)
+			if !ok {
+				pkt.DecRef()
+				continue
+			}
+		}
 
 		var src, dst tcpip.LinkAddress
 		var proto tcpip.NetworkProtocolNumber

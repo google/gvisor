@@ -63,6 +63,10 @@ type serverEndpoint struct {
 	// hdrSize is immutable.
 	hdrSize uint32
 
+	// virtioNetHeaderRequired if true indicates that a virtio header is expected
+	// in all inbound/outbound packets.
+	virtioNetHeaderRequired bool
+
 	// onClosed is a function to be called when the FD's peer (if any) closes its
 	// end of the communication pipe.
 	onClosed func(tcpip.Error)
@@ -218,6 +222,11 @@ func (e *serverEndpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcp
 	eth.Encode(ethHdr)
 }
 
+func (e *serverEndpoint) AddVirtioNetHeader(pkt *stack.PacketBuffer) {
+	virtio := header.VirtioNetHeader(pkt.VirtioNetHeader().Push(header.VirtioNetHeaderSize))
+	virtio.Encode(&header.VirtioNetHeaderFields{})
+}
+
 // WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket
 func (e *serverEndpoint) WriteRawPacket(pkt *stack.PacketBuffer) tcpip.Error {
 	views := pkt.Views()
@@ -235,6 +244,10 @@ func (e *serverEndpoint) WriteRawPacket(pkt *stack.PacketBuffer) tcpip.Error {
 func (e *serverEndpoint) writePacketLocked(r stack.RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
 	if e.addr != "" {
 		e.AddHeader(r.LocalLinkAddress, r.RemoteLinkAddress, protocol, pkt)
+	}
+
+	if e.virtioNetHeaderRequired {
+		e.AddVirtioNetHeader(pkt)
 	}
 
 	views := pkt.Views()
@@ -306,6 +319,13 @@ func (e *serverEndpoint) dispatchLoop(d stack.NetworkDispatcher) {
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Data: buffer.View(b).ToVectorisedView(),
 		})
+		if e.virtioNetHeaderRequired {
+			_, ok := pkt.VirtioNetHeader().Consume(header.VirtioNetHeaderSize)
+			if !ok {
+				pkt.DecRef()
+				continue
+			}
+		}
 		var src, dst tcpip.LinkAddress
 		var proto tcpip.NetworkProtocolNumber
 		if e.addr != "" {
