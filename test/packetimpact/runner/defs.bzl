@@ -82,7 +82,6 @@ def packetimpact_native_test(
         name,
         testbench_binary,
         expect_failure = False,
-        legacy_runner = False,
         **kwargs):
     """Add a native packetimpact test.
 
@@ -90,34 +89,23 @@ def packetimpact_native_test(
         name: name of the test
         testbench_binary: the testbench binary
         expect_failure: the test must fail
-        legacy_runner: use the legacy docker runner
         **kwargs: all the other args, forwarded to _packetimpact_test
     """
     expect_failure_flag = ["--expect_failure"] if expect_failure else []
-    if legacy_runner:
-        _packetimpact_test(
-            name = name + "_native_test",
-            testbench_binary = testbench_binary,
-            flags = ["--native"] + expect_failure_flag,
-            tags = PACKETIMPACT_TAGS,
-            **kwargs
-        )
-    else:
-        _packetimpact_test(
-            test_runner = "//test/packetimpact/runner:main",
-            name = name + "_native_test",
-            testbench_binary = testbench_binary,
-            flags = expect_failure_flag + ["--variant", "native"],
-            dut_binary = "//test/packetimpact/dut/native",
-            tags = PACKETIMPACT_TAGS,
-            **kwargs
-        )
+    _packetimpact_test(
+        test_runner = "//test/packetimpact/runner:main",
+        name = name + "_native_test",
+        testbench_binary = testbench_binary,
+        flags = expect_failure_flag + ["--variant", "native"],
+        dut_binary = "//test/packetimpact/dut/native",
+        tags = PACKETIMPACT_TAGS,
+        **kwargs
+    )
 
 def packetimpact_netstack_test(
         name,
         testbench_binary,
         expect_failure = False,
-        legacy_runner = False,
         **kwargs):
     """Add a packetimpact test on netstack.
 
@@ -125,34 +113,22 @@ def packetimpact_netstack_test(
         name: name of the test
         testbench_binary: the testbench binary
         expect_failure: the test must fail
-        legacy_runner: use the legacy docker runner
         **kwargs: all the other args, forwarded to _packetimpact_test
     """
     expect_failure_flag = []
     if expect_failure:
         expect_failure_flag = ["--expect_failure"]
-    if legacy_runner:
-        _packetimpact_test(
-            name = name + "_netstack_test",
-            testbench_binary = testbench_binary,
-            # Note that a distinct runtime must be provided in the form
-            # --test_arg=--runtime=other when invoking bazel.
-            flags = expect_failure_flag,
-            tags = PACKETIMPACT_TAGS,
-            **kwargs
-        )
-    else:
-        _packetimpact_test(
-            test_runner = "//test/packetimpact/runner:main",
-            name = name + "_netstack_test",
-            testbench_binary = testbench_binary,
-            flags = expect_failure_flag + ["--variant", "gvisor"],
-            dut_binary = "//test/packetimpact/dut/runsc",
-            tags = PACKETIMPACT_TAGS,
-            **kwargs
-        )
+    _packetimpact_test(
+        test_runner = "//test/packetimpact/runner:main",
+        name = name + "_netstack_test",
+        testbench_binary = testbench_binary,
+        flags = expect_failure_flag + ["--variant", "gvisor"],
+        dut_binary = "//test/packetimpact/dut/runsc",
+        tags = PACKETIMPACT_TAGS,
+        **kwargs
+    )
 
-def packetimpact_go_test(name, expect_native_failure = False, expect_netstack_failure = False, num_duts = 1, legacy_runner = False, **kwargs):
+def packetimpact_go_test(name, expect_native_failure = False, expect_netstack_failure = False, num_duts = 1, **kwargs):
     """Add packetimpact tests written in go.
 
     Args:
@@ -160,7 +136,6 @@ def packetimpact_go_test(name, expect_native_failure = False, expect_netstack_fa
         expect_native_failure: the test must fail natively
         expect_netstack_failure: the test must fail for Netstack
         num_duts: how many DUTs are needed for the test
-        legacy_runner: use the legacy docker runner
         **kwargs: all the other args, forwarded to packetimpact_native_test and packetimpact_netstack_test
     """
     testbench_binary = name + "_test"
@@ -169,7 +144,6 @@ def packetimpact_go_test(name, expect_native_failure = False, expect_netstack_fa
         expect_failure = expect_native_failure,
         num_duts = num_duts,
         testbench_binary = testbench_binary,
-        legacy_runner = legacy_runner,
         **kwargs
     )
     packetimpact_netstack_test(
@@ -177,7 +151,6 @@ def packetimpact_go_test(name, expect_native_failure = False, expect_netstack_fa
         expect_failure = expect_netstack_failure,
         num_duts = num_duts,
         testbench_binary = testbench_binary,
-        legacy_runner = legacy_runner,
         **kwargs
     )
 
@@ -209,7 +182,6 @@ PacketimpactTestInfo = provider(
         "timeout",
         "expect_netstack_failure",
         "num_duts",
-        "legacy_runner",
     ],
 )
 
