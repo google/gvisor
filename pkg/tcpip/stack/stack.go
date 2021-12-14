@@ -670,6 +670,9 @@ type NICOptions struct {
 	// should be tracked alongside a NIC, to avoid having to keep a
 	// map[tcpip.NICID]metadata mirroring stack.Stack's nic map.
 	Context NICContext
+
+	// QDisc is the queue discipline to use for this NIC.
+	QDisc QueueingDiscipline
 }
 
 // CreateNICWithOptions creates a NIC with the provided id, LinkEndpoint, and
@@ -695,7 +698,7 @@ func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOp
 		}
 	}
 
-	n := newNIC(s, id, opts.Name, ep, opts.Context)
+	n := newNIC(s, id, ep, opts)
 	for proto := range s.defaultForwardingEnabled {
 		if err := n.setForwarding(proto, true); err != nil {
 			panic(fmt.Sprintf("newNIC(%d, ...).setForwarding(%d, true): %s", id, proto, err))
@@ -721,7 +724,11 @@ func (s *Stack) GetLinkEndpointByName(name string) LinkEndpoint {
 	defer s.mu.RUnlock()
 	for _, nic := range s.nics {
 		if nic.Name() == name {
-			return nic.LinkEndpoint
+			linkEP, ok := nic.NetworkLinkEndpoint.(LinkEndpoint)
+			if !ok {
+				panic(fmt.Sprintf("unexpected NetworkLinkEndpoint(%#v) is not a LinkEndpoint", nic.NetworkLinkEndpoint))
+			}
+			return linkEP
 		}
 	}
 	return nil
@@ -866,14 +873,14 @@ func (s *Stack) NICInfo() map[tcpip.NICID]NICInfo {
 
 		info := NICInfo{
 			Name:              nic.name,
-			LinkAddress:       nic.LinkEndpoint.LinkAddress(),
+			LinkAddress:       nic.NetworkLinkEndpoint.LinkAddress(),
 			ProtocolAddresses: nic.primaryAddresses(),
 			Flags:             flags,
-			MTU:               nic.LinkEndpoint.MTU(),
+			MTU:               nic.NetworkLinkEndpoint.MTU(),
 			Stats:             nic.stats.local,
 			NetworkStats:      netStats,
 			Context:           nic.context,
-			ARPHardwareType:   nic.LinkEndpoint.ARPHardwareType(),
+			ARPHardwareType:   nic.NetworkLinkEndpoint.ARPHardwareType(),
 			Forwarding:        make(map[tcpip.NetworkProtocolNumber]bool),
 		}
 
@@ -1527,7 +1534,7 @@ func (s *Stack) Wait() {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, n := range s.nics {
-		n.LinkEndpoint.Wait()
+		n.NetworkLinkEndpoint.Wait()
 	}
 }
 

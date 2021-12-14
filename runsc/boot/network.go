@@ -178,7 +178,8 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		linkEP := ethernet.New(loopback.New())
 
 		log.Infof("Enabling loopback interface %q with id %d on addresses %+v", link.Name, nicID, link.Addresses)
-		if err := n.createNICWithAddrs(nicID, link.Name, linkEP, link.Addresses); err != nil {
+		opts := stack.NICOptions{Name: link.Name}
+		if err := n.createNICWithAddrs(nicID, linkEP, opts, link.Addresses); err != nil {
 			return err
 		}
 
@@ -227,15 +228,23 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			return err
 		}
 
+		// Wrap linkEP in a sniffer to enable packet logging.
+		sniffEP := sniffer.New(linkEP)
+
+		var qDisc stack.QueueingDiscipline
 		switch link.QDisc {
 		case config.QDiscNone:
 		case config.QDiscFIFO:
 			log.Infof("Enabling FIFO QDisc on %q", link.Name)
-			linkEP = fifo.New(linkEP, runtime.GOMAXPROCS(0), 1000)
+			qDisc = fifo.New(sniffEP, runtime.GOMAXPROCS(0), 1000)
 		}
 
 		log.Infof("Enabling interface %q with id %d on addresses %+v (%v) w/ %d channels", link.Name, nicID, link.Addresses, mac, link.NumChannels)
-		if err := n.createNICWithAddrs(nicID, link.Name, linkEP, link.Addresses); err != nil {
+		opts := stack.NICOptions{
+			Name:  link.Name,
+			QDisc: qDisc,
+		}
+		if err := n.createNICWithAddrs(nicID, sniffEP, opts, link.Addresses); err != nil {
 			return err
 		}
 
@@ -285,9 +294,8 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 
 // createNICWithAddrs creates a NIC in the network stack and adds the given
 // addresses.
-func (n *Network) createNICWithAddrs(id tcpip.NICID, name string, ep stack.LinkEndpoint, addrs []IPWithPrefix) error {
-	opts := stack.NICOptions{Name: name}
-	if err := n.Stack.CreateNICWithOptions(id, sniffer.New(ep), opts); err != nil {
+func (n *Network) createNICWithAddrs(id tcpip.NICID, ep stack.LinkEndpoint, opts stack.NICOptions, addrs []IPWithPrefix) error {
+	if err := n.Stack.CreateNICWithOptions(id, ep, opts); err != nil {
 		return fmt.Errorf("CreateNICWithOptions(%d, _, %+v) failed: %v", id, opts, err)
 	}
 
