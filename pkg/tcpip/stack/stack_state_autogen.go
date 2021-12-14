@@ -426,8 +426,8 @@ func (pk *PacketBuffer) StateFields() []string {
 		"Owner",
 		"EgressRoute",
 		"GSOOptions",
-		"SNATDone",
-		"DNATDone",
+		"snatDone",
+		"dnatDone",
 		"PktType",
 		"NICID",
 		"RXTransportChecksumValidated",
@@ -455,8 +455,8 @@ func (pk *PacketBuffer) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(10, &pk.Owner)
 	stateSinkObject.Save(11, &pk.EgressRoute)
 	stateSinkObject.Save(12, &pk.GSOOptions)
-	stateSinkObject.Save(13, &pk.SNATDone)
-	stateSinkObject.Save(14, &pk.DNATDone)
+	stateSinkObject.Save(13, &pk.snatDone)
+	stateSinkObject.Save(14, &pk.dnatDone)
 	stateSinkObject.Save(15, &pk.PktType)
 	stateSinkObject.Save(16, &pk.NICID)
 	stateSinkObject.Save(17, &pk.RXTransportChecksumValidated)
@@ -482,8 +482,8 @@ func (pk *PacketBuffer) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(10, &pk.Owner)
 	stateSourceObject.Load(11, &pk.EgressRoute)
 	stateSourceObject.Load(12, &pk.GSOOptions)
-	stateSourceObject.Load(13, &pk.SNATDone)
-	stateSourceObject.Load(14, &pk.DNATDone)
+	stateSourceObject.Load(13, &pk.snatDone)
+	stateSourceObject.Load(14, &pk.dnatDone)
 	stateSourceObject.Load(15, &pk.PktType)
 	stateSourceObject.Load(16, &pk.NICID)
 	stateSourceObject.Load(17, &pk.RXTransportChecksumValidated)
