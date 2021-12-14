@@ -19,6 +19,7 @@ import (
 	"io"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -348,6 +349,7 @@ func (e *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
 
 func send4(s *stack.Stack, ctx *network.WriteContext, ident uint16, data buffer.View, maxHeaderLength uint16) tcpip.Error {
 	if len(data) < header.ICMPv4MinimumSize {
+		log.Infof("len(data) is smaller than min size")
 		return &tcpip.ErrInvalidEndpointState{}
 	}
 

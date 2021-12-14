@@ -207,6 +207,7 @@ func logPacket(prefix string, dir direction, protocol tcpip.NetworkProtocolNumbe
 	// We trim the link headers from the cloned buffer as the sniffer doesn't
 	// handle link headers.
 	vv := buffer.NewVectorisedView(pkt.Size(), pkt.Views())
+	vv.TrimFront(len(pkt.VirtioNetHeader().View()))
 	vv.TrimFront(len(pkt.LinkHeader().View()))
 	pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{Data: vv})
 	defer pkt.DecRef()

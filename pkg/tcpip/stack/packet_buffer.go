@@ -27,7 +27,8 @@ import (
 type headerType int
 
 const (
-	linkHeader headerType = iota
+	virtioNetHeader headerType = iota
+	linkHeader
 	networkHeader
 	transportHeader
 	numHeaderType
@@ -214,6 +215,14 @@ func (pk *PacketBuffer) ReservedHeaderBytes() int {
 // headers. This is relevant to PacketHeader.Push method only.
 func (pk *PacketBuffer) AvailableHeaderBytes() int {
 	return pk.reserved - pk.pushed
+}
+
+// VirtioNetHeader returns the handle to virtio-layer header.
+func (pk *PacketBuffer) VirtioNetHeader() PacketHeader {
+	return PacketHeader{
+		pk:  pk,
+		typ: virtioNetHeader,
+	}
 }
 
 // LinkHeader returns the handle to link-layer header.
