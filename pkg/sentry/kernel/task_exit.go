@@ -653,6 +653,7 @@ func (t *Task) exitNotifyLocked(fromPtraceDetach bool) {
 				delete(ns.tgids, t.tg)
 			}
 		}
+		t.userCounters.decRLimitNProc()
 		t.tg.exitedCPUStats.Accumulate(t.CPUStats())
 		t.tg.ioUsage.Accumulate(t.ioUsage)
 		t.tg.signalHandlers.mu.Lock()
