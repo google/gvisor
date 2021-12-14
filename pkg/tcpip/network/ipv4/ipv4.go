@@ -420,7 +420,8 @@ func (e *endpoint) handleFragments(_ *stack.Route, networkMTU uint32, pkt *stack
 
 // WritePacket writes a packet to the given destination address and protocol.
 func (e *endpoint) WritePacket(r *stack.Route, params stack.NetworkHeaderParams, pkt *stack.PacketBuffer) tcpip.Error {
-	if err := e.addIPHeader(r.LocalAddress(), r.RemoteAddress(), pkt, params, nil /* options */); err != nil {
+	dstAddr := r.RemoteAddress()
+	if err := e.addIPHeader(r.LocalAddress(), dstAddr, pkt, params, nil /* options */); err != nil {
 		return err
 	}
 
@@ -433,15 +434,14 @@ func (e *endpoint) WritePacket(r *stack.Route, params stack.NetworkHeaderParams,
 		return nil
 	}
 
-	// If the packet is manipulated as per NAT Output rules, handle packet
+	// If the packet is manipulated as per DNAT Output rules, handle packet
 	// based on destination address and do not send the packet to link
 	// layer.
 	//
-	// We should do this for every packet, rather than only NATted packets, but
+	// We should do this for every packet, rather than only DNATted packets, but
 	// removing this check short circuits broadcasts before they are sent out to
 	// other hosts.
-	if pkt.DNATDone {
-		netHeader := header.IPv4(pkt.NetworkHeader().View())
+	if netHeader := header.IPv4(pkt.NetworkHeader().View()); dstAddr != netHeader.DestinationAddress() {
 		if ep := e.protocol.findEndpointWithAddress(netHeader.DestinationAddress()); ep != nil {
 			// Since we rewrote the packet but it is being routed back to us, we
 			// can safely assume the checksum is valid.

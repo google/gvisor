@@ -138,13 +138,13 @@ type PacketBuffer struct {
 	EgressRoute RouteInfo
 	GSOOptions  GSO
 
-	// SNATDone indicates if the packet's source has been manipulated as per
+	// snatDone indicates if the packet's source has been manipulated as per
 	// iptables NAT table.
-	SNATDone bool
+	snatDone bool
 
-	// DNATDone indicates if the packet's destination has been manipulated as per
+	// dnatDone indicates if the packet's destination has been manipulated as per
 	// iptables NAT table.
-	DNATDone bool
+	dnatDone bool
 
 	// PktType indicates the SockAddrLink.PacketType of the packet as defined in
 	// https://www.man7.org/linux/man-pages/man7/packet.7.html.
@@ -346,8 +346,8 @@ func (pk *PacketBuffer) Clone() *PacketBuffer {
 	newPk.Owner = pk.Owner
 	newPk.GSOOptions = pk.GSOOptions
 	newPk.NetworkProtocolNumber = pk.NetworkProtocolNumber
-	newPk.DNATDone = pk.DNATDone
-	newPk.SNATDone = pk.SNATDone
+	newPk.dnatDone = pk.dnatDone
+	newPk.snatDone = pk.snatDone
 	newPk.TransportProtocolNumber = pk.TransportProtocolNumber
 	newPk.PktType = pk.PktType
 	newPk.NICID = pk.NICID

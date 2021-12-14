@@ -438,25 +438,23 @@ func (it *IPTables) checkNATRLocked(hook Hook, pkt *PacketBuffer, r *Route, addr
 		return true
 	}
 
-	var dnat bool
-	var natDone *bool
-	switch hook {
-	case Prerouting, Output:
-		dnat = true
-		natDone = &pkt.DNATDone
-	case Input, Postrouting:
-		dnat = false
-		natDone = &pkt.SNATDone
-	case Forward:
-		panic("should not attempt NAT in forwarding")
-	default:
-		panic(fmt.Sprintf("unhandled hook = %d", hook))
-	}
+	dnat, natDone := func() (bool, bool) {
+		switch hook {
+		case Prerouting, Output:
+			return true, pkt.dnatDone
+		case Input, Postrouting:
+			return false, pkt.snatDone
+		case Forward:
+			panic("should not attempt NAT in forwarding")
+		default:
+			panic(fmt.Sprintf("unhandled hook = %d", hook))
+		}
+	}()
 
 	// Make sure the connection is NATed.
 	//
 	// If the packet was already NATed, the connection must be NATed.
-	if !*natDone {
+	if !natDone {
 		t.conn.maybePerformNoopNAT(dnat)
 		_ = t.conn.handlePacket(pkt, hook, r)
 	}
@@ -566,12 +564,17 @@ func (it *IPTables) CheckPostroutingPackets(pkts PacketBufferList, r *Route, add
 	}, false /* dnat */)
 }
 
+func getAddr(pkt *PacketBuffer, dnat bool) tcpip.Address {
+	net := pkt.Network()
+	if dnat {
+		return net.DestinationAddress()
+	}
+	return net.SourceAddress()
+}
+
 func checkPackets(pkts PacketBufferList, f func(*PacketBuffer) bool, dnat bool) (drop map[*PacketBuffer]struct{}, natPkts map[*PacketBuffer]struct{}) {
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
-		natDone := &pkt.SNATDone
-		if dnat {
-			natDone = &pkt.DNATDone
-		}
+		origAddr := getAddr(pkt, dnat)
 
 		if ok := f(pkt); !ok {
 			if drop == nil {
@@ -579,7 +582,7 @@ func checkPackets(pkts PacketBufferList, f func(*PacketBuffer) bool, dnat bool) 
 			}
 			drop[pkt] = struct{}{}
 		}
-		if *natDone {
+		if newAddr := getAddr(pkt, dnat); newAddr != origAddr {
 			if natPkts == nil {
 				natPkts = make(map[*PacketBuffer]struct{})
 			}

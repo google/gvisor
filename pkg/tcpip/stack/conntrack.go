@@ -813,7 +813,7 @@ func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, rt *Route) bool {
 
 	fullChecksum := false
 	updatePseudoHeader := false
-	natDone := &pkt.SNATDone
+	natDone := &pkt.snatDone
 	dnat := false
 	switch hook {
 	case Prerouting:
@@ -822,13 +822,13 @@ func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, rt *Route) bool {
 		fullChecksum = true
 		updatePseudoHeader = true
 
-		natDone = &pkt.DNATDone
+		natDone = &pkt.dnatDone
 		dnat = true
 	case Input:
 	case Forward:
 		panic("should not handle packet in the forwarding hook")
 	case Output:
-		natDone = &pkt.DNATDone
+		natDone = &pkt.dnatDone
 		dnat = true
 		fallthrough
 	case Postrouting:
