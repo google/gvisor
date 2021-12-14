@@ -130,6 +130,7 @@ func CreateTask(ctx context.Context, name string, tc *kernel.ThreadGroup, mntns 
 	m := mm.NewMemoryManager(k, k, k.SleepForAddressSpaceActivation)
 	m.SetExecutable(ctx, fsbridge.NewVFSFile(exe))
 
+	creds := auth.CredentialsFromContext(ctx)
 	config := &kernel.TaskConfig{
 		Kernel:                  k,
 		ThreadGroup:             tc,
@@ -143,6 +144,7 @@ func CreateTask(ctx context.Context, name string, tc *kernel.ThreadGroup, mntns 
 		MountNamespaceVFS2:      mntns,
 		FSContext:               kernel.NewFSContextVFS2(root, cwd, 0022),
 		FDTable:                 k.NewFDTable(),
+		UserCounters:            k.GetUserCounters(creds.RealKUID),
 	}
 	t, err := k.TaskSet().NewTask(ctx, config)
 	if err != nil {

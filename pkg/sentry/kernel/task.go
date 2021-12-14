@@ -591,6 +591,12 @@ type Task struct {
 	//
 	// +checklocks:mu
 	cgroups map[Cgroup]struct{}
+
+	// userCounters is a pointer to a set of user counters.
+	//
+	// The userCounters pointer is exclusive to the task goroutine, but the
+	// userCounters instance must be atomically accessed.
+	userCounters *userCounters
 }
 
 func (t *Task) savePtraceTracer() *Task {
