@@ -1198,7 +1198,9 @@ func (f *sandboxNetstackCreator) CreateStack() (inet.Stack, error) {
 	nicID := tcpip.NICID(f.uniqueID.UniqueID())
 	link := DefaultLoopbackLink
 	linkEP := ethernet.New(loopback.New())
-	if err := n.createNICWithAddrs(nicID, link.Name, linkEP, link.Addresses); err != nil {
+	opts := stack.NICOptions{Name: link.Name}
+
+	if err := n.createNICWithAddrs(nicID, linkEP, opts, link.Addresses); err != nil {
 		return nil, err
 	}
 
