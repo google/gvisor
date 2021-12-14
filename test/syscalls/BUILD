@@ -307,6 +307,11 @@ syscall_test(
 )
 
 syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:fifo_test",
+)
+
+syscall_test(
     test = "//test/syscalls/linux:mlock_test",
 )
 

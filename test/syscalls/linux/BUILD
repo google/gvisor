@@ -1264,6 +1264,23 @@ cc_binary(
 )
 
 cc_binary(
+    name = "fifo_test",
+    testonly = 1,
+    srcs = ["fifo.cc"],
+    linkstatic = 1,
+    deps = [
+        "//test/util:file_descriptor",
+        gtest,
+        "//test/util:signal_util",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "//test/util:thread_util",
+        "//test/util:timer_util",
+    ],
+)
+
+cc_binary(
     name = "mlock_test",
     testonly = 1,
     srcs = ["mlock.cc"],
