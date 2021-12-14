@@ -44,7 +44,7 @@ var _ NetworkInterface = (*nic)(nil)
 // nic represents a "network interface card" to which the networking stack is
 // attached.
 type nic struct {
-	LinkEndpoint
+	NetworkLinkEndpoint
 
 	stack   *Stack
 	id      tcpip.NICID
@@ -82,6 +82,9 @@ type nic struct {
 		// +checklocks:mu
 		eps map[tcpip.NetworkProtocolNumber]*packetEndpointList
 	}
+
+	qDisc     QueueingDiscipline
+	rawLinkEP LinkRawWriter
 }
 
 // makeNICStats initializes the NIC statistics and associates them to the global
@@ -135,26 +138,33 @@ func (p *packetEndpointList) forEach(fn func(PacketEndpoint)) {
 }
 
 // newNIC returns a new NIC using the default NDP configurations from stack.
-func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICContext) *nic {
+func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *nic {
 	// TODO(b/141011931): Validate a LinkEndpoint (ep) is valid. For
 	// example, make sure that the link address it provides is a valid
 	// unicast ethernet address.
 
+	// If no queueing discipline was specified provide a stub implementation that
+	// just delegates to the lower link endpoint.
+	qDisc := opts.QDisc
+	if qDisc == nil {
+		qDisc = ep
+	}
+
 	// TODO(b/143357959): RFC 8200 section 5 requires that IPv6 endpoints
 	// observe an MTU of at least 1280 bytes. Ensure that this requirement
 	// of IPv6 is supported on this endpoint's LinkEndpoint.
-
 	nic := &nic{
-		LinkEndpoint: ep,
-
+		NetworkLinkEndpoint:       ep,
 		stack:                     stack,
 		id:                        id,
-		name:                      name,
-		context:                   ctx,
+		name:                      opts.Name,
+		context:                   opts.Context,
 		stats:                     makeNICStats(stack.Stats().NICs),
 		networkEndpoints:          make(map[tcpip.NetworkProtocolNumber]NetworkEndpoint),
 		linkAddrResolvers:         make(map[tcpip.NetworkProtocolNumber]*linkResolver),
 		duplicateAddressDetectors: make(map[tcpip.NetworkProtocolNumber]DuplicateAddressDetector),
+		qDisc:                     qDisc,
+		rawLinkEP:                 ep,
 	}
 	nic.linkResQueue.init(nic)
 
@@ -183,7 +193,7 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 		}
 	}
 
-	nic.LinkEndpoint.Attach(nic)
+	nic.NetworkLinkEndpoint.Attach(nic)
 
 	return nic
 }
@@ -290,7 +300,7 @@ func (n *nic) remove() tcpip.Error {
 	}
 
 	// Detach from link endpoint, so no packet comes in.
-	n.LinkEndpoint.Attach(nil)
+	n.NetworkLinkEndpoint.Attach(nil)
 	return nil
 }
 
@@ -311,13 +321,18 @@ func (n *nic) Promiscuous() bool {
 
 // IsLoopback implements NetworkInterface.
 func (n *nic) IsLoopback() bool {
-	return n.LinkEndpoint.Capabilities()&CapabilityLoopback != 0
+	return n.NetworkLinkEndpoint.Capabilities()&CapabilityLoopback != 0
 }
 
-// WritePacket implements NetworkLinkEndpoint.
+// WritePacket implements LinkWriter.
 func (n *nic) WritePacket(r *Route, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) tcpip.Error {
 	_, err := n.enqueuePacketBuffer(r, protocol, pkt)
 	return err
+}
+
+// WriteRawPacket implements LinkRawWriter.
+func (n *nic) WriteRawPacket(pkt *PacketBuffer) tcpip.Error {
+	return n.rawLinkEP.WriteRawPacket(pkt)
 }
 
 func (n *nic) writePacketBuffer(r RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt pendingPacketBuffer) (int, tcpip.Error) {
@@ -379,7 +394,7 @@ func (n *nic) writePacket(r RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt
 	pkt.NetworkProtocolNumber = protocol
 	n.deliverOutboundPacket(r.RemoteLinkAddress, pkt)
 
-	if err := n.LinkEndpoint.WritePacket(r, protocol, pkt); err != nil {
+	if err := n.qDisc.WritePacket(r, protocol, pkt); err != nil {
 		return err
 	}
 
@@ -388,7 +403,7 @@ func (n *nic) writePacket(r RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt
 	return nil
 }
 
-// WritePackets implements NetworkLinkEndpoint.
+// WritePackets implements LinkWriter..
 func (n *nic) WritePackets(r *Route, pkts PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
 	return n.enqueuePacketBuffer(r, protocol, &pkts)
 }
@@ -400,7 +415,7 @@ func (n *nic) writePackets(r RouteInfo, protocol tcpip.NetworkProtocolNumber, pk
 		n.deliverOutboundPacket(r.RemoteLinkAddress, pkt)
 	}
 
-	writtenPackets, err := n.LinkEndpoint.WritePackets(r, pkts, protocol)
+	writtenPackets, err := n.qDisc.WritePackets(r, pkts, protocol)
 	n.stats.tx.packets.IncrementBy(uint64(writtenPackets))
 	writtenBytes := 0
 	for i, pb := 0, pkts.Front(); i < writtenPackets && pb != nil; i, pb = i+1, pb.Next() {
@@ -734,9 +749,9 @@ func (n *nic) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 	// If no local link layer address is provided, assume it was sent
 	// directly to this NIC.
 	if local == "" {
-		local = n.LinkEndpoint.LinkAddress()
+		local = n.NetworkLinkEndpoint.LinkAddress()
 	}
-	pkt.RXTransportChecksumValidated = n.LinkEndpoint.Capabilities()&CapabilityRXChecksumOffload != 0
+	pkt.RXTransportChecksumValidated = n.NetworkLinkEndpoint.Capabilities()&CapabilityRXChecksumOffload != 0
 
 	// Deliver to interested packet endpoints without holding NIC lock.
 	var packetEPPkt *PacketBuffer
@@ -826,7 +841,7 @@ func (n *nic) deliverOutboundPacket(remote tcpip.LinkAddress, pkt *PacketBuffer)
 			// Add the link layer header as outgoing packets are intercepted before
 			// the link layer header is created and packet endpoints are interested
 			// in the link header.
-			n.LinkEndpoint.AddHeader(local, remote, pkt.NetworkProtocolNumber, packetEPPkt)
+			n.NetworkLinkEndpoint.AddHeader(local, remote, pkt.NetworkProtocolNumber, packetEPPkt)
 			packetEPPkt.PktType = tcpip.PacketOutgoing
 		}
 		clone := packetEPPkt.Clone()

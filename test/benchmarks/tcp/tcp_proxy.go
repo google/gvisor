@@ -205,7 +205,9 @@ func newNetstackImpl(mode string) (impl, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create FD endpoint: %v", err)
 	}
-	if err := s.CreateNIC(nicID, fifo.New(ep, runtime.GOMAXPROCS(0), 1000)); err != nil {
+	qDisc := fifo.New(ep, runtime.GOMAXPROCS(0), 1000)
+	opts := stack.NICOptions{QDisc: qDisc}
+	if err := s.CreateNICWithOptions(nicID, ep, opts); err != nil {
 		return nil, fmt.Errorf("error creating NIC %q: %v", *iface, err)
 	}
 	protocolAddr := tcpip.ProtocolAddress{

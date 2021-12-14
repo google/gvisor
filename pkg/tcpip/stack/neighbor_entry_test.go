@@ -205,7 +205,7 @@ func entryTestSetup(c NUDConfigurations) (*neighborEntry, *testNUDDispatcher, *e
 	clock := faketime.NewManualClock()
 	disp := testNUDDispatcher{}
 	nic := nic{
-		LinkEndpoint: nil, // entryTestLinkResolver doesn't use a LinkEndpoint
+		NetworkLinkEndpoint: nil, // entryTestLinkResolver doesn't use this.
 
 		id: entryTestNICID,
 		stack: &Stack{

@@ -195,7 +195,7 @@ func makeRoute(netProto tcpip.NetworkProtocolNumber, gateway, localAddr, remoteA
 		return r
 	}
 
-	if r.outgoingNIC.LinkEndpoint.Capabilities()&CapabilityResolutionRequired != 0 {
+	if r.outgoingNIC.NetworkLinkEndpoint.Capabilities()&CapabilityResolutionRequired != 0 {
 		if linkRes, ok := r.outgoingNIC.linkAddrResolvers[r.NetProto()]; ok {
 			r.linkRes = linkRes
 		}
@@ -233,7 +233,7 @@ func makeRouteInner(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr 
 		routeInfo: routeInfo{
 			NetProto:         netProto,
 			LocalAddress:     localAddr,
-			LocalLinkAddress: outgoingNIC.LinkEndpoint.LinkAddress(),
+			LocalLinkAddress: outgoingNIC.NetworkLinkEndpoint.LinkAddress(),
 			RemoteAddress:    remoteAddr,
 			Loop:             loop,
 		},
@@ -298,12 +298,12 @@ func (r *Route) RequiresTXTransportChecksum() bool {
 	if r.local() {
 		return false
 	}
-	return r.outgoingNIC.LinkEndpoint.Capabilities()&CapabilityTXChecksumOffload == 0
+	return r.outgoingNIC.NetworkLinkEndpoint.Capabilities()&CapabilityTXChecksumOffload == 0
 }
 
 // HasSoftwareGSOCapability returns true if the route supports software GSO.
 func (r *Route) HasSoftwareGSOCapability() bool {
-	if gso, ok := r.outgoingNIC.LinkEndpoint.(GSOEndpoint); ok {
+	if gso, ok := r.outgoingNIC.NetworkLinkEndpoint.(GSOEndpoint); ok {
 		return gso.SupportedGSO() == SWGSOSupported
 	}
 	return false
@@ -311,7 +311,7 @@ func (r *Route) HasSoftwareGSOCapability() bool {
 
 // HasHardwareGSOCapability returns true if the route supports hardware GSO.
 func (r *Route) HasHardwareGSOCapability() bool {
-	if gso, ok := r.outgoingNIC.LinkEndpoint.(GSOEndpoint); ok {
+	if gso, ok := r.outgoingNIC.NetworkLinkEndpoint.(GSOEndpoint); ok {
 		return gso.SupportedGSO() == HWGSOSupported
 	}
 	return false
@@ -319,17 +319,17 @@ func (r *Route) HasHardwareGSOCapability() bool {
 
 // HasSaveRestoreCapability returns true if the route supports save/restore.
 func (r *Route) HasSaveRestoreCapability() bool {
-	return r.outgoingNIC.LinkEndpoint.Capabilities()&CapabilitySaveRestore != 0
+	return r.outgoingNIC.NetworkLinkEndpoint.Capabilities()&CapabilitySaveRestore != 0
 }
 
 // HasDisconncetOkCapability returns true if the route supports disconnecting.
 func (r *Route) HasDisconncetOkCapability() bool {
-	return r.outgoingNIC.LinkEndpoint.Capabilities()&CapabilityDisconnectOk != 0
+	return r.outgoingNIC.NetworkLinkEndpoint.Capabilities()&CapabilityDisconnectOk != 0
 }
 
 // GSOMaxSize returns the maximum GSO packet size.
 func (r *Route) GSOMaxSize() uint32 {
-	if gso, ok := r.outgoingNIC.LinkEndpoint.(GSOEndpoint); ok {
+	if gso, ok := r.outgoingNIC.NetworkLinkEndpoint.(GSOEndpoint); ok {
 		return gso.GSOMaxSize()
 	}
 	return 0
