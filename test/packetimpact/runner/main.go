@@ -95,15 +95,12 @@ func main() {
 	}
 
 	var (
-		dutBinary       string
-		testBinary      string
-		expectFailure   bool
-		numDUTs         int
-		variant         string
-		runtime         string
-		partition       int
-		totalPartitions int
-		dutArgs         dutArgList
+		dutBinary     string
+		testBinary    string
+		expectFailure bool
+		numDUTs       int
+		variant       string
+		dutArgs       dutArgList
 	)
 	fs := flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
 	fs.StringVar(&dutBinary, "dut_binary", "", "path to the DUT binary")
@@ -112,10 +109,6 @@ func main() {
 	fs.IntVar(&numDUTs, "num_duts", 1, "number of DUTs to create")
 	fs.StringVar(&variant, "variant", "", "test variant could be native, gvisor or fuchsia")
 	fs.Var(&dutArgs, "dut_arg", "argument to the DUT binary")
-	// The following args are passed by CI environment which are not used by us.
-	fs.StringVar(&runtime, "runtime", "", "docker runtime to use (unused)")
-	fs.IntVar(&partition, "partition", 1, "1-indexed partition (unused)")
-	fs.IntVar(&totalPartitions, "total_partitions", 1, "total partitions (unused)")
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		log.Fatal(err)
 	}

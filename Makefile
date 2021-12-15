@@ -231,6 +231,10 @@ syscall-tests: ## Run all system call tests.
 	@$(call test,$(PARTITIONS) test/syscalls/...)
 .PHONY: syscall-tests
 
+packetimpact-tests:
+	@$(call test,--jobs=HOST_CPUS*3 --local_test_jobs=HOST_CPUS*3 //test/packetimpact/tests:all_tests)
+.PHONY: packetimpact-tests
+
 %-runtime-tests: load-runtimes_% $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),) # Ensure flags are cleared.
 	@$(call test_runtime,$(RUNTIME),--test_timeout=10800 //test/runtimes:$*)
@@ -301,13 +305,6 @@ packetdrill-tests: load-packetdrill $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),) # Clear flags.
 	@$(call test_runtime,$(RUNTIME),//test/packetdrill:all_tests)
 .PHONY: packetdrill-tests
-
-packetimpact-tests: load-packetimpact $(RUNTIME_BIN)
-	@sudo modprobe iptable_filter
-	@sudo modprobe ip6table_filter
-	@$(call install_runtime,$(RUNTIME),) # Clear flags.
-	@$(call test_runtime,$(RUNTIME),--jobs=HOST_CPUS*3 --local_test_jobs=HOST_CPUS*3 //test/packetimpact/tests:all_tests)
-.PHONY: packetimpact-tests
 
 fsstress-test: load-basic $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),--vfs2)
