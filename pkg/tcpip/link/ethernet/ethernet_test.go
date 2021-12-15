@@ -15,6 +15,7 @@
 package ethernet_test
 
 import (
+	"fmt"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -67,5 +68,54 @@ func TestDeliverNetworkPacket(t *testing.T) {
 	}))
 	if networkDispatcher.networkPackets != 1 {
 		t.Fatalf("got networkDispatcher.networkPackets = %d, want = 1", networkDispatcher.networkPackets)
+	}
+}
+
+type testLinkEndpoint struct {
+	stack.LinkEndpoint
+
+	mtu uint32
+}
+
+func (t *testLinkEndpoint) MTU() uint32 {
+	return t.mtu
+}
+
+func TestMTU(t *testing.T) {
+	const maxFrameSize = 1500
+
+	tests := []struct {
+		maxFrameSize uint32
+		expectedMTU  uint32
+	}{
+		{
+			maxFrameSize: 0,
+			expectedMTU:  0,
+		},
+		{
+			maxFrameSize: header.EthernetMinimumSize - 1,
+			expectedMTU:  0,
+		},
+		{
+			maxFrameSize: header.EthernetMinimumSize,
+			expectedMTU:  0,
+		},
+		{
+			maxFrameSize: header.EthernetMinimumSize + 1,
+			expectedMTU:  1,
+		},
+		{
+			maxFrameSize: maxFrameSize,
+			expectedMTU:  maxFrameSize - header.EthernetMinimumSize,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(fmt.Sprintf("MaxFrameSize=%d", test.maxFrameSize), func(t *testing.T) {
+			e := ethernet.New(&testLinkEndpoint{mtu: test.maxFrameSize})
+			if got := e.MTU(); got != test.expectedMTU {
+				t.Errorf("got e.MTU() = %d, want = %d", got, test.expectedMTU)
+			}
+		})
 	}
 }

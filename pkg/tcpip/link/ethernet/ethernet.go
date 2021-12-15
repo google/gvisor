@@ -50,6 +50,14 @@ func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
 	return header.UnspecifiedEthernetAddress
 }
 
+// MTU implements stack.LinkEndpoint.
+func (e *Endpoint) MTU() uint32 {
+	if mtu := e.Endpoint.MTU(); mtu > header.EthernetMinimumSize {
+		return mtu - header.EthernetMinimumSize
+	}
+	return 0
+}
+
 // DeliverNetworkPacket implements stack.NetworkDispatcher.
 func (e *Endpoint) DeliverNetworkPacket(_, _ tcpip.LinkAddress, _ tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	hdr, ok := pkt.LinkHeader().Consume(header.EthernetMinimumSize)
