@@ -868,6 +868,7 @@ type NetworkLinkEndpoint interface {
 // FIFO, LIFO, Random Early Drop etc).
 type QueueingDiscipline interface {
 	LinkWriter
+	Close()
 }
 
 // LinkEndpoint is the interface implemented by data link layer protocols (e.g.,

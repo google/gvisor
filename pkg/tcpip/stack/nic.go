@@ -137,6 +137,14 @@ func (p *packetEndpointList) forEach(fn func(PacketEndpoint)) {
 	}
 }
 
+var _ QueueingDiscipline = (*delegatingQueueingDiscipline)(nil)
+
+type delegatingQueueingDiscipline struct {
+	LinkWriter
+}
+
+func (*delegatingQueueingDiscipline) Close() {}
+
 // newNIC returns a new NIC using the default NDP configurations from stack.
 func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *nic {
 	// TODO(b/141011931): Validate a LinkEndpoint (ep) is valid. For
@@ -147,7 +155,7 @@ func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *nic
 	// just delegates to the lower link endpoint.
 	qDisc := opts.QDisc
 	if qDisc == nil {
-		qDisc = ep
+		qDisc = &delegatingQueueingDiscipline{LinkWriter: ep}
 	}
 
 	// TODO(b/143357959): RFC 8200 section 5 requires that IPv6 endpoints
@@ -299,7 +307,8 @@ func (n *nic) remove() tcpip.Error {
 		ep.Close()
 	}
 
-	// Detach from link endpoint, so no packet comes in.
+	// Prevent packets from going down to the link before shutting the link down.
+	n.qDisc.Close()
 	n.NetworkLinkEndpoint.Attach(nil)
 	return nil
 }
