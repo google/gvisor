@@ -44,10 +44,12 @@ import (
 )
 
 func setupStack(t *testing.T, stackOpts stack.Options, host1NICID, host2NICID tcpip.NICID) (*stack.Stack, *stack.Stack) {
+	const maxFrameSize = header.IPv6MinimumMTU + header.EthernetMinimumSize
+
 	host1Stack := stack.New(stackOpts)
 	host2Stack := stack.New(stackOpts)
 
-	host1NIC, host2NIC := pipe.New(utils.LinkAddr1, utils.LinkAddr2)
+	host1NIC, host2NIC := pipe.New(utils.LinkAddr1, utils.LinkAddr2, maxFrameSize)
 
 	if err := host1Stack.CreateNIC(host1NICID, utils.NewEthernetEndpoint(host1NIC)); err != nil {
 		t.Fatalf("host1Stack.CreateNIC(%d, _): %s", host1NICID, err)
