@@ -74,18 +74,17 @@ type endpoint struct {
 	stats tcpip.TransportEndpointStats
 	ops   tcpip.SocketOptions
 
-	// The following fields are used to manage the receive queue and are
-	// protected by rcvMu.
-	rcvMu      sync.Mutex `state:"nosave"`
-	rcvList    rawPacketList
+	rcvMu sync.Mutex `state:"nosave"`
+	// +checklocks:rcvMu
+	rcvList rawPacketList
+	// +checklocks:rcvMu
 	rcvBufSize int
-	rcvClosed  bool
+	// +checklocks:rcvMu
+	rcvClosed bool
+	// +checklocks:rcvMu
+	rcvDisabled bool
 
-	// The following fields are protected by mu.
 	mu sync.RWMutex `state:"nosave"`
-	// frozen indicates if the packets should be delivered to the endpoint
-	// during restore.
-	frozen bool
 }
 
 // NewEndpoint returns a raw  endpoint for the given protocols.
@@ -448,7 +447,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		}
 
 		rcvBufSize := e.ops.GetReceiveBufferSize()
-		if e.frozen || e.rcvBufSize >= int(rcvBufSize) {
+		if e.rcvDisabled || e.rcvBufSize >= int(rcvBufSize) {
 			e.stack.Stats().DroppedPackets.Increment()
 			e.stats.ReceiveErrors.ReceiveBufferOverflow.Increment()
 			return false
@@ -566,17 +565,8 @@ func (e *endpoint) SocketOptions() *tcpip.SocketOptions {
 	return &e.ops
 }
 
-// freeze prevents any more packets from being delivered to the endpoint.
-func (e *endpoint) freeze() {
-	e.mu.Lock()
-	e.frozen = true
-	e.mu.Unlock()
-}
-
-// thaw unfreezes a previously frozen endpoint using endpoint.freeze() allows
-// new packets to be delivered again.
-func (e *endpoint) thaw() {
-	e.mu.Lock()
-	e.frozen = false
-	e.mu.Unlock()
+func (e *endpoint) setReceiveDisabled(v bool) {
+	e.rcvMu.Lock()
+	defer e.rcvMu.Unlock()
+	e.rcvDisabled = v
 }
