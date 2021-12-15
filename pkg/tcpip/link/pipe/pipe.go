@@ -26,12 +26,14 @@ import (
 var _ stack.LinkEndpoint = (*Endpoint)(nil)
 
 // New returns both ends of a new pipe.
-func New(linkAddr1, linkAddr2 tcpip.LinkAddress) (*Endpoint, *Endpoint) {
+func New(linkAddr1, linkAddr2 tcpip.LinkAddress, mtu uint32) (*Endpoint, *Endpoint) {
 	ep1 := &Endpoint{
 		linkAddr: linkAddr1,
+		mtu:      mtu,
 	}
 	ep2 := &Endpoint{
 		linkAddr: linkAddr2,
+		mtu:      mtu,
 	}
 	ep1.linked = ep2
 	ep2.linked = ep1
@@ -43,6 +45,7 @@ type Endpoint struct {
 	dispatcher stack.NetworkDispatcher
 	linked     *Endpoint
 	linkAddr   tcpip.LinkAddress
+	mtu        uint32
 }
 
 func (e *Endpoint) deliverPackets(r stack.RouteInfo, proto tcpip.NetworkProtocolNumber, pkts stack.PacketBufferList) {
@@ -96,8 +99,8 @@ func (e *Endpoint) IsAttached() bool {
 func (*Endpoint) Wait() {}
 
 // MTU implements stack.LinkEndpoint.
-func (*Endpoint) MTU() uint32 {
-	return header.IPv6MinimumMTU
+func (e *Endpoint) MTU() uint32 {
+	return e.mtu
 }
 
 // Capabilities implements stack.LinkEndpoint.

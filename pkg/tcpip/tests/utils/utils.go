@@ -279,8 +279,9 @@ func SetupRouterStack(t *testing.T, s *stack.Stack, ep1, ep2 stack.LinkEndpoint)
 // SetupRoutedStacks creates the NICs, sets forwarding, adds addresses and sets
 // the route tables for the passed stacks.
 func SetupRoutedStacks(t *testing.T, host1Stack, routerStack, host2Stack *stack.Stack) {
-	host1NIC, routerNIC1 := pipe.New(LinkAddr1, LinkAddr2)
-	routerNIC2, host2NIC := pipe.New(LinkAddr3, LinkAddr4)
+	const maxFrameSize = header.IPv6MinimumMTU + header.EthernetMinimumSize
+	host1NIC, routerNIC1 := pipe.New(LinkAddr1, LinkAddr2, maxFrameSize)
+	routerNIC2, host2NIC := pipe.New(LinkAddr3, LinkAddr4, maxFrameSize)
 
 	SetupRouterStack(t, routerStack, NewEthernetEndpoint(routerNIC1), NewEthernetEndpoint(routerNIC2))
 

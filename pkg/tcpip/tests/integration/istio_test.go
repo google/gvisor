@@ -113,7 +113,7 @@ var (
 
 func newTestContext(t *testing.T) *testContext {
 	t.Helper()
-	localNIC, remoteNIC := pipe.New("" /* linkAddr1 */, "" /* linkAddr2 */)
+	localNIC, remoteNIC := pipe.New("" /* linkAddr1 */, "" /* linkAddr2 */, header.IPv4MinimumMTU)
 
 	localStack := stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
