@@ -16,6 +16,7 @@
 package inet
 
 import (
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -120,6 +121,10 @@ type Interface struct {
 
 	// MTU is the maximum transmission unit.
 	MTU uint32
+
+	// Features are the device features queried from the host at
+	// stack creation time. These are immutable after startup.
+	Features []linux.EthtoolGetFeaturesBlock
 }
 
 // InterfaceAddr contains information about a network interface address.

@@ -27,6 +27,7 @@ go_library(
         "test_stack.go",
     ],
     deps = [
+        "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/tcpip",
         "//pkg/tcpip/stack",
