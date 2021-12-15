@@ -32,35 +32,32 @@ var _ stack.QueueingDiscipline = (*discipline)(nil)
 // underlying queue using the PacketBuffer.Hash if set, otherwise all packets
 // are queued to the first queue to avoid reordering in case of missing hash.
 type discipline struct {
-	dispatcher  stack.NetworkDispatcher
-	lower       stack.LinkEndpoint
 	wg          sync.WaitGroup
-	dispatchers []*queueDispatcher
+	dispatchers []queueDispatcher
 }
 
 // queueDispatcher is responsible for dispatching all outbound packets in its
 // queue. It will also smartly batch packets when possible and write them
-// through the lower LinkEndpoint.
+// through the lower LinkWriter.
 type queueDispatcher struct {
-	lower          stack.LinkEndpoint
-	q              *packetBufferQueue
+	lower          stack.LinkWriter
+	queue          packetBufferQueue
 	newPacketWaker sleep.Waker
 	closeWaker     sleep.Waker
 }
 
 // New creates a new fifo queuing discipline  with the n queues with maximum
 // capacity of queueLen.
-func New(lower stack.LinkEndpoint, n int, queueLen int) stack.QueueingDiscipline {
+func New(lower stack.LinkWriter, n int, queueLen int) stack.QueueingDiscipline {
 	d := &discipline{
-		lower: lower,
+		dispatchers: make([]queueDispatcher, n),
 	}
 	// Create the required dispatchers
-	for i := 0; i < n; i++ {
-		qd := &queueDispatcher{
-			q:     &packetBufferQueue{limit: queueLen},
-			lower: lower,
-		}
-		d.dispatchers = append(d.dispatchers, qd)
+	for i := range d.dispatchers {
+		qd := &d.dispatchers[i]
+		qd.lower = lower
+		qd.queue.limit = queueLen
+
 		d.wg.Add(1)
 		go func() {
 			defer d.wg.Done()
@@ -86,9 +83,9 @@ func (q *queueDispatcher) dispatchLoop() {
 		default:
 			panic("unknown waker")
 		}
-		for pkt := q.q.dequeue(); pkt != nil; pkt = q.q.dequeue() {
+		for pkt := q.queue.dequeue(); pkt != nil; pkt = q.queue.dequeue() {
 			batch.PushBack(pkt)
-			if batch.Len() < batchSize && !q.q.empty() {
+			if batch.Len() < batchSize && !q.queue.empty() {
 				continue
 			}
 			// We pass a protocol of zero here because each packet carries its
@@ -107,8 +104,8 @@ func (q *queueDispatcher) dispatchLoop() {
 //  - pkt.GSOOptions
 //  - pkt.NetworkProtocolNumber
 func (d *discipline) WritePacket(_ stack.RouteInfo, _ tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
-	qd := d.dispatchers[int(pkt.Hash)%len(d.dispatchers)]
-	if !qd.q.enqueue(pkt) {
+	qd := &d.dispatchers[int(pkt.Hash)%len(d.dispatchers)]
+	if !qd.queue.enqueue(pkt) {
 		return &tcpip.ErrNoBufferSpace{}
 	}
 	qd.newPacketWaker.Assert()
@@ -125,9 +122,9 @@ func (d *discipline) WritePacket(_ stack.RouteInfo, _ tcpip.NetworkProtocolNumbe
 func (d *discipline) WritePackets(_ stack.RouteInfo, pkts stack.PacketBufferList, _ tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
 	enqueued := 0
 	for pkt := pkts.Front(); pkt != nil; {
-		qd := d.dispatchers[int(pkt.Hash)%len(d.dispatchers)]
+		qd := &d.dispatchers[int(pkt.Hash)%len(d.dispatchers)]
 		nxt := pkt.Next()
-		if !qd.q.enqueue(pkt) {
+		if !qd.queue.enqueue(pkt) {
 			if enqueued > 0 {
 				qd.newPacketWaker.Assert()
 			}
