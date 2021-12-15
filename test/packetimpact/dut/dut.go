@@ -134,9 +134,9 @@ func Run(dut DUT) error {
 
 // WaitForServer waits for a pattern to occur in posix_server's logs.
 func WaitForServer(output io.Reader) error {
-	// TODO(gvisor.dev/issue/6835): waiting for the server via log output is
-	// fragile, a better way could be passing a file descriptor, which is not
-	// possible with docker, do that after the docker runner is removed.
+	// Scanning log lines is not the most robust way, we could pass a file
+	// descriptor to signal the event for native/runsc DUTs, however, it is not
+	// possible for a fuchsia DUT as it lives inside a qemu instance.
 	scanner := bufio.NewScanner(output)
 	for scanner.Scan() {
 		if text := scanner.Text(); strings.HasPrefix(text, "Server listening on") {
