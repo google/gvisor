@@ -56,14 +56,14 @@ func (e *endpoint) afterLoad() {
 
 // beforeSave is invoked by stateify.
 func (e *endpoint) beforeSave() {
-	e.freeze()
+	e.setReceiveDisabled(true)
 }
 
 // Resume implements tcpip.ResumableEndpoint.Resume.
 func (e *endpoint) Resume(s *stack.Stack) {
 	e.net.Resume(s)
 
-	e.thaw()
+	e.setReceiveDisabled(false)
 	e.stack = s
 	e.ops.InitHandler(e, e.stack, tcpip.GetStackSendBufferLimits, tcpip.GetStackReceiveBufferLimits)
 
