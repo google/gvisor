@@ -27,6 +27,9 @@ var _ marshal.Marshallable = (*ElfHeader64)(nil)
 var _ marshal.Marshallable = (*ElfProg64)(nil)
 var _ marshal.Marshallable = (*ElfSection64)(nil)
 var _ marshal.Marshallable = (*ErrorName)(nil)
+var _ marshal.Marshallable = (*EthtoolCmd)(nil)
+var _ marshal.Marshallable = (*EthtoolGFeatures)(nil)
+var _ marshal.Marshallable = (*EthtoolGetFeaturesBlock)(nil)
 var _ marshal.Marshallable = (*ExtensionName)(nil)
 var _ marshal.Marshallable = (*FOwnerEx)(nil)
 var _ marshal.Marshallable = (*FUSEAttr)(nil)
@@ -6536,6 +6539,307 @@ func (m *MsqidDS) WriteTo(writer io.Writer) (int64, error) {
     // Since we bypassed the compiler's escape analysis, indicate that m
     // must live until the use above.
     runtime.KeepAlive(m) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+//go:nosplit
+func (e *EthtoolCmd) SizeBytes() int {
+    return 4
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (e *EthtoolCmd) MarshalBytes(dst []byte) []byte {
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(*e))
+    return dst[4:]
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (e *EthtoolCmd) UnmarshalBytes(src []byte) []byte {
+    *e = EthtoolCmd(uint32(hostarch.ByteOrder.Uint32(src[:4])))
+    return src[4:]
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (e *EthtoolCmd) Packed() bool {
+    // Scalar newtypes are always packed.
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (e *EthtoolCmd) MarshalUnsafe(dst []byte) []byte {
+    size := e.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(e), uintptr(size))
+    return dst[size:]
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (e *EthtoolCmd) UnmarshalUnsafe(src []byte) []byte {
+    size := e.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(e), unsafe.Pointer(&src[0]), uintptr(size))
+    return src[size:]
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (e *EthtoolCmd) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(e)))
+    hdr.Len = e.SizeBytes()
+    hdr.Cap = e.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that e
+    // must live until the use above.
+    runtime.KeepAlive(e) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (e *EthtoolCmd) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return e.CopyOutN(cc, addr, e.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (e *EthtoolCmd) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(e)))
+    hdr.Len = e.SizeBytes()
+    hdr.Cap = e.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that e
+    // must live until the use above.
+    runtime.KeepAlive(e) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (e *EthtoolCmd) WriteTo(writer io.Writer) (int64, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(e)))
+    hdr.Len = e.SizeBytes()
+    hdr.Cap = e.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that e
+    // must live until the use above.
+    runtime.KeepAlive(e) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (e *EthtoolGFeatures) SizeBytes() int {
+    return 8
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (e *EthtoolGFeatures) MarshalBytes(dst []byte) []byte {
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(e.Cmd))
+    dst = dst[4:]
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(e.Size))
+    dst = dst[4:]
+    return dst
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (e *EthtoolGFeatures) UnmarshalBytes(src []byte) []byte {
+    e.Cmd = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    e.Size = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    return src
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (e *EthtoolGFeatures) Packed() bool {
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (e *EthtoolGFeatures) MarshalUnsafe(dst []byte) []byte {
+    size := e.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(e), uintptr(size))
+    return dst[size:]
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (e *EthtoolGFeatures) UnmarshalUnsafe(src []byte) []byte {
+    size := e.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(e), unsafe.Pointer(&src[0]), uintptr(size))
+    return src[size:]
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (e *EthtoolGFeatures) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(e)))
+    hdr.Len = e.SizeBytes()
+    hdr.Cap = e.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that e
+    // must live until the use above.
+    runtime.KeepAlive(e) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (e *EthtoolGFeatures) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return e.CopyOutN(cc, addr, e.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (e *EthtoolGFeatures) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(e)))
+    hdr.Len = e.SizeBytes()
+    hdr.Cap = e.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that e
+    // must live until the use above.
+    runtime.KeepAlive(e) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (e *EthtoolGFeatures) WriteTo(writer io.Writer) (int64, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(e)))
+    hdr.Len = e.SizeBytes()
+    hdr.Cap = e.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that e
+    // must live until the use above.
+    runtime.KeepAlive(e) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (e *EthtoolGetFeaturesBlock) SizeBytes() int {
+    return 16
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (e *EthtoolGetFeaturesBlock) MarshalBytes(dst []byte) []byte {
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(e.Available))
+    dst = dst[4:]
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(e.Requested))
+    dst = dst[4:]
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(e.Active))
+    dst = dst[4:]
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(e.NeverChanged))
+    dst = dst[4:]
+    return dst
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (e *EthtoolGetFeaturesBlock) UnmarshalBytes(src []byte) []byte {
+    e.Available = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    e.Requested = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    e.Active = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    e.NeverChanged = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    return src
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (e *EthtoolGetFeaturesBlock) Packed() bool {
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (e *EthtoolGetFeaturesBlock) MarshalUnsafe(dst []byte) []byte {
+    size := e.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(e), uintptr(size))
+    return dst[size:]
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (e *EthtoolGetFeaturesBlock) UnmarshalUnsafe(src []byte) []byte {
+    size := e.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(e), unsafe.Pointer(&src[0]), uintptr(size))
+    return src[size:]
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (e *EthtoolGetFeaturesBlock) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(e)))
+    hdr.Len = e.SizeBytes()
+    hdr.Cap = e.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that e
+    // must live until the use above.
+    runtime.KeepAlive(e) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (e *EthtoolGetFeaturesBlock) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return e.CopyOutN(cc, addr, e.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (e *EthtoolGetFeaturesBlock) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(e)))
+    hdr.Len = e.SizeBytes()
+    hdr.Cap = e.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that e
+    // must live until the use above.
+    runtime.KeepAlive(e) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (e *EthtoolGetFeaturesBlock) WriteTo(writer io.Writer) (int64, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(e)))
+    hdr.Len = e.SizeBytes()
+    hdr.Cap = e.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that e
+    // must live until the use above.
+    runtime.KeepAlive(e) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
