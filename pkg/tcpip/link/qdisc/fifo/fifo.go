@@ -79,11 +79,13 @@ func (q *queueDispatcher) dispatchLoop() {
 	const batchSize = 32
 	var batch stack.PacketBufferList
 	for {
-		w := s.Fetch(true)
-		if w == &q.closeWaker {
+		switch w := s.Fetch(true); w {
+		case &q.newPacketWaker:
+		case &q.closeWaker:
 			return
+		default:
+			panic("unknown waker")
 		}
-		// Must otherwise be the newPacketWaker.
 		for pkt := q.q.dequeue(); pkt != nil; pkt = q.q.dequeue() {
 			batch.PushBack(pkt)
 			if batch.Len() < batchSize && !q.q.empty() {
@@ -136,4 +138,11 @@ func (d *discipline) WritePackets(_ stack.RouteInfo, pkts stack.PacketBufferList
 		qd.newPacketWaker.Assert()
 	}
 	return enqueued, nil
+}
+
+func (d *discipline) Close() {
+	for i := range d.dispatchers {
+		d.dispatchers[i].closeWaker.Assert()
+	}
+	d.wg.Wait()
 }
