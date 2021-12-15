@@ -23,7 +23,6 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -54,7 +53,7 @@ var defaultSendBufSize = inet.TCPBufferSize{
 // Stack implements inet.Stack for host sockets.
 type Stack struct {
 	// Stack is immutable.
-	interfaces     map[int32]inet.Interface
+	interfaces     map[int32]*inet.Interface
 	interfaceAddrs map[int32][]inet.InterfaceAddr
 	routes         []inet.Route
 	supportsIPv6   bool
@@ -69,7 +68,7 @@ type Stack struct {
 // NewStack returns an empty Stack containing no configuration.
 func NewStack() *Stack {
 	return &Stack{
-		interfaces:     make(map[int32]inet.Interface),
+		interfaces:     make(map[int32]*inet.Interface),
 		interfaceAddrs: make(map[int32][]inet.InterfaceAddr),
 	}
 }
@@ -129,7 +128,7 @@ func (s *Stack) Configure() error {
 // ExtractHostInterfaces will populate an interface map and
 // interfaceAddrs map with the results of the equivalent
 // netlink messages.
-func ExtractHostInterfaces(links []syscall.NetlinkMessage, addrs []syscall.NetlinkMessage, interfaces map[int32]inet.Interface, interfaceAddrs map[int32][]inet.InterfaceAddr) error {
+func ExtractHostInterfaces(links []syscall.NetlinkMessage, addrs []syscall.NetlinkMessage, interfaces map[int32]*inet.Interface, interfaceAddrs map[int32][]inet.InterfaceAddr) error {
 	for _, link := range links {
 		if link.Header.Type != unix.RTM_NEWLINK {
 			continue
@@ -158,7 +157,7 @@ func ExtractHostInterfaces(links []syscall.NetlinkMessage, addrs []syscall.Netli
 				inetIF.Name = string(attr.Value[:len(attr.Value)-1])
 			}
 		}
-		interfaces[ifinfo.Index] = inetIF
+		interfaces[ifinfo.Index] = &inetIF
 	}
 
 	for _, addr := range addrs {
@@ -258,7 +257,15 @@ func addHostInterfaces(s *Stack) error {
 		return fmt.Errorf("RTM_GETADDR failed: %v", err)
 	}
 
-	return ExtractHostInterfaces(links, addrs, s.interfaces, s.interfaceAddrs)
+	if err := ExtractHostInterfaces(links, addrs, s.interfaces, s.interfaceAddrs); err != nil {
+		return err
+	}
+
+	// query interface features for each of the host interfaces.
+	if err := queryInterfaceFeatures(s.interfaces); err != nil {
+		return err
+	}
+	return nil
 }
 
 func addHostRoutes(s *Stack) error {
@@ -304,7 +311,7 @@ func readTCPBufferSizeFile(filename string) (inet.TCPBufferSize, error) {
 func (s *Stack) Interfaces() map[int32]inet.Interface {
 	interfaces := make(map[int32]inet.Interface)
 	for k, v := range s.interfaces {
-		interfaces[k] = v
+		interfaces[k] = *v
 	}
 	return interfaces
 }

@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/syserr"
@@ -102,6 +103,76 @@ func ioctl(ctx context.Context, fd int, io usermem.IO, args arch.SyscallArgument
 		}
 		_, err := ifc.CopyOut(cc, args[2].Pointer())
 		return 0, err
+	case linux.SIOCETHTOOL:
+		cc := &usermem.IOCopyContext{
+			Ctx: ctx,
+			IO:  io,
+			Opts: usermem.IOOpts{
+				AddressSpaceActive: true,
+			},
+		}
+		var ifr linux.IFReq
+		if _, err := ifr.CopyIn(cc, args[2].Pointer()); err != nil {
+			return 0, err
+		}
+		// SIOCETHTOOL commands specify the subcommand in the first 32 bytes pointed
+		// to by ifr.ifr_data. We need to copy it in first to understand the actual
+		// structure pointed by ifr.ifr_data.
+		ifrData := hostarch.Addr(hostarch.ByteOrder.Uint64(ifr.Data[:8]))
+		var ethtoolCmd linux.EthtoolCmd
+		if _, err := ethtoolCmd.CopyIn(cc, ifrData); err != nil {
+			return 0, err
+		}
+		// We only support ETHTOOL_GFEATURES.
+		if ethtoolCmd != linux.ETHTOOL_GFEATURES {
+			return 0, linuxerr.EOPNOTSUPP
+		}
+		var gfeatures linux.EthtoolGFeatures
+		if _, err := gfeatures.CopyIn(cc, ifrData); err != nil {
+			return 0, err
+		}
+
+		// Find the requested device.
+		stk := inet.StackFromContext(ctx)
+		if stk == nil {
+			return 0, linuxerr.ENODEV
+		}
+
+		var (
+			iface inet.Interface
+			found bool
+		)
+		for _, iface = range stk.Interfaces() {
+			if iface.Name == ifr.Name() {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return 0, linuxerr.ENODEV
+		}
+
+		// Copy out the feature blocks to the memory pointed to by ifrData.
+		blksToCopy := int(gfeatures.Size)
+		if blksToCopy > len(iface.Features) {
+			blksToCopy = len(iface.Features)
+		}
+		gfeatures.Size = uint32(blksToCopy)
+		if _, err := gfeatures.CopyOut(cc, ifrData); err != nil {
+			return 0, err
+		}
+		next, ok := ifrData.AddLength(uint64(unsafe.Sizeof(linux.EthtoolGFeatures{})))
+		for i := 0; i < blksToCopy; i++ {
+			if !ok {
+				return 0, linuxerr.EFAULT
+			}
+			if _, err := iface.Features[i].CopyOut(cc, next); err != nil {
+				return 0, err
+			}
+			next, ok = next.AddLength(uint64(unsafe.Sizeof(linux.EthtoolGetFeaturesBlock{})))
+		}
+
+		return 0, nil
 	default:
 		return 0, linuxerr.ENOTTY
 	}
@@ -115,8 +186,7 @@ func accept4(fd int, addr *byte, addrlen *uint32, flags int) (int, error) {
 	return int(afd), nil
 }
 
-func getsockopt(fd int, level, name int, optlen int) ([]byte, error) {
-	opt := make([]byte, optlen)
+func getsockopt(fd int, level, name int, opt []byte) ([]byte, error) {
 	optlen32 := int32(len(opt))
 	_, _, errno := unix.Syscall6(unix.SYS_GETSOCKOPT, uintptr(fd), uintptr(level), uintptr(name), uintptr(firstBytePtr(opt)), uintptr(unsafe.Pointer(&optlen32)), 0)
 	if errno != 0 {

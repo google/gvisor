@@ -13,6 +13,7 @@ go_library(
         "socket_vfs2.go",
         "sockopt_impl.go",
         "stack.go",
+        "stack_unsafe.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
