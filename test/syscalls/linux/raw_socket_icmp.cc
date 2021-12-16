@@ -99,6 +99,16 @@ void RawSocketICMPTest::TearDown() {
   }
 }
 
+TEST_F(RawSocketICMPTest, SockOptIPv6Checksum) {
+  int v;
+  EXPECT_THAT(setsockopt(s_, SOL_IPV6, IPV6_CHECKSUM, &v, sizeof(v)),
+              SyscallFailsWithErrno(ENOPROTOOPT));
+  socklen_t len = sizeof(v);
+  EXPECT_THAT(getsockopt(s_, SOL_IPV6, IPV6_CHECKSUM, &v, &len),
+              SyscallFailsWithErrno(EOPNOTSUPP));
+  EXPECT_EQ(len, sizeof(v));
+}
+
 // We'll only read an echo in this case, as the kernel won't respond to the
 // malformed ICMP checksum.
 TEST_F(RawSocketICMPTest, SendAndReceiveBadChecksum) {
