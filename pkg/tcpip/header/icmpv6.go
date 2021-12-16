@@ -67,9 +67,9 @@ const (
 	// packet-too-big packet.
 	ICMPv6PacketTooBigMinimumSize = ICMPv6MinimumSize
 
-	// icmpv6ChecksumOffset is the offset of the checksum field
+	// ICMPv6ChecksumOffset is the offset of the checksum field
 	// in an ICMPv6 message.
-	icmpv6ChecksumOffset = 2
+	ICMPv6ChecksumOffset = 2
 
 	// icmpv6PointerOffset is the offset of the pointer
 	// in an ICMPv6 Parameter problem message.
@@ -194,12 +194,12 @@ func (b ICMPv6) SetTypeSpecific(val uint32) {
 
 // Checksum is the ICMP checksum field.
 func (b ICMPv6) Checksum() uint16 {
-	return binary.BigEndian.Uint16(b[icmpv6ChecksumOffset:])
+	return binary.BigEndian.Uint16(b[ICMPv6ChecksumOffset:])
 }
 
 // SetChecksum sets the ICMP checksum field.
 func (b ICMPv6) SetChecksum(checksum uint16) {
-	PutChecksum(b[icmpv6ChecksumOffset:], checksum)
+	PutChecksum(b[ICMPv6ChecksumOffset:], checksum)
 }
 
 // SourcePort implements Transport.SourcePort.

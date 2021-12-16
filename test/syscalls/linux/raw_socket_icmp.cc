@@ -109,7 +109,7 @@ void RawSocketICMPTest::TearDown() {
   }
 }
 
-TEST_F(RawSocketICMPTest, SockOptIPv6Checksum) {
+TEST_F(RawSocketICMPTest, IPv6ChecksumNotSupported) {
   int v;
   EXPECT_THAT(setsockopt(s_, SOL_IPV6, IPV6_CHECKSUM, &v, sizeof(v)),
               SyscallFailsWithErrno(ENOPROTOOPT));
@@ -633,6 +633,92 @@ TEST_F(RawSocketICMPv6Test, GetPartialFilterSucceeds) {
               FieldsAre(ElementsAreArray(expected_filter.icmp6_filt)));
 }
 
+TEST_F(RawSocketICMPv6Test, SetSockOptIPv6ChecksumFails) {
+  int v = 2;
+  EXPECT_THAT(setsockopt(fd().get(), SOL_IPV6, IPV6_CHECKSUM, &v, sizeof(v)),
+              SyscallFailsWithErrno(EINVAL));
+  socklen_t len = sizeof(v);
+  EXPECT_THAT(getsockopt(fd().get(), SOL_IPV6, IPV6_CHECKSUM, &v, &len),
+              SyscallSucceeds());
+  ASSERT_EQ(len, sizeof(v));
+  EXPECT_EQ(v, offsetof(icmp6_hdr, icmp6_cksum));
+}
+
+TEST_F(RawSocketICMPv6Test, MsgTooSmallToFillChecksumFailsSend) {
+  char buf[offsetof(icmp6_hdr, icmp6_cksum) +
+           sizeof((icmp6_hdr{}).icmp6_cksum) - 1];
+
+  const sockaddr_in6 addr = {
+      .sin6_family = AF_INET6,
+      .sin6_addr = IN6ADDR_LOOPBACK_INIT,
+  };
+
+  ASSERT_THAT(sendto(fd().get(), &buf, sizeof(buf), /*flags=*/0,
+                     reinterpret_cast<const sockaddr*>(&addr), sizeof(addr)),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+constexpr uint8_t kUnusedICMPCode = 0;
+
+TEST_F(RawSocketICMPv6Test, PingSuccessfully) {
+  // Only observe echo packets.
+  {
+    icmp6_filter set_filter;
+    ICMP6_FILTER_SETBLOCKALL(&set_filter);
+    ICMP6_FILTER_SETPASS(ICMP6_ECHO_REQUEST, &set_filter);
+    ICMP6_FILTER_SETPASS(ICMP6_ECHO_REPLY, &set_filter);
+    ASSERT_THAT(setsockopt(fd().get(), SOL_ICMPV6, ICMP6_FILTER, &set_filter,
+                           sizeof(set_filter)),
+                SyscallSucceeds());
+  }
+
+  const sockaddr_in6 addr = {
+      .sin6_family = AF_INET6,
+      .sin6_addr = IN6ADDR_LOOPBACK_INIT,
+  };
+
+  auto send_with_checksum = [&](uint16_t checksum) {
+    const icmp6_hdr echo_request = {
+        .icmp6_type = ICMP6_ECHO_REQUEST,
+        .icmp6_code = kUnusedICMPCode,
+        .icmp6_cksum = checksum,
+    };
+
+    ASSERT_THAT(RetryEINTR(sendto)(fd().get(), &echo_request,
+                                   sizeof(echo_request), /*flags=*/0,
+                                   reinterpret_cast<const sockaddr*>(&addr),
+                                   sizeof(addr)),
+                SyscallSucceedsWithValue(sizeof(echo_request)));
+  };
+
+  auto check_recv = [&](uint8_t expected_type) {
+    icmp6_hdr got_echo;
+    sockaddr_in6 sender;
+    socklen_t sender_len = sizeof(sender);
+    ASSERT_THAT(RetryEINTR(recvfrom)(
+                    fd().get(), &got_echo, sizeof(got_echo), /*flags=*/0,
+                    reinterpret_cast<sockaddr*>(&sender), &sender_len),
+                SyscallSucceedsWithValue(sizeof(got_echo)));
+    ASSERT_EQ(sender_len, sizeof(sender));
+    EXPECT_EQ(memcmp(&sender, &addr, sizeof(addr)), 0);
+    EXPECT_THAT(got_echo,
+                FieldsAre(expected_type, kUnusedICMPCode,
+                          // The stack should have populated the checksum.
+                          /*icmp6_cksum=*/Not(0), /*icmp6_dataun=*/_));
+    EXPECT_THAT(got_echo.icmp6_data32, ElementsAre(0));
+  };
+
+  // Send a request and observe the request followed by the response.
+  ASSERT_NO_FATAL_FAILURE(send_with_checksum(0));
+  ASSERT_NO_FATAL_FAILURE(check_recv(ICMP6_ECHO_REQUEST));
+  ASSERT_NO_FATAL_FAILURE(check_recv(ICMP6_ECHO_REPLY));
+
+  // The stack ignores the checksum set by the user.
+  ASSERT_NO_FATAL_FAILURE(send_with_checksum(1));
+  ASSERT_NO_FATAL_FAILURE(check_recv(ICMP6_ECHO_REQUEST));
+  ASSERT_NO_FATAL_FAILURE(check_recv(ICMP6_ECHO_REPLY));
+}
+
 class RawSocketICMPv6TypeTest : public RawSocketICMPv6Test,
                                 public WithParamInterface<uint8_t> {};
 
@@ -664,7 +750,6 @@ TEST_P(RawSocketICMPv6TypeTest, FilterDeliveredPackets) {
 
   // Send an ICMP packet for each type.
   uint8_t icmp_type = 0;
-  constexpr uint8_t kUnusedICMPCode = 0;
   do {
     const icmp6_hdr packet = {
         .icmp6_type = icmp_type,
@@ -685,25 +770,15 @@ TEST_P(RawSocketICMPv6TypeTest, FilterDeliveredPackets) {
     sockaddr_in6 sender;
     socklen_t sender_len = sizeof(sender);
     ASSERT_THAT(RetryEINTR(recvfrom)(
-                    fd().get(), &got_packet, sizeof(got_packet), 0 /* flags */,
+                    fd().get(), &got_packet, sizeof(got_packet), /*flags=*/0,
                     reinterpret_cast<sockaddr*>(&sender), &sender_len),
                 SyscallSucceedsWithValue(sizeof(got_packet)));
     ASSERT_EQ(sender_len, sizeof(sender));
     EXPECT_EQ(memcmp(&sender, &addr, sizeof(addr)), 0);
     // The stack should have populated the checksum.
-    if (IsRunningOnGvisor() && !IsRunningWithHostinet()) {
-      // TODO(https://github.com/google/gvisor/pull/6957): Use same check as
-      // Linux.
-      EXPECT_THAT(got_packet,
-                  FieldsAre(allowed_type, kUnusedICMPCode, 0 /* icmp6_cksum */,
-                            _ /* icmp6_dataun */
-                            ));
-    } else {
-      EXPECT_THAT(got_packet,
-                  FieldsAre(allowed_type, kUnusedICMPCode,
-                            Not(0) /* icmp6_cksum */, _ /* icmp6_dataun */
-                            ));
-    }
+    EXPECT_THAT(got_packet,
+                FieldsAre(allowed_type, kUnusedICMPCode,
+                          /*icmp6_cksum=*/Not(0), /*icmp6_dataun=*/_));
     EXPECT_THAT(got_packet.icmp6_data32, ElementsAre(0));
   }
 }

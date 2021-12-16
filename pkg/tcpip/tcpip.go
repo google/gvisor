@@ -757,6 +757,10 @@ const (
 	//
 	// NOTE: This option is currently only stubed out and is a no-op
 	TCPWindowClampOption
+
+	// IPv6Checksum is used to request the stack to populate and validate the IPv6
+	// checksum for transport level headers.
+	IPv6Checksum
 )
 
 const (
