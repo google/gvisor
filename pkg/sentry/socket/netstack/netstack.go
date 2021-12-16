@@ -1302,7 +1302,7 @@ func getSockOptIPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name 
 
 	family, skType, _ := s.Type()
 	if family != linux.AF_INET6 {
-		return nil, syserr.ErrUnknownProtocolOption
+		return nil, syserr.ErrNotSupported
 	}
 
 	switch name {
