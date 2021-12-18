@@ -1810,6 +1810,9 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 		e.LockUser()
 		e.windowClamp = uint32(v)
 		e.UnlockUser()
+
+	default:
+		return &tcpip.ErrUnknownProtocolOption{}
 	}
 	return nil
 }
@@ -1902,7 +1905,7 @@ func (e *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 		return nil
 
 	default:
-		return nil
+		return &tcpip.ErrUnknownProtocolOption{}
 	}
 	return nil
 }
@@ -1982,7 +1985,7 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 		return 1, nil
 
 	default:
-		return -1, &tcpip.ErrUnknownProtocolOption{}
+		return -1, &tcpip.ErrNotSupported{}
 	}
 }
 
@@ -2064,7 +2067,7 @@ func (e *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
 		}
 
 	default:
-		return &tcpip.ErrUnknownProtocolOption{}
+		return &tcpip.ErrNotSupported{}
 	}
 	return nil
 }

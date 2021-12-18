@@ -404,7 +404,7 @@ func (ep *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 		return v, nil
 
 	default:
-		return -1, &tcpip.ErrUnknownProtocolOption{}
+		return -1, &tcpip.ErrNotSupported{}
 	}
 }
 

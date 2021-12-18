@@ -616,8 +616,10 @@ func (e *Endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 		e.mu.Lock()
 		e.ipv6TClass = uint8(v)
 		e.mu.Unlock()
-	}
 
+	default:
+		return &tcpip.ErrUnknownProtocolOption{}
+	}
 	return nil
 }
 
@@ -653,7 +655,7 @@ func (e *Endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 		return v, nil
 
 	default:
-		return -1, &tcpip.ErrUnknownProtocolOption{}
+		return -1, &tcpip.ErrNotSupported{}
 	}
 }
 
@@ -769,6 +771,9 @@ func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 
 	case *tcpip.SocketDetachFilterOption:
 		return nil
+
+	default:
+		return &tcpip.ErrUnknownProtocolOption{}
 	}
 	return nil
 }
@@ -785,7 +790,7 @@ func (e *Endpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
 		e.mu.Unlock()
 
 	default:
-		return &tcpip.ErrUnknownProtocolOption{}
+		return &tcpip.ErrNotSupported{}
 	}
 	return nil
 }
