@@ -112,31 +112,6 @@ func (d *discipline) WritePacket(_ stack.RouteInfo, _ tcpip.NetworkProtocolNumbe
 	return nil
 }
 
-// WritePackets implements stack.QueueingDiscipline.WritePackets.
-//
-// Each packet in the packet buffer list must have the following fields
-// populated:
-//  - pkt.EgressRoute
-//  - pkt.GSOOptions
-//  - pkt.NetworkProtocolNumber
-func (d *discipline) WritePackets(_ stack.RouteInfo, pkts stack.PacketBufferList, _ tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
-	enqueued := 0
-	for pkt := pkts.Front(); pkt != nil; {
-		qd := &d.dispatchers[int(pkt.Hash)%len(d.dispatchers)]
-		nxt := pkt.Next()
-		if !qd.queue.enqueue(pkt) {
-			if enqueued > 0 {
-				qd.newPacketWaker.Assert()
-			}
-			return enqueued, &tcpip.ErrNoBufferSpace{}
-		}
-		pkt = nxt
-		enqueued++
-		qd.newPacketWaker.Assert()
-	}
-	return enqueued, nil
-}
-
 func (d *discipline) Close() {
 	for i := range d.dispatchers {
 		d.dispatchers[i].closeWaker.Assert()

@@ -576,16 +576,6 @@ type NetworkInterface interface {
 	// network and transport header must be set.
 	WritePacket(*Route, tcpip.NetworkProtocolNumber, *PacketBuffer) tcpip.Error
 
-	// WritePackets writes packets with the given protocol through the given
-	// route. Must not be called with an empty list of packet buffers.
-	//
-	// WritePackets may modify the packet buffers.
-	//
-	// Right now, WritePackets is used only when the software segmentation
-	// offload is enabled. If it will be used for something else, syscall filters
-	// may need to be updated.
-	WritePackets(*Route, PacketBufferList, tcpip.NetworkProtocolNumber) (int, tcpip.Error)
-
 	// HandleNeighborProbe processes an incoming neighbor probe (e.g. ARP
 	// request or NDP Neighbor Solicitation).
 	//
@@ -641,11 +631,6 @@ type NetworkEndpoint interface {
 	// protocol. It may modify pkt. pkt.TransportHeader must have
 	// already been set.
 	WritePacket(r *Route, params NetworkHeaderParams, pkt *PacketBuffer) tcpip.Error
-
-	// WritePackets writes packets to the given destination address and
-	// protocol. pkts must not be zero length. It may modify pkts and
-	// underlying packets.
-	WritePackets(r *Route, pkts PacketBufferList, params NetworkHeaderParams) (int, tcpip.Error)
 
 	// WriteHeaderIncludedPacket writes a packet that includes a network
 	// header to the given destination address. It may modify pkt.
@@ -776,26 +761,14 @@ const (
 )
 
 // LinkWriter is an interface that supports sending packets via a data-link
-// layer endpoint.
+// layer endpoint. It is used with QueueingDiscipline to batch writes from
+// upper layer endpoints.
 type LinkWriter interface {
-	// WritePacket writes a packet with the given protocol and route.
-	//
-	// WritePacket may modify the packet buffer. The packet buffer's
-	// network and transport header must be set.
-	//
-	// To participate in transparent bridging, a LinkEndpoint implementation
-	// should call eth.Encode with header.EthernetFields.SrcAddr set to
-	// r.LocalLinkAddress if it is provided.
-	WritePacket(RouteInfo, tcpip.NetworkProtocolNumber, *PacketBuffer) tcpip.Error
-
 	// WritePackets writes packets with the given protocol and route. Must not be
 	// called with an empty list of packet buffers.
 	//
-	// WritePackets may modify the packet buffers.
-	//
-	// Right now, WritePackets is used only when the software segmentation
-	// offload is enabled. If it will be used for something else, syscall filters
-	// may need to be updated.
+	// WritePackets may modify the packet buffers, and takes ownership of the PacketBufferList.
+	// it is not safe to use the PacketBufferList after a call to WritePackets.
 	WritePackets(RouteInfo, PacketBufferList, tcpip.NetworkProtocolNumber) (int, tcpip.Error)
 }
 
@@ -867,7 +840,16 @@ type NetworkLinkEndpoint interface {
 // QueueingDiscipline provides a queueing strategy for outgoing packets (e.g
 // FIFO, LIFO, Random Early Drop etc).
 type QueueingDiscipline interface {
-	LinkWriter
+	// WritePacket writes a packet with the given protocol and route.
+	//
+	// WritePacket may modify the packet buffer. The packet buffer's
+	// network and transport header must be set.
+	//
+	// To participate in transparent bridging, a LinkEndpoint implementation
+	// should call eth.Encode with header.EthernetFields.SrcAddr set to
+	// r.LocalLinkAddress if it is provided.
+	WritePacket(RouteInfo, tcpip.NetworkProtocolNumber, *PacketBuffer) tcpip.Error
+
 	Close()
 }
 
@@ -880,6 +862,18 @@ type LinkEndpoint interface {
 	NetworkLinkEndpoint
 	LinkWriter
 	LinkRawWriter
+
+	// TODO(b/211019749): Remove WritePacket, it's no longer used outside the context of
+	// tests and LinkEndpoint wrappers.
+	// WritePacket writes a packet with the given protocol and route.
+	//
+	// WritePacket may modify the packet buffer. The packet buffer's
+	// network and transport header must be set.
+	//
+	// To participate in transparent bridging, a LinkEndpoint implementation
+	// should call eth.Encode with header.EthernetFields.SrcAddr set to
+	// r.LocalLinkAddress if it is provided.
+	WritePacket(RouteInfo, tcpip.NetworkProtocolNumber, *PacketBuffer) tcpip.Error
 }
 
 // InjectableLinkEndpoint is a LinkEndpoint where inbound packets are

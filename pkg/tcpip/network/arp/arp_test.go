@@ -420,6 +420,14 @@ type testLinkEndpoint struct {
 	writeErr tcpip.Error
 }
 
+func (t *testLinkEndpoint) WritePackets(r stack.RouteInfo, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
+	if t.writeErr != nil {
+		return 0, t.writeErr
+	}
+
+	return t.LinkEndpoint.WritePackets(r, pkts, protocol)
+}
+
 func (t *testLinkEndpoint) WritePacket(r stack.RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
 	if t.writeErr != nil {
 		return t.writeErr

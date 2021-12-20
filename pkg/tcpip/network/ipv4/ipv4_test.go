@@ -1572,89 +1572,6 @@ func TestFragmentationWritePacket(t *testing.T) {
 	}
 }
 
-func TestFragmentationWritePackets(t *testing.T) {
-	const ttl = 42
-	writePacketsTests := []struct {
-		description  string
-		insertBefore int
-		insertAfter  int
-	}{
-		{
-			description:  "Single packet",
-			insertBefore: 0,
-			insertAfter:  0,
-		},
-		{
-			description:  "With packet before",
-			insertBefore: 1,
-			insertAfter:  0,
-		},
-		{
-			description:  "With packet after",
-			insertBefore: 0,
-			insertAfter:  1,
-		},
-		{
-			description:  "With packet before and after",
-			insertBefore: 1,
-			insertAfter:  1,
-		},
-	}
-	tinyPacket := iptestutil.MakeRandPkt(header.TCPMinimumSize, extraHeaderReserve+header.IPv4MinimumSize, []int{1}, header.IPv4ProtocolNumber)
-
-	for _, test := range writePacketsTests {
-		t.Run(test.description, func(t *testing.T) {
-			for _, ft := range fragmentationTests {
-				t.Run(ft.description, func(t *testing.T) {
-					var pkts stack.PacketBufferList
-					for i := 0; i < test.insertBefore; i++ {
-						pkts.PushBack(tinyPacket.Clone())
-					}
-					pkt := iptestutil.MakeRandPkt(ft.transportHeaderLength, extraHeaderReserve+header.IPv4MinimumSize, []int{ft.payloadSize}, header.IPv4ProtocolNumber)
-					pkts.PushBack(pkt.Clone())
-					for i := 0; i < test.insertAfter; i++ {
-						pkts.PushBack(tinyPacket.Clone())
-					}
-
-					ep := iptestutil.NewMockLinkEndpoint(ft.mtu, nil, math.MaxInt32)
-					r := buildRoute(t, ep)
-
-					wantTotalPackets := len(ft.wantFragments) + test.insertBefore + test.insertAfter
-					n, err := r.WritePackets(pkts, stack.NetworkHeaderParams{
-						Protocol: tcp.ProtocolNumber,
-						TTL:      ttl,
-						TOS:      stack.DefaultTOS,
-					})
-					if err != nil {
-						t.Errorf("got WritePackets(_, _, _) = (_, %s), want = (_, nil)", err)
-					}
-					if n != wantTotalPackets {
-						t.Errorf("got WritePackets(_, _, _) = (%d, _), want = (%d, _)", n, wantTotalPackets)
-					}
-					if got := len(ep.WrittenPackets); got != wantTotalPackets {
-						t.Errorf("got len(ep.WrittenPackets) = %d, want = %d", got, wantTotalPackets)
-					}
-					if got := int(r.Stats().IP.PacketsSent.Value()); got != wantTotalPackets {
-						t.Errorf("got c.Route.Stats().IP.PacketsSent.Value() = %d, want = %d", got, wantTotalPackets)
-					}
-					if got := int(r.Stats().IP.OutgoingPacketErrors.Value()); got != 0 {
-						t.Errorf("got r.Stats().IP.OutgoingPacketErrors.Value() = %d, want = 0", got)
-					}
-
-					if wantTotalPackets == 0 {
-						return
-					}
-
-					fragments := ep.WrittenPackets[test.insertBefore : len(ft.wantFragments)+test.insertBefore]
-					if err := compareFragments(fragments, pkt, ft.mtu, ft.wantFragments, tcp.ProtocolNumber, false /* withIPHeader */, extraHeaderReserve); err != nil {
-						t.Error(err)
-					}
-				})
-			}
-		})
-	}
-}
-
 // TestFragmentationErrors checks that errors are returned from WritePacket
 // correctly.
 func TestFragmentationErrors(t *testing.T) {
@@ -2929,65 +2846,36 @@ func TestWriteStats(t *testing.T) {
 		},
 	}
 
-	// Parameterize the tests to run with both WritePacket and WritePackets.
-	writers := []struct {
-		name         string
-		writePackets func(*stack.Route, stack.PacketBufferList) (int, tcpip.Error)
-	}{
-		{
-			name: "WritePacket",
-			writePackets: func(rt *stack.Route, pkts stack.PacketBufferList) (int, tcpip.Error) {
-				nWritten := 0
-				for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
-					if err := rt.WritePacket(stack.NetworkHeaderParams{}, pkt); err != nil {
-						return nWritten, err
-					}
-					nWritten++
-				}
-				return nWritten, nil
-			},
-		}, {
-			name: "WritePackets",
-			writePackets: func(rt *stack.Route, pkts stack.PacketBufferList) (int, tcpip.Error) {
-				return rt.WritePackets(pkts, stack.NetworkHeaderParams{})
-			},
-		},
-	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ep := iptestutil.NewMockLinkEndpoint(header.IPv4MinimumMTU, &tcpip.ErrInvalidEndpointState{}, test.allowPackets)
+			rt := buildRoute(t, ep)
 
-	for _, writer := range writers {
-		t.Run(writer.name, func(t *testing.T) {
-			for _, test := range tests {
-				t.Run(test.name, func(t *testing.T) {
-					ep := iptestutil.NewMockLinkEndpoint(header.IPv4MinimumMTU, &tcpip.ErrInvalidEndpointState{}, test.allowPackets)
-					rt := buildRoute(t, ep)
-
-					var pkts stack.PacketBufferList
-					for i := 0; i < nPackets; i++ {
-						pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-							ReserveHeaderBytes: header.UDPMinimumSize + int(rt.MaxHeaderLength()),
-							Data:               buffer.NewView(0).ToVectorisedView(),
-						})
-						pkt.TransportHeader().Push(header.UDPMinimumSize)
-						pkts.PushBack(pkt)
-					}
-
-					test.setup(t, rt.Stack())
-
-					nWritten, _ := writer.writePackets(rt, pkts)
-
-					if got := int(rt.Stats().IP.PacketsSent.Value()); got != test.expectSent {
-						t.Errorf("got rt.Stats().IP.PacketsSent.Value() = %d, want = %d", got, test.expectSent)
-					}
-					if got := int(rt.Stats().IP.IPTablesOutputDropped.Value()); got != test.expectOutputDropped {
-						t.Errorf("got rt.Stats().IP.IPTablesOutputDropped.Value() = %d, want = %d", got, test.expectOutputDropped)
-					}
-					if got := int(rt.Stats().IP.IPTablesPostroutingDropped.Value()); got != test.expectPostroutingDropped {
-						t.Errorf("got rt.Stats().IP.IPTablesPostroutingDropped.Value() = %d, want = %d", got, test.expectPostroutingDropped)
-					}
-					if nWritten != test.expectWritten {
-						t.Errorf("got nWritten = %d, want = %d", nWritten, test.expectWritten)
-					}
+			test.setup(t, rt.Stack())
+			nWritten := 0
+			for i := 0; i < nPackets; i++ {
+				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+					ReserveHeaderBytes: header.UDPMinimumSize + int(rt.MaxHeaderLength()),
+					Data:               buffer.NewView(0).ToVectorisedView(),
 				})
+				pkt.TransportHeader().Push(header.UDPMinimumSize)
+				if err := rt.WritePacket(stack.NetworkHeaderParams{}, pkt); err != nil {
+					break
+				}
+				nWritten++
+			}
+
+			if got := int(rt.Stats().IP.PacketsSent.Value()); got != test.expectSent {
+				t.Errorf("got rt.Stats().IP.PacketsSent.Value() = %d, want = %d", got, test.expectSent)
+			}
+			if got := int(rt.Stats().IP.IPTablesOutputDropped.Value()); got != test.expectOutputDropped {
+				t.Errorf("got rt.Stats().IP.IPTablesOutputDropped.Value() = %d, want = %d", got, test.expectOutputDropped)
+			}
+			if got := int(rt.Stats().IP.IPTablesPostroutingDropped.Value()); got != test.expectPostroutingDropped {
+				t.Errorf("got rt.Stats().IP.IPTablesPostroutingDropped.Value() = %d, want = %d", got, test.expectPostroutingDropped)
+			}
+			if nWritten != test.expectWritten {
+				t.Errorf("got nWritten = %d, want = %d", nWritten, test.expectWritten)
 			}
 		})
 	}

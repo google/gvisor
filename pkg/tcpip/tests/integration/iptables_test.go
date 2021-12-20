@@ -355,19 +355,12 @@ func TestIPTablesStatsForInput(t *testing.T) {
 	}
 }
 
-var _ stack.LinkEndpoint = (*channelEndpointWithoutWritePacket)(nil)
+var _ stack.LinkEndpoint = (*channelEndpoint)(nil)
 
-// channelEndpointWithoutWritePacket is a channel endpoint that does not support
-// stack.LinkEndpoint.WritePacket.
-type channelEndpointWithoutWritePacket struct {
+type channelEndpoint struct {
 	*channel.Endpoint
 
 	t *testing.T
-}
-
-func (c *channelEndpointWithoutWritePacket) WritePacket(stack.RouteInfo, tcpip.NetworkProtocolNumber, *stack.PacketBuffer) tcpip.Error {
-	c.t.Error("unexpectedly called WritePacket; all writes should go through WritePackets")
-	return &tcpip.ErrNotSupported{}
 }
 
 var _ stack.Matcher = (*udpSourcePortMatcher)(nil)
@@ -610,7 +603,7 @@ func TestIPTableWritePackets(t *testing.T) {
 				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
 				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 			})
-			e := channelEndpointWithoutWritePacket{
+			e := channelEndpoint{
 				Endpoint: channel.New(4, header.IPv6MinimumMTU, linkAddr),
 				t:        t,
 			}
@@ -653,13 +646,16 @@ func TestIPTableWritePackets(t *testing.T) {
 
 			pkts := test.genPacket(r)
 			pktsLen := pkts.Len()
-			if n, err := r.WritePackets(pkts, stack.NetworkHeaderParams{
-				Protocol: header.UDPProtocolNumber,
-				TTL:      64,
-			}); err != nil {
-				t.Fatalf("WritePackets(...): %s", err)
-			} else if n != pktsLen {
-				t.Fatalf("got WritePackets(...) = %d, want = %d", n, pktsLen)
+			for i := 0; i < pktsLen; i++ {
+				pkt := pkts.Front()
+				pkts.Remove(pkt)
+				if err := r.WritePacket(stack.NetworkHeaderParams{
+					Protocol: header.UDPProtocolNumber,
+					TTL:      64,
+				}, pkt); err != nil {
+					t.Fatalf("WritePacket(...): %s", err)
+				}
+				pkt.DecRef()
 			}
 
 			if got := s.Stats().IP.PacketsSent.Value(); got != test.expectSent {

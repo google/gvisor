@@ -81,8 +81,15 @@ func (e *endpoint) WritePacket(_ stack.RouteInfo, _ tcpip.NetworkProtocolNumber,
 }
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.
-func (e *endpoint) WritePackets(stack.RouteInfo, stack.PacketBufferList, tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
-	panic("not implemented")
+func (e *endpoint) WritePackets(_ stack.RouteInfo, pkts stack.PacketBufferList, _ tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
+	n := 0
+	for p := pkts.Front(); p != nil; p = p.Next() {
+		if err := e.WriteRawPacket(p); err != nil {
+			return n, err
+		}
+		n++
+	}
+	return n, nil
 }
 
 // ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType.

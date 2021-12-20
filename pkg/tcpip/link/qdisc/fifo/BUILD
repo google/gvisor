@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -13,6 +13,19 @@ go_library(
         "//pkg/sleep",
         "//pkg/sync",
         "//pkg/tcpip",
+        "//pkg/tcpip/stack",
+    ],
+)
+
+go_test(
+    name = "qdisc_test",
+    size = "small",
+    srcs = ["qdisc_test.go"],
+    deps = [
+        ":fifo",
+        "//pkg/sync",
+        "//pkg/tcpip",
+        "//pkg/tcpip/buffer",
         "//pkg/tcpip/stack",
     ],
 )
