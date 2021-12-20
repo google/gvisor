@@ -289,7 +289,7 @@ func (b TCP) SetDestinationPort(port uint16) {
 
 // SetChecksum sets the checksum field of the TCP header.
 func (b TCP) SetChecksum(checksum uint16) {
-	binary.BigEndian.PutUint16(b[TCPChecksumOffset:], checksum)
+	PutChecksum(b[TCPChecksumOffset:], checksum)
 }
 
 // SetDataOffset sets the data offset field of the TCP header. headerLen should
@@ -318,8 +318,8 @@ func (b TCP) SetWindowSize(rcvwnd uint16) {
 	binary.BigEndian.PutUint16(b[TCPWinSizeOffset:], rcvwnd)
 }
 
-// SetUrgentPoiner sets the window size field of the TCP header.
-func (b TCP) SetUrgentPoiner(urgentPointer uint16) {
+// SetUrgentPointer sets the window size field of the TCP header.
+func (b TCP) SetUrgentPointer(urgentPointer uint16) {
 	binary.BigEndian.PutUint16(b[TCPUrgentPtrOffset:], urgentPointer)
 }
 
@@ -360,11 +360,11 @@ func (b TCP) encodeSubset(seq, ack uint32, flags TCPFlags, rcvwnd uint16) {
 // Encode encodes all the fields of the TCP header.
 func (b TCP) Encode(t *TCPFields) {
 	b.encodeSubset(t.SeqNum, t.AckNum, t.Flags, t.WindowSize)
-	binary.BigEndian.PutUint16(b[TCPSrcPortOffset:], t.SrcPort)
-	binary.BigEndian.PutUint16(b[TCPDstPortOffset:], t.DstPort)
-	b[TCPDataOffset] = (t.DataOffset / 4) << 4
-	binary.BigEndian.PutUint16(b[TCPChecksumOffset:], t.Checksum)
-	binary.BigEndian.PutUint16(b[TCPUrgentPtrOffset:], t.UrgentPointer)
+	b.SetSourcePort(t.SrcPort)
+	b.SetDestinationPort(t.DstPort)
+	b.SetDataOffset(t.DataOffset)
+	b.SetChecksum(t.Checksum)
+	b.SetUrgentPointer(t.UrgentPointer)
 }
 
 // EncodePartial updates a subset of the fields of the TCP header. It is useful

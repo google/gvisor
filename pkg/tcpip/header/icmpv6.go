@@ -199,7 +199,7 @@ func (b ICMPv6) Checksum() uint16 {
 
 // SetChecksum sets the ICMP checksum field.
 func (b ICMPv6) SetChecksum(checksum uint16) {
-	binary.BigEndian.PutUint16(b[icmpv6ChecksumOffset:], checksum)
+	PutChecksum(b[icmpv6ChecksumOffset:], checksum)
 }
 
 // SourcePort implements Transport.SourcePort.
