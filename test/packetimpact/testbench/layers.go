@@ -1089,7 +1089,7 @@ func (l *TCP) ToBytes() ([]byte, error) {
 		h.SetWindowSize(32768)
 	}
 	if l.UrgentPointer != nil {
-		h.SetUrgentPoiner(*l.UrgentPointer)
+		h.SetUrgentPointer(*l.UrgentPointer)
 	}
 	copy(b[header.TCPMinimumSize:], l.Options)
 	header.AddTCPOptionPadding(b[header.TCPMinimumSize:], len(l.Options))
