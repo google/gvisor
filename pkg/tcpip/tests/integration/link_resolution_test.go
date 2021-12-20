@@ -941,8 +941,12 @@ func TestWritePacketsLinkResolution(t *testing.T) {
 			}
 			defer r.Release()
 
+			params := stack.NetworkHeaderParams{
+				Protocol: udp.ProtocolNumber,
+				TTL:      64,
+				TOS:      stack.DefaultTOS,
+			}
 			data := []byte{1, 2}
-			var pkts stack.PacketBufferList
 			for _, d := range data {
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					ReserveHeaderBytes: header.UDPMinimumSize + int(r.MaxHeaderLength()),
@@ -960,19 +964,10 @@ func TestWritePacketsLinkResolution(t *testing.T) {
 				xsum = header.ChecksumCombine(xsum, pkt.Data().AsRange().Checksum())
 				udpHdr.SetChecksum(^udpHdr.CalculateChecksum(xsum))
 
-				pkts.PushBack(pkt)
-			}
-
-			params := stack.NetworkHeaderParams{
-				Protocol: udp.ProtocolNumber,
-				TTL:      64,
-				TOS:      stack.DefaultTOS,
-			}
-
-			if n, err := r.WritePackets(pkts, params); err != nil {
-				t.Fatalf("r.WritePackets(_, %#v): %s", params, err)
-			} else if want := pkts.Len(); want != n {
-				t.Fatalf("got r.WritePackets(_, %#v) = %d, want = %d", params, n, want)
+				if err := r.WritePacket(params, pkt); err != nil {
+					t.Fatalf("WritePacket(...): %s", err)
+				}
+				pkt.DecRef()
 			}
 
 			var writer bytes.Buffer

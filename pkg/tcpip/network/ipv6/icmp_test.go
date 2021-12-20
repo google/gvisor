@@ -81,6 +81,10 @@ func (*stubLinkEndpoint) WritePacket(stack.RouteInfo, tcpip.NetworkProtocolNumbe
 	return nil
 }
 
+func (*stubLinkEndpoint) WritePackets(stack.RouteInfo, stack.PacketBufferList, tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
+	return 0, nil
+}
+
 func (*stubLinkEndpoint) Attach(stack.NetworkDispatcher) {}
 
 type stubDispatcher struct {
@@ -132,10 +136,6 @@ func (*testInterface) Spoofing() bool {
 
 func (t *testInterface) WritePacket(r *stack.Route, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
 	return t.LinkEndpoint.WritePacket(r.Fields(), protocol, pkt)
-}
-
-func (t *testInterface) WritePackets(r *stack.Route, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
-	return t.LinkEndpoint.WritePackets(r.Fields(), pkts, protocol)
 }
 
 func (t *testInterface) WritePacketToRemote(remoteLinkAddr tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {

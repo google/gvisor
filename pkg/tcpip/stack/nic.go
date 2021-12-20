@@ -145,6 +145,14 @@ type delegatingQueueingDiscipline struct {
 
 func (*delegatingQueueingDiscipline) Close() {}
 
+// WritePacket passes the packet through to the underlying LinkWriter's WritePackets.
+func (qDisc *delegatingQueueingDiscipline) WritePacket(r RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) tcpip.Error {
+	var pkts PacketBufferList
+	pkts.PushBack(pkt)
+	_, err := qDisc.LinkWriter.WritePackets(r, pkts, protocol)
+	return err
+}
+
 // newNIC returns a new NIC using the default NDP configurations from stack.
 func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *nic {
 	// TODO(b/141011931): Validate a LinkEndpoint (ep) is valid. For
@@ -333,36 +341,17 @@ func (n *nic) IsLoopback() bool {
 	return n.NetworkLinkEndpoint.Capabilities()&CapabilityLoopback != 0
 }
 
-// WritePacket implements LinkWriter.
-func (n *nic) WritePacket(r *Route, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) tcpip.Error {
-	_, err := n.enqueuePacketBuffer(r, protocol, pkt)
-	return err
-}
-
 // WriteRawPacket implements LinkRawWriter.
 func (n *nic) WriteRawPacket(pkt *PacketBuffer) tcpip.Error {
 	return n.rawLinkEP.WriteRawPacket(pkt)
 }
 
-func (n *nic) writePacketBuffer(r RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt pendingPacketBuffer) (int, tcpip.Error) {
-	switch pkt := pkt.(type) {
-	case *PacketBuffer:
-		if err := n.writePacket(r, protocol, pkt); err != nil {
-			return 0, err
-		}
-		return 1, nil
-	case *PacketBufferList:
-		return n.writePackets(r, protocol, *pkt)
-	default:
-		panic(fmt.Sprintf("unrecognized pending packet buffer type = %T", pkt))
-	}
-}
-
-func (n *nic) enqueuePacketBuffer(r *Route, protocol tcpip.NetworkProtocolNumber, pkt pendingPacketBuffer) (int, tcpip.Error) {
+// WritePacket implements LinkWriter.
+func (n *nic) WritePacket(r *Route, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) tcpip.Error {
 	routeInfo, _, err := r.resolvedFields(nil)
 	switch err.(type) {
 	case nil:
-		return n.writePacketBuffer(routeInfo, protocol, pkt)
+		return n.writePacket(routeInfo, protocol, pkt)
 	case *tcpip.ErrWouldBlock:
 		// As per relevant RFCs, we should queue packets while we wait for link
 		// resolution to complete.
@@ -383,7 +372,7 @@ func (n *nic) enqueuePacketBuffer(r *Route, protocol tcpip.NetworkProtocolNumber
 		//   completes, the node transmits any queued packets.
 		return n.linkResQueue.enqueue(r, protocol, pkt)
 	default:
-		return 0, err
+		return err
 	}
 }
 
@@ -410,29 +399,6 @@ func (n *nic) writePacket(r RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt
 	n.stats.tx.packets.Increment()
 	n.stats.tx.bytes.IncrementBy(uint64(numBytes))
 	return nil
-}
-
-// WritePackets implements LinkWriter..
-func (n *nic) WritePackets(r *Route, pkts PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
-	return n.enqueuePacketBuffer(r, protocol, &pkts)
-}
-
-func (n *nic) writePackets(r RouteInfo, protocol tcpip.NetworkProtocolNumber, pkts PacketBufferList) (int, tcpip.Error) {
-	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
-		pkt.EgressRoute = r
-		pkt.NetworkProtocolNumber = protocol
-		n.deliverOutboundPacket(r.RemoteLinkAddress, pkt)
-	}
-
-	writtenPackets, err := n.qDisc.WritePackets(r, pkts, protocol)
-	n.stats.tx.packets.IncrementBy(uint64(writtenPackets))
-	writtenBytes := 0
-	for i, pb := 0, pkts.Front(); i < writtenPackets && pb != nil; i, pb = i+1, pb.Next() {
-		writtenBytes += pb.Size()
-	}
-
-	n.stats.tx.bytes.IncrementBy(uint64(writtenBytes))
-	return writtenPackets, err
 }
 
 // setSpoofing enables or disables address spoofing.

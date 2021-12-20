@@ -212,11 +212,6 @@ func (t *testObject) WritePacket(_ *stack.Route, protocol tcpip.NetworkProtocolN
 	return nil
 }
 
-// WritePackets implements stack.LinkEndpoint.WritePackets.
-func (*testObject) WritePackets(_ *stack.Route, pkt stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
-	panic("not implemented")
-}
-
 // ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType.
 func (*testObject) ARPHardwareType() header.ARPHardwareType {
 	panic("not implemented")
