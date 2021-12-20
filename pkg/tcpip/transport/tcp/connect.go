@@ -832,7 +832,6 @@ func sendTCPBatch(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso 
 
 	size := data.Size()
 	hdrSize := header.TCPMinimumSize + int(r.MaxHeaderLength()) + optLen
-	var pkts stack.PacketBufferList
 	for i := 0; i < n; i++ {
 		packetSize := mss
 		if packetSize > size {
@@ -848,19 +847,18 @@ func sendTCPBatch(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso 
 		buildTCPHdr(r, tf, pkt, gso)
 		tf.seq = tf.seq.Add(seqnum.Size(packetSize))
 		pkt.GSOOptions = gso
-		pkts.PushBack(pkt)
+		if tf.ttl == 0 {
+			tf.ttl = r.DefaultTTL()
+		}
+		if err := r.WritePacket(stack.NetworkHeaderParams{Protocol: ProtocolNumber, TTL: tf.ttl, TOS: tf.tos}, pkt); err != nil {
+			r.Stats().TCP.SegmentSendErrors.Increment()
+			pkt.DecRef()
+			return err
+		}
+		r.Stats().TCP.SegmentsSent.Increment()
+		pkt.DecRef()
 	}
-	defer pkts.DecRef()
-
-	if tf.ttl == 0 {
-		tf.ttl = r.DefaultTTL()
-	}
-	sent, err := r.WritePackets(pkts, stack.NetworkHeaderParams{Protocol: ProtocolNumber, TTL: tf.ttl, TOS: tf.tos})
-	if err != nil {
-		r.Stats().TCP.SegmentSendErrors.IncrementBy(uint64(n - sent))
-	}
-	r.Stats().TCP.SegmentsSent.IncrementBy(uint64(sent))
-	return err
+	return nil
 }
 
 // sendTCP sends a TCP segment with the provided options via the provided
