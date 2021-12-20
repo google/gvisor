@@ -24,6 +24,11 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 )
 
+// PutChecksum puts the checksum in the provided byte slice.
+func PutChecksum(b []byte, xsum uint16) {
+	binary.BigEndian.PutUint16(b, xsum)
+}
+
 func calculateChecksum(buf []byte, odd bool, initial uint32) (uint16, bool) {
 	v := initial
 
