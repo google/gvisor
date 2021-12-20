@@ -287,6 +287,13 @@ func (flow testFlow) isReverseMulticast() bool {
 	}
 }
 
+func (flow testFlow) ttlOption() tcpip.SockOptInt {
+	if flow.isMulticast() {
+		return tcpip.MulticastTTLOption
+	}
+	return tcpip.TTLOption
+}
+
 type testContext struct {
 	t      *testing.T
 	linkEP *channel.Endpoint
@@ -1608,48 +1615,35 @@ func (*testInterface) Enabled() bool {
 	return true
 }
 
-func TestTTL(t *testing.T) {
-	for _, flow := range []testFlow{unicastV4, unicastV4in6, unicastV6, unicastV6Only, multicastV4, multicastV4in6, multicastV6, broadcast, broadcastIn6} {
+func TestNonMulticastDefaultTTL(t *testing.T) {
+	for _, flow := range []testFlow{unicastV4, unicastV4in6, unicastV6, unicastV6Only, broadcast, broadcastIn6} {
 		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {
 			c := newDualTestContext(t, defaultMTU)
 			defer c.cleanup()
 
 			c.createEndpointForFlow(flow)
-
-			const multicastTTL = 42
-			if err := c.ep.SetSockOptInt(tcpip.MulticastTTLOption, multicastTTL); err != nil {
-				c.t.Fatalf("SetSockOptInt failed: %s", err)
+			proto := c.s.NetworkProtocolInstance(flow.netProto())
+			if proto == nil {
+				t.Fatalf("c.s.NetworkProtocolInstance(flow.netProto()) did not return a protocol")
 			}
 
-			var wantTTL uint8
-			if flow.isMulticast() {
-				wantTTL = multicastTTL
-			} else {
-				var p stack.NetworkProtocolFactory
-				var n tcpip.NetworkProtocolNumber
-				if flow.isV4() {
-					p = ipv4.NewProtocol
-					n = ipv4.ProtocolNumber
-				} else {
-					p = ipv6.NewProtocol
-					n = ipv6.ProtocolNumber
-				}
-				s := stack.New(stack.Options{
-					NetworkProtocols: []stack.NetworkProtocolFactory{p},
-					Clock:            &faketime.NullClock{},
-				})
-				ep := s.NetworkProtocolInstance(n).NewEndpoint(&testInterface{}, nil)
-				wantTTL = ep.DefaultTTL()
-				ep.Close()
+			var initialDefaultTTL tcpip.DefaultTTLOption
+			if err := proto.Option(&initialDefaultTTL); err != nil {
+				t.Fatalf("proto.Option(&initialDefaultTTL) (%T) failed: %s", initialDefaultTTL, err)
 			}
+			testWrite(c, flow, checker.TTL(uint8(initialDefaultTTL)))
 
-			testWrite(c, flow, checker.TTL(wantTTL))
+			newDefaultTTL := tcpip.DefaultTTLOption(initialDefaultTTL + 1)
+			if err := proto.SetOption(&newDefaultTTL); err != nil {
+				c.t.Fatalf("proto.SetOption(&%T(%d))) failed: %s", newDefaultTTL, newDefaultTTL, err)
+			}
+			testWrite(c, flow, checker.TTL(uint8(newDefaultTTL)))
 		})
 	}
 }
 
 func TestSetTTL(t *testing.T) {
-	for _, flow := range []testFlow{unicastV4, unicastV4in6, unicastV6, unicastV6Only, broadcast, broadcastIn6} {
+	for _, flow := range []testFlow{unicastV4, unicastV4in6, unicastV6, unicastV6Only, multicastV4, multicastV4in6, multicastV6, broadcast, broadcastIn6} {
 		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {
 			for _, wantTTL := range []uint8{1, 2, 50, 64, 128, 254, 255} {
 				t.Run(fmt.Sprintf("TTL:%d", wantTTL), func(t *testing.T) {
@@ -1658,8 +1652,9 @@ func TestSetTTL(t *testing.T) {
 
 					c.createEndpointForFlow(flow)
 
-					if err := c.ep.SetSockOptInt(tcpip.TTLOption, int(wantTTL)); err != nil {
-						c.t.Fatalf("SetSockOptInt(TTLOption, %d) failed: %s", wantTTL, err)
+					opt := flow.ttlOption()
+					if err := c.ep.SetSockOptInt(opt, int(wantTTL)); err != nil {
+						c.t.Fatalf("SetSockOptInt(%d, %d) failed: %s", opt, wantTTL, err)
 					}
 
 					testWrite(c, flow, checker.TTL(wantTTL))

@@ -3403,33 +3403,104 @@ func TestSendGreaterThanMTU(t *testing.T) {
 	testBrokenUpWrite(t, c, maxPayload)
 }
 
-func TestSetTTL(t *testing.T) {
-	for _, wantTTL := range []uint8{1, 2, 50, 64, 128, 254, 255} {
-		t.Run(fmt.Sprintf("TTL:%d", wantTTL), func(t *testing.T) {
+func TestDefaultTTL(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		protoNum tcpip.NetworkProtocolNumber
+		addr     tcpip.Address
+	}{
+		{"ipv4", ipv4.ProtocolNumber, context.TestAddr},
+		{"ipv6", ipv6.ProtocolNumber, context.TestV6Addr},
+	} {
+		t.Run(fmt.Sprint(test.name), func(t *testing.T) {
 			c := context.New(t, 65535)
 			defer c.Cleanup()
 
 			var err tcpip.Error
-			c.EP, err = c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &waiter.Queue{})
+			c.EP, err = c.Stack().NewEndpoint(tcp.ProtocolNumber, test.protoNum, &waiter.Queue{})
 			if err != nil {
 				t.Fatalf("NewEndpoint failed: %s", err)
 			}
 
-			if err := c.EP.SetSockOptInt(tcpip.TTLOption, int(wantTTL)); err != nil {
-				t.Fatalf("SetSockOptInt(TTLOption, %d) failed: %s", wantTTL, err)
+			proto := c.Stack().NetworkProtocolInstance(test.protoNum)
+			if proto == nil {
+				t.Fatalf("c.s.NetworkProtocolInstance(flow.netProto()) did not return a protocol")
+			}
+
+			var initialDefaultTTL tcpip.DefaultTTLOption
+			if err := proto.Option(&initialDefaultTTL); err != nil {
+				t.Fatalf("proto.Option(&initialDefaultTTL) (%T) failed: %s", initialDefaultTTL, err)
 			}
 
 			{
-				err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort})
+				err := c.EP.Connect(tcpip.FullAddress{Addr: test.addr, Port: context.TestPort})
 				if d := cmp.Diff(&tcpip.ErrConnectStarted{}, err); d != "" {
 					t.Fatalf("c.EP.Connect(...) mismatch (-want +got):\n%s", d)
 				}
 			}
 
-			// Receive SYN packet.
-			b := c.GetPacket()
+			checkTTL := func(ttl uint8) {
+				if test.protoNum == ipv4.ProtocolNumber {
+					checker.IPv4(t, c.GetPacket(), checker.TTL(ttl))
+				} else {
+					checker.IPv6(t, c.GetV6Packet(), checker.TTL(ttl))
+				}
+			}
 
-			checker.IPv4(t, b, checker.TTL(wantTTL))
+			// Receive SYN packet.
+			checkTTL(uint8(initialDefaultTTL))
+
+			newDefaultTTL := tcpip.DefaultTTLOption(initialDefaultTTL + 1)
+			if err := proto.SetOption(&newDefaultTTL); err != nil {
+				t.Fatalf("proto.SetOption(&%T(%d))) failed: %s", newDefaultTTL, newDefaultTTL, err)
+			}
+
+			// Receive retransmitted SYN packet.
+			checkTTL(uint8(newDefaultTTL))
+		})
+	}
+}
+
+func TestSetTTL(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		protoNum tcpip.NetworkProtocolNumber
+		addr     tcpip.Address
+	}{
+		{"ipv4", ipv4.ProtocolNumber, context.TestAddr},
+		{"ipv6", ipv6.ProtocolNumber, context.TestV6Addr},
+	} {
+		t.Run(fmt.Sprint(test.name), func(t *testing.T) {
+			for _, wantTTL := range []uint8{1, 2, 50, 64, 128, 254, 255} {
+				t.Run(fmt.Sprintf("TTL:%d", wantTTL), func(t *testing.T) {
+					c := context.New(t, 65535)
+					defer c.Cleanup()
+
+					var err tcpip.Error
+					c.EP, err = c.Stack().NewEndpoint(tcp.ProtocolNumber, test.protoNum, &waiter.Queue{})
+					if err != nil {
+						t.Fatalf("NewEndpoint failed: %s", err)
+					}
+
+					if err := c.EP.SetSockOptInt(tcpip.TTLOption, int(wantTTL)); err != nil {
+						t.Fatalf("SetSockOptInt(TTLOption, %d) failed: %s", wantTTL, err)
+					}
+
+					{
+						err := c.EP.Connect(tcpip.FullAddress{Addr: test.addr, Port: context.TestPort})
+						if d := cmp.Diff(&tcpip.ErrConnectStarted{}, err); d != "" {
+							t.Fatalf("c.EP.Connect(...) mismatch (-want +got):\n%s", d)
+						}
+					}
+
+					// Receive SYN packet.
+					if test.protoNum == ipv4.ProtocolNumber {
+						checker.IPv4(t, c.GetPacket(), checker.TTL(wantTTL))
+					} else {
+						checker.IPv6(t, c.GetV6Packet(), checker.TTL(wantTTL))
+					}
+				})
+			}
 		})
 	}
 }
