@@ -232,6 +232,31 @@ func (c *ControlMessageIPv6PacketInfo) StateLoad(stateSourceObject state.Source)
 	stateSourceObject.Load(1, &c.NIC)
 }
 
+func (i *ICMP6Filter) StateTypeName() string {
+	return "pkg/abi/linux.ICMP6Filter"
+}
+
+func (i *ICMP6Filter) StateFields() []string {
+	return []string{
+		"Filter",
+	}
+}
+
+func (i *ICMP6Filter) beforeSave() {}
+
+// +checklocksignore
+func (i *ICMP6Filter) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.Filter)
+}
+
+func (i *ICMP6Filter) afterLoad() {}
+
+// +checklocksignore
+func (i *ICMP6Filter) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.Filter)
+}
+
 func (t *KernelTermios) StateTypeName() string {
 	return "pkg/abi/linux.KernelTermios"
 }
@@ -314,6 +339,7 @@ func init() {
 	state.Register((*SignalInfo)(nil))
 	state.Register((*ControlMessageIPPacketInfo)(nil))
 	state.Register((*ControlMessageIPv6PacketInfo)(nil))
+	state.Register((*ICMP6Filter)(nil))
 	state.Register((*KernelTermios)(nil))
 	state.Register((*WindowSize)(nil))
 }

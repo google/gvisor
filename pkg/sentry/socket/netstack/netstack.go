@@ -65,6 +65,8 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+const bitsPerUint32 = 32
+
 func mustCreateMetric(name, description string) *tcpip.StatCounter {
 	var cm tcpip.StatCounter
 	metric.MustRegisterCustomUint64Metric(name, true /* cumulative */, false /* sync */, description, cm.Value)
@@ -858,8 +860,10 @@ func GetSockOpt(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, family in
 	case linux.SOL_IP:
 		return getSockOptIP(t, s, ep, name, outPtr, outLen, family)
 
+	case linux.SOL_ICMPV6:
+		return getSockOptICMPv6(t, s, ep, name, outLen)
+
 	case linux.SOL_UDP,
-		linux.SOL_ICMPV6,
 		linux.SOL_RAW,
 		linux.SOL_PACKET:
 
@@ -1293,6 +1297,39 @@ func getSockOptTCP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name, 
 	return nil, syserr.ErrProtocolNotAvailable
 }
 
+func getSockOptICMPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name int, outLen int) (marshal.Marshallable, *syserr.Error) {
+	if _, ok := ep.(tcpip.Endpoint); !ok {
+		log.Warningf("SOL_ICMPV6 options not supported on endpoints other than tcpip.Endpoint: option = %d", name)
+		return nil, syserr.ErrUnknownProtocolOption
+	}
+
+	if family, _, _ := s.Type(); family != linux.AF_INET6 {
+		return nil, syserr.ErrNotSupported
+	}
+
+	switch name {
+	case linux.ICMPV6_FILTER:
+		var v tcpip.ICMPv6Filter
+		if err := ep.GetSockOpt(&v); err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+
+		filter := linux.ICMP6Filter{Filter: v.DenyType}
+
+		// Linux truncates the output to outLen.
+		buf := t.CopyScratchBuffer(filter.SizeBytes())
+		filter.MarshalUnsafe(buf)
+		if len(buf) > outLen {
+			buf = buf[:outLen]
+		}
+		bufP := primitive.ByteSlice(buf)
+		return &bufP, nil
+	default:
+		t.Kernel().EmitUnimplementedEvent(t)
+	}
+	return nil, syserr.ErrProtocolNotAvailable
+}
+
 // getSockOptIPv6 implements GetSockOpt when level is SOL_IPV6.
 func getSockOptIPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name int, outPtr hostarch.Addr, outLen int) (marshal.Marshallable, *syserr.Error) {
 	if _, ok := ep.(tcpip.Endpoint); !ok {
@@ -1686,6 +1723,9 @@ func SetSockOpt(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, level int
 	case linux.SOL_TCP:
 		return setSockOptTCP(t, s, ep, name, optVal)
 
+	case linux.SOL_ICMPV6:
+		return setSockOptICMPv6(t, s, ep, name, optVal)
+
 	case linux.SOL_IPV6:
 		return setSockOptIPv6(t, s, ep, name, optVal)
 
@@ -1700,7 +1740,6 @@ func SetSockOpt(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, level int
 		return syserr.ErrProtocolNotAvailable
 
 	case linux.SOL_UDP,
-		linux.SOL_ICMPV6,
 		linux.SOL_RAW:
 
 		t.Kernel().EmitUnimplementedEvent(t)
@@ -2046,6 +2085,32 @@ func setSockOptTCP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name i
 
 	default:
 		emitUnimplementedEventTCP(t, name)
+	}
+
+	return nil
+}
+
+func setSockOptICMPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name int, optVal []byte) *syserr.Error {
+	if _, ok := ep.(tcpip.Endpoint); !ok {
+		log.Warningf("SOL_ICMPV6 options not supported on endpoints other than tcpip.Endpoint: option = %d", name)
+		return syserr.ErrUnknownProtocolOption
+	}
+
+	if family, _, _ := s.Type(); family != linux.AF_INET6 {
+		return syserr.ErrUnknownProtocolOption
+	}
+
+	switch name {
+	case linux.ICMPV6_FILTER:
+		var req linux.ICMP6Filter
+		if len(optVal) < req.SizeBytes() {
+			return syserr.ErrInvalidArgument
+		}
+
+		req.UnmarshalUnsafe(optVal)
+		return syserr.TranslateNetstackError(ep.SetSockOpt(&tcpip.ICMPv6Filter{DenyType: req.Filter}))
+	default:
+		t.Kernel().EmitUnimplementedEvent(t)
 	}
 
 	return nil

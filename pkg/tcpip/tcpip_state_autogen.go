@@ -1220,6 +1220,31 @@ func (l *LinkPacketInfo) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &l.PktType)
 }
 
+func (f *ICMPv6Filter) StateTypeName() string {
+	return "pkg/tcpip.ICMPv6Filter"
+}
+
+func (f *ICMPv6Filter) StateFields() []string {
+	return []string{
+		"DenyType",
+	}
+}
+
+func (f *ICMPv6Filter) beforeSave() {}
+
+// +checklocksignore
+func (f *ICMPv6Filter) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.DenyType)
+}
+
+func (f *ICMPv6Filter) afterLoad() {}
+
+// +checklocksignore
+func (f *ICMPv6Filter) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.DenyType)
+}
+
 func (l *LingerOption) StateTypeName() string {
 	return "pkg/tcpip.LingerOption"
 }
@@ -1546,6 +1571,7 @@ func init() {
 	state.Register((*FullAddress)(nil))
 	state.Register((*ControlMessages)(nil))
 	state.Register((*LinkPacketInfo)(nil))
+	state.Register((*ICMPv6Filter)(nil))
 	state.Register((*LingerOption)(nil))
 	state.Register((*IPPacketInfo)(nil))
 	state.Register((*IPv6PacketInfo)(nil))

@@ -65,6 +65,7 @@ var _ marshal.Marshallable = (*FUSEWriteIn)(nil)
 var _ marshal.Marshallable = (*FUSEWriteOut)(nil)
 var _ marshal.Marshallable = (*FileMode)(nil)
 var _ marshal.Marshallable = (*Flock)(nil)
+var _ marshal.Marshallable = (*ICMP6Filter)(nil)
 var _ marshal.Marshallable = (*IFConf)(nil)
 var _ marshal.Marshallable = (*IFReq)(nil)
 var _ marshal.Marshallable = (*IOCallback)(nil)
@@ -13924,6 +13925,106 @@ func (c *ControlMessageIPv6PacketInfo) WriteTo(writer io.Writer) (int64, error) 
     // Since we bypassed the compiler's escape analysis, indicate that c
     // must live until the use above.
     runtime.KeepAlive(c) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (i *ICMP6Filter) SizeBytes() int {
+    return 0 +
+        4*8
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (i *ICMP6Filter) MarshalBytes(dst []byte) []byte {
+    for idx := 0; idx < 8; idx++ {
+        hostarch.ByteOrder.PutUint32(dst[:4], uint32(i.Filter[idx]))
+        dst = dst[4:]
+    }
+    return dst
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (i *ICMP6Filter) UnmarshalBytes(src []byte) []byte {
+    for idx := 0; idx < 8; idx++ {
+        i.Filter[idx] = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+        src = src[4:]
+    }
+    return src
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (i *ICMP6Filter) Packed() bool {
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (i *ICMP6Filter) MarshalUnsafe(dst []byte) []byte {
+    size := i.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i), uintptr(size))
+    return dst[size:]
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (i *ICMP6Filter) UnmarshalUnsafe(src []byte) []byte {
+    size := i.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(size))
+    return src[size:]
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (i *ICMP6Filter) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
+    hdr.Len = i.SizeBytes()
+    hdr.Cap = i.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that i
+    // must live until the use above.
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (i *ICMP6Filter) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return i.CopyOutN(cc, addr, i.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (i *ICMP6Filter) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
+    hdr.Len = i.SizeBytes()
+    hdr.Cap = i.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that i
+    // must live until the use above.
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (i *ICMP6Filter) WriteTo(writer io.Writer) (int64, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
+    hdr.Len = i.SizeBytes()
+    hdr.Cap = i.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that i
+    // must live until the use above.
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
