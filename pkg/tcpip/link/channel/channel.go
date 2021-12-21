@@ -26,15 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
-// PacketInfo holds all the information about an outbound packet.
-type PacketInfo struct {
-	Pkt *stack.PacketBuffer
-
-	// TODO(https://gvisor.dev/issue/6537): Remove these fields.
-	Proto tcpip.NetworkProtocolNumber
-	Route stack.RouteInfo
-}
-
 // Notification is the interface for receiving notification from the packet
 // queue.
 type Notification interface {
@@ -52,7 +43,7 @@ type NotificationHandle struct {
 
 type queue struct {
 	// c is the outbound packet channel.
-	c chan PacketInfo
+	c chan *stack.PacketBuffer
 	// mu protects fields below.
 	mu     sync.RWMutex
 	notify []*NotificationHandle
@@ -62,25 +53,25 @@ func (q *queue) Close() {
 	close(q.c)
 }
 
-func (q *queue) Read() (PacketInfo, bool) {
+func (q *queue) Read() *stack.PacketBuffer {
 	select {
 	case p := <-q.c:
-		return p, true
+		return p
 	default:
-		return PacketInfo{}, false
+		return nil
 	}
 }
 
-func (q *queue) ReadContext(ctx context.Context) (PacketInfo, bool) {
+func (q *queue) ReadContext(ctx context.Context) *stack.PacketBuffer {
 	select {
 	case pkt := <-q.c:
-		return pkt, true
+		return pkt
 	case <-ctx.Done():
-		return PacketInfo{}, false
+		return nil
 	}
 }
 
-func (q *queue) Write(p PacketInfo) bool {
+func (q *queue) Write(pkt *stack.PacketBuffer) bool {
 	// q holds the PacketBuffer.
 
 	// Ideally, Write() should take a reference here, since it is adding
@@ -92,10 +83,10 @@ func (q *queue) Write(p PacketInfo) bool {
 	// make a call to  PreserveObject(), which prevents the PacketBuffer
 	// pooling implementation from reclaiming this instance, even when
 	// the refcount goes to zero.
-	p.Pkt.PreserveObject()
+	pkt.PreserveObject()
 	wrote := false
 	select {
-	case q.c <- p:
+	case q.c <- pkt:
 		wrote = true
 	default:
 	}
@@ -157,7 +148,7 @@ type Endpoint struct {
 func New(size int, mtu uint32, linkAddr tcpip.LinkAddress) *Endpoint {
 	return &Endpoint{
 		q: &queue{
-			c: make(chan PacketInfo, size),
+			c: make(chan *stack.PacketBuffer, size),
 		},
 		mtu:      mtu,
 		linkAddr: linkAddr,
@@ -171,25 +162,23 @@ func (e *Endpoint) Close() {
 }
 
 // Read does non-blocking read one packet from the outbound packet queue.
-func (e *Endpoint) Read() (PacketInfo, bool) {
+func (e *Endpoint) Read() *stack.PacketBuffer {
 	return e.q.Read()
 }
 
 // ReadContext does blocking read for one packet from the outbound packet queue.
 // It can be cancelled by ctx, and in this case, it returns false.
-func (e *Endpoint) ReadContext(ctx context.Context) (PacketInfo, bool) {
+func (e *Endpoint) ReadContext(ctx context.Context) *stack.PacketBuffer {
 	return e.q.ReadContext(ctx)
 }
 
 // Drain removes all outbound packets from the channel and counts them.
 func (e *Endpoint) Drain() int {
 	c := 0
-	for {
-		if _, ok := e.Read(); !ok {
-			return c
-		}
+	for e.Read() != nil {
 		c++
 	}
+	return c
 }
 
 // NumQueued returns the number of packet queued for outbound.
@@ -251,32 +240,20 @@ func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
 }
 
 // WritePacket stores outbound packets into the channel.
-func (e *Endpoint) WritePacket(r stack.RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
-	p := PacketInfo{
-		Pkt:   pkt,
-		Proto: protocol,
-		Route: r,
-	}
-
+func (e *Endpoint) WritePacket(_ stack.RouteInfo, _ tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
 	// Write returns false if the queue is full. A full queue is not an error
 	// from the perspective of a LinkEndpoint so we ignore Write's return
 	// value and always return nil from this method.
-	_ = e.q.Write(p)
+	_ = e.q.Write(pkt)
 
 	return nil
 }
 
 // WritePackets stores outbound packets into the channel.
-func (e *Endpoint) WritePackets(r stack.RouteInfo, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
+func (e *Endpoint) WritePackets(_ stack.RouteInfo, pkts stack.PacketBufferList, _ tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
 	n := 0
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
-		p := PacketInfo{
-			Pkt:   pkt,
-			Proto: protocol,
-			Route: r,
-		}
-
-		if !e.q.Write(p) {
+		if !e.q.Write(pkt) {
 			break
 		}
 		n++
@@ -310,15 +287,10 @@ func (*Endpoint) AddHeader(tcpip.LinkAddress, tcpip.LinkAddress, tcpip.NetworkPr
 
 // WriteRawPacket implements stack.LinkEndpoint.
 func (e *Endpoint) WriteRawPacket(pkt *stack.PacketBuffer) tcpip.Error {
-	p := PacketInfo{
-		Pkt:   pkt,
-		Proto: pkt.NetworkProtocolNumber,
-	}
-
 	// Write returns false if the queue is full. A full queue is not an error
 	// from the perspective of a LinkEndpoint so we ignore Write's return
 	// value and always return nil from this method.
-	_ = e.q.Write(p)
+	_ = e.q.Write(pkt)
 
 	return nil
 }
