@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
+	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
@@ -2866,6 +2867,124 @@ func TestSNATHandlePortOrIdentConflicts(t *testing.T) {
 						})
 					}
 				})
+			}
+		})
+	}
+}
+
+func TestLocallyRoutedPackets(t *testing.T) {
+	const nicID = 1
+
+	tests := []struct {
+		name     string
+		netProto tcpip.NetworkProtocolNumber
+		addr     tcpip.Address
+	}{
+		{
+			name:     "IPv4",
+			netProto: ipv4.ProtocolNumber,
+			addr:     utils.Host1IPv4Addr.AddressWithPrefix.Address,
+		},
+		{
+			name:     "IPv6",
+			netProto: ipv6.ProtocolNumber,
+			addr:     utils.Host1IPv6Addr.AddressWithPrefix.Address,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
+			})
+
+			if err := s.CreateNIC(nicID, loopback.New()); err != nil {
+				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+			}
+			protocolAddr := tcpip.ProtocolAddress{
+				Protocol:          test.netProto,
+				AddressWithPrefix: test.addr.WithPrefix(),
+			}
+			if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
+			}
+
+			s.SetRouteTable([]tcpip.Route{
+				{
+					Destination: protocolAddr.AddressWithPrefix.Subnet(),
+					NIC:         nicID,
+				},
+			})
+
+			// Set IPTables so we create entries in the conntrack table.
+			{
+				ipv6 := test.netProto == ipv6.ProtocolNumber
+				ipt := s.IPTables()
+				filter := ipt.GetTable(stack.FilterID, ipv6)
+				if err := ipt.ReplaceTable(stack.FilterID, filter, ipv6); err != nil {
+					t.Fatalf("ipt.ReplaceTable(%d, _, %t): %s", stack.FilterID, ipv6, err)
+				}
+			}
+
+			var wq waiter.Queue
+			we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+			wq.EventRegister(&we)
+			defer wq.EventUnregister(&we)
+
+			ep, err := s.NewEndpoint(udp.ProtocolNumber, test.netProto, &wq)
+			if err != nil {
+				t.Fatalf("s.NewEndpoint(%d, %d, _): %s", udp.ProtocolNumber, test.netProto, err)
+			}
+			defer ep.Close()
+
+			fullAddr := tcpip.FullAddress{Addr: test.addr, Port: 1234}
+			if err := ep.Bind(fullAddr); err != nil {
+				t.Fatalf("ep.Bind(%#v): %s", fullAddr, err)
+			}
+			if err := ep.Connect(fullAddr); err != nil {
+				t.Fatalf("ep.Connect(%#v): %s", fullAddr, err)
+			}
+
+			data := []byte{1, 2, 3, 4}
+
+			var r bytes.Reader
+			r.Reset(data)
+			var wOpts tcpip.WriteOptions
+			n, err := ep.Write(&r, wOpts)
+			if err != nil {
+				t.Fatalf("ep.Write(_, %#v): %s", wOpts, err)
+			}
+			if want := int64(len(data)); n != want {
+				t.Fatalf("got ep.Write(_, %#v) = (%d, _), want = (%d, _)", wOpts, n, want)
+			}
+
+			var buf bytes.Buffer
+			var res tcpip.ReadResult
+			for {
+				var err tcpip.Error
+				res, err = ep.Read(&buf, tcpip.ReadOptions{})
+				if _, ok := err.(*tcpip.ErrWouldBlock); ok {
+					<-ch
+					continue
+				}
+				if err != nil {
+					t.Fatalf("ep.Read(_, {}): %s", err)
+				}
+				break
+			}
+			if diff := cmp.Diff(
+				tcpip.ReadResult{
+					Count: len(data),
+					Total: len(data),
+				},
+				res,
+				checker.IgnoreCmpPath("ControlMessages"),
+			); diff != "" {
+				t.Errorf("ep.Read: unexpected result (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(buf.Bytes(), data); diff != "" {
+				t.Errorf("received data mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
