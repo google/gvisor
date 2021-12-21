@@ -610,20 +610,20 @@ func TestDADResolve(t *testing.T) {
 
 			// Validate the sent Neighbor Solicitation messages.
 			for i := uint8(0); i < test.dupAddrDetectTransmits; i++ {
-				p, ok := e.Read()
-				if !ok {
+				p := e.Read()
+				if p == nil {
 					t.Fatal("packet didn't arrive")
 				}
 
 				// Make sure its an IPv6 packet.
-				if p.Proto != header.IPv6ProtocolNumber {
-					t.Fatalf("got Proto = %d, want = %d", p.Proto, header.IPv6ProtocolNumber)
+				if p.NetworkProtocolNumber != header.IPv6ProtocolNumber {
+					t.Fatalf("got Proto = %d, want = %d", p.NetworkProtocolNumber, header.IPv6ProtocolNumber)
 				}
 
 				// Make sure the right remote link address is used.
 				snmc := header.SolicitedNodeAddr(addr1)
-				if want := header.EthernetAddressFromMulticastIPv6Address(snmc); p.Route.RemoteLinkAddress != want {
-					t.Errorf("got remote link address = %s, want = %s", p.Route.RemoteLinkAddress, want)
+				if want := header.EthernetAddressFromMulticastIPv6Address(snmc); p.EgressRoute.RemoteLinkAddress != want {
+					t.Errorf("got remote link address = %s, want = %s", p.EgressRoute.RemoteLinkAddress, want)
 				}
 
 				// Check NDP NS packet.
@@ -631,7 +631,7 @@ func TestDADResolve(t *testing.T) {
 				// As per RFC 4861 section 4.3, a possible option is the Source Link
 				// Layer option, but this option MUST NOT be included when the source
 				// address of the packet is the unspecified address.
-				checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
+				checker.IPv6(t, stack.PayloadSince(p.NetworkHeader()),
 					checker.SrcAddr(header.IPv6Any),
 					checker.DstAddr(snmc),
 					checker.TTL(header.NDPHopLimit),
@@ -640,8 +640,8 @@ func TestDADResolve(t *testing.T) {
 						checker.NDPNSOptions([]header.NDPOption{header.NDPNonceOption(nonces[i])}),
 					))
 
-				if l, want := p.Pkt.AvailableHeaderBytes(), int(test.linkHeaderLen); l != want {
-					t.Errorf("got p.Pkt.AvailableHeaderBytes() = %d; want = %d", l, want)
+				if l, want := p.AvailableHeaderBytes(), int(test.linkHeaderLen); l != want {
+					t.Errorf("got p.AvailableHeaderBytes() = %d; want = %d", l, want)
 				}
 			}
 		})
@@ -1316,19 +1316,19 @@ func TestDynamicConfigurationsDisabled(t *testing.T) {
 						t.Errorf("got v6Stats.ICMP.PacketsSent.RouterSolicit.Value() = %d, want = %d", got, want)
 					}
 					if handleRAsDisabled {
-						if p, ok := e.Read(); ok {
+						if p := e.Read(); p != nil {
 							t.Errorf("unexpectedly got a packet = %#v", p)
 						}
-					} else if p, ok := e.Read(); !ok {
+					} else if p := e.Read(); p == nil {
 						t.Error("expected router solicitation packet")
-					} else if p.Proto != header.IPv6ProtocolNumber {
-						t.Errorf("got Proto = %d, want = %d", p.Proto, header.IPv6ProtocolNumber)
+					} else if p.NetworkProtocolNumber != header.IPv6ProtocolNumber {
+						t.Errorf("got Proto = %d, want = %d", p.NetworkProtocolNumber, header.IPv6ProtocolNumber)
 					} else {
-						if want := header.EthernetAddressFromMulticastIPv6Address(header.IPv6AllRoutersLinkLocalMulticastAddress); p.Route.RemoteLinkAddress != want {
-							t.Errorf("got remote link address = %s, want = %s", p.Route.RemoteLinkAddress, want)
+						if want := header.EthernetAddressFromMulticastIPv6Address(header.IPv6AllRoutersLinkLocalMulticastAddress); p.EgressRoute.RemoteLinkAddress != want {
+							t.Errorf("got remote link address = %s, want = %s", p.EgressRoute.RemoteLinkAddress, want)
 						}
 
-						checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
+						checker.IPv6(t, stack.PayloadSince(p.NetworkHeader()),
 							checker.SrcAddr(header.IPv6Any),
 							checker.DstAddr(header.IPv6AllRoutersLinkLocalMulticastAddress),
 							checker.TTL(header.NDPHopLimit),
@@ -5348,36 +5348,36 @@ func TestRouterSolicitation(t *testing.T) {
 						t.Helper()
 
 						clock.Advance(timeout)
-						p, ok := e.Read()
-						if !ok {
+						p := e.Read()
+						if p == nil {
 							t.Fatal("expected router solicitation packet")
 						}
 
-						if p.Proto != header.IPv6ProtocolNumber {
-							t.Fatalf("got Proto = %d, want = %d", p.Proto, header.IPv6ProtocolNumber)
+						if p.NetworkProtocolNumber != header.IPv6ProtocolNumber {
+							t.Fatalf("got Proto = %d, want = %d", p.NetworkProtocolNumber, header.IPv6ProtocolNumber)
 						}
 
 						// Make sure the right remote link address is used.
-						if want := header.EthernetAddressFromMulticastIPv6Address(header.IPv6AllRoutersLinkLocalMulticastAddress); p.Route.RemoteLinkAddress != want {
-							t.Errorf("got remote link address = %s, want = %s", p.Route.RemoteLinkAddress, want)
+						if want := header.EthernetAddressFromMulticastIPv6Address(header.IPv6AllRoutersLinkLocalMulticastAddress); p.EgressRoute.RemoteLinkAddress != want {
+							t.Errorf("got remote link address = %s, want = %s", p.EgressRoute.RemoteLinkAddress, want)
 						}
 
-						checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
+						checker.IPv6(t, stack.PayloadSince(p.NetworkHeader()),
 							checker.SrcAddr(test.expectedSrcAddr),
 							checker.DstAddr(header.IPv6AllRoutersLinkLocalMulticastAddress),
 							checker.TTL(header.NDPHopLimit),
 							checker.NDPRS(checker.NDPRSOptions(test.expectedNDPOpts)),
 						)
 
-						if l, want := p.Pkt.AvailableHeaderBytes(), int(test.linkHeaderLen); l != want {
-							t.Errorf("got p.Pkt.AvailableHeaderBytes() = %d; want = %d", l, want)
+						if l, want := p.AvailableHeaderBytes(), int(test.linkHeaderLen); l != want {
+							t.Errorf("got p.AvailableHeaderBytes() = %d; want = %d", l, want)
 						}
 					}
 					waitForNothing := func(timeout time.Duration) {
 						t.Helper()
 
 						clock.Advance(timeout)
-						if p, ok := e.Read(); ok {
+						if p := e.Read(); p != nil {
 							t.Fatalf("unexpectedly got a packet = %#v", p)
 						}
 					}
@@ -5538,15 +5538,15 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 				t.Helper()
 
 				clock.Advance(timeout)
-				p, ok := e.Read()
-				if !ok {
+				p := e.Read()
+				if p == nil {
 					t.Fatal("timed out waiting for packet")
 				}
 
-				if p.Proto != header.IPv6ProtocolNumber {
-					t.Fatalf("got Proto = %d, want = %d", p.Proto, header.IPv6ProtocolNumber)
+				if p.NetworkProtocolNumber != header.IPv6ProtocolNumber {
+					t.Fatalf("got Proto = %d, want = %d", p.NetworkProtocolNumber, header.IPv6ProtocolNumber)
 				}
-				checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
+				checker.IPv6(t, stack.PayloadSince(p.NetworkHeader()),
 					checker.SrcAddr(header.IPv6Any),
 					checker.DstAddr(header.IPv6AllRoutersLinkLocalMulticastAddress),
 					checker.TTL(header.NDPHopLimit),
@@ -5571,10 +5571,10 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 			// Stop soliciting routers.
 			test.stopFn(t, s, true /* first */)
 			clock.Advance(delay)
-			if _, ok := e.Read(); ok {
+			if e.Read() != nil {
 				// A single RS may have been sent before solicitations were stopped.
 				clock.Advance(interval)
-				if _, ok = e.Read(); ok {
+				if e.Read() != nil {
 					t.Fatal("should not have sent more than one RS message")
 				}
 			}
@@ -5583,7 +5583,7 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 			// do nothing.
 			test.stopFn(t, s, false /* first */)
 			clock.Advance(delay)
-			if _, ok := e.Read(); ok {
+			if e.Read() != nil {
 				t.Fatal("unexpectedly got a packet after router solicitation has been stopepd")
 			}
 
@@ -5598,7 +5598,7 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 			waitForPkt(clock, interval)
 			waitForPkt(clock, interval)
 			clock.Advance(interval)
-			if _, ok := e.Read(); ok {
+			if e.Read() != nil {
 				t.Fatal("unexpectedly got an extra packet after sending out the expected RSs")
 			}
 
@@ -5606,7 +5606,7 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 			// nothing.
 			test.startFn(t, s)
 			clock.Advance(interval)
-			if _, ok := e.Read(); ok {
+			if e.Read() != nil {
 				t.Fatal("unexpectedly got a packet after finishing router solicitations")
 			}
 		})

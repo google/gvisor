@@ -464,8 +464,8 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 					t.Fatalf("got invalid = %d, want = 1", got)
 				}
 
-				if p, got := e.Read(); got {
-					t.Fatalf("unexpected response to an invalid NS = %+v", p.Pkt)
+				if p := e.Read(); p != nil {
+					t.Fatalf("unexpected response to an invalid NS = %+v", p)
 				}
 
 				// If we expected the NS to be invalid, we have nothing else to check.
@@ -478,8 +478,8 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 
 			if test.performsLinkResolution {
 				clock.RunImmediatelyScheduledJobs()
-				p, got := e.Read()
-				if !got {
+				p := e.Read()
+				if p == nil {
 					t.Fatal("expected an NDP NS response")
 				}
 
@@ -487,11 +487,11 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 				var want stack.RouteInfo
 				want.NetProto = ProtocolNumber
 				want.RemoteLinkAddress = header.EthernetAddressFromMulticastIPv6Address(respNSDst)
-				if diff := cmp.Diff(want, p.Route, cmp.AllowUnexported(want)); diff != "" {
+				if diff := cmp.Diff(want, p.EgressRoute, cmp.AllowUnexported(want)); diff != "" {
 					t.Errorf("route info mismatch (-want +got):\n%s", diff)
 				}
 
-				checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
+				checker.IPv6(t, stack.PayloadSince(p.NetworkHeader()),
 					checker.SrcAddr(nicAddr),
 					checker.DstAddr(respNSDst),
 					checker.TTL(header.NDPHopLimit),
@@ -534,25 +534,25 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 			}
 
 			clock.RunImmediatelyScheduledJobs()
-			p, got := e.Read()
-			if !got {
+			p := e.Read()
+			if p == nil {
 				t.Fatal("expected an NDP NA response")
 			}
 
-			if p.Route.LocalAddress != test.naSrc {
-				t.Errorf("got p.Route.LocalAddress = %s, want = %s", p.Route.LocalAddress, test.naSrc)
+			if p.EgressRoute.LocalAddress != test.naSrc {
+				t.Errorf("got p.EgressRoute.LocalAddress = %s, want = %s", p.EgressRoute.LocalAddress, test.naSrc)
 			}
-			if p.Route.LocalLinkAddress != nicLinkAddr {
-				t.Errorf("p.Route.LocalLinkAddress = %s, want = %s", p.Route.LocalLinkAddress, nicLinkAddr)
+			if p.EgressRoute.LocalLinkAddress != nicLinkAddr {
+				t.Errorf("p.EgressRoute.LocalLinkAddress = %s, want = %s", p.EgressRoute.LocalLinkAddress, nicLinkAddr)
 			}
-			if p.Route.RemoteAddress != test.naDst {
-				t.Errorf("got p.Route.RemoteAddress = %s, want = %s", p.Route.RemoteAddress, test.naDst)
+			if p.EgressRoute.RemoteAddress != test.naDst {
+				t.Errorf("got p.EgressRoute.RemoteAddress = %s, want = %s", p.EgressRoute.RemoteAddress, test.naDst)
 			}
-			if p.Route.RemoteLinkAddress != test.naDstLinkAddr {
-				t.Errorf("got p.Route.RemoteLinkAddress = %s, want = %s", p.Route.RemoteLinkAddress, test.naDstLinkAddr)
+			if p.EgressRoute.RemoteLinkAddress != test.naDstLinkAddr {
+				t.Errorf("got p.EgressRoute.RemoteLinkAddress = %s, want = %s", p.EgressRoute.RemoteLinkAddress, test.naDstLinkAddr)
 			}
 
-			checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
+			checker.IPv6(t, stack.PayloadSince(p.NetworkHeader()),
 				checker.SrcAddr(test.naSrc),
 				checker.DstAddr(test.naDst),
 				checker.TTL(header.NDPHopLimit),
@@ -1281,20 +1281,20 @@ func TestCheckDuplicateAddress(t *testing.T) {
 	remoteLinkAddr := header.EthernetAddressFromMulticastIPv6Address(snmc)
 	checkDADMsg := func() {
 		clock.RunImmediatelyScheduledJobs()
-		p, ok := e.Read()
-		if !ok {
+		p := e.Read()
+		if p == nil {
 			t.Fatalf("expected %d-th DAD message", dadPacketsSent)
 		}
 
-		if p.Proto != header.IPv6ProtocolNumber {
-			t.Errorf("(i=%d) got p.Proto = %d, want = %d", dadPacketsSent, p.Proto, header.IPv6ProtocolNumber)
+		if p.NetworkProtocolNumber != header.IPv6ProtocolNumber {
+			t.Errorf("(i=%d) got p.NetworkProtocolNumber = %d, want = %d", dadPacketsSent, p.NetworkProtocolNumber, header.IPv6ProtocolNumber)
 		}
 
-		if p.Route.RemoteLinkAddress != remoteLinkAddr {
-			t.Errorf("(i=%d) got p.Route.RemoteLinkAddress = %s, want = %s", dadPacketsSent, p.Route.RemoteLinkAddress, remoteLinkAddr)
+		if p.EgressRoute.RemoteLinkAddress != remoteLinkAddr {
+			t.Errorf("(i=%d) got p.EgressRoute.RemoteLinkAddress = %s, want = %s", dadPacketsSent, p.EgressRoute.RemoteLinkAddress, remoteLinkAddr)
 		}
 
-		checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
+		checker.IPv6(t, stack.PayloadSince(p.NetworkHeader()),
 			checker.SrcAddr(header.IPv6Any),
 			checker.DstAddr(snmc),
 			checker.TTL(header.NDPHopLimit),
@@ -1359,7 +1359,7 @@ func TestCheckDuplicateAddress(t *testing.T) {
 	}
 
 	// Should have no more packets.
-	if p, ok := e.Read(); ok {
+	if p := e.Read(); p != nil {
 		t.Errorf("got unexpected packet = %#v", p)
 	}
 }

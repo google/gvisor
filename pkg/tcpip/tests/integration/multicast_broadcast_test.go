@@ -141,21 +141,21 @@ func TestPingMulticastBroadcast(t *testing.T) {
 			})
 
 			test.rxICMP(e, test.srcAddr, test.dstAddr, ttl)
-			pkt, ok := e.Read()
-			if !ok {
+			pkt := e.Read()
+			if pkt == nil {
 				t.Fatal("expected ICMP response")
 			}
 
-			if pkt.Route.LocalAddress != test.expectedSrc {
-				t.Errorf("got pkt.Route.LocalAddress = %s, want = %s", pkt.Route.LocalAddress, test.expectedSrc)
+			if pkt.EgressRoute.LocalAddress != test.expectedSrc {
+				t.Errorf("got pkt.EgressRoute.LocalAddress = %s, want = %s", pkt.EgressRoute.LocalAddress, test.expectedSrc)
 			}
 			// The destination of the response packet should be the source of the
 			// original packet.
-			if pkt.Route.RemoteAddress != test.srcAddr {
-				t.Errorf("got pkt.Route.RemoteAddress = %s, want = %s", pkt.Route.RemoteAddress, test.srcAddr)
+			if pkt.EgressRoute.RemoteAddress != test.srcAddr {
+				t.Errorf("got pkt.EgressRoute.RemoteAddress = %s, want = %s", pkt.EgressRoute.RemoteAddress, test.srcAddr)
 			}
 
-			src, dst := s.NetworkProtocolInstance(test.protoNum).ParseAddresses(stack.PayloadSince(pkt.Pkt.NetworkHeader()))
+			src, dst := s.NetworkProtocolInstance(test.protoNum).ParseAddresses(stack.PayloadSince(pkt.NetworkHeader()))
 			if src != test.expectedSrc {
 				t.Errorf("got pkt source = %s, want = %s", src, test.expectedSrc)
 			}

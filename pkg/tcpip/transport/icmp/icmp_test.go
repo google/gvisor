@@ -130,12 +130,12 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 		}
 
 		// Verify the packet was sent out the default NIC.
-		p, ok := defaultEP.Read()
-		if !ok {
+		p := defaultEP.Read()
+		if p == nil {
 			t.Fatalf("got defaultEP.Read(_) = _, false; want = _, true (packet wasn't written out)")
 		}
 
-		vv := buffer.NewVectorisedView(p.Pkt.Size(), p.Pkt.Views())
+		vv := buffer.NewVectorisedView(p.Size(), p.Views())
 		b := vv.ToView()
 
 		checker.IPv4(t, b, []checker.NetworkChecker{
@@ -148,7 +148,7 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 		}...)
 
 		// Verify the packet was not sent out the alternate NIC.
-		if p, ok := alternateEP.Read(); ok {
+		if p := alternateEP.Read(); p != nil {
 			t.Fatalf("got alternateEP.Read(_) = %+v, true; want = _, false", p)
 		}
 	}
@@ -172,17 +172,17 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 		}
 
 		// Verify the packet was not sent out the default NIC.
-		if p, ok := defaultEP.Read(); ok {
+		if p := defaultEP.Read(); p != nil {
 			t.Fatalf("got defaultEP.Read(_) = %+v, true; want = _, false", p)
 		}
 
 		// Verify the packet was sent out the alternate NIC.
-		p, ok := alternateEP.Read()
-		if !ok {
+		p := alternateEP.Read()
+		if p == nil {
 			t.Fatalf("got alternateEP.Read(_) = _, false; want = _, true (packet wasn't written out)")
 		}
 
-		vv := buffer.NewVectorisedView(p.Pkt.Size(), p.Pkt.Views())
+		vv := buffer.NewVectorisedView(p.Size(), p.Views())
 		b := vv.ToView()
 
 		checker.IPv4(t, b, []checker.NetworkChecker{
@@ -214,12 +214,12 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 		}
 
 		// Verify the packet was sent out the default NIC.
-		p, ok := defaultEP.Read()
-		if !ok {
+		p := defaultEP.Read()
+		if p == nil {
 			t.Fatalf("got defaultEP.Read(_) = _, false; want = _, true (packet wasn't written out)")
 		}
 
-		vv := buffer.NewVectorisedView(p.Pkt.Size(), p.Pkt.Views())
+		vv := buffer.NewVectorisedView(p.Size(), p.Views())
 		b := vv.ToView()
 
 		checker.IPv4(t, b, []checker.NetworkChecker{
@@ -232,7 +232,7 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 		}...)
 
 		// Verify the packet was not sent out the alternate NIC.
-		if p, ok := alternateEP.Read(); ok {
+		if p := alternateEP.Read(); p != nil {
 			t.Fatalf("got alternateEP.Read(_) = %+v, true; want = _, false", p)
 		}
 	}

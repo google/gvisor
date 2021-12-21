@@ -296,7 +296,7 @@ func (c *Context) CheckNoPacketTimeout(errMsg string, wait time.Duration) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
-	if _, ok := c.linkEP.ReadContext(ctx); ok {
+	if c.linkEP.ReadContext(ctx) != nil {
 		c.t.Fatal(errMsg)
 	}
 }
@@ -315,28 +315,28 @@ func (c *Context) GetPacketWithTimeout(timeout time.Duration) []byte {
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	p, ok := c.linkEP.ReadContext(ctx)
-	if !ok {
+	pkt := c.linkEP.ReadContext(ctx)
+	if pkt == nil {
 		return nil
 	}
 
-	if p.Proto != ipv4.ProtocolNumber {
-		c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, ipv4.ProtocolNumber)
+	if got, want := pkt.NetworkProtocolNumber, ipv4.ProtocolNumber; got != want {
+		c.t.Fatalf("got pkt.NetworkProtocolNumber = %d, want = %d", got, want)
 	}
 
 	// Just check that the stack set the transport protocol number for outbound
 	// TCP messages.
 	// TODO(gvisor.dev/issues/3810): Remove when protocol numbers are part
 	// of the headerinfo.
-	if p.Pkt.TransportProtocolNumber != tcp.ProtocolNumber {
-		c.t.Fatalf("got p.Pkt.TransportProtocolNumber = %d, want = %d", p.Pkt.TransportProtocolNumber, tcp.ProtocolNumber)
+	if got, want := pkt.TransportProtocolNumber, tcp.ProtocolNumber; got != want {
+		c.t.Fatalf("got pkt.TransportProtocolNumber = %d, want = %d", got, want)
 	}
 
-	vv := buffer.NewVectorisedView(p.Pkt.Size(), p.Pkt.Views())
+	vv := buffer.NewVectorisedView(pkt.Size(), pkt.Views())
 	b := vv.ToView()
 
-	if p.Pkt.GSOOptions.Type != stack.GSONone && p.Pkt.GSOOptions.L3HdrLen != header.IPv4MinimumSize {
-		c.t.Errorf("got L3HdrLen = %d, want = %d", p.Pkt.GSOOptions.L3HdrLen, header.IPv4MinimumSize)
+	if pkt.GSOOptions.Type != stack.GSONone && pkt.GSOOptions.L3HdrLen != header.IPv4MinimumSize {
+		c.t.Errorf("got L3HdrLen = %d, want = %d", pkt.GSOOptions.L3HdrLen, header.IPv4MinimumSize)
 	}
 
 	checker.IPv4(c.t, b, checker.SrcAddr(StackAddr), checker.DstAddr(TestAddr))
@@ -365,24 +365,24 @@ func (c *Context) GetPacket() []byte {
 func (c *Context) GetPacketNonBlocking() []byte {
 	c.t.Helper()
 
-	p, ok := c.linkEP.Read()
-	if !ok {
+	pkt := c.linkEP.Read()
+	if pkt == nil {
 		return nil
 	}
 
-	if p.Proto != ipv4.ProtocolNumber {
-		c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, ipv4.ProtocolNumber)
+	if got, want := pkt.NetworkProtocolNumber, ipv4.ProtocolNumber; got != want {
+		c.t.Fatalf("got pkt.NetworkProtocolNumber = %d, want = %d", got, want)
 	}
 
 	// Just check that the stack set the transport protocol number for outbound
 	// TCP messages.
 	// TODO(gvisor.dev/issues/3810): Remove when protocol numbers are part
 	// of the headerinfo.
-	if p.Pkt.TransportProtocolNumber != tcp.ProtocolNumber {
-		c.t.Fatalf("got p.Pkt.TransportProtocolNumber = %d, want = %d", p.Pkt.TransportProtocolNumber, tcp.ProtocolNumber)
+	if got, want := pkt.TransportProtocolNumber, tcp.ProtocolNumber; got != want {
+		c.t.Fatalf("got pkt.TransportProtocolNumber = %d, want = %d", got, want)
 	}
 
-	vv := buffer.NewVectorisedView(p.Pkt.Size(), p.Pkt.Views())
+	vv := buffer.NewVectorisedView(pkt.Size(), pkt.Views())
 	b := vv.ToView()
 
 	checker.IPv4(c.t, b, checker.SrcAddr(StackAddr), checker.DstAddr(TestAddr))
@@ -609,16 +609,16 @@ func (c *Context) GetV6Packet() []byte {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	p, ok := c.linkEP.ReadContext(ctx)
-	if !ok {
+	pkt := c.linkEP.ReadContext(ctx)
+	if pkt == nil {
 		c.t.Fatalf("Packet wasn't written out")
 		return nil
 	}
 
-	if p.Proto != ipv6.ProtocolNumber {
-		c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, ipv6.ProtocolNumber)
+	if got, want := pkt.NetworkProtocolNumber, ipv6.ProtocolNumber; got != want {
+		c.t.Fatalf("got pkt.NetworkProtocolNumber = %d, want = %d", got, want)
 	}
-	vv := buffer.NewVectorisedView(p.Pkt.Size(), p.Pkt.Views())
+	vv := buffer.NewVectorisedView(pkt.Size(), pkt.Views())
 	b := vv.ToView()
 
 	checker.IPv6(c.t, b, checker.SrcAddr(StackV6Addr), checker.DstAddr(TestV6Addr))

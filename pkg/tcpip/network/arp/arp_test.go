@@ -312,8 +312,8 @@ func TestDirectRequest(t *testing.T) {
 				// No packets should be sent after receiving an invalid ARP request.
 				// There is no need to perform a blocking read here, since packets are
 				// sent in the same function that handles ARP requests.
-				if pkt, ok := c.linkEP.Read(); ok {
-					t.Errorf("unexpected packet sent with network protocol number %d", pkt.Proto)
+				if pkt := c.linkEP.Read(); pkt != nil {
+					t.Errorf("unexpected packet sent: %+v", pkt)
 				}
 				if got, want := c.s.Stats().ARP.RequestsReceivedUnknownTargetAddress.Value(), requestsRecvUnknownAddr+1; got != want {
 					t.Errorf("got c.s.Stats().ARP.RequestsReceivedUnknownTargetAddress.Value() = %d, want = %d", got, want)
@@ -330,15 +330,15 @@ func TestDirectRequest(t *testing.T) {
 			}
 
 			// Verify an ARP response was sent.
-			pi, ok := c.linkEP.Read()
-			if !ok {
+			pi := c.linkEP.Read()
+			if pi == nil {
 				t.Fatal("expected ARP response to be sent, got none")
 			}
 
-			if pi.Proto != arp.ProtocolNumber {
-				t.Fatalf("expected ARP response, got network protocol number %d", pi.Proto)
+			if got, want := pi.NetworkProtocolNumber, arp.ProtocolNumber; got != want {
+				t.Fatalf("expected %d, got network protocol number %d", want, got)
 			}
-			rep := header.ARP(pi.Pkt.NetworkHeader().View())
+			rep := header.ARP(pi.NetworkHeader().View())
 			if !rep.IsValid() {
 				t.Fatalf("invalid ARP response: len = %d; response = %x", len(rep), rep)
 			}
@@ -614,16 +614,16 @@ func TestLinkAddressRequest(t *testing.T) {
 				return
 			}
 
-			pkt, ok := linkEP.Read()
-			if !ok {
+			pkt := linkEP.Read()
+			if pkt == nil {
 				t.Fatal("expected to send a link address request")
 			}
 
-			if pkt.Route.RemoteLinkAddress != test.expectedRemoteLinkAddr {
-				t.Errorf("got pkt.Route.RemoteLinkAddress = %s, want = %s", pkt.Route.RemoteLinkAddress, test.expectedRemoteLinkAddr)
+			if pkt.EgressRoute.RemoteLinkAddress != test.expectedRemoteLinkAddr {
+				t.Errorf("got pkt.EgressRoute.RemoteLinkAddress = %s, want = %s", pkt.EgressRoute.RemoteLinkAddress, test.expectedRemoteLinkAddr)
 			}
 
-			rep := header.ARP(stack.PayloadSince(pkt.Pkt.NetworkHeader()))
+			rep := header.ARP(stack.PayloadSince(pkt.NetworkHeader()))
 			if got := rep.Op(); got != header.ARPRequest {
 				t.Errorf("got Op = %d, want = %d", got, header.ARPRequest)
 			}
@@ -665,16 +665,16 @@ func TestDADARPRequestPacket(t *testing.T) {
 	}
 
 	clock.RunImmediatelyScheduledJobs()
-	pkt, ok := e.Read()
-	if !ok {
+	pkt := e.Read()
+	if pkt == nil {
 		t.Fatal("expected to send an ARP request")
 	}
 
-	if pkt.Route.RemoteLinkAddress != header.EthernetBroadcastAddress {
-		t.Errorf("got pkt.Route.RemoteLinkAddress = %s, want = %s", pkt.Route.RemoteLinkAddress, header.EthernetBroadcastAddress)
+	if pkt.EgressRoute.RemoteLinkAddress != header.EthernetBroadcastAddress {
+		t.Errorf("got pkt.EgressRoute.RemoteLinkAddress = %s, want = %s", pkt.EgressRoute.RemoteLinkAddress, header.EthernetBroadcastAddress)
 	}
 
-	req := header.ARP(stack.PayloadSince(pkt.Pkt.NetworkHeader()))
+	req := header.ARP(stack.PayloadSince(pkt.NetworkHeader()))
 	if !req.IsValid() {
 		t.Errorf("got req.IsValid() = false, want = true")
 	}

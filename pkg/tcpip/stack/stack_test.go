@@ -4430,15 +4430,15 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			if n := ep1.Drain(); n != 0 {
 				t.Errorf("got %d unexpected packets from ep1", n)
 			}
-			pkt, ok := ep2.Read()
-			if !ok {
+			pkt := ep2.Read()
+			if pkt == nil {
 				t.Fatal("packet not sent through ep2")
 			}
-			if pkt.Route.LocalAddress != test.localAddrWithPrefix.Address {
-				t.Errorf("got pkt.Route.LocalAddress = %s, want = %s", pkt.Route.LocalAddress, test.localAddrWithPrefix.Address)
+			if pkt.EgressRoute.LocalAddress != test.localAddrWithPrefix.Address {
+				t.Errorf("got pkt.EgressRoute.LocalAddress = %s, want = %s", pkt.EgressRoute.LocalAddress, test.localAddrWithPrefix.Address)
 			}
-			if pkt.Route.RemoteAddress != test.netCfg.remoteAddr {
-				t.Errorf("got pkt.Route.RemoteAddress = %s, want = %s", pkt.Route.RemoteAddress, test.netCfg.remoteAddr)
+			if pkt.EgressRoute.RemoteAddress != test.netCfg.remoteAddr {
+				t.Errorf("got pkt.EgressRoute.RemoteAddress = %s, want = %s", pkt.EgressRoute.RemoteAddress, test.netCfg.remoteAddr)
 			}
 
 			if !test.forwardingEnabled || !test.dependentOnForwarding {
@@ -4499,18 +4499,18 @@ func TestWritePacketToRemote(t *testing.T) {
 				t.Fatalf("s.WritePacketToRemote(_, _, _, _) = %s", err)
 			}
 
-			pkt, ok := e.Read()
-			if got, want := ok, true; got != want {
+			pkt := e.Read()
+			if got, want := pkt != nil, true; got != want {
 				t.Fatalf("e.Read() = %t, want %t", got, want)
 			}
-			if got, want := pkt.Proto, test.protocol; got != want {
-				t.Fatalf("pkt.Proto = %d, want %d", got, want)
+			if got, want := pkt.NetworkProtocolNumber, test.protocol; got != want {
+				t.Fatalf("pkt.NetworkProtocolNumber = %d, want %d", got, want)
 			}
-			if pkt.Route.RemoteLinkAddress != linkAddr2 {
-				t.Fatalf("pkt.Route.RemoteAddress = %s, want %s", pkt.Route.RemoteLinkAddress, linkAddr2)
+			if pkt.EgressRoute.RemoteLinkAddress != linkAddr2 {
+				t.Fatalf("pkt.EgressRoute.RemoteAddress = %s, want %s", pkt.EgressRoute.RemoteLinkAddress, linkAddr2)
 			}
-			if diff := cmp.Diff(pkt.Pkt.Data().AsRange().ToOwnedView(), buffer.View(test.payload)); diff != "" {
-				t.Errorf("pkt.Pkt.Data mismatch (-want +got):\n%s", diff)
+			if diff := cmp.Diff(pkt.Data().AsRange().ToOwnedView(), buffer.View(test.payload)); diff != "" {
+				t.Errorf("pkt.Data mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -4520,8 +4520,8 @@ func TestWritePacketToRemote(t *testing.T) {
 		if _, ok := err.(*tcpip.ErrUnknownDevice); !ok {
 			t.Fatalf("s.WritePacketToRemote(_, _, _, _) = %s, want = %s", err, &tcpip.ErrUnknownDevice{})
 		}
-		pkt, ok := e.Read()
-		if got, want := ok, false; got != want {
+		pkt := e.Read()
+		if got, want := pkt != nil, false; got != want {
 			t.Fatalf("e.Read() = %t, %v; want %t", got, pkt, want)
 		}
 	})

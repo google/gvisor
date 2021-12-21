@@ -1013,21 +1013,21 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 				}
 
 				if !test.expectICMP {
-					if p, ok := e.Read(); ok {
+					if p := e.Read(); p != nil {
 						t.Fatalf("unexpected packet received: %#v", p)
 					}
 					return
 				}
 
 				// ICMP required.
-				p, ok := e.Read()
-				if !ok {
+				p := e.Read()
+				if p == nil {
 					t.Fatalf("expected packet wasn't written out")
 				}
 
 				// Pack the output packet into a single buffer.View as the checkers
 				// assume that.
-				vv := buffer.NewVectorisedView(p.Pkt.Size(), p.Pkt.Views())
+				vv := buffer.NewVectorisedView(p.Size(), p.Views())
 				pkt := vv.ToView()
 				if got, want := len(pkt), header.IPv6FixedHeaderSize+header.ICMPv6MinimumSize+hdr.UsedLength(); got != want {
 					t.Fatalf("got an ICMP packet of size = %d, want = %d", got, want)
@@ -1040,11 +1040,11 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 
 				// We know we are looking at no extension headers in the error ICMP
 				// packets.
-				icmpPkt := header.ICMPv6(ipHdr.Payload())
+				icm := header.ICMPv6(ipHdr.Payload())
 				// We know we sent small packets that won't be truncated when reflected
 				// back to us.
-				originalPacket := icmpPkt.Payload()
-				if got, want := icmpPkt.TypeSpecific(), test.pointer; got != want {
+				originalPacket := icm.Payload()
+				if got, want := icm.TypeSpecific(), test.pointer; got != want {
 					t.Errorf("unexpected ICMPv6 pointer, got = %d, want = %d\n", got, want)
 				}
 				if diff := cmp.Diff(hdr.View(), buffer.View(originalPacket)); diff != "" {
@@ -2212,18 +2212,18 @@ func TestInvalidIPv6Fragments(t *testing.T) {
 				t.Errorf("got Stats.IP.MalformedFragmentsReceived = %d, want = %d", got, want)
 			}
 
-			reply, ok := e.Read()
+			reply := e.Read()
 			if !test.expectICMP {
-				if ok {
+				if reply != nil {
 					t.Fatalf("unexpected ICMP error message received: %#v", reply)
 				}
 				return
 			}
-			if !ok {
+			if reply == nil {
 				t.Fatal("expected ICMP error message missing")
 			}
 
-			checker.IPv6(t, stack.PayloadSince(reply.Pkt.NetworkHeader()),
+			checker.IPv6(t, stack.PayloadSince(reply.NetworkHeader()),
 				checker.SrcAddr(addr2),
 				checker.DstAddr(addr1),
 				checker.IPFullLength(uint16(header.IPv6MinimumSize+header.ICMPv6MinimumSize+expectICMPPayload.Size())),
@@ -2465,21 +2465,21 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 
 			clock.Advance(ReassembleTimeout)
 
-			reply, ok := e.Read()
+			reply := e.Read()
 			if !test.expectICMP {
-				if ok {
+				if reply != nil {
 					t.Fatalf("unexpected ICMP error message received: %#v", reply)
 				}
 				return
 			}
-			if !ok {
+			if reply == nil {
 				t.Fatal("expected ICMP error message missing")
 			}
 			if firstFragmentSent == nil {
 				t.Fatalf("unexpected ICMP error message received: %#v", reply)
 			}
 
-			checker.IPv6(t, stack.PayloadSince(reply.Pkt.NetworkHeader()),
+			checker.IPv6(t, stack.PayloadSince(reply.NetworkHeader()),
 				checker.SrcAddr(addr2),
 				checker.DstAddr(addr1),
 				checker.IPFullLength(uint16(header.IPv6MinimumSize+header.ICMPv6MinimumSize+firstFragmentSent.Size())),
@@ -3290,15 +3290,15 @@ func TestForwarding(t *testing.T) {
 				SrcAddr:           test.sourceAddr,
 				DstAddr:           test.destAddr,
 			})
-			requestPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+			reques := stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Data: hdr.View().ToVectorisedView(),
 			})
-			incomingEndpoint.InjectInbound(ProtocolNumber, requestPkt)
+			incomingEndpoint.InjectInbound(ProtocolNumber, reques)
 
-			reply, ok := incomingEndpoint.Read()
+			reply := incomingEndpoint.Read()
 
 			if test.expectErrorICMP {
-				if !ok {
+				if reply == nil {
 					t.Fatalf("expected ICMP packet type %d through incoming NIC", test.icmpType)
 				}
 
@@ -3315,7 +3315,7 @@ func TestForwarding(t *testing.T) {
 					return len(hdr.View())
 				}
 
-				checker.IPv6(t, stack.PayloadSince(reply.Pkt.NetworkHeader()),
+				checker.IPv6(t, stack.PayloadSince(reply.NetworkHeader()),
 					checker.SrcAddr(incomingIPv6Addr.Address),
 					checker.DstAddr(test.sourceAddr),
 					checker.TTL(DefaultTTL),
@@ -3329,17 +3329,17 @@ func TestForwarding(t *testing.T) {
 				if n := outgoingEndpoint.Drain(); n != 0 {
 					t.Fatalf("got e2.Drain() = %d, want = 0", n)
 				}
-			} else if ok {
+			} else if reply != nil {
 				t.Fatalf("expected no ICMP packet through incoming NIC, instead found: %#v", reply)
 			}
 
-			reply, ok = outgoingEndpoint.Read()
+			reply = outgoingEndpoint.Read()
 			if test.expectPacketForwarded {
-				if !ok {
+				if reply == nil {
 					t.Fatal("expected ICMP Echo Request packet through outgoing NIC")
 				}
 
-				checker.IPv6WithExtHdr(t, stack.PayloadSince(reply.Pkt.NetworkHeader()),
+				checker.IPv6WithExtHdr(t, stack.PayloadSince(reply.NetworkHeader()),
 					checker.SrcAddr(test.sourceAddr),
 					checker.DstAddr(test.destAddr),
 					checker.TTL(test.TTL-1),
@@ -3354,7 +3354,7 @@ func TestForwarding(t *testing.T) {
 				if n := incomingEndpoint.Drain(); n != 0 {
 					t.Fatalf("got e1.Drain() = %d, want = 0", n)
 				}
-			} else if ok {
+			} else if reply != nil {
 				t.Fatalf("expected no ICMP Echo packet through outgoing NIC, instead found: %#v", reply)
 			}
 
@@ -3492,14 +3492,14 @@ func TestIcmpRateLimit(t *testing.T) {
 				return hdr.View()
 			},
 			check: func(t *testing.T, e *channel.Endpoint, round int) {
-				p, ok := e.Read()
-				if !ok {
+				p := e.Read()
+				if p == nil {
 					t.Fatalf("expected echo response, no packet read in endpoint in round %d", round)
 				}
-				if got, want := p.Proto, header.IPv6ProtocolNumber; got != want {
-					t.Errorf("got p.Proto = %d, want = %d", got, want)
+				if got, want := p.NetworkProtocolNumber, header.IPv6ProtocolNumber; got != want {
+					t.Errorf("got p.NetworkProtocolNumber = %d, want = %d", got, want)
 				}
-				checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
+				checker.IPv6(t, stack.PayloadSince(p.NetworkHeader()),
 					checker.SrcAddr(host1IPv6Addr.AddressWithPrefix.Address),
 					checker.DstAddr(host2IPv6Addr.AddressWithPrefix.Address),
 					checker.ICMPv6(
@@ -3536,17 +3536,17 @@ func TestIcmpRateLimit(t *testing.T) {
 				return hdr.View()
 			},
 			check: func(t *testing.T, e *channel.Endpoint, round int) {
-				p, ok := e.Read()
+				p := e.Read()
 				if round >= icmpBurst {
-					if ok {
-						t.Errorf("got packet %x in round %d, expected ICMP rate limit to stop it", p.Pkt.Data().Views(), round)
+					if p != nil {
+						t.Errorf("got packet %x in round %d, expected ICMP rate limit to stop it", p.Data().Views(), round)
 					}
 					return
 				}
-				if !ok {
+				if p == nil {
 					t.Fatalf("expected unreachable in round %d, no packet read in endpoint", round)
 				}
-				checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
+				checker.IPv6(t, stack.PayloadSince(p.NetworkHeader()),
 					checker.SrcAddr(host1IPv6Addr.AddressWithPrefix.Address),
 					checker.DstAddr(host2IPv6Addr.AddressWithPrefix.Address),
 					checker.ICMPv6(
