@@ -124,10 +124,20 @@ type Pipe struct {
 	// Access atomically.
 	readers int32
 
-	// The number of active writes for this pipe.
+	// The total number of readers for this pipe.
+	//
+	// Access atomically.
+	totalReaders int32
+
+	// The number of active writers for this pipe.
 	//
 	// Access atomically.
 	writers int32
+
+	// The total number of writers for this pipe.
+	//
+	// Access atomically.
+	totalWriters int32
 
 	// mu protects all pipe internal state below.
 	mu sync.Mutex `state:"nosave"`
@@ -158,6 +168,13 @@ type Pipe struct {
 	//
 	// This is protected by mu.
 	hadWriter bool
+
+	// waitingWriters is used to wait when writers are initialized after a
+	// reader has opened the pipe.
+	waitingWriters sync.WaitGroup `state:"nosave"`
+	// waitingReaders is used to wait when readers are initialized after a
+	// write has opened the pipe.
+	waitingReaders sync.WaitGroup `state:"nosave"`
 }
 
 // NewPipe initializes and returns a pipe.
@@ -373,6 +390,7 @@ func (p *Pipe) writeLocked(count int64, f func(safemem.BlockSeq) (uint64, error)
 // rOpen signals a new reader of the pipe.
 func (p *Pipe) rOpen() {
 	atomic.AddInt32(&p.readers, 1)
+	atomic.AddInt32(&p.totalReaders, 1)
 
 	// Notify for blocking openers.
 	p.queue.Notify(waiter.EventInternal)
@@ -383,6 +401,7 @@ func (p *Pipe) wOpen() {
 	p.mu.Lock()
 	p.hadWriter = true
 	atomic.AddInt32(&p.writers, 1)
+	atomic.AddInt32(&p.totalWriters, 1)
 	p.mu.Unlock()
 
 	// Notify for blocking openers.

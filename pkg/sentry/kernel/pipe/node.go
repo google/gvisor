@@ -15,6 +15,8 @@
 package pipe
 
 import (
+	"sync/atomic"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -73,8 +75,10 @@ func NewInodeOperations(ctx context.Context, perms fs.FilePermissions, p *Pipe) 
 func (i *inodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
 	switch {
 	case flags.Read && !flags.Write: // O_RDONLY.
+		tWriters := atomic.LoadInt32(&i.p.totalWriters)
 		r := i.p.Open(ctx, d, flags)
-		for i.p.isNamed && !flags.NonBlocking && !i.p.HasWriters() {
+		for i.p.isNamed && !flags.NonBlocking && !i.p.HasWriters() &&
+			tWriters == atomic.LoadInt32(&i.p.totalWriters) {
 			if !ctx.BlockOn((*waitWriters)(i.p), waiter.EventInternal) {
 				r.DecRef(ctx)
 				return nil, linuxerr.ErrInterrupted
@@ -87,8 +91,10 @@ func (i *inodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags fs.Fi
 		return r, nil
 
 	case flags.Write && !flags.Read: // O_WRONLY.
+		tReaders := atomic.LoadInt32(&i.p.totalReaders)
 		w := i.p.Open(ctx, d, flags)
-		for i.p.isNamed && !i.p.HasReaders() {
+		for i.p.isNamed && !i.p.HasReaders() &&
+			tReaders == atomic.LoadInt32(&i.p.totalReaders) {
 			// On a nonblocking, write-only open, the open fails with ENXIO if the
 			// read side isn't open yet.
 			if flags.NonBlocking {
