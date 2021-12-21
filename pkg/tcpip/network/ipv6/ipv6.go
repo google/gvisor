@@ -286,7 +286,7 @@ func (e *endpoint) HandleLinkResolutionFailure(pkt *stack.PacketBuffer) {
 	if pkt.NetworkPacketInfo.IsForwardedPacket {
 		// TODO(gvisor.dev/issue/6005): Propagate asynchronously generated ICMP
 		// errors to local endpoints.
-		e.protocol.returnError(&icmpReasonHostUnreachable{}, pkt)
+		e.protocol.returnError(&icmpReasonHostUnreachable{}, pkt, false /* deliveredLocally */)
 		e.stats.ip.Forwarding.Errors.Increment()
 		e.stats.ip.Forwarding.HostUnreachable.Increment()
 		return
@@ -891,7 +891,7 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 		// We return the original error rather than the result of returning
 		// the ICMP packet because the original error is more relevant to
 		// the caller.
-		_ = e.protocol.returnError(&icmpReasonHopLimitExceeded{}, pkt)
+		_ = e.protocol.returnError(&icmpReasonHopLimitExceeded{}, pkt, false /* deliveredLocally */)
 		return &ip.ErrTTLExceeded{}
 	}
 
@@ -923,7 +923,7 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 	case *tcpip.ErrNoRoute, *tcpip.ErrNetworkUnreachable:
 		// We return the original error rather than the result of returning the
 		// ICMP packet because the original error is more relevant to the caller.
-		_ = e.protocol.returnError(&icmpReasonNetUnreachable{}, pkt)
+		_ = e.protocol.returnError(&icmpReasonNetUnreachable{}, pkt, false /* deliveredLocally */)
 		return &ip.ErrNoRoute{}
 	default:
 		return &ip.ErrOther{Err: err}
@@ -965,7 +965,7 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 		//   A Packet Too Big MUST be sent by a router in response to a packet that
 		//   it cannot forward because the packet is larger than the MTU of the
 		//   outgoing link.
-		_ = e.protocol.returnError(&icmpReasonPacketTooBig{}, pkt)
+		_ = e.protocol.returnError(&icmpReasonPacketTooBig{}, pkt, false /* deliveredLocally */)
 		return &ip.ErrMessageTooLong{}
 	default:
 		return &ip.ErrOther{Err: err}
@@ -1173,10 +1173,9 @@ func (e *endpoint) processExtensionHeaders(h header.IPv6, pkt *stack.PacketBuffe
 			// restricted to appear immediately after an IPv6 fixed header.
 			if previousHeaderStart != 0 {
 				_ = e.protocol.returnError(&icmpReasonParameterProblem{
-					code:       header.ICMPv6UnknownHeader,
-					pointer:    previousHeaderStart,
-					forwarding: forwarding,
-				}, pkt)
+					code:    header.ICMPv6UnknownHeader,
+					pointer: previousHeaderStart,
+				}, pkt, !forwarding /* deliveredLocally */)
 				return fmt.Errorf("found Hop-by-Hop header = %#v with non-zero previous header offset = %d", extHdr, previousHeaderStart)
 			}
 
@@ -1227,8 +1226,7 @@ func (e *endpoint) processExtensionHeaders(h header.IPv6, pkt *stack.PacketBuffe
 							code:               header.ICMPv6UnknownOption,
 							pointer:            it.ParseOffset() + optsIt.OptionOffset(),
 							respondToMulticast: true,
-							forwarding:         forwarding,
-						}, pkt)
+						}, pkt, !forwarding /* deliveredLocally */)
 						return fmt.Errorf("found unknown hop-by-hop header option = %#v with discard action", opt)
 					default:
 						panic(fmt.Sprintf("unrecognized action for an unrecognized Hop By Hop extension header option = %#v", opt))
@@ -1253,12 +1251,7 @@ func (e *endpoint) processExtensionHeaders(h header.IPv6, pkt *stack.PacketBuffe
 				_ = e.protocol.returnError(&icmpReasonParameterProblem{
 					code:    header.ICMPv6ErroneousHeader,
 					pointer: it.ParseOffset(),
-					// For the sake of consistency, we're using the value of `forwarding`
-					// here, even though it should always be false if we've reached this
-					// point. If `forwarding` is true here, we're executing undefined
-					// behavior no matter what.
-					forwarding: forwarding,
-				}, pkt)
+				}, pkt, true /* deliveredLocally */)
 				return fmt.Errorf("found unrecognized routing type with non-zero segments left in header = %#v", extHdr)
 			}
 
@@ -1348,7 +1341,7 @@ func (e *endpoint) processExtensionHeaders(h header.IPv6, pkt *stack.PacketBuffe
 				_ = e.protocol.returnError(&icmpReasonParameterProblem{
 					code:    header.ICMPv6ErroneousHeader,
 					pointer: header.IPv6PayloadLenOffset,
-				}, pkt)
+				}, pkt, true /* deliveredLocally */)
 				return fmt.Errorf("found fragment length = %d that is not a multiple of 8 octets", fragmentPayloadLen)
 			}
 
@@ -1370,7 +1363,7 @@ func (e *endpoint) processExtensionHeaders(h header.IPv6, pkt *stack.PacketBuffe
 				_ = e.protocol.returnError(&icmpReasonParameterProblem{
 					code:    header.ICMPv6ErroneousHeader,
 					pointer: fragmentFieldOffset,
-				}, pkt)
+				}, pkt, true /* deliveredLocally */)
 				return fmt.Errorf("determined that reassembled packet length = %d would exceed allowed length = %d", lengthAfterReassembly, header.IPv6MaximumPayloadSize)
 			}
 
@@ -1445,7 +1438,7 @@ func (e *endpoint) processExtensionHeaders(h header.IPv6, pkt *stack.PacketBuffe
 						code:               header.ICMPv6UnknownOption,
 						pointer:            it.ParseOffset() + optsIt.OptionOffset(),
 						respondToMulticast: true,
-					}, pkt)
+					}, pkt, true /* deliveredLocally */)
 					return fmt.Errorf("found unknown destination header option %#v with discard action", opt)
 				default:
 					panic(fmt.Sprintf("unrecognized action for an unrecognized Destination extension header option = %#v", opt))
@@ -1493,7 +1486,7 @@ func (e *endpoint) processExtensionHeaders(h header.IPv6, pkt *stack.PacketBuffe
 					//   message with Code 4 in response to a packet for which the
 					//   transport protocol (e.g., UDP) has no listener, if that transport
 					//   protocol has no alternative means to inform the sender.
-					_ = e.protocol.returnError(&icmpReasonPortUnreachable{}, pkt)
+					_ = e.protocol.returnError(&icmpReasonPortUnreachable{}, pkt, true /* deliveredLocally */)
 					return fmt.Errorf("destination port unreachable")
 				case stack.TransportPacketProtocolUnreachable:
 					// As per RFC 8200 section 4. (page 7):
@@ -1525,7 +1518,7 @@ func (e *endpoint) processExtensionHeaders(h header.IPv6, pkt *stack.PacketBuffe
 					_ = e.protocol.returnError(&icmpReasonParameterProblem{
 						code:    header.ICMPv6UnknownHeader,
 						pointer: prevHdrIDOffset,
-					}, pkt)
+					}, pkt, true /* deliveredLocally */)
 					return fmt.Errorf("transport protocol unreachable")
 				default:
 					panic(fmt.Sprintf("unrecognized result from DeliverTransportPacket = %d", res))
