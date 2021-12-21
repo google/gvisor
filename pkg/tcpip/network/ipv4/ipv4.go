@@ -109,7 +109,7 @@ func (e *endpoint) HandleLinkResolutionFailure(pkt *stack.PacketBuffer) {
 	if pkt.NetworkPacketInfo.IsForwardedPacket {
 		// TODO(gvisor.dev/issue/6005): Propagate asynchronously generated ICMP
 		// errors to local endpoints.
-		e.protocol.returnError(&icmpReasonHostUnreachable{}, pkt)
+		e.protocol.returnError(&icmpReasonHostUnreachable{}, pkt, false /* deliveredLocally */)
 		e.stats.ip.Forwarding.Errors.Increment()
 		e.stats.ip.Forwarding.HostUnreachable.Increment()
 		return
@@ -597,7 +597,7 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 		// We return the original error rather than the result of returning
 		// the ICMP packet because the original error is more relevant to
 		// the caller.
-		_ = e.protocol.returnError(&icmpReasonTTLExceeded{}, pkt)
+		_ = e.protocol.returnError(&icmpReasonTTLExceeded{}, pkt, false /* deliveredLocally */)
 		return &ip.ErrTTLExceeded{}
 	}
 
@@ -606,9 +606,8 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 		if optProblem != nil {
 			if optProblem.NeedICMP {
 				_ = e.protocol.returnError(&icmpReasonParamProblem{
-					pointer:    optProblem.Pointer,
-					forwarding: true,
-				}, pkt)
+					pointer: optProblem.Pointer,
+				}, pkt, false /* deliveredLocally */)
 			}
 			return &ip.ErrParameterProblem{}
 		}
@@ -651,7 +650,7 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 		// We return the original error rather than the result of returning
 		// the ICMP packet because the original error is more relevant to
 		// the caller.
-		_ = e.protocol.returnError(&icmpReasonNetworkUnreachable{}, pkt)
+		_ = e.protocol.returnError(&icmpReasonNetworkUnreachable{}, pkt, false /* deliveredLocally */)
 		return &ip.ErrNoRoute{}
 	default:
 		return &ip.ErrOther{Err: err}
@@ -705,7 +704,7 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 		// WriteHeaderIncludedPacket checks for the presence of the Don't Fragment bit
 		// while sending the packet and returns this error iff fragmentation is
 		// necessary and the bit is also set.
-		_ = e.protocol.returnError(&icmpReasonFragmentationNeeded{}, pkt)
+		_ = e.protocol.returnError(&icmpReasonFragmentationNeeded{}, pkt, false /* deliveredLocally */)
 		return &ip.ErrMessageTooLong{}
 	default:
 		return &ip.ErrOther{Err: err}
@@ -880,7 +879,7 @@ func (e *endpoint) handleValidatedPacket(h header.IPv4, pkt *stack.PacketBuffer,
 				if optProblem.NeedICMP {
 					_ = e.protocol.returnError(&icmpReasonParamProblem{
 						pointer: optProblem.Pointer,
-					}, pkt)
+					}, pkt, true /* deliveredLocally */)
 					e.stats.ip.MalformedPacketsReceived.Increment()
 				}
 				return
@@ -957,7 +956,7 @@ func (e *endpoint) handleValidatedPacket(h header.IPv4, pkt *stack.PacketBuffer,
 			if optProblem.NeedICMP {
 				_ = e.protocol.returnError(&icmpReasonParamProblem{
 					pointer: optProblem.Pointer,
-				}, pkt)
+				}, pkt, true /* deliveredLocally */)
 				stats.ip.MalformedPacketsReceived.Increment()
 			}
 			return
@@ -987,13 +986,13 @@ func (e *endpoint) handleValidatedPacket(h header.IPv4, pkt *stack.PacketBuffer,
 		//     3 (Port Unreachable), when the designated transport protocol
 		//     (e.g., UDP) is unable to demultiplex the datagram but has no
 		//     protocol mechanism to inform the sender.
-		_ = e.protocol.returnError(&icmpReasonPortUnreachable{}, pkt)
+		_ = e.protocol.returnError(&icmpReasonPortUnreachable{}, pkt, true /* deliveredLocally */)
 	case stack.TransportPacketProtocolUnreachable:
 		// As per RFC: 1122 Section 3.2.2.1
 		//   A host SHOULD generate Destination Unreachable messages with code:
 		//     2 (Protocol Unreachable), when the designated transport protocol
 		//     is not supported
-		_ = e.protocol.returnError(&icmpReasonProtoUnreachable{}, pkt)
+		_ = e.protocol.returnError(&icmpReasonProtoUnreachable{}, pkt, true /* deliveredLocally */)
 	default:
 		panic(fmt.Sprintf("unrecognized result from DeliverTransportPacket = %d", res))
 	}
