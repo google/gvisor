@@ -957,12 +957,12 @@ func TestForwardingHook(t *testing.T) {
 						t.Errorf("got ip2Stats.PacketsSent.Value() = %d, want = %d", got, want)
 					}
 
-					p, ok := e2.Read()
-					if ok != expectTransmitPacket {
-						t.Fatalf("got e2.Read() = (%#v, %t), want = (_, %t)", p, ok, expectTransmitPacket)
+					p := e2.Read()
+					if (p != nil) != expectTransmitPacket {
+						t.Fatalf("got e2.Read() = %#v, want = (_ == nil) = %t", p, expectTransmitPacket)
 					}
 					if expectTransmitPacket {
-						test.checker(t, stack.PayloadSince(p.Pkt.NetworkHeader()))
+						test.checker(t, stack.PayloadSince(p.NetworkHeader()))
 					}
 				})
 			}
@@ -1147,13 +1147,13 @@ func TestInputHookWithLocalForwarding(t *testing.T) {
 						t.Errorf("got ip2Stats.PacketsSent.Value() = %d, want = 0", got)
 					}
 
-					if p, ok := e1.Read(); ok == subTest.expectDrop {
-						t.Errorf("got e1.Read() = (%#v, %t), want = (_, %t)", p, ok, !subTest.expectDrop)
+					if p := e1.Read(); (p != nil) == subTest.expectDrop {
+						t.Errorf("got e1.Read() = %#v, want = (_ == nil) = %t", p, !subTest.expectDrop)
 					} else if !subTest.expectDrop {
-						test.checker(t, stack.PayloadSince(p.Pkt.NetworkHeader()))
+						test.checker(t, stack.PayloadSince(p.NetworkHeader()))
 					}
-					if p, ok := e2.Read(); ok {
-						t.Errorf("got e1.Read() = (%#v, true), want = (_, false)", p)
+					if p := e2.Read(); p != nil {
+						t.Errorf("got e1.Read() = %#v, want = nil)", p)
 					}
 				})
 			}
@@ -1502,11 +1502,11 @@ func TestNATEcho(t *testing.T) {
 								ep2.InjectInbound(test.netProto, stack.NewPacketBuffer(stack.PacketBufferOptions{
 									Data: test.echoPkt(natTypeTest.requestSrc, natTypeTest.requestDst, false /* reply */).ToVectorisedView(),
 								}))
-								pkt, ok := ep1.Read()
-								if !ok {
+								pkt := ep1.Read()
+								if pkt == nil {
 									t.Fatal("expected to read a packet on ep1")
 								}
-								test.checkEchoPkt(t, stack.PayloadSince(pkt.Pkt.NetworkHeader()), natTypeTest.expectedRequestSrc, natTypeTest.expectedRequestDst, false /* reply */)
+								test.checkEchoPkt(t, stack.PayloadSince(pkt.NetworkHeader()), natTypeTest.expectedRequestSrc, natTypeTest.expectedRequestDst, false /* reply */)
 							}
 
 							if t.Failed() {
@@ -1518,11 +1518,11 @@ func TestNATEcho(t *testing.T) {
 								ep1.InjectInbound(test.netProto, stack.NewPacketBuffer(stack.PacketBufferOptions{
 									Data: test.echoPkt(natTypeTest.expectedRequestDst, natTypeTest.expectedRequestSrc, true /* reply */).ToVectorisedView(),
 								}))
-								pkt, ok := ep2.Read()
-								if !ok {
+								pkt := ep2.Read()
+								if pkt == nil {
 									t.Fatal("expected to read a packet on ep2")
 								}
-								test.checkEchoPkt(t, stack.PayloadSince(pkt.Pkt.NetworkHeader()), natTypeTest.requestDst, natTypeTest.requestSrc, true /* reply */)
+								test.checkEchoPkt(t, stack.PayloadSince(pkt.NetworkHeader()), natTypeTest.requestDst, natTypeTest.requestSrc, true /* reply */)
 							}
 						})
 					}
@@ -2485,11 +2485,11 @@ func TestNATICMPError(t *testing.T) {
 									}))
 
 									{
-										pkt, ok := ep1.Read()
-										if !ok {
+										pkt := ep1.Read()
+										if pkt == nil {
 											t.Fatal("expected to read a packet on ep1")
 										}
-										pktView := stack.PayloadSince(pkt.Pkt.NetworkHeader())
+										pktView := stack.PayloadSince(pkt.NetworkHeader())
 										transportType.checkNATed(t, pktView)
 										if t.Failed() {
 											t.FailNow()
@@ -2503,16 +2503,16 @@ func TestNATICMPError(t *testing.T) {
 										}))
 									}
 
-									pkt, ok := ep2.Read()
+									pkt := ep2.Read()
 									expectResponse := icmpType.expectResponse && trimTest.expectNATedICMP
-									if ok != expectResponse {
-										t.Fatalf("got ep2.Read() = (%#v, %t), want = (_, %t)", pkt, ok, expectResponse)
+									if (pkt != nil) != expectResponse {
+										t.Fatalf("got ep2.Read() = %#v, want = (_ == nil) = %t", pkt, expectResponse)
 									}
 									if !expectResponse {
 										return
 									}
 									test.decrementTTL(buf)
-									test.checkNATedError(t, stack.PayloadSince(pkt.Pkt.NetworkHeader()), buf, icmpType.val)
+									test.checkNATedError(t, stack.PayloadSince(pkt.NetworkHeader()), buf, icmpType.val)
 								})
 							}
 						})
@@ -2851,11 +2851,11 @@ func TestSNATHandlePortOrIdentConflicts(t *testing.T) {
 														Data: transportType.buf(srcAddr, srcPortOrIdent).ToVectorisedView(),
 													}))
 
-													pkt, ok := ep1.Read()
-													if !ok {
+													pkt := ep1.Read()
+													if pkt == nil {
 														t.Fatal("expected to read a packet on ep1")
 													}
-													pktView := stack.PayloadSince(pkt.Pkt.NetworkHeader())
+													pktView := stack.PayloadSince(pkt.NetworkHeader())
 													transportType.checkNATed(t, pktView, srcPortOrIdent, i == 0, srcPortOrIdentRange.targetRange)
 												})
 											}

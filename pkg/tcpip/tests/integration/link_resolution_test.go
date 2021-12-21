@@ -430,14 +430,14 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 		utils.RxICMPv6EchoRequest(e, src, dst, ttl)
 	}
 
-	arpChecker := func(t *testing.T, request channel.PacketInfo, src, dst tcpip.Address) {
-		if request.Proto != arp.ProtocolNumber {
-			t.Errorf("got request.Proto = %d, want = %d", request.Proto, arp.ProtocolNumber)
+	arpChecker := func(t *testing.T, request *stack.PacketBuffer, src, dst tcpip.Address) {
+		if request.NetworkProtocolNumber != arp.ProtocolNumber {
+			t.Errorf("got request.NetworkProtocolNumber = %d, want = %d", request.NetworkProtocolNumber, arp.ProtocolNumber)
 		}
-		if request.Route.RemoteLinkAddress != header.EthernetBroadcastAddress {
-			t.Errorf("got request.Route.RemoteLinkAddress = %s, want = %s", request.Route.RemoteLinkAddress, header.EthernetBroadcastAddress)
+		if request.EgressRoute.RemoteLinkAddress != header.EthernetBroadcastAddress {
+			t.Errorf("got request.EgressRoute.RemoteLinkAddress = %s, want = %s", request.EgressRoute.RemoteLinkAddress, header.EthernetBroadcastAddress)
 		}
-		rep := header.ARP(request.Pkt.NetworkHeader().View())
+		rep := header.ARP(request.NetworkHeader().View())
 		if got := rep.Op(); got != header.ARPRequest {
 			t.Errorf("got Op() = %d, want = %d", got, header.ARPRequest)
 		}
@@ -452,17 +452,17 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 		}
 	}
 
-	ndpChecker := func(t *testing.T, request channel.PacketInfo, src, dst tcpip.Address) {
-		if request.Proto != header.IPv6ProtocolNumber {
-			t.Fatalf("got Proto = %d, want = %d", request.Proto, header.IPv6ProtocolNumber)
+	ndpChecker := func(t *testing.T, request *stack.PacketBuffer, src, dst tcpip.Address) {
+		if request.NetworkProtocolNumber != header.IPv6ProtocolNumber {
+			t.Fatalf("got Proto = %d, want = %d", request.NetworkProtocolNumber, header.IPv6ProtocolNumber)
 		}
 
 		snmc := header.SolicitedNodeAddr(dst)
-		if want := header.EthernetAddressFromMulticastIPv6Address(snmc); request.Route.RemoteLinkAddress != want {
-			t.Errorf("got remote link address = %s, want = %s", request.Route.RemoteLinkAddress, want)
+		if want := header.EthernetAddressFromMulticastIPv6Address(snmc); request.EgressRoute.RemoteLinkAddress != want {
+			t.Errorf("got remote link address = %s, want = %s", request.EgressRoute.RemoteLinkAddress, want)
 		}
 
-		checker.IPv6(t, stack.PayloadSince(request.Pkt.NetworkHeader()),
+		checker.IPv6(t, stack.PayloadSince(request.NetworkHeader()),
 			checker.SrcAddr(src),
 			checker.DstAddr(snmc),
 			checker.TTL(header.NDPHopLimit),
@@ -506,7 +506,7 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 		outgoingAddr                 tcpip.AddressWithPrefix
 		transportProtocol            func(*stack.Stack) stack.TransportProtocol
 		rx                           func(*channel.Endpoint, tcpip.Address, tcpip.Address)
-		linkResolutionRequestChecker func(*testing.T, channel.PacketInfo, tcpip.Address, tcpip.Address)
+		linkResolutionRequestChecker func(*testing.T, *stack.PacketBuffer, tcpip.Address, tcpip.Address)
 		icmpReplyChecker             func(*testing.T, []byte, tcpip.Address, tcpip.Address)
 		mtu                          uint32
 	}{
@@ -613,8 +613,8 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 			clock.RunImmediatelyScheduledJobs()
 
 			for i := 0; i < int(nudConfigs.MaxMulticastProbes); i++ {
-				request, ok := outgoingEndpoint.Read()
-				if !ok {
+				request := outgoingEndpoint.Read()
+				if request == nil {
 					t.Fatal("expected ARP packet through outgoing NIC")
 				}
 
@@ -628,17 +628,17 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 			// necessary because outgoing packets are dequeued asynchronously when
 			// link resolution fails, and this dequeue is what triggers the ICMP
 			// error.
-			reply, ok := incomingEndpoint.Read()
-			if !ok {
+			reply := incomingEndpoint.Read()
+			if reply == nil {
 				t.Fatal("expected ICMP packet through incoming NIC")
 			}
 
-			test.icmpReplyChecker(t, stack.PayloadSince(reply.Pkt.NetworkHeader()), test.incomingAddr.Address, test.sourceAddr)
+			test.icmpReplyChecker(t, stack.PayloadSince(reply.NetworkHeader()), test.incomingAddr.Address, test.sourceAddr)
 
 			// Since link resolution failed, we don't expect the packet to be
 			// forwarded.
-			forwardedPacket, ok := outgoingEndpoint.Read()
-			if ok {
+			forwardedPacket := outgoingEndpoint.Read()
+			if forwardedPacket != nil {
 				t.Fatalf("expected no ICMP Echo packet through outgoing NIC, instead found: %#v", forwardedPacket)
 			}
 

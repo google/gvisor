@@ -475,30 +475,30 @@ func routeICMPv6Packet(t *testing.T, clock *faketime.ManualClock, args routeArgs
 	t.Helper()
 
 	clock.RunImmediatelyScheduledJobs()
-	pi, ok := args.src.Read()
-	if !ok {
+	pi := args.src.Read()
+	if pi == nil {
 		t.Fatal("packet didn't arrive")
 	}
 
 	{
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Data: buffer.NewVectorisedView(pi.Pkt.Size(), pi.Pkt.Views()),
+			Data: buffer.NewVectorisedView(pi.Size(), pi.Views()),
 		})
-		args.dst.InjectLinkAddr(pi.Proto, args.dst.LinkAddress(), pkt)
+		args.dst.InjectLinkAddr(pi.NetworkProtocolNumber, args.dst.LinkAddress(), pkt)
 	}
 
-	if pi.Proto != ProtocolNumber {
-		t.Errorf("unexpected protocol number %d", pi.Proto)
+	if pi.NetworkProtocolNumber != ProtocolNumber {
+		t.Errorf("unexpected protocol number %d", pi.NetworkProtocolNumber)
 		return
 	}
 
-	if len(args.remoteLinkAddr) != 0 && pi.Route.RemoteLinkAddress != args.remoteLinkAddr {
-		t.Errorf("got remote link address = %s, want = %s", pi.Route.RemoteLinkAddress, args.remoteLinkAddr)
+	if len(args.remoteLinkAddr) != 0 && pi.EgressRoute.RemoteLinkAddress != args.remoteLinkAddr {
+		t.Errorf("got remote link address = %s, want = %s", pi.EgressRoute.RemoteLinkAddress, args.remoteLinkAddr)
 	}
 
 	// Pull the full payload since network header. Needed for header.IPv6 to
 	// extract its payload.
-	ipv6 := header.IPv6(stack.PayloadSince(pi.Pkt.NetworkHeader()))
+	ipv6 := header.IPv6(stack.PayloadSince(pi.NetworkHeader()))
 	transProto := tcpip.TransportProtocolNumber(ipv6.NextHeader())
 	if transProto != header.ICMPv6ProtocolNumber {
 		t.Errorf("unexpected transport protocol number %d", transProto)
@@ -1281,18 +1281,18 @@ func TestLinkAddressRequest(t *testing.T) {
 				return
 			}
 
-			pkt, ok := linkEP.Read()
-			if !ok {
+			pkt := linkEP.Read()
+			if pkt == nil {
 				t.Fatal("expected to send a link address request")
 			}
 
 			var want stack.RouteInfo
 			want.NetProto = ProtocolNumber
 			want.RemoteLinkAddress = test.expectedRemoteLinkAddr
-			if diff := cmp.Diff(want, pkt.Route, cmp.AllowUnexported(want)); diff != "" {
+			if diff := cmp.Diff(want, pkt.EgressRoute, cmp.AllowUnexported(want)); diff != "" {
 				t.Errorf("route info mismatch (-want +got):\n%s", diff)
 			}
-			checker.IPv6(t, stack.PayloadSince(pkt.Pkt.NetworkHeader()),
+			checker.IPv6(t, stack.PayloadSince(pkt.NetworkHeader()),
 				checker.SrcAddr(lladdr1),
 				checker.DstAddr(test.expectedRemoteAddr),
 				checker.TTL(header.NDPHopLimit),
@@ -1359,17 +1359,17 @@ func TestPacketQueing(t *testing.T) {
 				}))
 			},
 			checkResp: func(t *testing.T, e *channel.Endpoint) {
-				p, ok := e.Read()
-				if !ok {
+				p := e.Read()
+				if p == nil {
 					t.Fatalf("timed out waiting for packet")
 				}
-				if p.Proto != ProtocolNumber {
-					t.Errorf("got p.Proto = %d, want = %d", p.Proto, ProtocolNumber)
+				if p.NetworkProtocolNumber != ProtocolNumber {
+					t.Errorf("got p.NetworkProtocolNumber = %d, want = %d", p.NetworkProtocolNumber, ProtocolNumber)
 				}
-				if p.Route.RemoteLinkAddress != host2NICLinkAddr {
-					t.Errorf("got p.Route.RemoteLinkAddress = %s, want = %s", p.Route.RemoteLinkAddress, host2NICLinkAddr)
+				if p.EgressRoute.RemoteLinkAddress != host2NICLinkAddr {
+					t.Errorf("got p.EgressRoute.RemoteLinkAddress = %s, want = %s", p.EgressRoute.RemoteLinkAddress, host2NICLinkAddr)
 				}
-				checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
+				checker.IPv6(t, stack.PayloadSince(p.NetworkHeader()),
 					checker.SrcAddr(host1IPv6Addr.AddressWithPrefix.Address),
 					checker.DstAddr(host2IPv6Addr.AddressWithPrefix.Address),
 					checker.ICMPv6(
@@ -1405,17 +1405,17 @@ func TestPacketQueing(t *testing.T) {
 				}))
 			},
 			checkResp: func(t *testing.T, e *channel.Endpoint) {
-				p, ok := e.Read()
-				if !ok {
+				p := e.Read()
+				if p == nil {
 					t.Fatalf("timed out waiting for packet")
 				}
-				if p.Proto != ProtocolNumber {
-					t.Errorf("got p.Proto = %d, want = %d", p.Proto, ProtocolNumber)
+				if p.NetworkProtocolNumber != ProtocolNumber {
+					t.Errorf("got p.NetworkProtocolNumber = %d, want = %d", p.NetworkProtocolNumber, ProtocolNumber)
 				}
-				if p.Route.RemoteLinkAddress != host2NICLinkAddr {
-					t.Errorf("got p.Route.RemoteLinkAddress = %s, want = %s", p.Route.RemoteLinkAddress, host2NICLinkAddr)
+				if p.EgressRoute.RemoteLinkAddress != host2NICLinkAddr {
+					t.Errorf("got p.EgressRoute.RemoteLinkAddress = %s, want = %s", p.EgressRoute.RemoteLinkAddress, host2NICLinkAddr)
 				}
-				checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
+				checker.IPv6(t, stack.PayloadSince(p.NetworkHeader()),
 					checker.SrcAddr(host1IPv6Addr.AddressWithPrefix.Address),
 					checker.DstAddr(host2IPv6Addr.AddressWithPrefix.Address),
 					checker.ICMPv6(
@@ -1460,18 +1460,18 @@ func TestPacketQueing(t *testing.T) {
 			// be performed.
 			{
 				clock.RunImmediatelyScheduledJobs()
-				p, ok := e.Read()
-				if !ok {
+				p := e.Read()
+				if p == nil {
 					t.Fatalf("timed out waiting for packet")
 				}
-				if p.Proto != ProtocolNumber {
-					t.Errorf("got Proto = %d, want = %d", p.Proto, ProtocolNumber)
+				if p.NetworkProtocolNumber != ProtocolNumber {
+					t.Errorf("got Proto = %d, want = %d", p.NetworkProtocolNumber, ProtocolNumber)
 				}
 				snmc := header.SolicitedNodeAddr(host2IPv6Addr.AddressWithPrefix.Address)
-				if want := header.EthernetAddressFromMulticastIPv6Address(snmc); p.Route.RemoteLinkAddress != want {
-					t.Errorf("got p.Route.RemoteLinkAddress = %s, want = %s", p.Route.RemoteLinkAddress, want)
+				if want := header.EthernetAddressFromMulticastIPv6Address(snmc); p.EgressRoute.RemoteLinkAddress != want {
+					t.Errorf("got p.EgressRoute.RemoteLinkAddress = %s, want = %s", p.EgressRoute.RemoteLinkAddress, want)
 				}
-				checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
+				checker.IPv6(t, stack.PayloadSince(p.NetworkHeader()),
 					checker.SrcAddr(host1IPv6Addr.AddressWithPrefix.Address),
 					checker.DstAddr(snmc),
 					checker.TTL(header.NDPHopLimit),

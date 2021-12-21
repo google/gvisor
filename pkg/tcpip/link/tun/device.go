@@ -248,12 +248,12 @@ func (d *Device) Read() ([]byte, error) {
 	}
 
 	for {
-		info, ok := endpoint.Read()
-		if !ok {
+		pkt := endpoint.Read()
+		if pkt == nil {
 			return nil, linuxerr.ErrWouldBlock
 		}
 
-		v, ok := d.encodePkt(&info)
+		v, ok := d.encodePkt(pkt)
 		if !ok {
 			// Ignore unsupported packet.
 			continue
@@ -263,14 +263,14 @@ func (d *Device) Read() ([]byte, error) {
 }
 
 // encodePkt encodes packet for fd side.
-func (d *Device) encodePkt(info *channel.PacketInfo) (buffer.View, bool) {
+func (d *Device) encodePkt(pkt *stack.PacketBuffer) (buffer.View, bool) {
 	var vv buffer.VectorisedView
 
 	// Packet information.
 	if !d.flags.NoPacketInfo {
 		hdr := make(PacketInfoHeader, PacketInfoHeaderSize)
 		hdr.Encode(&PacketInfoFields{
-			Protocol: info.Proto,
+			Protocol: pkt.NetworkProtocolNumber,
 		})
 		vv.AppendView(buffer.View(hdr))
 	}
@@ -278,17 +278,17 @@ func (d *Device) encodePkt(info *channel.PacketInfo) (buffer.View, bool) {
 	// Ethernet header (TAP only).
 	if d.flags.TAP {
 		// Add ethernet header if not provided.
-		if info.Pkt.LinkHeader().View().IsEmpty() {
-			d.endpoint.AddHeader(info.Route.LocalLinkAddress, info.Route.RemoteLinkAddress, info.Proto, info.Pkt)
+		if pkt.LinkHeader().View().IsEmpty() {
+			d.endpoint.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
 		}
-		vv.AppendView(info.Pkt.LinkHeader().View())
+		vv.AppendView(pkt.LinkHeader().View())
 	}
 
 	// Append upper headers.
-	vv.AppendView(info.Pkt.NetworkHeader().View())
-	vv.AppendView(info.Pkt.TransportHeader().View())
+	vv.AppendView(pkt.NetworkHeader().View())
+	vv.AppendView(pkt.TransportHeader().View())
 	// Append data payload.
-	vv.Append(info.Pkt.Data().ExtractVV())
+	vv.Append(pkt.Data().ExtractVV())
 
 	return vv.ToView(), true
 }

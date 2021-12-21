@@ -402,21 +402,21 @@ func (c *testContext) createEndpointForFlow(flow testFlow) {
 func (c *testContext) getPacketAndVerify(flow testFlow, checkers ...checker.NetworkChecker) []byte {
 	c.t.Helper()
 
-	p, ok := c.linkEP.Read()
-	if !ok {
+	p := c.linkEP.Read()
+	if p == nil {
 		c.t.Fatalf("Packet wasn't written out")
 		return nil
 	}
 
-	if p.Proto != flow.netProto() {
-		c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, flow.netProto())
+	if got, want := p.NetworkProtocolNumber, flow.netProto(); got != want {
+		c.t.Fatalf("got p.NetworkProtocolNumber = %d, want = %d", got, want)
 	}
 
-	if got, want := p.Pkt.TransportProtocolNumber, header.UDPProtocolNumber; got != want {
-		c.t.Errorf("got p.Pkt.TransportProtocolNumber = %d, want = %d", got, want)
+	if got, want := p.TransportProtocolNumber, header.UDPProtocolNumber; got != want {
+		c.t.Errorf("got p.TransportProtocolNumber = %d, want = %d", got, want)
 	}
 
-	vv := buffer.NewVectorisedView(p.Pkt.Size(), p.Pkt.Views())
+	vv := buffer.NewVectorisedView(p.Size(), p.Views())
 	b := vv.ToView()
 
 	h := flow.header4Tuple(outgoing)
@@ -1925,20 +1925,19 @@ func TestV4UnknownDestination(t *testing.T) {
 				}
 			}
 			if !tc.icmpRequired {
-				if p, ok := c.linkEP.Read(); ok {
+				if p := c.linkEP.Read(); p != nil {
 					t.Fatalf("unexpected packet received: %+v", p)
 				}
 				return
 			}
 
 			// ICMP required.
-			p, ok := c.linkEP.Read()
-			if !ok {
+			p := c.linkEP.Read()
+			if p == nil {
 				t.Fatalf("packet wasn't written out")
-				return
 			}
 
-			vv := buffer.NewVectorisedView(p.Pkt.Size(), p.Pkt.Views())
+			vv := buffer.NewVectorisedView(p.Size(), p.Views())
 			pkt := vv.ToView()
 			if got, want := len(pkt), header.IPv4MinimumProcessableDatagramSize; got > want {
 				t.Fatalf("got an ICMP packet of size: %d, want: sz <= %d", got, want)
@@ -2019,20 +2018,19 @@ func TestV6UnknownDestination(t *testing.T) {
 				}
 			}
 			if !tc.icmpRequired {
-				if p, ok := c.linkEP.Read(); ok {
+				if p := c.linkEP.Read(); p != nil {
 					t.Fatalf("unexpected packet received: %+v", p)
 				}
 				return
 			}
 
 			// ICMP required.
-			p, ok := c.linkEP.Read()
-			if !ok {
+			p := c.linkEP.Read()
+			if p == nil {
 				t.Fatalf("packet wasn't written out")
-				return
 			}
 
-			vv := buffer.NewVectorisedView(p.Pkt.Size(), p.Pkt.Views())
+			vv := buffer.NewVectorisedView(p.Size(), p.Views())
 			pkt := vv.ToView()
 			if got, want := len(pkt), header.IPv6MinimumMTU; got > want {
 				t.Fatalf("got an ICMP packet of size: %d, want: sz <= %d", got, want)

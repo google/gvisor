@@ -1716,11 +1716,11 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 						return
 					}
 
-					pkt, ok := e.Read()
-					if !ok {
+					pkt := e.Read()
+					if pkt == nil {
 						t.Fatal("expected a packet to be written")
 					}
-					test.checker(t, pkt.Pkt, subTest.srcAddr)
+					test.checker(t, pkt, subTest.srcAddr)
 				})
 			}
 		})
@@ -1958,14 +1958,14 @@ func TestICMPInclusionSize(t *testing.T) {
 				},
 			})
 			v := test.injector(e, test.srcAddress, payload)
-			pkt, ok := e.Read()
-			if !ok {
+			pkt := e.Read()
+			if pkt == nil {
 				t.Fatal("expected a packet to be written")
 			}
-			if got, want := pkt.Pkt.Size(), test.replyLength; got != want {
+			if got, want := pkt.Size(), test.replyLength; got != want {
 				t.Fatalf("got %d bytes of icmp error packet, want %d", got, want)
 			}
-			test.checker(t, pkt.Pkt, v)
+			test.checker(t, pkt, v)
 		})
 	}
 }

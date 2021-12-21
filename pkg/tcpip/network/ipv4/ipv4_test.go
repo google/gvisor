@@ -432,10 +432,10 @@ func TestForwarding(t *testing.T) {
 			requestPkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
 			incomingEndpoint.InjectInbound(header.IPv4ProtocolNumber, requestPkt)
 
-			reply, ok := incomingEndpoint.Read()
+			reply := incomingEndpoint.Read()
 
 			if test.expectErrorICMP {
-				if !ok {
+				if reply == nil {
 					t.Fatalf("expected ICMP packet type %d through incoming NIC", test.icmpType)
 				}
 
@@ -451,7 +451,7 @@ func TestForwarding(t *testing.T) {
 					return len(hdr.View())
 				}
 
-				checker.IPv4(t, stack.PayloadSince(reply.Pkt.NetworkHeader()),
+				checker.IPv4(t, stack.PayloadSince(reply.NetworkHeader()),
 					checker.SrcAddr(incomingIPv4Addr.Address),
 					checker.DstAddr(test.sourceAddr),
 					checker.TTL(ipv4.DefaultTTL),
@@ -462,7 +462,7 @@ func TestForwarding(t *testing.T) {
 						checker.ICMPv4Payload(hdr.View()[:expectedICMPPayloadLength()]),
 					),
 				)
-			} else if ok {
+			} else if reply != nil {
 				t.Fatalf("expected no ICMP packet through incoming NIC, instead found: %#v", reply)
 			}
 
@@ -470,11 +470,11 @@ func TestForwarding(t *testing.T) {
 				if len(test.expectedFragmentsForwarded) != 0 {
 					var fragmentedPackets []*stack.PacketBuffer
 					for i := 0; i < len(test.expectedFragmentsForwarded); i++ {
-						reply, ok = outgoingEndpoint.Read()
-						if !ok {
+						reply := outgoingEndpoint.Read()
+						if reply == nil {
 							t.Fatal("expected ICMP Echo fragment through outgoing NIC")
 						}
-						fragmentedPackets = append(fragmentedPackets, reply.Pkt)
+						fragmentedPackets = append(fragmentedPackets, reply)
 					}
 
 					// The forwarded packet's TTL will have been decremented.
@@ -489,12 +489,12 @@ func TestForwarding(t *testing.T) {
 						t.Error(err)
 					}
 				} else {
-					reply, ok = outgoingEndpoint.Read()
-					if !ok {
+					reply := outgoingEndpoint.Read()
+					if reply == nil {
 						t.Fatal("expected ICMP Echo packet through outgoing NIC")
 					}
 
-					checker.IPv4(t, stack.PayloadSince(reply.Pkt.NetworkHeader()),
+					checker.IPv4(t, stack.PayloadSince(reply.NetworkHeader()),
 						checker.SrcAddr(test.sourceAddr),
 						checker.DstAddr(test.destAddr),
 						checker.TTL(test.TTL-1),
@@ -508,7 +508,7 @@ func TestForwarding(t *testing.T) {
 					)
 				}
 			} else {
-				if reply, ok = outgoingEndpoint.Read(); ok {
+				if reply := outgoingEndpoint.Read(); reply != nil {
 					t.Fatalf("expected no ICMP Echo packet through outgoing NIC, instead found: %#v", reply)
 				}
 			}
@@ -1253,8 +1253,8 @@ func TestIPv4Sanity(t *testing.T) {
 				Data: hdr.View().ToVectorisedView(),
 			})
 			e.InjectInbound(header.IPv4ProtocolNumber, requestPkt)
-			reply, ok := e.Read()
-			if !ok {
+			reply := e.Read()
+			if reply == nil {
 				if test.shouldFail {
 					if test.expectErrorICMP {
 						t.Fatalf("ICMP error response (type %d, code %d) missing", test.ICMPType, test.ICMPCode)
@@ -1271,15 +1271,15 @@ func TestIPv4Sanity(t *testing.T) {
 			}
 
 			// Check the route that brought the packet to us.
-			if reply.Route.LocalAddress != ipv4Addr.Address {
-				t.Errorf("got pkt.Route.LocalAddress = %s, want = %s", reply.Route.LocalAddress, ipv4Addr.Address)
+			if reply.EgressRoute.LocalAddress != ipv4Addr.Address {
+				t.Errorf("got pkt.Route.LocalAddress = %s, want = %s", reply.EgressRoute.LocalAddress, ipv4Addr.Address)
 			}
-			if reply.Route.RemoteAddress != remoteIPv4Addr {
-				t.Errorf("got pkt.Route.RemoteAddress = %s, want = %s", reply.Route.RemoteAddress, remoteIPv4Addr)
+			if reply.EgressRoute.RemoteAddress != remoteIPv4Addr {
+				t.Errorf("got pkt.Route.RemoteAddress = %s, want = %s", reply.EgressRoute.RemoteAddress, remoteIPv4Addr)
 			}
 
 			// Make sure it's all in one buffer for checker.
-			replyIPHeader := header.IPv4(stack.PayloadSince(reply.Pkt.NetworkHeader()))
+			replyIPHeader := header.IPv4(stack.PayloadSince(reply.NetworkHeader()))
 
 			// At this stage we only know it's probably an IP+ICMP header so verify
 			// that much.
@@ -2201,21 +2201,21 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 
 			clock.Advance(ipv4.ReassembleTimeout)
 
-			reply, ok := e.Read()
+			reply := e.Read()
 			if !test.expectICMP {
-				if ok {
+				if reply != nil {
 					t.Fatalf("unexpected ICMP error message received: %#v", reply)
 				}
 				return
 			}
-			if !ok {
+			if reply == nil {
 				t.Fatal("expected ICMP error message missing")
 			}
 			if firstFragmentSent == nil {
 				t.Fatalf("unexpected ICMP error message received: %#v", reply)
 			}
 
-			checker.IPv4(t, stack.PayloadSince(reply.Pkt.NetworkHeader()),
+			checker.IPv4(t, stack.PayloadSince(reply.NetworkHeader()),
 				checker.SrcAddr(addr2),
 				checker.DstAddr(addr1),
 				checker.IPFullLength(uint16(header.IPv4MinimumSize+header.ICMPv4MinimumSize+firstFragmentSent.Size())),
@@ -2992,17 +2992,17 @@ func TestPacketQueuing(t *testing.T) {
 				}))
 			},
 			checkResp: func(t *testing.T, e *channel.Endpoint) {
-				p, ok := e.Read()
-				if !ok {
+				p := e.Read()
+				if p == nil {
 					t.Fatalf("timed out waiting for packet")
 				}
-				if p.Proto != header.IPv4ProtocolNumber {
-					t.Errorf("got p.Proto = %d, want = %d", p.Proto, header.IPv4ProtocolNumber)
+				if p.NetworkProtocolNumber != header.IPv4ProtocolNumber {
+					t.Errorf("got p.NetworkProtocolNumber = %d, want = %d", p.NetworkProtocolNumber, header.IPv4ProtocolNumber)
 				}
-				if p.Route.RemoteLinkAddress != host2NICLinkAddr {
-					t.Errorf("got p.Route.RemoteLinkAddress = %s, want = %s", p.Route.RemoteLinkAddress, host2NICLinkAddr)
+				if p.EgressRoute.RemoteLinkAddress != host2NICLinkAddr {
+					t.Errorf("got p.EgressRoute.RemoteLinkAddress = %s, want = %s", p.EgressRoute.RemoteLinkAddress, host2NICLinkAddr)
 				}
-				checker.IPv4(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
+				checker.IPv4(t, stack.PayloadSince(p.NetworkHeader()),
 					checker.SrcAddr(host1IPv4Addr.AddressWithPrefix.Address),
 					checker.DstAddr(host2IPv4Addr.AddressWithPrefix.Address),
 					checker.ICMPv4(
@@ -3035,17 +3035,17 @@ func TestPacketQueuing(t *testing.T) {
 				}))
 			},
 			checkResp: func(t *testing.T, e *channel.Endpoint) {
-				p, ok := e.Read()
-				if !ok {
+				p := e.Read()
+				if p == nil {
 					t.Fatalf("timed out waiting for packet")
 				}
-				if p.Proto != header.IPv4ProtocolNumber {
-					t.Errorf("got p.Proto = %d, want = %d", p.Proto, header.IPv4ProtocolNumber)
+				if p.NetworkProtocolNumber != header.IPv4ProtocolNumber {
+					t.Errorf("got p.NetworkProtocolNumber = %d, want = %d", p.NetworkProtocolNumber, header.IPv4ProtocolNumber)
 				}
-				if p.Route.RemoteLinkAddress != host2NICLinkAddr {
-					t.Errorf("got p.Route.RemoteLinkAddress = %s, want = %s", p.Route.RemoteLinkAddress, host2NICLinkAddr)
+				if p.EgressRoute.RemoteLinkAddress != host2NICLinkAddr {
+					t.Errorf("got p.EgressRoute.RemoteLinkAddress = %s, want = %s", p.EgressRoute.RemoteLinkAddress, host2NICLinkAddr)
 				}
-				checker.IPv4(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
+				checker.IPv4(t, stack.PayloadSince(p.NetworkHeader()),
 					checker.SrcAddr(host1IPv4Addr.AddressWithPrefix.Address),
 					checker.DstAddr(host2IPv4Addr.AddressWithPrefix.Address),
 					checker.ICMPv4(
@@ -3087,17 +3087,17 @@ func TestPacketQueuing(t *testing.T) {
 			// performed.
 			{
 				clock.RunImmediatelyScheduledJobs()
-				p, ok := e.Read()
-				if !ok {
+				p := e.Read()
+				if p == nil {
 					t.Fatalf("timed out waiting for packet")
 				}
-				if p.Proto != arp.ProtocolNumber {
-					t.Errorf("got p.Proto = %d, want = %d", p.Proto, arp.ProtocolNumber)
+				if p.NetworkProtocolNumber != arp.ProtocolNumber {
+					t.Errorf("got p.NetworkProtocolNumber = %d, want = %d", p.NetworkProtocolNumber, arp.ProtocolNumber)
 				}
-				if p.Route.RemoteLinkAddress != header.EthernetBroadcastAddress {
-					t.Errorf("got p.Route.RemoteLinkAddress = %s, want = %s", p.Route.RemoteLinkAddress, header.EthernetBroadcastAddress)
+				if p.EgressRoute.RemoteLinkAddress != header.EthernetBroadcastAddress {
+					t.Errorf("got p.EgressRoute.RemoteLinkAddress = %s, want = %s", p.EgressRoute.RemoteLinkAddress, header.EthernetBroadcastAddress)
 				}
-				rep := header.ARP(p.Pkt.NetworkHeader().View())
+				rep := header.ARP(p.NetworkHeader().View())
 				if got := rep.Op(); got != header.ARPRequest {
 					t.Errorf("got Op() = %d, want = %d", got, header.ARPRequest)
 				}
@@ -3329,14 +3329,14 @@ func TestIcmpRateLimit(t *testing.T) {
 				return hdr.View()
 			},
 			check: func(t *testing.T, e *channel.Endpoint, round int) {
-				p, ok := e.Read()
-				if !ok {
+				p := e.Read()
+				if p == nil {
 					t.Fatalf("expected echo response, no packet read in endpoint in round %d", round)
 				}
-				if got, want := p.Proto, header.IPv4ProtocolNumber; got != want {
-					t.Errorf("got p.Proto = %d, want = %d", got, want)
+				if got, want := p.NetworkProtocolNumber, header.IPv4ProtocolNumber; got != want {
+					t.Errorf("got p.NetworkProtocolNumber = %d, want = %d", got, want)
 				}
-				checker.IPv4(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
+				checker.IPv4(t, stack.PayloadSince(p.NetworkHeader()),
 					checker.SrcAddr(host1IPv4Addr.AddressWithPrefix.Address),
 					checker.DstAddr(host2IPv4Addr.AddressWithPrefix.Address),
 					checker.ICMPv4(
@@ -3367,17 +3367,17 @@ func TestIcmpRateLimit(t *testing.T) {
 				return hdr.View()
 			},
 			check: func(t *testing.T, e *channel.Endpoint, round int) {
-				p, ok := e.Read()
+				p := e.Read()
 				if round >= icmpBurst {
-					if ok {
-						t.Errorf("got packet %x in round %d, expected ICMP rate limit to stop it", p.Pkt.Data().Views(), round)
+					if p != nil {
+						t.Errorf("got packet %x in round %d, expected ICMP rate limit to stop it", p.Data().Views(), round)
 					}
 					return
 				}
-				if !ok {
+				if p == nil {
 					t.Fatalf("expected unreachable in round %d, no packet read in endpoint", round)
 				}
-				checker.IPv4(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
+				checker.IPv4(t, stack.PayloadSince(p.NetworkHeader()),
 					checker.SrcAddr(host1IPv4Addr.AddressWithPrefix.Address),
 					checker.DstAddr(host2IPv4Addr.AddressWithPrefix.Address),
 					checker.ICMPv4(

@@ -508,13 +508,13 @@ func TestMulticastForwarding(t *testing.T) {
 
 			test.rx(e1, test.srcAddr, test.dstAddr)
 
-			p, ok := e2.Read()
-			if ok != test.expectForward {
-				t.Fatalf("got e2.Read() = (%#v, %t), want = (_, %t)", p, ok, test.expectForward)
+			p := e2.Read()
+			if (p != nil) != test.expectForward {
+				t.Fatalf("got e2.Read() = %#v, want = (_ == nil) = %t", p, test.expectForward)
 			}
 
 			if test.expectForward {
-				test.checker(t, stack.PayloadSince(p.Pkt.NetworkHeader()))
+				test.checker(t, stack.PayloadSince(p.NetworkHeader()))
 			}
 		})
 	}
@@ -683,13 +683,13 @@ func TestPerInterfaceForwarding(t *testing.T) {
 					})
 
 					test.rx(subTest.nicEP, test.srcAddr, test.dstAddr)
-					if p, ok := subTest.nicEP.Read(); ok {
+					if p := subTest.nicEP.Read(); p != nil {
 						t.Errorf("unexpectedly got a response from the interface the packet arrived on: %#v", p)
 					}
-					if p, ok := subTest.otherNICEP.Read(); ok != subTest.expectForwarding {
+					if p := subTest.otherNICEP.Read(); (p != nil) != subTest.expectForwarding {
 						t.Errorf("got otherNICEP.Read() = (%#v, %t), want = (_, %t)", p, ok, subTest.expectForwarding)
 					} else if subTest.expectForwarding {
-						test.checker(t, stack.PayloadSince(p.Pkt.NetworkHeader()))
+						test.checker(t, stack.PayloadSince(p.NetworkHeader()))
 					}
 				})
 			}
