@@ -90,8 +90,11 @@ type IPTables struct {
 	// v4Tables and v6tables map tableIDs to tables. They hold builtin
 	// tables only, not user tables.
 	//
+	// mu protects the array of tables, but not the tables themselves.
 	// +checklocks:mu
 	v4Tables [NumTables]Table
+	//
+	// mu protects the array of tables, but not the tables themselves.
 	// +checklocks:mu
 	v6Tables [NumTables]Table
 	// modified is whether tables have been modified at least once. It is
