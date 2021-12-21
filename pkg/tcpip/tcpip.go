@@ -897,6 +897,29 @@ type SettableSocketOption interface {
 	isSettableSocketOption()
 }
 
+// ICMPv6Filter specifes a filter for ICMPv6 types.
+//
+// +stateify savable
+type ICMPv6Filter struct {
+	// DenyType indicates if an ICMP type should be blocked.
+	//
+	// The ICMPv6 type field is 8 bits so there are up to 256 different ICMPv6
+	// types.
+	DenyType [8]uint32
+}
+
+// ShouldDeny returns true iff the ICMPv6 Type should be denied.
+func (f *ICMPv6Filter) ShouldDeny(icmpType uint8) bool {
+	const bitsInUint32 = 32
+	i := icmpType / bitsInUint32
+	b := icmpType % bitsInUint32
+	return f.DenyType[i]&(1<<b) != 0
+}
+
+func (*ICMPv6Filter) isGettableSocketOption() {}
+
+func (*ICMPv6Filter) isSettableSocketOption() {}
+
 // EndpointState represents the state of an endpoint.
 type EndpointState uint8
 

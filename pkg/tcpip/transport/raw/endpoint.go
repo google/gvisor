@@ -85,6 +85,10 @@ type endpoint struct {
 	rcvDisabled bool
 
 	mu sync.RWMutex `state:"nosave"`
+	// icmp6Filter holds the filter for ICMPv6 packets.
+	//
+	// +checklocks:mu
+	icmpv6Filter tcpip.ICMPv6Filter
 }
 
 // NewEndpoint returns a raw  endpoint for the given protocols.
@@ -388,10 +392,23 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 
 // SetSockOpt implements tcpip.Endpoint.SetSockOpt.
 func (e *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
-	switch opt.(type) {
+	switch opt := opt.(type) {
 	case *tcpip.SocketDetachFilterOption:
 		return nil
 
+	case *tcpip.ICMPv6Filter:
+		if e.net.NetProto() != header.IPv6ProtocolNumber {
+			return &tcpip.ErrUnknownProtocolOption{}
+		}
+
+		if e.transProto != header.ICMPv6ProtocolNumber {
+			return &tcpip.ErrInvalidOptionValue{}
+		}
+
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		e.icmpv6Filter = *opt
+		return nil
 	default:
 		return e.net.SetSockOpt(opt)
 	}
@@ -403,7 +420,24 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
 func (e *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
-	return e.net.GetSockOpt(opt)
+	switch opt := opt.(type) {
+	case *tcpip.ICMPv6Filter:
+		if e.net.NetProto() != header.IPv6ProtocolNumber {
+			return &tcpip.ErrUnknownProtocolOption{}
+		}
+
+		if e.transProto != header.ICMPv6ProtocolNumber {
+			return &tcpip.ErrInvalidOptionValue{}
+		}
+
+		e.mu.RLock()
+		defer e.mu.RUnlock()
+		*opt = e.icmpv6Filter
+		return nil
+
+	default:
+		return e.net.GetSockOpt(opt)
+	}
 }
 
 // GetSockOptInt implements tcpip.Endpoint.GetSockOptInt.
@@ -509,15 +543,29 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		//
 		// TODO(https://gvisor.dev/issue/6517): Avoid the copy once S/R supports
 		// overlapping slices.
+		transportHeader := pkt.TransportHeader().View()
 		var combinedVV buffer.VectorisedView
-		if info.NetProto == header.IPv4ProtocolNumber {
-			networkHeader, transportHeader := pkt.NetworkHeader().View(), pkt.TransportHeader().View()
+		switch info.NetProto {
+		case header.IPv4ProtocolNumber:
+			networkHeader := pkt.NetworkHeader().View()
 			headers := make(buffer.View, 0, len(networkHeader)+len(transportHeader))
 			headers = append(headers, networkHeader...)
 			headers = append(headers, transportHeader...)
 			combinedVV = headers.ToVectorisedView()
-		} else {
-			combinedVV = append(buffer.View(nil), pkt.TransportHeader().View()...).ToVectorisedView()
+		case header.IPv6ProtocolNumber:
+			if e.transProto == header.ICMPv6ProtocolNumber {
+				if len(transportHeader) < header.ICMPv6MinimumSize {
+					return false
+				}
+
+				if e.icmpv6Filter.ShouldDeny(uint8(header.ICMPv6(transportHeader).Type())) {
+					return false
+				}
+			}
+
+			combinedVV = append(buffer.View(nil), transportHeader...).ToVectorisedView()
+		default:
+			panic(fmt.Sprintf("unrecognized protocol number = %d", info.NetProto))
 		}
 		combinedVV.Append(pkt.Data().ExtractVV())
 		packet.data = combinedVV

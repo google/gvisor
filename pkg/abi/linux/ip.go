@@ -159,3 +159,8 @@ const (
 	IPV6_RECVFRAGSIZE     = 77
 	IPV6_FREEBIND         = 78
 )
+
+// Socket options from uapi/linux/icmpv6.h
+const (
+	ICMPV6_FILTER = 1
+)

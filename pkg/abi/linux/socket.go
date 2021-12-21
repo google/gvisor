@@ -586,3 +586,11 @@ const SCM_MAX_FD = 253
 // socket option for querying whether a socket is in a listening
 // state.
 const SO_ACCEPTCON = 1 << 16
+
+// ICMP6Filter represents struct icmp6_filter from linux/icmpv6.h.
+//
+// +marshal
+// +stateify savable
+type ICMP6Filter struct {
+	Filter [8]uint32
+}
