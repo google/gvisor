@@ -620,12 +620,21 @@ func (ct *ConnTrack) finalize(cn *conn) finalizeResult {
 
 		bkt := &buckets[id]
 		bkt.mu.Lock()
-		if bkt.connForTIDRLocked(tid, ct.clock.NowMonotonic()) == nil {
+		t := bkt.connForTIDRLocked(tid, ct.clock.NowMonotonic())
+		if t == nil {
 			bkt.tuples.PushFront(&cn.reply)
 			bkt.mu.Unlock()
 			return finalizeResultSuccess
 		}
 		bkt.mu.Unlock()
+
+		if t.conn == cn {
+			// We already have an entry for the reply tuple.
+			//
+			// This can occur when the source address/port is the same as the
+			// destination address/port. In this scenario, tid == tid.reply().
+			return finalizeResultSuccess
+		}
 	}
 
 	// Another connection for the reply already exists. Remove the original and
