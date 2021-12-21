@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <netinet/icmp6.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/ip_icmp.h>
@@ -34,6 +35,15 @@ namespace testing {
 
 namespace {
 
+using ::testing::_;
+using ::testing::ElementsAre;
+using ::testing::ElementsAreArray;
+using ::testing::FieldsAre;
+using ::testing::Not;
+using ::testing::Test;
+using ::testing::Values;
+using ::testing::WithParamInterface;
+
 // The size of an empty ICMP packet and IP header together.
 constexpr size_t kEmptyICMPSize = 28;
 
@@ -41,7 +51,7 @@ constexpr size_t kEmptyICMPSize = 28;
 // responds to ICMP echo requests, and thus a single echo request sent via
 // loopback leads to 2 received ICMP packets.
 
-class RawSocketICMPTest : public ::testing::Test {
+class RawSocketICMPTest : public Test {
  protected:
   // Creates a socket to be used in tests.
   void SetUp() override;
@@ -105,6 +115,16 @@ TEST_F(RawSocketICMPTest, SockOptIPv6Checksum) {
               SyscallFailsWithErrno(ENOPROTOOPT));
   socklen_t len = sizeof(v);
   EXPECT_THAT(getsockopt(s_, SOL_IPV6, IPV6_CHECKSUM, &v, &len),
+              SyscallFailsWithErrno(EOPNOTSUPP));
+  EXPECT_EQ(len, sizeof(v));
+}
+
+TEST_F(RawSocketICMPTest, ICMPv6FilterNotSupported) {
+  icmp6_filter v;
+  EXPECT_THAT(setsockopt(s_, SOL_ICMPV6, ICMP6_FILTER, &v, sizeof(v)),
+              SyscallFailsWithErrno(ENOPROTOOPT));
+  socklen_t len = sizeof(v);
+  EXPECT_THAT(getsockopt(s_, SOL_ICMPV6, ICMP6_FILTER, &v, &len),
               SyscallFailsWithErrno(EOPNOTSUPP));
   EXPECT_EQ(len, sizeof(v));
 }
@@ -551,6 +571,146 @@ void RawSocketICMPTest::ReceiveICMPFrom(char* recv_buf, size_t recv_buf_len,
   ASSERT_THAT(recvmsg(sock, &msg, 0),
               SyscallSucceedsWithValue(expected_size + sizeof(struct iphdr)));
 }
+
+class RawSocketICMPv6Test : public Test {
+ public:
+  void SetUp() override {
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+
+    fd_ = ASSERT_NO_ERRNO_AND_VALUE(
+        Socket(AF_INET6, SOCK_RAW | SOCK_NONBLOCK, IPPROTO_ICMPV6));
+  }
+
+  void TearDown() override {
+    if (!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability())) {
+      return;
+    }
+
+    EXPECT_THAT(close(fd_.release()), SyscallSucceeds());
+  }
+
+ protected:
+  const FileDescriptor& fd() { return fd_; }
+
+ private:
+  FileDescriptor fd_;
+};
+
+TEST_F(RawSocketICMPv6Test, InitialFilterPassesAll) {
+  icmp6_filter got_filter;
+  socklen_t got_filter_len = sizeof(got_filter);
+  ASSERT_THAT(getsockopt(fd().get(), SOL_ICMPV6, ICMP6_FILTER, &got_filter,
+                         &got_filter_len),
+              SyscallSucceeds());
+  ASSERT_EQ(got_filter_len, sizeof(got_filter));
+  icmp6_filter expected_filter;
+  ICMP6_FILTER_SETPASSALL(&expected_filter);
+  EXPECT_THAT(got_filter,
+              FieldsAre(ElementsAreArray(expected_filter.icmp6_filt)));
+}
+
+TEST_F(RawSocketICMPv6Test, GetPartialFilterSucceeds) {
+  icmp6_filter set_filter;
+  ICMP6_FILTER_SETBLOCKALL(&set_filter);
+  ASSERT_THAT(setsockopt(fd().get(), SOL_ICMPV6, ICMP6_FILTER, &set_filter,
+                         sizeof(set_filter)),
+              SyscallSucceeds());
+
+  icmp6_filter got_filter = {};
+  // We use a length smaller than a full filter length and expect that
+  // only the bytes up to the provided length are modified. The last element
+  // should be unmodified when getsockopt returns.
+  constexpr socklen_t kShortFilterLen =
+      sizeof(got_filter) - sizeof(got_filter.icmp6_filt[0]);
+  socklen_t got_filter_len = kShortFilterLen;
+  ASSERT_THAT(getsockopt(fd().get(), SOL_ICMPV6, ICMP6_FILTER, &got_filter,
+                         &got_filter_len),
+              SyscallSucceeds());
+  ASSERT_EQ(got_filter_len, kShortFilterLen);
+  icmp6_filter expected_filter = set_filter;
+  expected_filter.icmp6_filt[std::size(expected_filter.icmp6_filt) - 1] = 0;
+  EXPECT_THAT(got_filter,
+              FieldsAre(ElementsAreArray(expected_filter.icmp6_filt)));
+}
+
+class RawSocketICMPv6TypeTest : public RawSocketICMPv6Test,
+                                public WithParamInterface<uint8_t> {};
+
+TEST_P(RawSocketICMPv6TypeTest, FilterDeliveredPackets) {
+  const sockaddr_in6 addr = {
+      .sin6_family = AF_INET6,
+      .sin6_addr = IN6ADDR_LOOPBACK_INIT,
+  };
+
+  const uint8_t allowed_type = GetParam();
+
+  // Pass only the allowed type.
+  {
+    icmp6_filter set_filter;
+    ICMP6_FILTER_SETBLOCKALL(&set_filter);
+    ICMP6_FILTER_SETPASS(allowed_type, &set_filter);
+    ASSERT_THAT(setsockopt(fd().get(), SOL_ICMPV6, ICMP6_FILTER, &set_filter,
+                           sizeof(set_filter)),
+                SyscallSucceeds());
+
+    icmp6_filter got_filter;
+    socklen_t got_filter_len = sizeof(got_filter);
+    ASSERT_THAT(getsockopt(fd().get(), SOL_ICMPV6, ICMP6_FILTER, &got_filter,
+                           &got_filter_len),
+                SyscallSucceeds());
+    ASSERT_EQ(got_filter_len, sizeof(got_filter));
+    EXPECT_THAT(got_filter, FieldsAre(ElementsAreArray(set_filter.icmp6_filt)));
+  }
+
+  // Send an ICMP packet for each type.
+  uint8_t icmp_type = 0;
+  constexpr uint8_t kUnusedICMPCode = 0;
+  do {
+    const icmp6_hdr packet = {
+        .icmp6_type = icmp_type,
+        .icmp6_code = kUnusedICMPCode,
+        // The stack will calculate the checksum.
+        .icmp6_cksum = 0,
+    };
+
+    ASSERT_THAT(RetryEINTR(sendto)(fd().get(), &packet, sizeof(packet), 0,
+                                   reinterpret_cast<const sockaddr*>(&addr),
+                                   sizeof(addr)),
+                SyscallSucceedsWithValue(sizeof(packet)));
+  } while (icmp_type++ != std::numeric_limits<uint8_t>::max());
+
+  // Make sure only the allowed type was received.
+  {
+    icmp6_hdr got_packet;
+    sockaddr_in6 sender;
+    socklen_t sender_len = sizeof(sender);
+    ASSERT_THAT(RetryEINTR(recvfrom)(
+                    fd().get(), &got_packet, sizeof(got_packet), 0 /* flags */,
+                    reinterpret_cast<sockaddr*>(&sender), &sender_len),
+                SyscallSucceedsWithValue(sizeof(got_packet)));
+    ASSERT_EQ(sender_len, sizeof(sender));
+    EXPECT_EQ(memcmp(&sender, &addr, sizeof(addr)), 0);
+    // The stack should have populated the checksum.
+    if (IsRunningOnGvisor() && !IsRunningWithHostinet()) {
+      // TODO(https://github.com/google/gvisor/pull/6957): Use same check as
+      // Linux.
+      EXPECT_THAT(got_packet,
+                  FieldsAre(allowed_type, kUnusedICMPCode, 0 /* icmp6_cksum */,
+                            _ /* icmp6_dataun */
+                            ));
+    } else {
+      EXPECT_THAT(got_packet,
+                  FieldsAre(allowed_type, kUnusedICMPCode,
+                            Not(0) /* icmp6_cksum */, _ /* icmp6_dataun */
+                            ));
+    }
+    EXPECT_THAT(got_packet.icmp6_data32, ElementsAre(0));
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(AllRawSocketTests, RawSocketICMPv6TypeTest,
+                         Values(uint8_t{0},
+                                std::numeric_limits<uint8_t>::max()));
 
 }  // namespace
 
