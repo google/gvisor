@@ -219,7 +219,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 			if optProblem.NeedICMP {
 				_ = e.protocol.returnError(&icmpReasonParamProblem{
 					pointer: optProblem.Pointer,
-				}, pkt)
+				}, pkt, true /* deliveredLocally */)
 				e.stats.ip.MalformedPacketsReceived.Increment()
 			}
 			return
@@ -387,9 +387,6 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 // icmpReason is a marker interface for IPv4 specific ICMP errors.
 type icmpReason interface {
 	isICMPReason()
-	// isForwarding indicates whether or not the error arose while attempting to
-	// forward a packet.
-	isForwarding() bool
 }
 
 // icmpReasonPortUnreachable is an error where the transport protocol has no
@@ -397,18 +394,12 @@ type icmpReason interface {
 type icmpReasonPortUnreachable struct{}
 
 func (*icmpReasonPortUnreachable) isICMPReason() {}
-func (*icmpReasonPortUnreachable) isForwarding() bool {
-	return false
-}
 
 // icmpReasonProtoUnreachable is an error where the transport protocol is
 // not supported.
 type icmpReasonProtoUnreachable struct{}
 
 func (*icmpReasonProtoUnreachable) isICMPReason() {}
-func (*icmpReasonProtoUnreachable) isForwarding() bool {
-	return false
-}
 
 // icmpReasonTTLExceeded is an error where a packet's time to live exceeded in
 // transit to its final destination, as per RFC 792 page 6, Time Exceeded
@@ -416,15 +407,6 @@ func (*icmpReasonProtoUnreachable) isForwarding() bool {
 type icmpReasonTTLExceeded struct{}
 
 func (*icmpReasonTTLExceeded) isICMPReason() {}
-func (*icmpReasonTTLExceeded) isForwarding() bool {
-	// If we hit a TTL Exceeded error, then we know we are operating as a router.
-	// As per RFC 792 page 6, Time Exceeded Message,
-	//
-	//   If the gateway processing a datagram finds the time to live field
-	//   is zero it must discard the datagram.  The gateway may also notify
-	//   the source host via the time exceeded message.
-	return true
-}
 
 // icmpReasonReassemblyTimeout is an error where insufficient fragments are
 // received to complete reassembly of a packet within a configured time after
@@ -432,38 +414,20 @@ func (*icmpReasonTTLExceeded) isForwarding() bool {
 type icmpReasonReassemblyTimeout struct{}
 
 func (*icmpReasonReassemblyTimeout) isICMPReason() {}
-func (*icmpReasonReassemblyTimeout) isForwarding() bool {
-	return false
-}
 
 // icmpReasonParamProblem is an error to use to request a Parameter Problem
 // message to be sent.
 type icmpReasonParamProblem struct {
-	pointer    byte
-	forwarding bool
+	pointer byte
 }
 
 func (*icmpReasonParamProblem) isICMPReason() {}
-func (r *icmpReasonParamProblem) isForwarding() bool {
-	return r.forwarding
-}
 
 // icmpReasonNetworkUnreachable is an error in which the network specified in
 // the internet destination field of the datagram is unreachable.
 type icmpReasonNetworkUnreachable struct{}
 
 func (*icmpReasonNetworkUnreachable) isICMPReason() {}
-func (*icmpReasonNetworkUnreachable) isForwarding() bool {
-	// If we hit a Net Unreachable error, then we know we are operating as
-	// a router. As per RFC 792 page 5, Destination Unreachable Message,
-	//
-	//  If, according to the information in the gateway's routing tables,
-	//  the network specified in the internet destination field of a
-	//  datagram is unreachable, e.g., the distance to the network is
-	//  infinity, the gateway may send a destination unreachable message to
-	//  the internet source host of the datagram.
-	return true
-}
 
 // icmpReasonFragmentationNeeded is an error where a packet requires
 // fragmentation while also having the Don't Fragment flag set, as per RFC 792
@@ -471,38 +435,19 @@ func (*icmpReasonNetworkUnreachable) isForwarding() bool {
 type icmpReasonFragmentationNeeded struct{}
 
 func (*icmpReasonFragmentationNeeded) isICMPReason() {}
-func (*icmpReasonFragmentationNeeded) isForwarding() bool {
-	// If we hit a Don't Fragment error, then we know we are operating as a router.
-	// As per RFC 792 page 4, Destination Unreachable Message,
-	//
-	//   Another case is when a datagram must be fragmented to be forwarded by a
-	//   gateway yet the Don't Fragment flag is on. In this case the gateway must
-	//   discard the datagram and may return a destination unreachable message.
-	return true
-}
 
 // icmpReasonHostUnreachable is an error in which the host specified in the
 // internet destination field of the datagram is unreachable.
 type icmpReasonHostUnreachable struct{}
 
 func (*icmpReasonHostUnreachable) isICMPReason() {}
-func (*icmpReasonHostUnreachable) isForwarding() bool {
-	// If we hit a Host Unreachable error, then we know we are operating as a
-	// router. As per RFC 792 page 5, Destination Unreachable Message,
-	//
-	//   In addition, in some networks, the gateway may be able to determine
-	//   if the internet destination host is unreachable.  Gateways in these
-	//   networks may send destination unreachable messages to the source host
-	//   when the destination host is unreachable.
-	return true
-}
 
 // returnError takes an error descriptor and generates the appropriate ICMP
 // error packet for IPv4 and sends it back to the remote device that sent
 // the problematic packet. It incorporates as much of that packet as
 // possible as well as any error metadata as is available. returnError
 // expects pkt to hold a valid IPv4 packet as per the wire format.
-func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip.Error {
+func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, deliveredLocally bool) tcpip.Error {
 	origIPHdr := header.IPv4(pkt.NetworkHeader().View())
 	origIPHdrSrc := origIPHdr.SourceAddress()
 	origIPHdrDst := origIPHdr.DestinationAddress()
@@ -534,11 +479,11 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip
 		return nil
 	}
 
-	// If we are operating as a router/gateway, don't use the packet's destination
+	// If the packet wasn't delivered locally, do not use the packet's destination
 	// address as the response's source address as we should not not own the
 	// destination address of a packet we are forwarding.
 	localAddr := origIPHdrDst
-	if reason.isForwarding() {
+	if !deliveredLocally {
 		localAddr = ""
 	}
 
@@ -704,6 +649,6 @@ func (p *protocol) OnReassemblyTimeout(pkt *stack.PacketBuffer) {
 	//   If fragment zero is not available then no time exceeded need be sent at
 	//   all.
 	if pkt != nil {
-		p.returnError(&icmpReasonReassemblyTimeout{}, pkt)
+		p.returnError(&icmpReasonReassemblyTimeout{}, pkt, true /* deliveredLocally */)
 	}
 }
