@@ -636,11 +636,11 @@ grpc_extra_deps()
 
 http_archive(
     name = "com_google_googletest",
-    sha256 = "0a10bea96d8670e5eef948d79d824162b1577bb7889539e49ec786bfc3e48912",
-    strip_prefix = "googletest-565f1b848215b77c3732bca345fe76a0431d8b34",
+    sha256 = "b4870bf121ff7795ba20d20bcdd8627b8e088f2d1dab299a031c1034eddc93d5",
+    strip_prefix = "googletest-release-1.11.0",
     urls = [
-        "https://mirror.bazel.build/github.com/google/googletest/archive/565f1b848215b77c3732bca345fe76a0431d8b34.tar.gz",
-        "https://github.com/google/googletest/archive/565f1b848215b77c3732bca345fe76a0431d8b34.tar.gz",
+        "https://mirror.bazel.build/github.com/google/googletest/archive/release-1.11.0.tar.gz",
+        "https://github.com/google/googletest/archive/release-1.11.0.tar.gz",
     ],
 )
 
