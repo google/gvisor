@@ -84,6 +84,12 @@ syscall_test(
 )
 
 syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:pivot_root_test",
+    use_tmpfs = True,
+)
+
+syscall_test(
     test = "//test/syscalls/linux:clock_getres_test",
 )
 

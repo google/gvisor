@@ -475,6 +475,28 @@ cc_binary(
 )
 
 cc_binary(
+    name = "pivot_root_test",
+    testonly = 1,
+    srcs = ["pivot_root.cc"],
+    linkstatic = 1,
+    deps = [
+        "//test/util:capability_util",
+        "//test/util:cleanup",
+        "//test/util:file_descriptor",
+        "//test/util:fs_util",
+        "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/strings",
+        gtest,
+        "//test/util:logging",
+        "//test/util:mount_util",
+        "//test/util:multiprocess_util",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
     name = "clock_getres_test",
     testonly = 1,
     srcs = ["clock_getres.cc"],

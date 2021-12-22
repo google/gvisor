@@ -134,7 +134,7 @@ type MountNamespace struct {
 	// Owner is the usernamespace that owns this mount namespace.
 	Owner *auth.UserNamespace
 
-	// root is the MountNamespace's root mount. root is immutable.
+	// root is the MountNamespace's root mount.
 	root *Mount
 
 	// mountpoints maps all Dentries which are mount points in this namespace
@@ -263,7 +263,8 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 }
 
 // MountAt creates and mounts a Filesystem configured by the given arguments.
-// The VirtualFilesystem will hold a reference to the Mount until it is unmounted.
+// The VirtualFilesystem will hold a reference to the Mount until it is
+// unmounted.
 //
 // This method returns the mounted Mount without a reference, for convenience
 // during VFS setup when there is no chance of racing with unmount.
@@ -305,9 +306,10 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 	defer func() {
 		vd.DecRef(ctx)
 	}()
-	// Linux passes the LOOKUP_MOUNPOINT flag to user_path_at in ksys_umount to resolve to the
-	// toppmost mount in the stack located at the specified path. vfs.GetMountAt() imitiates this
-	// behavior. See fs/namei.c:user_path_at(...) and fs/namespace.c:ksys_umount(...).
+	// Linux passes the LOOKUP_MOUNPOINT flag to user_path_at in ksys_umount to
+	// resolve to the toppmost mount in the stack located at the specified path.
+	// vfs.GetMountAt() imitiates this behavior. See fs/namei.c:user_path_at(...)
+	// and fs/namespace.c:ksys_umount(...).
 	if vd.dentry.isMounted() {
 		if realmnt := vfs.getMountAt(ctx, vd.mount, vd.dentry); realmnt != nil {
 			vd.mount.DecRef(ctx)
@@ -708,6 +710,79 @@ retryFirst:
 	return VirtualDentry{mnt, d}
 }
 
+// PivotRoot makes location pointed to by newRootPop the root of the current
+// namespace, and moves the current root to the location pointed to by
+// putOldPop.
+func (vfs *VirtualFilesystem) PivotRoot(ctx context.Context, creds *auth.Credentials, newRootPop *PathOperation, putOldPop *PathOperation) error {
+	newRootVd, err := vfs.GetDentryAt(ctx, creds, newRootPop, &GetDentryOptions{CheckSearchable: true})
+	if err != nil {
+		return err
+	}
+	defer newRootVd.DecRef(ctx)
+	putOldVd, err := vfs.GetDentryAt(ctx, creds, putOldPop, &GetDentryOptions{CheckSearchable: true})
+	if err != nil {
+		return err
+	}
+	defer putOldVd.DecRef(ctx)
+	rootVd := RootFromContext(ctx)
+	defer rootVd.DecRef(ctx)
+
+	vfs.mountMu.Lock()
+	defer vfs.mountMu.Unlock()
+
+	// Neither new_root nor put_old can be on the same mount as the current
+	//root mount.
+	if newRootVd.mount == rootVd.mount || putOldVd.mount == rootVd.mount {
+		return linuxerr.EBUSY
+	}
+	// new_root must be a mountpoint.
+	if newRootVd.mount.root != newRootVd.dentry {
+		return linuxerr.EINVAL
+	}
+	// put_old must be at or underneath new_root.
+	path, err := vfs.PathnameReachable(ctx, newRootVd, putOldVd)
+	if err != nil || len(path) == 0 {
+		return linuxerr.EINVAL
+	}
+	// The current root directory must be a mountpoint
+	// (in the case it has been chrooted).
+	if rootVd.mount.root != rootVd.dentry {
+		return linuxerr.EINVAL
+	}
+	// The current root and the new root cannot be on the rootfs mount.
+	if rootVd.mount.parent() == nil || newRootVd.mount.parent() == nil {
+		return linuxerr.EINVAL
+	}
+	// The current root and the new root must be in the context's mount namespace.
+	ns := MountNamespaceFromContext(ctx)
+	defer ns.DecRef(ctx)
+	if rootVd.mount.ns != ns || newRootVd.mount.ns != ns {
+		return linuxerr.EINVAL
+	}
+	// TODO(gvisor.dev/issues/221): Update this function to disallow
+	// pivot_root-ing new_root/put_old mounts with MS_SHARED propagation once it
+	// is implemented in gVisor.
+
+	vfs.mounts.seq.BeginWrite()
+	mp := vfs.disconnectLocked(newRootVd.mount)
+	mp.DecRef(ctx)
+	rootMp := vfs.disconnectLocked(rootVd.mount)
+
+	putOldVd.IncRef()
+	putOldVd.dentry.mu.Lock()
+	vfs.connectLocked(rootVd.mount, putOldVd, ns)
+	putOldVd.dentry.mu.Unlock()
+
+	rootMp.dentry.mu.Lock()
+	vfs.connectLocked(newRootVd.mount, rootMp, ns)
+	rootMp.dentry.mu.Unlock()
+	vfs.mounts.seq.EndWrite()
+
+	newRootVd.mount.DecRef(ctx)
+	rootVd.mount.DecRef(ctx)
+	return nil
+}
+
 // SetMountReadOnly sets the mount as ReadOnly.
 func (vfs *VirtualFilesystem) SetMountReadOnly(mnt *Mount, ro bool) error {
 	vfs.mountMu.Lock()
@@ -781,7 +856,8 @@ func (mnt *Mount) Root() *Dentry {
 	return mnt.root
 }
 
-// Root returns mntns' root. It does not take a reference on the returned Dentry.
+// Root returns mntns' root. It does not take a reference on the returned
+// Dentry.
 func (mntns *MountNamespace) Root() VirtualDentry {
 	vd := VirtualDentry{
 		mount:  mntns.root,
