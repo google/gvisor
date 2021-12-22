@@ -168,13 +168,6 @@ type Pipe struct {
 	//
 	// This is protected by mu.
 	hadWriter bool
-
-	// waitingWriters is used to wait when writers are initialized after a
-	// reader has opened the pipe.
-	waitingWriters sync.WaitGroup `state:"nosave"`
-	// waitingReaders is used to wait when readers are initialized after a
-	// write has opened the pipe.
-	waitingReaders sync.WaitGroup `state:"nosave"`
 }
 
 // NewPipe initializes and returns a pipe.
