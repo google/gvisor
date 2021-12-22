@@ -129,3 +129,48 @@ func Chroot(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	vd.DecRef(t)
 	return 0, nil, nil
 }
+
+// PivotRoot implements Linux syscall pivot_root(2).
+func PivotRoot(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	addr1 := args[0].Pointer()
+	addr2 := args[1].Pointer()
+
+	if !t.HasCapability(linux.CAP_SYS_ADMIN) {
+		return 0, nil, linuxerr.EPERM
+	}
+
+	newRootPath, err := copyInPath(t, addr1)
+	if err != nil {
+		return 0, nil, err
+	}
+	newRootTpop, err := getTaskPathOperation(t, linux.AT_FDCWD, newRootPath, disallowEmptyPath, followFinalSymlink)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer newRootTpop.Release(t)
+	putOldPath, err := copyInPath(t, addr2)
+	if err != nil {
+		return 0, nil, err
+	}
+	putOldTpop, err := getTaskPathOperation(t, linux.AT_FDCWD, putOldPath, disallowEmptyPath, followFinalSymlink)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer putOldTpop.Release(t)
+
+	oldRootVd := t.FSContext().RootDirectoryVFS2()
+	defer oldRootVd.DecRef(t)
+	newRootVd, err := t.Kernel().VFS().GetDentryAt(t, t.Credentials(), &newRootTpop.pop, &vfs.GetDentryOptions{
+		CheckSearchable: true,
+	})
+	if err != nil {
+		return 0, nil, err
+	}
+	defer newRootVd.DecRef(t)
+
+	if err := t.Kernel().VFS().PivotRoot(t, t.Credentials(), &newRootTpop.pop, &putOldTpop.pop); err != nil {
+		return 0, nil, err
+	}
+	t.Kernel().ReplaceFSContextRoots(t, oldRootVd, newRootVd)
+	return 0, nil, nil
+}
