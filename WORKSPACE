@@ -1166,8 +1166,8 @@ go_repository(
 go_repository(
     name = "com_github_opencontainers_runtime_spec",
     importpath = "github.com/opencontainers/runtime-spec",
-    sum = "h1:UfAcuLBJB9Coz72x1hgl8O5RVzTdNiaglX6v2DM6FI0=",
-    version = "v1.0.2",
+    sum = "h1:9iT75RHhYHWwWRlVWU7wnmtFulYcURCglzQOpT+cAF8=",
+    version = "v1.0.3-0.20211123151946-c2389c3cb60a",
 )
 
 go_repository(
