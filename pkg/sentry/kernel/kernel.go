@@ -1844,3 +1844,30 @@ func (k *Kernel) ReleaseCgroupHierarchy(hid uint32) {
 	})
 	k.tasks.mu.RUnlock()
 }
+
+func (k *Kernel) ReplaceFSContextRoots(ctx context.Context, oldRoot vfs.VirtualDentry, newRoot vfs.VirtualDentry) {
+	k.tasks.mu.RLock()
+	oldRootDecRefs := 0
+	k.tasks.forEachTaskLocked(func(t *Task) {
+		t.mu.Lock()
+		defer t.mu.Unlock()
+		if fsc := t.fsContext; fsc != nil {
+			fsc.mu.Lock()
+			defer fsc.mu.Unlock()
+			if fsc.rootVFS2 == oldRoot {
+				newRoot.IncRef()
+				oldRootDecRefs++
+				fsc.rootVFS2 = newRoot
+			}
+			if fsc.cwdVFS2 == oldRoot {
+				newRoot.IncRef()
+				oldRootDecRefs++
+				fsc.cwdVFS2 = newRoot
+			}
+		}
+	})
+	k.tasks.mu.RUnlock()
+	for i := 0; i < oldRootDecRefs; i++ {
+		oldRoot.DecRef(ctx)
+	}
+}
