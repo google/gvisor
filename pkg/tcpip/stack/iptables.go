@@ -572,56 +572,6 @@ func (it *IPTables) startReaper(interval time.Duration) {
 	}()
 }
 
-// CheckOutputPackets performs the output hook on the packets.
-//
-// Returns a map of packets that must be dropped.
-//
-// Precondition:  The packets' network and transport header must be set.
-func (it *IPTables) CheckOutputPackets(pkts PacketBufferList, r *Route, outNicName string) (drop map[*PacketBuffer]struct{}, natPkts map[*PacketBuffer]struct{}) {
-	return checkPackets(pkts, func(pkt *PacketBuffer) bool {
-		return it.CheckOutput(pkt, r, outNicName)
-	}, true /* dnat */)
-}
-
-// CheckPostroutingPackets performs the postrouting hook on the packets.
-//
-// Returns a map of packets that must be dropped.
-//
-// Precondition:  The packets' network and transport header must be set.
-func (it *IPTables) CheckPostroutingPackets(pkts PacketBufferList, r *Route, addressEP AddressableEndpoint, outNicName string) (drop map[*PacketBuffer]struct{}, natPkts map[*PacketBuffer]struct{}) {
-	return checkPackets(pkts, func(pkt *PacketBuffer) bool {
-		return it.CheckPostrouting(pkt, r, addressEP, outNicName)
-	}, false /* dnat */)
-}
-
-func getAddr(pkt *PacketBuffer, dnat bool) tcpip.Address {
-	net := pkt.Network()
-	if dnat {
-		return net.DestinationAddress()
-	}
-	return net.SourceAddress()
-}
-
-func checkPackets(pkts PacketBufferList, f func(*PacketBuffer) bool, dnat bool) (drop map[*PacketBuffer]struct{}, natPkts map[*PacketBuffer]struct{}) {
-	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
-		origAddr := getAddr(pkt, dnat)
-
-		if ok := f(pkt); !ok {
-			if drop == nil {
-				drop = make(map[*PacketBuffer]struct{})
-			}
-			drop[pkt] = struct{}{}
-		}
-		if newAddr := getAddr(pkt, dnat); newAddr != origAddr {
-			if natPkts == nil {
-				natPkts = make(map[*PacketBuffer]struct{})
-			}
-			natPkts[pkt] = struct{}{}
-		}
-	}
-	return drop, natPkts
-}
-
 // Preconditions:
 // * pkt is a IPv4 packet of at least length header.IPv4MinimumSize.
 // * pkt.NetworkHeader is not nil.
