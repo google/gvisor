@@ -684,7 +684,7 @@ func (c *Container) State() specs.State {
 	return specs.State{
 		Version: specs.Version,
 		ID:      c.ID,
-		Status:  c.Status.String(),
+		Status:  c.Status,
 		Pid:     c.SandboxPid(),
 		Bundle:  c.BundleDir,
 	}
