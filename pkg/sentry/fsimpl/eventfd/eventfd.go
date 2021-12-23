@@ -75,6 +75,7 @@ func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, initVal uint64, sem
 		UseDentryMetadata: true,
 		DenyPRead:         true,
 		DenyPWrite:        true,
+		DenySpliceIn:      true,
 	}); err != nil {
 		return nil, err
 	}

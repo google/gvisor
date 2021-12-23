@@ -70,6 +70,9 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	if !inFile.IsReadable() || !outFile.IsWritable() {
 		return 0, nil, linuxerr.EBADF
 	}
+	if outFile.Options().DenySpliceIn {
+		return 0, nil, linuxerr.EINVAL
+	}
 
 	// The operation is non-blocking if anything is non-blocking.
 	//
@@ -213,6 +216,9 @@ func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 	if !inFile.IsReadable() || !outFile.IsWritable() {
 		return 0, nil, linuxerr.EBADF
 	}
+	if outFile.Options().DenySpliceIn {
+		return 0, nil, linuxerr.EINVAL
+	}
 
 	// The operation is non-blocking if anything is non-blocking.
 	//
@@ -284,6 +290,9 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	defer outFile.DecRef(t)
 	if !outFile.IsWritable() {
 		return 0, nil, linuxerr.EBADF
+	}
+	if outFile.Options().DenySpliceIn {
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Verify that the outFile Append flag is not set.

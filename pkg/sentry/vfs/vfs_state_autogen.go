@@ -493,6 +493,7 @@ func (f *FileDescriptionOptions) StateFields() []string {
 		"DenyPRead",
 		"DenyPWrite",
 		"UseDentryMetadata",
+		"DenySpliceIn",
 	}
 }
 
@@ -505,6 +506,7 @@ func (f *FileDescriptionOptions) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &f.DenyPRead)
 	stateSinkObject.Save(2, &f.DenyPWrite)
 	stateSinkObject.Save(3, &f.UseDentryMetadata)
+	stateSinkObject.Save(4, &f.DenySpliceIn)
 }
 
 func (f *FileDescriptionOptions) afterLoad() {}
@@ -515,6 +517,7 @@ func (f *FileDescriptionOptions) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &f.DenyPRead)
 	stateSourceObject.Load(2, &f.DenyPWrite)
 	stateSourceObject.Load(3, &f.UseDentryMetadata)
+	stateSourceObject.Load(4, &f.DenySpliceIn)
 }
 
 func (d *Dirent) StateTypeName() string {
