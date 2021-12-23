@@ -209,6 +209,7 @@ func (e *connectionedEndpoint) Listening() bool {
 // That is, close may be used to "unbind" or "disconnect" the socket in error
 // paths.
 func (e *connectionedEndpoint) Close(ctx context.Context) {
+	var acceptedChan chan *connectionedEndpoint
 	e.Lock()
 	var c ConnectedEndpoint
 	var r Receiver
@@ -229,13 +230,16 @@ func (e *connectionedEndpoint) Close(ctx context.Context) {
 		e.path = ""
 	case e.Listening():
 		close(e.acceptedChan)
-		for n := range e.acceptedChan {
-			n.Close(ctx)
-		}
+		acceptedChan = e.acceptedChan
 		e.acceptedChan = nil
 		e.path = ""
 	}
 	e.Unlock()
+	if acceptedChan != nil {
+		for n := range acceptedChan {
+			n.Close(ctx)
+		}
+	}
 	if c != nil {
 		c.CloseNotify()
 		c.Release(ctx)
