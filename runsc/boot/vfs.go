@@ -540,29 +540,10 @@ func (c *containerMounter) getMountNameAndOptionsVFS2(conf *config.Config, m *mo
 		return "", nil, false, nil
 	}
 
-	opts := &vfs.MountOptions{
-		GetFilesystemOptions: vfs.GetFilesystemOptions{
-			Data:         strings.Join(data, ","),
-			InternalData: internalData,
-		},
-		InternalMount: true,
-	}
-
-	for _, o := range m.mount.Options {
-		switch o {
-		case "rw":
-			opts.ReadOnly = false
-		case "ro":
-			opts.ReadOnly = true
-		case "noatime":
-			opts.Flags.NoATime = true
-		case "noexec":
-			opts.Flags.NoExec = true
-		case "bind", "rbind":
-			// These are the same as a mount with type="bind".
-		default:
-			log.Warningf("ignoring unknown mount option %q", o)
-		}
+	opts := parseMountOptionsVFS2(m.mount.Options)
+	opts.GetFilesystemOptions = vfs.GetFilesystemOptions{
+		Data:         strings.Join(data, ","),
+		InternalData: internalData,
 	}
 
 	if verityRequested {
@@ -580,6 +561,30 @@ func (c *containerMounter) getMountNameAndOptionsVFS2(conf *config.Config, m *mo
 	}
 
 	return fsName, opts, useOverlay, nil
+}
+
+func parseMountOptionsVFS2(opts []string) *vfs.MountOptions {
+	mountOpts := &vfs.MountOptions{
+		InternalMount: true,
+	}
+	// Note: update mountHint.CheckCompatibleVFS2 when more options are added.
+	for _, o := range opts {
+		switch o {
+		case "ro":
+			mountOpts.ReadOnly = true
+		case "noatime":
+			mountOpts.Flags.NoATime = true
+		case "noexec":
+			mountOpts.Flags.NoExec = true
+		case "rw", "atime", "exec":
+			// These use the default value and don't need to be set.
+		case "bind", "rbind":
+			// These are the same as a mount with type="bind".
+		default:
+			log.Warningf("ignoring unknown mount option %q", o)
+		}
+	}
+	return mountOpts
 }
 
 func parseKeyValue(s string) (string, string, bool) {
@@ -759,7 +764,7 @@ func (c *containerMounter) mountSharedMasterVFS2(ctx context.Context, conf *conf
 // mountSharedSubmount binds mount to a previously mounted volume that is shared
 // among containers in the same pod.
 func (c *containerMounter) mountSharedSubmountVFS2(ctx context.Context, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, mount *specs.Mount, source *mountHint) (*vfs.Mount, error) {
-	if err := source.checkCompatible(mount); err != nil {
+	if err := source.checkCompatibleVFS2(mount); err != nil {
 		return nil, err
 	}
 
