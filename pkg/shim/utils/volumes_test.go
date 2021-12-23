@@ -307,23 +307,135 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 			},
 			expectUpdate: true,
 		},
+		{
+			name: "shm-sandbox",
+			spec: &specs.Spec{
+				Annotations: map[string]string{
+					sandboxLogDirAnnotation: testLogDirPath,
+					ContainerTypeAnnotation: containerTypeSandbox,
+				},
+				Mounts: []specs.Mount{
+					{
+						Destination: "/dev/shm",
+						Type:        "bind",
+						Source:      testVolumePath,
+						Options:     []string{"ro", "foo"},
+					},
+				},
+			},
+			expected: &specs.Spec{
+				Annotations: map[string]string{
+					sandboxLogDirAnnotation:                   testLogDirPath,
+					ContainerTypeAnnotation:                   containerTypeSandbox,
+					volumeKeyPrefix + devshmName + ".share":   "pod",
+					volumeKeyPrefix + devshmName + ".type":    "tmpfs",
+					volumeKeyPrefix + devshmName + ".options": "rw",
+					volumeKeyPrefix + devshmName + ".source":  testVolumePath,
+				},
+				Mounts: []specs.Mount{
+					{
+						Destination: "/dev/shm",
+						Type:        "tmpfs",
+						Source:      testVolumePath,
+						Options:     []string{"ro", "foo"},
+					},
+				},
+			},
+			expectUpdate: true,
+		},
+		{
+			name: "shm-container",
+			spec: &specs.Spec{
+				Annotations: map[string]string{
+					ContainerTypeAnnotation: ContainerTypeContainer,
+				},
+				Mounts: []specs.Mount{
+					{
+						Destination: "/dev/shm",
+						Type:        "bind",
+						Source:      testVolumePath,
+						Options:     []string{"ro", "foo"},
+					},
+				},
+			},
+			expected: &specs.Spec{
+				Annotations: map[string]string{
+					ContainerTypeAnnotation: ContainerTypeContainer,
+				},
+				Mounts: []specs.Mount{
+					{
+						Destination: "/dev/shm",
+						Type:        "tmpfs",
+						Source:      testVolumePath,
+						Options:     []string{"ro", "foo"},
+					},
+				},
+			},
+			expectUpdate: true,
+		},
+		{
+			name: "shm-duplicate",
+			spec: &specs.Spec{
+				Annotations: map[string]string{
+					ContainerTypeAnnotation: ContainerTypeContainer,
+				},
+				Mounts: []specs.Mount{
+					{
+						Destination: "/dev/shm",
+						Type:        "bind",
+						Source:      testVolumePath,
+						Options:     []string{"ro", "foo"},
+					},
+					{
+						Destination: "/dev/shm",
+						Type:        "tmpfs",
+					},
+					{
+						Destination: "/home",
+						Type:        "bind",
+						Source:      "/another/mount",
+						Options:     []string{"rw"},
+					},
+				},
+			},
+			expected: &specs.Spec{
+				Annotations: map[string]string{
+					ContainerTypeAnnotation: ContainerTypeContainer,
+				},
+				Mounts: []specs.Mount{
+					{
+						Destination: "/dev/shm",
+						Type:        "tmpfs",
+						Source:      testVolumePath,
+						Options:     []string{"ro", "foo"},
+					},
+					{
+						Destination: "/home",
+						Type:        "bind",
+						Source:      "/another/mount",
+						Options:     []string{"rw"},
+					},
+				},
+			},
+			expectUpdate: true,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			updated, err := UpdateVolumeAnnotations(test.spec)
 			if test.expectErr {
 				if err == nil {
-					t.Fatal("Expected error, but got nil")
+					t.Fatal("UpdateVolumeAnnotations(spec): nil, want: error")
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("Unexpected error: %v", err)
-			}
-			if !reflect.DeepEqual(test.expected, test.spec) {
-				t.Fatalf("Expected %+v, got %+v", test.expected, test.spec)
+				t.Fatalf("UpdateVolumeAnnotations(spec): %v", err)
 			}
 			if test.expectUpdate != updated {
-				t.Errorf("Expected %v, got %v", test.expected, updated)
+				t.Errorf("want: %v, got: %v", test.expectUpdate, updated)
+			}
+			if !reflect.DeepEqual(test.expected, test.spec) {
+				t.Fatalf("want: %+v, got: %+v", test.expected, test.spec)
 			}
 		})
 	}

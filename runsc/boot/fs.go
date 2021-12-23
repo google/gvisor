@@ -492,10 +492,10 @@ func (m *mountHint) isSupported() bool {
 // For now enforce that all options are the same. Once bind mount is properly
 // supported, then we should ensure the master is less restrictive than the
 // container, e.g. master can be 'rw' while container mounts as 'ro'.
-func (m *mountHint) checkCompatible(mount *specs.Mount) error {
+func (m *mountHint) checkCompatible(replica *specs.Mount) error {
 	// Remove options that don't affect to mount's behavior.
 	masterOpts := filterUnsupportedOptions(&m.mount)
-	replicaOpts := filterUnsupportedOptions(mount)
+	replicaOpts := filterUnsupportedOptions(replica)
 
 	if len(masterOpts) != len(replicaOpts) {
 		return fmt.Errorf("mount options in annotations differ from container mount, annotation: %s, mount: %s", masterOpts, replicaOpts)
@@ -507,6 +507,25 @@ func (m *mountHint) checkCompatible(mount *specs.Mount) error {
 		if opt != replicaOpts[i] {
 			return fmt.Errorf("mount options in annotations differ from container mount, annotation: %s, mount: %s", masterOpts, replicaOpts)
 		}
+	}
+	return nil
+}
+
+// checkCompatibleVFS2 verifies that shared mount is compatible with master.
+// Master options must be the same or less restrictive than the container mount,
+// e.g. master can be 'rw' while container mounts as 'ro'.
+func (m *mountHint) checkCompatibleVFS2(replica *specs.Mount) error {
+	masterOpts := parseMountOptionsVFS2(m.mount.Options)
+	replicaOpts := parseMountOptionsVFS2(replica.Options)
+
+	if masterOpts.ReadOnly && !replicaOpts.ReadOnly {
+		return fmt.Errorf("cannot mount read-write shared mount because master is read-only, mount: %+v", replica)
+	}
+	if masterOpts.Flags.NoExec && !replicaOpts.Flags.NoExec {
+		return fmt.Errorf("cannot mount exec enabled shared mount because master is noexec, mount: %+v", replica)
+	}
+	if masterOpts.Flags.NoATime && !replicaOpts.Flags.NoATime {
+		return fmt.Errorf("cannot mount atime enabled shared mount because master is noatime, mount: %+v", replica)
 	}
 	return nil
 }

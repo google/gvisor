@@ -101,8 +101,9 @@ func startContainers(conf *config.Config, specs []*specs.Spec, ids []string) ([]
 type execDesc struct {
 	c    *Container
 	cmd  []string
-	want int
 	name string
+	want int
+	err  string
 }
 
 func execMany(t *testing.T, conf *config.Config, execs []execDesc) {
@@ -110,9 +111,13 @@ func execMany(t *testing.T, conf *config.Config, execs []execDesc) {
 		t.Run(exec.name, func(t *testing.T) {
 			args := &control.ExecArgs{Argv: exec.cmd}
 			if ws, err := exec.c.executeSync(conf, args); err != nil {
-				t.Errorf("error executing %+v: %v", args, err)
+				if len(exec.err) == 0 || !strings.Contains(err.Error(), exec.err) {
+					t.Errorf("error executing %+v: %v", args, err)
+				}
+			} else if len(exec.err) > 0 {
+				t.Errorf("exec %q didn't fail as expected", exec.cmd)
 			} else if ws.ExitStatus() != exec.want {
-				t.Errorf("%q: exec %q got exit status: %d, want: %d", exec.name, exec.cmd, ws.ExitStatus(), exec.want)
+				t.Errorf("exec %q got exit status: %d, want: %d", exec.cmd, ws.ExitStatus(), exec.want)
 			}
 		})
 	}
@@ -1387,6 +1392,75 @@ func TestMultiContainerSharedMountReadonly(t *testing.T) {
 	}
 }
 
+// Test that pod mounts can be mounted with less restrictive options in
+// container mounts.
+func TestMultiContainerSharedMountCompatible(t *testing.T) {
+	rootDir, cleanup, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer cleanup()
+	conf := testutil.TestConfig(t)
+	conf.RootDir = rootDir
+
+	sleep := []string{"sleep", "100"}
+	podSpec, ids := createSpecs(sleep, sleep)
+
+	// Init container and annotations allow read-write and exec.
+	mnt0 := specs.Mount{
+		Destination: "/mydir/test",
+		Source:      "/some/dir",
+		Type:        "tmpfs",
+		Options:     []string{"rw", "exec"},
+	}
+	podSpec[0].Mounts = append(podSpec[0].Mounts, mnt0)
+
+	// While subcontainer mount has more restrictive options: read-only, noexec.
+	mnt1 := mnt0
+	mnt1.Destination = "/mydir2/test2"
+	mnt1.Options = []string{"ro", "noexec"}
+	podSpec[1].Mounts = append(podSpec[1].Mounts, mnt1)
+
+	createSharedMount(mnt0, "test-mount", podSpec...)
+
+	containers, cleanup, err := startContainers(conf, podSpec, ids)
+	if err != nil {
+		t.Fatalf("error starting containers: %v", err)
+	}
+	defer cleanup()
+
+	execs := []execDesc{
+		{
+			c:    containers[1],
+			cmd:  []string{"/bin/touch", path.Join(mnt1.Destination, "fail")},
+			want: 1,
+			name: "fails write to container1",
+		},
+		{
+			c:    containers[0],
+			cmd:  []string{"/bin/cp", "/usr/bin/test", mnt0.Destination},
+			name: "writes to container0",
+		},
+		{
+			c:    containers[1],
+			cmd:  []string{"/usr/bin/test", "-f", path.Join(mnt1.Destination, "test")},
+			name: "file appears in container1",
+		},
+		{
+			c:    containers[0],
+			cmd:  []string{path.Join(mnt0.Destination, "test"), "-d", mnt0.Destination},
+			name: "container0 can execute",
+		},
+		{
+			c:    containers[1],
+			cmd:  []string{path.Join(mnt1.Destination, "test"), "-d", mnt1.Destination},
+			err:  "permission denied",
+			name: "container1 cannot execute",
+		},
+	}
+	execMany(t, conf, execs)
+}
+
 // Test that shared pod mounts continue to work after container is restarted.
 func TestMultiContainerSharedMountRestart(t *testing.T) {
 	for name, conf := range configs(t, all...) {
@@ -2086,5 +2160,56 @@ func TestDuplicateEnvVariable(t *testing.T) {
 		if _, ok := envs["VAR"]; !ok {
 			t.Errorf("variable VAR missing: %v", envs)
 		}
+	}
+}
+
+// Test that /dev/shm can be shared between containers.
+func TestMultiContainerShm(t *testing.T) {
+	conf := testutil.TestConfig(t)
+
+	rootDir, cleanup, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer cleanup()
+	conf.RootDir = rootDir
+
+	sleep := []string{"sleep", "100"}
+	testSpecs, ids := createSpecs(sleep, sleep)
+
+	sharedMount := specs.Mount{
+		Destination: "/dev/shm",
+		Source:      "/some/path",
+		Type:        "tmpfs",
+	}
+
+	// Add shared /dev/shm mount to all containers.
+	for _, spec := range testSpecs {
+		spec.Mounts = append(spec.Mounts, sharedMount)
+	}
+
+	// Create annotation hints for the init container.
+	createSharedMount(sharedMount, "devshm", testSpecs[0])
+
+	containers, cleanup, err := startContainers(conf, testSpecs, ids)
+	if err != nil {
+		t.Fatalf("error starting containers: %v", err)
+	}
+	defer cleanup()
+
+	// Write file to shared /dev/shm directory in one container.
+	const output = "/dev/shm/file.txt"
+	exec0 := fmt.Sprintf("echo 123 > %s", output)
+	if ws, err := execute(conf, containers[0], "/bin/sh", "-c", exec0); err != nil || ws.ExitStatus() != 0 {
+		t.Fatalf("exec failed, ws: %v, err: %v", ws, err)
+	}
+
+	// Check that file can be found in the other container.
+	out, err := executeCombinedOutput(conf, containers[1], "/bin/cat", output)
+	if err != nil {
+		t.Fatalf("exec failed: %v", err)
+	}
+	if want := "123\n"; string(out) != want {
+		t.Fatalf("wrong output, want: %q, got: %v", want, out)
 	}
 }

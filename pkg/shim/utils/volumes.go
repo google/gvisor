@@ -22,7 +22,13 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
-const volumeKeyPrefix = "dev.gvisor.spec.mount."
+const (
+	volumeKeyPrefix = "dev.gvisor.spec.mount."
+
+	// devshmName is the volume name used for /dev/shm. Pick a name that is
+	// unlikely to be used.
+	devshmName = "gvisorinternaldevshm"
+)
 
 var kubeletPodsDir = "/var/lib/kubelet/pods"
 
@@ -99,7 +105,7 @@ func UpdateVolumeAnnotations(s *specs.Spec) (bool, error) {
 			return false, nil
 		}
 	}
-	var updated bool
+	updated := false
 	for k, v := range s.Annotations {
 		if !isVolumeKey(k) {
 			continue
@@ -134,6 +140,67 @@ func UpdateVolumeAnnotations(s *specs.Spec) (bool, error) {
 					updated = true
 				}
 			}
+		}
+	}
+
+	if ok, err := configureShm(s); err != nil {
+		return false, err
+	} else if ok {
+		updated = true
+	}
+
+	return updated, nil
+}
+
+// configureShm sets up annotations to mount /dev/shm as a pod shared tmpfs
+// mount inside containers.
+//
+// Pods are configured to mount /dev/shm to a common path in the host, so it's
+// shared among containers in the same pod. In gVisor, /dev/shm must be
+// converted to a tmpfs mount inside the sandbox, otherwise shm_open(3) doesn't
+// use it (see where_is_shmfs() in glibc). Mount annotation hints are used to
+// instruct runsc to mount the same tmpfs volume in all containers inside the
+// pod.
+func configureShm(s *specs.Spec) (bool, error) {
+	const (
+		shmPath    = "/dev/shm"
+		devshmType = "tmpfs"
+	)
+
+	// Some containers contain a duplicate mount entry for /dev/shm using tmpfs.
+	// If this is detected, remove the extraneous entry to ensure the correct one
+	// is used.
+	duplicate := -1
+	for i, m := range s.Mounts {
+		if m.Destination == shmPath && m.Type == devshmType {
+			duplicate = i
+			break
+		}
+	}
+
+	updated := false
+	for i := range s.Mounts {
+		m := &s.Mounts[i]
+		if m.Destination == shmPath && m.Type == "bind" {
+			if IsSandbox(s) {
+				s.Annotations["dev.gvisor.spec.mount."+devshmName+".source"] = m.Source
+				s.Annotations["dev.gvisor.spec.mount."+devshmName+".type"] = devshmType
+				s.Annotations["dev.gvisor.spec.mount."+devshmName+".share"] = "pod"
+				// Given that we don't have visibility into mount options for all
+				// containers, assume broad access for the master mount (it's tmpfs
+				// inside the sandbox anyways) and apply options to subcontainers as
+				// they bind mount individually.
+				s.Annotations["dev.gvisor.spec.mount."+devshmName+".options"] = "rw"
+			}
+
+			changeMountType(m, devshmType)
+			updated = true
+
+			// Remove the duplicate entry now that we found the shared /dev/shm mount.
+			if duplicate >= 0 {
+				s.Mounts = append(s.Mounts[:duplicate], s.Mounts[duplicate+1:]...)
+			}
+			break
 		}
 	}
 	return updated, nil
