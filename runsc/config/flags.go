@@ -84,6 +84,7 @@ func RegisterFlags() {
 		flag.Bool("fuse", false, "TEST ONLY; use while FUSE in VFSv2 is landing. This allows the use of the new experimental FUSE filesystem.")
 		flag.Bool("lisafs", false, "Enables lisafs protocol instead of 9P. This is only effective with VFS2.")
 		flag.Bool("cgroupfs", false, "Automatically mount cgroupfs.")
+		flag.Bool("ignore-cgroups", false, "don't configure cgroups.")
 
 		// Flags that control sandbox runtime behavior: network related.
 		flag.Var(networkTypePtr(NetworkSandbox), "network", "specifies which network to use: sandbox (default), host, none. Using network inside the sandbox is more secure because it's isolated from the host network.")
