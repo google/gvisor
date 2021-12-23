@@ -132,6 +132,7 @@ go_test(
         "compat_test.go",
         "fs_test.go",
         "loader_test.go",
+        "vfs_test.go",
     ],
     library = ":boot",
     deps = [
