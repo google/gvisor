@@ -149,7 +149,6 @@ TEST(EventfdTest, BigWriteBigRead) {
   EXPECT_EQ(l[0], 1);
 }
 
-// NotifyNonZero is inherently racy, so random save is disabled.
 TEST(EventfdTest, NotifyNonZero) {
   // Waits will time out at 10 seconds.
   constexpr int kEpollTimeoutMs = 10000;
@@ -189,6 +188,31 @@ TEST(EventfdTest, NotifyNonZero) {
   val = 0;
   ASSERT_THAT(read(efd.get(), &val, sizeof(val)), SyscallSucceeds());
   EXPECT_EQ(val, 1);
+}
+
+TEST(EventfdTest, SpliceReturnsEINVAL) {
+  SKIP_IF(IsRunningWithVFS1());
+
+  // Splicing into eventfd has been disabled in
+  // 36e2c7421f02 ("fs: don't allow splice read/write without explicit ops").
+  SKIP_IF(!IsRunningOnGvisor());
+
+  // Create an eventfd descriptor.
+  FileDescriptor efd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(7, 0));
+
+  // Create a new pipe.
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  const FileDescriptor rfd(fds[0]);
+  const FileDescriptor wfd(fds[1]);
+
+  // Fill the pipe.
+  std::vector<char> buf(kPageSize);
+  ASSERT_THAT(write(wfd.get(), buf.data(), buf.size()),
+              SyscallSucceedsWithValue(kPageSize));
+
+  EXPECT_THAT(splice(rfd.get(), nullptr, efd.get(), nullptr, kPageSize, 0),
+              SyscallFailsWithErrno(EINVAL));
 }
 
 }  // namespace

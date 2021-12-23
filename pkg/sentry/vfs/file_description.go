@@ -118,6 +118,9 @@ type FileDescriptionOptions struct {
 	// implementations of FileDescriptionImpl methods that should not be
 	// called.
 	UseDentryMetadata bool
+
+	// If DenySpliceIn is true, splice into descriptor isn't allowed.
+	DenySpliceIn bool
 }
 
 // FileCreationFlags are the set of flags passed to FileDescription.Init() but
