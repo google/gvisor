@@ -102,7 +102,7 @@ func TestOOMScoreAdjSingle(t *testing.T) {
 				//
 				// The sandbox should be the same for all containers so just use
 				// the first one.
-				sandboxPid := c.Sandbox.Pid
+				sandboxPid := c.Sandbox.Getpid()
 				sandboxScore, err := specutils.GetOOMScoreAdj(sandboxPid)
 				if err != nil {
 					t.Fatalf("error reading sandbox oom_score_adj: %v", err)
@@ -254,7 +254,7 @@ func TestOOMScoreAdjMulti(t *testing.T) {
 			//
 			// The sandbox should be the same for all containers so just use
 			// the first one.
-			sandboxPid := containers[0].Sandbox.Pid
+			sandboxPid := containers[0].Sandbox.Getpid()
 			if testCase.Expected != nil {
 				score, err := specutils.GetOOMScoreAdj(sandboxPid)
 				if err != nil {
