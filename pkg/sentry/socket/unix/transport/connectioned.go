@@ -358,9 +358,9 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 		return nil
 	default:
 		// Busy; return EAGAIN per spec.
-		ne.Close(ctx)
 		e.NestedUnlock()
 		ce.Unlock()
+		ne.Close(ctx)
 		return syserr.ErrTryAgain
 	}
 }
