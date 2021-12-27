@@ -11,7 +11,10 @@ exports_files(["LICENSE"])
 go_library(
     name = "locking",
     srcs = [
-        "atomicptrmap_lockdep_unsafe.go",
+        "atomicptrmap_antecessors_unsafe.go",
+        "atomicptrmap_class_unsafe.go",
+        "atomicptrmap_goroutine_unsafe.go",
+        "atomicptrmap_subclass_unsafe.go",
         "lockdep.go",
         "lockdep_norace.go",
     ],
@@ -27,8 +30,8 @@ go_library(
 )
 
 go_template_instance(
-    name = "atomicptrmap_lockdep",
-    out = "atomicptrmap_lockdep_unsafe.go",
+    name = "atomicptrmap_goroutine",
+    out = "atomicptrmap_goroutine_unsafe.go",
     package = "locking",
     prefix = "goroutineLocks",
     template = "//pkg/sync/atomicptrmap:generic_atomicptrmap",
@@ -38,8 +41,52 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "atomicptrmap_class",
+    out = "atomicptrmap_class_unsafe.go",
+    imports = {
+        "reflect": "reflect",
+    },
+    package = "locking",
+    prefix = "class",
+    template = "//pkg/sync/atomicptrmap:generic_atomicptrmap",
+    types = {
+        "Key": "*MutexClass",
+        "Value": "reflect.Type",
+    },
+)
+
+go_template_instance(
+    name = "atomicptrmap_subclass",
+    out = "atomicptrmap_subclass_unsafe.go",
+    imports = {
+        "reflect": "reflect",
+    },
+    package = "locking",
+    prefix = "subclass",
+    template = "//pkg/sync/atomicptrmap:generic_atomicptrmap",
+    types = {
+        "Key": "uint32",
+        "Value": "MutexClass",
+    },
+)
+
+go_template_instance(
+    name = "atomicptrmap_antecessors",
+    out = "atomicptrmap_antecessors_unsafe.go",
+    imports = {
+        "reflect": "reflect",
+    },
+    package = "locking",
+    prefix = "antecessors",
+    template = "//pkg/sync/atomicptrmap:generic_atomicptrmap",
+    types = {
+        "Key": "*MutexClass",
+        "Value": "string",
+    },
+)
+
 go_test(
-    gotags = ["lockdep"],
     name = "locking_test",
     size = "small",
     srcs = [
@@ -48,6 +95,7 @@ go_test(
         "mutex3_test.go",
         "mutex_test.go",
     ],
+    gotags = ["lockdep"],
     library = ":locking",
     nogo = False,
 )

@@ -25,27 +25,21 @@ import (
 
 	"gvisor.dev/gvisor/pkg/goid"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sync"
 )
 
-var classMap = make(map[*MutexClass]reflect.Type)
-var classMapMu sync.Mutex
+var classMap classAtomicPtrMap
 
 // NewMutexClass allocates a new lock class.
 func NewMutexClass(t reflect.Type) *MutexClass {
 	c := &MutexClass{}
-	classMapMu.Lock()
-	classMap[c] = t
-	classMapMu.Unlock()
-	c.subclasses = make(map[uint32]*MutexClass)
+	classMap.Store(c, &t)
 	return c
 }
 
 // LockDependencies describes dependencies for a lock class.
 type MutexClass struct {
-	mu         sync.Mutex
-	parents    map[*MutexClass]string
-	subclasses map[uint32]*MutexClass
+	antecessors antecessorsAtomicPtrMap
+	subclasses  subclassAtomicPtrMap
 }
 
 type goroutineLocks map[*MutexClass]bool
@@ -54,37 +48,30 @@ var routineLocks goroutineLocksAtomicPtrMap
 
 func checkLock(class *MutexClass, prevClass *MutexClass, chain []*MutexClass) {
 	chain = append(chain, prevClass)
-	prevClass.mu.Lock()
-	defer prevClass.mu.Unlock()
-	if prevClass.parents == nil {
-		return
-	}
-	if _, ok := prevClass.parents[class]; ok {
-		classMapMu.Lock()
-		defer classMapMu.Unlock()
-
+	if c := prevClass.antecessors.Load(class); c != nil {
 		var b strings.Builder
-		fmt.Fprintf(&b, "WARNING: circular locking detected: %s -> %s:\n%s\n", classMap[chain[0]], classMap[class], log.Stacks(false))
+		fmt.Fprintf(&b, "WARNING: circular locking detected: %s -> %s:\n%s\n", *classMap.Load(chain[0]), *classMap.Load(class), log.Stacks(false))
 
 		fmt.Fprintf(&b, "known lock chain: ")
 		c := class
 		for i := len(chain) - 1; i >= 0; i-- {
-			fmt.Fprintf(&b, "%s -> ", classMap[c])
+			fmt.Fprintf(&b, "%s -> ", *classMap.Load(c))
 			c = chain[i]
 		}
-		fmt.Fprintf(&b, "%s\n", classMap[chain[0]])
+		fmt.Fprintf(&b, "%s\n", *classMap.Load(chain[0]))
 		c = class
 		for i := len(chain) - 1; i >= 0; i-- {
-			fmt.Fprintf(&b, "\n====== %s -> %s =====\n%s", classMap[c], classMap[chain[i]], chain[i].parents[c])
+			fmt.Fprintf(&b, "\n====== %s -> %s =====\n%s", *classMap.Load(c), *classMap.Load(chain[i]), *chain[i].antecessors.Load(c))
 			c = chain[i]
 		}
 		panic(b.String())
 	}
-	for parentClass, _ := range prevClass.parents {
+	prevClass.antecessors.Range(func(parentClass *MutexClass, stacks *string) bool {
 		// The recursion is fine here. If it fails, you need to reduce
 		// a number of nested locks.
 		checkLock(class, parentClass, chain)
-	}
+		return true
+	})
 }
 
 // AddGLock records a lock to the current goroutine.
@@ -92,17 +79,12 @@ func AddGLock(class *MutexClass, subclass uint32) {
 	gid := goid.Get()
 
 	if subclass != 0 {
-		var ok bool
 		var c *MutexClass
-		class.mu.Lock()
-		if c, ok = class.subclasses[subclass]; !ok {
-			classMapMu.Lock()
-			t := classMap[class]
-			classMapMu.Unlock()
-			c = NewMutexClass(t)
-			class.subclasses[subclass] = c
+		if c = class.subclasses.Load(subclass); c == nil {
+			t := classMap.Load(class)
+			c = NewMutexClass(*t)
+			class.subclasses.Store(subclass, c)
 		}
-		class.mu.Unlock()
 		class = c
 	}
 	currentLocks := routineLocks.Load(gid)
@@ -115,20 +97,14 @@ func AddGLock(class *MutexClass, subclass uint32) {
 
 	for prevClass, _ := range *currentLocks {
 		if prevClass == class {
-			classMapMu.Lock()
-			defer classMapMu.Unlock()
-			panic(fmt.Sprintf("nested locking: %s:\n%s", classMap[class], log.Stacks(false)))
+			panic(fmt.Sprintf("nested locking: %s:\n%s", *classMap.Load(class), log.Stacks(false)))
 		}
 		checkLock(class, prevClass, nil)
 
-		class.mu.Lock()
-		if class.parents == nil {
-			class.parents = make(map[*MutexClass]string)
+		if c := class.antecessors.Load(prevClass); c == nil {
+			stacks := string(log.Stacks(false))
+			class.antecessors.Store(prevClass, &stacks)
 		}
-		if _, ok := class.parents[prevClass]; !ok {
-			class.parents[prevClass] = string(log.Stacks(false))
-		}
-		class.mu.Unlock()
 	}
 	(*currentLocks)[class] = true
 
@@ -137,7 +113,7 @@ func AddGLock(class *MutexClass, subclass uint32) {
 // DelGLock deletes a lock from the current goroutine.
 func DelGLock(class *MutexClass, subclass uint32) {
 	if subclass != 0 {
-		class = class.subclasses[subclass]
+		class = class.subclasses.Load(subclass)
 	}
 	gid := goid.Get()
 	currentLocks := routineLocks.Load(gid)
