@@ -262,11 +262,6 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 			return
 		}
 
-		// Take the base of the incoming request IP header but replace the options.
-		replyHeaderLength := uint8(header.IPv4MinimumSize + len(newOptions))
-		replyIPHdr := header.IPv4(append(iph[:header.IPv4MinimumSize:header.IPv4MinimumSize], newOptions...))
-		replyIPHdr.SetHeaderLength(replyHeaderLength)
-
 		// As per RFC 1122 section 3.2.1.3, when a host sends any datagram, the IP
 		// source address MUST be one of its own IP addresses (but not a broadcast
 		// or multicast address).
@@ -313,6 +308,14 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 		// We need to produce the entire packet in the data segment in order to
 		// use WriteHeaderIncludedPacket(). WriteHeaderIncludedPacket sets the
 		// total length and the header checksum so we don't need to set those here.
+		//
+		// Take the base of the incoming request IP header but replace the options.
+		replyHeaderLength := uint8(header.IPv4MinimumSize + len(newOptions))
+		replyIPHdrBytes := make([]byte, 0, replyHeaderLength)
+		replyIPHdrBytes = append(replyIPHdrBytes, iph[:header.IPv4MinimumSize]...)
+		replyIPHdrBytes = append(replyIPHdrBytes, newOptions...)
+		replyIPHdr := header.IPv4(replyIPHdrBytes)
+		replyIPHdr.SetHeaderLength(replyHeaderLength)
 		replyIPHdr.SetSourceAddress(r.LocalAddress())
 		replyIPHdr.SetDestinationAddress(r.RemoteAddress())
 		replyIPHdr.SetTTL(r.DefaultTTL())
