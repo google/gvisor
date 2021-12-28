@@ -233,8 +233,10 @@ func TestSimpleSend(t *testing.T) {
 			// See nic.writePacket.
 			pkt.EgressRoute = r
 			pkt.NetworkProtocolNumber = proto
-			if err := c.ep.WritePacket(r, proto, pkt); err != nil {
-				t.Fatalf("WritePacket failed: %v", err)
+			var pkts stack.PacketBufferList
+			pkts.PushBack(pkt)
+			if _, err := c.ep.WritePackets(r, pkts, proto); err != nil {
+				t.Fatalf("WritePackets failed: %s", err)
 			}
 
 			// Receive packet.
@@ -306,8 +308,11 @@ func TestPreserveSrcAddressInSend(t *testing.T) {
 	// See nic.writePacket.
 	pkt.EgressRoute = r
 	pkt.NetworkProtocolNumber = proto
-	if err := c.ep.WritePacket(r, proto, pkt); err != nil {
-		t.Fatalf("WritePacket failed: %v", err)
+
+	var pkts stack.PacketBufferList
+	pkts.PushBack(pkt)
+	if _, err := c.ep.WritePackets(r, pkts, proto); err != nil {
+		t.Fatalf("WritePackets failed: %s", err)
 	}
 
 	// Receive packet.
@@ -362,8 +367,10 @@ func TestFillTxQueue(t *testing.T) {
 			Data:               buf.ToVectorisedView(),
 		})
 
-		if err := c.ep.WritePacket(r, header.IPv4ProtocolNumber, pkt); err != nil {
-			t.Fatalf("WritePacket failed unexpectedly: %v", err)
+		var pkts stack.PacketBufferList
+		pkts.PushBack(pkt)
+		if _, err := c.ep.WritePackets(r, pkts, header.IPv4ProtocolNumber); err != nil {
+			t.Fatalf("WritePackets failed unexpectedly: %s", err)
 		}
 
 		// Check that they have different IDs.
@@ -380,9 +387,11 @@ func TestFillTxQueue(t *testing.T) {
 		ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 		Data:               buf.ToVectorisedView(),
 	})
-	err := c.ep.WritePacket(r, header.IPv4ProtocolNumber, pkt)
+	var pkts stack.PacketBufferList
+	pkts.PushBack(pkt)
+	_, err := c.ep.WritePackets(r, pkts, header.IPv4ProtocolNumber)
 	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-		t.Fatalf("got WritePacket(...) = %v, want %s", err, &tcpip.ErrWouldBlock{})
+		t.Fatalf("got WritePackets(...) = %s, want %s", err, &tcpip.ErrWouldBlock{})
 	}
 }
 
@@ -403,13 +412,17 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 	buf := buffer.NewView(100)
 
 	// Send two packets so that the id slice has at least two slots.
-	for i := 2; i > 0; i-- {
-		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
-			Data:               buf.ToVectorisedView(),
-		})
-		if err := c.ep.WritePacket(r, header.IPv4ProtocolNumber, pkt); err != nil {
-			t.Fatalf("WritePacket failed unexpectedly: %v", err)
+	{
+		var pkts stack.PacketBufferList
+		for i := 2; i > 0; i-- {
+			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+				ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
+				Data:               buf.ToVectorisedView(),
+			})
+			pkts.PushBack(pkt)
+		}
+		if _, err := c.ep.WritePackets(r, pkts, header.IPv4ProtocolNumber); err != nil {
+			t.Fatalf("WritePackets failed unexpectedly: %s", err)
 		}
 	}
 
@@ -431,8 +444,10 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 			Data:               buf.ToVectorisedView(),
 		})
-		if err := c.ep.WritePacket(r, header.IPv4ProtocolNumber, pkt); err != nil {
-			t.Fatalf("WritePacket failed unexpectedly: %v", err)
+		var pkts stack.PacketBufferList
+		pkts.PushBack(pkt)
+		if _, err := c.ep.WritePackets(r, pkts, header.IPv4ProtocolNumber); err != nil {
+			t.Fatalf("WritePackets failed unexpectedly: %s", err)
 		}
 
 		// Check that they have different IDs.
@@ -449,9 +464,11 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 		ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 		Data:               buf.ToVectorisedView(),
 	})
-	err := c.ep.WritePacket(r, header.IPv4ProtocolNumber, pkt)
+	var pkts stack.PacketBufferList
+	pkts.PushBack(pkt)
+	_, err := c.ep.WritePackets(r, pkts, header.IPv4ProtocolNumber)
 	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-		t.Fatalf("got WritePacket(...) = %v, want %s", err, &tcpip.ErrWouldBlock{})
+		t.Fatalf("got WritePackets(...) = %s, want %s", err, &tcpip.ErrWouldBlock{})
 	}
 }
 
@@ -475,8 +492,10 @@ func TestFillTxMemory(t *testing.T) {
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 			Data:               buf.ToVectorisedView(),
 		})
-		if err := c.ep.WritePacket(r, header.IPv4ProtocolNumber, pkt); err != nil {
-			t.Fatalf("WritePacket failed unexpectedly: %v", err)
+		var pkts stack.PacketBufferList
+		pkts.PushBack(pkt)
+		if _, err := c.ep.WritePackets(r, pkts, header.IPv4ProtocolNumber); err != nil {
+			t.Fatalf("WritePackets failed unexpectedly: %s", err)
 		}
 
 		// Check that they have different IDs.
@@ -494,9 +513,11 @@ func TestFillTxMemory(t *testing.T) {
 		ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 		Data:               buf.ToVectorisedView(),
 	})
-	err := c.ep.WritePacket(r, header.IPv4ProtocolNumber, pkt)
+	var pkts stack.PacketBufferList
+	pkts.PushBack(pkt)
+	_, err := c.ep.WritePackets(r, pkts, header.IPv4ProtocolNumber)
 	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-		t.Fatalf("got WritePacket(...) = %v, want %s", err, &tcpip.ErrWouldBlock{})
+		t.Fatalf("got WritePackets(...) = %s, want %s", err, &tcpip.ErrWouldBlock{})
 	}
 }
 
@@ -521,8 +542,10 @@ func TestFillTxMemoryWithMultiBuffer(t *testing.T) {
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 			Data:               buf.ToVectorisedView(),
 		})
-		if err := c.ep.WritePacket(r, header.IPv4ProtocolNumber, pkt); err != nil {
-			t.Fatalf("WritePacket failed unexpectedly: %v", err)
+		var pkts stack.PacketBufferList
+		pkts.PushBack(pkt)
+		if _, err := c.ep.WritePackets(r, pkts, header.IPv4ProtocolNumber); err != nil {
+			t.Fatalf("WritePackets failed unexpectedly: %s", err)
 		}
 
 		// Pull the posted buffer.
@@ -532,24 +555,28 @@ func TestFillTxMemoryWithMultiBuffer(t *testing.T) {
 
 	// Attempt to write a two-buffer packet. It must fail.
 	{
+		var pkts stack.PacketBufferList
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 			Data:               buffer.NewView(bufferSize).ToVectorisedView(),
 		})
-		err := c.ep.WritePacket(r, header.IPv4ProtocolNumber, pkt)
+		pkts.PushBack(pkt)
+		_, err := c.ep.WritePackets(r, pkts, header.IPv4ProtocolNumber)
 		if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-			t.Fatalf("got WritePacket(...) = %v, want %s", err, &tcpip.ErrWouldBlock{})
+			t.Fatalf("got WritePackets(...) = %s, want %s", err, &tcpip.ErrWouldBlock{})
 		}
 	}
 
 	// Attempt to write the one-buffer packet again. It must succeed.
 	{
+		var pkts stack.PacketBufferList
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 			Data:               buf.ToVectorisedView(),
 		})
-		if err := c.ep.WritePacket(r, header.IPv4ProtocolNumber, pkt); err != nil {
-			t.Fatalf("WritePacket failed unexpectedly: %v", err)
+		pkts.PushBack(pkt)
+		if _, err := c.ep.WritePackets(r, pkts, header.IPv4ProtocolNumber); err != nil {
+			t.Fatalf("WritePackets failed unexpectedly: %s", err)
 		}
 	}
 }

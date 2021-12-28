@@ -80,12 +80,6 @@ func (e *Endpoint) Capabilities() stack.LinkEndpointCapabilities {
 	return c
 }
 
-// WritePacket implements stack.LinkEndpoint.
-func (e *Endpoint) WritePacket(r stack.RouteInfo, proto tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
-	e.AddHeader(e.LinkAddress(), r.RemoteLinkAddress, proto, pkt)
-	return e.Endpoint.WritePacket(r, proto, pkt)
-}
-
 // WritePackets implements stack.LinkEndpoint.
 func (e *Endpoint) WritePackets(r stack.RouteInfo, pkts stack.PacketBufferList, proto tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
 	linkAddr := e.LinkAddress()

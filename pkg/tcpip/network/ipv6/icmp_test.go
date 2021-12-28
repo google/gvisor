@@ -77,10 +77,6 @@ func (*stubLinkEndpoint) LinkAddress() tcpip.LinkAddress {
 	return ""
 }
 
-func (*stubLinkEndpoint) WritePacket(stack.RouteInfo, tcpip.NetworkProtocolNumber, *stack.PacketBuffer) tcpip.Error {
-	return nil
-}
-
 func (*stubLinkEndpoint) WritePackets(stack.RouteInfo, stack.PacketBufferList, tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
 	return 0, nil
 }
@@ -135,14 +131,20 @@ func (*testInterface) Spoofing() bool {
 }
 
 func (t *testInterface) WritePacket(r *stack.Route, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
-	return t.LinkEndpoint.WritePacket(r.Fields(), protocol, pkt)
+	var pkts stack.PacketBufferList
+	pkts.PushBack(pkt)
+	_, err := t.LinkEndpoint.WritePackets(r.Fields(), pkts, protocol)
+	return err
 }
 
 func (t *testInterface) WritePacketToRemote(remoteLinkAddr tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
 	var r stack.RouteInfo
 	r.NetProto = protocol
 	r.RemoteLinkAddress = remoteLinkAddr
-	return t.LinkEndpoint.WritePacket(r, protocol, pkt)
+	var pkts stack.PacketBufferList
+	pkts.PushBack(pkt)
+	_, err := t.LinkEndpoint.WritePackets(r, pkts, protocol)
+	return err
 }
 
 func (t *testInterface) HandleNeighborProbe(tcpip.NetworkProtocolNumber, tcpip.Address, tcpip.LinkAddress) tcpip.Error {

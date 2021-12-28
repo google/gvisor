@@ -74,12 +74,6 @@ func (*endpoint) LinkAddress() tcpip.LinkAddress {
 // Wait implements stack.LinkEndpoint.Wait.
 func (*endpoint) Wait() {}
 
-// WritePacket implements stack.LinkEndpoint.WritePacket. It delivers outbound
-// packets to the network-layer dispatcher.
-func (e *endpoint) WritePacket(_ stack.RouteInfo, _ tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
-	return e.WriteRawPacket(pkt)
-}
-
 // WritePackets implements stack.LinkEndpoint.WritePackets.
 func (e *endpoint) WritePackets(_ stack.RouteInfo, pkts stack.PacketBufferList, _ tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
 	n := 0
