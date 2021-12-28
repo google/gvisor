@@ -862,18 +862,6 @@ type LinkEndpoint interface {
 	NetworkLinkEndpoint
 	LinkWriter
 	LinkRawWriter
-
-	// TODO(b/211019749): Remove WritePacket, it's no longer used outside the context of
-	// tests and LinkEndpoint wrappers.
-	// WritePacket writes a packet with the given protocol and route.
-	//
-	// WritePacket may modify the packet buffer. The packet buffer's
-	// network and transport header must be set.
-	//
-	// To participate in transparent bridging, a LinkEndpoint implementation
-	// should call eth.Encode with header.EthernetFields.SrcAddr set to
-	// r.LocalLinkAddress if it is provided.
-	WritePacket(RouteInfo, tcpip.NetworkProtocolNumber, *PacketBuffer) tcpip.Error
 }
 
 // InjectableLinkEndpoint is a LinkEndpoint where inbound packets are

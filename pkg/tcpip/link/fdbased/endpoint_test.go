@@ -199,6 +199,10 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash u
 		Data:               payload.ToVectorisedView(),
 	})
 	pkt.Hash = hash
+	// Every PacketBuffer must have these set:
+	// See nic.writePacket.
+	pkt.EgressRoute = r
+	pkt.NetworkProtocolNumber = proto
 
 	// Build header.
 	b := pkt.NetworkHeader().Push(netHdrLen)
@@ -218,7 +222,9 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash u
 			L3HdrLen:   l3HdrLen,
 		}
 	}
-	if err := c.ep.WritePacket(r, proto, pkt); err != nil {
+	var pkts stack.PacketBufferList
+	pkts.PushBack(pkt)
+	if _, err := c.ep.WritePackets(r, pkts, proto); err != nil {
 		t.Fatalf("WritePacket failed: %v", err)
 	}
 
@@ -333,7 +339,13 @@ func TestPreserveSrcAddress(t *testing.T) {
 		ReserveHeaderBytes: header.EthernetMinimumSize,
 		Data:               buffer.VectorisedView{},
 	})
-	if err := c.ep.WritePacket(r, proto, pkt); err != nil {
+	// Every PacketBuffer must have these set:
+	// See nic.writePacket.
+	pkt.NetworkProtocolNumber = proto
+	pkt.EgressRoute = r
+	var pkts stack.PacketBufferList
+	pkts.PushBack(pkt)
+	if _, err := c.ep.WritePackets(r, pkts, proto); err != nil {
 		t.Fatalf("WritePacket failed: %v", err)
 	}
 

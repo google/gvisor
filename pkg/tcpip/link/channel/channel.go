@@ -239,16 +239,6 @@ func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
 	return e.linkAddr
 }
 
-// WritePacket stores outbound packets into the channel.
-func (e *Endpoint) WritePacket(_ stack.RouteInfo, _ tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
-	// Write returns false if the queue is full. A full queue is not an error
-	// from the perspective of a LinkEndpoint so we ignore Write's return
-	// value and always return nil from this method.
-	_ = e.q.Write(pkt)
-
-	return nil
-}
-
 // WritePackets stores outbound packets into the channel.
 func (e *Endpoint) WritePackets(_ stack.RouteInfo, pkts stack.PacketBufferList, _ tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
 	n := 0

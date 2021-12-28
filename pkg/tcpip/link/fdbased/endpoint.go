@@ -508,9 +508,9 @@ func (e *endpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.Net
 // WriteRawPacket implements stack.LinkEndpoint.
 func (*endpoint) WriteRawPacket(*stack.PacketBuffer) tcpip.Error { return &tcpip.ErrNotSupported{} }
 
-// WritePacket writes outbound packets to the file descriptor. If it is not
+// writePacket writes outbound packets to the file descriptor. If it is not
 // currently writable, the packet is dropped.
-func (e *endpoint) WritePacket(r stack.RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
+func (e *endpoint) writePacket(r stack.RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
 	if e.hdrSize > 0 {
 		e.AddHeader(r.LocalLinkAddress, r.RemoteLinkAddress, protocol, pkt)
 	}
@@ -641,7 +641,7 @@ func (e *endpoint) sendBatch(batchFD int, pkts []*stack.PacketBuffer) (int, tcpi
 			// if necessary (by using e.writevMaxIovs instead of
 			// rawfile.MaxIovs).
 			pkt := batch[0]
-			if err := e.WritePacket(pkt.EgressRoute, pkt.NetworkProtocolNumber, pkt); err != nil {
+			if err := e.writePacket(pkt.EgressRoute, pkt.NetworkProtocolNumber, pkt); err != nil {
 				return packets, err
 			}
 			packets++

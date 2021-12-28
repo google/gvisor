@@ -346,7 +346,7 @@ func (n *nic) WriteRawPacket(pkt *PacketBuffer) tcpip.Error {
 	return n.rawLinkEP.WriteRawPacket(pkt)
 }
 
-// WritePacket implements LinkWriter.
+// WritePacket implements NetworkEndpoint.
 func (n *nic) WritePacket(r *Route, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) tcpip.Error {
 	routeInfo, _, err := r.resolvedFields(nil)
 	switch err.(type) {
