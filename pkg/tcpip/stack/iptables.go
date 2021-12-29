@@ -180,7 +180,6 @@ func DefaultTables(clock tcpip.Clock, rand *rand.Rand) *IPTables {
 			clock: clock,
 			rand:  rand,
 		},
-		reaperDone: make(chan struct{}, 1),
 	}
 }
 
@@ -545,7 +544,7 @@ func (it *IPTables) check(table Table, hook Hook, pkt *PacketBuffer, r *Route, a
 // beforeSave is invoked by stateify.
 func (it *IPTables) beforeSave() {
 	// Ensure the reaper exits cleanly.
-	it.reaperDone <- struct{}{}
+	it.reaper.Stop()
 	// Prevent others from modifying the connection table.
 	it.connections.mu.Lock()
 }
@@ -555,21 +554,13 @@ func (it *IPTables) afterLoad() {
 	it.startReaper(reaperDelay)
 }
 
-// startReaper starts a goroutine that wakes up periodically to reap timed out
-// connections.
+// startReaper periodically reaps timed out connections.
 func (it *IPTables) startReaper(interval time.Duration) {
-	go func() { // S/R-SAFE: reaperDone is signalled when iptables is saved.
-		bucket := 0
-		for {
-			select {
-			case <-it.reaperDone:
-				return
-				// TODO(gvisor.dev/issue/5939): do not use the ambient clock.
-			case <-time.After(interval):
-				bucket, interval = it.connections.reapUnused(bucket, interval)
-			}
-		}
-	}()
+	bucket := 0
+	it.reaper = it.connections.clock.AfterFunc(interval, func() {
+		bucket, interval = it.connections.reapUnused(bucket, interval)
+		it.reaper.Reset(interval)
+	})
 }
 
 // Preconditions:
