@@ -6,7 +6,6 @@ go_library(
     name = "fifo",
     srcs = [
         "fifo.go",
-        "packet_buffer_queue.go",
     ],
     visibility = ["//visibility:public"],
     deps = [
