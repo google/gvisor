@@ -3059,6 +3059,22 @@ cc_binary(
 )
 
 cc_binary(
+    name = "socket_ipv6_unbound_test",
+    testonly = 1,
+    srcs = [
+        "socket_ipv6_unbound.cc",
+    ],
+    linkstatic = 1,
+    deps = [
+        ":ip_socket_test_util",
+        "//test/util:socket_util",
+        gtest,
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
     name = "socket_ipv6_udp_unbound_loopback_test",
     testonly = 1,
     srcs = [

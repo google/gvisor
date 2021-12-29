@@ -165,7 +165,7 @@ func (p *protocol) HandleUnknownDestinationPacket(id stack.TransportEndpointID, 
 	}
 
 	if !s.flags.Contains(header.TCPFlagRst) {
-		replyWithReset(p.stack, s, stack.DefaultTOS, 0)
+		replyWithReset(p.stack, s, stack.DefaultTOS, tcpip.UseDefaultIPv4TTL, tcpip.UseDefaultIPv6HopLimit)
 	}
 
 	return stack.UnknownDestinationPacketHandled
@@ -191,13 +191,16 @@ func (p *protocol) tsOffset(src, dst tcpip.Address) tcp.TSOffset {
 
 // replyWithReset replies to the given segment with a reset segment.
 //
-// If the passed TTL is 0, then the route's default TTL will be used.
-func replyWithReset(st *stack.Stack, s *segment, tos, ttl uint8) tcpip.Error {
+// If the relevant TTL has its reset value (0 for ipv4TTL, -1 for ipv6HopLimit),
+// then the route's default TTL will be used.
+func replyWithReset(st *stack.Stack, s *segment, tos, ipv4TTL uint8, ipv6HopLimit int16) tcpip.Error {
 	route, err := st.FindRoute(s.nicID, s.dstAddr, s.srcAddr, s.netProto, false /* multicastLoop */)
 	if err != nil {
 		return err
 	}
 	defer route.Release()
+
+	ttl := calculateTTL(route, ipv4TTL, ipv6HopLimit)
 
 	// Get the seqnum from the packet if the ack flag is set.
 	seq := seqnum.Value(0)
@@ -219,10 +222,6 @@ func replyWithReset(st *stack.Stack, s *segment, tos, ttl uint8) tcpip.Error {
 	} else {
 		flags |= header.TCPFlagAck
 		ack = s.sequenceNumber.Add(s.logicalLen())
-	}
-
-	if ttl == 0 {
-		ttl = route.DefaultTTL()
 	}
 
 	return sendTCP(route, tcpFields{
