@@ -83,8 +83,7 @@ const (
 type IPTables struct {
 	connections ConnTrack
 
-	// reaperDone can be signaled to stop the reaper goroutine.
-	reaperDone chan struct{}
+	reaper tcpip.Timer
 
 	mu sync.RWMutex
 	// v4Tables and v6tables map tableIDs to tables. They hold builtin

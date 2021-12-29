@@ -121,7 +121,9 @@ func TestNATedConnectionReap(t *testing.T) {
 
 	// Stop the reaper if it is running so we can reap manually as it is started
 	// on the first change to IPTables.
-	iptables.reaperDone <- struct{}{}
+	if !iptables.reaper.Stop() {
+		t.Fatal("failed to stop reaper")
+	}
 
 	pkt := v6PacketBuffer()
 
@@ -224,7 +226,7 @@ func TestNATedConnectionReap(t *testing.T) {
 		bkt.mu.RLock()
 		defer bkt.mu.RUnlock()
 		for tuple := bkt.tuples.Front(); tuple != nil; tuple = tuple.Next() {
-			if tuple.id() == originalTID {
+			if tuple.id() == tid {
 				t.Errorf("unexpectedly found tuple with ID = %#v; reply = %t", tid, reply)
 			}
 		}
