@@ -40,8 +40,15 @@ type discipline struct {
 // queue. It will also smartly batch packets when possible and write them
 // through the lower LinkWriter.
 type queueDispatcher struct {
-	lower          stack.LinkWriter
-	queue          packetBufferQueue
+	lower stack.LinkWriter
+	limit int
+
+	mu sync.Mutex
+	// +checklocks:mu
+	queue stack.PacketBufferList
+	// +checklocks:mu
+	used int
+
 	newPacketWaker sleep.Waker
 	closeWaker     sleep.Waker
 }
@@ -56,7 +63,7 @@ func New(lower stack.LinkWriter, n int, queueLen int) stack.QueueingDiscipline {
 	for i := range d.dispatchers {
 		qd := &d.dispatchers[i]
 		qd.lower = lower
-		qd.queue.limit = queueLen
+		qd.limit = queueLen
 
 		d.wg.Add(1)
 		go func() {
@@ -67,33 +74,39 @@ func New(lower stack.LinkWriter, n int, queueLen int) stack.QueueingDiscipline {
 	return d
 }
 
-func (q *queueDispatcher) dispatchLoop() {
+func (qd *queueDispatcher) dispatchLoop() {
 	s := sleep.Sleeper{}
-	s.AddWaker(&q.newPacketWaker)
-	s.AddWaker(&q.closeWaker)
+	s.AddWaker(&qd.newPacketWaker)
+	s.AddWaker(&qd.closeWaker)
 	defer s.Done()
 
 	const batchSize = 32
 	var batch stack.PacketBufferList
 	for {
 		switch w := s.Fetch(true); w {
-		case &q.newPacketWaker:
-		case &q.closeWaker:
+		case &qd.newPacketWaker:
+		case &qd.closeWaker:
 			return
 		default:
 			panic("unknown waker")
 		}
-		for pkt := q.queue.dequeue(); pkt != nil; pkt = q.queue.dequeue() {
-			batch.PushBack(pkt)
-			if batch.Len() < batchSize && !q.queue.empty() {
-				continue
+		qd.mu.Lock()
+		for batch.Len() < batchSize {
+			pkt := qd.queue.Front()
+			if pkt == nil {
+				break
 			}
-			// We pass a protocol of zero here because each packet carries its
-			// NetworkProtocol.
-			q.lower.WritePackets(stack.RouteInfo{}, batch, 0 /* protocol */)
-			batch.DecRef()
-			batch.Reset()
+			qd.queue.Remove(pkt)
+			qd.used--
+			batch.PushBack(pkt)
 		}
+		qd.mu.Unlock()
+
+		// We pass a protocol of zero here because each packet carries its
+		// NetworkProtocol.
+		_, _ = qd.lower.WritePackets(stack.RouteInfo{}, batch, 0 /* protocol */)
+		batch.DecRef()
+		batch.Reset()
 	}
 }
 
@@ -105,7 +118,15 @@ func (q *queueDispatcher) dispatchLoop() {
 //  - pkt.NetworkProtocolNumber
 func (d *discipline) WritePacket(_ stack.RouteInfo, _ tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
 	qd := &d.dispatchers[int(pkt.Hash)%len(d.dispatchers)]
-	if !qd.queue.enqueue(pkt) {
+	qd.mu.Lock()
+	haveSpace := qd.used < qd.limit
+	if haveSpace {
+		pkt.IncRef()
+		qd.queue.PushBack(pkt)
+		qd.used++
+	}
+	qd.mu.Unlock()
+	if !haveSpace {
 		return &tcpip.ErrNoBufferSpace{}
 	}
 	qd.newPacketWaker.Assert()
