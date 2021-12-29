@@ -435,7 +435,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		// RFC 793 section 3.4 page 35 (figure 12) outlines that a RST
 		// must be sent in response to a SYN-ACK while in the listen
 		// state to prevent completing a handshake from an old SYN.
-		return replyWithReset(e.stack, s, e.sendTOS, e.ttl)
+		return replyWithReset(e.stack, s, e.sendTOS, e.ipv4TTL, e.ipv6HopLimit)
 	}
 
 	switch {
@@ -569,7 +569,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		cookie := ctx.createCookie(s.id, s.sequenceNumber, encodeMSS(opts.MSS))
 		fields := tcpFields{
 			id:     s.id,
-			ttl:    e.ttl,
+			ttl:    calculateTTL(route, e.ipv4TTL, e.ipv6HopLimit),
 			tos:    e.sendTOS,
 			flags:  header.TCPFlagSyn | header.TCPFlagAck,
 			seq:    cookie,
@@ -616,7 +616,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 			// The only time we should reach here when a connection
 			// was opened and closed really quickly and a delayed
 			// ACK was received from the sender.
-			return replyWithReset(e.stack, s, e.sendTOS, e.ttl)
+			return replyWithReset(e.stack, s, e.sendTOS, e.ipv4TTL, e.ipv6HopLimit)
 		}
 
 		// Keep hold of acceptMu until the new endpoint is in the accept queue (or

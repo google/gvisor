@@ -436,7 +436,8 @@ type endpoint struct {
 	isRegistered      bool `state:"manual"`
 	boundNICID        tcpip.NICID
 	route             *stack.Route `state:"manual"`
-	ttl               uint8
+	ipv4TTL           uint8
+	ipv6HopLimit      int16
 	isConnectNotified bool
 
 	// h stores a reference to the current handshake state if the endpoint is in
@@ -783,6 +784,25 @@ func (e *endpoint) recentTimestamp() uint32 {
 	return e.RecentTS
 }
 
+// TODO(gvisor.dev/issue/6974): Remove once tcp endpoints are composed with a
+// network.Endpoint, which also defines this function.
+func calculateTTL(route *stack.Route, ipv4TTL uint8, ipv6HopLimit int16) uint8 {
+	switch netProto := route.NetProto(); netProto {
+	case header.IPv4ProtocolNumber:
+		if ipv4TTL == tcpip.UseDefaultIPv4TTL {
+			return route.DefaultTTL()
+		}
+		return ipv4TTL
+	case header.IPv6ProtocolNumber:
+		if ipv6HopLimit == tcpip.UseDefaultIPv6HopLimit {
+			return route.DefaultTTL()
+		}
+		return uint8(ipv6HopLimit)
+	default:
+		panic(fmt.Sprintf("invalid protocol number = %d", netProto))
+	}
+}
+
 // keepalive is a synchronization wrapper used to appease stateify. See the
 // comment in endpoint, where it is used.
 //
@@ -818,6 +838,8 @@ func newEndpoint(s *stack.Stack, protocol *protocol, netProto tcpip.NetworkProto
 			count:    DefaultKeepaliveCount,
 		},
 		uniqueID:      s.UniqueID(),
+		ipv4TTL:       tcpip.UseDefaultIPv4TTL,
+		ipv6HopLimit:  tcpip.UseDefaultIPv6HopLimit,
 		txHash:        s.Rand().Uint32(),
 		windowClamp:   DefaultReceiveBufferSize,
 		maxSynRetries: DefaultSynRetries,
@@ -1775,9 +1797,14 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 			return &tcpip.ErrNotSupported{}
 		}
 
-	case tcpip.TTLOption:
+	case tcpip.IPv4TTLOption:
 		e.LockUser()
-		e.ttl = uint8(v)
+		e.ipv4TTL = uint8(v)
+		e.UnlockUser()
+
+	case tcpip.IPv6HopLimitOption:
+		e.LockUser()
+		e.ipv6HopLimit = int16(v)
 		e.UnlockUser()
 
 	case tcpip.TCPSynCountOption:
@@ -1960,9 +1987,15 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 	case tcpip.ReceiveQueueSizeOption:
 		return e.readyReceiveSize()
 
-	case tcpip.TTLOption:
+	case tcpip.IPv4TTLOption:
 		e.LockUser()
-		v := int(e.ttl)
+		v := int(e.ipv4TTL)
+		e.UnlockUser()
+		return v, nil
+
+	case tcpip.IPv6HopLimitOption:
+		e.LockUser()
+		v := int(e.ipv6HopLimit)
 		e.UnlockUser()
 		return v, nil
 

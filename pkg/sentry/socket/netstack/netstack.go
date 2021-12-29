@@ -1351,6 +1351,26 @@ func getSockOptIPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name 
 		v := primitive.Int32(boolToInt32(ep.SocketOptions().GetV6Only()))
 		return &v, nil
 
+	case linux.IPV6_UNICAST_HOPS:
+		if outLen < sizeOfInt32 {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		v, err := ep.GetSockOptInt(tcpip.IPv6HopLimitOption)
+		if err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+
+		// Fill in the default value, if needed.
+		vP := primitive.Int32(v)
+		if vP == -1 {
+			// TODO(https://github.com/google/gvisor/issues/6973): Retrieve the
+			// configured DefaultTTLOption of the IPv6 protocol.
+			vP = DefaultTTL
+		}
+
+		return &vP, nil
+
 	case linux.IPV6_PATHMTU:
 		t.Kernel().EmitUnimplementedEvent(t)
 
@@ -1499,7 +1519,7 @@ func getSockOptIP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name in
 			return nil, syserr.ErrInvalidArgument
 		}
 
-		v, err := ep.GetSockOptInt(tcpip.TTLOption)
+		v, err := ep.GetSockOptInt(tcpip.IPv4TTLOption)
 		if err != nil {
 			return nil, syserr.TranslateNetstackError(err)
 		}
@@ -1507,6 +1527,8 @@ func getSockOptIP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name in
 		// Fill in the default value, if needed.
 		vP := primitive.Int32(v)
 		if vP == 0 {
+			// TODO(https://github.com/google/gvisor/issues/6973): Retrieve the
+			// configured DefaultTTLOption of the IPv4 protocol.
 			vP = DefaultTTL
 		}
 
@@ -2200,6 +2222,16 @@ func setSockOptIPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name 
 		ep.SocketOptions().SetIPv6ReceivePacketInfo(v != 0)
 		return nil
 
+	case linux.IPV6_UNICAST_HOPS:
+		if len(optVal) < sizeOfInt32 {
+			return syserr.ErrInvalidArgument
+		}
+		v := int32(hostarch.ByteOrder.Uint32(optVal))
+		if v < -1 || v > 255 {
+			return syserr.ErrInvalidArgument
+		}
+		return syserr.TranslateNetstackError(ep.SetSockOptInt(tcpip.IPv6HopLimitOption, int(v)))
+
 	case linux.IPV6_TCLASS:
 		if len(optVal) < sizeOfInt32 {
 			return syserr.ErrInvalidArgument
@@ -2410,7 +2442,7 @@ func setSockOptIP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name in
 		} else if v < 1 || v > 255 {
 			return syserr.ErrInvalidArgument
 		}
-		return syserr.TranslateNetstackError(ep.SetSockOptInt(tcpip.TTLOption, int(v)))
+		return syserr.TranslateNetstackError(ep.SetSockOptInt(tcpip.IPv4TTLOption, int(v)))
 
 	case linux.IP_TOS:
 		if len(optVal) == 0 {

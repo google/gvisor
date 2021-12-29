@@ -132,7 +132,7 @@ func (r *ForwarderRequest) Complete(sendReset bool) {
 	r.forwarder.mu.Unlock()
 
 	if sendReset {
-		replyWithReset(r.forwarder.stack, r.segment, stack.DefaultTOS, 0 /* ttl */)
+		replyWithReset(r.forwarder.stack, r.segment, stack.DefaultTOS, tcpip.UseDefaultIPv4TTL, tcpip.UseDefaultIPv6HopLimit)
 	}
 
 	// Release all resources.

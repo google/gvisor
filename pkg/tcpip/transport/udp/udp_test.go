@@ -287,13 +287,6 @@ func (flow testFlow) isReverseMulticast() bool {
 	}
 }
 
-func (flow testFlow) ttlOption() tcpip.SockOptInt {
-	if flow.isMulticast() {
-		return tcpip.MulticastTTLOption
-	}
-	return tcpip.TTLOption
-}
-
 type testContext struct {
 	t      *testing.T
 	linkEP *channel.Endpoint
@@ -1615,7 +1608,7 @@ func (*testInterface) Enabled() bool {
 	return true
 }
 
-func TestNonMulticastDefaultTTL(t *testing.T) {
+func TestDefaultTTL(t *testing.T) {
 	for _, flow := range []testFlow{unicastV4, unicastV4in6, unicastV6, unicastV6Only, broadcast, broadcastIn6} {
 		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {
 			c := newDualTestContext(t, defaultMTU)
@@ -1642,8 +1635,8 @@ func TestNonMulticastDefaultTTL(t *testing.T) {
 	}
 }
 
-func TestSetTTL(t *testing.T) {
-	for _, flow := range []testFlow{unicastV4, unicastV4in6, unicastV6, unicastV6Only, multicastV4, multicastV4in6, multicastV6, broadcast, broadcastIn6} {
+func TestNonMulticastDefaultTTL(t *testing.T) {
+	for _, flow := range []testFlow{unicastV4, unicastV4in6, unicastV6, unicastV6Only, broadcast, broadcastIn6} {
 		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {
 			for _, wantTTL := range []uint8{1, 2, 50, 64, 128, 254, 255} {
 				t.Run(fmt.Sprintf("TTL:%d", wantTTL), func(t *testing.T) {
@@ -1652,9 +1645,43 @@ func TestSetTTL(t *testing.T) {
 
 					c.createEndpointForFlow(flow)
 
-					opt := flow.ttlOption()
-					if err := c.ep.SetSockOptInt(opt, int(wantTTL)); err != nil {
-						c.t.Fatalf("SetSockOptInt(%d, %d) failed: %s", opt, wantTTL, err)
+					var relevantOpt tcpip.SockOptInt
+					var irrelevantOpt tcpip.SockOptInt
+					if flow.isV4() {
+						relevantOpt = tcpip.IPv4TTLOption
+						irrelevantOpt = tcpip.IPv6HopLimitOption
+					} else {
+						relevantOpt = tcpip.IPv6HopLimitOption
+						irrelevantOpt = tcpip.IPv4TTLOption
+					}
+					if err := c.ep.SetSockOptInt(relevantOpt, int(wantTTL)); err != nil {
+						c.t.Fatalf("SetSockOptInt(%d, %d) failed: %s", relevantOpt, wantTTL, err)
+					}
+					// Set a different ttl/hoplimit for the unused protocol, showing that
+					// it does not affect the other protocol.
+					if err := c.ep.SetSockOptInt(irrelevantOpt, int(wantTTL+1)); err != nil {
+						c.t.Fatalf("SetSockOptInt(%d, %d) failed: %s", irrelevantOpt, wantTTL, err)
+					}
+
+					testWrite(c, flow, checker.TTL(wantTTL))
+				})
+			}
+		})
+	}
+}
+
+func TestSetMulticastTTL(t *testing.T) {
+	for _, flow := range []testFlow{multicastV4, multicastV4in6, multicastV6} {
+		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {
+			for _, wantTTL := range []uint8{1, 2, 50, 64, 128, 254, 255} {
+				t.Run(fmt.Sprintf("TTL:%d", wantTTL), func(t *testing.T) {
+					c := newDualTestContext(t, defaultMTU)
+					defer c.cleanup()
+
+					c.createEndpointForFlow(flow)
+
+					if err := c.ep.SetSockOptInt(tcpip.MulticastTTLOption, int(wantTTL)); err != nil {
+						c.t.Fatalf("SetSockOptInt failed: %s", err)
 					}
 
 					testWrite(c, flow, checker.TTL(wantTTL))

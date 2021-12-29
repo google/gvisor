@@ -767,6 +767,11 @@ syscall_test(
 )
 
 syscall_test(
+    shard_count = more_shards,
+    test = "//test/syscalls/linux:socket_ipv6_unbound_test",
+)
+
+syscall_test(
     test = "//test/syscalls/linux:socket_ip_unbound_netlink_test",
 )
 

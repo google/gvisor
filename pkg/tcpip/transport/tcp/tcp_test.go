@@ -3463,12 +3463,14 @@ func TestDefaultTTL(t *testing.T) {
 
 func TestSetTTL(t *testing.T) {
 	for _, test := range []struct {
-		name     string
-		protoNum tcpip.NetworkProtocolNumber
-		addr     tcpip.Address
+		name          string
+		protoNum      tcpip.NetworkProtocolNumber
+		addr          tcpip.Address
+		relevantOpt   tcpip.SockOptInt
+		irrelevantOpt tcpip.SockOptInt
 	}{
-		{"ipv4", ipv4.ProtocolNumber, context.TestAddr},
-		{"ipv6", ipv6.ProtocolNumber, context.TestV6Addr},
+		{"ipv4", ipv4.ProtocolNumber, context.TestAddr, tcpip.IPv4TTLOption, tcpip.IPv6HopLimitOption},
+		{"ipv6", ipv6.ProtocolNumber, context.TestV6Addr, tcpip.IPv6HopLimitOption, tcpip.IPv4TTLOption},
 	} {
 		t.Run(fmt.Sprint(test.name), func(t *testing.T) {
 			for _, wantTTL := range []uint8{1, 2, 50, 64, 128, 254, 255} {
@@ -3482,8 +3484,13 @@ func TestSetTTL(t *testing.T) {
 						t.Fatalf("NewEndpoint failed: %s", err)
 					}
 
-					if err := c.EP.SetSockOptInt(tcpip.TTLOption, int(wantTTL)); err != nil {
-						t.Fatalf("SetSockOptInt(TTLOption, %d) failed: %s", wantTTL, err)
+					if err := c.EP.SetSockOptInt(test.relevantOpt, int(wantTTL)); err != nil {
+						t.Fatalf("SetSockOptInt(%d, %d) failed: %s", test.relevantOpt, wantTTL, err)
+					}
+					// Set a different ttl/hoplimit for the unused protocol, showing that
+					// it does not affect the other protocol.
+					if err := c.EP.SetSockOptInt(test.irrelevantOpt, int(wantTTL+1)); err != nil {
+						t.Fatalf("SetSockOptInt(%d, %d) failed: %s", test.irrelevantOpt, wantTTL, err)
 					}
 
 					{

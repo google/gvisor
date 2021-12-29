@@ -731,12 +731,19 @@ const (
 	// number of unread bytes in the output buffer should be returned.
 	SendQueueSizeOption
 
-	// TTLOption is used by SetSockOptInt/GetSockOptInt to control the
-	// default TTL/hop limit value for unicast messages. The default is
-	// protocol specific.
+	// IPv4TTLOption is used by SetSockOptInt/GetSockOptInt to control the default
+	// TTL value for unicast messages.
 	//
-	// A zero value indicates the default.
-	TTLOption
+	// The default is configured by DefaultTTLOption. A UseDefaultIPv4TTL value
+	// configures the endpoint to use the default.
+	IPv4TTLOption
+
+	// IPv6HopLimitOption is used by SetSockOptInt/GetSockOptInt to control the
+	// default hop limit value for unicast messages.
+	//
+	// The default is configured by DefaultTTLOption. A UseDefaultIPv6HopLimit
+	// value configures the endpoint to use the default.
+	IPv6HopLimitOption
 
 	// TCPSynCountOption is used by SetSockOptInt/GetSockOptInt to specify
 	// the number of SYN retransmits that TCP should send before aborting
@@ -750,6 +757,18 @@ const (
 	//
 	// NOTE: This option is currently only stubed out and is a no-op
 	TCPWindowClampOption
+)
+
+const (
+	// UseDefaultIPv4TTL is the IPv4TTLOption value that configures an endpoint to
+	// use the default ttl currently configured by the IPv4 protocol (see
+	// DefaultTTLOption).
+	UseDefaultIPv4TTL = 0
+
+	// UseDefaultIPv6HopLimit is the IPv6HopLimitOption value that configures an
+	// endpoint to use the default hop limit currently configured by the IPv6
+	// protocol (see DefaultTTLOption).
+	UseDefaultIPv6HopLimit = -1
 )
 
 const (

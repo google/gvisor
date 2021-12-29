@@ -53,9 +53,10 @@ type Endpoint struct {
 	connectedRoute *stack.Route `state:"manual"`
 	// +checklocks:mu
 	multicastMemberships map[multicastMembership]struct{}
-	// TODO(https://gvisor.dev/issue/6389): Use different fields for IPv4/IPv6.
 	// +checklocks:mu
-	ttl uint8
+	ipv4TTL uint8
+	// +checklocks:mu
+	ipv6HopLimit int16
 	// TODO(https://gvisor.dev/issue/6389): Use different fields for IPv4/IPv6.
 	// +checklocks:mu
 	multicastTTL uint8
@@ -131,6 +132,8 @@ func (e *Endpoint) Init(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, tr
 			TransProto: transProto,
 		},
 		effectiveNetProto: netProto,
+		ipv4TTL:           tcpip.UseDefaultIPv4TTL,
+		ipv6HopLimit:      tcpip.UseDefaultIPv6HopLimit,
 		// Linux defaults to TTL=1.
 		multicastTTL:         1,
 		multicastMemberships: make(map[multicastMembership]struct{}),
@@ -191,16 +194,27 @@ func (e *Endpoint) SetOwner(owner tcpip.PacketOwner) {
 	e.owner = owner
 }
 
-func calculateTTL(route *stack.Route, ttl uint8, multicastTTL uint8) uint8 {
-	if header.IsV4MulticastAddress(route.RemoteAddress()) || header.IsV6MulticastAddress(route.RemoteAddress()) {
-		return multicastTTL
+// +checklocksread:e.mu
+func (e *Endpoint) calculateTTL(route *stack.Route) uint8 {
+	remoteAddress := route.RemoteAddress()
+	if header.IsV4MulticastAddress(remoteAddress) || header.IsV6MulticastAddress(remoteAddress) {
+		return e.multicastTTL
 	}
 
-	if ttl == 0 {
-		return route.DefaultTTL()
+	switch netProto := route.NetProto(); netProto {
+	case header.IPv4ProtocolNumber:
+		if e.ipv4TTL == 0 {
+			return route.DefaultTTL()
+		}
+		return e.ipv4TTL
+	case header.IPv6ProtocolNumber:
+		if e.ipv6HopLimit == -1 {
+			return route.DefaultTTL()
+		}
+		return uint8(e.ipv6HopLimit)
+	default:
+		panic(fmt.Sprintf("invalid protocol number = %d", netProto))
 	}
-
-	return ttl
 }
 
 // WriteContext holds the context for a write.
@@ -327,7 +341,7 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 	return WriteContext{
 		transProto: e.transProto,
 		route:      route,
-		ttl:        calculateTTL(route, e.ttl, e.multicastTTL),
+		ttl:        e.calculateTTL(route),
 		tos:        tos,
 		owner:      e.owner,
 	}, nil
@@ -602,9 +616,14 @@ func (e *Endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 		e.multicastTTL = uint8(v)
 		e.mu.Unlock()
 
-	case tcpip.TTLOption:
+	case tcpip.IPv4TTLOption:
 		e.mu.Lock()
-		e.ttl = uint8(v)
+		e.ipv4TTL = uint8(v)
+		e.mu.Unlock()
+
+	case tcpip.IPv6HopLimitOption:
+		e.mu.Lock()
+		e.ipv6HopLimit = int16(v)
 		e.mu.Unlock()
 
 	case tcpip.IPv4TOSOption:
@@ -634,9 +653,15 @@ func (e *Endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 		e.mu.Unlock()
 		return v, nil
 
-	case tcpip.TTLOption:
+	case tcpip.IPv4TTLOption:
 		e.mu.Lock()
-		v := int(e.ttl)
+		v := int(e.ipv4TTL)
+		e.mu.Unlock()
+		return v, nil
+
+	case tcpip.IPv6HopLimitOption:
+		e.mu.Lock()
+		v := int(e.ipv6HopLimit)
 		e.mu.Unlock()
 		return v, nil
 
