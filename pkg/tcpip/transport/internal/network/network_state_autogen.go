@@ -20,7 +20,8 @@ func (e *Endpoint) StateFields() []string {
 		"writeShutdown",
 		"effectiveNetProto",
 		"multicastMemberships",
-		"ttl",
+		"ipv4TTL",
+		"ipv6HopLimit",
 		"multicastTTL",
 		"multicastAddr",
 		"multicastNICID",
@@ -44,14 +45,15 @@ func (e *Endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &e.writeShutdown)
 	stateSinkObject.Save(6, &e.effectiveNetProto)
 	stateSinkObject.Save(7, &e.multicastMemberships)
-	stateSinkObject.Save(8, &e.ttl)
-	stateSinkObject.Save(9, &e.multicastTTL)
-	stateSinkObject.Save(10, &e.multicastAddr)
-	stateSinkObject.Save(11, &e.multicastNICID)
-	stateSinkObject.Save(12, &e.ipv4TOS)
-	stateSinkObject.Save(13, &e.ipv6TClass)
-	stateSinkObject.Save(14, &e.info)
-	stateSinkObject.Save(15, &e.state)
+	stateSinkObject.Save(8, &e.ipv4TTL)
+	stateSinkObject.Save(9, &e.ipv6HopLimit)
+	stateSinkObject.Save(10, &e.multicastTTL)
+	stateSinkObject.Save(11, &e.multicastAddr)
+	stateSinkObject.Save(12, &e.multicastNICID)
+	stateSinkObject.Save(13, &e.ipv4TOS)
+	stateSinkObject.Save(14, &e.ipv6TClass)
+	stateSinkObject.Save(15, &e.info)
+	stateSinkObject.Save(16, &e.state)
 }
 
 func (e *Endpoint) afterLoad() {}
@@ -66,14 +68,15 @@ func (e *Endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(5, &e.writeShutdown)
 	stateSourceObject.Load(6, &e.effectiveNetProto)
 	stateSourceObject.Load(7, &e.multicastMemberships)
-	stateSourceObject.Load(8, &e.ttl)
-	stateSourceObject.Load(9, &e.multicastTTL)
-	stateSourceObject.Load(10, &e.multicastAddr)
-	stateSourceObject.Load(11, &e.multicastNICID)
-	stateSourceObject.Load(12, &e.ipv4TOS)
-	stateSourceObject.Load(13, &e.ipv6TClass)
-	stateSourceObject.Load(14, &e.info)
-	stateSourceObject.Load(15, &e.state)
+	stateSourceObject.Load(8, &e.ipv4TTL)
+	stateSourceObject.Load(9, &e.ipv6HopLimit)
+	stateSourceObject.Load(10, &e.multicastTTL)
+	stateSourceObject.Load(11, &e.multicastAddr)
+	stateSourceObject.Load(12, &e.multicastNICID)
+	stateSourceObject.Load(13, &e.ipv4TOS)
+	stateSourceObject.Load(14, &e.ipv6TClass)
+	stateSourceObject.Load(15, &e.info)
+	stateSourceObject.Load(16, &e.state)
 }
 
 func (m *multicastMembership) StateTypeName() string {

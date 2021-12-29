@@ -283,7 +283,7 @@ func (h *handshake) synSentState(s *segment) tcpip.Error {
 	// but resend our own SYN and wait for it to be acknowledged in the
 	// SYN-RCVD state.
 	h.state = handshakeSynRcvd
-	ttl := h.ep.ttl
+	ttl := calculateTTL(h.ep.route, h.ep.ipv4TTL, h.ep.ipv6HopLimit)
 	amss := h.ep.amss
 	h.ep.setEndpointState(StateSynRecv)
 	synOpts := header.TCPSynOptions{
@@ -366,7 +366,7 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 		}
 		h.ep.sendSynTCP(h.ep.route, tcpFields{
 			id:     h.ep.TransportEndpointInfo.ID,
-			ttl:    h.ep.ttl,
+			ttl:    calculateTTL(h.ep.route, h.ep.ipv4TTL, h.ep.ipv6HopLimit),
 			tos:    h.ep.sendTOS,
 			flags:  h.flags,
 			seq:    h.iss,
@@ -508,7 +508,7 @@ func (h *handshake) start() {
 	h.sendSYNOpts = synOpts
 	h.ep.sendSynTCP(h.ep.route, tcpFields{
 		id:     h.ep.TransportEndpointInfo.ID,
-		ttl:    h.ep.ttl,
+		ttl:    calculateTTL(h.ep.route, h.ep.ipv4TTL, h.ep.ipv6HopLimit),
 		tos:    h.ep.sendTOS,
 		flags:  h.flags,
 		seq:    h.iss,
@@ -556,7 +556,7 @@ func (h *handshake) complete() tcpip.Error {
 			if h.active || !h.acked || h.deferAccept != 0 && h.ep.stack.Clock().NowMonotonic().Sub(h.startTime) > h.deferAccept {
 				h.ep.sendSynTCP(h.ep.route, tcpFields{
 					id:     h.ep.TransportEndpointInfo.ID,
-					ttl:    h.ep.ttl,
+					ttl:    calculateTTL(h.ep.route, h.ep.ipv4TTL, h.ep.ipv6HopLimit),
 					tos:    h.ep.sendTOS,
 					flags:  h.flags,
 					seq:    h.iss,
@@ -847,9 +847,6 @@ func sendTCPBatch(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso 
 		buildTCPHdr(r, tf, pkt, gso)
 		tf.seq = tf.seq.Add(seqnum.Size(packetSize))
 		pkt.GSOOptions = gso
-		if tf.ttl == 0 {
-			tf.ttl = r.DefaultTTL()
-		}
 		if err := r.WritePacket(stack.NetworkHeaderParams{Protocol: ProtocolNumber, TTL: tf.ttl, TOS: tf.tos}, pkt); err != nil {
 			r.Stats().TCP.SegmentSendErrors.Increment()
 			pkt.DecRef()
@@ -883,9 +880,6 @@ func sendTCP(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso stack
 	pkt.Owner = owner
 	buildTCPHdr(r, tf, pkt, gso)
 
-	if tf.ttl == 0 {
-		tf.ttl = r.DefaultTTL()
-	}
 	if err := r.WritePacket(stack.NetworkHeaderParams{Protocol: ProtocolNumber, TTL: tf.ttl, TOS: tf.tos}, pkt); err != nil {
 		r.Stats().TCP.SegmentSendErrors.Increment()
 		return err
@@ -945,7 +939,7 @@ func (e *endpoint) sendRaw(data buffer.VectorisedView, flags header.TCPFlags, se
 	options := e.makeOptions(sackBlocks)
 	err := e.sendTCP(e.route, tcpFields{
 		id:     e.TransportEndpointInfo.ID,
-		ttl:    e.ttl,
+		ttl:    calculateTTL(e.route, e.ipv4TTL, e.ipv6HopLimit),
 		tos:    e.sendTOS,
 		flags:  flags,
 		seq:    seq,
@@ -1049,7 +1043,7 @@ func (e *endpoint) tryDeliverSegmentFromClosedEndpoint(s *segment) {
 		)
 	}
 	if ep == nil {
-		replyWithReset(e.stack, s, stack.DefaultTOS, 0 /* ttl */)
+		replyWithReset(e.stack, s, stack.DefaultTOS, tcpip.UseDefaultIPv4TTL, tcpip.UseDefaultIPv6HopLimit)
 		s.decRef()
 		return
 	}
