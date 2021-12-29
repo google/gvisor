@@ -195,7 +195,7 @@ func (it *IPTables) StateTypeName() string {
 func (it *IPTables) StateFields() []string {
 	return []string{
 		"connections",
-		"reaperDone",
+		"reaper",
 		"mu",
 		"v4Tables",
 		"v6Tables",
@@ -207,7 +207,7 @@ func (it *IPTables) StateFields() []string {
 func (it *IPTables) StateSave(stateSinkObject state.Sink) {
 	it.beforeSave()
 	stateSinkObject.Save(0, &it.connections)
-	stateSinkObject.Save(1, &it.reaperDone)
+	stateSinkObject.Save(1, &it.reaper)
 	stateSinkObject.Save(2, &it.mu)
 	stateSinkObject.Save(3, &it.v4Tables)
 	stateSinkObject.Save(4, &it.v6Tables)
@@ -217,7 +217,7 @@ func (it *IPTables) StateSave(stateSinkObject state.Sink) {
 // +checklocksignore
 func (it *IPTables) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &it.connections)
-	stateSourceObject.Load(1, &it.reaperDone)
+	stateSourceObject.Load(1, &it.reaper)
 	stateSourceObject.Load(2, &it.mu)
 	stateSourceObject.Load(3, &it.v4Tables)
 	stateSourceObject.Load(4, &it.v6Tables)
