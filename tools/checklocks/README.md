@@ -88,7 +88,7 @@ greater than 100%, if the lock is held multiple times. For example:
 func foo(ts1 *testStruct, ts2 *testStruct) {
   ts1.Lock()
   ts2.Lock()
-  ts1.gaurdedField = 1 // 200% locks held.
+  ts1.guardedField = 1 // 200% locks held.
   ts1.Unlock()
   ts2.Unlock()
 }
