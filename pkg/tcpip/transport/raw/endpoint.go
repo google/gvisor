@@ -85,6 +85,13 @@ type endpoint struct {
 	rcvDisabled bool
 
 	mu sync.RWMutex `state:"nosave"`
+
+	// ipv6ChecksumOffset indicates the offset to populate the IPv6 checksum at.
+	//
+	// A negative value indicates no checksum should be calculated.
+	//
+	// +checklocks:mu
+	ipv6ChecksumOffset int
 	// icmp6Filter holds the filter for ICMPv6 packets.
 	//
 	// +checklocks:mu
@@ -97,11 +104,24 @@ func NewEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, trans
 }
 
 func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, waiterQueue *waiter.Queue, associated bool) (tcpip.Endpoint, tcpip.Error) {
+	// Calculating the upper-layer checksum is disabled by default for raw IPv6
+	// endpoints, unless the upper-layer protocol is ICMPv6.
+	//
+	// As per RFC 3542 section 3.1,
+	//
+	//   The kernel will calculate and insert the ICMPv6 checksum for ICMPv6
+	//   raw sockets, since this checksum is mandatory.
+	ipv6ChecksumOffset := -1
+	if netProto == header.IPv6ProtocolNumber && transProto == header.ICMPv6ProtocolNumber {
+		ipv6ChecksumOffset = header.ICMPv6ChecksumOffset
+	}
+
 	e := &endpoint{
-		stack:       s,
-		transProto:  transProto,
-		waiterQueue: waiterQueue,
-		associated:  associated,
+		stack:              s,
+		transProto:         transProto,
+		waiterQueue:        waiterQueue,
+		associated:         associated,
+		ipv6ChecksumOffset: ipv6ChecksumOffset,
 	}
 	e.ops.InitHandler(e, e.stack, tcpip.GetStackSendBufferLimits, tcpip.GetStackReceiveBufferLimits)
 	e.ops.SetHeaderIncluded(!associated)
@@ -274,7 +294,10 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 }
 
 func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcpip.Error) {
+	e.mu.Lock()
 	ctx, err := e.net.AcquireContextForWrite(opts)
+	ipv6ChecksumOffset := e.ipv6ChecksumOffset
+	e.mu.Unlock()
 	if err != nil {
 		return 0, err
 	}
@@ -283,6 +306,18 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 	payloadBytes := make([]byte, p.Len())
 	if _, err := io.ReadFull(p, payloadBytes); err != nil {
 		return 0, &tcpip.ErrBadBuffer{}
+	}
+
+	if packetInfo := ctx.PacketInfo(); packetInfo.NetProto == header.IPv6ProtocolNumber && ipv6ChecksumOffset >= 0 {
+		// Make sure we can fit the checksum.
+		if len(payloadBytes) < ipv6ChecksumOffset+header.ChecksumSize {
+			return 0, &tcpip.ErrInvalidOptionValue{}
+		}
+
+		xsum := header.PseudoHeaderChecksum(e.transProto, packetInfo.LocalAddress, packetInfo.RemoteAddress, uint16(len(payloadBytes)))
+		header.PutChecksum(payloadBytes[ipv6ChecksumOffset:], 0)
+		xsum = header.Checksum(payloadBytes, xsum)
+		header.PutChecksum(payloadBytes[ipv6ChecksumOffset:], ^xsum)
 	}
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -415,7 +450,31 @@ func (e *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 }
 
 func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
-	return e.net.SetSockOptInt(opt, v)
+	switch opt {
+	case tcpip.IPv6Checksum:
+		if e.net.NetProto() != header.IPv6ProtocolNumber {
+			return &tcpip.ErrUnknownProtocolOption{}
+		}
+
+		if e.transProto == header.ICMPv6ProtocolNumber {
+			// As per RFC 3542 section 3.1,
+			//
+			//  An attempt to set IPV6_CHECKSUM for an ICMPv6 socket will fail.
+			return &tcpip.ErrInvalidOptionValue{}
+		}
+
+		// Make sure the offset is aligned properly if checksum is requested.
+		if v > 0 && v%header.ChecksumSize != 0 {
+			return &tcpip.ErrInvalidOptionValue{}
+		}
+
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		e.ipv6ChecksumOffset = v
+		return nil
+	default:
+		return e.net.SetSockOptInt(opt, v)
+	}
 }
 
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
@@ -452,6 +511,15 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 		}
 		e.rcvMu.Unlock()
 		return v, nil
+
+	case tcpip.IPv6Checksum:
+		if e.net.NetProto() != header.IPv6ProtocolNumber {
+			return 0, &tcpip.ErrUnknownProtocolOption{}
+		}
+
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		return e.ipv6ChecksumOffset, nil
 
 	default:
 		return e.net.GetSockOptInt(opt)
@@ -552,6 +620,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 			headers = append(headers, networkHeader...)
 			headers = append(headers, transportHeader...)
 			combinedVV = headers.ToVectorisedView()
+			combinedVV.Append(pkt.Data().ExtractVV())
 		case header.IPv6ProtocolNumber:
 			if e.transProto == header.ICMPv6ProtocolNumber {
 				if len(transportHeader) < header.ICMPv6MinimumSize {
@@ -564,10 +633,26 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 			}
 
 			combinedVV = append(buffer.View(nil), transportHeader...).ToVectorisedView()
+			combinedVV.Append(pkt.Data().ExtractVV())
+
+			if checksumOffset := e.ipv6ChecksumOffset; checksumOffset >= 0 {
+				vvSize := combinedVV.Size()
+				if vvSize < checksumOffset+header.ChecksumSize {
+					// Message too small to fit checksum.
+					return false
+				}
+
+				xsum := header.PseudoHeaderChecksum(e.transProto, srcAddr, dstAddr, uint16(vvSize))
+				xsum = header.ChecksumVV(combinedVV, xsum)
+				if xsum != 0xFFFF {
+					// Invalid checksum.
+					return false
+				}
+			}
 		default:
 			panic(fmt.Sprintf("unrecognized protocol number = %d", info.NetProto))
 		}
-		combinedVV.Append(pkt.Data().ExtractVV())
+
 		packet.data = combinedVV
 		packet.receivedAt = e.stack.Clock().Now()
 
