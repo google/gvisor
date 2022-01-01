@@ -1343,6 +1343,19 @@ func getSockOptIPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name 
 	}
 
 	switch name {
+	case linux.IPV6_CHECKSUM:
+		if outLen < sizeOfInt32 {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		v, err := ep.GetSockOptInt(tcpip.IPv6Checksum)
+		if err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+
+		vP := primitive.Int32(v)
+		return &vP, nil
+
 	case linux.IPV6_V6ONLY:
 		if outLen < sizeOfInt32 {
 			return nil, syserr.ErrInvalidArgument
@@ -2151,6 +2164,15 @@ func setSockOptIPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name 
 	}
 
 	switch name {
+	case linux.IPV6_CHECKSUM:
+		if len(optVal) < sizeOfInt32 {
+			return syserr.ErrInvalidArgument
+		}
+
+		// int may not be 32-bits so we cast the uint32 to an int32 before casting
+		// to an int.
+		return syserr.TranslateNetstackError(ep.SetSockOptInt(tcpip.IPv6Checksum, int(int32(hostarch.ByteOrder.Uint32(optVal)))))
+
 	case linux.IPV6_V6ONLY:
 		if len(optVal) < sizeOfInt32 {
 			return syserr.ErrInvalidArgument

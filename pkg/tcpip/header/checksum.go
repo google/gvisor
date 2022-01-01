@@ -24,6 +24,11 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 )
 
+// ChecksumSize is the size of a checksum.
+//
+// The checksum is held in a uint16 which is 2 bytes.
+const ChecksumSize = 2
+
 // PutChecksum puts the checksum in the provided byte slice.
 func PutChecksum(b []byte, xsum uint16) {
 	binary.BigEndian.PutUint16(b, xsum)
