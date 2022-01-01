@@ -1186,6 +1186,179 @@ TEST(RawSocketTest, ReceiveIPv6PacketInfo) {
   EXPECT_THAT(CMSG_NXTHDR(&recv_msg, cmsg), IsNull());
 }
 
+TEST(RawSocketTest, SetIPv6ChecksumError_MultipleOf2) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_RAW, IPPROTO_UDP));
+
+  int intV = 3;
+  ASSERT_THAT(
+      setsockopt(fd.get(), SOL_IPV6, IPV6_CHECKSUM, &intV, sizeof(intV)),
+      SyscallFailsWithErrno(EINVAL));
+
+  intV = 5;
+  ASSERT_THAT(
+      setsockopt(fd.get(), SOL_IPV6, IPV6_CHECKSUM, &intV, sizeof(intV)),
+      SyscallFailsWithErrno(EINVAL));
+
+  intV = 2;
+  ASSERT_THAT(
+      setsockopt(fd.get(), SOL_IPV6, IPV6_CHECKSUM, &intV, sizeof(intV)),
+      SyscallSucceeds());
+
+  intV = 4;
+  ASSERT_THAT(
+      setsockopt(fd.get(), SOL_IPV6, IPV6_CHECKSUM, &intV, sizeof(intV)),
+      SyscallSucceeds());
+}
+
+TEST(RawSocketTest, SetIPv6ChecksumError_ReadShort) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_RAW, IPPROTO_UDP));
+
+  int intV = 2;
+  if (IsRunningOnGvisor() && !IsRunningWithHostinet()) {
+    // TODO(https://gvisor.dev/issue/6982): This is a deviation from Linux. We
+    // should determine if we want to match the behaviour or handle the error
+    // more gracefully.
+    ASSERT_THAT(
+        setsockopt(fd.get(), SOL_IPV6, IPV6_CHECKSUM, &intV, sizeof(intV) - 1),
+        SyscallFailsWithErrno(EINVAL));
+    return;
+  }
+
+  intV = std::numeric_limits<int>::max();
+  if (intV % 2) {
+    intV--;
+  }
+
+  if (const char* val = getenv("IPV6_CHECKSUM_SETSOCKOPT_SHORT_EXCEPTION");
+      val != nullptr && strcmp(val, "1") == 0) {
+    // TODO(https://issuetracker.google.com/issues/212585236): As of writing, it
+    // seems like at least one Linux environment considers optlen unlike a local
+    // Linux environment. In this case we call setsockopt with the full int so
+    // that the rest of the test passes. Once the root cause for this difference
+    // is found, we can update this check.
+    ASSERT_THAT(
+        setsockopt(fd.get(), SOL_IPV6, IPV6_CHECKSUM, &intV, sizeof(intV)),
+        SyscallSucceeds());
+  } else {
+    ASSERT_THAT(
+        setsockopt(fd.get(), SOL_IPV6, IPV6_CHECKSUM, &intV, sizeof(intV) - 1),
+        SyscallSucceeds());
+  }
+
+  {
+    int got;
+    socklen_t got_len = sizeof(got);
+    ASSERT_THAT(getsockopt(fd.get(), SOL_IPV6, IPV6_CHECKSUM, &got, &got_len),
+                SyscallSucceeds());
+    ASSERT_EQ(got_len, sizeof(got));
+    // Even though we called setsockopt with a length smaller than an int, Linux
+    // seems to read the full int.
+    EXPECT_EQ(got, intV);
+  }
+
+  // If we have pass a pointer that points to memory less than the size of an
+  // int, we get a bad address error.
+  std::unique_ptr<uint8_t> u8V;
+  // Linux seems to assume a full int but doesn't check the passed length.
+  //
+  // https://github.com/torvalds/linux/blob/a52a8e9eaf4a12dd58953fc622bb2bc08fd1d32c/net/ipv6/raw.c#L1023
+  // shows that Linux copies optVal to an int without first checking optLen.
+  ASSERT_THAT(
+      setsockopt(fd.get(), SOL_IPV6, IPV6_CHECKSUM, u8V.get(), sizeof(*u8V)),
+      SyscallFailsWithErrno(EFAULT));
+}
+
+TEST(RawSocketTest, IPv6Checksum_ValidateAndCalculate) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+
+  FileDescriptor checksum_set =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_RAW, IPPROTO_UDP));
+
+  FileDescriptor checksum_not_set =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_RAW, IPPROTO_UDP));
+
+  const sockaddr_in6 addr = {
+      .sin6_family = AF_INET6,
+      .sin6_addr = IN6ADDR_LOOPBACK_INIT,
+  };
+
+  auto bind_and_set_checksum = [&](const FileDescriptor& fd, int v) {
+    ASSERT_THAT(
+        bind(fd.get(), reinterpret_cast<const sockaddr*>(&addr), sizeof(addr)),
+        SyscallSucceeds());
+
+    int got;
+    socklen_t got_len = sizeof(got);
+    ASSERT_THAT(getsockopt(fd.get(), SOL_IPV6, IPV6_CHECKSUM, &got, &got_len),
+                SyscallSucceeds());
+    ASSERT_EQ(got_len, sizeof(got));
+    EXPECT_EQ(got, -1);
+
+    ASSERT_THAT(setsockopt(fd.get(), SOL_IPV6, IPV6_CHECKSUM, &v, sizeof(v)),
+                SyscallSucceeds());
+    ASSERT_THAT(getsockopt(fd.get(), SOL_IPV6, IPV6_CHECKSUM, &got, &got_len),
+                SyscallSucceeds());
+    ASSERT_EQ(got_len, sizeof(got));
+    EXPECT_EQ(got, v);
+  };
+
+  struct udp_packet {
+    udphdr udp;
+    uint32_t value;
+  } ABSL_ATTRIBUTE_PACKED;
+
+  ASSERT_NO_FATAL_FAILURE(bind_and_set_checksum(
+      checksum_set, offsetof(udp_packet, udp) + offsetof(udphdr, uh_sum)));
+  ASSERT_NO_FATAL_FAILURE(bind_and_set_checksum(checksum_not_set, -1));
+
+  auto send = [&](const FileDescriptor& fd, uint32_t v) {
+    const udp_packet packet = {
+        .value = v,
+    };
+
+    ASSERT_THAT(sendto(fd.get(), &packet, sizeof(packet), /*flags=*/0,
+                       reinterpret_cast<const sockaddr*>(&addr), sizeof(addr)),
+                SyscallSucceedsWithValue(sizeof(packet)));
+  };
+
+  auto expect_receive = [&](const FileDescriptor& fd, uint32_t v,
+                            bool should_check_xsum) {
+    udp_packet packet;
+    sockaddr_in6 sender;
+    socklen_t sender_len = sizeof(sender);
+    ASSERT_THAT(
+        RetryEINTR(recvfrom)(fd.get(), &packet, sizeof(packet), /*flags=*/0,
+                             reinterpret_cast<sockaddr*>(&sender), &sender_len),
+        SyscallSucceedsWithValue(sizeof(packet)));
+    ASSERT_EQ(sender_len, sizeof(sender));
+    EXPECT_EQ(memcmp(&sender, &addr, sizeof(addr)), 0);
+    EXPECT_EQ(packet.value, v);
+    if (should_check_xsum) {
+      EXPECT_NE(packet.udp.uh_sum, 0);
+    } else {
+      EXPECT_EQ(packet.udp.uh_sum, 0);
+    }
+  };
+
+  uint32_t counter = 1;
+  // Packets sent through checksum_not_set will not have a valid checksum set so
+  // checksum_set should not accept those packets.
+  ASSERT_NO_FATAL_FAILURE(send(checksum_not_set, counter));
+  ASSERT_NO_FATAL_FAILURE(expect_receive(checksum_not_set, counter, false));
+
+  // Packets sent through checksum_set will have a valid checksum so both
+  // sockets should accept them.
+  ASSERT_NO_FATAL_FAILURE(send(checksum_set, ++counter));
+  ASSERT_NO_FATAL_FAILURE(expect_receive(checksum_set, counter, true));
+  ASSERT_NO_FATAL_FAILURE(expect_receive(checksum_not_set, counter, true));
+}
+
 }  // namespace
 
 }  // namespace testing
