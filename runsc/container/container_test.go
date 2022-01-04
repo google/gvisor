@@ -1938,7 +1938,7 @@ func doGoferExitTest(t *testing.T, vfs2 bool) {
 	}
 
 	// Kill sandbox and expect gofer to exit on its own.
-	sandboxProc, err := os.FindProcess(c.Sandbox.Pid)
+	sandboxProc, err := os.FindProcess(c.Sandbox.Getpid())
 	if err != nil {
 		t.Fatalf("error finding sandbox process: %v", err)
 	}

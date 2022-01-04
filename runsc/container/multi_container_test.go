@@ -694,7 +694,7 @@ func TestMultiContainerSignal(t *testing.T) {
 				t.Errorf("error waiting for gofer to exit: %v", err)
 			}
 
-			err = blockUntilWaitable(containers[0].Sandbox.Pid)
+			err = blockUntilWaitable(containers[0].Sandbox.Getpid())
 			if err != nil && err != unix.ECHILD {
 				t.Errorf("error waiting for sandbox to exit: %v", err)
 			}

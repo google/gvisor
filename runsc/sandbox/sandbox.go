@@ -17,6 +17,7 @@ package sandbox
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -24,6 +25,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -50,6 +52,36 @@ import (
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
+// pid is an atomic type that implements JSON marshal/unmarshal interfaces.
+type pid struct {
+	// +checkatomics
+	val int64
+}
+
+func (p *pid) store(pid int) {
+	atomic.StoreInt64(&p.val, int64(pid))
+}
+
+func (p *pid) load() int {
+	return int(atomic.LoadInt64(&p.val))
+}
+
+// UnmarshalJSON implements json.Unmarshaler.UnmarshalJSON.
+func (p *pid) UnmarshalJSON(b []byte) error {
+	var pid int
+
+	if err := json.Unmarshal(b, &pid); err != nil {
+		return err
+	}
+	p.store(pid)
+	return nil
+}
+
+// MarshalJSON implements json.Marshaler.MarshalJSON
+func (p *pid) MarshalJSON() ([]byte, error) {
+	return json.Marshal(p.load())
+}
+
 // Sandbox wraps a sandbox process.
 //
 // It is used to start/stop sandbox process (and associated processes like
@@ -63,9 +95,9 @@ type Sandbox struct {
 	// ID as the first container run in the sandbox.
 	ID string `json:"id"`
 
-	// Pid is the pid of the running sandbox (immutable). May be 0 if the sandbox
+	// Pid is the pid of the running sandbox. May be 0 if the sandbox
 	// is not running.
-	Pid int `json:"pid"`
+	Pid pid `json:"pid"`
 
 	// UID is the user ID in the parent namespace that the sandbox is running as.
 	UID int `json:"uid"`
@@ -94,6 +126,11 @@ type Sandbox struct {
 	// threads to wait on sandbox and get the exit code, since Linux will return
 	// WaitStatus to one of the waiters only.
 	status unix.WaitStatus
+}
+
+// Getpid returns the process ID of the sandbox process.
+func (s *Sandbox) Getpid() int {
+	return s.Pid.load()
 }
 
 // Args is used to configure a new sandbox.
@@ -185,7 +222,7 @@ func New(conf *config.Config, args *Args) (*Sandbox, error) {
 
 // CreateSubcontainer creates a container inside the sandbox.
 func (s *Sandbox) CreateSubcontainer(conf *config.Config, cid string, tty *os.File) error {
-	log.Debugf("Create sub-container %q in sandbox %q, PID: %d", cid, s.ID, s.Pid)
+	log.Debugf("Create sub-container %q in sandbox %q, PID: %d", cid, s.ID, s.Pid.load())
 
 	var files []*os.File
 	if tty != nil {
@@ -213,7 +250,8 @@ func (s *Sandbox) CreateSubcontainer(conf *config.Config, cid string, tty *os.Fi
 
 // StartRoot starts running the root container process inside the sandbox.
 func (s *Sandbox) StartRoot(spec *specs.Spec, conf *config.Config) error {
-	log.Debugf("Start root sandbox %q, PID: %d", s.ID, s.Pid)
+	pid := s.Pid.load()
+	log.Debugf("Start root sandbox %q, PID: %d", s.ID, pid)
 	conn, err := s.sandboxConnect()
 	if err != nil {
 		return err
@@ -221,7 +259,7 @@ func (s *Sandbox) StartRoot(spec *specs.Spec, conf *config.Config) error {
 	defer conn.Close()
 
 	// Configure the network.
-	if err := setupNetwork(conn, s.Pid, conf); err != nil {
+	if err := setupNetwork(conn, pid, conf); err != nil {
 		return fmt.Errorf("setting up network: %v", err)
 	}
 
@@ -236,7 +274,7 @@ func (s *Sandbox) StartRoot(spec *specs.Spec, conf *config.Config) error {
 
 // StartSubcontainer starts running a sub-container inside the sandbox.
 func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles []*os.File) error {
-	log.Debugf("Start sub-container %q in sandbox %q, PID: %d", cid, s.ID, s.Pid)
+	log.Debugf("Start sub-container %q in sandbox %q, PID: %d", cid, s.ID, s.Pid.load())
 
 	if err := s.configureStdios(conf, stdios); err != nil {
 		return err
@@ -299,7 +337,7 @@ func (s *Sandbox) Restore(cid string, spec *specs.Spec, conf *config.Config, fil
 	defer conn.Close()
 
 	// Configure the network.
-	if err := setupNetwork(conn, s.Pid, conf); err != nil {
+	if err := setupNetwork(conn, s.Pid.load(), conf); err != nil {
 		return fmt.Errorf("setting up network: %v", err)
 	}
 
@@ -330,7 +368,7 @@ func (s *Sandbox) Processes(cid string) ([]*control.Process, error) {
 
 // NewCGroup returns the sandbox's Cgroup, or an error if it does not have one.
 func (s *Sandbox) NewCGroup() (cgroup.Cgroup, error) {
-	return cgroup.NewFromPid(s.Pid)
+	return cgroup.NewFromPid(s.Pid.load())
 }
 
 // Execute runs the specified command in the container. It returns the PID of
@@ -385,7 +423,7 @@ func (s *Sandbox) sandboxConnect() (*urpc.Client, error) {
 }
 
 func (s *Sandbox) connError(err error) error {
-	return fmt.Errorf("connecting to control server at PID %d: %v", s.Pid, err)
+	return fmt.Errorf("connecting to control server at PID %d: %v", s.Pid.load(), err)
 }
 
 // createSandboxProcess starts the sandbox as a subprocess by running the "boot"
@@ -853,8 +891,8 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	}
 
 	s.child = true
-	s.Pid = cmd.Process.Pid
-	log.Infof("Sandbox started, PID: %d", s.Pid)
+	s.Pid.store(cmd.Process.Pid)
+	log.Infof("Sandbox started, PID: %d", cmd.Process.Pid)
 
 	return nil
 }
@@ -943,10 +981,11 @@ func (s *Sandbox) IsRootContainer(cid string) bool {
 // is idempotent.
 func (s *Sandbox) destroy() error {
 	log.Debugf("Destroy sandbox %q", s.ID)
-	if s.Pid != 0 {
+	pid := s.Pid.load()
+	if pid != 0 {
 		log.Debugf("Killing sandbox %q", s.ID)
-		if err := unix.Kill(s.Pid, unix.SIGKILL); err != nil && err != unix.ESRCH {
-			return fmt.Errorf("killing sandbox %q PID %q: %v", s.ID, s.Pid, err)
+		if err := unix.Kill(pid, unix.SIGKILL); err != nil && err != unix.ESRCH {
+			return fmt.Errorf("killing sandbox %q PID %q: %v", s.ID, pid, err)
 		}
 		if err := s.waitForStopped(); err != nil {
 			return fmt.Errorf("waiting sandbox %q stop: %v", s.ID, err)
@@ -1168,9 +1207,10 @@ func (s *Sandbox) Stream(cid string, filters []string, out *os.File) error {
 
 // IsRunning returns true if the sandbox or gofer process is running.
 func (s *Sandbox) IsRunning() bool {
-	if s.Pid != 0 {
+	pid := s.Pid.load()
+	if pid != 0 {
 		// Send a signal 0 to the sandbox process.
-		if err := unix.Kill(s.Pid, 0); err == nil {
+		if err := unix.Kill(pid, 0); err == nil {
 			// Succeeded, process is running.
 			return true
 		}
@@ -1324,15 +1364,16 @@ func (s *Sandbox) waitForStopped() error {
 	if s.child {
 		s.statusMu.Lock()
 		defer s.statusMu.Unlock()
-		if s.Pid == 0 {
+		pid := s.Pid.load()
+		if pid == 0 {
 			return nil
 		}
 		// The sandbox process is a child of the current process,
 		// so we can wait it and collect its zombie.
-		if _, err := unix.Wait4(int(s.Pid), &s.status, 0, nil); err != nil {
+		if _, err := unix.Wait4(int(pid), &s.status, 0, nil); err != nil {
 			return fmt.Errorf("error waiting the sandbox process: %v", err)
 		}
-		s.Pid = 0
+		s.Pid.store(0)
 		return nil
 	}
 
