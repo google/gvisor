@@ -399,6 +399,34 @@ func (r *IPCNamespaceRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
+func (uc *userCounters) StateTypeName() string {
+	return "pkg/sentry/kernel.userCounters"
+}
+
+func (uc *userCounters) StateFields() []string {
+	return []string{
+		"uid",
+		"rlimitNProc",
+	}
+}
+
+func (uc *userCounters) beforeSave() {}
+
+// +checklocksignore
+func (uc *userCounters) StateSave(stateSinkObject state.Sink) {
+	uc.beforeSave()
+	stateSinkObject.Save(0, &uc.uid)
+	stateSinkObject.Save(1, &uc.rlimitNProc)
+}
+
+func (uc *userCounters) afterLoad() {}
+
+// +checklocksignore
+func (uc *userCounters) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &uc.uid)
+	stateSourceObject.Load(1, &uc.rlimitNProc)
+}
+
 func (k *Kernel) StateTypeName() string {
 	return "pkg/sentry/kernel.Kernel"
 }
@@ -443,6 +471,7 @@ func (k *Kernel) StateFields() []string {
 		"ptraceExceptions",
 		"YAMAPtraceScope",
 		"cgroupRegistry",
+		"userCountersMap",
 	}
 }
 
@@ -493,6 +522,7 @@ func (k *Kernel) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(35, &k.ptraceExceptions)
 	stateSinkObject.Save(36, &k.YAMAPtraceScope)
 	stateSinkObject.Save(37, &k.cgroupRegistry)
+	stateSinkObject.Save(38, &k.userCountersMap)
 }
 
 func (k *Kernel) afterLoad() {}
@@ -535,6 +565,7 @@ func (k *Kernel) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(35, &k.ptraceExceptions)
 	stateSourceObject.Load(36, &k.YAMAPtraceScope)
 	stateSourceObject.Load(37, &k.cgroupRegistry)
+	stateSourceObject.Load(38, &k.userCountersMap)
 	stateSourceObject.LoadValue(22, new([]tcpip.Endpoint), func(y interface{}) { k.loadDanglingEndpoints(y.([]tcpip.Endpoint)) })
 	stateSourceObject.LoadValue(26, new(*device.Registry), func(y interface{}) { k.loadDeviceRegistry(y.(*device.Registry)) })
 }
@@ -1373,6 +1404,7 @@ func (t *Task) StateFields() []string {
 		"startTime",
 		"kcov",
 		"cgroups",
+		"userCounters",
 	}
 }
 
@@ -1450,6 +1482,7 @@ func (t *Task) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(62, &t.startTime)
 	stateSinkObject.Save(63, &t.kcov)
 	stateSinkObject.Save(64, &t.cgroups)
+	stateSinkObject.Save(65, &t.userCounters)
 }
 
 // +checklocksignore
@@ -1517,6 +1550,7 @@ func (t *Task) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(62, &t.startTime)
 	stateSourceObject.Load(63, &t.kcov)
 	stateSourceObject.Load(64, &t.cgroups)
+	stateSourceObject.Load(65, &t.userCounters)
 	stateSourceObject.LoadValue(32, new(*Task), func(y interface{}) { t.loadPtraceTracer(y.(*Task)) })
 	stateSourceObject.LoadValue(49, new([]bpf.Program), func(y interface{}) { t.loadSyscallFilters(y.([]bpf.Program)) })
 	stateSourceObject.AfterLoad(t.afterLoad)
@@ -2547,6 +2581,7 @@ func init() {
 	state.Register((*FSContextRefs)(nil))
 	state.Register((*IPCNamespace)(nil))
 	state.Register((*IPCNamespaceRefs)(nil))
+	state.Register((*userCounters)(nil))
 	state.Register((*Kernel)(nil))
 	state.Register((*SocketRecord)(nil))
 	state.Register((*SocketRecordVFS1)(nil))

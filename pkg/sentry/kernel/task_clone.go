@@ -186,6 +186,11 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 		rseqSignature = t.rseqSignature
 	}
 
+	uc := t.userCounters
+	if uc.uid != creds.RealKUID {
+		uc = t.k.GetUserCounters(creds.RealKUID)
+	}
+
 	cfg := &TaskConfig{
 		Kernel:                  t.k,
 		ThreadGroup:             tg,
@@ -204,6 +209,7 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 		RSeqAddr:                rseqAddr,
 		RSeqSignature:           rseqSignature,
 		ContainerID:             t.ContainerID(),
+		UserCounters:            uc,
 	}
 	if args.Flags&linux.CLONE_THREAD == 0 {
 		cfg.Parent = t

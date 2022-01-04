@@ -42,6 +42,7 @@ import (
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/eventchannel"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
@@ -93,6 +94,35 @@ var LISAFSEnabled = false
 // FUSEEnabled is set to true when FUSE is enabled. Added as a global to allow
 // easy access everywhere. To be removed once FUSE is completed.
 var FUSEEnabled = false
+
+// userCounters is a set of user counters.
+//
+// +stateify savable
+type userCounters struct {
+	uid auth.KUID
+
+	// +checkatomic
+	rlimitNProc uint64
+}
+
+// incRLimitNProc increments the rlimitNProc counter.
+func (uc *userCounters) incRLimitNProc(ctx context.Context) error {
+	lim := limits.FromContext(ctx).Get(limits.ProcessCount)
+	creds := auth.CredentialsFromContext(ctx)
+	nproc := atomic.AddUint64(&uc.rlimitNProc, 1)
+	if nproc > lim.Cur &&
+		!creds.HasCapability(linux.CAP_SYS_ADMIN) &&
+		!creds.HasCapability(linux.CAP_SYS_RESOURCE) {
+		atomic.AddUint64(&uc.rlimitNProc, ^uint64(0))
+		return linuxerr.EAGAIN
+	}
+	return nil
+}
+
+// decRLimitNProc decrements the rlimitNProc counter.
+func (uc *userCounters) decRLimitNProc() {
+	atomic.AddUint64(&uc.rlimitNProc, ^uint64(0))
+}
 
 // Kernel represents an emulated Linux kernel. It must be initialized by calling
 // Init() or LoadFrom().
@@ -301,6 +331,10 @@ type Kernel struct {
 	// system. It is controller by cgroupfs. Nil if cgroupfs is unavailable on
 	// the system.
 	cgroupRegistry *CgroupRegistry
+
+	// userCountersMa maps auth.KUID into a set of user counters.
+	userCountersMap   map[auth.KUID]*userCounters
+	userCountersMapMu sync.Mutex `state:"nosave"`
 }
 
 // InitKernelArgs holds arguments to Init.
@@ -401,6 +435,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	k.netlinkPorts = port.New()
 	k.ptraceExceptions = make(map[*Task]*Task)
 	k.YAMAPtraceScope = linux.YAMA_SCOPE_RELATIONAL
+	k.userCountersMap = make(map[auth.KUID]*userCounters)
 
 	if VFS2Enabled {
 		ctx := k.SupervisorContext()
@@ -1032,6 +1067,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		AbstractSocketNamespace: args.AbstractSocketNamespace,
 		MountNamespaceVFS2:      mntnsVFS2,
 		ContainerID:             args.ContainerID,
+		UserCounters:            k.GetUserCounters(args.Credentials.RealKUID),
 	}
 	t, err := k.tasks.NewTask(ctx, config)
 	if err != nil {
@@ -1870,4 +1906,17 @@ func (k *Kernel) ReplaceFSContextRoots(ctx context.Context, oldRoot vfs.VirtualD
 	for i := 0; i < oldRootDecRefs; i++ {
 		oldRoot.DecRef(ctx)
 	}
+}
+
+func (k *Kernel) GetUserCounters(uid auth.KUID) *userCounters {
+	k.userCountersMapMu.Lock()
+	defer k.userCountersMapMu.Unlock()
+
+	if uc, ok := k.userCountersMap[uid]; ok {
+		return uc
+	}
+
+	uc := &userCounters{}
+	k.userCountersMap[uid] = uc
+	return uc
 }

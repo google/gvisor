@@ -93,6 +93,9 @@ type TaskConfig struct {
 
 	// ContainerID is the container the new task belongs to.
 	ContainerID string
+
+	// UserCounters is user resource counters.
+	UserCounters *userCounters
 }
 
 // NewTask creates a new task defined by cfg.
@@ -102,8 +105,8 @@ type TaskConfig struct {
 // If successful, NewTask transfers references held by cfg to the new task.
 // Otherwise, NewTask releases them.
 func (ts *TaskSet) NewTask(ctx context.Context, cfg *TaskConfig) (*Task, error) {
-	t, err := ts.newTask(cfg)
-	if err != nil {
+	var err error
+	cleanup := func() {
 		cfg.TaskImage.release()
 		cfg.FSContext.DecRef(ctx)
 		cfg.FDTable.DecRef(ctx)
@@ -111,6 +114,15 @@ func (ts *TaskSet) NewTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		if cfg.MountNamespaceVFS2 != nil {
 			cfg.MountNamespaceVFS2.DecRef(ctx)
 		}
+	}
+	if err := cfg.UserCounters.incRLimitNProc(ctx); err != nil {
+		cleanup()
+		return nil, err
+	}
+	t, err := ts.newTask(cfg)
+	if err != nil {
+		cfg.UserCounters.decRLimitNProc()
+		cleanup()
 		return nil, err
 	}
 	return t, nil
@@ -150,6 +162,7 @@ func (ts *TaskSet) newTask(cfg *TaskConfig) (*Task, error) {
 		futexWaiter:        futex.NewWaiter(),
 		containerID:        cfg.ContainerID,
 		cgroups:            make(map[Cgroup]struct{}),
+		userCounters:       cfg.UserCounters,
 	}
 	t.netns.Store(cfg.NetworkNamespace)
 	t.creds.Store(cfg.Credentials)
