@@ -514,13 +514,13 @@ func (c *Container) Event() (*boot.EventOut, error) {
 	return event, nil
 }
 
-// SandboxPid returns the Pid of the sandbox the container is running in, or -1 if the
+// SandboxPid returns the Getpid of the sandbox the container is running in, or -1 if the
 // container is not running.
 func (c *Container) SandboxPid() int {
 	if err := c.requireStatus("get PID", Created, Running, Paused); err != nil {
 		return -1
 	}
-	return c.Sandbox.Pid
+	return c.Sandbox.Getpid()
 }
 
 // Wait waits for the container to exit, and returns its WaitStatus.
@@ -1145,7 +1145,7 @@ func adjustSandboxOOMScoreAdj(s *sandbox.Sandbox, spec *specs.Spec, rootDir stri
 	}
 
 	// Set the lowest of all containers oom_score_adj to the sandbox.
-	return setOOMScoreAdj(s.Pid, lowScore)
+	return setOOMScoreAdj(s.Getpid(), lowScore)
 }
 
 // setOOMScoreAdj sets oom_score_adj to the given value for the given PID.

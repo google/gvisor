@@ -139,13 +139,14 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	if !c.IsSandboxRunning() {
 		return Errorf("container sandbox is not running")
 	}
-	log.Infof("Found sandbox %q, PID: %d", c.Sandbox.ID, c.Sandbox.Pid)
+	log.Infof("Found sandbox %q, PID: %d", c.Sandbox.ID, c.Sandbox.Getpid())
 
 	// Perform synchronous actions.
 	if d.signal > 0 {
-		log.Infof("Sending signal %d to process: %d", d.signal, c.Sandbox.Pid)
-		if err := unix.Kill(c.Sandbox.Pid, unix.Signal(d.signal)); err != nil {
-			return Errorf("failed to send signal %d to processs %d", d.signal, c.Sandbox.Pid)
+		pid := c.Sandbox.Getpid()
+		log.Infof("Sending signal %d to process: %d", d.signal, pid)
+		if err := unix.Kill(pid, unix.Signal(d.signal)); err != nil {
+			return Errorf("failed to send signal %d to processs %d", d.signal, pid)
 		}
 	}
 	if d.stacks {
