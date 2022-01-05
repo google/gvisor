@@ -1562,7 +1562,7 @@ TEST_P(SocketInetReusePortTest, UdpPortReuseMultiThread) {
 
           // Shutdown all sockets to wake up other threads.
           for (int j = 0; j < kThreadCount; j++)
-            shutdown(listener_fds[j].get(), SHUT_RDWR);
+            shutdown(listener_fds[j].get(), SHUT_RD);
         });
   }
 
