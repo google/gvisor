@@ -442,11 +442,13 @@ func (n *netUnix) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]s
 
 		sockFlags := 0
 		if ce, ok := sops.Endpoint().(transport.ConnectingEndpoint); ok {
-			if ce.Listening() {
+			ce.Lock()
+			if ce.ListeningLocked() {
 				// For unix domain sockets, linux reports a single flag
 				// value if the socket is listening, of __SO_ACCEPTCON.
 				sockFlags = linux.SO_ACCEPTCON
 			}
+			ce.Unlock()
 		}
 
 		// In the socket entry below, the value for the 'Num' field requires
