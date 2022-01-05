@@ -53,10 +53,11 @@ type ConnectingEndpoint interface {
 	// so the connection attempt must be aborted if this returns true.
 	Connected() bool
 
-	// Listening returns true iff the ConnectingEndpoint is in the listening
-	// state. ConnectingEndpoints cannot make connections while listening, so
-	// the connection attempt must be aborted if this returns true.
-	Listening() bool
+	// ListeningLocked returns true iff the ConnectingEndpoint is in the
+	// listening state. ConnectingEndpoints cannot make connections while
+	// listening, so the connection attempt must be aborted if this returns
+	// true.
+	ListeningLocked() bool
 
 	// WaiterQueue returns a pointer to the endpoint's waiter queue.
 	WaiterQueue() *waiter.Queue
@@ -199,6 +200,12 @@ func (e *connectionedEndpoint) isBound() bool {
 
 // Listening implements ConnectingEndpoint.Listening.
 func (e *connectionedEndpoint) Listening() bool {
+	e.Lock()
+	defer e.Unlock()
+	return e.ListeningLocked()
+}
+
+func (e *connectionedEndpoint) ListeningLocked() bool {
 	return e.acceptedChan != nil
 }
 
@@ -228,7 +235,7 @@ func (e *connectionedEndpoint) Close(ctx context.Context) {
 		e.receiver = nil
 	case e.isBound():
 		e.path = ""
-	case e.Listening():
+	case e.ListeningLocked():
 		close(e.acceptedChan)
 		acceptedChan = e.acceptedChan
 		e.acceptedChan = nil
@@ -276,14 +283,14 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 		ce.Unlock()
 		return syserr.ErrAlreadyConnected
 	}
-	if ce.Listening() {
+	if ce.ListeningLocked() {
 		e.Unlock()
 		ce.Unlock()
 		return syserr.ErrInvalidEndpointState
 	}
 
 	// Check bound state.
-	if !e.Listening() {
+	if !e.ListeningLocked() {
 		e.Unlock()
 		ce.Unlock()
 		return syserr.ErrConnectionRefused
@@ -378,7 +385,7 @@ func (e *connectionedEndpoint) Connect(ctx context.Context, server BoundEndpoint
 func (e *connectionedEndpoint) Listen(backlog int) *syserr.Error {
 	e.Lock()
 	defer e.Unlock()
-	if e.Listening() {
+	if e.ListeningLocked() {
 		// Adjust the size of the channel iff we can fix existing
 		// pending connections into the new one.
 		if len(e.acceptedChan) > backlog {
@@ -405,7 +412,7 @@ func (e *connectionedEndpoint) Listen(backlog int) *syserr.Error {
 func (e *connectionedEndpoint) Accept(peerAddr *tcpip.FullAddress) (Endpoint, *syserr.Error) {
 	e.Lock()
 
-	if !e.Listening() {
+	if !e.ListeningLocked() {
 		e.Unlock()
 		return nil, syserr.ErrInvalidEndpointState
 	}
@@ -445,7 +452,7 @@ func (e *connectionedEndpoint) Accept(peerAddr *tcpip.FullAddress) (Endpoint, *s
 func (e *connectionedEndpoint) Bind(addr tcpip.FullAddress, commit func() *syserr.Error) *syserr.Error {
 	e.Lock()
 	defer e.Unlock()
-	if e.isBound() || e.Listening() {
+	if e.isBound() || e.ListeningLocked() {
 		return syserr.ErrAlreadyBound
 	}
 	if addr.Addr == "" {
@@ -490,7 +497,7 @@ func (e *connectionedEndpoint) Readiness(mask waiter.EventMask) waiter.EventMask
 		if mask&waiter.WritableEvents != 0 && e.connected.Writable() {
 			ready |= waiter.WritableEvents
 		}
-	case e.Listening():
+	case e.ListeningLocked():
 		if mask&waiter.ReadableEvents != 0 && len(e.acceptedChan) > 0 {
 			ready |= waiter.ReadableEvents
 		}

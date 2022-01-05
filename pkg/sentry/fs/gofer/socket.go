@@ -93,7 +93,7 @@ func (e *endpoint) BidirectionalConnect(ctx context.Context, ce transport.Connec
 		ce.Unlock()
 		return syserr.ErrAlreadyConnected
 	}
-	if ce.Listening() {
+	if ce.ListeningLocked() {
 		ce.Unlock()
 		return syserr.ErrInvalidEndpointState
 	}

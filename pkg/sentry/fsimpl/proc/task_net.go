@@ -226,11 +226,13 @@ func (n *netUnixData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 
 		sockFlags := 0
 		if ce, ok := sops.Endpoint().(transport.ConnectingEndpoint); ok {
-			if ce.Listening() {
+			ce.Lock()
+			if ce.ListeningLocked() {
 				// For unix domain sockets, linux reports a single flag
 				// value if the socket is listening, of __SO_ACCEPTCON.
 				sockFlags = linux.SO_ACCEPTCON
 			}
+			ce.Unlock()
 		}
 
 		// Get inode number.
