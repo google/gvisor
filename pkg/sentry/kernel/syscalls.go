@@ -25,12 +25,14 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
-// maxSyscallNum is the highest supported syscall number.
-//
-// The types below create fast lookup slices for all syscalls. This maximum
-// serves as a sanity check that we don't allocate huge slices for a very large
-// syscall. This is checked during registration.
-const maxSyscallNum = 2000
+const (
+	// maxSyscallNum is the highest supported syscall number.
+	//
+	// The types below create fast lookup slices for all syscalls. This maximum
+	// serves as a sanity check that we don't allocate huge slices for a very large
+	// syscall. This is checked during registration.
+	maxSyscallNum = 2000
+)
 
 // SyscallSupportLevel is a syscall support levels.
 type SyscallSupportLevel int
@@ -119,7 +121,7 @@ type SyscallFlagsTable struct {
 	//
 	// missing syscalls have the same value in enable as missingEnable to
 	// avoid an extra branch in Word.
-	enable []uint32
+	enable [maxSyscallNum + 1]uint32
 
 	// missingEnable contains the enable bits for missing syscalls.
 	missingEnable uint32
@@ -128,8 +130,7 @@ type SyscallFlagsTable struct {
 // Init initializes the struct, with all syscalls in table set to enable.
 //
 // max is the largest syscall number in table.
-func (e *SyscallFlagsTable) init(table map[uintptr]Syscall, max uintptr) {
-	e.enable = make([]uint32, max+1)
+func (e *SyscallFlagsTable) init(table map[uintptr]Syscall) {
 	for num := range table {
 		e.enable[num] = syscallPresent
 	}
@@ -137,7 +138,7 @@ func (e *SyscallFlagsTable) init(table map[uintptr]Syscall, max uintptr) {
 
 // Word returns the enable bitfield for sysno.
 func (e *SyscallFlagsTable) Word(sysno uintptr) uint32 {
-	if sysno < uintptr(len(e.enable)) {
+	if sysno <= maxSyscallNum {
 		return atomic.LoadUint32(&e.enable[sysno])
 	}
 
@@ -239,7 +240,7 @@ type SyscallTable struct {
 
 	// lookup is a fixed-size array that holds the syscalls (indexed by
 	// their numbers). It is used for fast look ups.
-	lookup []SyscallFn
+	lookup [maxSyscallNum + 1]SyscallFn
 
 	// Emulate is a collection of instruction addresses to emulate. The
 	// keys are addresses, and the values are system call numbers.
@@ -319,24 +320,20 @@ func (s *SyscallTable) Init() {
 		s.Emulate = make(map[hostarch.Addr]uintptr)
 	}
 
-	max := s.MaxSysno() // Checked during RegisterSyscallTable.
-
 	// Initialize the fast-lookup table.
-	s.lookup = make([]SyscallFn, max+1)
 	for num, sc := range s.Table {
 		s.lookup[num] = sc.Fn
 	}
 
 	// Initialize all features.
-	s.FeatureEnable.init(s.Table, max)
+	s.FeatureEnable.init(s.Table)
 }
 
 // Lookup returns the syscall implementation, if one exists.
 func (s *SyscallTable) Lookup(sysno uintptr) SyscallFn {
-	if sysno < uintptr(len(s.lookup)) {
+	if sysno <= maxSyscallNum {
 		return s.lookup[sysno]
 	}
-
 	return nil
 }
 
