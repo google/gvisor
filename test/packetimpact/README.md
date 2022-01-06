@@ -4,10 +4,10 @@
 
 Packetimpact is a tool for platform-independent network testing. It is heavily
 inspired by [packetdrill](https://github.com/google/packetdrill). It creates two
-docker containers connected by a network. One is for the test bench, which
-operates the test. The other is for the device-under-test (DUT), which is the
-software being tested. The test bench communicates over the network with the DUT
-to check correctness of the network.
+network namespaces. One is for the test bench, which operates the test. The
+other is for the device-under-test (DUT), which is the software being tested.
+The test bench communicates over the network with the DUT to check correctness
+of the network.
 
 ### Goals
 
@@ -19,13 +19,6 @@ Packetimpact aims to provide:
 *   **Flexibility** to specify every byte in a packet or use multiple sockets.
 
 ## How to run packetimpact tests?
-
-Build the test container image by running the following at the root of the
-repository:
-
-```bash
-$ make load-packetimpact
-```
 
 Run a test, e.g. `fin_wait2_timeout`, against Linux:
 
@@ -118,19 +111,19 @@ design decisions below are made to mitigate that.
     +-------------------+               +------------------------+
 ```
 
-Two docker containers are created by a "runner" script, one for the testbench
-and the other for the device under test (DUT). The script connects the two
-containers with a control network and test network. It also does some other
-tasks like waiting until the DUT is ready before starting the test and disabling
-Linux networking that would interfere with the test bench.
+Two network namespaces are created by the test runner, one for the testbench and
+the other for the device under test (DUT). The runner connects the two
+namespaces with a control veth pair and test veth pair. It also does some other
+tasks like waiting until the DUT is ready before starting the test and
+installing iptables rules so that RST won't be generated for TCP segments from
+the DUT that the kernel has no knowledge about.
 
 ### DUT
 
-The DUT container runs a program called the "posix_server". The posix_server is
-written in c++ for maximum portability. It is compiled on the host. The script
-that starts the containers copies it into the DUT's container and runs it. It's
-job is to receive directions from the test bench on what actions to take. For
-this, the posix_server does three steps in a loop:
+The DUT namespace runs a program called the "posix_server". The posix_server is
+written in c++ for maximum portability. Its job is to receive directions from
+the test bench on what actions to take. For this, the posix_server does three
+steps in a loop:
 
 1.  Listen for a request from the test bench.
 2.  Execute a command.
@@ -175,9 +168,9 @@ message SocketResponse {
 ### Test Bench
 
 The test bench does most of the work in a test. It is a Go program that compiles
-on the host and is copied by the script into test bench's container. It is a
-regular [go unit test](https://golang.org/pkg/testing/) that imports the test
-bench framework. The test bench framework is based on three basic utilities:
+on the host and is run inside the test bench's namespace. It is a regular
+[go unit test](https://golang.org/pkg/testing/) that imports the test bench
+framework. The test bench framework is based on three basic utilities:
 
 *   Commanding the DUT to run POSIX commands and return responses.
 *   Sending raw packets to the DUT on the test network.
@@ -245,7 +238,8 @@ func (i *Injector) Send(b []byte) {...}
 *   [gopacket](https://github.com/google/gopacket) pcap has raw socket support
     but requires cgo. cgo is not guaranteed to be portable from the host to the
     container and in practice, the container doesn't recognize binaries built on
-    the host if they use cgo.
+    the host if they use cgo. Packetimpact used to be based on docker, so the
+    library was not adopted, now we can start to consider using the library.
 *   Both gVisor and gopacket have the ability to read and write pcap files
     without cgo but that is insufficient here because we can't just replay pcap
     files, we need a more dynamic solution.
