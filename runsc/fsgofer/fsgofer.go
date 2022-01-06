@@ -47,6 +47,9 @@ const (
 	openFlags = unix.O_NOFOLLOW | unix.O_CLOEXEC
 
 	allowedOpenFlags = unix.O_TRUNC
+
+	// UNIX_PATH_MAX as defined in include/uapi/linux/un.h.
+	unixPathMax = 108
 )
 
 // verityXattrs are the extended attributes used by verity file system.
@@ -70,7 +73,8 @@ type Config struct {
 	// PanicOnWrite panics on attempts to write to RO mounts.
 	PanicOnWrite bool
 
-	// HostUDS signals whether the gofer can mount a host's UDS.
+	// HostUDS signals whether the gofer can mount a host's UDS and connect to it
+	// or bind (create) a host UDS and serve it.
 	HostUDS bool
 
 	// EnableVerityXattr allows access to extended attributes used by the
@@ -1129,6 +1133,80 @@ func (l *localFile) Flush() error {
 	return nil
 }
 
+// Bind implements p9.File.Bind.
+func (l *localFile) Bind(sockType uint32, sockName string, uid p9.UID, gid p9.GID) (p9.File, p9.QID, p9.AttrMask, p9.Attr, error) {
+	if !l.attachPoint.conf.HostUDS {
+		// Bind on host UDS is not allowed. As per mknod(2), which is invoked as
+		// part of bind(2), if "the filesystem containing pathname does not support
+		// the type of node requested." then EPERM must be returned.
+		return nil, p9.QID{}, p9.AttrMask{}, p9.Attr{}, unix.EPERM
+	}
+
+	// TODO(gvisor.dev/issue/1003): Due to different app vs replacement
+	// mappings, the app path may have fit in the sockaddr, but we can't
+	// fit f.path in our sockaddr. We'd need to redirect through a shorter
+	// path in order to actually connect to this socket.
+	sockPath := path.Join(l.hostPath, sockName)
+	if len(sockPath) >= unixPathMax {
+		return nil, p9.QID{}, p9.AttrMask{}, p9.Attr{}, unix.EINVAL
+	}
+
+	// Create socket only for supported types.
+	switch sockType {
+	case unix.SOCK_STREAM, unix.SOCK_DGRAM, unix.SOCK_SEQPACKET:
+	default:
+		return nil, p9.QID{}, p9.AttrMask{}, p9.Attr{}, unix.ENXIO
+	}
+	sock, err := unix.Socket(unix.AF_UNIX, int(sockType), 0)
+	if err != nil {
+		return nil, p9.QID{}, p9.AttrMask{}, p9.Attr{}, extractErrno(err)
+	}
+
+	// Revert operations on error paths.
+	didBind := false
+	cu := cleanup.Make(func() {
+		_ = unix.Close(sock)
+		if didBind {
+			if err := unix.Unlinkat(l.file.FD(), sockName, 0); err != nil {
+				log.Warningf("error unlinking file %q after failure: %v", sockPath, err)
+			}
+		}
+	})
+	defer cu.Clean()
+
+	// socket FD must be non blocking because RPC operations like Accept on this
+	// socket must be non blocking.
+	if err := unix.SetNonblock(sock, true); err != nil {
+		return nil, p9.QID{}, p9.AttrMask{}, p9.Attr{}, extractErrno(err)
+	}
+
+	// Bind at the given path which should create the socket file.
+	if err := unix.Bind(sock, &unix.SockaddrUnix{Name: sockPath}); err != nil {
+		return nil, p9.QID{}, p9.AttrMask{}, p9.Attr{}, extractErrno(err)
+	}
+	didBind = true
+
+	// Open socket to change ownership.
+	tempSockFD, err := fd.OpenAt(l.file, sockName, unix.O_PATH|openFlags, 0)
+	if err != nil {
+		return nil, p9.QID{}, p9.AttrMask{}, p9.Attr{}, extractErrno(err)
+	}
+	defer tempSockFD.Close()
+
+	if _, err = setOwnerIfNeeded(tempSockFD.FD(), uid, gid); err != nil {
+		return nil, p9.QID{}, p9.AttrMask{}, p9.Attr{}, extractErrno(err)
+	}
+
+	// Generate file for this socket by walking on it.
+	qid, sockF, valid, attr, err := l.WalkGetAttr([]string{sockName})
+	if err != nil {
+		return nil, p9.QID{}, p9.AttrMask{}, p9.Attr{}, err
+	}
+
+	cu.Release()
+	return &socketLocalFile{localFile: sockF.(*localFile), sock: sock}, qid[0], valid, attr, nil
+}
+
 // Connect implements p9.File.
 func (l *localFile) Connect(flags p9.ConnectFlags) (*fd.FD, error) {
 	if !l.attachPoint.conf.HostUDS {
@@ -1139,8 +1217,7 @@ func (l *localFile) Connect(flags p9.ConnectFlags) (*fd.FD, error) {
 	// mappings, the app path may have fit in the sockaddr, but we can't
 	// fit f.path in our sockaddr. We'd need to redirect through a shorter
 	// path in order to actually connect to this socket.
-	const UNIX_PATH_MAX = 108 // defined in afunix.h
-	if len(l.hostPath) > UNIX_PATH_MAX {
+	if len(l.hostPath) >= unixPathMax {
 		return nil, unix.ECONNREFUSED
 	}
 
@@ -1175,7 +1252,7 @@ func (l *localFile) Connect(flags p9.ConnectFlags) (*fd.FD, error) {
 	return fd.New(f), nil
 }
 
-// Close implements p9.File.
+// Close implements p9.File.Close.
 func (l *localFile) Close() error {
 	l.mode = invalidMode
 	err := l.file.Close()
@@ -1289,4 +1366,23 @@ func (l *localFile) MultiGetAttr(names []string) ([]p9.FullStat, error) {
 		parent = child
 	}
 	return stats, nil
+}
+
+// socketLocalFile is an extension of localFile which is only created via Bind
+// and additionally implements Listen and Accept. It also tracks the lifecycle
+// of the socket FD created by socket(2) in addition to the FD opened on the
+// socket file itself.
+type socketLocalFile struct {
+	*localFile
+	sock int
+}
+
+// Close implements p9.File.Close.
+func (l *socketLocalFile) Close() error {
+	err := l.localFile.Close()
+	err2 := unix.Close(l.sock)
+	if err != nil {
+		return err
+	}
+	return err2
 }

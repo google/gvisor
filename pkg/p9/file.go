@@ -294,6 +294,17 @@ type File interface {
 	// On the server, Flush has a read concurrency guarantee.
 	Flush() error
 
+	// Bind binds to a host unix domain socket. If successful, it creates a
+	// socket file on the host filesystem and returns a File for the newly
+	// created socket file. The File implementation must save the bound socket
+	// FD so that subsequent Listen and Accept operations on the File can be
+	// served.
+	//
+	// Bind is an extension to 9P2000.L, see version.go.
+	//
+	// On the server, UnlinkAt has a write concurrency guarantee.
+	Bind(sockType uint32, sockName string, uid UID, gid GID) (File, QID, AttrMask, Attr, error)
+
 	// Connect establishes a new host-socket backed connection with a
 	// socket. A File does not need to be opened before it can be connected
 	// and it can be connected to multiple times resulting in a unique

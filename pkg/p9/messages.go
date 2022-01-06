@@ -2438,6 +2438,95 @@ func (r *Rusymlink) String() string {
 	return fmt.Sprintf("Rusymlink{%v}", &r.Rsymlink)
 }
 
+// Tbind is a bind request.
+type Tbind struct {
+	// Directory is the directory inside which the bound socket file should be
+	// created.
+	Directory FID
+
+	// SockType is the type of socket to be used. This is passed as an argument
+	// to socket(2).
+	SockType uint32
+
+	// SockName is the name of the socket file to be created.
+	SockName string
+
+	// UID is the owning user.
+	UID UID
+
+	// GID is the owning group.
+	GID GID
+
+	// NewFID is the resulting FID for the socket file.
+	NewFID FID
+}
+
+// decode implements encoder.decode.
+func (t *Tbind) decode(b *buffer) {
+	t.Directory = b.ReadFID()
+	t.SockType = b.Read32()
+	t.SockName = b.ReadString()
+	t.UID = b.ReadUID()
+	t.GID = b.ReadGID()
+	t.NewFID = b.ReadFID()
+}
+
+// encode implements encoder.encode.
+func (t *Tbind) encode(b *buffer) {
+	b.WriteFID(t.Directory)
+	b.Write32(t.SockType)
+	b.WriteString(t.SockName)
+	b.WriteUID(t.UID)
+	b.WriteGID(t.GID)
+	b.WriteFID(t.NewFID)
+}
+
+// Type implements message.Type.
+func (*Tbind) Type() MsgType {
+	return MsgTbind
+}
+
+// String implements fmt.Stringer.
+func (t *Tbind) String() string {
+	return fmt.Sprintf("Tbind{Directory: %d, SockType: %d, SockName: %s, UID: %d, GID: %d, NewFID: %d}", t.Directory, t.SockType, t.SockName, t.UID, t.GID, t.NewFID)
+}
+
+// Rbind is a bind response.
+type Rbind struct {
+	// QID is the resulting QID of the created socket file.
+	QID QID
+
+	// Valid indicates which fields are valid.
+	Valid AttrMask
+
+	// Attr is the set of attributes of the created socket file.
+	Attr Attr
+}
+
+// decode implements encoder.decode.
+func (r *Rbind) decode(b *buffer) {
+	r.QID.decode(b)
+	r.Valid.decode(b)
+	r.Attr.decode(b)
+}
+
+// encode implements encoder.encode.
+func (r *Rbind) encode(b *buffer) {
+	r.QID.encode(b)
+	r.Valid.encode(b)
+	r.Attr.encode(b)
+}
+
+// Type implements message.Type.
+func (*Rbind) Type() MsgType {
+	return MsgRbind
+}
+
+// String implements fmt.Stringer.
+func (r *Rbind) String() string {
+	return fmt.Sprintf("Rbind{QID: %s, Valid: %v, Attr: %s}", r.QID, r.Valid, r.Attr)
+}
+
 // Tlconnect is a connect request.
 type Tlconnect struct {
 	// FID is the FID to be connected.
@@ -2785,6 +2874,8 @@ func init() {
 	msgRegistry.register(MsgRumknod, func() message { return &Rumknod{} })
 	msgRegistry.register(MsgTusymlink, func() message { return &Tusymlink{} })
 	msgRegistry.register(MsgRusymlink, func() message { return &Rusymlink{} })
+	msgRegistry.register(MsgTbind, func() message { return &Tbind{} })
+	msgRegistry.register(MsgRbind, func() message { return &Rbind{} })
 	msgRegistry.register(MsgTlconnect, func() message { return &Tlconnect{} })
 	msgRegistry.register(MsgRlconnect, func() message { return &Rlconnect{} })
 	msgRegistry.register(MsgTallocate, func() message { return &Tallocate{} })

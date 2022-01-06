@@ -404,6 +404,8 @@ const (
 	MsgRsetattrclunk MsgType = 141
 	MsgTmultigetattr MsgType = 142
 	MsgRmultigetattr MsgType = 143
+	MsgTbind         MsgType = 144
+	MsgRbind         MsgType = 145
 	MsgTchannel      MsgType = 250
 	MsgRchannel      MsgType = 251
 )

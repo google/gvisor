@@ -1399,6 +1399,58 @@ func (t *Tumknod) handle(cs *connState) message {
 }
 
 // handle implements handler.handle.
+func (t *Tbind) handle(cs *connState) message {
+	if err := checkSafeName(t.SockName); err != nil {
+		return newErr(err)
+	}
+
+	ref, ok := cs.LookupFID(t.Directory)
+	if !ok {
+		return newErr(unix.EBADF)
+	}
+	defer ref.DecRef()
+
+	var (
+		sockRef *fidRef
+		qid     QID
+		valid   AttrMask
+		attr    Attr
+	)
+	if err := ref.safelyWrite(func() (err error) {
+		// Don't allow creation from non-directories or deleted directories.
+		if ref.isDeleted() || !ref.mode.IsDir() {
+			return unix.EINVAL
+		}
+
+		// Not allowed on open directories.
+		if ref.opened {
+			return unix.EINVAL
+		}
+
+		var sockF File
+		sockF, qid, valid, attr, err = ref.file.Bind(t.SockType, t.SockName, t.UID, t.GID)
+		if err != nil {
+			return err
+		}
+
+		sockRef = &fidRef{
+			server:   cs.server,
+			parent:   ref,
+			file:     sockF,
+			mode:     ModeSocket,
+			pathNode: ref.pathNode.pathNodeFor(t.SockName),
+		}
+		ref.pathNode.addChild(sockRef, t.SockName)
+		ref.IncRef() // Acquire parent reference.
+		return nil
+	}); err != nil {
+		return newErr(err)
+	}
+	cs.InsertFID(t.NewFID, sockRef)
+	return &Rbind{QID: qid, Valid: valid, Attr: attr}
+}
+
+// handle implements handler.handle.
 func (t *Tlconnect) handle(cs *connState) message {
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
