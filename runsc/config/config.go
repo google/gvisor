@@ -75,7 +75,8 @@ type Config struct {
 	// Verity is whether there's one or more verity file system to mount.
 	Verity bool `flag:"verity"`
 
-	// FSGoferHostUDS enables the gofer to mount a host UDS.
+	// FSGoferHostUDS enables the gofer to mount a host UDS and connect to it or
+	// bind (create) a host UDS and serve it.
 	FSGoferHostUDS bool `flag:"fsgofer-host-uds"`
 
 	// Network indicates what type of network to use.

@@ -348,6 +348,37 @@ func (c *clientFile) Open(flags OpenFlags) (*fd.FD, QID, uint32, error) {
 	return rlopen.File, rlopen.QID, rlopen.IoUnit, nil
 }
 
+func (c *clientFile) Bind(sockType uint32, sockName string, uid UID, gid GID) (File, QID, AttrMask, Attr, error) {
+	if atomic.LoadUint32(&c.closed) != 0 {
+		return nil, QID{}, AttrMask{}, Attr{}, unix.EBADF
+	}
+
+	if !versionSupportsBind(c.client.version) {
+		return nil, QID{}, AttrMask{}, Attr{}, unix.EOPNOTSUPP
+	}
+
+	fid, ok := c.client.fidPool.Get()
+	if !ok {
+		return nil, QID{}, AttrMask{}, Attr{}, ErrOutOfFIDs
+	}
+
+	tbind := Tbind{
+		SockType:  sockType,
+		SockName:  sockName,
+		UID:       uid,
+		GID:       gid,
+		Directory: c.fid,
+		NewFID:    FID(fid),
+	}
+	rbind := Rbind{}
+	if err := c.client.sendRecv(&tbind, &rbind); err != nil {
+		c.client.fidPool.Put(fid)
+		return nil, QID{}, AttrMask{}, Attr{}, err
+	}
+
+	return c.client.newFile(FID(fid)), rbind.QID, rbind.Valid, rbind.Attr, nil
+}
+
 // Connect implements File.Connect.
 func (c *clientFile) Connect(flags ConnectFlags) (*fd.FD, error) {
 	if atomic.LoadUint32(&c.closed) != 0 {
