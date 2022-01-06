@@ -118,6 +118,17 @@ func TestEncodeDecode(t *testing.T) {
 			QID:    QID{Type: 1},
 			IoUnit: 2,
 		},
+		&Tbind{
+			Directory: 1,
+			SockType:  2,
+			SockName:  "name",
+			GID:       3,
+			UID:       4,
+			NewFID:    5,
+		},
+		&Rbind{
+			QID: QID{Type: 1},
+		},
 		&Tlconnect{
 			FID: 1,
 		},

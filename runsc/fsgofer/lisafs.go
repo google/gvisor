@@ -655,7 +655,7 @@ func (fd *controlFDLisa) Connect(c *lisafs.Connection, sockType uint32) (int, er
 	// hostPath in our sockaddr. We'd need to redirect through a shorter path
 	// in order to actually connect to this socket.
 	hostPath := fd.FilePathLocked()
-	if len(hostPath) > 108 { // UNIX_PATH_MAX = 108 is defined in afunix.h.
+	if len(hostPath) >= unixPathMax {
 		return -1, unix.ECONNREFUSED
 	}
 

@@ -185,3 +185,9 @@ func versionSupportsTsetattrclunk(v uint32) bool {
 func versionSupportsTmultiGetAttr(v uint32) bool {
 	return v >= 13
 }
+
+// versionSupportsBind returns true if version v supports the Tbind message.
+func versionSupportsBind(v uint32) bool {
+	// TODO(b/194709873): Bump version and gate with that.
+	return false
+}

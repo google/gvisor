@@ -796,6 +796,47 @@ func TestReaddir(t *testing.T) {
 	})
 }
 
+func TestUDS(t *testing.T) {
+	config := Config{ROMount: false, HostUDS: true}
+	dir, err := ioutil.TempDir("", "root-")
+	if err != nil {
+		t.Fatalf("ioutil.TempDir() failed, err: %v", err)
+	}
+	defer os.RemoveAll(dir)
+
+	// First attach with writable configuration to setup tree.
+	a, err := NewAttachPoint(dir, config)
+	if err != nil {
+		t.Fatalf("NewAttachPoint failed: %v", err)
+	}
+	root, err := a.Attach()
+	if err != nil {
+		t.Fatalf("attach failed, err: %v", err)
+	}
+	defer root.Close()
+
+	name := "sock"
+	uid := p9.UID(os.Getuid())
+	gid := p9.GID(os.Getgid())
+	sockF, _, valid, attr, err := root.Bind(unix.SOCK_STREAM, name, uid, gid)
+	if err != nil {
+		t.Fatalf("Bind failed: %v", err)
+	}
+	defer sockF.Close()
+
+	if valid.Mode && !attr.Mode.IsSocket() {
+		t.Errorf("socket file mode is incorrect: want %d, got %d", p9.ModeSocket, attr.Mode)
+	}
+	if valid.UID && attr.UID != uid {
+		t.Errorf("socket file uid is incorrect: want %d, got %d", uid, attr.UID)
+	}
+	if valid.GID && attr.GID != gid {
+		t.Errorf("socket file gid is incorrect: want %d, got %d", gid, attr.GID)
+	}
+	// TODO(b/194709873): Once listen and accept are implemented, test connecting
+	// and accepting a connection using sockF.
+}
+
 // Test that attach point can be written to when it points to a file, e.g.
 // /etc/hosts.
 func TestAttachFile(t *testing.T) {
