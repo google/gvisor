@@ -87,6 +87,11 @@ func (r *Rx) Flush() {
 	r.tail = r.head
 }
 
+// Abort unpulls any pulled buffers.
+func (r *Rx) Abort() {
+	r.head = r.tail
+}
+
 // Bytes returns the byte slice on which the pipe operates.
 func (r *Rx) Bytes() []byte {
 	return r.p.buffer

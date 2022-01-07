@@ -50,6 +50,12 @@ const (
 	// defaultSharedDataSize is the size of the sharedData region used to
 	// enable/disable notifications.
 	defaultSharedDataSize = 4 << 10 // 4KiB
+
+	// DefaultBufferSize is the size of each individual buffer that the data
+	// region is broken down into to hold packet data. Should be larger than
+	// 1500 + 14 (Ethernet header) + 10 (VirtIO header) to fit each packet
+	// in a single buffer.
+	DefaultBufferSize = 2048
 )
 
 // A QueuePair represents a pair of TX/RX queues.

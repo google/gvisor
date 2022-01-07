@@ -56,15 +56,18 @@ go_test(
     srcs = ["sharedmem_server_test.go"],
     deps = [
         ":sharedmem",
+        "//pkg/log",
         "//pkg/tcpip",
         "//pkg/tcpip/adapters/gonet",
         "//pkg/tcpip/header",
+        "//pkg/tcpip/link/qdisc/fifo",
         "//pkg/tcpip/link/sniffer",
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/network/ipv6",
         "//pkg/tcpip/stack",
         "//pkg/tcpip/transport/tcp",
         "//pkg/tcpip/transport/udp",
+        "@org_golang_x_sync//errgroup:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

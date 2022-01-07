@@ -43,7 +43,7 @@ type tx struct {
 //
 // The caller always retains ownership of all file descriptors passed in. The
 // queue implementation will duplicate any that it may need in the future.
-func (t *tx) init(mtu uint32, c *QueueConfig) error {
+func (t *tx) init(bufferSize uint32, c *QueueConfig) error {
 	// Map in all buffers.
 	txPipe, err := getBuffer(c.TxPipeFD)
 	if err != nil {
@@ -73,7 +73,7 @@ func (t *tx) init(mtu uint32, c *QueueConfig) error {
 	// Initialize state based on buffers.
 	t.q.Init(txPipe, rxPipe, sharedDataPointer(sharedData))
 	t.ids.init()
-	t.bufs.init(0, len(data), int(mtu))
+	t.bufs.init(0, len(data), int(bufferSize))
 	t.data = data
 	t.eventFD = c.EventFD
 	t.sharedDataFD = c.SharedDataFD

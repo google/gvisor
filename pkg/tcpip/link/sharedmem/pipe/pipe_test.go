@@ -461,7 +461,7 @@ func TestConcurrentReaderWriter(t *testing.T) {
 	tr := rand.New(rand.NewSource(99))
 	rr := rand.New(rand.NewSource(99))
 
-	b := make([]byte, 100)
+	b := make([]byte, 4096)
 	var tx Tx
 	tx.Init(b)
 
