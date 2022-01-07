@@ -22,13 +22,17 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"syscall"
 	"testing"
 
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/link/qdisc/fifo"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
@@ -45,13 +49,18 @@ const (
 	remoteIPv4Address = tcpip.Address("\x0a\x00\x00\x02")
 	serverPort        = 10001
 
-	defaultMTU        = 1500
+	defaultMTU        = 65536
 	defaultBufferSize = 1500
+
+	// qDisc options
+	numQueues = 1
+	queueLen  = 1000
 )
 
 type stackOptions struct {
-	ep   stack.LinkEndpoint
-	addr tcpip.Address
+	ep               stack.LinkEndpoint
+	addr             tcpip.Address
+	enablePacketLogs bool
 }
 
 func newStackWithOptions(stackOpts stackOptions) (*stack.Stack, error) {
@@ -67,9 +76,16 @@ func newStackWithOptions(stackOpts stackOptions) (*stack.Stack, error) {
 		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol},
 	})
 	nicID := tcpip.NICID(1)
-	sniffEP := sniffer.New(stackOpts.ep)
-	opts := stack.NICOptions{Name: "eth0"}
-	if err := st.CreateNICWithOptions(nicID, sniffEP, opts); err != nil {
+	ep := stackOpts.ep
+	if stackOpts.enablePacketLogs {
+		ep = sniffer.New(stackOpts.ep)
+	}
+	qDisc := fifo.New(ep, int(numQueues), int(queueLen))
+	opts := stack.NICOptions{
+		Name:  "eth0",
+		QDisc: qDisc,
+	}
+	if err := st.CreateNICWithOptions(nicID, ep, opts); err != nil {
 		return nil, fmt.Errorf("method CreateNICWithOptions(%d, _, %v) failed: %s", nicID, opts, err)
 	}
 
@@ -106,7 +122,7 @@ func newClientStack(t *testing.T, qPair *sharedmem.QueuePair, peerFD int) (*stac
 	if err != nil {
 		return nil, fmt.Errorf("failed to create sharedmem endpoint: %s", err)
 	}
-	st, err := newStackWithOptions(stackOptions{ep: ep, addr: localIPv4Address})
+	st, err := newStackWithOptions(stackOptions{ep: ep, addr: localIPv4Address, enablePacketLogs: true})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create client stack: %s", err)
 	}
@@ -125,7 +141,7 @@ func newServerStack(t *testing.T, qPair *sharedmem.QueuePair, peerFD int) (*stac
 	if err != nil {
 		return nil, fmt.Errorf("failed to create sharedmem endpoint: %s", err)
 	}
-	st, err := newStackWithOptions(stackOptions{ep: ep, addr: remoteIPv4Address})
+	st, err := newStackWithOptions(stackOptions{ep: ep, addr: remoteIPv4Address, enablePacketLogs: true})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create client stack: %s", err)
 	}
@@ -185,7 +201,7 @@ func TestServerRoundTrip(t *testing.T) {
 		t.Fatalf("failed to start TCP Listener: %s", err)
 	}
 	defer l.Close()
-	var responseString = "response"
+	var responseString = strings.Repeat("response", 8<<10)
 	go func() {
 		http.Serve(l, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte(responseString))
@@ -216,5 +232,58 @@ func TestServerRoundTrip(t *testing.T) {
 	response.Body.Close()
 	if got, want := string(body), responseString; got != want {
 		t.Fatalf("unexpected response got: %s, want: %s", got, want)
+	}
+}
+
+func TestServerRoundTripStress(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+	listenAddr := tcpip.FullAddress{Addr: remoteIPv4Address, Port: serverPort}
+	l, err := gonet.ListenTCP(ctx.serverStk, listenAddr, ipv4.ProtocolNumber)
+	if err != nil {
+		t.Fatalf("failed to start TCP Listener: %s", err)
+	}
+	defer l.Close()
+	var responseString = strings.Repeat("response", 8<<10)
+	go func() {
+		http.Serve(l, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Write([]byte(responseString))
+		}))
+	}()
+
+	dialFunc := func(address, protocol string) (net.Conn, error) {
+		return gonet.DialTCP(ctx.clientStk, listenAddr, ipv4.ProtocolNumber)
+	}
+
+	serverURL := fmt.Sprintf("http://[%s]:%d/", net.IP(remoteIPv4Address), serverPort)
+	var errs errgroup.Group
+	for i := 0; i < 1000; i++ {
+		errs.Go(func() error {
+			httpClient := &http.Client{
+				Transport: &http.Transport{
+					Dial: dialFunc,
+				},
+			}
+			response, err := httpClient.Get(serverURL)
+			if err != nil {
+				return fmt.Errorf("httpClient.Get(\"/\") failed: %s", err)
+			}
+			if got, want := response.StatusCode, http.StatusOK; got != want {
+				return fmt.Errorf("unexpected status code got: %d, want: %d", got, want)
+			}
+			body, err := io.ReadAll(response.Body)
+			if err != nil {
+				return fmt.Errorf("io.ReadAll(response.Body) failed: %s", err)
+			}
+			response.Body.Close()
+			if got, want := string(body), responseString; got != want {
+				return fmt.Errorf("unexpected response got: %s, want: %s", got, want)
+			}
+			log.Infof("worker: %d read %d bytes", len(body))
+			return nil
+		})
+	}
+	if err := errs.Wait(); err != nil {
+		t.Fatalf("request failed: %s", err)
 	}
 }
