@@ -410,6 +410,24 @@ type icmpReason interface {
 	isICMPReason()
 }
 
+// icmpReasonNetworkProhibited is an error where the destination network is
+// prohibited.
+type icmpReasonNetworkProhibited struct{}
+
+func (*icmpReasonNetworkProhibited) isICMPReason() {}
+
+// icmpReasonHostProhibited is an error where the destination host is
+// prohibited.
+type icmpReasonHostProhibited struct{}
+
+func (*icmpReasonHostProhibited) isICMPReason() {}
+
+// icmpReasonAdministrativelyProhibited is an error where the destination is
+// administratively prohibited.
+type icmpReasonAdministrativelyProhibited struct{}
+
+func (*icmpReasonAdministrativelyProhibited) isICMPReason() {}
+
 // icmpReasonPortUnreachable is an error where the transport protocol has no
 // listener and no alternative means to inform the sender.
 type icmpReasonPortUnreachable struct{}
@@ -560,6 +578,12 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, deliv
 	sent := netEP.stats.icmp.packetsSent
 	icmpType, icmpCode, counter, pointer := func() (header.ICMPv4Type, header.ICMPv4Code, tcpip.MultiCounterStat, byte) {
 		switch reason := reason.(type) {
+		case *icmpReasonNetworkProhibited:
+			return header.ICMPv4DstUnreachable, header.ICMPv4NetProhibited, sent.dstUnreachable, 0
+		case *icmpReasonHostProhibited:
+			return header.ICMPv4DstUnreachable, header.ICMPv4HostProhibited, sent.dstUnreachable, 0
+		case *icmpReasonAdministrativelyProhibited:
+			return header.ICMPv4DstUnreachable, header.ICMPv4AdminProhibited, sent.dstUnreachable, 0
 		case *icmpReasonPortUnreachable:
 			return header.ICMPv4DstUnreachable, header.ICMPv4PortUnreachable, sent.dstUnreachable, 0
 		case *icmpReasonProtoUnreachable:

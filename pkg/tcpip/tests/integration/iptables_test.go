@@ -3037,3 +3037,295 @@ func TestLocallyRoutedPackets(t *testing.T) {
 		})
 	}
 }
+
+type icmpv4Matcher struct {
+	icmpType header.ICMPv4Type
+}
+
+func (m *icmpv4Matcher) Match(_ stack.Hook, pkt *stack.PacketBuffer, _, _ string) (matches bool, hotdrop bool) {
+	if pkt.NetworkProtocolNumber != header.IPv4ProtocolNumber {
+		return false, false
+	}
+
+	if pkt.TransportProtocolNumber != header.ICMPv4ProtocolNumber {
+		return false, false
+	}
+
+	return header.ICMPv4(pkt.TransportHeader().View()).Type() == m.icmpType, false
+}
+
+type icmpv6Matcher struct {
+	icmpType header.ICMPv6Type
+}
+
+func (m *icmpv6Matcher) Match(_ stack.Hook, pkt *stack.PacketBuffer, _, _ string) (matches bool, hotdrop bool) {
+	if pkt.NetworkProtocolNumber != header.IPv6ProtocolNumber {
+		return false, false
+	}
+
+	if pkt.TransportProtocolNumber != header.ICMPv6ProtocolNumber {
+		return false, false
+	}
+
+	return header.ICMPv6(pkt.TransportHeader().View()).Type() == m.icmpType, false
+}
+
+func TestRejectWith(t *testing.T) {
+	type natHook struct {
+		hook    stack.Hook
+		dstAddr tcpip.Address
+		matcher stack.Matcher
+
+		errorICMPDstAddr tcpip.Address
+		errorICMPPayload buffer.View
+	}
+
+	type rejectWithVal struct {
+		name          string
+		val           int
+		errorICMPCode uint8
+	}
+
+	rxICMPv4EchoRequest := func(dst tcpip.Address) buffer.View {
+		return utils.ICMPv4Echo(utils.Host1IPv4Addr.AddressWithPrefix.Address, dst, ttl, header.ICMPv4Echo)
+	}
+
+	rxICMPv6EchoRequest := func(dst tcpip.Address) buffer.View {
+		return utils.ICMPv6Echo(utils.Host1IPv6Addr.AddressWithPrefix.Address, dst, ttl, header.ICMPv6EchoRequest)
+	}
+
+	tests := []struct {
+		name              string
+		netProto          tcpip.NetworkProtocolNumber
+		rxICMPEchoRequest func(tcpip.Address) buffer.View
+		icmpChecker       func(*testing.T, buffer.View, tcpip.Address, uint8, uint8, buffer.View)
+
+		natHooks []natHook
+
+		rejectTarget   func(*testing.T, stack.NetworkProtocol, int) stack.Target
+		rejectWithVals []rejectWithVal
+		errorICMPType  uint8
+	}{
+		{
+			name:              "IPv4",
+			netProto:          header.IPv4ProtocolNumber,
+			rxICMPEchoRequest: rxICMPv4EchoRequest,
+
+			icmpChecker: func(t *testing.T, v buffer.View, dstAddr tcpip.Address, icmpType, icmpCode uint8, origPayload buffer.View) {
+				t.Helper()
+
+				checker.IPv4(t, v,
+					checker.SrcAddr(utils.RouterNIC1IPv4Addr.AddressWithPrefix.Address),
+					checker.DstAddr(dstAddr),
+					checker.ICMPv4(
+						checker.ICMPv4Checksum(),
+						checker.ICMPv4Type(header.ICMPv4Type(icmpType)),
+						checker.ICMPv4Code(header.ICMPv4Code(icmpCode)),
+						checker.ICMPv4Payload(origPayload),
+					),
+				)
+			},
+			natHooks: []natHook{
+				{
+					hook:             stack.Input,
+					dstAddr:          utils.RouterNIC1IPv4Addr.AddressWithPrefix.Address,
+					matcher:          &icmpv4Matcher{icmpType: header.ICMPv4Echo},
+					errorICMPDstAddr: utils.Host1IPv4Addr.AddressWithPrefix.Address,
+					errorICMPPayload: rxICMPv4EchoRequest(utils.RouterNIC1IPv4Addr.AddressWithPrefix.Address),
+				},
+				{
+					hook:             stack.Forward,
+					dstAddr:          utils.Host2IPv4Addr.AddressWithPrefix.Address,
+					matcher:          &icmpv4Matcher{icmpType: header.ICMPv4Echo},
+					errorICMPDstAddr: utils.Host1IPv4Addr.AddressWithPrefix.Address,
+					errorICMPPayload: rxICMPv4EchoRequest(utils.Host2IPv4Addr.AddressWithPrefix.Address),
+				},
+				{
+					hook:             stack.Output,
+					dstAddr:          utils.RouterNIC1IPv4Addr.AddressWithPrefix.Address,
+					matcher:          &icmpv4Matcher{icmpType: header.ICMPv4EchoReply},
+					errorICMPDstAddr: utils.RouterNIC1IPv4Addr.AddressWithPrefix.Address,
+					errorICMPPayload: utils.ICMPv4Echo(utils.RouterNIC1IPv4Addr.AddressWithPrefix.Address, utils.Host1IPv4Addr.AddressWithPrefix.Address, ttl, header.ICMPv4EchoReply),
+				},
+			},
+			rejectTarget: func(t *testing.T, netProto stack.NetworkProtocol, rejectWith int) stack.Target {
+				handler, ok := netProto.(stack.RejectIPv4WithHandler)
+				if !ok {
+					t.Fatalf("expected %T to implement %T", netProto, handler)
+				}
+
+				return &stack.RejectIPv4Target{
+					Handler:    handler,
+					RejectWith: stack.RejectIPv4WithICMPType(rejectWith),
+				}
+			},
+			rejectWithVals: []rejectWithVal{
+				{
+					name:          "ICMP Network Unreachable",
+					val:           int(stack.RejectIPv4WithICMPNetUnreachable),
+					errorICMPCode: uint8(header.ICMPv4NetUnreachable),
+				},
+				{
+					name:          "ICMP Host Unreachable",
+					val:           int(stack.RejectIPv4WithICMPHostUnreachable),
+					errorICMPCode: uint8(header.ICMPv4HostUnreachable),
+				},
+				{
+					name:          "ICMP Port Unreachable",
+					val:           int(stack.RejectIPv4WithICMPPortUnreachable),
+					errorICMPCode: uint8(header.ICMPv4PortUnreachable),
+				},
+				{
+					name:          "ICMP Network Prohibited",
+					val:           int(stack.RejectIPv4WithICMPNetProhibited),
+					errorICMPCode: uint8(header.ICMPv4NetProhibited),
+				},
+				{
+					name:          "ICMP Host Prohibited",
+					val:           int(stack.RejectIPv4WithICMPHostProhibited),
+					errorICMPCode: uint8(header.ICMPv4HostProhibited),
+				},
+				{
+					name:          "ICMP Administratively Prohibited",
+					val:           int(stack.RejectIPv4WithICMPAdminProhibited),
+					errorICMPCode: uint8(header.ICMPv4AdminProhibited),
+				},
+			},
+			errorICMPType: uint8(header.ICMPv4DstUnreachable),
+		},
+		{
+			name:              "IPv6",
+			netProto:          header.IPv6ProtocolNumber,
+			rxICMPEchoRequest: rxICMPv6EchoRequest,
+
+			icmpChecker: func(t *testing.T, v buffer.View, dstAddr tcpip.Address, icmpType, icmpCode uint8, origPayload buffer.View) {
+				t.Helper()
+
+				checker.IPv6(t, v,
+					checker.SrcAddr(utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address),
+					checker.DstAddr(dstAddr),
+					checker.ICMPv6(
+						checker.ICMPv6Type(header.ICMPv6Type(icmpType)),
+						checker.ICMPv6Code(header.ICMPv6Code(icmpCode)),
+						checker.ICMPv6Payload(origPayload),
+					),
+				)
+			},
+			natHooks: []natHook{
+				{
+					hook:             stack.Input,
+					dstAddr:          utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address,
+					matcher:          &icmpv6Matcher{icmpType: header.ICMPv6EchoRequest},
+					errorICMPDstAddr: utils.Host1IPv6Addr.AddressWithPrefix.Address,
+					errorICMPPayload: rxICMPv6EchoRequest(utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address),
+				},
+				{
+					hook:             stack.Forward,
+					dstAddr:          utils.Host2IPv6Addr.AddressWithPrefix.Address,
+					matcher:          &icmpv6Matcher{icmpType: header.ICMPv6EchoRequest},
+					errorICMPDstAddr: utils.Host1IPv6Addr.AddressWithPrefix.Address,
+					errorICMPPayload: rxICMPv6EchoRequest(utils.Host2IPv6Addr.AddressWithPrefix.Address),
+				},
+				{
+					hook:             stack.Output,
+					dstAddr:          utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address,
+					matcher:          &icmpv6Matcher{icmpType: header.ICMPv6EchoReply},
+					errorICMPDstAddr: utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address,
+					errorICMPPayload: utils.ICMPv6Echo(utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address, utils.Host1IPv6Addr.AddressWithPrefix.Address, ttl, header.ICMPv6EchoReply),
+				},
+			},
+			rejectTarget: func(t *testing.T, netProto stack.NetworkProtocol, rejectWith int) stack.Target {
+				handler, ok := netProto.(stack.RejectIPv6WithHandler)
+				if !ok {
+					t.Fatalf("expected %T to implement %T", netProto, handler)
+				}
+
+				return &stack.RejectIPv6Target{
+					Handler:    handler,
+					RejectWith: stack.RejectIPv6WithICMPType(rejectWith),
+				}
+			},
+			rejectWithVals: []rejectWithVal{
+				{
+					name:          "ICMP No Route",
+					val:           int(stack.RejectIPv6WithICMPNoRoute),
+					errorICMPCode: uint8(header.ICMPv6NetworkUnreachable),
+				},
+				{
+					name:          "ICMP Address Unreachable",
+					val:           int(stack.RejectIPv6WithICMPAddrUnreachable),
+					errorICMPCode: uint8(header.ICMPv6AddressUnreachable),
+				},
+				{
+					name:          "ICMP Port Unreachable",
+					val:           int(stack.RejectIPv6WithICMPPortUnreachable),
+					errorICMPCode: uint8(header.ICMPv6PortUnreachable),
+				},
+				{
+					name:          "ICMP Administratively Prohibited",
+					val:           int(stack.RejectIPv6WithICMPAdminProhibited),
+					errorICMPCode: uint8(header.ICMPv6Prohibited),
+				},
+			},
+			errorICMPType: uint8(header.ICMPv6DstUnreachable),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			for _, natHook := range test.natHooks {
+				t.Run(natHook.hook.String(), func(t *testing.T) {
+					for _, rejectWith := range test.rejectWithVals {
+						t.Run(rejectWith.name, func(t *testing.T) {
+							s := stack.New(stack.Options{
+								NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+								TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol, tcp.NewProtocol},
+							})
+
+							ep1 := channel.New(1, header.IPv6MinimumMTU, "")
+							ep2 := channel.New(1, header.IPv6MinimumMTU, "")
+							utils.SetupRouterStack(t, s, ep1, ep2)
+
+							{
+								ipv6 := test.netProto == ipv6.ProtocolNumber
+								ipt := s.IPTables()
+								filter := ipt.GetTable(stack.FilterID, ipv6)
+								ruleIdx := filter.BuiltinChains[natHook.hook]
+								filter.Rules[ruleIdx].Matchers = []stack.Matcher{natHook.matcher}
+								filter.Rules[ruleIdx].Target = test.rejectTarget(t, s.NetworkProtocolInstance(test.netProto), rejectWith.val)
+								// Make sure the packet is not dropped by the next rule.
+								filter.Rules[ruleIdx+1].Target = &stack.AcceptTarget{}
+								if err := ipt.ReplaceTable(stack.FilterID, filter, ipv6); err != nil {
+									t.Fatalf("ipt.ReplaceTable(%d, _, %t): %s", stack.FilterID, ipv6, err)
+								}
+							}
+
+							func() {
+								pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+									Data: test.rxICMPEchoRequest(natHook.dstAddr).ToVectorisedView(),
+								})
+								defer pkt.DecRef()
+								ep1.InjectInbound(test.netProto, pkt)
+							}()
+
+							{
+								pkt := ep1.Read()
+								if pkt == nil {
+									t.Fatal("expected to read a packet on ep1")
+								}
+								test.icmpChecker(
+									t,
+									stack.PayloadSince(pkt.NetworkHeader()),
+									natHook.errorICMPDstAddr,
+									test.errorICMPType,
+									rejectWith.errorICMPCode,
+									natHook.errorICMPPayload,
+								)
+							}
+						})
+					}
+				})
+			}
+		})
+	}
+}

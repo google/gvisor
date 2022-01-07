@@ -45,6 +45,88 @@ func (*DropTarget) Action(*PacketBuffer, Hook, *Route, AddressableEndpoint) (Rul
 	return RuleDrop, 0
 }
 
+// RejectIPv4WithHandler handles rejecting a packet.
+type RejectIPv4WithHandler interface {
+	// SendRejectionError sends an error packet in response to the packet.
+	SendRejectionError(pkt *PacketBuffer, rejectWith RejectIPv4WithICMPType, inputHook bool) tcpip.Error
+}
+
+// RejectIPv4WithICMPType indicates the type of ICMP error that should be sent.
+type RejectIPv4WithICMPType int
+
+// The types of errors that may be returned when rejecting IPv4 packets.
+const (
+	_ RejectIPv4WithICMPType = iota
+	RejectIPv4WithICMPNetUnreachable
+	RejectIPv4WithICMPHostUnreachable
+	RejectIPv4WithICMPPortUnreachable
+	RejectIPv4WithICMPNetProhibited
+	RejectIPv4WithICMPHostProhibited
+	RejectIPv4WithICMPAdminProhibited
+)
+
+// RejectIPv4Target drops packets and sends back an error packet in response to the
+// matched packet.
+type RejectIPv4Target struct {
+	Handler    RejectIPv4WithHandler
+	RejectWith RejectIPv4WithICMPType
+}
+
+// Action implements Target.Action.
+func (rt *RejectIPv4Target) Action(pkt *PacketBuffer, hook Hook, _ *Route, _ AddressableEndpoint) (RuleVerdict, int) {
+	switch hook {
+	case Input, Forward, Output:
+		// There is nothing reasonable for us to do in response to an error here;
+		// we already drop the packet.
+		_ = rt.Handler.SendRejectionError(pkt, rt.RejectWith, hook == Input)
+		return RuleDrop, 0
+	case Prerouting, Postrouting:
+		panic(fmt.Sprintf("%s hook not supported for REDIRECT", hook))
+	default:
+		panic(fmt.Sprintf("unhandled hook = %s", hook))
+	}
+}
+
+// RejectIPv6WithHandler handles rejecting a packet.
+type RejectIPv6WithHandler interface {
+	// SendRejectionError sends an error packet in response to the packet.
+	SendRejectionError(pkt *PacketBuffer, rejectWith RejectIPv6WithICMPType, forwardingHook bool) tcpip.Error
+}
+
+// RejectIPv6WithICMPType indicates the type of ICMP error that should be sent.
+type RejectIPv6WithICMPType int
+
+// The types of errors that may be returned when rejecting IPv6 packets.
+const (
+	_ RejectIPv6WithICMPType = iota
+	RejectIPv6WithICMPNoRoute
+	RejectIPv6WithICMPAddrUnreachable
+	RejectIPv6WithICMPPortUnreachable
+	RejectIPv6WithICMPAdminProhibited
+)
+
+// RejectIPv6Target drops packets and sends back an error packet in response to the
+// matched packet.
+type RejectIPv6Target struct {
+	Handler    RejectIPv6WithHandler
+	RejectWith RejectIPv6WithICMPType
+}
+
+// Action implements Target.Action.
+func (rt *RejectIPv6Target) Action(pkt *PacketBuffer, hook Hook, _ *Route, _ AddressableEndpoint) (RuleVerdict, int) {
+	switch hook {
+	case Input, Forward, Output:
+		// There is nothing reasonable for us to do in response to an error here;
+		// we already drop the packet.
+		_ = rt.Handler.SendRejectionError(pkt, rt.RejectWith, hook == Input)
+		return RuleDrop, 0
+	case Prerouting, Postrouting:
+		panic(fmt.Sprintf("%s hook not supported for REDIRECT", hook))
+	default:
+		panic(fmt.Sprintf("unhandled hook = %s", hook))
+	}
+}
+
 // ErrorTarget logs an error and drops the packet. It represents a target that
 // should be unreachable.
 type ErrorTarget struct {
