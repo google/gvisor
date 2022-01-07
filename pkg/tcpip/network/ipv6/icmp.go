@@ -678,7 +678,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 		})
 		defer replyPkt.DecRef()
 		icmp := header.ICMPv6(replyPkt.TransportHeader().Push(header.ICMPv6EchoMinimumSize))
-		pkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
+		replyPkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
 		copy(icmp, h)
 		icmp.SetType(header.ICMPv6EchoReply)
 		dataRange := replyPkt.Data().AsRange()
@@ -964,6 +964,16 @@ func (p *icmpReasonParameterProblem) respondsToMulticast() bool {
 	return p.respondToMulticast
 }
 
+// icmpReasonAdministrativelyProhibited is an error where the destination is
+// administratively prohibited.
+type icmpReasonAdministrativelyProhibited struct{}
+
+func (*icmpReasonAdministrativelyProhibited) isICMPReason() {}
+
+func (*icmpReasonAdministrativelyProhibited) respondsToMulticast() bool {
+	return false
+}
+
 // icmpReasonPortUnreachable is an error where the transport protocol has no
 // listener and no alternative means to inform the sender.
 type icmpReasonPortUnreachable struct{}
@@ -1104,6 +1114,8 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, deliv
 		switch reason := reason.(type) {
 		case *icmpReasonParameterProblem:
 			return header.ICMPv6ParamProblem, reason.code, sent.paramProblem, reason.pointer
+		case *icmpReasonAdministrativelyProhibited:
+			return header.ICMPv6DstUnreachable, header.ICMPv6Prohibited, sent.dstUnreachable, 0
 		case *icmpReasonPortUnreachable:
 			return header.ICMPv6DstUnreachable, header.ICMPv6PortUnreachable, sent.dstUnreachable, 0
 		case *icmpReasonNetUnreachable:

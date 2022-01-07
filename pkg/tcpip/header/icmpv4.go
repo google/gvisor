@@ -102,13 +102,17 @@ const (
 	ICMPv4ReassemblyTimeout ICMPv4Code = 1
 )
 
-// ICMP codes for ICMPv4 Destination Unreachable messages as defined in RFC 792.
+// ICMP codes for ICMPv4 Destination Unreachable messages as defined in RFC 792,
+// RFC 1122 section 3.2.2.1 and RFC 1812 section 5.2.7.1.
 const (
 	ICMPv4NetUnreachable      ICMPv4Code = 0
 	ICMPv4HostUnreachable     ICMPv4Code = 1
 	ICMPv4ProtoUnreachable    ICMPv4Code = 2
 	ICMPv4PortUnreachable     ICMPv4Code = 3
 	ICMPv4FragmentationNeeded ICMPv4Code = 4
+	ICMPv4NetProhibited       ICMPv4Code = 9
+	ICMPv4HostProhibited      ICMPv4Code = 10
+	ICMPv4AdminProhibited     ICMPv4Code = 13
 )
 
 // ICMPv4UnusedCode is a code to use in ICMP messages where no code is needed.
