@@ -113,6 +113,27 @@ func (s *serverTx) cleanup() {
 	s.eventFD.Close()
 }
 
+// acquireBuffers acquires enough buffers to hold all the data in views or
+// returns nil if not enough buffers are currently available.
+func (s *serverTx) acquireBuffers(views []buffer.View, buffers []queue.RxBuffer) (acquiredBuffers []queue.RxBuffer) {
+	acquiredBuffers = buffers[:0]
+	wantBytes := 0
+	for i := range views {
+		wantBytes += len(views[i])
+	}
+	for wantBytes > 0 {
+		var b []byte
+		if b = s.fillPipe.Pull(); b == nil {
+			s.fillPipe.Abort()
+			return nil
+		}
+		rxBuffer := queue.DecodeRxBufferHeader(b)
+		acquiredBuffers = append(acquiredBuffers, rxBuffer)
+		wantBytes -= int(rxBuffer.Size)
+	}
+	return acquiredBuffers
+}
+
 // fillPacket copies the data in the provided views into buffers pulled from the
 // fillPipe and returns a slice of RxBuffers that contain the copied data as
 // well as the total number of bytes copied.
@@ -120,50 +141,48 @@ func (s *serverTx) cleanup() {
 // To avoid allocations the filledBuffers are appended to the buffers slice
 // which will be grown as required.
 func (s *serverTx) fillPacket(views []buffer.View, buffers []queue.RxBuffer) (filledBuffers []queue.RxBuffer, totalCopied uint32) {
-	filledBuffers = buffers[:0]
 	// fillBuffer copies as much of the views as possible into the provided buffer
 	// and returns any left over views (if any).
 	fillBuffer := func(buffer *queue.RxBuffer, views []buffer.View) (left []buffer.View) {
 		if len(views) == 0 {
 			return nil
 		}
-		availBytes := buffer.Size
 		copied := uint64(0)
+		availBytes := buffer.Size
 		for availBytes > 0 && len(views) > 0 {
 			n := copy(s.data[buffer.Offset+copied:][:uint64(buffer.Size)-copied], views[0])
+			copied += uint64(n)
+			availBytes -= uint32(n)
 			views[0].TrimFront(n)
 			if !views[0].IsEmpty() {
 				break
 			}
 			views = views[1:]
-			copied += uint64(n)
-			availBytes -= uint32(n)
 		}
 		buffer.Size = uint32(copied)
 		return views
 	}
-
-	for len(views) > 0 {
-		var b []byte
-		// Spin till we get a free buffer reposted by the peer.
-		for {
-			if b = s.fillPipe.Pull(); b != nil {
-				break
-			}
-		}
-		rxBuffer := queue.DecodeRxBufferHeader(b)
+	bufs := s.acquireBuffers(views, buffers)
+	if bufs == nil {
+		return nil, 0
+	}
+	for i := 0; len(views) > 0 && i < len(bufs); i++ {
 		// Copy the packet into the posted buffer.
-		views = fillBuffer(&rxBuffer, views)
-		totalCopied += rxBuffer.Size
-		filledBuffers = append(filledBuffers, rxBuffer)
+		views = fillBuffer(&bufs[i], views)
+		totalCopied += bufs[i].Size
 	}
 
-	return filledBuffers, totalCopied
+	return bufs, totalCopied
 }
 
 func (s *serverTx) transmit(views []buffer.View) bool {
 	buffers := make([]queue.RxBuffer, 8)
 	buffers, totalCopied := s.fillPacket(views, buffers)
+	if totalCopied == 0 {
+		// drop the packet as not enough buffers were probably available
+		// to send.
+		return false
+	}
 	b := s.completionPipe.Push(queue.RxCompletionSize(len(buffers)))
 	if b == nil {
 		return false
