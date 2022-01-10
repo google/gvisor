@@ -97,10 +97,28 @@ func ioctl(ctx context.Context, fd int, io usermem.IO, args arch.SyscallArgument
 		if _, err := ifc.CopyIn(cc, args[2].Pointer()); err != nil {
 			return 0, err
 		}
-		// TODO(b/209503078): Check ifc.Ptr range is in untrusted range.
-		if _, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), cmd, uintptr(unsafe.Pointer(&ifc))); errno != 0 {
+		// We need to perform a translation to the local address space, since
+		// this ioctl includes a nested pointer. This involves an extra copy.
+		//
+		// maxPtrSize indicates the maximum size of the nested element.
+		const maxPtrSize = 8 * hostarch.PageSize
+		if ifc.Len < 0 || ifc.Len > maxPtrSize {
+			return 0, linuxerr.ENOMEM
+		}
+		buf := make([]byte, ifc.Len)
+		localIFC := linux.IFConf{
+			Len: int32(len(buf)),
+			Ptr: uint64(uintptr(unsafe.Pointer(&buf[0]))),
+		}
+		if _, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), cmd, uintptr(unsafe.Pointer(&localIFC))); errno != 0 {
 			return 0, translateIOSyscallError(errno)
 		}
+		// Update result.
+		ifc.Len = localIFC.Len
+		if _, err := cc.CopyOutBytes(hostarch.Addr(ifc.Ptr), buf[:ifc.Len]); err != nil {
+			return 0, err
+		}
+		// Copy out structure.
 		_, err := ifc.CopyOut(cc, args[2].Pointer())
 		return 0, err
 	case linux.SIOCETHTOOL:
