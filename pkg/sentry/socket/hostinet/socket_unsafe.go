@@ -97,10 +97,24 @@ func ioctl(ctx context.Context, fd int, io usermem.IO, args arch.SyscallArgument
 		if _, err := ifc.CopyIn(cc, args[2].Pointer()); err != nil {
 			return 0, err
 		}
-		// TODO(b/209503078): Check ifc.Ptr range is in untrusted range.
-		if _, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), cmd, uintptr(unsafe.Pointer(&ifc))); errno != 0 {
+
+		// The user's ifconf can have a nullable pointer to a buffer. Use a Sentry array if non-null.
+		ifcNested := linux.IFConf{Len: ifc.Len}
+		var ifcBuf []byte
+		if ifc.Ptr != 0 {
+			ifcBuf = make([]byte, ifc.Len)
+			ifcNested.Ptr = uint64(uintptr(unsafe.Pointer(&ifcBuf[0])))
+		}
+		if _, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), cmd, uintptr(unsafe.Pointer(&ifcNested))); errno != 0 {
 			return 0, translateIOSyscallError(errno)
 		}
+		// Copy out the buffer if it was non-null.
+		if ifc.Ptr != 0 {
+			if _, err := cc.CopyOutBytes(hostarch.Addr(ifc.Ptr), ifcBuf); err != nil {
+				return 0, err
+			}
+		}
+		ifc.Len = ifcNested.Len
 		_, err := ifc.CopyOut(cc, args[2].Pointer())
 		return 0, err
 	case linux.SIOCETHTOOL:
