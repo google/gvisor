@@ -166,10 +166,13 @@ func (r *reassembler) process(first, last uint16, more bool, proto uint8, pkt *s
 		return r.holes[i].first < r.holes[j].first
 	})
 
+	// Don't DecRef resPkt since we will return it to the caller after appending
+	// the other fragments to it.
 	resPkt := r.holes[0].pkt
-	resPkt.DecRef()
 	for i := 1; i < len(r.holes); i++ {
-		stack.MergeFragment(resPkt, r.holes[i].pkt)
+		fragmentPkt := r.holes[i].pkt
+		stack.MergeFragment(resPkt, fragmentPkt)
+		fragmentPkt.DecRef()
 	}
 	return resPkt, r.proto, true, memConsumed, nil
 }

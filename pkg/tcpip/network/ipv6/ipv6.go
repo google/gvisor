@@ -1390,6 +1390,7 @@ func (e *endpoint) processExtensionHeaders(h header.IPv6, pkt *stack.PacketBuffe
 			}
 
 			if ready {
+				defer resPkt.DecRef()
 				pkt = resPkt
 
 				// We create a new iterator with the reassembled packet because we could
