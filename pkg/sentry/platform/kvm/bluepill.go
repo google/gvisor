@@ -68,11 +68,15 @@ var (
 	dieTrampolineAddr uintptr
 )
 
+// _SYS_KVM_RETURN_TO_HOST is the system call that is used to transition
+// to host.
+const _SYS_KVM_RETURN_TO_HOST = ^uintptr(0)
+
 // redpill invokes a syscall with -1.
 //
 //go:nosplit
 func redpill() {
-	unix.RawSyscall(^uintptr(0), 0, 0, 0)
+	unix.RawSyscall(_SYS_KVM_RETURN_TO_HOST, 0, 0, 0)
 }
 
 // dieHandler is called by dieTrampoline.

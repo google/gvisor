@@ -62,6 +62,7 @@ go_library(
         "bluepill_fault.go",
         "bluepill_unsafe.go",
         "context.go",
+        "filters.go",
         "filters_amd64.go",
         "filters_arm64.go",
         "kvm.go",
