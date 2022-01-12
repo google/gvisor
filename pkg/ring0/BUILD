@@ -82,5 +82,6 @@ go_library(
         "//pkg/safecopy",
         "//pkg/sentry/arch",
         "//pkg/sentry/arch/fpu",
+        "//pkg/sync",
     ],
 )

@@ -182,7 +182,6 @@ const (
 	traceCategory = "task"
 	runRegion     = ":run"
 	blockRegion   = ":block"
-	cpuidRegion   = ":cpuid"
 	faultRegion   = ":fault"
 )
 

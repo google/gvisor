@@ -40,6 +40,12 @@ type context struct {
 	interrupt interrupt.Forwarder
 }
 
+// tryCPUIDError indicates that CPUID emulation should occur.
+type tryCPUIDError struct{}
+
+// Error implements error.Error.
+func (tryCPUIDError) Error() string { return "cpuid emulation failed" }
+
 // Switch runs the provided context in the given address space.
 func (c *context) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac arch.Context, _ int32) (*linux.SignalInfo, hostarch.AccessType, error) {
 	as := mm.AddressSpace()
@@ -63,6 +69,7 @@ func (c *context) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac a
 	// that the flush can occur naturally on the next user entry.
 	cpu.active.set(localAS)
 
+restart:
 	// Prepare switch options.
 	switchOpts := ring0.SwitchOpts{
 		Registers:          &ac.StateData().Regs,
@@ -74,6 +81,17 @@ func (c *context) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac a
 
 	// Take the blue pill.
 	at, err := cpu.SwitchToUser(switchOpts, &c.info)
+	if err != nil {
+		if _, ok := err.(tryCPUIDError); ok {
+			// Does emulation work for the CPUID?
+			if platform.TryCPUIDEmulate(ctx, mm, ac) {
+				goto restart
+			}
+			// If not a valid CPUID, then the signal should be
+			// delivered as is and the information is filled.
+			err = platform.ErrContextSignal
+		}
+	}
 
 	// Clear the address space.
 	cpu.active.set(nil)

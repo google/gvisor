@@ -12,29 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build (amd64 || 386) && go1.1
-// +build amd64 386
-// +build go1.1
+package cpuid
 
-package arch
+import "testing"
 
-import (
-	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
-)
+func TestFeatureFromString(t *testing.T) {
+	// Check that known features do match.
+	for feature, _ := range allFeatures {
+		f, ok := FeatureFromString(feature.String())
+		if f != feature || !ok {
+			t.Errorf("got %v, %v want %v, true", f, ok, feature)
+		}
+	}
 
-// State contains the common architecture bits for X86 (the build tag of this
-// file ensures it's only built on x86).
-//
-// +stateify savable
-type State struct {
-	// The system registers.
-	Regs Registers
-
-	// Our floating point state.
-	fpState fpu.State `state:"wait"`
-}
-
-// afterLoad is invoked by stateify.
-func (s *State) afterLoad() {
-	s.afterLoadFPState()
+	// Check that "bad" doesn't match.
+	f, ok := FeatureFromString("bad")
+	if ok {
+		t.Errorf("got %v, %v want false", f, ok)
+	}
 }

@@ -627,9 +627,9 @@ func (t *Task) afterLoad() {
 		t.stopCount = 1
 	}
 	t.endStopCond.L = &t.tg.signalHandlers.mu
-	t.p = t.k.Platform.NewContext()
 	t.rseqPreempted = true
 	t.futexWaiter = futex.NewWaiter()
+	t.p = t.k.Platform.NewContext(t)
 }
 
 // copyScratchBufferLen is the length of Task.copyScratchBuffer.

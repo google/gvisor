@@ -15,7 +15,6 @@
 package kernel
 
 import (
-	"bytes"
 	"fmt"
 	"runtime"
 	"runtime/trace"
@@ -25,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/goid"
 	"gvisor.dev/gvisor/pkg/hostarch"
-	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/hostcpu"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -133,32 +131,6 @@ func (t *Task) doStop() {
 	for t.stopCount > 0 {
 		t.endStopCond.Wait()
 	}
-}
-
-func (*runApp) handleCPUIDInstruction(t *Task) error {
-	if len(arch.CPUIDInstruction) == 0 {
-		// CPUID emulation isn't supported, but this code can be
-		// executed, because the ptrace platform returns
-		// ErrContextSignalCPUID on page faults too. Look at
-		// pkg/sentry/platform/ptrace/ptrace.go:context.Switch for more
-		// details.
-		return platform.ErrContextSignal
-	}
-	// Is this a CPUID instruction?
-	region := trace.StartRegion(t.traceContext, cpuidRegion)
-	expected := arch.CPUIDInstruction[:]
-	found := make([]byte, len(expected))
-	_, err := t.CopyInBytes(hostarch.Addr(t.Arch().IP()), found)
-	if err == nil && bytes.Equal(expected, found) {
-		// Skip the cpuid instruction.
-		t.Arch().CPUIDEmulate(t)
-		t.Arch().SetIP(t.Arch().IP() + uintptr(len(expected)))
-		region.End()
-
-		return nil
-	}
-	region.End() // Not an actual CPUID, but required copy-in.
-	return platform.ErrContextSignal
 }
 
 // The runApp state checks for interrupts before executing untrusted
@@ -285,16 +257,6 @@ func (app *runApp) execute(t *Task) taskRunState {
 		// Interrupted by platform.Context.Interrupt(). Re-enter the run
 		// loop to figure out why.
 		return (*runApp)(nil)
-
-	case platform.ErrContextSignalCPUID:
-		if err := app.handleCPUIDInstruction(t); err == nil {
-			// Resume execution.
-			return (*runApp)(nil)
-		}
-
-		// The instruction at the given RIP was not a CPUID, and we
-		// fallthrough to the default signal deliver behavior below.
-		fallthrough
 
 	case platform.ErrContextSignal:
 		// Looks like a signal has been delivered to us. If it's a synchronous

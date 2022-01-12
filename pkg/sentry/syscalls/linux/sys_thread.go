@@ -167,7 +167,7 @@ func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr host
 		CloseOnExec:         closeOnExec,
 		Argv:                argv,
 		Envv:                envv,
-		Features:            t.Arch().FeatureSet(),
+		Features:            t.Kernel().FeatureSet(),
 	}
 
 	image, se := t.Kernel().LoadTaskImage(t, loadArgs)
