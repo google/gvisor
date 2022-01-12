@@ -1608,7 +1608,7 @@ func (*testInterface) Enabled() bool {
 	return true
 }
 
-func TestDefaultTTL(t *testing.T) {
+func TestNonMulticastDefaultTTL(t *testing.T) {
 	for _, flow := range []testFlow{unicastV4, unicastV4in6, unicastV6, unicastV6Only, broadcast, broadcastIn6} {
 		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {
 			c := newDualTestContext(t, defaultMTU)
@@ -1635,7 +1635,7 @@ func TestDefaultTTL(t *testing.T) {
 	}
 }
 
-func TestNonMulticastDefaultTTL(t *testing.T) {
+func TestSetNonMulticastTTL(t *testing.T) {
 	for _, flow := range []testFlow{unicastV4, unicastV4in6, unicastV6, unicastV6Only, broadcast, broadcastIn6} {
 		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {
 			for _, wantTTL := range []uint8{1, 2, 50, 64, 128, 254, 255} {
