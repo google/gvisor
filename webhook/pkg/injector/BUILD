@@ -20,15 +20,3 @@ go_library(
         "@io_k8s_client_go//kubernetes:go_default_library",
     ],
 )
-
-genrule(
-    name = "certs",
-    srcs = [":gencerts"],
-    outs = ["certs.go"],
-    cmd = "$$(cut -d ' ' -f 1 <<< \"$(locations :gencerts)\") $@",
-)
-
-sh_binary(
-    name = "gencerts",
-    srcs = ["gencerts.sh"],
-)

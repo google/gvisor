@@ -4,9 +4,14 @@ load("//tools:defs.bzl", "go_binary", "pkg_tar")
 package(licenses = ["notice"])
 
 docker_image(
-    name = "webhook_image",
+    name = "image",
     data = ":files",
     statements = ['ENTRYPOINT ["/webhook"]'],
+    tags = [
+        "local",
+        "manual",
+        "no-sandbox",
+    ],
 )
 
 # files is the full file system of the webhook container. It is simply:
