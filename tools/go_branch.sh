@@ -61,11 +61,6 @@ find "${go_amd64}/src/${module}" -name '*_arm64*.s' -exec rm -f {} \;
 find "${go_arm64}/src/${module}" -name '*_amd64*.go' -exec rm -f {} \;
 find "${go_arm64}/src/${module}" -name '*_amd64*.s' -exec rm -f {} \;
 
-# See below. The certs.go file is pseudo-random, and therefore will also
-# differ between the branches. Since we merge, it only has to come from one.
-# We arbitrarily keep the one from the amd64 branch, and drop the arm64 one.
-rm -f "${go_arm64}/src/${module}/webhook/pkg/injector/certs.go"
-
 # Check that all files are compatible. This means that if the files exist in
 # both architectures, then they must be identical. The only ones that we expect
 # to exist in a single architecture (due to binary builds) may be different.
@@ -128,7 +123,6 @@ find . -type d -exec chmod 0755 {} \;
 declare -r gopath="${go_merged}/src/${module}"
 rsync --recursive --delete \
   --exclude .git \
-  --exclude webhook/pkg/injector/certs.go \
   "${gopath}/" .
 
 # Add additional files.

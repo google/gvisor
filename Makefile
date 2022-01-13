@@ -433,6 +433,28 @@ website-deploy: website-push ## Deploy a new version of the website.
 .PHONY: website-deploy
 
 ##
+## Webhook helpers.
+##
+##   The webhook is built locally.
+##     WEBHOOK_IMAGE - The name of the container image.
+##
+WEBHOOK_IMAGE := gcr.io/gvisor-presubmit/webhook
+
+webhook-build: ## Build the webhookimage locally.
+	@$(call run,//webhook:image,$(WEBHOOK_IMAGE))
+.PHONY: webhook-build
+
+webhook-push: webhook-build ## Push a new image.
+	@docker push $(WEBHOOK_IMAGE)
+.PHONY: website-push
+
+webhook-update: test/kubernetes/gvisor-injection-admission-webhook.yaml.in
+	@WEBHOOK=$(WEBHOOK_IMAGE):$$($(call run,//webhook:image,$(WEBHOOK_IMAGE)) | cut -d':' -f2) && \
+	INIT=$(call remote_image,certs):$(call tag,certs) && \
+	cat $< | sed -e "s|%WEBHOOK%|$${WEBHOOK}|g" | sed -e "s|%INIT%|$${INIT}|g" > test/kubernetes/gvisor-injection-admission-webhook.yaml
+.PHONY: webhook-update
+
+##
 ## Repository builders.
 ##
 ##   This builds a local apt repository. The following variables may be set:
