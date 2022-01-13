@@ -94,13 +94,13 @@ func CreateConfiguration(clientset kubeclientset.Interface, selector *metav1.Lab
 
 // GetTLSConfig retrieves the CA cert that signed the cert used by the webhook.
 func GetTLSConfig() *tls.Config {
-	serverCert, err := tls.X509KeyPair(serverCert, serverKey)
+	sc, err := tls.X509KeyPair(serverCert, serverKey)
 	if err != nil {
 		log.Warningf("Failed to generate X509 key pair: %v", err)
 		os.Exit(1)
 	}
 	return &tls.Config{
-		Certificates: []tls.Certificate{serverCert},
+		Certificates: []tls.Certificate{sc},
 	}
 }
 

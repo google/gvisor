@@ -1,97 +1,45 @@
+// Copyright 2020 The gVisor Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package injector
 
-// This file was generated using openssl by the gencerts.sh script.
+import (
+	"fmt"
+	"io/ioutil"
+)
 
-var caKey = []byte(`-----BEGIN RSA PRIVATE KEY-----
-MIIEogIBAAKCAQEAtUYj/tDPDDHTlSJpZLIjZ5dUZ4MD3IdwBJLUwTXdDr0TWVhY
-MX7FSJVeKW+hGpx1xZ1R+TdCwzSyfoFFCzttcqnKJ1Kl+FYDBMsIDFZw4BiAAPVK
-sviCMYVtgR+YU4Z1WzudCX8RUbxK5ueifXSf8GbRteu6mCv2uMuDrA+XfZnNWyr+
-6sgU1kzTAUgUMt6VKR069ayClv8P42VRDb9Rw2Hma5x4AnMCF2WaxBN8kLRpqHRd
-it80d5oidY6xpxcBPOismo76U4RpIXtCEBvgvZInhW3qz2rxFYG0PJnw0ovOvCdP
-fcz5sktrerreet3sDiTwU6TM1KSJX+uGmnetnwIDAQABAoIBAAYaDFAhezav3q1g
-cSfAj0yHXYH2eQTNUkn1H1A5ne1HFAWn4aAY4k8lJ/xBE60vow850m6PG6Iyfeeg
-NlDAeViounNEZu3LB2L76pNvvXDtojFmEFOh5dAA68Sy6Y+2MPEXOpv9OPoFWogX
-N/L9H/0ZmOmEu80vfaiOwSnjhHfnzOeWr4AuPpZyQP0/fioZPEYcdBmZMT9hP+gb
-lgz/43QJ/XICO1jypiFUuLz/Z1WsZAuTgjkL1u9AI0Lb5iwA2kp50d8/ebRF24ME
-VhLZNuCGf1/h1oMUq1nf0cvnqR8X/xf2nJganOvCCFWIv05dOiF1pwa0g6UOTMok
-esEx9EECgYEA5Z0QmvGcjZi3jpGpGJhUMCxt/icisG6+TrFEgMDOCbxHpy9joX1O
-zd2k9/ho5LcGdClxV2oE93YeYqEzpdN9C/rp1B5mBPVd7kN04Gvppg2ahgN0/N8d
-egr4sW8y/Q4TsQHJ2gt5iOFyOZ7d4W/rVfUubnf2N9GR7Of3cQXHJ5ECgYEAyhr9
-BS2nJTdzcnLQfLINQJ/DLFJzNajGhhYah1rgDcfOLg93HSwEg5qrRnRh6LnqGqKS
-8hqUJebmdA0Vh8a3ocgiFWbiDyjRyl/IhIzWWgzgqkiBH4AQX8TFZMcy2A+Ju8nz
-GEsxqwdHqTShPiHc8bHwLzDp9SYgFzHyH5k/yi8CgYAoPfTRExNbBa71/7VhKCFp
-KABHENjVjzMvW4YkAqaZsjPkqzuM7AdJsVTeWN0ZaLJq3XCN33jrXfpJUvNYVs6N
-sPYWRRWgPNivj4cGZiNXBP9WCXkRcJEb+JxJjLGlBDiTRzr3SheM0+ZPDvbYMeNO
-91+h4Mh4U/R9TtJhLqAO4QKBgDoQyPMM68HAjbWrEQVSboZLoFqCkcEv7WGmxhZv
-YIH1DuKi5NkHxYA+FslWNK8VgxIF9WwDgN7m2P0sqSvqRuX/RvOZLIeodaXMISMc
-B5W1r3KdBCQVuh6ZvRC4Pn5e8HZ4jhRDvlBh9g/CJDViq0Txl40nY4BgZMXlPqgf
-cnlXAoGAGNaUmN85FxTc6AIPwmX+iY74ktmAsyKb2kVvur4VtjfwLQlM0+d4muFp
-CLZiaejLdfle7St5SVEVHrjoUlbErsnElWGiNODpne2euHsothLQwiZtnktQD3Qp
-vAYf7xflC2sDJT6bs1j2m5Sf58NKqOKMwT/SqjVl9503aQQq66g=
------END RSA PRIVATE KEY-----`)
+var (
+	caKey      []byte
+	caCert     []byte
+	serverKey  []byte
+	serverCert []byte
+)
 
-var caCert = []byte(`-----BEGIN CERTIFICATE-----
-MIICqzCCAZMCFHOPDPhe8VHPQBU9eZ4k3biL33tvMA0GCSqGSIb3DQEBCwUAMBEx
-DzANBgNVBAMMBmUyZV9jYTAgFw0yMDEyMzAwMTQ1NTlaGA8yMjk0MTAxNTAxNDU1
-OVowETEPMA0GA1UEAwwGZTJlX2NhMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIB
-CgKCAQEAtUYj/tDPDDHTlSJpZLIjZ5dUZ4MD3IdwBJLUwTXdDr0TWVhYMX7FSJVe
-KW+hGpx1xZ1R+TdCwzSyfoFFCzttcqnKJ1Kl+FYDBMsIDFZw4BiAAPVKsviCMYVt
-gR+YU4Z1WzudCX8RUbxK5ueifXSf8GbRteu6mCv2uMuDrA+XfZnNWyr+6sgU1kzT
-AUgUMt6VKR069ayClv8P42VRDb9Rw2Hma5x4AnMCF2WaxBN8kLRpqHRdit80d5oi
-dY6xpxcBPOismo76U4RpIXtCEBvgvZInhW3qz2rxFYG0PJnw0ovOvCdPfcz5sktr
-erreet3sDiTwU6TM1KSJX+uGmnetnwIDAQABMA0GCSqGSIb3DQEBCwUAA4IBAQAm
-52DD59yJDsbzK2dTTnBYgUtXkYeEvnQmcQ9nY2209MAP3u8nFk/SbeRiRND4ZH44
-QluVyAB64sLEDgL09+Ag5oKo0HaMfbFRFl9zqu/9e5ew6CyIwCsAOSGe0UMn6Wwk
-xmnoCs7N/rMllPSfVQY2Se7VDwD/2qJZwAARlfhMUGDrYNFuEYg9LWCTmIljmmjw
-uKeRvG0goezmkkDKbuFiEM2uT/R0FpTiEn2qaYvDNXKVGLK9JhUeScbThL42jV9m
-Jq86HNWl0lQvmq3UElmal8EAW+fupyFcNWamlNaRLNIEg0BYyS+Bc14cGQ4e20hP
-ANxAnoVTDxatLx6IgF+l
------END CERTIFICATE-----`)
-
-var serverKey = []byte(`-----BEGIN RSA PRIVATE KEY-----
-MIIEpAIBAAKCAQEAvjyW06g28A1Jarin5OSG4wR0uvUteE3+ZTgawezJvdi4T4RW
-zcz1TKvgHBg4zI20SqjLS8m85fIWrmL0xnRYeQR9cK5S9DFvjbSbYmH98/WeDsVF
-iY3G4NnnAZDb9HegXdZLWiAXAE64mVhCFPw1obsRYPVTN+ZbNp3UELB5HC2YrLCR
-XXPLh5YERPpPCmO19FRCKayusHz0YuAGf9+W7oz2gSmnlgymJoO2mDqgNxw1uM20
-2ogB0+QV2phpGQGvVh6ZsilwLMFEwdtAJn331EmslkbXdxROd1g38ERFP0tsAclT
-MuOufhaFU7PkHygdCgUlxmHrOPGt3swVXbmBOwIDAQABAoIBAQCi8HhrP4gWofrB
-GvpLFeXmqhllTLyub3c2sRBSC4NcRTTQftRun193VTu2NJTpt3G2BM9j0Z4nAeyl
-XwKyvFJPDSZ4DgflOjaHFCuG39HJVBYWJqeBwtqWGm0/LRkIUjIcTYDq59NrowF/
-7lVjbgZtyTGAb3/gwEBeDl7mEJEbLQPJBgSjU4NIDnds7XdwshUtkWUePOP2qwy/
-FWHqHZPyfNnqBqX5/Fr9zd5NiQw5XrpM6OKkEV+mXTwaccapmh5qqZHLX6Hwe5jO
-NtXmXtSHAmLZPF6hrmd+gdX9DEqkKvPIes99ZOMWrBEeAy5kHIcb9pOVtSPpwxlV
-vcBf4IChAoGBAOxvN3eIDG6spmtqeh0ynTRpWPytJJuIO2ylJ1IuA6pnxPEQGvue
-4JBVYDvsmoop8B0OTYXC1I8DWagmH276b7guUQwtXI8cudkBavu7ekqa+BqFh/Yy
-UoF8xFI31uw9k7VEmPEa3yTiRy+gtsQniIrvFKEhvTDpxKijg/kxtBbRAoGBAM36
-sEWhy5xp5erUFaFOxKQte2vMEX1An4kzK4NKg6c92WQHauoT9Qn2lhdPt/UYPInv
-Rg+qbKfXhNugPgfkBIXjtW8tZ1TbC8w6OfM030dsSKC9E28crtLAwJ3F4S8HZJMJ
-ZNSHAwaZLqp3dTsdfFt7EI3IAfGMNKnertPt4jJLAoGADwPZH+wx7e1k/Dlc2/HU
-7fkqv5E3W/FA5NtwLdXiQbYpWa3OKOCkHkZtwCB8h/211AKOhcojuZla3kTdhiy9
-X5MBbqaK1EPcwZ1HcAkt8QL6cqS8R7RWbQbBaP9G1OXsNXzPwbAVL8B3CN1J/hcM
-otYgF0OPQkX2SUdpIDA54aECgYAKy8fvbmKIqThGzaTwlntSC5w7cy+7e+agv1DZ
-ic9KtcAuMQFWkYM3aXhGcoQ20XVi2Wq3qXwWdAJfrI9zxGzEQ8IfuKaA2RZONwMQ
-j0XgrXlFC4P4P+2d2EKAQn3iBCYuWsCxLv5mmyLKBobbeVkqRlIAzGnlqi6cdLJ/
-IynG7wKBgQDGYvQLBIN7StLBlVVZAbTaDGloNXo2jifFbbHu1yh1UvFhtZFglz/r
-WXCZxvzaMKxnuMZs2PpggM/tgaoxOWPpFtI4gaUFD5+CgikjWpApM93yP4Zvnwo0
-4EiHPQQiQ6yBgVOHckKRYMJs38dUt433kq9g0HDMkc+ajfKNw5yZMA==
------END RSA PRIVATE KEY-----`)
-
-var serverCert = []byte(`-----BEGIN CERTIFICATE-----
-MIIDDzCCAfegAwIBAgIUYw+kvxKk5J0Q1nAtF7WFIUNuxvQwDQYJKoZIhvcNAQEL
-BQAwETEPMA0GA1UEAwwGZTJlX2NhMCAXDTIwMTIzMDAxNDYwMFoYDzIyOTQxMDE1
-MDE0NjAwWjA1MTMwMQYDVQQDDCpndmlzb3ItaW5qZWN0aW9uLWFkbWlzc2lvbi13
-ZWJob29rLmUyZS5zdmMwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQC+
-PJbTqDbwDUlquKfk5IbjBHS69S14Tf5lOBrB7Mm92LhPhFbNzPVMq+AcGDjMjbRK
-qMtLybzl8hauYvTGdFh5BH1wrlL0MW+NtJtiYf3z9Z4OxUWJjcbg2ecBkNv0d6Bd
-1ktaIBcATriZWEIU/DWhuxFg9VM35ls2ndQQsHkcLZissJFdc8uHlgRE+k8KY7X0
-VEIprK6wfPRi4AZ/35bujPaBKaeWDKYmg7aYOqA3HDW4zbTaiAHT5BXamGkZAa9W
-HpmyKXAswUTB20AmfffUSayWRtd3FE53WDfwREU/S2wByVMy465+FoVTs+QfKB0K
-BSXGYes48a3ezBVduYE7AgMBAAGjOTA3MAkGA1UdEwQCMAAwCwYDVR0PBAQDAgXg
-MB0GA1UdJQQWMBQGCCsGAQUFBwMCBggrBgEFBQcDATANBgkqhkiG9w0BAQsFAAOC
-AQEAerR4SLGytdufaftX8wXhp5/8TN5uwsrfifYbYYD7eP1uGxbGHEmsDNmQuPxh
-PAs8emeTlxDDV6oJI8BtjXT0MW4YYDEFVnPynrG9Mu29Qju7lqX+wWUTb37dLmPo
-ISZBi9CvF3a6dCMytOwx7UX2lHn7PuhhN6P1x3IDO3798ED/c42p9m0s+GDHifxS
-NSD27id1LTx3peqJinacRAr1HMHgeoH6Si/HWoKOaapI7rVjpeiK5legQzcfq68r
-Sq3c+NsxCRVrhsj3oyUuPFDuE340NG5qGY4SCSAd/4J4LNScL/uvP4SYmAdrp+nC
-HEP3jklV4cN/EZwyjhQX/lHV/w==
------END CERTIFICATE-----`)
+func init() {
+	var (
+		caKeyErr      error
+		caCertErr     error
+		serverKeyErr  error
+		serverCertErr error
+	)
+	caKey, caKeyErr = ioutil.ReadFile("caKey.pem")
+	caCert, caCertErr = ioutil.ReadFile("caCert.pem")
+	serverKey, serverKeyErr = ioutil.ReadFile("serverKey.pem")
+	serverCert, serverCertErr = ioutil.ReadFile("serverCert.pem")
+	for _, err := range []error{caKeyErr, caCertErr, serverKeyErr, serverCertErr} {
+		if err != nil {
+			panic(fmt.Errorf("unable to create certificates: %v", err))
+		}
+	}
+}
