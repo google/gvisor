@@ -55,7 +55,7 @@ func (c *vCPU) setCPUID() error {
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		_KVM_SET_CPUID2,
-		uintptr(unsafe.Pointer(&cpuidSupported))); errno != 0 {
+		uintptr(unsafe.Pointer(&cpuidMasked))); errno != 0 {
 		return fmt.Errorf("error setting CPUID: %v", errno)
 	}
 	return nil

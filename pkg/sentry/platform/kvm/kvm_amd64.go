@@ -199,17 +199,33 @@ func (c *cpuidEntries) Query(in cpuid.In) (out cpuid.Out) {
 // updateGlobalOnce does global initialization. It has to be called only once.
 func updateGlobalOnce(fd int) error {
 	err := updateSystemValues(int(fd))
-	// Create a static feature set from the KVM entries. Then, we
-	// explicitly set OSXSAVE, since this does not come in the feature
-	// entries, but can be provided when the relevant CR4 bit is set.
 	fs := cpuid.FeatureSet{
 		Function: &cpuidSupported,
 	}
+	// Calculate whether guestPCID is supported.
+	hasGuestPCID = fs.HasFeature(cpuid.X86FeaturePCID)
+	// Create a static feature set from the KVM entries. Then, we
+	// explicitly set OSXSAVE, since this does not come in the feature
+	// entries, but can be provided when the relevant CR4 bit is set.
 	s := fs.ToStatic()
 	s.Add(cpuid.X86FeatureOSXSAVE)
+	// Explicitly disable nested virtualization. Since we don't provide
+	// any virtualization APIs, there is no need to enable this feature.
+	s.Remove(cpuid.X86FeatureVMX)
+	s.Remove(cpuid.X86FeatureSVM)
 	ring0.Init(cpuid.FeatureSet{
 		Function: s,
 	})
+	// Copy out this masked set of features.
+	for in, out := range s {
+		cpuidMasked.entries[cpuidMasked.nr].function = in.Eax
+		cpuidMasked.entries[cpuidMasked.nr].index = in.Ecx
+		cpuidMasked.entries[cpuidMasked.nr].eax = out.Eax
+		cpuidMasked.entries[cpuidMasked.nr].ebx = out.Ebx
+		cpuidMasked.entries[cpuidMasked.nr].ecx = out.Ecx
+		cpuidMasked.entries[cpuidMasked.nr].edx = out.Edx
+		cpuidMasked.nr++
+	}
 	physicalInit()
 	return err
 }
