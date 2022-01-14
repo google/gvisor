@@ -238,6 +238,9 @@ const (
 	// LeaksLogTraces indicates that a trace collected during allocation
 	// should be logged when leaks are found.
 	LeaksLogTraces
+
+	// LeaksPanic indidcates that a panic should be issued when leaks are found.
+	LeaksPanic
 )
 
 // Set implements flag.Value.
@@ -249,6 +252,8 @@ func (l *LeakMode) Set(v string) error {
 		*l = LeaksLogWarning
 	case "log-traces":
 		*l = LeaksLogTraces
+	case "panic":
+		*l = LeaksPanic
 	default:
 		return fmt.Errorf("invalid ref leak mode %q", v)
 	}
@@ -271,8 +276,11 @@ func (l LeakMode) String() string {
 		return "log-names"
 	case LeaksLogTraces:
 		return "log-traces"
+	case LeaksPanic:
+		return "panic"
+	default:
+		panic(fmt.Sprintf("invalid ref leak mode %d", l))
 	}
-	panic(fmt.Sprintf("invalid ref leak mode %d", l))
 }
 
 // leakMode stores the current mode for the reference leak checker.
