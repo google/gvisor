@@ -79,14 +79,11 @@ type Stack struct {
 
 	stats tcpip.Stats
 
-	// LOCK ORDERING: mu > route.mu.
-	route struct {
-		mu struct {
-			sync.RWMutex
+	// LOCK ORDERING: mu > routeMu.
+	routeMu sync.RWMutex
 
-			table []tcpip.Route
-		}
-	}
+	// +checklocks:routeMu
+	routeTable []tcpip.Route
 
 	mu                       sync.RWMutex
 	nics                     map[tcpip.NICID]*nic
@@ -579,37 +576,37 @@ func (s *Stack) SetPortRange(start uint16, end uint16) tcpip.Error {
 //
 // This method takes ownership of the table.
 func (s *Stack) SetRouteTable(table []tcpip.Route) {
-	s.route.mu.Lock()
-	defer s.route.mu.Unlock()
-	s.route.mu.table = table
+	s.routeMu.Lock()
+	defer s.routeMu.Unlock()
+	s.routeTable = table
 }
 
 // GetRouteTable returns the route table which is currently in use.
 func (s *Stack) GetRouteTable() []tcpip.Route {
-	s.route.mu.RLock()
-	defer s.route.mu.RUnlock()
-	return append([]tcpip.Route(nil), s.route.mu.table...)
+	s.routeMu.RLock()
+	defer s.routeMu.RUnlock()
+	return append([]tcpip.Route(nil), s.routeTable...)
 }
 
 // AddRoute appends a route to the route table.
 func (s *Stack) AddRoute(route tcpip.Route) {
-	s.route.mu.Lock()
-	defer s.route.mu.Unlock()
-	s.route.mu.table = append(s.route.mu.table, route)
+	s.routeMu.Lock()
+	defer s.routeMu.Unlock()
+	s.routeTable = append(s.routeTable, route)
 }
 
 // RemoveRoutes removes matching routes from the route table.
 func (s *Stack) RemoveRoutes(match func(tcpip.Route) bool) {
-	s.route.mu.Lock()
-	defer s.route.mu.Unlock()
+	s.routeMu.Lock()
+	defer s.routeMu.Unlock()
 
 	var filteredRoutes []tcpip.Route
-	for _, route := range s.route.mu.table {
+	for _, route := range s.routeTable {
 		if !match(route) {
 			filteredRoutes = append(filteredRoutes, route)
 		}
 	}
-	s.route.mu.table = filteredRoutes
+	s.routeTable = filteredRoutes
 }
 
 // NewEndpoint creates a new transport layer endpoint of the given protocol.
@@ -797,18 +794,18 @@ func (s *Stack) removeNICLocked(id tcpip.NICID) tcpip.Error {
 	delete(s.nics, id)
 
 	// Remove routes in-place. n tracks the number of routes written.
-	s.route.mu.Lock()
+	s.routeMu.Lock()
 	n := 0
-	for i, r := range s.route.mu.table {
-		s.route.mu.table[i] = tcpip.Route{}
+	for i, r := range s.routeTable {
+		s.routeTable[i] = tcpip.Route{}
 		if r.NIC != id {
 			// Keep this route.
-			s.route.mu.table[n] = r
+			s.routeTable[n] = r
 			n++
 		}
 	}
-	s.route.mu.table = s.route.mu.table[:n]
-	s.route.mu.Unlock()
+	s.routeTable = s.routeTable[:n]
+	s.routeMu.Unlock()
 
 	return nic.remove()
 }
@@ -1135,10 +1132,10 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 	// Find a route to the remote with the route table.
 	var chosenRoute tcpip.Route
 	if r := func() *Route {
-		s.route.mu.RLock()
-		defer s.route.mu.RUnlock()
+		s.routeMu.RLock()
+		defer s.routeMu.RUnlock()
 
-		for _, route := range s.route.mu.table {
+		for _, route := range s.routeTable {
 			if len(remoteAddr) != 0 && !route.Destination.Contains(remoteAddr) {
 				continue
 			}

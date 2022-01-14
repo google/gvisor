@@ -102,7 +102,7 @@ func (igmp *igmpState) Enabled() bool {
 
 // SendReport implements ip.MulticastGroupProtocol.
 //
-// Precondition: igmp.ep.mu must be read locked.
+// +checklocksread:igmp.ep.mu
 func (igmp *igmpState) SendReport(groupAddress tcpip.Address) (bool, tcpip.Error) {
 	igmpType := header.IGMPv2MembershipReport
 	if igmp.v1Present() {
@@ -113,7 +113,7 @@ func (igmp *igmpState) SendReport(groupAddress tcpip.Address) (bool, tcpip.Error
 
 // SendLeave implements ip.MulticastGroupProtocol.
 //
-// Precondition: igmp.ep.mu must be read locked.
+// +checklocksread:igmp.ep.mu
 func (igmp *igmpState) SendLeave(groupAddress tcpip.Address) tcpip.Error {
 	// As per RFC 2236 Section 6, Page 8: "If the interface state says the
 	// Querier is running IGMPv1, this action SHOULD be skipped. If the flag
@@ -143,7 +143,7 @@ func (igmp *igmpState) ShouldPerformProtocol(groupAddress tcpip.Address) bool {
 // Must only be called once for the lifetime of igmp.
 func (igmp *igmpState) init(ep *endpoint) {
 	igmp.ep = ep
-	igmp.genericMulticastProtocol.Init(&ep.mu.RWMutex, ip.GenericMulticastProtocolOptions{
+	igmp.genericMulticastProtocol.Init(&ep.mu, ip.GenericMulticastProtocolOptions{
 		Rand:                      ep.protocol.stack.Rand(),
 		Clock:                     ep.protocol.stack.Clock(),
 		Protocol:                  igmp,
@@ -155,7 +155,7 @@ func (igmp *igmpState) init(ep *endpoint) {
 	})
 }
 
-// Precondition: igmp.ep.mu must be locked.
+// +checklocks:igmp.ep.mu
 func (igmp *igmpState) isSourceIPValidLocked(src tcpip.Address, messageType header.IGMPType) bool {
 	if messageType == header.IGMPMembershipQuery {
 		// RFC 2236 does not require the IGMP implementation to check the source IP
@@ -175,7 +175,7 @@ func (igmp *igmpState) isSourceIPValidLocked(src tcpip.Address, messageType head
 	//
 	// Note: this rule applies to both V1 and V2 Membership Reports.
 	var isSourceIPValid bool
-	igmp.ep.mu.addressableEndpointState.ForEachPrimaryEndpoint(func(addressEndpoint stack.AddressEndpoint) bool {
+	igmp.ep.addressableEndpointState.ForEachPrimaryEndpoint(func(addressEndpoint stack.AddressEndpoint) bool {
 		if subnet := addressEndpoint.Subnet(); subnet.Contains(src) {
 			isSourceIPValid = true
 			return false
@@ -186,7 +186,7 @@ func (igmp *igmpState) isSourceIPValidLocked(src tcpip.Address, messageType head
 	return isSourceIPValid
 }
 
-// Precondition: igmp.ep.mu must be locked.
+// +checklocks:igmp.ep.mu
 func (igmp *igmpState) isPacketValidLocked(pkt *stack.PacketBuffer, messageType header.IGMPType, hasRouterAlertOption bool) bool {
 	// We can safely assume that the IP header is valid if we got this far.
 	iph := header.IPv4(pkt.NetworkHeader().View())
@@ -204,7 +204,7 @@ func (igmp *igmpState) isPacketValidLocked(pkt *stack.PacketBuffer, messageType 
 
 // handleIGMP handles an IGMP packet.
 //
-// Precondition: igmp.ep.mu must be locked.
+// +checklocks:igmp.ep.mu
 func (igmp *igmpState) handleIGMP(pkt *stack.PacketBuffer, hasRouterAlertOption bool) {
 	received := igmp.ep.stats.igmp.packetsReceived
 	headerView, ok := pkt.Data().PullUp(header.IGMPMinimumSize)
@@ -287,7 +287,7 @@ func (igmp *igmpState) resetV1Present() {
 
 // handleMembershipQuery handles a membership query.
 //
-// Precondition: igmp.ep.mu must be locked.
+// +checklocks:igmp.ep.mu
 func (igmp *igmpState) handleMembershipQuery(groupAddress tcpip.Address, maxRespTime time.Duration) {
 	// As per RFC 2236 Section 6, Page 10: If the maximum response time is zero
 	// then change the state to note that an IGMPv1 router is present and
@@ -304,14 +304,14 @@ func (igmp *igmpState) handleMembershipQuery(groupAddress tcpip.Address, maxResp
 
 // handleMembershipReport handles a membership report.
 //
-// Precondition: igmp.ep.mu must be locked.
+// +checklocks:igmp.ep.mu
 func (igmp *igmpState) handleMembershipReport(groupAddress tcpip.Address) {
 	igmp.genericMulticastProtocol.HandleReportLocked(groupAddress)
 }
 
 // writePacket assembles and sends an IGMP packet.
 //
-// Precondition: igmp.ep.mu must be read locked.
+// +checklocksread:igmp.ep.mu
 func (igmp *igmpState) writePacket(destAddress tcpip.Address, groupAddress tcpip.Address, igmpType header.IGMPType) (bool, tcpip.Error) {
 	igmpData := header.IGMP(buffer.NewView(header.IGMPReportMinimumSize))
 	igmpData.SetType(igmpType)
@@ -366,14 +366,14 @@ func (igmp *igmpState) writePacket(destAddress tcpip.Address, groupAddress tcpip
 // If the group already exists in the membership map, returns
 // *tcpip.ErrDuplicateAddress.
 //
-// Precondition: igmp.ep.mu must be locked.
+// +checklocks:igmp.ep.mu
 func (igmp *igmpState) joinGroup(groupAddress tcpip.Address) {
 	igmp.genericMulticastProtocol.JoinGroupLocked(groupAddress)
 }
 
 // isInGroup returns true if the specified group has been joined locally.
 //
-// Precondition: igmp.ep.mu must be read locked.
+// +checklocksread:igmp.ep.mu
 func (igmp *igmpState) isInGroup(groupAddress tcpip.Address) bool {
 	return igmp.genericMulticastProtocol.IsLocallyJoinedRLocked(groupAddress)
 }
@@ -382,7 +382,7 @@ func (igmp *igmpState) isInGroup(groupAddress tcpip.Address) bool {
 // delay timers associated with that group, and sends the Leave Group message
 // if required.
 //
-// Precondition: igmp.ep.mu must be locked.
+// +checklocks:igmp.ep.mu
 func (igmp *igmpState) leaveGroup(groupAddress tcpip.Address) tcpip.Error {
 	// LeaveGroup returns false only if the group was not joined.
 	if igmp.genericMulticastProtocol.LeaveGroupLocked(groupAddress) {
@@ -395,7 +395,7 @@ func (igmp *igmpState) leaveGroup(groupAddress tcpip.Address) tcpip.Error {
 // softLeaveAll leaves all groups from the perspective of IGMP, but remains
 // joined locally.
 //
-// Precondition: igmp.ep.mu must be locked.
+// +checklocks:igmp.ep.mu
 func (igmp *igmpState) softLeaveAll() {
 	igmp.genericMulticastProtocol.MakeAllNonMemberLocked()
 }
@@ -403,14 +403,14 @@ func (igmp *igmpState) softLeaveAll() {
 // initializeAll attemps to initialize the IGMP state for each group that has
 // been joined locally.
 //
-// Precondition: igmp.ep.mu must be locked.
+// +checklocks:igmp.ep.mu
 func (igmp *igmpState) initializeAll() {
 	igmp.genericMulticastProtocol.InitializeGroupsLocked()
 }
 
 // sendQueuedReports attempts to send any reports that are queued for sending.
 //
-// Precondition: igmp.ep.mu must be locked.
+// +checklocksread:igmp.ep.mu
 func (igmp *igmpState) sendQueuedReports() {
 	igmp.genericMulticastProtocol.SendQueuedReportsLocked()
 }

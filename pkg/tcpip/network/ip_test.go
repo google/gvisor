@@ -303,10 +303,10 @@ var _ stack.NetworkInterface = (*testInterface)(nil)
 type testInterface struct {
 	testObject
 
-	mu struct {
-		sync.RWMutex
-		disabled bool
-	}
+	mu sync.RWMutex
+
+	// +checklocks:mu
+	disabled bool
 }
 
 func (*testInterface) ID() tcpip.NICID {
@@ -324,7 +324,7 @@ func (*testInterface) Name() string {
 func (t *testInterface) Enabled() bool {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	return !t.mu.disabled
+	return !t.disabled
 }
 
 func (*testInterface) Promiscuous() bool {
@@ -338,7 +338,7 @@ func (*testInterface) Spoofing() bool {
 func (t *testInterface) setEnabled(v bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.mu.disabled = !v
+	t.disabled = !v
 }
 
 func (*testInterface) WritePacketToRemote(tcpip.LinkAddress, *stack.PacketBuffer) tcpip.Error {

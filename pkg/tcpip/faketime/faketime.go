@@ -45,17 +45,16 @@ func (*NullClock) AfterFunc(time.Duration, func()) tcpip.Timer {
 }
 
 type notificationChannels struct {
-	mu struct {
-		sync.Mutex
+	mu sync.Mutex
 
-		ch []<-chan struct{}
-	}
+	// +checklocks:mu
+	ch []<-chan struct{}
 }
 
 func (n *notificationChannels) add(ch <-chan struct{}) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	n.mu.ch = append(n.mu.ch, ch)
+	n.ch = append(n.ch, ch)
 }
 
 // wait returns once all the notification channels are readable.
@@ -65,8 +64,8 @@ func (n *notificationChannels) add(ch <-chan struct{}) {
 func (n *notificationChannels) wait() {
 	for {
 		n.mu.Lock()
-		ch := n.mu.ch
-		n.mu.ch = nil
+		ch := n.ch
+		n.ch = nil
 		n.mu.Unlock()
 
 		if len(ch) == 0 {
@@ -87,18 +86,19 @@ type ManualClock struct {
 	// of timer callback dispatch.
 	runningTimers notificationChannels
 
-	mu struct {
-		sync.RWMutex
+	mu sync.RWMutex
 
-		// now is the current (fake) time of the clock.
-		now time.Time
+	// now is the current (fake) time of the clock.
+	// +checklocks:mu
+	now time.Time
 
-		// times is min-heap of times.
-		times timeHeap
+	// times is min-heap of times.
+	// +checklocks:mu
+	times timeHeap
 
-		// timers holds the timers scheduled for each time.
-		timers map[time.Time]map[*manualTimer]struct{}
-	}
+	// timers holds the timers scheduled for each time.
+	// +checklocks:mu
+	timers map[time.Time]map[*manualTimer]struct{}
 }
 
 // NewManualClock creates a new ManualClock instance.
@@ -110,8 +110,8 @@ func NewManualClock() *ManualClock {
 
 	// Set the initial time to a non-zero value since the zero value is used to
 	// detect inactive timers.
-	c.mu.now = time.Unix(0, 0)
-	c.mu.timers = make(map[time.Time]map[*manualTimer]struct{})
+	c.now = time.Unix(0, 0)
+	c.timers = make(map[time.Time]map[*manualTimer]struct{})
 
 	return c
 }
@@ -122,7 +122,7 @@ var _ tcpip.Clock = (*ManualClock)(nil)
 func (mc *ManualClock) Now() time.Time {
 	mc.mu.RLock()
 	defer mc.mu.RUnlock()
-	return mc.mu.now
+	return mc.now
 }
 
 // NowMonotonic implements tcpip.Clock.NowMonotonic.
@@ -150,15 +150,16 @@ func (mc *ManualClock) AfterFunc(d time.Duration, f func()) tcpip.Timer {
 
 // resetTimerLocked schedules a timer to be fired after the given duration.
 //
-// Precondition: mc.mu and mt.mu must be locked.
+// +checklocks:mt.mu
+// +checklocks:mc.mu
 func (mc *ManualClock) resetTimerLocked(mt *manualTimer, d time.Duration) {
-	if !mt.mu.firesAt.IsZero() {
+	if !mt.firesAt.IsZero() {
 		panic("tried to reset an active timer")
 	}
 
-	t := mc.mu.now.Add(d)
+	t := mc.now.Add(d)
 
-	if !mc.mu.now.Before(t) {
+	if !mc.now.Before(t) {
 		// If the timer is scheduled to fire immediately, call its callback
 		// in a new goroutine immediately.
 		//
@@ -176,13 +177,13 @@ func (mc *ManualClock) resetTimerLocked(mt *manualTimer, d time.Duration) {
 		return
 	}
 
-	mt.mu.firesAt = t
+	mt.firesAt = t
 
-	timers, ok := mc.mu.timers[t]
+	timers, ok := mc.timers[t]
 	if !ok {
 		timers = make(map[*manualTimer]struct{})
-		mc.mu.timers[t] = timers
-		heap.Push(&mc.mu.times, t)
+		mc.timers[t] = timers
+		heap.Push(&mc.times, t)
 	}
 
 	timers[mt] = struct{}{}
@@ -190,19 +191,20 @@ func (mc *ManualClock) resetTimerLocked(mt *manualTimer, d time.Duration) {
 
 // stopTimerLocked stops a timer from firing.
 //
-// Precondition: mc.mu and mt.mu must be locked.
+// +checklocks:mt.mu
+// +checklocks:mc.mu
 func (mc *ManualClock) stopTimerLocked(mt *manualTimer) {
-	t := mt.mu.firesAt
-	mt.mu.firesAt = time.Time{}
+	t := mt.firesAt
+	mt.firesAt = time.Time{}
 
 	if t.IsZero() {
 		panic("tried to stop an inactive timer")
 	}
 
-	timers, ok := mc.mu.timers[t]
+	timers, ok := mc.timers[t]
 	if !ok {
 		err := fmt.Sprintf("tried to stop an active timer but the clock does not have anything scheduled for the timer @ t = %s %p\nScheduled timers @:", t.UTC(), mt)
-		for t := range mc.mu.timers {
+		for t := range mc.timers {
 			err += fmt.Sprintf("%s\n", t.UTC())
 		}
 		panic(err)
@@ -215,7 +217,7 @@ func (mc *ManualClock) stopTimerLocked(mt *manualTimer) {
 	delete(timers, mt)
 
 	if len(timers) == 0 {
-		delete(mc.mu.timers, t)
+		delete(mc.timers, t)
 	}
 }
 
@@ -236,19 +238,19 @@ func (mc *ManualClock) Advance(d time.Duration) {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
 
-	until := mc.mu.now.Add(d)
-	for mc.mu.times.Len() > 0 {
-		t := heap.Pop(&mc.mu.times).(time.Time)
+	until := mc.now.Add(d)
+	for mc.times.Len() > 0 {
+		t := heap.Pop(&mc.times).(time.Time)
 		if t.After(until) {
 			// No work to do
-			heap.Push(&mc.mu.times, t)
+			heap.Push(&mc.times, t)
 			break
 		}
 
-		timers := mc.mu.timers[t]
-		delete(mc.mu.timers, t)
+		timers := mc.timers[t]
+		delete(mc.timers, t)
 
-		mc.mu.now = t
+		mc.now = t
 
 		// Mark the timers as inactive since they will be fired.
 		//
@@ -259,7 +261,7 @@ func (mc *ManualClock) Advance(d time.Duration) {
 		// the timer was expected to fire.
 		for mt := range timers {
 			mt.mu.Lock()
-			mt.mu.firesAt = time.Time{}
+			mt.firesAt = time.Time{}
 			mt.mu.Unlock()
 		}
 
@@ -280,7 +282,7 @@ func (mc *ManualClock) Advance(d time.Duration) {
 		mc.mu.Lock()
 	}
 
-	mc.mu.now = until
+	mc.now = until
 }
 
 func (mc *ManualClock) resetTimer(mt *manualTimer, d time.Duration) {
@@ -290,7 +292,7 @@ func (mc *ManualClock) resetTimer(mt *manualTimer, d time.Duration) {
 	mt.mu.Lock()
 	defer mt.mu.Unlock()
 
-	if !mt.mu.firesAt.IsZero() {
+	if !mt.firesAt.IsZero() {
 		mc.stopTimerLocked(mt)
 	}
 
@@ -304,7 +306,7 @@ func (mc *ManualClock) stopTimer(mt *manualTimer) bool {
 	mt.mu.Lock()
 	defer mt.mu.Unlock()
 
-	if mt.mu.firesAt.IsZero() {
+	if mt.firesAt.IsZero() {
 		return false
 	}
 
@@ -316,14 +318,13 @@ type manualTimer struct {
 	clock *ManualClock
 	f     func()
 
-	mu struct {
-		sync.Mutex
+	mu sync.Mutex
 
-		// firesAt is the time when the timer will fire.
-		//
-		// Zero only when the timer is not active.
-		firesAt time.Time
-	}
+	// firesAt is the time when the timer will fire.
+	//
+	// Zero only when the timer is not active.
+	// +checklocks:mu
+	firesAt time.Time
 }
 
 var _ tcpip.Timer = (*manualTimer)(nil)

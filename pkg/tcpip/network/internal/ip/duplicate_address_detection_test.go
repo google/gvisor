@@ -30,12 +30,13 @@ import (
 type mockDADProtocol struct {
 	t *testing.T
 
-	mu struct {
-		sync.Mutex
+	mu sync.Mutex
 
-		dad        ip.DAD
-		sentNonces map[tcpip.Address][][]byte
-	}
+	// +checklocks:mu
+	dad ip.DAD
+
+	// +checklocks:mu
+	sentNonces map[tcpip.Address][][]byte
 }
 
 func (m *mockDADProtocol) init(t *testing.T, c stack.DADConfigurations, opts ip.DADOptions) {
@@ -44,18 +45,19 @@ func (m *mockDADProtocol) init(t *testing.T, c stack.DADConfigurations, opts ip.
 
 	m.t = t
 	opts.Protocol = m
-	m.mu.dad.Init(&m.mu, c, opts)
+	m.dad.Init(&m.mu, c, opts)
 	m.initLocked()
 }
 
+// +checklocks:m.mu
 func (m *mockDADProtocol) initLocked() {
-	m.mu.sentNonces = make(map[tcpip.Address][][]byte)
+	m.sentNonces = make(map[tcpip.Address][][]byte)
 }
 
 func (m *mockDADProtocol) SendDADMessage(addr tcpip.Address, nonce []byte) tcpip.Error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.mu.sentNonces[addr] = append(m.mu.sentNonces[addr], nonce)
+	m.sentNonces[addr] = append(m.sentNonces[addr], nonce)
 	return nil
 }
 
@@ -72,7 +74,7 @@ func (m *mockDADProtocol) checkWithNonce(expectedSentNonces map[tcpip.Address][]
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	diff := cmp.Diff(expectedSentNonces, m.mu.sentNonces)
+	diff := cmp.Diff(expectedSentNonces, m.sentNonces)
 	m.initLocked()
 	return diff
 }
@@ -80,25 +82,25 @@ func (m *mockDADProtocol) checkWithNonce(expectedSentNonces map[tcpip.Address][]
 func (m *mockDADProtocol) checkDuplicateAddress(addr tcpip.Address, h stack.DADCompletionHandler) stack.DADCheckAddressDisposition {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.mu.dad.CheckDuplicateAddressLocked(addr, h)
+	return m.dad.CheckDuplicateAddressLocked(addr, h)
 }
 
 func (m *mockDADProtocol) stop(addr tcpip.Address, reason stack.DADResult) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.mu.dad.StopLocked(addr, reason)
+	m.dad.StopLocked(addr, reason)
 }
 
 func (m *mockDADProtocol) extendIfNonceEqual(addr tcpip.Address, nonce []byte) ip.ExtendIfNonceEqualLockedDisposition {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.mu.dad.ExtendIfNonceEqualLocked(addr, nonce)
+	return m.dad.ExtendIfNonceEqualLocked(addr, nonce)
 }
 
 func (m *mockDADProtocol) setConfigs(c stack.DADConfigurations) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.mu.dad.SetConfigsLocked(c)
+	m.dad.SetConfigsLocked(c)
 }
 
 const (
