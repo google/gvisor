@@ -53,6 +53,12 @@ func leakCheckEnabled() bool {
 	return refs_vfs1.GetLeakMode() != refs_vfs1.NoLeakChecking
 }
 
+// leakCheckPanicEnabled returns whether DoLeakCheck() should panic when leaks
+// are detected.
+func leakCheckPanicEnabled() bool {
+	return refs_vfs1.GetLeakMode() == refs_vfs1.LeaksPanic
+}
+
 // Register adds obj to the live object map.
 func Register(obj CheckedObject) {
 	if leakCheckEnabled() {
@@ -130,6 +136,9 @@ func DoLeakCheck() {
 				msg := fmt.Sprintf("Leak checking detected %d leaked objects:\n", leaked)
 				for obj := range liveObjects {
 					msg += obj.LeakMessage() + "\n"
+				}
+				if leakCheckPanicEnabled() {
+					panic(msg)
 				}
 				log.Warningf(msg)
 			}
