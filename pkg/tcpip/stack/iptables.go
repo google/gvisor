@@ -231,7 +231,7 @@ func (it *IPTables) getTableRLocked(id TableID, ipv6 bool) Table {
 
 // ReplaceTable replaces or inserts table by name. It panics when an invalid id
 // is provided.
-func (it *IPTables) ReplaceTable(id TableID, table Table, ipv6 bool) tcpip.Error {
+func (it *IPTables) ReplaceTable(id TableID, table Table, ipv6 bool) {
 	it.mu.Lock()
 	defer it.mu.Unlock()
 	// If iptables is being enabled, initialize the conntrack table and
@@ -246,7 +246,6 @@ func (it *IPTables) ReplaceTable(id TableID, table Table, ipv6 bool) tcpip.Error
 	} else {
 		it.v4Tables[id] = table
 	}
-	return nil
 }
 
 // A chainVerdict is what a table decides should be done with a packet.

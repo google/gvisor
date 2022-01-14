@@ -2774,9 +2774,7 @@ func TestWriteStats(t *testing.T) {
 				filter := ipt.GetTable(stack.FilterID, false /* ipv6 */)
 				ruleIdx := filter.BuiltinChains[stack.Output]
 				filter.Rules[ruleIdx].Target = &stack.DropTarget{}
-				if err := ipt.ReplaceTable(stack.FilterID, filter, false /* ipv6 */); err != nil {
-					t.Fatalf("failed to replace table: %s", err)
-				}
+				ipt.ReplaceTable(stack.FilterID, filter, false /* ipv6 */)
 			},
 			allowPackets:             math.MaxInt32,
 			expectSent:               0,
@@ -2790,9 +2788,7 @@ func TestWriteStats(t *testing.T) {
 				filter := ipt.GetTable(stack.NATID, false /* ipv6 */)
 				ruleIdx := filter.BuiltinChains[stack.Postrouting]
 				filter.Rules[ruleIdx].Target = &stack.DropTarget{}
-				if err := ipt.ReplaceTable(stack.NATID, filter, false /* ipv6 */); err != nil {
-					t.Fatalf("failed to replace table: %s", err)
-				}
+				ipt.ReplaceTable(stack.NATID, filter, false /* ipv6 */)
 			},
 			allowPackets:             math.MaxInt32,
 			expectSent:               0,
@@ -2812,9 +2808,7 @@ func TestWriteStats(t *testing.T) {
 				filter.Rules[ruleIdx].Matchers = []stack.Matcher{&limitedMatcher{nPackets - 1}}
 				// Make sure the next rule is ACCEPT.
 				filter.Rules[ruleIdx+1].Target = &stack.AcceptTarget{}
-				if err := ipt.ReplaceTable(stack.FilterID, filter, false /* ipv6 */); err != nil {
-					t.Fatalf("failed to replace table: %s", err)
-				}
+				ipt.ReplaceTable(stack.FilterID, filter, false /* ipv6 */)
 			},
 			allowPackets:             math.MaxInt32,
 			expectSent:               nPackets - 1,
@@ -2834,9 +2828,7 @@ func TestWriteStats(t *testing.T) {
 				filter.Rules[ruleIdx].Matchers = []stack.Matcher{&limitedMatcher{nPackets - 1}}
 				// Make sure the next rule is ACCEPT.
 				filter.Rules[ruleIdx+1].Target = &stack.AcceptTarget{}
-				if err := ipt.ReplaceTable(stack.NATID, filter, false /* ipv6 */); err != nil {
-					t.Fatalf("failed to replace table: %s", err)
-				}
+				ipt.ReplaceTable(stack.NATID, filter, false /* ipv6 */)
 			},
 			allowPackets:             math.MaxInt32,
 			expectSent:               nPackets - 1,
@@ -3184,9 +3176,7 @@ func TestCloseLocking(t *testing.T) {
 			stack.Postrouting: 3,
 		},
 	}
-	if err := s.IPTables().ReplaceTable(stack.NATID, table, false /* ipv6 */); err != nil {
-		t.Fatalf("s.IPTables().ReplaceTable(...): %s", err)
-	}
+	s.IPTables().ReplaceTable(stack.NATID, table, false /* ipv6 */)
 
 	e := channel.New(0, defaultMTU, "")
 	if err := s.CreateNIC(nicID1, e); err != nil {

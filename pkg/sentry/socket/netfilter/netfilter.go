@@ -289,7 +289,8 @@ func SetEntries(task *kernel.Task, stk *stack.Stack, optVal []byte, ipv6 bool) *
 	// - There are no chains without an unconditional final rule.
 	// - There are no chains without an unconditional underflow rule.
 
-	return syserr.TranslateNetstackError(stk.IPTables().ReplaceTable(nameToID[replace.Name.String()], table, ipv6))
+	stk.IPTables().ReplaceTable(nameToID[replace.Name.String()], table, ipv6)
+	return nil
 }
 
 // parseMatchers parses 0 or more matchers from optVal. optVal should contain

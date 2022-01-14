@@ -314,9 +314,7 @@ func TestOutboundNATRedirect(t *testing.T) {
 		NetworkProtocol: ipv4.ProtocolNumber,
 	}
 	tbl.Rules[ruleIdx+1].Target = &stack.AcceptTarget{}
-	if err := ipt.ReplaceTable(stack.NATID, tbl, false /* ipv6 */); err != nil {
-		t.Fatalf("ipt.ReplaceTable(%d, _, false): %s", stack.NATID, err)
-	}
+	ipt.ReplaceTable(stack.NATID, tbl, false /* ipv6 */)
 
 	dialFunc := func(protocol, address string) (net.Conn, error) {
 		host, port, err := net.SplitHostPort(address)
