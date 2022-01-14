@@ -21,6 +21,8 @@ package bigquery
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -81,6 +83,31 @@ func (s *Suite) debugString(sb *strings.Builder, prefix string) {
 	sb.WriteString(fmt.Sprintf("End of data for benchmark suite %s.", s.Name))
 }
 
+// Benchstat returns a benchstat-formatted output string.
+// See https://pkg.go.dev/golang.org/x/perf/cmd/benchstat
+// `includeConditions` contains names of `Condition`s that should be included
+// as part of the benchmark name.
+func (s *Suite) Benchstat(includeConditions []string) string {
+	var sb strings.Builder
+	benchmarkNames := make([]string, 0, len(s.Benchmarks))
+	benchmarks := make(map[string]*Benchmark, len(s.Benchmarks))
+	for _, bm := range s.Benchmarks {
+		if _, found := benchmarks[bm.Name]; !found {
+			benchmarkNames = append(benchmarkNames, bm.Name)
+			benchmarks[bm.Name] = bm
+		}
+	}
+	sort.Strings(benchmarkNames)
+	includeConditionsMap := make(map[string]bool, len(includeConditions))
+	for _, condName := range includeConditions {
+		includeConditionsMap[condName] = true
+	}
+	for _, bmName := range benchmarkNames {
+		benchmarks[bmName].benchstat(&sb, s.Name, includeConditionsMap, s.Conditions)
+	}
+	return sb.String()
+}
+
 // Benchmark represents an individual benchmark in a suite.
 type Benchmark struct {
 	Name      string       `bq:"name"`
@@ -114,6 +141,69 @@ func (bm *Benchmark) debugString(sb *strings.Builder, prefix string) {
 		for _, metric := range bm.Metric {
 			metric.debugString(sb, prefix+"    ")
 		}
+	}
+}
+
+// noSpaceRe is used to remove whitespace characters in `noSpace`.
+var noSpaceRe = regexp.MustCompile("\\s+")
+
+// noSpace replaces whitespace characters from `s` with "_".
+func noSpace(s string) string {
+	return noSpaceRe.ReplaceAllString(s, "_")
+}
+
+// benchstat produces benchmark-formatted output for this Benchmark.
+func (bm *Benchmark) benchstat(sb *strings.Builder, suiteName string, includeConditions map[string]bool, suiteConditions []*Condition) {
+	var conditionsStr string
+	conditionNames := make([]string, 0, len(suiteConditions)+len(bm.Condition))
+	conditionMap := make(map[string]string, len(suiteConditions)+len(bm.Condition))
+	for _, c := range suiteConditions {
+		cName := noSpace(c.Name)
+		if _, found := conditionMap[cName]; !found && includeConditions[cName] {
+			conditionNames = append(conditionNames, cName)
+			conditionMap[cName] = noSpace(c.Value)
+		}
+	}
+	for _, c := range bm.Condition {
+		cName := noSpace(c.Name)
+		if _, found := conditionMap[cName]; !found && includeConditions[cName] {
+			conditionNames = append(conditionNames, cName)
+			conditionMap[cName] = noSpace(c.Value)
+		}
+	}
+	sort.Strings(conditionNames)
+	var conditionsBuilder strings.Builder
+	if len(conditionNames) > 0 {
+		conditionsBuilder.WriteByte('{')
+		for i, condName := range conditionNames {
+			if i != 0 {
+				conditionsBuilder.WriteByte(',')
+			}
+			conditionsBuilder.WriteString(condName)
+			conditionsBuilder.WriteByte('=')
+			conditionsBuilder.WriteString(conditionMap[condName])
+		}
+		conditionsBuilder.WriteByte('}')
+	}
+	conditionsStr = conditionsBuilder.String()
+	for _, m := range bm.Metric {
+		if !strings.HasPrefix(suiteName, "Benchmark") {
+			// benchstat format requires all benchmark names to start with "Benchmark".
+			sb.WriteString("Benchmark")
+		}
+		sb.WriteString(noSpace(suiteName))
+		if suiteName != bm.Name {
+			sb.WriteByte('/')
+			sb.WriteString(noSpace(bm.Name))
+		}
+		sb.WriteString(conditionsStr)
+		sb.WriteByte('/')
+		sb.WriteString(noSpace(m.Name))
+		sb.WriteString(" 1 ") // 1 sample
+		sb.WriteString(fmt.Sprintf("%f", m.Sample))
+		sb.WriteByte(' ')
+		sb.WriteString(noSpace(m.Unit))
+		sb.WriteByte('\n')
 	}
 }
 
