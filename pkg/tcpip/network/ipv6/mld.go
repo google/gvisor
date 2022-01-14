@@ -67,14 +67,14 @@ func (mld *mldState) Enabled() bool {
 
 // SendReport implements ip.MulticastGroupProtocol.
 //
-// Precondition: mld.ep.mu must be read locked.
+// +checklocksread:mld.ep.mu
 func (mld *mldState) SendReport(groupAddress tcpip.Address) (bool, tcpip.Error) {
 	return mld.writePacket(groupAddress, groupAddress, header.ICMPv6MulticastListenerReport)
 }
 
 // SendLeave implements ip.MulticastGroupProtocol.
 //
-// Precondition: mld.ep.mu must be read locked.
+// +checklocksread:mld.ep.mu
 func (mld *mldState) SendLeave(groupAddress tcpip.Address) tcpip.Error {
 	_, err := mld.writePacket(header.IPv6AllRoutersLinkLocalMulticastAddress, groupAddress, header.ICMPv6MulticastListenerDone)
 	return err
@@ -105,7 +105,7 @@ func (mld *mldState) ShouldPerformProtocol(groupAddress tcpip.Address) bool {
 // Must only be called once for the lifetime of mld.
 func (mld *mldState) init(ep *endpoint) {
 	mld.ep = ep
-	mld.genericMulticastProtocol.Init(&ep.mu.RWMutex, ip.GenericMulticastProtocolOptions{
+	mld.genericMulticastProtocol.Init(&ep.mu, ip.GenericMulticastProtocolOptions{
 		Rand:                      ep.protocol.stack.Rand(),
 		Clock:                     ep.protocol.stack.Clock(),
 		Protocol:                  mld,
@@ -115,14 +115,14 @@ func (mld *mldState) init(ep *endpoint) {
 
 // handleMulticastListenerQuery handles a query message.
 //
-// Precondition: mld.ep.mu must be locked.
+// +checklocks:mld.ep.mu
 func (mld *mldState) handleMulticastListenerQuery(mldHdr header.MLD) {
 	mld.genericMulticastProtocol.HandleQueryLocked(mldHdr.MulticastAddress(), mldHdr.MaximumResponseDelay())
 }
 
 // handleMulticastListenerReport handles a report message.
 //
-// Precondition: mld.ep.mu must be locked.
+// +checklocks:mld.ep.mu
 func (mld *mldState) handleMulticastListenerReport(mldHdr header.MLD) {
 	mld.genericMulticastProtocol.HandleReportLocked(mldHdr.MulticastAddress())
 }
@@ -132,14 +132,14 @@ func (mld *mldState) handleMulticastListenerReport(mldHdr header.MLD) {
 //
 // If the group is already joined, returns *tcpip.ErrDuplicateAddress.
 //
-// Precondition: mld.ep.mu must be locked.
+// +checklocks:mld.ep.mu
 func (mld *mldState) joinGroup(groupAddress tcpip.Address) {
 	mld.genericMulticastProtocol.JoinGroupLocked(groupAddress)
 }
 
 // isInGroup returns true if the specified group has been joined locally.
 //
-// Precondition: mld.ep.mu must be read locked.
+// +checklocksread:mld.ep.mu
 func (mld *mldState) isInGroup(groupAddress tcpip.Address) bool {
 	return mld.genericMulticastProtocol.IsLocallyJoinedRLocked(groupAddress)
 }
@@ -148,7 +148,7 @@ func (mld *mldState) isInGroup(groupAddress tcpip.Address) bool {
 // delay timers associated with that group, and sends the Done message, if
 // required.
 //
-// Precondition: mld.ep.mu must be locked.
+// +checklocks:mld.ep.mu
 func (mld *mldState) leaveGroup(groupAddress tcpip.Address) tcpip.Error {
 	// LeaveGroup returns false only if the group was not joined.
 	if mld.genericMulticastProtocol.LeaveGroupLocked(groupAddress) {
@@ -161,7 +161,7 @@ func (mld *mldState) leaveGroup(groupAddress tcpip.Address) tcpip.Error {
 // softLeaveAll leaves all groups from the perspective of MLD, but remains
 // joined locally.
 //
-// Precondition: mld.ep.mu must be locked.
+// +checklocks:mld.ep.mu
 func (mld *mldState) softLeaveAll() {
 	mld.genericMulticastProtocol.MakeAllNonMemberLocked()
 }
@@ -169,21 +169,21 @@ func (mld *mldState) softLeaveAll() {
 // initializeAll attemps to initialize the MLD state for each group that has
 // been joined locally.
 //
-// Precondition: mld.ep.mu must be locked.
+// +checklocks:mld.ep.mu
 func (mld *mldState) initializeAll() {
 	mld.genericMulticastProtocol.InitializeGroupsLocked()
 }
 
 // sendQueuedReports attempts to send any reports that are queued for sending.
 //
-// Precondition: mld.ep.mu must be locked.
+// +checklocks:mld.ep.mu
 func (mld *mldState) sendQueuedReports() {
 	mld.genericMulticastProtocol.SendQueuedReportsLocked()
 }
 
 // writePacket assembles and sends an MLD packet.
 //
-// Precondition: mld.ep.mu must be read locked.
+// +checklocksread:mld.ep.mu
 func (mld *mldState) writePacket(destAddress, groupAddress tcpip.Address, mldType header.ICMPv6Type) (bool, tcpip.Error) {
 	sentStats := mld.ep.stats.icmp.packetsSent
 	var mldStat tcpip.MultiCounterStat

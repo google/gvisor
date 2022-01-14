@@ -583,9 +583,9 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 
 		targetAddr := na.TargetAddress()
 
-		e.dad.mu.Lock()
-		e.dad.mu.dad.StopLocked(targetAddr, &stack.DADDupAddrDetected{HolderLinkAddress: targetLinkAddr})
-		e.dad.mu.Unlock()
+		e.dadMu.Lock()
+		e.dad.StopLocked(targetAddr, &stack.DADDupAddrDetected{HolderLinkAddress: targetLinkAddr})
+		e.dadMu.Unlock()
 
 		if e.hasTentativeAddr(targetAddr) {
 			// We only send a nonce value in DAD messages to check for loopedback
@@ -821,7 +821,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 		}
 
 		e.mu.Lock()
-		e.mu.ndp.handleRA(routerAddr, ra)
+		e.ndp.handleRA(routerAddr, ra) // +checklocksforce: e.ndp.ep.mu == e.mu.
 		e.mu.Unlock()
 
 	case header.ICMPv6RedirectMsg:
@@ -867,11 +867,11 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 		switch icmpType {
 		case header.ICMPv6MulticastListenerQuery:
 			e.mu.Lock()
-			e.mu.mld.handleMulticastListenerQuery(header.MLD(h.MessageBody()))
+			e.mld.handleMulticastListenerQuery(header.MLD(h.MessageBody())) // +checklocksforce: e.mld.ep.mu == e.mu.
 			e.mu.Unlock()
 		case header.ICMPv6MulticastListenerReport:
 			e.mu.Lock()
-			e.mu.mld.handleMulticastListenerReport(header.MLD(h.MessageBody()))
+			e.mld.handleMulticastListenerReport(header.MLD(h.MessageBody())) // +checklocksforce: e.mld.ep.mu == e.mu.
 			e.mu.Unlock()
 		case header.ICMPv6MulticastListenerDone:
 		default:
@@ -1097,7 +1097,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, deliv
 	// which it arrived, which isn't necessarily the same as the NIC on which it
 	// will be transmitted. On the other hand, the route's NIC *is* guaranteed
 	// to be the NIC on which the packet will be transmitted.
-	netEP, ok := p.mu.eps[route.NICID()]
+	netEP, ok := p.eps[route.NICID()]
 	p.mu.Unlock()
 	if !ok {
 		return &tcpip.ErrNotConnected{}

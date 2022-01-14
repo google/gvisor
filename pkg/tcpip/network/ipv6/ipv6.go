@@ -198,13 +198,17 @@ type endpoint struct {
 	// Must be accessed using atomic operations.
 	forwarding uint32
 
-	mu struct {
-		sync.RWMutex
+	// mu protects annotated fields below.
+	mu sync.RWMutex
 
-		addressableEndpointState stack.AddressableEndpointState
-		ndp                      ndpState
-		mld                      mldState
-	}
+	// +checklocks:mu
+	addressableEndpointState stack.AddressableEndpointState
+
+	// +checklocks:mu
+	ndp ndpState
+
+	// +checklocks:mu
+	mld mldState
 
 	// dad is used to check if an arbitrary address is already assigned to some
 	// neighbor.
@@ -214,14 +218,11 @@ type endpoint struct {
 	// DAD; if we had used the same state, handlers for a removed address would
 	// not be called with the actual DAD result.
 	//
-	// LOCK ORDERING: mu > dad.mu.
-	dad struct {
-		mu struct {
-			sync.Mutex
+	// LOCK ORDERING: mu > dadMu.
+	dadMu sync.Mutex
 
-			dad ip.DAD
-		}
-	}
+	// +checklocks:dadMu
+	dad ip.DAD
 }
 
 // NICNameFromID is a function that returns a stable name for the specified NIC,
@@ -258,20 +259,20 @@ type OpaqueInterfaceIdentifierOptions struct {
 
 // CheckDuplicateAddress implements stack.DuplicateAddressDetector.
 func (e *endpoint) CheckDuplicateAddress(addr tcpip.Address, h stack.DADCompletionHandler) stack.DADCheckAddressDisposition {
-	e.dad.mu.Lock()
-	defer e.dad.mu.Unlock()
-	return e.dad.mu.dad.CheckDuplicateAddressLocked(addr, h)
+	e.dadMu.Lock()
+	defer e.dadMu.Unlock()
+	return e.dad.CheckDuplicateAddressLocked(addr, h)
 }
 
 // SetDADConfigurations implements stack.DuplicateAddressDetector.
 func (e *endpoint) SetDADConfigurations(c stack.DADConfigurations) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.dad.mu.Lock()
-	defer e.dad.mu.Unlock()
+	e.dadMu.Lock()
+	defer e.dadMu.Unlock()
 
-	e.mu.ndp.dad.SetConfigsLocked(c)
-	e.dad.mu.dad.SetConfigsLocked(c)
+	e.ndp.dad.SetConfigsLocked(c)
+	e.dad.SetConfigsLocked(c)
 }
 
 // DuplicateAddressProtocol implements stack.DuplicateAddressDetector.
@@ -304,7 +305,8 @@ func (e *endpoint) HandleLinkResolutionFailure(pkt *stack.PacketBuffer) {
 
 // onAddressAssignedLocked handles an address being assigned.
 //
-// Precondition: e.mu must be exclusively locked.
+// +checklocks:e.mu
+// +checklocksalias:e.mld.ep.mu=e.mu
 func (e *endpoint) onAddressAssignedLocked(addr tcpip.Address) {
 	// As per RFC 2710 section 3,
 	//
@@ -337,7 +339,7 @@ func (e *endpoint) onAddressAssignedLocked(addr tcpip.Address) {
 	//   Report and Done messages sent with the unspecified address as the
 	//   IPv6 source address.
 	if header.IsV6LinkLocalUnicastAddress(addr) {
-		e.mu.mld.sendQueuedReports()
+		e.mld.sendQueuedReports()
 	}
 }
 
@@ -345,10 +347,15 @@ func (e *endpoint) onAddressAssignedLocked(addr tcpip.Address) {
 func (e *endpoint) InvalidateDefaultRouter(rtr tcpip.Address) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	e.invalidateDefaultRouterLocked(rtr)
+}
 
+// +checklocks:e.mu
+// +checklocksalias:e.ndp.ep.mu=e.mu
+func (e *endpoint) invalidateDefaultRouterLocked(rtr tcpip.Address) {
 	// We represent default routers with a default (off-link) route through the
 	// router.
-	e.mu.ndp.invalidateOffLinkRoute(offLinkRoute{dest: header.IPv6EmptySubnet, router: rtr})
+	e.ndp.invalidateOffLinkRoute(offLinkRoute{dest: header.IPv6EmptySubnet, router: rtr})
 }
 
 // SetNDPConfigurations implements NDPEndpoint.
@@ -356,7 +363,7 @@ func (e *endpoint) SetNDPConfigurations(c NDPConfigurations) {
 	c.validate()
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.mu.ndp.configs = c
+	e.ndp.configs = c
 }
 
 // hasTentativeAddr returns true if addr is tentative on e.
@@ -376,7 +383,12 @@ func (e *endpoint) hasTentativeAddr(addr tcpip.Address) bool {
 func (e *endpoint) dupTentativeAddrDetected(addr tcpip.Address, holderLinkAddr tcpip.LinkAddress, nonce []byte) tcpip.Error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	return e.dupTentativeAddrDetectedLocked(addr, holderLinkAddr, nonce)
+}
 
+// +checklocks:e.mu
+// +checklocksalias:e.ndp.ep.mu=e.mu
+func (e *endpoint) dupTentativeAddrDetectedLocked(addr tcpip.Address, holderLinkAddr tcpip.LinkAddress, nonce []byte) tcpip.Error {
 	addressEndpoint := e.getAddressRLocked(addr)
 	if addressEndpoint == nil {
 		return &tcpip.ErrBadAddress{}
@@ -386,7 +398,7 @@ func (e *endpoint) dupTentativeAddrDetected(addr tcpip.Address, holderLinkAddr t
 		return &tcpip.ErrInvalidEndpointState{}
 	}
 
-	switch result := e.mu.ndp.dad.ExtendIfNonceEqualLocked(addr, nonce); result {
+	switch result := e.ndp.dad.ExtendIfNonceEqualLocked(addr, nonce); result {
 	case ip.Extended:
 		// The nonce we got back was the same we sent so we know the message
 		// indicating a duplicate address was likely ours so do not consider
@@ -415,11 +427,11 @@ func (e *endpoint) dupTentativeAddrDetected(addr tcpip.Address, holderLinkAddr t
 		switch t := addressEndpoint.ConfigType(); t {
 		case stack.AddressConfigStatic:
 		case stack.AddressConfigSlaac:
-			e.mu.ndp.regenerateSLAACAddr(prefix)
+			e.ndp.regenerateSLAACAddr(prefix)
 		case stack.AddressConfigSlaacTemp:
 			// Do not reset the generation attempts counter for the prefix as the
 			// temporary address is being regenerated in response to a DAD conflict.
-			e.mu.ndp.regenerateTempSLAACAddr(prefix, false /* resetGenAttempts */)
+			e.ndp.regenerateTempSLAACAddr(prefix, false /* resetGenAttempts */)
 		default:
 			panic(fmt.Sprintf("unrecognized address config type = %d", t))
 		}
@@ -451,7 +463,12 @@ func (e *endpoint) setForwarding(v bool) bool {
 func (e *endpoint) SetForwarding(forwarding bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	e.setForwardingLocked(forwarding)
+}
 
+// +checklocks:e.mu
+// +checklocksalias:e.ndp.ep.mu=e.mu
+func (e *endpoint) setForwardingLocked(forwarding bool) {
 	if !e.setForwarding(forwarding) {
 		return
 	}
@@ -498,14 +515,20 @@ func (e *endpoint) SetForwarding(forwarding bool) {
 		}
 	}
 
-	e.mu.ndp.forwardingChanged(forwarding)
+	e.ndp.forwardingChanged(forwarding)
 }
 
 // Enable implements stack.NetworkEndpoint.
 func (e *endpoint) Enable() tcpip.Error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	return e.enableLocked()
+}
 
+// +checklocks:e.mu
+// +checklocksalias:e.ndp.ep.mu=e.mu
+// +checklocksalias:e.mld.ep.mu=e.mu
+func (e *endpoint) enableLocked() tcpip.Error {
 	// If the NIC is not enabled, the endpoint can't do anything meaningful so
 	// don't enable the endpoint.
 	if !e.nic.Enabled() {
@@ -521,7 +544,7 @@ func (e *endpoint) Enable() tcpip.Error {
 	// endpoint may have left groups from the perspective of MLD when the
 	// endpoint was disabled. Either way, we need to let routers know to
 	// send us multicast traffic.
-	e.mu.mld.initializeAll()
+	e.mld.initializeAll()
 
 	// Join the IPv6 All-Nodes Multicast group if the stack is configured to
 	// use IPv6. This is required to ensure that this node properly receives
@@ -552,7 +575,7 @@ func (e *endpoint) Enable() tcpip.Error {
 	// Addresses may have already completed DAD but in the time since the endpoint
 	// was last enabled, other devices may have acquired the same addresses.
 	var err tcpip.Error
-	e.mu.addressableEndpointState.ForEachEndpoint(func(addressEndpoint stack.AddressEndpoint) bool {
+	e.addressableEndpointState.ForEachEndpoint(func(addressEndpoint stack.AddressEndpoint) bool {
 		addr := addressEndpoint.AddressWithPrefix().Address
 		if !header.IsV6UnicastAddress(addr) {
 			return true
@@ -563,7 +586,7 @@ func (e *endpoint) Enable() tcpip.Error {
 			addressEndpoint.SetKind(stack.PermanentTentative)
 			fallthrough
 		case stack.PermanentTentative:
-			err = e.mu.ndp.startDuplicateAddressDetection(addr, addressEndpoint)
+			err = e.ndp.startDuplicateAddressDetection(addr, addressEndpoint) // +checklocksforce: closure invoked synchronously.
 			return err == nil
 		default:
 			return true
@@ -577,10 +600,10 @@ func (e *endpoint) Enable() tcpip.Error {
 	if e.protocol.options.AutoGenLinkLocal && !e.nic.IsLoopback() {
 		// The valid and preferred lifetime is infinite for the auto-generated
 		// link-local address.
-		e.mu.ndp.doSLAAC(header.IPv6LinkLocalPrefix.Subnet(), header.NDPInfiniteLifetime, header.NDPInfiniteLifetime)
+		e.ndp.doSLAAC(header.IPv6LinkLocalPrefix.Subnet(), header.NDPInfiniteLifetime, header.NDPInfiniteLifetime)
 	}
 
-	e.mu.ndp.startSolicitingRouters()
+	e.ndp.startSolicitingRouters()
 	return nil
 }
 
@@ -612,26 +635,29 @@ func (e *endpoint) Disable() {
 	e.disableLocked()
 }
 
+// +checklocks:e.mu
+// +checklocksalias:e.ndp.ep.mu=e.mu
+// +checklocksalias:e.mld.ep.mu=e.mu
 func (e *endpoint) disableLocked() {
 	if !e.Enabled() {
 		return
 	}
 
-	e.mu.ndp.stopSolicitingRouters()
+	e.ndp.stopSolicitingRouters()
 	// Stop DAD for all the tentative unicast addresses.
-	e.mu.addressableEndpointState.ForEachEndpoint(func(addressEndpoint stack.AddressEndpoint) bool {
+	e.addressableEndpointState.ForEachEndpoint(func(addressEndpoint stack.AddressEndpoint) bool {
 		if addressEndpoint.GetKind() != stack.PermanentTentative {
 			return true
 		}
 
 		addr := addressEndpoint.AddressWithPrefix().Address
 		if header.IsV6UnicastAddress(addr) {
-			e.mu.ndp.stopDuplicateAddressDetection(addr, &stack.DADAborted{})
+			e.ndp.stopDuplicateAddressDetection(addr, &stack.DADAborted{}) // +checklocksforce: synchronous closure.
 		}
 
 		return true
 	})
-	e.mu.ndp.cleanupState()
+	e.ndp.cleanupState()
 
 	// The endpoint may have already left the multicast group.
 	switch err := e.leaveGroupLocked(header.IPv6AllNodesMulticastAddress).(type) {
@@ -642,7 +668,7 @@ func (e *endpoint) disableLocked() {
 
 	// Leave groups from the perspective of MLD so that routers know that
 	// we are no longer interested in the group.
-	e.mu.mld.softLeaveAll()
+	e.mld.softLeaveAll()
 
 	if !e.setEnabled(false) {
 		panic("should have only done work to disable the endpoint if it was enabled")
@@ -1540,7 +1566,7 @@ func (e *endpoint) processExtensionHeaders(h header.IPv6, pkt *stack.PacketBuffe
 func (e *endpoint) Close() {
 	e.mu.Lock()
 	e.disableLocked()
-	e.mu.addressableEndpointState.Cleanup()
+	e.addressableEndpointState.Cleanup()
 	e.mu.Unlock()
 
 	e.protocol.forgetEndpoint(e.nic.ID())
@@ -1566,9 +1592,10 @@ func (e *endpoint) AddAndAcquirePermanentAddress(addr tcpip.AddressWithPrefix, p
 // addAndAcquirePermanentAddressLocked also joins the passed address's
 // solicited-node multicast group and start duplicate address detection.
 //
-// Precondition: e.mu must be write locked.
+// +checklocks:e.mu
+// +checklocksalias:e.ndp.ep.mu=e.mu
 func (e *endpoint) addAndAcquirePermanentAddressLocked(addr tcpip.AddressWithPrefix, properties stack.AddressProperties) (stack.AddressEndpoint, tcpip.Error) {
-	addressEndpoint, err := e.mu.addressableEndpointState.AddAndAcquirePermanentAddress(addr, properties)
+	addressEndpoint, err := e.addressableEndpointState.AddAndAcquirePermanentAddress(addr, properties)
 	if err != nil {
 		return nil, err
 	}
@@ -1580,7 +1607,7 @@ func (e *endpoint) addAndAcquirePermanentAddressLocked(addr tcpip.AddressWithPre
 	addressEndpoint.SetKind(stack.PermanentTentative)
 
 	if e.Enabled() {
-		if err := e.mu.ndp.startDuplicateAddressDetection(addr.Address, addressEndpoint); err != nil {
+		if err := e.ndp.startDuplicateAddressDetection(addr.Address, addressEndpoint); err != nil {
 			return nil, err
 		}
 	}
@@ -1611,16 +1638,17 @@ func (e *endpoint) RemovePermanentAddress(addr tcpip.Address) tcpip.Error {
 // removePermanentEndpointLocked is like removePermanentAddressLocked except
 // it works with a stack.AddressEndpoint.
 //
-// Precondition: e.mu must be write locked.
+// +checklocks:e.mu
+// +checklocksalias:e.ndp.ep.mu=e.mu
 func (e *endpoint) removePermanentEndpointLocked(addressEndpoint stack.AddressEndpoint, allowSLAACInvalidation bool, dadResult stack.DADResult) tcpip.Error {
 	addr := addressEndpoint.AddressWithPrefix()
 	// If we are removing an address generated via SLAAC, cleanup
 	// its SLAAC resources and notify the integrator.
 	switch addressEndpoint.ConfigType() {
 	case stack.AddressConfigSlaac:
-		e.mu.ndp.cleanupSLAACAddrResourcesAndNotify(addr, allowSLAACInvalidation)
+		e.ndp.cleanupSLAACAddrResourcesAndNotify(addr, allowSLAACInvalidation)
 	case stack.AddressConfigSlaacTemp:
-		e.mu.ndp.cleanupTempSLAACAddrResourcesAndNotify(addr)
+		e.ndp.cleanupTempSLAACAddrResourcesAndNotify(addr)
 	}
 
 	return e.removePermanentEndpointInnerLocked(addressEndpoint, dadResult)
@@ -1629,12 +1657,13 @@ func (e *endpoint) removePermanentEndpointLocked(addressEndpoint stack.AddressEn
 // removePermanentEndpointInnerLocked is like removePermanentEndpointLocked
 // except it does not cleanup SLAAC address state.
 //
-// Precondition: e.mu must be write locked.
+// +checklocks:e.mu
+// +checklocksalias:e.ndp.ep.mu=e.mu
 func (e *endpoint) removePermanentEndpointInnerLocked(addressEndpoint stack.AddressEndpoint, dadResult stack.DADResult) tcpip.Error {
 	addr := addressEndpoint.AddressWithPrefix()
-	e.mu.ndp.stopDuplicateAddressDetection(addr.Address, dadResult)
+	e.ndp.stopDuplicateAddressDetection(addr.Address, dadResult)
 
-	if err := e.mu.addressableEndpointState.RemovePermanentEndpoint(addressEndpoint); err != nil {
+	if err := e.addressableEndpointState.RemovePermanentEndpoint(addressEndpoint); err != nil {
 		return err
 	}
 
@@ -1650,7 +1679,7 @@ func (e *endpoint) removePermanentEndpointInnerLocked(addressEndpoint stack.Addr
 // hasPermanentAddressLocked returns true if the endpoint has a permanent
 // address equal to the passed address.
 //
-// Precondition: e.mu must be read or write locked.
+// +checklocksread:e.mu
 func (e *endpoint) hasPermanentAddressRLocked(addr tcpip.Address) bool {
 	addressEndpoint := e.getAddressRLocked(addr)
 	if addressEndpoint == nil {
@@ -1661,31 +1690,31 @@ func (e *endpoint) hasPermanentAddressRLocked(addr tcpip.Address) bool {
 
 // getAddressRLocked returns the endpoint for the passed address.
 //
-// Precondition: e.mu must be read or write locked.
+// +checklocksread:e.mu
 func (e *endpoint) getAddressRLocked(localAddr tcpip.Address) stack.AddressEndpoint {
-	return e.mu.addressableEndpointState.GetAddress(localAddr)
+	return e.addressableEndpointState.GetAddress(localAddr)
 }
 
 // MainAddress implements stack.AddressableEndpoint.
 func (e *endpoint) MainAddress() tcpip.AddressWithPrefix {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	return e.mu.addressableEndpointState.MainAddress()
+	return e.addressableEndpointState.MainAddress()
 }
 
 // AcquireAssignedAddress implements stack.AddressableEndpoint.
 func (e *endpoint) AcquireAssignedAddress(localAddr tcpip.Address, allowTemp bool, tempPEB stack.PrimaryEndpointBehavior) stack.AddressEndpoint {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	return e.acquireAddressOrCreateTempLocked(localAddr, allowTemp, tempPEB)
 }
 
 // acquireAddressOrCreateTempLocked is like AcquireAssignedAddress but with
 // locking requirements.
 //
-// Precondition: e.mu must be write locked.
+// +checklocks:e.mu
 func (e *endpoint) acquireAddressOrCreateTempLocked(localAddr tcpip.Address, allowTemp bool, tempPEB stack.PrimaryEndpointBehavior) stack.AddressEndpoint {
-	return e.mu.addressableEndpointState.AcquireAssignedAddress(localAddr, allowTemp, tempPEB)
+	return e.addressableEndpointState.AcquireAssignedAddress(localAddr, allowTemp, tempPEB)
 }
 
 // AcquireOutgoingPrimaryAddress implements stack.AddressableEndpoint.
@@ -1700,10 +1729,10 @@ func (e *endpoint) AcquireOutgoingPrimaryAddress(remoteAddr tcpip.Address, allow
 //
 // See stack.PrimaryEndpointBehavior for more details about the primary list.
 //
-// Precondition: e.mu must be read locked.
+// +checklocksread:e.mu
 func (e *endpoint) getLinkLocalAddressRLocked() tcpip.Address {
 	var linkLocalAddr tcpip.Address
-	e.mu.addressableEndpointState.ForEachPrimaryEndpoint(func(addressEndpoint stack.AddressEndpoint) bool {
+	e.addressableEndpointState.ForEachPrimaryEndpoint(func(addressEndpoint stack.AddressEndpoint) bool {
 		if addressEndpoint.IsAssigned(false /* allowExpired */) {
 			if addr := addressEndpoint.AddressWithPrefix().Address; header.IsV6LinkLocalUnicastAddress(addr) {
 				linkLocalAddr = addr
@@ -1718,7 +1747,7 @@ func (e *endpoint) getLinkLocalAddressRLocked() tcpip.Address {
 // acquireOutgoingPrimaryAddressRLocked is like AcquireOutgoingPrimaryAddress
 // but with locking requirements.
 //
-// Precondition: e.mu must be read locked.
+// +checklocksread:e.mu
 func (e *endpoint) acquireOutgoingPrimaryAddressRLocked(remoteAddr tcpip.Address, allowExpired bool) stack.AddressEndpoint {
 	// addrCandidate is a candidate for Source Address Selection, as per
 	// RFC 6724 section 5.
@@ -1732,13 +1761,13 @@ func (e *endpoint) acquireOutgoingPrimaryAddressRLocked(remoteAddr tcpip.Address
 	}
 
 	if len(remoteAddr) == 0 {
-		return e.mu.addressableEndpointState.AcquireOutgoingPrimaryAddress(remoteAddr, allowExpired)
+		return e.addressableEndpointState.AcquireOutgoingPrimaryAddress(remoteAddr, allowExpired)
 	}
 
 	// Create a candidate set of available addresses we can potentially use as a
 	// source address.
 	var cs []addrCandidate
-	e.mu.addressableEndpointState.ForEachPrimaryEndpoint(func(addressEndpoint stack.AddressEndpoint) bool {
+	e.addressableEndpointState.ForEachPrimaryEndpoint(func(addressEndpoint stack.AddressEndpoint) bool {
 		// If r is not valid for outgoing connections, it is not a valid endpoint.
 		if !addressEndpoint.IsAssigned(allowExpired) {
 			return true
@@ -1843,14 +1872,14 @@ func (e *endpoint) acquireOutgoingPrimaryAddressRLocked(remoteAddr tcpip.Address
 func (e *endpoint) PrimaryAddresses() []tcpip.AddressWithPrefix {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	return e.mu.addressableEndpointState.PrimaryAddresses()
+	return e.addressableEndpointState.PrimaryAddresses()
 }
 
 // PermanentAddresses implements stack.AddressableEndpoint.
 func (e *endpoint) PermanentAddresses() []tcpip.AddressWithPrefix {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	return e.mu.addressableEndpointState.PermanentAddresses()
+	return e.addressableEndpointState.PermanentAddresses()
 }
 
 // JoinGroup implements stack.GroupAddressableEndpoint.
@@ -1862,13 +1891,14 @@ func (e *endpoint) JoinGroup(addr tcpip.Address) tcpip.Error {
 
 // joinGroupLocked is like JoinGroup but with locking requirements.
 //
-// Precondition: e.mu must be locked.
+// +checklocks:e.mu
+// +checklocksalias:e.mld.ep.mu=e.mu
 func (e *endpoint) joinGroupLocked(addr tcpip.Address) tcpip.Error {
 	if !header.IsV6MulticastAddress(addr) {
 		return &tcpip.ErrBadAddress{}
 	}
 
-	e.mu.mld.joinGroup(addr)
+	e.mld.joinGroup(addr)
 	return nil
 }
 
@@ -1881,16 +1911,23 @@ func (e *endpoint) LeaveGroup(addr tcpip.Address) tcpip.Error {
 
 // leaveGroupLocked is like LeaveGroup but with locking requirements.
 //
-// Precondition: e.mu must be locked.
+// +checklocks:e.mu
+// +checklocksalias:e.mld.ep.mu=e.mu
 func (e *endpoint) leaveGroupLocked(addr tcpip.Address) tcpip.Error {
-	return e.mu.mld.leaveGroup(addr)
+	return e.mld.leaveGroup(addr)
 }
 
 // IsInGroup implements stack.GroupAddressableEndpoint.
 func (e *endpoint) IsInGroup(addr tcpip.Address) bool {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	return e.mu.mld.isInGroup(addr)
+	return e.isInGroupRLocked(addr)
+}
+
+// +checklocksread:e.mu
+// +checklocksalias:e.mld.ep.mu=e.mu
+func (e *endpoint) isInGroupRLocked(addr tcpip.Address) bool {
+	return e.mld.isInGroup(addr)
 }
 
 // Stats implements stack.NetworkEndpoint.
@@ -1906,16 +1943,17 @@ type protocol struct {
 	stack   *stack.Stack
 	options Options
 
-	mu struct {
-		sync.RWMutex
+	// mu protects annotated fields below.
+	mu sync.RWMutex
 
-		// eps is keyed by NICID to allow protocol methods to retrieve an endpoint
-		// when handling a packet, by looking at which NIC handled the packet.
-		eps map[tcpip.NICID]*endpoint
+	// eps is keyed by NICID to allow protocol methods to retrieve an endpoint
+	// when handling a packet, by looking at which NIC handled the packet.
+	// +checklocks:mu
+	eps map[tcpip.NICID]*endpoint
 
-		// ICMP types for which the stack's global rate limiting must apply.
-		icmpRateLimitedTypes map[header.ICMPv6Type]struct{}
-	}
+	// ICMP types for which the stack's global rate limiting must apply.
+	// +checklocks:mu
+	icmpRateLimitedTypes map[header.ICMPv6Type]struct{}
 
 	ids    []uint32
 	hashIV uint32
@@ -1973,17 +2011,17 @@ func (p *protocol) NewEndpoint(nic stack.NetworkInterface, dispatcher stack.Tran
 		SecureRNG:          p.stack.SecureRNG(),
 		NonceSize:          nonceSize,
 		ExtendDADTransmits: maxMulticastSolicit,
-		Protocol:           &e.mu.ndp,
+		Protocol:           &e.ndp,
 		NICID:              nic.ID(),
 	}
 
 	e.mu.Lock()
-	e.mu.addressableEndpointState.Init(e)
-	e.mu.ndp.init(e, dadOptions)
-	e.mu.mld.init(e)
-	e.dad.mu.Lock()
-	e.dad.mu.dad.Init(&e.dad.mu, p.options.DADConfigs, dadOptions)
-	e.dad.mu.Unlock()
+	e.addressableEndpointState.Init(e)
+	e.ndp.init(e, dadOptions)
+	e.mld.init(e)
+	e.dadMu.Lock()
+	e.dad.Init(&e.dadMu, p.options.DADConfigs, dadOptions)
+	e.dadMu.Unlock()
 	e.mu.Unlock()
 
 	stackStats := p.stack.Stats()
@@ -1993,7 +2031,7 @@ func (p *protocol) NewEndpoint(nic stack.NetworkInterface, dispatcher stack.Tran
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.mu.eps[nic.ID()] = e
+	p.eps[nic.ID()] = e
 	return e
 }
 
@@ -2001,7 +2039,7 @@ func (p *protocol) findEndpointWithAddress(addr tcpip.Address) *endpoint {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	for _, e := range p.mu.eps {
+	for _, e := range p.eps {
 		if addressEndpoint := e.AcquireAssignedAddress(addr, false /* allowTemp */, stack.NeverPrimaryEndpoint); addressEndpoint != nil {
 			addressEndpoint.DecRef()
 			return e
@@ -2014,14 +2052,14 @@ func (p *protocol) findEndpointWithAddress(addr tcpip.Address) *endpoint {
 func (p *protocol) getEndpointForNIC(id tcpip.NICID) (*endpoint, bool) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	ep, ok := p.mu.eps[id]
+	ep, ok := p.eps[id]
 	return ep, ok
 }
 
 func (p *protocol) forgetEndpoint(nicID tcpip.NICID) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	delete(p.mu.eps, nicID)
+	delete(p.eps, nicID)
 }
 
 // SetOption implements stack.NetworkProtocol.
@@ -2119,7 +2157,7 @@ func (p *protocol) allowICMPReply(icmpType header.ICMPv6Type) bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	if _, ok := p.mu.icmpRateLimitedTypes[icmpType]; ok {
+	if _, ok := p.icmpRateLimitedTypes[icmpType]; ok {
 		return p.stack.AllowICMPMessage()
 	}
 	return true
@@ -2235,7 +2273,7 @@ func NewProtocolWithOptions(opts Options) stack.NetworkProtocolFactory {
 			hashIV: hashIV,
 		}
 		p.fragmentation = fragmentation.NewFragmentation(header.IPv6FragmentExtHdrFragmentOffsetBytesPerUnit, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, ReassembleTimeout, s.Clock(), p)
-		p.mu.eps = make(map[tcpip.NICID]*endpoint)
+		p.eps = make(map[tcpip.NICID]*endpoint)
 		p.SetDefaultTTL(DefaultTTL)
 		// Set default ICMP rate limiting to Linux defaults.
 		//
@@ -2250,7 +2288,7 @@ func NewProtocolWithOptions(opts Options) stack.NetworkProtocolFactory {
 				defaultIcmpTypes[i] = struct{}{}
 			}
 		}
-		p.mu.icmpRateLimitedTypes = defaultIcmpTypes
+		p.icmpRateLimitedTypes = defaultIcmpTypes
 
 		return p
 	}

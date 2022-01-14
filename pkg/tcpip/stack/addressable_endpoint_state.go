@@ -194,14 +194,14 @@ func (a *AddressableEndpointState) addAndAcquireAddressLocked(addr tcpip.Address
 		}
 
 		addrState.mu.Lock()
-		if addrState.mu.kind.IsPermanent() {
+		if addrState.kind.IsPermanent() {
 			addrState.mu.Unlock()
 			// We are adding a permanent address but a permanent address already
 			// exists.
 			return nil, &tcpip.ErrDuplicateAddress{}
 		}
 
-		if addrState.mu.refs == 0 {
+		if addrState.refs == 0 {
 			panic(fmt.Sprintf("found an address that should have been released (ref count == 0); address = %s", addrState.addr))
 		}
 
@@ -241,7 +241,7 @@ func (a *AddressableEndpointState) addAndAcquireAddressLocked(addr tcpip.Address
 		addrState.mu.Lock()
 		// We never promote an address to temporary - it can only be added as such.
 		// If we are actaully adding a permanent address, it is promoted below.
-		addrState.mu.kind = Temporary
+		addrState.kind = Temporary
 	}
 
 	// At this point we have an address we are either promoting from an expired or
@@ -252,18 +252,18 @@ func (a *AddressableEndpointState) addAndAcquireAddressLocked(addr tcpip.Address
 	defer addrState.mu.Unlock() // +checklocksforce
 
 	if permanent {
-		if addrState.mu.kind.IsPermanent() {
+		if addrState.kind.IsPermanent() {
 			panic(fmt.Sprintf("only non-permanent addresses should be promoted to permanent; address = %s", addrState.addr))
 		}
 
 		// Primary addresses are biased by 1.
-		addrState.mu.refs++
-		addrState.mu.kind = Permanent
+		addrState.refs++
+		addrState.kind = Permanent
 	}
 	// Acquire the address before returning it.
-	addrState.mu.refs++
-	addrState.mu.deprecated = properties.Deprecated
-	addrState.mu.configType = properties.ConfigType
+	addrState.refs++
+	addrState.deprecated = properties.Deprecated
+	addrState.configType = properties.ConfigType
 
 	if attemptAddToPrimary {
 		switch properties.PEB {
@@ -354,20 +354,20 @@ func (a *AddressableEndpointState) decAddressRefLocked(addrState *addressState) 
 	addrState.mu.Lock()
 	defer addrState.mu.Unlock()
 
-	if addrState.mu.refs == 0 {
+	if addrState.refs == 0 {
 		panic(fmt.Sprintf("attempted to decrease ref count for AddressEndpoint w/ addr = %s when it is already released", addrState.addr))
 	}
 
-	addrState.mu.refs--
+	addrState.refs--
 
-	if addrState.mu.refs != 0 {
+	if addrState.refs != 0 {
 		return
 	}
 
 	// A non-expired permanent address must not have its reference count dropped
 	// to 0.
-	if addrState.mu.kind.IsPermanent() {
-		panic(fmt.Sprintf("permanent addresses should be removed through the AddressableEndpoint: addr = %s, kind = %d", addrState.addr, addrState.mu.kind))
+	if addrState.kind.IsPermanent() {
+		panic(fmt.Sprintf("permanent addresses should be removed through the AddressableEndpoint: addr = %s, kind = %d", addrState.addr, addrState.kind))
 	}
 
 	a.releaseAddressStateLocked(addrState)
@@ -613,18 +613,26 @@ type addressState struct {
 	addressableEndpointState *AddressableEndpointState
 	addr                     tcpip.AddressWithPrefix
 	subnet                   tcpip.Subnet
+
+	// mu protects annotated fields below.
+	//
 	// Lock ordering (from outer to inner lock ordering):
 	//
 	// AddressableEndpointState.mu
 	//   addressState.mu
-	mu struct {
-		sync.RWMutex
+	mu sync.RWMutex
 
-		refs       uint32
-		kind       AddressKind
-		configType AddressConfigType
-		deprecated bool
-	}
+	// +checklocks:mu
+	refs uint32
+
+	// +checklocks:mu
+	kind AddressKind
+
+	// +checklocks:mu
+	configType AddressConfigType
+
+	// +checklocks:mu
+	deprecated bool
 }
 
 // AddressWithPrefix implements AddressEndpoint.
@@ -641,14 +649,14 @@ func (a *addressState) Subnet() tcpip.Subnet {
 func (a *addressState) GetKind() AddressKind {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	return a.mu.kind
+	return a.kind
 }
 
 // SetKind implements AddressEndpoint.
 func (a *addressState) SetKind(kind AddressKind) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.mu.kind = kind
+	a.kind = kind
 }
 
 // IsAssigned implements AddressEndpoint.
@@ -671,11 +679,11 @@ func (a *addressState) IsAssigned(allowExpired bool) bool {
 func (a *addressState) IncRef() bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.mu.refs == 0 {
+	if a.refs == 0 {
 		return false
 	}
 
-	a.mu.refs++
+	a.refs++
 	return true
 }
 
@@ -688,19 +696,19 @@ func (a *addressState) DecRef() {
 func (a *addressState) ConfigType() AddressConfigType {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	return a.mu.configType
+	return a.configType
 }
 
 // SetDeprecated implements AddressEndpoint.
 func (a *addressState) SetDeprecated(d bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.mu.deprecated = d
+	a.deprecated = d
 }
 
 // Deprecated implements AddressEndpoint.
 func (a *addressState) Deprecated() bool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	return a.mu.deprecated
+	return a.deprecated
 }

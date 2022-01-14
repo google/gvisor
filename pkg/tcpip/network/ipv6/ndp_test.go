@@ -92,9 +92,9 @@ func TestStackNDPEndpointInvalidateDefaultRouter(t *testing.T) {
 	}
 
 	ipv6EP := ep.(*endpoint)
-	ipv6EP.mu.Lock()
-	ipv6EP.mu.ndp.handleOffLinkRouteDiscovery(offLinkRoute{dest: header.IPv6EmptySubnet, router: lladdr1}, time.Hour, header.MediumRoutePreference)
-	ipv6EP.mu.Unlock()
+	ipv6EP.ndp.ep.mu.Lock()
+	ipv6EP.ndp.handleOffLinkRouteDiscovery(offLinkRoute{dest: header.IPv6EmptySubnet, router: lladdr1}, time.Hour, header.MediumRoutePreference)
+	ipv6EP.ndp.ep.mu.Unlock()
 
 	if ndpDisp.addr != lladdr1 {
 		t.Fatalf("got ndpDisp.addr = %s, want = %s", ndpDisp.addr, lladdr1)

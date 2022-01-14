@@ -33,16 +33,16 @@ type Route struct {
 	// address's assigned status without the NIC.
 	localAddressNIC *nic
 
-	mu struct {
-		sync.RWMutex
+	// mu protects annotated fields bedlow.
+	mu sync.RWMutex
 
-		// localAddressEndpoint is the local address this route is associated with.
-		localAddressEndpoint AssignableAddressEndpoint
+	// localAddressEndpoint is the local address this route is associated with.
+	// +checklocks:mu
+	localAddressEndpoint AssignableAddressEndpoint
 
-		// remoteLinkAddress is the link-layer (MAC) address of the next hop in the
-		// route.
-		remoteLinkAddress tcpip.LinkAddress
-	}
+	// remoteLinkAddress is the link-layer (MAC) address of the next hop.
+	// +checklocks:mu
+	remoteLinkAddress tcpip.LinkAddress
 
 	// outgoingNIC is the interface this route uses to write packets.
 	outgoingNIC *nic
@@ -119,10 +119,11 @@ func (r *Route) Fields() RouteInfo {
 	return r.fieldsLocked()
 }
 
+// +checklocksread:r.mu
 func (r *Route) fieldsLocked() RouteInfo {
 	return RouteInfo{
 		routeInfo:         r.routeInfo,
-		RemoteLinkAddress: r.mu.remoteLinkAddress,
+		RemoteLinkAddress: r.remoteLinkAddress,
 	}
 }
 
@@ -242,7 +243,7 @@ func makeRouteInner(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr 
 	}
 
 	r.mu.Lock()
-	r.mu.localAddressEndpoint = localAddressEndpoint
+	r.localAddressEndpoint = localAddressEndpoint
 	r.mu.Unlock()
 
 	return r
@@ -268,7 +269,7 @@ func makeLocalRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr 
 func (r *Route) RemoteLinkAddress() tcpip.LinkAddress {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return r.mu.remoteLinkAddress
+	return r.remoteLinkAddress
 }
 
 // NICID returns the id of the NIC from which this route originates.
@@ -340,7 +341,7 @@ func (r *Route) GSOMaxSize() uint32 {
 func (r *Route) ResolveWith(addr tcpip.LinkAddress) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.mu.remoteLinkAddress = addr
+	r.remoteLinkAddress = addr
 }
 
 // ResolvedFieldsResult is the result of a route resolution attempt.
@@ -427,8 +428,9 @@ func (r *Route) IsResolutionRequired() bool {
 	return r.isResolutionRequiredRLocked()
 }
 
+// +checklocksread:r.mu
 func (r *Route) isResolutionRequiredRLocked() bool {
-	return len(r.mu.remoteLinkAddress) == 0 && r.linkRes != nil && r.isValidForOutgoingRLocked() && !r.local()
+	return len(r.remoteLinkAddress) == 0 && r.linkRes != nil && r.isValidForOutgoingRLocked() && !r.local()
 }
 
 func (r *Route) isValidForOutgoing() bool {
@@ -437,12 +439,13 @@ func (r *Route) isValidForOutgoing() bool {
 	return r.isValidForOutgoingRLocked()
 }
 
+// +checklocksread:r.mu
 func (r *Route) isValidForOutgoingRLocked() bool {
 	if !r.outgoingNIC.Enabled() {
 		return false
 	}
 
-	localAddressEndpoint := r.mu.localAddressEndpoint
+	localAddressEndpoint := r.localAddressEndpoint
 	if localAddressEndpoint == nil || !r.localAddressNIC.isValidForOutgoing(localAddressEndpoint) {
 		return false
 	}
@@ -491,7 +494,7 @@ func (r *Route) Release() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if ep := r.mu.localAddressEndpoint; ep != nil {
+	if ep := r.localAddressEndpoint; ep != nil {
 		ep.DecRef()
 	}
 }
@@ -504,8 +507,9 @@ func (r *Route) Acquire() {
 	r.acquireLocked()
 }
 
+// +checklocksread:r.mu
 func (r *Route) acquireLocked() {
-	if ep := r.mu.localAddressEndpoint; ep != nil {
+	if ep := r.localAddressEndpoint; ep != nil {
 		if !ep.IncRef() {
 			panic(fmt.Sprintf("failed to increment reference count for local address endpoint = %s", r.LocalAddress()))
 		}
@@ -523,7 +527,7 @@ func (r *Route) isV4Broadcast(addr tcpip.Address) bool {
 	}
 
 	r.mu.RLock()
-	localAddressEndpoint := r.mu.localAddressEndpoint
+	localAddressEndpoint := r.localAddressEndpoint
 	r.mu.RUnlock()
 	if localAddressEndpoint == nil {
 		return false
