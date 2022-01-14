@@ -167,7 +167,7 @@ func sanitizeMXCSR(f State) {
 // PtraceGetXstateRegs implements ptrace(PTRACE_GETREGS, NT_X86_XSTATE) by
 // writing the floating point registers from this state to dst and returning the
 // number of bytes written, which must be less than or equal to maxlen.
-func (s *State) PtraceGetXstateRegs(dst io.Writer, maxlen int, featureSet *cpuid.FeatureSet) (int, error) {
+func (s *State) PtraceGetXstateRegs(dst io.Writer, maxlen int, featureSet cpuid.FeatureSet) (int, error) {
 	// N.B. s.x86FPState may contain more state than the application
 	// expects. We only copy the subset that would be in their XSAVE area.
 	ess, _ := featureSet.ExtendedStateSize()
@@ -188,7 +188,7 @@ func (s *State) PtraceGetXstateRegs(dst io.Writer, maxlen int, featureSet *cpuid
 // PtraceSetXstateRegs implements ptrace(PTRACE_SETREGS, NT_X86_XSTATE) by
 // reading floating point registers from src and returning the number of bytes
 // read, which must be less than or equal to maxlen.
-func (s *State) PtraceSetXstateRegs(src io.Reader, maxlen int, featureSet *cpuid.FeatureSet) (int, error) {
+func (s *State) PtraceSetXstateRegs(src io.Reader, maxlen int, featureSet cpuid.FeatureSet) (int, error) {
 	// Allow users to pass an xstate register set smaller than ours (they can
 	// mask bits out of XSTATE_BV), as long as it's at least minXstateBytes.
 	// Also allow users to pass a register set larger than ours; anything after

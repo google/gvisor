@@ -19,6 +19,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -132,6 +133,8 @@ func (t *Task) contextValue(key interface{}, isTaskGoroutine bool) interface{} {
 		return t.k.GenerateInotifyCookie()
 	case unimpl.CtxEvents:
 		return t.k
+	case cpuid.CtxFeatureSet:
+		return t.k.featureSet
 	default:
 		return nil
 	}

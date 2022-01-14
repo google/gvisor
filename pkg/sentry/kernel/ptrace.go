@@ -1180,7 +1180,7 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 			Opts: usermem.IOOpts{
 				AddressSpaceActive: true,
 			},
-		}, int(ar.Length()))
+		}, int(ar.Length()), target.Kernel().FeatureSet())
 		if err != nil {
 			return err
 		}
@@ -1210,7 +1210,7 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 			Opts: usermem.IOOpts{
 				AddressSpaceActive: true,
 			},
-		}, int(ar.Length()))
+		}, int(ar.Length()), target.Kernel().FeatureSet())
 		if err != nil {
 			return err
 		}

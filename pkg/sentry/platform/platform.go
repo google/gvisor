@@ -92,7 +92,7 @@ type Platform interface {
 	NewAddressSpace(mappingsID interface{}) (AddressSpace, <-chan struct{}, error)
 
 	// NewContext returns a new execution context.
-	NewContext() Context
+	NewContext(context.Context) Context
 
 	// PreemptAllCPUs causes all concurrent calls to Context.Switch(), as well
 	// as the first following call to Context.Switch() for each Context, to
@@ -250,13 +250,6 @@ var (
 	// ErrContextSignal is returned by Context.Switch() to indicate that the
 	// Context was interrupted by a signal.
 	ErrContextSignal = fmt.Errorf("interrupted by signal")
-
-	// ErrContextSignalCPUID is equivalent to ErrContextSignal, except that
-	// a check should be done for execution of the CPUID instruction. If
-	// the current instruction pointer is a CPUID instruction, then this
-	// should be emulated appropriately. If not, then the given signal
-	// should be handled per above.
-	ErrContextSignalCPUID = fmt.Errorf("interrupted by signal, possible CPUID")
 
 	// ErrContextInterrupt is returned by Context.Switch() to indicate that the
 	// Context was interrupted by a call to Context.Interrupt().

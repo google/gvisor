@@ -20,6 +20,7 @@ import (
 	"os"
 
 	"golang.org/x/sys/unix"
+	pkgcontext "gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
@@ -160,7 +161,7 @@ func (*KVM) MaxUserAddress() hostarch.Addr {
 }
 
 // NewAddressSpace returns a new pagetable root.
-func (k *KVM) NewAddressSpace(_ interface{}) (platform.AddressSpace, <-chan struct{}, error) {
+func (k *KVM) NewAddressSpace(interface{}) (platform.AddressSpace, <-chan struct{}, error) {
 	// Allocate page tables and install system mappings.
 	pageTables := pagetables.NewWithUpper(newAllocator(), k.machine.upperSharedPageTables, ring0.KernelStartAddress)
 
@@ -173,7 +174,7 @@ func (k *KVM) NewAddressSpace(_ interface{}) (platform.AddressSpace, <-chan stru
 }
 
 // NewContext returns an interruptible context.
-func (k *KVM) NewContext() platform.Context {
+func (k *KVM) NewContext(pkgcontext.Context) platform.Context {
 	return &context{
 		machine: k.machine,
 	}

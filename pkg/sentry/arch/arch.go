@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/hostarch"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
@@ -161,9 +160,6 @@ type Context interface {
 	// SignalRestore returns the thread's new signal mask.
 	SignalRestore(st *Stack, rt bool) (linux.SignalSet, linux.SignalStack, error)
 
-	// CPUIDEmulate emulates a CPUID instruction according to current register state.
-	CPUIDEmulate(l log.Logger)
-
 	// SingleStep returns true if single stepping is enabled.
 	SingleStep() bool
 
@@ -185,9 +181,6 @@ type Context interface {
 	// PIELoadAddress returns a preferred load address for a
 	// position-independent executable within l.
 	PIELoadAddress(l MmapLayout) hostarch.Addr
-
-	// FeatureSet returns the FeatureSet in use in this context.
-	FeatureSet() *cpuid.FeatureSet
 
 	// Hack around our package dependences being too broken to support the
 	// equivalent of arch_ptrace():
@@ -212,13 +205,13 @@ type Context interface {
 	// register set given by architecture-defined value regset from this
 	// Context to dst and returning the number of bytes written, which must be
 	// less than or equal to maxlen.
-	PtraceGetRegSet(regset uintptr, dst io.Writer, maxlen int) (int, error)
+	PtraceGetRegSet(regset uintptr, dst io.Writer, maxlen int, fs cpuid.FeatureSet) (int, error)
 
 	// PtraceSetRegSet implements ptrace(PTRACE_SETREGSET) by reading the
 	// register set given by architecture-defined value regset from src and
 	// returning the number of bytes read, which must be less than or equal to
 	// maxlen.
-	PtraceSetRegSet(regset uintptr, src io.Reader, maxlen int) (int, error)
+	PtraceSetRegSet(regset uintptr, src io.Reader, maxlen int, fs cpuid.FeatureSet) (int, error)
 
 	// FullRestore returns 'true' if all CPU registers must be restored
 	// when switching to the untrusted application. Typically a task enters

@@ -12,13 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// func HostID(rax, rcx uint32) (ret0, ret1, ret2, ret3 uint32)
-TEXT ·HostID(SB),$0-48
-	MOVL ax+0(FP), AX
-	MOVL cx+4(FP), CX
-	CPUID
-	MOVL AX, ret0+8(FP)
-	MOVL BX, ret1+12(FP)
-	MOVL CX, ret2+16(FP)
-	MOVL DX, ret3+20(FP)
-	RET
+//go:build arm64
+// +build arm64
+
+package platform
+
+import (
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
+)
+
+// TryCPUIDEmulate always returns false: there is no cpuid.
+func TryCPUIDEmulate(ctx context.Context, mm MemoryManager, ac arch.Context) bool {
+	return false
+}

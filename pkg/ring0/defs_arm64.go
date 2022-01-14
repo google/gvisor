@@ -21,9 +21,9 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
-var (
+const (
 	// UserspaceSize is the total size of userspace.
-	UserspaceSize = uintptr(1) << (VirtualAddressBits())
+	UserspaceSize = uintptr(1) << VirtualAddressBits
 
 	// MaximumUserAddress is the largest possible user address.
 	MaximumUserAddress = (UserspaceSize - 1) & ^uintptr(hostarch.PageSize-1)

@@ -154,7 +154,7 @@ type Kernel struct {
 	mf *pgalloc.MemoryFile `state:"nosave"`
 
 	// See InitKernelArgs for the meaning of these fields.
-	featureSet                  *cpuid.FeatureSet
+	featureSet                  cpuid.FeatureSet
 	timekeeper                  *Timekeeper
 	tasks                       *TaskSet
 	rootUserNamespace           *auth.UserNamespace
@@ -340,7 +340,7 @@ type Kernel struct {
 // InitKernelArgs holds arguments to Init.
 type InitKernelArgs struct {
 	// FeatureSet is the emulated CPU feature set.
-	FeatureSet *cpuid.FeatureSet
+	FeatureSet cpuid.FeatureSet
 
 	// Timekeeper manages time for all tasks in the system.
 	Timekeeper *Timekeeper
@@ -389,9 +389,6 @@ type InitKernelArgs struct {
 // Callers must manually set Kernel.Platform and call Kernel.SetMemoryFile
 // before calling Init.
 func (k *Kernel) Init(args InitKernelArgs) error {
-	if args.FeatureSet == nil {
-		return fmt.Errorf("args.FeatureSet is nil")
-	}
 	if args.Timekeeper == nil {
 		return fmt.Errorf("args.Timekeeper is nil")
 	}
@@ -548,7 +545,7 @@ func (k *Kernel) SaveTo(ctx context.Context, w wire.Writer) error {
 	//
 	// N.B. This will also be saved along with the full kernel save below.
 	cpuidStart := time.Now()
-	if _, err := state.Save(ctx, w, k.FeatureSet()); err != nil {
+	if _, err := state.Save(ctx, w, &k.featureSet); err != nil {
 		return err
 	}
 	log.Infof("CPUID save took [%s].", time.Since(cpuidStart))
@@ -683,8 +680,7 @@ func (k *Kernel) LoadFrom(ctx context.Context, r wire.Reader, timeReady chan str
 	// N.B. This was also saved along with the full kernel below, so we
 	// don't need to explicitly install it in the Kernel.
 	cpuidStart := time.Now()
-	var features cpuid.FeatureSet
-	if _, err := state.Load(ctx, r, &features); err != nil {
+	if _, err := state.Load(ctx, r, &k.featureSet); err != nil {
 		return err
 	}
 	log.Infof("CPUID load took [%s].", time.Since(cpuidStart))
@@ -693,7 +689,7 @@ func (k *Kernel) LoadFrom(ctx context.Context, r wire.Reader, timeReady chan str
 	// Kernel load so that the explicit CPUID mismatch error has priority
 	// over floating point state restore errors that may occur on load on
 	// an incompatible machine.
-	if err := features.CheckHostCompatible(); err != nil {
+	if err := k.featureSet.CheckHostCompatible(); err != nil {
 		return err
 	}
 
@@ -1404,7 +1400,7 @@ func (k *Kernel) RebuildTraceContexts() {
 }
 
 // FeatureSet returns the FeatureSet.
-func (k *Kernel) FeatureSet() *cpuid.FeatureSet {
+func (k *Kernel) FeatureSet() cpuid.FeatureSet {
 	return k.featureSet
 }
 
@@ -1759,6 +1755,8 @@ func (ctx *supervisorContext) Value(key interface{}) interface{} {
 		return ctx.Kernel.GenerateInotifyCookie()
 	case unimpl.CtxEvents:
 		return ctx.Kernel
+	case cpuid.CtxFeatureSet:
+		return ctx.Kernel.featureSet
 	default:
 		return nil
 	}

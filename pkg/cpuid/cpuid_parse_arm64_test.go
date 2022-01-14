@@ -12,29 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build (amd64 || 386) && go1.1
-// +build amd64 386
-// +build go1.1
+//go:build arm64
+// +build arm64
 
-package arch
+package cpuid
 
-import (
-	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
-)
-
-// State contains the common architecture bits for X86 (the build tag of this
-// file ensures it's only built on x86).
-//
-// +stateify savable
-type State struct {
-	// The system registers.
-	Regs Registers
-
-	// Our floating point state.
-	fpState fpu.State `state:"wait"`
-}
-
-// afterLoad is invoked by stateify.
-func (s *State) afterLoad() {
-	s.afterLoadFPState()
+func archSkipFeature(feature Feature, major, minor int) bool {
+	return false
 }
