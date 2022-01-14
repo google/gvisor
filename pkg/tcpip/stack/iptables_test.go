@@ -115,9 +115,7 @@ func TestNATedConnectionReap(t *testing.T) {
 			Postrouting: 5,
 		},
 	}
-	if err := iptables.ReplaceTable(NATID, table, ipv6); err != nil {
-		t.Fatalf("ipt.ReplaceTable(%d, _, true): %s", NATID, err)
-	}
+	iptables.ReplaceTable(NATID, table, ipv6)
 
 	// Stop the reaper if it is running so we can reap manually as it is started
 	// on the first change to IPTables.
@@ -299,9 +297,7 @@ func TestNATAlwaysPerformed(t *testing.T) {
 			iptables := DefaultTables(clock, rand.New(rand.NewSource(0 /* seed */)))
 
 			// Just to make sure the iptables is not short circuited.
-			if err := iptables.ReplaceTable(NATID, iptables.GetTable(NATID, ipv6), ipv6); err != nil {
-				t.Fatalf("ipt.ReplaceTable(%d, _, true): %s", NATID, err)
-			}
+			iptables.ReplaceTable(NATID, iptables.GetTable(NATID, ipv6), ipv6)
 
 			pkt := v6PacketBuffer()
 
@@ -414,9 +410,7 @@ func TestNATConflict(t *testing.T) {
 					Postrouting: 5,
 				},
 			}
-			if err := iptables.ReplaceTable(NATID, table, ipv6); err != nil {
-				t.Fatalf("ipt.ReplaceTable(%d, _, true): %s", NATID, err)
-			}
+			iptables.ReplaceTable(NATID, table, ipv6)
 
 			// Create and finalize the connection.
 			test.checkIPTables(t, iptables, v6PacketBufferWithSrcAddr(srcAddr), true /* lastHookOK */)
