@@ -23,7 +23,6 @@ import (
 	"math/rand"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
@@ -200,11 +199,6 @@ func (c *context64) Value(val marshal.Marshallable) uintptr {
 // Width returns the byte width of this architecture.
 func (c *context64) Width() uint {
 	return 8
-}
-
-// FeatureSet returns the FeatureSet in use.
-func (c *context64) FeatureSet() *cpuid.FeatureSet {
-	return c.State.FeatureSet
 }
 
 // mmapRand returns a random adjustment for randomizing an mmap layout.

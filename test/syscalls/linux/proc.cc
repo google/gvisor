@@ -1264,6 +1264,16 @@ TEST(ProcCpuinfo, DeniesWriteRoot) {
   }
 }
 
+// Cpuinfo should not change across save/restore.
+TEST(ProcCpuinfo, Stable) {
+  std::string output_before;
+  ASSERT_NO_ERRNO(GetContents("/proc/cpuinfo", &output_before));
+  MaybeSave();
+  std::string output_after;
+  ASSERT_NO_ERRNO(GetContents("/proc/cpuinfo", &output_after));
+  EXPECT_THAT(output_before, Eq(output_after));
+}
+
 // Sanity checks that uptime is present.
 TEST(ProcUptime, IsPresent) {
   std::string proc_uptime =

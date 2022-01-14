@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 	rpb "gvisor.dev/gvisor/pkg/sentry/arch/registers_go_proto"
 )
@@ -148,27 +147,14 @@ func (s State) Proto() *rpb.Registers {
 // Fork creates and returns an identical copy of the state.
 func (s *State) Fork() State {
 	return State{
-		Regs:       s.Regs,
-		fpState:    s.fpState.Fork(),
-		FeatureSet: s.FeatureSet,
+		Regs:    s.Regs,
+		fpState: s.fpState.Fork(),
 	}
 }
 
 // StateData implements Context.StateData.
 func (s *State) StateData() *State {
 	return s
-}
-
-// CPUIDEmulate emulates a cpuid instruction.
-func (s *State) CPUIDEmulate(l log.Logger) {
-	argax := uint32(s.Regs.Rax)
-	argcx := uint32(s.Regs.Rcx)
-	ax, bx, cx, dx := s.FeatureSet.EmulateID(argax, argcx)
-	s.Regs.Rax = uint64(ax)
-	s.Regs.Rbx = uint64(bx)
-	s.Regs.Rcx = uint64(cx)
-	s.Regs.Rdx = uint64(dx)
-	l.Debugf("CPUID(%x,%x): %x %x %x %x", argax, argcx, ax, bx, cx, dx)
 }
 
 // SingleStep implements Context.SingleStep.
@@ -350,7 +336,7 @@ const (
 )
 
 // PtraceGetRegSet implements Context.PtraceGetRegSet.
-func (s *State) PtraceGetRegSet(regset uintptr, dst io.Writer, maxlen int) (int, error) {
+func (s *State) PtraceGetRegSet(regset uintptr, dst io.Writer, maxlen int, fs cpuid.FeatureSet) (int, error) {
 	switch regset {
 	case _NT_PRSTATUS:
 		if maxlen < ptraceRegistersSize {
@@ -360,14 +346,14 @@ func (s *State) PtraceGetRegSet(regset uintptr, dst io.Writer, maxlen int) (int,
 	case _NT_PRFPREG:
 		return s.fpState.PtraceGetFPRegs(dst, maxlen)
 	case _NT_X86_XSTATE:
-		return s.fpState.PtraceGetXstateRegs(dst, maxlen, s.FeatureSet)
+		return s.fpState.PtraceGetXstateRegs(dst, maxlen, fs)
 	default:
 		return 0, linuxerr.EINVAL
 	}
 }
 
 // PtraceSetRegSet implements Context.PtraceSetRegSet.
-func (s *State) PtraceSetRegSet(regset uintptr, src io.Reader, maxlen int) (int, error) {
+func (s *State) PtraceSetRegSet(regset uintptr, src io.Reader, maxlen int, fs cpuid.FeatureSet) (int, error) {
 	switch regset {
 	case _NT_PRSTATUS:
 		if maxlen < ptraceRegistersSize {
@@ -377,7 +363,7 @@ func (s *State) PtraceSetRegSet(regset uintptr, src io.Reader, maxlen int) (int,
 	case _NT_PRFPREG:
 		return s.fpState.PtraceSetFPRegs(src, maxlen)
 	case _NT_X86_XSTATE:
-		return s.fpState.PtraceSetXstateRegs(src, maxlen, s.FeatureSet)
+		return s.fpState.PtraceSetXstateRegs(src, maxlen, fs)
 	default:
 		return 0, linuxerr.EINVAL
 	}
@@ -404,13 +390,12 @@ func (s *State) FullRestore() bool {
 }
 
 // New returns a new architecture context.
-func New(arch Arch, fs *cpuid.FeatureSet) Context {
+func New(arch Arch) Context {
 	switch arch {
 	case AMD64:
 		return &context64{
 			State{
-				fpState:    fpu.NewState(),
-				FeatureSet: fs,
+				fpState: fpu.NewState(),
 			},
 			[]fpu.State(nil),
 		}

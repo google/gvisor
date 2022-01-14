@@ -27,10 +27,6 @@ import (
 func newCPUInfo(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 	k := kernel.KernelFromContext(ctx)
 	features := k.FeatureSet()
-	if features == nil {
-		// Kernel is always initialized with a FeatureSet.
-		panic("cpuinfo read with nil FeatureSet")
-	}
 	var buf bytes.Buffer
 	for i, max := uint(0), k.ApplicationCores(); i < max; i++ {
 		features.WriteCPUInfoTo(i, &buf)
@@ -38,4 +34,4 @@ func newCPUInfo(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 	return newStaticProcInode(ctx, msrc, buf.Bytes())
 }
 
-// LINT.ThenChange(../../fsimpl/proc/tasks_files.go)
+// LINT.ThenChange(../../fsimpl/proc/tasks.go)

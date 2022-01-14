@@ -348,7 +348,7 @@ func New(args Args) (*Loader, error) {
 	// Initiate the Kernel object, which is required by the Context passed
 	// to createVFS in order to mount (among other things) procfs.
 	if err = k.Init(kernel.InitKernelArgs{
-		FeatureSet:                  cpuid.HostFeatureSet(),
+		FeatureSet:                  cpuid.HostFeatureSet().Fixed(),
 		Timekeeper:                  tk,
 		RootUserNamespace:           creds.UserNamespace,
 		RootNetworkNamespace:        netns,

@@ -1,4 +1,4 @@
-// Copyright 2020 The gVisor Authors.
+// Copyright 2018 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,29 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build (amd64 || 386) && go1.1
-// +build amd64 386
-// +build go1.1
+#include "textflag.h"
 
-package arch
-
-import (
-	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
-)
-
-// State contains the common architecture bits for X86 (the build tag of this
-// file ensures it's only built on x86).
-//
-// +stateify savable
-type State struct {
-	// The system registers.
-	Regs Registers
-
-	// Our floating point state.
-	fpState fpu.State `state:"wait"`
-}
-
-// afterLoad is invoked by stateify.
-func (s *State) afterLoad() {
-	s.afterLoadFPState()
-}
+TEXT ·native(SB),NOSPLIT,$0-24
+	MOVL ax+0(FP), AX
+	MOVL cx+4(FP), CX
+	CPUID
+	MOVL AX, ret0+8(FP)
+	MOVL BX, ret1+12(FP)
+	MOVL CX, ret2+16(FP)
+	MOVL DX, ret3+20(FP)
+	RET
