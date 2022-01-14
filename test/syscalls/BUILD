@@ -241,6 +241,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    add_hostinet = True,
     add_overlay = True,
     test = "//test/syscalls/linux:ioctl_test",
 )
