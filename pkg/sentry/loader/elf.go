@@ -580,7 +580,7 @@ func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, in
 // Preconditions:
 // * f is an ELF file.
 // * f is the first ELF loaded into m.
-func loadInitialELF(ctx context.Context, m *mm.MemoryManager, fs *cpuid.FeatureSet, f fsbridge.File) (loadedELF, arch.Context, error) {
+func loadInitialELF(ctx context.Context, m *mm.MemoryManager, fs cpuid.FeatureSet, f fsbridge.File) (loadedELF, arch.Context, error) {
 	info, err := parseHeader(ctx, f)
 	if err != nil {
 		ctx.Infof("Failed to parse initial ELF: %v", err)
@@ -595,7 +595,7 @@ func loadInitialELF(ctx context.Context, m *mm.MemoryManager, fs *cpuid.FeatureS
 
 	// Create the arch.Context now so we can prepare the mmap layout before
 	// mapping anything.
-	ac := arch.New(info.arch, fs)
+	ac := arch.New(info.arch)
 
 	l, err := m.SetMmapLayout(ac, limits.FromContext(ctx))
 	if err != nil {

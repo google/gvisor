@@ -364,7 +364,7 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *linux.SignalInfo)
 			// When CPUID faulting is enabled, we will generate a #GP(0) when
 			// userspace executes a CPUID instruction. This is handled above,
 			// because we need to be able to map and read user memory.
-			return hostarch.AccessType{}, platform.ErrContextSignalCPUID
+			return hostarch.AccessType{}, tryCPUIDError{}
 		}
 		return hostarch.AccessType{}, platform.ErrContextSignal
 

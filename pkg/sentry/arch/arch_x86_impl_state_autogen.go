@@ -18,7 +18,6 @@ func (s *State) StateFields() []string {
 	return []string{
 		"Regs",
 		"fpState",
-		"FeatureSet",
 	}
 }
 
@@ -29,14 +28,12 @@ func (s *State) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.Regs)
 	stateSinkObject.Save(1, &s.fpState)
-	stateSinkObject.Save(2, &s.FeatureSet)
 }
 
 // +checklocksignore
 func (s *State) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.Regs)
 	stateSourceObject.LoadWait(1, &s.fpState)
-	stateSourceObject.Load(2, &s.FeatureSet)
 	stateSourceObject.AfterLoad(s.afterLoad)
 }
 

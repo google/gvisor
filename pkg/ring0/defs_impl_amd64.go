@@ -7,8 +7,6 @@ package ring0
 
 import (
 	"fmt"
-	"gvisor.dev/gvisor/pkg/cpuid"
-	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
@@ -121,14 +119,32 @@ type SwitchOpts struct {
 }
 
 var (
+	// VirtualAddressBits is the number of bits available in the virtual
+	// address space.
+	//
+	// Initialized by ring0.Init.
+	VirtualAddressBits uintptr
+
+	// PhysicalAddressBits is the number of bits available in the physical
+	// address space.
+	//
+	// Initialized by ring0.Init.
+	PhysicalAddressBits uintptr
+
 	// UserspaceSize is the total size of userspace.
-	UserspaceSize = uintptr(1) << (VirtualAddressBits() - 1)
+	//
+	// Initialized by ring0.Init.
+	UserspaceSize uintptr
 
 	// MaximumUserAddress is the largest possible user address.
-	MaximumUserAddress = (UserspaceSize - 1) & ^uintptr(hostarch.PageSize-1)
+	//
+	// Initialized by ring0.Init.
+	MaximumUserAddress uintptr
 
 	// KernelStartAddress is the starting kernel address.
-	KernelStartAddress = ^uintptr(0) - (UserspaceSize - 1)
+	//
+	// Initialized by ring0.Init.
+	KernelStartAddress uintptr
 )
 
 // Segment indices and Selectors.
@@ -467,24 +483,6 @@ const (
 const (
 	Syscall Vector = _NR_INTERRUPTS
 )
-
-// VirtualAddressBits returns the number bits available for virtual addresses.
-//
-// Note that sign-extension semantics apply to the highest order bit.
-//
-// FIXME(b/69382326): This should use the cpuid passed to Init.
-func VirtualAddressBits() uint32 {
-	ax, _, _, _ := cpuid.HostID(0x80000008, 0)
-	return (ax >> 8) & 0xff
-}
-
-// PhysicalAddressBits returns the number of bits available for physical addresses.
-//
-// FIXME(b/69382326): This should use the cpuid passed to Init.
-func PhysicalAddressBits() uint32 {
-	ax, _, _, _ := cpuid.HostID(0x80000008, 0)
-	return ax & 0xff
-}
 
 // Selector is a segment Selector.
 type Selector uint16

@@ -45,7 +45,6 @@ func (s *State) StateFields() []string {
 	return []string{
 		"Regs",
 		"fpState",
-		"FeatureSet",
 		"OrigR0",
 	}
 }
@@ -57,8 +56,7 @@ func (s *State) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.Regs)
 	stateSinkObject.Save(1, &s.fpState)
-	stateSinkObject.Save(2, &s.FeatureSet)
-	stateSinkObject.Save(3, &s.OrigR0)
+	stateSinkObject.Save(2, &s.OrigR0)
 }
 
 func (s *State) afterLoad() {}
@@ -67,8 +65,7 @@ func (s *State) afterLoad() {}
 func (s *State) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.Regs)
 	stateSourceObject.LoadWait(1, &s.fpState)
-	stateSourceObject.Load(2, &s.FeatureSet)
-	stateSourceObject.Load(3, &s.OrigR0)
+	stateSourceObject.Load(2, &s.OrigR0)
 }
 
 func init() {

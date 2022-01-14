@@ -508,8 +508,6 @@ func (s *subprocess) switchToApp(c *context, ac arch.Context) bool {
 
 	// Extract floating point state.
 	fpState := ac.FloatingPointData()
-	fpLen, _ := ac.FeatureSet().ExtendedStateSize()
-	useXsave := ac.FeatureSet().UseXsave()
 
 	// Grab our thread from the pool.
 	currentTID := int32(procid.Current())
@@ -534,7 +532,7 @@ func (s *subprocess) switchToApp(c *context, ac arch.Context) bool {
 	if err := t.setRegs(regs); err != nil {
 		panic(fmt.Sprintf("ptrace set regs (%+v) failed: %v", regs, err))
 	}
-	if err := t.setFPRegs(fpState, uint64(fpLen), useXsave); err != nil {
+	if err := t.setFPRegs(fpState, &c.archContext); err != nil {
 		panic(fmt.Sprintf("ptrace set fpregs (%+v) failed: %v", fpState, err))
 	}
 	if err := t.setTLS(&tls); err != nil {
@@ -572,7 +570,7 @@ func (s *subprocess) switchToApp(c *context, ac arch.Context) bool {
 		if err := t.getRegs(regs); err != nil {
 			panic(fmt.Sprintf("ptrace get regs failed: %v", err))
 		}
-		if err := t.getFPRegs(fpState, uint64(fpLen), useXsave); err != nil {
+		if err := t.getFPRegs(fpState, &c.archContext); err != nil {
 			panic(fmt.Sprintf("ptrace get fpregs failed: %v", err))
 		}
 		if err := t.getTLS(&tls); err != nil {

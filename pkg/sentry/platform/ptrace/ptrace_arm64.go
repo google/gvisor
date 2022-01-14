@@ -16,11 +16,31 @@ package ptrace
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	pkgcontext "gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
-// fpRegSet returns the GETREGSET/SETREGSET register set type to be used.
-func fpRegSet(_ bool) uintptr {
+// archContext is architecture-specific context.
+type archContext struct {
+	// fpLen is the size of the floating point state.
+	fpLen int
+}
+
+// init initializes the archContext.
+func (a *archContext) init(ctx pkgcontext.Context) {
+	fs := cpuid.FromContext(ctx)
+	fpLen, _ := fs.ExtendedStateSize()
+	a.fpLen = int(fpLen)
+}
+
+// floatingPointLength returns the length of floating point state.
+func (a *archContext) floatingPointLength() uint64 {
+	return uint64(a.fpLen)
+}
+
+// floatingPointRegSet returns the register set to fetch.
+func (a *archContext) floatingPointRegSet() uintptr {
 	return linux.NT_PRFPREG
 }
 

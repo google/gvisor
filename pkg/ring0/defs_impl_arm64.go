@@ -26,6 +26,12 @@ const (
 )
 
 const (
+	// VirtualAddressBits is fixed at 48.
+	VirtualAddressBits = 48
+
+	// PhysicalAddressBits is fixed at 40.
+	PhysicalAddressBits = 40
+
 	// DAIF bits:debug, sError, IRQ, FIQ.
 	_PSR_D_BIT      = 0x00000200
 	_PSR_A_BIT      = 0x00000100
@@ -107,16 +113,6 @@ const (
 	PageFault               Vector = El0SyncDa
 	VirtualizationException Vector = El0ErrBounce
 )
-
-// VirtualAddressBits returns the number bits available for virtual addresses.
-func VirtualAddressBits() uint32 {
-	return 48
-}
-
-// PhysicalAddressBits returns the number of bits available for physical addresses.
-func PhysicalAddressBits() uint32 {
-	return 40
-}
 
 // Kernel is a global kernel object.
 //
@@ -222,9 +218,9 @@ type SwitchOpts struct {
 	SwitchArchOpts
 }
 
-var (
+const (
 	// UserspaceSize is the total size of userspace.
-	UserspaceSize = uintptr(1) << (VirtualAddressBits())
+	UserspaceSize = uintptr(1) << VirtualAddressBits
 
 	// MaximumUserAddress is the largest possible user address.
 	MaximumUserAddress = (UserspaceSize - 1) & ^uintptr(hostarch.PageSize-1)

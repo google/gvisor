@@ -55,7 +55,7 @@ func fillAddressSpace() (excludedRegions []region) {
 	// We exclude reservedMemory below from our physical memory size, so it
 	// needs to be dropped here as well. Otherwise, we could end up with
 	// physical addresses that are beyond what is mapped.
-	pSize := uintptr(1) << ring0.PhysicalAddressBits()
+	pSize := uintptr(1) << ring0.PhysicalAddressBits
 	pSize -= reservedMemory
 
 	// Add specifically excluded regions; see excludeVirtualRegion.

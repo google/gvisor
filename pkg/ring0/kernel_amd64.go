@@ -20,9 +20,7 @@ package ring0
 import (
 	"encoding/binary"
 	"reflect"
-	"sync"
 
-	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
@@ -33,8 +31,6 @@ func HaltAndWriteFSBase(regs *arch.Registers)
 
 // init initializes architecture-specific state.
 func (k *Kernel) init(maxCPUs int) {
-	initSentryXCR0()
-
 	entrySize := reflect.TypeOf(kernelEntry{}).Size()
 	var (
 		entries []kernelEntry
@@ -267,23 +263,6 @@ func doSwitchToUser(
 	userCR3 uint64, // +24(FP)
 	needIRET uint64) Vector // +32(FP), +40(FP)
 
-var (
-	sentryXCR0        uintptr
-	xgetbvIsSupported bool
-	sentryXCR0Once    sync.Once
-)
-
-// initSentryXCR0 saves a value of XCR0 in the host mode. It is used to
-// initialize XCR0 of guest vCPU-s.
-func initSentryXCR0() {
-	sentryXCR0Once.Do(func() {
-		if cpuid.HostFeatureSet().HasFeature(cpuid.X86FeatureXSAVE) {
-			sentryXCR0 = xgetbv(0)
-			xgetbvIsSupported = true
-		}
-	})
-}
-
 // startGo is the CPU entrypoint.
 //
 // This is called from the start asm stub (see entry_amd64.go); on return the
@@ -310,8 +289,8 @@ func startGo(c *CPU) {
 	fninit()
 	// Need to sync XCR0 with the host, because xsave and xrstor can be
 	// called from different contexts.
-	if xgetbvIsSupported {
-		xsetbv(0, sentryXCR0)
+	if hasXSAVE {
+		xsetbv(0, localXCR0)
 	}
 
 	// Set the syscall target.

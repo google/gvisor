@@ -411,22 +411,20 @@ TEXT ·start(SB),NOSPLIT,$0
 	// N.B. This is the vCPU entrypoint. It is not called from Go code and
 	// thus pushes and pops values on the stack until calling into Go
 	// (startGo) because we aren't usually a typical Go assembly frame.
-
-	PUSHQ $0x0            // Previous frame pointer.
-	MOVQ SP, BP           // Set frame pointer.
-
-	PUSHQ AX              // Save CPU.
+	PUSHQ $0x0  // Previous frame pointer.
+	MOVQ SP, BP // Set frame pointer.
+	PUSHQ AX    // Save CPU.
 
 	// Set up environment required by Go before calling startGo: Go needs
 	// FS_BASE and floating point initialized.
 	MOVQ CPU_REGISTERS+PTRACE_FS_BASE(AX), BX
-	PUSHQ BX              // First argument (FS_BASE)
+	PUSHQ BX          // First argument (FS_BASE)
 	CALL ·writeFS(SB)
 	POPQ BX
 
 	// First argument (CPU) already at bottom of stack.
-	CALL ·startGo(SB)     // Call Go hook.
-	JMP ·resume(SB)       // Restore to registers.
+	CALL ·startGo(SB) // Call Go hook.
+	JMP ·resume(SB)   // Restore to registers.
 
 ADDR_OF_FUNC(·AddrOfStart(SB), ·start(SB));
 

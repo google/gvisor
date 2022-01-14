@@ -146,7 +146,6 @@ func (ts *TaskSet) newTask(cfg *TaskConfig) (*Task, error) {
 		image:              *image,
 		fsContext:          cfg.FSContext,
 		fdTable:            cfg.FDTable,
-		p:                  cfg.Kernel.Platform.NewContext(),
 		k:                  cfg.Kernel,
 		ptraceTracees:      make(map[*Task]struct{}),
 		allowedCPUMask:     cfg.AllowedCPUMask.Copy(),
@@ -230,8 +229,11 @@ func (ts *TaskSet) newTask(cfg *TaskConfig) (*Task, error) {
 	defer t.mu.Unlock()
 
 	t.cpu = assignCPU(t.allowedCPUMask, ts.Root.tids[t])
-
 	t.startTime = t.k.RealtimeClock().Now()
+
+	// As a final step, initialize the platform context. This may require
+	// other pieces to be initialized as the task is used the context.
+	t.p = cfg.Kernel.Platform.NewContext(t.AsyncContext())
 
 	return t, nil
 }
