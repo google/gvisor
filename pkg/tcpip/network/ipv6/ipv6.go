@@ -814,14 +814,14 @@ func (e *endpoint) writePacket(r *stack.Route, pkt *stack.PacketBuffer, protocol
 			// fragment one by one using WritePacket() (current strategy) or if we
 			// want to create a PacketBufferList from the fragments and feed it to
 			// WritePackets(). It'll be faster but cost more memory.
-			return e.nic.WritePacket(r, ProtocolNumber, fragPkt)
+			return e.nic.WritePacket(r, fragPkt)
 		})
 		stats.PacketsSent.IncrementBy(uint64(sent))
 		stats.OutgoingPacketErrors.IncrementBy(uint64(remain))
 		return err
 	}
 
-	if err := e.nic.WritePacket(r, ProtocolNumber, pkt); err != nil {
+	if err := e.nic.WritePacket(r, pkt); err != nil {
 		stats.OutgoingPacketErrors.Increment()
 		return err
 	}

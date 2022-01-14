@@ -218,7 +218,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		//
 		//   Send the packet to the (new) target hardware address on the same
 		//   hardware on which the request was received.
-		if err := e.nic.WritePacketToRemote(tcpip.LinkAddress(origSender), ProtocolNumber, respPkt); err != nil {
+		if err := e.nic.WritePacketToRemote(tcpip.LinkAddress(origSender), respPkt); err != nil {
 			stats.outgoingRepliesDropped.Increment()
 		} else {
 			stats.outgoingRepliesSent.Increment()
@@ -351,7 +351,7 @@ func (e *endpoint) sendARPRequest(localAddr, targetAddr tcpip.Address, remoteLin
 	}
 
 	stats := e.stats.arp
-	if err := e.nic.WritePacketToRemote(remoteLinkAddr, ProtocolNumber, pkt); err != nil {
+	if err := e.nic.WritePacketToRemote(remoteLinkAddr, pkt); err != nil {
 		stats.outgoingRequestsDropped.Increment()
 		return err
 	}

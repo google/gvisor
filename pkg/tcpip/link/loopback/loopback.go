@@ -75,7 +75,7 @@ func (*endpoint) LinkAddress() tcpip.LinkAddress {
 func (*endpoint) Wait() {}
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.
-func (e *endpoint) WritePackets(_ stack.RouteInfo, pkts stack.PacketBufferList, _ tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
+func (e *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 	n := 0
 	for p := pkts.Front(); p != nil; p = p.Next() {
 		if err := e.WriteRawPacket(p); err != nil {
