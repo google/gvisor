@@ -274,7 +274,7 @@ func (e *serverEndpoint) WritePacket(_ stack.RouteInfo, _ tcpip.NetworkProtocolN
 }
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.
-func (e *serverEndpoint) WritePackets(_ stack.RouteInfo, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
+func (e *serverEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 	n := 0
 	var err tcpip.Error
 	e.mu.Lock()

@@ -72,7 +72,7 @@ func (e *countedEndpoint) LinkAddress() tcpip.LinkAddress {
 }
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.
-func (e *countedEndpoint) WritePackets(_ stack.RouteInfo, pkts stack.PacketBufferList, _ tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
+func (e *countedEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 	e.writeCount += pkts.Len()
 	return pkts.Len(), nil
 }
@@ -102,7 +102,11 @@ func TestWaitWrite(t *testing.T) {
 		var pkts stack.PacketBufferList
 		pkts.PushBack(stack.NewPacketBuffer(stack.PacketBufferOptions{}))
 		// Write and check that it goes through.
-		wep.WritePackets(stack.RouteInfo{}, pkts, 0)
+		if n, err := wep.WritePackets(pkts); err != nil {
+			t.Fatalf("WritePackets(_): %s", err)
+		} else if n != 1 {
+			t.Fatalf("got WritePackets(_) = %d, want = 1", n)
+		}
 		if want := 1; ep.writeCount != want {
 			t.Fatalf("Unexpected writeCount: got=%v, want=%v", ep.writeCount, want)
 		}
@@ -112,7 +116,11 @@ func TestWaitWrite(t *testing.T) {
 		pkts.PushBack(stack.NewPacketBuffer(stack.PacketBufferOptions{}))
 		// Wait on dispatches, then try to write. It must go through.
 		wep.WaitDispatch()
-		wep.WritePackets(stack.RouteInfo{}, pkts, 0)
+		if n, err := wep.WritePackets(pkts); err != nil {
+			t.Fatalf("WritePackets(_): %s", err)
+		} else if n != 1 {
+			t.Fatalf("got WritePackets(_) = %d, want = 1", n)
+		}
 		if want := 2; ep.writeCount != want {
 			t.Fatalf("Unexpected writeCount: got=%v, want=%v", ep.writeCount, want)
 		}
@@ -123,7 +131,11 @@ func TestWaitWrite(t *testing.T) {
 		pkts.PushBack(stack.NewPacketBuffer(stack.PacketBufferOptions{}))
 		// Wait on writes, then try to write. It must not go through.
 		wep.WaitWrite()
-		wep.WritePackets(stack.RouteInfo{}, pkts, 0)
+		if n, err := wep.WritePackets(pkts); err != nil {
+			t.Fatalf("WritePackets(_): %s", err)
+		} else if n != 1 {
+			t.Fatalf("got WritePackets(_) = %d, want = 1", n)
+		}
 		if want := 2; ep.writeCount != want {
 			t.Fatalf("Unexpected writeCount: got=%v, want=%v", ep.writeCount, want)
 		}

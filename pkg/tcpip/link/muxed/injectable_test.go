@@ -51,12 +51,12 @@ func TestInjectableEndpointDispatch(t *testing.T) {
 		Data:               buffer.NewViewFromBytes([]byte{0xFB}).ToVectorisedView(),
 	})
 	pkt.TransportHeader().Push(1)[0] = 0xFA
-	var packetRoute stack.RouteInfo
-	packetRoute.RemoteAddress = dstIP
+	pkt.EgressRoute.RemoteAddress = dstIP
+	pkt.NetworkProtocolNumber = ipv4.ProtocolNumber
 
 	var pkts stack.PacketBufferList
 	pkts.PushBack(pkt)
-	if _, err := endpoint.WritePackets(packetRoute, pkts, ipv4.ProtocolNumber); err != nil {
+	if _, err := endpoint.WritePackets(pkts); err != nil {
 		t.Fatalf("Unable to write packets: %s", err)
 	}
 
@@ -78,12 +78,12 @@ func TestInjectableEndpointDispatchHdrOnly(t *testing.T) {
 		Data:               buffer.NewView(0).ToVectorisedView(),
 	})
 	pkt.TransportHeader().Push(1)[0] = 0xFA
-	var packetRoute stack.RouteInfo
-	packetRoute.RemoteAddress = dstIP
+	pkt.EgressRoute.RemoteAddress = dstIP
+	pkt.NetworkProtocolNumber = ipv4.ProtocolNumber
 
 	var pkts stack.PacketBufferList
 	pkts.PushBack(pkt)
-	if _, err := endpoint.WritePackets(packetRoute, pkts, ipv4.ProtocolNumber); err != nil {
+	if _, err := endpoint.WritePackets(pkts); err != nil {
 		t.Fatalf("Unable to write packets: %s", err)
 	}
 	buf := make([]byte, 6500)

@@ -420,12 +420,12 @@ type testLinkEndpoint struct {
 	writeErr tcpip.Error
 }
 
-func (t *testLinkEndpoint) WritePackets(r stack.RouteInfo, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
+func (t *testLinkEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 	if t.writeErr != nil {
 		return 0, t.writeErr
 	}
 
-	return t.LinkEndpoint.WritePackets(r, pkts, protocol)
+	return t.LinkEndpoint.WritePackets(pkts)
 }
 
 func TestLinkAddressRequest(t *testing.T) {

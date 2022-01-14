@@ -140,10 +140,10 @@ func TestWritePacketsAddHeader(t *testing.T) {
 
 		var pkts stack.PacketBufferList
 		pkts.PushFront(pkt)
-		if n, err := e.WritePackets(stack.RouteInfo{}, pkts, 0 /* protocol */); err != nil {
-			t.Fatalf("e.WritePackets({}, _, 0): %s", err)
+		if n, err := e.WritePackets(pkts); err != nil {
+			t.Fatalf("e.WritePackets(_): %s", err)
 		} else if n != 1 {
-			t.Fatalf("got e.WritePackets({}, _, 0) = %d, want = 1", n)
+			t.Fatalf("got e.WritePackets(_) = %d, want = 1", n)
 		}
 	}
 

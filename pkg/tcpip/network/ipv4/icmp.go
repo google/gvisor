@@ -284,10 +284,6 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 			return
 		}
 
-		// TODO(gvisor.dev/issue/3810:) When adding protocol numbers into the
-		// header information, we may have to change this code to handle the
-		// ICMP header no longer being in the data buffer.
-
 		// Because IP and ICMP are so closely intertwined, we need to handcraft our
 		// IP header to be able to follow RFC 792. The wording on page 13 is as
 		// follows:
