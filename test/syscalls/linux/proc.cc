@@ -395,6 +395,25 @@ int ReadlinkWhileExited(std::string const& basename, char* buf, size_t count) {
   return ret;
 }
 
+void RemoveUnstableCPUInfoFields(std::vector<std::string>& cpu_info_fields) {
+  const std::vector<std::string> unstable_fields{"cpu MHz", "bogomips"};
+  auto it = cpu_info_fields.begin();
+  while (it != cpu_info_fields.end()) {
+    bool found = false;
+    for (const std::string& unstable_field : unstable_fields) {
+      if (it->find(unstable_field) != std::string::npos) {
+        found = true;
+        break;
+      }
+    }
+    if (found) {
+      it = cpu_info_fields.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
 TEST(ProcTest, NotFoundInRoot) {
   struct stat s;
   EXPECT_THAT(stat("/proc/foobar", &s), SyscallFailsWithErrno(ENOENT));
@@ -1217,7 +1236,6 @@ TEST(ProcCpuinfo, RequiredFieldsArePresent) {
   std::string proc_cpuinfo =
       ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/cpuinfo"));
   ASSERT_FALSE(proc_cpuinfo.empty());
-  std::vector<std::string> cpuinfo_fields = absl::StrSplit(proc_cpuinfo, '\n');
 
   // Check that the usual fields are there. We don't really care about the
   // contents.
@@ -1271,7 +1289,14 @@ TEST(ProcCpuinfo, Stable) {
   MaybeSave();
   std::string output_after;
   ASSERT_NO_ERRNO(GetContents("/proc/cpuinfo", &output_after));
-  EXPECT_THAT(output_before, Eq(output_after));
+
+  std::vector<std::string> before_fields = absl::StrSplit(output_before, '\n');
+  std::vector<std::string> after_fields = absl::StrSplit(output_before, '\n');
+  RemoveUnstableCPUInfoFields(before_fields);
+  RemoveUnstableCPUInfoFields(after_fields);
+
+  EXPECT_THAT(absl::StrJoin(before_fields, "\n"),
+              Eq(absl::StrJoin(after_fields, "\n")));
 }
 
 // Sanity checks that uptime is present.
