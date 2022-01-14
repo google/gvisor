@@ -34,10 +34,11 @@ func (t *testInterface) ID() tcpip.NICID {
 	return t.nicID
 }
 
+// +checklocks:proto.mu
 func knownNICIDs(proto *protocol) []tcpip.NICID {
 	var nicIDs []tcpip.NICID
 
-	for k := range proto.mu.eps {
+	for k := range proto.eps {
 		nicIDs = append(nicIDs, k)
 	}
 
@@ -54,7 +55,7 @@ func TestClearEndpointFromProtocolOnClose(t *testing.T) {
 	var nicIDs []tcpip.NICID
 
 	proto.mu.Lock()
-	foundEP, hasEndpointBeforeClose := proto.mu.eps[nic.ID()]
+	foundEP, hasEndpointBeforeClose := proto.eps[nic.ID()]
 	nicIDs = knownNICIDs(proto)
 	proto.mu.Unlock()
 
@@ -68,7 +69,7 @@ func TestClearEndpointFromProtocolOnClose(t *testing.T) {
 	ep.Close()
 
 	proto.mu.Lock()
-	_, hasEP := proto.mu.eps[nic.ID()]
+	_, hasEP := proto.eps[nic.ID()]
 	nicIDs = knownNICIDs(proto)
 	proto.mu.Unlock()
 	if hasEP {

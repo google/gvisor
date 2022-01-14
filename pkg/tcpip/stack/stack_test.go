@@ -81,12 +81,13 @@ func checkGetMainNICAddress(s *stack.Stack, nicID tcpip.NICID, proto tcpip.Netwo
 type fakeNetworkEndpoint struct {
 	stack.AddressableEndpointState
 
-	mu struct {
-		sync.RWMutex
+	mu sync.RWMutex
 
-		enabled    bool
-		forwarding bool
-	}
+	// +checklocks:mu
+	enabled bool
+
+	// +checklocks:mu
+	forwarding bool
 
 	nic        stack.NetworkInterface
 	proto      *fakeNetworkProtocol
@@ -96,20 +97,20 @@ type fakeNetworkEndpoint struct {
 func (f *fakeNetworkEndpoint) Enable() tcpip.Error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.mu.enabled = true
+	f.enabled = true
 	return nil
 }
 
 func (f *fakeNetworkEndpoint) Enabled() bool {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
-	return f.mu.enabled
+	return f.enabled
 }
 
 func (f *fakeNetworkEndpoint) Disable() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.mu.enabled = false
+	f.enabled = false
 }
 
 func (f *fakeNetworkEndpoint) MTU() uint32 {
@@ -301,14 +302,14 @@ func (*fakeNetworkProtocol) Parse(pkt *stack.PacketBuffer) (tcpip.TransportProto
 func (f *fakeNetworkEndpoint) Forwarding() bool {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
-	return f.mu.forwarding
+	return f.forwarding
 }
 
 // SetForwarding implements stack.ForwardingNetworkEndpoint.
 func (f *fakeNetworkEndpoint) SetForwarding(v bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.mu.forwarding = v
+	f.forwarding = v
 }
 
 func fakeNetFactory(s *stack.Stack) stack.NetworkProtocol {

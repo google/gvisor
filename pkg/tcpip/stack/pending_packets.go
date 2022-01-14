@@ -39,20 +39,21 @@ type pendingPacket struct {
 type packetsPendingLinkResolution struct {
 	nic *nic
 
-	mu struct {
-		sync.Mutex
+	// mu protects annotated fields below.
+	mu sync.Mutex
 
-		// The packets to send once the resolver completes.
-		//
-		// The link resolution channel is used as the key for this map.
-		packets map[<-chan struct{}][]pendingPacket
+	// The packets to send once the resolver completes.
+	//
+	// The link resolution channel is used as the key for this map.
+	// +checklocks:mu
+	packets map[<-chan struct{}][]pendingPacket
 
-		// FIFO of channels used to cancel the oldest goroutine waiting for
-		// link-address resolution.
-		//
-		// cancelChans holds the same channels that are used as keys to packets.
-		cancelChans []<-chan struct{}
-	}
+	// FIFO of channels used to cancel the oldest goroutine waiting for
+	// link-address resolution.
+	//
+	// cancelChans holds the same channels that are used as keys to packets.
+	// +checklocks:mu
+	cancelChans []<-chan struct{}
 }
 
 func (f *packetsPendingLinkResolution) incrementOutgoingPacketErrors(pkt *PacketBuffer) {
@@ -67,7 +68,7 @@ func (f *packetsPendingLinkResolution) init(nic *nic) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.nic = nic
-	f.mu.packets = make(map[<-chan struct{}][]pendingPacket)
+	f.packets = make(map[<-chan struct{}][]pendingPacket)
 }
 
 // dequeue any pending packets associated with ch.
@@ -76,13 +77,13 @@ func (f *packetsPendingLinkResolution) init(nic *nic) {
 // address.
 func (f *packetsPendingLinkResolution) dequeue(ch <-chan struct{}, linkAddr tcpip.LinkAddress, err tcpip.Error) {
 	f.mu.Lock()
-	packets, ok := f.mu.packets[ch]
-	delete(f.mu.packets, ch)
+	packets, ok := f.packets[ch]
+	delete(f.packets, ch)
 
 	if ok {
-		for i, cancelChan := range f.mu.cancelChans {
+		for i, cancelChan := range f.cancelChans {
 			if cancelChan == ch {
-				f.mu.cancelChans = append(f.mu.cancelChans[:i], f.mu.cancelChans[i+1:]...)
+				f.cancelChans = append(f.cancelChans[:i], f.cancelChans[i+1:]...)
 				break
 			}
 		}
@@ -129,7 +130,7 @@ func (f *packetsPendingLinkResolution) enqueue(r *Route, pkt *PacketBuffer) tcpi
 
 	defer f.mu.Unlock()
 
-	packets, ok := f.mu.packets[ch]
+	packets, ok := f.packets[ch]
 	packets = append(packets, pendingPacket{
 		routeInfo: routeInfo,
 		pkt:       pkt,
@@ -146,7 +147,7 @@ func (f *packetsPendingLinkResolution) enqueue(r *Route, pkt *PacketBuffer) tcpi
 		}
 	}
 
-	f.mu.packets[ch] = packets
+	f.packets[ch] = packets
 
 	if ok {
 		return nil
@@ -166,25 +167,26 @@ func (f *packetsPendingLinkResolution) enqueue(r *Route, pkt *PacketBuffer) tcpi
 // newCancelChannelLocked appends the link resolution channel to a FIFO. If the
 // maximum number of pending resolutions is reached, the oldest channel will be
 // removed and its associated pending packets will be returned.
+//
+// +checklocks:f.mu
 func (f *packetsPendingLinkResolution) newCancelChannelLocked(newCH <-chan struct{}) []pendingPacket {
-	f.mu.cancelChans = append(f.mu.cancelChans, newCH)
-	if len(f.mu.cancelChans) <= maxPendingResolutions {
+	f.cancelChans = append(f.cancelChans, newCH)
+	if len(f.cancelChans) <= maxPendingResolutions {
 		return nil
 	}
 
-	ch := f.mu.cancelChans[0]
-	f.mu.cancelChans[0] = nil
-	f.mu.cancelChans = f.mu.cancelChans[1:]
-	if l := len(f.mu.cancelChans); l > maxPendingResolutions {
+	ch := f.cancelChans[0]
+	f.cancelChans[0] = nil
+	f.cancelChans = f.cancelChans[1:]
+	if l := len(f.cancelChans); l > maxPendingResolutions {
 		panic(fmt.Sprintf("max pending resolutions reached; got %d active resolutions, max = %d", l, maxPendingResolutions))
 	}
 
-	packets, ok := f.mu.packets[ch]
+	packets, ok := f.packets[ch]
 	if !ok {
 		panic("must have a packet queue for an uncancelled channel")
 	}
-	delete(f.mu.packets, ch)
-
+	delete(f.packets, ch)
 	return packets
 }
 

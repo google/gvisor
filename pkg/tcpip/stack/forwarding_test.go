@@ -56,10 +56,10 @@ type fwdTestNetworkEndpoint struct {
 	proto      *fwdTestNetworkProtocol
 	dispatcher TransportDispatcher
 
-	mu struct {
-		sync.RWMutex
-		forwarding bool
-	}
+	mu sync.RWMutex
+
+	// +checklocks:mu
+	forwarding bool
 }
 
 func (*fwdTestNetworkEndpoint) Enable() tcpip.Error {
@@ -236,15 +236,14 @@ func (*fwdTestNetworkEndpoint) LinkAddressProtocol() tcpip.NetworkProtocolNumber
 func (f *fwdTestNetworkEndpoint) Forwarding() bool {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
-	return f.mu.forwarding
-
+	return f.forwarding
 }
 
 // SetForwarding implements stack.ForwardingNetworkEndpoint.
 func (f *fwdTestNetworkEndpoint) SetForwarding(v bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.mu.forwarding = v
+	f.forwarding = v
 }
 
 var _ LinkEndpoint = (*fwdTestLinkEndpoint)(nil)

@@ -319,21 +319,29 @@ type NUDState struct {
 	clock tcpip.Clock
 	rng   *rand.Rand
 
-	mu struct {
-		sync.RWMutex
+	// mu protects annotated fields below.
+	mu sync.RWMutex
 
-		config NUDConfigurations
+	// +checklocks:mu
+	config NUDConfigurations
 
-		// reachableTime is the duration to wait for a REACHABLE entry to
-		// transition into STALE after inactivity. This value is calculated with
-		// the algorithm defined in RFC 4861 section 6.3.2.
-		reachableTime time.Duration
+	// reachableTime is the duration to wait for a REACHABLE entry to
+	// transition into STALE after inactivity. This value is calculated with
+	// the algorithm defined in RFC 4861 section 6.3.2.
+	// +checklocks:mu
+	reachableTime time.Duration
 
-		expiration            time.Time
-		prevBaseReachableTime time.Duration
-		prevMinRandomFactor   float32
-		prevMaxRandomFactor   float32
-	}
+	// +checklocks:mu
+	expiration time.Time
+
+	// +checklocks:mu
+	prevBaseReachableTime time.Duration
+
+	// +checklocks:mu
+	prevMinRandomFactor float32
+
+	// +checklocks:mu
+	prevMaxRandomFactor float32
 }
 
 // NewNUDState returns new NUDState using c as configuration and the specified
@@ -343,7 +351,7 @@ func NewNUDState(c NUDConfigurations, clock tcpip.Clock, rng *rand.Rand) *NUDSta
 		clock: clock,
 		rng:   rng,
 	}
-	s.mu.config = c
+	s.config = c
 	return s
 }
 
@@ -351,14 +359,14 @@ func NewNUDState(c NUDConfigurations, clock tcpip.Clock, rng *rand.Rand) *NUDSta
 func (s *NUDState) Config() NUDConfigurations {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.mu.config
+	return s.config
 }
 
 // SetConfig replaces the existing NUD configurations with c.
 func (s *NUDState) SetConfig(c NUDConfigurations) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.mu.config = c
+	s.config = c
 }
 
 // ReachableTime returns the duration to wait for a REACHABLE entry to
@@ -369,13 +377,13 @@ func (s *NUDState) ReachableTime() time.Duration {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.clock.Now().After(s.mu.expiration) ||
-		s.mu.config.BaseReachableTime != s.mu.prevBaseReachableTime ||
-		s.mu.config.MinRandomFactor != s.mu.prevMinRandomFactor ||
-		s.mu.config.MaxRandomFactor != s.mu.prevMaxRandomFactor {
+	if s.clock.Now().After(s.expiration) ||
+		s.config.BaseReachableTime != s.prevBaseReachableTime ||
+		s.config.MinRandomFactor != s.prevMinRandomFactor ||
+		s.config.MaxRandomFactor != s.prevMaxRandomFactor {
 		s.recomputeReachableTimeLocked()
 	}
-	return s.mu.reachableTime
+	return s.reachableTime
 }
 
 // recomputeReachableTimeLocked forces a recalculation of ReachableTime using
@@ -398,25 +406,25 @@ func (s *NUDState) ReachableTime() time.Duration {
 //    changes.  In such cases, an implementation SHOULD ensure that a new
 //    random value gets re-computed at least once every few hours.
 //
-// s.mu MUST be locked for writing.
+// +checklocks:s.mu
 func (s *NUDState) recomputeReachableTimeLocked() {
-	s.mu.prevBaseReachableTime = s.mu.config.BaseReachableTime
-	s.mu.prevMinRandomFactor = s.mu.config.MinRandomFactor
-	s.mu.prevMaxRandomFactor = s.mu.config.MaxRandomFactor
+	s.prevBaseReachableTime = s.config.BaseReachableTime
+	s.prevMinRandomFactor = s.config.MinRandomFactor
+	s.prevMaxRandomFactor = s.config.MaxRandomFactor
 
-	randomFactor := s.mu.config.MinRandomFactor + s.rng.Float32()*(s.mu.config.MaxRandomFactor-s.mu.config.MinRandomFactor)
+	randomFactor := s.config.MinRandomFactor + s.rng.Float32()*(s.config.MaxRandomFactor-s.config.MinRandomFactor)
 
 	// Check for overflow, given that minRandomFactor and maxRandomFactor are
 	// guaranteed to be positive numbers.
-	if math.MaxInt64/randomFactor < float32(s.mu.config.BaseReachableTime) {
-		s.mu.reachableTime = time.Duration(math.MaxInt64)
+	if math.MaxInt64/randomFactor < float32(s.config.BaseReachableTime) {
+		s.reachableTime = time.Duration(math.MaxInt64)
 	} else if randomFactor == 1 {
 		// Avoid loss of precision when a large base reachable time is used.
-		s.mu.reachableTime = s.mu.config.BaseReachableTime
+		s.reachableTime = s.config.BaseReachableTime
 	} else {
-		reachableTime := int64(float32(s.mu.config.BaseReachableTime) * randomFactor)
-		s.mu.reachableTime = time.Duration(reachableTime)
+		reachableTime := int64(float32(s.config.BaseReachableTime) * randomFactor)
+		s.reachableTime = time.Duration(reachableTime)
 	}
 
-	s.mu.expiration = s.clock.Now().Add(2 * time.Hour)
+	s.expiration = s.clock.Now().Add(2 * time.Hour)
 }
