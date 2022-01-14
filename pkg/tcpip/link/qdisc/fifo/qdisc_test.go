@@ -31,7 +31,7 @@ var _ stack.LinkWriter = (*discardWriter)(nil)
 type discardWriter struct {
 }
 
-func (*discardWriter) WritePackets(_ stack.RouteInfo, pkts stack.PacketBufferList, _ tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
+func (*discardWriter) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 	return pkts.Len(), nil
 }
 
@@ -42,9 +42,6 @@ func TestFastSimultaneousWrites(t *testing.T) {
 	linkEP := fifo.New(lower, 16, 1000)
 
 	v := make(buffer.View, 1)
-
-	prot := tcpip.NetworkProtocolNumber(0)
-	r := stack.RouteInfo{}
 
 	// Simulate many simultaneous writes from various goroutines, similar to TCP's sendTCPBatch().
 	nWriters := 100
@@ -60,7 +57,7 @@ func TestFastSimultaneousWrites(t *testing.T) {
 					Data: v.ToVectorisedView(),
 				})
 				pkt.Hash = rand.Uint32()
-				linkEP.WritePacket(r, prot, pkt)
+				linkEP.WritePacket(pkt)
 				pkt.DecRef()
 			}
 		}()

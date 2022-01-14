@@ -62,7 +62,7 @@ func (*MockLinkEndpoint) MaxHeaderLength() uint16 { return 0 }
 func (*MockLinkEndpoint) LinkAddress() tcpip.LinkAddress { return "" }
 
 // WritePackets implements LinkEndpoint.WritePackets.
-func (ep *MockLinkEndpoint) WritePackets(r stack.RouteInfo, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
+func (ep *MockLinkEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 	var n int
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
 		if ep.allowPackets == 0 {

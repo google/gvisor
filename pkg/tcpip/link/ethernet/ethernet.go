@@ -81,14 +81,14 @@ func (e *Endpoint) Capabilities() stack.LinkEndpointCapabilities {
 }
 
 // WritePackets implements stack.LinkEndpoint.
-func (e *Endpoint) WritePackets(r stack.RouteInfo, pkts stack.PacketBufferList, proto tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
+func (e *Endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 	linkAddr := e.LinkAddress()
 
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
 		e.AddHeader(linkAddr, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
 	}
 
-	return e.Endpoint.WritePackets(r, pkts, proto)
+	return e.Endpoint.WritePackets(pkts)
 }
 
 // MaxHeaderLength implements stack.LinkEndpoint.

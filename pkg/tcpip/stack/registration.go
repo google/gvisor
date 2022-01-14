@@ -567,14 +567,13 @@ type NetworkInterface interface {
 	CheckLocalAddress(tcpip.NetworkProtocolNumber, tcpip.Address) bool
 
 	// WritePacketToRemote writes the packet to the given remote link address.
-	WritePacketToRemote(tcpip.LinkAddress, tcpip.NetworkProtocolNumber, *PacketBuffer) tcpip.Error
+	WritePacketToRemote(tcpip.LinkAddress, *PacketBuffer) tcpip.Error
 
-	// WritePacket writes a packet with the given protocol through the given
-	// route.
+	// WritePacket writes a packet through the given route.
 	//
 	// WritePacket may modify the packet buffer. The packet buffer's
 	// network and transport header must be set.
-	WritePacket(*Route, tcpip.NetworkProtocolNumber, *PacketBuffer) tcpip.Error
+	WritePacket(*Route, *PacketBuffer) tcpip.Error
 
 	// HandleNeighborProbe processes an incoming neighbor probe (e.g. ARP
 	// request or NDP Neighbor Solicitation).
@@ -764,12 +763,12 @@ const (
 // layer endpoint. It is used with QueueingDiscipline to batch writes from
 // upper layer endpoints.
 type LinkWriter interface {
-	// WritePackets writes packets with the given protocol and route. Must not be
-	// called with an empty list of packet buffers.
+	// WritePackets writes packets. Must not be called with an empty list of
+	// packet buffers.
 	//
 	// WritePackets may modify the packet buffers, and takes ownership of the PacketBufferList.
 	// it is not safe to use the PacketBufferList after a call to WritePackets.
-	WritePackets(RouteInfo, PacketBufferList, tcpip.NetworkProtocolNumber) (int, tcpip.Error)
+	WritePackets(PacketBufferList) (int, tcpip.Error)
 }
 
 // LinkRawWriter is an interface that must be implemented by all Link endpoints
@@ -840,15 +839,15 @@ type NetworkLinkEndpoint interface {
 // QueueingDiscipline provides a queueing strategy for outgoing packets (e.g
 // FIFO, LIFO, Random Early Drop etc).
 type QueueingDiscipline interface {
-	// WritePacket writes a packet with the given protocol and route.
+	// WritePacket writes a packet.
 	//
 	// WritePacket may modify the packet buffer. The packet buffer's
 	// network and transport header must be set.
 	//
 	// To participate in transparent bridging, a LinkEndpoint implementation
 	// should call eth.Encode with header.EthernetFields.SrcAddr set to
-	// r.LocalLinkAddress if it is provided.
-	WritePacket(RouteInfo, tcpip.NetworkProtocolNumber, *PacketBuffer) tcpip.Error
+	// pkg.EgressRoute.LocalLinkAddress if it is provided.
+	WritePacket(*PacketBuffer) tcpip.Error
 
 	Close()
 }

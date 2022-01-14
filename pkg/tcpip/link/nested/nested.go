@@ -103,8 +103,8 @@ func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
 }
 
 // WritePackets implements stack.LinkEndpoint.
-func (e *Endpoint) WritePackets(r stack.RouteInfo, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
-	return e.child.WritePackets(r, pkts, protocol)
+func (e *Endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
+	return e.child.WritePackets(pkts)
 }
 
 // Wait implements stack.LinkEndpoint.

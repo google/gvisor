@@ -146,10 +146,10 @@ type delegatingQueueingDiscipline struct {
 func (*delegatingQueueingDiscipline) Close() {}
 
 // WritePacket passes the packet through to the underlying LinkWriter's WritePackets.
-func (qDisc *delegatingQueueingDiscipline) WritePacket(r RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) tcpip.Error {
+func (qDisc *delegatingQueueingDiscipline) WritePacket(pkt *PacketBuffer) tcpip.Error {
 	var pkts PacketBufferList
 	pkts.PushBack(pkt)
-	_, err := qDisc.LinkWriter.WritePackets(r, pkts, protocol)
+	_, err := qDisc.LinkWriter.WritePackets(pkts)
 	return err
 }
 
@@ -347,11 +347,12 @@ func (n *nic) WriteRawPacket(pkt *PacketBuffer) tcpip.Error {
 }
 
 // WritePacket implements NetworkEndpoint.
-func (n *nic) WritePacket(r *Route, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) tcpip.Error {
+func (n *nic) WritePacket(r *Route, pkt *PacketBuffer) tcpip.Error {
 	routeInfo, _, err := r.resolvedFields(nil)
 	switch err.(type) {
 	case nil:
-		return n.writePacket(routeInfo, protocol, pkt)
+		pkt.EgressRoute = routeInfo
+		return n.writePacket(pkt)
 	case *tcpip.ErrWouldBlock:
 		// As per relevant RFCs, we should queue packets while we wait for link
 		// resolution to complete.
@@ -370,29 +371,25 @@ func (n *nic) WritePacket(r *Route, protocol tcpip.NetworkProtocolNumber, pkt *P
 		//   SHOULD be limited to some small value. When a queue overflows, the new
 		//   arrival SHOULD replace the oldest entry. Once address resolution
 		//   completes, the node transmits any queued packets.
-		return n.linkResQueue.enqueue(r, protocol, pkt)
+		return n.linkResQueue.enqueue(r, pkt)
 	default:
 		return err
 	}
 }
 
 // WritePacketToRemote implements NetworkInterface.
-func (n *nic) WritePacketToRemote(remoteLinkAddr tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) tcpip.Error {
-	var r RouteInfo
-	r.NetProto = protocol
-	r.RemoteLinkAddress = remoteLinkAddr
-	return n.writePacket(r, protocol, pkt)
+func (n *nic) WritePacketToRemote(remoteLinkAddr tcpip.LinkAddress, pkt *PacketBuffer) tcpip.Error {
+	pkt.EgressRoute = RouteInfo{routeInfo: routeInfo{NetProto: pkt.NetworkProtocolNumber}, RemoteLinkAddress: remoteLinkAddr}
+	return n.writePacket(pkt)
 }
 
-func (n *nic) writePacket(r RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) tcpip.Error {
+func (n *nic) writePacket(pkt *PacketBuffer) tcpip.Error {
 	// WritePacket modifies pkt, calculate numBytes first.
 	numBytes := pkt.Size()
 
-	pkt.EgressRoute = r
-	pkt.NetworkProtocolNumber = protocol
-	n.deliverOutboundPacket(r.RemoteLinkAddress, pkt)
+	n.deliverOutboundPacket(pkt.EgressRoute.RemoteLinkAddress, pkt)
 
-	if err := n.qDisc.WritePacket(r, protocol, pkt); err != nil {
+	if err := n.qDisc.WritePacket(pkt); err != nil {
 		return err
 	}
 

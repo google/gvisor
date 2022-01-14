@@ -48,7 +48,7 @@ type Endpoint struct {
 	mtu        uint32
 }
 
-func (e *Endpoint) deliverPackets(r stack.RouteInfo, proto tcpip.NetworkProtocolNumber, pkts stack.PacketBufferList) {
+func (e *Endpoint) deliverPackets(pkts stack.PacketBufferList) {
 	if !e.linked.IsAttached() {
 		return
 	}
@@ -65,15 +65,16 @@ func (e *Endpoint) deliverPackets(r stack.RouteInfo, proto tcpip.NetworkProtocol
 		newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Data: buffer.NewVectorisedView(pkt.Size(), pkt.Views()),
 		})
-		e.linked.dispatcher.DeliverNetworkPacket(r.LocalLinkAddress /* remote */, r.RemoteLinkAddress /* local */, proto, newPkt)
+		r := pkt.EgressRoute
+		e.linked.dispatcher.DeliverNetworkPacket(r.LocalLinkAddress /* remote */, r.RemoteLinkAddress /* local */, pkt.NetworkProtocolNumber, newPkt)
 		newPkt.DecRef()
 	}
 }
 
 // WritePackets implements stack.LinkEndpoint.
-func (e *Endpoint) WritePackets(r stack.RouteInfo, pkts stack.PacketBufferList, proto tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
+func (e *Endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 	n := pkts.Len()
-	e.deliverPackets(r, proto, pkts)
+	e.deliverPackets(pkts)
 	return n, nil
 }
 
@@ -123,6 +124,6 @@ func (*Endpoint) AddHeader(_, _ tcpip.LinkAddress, _ tcpip.NetworkProtocolNumber
 func (e *Endpoint) WriteRawPacket(pkt *stack.PacketBuffer) tcpip.Error {
 	var pkts stack.PacketBufferList
 	pkts.PushBack(pkt)
-	_, err := e.WritePackets(stack.RouteInfo{}, pkts, 0)
+	_, err := e.WritePackets(pkts)
 	return err
 }

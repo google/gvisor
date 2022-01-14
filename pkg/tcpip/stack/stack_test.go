@@ -196,7 +196,7 @@ func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, params stack.NetworkHe
 		return nil
 	}
 
-	return f.nic.WritePacket(r, fakeNetNumber, pkt)
+	return f.nic.WritePacket(r, pkt)
 }
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.

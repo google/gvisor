@@ -30,7 +30,6 @@ const (
 
 type pendingPacket struct {
 	routeInfo RouteInfo
-	proto     tcpip.NetworkProtocolNumber
 	pkt       *PacketBuffer
 }
 
@@ -56,10 +55,10 @@ type packetsPendingLinkResolution struct {
 	}
 }
 
-func (f *packetsPendingLinkResolution) incrementOutgoingPacketErrors(proto tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
+func (f *packetsPendingLinkResolution) incrementOutgoingPacketErrors(pkt *PacketBuffer) {
 	f.nic.stack.stats.IP.OutgoingPacketErrors.Increment()
 
-	if ipEndpointStats, ok := f.nic.getNetworkEndpoint(proto).Stats().(IPNetworkEndpointStats); ok {
+	if ipEndpointStats, ok := f.nic.getNetworkEndpoint(pkt.NetworkProtocolNumber).Stats().(IPNetworkEndpointStats); ok {
 		ipEndpointStats.IPStats().OutgoingPacketErrors.Increment()
 	}
 }
@@ -101,7 +100,7 @@ func (f *packetsPendingLinkResolution) dequeue(ch <-chan struct{}, linkAddr tcpi
 // If the maximum number of pending resolutions is reached, the packets
 // associated with the oldest link resolution will be dequeued as if they failed
 // link resolution.
-func (f *packetsPendingLinkResolution) enqueue(r *Route, proto tcpip.NetworkProtocolNumber, pkt *PacketBuffer) tcpip.Error {
+func (f *packetsPendingLinkResolution) enqueue(r *Route, pkt *PacketBuffer) tcpip.Error {
 	f.mu.Lock()
 	// Make sure we attempt resolution while holding f's lock so that we avoid
 	// a race where link resolution completes before we enqueue the packets.
@@ -119,7 +118,8 @@ func (f *packetsPendingLinkResolution) enqueue(r *Route, proto tcpip.NetworkProt
 		// The route resolved immediately, so we don't need to wait for link
 		// resolution to send the packet.
 		f.mu.Unlock()
-		return f.nic.writePacket(routeInfo, proto, pkt)
+		pkt.EgressRoute = routeInfo
+		return f.nic.writePacket(pkt)
 	case *tcpip.ErrWouldBlock:
 		// We need to wait for link resolution to complete.
 	default:
@@ -132,13 +132,12 @@ func (f *packetsPendingLinkResolution) enqueue(r *Route, proto tcpip.NetworkProt
 	packets, ok := f.mu.packets[ch]
 	packets = append(packets, pendingPacket{
 		routeInfo: routeInfo,
-		proto:     proto,
 		pkt:       pkt,
 	})
 	pkt.IncRef()
 
 	if len(packets) > maxPendingPacketsPerResolution {
-		f.incrementOutgoingPacketErrors(packets[0].proto, packets[0].pkt)
+		f.incrementOutgoingPacketErrors(packets[0].pkt)
 		packets[0] = pendingPacket{}
 		packets = packets[1:]
 
@@ -193,11 +192,12 @@ func (f *packetsPendingLinkResolution) dequeuePackets(packets []pendingPacket, l
 	for _, p := range packets {
 		if err == nil {
 			p.routeInfo.RemoteLinkAddress = linkAddr
-			_ = f.nic.writePacket(p.routeInfo, p.proto, p.pkt)
+			p.pkt.EgressRoute = p.routeInfo
+			_ = f.nic.writePacket(p.pkt)
 		} else {
-			f.incrementOutgoingPacketErrors(p.proto, p.pkt)
+			f.incrementOutgoingPacketErrors(p.pkt)
 
-			if linkResolvableEP, ok := f.nic.getNetworkEndpoint(p.proto).(LinkResolvableNetworkEndpoint); ok {
+			if linkResolvableEP, ok := f.nic.getNetworkEndpoint(p.pkt.NetworkProtocolNumber).(LinkResolvableNetworkEndpoint); ok {
 				linkResolvableEP.HandleLinkResolutionFailure(p.pkt)
 			}
 		}

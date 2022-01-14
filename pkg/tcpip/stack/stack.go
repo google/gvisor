@@ -1625,7 +1625,7 @@ func (s *Stack) WritePacketToRemote(nicID tcpip.NICID, remote tcpip.LinkAddress,
 	})
 	defer pkt.DecRef()
 	pkt.NetworkProtocolNumber = netProto
-	return nic.WritePacketToRemote(remote, netProto, pkt)
+	return nic.WritePacketToRemote(remote, pkt)
 }
 
 // WriteRawPacket writes data directly to the specified NIC without adding any

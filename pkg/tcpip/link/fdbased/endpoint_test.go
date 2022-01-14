@@ -224,8 +224,8 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash u
 	}
 	var pkts stack.PacketBufferList
 	pkts.PushBack(pkt)
-	if _, err := c.ep.WritePackets(r, pkts, proto); err != nil {
-		t.Fatalf("WritePacket failed: %v", err)
+	if _, err := c.ep.WritePackets(pkts); err != nil {
+		t.Fatalf("WritePackets failed: %s", err)
 	}
 
 	// Read from the corresponding FD, then compare with what we wrote.
@@ -345,8 +345,8 @@ func TestPreserveSrcAddress(t *testing.T) {
 	pkt.EgressRoute = r
 	var pkts stack.PacketBufferList
 	pkts.PushBack(pkt)
-	if _, err := c.ep.WritePackets(r, pkts, proto); err != nil {
-		t.Fatalf("WritePacket failed: %v", err)
+	if _, err := c.ep.WritePackets(pkts); err != nil {
+		t.Fatalf("WritePackets failed: %s", err)
 	}
 
 	// Read from the FD, then compare with what we wrote.
