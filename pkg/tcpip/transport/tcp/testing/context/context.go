@@ -499,6 +499,7 @@ func (c *Context) SendPacketWithAddrs(payload []byte, h *Headers, src, dst tcpip
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: c.BuildSegmentWithAddrs(payload, h, src, dst),
 	})
+	defer pkt.DecRef()
 	c.linkEP.InjectInbound(ipv4.ProtocolNumber, pkt)
 }
 
@@ -672,6 +673,7 @@ func (c *Context) SendV6PacketWithAddrs(payload []byte, h *Headers, src, dst tcp
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
 	})
+	defer pkt.DecRef()
 	c.linkEP.InjectInbound(ipv6.ProtocolNumber, pkt)
 }
 

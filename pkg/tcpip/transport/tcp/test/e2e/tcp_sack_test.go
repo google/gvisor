@@ -12,58 +12,47 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tcp_test
+package tcp_sack_test
 
 import (
 	"bytes"
 	"fmt"
 	"log"
+	"os"
 	"reflect"
 	"testing"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp/test/e2e"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp/testing/context"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
-// createConnectedWithSACKPermittedOption creates and connects c.ep with the
-// SACKPermitted option enabled if the stack in the context has the SACK support
-// enabled.
-func createConnectedWithSACKPermittedOption(c *context.Context) *context.RawEndpoint {
-	return c.CreateConnectedWithOptionsNoDelay(header.TCPSynOptions{SACKPermitted: c.SACKEnabled()})
-}
-
-// createConnectedWithSACKAndTS creates and connects c.ep with the SACK & TS
-// option enabled if the stack in the context has SACK and TS enabled.
-func createConnectedWithSACKAndTS(c *context.Context) *context.RawEndpoint {
-	return c.CreateConnectedWithOptionsNoDelay(header.TCPSynOptions{SACKPermitted: c.SACKEnabled(), TS: true})
-}
-
-func setStackSACKPermitted(t *testing.T, c *context.Context, enable bool) {
-	t.Helper()
-	opt := tcpip.TCPSACKEnabled(enable)
-	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
-		t.Fatalf("c.s.SetTransportProtocolOption(%d, &%T(%t)): %s", tcp.ProtocolNumber, opt, opt, err)
-	}
-}
+const (
+	maxPayload   = 10
+	tsOptionSize = 12
+	mtu          = header.TCPMinimumSize + header.IPv4MinimumSize + e2e.MaxTCPOptionSize + maxPayload
+)
 
 // TestSackPermittedConnect establishes a connection with the SACK option
 // enabled.
 func TestSackPermittedConnect(t *testing.T) {
 	for _, sackEnabled := range []bool{false, true} {
 		t.Run(fmt.Sprintf("stack.sackEnabled: %v", sackEnabled), func(t *testing.T) {
-			c := context.New(t, defaultMTU)
+			c := context.New(t, e2e.DefaultMTU)
 			defer c.Cleanup()
 
-			setStackSACKPermitted(t, c, sackEnabled)
-			setStackTCPRecovery(t, c, 0)
-			rep := createConnectedWithSACKPermittedOption(c)
+			e2e.SetStackSACKPermitted(t, c, sackEnabled)
+			e2e.SetStackTCPRecovery(t, c, 0)
+			rep := e2e.CreateConnectedWithSACKPermittedOption(c)
 			data := []byte{1, 2, 3}
 
 			rep.SendPacket(data, nil)
@@ -103,11 +92,11 @@ func TestSackPermittedConnect(t *testing.T) {
 func TestSackDisabledConnect(t *testing.T) {
 	for _, sackEnabled := range []bool{false, true} {
 		t.Run(fmt.Sprintf("sackEnabled: %v", sackEnabled), func(t *testing.T) {
-			c := context.New(t, defaultMTU)
+			c := context.New(t, e2e.DefaultMTU)
 			defer c.Cleanup()
 
-			setStackSACKPermitted(t, c, sackEnabled)
-			setStackTCPRecovery(t, c, 0)
+			e2e.SetStackSACKPermitted(t, c, sackEnabled)
+			e2e.SetStackTCPRecovery(t, c, 0)
 
 			rep := c.CreateConnectedWithOptionsNoDelay(header.TCPSynOptions{})
 
@@ -159,7 +148,7 @@ func TestSackPermittedAccept(t *testing.T) {
 		t.Run(fmt.Sprintf("test: %#v", tc), func(t *testing.T) {
 			for _, sackEnabled := range []bool{false, true} {
 				t.Run(fmt.Sprintf("test stack.sackEnabled: %v", sackEnabled), func(t *testing.T) {
-					c := context.New(t, defaultMTU)
+					c := context.New(t, e2e.DefaultMTU)
 					defer c.Cleanup()
 
 					if tc.cookieEnabled {
@@ -168,10 +157,10 @@ func TestSackPermittedAccept(t *testing.T) {
 							t.Fatalf("SetTransportProtocolOption(%d, &%T(%t)): %s", tcp.ProtocolNumber, opt, opt, err)
 						}
 					}
-					setStackSACKPermitted(t, c, sackEnabled)
-					setStackTCPRecovery(t, c, 0)
+					e2e.SetStackSACKPermitted(t, c, sackEnabled)
+					e2e.SetStackTCPRecovery(t, c, 0)
 
-					rep := c.AcceptWithOptionsNoDelay(tc.wndScale, header.TCPSynOptions{MSS: defaultIPv4MSS, SACKPermitted: tc.sackPermitted})
+					rep := c.AcceptWithOptionsNoDelay(tc.wndScale, header.TCPSynOptions{MSS: e2e.DefaultIPv4MSS, SACKPermitted: tc.sackPermitted})
 					//  Now verify no SACK blocks are
 					//  received when sack is disabled.
 					data := []byte{1, 2, 3}
@@ -232,7 +221,7 @@ func TestSackDisabledAccept(t *testing.T) {
 		t.Run(fmt.Sprintf("test: %#v", tc), func(t *testing.T) {
 			for _, sackEnabled := range []bool{false, true} {
 				t.Run(fmt.Sprintf("test: sackEnabled: %v", sackEnabled), func(t *testing.T) {
-					c := context.New(t, defaultMTU)
+					c := context.New(t, e2e.DefaultMTU)
 					defer c.Cleanup()
 
 					if tc.cookieEnabled {
@@ -242,10 +231,10 @@ func TestSackDisabledAccept(t *testing.T) {
 						}
 					}
 
-					setStackSACKPermitted(t, c, sackEnabled)
-					setStackTCPRecovery(t, c, 0)
+					e2e.SetStackSACKPermitted(t, c, sackEnabled)
+					e2e.SetStackTCPRecovery(t, c, 0)
 
-					rep := c.AcceptWithOptionsNoDelay(tc.wndScale, header.TCPSynOptions{MSS: defaultIPv4MSS})
+					rep := c.AcceptWithOptionsNoDelay(tc.wndScale, header.TCPSynOptions{MSS: e2e.DefaultIPv4MSS})
 
 					//  Now verify no SACK blocks are
 					//  received when sack is disabled.
@@ -373,11 +362,9 @@ func TestSACKRecovery(t *testing.T) {
 	// Enabling SACK means the payload size is reduced to account
 	// for the extra space required for the TCP options.
 	//
-	// We increase the MTU by 40 bytes to account for SACK and Timestamp
-	// options.
-	const maxTCPOptionSize = 40
-
-	c := context.New(t, uint32(header.TCPMinimumSize+header.IPv4MinimumSize+maxTCPOptionSize+maxPayload))
+	// We increase the MTU by e2e.MaxTCPOptionSize bytes to account for SACK
+	// and Timestamp options.
+	c := context.New(t, uint32(header.TCPMinimumSize+header.IPv4MinimumSize+e2e.MaxTCPOptionSize+maxPayload))
 	defer c.Cleanup()
 
 	c.Stack().AddTCPProbe(func(s stack.TCPEndpointState) {
@@ -390,9 +377,9 @@ func TestSACKRecovery(t *testing.T) {
 		// causes the test to panic due to logging after test finished.
 		log.Printf("state: %+v\n", s)
 	})
-	setStackSACKPermitted(t, c, true)
-	setStackTCPRecovery(t, c, 0)
-	createConnectedWithSACKAndTS(c)
+	e2e.SetStackSACKPermitted(t, c, true)
+	e2e.SetStackTCPRecovery(t, c, 0)
+	e2e.CreateConnectedWithSACKAndTS(c)
 
 	const iterations = 3
 	data := make([]byte, 2*maxPayload*(tcp.InitialCwnd<<(iterations+1)))
@@ -604,7 +591,7 @@ func TestRecoveryEntry(t *testing.T) {
 	defer c.Cleanup()
 
 	numPackets := 5
-	data := sendAndReceiveWithSACK(t, c, numPackets, false /* enableRACK */)
+	data := e2e.SendAndReceiveWithSACK(t, c, maxPayload, numPackets, false /* enableRACK */)
 
 	// Ack #1 packet.
 	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
@@ -768,8 +755,8 @@ func TestDetectSpuriousRecoveryWithRTO(t *testing.T) {
 		close(probeDone)
 	})
 
-	setStackSACKPermitted(t, c, true)
-	createConnectedWithSACKAndTS(c)
+	e2e.SetStackSACKPermitted(t, c, true)
+	e2e.CreateConnectedWithSACKAndTS(c)
 	numPackets := 5
 	data := make([]byte, numPackets*maxPayload)
 	for i := range data {
@@ -854,8 +841,8 @@ func TestSACKDetectSpuriousRecoveryWithDupACK(t *testing.T) {
 		close(probeDone)
 	})
 
-	setStackSACKPermitted(t, c, true)
-	createConnectedWithSACKAndTS(c)
+	e2e.SetStackSACKPermitted(t, c, true)
+	e2e.CreateConnectedWithSACKAndTS(c)
 	numPackets := 5
 	data := make([]byte, numPackets*maxPayload)
 	for i := range data {
@@ -930,10 +917,10 @@ func TestSACKDetectSpuriousRecoveryWithDupACK(t *testing.T) {
 func TestNoSpuriousRecoveryWithDSACK(t *testing.T) {
 	c := context.New(t, uint32(mtu))
 	defer c.Cleanup()
-	setStackSACKPermitted(t, c, true)
-	createConnectedWithSACKAndTS(c)
+	e2e.SetStackSACKPermitted(t, c, true)
+	e2e.CreateConnectedWithSACKAndTS(c)
 	numPackets := 5
-	data := sendAndReceiveWithSACK(t, c, numPackets, true /* enableRACK */)
+	data := e2e.SendAndReceiveWithSACK(t, c, maxPayload, numPackets, true /* enableRACK */)
 
 	// Receive the retransmitted packet after TLP.
 	c.ReceiveAndCheckPacketWithOptions(data, 4*maxPayload, maxPayload, tsOptionSize)
@@ -957,4 +944,14 @@ func TestNoSpuriousRecoveryWithDSACK(t *testing.T) {
 	c.SendAckWithSACK(seq, 6*maxPayload, []header.SACKBlock{{start, end}})
 
 	verifySpuriousRecoveryMetric(t, c, 0 /* numSpuriousRecovery */, 0 /* numSpuriousRTO */)
+}
+
+func TestMain(m *testing.M) {
+	refs.SetLeakMode(refs.LeaksPanic)
+	code := m.Run()
+	// Allow TCP async work to complete to avoid false reports of leaks.
+	// TODO(gvisor.dev/issue/5940): Use fake clock in tests.
+	time.Sleep(1 * time.Second)
+	refsvfs2.DoLeakCheck()
+	os.Exit(code)
 }

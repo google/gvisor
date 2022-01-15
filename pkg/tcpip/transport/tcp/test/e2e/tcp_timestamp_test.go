@@ -12,19 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tcp_test
+package tcp_timestamp_test
 
 import (
 	"bytes"
 	"math/rand"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp/test/e2e"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp/testing/context"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -39,7 +43,7 @@ func createConnectedWithTimestampOption(c *context.Context) *context.RawEndpoint
 // an active connect and sets the TS Echo Reply fields correctly when the
 // SYN-ACK also indicates support for the TS option and provides a TSVal.
 func TestTimeStampEnabledConnect(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	rep := createConnectedWithTimestampOption(c)
@@ -128,14 +132,14 @@ func TestTimeStampEnabledConnect(t *testing.T) {
 // timestamp option is not enabled and future packets do not contain a
 // timestamp.
 func TestTimeStampDisabledConnect(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateConnectedWithOptionsNoDelay(header.TCPSynOptions{})
 }
 
 func timeStampEnabledAccept(t *testing.T, cookieEnabled bool, wndScale int, wndSize uint16) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	if cookieEnabled {
@@ -147,7 +151,7 @@ func timeStampEnabledAccept(t *testing.T, cookieEnabled bool, wndScale int, wndS
 
 	t.Logf("Test w/ CookieEnabled = %v", cookieEnabled)
 	tsVal := rand.Uint32()
-	c.AcceptWithOptionsNoDelay(wndScale, header.TCPSynOptions{MSS: defaultIPv4MSS, TS: true, TSVal: tsVal})
+	c.AcceptWithOptionsNoDelay(wndScale, header.TCPSynOptions{MSS: e2e.DefaultIPv4MSS, TS: true, TSVal: tsVal})
 
 	// Now send some data and validate that timestamp is echoed correctly in the ACK.
 	data := []byte{1, 2, 3}
@@ -198,7 +202,7 @@ func TestTimeStampEnabledAccept(t *testing.T) {
 }
 
 func timeStampDisabledAccept(t *testing.T, cookieEnabled bool, wndScale int, wndSize uint16) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	if cookieEnabled {
@@ -209,7 +213,7 @@ func timeStampDisabledAccept(t *testing.T, cookieEnabled bool, wndScale int, wnd
 	}
 
 	t.Logf("Test w/ CookieEnabled = %v", cookieEnabled)
-	c.AcceptWithOptionsNoDelay(wndScale, header.TCPSynOptions{MSS: defaultIPv4MSS})
+	c.AcceptWithOptionsNoDelay(wndScale, header.TCPSynOptions{MSS: e2e.DefaultIPv4MSS})
 
 	// Now send some data with the accepted connection endpoint and validate
 	// that no timestamp option is sent in the TCP segment.
@@ -261,7 +265,7 @@ func TestSendGreaterThanMTUWithOptions(t *testing.T) {
 	defer c.Cleanup()
 
 	createConnectedWithTimestampOption(c)
-	testBrokenUpWrite(t, c, maxPayload)
+	e2e.CheckBrokenUpWrite(t, c, maxPayload)
 }
 
 func TestSegmentNotDroppedWhenTimestampMissing(t *testing.T) {
@@ -308,4 +312,14 @@ func TestSegmentNotDroppedWhenTimestampMissing(t *testing.T) {
 	if got, want := buf.Bytes(), data; bytes.Compare(got, want) != 0 {
 		t.Fatalf("Data is different: got: %v, want: %v", got, want)
 	}
+}
+
+func TestMain(m *testing.M) {
+	refs.SetLeakMode(refs.LeaksPanic)
+	code := m.Run()
+	// Allow TCP async work to complete to avoid false reports of leaks.
+	// TODO(gvisor.dev/issue/5940): Use fake clock in tests.
+	time.Sleep(1 * time.Second)
+	refsvfs2.DoLeakCheck()
+	os.Exit(code)
 }

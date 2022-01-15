@@ -79,51 +79,17 @@ go_library(
 )
 
 go_test(
-    name = "tcp_x_test",
-    size = "large",
-    srcs = [
-        "dual_stack_test.go",
-        "forwarder_test.go",
-        "rcv_test.go",
-        "sack_scoreboard_test.go",
-        "tcp_noracedetector_test.go",
-        "tcp_rack_test.go",
-        "tcp_sack_test.go",
-        "tcp_test.go",
-        "tcp_timestamp_test.go",
-    ],
-    shard_count = more_shards,
-    deps = [
-        ":tcp",
-        "//pkg/rand",
-        "//pkg/sync",
-        "//pkg/tcpip",
-        "//pkg/tcpip/checker",
-        "//pkg/tcpip/faketime",
-        "//pkg/tcpip/header",
-        "//pkg/tcpip/link/loopback",
-        "//pkg/tcpip/link/sniffer",
-        "//pkg/tcpip/network/ipv4",
-        "//pkg/tcpip/network/ipv6",
-        "//pkg/tcpip/seqnum",
-        "//pkg/tcpip/stack",
-        "//pkg/tcpip/testutil",
-        "//pkg/tcpip/transport/tcp/testing/context",
-        "//pkg/test/testutil",
-        "//pkg/waiter",
-        "@com_github_google_go_cmp//cmp:go_default_library",
-    ],
-)
-
-go_test(
     name = "tcp_test",
     size = "small",
     srcs = [
+        "main_test.go",
         "segment_test.go",
         "timer_test.go",
     ],
     library = ":tcp",
     deps = [
+        "//pkg/refs",
+        "//pkg/refsvfs2",
         "//pkg/sleep",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/faketime",

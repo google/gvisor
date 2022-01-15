@@ -19,12 +19,15 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/rand"
+	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -38,6 +41,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	tcpiptestutil "gvisor.dev/gvisor/pkg/tcpip/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp/test/e2e"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp/testing/context"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -103,19 +107,8 @@ func (e *endpointTester) CheckReadFull(t *testing.T, count int, notifyRead <-cha
 	return buf.Bytes()
 }
 
-const (
-	// defaultMTU is the MTU, in bytes, used throughout the tests, except
-	// where another value is explicitly used. It is chosen to match the MTU
-	// of loopback interfaces on linux systems.
-	defaultMTU = 65535
-
-	// defaultIPv4MSS is the MSS sent by the network stack in SYN/SYN-ACK for an
-	// IPv4 endpoint when the MTU is set to defaultMTU in the test.
-	defaultIPv4MSS = defaultMTU - header.IPv4MinimumSize - header.TCPMinimumSize
-)
-
 func TestGiveUpConnect(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	var wq waiter.Queue
@@ -162,7 +155,7 @@ func TestGiveUpConnect(t *testing.T) {
 
 // Test for ICMP error handling without completing handshake.
 func TestConnectICMPError(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	var wq waiter.Queue
@@ -196,7 +189,7 @@ func TestConnectICMPError(t *testing.T) {
 	// tests the handshake completion logic on ICMP errors.
 	wep.StopWork()
 
-	c.SendICMPPacket(header.ICMPv4DstUnreachable, header.ICMPv4HostUnreachable, nil, syn, defaultMTU)
+	c.SendICMPPacket(header.ICMPv4DstUnreachable, header.ICMPv4HostUnreachable, nil, syn, e2e.DefaultMTU)
 
 	for {
 		if err := wep.LastErrorLocked(); err != nil {
@@ -231,7 +224,7 @@ func TestConnectICMPError(t *testing.T) {
 }
 
 func TestConnectIncrementActiveConnection(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	stats := c.Stack().Stats()
@@ -244,7 +237,7 @@ func TestConnectIncrementActiveConnection(t *testing.T) {
 }
 
 func TestConnectDoesNotIncrementFailedConnectionAttempts(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	stats := c.Stack().Stats()
@@ -260,7 +253,7 @@ func TestConnectDoesNotIncrementFailedConnectionAttempts(t *testing.T) {
 }
 
 func TestActiveFailedConnectionAttemptIncrement(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	stats := c.Stack().Stats()
@@ -287,7 +280,7 @@ func TestActiveFailedConnectionAttemptIncrement(t *testing.T) {
 }
 
 func TestCloseWithoutConnect(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	// Create TCP endpoint.
@@ -305,7 +298,7 @@ func TestCloseWithoutConnect(t *testing.T) {
 }
 
 func TestTCPSegmentsSentIncrement(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	stats := c.Stack().Stats()
@@ -322,7 +315,7 @@ func TestTCPSegmentsSentIncrement(t *testing.T) {
 }
 
 func TestTCPResetsSentIncrement(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 	stats := c.Stack().Stats()
 	wq := &waiter.Queue{}
@@ -384,7 +377,7 @@ func TestTCPResetsSentIncrement(t *testing.T) {
 // DstUnreachable packet when we try send a packet which is not part
 // of an active session.
 func TestTCPResetsSentNoICMP(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 	stats := c.Stack().Stats()
 
@@ -416,7 +409,7 @@ func TestTCPResetsSentNoICMP(t *testing.T) {
 // a RST if an ACK is received on the listening socket for which there is no
 // active handshake in progress and we are not using SYN cookies.
 func TestTCPResetSentForACKWhenNotUsingSynCookies(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	// Set TCPLingerTimeout to 5 seconds so that sockets are marked closed
@@ -526,7 +519,7 @@ func TestTCPResetSentForACKWhenNotUsingSynCookies(t *testing.T) {
 }
 
 func TestTCPResetsReceivedIncrement(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	stats := c.Stack().Stats()
@@ -550,7 +543,7 @@ func TestTCPResetsReceivedIncrement(t *testing.T) {
 }
 
 func TestTCPResetsDoNotGenerateResets(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	stats := c.Stack().Stats()
@@ -575,14 +568,14 @@ func TestTCPResetsDoNotGenerateResets(t *testing.T) {
 }
 
 func TestActiveHandshake(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
 }
 
 func TestNonBlockingClose(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
@@ -598,7 +591,7 @@ func TestNonBlockingClose(t *testing.T) {
 }
 
 func TestConnectResetAfterClose(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	// Set TCPLinger to 3 seconds so that sockets are marked closed
@@ -674,7 +667,7 @@ func TestConnectResetAfterClose(t *testing.T) {
 // TestCurrentConnectedIncrement tests increment of the current
 // established and connected counters.
 func TestCurrentConnectedIncrement(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	// Set TCPTimeWaitTimeout to 1 seconds so that sockets are marked closed
@@ -760,7 +753,7 @@ func TestCurrentConnectedIncrement(t *testing.T) {
 // when the endpoint transitions to StateClose. The in-flight segments would be
 // re-enqueued to a any listening endpoint.
 func TestClosingWithEnqueuedSegments(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
@@ -875,7 +868,7 @@ func TestClosingWithEnqueuedSegments(t *testing.T) {
 }
 
 func TestSimpleReceive(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
@@ -1137,7 +1130,7 @@ func TestUserSuppliedMSSOnListenAccept(t *testing.T) {
 	}
 }
 func TestSendRstOnListenerRxSynAckV4(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.Create(-1)
@@ -1165,7 +1158,7 @@ func TestSendRstOnListenerRxSynAckV4(t *testing.T) {
 }
 
 func TestSendRstOnListenerRxSynAckV6(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateV6Endpoint(true)
@@ -1198,7 +1191,7 @@ func TestSendRstOnListenerRxSynAckV6(t *testing.T) {
 //
 // This test uses IPv4.
 func TestTCPAckBeforeAcceptV4(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.Create(-1)
@@ -1236,7 +1229,7 @@ func TestTCPAckBeforeAcceptV4(t *testing.T) {
 //
 // This test uses IPv6.
 func TestTCPAckBeforeAcceptV6(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateV6Endpoint(true)
@@ -1269,7 +1262,7 @@ func TestTCPAckBeforeAcceptV6(t *testing.T) {
 }
 
 func TestSendRstOnListenerRxAckV4(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.Create(-1 /* epRcvBuf */)
@@ -1297,7 +1290,7 @@ func TestSendRstOnListenerRxAckV4(t *testing.T) {
 }
 
 func TestSendRstOnListenerRxAckV6(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateV6Endpoint(true /* v6Only */)
@@ -1327,7 +1320,7 @@ func TestSendRstOnListenerRxAckV6(t *testing.T) {
 // TestListenShutdown tests for the listening endpoint replying with RST
 // on read shutdown.
 func TestListenShutdown(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.Create(-1 /* epRcvBuf */)
@@ -1452,7 +1445,7 @@ func TestListenerReadinessOnEvent(t *testing.T) {
 // drain the accept-queue when closed. This should reset all of the
 // pending connections that are waiting to be accepted.
 func TestListenCloseWhileConnect(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.Create(-1 /* epRcvBuf */)
@@ -1486,7 +1479,7 @@ func TestListenCloseWhileConnect(t *testing.T) {
 }
 
 func TestTOSV4(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	ep, err := c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
@@ -1509,7 +1502,7 @@ func TestTOSV4(t *testing.T) {
 		t.Errorf("got GetSockOptInt(IPv4TOSOption) = %d, want = %d", v, tos)
 	}
 
-	testV4Connect(t, c, checker.TOS(tos, 0))
+	e2e.TestV4Connect(t, c, checker.TOS(tos, 0))
 
 	data := []byte{1, 2, 3}
 	var r bytes.Reader
@@ -1538,7 +1531,7 @@ func TestTOSV4(t *testing.T) {
 }
 
 func TestTrafficClassV6(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateV6Endpoint(false)
@@ -1558,7 +1551,7 @@ func TestTrafficClassV6(t *testing.T) {
 	}
 
 	// Test the connection request.
-	testV6Connect(t, c, checker.TOS(tos, 0))
+	e2e.TestV6Connect(t, c, checker.TOS(tos, 0))
 
 	data := []byte{1, 2, 3}
 	var r bytes.Reader
@@ -1597,7 +1590,7 @@ func TestConnectBindToDevice(t *testing.T) {
 		{"AnyDevice", 0, tcp.StateEstablished},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			c := context.New(t, defaultMTU)
+			c := context.New(t, e2e.DefaultMTU)
 			defer c.Cleanup()
 
 			c.Create(-1)
@@ -1658,7 +1651,7 @@ func TestShutdownConnectingSocket(t *testing.T) {
 		{"ShutdownReadWrite", tcpip.ShutdownRead | tcpip.ShutdownWrite},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			c := context.New(t, defaultMTU)
+			c := context.New(t, e2e.DefaultMTU)
 			defer c.Cleanup()
 
 			// Create an endpoint, don't handshake because we want to interfere with
@@ -1722,7 +1715,7 @@ func TestSynSent(t *testing.T) {
 		{"CloseOnSynSent", false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			c := context.New(t, defaultMTU)
+			c := context.New(t, e2e.DefaultMTU)
 			defer c.Cleanup()
 
 			// Create an endpoint, don't handshake because we want to interfere with the
@@ -1800,7 +1793,7 @@ func TestSynSent(t *testing.T) {
 }
 
 func TestOutOfOrderReceive(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
@@ -1868,7 +1861,7 @@ func TestOutOfOrderReceive(t *testing.T) {
 }
 
 func TestOutOfOrderFlood(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	rcvBufSz := math.MaxUint16
@@ -1942,7 +1935,7 @@ func TestOutOfOrderFlood(t *testing.T) {
 }
 
 func TestRstOnCloseWithUnreadData(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
@@ -2011,7 +2004,7 @@ func TestRstOnCloseWithUnreadData(t *testing.T) {
 }
 
 func TestRstOnCloseWithUnreadDataFinConvertRst(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
@@ -2102,7 +2095,7 @@ func TestRstOnCloseWithUnreadDataFinConvertRst(t *testing.T) {
 }
 
 func TestShutdownRead(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
@@ -2122,7 +2115,7 @@ func TestShutdownRead(t *testing.T) {
 }
 
 func TestFullWindowReceive(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	const rcvBufSz = 10
@@ -2405,7 +2398,7 @@ func TestSmallReceiveBufferReadiness(t *testing.T) {
 // segment overhead. It tests for the right edge of the window to not grow when
 // the endpoint is not being read from.
 func TestSmallSegReceiveWindowAdvertisement(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	opt := tcpip.TCPReceiveBufferSizeRangeOption{
@@ -2417,7 +2410,7 @@ func TestSmallSegReceiveWindowAdvertisement(t *testing.T) {
 		t.Fatalf("SetTransportProtocolOption(%d, &%#v): %s", tcp.ProtocolNumber, opt, err)
 	}
 
-	c.AcceptWithOptionsNoDelay(tcp.FindWndScale(seqnum.Size(opt.Default)), header.TCPSynOptions{MSS: defaultIPv4MSS})
+	c.AcceptWithOptionsNoDelay(tcp.FindWndScale(seqnum.Size(opt.Default)), header.TCPSynOptions{MSS: e2e.DefaultIPv4MSS})
 
 	// Bump up the receive buffer size such that, when the receive window grows,
 	// the scaled window exceeds maxUint16.
@@ -2482,7 +2475,7 @@ func TestSmallSegReceiveWindowAdvertisement(t *testing.T) {
 }
 
 func TestNoWindowShrinking(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	// Start off with a certain receive buffer then cut it in half and verify that
@@ -2613,7 +2606,7 @@ func TestNoWindowShrinking(t *testing.T) {
 }
 
 func TestSimpleSend(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
@@ -2654,7 +2647,7 @@ func TestSimpleSend(t *testing.T) {
 }
 
 func TestZeroWindowSend(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateConnected(context.TestInitialSequenceNumber, 0 /* rcvWnd */, -1 /* epRcvBuf */)
@@ -2719,7 +2712,7 @@ func TestZeroWindowSend(t *testing.T) {
 func TestScaledWindowConnect(t *testing.T) {
 	// This test ensures that window scaling is used when the peer
 	// does advertise it and connection is established with Connect().
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	// Set the window size greater than the maximum non-scaled window.
@@ -2753,7 +2746,7 @@ func TestScaledWindowConnect(t *testing.T) {
 func TestNonScaledWindowConnect(t *testing.T) {
 	// This test ensures that window scaling is not used when the peer
 	// doesn't advertise it and connection is established with Connect().
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	// Set the window size greater than the maximum non-scaled window.
@@ -2785,7 +2778,7 @@ func TestNonScaledWindowConnect(t *testing.T) {
 func TestScaledWindowAccept(t *testing.T) {
 	// This test ensures that window scaling is used when the peer
 	// does advertise it and connection is established with Accept().
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	// Create EP and start listening.
@@ -2809,7 +2802,7 @@ func TestScaledWindowAccept(t *testing.T) {
 
 	// Do 3-way handshake.
 	// wndScale expected is 3 as 65535 * 3 * 2 < 65535 * 2^3 but > 65535 *2 *2
-	c.PassiveConnectWithOptions(100, 3 /* wndScale */, header.TCPSynOptions{MSS: defaultIPv4MSS}, 0 /* delay */)
+	c.PassiveConnectWithOptions(100, 3 /* wndScale */, header.TCPSynOptions{MSS: e2e.DefaultIPv4MSS}, 0 /* delay */)
 
 	// Try to accept the connection.
 	we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
@@ -2857,7 +2850,7 @@ func TestScaledWindowAccept(t *testing.T) {
 func TestNonScaledWindowAccept(t *testing.T) {
 	// This test ensures that window scaling is not used when the peer
 	// doesn't advertise it and connection is established with Accept().
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	// Create EP and start listening.
@@ -2881,7 +2874,7 @@ func TestNonScaledWindowAccept(t *testing.T) {
 
 	// Do 3-way handshake w/ window scaling disabled. The SYN-ACK to the SYN
 	// should not carry the window scaling option.
-	c.PassiveConnect(100, -1, header.TCPSynOptions{MSS: defaultIPv4MSS})
+	c.PassiveConnect(100, -1, header.TCPSynOptions{MSS: e2e.DefaultIPv4MSS})
 
 	// Try to accept the connection.
 	we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
@@ -2930,7 +2923,7 @@ func TestZeroScaledWindowReceive(t *testing.T) {
 	// This test ensures that the endpoint sends a non-zero window size
 	// advertisement when the scaled window transitions from 0 to non-zero,
 	// but the actual window (not scaled) hasn't gotten to zero.
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	// Set the buffer size such that a window scale of 5 will be used.
@@ -3014,7 +3007,7 @@ func TestZeroScaledWindowReceive(t *testing.T) {
 	// we need to read at 3 packets.
 	w := tcpip.LimitedWriter{
 		W: ioutil.Discard,
-		N: defaultMTU * 2,
+		N: e2e.DefaultMTU * 2,
 	}
 	for w.N != 0 {
 		res, err := c.EP.Read(&w, tcpip.ReadOptions{})
@@ -3030,7 +3023,7 @@ func TestZeroScaledWindowReceive(t *testing.T) {
 			checker.DstPort(context.TestPort),
 			checker.TCPSeqNum(uint32(c.IRS)+1),
 			checker.TCPAckNum(uint32(iss)+uint32(sent)),
-			checker.TCPWindowGreaterThanEq(uint16(defaultMTU>>ws)),
+			checker.TCPWindowGreaterThanEq(uint16(e2e.DefaultMTU>>ws)),
 			checker.TCPFlags(header.TCPFlagAck),
 		),
 	)
@@ -3064,7 +3057,7 @@ func TestSegmentMerging(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			c := context.New(t, defaultMTU)
+			c := context.New(t, e2e.DefaultMTU)
 			defer c.Cleanup()
 
 			c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
@@ -3146,7 +3139,7 @@ func TestSegmentMerging(t *testing.T) {
 }
 
 func TestDelay(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
@@ -3196,7 +3189,7 @@ func TestDelay(t *testing.T) {
 }
 
 func TestUndelay(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
@@ -3279,7 +3272,7 @@ func TestMSSNotDelayed(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			const maxPayload = 100
-			c := context.New(t, defaultMTU)
+			c := context.New(t, e2e.DefaultMTU)
 			defer c.Cleanup()
 
 			c.CreateConnectedWithRawOptions(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */, []byte{
@@ -3332,75 +3325,13 @@ func TestMSSNotDelayed(t *testing.T) {
 	}
 }
 
-func testBrokenUpWrite(t *testing.T, c *context.Context, maxPayload int) {
-	payloadMultiplier := 10
-	dataLen := payloadMultiplier * maxPayload
-	data := make([]byte, dataLen)
-	for i := range data {
-		data[i] = byte(i)
-	}
-
-	var r bytes.Reader
-	r.Reset(data)
-	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
-		t.Fatalf("Write failed: %s", err)
-	}
-
-	// Check that data is received in chunks.
-	bytesReceived := 0
-	numPackets := 0
-	iss := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
-	for bytesReceived != dataLen {
-		b := c.GetPacket()
-		numPackets++
-		tcpHdr := header.TCP(header.IPv4(b).Payload())
-		payloadLen := len(tcpHdr.Payload())
-		checker.IPv4(t, b,
-			checker.TCP(
-				checker.DstPort(context.TestPort),
-				checker.TCPSeqNum(uint32(c.IRS)+1+uint32(bytesReceived)),
-				checker.TCPAckNum(uint32(iss)),
-				checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
-			),
-		)
-
-		pdata := data[bytesReceived : bytesReceived+payloadLen]
-		if p := tcpHdr.Payload(); !bytes.Equal(pdata, p) {
-			t.Fatalf("got data = %v, want = %v", p, pdata)
-		}
-		bytesReceived += payloadLen
-		var options []byte
-		if c.TimeStampEnabled {
-			// If timestamp option is enabled, echo back the timestamp and increment
-			// the TSEcr value included in the packet and send that back as the TSVal.
-			parsedOpts := tcpHdr.ParsedOptions()
-			tsOpt := [12]byte{header.TCPOptionNOP, header.TCPOptionNOP}
-			header.EncodeTSOption(parsedOpts.TSEcr+1, parsedOpts.TSVal, tsOpt[2:])
-			options = tsOpt[:]
-		}
-		// Acknowledge the data.
-		c.SendPacket(nil, &context.Headers{
-			SrcPort: context.TestPort,
-			DstPort: c.Port,
-			Flags:   header.TCPFlagAck,
-			SeqNum:  iss,
-			AckNum:  c.IRS.Add(1 + seqnum.Size(bytesReceived)),
-			RcvWnd:  30000,
-			TCPOpts: options,
-		})
-	}
-	if numPackets == 1 {
-		t.Fatalf("expected write to be broken up into multiple packets, but got 1 packet")
-	}
-}
-
 func TestSendGreaterThanMTU(t *testing.T) {
 	const maxPayload = 100
 	c := context.New(t, uint32(header.TCPMinimumSize+header.IPv4MinimumSize+maxPayload))
 	defer c.Cleanup()
 
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
-	testBrokenUpWrite(t, c, maxPayload)
+	e2e.CheckBrokenUpWrite(t, c, maxPayload)
 }
 
 func TestDefaultTTL(t *testing.T) {
@@ -3520,7 +3451,7 @@ func TestActiveSendMSSLessThanMTU(t *testing.T) {
 	c.CreateConnectedWithRawOptions(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */, []byte{
 		header.TCPOptionMSS, 4, byte(maxPayload / 256), byte(maxPayload % 256),
 	})
-	testBrokenUpWrite(t, c, maxPayload)
+	e2e.CheckBrokenUpWrite(t, c, maxPayload)
 }
 
 func TestPassiveSendMSSLessThanMTU(t *testing.T) {
@@ -3574,7 +3505,7 @@ func TestPassiveSendMSSLessThanMTU(t *testing.T) {
 	}
 
 	// Check that data gets properly segmented.
-	testBrokenUpWrite(t, c, maxPayload)
+	e2e.CheckBrokenUpWrite(t, c, maxPayload)
 }
 
 func TestSynCookiePassiveSendMSSLessThanMTU(t *testing.T) {
@@ -3628,7 +3559,7 @@ func TestSynCookiePassiveSendMSSLessThanMTU(t *testing.T) {
 	}
 
 	// Check that data gets properly segmented.
-	testBrokenUpWrite(t, c, maxPayload)
+	e2e.CheckBrokenUpWrite(t, c, maxPayload)
 }
 
 func TestSynOptionsOnActiveConnect(t *testing.T) {
@@ -3720,7 +3651,7 @@ func TestSynOptionsOnActiveConnect(t *testing.T) {
 }
 
 func TestCloseListener(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	// Create listener.
@@ -3747,7 +3678,7 @@ func TestCloseListener(t *testing.T) {
 }
 
 func TestReceiveOnResetConnection(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
@@ -3813,7 +3744,7 @@ loop:
 }
 
 func TestSendOnResetConnection(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
@@ -3843,7 +3774,7 @@ func TestSendOnResetConnection(t *testing.T) {
 // TestMaxRetransmitsTimeout tests if the connection is timed out after
 // a segment has been retransmitted MaxRetries times.
 func TestMaxRetransmitsTimeout(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	const numRetries = 2
@@ -3910,7 +3841,7 @@ func TestMaxRetransmitsTimeout(t *testing.T) {
 
 // TestMaxRTO tests if the retransmit interval caps to MaxRTO.
 func TestMaxRTO(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	rto := 1 * time.Second
@@ -3956,7 +3887,7 @@ func TestMaxRTO(t *testing.T) {
 // result in a panic on an RTO as no segment should have been queued for
 // a zero sized write.
 func TestZeroSizedWriteRetransmit(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000 /* rcvWnd */, -1 /* epRcvBuf */)
@@ -3995,7 +3926,7 @@ func TestRetransmitIPv4IDUniqueness(t *testing.T) {
 		{"512Bytes", 512},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			c := context.New(t, defaultMTU)
+			c := context.New(t, e2e.DefaultMTU)
 			defer c.Cleanup()
 
 			minRTOOpt := tcpip.TCPMinRTOOption(time.Second)
@@ -4048,7 +3979,7 @@ func TestRetransmitIPv4IDUniqueness(t *testing.T) {
 }
 
 func TestFinImmediately(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
@@ -4092,7 +4023,7 @@ func TestFinImmediately(t *testing.T) {
 }
 
 func TestFinRetransmit(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
@@ -4147,7 +4078,7 @@ func TestFinRetransmit(t *testing.T) {
 }
 
 func TestFinWithNoPendingData(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
@@ -4221,7 +4152,7 @@ func TestFinWithNoPendingData(t *testing.T) {
 }
 
 func TestFinWithPendingDataCwndFull(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
@@ -4312,7 +4243,7 @@ func TestFinWithPendingDataCwndFull(t *testing.T) {
 }
 
 func TestFinWithPendingData(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
@@ -4402,7 +4333,7 @@ func TestFinWithPendingData(t *testing.T) {
 }
 
 func TestFinWithPartialAck(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
@@ -4507,7 +4438,7 @@ func TestFinWithPartialAck(t *testing.T) {
 }
 
 func TestUpdateListenBacklog(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	// Create listener.
@@ -4537,10 +4468,10 @@ func scaledSendWindow(t *testing.T, scale uint8) {
 	// This test ensures that the endpoint is using the right scaling by
 	// sending a buffer that is larger than the window size, and ensuring
 	// that the endpoint doesn't send more than allowed.
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
-	maxPayload := defaultMTU - header.IPv4MinimumSize - header.TCPMinimumSize
+	maxPayload := e2e.DefaultMTU - header.IPv4MinimumSize - header.TCPMinimumSize
 	c.CreateConnectedWithRawOptions(context.TestInitialSequenceNumber, 0, -1 /* epRcvBuf */, []byte{
 		header.TCPOptionMSS, 4, byte(maxPayload / 256), byte(maxPayload % 256),
 		header.TCPOptionWS, 3, scale, header.TCPOptionNOP,
@@ -4592,7 +4523,7 @@ func TestScaledSendWindow(t *testing.T) {
 }
 
 func TestReceivedValidSegmentCountIncrement(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
 	stats := c.Stack().Stats()
@@ -4622,7 +4553,7 @@ func TestReceivedValidSegmentCountIncrement(t *testing.T) {
 }
 
 func TestReceivedInvalidSegmentCountIncrement(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
 	stats := c.Stack().Stats()
@@ -4650,7 +4581,7 @@ func TestReceivedInvalidSegmentCountIncrement(t *testing.T) {
 }
 
 func TestReceivedIncorrectChecksumIncrement(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
 	stats := c.Stack().Stats()
@@ -4684,7 +4615,7 @@ func TestReceivedSegmentQueuing(t *testing.T) {
 	// endpoint and checks that they're all received and acknowledged by
 	// the endpoint, that is, that none of the segments are dropped by
 	// internal queues.
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
@@ -4731,7 +4662,7 @@ func TestReadAfterClosedState(t *testing.T) {
 	// has transitioned to closedState still works if there is pending
 	// data. To transition to stateClosed without calling Close(), we must
 	// shutdown the send path and the peer must send its own FIN.
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	// Set TCPTimeWaitTimeout to 1 seconds so that sockets are marked closed
@@ -4842,7 +4773,7 @@ func TestReadAfterClosedState(t *testing.T) {
 func TestReusePort(t *testing.T) {
 	// This test ensures that ports are immediately available for reuse
 	// after Close on the endpoints using them returns.
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	// First case, just an endpoint that was bound.
@@ -5556,16 +5487,8 @@ func TestEndpointSetCongestionControl(t *testing.T) {
 	}
 }
 
-func enableCUBIC(t *testing.T, c *context.Context) {
-	t.Helper()
-	opt := tcpip.CongestionControlOption("cubic")
-	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
-		t.Fatalf("SetTransportProtocolOption(%d, &%T(%s)) %s", tcp.ProtocolNumber, opt, opt, err)
-	}
-}
-
 func TestKeepalive(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
@@ -5802,7 +5725,7 @@ func executeV6Handshake(t *testing.T, c *context.Context, srcPort uint16, synCoo
 // TestListenBacklogFull tests that netstack does not complete handshakes if the
 // listen backlog for the endpoint is full.
 func TestListenBacklogFull(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	// Create TCP endpoint.
@@ -5971,7 +5894,7 @@ func TestListenNoAcceptNonUnicastV4(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			c := context.New(t, defaultMTU)
+			c := context.New(t, e2e.DefaultMTU)
 			defer c.Cleanup()
 
 			c.Create(-1)
@@ -6071,7 +5994,7 @@ func TestListenNoAcceptNonUnicastV6(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			c := context.New(t, defaultMTU)
+			c := context.New(t, e2e.DefaultMTU)
 			defer c.Cleanup()
 
 			c.CreateV6Endpoint(true)
@@ -6117,7 +6040,7 @@ func TestListenNoAcceptNonUnicastV6(t *testing.T) {
 }
 
 func TestListenSynRcvdQueueFull(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	// Create TCP endpoint.
@@ -6218,7 +6141,7 @@ func TestListenSynRcvdQueueFull(t *testing.T) {
 }
 
 func TestListenBacklogFullSynCookieInUse(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	// Create TCP endpoint.
@@ -6288,7 +6211,7 @@ func TestListenBacklogFullSynCookieInUse(t *testing.T) {
 }
 
 func TestSYNRetransmit(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	// Create TCP endpoint.
@@ -6332,7 +6255,7 @@ func TestSYNRetransmit(t *testing.T) {
 }
 
 func TestSynRcvdBadSeqNumber(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	// Create TCP endpoint.
@@ -6437,7 +6360,7 @@ func TestSynRcvdBadSeqNumber(t *testing.T) {
 }
 
 func TestPassiveConnectionAttemptIncrement(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	ep, err := c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
@@ -6490,7 +6413,7 @@ func TestPassiveConnectionAttemptIncrement(t *testing.T) {
 }
 
 func TestPassiveFailedConnectionAttemptIncrement(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	stats := c.Stack().Stats()
@@ -6565,7 +6488,7 @@ func TestPassiveFailedConnectionAttemptIncrement(t *testing.T) {
 }
 
 func TestListenDropIncrement(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	stats := c.Stack().Stats()
@@ -6613,7 +6536,7 @@ func TestListenDropIncrement(t *testing.T) {
 }
 
 func TestEndpointBindListenAcceptState(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 	wq := &waiter.Queue{}
 	ep, err := c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, wq)
@@ -6641,7 +6564,7 @@ func TestEndpointBindListenAcceptState(t *testing.T) {
 		t.Errorf("unexpected endpoint state: want %s, got %s", want, got)
 	}
 
-	c.PassiveConnectWithOptions(100, 5, header.TCPSynOptions{MSS: defaultIPv4MSS}, 0 /* delay */)
+	c.PassiveConnectWithOptions(100, 5, header.TCPSynOptions{MSS: e2e.DefaultIPv4MSS}, 0 /* delay */)
 
 	// Try to accept the connection.
 	we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
@@ -6984,13 +6907,13 @@ func TestReceiveBufferAutoTuning(t *testing.T) {
 }
 
 func TestDelayEnabled(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 	checkDelayOption(t, c, false, false) // Delay is disabled by default.
 
 	for _, delayEnabled := range []bool{false, true} {
 		t.Run(fmt.Sprintf("delayEnabled=%t", delayEnabled), func(t *testing.T) {
-			c := context.New(t, defaultMTU)
+			c := context.New(t, e2e.DefaultMTU)
 			defer c.Cleanup()
 			opt := tcpip.TCPDelayEnabled(delayEnabled)
 			if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
@@ -7060,7 +6983,7 @@ func TestTCPLingerTimeout(t *testing.T) {
 }
 
 func TestTCPTimeWaitRSTIgnored(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	wq := &waiter.Queue{}
@@ -7179,7 +7102,7 @@ func TestTCPTimeWaitRSTIgnored(t *testing.T) {
 }
 
 func TestTCPTimeWaitOutOfOrder(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	wq := &waiter.Queue{}
@@ -7286,7 +7209,7 @@ func TestTCPTimeWaitOutOfOrder(t *testing.T) {
 }
 
 func TestTCPTimeWaitNewSyn(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	wq := &waiter.Queue{}
@@ -7440,7 +7363,7 @@ func TestTCPTimeWaitNewSyn(t *testing.T) {
 }
 
 func TestTCPTimeWaitDuplicateFINExtendsTimeWait(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	// Set TCPTimeWaitTimeout to 5 seconds so that sockets are marked closed
@@ -7591,7 +7514,7 @@ func TestTCPTimeWaitDuplicateFINExtendsTimeWait(t *testing.T) {
 }
 
 func TestTCPCloseWithData(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	// Set TCPTimeWaitTimeout to 5 seconds so that sockets are marked closed
@@ -7764,7 +7687,7 @@ func TestTCPCloseWithData(t *testing.T) {
 }
 
 func TestTCPUserTimeout(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	initRTO := 1 * time.Second
@@ -7855,7 +7778,7 @@ func TestTCPUserTimeout(t *testing.T) {
 }
 
 func TestKeepaliveWithUserTimeout(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
@@ -7940,7 +7863,7 @@ func TestKeepaliveWithUserTimeout(t *testing.T) {
 func TestIncreaseWindowOnRead(t *testing.T) {
 	// This test ensures that the endpoint sends an ack,
 	// after read() when the window grows by more than 1 MSS.
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	const rcvBuf = 65535 * 10
@@ -7950,7 +7873,7 @@ func TestIncreaseWindowOnRead(t *testing.T) {
 	// payloads make it equal or longer than MSS.
 	remain := rcvBuf * 2
 	sent := 0
-	data := make([]byte, defaultMTU/2)
+	data := make([]byte, e2e.DefaultMTU/2)
 	iss := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
 	for remain > len(data) {
 		c.SendPacket(data, &context.Headers{
@@ -7973,8 +7896,8 @@ func TestIncreaseWindowOnRead(t *testing.T) {
 				checker.TCPFlags(header.TCPFlagAck),
 			),
 		)
-		// Break once the window drops below defaultMTU/2
-		if wnd := header.TCP(header.IPv4(pkt).Payload()).WindowSize(); wnd < defaultMTU/2 {
+		// Break once the window drops below e2e.DefaultMTU/2
+		if wnd := header.TCP(header.IPv4(pkt).Payload()).WindowSize(); wnd < e2e.DefaultMTU/2 {
 			break
 		}
 	}
@@ -7983,9 +7906,9 @@ func TestIncreaseWindowOnRead(t *testing.T) {
 	// worth of data as receive buffer space
 	w := tcpip.LimitedWriter{
 		W: ioutil.Discard,
-		// defaultMTU is a good enough estimate for the MSS used for this
+		// e2e.DefaultMTU is a good enough estimate for the MSS used for this
 		// connection.
-		N: defaultMTU * 2,
+		N: e2e.DefaultMTU * 2,
 	}
 	for w.N != 0 {
 		_, err := c.EP.Read(&w, tcpip.ReadOptions{})
@@ -8010,7 +7933,7 @@ func TestIncreaseWindowOnRead(t *testing.T) {
 func TestIncreaseWindowOnBufferResize(t *testing.T) {
 	// This test ensures that the endpoint sends an ack,
 	// after available recv buffer grows to more than 1 MSS.
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	const rcvBuf = 65535 * 10
@@ -8020,7 +7943,7 @@ func TestIncreaseWindowOnBufferResize(t *testing.T) {
 	// payloads make it equal or longer than MSS.
 	remain := rcvBuf
 	sent := 0
-	data := make([]byte, defaultMTU/2)
+	data := make([]byte, e2e.DefaultMTU/2)
 	iss := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
 	for remain > len(data) {
 		c.SendPacket(data, &context.Headers{
@@ -8061,7 +7984,7 @@ func TestIncreaseWindowOnBufferResize(t *testing.T) {
 }
 
 func TestTCPDeferAccept(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.Create(-1)
@@ -8120,7 +8043,7 @@ func TestTCPDeferAccept(t *testing.T) {
 }
 
 func TestTCPDeferAcceptTimeout(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.Create(-1)
@@ -8191,7 +8114,7 @@ func TestTCPDeferAcceptTimeout(t *testing.T) {
 }
 
 func TestResetDuringClose(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRecvBuf */)
@@ -8245,7 +8168,7 @@ func TestResetDuringClose(t *testing.T) {
 }
 
 func TestStackTimeWaitReuse(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	s := c.Stack()
@@ -8259,7 +8182,7 @@ func TestStackTimeWaitReuse(t *testing.T) {
 }
 
 func TestSetStackTimeWaitReuse(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	s := c.Stack()
@@ -8334,7 +8257,7 @@ func TestHandshakeRTT(t *testing.T) {
 		tt := tt
 		t.Run(fmt.Sprintf("connect=%t,TS=%t,cookie=%t,retrans=%t)", tt.connect, tt.tsEnabled, tt.useCookie, tt.retrans), func(t *testing.T) {
 			t.Parallel()
-			c := context.New(t, defaultMTU)
+			c := context.New(t, e2e.DefaultMTU)
 			if tt.useCookie {
 				opt := tcpip.TCPAlwaysUseSynCookies(true)
 				if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
@@ -8349,7 +8272,7 @@ func TestHandshakeRTT(t *testing.T) {
 			if tt.connect {
 				c.CreateConnectedWithOptions(synOpts, tt.delay)
 			} else {
-				synOpts.MSS = defaultIPv4MSS
+				synOpts.MSS = e2e.DefaultIPv4MSS
 				synOpts.WS = -1
 				c.AcceptWithOptions(-1, synOpts, tt.delay)
 			}
@@ -8371,7 +8294,7 @@ func TestHandshakeRTT(t *testing.T) {
 }
 
 func TestSetRTO(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	minRTO, maxRTO := tcpRTOMinMax(t, c)
 	for _, tt := range []struct {
 		name   string
@@ -8400,7 +8323,7 @@ func TestSetRTO(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			c := context.New(t, defaultMTU)
+			c := context.New(t, e2e.DefaultMTU)
 			var opt tcpip.SettableTransportProtocolOption
 			if tt.minRTO > 0 {
 				min := tcpip.TCPMinRTOOption(tt.minRTO)
@@ -8453,7 +8376,7 @@ func generateRandomPayload(t *testing.T, n int) []byte {
 
 func TestSendBufferTuning(t *testing.T) {
 	const maxPayload = 536
-	const mtu = header.TCPMinimumSize + header.IPv4MinimumSize + maxTCPOptionSize + maxPayload
+	const mtu = header.TCPMinimumSize + header.IPv4MinimumSize + e2e.MaxTCPOptionSize + maxPayload
 	const packetOverheadFactor = 2
 
 	testCases := []struct {
@@ -8553,7 +8476,7 @@ func TestTimestampSynCookies(t *testing.T) {
 	c := context.NewWithOpts(t, context.Options{
 		EnableV4: true,
 		EnableV6: true,
-		MTU:      defaultMTU,
+		MTU:      e2e.DefaultMTU,
 		Clock:    clock,
 	})
 	defer c.Cleanup()
@@ -8655,7 +8578,7 @@ func TestECNFlagsAccept(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 
-			c := context.New(t, defaultMTU)
+			c := context.New(t, e2e.DefaultMTU)
 			defer c.Cleanup()
 
 			// Create EP and start listening.
@@ -8677,7 +8600,7 @@ func TestECNFlagsAccept(t *testing.T) {
 			// Do 3-way handshake.
 			const maxPayload = 100
 
-			c.PassiveConnect(maxPayload, -1 /* wndScale */, header.TCPSynOptions{MSS: defaultIPv4MSS, Flags: tc.flags})
+			c.PassiveConnect(maxPayload, -1 /* wndScale */, header.TCPSynOptions{MSS: e2e.DefaultIPv4MSS, Flags: tc.flags})
 
 			// Try to accept the connection.
 			we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
@@ -8702,4 +8625,14 @@ func TestECNFlagsAccept(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMain(m *testing.M) {
+	refs.SetLeakMode(refs.LeaksPanic)
+	code := m.Run()
+	// Allow TCP async work to complete to avoid false reports of leaks.
+	// TODO(gvisor.dev/issue/5940): Use fake clock in tests.
+	time.Sleep(1 * time.Second)
+	refsvfs2.DoLeakCheck()
+	os.Exit(code)
 }
