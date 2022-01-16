@@ -135,6 +135,7 @@ func (r *reassembler) process(first, last uint16, more bool, proto uint8, pkt *s
 			final:  currentHole.final,
 			pkt:    pkt,
 		}
+		pkt.IncRef()
 		r.filled++
 		// For IPv6, it is possible to have different Protocol values between
 		// fragments of a packet (because, unlike IPv4, the Protocol is not used to
@@ -145,11 +146,13 @@ func (r *reassembler) process(first, last uint16, more bool, proto uint8, pkt *s
 		// options received in the first fragment should be used - and they should
 		// override options from following fragments.
 		if first == 0 {
+			if r.pkt != nil {
+				r.pkt.DecRef()
+			}
 			r.pkt = pkt
+			pkt.IncRef()
 			r.proto = proto
 		}
-
-		pkt.IncRef()
 		break
 	}
 	if !holeFound {
@@ -167,7 +170,6 @@ func (r *reassembler) process(first, last uint16, more bool, proto uint8, pkt *s
 	})
 
 	resPkt := r.holes[0].pkt
-	resPkt.DecRef()
 	for i := 1; i < len(r.holes); i++ {
 		stack.MergeFragment(resPkt, r.holes[i].pkt)
 	}
