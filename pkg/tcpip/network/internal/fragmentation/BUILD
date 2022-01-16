@@ -41,10 +41,13 @@ go_test(
     size = "small",
     srcs = [
         "fragmentation_test.go",
+        "main_test.go",
         "reassembler_test.go",
     ],
     library = ":fragmentation",
     deps = [
+        "//pkg/refs",
+        "//pkg/refsvfs2",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/faketime",
         "//pkg/tcpip/network/internal/testutil",

@@ -237,6 +237,14 @@ func (f *Fragmentation) release(r *reassembler, timedOut bool) {
 	if h := f.timeoutHandler; timedOut && h != nil {
 		h.OnReassemblyTimeout(r.pkt)
 	}
+	if r.pkt != nil {
+		r.pkt.DecRef()
+	}
+	for _, h := range r.holes {
+		if h.pkt != nil {
+			h.pkt.DecRef()
+		}
+	}
 }
 
 // releaseReassemblersLocked releases already-expired reassemblers, then

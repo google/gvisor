@@ -731,10 +731,12 @@ func (e *endpoint) handleFragments(r *stack.Route, networkMTU uint32, pkt *stack
 	for {
 		fragPkt, more := buildNextFragment(&pf, networkHeader, transProto, id)
 		if err := handler(fragPkt); err != nil {
+			fragPkt.DecRef()
 			return n, pf.RemainingFragmentCount() + 1, err
 		}
 		n++
 		if !more {
+			fragPkt.DecRef()
 			return n, pf.RemainingFragmentCount(), nil
 		}
 	}

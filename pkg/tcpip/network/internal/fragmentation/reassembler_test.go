@@ -186,6 +186,19 @@ func TestReassemblerProcess(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			r := newReassembler(FragmentID{}, &faketime.NullClock{})
+			// Emulate a call to (*Fragmentation).release(), which always happens
+			// after reassembler error or completion. Without release(), the
+			// reassembler will leak PacketBuffers.
+			defer func() {
+				for _, h := range r.holes {
+					if h.pkt != nil {
+						h.pkt.DecRef()
+					}
+				}
+				if r.pkt != nil {
+					r.pkt.DecRef()
+				}
+			}()
 			var resPkt *stack.PacketBuffer
 			var isDone bool
 			for _, param := range test.params {
@@ -229,5 +242,18 @@ func TestReassemblerProcess(t *testing.T) {
 				}
 			}
 		})
+		for _, p := range test.params {
+			if p.pkt != nil {
+				p.pkt.DecRef()
+			}
+		}
+		for _, w := range test.want {
+			if w.pkt != nil {
+				w.pkt.DecRef()
+			}
+		}
+		if test.wantPkt != nil {
+			test.wantPkt.DecRef()
+		}
 	}
 }
