@@ -15,8 +15,11 @@
 package icmp_test
 
 import (
+	"os"
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -236,4 +239,11 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 			t.Fatalf("got alternateEP.Read(_) = %+v, true; want = _, false", p)
 		}
 	}
+}
+
+func TestMain(m *testing.M) {
+	refs.SetLeakMode(refs.LeaksPanic)
+	code := m.Run()
+	refsvfs2.DoLeakCheck()
+	os.Exit(code)
 }
