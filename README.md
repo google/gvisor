@@ -2,8 +2,12 @@
 
 [![Build status](https://badge.buildkite.com/3b159f20b9830461a71112566c4171c0bdfd2f980a8e4c0ae6.svg?branch=master)](https://buildkite.com/gvisor/pipeline)
 [![Issue reviver](https://github.com/google/gvisor/actions/workflows/issue_reviver.yml/badge.svg)](https://github.com/google/gvisor/actions/workflows/issue_reviver.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/google/gvisor)](https://goreportcard.com/report/github.com/google/gvisor)
+[![GoDoc](https://pkg.go.dev/badge/github.com/google/gvisor?status.svg)](https://pkg.go.dev/github.com/google/gvisor?tab=doc)
 [![gVisor chat](https://badges.gitter.im/gvisor/community.png)](https://gitter.im/gvisor/community)
 [![code search](https://img.shields.io/badge/code-search-blue)](https://cs.opensource.google/gvisor/gvisor)
+![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/google/gvisor)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 ## What is gVisor?
 
