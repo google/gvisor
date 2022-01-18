@@ -19,10 +19,13 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math/rand"
+	"os"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/time/rate"
+	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -442,9 +445,11 @@ func (c *testContext) injectPacket(flow testFlow, payload []byte, badChecksum bo
 				}
 			}
 		}
-		c.linkEP.InjectInbound(ipv4.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Data: buf.ToVectorisedView(),
-		}))
+		})
+		defer pkt.DecRef()
+		c.linkEP.InjectInbound(ipv4.ProtocolNumber, pkt)
 	} else {
 		buf := c.buildV6Packet(payload, &h)
 		if badChecksum {
@@ -453,9 +458,11 @@ func (c *testContext) injectPacket(flow testFlow, payload []byte, badChecksum bo
 			u := header.UDP(buf[header.IPv6MinimumSize:])
 			u.SetChecksum(u.Checksum() + 1)
 		}
-		c.linkEP.InjectInbound(ipv6.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Data: buf.ToVectorisedView(),
-		}))
+		})
+		defer pkt.DecRef()
+		c.linkEP.InjectInbound(ipv6.ProtocolNumber, pkt)
 	}
 }
 
@@ -851,9 +858,11 @@ func TestV4ReadSelfSource(t *testing.T) {
 			h.srcAddr = h.dstAddr
 
 			buf := c.buildV4Packet(payload, &h)
-			c.linkEP.InjectInbound(ipv4.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Data: buf.ToVectorisedView(),
-			}))
+			})
+			defer pkt.DecRef()
+			c.linkEP.InjectInbound(ipv4.ProtocolNumber, pkt)
 
 			if got := c.s.Stats().IP.InvalidSourceAddressesReceived.Value(); got != tt.wantInvalidSource {
 				t.Errorf("c.s.Stats().IP.InvalidSourceAddressesReceived got %d, want %d", got, tt.wantInvalidSource)
@@ -2108,10 +2117,11 @@ func TestIncrementMalformedPacketsReceived(t *testing.T) {
 	// Invalidate the UDP header length field.
 	u := header.UDP(buf[header.IPv6MinimumSize:])
 	u.SetLength(u.Length() + 1)
-
-	c.linkEP.InjectInbound(ipv6.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	}))
+	})
+	defer pkt.DecRef()
+	c.linkEP.InjectInbound(ipv6.ProtocolNumber, pkt)
 
 	const want = 1
 	if got := c.s.Stats().UDP.MalformedPacketsReceived.Value(); got != want {
@@ -2164,9 +2174,11 @@ func TestShortHeader(t *testing.T) {
 	copy(buf[header.IPv6MinimumSize:], udpHdr)
 
 	// Inject packet.
-	c.linkEP.InjectInbound(ipv6.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	}))
+	})
+	defer pkt.DecRef()
+	c.linkEP.InjectInbound(ipv6.ProtocolNumber, pkt)
 
 	if got, want := c.s.Stats().NICs.MalformedL4RcvdPackets.Value(), uint64(1); got != want {
 		t.Errorf("got c.s.Stats().NIC.MalformedL4RcvdPackets.Value() = %d, want = %d", got, want)
@@ -2219,9 +2231,12 @@ func TestPayloadModifiedV4(t *testing.T) {
 	// Modify the payload so that the checksum value in the UDP header will be
 	// incorrect.
 	buf[len(buf)-1]++
-	c.linkEP.InjectInbound(ipv4.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	}))
+	})
+	defer pkt.DecRef()
+	c.linkEP.InjectInbound(ipv4.ProtocolNumber, pkt)
 
 	const want = 1
 	if got := c.s.Stats().UDP.ChecksumErrors.Value(); got != want {
@@ -2250,9 +2265,11 @@ func TestPayloadModifiedV6(t *testing.T) {
 	// Modify the payload so that the checksum value in the UDP header will be
 	// incorrect.
 	buf[len(buf)-1]++
-	c.linkEP.InjectInbound(ipv6.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	}))
+	})
+	defer pkt.DecRef()
+	c.linkEP.InjectInbound(ipv6.ProtocolNumber, pkt)
 
 	const want = 1
 	if got := c.s.Stats().UDP.ChecksumErrors.Value(); got != want {
@@ -2281,9 +2298,11 @@ func TestChecksumZeroV4(t *testing.T) {
 	// Set the checksum field in the UDP header to zero.
 	u := header.UDP(buf[header.IPv4MinimumSize:])
 	u.SetChecksum(0)
-	c.linkEP.InjectInbound(ipv4.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	}))
+	})
+	defer pkt.DecRef()
+	c.linkEP.InjectInbound(ipv4.ProtocolNumber, pkt)
 
 	const want = 0
 	if got := c.s.Stats().UDP.ChecksumErrors.Value(); got != want {
@@ -2312,9 +2331,11 @@ func TestChecksumZeroV6(t *testing.T) {
 	// Set the checksum field in the UDP header to zero.
 	u := header.UDP(buf[header.IPv6MinimumSize:])
 	u.SetChecksum(0)
-	c.linkEP.InjectInbound(ipv6.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	}))
+	})
+	defer pkt.DecRef()
+	c.linkEP.InjectInbound(ipv6.ProtocolNumber, pkt)
 
 	const want = 1
 	if got := c.s.Stats().UDP.ChecksumErrors.Value(); got != want {
@@ -2619,4 +2640,11 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMain(m *testing.M) {
+	refs.SetLeakMode(refs.LeaksPanic)
+	code := m.Run()
+	refsvfs2.DoLeakCheck()
+	os.Exit(code)
 }

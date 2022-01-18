@@ -49,6 +49,8 @@ go_test(
     srcs = ["udp_test.go"],
     deps = [
         ":udp",
+        "//pkg/refs",
+        "//pkg/refsvfs2",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/checker",

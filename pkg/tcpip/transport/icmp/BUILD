@@ -48,6 +48,8 @@ go_test(
     srcs = ["icmp_test.go"],
     deps = [
         ":icmp",
+        "//pkg/refs",
+        "//pkg/refsvfs2",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/checker",
