@@ -21,6 +21,8 @@ import (
 	"testing"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/link/fdbased"
@@ -50,6 +52,7 @@ func TestInjectableEndpointDispatch(t *testing.T) {
 		ReserveHeaderBytes: 1,
 		Data:               buffer.NewViewFromBytes([]byte{0xFB}).ToVectorisedView(),
 	})
+	defer pkt.DecRef()
 	pkt.TransportHeader().Push(1)[0] = 0xFA
 	pkt.EgressRoute.RemoteAddress = dstIP
 	pkt.NetworkProtocolNumber = ipv4.ProtocolNumber
@@ -77,6 +80,7 @@ func TestInjectableEndpointDispatchHdrOnly(t *testing.T) {
 		ReserveHeaderBytes: 1,
 		Data:               buffer.NewView(0).ToVectorisedView(),
 	})
+	defer pkt.DecRef()
 	pkt.TransportHeader().Push(1)[0] = 0xFA
 	pkt.EgressRoute.RemoteAddress = dstIP
 	pkt.NetworkProtocolNumber = ipv4.ProtocolNumber
@@ -107,4 +111,11 @@ func makeTestInjectableEndpoint(t *testing.T) (*InjectableEndpoint, *os.File, tc
 	routes := map[tcpip.Address]stack.InjectableLinkEndpoint{dstIP: underlyingEndpoint}
 	endpoint := NewInjectableEndpoint(routes)
 	return endpoint, os.NewFile(uintptr(pair[0]), "test route end"), dstIP
+}
+
+func TestMain(m *testing.M) {
+	refs.SetLeakMode(refs.LeaksPanic)
+	code := m.Run()
+	refsvfs2.DoLeakCheck()
+	os.Exit(code)
 }

@@ -16,8 +16,11 @@ package ethernet_test
 
 import (
 	"fmt"
+	"os"
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -63,9 +66,9 @@ func TestDeliverNetworkPacket(t *testing.T) {
 		DstAddr: otherLinkAddr2,
 		Type:    header.IPv4ProtocolNumber,
 	})
-	e.DeliverNetworkPacket("", "", 0, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: eth.ToVectorisedView(),
-	}))
+	p := stack.NewPacketBuffer(stack.PacketBufferOptions{Data: eth.ToVectorisedView()})
+	defer p.DecRef()
+	e.DeliverNetworkPacket("", "", 0, p)
 	if networkDispatcher.networkPackets != 1 {
 		t.Fatalf("got networkDispatcher.networkPackets = %d, want = 1", networkDispatcher.networkPackets)
 	}
@@ -135,6 +138,7 @@ func TestWritePacketsAddHeader(t *testing.T) {
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			ReserveHeaderBytes: int(e.MaxHeaderLength()),
 		})
+		defer pkt.DecRef()
 		pkt.NetworkProtocolNumber = netProto
 		pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
 
@@ -164,4 +168,11 @@ func TestWritePacketsAddHeader(t *testing.T) {
 			t.Errorf("got eth.Type() = %d, want = %d", got, netProto)
 		}
 	}
+}
+
+func TestMain(m *testing.M) {
+	refs.SetLeakMode(refs.LeaksPanic)
+	code := m.Run()
+	refsvfs2.DoLeakCheck()
+	os.Exit(code)
 }
