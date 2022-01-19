@@ -19,6 +19,11 @@
 // This is guaranteed to be zero.
 #define VCPU_CPU 0x0
 
+// ENTRY_CPU_SELF is the location of the CPU in the entry struct.
+//
+// This is sourced from ring0.
+#define ENTRY_CPU_SELF {{ .kernelEntry.cpuSelf.Offset }}
+
 // Context offsets.
 //
 // Only limited use of the context is done in the assembly stub below, most is
@@ -32,6 +37,7 @@
 // This is checked as the source of the fault.
 #define CLI $0xfa
 
+// System call definitions.
 #define SYS_MMAP 9
 
 // See bluepill.go.

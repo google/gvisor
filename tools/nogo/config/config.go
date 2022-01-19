@@ -12,18 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package nogo
+// Package config defines a filter configuration for nogo findings.
+package config
 
 import (
 	"fmt"
 	"regexp"
+
+	"gvisor.dev/gvisor/tools/nogo/check"
 )
 
 // GroupName is a named group.
 type GroupName string
-
-// AnalyzerName is a named analyzer.
-type AnalyzerName string
 
 // Group represents a named collection of files.
 type Group struct {
@@ -215,7 +215,7 @@ type Config struct {
 	// key for each analyzer is the name of the analyzer. The
 	// value is either a boolean (enable/disable), or a map to
 	// the groups above.
-	Analyzers map[AnalyzerName]AnalyzerConfig `yaml:"analyzers"`
+	Analyzers map[string]AnalyzerConfig `yaml:"analyzers"`
 }
 
 // Size implements worker.Sizer.Size.
@@ -282,7 +282,7 @@ func (c *Config) Compile() error {
 }
 
 // ShouldReport returns true iff the finding should match the Config.
-func (c *Config) ShouldReport(finding Finding) bool {
+func (c *Config) ShouldReport(finding check.Finding) bool {
 	fullPos := finding.Position.String()
 
 	// Find the matching group.

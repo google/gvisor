@@ -12,27 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build go1.1
-// +build go1.1
-
-package nogo
+package check
 
 import (
 	"fmt"
 	"io"
 	"os"
+
+	"gvisor.dev/gvisor/tools/nogo/flags"
 )
 
 // findStdPkg needs to find the bundled standard library packages.
-func findStdPkg(GOOS, GOARCH, path string) (io.ReadCloser, error) {
+var findStdPkg = func(path string) (io.ReadCloser, error) {
 	if path == "C" {
 		// Cgo builds cannot be analyzed. Skip.
 		return nil, ErrSkip
 	}
-	return os.Open(fmt.Sprintf("external/go_sdk/pkg/%s_%s/%s.a", GOOS, GOARCH, path))
+
+	// Attempt to use the root, if available.
+	root, envErr := flags.Env("GOROOT")
+	if envErr != nil {
+		return nil, fmt.Errorf("unable to resolve GOROOT: %w", envErr)
+	}
+
+	// Attempt to resolve the library, and propagate this error.
+	return os.Open(fmt.Sprintf("%s/pkg/%s_%s/%s.a", root, flags.GOOS, flags.GOARCH, path))
 }
 
-// ReleaseTags returns nil, indicating that the defaults should be used.
-func ReleaseTags() ([]string, error) {
+// releaseTags returns nil, indicating that the defaults should be used.
+var releaseTags = func() ([]string, error) {
 	return nil, nil
 }

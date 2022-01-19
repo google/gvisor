@@ -21,7 +21,6 @@ package worker
 import (
 	"bufio"
 	"bytes"
-	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -32,6 +31,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	_ "net/http/pprof" // For profiling.
@@ -40,6 +40,7 @@ import (
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 	wpb "gvisor.dev/bazel/worker_protocol_go_proto"
+	"gvisor.dev/gvisor/runsc/flag"
 )
 
 var (
@@ -54,13 +55,77 @@ var (
 	// This is used for cache invalidation. The key is the *absolute* path
 	// name, and the value is the digest in the current run.
 	inputFiles = make(map[string]string)
+)
 
-	// activeCaches is the set of active caches.
-	activeCaches = make(map[*Cache]struct{})
+// LookupDigest returns a digest for the given file.
+func LookupDigest(filename string) (string, bool) {
+	digest, ok := inputFiles[filename]
+	return digest, ok
+}
+
+var (
+	// allCaches is a global list of caches.
+	allCaches cachesList
+
+	// globalMu is a globalMutex for globalLRU.
+	//
+	// Note that this has a strict lock ordering requirement. No cache locks
+	// may be held when acquiring this lock.
+	globalMu sync.Mutex
+
+	// globalLRU is a globalLRU for all entries.
+	//
+	// Protected by globalMu.
+	globalLRU lruList
 
 	// totalCacheUsage is the total usage of all caches.
+	//
+	// Protected by globalMu.
 	totalCacheUsage int64
 )
+
+// Sizer returns a size.
+type Sizer interface {
+	Size() int64
+}
+
+// cacheEntry is a cache entry.
+//
+// The cacheEntry object is immutable, with the exception of the ready
+// WaitGroup, which may be signalled.
+type cacheEntry struct {
+	cache    *Cache
+	key      string
+	sizer    Sizer
+	err      error
+	ready    sync.WaitGroup
+	lruEntry // in globalLRU.
+}
+
+// Cache is a worker cache.
+//
+// They can be created via NewCache.
+type Cache struct {
+	name        string
+	mu          sync.Mutex
+	entries     map[string]*cacheEntry
+	size        int64
+	hits        int64
+	misses      int64
+	cachesEntry // in allCaches.
+}
+
+// NewCache returns a new cache.
+//
+// Precondition: this must be called at init.
+func NewCache(name string) *Cache {
+	c := &Cache{
+		name:    name,
+		entries: make(map[string]*cacheEntry),
+	}
+	allCaches.PushBack(c)
+	return c
+}
 
 // mustAbs returns the absolute path of a filename or dies.
 func mustAbs(filename string) string {
@@ -71,46 +136,8 @@ func mustAbs(filename string) string {
 	return abs
 }
 
-// updateInputFiles creates an entry in inputFiles.
-func updateInputFile(filename, digest string) {
-	inputFiles[mustAbs(filename)] = digest
-}
-
-// Sizer returns a size.
-type Sizer interface {
-	Size() int64
-}
-
-// CacheBytes is an example of a Sizer.
-type CacheBytes []byte
-
-// Size implements Sizer.Size.
-func (cb CacheBytes) Size() int64 {
-	return int64(len(cb))
-}
-
-// Cache is a worker cache.
-//
-// They can be created via NewCache.
-type Cache struct {
-	name    string
-	entries map[string]Sizer
-	size    int64
-	hits    int64
-	misses  int64
-}
-
-// NewCache returns a new cache.
-func NewCache(name string) *Cache {
-	return &Cache{
-		name: name,
-	}
-}
-
 // Lookup looks up an entry in the cache.
-//
-// It is a function of the given files.
-func (c *Cache) Lookup(filenames []string, generate func() Sizer) Sizer {
+func (c *Cache) Lookup(filenames []string, generate func() (Sizer, error)) (Sizer, error) {
 	digests := make([]string, 0, len(filenames))
 	for _, filename := range filenames {
 		digest, ok := inputFiles[mustAbs(filename)]
@@ -129,59 +156,91 @@ func (c *Cache) Lookup(filenames []string, generate func() Sizer) Sizer {
 		return digests[i] < digests[j]
 	})
 	cacheKey := strings.Join(digests, "+")
-	if c.entries == nil {
-		c.entries = make(map[string]Sizer)
-		activeCaches[c] = struct{}{}
-	}
+
+	c.mu.Lock()
 	entry, ok := c.entries[cacheKey]
 	if ok {
 		c.hits++
-		return entry
+		c.mu.Unlock() // See ordering requirement.
+		if entry.sizer != nil {
+			globalMu.Lock()
+			globalLRU.Remove(entry)
+			globalLRU.PushBack(entry)
+			globalMu.Unlock()
+		}
+		entry.ready.Wait()
+		return entry.sizer, entry.err
 	}
 
 	// Generate a new entry.
-	entry = generate()
 	c.misses++
+	entry = &cacheEntry{
+		cache: c,
+		key:   cacheKey,
+	}
+	entry.ready.Add(1)
 	c.entries[cacheKey] = entry
-	if entry != nil {
-		sz := entry.Size()
-		c.size += sz
-		totalCacheUsage += sz
+	c.mu.Unlock() // Unlock for generate.
+	entry.sizer, entry.err = generate()
+	entry.ready.Done()
+
+	// Does this need to be accounted? We consider negative cache entries
+	// to be free, in order to avoid extra work.
+	if entry.sizer == nil {
+		return entry.sizer, entry.err
 	}
 
-	// Check the capacity of all caches. If it greater than the maximum, we
-	// flush everything but still return this entry.
+	// Account for the size of this item. This is complex, but we may clear
+	// out other caches based on the globalLRU. Only items with non-zero
+	// size are added here. This routine is the reason for the locking
+	// order requirement on globalMu and must be respected.
+	globalMu.Lock()
+	globalLRU.PushBack(entry)
+	totalCacheUsage += entry.sizer.Size()
 	if totalCacheUsage > *maximumCacheUsage {
-		for entry, _ := range activeCaches {
-			// Drop all entries.
-			entry.size = 0
-			entry.entries = nil
-		}
-		totalCacheUsage = 0 // Reset.
-	}
+		for entry := globalLRU.Front(); entry != nil && totalCacheUsage > *maximumCacheUsage; entry = globalLRU.Front() {
+			sz := entry.sizer.Size()
 
-	return entry
+			// Remove from its cache.
+			entry.cache.mu.Lock()
+			delete(entry.cache.entries, entry.key)
+			entry.cache.size -= sz
+			entry.cache.mu.Unlock()
+
+			// Remove from the global list.
+			globalLRU.Remove(entry)
+			totalCacheUsage -= sz
+		}
+	}
+	globalMu.Unlock()
+
+	// Return the value.
+	return entry.sizer, entry.err
 }
 
 // allCacheStats returns stats for all caches.
 func allCacheStats() string {
-	var sb strings.Builder
-	for entry, _ := range activeCaches {
-		ratio := float64(entry.hits) / float64(entry.hits+entry.misses)
+	var (
+		sb    strings.Builder
+		count int
+	)
+	for c := allCaches.Front(); c != nil; c = c.Next() {
+		c.mu.Lock()
+		if len(c.entries) == 0 {
+			c.mu.Unlock()
+			continue // Not active.
+		}
+		count++ // At least one active cache.
+		ratio := float64(c.hits) / float64(c.hits+c.misses)
 		fmt.Fprintf(&sb,
 			"% 10s: count: % 5d  size: % 10d  hits: % 7d  misses: % 7d  ratio: %2.2f\n",
-			entry.name, len(entry.entries), entry.size, entry.hits, entry.misses, ratio)
+			c.name, len(c.entries), c.size, c.hits, c.misses, ratio)
+		c.mu.Unlock()
 	}
-	if len(activeCaches) > 0 {
+	if count > 0 {
 		fmt.Fprintf(&sb, "total: % 10d\n", totalCacheUsage)
 	}
 	return sb.String()
-}
-
-// LookupDigest returns a digest for the given file.
-func LookupDigest(filename string) (string, bool) {
-	digest, ok := inputFiles[filename]
-	return digest, ok
 }
 
 // Work invokes the main function.
@@ -197,6 +256,15 @@ func Work(run func([]string) int) {
 			}
 			// Pull arguments from the file.
 			args = strings.Split(string(content), "\n")
+			for i := 0; i < len(args); {
+				if args[i] == "" {
+					// Remove empty arguments.
+					copy(args[i:], args[i+1:])
+					args = args[:len(args)-1]
+					continue
+				}
+				i++ // Visit next.
+			}
 			flag.CommandLine.Parse(args)
 			args = flag.CommandLine.Args()
 		}
@@ -276,7 +344,7 @@ func Work(run func([]string) int) {
 		// Flush relevant caches.
 		inputFiles = make(map[string]string)
 		for _, input := range wreq.GetInputs() {
-			updateInputFile(input.GetPath(), string(input.GetDigest()))
+			inputFiles[mustAbs(input.GetPath())] = string(input.GetDigest())
 		}
 
 		// Prepare logging.

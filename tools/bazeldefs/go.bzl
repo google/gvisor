@@ -135,17 +135,13 @@ def go_context(ctx, goos = None, goarch = None, std = False):
     go_ctx = _go_context(ctx)
     if goos == None:
         goos = go_ctx.sdk.goos
-    elif goos != go_ctx.sdk.goos:
-        fail("Internal GOOS (%s) doesn't match GoSdk GOOS (%s)." % (goos, go_ctx.sdk.goos))
     if goarch == None:
         goarch = go_ctx.sdk.goarch
-    elif goarch != go_ctx.sdk.goarch:
-        fail("Internal GOARCH (%s) doesn't match GoSdk GOARCH (%s)." % (goarch, go_ctx.sdk.goarch))
     return struct(
         env = go_ctx.env,
         go = go_ctx.go,
-        goarch = go_ctx.sdk.goarch,
-        goos = go_ctx.sdk.goos,
+        goarch = goarch,
+        goos = goos,
         gotags = go_ctx.tags,
         nogo_args = [],
         runfiles = depset([go_ctx.go] + go_ctx.sdk.srcs + go_ctx.sdk.tools + go_ctx.stdlib.libs),
