@@ -1,93 +1,3 @@
-// build +arm64
-
-// Automatically generated, do not edit.
-
-// CPU offsets.
-#define CPU_SELF             0x00
-#define CPU_REGISTERS        0xe0
-#define CPU_STACK_TOP        0x90
-#define CPU_ERROR_CODE       0x90
-#define CPU_ERROR_TYPE       0x98
-#define CPU_FAULT_ADDR       0xa0
-#define CPU_FPSTATE_EL0      0xa8
-#define CPU_TTBR0_KVM	     0xb0
-#define CPU_TTBR0_APP        0xb8
-#define CPU_VECTOR_CODE      0xc0
-#define CPU_APP_ADDR         0xc8
-#define CPU_LAZY_VFP         0xd0
-#define CPU_APP_ASID         0xd8
-
-// Bits.
-#define _KERNEL_FLAGS        0x3c5
-
-// Vectors.
-#define El1Sync 0x04
-#define El1Irq 0x05
-#define El1Fiq 0x06
-#define El1Err 0x07
-#define El0Sync 0x08
-#define El0Irq 0x09
-#define El0Fiq 0x0a
-#define El0Err 0x0b
-#define El1SyncDa 0x10
-#define El1SyncIa 0x11
-#define El1SyncSpPc 0x12
-#define El1SyncUndef 0x13
-#define El1SyncDbg 0x14
-#define El1SyncInv 0x15
-#define El0SyncSVC 0x16
-#define El0SyncDa 0x17
-#define El0SyncIa 0x18
-#define El0SyncFpsimdAcc 0x19
-#define El0SyncSveAcc 0x1a
-#define El0SyncFpsimdExc 0x1b
-#define El0SyncSys 0x1c
-#define El0SyncSpPc 0x1d
-#define El0SyncUndef 0x1e
-#define El0SyncDbg 0x1f
-#define El0SyncWfx 0x20
-#define El0SyncInv 0x21
-#define El0ErrNMI 0x22
-#define PageFault 0x17
-#define Syscall 0x16
-#define VirtualizationException 0x23
-
-// Ptrace registers.
-#define PTRACE_R0       0x00
-#define PTRACE_R1       0x08
-#define PTRACE_R2       0x10
-#define PTRACE_R3       0x18
-#define PTRACE_R4       0x20
-#define PTRACE_R5       0x28
-#define PTRACE_R6       0x30
-#define PTRACE_R7       0x38
-#define PTRACE_R8       0x40
-#define PTRACE_R9       0x48
-#define PTRACE_R10      0x50
-#define PTRACE_R11      0x58
-#define PTRACE_R12      0x60
-#define PTRACE_R13      0x68
-#define PTRACE_R14      0x70
-#define PTRACE_R15      0x78
-#define PTRACE_R16      0x80
-#define PTRACE_R17      0x88
-#define PTRACE_R18      0x90
-#define PTRACE_R19      0x98
-#define PTRACE_R20      0xa0
-#define PTRACE_R21      0xa8
-#define PTRACE_R22      0xb0
-#define PTRACE_R23      0xb8
-#define PTRACE_R24      0xc0
-#define PTRACE_R25      0xc8
-#define PTRACE_R26      0xd0
-#define PTRACE_R27      0xd8
-#define PTRACE_R28      0xe0
-#define PTRACE_R29      0xe8
-#define PTRACE_R30      0xf0
-#define PTRACE_SP       0xf8
-#define PTRACE_PC       0x100
-#define PTRACE_PSTATE   0x108
-#define PTRACE_TLS      0x110
 // Copyright 2019 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -105,9 +15,98 @@
 #include "funcdata.h"
 #include "textflag.h"
 
-// NB: Offsets are programatically generated (see BUILD).
-//
-// This file is concatenated with the definitions.
+
+#define CPU_SELF             0
+#define CPU_REGISTERS        224
+
+
+#define CPU_STACK_TOP        (0 + 128)
+#define CPU_ERROR_CODE       128
+#define CPU_ERROR_TYPE       136
+#define CPU_FAULT_ADDR       144
+#define CPU_FPSTATE_EL0      152
+#define CPU_TTBR0_KVM	     160
+#define CPU_TTBR0_APP        168
+#define CPU_VECTOR_CODE      176
+#define CPU_APP_ADDR         184
+#define CPU_LAZY_VFP         192
+#define CPU_APP_ASID         200
+
+
+// Bits.
+#define _KERNEL_FLAGS 965
+
+// Vectors.
+#define El1Sync                 4
+#define El1Irq                  5
+#define El1Fiq                  6
+#define El1Err                  7
+#define El0Sync                 8
+#define El0Irq                  9
+#define El0Fiq                  10
+#define El0Err                  11
+#define El1SyncDa               16
+#define El1SyncIa               17
+#define El1SyncSpPc             18
+#define El1SyncUndef            19
+#define El1SyncDbg              20
+#define El1SyncInv              21
+#define El0SyncSVC              22
+#define El0SyncDa               23
+#define El0SyncIa               24
+#define El0SyncFpsimdAcc        25
+#define El0SyncSveAcc           26
+#define El0SyncFpsimdExc        27
+#define El0SyncSys              28
+#define El0SyncSpPc             29
+#define El0SyncUndef            30
+#define El0SyncDbg              31
+#define El0SyncWfx              32
+#define El0SyncInv              33
+#define El0ErrNMI               34
+#define PageFault               23
+#define Syscall                 22
+#define VirtualizationException 35
+
+
+#define PTRACE_R0       (0 + 0*8)
+#define PTRACE_R1       (0 + 1*8)
+#define PTRACE_R2       (0 + 2*8)
+#define PTRACE_R3       (0 + 3*8)
+#define PTRACE_R4       (0 + 4*8)
+#define PTRACE_R5       (0 + 5*8)
+#define PTRACE_R6       (0 + 6*8)
+#define PTRACE_R7       (0 + 7*8)
+#define PTRACE_R8       (0 + 8*8)
+#define PTRACE_R9       (0 + 9*8)
+#define PTRACE_R10      (0 + 10*8)
+#define PTRACE_R11      (0 + 11*8)
+#define PTRACE_R12      (0 + 12*8)
+#define PTRACE_R13      (0 + 13*8)
+#define PTRACE_R14      (0 + 14*8)
+#define PTRACE_R15      (0 + 15*8)
+#define PTRACE_R16      (0 + 16*8)
+#define PTRACE_R17      (0 + 17*8)
+#define PTRACE_R18      (0 + 18*8)
+#define PTRACE_R19      (0 + 19*8)
+#define PTRACE_R20      (0 + 20*8)
+#define PTRACE_R21      (0 + 21*8)
+#define PTRACE_R22      (0 + 22*8)
+#define PTRACE_R23      (0 + 23*8)
+#define PTRACE_R24      (0 + 24*8)
+#define PTRACE_R25      (0 + 25*8)
+#define PTRACE_R26      (0 + 26*8)
+#define PTRACE_R27      (0 + 27*8)
+#define PTRACE_R28      (0 + 28*8)
+#define PTRACE_R29      (0 + 29*8)
+#define PTRACE_R30      (0 + 30*8)
+#define PTRACE_SP       248
+#define PTRACE_PC       256
+#define PTRACE_PSTATE   264
+
+
+#define PTRACE_TLS      272
+
 
 // Saves a register set.
 //
