@@ -43,19 +43,24 @@ func (p *Pipe) Release(context.Context) {
 
 // Read reads from the Pipe into dst.
 func (p *Pipe) Read(ctx context.Context, dst usermem.IOSequence) (int64, error) {
-	n, err := dst.CopyOutFrom(ctx, p)
+	n, err := p.read(dst.NumBytes(), func(srcs safemem.BlockSeq) (uint64, error) {
+		var done uint64
+		for !srcs.IsEmpty() {
+			src := srcs.Head()
+			n, err := dst.CopyOut(ctx, src.ToSlice())
+			done += uint64(n)
+			if err != nil {
+				return done, err
+			}
+			dst = dst.DropFirst(n)
+			srcs = srcs.Tail()
+		}
+		return done, nil
+	}, true /* removeFromSrc */)
 	if n > 0 {
 		p.queue.Notify(waiter.WritableEvents)
 	}
 	return n, err
-}
-
-// ReadToBlocks implements safemem.Reader.ReadToBlocks for Pipe.Read.
-func (p *Pipe) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
-	n, err := p.read(int64(dsts.NumBytes()), func(srcs safemem.BlockSeq) (uint64, error) {
-		return safemem.CopySeq(dsts, srcs)
-	}, true /* removeFromSrc */)
-	return uint64(n), err
 }
 
 func (p *Pipe) read(count int64, f func(srcs safemem.BlockSeq) (uint64, error), removeFromSrc bool) (int64, error) {
@@ -81,7 +86,20 @@ func (p *Pipe) WriteTo(ctx context.Context, w io.Writer, count int64, dup bool) 
 
 // Write writes to the Pipe from src.
 func (p *Pipe) Write(ctx context.Context, src usermem.IOSequence) (int64, error) {
-	n, err := src.CopyInTo(ctx, p)
+	n, err := p.write(src.NumBytes(), func(dsts safemem.BlockSeq) (uint64, error) {
+		var done uint64
+		for !dsts.IsEmpty() {
+			dst := dsts.Head()
+			n, err := src.CopyIn(ctx, dst.ToSlice())
+			done += uint64(n)
+			if err != nil {
+				return done, err
+			}
+			src = src.DropFirst(n)
+			dsts = dsts.Tail()
+		}
+		return done, nil
+	})
 	if n > 0 {
 		p.queue.Notify(waiter.ReadableEvents)
 	}
@@ -92,14 +110,6 @@ func (p *Pipe) Write(ctx context.Context, src usermem.IOSequence) (int64, error)
 		}
 	}
 	return n, err
-}
-
-// WriteFromBlocks implements safemem.Writer.WriteFromBlocks for Pipe.Write.
-func (p *Pipe) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error) {
-	n, err := p.write(int64(srcs.NumBytes()), func(dsts safemem.BlockSeq) (uint64, error) {
-		return safemem.CopySeq(dsts, srcs)
-	})
-	return uint64(n), err
 }
 
 func (p *Pipe) write(count int64, f func(safemem.BlockSeq) (uint64, error)) (int64, error) {
