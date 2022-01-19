@@ -22,10 +22,12 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/cleanup/cleanup.h"
 #include "absl/strings/string_view.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/memory_util.h"
 #include "test/util/signal_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -828,6 +830,100 @@ TEST(SpliceTest, ToPipeWithSmallCapacityDoesNotSpin) {
 
   // Alarm should have been handled.
   EXPECT_EQ(signaled, 1);
+}
+
+// Regression test for b/208679047.
+TEST(SpliceTest, FromPipeWithConcurrentIo) {
+  // Create a file containing two copies of the same byte. Two bytes are
+  // necessary because both the read() and splice() loops below advance the file
+  // offset by one byte before lseek(); use of the file offset is required since
+  // the mutex protecting the file offset is implicated in the circular lock
+  // ordering that this test attempts to reproduce.
+  //
+  // This can't use memfd_create() because, in Linux, memfd_create(2) creates a
+  // struct file using alloc_file_pseudo() without going through
+  // do_dentry_open(), so FMODE_ATOMIC_POS is not set despite the created file
+  // having type S_IFREG ("regular file").
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR));
+  constexpr char kSplicedByte = 0x01;
+  for (int i = 0; i < 2; i++) {
+    ASSERT_THAT(WriteFd(fd.get(), &kSplicedByte, 1),
+                SyscallSucceedsWithValue(1));
+  }
+
+  // Create a pipe.
+  int pipe_fds[2];
+  ASSERT_THAT(pipe(pipe_fds), SyscallSucceeds());
+  const FileDescriptor rfd(pipe_fds[0]);
+  FileDescriptor wfd(pipe_fds[1]);
+
+  DisableSave ds;
+  std::atomic<bool> done(false);
+
+  // Create a thread that reads from fd until the end of the test.
+  ScopedThread memfd_reader([&] {
+    char file_buf;
+    while (!done.load()) {
+      ASSERT_THAT(lseek(fd.get(), 0, SEEK_SET), SyscallSucceeds());
+      int n = ReadFd(fd.get(), &file_buf, 1);
+      if (n == 0) {
+        // fd was at offset 2 (EOF). In Linux, this is possible even after
+        // lseek(0) because splice() doesn't attempt atomicity with respect to
+        // concurrent lseek(), so the effect of lseek() may be lost.
+        continue;
+      }
+      ASSERT_THAT(n, SyscallSucceedsWithValue(1));
+      ASSERT_EQ(file_buf, kSplicedByte);
+    }
+  });
+
+  // Create a thread that reads from the pipe until the end of the test.
+  ScopedThread pipe_reader([&] {
+    char pipe_buf;
+    while (!done.load()) {
+      int n = ReadFd(rfd.get(), &pipe_buf, 1);
+      if (n == 0) {
+        // This should only happen due to cleanup_threads (below) closing wfd.
+        EXPECT_TRUE(done.load());
+        return;
+      }
+      ASSERT_THAT(n, SyscallSucceedsWithValue(1));
+      ASSERT_EQ(pipe_buf, kSplicedByte);
+    }
+  });
+
+  // Create a thread that repeatedly invokes madvise(MADV_DONTNEED) on the same
+  // page of memory. (Having a thread attempt to lock MM.activeMu for writing is
+  // necessary to create a deadlock from the circular lock ordering, since
+  // otherwise both uses of MM.activeMu are for reading and may proceed
+  // concurrently.)
+  ScopedThread mm_locker([&] {
+    const Mapping m = ASSERT_NO_ERRNO_AND_VALUE(
+        MmapAnon(kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));
+    while (!done.load()) {
+      madvise(m.ptr(), kPageSize, MADV_DONTNEED);
+    }
+  });
+
+  // This must come after the ScopedThreads since its destructor must run before
+  // theirs.
+  const absl::Cleanup cleanup_threads = [&] {
+    done.store(true);
+    // Ensure that pipe_reader is unblocked after setting done, so that it will
+    // be able to observe done being true.
+    wfd.reset();
+  };
+
+  // Repeatedly splice from memfd to the pipe. The test passes if this does not
+  // deadlock.
+  const int kIterations = 5000;
+  for (int i = 0; i < kIterations; i++) {
+    ASSERT_THAT(lseek(fd.get(), 0, SEEK_SET), SyscallSucceeds());
+    ASSERT_THAT(splice(fd.get(), nullptr, wfd.get(), nullptr, 1, 0),
+                SyscallSucceedsWithValue(1));
+  }
 }
 
 }  // namespace

@@ -2310,9 +2310,11 @@ cc_binary(
     linkstatic = 1,
     deps = [
         "//test/util:file_descriptor",
+        "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
         gtest,
+        "//test/util:memory_util",
         "//test/util:signal_util",
         "//test/util:temp_path",
         "//test/util:test_main",
