@@ -20,11 +20,14 @@ package sharedmem
 import (
 	"bytes"
 	"math/rand"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -235,6 +238,7 @@ func TestSimpleSend(t *testing.T) {
 			pkt.NetworkProtocolNumber = proto
 			var pkts stack.PacketBufferList
 			pkts.PushBack(pkt)
+			defer pkts.DecRef()
 			if _, err := c.ep.WritePackets(pkts); err != nil {
 				t.Fatalf("WritePackets failed: %s", err)
 			}
@@ -310,6 +314,7 @@ func TestPreserveSrcAddressInSend(t *testing.T) {
 	pkt.NetworkProtocolNumber = proto
 
 	var pkts stack.PacketBufferList
+	defer pkts.DecRef()
 	pkts.PushBack(pkt)
 	if _, err := c.ep.WritePackets(pkts); err != nil {
 		t.Fatalf("WritePackets failed: %s", err)
@@ -360,6 +365,8 @@ func TestFillTxQueue(t *testing.T) {
 
 	// Each packet is uses no more than 40 bytes, so write that many packets
 	// until the tx queue if full.
+	// Each packet uses no more than 40 bytes, so write that many packets
+	// until the tx queue if full.
 	ids := make(map[uint64]struct{})
 	for i := queuePipeSize / 40; i > 0; i-- {
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -372,8 +379,10 @@ func TestFillTxQueue(t *testing.T) {
 		var pkts stack.PacketBufferList
 		pkts.PushBack(pkt)
 		if _, err := c.ep.WritePackets(pkts); err != nil {
+			pkts.DecRef()
 			t.Fatalf("WritePackets failed unexpectedly: %s", err)
 		}
+		pkts.DecRef()
 
 		// Check that they have different IDs.
 		desc := c.txq.tx.Pull()
@@ -398,6 +407,7 @@ func TestFillTxQueue(t *testing.T) {
 	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
 		t.Fatalf("got WritePackets(...) = %s, want %s", err, &tcpip.ErrWouldBlock{})
 	}
+	pkts.DecRef()
 }
 
 // TestFillTxQueueAfterBadCompletion sends a bad completion, then sends packets
@@ -431,6 +441,7 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 		if _, err := c.ep.WritePackets(pkts); err != nil {
 			t.Fatalf("WritePackets failed unexpectedly: %s", err)
 		}
+		pkts.DecRef()
 	}
 
 	// Complete the two writes twice.
@@ -458,6 +469,7 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 		if _, err := c.ep.WritePackets(pkts); err != nil {
 			t.Fatalf("WritePackets failed unexpectedly: %s", err)
 		}
+		pkts.DecRef()
 
 		// Check that they have different IDs.
 		desc := c.txq.tx.Pull()
@@ -481,6 +493,7 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
 		t.Fatalf("got WritePackets(...) = %s, want %s", err, &tcpip.ErrWouldBlock{})
 	}
+	pkts.DecRef()
 }
 
 // TestFillTxMemory sends packets until the we run out of shared memory.
@@ -510,6 +523,7 @@ func TestFillTxMemory(t *testing.T) {
 		if _, err := c.ep.WritePackets(pkts); err != nil {
 			t.Fatalf("WritePackets failed unexpectedly: %s", err)
 		}
+		pkts.DecRef()
 
 		// Check that they have different IDs.
 		desc := c.txq.tx.Pull()
@@ -534,6 +548,7 @@ func TestFillTxMemory(t *testing.T) {
 	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
 		t.Fatalf("got WritePackets(...) = %s, want %s", err, &tcpip.ErrWouldBlock{})
 	}
+	pkts.DecRef()
 }
 
 // TestFillTxMemoryWithMultiBuffer sends packets until the we run out of
@@ -564,6 +579,7 @@ func TestFillTxMemoryWithMultiBuffer(t *testing.T) {
 		if _, err := c.ep.WritePackets(pkts); err != nil {
 			t.Fatalf("WritePackets failed unexpectedly: %s", err)
 		}
+		pkts.DecRef()
 
 		// Pull the posted buffer.
 		c.txq.tx.Pull()
@@ -584,6 +600,7 @@ func TestFillTxMemoryWithMultiBuffer(t *testing.T) {
 		if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
 			t.Fatalf("got WritePackets(...) = %s, want %s", err, &tcpip.ErrWouldBlock{})
 		}
+		pkts.DecRef()
 	}
 
 	// Attempt to write the one-buffer packet again. It must succeed.
@@ -599,6 +616,7 @@ func TestFillTxMemoryWithMultiBuffer(t *testing.T) {
 		if _, err := c.ep.WritePackets(pkts); err != nil {
 			t.Fatalf("WritePackets failed unexpectedly: %s", err)
 		}
+		pkts.DecRef()
 	}
 }
 
@@ -814,4 +832,11 @@ func TestCloseWhileWaitingToPost(t *testing.T) {
 	c.cleanup()
 	cleaned = true
 	c.ep.Wait()
+}
+
+func TestMain(m *testing.M) {
+	refs.SetLeakMode(refs.LeaksPanic)
+	code := m.Run()
+	refsvfs2.DoLeakCheck()
+	os.Exit(code)
 }
