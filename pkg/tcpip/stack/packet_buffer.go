@@ -106,7 +106,7 @@ type PacketBuffer struct {
 
 	// buf is the underlying buffer for the packet. See struct level docs for
 	// details.
-	buf      *buffer.Buffer
+	buf      buffer.Buffer
 	reserved int
 	pushed   int
 	consumed int
@@ -169,7 +169,6 @@ type PacketBuffer struct {
 func NewPacketBuffer(opts PacketBufferOptions) *PacketBuffer {
 	pk := pkPool.Get().(*PacketBuffer)
 	pk.reset()
-	pk.buf = &buffer.Buffer{}
 	if opts.ReserveHeaderBytes != 0 {
 		pk.buf.AppendOwned(make([]byte, opts.ReserveHeaderBytes))
 		pk.reserved = opts.ReserveHeaderBytes
@@ -558,7 +557,7 @@ func (d PacketData) AppendView(v tcpipbuffer.View) {
 // frag and frag should not be used again.
 func MergeFragment(dst, frag *PacketBuffer) {
 	frag.buf.TrimFront(int64(frag.dataOffset()))
-	dst.buf.Merge(frag.buf)
+	dst.buf.Merge(&frag.buf)
 }
 
 // ReadFromVV moves at most count bytes from the beginning of srcVV to the end

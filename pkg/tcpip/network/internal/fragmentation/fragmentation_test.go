@@ -107,7 +107,7 @@ func TestFragmentationProcess(t *testing.T) {
 	}
 	for _, c := range processTestCases {
 		t.Run(c.comment, func(t *testing.T) {
-			f := NewFragmentation(minBlockSize, 1024, 512, reassembleTimeout, &faketime.NullClock{}, nil)
+			f := NewFragmentation(minBlockSize, 2048, 512, reassembleTimeout, &faketime.NullClock{}, nil)
 			firstFragmentProto := c.in[0].proto
 			for i, in := range c.in {
 				defer in.pkt.DecRef()
