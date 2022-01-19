@@ -39,6 +39,8 @@ go_test(
     srcs = ["sharedmem_test.go"],
     library = ":sharedmem",
     deps = [
+        "//pkg/refs",
+        "//pkg/refsvfs2",
         "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
@@ -57,6 +59,8 @@ go_test(
     deps = [
         ":sharedmem",
         "//pkg/log",
+        "//pkg/refs",
+        "//pkg/refsvfs2",
         "//pkg/tcpip",
         "//pkg/tcpip/adapters/gonet",
         "//pkg/tcpip/header",
