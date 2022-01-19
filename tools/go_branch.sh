@@ -45,36 +45,10 @@ origpwd=$(pwd)
 othersrc=("go.mod" "go.sum" "AUTHORS" "LICENSE")
 readonly module origpwd othersrc
 
-# Build an amd64 & arm64 gopath.
-declare -r go_amd64="${tmp_dir}/amd64"
-declare -r go_arm64="${tmp_dir}/arm64"
+# Build a full gopath.
+declare -r go_output="${tmp_dir}/output"
 make build BAZEL_OPTIONS="" TARGETS="//:gopath"
-rsync --recursive --delete --copy-links bazel-bin/gopath/ "${go_amd64}"
-make build BAZEL_OPTIONS=--config=cross-aarch64 TARGETS="//:gopath" 2>/dev/null
-rsync --recursive --delete --copy-links bazel-bin/gopath/ "${go_arm64}"
-
-# Strip irrelevant files, i.e. use only arm64 files from the arm64 build.
-# This is because bazel may generate incorrect files for non-target platforms
-# as a workaround. See pkg/sentry/loader/vdsodata as an example.
-find "${go_amd64}/src/${module}" -name '*_arm64*.go' -exec rm -f {} \;
-find "${go_amd64}/src/${module}" -name '*_arm64*.s' -exec rm -f {} \;
-find "${go_arm64}/src/${module}" -name '*_amd64*.go' -exec rm -f {} \;
-find "${go_arm64}/src/${module}" -name '*_amd64*.s' -exec rm -f {} \;
-
-# Check that all files are compatible. This means that if the files exist in
-# both architectures, then they must be identical. The only ones that we expect
-# to exist in a single architecture (due to binary builds) may be different.
-function cross_check() {
-  (cd "${1}" && find "src/${module}" -type f | \
-    xargs -n 1 -I {} sh -c "diff '${1}/{}' '${2}/{}' 2>/dev/null; test \$? -ne 1")
-}
-cross_check "${go_arm64}" "${go_amd64}"
-cross_check "${go_amd64}" "${go_arm64}"
-
-# Merge the two for a complete set of source files.
-declare -r go_merged="${tmp_dir}/merged"
-rsync --recursive "${go_amd64}/" "${go_merged}"
-rsync --recursive "${go_arm64}/" "${go_merged}"
+rsync --recursive --delete --copy-links bazel-bin/gopath/ "${go_output}"
 
 # We expect to have an existing go branch that we will use as the basis for this
 # commit. That branch may be empty, but it must exist. We search for this branch
@@ -120,7 +94,7 @@ find . -type d -exec chmod 0755 {} \;
 # will change here. Otherwise, it adds a tremendous amount of noise to commits.
 # If this file disappears in the future, then presumably we will still delete
 # the underlying directory.
-declare -r gopath="${go_merged}/src/${module}"
+declare -r gopath="${go_output}/src/${module}"
 rsync --recursive --delete \
   --exclude .git \
   "${gopath}/" .

@@ -36,8 +36,6 @@ http_archive(
     name = "io_bazel_rules_go",
     patch_args = ["-p1"],
     patches = [
-        # Ensure we don't destroy the facts visibility.
-        "//tools:rules_go_visibility.patch",
         # Newer versions of the rules_go rules will automatically strip test
         # binaries of symbols, which we don't want.
         "//tools:rules_go_symbols.patch",
@@ -51,13 +49,6 @@ http_archive(
 
 http_archive(
     name = "bazel_gazelle",
-    patch_args = ["-p1"],
-    patches = [
-        # Fix permissions for facts for go_library, not just tool library.
-        # This is actually a no-op with the hacky patch above, but should
-        # slightly future proof this mechanism.
-        "//tools:bazel_gazelle_generate.patch",
-    ],
     sha256 = "62ca106be173579c0a167deb23358fdfe71ffa1e4cfdddf5582af26520f1c66f",
     urls = [
         "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.23.0/bazel-gazelle-v0.23.0.tar.gz",

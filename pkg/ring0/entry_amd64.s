@@ -15,9 +15,77 @@
 #include "funcdata.h"
 #include "textflag.h"
 
-// NB: Offsets are programmatically generated (see BUILD).
-//
-// This file is concatenated with the definitions.
+// CPU offsets.
+#define CPU_REGISTERS    {{ .CPU.registers.Offset }}
+#define CPU_FPU_STATE    {{ .CPU.floatingPointState.Offset }}
+#define CPU_ERROR_CODE   ({{ .CPU.CPUArchState.Offset }}+{{ .CPUArchState.errorCode.Offset }})
+#define CPU_ERROR_TYPE   ({{ .CPU.CPUArchState.Offset }}+{{ .CPUArchState.errorType.Offset }})
+#define CPU_ENTRY        ({{ .CPU.CPUArchState.Offset }}+{{ .CPUArchState.kernelEntry.Offset }})
+#define CPU_HAS_XSAVE    ({{ .CPU.CPUArchState.Offset }}+{{ .CPUArchState.hasXSAVE.Offset }})
+#define CPU_HAS_XSAVEOPT ({{ .CPU.CPUArchState.Offset }}+{{ .CPUArchState.hasXSAVEOPT.Offset }})
+
+{{ with .kernelEntry }}
+#define ENTRY_SCRATCH0   {{ .scratch0.Offset }}
+#define ENTRY_STACK_TOP  {{ .stackTop.Offset }}
+#define ENTRY_CPU_SELF   {{ .cpuSelf.Offset }}
+#define ENTRY_KERNEL_CR3 {{ .kernelCR3.Offset }}
+{{ end }}
+
+// Bits.
+#define _RFLAGS_IF    {{ ._RFLAGS_IF.Value }}
+#define _RFLAGS_IOPL0 {{ ._RFLAGS_IOPL0.Value }}
+#define _KERNEL_FLAGS {{ .KernelFlagsSet.Value }}
+
+// Vectors.
+#define DivideByZero               {{ .DivideByZero.Value }}
+#define Debug                      {{ .Debug.Value }}
+#define NMI                        {{ .NMI.Value }}
+#define Breakpoint                 {{ .Breakpoint.Value }}
+#define Overflow                   {{ .Overflow.Value }}
+#define BoundRangeExceeded         {{ .BoundRangeExceeded.Value }}
+#define InvalidOpcode              {{ .InvalidOpcode.Value }}
+#define DeviceNotAvailable         {{ .DeviceNotAvailable.Value }}
+#define DoubleFault                {{ .DoubleFault.Value }}
+#define CoprocessorSegmentOverrun  {{ .CoprocessorSegmentOverrun.Value }}
+#define InvalidTSS                 {{ .InvalidTSS.Value }}
+#define SegmentNotPresent          {{ .SegmentNotPresent.Value }}
+#define StackSegmentFault          {{ .StackSegmentFault.Value }}
+#define GeneralProtectionFault     {{ .GeneralProtectionFault.Value }}
+#define PageFault                  {{ .PageFault.Value }}
+#define X87FloatingPointException  {{ .X87FloatingPointException.Value }}
+#define AlignmentCheck             {{ .AlignmentCheck.Value }}
+#define MachineCheck               {{ .MachineCheck.Value }}
+#define SIMDFloatingPointException {{ .SIMDFloatingPointException.Value }}
+#define VirtualizationException    {{ .VirtualizationException.Value }}
+#define SecurityException          {{ .SecurityException.Value }}
+#define SyscallInt80               {{ .SyscallInt80.Value }}
+#define Syscall                    {{ .Syscall.Value }}
+
+{{ with .import.linux.PtraceRegs }}
+#define PTRACE_R15      {{ .R15.Offset }}
+#define PTRACE_R14      {{ .R14.Offset }}
+#define PTRACE_R13      {{ .R13.Offset }}
+#define PTRACE_R12      {{ .R12.Offset }}
+#define PTRACE_RBP      {{ .Rbp.Offset }}
+#define PTRACE_RBX      {{ .Rbx.Offset }}
+#define PTRACE_R11      {{ .R11.Offset }}
+#define PTRACE_R10      {{ .R10.Offset }}
+#define PTRACE_R9       {{ .R9.Offset }}
+#define PTRACE_R8       {{ .R8.Offset }}
+#define PTRACE_RAX      {{ .Rax.Offset }}
+#define PTRACE_RCX      {{ .Rcx.Offset }}
+#define PTRACE_RDX      {{ .Rdx.Offset }}
+#define PTRACE_RSI      {{ .Rsi.Offset }}
+#define PTRACE_RDI      {{ .Rdi.Offset }}
+#define PTRACE_ORIGRAX  {{ .Orig_rax.Offset }}
+#define PTRACE_RIP      {{ .Rip.Offset }}
+#define PTRACE_CS       {{ .Cs.Offset }}
+#define PTRACE_FLAGS    {{ .Eflags.Offset }}
+#define PTRACE_RSP      {{ .Rsp.Offset }}
+#define PTRACE_SS       {{ .Ss.Offset }}
+#define PTRACE_FS_BASE  {{ .Fs_base.Offset }}
+#define PTRACE_GS_BASE  {{ .Gs_base.Offset }}
+{{ end }}
 
 // Saves a register set.
 //

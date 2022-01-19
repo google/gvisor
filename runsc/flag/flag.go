@@ -30,9 +30,11 @@ var (
 	Bool        = flag.Bool
 	CommandLine = flag.CommandLine
 	Int         = flag.Int
+	Int64       = flag.Int64
 	NewFlagSet  = flag.NewFlagSet
 	Parse       = flag.Parse
 	String      = flag.String
+	StringVar   = flag.StringVar
 	Uint        = flag.Uint
 	Var         = flag.Var
 )

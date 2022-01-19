@@ -54,7 +54,7 @@ doc(
 yaml_test(
     name = "nogo_config_test",
     srcs = glob(["nogo*.yaml"]),
-    schema = "//tools/nogo:config-schema.json",
+    schema = "//tools/nogo/config:schema.json",
 )
 
 yaml_test(

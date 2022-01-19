@@ -7,6 +7,8 @@ load("//tools:defs.bzl", "cc_flags_supplier", "cc_toolchain", "select_arch", "vd
 
 package(licenses = ["notice"])
 
+exports_files(["check_vdso.py"])
+
 genrule(
     name = "vdso",
     srcs = [
@@ -53,13 +55,7 @@ genrule(
           ) +
           "-o $(location vdso.so) " +
           "$(location vdso.cc) " +
-          "$(location vdso_time.cc) " +
-          "&& $(location :check_vdso) " +
-          "--check-data " +
-          "--vdso $(location vdso.so) ",
-    exec_tools = [
-        ":check_vdso",
-    ],
+          "$(location vdso_time.cc)",
     features = ["-pie"],
     toolchains = [
         cc_toolchain,
@@ -73,9 +69,14 @@ cc_flags_supplier(
     features = ["-pie"],
 )
 
-py_binary(
-    name = "check_vdso",
+py_test(
+    name = "vdso_test",
     srcs = ["check_vdso.py"],
+    args = [
+        "--check-data",
+        "--vdso=$(location :vdso)",
+    ],
+    data = [":vdso"],
+    main = "check_vdso.py",
     python_version = "PY3",
-    visibility = ["//:sandbox"],
 )
