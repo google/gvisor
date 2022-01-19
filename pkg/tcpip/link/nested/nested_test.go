@@ -15,8 +15,11 @@
 package nested_test
 
 import (
+	"os"
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/nested"
@@ -87,9 +90,13 @@ func TestNestedLinkEndpoint(t *testing.T) {
 		t.Error("After attach, nestedEP.IsAttached() = false, want = true")
 	}
 
-	nestedEP.DeliverNetworkPacket(emptyAddress, emptyAddress, header.IPv4ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{}))
-	if disp.count != 1 {
-		t.Errorf("After first packet with dispatcher attached, got disp.count = %d, want = 1", disp.count)
+	{
+		p := stack.NewPacketBuffer(stack.PacketBufferOptions{})
+		nestedEP.DeliverNetworkPacket(emptyAddress, emptyAddress, header.IPv4ProtocolNumber, p)
+		p.DecRef()
+		if disp.count != 1 {
+			t.Errorf("After first packet with dispatcher attached, got disp.count = %d, want = 1", disp.count)
+		}
 	}
 
 	nestedEP.Attach(nil)
@@ -100,10 +107,20 @@ func TestNestedLinkEndpoint(t *testing.T) {
 		t.Error("After detach, nestedEP.IsAttached() = true, want = false")
 	}
 
-	disp.count = 0
-	nestedEP.DeliverNetworkPacket(emptyAddress, emptyAddress, header.IPv4ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{}))
-	if disp.count != 0 {
-		t.Errorf("After second packet with dispatcher detached, got disp.count = %d, want = 0", disp.count)
+	{
+		disp.count = 0
+		p := stack.NewPacketBuffer(stack.PacketBufferOptions{})
+		nestedEP.DeliverNetworkPacket(emptyAddress, emptyAddress, header.IPv4ProtocolNumber, p)
+		p.DecRef()
+		if disp.count != 0 {
+			t.Errorf("After second packet with dispatcher detached, got disp.count = %d, want = 0", disp.count)
+		}
 	}
+}
 
+func TestMain(m *testing.M) {
+	refs.SetLeakMode(refs.LeaksPanic)
+	code := m.Run()
+	refsvfs2.DoLeakCheck()
+	os.Exit(code)
 }

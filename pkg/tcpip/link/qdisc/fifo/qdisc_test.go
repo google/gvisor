@@ -16,8 +16,11 @@ package qdisc_test
 
 import (
 	"math/rand"
+	"os"
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -62,4 +65,11 @@ func TestFastSimultaneousWrites(t *testing.T) {
 			}
 		}()
 	}
+}
+
+func TestMain(m *testing.M) {
+	refs.SetLeakMode(refs.LeaksPanic)
+	code := m.Run()
+	refsvfs2.DoLeakCheck()
+	os.Exit(code)
 }
