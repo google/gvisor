@@ -19,6 +19,8 @@ go_test(
     srcs = ["injectable_test.go"],
     library = ":muxed",
     deps = [
+        "//pkg/refs",
+        "//pkg/refsvfs2",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/link/fdbased",
