@@ -32,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -641,6 +642,10 @@ func (t *Task) exitNotifyLocked(fromPtraceDetach bool) {
 				// should return ECHILD).
 				t.parent.tg.eventQueue.Notify(EventExit | EventChildGroupStop | EventGroupContinue)
 			}
+			if seccheck.Global.Enabled(seccheck.PointExitNotifyParent) {
+				mask, info := getExitNotifyParentSeccheckInfo(t)
+				seccheck.Global.ExitNotifyParent(t, mask, &info)
+			}
 		}
 	}
 	if t.exitTracerAcked && t.exitParentAcked {
@@ -692,6 +697,18 @@ func (t *Task) exitNotificationSignal(sig linux.Signal, receiver *Task) *linux.S
 	}
 	// TODO(b/72102453): Set utime, stime.
 	return info
+}
+
+// Preconditions: The TaskSet mutex must be locked.
+func getExitNotifyParentSeccheckInfo(t *Task) (seccheck.ExitNotifyParentFieldSet, seccheck.ExitNotifyParentInfo) {
+	req := seccheck.Global.ExitNotifyParentReq()
+	info := seccheck.ExitNotifyParentInfo{
+		ExitStatus: t.tg.exitStatus,
+	}
+	var mask seccheck.ExitNotifyParentFieldSet
+	mask.Add(seccheck.ExitNotifyParentFieldExitStatus)
+	t.loadSeccheckInfoLocked(req.Exiter, &mask.Exiter, &info.Exiter)
+	return mask, info
 }
 
 // ExitStatus returns t's exit status, which is only guaranteed to be
