@@ -269,6 +269,17 @@ TEST_F(TuntapTest, InvalidReadWrite) {
   EXPECT_THAT(write(fd.get(), buf, sizeof(buf)), SyscallFailsWithErrno(EBADFD));
 }
 
+TEST_F(TuntapTest, ZeroWrite) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(kDevNetTun, O_RDWR));
+  struct ifreq ifr_set = {};
+  ifr_set.ifr_flags = IFF_TUN | IFF_NO_PI;
+  strncpy(ifr_set.ifr_name, kTunName, IFNAMSIZ);
+  EXPECT_THAT(ioctl(fd.get(), TUNSETIFF, &ifr_set), SyscallSucceeds());
+  EXPECT_THAT(write(fd.get(), nullptr, 0), SyscallFailsWithErrno(EINVAL));
+}
+
 TEST_F(TuntapTest, WriteToDownDevice) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
 
