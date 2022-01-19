@@ -69,6 +69,13 @@ func New(lower stack.LinkWriter, n int, queueLen int) stack.QueueingDiscipline {
 		go func() {
 			defer d.wg.Done()
 			qd.dispatchLoop()
+			qd.mu.Lock()
+			for qd.queue.Front() != nil {
+				p := qd.queue.Front()
+				qd.queue.Remove(p)
+				p.DecRef()
+			}
+			qd.mu.Unlock()
 		}()
 	}
 	return d
