@@ -23,6 +23,8 @@ go_test(
         "nested_test.go",
     ],
     deps = [
+        "//pkg/refs",
+        "//pkg/refsvfs2",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/nested",
