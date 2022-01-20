@@ -16,6 +16,7 @@
 package tundev
 
 import (
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -139,6 +140,9 @@ func (fd *tunFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int6
 
 // Write implements vfs.FileDescriptionImpl.Write.
 func (fd *tunFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
+	if src.NumBytes() == 0 {
+		return 0, unix.EINVAL
+	}
 	data := make([]byte, src.NumBytes())
 	if _, err := src.CopyIn(ctx, data); err != nil {
 		return 0, err
