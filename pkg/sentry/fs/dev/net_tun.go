@@ -15,6 +15,7 @@
 package dev
 
 import (
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -131,6 +132,9 @@ func (n *netTunFileOperations) Ioctl(ctx context.Context, file *fs.File, io user
 
 // Write implements fs.FileOperations.Write.
 func (n *netTunFileOperations) Write(ctx context.Context, file *fs.File, src usermem.IOSequence, offset int64) (int64, error) {
+	if src.NumBytes() == 0 {
+		return 0, unix.EINVAL
+	}
 	data := make([]byte, src.NumBytes())
 	if _, err := src.CopyIn(ctx, data); err != nil {
 		return 0, err
