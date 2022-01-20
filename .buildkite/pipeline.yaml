@@ -172,6 +172,9 @@ steps:
     command: make containerd-test-1.5.4
     agents:
             queue: "cgroupv2"
+  - <<: *common
+    label: ":racehorse: Smoke tests for runsc-race"
+    command:  make run BAZEL_OPTIONS=--@io_bazel_rules_go//go/config:race TARGETS=runsc:runsc-race ARGS="--rootless --network none --debug --alsologtostderr do echo hello"
 
   # Check the website builds.
   - <<: *common
