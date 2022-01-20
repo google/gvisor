@@ -1280,6 +1280,13 @@ func doWalk(cs *connState, ref *fidRef, names []string, getattr bool) (qids []QI
 
 		var sf File // Temporary.
 		if err := walkRef.safelyRead(func() (err error) {
+			// It is not safe to walk on a deleted directory. It could have been
+			// replaced with a malicious symlink.
+			if walkRef.isDeleted() {
+				// Fail this operation as the result will not be meaningful if walkRef
+				// is deleted.
+				return unix.ENOENT
+			}
 			// Pass getattr = true to walkOne since we need the file type for
 			// newRef.
 			qids, sf, valid, attr, err = walkOne(qids, walkRef.file, names[i:i+1], true)
