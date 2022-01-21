@@ -60,7 +60,7 @@ func (f TCPFlags) Contains(o TCPFlags) bool {
 
 // String implements Stringer.String.
 func (f TCPFlags) String() string {
-	flagsStr := []byte("FSRPAU")
+	flagsStr := []byte("FSRPAUEC")
 	for i := range flagsStr {
 		if f&(1<<uint(i)) == 0 {
 			flagsStr[i] = ' '
@@ -77,6 +77,8 @@ const (
 	TCPFlagPsh
 	TCPFlagAck
 	TCPFlagUrg
+	TCPFlagEce
+	TCPFlagCwr
 )
 
 // Options that may be present in a TCP segment.
@@ -152,6 +154,10 @@ type TCPSynOptions struct {
 
 	// SACKPermitted is true if the SACK option was provided in the SYN/SYN-ACK.
 	SACKPermitted bool
+
+	// Flags if specified are set on the outgoing SYN. The SYN flag is
+	// always set.
+	Flags TCPFlags
 }
 
 // SACKBlock represents a single contiguous SACK block.
