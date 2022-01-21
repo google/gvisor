@@ -1158,7 +1158,7 @@ func (c *Context) PassiveConnectWithOptions(maxPayload, wndScale int, synOptions
 	c.SendPacket(nil, &Headers{
 		SrcPort: TestPort,
 		DstPort: StackPort,
-		Flags:   header.TCPFlagSyn,
+		Flags:   header.TCPFlagSyn | synOptions.Flags,
 		SeqNum:  iss,
 		RcvWnd:  30000,
 		TCPOpts: opts[:offset],

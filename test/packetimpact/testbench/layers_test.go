@@ -189,7 +189,7 @@ func TestLayerStringFormat(t *testing.T) {
 				"SeqNum:3452155723 " +
 				"AckNum:2596996163 " +
 				"DataOffset:5 " +
-				"Flags:  R A  " +
+				"Flags:  R A    " +
 				"WindowSize:64240 " +
 				"Checksum:11819" +
 				"}",

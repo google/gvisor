@@ -83,6 +83,7 @@ go_test(
     size = "large",
     srcs = [
         "dual_stack_test.go",
+        "forwarder_test.go",
         "rcv_test.go",
         "sack_scoreboard_test.go",
         "tcp_noracedetector_test.go",

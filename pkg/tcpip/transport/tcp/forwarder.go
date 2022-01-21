@@ -68,8 +68,8 @@ func (f *Forwarder) HandlePacket(id stack.TransportEndpointID, pkt *stack.Packet
 	s := newIncomingSegment(id, f.stack.Clock(), pkt)
 	defer s.decRef()
 
-	// We only care about well-formed SYN packets.
-	if !s.parse(pkt.RXTransportChecksumValidated) || !s.csumValid || s.flags != header.TCPFlagSyn {
+	// We only care about well-formed SYN packets (not SYN-ACK) packets.
+	if !s.parse(pkt.RXTransportChecksumValidated) || !s.csumValid || !s.flags.Contains(header.TCPFlagSyn) || s.flags.Contains(header.TCPFlagAck) {
 		return false
 	}
 
