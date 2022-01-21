@@ -344,11 +344,11 @@ type ControlFDImpl interface {
 	Symlink(c *Connection, name string, target string, uid UID, gid GID) (Inode, error)
 	Link(c *Connection, dir ControlFDImpl, name string) (Inode, error)
 	StatFS(c *Connection) (StatFS, error)
-	Readlink(c *Connection, getLinkBuf func(uint32) []byte) (uint32, error)
+	Readlink(c *Connection, getLinkBuf func(uint32) []byte) (uint16, error)
 	Connect(c *Connection, sockType uint32) (int, error)
 	Unlink(c *Connection, name string, flags uint32) error
 	RenameLocked(c *Connection, newDir ControlFDImpl, newName string) (func(ControlFDImpl), func(), error)
-	GetXattr(c *Connection, name string, dataBuf []byte) (uint32, error)
+	GetXattr(c *Connection, name string, dataBuf []byte) (uint16, error)
 	SetXattr(c *Connection, name string, value string, flags uint32) error
 	ListXattr(c *Connection, size uint64) (StringArray, error)
 	RemoveXattr(c *Connection, name string) error

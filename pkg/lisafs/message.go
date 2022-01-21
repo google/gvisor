@@ -181,17 +181,17 @@ func NoopMarshal(b []byte) []byte { return b }
 func NoopUnmarshal(b []byte) ([]byte, bool) { return b, true }
 
 // SizedString represents a string in memory. The marshalled string bytes are
-// preceded by a uint32 signifying the string length.
+// preceded by a uint16 signifying the string length.
 type SizedString string
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (s *SizedString) SizeBytes() int {
-	return (*primitive.Uint32)(nil).SizeBytes() + len(*s)
+	return (*primitive.Uint16)(nil).SizeBytes() + len(*s)
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (s *SizedString) MarshalBytes(dst []byte) []byte {
-	strLen := primitive.Uint32(len(*s))
+	strLen := primitive.Uint16(len(*s))
 	dst = strLen.MarshalUnsafe(dst)
 	// Copy without any allocation.
 	return dst[copy(dst[:strLen], *s):]
@@ -199,7 +199,7 @@ func (s *SizedString) MarshalBytes(dst []byte) []byte {
 
 // CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
 func (s *SizedString) CheckedUnmarshal(src []byte) ([]byte, bool) {
-	var strLen primitive.Uint32
+	var strLen primitive.Uint16
 	srcRemain, ok := strLen.CheckedUnmarshal(src)
 	if !ok || len(srcRemain) < int(strLen) {
 		return src, false
@@ -210,12 +210,12 @@ func (s *SizedString) CheckedUnmarshal(src []byte) ([]byte, bool) {
 }
 
 // StringArray represents an array of SizedStrings in memory. The marshalled
-// array data is preceded by a uint32 signifying the array length.
+// array data is preceded by a uint16 signifying the array length.
 type StringArray []string
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (s *StringArray) SizeBytes() int {
-	size := (*primitive.Uint32)(nil).SizeBytes()
+	size := (*primitive.Uint16)(nil).SizeBytes()
 	for _, str := range *s {
 		sstr := SizedString(str)
 		size += sstr.SizeBytes()
@@ -225,7 +225,7 @@ func (s *StringArray) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (s *StringArray) MarshalBytes(dst []byte) []byte {
-	arrLen := primitive.Uint32(len(*s))
+	arrLen := primitive.Uint16(len(*s))
 	dst = arrLen.MarshalUnsafe(dst)
 	for _, str := range *s {
 		sstr := SizedString(str)
@@ -236,7 +236,7 @@ func (s *StringArray) MarshalBytes(dst []byte) []byte {
 
 // CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
 func (s *StringArray) CheckedUnmarshal(src []byte) ([]byte, bool) {
-	var arrLen primitive.Uint32
+	var arrLen primitive.Uint16
 	srcRemain, ok := arrLen.CheckedUnmarshal(src)
 	if !ok {
 		return src, false
@@ -248,7 +248,7 @@ func (s *StringArray) CheckedUnmarshal(src []byte) ([]byte, bool) {
 		*s = (*s)[:arrLen]
 	}
 
-	for i := primitive.Uint32(0); i < arrLen; i++ {
+	for i := primitive.Uint16(0); i < arrLen; i++ {
 		var sstr SizedString
 		srcRemain, ok = sstr.CheckedUnmarshal(srcRemain)
 		if !ok {
@@ -436,7 +436,8 @@ const (
 	WalkComponentSymlink
 )
 
-// WalkResp is used to communicate the inodes walked by the server.
+// WalkResp is used to communicate the inodes walked by the server. In memory,
+// the inode array is preceded by a uint16 integer denoting array length.
 type WalkResp struct {
 	Status WalkStatus
 	Inodes []Inode
@@ -445,14 +446,14 @@ type WalkResp struct {
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (w *WalkResp) SizeBytes() int {
 	return w.Status.SizeBytes() +
-		(*primitive.Uint32)(nil).SizeBytes() + (len(w.Inodes) * (*Inode)(nil).SizeBytes())
+		(*primitive.Uint16)(nil).SizeBytes() + (len(w.Inodes) * (*Inode)(nil).SizeBytes())
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (w *WalkResp) MarshalBytes(dst []byte) []byte {
 	dst = w.Status.MarshalUnsafe(dst)
 
-	numInodes := primitive.Uint32(len(w.Inodes))
+	numInodes := primitive.Uint16(len(w.Inodes))
 	dst = numInodes.MarshalUnsafe(dst)
 
 	return MarshalUnsafeInodeSlice(w.Inodes, dst)
@@ -466,7 +467,7 @@ func (w *WalkResp) CheckedUnmarshal(src []byte) ([]byte, bool) {
 	}
 	srcRemain := w.Status.UnmarshalUnsafe(src)
 
-	var numInodes primitive.Uint32
+	var numInodes primitive.Uint16
 	srcRemain = numInodes.UnmarshalUnsafe(srcRemain)
 	if int(numInodes)*(*Inode)(nil).SizeBytes() > len(srcRemain) {
 		return src, false
@@ -479,19 +480,20 @@ func (w *WalkResp) CheckedUnmarshal(src []byte) ([]byte, bool) {
 	return UnmarshalUnsafeInodeSlice(w.Inodes, srcRemain), true
 }
 
-// WalkStatResp is used to communicate stat results for WalkStat.
+// WalkStatResp is used to communicate stat results for WalkStat. In memory,
+// the array data is preceded by a uint16 denoting the array length.
 type WalkStatResp struct {
 	Stats []linux.Statx
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (w *WalkStatResp) SizeBytes() int {
-	return (*primitive.Uint32)(nil).SizeBytes() + (len(w.Stats) * linux.SizeOfStatx)
+	return (*primitive.Uint16)(nil).SizeBytes() + (len(w.Stats) * linux.SizeOfStatx)
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (w *WalkStatResp) MarshalBytes(dst []byte) []byte {
-	numStats := primitive.Uint32(len(w.Stats))
+	numStats := primitive.Uint16(len(w.Stats))
 	dst = numStats.MarshalUnsafe(dst)
 
 	return linux.MarshalUnsafeStatxSlice(w.Stats, dst)
@@ -503,7 +505,7 @@ func (w *WalkStatResp) CheckedUnmarshal(src []byte) ([]byte, bool) {
 	if w.SizeBytes() > len(src) {
 		return src, false
 	}
-	var numStats primitive.Uint32
+	var numStats primitive.Uint16
 	srcRemain := numStats.UnmarshalUnsafe(src)
 
 	if int(numStats)*linux.SizeOfStatx > len(srcRemain) {
@@ -585,17 +587,17 @@ type OpenCreateAtResp struct {
 
 // FdArray is a utility struct which implements a marshallable type for
 // communicating an array of FDIDs. In memory, the array data is preceded by a
-// uint32 denoting the array length.
+// uint16 denoting the array length.
 type FdArray []FDID
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (f *FdArray) SizeBytes() int {
-	return (*primitive.Uint32)(nil).SizeBytes() + (len(*f) * (*FDID)(nil).SizeBytes())
+	return (*primitive.Uint16)(nil).SizeBytes() + (len(*f) * (*FDID)(nil).SizeBytes())
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (f *FdArray) MarshalBytes(dst []byte) []byte {
-	arrLen := primitive.Uint32(len(*f))
+	arrLen := primitive.Uint16(len(*f))
 	dst = arrLen.MarshalUnsafe(dst)
 	return MarshalUnsafeFDIDSlice(*f, dst)
 }
@@ -606,7 +608,7 @@ func (f *FdArray) CheckedUnmarshal(src []byte) ([]byte, bool) {
 	if f.SizeBytes() > len(src) {
 		return src, false
 	}
-	var arrLen primitive.Uint32
+	var arrLen primitive.Uint16
 	srcRemain := arrLen.UnmarshalUnsafe(src)
 	if int(arrLen)*(*FDID)(nil).SizeBytes() > len(srcRemain) {
 		return src, false
@@ -688,7 +690,7 @@ func (r *PReadResp) MarshalBytes(dst []byte) []byte {
 // CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
 func (r *PReadResp) CheckedUnmarshal(src []byte) ([]byte, bool) {
 	srcRemain, ok := r.NumBytes.CheckedUnmarshal(src)
-	if !ok || int(r.NumBytes) > len(srcRemain) || int(r.NumBytes) > len(r.Buf) {
+	if !ok || uint32(r.NumBytes) > uint32(len(srcRemain)) || uint32(r.NumBytes) > uint32(len(r.Buf)) {
 		return src, false
 	}
 
@@ -730,7 +732,7 @@ func (w *PWriteReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
 
 	// This is an optimization. Assuming that the server is making this call, it
 	// is safe to just point to src rather than allocating and copying.
-	if int(w.NumBytes) > len(srcRemain) {
+	if uint32(w.NumBytes) > uint32(len(srcRemain)) {
 		return src, false
 	}
 	w.Buf = srcRemain[:w.NumBytes]
@@ -1112,14 +1114,15 @@ func (d *Dirent64) CheckedUnmarshal(src []byte) ([]byte, bool) {
 	return src, false
 }
 
-// Getdents64Resp is used to communicate getdents64 results.
+// Getdents64Resp is used to communicate getdents64 results. In memory, the
+// dirents array is preceded by a uint16 integer denoting array length.
 type Getdents64Resp struct {
 	Dirents []Dirent64
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (g *Getdents64Resp) SizeBytes() int {
-	ret := (*primitive.Uint32)(nil).SizeBytes()
+	ret := (*primitive.Uint16)(nil).SizeBytes()
 	for i := range g.Dirents {
 		ret += g.Dirents[i].SizeBytes()
 	}
@@ -1128,7 +1131,7 @@ func (g *Getdents64Resp) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (g *Getdents64Resp) MarshalBytes(dst []byte) []byte {
-	numDirents := primitive.Uint32(len(g.Dirents))
+	numDirents := primitive.Uint16(len(g.Dirents))
 	dst = numDirents.MarshalUnsafe(dst)
 	for i := range g.Dirents {
 		dst = g.Dirents[i].MarshalBytes(dst)
@@ -1142,7 +1145,7 @@ func (g *Getdents64Resp) CheckedUnmarshal(src []byte) ([]byte, bool) {
 	if g.SizeBytes() > len(src) {
 		return src, false
 	}
-	var numDirents primitive.Uint32
+	var numDirents primitive.Uint16
 	srcRemain := numDirents.UnmarshalUnsafe(src)
 	if cap(g.Dirents) < int(numDirents) {
 		g.Dirents = make([]Dirent64, numDirents)
