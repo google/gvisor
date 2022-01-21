@@ -15,6 +15,7 @@
 package p9
 
 import (
+	errors2 "errors"
 	"fmt"
 	"io"
 	"os"
@@ -1537,12 +1538,79 @@ func (t *Tmultigetattr) handle(cs *connState) message {
 	}
 	defer ref.DecRef()
 
-	var stats []FullStat
-	if err := ref.safelyRead(func() (err error) {
-		stats, err = ref.file.MultiGetAttr(t.Names)
-		return err
-	}); err != nil {
-		return newErr(err)
+	if cs.server.options.MultiGetAttrSupported {
+		var stats []FullStat
+		if err := ref.safelyRead(func() (err error) {
+			stats, err = ref.file.MultiGetAttr(t.Names)
+			return err
+		}); err != nil {
+			return newErr(err)
+		}
+		return &Rmultigetattr{Stats: stats}
 	}
+
+	stats := make([]FullStat, 0, len(t.Names))
+	mask := AttrMaskAll()
+	start := ref.file
+	startNode := ref.pathNode
+	parent := start
+	parentNode := startNode
+	closeParent := func() {
+		if parent != start {
+			_ = parent.Close()
+		}
+	}
+	defer closeParent()
+
+	cs.server.renameMu.RLock()
+	defer cs.server.renameMu.RUnlock()
+
+	for i, name := range t.Names {
+		if len(name) == 0 && i == 0 {
+			startNode.opMu.RLock()
+			qid, valid, attr, err := start.GetAttr(mask)
+			startNode.opMu.RUnlock()
+			if err != nil {
+				return newErr(err)
+			}
+			stats = append(stats, FullStat{
+				QID:   qid,
+				Valid: valid,
+				Attr:  attr,
+			})
+			continue
+		}
+
+		parentNode.opMu.RLock()
+		if atomic.LoadUint32(&parentNode.deleted) != 0 {
+			parentNode.opMu.RUnlock()
+			break
+		}
+		qids, child, valid, attr, err := parent.WalkGetAttr([]string{name})
+		if err != nil {
+			parentNode.opMu.RUnlock()
+			if errors2.Is(err, unix.ENOENT) {
+				break
+			}
+			return newErr(err)
+		}
+		stats = append(stats, FullStat{
+			QID:   qids[0],
+			Valid: valid,
+			Attr:  attr,
+		})
+		// Update with next generation.
+		closeParent()
+		parent = child
+		childNode := parentNode.pathNodeFor(name)
+		parentNode.opMu.RUnlock()
+		parentNode = childNode
+		if attr.Mode.FileType() != ModeDirectory {
+			// Doesn't need to continue if entry is not a dir. Including symlinks
+			// that cannot be followed.
+			break
+		}
+	}
+
 	return &Rmultigetattr{Stats: stats}
 }
