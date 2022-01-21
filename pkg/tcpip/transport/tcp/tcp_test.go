@@ -3631,38 +3631,6 @@ func TestSynCookiePassiveSendMSSLessThanMTU(t *testing.T) {
 	testBrokenUpWrite(t, c, maxPayload)
 }
 
-func TestForwarderSendMSSLessThanMTU(t *testing.T) {
-	const maxPayload = 100
-	const mtu = 1200
-	c := context.New(t, mtu)
-	defer c.Cleanup()
-
-	s := c.Stack()
-	ch := make(chan tcpip.Error, 1)
-	f := tcp.NewForwarder(s, 65536, 10, func(r *tcp.ForwarderRequest) {
-		var err tcpip.Error
-		c.EP, err = r.CreateEndpoint(&c.WQ)
-		ch <- err
-	})
-	s.SetTransportProtocolHandler(tcp.ProtocolNumber, f.HandlePacket)
-
-	// Do 3-way handshake.
-	c.PassiveConnect(maxPayload, -1, header.TCPSynOptions{MSS: mtu - header.IPv4MinimumSize - header.TCPMinimumSize})
-
-	// Wait for connection to be available.
-	select {
-	case err := <-ch:
-		if err != nil {
-			t.Fatalf("Error creating endpoint: %s", err)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatalf("Timed out waiting for connection")
-	}
-
-	// Check that data gets properly segmented.
-	testBrokenUpWrite(t, c, maxPayload)
-}
-
 func TestSynOptionsOnActiveConnect(t *testing.T) {
 	const mtu = 1400
 	c := context.New(t, mtu)
@@ -8669,5 +8637,69 @@ func TestTimestampSynCookies(t *testing.T) {
 	// should match our expectation.
 	if got, want := header.TCP(header.IPv4(c.GetPacket()).Payload()).ParsedOptions().TSVal, tsNow()+tsOffset; got != want {
 		t.Fatalf("got TSVal = %d, want %d", got, want)
+	}
+}
+
+// TestECNFlagsAccept tests that an ECN non-setup/setup SYN is accepted
+// and the connection is correctly completed.
+func TestECNFlagsAccept(t *testing.T) {
+	testCases := []struct {
+		name  string
+		flags header.TCPFlags
+	}{
+		{name: "non-setup ECN SYN w/ ECE", flags: header.TCPFlagEce},
+		{name: "non-setup ECN SYN w/ CWR", flags: header.TCPFlagCwr},
+		{name: "setup ECN SYN", flags: header.TCPFlagEce | header.TCPFlagCwr},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+
+			c := context.New(t, defaultMTU)
+			defer c.Cleanup()
+
+			// Create EP and start listening.
+			wq := &waiter.Queue{}
+			ep, err := c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, wq)
+			if err != nil {
+				t.Fatalf("NewEndpoint failed: %s", err)
+			}
+			defer ep.Close()
+
+			if err := ep.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+				t.Fatalf("Bind failed: %s", err)
+			}
+
+			if err := ep.Listen(10); err != nil {
+				t.Fatalf("Listen failed: %s", err)
+			}
+
+			// Do 3-way handshake.
+			const maxPayload = 100
+
+			c.PassiveConnect(maxPayload, -1 /* wndScale */, header.TCPSynOptions{MSS: defaultIPv4MSS, Flags: tc.flags})
+
+			// Try to accept the connection.
+			we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+			wq.EventRegister(&we)
+			defer wq.EventUnregister(&we)
+
+			c.EP, _, err = ep.Accept(nil)
+			if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+				// Wait for connection to be established.
+				select {
+				case <-ch:
+					c.EP, _, err = ep.Accept(nil)
+					if err != nil {
+						t.Fatalf("Accept failed: %s", err)
+					}
+
+				case <-time.After(1 * time.Second):
+					t.Fatalf("Timed out waiting for accept")
+				}
+			} else if err != nil {
+				t.Fatalf("Accept failed: %s", err)
+			}
+		})
 	}
 }

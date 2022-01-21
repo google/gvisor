@@ -443,7 +443,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		e.stack.Stats().DroppedPackets.Increment()
 		return nil
 
-	case s.flags == header.TCPFlagSyn:
+	case s.flags.Contains(header.TCPFlagSyn):
 		if e.acceptQueueIsFull() {
 			e.stack.Stats().TCP.ListenOverflowSynDrop.Increment()
 			e.stats.ReceiveErrors.ListenOverflowSynDrop.Increment()
