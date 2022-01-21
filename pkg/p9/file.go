@@ -15,8 +15,6 @@
 package p9
 
 import (
-	"errors"
-
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/fd"
 )
@@ -30,6 +28,10 @@ type AttacherOptions struct {
 	// AllocateOnDeleted is set to true if it's safe to call File.Allocate for
 	// deleted files.
 	AllocateOnDeleted bool
+
+	// MultiGetAttrSupported is set to true if it's safe to call
+	// File.MultiGetAttr with read concurrency guarantee only on start directory.
+	MultiGetAttrSupported bool
 }
 
 // NoServerOptions partially implements Attacher with empty AttacherOptions.
@@ -359,51 +361,4 @@ func (*DisallowServerCalls) Renamed(File, string) {
 // ServerOptions implements Attacher.
 func (*DisallowServerCalls) ServerOptions() AttacherOptions {
 	panic("ServerOptions should not be called on the client")
-}
-
-// DefaultMultiGetAttr implements File.MultiGetAttr() on top of File.
-func DefaultMultiGetAttr(start File, names []string) ([]FullStat, error) {
-	stats := make([]FullStat, 0, len(names))
-	parent := start
-	closeParent := func() {
-		if parent != start {
-			_ = parent.Close()
-		}
-	}
-	defer closeParent()
-	mask := AttrMaskAll()
-	for i, name := range names {
-		if len(name) == 0 && i == 0 {
-			qid, valid, attr, err := parent.GetAttr(mask)
-			if err != nil {
-				return nil, err
-			}
-			stats = append(stats, FullStat{
-				QID:   qid,
-				Valid: valid,
-				Attr:  attr,
-			})
-			continue
-		}
-		qids, child, valid, attr, err := parent.WalkGetAttr([]string{name})
-		if err != nil {
-			if errors.Is(err, unix.ENOENT) {
-				return stats, nil
-			}
-			return nil, err
-		}
-		closeParent()
-		parent = child
-		stats = append(stats, FullStat{
-			QID:   qids[0],
-			Valid: valid,
-			Attr:  attr,
-		})
-		if attr.Mode.FileType() != ModeDirectory {
-			// Doesn't need to continue if entry is not a dir. Including symlinks
-			// that cannot be followed.
-			break
-		}
-	}
-	return stats, nil
 }

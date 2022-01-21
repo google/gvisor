@@ -150,8 +150,9 @@ func (a *attachPoint) Attach() (p9.File, error) {
 // a file that was created in the same path as the delete file.
 func (a *attachPoint) ServerOptions() p9.AttacherOptions {
 	return p9.AttacherOptions{
-		SetAttrOnDeleted:  true,
-		AllocateOnDeleted: true,
+		SetAttrOnDeleted:      true,
+		AllocateOnDeleted:     true,
+		MultiGetAttrSupported: true,
 	}
 }
 
@@ -869,7 +870,7 @@ func (*localFile) Rename(p9.File, string) error {
 	panic("rename called directly")
 }
 
-// RenameAt implements p9.File.RenameAt.
+// RenameAt implements p9.File.
 func (l *localFile) RenameAt(oldName string, directory p9.File, newName string) error {
 	if err := l.checkROMount(); err != nil {
 		return err
@@ -1133,7 +1134,7 @@ func (l *localFile) Flush() error {
 	return nil
 }
 
-// Bind implements p9.File.Bind.
+// Bind implements p9.File.
 func (l *localFile) Bind(sockType uint32, sockName string, uid p9.UID, gid p9.GID) (p9.File, p9.QID, p9.AttrMask, p9.Attr, error) {
 	if !l.attachPoint.conf.HostUDS {
 		// Bind on host UDS is not allowed. As per mknod(2), which is invoked as
@@ -1252,7 +1253,7 @@ func (l *localFile) Connect(flags p9.ConnectFlags) (*fd.FD, error) {
 	return fd.New(f), nil
 }
 
-// Close implements p9.File.Close.
+// Close implements p9.File.
 func (l *localFile) Close() error {
 	l.mode = invalidMode
 	err := l.file.Close()
@@ -1313,6 +1314,7 @@ func (l *localFile) checkROMount() error {
 	return nil
 }
 
+// MultiGetAttr implements p9.File.
 func (l *localFile) MultiGetAttr(names []string) ([]p9.FullStat, error) {
 	stats := make([]p9.FullStat, 0, len(names))
 
@@ -1329,6 +1331,12 @@ func (l *localFile) MultiGetAttr(names []string) ([]p9.FullStat, error) {
 		names = names[1:]
 	}
 
+	// Note that while performing the walk below, we do not have read
+	// concurrency guarantee for any descendants. So files can be created/deleted
+	// while the walk is being performed. However, this should be fine from a
+	// security perspective as we are using host FDs to walk and checking that
+	// each opened path component is a directory. We also set O_NOFOLLOW to
+	// ensure no symlinks are accidentally followed during walk.
 	parent := l.file.FD()
 	closeParent := func() {
 		if parent != l.file.FD() {
@@ -1377,7 +1385,7 @@ type socketLocalFile struct {
 	sock int
 }
 
-// Close implements p9.File.Close.
+// Close implements p9.File.
 func (l *socketLocalFile) Close() error {
 	err := l.localFile.Close()
 	err2 := unix.Close(l.sock)
