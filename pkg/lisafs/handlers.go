@@ -251,7 +251,7 @@ func WalkHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, e
 	// the slice allocation. The memory format should be WalkResp's.
 	var (
 		status    WalkStatus
-		numInodes primitive.Uint32
+		numInodes primitive.Uint16
 	)
 	maxPayloadSize := status.SizeBytes() + numInodes.SizeBytes() + (len(req.Path) * (*Inode)(nil).SizeBytes())
 	if maxPayloadSize > math.MaxUint32 {
@@ -308,7 +308,7 @@ func WalkStatHandler(c *Connection, comm Communicator, payloadLen uint32) (uint3
 	// We will manually marshal the statx results into the payload buffer as they
 	// are generated to avoid the slice allocation. The memory format should be
 	// the same as WalkStatResp's.
-	var numStats primitive.Uint32
+	var numStats primitive.Uint16
 	maxPayloadSize := numStats.SizeBytes() + (len(req.Path) * linux.SizeOfStatx)
 	if maxPayloadSize > math.MaxUint32 {
 		// Too much to walk, can't do.
@@ -730,7 +730,7 @@ func ReadLinkAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uin
 	// We will manually marshal ReadLinkAtResp, which just contains a
 	// SizedString. Let Readlinkat directly write into the payload buffer and
 	// manually write the string size before it.
-	var linkLen primitive.Uint32
+	var linkLen primitive.Uint16
 	respMetaSize := uint32(linkLen.SizeBytes())
 	n, err := fd.impl.Readlink(c, func(dataLen uint32) []byte {
 		return comm.PayloadBuf(dataLen + respMetaSize)[respMetaSize:]
@@ -738,9 +738,9 @@ func ReadLinkAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uin
 	if err != nil {
 		return 0, err
 	}
-	linkLen = primitive.Uint32(n)
+	linkLen = primitive.Uint16(n)
 	linkLen.MarshalUnsafe(comm.PayloadBuf(respMetaSize))
-	return respMetaSize + n, nil
+	return respMetaSize + uint32(n), nil
 }
 
 // FlushHandler handles the Flush RPC.
@@ -923,7 +923,7 @@ func Getdents64Handler(c *Connection, comm Communicator, payloadLen uint32) (uin
 	// We will manually marshal the response Getdents64Resp.
 
 	// numDirents is the number of dirents marshalled into the payload.
-	var numDirents primitive.Uint32
+	var numDirents primitive.Uint16
 	// The payload starts with numDirents, dirents go right after that.
 	// payloadBufPos represents the position at which to write the next dirent.
 	payloadBufPos := uint32(numDirents.SizeBytes())
@@ -964,16 +964,16 @@ func FGetXattrHandler(c *Connection, comm Communicator, payloadLen uint32) (uint
 
 	// Manually marshal FGetXattrResp to avoid allocations and copying.
 	// FGetXattrResp simply is a wrapper around SizedString.
-	var valueLen primitive.Uint32
+	var valueLen primitive.Uint16
 	respMetaSize := uint32(valueLen.SizeBytes())
 	payloadBuf := comm.PayloadBuf(respMetaSize + uint32(req.BufSize))
 	n, err := fd.impl.GetXattr(c, string(req.Name), payloadBuf[respMetaSize:])
 	if err != nil {
 		return 0, err
 	}
-	valueLen = primitive.Uint32(n)
+	valueLen = primitive.Uint16(n)
 	valueLen.MarshalBytes(payloadBuf)
-	return respMetaSize + n, nil
+	return respMetaSize + uint32(n), nil
 }
 
 // FSetXattrHandler handles the FSetXattr RPC.

@@ -16,6 +16,7 @@ package fsgofer
 
 import (
 	"io"
+	"math"
 	"path"
 	"strconv"
 	"sync/atomic"
@@ -622,17 +623,16 @@ func (fd *controlFDLisa) StatFS(c *lisafs.Connection) (lisafs.StatFS, error) {
 }
 
 // Readlink implements lisafs.ControlFDImpl.Readlink.
-func (fd *controlFDLisa) Readlink(c *lisafs.Connection, getLinkBuf func(uint32) []byte) (uint32, error) {
+func (fd *controlFDLisa) Readlink(c *lisafs.Connection, getLinkBuf func(uint32) []byte) (uint16, error) {
 	// This is similar to what os.Readlink does.
-	const limit = uint32(1024 * 1024)
-	for linkLen := uint32(128); linkLen < limit; linkLen *= 2 {
-		b := getLinkBuf(linkLen)
+	for linkLen := 128; linkLen < math.MaxUint16; linkLen *= 2 {
+		b := getLinkBuf(uint32(linkLen))
 		n, err := unix.Readlinkat(fd.hostFD, "", b)
 		if err != nil {
 			return 0, err
 		}
 		if n < int(linkLen) {
-			return uint32(n), nil
+			return uint16(n), nil
 		}
 	}
 	return 0, unix.ENOMEM
@@ -693,7 +693,7 @@ func (fd *controlFDLisa) RenameLocked(c *lisafs.Connection, newDir lisafs.Contro
 }
 
 // GetXattr implements lisafs.ControlFDImpl.GetXattr.
-func (fd *controlFDLisa) GetXattr(c *lisafs.Connection, name string, dataBuf []byte) (uint32, error) {
+func (fd *controlFDLisa) GetXattr(c *lisafs.Connection, name string, dataBuf []byte) (uint16, error) {
 	if !c.ServerImpl().(*LisafsServer).config.EnableVerityXattr {
 		return 0, unix.EOPNOTSUPP
 	}
@@ -701,7 +701,7 @@ func (fd *controlFDLisa) GetXattr(c *lisafs.Connection, name string, dataBuf []b
 		return 0, unix.EOPNOTSUPP
 	}
 	n, err := unix.Fgetxattr(fd.hostFD, name, dataBuf)
-	return uint32(n), err
+	return uint16(n), err
 }
 
 // SetXattr implements lisafs.ControlFDImpl.SetXattr.
