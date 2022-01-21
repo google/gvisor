@@ -15,6 +15,7 @@
 package p9
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"sync/atomic"
@@ -126,15 +127,58 @@ func (c *clientFile) MultiGetAttr(names []string) ([]FullStat, error) {
 		return nil, unix.EBADF
 	}
 
-	if !versionSupportsTmultiGetAttr(c.client.version) {
-		return DefaultMultiGetAttr(c, names)
+	if versionSupportsTmultiGetAttr(c.client.version) {
+		rmultigetattr := Rmultigetattr{}
+		if err := c.client.sendRecv(&Tmultigetattr{FID: c.fid, Names: names}, &rmultigetattr); err != nil {
+			return nil, err
+		}
+		return rmultigetattr.Stats, nil
 	}
 
-	rmultigetattr := Rmultigetattr{}
-	if err := c.client.sendRecv(&Tmultigetattr{FID: c.fid, Names: names}, &rmultigetattr); err != nil {
-		return nil, err
+	stats := make([]FullStat, 0, len(names))
+	var start File = c
+	parent := start
+	closeParent := func() {
+		if parent != start {
+			_ = parent.Close()
+		}
 	}
-	return rmultigetattr.Stats, nil
+	defer closeParent()
+	mask := AttrMaskAll()
+	for i, name := range names {
+		if len(name) == 0 && i == 0 {
+			qid, valid, attr, err := parent.GetAttr(mask)
+			if err != nil {
+				return nil, err
+			}
+			stats = append(stats, FullStat{
+				QID:   qid,
+				Valid: valid,
+				Attr:  attr,
+			})
+			continue
+		}
+		qids, child, valid, attr, err := parent.WalkGetAttr([]string{name})
+		if err != nil {
+			if errors.Is(err, unix.ENOENT) {
+				return stats, nil
+			}
+			return nil, err
+		}
+		closeParent()
+		parent = child
+		stats = append(stats, FullStat{
+			QID:   qids[0],
+			Valid: valid,
+			Attr:  attr,
+		})
+		if attr.Mode.FileType() != ModeDirectory {
+			// Doesn't need to continue if entry is not a dir. Including symlinks
+			// that cannot be followed.
+			break
+		}
+	}
+	return stats, nil
 }
 
 // StatFS implements File.StatFS.
