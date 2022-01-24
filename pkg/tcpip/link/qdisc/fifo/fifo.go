@@ -18,6 +18,8 @@
 package fifo
 
 import (
+	"sync/atomic"
+
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -34,7 +36,12 @@ var _ stack.QueueingDiscipline = (*discipline)(nil)
 type discipline struct {
 	wg          sync.WaitGroup
 	dispatchers []queueDispatcher
+
+	// +checkatomic
+	closed int32
 }
+
+const qDiscClosed = 1
 
 // queueDispatcher is responsible for dispatching all outbound packets in its
 // queue. It will also smartly batch packets when possible and write them
@@ -69,13 +76,6 @@ func New(lower stack.LinkWriter, n int, queueLen int) stack.QueueingDiscipline {
 		go func() {
 			defer d.wg.Done()
 			qd.dispatchLoop()
-			qd.mu.Lock()
-			for qd.queue.Front() != nil {
-				p := qd.queue.Front()
-				qd.queue.Remove(p)
-				p.DecRef()
-			}
-			qd.mu.Unlock()
 		}()
 	}
 	return d
@@ -93,6 +93,14 @@ func (qd *queueDispatcher) dispatchLoop() {
 		switch w := s.Fetch(true); w {
 		case &qd.newPacketWaker:
 		case &qd.closeWaker:
+			qd.mu.Lock()
+			for p := qd.queue.Front(); p != nil; p = qd.queue.Front() {
+				qd.queue.Remove(p)
+				p.DecRef()
+				qd.used--
+			}
+			qd.queue.DecRef()
+			qd.mu.Unlock()
 			return
 		default:
 			panic("unknown waker")
@@ -123,6 +131,9 @@ func (qd *queueDispatcher) dispatchLoop() {
 //  - pkt.GSOOptions
 //  - pkt.NetworkProtocolNumber
 func (d *discipline) WritePacket(pkt *stack.PacketBuffer) tcpip.Error {
+	if atomic.LoadInt32(&d.closed) == qDiscClosed {
+		return &tcpip.ErrClosedForSend{}
+	}
 	qd := &d.dispatchers[int(pkt.Hash)%len(d.dispatchers)]
 	qd.mu.Lock()
 	haveSpace := qd.used < qd.limit
@@ -140,6 +151,7 @@ func (d *discipline) WritePacket(pkt *stack.PacketBuffer) tcpip.Error {
 }
 
 func (d *discipline) Close() {
+	atomic.StoreInt32(&d.closed, qDiscClosed)
 	for i := range d.dispatchers {
 		d.dispatchers[i].closeWaker.Assert()
 	}
