@@ -21,6 +21,7 @@ import (
 	"bytes"
 	"fmt"
 	"math/rand"
+	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -28,6 +29,8 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -203,6 +206,7 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash u
 	// See nic.writePacket.
 	pkt.EgressRoute = r
 	pkt.NetworkProtocolNumber = proto
+	defer pkt.DecRef()
 
 	// Build header.
 	b := pkt.NetworkHeader().Push(netHdrLen)
@@ -339,6 +343,7 @@ func TestPreserveSrcAddress(t *testing.T) {
 		ReserveHeaderBytes: header.EthernetMinimumSize,
 		Data:               buffer.VectorisedView{},
 	})
+	defer pkt.DecRef()
 	// Every PacketBuffer must have these set:
 	// See nic.writePacket.
 	pkt.NetworkProtocolNumber = proto
@@ -385,6 +390,7 @@ func TestDeliverPacket(t *testing.T) {
 					ReserveHeaderBytes: header.EthernetMinimumSize,
 					Data:               buffer.NewViewFromBytes(all).ToVectorisedView(),
 				})
+				defer wantPkt.DecRef()
 				if eth {
 					hdr := header.Ethernet(wantPkt.LinkHeader().Push(header.EthernetMinimumSize))
 					hdr.Encode(&header.EthernetFields{
@@ -633,4 +639,11 @@ func TestDispatchPacketFormat(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMain(m *testing.M) {
+	refs.SetLeakMode(refs.LeaksPanic)
+	code := m.Run()
+	refsvfs2.DoLeakCheck()
+	os.Exit(code)
 }
