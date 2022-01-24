@@ -29,6 +29,7 @@ namespace testing {
 namespace {
 
 constexpr int kDefaultHopLimit = 64;
+constexpr int kDefaultTtl = 64;
 
 using ::testing::ValuesIn;
 using IPv6UnboundSocketTest = SimpleSocketTest;
@@ -37,13 +38,18 @@ TEST_P(IPv6UnboundSocketTest, HopLimitDefault) {
   std::unique_ptr<FileDescriptor> socket =
       ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
+  const int set = -1;
+  ASSERT_THAT(setsockopt(socket->get(), IPPROTO_IPV6, IPV6_UNICAST_HOPS, &set,
+                         sizeof(set)),
+              SyscallSucceedsWithValue(0));
+
   int get = -1;
   socklen_t get_sz = sizeof(get);
   ASSERT_THAT(
       getsockopt(socket->get(), IPPROTO_IPV6, IPV6_UNICAST_HOPS, &get, &get_sz),
       SyscallSucceedsWithValue(0));
   ASSERT_EQ(get_sz, sizeof(get));
-  EXPECT_EQ(get, kDefaultHopLimit);
+  EXPECT_EQ(get, kDefaultTtl);
 }
 
 TEST_P(IPv6UnboundSocketTest, SetHopLimit) {
