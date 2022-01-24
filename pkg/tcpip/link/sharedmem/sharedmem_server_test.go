@@ -189,10 +189,30 @@ func newTestContext(t *testing.T) *testContext {
 }
 
 func (ctx *testContext) cleanup() {
+	ctx.clientStk.RemoveNIC(tcpip.NICID(1))
+	ctx.serverStk.RemoveNIC(tcpip.NICID(1))
 	unix.Close(ctx.peerFDs[0])
 	unix.Close(ctx.peerFDs[1])
 	ctx.clientStk.Close()
 	ctx.serverStk.Close()
+}
+
+func makeRequest(ctx *testContext) (*http.Response, error) {
+	listenAddr := tcpip.FullAddress{Addr: remoteIPv4Address, Port: serverPort}
+	dialFunc := func(address, protocol string) (net.Conn, error) {
+		return gonet.DialTCP(ctx.clientStk, listenAddr, ipv4.ProtocolNumber)
+	}
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			Dial: dialFunc,
+		},
+	}
+	// Close idle "keep alive" connections. If any connections remain open after
+	// a test ends, DoLeakCheck() will erroneously detect leaked packets.
+	defer httpClient.CloseIdleConnections()
+	serverURL := fmt.Sprintf("http://[%s]:%d/", net.IP(remoteIPv4Address), serverPort)
+	response, err := httpClient.Get(serverURL)
+	return response, err
 }
 
 func TestServerRoundTrip(t *testing.T) {
@@ -211,17 +231,7 @@ func TestServerRoundTrip(t *testing.T) {
 		}))
 	}()
 
-	dialFunc := func(address, protocol string) (net.Conn, error) {
-		return gonet.DialTCP(ctx.clientStk, listenAddr, ipv4.ProtocolNumber)
-	}
-
-	httpClient := &http.Client{
-		Transport: &http.Transport{
-			Dial: dialFunc,
-		},
-	}
-	serverURL := fmt.Sprintf("http://[%s]:%d/", net.IP(remoteIPv4Address), serverPort)
-	response, err := httpClient.Get(serverURL)
+	response, err := makeRequest(ctx)
 	if err != nil {
 		t.Fatalf("httpClient.Get(\"/\") failed: %s", err)
 	}
@@ -254,20 +264,10 @@ func TestServerRoundTripStress(t *testing.T) {
 		}))
 	}()
 
-	dialFunc := func(address, protocol string) (net.Conn, error) {
-		return gonet.DialTCP(ctx.clientStk, listenAddr, ipv4.ProtocolNumber)
-	}
-
-	serverURL := fmt.Sprintf("http://[%s]:%d/", net.IP(remoteIPv4Address), serverPort)
 	var errs errgroup.Group
 	for i := 0; i < 1000; i++ {
 		errs.Go(func() error {
-			httpClient := &http.Client{
-				Transport: &http.Transport{
-					Dial: dialFunc,
-				},
-			}
-			response, err := httpClient.Get(serverURL)
+			response, err := makeRequest(ctx)
 			if err != nil {
 				return fmt.Errorf("httpClient.Get(\"/\") failed: %s", err)
 			}
