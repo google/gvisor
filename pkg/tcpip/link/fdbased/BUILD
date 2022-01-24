@@ -30,6 +30,8 @@ go_test(
     srcs = ["endpoint_test.go"],
     library = ":fdbased",
     deps = [
+        "//pkg/refs",
+        "//pkg/refsvfs2",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
