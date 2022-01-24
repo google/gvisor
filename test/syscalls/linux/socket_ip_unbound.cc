@@ -96,6 +96,7 @@ TEST_P(IPUnboundSocketTest, ResetTtlToDefault) {
   EXPECT_THAT(getsockopt(socket->get(), IPPROTO_IP, IP_TTL, &get2, &get2_sz),
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(get2_sz, sizeof(get2));
+  EXPECT_TRUE(get2 == 64 || get2 == 127);
   EXPECT_EQ(get2, get1);
 }
 
