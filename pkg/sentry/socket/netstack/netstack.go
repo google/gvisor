@@ -1330,6 +1330,15 @@ func getSockOptICMPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 	return nil, syserr.ErrProtocolNotAvailable
 }
 
+func defaultTTL(t *kernel.Task, network tcpip.NetworkProtocolNumber) (primitive.Int32, tcpip.Error) {
+	var opt tcpip.DefaultTTLOption
+	stack := inet.StackFromContext(t)
+	if err := stack.(*Stack).Stack.NetworkProtocolOption(network, &opt); err != nil {
+		return 0, err
+	}
+	return primitive.Int32(opt), nil
+}
+
 // getSockOptIPv6 implements GetSockOpt when level is SOL_IPV6.
 func getSockOptIPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name int, outPtr hostarch.Addr, outLen int) (marshal.Marshallable, *syserr.Error) {
 	if _, ok := ep.(tcpip.Endpoint); !ok {
@@ -1377,9 +1386,10 @@ func getSockOptIPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name 
 		// Fill in the default value, if needed.
 		vP := primitive.Int32(v)
 		if vP == -1 {
-			// TODO(https://github.com/google/gvisor/issues/6973): Retrieve the
-			// configured DefaultTTLOption of the IPv6 protocol.
-			vP = DefaultTTL
+			vP, err = defaultTTL(t, header.IPv6ProtocolNumber)
+			if err != nil {
+				return nil, syserr.TranslateNetstackError(err)
+			}
 		}
 
 		return &vP, nil
@@ -1540,9 +1550,10 @@ func getSockOptIP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name in
 		// Fill in the default value, if needed.
 		vP := primitive.Int32(v)
 		if vP == 0 {
-			// TODO(https://github.com/google/gvisor/issues/6973): Retrieve the
-			// configured DefaultTTLOption of the IPv4 protocol.
-			vP = DefaultTTL
+			vP, err = defaultTTL(t, header.IPv4ProtocolNumber)
+			if err != nil {
+				return nil, syserr.TranslateNetstackError(err)
+			}
 		}
 
 		return &vP, nil
