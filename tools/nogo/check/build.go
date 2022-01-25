@@ -16,6 +16,7 @@ package check
 
 import (
 	"fmt"
+	"go/build"
 	"io"
 	"os"
 
@@ -39,7 +40,7 @@ var findStdPkg = func(path string) (io.ReadCloser, error) {
 	return os.Open(fmt.Sprintf("%s/pkg/%s_%s/%s.a", root, flags.GOOS, flags.GOARCH, path))
 }
 
-// releaseTags returns nil, indicating that the defaults should be used.
+// releaseTags returns the default release tags.
 var releaseTags = func() ([]string, error) {
-	return nil, nil
+	return build.Default.ReleaseTags, nil
 }
