@@ -538,7 +538,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, deliv
 	// which it arrived, which isn't necessarily the same as the NIC on which it
 	// will be transmitted. On the other hand, the route's NIC *is* guaranteed
 	// to be the NIC on which the packet will be transmitted.
-	netEP, ok := p.mu.eps[route.NICID()]
+	netEP, ok := p.eps[route.NICID()]
 	p.mu.Unlock()
 	if !ok {
 		return &tcpip.ErrNotConnected{}
