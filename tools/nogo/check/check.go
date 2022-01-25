@@ -33,8 +33,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
-	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -69,45 +67,11 @@ var (
 	releaseTagsErr error
 )
 
-// versionTags generates all version tags.
-//
-// This function will panic if passed an invalid version.
-func versionTags(v string) (tags []string) {
-	if len(v) < 2 || string(v[:2]) != "go" {
-		panic(fmt.Errorf("version %q is not valid", v))
-	}
-	v = v[2:] // Strip go prefix.
-	v = strings.Split(v, " ")[0]
-	v = strings.Split(v, "-")[0]
-	parts := strings.Split(v, ".")
-	if len(parts) < 2 {
-		panic(fmt.Errorf("version %q lacks major and minor number", v))
-	}
-	major, err := strconv.ParseInt(parts[0], 10, 64)
-	if err != nil {
-		panic(fmt.Errorf("version %q contains invalid major: %w", v, err))
-	}
-	minor, err := strconv.ParseInt(parts[1], 10, 64)
-	if err != nil {
-		panic(fmt.Errorf("version %q contains invalid minor: %w", v, err))
-	}
-	// Generate all compliant tags.
-	for i := int64(0); i <= minor; i++ {
-		tags = append(tags, fmt.Sprintf("go%d.%d", major, i))
-	}
-	return tags
-}
-
 // shouldInclude indicates whether the file should be included.
 func shouldInclude(path string) (bool, error) {
 	tagsOnce.Do(func() {
 		if len(flags.BuildTags) > 0 {
 			buildTags = strings.Split(flags.BuildTags, ",")
-		}
-		if v, err := flags.Env("GOVERSION"); err == nil {
-			buildTags = append(buildTags, versionTags(v)...)
-		} else {
-			buildTags = append(buildTags, versionTags(runtime.Version())...)
 		}
 		releaseTagsVal, releaseTagsErr = releaseTags()
 	})
