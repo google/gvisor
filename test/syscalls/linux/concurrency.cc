@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <signal.h>
+#include <time.h>
 
 #include <atomic>
 
@@ -78,9 +79,12 @@ TEST(ConcurrencyTest, MultiProcessMultithreaded) {
 
   pid_t child_pid = fork();
   if (child_pid == 0) {
+    struct timespec now;
+    TEST_CHECK(clock_gettime(CLOCK_MONOTONIC, &now) == 0);
     // Busy wait without making any blocking syscalls.
-    auto end = absl::Now() + absl::Seconds(5);
-    while (absl::Now() < end) {
+    auto end = now.tv_sec + 5;
+    while (now.tv_sec < end) {
+      TEST_CHECK(clock_gettime(CLOCK_MONOTONIC, &now) == 0);
     }
     _exit(0);
   }

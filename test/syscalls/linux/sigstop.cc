@@ -15,6 +15,7 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <sys/select.h>
+#include <time.h>
 
 #include "gtest/gtest.h"
 #include "absl/flags/flag.h"
@@ -126,21 +127,22 @@ void SleepIgnoreStopped(absl::Duration d) {
 TEST(SigstopTest, RestartSyscall) {
   pid_t pid;
   constexpr absl::Duration kStopDelay = absl::Seconds(5);
-  constexpr absl::Duration kSleepDelay = absl::Seconds(15);
   constexpr absl::Duration kStartupDelay = absl::Seconds(5);
-  constexpr absl::Duration kErrorDelay = absl::Seconds(3);
+  constexpr uint64_t kSleepDelay = 15;
+  constexpr uint64_t kErrorDelay = 3;
 
   const DisableSave ds;  // Timing-related.
 
   pid = fork();
   if (pid == 0) {
-    struct timespec ts = {.tv_sec = kSleepDelay / absl::Seconds(1)};
-    auto start = absl::Now();
+    struct timespec ts = {.tv_sec = kSleepDelay};
+    struct timespec start, finish;
+    TEST_CHECK(clock_gettime(CLOCK_MONOTONIC, &start) == 0);
     TEST_CHECK(nanosleep(&ts, nullptr) == 0);
-    auto finish = absl::Now();
+    TEST_CHECK(clock_gettime(CLOCK_MONOTONIC, &finish) == 0);
     // Check that time spent stopped is counted as time spent sleeping.
-    TEST_CHECK(finish - start >= kSleepDelay);
-    TEST_CHECK(finish - start < kSleepDelay + kErrorDelay);
+    TEST_CHECK(finish.tv_sec - start.tv_sec >= kSleepDelay);
+    TEST_CHECK(finish.tv_sec - start.tv_sec < kSleepDelay + kErrorDelay);
     _exit(kChildMainThreadExitCode);
   }
   ASSERT_THAT(pid, SyscallSucceeds());
