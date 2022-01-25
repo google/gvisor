@@ -25,29 +25,40 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 )
 
-// cpuididFunction is a useful type wrapper.
-type cpuidFunction uint32
+// cpuididFunction is a useful type wrapper. The format is eax | (ecx << 32).
+type cpuidFunction uint64
+
+func (f cpuidFunction) eax() uint32 {
+	return uint32(f)
+}
+
+func (f cpuidFunction) ecx() uint32 {
+	return uint32(f >> 32)
+}
 
 // The constants below are the lower or "standard" cpuid functions, ordered as
 // defined by the hardware. Note that these may not be included in the standard
 // set of functions that we are allowed to execute, which are filtered in the
 // Native.Query function defined below.
 const (
-	vendorID                      cpuidFunction = 0x0 // Returns vendor ID and largest standard function.
-	featureInfo                   cpuidFunction = 0x1 // Returns basic feature bits and processor signature.
-	intelCacheDescriptors         cpuidFunction = 0x2 // Returns list of cache descriptors. Intel only.
-	intelSerialNumber             cpuidFunction = 0x3 // Returns processor serial number (obsolete on new hardware). Intel only.
-	intelDeterministicCacheParams cpuidFunction = 0x4 // Returns deterministic cache information. Intel only.
-	monitorMwaitParams            cpuidFunction = 0x5 // Returns information about monitor/mwait instructions.
-	powerParams                   cpuidFunction = 0x6 // Returns information about power management and thermal sensors.
-	extendedFeatureInfo           cpuidFunction = 0x7 // Returns extended feature bits.
-	_                                                 // Function 0x8 is reserved.
-	intelDCAParams                cpuidFunction = 0x9 // Returns direct cache access information. Intel only.
-	intelPMCInfo                  cpuidFunction = 0xa // Returns information about performance monitoring features. Intel only.
-	intelX2APICInfo               cpuidFunction = 0xb // Returns core/logical processor topology. Intel only.
-	_                                                 // Function 0xc is reserved.
-	xSaveInfo                     cpuidFunction = 0xd // Returns information about extended state management.
+	vendorID                      cpuidFunction = 0x0               // Returns vendor ID and largest standard function.
+	featureInfo                   cpuidFunction = 0x1               // Returns basic feature bits and processor signature.
+	intelCacheDescriptors         cpuidFunction = 0x2               // Returns list of cache descriptors. Intel only.
+	intelSerialNumber             cpuidFunction = 0x3               // Returns processor serial number (obsolete on new hardware). Intel only.
+	intelDeterministicCacheParams cpuidFunction = 0x4               // Returns deterministic cache information. Intel only.
+	monitorMwaitParams            cpuidFunction = 0x5               // Returns information about monitor/mwait instructions.
+	powerParams                   cpuidFunction = 0x6               // Returns information about power management and thermal sensors.
+	extendedFeatureInfo           cpuidFunction = 0x7               // Returns extended feature bits.
+	_                                                               // Function 0x8 is reserved.
+	intelDCAParams                cpuidFunction = 0x9               // Returns direct cache access information. Intel only.
+	intelPMCInfo                  cpuidFunction = 0xa               // Returns information about performance monitoring features. Intel only.
+	intelX2APICInfo               cpuidFunction = 0xb               // Returns core/logical processor topology. Intel only.
+	_                                                               // Function 0xc is reserved.
+	xSaveInfo                     cpuidFunction = 0xd               // Returns information about extended state management.
+	xSaveInfoSub                  cpuidFunction = 0xd | (0x1 << 32) // Returns information about extended state management (Sub-leaf).
 )
+
+const xSaveInfoNumLeaves = 64 // Maximum number of xSaveInfo leaves.
 
 // The "extended" functions.
 const (
@@ -135,7 +146,7 @@ func (*Native) Query(in In) Out {
 //
 //go:nosplit
 func (fs FeatureSet) query(fn cpuidFunction) (uint32, uint32, uint32, uint32) {
-	out := fs.Query(In{Eax: uint32(fn)})
+	out := fs.Query(In{Eax: fn.eax(), Ecx: fn.ecx()})
 	return out.Eax, out.Ebx, out.Ecx, out.Edx
 }
 
