@@ -56,6 +56,12 @@ func (fs FeatureSet) ToStatic() Static {
 		feature.set(s, fs.HasFeature(feature))
 	}
 
+	// Processor Extended State Enumeration.
+	for i := uint32(0); i < xSaveInfoNumLeaves; i++ {
+		in := In{Eax: uint32(xSaveInfo), Ecx: i}
+		s[in] = fs.Query(in)
+	}
+
 	// Save all cache information.
 	out := fs.Query(In{Eax: uint32(featureInfo)})
 	for i := uint32(0); i < out.Ecx; i++ {

@@ -81,13 +81,14 @@ func (f *Feature) set(s Static, on bool) {
 		out := s.Query(In{Eax: uint32(featureInfo)})
 		out.Ecx |= (1 << 26)
 		s[In{Eax: uint32(featureInfo)}] = out
-		out = s.Query(In{Eax: uint32(xSaveInfo)})
+
+		out = s.Query(In{Eax: xSaveInfoSub.eax(), Ecx: xSaveInfoSub.ecx()})
 		if on {
 			out.Eax |= f.bit()
 		} else {
 			out.Eax &^= f.bit()
 		}
-		s[In{Eax: uint32(xSaveInfo)}] = out
+		s[In{Eax: xSaveInfoSub.eax(), Ecx: xSaveInfoSub.ecx()}] = out
 	case 5, 6:
 		// Need to enable extended features.
 		out := s.Query(In{Eax: uint32(extendedFunctionInfo)})
@@ -136,7 +137,7 @@ func (f *Feature) check(fs FeatureSet) bool {
 		if (cx & (1 << 26)) == 0 {
 			return false
 		}
-		ax, _, _, _ := fs.query(xSaveInfo)
+		ax, _, _, _ := fs.query(xSaveInfoSub)
 		return (ax & f.bit()) != 0
 	case 5, 6:
 		// eax=0x80000000 gets supported extended levels. We use this
