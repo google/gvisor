@@ -194,6 +194,9 @@ func (c *CPU) CR4() uint64 {
 	if hasSMEP {
 		cr4 |= _CR4_SMEP
 	}
+	if hasSMAP {
+		cr4 |= _CR4_SMAP
+	}
 	if hasFSGSBASE {
 		cr4 |= _CR4_FSGSBASE
 	}

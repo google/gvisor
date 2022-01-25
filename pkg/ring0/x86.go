@@ -34,6 +34,7 @@ const (
 	_CR4_PCIDE      = 1 << 17
 	_CR4_OSXSAVE    = 1 << 18
 	_CR4_SMEP       = 1 << 20
+	_CR4_SMAP       = 1 << 21
 
 	_RFLAGS_AC       = 1 << 18
 	_RFLAGS_NT       = 1 << 14
