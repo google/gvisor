@@ -68,7 +68,10 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
@@ -85,9 +88,21 @@ func (*execStop) Killable() bool { return true }
 // thread group and switching to newImage. Execve always takes ownership of
 // newImage.
 //
+// If executable is not nil, it is the first executable file that was loaded in
+// the process of obtaining newImage, and pathname is a path to it.
+//
 // Preconditions: The caller must be running Task.doSyscallInvoke on the task
 // goroutine.
-func (t *Task) Execve(newImage *TaskImage) (*SyscallControl, error) {
+func (t *Task) Execve(newImage *TaskImage, argv, env []string, executable fsbridge.File, pathname string) (*SyscallControl, error) {
+	// We can't clearly hold kernel package locks while stat'ing executable.
+	if seccheck.Global.Enabled(seccheck.PointExecve) {
+		mask, info := getExecveSeccheckInfo(t, argv, env, executable, pathname)
+		if err := seccheck.Global.Execve(t, mask, &info); err != nil {
+			newImage.release()
+			return nil, err
+		}
+	}
+
 	t.tg.pidns.owner.mu.Lock()
 	defer t.tg.pidns.owner.mu.Unlock()
 	t.tg.signalHandlers.mu.Lock()
@@ -285,4 +300,55 @@ func (t *Task) promoteLocked() {
 		tracer.tg.eventQueue.Notify(EventExit | EventTraceeStop | EventGroupContinue)
 	}
 	oldLeader.exitNotifyLocked(false)
+}
+
+func getExecveSeccheckInfo(t *Task, argv, env []string, executable fsbridge.File, pathname string) (seccheck.ExecveFieldSet, seccheck.ExecveInfo) {
+	req := seccheck.Global.ExecveReq()
+	info := seccheck.ExecveInfo{
+		Credentials: t.Credentials(),
+		Argv:        argv,
+		Env:         env,
+	}
+	var mask seccheck.ExecveFieldSet
+	mask.Add(seccheck.ExecveFieldCredentials)
+	mask.Add(seccheck.ExecveFieldArgv)
+	mask.Add(seccheck.ExecveFieldEnv)
+	if executable != nil {
+		info.BinaryPath = pathname
+		mask.Add(seccheck.ExecveFieldBinaryPath)
+		if vfs2bridgeFile, ok := executable.(*fsbridge.VFSFile); ok {
+			if req.Contains(seccheck.ExecveFieldBinaryMode) || req.Contains(seccheck.ExecveFieldBinaryUID) || req.Contains(seccheck.ExecveFieldBinaryGID) {
+				var statOpts vfs.StatOptions
+				if req.Contains(seccheck.ExecveFieldBinaryMode) {
+					statOpts.Mask |= linux.STATX_TYPE | linux.STATX_MODE
+				}
+				if req.Contains(seccheck.ExecveFieldBinaryUID) {
+					statOpts.Mask |= linux.STATX_UID
+				}
+				if req.Contains(seccheck.ExecveFieldBinaryGID) {
+					statOpts.Mask |= linux.STATX_GID
+				}
+				if stat, err := vfs2bridgeFile.FileDescription().Stat(t, statOpts); err == nil {
+					if stat.Mask&(linux.STATX_TYPE|linux.STATX_MODE) == (linux.STATX_TYPE | linux.STATX_MODE) {
+						info.BinaryMode = stat.Mode
+						mask.Add(seccheck.ExecveFieldBinaryMode)
+					}
+					if stat.Mask&linux.STATX_UID != 0 {
+						info.BinaryUID = auth.KUID(stat.UID)
+						mask.Add(seccheck.ExecveFieldBinaryUID)
+					}
+					if stat.Mask&linux.STATX_GID != 0 {
+						info.BinaryGID = auth.KGID(stat.GID)
+						mask.Add(seccheck.ExecveFieldBinaryGID)
+					}
+				}
+			}
+			// TODO(b/202293325): Decide if we actually want to offer binary
+			// SHA256, which is very expensive.
+		}
+	}
+	t.k.tasks.mu.RLock()
+	defer t.k.tasks.mu.RUnlock()
+	t.loadSeccheckInfoLocked(req.Invoker, &mask.Invoker, &info.Invoker)
+	return mask, info
 }
