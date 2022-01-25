@@ -57,25 +57,25 @@ type endpoint struct {
 	nic   stack.NetworkInterface
 	stats sharedStats
 
-	mu struct {
-		sync.Mutex
+	// mu protects annotated fields below.
+	mu sync.Mutex
 
-		dad ip.DAD
-	}
+	// +checklocks:mu
+	dad ip.DAD
 }
 
 // CheckDuplicateAddress implements stack.DuplicateAddressDetector.
 func (e *endpoint) CheckDuplicateAddress(addr tcpip.Address, h stack.DADCompletionHandler) stack.DADCheckAddressDisposition {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return e.mu.dad.CheckDuplicateAddressLocked(addr, h)
+	return e.dad.CheckDuplicateAddressLocked(addr, h)
 }
 
 // SetDADConfigurations implements stack.DuplicateAddressDetector.
 func (e *endpoint) SetDADConfigurations(c stack.DADConfigurations) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.mu.dad.SetConfigsLocked(c)
+	e.dad.SetConfigsLocked(c)
 }
 
 // DuplicateAddressProtocol implements stack.DuplicateAddressDetector.
@@ -230,7 +230,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		linkAddr := tcpip.LinkAddress(h.HardwareAddressSender())
 
 		e.mu.Lock()
-		e.mu.dad.StopLocked(addr, &stack.DADDupAddrDetected{HolderLinkAddress: linkAddr})
+		e.dad.StopLocked(addr, &stack.DADDupAddrDetected{HolderLinkAddress: linkAddr})
 		e.mu.Unlock()
 
 		// The solicited, override, and isRouter flags are not available for ARP;
@@ -280,7 +280,7 @@ func (p *protocol) NewEndpoint(nic stack.NetworkInterface, _ stack.TransportDisp
 	}
 
 	e.mu.Lock()
-	e.mu.dad.Init(&e.mu, p.options.DADConfigs, ip.DADOptions{
+	e.dad.Init(&e.mu, p.options.DADConfigs, ip.DADOptions{
 		Clock:     p.stack.Clock(),
 		SecureRNG: p.stack.SecureRNG(),
 		// ARP does not support sending nonce values.
