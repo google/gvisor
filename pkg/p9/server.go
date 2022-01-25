@@ -494,10 +494,10 @@ func (cs *connState) handle(m message) (r message) {
 			// Include a useful log message.
 			log.Warningf("panic in handler: %v\n%s", err, debug.Stack())
 
-			// Wrap in an EFAULT error; we don't really have a
+			// Wrap in an EREMOTEIO error; we don't really have a
 			// better way to describe this kind of error. It will
 			// usually manifest as a result of the test framework.
-			r = newErrFromLinuxerr(linuxerr.EFAULT)
+			r = newErrFromLinuxerr(linuxerr.EREMOTEIO)
 		}
 	}()
 	if handler, ok := m.(handler); ok {

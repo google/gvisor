@@ -15,6 +15,8 @@
 package lisafs
 
 import (
+	"runtime/debug"
+
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/flipcall"
 	"gvisor.dev/gvisor/pkg/log"
@@ -156,7 +158,7 @@ func (c *Connection) respondError(comm Communicator, err unix.Errno) (MID, uint3
 	return Error, respLen, nil
 }
 
-func (c *Connection) handleMsg(comm Communicator, m MID, payloadLen uint32) (MID, uint32, []int) {
+func (c *Connection) handleMsg(comm Communicator, m MID, payloadLen uint32) (retM MID, retPayloadLen uint32, retFDs []int) {
 	if payloadLen > c.maxMessageSize {
 		log.Warningf("received payload is too large: %d bytes", payloadLen)
 		return c.respondError(comm, unix.EIO)
@@ -165,7 +167,20 @@ func (c *Connection) handleMsg(comm Communicator, m MID, payloadLen uint32) (MID
 		// c.close() has been called; the connection is shutting down.
 		return c.respondError(comm, unix.ECONNRESET)
 	}
-	defer c.reqGate.Leave()
+	defer func() {
+		c.reqGate.Leave()
+
+		// Don't allow a panic to propagate.
+		if err := recover(); err != nil {
+			// Include a useful log message.
+			log.Warningf("panic in handler: %v\n%s", err, debug.Stack())
+
+			// Wrap in an EREMOTEIO error; we don't really have a better way to
+			// describe this kind of error. EREMOTEIO is appropriate for a generic
+			// failed RPC message.
+			retM, retPayloadLen, retFDs = c.respondError(comm, unix.EREMOTEIO)
+		}
+	}()
 
 	if !c.mounted && m != Mount {
 		log.Warningf("connection must first be mounted")
