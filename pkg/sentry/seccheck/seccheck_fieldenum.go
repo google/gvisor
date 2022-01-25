@@ -77,6 +77,8 @@ const (
 	ExecveFieldArgv
 	ExecveFieldEnv
 	ExecveFieldBinaryMode
+	ExecveFieldBinaryUID
+	ExecveFieldBinaryGID
 	ExecveFieldBinarySHA256
 )
 
@@ -89,6 +91,8 @@ type ExecveFields struct {
 	Argv bool
 	Env bool
 	BinaryMode bool
+	BinaryUID bool
+	BinaryGID bool
 	BinarySHA256 bool
 }
 
@@ -140,6 +144,12 @@ func (fs *ExecveFieldSet) AddFieldsLoadable(fields ExecveFields) {
 	}
 	if fields.BinaryMode {
 		atomic.StoreUint32(&fs.fields[0], fs.fields[0] | (uint32(1) << uint(ExecveFieldBinaryMode)))
+	}
+	if fields.BinaryUID {
+		atomic.StoreUint32(&fs.fields[0], fs.fields[0] | (uint32(1) << uint(ExecveFieldBinaryUID)))
+	}
+	if fields.BinaryGID {
+		atomic.StoreUint32(&fs.fields[0], fs.fields[0] | (uint32(1) << uint(ExecveFieldBinaryGID)))
 	}
 	if fields.BinarySHA256 {
 		atomic.StoreUint32(&fs.fields[0], fs.fields[0] | (uint32(1) << uint(ExecveFieldBinarySHA256)))

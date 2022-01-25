@@ -42,6 +42,12 @@ type ExecveInfo struct {
 	// BinaryMode is the executable binary file's mode.
 	BinaryMode uint16
 
+	// BinaryUID is the executable binary file's owner.
+	BinaryUID auth.KUID
+
+	// BinaryGID is the executable binary file's group.
+	BinaryGID auth.KGID
+
 	// BinarySHA256 is the SHA-256 hash of the executable binary file.
 	//
 	// Note that this requires reading the entire file into memory, which is
