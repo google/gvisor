@@ -40,6 +40,19 @@ TEST(FuseMount, Success) {
       ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), "fuse", 0, mopts, 0));
 }
 
+TEST(FuseMount, SuccessFstype) {
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/fuse", O_WRONLY));
+  std::string mopts =
+      absl::StrFormat("fd=%d,user_id=%d,group_id=%d,rootmode=0777", fd.get(),
+                      getuid(), getgid());
+
+  const auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  const auto mount =
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), "fuse.testfs", 0, mopts, 0));
+}
+
 TEST(FuseMount, FDNotParsable) {
   int devfd;
   EXPECT_THAT(devfd = open("/dev/fuse", O_RDWR), SyscallSucceeds());

@@ -232,6 +232,43 @@ type FUSEInitOut struct {
 	_ [8]uint32
 }
 
+// FUSEStatfsOut is the reply sent by the daemon to the kernel
+// for FUSE_STATFS.
+// from https://elixir.bootlin.com/linux/latest/source/include/uapi/linux/fuse.h#L252
+//
+// +marshal
+type FUSEStatfsOut struct {
+	// Blocks is the maximum number of data blocks the filesystem may store, in
+	// units of BlockSize.
+	Blocks uint64
+
+	// BlocksFree is the number of free data blocks, in units of BlockSize.
+	BlocksFree uint64
+
+	// BlocksAvailable is the number of data blocks free for use by
+	// unprivileged users, in units of BlockSize.
+	BlocksAvailable uint64
+
+	// Files is the number of used file nodes on the filesystem.
+	Files uint64
+
+	// FileFress is the number of free file nodes on the filesystem.
+	FilesFree uint64
+
+	// BlockSize is the optimal transfer block size in bytes.
+	BlockSize uint32
+
+	// NameLength is the maximum file name length.
+	NameLength uint32
+
+	// FragmentSize is equivalent to BlockSize.
+	FragmentSize uint32
+
+	_ uint32
+
+	Spare [6]uint32
+}
+
 // FUSE_GETATTR_FH is currently the only flag of FUSEGetAttrIn.GetAttrFlags.
 // If it is set, the file handle (FUSEGetAttrIn.Fh) is used to indicate the
 // object instead of the node id attribute in the request header.
@@ -436,6 +473,15 @@ type FUSEOpenOut struct {
 	_ uint32
 }
 
+// FUSECreateOut is the reply sent by the daemon to the kernel
+// for FUSECreateMeta.
+//
+// +marshal
+type FUSECreateOut struct {
+	FUSEEntryOut
+	FUSEOpenOut
+}
+
 // FUSE_READ flags, consistent with the ones in include/uapi/linux/fuse.h.
 const (
 	FUSE_READ_LOCKOWNER = 1 << 1
@@ -474,6 +520,7 @@ type FUSEReadIn struct {
 //
 // The second part of the payload is the
 // binary bytes of the data to be written.
+// See FUSEWritePayloadIn that combines header & payload.
 //
 // +marshal
 type FUSEWriteIn struct {
@@ -496,6 +543,36 @@ type FUSEWriteIn struct {
 	Flags uint32
 
 	_ uint32
+}
+
+// FUSEWritePayloadIn combines header - FUSEWriteIn and payload
+// in a single marshallable struct when sending request by the
+// kernel to the daemon
+//
+// +marshal dynamic
+type FUSEWritePayloadIn struct {
+	Header FUSEWriteIn
+	Payload primitive.ByteSlice
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (r *FUSEWritePayloadIn) SizeBytes() int {
+	if r == nil {
+		return (*FUSEWriteIn)(nil).SizeBytes()
+	}
+	return r.Header.SizeBytes() + r.Payload.SizeBytes()
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (r *FUSEWritePayloadIn) MarshalBytes(dst []byte) []byte {
+    dst = r.Header.MarshalUnsafe(dst)
+    dst = r.Payload.MarshalUnsafe(dst)
+    return dst
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (r *FUSEWritePayloadIn) UnmarshalBytes(src []byte) []byte {
+    panic("Unimplemented, FUSEWritePayloadIn is never unmarshalled")
 }
 
 // FUSEWriteOut is the payload of the reply sent by the daemon to the kernel
@@ -541,6 +618,32 @@ type FUSECreateMeta struct {
 	// Umask is the current file mode creation mask.
 	Umask uint32
 	_     uint32
+}
+
+// FUSERenameIn sent by the kernel for FUSE_RENAME
+//
+// +marshal dynamic
+type FUSERenameIn struct {
+	Newdir primitive.Uint64
+	Oldname CString
+	Newname CString
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (r *FUSERenameIn) MarshalBytes(dst []byte) []byte {
+	dst = r.Newdir.MarshalBytes(dst)
+	dst = r.Oldname.MarshalBytes(dst)
+	return r.Newname.MarshalBytes(dst)
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (r *FUSERenameIn) UnmarshalBytes(buf []byte) []byte {
+	panic("Unimplemented, FUSERmDirIn is never unmarshalled")
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (r *FUSERenameIn) SizeBytes() int {
+	return r.Newdir.SizeBytes() + r.Oldname.SizeBytes() + r.Newname.SizeBytes()
 }
 
 // FUSECreateIn contains all the arguments sent by the kernel to the daemon, to
@@ -928,4 +1031,17 @@ func (r *FUSEUnlinkIn) UnmarshalBytes(buf []byte) []byte {
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (r *FUSEUnlinkIn) SizeBytes() int {
 	return r.Name.SizeBytes()
+}
+
+// FUSEFsyncIn is the request sent by the kernel to the daemon
+// when trying to fsync a file.
+//
+// +marshal
+type FUSEFsyncIn struct {
+	Fh uint64
+
+	FsyncFlags uint32
+
+	// padding
+	_ uint32
 }

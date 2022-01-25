@@ -21,6 +21,21 @@ cc_binary(
 )
 
 cc_binary(
+    name = "statfs_test",
+    testonly = 1,
+    srcs = ["statfs_test.cc"],
+    deps = [
+        gtest,
+        ":fuse_fd_util",
+        "//test/util:cleanup",
+        "//test/util:fs_util",
+        "//test/util:fuse_util",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
     name = "open_test",
     testonly = 1,
     srcs = ["open_test.cc"],
