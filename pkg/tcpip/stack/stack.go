@@ -1530,9 +1530,13 @@ func (s *Stack) Wait() {
 		p.Wait()
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for _, n := range s.nics {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for id, n := range s.nics {
+		// Remove NIC to ensure that qDisc goroutines are correctly
+		// terminated on stack teardown.
+		s.removeNICLocked(id)
 		n.NetworkLinkEndpoint.Wait()
 	}
 }
