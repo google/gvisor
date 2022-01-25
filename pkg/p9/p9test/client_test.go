@@ -45,8 +45,8 @@ func TestPanic(t *testing.T) {
 	})
 
 	// Attach to the client.
-	if _, err := c.Attach("/"); err != unix.EFAULT {
-		t.Fatalf("got attach err %v, want EFAULT", err)
+	if _, err := c.Attach("/"); err != unix.EREMOTEIO {
+		t.Fatalf("got attach err %v, want EREMOTEIO", err)
 	}
 }
 
