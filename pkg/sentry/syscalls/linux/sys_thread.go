@@ -144,6 +144,7 @@ func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr host
 				return 0, nil, err
 			}
 			executable = fsbridge.NewFSFile(f)
+			pathname = executable.PathnameWithDeleted(t)
 		} else {
 			wd = f.Dirent
 			wd.IncRef()
@@ -175,7 +176,7 @@ func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr host
 		return 0, nil, se.ToError()
 	}
 
-	ctrl, err := t.Execve(image)
+	ctrl, err := t.Execve(image, argv, envv, nil, "")
 	return 0, ctrl, err
 }
 

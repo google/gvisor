@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/loader"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	slinux "gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
@@ -73,6 +74,11 @@ func execveat(t *kernel.Task, dirfd int32, pathnameAddr, argvAddr, envvAddr host
 	root := t.FSContext().RootDirectoryVFS2()
 	defer root.DecRef(t)
 	var executable fsbridge.File
+	defer func() {
+		if executable != nil {
+			executable.DecRef(t)
+		}
+	}()
 	closeOnExec := false
 	if path := fspath.Parse(pathname); dirfd != linux.AT_FDCWD && !path.Absolute {
 		// We must open the executable ourselves since dirfd is used as the
@@ -105,8 +111,8 @@ func execveat(t *kernel.Task, dirfd int32, pathnameAddr, argvAddr, envvAddr host
 		if err != nil {
 			return 0, nil, err
 		}
-		defer file.DecRef(t)
 		executable = fsbridge.NewVFSFile(file)
+		pathname = executable.PathnameWithDeleted(t)
 	}
 
 	// Load the new TaskImage.
@@ -125,12 +131,25 @@ func execveat(t *kernel.Task, dirfd int32, pathnameAddr, argvAddr, envvAddr host
 		Envv:                envv,
 		Features:            t.Kernel().FeatureSet(),
 	}
+	if seccheck.Global.Enabled(seccheck.PointExecve) {
+		// Retain the first executable file that is opened (which may open
+		// multiple executable files while resolving interpreter scripts).
+		if executable == nil {
+			loadArgs.AfterOpen = func(f fsbridge.File) {
+				if executable == nil {
+					f.IncRef()
+					executable = f
+					pathname = executable.PathnameWithDeleted(t)
+				}
+			}
+		}
+	}
 
 	image, se := t.Kernel().LoadTaskImage(t, loadArgs)
 	if se != nil {
 		return 0, nil, se.ToError()
 	}
 
-	ctrl, err := t.Execve(image)
+	ctrl, err := t.Execve(image, argv, envv, executable, pathname)
 	return 0, ctrl, err
 }

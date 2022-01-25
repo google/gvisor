@@ -137,11 +137,6 @@ func (t *Task) Stack() *arch.Stack {
 //
 // args.MemoryManager does not need to be set by the caller.
 func (k *Kernel) LoadTaskImage(ctx context.Context, args loader.LoadArgs) (*TaskImage, *syserr.Error) {
-	// If File is not nil, we should load that instead of resolving Filename.
-	if args.File != nil {
-		args.Filename = args.File.PathnameWithDeleted(ctx)
-	}
-
 	// Prepare a new user address space to load into.
 	m := mm.NewMemoryManager(k, k, k.SleepForAddressSpaceActivation)
 	defer m.DecUsers(ctx)

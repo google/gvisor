@@ -1014,6 +1014,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		args.File = nil
 	case args.File != nil:
 		// If File is set, take the File provided directly.
+		args.Filename = args.File.PathnameWithDeleted(ctx)
 	default:
 		// Otherwise look at Argv and see if the first argument is a valid path.
 		if len(args.Argv) == 0 {

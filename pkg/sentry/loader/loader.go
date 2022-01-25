@@ -64,6 +64,10 @@ type LoadArgs struct {
 	// Opener is used to open the executable file when 'File' is nil.
 	Opener fsbridge.Lookup
 
+	// If AfterOpen is not nil, it is called after every successful call to
+	// Opener.OpenPath().
+	AfterOpen func(f fsbridge.File)
+
 	// CloseOnExec indicates that the executable (or one of its parent
 	// directories) was opened with O_CLOEXEC. If the executable is an
 	// interpreter script, then cause an ENOENT error to occur, since the
@@ -102,7 +106,14 @@ func openPath(ctx context.Context, args LoadArgs) (fsbridge.File, error) {
 		Flags:    linux.O_RDONLY,
 		FileExec: true,
 	}
-	return args.Opener.OpenPath(ctx, args.Filename, opts, args.RemainingTraversals, args.ResolveFinal)
+	f, err := args.Opener.OpenPath(ctx, args.Filename, opts, args.RemainingTraversals, args.ResolveFinal)
+	if err != nil {
+		return f, err
+	}
+	if args.AfterOpen != nil {
+		args.AfterOpen(f)
+	}
+	return f, nil
 }
 
 // checkIsRegularFile prevents us from trying to execute a directory, pipe, etc.
