@@ -68,20 +68,22 @@ type nic struct {
 	// complete.
 	linkResQueue packetsPendingLinkResolution
 
-	mu struct {
-		sync.RWMutex
-		spoofing    bool
-		promiscuous bool
-	}
+	// mu protects annotated fields below.
+	mu sync.RWMutex
 
-	packetEPs struct {
-		mu sync.RWMutex
+	// +checklocks:mu
+	spoofing bool
 
-		// eps is protected by the mutex, but the values contained in it are not.
-		//
-		// +checklocks:mu
-		eps map[tcpip.NetworkProtocolNumber]*packetEndpointList
-	}
+	// +checklocks:mu
+	promiscuous bool
+
+	// packetEPsMu protects annotated fields below.
+	packetEPsMu sync.RWMutex
+
+	// eps is protected by the mutex, but the values contained in it are not.
+	//
+	// +checklocks:packetEPsMu
+	packetEPs map[tcpip.NetworkProtocolNumber]*packetEndpointList
 
 	qDisc     QueueingDiscipline
 	rawLinkEP LinkRawWriter
@@ -184,10 +186,10 @@ func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *nic
 	}
 	nic.linkResQueue.init(nic)
 
-	nic.packetEPs.mu.Lock()
-	defer nic.packetEPs.mu.Unlock()
+	nic.packetEPsMu.Lock()
+	defer nic.packetEPsMu.Unlock()
 
-	nic.packetEPs.eps = make(map[tcpip.NetworkProtocolNumber]*packetEndpointList)
+	nic.packetEPs = make(map[tcpip.NetworkProtocolNumber]*packetEndpointList)
 
 	resolutionRequired := ep.Capabilities()&CapabilityResolutionRequired != 0
 
@@ -324,14 +326,14 @@ func (n *nic) remove() tcpip.Error {
 // setPromiscuousMode enables or disables promiscuous mode.
 func (n *nic) setPromiscuousMode(enable bool) {
 	n.mu.Lock()
-	n.mu.promiscuous = enable
+	n.promiscuous = enable
 	n.mu.Unlock()
 }
 
 // Promiscuous implements NetworkInterface.
 func (n *nic) Promiscuous() bool {
 	n.mu.RLock()
-	rv := n.mu.promiscuous
+	rv := n.promiscuous
 	n.mu.RUnlock()
 	return rv
 }
@@ -401,7 +403,7 @@ func (n *nic) writePacket(pkt *PacketBuffer) tcpip.Error {
 // setSpoofing enables or disables address spoofing.
 func (n *nic) setSpoofing(enable bool) {
 	n.mu.Lock()
-	n.mu.spoofing = enable
+	n.spoofing = enable
 	n.mu.Unlock()
 }
 
@@ -409,7 +411,7 @@ func (n *nic) setSpoofing(enable bool) {
 func (n *nic) Spoofing() bool {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
-	return n.mu.spoofing
+	return n.spoofing
 }
 
 // primaryAddress returns an address that can be used to communicate with
@@ -426,7 +428,7 @@ func (n *nic) primaryEndpoint(protocol tcpip.NetworkProtocolNumber, remoteAddr t
 	}
 
 	n.mu.RLock()
-	spoofing := n.mu.spoofing
+	spoofing := n.spoofing
 	n.mu.RUnlock()
 
 	return addressableEndpoint.AcquireOutgoingPrimaryAddress(remoteAddr, spoofing)
@@ -477,9 +479,9 @@ func (n *nic) getAddressOrCreateTemp(protocol tcpip.NetworkProtocolNumber, addre
 	var spoofingOrPromiscuous bool
 	switch tempRef {
 	case spoofing:
-		spoofingOrPromiscuous = n.mu.spoofing
+		spoofingOrPromiscuous = n.spoofing
 	case promiscuous:
-		spoofingOrPromiscuous = n.mu.promiscuous
+		spoofingOrPromiscuous = n.promiscuous
 	}
 	n.mu.RUnlock()
 	return n.getAddressOrCreateTempInner(protocol, address, spoofingOrPromiscuous, peb)
@@ -758,12 +760,12 @@ func (n *nic) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 		ep.HandlePacket(n.id, local, protocol, clone)
 	}
 
-	n.packetEPs.mu.Lock()
+	n.packetEPsMu.Lock()
 	// Are any packet type sockets listening for this network protocol?
-	protoEPs, protoEPsOK := n.packetEPs.eps[protocol]
+	protoEPs, protoEPsOK := n.packetEPs[protocol]
 	// Other packet type sockets that are listening for all protocols.
-	anyEPs, anyEPsOK := n.packetEPs.eps[header.EthernetProtocolAll]
-	n.packetEPs.mu.Unlock()
+	anyEPs, anyEPsOK := n.packetEPs[header.EthernetProtocolAll]
+	n.packetEPsMu.Unlock()
 
 	if protoEPsOK {
 		protoEPs.forEach(deliverPacketEPs)
@@ -777,12 +779,12 @@ func (n *nic) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 
 // deliverOutboundPacket delivers outgoing packets to interested endpoints.
 func (n *nic) deliverOutboundPacket(remote tcpip.LinkAddress, pkt *PacketBuffer) {
-	n.packetEPs.mu.RLock()
-	defer n.packetEPs.mu.RUnlock()
+	n.packetEPsMu.RLock()
+	defer n.packetEPsMu.RUnlock()
 	// We do not deliver to protocol specific packet endpoints as on Linux
 	// only ETH_P_ALL endpoints get outbound packets.
 	// Add any other packet sockets that maybe listening for all protocols.
-	eps, ok := n.packetEPs.eps[header.EthernetProtocolAll]
+	eps, ok := n.packetEPs[header.EthernetProtocolAll]
 	if !ok {
 		return
 	}
@@ -956,13 +958,13 @@ func (n *nic) setNUDConfigs(protocol tcpip.NetworkProtocolNumber, c NUDConfigura
 }
 
 func (n *nic) registerPacketEndpoint(netProto tcpip.NetworkProtocolNumber, ep PacketEndpoint) tcpip.Error {
-	n.packetEPs.mu.Lock()
-	defer n.packetEPs.mu.Unlock()
+	n.packetEPsMu.Lock()
+	defer n.packetEPsMu.Unlock()
 
-	eps, ok := n.packetEPs.eps[netProto]
+	eps, ok := n.packetEPs[netProto]
 	if !ok {
 		eps = new(packetEndpointList)
-		n.packetEPs.eps[netProto] = eps
+		n.packetEPs[netProto] = eps
 	}
 	eps.add(ep)
 
@@ -970,16 +972,16 @@ func (n *nic) registerPacketEndpoint(netProto tcpip.NetworkProtocolNumber, ep Pa
 }
 
 func (n *nic) unregisterPacketEndpoint(netProto tcpip.NetworkProtocolNumber, ep PacketEndpoint) {
-	n.packetEPs.mu.Lock()
-	defer n.packetEPs.mu.Unlock()
+	n.packetEPsMu.Lock()
+	defer n.packetEPsMu.Unlock()
 
-	eps, ok := n.packetEPs.eps[netProto]
+	eps, ok := n.packetEPs[netProto]
 	if !ok {
 		return
 	}
 	eps.remove(ep)
 	if eps.len() == 0 {
-		delete(n.packetEPs.eps, netProto)
+		delete(n.packetEPs, netProto)
 	}
 }
 
@@ -988,7 +990,7 @@ func (n *nic) unregisterPacketEndpoint(netProto tcpip.NetworkProtocolNumber, ep 
 // has been removed) unless the NIC is in spoofing mode, or temporary.
 func (n *nic) isValidForOutgoing(ep AssignableAddressEndpoint) bool {
 	n.mu.RLock()
-	spoofing := n.mu.spoofing
+	spoofing := n.spoofing
 	n.mu.RUnlock()
 	return n.Enabled() && ep.IsAssigned(spoofing)
 }
