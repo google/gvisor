@@ -67,6 +67,7 @@ func rdmsr(reg uintptr) uintptr
 // Mostly-constants set by Init.
 var (
 	hasSMEP       bool
+	hasSMAP       bool
 	hasPCID       bool
 	hasXSAVEOPT   bool
 	hasXSAVE      bool
@@ -90,6 +91,7 @@ func Init(fs cpuid.FeatureSet) {
 
 	// Initialize all functions.
 	hasSMEP = fs.HasFeature(cpuid.X86FeatureSMEP)
+	hasSMAP = fs.HasFeature(cpuid.X86FeatureSMAP)
 	hasPCID = fs.HasFeature(cpuid.X86FeaturePCID)
 	hasXSAVEOPT = fs.UseXsaveopt()
 	hasXSAVE = fs.UseXsave()
