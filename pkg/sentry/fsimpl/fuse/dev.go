@@ -168,7 +168,7 @@ func (fd *DeviceFD) readLocked(ctx context.Context, dst usermem.IOSequence, opts
 	for !fd.queue.Empty() {
 		req = fd.queue.Front()
 
-		if int64(req.hdr.Len)+int64(len(req.payload)) <= dst.NumBytes() {
+		if int64(req.hdr.Len) <= dst.NumBytes() {
 			break
 		}
 
@@ -205,17 +205,6 @@ func (fd *DeviceFD) readLocked(ctx context.Context, dst usermem.IOSequence, opts
 	}
 	if n != len(req.data) {
 		return 0, linuxerr.EIO
-	}
-
-	if req.hdr.Opcode == linux.FUSE_WRITE {
-		written, err := dst.DropFirst(n).CopyOut(ctx, req.payload)
-		if err != nil {
-			return 0, err
-		}
-		if written != len(req.payload) {
-			return 0, linuxerr.EIO
-		}
-		n += int(written)
 	}
 
 	// Fully done with this req, remove it from the queue.

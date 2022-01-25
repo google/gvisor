@@ -51,6 +51,7 @@ go_library(
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/marshal",
+        "//pkg/marshal/primitive",        
         "//pkg/refs",
         "//pkg/refsvfs2",
         "//pkg/safemem",

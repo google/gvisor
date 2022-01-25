@@ -8,6 +8,10 @@ package(licenses = ["notice"])
 #     fuse = "True",
 #     test = "//test/fuse/linux:stat_test",
 # )
+# syscall_test(
+#     fuse = "True",
+#     test = "//test/fuse/linux:statfs_test",
+# )
 #
 # syscall_test(
 #     fuse = "True",

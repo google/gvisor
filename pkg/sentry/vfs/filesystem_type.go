@@ -17,6 +17,7 @@ package vfs
 import (
 	"bytes"
 	"fmt"
+	"strings"
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -102,7 +103,13 @@ func (vfs *VirtualFilesystem) MustRegisterFilesystemType(name string, fsType Fil
 func (vfs *VirtualFilesystem) getFilesystemType(name string) *registeredFilesystemType {
 	vfs.fsTypesMu.RLock()
 	defer vfs.fsTypesMu.RUnlock()
-	return vfs.fsTypes[name]
+	fsname := name
+	// Fetch a meaningful part of name if there is a dot in the name
+	// and use left part of a string as fname.
+	if strings.Index(name, ".") != -1 {
+		fsname = strings.Split(name, ".")[0]
+	}
+	return vfs.fsTypes[fsname]
 }
 
 // GenerateProcFilesystems emits the contents of /proc/filesystems for vfs to
