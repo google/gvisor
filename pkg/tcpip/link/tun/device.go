@@ -219,22 +219,13 @@ func (d *Device) Write(data []byte) (int64, error) {
 		}
 	}
 
-	// Try to determine remote link address, default zero.
-	var remote tcpip.LinkAddress
-	switch {
-	case ethHdr != nil:
-		remote = ethHdr.SourceAddress()
-	default:
-		remote = tcpip.LinkAddress(zeroMAC[:])
-	}
-
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: len(ethHdr),
 		Data:               buffer.View(data).ToVectorisedView(),
 	})
 	defer pkt.DecRef()
 	copy(pkt.LinkHeader().Push(len(ethHdr)), ethHdr)
-	endpoint.InjectLinkAddr(protocol, remote, pkt)
+	endpoint.InjectInbound(protocol, pkt)
 	return dataLen, nil
 }
 

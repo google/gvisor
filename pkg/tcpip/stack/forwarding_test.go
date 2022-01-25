@@ -265,7 +265,7 @@ func (e *fwdTestLinkEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber
 
 // InjectLinkAddr injects an inbound packet with a remote link address.
 func (e *fwdTestLinkEndpoint) InjectLinkAddr(protocol tcpip.NetworkProtocolNumber, remote tcpip.LinkAddress, pkt *PacketBuffer) {
-	e.dispatcher.DeliverNetworkPacket(remote, "" /* local */, protocol, pkt)
+	e.dispatcher.DeliverNetworkPacket(protocol, pkt)
 }
 
 // Attach saves the stack network-layer dispatcher for use later when packets

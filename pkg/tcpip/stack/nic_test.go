@@ -182,7 +182,7 @@ func TestDisabledRxStatsWhenNICDisabled(t *testing.T) {
 		t.FailNow()
 	}
 
-	nic.DeliverNetworkPacket("", "", 0, NewPacketBuffer(PacketBufferOptions{
+	nic.DeliverNetworkPacket(0, NewPacketBuffer(PacketBufferOptions{
 		Data: buffer.View([]byte{1, 2, 3, 4}).ToVectorisedView(),
 	}))
 
@@ -207,7 +207,7 @@ func TestPacketWithUnknownNetworkProtocolNumber(t *testing.T) {
 	}
 	// IPv4 isn't recognized since we haven't initialized the NIC with an IPv4
 	// endpoint.
-	nic.DeliverNetworkPacket("", "", header.IPv4ProtocolNumber, NewPacketBuffer(PacketBufferOptions{
+	nic.DeliverNetworkPacket(header.IPv4ProtocolNumber, NewPacketBuffer(PacketBufferOptions{
 		Data: buffer.View([]byte{1, 2, 3, 4}).ToVectorisedView(),
 	}))
 	var count uint64

@@ -40,12 +40,8 @@ type countedEndpoint struct {
 	dispatcher stack.NetworkDispatcher
 }
 
-func (e *countedEndpoint) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func (e *countedEndpoint) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	e.dispatchCount++
-}
-
-func (e *countedEndpoint) DeliverOutboundPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
-	panic("unimplemented")
 }
 
 func (e *countedEndpoint) Attach(dispatcher stack.NetworkDispatcher) {
@@ -161,7 +157,7 @@ func TestWaitDispatch(t *testing.T) {
 	// Dispatch and check that it goes through.
 	{
 		p := stack.NewPacketBuffer(stack.PacketBufferOptions{})
-		ep.dispatcher.DeliverNetworkPacket("", "", 0, p)
+		ep.dispatcher.DeliverNetworkPacket(0, p)
 		if want := 1; ep.dispatchCount != want {
 			t.Fatalf("Unexpected dispatchCount: got=%v, want=%v", ep.dispatchCount, want)
 		}
@@ -172,7 +168,7 @@ func TestWaitDispatch(t *testing.T) {
 	{
 		wep.WaitWrite()
 		p := stack.NewPacketBuffer(stack.PacketBufferOptions{})
-		ep.dispatcher.DeliverNetworkPacket("", "", 0, p)
+		ep.dispatcher.DeliverNetworkPacket(0, p)
 		if want := 2; ep.dispatchCount != want {
 			t.Fatalf("Unexpected dispatchCount: got=%v, want=%v", ep.dispatchCount, want)
 		}
@@ -183,7 +179,7 @@ func TestWaitDispatch(t *testing.T) {
 	{
 		wep.WaitDispatch()
 		p := stack.NewPacketBuffer(stack.PacketBufferOptions{})
-		ep.dispatcher.DeliverNetworkPacket("", "", 0, p)
+		ep.dispatcher.DeliverNetworkPacket(0, p)
 		if want := 2; ep.dispatchCount != want {
 			t.Fatalf("Unexpected dispatchCount: got=%v, want=%v", ep.dispatchCount, want)
 		}

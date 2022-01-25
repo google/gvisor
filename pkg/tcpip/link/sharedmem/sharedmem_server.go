@@ -326,7 +326,6 @@ func (e *serverEndpoint) dispatchLoop(d stack.NetworkDispatcher) {
 				continue
 			}
 		}
-		var src, dst tcpip.LinkAddress
 		var proto tcpip.NetworkProtocolNumber
 		if e.addr != "" {
 			hdr, ok := pkt.LinkHeader().Consume(header.EthernetMinimumSize)
@@ -334,10 +333,7 @@ func (e *serverEndpoint) dispatchLoop(d stack.NetworkDispatcher) {
 				pkt.DecRef()
 				continue
 			}
-			eth := header.Ethernet(hdr)
-			src = eth.SourceAddress()
-			dst = eth.DestinationAddress()
-			proto = eth.Type()
+			proto = header.Ethernet(hdr).Type()
 		} else {
 			// We don't get any indication of what the packet is, so try to guess
 			// if it's an IPv4 or IPv6 packet.
@@ -358,7 +354,7 @@ func (e *serverEndpoint) dispatchLoop(d stack.NetworkDispatcher) {
 			}
 		}
 		// Send packet up the stack.
-		d.DeliverNetworkPacket(src, dst, proto, pkt)
+		d.DeliverNetworkPacket(proto, pkt)
 		pkt.DecRef()
 	}
 
