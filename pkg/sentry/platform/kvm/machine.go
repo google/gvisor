@@ -369,10 +369,6 @@ func (m *machine) mapPhysical(physical, length uintptr, phyRegions []physicalReg
 func (m *machine) Destroy() {
 	runtime.SetFinalizer(m, nil)
 
-	machinePoolMu.Lock()
-	machinePool[m.machinePoolIndex].Store(nil)
-	machinePoolMu.Unlock()
-
 	// Destroy vCPUs.
 	for _, c := range m.vCPUsByID {
 		if c == nil {
@@ -395,6 +391,9 @@ func (m *machine) Destroy() {
 			panic(fmt.Sprintf("error closing vCPU fd: %v", err))
 		}
 	}
+
+	machinePool[m.machinePoolIndex].Store(nil)
+	seccompMmapSync()
 
 	// vCPUs are gone: teardown machine state.
 	if err := unix.Close(m.fd); err != nil {

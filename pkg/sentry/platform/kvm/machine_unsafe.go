@@ -24,6 +24,7 @@ package kvm
 import (
 	"fmt"
 	"math"
+	"runtime"
 	"sync/atomic"
 	"unsafe"
 
@@ -172,6 +173,26 @@ func (c *vCPU) setSignalMask() error {
 	return nil
 }
 
+// seccompMmapHandlerCnt is a number of currently running seccompMmapHandler
+// instances.
+var seccompMmapHandlerCnt int64
+
+// seccompMmapSync waits for all currently runnuing seccompMmapHandler
+// instances.
+//
+// The standard locking primitives can't be used in this case since
+// seccompMmapHandler is executed in a signal handler context.
+//
+// It can be implemented by using FUTEX calls, but it will require to call
+// FUTEX_WAKE from seccompMmapHandler. Consider machine.Destroy is called only
+// once, and the probability is racing with seccompMmapHandler is very low the
+// spinlock-like way looks more reasonable.
+func seccompMmapSync() {
+	for atomic.LoadInt64(&seccompMmapHandlerCnt) != 0 {
+		runtime.Gosched()
+	}
+}
+
 // seccompMmapHandler is a signal handler for runtime mmap system calls
 // that are trapped by seccomp.
 //
@@ -185,6 +206,7 @@ func seccompMmapHandler(context unsafe.Pointer) {
 		return
 	}
 
+	atomic.AddInt64(&seccompMmapHandlerCnt, 1)
 	for i := uint32(0); i < atomic.LoadUint32(&machinePoolLen); i++ {
 		m := machinePool[i].Load()
 		if m == nil {
@@ -213,4 +235,5 @@ func seccompMmapHandler(context unsafe.Pointer) {
 			virtual += length
 		}
 	}
+	atomic.AddInt64(&seccompMmapHandlerCnt, -1)
 }
