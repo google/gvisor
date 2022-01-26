@@ -16,9 +16,12 @@ package network_test
 
 import (
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -198,10 +201,12 @@ func TestEndpointStateTransitions(t *testing.T) {
 			}, info); diff != "" {
 				t.Errorf("write packet info mismatch (-want +got):\n%s", diff)
 			}
-			if err := ctx.WritePacket(stack.NewPacketBuffer(stack.PacketBufferOptions{
+			injectPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 				ReserveHeaderBytes: int(info.MaxHeaderLength),
 				Data:               data.ToVectorisedView(),
-			}), false /* headerIncluded */); err != nil {
+			})
+			defer injectPkt.DecRef()
+			if err := ctx.WritePacket(injectPkt, false /* headerIncluded */); err != nil {
 				t.Fatalf("ctx.WritePacket(_, false): %s", err)
 			}
 			if pkt := e.Read(); pkt == nil {
@@ -315,4 +320,11 @@ func TestBindNICID(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMain(m *testing.M) {
+	refs.SetLeakMode(refs.LeaksPanic)
+	code := m.Run()
+	refsvfs2.DoLeakCheck()
+	os.Exit(code)
 }
