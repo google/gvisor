@@ -82,11 +82,14 @@ go_test(
     name = "tcp_test",
     size = "small",
     srcs = [
+        "main_test.go",
         "segment_test.go",
         "timer_test.go",
     ],
     library = ":tcp",
     deps = [
+        "//pkg/refs",
+        "//pkg/refsvfs2",
         "//pkg/sleep",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/faketime",

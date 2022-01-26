@@ -15,8 +15,12 @@
 package sack_scoreboard_test
 
 import (
+	"os"
 	"testing"
+	"time"
 
+	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
@@ -246,4 +250,14 @@ func TestSACKScoreboardDelete(t *testing.T) {
 	if got, want := s.Sacked(), seqnum.Size(0); got != want {
 		t.Fatalf("incorrect sacked bytes in scoreboard got: %v, want: %v", got, want)
 	}
+}
+
+func TestMain(m *testing.M) {
+	refs.SetLeakMode(refs.LeaksPanic)
+	code := m.Run()
+	// Allow TCP async work to complete to avoid false reports of leaks.
+	// TODO(gvisor.dev/issue/5940): Use fake clock in tests.
+	time.Sleep(1 * time.Second)
+	refsvfs2.DoLeakCheck()
+	os.Exit(code)
 }
