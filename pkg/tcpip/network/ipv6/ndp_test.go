@@ -473,6 +473,7 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 				respNSDst := header.SolicitedNodeAddr(test.nsSrc)
 				var want stack.RouteInfo
 				want.NetProto = ProtocolNumber
+				want.LocalLinkAddress = nicLinkAddr
 				want.RemoteLinkAddress = header.EthernetAddressFromMulticastIPv6Address(respNSDst)
 				if diff := cmp.Diff(want, p.EgressRoute, cmp.AllowUnexported(want)); diff != "" {
 					t.Errorf("route info mismatch (-want +got):\n%s", diff)

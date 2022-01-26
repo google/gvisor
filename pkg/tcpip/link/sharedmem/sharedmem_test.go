@@ -204,11 +204,6 @@ func TestSimpleSend(t *testing.T) {
 	c := newTestContext(t, 20000, 1500, localLinkAddr)
 	defer c.cleanup()
 
-	// Prepare route.
-	var r stack.RouteInfo
-	r.RemoteLinkAddress = remoteLinkAddr
-	r.LocalLinkAddress = localLinkAddr
-
 	for iters := 1000; iters > 0; iters-- {
 		func() {
 			hdrLen, dataLen := rand.Intn(10000), rand.Intn(10000)
@@ -228,8 +223,10 @@ func TestSimpleSend(t *testing.T) {
 			proto := tcpip.NetworkProtocolNumber(rand.Intn(0x10000))
 			// Every PacketBuffer must have these set:
 			// See nic.writePacket.
-			pkt.EgressRoute = r
+			pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
+			pkt.EgressRoute.LocalLinkAddress = localLinkAddr
 			pkt.NetworkProtocolNumber = proto
+			c.ep.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
 			var pkts stack.PacketBufferList
 			pkts.PushBack(pkt)
 			defer pkts.DecRef()
@@ -291,10 +288,6 @@ func TestPreserveSrcAddressInSend(t *testing.T) {
 	defer c.cleanup()
 
 	newLocalLinkAddress := tcpip.LinkAddress(strings.Repeat("0xFE", 6))
-	// Set both remote and local link address in route.
-	var r stack.RouteInfo
-	r.LocalLinkAddress = newLocalLinkAddress
-	r.RemoteLinkAddress = remoteLinkAddr
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		// WritePacket panics given a prependable with anything less than
@@ -304,8 +297,10 @@ func TestPreserveSrcAddressInSend(t *testing.T) {
 	proto := tcpip.NetworkProtocolNumber(rand.Intn(0x10000))
 	// Every PacketBuffer must have these set:
 	// See nic.writePacket.
-	pkt.EgressRoute = r
+	pkt.EgressRoute.LocalLinkAddress = newLocalLinkAddress
+	pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
 	pkt.NetworkProtocolNumber = proto
+	c.ep.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
 
 	var pkts stack.PacketBufferList
 	defer pkts.DecRef()
@@ -351,10 +346,6 @@ func TestFillTxQueue(t *testing.T) {
 	c := newTestContext(t, 20000, 1500, localLinkAddr)
 	defer c.cleanup()
 
-	// Prepare to send a packet.
-	var r stack.RouteInfo
-	r.RemoteLinkAddress = remoteLinkAddr
-
 	buf := buffer.NewView(100)
 
 	// Each packet is uses no more than 40 bytes, so write that many packets
@@ -367,8 +358,9 @@ func TestFillTxQueue(t *testing.T) {
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 			Data:               buf.ToVectorisedView(),
 		})
-		pkt.EgressRoute = r
+		pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
 		pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
+		c.ep.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
 
 		var pkts stack.PacketBufferList
 		pkts.PushBack(pkt)
@@ -392,8 +384,9 @@ func TestFillTxQueue(t *testing.T) {
 		ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 		Data:               buf.ToVectorisedView(),
 	})
-	pkt.EgressRoute = r
+	pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
 	pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
+	c.ep.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
 
 	var pkts stack.PacketBufferList
 	pkts.PushBack(pkt)
@@ -414,10 +407,6 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 	queue.EncodeTxCompletion(c.txq.rx.Push(8), 1)
 	c.txq.rx.Flush()
 
-	// Prepare to send a packet.
-	var r stack.RouteInfo
-	r.RemoteLinkAddress = remoteLinkAddr
-
 	buf := buffer.NewView(100)
 
 	// Send two packets so that the id slice has at least two slots.
@@ -429,8 +418,9 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 				Data:               buf.ToVectorisedView(),
 			})
 			pkts.PushBack(pkt)
-			pkt.EgressRoute = r
+			pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
 			pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
+			c.ep.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
 		}
 		if _, err := c.ep.WritePackets(pkts); err != nil {
 			t.Fatalf("WritePackets failed unexpectedly: %s", err)
@@ -456,8 +446,10 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 			Data:               buf.ToVectorisedView(),
 		})
-		pkt.EgressRoute = r
+		pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
 		pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
+		c.ep.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
+
 		var pkts stack.PacketBufferList
 		pkts.PushBack(pkt)
 		if _, err := c.ep.WritePackets(pkts); err != nil {
@@ -479,8 +471,10 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 		ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 		Data:               buf.ToVectorisedView(),
 	})
-	pkt.EgressRoute = r
+	pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
 	pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
+	c.ep.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
+
 	var pkts stack.PacketBufferList
 	pkts.PushBack(pkt)
 	_, err := c.ep.WritePackets(pkts)
@@ -496,10 +490,6 @@ func TestFillTxMemory(t *testing.T) {
 	c := newTestContext(t, 20000, bufferSize, localLinkAddr)
 	defer c.cleanup()
 
-	// Prepare to send a packet.
-	var r stack.RouteInfo
-	r.RemoteLinkAddress = remoteLinkAddr
-
 	buf := buffer.NewView(100)
 
 	// Each packet is uses up one buffer, so write as many as possible until
@@ -510,8 +500,10 @@ func TestFillTxMemory(t *testing.T) {
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 			Data:               buf.ToVectorisedView(),
 		})
-		pkt.EgressRoute = r
+		pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
 		pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
+		c.ep.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
+
 		var pkts stack.PacketBufferList
 		pkts.PushBack(pkt)
 		if _, err := c.ep.WritePackets(pkts); err != nil {
@@ -535,7 +527,7 @@ func TestFillTxMemory(t *testing.T) {
 		Data:               buf.ToVectorisedView(),
 	})
 	pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
-	pkt.EgressRoute = r
+	pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
 	var pkts stack.PacketBufferList
 	pkts.PushBack(pkt)
 	_, err := c.ep.WritePackets(pkts)
@@ -553,10 +545,6 @@ func TestFillTxMemoryWithMultiBuffer(t *testing.T) {
 	c := newTestContext(t, 20000, bufferSize, localLinkAddr)
 	defer c.cleanup()
 
-	// Prepare to send a packet.
-	var r stack.RouteInfo
-	r.RemoteLinkAddress = remoteLinkAddr
-
 	buf := buffer.NewView(100)
 
 	// Each packet is uses up one buffer, so write as many as possible
@@ -567,7 +555,7 @@ func TestFillTxMemoryWithMultiBuffer(t *testing.T) {
 			Data:               buf.ToVectorisedView(),
 		})
 		var pkts stack.PacketBufferList
-		pkt.EgressRoute = r
+		pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
 		pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
 		pkts.PushBack(pkt)
 		if _, err := c.ep.WritePackets(pkts); err != nil {
@@ -587,8 +575,10 @@ func TestFillTxMemoryWithMultiBuffer(t *testing.T) {
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 			Data:               buffer.NewView(bufferSize).ToVectorisedView(),
 		})
-		pkt.EgressRoute = r
+		pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
 		pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
+		c.ep.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
+
 		pkts.PushBack(pkt)
 		_, err := c.ep.WritePackets(pkts)
 		if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
@@ -604,7 +594,7 @@ func TestFillTxMemoryWithMultiBuffer(t *testing.T) {
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 			Data:               buf.ToVectorisedView(),
 		})
-		pkt.EgressRoute = r
+		pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
 		pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
 		pkts.PushBack(pkt)
 		if _, err := c.ep.WritePackets(pkts); err != nil {

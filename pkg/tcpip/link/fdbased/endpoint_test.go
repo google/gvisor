@@ -181,9 +181,6 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash u
 	c := newContext(t, &Options{Address: laddr, MTU: mtu, EthernetHeader: eth, GSOMaxSize: gsoMaxSize})
 	defer c.cleanup()
 
-	var r stack.RouteInfo
-	r.RemoteLinkAddress = raddr
-
 	// Build payload.
 	payload := buffer.NewView(plen)
 	if _, err := rand.Read(payload); err != nil {
@@ -199,7 +196,8 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash u
 	pkt.Hash = hash
 	// Every PacketBuffer must have these set:
 	// See nic.writePacket.
-	pkt.EgressRoute = r
+	pkt.EgressRoute.LocalLinkAddress = laddr
+	pkt.EgressRoute.RemoteLinkAddress = raddr
 	pkt.NetworkProtocolNumber = proto
 	defer pkt.DecRef()
 
@@ -221,6 +219,9 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash u
 			L3HdrLen:   l3HdrLen,
 		}
 	}
+
+	c.ep.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
+
 	var pkts stack.PacketBufferList
 	pkts.PushBack(pkt)
 	if _, err := c.ep.WritePackets(pkts); err != nil {
@@ -326,11 +327,6 @@ func TestPreserveSrcAddress(t *testing.T) {
 	c := newContext(t, &Options{Address: laddr, MTU: mtu, EthernetHeader: true})
 	defer c.cleanup()
 
-	// Set LocalLinkAddress in route to the value of the bridged address.
-	var r stack.RouteInfo
-	r.LocalLinkAddress = baddr
-	r.RemoteLinkAddress = raddr
-
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		// WritePacket panics given a prependable with anything less than
 		// the minimum size of the ethernet header.
@@ -342,7 +338,11 @@ func TestPreserveSrcAddress(t *testing.T) {
 	// Every PacketBuffer must have these set:
 	// See nic.writePacket.
 	pkt.NetworkProtocolNumber = proto
-	pkt.EgressRoute = r
+	// Set LocalLinkAddress in route to the value of the bridged address.
+	pkt.EgressRoute.LocalLinkAddress = baddr
+	pkt.EgressRoute.RemoteLinkAddress = raddr
+	c.ep.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
+
 	var pkts stack.PacketBufferList
 	pkts.PushBack(pkt)
 	if _, err := c.ep.WritePackets(pkts); err != nil {
