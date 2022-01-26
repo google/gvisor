@@ -32,17 +32,33 @@ func featureID(b block, bit int) Feature {
 }
 
 // block returns the block associated with the feature.
-func (f *Feature) block() block {
-	return block((*f) / blockSize)
+func (f Feature) block() block {
+	return block(f / blockSize)
 }
 
 // Bit returns the bit associated with the feature.
-func (f *Feature) bit() uint32 {
-	return uint32(1 << ((*f) % blockSize))
+func (f Feature) bit() uint32 {
+	return uint32(1 << (f % blockSize))
+}
+
+// ChangeableSet is a feature set that can allows changes.
+type ChangeableSet interface {
+	Query(in In) Out
+	Set(in In, out Out)
+}
+
+// Set sets the given feature.
+func (f Feature) Set(s ChangeableSet) {
+	f.set(s, true)
+}
+
+// Unset unsets the given feature.
+func (f Feature) Unset(s ChangeableSet) {
+	f.set(s, false)
 }
 
 // set sets the given feature.
-func (f *Feature) set(s Static, on bool) {
+func (f Feature) set(s ChangeableSet, on bool) {
 	switch f.block() {
 	case 0:
 		out := s.Query(In{Eax: uint32(featureInfo)})
@@ -51,7 +67,7 @@ func (f *Feature) set(s Static, on bool) {
 		} else {
 			out.Ecx &^= f.bit()
 		}
-		s[In{Eax: uint32(featureInfo)}] = out
+		s.Set(In{Eax: uint32(featureInfo)}, out)
 	case 1:
 		out := s.Query(In{Eax: uint32(featureInfo)})
 		if on {
@@ -59,7 +75,7 @@ func (f *Feature) set(s Static, on bool) {
 		} else {
 			out.Edx &^= f.bit()
 		}
-		s[In{Eax: uint32(featureInfo)}] = out
+		s.Set(In{Eax: uint32(featureInfo)}, out)
 	case 2:
 		out := s.Query(In{Eax: uint32(extendedFeatureInfo)})
 		if on {
@@ -67,7 +83,7 @@ func (f *Feature) set(s Static, on bool) {
 		} else {
 			out.Ebx &^= f.bit()
 		}
-		s[In{Eax: uint32(extendedFeatureInfo)}] = out
+		s.Set(In{Eax: uint32(extendedFeatureInfo)}, out)
 	case 3:
 		out := s.Query(In{Eax: uint32(extendedFeatureInfo)})
 		if on {
@@ -75,12 +91,12 @@ func (f *Feature) set(s Static, on bool) {
 		} else {
 			out.Ecx &^= f.bit()
 		}
-		s[In{Eax: uint32(extendedFeatureInfo)}] = out
+		s.Set(In{Eax: uint32(extendedFeatureInfo)}, out)
 	case 4:
 		// Need to turn on the bit in block 0.
 		out := s.Query(In{Eax: uint32(featureInfo)})
 		out.Ecx |= (1 << 26)
-		s[In{Eax: uint32(featureInfo)}] = out
+		s.Set(In{Eax: uint32(featureInfo)}, out)
 
 		out = s.Query(In{Eax: xSaveInfoSub.eax(), Ecx: xSaveInfoSub.ecx()})
 		if on {
@@ -88,14 +104,14 @@ func (f *Feature) set(s Static, on bool) {
 		} else {
 			out.Eax &^= f.bit()
 		}
-		s[In{Eax: xSaveInfoSub.eax(), Ecx: xSaveInfoSub.ecx()}] = out
+		s.Set(In{Eax: xSaveInfoSub.eax(), Ecx: xSaveInfoSub.ecx()}, out)
 	case 5, 6:
 		// Need to enable extended features.
 		out := s.Query(In{Eax: uint32(extendedFunctionInfo)})
 		if out.Eax < uint32(extendedFeatures) {
 			out.Eax = uint32(extendedFeatures)
 		}
-		s[In{Eax: uint32(extendedFunctionInfo)}] = out
+		s.Set(In{Eax: uint32(extendedFunctionInfo)}, out)
 		out = s.Query(In{Eax: uint32(extendedFeatures)})
 		if f.block() == 5 {
 			if on {
@@ -110,14 +126,14 @@ func (f *Feature) set(s Static, on bool) {
 				out.Edx &^= f.bit()
 			}
 		}
-		s[In{Eax: uint32(extendedFeatures)}] = out
+		s.Set(In{Eax: uint32(extendedFeatures)}, out)
 	}
 }
 
 // check checks for the given feature.
 //
 //go:nosplit
-func (f *Feature) check(fs FeatureSet) bool {
+func (f Feature) check(fs FeatureSet) bool {
 	switch f.block() {
 	case 0:
 		_, _, cx, _ := fs.query(featureInfo)

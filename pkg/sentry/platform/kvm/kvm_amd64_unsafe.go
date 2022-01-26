@@ -62,18 +62,6 @@ func updateSystemValues(fd int) error {
 		return fmt.Errorf("getting supported CPUID (2nd attempt): %v", errno)
 	}
 
-	// Calculate whether guestPCID is supported.
-	//
-	// FIXME(ascannell): These should go through the much more pleasant
-	// cpuid package interfaces, once a way to accept raw kvm CPUID entries
-	// is plumbed (or some rough equivalent).
-	for i := 0; i < int(cpuidSupported.nr); i++ {
-		entry := cpuidSupported.entries[i]
-		if entry.function == 1 && entry.index == 0 && entry.ecx&(1<<17) != 0 {
-			hasGuestPCID = true // Found matching PCID in guest feature set.
-		}
-	}
-
 	// Success.
 	return nil
 }
