@@ -196,17 +196,44 @@ func (c *cpuidEntries) Query(in cpuid.In) (out cpuid.Out) {
 	return
 }
 
+// Set implements cpuid.ChangeableSet.Set.
+func (c *cpuidEntries) Set(in cpuid.In, out cpuid.Out) {
+	i := 0
+	for ; i < int(c.nr); i++ {
+		if c.entries[i].function == in.Eax && c.entries[i].index == in.Ecx {
+			break
+		}
+	}
+	if i == _KVM_NR_CPUID_ENTRIES {
+		panic("exceede KVM_NR_CPUID_ENTRIES")
+	}
+
+	c.entries[i].eax = out.Eax
+	c.entries[i].ebx = out.Ebx
+	c.entries[i].ecx = out.Ecx
+	c.entries[i].edx = out.Edx
+	if i == int(c.nr) {
+		c.nr++
+	}
+}
+
 // updateGlobalOnce does global initialization. It has to be called only once.
 func updateGlobalOnce(fd int) error {
 	err := updateSystemValues(int(fd))
-	// Create a static feature set from the KVM entries. Then, we
-	// explicitly set OSXSAVE, since this does not come in the feature
-	// entries, but can be provided when the relevant CR4 bit is set.
 	fs := cpuid.FeatureSet{
 		Function: &cpuidSupported,
 	}
-	s := fs.ToStatic()
-	s.Add(cpuid.X86FeatureOSXSAVE)
+	// Calculate whether guestPCID is supported.
+	hasGuestPCID = fs.HasFeature(cpuid.X86FeaturePCID)
+	// Create a static feature set from the KVM entries. Then, we
+	// explicitly set OSXSAVE, since this does not come in the feature
+	// entries, but can be provided when the relevant CR4 bit is set.
+	s := &cpuidSupported
+	cpuid.X86FeatureOSXSAVE.Set(s)
+	// Explicitly disable nested virtualization. Since we don't provide
+	// any virtualization APIs, there is no need to enable this feature.
+	cpuid.X86FeatureVMX.Unset(s)
+	cpuid.X86FeatureSVM.Unset(s)
 	ring0.Init(cpuid.FeatureSet{
 		Function: s,
 	})

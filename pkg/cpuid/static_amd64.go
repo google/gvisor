@@ -118,6 +118,11 @@ func (s Static) Remove(feature Feature) Static {
 	return s
 }
 
+// Set implements ChangeableSet.Set.
+func (s Static) Set(in In, out Out) {
+	s[in] = out
+}
+
 // Query implements Function.Query.
 func (s Static) Query(in In) Out {
 	in.normalize()
