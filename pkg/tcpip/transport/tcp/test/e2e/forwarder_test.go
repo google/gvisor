@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tcp_test
+package forwarder_test
 
 import (
 	"testing"
@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp/test/e2e"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp/testing/context"
 )
 
@@ -54,7 +55,7 @@ func TestForwarderSendMSSLessThanMTU(t *testing.T) {
 	}
 
 	// Check that data gets properly segmented.
-	testBrokenUpWrite(t, c, maxPayload)
+	e2e.CheckBrokenUpWrite(t, c, maxPayload)
 }
 
 func TestForwarderDoesNotRejectECNFlags(t *testing.T) {

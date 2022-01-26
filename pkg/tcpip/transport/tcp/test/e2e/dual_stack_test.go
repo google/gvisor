@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tcp_test
+package dual_stack_test
 
 import (
 	"strings"
@@ -26,12 +26,13 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp/test/e2e"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp/testing/context"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 func TestV4MappedConnectOnV6Only(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateV6Endpoint(true)
@@ -43,70 +44,18 @@ func TestV4MappedConnectOnV6Only(t *testing.T) {
 	}
 }
 
-func testV4Connect(t *testing.T, c *context.Context, checkers ...checker.NetworkChecker) {
-	// Start connection attempt.
-	we, ch := waiter.NewChannelEntry(waiter.WritableEvents)
-	c.WQ.EventRegister(&we)
-	defer c.WQ.EventUnregister(&we)
-
-	err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestV4MappedAddr, Port: context.TestPort})
-	if d := cmp.Diff(&tcpip.ErrConnectStarted{}, err); d != "" {
-		t.Fatalf("c.EP.Connect(...) mismatch (-want +got):\n%s", d)
-	}
-
-	// Receive SYN packet.
-	b := c.GetPacket()
-	synCheckers := append(checkers, checker.TCP(
-		checker.DstPort(context.TestPort),
-		checker.TCPFlags(header.TCPFlagSyn),
-	))
-	checker.IPv4(t, b, synCheckers...)
-
-	tcp := header.TCP(header.IPv4(b).Payload())
-	c.IRS = seqnum.Value(tcp.SequenceNumber())
-
-	iss := seqnum.Value(789)
-	c.SendPacket(nil, &context.Headers{
-		SrcPort: tcp.DestinationPort(),
-		DstPort: tcp.SourcePort(),
-		Flags:   header.TCPFlagSyn | header.TCPFlagAck,
-		SeqNum:  iss,
-		AckNum:  c.IRS.Add(1),
-		RcvWnd:  30000,
-	})
-
-	// Receive ACK packet.
-	ackCheckers := append(checkers, checker.TCP(
-		checker.DstPort(context.TestPort),
-		checker.TCPFlags(header.TCPFlagAck),
-		checker.TCPSeqNum(uint32(c.IRS)+1),
-		checker.TCPAckNum(uint32(iss)+1),
-	))
-	checker.IPv4(t, c.GetPacket(), ackCheckers...)
-
-	// Wait for connection to be established.
-	select {
-	case <-ch:
-		if err := c.EP.LastError(); err != nil {
-			t.Fatalf("Unexpected error when connecting: %v", err)
-		}
-	case <-time.After(1 * time.Second):
-		t.Fatalf("Timed out waiting for connection")
-	}
-}
-
 func TestV4MappedConnect(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateV6Endpoint(false)
 
 	// Test the connection request.
-	testV4Connect(t, c)
+	e2e.TestV4Connect(t, c)
 }
 
 func TestV4ConnectWhenBoundToWildcard(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateV6Endpoint(false)
@@ -117,11 +66,11 @@ func TestV4ConnectWhenBoundToWildcard(t *testing.T) {
 	}
 
 	// Test the connection request.
-	testV4Connect(t, c)
+	e2e.TestV4Connect(t, c)
 }
 
 func TestV4ConnectWhenBoundToV4MappedWildcard(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateV6Endpoint(false)
@@ -132,11 +81,11 @@ func TestV4ConnectWhenBoundToV4MappedWildcard(t *testing.T) {
 	}
 
 	// Test the connection request.
-	testV4Connect(t, c)
+	e2e.TestV4Connect(t, c)
 }
 
 func TestV4ConnectWhenBoundToV4Mapped(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateV6Endpoint(false)
@@ -147,83 +96,31 @@ func TestV4ConnectWhenBoundToV4Mapped(t *testing.T) {
 	}
 
 	// Test the connection request.
-	testV4Connect(t, c)
-}
-
-func testV6Connect(t *testing.T, c *context.Context, checkers ...checker.NetworkChecker) {
-	// Start connection attempt to IPv6 address.
-	we, ch := waiter.NewChannelEntry(waiter.WritableEvents)
-	c.WQ.EventRegister(&we)
-	defer c.WQ.EventUnregister(&we)
-
-	err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestV6Addr, Port: context.TestPort})
-	if d := cmp.Diff(&tcpip.ErrConnectStarted{}, err); d != "" {
-		t.Fatalf("Connect(...) mismatch (-want +got):\n%s", d)
-	}
-
-	// Receive SYN packet.
-	b := c.GetV6Packet()
-	synCheckers := append(checkers, checker.TCP(
-		checker.DstPort(context.TestPort),
-		checker.TCPFlags(header.TCPFlagSyn),
-	))
-	checker.IPv6(t, b, synCheckers...)
-
-	tcp := header.TCP(header.IPv6(b).Payload())
-	c.IRS = seqnum.Value(tcp.SequenceNumber())
-
-	iss := seqnum.Value(789)
-	c.SendV6Packet(nil, &context.Headers{
-		SrcPort: tcp.DestinationPort(),
-		DstPort: tcp.SourcePort(),
-		Flags:   header.TCPFlagSyn | header.TCPFlagAck,
-		SeqNum:  iss,
-		AckNum:  c.IRS.Add(1),
-		RcvWnd:  30000,
-	})
-
-	// Receive ACK packet.
-	ackCheckers := append(checkers, checker.TCP(
-		checker.DstPort(context.TestPort),
-		checker.TCPFlags(header.TCPFlagAck),
-		checker.TCPSeqNum(uint32(c.IRS)+1),
-		checker.TCPAckNum(uint32(iss)+1),
-	))
-	checker.IPv6(t, c.GetV6Packet(), ackCheckers...)
-
-	// Wait for connection to be established.
-	select {
-	case <-ch:
-		if err := c.EP.LastError(); err != nil {
-			t.Fatalf("Unexpected error when connecting: %v", err)
-		}
-	case <-time.After(1 * time.Second):
-		t.Fatalf("Timed out waiting for connection")
-	}
+	e2e.TestV4Connect(t, c)
 }
 
 func TestV6Connect(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateV6Endpoint(false)
 
 	// Test the connection request.
-	testV6Connect(t, c)
+	e2e.TestV6Connect(t, c)
 }
 
 func TestV6ConnectV6Only(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateV6Endpoint(true)
 
 	// Test the connection request.
-	testV6Connect(t, c)
+	e2e.TestV6Connect(t, c)
 }
 
 func TestV6ConnectWhenBoundToWildcard(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateV6Endpoint(false)
@@ -234,13 +131,13 @@ func TestV6ConnectWhenBoundToWildcard(t *testing.T) {
 	}
 
 	// Test the connection request.
-	testV6Connect(t, c)
+	e2e.TestV6Connect(t, c)
 }
 
 func TestStackV6OnlyConnectWhenBoundToWildcard(t *testing.T) {
 	c := context.NewWithOpts(t, context.Options{
 		EnableV6: true,
-		MTU:      defaultMTU,
+		MTU:      e2e.DefaultMTU,
 	})
 	defer c.Cleanup()
 
@@ -253,11 +150,11 @@ func TestStackV6OnlyConnectWhenBoundToWildcard(t *testing.T) {
 	}
 
 	// Test the connection request.
-	testV6Connect(t, c)
+	e2e.TestV6Connect(t, c)
 }
 
 func TestV6ConnectWhenBoundToLocalAddress(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateV6Endpoint(false)
@@ -268,11 +165,11 @@ func TestV6ConnectWhenBoundToLocalAddress(t *testing.T) {
 	}
 
 	// Test the connection request.
-	testV6Connect(t, c)
+	e2e.TestV6Connect(t, c)
 }
 
 func TestV4RefuseOnV6Only(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateV6Endpoint(true)
@@ -309,7 +206,7 @@ func TestV4RefuseOnV6Only(t *testing.T) {
 }
 
 func TestV6RefuseOnBoundToV4Mapped(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateV6Endpoint(false)
@@ -428,7 +325,7 @@ func testV4Accept(t *testing.T, c *context.Context) {
 }
 
 func TestV4AcceptOnV6(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateV6Endpoint(false)
@@ -443,7 +340,7 @@ func TestV4AcceptOnV6(t *testing.T) {
 }
 
 func TestV4AcceptOnBoundToV4MappedWildcard(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateV6Endpoint(false)
@@ -458,7 +355,7 @@ func TestV4AcceptOnBoundToV4MappedWildcard(t *testing.T) {
 }
 
 func TestV4AcceptOnBoundToV4Mapped(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateV6Endpoint(false)
@@ -473,7 +370,7 @@ func TestV4AcceptOnBoundToV4Mapped(t *testing.T) {
 }
 
 func TestV6AcceptOnV6(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	c.CreateV6Endpoint(false)
@@ -546,7 +443,7 @@ func TestV6AcceptOnV6(t *testing.T) {
 }
 
 func TestV4AcceptOnV4(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	// Create TCP endpoint.
@@ -630,7 +527,7 @@ func testV4ListenClose(t *testing.T, c *context.Context) {
 }
 
 func TestV4ListenCloseOnV4(t *testing.T) {
-	c := context.New(t, defaultMTU)
+	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
 	// Create TCP endpoint.
