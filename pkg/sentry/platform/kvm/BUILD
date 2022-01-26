@@ -131,6 +131,7 @@ go_test(
     ],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/cpuid",
         "//pkg/hostarch",
         "//pkg/memutil",
         "//pkg/ring0",

@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -86,5 +87,21 @@ func TestMXCSR(t *testing.T) {
 			t.Errorf("mxcsr = %x (expected %x)", mxcsrBefore, mxcsrAfter)
 		}
 		return false
+	})
+}
+
+//go:nosplit
+func nestedVirtIsOn(c *vCPU, fs *cpuid.FeatureSet) bool {
+	bluepill(c)
+	return fs.HasFeature(cpuid.X86FeatureVMX) || fs.HasFeature(cpuid.X86FeatureSVM)
+
+}
+
+func TestKernelCPUID(t *testing.T) {
+	bluepillTest(t, func(c *vCPU) {
+		fs := cpuid.HostFeatureSet()
+		if nestedVirtIsOn(c, &fs) {
+			t.Fatalf("Nested virtualization is enabled")
+		}
 	})
 }
