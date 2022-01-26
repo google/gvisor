@@ -35,11 +35,8 @@ type testNetworkDispatcher struct {
 	networkPackets int
 }
 
-func (t *testNetworkDispatcher) DeliverNetworkPacket(_, _ tcpip.LinkAddress, _ tcpip.NetworkProtocolNumber, _ *stack.PacketBuffer) {
+func (t *testNetworkDispatcher) DeliverNetworkPacket(tcpip.NetworkProtocolNumber, *stack.PacketBuffer) {
 	t.networkPackets++
-}
-
-func (*testNetworkDispatcher) DeliverOutboundPacket(_, _ tcpip.LinkAddress, _ tcpip.NetworkProtocolNumber, _ *stack.PacketBuffer) {
 }
 
 func TestDeliverNetworkPacket(t *testing.T) {
@@ -68,7 +65,7 @@ func TestDeliverNetworkPacket(t *testing.T) {
 	})
 	p := stack.NewPacketBuffer(stack.PacketBufferOptions{Data: eth.ToVectorisedView()})
 	defer p.DecRef()
-	e.DeliverNetworkPacket("", "", 0, p)
+	e.DeliverNetworkPacket(0, p)
 	if networkDispatcher.networkPackets != 1 {
 		t.Fatalf("got networkDispatcher.networkPackets = %d, want = 1", networkDispatcher.networkPackets)
 	}

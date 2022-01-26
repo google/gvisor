@@ -243,7 +243,6 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 	tests := []struct {
 		name                   string
 		nsOpts                 header.NDPOptionsSerializer
-		nsSrcLinkAddr          tcpip.LinkAddress
 		nsSrc                  tcpip.Address
 		nsDst                  tcpip.Address
 		nsInvalid              bool
@@ -256,7 +255,6 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 		{
 			name:          "Unspecified source to solicited-node multicast destination",
 			nsOpts:        nil,
-			nsSrcLinkAddr: remoteLinkAddr0,
 			nsSrc:         header.IPv6Any,
 			nsDst:         nicAddrSNMC,
 			nsInvalid:     false,
@@ -270,35 +268,31 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 			nsOpts: header.NDPOptionsSerializer{
 				header.NDPSourceLinkLayerAddressOption(remoteLinkAddr0[:]),
 			},
-			nsSrcLinkAddr: remoteLinkAddr0,
-			nsSrc:         header.IPv6Any,
-			nsDst:         nicAddrSNMC,
-			nsInvalid:     true,
+			nsSrc:     header.IPv6Any,
+			nsDst:     nicAddrSNMC,
+			nsInvalid: true,
 		},
 		{
-			name:          "Unspecified source to unicast destination",
-			nsOpts:        nil,
-			nsSrcLinkAddr: remoteLinkAddr0,
-			nsSrc:         header.IPv6Any,
-			nsDst:         nicAddr,
-			nsInvalid:     true,
+			name:      "Unspecified source to unicast destination",
+			nsOpts:    nil,
+			nsSrc:     header.IPv6Any,
+			nsDst:     nicAddr,
+			nsInvalid: true,
 		},
 		{
 			name: "Unspecified source with source ll option to unicast destination",
 			nsOpts: header.NDPOptionsSerializer{
 				header.NDPSourceLinkLayerAddressOption(remoteLinkAddr0[:]),
 			},
-			nsSrcLinkAddr: remoteLinkAddr0,
-			nsSrc:         header.IPv6Any,
-			nsDst:         nicAddr,
-			nsInvalid:     true,
+			nsSrc:     header.IPv6Any,
+			nsDst:     nicAddr,
+			nsInvalid: true,
 		},
 		{
 			name: "Specified source with 1 source ll to multicast destination",
 			nsOpts: header.NDPOptionsSerializer{
 				header.NDPSourceLinkLayerAddressOption(remoteLinkAddr0[:]),
 			},
-			nsSrcLinkAddr: remoteLinkAddr0,
 			nsSrc:         remoteAddr,
 			nsDst:         nicAddrSNMC,
 			nsInvalid:     false,
@@ -312,7 +306,6 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 			nsOpts: header.NDPOptionsSerializer{
 				header.NDPSourceLinkLayerAddressOption(remoteLinkAddr1[:]),
 			},
-			nsSrcLinkAddr: remoteLinkAddr0,
 			nsSrc:         remoteAddr,
 			nsDst:         nicAddrSNMC,
 			nsInvalid:     false,
@@ -322,12 +315,11 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 			naDst:         remoteAddr,
 		},
 		{
-			name:          "Specified source to multicast destination",
-			nsOpts:        nil,
-			nsSrcLinkAddr: remoteLinkAddr0,
-			nsSrc:         remoteAddr,
-			nsDst:         nicAddrSNMC,
-			nsInvalid:     true,
+			name:      "Specified source to multicast destination",
+			nsOpts:    nil,
+			nsSrc:     remoteAddr,
+			nsDst:     nicAddrSNMC,
+			nsInvalid: true,
 		},
 		{
 			name: "Specified source with 2 source ll to multicast destination",
@@ -335,16 +327,14 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 				header.NDPSourceLinkLayerAddressOption(remoteLinkAddr0[:]),
 				header.NDPSourceLinkLayerAddressOption(remoteLinkAddr1[:]),
 			},
-			nsSrcLinkAddr: remoteLinkAddr0,
-			nsSrc:         remoteAddr,
-			nsDst:         nicAddrSNMC,
-			nsInvalid:     true,
+			nsSrc:     remoteAddr,
+			nsDst:     nicAddrSNMC,
+			nsInvalid: true,
 		},
 
 		{
 			name:          "Specified source to unicast destination",
 			nsOpts:        nil,
-			nsSrcLinkAddr: remoteLinkAddr0,
 			nsSrc:         remoteAddr,
 			nsDst:         nicAddr,
 			nsInvalid:     false,
@@ -362,7 +352,6 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 			nsOpts: header.NDPOptionsSerializer{
 				header.NDPSourceLinkLayerAddressOption(remoteLinkAddr0[:]),
 			},
-			nsSrcLinkAddr: remoteLinkAddr0,
 			nsSrc:         remoteAddr,
 			nsDst:         nicAddr,
 			nsInvalid:     false,
@@ -376,7 +365,6 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 			nsOpts: header.NDPOptionsSerializer{
 				header.NDPSourceLinkLayerAddressOption(remoteLinkAddr1[:]),
 			},
-			nsSrcLinkAddr: remoteLinkAddr0,
 			nsSrc:         remoteAddr,
 			nsDst:         nicAddr,
 			nsInvalid:     false,
@@ -391,10 +379,9 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 				header.NDPSourceLinkLayerAddressOption(remoteLinkAddr0[:]),
 				header.NDPSourceLinkLayerAddressOption(remoteLinkAddr1[:]),
 			},
-			nsSrcLinkAddr: remoteLinkAddr0,
-			nsSrc:         remoteAddr,
-			nsDst:         nicAddr,
-			nsInvalid:     true,
+			nsSrc:     remoteAddr,
+			nsDst:     nicAddr,
+			nsInvalid: true,
 		},
 	}
 
@@ -455,7 +442,7 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 				t.Fatalf("got invalid = %d, want = 0", got)
 			}
 
-			e.InjectLinkAddr(ProtocolNumber, test.nsSrcLinkAddr, stack.NewPacketBuffer(stack.PacketBufferOptions{
+			e.InjectInbound(ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Data: hdr.View().ToVectorisedView(),
 			}))
 
@@ -528,7 +515,7 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 					SrcAddr:           test.nsSrc,
 					DstAddr:           nicAddr,
 				})
-				e.InjectLinkAddr(ProtocolNumber, "", stack.NewPacketBuffer(stack.PacketBufferOptions{
+				e.InjectInbound(ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Data: hdr.View().ToVectorisedView(),
 				}))
 			}

@@ -486,7 +486,7 @@ func routeICMPv6Packet(t *testing.T, clock *faketime.ManualClock, args routeArgs
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Data: buffer.NewVectorisedView(pi.Size(), pi.Views()),
 		})
-		args.dst.InjectLinkAddr(pi.NetworkProtocolNumber, args.dst.LinkAddress(), pkt)
+		args.dst.InjectInbound(pi.NetworkProtocolNumber, pkt)
 	}
 
 	if pi.NetworkProtocolNumber != ProtocolNumber {
