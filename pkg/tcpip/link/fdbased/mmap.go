@@ -169,15 +169,9 @@ func (d *packetMMapDispatcher) dispatch() (bool, tcpip.Error) {
 	if err != nil || stopped {
 		return false, err
 	}
-	var (
-		p             tcpip.NetworkProtocolNumber
-		remote, local tcpip.LinkAddress
-	)
+	var p tcpip.NetworkProtocolNumber
 	if d.e.hdrSize > 0 {
-		eth := header.Ethernet(pkt)
-		p = eth.Type()
-		remote = eth.SourceAddress()
-		local = eth.DestinationAddress()
+		p = header.Ethernet(pkt).Type()
 	} else {
 		// We don't get any indication of what the packet is, so try to guess
 		// if it's an IPv4 or IPv6 packet.
@@ -200,6 +194,6 @@ func (d *packetMMapDispatcher) dispatch() (bool, tcpip.Error) {
 			panic(fmt.Sprintf("LinkHeader().Consume(%d) must succeed", d.e.hdrSize))
 		}
 	}
-	d.e.dispatcher.DeliverNetworkPacket(remote, local, p, pbuf)
+	d.e.dispatcher.DeliverNetworkPacket(p, pbuf)
 	return true, nil
 }
