@@ -510,11 +510,7 @@ func (*endpoint) WriteRawPacket(*stack.PacketBuffer) tcpip.Error { return &tcpip
 
 // writePacket writes outbound packets to the file descriptor. If it is not
 // currently writable, the packet is dropped.
-func (e *endpoint) writePacket(r stack.RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
-	if e.hdrSize > 0 {
-		e.AddHeader(r.LocalLinkAddress, r.RemoteLinkAddress, protocol, pkt)
-	}
-
+func (e *endpoint) writePacket(pkt *stack.PacketBuffer) tcpip.Error {
 	fd := e.fds[pkt.Hash%uint32(len(e.fds))]
 	var vnetHdrBuf []byte
 	if e.gsoKind == stack.HWGSOSupported {
@@ -572,10 +568,6 @@ func (e *endpoint) sendBatch(batchFD int, pkts []*stack.PacketBuffer) (int, tcpi
 		batch := pkts[packets:]
 		syscallHeaderBytes := uintptr(0)
 		for _, pkt := range batch {
-			if e.hdrSize > 0 {
-				e.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
-			}
-
 			var vnetHdrBuf []byte
 			if e.gsoKind == stack.HWGSOSupported {
 				vnetHdr := virtioNetHdr{}
@@ -641,7 +633,7 @@ func (e *endpoint) sendBatch(batchFD int, pkts []*stack.PacketBuffer) (int, tcpi
 			// if necessary (by using e.writevMaxIovs instead of
 			// rawfile.MaxIovs).
 			pkt := batch[0]
-			if err := e.writePacket(pkt.EgressRoute, pkt.NetworkProtocolNumber, pkt); err != nil {
+			if err := e.writePacket(pkt); err != nil {
 				return packets, err
 			}
 			packets++
