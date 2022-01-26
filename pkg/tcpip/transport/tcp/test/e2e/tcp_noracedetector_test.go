@@ -19,7 +19,7 @@
 //go:build !race
 // +build !race
 
-package tcp_test
+package tcp_noracedetector_test
 
 import (
 	"bytes"
@@ -31,6 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp/test/e2e"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp/testing/context"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
@@ -355,7 +356,7 @@ func TestCubicCongestionAvoidance(t *testing.T) {
 	c := context.New(t, uint32(header.TCPMinimumSize+header.IPv4MinimumSize+maxPayload))
 	defer c.Cleanup()
 
-	enableCUBIC(t, c)
+	e2e.EnableCUBIC(t, c)
 
 	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
