@@ -321,6 +321,10 @@ func (e *endpoint) LinkAddress() tcpip.LinkAddress {
 // AddHeader implements stack.LinkEndpoint.AddHeader.
 func (e *endpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	// Add ethernet header if needed.
+	if len(e.addr) == 0 {
+		return
+	}
+
 	eth := header.Ethernet(pkt.LinkHeader().Push(header.EthernetMinimumSize))
 	ethHdr := &header.EthernetFields{
 		DstAddr: remote,
@@ -346,9 +350,6 @@ func (*endpoint) WriteRawPacket(*stack.PacketBuffer) tcpip.Error { return &tcpip
 
 // +checklocks:e.mu
 func (e *endpoint) writePacketLocked(r stack.RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
-	if e.addr != "" {
-		e.AddHeader(r.LocalLinkAddress, r.RemoteLinkAddress, protocol, pkt)
-	}
 	if e.virtioNetHeaderRequired {
 		e.AddVirtioNetHeader(pkt)
 	}

@@ -120,32 +120,24 @@ func TestMTU(t *testing.T) {
 	}
 }
 
-func TestWritePacketsAddHeader(t *testing.T) {
+func TestWritePacketToRemoteAddHeader(t *testing.T) {
 	const (
 		localLinkAddr  = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
 		remoteLinkAddr = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x07")
 
 		netProto = 55
+		nicID    = 1
 	)
 
 	c := channel.New(1, header.EthernetMinimumSize, localLinkAddr)
-	e := ethernet.New(c)
 
-	{
-		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			ReserveHeaderBytes: int(e.MaxHeaderLength()),
-		})
-		defer pkt.DecRef()
-		pkt.NetworkProtocolNumber = netProto
-		pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
+	s := stack.New(stack.Options{})
+	if err := s.CreateNIC(nicID, ethernet.New(c)); err != nil {
+		t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+	}
 
-		var pkts stack.PacketBufferList
-		pkts.PushFront(pkt)
-		if n, err := e.WritePackets(pkts); err != nil {
-			t.Fatalf("e.WritePackets(_): %s", err)
-		} else if n != 1 {
-			t.Fatalf("got e.WritePackets(_) = %d, want = 1", n)
-		}
+	if err := s.WritePacketToRemote(nicID, remoteLinkAddr, netProto, buffer.VectorisedView{}); err != nil {
+		t.Fatalf("s.WritePacketToRemote(%d, %s, _): %s", nicID, remoteLinkAddr, err)
 	}
 
 	{

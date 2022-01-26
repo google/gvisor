@@ -266,20 +266,7 @@ func (d *Device) encodePkt(pkt *stack.PacketBuffer) (buffer.View, bool) {
 		vv.AppendView(buffer.View(hdr))
 	}
 
-	// Ethernet header (TAP only).
-	if d.flags.TAP {
-		// Add ethernet header if not provided.
-		if pkt.LinkHeader().View().IsEmpty() {
-			d.endpoint.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
-		}
-		vv.AppendView(pkt.LinkHeader().View())
-	}
-
-	// Append upper headers.
-	vv.AppendView(pkt.NetworkHeader().View())
-	vv.AppendView(pkt.TransportHeader().View())
-	// Append data payload.
-	vv.Append(pkt.Data().ExtractVV())
+	vv.AppendViews(pkt.Views())
 
 	return vv.ToView(), true
 }

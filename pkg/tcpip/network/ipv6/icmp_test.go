@@ -83,6 +83,9 @@ func (*stubLinkEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.E
 
 func (*stubLinkEndpoint) Attach(stack.NetworkDispatcher) {}
 
+func (*stubLinkEndpoint) AddHeader(_, _ tcpip.LinkAddress, _ tcpip.NetworkProtocolNumber, _ *stack.PacketBuffer) {
+}
+
 type stubDispatcher struct {
 	stack.TransportDispatcher
 }
@@ -1290,6 +1293,7 @@ func TestLinkAddressRequest(t *testing.T) {
 
 			var want stack.RouteInfo
 			want.NetProto = ProtocolNumber
+			want.LocalLinkAddress = linkAddr0
 			want.RemoteLinkAddress = test.expectedRemoteLinkAddr
 			if diff := cmp.Diff(want, pkt.EgressRoute, cmp.AllowUnexported(want)); diff != "" {
 				t.Errorf("route info mismatch (-want +got):\n%s", diff)
