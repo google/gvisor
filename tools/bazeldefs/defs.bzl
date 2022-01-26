@@ -34,6 +34,7 @@ def select_system(linux = ["__linux__"], darwin = [], **kwargs):
     })
 
 arch_config = [
+    "@io_bazel_rules_go//go/config:race",
     "//command_line_option:cpu",
     "//command_line_option:crosstool_top",
     "//command_line_option:platforms",
@@ -41,6 +42,9 @@ arch_config = [
 
 def arm64_config(settings, attr):
     return {
+        # Race builds are always disabled for cross-architecture generation. We
+        # can't run it locally anyways, what value can this provide?
+        "@io_bazel_rules_go//go/config:race": False,
         "//command_line_option:cpu": "aarch64",
         "//command_line_option:crosstool_top": "@crosstool//:toolchains",
         "//command_line_option:platforms": "@io_bazel_rules_go//go/toolchain:linux_arm64",
@@ -48,6 +52,8 @@ def arm64_config(settings, attr):
 
 def amd64_config(settings, attr):
     return {
+        # See above.
+        "@io_bazel_rules_go//go/config:race": False,
         "//command_line_option:cpu": "k8",
         "//command_line_option:crosstool_top": "@crosstool//:toolchains",
         "//command_line_option:platforms": "@io_bazel_rules_go//go/toolchain:linux_amd64",

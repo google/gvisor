@@ -112,7 +112,7 @@ nogo_stdlib = go_rule(
     attrs = {
         "_nogo": attr.label(
             default = "//tools/nogo:nogo",
-            cfg = "host",
+            cfg = "exec",
         ),
         "_target": attr.label(
             default = "//tools/nogo:target",
@@ -319,7 +319,7 @@ nogo_aspect = go_rule(
     attrs = {
         "_nogo": attr.label(
             default = "//tools/nogo:nogo",
-            cfg = "host",
+            cfg = "exec",
         ),
         "_target": attr.label(
             default = "//tools/nogo:target",
@@ -329,7 +329,7 @@ nogo_aspect = go_rule(
         # appears to be reserved for some internal bazel use.
         "_nogo_stdlib": attr.label(
             default = "//tools/nogo:stdlib",
-            cfg = "host",
+            cfg = "target",
         ),
     },
 )
@@ -411,7 +411,7 @@ nogo_test = rule(
         ),
         "_nogo": attr.label(
             default = "//tools/nogo:nogo",
-            cfg = "host",
+            cfg = "exec",
         ),
         "_target": attr.label(
             default = "//tools/nogo:target",
@@ -493,12 +493,12 @@ nogo_facts = go_rule(
         ),
         "_nogo": attr.label(
             default = "//tools/nogo:nogo",
-            cfg = "host",
+            cfg = "exec",
         ),
         # See _nogo_aspect, above.
         "_nogo_stdlib": attr.label(
             default = "//tools/nogo:stdlib",
-            cfg = "host",
+            cfg = "target",
         ),
         "_target": attr.label(
             default = "//tools/nogo:target",

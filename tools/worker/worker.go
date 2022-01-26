@@ -32,7 +32,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 
 	_ "net/http/pprof" // For profiling.
 
@@ -243,6 +242,19 @@ func allCacheStats() string {
 	return sb.String()
 }
 
+// safeBuffer is a trivial wrapper around bytes.Buffer.
+type safeBuffer struct {
+	mu sync.Mutex
+	bytes.Buffer
+}
+
+// Write implements io.Writer.Write.
+func (s *safeBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.Buffer.Write(p)
+}
+
 // Work invokes the main function.
 func Work(run func([]string) int) {
 	flag.CommandLine.Parse(os.Args[1:])
@@ -298,8 +310,6 @@ func Work(run func([]string) int) {
 			log.Fatalf("unable to move stdout: %v", err)
 		}
 	}
-
-	// Best-effort: collect logs.
 	rPipe, wPipe, err := os.Pipe()
 	if err != nil {
 		log.Fatalf("unable to create pipe: %v", err)
@@ -310,8 +320,8 @@ func Work(run func([]string) int) {
 	if err := unix.Dup2(int(wPipe.Fd()), 2); err != nil {
 		log.Fatalf("error duping over stderr: %v", err)
 	}
-	wPipe.Close()
-	defer rPipe.Close()
+	wPipe.Close() // Still open at stdout, stderr.
+	rPipe.Close() // Read end of pipe is now closed.
 
 	// Read requests from stdin.
 	input := bufio.NewReader(os.NewFile(0, "input"))
@@ -348,30 +358,16 @@ func Work(run func([]string) int) {
 		}
 
 		// Prepare logging.
-		outputBuffer := bytes.NewBuffer(nil)
+		var outputBuffer safeBuffer
 		outputBuffer.WriteString(listenHeader)
-		log.SetOutput(outputBuffer)
+		log.SetOutput(&outputBuffer)
 
 		// Parse all arguments.
 		flag.CommandLine.Parse(wreq.GetArguments())
-		var exitCode int
-		exitChan := make(chan int)
-		go func() { exitChan <- run(flag.CommandLine.Args()) }()
-		for running := true; running; {
-			select {
-			case exitCode = <-exitChan:
-				running = false
-			default:
-			}
-			// N.B. rPipe is given a read deadline of 1ms. We expect
-			// this to turn a copy error after 1ms, and we just keep
-			// flushing this buffer while the task is running.
-			rPipe.SetReadDeadline(time.Now().Add(time.Millisecond))
-			outputBuffer.ReadFrom(rPipe)
-		}
+		exitCode := run(flag.CommandLine.Args())
 
+		// Attach all cache stats.
 		if *workerDebug {
-			// Attach all cache stats.
 			outputBuffer.WriteString(allCacheStats())
 		}
 
