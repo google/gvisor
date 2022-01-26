@@ -203,15 +203,15 @@ TEST(ExecTest, InterpreterScript) {
             ArgEnvExitStatus(25, 0), "");
 }
 
-std::string GetShortTestTmpDir() {
+std::string GetShortTestTmpdir() {
 #ifdef ANDROID
-  // Using GetAbsoluteTestTmpDir() can cause the tmp directory path to exceed
+  // Using GetAbsoluteTestTmpdir() can cause the tmp directory path to exceed
   // the max length of the interpreter script path (127).
   //
   // However, existing systems that are built with the ANDROID configuration
   // have their temp directory in a different location, and must respect the
   // TEST_TMPDIR.
-  return GetAbsoluteTestTmpDir();
+  return GetAbsoluteTestTmpdir();
 #else
   return "/tmp";
 #endif  // ANDROID
@@ -221,10 +221,10 @@ std::string GetShortTestTmpDir() {
 TEST(ExecTest, InterpreterScriptArgSplit) {
   // Symlink through /tmp to ensure the path is short enough.
   TempPath link = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateSymlinkTo(
-      GetShortTestTmpDir(), RunfilePath(kBasicWorkload)));
+      GetShortTestTmpdir(), RunfilePath(kBasicWorkload)));
 
   TempPath script = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
-      GetShortTestTmpDir(), absl::StrCat("#!", link.path(), " foo bar"), 0755));
+      GetShortTestTmpdir(), absl::StrCat("#!", link.path(), " foo bar"), 0755));
 
   CheckExec(script.path(), {script.path()}, {}, ArgEnvExitStatus(2, 0),
             absl::StrCat(link.path(), "\nfoo bar\n", script.path(), "\n"));
@@ -234,10 +234,10 @@ TEST(ExecTest, InterpreterScriptArgSplit) {
 TEST(ExecTest, InterpreterScriptArgvZero) {
   // Symlink through /tmp to ensure the path is short enough.
   TempPath link = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateSymlinkTo(
-      GetShortTestTmpDir(), RunfilePath(kBasicWorkload)));
+      GetShortTestTmpdir(), RunfilePath(kBasicWorkload)));
 
   TempPath script = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
-      GetShortTestTmpDir(), absl::StrCat("#!", link.path()), 0755));
+      GetShortTestTmpdir(), absl::StrCat("#!", link.path()), 0755));
 
   CheckExec(script.path(), {"REPLACED"}, {}, ArgEnvExitStatus(1, 0),
             absl::StrCat(link.path(), "\n", script.path(), "\n"));
@@ -248,10 +248,10 @@ TEST(ExecTest, InterpreterScriptArgvZero) {
 TEST(ExecTest, InterpreterScriptArgvZeroRelative) {
   // Symlink through /tmp to ensure the path is short enough.
   TempPath link = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateSymlinkTo(
-      GetShortTestTmpDir(), RunfilePath(kBasicWorkload)));
+      GetShortTestTmpdir(), RunfilePath(kBasicWorkload)));
 
   TempPath script = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
-      GetShortTestTmpDir(), absl::StrCat("#!", link.path()), 0755));
+      GetShortTestTmpdir(), absl::StrCat("#!", link.path()), 0755));
 
   auto cwd = ASSERT_NO_ERRNO_AND_VALUE(GetCWD());
   auto script_relative =
@@ -265,10 +265,10 @@ TEST(ExecTest, InterpreterScriptArgvZeroRelative) {
 TEST(ExecTest, InterpreterScriptArgvZeroAdded) {
   // Symlink through /tmp to ensure the path is short enough.
   TempPath link = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateSymlinkTo(
-      GetShortTestTmpDir(), RunfilePath(kBasicWorkload)));
+      GetShortTestTmpdir(), RunfilePath(kBasicWorkload)));
 
   TempPath script = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
-      GetShortTestTmpDir(), absl::StrCat("#!", link.path()), 0755));
+      GetShortTestTmpdir(), absl::StrCat("#!", link.path()), 0755));
 
   CheckExec(script.path(), {}, {}, ArgEnvExitStatus(1, 0),
             absl::StrCat(link.path(), "\n", script.path(), "\n"));
@@ -278,10 +278,10 @@ TEST(ExecTest, InterpreterScriptArgvZeroAdded) {
 TEST(ExecTest, InterpreterScriptArgNUL) {
   // Symlink through /tmp to ensure the path is short enough.
   TempPath link = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateSymlinkTo(
-      GetShortTestTmpDir(), RunfilePath(kBasicWorkload)));
+      GetShortTestTmpdir(), RunfilePath(kBasicWorkload)));
 
   TempPath script = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
-      GetShortTestTmpDir(),
+      GetShortTestTmpdir(),
       absl::StrCat("#!", link.path(), " foo", std::string(1, '\0'), "bar"),
       0755));
 
@@ -293,10 +293,10 @@ TEST(ExecTest, InterpreterScriptArgNUL) {
 TEST(ExecTest, InterpreterScriptTrailingWhitespace) {
   // Symlink through /tmp to ensure the path is short enough.
   TempPath link = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateSymlinkTo(
-      GetShortTestTmpDir(), RunfilePath(kBasicWorkload)));
+      GetShortTestTmpdir(), RunfilePath(kBasicWorkload)));
 
   TempPath script = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
-      GetShortTestTmpDir(), absl::StrCat("#!", link.path(), "  \n"), 0755));
+      GetShortTestTmpdir(), absl::StrCat("#!", link.path(), "  \n"), 0755));
 
   CheckExec(script.path(), {script.path()}, {}, ArgEnvExitStatus(1, 0),
             absl::StrCat(link.path(), "\n", script.path(), "\n"));
@@ -306,10 +306,10 @@ TEST(ExecTest, InterpreterScriptTrailingWhitespace) {
 TEST(ExecTest, InterpreterScriptArgWhitespace) {
   // Symlink through /tmp to ensure the path is short enough.
   TempPath link = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateSymlinkTo(
-      GetShortTestTmpDir(), RunfilePath(kBasicWorkload)));
+      GetShortTestTmpdir(), RunfilePath(kBasicWorkload)));
 
   TempPath script = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
-      GetShortTestTmpDir(), absl::StrCat("#!", link.path(), "  foo"), 0755));
+      GetShortTestTmpdir(), absl::StrCat("#!", link.path(), "  foo"), 0755));
 
   CheckExec(script.path(), {script.path()}, {}, ArgEnvExitStatus(2, 0),
             absl::StrCat(link.path(), "\nfoo\n", script.path(), "\n"));
@@ -317,7 +317,7 @@ TEST(ExecTest, InterpreterScriptArgWhitespace) {
 
 TEST(ExecTest, InterpreterScriptNoPath) {
   TempPath script = ASSERT_NO_ERRNO_AND_VALUE(
-      TempPath::CreateFileWith(GetShortTestTmpDir(), "#!\n\n", 0755));
+      TempPath::CreateFileWith(GetShortTestTmpdir(), "#!\n\n", 0755));
 
   int execve_errno;
   ASSERT_NO_ERRNO_AND_VALUE(
@@ -329,10 +329,10 @@ TEST(ExecTest, InterpreterScriptNoPath) {
 TEST(ExecTest, ExecFn) {
   // Symlink through /tmp to ensure the path is short enough.
   TempPath link = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateSymlinkTo(
-      GetShortTestTmpDir(), RunfilePath(kStateWorkload)));
+      GetShortTestTmpdir(), RunfilePath(kStateWorkload)));
 
   TempPath script = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
-      GetShortTestTmpDir(), absl::StrCat("#!", link.path(), " PrintExecFn"),
+      GetShortTestTmpdir(), absl::StrCat("#!", link.path(), " PrintExecFn"),
       0755));
 
   // Pass the script as a relative path and assert that is what appears in
@@ -355,10 +355,10 @@ TEST(ExecTest, ExecName) {
 TEST(ExecTest, ExecNameScript) {
   // Symlink through /tmp to ensure the path is short enough.
   TempPath link = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateSymlinkTo(
-      GetShortTestTmpDir(), RunfilePath(kStateWorkload)));
+      GetShortTestTmpdir(), RunfilePath(kStateWorkload)));
 
   TempPath script = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
-      GetShortTestTmpDir(), absl::StrCat("#!", link.path(), " PrintExecName"),
+      GetShortTestTmpdir(), absl::StrCat("#!", link.path(), " PrintExecName"),
       0755));
 
   std::string script_path = script.path();
