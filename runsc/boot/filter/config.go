@@ -187,37 +187,37 @@ var allowedSyscalls = seccomp.SyscallRules{
 		{
 			seccomp.MatchAny{},
 			seccomp.MatchAny{},
-			seccomp.MatchAny{},
+			seccomp.MaskedEqual(unix.PROT_EXEC, 0),
 			seccomp.EqualTo(unix.MAP_SHARED),
 		},
 		{
 			seccomp.MatchAny{},
 			seccomp.MatchAny{},
-			seccomp.MatchAny{},
+			seccomp.MaskedEqual(unix.PROT_EXEC, 0),
 			seccomp.EqualTo(unix.MAP_SHARED | unix.MAP_FIXED),
 		},
 		{
 			seccomp.MatchAny{},
 			seccomp.MatchAny{},
-			seccomp.MatchAny{},
+			seccomp.MaskedEqual(unix.PROT_EXEC, 0),
 			seccomp.EqualTo(unix.MAP_PRIVATE),
 		},
 		{
 			seccomp.MatchAny{},
 			seccomp.MatchAny{},
-			seccomp.MatchAny{},
+			seccomp.MaskedEqual(unix.PROT_EXEC, 0),
 			seccomp.EqualTo(unix.MAP_PRIVATE | unix.MAP_ANONYMOUS),
 		},
 		{
 			seccomp.MatchAny{},
 			seccomp.MatchAny{},
-			seccomp.MatchAny{},
+			seccomp.MaskedEqual(unix.PROT_EXEC, 0),
 			seccomp.EqualTo(unix.MAP_PRIVATE | unix.MAP_ANONYMOUS | unix.MAP_STACK),
 		},
 		{
 			seccomp.MatchAny{},
 			seccomp.MatchAny{},
-			seccomp.MatchAny{},
+			seccomp.MaskedEqual(unix.PROT_EXEC, 0),
 			seccomp.EqualTo(unix.MAP_PRIVATE | unix.MAP_ANONYMOUS | unix.MAP_NORESERVE),
 		},
 		{
@@ -227,7 +227,13 @@ var allowedSyscalls = seccomp.SyscallRules{
 			seccomp.EqualTo(unix.MAP_PRIVATE | unix.MAP_ANONYMOUS | unix.MAP_FIXED),
 		},
 	},
-	unix.SYS_MPROTECT:  {},
+	unix.SYS_MPROTECT: {
+		{
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
+			seccomp.MaskedEqual(unix.PROT_EXEC, 0),
+		},
+	},
 	unix.SYS_MUNMAP:    {},
 	unix.SYS_NANOSLEEP: {},
 	unix.SYS_PPOLL:     {},

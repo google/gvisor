@@ -41,7 +41,14 @@ func (k *KVM) SyscallFilters() seccomp.SyscallRules {
 				seccomp.EqualTo(0),
 			},
 		},
-		unix.SYS_MMAP:            {},
+		unix.SYS_MMAP: {
+			{
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+				seccomp.MaskedEqual(unix.PROT_EXEC, 0),
+				seccomp.MaskedEqual(unix.MAP_DENYWRITE, unix.MAP_DENYWRITE),
+			},
+		},
 		unix.SYS_RT_SIGSUSPEND:   {},
 		unix.SYS_RT_SIGTIMEDWAIT: {},
 		_SYS_KVM_RETURN_TO_HOST:  {},
