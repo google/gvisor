@@ -18,6 +18,8 @@ go_test(
     srcs = ["tcp_conntrack_test.go"],
     deps = [
         ":tcpconntrack",
+        "//pkg/refs",
+        "//pkg/refsvfs2",
         "//pkg/tcpip/header",
     ],
 )

@@ -15,8 +15,11 @@
 package tcpconntrack_test
 
 import (
+	"os"
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcpconntrack"
 )
@@ -514,4 +517,11 @@ func TestIgnoreBadResetOnSynSent(t *testing.T) {
 // and payload are in tcp.
 func dataLen(tcp header.TCP) int {
 	return len(tcp) - int(tcp.DataOffset())
+}
+
+func TestMain(m *testing.M) {
+	refs.SetLeakMode(refs.LeaksPanic)
+	code := m.Run()
+	refsvfs2.DoLeakCheck()
+	os.Exit(code)
 }
