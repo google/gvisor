@@ -80,7 +80,6 @@ func (q *queueBuffers) cleanup() {
 }
 
 type packetInfo struct {
-	addr       tcpip.LinkAddress
 	proto      tcpip.NetworkProtocolNumber
 	data       buffer.View
 	linkHeader buffer.View
@@ -145,20 +144,15 @@ func newTestContext(t *testing.T, mtu, bufferSize uint32, addr tcpip.LinkAddress
 	return c
 }
 
-func (c *testContext) DeliverNetworkPacket(remoteLinkAddr, localLinkAddr tcpip.LinkAddress, proto tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func (c *testContext) DeliverNetworkPacket(proto tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	c.mu.Lock()
 	c.packets = append(c.packets, packetInfo{
-		addr:  remoteLinkAddr,
 		proto: proto,
 		data:  pkt.Data().AsRange().ToOwnedView(),
 	})
 	c.mu.Unlock()
 
 	c.packetCh <- struct{}{}
-}
-
-func (c *testContext) DeliverOutboundPacket(remoteLinkAddr, localLinkAddr tcpip.LinkAddress, proto tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
-	panic("unimplemented")
 }
 
 func (c *testContext) cleanup() {

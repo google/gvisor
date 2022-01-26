@@ -188,12 +188,7 @@ func (e *Endpoint) NumQueued() int {
 
 // InjectInbound injects an inbound packet.
 func (e *Endpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
-	e.InjectLinkAddr(protocol, "", pkt)
-}
-
-// InjectLinkAddr injects an inbound packet with a remote link address.
-func (e *Endpoint) InjectLinkAddr(protocol tcpip.NetworkProtocolNumber, remote tcpip.LinkAddress, pkt *stack.PacketBuffer) {
-	e.dispatcher.DeliverNetworkPacket(remote, "" /* local */, protocol, pkt)
+	e.dispatcher.DeliverNetworkPacket(protocol, pkt)
 }
 
 // Attach saves the stack network-layer dispatcher for use later when packets

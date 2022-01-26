@@ -702,7 +702,7 @@ func (n *nic) isInGroup(addr tcpip.Address) bool {
 // Note that the ownership of the slice backing vv is retained by the caller.
 // This rule applies only to the slice itself, not to the items of the slice;
 // the ownership of the items is not retained by the caller.
-func (n *nic) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
+func (n *nic) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
 	enabled := n.Enabled()
 	// If the NIC is not yet enabled, don't receive any packets.
 	if !enabled {
@@ -720,11 +720,6 @@ func (n *nic) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 		return
 	}
 
-	// If no local link layer address is provided, assume it was sent
-	// directly to this NIC.
-	if local == "" {
-		local = n.NetworkLinkEndpoint.LinkAddress()
-	}
 	pkt.RXTransportChecksumValidated = n.NetworkLinkEndpoint.Capabilities()&CapabilityRXChecksumOffload != 0
 
 	// Deliver to interested packet endpoints without holding NIC lock.
@@ -757,7 +752,7 @@ func (n *nic) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 
 		clone := packetEPPkt.Clone()
 		defer clone.DecRef()
-		ep.HandlePacket(n.id, local, protocol, clone)
+		ep.HandlePacket(n.id, protocol, clone)
 	}
 
 	n.packetEPsMu.Lock()
@@ -820,7 +815,7 @@ func (n *nic) deliverOutboundPacket(remote tcpip.LinkAddress, pkt *PacketBuffer)
 		}
 		clone := packetEPPkt.Clone()
 		defer clone.DecRef()
-		ep.HandlePacket(n.id, local, pkt.NetworkProtocolNumber, clone)
+		ep.HandlePacket(n.id, pkt.NetworkProtocolNumber, clone)
 	})
 }
 

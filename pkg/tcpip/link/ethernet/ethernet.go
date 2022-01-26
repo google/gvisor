@@ -59,7 +59,7 @@ func (e *Endpoint) MTU() uint32 {
 }
 
 // DeliverNetworkPacket implements stack.NetworkDispatcher.
-func (e *Endpoint) DeliverNetworkPacket(_, _ tcpip.LinkAddress, _ tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func (e *Endpoint) DeliverNetworkPacket(_ tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	hdr, ok := pkt.LinkHeader().Consume(header.EthernetMinimumSize)
 	if !ok {
 		return
@@ -67,8 +67,7 @@ func (e *Endpoint) DeliverNetworkPacket(_, _ tcpip.LinkAddress, _ tcpip.NetworkP
 
 	// Note, there is no need to check the destination link address here since
 	// the ethernet hardware filters frames based on their destination addresses.
-	eth := header.Ethernet(hdr)
-	e.Endpoint.DeliverNetworkPacket(eth.SourceAddress() /* remote */, eth.DestinationAddress() /* local */, eth.Type() /* protocol */, pkt)
+	e.Endpoint.DeliverNetworkPacket(header.Ethernet(hdr).Type() /* protocol */, pkt)
 }
 
 // Capabilities implements stack.LinkEndpoint.

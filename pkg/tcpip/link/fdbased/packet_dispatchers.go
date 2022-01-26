@@ -183,19 +183,13 @@ func (d *readVDispatcher) dispatch() (bool, tcpip.Error) {
 	})
 	defer pkt.DecRef()
 
-	var (
-		p             tcpip.NetworkProtocolNumber
-		remote, local tcpip.LinkAddress
-	)
+	var p tcpip.NetworkProtocolNumber
 	if d.e.hdrSize > 0 {
 		hdr, ok := pkt.LinkHeader().Consume(d.e.hdrSize)
 		if !ok {
 			return false, nil
 		}
-		eth := header.Ethernet(hdr)
-		p = eth.Type()
-		remote = eth.SourceAddress()
-		local = eth.DestinationAddress()
+		p = header.Ethernet(hdr).Type()
 	} else {
 		// We don't get any indication of what the packet is, so try to guess
 		// if it's an IPv4 or IPv6 packet.
@@ -214,7 +208,7 @@ func (d *readVDispatcher) dispatch() (bool, tcpip.Error) {
 		}
 	}
 
-	d.e.dispatcher.DeliverNetworkPacket(remote, local, p, pkt)
+	d.e.dispatcher.DeliverNetworkPacket(p, pkt)
 
 	return true, nil
 }
@@ -298,19 +292,13 @@ func (d *recvMMsgDispatcher) dispatch() (bool, tcpip.Error) {
 		// Mark that this iovec has been processed.
 		d.msgHdrs[k].Msg.Iovlen = 0
 
-		var (
-			p             tcpip.NetworkProtocolNumber
-			remote, local tcpip.LinkAddress
-		)
+		var p tcpip.NetworkProtocolNumber
 		if d.e.hdrSize > 0 {
 			hdr, ok := pkt.LinkHeader().Consume(d.e.hdrSize)
 			if !ok {
 				return false, nil
 			}
-			eth := header.Ethernet(hdr)
-			p = eth.Type()
-			remote = eth.SourceAddress()
-			local = eth.DestinationAddress()
+			p = header.Ethernet(hdr).Type()
 		} else {
 			// We don't get any indication of what the packet is, so try to guess
 			// if it's an IPv4 or IPv6 packet.
@@ -331,7 +319,7 @@ func (d *recvMMsgDispatcher) dispatch() (bool, tcpip.Error) {
 			}
 		}
 
-		d.e.dispatcher.DeliverNetworkPacket(remote, local, p, pkt)
+		d.e.dispatcher.DeliverNetworkPacket(p, pkt)
 	}
 
 	return true, nil
