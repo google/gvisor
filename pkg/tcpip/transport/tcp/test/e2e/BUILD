@@ -10,6 +10,8 @@ go_test(
     deps = [
         ":e2e",
         "//pkg/rand",
+        "//pkg/refs",
+        "//pkg/refsvfs2",
         "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/checker",
@@ -36,6 +38,8 @@ go_test(
     srcs = ["dual_stack_test.go"],
     deps = [
         ":e2e",
+        "//pkg/refs",
+        "//pkg/refsvfs2",
         "//pkg/tcpip",
         "//pkg/tcpip/checker",
         "//pkg/tcpip/header",
@@ -70,6 +74,8 @@ go_test(
     srcs = ["forwarder_test.go"],
     deps = [
         ":e2e",
+        "//pkg/refs",
+        "//pkg/refsvfs2",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
         "//pkg/tcpip/transport/tcp",
@@ -92,6 +98,8 @@ go_test(
     size = "small",
     srcs = ["sack_scoreboard_test.go"],
     deps = [
+        "//pkg/refs",
+        "//pkg/refsvfs2",
         "//pkg/tcpip/header",
         "//pkg/tcpip/seqnum",
         "//pkg/tcpip/transport/tcp",
@@ -104,6 +112,8 @@ go_test(
     srcs = ["tcp_timestamp_test.go"],
     deps = [
         ":e2e",
+        "//pkg/refs",
+        "//pkg/refsvfs2",
         "//pkg/tcpip",
         "//pkg/tcpip/checker",
         "//pkg/tcpip/header",
@@ -120,6 +130,8 @@ go_test(
     srcs = ["tcp_rack_test.go"],
     deps = [
         ":e2e",
+        "//pkg/refs",
+        "//pkg/refsvfs2",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
         "//pkg/tcpip/seqnum",
@@ -135,6 +147,8 @@ go_test(
     srcs = ["tcp_sack_test.go"],
     deps = [
         ":e2e",
+        "//pkg/refs",
+        "//pkg/refsvfs2",
         "//pkg/tcpip",
         "//pkg/tcpip/checker",
         "//pkg/tcpip/header",
@@ -152,6 +166,8 @@ go_test(
     srcs = ["tcp_noracedetector_test.go"],
     deps = [
         ":e2e",
+        "//pkg/refs",
+        "//pkg/refsvfs2",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
         "//pkg/tcpip/transport/tcp",

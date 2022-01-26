@@ -17,10 +17,13 @@ package tcp_timestamp_test
 import (
 	"bytes"
 	"math/rand"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -309,4 +312,14 @@ func TestSegmentNotDroppedWhenTimestampMissing(t *testing.T) {
 	if got, want := buf.Bytes(), data; bytes.Compare(got, want) != 0 {
 		t.Fatalf("Data is different: got: %v, want: %v", got, want)
 	}
+}
+
+func TestMain(m *testing.M) {
+	refs.SetLeakMode(refs.LeaksPanic)
+	code := m.Run()
+	// Allow TCP async work to complete to avoid false reports of leaks.
+	// TODO(gvisor.dev/issue/5940): Use fake clock in tests.
+	time.Sleep(1 * time.Second)
+	refsvfs2.DoLeakCheck()
+	os.Exit(code)
 }
