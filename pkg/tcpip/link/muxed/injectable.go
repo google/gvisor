@@ -137,11 +137,6 @@ func (*InjectableEndpoint) ARPHardwareType() header.ARPHardwareType {
 // AddHeader implements stack.LinkEndpoint.AddHeader.
 func (*InjectableEndpoint) AddHeader(*stack.PacketBuffer) {}
 
-// WriteRawPacket implements stack.LinkEndpoint.
-func (*InjectableEndpoint) WriteRawPacket(*stack.PacketBuffer) tcpip.Error {
-	return &tcpip.ErrNotSupported{}
-}
-
 // NewInjectableEndpoint creates a new multi-endpoint injectable endpoint.
 func NewInjectableEndpoint(routes map[tcpip.Address]stack.InjectableLinkEndpoint) *InjectableEndpoint {
 	return &InjectableEndpoint{

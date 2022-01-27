@@ -76,14 +76,14 @@ func (*endpoint) Wait() {}
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.
 func (e *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
-	n := 0
-	for p := pkts.Front(); p != nil; p = p.Next() {
-		if err := e.WriteRawPacket(p); err != nil {
-			return n, err
-		}
-		n++
+	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
+		newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+			Data: buffer.NewVectorisedView(pkt.Size(), pkt.Views()),
+		})
+		e.dispatcher.DeliverNetworkPacket(pkt.NetworkProtocolNumber, newPkt)
+		newPkt.DecRef()
 	}
-	return n, nil
+	return pkts.Len(), nil
 }
 
 // ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType.
@@ -92,20 +92,3 @@ func (*endpoint) ARPHardwareType() header.ARPHardwareType {
 }
 
 func (*endpoint) AddHeader(*stack.PacketBuffer) {}
-
-// WriteRawPacket implements stack.LinkEndpoint.
-func (e *endpoint) WriteRawPacket(pkt *stack.PacketBuffer) tcpip.Error {
-	// Construct data as the unparsed portion for the loopback packet.
-	data := buffer.NewVectorisedView(pkt.Size(), pkt.Views())
-
-	// Because we're immediately turning around and writing the packet back
-	// to the rx path, we intentionally don't preserve the remote and local
-	// link addresses from the stack.Route we're passed.
-	newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: data,
-	})
-	defer newPkt.DecRef()
-	e.dispatcher.DeliverNetworkPacket(pkt.NetworkProtocolNumber, newPkt)
-
-	return nil
-}
