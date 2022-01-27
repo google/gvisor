@@ -203,6 +203,9 @@ func TestReassemblerProcess(t *testing.T) {
 			var isDone bool
 			for _, param := range test.params {
 				pkt, _, done, _, err := r.process(param.first, param.last, param.more, proto, param.pkt)
+				if pkt != nil {
+					defer pkt.DecRef()
+				}
 				if done != param.wantDone || err != param.wantError {
 					t.Errorf("got r.process(%d, %d, %t, %d, _) = (_, _, %t, _, %v), want = (%t, %v)", param.first, param.last, param.more, proto, done, err, param.wantDone, param.wantError)
 				}

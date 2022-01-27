@@ -941,6 +941,7 @@ func (e *endpoint) handleValidatedPacket(h header.IPv4, pkt *stack.PacketBuffer,
 		if !ready {
 			return
 		}
+		defer resPkt.DecRef()
 		pkt = resPkt
 		h = header.IPv4(pkt.NetworkHeader().View())
 

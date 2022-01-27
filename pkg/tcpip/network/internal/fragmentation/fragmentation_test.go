@@ -112,6 +112,9 @@ func TestFragmentationProcess(t *testing.T) {
 			for i, in := range c.in {
 				defer in.pkt.DecRef()
 				resPkt, proto, done, err := f.Process(in.id, in.first, in.last, in.more, in.proto, in.pkt)
+				if resPkt != nil {
+					defer resPkt.DecRef()
+				}
 				if err != nil {
 					t.Fatalf("f.Process(%+v, %d, %d, %t, %d, %#v) failed: %s",
 						in.id, in.first, in.last, in.more, in.proto, in.pkt, err)
@@ -258,7 +261,10 @@ func TestReassemblingTimeout(t *testing.T) {
 				if frag := event.fragment; frag != nil {
 					p := pkt(len(frag.data), frag.data)
 					defer p.DecRef()
-					_, _, done, err := f.Process(FragmentID{}, frag.first, frag.last, frag.more, protocol, p)
+					pkt, _, done, err := f.Process(FragmentID{}, frag.first, frag.last, frag.more, protocol, p)
+					if pkt != nil {
+						pkt.DecRef()
+					}
 					if err != nil {
 						t.Fatalf("%s: f.Process failed: %s", event.name, err)
 					}
@@ -685,4 +691,19 @@ func TestTimeoutHandler(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFragmentSurvivesReleaseJob(t *testing.T) {
+	handler := &testTimeoutHandler{pkt: nil}
+	c := faketime.NewManualClock()
+	f := NewFragmentation(minBlockSize, HighFragThreshold, LowFragThreshold, reassembleTimeout, c, handler)
+	pkt := pkt(2, "01")
+	// Values to Process don't matter except for pkt.
+	resPkt, _, _, _ := f.Process(FragmentID{ID: 0}, 0, 1, false, 0, pkt)
+	pkt.DecRef()
+	// This clears out the references held by the reassembler.
+	c.Advance(reassembleTimeout)
+	// If Process doesn't give the returned packet its own reference, this will
+	// fail.
+	resPkt.DecRef()
 }
