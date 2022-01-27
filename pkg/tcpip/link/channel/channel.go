@@ -268,13 +268,3 @@ func (*Endpoint) ARPHardwareType() header.ARPHardwareType {
 
 // AddHeader implements stack.LinkEndpoint.AddHeader.
 func (*Endpoint) AddHeader(*stack.PacketBuffer) {}
-
-// WriteRawPacket implements stack.LinkEndpoint.
-func (e *Endpoint) WriteRawPacket(pkt *stack.PacketBuffer) tcpip.Error {
-	// Write returns false if the queue is full. A full queue is not an error
-	// from the perspective of a LinkEndpoint so we ignore Write's return
-	// value and always return nil from this method.
-	_ = e.q.Write(pkt)
-
-	return nil
-}

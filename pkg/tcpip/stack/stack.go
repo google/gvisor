@@ -1646,7 +1646,7 @@ func (s *Stack) WriteRawPacket(nicID tcpip.NICID, proto tcpip.NetworkProtocolNum
 	})
 	defer pkt.DecRef()
 	pkt.NetworkProtocolNumber = proto
-	return nic.WriteRawPacket(pkt)
+	return nic.writeRawPacket(pkt)
 }
 
 // NetworkProtocolInstance returns the protocol instance in the stack for the

@@ -85,8 +85,7 @@ type nic struct {
 	// +checklocks:packetEPsMu
 	packetEPs map[tcpip.NetworkProtocolNumber]*packetEndpointList
 
-	qDisc     QueueingDiscipline
-	rawLinkEP LinkRawWriter
+	qDisc QueueingDiscipline
 }
 
 // makeNICStats initializes the NIC statistics and associates them to the global
@@ -182,7 +181,6 @@ func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *nic
 		linkAddrResolvers:         make(map[tcpip.NetworkProtocolNumber]*linkResolver),
 		duplicateAddressDetectors: make(map[tcpip.NetworkProtocolNumber]DuplicateAddressDetector),
 		qDisc:                     qDisc,
-		rawLinkEP:                 ep,
 	}
 	nic.linkResQueue.init(nic)
 
@@ -343,11 +341,6 @@ func (n *nic) IsLoopback() bool {
 	return n.NetworkLinkEndpoint.Capabilities()&CapabilityLoopback != 0
 }
 
-// WriteRawPacket implements LinkRawWriter.
-func (n *nic) WriteRawPacket(pkt *PacketBuffer) tcpip.Error {
-	return n.rawLinkEP.WriteRawPacket(pkt)
-}
-
 // WritePacket implements NetworkEndpoint.
 func (n *nic) WritePacket(r *Route, pkt *PacketBuffer) tcpip.Error {
 	routeInfo, _, err := r.resolvedFields(nil)
@@ -392,11 +385,11 @@ func (n *nic) WritePacketToRemote(remoteLinkAddr tcpip.LinkAddress, pkt *PacketB
 }
 
 func (n *nic) writePacket(pkt *PacketBuffer) tcpip.Error {
-	// WritePacket modifies pkt, calculate numBytes first.
-	numBytes := pkt.Size()
-
 	n.NetworkLinkEndpoint.AddHeader(pkt)
+	return n.writeRawPacket(pkt)
+}
 
+func (n *nic) writeRawPacket(pkt *PacketBuffer) tcpip.Error {
 	n.deliverLinkPacket(pkt.NetworkProtocolNumber, pkt, false /* incoming */)
 
 	if err := n.qDisc.WritePacket(pkt); err != nil {
@@ -404,7 +397,7 @@ func (n *nic) writePacket(pkt *PacketBuffer) tcpip.Error {
 	}
 
 	n.stats.tx.packets.Increment()
-	n.stats.tx.bytes.IncrementBy(uint64(numBytes))
+	n.stats.tx.bytes.IncrementBy(uint64(pkt.Size()))
 	return nil
 }
 

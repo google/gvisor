@@ -224,19 +224,6 @@ func (e *serverEndpoint) AddVirtioNetHeader(pkt *stack.PacketBuffer) {
 	virtio.Encode(&header.VirtioNetHeaderFields{})
 }
 
-// WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket
-func (e *serverEndpoint) WriteRawPacket(pkt *stack.PacketBuffer) tcpip.Error {
-	views := pkt.Views()
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	ok := e.tx.transmit(views)
-	if !ok {
-		return &tcpip.ErrWouldBlock{}
-	}
-	e.tx.notify()
-	return nil
-}
-
 // +checklocks:e.mu
 func (e *serverEndpoint) writePacketLocked(r stack.RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
 	if e.virtioNetHeaderRequired {

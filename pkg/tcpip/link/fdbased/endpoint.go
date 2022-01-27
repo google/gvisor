@@ -498,9 +498,6 @@ func (e *endpoint) AddHeader(pkt *stack.PacketBuffer) {
 	}
 }
 
-// WriteRawPacket implements stack.LinkEndpoint.
-func (*endpoint) WriteRawPacket(*stack.PacketBuffer) tcpip.Error { return &tcpip.ErrNotSupported{} }
-
 // writePacket writes outbound packets to the file descriptor. If it is not
 // currently writable, the packet is dropped.
 func (e *endpoint) writePacket(pkt *stack.PacketBuffer) tcpip.Error {
