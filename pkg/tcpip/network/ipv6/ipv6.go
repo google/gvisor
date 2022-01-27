@@ -1136,7 +1136,16 @@ func (e *endpoint) processExtensionHeaders(h header.IPv6, pkt *stack.PacketBuffe
 	var (
 		hasFragmentHeader bool
 		routerAlert       *header.IPv6RouterAlertOption
+		// Create an extra packet buffer reference to keep track of the packet to
+		// DecRef so that we do not incur a memory allocation for deferring a DecRef
+		// within the loop.
+		resPktToDecRef *stack.PacketBuffer
 	)
+	defer func() {
+		if resPktToDecRef != nil {
+			resPktToDecRef.DecRef()
+		}
+	}()
 
 	for {
 		// Keep track of the start of the previous header so we can report the
@@ -1392,6 +1401,7 @@ func (e *endpoint) processExtensionHeaders(h header.IPv6, pkt *stack.PacketBuffe
 			}
 
 			if ready {
+				resPktToDecRef = resPkt
 				pkt = resPkt
 
 				// We create a new iterator with the reassembled packet because we could
