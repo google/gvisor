@@ -771,18 +771,6 @@ type LinkWriter interface {
 	WritePackets(PacketBufferList) (int, tcpip.Error)
 }
 
-// LinkRawWriter is an interface that must be implemented by all Link endpoints
-// to support emitting pre-formed packets which include the Link header.
-type LinkRawWriter interface {
-	// WriteRawPacket writes a packet directly to the link.
-	//
-	// If the link-layer has its own header, the payload must already include the
-	// header.
-	//
-	// WriteRawPacket may modify the packet.
-	WriteRawPacket(*PacketBuffer) tcpip.Error
-}
-
 // NetworkLinkEndpoint is a data-link layer that supports sending network
 // layer packets.
 type NetworkLinkEndpoint interface {
@@ -860,7 +848,6 @@ type QueueingDiscipline interface {
 type LinkEndpoint interface {
 	NetworkLinkEndpoint
 	LinkWriter
-	LinkRawWriter
 }
 
 // InjectableLinkEndpoint is a LinkEndpoint where inbound packets are

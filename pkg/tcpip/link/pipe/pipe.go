@@ -109,11 +109,3 @@ func (*Endpoint) ARPHardwareType() header.ARPHardwareType {
 
 // AddHeader implements stack.LinkEndpoint.
 func (*Endpoint) AddHeader(*stack.PacketBuffer) {}
-
-// WriteRawPacket implements stack.LinkEndpoint.
-func (e *Endpoint) WriteRawPacket(pkt *stack.PacketBuffer) tcpip.Error {
-	var pkts stack.PacketBufferList
-	pkts.PushBack(pkt)
-	_, err := e.WritePackets(pkts)
-	return err
-}
