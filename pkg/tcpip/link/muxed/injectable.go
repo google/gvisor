@@ -135,8 +135,7 @@ func (*InjectableEndpoint) ARPHardwareType() header.ARPHardwareType {
 }
 
 // AddHeader implements stack.LinkEndpoint.AddHeader.
-func (*InjectableEndpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
-}
+func (*InjectableEndpoint) AddHeader(*stack.PacketBuffer) {}
 
 // WriteRawPacket implements stack.LinkEndpoint.
 func (*InjectableEndpoint) WriteRawPacket(*stack.PacketBuffer) tcpip.Error {

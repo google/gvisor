@@ -205,25 +205,18 @@ func (e *serverEndpoint) LinkAddress() tcpip.LinkAddress {
 }
 
 // AddHeader implements stack.LinkEndpoint.AddHeader.
-func (e *serverEndpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func (e *serverEndpoint) AddHeader(pkt *stack.PacketBuffer) {
 	// Add ethernet header if needed.
 	if len(e.addr) == 0 {
 		return
 	}
 
 	eth := header.Ethernet(pkt.LinkHeader().Push(header.EthernetMinimumSize))
-	ethHdr := &header.EthernetFields{
-		DstAddr: remote,
-		Type:    protocol,
-	}
-
-	// Preserve the src address if it's set in the route.
-	if local != "" {
-		ethHdr.SrcAddr = local
-	} else {
-		ethHdr.SrcAddr = e.addr
-	}
-	eth.Encode(ethHdr)
+	eth.Encode(&header.EthernetFields{
+		SrcAddr: pkt.EgressRoute.LocalLinkAddress,
+		DstAddr: pkt.EgressRoute.RemoteLinkAddress,
+		Type:    pkt.NetworkProtocolNumber,
+	})
 }
 
 func (e *serverEndpoint) AddVirtioNetHeader(pkt *stack.PacketBuffer) {

@@ -267,8 +267,7 @@ func (*Endpoint) ARPHardwareType() header.ARPHardwareType {
 }
 
 // AddHeader implements stack.LinkEndpoint.AddHeader.
-func (*Endpoint) AddHeader(tcpip.LinkAddress, tcpip.LinkAddress, tcpip.NetworkProtocolNumber, *stack.PacketBuffer) {
-}
+func (*Endpoint) AddHeader(*stack.PacketBuffer) {}
 
 // WriteRawPacket implements stack.LinkEndpoint.
 func (e *Endpoint) WriteRawPacket(pkt *stack.PacketBuffer) tcpip.Error {

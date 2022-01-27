@@ -220,7 +220,7 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash u
 		}
 	}
 
-	c.ep.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
+	c.ep.AddHeader(pkt)
 
 	var pkts stack.PacketBufferList
 	pkts.PushBack(pkt)
@@ -341,7 +341,7 @@ func TestPreserveSrcAddress(t *testing.T) {
 	// Set LocalLinkAddress in route to the value of the bridged address.
 	pkt.EgressRoute.LocalLinkAddress = baddr
 	pkt.EgressRoute.RemoteLinkAddress = raddr
-	c.ep.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
+	c.ep.AddHeader(pkt)
 
 	var pkts stack.PacketBufferList
 	pkts.PushBack(pkt)

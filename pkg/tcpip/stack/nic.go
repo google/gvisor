@@ -395,7 +395,7 @@ func (n *nic) writePacket(pkt *PacketBuffer) tcpip.Error {
 	// WritePacket modifies pkt, calculate numBytes first.
 	numBytes := pkt.Size()
 
-	n.NetworkLinkEndpoint.AddHeader(n.LinkAddress(), pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
+	n.NetworkLinkEndpoint.AddHeader(pkt)
 
 	n.deliverLinkPacket(pkt.NetworkProtocolNumber, pkt, false /* incoming */)
 
