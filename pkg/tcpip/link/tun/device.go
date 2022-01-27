@@ -337,21 +337,16 @@ func (e *tunEndpoint) ARPHardwareType() header.ARPHardwareType {
 }
 
 // AddHeader implements stack.LinkEndpoint.AddHeader.
-func (e *tunEndpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func (e *tunEndpoint) AddHeader(pkt *stack.PacketBuffer) {
 	if !e.isTap {
 		return
 	}
 	eth := header.Ethernet(pkt.LinkHeader().Push(header.EthernetMinimumSize))
-	hdr := &header.EthernetFields{
-		SrcAddr: local,
-		DstAddr: remote,
-		Type:    protocol,
-	}
-	if hdr.SrcAddr == "" {
-		hdr.SrcAddr = e.LinkAddress()
-	}
-
-	eth.Encode(hdr)
+	eth.Encode(&header.EthernetFields{
+		SrcAddr: pkt.EgressRoute.LocalLinkAddress,
+		DstAddr: pkt.EgressRoute.RemoteLinkAddress,
+		Type:    pkt.NetworkProtocolNumber,
+	})
 }
 
 // MaxHeaderLength returns the maximum size of the link layer header.

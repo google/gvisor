@@ -226,7 +226,7 @@ func TestSimpleSend(t *testing.T) {
 			pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
 			pkt.EgressRoute.LocalLinkAddress = localLinkAddr
 			pkt.NetworkProtocolNumber = proto
-			c.ep.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
+			c.ep.AddHeader(pkt)
 			var pkts stack.PacketBufferList
 			pkts.PushBack(pkt)
 			defer pkts.DecRef()
@@ -300,7 +300,7 @@ func TestPreserveSrcAddressInSend(t *testing.T) {
 	pkt.EgressRoute.LocalLinkAddress = newLocalLinkAddress
 	pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
 	pkt.NetworkProtocolNumber = proto
-	c.ep.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
+	c.ep.AddHeader(pkt)
 
 	var pkts stack.PacketBufferList
 	defer pkts.DecRef()
@@ -360,7 +360,7 @@ func TestFillTxQueue(t *testing.T) {
 		})
 		pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
 		pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
-		c.ep.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
+		c.ep.AddHeader(pkt)
 
 		var pkts stack.PacketBufferList
 		pkts.PushBack(pkt)
@@ -386,7 +386,7 @@ func TestFillTxQueue(t *testing.T) {
 	})
 	pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
 	pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
-	c.ep.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
+	c.ep.AddHeader(pkt)
 
 	var pkts stack.PacketBufferList
 	pkts.PushBack(pkt)
@@ -420,7 +420,7 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 			pkts.PushBack(pkt)
 			pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
 			pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
-			c.ep.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
+			c.ep.AddHeader(pkt)
 		}
 		if _, err := c.ep.WritePackets(pkts); err != nil {
 			t.Fatalf("WritePackets failed unexpectedly: %s", err)
@@ -448,7 +448,7 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 		})
 		pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
 		pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
-		c.ep.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
+		c.ep.AddHeader(pkt)
 
 		var pkts stack.PacketBufferList
 		pkts.PushBack(pkt)
@@ -473,7 +473,7 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 	})
 	pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
 	pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
-	c.ep.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
+	c.ep.AddHeader(pkt)
 
 	var pkts stack.PacketBufferList
 	pkts.PushBack(pkt)
@@ -502,7 +502,7 @@ func TestFillTxMemory(t *testing.T) {
 		})
 		pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
 		pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
-		c.ep.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
+		c.ep.AddHeader(pkt)
 
 		var pkts stack.PacketBufferList
 		pkts.PushBack(pkt)
@@ -577,7 +577,7 @@ func TestFillTxMemoryWithMultiBuffer(t *testing.T) {
 		})
 		pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
 		pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
-		c.ep.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
+		c.ep.AddHeader(pkt)
 
 		pkts.PushBack(pkt)
 		_, err := c.ep.WritePackets(pkts)

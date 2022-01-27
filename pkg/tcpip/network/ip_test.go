@@ -218,7 +218,7 @@ func (*testObject) ARPHardwareType() header.ARPHardwareType {
 }
 
 // AddHeader implements stack.LinkEndpoint.AddHeader.
-func (*testObject) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func (*testObject) AddHeader(*stack.PacketBuffer) {
 	panic("not implemented")
 }
 

@@ -88,8 +88,7 @@ func (*MockLinkEndpoint) Wait() {}
 func (*MockLinkEndpoint) ARPHardwareType() header.ARPHardwareType { return header.ARPHardwareNone }
 
 // AddHeader implements LinkEndpoint.AddHeader.
-func (*MockLinkEndpoint) AddHeader(_, _ tcpip.LinkAddress, _ tcpip.NetworkProtocolNumber, _ *stack.PacketBuffer) {
-}
+func (*MockLinkEndpoint) AddHeader(*stack.PacketBuffer) {}
 
 // WriteRawPacket implements stack.LinkEndpoint.
 func (*MockLinkEndpoint) WriteRawPacket(*stack.PacketBuffer) tcpip.Error {
