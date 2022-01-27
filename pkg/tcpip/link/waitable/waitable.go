@@ -130,8 +130,8 @@ func (e *Endpoint) ARPHardwareType() header.ARPHardwareType {
 }
 
 // AddHeader implements stack.LinkEndpoint.AddHeader.
-func (e *Endpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
-	e.lower.AddHeader(local, remote, protocol, pkt)
+func (e *Endpoint) AddHeader(pkt *stack.PacketBuffer) {
+	e.lower.AddHeader(pkt)
 }
 
 // WriteRawPacket implements stack.LinkEndpoint.

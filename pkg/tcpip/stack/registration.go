@@ -832,8 +832,8 @@ type NetworkLinkEndpoint interface {
 	// https://github.com/torvalds/linux/blob/aa0c9086b40c17a7ad94425b3b70dd1fdd7497bf/include/uapi/linux/if_arp.h#L30
 	ARPHardwareType() header.ARPHardwareType
 
-	// AddHeader adds a link layer header to pkt if required.
-	AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer)
+	// AddHeader adds a link layer header to the packet if required.
+	AddHeader(*PacketBuffer)
 }
 
 // QueueingDiscipline provides a queueing strategy for outgoing packets (e.g
