@@ -129,7 +129,7 @@ steps:
   - <<: *common
     label: ":toolbox: System call tests"
     command: make syscall-tests
-    parallelism: 20
+    parallelism: 60
 
   # Integration tests.
   - <<: *common
@@ -193,15 +193,15 @@ steps:
   - <<: *common
     label: ":php: PHP runtime tests"
     command: make php7.3.6-runtime-tests_vfs2
-    parallelism: 10
+    parallelism: 20
   - <<: *common
     label: ":java: Java runtime tests"
     command: make java11-runtime-tests_vfs2
-    parallelism: 40
+    parallelism: 120
   - <<: *common
     label: ":golang: Go runtime tests"
     command: make go1.12-runtime-tests_vfs2
-    parallelism: 10
+    parallelism: 20
   - <<: *common
     label: ":node: NodeJS runtime tests"
     command: make nodejs12.4.0-runtime-tests_vfs2
@@ -209,23 +209,23 @@ steps:
   - <<: *common
     label: ":python: Python runtime tests"
     command: make python3.7.3-runtime-tests_vfs2
-    parallelism: 10
+    parallelism: 20
 
   # Runtime tests (VFS1).
   - <<: *common
     label: ":php: PHP runtime tests (VFS1)"
     command: make php7.3.6-runtime-tests
-    parallelism: 10
+    parallelism: 20
     if: build.message =~ /VFS1/ || build.branch == "master"
   - <<: *common
     label: ":java: Java runtime tests (VFS1)"
     command: make java11-runtime-tests
-    parallelism: 40
+    parallelism: 120
     if: build.message =~ /VFS1/ || build.branch == "master"
   - <<: *common
     label: ":golang: Go runtime tests (VFS1)"
     command: make go1.12-runtime-tests
-    parallelism: 10
+    parallelism: 20
     if: build.message =~ /VFS1/ || build.branch == "master"
   - <<: *common
     label: ":node: NodeJS runtime tests (VFS1)"
@@ -235,7 +235,7 @@ steps:
   - <<: *common
     label: ":python: Python runtime tests (VFS1)"
     command: make python3.7.3-runtime-tests
-    parallelism: 10
+    parallelism: 20
     if: build.message =~ /VFS1/ || build.branch == "master"
 
   # ARM tests.
