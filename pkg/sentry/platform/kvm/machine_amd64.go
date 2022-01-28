@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"math/big"
 	"reflect"
+	"runtime"
 	"runtime/debug"
 
 	"golang.org/x/sys/unix"
@@ -55,15 +56,20 @@ func (m *machine) initArchState() error {
 		recover()
 		debug.SetPanicOnFault(old)
 	}()
+
+	// Initialize all vCPUs to minimize kvm ioctl-s allowed by seccomp filters.
+	m.mu.Lock()
+	for i := 0; i < m.maxVCPUs; i++ {
+		m.createVCPU(i)
+	}
+	m.mu.Unlock()
+
 	c := m.Get()
 	defer m.Put(c)
 	bluepill(c)
 	ring0.SetCPUIDFaulting(true)
 
 	return nil
-}
-
-type machineArchState struct {
 }
 
 type vCPUArchState struct {
@@ -483,15 +489,10 @@ func (m *machine) getMaxVCPU() {
 	} else {
 		m.maxVCPUs = int(maxVCPUs)
 	}
-}
-
-// getNewVCPU create a new vCPU (maybe)
-func (m *machine) getNewVCPU() *vCPU {
-	if int(m.nextID) < m.maxVCPUs {
-		c := m.newVCPU()
-		return c
+	rCPUs := runtime.GOMAXPROCS(0)
+	if rCPUs < m.maxVCPUs {
+		m.maxVCPUs = rCPUs
 	}
-	return nil
 }
 
 func archPhysicalRegions(physicalRegions []physicalRegion) []physicalRegion {
