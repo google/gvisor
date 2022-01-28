@@ -17,8 +17,6 @@ package lisafs
 import (
 	"fmt"
 	"math"
-	"path"
-	"path/filepath"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -90,53 +88,60 @@ func ErrorHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, 
 // that Mount is the first message on the connection. Only after the connection
 // has been successfully mounted can other channels be created.
 func MountHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
-	var req MountReq
-	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
-		return 0, unix.EIO
-	}
-
-	mountPath := path.Clean(string(req.MountPath))
-	if !filepath.IsAbs(mountPath) {
-		log.Warningf("mountPath %q is not absolute", mountPath)
-		return 0, unix.EINVAL
-	}
-
-	if c.mounted {
-		log.Warningf("connection has already been mounted at %q", mountPath)
-		return 0, unix.EBUSY
-	}
-
 	var (
 		mountPointFD   *ControlFD
 		mountPointStat linux.Statx
+		mountNode      = c.server.root
 	)
 	if err := c.server.withRenameReadLock(func() (err error) {
-		mountPointFD, mountPointStat, err = c.ServerImpl().Mount(c)
-		if err != nil {
-			return err
-		}
+		// Maintain extra ref on mountNode to ensure existence during walk.
+		mountNode.IncRef()
+		defer func() {
+			// Drop extra ref on mountNode. Wrap the defer call with a func so that
+			// mountNode is evaluated on execution, not on defer itself.
+			mountNode.DecRef(nil)
+		}()
 
-		for pit := fspath.Parse(mountPath).Begin; pit.Ok(); pit = pit.Next() {
-			mountPointFD.node.opMu.RLock()
-			nextFD, nextStat, err := mountPointFD.impl.Walk(pit.String())
-			mountPointFD.node.opMu.RUnlock()
-			if err != nil {
+		// Walk to the mountpoint.
+		pit := fspath.Parse(c.mountPath).Begin
+		for pit.Ok() {
+			curName := pit.String()
+			if err := checkSafeName(curName); err != nil {
 				return err
 			}
-
-			c.removeControlFDLocked(mountPointFD.id)
-			mountPointFD = nextFD
-			mountPointStat = nextStat
+			mountNode.opMu.RLock()
+			if mountNode.isDeleted() {
+				mountNode.opMu.RUnlock()
+				return unix.ENOENT
+			}
+			mountNode.childrenMu.Lock()
+			next := mountNode.LookupChildLocked(curName)
+			if next == nil {
+				next = &Node{}
+				next.InitLocked(curName, mountNode)
+			} else {
+				next.IncRef()
+			}
+			mountNode.childrenMu.Unlock()
+			mountNode.opMu.RUnlock()
+			// next has an extra ref as needed. Drop extra ref on mountNode.
+			mountNode.DecRef(nil)
+			pit = pit.Next()
+			mountNode = next
 		}
+
+		// Provide Mount with read concurrency guarantee.
+		mountNode.opMu.RLock()
+		defer mountNode.opMu.RUnlock()
+		if mountNode.isDeleted() {
+			return unix.ENOENT
+		}
+		mountPointFD, mountPointStat, err = c.ServerImpl().Mount(c, mountNode)
 		return err
 	}); err != nil {
-		if mountPointFD != nil {
-			c.removeFD(mountPointFD.id)
-		}
 		return 0, err
 	}
 
-	c.mounted = true
 	resp := MountResp{
 		Root: Inode{
 			ControlFD: mountPointFD.id,

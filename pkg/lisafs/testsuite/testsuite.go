@@ -91,14 +91,14 @@ func runServerClient(t *testing.T, tester Tester, testFn testFunc) {
 	}
 
 	server := tester.NewServer(t)
-	conn, err := server.CreateConnection(serverSocket, false /* readonly */)
+	conn, err := server.CreateConnection(serverSocket, mountPath, false /* readonly */)
 	if err != nil {
 		t.Fatalf("starting connection failed: %v", err)
 		return
 	}
 	server.StartConnection(conn)
 
-	c, root, err := lisafs.NewClient(clientSocket, mountPath)
+	c, root, err := lisafs.NewClient(clientSocket)
 	if err != nil {
 		t.Fatalf("client creation failed: %v", err)
 	}
