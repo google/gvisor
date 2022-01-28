@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -33,6 +34,25 @@ import (
 
 func (d *dentry) isDir() bool {
 	return d.fileType() == linux.S_IFDIR
+}
+
+// Preconditions:
+// - filesystem.renameMu must be locked.
+// - d.dirMu must be locked.
+// - d.isDir().
+// - child must be a newly-created dentry that has never had a parent.
+func (d *dentry) insertCreatedChildLocked(ctx context.Context, childIno *lisafs.Inode, childName string, updateChild func(child *dentry), ds **[]*dentry) error {
+	child, err := d.fs.newDentryLisa(ctx, childIno)
+	if err != nil {
+		d.fs.clientLisa.CloseFDBatched(ctx, childIno.ControlFD)
+		return err
+	}
+	d.cacheNewChildLocked(child, childName)
+	appendNewChildDentry(ds, d, child)
+	if updateChild != nil {
+		updateChild(child)
+	}
+	return nil
 }
 
 // Preconditions:

@@ -212,7 +212,7 @@ func (f *ClientFD) Write(ctx context.Context, src []byte, offset uint64) (uint64
 }
 
 // MkdirAt makes the MkdirAt RPC.
-func (f *ClientFD) MkdirAt(ctx context.Context, name string, mode linux.FileMode, uid UID, gid GID) (*Inode, error) {
+func (f *ClientFD) MkdirAt(ctx context.Context, name string, mode linux.FileMode, uid UID, gid GID) (Inode, error) {
 	var req MkdirAtReq
 	req.DirFD = f.fd
 	req.Name = SizedString(name)
@@ -224,11 +224,11 @@ func (f *ClientFD) MkdirAt(ctx context.Context, name string, mode linux.FileMode
 	ctx.UninterruptibleSleepStart(false)
 	err := f.client.SndRcvMessage(MkdirAt, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, nil)
 	ctx.UninterruptibleSleepFinish(false)
-	return &resp.ChildDir, err
+	return resp.ChildDir, err
 }
 
 // SymlinkAt makes the SymlinkAt RPC.
-func (f *ClientFD) SymlinkAt(ctx context.Context, name, target string, uid UID, gid GID) (*Inode, error) {
+func (f *ClientFD) SymlinkAt(ctx context.Context, name, target string, uid UID, gid GID) (Inode, error) {
 	req := SymlinkAtReq{
 		DirFD:  f.fd,
 		Name:   SizedString(name),
@@ -241,11 +241,11 @@ func (f *ClientFD) SymlinkAt(ctx context.Context, name, target string, uid UID, 
 	ctx.UninterruptibleSleepStart(false)
 	err := f.client.SndRcvMessage(SymlinkAt, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, nil)
 	ctx.UninterruptibleSleepFinish(false)
-	return &resp.Symlink, err
+	return resp.Symlink, err
 }
 
 // LinkAt makes the LinkAt RPC.
-func (f *ClientFD) LinkAt(ctx context.Context, targetFD FDID, name string) (*Inode, error) {
+func (f *ClientFD) LinkAt(ctx context.Context, targetFD FDID, name string) (Inode, error) {
 	req := LinkAtReq{
 		DirFD:  f.fd,
 		Target: targetFD,
@@ -256,11 +256,11 @@ func (f *ClientFD) LinkAt(ctx context.Context, targetFD FDID, name string) (*Ino
 	ctx.UninterruptibleSleepStart(false)
 	err := f.client.SndRcvMessage(LinkAt, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, nil)
 	ctx.UninterruptibleSleepFinish(false)
-	return &resp.Link, err
+	return resp.Link, err
 }
 
 // MknodAt makes the MknodAt RPC.
-func (f *ClientFD) MknodAt(ctx context.Context, name string, mode linux.FileMode, uid UID, gid GID, minor, major uint32) (*Inode, error) {
+func (f *ClientFD) MknodAt(ctx context.Context, name string, mode linux.FileMode, uid UID, gid GID, minor, major uint32) (Inode, error) {
 	var req MknodAtReq
 	req.DirFD = f.fd
 	req.Name = SizedString(name)
@@ -274,7 +274,7 @@ func (f *ClientFD) MknodAt(ctx context.Context, name string, mode linux.FileMode
 	ctx.UninterruptibleSleepStart(false)
 	err := f.client.SndRcvMessage(MknodAt, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, nil)
 	ctx.UninterruptibleSleepFinish(false)
-	return &resp.Child, err
+	return resp.Child, err
 }
 
 // SetStat makes the SetStat RPC.
@@ -318,7 +318,7 @@ func (f *ClientFD) WalkMultiple(ctx context.Context, names []string) (WalkStatus
 }
 
 // Walk makes the Walk RPC with just one path component to walk.
-func (f *ClientFD) Walk(ctx context.Context, name string) (*Inode, error) {
+func (f *ClientFD) Walk(ctx context.Context, name string) (Inode, error) {
 	req := WalkReq{
 		DirFD: f.fd,
 		Path:  []string{name},
@@ -330,15 +330,15 @@ func (f *ClientFD) Walk(ctx context.Context, name string) (*Inode, error) {
 	err := f.client.SndRcvMessage(Walk, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, nil)
 	ctx.UninterruptibleSleepFinish(false)
 	if err != nil {
-		return nil, err
+		return Inode{}, err
 	}
 
 	switch resp.Status {
 	case WalkComponentDoesNotExist:
-		return nil, unix.ENOENT
+		return Inode{}, unix.ENOENT
 	case WalkComponentSymlink:
 		// f is not a directory which can be walked on.
-		return nil, unix.ENOTDIR
+		return Inode{}, unix.ENOTDIR
 	}
 
 	if n := len(resp.Inodes); n > 1 {
@@ -346,12 +346,12 @@ func (f *ClientFD) Walk(ctx context.Context, name string) (*Inode, error) {
 			f.client.CloseFDBatched(ctx, resp.Inodes[i].ControlFD)
 		}
 		log.Warningf("requested to walk one component, but got %d results", n)
-		return nil, unix.EIO
+		return Inode{}, unix.EIO
 	} else if n == 0 {
 		log.Warningf("walk has success status but no results returned")
-		return nil, unix.ENOENT
+		return Inode{}, unix.ENOENT
 	}
-	return &inode[0], err
+	return inode[0], err
 }
 
 // WalkStat makes the WalkStat RPC with multiple path components to walk.

@@ -388,7 +388,7 @@ func (fs *filesystem) getChildLocked(ctx context.Context, parent *dentry, name s
 			return nil, err
 		}
 		// Create a new dentry representing the file.
-		child, err = fs.newDentryLisa(ctx, childInode)
+		child, err = fs.newDentryLisa(ctx, &childInode)
 		if err != nil {
 			fs.clientLisa.CloseFDBatched(ctx, childInode.ControlFD)
 			return nil, err
@@ -482,7 +482,7 @@ func (fs *filesystem) resolveLocked(ctx context.Context, rp *vfs.ResolvingPath, 
 // Preconditions:
 // * !rp.Done().
 // * For the final path component in rp, !rp.ShouldFollowSymlink().
-func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir bool, createInRemoteDir func(parent *dentry, name string, ds **[]*dentry) (*lisafs.Inode, error), createInSyntheticDir func(parent *dentry, name string) error, updateChild func(child *dentry)) error {
+func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir bool, createInRemoteDir func(parent *dentry, name string, ds **[]*dentry) error, createInSyntheticDir func(parent *dentry, name string) error) error {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
 	defer fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
@@ -569,25 +569,8 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 	// No cached dentry exists; however, in InteropModeShared there might still be
 	// an existing file at name. Just attempt the file creation RPC anyways. If a
 	// file does exist, the RPC will fail with EEXIST like we would have.
-	lisaInode, err := createInRemoteDir(parent, name, &ds)
-	if err != nil {
+	if err := createInRemoteDir(parent, name, &ds); err != nil {
 		return err
-	}
-	// lisafs may aggresively cache newly created inodes. This has helped reduce
-	// Walk RPCs in practice.
-	if lisaInode != nil {
-		child, err := fs.newDentryLisa(ctx, lisaInode)
-		if err != nil {
-			fs.clientLisa.CloseFDBatched(ctx, lisaInode.ControlFD)
-			return err
-		}
-		parent.cacheNewChildLocked(child, name)
-		appendNewChildDentry(&ds, parent, child)
-
-		// lisafs may update dentry properties upon successful creation.
-		if updateChild != nil {
-			updateChild(child)
-		}
 	}
 	if fs.opts.interop != InteropModeShared {
 		if child, ok := parent.children[name]; ok && child == nil {
@@ -833,31 +816,35 @@ func (fs *filesystem) GetParentDentryAt(ctx context.Context, rp *vfs.ResolvingPa
 
 // LinkAt implements vfs.FilesystemImpl.LinkAt.
 func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.VirtualDentry) error {
-	err := fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, childName string, ds **[]*dentry) (*lisafs.Inode, error) {
+	err := fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, childName string, ds **[]*dentry) error {
 		if rp.Mount() != vd.Mount() {
-			return nil, linuxerr.EXDEV
+			return linuxerr.EXDEV
 		}
 		d := vd.Dentry().Impl().(*dentry)
 		if d.isDir() {
-			return nil, linuxerr.EPERM
+			return linuxerr.EPERM
 		}
 		gid := auth.KGID(atomic.LoadUint32(&d.gid))
 		uid := auth.KUID(atomic.LoadUint32(&d.uid))
 		mode := linux.FileMode(atomic.LoadUint32(&d.mode))
 		if err := vfs.MayLink(rp.Credentials(), mode, uid, gid); err != nil {
-			return nil, err
+			return err
 		}
 		if d.nlink == 0 {
-			return nil, linuxerr.ENOENT
+			return linuxerr.ENOENT
 		}
 		if d.nlink == math.MaxUint32 {
-			return nil, linuxerr.EMLINK
+			return linuxerr.EMLINK
 		}
 		if fs.opts.lisaEnabled {
-			return parent.controlFDLisa.LinkAt(ctx, d.controlFDLisa.ID(), childName)
+			linkInode, err := parent.controlFDLisa.LinkAt(ctx, d.controlFDLisa.ID(), childName)
+			if err != nil {
+				return err
+			}
+			return parent.insertCreatedChildLocked(ctx, &linkInode, childName, nil, ds)
 		}
-		return nil, parent.file.link(ctx, d.file, childName)
-	}, nil, nil)
+		return parent.file.link(ctx, d.file, childName)
+	}, nil)
 
 	if err == nil {
 		// Success!
@@ -869,7 +856,7 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 // MkdirAt implements vfs.FilesystemImpl.MkdirAt.
 func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.MkdirOptions) error {
 	creds := rp.Credentials()
-	return fs.doCreateAt(ctx, rp, true /* dir */, func(parent *dentry, name string, ds **[]*dentry) (*lisafs.Inode, error) {
+	return fs.doCreateAt(ctx, rp, true /* dir */, func(parent *dentry, name string, ds **[]*dentry) error {
 		// If the parent is a setgid directory, use the parent's GID
 		// rather than the caller's and enable setgid.
 		kgid := creds.EffectiveKGID
@@ -878,12 +865,15 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 			kgid = auth.KGID(atomic.LoadUint32(&parent.gid))
 			mode |= linux.S_ISGID
 		}
-		var (
-			childDirInode *lisafs.Inode
-			err           error
-		)
+		var err error
 		if fs.opts.lisaEnabled {
+			var childDirInode lisafs.Inode
 			childDirInode, err = parent.controlFDLisa.MkdirAt(ctx, name, mode, lisafs.UID(creds.EffectiveKUID), lisafs.GID(kgid))
+			if err == nil {
+				if err = parent.insertCreatedChildLocked(ctx, &childDirInode, name, nil, ds); err != nil {
+					return err
+				}
+			}
 		} else {
 			_, err = parent.file.mkdir(ctx, name, p9.FileMode(mode), (p9.UID)(creds.EffectiveKUID), p9.GID(kgid))
 		}
@@ -891,11 +881,11 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 			if fs.opts.interop != InteropModeShared {
 				parent.incLinks()
 			}
-			return childDirInode, nil
+			return nil
 		}
 
 		if !opts.ForSyntheticMountpoint || linuxerr.Equals(linuxerr.EEXIST, err) {
-			return nil, err
+			return err
 		}
 		ctx.Infof("Failed to create remote directory %q: %v; falling back to synthetic directory", name, err)
 		parent.createSyntheticChildLocked(&createSyntheticOpts{
@@ -908,7 +898,7 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		if fs.opts.interop != InteropModeShared {
 			parent.incLinks()
 		}
-		return nil, nil
+		return nil
 	}, func(parent *dentry, name string) error {
 		if !opts.ForSyntheticMountpoint {
 			// Can't create non-synthetic files in synthetic directories.
@@ -922,26 +912,27 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		})
 		parent.incLinks()
 		return nil
-	}, nil)
+	})
 }
 
 // MknodAt implements vfs.FilesystemImpl.MknodAt.
 func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.MknodOptions) error {
-	return fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, name string, ds **[]*dentry) (*lisafs.Inode, error) {
+	return fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, name string, ds **[]*dentry) error {
 		creds := rp.Credentials()
-		var (
-			childInode *lisafs.Inode
-			err        error
-		)
+		var err error
 		if fs.opts.lisaEnabled {
+			var childInode lisafs.Inode
 			childInode, err = parent.controlFDLisa.MknodAt(ctx, name, opts.Mode, lisafs.UID(creds.EffectiveKUID), lisafs.GID(creds.EffectiveKGID), opts.DevMinor, opts.DevMajor)
+			if err == nil {
+				return parent.insertCreatedChildLocked(ctx, &childInode, name, nil, ds)
+			}
 		} else {
 			_, err = parent.file.mknod(ctx, name, (p9.FileMode)(opts.Mode), opts.DevMajor, opts.DevMinor, (p9.UID)(creds.EffectiveKUID), (p9.GID)(creds.EffectiveKGID))
 		}
 		if err == nil {
-			return childInode, nil
+			return nil
 		} else if !linuxerr.Equals(linuxerr.EPERM, err) {
-			return nil, err
+			return err
 		}
 
 		// EPERM means that gofer does not allow creating a socket or pipe. Fallback
@@ -952,10 +943,10 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		switch {
 		case err == nil:
 			// Step succeeded, another file exists.
-			return nil, linuxerr.EEXIST
+			return linuxerr.EEXIST
 		case !linuxerr.Equals(linuxerr.ENOENT, err):
 			// Unexpected error.
-			return nil, err
+			return err
 		}
 
 		switch opts.Mode.FileType() {
@@ -968,7 +959,7 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 				endpoint: opts.Endpoint,
 			})
 			*ds = appendDentry(*ds, parent)
-			return nil, nil
+			return nil
 		case linux.S_IFIFO:
 			parent.createSyntheticChildLocked(&createSyntheticOpts{
 				name: name,
@@ -978,11 +969,11 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 				pipe: pipe.NewVFSPipe(true /* isNamed */, pipe.DefaultPipeSize),
 			})
 			*ds = appendDentry(*ds, parent)
-			return nil, nil
+			return nil
 		}
 		// Retain error from gofer if synthetic file cannot be created internally.
-		return nil, linuxerr.EPERM
-	}, nil, nil)
+		return linuxerr.EPERM
+	}, nil)
 }
 
 // OpenAt implements vfs.FilesystemImpl.OpenAt.
@@ -1740,21 +1731,25 @@ func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linu
 
 // SymlinkAt implements vfs.FilesystemImpl.SymlinkAt.
 func (fs *filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, target string) error {
-	return fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, name string, ds **[]*dentry) (*lisafs.Inode, error) {
+	return fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, name string, ds **[]*dentry) error {
 		creds := rp.Credentials()
 		if fs.opts.lisaEnabled {
-			return parent.controlFDLisa.SymlinkAt(ctx, name, target, lisafs.UID(creds.EffectiveKUID), lisafs.GID(creds.EffectiveKGID))
+			symlinkInode, err := parent.controlFDLisa.SymlinkAt(ctx, name, target, lisafs.UID(creds.EffectiveKUID), lisafs.GID(creds.EffectiveKGID))
+			if err != nil {
+				return err
+			}
+			return parent.insertCreatedChildLocked(ctx, &symlinkInode, name, func(child *dentry) {
+				if fs.opts.interop != InteropModeShared {
+					// lisafs caches the symlink target on creation. In practice, this
+					// helps avoid a lot of ReadLink RPCs.
+					child.haveTarget = true
+					child.target = target
+				}
+			}, ds)
 		}
 		_, err := parent.file.symlink(ctx, target, name, (p9.UID)(creds.EffectiveKUID), (p9.GID)(creds.EffectiveKGID))
-		return nil, err
-	}, nil, func(child *dentry) {
-		if fs.opts.interop != InteropModeShared {
-			// lisafs caches the symlink target on creation. In practice, this
-			// helps avoid a lot of ReadLink RPCs.
-			child.haveTarget = true
-			child.target = target
-		}
-	})
+		return err
+	}, nil)
 }
 
 // UnlinkAt implements vfs.FilesystemImpl.UnlinkAt.

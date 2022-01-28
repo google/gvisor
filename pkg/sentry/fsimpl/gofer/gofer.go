@@ -502,12 +502,12 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 func (fs *filesystem) initClientAndRoot(ctx context.Context) error {
 	var err error
 	if fs.opts.lisaEnabled {
-		var rootInode *lisafs.Inode
+		var rootInode lisafs.Inode
 		rootInode, err = fs.initClientLisa(ctx)
 		if err != nil {
 			return err
 		}
-		fs.root, err = fs.newDentryLisa(ctx, rootInode)
+		fs.root, err = fs.newDentryLisa(ctx, &rootInode)
 		if err != nil {
 			fs.clientLisa.CloseFDBatched(ctx, rootInode.ControlFD)
 		}
@@ -524,18 +524,18 @@ func (fs *filesystem) initClientAndRoot(ctx context.Context) error {
 	return err
 }
 
-func (fs *filesystem) initClientLisa(ctx context.Context) (*lisafs.Inode, error) {
+func (fs *filesystem) initClientLisa(ctx context.Context) (lisafs.Inode, error) {
 	sock, err := unet.NewSocket(fs.opts.fd)
 	if err != nil {
-		return nil, err
+		return lisafs.Inode{}, err
 	}
 
-	var rootInode *lisafs.Inode
+	var rootInode lisafs.Inode
 	ctx.UninterruptibleSleepStart(false)
 	fs.clientLisa, rootInode, err = lisafs.NewClient(sock)
 	ctx.UninterruptibleSleepFinish(false)
 	if err != nil {
-		return nil, err
+		return lisafs.Inode{}, err
 	}
 	if fs.opts.aname == "/" {
 		return rootInode, nil
@@ -546,7 +546,7 @@ func (fs *filesystem) initClientLisa(ctx context.Context) (*lisafs.Inode, error)
 	status, inodes, err := rootFD.WalkMultiple(ctx, strings.Split(fs.opts.aname, "/"))
 	rootFD.CloseBatched(ctx)
 	if err != nil {
-		return nil, err
+		return lisafs.Inode{}, err
 	}
 
 	// Close all intermediate FDs to the attach point.
@@ -558,12 +558,12 @@ func (fs *filesystem) initClientLisa(ctx context.Context) (*lisafs.Inode, error)
 
 	switch status {
 	case lisafs.WalkSuccess:
-		return &inodes[numInodes-1], nil
+		return inodes[numInodes-1], nil
 	default:
 		last := fs.clientLisa.NewFD(inodes[numInodes-1].ControlFD)
 		last.CloseBatched(ctx)
 		log.Warningf("initClientLisa failed because walk to attach point %q failed: lisafs.WalkStatus = %v", fs.opts.aname, status)
-		return nil, unix.ENOENT
+		return lisafs.Inode{}, unix.ENOENT
 	}
 }
 
