@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
+	"gvisor.dev/gvisor/pkg/tcpip/link/packetsocket"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -150,7 +151,7 @@ func attachOrCreateNIC(s *stack.Stack, name, prefix string, linkCaps stack.LinkE
 		if endpoint.name == "" {
 			endpoint.name = fmt.Sprintf("%s%d", prefix, id)
 		}
-		err := s.CreateNICWithOptions(endpoint.nicID, endpoint, stack.NICOptions{
+		err := s.CreateNICWithOptions(endpoint.nicID, packetsocket.New(endpoint), stack.NICOptions{
 			Name: endpoint.name,
 		})
 		switch err.(type) {

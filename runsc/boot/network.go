@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/link/ethernet"
 	"gvisor.dev/gvisor/pkg/tcpip/link/fdbased"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
+	"gvisor.dev/gvisor/pkg/tcpip/link/packetsocket"
 	"gvisor.dev/gvisor/pkg/tcpip/link/qdisc/fifo"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
@@ -175,7 +176,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		nicID++
 		nicids[link.Name] = nicID
 
-		linkEP := ethernet.New(loopback.New())
+		linkEP := packetsocket.New(ethernet.New(loopback.New()))
 
 		log.Infof("Enabling loopback interface %q with id %d on addresses %+v", link.Name, nicID, link.Addresses)
 		opts := stack.NICOptions{Name: link.Name}
@@ -229,7 +230,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		}
 
 		// Wrap linkEP in a sniffer to enable packet logging.
-		sniffEP := sniffer.New(linkEP)
+		sniffEP := sniffer.New(packetsocket.New(linkEP))
 
 		var qDisc stack.QueueingDiscipline
 		switch link.QDisc {

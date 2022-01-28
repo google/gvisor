@@ -60,6 +60,16 @@ func (e *Endpoint) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pk
 	}
 }
 
+// DeliverLinkPacket implements stack.NetworkDispatcher.
+func (e *Endpoint) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer, incoming bool) {
+	e.mu.RLock()
+	d := e.dispatcher
+	e.mu.RUnlock()
+	if d != nil {
+		d.DeliverLinkPacket(protocol, pkt, incoming)
+	}
+}
+
 // Attach implements stack.LinkEndpoint.
 func (e *Endpoint) Attach(dispatcher stack.NetworkDispatcher) {
 	e.mu.Lock()

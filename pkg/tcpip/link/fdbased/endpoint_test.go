@@ -137,6 +137,10 @@ func (c *context) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt
 	c.ch <- packetInfo{protocol, pkt}
 }
 
+func (c *context) DeliverLinkPacket(tcpip.NetworkProtocolNumber, *stack.PacketBuffer, bool) {
+	c.t.Fatal("DeliverLinkPacket not implemented")
+}
+
 func TestNoEthernetProperties(t *testing.T) {
 	c := newContext(t, &Options{MTU: mtu})
 	defer c.cleanup()
@@ -564,6 +568,10 @@ type fakeNetworkDispatcher struct {
 
 func (d *fakeNetworkDispatcher) DeliverNetworkPacket(_ tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	d.pkts = append(d.pkts, pkt)
+}
+
+func (*fakeNetworkDispatcher) DeliverLinkPacket(tcpip.NetworkProtocolNumber, *stack.PacketBuffer, bool) {
+	panic("not implemented")
 }
 
 func TestDispatchPacketFormat(t *testing.T) {

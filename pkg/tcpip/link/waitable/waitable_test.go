@@ -44,6 +44,10 @@ func (e *countedEndpoint) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNum
 	e.dispatchCount++
 }
 
+func (*countedEndpoint) DeliverLinkPacket(tcpip.NetworkProtocolNumber, *stack.PacketBuffer, bool) {
+	panic("not implemented")
+}
+
 func (e *countedEndpoint) Attach(dispatcher stack.NetworkDispatcher) {
 	e.attachCount++
 	e.dispatcher = dispatcher
