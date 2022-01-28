@@ -50,9 +50,10 @@ func NewLisafsServer(config Config) *LisafsServer {
 }
 
 // Mount implements lisafs.ServerImpl.Mount.
-func (s *LisafsServer) Mount(c *lisafs.Connection) (*lisafs.ControlFD, linux.Statx, error) {
+func (s *LisafsServer) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*lisafs.ControlFD, linux.Statx, error) {
+	mountPath := mountNode.FilePath()
 	rootHostFD, err := tryOpen(func(flags int) (int, error) {
-		return unix.Open("/", flags, 0)
+		return unix.Open(mountPath, flags, 0)
 	})
 	if err != nil {
 		return nil, linux.Statx{}, err
@@ -67,7 +68,8 @@ func (s *LisafsServer) Mount(c *lisafs.Connection) (*lisafs.ControlFD, linux.Sta
 		hostFD:         rootHostFD,
 		writableHostFD: -1,
 	}
-	rootFD.ControlFD.Init(c, s.Root(), linux.FileMode(stat.Mode), rootFD)
+	mountNode.IncRef() // Ref is transferred to ControlFD.
+	rootFD.ControlFD.Init(c, mountNode, linux.FileMode(stat.Mode), rootFD)
 	return rootFD.FD(), stat, nil
 }
 
