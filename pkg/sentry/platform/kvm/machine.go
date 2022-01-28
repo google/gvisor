@@ -68,6 +68,10 @@ type machine struct {
 	// vCPUsByID are the machine vCPUs, can be indexed by the vCPU's ID.
 	vCPUsByID []*vCPU
 
+	// usedVCPUs is the number of vCPUs that have been used from the
+	// vCPUsByID pool.
+	usedVCPUs int
+
 	// maxVCPUs is the maximum number of vCPUs supported by the machine.
 	maxVCPUs int
 
@@ -79,12 +83,6 @@ type machine struct {
 
 	// usedSlots is the set of used physical addresses (not sorted).
 	usedSlots []uintptr
-
-	// nextID is the next vCPU ID.
-	nextID uint32
-
-	// machineArchState is the architecture-specific state.
-	machineArchState
 }
 
 const (
@@ -160,12 +158,11 @@ type dieState struct {
 	guestRegs userRegs
 }
 
-// newVCPU creates a returns a new vCPU.
+// createVCPU creates and returns a new vCPU.
 //
 // Precondition: mu must be held.
-func (m *machine) newVCPU() *vCPU {
+func (m *machine) createVCPU(id int) *vCPU {
 	// Create the vCPU.
-	id := int(atomic.AddUint32(&m.nextID, 1) - 1)
 	fd, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(m.fd), _KVM_CREATE_VCPU, uintptr(id))
 	if errno != 0 {
 		panic(fmt.Sprintf("error creating new vCPU: %v", errno))
@@ -452,8 +449,10 @@ func (m *machine) Get() *vCPU {
 			}
 		}
 
-		// Get a new vCPU (maybe).
-		if c := m.getNewVCPU(); c != nil {
+		// Get vCPU from the m.vCPUsByID pool.
+		if m.usedVCPUs < m.maxVCPUs {
+			c := m.vCPUsByID[m.usedVCPUs]
+			m.usedVCPUs++
 			c.lock()
 			m.vCPUsByTID[tid] = c
 			m.mu.Unlock()

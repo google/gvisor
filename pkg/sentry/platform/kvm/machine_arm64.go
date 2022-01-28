@@ -19,7 +19,6 @@ package kvm
 
 import (
 	"runtime"
-	"sync/atomic"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -28,11 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 )
-
-type machineArchState struct {
-	//initialvCPUs is the machine vCPUs which has initialized but not used
-	initialvCPUs map[int]*vCPU
-}
 
 type vCPUArchState struct {
 	// PCIDs is the set of PCIDs for this vCPU.
@@ -313,15 +307,4 @@ func (m *machine) getMaxVCPU() {
 			m.maxVCPUs = int(smaxVCPUs)
 		}
 	}
-}
-
-// getNewVCPU() scan for an available vCPU from initialvCPUs
-func (m *machine) getNewVCPU() *vCPU {
-	for CID, c := range m.initialvCPUs {
-		if atomic.CompareAndSwapUint32(&c.state, vCPUReady, vCPUUser) {
-			delete(m.initialvCPUs, CID)
-			return c
-		}
-	}
-	return nil
 }
