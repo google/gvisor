@@ -195,7 +195,7 @@ func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRest
 		if err != nil {
 			return err
 		}
-		if err := fs.root.restoreFileLisa(ctx, rootInode, &opts); err != nil {
+		if err := fs.root.restoreFileLisa(ctx, &rootInode, &opts); err != nil {
 			return err
 		}
 	} else {
@@ -381,7 +381,7 @@ func (d *dentry) restoreRecursive(ctx context.Context, opts *vfs.CompleteRestore
 		if err != nil {
 			return err
 		}
-		if err := d.restoreFileLisa(ctx, inode, opts); err != nil {
+		if err := d.restoreFileLisa(ctx, &inode, opts); err != nil {
 			return err
 		}
 	} else {
