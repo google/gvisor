@@ -189,8 +189,9 @@ func newSocket(ioFD int) *unet.Socket {
 
 func (g *Gofer) serveLisafs(spec *specs.Spec, conf *config.Config, root string) subcommands.ExitStatus {
 	type connectionConfig struct {
-		sock     *unet.Socket
-		readonly bool
+		sock      *unet.Socket
+		mountPath string
+		readonly  bool
 	}
 	cfgs := make([]connectionConfig, 0, len(spec.Mounts)+1)
 	server := fsgofer.NewLisafsServer(fsgofer.Config{
@@ -202,8 +203,9 @@ func (g *Gofer) serveLisafs(spec *specs.Spec, conf *config.Config, root string) 
 
 	// Start with root mount, then add any other additional mount as needed.
 	cfgs = append(cfgs, connectionConfig{
-		sock:     newSocket(g.ioFDs[0]),
-		readonly: spec.Root.Readonly || conf.Overlay,
+		sock:      newSocket(g.ioFDs[0]),
+		mountPath: "/", // fsgofer process is always chroot()ed. So serve root.
+		readonly:  spec.Root.Readonly || conf.Overlay,
 	})
 	log.Infof("Serving %q mapped to %q on FD %d (ro: %t)", "/", root, g.ioFDs[0], cfgs[0].readonly)
 
@@ -221,8 +223,9 @@ func (g *Gofer) serveLisafs(spec *specs.Spec, conf *config.Config, root string) 
 		}
 
 		cfgs = append(cfgs, connectionConfig{
-			sock:     newSocket(g.ioFDs[mountIdx]),
-			readonly: isReadonlyMount(m.Options) || conf.Overlay,
+			sock:      newSocket(g.ioFDs[mountIdx]),
+			mountPath: m.Destination,
+			readonly:  isReadonlyMount(m.Options) || conf.Overlay,
 		})
 
 		log.Infof("Serving %q mapped on FD %d (ro: %t)", m.Destination, g.ioFDs[mountIdx], cfgs[mountIdx].readonly)
@@ -235,7 +238,7 @@ func (g *Gofer) serveLisafs(spec *specs.Spec, conf *config.Config, root string) 
 	cfgs = cfgs[:mountIdx]
 
 	for _, cfg := range cfgs {
-		conn, err := server.CreateConnection(cfg.sock, cfg.readonly)
+		conn, err := server.CreateConnection(cfg.sock, cfg.mountPath, cfg.readonly)
 		if err != nil {
 			Fatalf("starting connection on FD %d for gofer mount failed: %v", cfg.sock.FD(), err)
 		}

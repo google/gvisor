@@ -103,20 +103,15 @@ func (s *Server) Wait() {
 	s.connWg.Wait()
 }
 
-// Root returns the server's root node.
-func (s *Server) Root() *Node {
-	return s.root
-}
-
 // ServerImpl contains the implementation details for a Server.
 // Implementations of ServerImpl should contain their associated Server by
 // value as their first field.
 type ServerImpl interface {
 	// Mount is called when a Mount RPC is made. It mounts the connection on
-	// filesystem root.
+	// mountNode.
 	//
-	// Mount has rename read concurrency guarantee.
-	Mount(c *Connection) (*ControlFD, linux.Statx, error)
+	// Mount has a read concurrency guarantee on mountNode.
+	Mount(c *Connection, mountNode *Node) (*ControlFD, linux.Statx, error)
 
 	// SupportedMessages returns a list of messages that the server
 	// implementation supports.

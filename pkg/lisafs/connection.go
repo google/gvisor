@@ -15,6 +15,8 @@
 package lisafs
 
 import (
+	"path"
+	"path/filepath"
 	"runtime/debug"
 
 	"golang.org/x/sys/unix"
@@ -44,12 +46,14 @@ type Connection struct {
 	// associated with it for its entire lifetime.
 	server *Server
 
+	// mountPath is the path to a file inside the server that is served to this
+	// connection as its root FD. IOW, this connection is mounted at this path.
+	// mountPath is trusted because it is configured by the server (trusted) as
+	// per the user's sandbox configuration. mountPath is immutable.
+	mountPath string
+
 	// maxMessageSize is the cached value of server.impl.MaxMessageSize().
 	maxMessageSize uint32
-
-	// mounted is a one way flag indicating whether this connection has been
-	// mounted correctly and the server is initialized properly.
-	mounted bool
 
 	// readonly indicates if this connection is readonly. All write operations
 	// will fail with EROFS.
@@ -79,13 +83,20 @@ type Connection struct {
 	nextFDID FDID
 }
 
-// CreateConnection initializes a new connection - creating a server if
-// required. The connection must be started separately.
-func (s *Server) CreateConnection(sock *unet.Socket, readonly bool) (*Connection, error) {
+// CreateConnection initializes a new connection which will be mounted at
+// mountPath. The connection must be started separately.
+func (s *Server) CreateConnection(sock *unet.Socket, mountPath string, readonly bool) (*Connection, error) {
+	mountPath = path.Clean(mountPath)
+	if !filepath.IsAbs(mountPath) {
+		log.Warningf("mountPath %q is not absolute", mountPath)
+		return nil, unix.EINVAL
+	}
+
 	c := &Connection{
 		sockComm:       newSockComm(sock),
 		server:         s,
 		maxMessageSize: s.impl.MaxMessageSize(),
+		mountPath:      mountPath,
 		readonly:       readonly,
 		channels:       make([]*channel, 0, maxChannels()),
 		fds:            make(map[FDID]genericFD),
@@ -182,11 +193,6 @@ func (c *Connection) handleMsg(comm Communicator, m MID, payloadLen uint32) (ret
 			retM, retPayloadLen, retFDs = c.respondError(comm, unix.EREMOTEIO)
 		}
 	}()
-
-	if !c.mounted && m != Mount {
-		log.Warningf("connection must first be mounted")
-		return c.respondError(comm, unix.EINVAL)
-	}
 
 	// Check if the message is supported for forward compatibility.
 	if int(m) >= len(c.server.handlers) || c.server.handlers[m] == nil {

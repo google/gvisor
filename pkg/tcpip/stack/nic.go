@@ -40,6 +40,7 @@ func (l *linkResolver) confirmReachable(addr tcpip.Address) {
 }
 
 var _ NetworkInterface = (*nic)(nil)
+var _ NetworkDispatcher = (*nic)(nil)
 
 // nic represents a "network interface card" to which the networking stack is
 // attached.
@@ -390,8 +391,6 @@ func (n *nic) writePacket(pkt *PacketBuffer) tcpip.Error {
 }
 
 func (n *nic) writeRawPacket(pkt *PacketBuffer) tcpip.Error {
-	n.deliverLinkPacket(pkt.NetworkProtocolNumber, pkt, false /* incoming */)
-
 	if err := n.qDisc.WritePacket(pkt); err != nil {
 		return err
 	}
@@ -723,12 +722,10 @@ func (n *nic) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *Pa
 
 	pkt.RXTransportChecksumValidated = n.NetworkLinkEndpoint.Capabilities()&CapabilityRXChecksumOffload != 0
 
-	n.deliverLinkPacket(protocol, pkt, true /* incoming */)
-
 	networkEndpoint.HandlePacket(pkt)
 }
 
-func (n *nic) deliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer, incoming bool) {
+func (n *nic) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer, incoming bool) {
 	// Deliver to interested packet endpoints without holding NIC lock.
 	var packetEPPkt *PacketBuffer
 	defer func() {

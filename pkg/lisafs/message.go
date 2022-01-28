@@ -268,26 +268,6 @@ type Inode struct {
 	Stat      linux.Statx
 }
 
-// MountReq represents a Mount request.
-type MountReq struct {
-	MountPath SizedString
-}
-
-// SizeBytes implements marshal.Marshallable.SizeBytes.
-func (m *MountReq) SizeBytes() int {
-	return m.MountPath.SizeBytes()
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (m *MountReq) MarshalBytes(dst []byte) []byte {
-	return m.MountPath.MarshalBytes(dst)
-}
-
-// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
-func (m *MountReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
-	return m.MountPath.CheckedUnmarshal(src)
-}
-
 // MountResp represents a Mount response.
 type MountResp struct {
 	Root Inode

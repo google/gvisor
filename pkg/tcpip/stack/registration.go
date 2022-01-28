@@ -730,12 +730,18 @@ type NetworkDispatcher interface {
 	// DeliverNetworkPacket finds the appropriate network protocol endpoint
 	// and hands the packet over for further processing.
 	//
-	// pkt.LinkHeader may or may not be set before calling
-	// DeliverNetworkPacket. Some packets do not have link headers (e.g.
-	// packets sent via loopback), and won't have the field set.
+	//
+	// If the link-layer has a header, the packet's link header must be populated.
 	//
 	// DeliverNetworkPacket may modify pkt.
 	DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer)
+
+	// DeliverLinkPacket delivers a packet to any interested packet endpoints.
+	//
+	// This method should be called with both incoming and outgoing packets.
+	//
+	// If the link-layer has a header, the packet's link header must be populated.
+	DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer, incoming bool)
 }
 
 // LinkEndpointCapabilities is the type associated with the capabilities
