@@ -18,7 +18,6 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -54,35 +53,13 @@ type genericFD interface {
 // being performed.
 //
 // Reference Model:
-// * When a control FD is created, the connection takes a ref on it which
-//   represents the client's ref on the FD.
-// * The client can drop its ref via the Close RPC which will in turn make the
-//   connection drop its ref.
-// * Each control FD holds a ref on its parent for its entire life time.
+// * Each control FD holds a ref on its Node for its entire lifetime.
 type ControlFD struct {
 	controlFDRefs
 	controlFDEntry
 
-	// parent is the parent directory FD containing the file this FD represents.
-	// A ControlFD holds a ref on parent for its entire lifetime. If this FD
-	// represents the root, then parent is nil. parent may be a control FD from
-	// another connection (another mount point). parent is protected by the
-	// backing server's rename mutex.
-	parent *ControlFD
-
-	// name is the file path's last component name. If this FD represents the
-	// root directory, then name is the mount path. name is protected by the
-	// backing server's rename mutex.
-	name string
-
-	// children is a linked list of all children control FDs. As per reference
-	// model, all children hold a ref on this FD.
-	// children is protected by childrenMu and server's rename mutex. To have
-	// mutual exclusion, it is sufficient to:
-	// * Hold rename mutex for reading and lock childrenMu. OR
-	// * Or hold rename mutex for writing.
-	childrenMu sync.Mutex
-	children   controlFDList
+	// node is the filesystem node this FD is immutably associated with.
+	node *Node
 
 	// openFDs is a linked list of all FDs opened on this FD. As per reference
 	// model, all open FDs hold a ref on this FD.
@@ -112,63 +89,54 @@ var _ genericFD = (*ControlFD)(nil)
 // refsvfs2.RefCounter interface.
 func (fd *ControlFD) DecRef(context.Context) {
 	fd.controlFDRefs.DecRef(func() {
-		if fd.parent != nil {
-			fd.conn.server.RenameMu.RLock()
-			fd.parent.childrenMu.Lock()
-			fd.parent.children.Remove(fd)
-			fd.parent.childrenMu.Unlock()
-			fd.conn.server.RenameMu.RUnlock()
-			fd.parent.DecRef(nil) // Drop the ref on the parent.
-		}
-		fd.impl.Close(fd.conn)
+		fd.conn.server.renameMu.RLock()
+		fd.destroyLocked()
+		fd.conn.server.renameMu.RUnlock()
 	})
 }
 
-// DecRefLocked is the same as DecRef except the added precondition.
+// decRefLocked is the same as DecRef except the added precondition.
 //
 // Precondition: server's rename mutex must be at least read locked.
-func (fd *ControlFD) DecRefLocked() {
+func (fd *ControlFD) decRefLocked() {
 	fd.controlFDRefs.DecRef(func() {
-		fd.clearParentLocked()
-		fd.impl.Close(fd.conn)
+		fd.destroyLocked()
 	})
 }
 
 // Precondition: server's rename mutex must be at least read locked.
-func (fd *ControlFD) clearParentLocked() {
-	if fd.parent == nil {
-		return
-	}
-	fd.parent.childrenMu.Lock()
-	fd.parent.children.Remove(fd)
-	fd.parent.childrenMu.Unlock()
-	fd.parent.DecRefLocked() // Drop the ref on the parent.
+func (fd *ControlFD) destroyLocked() {
+	// Update node's control FD list.
+	fd.node.removeFD(fd)
+
+	// Drop ref on node.
+	fd.node.DecRef(nil)
+
+	// Let the FD implementation clean up.
+	fd.impl.Close()
 }
 
 // Init must be called before first use of fd. It inserts fd into the
 // filesystem tree.
 //
-// Precondition: server's rename mutex must be at least read locked.
-func (fd *ControlFD) Init(c *Connection, parent *ControlFD, name string, mode linux.FileMode, impl ControlFDImpl) {
+// Preconditions:
+// * server's rename mutex must be at least read locked.
+// * The caller must take a ref on node which is transferred to fd.
+func (fd *ControlFD) Init(c *Connection, node *Node, mode linux.FileMode, impl ControlFDImpl) {
+	fd.conn = c
+	fd.node = node
+	fd.impl = impl
+	fd.ftype = mode.FileType()
 	// Initialize fd with 1 ref which is transferred to c via c.insertFD().
 	fd.controlFDRefs.InitRefs()
-	fd.conn = c
+	// Make fd reachable/discoverable.
 	fd.id = c.insertFD(fd)
-	fd.name = name
-	fd.ftype = mode.FileType()
-	fd.impl = impl
-	fd.setParentLocked(parent)
+	node.insertFD(fd)
 }
 
-// Precondition: server's rename mutex must be at least read locked.
-func (fd *ControlFD) setParentLocked(parent *ControlFD) {
-	fd.parent = parent
-	if parent != nil {
-		parent.IncRef() // Hold a ref on parent.
-		parent.childrenMu.Lock()
-		parent.children.PushBack(fd)
-		parent.childrenMu.Unlock()
-	}
+// Conn returns the fd's owning connection.
+func (fd *ControlFD) Conn() *Connection {
+	return fd.conn
 }
 
 // FileType returns the file mode only containing the file type bits.
@@ -196,60 +164,57 @@ func (fd *ControlFD) IsSocket() bool {
 	return fd.ftype == unix.S_IFSOCK
 }
 
-// NameLocked returns the backing file's last component name.
+// Node returns the node this FD was opened on.
+func (fd *ControlFD) Node() *Node {
+	return fd.node
+}
+
+// RemoveFromConn removes this control FD from its owning connection.
 //
-// Precondition: server's rename mutex must be at least read locked.
-func (fd *ControlFD) NameLocked() string {
-	return fd.name
+// Preconditions:
+// * fd should not have been returned to the client. Otherwise the client can
+//   still refer to it.
+// * server's rename mutex must at least be read locked.
+func (fd *ControlFD) RemoveFromConn() {
+	fd.conn.removeControlFDLocked(fd.id)
 }
 
-// ParentLocked returns the parent control FD. Note that parent might be a
-// control FD from another connection on this server. So its ID must not
-// returned on this connection because FDIDs are local to their connection.
-//
-// Precondition: server's rename mutex must be at least read locked.
-func (fd *ControlFD) ParentLocked() ControlFDImpl {
-	if fd.parent == nil {
-		return nil
-	}
-	return fd.parent.impl
+// safelyRead executes the given operation with the local path node locked.
+// This guarantees that fd's path will not change. fn may not any change paths.
+func (fd *ControlFD) safelyRead(fn func() error) error {
+	fd.conn.server.renameMu.RLock()
+	defer fd.conn.server.renameMu.RUnlock()
+	fd.node.opMu.RLock()
+	defer fd.node.opMu.RUnlock()
+	return fn()
 }
 
-// ID returns fd's ID.
-func (fd *ControlFD) ID() FDID {
-	return fd.id
+// safelyWrite executes the given operation with the local path node locked in
+// a writable fashion. This guarantees that no other operation is executing on
+// this path node. fn may change paths inside fd.node.
+func (fd *ControlFD) safelyWrite(fn func() error) error {
+	fd.conn.server.renameMu.RLock()
+	defer fd.conn.server.renameMu.RUnlock()
+	fd.node.opMu.Lock()
+	defer fd.node.opMu.Unlock()
+	return fn()
 }
 
-// FilePath returns the absolute path of the file fd was opened on. This is
-// expensive and must not be called on hot paths. FilePath acquires the rename
-// mutex for reading so callers should not be holding it.
-func (fd *ControlFD) FilePath() string {
-	// Lock the rename mutex for reading to ensure that the filesystem tree is not
-	// changed while we traverse it upwards.
-	fd.conn.server.RenameMu.RLock()
-	defer fd.conn.server.RenameMu.RUnlock()
-	return fd.FilePathLocked()
+// safelyGlobal executes the given operation with the global path lock held.
+// This guarantees that no other operations is executing concurrently on this
+// server. fn may change any path.
+func (fd *ControlFD) safelyGlobal(fn func() error) (err error) {
+	fd.conn.server.renameMu.Lock()
+	defer fd.conn.server.renameMu.Unlock()
+	return fn()
 }
 
-// FilePathLocked is the same as FilePath with the additional precondition.
-//
-// Precondition: server's rename mutex must be at least read locked.
-func (fd *ControlFD) FilePathLocked() string {
-	// Walk upwards and prepend name to res.
-	var res fspath.Builder
-	for fd != nil {
-		res.PrependComponent(fd.name)
-		fd = fd.parent
-	}
-	return res.String()
-}
-
-// ForEachOpenFD executes fn on each FD opened on fd.
-func (fd *ControlFD) ForEachOpenFD(fn func(ofd OpenFDImpl)) {
+// forEachOpenFD executes fn on each FD opened on fd.
+func (fd *ControlFD) forEachOpenFD(fn func(ofd *OpenFD)) {
 	fd.openFDsMu.RLock()
 	defer fd.openFDsMu.RUnlock()
 	for ofd := fd.openFDs.Front(); ofd != nil; ofd = ofd.Next() {
-		fn(ofd.impl)
+		fn(ofd)
 	}
 }
 
@@ -284,11 +249,6 @@ type OpenFD struct {
 
 var _ genericFD = (*OpenFD)(nil)
 
-// ID returns fd's ID.
-func (fd *OpenFD) ID() FDID {
-	return fd.id
-}
-
 // ControlFD returns the control FD on which this FD was opened.
 func (fd *OpenFD) ControlFD() ControlFDImpl {
 	return fd.controlFD.impl
@@ -303,7 +263,7 @@ func (fd *OpenFD) DecRef(context.Context) {
 		fd.controlFD.openFDs.Remove(fd)
 		fd.controlFD.openFDsMu.Unlock()
 		fd.controlFD.DecRef(nil) // Drop the ref on the control FD.
-		fd.impl.Close(fd.controlFD.conn)
+		fd.impl.Close()
 	})
 }
 
@@ -323,6 +283,25 @@ func (fd *OpenFD) Init(cfd *ControlFD, flags uint32, impl OpenFDImpl) {
 	cfd.openFDsMu.Unlock()
 }
 
+// There are four different types of guarantees provided:
+//
+// none: There is no concurrency guarantee. The method may be invoked
+// concurrently with any other method on any other FD.
+//
+// read: The method is guaranteed to be exclusive of any write or global
+// operation that is mutating the state of the directory tree starting at this
+// node. For example, this means creating new files, symlinks, directories or
+// renaming a directory entry (or renaming in to this target), but the method
+// may be called concurrently with other read methods.
+//
+// write: The method is guaranteed to be exclusive of any read, write or global
+// operation that is mutating the state of the directory tree starting at this
+// node, as described in read above. There may however, be other write
+// operations executing concurrently on other components in the directory tree.
+//
+// global: The method is guaranteed to be exclusive of any read, write or
+// global operation.
+
 // ControlFDImpl contains implementation details for a ControlFD.
 // Implementations of ControlFDImpl should contain their associated ControlFD
 // by value as their first field.
@@ -331,27 +310,182 @@ func (fd *OpenFD) Init(cfd *ControlFD, flags uint32, impl OpenFDImpl) {
 // filesystem tree must synchronize those modifications with the server's
 // rename mutex.
 type ControlFDImpl interface {
+	// FD returns a pointer to the embedded ControlFD.
 	FD() *ControlFD
-	Close(c *Connection)
-	Stat(c *Connection) (linux.Statx, error)
-	SetStat(c *Connection, stat SetStatReq) (uint32, error)
-	Walk(c *Connection, path StringArray, recordInode func(Inode)) (WalkStatus, error)
-	WalkStat(c *Connection, path StringArray, recordStat func(linux.Statx)) error
-	Open(c *Connection, flags uint32) (FDID, int, error)
-	OpenCreate(c *Connection, mode linux.FileMode, uid UID, gid GID, name string, flags uint32) (Inode, FDID, int, error)
-	Mkdir(c *Connection, mode linux.FileMode, uid UID, gid GID, name string) (Inode, error)
-	Mknod(c *Connection, mode linux.FileMode, uid UID, gid GID, name string, minor uint32, major uint32) (Inode, error)
-	Symlink(c *Connection, name string, target string, uid UID, gid GID) (Inode, error)
-	Link(c *Connection, dir ControlFDImpl, name string) (Inode, error)
-	StatFS(c *Connection) (StatFS, error)
-	Readlink(c *Connection, getLinkBuf func(uint32) []byte) (uint16, error)
-	Connect(c *Connection, sockType uint32) (int, error)
-	Unlink(c *Connection, name string, flags uint32) error
-	RenameLocked(c *Connection, newDir ControlFDImpl, newName string) (func(ControlFDImpl), func(), error)
-	GetXattr(c *Connection, name string, dataBuf []byte) (uint16, error)
-	SetXattr(c *Connection, name string, value string, flags uint32) error
-	ListXattr(c *Connection, size uint64) (StringArray, error)
-	RemoveXattr(c *Connection, name string) error
+
+	// Close should clean up resources used by the control FD implementation.
+	// Close is called after all references on the FD have been dropped and its
+	// FDID has been released.
+	//
+	// On the server, Close has no concurrency guarantee.
+	Close()
+
+	// Stat returns the stat(2) results for this FD.
+	//
+	// On the server, Stat has a read concurrency guarantee.
+	Stat() (linux.Statx, error)
+
+	// SetStat sets file attributes on the backing file. This does not correspond
+	// to any one Linux syscall. On Linux, this operation is performed using
+	// multiple syscalls like fchmod(2), fchown(2), ftruncate(2), futimesat(2)
+	// and so on. The implementation must only set attributes for fields
+	// indicated by stat.Mask. Failure to set an attribute may or may not
+	// terminate the entire operation. SetStat must return a uint32 which is
+	// interpreted as a stat mask to indicate which attribute setting attempts
+	// failed. If multiple attribute setting attempts failed, the returned error
+	// may be from any one of them.
+	//
+	// On the server, SetStat has a write concurrency guarantee.
+	SetStat(stat SetStatReq) (uint32, error)
+
+	// Walk walks one path component from the directory represented by this FD.
+	// Walk must open a ControlFD on the walked file.
+	//
+	// On the server, Walk has a read concurrency guarantee.
+	Walk(name string) (*ControlFD, linux.Statx, error)
+
+	// WalkStat is capable of walking multiple path components and returning the
+	// stat results for each path component walked via recordStat. Stat results
+	// must be returned in the order of walk.
+	//
+	// In case a symlink is encountered, the walk must terminate successfully on
+	// the symlink including its stat result.
+	//
+	// The first path component of path may be "" which indicates that the first
+	// stat result returned must be of this starting directory.
+	//
+	// On the server, WalkStat has a read concurrency guarantee.
+	WalkStat(path StringArray, recordStat func(linux.Statx)) error
+
+	// Open opens the control FD with the flags passed. The flags should be
+	// interpreted as open(2) flags.
+	//
+	// Open may also optionally return a host FD for the opened file whose
+	// lifecycle is independent of the OpenFD. Returns -1 if not available.
+	//
+	// N.B. The server must resolve any lazy paths when open is called.
+	// After this point, read and write may be called on files with no
+	// deletion check, so resolving in the data path is not viable.
+	//
+	// On the server, Open has a read concurrency guarantee.
+	Open(flags uint32) (*OpenFD, int, error)
+
+	// OpenCreate creates a regular file inside the directory represented by this
+	// FD and then also opens the file. The created file has perms as specified
+	// by mode and owners as specified by uid and gid. The file is opened with
+	// the specified flags.
+	//
+	// OpenCreate may also optionally return a host FD for the opened file whose
+	// lifecycle is independent of the OpenFD. Returns -1 if not available.
+	//
+	// N.B. The server must resolve any lazy paths when open is called.
+	// After this point, read and write may be called on files with no
+	// deletion check, so resolving in the data path is not viable.
+	//
+	// On the server, OpenCreate has a write concurrency guarantee.
+	OpenCreate(mode linux.FileMode, uid UID, gid GID, name string, flags uint32) (*ControlFD, linux.Statx, *OpenFD, int, error)
+
+	// Mkdir creates a directory inside the directory represented by this FD. The
+	// created directory has perms as specified by mode and owners as specified
+	// by uid and gid.
+	//
+	// On the server, Mkdir has a write concurrency guarantee.
+	Mkdir(mode linux.FileMode, uid UID, gid GID, name string) (*ControlFD, linux.Statx, error)
+
+	// Mknod creates a file inside the directory represented by this FD. The file
+	// type and perms are specified by mode and owners are specified by uid and
+	// gid. If the newly created file is a character or block device, minor and
+	// major specify its device number.
+	//
+	// On the server, Mkdir has a write concurrency guarantee.
+	Mknod(mode linux.FileMode, uid UID, gid GID, name string, minor uint32, major uint32) (*ControlFD, linux.Statx, error)
+
+	// Symlink creates a symlink inside the directory represented by this FD. The
+	// symlink has owners as specified by uid and gid and points to target.
+	//
+	// On the server, Symlink has a write concurrency guarantee.
+	Symlink(name string, target string, uid UID, gid GID) (*ControlFD, linux.Statx, error)
+
+	// Link creates a hard link to the file represented by this FD. The hard link
+	// is created inside dir with the specified name.
+	//
+	// On the server, Link has a write concurrency guarantee for dir and read
+	// concurrency guarantee for this file.
+	Link(dir ControlFDImpl, name string) (*ControlFD, linux.Statx, error)
+
+	// StatFS returns information about the file system associated with
+	// this file.
+	//
+	// On the server, StatFS has read concurrency guarantee.
+	StatFS() (StatFS, error)
+
+	// Readlink reads the symlink's target and writes the string into the buffer
+	// returned by getLinkBuf which can be used to request buffer for some size.
+	// It returns the number of bytes written into the buffer.
+	//
+	// On the server, Readlink has a read concurrency guarantee.
+	Readlink(getLinkBuf func(uint32) []byte) (uint16, error)
+
+	// Connect establishes a new host-socket backed connection with a unix domain
+	// socket. On success it returns a non-blocking host socket FD whose
+	// lifecycle is independent of this ControlFD.
+	//
+	// sockType indicates the requested type of socket and can be passed as type
+	// argument to socket(2).
+	//
+	// On the server, Connect has a read concurrency guarantee.
+	Connect(sockType uint32) (int, error)
+
+	// UnlinkAt the file identified by name in this directory.
+	//
+	// Flags are Linux unlinkat(2) flags.
+	//
+	// On the server, UnlinkAt has a write concurrency guarantee.
+	Unlink(name string, flags uint32) error
+
+	// RenameAt renames a given file to a new name in a potentially new directory.
+	//
+	// oldName must be a name relative to this file, which must be a directory.
+	// newName is a name relative to newDir.
+	//
+	// On the server, RenameAt has a global concurrency guarantee.
+	RenameAt(oldName string, newDir ControlFDImpl, newName string) error
+
+	// Renamed is called to notify the FD implementation that the file has been
+	// renamed. FD implementation may update its state accordingly.
+	//
+	// On the server, Renamed has a global concurrency guarantee.
+	Renamed()
+
+	// GetXattr returns extended attributes of this file. It returns the number
+	// of bytes written into dataBuf.
+	//
+	// If the value is larger than len(dataBuf), implementations may return
+	// ERANGE to indicate that the buffer is too small.
+	//
+	// On the server, GetXattr has a read concurrency guarantee.
+	GetXattr(name string, dataBuf []byte) (uint16, error)
+
+	// SetXattr sets extended attributes on this file.
+	//
+	// On the server, SetXattr has a write concurrency guarantee.
+	SetXattr(name string, value string, flags uint32) error
+
+	// ListXattr lists the names of the extended attributes on this file.
+	//
+	// Size indicates the size of the buffer that has been allocated to hold the
+	// attribute list. If the list would be larger than size, implementations may
+	// return ERANGE to indicate that the buffer is too small, but they are also
+	// free to ignore the hint entirely (i.e. the value returned may be larger
+	// than size). All size checking is done independently at the syscall layer.
+	//
+	// On the server, ListXattr has a read concurrency guarantee.
+	ListXattr(size uint64) (StringArray, error)
+
+	// RemoveXattr removes extended attributes on this file.
+	//
+	// On the server, RemoveXattr has a write concurrency guarantee.
+	RemoveXattr(name string) error
 }
 
 // OpenFDImpl contains implementation details for a OpenFD. Implementations of
@@ -362,13 +496,62 @@ type ControlFDImpl interface {
 // to the filesystem tree, there is no need to synchronize with rename
 // operations.
 type OpenFDImpl interface {
+	// FD returns a pointer to the embedded OpenFD.
 	FD() *OpenFD
-	Close(c *Connection)
-	Stat(c *Connection) (linux.Statx, error)
-	Sync(c *Connection) error
-	Write(c *Connection, buf []byte, off uint64) (uint64, error)
-	Read(c *Connection, off uint64, dataBuf []byte) (uint32, error)
-	Allocate(c *Connection, mode, off, length uint64) error
-	Flush(c *Connection) error
-	Getdent64(c *Connection, count uint32, seek0 bool, recordDirent func(Dirent64)) error
+
+	// Close should clean up resources used by the open FD implementation.
+	// Close is called after all references on the FD have been dropped and its
+	// FDID has been released.
+	//
+	// On the server, Close has no concurrency guarantee.
+	Close()
+
+	// Stat returns the stat(2) results for this FD.
+	//
+	// On the server, Stat has a read concurrency guarantee.
+	Stat() (linux.Statx, error)
+
+	// Sync is simialr to fsync(2).
+	//
+	// On the server, Sync has a read concurrency guarantee.
+	Sync() error
+
+	// Write writes buf at offset off to the backing file via this open FD. Write
+	// attempts to write len(buf) bytes and returns the number of bytes written.
+	//
+	// On the server, Write has a write concurrency guarantee. See Open for
+	// additional requirements regarding lazy path resolution.
+	Write(buf []byte, off uint64) (uint64, error)
+
+	// Read reads at offset off into buf from the backing file via this open FD.
+	// Read attempts to read len(buf) bytes and returns the number of bytes read.
+	//
+	// On the server, Read has a read concurrency guarantee. See Open for
+	// additional requirements regarding lazy path resolution.
+	Read(buf []byte, off uint64) (uint64, error)
+
+	// Allocate allows the caller to directly manipulate the allocated disk space
+	// for the file. See fallocate(2) for more details.
+	//
+	// On the server, Allocate has a write concurrency guarantee.
+	Allocate(mode, off, length uint64) error
+
+	// Flush can be used to clean up the file state. Behavior is
+	// implementation-specific.
+	//
+	// On the server, Flush has a read concurrency guarantee.
+	Flush() error
+
+	// Getdent64 fetches directory entries for this directory and calls
+	// recordDirent for each dirent read. If seek0 is true, then the directory FD
+	// is seeked to 0 and iteration starts from the beginning.
+	//
+	// On the server, Getdent64 has a read concurrency guarantee.
+	Getdent64(count uint32, seek0 bool, recordDirent func(Dirent64)) error
+
+	// Renamed is called to notify the FD implementation that the file has been
+	// renamed. FD implementation may update its state accordingly.
+	//
+	// On the server, Renamed has a global concurrency guarantee.
+	Renamed()
 }

@@ -33,6 +33,12 @@ import (
 // the server and the other end is owned by the client. The connection may
 // spawn additional comunicational channels for the same mount for increased
 // RPC concurrency.
+//
+// Reference model:
+// * When any FD is created, the connection takes a ref on it which represents
+//   the client's ref on the FD.
+// * The client can drop its ref via the Close RPC which will in turn make the
+//   connection drop its ref.
 type Connection struct {
 	// server is the server on which this connection was created. It is immutably
 	// associated with it for its entire lifetime.
@@ -92,11 +98,6 @@ func (s *Server) CreateConnection(sock *unet.Socket, readonly bool) (*Connection
 	}
 	c.channelAlloc = alloc
 	return c, nil
-}
-
-// Server returns the associated server.
-func (c *Connection) Server() *Server {
-	return c.server
 }
 
 // ServerImpl returns the associated server implementation.
@@ -239,13 +240,13 @@ func (c *Connection) close() {
 	// Cleanup all FDs.
 	c.fdsMu.Lock()
 	for fdid := range c.fds {
-		fd := c.removeFDLocked(fdid)
+		fd := c.stopTrackingFD(fdid)
 		fd.DecRef(nil) // Drop the ref held by c.
 	}
 	c.fdsMu.Unlock()
 }
 
-// The caller gains a ref on the FD on success.
+// Postcondition: The caller gains a ref on the FD on success.
 func (c *Connection) lookupFD(id FDID) (genericFD, error) {
 	c.fdsMu.RLock()
 	defer c.fdsMu.RUnlock()
@@ -258,9 +259,9 @@ func (c *Connection) lookupFD(id FDID) (genericFD, error) {
 	return fd, nil
 }
 
-// LookupControlFD retrieves the control FD identified by id on this
+// lookupControlFD retrieves the control FD identified by id on this
 // connection. On success, the caller gains a ref on the FD.
-func (c *Connection) LookupControlFD(id FDID) (*ControlFD, error) {
+func (c *Connection) lookupControlFD(id FDID) (*ControlFD, error) {
 	fd, err := c.lookupFD(id)
 	if err != nil {
 		return nil, err
@@ -274,9 +275,9 @@ func (c *Connection) LookupControlFD(id FDID) (*ControlFD, error) {
 	return cfd, nil
 }
 
-// LookupOpenFD retrieves the open FD identified by id on this
+// lookupOpenFD retrieves the open FD identified by id on this
 // connection. On success, the caller gains a ref on the FD.
-func (c *Connection) LookupOpenFD(id FDID) (*OpenFD, error) {
+func (c *Connection) lookupOpenFD(id FDID) (*OpenFD, error) {
 	fd, err := c.lookupFD(id)
 	if err != nil {
 		return nil, err
@@ -305,10 +306,10 @@ func (c *Connection) insertFD(fd genericFD) FDID {
 	return res
 }
 
-// RemoveFD makes c stop tracking the passed FDID and drops its ref on it.
-func (c *Connection) RemoveFD(id FDID) {
+// removeFD makes c stop tracking the passed FDID and drops its ref on it.
+func (c *Connection) removeFD(id FDID) {
 	c.fdsMu.Lock()
-	fd := c.removeFDLocked(id)
+	fd := c.stopTrackingFD(id)
 	c.fdsMu.Unlock()
 	if fd != nil {
 		// Drop the ref held by c. This can take arbitrarily long. So do not hold
@@ -317,27 +318,27 @@ func (c *Connection) RemoveFD(id FDID) {
 	}
 }
 
-// RemoveControlFDLocked is the same as RemoveFD with added preconditions.
+// removeControlFDLocked is the same as removeFD with added preconditions.
 //
 // Preconditions:
 // * server's rename mutex must at least be read locked.
 // * id must be pointing to a control FD.
-func (c *Connection) RemoveControlFDLocked(id FDID) {
+func (c *Connection) removeControlFDLocked(id FDID) {
 	c.fdsMu.Lock()
-	fd := c.removeFDLocked(id)
+	fd := c.stopTrackingFD(id)
 	c.fdsMu.Unlock()
 	if fd != nil {
 		// Drop the ref held by c. This can take arbitrarily long. So do not hold
 		// c.fdsMu while calling it.
-		fd.(*ControlFD).DecRefLocked()
+		fd.(*ControlFD).decRefLocked()
 	}
 }
 
-// removeFDLocked makes c stop tracking the passed FDID. Note that the caller
+// stopTrackingFD makes c stop tracking the passed FDID. Note that the caller
 // must drop ref on the returned fd (preferably without holding c.fdsMu).
 //
 // Precondition: c.fdsMu is locked.
-func (c *Connection) removeFDLocked(id FDID) genericFD {
+func (c *Connection) stopTrackingFD(id FDID) genericFD {
 	fd := c.fds[id]
 	if fd == nil {
 		log.Warningf("removeFDLocked called on non-existent FDID %d", id)

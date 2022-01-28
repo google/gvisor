@@ -86,6 +86,30 @@ func (r *controlFDRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
+func (r *nodeRefs) StateTypeName() string {
+	return "pkg/lisafs.nodeRefs"
+}
+
+func (r *nodeRefs) StateFields() []string {
+	return []string{
+		"refCount",
+	}
+}
+
+func (r *nodeRefs) beforeSave() {}
+
+// +checklocksignore
+func (r *nodeRefs) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.refCount)
+}
+
+// +checklocksignore
+func (r *nodeRefs) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(r.afterLoad)
+}
+
 func (l *openFDList) StateTypeName() string {
 	return "pkg/lisafs.openFDList"
 }
@@ -170,6 +194,7 @@ func init() {
 	state.Register((*controlFDList)(nil))
 	state.Register((*controlFDEntry)(nil))
 	state.Register((*controlFDRefs)(nil))
+	state.Register((*nodeRefs)(nil))
 	state.Register((*openFDList)(nil))
 	state.Register((*openFDEntry)(nil))
 	state.Register((*openFDRefs)(nil))

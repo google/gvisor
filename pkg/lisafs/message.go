@@ -672,7 +672,7 @@ type PReadReq struct {
 
 // PReadResp is used to return the result of pread(2).
 type PReadResp struct {
-	NumBytes primitive.Uint32
+	NumBytes primitive.Uint64
 	Buf      []byte
 }
 
@@ -1026,38 +1026,45 @@ func (u *UnlinkAtReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
 	return src, false
 }
 
-// RenameAtReq is used to make Rename requests. Note that the request takes in
+// RenameAtReq is used to make RenameAt requests. Note that the request takes in
 // the to-be-renamed file's FD instead of oldDir and oldName like renameat(2).
 type RenameAtReq struct {
-	Renamed FDID
+	OldDir  FDID
 	NewDir  FDID
+	OldName SizedString
 	NewName SizedString
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (r *RenameAtReq) SizeBytes() int {
-	return r.Renamed.SizeBytes() + r.NewDir.SizeBytes() + r.NewName.SizeBytes()
+	return r.OldDir.SizeBytes() + r.NewDir.SizeBytes() + r.OldName.SizeBytes() + r.NewName.SizeBytes()
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (r *RenameAtReq) MarshalBytes(dst []byte) []byte {
-	dst = r.Renamed.MarshalUnsafe(dst)
+	dst = r.OldDir.MarshalUnsafe(dst)
 	dst = r.NewDir.MarshalUnsafe(dst)
+	dst = r.OldName.MarshalBytes(dst)
 	return r.NewName.MarshalBytes(dst)
 }
 
 // CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
 func (r *RenameAtReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	r.OldName = ""
 	r.NewName = ""
 	if r.SizeBytes() > len(src) {
 		return src, false
 	}
-	srcRemain := r.Renamed.UnmarshalUnsafe(src)
+	srcRemain := r.OldDir.UnmarshalUnsafe(src)
 	srcRemain = r.NewDir.UnmarshalUnsafe(srcRemain)
-	if srcRemain, ok := r.NewName.CheckedUnmarshal(srcRemain); ok {
-		return srcRemain, true
+	var ok bool
+	if srcRemain, ok = r.OldName.CheckedUnmarshal(srcRemain); !ok {
+		return src, false
 	}
-	return src, false
+	if srcRemain, ok = r.NewName.CheckedUnmarshal(srcRemain); !ok {
+		return src, false
+	}
+	return srcRemain, true
 }
 
 // Getdents64Req is used to make Getdents64 requests.
