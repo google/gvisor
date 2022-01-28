@@ -23,7 +23,6 @@ pkg_tar(
 
 pkg_deb(
     name = "debian",
-    out = "runsc-latest.deb",
     architecture = select_arch(
         amd64 = "amd64",
         arm64 = "arm64",
