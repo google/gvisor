@@ -81,7 +81,7 @@ func runServerClient(t *testing.T, tester Tester, testFn testFunc) {
 	}
 	defer os.RemoveAll(mountPath)
 
-	// fsgofer should run with a umask of 0, because we want to preserve file
+	// server should run with a umask of 0, because we want to preserve file
 	// modes exactly for testing purposes.
 	unix.Umask(0)
 
@@ -545,7 +545,7 @@ func testRename(ctx context.Context, t *testing.T, tester Tester, root lisafs.Cl
 	defer closeFD(ctx, t, tempDir)
 
 	// Move tempFile into tempDir.
-	if err := tempFile.RenameTo(ctx, tempDir.ID(), "movedFile"); err != nil {
+	if err := root.RenameAt(ctx, name, tempDir.ID(), "movedFile"); err != nil {
 		t.Fatalf("rename failed: %v", err)
 	}
 

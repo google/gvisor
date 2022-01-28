@@ -29,6 +29,17 @@ go_template_instance(
 )
 
 go_template_instance(
+    name = "node_fd_refs",
+    out = "node_fd_refs.go",
+    package = "lisafs",
+    prefix = "node",
+    template = "//pkg/refsvfs2:refs_template",
+    types = {
+        "T": "Node",
+    },
+)
+
+go_template_instance(
     name = "control_fd_list",
     out = "control_fd_list.go",
     package = "lisafs",
@@ -66,6 +77,8 @@ go_library(
         "handlers.go",
         "lisafs.go",
         "message.go",
+        "node.go",
+        "node_fd_refs.go",
         "open_fd_list.go",
         "open_fd_refs.go",
         "sample_message.go",
@@ -110,8 +123,16 @@ go_test(
     srcs = ["connection_test.go"],
     deps = [
         ":lisafs",
+        "//pkg/abi/linux",
         "//pkg/sync",
         "//pkg/unet",
         "@org_golang_x_sys//unix:go_default_library",
     ],
+)
+
+go_test(
+    name = "node_test",
+    size = "small",
+    srcs = ["node_test.go"],
+    library = ":lisafs",
 )

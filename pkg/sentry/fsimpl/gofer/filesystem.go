@@ -1555,7 +1555,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	// Update the remote filesystem.
 	if !renamed.isSynthetic() {
 		if fs.opts.lisaEnabled {
-			err = renamed.controlFDLisa.RenameTo(ctx, newParent.controlFDLisa.ID(), newName)
+			err = oldParent.controlFDLisa.RenameAt(ctx, oldName, newParent.controlFDLisa.ID(), newName)
 		} else {
 			err = renamed.file.rename(ctx, newParent.file, newName)
 		}

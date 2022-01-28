@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
@@ -53,9 +54,13 @@ func (fd *testControlFD) FD() *lisafs.ControlFD {
 	return &fd.ControlFD
 }
 
+func (fd *testControlFD) Close() {}
+
 // Mount implements lisafs.Mount.
-func (s *testServer) Mount(c *lisafs.Connection, mountPath string) (lisafs.ControlFDImpl, lisafs.Inode, error) {
-	return &testControlFD{}, lisafs.Inode{ControlFD: 1}, nil
+func (s *testServer) Mount(c *lisafs.Connection) (*lisafs.ControlFD, linux.Statx, error) {
+	dummyRoot := &testControlFD{}
+	dummyRoot.Init(c, s.Root(), linux.ModeDirectory, dummyRoot)
+	return dummyRoot.FD(), linux.Statx{Mode: linux.S_IFDIR}, nil
 }
 
 // MaxMessageSize implements lisafs.MaxMessageSize.
@@ -80,7 +85,8 @@ func runServerClient(t testing.TB, clientFn func(c *lisafs.Client)) {
 	}
 
 	ts := &testServer{}
-	ts.Server.InitTestOnly(ts, handlers[:])
+	ts.Server.Init(ts, lisafs.ServerOpts{})
+	ts.Server.SetHandlers(handlers[:])
 	conn, err := ts.CreateConnection(serverSocket, false /* readonly */)
 	if err != nil {
 		t.Fatalf("starting connection failed: %v", err)

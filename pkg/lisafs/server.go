@@ -15,6 +15,7 @@
 package lisafs
 
 import (
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -28,40 +29,63 @@ type Server struct {
 	// connWg counts the number of active connections being tracked.
 	connWg sync.WaitGroup
 
-	// RenameMu synchronizes rename operations within this filesystem tree.
-	RenameMu sync.RWMutex
+	// renameMu synchronizes rename operations within this filesystem tree.
+	renameMu sync.RWMutex
 
 	// handlers is a list of RPC handlers which can be indexed by the handler's
 	// corresponding MID.
 	handlers []RPCHandler
 
-	// mountPoints keeps track of all the mount points this server serves.
-	mpMu        sync.RWMutex
-	mountPoints []*ControlFD
+	// root is the root of the filesystem tree being managed by this server.
+	// root is immutable. Server holds a ref on root for its entire lifetime.
+	root *Node
 
 	// impl is the server implementation which embeds this server.
 	impl ServerImpl
+
+	// opts is the server specific options. This dictates how some of the
+	// messages are handled.
+	opts ServerOpts
+}
+
+// ServerOpts defines some server implementation specific behavior.
+type ServerOpts struct {
+	// WalkStatSupported is set to true if it's safe to call
+	// ControlFDImpl.WalkStat and let the file implementation perform the walk
+	// without holding locks on any of the descendant's Nodes.
+	WalkStatSupported bool
+
+	// SetAttrOnDeleted is set to true if it's safe to call ControlFDImpl.SetStat
+	// for deleted files.
+	SetAttrOnDeleted bool
+
+	// AllocateOnDeleted is set to true if it's safe to call OpenFDImpl.Allocate
+	// for deleted files.
+	AllocateOnDeleted bool
 }
 
 // Init must be called before first use of server.
-func (s *Server) Init(impl ServerImpl) {
+func (s *Server) Init(impl ServerImpl, opts ServerOpts) {
 	s.impl = impl
+	s.opts = opts
 	s.handlers = handlers[:]
+	s.root = &Node{}
+	// s owns the ref on s.root.
+	s.root.InitLocked("", nil)
 }
 
-// InitTestOnly is the same as Init except that it allows to swap out the
-// underlying handlers with something custom. This is for test only.
-func (s *Server) InitTestOnly(impl ServerImpl, handlers []RPCHandler) {
-	s.impl = impl
+// SetHandlers overrides the server's RPC handlers. Mainly should only be used
+// for tests.
+func (s *Server) SetHandlers(handlers []RPCHandler) {
 	s.handlers = handlers
 }
 
-// WithRenameReadLock invokes fn with the server's rename mutex locked for
+// withRenameReadLock invokes fn with the server's rename mutex locked for
 // reading. This ensures that no rename operations occur concurrently.
-func (s *Server) WithRenameReadLock(fn func() error) error {
-	s.RenameMu.RLock()
+func (s *Server) withRenameReadLock(fn func() error) error {
+	s.renameMu.RLock()
 	err := fn()
-	s.RenameMu.RUnlock()
+	s.renameMu.RUnlock()
 	return err
 }
 
@@ -79,29 +103,20 @@ func (s *Server) Wait() {
 	s.connWg.Wait()
 }
 
-func (s *Server) addMountPoint(root *ControlFD) {
-	s.mpMu.Lock()
-	defer s.mpMu.Unlock()
-	s.mountPoints = append(s.mountPoints, root)
-}
-
-func (s *Server) forEachMountPoint(fn func(root *ControlFD)) {
-	s.mpMu.RLock()
-	defer s.mpMu.RUnlock()
-	for _, mp := range s.mountPoints {
-		fn(mp)
-	}
+// Root returns the server's root node.
+func (s *Server) Root() *Node {
+	return s.root
 }
 
 // ServerImpl contains the implementation details for a Server.
 // Implementations of ServerImpl should contain their associated Server by
 // value as their first field.
 type ServerImpl interface {
-	// Mount is called when a Mount RPC is made. It mounts the connection at
-	// mountPath.
+	// Mount is called when a Mount RPC is made. It mounts the connection on
+	// filesystem root.
 	//
-	// Precondition: mountPath == path.Clean(mountPath).
-	Mount(c *Connection, mountPath string) (ControlFDImpl, Inode, error)
+	// Mount has rename read concurrency guarantee.
+	Mount(c *Connection) (*ControlFD, linux.Statx, error)
 
 	// SupportedMessages returns a list of messages that the server
 	// implementation supports.

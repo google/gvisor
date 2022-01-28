@@ -41,25 +41,34 @@ var _ lisafs.ServerImpl = (*LisafsServer)(nil)
 // NewLisafsServer initializes a new lisafs server for fsgofer.
 func NewLisafsServer(config Config) *LisafsServer {
 	s := &LisafsServer{config: config}
-	s.Server.Init(s)
+	s.Server.Init(s, lisafs.ServerOpts{
+		WalkStatSupported: true,
+		SetAttrOnDeleted:  true,
+		AllocateOnDeleted: true,
+	})
 	return s
 }
 
 // Mount implements lisafs.ServerImpl.Mount.
-func (s *LisafsServer) Mount(c *lisafs.Connection, mountPath string) (lisafs.ControlFDImpl, lisafs.Inode, error) {
-	s.RenameMu.RLock()
-	defer s.RenameMu.RUnlock()
-
-	rootFD, rootStat, err := tryStepLocked(c, mountPath, nil, func(flags int) (int, error) {
-		return unix.Open(mountPath, flags, 0)
+func (s *LisafsServer) Mount(c *lisafs.Connection) (*lisafs.ControlFD, linux.Statx, error) {
+	rootHostFD, err := tryOpen(func(flags int) (int, error) {
+		return unix.Open("/", flags, 0)
 	})
 	if err != nil {
-		return nil, lisafs.Inode{}, err
+		return nil, linux.Statx{}, err
 	}
 
-	var rootIno lisafs.Inode
-	rootFD.initInodeWithStat(&rootIno, &rootStat)
-	return rootFD, rootIno, nil
+	stat, err := fstatTo(rootHostFD)
+	if err != nil {
+		return nil, linux.Statx{}, err
+	}
+
+	rootFD := &controlFDLisa{
+		hostFD:         rootHostFD,
+		writableHostFD: -1,
+	}
+	rootFD.ControlFD.Init(c, s.Root(), linux.FileMode(stat.Mode), rootFD)
+	return rootFD.FD(), stat, nil
 }
 
 // MaxMessageSize implements lisafs.ServerImpl.MaxMessageSize.
@@ -114,24 +123,36 @@ type controlFDLisa struct {
 
 var _ lisafs.ControlFDImpl = (*controlFDLisa)(nil)
 
-// Precondition: server's rename mutex must be at least read locked.
-func newControlFDLisaLocked(c *lisafs.Connection, hostFD int, parent *controlFDLisa, name string, mode linux.FileMode) *controlFDLisa {
-	fd := &controlFDLisa{
-		hostFD:         hostFD,
-		writableHostFD: -1,
-	}
-	fd.ControlFD.Init(c, parent.FD(), name, mode, fd)
-	return fd
-}
-
-func (fd *controlFDLisa) initInode(inode *lisafs.Inode) error {
-	inode.ControlFD = fd.ID()
-	return fstatTo(fd.hostFD, &inode.Stat)
-}
-
-func (fd *controlFDLisa) initInodeWithStat(inode *lisafs.Inode, unixStat *unix.Stat_t) {
-	inode.ControlFD = fd.ID()
-	unixToLinuxStat(unixStat, &inode.Stat)
+func newControlFDLisa(hostFD int, parent *controlFDLisa, name string, mode linux.FileMode) *controlFDLisa {
+	var (
+		childFD    *controlFDLisa
+		childNode  *lisafs.Node
+		parentNode = parent.Node()
+	)
+	parentNode.WithChildrenMu(func() {
+		childNode = parentNode.LookupChildLocked(name)
+		if childNode == nil {
+			// Common case. Performance hack which is used to allocate the node and
+			// its control FD together in the heap. For a well-behaving client, there
+			// will be a 1:1 mapping between control FD and node and their lifecycle
+			// will be similar too. This will help reduce allocations and memory
+			// fragmentation. This is more cache friendly too.
+			temp := struct {
+				node lisafs.Node
+				fd   controlFDLisa
+			}{}
+			childFD = &temp.fd
+			childNode = &temp.node
+			childNode.InitLocked(name, parentNode)
+		} else {
+			childNode.IncRef()
+			childFD = &controlFDLisa{}
+		}
+	})
+	childFD.hostFD = hostFD
+	childFD.writableHostFD = -1
+	childFD.ControlFD.Init(parent.Conn(), childNode, mode, childFD)
+	return childFD
 }
 
 func (fd *controlFDLisa) getWritableFD() (int, error) {
@@ -160,7 +181,7 @@ func (fd *controlFDLisa) FD() *lisafs.ControlFD {
 }
 
 // Close implements lisafs.ControlFDImpl.Close.
-func (fd *controlFDLisa) Close(c *lisafs.Connection) {
+func (fd *controlFDLisa) Close() {
 	if fd.hostFD >= 0 {
 		_ = unix.Close(fd.hostFD)
 		fd.hostFD = -1
@@ -173,16 +194,15 @@ func (fd *controlFDLisa) Close(c *lisafs.Connection) {
 }
 
 // Stat implements lisafs.ControlFDImpl.Stat.
-func (fd *controlFDLisa) Stat(c *lisafs.Connection) (linux.Statx, error) {
-	var resp linux.Statx
-	return resp, fstatTo(fd.hostFD, &resp)
+func (fd *controlFDLisa) Stat() (linux.Statx, error) {
+	return fstatTo(fd.hostFD)
 }
 
 // SetStat implements lisafs.ControlFDImpl.SetStat.
-func (fd *controlFDLisa) SetStat(c *lisafs.Connection, stat lisafs.SetStatReq) (failureMask uint32, failureErr error) {
+func (fd *controlFDLisa) SetStat(stat lisafs.SetStatReq) (failureMask uint32, failureErr error) {
 	if stat.Mask&unix.STATX_MODE != 0 {
 		if err := unix.Fchmod(fd.hostFD, stat.Mode&^unix.S_IFMT); err != nil {
-			log.Warningf("SetStat fchmod failed %q, err: %v", fd.FilePath(), err)
+			log.Warningf("SetStat fchmod failed %q, err: %v", fd.Node().FilePath(), err)
 			failureMask |= unix.STATX_MODE
 			failureErr = err
 		}
@@ -195,7 +215,7 @@ func (fd *controlFDLisa) SetStat(c *lisafs.Connection, stat lisafs.SetStatReq) (
 			err = unix.Ftruncate(writableFD, int64(stat.Size))
 		}
 		if err != nil {
-			log.Warningf("SetStat ftruncate failed %q, err: %v", fd.FilePath(), err)
+			log.Warningf("SetStat ftruncate failed %q, err: %v", fd.Node().FilePath(), err)
 			failureMask |= unix.STATX_SIZE
 			failureErr = err
 		}
@@ -218,15 +238,17 @@ func (fd *controlFDLisa) SetStat(c *lisafs.Connection, stat lisafs.SetStatReq) (
 		if fd.IsSymlink() {
 			// utimensat operates different that other syscalls. To operate on a
 			// symlink it *requires* AT_SYMLINK_NOFOLLOW with dirFD and a non-empty
-			// name.
-			c.Server().WithRenameReadLock(func() error {
-				if err := utimensat(fd.ParentLocked().(*controlFDLisa).hostFD, fd.NameLocked(), utimes, unix.AT_SYMLINK_NOFOLLOW); err != nil {
-					log.Warningf("SetStat utimens failed %q, err: %v", fd.FilePathLocked(), err)
-					failureMask |= (stat.Mask & (unix.STATX_ATIME | unix.STATX_MTIME))
-					failureErr = err
-				}
-				return nil
-			})
+			// name. We need the parent FD.
+			symlinkPath := fd.Node().FilePath()
+			parent, err := unix.Open(path.Dir(symlinkPath), openFlags|unix.O_PATH, 0)
+			if err == nil {
+				err = utimensat(parent, path.Base(symlinkPath), utimes, unix.AT_SYMLINK_NOFOLLOW)
+				unix.Close(parent)
+			}
+			if err != nil {
+				failureMask |= (stat.Mask & (unix.STATX_ATIME | unix.STATX_MTIME))
+				failureErr = err
+			}
 		} else {
 			hostFD := fd.hostFD
 			if fd.IsRegular() {
@@ -235,14 +257,14 @@ func (fd *controlFDLisa) SetStat(c *lisafs.Connection, stat lisafs.SetStatReq) (
 				if writableFD, err := fd.getWritableFD(); err == nil {
 					hostFD = writableFD
 				} else {
-					log.Warningf("SetStat getWritableFD failed %q, err: %v", fd.FilePath(), err)
+					log.Warningf("SetStat getWritableFD failed %q, err: %v", fd.Node().FilePath(), err)
 				}
 			}
 			// Directories and regular files can operate directly on the fd
 			// using empty name.
 			err := utimensat(hostFD, "", utimes, 0)
 			if err != nil {
-				log.Warningf("SetStat utimens failed %q, err: %v", fd.FilePath(), err)
+				log.Warningf("SetStat utimens failed %q, err: %v", fd.Node().FilePath(), err)
 				failureMask |= (stat.Mask & (unix.STATX_ATIME | unix.STATX_MTIME))
 				failureErr = err
 			}
@@ -261,7 +283,7 @@ func (fd *controlFDLisa) SetStat(c *lisafs.Connection, stat lisafs.SetStatReq) (
 			gid = int(stat.GID)
 		}
 		if err := unix.Fchownat(fd.hostFD, "", uid, gid, unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW); err != nil {
-			log.Warningf("SetStat fchown failed %q, err: %v", fd.FilePath(), err)
+			log.Warningf("SetStat fchown failed %q, err: %v", fd.Node().FilePath(), err)
 			failureMask |= stat.Mask & (unix.STATX_UID | unix.STATX_GID)
 			failureErr = err
 		}
@@ -271,58 +293,29 @@ func (fd *controlFDLisa) SetStat(c *lisafs.Connection, stat lisafs.SetStatReq) (
 }
 
 // Walk implements lisafs.ControlFDImpl.Walk.
-func (fd *controlFDLisa) Walk(c *lisafs.Connection, path lisafs.StringArray, recordInode func(lisafs.Inode)) (lisafs.WalkStatus, error) {
-	s := c.Server()
-	s.RenameMu.RLock()
-	defer s.RenameMu.RUnlock()
-
-	status := lisafs.WalkSuccess
-	curDirFD := fd
-	cu := cleanup.Make(func() {
-		// Destroy all newly created FDs until now. Walk upward from curDirFD to
-		// fd. Do not destroy fd as the client still owns that.
-		for curDirFD != fd {
-			c.RemoveControlFDLocked(curDirFD.ID())
-			curDirFD = curDirFD.ParentLocked().(*controlFDLisa)
-		}
+func (fd *controlFDLisa) Walk(name string) (*lisafs.ControlFD, linux.Statx, error) {
+	childHostFD, err := tryOpen(func(flags int) (int, error) {
+		return unix.Openat(fd.hostFD, name, flags, 0)
 	})
-	defer cu.Clean()
-
-	for _, name := range path {
-		// Symlinks terminate walk. This client gets the symlink inode, but will
-		// have to invoke Walk again with the resolved path.
-		if curDirFD.IsSymlink() {
-			status = lisafs.WalkComponentSymlink
-			break
-		}
-
-		child, childStat, err := tryStepLocked(c, name, curDirFD, func(flags int) (int, error) {
-			return unix.Openat(curDirFD.hostFD, name, flags, 0)
-		})
-		if err == unix.ENOENT {
-			status = lisafs.WalkComponentDoesNotExist
-			break
-		}
-		if err != nil {
-			return 0, err
-		}
-
-		var childInode lisafs.Inode
-		child.initInodeWithStat(&childInode, &childStat)
-		recordInode(childInode)
-		curDirFD = child
+	if err != nil {
+		return nil, linux.Statx{}, err
 	}
-	cu.Release()
 
-	return status, nil
+	stat, err := fstatTo(childHostFD)
+	if err != nil {
+		return nil, linux.Statx{}, err
+	}
+
+	return newControlFDLisa(childHostFD, fd, name, linux.FileMode(stat.Mode)).FD(), stat, nil
 }
 
 // WalkStat implements lisafs.ControlFDImpl.WalkStat.
-func (fd *controlFDLisa) WalkStat(c *lisafs.Connection, path lisafs.StringArray, recordStat func(linux.Statx)) error {
-	s := c.Server()
-	s.RenameMu.RLock()
-	defer s.RenameMu.RUnlock()
-
+func (fd *controlFDLisa) WalkStat(path lisafs.StringArray, recordStat func(linux.Statx)) error {
+	// Note that while performing the walk below, we do not have read concurrency
+	// guarantee for any descendants. So files can be created/deleted inside fd
+	// while the walk is being performed. However, this should be fine from a
+	// security perspective as we are using host FDs to walk and checking that
+	// each opened path component is not a symlink.
 	curDirFD := fd.hostFD
 	closeCurDirFD := func() {
 		if curDirFD != fd.hostFD {
@@ -330,16 +323,12 @@ func (fd *controlFDLisa) WalkStat(c *lisafs.Connection, path lisafs.StringArray,
 		}
 	}
 	defer closeCurDirFD()
-	var (
-		stat     linux.Statx
-		unixStat unix.Stat_t
-	)
 	if len(path) > 0 && len(path[0]) == 0 {
 		// Write stat results for dirFD if the first path component is "".
-		if err := unix.Fstat(fd.hostFD, &unixStat); err != nil {
+		stat, err := fstatTo(fd.hostFD)
+		if err != nil {
 			return err
 		}
-		unixToLinuxStat(&unixStat, &stat)
 		recordStat(stat)
 		path = path[1:]
 	}
@@ -361,15 +350,15 @@ func (fd *controlFDLisa) WalkStat(c *lisafs.Connection, path lisafs.StringArray,
 		closeCurDirFD()
 		curDirFD = curFD
 
-		if err := unix.Fstat(curFD, &unixStat); err != nil {
+		stat, err := fstatTo(curFD)
+		if err != nil {
 			return err
 		}
-		unixToLinuxStat(&unixStat, &stat)
 		recordStat(stat)
 
 		// Symlinks terminate walk. This client gets the symlink stat result, but
 		// will have to invoke Walk again with the resolved path.
-		if unixStat.Mode&unix.S_IFMT == unix.S_IFLNK {
+		if stat.Mode&unix.S_IFMT == unix.S_IFLNK {
 			break
 		}
 	}
@@ -378,11 +367,11 @@ func (fd *controlFDLisa) WalkStat(c *lisafs.Connection, path lisafs.StringArray,
 }
 
 // Open implements lisafs.ControlFDImpl.Open.
-func (fd *controlFDLisa) Open(c *lisafs.Connection, flags uint32) (lisafs.FDID, int, error) {
+func (fd *controlFDLisa) Open(flags uint32) (*lisafs.OpenFD, int, error) {
 	flags |= openFlags
 	newHostFD, err := unix.Openat(int(procSelfFD.FD()), strconv.Itoa(fd.hostFD), int(flags)&^unix.O_NOFOLLOW, 0)
 	if err != nil {
-		return lisafs.InvalidFDID, -1, err
+		return nil, -1, err
 	}
 	openFD := fd.newOpenFDLisa(newHostFD, flags)
 
@@ -397,58 +386,47 @@ func (fd *controlFDLisa) Open(c *lisafs.Connection, flags uint32) (lisafs.FDID, 
 		}
 	}
 
-	return openFD.ID(), hostOpenFD, nil
+	return openFD.FD(), hostOpenFD, nil
 }
 
 // OpenCreate implements lisafs.ControlFDImpl.OpenCreate.
-func (fd *controlFDLisa) OpenCreate(c *lisafs.Connection, mode linux.FileMode, uid lisafs.UID, gid lisafs.GID, name string, flags uint32) (lisafs.Inode, lisafs.FDID, int, error) {
-	// Need to hold rename mutex for reading while performing the walk. Also keep
-	// holding it while the cleanup is still possible.
-	var (
-		childIno lisafs.Inode
-		newFD    *openFDLisa
-	)
-	if err := c.Server().WithRenameReadLock(func() error {
-		createFlags := unix.O_CREAT | unix.O_EXCL | unix.O_RDONLY | unix.O_NONBLOCK | openFlags
-		childHostFD, err := unix.Openat(fd.hostFD, name, createFlags, uint32(mode&^linux.FileTypeMask))
-		if err != nil {
-			return err
-		}
-
-		childFD := newControlFDLisaLocked(c, childHostFD, fd, name, linux.ModeRegular)
-		cu := cleanup.Make(func() {
-			// Best effort attempt to remove the file in case of failure.
-			if err := unix.Unlinkat(fd.hostFD, name, 0); err != nil {
-				log.Warningf("error unlinking file %q after failure: %v", path.Join(fd.FilePathLocked(), name), err)
-			}
-			c.RemoveControlFDLocked(childFD.ID())
-		})
-		defer cu.Clean()
-
-		// Set the owners as requested by the client.
-		if err := unix.Fchownat(childFD.hostFD, "", int(uid), int(gid), unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW); err != nil {
-			return err
-		}
-
-		// Do not use the stat result from tryOpen because the owners might have
-		// changed. initInode() will stat the FD again and use fresh results.
-		if err := childFD.initInode(&childIno); err != nil {
-			return err
-		}
-
-		// Now open an FD to the newly created file with the flags requested by the client.
-		flags |= openFlags
-		newHostFD, err := unix.Openat(int(procSelfFD.FD()), strconv.Itoa(childFD.hostFD), int(flags)&^unix.O_NOFOLLOW, 0)
-		if err != nil {
-			return err
-		}
-		cu.Release()
-
-		newFD = childFD.newOpenFDLisa(newHostFD, uint32(flags))
-		return nil
-	}); err != nil {
-		return lisafs.Inode{}, lisafs.InvalidFDID, -1, err
+func (fd *controlFDLisa) OpenCreate(mode linux.FileMode, uid lisafs.UID, gid lisafs.GID, name string, flags uint32) (*lisafs.ControlFD, linux.Statx, *lisafs.OpenFD, int, error) {
+	createFlags := unix.O_CREAT | unix.O_EXCL | unix.O_RDONLY | unix.O_NONBLOCK | openFlags
+	childHostFD, err := unix.Openat(fd.hostFD, name, createFlags, uint32(mode&^linux.FileTypeMask))
+	if err != nil {
+		return nil, linux.Statx{}, nil, -1, err
 	}
+
+	cu := cleanup.Make(func() {
+		// Best effort attempt to remove the file in case of failure.
+		if err := unix.Unlinkat(fd.hostFD, name, 0); err != nil {
+			log.Warningf("error unlinking file %q after failure: %v", path.Join(fd.Node().FilePath(), name), err)
+		}
+		unix.Close(childHostFD)
+	})
+	defer cu.Clean()
+
+	// Set the owners as requested by the client.
+	if err := unix.Fchownat(childHostFD, "", int(uid), int(gid), unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		return nil, linux.Statx{}, nil, -1, err
+	}
+
+	// Get stat results.
+	childStat, err := fstatTo(childHostFD)
+	if err != nil {
+		return nil, linux.Statx{}, nil, -1, err
+	}
+
+	// Now open an FD to the newly created file with the flags requested by the client.
+	flags |= openFlags
+	newHostFD, err := unix.Openat(int(procSelfFD.FD()), strconv.Itoa(childHostFD), int(flags)&^unix.O_NOFOLLOW, 0)
+	if err != nil {
+		return nil, linux.Statx{}, nil, -1, err
+	}
+	cu.Release()
+
+	childFD := newControlFDLisa(childHostFD, fd, name, linux.ModeRegular)
+	newFD := childFD.newOpenFDLisa(newHostFD, uint32(flags))
 
 	// Donate FD because open(O_CREAT|O_EXCL) always creates a regular file.
 	// Since FD donation is a destructive operation, we should duplicate the
@@ -458,153 +436,152 @@ func (fd *controlFDLisa) OpenCreate(c *lisafs.Connection, mode linux.FileMode, u
 	if dupFD, err := unix.Dup(newFD.hostFD); err == nil {
 		hostOpenFD = dupFD
 	}
-	return childIno, newFD.ID(), hostOpenFD, nil
+
+	return childFD.FD(), childStat, newFD.FD(), hostOpenFD, nil
 }
 
 // Mkdir implements lisafs.ControlFDImpl.Mkdir.
-func (fd *controlFDLisa) Mkdir(c *lisafs.Connection, mode linux.FileMode, uid lisafs.UID, gid lisafs.GID, name string) (lisafs.Inode, error) {
-	var childIno lisafs.Inode
-	return childIno, c.Server().WithRenameReadLock(func() error {
-		if err := unix.Mkdirat(fd.hostFD, name, uint32(mode&^linux.FileTypeMask)); err != nil {
-			return err
+func (fd *controlFDLisa) Mkdir(mode linux.FileMode, uid lisafs.UID, gid lisafs.GID, name string) (*lisafs.ControlFD, linux.Statx, error) {
+	if err := unix.Mkdirat(fd.hostFD, name, uint32(mode&^linux.FileTypeMask)); err != nil {
+		return nil, linux.Statx{}, err
+	}
+	cu := cleanup.Make(func() {
+		// Best effort attempt to remove the dir in case of failure.
+		if err := unix.Unlinkat(fd.hostFD, name, unix.AT_REMOVEDIR); err != nil {
+			log.Warningf("error unlinking dir %q after failure: %v", path.Join(fd.Node().FilePath(), name), err)
 		}
-		cu := cleanup.Make(func() {
-			// Best effort attempt to remove the dir in case of failure.
-			if err := unix.Unlinkat(fd.hostFD, name, unix.AT_REMOVEDIR); err != nil {
-				log.Warningf("error unlinking dir %q after failure: %v", path.Join(fd.FilePathLocked(), name), err)
-			}
-		})
-		defer cu.Clean()
-
-		// Open directory to change ownership.
-		childDirFd, err := unix.Openat(fd.hostFD, name, unix.O_DIRECTORY|unix.O_RDONLY|openFlags, 0)
-		if err != nil {
-			return err
-		}
-		if err := unix.Fchownat(childDirFd, "", int(uid), int(gid), unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW); err != nil {
-			unix.Close(childDirFd)
-			return err
-		}
-
-		childDir := newControlFDLisaLocked(c, childDirFd, fd, name, linux.ModeDirectory)
-		if err := childDir.initInode(&childIno); err != nil {
-			c.RemoveControlFDLocked(childDir.ID())
-			return err
-		}
-		cu.Release()
-
-		return nil
 	})
+	defer cu.Clean()
+
+	// Open directory to change ownership.
+	childDirFd, err := tryOpen(func(flags int) (int, error) {
+		return unix.Openat(fd.hostFD, name, flags|unix.O_DIRECTORY, 0)
+	})
+	if err != nil {
+		return nil, linux.Statx{}, err
+	}
+	if err := unix.Fchownat(childDirFd, "", int(uid), int(gid), unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		unix.Close(childDirFd)
+		return nil, linux.Statx{}, err
+	}
+
+	// Get stat results.
+	childDirStat, err := fstatTo(childDirFd)
+	if err != nil {
+		unix.Close(childDirFd)
+		return nil, linux.Statx{}, err
+	}
+
+	cu.Release()
+	return newControlFDLisa(childDirFd, fd, name, linux.ModeDirectory).FD(), childDirStat, nil
 }
 
 // Mknod implements lisafs.ControlFDImpl.Mknod.
-func (fd *controlFDLisa) Mknod(c *lisafs.Connection, mode linux.FileMode, uid lisafs.UID, gid lisafs.GID, name string, minor uint32, major uint32) (lisafs.Inode, error) {
+func (fd *controlFDLisa) Mknod(mode linux.FileMode, uid lisafs.UID, gid lisafs.GID, name string, minor uint32, major uint32) (*lisafs.ControlFD, linux.Statx, error) {
 	// From mknod(2) man page:
 	// "EPERM: [...] if the filesystem containing pathname does not support
 	// the type of node requested."
 	if mode.FileType() != linux.ModeRegular {
-		return lisafs.Inode{}, unix.EPERM
+		return nil, linux.Statx{}, unix.EPERM
 	}
 
-	var childIno lisafs.Inode
-	return childIno, c.Server().WithRenameReadLock(func() error {
-		if err := unix.Mknodat(fd.hostFD, name, uint32(mode), 0); err != nil {
-			return err
+	if err := unix.Mknodat(fd.hostFD, name, uint32(mode), 0); err != nil {
+		return nil, linux.Statx{}, err
+	}
+	cu := cleanup.Make(func() {
+		// Best effort attempt to remove the file in case of failure.
+		if err := unix.Unlinkat(fd.hostFD, name, 0); err != nil {
+			log.Warningf("error unlinking file %q after failure: %v", path.Join(fd.Node().FilePath(), name), err)
 		}
-		cu := cleanup.Make(func() {
-			// Best effort attempt to remove the file in case of failure.
-			if err := unix.Unlinkat(fd.hostFD, name, 0); err != nil {
-				log.Warningf("error unlinking file %q after failure: %v", path.Join(fd.FilePathLocked(), name), err)
-			}
-		})
-		defer cu.Clean()
-
-		// Open file to change ownership.
-		childFD, err := unix.Openat(fd.hostFD, name, unix.O_PATH|openFlags, 0)
-		if err != nil {
-			return err
-		}
-		if err := unix.Fchownat(childFD, "", int(uid), int(gid), unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW); err != nil {
-			unix.Close(childFD)
-			return err
-		}
-
-		child := newControlFDLisaLocked(c, childFD, fd, name, mode)
-		if err := child.initInode(&childIno); err != nil {
-			c.RemoveControlFDLocked(child.ID())
-			return err
-		}
-		cu.Release()
-		return nil
 	})
+	defer cu.Clean()
+
+	// Open file to change ownership.
+	childFD, err := tryOpen(func(flags int) (int, error) {
+		return unix.Openat(fd.hostFD, name, flags, 0)
+	})
+	if err != nil {
+		return nil, linux.Statx{}, err
+	}
+	if err := unix.Fchownat(childFD, "", int(uid), int(gid), unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		unix.Close(childFD)
+		return nil, linux.Statx{}, err
+	}
+
+	// Get stat results.
+	childStat, err := fstatTo(childFD)
+	if err != nil {
+		unix.Close(childFD)
+		return nil, linux.Statx{}, err
+	}
+	cu.Release()
+
+	return newControlFDLisa(childFD, fd, name, mode).FD(), childStat, nil
 }
 
 // Symlink implements lisafs.ControlFDImpl.Symlink.
-func (fd *controlFDLisa) Symlink(c *lisafs.Connection, name string, target string, uid lisafs.UID, gid lisafs.GID) (lisafs.Inode, error) {
-	var childIno lisafs.Inode
-	return childIno, c.Server().WithRenameReadLock(func() error {
-		if err := unix.Symlinkat(target, fd.hostFD, name); err != nil {
-			return err
+func (fd *controlFDLisa) Symlink(name string, target string, uid lisafs.UID, gid lisafs.GID) (*lisafs.ControlFD, linux.Statx, error) {
+	if err := unix.Symlinkat(target, fd.hostFD, name); err != nil {
+		return nil, linux.Statx{}, err
+	}
+	cu := cleanup.Make(func() {
+		// Best effort attempt to remove the symlink in case of failure.
+		if err := unix.Unlinkat(fd.hostFD, name, 0); err != nil {
+			log.Warningf("error unlinking file %q after failure: %v", path.Join(fd.Node().FilePath(), name), err)
 		}
-		cu := cleanup.Make(func() {
-			// Best effort attempt to remove the symlink in case of failure.
-			if err := unix.Unlinkat(fd.hostFD, name, 0); err != nil {
-				log.Warningf("error unlinking file %q after failure: %v", path.Join(fd.FilePathLocked(), name), err)
-			}
-		})
-		defer cu.Clean()
-
-		// Open symlink to change ownership.
-		symlinkFD, err := unix.Openat(fd.hostFD, name, unix.O_PATH|openFlags, 0)
-		if err != nil {
-			return err
-		}
-		if err := unix.Fchownat(symlinkFD, "", int(uid), int(gid), unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW); err != nil {
-			unix.Close(symlinkFD)
-			return err
-		}
-
-		symlink := newControlFDLisaLocked(c, symlinkFD, fd, name, linux.ModeSymlink)
-		if err := symlink.initInode(&childIno); err != nil {
-			c.RemoveControlFDLocked(symlink.ID())
-			return err
-		}
-		cu.Release()
-		return nil
 	})
+	defer cu.Clean()
+
+	// Open symlink to change ownership.
+	symlinkFD, err := unix.Openat(fd.hostFD, name, unix.O_PATH|openFlags, 0)
+	if err != nil {
+		return nil, linux.Statx{}, err
+	}
+	if err := unix.Fchownat(symlinkFD, "", int(uid), int(gid), unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		unix.Close(symlinkFD)
+		return nil, linux.Statx{}, err
+	}
+
+	symlinkStat, err := fstatTo(symlinkFD)
+	if err != nil {
+		unix.Close(symlinkFD)
+		return nil, linux.Statx{}, err
+	}
+	cu.Release()
+	return newControlFDLisa(symlinkFD, fd, name, linux.ModeSymlink).FD(), symlinkStat, nil
 }
 
 // Link implements lisafs.ControlFDImpl.Link.
-func (fd *controlFDLisa) Link(c *lisafs.Connection, dir lisafs.ControlFDImpl, name string) (lisafs.Inode, error) {
-	var childIno lisafs.Inode
-	return childIno, c.Server().WithRenameReadLock(func() error {
-		dirFD := dir.(*controlFDLisa)
-		if err := unix.Linkat(fd.hostFD, "", dirFD.hostFD, name, unix.AT_EMPTY_PATH); err != nil {
-			return err
+func (fd *controlFDLisa) Link(dir lisafs.ControlFDImpl, name string) (*lisafs.ControlFD, linux.Statx, error) {
+	dirFD := dir.(*controlFDLisa)
+	if err := unix.Linkat(fd.hostFD, "", dirFD.hostFD, name, unix.AT_EMPTY_PATH); err != nil {
+		return nil, linux.Statx{}, err
+	}
+	cu := cleanup.Make(func() {
+		// Best effort attempt to remove the hard link in case of failure.
+		if err := unix.Unlinkat(dirFD.hostFD, name, 0); err != nil {
+			log.Warningf("error unlinking file %q after failure: %v", path.Join(dirFD.Node().FilePath(), name), err)
 		}
-		cu := cleanup.Make(func() {
-			// Best effort attempt to remove the hard link in case of failure.
-			if err := unix.Unlinkat(dirFD.hostFD, name, 0); err != nil {
-				log.Warningf("error unlinking file %q after failure: %v", path.Join(dirFD.FilePathLocked(), name), err)
-			}
-		})
-		defer cu.Clean()
-
-		linkFD, linkStat, err := tryStepLocked(c, name, dirFD, func(flags int) (int, error) {
-			return unix.Openat(dirFD.hostFD, name, flags, 0)
-		})
-		if err != nil {
-			return err
-		}
-		cu.Release()
-
-		linkFD.initInodeWithStat(&childIno, &linkStat)
-		return nil
 	})
+	defer cu.Clean()
+
+	linkFD, err := tryOpen(func(flags int) (int, error) {
+		return unix.Openat(dirFD.hostFD, name, flags, 0)
+	})
+	if err != nil {
+		return nil, linux.Statx{}, err
+	}
+
+	linkStat, err := fstatTo(linkFD)
+	if err != nil {
+		return nil, linux.Statx{}, err
+	}
+	cu.Release()
+	return newControlFDLisa(linkFD, dirFD, name, linux.FileMode(linkStat.Mode)).FD(), linkStat, nil
 }
 
 // StatFS implements lisafs.ControlFDImpl.StatFS.
-func (fd *controlFDLisa) StatFS(c *lisafs.Connection) (lisafs.StatFS, error) {
+func (fd *controlFDLisa) StatFS() (lisafs.StatFS, error) {
 	var s unix.Statfs_t
 	if err := unix.Fstatfs(fd.hostFD, &s); err != nil {
 		return lisafs.StatFS{}, err
@@ -623,7 +600,7 @@ func (fd *controlFDLisa) StatFS(c *lisafs.Connection) (lisafs.StatFS, error) {
 }
 
 // Readlink implements lisafs.ControlFDImpl.Readlink.
-func (fd *controlFDLisa) Readlink(c *lisafs.Connection, getLinkBuf func(uint32) []byte) (uint16, error) {
+func (fd *controlFDLisa) Readlink(getLinkBuf func(uint32) []byte) (uint16, error) {
 	// This is similar to what os.Readlink does.
 	for linkLen := 128; linkLen < math.MaxUint16; linkLen *= 2 {
 		b := getLinkBuf(uint32(linkLen))
@@ -639,22 +616,16 @@ func (fd *controlFDLisa) Readlink(c *lisafs.Connection, getLinkBuf func(uint32) 
 }
 
 // Connect implements lisafs.ControlFDImpl.Connect.
-func (fd *controlFDLisa) Connect(c *lisafs.Connection, sockType uint32) (int, error) {
-	s := c.ServerImpl().(*LisafsServer)
-	if !s.config.HostUDS {
+func (fd *controlFDLisa) Connect(sockType uint32) (int, error) {
+	if !fd.Conn().ServerImpl().(*LisafsServer).config.HostUDS {
 		return -1, unix.ECONNREFUSED
 	}
-
-	// Lock RenameMu so that the hostPath read stays valid and is not tampered
-	// with until it is actually connected to.
-	s.RenameMu.RLock()
-	defer s.RenameMu.RUnlock()
 
 	// TODO(gvisor.dev/issue/1003): Due to different app vs replacement
 	// mappings, the app path may have fit in the sockaddr, but we can't fit
 	// hostPath in our sockaddr. We'd need to redirect through a shorter path
 	// in order to actually connect to this socket.
-	hostPath := fd.FilePathLocked()
+	hostPath := fd.Node().FilePath()
 	if len(hostPath) >= unixPathMax {
 		return -1, unix.ECONNREFUSED
 	}
@@ -680,21 +651,23 @@ func (fd *controlFDLisa) Connect(c *lisafs.Connection, sockType uint32) (int, er
 }
 
 // Unlink implements lisafs.ControlFDImpl.Unlink.
-func (fd *controlFDLisa) Unlink(c *lisafs.Connection, name string, flags uint32) error {
-	return c.Server().WithRenameReadLock(func() error {
-		return unix.Unlinkat(fd.hostFD, name, int(flags))
-	})
+func (fd *controlFDLisa) Unlink(name string, flags uint32) error {
+	return unix.Unlinkat(fd.hostFD, name, int(flags))
 }
 
-// RenameLocked implements lisafs.ControlFDImpl.RenameLocked.
-func (fd *controlFDLisa) RenameLocked(c *lisafs.Connection, newDir lisafs.ControlFDImpl, newName string) (func(lisafs.ControlFDImpl), func(), error) {
-	// Note that there is no controlFDLisa specific update needed on rename.
-	return nil, nil, renameat(fd.ParentLocked().(*controlFDLisa).hostFD, fd.NameLocked(), newDir.(*controlFDLisa).hostFD, newName)
+// RenameAt implements lisafs.ControlFDImpl.RenameAt.
+func (fd *controlFDLisa) RenameAt(oldName string, newDir lisafs.ControlFDImpl, newName string) error {
+	return renameat(fd.hostFD, oldName, newDir.(*controlFDLisa).hostFD, newName)
+}
+
+// Renamed implements lisafs.ControlFDImpl.Renamed.
+func (fd *controlFDLisa) Renamed() {
+	// controlFDLisa does not have any state to update on rename.
 }
 
 // GetXattr implements lisafs.ControlFDImpl.GetXattr.
-func (fd *controlFDLisa) GetXattr(c *lisafs.Connection, name string, dataBuf []byte) (uint16, error) {
-	if !c.ServerImpl().(*LisafsServer).config.EnableVerityXattr {
+func (fd *controlFDLisa) GetXattr(name string, dataBuf []byte) (uint16, error) {
+	if !fd.Conn().ServerImpl().(*LisafsServer).config.EnableVerityXattr {
 		return 0, unix.EOPNOTSUPP
 	}
 	if _, ok := verityXattrs[name]; !ok {
@@ -705,8 +678,8 @@ func (fd *controlFDLisa) GetXattr(c *lisafs.Connection, name string, dataBuf []b
 }
 
 // SetXattr implements lisafs.ControlFDImpl.SetXattr.
-func (fd *controlFDLisa) SetXattr(c *lisafs.Connection, name string, value string, flags uint32) error {
-	if !c.ServerImpl().(*LisafsServer).config.EnableVerityXattr {
+func (fd *controlFDLisa) SetXattr(name string, value string, flags uint32) error {
+	if !fd.Conn().ServerImpl().(*LisafsServer).config.EnableVerityXattr {
 		return unix.EOPNOTSUPP
 	}
 	if _, ok := verityXattrs[name]; !ok {
@@ -716,12 +689,12 @@ func (fd *controlFDLisa) SetXattr(c *lisafs.Connection, name string, value strin
 }
 
 // ListXattr implements lisafs.ControlFDImpl.ListXattr.
-func (fd *controlFDLisa) ListXattr(c *lisafs.Connection, size uint64) (lisafs.StringArray, error) {
+func (fd *controlFDLisa) ListXattr(size uint64) (lisafs.StringArray, error) {
 	return nil, unix.EOPNOTSUPP
 }
 
 // RemoveXattr implements lisafs.ControlFDImpl.RemoveXattr.
-func (fd *controlFDLisa) RemoveXattr(c *lisafs.Connection, name string) error {
+func (fd *controlFDLisa) RemoveXattr(name string) error {
 	return unix.EOPNOTSUPP
 }
 
@@ -752,7 +725,7 @@ func (fd *openFDLisa) FD() *lisafs.OpenFD {
 }
 
 // Close implements lisafs.OpenFDImpl.Close.
-func (fd *openFDLisa) Close(c *lisafs.Connection) {
+func (fd *openFDLisa) Close() {
 	if fd.hostFD >= 0 {
 		_ = unix.Close(fd.hostFD)
 		fd.hostFD = -1
@@ -760,45 +733,44 @@ func (fd *openFDLisa) Close(c *lisafs.Connection) {
 }
 
 // Stat implements lisafs.OpenFDImpl.Stat.
-func (fd *openFDLisa) Stat(c *lisafs.Connection) (linux.Statx, error) {
-	var resp linux.Statx
-	return resp, fstatTo(fd.hostFD, &resp)
+func (fd *openFDLisa) Stat() (linux.Statx, error) {
+	return fstatTo(fd.hostFD)
 }
 
 // Sync implements lisafs.OpenFDImpl.Sync.
-func (fd *openFDLisa) Sync(c *lisafs.Connection) error {
+func (fd *openFDLisa) Sync() error {
 	return unix.Fsync(fd.hostFD)
 }
 
 // Write implements lisafs.OpenFDImpl.Write.
-func (fd *openFDLisa) Write(c *lisafs.Connection, buf []byte, off uint64) (uint64, error) {
+func (fd *openFDLisa) Write(buf []byte, off uint64) (uint64, error) {
 	rw := rwfd.NewReadWriter(fd.hostFD)
 	n, err := rw.WriteAt(buf, int64(off))
 	return uint64(n), err
 }
 
 // Read implements lisafs.OpenFDImpl.Read.
-func (fd *openFDLisa) Read(c *lisafs.Connection, off uint64, dataBuf []byte) (uint32, error) {
+func (fd *openFDLisa) Read(buf []byte, off uint64) (uint64, error) {
 	rw := rwfd.NewReadWriter(fd.hostFD)
-	n, err := rw.ReadAt(dataBuf, int64(off))
+	n, err := rw.ReadAt(buf, int64(off))
 	if err != nil && err != io.EOF {
 		return 0, err
 	}
-	return uint32(n), nil
+	return uint64(n), nil
 }
 
 // Allocate implements lisafs.OpenFDImpl.Allocate.
-func (fd *openFDLisa) Allocate(c *lisafs.Connection, mode, off, length uint64) error {
+func (fd *openFDLisa) Allocate(mode, off, length uint64) error {
 	return unix.Fallocate(fd.hostFD, uint32(mode), int64(off), int64(length))
 }
 
 // Flush implements lisafs.OpenFDImpl.Flush.
-func (fd *openFDLisa) Flush(c *lisafs.Connection) error {
+func (fd *openFDLisa) Flush() error {
 	return nil
 }
 
 // Getdent64 implements lisafs.OpenFDImpl.Getdent64.
-func (fd *openFDLisa) Getdent64(c *lisafs.Connection, count uint32, seek0 bool, recordDirent func(lisafs.Dirent64)) error {
+func (fd *openFDLisa) Getdent64(count uint32, seek0 bool, recordDirent func(lisafs.Dirent64)) error {
 	if seek0 {
 		if _, err := unix.Seek(fd.hostFD, 0, 0); err != nil {
 			return err
@@ -856,81 +828,68 @@ func (fd *openFDLisa) Getdent64(c *lisafs.Connection, count uint32, seek0 bool, 
 	return nil
 }
 
-// tryStepLocked tries to walk via open() with different modes as documented.
-// It then initializes and returns the control FD.
-//
-// Precondition: server's rename mutex must at least be read locked.
-func tryStepLocked(c *lisafs.Connection, name string, parent *controlFDLisa, open func(flags int) (int, error)) (*controlFDLisa, unix.Stat_t, error) {
+// Renamed implements lisafs.OpenFDImpl.Renamed.
+func (fd *openFDLisa) Renamed() {
+	// openFDLisa does not have any state to update on rename.
+}
+
+// tryOpen tries to open() with different modes as documented.
+func tryOpen(open func(int) (int, error)) (hostFD int, err error) {
 	// Attempt to open file in the following in order:
 	//   1. RDONLY | NONBLOCK: for all files, directories, ro mounts, FIFOs.
 	//      Use non-blocking to prevent getting stuck inside open(2) for
 	//      FIFOs. This option has no effect on regular files.
 	//   2. PATH: for symlinks, sockets.
-	options := []struct {
-		flag     int
-		readable bool
-	}{
-		{
-			flag:     unix.O_RDONLY | unix.O_NONBLOCK,
-			readable: true,
-		},
-		{
-			flag:     unix.O_PATH,
-			readable: false,
-		},
+	flags := []int{
+		unix.O_RDONLY | unix.O_NONBLOCK,
+		unix.O_PATH,
 	}
 
-	for i, option := range options {
-		hostFD, err := open(option.flag | openFlags)
+	for _, flag := range flags {
+		hostFD, err = open(flag | openFlags)
 		if err == nil {
-			var stat unix.Stat_t
-			if err = unix.Fstat(hostFD, &stat); err == nil {
-				return newControlFDLisaLocked(c, hostFD, parent, name, linux.FileMode(stat.Mode)), stat, nil
-			}
-			unix.Close(hostFD)
+			return
 		}
 
-		e := extractErrno(err)
-		if e == unix.ENOENT {
+		if e := extractErrno(err); e == unix.ENOENT {
 			// File doesn't exist, no point in retrying.
-			return nil, unix.Stat_t{}, e
+			return -1, e
 		}
-		if i < len(options)-1 {
-			continue
-		}
-		return nil, unix.Stat_t{}, e
 	}
-	panic("unreachable")
+	return
 }
 
-func fstatTo(hostFD int, stat *linux.Statx) error {
-	var unixStat unix.Stat_t
-	if err := unix.Fstat(hostFD, &unixStat); err != nil {
-		return err
+func fstatTo(hostFD int) (linux.Statx, error) {
+	var stat unix.Stat_t
+	if err := unix.Fstat(hostFD, &stat); err != nil {
+		return linux.Statx{}, err
 	}
 
-	unixToLinuxStat(&unixStat, stat)
-	return nil
-}
-
-func unixToLinuxStat(from *unix.Stat_t, to *linux.Statx) {
-	to.Mask = unix.STATX_TYPE | unix.STATX_MODE | unix.STATX_INO | unix.STATX_NLINK | unix.STATX_UID | unix.STATX_GID | unix.STATX_SIZE | unix.STATX_BLOCKS | unix.STATX_ATIME | unix.STATX_MTIME | unix.STATX_CTIME
-	to.Mode = uint16(from.Mode)
-	to.DevMinor = unix.Minor(from.Dev)
-	to.DevMajor = unix.Major(from.Dev)
-	to.Ino = from.Ino
-	to.Nlink = uint32(from.Nlink)
-	to.UID = from.Uid
-	to.GID = from.Gid
-	to.RdevMinor = unix.Minor(from.Rdev)
-	to.RdevMajor = unix.Major(from.Rdev)
-	to.Size = uint64(from.Size)
-	to.Blksize = uint32(from.Blksize)
-	to.Blocks = uint64(from.Blocks)
-	to.Atime.Sec = from.Atim.Sec
-	to.Atime.Nsec = uint32(from.Atim.Nsec)
-	to.Mtime.Sec = from.Mtim.Sec
-	to.Mtime.Nsec = uint32(from.Mtim.Nsec)
-	to.Ctime.Sec = from.Ctim.Sec
-	to.Ctime.Nsec = uint32(from.Ctim.Nsec)
+	return linux.Statx{
+		Mask:      unix.STATX_TYPE | unix.STATX_MODE | unix.STATX_INO | unix.STATX_NLINK | unix.STATX_UID | unix.STATX_GID | unix.STATX_SIZE | unix.STATX_BLOCKS | unix.STATX_ATIME | unix.STATX_MTIME | unix.STATX_CTIME,
+		Mode:      uint16(stat.Mode),
+		DevMinor:  unix.Minor(stat.Dev),
+		DevMajor:  unix.Major(stat.Dev),
+		Ino:       stat.Ino,
+		Nlink:     uint32(stat.Nlink),
+		UID:       stat.Uid,
+		GID:       stat.Gid,
+		RdevMinor: unix.Minor(stat.Rdev),
+		RdevMajor: unix.Major(stat.Rdev),
+		Size:      uint64(stat.Size),
+		Blksize:   uint32(stat.Blksize),
+		Blocks:    uint64(stat.Blocks),
+		Atime: linux.StatxTimestamp{
+			Sec:  stat.Atim.Sec,
+			Nsec: uint32(stat.Atim.Nsec),
+		},
+		Mtime: linux.StatxTimestamp{
+			Sec:  stat.Mtim.Sec,
+			Nsec: uint32(stat.Mtim.Nsec),
+		},
+		Ctime: linux.StatxTimestamp{
+			Sec:  stat.Ctim.Sec,
+			Nsec: uint32(stat.Ctim.Nsec),
+		},
+	}, nil
 }
