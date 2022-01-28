@@ -26,11 +26,11 @@ import (
 )
 
 const (
-	// defaultQueueDataSize is the size of the shared memory data region that
+	// DefaultQueueDataSize is the size of the shared memory data region that
 	// holds the scatter/gather buffers.
-	defaultQueueDataSize = 1 << 20 // 1MiB
+	DefaultQueueDataSize = 1 << 20 // 1MiB
 
-	// defaultQueuePipeSize is the size of the pipe that holds the packet descriptors.
+	// DefaultQueuePipeSize is the size of the pipe that holds the packet descriptors.
 	//
 	// Assuming each packet data is approximately 1280 bytes (IPv6 Minimum MTU)
 	// then we can hold approximately 1024*1024/1280 ~ 819 packets in the data
@@ -45,17 +45,21 @@ const (
 	// descriptors. We could go with a 32 KiB pipe but to give it some slack in
 	// how the upper layer may make use of the scatter gather buffers we double
 	// this to hold enough descriptors.
-	defaultQueuePipeSize = 64 << 10 // 64KiB
+	DefaultQueuePipeSize = 64 << 10 // 64KiB
 
-	// defaultSharedDataSize is the size of the sharedData region used to
+	// DefaultSharedDataSize is the size of the sharedData region used to
 	// enable/disable notifications.
-	defaultSharedDataSize = 4 << 10 // 4KiB
+	DefaultSharedDataSize = 4 << 10 // 4KiB
 
 	// DefaultBufferSize is the size of each individual buffer that the data
 	// region is broken down into to hold packet data. Should be larger than
 	// 1500 + 14 (Ethernet header) + 10 (VirtIO header) to fit each packet
 	// in a single buffer.
 	DefaultBufferSize = 2048
+
+	// DefaultTmpDir is the path used to create the memory files if a path
+	// is not provided.
+	DefaultTmpDir = "/dev/shm"
 )
 
 // A QueuePair represents a pair of TX/RX queues.
@@ -67,24 +71,34 @@ type QueuePair struct {
 	rxCfg QueueConfig
 }
 
+// QueueOptions allows queue specific configuration to be specified when
+// creating a QueuePair.
+type QueueOptions struct {
+	// sharedMemPath is the path to use to create the shared memory backing
+	// files for the queue.
+	//
+	// If unspecified it defaults to "/dev/shm".
+	sharedMemPath string
+}
+
 // NewQueuePair creates a shared memory QueuePair.
-func NewQueuePair() (*QueuePair, error) {
-	txCfg, err := createQueueFDs(queueSizes{
-		dataSize:       defaultQueueDataSize,
-		txPipeSize:     defaultQueuePipeSize,
-		rxPipeSize:     defaultQueuePipeSize,
-		sharedDataSize: defaultSharedDataSize,
+func NewQueuePair(opts QueueOptions) (*QueuePair, error) {
+	txCfg, err := createQueueFDs(opts.sharedMemPath, queueSizes{
+		dataSize:       DefaultQueueDataSize,
+		txPipeSize:     DefaultQueuePipeSize,
+		rxPipeSize:     DefaultQueuePipeSize,
+		sharedDataSize: DefaultSharedDataSize,
 	})
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tx queue: %s", err)
 	}
 
-	rxCfg, err := createQueueFDs(queueSizes{
-		dataSize:       defaultQueueDataSize,
-		txPipeSize:     defaultQueuePipeSize,
-		rxPipeSize:     defaultQueuePipeSize,
-		sharedDataSize: defaultSharedDataSize,
+	rxCfg, err := createQueueFDs(opts.sharedMemPath, queueSizes{
+		dataSize:       DefaultQueueDataSize,
+		txPipeSize:     DefaultQueuePipeSize,
+		rxPipeSize:     DefaultQueuePipeSize,
+		sharedDataSize: DefaultSharedDataSize,
 	})
 
 	if err != nil {
@@ -121,7 +135,7 @@ type queueSizes struct {
 	sharedDataSize int64
 }
 
-func createQueueFDs(s queueSizes) (QueueConfig, error) {
+func createQueueFDs(sharedMemPath string, s queueSizes) (QueueConfig, error) {
 	success := false
 	var eventFD eventfd.Eventfd
 	var dataFD, txPipeFD, rxPipeFD, sharedDataFD int
@@ -141,19 +155,19 @@ func createQueueFDs(s queueSizes) (QueueConfig, error) {
 	if err != nil {
 		return QueueConfig{}, fmt.Errorf("eventfd failed: %v", err)
 	}
-	dataFD, err = createFile(s.dataSize, false)
+	dataFD, err = createFile(sharedMemPath, s.dataSize, false)
 	if err != nil {
 		return QueueConfig{}, fmt.Errorf("failed to create dataFD: %s", err)
 	}
-	txPipeFD, err = createFile(s.txPipeSize, true)
+	txPipeFD, err = createFile(sharedMemPath, s.txPipeSize, true)
 	if err != nil {
 		return QueueConfig{}, fmt.Errorf("failed to create txPipeFD: %s", err)
 	}
-	rxPipeFD, err = createFile(s.rxPipeSize, true)
+	rxPipeFD, err = createFile(sharedMemPath, s.rxPipeSize, true)
 	if err != nil {
 		return QueueConfig{}, fmt.Errorf("failed to create rxPipeFD: %s", err)
 	}
-	sharedDataFD, err = createFile(s.sharedDataSize, false)
+	sharedDataFD, err = createFile(sharedMemPath, s.sharedDataSize, false)
 	if err != nil {
 		return QueueConfig{}, fmt.Errorf("failed to create sharedDataFD: %s", err)
 	}
@@ -167,8 +181,11 @@ func createQueueFDs(s queueSizes) (QueueConfig, error) {
 	}, nil
 }
 
-func createFile(size int64, initQueue bool) (fd int, err error) {
-	const tmpDir = "/dev/shm/"
+func createFile(sharedMemPath string, size int64, initQueue bool) (fd int, err error) {
+	var tmpDir = DefaultTmpDir
+	if sharedMemPath != "" {
+		tmpDir = sharedMemPath
+	}
 	f, err := ioutil.TempFile(tmpDir, "sharedmem_test")
 	if err != nil {
 		return -1, fmt.Errorf("TempFile failed: %v", err)

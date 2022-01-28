@@ -162,7 +162,7 @@ func newTestContext(t *testing.T) *testContext {
 	if err != nil {
 		t.Fatalf("failed to create peerFDs: %s", err)
 	}
-	q, err := sharedmem.NewQueuePair()
+	q, err := sharedmem.NewQueuePair(sharedmem.QueueOptions{})
 	if err != nil {
 		t.Fatalf("failed to create sharedmem queue: %s", err)
 	}

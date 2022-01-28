@@ -104,7 +104,7 @@ func newTestContext(t *testing.T, mtu, bufferSize uint32, addr tcpip.LinkAddress
 		t:        t,
 		packetCh: make(chan struct{}, 1000000),
 	}
-	c.txCfg, err = createQueueFDs(queueSizes{
+	c.txCfg, err = createQueueFDs("" /* sharedMemPath */, queueSizes{
 		dataSize:       queueDataSize,
 		txPipeSize:     queuePipeSize,
 		rxPipeSize:     queuePipeSize,
@@ -113,7 +113,7 @@ func newTestContext(t *testing.T, mtu, bufferSize uint32, addr tcpip.LinkAddress
 	if err != nil {
 		t.Fatalf("createQueueFDs for tx failed: %s", err)
 	}
-	c.rxCfg, err = createQueueFDs(queueSizes{
+	c.rxCfg, err = createQueueFDs("" /* sharedMemPath */, queueSizes{
 		dataSize:       queueDataSize,
 		txPipeSize:     queuePipeSize,
 		rxPipeSize:     queuePipeSize,
