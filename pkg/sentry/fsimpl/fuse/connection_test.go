@@ -74,7 +74,9 @@ func TestConnectionAbort(t *testing.T) {
 	testObj := primitive.Uint32(rand.Uint32())
 	for i := 0; i < int(numRequests); i++ {
 		req := conn.NewRequest(creds, uint32(i), uint64(i), 0, &testObj)
+		conn.fd.mu.Lock()
 		fut, err := conn.callFutureLocked(task, req)
+		conn.fd.mu.Unlock()
 		if err != nil {
 			t.Fatalf("callFutureLocked failed: %v", err)
 		}

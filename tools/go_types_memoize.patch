@@ -1,0 +1,39 @@
+diff '--color=auto' -r -u2 a/go/src/go/types/scope.go b/go/src/go/types/scope.go
+--- a/go/src/go/types/scope.go	2022-01-06 19:14:25.000000000 +0000
++++ b/go/src/go/types/scope.go	2022-02-03 18:50:35.526563967 +0000
+@@ -24,4 +24,5 @@
+ 	children []*Scope
+ 	elems    map[string]Object // lazily allocated
++	sorted   []string          // lazily allocated
+ 	pos, end token.Pos         // scope extent; may be invalid
+ 	comment  string            // for debugging only
+@@ -32,5 +33,5 @@
+ // scope, if any. The comment is for debugging only.
+ func NewScope(parent *Scope, pos, end token.Pos, comment string) *Scope {
+-	s := &Scope{parent, nil, nil, pos, end, comment, false}
++	s := &Scope{parent, nil, nil, nil, pos, end, comment, false}
+ 	// don't add children to Universe scope!
+ 	if parent != nil && parent != Universe {
+@@ -48,12 +49,14 @@
+ // Names returns the scope's element names in sorted order.
+ func (s *Scope) Names() []string {
+-	names := make([]string, len(s.elems))
+-	i := 0
+-	for name := range s.elems {
+-		names[i] = name
+-		i++
++	if len(s.sorted) != len(s.elems) {
++		s.sorted = make([]string, len(s.elems))
++		i := 0
++		for name := range s.elems {
++			s.sorted[i] = name
++			i++
++		}
++		sort.Strings(s.sorted)
+ 	}
+-	sort.Strings(names)
+-	return names
++	return s.sorted
+ }
+ 
+Only in b/go/src/go/types: scope.go.orig

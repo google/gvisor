@@ -185,10 +185,13 @@ debian: ## Builds the debian packages.
 	@$(call build,-c opt //debian:debian)
 .PHONY: debian
 
-smoke-tests: ## Runs a simple smoke test after build runsc.
+smoke-tests: ## Runs a simple smoke test after building runsc.
 	@$(call run,//runsc,--alsologtostderr --network none --debug --TESTONLY-unsafe-nonroot=true --rootless do true)
-	@$(call run,$(RACE_FLAGS) //runsc:runsc-race,--alsologtostderr --network none --debug --TESTONLY-unsafe-nonroot=true --rootless do true)
 .PHONY: smoke-tests
+
+smoke-race-tests: ## Runs a smoke test after build building runsc in race configuration.
+	@$(call run,$(RACE_FLAGS) //runsc:runsc-race,--alsologtostderr --network none --debug --TESTONLY-unsafe-nonroot=true --rootless do true)
+.PHONY: smoke-race-tests
 
 nogo-tests:
 	@$(call test,--build_tag_filters=nogo --test_tag_filters=nogo //:all pkg/... tools/...)

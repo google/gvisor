@@ -69,30 +69,27 @@ def _nogo_stdlib_impl(ctx):
     # Build the analyzer command.
     facts_file = ctx.actions.declare_file(ctx.label.name + ".facts")
     findings_file = ctx.actions.declare_file(ctx.label.name + ".raw_findings")
-    args_file = ctx.actions.declare_file(ctx.label.name + "_args_file")
-    ctx.actions.write(
-        output = args_file,
-        content = "\n".join(args + [
-            "bundle",
-            "-findings=%s" % findings_file.path,
-            "-facts=%s" % facts_file.path,
-            "-root=.*?/src/",
-        ] + [f.path for f in go_ctx.stdlib_srcs]),
-    )
     ctx.actions.run(
         # For the standard library, we need to include the full set of Go
         # sources in the inputs.
-        inputs = inputs + go_ctx.stdlib_srcs + [args_file],
+        inputs = inputs + go_ctx.stdlib_srcs,
         outputs = [facts_file, findings_file],
         tools = depset(go_ctx.runfiles.to_list() + ctx.files._nogo),
         executable = ctx.files._nogo[0],
         env = go_ctx.env,
         mnemonic = "GoStandardLibraryAnalysis",
-        # Note that this does not support work execution currently. There is an
-        # issue with stdout pollution that is not yet resolved, so this is kept
-        # as a separate menomic.
         progress_message = "Analyzing Go Standard Library",
-        arguments = ["@%s" % args_file.path],
+        # Since these actions are generally I/O bound, reading source files,
+        # facts, binaries and serializing results, disable sandboxing. This can
+        # be enabled without any issues for correctness, but we want to avoid
+        # paying the FUSE penalty.
+        execution_requirements = {"no-sandbox": "1"},
+        arguments = args + [
+            "bundle",
+            "-findings=%s" % findings_file.path,
+            "-facts=%s" % facts_file.path,
+            "-root=.*?/src/",
+        ] + [f.path for f in go_ctx.stdlib_srcs],
     )
 
     # Return the stdlib facts as output.
@@ -183,7 +180,8 @@ def _nogo_config(ctx, deps):
         # Configure where to find the binary & fact files. Note that this will
         # use .x and .a regardless of whether this is a go_binary rule, since
         # these dependencies must be go_library rules.
-        _, x_file = _select_objfile(info.binaries)
+        a_file, x_file = _select_objfile(info.binaries)
+        args.append("-archive=%s=%s" % (info.importpath, a_file.path))
         args.append("-import=%s=%s" % (info.importpath, x_file.path))
         args.append("-facts=%s=%s" % (info.importpath, info.facts.path))
 
@@ -191,6 +189,7 @@ def _nogo_config(ctx, deps):
         raw_findings.extend(info.raw_findings)
 
         # Ensure the above are available as inputs.
+        inputs.append(a_file)
         inputs.append(x_file)
         inputs.append(info.facts)
 
@@ -207,12 +206,12 @@ def _nogo_package_config(ctx, deps, importpath = None, target = None):
     binaries = []
     if target != None:
         binaries.extend(target.files.to_list())
-    target_objfile, target_xfile = _select_objfile(binaries)
-    if target_objfile != None:
-        inputs.append(target_objfile)
+    target_afile, target_xfile = _select_objfile(binaries)
     if target_xfile != None:
-        inputs.append(target_xfile)
+        args.append("-archive=%s=%s" % (importpath, target_afile.path))
         args.append("-import=%s=%s" % (importpath, target_xfile.path))
+        inputs.append(target_afile)
+        inputs.append(target_xfile)
 
     # Add the standard library facts.
     stdlib_info = ctx.attr._nogo_stdlib[NogoStdlibInfo]
@@ -272,28 +271,24 @@ def _nogo_aspect_impl(target, ctx):
     go_ctx, args, inputs, raw_findings = _nogo_package_config(ctx, deps, importpath = importpath, target = target)
 
     # Build the argument file, and the runner.
-    args_file = ctx.actions.declare_file(ctx.label.name + "_args_file")
     facts_file = ctx.actions.declare_file(ctx.label.name + ".facts")
     findings_file = ctx.actions.declare_file(ctx.label.name + ".findings")
-    ctx.actions.write(
-        output = args_file,
-        content = "\n".join(args + [
-            "check",
-            "-findings=%s" % findings_file.path,
-            "-facts=%s" % facts_file.path,
-            "-package=%s" % importpath,
-        ] + [src.path for src in srcs]),
-    )
     ctx.actions.run(
-        inputs = inputs + srcs + [args_file],
+        inputs = inputs + srcs,
         outputs = [findings_file, facts_file],
         tools = depset(go_ctx.runfiles.to_list() + ctx.files._nogo),
         executable = ctx.files._nogo[0],
         env = go_ctx.env,
         mnemonic = "GoStaticAnalysis",
         progress_message = "Analyzing %s" % target.label,
-        execution_requirements = {"supports-workers": "1"},
-        arguments = ["@%s" % args_file.path],
+        # See above.
+        execution_requirements = {"no-sandbox": "1"},
+        arguments = args + [
+            "check",
+            "-findings=%s" % findings_file.path,
+            "-facts=%s" % facts_file.path,
+            "-package=%s" % importpath,
+        ] + [src.path for src in srcs],
     )
 
     # Return the package facts as output.
@@ -346,25 +341,19 @@ def _nogo_test_impl(ctx):
     # Build a step that applies the configuration.
     config_srcs = ctx.attr.config[NogoConfigInfo].srcs
     findings = ctx.actions.declare_file(ctx.label.name + ".findings")
-    args_file = ctx.actions.declare_file(ctx.label.name + "_args_file")
-    ctx.actions.write(
-        output = args_file,
-        content = "\n".join(
-            ["filter"] +
-            ["-config=%s" % f.path for f in config_srcs] +
-            ["-output=%s" % findings.path] +
-            [f.path for f in raw_findings],
-        ),
-    )
     ctx.actions.run(
-        inputs = raw_findings + ctx.files.srcs + config_srcs + [args_file],
+        inputs = raw_findings + ctx.files.srcs + config_srcs,
         outputs = [findings],
         tools = depset(ctx.files._nogo),
         executable = ctx.files._nogo[0],
         mnemonic = "GoStaticAnalysis",
         progress_message = "Generating %s" % ctx.label,
-        execution_requirements = {"supports-workers": "1"},
-        arguments = ["@%s" % args_file.path],
+        # See above.
+        execution_requirements = {"no-sandbox": "1"},
+        arguments = ["filter"] +
+                    ["-config=%s" % f.path for f in config_srcs] +
+                    ["-output=%s" % findings.path] +
+                    [f.path for f in raw_findings],
     )
 
     # Build a runner that checks the filtered facts.
@@ -375,7 +364,7 @@ def _nogo_test_impl(ctx):
     runner = ctx.actions.declare_file(ctx.label.name)
     runner_content = [
         "#!/bin/bash",
-        "exec %s filter -text %s" % (ctx.files._nogo[0].short_path, findings.short_path),
+        "exec %s filter -test -text %s" % (ctx.files._nogo[0].short_path, findings.short_path),
         "",
     ]
     ctx.actions.write(runner, "\n".join(runner_content), is_executable = True)
@@ -444,26 +433,22 @@ def _nogo_facts_impl(ctx):
     # since this will refer to ctx.files (which contains no binaries).
     go_ctx, args, inputs, _ = _nogo_package_config(ctx, ctx.attr.deps)
 
-    # Build the argument file, and the runner.
-    args_file = ctx.actions.declare_file(ctx.label.name + "_args_file")
-    ctx.actions.write(
-        output = args_file,
-        content = "\n".join(args + [
-            "render",
-            "-template=%s" % ctx.files.template[0].path,
-            "-output=%s" % ctx.outputs.output.path,
-        ] + [src.path for src in ctx.files.srcs]),
-    )
-    inputs += ctx.files.template
+    # Build the runner.
     ctx.actions.run(
-        inputs = inputs + ctx.files.srcs + ctx.files.template + [args_file],
+        inputs = inputs + ctx.files.srcs + ctx.files.template,
         outputs = [ctx.outputs.output],
         tools = depset(go_ctx.runfiles.to_list() + ctx.files._nogo),
         executable = ctx.files._nogo[0],
         env = go_ctx.env,
         mnemonic = "GoStaticAnalysis",
         progress_message = "Generating %s" % ctx.label,
-        arguments = ["@%s" % args_file.path],
+        # See above.
+        execution_requirements = {"no-sandbox": "1"},
+        arguments = args + [
+            "render",
+            "-template=%s" % ctx.files.template[0].path,
+            "-output=%s" % ctx.outputs.output.path,
+        ] + [src.path for src in ctx.files.srcs],
     )
 
     # Return the output.

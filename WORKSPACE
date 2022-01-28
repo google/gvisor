@@ -39,36 +39,52 @@ http_archive(
         # Newer versions of the rules_go rules will automatically strip test
         # binaries of symbols, which we don't want.
         "//tools:rules_go_symbols.patch",
+        # Allow for patching of the go_sdk.
+        "//tools:rules_go_sdk.patch",
     ],
-    sha256 = "8e968b5fcea1d2d64071872b12737bbb5514524ee5f0a4f54f5920266c261acb",
+    sha256 = "d6b2513456fe2229811da7eb67a444be7785f5323c6708b38d851d2b51e54d83",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.28.0/rules_go-v0.28.0.zip",
-        "https://github.com/bazelbuild/rules_go/releases/download/v0.28.0/rules_go-v0.28.0.zip",
+        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.30.0/rules_go-v0.30.0.zip",
+        "https://github.com/bazelbuild/rules_go/releases/download/v0.30.0/rules_go-v0.30.0.zip",
     ],
 )
 
 http_archive(
     name = "bazel_gazelle",
-    sha256 = "62ca106be173579c0a167deb23358fdfe71ffa1e4cfdddf5582af26520f1c66f",
+    sha256 = "de69a09dc70417580aabf20a28619bb3ef60d038470c7cf8442fafcf627c21cb",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.23.0/bazel-gazelle-v0.23.0.tar.gz",
-        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.23.0/bazel-gazelle-v0.23.0.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.24.0/bazel-gazelle-v0.24.0.tar.gz",
+        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.24.0/bazel-gazelle-v0.24.0.tar.gz",
     ],
 )
 
-load("@io_bazel_rules_go//go:deps.bzl", "go_register_toolchains", "go_rules_dependencies")
+load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_rules_dependencies")
+load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies", "go_repository")
 
 go_rules_dependencies()
 
-go_register_toolchains(go_version = "1.16.8")
-
-load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies", "go_repository")
+go_download_sdk(
+    name = "go_sdk",
+    # This implements a fix in the types package which dramatically speeds up
+    # analysis. Without this fix, the nogo rules will often fail to run in
+    # time on our continuous integration.
+    patch = "//tools:go_types_memoize.patch",
+    patch_strip = 2,
+    version = "1.17.6",
+)
 
 gazelle_dependencies()
 
 # Some repository below has a transitive dependency on these repositories.
 # These declarations must precede any later declarations that transitively
-# depend on older versions, since only the first declaration is considered.
+# depend on older versions, since only the first declaration is considered.  go_repository(
+go_repository(
+    name = "org_golang_x_tools",
+    importpath = "golang.org/x/tools",
+    sum = "h1:j9KsMiaP1c3B0OTQGth0/k+miLGTgLsAFUCrF2vLcF8=",
+    version = "v0.1.9",
+)
+
 go_repository(
     name = "org_golang_x_sys",
     importpath = "golang.org/x/sys",
@@ -81,6 +97,20 @@ go_repository(
     importpath = "golang.org/x/net",
     sum = "h1:a8jGStKg0XqKDlKqjLrXn0ioF5MH36pT7Z0BRTqLhbk=",
     version = "v0.0.0-20210503060351-7fd8e65b6420",
+)
+
+go_repository(
+    name = "co_honnef_go_tools",
+    importpath = "honnef.co/go/tools",
+    sum = "h1:MNh1AVMyVX23VUHE2O27jm6lNj3vjO5DexS4A1xvnzk=",
+    version = "v0.2.2",
+)
+
+go_repository(
+    name = "org_golang_x_oauth2",
+    importpath = "golang.org/x/oauth2",
+    sum = "h1:RerP+noqYHUQ8CMRcPlC2nvTa4dcBIjegkuWdcUDuqg=",
+    version = "v0.0.0-20211104180415-d3ed0bb246c8",
 )
 
 # Load C++ rules.
@@ -585,11 +615,11 @@ rbe_autoconfig(name = "rbe_default")
 
 http_archive(
     name = "rules_pkg",
+    sha256 = "62eeb544ff1ef41d786e329e1536c1d541bb9bcad27ae984d57f18f314018e66",
     urls = [
         "https://mirror.bazel.build/github.com/bazelbuild/rules_pkg/releases/download/0.6.0/rules_pkg-0.6.0.tar.gz",
         "https://github.com/bazelbuild/rules_pkg/releases/download/0.6.0/rules_pkg-0.6.0.tar.gz",
     ],
-    sha256 = "62eeb544ff1ef41d786e329e1536c1d541bb9bcad27ae984d57f18f314018e66",
 )
 
 load("@rules_pkg//:deps.bzl", "rules_pkg_dependencies")
@@ -821,13 +851,6 @@ go_repository(
 )
 
 go_repository(
-    name = "org_golang_x_tools",
-    importpath = "golang.org/x/tools",
-    sum = "h1:ouewzE6p+/VEB31YYnTbEJdi8pFqKp4P4n85vwo3DHA=",
-    version = "v0.1.5",
-)
-
-go_repository(
     name = "org_golang_x_xerrors",
     importpath = "golang.org/x/xerrors",
     sum = "h1:go1bK/D/BFZV2I8cIQd1NKEZ+0owSTG1fDTci4IqFcE=",
@@ -846,13 +869,6 @@ go_repository(
     importpath = "github.com/golang/protobuf",
     sum = "h1:ROPKBNFfQgOUMifHyP+KYbvpjbdoFNs+aK7DXlji0Tw=",
     version = "v1.5.2",
-)
-
-go_repository(
-    name = "org_golang_x_oauth2",
-    importpath = "golang.org/x/oauth2",
-    sum = "h1:B333XXssMuKQeBwiNODx4TupZy7bf4sxFZnN2ZOcvUE=",
-    version = "v0.0.0-20211005180243-6b3c2da341f1",
 )
 
 go_repository(
@@ -972,13 +988,6 @@ go_repository(
     importpath = "go.opencensus.io",
     sum = "h1:gqCw0LfLxScz8irSi8exQc7fyQ0fKQU/qnC/X8+V/1M=",
     version = "v0.23.0",
-)
-
-go_repository(
-    name = "co_honnef_go_tools",
-    importpath = "honnef.co/go/tools",
-    sum = "h1:/EPr//+UMMXwMTkXvCCoaJDq8cpjMO80Ou+L4PDo2mY=",
-    version = "v0.2.1",
 )
 
 go_repository(

@@ -218,17 +218,6 @@ type Config struct {
 	Analyzers map[string]AnalyzerConfig `yaml:"analyzers"`
 }
 
-// Size implements worker.Sizer.Size.
-func (c *Config) Size() int64 {
-	count := c.Global.RegexpCount()
-	for _, config := range c.Analyzers {
-		count += config.RegexpCount()
-	}
-	// The size is measured as the number of regexps that are compiled
-	// here. We multiply by 1k to produce an estimate.
-	return 1024 * count
-}
-
 // Merge merges two configurations.
 func (c *Config) Merge(other *Config) {
 	// Merge all groups.
