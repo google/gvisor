@@ -58,6 +58,10 @@ func (d *counterDispatcher) DeliverNetworkPacket(tcpip.NetworkProtocolNumber, *s
 	d.count++
 }
 
+func (*counterDispatcher) DeliverLinkPacket(tcpip.NetworkProtocolNumber, *stack.PacketBuffer, bool) {
+	panic("not implemented")
+}
+
 func TestNestedLinkEndpoint(t *testing.T) {
 	var (
 		childEP  childEndpoint

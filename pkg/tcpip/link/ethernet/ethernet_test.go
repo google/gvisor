@@ -39,6 +39,10 @@ func (t *testNetworkDispatcher) DeliverNetworkPacket(tcpip.NetworkProtocolNumber
 	t.networkPackets++
 }
 
+func (*testNetworkDispatcher) DeliverLinkPacket(tcpip.NetworkProtocolNumber, *stack.PacketBuffer, bool) {
+	panic("not implemented")
+}
+
 func TestDeliverNetworkPacket(t *testing.T) {
 	const (
 		linkAddr       = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")

@@ -155,6 +155,10 @@ func (c *testContext) DeliverNetworkPacket(proto tcpip.NetworkProtocolNumber, pk
 	c.packetCh <- struct{}{}
 }
 
+func (c *testContext) DeliverLinkPacket(tcpip.NetworkProtocolNumber, *stack.PacketBuffer, bool) {
+	c.t.Fatal("DeliverLinkPacket not implemented")
+}
+
 func (c *testContext) cleanup() {
 	c.ep.Close()
 	closeFDs(c.txCfg)

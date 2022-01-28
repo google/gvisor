@@ -28,6 +28,9 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
+var _ stack.NetworkDispatcher = (*Endpoint)(nil)
+var _ stack.LinkEndpoint = (*Endpoint)(nil)
+
 // Endpoint is a waitable link-layer endpoint.
 type Endpoint struct {
 	dispatchGate sync.Gate
@@ -56,6 +59,16 @@ func (e *Endpoint) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pk
 	}
 
 	e.dispatcher.DeliverNetworkPacket(protocol, pkt)
+	e.dispatchGate.Leave()
+}
+
+// DeliverLinkPacket implements stack.NetworkDispatcher.
+func (e *Endpoint) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer, incoming bool) {
+	if !e.dispatchGate.Enter() {
+		return
+	}
+
+	e.dispatcher.DeliverLinkPacket(protocol, pkt, incoming)
 	e.dispatchGate.Leave()
 }
 
