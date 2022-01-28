@@ -441,11 +441,12 @@ func (f *ClientFD) UnlinkAt(ctx context.Context, name string, flags uint32) erro
 	return err
 }
 
-// RenameTo makes the RenameAt RPC which renames f to newDirFD directory with
-// name newName.
-func (f *ClientFD) RenameTo(ctx context.Context, newDirFD FDID, newName string) error {
+// RenameAt makes the RenameAt RPC which renames oldName inside directory f to
+// newDirFD directory with name newName.
+func (f *ClientFD) RenameAt(ctx context.Context, oldName string, newDirFD FDID, newName string) error {
 	req := RenameAtReq{
-		Renamed: f.fd,
+		OldDir:  f.fd,
+		OldName: SizedString(oldName),
 		NewDir:  newDirFD,
 		NewName: SizedString(newName),
 	}
