@@ -245,6 +245,7 @@ func (g *Gofer) serveLisafs(spec *specs.Spec, conf *config.Config, root string) 
 		server.StartConnection(conn)
 	}
 	server.Wait()
+	server.Destroy()
 	log.Infof("All lisafs servers exited.")
 	return subcommands.ExitSuccess
 }
