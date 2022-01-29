@@ -15,9 +15,6 @@
 // These tests are flaky when run under the go race detector due to some
 // iterations taking long enough that the retransmit timer can kick in causing
 // the congestion window measurements to fail due to extra packets etc.
-//
-//go:build !race
-// +build !race
 
 package tcp_noracedetector_test
 

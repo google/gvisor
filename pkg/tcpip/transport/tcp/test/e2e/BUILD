@@ -164,6 +164,9 @@ go_test(
     name = "tcp_noracedetector_test",
     size = "small",
     srcs = ["tcp_noracedetector_test.go"],
+    # These tests can be extremely slow/flaky when run under gotsan,
+    # so exclude them from gotsan runs.
+    tags = ["nogotsan"],
     deps = [
         ":e2e",
         "//pkg/refs",
