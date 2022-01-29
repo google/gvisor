@@ -104,6 +104,7 @@ func runServerClient(t testing.TB, clientFn func(c *lisafs.Client)) {
 
 	c.Close() // This should trigger client and server shutdown.
 	ts.Wait()
+	ts.Server.Destroy()
 }
 
 // TestStartUp tests that the server and client can be started up correctly.

@@ -30,6 +30,8 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/lisafs"
+	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/unet"
 )
 
@@ -49,10 +51,9 @@ type Tester interface {
 
 // RunAllLocalFSTests runs all local FS tests as subtests.
 func RunAllLocalFSTests(t *testing.T, tester Tester) {
+	refs.SetLeakMode(refs.LeaksPanic)
 	for name, testFn := range localFSTests {
-		t.Run(name, func(t *testing.T) {
-			runServerClient(t, tester, testFn)
-		})
+		runServerClient(t, tester, name, testFn)
 	}
 }
 
@@ -74,7 +75,7 @@ var localFSTests map[string]testFunc = map[string]testFunc{
 	"Getdents":        testGetdents,
 }
 
-func runServerClient(t *testing.T, tester Tester, testFn testFunc) {
+func runServerClient(t *testing.T, tester Tester, testName string, testFn testFunc) {
 	mountPath, err := ioutil.TempDir(os.Getenv("TEST_TMPDIR"), "")
 	if err != nil {
 		t.Fatalf("creation of temporary mountpoint failed: %v", err)
@@ -109,8 +110,15 @@ func runServerClient(t *testing.T, tester Tester, testFn testFunc) {
 	rootFile := c.NewFD(root.ControlFD)
 
 	ctx := context.Background()
-	testFn(ctx, t, tester, rootFile)
+	t.Run(testName, func(t *testing.T) {
+		testFn(ctx, t, tester, rootFile)
+	})
 	closeFD(ctx, t, rootFile)
+
+	// Release server resources and check for leaks. Note that leak check must
+	// happen before c.Close() because server cleans up resources on shutdown.
+	server.Destroy()
+	refsvfs2.DoRepeatedLeakCheck()
 
 	c.Close() // This should trigger client and server shutdown.
 	server.Wait()

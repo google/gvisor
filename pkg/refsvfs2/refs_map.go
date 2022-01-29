@@ -124,24 +124,35 @@ func logEvent(obj CheckedObject, msg string) {
 var checkOnce sync.Once
 
 // DoLeakCheck iterates through the live object map and logs a message for each
-// object. It is called once no reference-counted objects should be reachable
-// anymore, at which point anything left in the map is considered a leak.
+// object. It should be called when no reference-counted objects are reachable
+// anymore, at which point anything left in the map is considered a leak. On
+// multiple calls, only the first call will perform the leak check.
 func DoLeakCheck() {
 	if leakCheckEnabled() {
-		checkOnce.Do(func() {
-			liveObjectsMu.Lock()
-			defer liveObjectsMu.Unlock()
-			leaked := len(liveObjects)
-			if leaked > 0 {
-				msg := fmt.Sprintf("Leak checking detected %d leaked objects:\n", leaked)
-				for obj := range liveObjects {
-					msg += obj.LeakMessage() + "\n"
-				}
-				if leakCheckPanicEnabled() {
-					panic(msg)
-				}
-				log.Warningf(msg)
-			}
-		})
+		checkOnce.Do(doLeakCheck)
+	}
+}
+
+// DoRepeatedLeakCheck is the same as DoLeakCheck except that it can be called
+// multiple times by the caller to incrementally perform leak checking.
+func DoRepeatedLeakCheck() {
+	if leakCheckEnabled() {
+		doLeakCheck()
+	}
+}
+
+func doLeakCheck() {
+	liveObjectsMu.Lock()
+	defer liveObjectsMu.Unlock()
+	leaked := len(liveObjects)
+	if leaked > 0 {
+		msg := fmt.Sprintf("Leak checking detected %d leaked objects:\n", leaked)
+		for obj := range liveObjects {
+			msg += obj.LeakMessage() + "\n"
+		}
+		if leakCheckPanicEnabled() {
+			panic(msg)
+		}
+		log.Warningf(msg)
 	}
 }
