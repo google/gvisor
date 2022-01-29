@@ -103,6 +103,11 @@ func (s *Server) Wait() {
 	s.connWg.Wait()
 }
 
+// Destroy releases resources being used by this server.
+func (s *Server) Destroy() {
+	s.root.DecRef(nil)
+}
+
 // ServerImpl contains the implementation details for a Server.
 // Implementations of ServerImpl should contain their associated Server by
 // value as their first field.
