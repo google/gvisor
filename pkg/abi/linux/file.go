@@ -96,6 +96,11 @@ const (
 	AT_EMPTY_PATH     = 0x1000
 )
 
+// Constants for faccessat2(2).
+const (
+	AT_EACCESS = 0x200
+)
+
 // Constants for all file-related ...at(2) syscalls.
 const (
 	AT_FDCWD = -100
