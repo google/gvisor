@@ -25,6 +25,10 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
+const (
+	maxCachedDentries = 1000
+)
+
 // RegistryImpl implements mq.RegistryImpl. It implements the interface using
 // the message queue filesystem, and is provided to mq.Registry at
 // initialization.
@@ -58,7 +62,8 @@ func NewRegistryImpl(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *
 	}
 
 	fs := &filesystem{
-		devMinor: devMinor,
+		devMinor:   devMinor,
+		Filesystem: kernfs.Filesystem{MaxCachedDentries: maxCachedDentries},
 	}
 	fs.VFSFilesystem().Init(vfsObj, &FilesystemType{}, fs)
 	vfsfs := fs.VFSFilesystem()

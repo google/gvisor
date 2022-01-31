@@ -18,10 +18,8 @@ package mqfs
 
 import (
 	"fmt"
-	"strconv"
 
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/ipc"
@@ -31,8 +29,7 @@ import (
 
 const (
 	// Name is the user-visible filesystem name.
-	Name                     = "mqueue"
-	defaultMaxCachedDentries = uint64(1000)
+	Name = "mqueue"
 )
 
 // FilesystemType implements vfs.FilesystemType.
@@ -67,32 +64,9 @@ func (ft FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualF
 		return nil, nil, fmt.Errorf("mqfs.FilesystemType.GetFilesystem: ipc namespace doesn't have a POSIX registry")
 	}
 	impl := registry.Impl().(*RegistryImpl)
-
-	maxCachedDentries, err := maxCachedDentries(ctx, vfs.GenericParseMountOptions(opts.Data))
-	if err != nil {
-		return nil, nil, err
-	}
-	impl.fs.MaxCachedDentries = maxCachedDentries
-
 	impl.fs.VFSFilesystem().IncRef()
 	impl.root.IncRef()
 	return impl.fs.VFSFilesystem(), impl.root.VFSDentry(), nil
-}
-
-// maxCachedDentries checks mopts for dentry_cache_limit. If a value is
-// specified, parse it into uint64 and return it. Otherwise, return the default
-// value. An error is returned if a value is found but can't be parsed.
-func maxCachedDentries(ctx context.Context, mopts map[string]string) (_ uint64, err error) {
-	max := defaultMaxCachedDentries
-	if str, ok := mopts["dentry_cache_limit"]; ok {
-		delete(mopts, "dentry_cache_limit")
-		max, err = strconv.ParseUint(str, 10, 64)
-		if err != nil {
-			ctx.Warningf("mqfs.FilesystemType.GetFilesystem: invalid dentry cache limit: dentry_cache_limit=%s", str)
-			return 0, linuxerr.EINVAL
-		}
-	}
-	return max, nil
 }
 
 // filesystem implements kernfs.Filesystem.
@@ -111,7 +85,7 @@ func (fs *filesystem) Release(ctx context.Context) {
 
 // MountOptions implements vfs.FilesystemImpl.MountOptions.
 func (fs *filesystem) MountOptions() string {
-	return fmt.Sprintf("dentry_cache_limit=%d", fs.MaxCachedDentries)
+	return ""
 }
 
 // ipcNamespace defines functions we need from kernel.IPCNamespace. We redefine
