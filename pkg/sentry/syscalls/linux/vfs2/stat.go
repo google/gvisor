@@ -245,26 +245,29 @@ func Access(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	addr := args[0].Pointer()
 	mode := args[1].ModeT()
 
-	return 0, nil, accessAt(t, linux.AT_FDCWD, addr, mode)
+	return 0, nil, accessAt(t, linux.AT_FDCWD, addr, mode, 0 /* flags */)
 }
 
 // Faccessat implements Linux syscall faccessat(2).
-//
-// Note that the faccessat() system call does not take a flags argument:
-// "The raw faccessat() system call takes only the first three arguments. The
-// AT_EACCESS and AT_SYMLINK_NOFOLLOW flags are actually implemented within
-// the glibc wrapper function for faccessat().  If either of these flags is
-// specified, then the wrapper function employs fstatat(2) to determine access
-// permissions." - faccessat(2)
 func Faccessat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	dirfd := args[0].Int()
 	addr := args[1].Pointer()
 	mode := args[2].ModeT()
 
-	return 0, nil, accessAt(t, dirfd, addr, mode)
+	return 0, nil, accessAt(t, dirfd, addr, mode, 0 /* flags */)
 }
 
-func accessAt(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr, mode uint) error {
+// Faccessat2 implements Linux syscall faccessat2(2).
+func Faccessat2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	dirfd := args[0].Int()
+	addr := args[1].Pointer()
+	mode := args[2].ModeT()
+	flags := args[3].Int()
+
+	return 0, nil, accessAt(t, dirfd, addr, mode, flags)
+}
+
+func accessAt(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr, mode uint, flags int32) error {
 	const rOK = 4
 	const wOK = 2
 	const xOK = 1
@@ -274,30 +277,38 @@ func accessAt(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr, mode uint) er
 		return linuxerr.EINVAL
 	}
 
+	// faccessat2(2) isn't documented as supporting AT_EMPTY_PATH, but it does.
+	if flags&^(linux.AT_EACCESS|linux.AT_SYMLINK_NOFOLLOW|linux.AT_EMPTY_PATH) != 0 {
+		return linuxerr.EINVAL
+	}
+
 	path, err := copyInPath(t, pathAddr)
 	if err != nil {
 		return err
 	}
-	tpop, err := getTaskPathOperation(t, dirfd, path, disallowEmptyPath, followFinalSymlink)
+	tpop, err := getTaskPathOperation(t, dirfd, path, shouldAllowEmptyPath(flags&linux.AT_EMPTY_PATH != 0), shouldFollowFinalSymlink(flags&linux.AT_SYMLINK_NOFOLLOW == 0))
 	if err != nil {
 		return err
 	}
 	defer tpop.Release(t)
 
-	// access(2) and faccessat(2) check permissions using real
-	// UID/GID, not effective UID/GID.
-	//
-	// "access() needs to use the real uid/gid, not the effective
-	// uid/gid. We do this by temporarily clearing all FS-related
-	// capabilities and switching the fsuid/fsgid around to the
-	// real ones." -fs/open.c:faccessat
-	creds := t.Credentials().Fork()
-	creds.EffectiveKUID = creds.RealKUID
-	creds.EffectiveKGID = creds.RealKGID
-	if creds.EffectiveKUID.In(creds.UserNamespace) == auth.RootUID {
-		creds.EffectiveCaps = creds.PermittedCaps
-	} else {
-		creds.EffectiveCaps = 0
+	creds := t.Credentials()
+	if flags&linux.AT_EACCESS == 0 {
+		// access(2) and faccessat(2) check permissions using real
+		// UID/GID, not effective UID/GID.
+		//
+		// "access() needs to use the real uid/gid, not the effective
+		// uid/gid. We do this by temporarily clearing all FS-related
+		// capabilities and switching the fsuid/fsgid around to the
+		// real ones." -fs/open.c:faccessat
+		creds = creds.Fork()
+		creds.EffectiveKUID = creds.RealKUID
+		creds.EffectiveKGID = creds.RealKGID
+		if creds.EffectiveKUID.In(creds.UserNamespace) == auth.RootUID {
+			creds.EffectiveCaps = creds.PermittedCaps
+		} else {
+			creds.EffectiveCaps = 0
+		}
 	}
 
 	return t.Kernel().VFS().AccessAt(t, creds, vfs.AccessTypes(mode), &tpop.pop)
