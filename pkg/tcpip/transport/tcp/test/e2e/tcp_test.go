@@ -8374,6 +8374,31 @@ func generateRandomPayload(t *testing.T, n int) []byte {
 	return buf
 }
 
+func sendPacketsTillBufferSize(c *context.Context, bytesRead, maxPayload int) (int, int) {
+	data := make([]byte, maxPayload+bytesRead)
+	for i := range data {
+		data[i] = byte(i)
+	}
+
+	numPkts := 0
+	for {
+		// Packets will be sent till the send buffer
+		// size is reached.
+		var r bytes.Reader
+		r.Reset(data[bytesRead : bytesRead+maxPayload])
+		_, err := c.EP.Write(&r, tcpip.WriteOptions{})
+		if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+			break
+		}
+
+		c.ReceiveAndCheckPacketWithOptions(data, bytesRead, maxPayload, 0)
+		bytesRead += maxPayload
+		data = append(data, data...)
+		numPkts++
+	}
+	return bytesRead, numPkts
+}
+
 func TestSendBufferTuning(t *testing.T) {
 	const maxPayload = 536
 	const mtu = header.TCPMinimumSize + header.IPv4MinimumSize + e2e.MaxTCPOptionSize + maxPayload
@@ -8422,21 +8447,7 @@ func TestSendBufferTuning(t *testing.T) {
 			c.WQ.EventRegister(&w)
 			defer c.WQ.EventUnregister(&w)
 
-			bytesRead := 0
-			for {
-				// Packets will be sent till the send buffer
-				// size is reached.
-				var r bytes.Reader
-				r.Reset(data[bytesRead : bytesRead+maxPayload])
-				_, err := c.EP.Write(&r, tcpip.WriteOptions{})
-				if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
-					break
-				}
-
-				c.ReceiveAndCheckPacketWithOptions(data, bytesRead, maxPayload, 0)
-				bytesRead += maxPayload
-				data = append(data, data...)
-			}
+			bytesRead, _ := sendPacketsTillBufferSize(c, 0 /* bytesRead */, maxPayload)
 
 			// Send an ACK and wait for connection to become writable again.
 			c.SendAck(seqnum.Value(context.TestInitialSequenceNumber).Add(1), bytesRead)
@@ -8624,6 +8635,50 @@ func TestECNFlagsAccept(t *testing.T) {
 				t.Fatalf("Accept failed: %s", err)
 			}
 		})
+	}
+}
+
+func TestSendBufferSizeWakeUpWriters(t *testing.T) {
+	const maxPayload = 536
+	const mtu = header.TCPMinimumSize + header.IPv4MinimumSize + e2e.MaxTCPOptionSize + maxPayload
+
+	c := context.New(t, mtu)
+	defer c.Cleanup()
+
+	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
+	checkSendBufferSize(t, c.EP, tcp.DefaultSendBufferSize)
+	// Set send buffer size to send 3 packets.
+	sndBufSz := int64(maxPayload * 3)
+	c.EP.SocketOptions().SetSendBufferSize(sndBufSz, true /* notify */)
+
+	w, ch := waiter.NewChannelEntry(waiter.WritableEvents)
+	c.WQ.EventRegister(&w)
+	defer c.WQ.EventUnregister(&w)
+
+	bytesRead, numPkts := sendPacketsTillBufferSize(c, 0 /* bytesRead */, maxPayload)
+	if numPkts != 3 {
+		t.Fatalf("Number of expected packets to be sent is wrong, got %d, want 3", numPkts)
+	}
+
+	// Increase the send buffer size to send 6 more packets.
+	sndBufSz += int64(maxPayload * 6)
+	c.EP.SocketOptions().SetSendBufferSize(sndBufSz, true /* notify */)
+
+	// Writers should wake up and start sending again.
+	bytesRead, numPkts = sendPacketsTillBufferSize(c, bytesRead, maxPayload)
+	if numPkts != 6 {
+		t.Fatalf("Number of expected packets to be sent is wrong, got %d, want 9", numPkts)
+	}
+
+	// Send an ACK and wait for connection to become writable again.
+	c.SendAck(seqnum.Value(context.TestInitialSequenceNumber).Add(1), bytesRead)
+	select {
+	case <-ch:
+		if err := c.EP.LastError(); err != nil {
+			t.Fatalf("Write failed: %s", err)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatalf("Timed out waiting for connection")
 	}
 }
 
