@@ -53,13 +53,13 @@ func (c *mockClocks) GetTime(id sentrytime.ClockID) (int64, error) {
 // SetClocks called.
 func stateTestClocklessTimekeeper(tb testing.TB) *Timekeeper {
 	ctx := contexttest.Context(tb)
-	mfp := pgalloc.MemoryFileProviderFromContext(ctx)
-	fr, err := mfp.MemoryFile().Allocate(hostarch.PageSize, pgalloc.AllocOpts{Kind: usage.Anonymous})
+	mf := pgalloc.MemoryFileFromContext(ctx)
+	fr, err := mf.Allocate(hostarch.PageSize, pgalloc.AllocOpts{Kind: usage.Anonymous})
 	if err != nil {
 		tb.Fatalf("failed to allocate memory: %v", err)
 	}
 	return &Timekeeper{
-		params: NewVDSOParamPage(mfp, fr),
+		params: NewVDSOParamPage(ctx, fr),
 	}
 }
 

@@ -61,9 +61,10 @@ type FilesystemType struct{}
 type filesystem struct {
 	vfsfs vfs.Filesystem
 
-	// mfp is used to allocate memory that stores regular file contents. mfp is
-	// immutable.
-	mfp pgalloc.MemoryFileProvider
+	// mf is used to allocate memory that stores regular file contents.
+	//
+	// mf is immutable.
+	mf *pgalloc.MemoryFile
 
 	// clock is a realtime clock used to set timestamps in file operations.
 	clock time.Clock
@@ -124,11 +125,7 @@ type FilesystemOpts struct {
 
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
 func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, _ string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
-	mfp := pgalloc.MemoryFileProviderFromContext(ctx)
-	if mfp == nil {
-		panic("MemoryFileProviderFromContext returned nil")
-	}
-
+	mf := pgalloc.MemoryFileFromContext(ctx)
 	rootFileType := uint16(linux.S_IFDIR)
 	newFSType := vfs.FilesystemType(&fstype)
 	tmpfsOpts, tmpfsOptsOk := opts.InternalData.(FilesystemOpts)
@@ -203,7 +200,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		memUsage = *tmpfsOpts.Usage
 	}
 	fs := filesystem{
-		mfp:            mfp,
+		mf:             mf,
 		clock:          clock,
 		devMinor:       devMinor,
 		mopts:          opts.Data,

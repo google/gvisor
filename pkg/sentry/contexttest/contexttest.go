@@ -116,8 +116,6 @@ func (t *TestContext) Value(key interface{}) interface{} {
 		return t.l
 	case pgalloc.CtxMemoryFile:
 		return t.mf
-	case pgalloc.CtxMemoryFileProvider:
-		return t
 	case platform.CtxPlatform:
 		return t.platform
 	case uniqueid.CtxGlobalUniqueID:
@@ -134,11 +132,6 @@ func (t *TestContext) Value(key interface{}) interface{} {
 		}
 		return t.Context.Value(key)
 	}
-}
-
-// MemoryFile implements pgalloc.MemoryFileProvider.MemoryFile.
-func (t *TestContext) MemoryFile() *pgalloc.MemoryFile {
-	return t.mf
 }
 
 // RootContext returns a Context that may be used in tests that need root

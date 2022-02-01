@@ -68,7 +68,7 @@ func New(ctx context.Context, msrc *fs.MountSource, cgroupControllers map[string
 		"cpuinfo":     newCPUInfo(ctx, msrc),
 		"filesystems": seqfile.NewSeqFileInode(ctx, &filesystemsData{}, msrc),
 		"loadavg":     seqfile.NewSeqFileInode(ctx, &loadavgData{}, msrc),
-		"meminfo":     seqfile.NewSeqFileInode(ctx, &meminfoData{k}, msrc),
+		"meminfo":     seqfile.NewSeqFileInode(ctx, &meminfoData{}, msrc),
 		"mounts":      newProcInode(ctx, ramfs.NewSymlink(ctx, fs.RootOwner, "self/mounts"), msrc, fs.Symlink, nil),
 		"net":         newProcInode(ctx, ramfs.NewSymlink(ctx, fs.RootOwner, "self/net"), msrc, fs.Symlink, nil),
 		"self":        newSelf(ctx, pidns, msrc),

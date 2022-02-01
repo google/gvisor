@@ -54,8 +54,8 @@ import (
 // +stateify savable
 type MemoryManager struct {
 	// p and mfp are immutable.
-	p   platform.Platform
-	mfp pgalloc.MemoryFileProvider
+	p  platform.Memory
+	mf *pgalloc.MemoryFile
 
 	// haveASIO is the cached result of p.SupportsAddressSpaceIO(). Aside from
 	// eliminating an indirect call in the hot I/O path, this makes

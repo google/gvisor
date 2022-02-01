@@ -19,10 +19,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	sentrytime "gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -97,9 +97,9 @@ type Timekeeper struct {
 // NewTimekeeper does not take ownership of paramPage.
 //
 // SetClocks must be called on the returned Timekeeper before it is usable.
-func NewTimekeeper(mfp pgalloc.MemoryFileProvider, paramPage memmap.FileRange) *Timekeeper {
+func NewTimekeeper(ctx context.Context, paramPage memmap.FileRange) *Timekeeper {
 	t := Timekeeper{
-		params: NewVDSOParamPage(mfp, paramPage),
+		params: NewVDSOParamPage(ctx, paramPage),
 	}
 	t.realtimeClock = &timekeeperClock{tk: &t, c: sentrytime.Realtime}
 	t.monotonicClock = &timekeeperClock{tk: &t, c: sentrytime.Monotonic}

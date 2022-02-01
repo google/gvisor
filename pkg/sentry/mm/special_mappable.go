@@ -32,7 +32,7 @@ import (
 type SpecialMappable struct {
 	SpecialMappableRefs
 
-	mfp  pgalloc.MemoryFileProvider
+	mf   *pgalloc.MemoryFile
 	fr   memmap.FileRange
 	name string
 }
@@ -42,8 +42,12 @@ type SpecialMappable struct {
 // SpecialMappable will use the given name in /proc/[pid]/maps.
 //
 // Preconditions: fr.Length() != 0.
-func NewSpecialMappable(name string, mfp pgalloc.MemoryFileProvider, fr memmap.FileRange) *SpecialMappable {
-	m := SpecialMappable{mfp: mfp, fr: fr, name: name}
+func NewSpecialMappable(ctx context.Context, name string, fr memmap.FileRange) *SpecialMappable {
+	m := SpecialMappable{
+		mf:   pgalloc.MemoryFileFromContext(ctx),
+		fr:   fr,
+		name: name,
+	}
 	m.InitRefs()
 	return &m
 }
@@ -51,7 +55,7 @@ func NewSpecialMappable(name string, mfp pgalloc.MemoryFileProvider, fr memmap.F
 // DecRef implements refs.RefCounter.DecRef.
 func (m *SpecialMappable) DecRef(ctx context.Context) {
 	m.SpecialMappableRefs.DecRef(func() {
-		m.mfp.MemoryFile().DecRef(m.fr)
+		m.mf.DecRef(m.fr)
 	})
 }
 
@@ -100,7 +104,7 @@ func (m *SpecialMappable) Translate(ctx context.Context, required, optional memm
 		return []memmap.Translation{
 			{
 				Source: source,
-				File:   m.mfp.MemoryFile(),
+				File:   m.mf,
 				Offset: m.fr.Start + source.Start,
 				Perms:  hostarch.AnyAccess,
 			},
@@ -116,14 +120,8 @@ func (m *SpecialMappable) InvalidateUnsavable(ctx context.Context) error {
 	return nil
 }
 
-// MemoryFileProvider returns the MemoryFileProvider whose MemoryFile stores
-// the SpecialMappable's contents.
-func (m *SpecialMappable) MemoryFileProvider() pgalloc.MemoryFileProvider {
-	return m.mfp
-}
-
-// FileRange returns the offsets into MemoryFileProvider().MemoryFile() that
-// store the SpecialMappable's contents.
+// FileRange returns the offsets into the MemoryFile that store the
+// SpecialMappable's contents.
 func (m *SpecialMappable) FileRange() memmap.FileRange {
 	return m.fr
 }
@@ -142,7 +140,7 @@ func (m *SpecialMappable) Length() uint64 {
 // and causing memory for shared anonymous mappings to be allocated up-front
 // instead of on first touch; this is to avoid exacerbating the fs.MountSource
 // leak (b/143656263). Delete this function along with VFS1.
-func NewSharedAnonMappable(length uint64, mfp pgalloc.MemoryFileProvider) (*SpecialMappable, error) {
+func NewSharedAnonMappable(ctx context.Context, length uint64) (*SpecialMappable, error) {
 	if length == 0 {
 		return nil, linuxerr.EINVAL
 	}
@@ -150,9 +148,10 @@ func NewSharedAnonMappable(length uint64, mfp pgalloc.MemoryFileProvider) (*Spec
 	if !ok {
 		return nil, linuxerr.EINVAL
 	}
-	fr, err := mfp.MemoryFile().Allocate(uint64(alignedLen), pgalloc.AllocOpts{Kind: usage.Anonymous})
+	mf := pgalloc.MemoryFileFromContext(ctx)
+	fr, err := mf.Allocate(uint64(alignedLen), pgalloc.AllocOpts{Kind: usage.Anonymous})
 	if err != nil {
 		return nil, err
 	}
-	return NewSpecialMappable("/dev/zero (deleted)", mfp, fr), nil
+	return NewSpecialMappable(ctx, "/dev/zero (deleted)", fr), nil
 }

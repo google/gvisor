@@ -17,6 +17,7 @@ package kernel
 import (
 	"fmt"
 
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -58,8 +59,8 @@ type vdsoParams struct {
 // +stateify savable
 type VDSOParamPage struct {
 	// The parameter page is fr, allocated from mfp.MemoryFile().
-	mfp pgalloc.MemoryFileProvider
-	fr  memmap.FileRange
+	mf *pgalloc.MemoryFile
+	fr memmap.FileRange
 
 	// seq is the current sequence count written to the page.
 	//
@@ -86,9 +87,9 @@ type VDSOParamPage struct {
 //   VDSOParamPage.
 // * VDSOParamPage must be the only writer to fr.
 // * mfp.MemoryFile().MapInternal(fr) must return a single safemem.Block.
-func NewVDSOParamPage(mfp pgalloc.MemoryFileProvider, fr memmap.FileRange) *VDSOParamPage {
+func NewVDSOParamPage(ctx context.Context, fr memmap.FileRange) *VDSOParamPage {
 	return &VDSOParamPage{
-		mfp:               mfp,
+		mf:                pgalloc.MemoryFileFromContext(ctx),
 		fr:                fr,
 		copyScratchBuffer: make([]byte, (*vdsoParams)(nil).SizeBytes()),
 	}
@@ -96,7 +97,7 @@ func NewVDSOParamPage(mfp pgalloc.MemoryFileProvider, fr memmap.FileRange) *VDSO
 
 // access returns a mapping of the param page.
 func (v *VDSOParamPage) access() (safemem.Block, error) {
-	bs, err := v.mfp.MemoryFile().MapInternal(v.fr, hostarch.ReadWrite)
+	bs, err := v.mf.MapInternal(v.fr, hostarch.ReadWrite)
 	if err != nil {
 		return safemem.Block{}, err
 	}

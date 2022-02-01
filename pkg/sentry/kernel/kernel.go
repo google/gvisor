@@ -145,9 +145,7 @@ type Kernel struct {
 
 	// All of the following fields are immutable unless otherwise specified.
 
-	// Platform is the platform that is used to execute tasks in the created
-	// Kernel. See comment on pgalloc.MemoryFileProvider for why Platform is
-	// embedded anonymously (the same issue applies).
+	// Platform is the platform that is used to execute tasks.
 	platform.Platform `state:"nosave"`
 
 	// mf provides application memory.
@@ -898,8 +896,6 @@ func (ctx *createProcessContext) Value(key interface{}) interface{} {
 		return ctx.args.Limits
 	case pgalloc.CtxMemoryFile:
 		return ctx.kernel.mf
-	case pgalloc.CtxMemoryFileProvider:
-		return ctx.kernel
 	case platform.CtxPlatform:
 		return ctx.kernel
 	case uniqueid.CtxGlobalUniqueID:
@@ -1559,7 +1555,7 @@ func (k *Kernel) SetMemoryFile(mf *pgalloc.MemoryFile) {
 	k.mf = mf
 }
 
-// MemoryFile implements pgalloc.MemoryFileProvider.MemoryFile.
+// MemoryFile returns the kernel MemoryFile.
 func (k *Kernel) MemoryFile() *pgalloc.MemoryFile {
 	return k.mf
 }
@@ -1744,8 +1740,6 @@ func (ctx *supervisorContext) Value(key interface{}) interface{} {
 		return limits.NewLimitSet()
 	case pgalloc.CtxMemoryFile:
 		return ctx.Kernel.mf
-	case pgalloc.CtxMemoryFileProvider:
-		return ctx.Kernel
 	case platform.CtxPlatform:
 		return ctx.Kernel
 	case uniqueid.CtxGlobalUniqueID:

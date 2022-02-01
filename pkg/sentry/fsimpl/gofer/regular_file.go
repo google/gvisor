@@ -342,9 +342,8 @@ func (fd *regularFileFD) writeCache(ctx context.Context, d *dentry, offset int64
 	d.mapsMu.Unlock()
 
 	// Finally free pages removed from the cache.
-	mf := d.fs.mfp.MemoryFile()
 	for _, freedFR := range freed {
-		mf.DecRef(freedFR)
+		d.fs.mf.DecRef(freedFR)
 	}
 	return nil
 }
@@ -407,8 +406,7 @@ func (rw *dentryReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) 
 	}
 
 	// Otherwise read from/through the cache.
-	mf := rw.d.fs.mfp.MemoryFile()
-	fillCache := mf.ShouldCacheEvictable()
+	fillCache := rw.d.fs.mf.ShouldCacheEvictable()
 	var dataMuUnlock func()
 	if fillCache {
 		rw.d.dataMu.Lock()
@@ -436,7 +434,7 @@ func (rw *dentryReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) 
 		switch {
 		case seg.Ok():
 			// Get internal mappings from the cache.
-			ims, err := mf.MapInternal(seg.FileRangeOf(seg.Range().Intersect(mr)), hostarch.Read)
+			ims, err := rw.d.fs.mf.MapInternal(seg.FileRangeOf(seg.Range().Intersect(mr)), hostarch.Read)
 			if err != nil {
 				dataMuUnlock()
 				rw.d.handleMu.RUnlock()
@@ -468,8 +466,8 @@ func (rw *dentryReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) 
 					End:   gapEnd,
 				}
 				optMR := gap.Range()
-				err := rw.d.cache.Fill(rw.ctx, reqMR, maxFillRange(reqMR, optMR), rw.d.size, mf, usage.PageCache, h.readToBlocksAt)
-				mf.MarkEvictable(rw.d, pgalloc.EvictableRange{optMR.Start, optMR.End})
+				err := rw.d.cache.Fill(rw.ctx, reqMR, maxFillRange(reqMR, optMR), rw.d.size, rw.d.fs.mf, usage.PageCache, h.readToBlocksAt)
+				rw.d.fs.mf.MarkEvictable(rw.d, pgalloc.EvictableRange{optMR.Start, optMR.End})
 				seg, gap = rw.d.cache.Find(rw.off)
 				if !seg.Ok() {
 					dataMuUnlock()
@@ -534,7 +532,6 @@ func (rw *dentryReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, erro
 	}
 
 	// Otherwise write to/through the cache.
-	mf := rw.d.fs.mfp.MemoryFile()
 	rw.d.dataMu.Lock()
 
 	// Compute the range to write (overflow-checked).
@@ -555,7 +552,7 @@ func (rw *dentryReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, erro
 		case seg.Ok():
 			// Get internal mappings from the cache.
 			segMR := seg.Range().Intersect(mr)
-			ims, err := mf.MapInternal(seg.FileRangeOf(segMR), hostarch.Write)
+			ims, err := rw.d.fs.mf.MapInternal(seg.FileRangeOf(segMR), hostarch.Write)
 			if err != nil {
 				retErr = err
 				goto exitLoop
@@ -608,7 +605,7 @@ exitLoop:
 		if err := fsutil.SyncDirty(rw.ctx, memmap.MappableRange{
 			Start: start,
 			End:   rw.off,
-		}, &rw.d.cache, &rw.d.dirty, rw.d.size, mf, h.writeFromBlocksAt); err != nil {
+		}, &rw.d.cache, &rw.d.dirty, rw.d.size, rw.d.fs.mf, h.writeFromBlocksAt); err != nil {
 			// We have no idea how many bytes were actually flushed.
 			rw.off = start
 			done = 0
@@ -640,7 +637,7 @@ func (d *dentry) writeback(ctx context.Context, offset, size int64) error {
 	return fsutil.SyncDirty(ctx, memmap.MappableRange{
 		Start: uint64(offset),
 		End:   uint64(end),
-	}, &d.cache, &d.dirty, d.size, d.fs.mfp.MemoryFile(), h.writeFromBlocksAt)
+	}, &d.cache, &d.dirty, d.size, d.fs.mf, h.writeFromBlocksAt)
 }
 
 // Seek implements vfs.FileDescriptionImpl.Seek.
@@ -748,9 +745,8 @@ func (d *dentry) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar host
 	if d.fs.mayCachePagesInMemoryFile() {
 		// d.Evict() will refuse to evict memory-mapped pages, so tell the
 		// MemoryFile to not bother trying.
-		mf := d.fs.mfp.MemoryFile()
 		for _, r := range mapped {
-			mf.MarkUnevictable(d, pgalloc.EvictableRange{r.Start, r.End})
+			d.fs.mf.MarkUnevictable(d, pgalloc.EvictableRange{r.Start, r.End})
 		}
 	}
 	d.mapsMu.Unlock()
@@ -768,13 +764,12 @@ func (d *dentry) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar h
 		// Pages that are no longer referenced by any application memory
 		// mappings are now considered unused; allow MemoryFile to evict them
 		// when necessary.
-		mf := d.fs.mfp.MemoryFile()
 		d.dataMu.Lock()
 		for _, r := range unmapped {
 			// Since these pages are no longer mapped, they are no longer
 			// concurrently dirtyable by a writable memory mapping.
 			d.dirty.AllowClean(r)
-			mf.MarkEvictable(d, pgalloc.EvictableRange{r.Start, r.End})
+			d.fs.mf.MarkEvictable(d, pgalloc.EvictableRange{r.Start, r.End})
 		}
 		d.dataMu.Unlock()
 	}
@@ -824,9 +819,8 @@ func (d *dentry) Translate(ctx context.Context, required, optional memmap.Mappab
 		optional.End = pgend
 	}
 
-	mf := d.fs.mfp.MemoryFile()
 	h := d.readHandleLocked()
-	cerr := d.cache.Fill(ctx, required, maxFillRange(required, optional), d.size, mf, usage.PageCache, h.readToBlocksAt)
+	cerr := d.cache.Fill(ctx, required, maxFillRange(required, optional), d.size, d.fs.mf, usage.PageCache, h.readToBlocksAt)
 
 	var ts []memmap.Translation
 	var translatedEnd uint64
@@ -846,7 +840,7 @@ func (d *dentry) Translate(ctx context.Context, required, optional memmap.Mappab
 		}
 		ts = append(ts, memmap.Translation{
 			Source: segMR,
-			File:   mf,
+			File:   d.fs.mf,
 			Offset: seg.FileRangeOf(segMR).Start,
 			Perms:  perms,
 		})
@@ -894,20 +888,19 @@ func (d *dentry) InvalidateUnsavable(ctx context.Context) error {
 
 	// Write the cache's contents back to the remote file so that if we have a
 	// host fd after restore, the remote file's contents are coherent.
-	mf := d.fs.mfp.MemoryFile()
 	d.handleMu.RLock()
 	defer d.handleMu.RUnlock()
 	h := d.writeHandleLocked()
 	d.dataMu.Lock()
 	defer d.dataMu.Unlock()
-	if err := fsutil.SyncDirtyAll(ctx, &d.cache, &d.dirty, d.size, mf, h.writeFromBlocksAt); err != nil {
+	if err := fsutil.SyncDirtyAll(ctx, &d.cache, &d.dirty, d.size, d.fs.mf, h.writeFromBlocksAt); err != nil {
 		return err
 	}
 
 	// Discard the cache so that it's not stored in saved state. This is safe
 	// because per InvalidateUnsavable invariants, no new translations can have
 	// been returned after we invalidated all existing translations above.
-	d.cache.DropAll(mf)
+	d.cache.DropAll(d.fs.mf)
 	d.dirty.RemoveAll()
 
 	return nil
@@ -916,7 +909,6 @@ func (d *dentry) InvalidateUnsavable(ctx context.Context) error {
 // Evict implements pgalloc.EvictableMemoryUser.Evict.
 func (d *dentry) Evict(ctx context.Context, er pgalloc.EvictableRange) {
 	mr := memmap.MappableRange{er.Start, er.End}
-	mf := d.fs.mfp.MemoryFile()
 	d.mapsMu.Lock()
 	defer d.mapsMu.Unlock()
 	d.handleMu.RLock()
@@ -931,10 +923,10 @@ func (d *dentry) Evict(ctx context.Context, er pgalloc.EvictableRange) {
 		if mgapMR.Length() == 0 {
 			continue
 		}
-		if err := fsutil.SyncDirty(ctx, mgapMR, &d.cache, &d.dirty, d.size, mf, h.writeFromBlocksAt); err != nil {
+		if err := fsutil.SyncDirty(ctx, mgapMR, &d.cache, &d.dirty, d.size, d.fs.mf, h.writeFromBlocksAt); err != nil {
 			log.Warningf("Failed to writeback cached data %v: %v", mgapMR, err)
 		}
-		d.cache.Drop(mgapMR, mf)
+		d.cache.Drop(mgapMR, d.fs.mf)
 		d.dirty.KeepClean(mgapMR)
 	}
 }

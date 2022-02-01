@@ -121,8 +121,6 @@ func (t *Task) contextValue(key interface{}, isTaskGoroutine bool) interface{} {
 		}
 	case pgalloc.CtxMemoryFile:
 		return t.k.mf
-	case pgalloc.CtxMemoryFileProvider:
-		return t.k
 	case platform.CtxPlatform:
 		return t.k
 	case uniqueid.CtxGlobalUniqueID:

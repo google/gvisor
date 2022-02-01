@@ -110,9 +110,9 @@ type FilesystemType struct{}
 type filesystem struct {
 	vfsfs vfs.Filesystem
 
-	// mfp is used to allocate memory that caches regular file contents. mfp is
+	// mf is used to allocate memory that caches regular file contents. mf is
 	// immutable.
-	mfp pgalloc.MemoryFileProvider
+	mf *pgalloc.MemoryFile
 
 	// Immutable options.
 	opts  filesystemOptions
@@ -332,12 +332,7 @@ func (FilesystemType) Release(ctx context.Context) {}
 
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
 func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
-	mfp := pgalloc.MemoryFileProviderFromContext(ctx)
-	if mfp == nil {
-		ctx.Warningf("gofer.FilesystemType.GetFilesystem: context does not provide a pgalloc.MemoryFileProvider")
-		return nil, nil, linuxerr.EINVAL
-	}
-
+	mf := pgalloc.MemoryFileFromContext(ctx)
 	mopts := vfs.GenericParseMountOptions(opts.Data)
 	var fsopts filesystemOptions
 
@@ -479,7 +474,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		return nil, nil, err
 	}
 	fs := &filesystem{
-		mfp:              mfp,
+		mf:               mf,
 		opts:             fsopts,
 		iopts:            iopts,
 		clock:            ktime.RealtimeClockFromContext(ctx),
@@ -661,20 +656,19 @@ func (fs *filesystem) dial(ctx context.Context) error {
 func (fs *filesystem) Release(ctx context.Context) {
 	atomic.StoreInt32(&fs.released, 1)
 
-	mf := fs.mfp.MemoryFile()
 	fs.syncMu.Lock()
 	for d := range fs.syncableDentries {
 		d.handleMu.Lock()
 		d.dataMu.Lock()
 		if h := d.writeHandleLocked(); h.isOpen() {
 			// Write dirty cached data to the remote file.
-			if err := fsutil.SyncDirtyAll(ctx, &d.cache, &d.dirty, d.size, mf, h.writeFromBlocksAt); err != nil {
+			if err := fsutil.SyncDirtyAll(ctx, &d.cache, &d.dirty, d.size, fs.mf, h.writeFromBlocksAt); err != nil {
 				log.Warningf("gofer.filesystem.Release: failed to flush dentry: %v", err)
 			}
 			// TODO(jamieliu): Do we need to flushf/fsync d?
 		}
 		// Discard cached pages.
-		d.cache.DropAll(mf)
+		d.cache.DropAll(fs.mf)
 		d.dirty.RemoveAll()
 		d.dataMu.Unlock()
 		// Close host FDs if they exist.
@@ -1615,7 +1609,7 @@ func (d *dentry) updateSizeAndUnlockDataMuLocked(newSize uint64) {
 		// truncated pages have been removed from the remote file, they
 		// should be dropped without being written back.
 		d.dataMu.Lock()
-		d.cache.Truncate(newSize, d.fs.mfp.MemoryFile())
+		d.cache.Truncate(newSize, d.fs.mf)
 		d.dirty.KeepClean(memmap.MappableRange{newSize, oldpgend})
 		d.dataMu.Unlock()
 	}
@@ -1976,19 +1970,18 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 	// scalability.
 	d.fs.renameMu.Unlock()
 
-	mf := d.fs.mfp.MemoryFile()
 	d.handleMu.Lock()
 	d.dataMu.Lock()
 	if h := d.writeHandleLocked(); h.isOpen() {
 		// Write dirty pages back to the remote filesystem.
-		if err := fsutil.SyncDirtyAll(ctx, &d.cache, &d.dirty, d.size, mf, h.writeFromBlocksAt); err != nil {
+		if err := fsutil.SyncDirtyAll(ctx, &d.cache, &d.dirty, d.size, d.fs.mf, h.writeFromBlocksAt); err != nil {
 			log.Warningf("gofer.dentry.destroyLocked: failed to write dirty data back: %v", err)
 		}
 	}
 	// Discard cached data.
 	if !d.cache.IsEmpty() {
-		mf.MarkAllUnevictable(d)
-		d.cache.DropAll(mf)
+		d.fs.mf.MarkAllUnevictable(d)
+		d.cache.DropAll(d.fs.mf)
 		d.dirty.RemoveAll()
 	}
 	d.dataMu.Unlock()
@@ -2433,7 +2426,7 @@ func (d *dentry) syncCachedFile(ctx context.Context, forFilesystemSync bool, acc
 	if h.isOpen() {
 		// Write back dirty pages to the remote file.
 		d.dataMu.Lock()
-		err := fsutil.SyncDirtyAll(ctx, &d.cache, &d.dirty, d.size, d.fs.mfp.MemoryFile(), h.writeFromBlocksAt)
+		err := fsutil.SyncDirtyAll(ctx, &d.cache, &d.dirty, d.size, d.fs.mf, h.writeFromBlocksAt)
 		d.dataMu.Unlock()
 		if err != nil {
 			return err

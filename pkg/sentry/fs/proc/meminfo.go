@@ -21,7 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/fs/proc/seqfile"
-	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 )
 
@@ -30,10 +30,7 @@ import (
 // meminfoData backs /proc/meminfo.
 //
 // +stateify savable
-type meminfoData struct {
-	// k is the owning Kernel.
-	k *kernel.Kernel
-}
+type meminfoData struct{}
 
 // NeedsUpdate implements seqfile.SeqSource.NeedsUpdate.
 func (*meminfoData) NeedsUpdate(generation int64) bool {
@@ -46,7 +43,7 @@ func (d *meminfoData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) 
 		return nil, 0
 	}
 
-	mf := d.k.MemoryFile()
+	mf := pgalloc.MemoryFileFromContext(ctx)
 	mf.UpdateUsage()
 	snapshot, totalUsage := usage.MemoryAccounting.Copy()
 	totalSize := usage.TotalMemory(mf.TotalSize(), totalUsage)

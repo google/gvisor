@@ -22,8 +22,8 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
-	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 )
 
@@ -89,8 +89,7 @@ type memoryUsageInBytesData struct{}
 func (d *memoryUsageInBytesData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	// TODO(b/183151557): This is a giant hack, we're using system-wide
 	// accounting since we know there is only one cgroup.
-	k := kernel.KernelFromContext(ctx)
-	mf := k.MemoryFile()
+	mf := pgalloc.MemoryFileFromContext(ctx)
 	mf.UpdateUsage()
 	_, totalBytes := usage.MemoryAccounting.Copy()
 

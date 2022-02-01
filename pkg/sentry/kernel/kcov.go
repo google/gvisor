@@ -42,7 +42,7 @@ const kcovAreaSizeMax = 10 * 1024 * 1024
 // memory every time before we return to userspace.
 type Kcov struct {
 	// mfp provides application memory. It is immutable after creation.
-	mfp pgalloc.MemoryFileProvider
+	mf *pgalloc.MemoryFile
 
 	// mu protects all of the fields below.
 	mu sync.RWMutex
@@ -74,7 +74,7 @@ type Kcov struct {
 // NewKcov creates and returns a Kcov instance.
 func (k *Kernel) NewKcov() *Kcov {
 	return &Kcov{
-		mfp: k,
+		mf: k.mf,
 	}
 }
 
@@ -94,7 +94,7 @@ func (kcov *Kcov) TaskWork(t *Task) {
 	}
 
 	rw := &kcovReadWriter{
-		mf: kcov.mfp.MemoryFile(),
+		mf: kcov.mf,
 		fr: kcov.mappable.FileRange(),
 	}
 
@@ -242,7 +242,7 @@ func (kcov *Kcov) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) erro
 
 	if kcov.mappable == nil {
 		// Set up the kcov area.
-		fr, err := kcov.mfp.MemoryFile().Allocate(kcov.size*8, pgalloc.AllocOpts{Kind: usage.Anonymous})
+		fr, err := kcov.mf.Allocate(kcov.size*8, pgalloc.AllocOpts{Kind: usage.Anonymous})
 		if err != nil {
 			return err
 		}
@@ -254,7 +254,7 @@ func (kcov *Kcov) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) erro
 		}
 		// For convenience, a special mappable is used here. Note that these mappings
 		// will look different under /proc/[pid]/maps than they do on Linux.
-		kcov.mappable = mm.NewSpecialMappable(fmt.Sprintf("[kcov:%d]", t.ThreadID()), kcov.mfp, fr)
+		kcov.mappable = mm.NewSpecialMappable(ctx, fmt.Sprintf("[kcov:%d]", t.ThreadID()), fr)
 	}
 	kcov.mappable.IncRef()
 	opts.Mappable = kcov.mappable

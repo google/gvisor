@@ -62,8 +62,8 @@ type CachingInodeOperations struct {
 	// backingFile is a handle to a cached file object.
 	backingFile CachedFileObject
 
-	// mfp is used to allocate memory that caches backingFile's contents.
-	mfp pgalloc.MemoryFileProvider
+	// mf is used to allocate memory that caches backingFile's contents.
+	mf *pgalloc.MemoryFile
 
 	// opts contains options. opts is immutable.
 	opts CachingInodeOperationsOptions
@@ -175,13 +175,9 @@ type CachedFileObject interface {
 // NewCachingInodeOperations returns a new CachingInodeOperations backed by
 // a CachedFileObject and its initial unstable attributes.
 func NewCachingInodeOperations(ctx context.Context, backingFile CachedFileObject, uattr fs.UnstableAttr, opts CachingInodeOperationsOptions) *CachingInodeOperations {
-	mfp := pgalloc.MemoryFileProviderFromContext(ctx)
-	if mfp == nil {
-		panic(fmt.Sprintf("context.Context %T lacks non-nil value for key %T", ctx, pgalloc.CtxMemoryFileProvider))
-	}
 	return &CachingInodeOperations{
 		backingFile:    backingFile,
-		mfp:            mfp,
+		mf:             pgalloc.MemoryFileFromContext(ctx),
 		opts:           opts,
 		attr:           uattr,
 		hostFileMapper: NewHostFileMapper(),
@@ -203,12 +199,11 @@ func (c *CachingInodeOperations) Release() {
 
 	// Drop any cached pages that are still awaiting MemoryFile eviction. (This
 	// means that MemoryFile no longer needs to evict them.)
-	mf := c.mfp.MemoryFile()
-	mf.MarkAllUnevictable(c)
-	if err := SyncDirtyAll(context.Background(), &c.cache, &c.dirty, uint64(c.attr.Size), mf, c.backingFile.WriteFromBlocksAt); err != nil {
+	c.mf.MarkAllUnevictable(c)
+	if err := SyncDirtyAll(context.Background(), &c.cache, &c.dirty, uint64(c.attr.Size), c.mf, c.backingFile.WriteFromBlocksAt); err != nil {
 		panic(fmt.Sprintf("Failed to writeback cached data: %v", err))
 	}
-	c.cache.DropAll(mf)
+	c.cache.DropAll(c.mf)
 	c.dirty.RemoveAll()
 }
 
@@ -357,7 +352,7 @@ func (c *CachingInodeOperations) Truncate(ctx context.Context, inode *fs.Inode, 
 	// written back.
 	c.dataMu.Lock()
 	defer c.dataMu.Unlock()
-	c.cache.Truncate(uint64(size), c.mfp.MemoryFile())
+	c.cache.Truncate(uint64(size), c.mf)
 	c.dirty.KeepClean(memmap.MappableRange{uint64(size), oldpgend})
 
 	return nil
@@ -396,7 +391,7 @@ func (c *CachingInodeOperations) WriteDirtyPagesAndAttrs(ctx context.Context, in
 	defer c.dataMu.Unlock()
 
 	// Write dirty pages back.
-	err := SyncDirtyAll(ctx, &c.cache, &c.dirty, uint64(c.attr.Size), c.mfp.MemoryFile(), c.backingFile.WriteFromBlocksAt)
+	err := SyncDirtyAll(ctx, &c.cache, &c.dirty, uint64(c.attr.Size), c.mf, c.backingFile.WriteFromBlocksAt)
 	if err != nil {
 		return err
 	}
@@ -598,8 +593,7 @@ type inodeReadWriter struct {
 
 // ReadToBlocks implements safemem.Reader.ReadToBlocks.
 func (rw *inodeReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
-	mem := rw.c.mfp.MemoryFile()
-	fillCache := !rw.c.useHostPageCache() && mem.ShouldCacheEvictable()
+	fillCache := !rw.c.useHostPageCache() && rw.c.mf.ShouldCacheEvictable()
 
 	// Hot path. Avoid defers.
 	var unlock func()
@@ -629,7 +623,7 @@ func (rw *inodeReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 		switch {
 		case seg.Ok():
 			// Get internal mappings from the cache.
-			ims, err := mem.MapInternal(seg.FileRangeOf(seg.Range().Intersect(mr)), hostarch.Read)
+			ims, err := rw.c.mf.MapInternal(seg.FileRangeOf(seg.Range().Intersect(mr)), hostarch.Read)
 			if err != nil {
 				unlock()
 				return done, err
@@ -658,8 +652,8 @@ func (rw *inodeReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 					End:   fs.OffsetPageEnd(int64(gapMR.End)),
 				}
 				optMR := gap.Range()
-				err := rw.c.cache.Fill(rw.ctx, reqMR, maxFillRange(reqMR, optMR), uint64(rw.c.attr.Size), mem, usage.PageCache, rw.c.backingFile.ReadToBlocksAt)
-				mem.MarkEvictable(rw.c, pgalloc.EvictableRange{optMR.Start, optMR.End})
+				err := rw.c.cache.Fill(rw.ctx, reqMR, maxFillRange(reqMR, optMR), uint64(rw.c.attr.Size), rw.c.mf, usage.PageCache, rw.c.backingFile.ReadToBlocksAt)
+				rw.c.mf.MarkEvictable(rw.c, pgalloc.EvictableRange{optMR.Start, optMR.End})
 				seg, gap = rw.c.cache.Find(uint64(rw.offset))
 				if !seg.Ok() {
 					unlock()
@@ -734,7 +728,6 @@ func (rw *inodeReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error
 		return 0, nil
 	}
 
-	mf := rw.c.mfp.MemoryFile()
 	var done uint64
 	seg, gap := rw.c.cache.Find(uint64(rw.offset))
 	for rw.offset < end {
@@ -743,7 +736,7 @@ func (rw *inodeReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error
 		case seg.Ok() && seg.Start() < mr.End:
 			// Get internal mappings from the cache.
 			segMR := seg.Range().Intersect(mr)
-			ims, err := mf.MapInternal(seg.FileRangeOf(segMR), hostarch.Write)
+			ims, err := rw.c.mf.MapInternal(seg.FileRangeOf(segMR), hostarch.Write)
 			if err != nil {
 				rw.maybeUpdateAttrs(done)
 				rw.c.dataMu.Unlock()
@@ -812,9 +805,8 @@ func (c *CachingInodeOperations) AddMapping(ctx context.Context, ms memmap.Mappi
 	if !c.useHostPageCache() {
 		// c.Evict() will refuse to evict memory-mapped pages, so tell the
 		// MemoryFile to not bother trying.
-		mf := c.mfp.MemoryFile()
 		for _, r := range mapped {
-			mf.MarkUnevictable(c, pgalloc.EvictableRange{r.Start, r.End})
+			c.mf.MarkUnevictable(c, pgalloc.EvictableRange{r.Start, r.End})
 		}
 	}
 	c.mapsMu.Unlock()
@@ -837,13 +829,12 @@ func (c *CachingInodeOperations) RemoveMapping(ctx context.Context, ms memmap.Ma
 	// Pages that are no longer referenced by any application memory mappings
 	// are now considered unused; allow MemoryFile to evict them when
 	// necessary.
-	mf := c.mfp.MemoryFile()
 	c.dataMu.Lock()
 	for _, r := range unmapped {
 		// Since these pages are no longer mapped, they are no longer
 		// concurrently dirtyable by a writable memory mapping.
 		c.dirty.AllowClean(r)
-		mf.MarkEvictable(c, pgalloc.EvictableRange{r.Start, r.End})
+		c.mf.MarkEvictable(c, pgalloc.EvictableRange{r.Start, r.End})
 	}
 	c.dataMu.Unlock()
 	c.mapsMu.Unlock()
@@ -890,8 +881,7 @@ func (c *CachingInodeOperations) Translate(ctx context.Context, required, option
 		optional.End = pgend
 	}
 
-	mf := c.mfp.MemoryFile()
-	cerr := c.cache.Fill(ctx, required, maxFillRange(required, optional), uint64(c.attr.Size), mf, usage.PageCache, c.backingFile.ReadToBlocksAt)
+	cerr := c.cache.Fill(ctx, required, maxFillRange(required, optional), uint64(c.attr.Size), c.mf, usage.PageCache, c.backingFile.ReadToBlocksAt)
 
 	var ts []memmap.Translation
 	var translatedEnd uint64
@@ -911,7 +901,7 @@ func (c *CachingInodeOperations) Translate(ctx context.Context, required, option
 		}
 		ts = append(ts, memmap.Translation{
 			Source: segMR,
-			File:   mf,
+			File:   c.mf,
 			Offset: seg.FileRangeOf(segMR).Start,
 			Perms:  perms,
 		})
@@ -958,17 +948,16 @@ func (c *CachingInodeOperations) InvalidateUnsavable(ctx context.Context) error 
 
 	// Sync the cache's contents so that if we have a host fd after restore,
 	// the remote file's contents are coherent.
-	mf := c.mfp.MemoryFile()
 	c.dataMu.Lock()
 	defer c.dataMu.Unlock()
-	if err := SyncDirtyAll(ctx, &c.cache, &c.dirty, uint64(c.attr.Size), mf, c.backingFile.WriteFromBlocksAt); err != nil {
+	if err := SyncDirtyAll(ctx, &c.cache, &c.dirty, uint64(c.attr.Size), c.mf, c.backingFile.WriteFromBlocksAt); err != nil {
 		return err
 	}
 
 	// Discard the cache so that it's not stored in saved state. This is safe
 	// because per InvalidateUnsavable invariants, no new translations can have
 	// been returned after we invalidated all existing translations above.
-	c.cache.DropAll(mf)
+	c.cache.DropAll(c.mf)
 	c.dirty.RemoveAll()
 
 	return nil
@@ -999,17 +988,16 @@ func (c *CachingInodeOperations) Evict(ctx context.Context, er pgalloc.Evictable
 	defer c.dataMu.Unlock()
 
 	mr := memmap.MappableRange{er.Start, er.End}
-	mf := c.mfp.MemoryFile()
 	// Only allow pages that are no longer memory-mapped to be evicted.
 	for mgap := c.mappings.LowerBoundGap(mr.Start); mgap.Ok() && mgap.Start() < mr.End; mgap = mgap.NextGap() {
 		mgapMR := mgap.Range().Intersect(mr)
 		if mgapMR.Length() == 0 {
 			continue
 		}
-		if err := SyncDirty(ctx, mgapMR, &c.cache, &c.dirty, uint64(c.attr.Size), mf, c.backingFile.WriteFromBlocksAt); err != nil {
+		if err := SyncDirty(ctx, mgapMR, &c.cache, &c.dirty, uint64(c.attr.Size), c.mf, c.backingFile.WriteFromBlocksAt); err != nil {
 			log.Warningf("Failed to writeback cached data %v: %v", mgapMR, err)
 		}
-		c.cache.Drop(mgapMR, mf)
+		c.cache.Drop(mgapMR, c.mf)
 		c.dirty.KeepClean(mgapMR)
 	}
 }

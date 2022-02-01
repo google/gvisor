@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
@@ -262,7 +263,7 @@ var _ dynamicInode = (*meminfoData)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (*meminfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	mf := kernel.KernelFromContext(ctx).MemoryFile()
+	mf := pgalloc.MemoryFileFromContext(ctx)
 	_ = mf.UpdateUsage() // Best effort
 	snapshot, totalUsage := usage.MemoryAccounting.Copy()
 	totalSize := usage.TotalMemory(mf.TotalSize(), totalUsage)

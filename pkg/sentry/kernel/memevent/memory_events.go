@@ -19,11 +19,12 @@ package memevent
 import (
 	"time"
 
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/eventchannel"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/metric"
-	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	pb "gvisor.dev/gvisor/pkg/sentry/kernel/memevent/memory_events_go_proto"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -33,7 +34,8 @@ var totalEvents = metric.MustCreateNewUint64Metric("/memory_events/events", fals
 
 // MemoryEvents describes the configuration for the global memory event emitter.
 type MemoryEvents struct {
-	k *kernel.Kernel
+	// mf is the underlying memory source.
+	mf *pgalloc.MemoryFile
 
 	// The period is how often to emit an event. The memory events goroutine
 	// will ensure a minimum of one event is emitted per this period, regardless
@@ -48,9 +50,9 @@ type MemoryEvents struct {
 }
 
 // New creates a new MemoryEvents.
-func New(k *kernel.Kernel, period time.Duration) *MemoryEvents {
+func New(ctx context.Context, period time.Duration) *MemoryEvents {
 	return &MemoryEvents{
-		k:      k,
+		mf:     pgalloc.MemoryFileFromContext(ctx),
 		period: period,
 		stop:   make(chan struct{}),
 	}
@@ -95,7 +97,7 @@ func (m *MemoryEvents) run() {
 }
 
 func (m *MemoryEvents) emit() {
-	totalPlatform, err := m.k.MemoryFile().TotalUsage()
+	totalPlatform, err := m.mf.TotalUsage()
 	if err != nil {
 		log.Warningf("Failed to fetch memory usage for memory events: %v", err)
 		return

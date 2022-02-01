@@ -28,10 +28,10 @@ import (
 )
 
 // NewMemoryManager returns a new MemoryManager with no mappings and 1 user.
-func NewMemoryManager(p platform.Platform, mfp pgalloc.MemoryFileProvider, sleepForActivation bool) *MemoryManager {
+func NewMemoryManager(ctx context.Context, p platform.Memory, sleepForActivation bool) *MemoryManager {
 	return &MemoryManager{
 		p:                  p,
-		mfp:                mfp,
+		mf:                 pgalloc.MemoryFileFromContext(ctx),
 		haveASIO:           p.SupportsAddressSpaceIO(),
 		privateRefs:        &privateRefs{},
 		users:              1,
@@ -65,7 +65,7 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 	defer mm.mappingMu.RUnlock()
 	mm2 := &MemoryManager{
 		p:           mm.p,
-		mfp:         mm.mfp,
+		mf:          mm.mf,
 		haveASIO:    mm.haveASIO,
 		layout:      mm.layout,
 		privateRefs: mm.privateRefs,

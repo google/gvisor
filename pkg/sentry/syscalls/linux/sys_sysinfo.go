@@ -18,6 +18,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 )
 
@@ -25,7 +26,7 @@ import (
 func Sysinfo(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 
-	mf := t.Kernel().MemoryFile()
+	mf := pgalloc.MemoryFileFromContext(t)
 	mfUsage, err := mf.TotalUsage()
 	if err != nil {
 		return 0, nil, err

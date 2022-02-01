@@ -74,13 +74,13 @@ func Boot() (*kernel.Kernel, error) {
 	k.SetMemoryFile(mf)
 
 	// Pass k as the platform since it is savable, unlike the actual platform.
-	vdso, err := loader.PrepareVDSO(k)
+	vdso, err := loader.PrepareVDSO(k.SupervisorContext())
 	if err != nil {
 		return nil, fmt.Errorf("creating vdso: %v", err)
 	}
 
 	// Create timekeeper.
-	tk := kernel.NewTimekeeper(k, vdso.ParamPage.FileRange())
+	tk := kernel.NewTimekeeper(k.SupervisorContext(), vdso.ParamPage.FileRange())
 	tk.SetClocks(time.NewCalibratedClocks())
 
 	creds := auth.NewRootCredentials(auth.NewRootUserNamespace())
@@ -127,7 +127,7 @@ func CreateTask(ctx context.Context, name string, tc *kernel.ThreadGroup, mntns 
 	if err != nil {
 		return nil, err
 	}
-	m := mm.NewMemoryManager(k, k, k.SleepForAddressSpaceActivation)
+	m := mm.NewMemoryManager(k.SupervisorContext(), k, k.SleepForAddressSpaceActivation)
 	m.SetExecutable(ctx, fsbridge.NewVFSFile(exe))
 
 	creds := auth.CredentialsFromContext(ctx)

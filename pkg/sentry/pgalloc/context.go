@@ -15,6 +15,8 @@
 package pgalloc
 
 import (
+	"fmt"
+
 	"gvisor.dev/gvisor/pkg/context"
 )
 
@@ -24,25 +26,14 @@ type contextID int
 const (
 	// CtxMemoryFile is a Context.Value key for a MemoryFile.
 	CtxMemoryFile contextID = iota
-
-	// CtxMemoryFileProvider is a Context.Value key for a MemoryFileProvider.
-	CtxMemoryFileProvider
 )
 
-// MemoryFileFromContext returns the MemoryFile used by ctx, or nil if no such
-// MemoryFile exists.
+// MemoryFileFromContext returns the MemoryFile used by ctx.
+//
+// This function panics on failure, nil is never returned.
 func MemoryFileFromContext(ctx context.Context) *MemoryFile {
 	if v := ctx.Value(CtxMemoryFile); v != nil {
 		return v.(*MemoryFile)
 	}
-	return nil
-}
-
-// MemoryFileProviderFromContext returns the MemoryFileProvider used by ctx, or nil if no such
-// MemoryFileProvider exists.
-func MemoryFileProviderFromContext(ctx context.Context) MemoryFileProvider {
-	if v := ctx.Value(CtxMemoryFileProvider); v != nil {
-		return v.(MemoryFileProvider)
-	}
-	return nil
+	panic(fmt.Errorf("no MemoryFile is available from context"))
 }

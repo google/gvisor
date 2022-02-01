@@ -31,9 +31,8 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-// Platform provides abstractions for execution contexts (Context,
-// AddressSpace).
-type Platform interface {
+// Memory defines memory-related Platform methods.
+type Memory interface {
 	// SupportsAddressSpaceIO returns true if AddressSpaces returned by this
 	// Platform support AddressSpaceIO methods.
 	//
@@ -49,14 +48,6 @@ type Platform interface {
 	// The value returned by CooperativelySchedulesAddressSpace is guaranteed
 	// to remain unchanged over the lifetime of the Platform.
 	CooperativelySchedulesAddressSpace() bool
-
-	// DetectsCPUPreemption returns true if Contexts returned by the Platform
-	// can reliably return ErrContextCPUPreempted.
-	DetectsCPUPreemption() bool
-
-	// HaveGlobalMemoryBarrier returns true if the GlobalMemoryBarrier method
-	// is supported.
-	HaveGlobalMemoryBarrier() bool
 
 	// MapUnit returns the alignment used for optional mappings into this
 	// platform's AddressSpaces. Higher values indicate lower per-page costs
@@ -90,6 +81,13 @@ type Platform interface {
 	// In general, this blocking behavior only occurs when
 	// CooperativelySchedulesAddressSpace (above) returns false.
 	NewAddressSpace(mappingsID interface{}) (AddressSpace, <-chan struct{}, error)
+}
+
+// Execution defines execution-related Platform methods.
+type Execution interface {
+	// DetectsCPUPreemption returns true if Contexts returned by the Platform
+	// can reliably return ErrContextCPUPreempted.
+	DetectsCPUPreemption() bool
 
 	// NewContext returns a new execution context.
 	NewContext(context.Context) Context
@@ -102,6 +100,17 @@ type Platform interface {
 	// Platforms for which this does not hold may panic if PreemptAllCPUs is
 	// called.
 	PreemptAllCPUs() error
+}
+
+// Platform provides abstractions for execution contexts (Context,
+// AddressSpace).
+type Platform interface {
+	Memory
+	Execution
+
+	// HaveGlobalMemoryBarrier returns true if the GlobalMemoryBarrier method
+	// is supported.
+	HaveGlobalMemoryBarrier() bool
 
 	// GlobalMemoryBarrier blocks until all threads running application code
 	// (via Context.Switch) and all task goroutines "have passed through a

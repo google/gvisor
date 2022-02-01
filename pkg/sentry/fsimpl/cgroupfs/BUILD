@@ -44,6 +44,7 @@ go_library(
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/memmap",
+        "//pkg/sentry/pgalloc",
         "//pkg/sentry/usage",
         "//pkg/sentry/vfs",
         "//pkg/sync",

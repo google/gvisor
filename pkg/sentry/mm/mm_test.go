@@ -24,15 +24,13 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 func testMemoryManager(ctx context.Context) *MemoryManager {
 	p := platform.FromContext(ctx)
-	mfp := pgalloc.MemoryFileProviderFromContext(ctx)
-	mm := NewMemoryManager(p, mfp, false)
+	mm := NewMemoryManager(ctx, p, false)
 	mm.layout = arch.MmapLayout{
 		MinAddr:      p.MinUserAddress(),
 		MaxAddr:      p.MaxUserAddress(),

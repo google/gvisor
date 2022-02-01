@@ -96,6 +96,7 @@ go_library(
         "//pkg/sentry/loader",
         "//pkg/sentry/memmap",
         "//pkg/sentry/mm",
+        "//pkg/sentry/pgalloc",
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/control",
         "//pkg/sentry/socket/unix/transport",

@@ -27,7 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
-	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
@@ -52,8 +51,8 @@ type fileInodeOperations struct {
 
 	fsutil.InodeSimpleExtendedAttributes
 
-	// kernel is used to allocate memory that stores the file's contents.
-	kernel *kernel.Kernel
+	// mf is the underlying memory for storage.
+	mf *pgalloc.MemoryFile
 
 	// memUsage is the default memory usage that will be reported by this file.
 	memUsage usage.MemoryKind
@@ -101,11 +100,11 @@ type fileInodeOperations struct {
 
 var _ fs.InodeOperations = (*fileInodeOperations)(nil)
 
-// NewInMemoryFile returns a new file backed by Kernel.MemoryFile().
+// NewInMemoryFile returns a new file.
 func NewInMemoryFile(ctx context.Context, usage usage.MemoryKind, uattr fs.UnstableAttr) fs.InodeOperations {
 	return &fileInodeOperations{
 		attr:     uattr,
-		kernel:   kernel.KernelFromContext(ctx),
+		mf:       pgalloc.MemoryFileFromContext(ctx),
 		memUsage: usage,
 		seals:    linux.F_SEAL_SEAL,
 	}
@@ -132,10 +131,10 @@ func NewMemfdInode(ctx context.Context, allowSeals bool) *fs.Inode {
 }
 
 // Release implements fs.InodeOperations.Release.
-func (f *fileInodeOperations) Release(context.Context) {
+func (f *fileInodeOperations) Release(ctx context.Context) {
 	f.dataMu.Lock()
 	defer f.dataMu.Unlock()
-	f.data.DropAll(f.kernel.MemoryFile())
+	f.data.DropAll(f.mf)
 }
 
 // Mappable implements fs.InodeOperations.Mappable.
@@ -259,7 +258,7 @@ func (f *fileInodeOperations) Truncate(ctx context.Context, _ *fs.Inode, size in
 	// and can remove them.
 	f.dataMu.Lock()
 	defer f.dataMu.Unlock()
-	f.data.Truncate(uint64(size), f.kernel.MemoryFile())
+	f.data.Truncate(uint64(size), f.mf)
 
 	return nil
 }
@@ -399,7 +398,6 @@ func (rw *fileReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 		return 0, nil
 	}
 
-	mf := rw.f.kernel.MemoryFile()
 	var done uint64
 	seg, gap := rw.f.data.Find(uint64(rw.offset))
 	for rw.offset < end {
@@ -407,7 +405,7 @@ func (rw *fileReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 		switch {
 		case seg.Ok():
 			// Get internal mappings.
-			ims, err := mf.MapInternal(seg.FileRangeOf(seg.Range().Intersect(mr)), hostarch.Read)
+			ims, err := rw.f.mf.MapInternal(seg.FileRangeOf(seg.Range().Intersect(mr)), hostarch.Read)
 			if err != nil {
 				return done, err
 			}
@@ -495,7 +493,6 @@ func (rw *fileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error)
 		}
 	}()
 
-	mf := rw.f.kernel.MemoryFile()
 	// Page-aligned mr for when we need to allocate memory. RoundUp can't
 	// overflow since end is an int64.
 	pgstartaddr := hostarch.Addr(rw.offset).RoundDown()
@@ -509,7 +506,7 @@ func (rw *fileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error)
 		switch {
 		case seg.Ok():
 			// Get internal mappings.
-			ims, err := mf.MapInternal(seg.FileRangeOf(seg.Range().Intersect(mr)), hostarch.Write)
+			ims, err := rw.f.mf.MapInternal(seg.FileRangeOf(seg.Range().Intersect(mr)), hostarch.Write)
 			if err != nil {
 				return done, err
 			}
@@ -529,7 +526,7 @@ func (rw *fileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error)
 		case gap.Ok():
 			// Allocate memory for the write.
 			gapMR := gap.Range().Intersect(pgMR)
-			fr, err := mf.Allocate(gapMR.Length(), pgalloc.AllocOpts{Kind: rw.f.memUsage})
+			fr, err := rw.f.mf.Allocate(gapMR.Length(), pgalloc.AllocOpts{Kind: rw.f.memUsage})
 			if err != nil {
 				return done, err
 			}
@@ -613,8 +610,7 @@ func (f *fileInodeOperations) Translate(ctx context.Context, required, optional 
 		optional.End = pgend
 	}
 
-	mf := f.kernel.MemoryFile()
-	cerr := f.data.Fill(ctx, required, optional, uint64(f.attr.Size), mf, f.memUsage, func(_ context.Context, dsts safemem.BlockSeq, _ uint64) (uint64, error) {
+	cerr := f.data.Fill(ctx, required, optional, uint64(f.attr.Size), f.mf, f.memUsage, func(_ context.Context, dsts safemem.BlockSeq, _ uint64) (uint64, error) {
 		// Newly-allocated pages are zeroed, so we don't need to do anything.
 		return dsts.NumBytes(), nil
 	})
@@ -625,7 +621,7 @@ func (f *fileInodeOperations) Translate(ctx context.Context, required, optional 
 		segMR := seg.Range().Intersect(optional)
 		ts = append(ts, memmap.Translation{
 			Source: segMR,
-			File:   mf,
+			File:   f.mf,
 			Offset: seg.FileRangeOf(segMR).Start,
 			Perms:  hostarch.AnyAccess,
 		})

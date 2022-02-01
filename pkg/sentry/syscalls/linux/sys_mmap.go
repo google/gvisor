@@ -103,7 +103,7 @@ func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 	} else if shared {
 		// Back shared anonymous mappings with a special mappable.
 		opts.Offset = 0
-		m, err := mm.NewSharedAnonMappable(opts.Length, t.Kernel())
+		m, err := mm.NewSharedAnonMappable(t, opts.Length)
 		if err != nil {
 			return 0, nil, err
 		}

@@ -32,7 +32,6 @@ go_library(
         "//pkg/sentry/kernel",
         "//pkg/sentry/memmap",
         "//pkg/sentry/mm",
-        "//pkg/sentry/pgalloc",
         "//pkg/sentry/socket/netstack",
         "//pkg/tcpip/link/tun",
         "//pkg/usermem",

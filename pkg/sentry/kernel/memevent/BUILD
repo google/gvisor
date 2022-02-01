@@ -8,10 +8,11 @@ go_library(
     visibility = ["//:sandbox"],
     deps = [
         ":memory_events_go_proto",
+        "//pkg/context",
         "//pkg/eventchannel",
         "//pkg/log",
         "//pkg/metric",
-        "//pkg/sentry/kernel",
+        "//pkg/sentry/pgalloc",
         "//pkg/sentry/usage",
         "//pkg/sync",
     ],

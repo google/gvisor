@@ -201,19 +201,15 @@ func (r *Registry) FindOrCreate(ctx context.Context, pid int32, key ipc.Key, siz
 //
 // Precondition: Caller must hold r.mu.
 func (r *Registry) newShmLocked(ctx context.Context, pid int32, key ipc.Key, creator fs.FileOwner, perms fs.FilePermissions, size uint64) (*Shm, error) {
-	mfp := pgalloc.MemoryFileProviderFromContext(ctx)
-	if mfp == nil {
-		panic(fmt.Sprintf("context.Context %T lacks non-nil value for key %T", ctx, pgalloc.CtxMemoryFileProvider))
-	}
-
+	mf := pgalloc.MemoryFileFromContext(ctx)
 	effectiveSize := uint64(hostarch.Addr(size).MustRoundUp())
-	fr, err := mfp.MemoryFile().Allocate(effectiveSize, pgalloc.AllocOpts{Kind: usage.Anonymous})
+	fr, err := mf.Allocate(effectiveSize, pgalloc.AllocOpts{Kind: usage.Anonymous})
 	if err != nil {
 		return nil, err
 	}
 
 	shm := &Shm{
-		mfp:           mfp,
+		mf:            mf,
 		registry:      r,
 		size:          size,
 		effectiveSize: effectiveSize,
@@ -326,7 +322,8 @@ type Shm struct {
 	// via MappingIdentity.
 	ShmRefs
 
-	mfp pgalloc.MemoryFileProvider
+	// mf contains backing memory. mf is immutable.
+	mf *pgalloc.MemoryFile
 
 	// registry points to the shm registry containing this segment. Immutable.
 	registry *Registry
@@ -428,7 +425,7 @@ func (s *Shm) InodeID() uint64 {
 // Precondition: Caller must not hold s.mu.
 func (s *Shm) DecRef(ctx context.Context) {
 	s.ShmRefs.DecRef(func() {
-		s.mfp.MemoryFile().DecRef(s.fr)
+		s.mf.DecRef(s.fr)
 		s.registry.remove(s)
 	})
 }
@@ -490,7 +487,7 @@ func (s *Shm) Translate(ctx context.Context, required, optional memmap.MappableR
 		return []memmap.Translation{
 			{
 				Source: source,
-				File:   s.mfp.MemoryFile(),
+				File:   s.mf,
 				Offset: s.fr.Start + source.Start,
 				Perms:  hostarch.AnyAccess,
 			},
