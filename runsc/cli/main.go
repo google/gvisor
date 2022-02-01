@@ -59,47 +59,46 @@ var (
 func Main(version string) {
 	// Help and flags commands are generated automatically.
 	help := cmd.NewHelp(subcommands.DefaultCommander)
-	help.Register(new(cmd.Syscalls))
 	help.Register(new(cmd.Platforms))
+	help.Register(new(cmd.Syscalls))
 	subcommands.Register(help, "")
 	subcommands.Register(subcommands.FlagsCommand(), "")
 
-	// Installation helpers.
-	const helperGroup = "helpers"
-	subcommands.Register(new(cmd.Install), helperGroup)
-	subcommands.Register(new(cmd.Uninstall), helperGroup)
-
-	// Register user-facing runsc commands.
+	// Register OCI user-facing runsc commands.
 	subcommands.Register(new(cmd.Checkpoint), "")
 	subcommands.Register(new(cmd.Create), "")
 	subcommands.Register(new(cmd.Delete), "")
 	subcommands.Register(new(cmd.Do), "")
 	subcommands.Register(new(cmd.Events), "")
 	subcommands.Register(new(cmd.Exec), "")
-	subcommands.Register(new(cmd.Gofer), "")
 	subcommands.Register(new(cmd.Kill), "")
 	subcommands.Register(new(cmd.List), "")
-	subcommands.Register(new(cmd.Pause), "")
 	subcommands.Register(new(cmd.PS), "")
+	subcommands.Register(new(cmd.Pause), "")
 	subcommands.Register(new(cmd.Restore), "")
 	subcommands.Register(new(cmd.Resume), "")
 	subcommands.Register(new(cmd.Run), "")
 	subcommands.Register(new(cmd.Spec), "")
-	subcommands.Register(new(cmd.State), "")
 	subcommands.Register(new(cmd.Start), "")
-	subcommands.Register(new(cmd.Symbolize), "")
-	subcommands.Register(new(cmd.Wait), "")
-	subcommands.Register(new(cmd.Mitigate), "")
+	subcommands.Register(new(cmd.State), "")
 	subcommands.Register(new(cmd.VerityPrepare), "")
+	subcommands.Register(new(cmd.Wait), "")
 
-	// Register internal commands with the internal group name. This causes
-	// them to be sorted below the user-facing commands with empty group.
-	// The string below will be printed above the commands.
+	// Installation helpers.
+	const helperGroup = "helpers"
+	subcommands.Register(new(cmd.Install), helperGroup)
+	subcommands.Register(new(cmd.Mitigate), helperGroup)
+	subcommands.Register(new(cmd.Uninstall), helperGroup)
+
+	const debugGroup = "debug"
+	subcommands.Register(new(cmd.Debug), debugGroup)
+	subcommands.Register(new(cmd.Statefile), debugGroup)
+	subcommands.Register(new(cmd.Symbolize), debugGroup)
+
+	// Internal commands.
 	const internalGroup = "internal use only"
 	subcommands.Register(new(cmd.Boot), internalGroup)
-	subcommands.Register(new(cmd.Debug), internalGroup)
 	subcommands.Register(new(cmd.Gofer), internalGroup)
-	subcommands.Register(new(cmd.Statefile), internalGroup)
 
 	config.RegisterFlags()
 

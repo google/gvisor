@@ -30,7 +30,7 @@ import (
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
-// List implements subcommands.Command for the "list" command for the "list" command.
+// List implements subcommands.Command for the "list" command.
 type List struct {
 	quiet  bool
 	format string
