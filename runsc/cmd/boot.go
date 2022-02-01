@@ -115,7 +115,7 @@ func (*Boot) Name() string {
 
 // Synopsis implements subcommands.Command.Synopsis.
 func (*Boot) Synopsis() string {
-	return "launch a sandbox process (internal use only)"
+	return "launch a sandbox process"
 }
 
 // Usage implements subcommands.Command.Usage.
