@@ -15,11 +15,114 @@
 package cgroup
 
 import (
+	"io/ioutil"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+
+	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
 var cgroupv2MountInfo = `29 22 0:26 / /sys/fs/cgroup rw shared:4 - cgroup2 cgroup2 rw,seclabel,nsdelegate`
+
+func TestIO(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		spec  *specs.LinuxBlockIO
+		path  string
+		wants string
+	}{
+		{
+			name: "simple",
+			spec: &specs.LinuxBlockIO{
+				Weight: uint16Ptr(1),
+			},
+			path:  "io.weight",
+			wants: strconv.FormatUint(convertBlkIOToIOWeightValue(1), 10),
+		},
+		{
+			name: "throttlereadbps",
+			spec: &specs.LinuxBlockIO{
+				ThrottleReadBpsDevice: []specs.LinuxThrottleDevice{
+					makeLinuxThrottleDevice(1, 2, 3),
+				},
+			},
+			path:  "io.max",
+			wants: "1:2 rbps=3",
+		},
+		{
+			name: "throttlewritebps",
+			spec: &specs.LinuxBlockIO{
+				ThrottleWriteBpsDevice: []specs.LinuxThrottleDevice{
+					makeLinuxThrottleDevice(4, 5, 6),
+				},
+			},
+			path:  "io.max",
+			wants: "4:5 wbps=6",
+		},
+		{
+			name: "throttlereadiops",
+			spec: &specs.LinuxBlockIO{
+				ThrottleReadIOPSDevice: []specs.LinuxThrottleDevice{
+					makeLinuxThrottleDevice(7, 8, 9),
+				},
+			},
+			path:  "io.max",
+			wants: "7:8 riops=9",
+		},
+		{
+			name: "throttlewriteiops",
+			spec: &specs.LinuxBlockIO{
+				ThrottleWriteIOPSDevice: []specs.LinuxThrottleDevice{
+					makeLinuxThrottleDevice(10, 11, 12),
+				},
+			},
+			path:  "io.max",
+			wants: "10:11 wiops=12",
+		},
+		{
+			name:  "nil_values",
+			spec:  &specs.LinuxBlockIO{},
+			path:  "not_used",
+			wants: "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			testutil.TmpDir()
+			dir, err := ioutil.TempDir(testutil.TmpDir(), "cgroup")
+			if err != nil {
+				t.Fatalf("error creating temporary directory: %v", err)
+			}
+			defer os.RemoveAll(dir)
+
+			fd, err := os.Create(filepath.Join(dir, tc.path))
+			if err != nil {
+				t.Fatalf("os.CreatTemp(): %v", err)
+			}
+			fd.Close()
+
+			spec := &specs.LinuxResources{
+				BlockIO: tc.spec,
+			}
+			ctrlr := io2{}
+			if err := ctrlr.set(spec, dir); err != nil {
+				t.Fatalf("ctrlr.set(): %v", err)
+			}
+
+			gotBytes, err := ioutil.ReadFile(filepath.Join(dir, tc.path))
+			if err != nil {
+				t.Fatal(err.Error())
+			}
+			got := strings.TrimSuffix(string(gotBytes), "\n")
+			if got != tc.wants {
+				t.Errorf("wrong file content, file: %q, want: %q, got: %q", tc.path, tc.wants, got)
+			}
+		})
+	}
+}
 
 func TestLoadPathsCgroupv2(t *testing.T) {
 	for _, tc := range []struct {

@@ -513,7 +513,7 @@ func (*io2) set(spec *specs.LinuxResources, path string) error {
 		return err
 	}
 
-	if err := setThrottle2(path, "riops", blkio.ThrottleWriteIOPSDevice); err != nil {
+	if err := setThrottle2(path, "wiops", blkio.ThrottleWriteIOPSDevice); err != nil {
 		return err
 	}
 
