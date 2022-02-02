@@ -167,7 +167,7 @@ func (e *Endpoint) Read() *stack.PacketBuffer {
 }
 
 // ReadContext does blocking read for one packet from the outbound packet queue.
-// It can be cancelled by ctx, and in this case, it returns false.
+// It can be cancelled by ctx, and in this case, it returns nil.
 func (e *Endpoint) ReadContext(ctx context.Context) *stack.PacketBuffer {
 	return e.q.ReadContext(ctx)
 }
