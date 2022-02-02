@@ -699,9 +699,6 @@ func (n *nic) isInGroup(addr tcpip.Address) bool {
 // DeliverNetworkPacket finds the appropriate network protocol endpoint and
 // hands the packet over for further processing. This function is called when
 // the NIC receives a packet from the link endpoint.
-// Note that the ownership of the slice backing vv is retained by the caller.
-// This rule applies only to the slice itself, not to the items of the slice;
-// the ownership of the items is not retained by the caller.
 func (n *nic) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
 	enabled := n.Enabled()
 	// If the NIC is not yet enabled, don't receive any packets.
