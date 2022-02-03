@@ -198,7 +198,7 @@ func (m *machine) createVCPU(id int) *vCPU {
 
 // readOnlyGuestRegions contains regions that have to be mapped read-only into
 // the guest physical address space. Right now, it is used on arm64 only.
-var readOnlyGuestRegions []region
+var readOnlyGuestRegions []virtualRegion
 
 // newMachine returns a new VM context.
 func newMachine(vm int) (*machine, error) {
@@ -247,7 +247,7 @@ func newMachine(vm int) (*machine, error) {
 		m.kernel.PageTables.Map(
 			hostarch.Addr(pr.virtual),
 			pr.length,
-			pagetables.MapOpts{AccessType: hostarch.AnyAccess},
+			pagetables.MapOpts{AccessType: hostarch.ReadWrite},
 			pr.physical)
 
 		return true // Keep iterating.
@@ -257,7 +257,7 @@ func newMachine(vm int) (*machine, error) {
 	// available in the VM. Note that this doesn't guarantee no future
 	// faults, however it should guarantee that everything is available to
 	// ensure successful vCPU entry.
-	mapRegion := func(vr region, flags uint32) {
+	mapRegion := func(vr virtualRegion, flags uint32) {
 		for virtual := vr.virtual; virtual < vr.virtual+vr.length; {
 			physical, length, ok := translateToPhysical(virtual)
 			if !ok {
@@ -268,6 +268,17 @@ func newMachine(vm int) (*machine, error) {
 			if virtual+length > vr.virtual+vr.length {
 				// Cap the length to the end of the area.
 				length = vr.virtual + vr.length - virtual
+			}
+			// Update page tables for executable mappings.
+			if vr.accessType.Execute {
+				if vr.accessType.Write {
+					panic(fmt.Sprintf("executable mapping can't be writable: %#v", vr))
+				}
+				m.kernel.PageTables.Map(
+					hostarch.Addr(virtual),
+					length,
+					pagetables.MapOpts{AccessType: vr.accessType},
+					physical)
 			}
 
 			// Ensure the physical range is mapped.
@@ -295,7 +306,7 @@ func newMachine(vm int) (*machine, error) {
 			vr.length += 1 << 20
 		}
 
-		mapRegion(vr.region, 0)
+		mapRegion(vr, 0)
 
 	})
 
