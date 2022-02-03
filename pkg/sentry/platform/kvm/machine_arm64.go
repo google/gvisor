@@ -107,16 +107,18 @@ func archPhysicalRegions(physicalRegions []physicalRegion) []physicalRegion {
 			return // skip region.
 		}
 		if !vr.accessType.Write {
-			readOnlyGuestRegions = append(readOnlyGuestRegions, vr.region)
+			readOnlyGuestRegions = append(readOnlyGuestRegions, vr)
 		}
 	})
 
 	rdRegions := readOnlyGuestRegions[:]
 
 	// Add an unreachable region.
-	rdRegions = append(rdRegions, region{
-		virtual: 0xffffffffffffffff,
-		length:  0,
+	rdRegions = append(rdRegions, virtualRegion{
+		region: region{
+			virtual: 0xffffffffffffffff,
+			length:  0,
+		},
 	})
 
 	var regions []physicalRegion
@@ -137,7 +139,7 @@ func archPhysicalRegions(physicalRegions []physicalRegion) []physicalRegion {
 		start := pr.virtual
 		end := pr.virtual + pr.length
 		for start < end {
-			rdRegion := rdRegions[i]
+			rdRegion := rdRegions[i].region
 			rdStart := rdRegion.virtual
 			rdEnd := rdRegion.virtual + rdRegion.length
 			if rdEnd <= start {
