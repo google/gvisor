@@ -272,9 +272,12 @@ func newFUSEFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, fsTyp
 	// reference on fuseFD, since conn uses fuseFD for communication with the
 	// server? Wouldn't doing so create a circular reference?
 	fs.VFSFilesystem().IncRef() // for fuseFD.fs
-	// FIXME(gvisor.dev/issue/4813): fuseFD.fs is accessed without
-	// synchronization.
+
+	fuseFD.mu.Lock()
+	fs.conn.mu.Lock()
 	fuseFD.fs = fs
+	fs.conn.mu.Unlock()
+	fuseFD.mu.Unlock()
 
 	return fs, nil
 }
