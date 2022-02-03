@@ -205,6 +205,20 @@ func (f *fidRef) DecRef() {
 	}
 }
 
+// TryIncRef returns true if a new reference is taken on the fid, and false if
+// the fid has been destroyed.
+func (f *fidRef) TryIncRef() bool {
+	for {
+		r := atomic.LoadInt64(&f.refs)
+		if r <= 0 {
+			return false
+		}
+		if atomic.CompareAndSwapInt64(&f.refs, r, r+1) {
+			return true
+		}
+	}
+}
+
 // isDeleted returns true if this fidRef has been deleted.
 //
 // Precondition: this must be called via safelyRead, safelyWrite or
