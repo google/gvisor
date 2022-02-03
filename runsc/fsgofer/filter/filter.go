@@ -27,7 +27,7 @@ func Install() error {
 	// when not enabled.
 	allowedSyscalls.Merge(instrumentationFilters())
 
-	return seccomp.Install(allowedSyscalls)
+	return seccomp.Install(allowedSyscalls, seccomp.DenyNewExecMappings)
 }
 
 // InstallUDSFilters extends the allowed syscalls to include those necessary for

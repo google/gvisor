@@ -41,11 +41,14 @@ const (
 // used because it only kills the offending thread and often keeps the sentry
 // hanging.
 //
+// denyRules describes forbidden syscalls. rules describes allowed syscalls.
+// denyRules is executed before rules.
+//
 // Be aware that RET_TRAP sends SIGSYS to the process and it may be ignored,
 // making it possible for the process to continue running after a violation.
 // However, it will leave a SECCOMP audit event trail behind. In any case, the
 // syscall is still blocked from executing.
-func Install(rules SyscallRules) error {
+func Install(rules SyscallRules, denyRules SyscallRules) error {
 	defaultAction, err := defaultAction()
 	if err != nil {
 		return err
@@ -57,6 +60,10 @@ func Install(rules SyscallRules) error {
 	log.Infof("Installing seccomp filters for %d syscalls (action=%v)", len(rules), defaultAction)
 
 	instrs, err := BuildProgram([]RuleSet{
+		{
+			Rules:  denyRules,
+			Action: defaultAction,
+		},
 		{
 			Rules:  rules,
 			Action: linux.SECCOMP_RET_ALLOW,
