@@ -209,7 +209,11 @@ func ReadTest(serverTask *kernel.Task, fd *vfs.FileDescription, inIOseq usermem.
 // a header, a payload, calls the server, waits for the response, and processes
 // the response.
 func fuseClientRun(t *testing.T, s *testutil.System, k *kernel.Kernel, conn *connection, creds *auth.Credentials, pid uint32, inode uint64, clientDone chan struct{}) {
-	defer func() { clientDone <- struct{}{} }()
+	defer func() {
+		if !t.Failed() {
+			clientDone <- struct{}{}
+		}
+	}()
 
 	tc := k.NewThreadGroup(nil, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
 	clientTask, err := testutil.CreateTask(s.Ctx, fmt.Sprintf("fuse-client-%v", pid), tc, s.MntNs, s.Root, s.Root)
@@ -251,7 +255,11 @@ func fuseClientRun(t *testing.T, s *testutil.System, k *kernel.Kernel, conn *con
 // that simply reads a request and echos the same struct back as a response using the
 // appropriate headers.
 func fuseServerRun(t *testing.T, s *testutil.System, k *kernel.Kernel, fd *vfs.FileDescription, serverDone, killServer chan struct{}) {
-	defer func() { serverDone <- struct{}{} }()
+	defer func() {
+		if !t.Failed() {
+			serverDone <- struct{}{}
+		}
+	}()
 
 	// Create the tasks that the server will be using.
 	tc := k.NewThreadGroup(nil, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
