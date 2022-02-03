@@ -109,9 +109,13 @@ func (conn *connection) InitRecv(res *Response, hasSysAdminCap bool) error {
 // Process the FUSE_INIT reply from the FUSE server.
 // It tries to acquire the conn.asyncMu lock if minor version is newer than 13.
 func (conn *connection) initProcessReply(out *linux.FUSEInitOut, hasSysAdminCap bool) error {
+	conn.mu.Lock()
 	// No matter error or not, always set initialzied.
 	// to unblock the blocked requests.
-	defer conn.SetInitialized()
+	defer func() {
+		conn.SetInitialized()
+		conn.mu.Unlock()
+	}()
 
 	// No support for old major fuse versions.
 	if out.Major != linux.FUSE_KERNEL_VERSION {
@@ -219,7 +223,7 @@ func (conn *connection) Abort(ctx context.Context) {
 	conn.asyncMu.Unlock()
 	conn.mu.Unlock()
 
-	// 1. The requets blocked before initialization.
+	// 1. The request blocked before initialization.
 	// Will reach call() `connected` check and return.
 	if !conn.Initialized() {
 		conn.SetInitialized()

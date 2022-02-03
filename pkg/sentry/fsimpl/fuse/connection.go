@@ -48,7 +48,7 @@ const (
 type connection struct {
 	fd *DeviceFD
 
-	// mu protects access to struct memebers.
+	// mu protects access to struct members.
 	mu sync.Mutex `state:"nosave"`
 
 	// attributeVersion is the version of connection's attributes.
@@ -84,15 +84,18 @@ type connection struct {
 	//   umount,
 	//   connection abort,
 	//   device release.
+	// +checklocks:mu
 	connected bool
 
 	// connInitError if FUSE_INIT encountered error (major version mismatch).
 	// Only set in INIT.
+	// +checklocks:mu
 	connInitError bool
 
 	// connInitSuccess if FUSE_INIT is successful.
 	// Only set in INIT.
-	// Used for destory (not yet implemented).
+	// Used for destroy (not yet implemented).
+	// +checklocks:mu
 	connInitSuccess bool
 
 	// aborted via sysfs, and will send ECONNABORTED to read after disconnection (instead of ENODEV).
@@ -100,7 +103,7 @@ type connection struct {
 	// TODO(gvisor.dev/issue/3525): set this to true when user aborts.
 	aborted bool
 
-	// numWating is the number of requests waiting to be
+	// numWaiting is the number of requests waiting to be
 	// sent to FUSE device or being processed by FUSE daemon.
 	numWaiting uint32
 
@@ -118,19 +121,19 @@ type connection struct {
 	asyncMu sync.Mutex `state:"nosave"`
 
 	// asyncNum is the number of async requests.
-	// Protected by asyncMu.
+	// +checklocks:asyncMu
 	asyncNum uint16
 
 	// asyncCongestionThreshold the number of async requests.
 	// Negotiated in FUSE_INIT as "CongestionThreshold".
 	// TODO(gvisor.dev/issue/3529): add congestion control.
-	// Protected by asyncMu.
+	// +checklocks:asyncMu
 	asyncCongestionThreshold uint16
 
 	// asyncNumMax is the maximum number of asyncNum.
 	// Connection blocks the async requests when it is reached.
 	// Negotiated in FUSE_INIT as "MaxBackground".
-	// Protected by asyncMu.
+	// +checklocks:asyncMu
 	asyncNumMax uint16
 
 	// maxRead is the maximum size of a read buffer in in bytes.
@@ -201,10 +204,12 @@ func newFUSEConnection(_ context.Context, fuseFD *DeviceFD, opts *filesystemOpti
 
 	// Create the writeBuf for the header to be stored in.
 	hdrLen := uint32((*linux.FUSEHeaderOut)(nil).SizeBytes())
+	fuseFD.mu.Lock()
 	fuseFD.writeBuf = make([]byte, hdrLen)
 	fuseFD.completions = make(map[linux.FUSEOpID]*futureResponse)
 	fuseFD.fullQueueCh = make(chan struct{}, opts.maxActiveRequests)
 	fuseFD.writeCursor = 0
+	fuseFD.mu.Unlock()
 
 	return &connection{
 		fd:                       fuseFD,
@@ -251,15 +256,24 @@ func (conn *connection) Call(t *kernel.Task, r *Request) (*Response, error) {
 		}
 	}
 
-	if !conn.connected {
+	conn.fd.mu.Lock()
+	conn.mu.Lock()
+	connected := conn.connected
+	connInitError := conn.connInitError
+	conn.mu.Unlock()
+
+	if !connected {
+		conn.fd.mu.Unlock()
 		return nil, linuxerr.ENOTCONN
 	}
 
-	if conn.connInitError {
+	if connInitError {
+		conn.fd.mu.Unlock()
 		return nil, linuxerr.ECONNREFUSED
 	}
 
 	fut, err := conn.callFuture(t, r)
+	conn.fd.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
@@ -269,10 +283,8 @@ func (conn *connection) Call(t *kernel.Task, r *Request) (*Response, error) {
 
 // callFuture makes a request to the server and returns a future response.
 // Call resolve() when the response needs to be fulfilled.
+// +checklocks:conn.fd.mu
 func (conn *connection) callFuture(t *kernel.Task, r *Request) (*futureResponse, error) {
-	conn.fd.mu.Lock()
-	defer conn.fd.mu.Unlock()
-
 	// Is the queue full?
 	//
 	// We must busy wait here until the request can be queued. We don't
@@ -299,6 +311,7 @@ func (conn *connection) callFuture(t *kernel.Task, r *Request) (*futureResponse,
 }
 
 // callFutureLocked makes a request to the server and returns a future response.
+// +checklocks:conn.fd.mu
 func (conn *connection) callFutureLocked(t *kernel.Task, r *Request) (*futureResponse, error) {
 	// Check connected again holding conn.mu.
 	conn.mu.Lock()

@@ -118,10 +118,17 @@ func (fd *DeviceFD) Release(ctx context.Context) {
 	}
 }
 
+// filesystemIsInitialized returns true if fd.fs is set and the connection is
+// initialized.
+func (fd *DeviceFD) filesystemIsInitialized() bool {
+	// FIXME(gvisor.dev/issue/4813): Access to fd.fs should be synchronized.
+	return fd.fs != nil
+}
+
 // PRead implements vfs.FileDescriptionImpl.PRead.
 func (fd *DeviceFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
 	// Operations on /dev/fuse don't make sense until a FUSE filesystem is mounted.
-	if fd.fs == nil {
+	if !fd.filesystemIsInitialized() {
 		return 0, linuxerr.EPERM
 	}
 
@@ -131,7 +138,7 @@ func (fd *DeviceFD) PRead(ctx context.Context, dst usermem.IOSequence, offset in
 // Read implements vfs.FileDescriptionImpl.Read.
 func (fd *DeviceFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
 	// Operations on /dev/fuse don't make sense until a FUSE filesystem is mounted.
-	if fd.fs == nil {
+	if !fd.filesystemIsInitialized() {
 		return 0, linuxerr.EPERM
 	}
 
@@ -142,7 +149,9 @@ func (fd *DeviceFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.R
 	minBuffSize := linux.FUSE_MIN_READ_BUFFER
 	inHdrLen := uint32((*linux.FUSEHeaderIn)(nil).SizeBytes())
 	writeHdrLen := uint32((*linux.FUSEWriteIn)(nil).SizeBytes())
+	fd.fs.conn.mu.Lock()
 	negotiatedMinBuffSize := inHdrLen + writeHdrLen + fd.fs.conn.maxWrite
+	fd.fs.conn.mu.Unlock()
 	if minBuffSize < negotiatedMinBuffSize {
 		minBuffSize = negotiatedMinBuffSize
 	}
@@ -160,6 +169,7 @@ func (fd *DeviceFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.R
 // readLocked implements the reading of the fuse device while locked with DeviceFD.mu.
 //
 // Preconditions: dst is large enough for any reasonable request.
+// +checklocks:fd.mu
 func (fd *DeviceFD) readLocked(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
 	var req *Request
 
@@ -233,7 +243,7 @@ func (fd *DeviceFD) readLocked(ctx context.Context, dst usermem.IOSequence, opts
 // PWrite implements vfs.FileDescriptionImpl.PWrite.
 func (fd *DeviceFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
 	// Operations on /dev/fuse don't make sense until a FUSE filesystem is mounted.
-	if fd.fs == nil {
+	if !fd.filesystemIsInitialized() {
 		return 0, linuxerr.EPERM
 	}
 
@@ -248,9 +258,10 @@ func (fd *DeviceFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.
 }
 
 // writeLocked implements writing to the fuse device while locked with DeviceFD.mu.
+// +checklocks:fd.mu
 func (fd *DeviceFD) writeLocked(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
 	// Operations on /dev/fuse don't make sense until a FUSE filesystem is mounted.
-	if fd.fs == nil {
+	if !fd.filesystemIsInitialized() {
 		return 0, linuxerr.EPERM
 	}
 
@@ -359,10 +370,11 @@ func (fd *DeviceFD) Readiness(mask waiter.EventMask) waiter.EventMask {
 
 // readinessLocked implements checking the readiness of the fuse device while
 // locked with DeviceFD.mu.
+// +checklocks:fd.mu
 func (fd *DeviceFD) readinessLocked(mask waiter.EventMask) waiter.EventMask {
 	var ready waiter.EventMask
 
-	if fd.fs == nil || fd.fs.umounted {
+	if !fd.filesystemIsInitialized() || fd.fs.umounted {
 		ready |= waiter.EventErr
 		return ready & mask
 	}
@@ -391,7 +403,7 @@ func (fd *DeviceFD) EventUnregister(e *waiter.Entry) {
 // Seek implements vfs.FileDescriptionImpl.Seek.
 func (fd *DeviceFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
 	// Operations on /dev/fuse don't make sense until a FUSE filesystem is mounted.
-	if fd.fs == nil {
+	if !fd.filesystemIsInitialized() {
 		return 0, linuxerr.EPERM
 	}
 
