@@ -55,8 +55,7 @@ namespace {
 
 // Fixture for tests parameterized by the address family to use (AF_INET and
 // AF_INET6) when creating sockets.
-class UdpSocketTest
-    : public ::testing::TestWithParam<gvisor::testing::AddressFamily> {
+class UdpSocketTest : public ::testing::TestWithParam<int> {
  protected:
   // Creates two sockets that will be used by test cases.
   void SetUp() override;
@@ -79,9 +78,6 @@ class UdpSocketTest
   // Disconnects socket sockfd.
   void Disconnect(int sockfd);
 
-  // Get family for the test.
-  int GetFamily();
-
   // Socket used by Bind methods
   FileDescriptor bind_;
 
@@ -91,7 +87,7 @@ class UdpSocketTest
   // Address for bind_ socket.
   struct sockaddr* bind_addr_;
 
-  // Initialized to the length based on GetFamily().
+  // Initialized to the length based on GetParam().
   socklen_t addrlen_;
 
   // Storage for bind_addr_.
@@ -138,19 +134,12 @@ void UdpSocketTest::SetUp() {
   addrlen_ = GetAddrLength();
 
   bind_ =
-      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetFamily(), SOCK_DGRAM, IPPROTO_UDP));
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_DGRAM, IPPROTO_UDP));
   memset(&bind_addr_storage_, 0, sizeof(bind_addr_storage_));
   bind_addr_ = AsSockAddr(&bind_addr_storage_);
 
   sock_ =
-      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetFamily(), SOCK_DGRAM, IPPROTO_UDP));
-}
-
-int UdpSocketTest::GetFamily() {
-  if (GetParam() == AddressFamily::kIpv4) {
-    return AF_INET;
-  }
-  return AF_INET6;
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_DGRAM, IPPROTO_UDP));
 }
 
 PosixError UdpSocketTest::BindLoopback() {
@@ -183,7 +172,7 @@ PosixError UdpSocketTest::BindSocket(int socket, struct sockaddr* addr) {
 
 socklen_t UdpSocketTest::GetAddrLength() {
   struct sockaddr_storage addr;
-  if (GetFamily() == AF_INET) {
+  if (GetParam() == AF_INET) {
     auto sin = reinterpret_cast<struct sockaddr_in*>(&addr);
     return sizeof(*sin);
   }
@@ -195,9 +184,9 @@ socklen_t UdpSocketTest::GetAddrLength() {
 sockaddr_storage UdpSocketTest::InetAnyAddr() {
   struct sockaddr_storage addr;
   memset(&addr, 0, sizeof(addr));
-  AsSockAddr(&addr)->sa_family = GetFamily();
+  AsSockAddr(&addr)->sa_family = GetParam();
 
-  if (GetFamily() == AF_INET) {
+  if (GetParam() == AF_INET) {
     auto sin = reinterpret_cast<struct sockaddr_in*>(&addr);
     sin->sin_addr.s_addr = htonl(INADDR_ANY);
     sin->sin_port = htons(0);
@@ -213,9 +202,9 @@ sockaddr_storage UdpSocketTest::InetAnyAddr() {
 sockaddr_storage UdpSocketTest::InetLoopbackAddr() {
   struct sockaddr_storage addr;
   memset(&addr, 0, sizeof(addr));
-  AsSockAddr(&addr)->sa_family = GetFamily();
+  AsSockAddr(&addr)->sa_family = GetParam();
 
-  if (GetFamily() == AF_INET) {
+  if (GetParam() == AF_INET) {
     auto sin = reinterpret_cast<struct sockaddr_in*>(&addr);
     sin->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     sin->sin_port = htons(0);
@@ -237,7 +226,7 @@ void UdpSocketTest::Disconnect(int sockfd) {
 
   // Check that after disconnect the socket is bound to the ANY address.
   EXPECT_THAT(getsockname(sockfd, addr, &addrlen), SyscallSucceeds());
-  if (GetParam() == AddressFamily::kIpv4) {
+  if (GetParam() == AF_INET) {
     auto addr_out = reinterpret_cast<struct sockaddr_in*>(addr);
     EXPECT_EQ(addrlen, sizeof(*addr_out));
     EXPECT_EQ(addr_out->sin_addr.s_addr, htonl(INADDR_ANY));
@@ -252,13 +241,13 @@ void UdpSocketTest::Disconnect(int sockfd) {
 
 TEST_P(UdpSocketTest, Creation) {
   FileDescriptor sock =
-      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetFamily(), SOCK_DGRAM, IPPROTO_UDP));
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_DGRAM, IPPROTO_UDP));
   EXPECT_THAT(close(sock.release()), SyscallSucceeds());
 
-  sock = ASSERT_NO_ERRNO_AND_VALUE(Socket(GetFamily(), SOCK_DGRAM, 0));
+  sock = ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_DGRAM, 0));
   EXPECT_THAT(close(sock.release()), SyscallSucceeds());
 
-  ASSERT_THAT(socket(GetFamily(), SOCK_STREAM, IPPROTO_UDP), SyscallFails());
+  ASSERT_THAT(socket(GetParam(), SOCK_STREAM, IPPROTO_UDP), SyscallFails());
 }
 
 TEST_P(UdpSocketTest, Getsockname) {
@@ -377,7 +366,7 @@ TEST_P(UdpSocketTest, ConnectWriteToInvalidPort) {
   socklen_t addrlen = sizeof(addr_storage);
   struct sockaddr* addr = AsSockAddr(&addr_storage);
   FileDescriptor s =
-      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetFamily(), SOCK_DGRAM, IPPROTO_UDP));
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_DGRAM, IPPROTO_UDP));
   ASSERT_THAT(bind(s.get(), addr, addrlen), SyscallSucceeds());
   ASSERT_THAT(getsockname(s.get(), addr, &addrlen), SyscallSucceeds());
   EXPECT_EQ(addrlen, addrlen_);
@@ -411,7 +400,7 @@ TEST_P(UdpSocketTest, ConnectSimultaneousWriteToInvalidPort) {
   socklen_t addrlen = sizeof(addr_storage);
   struct sockaddr* addr = AsSockAddr(&addr_storage);
   FileDescriptor s =
-      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetFamily(), SOCK_DGRAM, IPPROTO_UDP));
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_DGRAM, IPPROTO_UDP));
   ASSERT_THAT(bind(s.get(), addr, addrlen), SyscallSucceeds());
   ASSERT_THAT(getsockname(s.get(), addr, &addrlen), SyscallSucceeds());
   EXPECT_EQ(addrlen, addrlen_);
@@ -503,7 +492,7 @@ TEST_P(UdpSocketTest, Connect) {
   struct sockaddr_storage bind2_storage = InetLoopbackAddr();
   struct sockaddr* bind2_addr = AsSockAddr(&bind2_storage);
   FileDescriptor bind2 =
-      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetFamily(), SOCK_DGRAM, IPPROTO_UDP));
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_DGRAM, IPPROTO_UDP));
   ASSERT_NO_ERRNO(BindSocket(bind2.get(), bind2_addr));
 
   // Try to connect again.
@@ -644,7 +633,7 @@ TEST_P(UdpSocketTest, DisconnectAfterBindToUnspecAndConnect) {
   sockaddr_storage unspec = {.ss_family = AF_UNSPEC};
   int bind_res = bind(sock_.get(), AsSockAddr(&unspec), sizeof(unspec));
   if ((!IsRunningOnGvisor() || IsRunningWithHostinet()) &&
-      GetFamily() == AF_INET) {
+      GetParam() == AF_INET) {
     // Linux allows this for undocumented compatibility reasons:
     // https://github.com/torvalds/linux/commit/29c486df6a208432b370bd4be99ae1369ede28d8.
     //
@@ -678,7 +667,7 @@ TEST_P(UdpSocketTest, BindToAnyConnnectToLocalhost) {
 
   // If the socket is bound to ANY and connected to a loopback address,
   // getsockname() has to return the loopback address.
-  if (GetParam() == AddressFamily::kIpv4) {
+  if (GetParam() == AF_INET) {
     auto addr_out = reinterpret_cast<struct sockaddr_in*>(addr);
     EXPECT_EQ(addrlen, sizeof(*addr_out));
     EXPECT_EQ(addr_out->sin_addr.s_addr, htonl(INADDR_LOOPBACK));
@@ -759,7 +748,7 @@ TEST_P(UdpSocketTest, Disconnect) {
 
 TEST_P(UdpSocketTest, ConnectBadAddress) {
   struct sockaddr addr = {};
-  addr.sa_family = GetFamily();
+  addr.sa_family = GetParam();
   ASSERT_THAT(connect(sock_.get(), &addr, sizeof(addr.sa_family)),
               SyscallFailsWithErrno(EINVAL));
 }
@@ -829,7 +818,7 @@ TEST_P(UdpSocketTest, RecvErrorConnRefused) {
   socklen_t optlen = sizeof(v);
   int opt_level = SOL_IP;
   int opt_type = IP_RECVERR;
-  if (GetParam() != AddressFamily::kIpv4) {
+  if (GetParam() == AF_INET6) {
     opt_level = SOL_IPV6;
     opt_type = IPV6_RECVERR;
   }
@@ -889,7 +878,7 @@ TEST_P(UdpSocketTest, RecvErrorConnRefused) {
   struct sock_extended_err* sock_err =
       (struct sock_extended_err*)CMSG_DATA(cmsg);
   EXPECT_EQ(sock_err->ee_errno, ECONNREFUSED);
-  if (GetParam() == AddressFamily::kIpv4) {
+  if (GetParam() == AF_INET) {
     EXPECT_EQ(sock_err->ee_origin, SO_EE_ORIGIN_ICMP);
     EXPECT_EQ(sock_err->ee_type, ICMP_DEST_UNREACH);
     EXPECT_EQ(sock_err->ee_code, ICMP_PORT_UNREACH);
@@ -1751,7 +1740,7 @@ TEST_P(UdpSocketTest, TimestampIoctlPersistence) {
 // TOS and TCLASS values may be different but IPv6 sockets with IPv4-mapped-IPv6
 // addresses use TOS (IPv4), not TCLASS (IPv6).
 TEST_P(UdpSocketTest, DifferentTOSAndTClass) {
-  const int kFamily = GetFamily();
+  const int kFamily = GetParam();
   constexpr int kToS = IPTOS_LOWDELAY;
   constexpr int kTClass = IPTOS_THROUGHPUT;
   ASSERT_NE(kToS, kTClass);
@@ -1900,7 +1889,7 @@ TEST_P(UdpSocketTest, SetAndReceiveTOS) {
   // Allow socket to receive control message.
   int recv_level = SOL_IP;
   int recv_type = IP_RECVTOS;
-  if (GetParam() != AddressFamily::kIpv4) {
+  if (GetParam() == AF_INET6) {
     recv_level = SOL_IPV6;
     recv_type = IPV6_RECVTCLASS;
   }
@@ -1973,7 +1962,7 @@ TEST_P(UdpSocketTest, SendAndReceiveTOS) {
   // Allow socket to receive control message.
   int recv_level = SOL_IP;
   int recv_type = IP_RECVTOS;
-  if (GetParam() != AddressFamily::kIpv4) {
+  if (GetParam() == AF_INET6) {
     recv_level = SOL_IPV6;
     recv_type = IPV6_RECVTCLASS;
   }
@@ -2269,9 +2258,7 @@ TEST_P(UdpSocketTest, ConnectToZeroPortConnected) {
 }
 
 INSTANTIATE_TEST_SUITE_P(AllInetTests, UdpSocketTest,
-                         ::testing::Values(AddressFamily::kIpv4,
-                                           AddressFamily::kIpv6,
-                                           AddressFamily::kDualStack));
+                         ::testing::Values(AF_INET, AF_INET6));
 
 TEST(UdpInet6SocketTest, ConnectInet4Sockaddr) {
   // glibc getaddrinfo expects the invariant expressed by this test to be held.
