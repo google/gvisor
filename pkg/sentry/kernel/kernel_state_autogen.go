@@ -2286,6 +2286,7 @@ func (ns *PIDNamespace) StateFields() []string {
 		"processGroups",
 		"pgids",
 		"exiting",
+		"extra",
 	}
 }
 
@@ -2306,6 +2307,7 @@ func (ns *PIDNamespace) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(9, &ns.processGroups)
 	stateSinkObject.Save(10, &ns.pgids)
 	stateSinkObject.Save(11, &ns.exiting)
+	stateSinkObject.Save(12, &ns.extra)
 }
 
 func (ns *PIDNamespace) afterLoad() {}
@@ -2324,6 +2326,7 @@ func (ns *PIDNamespace) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(9, &ns.processGroups)
 	stateSourceObject.Load(10, &ns.pgids)
 	stateSourceObject.Load(11, &ns.exiting)
+	stateSourceObject.Load(12, &ns.extra)
 }
 
 func (t *threadGroupNode) StateTypeName() string {

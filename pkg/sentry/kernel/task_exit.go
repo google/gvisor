@@ -651,12 +651,7 @@ func (t *Task) exitNotifyLocked(fromPtraceDetach bool) {
 	if t.exitTracerAcked && t.exitParentAcked {
 		t.advanceExitStateLocked(TaskExitZombie, TaskExitDead)
 		for ns := t.tg.pidns; ns != nil; ns = ns.parent {
-			tid := ns.tids[t]
-			delete(ns.tasks, tid)
-			delete(ns.tids, t)
-			if t == t.tg.leader {
-				delete(ns.tgids, t.tg)
-			}
+			ns.deleteTask(t)
 		}
 		t.userCounters.decRLimitNProc()
 		t.tg.exitedCPUStats.Accumulate(t.CPUStats())
