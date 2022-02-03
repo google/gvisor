@@ -120,7 +120,7 @@ TEST_F(WriteTest, WriteNormal) {
 
   EXPECT_EQ(in_payload_write.fh, test_fh_);
   EXPECT_EQ(in_header_write.len,
-            sizeof(in_header_write) + sizeof(in_payload_write));
+            sizeof(in_header_write) + sizeof(in_payload_write) + n_write);
   EXPECT_EQ(in_header_write.opcode, FUSE_WRITE);
   EXPECT_EQ(in_payload_write.offset, 0);
   EXPECT_EQ(in_payload_write.size, n_write);
@@ -157,7 +157,7 @@ TEST_F(WriteTest, WriteShort) {
 
   EXPECT_EQ(in_payload_write.fh, test_fh_);
   EXPECT_EQ(in_header_write.len,
-            sizeof(in_header_write) + sizeof(in_payload_write));
+            sizeof(in_header_write) + sizeof(in_payload_write) + n_write);
   EXPECT_EQ(in_header_write.opcode, FUSE_WRITE);
   EXPECT_EQ(in_payload_write.offset, 0);
   EXPECT_EQ(in_payload_write.size, n_write);
@@ -193,7 +193,7 @@ TEST_F(WriteTest, WriteShortZero) {
 
   EXPECT_EQ(in_payload_write.fh, test_fh_);
   EXPECT_EQ(in_header_write.len,
-            sizeof(in_header_write) + sizeof(in_payload_write));
+            sizeof(in_header_write) + sizeof(in_payload_write) + n_write);
   EXPECT_EQ(in_header_write.opcode, FUSE_WRITE);
   EXPECT_EQ(in_payload_write.offset, 0);
   EXPECT_EQ(in_payload_write.size, n_write);
@@ -240,7 +240,7 @@ TEST_F(WriteTest, PWrite) {
 
   EXPECT_EQ(in_payload_write.fh, test_fh_);
   EXPECT_EQ(in_header_write.len,
-            sizeof(in_header_write) + sizeof(in_payload_write));
+            sizeof(in_header_write) + sizeof(in_payload_write) + n_write);
   EXPECT_EQ(in_header_write.opcode, FUSE_WRITE);
   EXPECT_EQ(in_payload_write.offset, offset_write);
   EXPECT_EQ(in_payload_write.size, n_write);
@@ -286,8 +286,9 @@ TEST_F(WriteTestSmallMaxWrite, WriteSmallMaxWrie) {
     GetServerActualRequest(iov_in_write);
 
     EXPECT_EQ(in_payload_write.fh, test_fh_);
-    EXPECT_EQ(in_header_write.len,
-              sizeof(in_header_write) + sizeof(in_payload_write));
+    EXPECT_EQ(
+        in_header_write.len,
+        sizeof(in_header_write) + sizeof(in_payload_write) + size_fragment);
     EXPECT_EQ(in_header_write.opcode, FUSE_WRITE);
     EXPECT_EQ(in_payload_write.offset, i * size_fragment);
     EXPECT_EQ(in_payload_write.size, size_fragment);
