@@ -17,6 +17,7 @@ func (p *icmpPacket) StateFields() []string {
 		"senderAddress",
 		"data",
 		"receivedAt",
+		"tosOrTClass",
 	}
 }
 
@@ -33,6 +34,7 @@ func (p *icmpPacket) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.SaveValue(3, receivedAtValue)
 	stateSinkObject.Save(0, &p.icmpPacketEntry)
 	stateSinkObject.Save(1, &p.senderAddress)
+	stateSinkObject.Save(4, &p.tosOrTClass)
 }
 
 func (p *icmpPacket) afterLoad() {}
@@ -41,6 +43,7 @@ func (p *icmpPacket) afterLoad() {}
 func (p *icmpPacket) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.icmpPacketEntry)
 	stateSourceObject.Load(1, &p.senderAddress)
+	stateSourceObject.Load(4, &p.tosOrTClass)
 	stateSourceObject.LoadValue(2, new(buffer.VectorisedView), func(y interface{}) { p.loadData(y.(buffer.VectorisedView)) })
 	stateSourceObject.LoadValue(3, new(int64), func(y interface{}) { p.loadReceivedAt(y.(int64)) })
 }

@@ -689,10 +689,14 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 			PayloadCsum: dataRange.Checksum(),
 			PayloadLen:  dataRange.Size(),
 		}))
+		replyTClass, _ := iph.TOS()
 		if err := r.WritePacket(stack.NetworkHeaderParams{
 			Protocol: header.ICMPv6ProtocolNumber,
 			TTL:      r.DefaultTTL(),
-			TOS:      stack.DefaultTOS,
+			// Even though RFC 4443 does not mention anything about it, Linux uses the
+			// TrafficClass of the received echo request when replying.
+			// https://github.com/torvalds/linux/blob/0280e3c58f9/net/ipv6/icmp.c#L797
+			TOS: replyTClass,
 		}, replyPkt); err != nil {
 			sent.dropped.Increment()
 			return
