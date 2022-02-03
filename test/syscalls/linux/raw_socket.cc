@@ -1186,6 +1186,124 @@ TEST(RawSocketTest, ReceiveIPv6PacketInfo) {
   EXPECT_THAT(CMSG_NXTHDR(&recv_msg, cmsg), IsNull());
 }
 
+TEST(RawSocketTest, ReceiveTOS) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+
+  FileDescriptor raw =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_RAW, IPPROTO_UDP));
+
+  const sockaddr_in kAddr = {
+      .sin_family = AF_INET,
+      .sin_addr = {.s_addr = htonl(INADDR_LOOPBACK)},
+  };
+  ASSERT_THAT(
+      bind(raw.get(), reinterpret_cast<const sockaddr*>(&kAddr), sizeof(kAddr)),
+      SyscallSucceeds());
+
+  constexpr int kArbitraryTOS = 42;
+  ASSERT_THAT(setsockopt(raw.get(), IPPROTO_IP, IP_TOS, &kArbitraryTOS,
+                         sizeof(kArbitraryTOS)),
+              SyscallSucceeds());
+
+  constexpr char kSendBuf[] = "malformed UDP";
+  ASSERT_THAT(sendto(raw.get(), kSendBuf, sizeof(kSendBuf), 0 /* flags */,
+                     reinterpret_cast<const sockaddr*>(&kAddr), sizeof(kAddr)),
+              SyscallSucceedsWithValue(sizeof(kSendBuf)));
+
+  // Register to receive TOS.
+  constexpr int kOne = 1;
+  ASSERT_THAT(
+      setsockopt(raw.get(), IPPROTO_IP, IP_RECVTOS, &kOne, sizeof(kOne)),
+      SyscallSucceeds());
+
+  struct {
+    iphdr ip;
+    char data[sizeof(kSendBuf)];
+
+    // Extra space in the receive buffer should be unused.
+    char unused_space;
+  } ABSL_ATTRIBUTE_PACKED recv_buf;
+  uint8_t recv_tos;
+  size_t recv_buf_len = sizeof(recv_buf);
+  ASSERT_NO_FATAL_FAILURE(RecvTOS(raw.get(), reinterpret_cast<char*>(&recv_buf),
+                                  &recv_buf_len, &recv_tos));
+  ASSERT_EQ(recv_buf_len, sizeof(iphdr) + sizeof(kSendBuf));
+
+  EXPECT_EQ(recv_buf.ip.version, static_cast<unsigned int>(IPVERSION));
+  // IHL holds the number of header bytes in 4 byte units.
+  EXPECT_EQ(recv_buf.ip.ihl, sizeof(iphdr) / 4);
+  EXPECT_EQ(ntohs(recv_buf.ip.tot_len), sizeof(iphdr) + sizeof(kSendBuf));
+  EXPECT_EQ(recv_buf.ip.protocol, IPPROTO_UDP);
+  EXPECT_EQ(ntohl(recv_buf.ip.saddr), INADDR_LOOPBACK);
+  EXPECT_EQ(ntohl(recv_buf.ip.daddr), INADDR_LOOPBACK);
+
+  EXPECT_EQ(memcmp(kSendBuf, &recv_buf.data, sizeof(kSendBuf)), 0);
+
+  if (const char* val = getenv("TOS_TCLASS_EXPECT_DEFAULT");
+      val != nullptr && strcmp(val, "1") == 0) {
+    // TODO(https://issuetracker.google.com/issues/217448626): As of writing, it
+    // seems like at least one Linux environment does not allow setting a custom
+    // TOS. In this case, we expect the default instead of the TOS that was set
+    // above.
+    EXPECT_EQ(recv_buf.ip.tos, 0u);
+    EXPECT_EQ(recv_tos, 0u);
+  } else {
+    EXPECT_EQ(recv_buf.ip.tos, static_cast<uint8_t>(kArbitraryTOS));
+    EXPECT_EQ(recv_tos, kArbitraryTOS);
+  }
+}
+
+TEST(RawSocketTest, ReceiveTClass) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+
+  FileDescriptor raw =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_RAW, IPPROTO_UDP));
+
+  const sockaddr_in6 kAddr = {
+      .sin6_family = AF_INET6,
+      .sin6_addr = in6addr_loopback,
+  };
+  ASSERT_THAT(
+      bind(raw.get(), reinterpret_cast<const sockaddr*>(&kAddr), sizeof(kAddr)),
+      SyscallSucceeds());
+
+  constexpr int kArbitraryTClass = 42;
+  ASSERT_THAT(setsockopt(raw.get(), IPPROTO_IPV6, IPV6_TCLASS,
+                         &kArbitraryTClass, sizeof(kArbitraryTClass)),
+              SyscallSucceeds());
+
+  constexpr char send_buf[] = "malformed UDP";
+  ASSERT_THAT(sendto(raw.get(), send_buf, sizeof(send_buf), 0 /* flags */,
+                     reinterpret_cast<const sockaddr*>(&kAddr), sizeof(kAddr)),
+              SyscallSucceedsWithValue(sizeof(send_buf)));
+
+  // Register to receive TClass.
+  constexpr int kOne = 1;
+  ASSERT_THAT(
+      setsockopt(raw.get(), IPPROTO_IPV6, IPV6_RECVTCLASS, &kOne, sizeof(kOne)),
+      SyscallSucceeds());
+
+  char recv_buf[sizeof(send_buf) + 1];
+  size_t recv_buf_len = sizeof(recv_buf);
+  int recv_tclass;
+  ASSERT_NO_FATAL_FAILURE(
+      RecvTClass(raw.get(), recv_buf, &recv_buf_len, &recv_tclass));
+  ASSERT_EQ(recv_buf_len, sizeof(send_buf));
+
+  EXPECT_EQ(memcmp(send_buf, recv_buf, sizeof(send_buf)), 0);
+
+  if (const char* val = getenv("TOS_TCLASS_EXPECT_DEFAULT");
+      val != nullptr && strcmp(val, "1") == 0) {
+    // TODO(https://issuetracker.google.com/issues/217448626): As of writing, it
+    // seems like at least one Linux environment does not allow setting a custom
+    // TCLASS. In this case, we expect the default instead of the TCLASS that
+    // was set above.
+    EXPECT_EQ(recv_tclass, 0);
+  } else {
+    EXPECT_EQ(recv_tclass, kArbitraryTClass);
+  }
+}
+
 TEST(RawSocketTest, SetIPv6ChecksumError_MultipleOf2) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
 

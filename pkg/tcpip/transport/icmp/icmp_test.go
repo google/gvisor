@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/testing/context"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -41,6 +42,8 @@ var (
 	localV4Addr2 = testutil.MustParse4("10.0.0.2")
 	remoteV4Addr = testutil.MustParse4("10.0.0.3")
 )
+
+const testTOS = 0x80
 
 func addNICWithDefaultRoute(t *testing.T, s *stack.Stack, id tcpip.NICID, name string, addrV4 tcpip.Address) *channel.Endpoint {
 	t.Helper()
@@ -80,18 +83,6 @@ func writePayload(buf []byte) {
 	}
 }
 
-func newICMPv4EchoRequest(payloadSize uint32) buffer.View {
-	buf := buffer.NewView(header.ICMPv4MinimumSize + int(payloadSize))
-	writePayload(buf[header.ICMPv4MinimumSize:])
-
-	icmp := header.ICMPv4(buf)
-	icmp.SetType(header.ICMPv4Echo)
-	// No need to set the checksum; it is reset by the socket before the packet
-	// is sent.
-
-	return buf
-}
-
 // TestWriteUnboundWithBindToDevice exercises writing to an unbound ICMP socket
 // when SO_BINDTODEVICE is set to the non-default NIC for that subnet.
 //
@@ -117,10 +108,22 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 
 	echoPayloadSize := defaultEP.MTU() - header.IPv4MinimumSize - header.ICMPv4MinimumSize
 
+	newICMPv4EchoRequest := func() buffer.View {
+		buf := buffer.NewView(header.ICMPv4MinimumSize + int(echoPayloadSize))
+		writePayload(buf[header.ICMPv4MinimumSize:])
+
+		icmp := header.ICMPv4(buf)
+		icmp.SetType(header.ICMPv4Echo)
+		// No need to set the checksum; it is reset by the socket before the packet
+		// is sent.
+
+		return buf
+	}
+
 	// Send a packet without SO_BINDTODEVICE. This verifies that the first NIC
 	// to be added is the default NIC to send packets when not explicitly bound.
 	{
-		buf := newICMPv4EchoRequest(echoPayloadSize)
+		buf := newICMPv4EchoRequest()
 		r := buf.Reader()
 		n, err := socket.Write(&r, tcpip.WriteOptions{
 			To: &tcpip.FullAddress{Addr: remoteV4Addr},
@@ -162,7 +165,7 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 		// Use SO_BINDTODEVICE to send over the alternate NIC by default.
 		socket.SocketOptions().SetBindToDevice(2)
 
-		buf := newICMPv4EchoRequest(echoPayloadSize)
+		buf := newICMPv4EchoRequest()
 		r := buf.Reader()
 		n, err := socket.Write(&r, tcpip.WriteOptions{
 			To: &tcpip.FullAddress{Addr: remoteV4Addr},
@@ -204,7 +207,7 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 	{
 		socket.SocketOptions().SetBindToDevice(0)
 
-		buf := newICMPv4EchoRequest(echoPayloadSize)
+		buf := newICMPv4EchoRequest()
 		r := buf.Reader()
 		n, err := socket.Write(&r, tcpip.WriteOptions{
 			To: &tcpip.FullAddress{Addr: remoteV4Addr},
@@ -238,6 +241,155 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 		if p := alternateEP.Read(); p != nil {
 			t.Fatalf("got alternateEP.Read(_) = %+v, true; want = _, false", p)
 		}
+	}
+}
+
+func buildV4EchoReplyPacket(payload []byte, h context.Header4Tuple) (buffer.View, buffer.View) {
+	const ttl = 65
+	// Allocate a buffer for data and headers.
+	buf := buffer.NewView(header.IPv4MinimumSize + header.ICMPv4MinimumSize + len(payload))
+	payloadStart := len(buf) - len(payload)
+	copy(buf[payloadStart:], payload)
+
+	// Initialize the IP header.
+	ip := header.IPv4(buf)
+	ip.Encode(&header.IPv4Fields{
+		TOS:         testTOS,
+		TotalLength: uint16(len(buf)),
+		TTL:         ttl,
+		Protocol:    uint8(icmp.ProtocolNumber4),
+		SrcAddr:     h.Src.Addr,
+		DstAddr:     h.Dst.Addr,
+	})
+	ip.SetChecksum(^ip.CalculateChecksum())
+
+	// Initialize the ICMP header.
+	icmp := header.ICMPv4(buf[header.IPv4MinimumSize:])
+	icmp.SetType(header.ICMPv4EchoReply)
+	icmp.SetCode(header.ICMPv4UnusedCode)
+	icmp.SetIdent(h.Dst.Port)
+	icmp.SetChecksum(^header.Checksum(icmp, 0))
+
+	return buf, buffer.View(icmp)
+}
+
+func buildV6EchoReplyPacket(payload []byte, h context.Header4Tuple) (buffer.View, buffer.View) {
+	const hoplimit = 65
+	// Allocate a buffer for data and headers.
+	buf := buffer.NewView(header.IPv6MinimumSize + header.ICMPv6EchoMinimumSize + len(payload))
+	payloadStart := len(buf) - len(payload)
+	copy(buf[payloadStart:], payload)
+
+	// Initialize the IP header.
+	ip := header.IPv6(buf)
+	ip.Encode(&header.IPv6Fields{
+		TrafficClass:      testTOS,
+		PayloadLength:     uint16(header.ICMPv6EchoMinimumSize + len(payload)),
+		TransportProtocol: icmp.ProtocolNumber6,
+		HopLimit:          hoplimit,
+		SrcAddr:           h.Src.Addr,
+		DstAddr:           h.Dst.Addr,
+	})
+
+	// Initialize the ICMPv6 header.
+	icmpv6 := header.ICMPv6(buf[header.IPv6MinimumSize:])
+	icmpv6.SetType(header.ICMPv6EchoReply)
+	icmpv6.SetCode(header.ICMPv6UnusedCode)
+	icmpv6.SetIdent(h.Dst.Port)
+	icmpv6.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+		Header:      icmpv6[:header.ICMPv6EchoMinimumSize],
+		Src:         h.Src.Addr,
+		Dst:         h.Dst.Addr,
+		PayloadCsum: header.Checksum(payload, 0),
+		PayloadLen:  len(payload),
+	}))
+
+	return buf, buffer.View(icmpv6)
+}
+
+// buildEchoReplyPacket builds an ICMPv4 or ICMPv6 echo reply packet, and
+// returns the full packet and the ICMP portion of the packet.
+func buildEchoReplyPacket(payload []byte, flow context.TestFlow) (buffer.View, buffer.View) {
+	h := flow.MakeHeader4Tuple(context.Incoming)
+	if flow.IsV4() {
+		return buildV4EchoReplyPacket(payload, h)
+	}
+	return buildV6EchoReplyPacket(payload, h)
+}
+
+func TestReceiveControlMessages(t *testing.T) {
+	var payload = [...]byte{0, 1, 2, 3, 4, 5}
+
+	for _, test := range []struct {
+		name             string
+		optionProtocol   tcpip.NetworkProtocolNumber
+		getReceiveOption func(tcpip.Endpoint) bool
+		setReceiveOption func(tcpip.Endpoint, bool)
+		presenceChecker  checker.ControlMessagesChecker
+		absenceChecker   checker.ControlMessagesChecker
+	}{
+		{
+			name:             "TOS",
+			optionProtocol:   header.IPv4ProtocolNumber,
+			getReceiveOption: func(ep tcpip.Endpoint) bool { return ep.SocketOptions().GetReceiveTOS() },
+			setReceiveOption: func(ep tcpip.Endpoint, value bool) { ep.SocketOptions().SetReceiveTOS(value) },
+			presenceChecker:  checker.ReceiveTOS(testTOS),
+			absenceChecker:   checker.NoTOSReceived(),
+		},
+		{
+			name:             "TClass",
+			optionProtocol:   header.IPv6ProtocolNumber,
+			getReceiveOption: func(ep tcpip.Endpoint) bool { return ep.SocketOptions().GetReceiveTClass() },
+			setReceiveOption: func(ep tcpip.Endpoint, value bool) { ep.SocketOptions().SetReceiveTClass(value) },
+			presenceChecker:  checker.ReceiveTClass(testTOS),
+			absenceChecker:   checker.NoTClassReceived(),
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			for _, flow := range []context.TestFlow{context.UnicastV4, context.UnicastV6, context.UnicastV6Only, context.MulticastV4, context.MulticastV6, context.MulticastV6Only, context.Broadcast} {
+				t.Run(flow.String(), func(t *testing.T) {
+					c := context.New(t, []stack.TransportProtocolFactory{icmp.NewProtocol4, icmp.NewProtocol6})
+					defer c.Cleanup()
+
+					icmpProto := func() tcpip.TransportProtocolNumber {
+						if flow.IsV4() {
+							return icmp.ProtocolNumber4
+						}
+						return icmp.ProtocolNumber6
+					}()
+
+					c.CreateEndpointForFlow(flow, icmpProto)
+					if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+						c.T.Fatalf("Bind failed: %s", err)
+					}
+					if flow.IsMulticast() {
+						netProto := flow.NetProto()
+						addr := flow.GetMulticastAddr()
+						if err := c.Stack.JoinGroup(netProto, context.NICID, addr); err != nil {
+							c.T.Fatalf("JoinGroup(%d, %d, %s): %s", netProto, context.NICID, addr, err)
+						}
+					}
+
+					buf, icmp := buildEchoReplyPacket(payload[:], flow)
+
+					if test.getReceiveOption(c.EP) {
+						t.Fatal("got getReceiveOption() = true, want = false")
+					}
+
+					test.setReceiveOption(c.EP, true)
+					if !test.getReceiveOption(c.EP) {
+						t.Fatal("got getReceiveOption() = false, want = true")
+					}
+
+					c.InjectPacket(flow.NetProto(), buf)
+					if flow.NetProto() == test.optionProtocol {
+						c.ReadFromEndpointExpectSuccess(icmp, flow, test.presenceChecker)
+					} else {
+						c.ReadFromEndpointExpectSuccess(icmp, flow, test.absenceChecker)
+					}
+				})
+			}
+		})
 	}
 }
 

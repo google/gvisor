@@ -125,6 +125,17 @@ std::string GetAddr6Str(const in6_addr* a);
 // string.
 std::string GetAddrStr(const sockaddr* a);
 
+// RecvTOS attempts to read buf_size bytes into buf, and then update buf_size
+// with the numbers of bytes actually read. It expects the IP_TOS cmsg to be
+// received. The buffer must already be allocated with at least buf_size size.
+void RecvTOS(int sock, char buf[], size_t* buf_size, uint8_t* out_tos);
+
+// RecvTClass attempts to read buf_size bytes into buf, and then update buf_size
+// with the numbers of bytes actually read. It expects the IPV6_TCLASS cmsg to
+// be received. The buffer must already be allocated with at least buf_size
+// size.
+void RecvTClass(int sock, char buf[], size_t* buf_size, int* out_tclass);
+
 }  // namespace testing
 }  // namespace gvisor
 

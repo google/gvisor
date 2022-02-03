@@ -39,8 +39,9 @@ type udpPacket struct {
 	packetInfo         tcpip.IPPacketInfo
 	pkt                *stack.PacketBuffer
 	receivedAt         time.Time `state:".(int64)"`
-	// tos stores either the receiveTOS or receiveTClass value.
-	tos uint8
+	// tosOrTClass stores either the Type of Service for IPv4 or the Traffic Class
+	// for IPv6.
+	tosOrTClass uint8
 }
 
 // endpoint represents a UDP endpoint. This struct serves as the interface
@@ -233,18 +234,18 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 	e.rcvMu.Unlock()
 
 	// Control Messages
+	// TODO(https://gvisor.dev/issue/7012): Share control message code with other
+	// network endpoints.
 	cm := tcpip.ControlMessages{
 		HasTimestamp: true,
 		Timestamp:    p.receivedAt,
 	}
-
 	switch p.netProto {
 	case header.IPv4ProtocolNumber:
 		if e.ops.GetReceiveTOS() {
 			cm.HasTOS = true
-			cm.TOS = p.tos
+			cm.TOS = p.tosOrTClass
 		}
-
 		if e.ops.GetReceivePacketInfo() {
 			cm.HasIPPacketInfo = true
 			cm.PacketInfo = p.packetInfo
@@ -253,9 +254,8 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 		if e.ops.GetReceiveTClass() {
 			cm.HasTClass = true
 			// Although TClass is an 8-bit value it's read in the CMsg as a uint32.
-			cm.TClass = uint32(p.tos)
+			cm.TClass = uint32(p.tosOrTClass)
 		}
-
 		if e.ops.GetIPv6ReceivePacketInfo() {
 			cm.HasIPv6PacketInfo = true
 			cm.IPv6PacketInfo = tcpip.IPv6PacketInfo{
@@ -926,12 +926,7 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 	e.rcvBufSize += pkt.Data().Size()
 
 	// Save any useful information from the network header to the packet.
-	switch pkt.NetworkProtocolNumber {
-	case header.IPv4ProtocolNumber:
-		packet.tos, _ = header.IPv4(pkt.NetworkHeader().View()).TOS()
-	case header.IPv6ProtocolNumber:
-		packet.tos, _ = header.IPv6(pkt.NetworkHeader().View()).TOS()
-	}
+	packet.tosOrTClass, _ = pkt.Network().TOS()
 
 	// TODO(gvisor.dev/issue/3556): r.LocalAddress may be a multicast or broadcast
 	// address. packetInfo.LocalAddr should hold a unicast address that can be

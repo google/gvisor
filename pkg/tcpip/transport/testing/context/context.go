@@ -32,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/raw"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -96,6 +97,7 @@ func NewWithOptions(t *testing.T, transportProtocols []stack.TransportProtocolFa
 		TransportProtocols: transportProtocols,
 		HandleLocal:        options.HandleLocal,
 		Clock:              &faketime.NullClock{},
+		RawFactory:         &raw.EndpointFactory{},
 	}
 
 	s := stack.New(stackOptions)
@@ -171,6 +173,30 @@ func (c *Context) CreateEndpointForFlow(flow TestFlow, transport tcpip.Transport
 	c.T.Helper()
 
 	c.CreateEndpoint(flow.SockProto(), transport)
+	if flow.isV6Only() {
+		c.EP.SocketOptions().SetV6Only(true)
+	} else if flow.isBroadcast() {
+		c.EP.SocketOptions().SetBroadcast(true)
+	}
+}
+
+// CreateRawEndpoint creates the Context's Endpoint.
+func (c *Context) CreateRawEndpoint(network tcpip.NetworkProtocolNumber, transport tcpip.TransportProtocolNumber) {
+	c.T.Helper()
+
+	var err tcpip.Error
+	c.EP, err = c.Stack.NewRawEndpoint(transport, network, &c.WQ, true /* associated */)
+	if err != nil {
+		c.T.Fatal("c.Stack.NewRawEndpoint failed: ", err)
+	}
+}
+
+// CreateRawEndpointForFlow creates the Context's Endpoint and configured it
+// according to the given TestFlow.
+func (c *Context) CreateRawEndpointForFlow(flow TestFlow, transport tcpip.TransportProtocolNumber) {
+	c.T.Helper()
+
+	c.CreateRawEndpoint(flow.SockProto(), transport)
 	if flow.isV6Only() {
 		c.EP.SocketOptions().SetV6Only(true)
 	} else if flow.isBroadcast() {

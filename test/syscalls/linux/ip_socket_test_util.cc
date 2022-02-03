@@ -246,5 +246,45 @@ std::string GetAddrStr(const sockaddr* a) {
   }
 }
 
+namespace {
+template <typename T>
+void RecvCmsg(int sock, int cmsg_level, int cmsg_type, char buf[],
+              size_t* buf_size, T* out_cmsg_value) {
+  struct iovec iov = {
+      iov.iov_base = buf,
+      iov.iov_len = *buf_size,
+  };
+  // Add an extra byte to confirm we only read what we expected.
+  char control[CMSG_SPACE(sizeof(*out_cmsg_value)) + 1];
+  struct msghdr msg = {
+      .msg_iov = &iov,
+      .msg_iovlen = 1,
+      .msg_control = control,
+      .msg_controllen = sizeof(control),
+  };
+
+  ASSERT_THAT(*buf_size = RetryEINTR(recvmsg)(sock, &msg, /*flags=*/0),
+              SyscallSucceeds());
+  ASSERT_EQ(msg.msg_controllen, CMSG_SPACE(sizeof(*out_cmsg_value)));
+
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+  ASSERT_NE(cmsg, nullptr);
+  ASSERT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(*out_cmsg_value)));
+  ASSERT_EQ(cmsg->cmsg_level, cmsg_level);
+  ASSERT_EQ(cmsg->cmsg_type, cmsg_type);
+
+  std::copy_n(CMSG_DATA(cmsg), sizeof(*out_cmsg_value),
+              reinterpret_cast<uint8_t*>(out_cmsg_value));
+}
+}  // namespace
+
+void RecvTOS(int sock, char buf[], size_t* buf_size, uint8_t* out_tos) {
+  RecvCmsg(sock, SOL_IP, IP_TOS, buf, buf_size, out_tos);
+}
+
+void RecvTClass(int sock, char buf[], size_t* buf_size, int* out_tclass) {
+  RecvCmsg(sock, SOL_IPV6, IPV6_TCLASS, buf, buf_size, out_tclass);
+}
+
 }  // namespace testing
 }  // namespace gvisor
