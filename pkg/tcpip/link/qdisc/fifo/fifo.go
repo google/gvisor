@@ -28,6 +28,13 @@ import (
 
 var _ stack.QueueingDiscipline = (*discipline)(nil)
 
+const (
+	// BatchSize represents the number of packets written to the
+	// lower link endpoint during calls to WritePackets.
+	BatchSize   = 32
+	qDiscClosed = 1
+)
+
 // discipline represents a QueueingDiscipline which implements a FIFO queue for
 // all outgoing packets. discipline can have 1 or more underlying
 // queueDispatchers. All outgoing packets are consistenly hashed to a single
@@ -40,8 +47,6 @@ type discipline struct {
 	// +checkatomic
 	closed int32
 }
-
-const qDiscClosed = 1
 
 // queueDispatcher is responsible for dispatching all outbound packets in its
 // queue. It will also smartly batch packets when possible and write them
@@ -87,7 +92,6 @@ func (qd *queueDispatcher) dispatchLoop() {
 	s.AddWaker(&qd.closeWaker)
 	defer s.Done()
 
-	const batchSize = 32
 	var batch stack.PacketBufferList
 	for {
 		switch w := s.Fetch(true); w {
@@ -106,21 +110,20 @@ func (qd *queueDispatcher) dispatchLoop() {
 			panic("unknown waker")
 		}
 		qd.mu.Lock()
-		for batch.Len() < batchSize {
-			pkt := qd.queue.Front()
-			if pkt == nil {
-				break
-			}
-
+		for pkt := qd.queue.Front(); pkt != nil; pkt = qd.queue.Front() {
 			qd.queue.Remove(pkt)
 			qd.used--
 			batch.PushBack(pkt)
+			if batch.Len() < BatchSize && qd.used != 0 {
+				continue
+			}
+			qd.mu.Unlock()
+			_, _ = qd.lower.WritePackets(batch)
+			batch.DecRef()
+			batch.Reset()
+			qd.mu.Lock()
 		}
 		qd.mu.Unlock()
-
-		_, _ = qd.lower.WritePackets(batch)
-		batch.DecRef()
-		batch.Reset()
 	}
 }
 

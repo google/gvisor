@@ -18,6 +18,7 @@ import (
 	"math/rand"
 	"os"
 	"testing"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
@@ -28,20 +29,31 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
-var _ stack.LinkWriter = (*discardWriter)(nil)
+var _ stack.LinkWriter = (*countWriter)(nil)
 
-// discardWriter implements LinkWriter.
-type discardWriter struct {
+// countWriter implements LinkWriter.
+type countWriter struct {
+	mu             sync.Mutex
+	packetsWritten int
+	packetsWanted  int
+	done           chan struct{}
 }
 
-func (*discardWriter) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
+func (cw *countWriter) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
+	cw.mu.Lock()
+	defer cw.mu.Unlock()
+	cw.packetsWritten += pkts.Len()
+	// Opt out of using the done channel if packetsWanted is not set.
+	if cw.packetsWanted > 0 && cw.packetsWritten == cw.packetsWanted {
+		close(cw.done)
+	}
 	return pkts.Len(), nil
 }
 
 // In b/209690936, fast simultaneous writes on qdisc will cause panics. This test
 // reproduces the behavior shown in that bug.
 func TestFastSimultaneousWrites(t *testing.T) {
-	lower := &discardWriter{}
+	lower := &countWriter{}
 	linkEP := fifo.New(lower, 16, 1000)
 
 	v := make(buffer.View, 1)
@@ -50,7 +62,6 @@ func TestFastSimultaneousWrites(t *testing.T) {
 	nWriters := 100
 	nWrites := 100
 	var wg sync.WaitGroup
-	defer wg.Done()
 	for i := 0; i < nWriters; i++ {
 		wg.Add(1)
 		go func() {
@@ -65,6 +76,8 @@ func TestFastSimultaneousWrites(t *testing.T) {
 			}
 		}()
 	}
+	wg.Wait()
+	linkEP.Close()
 }
 
 func TestWriteRefusedAfterClosed(t *testing.T) {
@@ -75,6 +88,30 @@ func TestWriteRefusedAfterClosed(t *testing.T) {
 	_, ok := err.(*tcpip.ErrClosedForSend)
 	if !ok {
 		t.Errorf("got err = %s, want %s", err, &tcpip.ErrClosedForSend{})
+	}
+}
+
+func TestWriteMorePacketsThanBatchSize(t *testing.T) {
+	tc := []int{fifo.BatchSize + 1, fifo.BatchSize*2 + 1}
+	v := make(buffer.View, 1)
+
+	for _, want := range tc {
+		done := make(chan struct{})
+		lower := &countWriter{done: done, packetsWanted: want}
+		linkEp := fifo.New(lower, 1, 1000)
+		for i := 0; i < want; i++ {
+			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+				Data: v.ToVectorisedView(),
+			})
+			linkEp.WritePacket(pkt)
+			pkt.DecRef()
+		}
+		select {
+		case <-done:
+		case <-time.After(1 * time.Second):
+			t.Fatalf("expected %d packets, but got only %d", want, lower.packetsWritten)
+		}
+		linkEp.Close()
 	}
 }
 
