@@ -187,6 +187,9 @@ type PIDNamespace struct {
 	// exiting indicates that the namespace's init process is exiting or has
 	// exited.
 	exiting bool
+
+	// pidNamespaceData contains additional per-PID-namespace data.
+	extra pidNamespaceData
 }
 
 func newPIDNamespace(ts *TaskSet, parent *PIDNamespace, userns *auth.UserNamespace) *PIDNamespace {
@@ -201,6 +204,7 @@ func newPIDNamespace(ts *TaskSet, parent *PIDNamespace, userns *auth.UserNamespa
 		sids:          make(map[*Session]SessionID),
 		processGroups: make(map[ProcessGroupID]*ProcessGroup),
 		pgids:         make(map[*ProcessGroup]ProcessGroupID),
+		extra:         newPIDNamespaceData(),
 	}
 }
 
