@@ -15,11 +15,11 @@
 package fuse
 
 import (
-	"fmt"
-
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -212,7 +212,9 @@ func (r *Response) UnmarshalPayload(m marshal.Marshallable) error {
 	wantDataLen := uint32(m.SizeBytes())
 
 	if haveDataLen < wantDataLen {
-		return fmt.Errorf("payload too small. Minimum data lenth required: %d,  but got data length %d", wantDataLen, haveDataLen)
+		log.Warningf("fusefs: Payload too small. Minimum data length required: %d, but got data length %d", wantDataLen, haveDataLen)
+		return linuxerr.EINVAL
+
 	}
 
 	// The response data is empty unless there is some payload. And so, doesn't
