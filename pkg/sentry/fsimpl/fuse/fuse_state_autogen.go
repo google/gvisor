@@ -308,6 +308,8 @@ func (i *inode) StateFields() []string {
 		"attributeTime",
 		"version",
 		"link",
+		"isNewFh",
+		"newFhData",
 	}
 }
 
@@ -331,6 +333,8 @@ func (i *inode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(12, &i.attributeTime)
 	stateSinkObject.Save(13, &i.version)
 	stateSinkObject.Save(14, &i.link)
+	stateSinkObject.Save(15, &i.isNewFh)
+	stateSinkObject.Save(16, &i.newFhData)
 }
 
 func (i *inode) afterLoad() {}
@@ -352,6 +356,8 @@ func (i *inode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(12, &i.attributeTime)
 	stateSourceObject.Load(13, &i.version)
 	stateSourceObject.Load(14, &i.link)
+	stateSourceObject.Load(15, &i.isNewFh)
+	stateSourceObject.Load(16, &i.newFhData)
 }
 
 func (r *inodeRefs) StateTypeName() string {
@@ -444,7 +450,6 @@ func (r *Request) StateFields() []string {
 		"id",
 		"hdr",
 		"data",
-		"payload",
 		"async",
 		"noReply",
 	}
@@ -459,9 +464,8 @@ func (r *Request) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &r.id)
 	stateSinkObject.Save(2, &r.hdr)
 	stateSinkObject.Save(3, &r.data)
-	stateSinkObject.Save(4, &r.payload)
-	stateSinkObject.Save(5, &r.async)
-	stateSinkObject.Save(6, &r.noReply)
+	stateSinkObject.Save(4, &r.async)
+	stateSinkObject.Save(5, &r.noReply)
 }
 
 func (r *Request) afterLoad() {}
@@ -472,9 +476,8 @@ func (r *Request) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &r.id)
 	stateSourceObject.Load(2, &r.hdr)
 	stateSourceObject.Load(3, &r.data)
-	stateSourceObject.Load(4, &r.payload)
-	stateSourceObject.Load(5, &r.async)
-	stateSourceObject.Load(6, &r.noReply)
+	stateSourceObject.Load(4, &r.async)
+	stateSourceObject.Load(5, &r.noReply)
 }
 
 func (f *futureResponse) StateTypeName() string {
