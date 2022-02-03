@@ -1016,6 +1016,7 @@ func TestKillPid(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to get process list: %v", err)
 			}
+			t.Logf("current process list: %v", procs)
 			var pid int32
 			for _, p := range procs {
 				if pid < int32(p.PID) {
@@ -1028,7 +1029,8 @@ func TestKillPid(t *testing.T) {
 
 			// Verify that one process is gone.
 			if err := waitForProcessCount(cont, nProcs-1); err != nil {
-				t.Fatalf("error waiting for processes: %v", err)
+				procs, procsErr := cont.Processes()
+				t.Fatalf("error waiting for processes: %v; current processes: %v / %v", err, procs, procsErr)
 			}
 
 			procs, err = cont.Processes()

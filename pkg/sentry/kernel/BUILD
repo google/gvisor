@@ -200,6 +200,7 @@ go_library(
         "task_work.go",
         "thread_group.go",
         "threads.go",
+        "threads_impl.go",
         "timekeeper.go",
         "timekeeper_state.go",
         "tty.go",
