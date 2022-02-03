@@ -170,6 +170,8 @@ cc_library(
         "//test/util:posix_error",
         "//test/util:temp_path",
         "//test/util:test_util",
+        "//test/util:thread_util",
+        "@com_google_absl//absl/memory",
         "@com_google_absl//absl/strings:str_format",
     ],
 )
