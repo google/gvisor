@@ -37,6 +37,10 @@ type icmpPacket struct {
 	senderAddress tcpip.FullAddress
 	data          buffer.VectorisedView `state:".(buffer.VectorisedView)"`
 	receivedAt    time.Time             `state:".(int64)"`
+
+	// tosOrTClass stores either the Type of Service for IPv4 or the Traffic Class
+	// for IPv6.
+	tosOrTClass uint8
 }
 
 // endpoint represents an ICMP endpoint. This struct serves as the interface
@@ -177,12 +181,32 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 
 	e.rcvMu.Unlock()
 
+	// Control Messages
+	// TODO(https://gvisor.dev/issue/7012): Share control message code with other
+	// network endpoints.
+	cm := tcpip.ControlMessages{
+		HasTimestamp: true,
+		Timestamp:    p.receivedAt,
+	}
+	switch netProto := e.net.NetProto(); netProto {
+	case header.IPv4ProtocolNumber:
+		if e.ops.GetReceiveTOS() {
+			cm.HasTOS = true
+			cm.TOS = p.tosOrTClass
+		}
+	case header.IPv6ProtocolNumber:
+		if e.ops.GetReceiveTClass() {
+			cm.HasTClass = true
+			// Although TClass is an 8-bit value it's read in the CMsg as a uint32.
+			cm.TClass = uint32(p.tosOrTClass)
+		}
+	default:
+		panic(fmt.Sprintf("unrecognized network protocol = %d", netProto))
+	}
+
 	res := tcpip.ReadResult{
-		Total: p.data.Size(),
-		ControlMessages: tcpip.ControlMessages{
-			HasTimestamp: true,
-			Timestamp:    p.receivedAt,
-		},
+		Total:           p.data.Size(),
+		ControlMessages: cm,
 	}
 	if opts.NeedRemoteAddr {
 		res.RemoteAddr = p.senderAddress
@@ -679,6 +703,9 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 			Addr: id.RemoteAddress,
 		},
 	}
+
+	// Save any useful information from the network header to the packet.
+	packet.tosOrTClass, _ = pkt.Network().TOS()
 
 	// ICMP socket's data includes ICMP header.
 	packet.data = pkt.TransportHeader().View().ToVectorisedView()

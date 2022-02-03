@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(licenses = ["notice"])
@@ -38,5 +38,21 @@ go_library(
         "//pkg/tcpip/transport/internal/noop",
         "//pkg/tcpip/transport/packet",
         "//pkg/waiter",
+    ],
+)
+
+go_test(
+    name = "raw_x_test",
+    size = "small",
+    srcs = ["raw_test.go"],
+    deps = [
+        "//pkg/refs",
+        "//pkg/refsvfs2",
+        "//pkg/tcpip",
+        "//pkg/tcpip/checker",
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/stack",
+        "//pkg/tcpip/transport/testing/context",
+        "//pkg/tcpip/transport/udp",
     ],
 )

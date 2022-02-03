@@ -19,10 +19,12 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 )
 
 const (
@@ -337,4 +339,105 @@ func (flow TestFlow) isReverseMulticast() bool {
 	default:
 		return false
 	}
+}
+
+// BuildV4UDPPacket builds an IPv4 UDP packet.
+func BuildV4UDPPacket(payload []byte, h Header4Tuple, tos, ttl uint8, badChecksum bool) buffer.View {
+	// Allocate a buffer for data and headers.
+	buf := buffer.NewView(header.UDPMinimumSize + header.IPv4MinimumSize + len(payload))
+	payloadStart := len(buf) - len(payload)
+	copy(buf[payloadStart:], payload)
+
+	// Initialize the IP header.
+	ip := header.IPv4(buf)
+	ip.Encode(&header.IPv4Fields{
+		TOS:         tos,
+		TotalLength: uint16(len(buf)),
+		TTL:         ttl,
+		Protocol:    uint8(udp.ProtocolNumber),
+		SrcAddr:     h.Src.Addr,
+		DstAddr:     h.Dst.Addr,
+	})
+	ip.SetChecksum(^ip.CalculateChecksum())
+
+	// Initialize the UDP header.
+	u := header.UDP(buf[header.IPv4MinimumSize:])
+	u.Encode(&header.UDPFields{
+		SrcPort: h.Src.Port,
+		DstPort: h.Dst.Port,
+		Length:  uint16(header.UDPMinimumSize + len(payload)),
+	})
+
+	// Calculate the UDP pseudo-header checksum.
+	xsum := header.PseudoHeaderChecksum(udp.ProtocolNumber, h.Src.Addr, h.Dst.Addr, uint16(len(u)))
+
+	// Calculate the UDP checksum and set it.
+	xsum = header.Checksum(payload, xsum)
+	u.SetChecksum(^u.CalculateChecksum(xsum))
+
+	if badChecksum {
+		// Invalidate the UDP header checksum field, taking care to avoid overflow
+		// to zero, which would disable checksum validation.
+		for {
+			u.SetChecksum(u.Checksum() + 1)
+			if u.Checksum() != 0 {
+				break
+			}
+		}
+	}
+
+	return buf
+}
+
+// BuildV6UDPPacket builds an IPv6 UDP packet.
+func BuildV6UDPPacket(payload []byte, h Header4Tuple, tclass, hoplimit uint8, badChecksum bool) buffer.View {
+	// Allocate a buffer for data and headers.
+	buf := buffer.NewView(header.UDPMinimumSize + header.IPv6MinimumSize + len(payload))
+	payloadStart := len(buf) - len(payload)
+	copy(buf[payloadStart:], payload)
+
+	// Initialize the IP header.
+	ip := header.IPv6(buf)
+	ip.Encode(&header.IPv6Fields{
+		TrafficClass:      tclass,
+		PayloadLength:     uint16(header.UDPMinimumSize + len(payload)),
+		TransportProtocol: udp.ProtocolNumber,
+		HopLimit:          hoplimit,
+		SrcAddr:           h.Src.Addr,
+		DstAddr:           h.Dst.Addr,
+	})
+
+	// Initialize the UDP header.
+	u := header.UDP(buf[header.IPv6MinimumSize:])
+	u.Encode(&header.UDPFields{
+		SrcPort: h.Src.Port,
+		DstPort: h.Dst.Port,
+		Length:  uint16(header.UDPMinimumSize + len(payload)),
+	})
+
+	// Calculate the UDP pseudo-header checksum.
+	xsum := header.PseudoHeaderChecksum(udp.ProtocolNumber, h.Src.Addr, h.Dst.Addr, uint16(len(u)))
+
+	// Calculate the UDP checksum and set it.
+	xsum = header.Checksum(payload, xsum)
+	u.SetChecksum(^u.CalculateChecksum(xsum))
+
+	if badChecksum {
+		// Invalidate the UDP header checksum field (Unlike IPv4, zero is a valid
+		// checksum value for IPv6 so no need to avoid it).
+		u := header.UDP(buf[header.IPv6MinimumSize:])
+		u.SetChecksum(u.Checksum() + 1)
+	}
+
+	return buf
+}
+
+// BuildUDPPacket builds an IPv4 or IPv6 UDP packet, depending on the specified
+// TestFlow.
+func BuildUDPPacket(payload []byte, flow TestFlow, direction PacketDirection, tosOrTclass, ttlOrHopLimit uint8, badChecksum bool) buffer.View {
+	h := flow.MakeHeader4Tuple(direction)
+	if flow.IsV4() {
+		return BuildV4UDPPacket(payload, h, tosOrTclass, ttlOrHopLimit, badChecksum)
+	}
+	return BuildV6UDPPacket(payload, h, tosOrTclass, ttlOrHopLimit, badChecksum)
 }

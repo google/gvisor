@@ -292,9 +292,20 @@ func ReceiveTClass(want uint32) ControlMessagesChecker {
 	return func(t *testing.T, cm tcpip.ControlMessages) {
 		t.Helper()
 		if !cm.HasTClass {
-			t.Errorf("got cm.HasTClass = %t, want = true", cm.HasTClass)
+			t.Error("got cm.HasTClass = false, want = true")
 		} else if got := cm.TClass; got != want {
 			t.Errorf("got cm.TClass = %d, want %d", got, want)
+		}
+	}
+}
+
+// NoTClassReceived creates a checker that checks the absence of the TCLASS
+// field in ControlMessages.
+func NoTClassReceived() ControlMessagesChecker {
+	return func(t *testing.T, cm tcpip.ControlMessages) {
+		t.Helper()
+		if cm.HasTClass {
+			t.Error("got cm.HasTClass = true, want = false")
 		}
 	}
 }
@@ -304,9 +315,20 @@ func ReceiveTOS(want uint8) ControlMessagesChecker {
 	return func(t *testing.T, cm tcpip.ControlMessages) {
 		t.Helper()
 		if !cm.HasTOS {
-			t.Errorf("got cm.HasTOS = %t, want = true", cm.HasTOS)
+			t.Error("got cm.HasTOS = false, want = true")
 		} else if got := cm.TOS; got != want {
 			t.Errorf("got cm.TOS = %d, want %d", got, want)
+		}
+	}
+}
+
+// NoTOSReceived creates a checker that checks the absence of the TOS field in
+// ControlMessages.
+func NoTOSReceived() ControlMessagesChecker {
+	return func(t *testing.T, cm tcpip.ControlMessages) {
+		t.Helper()
+		if cm.HasTOS {
+			t.Error("got cm.HasTOS = true, want = false")
 		}
 	}
 }
@@ -317,7 +339,7 @@ func ReceiveIPPacketInfo(want tcpip.IPPacketInfo) ControlMessagesChecker {
 	return func(t *testing.T, cm tcpip.ControlMessages) {
 		t.Helper()
 		if !cm.HasIPPacketInfo {
-			t.Errorf("got cm.HasIPPacketInfo = %t, want = true", cm.HasIPPacketInfo)
+			t.Error("got cm.HasIPPacketInfo = false, want = true")
 		} else if diff := cmp.Diff(want, cm.PacketInfo); diff != "" {
 			t.Errorf("IPPacketInfo mismatch (-want +got):\n%s", diff)
 		}
@@ -330,7 +352,7 @@ func ReceiveIPv6PacketInfo(want tcpip.IPv6PacketInfo) ControlMessagesChecker {
 	return func(t *testing.T, cm tcpip.ControlMessages) {
 		t.Helper()
 		if !cm.HasIPv6PacketInfo {
-			t.Errorf("got cm.HasIPv6PacketInfo = %t, want = true", cm.HasIPv6PacketInfo)
+			t.Error("got cm.HasIPv6PacketInfo = false, want = true")
 		} else if diff := cmp.Diff(want, cm.IPv6PacketInfo); diff != "" {
 			t.Errorf("IPv6PacketInfo mismatch (-want +got):\n%s", diff)
 		}
@@ -343,7 +365,7 @@ func ReceiveOriginalDstAddr(want tcpip.FullAddress) ControlMessagesChecker {
 	return func(t *testing.T, cm tcpip.ControlMessages) {
 		t.Helper()
 		if !cm.HasOriginalDstAddress {
-			t.Errorf("got cm.HasOriginalDstAddress = %t, want = true", cm.HasOriginalDstAddress)
+			t.Error("got cm.HasOriginalDstAddress = false, want = true")
 		} else if diff := cmp.Diff(want, cm.OriginalDstAddress); diff != "" {
 			t.Errorf("OriginalDstAddress mismatch (-want +got):\n%s", diff)
 		}
