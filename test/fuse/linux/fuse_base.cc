@@ -24,12 +24,13 @@
 #include <sys/uio.h>
 #include <unistd.h>
 
-#include "gtest/gtest.h"
 #include "absl/strings/str_format.h"
+#include "gtest/gtest.h"
 #include "test/util/fuse_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
+#include "test/util/thread_util.h"
 
 namespace gvisor {
 namespace testing {
@@ -160,6 +161,8 @@ void FuseTest::MountFuse(const char* mountOpts) {
 
 void FuseTest::UnmountFuse() {
   EXPECT_THAT(umount(mount_point_.path().c_str()), SyscallSucceeds());
+  shutdown(sock_[0], SHUT_RDWR);
+  fuse_server_->Join();
   // TODO(gvisor.dev/issue/3330): ensure the process is terminated successfully.
 }
 
@@ -232,6 +235,9 @@ void FuseTest::ServerFuseLoop() {
       ASSERT_EQ(fds[fd_idx].revents, POLL_IN);
       if (fds[fd_idx].fd == sock_[1]) {
         ServerHandleCommand();
+        if (sock_[1] == -1) {
+          return;
+        }
       } else if (fds[fd_idx].fd == dev_fd_) {
         ServerProcessFuseRequest();
       }
@@ -246,23 +252,13 @@ void FuseTest::ServerFuseLoop() {
 void FuseTest::SetUpFuseServer(const struct fuse_init_out* payload) {
   ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, 0, sock_), SyscallSucceeds());
 
-  switch (fork()) {
-    case -1:
-      GTEST_FAIL();
-      return;
-    case 0:
-      break;
-    default:
-      ASSERT_THAT(close(sock_[1]), SyscallSucceeds());
-      WaitServerComplete();
-      return;
-  }
-
-  // Begin child thread, i.e. the FUSE server.
-  ASSERT_THAT(close(sock_[0]), SyscallSucceeds());
-  ServerCompleteWith(ServerConsumeFuseInit(payload).ok());
-  ServerFuseLoop();
-  _exit(0);
+  fuse_server_ = absl::make_unique<ScopedThread>([this, payload]() {
+    // Begin child thread, i.e. the FUSE server.
+    ServerCompleteWith(ServerConsumeFuseInit(payload).ok());
+    ServerFuseLoop();
+    shutdown(sock_[1], SHUT_RDWR);
+  });
+  WaitServerComplete();
 }
 
 void FuseTest::ServerSendData(uint32_t data) {
@@ -275,8 +271,16 @@ void FuseTest::ServerSendData(uint32_t data) {
 // is required after the switch keyword.
 void FuseTest::ServerHandleCommand() {
   uint32_t cmd;
-  EXPECT_THAT(RetryEINTR(read)(sock_[1], &cmd, sizeof(cmd)),
-              SyscallSucceedsWithValue(sizeof(cmd)));
+  int ret;
+
+  EXPECT_THAT(ret = RetryEINTR(read)(sock_[1], &cmd, sizeof(cmd)),
+              SyscallSucceeds());
+  if (ret == 0) {
+    shutdown(sock_[1], SHUT_RDWR);
+    sock_[1] = -1;
+    return;
+  }
+  EXPECT_EQ(ret, sizeof(cmd));
 
   switch (static_cast<FuseTestCmd>(cmd)) {
     case FuseTestCmd::kSetResponse:
