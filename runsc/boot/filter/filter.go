@@ -51,7 +51,7 @@ func Install(opt Options) error {
 
 	s.Merge(opt.Platform.SyscallFilters())
 
-	return seccomp.Install(s)
+	return seccomp.Install(s, seccomp.DenyNewExecMappings)
 }
 
 // Report writes a warning message to the log.

@@ -14,7 +14,11 @@
 
 package seccomp
 
-import "fmt"
+import (
+	"fmt"
+
+	"golang.org/x/sys/unix"
+)
 
 // The offsets are based on the following struct in include/linux/seccomp.h.
 // struct seccomp_data {
@@ -187,4 +191,23 @@ func (sr SyscallRules) Merge(rules SyscallRules) {
 			sr[sysno] = rs
 		}
 	}
+}
+
+// DenyNewExecMappings is a set of rules that denies creating new executable
+// mappings and converting existing ones.
+var DenyNewExecMappings = SyscallRules{
+	unix.SYS_MMAP: []Rule{
+		{
+			MatchAny{},
+			MatchAny{},
+			MaskedEqual(unix.PROT_EXEC, unix.PROT_EXEC),
+		},
+	},
+	unix.SYS_MPROTECT: []Rule{
+		{
+			MatchAny{},
+			MatchAny{},
+			MaskedEqual(unix.PROT_EXEC, unix.PROT_EXEC),
+		},
+	},
 }

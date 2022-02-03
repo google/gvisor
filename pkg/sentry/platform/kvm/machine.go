@@ -744,7 +744,7 @@ func seccompMmapRules(m *machine) {
 						{
 							seccomp.MatchAny{},
 							seccomp.MatchAny{},
-							seccomp.MatchAny{},
+							seccomp.MaskedEqual(unix.PROT_EXEC, 0),
 							/* MAP_DENYWRITE is ignored and used only for filtering. */
 							seccomp.MaskedEqual(unix.MAP_DENYWRITE, 0),
 						},
