@@ -216,8 +216,17 @@ func (p *pathNode) removeWithName(name string, fn func(ref *fidRef)) *pathNode {
 		for ref := range m {
 			delete(m, ref)
 			delete(p.childRefNames, ref)
-			if fn != nil {
+			if fn == nil {
+				// No callback provided.
+				continue
+			}
+			// Attempt to hold a reference while calling fn() to
+			// prevent concurrent destruction of the child, which
+			// can lead to data races. If the child has already
+			// been destroyed, then we can skip the callback.
+			if ref.TryIncRef() {
 				fn(ref)
+				ref.DecRef()
 			}
 		}
 	}
