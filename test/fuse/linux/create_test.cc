@@ -66,13 +66,6 @@ TEST_F(CreateTest, CreateFile) {
   iov_out = FuseGenerateIovecs(out_header, entry_payload, out_payload);
   SetServerResponse(FUSE_CREATE, iov_out);
 
-  // kernfs generates a successive FUSE_OPEN after the file is created. Linux's
-  // fuse kernel module will not send this FUSE_OPEN after creat(2).
-  out_header.len =
-      sizeof(struct fuse_out_header) + sizeof(struct fuse_open_out);
-  iov_out = FuseGenerateIovecs(out_header, out_payload);
-  SetServerResponse(FUSE_OPEN, iov_out);
-
   int fd;
   TempUmask mask(new_mask);
   EXPECT_THAT(fd = creat(test_file_path.c_str(), mode), SyscallSucceeds());
@@ -96,14 +89,6 @@ TEST_F(CreateTest, CreateFile) {
   EXPECT_EQ(in_payload.mode, mode & ~new_mask);
   EXPECT_EQ(in_payload.umask, new_mask);
   EXPECT_EQ(std::string(name.data()), test_file_name_);
-
-  // Get the successive FUSE_OPEN.
-  struct fuse_open_in in_payload_open;
-  iov_in = FuseGenerateIovecs(in_header, in_payload_open);
-  GetServerActualRequest(iov_in);
-  EXPECT_EQ(in_header.len, sizeof(in_header) + sizeof(in_payload_open));
-  EXPECT_EQ(in_header.opcode, FUSE_OPEN);
-  EXPECT_EQ(in_payload_open.flags, open_flags & O_ACCMODE);
 
   EXPECT_THAT(close(fd), SyscallSucceeds());
   // Skip the FUSE_RELEASE.

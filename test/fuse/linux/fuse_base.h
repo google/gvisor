@@ -25,8 +25,10 @@
 #include <vector>
 
 #include "gtest/gtest.h"
+#include "absl/memory/memory.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
+#include "test/util/thread_util.h"
 
 namespace gvisor {
 namespace testing {
@@ -236,6 +238,7 @@ class FuseTest : public ::testing::Test {
 
   int dev_fd_;
   int sock_[2];
+  std::unique_ptr<ScopedThread> fuse_server_;
 
   uint64_t nodeid_;
   std::unordered_map<std::string, FuseMemBlock> lookup_map_;
