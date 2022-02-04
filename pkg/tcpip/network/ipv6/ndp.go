@@ -650,12 +650,11 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, addressE
 		}
 
 		if dadSucceeded {
-			if addressEndpoint.ConfigType() == stack.AddressConfigSlaac {
+			if addressEndpoint.ConfigType() == stack.AddressConfigSlaac && !addressEndpoint.Temporary() {
 				// Reset the generation attempts counter as we are starting the
 				// generation of a new address for the SLAAC prefix.
 				ndp.regenerateTempSLAACAddr(addressEndpoint.AddressWithPrefix().Subnet(), true /* resetGenAttempts */)
 			}
-
 			ndp.ep.onAddressAssignedLocked(addr)
 		}
 	})
@@ -1123,7 +1122,7 @@ func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 // addAndAcquireSLAACAddr adds a SLAAC address to the IPv6 endpoint.
 //
 // The IPv6 endpoint that ndp belongs to MUST be locked.
-func (ndp *ndpState) addAndAcquireSLAACAddr(addr tcpip.AddressWithPrefix, configType stack.AddressConfigType, deprecated bool) stack.AddressEndpoint {
+func (ndp *ndpState) addAndAcquireSLAACAddr(addr tcpip.AddressWithPrefix, temporary bool, deprecated bool) stack.AddressEndpoint {
 	// Inform the integrator that we have a new SLAAC address.
 	ndpDisp := ndp.ep.protocol.options.NDPDisp
 	if ndpDisp == nil {
@@ -1132,8 +1131,9 @@ func (ndp *ndpState) addAndAcquireSLAACAddr(addr tcpip.AddressWithPrefix, config
 
 	addressEndpoint, err := ndp.ep.addAndAcquirePermanentAddressLocked(addr, stack.AddressProperties{
 		PEB:        stack.FirstPrimaryEndpoint,
-		ConfigType: configType,
+		ConfigType: stack.AddressConfigSlaac,
 		Deprecated: deprecated,
+		Temporary:  temporary,
 	})
 	if err != nil {
 		panic(fmt.Sprintf("ndp: error when adding SLAAC address %+v: %s", addr, err))
@@ -1217,7 +1217,7 @@ func (ndp *ndpState) generateSLAACAddr(prefix tcpip.Subnet, state *slaacPrefixSt
 	}
 
 	deprecated := state.preferredUntil != nil && !state.preferredUntil.After(ndp.ep.protocol.stack.Clock().NowMonotonic())
-	if addressEndpoint := ndp.addAndAcquireSLAACAddr(generatedAddr, stack.AddressConfigSlaac, deprecated); addressEndpoint != nil {
+	if addressEndpoint := ndp.addAndAcquireSLAACAddr(generatedAddr, false /* temporary */, deprecated); addressEndpoint != nil {
 		state.stableAddr.addressEndpoint = addressEndpoint
 		state.generationAttempts++
 		return true
@@ -1329,7 +1329,7 @@ func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *sla
 	// As per RFC RFC 4941 section 3.3 step 5, we MUST NOT create a temporary
 	// address with a zero preferred lifetime. The checks above ensure this
 	// so we know the address is not deprecated.
-	addressEndpoint := ndp.addAndAcquireSLAACAddr(generatedAddr, stack.AddressConfigSlaacTemp, false /* deprecated */)
+	addressEndpoint := ndp.addAndAcquireSLAACAddr(generatedAddr, true /* temporary */, false /* deprecated */)
 	if addressEndpoint == nil {
 		return false
 	}

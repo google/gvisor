@@ -358,11 +358,6 @@ const (
 	// AddressConfigSlaac is an address endpoint added by SLAAC, as per RFC 4862
 	// section 5.5.3.
 	AddressConfigSlaac
-
-	// AddressConfigSlaacTemp is a temporary address endpoint added by SLAAC as
-	// per RFC 4941. Temporary SLAAC addresses are short-lived and are not
-	// to be valid (or preferred) forever; hence the term temporary.
-	AddressConfigSlaacTemp
 )
 
 // AddressProperties contains additional properties that can be configured when
@@ -371,6 +366,11 @@ type AddressProperties struct {
 	PEB        PrimaryEndpointBehavior
 	ConfigType AddressConfigType
 	Deprecated bool
+	// Temporary is as defined in RFC 4941, but applies not only to addresses
+	// added via SLAAC, e.g. DHCPv6 can also add temporary addresses. Temporary
+	// addresses are short-lived and are not to be valid (or preferred)
+	// forever; hence the term temporary.
+	Temporary bool
 }
 
 // AssignableAddressEndpoint is a reference counted address endpoint that may be
@@ -415,6 +415,9 @@ type AddressEndpoint interface {
 
 	// SetDeprecated sets this endpoint's deprecated status.
 	SetDeprecated(bool)
+
+	// Temporary returns whether or not this endpoint is temporary.
+	Temporary() bool
 }
 
 // AddressKind is the kind of an address.
