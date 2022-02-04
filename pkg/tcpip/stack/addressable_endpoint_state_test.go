@@ -38,9 +38,10 @@ func TestAddressableEndpointStateCleanup(t *testing.T) {
 	}
 
 	{
-		ep, err := s.AddAndAcquirePermanentAddress(addr, stack.AddressProperties{PEB: stack.NeverPrimaryEndpoint})
+		properties := stack.AddressProperties{PEB: stack.NeverPrimaryEndpoint}
+		ep, err := s.AddAndAcquirePermanentAddress(addr, properties)
 		if err != nil {
-			t.Fatalf("s.AddAndAcquirePermanentAddress(%s, AddressProperties{PEB: NeverPrimaryEndpoint}): %s", addr, err)
+			t.Fatalf("s.AddAndAcquirePermanentAddress(%s, %+v): %s", addr, properties, err)
 		}
 		// We don't need the address endpoint.
 		ep.DecRef()
