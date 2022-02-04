@@ -28,7 +28,6 @@ go_library(
         "//pkg/unet",
         "//pkg/urpc",
         "//runsc/boot",
-        "//runsc/boot/platforms",
         "//runsc/cgroup",
         "//runsc/config",
         "//runsc/console",

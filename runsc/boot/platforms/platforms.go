@@ -22,13 +22,4 @@ import (
 	// Import platforms that runsc might use.
 	_ "gvisor.dev/gvisor/pkg/sentry/platform/kvm"
 	_ "gvisor.dev/gvisor/pkg/sentry/platform/ptrace"
-	_ "gvisor.dev/gvisor/runsc/boot/platforms/nonstandard"
-)
-
-const (
-	// Ptrace runs the sandbox with the ptrace platform.
-	Ptrace = "ptrace"
-
-	// KVM runs the sandbox with the KVM platform.
-	KVM = "kvm"
 )

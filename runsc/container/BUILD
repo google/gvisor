@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library", "go_test", "more_shards")
+load("//tools:defs.bzl", "default_platform", "go_library", "go_test", "more_shards", "platforms")
 
 package(licenses = ["notice"])
 
@@ -39,12 +39,18 @@ go_test(
     size = "large",
     srcs = [
         "console_test.go",
-        "container_norace_test.go",
-        "container_race_test.go",
         "container_test.go",
         "multi_container_test.go",
         "shared_volume_test.go",
     ],
+    # Only run the default platform for the tsan test, which should
+    # be compatible. For non-tsan builds, run all platforms.
+    args = select({
+        "//conditions:default": ["-test_platforms=%s" % ",".join(
+            [p for (p, tags) in platforms.items() if "manual" not in tags],
+        )],
+        "//tools:gotsan": ["-test_platforms=%s" % default_platform],
+    }),
     data = [
         "//runsc",
         "//test/cmd/test_app",
@@ -60,13 +66,14 @@ go_test(
         "//pkg/sentry/control",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
+        "//pkg/sentry/platform",
         "//pkg/sync",
         "//pkg/test/testutil",
         "//pkg/unet",
         "//pkg/urpc",
         "//runsc/boot",
-        "//runsc/boot/platforms",
         "//runsc/config",
+        "//runsc/flag",
         "//runsc/specutils",
         "@com_github_cenkalti_backoff//:go_default_library",
         "@com_github_kr_pty//:go_default_library",

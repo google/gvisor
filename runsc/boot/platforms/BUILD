@@ -1,15 +1,11 @@
-load("//tools:defs.bzl", "go_library", "select_system")
+# The go_library rule is imported as a different name in this case,
+# in order to avoid automated tooling doing the wrong thing with the
+# operating-specific dependencies listed below.
+load("//tools:defs.bzl", "platforms", "select_system", exempt_go_library = "go_library")
 
 package(licenses = ["notice"])
 
-# Don't rewrite the deps attribute of :platforms.
-# @unused
-glaze_ignore = [
-    "platforms.go",
-    "platforms_darwin.go",
-]
-
-go_library(
+exempt_go_library(
     name = "platforms",
     srcs = [
         "platforms.go",
@@ -24,9 +20,8 @@ go_library(
     deps = select_system(
         darwin = [],
         linux = [
-            "//pkg/sentry/platform/kvm",
-            "//pkg/sentry/platform/ptrace",
-            "//runsc/boot/platforms/nonstandard",
+            "//pkg/sentry/platform/%s" % platform
+            for platform in platforms
         ],
     ),
 )
