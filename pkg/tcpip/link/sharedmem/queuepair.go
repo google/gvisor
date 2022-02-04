@@ -74,16 +74,16 @@ type QueuePair struct {
 // QueueOptions allows queue specific configuration to be specified when
 // creating a QueuePair.
 type QueueOptions struct {
-	// sharedMemPath is the path to use to create the shared memory backing
+	// SharedMemPath is the path to use to create the shared memory backing
 	// files for the queue.
 	//
 	// If unspecified it defaults to "/dev/shm".
-	sharedMemPath string
+	SharedMemPath string
 }
 
 // NewQueuePair creates a shared memory QueuePair.
 func NewQueuePair(opts QueueOptions) (*QueuePair, error) {
-	txCfg, err := createQueueFDs(opts.sharedMemPath, queueSizes{
+	txCfg, err := createQueueFDs(opts.SharedMemPath, queueSizes{
 		dataSize:       DefaultQueueDataSize,
 		txPipeSize:     DefaultQueuePipeSize,
 		rxPipeSize:     DefaultQueuePipeSize,
@@ -94,7 +94,7 @@ func NewQueuePair(opts QueueOptions) (*QueuePair, error) {
 		return nil, fmt.Errorf("failed to create tx queue: %s", err)
 	}
 
-	rxCfg, err := createQueueFDs(opts.sharedMemPath, queueSizes{
+	rxCfg, err := createQueueFDs(opts.SharedMemPath, queueSizes{
 		dataSize:       DefaultQueueDataSize,
 		txPipeSize:     DefaultQueuePipeSize,
 		rxPipeSize:     DefaultQueuePipeSize,
