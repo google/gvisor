@@ -148,6 +148,11 @@ type connection struct {
 	// Negotiated in FUSE_INIT.
 	maxPages uint16
 
+	// maxActiveRequests specifies the maximum number of active requests that can
+	// exist at any time. Any further requests will block when trying to CAll
+	// the server.
+	maxActiveRequests uint64
+
 	// minor version of the FUSE protocol.
 	// Negotiated and only set in INIT.
 	minor uint32
@@ -217,6 +222,7 @@ func newFUSEConnection(_ context.Context, fuseFD *DeviceFD, opts *filesystemOpti
 		asyncCongestionThreshold: fuseDefaultCongestionThreshold,
 		maxRead:                  opts.maxRead,
 		maxPages:                 fuseDefaultMaxPagesPerReq,
+		maxActiveRequests:        opts.maxActiveRequests,
 		initializedChan:          make(chan struct{}),
 		connected:                true,
 	}, nil
@@ -296,7 +302,7 @@ func (conn *connection) callFuture(t *kernel.Task, r *Request) (*futureResponse,
 	// This can potentially starve a request forever but this can only happen
 	// if there are always too many ongoing requests all the time. The
 	// supported maxActiveRequests setting should be really high to avoid this.
-	for conn.fd.numActiveRequests == conn.fd.fs.opts.maxActiveRequests {
+	for conn.fd.numActiveRequests == conn.maxActiveRequests {
 		log.Infof("Blocking request %v from being queued. Too many active requests: %v",
 			r.id, conn.fd.numActiveRequests)
 		conn.fd.mu.Unlock()
