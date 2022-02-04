@@ -2980,7 +2980,7 @@ func TestIPv6SourceAddressSelectionScopeAndSameAddress(t *testing.T) {
 		properties stack.AddressProperties
 	}
 
-	// Rule 3 is not tested here, and is instead tested by NDP's AutoGenAddr test.
+	// Rule 3 is also tested by NDP's AutoGenAddr test.
 	tests := []struct {
 		name                                   string
 		slaacPrefixForTempAddrBeforeNICAddrAdd tcpip.AddressWithPrefix
@@ -3101,6 +3101,35 @@ func TestIPv6SourceAddressSelectionScopeAndSameAddress(t *testing.T) {
 			expectedLocalAddr: linkLocalAddr1,
 		},
 
+		// Test Rule 3 of RFC 6724 section 5 (avoid deprecated addresses).
+		{
+			name: "Deprecated least preferred (last address)",
+			nicAddrs: []addressWithProperties{
+				{addr: globalAddr1},
+				{
+					addr: globalAddr2,
+					properties: stack.AddressProperties{
+						Deprecated: true,
+					},
+				},
+			},
+			remoteAddr:        globalAddr3,
+			expectedLocalAddr: globalAddr1,
+		},
+		{
+			name: "Deprecated least preferred (first address)",
+			nicAddrs: []addressWithProperties{
+				{
+					addr: globalAddr2,
+					properties: stack.AddressProperties{
+						Deprecated: true,
+					},
+				},
+				{addr: globalAddr1},
+			},
+			remoteAddr:        globalAddr3,
+			expectedLocalAddr: globalAddr1,
+		},
 		// Test Rule 6 of 6724 section 5 (prefer matching label).
 		{
 			name: "Unique Local most preferred (last address)",
