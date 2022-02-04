@@ -1681,6 +1681,13 @@ func (e *endpoint) getAddressRLocked(localAddr tcpip.Address) stack.AddressEndpo
 	return e.mu.addressableEndpointState.GetAddress(localAddr)
 }
 
+// SetDeprecated implements stack.AddressableEndpoint.
+func (e *endpoint) SetDeprecated(addr tcpip.Address, deprecated bool) tcpip.Error {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.mu.addressableEndpointState.SetDeprecated(addr, deprecated)
+}
+
 // MainAddress implements stack.AddressableEndpoint.
 func (e *endpoint) MainAddress() tcpip.AddressWithPrefix {
 	e.mu.RLock()

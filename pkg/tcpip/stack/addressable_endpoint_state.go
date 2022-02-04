@@ -374,6 +374,19 @@ func (a *AddressableEndpointState) decAddressRefLocked(addrState *addressState) 
 	a.releaseAddressStateLocked(addrState)
 }
 
+// SetDeprecated implements stack.AddressableEndpoint.
+func (a *AddressableEndpointState) SetDeprecated(addr tcpip.Address, deprecated bool) tcpip.Error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	addrState, ok := a.mu.endpoints[addr]
+	if !ok {
+		return &tcpip.ErrBadLocalAddress{}
+	}
+	addrState.SetDeprecated(deprecated)
+	return nil
+}
+
 // MainAddress implements AddressableEndpoint.
 func (a *AddressableEndpointState) MainAddress() tcpip.AddressWithPrefix {
 	a.mu.RLock()

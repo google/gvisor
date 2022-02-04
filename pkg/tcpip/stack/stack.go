@@ -943,6 +943,18 @@ func (s *Stack) RemoveAddress(id tcpip.NICID, addr tcpip.Address) tcpip.Error {
 	return &tcpip.ErrUnknownNICID{}
 }
 
+// SetAddressDeprecated sets an address to be deprecated or preferred.
+func (s *Stack) SetAddressDeprecated(id tcpip.NICID, addr tcpip.Address, deprecated bool) tcpip.Error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if nic, ok := s.nics[id]; ok {
+		return nic.setAddressDeprecated(addr, deprecated)
+	}
+
+	return &tcpip.ErrUnknownNICID{}
+}
+
 // AllAddresses returns a map of NICIDs to their protocol addresses (primary
 // and non-primary).
 func (s *Stack) AllAddresses() map[tcpip.NICID][]tcpip.ProtocolAddress {

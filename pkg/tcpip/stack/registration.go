@@ -491,6 +491,12 @@ type AddressableEndpoint interface {
 	// permanent address.
 	RemovePermanentAddress(addr tcpip.Address) tcpip.Error
 
+	// SetDeprecated sets whether the address should be deprecated or not.
+	//
+	// Returns *tcpip.ErrBadLocalAddress if the endpoint does not have the passed
+	// address.
+	SetDeprecated(addr tcpip.Address, deprecated bool) tcpip.Error
+
 	// MainAddress returns the endpoint's primary permanent address.
 	MainAddress() tcpip.AddressWithPrefix
 

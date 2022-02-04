@@ -1053,6 +1053,13 @@ func (e *endpoint) RemovePermanentAddress(addr tcpip.Address) tcpip.Error {
 	return e.addressableEndpointState.RemovePermanentAddress(addr)
 }
 
+// SetDeprecated implements stack.AddressableEndpoint.
+func (e *endpoint) SetDeprecated(addr tcpip.Address, deprecated bool) tcpip.Error {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.addressableEndpointState.SetDeprecated(addr, deprecated)
+}
+
 // MainAddress implements stack.AddressableEndpoint.
 func (e *endpoint) MainAddress() tcpip.AddressWithPrefix {
 	e.mu.RLock()
