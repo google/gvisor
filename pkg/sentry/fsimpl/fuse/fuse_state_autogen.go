@@ -27,6 +27,7 @@ func (conn *connection) StateFields() []string {
 		"maxRead",
 		"maxWrite",
 		"maxPages",
+		"maxActiveRequests",
 		"minor",
 		"atomicOTrunc",
 		"asyncRead",
@@ -59,13 +60,14 @@ func (conn *connection) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(12, &conn.maxRead)
 	stateSinkObject.Save(13, &conn.maxWrite)
 	stateSinkObject.Save(14, &conn.maxPages)
-	stateSinkObject.Save(15, &conn.minor)
-	stateSinkObject.Save(16, &conn.atomicOTrunc)
-	stateSinkObject.Save(17, &conn.asyncRead)
-	stateSinkObject.Save(18, &conn.writebackCache)
-	stateSinkObject.Save(19, &conn.bigWrites)
-	stateSinkObject.Save(20, &conn.dontMask)
-	stateSinkObject.Save(21, &conn.noOpen)
+	stateSinkObject.Save(15, &conn.maxActiveRequests)
+	stateSinkObject.Save(16, &conn.minor)
+	stateSinkObject.Save(17, &conn.atomicOTrunc)
+	stateSinkObject.Save(18, &conn.asyncRead)
+	stateSinkObject.Save(19, &conn.writebackCache)
+	stateSinkObject.Save(20, &conn.bigWrites)
+	stateSinkObject.Save(21, &conn.dontMask)
+	stateSinkObject.Save(22, &conn.noOpen)
 }
 
 func (conn *connection) afterLoad() {}
@@ -86,13 +88,14 @@ func (conn *connection) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(12, &conn.maxRead)
 	stateSourceObject.Load(13, &conn.maxWrite)
 	stateSourceObject.Load(14, &conn.maxPages)
-	stateSourceObject.Load(15, &conn.minor)
-	stateSourceObject.Load(16, &conn.atomicOTrunc)
-	stateSourceObject.Load(17, &conn.asyncRead)
-	stateSourceObject.Load(18, &conn.writebackCache)
-	stateSourceObject.Load(19, &conn.bigWrites)
-	stateSourceObject.Load(20, &conn.dontMask)
-	stateSourceObject.Load(21, &conn.noOpen)
+	stateSourceObject.Load(15, &conn.maxActiveRequests)
+	stateSourceObject.Load(16, &conn.minor)
+	stateSourceObject.Load(17, &conn.atomicOTrunc)
+	stateSourceObject.Load(18, &conn.asyncRead)
+	stateSourceObject.Load(19, &conn.writebackCache)
+	stateSourceObject.Load(20, &conn.bigWrites)
+	stateSourceObject.Load(21, &conn.dontMask)
+	stateSourceObject.Load(22, &conn.noOpen)
 	stateSourceObject.LoadValue(3, new(bool), func(y interface{}) { conn.loadInitializedChan(y.(bool)) })
 }
 
