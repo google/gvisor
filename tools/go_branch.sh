@@ -116,7 +116,7 @@ EOF
 # There are a few solitary files that can get left behind due to the way bazel
 # constructs the gopath target. Note that we don't find all Go files here
 # because they may correspond to unused templates, etc.
-declare -ar binaries=( "runsc" "shim" "webhook" )
+declare -ar binaries=( "runsc" "shim" "webhook" "tools/checklocks/cmd/checklocks" )
 for target in "${binaries[@]}"; do
   mkdir -p "${target}"
   cp "${repo_orig}/${target}"/*.go "${target}/"
