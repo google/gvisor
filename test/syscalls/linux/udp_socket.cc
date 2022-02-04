@@ -1737,296 +1737,6 @@ TEST_P(UdpSocketTest, TimestampIoctlPersistence) {
   ASSERT_EQ(tv.tv_usec, tv2.tv_usec);
 }
 
-// TOS and TCLASS values may be different but IPv6 sockets with IPv4-mapped-IPv6
-// addresses use TOS (IPv4), not TCLASS (IPv6).
-TEST_P(UdpSocketTest, DifferentTOSAndTClass) {
-  const int kFamily = GetParam();
-  constexpr int kToS = IPTOS_LOWDELAY;
-  constexpr int kTClass = IPTOS_THROUGHPUT;
-  ASSERT_NE(kToS, kTClass);
-
-  if (kFamily == AF_INET6) {
-    ASSERT_THAT(setsockopt(sock_.get(), SOL_IPV6, IPV6_TCLASS, &kTClass,
-                           sizeof(kTClass)),
-                SyscallSucceeds());
-
-    // Marking an IPv6 socket as IPv6 only should not affect the ability to
-    // configure IPv4 socket options as the V6ONLY flag may later be disabled so
-    // that applications may use the socket to send/receive IPv4 packets.
-    constexpr int on = 1;
-    ASSERT_THAT(setsockopt(sock_.get(), SOL_IPV6, IPV6_V6ONLY, &on, sizeof(on)),
-                SyscallSucceeds());
-  }
-
-  ASSERT_THAT(setsockopt(sock_.get(), SOL_IP, IP_TOS, &kToS, sizeof(kToS)),
-              SyscallSucceeds());
-
-  if (kFamily == AF_INET6) {
-    int got_tclass;
-    socklen_t got_tclass_len = sizeof(got_tclass);
-    ASSERT_THAT(getsockopt(sock_.get(), SOL_IPV6, IPV6_TCLASS, &got_tclass,
-                           &got_tclass_len),
-                SyscallSucceeds());
-    ASSERT_EQ(got_tclass_len, sizeof(got_tclass));
-    EXPECT_EQ(got_tclass, kTClass);
-  }
-
-  {
-    int got_tos;
-    socklen_t got_tos_len = sizeof(got_tos);
-    ASSERT_THAT(getsockopt(sock_.get(), SOL_IP, IP_TOS, &got_tos, &got_tos_len),
-                SyscallSucceeds());
-    ASSERT_EQ(got_tos_len, sizeof(got_tos));
-    EXPECT_EQ(got_tos, kToS);
-  }
-
-  auto test_send = [this](sockaddr_storage addr,
-                          std::function<void(const cmsghdr*)> cb) {
-    FileDescriptor bind = ASSERT_NO_ERRNO_AND_VALUE(
-        Socket(addr.ss_family, SOCK_DGRAM, IPPROTO_UDP));
-    ASSERT_NO_ERRNO(BindSocket(bind.get(), reinterpret_cast<sockaddr*>(&addr)));
-    ASSERT_THAT(setsockopt(bind.get(), SOL_IP, IP_RECVTOS, &kSockOptOn,
-                           sizeof(kSockOptOn)),
-                SyscallSucceeds());
-    if (addr.ss_family == AF_INET6) {
-      ASSERT_THAT(setsockopt(bind.get(), SOL_IPV6, IPV6_RECVTCLASS, &kSockOptOn,
-                             sizeof(kSockOptOn)),
-                  SyscallSucceeds());
-    }
-
-    char sent_data[1024];
-    iovec sent_iov = {
-        .iov_base = sent_data,
-        .iov_len = sizeof(sent_data),
-    };
-    msghdr sent_msg = {
-        .msg_name = &addr,
-        .msg_namelen = sizeof(addr),
-        .msg_iov = &sent_iov,
-        .msg_iovlen = 1,
-    };
-    ASSERT_THAT(RetryEINTR(sendmsg)(sock_.get(), &sent_msg, 0),
-                SyscallSucceedsWithValue(sizeof(sent_data)));
-
-    char received_data[sizeof(sent_data) + 1];
-    iovec received_iov = {
-        .iov_base = received_data,
-        .iov_len = sizeof(received_data),
-    };
-    std::vector<char> received_cmsgbuf(CMSG_SPACE(sizeof(int8_t)));
-    msghdr received_msg = {
-        .msg_iov = &received_iov,
-        .msg_iovlen = 1,
-        .msg_control = received_cmsgbuf.data(),
-        .msg_controllen = static_cast<socklen_t>(received_cmsgbuf.size()),
-    };
-    ASSERT_THAT(RetryEINTR(recvmsg)(bind.get(), &received_msg, 0),
-                SyscallSucceedsWithValue(sizeof(sent_data)));
-
-    cmsghdr* cmsg = CMSG_FIRSTHDR(&received_msg);
-    ASSERT_NE(cmsg, nullptr);
-    ASSERT_NO_FATAL_FAILURE(cb(cmsg));
-    EXPECT_EQ(CMSG_NXTHDR(&received_msg, cmsg), nullptr);
-  };
-
-  if (kFamily == AF_INET6) {
-    SCOPED_TRACE(
-        "Send IPv4 loopback packet using IPv6 socket via IPv4-mapped-IPv6");
-
-    constexpr int off = 0;
-    ASSERT_THAT(
-        setsockopt(sock_.get(), SOL_IPV6, IPV6_V6ONLY, &off, sizeof(off)),
-        SyscallSucceeds());
-
-    // Send a packet and make sure that the ToS value in the IPv4 header is
-    // the configured IPv4 ToS Value and not the IPv6 Traffic Class value even
-    // though we use an IPv6 socket to send an IPv4 packet.
-    ASSERT_NO_FATAL_FAILURE(
-        test_send(V4MappedLoopback().addr, [kToS](const cmsghdr* cmsg) {
-          EXPECT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(int8_t)));
-          EXPECT_EQ(cmsg->cmsg_level, SOL_IP);
-          EXPECT_EQ(cmsg->cmsg_type, IP_TOS);
-          int8_t received;
-          memcpy(&received, CMSG_DATA(cmsg), sizeof(received));
-          EXPECT_EQ(received, kToS);
-        }));
-  }
-
-  {
-    SCOPED_TRACE("Send loopback packet");
-
-    ASSERT_NO_FATAL_FAILURE(test_send(
-        InetLoopbackAddr(), [kFamily, kTClass, kToS](const cmsghdr* cmsg) {
-          switch (kFamily) {
-            case AF_INET: {
-              EXPECT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(int8_t)));
-              EXPECT_EQ(cmsg->cmsg_level, SOL_IP);
-              EXPECT_EQ(cmsg->cmsg_type, IP_TOS);
-              int8_t received;
-              memcpy(&received, CMSG_DATA(cmsg), sizeof(received));
-              EXPECT_EQ(received, kToS);
-            } break;
-            case AF_INET6: {
-              EXPECT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(int32_t)));
-              EXPECT_EQ(cmsg->cmsg_level, SOL_IPV6);
-              EXPECT_EQ(cmsg->cmsg_type, IPV6_TCLASS);
-              int32_t received;
-              memcpy(&received, CMSG_DATA(cmsg), sizeof(received));
-              EXPECT_EQ(received, kTClass);
-            } break;
-          }
-        }));
-  }
-}
-
-// Test that a socket with IP_TOS or IPV6_TCLASS set will set the TOS byte on
-// outgoing packets, and that a receiving socket with IP_RECVTOS or
-// IPV6_RECVTCLASS will create the corresponding control message.
-TEST_P(UdpSocketTest, SetAndReceiveTOS) {
-  ASSERT_NO_ERRNO(BindLoopback());
-  ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
-
-  // Allow socket to receive control message.
-  int recv_level = SOL_IP;
-  int recv_type = IP_RECVTOS;
-  if (GetParam() == AF_INET6) {
-    recv_level = SOL_IPV6;
-    recv_type = IPV6_RECVTCLASS;
-  }
-  ASSERT_THAT(setsockopt(bind_.get(), recv_level, recv_type, &kSockOptOn,
-                         sizeof(kSockOptOn)),
-              SyscallSucceeds());
-
-  // Set socket TOS.
-  int sent_level = recv_level;
-  int sent_type = IP_TOS;
-  if (sent_level == SOL_IPV6) {
-    sent_type = IPV6_TCLASS;
-  }
-  int sent_tos = IPTOS_LOWDELAY;  // Choose some TOS value.
-  ASSERT_THAT(setsockopt(sock_.get(), sent_level, sent_type, &sent_tos,
-                         sizeof(sent_tos)),
-              SyscallSucceeds());
-
-  // Prepare message to send.
-  constexpr size_t kDataLength = 1024;
-  struct msghdr sent_msg = {};
-  struct iovec sent_iov = {};
-  char sent_data[kDataLength];
-  sent_iov.iov_base = &sent_data[0];
-  sent_iov.iov_len = kDataLength;
-  sent_msg.msg_iov = &sent_iov;
-  sent_msg.msg_iovlen = 1;
-
-  ASSERT_THAT(RetryEINTR(sendmsg)(sock_.get(), &sent_msg, 0),
-              SyscallSucceedsWithValue(kDataLength));
-
-  // Receive message.
-  struct msghdr received_msg = {};
-  struct iovec received_iov = {};
-  char received_data[kDataLength];
-  received_iov.iov_base = &received_data[0];
-  received_iov.iov_len = kDataLength;
-  received_msg.msg_iov = &received_iov;
-  received_msg.msg_iovlen = 1;
-  size_t cmsg_data_len = sizeof(int8_t);
-  if (sent_type == IPV6_TCLASS) {
-    cmsg_data_len = sizeof(int);
-  }
-  std::vector<char> received_cmsgbuf(CMSG_SPACE(cmsg_data_len));
-  received_msg.msg_control = &received_cmsgbuf[0];
-  received_msg.msg_controllen = received_cmsgbuf.size();
-  ASSERT_THAT(RetryEINTR(recvmsg)(bind_.get(), &received_msg, 0),
-              SyscallSucceedsWithValue(kDataLength));
-
-  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&received_msg);
-  ASSERT_NE(cmsg, nullptr);
-  EXPECT_EQ(cmsg->cmsg_len, CMSG_LEN(cmsg_data_len));
-  EXPECT_EQ(cmsg->cmsg_level, sent_level);
-  EXPECT_EQ(cmsg->cmsg_type, sent_type);
-  int8_t received_tos = 0;
-  memcpy(&received_tos, CMSG_DATA(cmsg), sizeof(received_tos));
-  EXPECT_EQ(received_tos, sent_tos);
-}
-
-// Test that sendmsg with IP_TOS and IPV6_TCLASS control messages will set the
-// TOS byte on outgoing packets, and that a receiving socket with IP_RECVTOS or
-// IPV6_RECVTCLASS will create the corresponding control message.
-TEST_P(UdpSocketTest, SendAndReceiveTOS) {
-  // TODO(b/146661005): Setting TOS via cmsg not supported for netstack.
-  SKIP_IF(IsRunningOnGvisor() && !IsRunningWithHostinet());
-
-  ASSERT_NO_ERRNO(BindLoopback());
-  ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
-
-  // Allow socket to receive control message.
-  int recv_level = SOL_IP;
-  int recv_type = IP_RECVTOS;
-  if (GetParam() == AF_INET6) {
-    recv_level = SOL_IPV6;
-    recv_type = IPV6_RECVTCLASS;
-  }
-  int recv_opt = kSockOptOn;
-  ASSERT_THAT(setsockopt(bind_.get(), recv_level, recv_type, &recv_opt,
-                         sizeof(recv_opt)),
-              SyscallSucceeds());
-
-  // Prepare message to send.
-  constexpr size_t kDataLength = 1024;
-  int sent_level = recv_level;
-  int sent_type = IP_TOS;
-  int sent_tos = IPTOS_LOWDELAY;  // Choose some TOS value.
-
-  struct msghdr sent_msg = {};
-  struct iovec sent_iov = {};
-  char sent_data[kDataLength];
-  sent_iov.iov_base = &sent_data[0];
-  sent_iov.iov_len = kDataLength;
-  sent_msg.msg_iov = &sent_iov;
-  sent_msg.msg_iovlen = 1;
-  size_t cmsg_data_len = sizeof(int8_t);
-  if (sent_level == SOL_IPV6) {
-    sent_type = IPV6_TCLASS;
-    cmsg_data_len = sizeof(int);
-  }
-  std::vector<char> sent_cmsgbuf(CMSG_SPACE(cmsg_data_len));
-  sent_msg.msg_control = &sent_cmsgbuf[0];
-  sent_msg.msg_controllen = CMSG_LEN(cmsg_data_len);
-
-  // Manually add control message.
-  struct cmsghdr* sent_cmsg = CMSG_FIRSTHDR(&sent_msg);
-  sent_cmsg->cmsg_len = CMSG_LEN(cmsg_data_len);
-  sent_cmsg->cmsg_level = sent_level;
-  sent_cmsg->cmsg_type = sent_type;
-  *(int8_t*)CMSG_DATA(sent_cmsg) = sent_tos;
-
-  ASSERT_THAT(RetryEINTR(sendmsg)(sock_.get(), &sent_msg, 0),
-              SyscallSucceedsWithValue(kDataLength));
-
-  // Receive message.
-  struct msghdr received_msg = {};
-  struct iovec received_iov = {};
-  char received_data[kDataLength];
-  received_iov.iov_base = &received_data[0];
-  received_iov.iov_len = kDataLength;
-  received_msg.msg_iov = &received_iov;
-  received_msg.msg_iovlen = 1;
-  std::vector<char> received_cmsgbuf(CMSG_SPACE(cmsg_data_len));
-  received_msg.msg_control = &received_cmsgbuf[0];
-  received_msg.msg_controllen = CMSG_LEN(cmsg_data_len);
-  ASSERT_THAT(RetryEINTR(recvmsg)(bind_.get(), &received_msg, 0),
-              SyscallSucceedsWithValue(kDataLength));
-
-  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&received_msg);
-  ASSERT_NE(cmsg, nullptr);
-  EXPECT_EQ(cmsg->cmsg_len, CMSG_LEN(cmsg_data_len));
-  EXPECT_EQ(cmsg->cmsg_level, sent_level);
-  EXPECT_EQ(cmsg->cmsg_type, sent_type);
-  int8_t received_tos = 0;
-  memcpy(&received_tos, CMSG_DATA(cmsg), sizeof(received_tos));
-  EXPECT_EQ(received_tos, sent_tos);
-}
-
 TEST_P(UdpSocketTest, RecvBufLimitsEmptyRcvBuf) {
   // Discover minimum buffer size by setting it to zero.
   constexpr int kRcvBufSz = 0;
@@ -2259,6 +1969,183 @@ TEST_P(UdpSocketTest, ConnectToZeroPortConnected) {
 
 INSTANTIATE_TEST_SUITE_P(AllInetTests, UdpSocketTest,
                          ::testing::Values(AF_INET, AF_INET6));
+
+class UdpSocketControlMessagesTest
+    : public ::testing::TestWithParam<gvisor::testing::AddressFamily> {
+ protected:
+  void SetUp() override {
+    switch (GetParam()) {
+      case AddressFamily::kIpv4: {
+        server_ =
+            ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
+        TestAddress addr = V4Loopback().WithPort(port_);
+        ASSERT_THAT(
+            bind(server_.get(), reinterpret_cast<const sockaddr*>(&addr.addr),
+                 addr.addr_len),
+            SyscallSucceeds());
+
+        client_ =
+            ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
+        ASSERT_THAT(connect(client_.get(),
+                            reinterpret_cast<const sockaddr*>(&addr.addr),
+                            addr.addr_len),
+                    SyscallSucceeds());
+        break;
+      }
+
+      case AddressFamily::kIpv6: {
+        server_ = ASSERT_NO_ERRNO_AND_VALUE(
+            Socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP));
+        TestAddress addr = V6Loopback().WithPort(port_);
+        ASSERT_THAT(
+            bind(server_.get(), reinterpret_cast<const sockaddr*>(&addr.addr),
+                 addr.addr_len),
+            SyscallSucceeds());
+
+        client_ = ASSERT_NO_ERRNO_AND_VALUE(
+            Socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP));
+        ASSERT_THAT(connect(client_.get(),
+                            reinterpret_cast<const sockaddr*>(&addr.addr),
+                            addr.addr_len),
+                    SyscallSucceeds());
+        break;
+      }
+
+      case AddressFamily::kDualStack: {
+        server_ = ASSERT_NO_ERRNO_AND_VALUE(
+            Socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP));
+
+        TestAddress bind_addr = V4MappedLoopback().WithPort(port_);
+        ASSERT_THAT(bind(server_.get(),
+                         reinterpret_cast<const sockaddr*>(&bind_addr.addr),
+                         bind_addr.addr_len),
+                    SyscallSucceeds());
+
+        client_ =
+            ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
+        TestAddress connect_addr = V4Loopback().WithPort(port_);
+        ASSERT_THAT(
+            connect(client_.get(),
+                    reinterpret_cast<const sockaddr*>(&connect_addr.addr),
+                    connect_addr.addr_len),
+            SyscallSucceeds());
+        break;
+      }
+
+      default:
+        FAIL() << "unknown address family: " << static_cast<int>(GetParam());
+    }
+  }
+
+  int ClientAddressFamily() const {
+    if (GetParam() == AddressFamily::kIpv6) {
+      return AF_INET6;
+    }
+    return AF_INET;
+  }
+
+  int ServerAddressFamily() const {
+    if (GetParam() == AddressFamily::kIpv4) {
+      return AF_INET;
+    }
+    return AF_INET6;
+  }
+
+  FileDescriptor server_;
+  FileDescriptor client_;
+
+ private:
+  static constexpr uint16_t port_ = 1337;
+};
+
+TEST_P(UdpSocketControlMessagesTest, SetAndReceiveTOSOrTClass) {
+  // Enable receiving TOS and maybe TClass on the receiver.
+  ASSERT_THAT(setsockopt(server_.get(), SOL_IP, IP_RECVTOS, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  if (ServerAddressFamily() == AF_INET6) {
+    ASSERT_THAT(setsockopt(server_.get(), SOL_IPV6, IPV6_RECVTCLASS,
+                           &kSockOptOn, sizeof(kSockOptOn)),
+                SyscallSucceeds());
+  }
+
+  // Set custom TOS and maybe TClass on the sender.
+  constexpr int kTOS = IPTOS_LOWDELAY;
+  constexpr int kTClass = IPTOS_THROUGHPUT;
+  ASSERT_NE(kTOS, kTClass);
+
+  ASSERT_THAT(setsockopt(client_.get(), SOL_IP, IP_TOS, &kTOS, sizeof(kTOS)),
+              SyscallSucceeds());
+  if (ClientAddressFamily() == AF_INET6) {
+    ASSERT_THAT(setsockopt(client_.get(), SOL_IPV6, IPV6_TCLASS, &kTClass,
+                           sizeof(kTClass)),
+                SyscallSucceeds());
+  }
+
+  constexpr size_t kArbitrarySendSize = 1042;
+  constexpr char sent_data[kArbitrarySendSize] = {};
+  ASSERT_THAT(RetryEINTR(send)(client_.get(), sent_data, sizeof(sent_data), 0),
+              SyscallSucceedsWithValue(sizeof(sent_data)));
+
+  char recv_data[sizeof(sent_data) + 1];
+  size_t recv_data_len = sizeof(recv_data);
+
+  if (ClientAddressFamily() == AF_INET) {
+    uint8_t tos;
+    ASSERT_NO_FATAL_FAILURE(
+        RecvTOS(server_.get(), recv_data, &recv_data_len, &tos));
+    EXPECT_EQ(static_cast<int>(tos), kTOS);
+  } else {
+    int tclass;
+    ASSERT_NO_FATAL_FAILURE(
+        RecvTClass(server_.get(), recv_data, &recv_data_len, &tclass));
+    EXPECT_EQ(tclass, kTClass);
+  }
+  EXPECT_EQ(recv_data_len, sizeof(sent_data));
+}
+
+TEST_P(UdpSocketControlMessagesTest, SendAndReceiveTOSorTClass) {
+  // TODO(b/146661005): Setting TOS via sendmsg is not supported by netstack.
+  SKIP_IF(IsRunningOnGvisor() && !IsRunningWithHostinet());
+
+  // Enable receiving TOS and maybe TClass on the receiver.
+  ASSERT_THAT(setsockopt(server_.get(), SOL_IP, IP_RECVTOS, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  if (ServerAddressFamily() == AF_INET6) {
+    ASSERT_THAT(setsockopt(server_.get(), SOL_IPV6, IPV6_RECVTCLASS,
+                           &kSockOptOn, sizeof(kSockOptOn)),
+                SyscallSucceeds());
+  }
+
+  constexpr uint8_t kSendCmsgValue = IPTOS_LOWDELAY;
+  constexpr size_t kArbitrarySendSize = 1024;
+  char sent_data[kArbitrarySendSize];
+  char recv_data[sizeof(sent_data) + 1];
+  size_t recv_data_len = sizeof(recv_data);
+
+  if (ClientAddressFamily() == AF_INET) {
+    ASSERT_NO_FATAL_FAILURE(SendTOS(client_.get(), sent_data,
+                                    size_t(sizeof(sent_data)), kSendCmsgValue));
+    uint8_t tos;
+    ASSERT_NO_FATAL_FAILURE(
+        RecvTOS(server_.get(), recv_data, &recv_data_len, &tos));
+    EXPECT_EQ(static_cast<int>(tos), kSendCmsgValue);
+  } else {
+    ASSERT_NO_FATAL_FAILURE(SendTClass(
+        client_.get(), sent_data, size_t(sizeof(sent_data)), kSendCmsgValue));
+    int tclass;
+    ASSERT_NO_FATAL_FAILURE(
+        RecvTClass(server_.get(), recv_data, &recv_data_len, &tclass));
+    EXPECT_EQ(tclass, kSendCmsgValue);
+  }
+  EXPECT_EQ(recv_data_len, sizeof(sent_data));
+}
+
+INSTANTIATE_TEST_SUITE_P(AllInetTests, UdpSocketControlMessagesTest,
+                         ::testing::Values(AddressFamily::kIpv4,
+                                           AddressFamily::kIpv6,
+                                           AddressFamily::kDualStack));
 
 TEST(UdpInet6SocketTest, ConnectInet4Sockaddr) {
   // glibc getaddrinfo expects the invariant expressed by this test to be held.

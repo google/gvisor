@@ -130,11 +130,19 @@ std::string GetAddrStr(const sockaddr* a);
 // received. The buffer must already be allocated with at least buf_size size.
 void RecvTOS(int sock, char buf[], size_t* buf_size, uint8_t* out_tos);
 
+// SendTOS sends a message using buf as payload and tos as IP_TOS control
+// message.
+void SendTOS(int sock, char buf[], size_t buf_size, uint8_t tos);
+
 // RecvTClass attempts to read buf_size bytes into buf, and then update buf_size
 // with the numbers of bytes actually read. It expects the IPV6_TCLASS cmsg to
 // be received. The buffer must already be allocated with at least buf_size
 // size.
 void RecvTClass(int sock, char buf[], size_t* buf_size, int* out_tclass);
+
+// SendTClass sends a message using buf as payload and tclass as IP_TOS control
+// message.
+void SendTClass(int sock, char buf[], size_t buf_size, int tclass);
 
 }  // namespace testing
 }  // namespace gvisor
