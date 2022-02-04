@@ -57,9 +57,14 @@ def go_binary(name, static = False, pure = False, x_defs = None, system_malloc =
         kwargs["static"] = "on"
     if pure:
         kwargs["pure"] = "on"
+    gc_goopts = select({
+        "//conditions:default": kwargs.pop("gc_goopts", []),
+        "//tools:debug": kwargs.pop("gc_goopts", []) + ["-all=-N -l"],
+    })
     _go_binary(
         name = name,
         x_defs = x_defs,
+        gc_goopts = gc_goopts,
         **kwargs
     )
 
@@ -154,3 +159,7 @@ def select_goos():
         linux = "linux",
         darwin = "darwin",
     )
+
+# Defined by rules_go.
+gotsan_values = None
+gotsan_flag_values = {"@io_bazel_rules_go//go/config:race": "true"}

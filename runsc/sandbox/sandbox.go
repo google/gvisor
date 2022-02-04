@@ -45,7 +45,6 @@ import (
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot"
-	"gvisor.dev/gvisor/runsc/boot/platforms"
 	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/console"
@@ -1426,7 +1425,7 @@ func deviceFileForPlatform(name string) (*os.File, error) {
 func checkBinaryPermissions(conf *config.Config) error {
 	// All platforms need the other exe bit
 	neededBits := os.FileMode(0001)
-	if conf.Platform == platforms.Ptrace {
+	if conf.Platform == "ptrace" {
 		// Ptrace needs the other read bit
 		neededBits |= os.FileMode(0004)
 	}

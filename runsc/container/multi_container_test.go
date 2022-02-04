@@ -137,7 +137,7 @@ func createSharedMount(mount specs.Mount, name string, pod ...*specs.Spec) {
 // TestMultiContainerSanity checks that it is possible to run 2 dead-simple
 // containers in the same sandbox.
 func TestMultiContainerSanity(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -175,7 +175,7 @@ func TestMultiContainerSanity(t *testing.T) {
 // TestMultiPIDNS checks that it is possible to run 2 dead-simple containers in
 // the same sandbox with different pidns.
 func TestMultiPIDNS(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -247,7 +247,7 @@ func TestMultiPIDNS(t *testing.T) {
 
 // TestMultiPIDNSPath checks the pidns path.
 func TestMultiPIDNSPath(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -365,7 +365,7 @@ func TestMultiPIDNSKill(t *testing.T) {
 		t.Fatal("error finding test_app:", err)
 	}
 
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -619,7 +619,7 @@ func TestMultiContainerMount(t *testing.T) {
 // TestMultiContainerSignal checks that it is possible to signal individual
 // containers without killing the entire sandbox.
 func TestMultiContainerSignal(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -719,7 +719,7 @@ func TestMultiContainerDestroy(t *testing.T) {
 		t.Fatal("error finding test_app:", err)
 	}
 
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -1216,7 +1216,7 @@ func TestMultiContainerContainerDestroyStress(t *testing.T) {
 // Test that pod shared mounts are properly mounted in 2 containers and that
 // changes from one container is reflected in the other.
 func TestMultiContainerSharedMount(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -1329,7 +1329,7 @@ func TestMultiContainerSharedMount(t *testing.T) {
 
 // Test that pod mounts are mounted as readonly when requested.
 func TestMultiContainerSharedMountReadonly(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -1463,7 +1463,7 @@ func TestMultiContainerSharedMountCompatible(t *testing.T) {
 
 // Test that shared pod mounts continue to work after container is restarted.
 func TestMultiContainerSharedMountRestart(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -1572,7 +1572,7 @@ func TestMultiContainerSharedMountRestart(t *testing.T) {
 // Test that unsupported pod mounts options are ignored when matching master and
 // replica mounts.
 func TestMultiContainerSharedMountUnsupportedOptions(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -1907,7 +1907,7 @@ func TestMultiContainerRunNonRoot(t *testing.T) {
 func TestMultiContainerHomeEnvDir(t *testing.T) {
 	// NOTE: Don't use overlay since we need changes to persist to the temp dir
 	// outside the sandbox.
-	for testName, conf := range configs(t, noOverlay...) {
+	for testName, conf := range configs(t, true /* noOverlay */) {
 		t.Run(testName, func(t *testing.T) {
 
 			rootDir, cleanup, err := testutil.SetupRootDir()
