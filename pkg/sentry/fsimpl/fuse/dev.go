@@ -404,7 +404,20 @@ func (fd *DeviceFD) Seek(ctx context.Context, offset int64, whence int32) (int64
 // Preconditions: fd.mu must be held.
 func (fd *DeviceFD) sendResponse(ctx context.Context, fut *futureResponse) error {
 	// Signal the task waiting on a response if any.
-	defer close(fut.ch)
+	defer func() {
+		// A misbehaving server can write to the device multiple times with the
+		// same cookie, causing duplicate closes. This should not cause a sentry
+		// panic.
+		//
+		// The select and close below are atomic w.r.t concurrent sendResponses
+		// since fd.mu is held.
+		select {
+		case <-fut.ch:
+			// Already closed.
+		default:
+			close(fut.ch)
+		}
+	}()
 
 	// Signal that the queue is no longer full.
 	select {
