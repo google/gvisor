@@ -591,6 +591,24 @@ func (n *nic) removeAddress(addr tcpip.Address) tcpip.Error {
 	return &tcpip.ErrBadLocalAddress{}
 }
 
+func (n *nic) setAddressDeprecated(addr tcpip.Address, deprecated bool) tcpip.Error {
+	for _, ep := range n.networkEndpoints {
+		ep, ok := ep.(AddressableEndpoint)
+		if !ok {
+			continue
+		}
+
+		switch err := ep.SetDeprecated(addr, deprecated); err.(type) {
+		case *tcpip.ErrBadLocalAddress:
+			continue
+		default:
+			return err
+		}
+	}
+
+	return &tcpip.ErrBadLocalAddress{}
+}
+
 func (n *nic) getLinkAddress(addr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, onResolve func(LinkResolutionResult)) tcpip.Error {
 	linkRes, ok := n.linkAddrResolvers[protocol]
 	if !ok {
