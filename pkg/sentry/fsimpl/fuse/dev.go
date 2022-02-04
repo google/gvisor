@@ -149,6 +149,9 @@ func (fd *DeviceFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.R
 	minBuffSize := linux.FUSE_MIN_READ_BUFFER
 	inHdrLen := uint32((*linux.FUSEHeaderIn)(nil).SizeBytes())
 	writeHdrLen := uint32((*linux.FUSEWriteIn)(nil).SizeBytes())
+
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
 	fd.fs.conn.mu.Lock()
 	negotiatedMinBuffSize := inHdrLen + writeHdrLen + fd.fs.conn.maxWrite
 	fd.fs.conn.mu.Unlock()
@@ -160,9 +163,6 @@ func (fd *DeviceFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.R
 	if dst.NumBytes() < int64(minBuffSize) {
 		return 0, linuxerr.EINVAL
 	}
-
-	fd.mu.Lock()
-	defer fd.mu.Unlock()
 	return fd.readLocked(ctx, dst, opts)
 }
 
