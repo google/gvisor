@@ -233,6 +233,7 @@ func (a *AddressableEndpointState) addAndAcquireAddressLocked(addr tcpip.Address
 		addrState = &addressState{
 			addressableEndpointState: a,
 			addr:                     addr,
+			temporary:                properties.Temporary,
 			// Cache the subnet in addrState to avoid calls to addr.Subnet() as that
 			// results in allocations on every call.
 			subnet: addr.Subnet(),
@@ -613,6 +614,7 @@ type addressState struct {
 	addressableEndpointState *AddressableEndpointState
 	addr                     tcpip.AddressWithPrefix
 	subnet                   tcpip.Subnet
+	temporary                bool
 	// Lock ordering (from outer to inner lock ordering):
 	//
 	// AddressableEndpointState.mu
@@ -703,4 +705,8 @@ func (a *addressState) Deprecated() bool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.mu.deprecated
+}
+
+func (a *addressState) Temporary() bool {
+	return a.temporary
 }

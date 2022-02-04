@@ -415,11 +415,13 @@ func (e *endpoint) dupTentativeAddrDetected(addr tcpip.Address, holderLinkAddr t
 		switch t := addressEndpoint.ConfigType(); t {
 		case stack.AddressConfigStatic:
 		case stack.AddressConfigSlaac:
-			e.mu.ndp.regenerateSLAACAddr(prefix)
-		case stack.AddressConfigSlaacTemp:
-			// Do not reset the generation attempts counter for the prefix as the
-			// temporary address is being regenerated in response to a DAD conflict.
-			e.mu.ndp.regenerateTempSLAACAddr(prefix, false /* resetGenAttempts */)
+			if addressEndpoint.Temporary() {
+				// Do not reset the generation attempts counter for the prefix as the
+				// temporary address is being regenerated in response to a DAD conflict.
+				e.mu.ndp.regenerateTempSLAACAddr(prefix, false /* resetGenAttempts */)
+			} else {
+				e.mu.ndp.regenerateSLAACAddr(prefix)
+			}
 		default:
 			panic(fmt.Sprintf("unrecognized address config type = %d", t))
 		}
@@ -1628,11 +1630,12 @@ func (e *endpoint) removePermanentEndpointLocked(addressEndpoint stack.AddressEn
 	addr := addressEndpoint.AddressWithPrefix()
 	// If we are removing an address generated via SLAAC, cleanup
 	// its SLAAC resources and notify the integrator.
-	switch addressEndpoint.ConfigType() {
-	case stack.AddressConfigSlaac:
-		e.mu.ndp.cleanupSLAACAddrResourcesAndNotify(addr, allowSLAACInvalidation)
-	case stack.AddressConfigSlaacTemp:
-		e.mu.ndp.cleanupTempSLAACAddrResourcesAndNotify(addr)
+	if addressEndpoint.ConfigType() == stack.AddressConfigSlaac {
+		if addressEndpoint.Temporary() {
+			e.mu.ndp.cleanupTempSLAACAddrResourcesAndNotify(addr)
+		} else {
+			e.mu.ndp.cleanupSLAACAddrResourcesAndNotify(addr, allowSLAACInvalidation)
+		}
 	}
 
 	return e.removePermanentEndpointInnerLocked(addressEndpoint, dadResult)
@@ -1823,7 +1826,7 @@ func (e *endpoint) acquireOutgoingPrimaryAddressRLocked(remoteAddr tcpip.Address
 		}
 
 		// Prefer temporary addresses as per RFC 6724 section 5 rule 7.
-		if saTemp, sbTemp := sa.addressEndpoint.ConfigType() == stack.AddressConfigSlaacTemp, sb.addressEndpoint.ConfigType() == stack.AddressConfigSlaacTemp; saTemp != sbTemp {
+		if saTemp, sbTemp := sa.addressEndpoint.Temporary(), sb.addressEndpoint.Temporary(); saTemp != sbTemp {
 			return saTemp
 		}
 
