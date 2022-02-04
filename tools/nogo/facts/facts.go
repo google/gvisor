@@ -16,22 +16,23 @@
 package facts
 
 import (
-	"bytes"
 	"encoding/gob"
+	"fmt"
 	"go/types"
 	"io"
-	"log"
 	"reflect"
 	"sort"
 
+	"archive/zip"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/types/objectpath"
 )
 
-// Writer is used for fact serialization.
-type Writer interface {
-	io.ReaderFrom
-	io.WriterTo
+// Serializer is used for fact serialization.
+//
+// It generalizes over the Package and Bundle types.
+type Serializer interface {
+	Serialize(w io.Writer) error
 }
 
 // item is used for serialiation.
@@ -40,7 +41,7 @@ type item struct {
 	Value interface{}
 }
 
-// writeItems is an implementation of io.WriterTo.WriteTo.
+// writeItems is an implementation of Serialize.
 //
 // This will sort the list as a side effect.
 func writeItems(w io.Writer, is []item) error {
@@ -65,50 +66,53 @@ func readItems(r io.Reader) (is []item, err error) {
 // because all imports are shared across all packages, there is a single
 // canonical types.Object shared among all packages being analyzed.
 type Package struct {
-	pkg     *types.Package
 	Objects map[types.Object][]analysis.Fact
 }
 
 // NewPackage returns a new set of Package facts.
-func NewPackage(pkg *types.Package) *Package {
+func NewPackage() *Package {
 	return &Package{
-		pkg:     pkg,
 		Objects: make(map[types.Object][]analysis.Fact),
 	}
 }
 
-// WriteTo implements io.WriterTo.WriteTo.
-func (p *Package) WriteTo(w io.Writer) (int64, error) {
-	is := make([]item, 0, len(p.Objects))
-	for obj, facts := range p.Objects {
-		var (
-			name objectpath.Path
-			err  error
-		)
-		if obj != nil {
-			name, err = objectpath.For(obj)
+func extractObjectpath(obj types.Object) (name objectpath.Path, err error) {
+	defer func() {
+		// Unfortunately, objectpath.For will occasionally panic for
+		// certain objects. This happens with basic analysis packages
+		// (buildssa), and therefore cannot be avoided.
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic: %v", r)
 		}
-		if err != nil {
-			continue // Not exported, expected.
-		}
-		for _, fact := range facts {
-			is = append(is, item{
-				Key:   string(name),
-				Value: fact,
-			})
-		}
+	}()
+	// Allow empty name for no object.
+	if obj != nil {
+		name, err = objectpath.For(obj)
 	}
-	if err := writeItems(w, is); err != nil {
-		return 0, err
-	}
-	return 1, nil
+	return
 }
 
-// ReadFrom implements io.ReaderFrom.ReadFrom.
-func (p *Package) ReadFrom(r io.Reader) (int64, error) {
+// Serialize implements Serializer.Serialize.
+func (p *Package) Serialize(w io.Writer) error {
+	is := make([]item, 0, len(p.Objects))
+	for obj, facts := range p.Objects {
+		name, err := extractObjectpath(obj)
+		if err != nil {
+			continue // Not exported; expected.
+		}
+		is = append(is, item{
+			Key:   string(name),
+			Value: facts,
+		})
+	}
+	return writeItems(w, is)
+}
+
+// ReadFrom deserializes a package.
+func (p *Package) ReadFrom(pkg *types.Package, r io.Reader) error {
 	is, err := readItems(r)
 	if err != nil {
-		return 0, err
+		return err
 	}
 	for _, fi := range is {
 		var (
@@ -116,35 +120,24 @@ func (p *Package) ReadFrom(r io.Reader) (int64, error) {
 			err error
 		)
 		if fi.Key != "" {
-			obj, err = objectpath.Object(p.pkg, objectpath.Path(fi.Key))
+			obj, err = objectpath.Object(pkg, objectpath.Path(fi.Key))
 		}
 		if err != nil {
 			// This could simply be a fact saved on an unexported
 			// object. We just suppress this error and ignore it.
 			continue
 		}
-		p.Objects[obj] = append(p.Objects[obj], fi.Value.(analysis.Fact))
+		p.Objects[obj] = fi.Value.([]analysis.Fact)
 	}
-	return 1, nil
-}
-
-// Size implements worker.Sizer.Size.
-func (p *Package) Size() int64 {
-	total := int64(0)
-	for _, val := range p.Objects {
-		total += int64(8)             // 8-byte pointer.
-		total += int64(len(val)) * 16 // 16-bytes per object.
-	}
-	return total
+	return nil
 }
 
 // ExportFact exports an object fact.
-func (p Package) ExportFact(obj types.Object, ptr analysis.Fact) {
+func (p *Package) ExportFact(obj types.Object, ptr analysis.Fact) {
 	for i, v := range p.Objects[obj] {
 		if reflect.TypeOf(v) == reflect.TypeOf(ptr) {
-			// Drop this item from the list.
-			p.Objects[obj] = append(p.Objects[obj][:i], p.Objects[obj][i+1:]...)
-			break
+			p.Objects[obj][i] = ptr // Replace.
+			return
 		}
 	}
 	// Append this new fact.
@@ -153,6 +146,9 @@ func (p Package) ExportFact(obj types.Object, ptr analysis.Fact) {
 
 // ImportFact imports an object fact.
 func (p *Package) ImportFact(obj types.Object, ptr analysis.Fact) bool {
+	if p == nil {
+		return false // No facts.
+	}
 	for _, v := range p.Objects[obj] {
 		if reflect.TypeOf(v) == reflect.TypeOf(ptr) {
 			// Set the value to the element saved in our facts.
@@ -163,78 +159,101 @@ func (p *Package) ImportFact(obj types.Object, ptr analysis.Fact) bool {
 	return false
 }
 
-// Bundle is a set of facts about different packages. This is typically
-// used for the standard library, but may be used for e.g. module dependencies.
+// Bundle is a set of facts about different packages.
+//
+// This is used to serialize a collection of facts about different packages,
+// which will be loaded and evaluated lazily.
 type Bundle struct {
-	importer types.Importer
-	Packages map[string]*Package
+	reader  *zip.ReadCloser
+	decoded map[string]*Package
 }
 
-// NewBundle returns a new bundle.
-func NewBundle(importer types.Importer) *Bundle {
+// NewBundle makes a new package bundle.
+func NewBundle() *Bundle {
 	return &Bundle{
-		importer: importer,
-		Packages: make(map[string]*Package),
+		decoded: make(map[string]*Package),
 	}
 }
 
-// Size implements worker.Sizer.Size.
-func (b *Bundle) Size() int64 {
-	size := int64(0)
-	for filename, p := range b.Packages {
-		size += int64(len(filename))
-		size += p.Size()
-	}
-	return size
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (b *Bundle) WriteTo(w io.Writer) (int64, error) {
-	is := make([]item, 0, len(b.Packages))
-	for pkg, facts := range b.Packages {
+// Serialize implements Serializer.Serialize.
+func (b *Bundle) Serialize(w io.Writer) error {
+	zw := zip.NewWriter(w)
+	for pkg, facts := range b.decoded {
 		if facts == nil {
 			// Some facts may be omitted for bundles, if there is
 			// only type information but no source information. We
 			// omit these completely from the serialized bundle.
 			continue
 		}
-		var buf bytes.Buffer
-		if _, err := facts.WriteTo(&buf); err != nil {
-			return 0, err
-		}
-		is = append(is, item{
-			Key:   pkg,
-			Value: buf.Bytes(),
-		})
-	}
-	if err := writeItems(w, is); err != nil {
-		return 0, err
-	}
-	return 1, nil
-}
-
-// ReadFrom implements io.ReaderFrom.ReadFrom.
-func (b *Bundle) ReadFrom(r io.Reader) (int64, error) {
-	is, err := readItems(r)
-	if err != nil {
-		return 0, err
-	}
-	for _, fi := range is {
-		pkg, err := b.importer.Import(fi.Key)
-		if err != nil {
-			// There's nothing that can be done here, but we can
-			// report the warning at least. This is not expected.
-			log.Printf("WARNING: lost facts from %q: %v", fi.Key, err)
+		if len(facts.Objects) == 0 {
+			// Similarly prevent serializing any Packages that have
+			// no facts associated with them. This will speed up
+			// deserialization since the Package can handle nil.
 			continue
 		}
-		buf := bytes.NewBuffer(fi.Value.([]byte))
-		facts := NewPackage(pkg)
-		if _, err := facts.ReadFrom(buf); err != nil {
-			return 0, err
+		wc, err := zw.Create(pkg)
+		if err != nil {
+			return err
 		}
-		b.Packages[fi.Key] = facts
+		if err := facts.Serialize(wc); err != nil {
+			return err
+		}
 	}
-	return 1, nil
+	return zw.Close()
+}
+
+// BundleFrom may be used to create a new bundle that deserializes the contents
+// of the given file.
+//
+// Note that there is no explicit close mechanism, and the underlying file will
+// be closed only when the object is finalized.
+func BundleFrom(filename string) (*Bundle, error) {
+	r, err := zip.OpenReader(filename)
+	if err != nil {
+		return nil, err
+	}
+	return &Bundle{
+		reader:  r,
+		decoded: make(map[string]*Package),
+	}, nil
+}
+
+// Add adds the package to the Bundle.
+func (b *Bundle) Add(path string, facts *Package) {
+	b.decoded[path] = facts
+}
+
+// Package looks up the given package in the bundle.
+func (b *Bundle) Package(pkg *types.Package) (*Package, error) {
+	// Already decoded?
+	if facts, ok := b.decoded[pkg.Path()]; ok {
+		return facts, nil
+	}
+
+	// Find based on the reader.
+	for _, f := range b.reader.File {
+		if f.Name != pkg.Path() {
+			continue
+		}
+
+		// Extract from the archive.
+		facts := NewPackage()
+		rc, err := f.Open()
+		if err != nil {
+			return nil, err
+		}
+		defer rc.Close()
+		if err := facts.ReadFrom(pkg, rc); err != nil {
+			return nil, err
+		}
+
+		// Memoize the result.
+		b.Add(pkg.Path(), facts)
+		return facts, nil
+	}
+
+	// Nothing available.
+	return nil, nil
 }
 
 // Resolved is a human-readable fact format.
@@ -337,7 +356,7 @@ func (r Resolved) walkScope(parents []string, scope *types.Scope, facts *Package
 }
 
 // Resolve resolves all object facts.
-func Resolve(pkg *types.Package, localFacts *Package, allFacts *Bundle, allFactNames map[reflect.Type]string) Resolved {
+func Resolve(pkg *types.Package, localFacts *Package, allFacts *Bundle, allFactNames map[reflect.Type]string) (Resolved, error) {
 	// Populate the tree. Allocating this slice up front prevents
 	// allocation during name resolution. We allow for up to 64 names
 	// without allocating a new backing array.
@@ -345,12 +364,16 @@ func Resolve(pkg *types.Package, localFacts *Package, allFacts *Bundle, allFactN
 	names := make([]string, 0, 64)
 	r.walkScope(names, pkg.Scope(), localFacts, allFactNames)
 	for _, importPkg := range pkg.Imports() {
-		importFacts := allFacts.Packages[importPkg.Path()]
+		importFacts, err := allFacts.Package(importPkg)
+		if err != nil {
+			return nil, err
+		}
 		r.walkScope(append(names, "import", importPkg.Name()), importPkg.Scope(), importFacts, allFactNames)
 	}
-	return r
+	return r, nil
 }
 
 func init() {
 	gob.Register((*item)(nil))
+	gob.Register(([]analysis.Fact)(nil))
 }

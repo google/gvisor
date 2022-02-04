@@ -33,28 +33,20 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"runtime/debug"
 	"strings"
 	"sync"
-	"sync/atomic"
-	"time"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/gcexportdata"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/tools/nogo/facts"
 	"gvisor.dev/gvisor/tools/nogo/flags"
-	"gvisor.dev/gvisor/tools/worker"
 )
 
 var (
 	// ErrSkip indicates the package should be skipped.
-	ErrSkip = errors.New("skipped2")
-
-	// cachedFacts caches by file (just byte data).
-	cachedFacts = worker.NewCache("facts")
-
-	// bundleCachedFacts caches the standard library (bundleFacts).
-	bundleCachedFacts = worker.NewCache("stdlib")
+	ErrSkip = errors.New("skipped")
 
 	// showTimes indicates we should show analyzer times.
 	showTimes = flag.Bool("show_times", false, "show all analyzer times")
@@ -103,8 +95,9 @@ type importerEntry struct {
 	ready    sync.WaitGroup
 	pkg      *types.Package
 	findings FindingSet
-	facts    *facts.Package
 	err      error
+	factsMu  sync.Mutex
+	facts    *facts.Package
 }
 
 // importer is an almost-implementation of go/types.Importer.
@@ -116,85 +109,126 @@ type importer struct {
 	fset    *token.FileSet
 	sources map[string][]string
 
-	// mu protects cache.
+	// mu protects cache & bundles (see below).
 	mu    sync.Mutex
 	cache map[string]*importerEntry
+
+	// bundles is protected by mu, but once set is immutable.
+	bundles []*facts.Bundle
 
 	// importsMu protects imports.
 	importsMu sync.Mutex
 	imports   map[string]*types.Package
 }
 
-// allFacts returns all package facts for the given name.
+// loadBundles loads all bundle files.
 //
-// This attempts to load via the FactMap (global flags) or the Bundles (global
-// flags), but falls back to attempting a direct import.
-func (i *importer) allFacts(pkg *types.Package) (*facts.Package, error) {
+// This should only be called from loadFacts, below. After calling this
+// function, i.bundles may be read freely without holding a lock.
+func (i *importer) loadBundles() error {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+
+	// Are bundles already available?
+	if i.bundles != nil {
+		return nil
+	}
+
+	// Scan all bundle files.
+	for _, filename := range flags.Bundles {
+		// Open the given filename as a bundle.
+		loadedFacts, err := facts.BundleFrom(filename)
+		if err != nil {
+			return fmt.Errorf("error loading bundled facts: %w", err)
+		}
+
+		// Add to the set of available bundles.
+		i.bundles = append(i.bundles, loadedFacts)
+	}
+
+	return nil
+}
+
+// loadFacts returns all package facts for the given name.
+//
+// This should be called only from importPackage, as this may deserialize a
+// facts file (which is an expensive operation). Callers should generally rely
+// on fastFacts to access facts for packages that have already been imported.
+func (i *importer) loadFacts(pkg *types.Package) (*facts.Package, error) {
 	// Attempt to load from the fact map.
 	filename, ok := flags.FactMap[pkg.Path()]
 	if ok {
-		cb, err := cachedFacts.Lookup([]string{filename}, func() (worker.Sizer, error) {
-			r, openErr := os.Open(filename)
-			if openErr != nil {
-				return nil, fmt.Errorf("error loading facts from %q: %w", filename, openErr)
-			}
-			defer r.Close()
-			loadedFacts := facts.NewPackage(pkg)
-			if _, readErr := loadedFacts.ReadFrom(r); readErr != nil {
-				return nil, fmt.Errorf("error loading facts: %w", readErr)
-			}
-			return loadedFacts, nil
-		})
-		if err != nil {
-			return nil, err
+		r, openErr := os.Open(filename)
+		if openErr != nil {
+			return nil, fmt.Errorf("error loading facts from %q: %w", filename, openErr)
 		}
-		return cb.(*facts.Package), nil
+		defer r.Close()
+		loadedFacts := facts.NewPackage()
+		if readErr := loadedFacts.ReadFrom(pkg, r); readErr != nil {
+			return nil, fmt.Errorf("error loading facts: %w", readErr)
+		}
+		return loadedFacts, nil
 	}
 
 	// Attempt to load any bundles.
-	for _, filename := range flags.Bundles {
-		cb, err := bundleCachedFacts.Lookup([]string{filename}, func() (worker.Sizer, error) {
-			r, openErr := os.Open(filename)
-			if openErr != nil {
-				return nil, fmt.Errorf("error loading bundled facts from %q: %w", filename, openErr)
-			}
-			defer r.Close()
-			loadedFacts := facts.NewBundle(i)
-			if _, readErr := loadedFacts.ReadFrom(r); readErr != nil {
-				// If the file is length zero, we skip it. This
-				// is because stray fact files may been left
-				// behind that are attempting to recreate now.
-				fi, err := r.Stat()
-				if err == nil && fi.Size() == 0 {
-					return nil, ErrSkip
-				}
-				return nil, fmt.Errorf("error loading bundled facts: %w", readErr)
-			}
-			return loadedFacts, nil
-		})
-		if err == ErrSkip {
-			continue // See above.
-		}
+	if err := i.loadBundles(); err != nil {
+		return nil, fmt.Errorf("error loading bundles: %w", err)
+	}
+
+	// Try to import from the bundle.
+	for _, bundleFacts := range i.bundles {
+		localFacts, err := bundleFacts.Package(pkg)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error loading from a bundle: %w", err)
 		}
-		if loadedFacts, ok := cb.(*facts.Bundle).Packages[pkg.Path()]; ok {
-			return loadedFacts, nil
+		if localFacts != nil {
+			return localFacts, nil
 		}
 	}
 
-	// Attempt to resolve the package via import.
-	_, parsedFacts, err := i.importPackage(pkg.Path())
-	return parsedFacts, err
+	// Nothing available for this package?
+	return nil, nil
 }
 
-// fastFact returns facts for the given package.
-func (i *importer) fastFact(pkg *types.Package, obj types.Object, ptr analysis.Fact) bool {
-	foundFacts, err := i.allFacts(pkg)
-	if err != nil || foundFacts == nil {
-		return false
+// fastFacts returns facts for the given package.
+//
+// This relies exclusively on loaded packages, as the parameter is
+// *types.Package and therefore the package data must already be available.
+func (i *importer) fastFacts(pkg *types.Package) *facts.Package {
+	i.mu.Lock()
+	e, ok := i.cache[pkg.Path()]
+	i.mu.Unlock()
+	if !ok {
+		return nil
 	}
-	return foundFacts.ImportFact(obj, ptr)
+
+	e.factsMu.Lock()
+	defer e.factsMu.Unlock()
+
+	// Do we have them already?
+	if e.facts != nil {
+		return e.facts
+	}
+
+	// Load the facts.
+	facts, err := i.loadFacts(pkg)
+	if err != nil {
+		// We have no available to propagate an error when attempting
+		// to import a fact, so we must simply issue a warning.
+		log.Printf("WARNING: error loading facts for %s: %v", pkg.Path(), err)
+		return nil
+	}
+	e.facts = facts // Cache the result.
+	return facts
+}
+
+// findArchive finds the archive for the given package.
+func (i *importer) findArchive(path string) (rc io.ReadCloser, err error) {
+	realPath, ok := flags.ArchiveMap[path]
+	if !ok {
+		return i.findBinary(path)
+	}
+	return os.Open(realPath)
 }
 
 // findBinary finds the binary for the given package.
@@ -214,21 +248,21 @@ func (i *importer) findBinary(path string) (rc io.ReadCloser, err error) {
 // importPackage almost-implements types.Importer.Import.
 //
 // This must be called by other methods directly.
-func (i *importer) importPackage(path string) (*types.Package, *facts.Package, error) {
+func (i *importer) importPackage(path string) (*types.Package, error) {
 	if path == "unsafe" {
 		// Special case: go/types has pre-defined type information for
 		// unsafe. We ensure that this package is correct, in case any
 		// analyzers are specifically looking for this.
-		return types.Unsafe, nil, nil
+		return types.Unsafe, nil
 	}
 
 	// Pull the internal entry.
 	i.mu.Lock()
 	entry, ok := i.cache[path]
-	if ok {
+	if ok && entry.pkg != nil {
 		i.mu.Unlock()
 		entry.ready.Wait()
-		return entry.pkg, entry.facts, entry.err
+		return entry.pkg, entry.err
 	}
 
 	// Start preparing this entry.
@@ -242,55 +276,49 @@ func (i *importer) importPackage(path string) (*types.Package, *facts.Package, e
 	// analysis from first principles to validate the package and derive
 	// the types. We strictly prefer this to the gcexportdata.
 	if srcs, ok := i.sources[path]; ok && len(srcs) > 0 {
-		start := time.Now()
 		entry.pkg, entry.findings, entry.facts, entry.err = i.checkPackage(path, srcs)
 		if entry.err != nil {
-			return nil, nil, entry.err
+			return nil, entry.err
 		}
-		// Why does the news already need to be bad? Note that this is
-		// printed here because this will only happen when multiple
-		// packages are being analyzed.
-		log.Printf("SUCCESS: all analyzers successfully completed %q (%v).", path, time.Since(start))
 		i.importsMu.Lock()
 		defer i.importsMu.Unlock()
 		i.imports[path] = entry.pkg
-		return entry.pkg, entry.facts, entry.err
+		return entry.pkg, entry.err
 	}
 
 	// Load all exported data. Unfortunately, we will have to hold the lock
 	// during this time. The imported may access imports directly.
 	rc, err := i.findBinary(path)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	defer rc.Close()
 	r, err := gcexportdata.NewReader(rc)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	i.importsMu.Lock()
 	defer i.importsMu.Unlock()
 	entry.pkg, entry.err = gcexportdata.Read(r, i.fset, i.imports, path)
-	return entry.pkg, entry.facts, entry.err
+	return entry.pkg, entry.err
 }
 
 // Import implements types.Importer.Import.
 func (i *importer) Import(path string) (*types.Package, error) {
-	pkg, _, err := i.importPackage(path)
-	return pkg, err
+	return i.importPackage(path)
 }
 
 // errorImporter tracks the last error.
 type errorImporter struct {
 	*importer
-	lastErr atomic.Value
+	lastErr error
 }
 
 // Import implements types.Importer.Import.
 func (i *errorImporter) Import(path string) (*types.Package, error) {
-	pkg, _, err := i.importer.importPackage(path)
+	pkg, err := i.importer.importPackage(path)
 	if err != nil {
-		i.lastErr.Store(err)
+		i.lastErr = err
 	}
 	return pkg, err
 }
@@ -333,6 +361,7 @@ func (i *importer) checkPackage(path string, srcs []string) (*types.Package, Fin
 	typesSizes := types.SizesFor("gc", flags.GOARCH)
 	typeConfig := types.Config{
 		Importer: ei,
+		Error:    func(error) {},
 	}
 	typesInfo := &types.Info{
 		Types:      make(map[ast.Expr]types.TypeAndValue),
@@ -343,19 +372,16 @@ func (i *importer) checkPackage(path string, srcs []string) (*types.Package, Fin
 		Selections: make(map[*ast.SelectorExpr]*types.Selection),
 	}
 	astPackage, err := typeConfig.Check(path, i.fset, syntax, typesInfo)
-	if err != nil && ei.lastErr.Load() != ErrSkip {
+	if err != nil && ei.lastErr != ErrSkip {
 		return nil, nil, nil, fmt.Errorf("error checking types: %w", err)
 	}
 
-	// We start with completely empty facts. All of our facts are sourced
-	// via the fastFact function that hits the local caches.
-	//
 	// Note that facts should be reconcilable between types as of go/tools
 	// commit ee04797aa0b6be5ce3d5f7ac0f91e34716b3acdf. We previously used
 	// to do a sanity check to ensure that binary import data was
 	// compatible with ast-derived data, but this is no longer necessary.
 	// If packages are available locally, we can refer to those directly.
-	astFacts := facts.NewPackage(astPackage)
+	astFacts := facts.NewPackage()
 
 	// Recursively visit all analyzers.
 	var (
@@ -419,7 +445,10 @@ func (i *importer) checkPackage(path string, srcs []string) (*types.Package, Fin
 				},
 				ImportPackageFact: func(pkg *types.Package, ptr analysis.Fact) bool {
 					if pkg != astPackage {
-						return i.fastFact(pkg, nil, ptr)
+						if f := i.fastFacts(pkg); f != nil {
+							return f.ImportFact(nil, ptr)
+						}
+						return false
 					}
 					factsMu.RLock()
 					defer factsMu.RUnlock()
@@ -432,7 +461,10 @@ func (i *importer) checkPackage(path string, srcs []string) (*types.Package, Fin
 				},
 				ImportObjectFact: func(obj types.Object, ptr analysis.Fact) bool {
 					if pkg := obj.Pkg(); pkg != nil && pkg != astPackage {
-						return i.fastFact(pkg, obj, ptr)
+						if f := i.fastFacts(pkg); f != nil {
+							return f.ImportFact(obj, ptr)
+						}
+						return false
 					}
 					factsMu.RLock()
 					defer factsMu.RUnlock()
@@ -441,14 +473,12 @@ func (i *importer) checkPackage(path string, srcs []string) (*types.Package, Fin
 				ExportObjectFact: func(obj types.Object, fact analysis.Fact) {
 					if obj == nil {
 						// Tried to export nil object?
-						log.Printf("WARNING: attempted to export fact for nil object")
 						return
 					}
 					if obj.Pkg() != astPackage {
 						// This is not allowed: the
 						// built-in facts library will
 						// also panic in this case.
-						log.Printf("WARNING: attempted to export fact for package %s", obj.Pkg().Name())
 						return
 					}
 					factsMu.Lock()
@@ -460,8 +490,8 @@ func (i *importer) checkPackage(path string, srcs []string) (*types.Package, Fin
 					defer factsMu.RUnlock()
 					// Pull all dependencies.
 					for _, importedPkg := range astPackage.Imports() {
-						otherFacts, err := i.allFacts(importedPkg)
-						if err != nil || otherFacts == nil {
+						otherFacts := i.fastFacts(importedPkg)
+						if otherFacts == nil {
 							continue
 						}
 						for typ := range localFactTypes {
@@ -520,20 +550,26 @@ func (i *importer) checkPackage(path string, srcs []string) (*types.Package, Fin
 					// analyzers running concurrently
 					// debuggable, capture panic exceptions
 					// and propagate as an analyzer error.
-					err = fmt.Errorf("panic recovered: %s", r)
+					err = fmt.Errorf("panic recovered: %s (%s)", r, debug.Stack())
 					resultsMu.RUnlock() // +checklocksignore
-					resultsMu.Lock()
-					errs[a] = err
-					resultsMu.Unlock()
 				}
+				resultsMu.Lock()
+				findings = append(findings, localFindings...)
+				results[a] = result
+				errs[a] = err
+				resultsMu.Unlock()
 			}()
 			found := findAnalyzer(a)
 			resultsMu.RLock()
 			if ba, ok := found.(binaryAnalyzer); ok {
 				// Load the binary and analyze.
-				rc, loadErr := i.findBinary(path)
+				rc, loadErr := i.findArchive(path)
 				if loadErr != nil {
-					err = loadErr
+					if loadErr != ErrSkip {
+						err = loadErr
+					} else {
+						err = nil // Ignore.
+					}
 				} else {
 					result, err = ba.Run(p, rc)
 					rc.Close()
@@ -542,11 +578,6 @@ func (i *importer) checkPackage(path string, srcs []string) (*types.Package, Fin
 				result, err = a.Run(p)
 			}
 			resultsMu.RUnlock()
-			resultsMu.Lock()
-			findings = append(findings, localFindings...)
-			results[a] = result
-			errs[a] = err
-			resultsMu.Unlock()
 		}(a, wg)
 	}
 	for _, wg := range ready {
@@ -558,9 +589,13 @@ func (i *importer) checkPackage(path string, srcs []string) (*types.Package, Fin
 		// this as a finding that can be suppressed. Some analyzers
 		// will fail on some packages.
 		if errs[a] != nil {
+			filename := ""
+			if len(srcs) > 0 {
+				filename = srcs[0]
+			}
 			findings = append(findings, Finding{
 				Category: a.Name,
-				Position: token.Position{Filename: path},
+				Position: token.Position{Filename: filename},
 				Message:  errs[a].Error(),
 			})
 			continue
@@ -577,32 +612,8 @@ func (i *importer) checkPackage(path string, srcs []string) (*types.Package, Fin
 	return astPackage, findings, astFacts, nil
 }
 
-// allFindingsAndFacts returns the complete set.
-func (i *importer) allFindingsAndFacts() (FindingSet, *facts.Bundle, error) {
-	var (
-		findings = make(FindingSet, 0)
-		allFacts = facts.NewBundle(i)
-	)
-	for path, entry := range i.cache {
-		findings = append(findings, entry.findings...)
-		if entry.facts != nil {
-			allFacts.Packages[path] = entry.facts
-		} else if entry.pkg != nil {
-			pkgFacts, err := i.allFacts(entry.pkg)
-			if err != nil {
-				// This should not happen, we should load facts for all packages.
-				return nil, nil, fmt.Errorf("no facts available for %s: %v", entry.pkg.Path(), err)
-			}
-			allFacts.Packages[path] = pkgFacts
-		}
-	}
-
-	// Return the results.
-	return findings, allFacts, nil
-}
-
 // Package runs all analyzer on a single package.
-func Package(path string, srcs []string) (FindingSet, facts.Writer, error) {
+func Package(path string, srcs []string) (FindingSet, facts.Serializer, error) {
 	i := &importer{
 		fset:    token.NewFileSet(),
 		cache:   make(map[string]*importerEntry),
@@ -613,6 +624,19 @@ func Package(path string, srcs []string) (FindingSet, facts.Writer, error) {
 		return nil, nil, err
 	}
 	return findings, facts, nil
+}
+
+// allFactsAndFindings returns all factsAndFindings from an importer.
+func (i *importer) allFactsAndFindings() (FindingSet, *facts.Bundle) {
+	var (
+		findings = make(FindingSet, 0)
+		allFacts = facts.NewBundle()
+	)
+	for path, entry := range i.cache {
+		findings = append(findings, entry.findings...)
+		allFacts.Add(path, entry.facts)
+	}
+	return findings, allFacts
 }
 
 // Facts runs all analyzers, and returns human-readable facts.
@@ -632,11 +656,8 @@ func Facts(path string, srcs []string) (facts.Resolved, error) {
 		// analyzers for these packages.
 		return nil, err
 	}
-	_, allFacts, err := i.allFindingsAndFacts()
-	if err != nil {
-		return nil, err
-	}
-	return facts.Resolve(pkg, localFacts, allFacts, allFactNames), nil
+	_, allFacts := i.allFactsAndFindings()
+	return facts.Resolve(pkg, localFacts, allFacts, allFactNames)
 }
 
 // FindRoot finds a package root.
@@ -688,16 +709,20 @@ func SplitPackages(srcs []string, srcRootPrefix string) map[string][]string {
 			continue // Also not a file.
 		}
 
-		// Skip commands where possible. These also have package names
-		// that do not match the tree structure and will never be
-		// dependencies.
-		if strings.HasPrefix(filename, "cmd/") {
+		// Ignore any files with /testdata/ in the path.
+		if strings.Contains(filename, "/testdata/") {
 			continue
 		}
 
-		// Skip obvious test files; they have bizarre package semantics
-		// and are never direct dependencies of anything else.
+		// Ignore all test files since they *may* be in a different
+		// package than the rest of the sources.
 		if strings.HasSuffix(filename, "_test.go") {
+			continue
+		}
+
+		// Skip the "builtin" package, which is only for docs and not a
+		// real package. Attempting type checking goes crazy.
+		if pkg == "builtin" {
 			continue
 		}
 
@@ -727,7 +752,7 @@ var usesTypeParams = map[string]struct{}{
 }
 
 // Bundle checks a bundle of files (typically the standard library).
-func Bundle(sources map[string][]string) (FindingSet, facts.Writer, error) {
+func Bundle(sources map[string][]string) (FindingSet, facts.Serializer, error) {
 	// Process all packages.
 	i := &importer{
 		fset:    token.NewFileSet(),
@@ -736,12 +761,12 @@ func Bundle(sources map[string][]string) (FindingSet, facts.Writer, error) {
 		imports: make(map[string]*types.Package),
 	}
 	for pkg, _ := range sources {
-		// Was there an error processing this package? Just print a warning.
-		if _, _, err := i.importPackage(pkg); err != nil && err != ErrSkip {
-			log.Printf("WARNING: %v.", err)
+		// Was there an error processing this package?
+		if _, err := i.importPackage(pkg); err != nil && err != ErrSkip {
+			return nil, nil, err
 		}
 	}
 
-	// Build our findings and facts.
-	return i.allFindingsAndFacts()
+	findings, facts := i.allFactsAndFindings()
+	return findings, facts, nil
 }

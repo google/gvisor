@@ -46,6 +46,9 @@ var (
 	// ImportMap defines all binary input files.
 	ImportMap = StringMap{}
 
+	// ArchiveMap defines all binary archive files.
+	ArchiveMap = StringMap{}
+
 	// FactMap defines all fact input files.
 	FactMap = StringMap{}
 
@@ -60,6 +63,7 @@ func init() {
 	flag.StringVar(&GOARCH, "GOARCH", runtime.GOARCH, "GOARCH for analysis")
 	flag.StringVar(&BuildTags, "tags", "", "comma-separated build tags")
 	flag.Var(&ImportMap, "import", "map of import paths to binaries")
+	flag.Var(&ArchiveMap, "archive", "map of import paths to archives")
 	flag.Var(&FactMap, "facts", "map of import paths to facts")
 	flag.Var(&Bundles, "bundle", "list of fact bundles")
 }

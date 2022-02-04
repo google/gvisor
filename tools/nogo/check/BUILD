@@ -20,7 +20,6 @@ go_library(
         "//tools/checkunsafe",
         "//tools/nogo/facts",
         "//tools/nogo/flags",
-        "//tools/worker",
         "@co_honnef_go_tools//staticcheck:go_default_library",
         "@co_honnef_go_tools//stylecheck:go_default_library",
         "@org_golang_x_tools//go/analysis:go_default_library",

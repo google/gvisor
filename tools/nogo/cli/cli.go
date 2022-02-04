@@ -32,13 +32,15 @@ import (
 	"gvisor.dev/gvisor/tools/nogo/config"
 	"gvisor.dev/gvisor/tools/nogo/facts"
 	"gvisor.dev/gvisor/tools/nogo/flags"
-	"gvisor.dev/gvisor/tools/worker"
 )
 
 // openOutput opens an output file.
-func openOutput(filename string, def io.Writer) (io.Writer, error) {
+func openOutput(filename string, def *os.File) (*os.File, error) {
 	if filename == "" {
-		return def, nil
+		if def != nil {
+			return def, nil
+		}
+		filename = "/dev/null" // Sink.
 	}
 	f, err := os.OpenFile(filename, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0644)
 	if err != nil {
@@ -104,9 +106,9 @@ func (c *checkCommon) setFlags(fs *flag.FlagSet, commandType string) {
 }
 
 // execute runs the common bits for a check command.
-func (c *checkCommon) execute(fn func() (check.FindingSet, facts.Writer, error)) error {
+func (c *checkCommon) execute(fn func() (check.FindingSet, facts.Serializer, error)) error {
 	// Open outputs.
-	factsOutput, err := openOutput(c.Facts, io.Discard)
+	factsOutput, err := openOutput(c.Facts, nil)
 	if err != nil {
 		return fmt.Errorf("opening facts: %w", err)
 	}
@@ -124,7 +126,7 @@ func (c *checkCommon) execute(fn func() (check.FindingSet, facts.Writer, error))
 	}
 
 	// Save the data.
-	if _, err := factData.WriteTo(factsOutput); err != nil {
+	if err := factData.Serialize(factsOutput); err != nil {
 		return fmt.Errorf("writing facts: %w", err)
 	}
 	if !c.Text && !isTerminal(findingsOutput) {
@@ -174,7 +176,6 @@ func (*Check) Usage() string {
 func (c *Check) SetFlags(fs *flag.FlagSet) {
 	c.setFlags(fs, "check")
 	fs.StringVar(&c.Package, "package", "", "package for analysis (required)")
-	fs.StringVar(&c.Binary, "binary", "", "binary for analysis (optional, omitting may cause some analyzers to fail)")
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -183,15 +184,8 @@ func (c *Check) Execute(ctx context.Context, fs *flag.FlagSet, args ...interface
 		c.Package = "main" // Default, no imports.
 	}
 
-	// Add the binary to the import map. Note that it may already be
-	// provided in the import map via the global command line flags, but
-	// this is able to override that path.
-	if c.Binary != "" {
-		flags.ImportMap[c.Package] = c.Binary
-	}
-
 	// Perform the analysis.
-	if err := c.execute(func() (check.FindingSet, facts.Writer, error) {
+	if err := c.execute(func() (check.FindingSet, facts.Serializer, error) {
 		return check.Package(c.Package /* path */, fs.Args() /* srcs */)
 	}); err != nil {
 		return failure("%v", err)
@@ -238,7 +232,7 @@ func (b *Bundle) SetFlags(fs *flag.FlagSet) {
 // Execute implements subcommands.Command.Execute.
 func (b *Bundle) Execute(ctx context.Context, fs *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
 	// Perform the analysis.
-	if err := b.execute(func() (check.FindingSet, facts.Writer, error) {
+	if err := b.execute(func() (check.FindingSet, facts.Serializer, error) {
 		// Discover the correct common root.
 		srcRootPrefix, err := check.FindRoot(fs.Args(), b.Root)
 		if err != nil {
@@ -297,7 +291,7 @@ func (s *Stdlib) Execute(ctx context.Context, fs *flag.FlagSet, args ...interfac
 		return subcommands.ExitUsageError // Need no arguments.
 	}
 
-	if err := s.execute(func() (check.FindingSet, facts.Writer, error) {
+	if err := s.execute(func() (check.FindingSet, facts.Serializer, error) {
 		root, err := flags.Env("GOROOT")
 		if err != nil {
 			return nil, nil, err
@@ -320,6 +314,7 @@ type Filter struct {
 	Configs flags.StringList
 	Output  string
 	Text    bool
+	Test    bool
 }
 
 // Name implements subcommands.Command.Name.
@@ -347,83 +342,59 @@ func (f *Filter) SetFlags(fs *flag.FlagSet) {
 	fs.Var(&f.Configs, "config", "filter configuration files (in JSON format)")
 	fs.StringVar(&f.Output, "output", "", "findings output (in JSON format by default, unless attached to a terminal)")
 	fs.BoolVar(&f.Text, "text", false, "force text format in all cases (even not attached to a terminal)")
+	fs.BoolVar(&f.Test, "test", false, "exit with non-zero status if findings are not empty")
 }
 
-var (
-	cachedFindings    = worker.NewCache("findings") // With check.FindingSet.
-	cachedFiltered    = worker.NewCache("filtered") // With check.FindingSet.
-	cachedConfigs     = worker.NewCache("configs")  // With config.Config.
-	cachedFullConfigs = worker.NewCache("compiled") // With config.Config.
-)
-
 func loadFindings(filename string) (check.FindingSet, error) {
-	v, err := cachedFindings.Lookup([]string{filename}, func() (worker.Sizer, error) {
-		r, err := os.Open(filename)
-		if err != nil {
-			return nil, fmt.Errorf("unable to open input: %w", err)
-		}
-		inputFindings, err := check.ExtractFindingsFrom(r, false /* json */)
-		if err != nil {
-			// Seek to reread the file.
-			if _, err := r.Seek(0, os.SEEK_SET); err != nil {
-				return nil, fmt.Errorf("unable to reseek in findings %q: %w", filename, err)
-			}
-			// Attempt to interpret as a json input.
-			inputFindings, err = check.ExtractFindingsFrom(r, true /* json */)
-			if err != nil {
-				return nil, fmt.Errorf("unable to extract findings from %q: %w", filename, err)
-			}
-		}
-		return inputFindings, nil
-	})
+	r, err := os.Open(filename)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unable to open input: %w", err)
 	}
-	return v.(check.FindingSet), nil
+	inputFindings, err := check.ExtractFindingsFrom(r, false /* json */)
+	if err != nil {
+		// Seek to reread the file.
+		if _, err := r.Seek(0, os.SEEK_SET); err != nil {
+			return nil, fmt.Errorf("unable to reseek in findings %q: %w", filename, err)
+		}
+		// Attempt to interpret as a json input.
+		inputFindings, err = check.ExtractFindingsFrom(r, true /* json */)
+		if err != nil {
+			return nil, fmt.Errorf("unable to extract findings from %q: %w", filename, err)
+		}
+	}
+	return inputFindings, nil
 }
 
 func loadConfig(filename string) (*config.Config, error) {
-	v, err := cachedConfigs.Lookup([]string{filename}, func() (worker.Sizer, error) {
-		f, err := os.Open(filename)
-		if err != nil {
-			return nil, fmt.Errorf("unable to open config: %w", err)
-		}
-		var newConfig config.Config // For current file.
-		dec := yaml.NewDecoder(f)
-		dec.SetStrict(true)
-		if err := dec.Decode(&newConfig); err != nil {
-			return nil, fmt.Errorf("unable to decode %q: %w", filename, err)
-		}
-		return &newConfig, nil
-	})
+	f, err := os.Open(filename)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unable to open config: %w", err)
 	}
-	return v.(*config.Config), nil
+	var newConfig config.Config // For current file.
+	dec := yaml.NewDecoder(f)
+	dec.SetStrict(true)
+	if err := dec.Decode(&newConfig); err != nil {
+		return nil, fmt.Errorf("unable to decode %q: %w", filename, err)
+	}
+	return &newConfig, nil
 }
 
 func loadConfigs(filenames []string) (*config.Config, error) {
-	v, err := cachedFullConfigs.Lookup(filenames, func() (worker.Sizer, error) {
-		config := &config.Config{
-			Global:    make(config.AnalyzerConfig),
-			Analyzers: make(map[string]config.AnalyzerConfig),
-		}
-		for _, filename := range filenames {
-			next, err := loadConfig(filename)
-			if err != nil {
-				return nil, err
-			}
-			config.Merge(next)
-		}
-		if err := config.Compile(); err != nil {
-			return nil, fmt.Errorf("error compiling config: %w", err)
-		}
-		return config, nil
-	})
-	if err != nil {
-		return nil, err
+	config := &config.Config{
+		Global:    make(config.AnalyzerConfig),
+		Analyzers: make(map[string]config.AnalyzerConfig),
 	}
-	return v.(*config.Config), nil
+	for _, filename := range filenames {
+		next, err := loadConfig(filename)
+		if err != nil {
+			return nil, err
+		}
+		config.Merge(next)
+	}
+	if err := config.Compile(); err != nil {
+		return nil, fmt.Errorf("error compiling config: %w", err)
+	}
+	return config, nil
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -454,23 +425,15 @@ func (f *Filter) Execute(ctx context.Context, fs *flag.FlagSet, args ...interfac
 		// is guaranteed to be safe. This allows us to reuse the same
 		// filter result many times over, because e.g. all standard
 		// library findings will be available to all packages.
-		v, err := cachedFiltered.Lookup(append(f.Configs, filename), func() (worker.Sizer, error) {
-			inputFindings, err := loadFindings(filename)
-			if err != nil {
-				return nil, err
-			}
-			filteredFindings := make(check.FindingSet, 0, len(inputFindings))
-			for _, finding := range inputFindings {
-				if ok := config.ShouldReport(finding); ok {
-					filteredFindings = append(filteredFindings, finding)
-				}
-			}
-			return filteredFindings, nil
-		})
+		inputFindings, err := loadFindings(filename)
 		if err != nil {
-			return failure("unable to load filtered findings from %q: %v", filename, err)
+			return failure("unable to load findings from %q: %v", filename, err)
 		}
-		filteredFindings = append(filteredFindings, v.(check.FindingSet)...)
+		for _, finding := range inputFindings {
+			if ok := config.ShouldReport(finding); ok {
+				filteredFindings = append(filteredFindings, finding)
+			}
+		}
 	}
 
 	// Write the output.
@@ -484,10 +447,12 @@ func (f *Filter) Execute(ctx context.Context, fs *flag.FlagSet, args ...interfac
 		}
 	}
 
-	// Treat the run as a test.
-	if (f.Text || isTerminal(output)) && len(filteredFindings) == 0 {
+	// Treat the run as a test?
+	if (f.Text || isTerminal(output)) && f.Test && len(filteredFindings) == 0 {
 		fmt.Fprintf(output, "PASS\n")
-		return subcommands.ExitSuccess
+	}
+	if f.Test && len(filteredFindings) > 0 {
+		return subcommands.ExitFailure
 	}
 
 	return subcommands.ExitSuccess
@@ -564,7 +529,6 @@ func Main() {
 	subcommands.Register(&Render{}, "")
 	subcommands.Register(subcommands.HelpCommand(), "")
 	subcommands.Register(subcommands.FlagsCommand(), "")
-	worker.Work(func(args []string) int {
-		return int(subcommands.Execute(context.Background()))
-	})
+	flag.CommandLine.Parse(os.Args[1:])
+	os.Exit(int(subcommands.Execute(context.Background())))
 }

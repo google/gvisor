@@ -21,7 +21,6 @@ import (
 	"go/token"
 	"io"
 	"os"
-	"reflect"
 	"sort"
 )
 
@@ -32,14 +31,6 @@ type Finding struct {
 	Message  string
 }
 
-// findingSize is the size of the finding struct itself.
-var findingSize = int64(reflect.TypeOf(Finding{}).Size())
-
-// Size implements worker.Sizer.Size.
-func (f *Finding) Size() int64 {
-	return int64(len(f.Category)) + int64(len(f.Message)) + findingSize
-}
-
 // String implements fmt.Stringer.String.
 func (f *Finding) String() string {
 	return fmt.Sprintf("%s: %s: %s", f.Category, f.Position.String(), f.Message)
@@ -47,15 +38,6 @@ func (f *Finding) String() string {
 
 // FindingSet is a collection of findings.
 type FindingSet []Finding
-
-// Size implmements worker.Sizer.Size.
-func (fs FindingSet) Size() int64 {
-	size := int64(0)
-	for _, finding := range fs {
-		size += finding.Size()
-	}
-	return size
-}
 
 // Sort sorts all findings.
 func (fs FindingSet) Sort() {

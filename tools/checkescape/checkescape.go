@@ -67,15 +67,16 @@ import (
 	"go/types"
 	"io"
 	"io/ioutil"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/buildssa"
 	"golang.org/x/tools/go/ssa"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/tools/nogo/flags"
 )
 
@@ -165,21 +166,6 @@ var escapingBuiltins = []string{
 	"mallocgc",
 }
 
-// packageEscapeFacts is the set of all functions in a package, and whether or
-// not they recursively pass escape analysis.
-//
-// All the type names for receivers are encoded in the full key. The key
-// represents the fully qualified package and type name used at link time.
-//
-// Note that each Escapes object is a summary. Local findings may be reported
-// using more detailed information.
-type packageEscapeFacts struct {
-	Funcs map[string]Escapes
-}
-
-// AFact implements analysis.Fact.AFact.
-func (*packageEscapeFacts) AFact() {}
-
 // objdumpAnalyzer accepts the objdump parameter.
 type objdumpAnalyzer struct {
 	analysis.Analyzer
@@ -202,7 +188,7 @@ var Analyzer = &objdumpAnalyzer{
 		Doc:       "escape analysis checks based on +checkescape annotations",
 		Run:       nil, // Must be invoked via Run above.
 		Requires:  []*analysis.Analyzer{buildssa.Analyzer},
-		FactTypes: []analysis.Fact{(*packageEscapeFacts)(nil)},
+		FactTypes: []analysis.Fact{(*Escapes)(nil)},
 	},
 }
 
@@ -251,6 +237,9 @@ type Escapes struct {
 	Details   [reasonCount]string
 	Omitted   [reasonCount]int
 }
+
+// AFact implements analysis.Fact.AFact.
+func (*Escapes) AFact() {}
 
 // add is called by Add and Merge.
 func (es *Escapes) add(r EscapeReason, detail string, omitted int, callSites ...CallSite) {
@@ -407,11 +396,16 @@ func loadObjdump(binary io.Reader) (finalResults map[string][]string, finalErr e
 
 	// Execute go tool objdump ggiven the input.
 	cmd := exec.Command(flags.Go, "tool", "objdump", input.Name())
-	cmd.Stderr = os.Stderr
-	pipeOut, pipeErr := cmd.StdoutPipe()
-	if pipeErr != nil {
-		return nil, fmt.Errorf("unable to load objdump: %w", pipeErr)
+	pipeOut, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("unable to load objdump: %w", err)
 	}
+	defer pipeOut.Close()
+	pipeErr, err := cmd.StderrPipe()
+	if err != nil {
+		return nil, fmt.Errorf("unable to load objdump: %w", err)
+	}
+	defer pipeErr.Close()
 	if startErr := cmd.Start(); startErr != nil {
 		return nil, fmt.Errorf("unable to start objdump: %w", startErr)
 	}
@@ -421,9 +415,20 @@ func loadObjdump(binary io.Reader) (finalResults map[string][]string, finalErr e
 	// indicate that the dump was incomplete and we could be missed some
 	// escapes that would have appeared. We need to force failure.
 	defer func() {
-		if waitErr := cmd.Wait(); finalErr == nil && waitErr != nil {
+		var (
+			wg  sync.WaitGroup
+			buf bytes.Buffer
+		)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			io.Copy(&buf, pipeErr)
+		}()
+		waitErr := cmd.Wait()
+		wg.Wait()
+		if finalErr == nil && waitErr != nil {
 			// Override the function's return value in this case.
-			finalErr = fmt.Errorf("error running objdump: %v", waitErr)
+			finalErr = fmt.Errorf("error running objdump %s: %v (%s)", input.Name(), waitErr, buf.Bytes())
 		}
 	}()
 
@@ -636,7 +641,7 @@ func run(pass *analysis.Pass, binary io.Reader) (interface{}, error) {
 		// Note that if this analysis fails, then we don't actually
 		// fail the analyzer itself. We simply report every possible
 		// escape. In most cases this will work just fine.
-		log.Printf("WARNING: unable to load objdump: %v", callsErr)
+		log.Warningf("unable to load objdump: %v", callsErr)
 	}
 	allEscapes := make(map[string][]Escapes)
 	mergedEscapes := make(map[string]Escapes)
@@ -707,40 +712,42 @@ func run(pass *analysis.Pass, binary io.Reader) (interface{}, error) {
 			}
 			switch x := x.Call.Value.(type) {
 			case *ssa.Function:
-				if x.Pkg == nil {
-					// Can't resolve the package.
-					es.Add(unknownPackage, "no package", cs)
-					return
-				}
-
 				// Is this a local function? If yes, call the
 				// function to load the local function. The
 				// local escapes are the escapes found in the
 				// local function.
-				if x.Pkg.Pkg == pass.Pkg {
+				if x.Pkg != nil && x.Pkg.Pkg == pass.Pkg {
 					es.MergeWithCall(loadFunc(x), cs)
 					return
 				}
 
 				// If this package is the atomic package, the implementation
 				// may be replaced by instrinsics that don't have analysis.
-				if x.Pkg.Pkg.Path() == "sync/atomic" {
+				if x.Pkg != nil && x.Pkg.Pkg.Path() == "sync/atomic" {
 					return
 				}
 
 				// Recursively collect information.
-				var imp packageEscapeFacts
-				if !pass.ImportPackageFact(x.Pkg.Pkg, &imp) {
+				var funcEscapes Escapes
+				if !pass.ImportObjectFact(x.Object(), &funcEscapes) {
+					// If this is the unix package, and the
+					// function is RawSyscall, we can also
+					// ignore this case.
+					if x.Pkg != nil && x.Pkg.Pkg.Name() == "unix" && (x.Name() == "RawSyscall" || x.Name() == "RawSyscall6") {
+						return
+					}
+
 					// Unable to import the dependency; we must
 					// declare these as escaping.
-					es.Add(unknownPackage, "no analysis", cs)
+					message := fmt.Sprintf("no analysis for %q", x.Object().String())
+					es.Add(unknownPackage, message, cs)
 					return
 				}
 
 				// The escapes of this instruction are the
 				// escapes of the called function directly.
 				// Note that this may record many escapes.
-				es.MergeWithCall(imp.Funcs[x.RelString(x.Pkg.Pkg)], cs)
+				es.MergeWithCall(funcEscapes, cs)
 				return
 			case *ssa.Builtin:
 				// Ignore elided escapes.
@@ -846,7 +853,10 @@ func run(pass *analysis.Pass, binary io.Reader) (interface{}, error) {
 
 	// Complete all local functions.
 	for _, fn := range state.SrcFuncs {
-		loadFunc(fn)
+		funcEscapes := loadFunc(fn)
+		if obj := fn.Object(); obj != nil {
+			pass.ExportObjectFact(obj, &funcEscapes)
+		}
 	}
 
 	// Scan all functions for violations.

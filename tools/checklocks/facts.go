@@ -164,8 +164,8 @@ func (*lockGuardFacts) AFact() {}
 
 // globalGuard is a global value.
 type globalGuard struct {
-	// Object indicates the object from which resolution should occur.
-	Object types.Object
+	// ObjectName indicates the object from which resolution should occur.
+	ObjectName string
 
 	// FieldList is the traversal path from object.
 	FieldList fieldList
@@ -179,7 +179,7 @@ type ssaPackager interface {
 // resolveCommon implements resolution for all cases.
 func (g *globalGuard) resolveCommon(pc *passContext, ls *lockState) resolvedValue {
 	state := pc.pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
-	v := state.Pkg.Members[g.Object.Name()].(ssa.Value)
+	v := state.Pkg.Members[g.ObjectName].(ssa.Value)
 	return makeResolvedValue(v, g.FieldList)
 }
 
@@ -627,8 +627,8 @@ func (pc *passContext) findGlobalGuard(pos token.Pos, guardName string) (*global
 		return nil, false
 	}
 	return &globalGuard{
-		Object:    globalObj,
-		FieldList: fl,
+		ObjectName: parts[0],
+		FieldList:  fl,
 	}, true
 }
 

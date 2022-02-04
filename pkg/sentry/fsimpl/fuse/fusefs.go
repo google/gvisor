@@ -303,12 +303,12 @@ func (fs *filesystem) MountOptions() string {
 	return fs.opts.mopts
 }
 
-// Fh data returned by newEntry
+// NewFhData is returned by newEntry.
 type NewFhData struct {
-	// file handler
+	// fh is the file handler.
 	fh uint64
 
-	// Flags of the file.
+	// flags is the flags of the file.
 	flags uint32
 }
 

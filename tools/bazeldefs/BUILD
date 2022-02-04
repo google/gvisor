@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "bzl_library", "go_proto_library")
+load("//tools:defs.bzl", "bzl_library")
 
 package(
     default_visibility = ["//:sandbox"],
@@ -52,10 +52,4 @@ genrule(
         "notap",
     ],
     visibility = ["//:sandbox"],
-)
-
-go_proto_library(
-    name = "worker_protocol_go_proto",
-    importpath = "gvisor.dev/bazel/worker_protocol_go_proto",
-    proto = "@bazel_tools//src/main/protobuf:worker_protocol_proto",
 )
