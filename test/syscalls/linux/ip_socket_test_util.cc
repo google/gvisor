@@ -24,6 +24,8 @@
 namespace gvisor {
 namespace testing {
 
+using ::testing::NotNull;
+
 uint32_t IPFromInetSockaddr(const struct sockaddr* addr) {
   auto* in_addr = reinterpret_cast<const struct sockaddr_in*>(addr);
   return in_addr->sin_addr.s_addr;
@@ -250,13 +252,13 @@ namespace {
 template <typename T>
 void RecvCmsg(int sock, int cmsg_level, int cmsg_type, char buf[],
               size_t* buf_size, T* out_cmsg_value) {
-  struct iovec iov = {
+  iovec iov = {
       iov.iov_base = buf,
       iov.iov_len = *buf_size,
   };
   // Add an extra byte to confirm we only read what we expected.
   char control[CMSG_SPACE(sizeof(*out_cmsg_value)) + 1];
-  struct msghdr msg = {
+  msghdr msg = {
       .msg_iov = &iov,
       .msg_iovlen = 1,
       .msg_control = control,
@@ -276,14 +278,51 @@ void RecvCmsg(int sock, int cmsg_level, int cmsg_type, char buf[],
   std::copy_n(CMSG_DATA(cmsg), sizeof(*out_cmsg_value),
               reinterpret_cast<uint8_t*>(out_cmsg_value));
 }
+
+template <typename T>
+void SendCmsg(int sock, int cmsg_level, int cmsg_type, char buf[],
+              size_t buf_size, T cmsg_value) {
+  iovec iov = {
+      .iov_base = buf,
+      .iov_len = buf_size,
+  };
+
+  std::vector<uint8_t> control(CMSG_SPACE(sizeof(cmsg_value)));
+  msghdr msg = {
+      .msg_iov = &iov,
+      .msg_iovlen = 1,
+      .msg_control = control.data(),
+      .msg_controllen = CMSG_LEN(sizeof(cmsg_value)),
+  };
+
+  // Manually add control message.
+  cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+  ASSERT_THAT(cmsg, NotNull());
+  cmsg->cmsg_len = CMSG_LEN(sizeof(cmsg_value));
+  cmsg->cmsg_level = cmsg_level;
+  cmsg->cmsg_type = cmsg_type;
+  std::copy_n(reinterpret_cast<uint8_t*>(&cmsg_value), sizeof(cmsg_value),
+              CMSG_DATA(cmsg));
+
+  ASSERT_THAT(RetryEINTR(sendmsg)(sock, &msg, 0),
+              SyscallSucceedsWithValue(buf_size));
+}
 }  // namespace
 
 void RecvTOS(int sock, char buf[], size_t* buf_size, uint8_t* out_tos) {
   RecvCmsg(sock, SOL_IP, IP_TOS, buf, buf_size, out_tos);
 }
 
+void SendTOS(int sock, char buf[], size_t buf_size, uint8_t tos) {
+  SendCmsg(sock, SOL_IP, IP_TOS, buf, buf_size, tos);
+}
+
 void RecvTClass(int sock, char buf[], size_t* buf_size, int* out_tclass) {
   RecvCmsg(sock, SOL_IPV6, IPV6_TCLASS, buf, buf_size, out_tclass);
+}
+
+void SendTClass(int sock, char buf[], size_t buf_size, int tclass) {
+  SendCmsg(sock, SOL_IPV6, IPV6_TCLASS, buf, buf_size, tclass);
 }
 
 }  // namespace testing
