@@ -41,6 +41,9 @@ steps:
   - <<: *common
     label: ":fire: Smoke tests"
     command: make smoke-tests
+  - <<: *common
+    label: ":fire: Smoke race tests"
+    command: make smoke-race-tests
   - wait
 
   # Check that the Go branch builds.

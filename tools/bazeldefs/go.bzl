@@ -11,8 +11,6 @@ go_embed_data = _go_embed_data
 
 go_path = _go_path
 
-bazel_worker_proto = "//tools/bazeldefs:worker_protocol_go_proto"
-
 def _go_proto_or_grpc_library(go_library_func, name, **kwargs):
     if "importpath" in kwargs:
         # If importpath is explicit, pass straight through.

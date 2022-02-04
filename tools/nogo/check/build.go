@@ -15,6 +15,7 @@
 package check
 
 import (
+	"errors"
 	"fmt"
 	"go/build"
 	"io"
@@ -37,7 +38,11 @@ var findStdPkg = func(path string) (io.ReadCloser, error) {
 	}
 
 	// Attempt to resolve the library, and propagate this error.
-	return os.Open(fmt.Sprintf("%s/pkg/%s_%s/%s.a", root, flags.GOOS, flags.GOARCH, path))
+	f, err := os.Open(fmt.Sprintf("%s/pkg/%s_%s/%s.a", root, flags.GOOS, flags.GOARCH, path))
+	if err != nil && errors.Is(err, os.ErrNotExist) {
+		return nil, ErrSkip
+	}
+	return f, err
 }
 
 // releaseTags returns the default release tags.
