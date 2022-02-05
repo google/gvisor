@@ -1,5 +1,6 @@
 """Nogo rules."""
 
+load("//tools/bazeldefs:defs.bzl", "BuildSettingInfo")
 load("//tools/bazeldefs:go.bzl", "go_context", "go_embed_libraries", "go_importpath", "go_rule")
 
 NogoConfigInfo = provider(
@@ -63,6 +64,13 @@ NogoStdlibInfo = provider(
 )
 
 def _nogo_stdlib_impl(ctx):
+    # If this is disabled, return nothing.
+    if ctx.attr._fast[BuildSettingInfo].value:
+        return [NogoStdlibInfo(
+            facts = None,
+            raw_findings = [],
+        )]
+
     # Build the configuration for the stdlib.
     go_ctx, args, inputs, raw_findings = _nogo_config(ctx, deps = [])
 
@@ -109,11 +117,15 @@ nogo_stdlib = go_rule(
     attrs = {
         "_nogo": attr.label(
             default = "//tools/nogo:nogo",
-            cfg = "exec",
+            cfg = "host",
         ),
         "_target": attr.label(
             default = "//tools/nogo:target",
             cfg = "target",
+        ),
+        "_fast": attr.label(
+            default = "//tools/nogo:fast",
+            cfg = "host",
         ),
     },
 )
@@ -216,8 +228,9 @@ def _nogo_package_config(ctx, deps, importpath = None, target = None):
     # Add the standard library facts.
     stdlib_info = ctx.attr._nogo_stdlib[NogoStdlibInfo]
     stdlib_facts = stdlib_info.facts
-    inputs.append(stdlib_facts)
-    args.append("-bundle=%s" % stdlib_facts.path)
+    if stdlib_facts:
+        inputs.append(stdlib_facts)
+        args.append("-bundle=%s" % stdlib_facts.path)
 
     # Flatten all findings from all dependencies.
     #
@@ -314,7 +327,7 @@ nogo_aspect = go_rule(
     attrs = {
         "_nogo": attr.label(
             default = "//tools/nogo:nogo",
-            cfg = "exec",
+            cfg = "host",
         ),
         "_target": attr.label(
             default = "//tools/nogo:target",
@@ -400,7 +413,7 @@ nogo_test = rule(
         ),
         "_nogo": attr.label(
             default = "//tools/nogo:nogo",
-            cfg = "exec",
+            cfg = "host",
         ),
         "_target": attr.label(
             default = "//tools/nogo:target",
@@ -478,7 +491,7 @@ nogo_facts = go_rule(
         ),
         "_nogo": attr.label(
             default = "//tools/nogo:nogo",
-            cfg = "exec",
+            cfg = "host",
         ),
         # See _nogo_aspect, above.
         "_nogo_stdlib": attr.label(
