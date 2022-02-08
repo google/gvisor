@@ -100,11 +100,16 @@ func (p PacketDispatchMode) String() string {
 var _ stack.LinkEndpoint = (*endpoint)(nil)
 var _ stack.GSOEndpoint = (*endpoint)(nil)
 
+type fdInfo struct {
+	fd       int
+	isSocket bool
+}
+
 type endpoint struct {
 	// fds is the set of file descriptors each identifying one inbound/outbound
 	// channel. The endpoint will dispatch from all inbound channels as well as
 	// hash outbound packets to specific channels based on the packet hash.
-	fds []int
+	fds []fdInfo
 
 	// mtu (maximum transmission unit) is the maximum size of a packet.
 	mtu uint32
@@ -260,7 +265,6 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 	}
 
 	e := &endpoint{
-		fds:                   opts.FDs,
 		mtu:                   opts.MTU,
 		caps:                  caps,
 		closed:                opts.ClosedFunc,
@@ -281,8 +285,7 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 	fid := atomic.AddInt32(&fanoutID, 1)
 
 	// Create per channel dispatchers.
-	for i := 0; i < len(e.fds); i++ {
-		fd := e.fds[i]
+	for _, fd := range opts.FDs {
 		if err := unix.SetNonblock(fd, true); err != nil {
 			return nil, fmt.Errorf("unix.SetNonblock(%v) failed: %v", fd, err)
 		}
@@ -291,6 +294,7 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 		if err != nil {
 			return nil, err
 		}
+		e.fds = append(e.fds, fdInfo{fd: fd, isSocket: isSocket})
 		if isSocket {
 			if opts.GSOMaxSize != 0 {
 				if opts.SoftwareGSOEnabled {
@@ -501,7 +505,8 @@ func (e *endpoint) AddHeader(pkt *stack.PacketBuffer) {
 // writePacket writes outbound packets to the file descriptor. If it is not
 // currently writable, the packet is dropped.
 func (e *endpoint) writePacket(pkt *stack.PacketBuffer) tcpip.Error {
-	fd := e.fds[pkt.Hash%uint32(len(e.fds))]
+	fdInfo := e.fds[pkt.Hash%uint32(len(e.fds))]
+	fd := fdInfo.fd
 	var vnetHdrBuf []byte
 	if e.gsoKind == stack.HWGSOSupported {
 		vnetHdr := virtioNetHdr{}
@@ -549,8 +554,23 @@ func (e *endpoint) writePacket(pkt *stack.PacketBuffer) tcpip.Error {
 	return rawfile.NonBlockingWriteIovec(fd, iovecs)
 }
 
-func (e *endpoint) sendBatch(batchFD int, pkts []*stack.PacketBuffer) (int, tcpip.Error) {
+func (e *endpoint) sendBatch(batchFDInfo fdInfo, pkts []*stack.PacketBuffer) (int, tcpip.Error) {
+	// Degrade to writePacket if underlying fd is not a socket.
+	if !batchFDInfo.isSocket {
+		written := 0
+		for i := 0; i < len(pkts); i++ {
+			if err := e.writePacket(pkts[i]); err != nil {
+				if written > 0 {
+					return written, nil
+				}
+				return 0, err
+			}
+		}
+		return written, nil
+	}
+
 	// Send a batch of packets through batchFD.
+	batchFD := batchFDInfo.fd
 	mmsgHdrsStorage := make([]rawfile.MMsgHdr, 0, len(pkts))
 	packets := 0
 	for packets < len(pkts) {
@@ -657,29 +677,29 @@ func (e *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) 
 	// byte segment.
 	const batchSz = 47
 	batch := make([]*stack.PacketBuffer, 0, batchSz)
-	batchFD := -1
+	batchFDInfo := fdInfo{fd: -1, isSocket: false}
 	sentPackets := 0
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
 		if len(batch) == 0 {
-			batchFD = e.fds[pkt.Hash%uint32(len(e.fds))]
+			batchFDInfo = e.fds[pkt.Hash%uint32(len(e.fds))]
 		}
-		pktFD := e.fds[pkt.Hash%uint32(len(e.fds))]
-		if sendNow := pktFD != batchFD; !sendNow {
+		pktFDInfo := e.fds[pkt.Hash%uint32(len(e.fds))]
+		if sendNow := pktFDInfo != batchFDInfo; !sendNow {
 			batch = append(batch, pkt)
 			continue
 		}
-		n, err := e.sendBatch(batchFD, batch)
+		n, err := e.sendBatch(batchFDInfo, batch)
 		sentPackets += n
 		if err != nil {
 			return sentPackets, err
 		}
 		batch = batch[:0]
 		batch = append(batch, pkt)
-		batchFD = pktFD
+		batchFDInfo = pktFDInfo
 	}
 
 	if len(batch) != 0 {
-		n, err := e.sendBatch(batchFD, batch)
+		n, err := e.sendBatch(batchFDInfo, batch)
 		sentPackets += n
 		if err != nil {
 			return sentPackets, err
@@ -695,7 +715,7 @@ func viewsEqual(vs1, vs2 []buffer.View) bool {
 
 // InjectOutobund implements stack.InjectableEndpoint.InjectOutbound.
 func (e *endpoint) InjectOutbound(dest tcpip.Address, packet []byte) tcpip.Error {
-	return rawfile.NonBlockingWrite(e.fds[0], packet)
+	return rawfile.NonBlockingWrite(e.fds[0].fd, packet)
 }
 
 // dispatchLoop reads packets from the file descriptor in a loop and dispatches
@@ -750,13 +770,17 @@ func (e *InjectableEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber,
 }
 
 // NewInjectable creates a new fd-based InjectableEndpoint.
-func NewInjectable(fd int, mtu uint32, capabilities stack.LinkEndpointCapabilities) *InjectableEndpoint {
+func NewInjectable(fd int, mtu uint32, capabilities stack.LinkEndpointCapabilities) (*InjectableEndpoint, error) {
 	unix.SetNonblock(fd, true)
+	isSocket, err := isSocketFD(fd)
+	if err != nil {
+		return nil, err
+	}
 
 	return &InjectableEndpoint{endpoint: endpoint{
-		fds:           []int{fd},
+		fds:           []fdInfo{{fd: fd, isSocket: isSocket}},
 		mtu:           mtu,
 		caps:          capabilities,
 		writevMaxIovs: rawfile.MaxIovs,
-	}}
+	}}, nil
 }
