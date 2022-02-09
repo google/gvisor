@@ -380,8 +380,8 @@ func (v *View) Copy() (other View) {
 
 // Clone makes a more shallow copy compared to Copy. The underlying payload
 // slice (buffer.data) is shared but the buffers themselves are copied.
-func (v *View) Clone() View {
-	other := View{
+func (v *View) Clone() *View {
+	other := &View{
 		size: v.size,
 	}
 	for buf := v.data.Front(); buf != nil; buf = buf.Next() {
