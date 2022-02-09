@@ -15,23 +15,19 @@
 #include "funcdata.h"
 #include "textflag.h"
 
-{{ with .CPU }}
-#define CPU_SELF             {{ .self.Offset }}
-#define CPU_REGISTERS        {{ .registers.Offset }}
-{{ end }}
-{{ with .CPUArchState }}
-#define CPU_STACK_TOP        ({{ .stack.Offset }} + {{ .stack.Size }})
-#define CPU_ERROR_CODE       {{ .errorCode.Offset }}
-#define CPU_ERROR_TYPE       {{ .errorType.Offset }}
-#define CPU_FAULT_ADDR       {{ .faultAddr.Offset }}
-#define CPU_FPSTATE_EL0      {{ .el0Fp.Offset }}
-#define CPU_TTBR0_KVM	     {{ .ttbr0Kvm.Offset }}
-#define CPU_TTBR0_APP        {{ .ttbr0App.Offset }}
-#define CPU_VECTOR_CODE      {{ .vecCode.Offset }}
-#define CPU_APP_ADDR         {{ .appAddr.Offset }}
-#define CPU_LAZY_VFP         {{ .lazyVFP.Offset }}
-#define CPU_APP_ASID         {{ .appASID.Offset }}
-{{ end }}
+#define CPU_SELF             {{ .CPU.self.Offset }}
+#define CPU_REGISTERS        {{ .CPU.registers.Offset }}
+#define CPU_STACK_TOP        ({{ .CPU.CPUArchState.Offset }}+{{ .CPUArchState.stack.Offset }} + {{ .CPUArchState.stack.Size }})
+#define CPU_ERROR_CODE       ({{ .CPU.CPUArchState.Offset }}+{{ .CPUArchState.errorCode.Offset }})
+#define CPU_ERROR_TYPE       ({{ .CPU.CPUArchState.Offset }}+{{ .CPUArchState.errorType.Offset }})
+#define CPU_FAULT_ADDR       ({{ .CPU.CPUArchState.Offset }}+{{ .CPUArchState.faultAddr.Offset }})
+#define CPU_FPSTATE_EL0      ({{ .CPU.CPUArchState.Offset }}+{{ .CPUArchState.el0Fp.Offset }})
+#define CPU_TTBR0_KVM       ({{ .CPU.CPUArchState.Offset }}+{{ .CPUArchState.ttbr0Kvm.Offset }})
+#define CPU_TTBR0_APP        ({{ .CPU.CPUArchState.Offset }}+{{ .CPUArchState.ttbr0App.Offset }})
+#define CPU_VECTOR_CODE      ({{ .CPU.CPUArchState.Offset }}+{{ .CPUArchState.vecCode.Offset }})
+#define CPU_APP_ADDR         ({{ .CPU.CPUArchState.Offset }}+{{ .CPUArchState.appAddr.Offset }})
+#define CPU_LAZY_VFP         ({{ .CPU.CPUArchState.Offset }}+{{ .CPUArchState.lazyVFP.Offset }})
+#define CPU_APP_ASID         ({{ .CPU.CPUArchState.Offset }}+{{ .CPUArchState.appASID.Offset }})
 
 // Bits.
 #define _KERNEL_FLAGS {{ .KernelFlagsSet.Value }}
