@@ -15,23 +15,19 @@
 #include "funcdata.h"
 #include "textflag.h"
 
-
 #define CPU_SELF             0
 #define CPU_REGISTERS        224
-
-
-#define CPU_STACK_TOP        (0 + 128)
-#define CPU_ERROR_CODE       128
-#define CPU_ERROR_TYPE       136
-#define CPU_FAULT_ADDR       144
-#define CPU_FPSTATE_EL0      152
-#define CPU_TTBR0_KVM	     160
-#define CPU_TTBR0_APP        168
-#define CPU_VECTOR_CODE      176
-#define CPU_APP_ADDR         184
-#define CPU_LAZY_VFP         192
-#define CPU_APP_ASID         200
-
+#define CPU_STACK_TOP        (16+0 + 128)
+#define CPU_ERROR_CODE       (16+128)
+#define CPU_ERROR_TYPE       (16+136)
+#define CPU_FAULT_ADDR       (16+144)
+#define CPU_FPSTATE_EL0      (16+152)
+#define CPU_TTBR0_KVM       (16+160)
+#define CPU_TTBR0_APP        (16+168)
+#define CPU_VECTOR_CODE      (16+176)
+#define CPU_APP_ADDR         (16+184)
+#define CPU_LAZY_VFP         (16+192)
+#define CPU_APP_ASID         (16+200)
 
 // Bits.
 #define _KERNEL_FLAGS 965
