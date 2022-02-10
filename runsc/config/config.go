@@ -31,9 +31,11 @@ import (
 // Follow these steps to add a new flag:
 //   1. Create a new field in Config.
 //   2. Add a field tag with the flag name
-//   3. Register a new flag in flags.go, with name and description
+//   3. Register a new flag in flags.go, with same name and add a description
 //   4. Add any necessary validation into validate()
 //   5. If adding an enum, follow the same pattern as FileAccessType
+//   6. Evaluate if the flag can be changed with OCI annotations. See
+//      overrideAllowlist for more details
 //
 type Config struct {
 	// RootDir is the runtime root directory.
