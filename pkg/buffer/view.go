@@ -385,6 +385,10 @@ func (v *View) Clone() View {
 		size: v.size,
 	}
 	for buf := v.data.Front(); buf != nil; buf = buf.Next() {
+		// Copy the buffer structs itself as they are stateful and
+		// should not be shared between Views.
+		//
+		// TODO(gvisor.dev/issue/7158): revisit need for View.pool.
 		newBuf := other.pool.getNoInit()
 		*newBuf = *buf
 		other.data.PushBack(newBuf)
@@ -428,7 +432,13 @@ func (v *View) Merge(other *View) {
 	// Copy over all buffers.
 	for buf := other.data.Front(); buf != nil; buf = other.data.Front() {
 		other.data.Remove(buf)
-		v.data.PushBack(buf)
+		// Copy the buffer structs itself as they are stateful and
+		// should not be shared between Views.
+		//
+		// TODO(gvisor.dev/issue/7158): revisit need for View.pool.
+		newBuf := v.pool.getNoInit()
+		*newBuf = *buf
+		v.data.PushBack(newBuf)
 	}
 
 	// Adjust sizes.
