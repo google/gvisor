@@ -305,3 +305,60 @@ func TestOverrideError(t *testing.T) {
 		})
 	}
 }
+
+func TestOverrideAllowlist(t *testing.T) {
+	c, err := NewFromFlags()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		flag  string
+		value string
+		error string
+	}{
+		{
+			flag:  "debug",
+			value: "true",
+		},
+		{
+			flag:  "debug",
+			value: "123",
+			error: "error setting flag",
+		},
+		{
+			flag:  "oci-seccomp",
+			value: "true",
+		},
+		{
+			flag:  "oci-seccomp",
+			value: "false",
+			error: `disabling "oci-seccomp" requires flag`,
+		},
+		{
+			flag:  "oci-seccomp",
+			value: "123",
+			error: "invalid syntax",
+		},
+		{
+			flag:  "profile",
+			value: "true",
+			error: "flag override disabled",
+		},
+		{
+			flag:  "profile",
+			value: "123",
+			error: "flag override disabled",
+		},
+	} {
+		t.Run(tc.flag, func(t *testing.T) {
+			err := c.Override(tc.flag, tc.value)
+			if len(tc.error) == 0 {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), tc.error) {
+				t.Errorf("Override(%q, %q) wrong error: %v", tc.flag, tc.value, err)
+			}
+		})
+	}
+}
