@@ -1818,13 +1818,13 @@ func (d *dentry) checkCachingLocked(ctx context.Context, renameMuWriteLocked boo
 			// Need to lock d.fs.renameMu for writing as needed by d.destroyLocked().
 			d.fs.renameMu.Lock()
 			defer d.fs.renameMu.Unlock()
-			// Now that renameMu is locked for writing, no more refs can be taken on
-			// d because path resolution requires renameMu for reading at least.
-			if atomic.LoadInt64(&d.refs) != 0 {
-				// Destroy d only if its ref is still 0. If not, either someone took a
-				// ref on it or it got destroyed before fs.renameMu could be acquired.
-				return
-			}
+		}
+		// Now that renameMu is locked for writing, no more refs can be taken on
+		// d because path resolution requires renameMu for reading at least.
+		if atomic.LoadInt64(&d.refs) != 0 {
+			// Destroy d only if its ref is still 0. If not, either someone took a
+			// ref on it or it got destroyed before fs.renameMu could be acquired.
+			return
 		}
 		if d.isDeleted() {
 			d.watches.HandleDeletion(ctx)
