@@ -81,8 +81,8 @@ func RegisterFlags() {
 		flag.Bool("verity", false, "specifies whether a verity file system will be mounted.")
 		flag.Bool("fsgofer-host-uds", false, "allow the gofer to mount Unix Domain Sockets.")
 		flag.Bool("vfs2", true, "enables VFSv2. This uses the new VFS layer that is faster than the previous one.")
-		flag.Bool("fuse", false, "TEST ONLY; use while FUSE in VFSv2 is landing. This allows the use of the new experimental FUSE filesystem.")
-		flag.Bool("lisafs", false, "Enables lisafs protocol instead of 9P. This is only effective with VFS2.")
+		flag.Bool("fuse", false, "TEST ONLY; This allows the use of the new experimental FUSE filesystem. Only works with VFS2.")
+		flag.Bool("lisafs", false, "Enables lisafs protocol instead of 9P. Only works with VFS2.")
 		flag.Bool("cgroupfs", false, "Automatically mount cgroupfs.")
 		flag.Bool("ignore-cgroups", false, "don't configure cgroups.")
 
@@ -101,6 +101,33 @@ func RegisterFlags() {
 		flag.String("TESTONLY-test-name-env", "", "TEST ONLY; do not ever use! Used for automated tests to improve logging.")
 		flag.Bool("TESTONLY-allow-packet-endpoint-write", false, "TEST ONLY; do not ever use! Used for tests to allow writes on packet sockets.")
 	})
+}
+
+// overrideAllowlist lists all flags that can be changed using OCI
+// annotations without an administrator setting `--allow-flag-override` on the
+// runtime. Flags in this list can be set by container authors and should not
+// make the sandbox less secure.
+var overrideAllowlist = map[string]struct {
+	check func(name string, value string) error
+}{
+	"debug":           {},
+	"strace":          {},
+	"strace-syscalls": {},
+	"strace-log-size": {},
+
+	"oci-seccomp": {check: checkOciSeccomp},
+}
+
+// checkOciSeccomp ensures that seccomp can be enabled but not disabled.
+func checkOciSeccomp(name string, value string) error {
+	enable, err := strconv.ParseBool(value)
+	if err != nil {
+		return err
+	}
+	if !enable {
+		return fmt.Errorf("disabling %q requires flag %q to be enabled", name, "allow-flag-override")
+	}
+	return nil
 }
 
 // NewFromFlags creates a new Config with values coming from command line flags.
@@ -168,10 +195,6 @@ func (c *Config) ToFlags() []string {
 
 // Override writes a new value to a flag.
 func (c *Config) Override(name string, value string) error {
-	if !c.AllowFlagOverride {
-		return fmt.Errorf("flag override disabled, use --allow-flag-override to enable it")
-	}
-
 	obj := reflect.ValueOf(c).Elem()
 	st := obj.Type()
 	for i := 0; i < st.NumField(); i++ {
@@ -186,6 +209,9 @@ func (c *Config) Override(name string, value string) error {
 			// Flag must exist if there is a field match above.
 			panic(fmt.Sprintf("Flag %q not found", name))
 		}
+		if err := c.isOverrideAllowed(name, value); err != nil {
+			return fmt.Errorf("error setting flag %s=%q: %w", name, value, err)
+		}
 
 		// Use flag to convert the string value to the underlying flag type, using
 		// the same rules as the command-line for consistency.
@@ -199,6 +225,23 @@ func (c *Config) Override(name string, value string) error {
 		return c.validate()
 	}
 	return fmt.Errorf("flag %q not found. Cannot set it to %q", name, value)
+}
+
+func (c *Config) isOverrideAllowed(name string, value string) error {
+	if c.AllowFlagOverride {
+		return nil
+	}
+	// If the global override flag is not enabled, check if individual flag is
+	// safe to apply.
+	if allow, ok := overrideAllowlist[name]; ok {
+		if allow.check != nil {
+			if err := allow.check(name, value); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return fmt.Errorf("flag override disabled, use --allow-flag-override to enable it")
 }
 
 func getVal(field reflect.Value) string {
