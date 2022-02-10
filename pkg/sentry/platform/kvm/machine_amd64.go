@@ -436,16 +436,6 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *linux.SignalInfo)
 	}
 }
 
-// On x86 platform, the flags for "setMemoryRegion" can always be set as 0.
-// There is no need to return read-only physicalRegions.
-func rdonlyRegionsForSetMem() (phyRegions []physicalRegion) {
-	return nil
-}
-
-func availableRegionsForSetMem() (phyRegions []physicalRegion) {
-	return physicalRegions
-}
-
 func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
 	// Map all the executable regions so that all the entry functions
 	// are mapped in the upper half.

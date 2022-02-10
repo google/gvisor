@@ -231,7 +231,7 @@ func seccompMmapHandler(context unsafe.Pointer) {
 			}
 
 			// Ensure the physical range is mapped.
-			m.mapPhysical(physical, length, physicalRegions, _KVM_MEM_FLAGS_NONE)
+			m.mapPhysical(physical, length, physicalRegions)
 			virtual += length
 		}
 	}
