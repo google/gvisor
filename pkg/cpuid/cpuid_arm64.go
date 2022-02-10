@@ -31,6 +31,8 @@ import (
 // Documentation/arm64/elf_hwcaps.rst for more info.
 //
 // Currently, only the HWCAP bits are supported.
+//
+// +stateify savable
 type FeatureSet struct {
 	hwCap      uint
 	cpuFreqMHz float64
