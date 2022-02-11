@@ -37,6 +37,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/flag"
 )
 
 // ExePath must point to runsc binary, which is normally the same binary. It's
@@ -200,7 +201,7 @@ func ReadSpecFromFile(bundleDir string, specFile *os.File, conf *config.Config) 
 		if strings.HasPrefix(annotation, flagPrefix) {
 			name := annotation[len(flagPrefix):]
 			log.Infof("Overriding flag: %s=%q", name, val)
-			if err := conf.Override(name, val); err != nil {
+			if err := conf.Override(flag.CommandLine, name, val); err != nil {
 				return nil, err
 			}
 		}
