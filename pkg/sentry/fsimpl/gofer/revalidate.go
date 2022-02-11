@@ -291,10 +291,18 @@ func (fs *filesystem) revalidateHelper(ctx context.Context, vfsObj *vfs.VirtualF
 				return nil
 			}
 			// The file at this path has changed or no longer exists. Mark the
-			// dentry invalidated, and re-evaluate its caching status (i.e. if it
-			// has 0 references, drop it). The dentry will be reloaded next time it's
-			// accessed.
+			// dentry invalidated, and re-evaluate its caching status (i.e. if
+			// it has 0 references, drop it). The dentry will be reloaded next
+			// time it's accessed.
+			//
+			// If the dentry is a mountpoint, InvalidateDentry may drop the
+			// last reference on it, resulting in lock recursion. To avoid
+			// this, take a dentry reference first, then drop it while
+			// deferring the call to dentry.checkCachingLocked().
+			d.IncRef()
 			vfsObj.InvalidateDentry(ctx, &d.vfsd)
+			d.decRefNoCaching()
+			*ds = appendDentry(*ds, d)
 
 			name := state.names[i]
 			d.parent.dirMu.Lock()
