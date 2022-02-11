@@ -541,9 +541,9 @@ func (fs *filesystem) initClientLisa(ctx context.Context) (lisafs.Inode, error) 
 		return rootInode, nil
 	}
 
-	// Walk to the attach point from root inode.
+	// Walk to the attach point from root inode. aname is always absolute.
 	rootFD := fs.clientLisa.NewFD(rootInode.ControlFD)
-	status, inodes, err := rootFD.WalkMultiple(ctx, strings.Split(fs.opts.aname, "/"))
+	status, inodes, err := rootFD.WalkMultiple(ctx, strings.Split(fs.opts.aname, "/")[1:])
 	rootFD.CloseBatched(ctx)
 	if err != nil {
 		return lisafs.Inode{}, err
