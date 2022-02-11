@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <arpa/inet.h>
+#include <net/if.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
@@ -873,6 +874,20 @@ TEST_P(RawSocketTest, GetSocketDetachFilter) {
   socklen_t val_len = sizeof(val);
   ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_DETACH_FILTER, &val, &val_len),
               SyscallFailsWithErrno(ENOPROTOOPT));
+}
+
+TEST_P(RawSocketTest, BindToDevice) {
+  constexpr char kLoopbackDeviceName[] = "lo";
+  ASSERT_THAT(setsockopt(s_, SOL_SOCKET, SO_BINDTODEVICE, &kLoopbackDeviceName,
+                         sizeof(kLoopbackDeviceName)),
+              SyscallSucceeds());
+
+  char got[IFNAMSIZ];
+  socklen_t got_len = sizeof(got);
+  ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_BINDTODEVICE, &got, &got_len),
+              SyscallSucceeds());
+  ASSERT_EQ(got_len, sizeof(kLoopbackDeviceName));
+  EXPECT_EQ(strcmp(kLoopbackDeviceName, got), 0);
 }
 
 // AF_INET6+SOCK_RAW+IPPROTO_RAW sockets can be created, but not written to.
