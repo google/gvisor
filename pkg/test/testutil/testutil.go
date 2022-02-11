@@ -21,7 +21,6 @@ import (
 	"debug/elf"
 	"encoding/base32"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -45,16 +44,42 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 var (
-	checkpoint           = flag.Bool("checkpoint", true, "control checkpoint/restore support")
-	partition            = flag.Int("partition", 1, "partition number, this is 1-indexed")
-	totalPartitions      = flag.Int("total_partitions", 1, "total number of partitions")
-	isRunningWithHostNet = flag.Bool("hostnet", false, "whether test is running with hostnet")
-	runscPath            = flag.String("runsc", "", "path to runsc binary")
+	checkpoint           = flag.Bool("checkpoint", boolFromEnv("CHECKPOINT", true), "control checkpoint/restore support")
+	partition            = flag.Int("partition", intFromEnv("PARTITION", 1), "partition number, this is 1-indexed")
+	totalPartitions      = flag.Int("total_partitions", intFromEnv("TOTAL_PARTITIONS", 1), "total number of partitions")
+	isRunningWithHostNet = flag.Bool("hostnet", boolFromEnv("HOSTNET", false), "whether test is running with hostnet")
+	runscPath            = flag.String("runsc", os.Getenv("RUNTIME"), "path to runsc binary")
 )
+
+func intFromEnv(name string, def int) int {
+	str := os.Getenv(name)
+	if str == "" {
+		return def
+	}
+	v, err := strconv.ParseInt(str, 10, 64)
+	if err != nil {
+		// N.B. This library is testonly, so a panic here is reasonable.
+		panic(fmt.Errorf("invalid environment variable %q; got %q expected integer: %w", name, str, err))
+	}
+	return int(v)
+}
+
+func boolFromEnv(name string, def bool) bool {
+	str := strings.ToLower(os.Getenv(name))
+	if str == "" {
+		return def
+	}
+	v, err := strconv.ParseBool(str)
+	if err != nil {
+		panic(fmt.Errorf("invalid environment variable %q; got %q expected bool: %w", name, str, err))
+	}
+	return v
+}
 
 // IsCheckpointSupported returns the relevant command line flag.
 func IsCheckpointSupported() bool {
@@ -174,13 +199,11 @@ func TestConfig(t *testing.T) *config.Config {
 		logDir = dir + "/"
 	}
 
-	// Only register flags if config is being used. Otherwise anyone that uses
-	// testutil will get flags registered and they may conflict.
-	config.RegisterFlags()
-
-	conf, err := config.NewFromFlags()
+	testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
+	config.RegisterFlags(testFlags)
+	conf, err := config.NewFromFlags(testFlags)
 	if err != nil {
-		panic(err)
+		t.Fatalf("error loading configuration from flags: %v", err)
 	}
 	// Change test defaults.
 	conf.Debug = true

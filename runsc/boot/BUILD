@@ -148,6 +148,7 @@ go_test(
         "//pkg/sync",
         "//pkg/unet",
         "//runsc/config",
+        "//runsc/flag",
         "//runsc/fsgofer",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
