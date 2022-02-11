@@ -1,0 +1,12 @@
+_templates:
+  common: &common
+    # Runtimes are targeted to finish in <5 minutes per shard. If they hang,
+    # it's likely that something is wrong and it should be terminated.
+    timeout_in_minutes: 10
+    retry:
+      automatic:
+        - exit_status: -1
+          limit: 10
+        - exit_status: "*"
+          limit: 3
+steps:

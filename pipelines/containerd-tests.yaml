@@ -1,0 +1,11 @@
+_templates:
+  common: &common
+    # These should finish in 5 minutes.
+    timeout_in_minutes: 5
+    retry:
+      automatic:
+        - exit_status: -1
+          limit: 10
+        - exit_status: "*"
+          limit: 3
+steps:

@@ -1,0 +1,16 @@
+_templates:
+  common: &common
+    timeout_in_minutes: 30
+    retry:
+      automatic:
+        - exit_status: -1
+          limit: 10
+        - exit_status: "*"
+          limit: 2
+
+steps:
+  - <<: *common
+    label: ":world_map: Build everything"
+    command: "make build OPTIONS=--build_tag_filters=-nogo TARGETS=//..."
+  - <<: *common
+    command: make pipeline-netstack-tests | buildkite-agent pipeload upload

@@ -47,13 +47,25 @@ SHELL = /bin/bash
 ##
 help: ## Shows all targets and help from the Makefile (this message).
 	@grep --no-filename -E '^([a-z.A-Z_%-]+:.*?|)##' $(MAKEFILE_LIST) | \
-		awk 'BEGIN {FS = "(:.*?|)## ?"}; { \
+		awk 'BEGIN {FS = "(:.*?|)#(:[a-z0-9]+:)?# ?"}; { \
 			if (length($$1) > 0) { \
 				printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2; \
 			} else { \
 				printf "%s\n", $$2; \
 			} \
 		}'
+.PHONY: help
+
+pipeline-%: ## Constructs a pipeline for the given target.
+	@set -euo pipefail; \
+	cat "pipelines/$*.yaml" && \
+	for target in $$($(MAKE) -Bnp | grep --no-filename -E '^$*: ' | cut -d: -f2-); do \
+		echo "  - <<: *common" && \
+		echo "    command: \"make $$target\"" && \
+		(grep --no-filename -E "^$$target:.*#~ " $(MAKEFILE_LIST) || \
+		 grep --no-filename -E "^$*:.*#~ " $(MAKEFILE_LIST)) | \
+		 awk 'BEGIN { FS = "#~ " } ; { print "    " $$2 }' | sed -e "s/label: \(.*\)/label: \"\1$$target\"/"; \
+	done
 
 build: ## Builds the given $(TARGETS) with the given $(OPTIONS). E.g. make build TARGETS=runsc
 	@$(call build,$(OPTIONS) $(TARGETS))
@@ -100,8 +112,6 @@ endif
 ##     RUNTIME_LOG_DIR - The logs directory (default: $RUNTIME_DIR/logs).
 ##     RUNTIME_LOGS    - The log pattern (default: $RUNTIME_LOG_DIR/runsc.log.%TEST%.%TIMESTAMP%.%COMMAND%).
 ##     RUNTIME_ARGS    - Arguments passed to the runtime when installed.
-##     STAGED_BINARIES - A tarball of staged binaries. If this is set, then binaries
-##                       will be installed from this staged bundle instead of built.
 ##
 ifeq (,$(BRANCH_NAME))
 RUNTIME     := runsc
@@ -115,22 +125,17 @@ RUNTIME_LOG_DIR := $(RUNTIME_DIR)/logs
 RUNTIME_LOGS    := $(RUNTIME_LOG_DIR)/runsc.log.%TEST%.%TIMESTAMP%.%COMMAND%
 RUNTIME_ARGS    ?=
 
+# We automatically detect whether cgroupv2 is enabled not, but this can be
+# overriden in the command line for the purpose of generating the pipeline.
 ifeq ($(shell stat -f -c "%T" /sys/fs/cgroup 2>/dev/null),cgroup2fs)
 CGROUPV2 := true
 else
 CGROUPV2 := false
 endif
 
-$(RUNTIME_BIN): # See below.
-	@mkdir -p "$(RUNTIME_DIR)"
-ifeq (,$(STAGED_BINARIES))
-	@$(call copy,//runsc,$(RUNTIME_BIN))
-else
-	gsutil cat "${STAGED_BINARIES}" | \
-	  tar -C "$(RUNTIME_DIR)" -zxvf - runsc && \
-	  chmod a+rx "$(RUNTIME_BIN)"
-endif
-.PHONY: $(RUNTIME_BIN) # Real file, but force rebuild.
+$(RUNTIME_BIN): $(RELEASE_ARTIFACTS)/$(ARCH)
+	@mkdir -p "$(RUNTIME_DIR)" && cp -af $^ $@
+.PHONY: $(RUNTIME_BIN) # Real file, but force recopy.
 
 # Configure helpers for below.
 configure_noreload = \
@@ -158,9 +163,8 @@ dev: $(RUNTIME_BIN) ## Installs a set of local runtimes. Requires sudo.
 	@$(call configure_noreload,$(RUNTIME),--net-raw)
 	@$(call configure_noreload,$(RUNTIME)-d,--net-raw --debug --strace --log-packets)
 	@$(call configure_noreload,$(RUNTIME)-p,--net-raw --profile)
-	@$(call configure_noreload,$(RUNTIME)-vfs2-d,--net-raw --debug --strace --log-packets --vfs2)
-	@$(call configure_noreload,$(RUNTIME)-vfs2-fuse-d,--net-raw --debug --strace --log-packets --vfs2 --fuse)
-	@$(call configure_noreload,$(RUNTIME)-vfs2-cgroup-d,--net-raw --debug --strace --log-packets --vfs2 --cgroupfs)
+	@$(call configure_noreload,$(RUNTIME)-fuse-d,--net-raw --debug --strace --log-packets --fuse)
+	@$(call configure_noreload,$(RUNTIME)-cgroup-d,--net-raw --debug --strace --log-packets --cgroupfs)
 	@$(call reload_docker)
 .PHONY: dev
 
@@ -188,14 +192,34 @@ debian: ## Builds the debian packages.
 .PHONY: debian
 
 smoke-tests: ## Runs a simple smoke test after building runsc.
-	@$(call run,//runsc,--alsologtostderr --network none --debug --TESTONLY-unsafe-nonroot=true --rootless do true)
+smoke-tests: smoke-basic-tests
+smoke-tests: smoke-race-tests
+smoke-tests: go-branch-tests
 .PHONY: smoke-tests
 
-smoke-race-tests: ## Runs a smoke test after build building runsc in race configuration.
+smoke-basic-tests: #~ label: :fire:
+	@$(call run,//runsc,--alsologtostderr --network none --debug --TESTONLY-unsafe-nonroot=true --rootless do true)
+.PHONY: smoke-basic-tests
+
+smoke-race-tests: #~ label: :fire:
 	@$(call run,$(RACE_FLAGS) //runsc:runsc-race,--alsologtostderr --network none --debug --TESTONLY-unsafe-nonroot=true --rootless do true)
 .PHONY: smoke-race-tests
 
-nogo-tests:
+go-branch-tests: #~ label: :golang:
+	@tools/go_branch.sh
+	@git checkout go && git clean -xf .
+	@go build ./...
+.PHONY: go-branch-tests
+
+source-tests: ## Runs all relevant source-based tests.
+source-tests: #~ label: :file_folder:
+source-tests: nogo-tests
+source-tests: unit-tests
+source-tests: container-tests
+source-tests: website-build
+.PHONY: source-tests
+
+nogo-tests: ## Perform a nogo analysis on all local sources.
 	@$(call test,--build_tag_filters=nogo --test_tag_filters=nogo //:all pkg/... tools/...)
 .PHONY: nogo-tests
 
@@ -210,41 +234,61 @@ container-tests: $(RUNTIME_BIN) ## Run all tests in runsc/container/...
 	@$(call test,--test_env=RUNTIME=$(RUNTIME_BIN) runsc/container/...)
 .PHONY: container-tests
 
-tests: ## Runs all unit tests and syscall tests.
-tests: unit-tests nogo-tests container-tests syscall-tests
-.PHONY: tests
-
 integration-tests: ## Run all standard integration tests.
-integration-tests: docker-tests overlay-tests hostnet-tests swgso-tests
-integration-tests: do-tests kvm-tests containerd-tests-min
+integration-tests: docker-tests
+integration-tests: overlay-tests
+integration-tests: hostnet-tests
+integration-tests: swgso-tests
+integration-tests: do-tests
+integration-tests: kvm-tests
+integration-tests: syscall-tests
+integration-tests: fsstress-tests
 .PHONY: integration-tests
 
 network-tests: ## Run all networking integration tests.
-network-tests: iptables-tests packetdrill-tests packetimpact-tests
+network-tests: iptables-tests
+network-tests: packetdrill-tests
+network-tests: packetimpact-tests
 .PHONY: network-tests
 
-syscall-tests: $(RUNTIME_BIN) ## Run all system call tests.
+syscall-tests: ## Run all system call tests.
+syscall-tests: #~ label: :toolbox:
+syscall-tests: $(RUNTIME_BIN)
 	@$(call test,--test_env=RUNTIME=$(RUNTIME_BIN) $(PARTITIONS) test/syscalls/... test/fuse/...)
 .PHONY: syscall-tests
 
-packetimpact-tests:
-	@$(call test,--jobs=HOST_CPUS*3 --local_test_jobs=HOST_CPUS*3 //test/packetimpact/tests:all_tests)
-.PHONY: packetimpact-tests
-
 %-runtime-tests: load-runtimes_% $(RUNTIME_BIN)
-	@$(call install_runtime,$(RUNTIME),) # Ensure flags are cleared.
+	@$(call install_runtime,$(RUNTIME),)
 	@$(call test_runtime,$(RUNTIME),--test_timeout=10800 //test/runtimes:$*)
 
-%-runtime-tests_vfs2: load-runtimes_% $(RUNTIME_BIN)
-	@$(call install_runtime,$(RUNTIME),--vfs2)
-	@$(call test_runtime,$(RUNTIME),--test_timeout=10800 //test/runtimes:$*)
+php7.3.6-runtime-tests: #~ label: :php:
+php7.3.6-runtime-tests: #~ parallelism: 20
+java11-runtime-tests: #~ label: :java:
+java11-runtime-tests: #~ parallelism: 60
+go1.12-runtime-tests: #~ label: :golang:
+go1.12-runtime-tests: #~ parallelism: 20
+nodejs12.4.0-runtime-tests: #~ label: :node:
+nodejs12.4.0-runtime-tests: #~ parallelism: 10
+python3.7.3-runtime-tests: #~ label: :python:
+python3.7.3-runtime-tests: #~ parallelism: 20
+.PHONY: php7.3.6-runtime-tests java11-runtime-tests go1.12-runtime-tests nodejs12.4.0-runtime-tests python3.7.3-runtime-tests
 
+runtime-tests: ## Run all default runtime tests.
+runtime-tests: php7.3.6-runtime-tests
+runtime-tests: java11-runtime-tests
+runtime-tests: go1.12-runtime-tests
+runtime-tests: nodejs12.4.0-runtime-tests
+runtime-tests: python3.7.3-runtime-tests
+.PHONY: runtime-tests
+
+do-tests: #~ label: :coffee:
 do-tests: $(RUNTIME_BIN)
 	@$(RUNTIME_BIN) --rootless do true
 	@$(RUNTIME_BIN) --rootless -network=none do true
 	@sudo $(RUNTIME_BIN) do true
 .PHONY: do-tests
 
+arm-qemu-smoke-test: #~ label: :fire:
 arm-qemu-smoke-test: BAZEL_OPTIONS=--config=cross-aarch64
 arm-qemu-smoke-test: $(RUNTIME_BIN) load-arm-qemu
 	export T=$$(mktemp -d --tmpdir release.XXXXXX); \
@@ -253,34 +297,34 @@ arm-qemu-smoke-test: $(RUNTIME_BIN) load-arm-qemu
 	docker run --rm -v $$T/bin/arm64/runsc:/workdir/initramfs/runsc gvisor.dev/images/arm-qemu
 .PHONY: arm-qemu-smoke-test
 
-simple-tests: unit-tests # Compatibility target.
-.PHONY: simple-tests
-
 # Standard integration targets.
 INTEGRATION_TARGETS := //test/image:image_test //test/e2e:integration_test
 
+docker-tests: #~ label: :docker:
 docker-tests: load-basic $(RUNTIME_BIN)
-	@$(call install_runtime,$(RUNTIME),) # Clear flags.
-	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS))
-	@$(call install_runtime,$(RUNTIME),--vfs2)
+	@$(call install_runtime,$(RUNTIME),)
 	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS))
 .PHONY: docker-tests
 
+overlay-tests: #~ label: :googles:
 overlay-tests: load-basic $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),--overlay)
 	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS))
 .PHONY: overlay-tests
 
+swgso-tests: #~ label: :satellite:
 swgso-tests: load-basic $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),--software-gso=true --gso=false)
 	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS))
 .PHONY: swgso-tests
 
+hostnet-tests: #~ label: :safety_pin:
 hostnet-tests: load-basic $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),--network=host)
 	@$(call test_runtime,$(RUNTIME),--test_env=CHECKPOINT=false  --test_env=HOSTNET=true $(INTEGRATION_TARGETS))
 .PHONY: hostnet-tests
 
+kvm-tests: #~ label: :person_in_lotus_position:
 kvm-tests: load-basic $(RUNTIME_BIN)
 	@(lsmod | grep -E '^(kvm_intel|kvm_amd)') || sudo modprobe kvm
 	@if ! test -w /dev/kvm; then sudo chmod a+rw /dev/kvm; fi
@@ -289,6 +333,7 @@ kvm-tests: load-basic $(RUNTIME_BIN)
 	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS))
 .PHONY: kvm-tests
 
+iptables-tests: #~ label: :table_tennis_paddle_and_ball:
 iptables-tests: load-iptables $(RUNTIME_BIN)
 	@sudo modprobe iptable_filter
 	@sudo modprobe ip6table_filter
@@ -300,43 +345,41 @@ iptables-tests: load-iptables $(RUNTIME_BIN)
 	@$(call test_runtime,$(RUNTIME),//test/iptables:iptables_test)
 .PHONY: iptables-tests
 
+packetimpact-tests: #~ label: :hammer:
+packetimpact-tests:
+	@$(call test,--jobs=HOST_CPUS*3 --local_test_jobs=HOST_CPUS*3 //test/packetimpact/tests:all_tests)
+.PHONY: packetimpact-tests
+
+packetdrill-tests: #~ label: :construction_worker:
 packetdrill-tests: load-packetdrill $(RUNTIME_BIN)
-	@$(call install_runtime,$(RUNTIME),) # Clear flags.
+	@$(call install_runtime,$(RUNTIME),)
 	@$(call test_runtime,$(RUNTIME),//test/packetdrill:all_tests)
 .PHONY: packetdrill-tests
 
-fsstress-test: load-basic $(RUNTIME_BIN)
-	@$(call install_runtime,$(RUNTIME),--vfs2)
+fsstress-tests: #~ label: :weight_lifter:
+fsstress-tests: load-basic $(RUNTIME_BIN)
+	@$(call install_runtime,$(RUNTIME),)
 	@$(call test_runtime,$(RUNTIME),//test/fsstress:fsstress_test)
 .PHONY: fsstress-test
 
 # Specific containerd version tests.
 containerd-test-%: load-basic_alpine load-basic_python load-basic_busybox load-basic_resolv load-basic_httpd load-basic_ubuntu $(RUNTIME_BIN)
-	@$(call install_runtime,$(RUNTIME),) # Clear flags.
+	@$(call install_runtime,$(RUNTIME),)
 	@sudo tools/install_containerd.sh $*
-ifeq (,$(STAGED_BINARIES))
-	@$(call sudocopy,//shim:containerd-shim-runsc-v1,"$$(dirname $$(which containerd))")
-else
-	gsutil cat "$(STAGED_BINARIES)" | \
-		sudo tar -C "$$(dirname $$(which containerd))" -zxvf - containerd-shim-runsc-v1
-endif
+	@sudo cp -af $(RELEASE_ARTIFACTS)/$(ARCH)/containerd-shim-runsc-v1 $$(dirname $$(which containerd))
 	@$(call sudo,test/root:root_test,--runtime=$(RUNTIME) -test.v)
 
-ifeq ($(CGROUPV2),false)
-containerd-tests-min: containerd-test-1.3.9
-else
-containerd-tests-min: containerd-test-1.4.3
-endif
-
 # The shim builds with containerd 1.3.9 and it's not backward compatible. Test
-# with 1.3.9 and newer versions.
-# When run under cgroupv2 environment, skip 1.3.9 as it does not support cgroupv2
+# with 1.3.9 and newer versions. When run under cgroupv2 environment, skip
+# 1.3.9 as it does not support cgroupv2.
 containerd-tests: ## Runs all supported containerd version tests.
+containerd-tests: #~ label: :docker:
 ifeq ($(CGROUPV2),false)
 containerd-tests: containerd-test-1.3.9
 endif
 containerd-tests: containerd-test-1.4.3
 containerd-tests: containerd-test-1.5.4
+.PHONY: containerd-tests
 
 ##
 ## Benchmarks.
@@ -411,7 +454,9 @@ WEBSITE_SERVICE := gvisordev
 WEBSITE_PROJECT := gvisordev
 WEBSITE_REGION  := us-central1
 
-website-build: load-jekyll ## Build the site image locally.
+website-build: ## Build the site image locally.
+website-build: #~ label: :world_map:
+website-build: load-jekyll
 	@$(call run,//website:website,$(WEBSITE_IMAGE))
 .PHONY: website-build
 
@@ -484,13 +529,16 @@ $(RELEASE_KEY):
 	gpg --batch $(GPG_TEST_OPTIONS) --export-secret-keys --no-default-keyring --secret-keyring $$T > $@; \
 	rc=$$?; rm -f $$T $$C; exit $$rc
 
-$(RELEASE_ARTIFACTS)/%:
+$(RELEASE_ARTIFACTS)/%: $(shell find . -type f $(pabsubst %,-prune=%,$(BUILD_ROOTS)))
 	@mkdir -p $@
 	@$(call copy,//runsc:runsc,$@)
 	@$(call copy,//shim:containerd-shim-runsc-v1,$@)
 	@$(call copy,//debian:debian,$@)
 
-release: $(RELEASE_KEY) $(RELEASE_ARTIFACTS)/$(ARCH)
+release-artifacts: $(RELEASE_ARTIFACTS)/$(ARCH)
+.PHONY: release-artifacts
+
+release: $(RELEASE_KEY) release-artifacts
 	@mkdir -p $(RELEASE_ROOT)
 	@NIGHTLY=$(RELEASE_NIGHTLY) tools/make_release.sh $(RELEASE_KEY) $(RELEASE_ROOT) $$(find $(RELEASE_ARTIFACTS) -type f)
 .PHONY: release
@@ -498,3 +546,38 @@ release: $(RELEASE_KEY) $(RELEASE_ARTIFACTS)/$(ARCH)
 tag: ## Creates and pushes a release tag.
 	@tools/tag_release.sh "$(RELEASE_COMMIT)" "$(RELEASE_NAME)" "$(RELEASE_NOTES)"
 .PHONY: tag
+
+##
+## Netstack-specific tests.
+##
+NETSTACK_PACKAGES := ./pkg/tcpip ./pkg/tcpip/adapters/gonet ./pkg/tcpip/buffer ./pkg/tcpip/header
+NETSTACK_PACKAGES += ./pkg/tcpip/link/channel ./pkg/tcpip/network/ipv4 ./pkg/tcpip/network/ipv6 ./pkg/tcpip/stack
+NETSTACK_PACKAGES += ./pkg/tcpip/transport/icmp ./pkg/tcpip/transport/tcp ./pkg/tcpip/transport/udp ./pkg/waiter
+
+netstack-tests: ## Run all netstack tests.
+netstack-tests: netstack-mac-arm64-tests
+netstack-tests: netstack-windows-amd64-tests
+netstack-tests: netstack-freebsd-amd64-tests
+netstack-tests: netstack-openbsd-amd64-tests
+netstack-tests: netstack-linux-mips-tests
+
+netstack-%-amd64-tests: GOARCH=amd64
+netstack-%-arm64-tests: GOARCH=arm64
+netstack-%-mips-tests:  GOARCH=mips
+
+netstack-mac-%-tests:     GOOS=mac
+netstack-windows-%-tests: GOOS=windows
+netstack-freebsd-%-tests: GOOS=freebsd
+netstack-openbsd-%-tests: GOOS=openbsd
+netstack-linux-%-tests:   GOOS=mips
+
+netstack-mac-arm64-tests:     netstack-run-tests #~ label: :mac:
+netstack-windows-amd64-tests: netstack-run-tests #~ label: :windows:
+netstack-freebsd-amd64-tests: netstack-run-tests #~ label: :freebsd:
+netstack-openbsd-amd64-tests: netstack-run-tests #~ label: :openbsd:
+netstack-linux-mips-tests:    netstack-run-tests #~ label: :older_man:
+
+netstack-run-tests:
+	@tools/go_branch.sh
+	@git checkout go && git clean -xf .
+	@GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(NETSTACK_PACKAGES)

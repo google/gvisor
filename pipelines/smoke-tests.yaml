@@ -1,0 +1,12 @@
+_templates:
+  common: &common
+    # Smoke tests should be able to finish in 10 minutes. If they are not, it's
+    # likely that something is wrong and they should be restarted.
+    timeout_in_minutes: 10
+    retry:
+      automatic:
+        - exit_status: -1
+          limit: 10
+        - exit_status: "*"
+          limit: 2
+steps:

@@ -1,0 +1,9 @@
+# This pipeline handles ARM64 testing. For now, this is mostly manual and
+# emulated as there are no KVM-capable ARM64 build agents. When these are
+# available, this pipeline can be made into a version similar to AMD64.
+
+steps:
+  - label: ":docker: Images"
+    command: make ARCH=aarch64 load-all-images
+  - label: ":mechanical_arm: ARM"
+    command: make arm-qemu-smoke-test

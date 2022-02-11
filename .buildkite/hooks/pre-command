@@ -37,5 +37,8 @@ else
   export BENCHMARKS_OFFICIAL=false
 fi
 
+# Download any prebuilt artifacts in this pipeline.
+buildkite-agent artifacts download "artifacts/**/*"
+
 # Clear existing profiles.
 sudo rm -rf /tmp/profile
