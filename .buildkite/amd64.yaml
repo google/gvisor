@@ -1,5 +1,4 @@
 steps:
   - label: ":docker: Images (x86_64)"
     command: make ARCH=x86_64 load-all-images
-  - label: ":pipeline: Upload pipeline"
-    command: buildkite-agent pipeline upload pipelines/test.yaml
+  - command: buildkite-agent pipeline upload pipelines/test.yaml
