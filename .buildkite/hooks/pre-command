@@ -38,7 +38,7 @@ else
 fi
 
 # Download any prebuilt artifacts in this pipeline.
-buildkite-agent artifacts download "artifacts/**/*"
+buildkite-agent artifact download "artifacts/**/*"
 
 # Clear existing profiles.
 sudo rm -rf /tmp/profile

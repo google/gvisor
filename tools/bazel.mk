@@ -156,7 +156,7 @@ bazel-alias: ## Emits an alias that can be used within the shell.
 
 bazel-image: load-default ## Ensures that the local builder exists.
 	@$(call header,DOCKER BUILD)
-	@docker rm -f $(BUILDER_NAME) 2>/dev/null || true
+	@docker rm -f $(BUILDER_NAME) 2>/dev/null >&2 || true
 	@docker run --user 0:0 --entrypoint "" --name $(BUILDER_NAME) gvisor.dev/images/default \
 	  bash -c "$(GROUPADD_DOCKER) $(USERADD_DOCKER) if test -e /dev/kvm; then chmod a+rw /dev/kvm; fi" >&2
 	@docker commit $(BUILDER_NAME) gvisor.dev/images/builder >&2
@@ -165,7 +165,7 @@ bazel-image: load-default ## Ensures that the local builder exists.
 ifneq (true,$(shell $(wrapper echo true)))
 bazel-server: bazel-image ## Ensures that the server exists.
 	@$(call header,DOCKER RUN)
-	@docker rm -f $(DOCKER_NAME) 2>/dev/null || true
+	@docker rm -f $(DOCKER_NAME) 2>/dev/null >&2 || true
 	@mkdir -p $(BAZEL_CACHE)
 	@mkdir -p $(GCLOUD_CONFIG)
 	@docker run -d --name $(DOCKER_NAME) \
@@ -173,7 +173,7 @@ bazel-server: bazel-image ## Ensures that the server exists.
 	  --workdir "$(CURDIR)" \
 	  $(DOCKER_RUN_OPTIONS) \
 	  gvisor.dev/images/builder \
-	  bash -c "set -x; tail -f --pid=\$$($(BAZEL) info server_pid) /dev/null"
+	  bash -c "set -x; tail -f --pid=\$$($(BAZEL) info server_pid) /dev/null" >&2
 else
 bazel-server:
 	@
