@@ -22,12 +22,10 @@ import (
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
-func init() {
-	RegisterFlags()
-}
-
 func TestDefault(t *testing.T) {
-	c, err := NewFromFlags()
+	testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
+	RegisterFlags(testFlags)
+	c, err := NewFromFlags(testFlags)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,46 +40,26 @@ func TestDefault(t *testing.T) {
 	}
 }
 
-func setDefault(name string) error {
-	fl := flag.CommandLine.Lookup(name)
-	return fl.Value.Set(fl.DefValue)
-}
-
 func TestFromFlags(t *testing.T) {
-	if err := flag.CommandLine.Lookup("root").Value.Set("some-path"); err != nil {
+	testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
+	RegisterFlags(testFlags)
+	if err := testFlags.Lookup("root").Value.Set("some-path"); err != nil {
 		t.Errorf("Flag set: %v", err)
 	}
-	if err := flag.CommandLine.Lookup("debug").Value.Set("true"); err != nil {
+	if err := testFlags.Lookup("debug").Value.Set("true"); err != nil {
 		t.Errorf("Flag set: %v", err)
 	}
-	if err := flag.CommandLine.Lookup("num-network-channels").Value.Set("123"); err != nil {
+	if err := testFlags.Lookup("num-network-channels").Value.Set("123"); err != nil {
 		t.Errorf("Flag set: %v", err)
 	}
-	if err := flag.CommandLine.Lookup("network").Value.Set("none"); err != nil {
+	if err := testFlags.Lookup("network").Value.Set("none"); err != nil {
 		t.Errorf("Flag set: %v", err)
 	}
-	if err := flag.CommandLine.Lookup("controls").Value.Set("EVENTS,FS"); err != nil {
+	if err := testFlags.Lookup("controls").Value.Set("EVENTS,FS"); err != nil {
 		t.Errorf("Flag set: %v", err)
 	}
-	defer func() {
-		if err := setDefault("root"); err != nil {
-			t.Errorf("Flag set: %v", err)
-		}
-		if err := setDefault("debug"); err != nil {
-			t.Errorf("Flag set: %v", err)
-		}
-		if err := setDefault("num-network-channels"); err != nil {
-			t.Errorf("Flag set: %v", err)
-		}
-		if err := setDefault("network"); err != nil {
-			t.Errorf("Flag set: %v", err)
-		}
-		if err := setDefault("controls"); err != nil {
-			t.Errorf("Flag set: %v", err)
-		}
-	}()
 
-	c, err := NewFromFlags()
+	c, err := NewFromFlags(testFlags)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +84,9 @@ func TestFromFlags(t *testing.T) {
 }
 
 func TestToFlags(t *testing.T) {
-	c, err := NewFromFlags()
+	testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
+	RegisterFlags(testFlags)
+	c, err := NewFromFlags(testFlags)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,8 +155,9 @@ func TestInvalidFlags(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			defer setDefault(tc.name)
-			if err := flag.CommandLine.Lookup(tc.name).Value.Set("invalid"); err == nil || !strings.Contains(err.Error(), tc.error) {
+			testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
+			RegisterFlags(testFlags)
+			if err := testFlags.Lookup(tc.name).Value.Set("invalid"); err == nil || !strings.Contains(err.Error(), tc.error) {
 				t.Errorf("flag.Value.Set(invalid) wrong error reported: %v", err)
 			}
 		})
@@ -206,13 +187,14 @@ func TestValidationFail(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
+			RegisterFlags(testFlags)
 			for name, val := range tc.flags {
-				defer setDefault(name)
-				if err := flag.CommandLine.Lookup(name).Value.Set(val); err != nil {
+				if err := testFlags.Lookup(name).Value.Set(val); err != nil {
 					t.Errorf("%s=%q: %v", name, val, err)
 				}
 			}
-			if _, err := NewFromFlags(); err == nil || !strings.Contains(err.Error(), tc.error) {
+			if _, err := NewFromFlags(testFlags); err == nil || !strings.Contains(err.Error(), tc.error) {
 				t.Errorf("NewFromFlags() wrong error reported: %v", err)
 			}
 		})
@@ -220,7 +202,9 @@ func TestValidationFail(t *testing.T) {
 }
 
 func TestOverride(t *testing.T) {
-	c, err := NewFromFlags()
+	testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
+	RegisterFlags(testFlags)
+	c, err := NewFromFlags(testFlags)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,10 +212,9 @@ func TestOverride(t *testing.T) {
 
 	t.Run("string", func(t *testing.T) {
 		c.RootDir = "foobar"
-		if err := c.Override("root", "bar"); err != nil {
+		if err := c.Override(testFlags, "root", "bar"); err != nil {
 			t.Fatalf("Override(root, bar) failed: %v", err)
 		}
-		defer setDefault("root")
 		if c.RootDir != "bar" {
 			t.Errorf("Override(root, bar) didn't work: %+v", c)
 		}
@@ -239,10 +222,9 @@ func TestOverride(t *testing.T) {
 
 	t.Run("bool", func(t *testing.T) {
 		c.Debug = true
-		if err := c.Override("debug", "false"); err != nil {
+		if err := c.Override(testFlags, "debug", "false"); err != nil {
 			t.Fatalf("Override(debug, false) failed: %v", err)
 		}
-		defer setDefault("debug")
 		if c.Debug {
 			t.Errorf("Override(debug, false) didn't work: %+v", c)
 		}
@@ -250,10 +232,9 @@ func TestOverride(t *testing.T) {
 
 	t.Run("enum", func(t *testing.T) {
 		c.FileAccess = FileAccessShared
-		if err := c.Override("file-access", "exclusive"); err != nil {
+		if err := c.Override(testFlags, "file-access", "exclusive"); err != nil {
 			t.Fatalf("Override(file-access, exclusive) failed: %v", err)
 		}
-		defer setDefault("file-access")
 		if c.FileAccess != FileAccessExclusive {
 			t.Errorf("Override(file-access, exclusive) didn't work: %+v", c)
 		}
@@ -261,18 +242,22 @@ func TestOverride(t *testing.T) {
 }
 
 func TestOverrideDisabled(t *testing.T) {
-	c, err := NewFromFlags()
+	testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
+	RegisterFlags(testFlags)
+	c, err := NewFromFlags(testFlags)
 	if err != nil {
 		t.Fatal(err)
 	}
 	const errMsg = "flag override disabled"
-	if err := c.Override("root", "path"); err == nil || !strings.Contains(err.Error(), errMsg) {
+	if err := c.Override(testFlags, "root", "path"); err == nil || !strings.Contains(err.Error(), errMsg) {
 		t.Errorf("Override() wrong error: %v", err)
 	}
 }
 
 func TestOverrideError(t *testing.T) {
-	c, err := NewFromFlags()
+	testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
+	RegisterFlags(testFlags)
+	c, err := NewFromFlags(testFlags)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,7 +284,7 @@ func TestOverrideError(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := c.Override(tc.name, tc.value); err == nil || !strings.Contains(err.Error(), tc.error) {
+			if err := c.Override(testFlags, tc.name, tc.value); err == nil || !strings.Contains(err.Error(), tc.error) {
 				t.Errorf("Override(%q, %q) wrong error: %v", tc.name, tc.value, err)
 			}
 		})
@@ -307,7 +292,9 @@ func TestOverrideError(t *testing.T) {
 }
 
 func TestOverrideAllowlist(t *testing.T) {
-	c, err := NewFromFlags()
+	testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
+	RegisterFlags(testFlags)
+	c, err := NewFromFlags(testFlags)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,7 +338,7 @@ func TestOverrideAllowlist(t *testing.T) {
 		},
 	} {
 		t.Run(tc.flag, func(t *testing.T) {
-			err := c.Override(tc.flag, tc.value)
+			err := c.Override(testFlags, tc.flag, tc.value)
 			if len(tc.error) == 0 {
 				if err != nil {
 					t.Errorf("Unexpected error: %v", err)

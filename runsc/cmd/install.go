@@ -24,6 +24,8 @@ import (
 	"path"
 
 	"github.com/google/subcommands"
+	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
@@ -63,6 +65,26 @@ func (i *Install) SetFlags(fs *flag.FlagSet) {
 func (i *Install) Execute(_ context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
 	// Grab the name and arguments.
 	runtimeArgs := f.Args()
+	testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
+	config.RegisterFlags(testFlags)
+	testFlags.Parse(runtimeArgs)
+	conf, err := config.NewFromFlags(testFlags)
+	if err != nil {
+		log.Fatalf("invalid runtime arguments: %v", err)
+	}
+
+	// Check the platform.
+	p, err := platform.Lookup(conf.Platform)
+	if err != nil {
+		log.Fatalf("invalid platform: %v", err)
+	}
+	deviceFile, err := p.OpenDevice()
+	if err != nil {
+		log.Printf("WARNING: unable to open platform, runsc may fail to start: %v", err)
+	}
+	if deviceFile != nil {
+		deviceFile.Close()
+	}
 
 	// Extract the executable.
 	path, err := os.Executable()

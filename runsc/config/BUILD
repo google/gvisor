@@ -13,7 +13,6 @@ go_library(
         "//pkg/refs",
         "//pkg/sentry/control:control_go_proto",
         "//pkg/sentry/watchdog",
-        "//pkg/sync",
         "//runsc/flag",
     ],
 )

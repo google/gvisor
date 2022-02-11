@@ -17,6 +17,7 @@ go_library(
         "//pkg/log",
         "//pkg/sentry/kernel/auth",
         "//runsc/config",
+        "//runsc/flag",
         "@com_github_cenkalti_backoff//:go_default_library",
         "@com_github_mohae_deepcopy//:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",

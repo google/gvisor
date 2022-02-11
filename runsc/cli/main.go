@@ -100,7 +100,8 @@ func Main(version string) {
 	subcommands.Register(new(cmd.Boot), internalGroup)
 	subcommands.Register(new(cmd.Gofer), internalGroup)
 
-	config.RegisterFlags()
+	// Register with the main command line.
+	config.RegisterFlags(flag.CommandLine)
 
 	// All subcommands must be registered before flag parsing.
 	flag.Parse()
@@ -114,7 +115,7 @@ func Main(version string) {
 	}
 
 	// Create a new Config from the flags.
-	conf, err := config.NewFromFlags()
+	conf, err := config.NewFromFlags(flag.CommandLine)
 	if err != nil {
 		cmd.Fatalf(err.Error())
 	}
