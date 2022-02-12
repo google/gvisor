@@ -1,8 +1,10 @@
 steps:
-  - command: make pipeline-smoke-tests | buildkite-agent pipeline upload
+  - label: ":pipeline: Smoke tests"
+    command: make pipeline-smoke-tests | buildkite-agent pipeline upload
   - wait
 
-  - command: make pipeline-source-tests | buildkite-agent pipeline upload
+  - label: ":pipeline: Source tests"
+    command: make pipeline-source-tests | buildkite-agent pipeline upload
   - wait
 
   - label: ":ship: Artifacts"
@@ -14,12 +16,19 @@ steps:
       - buildkite-agent upload "artifacts/**/*"
   - wait
 
-  - command: make pipeline-integration-tests | buildkite-agent pipeline upload
+  - label: ":pipeline: Integration tests"
+    command: make pipeline-integration-tests | buildkite-agent pipeline upload
+
   # Include agents from both cgroupv1 and cgroupv2 queues into the mix. Note
   # that while the queue is cgroupv1 or cgroupv2, these agents can also execute
   # jobs in the default queue.
-  - command: '(echo -e "agents:\n  queue: cgroupv1" && make pipeline-containerd-tests CGROUPv2=false) | buildkite-agent pipeline upload'
-  - command: '(echo -e "agents:\n  queue: cgroupv2" && make pipeline-containerd-tests CGROUPV2=true)  | buildkite-agent pipeline upload'
-  - command: make pipeline-network-tests | buildkite-agent pipeline upload
-  - command: make pipeline-runtime-tests | buildkite-agent pipeline upload
-  - command: make pipeline-benchmarks | buildkite-agent pipeline upload
+  - label: ":pipeline: Containerd tests (cgroupv1)"
+    command: '(echo -e "agents:\n  queue: cgroupv1" && make pipeline-containerd-tests CGROUPv2=false) | buildkite-agent pipeline upload'
+  - label: ":pipeline: Containerd tests (cgroupv2)"
+    command: '(echo -e "agents:\n  queue: cgroupv2" && make pipeline-containerd-tests CGROUPV2=true)  | buildkite-agent pipeline upload'
+  - label: ":pipeline: Network tests"
+    command: make pipeline-network-tests | buildkite-agent pipeline upload
+  - label: ":pipeline: Runtime tests"
+    command: make pipeline-runtime-tests | buildkite-agent pipeline upload
+  - label: ":pipeline: Benchmarks"
+    command: make pipeline-benchmarks | buildkite-agent pipeline upload

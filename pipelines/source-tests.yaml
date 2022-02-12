@@ -13,4 +13,5 @@ steps:
     label: ":world_map: Build everything"
     command: "make build OPTIONS=--build_tag_filters=-nogo TARGETS=//..."
   - <<: *common
+    label: ":pipeline" Netstack tests"
     command: make pipeline-netstack-tests | buildkite-agent pipeload upload

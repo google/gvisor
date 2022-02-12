@@ -61,7 +61,7 @@ pipeline-%: ## Constructs a pipeline for the given target.
 	cat "pipelines/$*.yaml" && \
 	for target in $$($(MAKE) -Bnp | grep --no-filename -E '^$*: ' | cut -d: -f2-); do \
 		echo "  - <<: *common" && \
-		echo "    command: \"make $$target\"" && \
+		echo "    command: \"echo make $$target\"" && \
 		(grep --no-filename -E "^$$target:.*#~ " $(MAKEFILE_LIST) || \
 		 grep --no-filename -E "^$*:.*#~ " $(MAKEFILE_LIST)) | \
 		 awk 'BEGIN { FS = "#~ " } ; { print "    " $$2 }' | sed -e "s/label: \(.*\)/label: \"\1$$target\"/"; \
@@ -193,7 +193,6 @@ debian: ## Builds the debian packages.
 
 smoke-tests: ## Runs a simple smoke test after building runsc.
 smoke-tests: smoke-basic-tests
-smoke-tests: smoke-race-tests
 smoke-tests: go-branch-tests
 .PHONY: smoke-tests
 
@@ -215,6 +214,7 @@ source-tests: ## Runs all relevant source-based tests.
 source-tests: #~ label: :file_folder:
 source-tests: nogo-tests
 source-tests: unit-tests
+source-tests: smoke-race-tests
 source-tests: container-tests
 source-tests: website-build
 .PHONY: source-tests

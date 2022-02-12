@@ -5,5 +5,5 @@
 steps:
   - label: ":docker: Images"
     command: make ARCH=aarch64 load-all-images
-  - label: ":mechanical_arm: ARM"
+  - label: ":mechanical_arm: Smoke test"
     command: make arm-qemu-smoke-test
