@@ -15,6 +15,7 @@
 package lisafs
 
 import (
+	"fmt"
 	"math"
 	"runtime"
 
@@ -78,6 +79,11 @@ func (ch *channel) SndRcvMessage(m MID, payloadLen uint32, wantFDs uint8) (MID, 
 	}
 
 	return ch.rcvMsg(rcvDataLen)
+}
+
+// String implements fmt.Stringer.String.
+func (ch *channel) String() string {
+	return fmt.Sprintf("channel %p", ch)
 }
 
 func (ch *channel) shutdown() {

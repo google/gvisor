@@ -15,6 +15,7 @@
 package lisafs
 
 import (
+	"fmt"
 	"math/rand"
 
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
@@ -44,6 +45,11 @@ func (m *MsgSimple) Randomize() {
 type MsgDynamic struct {
 	N   primitive.Uint32
 	Arr []MsgSimple
+}
+
+// String implements fmt.Stringer.String.
+func (m *MsgDynamic) String() string {
+	return fmt.Sprintf("MsgDynamic{N: %d, Arr: %v}", m.N, m.Arr)
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -96,6 +102,11 @@ func (m *MsgDynamic) Randomize(arrLen int) {
 type P9Version struct {
 	MSize   primitive.Uint32
 	Version string
+}
+
+// String implements fmt.Stringer.String.
+func (v *P9Version) String() string {
+	return fmt.Sprintf("P9Version{MSize: %d, Version: %s}", v.MSize, v.Version)
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.

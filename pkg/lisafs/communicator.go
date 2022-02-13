@@ -14,11 +14,17 @@
 
 package lisafs
 
-import "golang.org/x/sys/unix"
+import (
+	"fmt"
+
+	"golang.org/x/sys/unix"
+)
 
 // Communicator is a server side utility which represents exactly how the
 // server is communicating with the client.
 type Communicator interface {
+	fmt.Stringer
+
 	// PayloadBuf returns a slice to the payload section of its internal buffer
 	// where the message can be marshalled. The handlers should use this to
 	// populate the payload buffer with the message.
