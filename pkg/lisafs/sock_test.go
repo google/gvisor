@@ -195,7 +195,7 @@ func TestSndRcvMessageNoPayload(t *testing.T) {
 	})
 }
 
-func checkMessageReceive(t *testing.T, comm *sockCommunicator, wantM MID, wantMsg interface{}) {
+func checkMessageReceive(t *testing.T, comm *sockCommunicator, wantM MID, wantMsg marshal.Marshallable) {
 	gotM, payloadLen, err := comm.rcvMsg(0)
 	if err != nil {
 		t.Fatalf("readMessageFrom failed: %v", err)
