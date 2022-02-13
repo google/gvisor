@@ -15,6 +15,7 @@
 package lisafs
 
 import (
+	"fmt"
 	"io"
 
 	"golang.org/x/sys/unix"
@@ -87,6 +88,11 @@ func (s *sockCommunicator) SndRcvMessage(m MID, payloadLen uint32, wantFDs uint8
 	}
 
 	return s.rcvMsg(wantFDs)
+}
+
+// String implements fmt.Stringer.String.
+func (s *sockCommunicator) String() string {
+	return fmt.Sprintf("sockComm %d", s.sock.FD())
 }
 
 // sndPrepopulatedMsg assumes that s.buf has already been populated with

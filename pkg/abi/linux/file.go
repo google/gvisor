@@ -271,6 +271,12 @@ type Statx struct {
 	DevMinor       uint32
 }
 
+// String implements fmt.Stringer.String.
+func (s *Statx) String() string {
+	return fmt.Sprintf("Statx{Mask: %d, Blksize: %d, Attributes: %d, Nlink: %d, UID: %d, GID: %d, Mode: %d, Ino: %d, Size: %d, Blocks: %d, AttributesMask: %d, Atime: %d, Btime: %d, Ctime: %d, Mtime: %d, RdevMajor: %d, RdevMinor: %d, DevMajor: %d, DevMinor: %d}",
+		s.Mask, s.Blksize, s.Attributes, s.Nlink, s.UID, s.GID, s.Mode, s.Ino, s.Size, s.Blocks, s.AttributesMask, s.Atime, s.Btime, s.Ctime, s.Mtime, s.RdevMajor, s.RdevMinor, s.DevMajor, s.DevMinor)
+}
+
 // SizeOfStatx is the size of a Statx struct.
 var SizeOfStatx = (*Statx)(nil).SizeBytes()
 

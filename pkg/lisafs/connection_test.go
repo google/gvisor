@@ -118,8 +118,9 @@ func TestStartUp(t *testing.T) {
 
 func TestUnsupportedMessage(t *testing.T) {
 	unsupportedM := lisafs.MID(len(handlers))
+	var em lisafs.EmptyMessage
 	runServerClient(t, func(c *lisafs.Client) {
-		if err := c.SndRcvMessage(unsupportedM, 0, lisafs.NoopMarshal, lisafs.NoopUnmarshal, nil); err != unix.EOPNOTSUPP {
+		if err := c.SndRcvMessage(unsupportedM, uint32(em.SizeBytes()), em.MarshalBytes, em.CheckedUnmarshal, nil, em.String, em.String); err != unix.EOPNOTSUPP {
 			t.Errorf("expected EOPNOTSUPP but got err: %v", err)
 		}
 	})
@@ -154,7 +155,7 @@ func TestStress(t *testing.T) {
 					req.Randomize(100)
 
 					var resp lisafs.MsgDynamic
-					if err := c.SndRcvMessage(dynamicMsgID, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, nil); err != nil {
+					if err := c.SndRcvMessage(dynamicMsgID, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, nil, req.String, resp.String); err != nil {
 						t.Errorf("SndRcvMessage: received unexpected error %v", err)
 						return
 					}
@@ -198,7 +199,7 @@ func BenchmarkSendRecv(b *testing.B) {
 	var recvV lisafs.P9Version
 	runServerClient(b, func(c *lisafs.Client) {
 		for i := 0; i < b.N; i++ {
-			if err := c.SndRcvMessage(versionMsgID, uint32(sendV.SizeBytes()), sendV.MarshalBytes, recvV.CheckedUnmarshal, nil); err != nil {
+			if err := c.SndRcvMessage(versionMsgID, uint32(sendV.SizeBytes()), sendV.MarshalBytes, recvV.CheckedUnmarshal, nil, sendV.String, recvV.String); err != nil {
 				b.Fatalf("unexpected error occurred: %v", err)
 			}
 		}
