@@ -392,6 +392,11 @@ func hostInetFilters() seccomp.SyscallRules {
 			{
 				seccomp.MatchAny{},
 				seccomp.EqualTo(unix.SOL_IPV6),
+				seccomp.EqualTo(unix.IPV6_RECVPKTINFO),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SOL_IPV6),
 				seccomp.EqualTo(unix.IPV6_RECVERR),
 			},
 			{
@@ -545,6 +550,13 @@ func hostInetFilters() seccomp.SyscallRules {
 				seccomp.MatchAny{},
 				seccomp.EqualTo(unix.SOL_IP),
 				seccomp.EqualTo(unix.IP_PKTINFO),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(4),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SOL_IPV6),
+				seccomp.EqualTo(unix.IPV6_RECVPKTINFO),
 				seccomp.MatchAny{},
 				seccomp.EqualTo(4),
 			},

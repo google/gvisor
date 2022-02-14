@@ -24,6 +24,7 @@
 namespace gvisor {
 namespace testing {
 
+using ::testing::IsNull;
 using ::testing::NotNull;
 
 uint32_t IPFromInetSockaddr(const struct sockaddr* addr) {
@@ -270,10 +271,11 @@ void RecvCmsg(int sock, int cmsg_level, int cmsg_type, char buf[],
   ASSERT_EQ(msg.msg_controllen, CMSG_SPACE(sizeof(*out_cmsg_value)));
 
   struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
-  ASSERT_NE(cmsg, nullptr);
+  ASSERT_THAT(cmsg, NotNull());
   ASSERT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(*out_cmsg_value)));
   ASSERT_EQ(cmsg->cmsg_level, cmsg_level);
   ASSERT_EQ(cmsg->cmsg_type, cmsg_type);
+  ASSERT_THAT(CMSG_NXTHDR(&msg, cmsg), IsNull());
 
   std::copy_n(CMSG_DATA(cmsg), sizeof(*out_cmsg_value),
               reinterpret_cast<uint8_t*>(out_cmsg_value));
@@ -323,6 +325,16 @@ void RecvTClass(int sock, char buf[], size_t* buf_size, int* out_tclass) {
 
 void SendTClass(int sock, char buf[], size_t buf_size, int tclass) {
   SendCmsg(sock, SOL_IPV6, IPV6_TCLASS, buf, buf_size, tclass);
+}
+
+void RecvPktInfo(int sock, char buf[], size_t* buf_size,
+                 in_pktinfo* out_pktinfo) {
+  RecvCmsg(sock, SOL_IP, IP_PKTINFO, buf, buf_size, out_pktinfo);
+}
+
+void RecvIPv6PktInfo(int sock, char buf[], size_t* buf_size,
+                     in6_pktinfo* out_pktinfo) {
+  RecvCmsg(sock, SOL_IPV6, IPV6_PKTINFO, buf, buf_size, out_pktinfo);
 }
 
 }  // namespace testing

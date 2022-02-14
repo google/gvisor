@@ -320,34 +320,65 @@ func buildEchoReplyPacket(payload []byte, flow context.TestFlow) (buffer.View, b
 func TestReceiveControlMessages(t *testing.T) {
 	var payload = [...]byte{0, 1, 2, 3, 4, 5}
 
-	for _, test := range []struct {
-		name             string
-		optionProtocol   tcpip.NetworkProtocolNumber
-		getReceiveOption func(tcpip.Endpoint) bool
-		setReceiveOption func(tcpip.Endpoint, bool)
-		presenceChecker  checker.ControlMessagesChecker
-		absenceChecker   checker.ControlMessagesChecker
-	}{
-		{
-			name:             "TOS",
-			optionProtocol:   header.IPv4ProtocolNumber,
-			getReceiveOption: func(ep tcpip.Endpoint) bool { return ep.SocketOptions().GetReceiveTOS() },
-			setReceiveOption: func(ep tcpip.Endpoint, value bool) { ep.SocketOptions().SetReceiveTOS(value) },
-			presenceChecker:  checker.ReceiveTOS(testTOS),
-			absenceChecker:   checker.NoTOSReceived(),
-		},
-		{
-			name:             "TClass",
-			optionProtocol:   header.IPv6ProtocolNumber,
-			getReceiveOption: func(ep tcpip.Endpoint) bool { return ep.SocketOptions().GetReceiveTClass() },
-			setReceiveOption: func(ep tcpip.Endpoint, value bool) { ep.SocketOptions().SetReceiveTClass(value) },
-			presenceChecker:  checker.ReceiveTClass(testTOS),
-			absenceChecker:   checker.NoTClassReceived(),
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			for _, flow := range []context.TestFlow{context.UnicastV4, context.UnicastV6, context.UnicastV6Only, context.MulticastV4, context.MulticastV6, context.MulticastV6Only, context.Broadcast} {
-				t.Run(flow.String(), func(t *testing.T) {
+	for _, flow := range []context.TestFlow{context.UnicastV4, context.UnicastV6, context.UnicastV6Only, context.MulticastV4, context.MulticastV6, context.MulticastV6Only, context.Broadcast} {
+		t.Run(flow.String(), func(t *testing.T) {
+			for _, test := range []struct {
+				name             string
+				optionProtocol   tcpip.NetworkProtocolNumber
+				getReceiveOption func(tcpip.Endpoint) bool
+				setReceiveOption func(tcpip.Endpoint, bool)
+				presenceChecker  checker.ControlMessagesChecker
+				absenceChecker   checker.ControlMessagesChecker
+			}{
+				{
+					name:             "TOS",
+					optionProtocol:   header.IPv4ProtocolNumber,
+					getReceiveOption: func(ep tcpip.Endpoint) bool { return ep.SocketOptions().GetReceiveTOS() },
+					setReceiveOption: func(ep tcpip.Endpoint, value bool) { ep.SocketOptions().SetReceiveTOS(value) },
+					presenceChecker:  checker.ReceiveTOS(testTOS),
+					absenceChecker:   checker.NoTOSReceived(),
+				},
+				{
+					name:             "TClass",
+					optionProtocol:   header.IPv6ProtocolNumber,
+					getReceiveOption: func(ep tcpip.Endpoint) bool { return ep.SocketOptions().GetReceiveTClass() },
+					setReceiveOption: func(ep tcpip.Endpoint, value bool) { ep.SocketOptions().SetReceiveTClass(value) },
+					presenceChecker:  checker.ReceiveTClass(testTOS),
+					absenceChecker:   checker.NoTClassReceived(),
+				},
+				{
+					name:             "IPPacketInfo",
+					optionProtocol:   header.IPv4ProtocolNumber,
+					getReceiveOption: func(ep tcpip.Endpoint) bool { return ep.SocketOptions().GetReceivePacketInfo() },
+					setReceiveOption: func(ep tcpip.Endpoint, value bool) { ep.SocketOptions().SetReceivePacketInfo(value) },
+					presenceChecker: func() checker.ControlMessagesChecker {
+						h := flow.MakeHeader4Tuple(context.Incoming)
+						return checker.ReceiveIPPacketInfo(tcpip.IPPacketInfo{
+							NIC: context.NICID,
+							// TODO(https://gvisor.dev/issue/3556): Expect the NIC's address
+							// instead of the header destination address for the LocalAddr
+							// field.
+							DestinationAddr: h.Dst.Addr,
+						})
+					}(),
+					absenceChecker: checker.NoIPPacketInfoReceived(),
+				},
+				{
+					name:             "IPv6PacketInfo",
+					optionProtocol:   header.IPv6ProtocolNumber,
+					getReceiveOption: func(ep tcpip.Endpoint) bool { return ep.SocketOptions().GetIPv6ReceivePacketInfo() },
+					setReceiveOption: func(ep tcpip.Endpoint, value bool) { ep.SocketOptions().SetIPv6ReceivePacketInfo(value) },
+					presenceChecker: func() checker.ControlMessagesChecker {
+						h := flow.MakeHeader4Tuple(context.Incoming)
+						return checker.ReceiveIPv6PacketInfo(tcpip.IPv6PacketInfo{
+							NIC:  context.NICID,
+							Addr: h.Dst.Addr,
+						})
+					}(),
+					absenceChecker: checker.NoIPv6PacketInfoReceived(),
+				},
+			} {
+				t.Run(test.name, func(t *testing.T) {
 					c := context.New(t, []stack.TransportProtocolFactory{icmp.NewProtocol4, icmp.NewProtocol6})
 					defer c.Cleanup()
 
