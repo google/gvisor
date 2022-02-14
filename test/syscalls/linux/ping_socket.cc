@@ -112,10 +112,9 @@ TEST(PingSocket, ReceiveTOS) {
               SyscallSucceedsWithValue(sizeof(kSendIcmp)));
 
   // Register to receive TOS.
-  constexpr int kOne = 1;
-  ASSERT_THAT(
-      setsockopt(ping.get(), IPPROTO_IP, IP_RECVTOS, &kOne, sizeof(kOne)),
-      SyscallSucceeds());
+  ASSERT_THAT(setsockopt(ping.get(), IPPROTO_IP, IP_RECVTOS, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
 
   struct {
     icmphdr icmp;
@@ -167,9 +166,8 @@ TEST(PingSocket, ReceiveTClass) {
               SyscallSucceedsWithValue(sizeof(kSendIcmp)));
 
   // Register to receive TCLASS.
-  constexpr int kOne = 1;
-  ASSERT_THAT(setsockopt(ping.get(), IPPROTO_IPV6, IPV6_RECVTCLASS, &kOne,
-                         sizeof(kOne)),
+  ASSERT_THAT(setsockopt(ping.get(), IPPROTO_IPV6, IPV6_RECVTCLASS, &kSockOptOn,
+                         sizeof(kSockOptOn)),
               SyscallSucceeds());
 
   struct {
@@ -189,6 +187,111 @@ TEST(PingSocket, ReceiveTClass) {
   EXPECT_EQ(recv_buf.icmpv6.icmp6_code, 0);
 
   EXPECT_EQ(received_tclass, kArbitraryTClass);
+}
+
+TEST(PingSocket, ReceiveIPPacketInfo) {
+  PosixErrorOr<FileDescriptor> result =
+      Socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
+  if (!result.ok()) {
+    int errno_value = result.error().errno_value();
+    ASSERT_EQ(errno_value, EACCES) << strerror(errno_value);
+    GTEST_SKIP() << "ping socket not supported";
+  }
+  FileDescriptor& ping = result.ValueOrDie();
+
+  const sockaddr_in kAddr = {
+      .sin_family = AF_INET,
+      .sin_addr = {.s_addr = htonl(INADDR_LOOPBACK)},
+  };
+  ASSERT_THAT(bind(ping.get(), reinterpret_cast<const sockaddr*>(&kAddr),
+                   sizeof(kAddr)),
+              SyscallSucceeds());
+
+  constexpr icmphdr kSendIcmp = {
+      .type = ICMP_ECHO,
+  };
+  ASSERT_THAT(sendto(ping.get(), &kSendIcmp, sizeof(kSendIcmp), 0,
+                     reinterpret_cast<const sockaddr*>(&kAddr), sizeof(kAddr)),
+              SyscallSucceedsWithValue(sizeof(kSendIcmp)));
+
+  // Register to receive PKTINFO.
+  ASSERT_THAT(setsockopt(ping.get(), IPPROTO_IP, IP_PKTINFO, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+
+  struct {
+    icmphdr icmp;
+
+    // Add an extra byte to confirm we did not read unexpected bytes.
+    char unused;
+  } ABSL_ATTRIBUTE_PACKED recv_buf;
+  size_t recv_buf_len = sizeof(recv_buf);
+  in_pktinfo received_pktinfo;
+  ASSERT_NO_FATAL_FAILURE(RecvPktInfo(ping.get(),
+                                      reinterpret_cast<char*>(&recv_buf),
+                                      &recv_buf_len, &received_pktinfo));
+  ASSERT_EQ(recv_buf_len, sizeof(icmphdr));
+
+  EXPECT_EQ(recv_buf.icmp.type, ICMP_ECHOREPLY);
+  EXPECT_EQ(recv_buf.icmp.code, 0);
+
+  EXPECT_EQ(received_pktinfo.ipi_ifindex,
+            ASSERT_NO_ERRNO_AND_VALUE(GetLoopbackIndex()));
+  EXPECT_EQ(ntohl(received_pktinfo.ipi_spec_dst.s_addr), INADDR_ANY);
+  EXPECT_EQ(ntohl(received_pktinfo.ipi_addr.s_addr), INADDR_LOOPBACK);
+}
+
+TEST(PingSocket, ReceiveIPv6PktInfo) {
+  PosixErrorOr<FileDescriptor> result =
+      Socket(AF_INET6, SOCK_DGRAM, IPPROTO_ICMPV6);
+  if (!result.ok()) {
+    int errno_value = result.error().errno_value();
+    ASSERT_EQ(errno_value, EACCES) << strerror(errno_value);
+    GTEST_SKIP() << "ping socket not supported";
+  }
+  FileDescriptor& ping = result.ValueOrDie();
+
+  const sockaddr_in6 kAddr = {
+      .sin6_family = AF_INET6,
+      .sin6_addr = in6addr_loopback,
+  };
+  ASSERT_THAT(bind(ping.get(), reinterpret_cast<const sockaddr*>(&kAddr),
+                   sizeof(kAddr)),
+              SyscallSucceeds());
+
+  constexpr icmp6_hdr kSendIcmp = {
+      .icmp6_type = ICMP6_ECHO_REQUEST,
+  };
+  ASSERT_THAT(sendto(ping.get(), &kSendIcmp, sizeof(kSendIcmp), 0,
+                     reinterpret_cast<const sockaddr*>(&kAddr), sizeof(kAddr)),
+              SyscallSucceedsWithValue(sizeof(kSendIcmp)));
+
+  // Register to receive PKTINFO.
+  ASSERT_THAT(setsockopt(ping.get(), IPPROTO_IPV6, IPV6_RECVPKTINFO,
+                         &kSockOptOn, sizeof(kSockOptOn)),
+              SyscallSucceeds());
+
+  struct {
+    icmp6_hdr icmpv6;
+
+    // Add an extra byte to confirm we did not read unexpected bytes.
+    char unused;
+  } ABSL_ATTRIBUTE_PACKED recv_buf;
+  size_t recv_buf_len = sizeof(recv_buf);
+  in6_pktinfo received_pktinfo;
+  ASSERT_NO_FATAL_FAILURE(RecvIPv6PktInfo(ping.get(),
+                                          reinterpret_cast<char*>(&recv_buf),
+                                          &recv_buf_len, &received_pktinfo));
+  ASSERT_EQ(recv_buf_len, sizeof(kSendIcmp));
+
+  EXPECT_EQ(recv_buf.icmpv6.icmp6_type, ICMP6_ECHO_REPLY);
+  EXPECT_EQ(recv_buf.icmpv6.icmp6_code, 0);
+
+  EXPECT_EQ(received_pktinfo.ipi6_ifindex,
+            ASSERT_NO_ERRNO_AND_VALUE(GetLoopbackIndex()));
+  ASSERT_EQ(memcmp(&received_pktinfo.ipi6_addr, &in6addr_loopback,
+                   sizeof(in6addr_loopback)),
+            0);
 }
 
 struct BindTestCase {

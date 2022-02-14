@@ -346,6 +346,17 @@ func ReceiveIPPacketInfo(want tcpip.IPPacketInfo) ControlMessagesChecker {
 	}
 }
 
+// NoIPPacketInfoReceived creates a checker that checks the PacketInfo field in
+// ControlMessages.
+func NoIPPacketInfoReceived() ControlMessagesChecker {
+	return func(t *testing.T, cm tcpip.ControlMessages) {
+		t.Helper()
+		if cm.HasIPPacketInfo {
+			t.Error("got cm.HasIPPacketInfo = true, want = false")
+		}
+	}
+}
+
 // ReceiveIPv6PacketInfo creates a checker that checks the IPv6PacketInfo field
 // in ControlMessages.
 func ReceiveIPv6PacketInfo(want tcpip.IPv6PacketInfo) ControlMessagesChecker {
@@ -355,6 +366,17 @@ func ReceiveIPv6PacketInfo(want tcpip.IPv6PacketInfo) ControlMessagesChecker {
 			t.Error("got cm.HasIPv6PacketInfo = false, want = true")
 		} else if diff := cmp.Diff(want, cm.IPv6PacketInfo); diff != "" {
 			t.Errorf("IPv6PacketInfo mismatch (-want +got):\n%s", diff)
+		}
+	}
+}
+
+// NoIPv6PacketInfoReceived creates a checker that checks the PacketInfo field
+// in ControlMessages.
+func NoIPv6PacketInfoReceived() ControlMessagesChecker {
+	return func(t *testing.T, cm tcpip.ControlMessages) {
+		t.Helper()
+		if cm.HasIPv6PacketInfo {
+			t.Error("got cm.HasIPv6PacketInfo = true, want = false")
 		}
 	}
 }

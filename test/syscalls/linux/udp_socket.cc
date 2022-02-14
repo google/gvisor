@@ -2142,6 +2142,126 @@ TEST_P(UdpSocketControlMessagesTest, SendAndReceiveTOSorTClass) {
   EXPECT_EQ(recv_data_len, sizeof(sent_data));
 }
 
+TEST_P(UdpSocketControlMessagesTest, SetAndReceivePktInfo) {
+  // Enable receiving IP_PKTINFO and maybe IPV6_PKTINFO on the receiver.
+  ASSERT_THAT(setsockopt(server_.get(), SOL_IP, IP_PKTINFO, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  if (ServerAddressFamily() == AF_INET6) {
+    ASSERT_THAT(setsockopt(server_.get(), SOL_IPV6, IPV6_RECVPKTINFO,
+                           &kSockOptOn, sizeof(kSockOptOn)),
+                SyscallSucceeds());
+  }
+
+  constexpr size_t kArbitrarySendSize = 1042;
+  constexpr char sent_data[kArbitrarySendSize] = {};
+  ASSERT_THAT(RetryEINTR(send)(client_.get(), sent_data, sizeof(sent_data), 0),
+              SyscallSucceedsWithValue(sizeof(sent_data)));
+
+  char recv_data[sizeof(sent_data) + 1];
+  size_t recv_data_len = sizeof(recv_data);
+  switch (GetParam()) {
+    case AddressFamily::kIpv4: {
+      in_pktinfo received_pktinfo;
+      ASSERT_NO_FATAL_FAILURE(RecvPktInfo(server_.get(), recv_data,
+                                          &recv_data_len, &received_pktinfo));
+      EXPECT_EQ(recv_data_len, sizeof(sent_data));
+      EXPECT_EQ(received_pktinfo.ipi_ifindex,
+                ASSERT_NO_ERRNO_AND_VALUE(GetLoopbackIndex()));
+      EXPECT_EQ(ntohl(received_pktinfo.ipi_spec_dst.s_addr), INADDR_LOOPBACK);
+      EXPECT_EQ(ntohl(received_pktinfo.ipi_addr.s_addr), INADDR_LOOPBACK);
+      break;
+    }
+
+    case AddressFamily::kIpv6: {
+      in6_pktinfo received_pktinfo;
+      ASSERT_NO_FATAL_FAILURE(RecvIPv6PktInfo(
+          server_.get(), recv_data, &recv_data_len, &received_pktinfo));
+      EXPECT_EQ(recv_data_len, sizeof(sent_data));
+      EXPECT_EQ(received_pktinfo.ipi6_ifindex,
+                ASSERT_NO_ERRNO_AND_VALUE(GetLoopbackIndex()));
+      ASSERT_EQ(memcmp(&received_pktinfo.ipi6_addr, &in6addr_loopback,
+                       sizeof(in6addr_loopback)),
+                0);
+      break;
+    }
+
+    case AddressFamily::kDualStack: {
+      // TODO(https://gvisor.dev/issue/7144): On dual stack sockets, Linux can
+      // receive both the IPv4 and IPv6 packet info. gVisor should do the same.
+      iovec iov = {
+          iov.iov_base = recv_data,
+          iov.iov_len = recv_data_len,
+      };
+      // Add an extra byte to confirm we only read what we expected.
+      char control[CMSG_SPACE(sizeof(in_pktinfo)) +
+                   CMSG_SPACE(sizeof(in6_pktinfo)) + 1];
+      msghdr msg = {
+          .msg_iov = &iov,
+          .msg_iovlen = 1,
+          .msg_control = control,
+          .msg_controllen = sizeof(control),
+      };
+
+      ASSERT_THAT(
+          recv_data_len = RetryEINTR(recvmsg)(server_.get(), &msg, /*flags=*/0),
+          SyscallSucceeds());
+      EXPECT_EQ(recv_data_len, sizeof(sent_data));
+      size_t expected_controllen = CMSG_SPACE(sizeof(in_pktinfo));
+      if (!IsRunningOnGvisor() || IsRunningWithHostinet()) {
+        expected_controllen += CMSG_SPACE(sizeof(in6_pktinfo));
+      }
+      EXPECT_EQ(msg.msg_controllen, expected_controllen);
+
+      std::pair<in_pktinfo, bool> received_pktinfo;
+      std::pair<in6_pktinfo, bool> received_pktinfo6;
+
+      struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+      while (cmsg != nullptr) {
+        ASSERT_TRUE(cmsg->cmsg_level == SOL_IP || cmsg->cmsg_level == SOL_IPV6);
+        if (cmsg->cmsg_level == SOL_IP) {
+          ASSERT_FALSE(received_pktinfo.second);
+          ASSERT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(in_pktinfo)));
+          ASSERT_EQ(cmsg->cmsg_type, IP_PKTINFO);
+          received_pktinfo.second = true;
+          std::copy_n(CMSG_DATA(cmsg), sizeof(received_pktinfo.first),
+                      reinterpret_cast<uint8_t*>(&received_pktinfo.first));
+        } else {  // SOL_IPV6
+          ASSERT_FALSE(received_pktinfo6.second);
+          ASSERT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(in6_pktinfo)));
+          ASSERT_EQ(cmsg->cmsg_type, IPV6_PKTINFO);
+          received_pktinfo6.second = true;
+          std::copy_n(CMSG_DATA(cmsg), sizeof(received_pktinfo6.first),
+                      reinterpret_cast<uint8_t*>(&received_pktinfo6.first));
+        }
+        cmsg = CMSG_NXTHDR(&msg, cmsg);
+      }
+
+      ASSERT_TRUE(received_pktinfo.second);
+      EXPECT_EQ(received_pktinfo.first.ipi_ifindex,
+                ASSERT_NO_ERRNO_AND_VALUE(GetLoopbackIndex()));
+      EXPECT_EQ(ntohl(received_pktinfo.first.ipi_spec_dst.s_addr),
+                INADDR_LOOPBACK);
+      EXPECT_EQ(ntohl(received_pktinfo.first.ipi_addr.s_addr), INADDR_LOOPBACK);
+
+      if (!IsRunningOnGvisor() || IsRunningWithHostinet()) {
+        ASSERT_TRUE(received_pktinfo6.second);
+        EXPECT_EQ(received_pktinfo6.first.ipi6_ifindex,
+                  ASSERT_NO_ERRNO_AND_VALUE(GetLoopbackIndex()));
+        struct in6_addr expected;
+        inet_pton(AF_INET6, "::ffff:127.0.0.1", &expected);
+        EXPECT_EQ(memcmp(&received_pktinfo6.first.ipi6_addr, &expected,
+                         sizeof(expected)),
+                  0);
+      } else {
+        ASSERT_FALSE(received_pktinfo6.second);
+      }
+
+      break;
+    }
+  }
+}
+
 INSTANTIATE_TEST_SUITE_P(AllInetTests, UdpSocketControlMessagesTest,
                          ::testing::Values(AddressFamily::kIpv4,
                                            AddressFamily::kIpv6,

@@ -144,6 +144,20 @@ void RecvTClass(int sock, char buf[], size_t* buf_size, int* out_tclass);
 // message.
 void SendTClass(int sock, char buf[], size_t buf_size, int tclass);
 
+// RecvPktInfo attempts to read buf_size bytes into buf, and then update
+// buf_size with the numbers of bytes actually read. It expects the
+// IP_PKTINFO cmsg to be received. The buffer must already be allocated with
+// at least buf_size size.
+void RecvPktInfo(int sock, char buf[], size_t* buf_size,
+                 in_pktinfo* out_pktinfo);
+
+// RecvIPv6PktInfo attempts to read buf_size bytes into buf, and then update
+// buf_size with the numbers of bytes actually read. It expects the
+// IPV6_PKTINFO cmsg to be received. The buffer must already be allocated with
+// at least buf_size size.
+void RecvIPv6PktInfo(int sock, char buf[], size_t* buf_size,
+                     in6_pktinfo* out_pktinfo);
+
 }  // namespace testing
 }  // namespace gvisor
 
