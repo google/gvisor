@@ -392,7 +392,7 @@ func (s *socketOpsCommon) GetSockOpt(t *kernel.Task, level int, name int, optVal
 		}
 	case linux.SOL_IPV6:
 		switch name {
-		case linux.IPV6_TCLASS, linux.IPV6_RECVTCLASS, linux.IPV6_RECVERR, linux.IPV6_V6ONLY, linux.IPV6_RECVORIGDSTADDR:
+		case linux.IPV6_TCLASS, linux.IPV6_RECVTCLASS, linux.IPV6_RECVPKTINFO, linux.IPV6_RECVERR, linux.IPV6_V6ONLY, linux.IPV6_RECVORIGDSTADDR:
 			optlen = sizeofInt32
 		}
 	case linux.SOL_SOCKET:
@@ -449,7 +449,7 @@ func (s *socketOpsCommon) SetSockOpt(t *kernel.Task, level int, name int, opt []
 		}
 	case linux.SOL_IPV6:
 		switch name {
-		case linux.IPV6_TCLASS, linux.IPV6_RECVTCLASS, linux.IPV6_RECVERR, linux.IPV6_V6ONLY, linux.IPV6_RECVORIGDSTADDR:
+		case linux.IPV6_TCLASS, linux.IPV6_RECVTCLASS, linux.IPV6_RECVPKTINFO, linux.IPV6_RECVERR, linux.IPV6_V6ONLY, linux.IPV6_RECVORIGDSTADDR:
 			optlen = sizeofInt32
 		}
 	case linux.SOL_SOCKET:
@@ -631,6 +631,12 @@ func parseUnixControlMessages(unixControlMessages []unix.SocketControlMessage) s
 				var tclass primitive.Uint32
 				tclass.UnmarshalUnsafe(unixCmsg.Data)
 				controlMessages.IP.TClass = uint32(tclass)
+
+			case linux.IPV6_PKTINFO:
+				controlMessages.IP.HasIPv6PacketInfo = true
+				var packetInfo linux.ControlMessageIPv6PacketInfo
+				packetInfo.UnmarshalUnsafe(unixCmsg.Data)
+				controlMessages.IP.IPv6PacketInfo = packetInfo
 
 			case linux.IPV6_RECVORIGDSTADDR:
 				var addr linux.SockAddrInet6

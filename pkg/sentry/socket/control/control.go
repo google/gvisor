@@ -600,6 +600,16 @@ func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte, width uint)
 				tclass.UnmarshalUnsafe(buf)
 				cmsgs.IP.TClass = uint32(tclass)
 
+			case linux.IPV6_PKTINFO:
+				if length < linux.SizeOfControlMessageIPv6PacketInfo {
+					return socket.ControlMessages{}, linuxerr.EINVAL
+				}
+
+				cmsgs.IP.HasIPv6PacketInfo = true
+				var packetInfo linux.ControlMessageIPv6PacketInfo
+				packetInfo.UnmarshalUnsafe(buf)
+				cmsgs.IP.IPv6PacketInfo = packetInfo
+
 			case linux.IPV6_RECVORIGDSTADDR:
 				var addr linux.SockAddrInet6
 				if length < addr.SizeBytes() {
