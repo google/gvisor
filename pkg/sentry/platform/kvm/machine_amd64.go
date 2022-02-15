@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"math/big"
 	"reflect"
-	"runtime"
 	"runtime/debug"
 
 	"golang.org/x/sys/unix"
@@ -488,10 +487,6 @@ func (m *machine) getMaxVCPU() {
 		m.maxVCPUs = _KVM_NR_VCPUS
 	} else {
 		m.maxVCPUs = int(maxVCPUs)
-	}
-	rCPUs := runtime.GOMAXPROCS(0)
-	if rCPUs < m.maxVCPUs {
-		m.maxVCPUs = rCPUs
 	}
 }
 

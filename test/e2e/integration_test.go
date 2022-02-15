@@ -295,7 +295,7 @@ func TestMemLimit(t *testing.T) {
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
 
-	allocMemoryKb := 50 * 1024
+	allocMemoryKb := 128 * 1024
 	opts := dockerutil.RunOpts{
 		Image:  "basic/alpine",
 		Memory: allocMemoryKb * 1024, // In bytes.
