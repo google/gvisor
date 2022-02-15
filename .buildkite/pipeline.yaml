@@ -41,10 +41,10 @@ steps:
   - <<: *common
     label: ":fire: Smoke tests"
     command: make smoke-tests
+  - wait
   - <<: *common
     label: ":fire: Smoke race tests"
     command: make smoke-race-tests
-  - wait
 
   # Check that the Go branch builds.
   - <<: *common
@@ -132,7 +132,7 @@ steps:
   - <<: *common
     label: ":toolbox: System call tests"
     command: make syscall-tests
-    parallelism: 60
+    parallelism: 20
 
   # Integration tests.
   - <<: *common
@@ -196,15 +196,15 @@ steps:
   - <<: *common
     label: ":php: PHP runtime tests"
     command: make php7.3.6-runtime-tests_vfs2
-    parallelism: 20
+    parallelism: 10
   - <<: *common
     label: ":java: Java runtime tests"
     command: make java11-runtime-tests_vfs2
-    parallelism: 120
+    parallelism: 40
   - <<: *common
     label: ":golang: Go runtime tests"
     command: make go1.12-runtime-tests_vfs2
-    parallelism: 20
+    parallelism: 10
   - <<: *common
     label: ":node: NodeJS runtime tests"
     command: make nodejs12.4.0-runtime-tests_vfs2
@@ -212,7 +212,7 @@ steps:
   - <<: *common
     label: ":python: Python runtime tests"
     command: make python3.7.3-runtime-tests_vfs2
-    parallelism: 20
+    parallelism: 10
 
   # ARM tests.
   - <<: *common
