@@ -161,8 +161,8 @@ func (n *Node) LookupChildLocked(name string) *Node {
 // WithChildrenMu executes fn with n.childrenMu locked.
 func (n *Node) WithChildrenMu(fn func()) {
 	n.childrenMu.Lock()
+	defer n.childrenMu.Unlock()
 	fn()
-	n.childrenMu.Unlock()
 }
 
 // FilePath returns the absolute path of the backing file. This is an expensive
@@ -188,22 +188,22 @@ func (n *Node) isDeleted() bool {
 
 func (n *Node) removeFD(fd *ControlFD) {
 	n.controlFDsMu.Lock()
+	defer n.controlFDsMu.Unlock()
 	n.controlFDs.Remove(fd)
-	n.controlFDsMu.Unlock()
 }
 
 func (n *Node) insertFD(fd *ControlFD) {
 	n.controlFDsMu.Lock()
+	defer n.controlFDsMu.Unlock()
 	n.controlFDs.PushBack(fd)
-	n.controlFDsMu.Unlock()
 }
 
 func (n *Node) forEachFD(fn func(*ControlFD)) {
 	n.controlFDsMu.Lock()
+	defer n.controlFDsMu.Unlock()
 	for fd := n.controlFDs.Front(); fd != nil; fd = fd.Next() {
 		fn(fd)
 	}
-	n.controlFDsMu.Unlock()
 }
 
 // removeChildLocked removes child with given name from n and returns the
