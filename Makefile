@@ -111,7 +111,11 @@ RUNTIME     := $(BRANCH_NAME)
 RUNTIME_DIR := $(shell dirname $(shell mktemp -u))/$(RUNTIME)
 endif
 RUNTIME_BIN     := $(RUNTIME_DIR)/runsc
+ifneq (,$(BUILDKITE_JOB_ID))
+RUNTIME_LOG_DIR     := /tmp/$(BUILDKITE_JOB_ID)
+else
 RUNTIME_LOG_DIR := $(RUNTIME_DIR)/logs
+endif
 RUNTIME_LOGS    := $(RUNTIME_LOG_DIR)/runsc.log.%TEST%.%TIMESTAMP%.%COMMAND%
 RUNTIME_ARGS    ?=
 
@@ -234,11 +238,11 @@ packetimpact-tests:
 
 %-runtime-tests: load-runtimes_% $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),--watchdog-action=panic)
-	@$(call test_runtime,$(RUNTIME),--test_timeout=1800 //test/runtimes:$*)
+	@$(call test_runtime,$(RUNTIME),--test_timeout=1800 --test_arg=-test.v --test_arg=--soft-timeout=900s //test/runtimes:$*)
 
 %-runtime-tests_lisafs: load-runtimes_% $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME), --lisafs)
-	@$(call test_runtime,$(RUNTIME),--test_timeout=10800 //test/runtimes:$*)
+	@$(call test_runtime,$(RUNTIME),--test_timeout=1800 --test_arg=-test.v --test_arg=--soft-timeout=900s //test/runtimes:$*)
 
 do-tests: $(RUNTIME_BIN)
 	@$(RUNTIME_BIN) --rootless do true

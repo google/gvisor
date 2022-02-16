@@ -51,6 +51,9 @@ rm -rf "${profile_output}"
 
 # Clean the bazel cache, if there's failure.
 if test "${BUILDKITE_COMMAND_EXIT_STATUS}" -ne "0"; then
+  for file in $(find /tmp/${BUILDKITE_JOB_ID}/ | sort); do
+    buildkite-agent artifact upload "${file}"
+  done
   # Attempt to clear the cache and shut down.
   make clean || echo "make clean failed with code $?"
   make bazel-shutdown || echo "make bazel-shutdown failed with code $?"

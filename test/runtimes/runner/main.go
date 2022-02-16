@@ -19,6 +19,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"testing"
 	"time"
 
 	"gvisor.dev/gvisor/test/runtimes/runner/lib"
@@ -28,15 +29,17 @@ var (
 	lang        = flag.String("lang", "", "language runtime to test")
 	image       = flag.String("image", "", "docker image with runtime tests")
 	excludeFile = flag.String("exclude_file", "", "file containing list of tests to exclude, in CSV format with fields: test name, bug id, comment")
-	batchSize   = flag.Int("batch", 50, "number of test cases run in one command")
-	timeout     = flag.Duration("timeout", 90*time.Minute, "batch timeout")
+	batchSize   = flag.Int("batch", 200, "number of test cases run in one command")
+	timeout     = flag.Duration("timeout", 25*time.Minute, "batch timeout")
+	softTimeout = flag.Duration("soft-timeout", 20*time.Minute, "timeout after which the test fails")
 )
 
 func main() {
+	testing.Init()
 	flag.Parse()
 	if *lang == "" || *image == "" {
 		fmt.Fprintf(os.Stderr, "lang and image flags must not be empty\n")
 		os.Exit(1)
 	}
-	os.Exit(lib.RunTests(*lang, *image, *excludeFile, *batchSize, *timeout))
+	os.Exit(lib.RunTests(*lang, *image, *excludeFile, *batchSize, *timeout, *softTimeout))
 }

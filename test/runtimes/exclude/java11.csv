@@ -4,6 +4,7 @@ com/sun/jdi/InvokeHangTest.java,https://bugs.openjdk.java.net/browse/JDK-8218463
 com/sun/jdi/NashornPopFrameTest.java,,
 com/sun/jdi/OnJcmdTest.java,b/180542784,
 com/sun/jdi/ProcessAttachTest.java,,
+com/sun/jndi/ldap/LdapTimeoutTest.java,,
 com/sun/management/HotSpotDiagnosticMXBean/CheckOrigin.java,,Fails in Docker
 com/sun/management/OperatingSystemMXBean/GetCommittedVirtualMemorySize.java,,
 com/sun/management/ThreadMXBean/ThreadCpuTimeArray.java,,Test assumes high CPU clock precision
@@ -60,6 +61,8 @@ java/nio/channels/SocketChannel/SocketOptionTests.java,b/77965901,
 java/nio/channels/spi/SelectorProvider/inheritedChannel/InheritedChannelTest.java,,Fails in Docker
 java/rmi/activation/Activatable/extLoadedImpl/ext.sh,,
 java/rmi/transport/checkLeaseInfoLeak/CheckLeaseLeak.java,,
+java/rmi/activation/Activatable/checkAnnotations/CheckAnnotations.java,b/226492590,
+java/rmi/activation/Activatable/checkImplClassLoader/CheckImplClassLoader.java,b/226492590,
 java/security/cert/PolicyNode/GetPolicyQualifiers.java,b/170263154,Kokoro executor cert expired
 java/text/Format/NumberFormat/CurrencyFormat.java,,Fails in Docker
 java/text/Format/NumberFormat/CurrencyFormat.java,,Fails in Docker
@@ -177,6 +180,7 @@ jdk/jfr/startupargs/TestStartRecording.java,,
 jdk/modules/incubator/ImageModules.java,,
 jdk/net/Sockets/ExtOptionTest.java,,
 jdk/net/Sockets/QuickAckTest.java,,
+jdk/nio/zipfs/LargeEntriesTest.java,b/226492590,
 lib/security/cacerts/VerifyCACerts.java,,
 sun/management/jmxremote/bootstrap/CustomLauncherTest.java,,
 sun/management/jmxremote/bootstrap/JvmstatCountersTest.java,,
@@ -218,3 +222,4 @@ tools/launcher/HelpFlagsTest.java,,java.lang.AssertionError: HelpFlagsTest faile
 tools/launcher/JliLaunchTest.java,,Fails on runc too
 tools/launcher/VersionCheck.java,,java.lang.AssertionError: VersionCheck failed: testToolVersion: [jfr];
 tools/launcher/modules/patch/systemmodules/PatchSystemModules.java,,
+tools/pack200/Pack200Test.java,,

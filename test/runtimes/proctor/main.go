@@ -22,6 +22,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/test/runtimes/proctor/lib"
@@ -32,6 +33,7 @@ var (
 	list      = flag.Bool("list", false, "list all available tests")
 	testNames = flag.String("tests", "", "run a subset of the available tests")
 	pause     = flag.Bool("pause", false, "cause container to pause indefinitely, reaping any zombie children")
+	timeout   = flag.Duration("timeout", 90*time.Minute, "batch timeout")
 )
 
 // setNumFilesLimit changes the NOFILE soft rlimit if it is too high.
@@ -68,6 +70,17 @@ func main() {
 	if *runtime == "" {
 		log.Fatalf("runtime flag must be provided")
 	}
+
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-done:
+			return
+		case <-time.After(*timeout):
+			panic("timeout")
+		}
+	}()
 
 	tr, err := lib.TestRunnerForRuntime(*runtime)
 	if err != nil {

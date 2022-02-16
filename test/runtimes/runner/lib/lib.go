@@ -35,7 +35,7 @@ import (
 // RunTests is a helper that is called by main. It exists so that we can run
 // defered functions before exiting. It returns an exit code that should be
 // passed to os.Exit.
-func RunTests(lang, image, excludeFile string, batchSize int, timeout time.Duration) int {
+func RunTests(lang, image, excludeFile string, batchSize int, timeout time.Duration, softTimeout time.Duration) int {
 	// TODO(gvisor.dev/issue/1624): Remove those tests from all exclude lists
 	// that only fail with VFS1.
 
@@ -51,6 +51,24 @@ func RunTests(lang, image, excludeFile string, batchSize int, timeout time.Durat
 	d := dockerutil.MakeContainer(ctx, testutil.DefaultLogger(lang))
 	defer d.CleanUp(ctx)
 
+	done := make(chan bool, 1)
+	timer := time.NewTimer(softTimeout)
+	failByTimeout := false
+	go func() {
+		select {
+		case <-timer.C:
+			failByTimeout = true
+			return
+		case <-done:
+			return
+		}
+	}()
+
+	defer func() {
+		done <- true
+		timer.Stop()
+	}()
+
 	if err := testutil.TouchShardStatusFile(); err != nil {
 		fmt.Fprintf(os.Stderr, "error touching status shard file: %v\n", err)
 		return 1
@@ -65,7 +83,11 @@ func RunTests(lang, image, excludeFile string, batchSize int, timeout time.Durat
 		return 1
 	}
 	m := mainStart(tests)
-	return m.Run()
+	ret := m.Run()
+	if failByTimeout {
+		return 1
+	}
+	return ret
 }
 
 // getTests executes all tests as table tests.
@@ -131,19 +153,20 @@ func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, 
 				}
 
 				go func() {
-					output, err = d.Exec(ctx, dockerutil.ExecOpts{}, "/proctor/proctor", "--runtime", lang, "--tests", strings.Join(tcs, ","))
+					output, err = d.Exec(ctx, dockerutil.ExecOpts{}, "/proctor/proctor", "--runtime", lang, "--tests", strings.Join(tcs, ","), fmt.Sprintf("--timeout=%s", timeout))
 					close(done)
 				}()
 
 				select {
 				case <-done:
 					if err == nil {
+						t.Logf("Output:\n%s\n", output)
 						fmt.Printf("PASS: (%v) %d tests passed\n", time.Since(now), len(tcs))
 						return
 					}
-					t.Errorf("FAIL: (%v):\nBatch:\n%s\nOutput:\n%s\n", time.Since(now), strings.Join(tcs, "\n"), output)
-				case <-time.After(timeout):
-					t.Errorf("TIMEOUT: (%v):\nBatch:\n%s\nOutput:\n%s\n", time.Since(now), strings.Join(tcs, "\n"), output)
+					t.Fatalf("FAIL: (%v):\nBatch:\n%s\nOutput:\n%s\n", time.Since(now), strings.Join(tcs, "\n"), output)
+				case <-time.After(timeout + time.Minute):
+					t.Fatalf("TIMEOUT: (%v):\nBatch:\n%s\nOutput:\n%s\n", time.Since(now), strings.Join(tcs, "\n"), output)
 				}
 			},
 		})
