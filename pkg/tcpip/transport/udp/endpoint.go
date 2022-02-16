@@ -17,6 +17,7 @@ package udp
 import (
 	"fmt"
 	"io"
+	"math"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/sync"
@@ -471,10 +472,33 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 	// On IPv6, UDP checksum is not optional (RFC2460 Section 8.1).
 	if pktInfo.RequiresTXTransportChecksum &&
 		(!e.ops.GetNoChecksum() || pktInfo.NetProto == header.IPv6ProtocolNumber) {
-		udp.SetChecksum(^udp.CalculateChecksum(header.ChecksumCombine(
+		xsum := udp.CalculateChecksum(header.ChecksumCombine(
 			header.PseudoHeaderChecksum(ProtocolNumber, pktInfo.LocalAddress, pktInfo.RemoteAddress, length),
 			pkt.Data().AsRange().Checksum(),
-		)))
+		))
+		// As per RFC 768 page 2,
+		//
+		//   Checksum is the 16-bit one's complement of the one's complement sum of
+		//   a pseudo header of information from the IP header, the UDP header, and
+		//   the data, padded with zero octets at the end (if necessary) to make a
+		//   multiple of two octets.
+		//
+		//	 The pseudo header conceptually prefixed to the UDP header contains the
+		//   source address, the destination address, the protocol, and the UDP
+		//   length. This information gives protection against misrouted datagrams.
+		//   This checksum procedure is the same as is used in TCP.
+		//
+		//   If the computed checksum is zero, it is transmitted as all ones (the
+		//   equivalent in one's complement arithmetic). An all zero transmitted
+		//   checksum value means that the transmitter generated no checksum (for
+		//   debugging or for higher level protocols that don't care).
+		//
+		// To avoid the zero value, we only calculate the one's complement of the
+		// one's complement sum if the sum is not all ones.
+		if xsum != math.MaxUint16 {
+			xsum = ^xsum
+		}
+		udp.SetChecksum(xsum)
 	}
 	if err := udpInfo.ctx.WritePacket(pkt, false /* headerIncluded */); err != nil {
 		e.stack.Stats().UDP.PacketSendErrors.Increment()
