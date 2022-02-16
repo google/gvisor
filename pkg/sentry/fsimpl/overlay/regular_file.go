@@ -60,10 +60,6 @@ type regularFileFD struct {
 	copiedUp    bool
 	cachedFD    *vfs.FileDescription
 	cachedFlags uint32
-
-	// If copiedUp is false, lowerWaiters contains all waiter.Entries
-	// registered with cachedFD. lowerWaiters is protected by mu.
-	lowerWaiters map[*waiter.Entry]struct{}
 }
 
 func (fd *regularFileFD) getCurrentFD(ctx context.Context) (*vfs.FileDescription, error) {
@@ -99,21 +95,10 @@ func (fd *regularFileFD) currentFDLocked(ctx context.Context) (*vfs.FileDescript
 				return nil, err
 			}
 		}
-		if len(fd.lowerWaiters) != 0 {
-			ready := upperFD.Readiness(^waiter.EventMask(0))
-			for e := range fd.lowerWaiters {
-				fd.cachedFD.EventUnregister(e)
-				if err := upperFD.EventRegister(e); err != nil {
-					return nil, err
-				}
-				e.NotifyEvent(ready)
-			}
-		}
 		fd.cachedFD.DecRef(ctx)
 		fd.copiedUp = true
 		fd.cachedFD = upperFD
 		fd.cachedFlags = statusFlags
-		fd.lowerWaiters = nil
 	} else if fd.cachedFlags != statusFlags {
 		if err := fd.cachedFD.SetStatusFlags(ctx, d.fs.creds, statusFlags); err != nil {
 			return nil, err
@@ -261,22 +246,12 @@ func (fd *regularFileFD) EventRegister(e *waiter.Entry) error {
 	defer fd.mu.Unlock()
 	wrappedFD, err := fd.currentFDLocked(context.Background())
 	if err != nil {
-		// TODO(b/171089913): Just use fd.cachedFD since EventRegister can't
-		// return an error. This is obviously wrong, but at least consistent
+		// TODO(b/171089913): Just use fd.cachedFD for backward compatibility
 		// with VFS1.
 		log.Warningf("overlay.regularFileFD.EventRegister: currentFDLocked failed: %v", err)
 		wrappedFD = fd.cachedFD
 	}
-	if err := wrappedFD.EventRegister(e); err != nil {
-		return err
-	}
-	if !fd.copiedUp {
-		if fd.lowerWaiters == nil {
-			fd.lowerWaiters = make(map[*waiter.Entry]struct{})
-		}
-		fd.lowerWaiters[e] = struct{}{}
-	}
-	return nil
+	return wrappedFD.EventRegister(e)
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
@@ -284,9 +259,6 @@ func (fd *regularFileFD) EventUnregister(e *waiter.Entry) {
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
 	fd.cachedFD.EventUnregister(e)
-	if !fd.copiedUp {
-		delete(fd.lowerWaiters, e)
-	}
 }
 
 // PRead implements vfs.FileDescriptionImpl.PRead.

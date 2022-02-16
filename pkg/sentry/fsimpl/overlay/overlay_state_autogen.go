@@ -282,7 +282,6 @@ func (fd *regularFileFD) StateFields() []string {
 		"copiedUp",
 		"cachedFD",
 		"cachedFlags",
-		"lowerWaiters",
 	}
 }
 
@@ -295,7 +294,6 @@ func (fd *regularFileFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &fd.copiedUp)
 	stateSinkObject.Save(2, &fd.cachedFD)
 	stateSinkObject.Save(3, &fd.cachedFlags)
-	stateSinkObject.Save(4, &fd.lowerWaiters)
 }
 
 func (fd *regularFileFD) afterLoad() {}
@@ -306,7 +304,6 @@ func (fd *regularFileFD) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &fd.copiedUp)
 	stateSourceObject.Load(2, &fd.cachedFD)
 	stateSourceObject.Load(3, &fd.cachedFlags)
-	stateSourceObject.Load(4, &fd.lowerWaiters)
 }
 
 func init() {
