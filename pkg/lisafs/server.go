@@ -84,9 +84,8 @@ func (s *Server) SetHandlers(handlers []RPCHandler) {
 // reading. This ensures that no rename operations occur concurrently.
 func (s *Server) withRenameReadLock(fn func() error) error {
 	s.renameMu.RLock()
-	err := fn()
-	s.renameMu.RUnlock()
-	return err
+	defer s.renameMu.RUnlock()
+	return fn()
 }
 
 // StartConnection starts the connection on a separate goroutine and tracks it.
