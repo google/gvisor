@@ -78,7 +78,6 @@ TEST_F(Pwrite64, Overflow) {
 }
 
 TEST_F(Pwrite64, Pwrite64WithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_PATH));

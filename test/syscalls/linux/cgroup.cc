@@ -49,7 +49,7 @@ std::vector<std::string> known_controllers = {
 };
 
 bool CgroupsAvailable() {
-  return IsRunningOnGvisor() && !IsRunningWithVFS1() &&
+  return IsRunningOnGvisor() &&
          TEST_CHECK_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN));
 }
 

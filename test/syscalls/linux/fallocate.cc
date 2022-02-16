@@ -109,7 +109,6 @@ TEST_F(AllocateTest, FallocateReadonly) {
 }
 
 TEST_F(AllocateTest, FallocateWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_PATH));
   EXPECT_THAT(fallocate(fd.get(), 0, 0, 10), SyscallFailsWithErrno(EBADF));

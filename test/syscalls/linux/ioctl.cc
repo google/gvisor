@@ -77,7 +77,6 @@ TEST_F(IoctlTest, InvalidControlNumber) {
 }
 
 TEST_F(IoctlTest, IoctlWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/null", O_PATH));
 

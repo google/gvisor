@@ -206,9 +206,7 @@ TEST_P(TimerfdTest, SetAbsoluteTime) {
 
 TEST_P(TimerfdTest, IllegalSeek) {
   auto const tfd = ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(GetParam(), 0));
-  if (!IsRunningWithVFS1()) {
-    EXPECT_THAT(lseek(tfd.get(), 0, SEEK_SET), SyscallFailsWithErrno(ESPIPE));
-  }
+  EXPECT_THAT(lseek(tfd.get(), 0, SEEK_SET), SyscallFailsWithErrno(ESPIPE));
 }
 
 TEST_P(TimerfdTest, IllegalPread) {
@@ -221,8 +219,6 @@ TEST_P(TimerfdTest, IllegalPread) {
 TEST_P(TimerfdTest, IllegalPwrite) {
   auto const tfd = ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(GetParam(), 0));
   EXPECT_THAT(pwrite(tfd.get(), "x", 1, 0), SyscallFailsWithErrno(ESPIPE));
-  if (!IsRunningWithVFS1()) {
-  }
 }
 
 TEST_P(TimerfdTest, IllegalWrite) {

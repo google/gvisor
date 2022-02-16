@@ -156,7 +156,7 @@ TEST(DevTest, TTYExists) {
 TEST(DevTest, OpenDevFuse) {
   // Note(gvisor.dev/issue/3076) This won't work in the sentry until the new
   // device registration is complete.
-  SKIP_IF(IsRunningWithVFS1() || IsRunningOnGvisor() || !IsFUSEEnabled());
+  SKIP_IF(IsRunningOnGvisor() || !IsFUSEEnabled());
 
   ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/fuse", O_RDONLY));
 }
@@ -164,7 +164,7 @@ TEST(DevTest, OpenDevFuse) {
 TEST(DevTest, ReadDevFuseWithoutMount) {
   // Note(gvisor.dev/issue/3076) This won't work in the sentry until the new
   // device registration is complete.
-  SKIP_IF(IsRunningWithVFS1() || IsRunningOnGvisor());
+  SKIP_IF(IsRunningOnGvisor());
 
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/fuse", O_RDONLY));

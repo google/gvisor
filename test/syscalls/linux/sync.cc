@@ -54,8 +54,6 @@ TEST(SyncTest, CannotSyncFileSystemAtBadFd) {
 }
 
 TEST(SyncTest, CannotSyncFileSystemAtOpathFD) {
-  SKIP_IF(IsRunningWithVFS1());
-
   const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
       GetAbsoluteTestTmpdir(), "", TempPath::kDefaultFileMode));
   const FileDescriptor fd =

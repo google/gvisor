@@ -391,7 +391,6 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 	platformVar := "TEST_ON_GVISOR"
 	networkVar := "GVISOR_NETWORK"
 	env := append(os.Environ(), platformVar+"="+*platform, networkVar+"="+*network)
-	env = append(env, "GVISOR_VFS=VFS2")
 	fuseVar := "FUSE_ENABLED"
 	if *fuse {
 		env = append(env, fuseVar+"=TRUE")

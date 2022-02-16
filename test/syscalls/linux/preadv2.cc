@@ -228,7 +228,6 @@ TEST(Preadv2Test, TestUnreadableFile) {
 
 // This test calls preadv2 with a file opened with O_PATH.
 TEST(Preadv2Test, Preadv2WithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   SKIP_IF(preadv2(-1, nullptr, 0, 0, 0) < 0 && errno == ENOSYS);
 
   const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());

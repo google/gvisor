@@ -99,7 +99,6 @@ TEST(ChmodTest, FchmodatBadF) {
 }
 
 TEST(ChmodTest, FchmodFileWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_PATH));
 
@@ -107,7 +106,6 @@ TEST(ChmodTest, FchmodFileWithOpath) {
 }
 
 TEST(ChmodTest, FchmodDirWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   const auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const auto fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_DIRECTORY | O_PATH));
@@ -116,7 +114,6 @@ TEST(ChmodTest, FchmodDirWithOpath) {
 }
 
 TEST(ChmodTest, FchmodatWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   // Drop capabilities that allow us to override file permissions.
   AutoCapability cap(CAP_DAC_OVERRIDE, false);
 

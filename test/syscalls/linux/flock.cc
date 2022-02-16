@@ -662,8 +662,6 @@ TEST(FlockTestNoFixture, FlockDir) {
 }
 
 TEST(FlockTestNoFixture, FlockSymlink) {
-  SKIP_IF(IsRunningWithVFS1());
-
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   auto symlink = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateSymlinkTo(GetAbsoluteTestTmpdir(), file.path()));

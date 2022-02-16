@@ -92,21 +92,7 @@ TEST(MknodTest, MknodOnExistingPathFails) {
               SyscallFailsWithErrno(EEXIST));
 }
 
-TEST(MknodTest, UnimplementedTypesReturnError) {
-  // TODO(gvisor.dev/issue/1624): These file types are supported by some
-  // filesystems in VFS2, so this test should be deleted along with VFS1.
-  SKIP_IF(!IsRunningWithVFS1());
-
-  const std::string path = NewTempAbsPath();
-  EXPECT_THAT(mknod(path.c_str(), S_IFSOCK, 0),
-              SyscallFailsWithErrno(EOPNOTSUPP));
-  EXPECT_THAT(mknod(path.c_str(), S_IFCHR, 0), SyscallFailsWithErrno(EPERM));
-  EXPECT_THAT(mknod(path.c_str(), S_IFBLK, 0), SyscallFailsWithErrno(EPERM));
-}
-
 TEST(MknodTest, Socket) {
-  SKIP_IF(IsRunningOnGvisor() && IsRunningWithVFS1());
-
   ASSERT_THAT(chdir(GetAbsoluteTestTmpdir().c_str()), SyscallSucceeds());
 
   auto filename = NewTempRelPath();

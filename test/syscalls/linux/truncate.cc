@@ -197,7 +197,6 @@ TEST(TruncateTest, FtruncateNonWriteable) {
 }
 
 TEST(TruncateTest, FtruncateWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   auto temp_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
       GetAbsoluteTestTmpdir(), absl::string_view(), 0555 /* mode */));
   const FileDescriptor fd =

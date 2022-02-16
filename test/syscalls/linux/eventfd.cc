@@ -191,8 +191,6 @@ TEST(EventfdTest, NotifyNonZero) {
 }
 
 TEST(EventfdTest, SpliceReturnsEINVAL) {
-  SKIP_IF(IsRunningWithVFS1());
-
   // Splicing into eventfd has been disabled in
   // 36e2c7421f02 ("fs: don't allow splice read/write without explicit ops").
   SKIP_IF(!IsRunningOnGvisor());

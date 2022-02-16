@@ -108,10 +108,8 @@ TEST(LinkTest, PermissionDenied) {
                 SyscallFailsWithErrno(EPERM));
     EXPECT_THAT(link(special_path.c_str(), newname.c_str()),
                 SyscallFailsWithErrno(EPERM));
-    if (!IsRunningWithVFS1()) {
-      EXPECT_THAT(link(setuid_file.path().c_str(), newname.c_str()),
-                  SyscallFailsWithErrno(EPERM));
-    }
+    EXPECT_THAT(link(setuid_file.path().c_str(), newname.c_str()),
+                SyscallFailsWithErrno(EPERM));
   });
 }
 
@@ -239,7 +237,6 @@ TEST(LinkTest, AbsPathsWithNonDirFDs) {
 }
 
 TEST(LinkTest, NewDirFDWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   auto oldfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const std::string newname_parent = NewTempAbsPath();
   const std::string newname_base = "child";
@@ -259,7 +256,6 @@ TEST(LinkTest, NewDirFDWithOpath) {
 }
 
 TEST(LinkTest, RelPathsNonDirFDsWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   auto oldfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
 
   // Create a file that will be passed as the directory fd for old/new names.
@@ -276,8 +272,6 @@ TEST(LinkTest, RelPathsNonDirFDsWithOpath) {
 }
 
 TEST(LinkTest, AbsPathsNonDirFDsWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
-
   auto oldfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const std::string newname = NewTempAbsPath();
 

@@ -31,9 +31,6 @@ namespace {
 
 // Mount verity file system on an existing tmpfs mount.
 TEST(MountTest, MountExisting) {
-  // Verity is implemented in VFS2.
-  SKIP_IF(IsRunningWithVFS1());
-
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
   // Mount a new tmpfs file system.

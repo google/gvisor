@@ -78,7 +78,6 @@ TEST_F(Pread64Test, WriteOnlyNotReadable) {
 }
 
 TEST_F(Pread64Test, Pread64WithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_PATH));
