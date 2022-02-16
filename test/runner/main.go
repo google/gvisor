@@ -47,7 +47,6 @@ var (
 	useTmpfs           = flag.Bool("use-tmpfs", false, "mounts tmpfs for /tmp")
 	fileAccess         = flag.String("file-access", "exclusive", "mounts root in exclusive or shared mode")
 	overlay            = flag.Bool("overlay", false, "wrap filesystem mounts with writable tmpfs overlay")
-	vfs2               = flag.Bool("vfs2", false, "enable VFS2")
 	fuse               = flag.Bool("fuse", false, "enable FUSE")
 	container          = flag.Bool("container", false, "run tests in their own namespaces (user ns, network ns, etc), pretending to be root")
 	setupContainerPath = flag.String("setup-container", "", "path to setup_container binary (for use with --container)")
@@ -179,8 +178,7 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 	if *overlay {
 		args = append(args, "-overlay")
 	}
-	args = append(args, fmt.Sprintf("-vfs2=%t", *vfs2))
-	if *vfs2 && *fuse {
+	if *fuse {
 		args = append(args, "-fuse")
 	}
 	if *debug {
@@ -393,17 +391,12 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 	platformVar := "TEST_ON_GVISOR"
 	networkVar := "GVISOR_NETWORK"
 	env := append(os.Environ(), platformVar+"="+*platform, networkVar+"="+*network)
-	vfsVar := "GVISOR_VFS"
-	if *vfs2 {
-		env = append(env, vfsVar+"=VFS2")
-		fuseVar := "FUSE_ENABLED"
-		if *fuse {
-			env = append(env, fuseVar+"=TRUE")
-		} else {
-			env = append(env, fuseVar+"=FALSE")
-		}
+	env = append(env, "GVISOR_VFS=VFS2")
+	fuseVar := "FUSE_ENABLED"
+	if *fuse {
+		env = append(env, fuseVar+"=TRUE")
 	} else {
-		env = append(env, vfsVar+"=VFS1")
+		env = append(env, fuseVar+"=FALSE")
 	}
 
 	// Remove shard env variables so that the gunit binary does not try to
