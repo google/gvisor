@@ -7,9 +7,12 @@ go_test(
     size = "small",
     srcs = [
         "ip_test.go",
+        "main_test.go",
         "multicast_group_test.go",
     ],
     deps = [
+        "//pkg/refs",
+        "//pkg/refsvfs2",
         "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
