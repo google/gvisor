@@ -81,7 +81,7 @@ const (
 const (
 	_KVM_MEM_LOG_DIRTY_PAGES = uint32(1) << 0
 	_KVM_MEM_READONLY        = uint32(1) << 1
-	_KVM_MEM_FLAGS_NONE      = 0
+	_KVM_MEM_FLAGS_NONE      = uint32(0)
 )
 
 // KVM hypercall list.
