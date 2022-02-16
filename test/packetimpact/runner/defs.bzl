@@ -307,6 +307,10 @@ ALL_TESTS = [
         name = "generic_dgram_socket_send_recv",
         timeout = "long",
     ),
+    PacketimpactTestInfo(
+        name = "tcp_acceptable_ack_syn_rcvd",
+        expect_netstack_failure = True,
+    ),
 ]
 
 def validate_all_tests():
