@@ -84,7 +84,7 @@ func OpenDevice() (*os.File, error) {
 	}
 	f, err := os.OpenFile(dev, unix.O_RDWR, 0)
 	if err != nil {
-		return nil, fmt.Errorf("error opening /dev/kvm: %v", err)
+		return nil, fmt.Errorf("error opening KVM device file (%s): %v", dev, err)
 	}
 	return f, nil
 }
