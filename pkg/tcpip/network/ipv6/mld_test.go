@@ -17,9 +17,12 @@ package ipv6_test
 import (
 	"bytes"
 	"math/rand"
+	"os"
 	"testing"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -57,9 +60,16 @@ func validateMLDPacket(t *testing.T, p buffer.View, localAddress, remoteAddress 
 	)
 }
 
-func TestIPv6JoinLeaveSolicitedNodeAddressPerformsMLD(t *testing.T) {
-	const nicID = 1
+type mldTestContext struct {
+	s *stack.Stack
+}
 
+func (c *mldTestContext) cleanup() {
+	c.s.Close()
+	c.s.Wait()
+}
+
+func newMLDTestContext() *mldTestContext {
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 			MLD: ipv6.MLDOptions{
@@ -67,6 +77,16 @@ func TestIPv6JoinLeaveSolicitedNodeAddressPerformsMLD(t *testing.T) {
 			},
 		})},
 	})
+	return &mldTestContext{s: s}
+}
+
+func TestIPv6JoinLeaveSolicitedNodeAddressPerformsMLD(t *testing.T) {
+	const nicID = 1
+
+	c := newMLDTestContext()
+	defer c.cleanup()
+	s := c.s
+
 	e := channel.New(1, header.IPv6MinimumMTU, "")
 	if err := s.CreateNIC(nicID, e); err != nil {
 		t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
@@ -156,6 +176,10 @@ func TestSendQueuedMLDReports(t *testing.T) {
 				})},
 				Clock: clock,
 			})
+			defer func() {
+				s.Close()
+				s.Wait()
+			}()
 
 			// Allow space for an extra packet so we can observe packets that were
 			// unexpectedly sent.
@@ -362,9 +386,11 @@ func createAndInjectMLDPacket(e *channel.Endpoint, mldType header.ICMPv6Type, ho
 		Dst:    header.IPv6AllNodesMulticastAddress,
 	}))
 
-	e.InjectInbound(ipv6.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	}))
+	})
+	e.InjectInbound(ipv6.ProtocolNumber, pkt)
+	pkt.DecRef()
 }
 
 func TestMLDPacketValidation(t *testing.T) {
@@ -434,13 +460,10 @@ func TestMLDPacketValidation(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
-					MLD: ipv6.MLDOptions{
-						Enabled: true,
-					},
-				})},
-			})
+			c := newMLDTestContext()
+			defer c.cleanup()
+			s := c.s
+
 			e := channel.New(nicID, header.IPv6MinimumMTU, "")
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
@@ -569,13 +592,10 @@ func TestMLDSkipProtocol(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
-					MLD: ipv6.MLDOptions{
-						Enabled: true,
-					},
-				})},
-			})
+			c := newMLDTestContext()
+			defer c.cleanup()
+			s := c.s
+
 			e := channel.New(1, header.IPv6MinimumMTU, "")
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
@@ -617,4 +637,11 @@ func TestMLDSkipProtocol(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMain(m *testing.M) {
+	refs.SetLeakMode(refs.LeaksPanic)
+	code := m.Run()
+	refsvfs2.DoLeakCheck()
+	os.Exit(code)
 }
