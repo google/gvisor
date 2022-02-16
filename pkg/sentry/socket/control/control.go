@@ -344,6 +344,28 @@ func PackTClass(t *kernel.Task, tClass uint32, buf []byte) []byte {
 	)
 }
 
+// PackTTL packs an IP_TTL socket control message.
+func PackTTL(t *kernel.Task, ttl uint32, buf []byte) []byte {
+	return putCmsgStruct(
+		buf,
+		linux.SOL_IP,
+		linux.IP_TTL,
+		t.Arch().Width(),
+		primitive.AllocateUint32(ttl),
+	)
+}
+
+// PackHopLimit packs an IPV6_HOPLIMIT socket control message.
+func PackHopLimit(t *kernel.Task, hoplimit uint32, buf []byte) []byte {
+	return putCmsgStruct(
+		buf,
+		linux.SOL_IPV6,
+		linux.IPV6_HOPLIMIT,
+		t.Arch().Width(),
+		primitive.AllocateUint32(hoplimit),
+	)
+}
+
 // PackIPPacketInfo packs an IP_PKTINFO socket control message.
 func PackIPPacketInfo(t *kernel.Task, packetInfo *linux.ControlMessageIPPacketInfo, buf []byte) []byte {
 	return putCmsgStruct(
@@ -415,8 +437,16 @@ func PackControlMessages(t *kernel.Task, cmsgs socket.ControlMessages, buf []byt
 		buf = PackTOS(t, cmsgs.IP.TOS, buf)
 	}
 
+	if cmsgs.IP.HasTTL {
+		buf = PackTTL(t, cmsgs.IP.TTL, buf)
+	}
+
 	if cmsgs.IP.HasTClass {
 		buf = PackTClass(t, cmsgs.IP.TClass, buf)
+	}
+
+	if cmsgs.IP.HasHopLimit {
+		buf = PackHopLimit(t, cmsgs.IP.HopLimit, buf)
 	}
 
 	if cmsgs.IP.HasIPPacketInfo {
@@ -460,8 +490,16 @@ func CmsgsSpace(t *kernel.Task, cmsgs socket.ControlMessages) int {
 		space += cmsgSpace(t, linux.SizeOfControlMessageTOS)
 	}
 
+	if cmsgs.IP.HasTTL {
+		space += cmsgSpace(t, linux.SizeOfControlMessageTTL)
+	}
+
 	if cmsgs.IP.HasTClass {
 		space += cmsgSpace(t, linux.SizeOfControlMessageTClass)
+	}
+
+	if cmsgs.IP.HasHopLimit {
+		space += cmsgSpace(t, linux.SizeOfControlMessageHopLimit)
 	}
 
 	if cmsgs.IP.HasIPPacketInfo {
@@ -559,6 +597,15 @@ func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte, width uint)
 				tos.UnmarshalUnsafe(buf)
 				cmsgs.IP.TOS = uint8(tos)
 
+			case linux.IP_TTL:
+				if length < linux.SizeOfControlMessageTTL {
+					return socket.ControlMessages{}, linuxerr.EINVAL
+				}
+				cmsgs.IP.HasTTL = true
+				var ttl primitive.Uint32
+				ttl.UnmarshalUnsafe(buf)
+				cmsgs.IP.TTL = uint32(ttl)
+
 			case linux.IP_PKTINFO:
 				if length < linux.SizeOfControlMessageIPPacketInfo {
 					return socket.ControlMessages{}, linuxerr.EINVAL
@@ -609,6 +656,15 @@ func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte, width uint)
 				var packetInfo linux.ControlMessageIPv6PacketInfo
 				packetInfo.UnmarshalUnsafe(buf)
 				cmsgs.IP.IPv6PacketInfo = packetInfo
+
+			case linux.IPV6_HOPLIMIT:
+				if length < linux.SizeOfControlMessageHopLimit {
+					return socket.ControlMessages{}, linuxerr.EINVAL
+				}
+				cmsgs.IP.HasHopLimit = true
+				var hoplimit primitive.Uint32
+				hoplimit.UnmarshalUnsafe(buf)
+				cmsgs.IP.HopLimit = uint32(hoplimit)
 
 			case linux.IPV6_RECVORIGDSTADDR:
 				var addr linux.SockAddrInet6

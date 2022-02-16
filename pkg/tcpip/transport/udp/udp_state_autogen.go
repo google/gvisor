@@ -20,6 +20,7 @@ func (p *udpPacket) StateFields() []string {
 		"pkt",
 		"receivedAt",
 		"tosOrTClass",
+		"ttlOrHopLimit",
 	}
 }
 
@@ -38,6 +39,7 @@ func (p *udpPacket) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &p.packetInfo)
 	stateSinkObject.Save(5, &p.pkt)
 	stateSinkObject.Save(7, &p.tosOrTClass)
+	stateSinkObject.Save(8, &p.ttlOrHopLimit)
 }
 
 func (p *udpPacket) afterLoad() {}
@@ -51,6 +53,7 @@ func (p *udpPacket) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(4, &p.packetInfo)
 	stateSourceObject.Load(5, &p.pkt)
 	stateSourceObject.Load(7, &p.tosOrTClass)
+	stateSourceObject.Load(8, &p.ttlOrHopLimit)
 	stateSourceObject.LoadValue(6, new(int64), func(y interface{}) { p.loadReceivedAt(y.(int64)) })
 }
 

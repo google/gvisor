@@ -19,6 +19,7 @@ func (p *rawPacket) StateFields() []string {
 		"senderAddr",
 		"packetInfo",
 		"tosOrTClass",
+		"ttlOrHopLimit",
 	}
 }
 
@@ -37,6 +38,7 @@ func (p *rawPacket) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &p.senderAddr)
 	stateSinkObject.Save(4, &p.packetInfo)
 	stateSinkObject.Save(5, &p.tosOrTClass)
+	stateSinkObject.Save(6, &p.ttlOrHopLimit)
 }
 
 func (p *rawPacket) afterLoad() {}
@@ -47,6 +49,7 @@ func (p *rawPacket) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(3, &p.senderAddr)
 	stateSourceObject.Load(4, &p.packetInfo)
 	stateSourceObject.Load(5, &p.tosOrTClass)
+	stateSourceObject.Load(6, &p.ttlOrHopLimit)
 	stateSourceObject.LoadValue(1, new(buffer.VectorisedView), func(y interface{}) { p.loadData(y.(buffer.VectorisedView)) })
 	stateSourceObject.LoadValue(2, new(int64), func(y interface{}) { p.loadReceivedAt(y.(int64)) })
 }
