@@ -16,6 +16,16 @@ packetimpact_testbench(
 )
 
 packetimpact_testbench(
+    name = "tcp_acceptable_ack_syn_rcvd",
+    srcs = ["tcp_acceptable_ack_syn_rcvd_test.go"],
+    deps = [
+        "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_testbench(
     name = "ipv4_id_uniqueness",
     srcs = ["ipv4_id_uniqueness_test.go"],
     deps = [
