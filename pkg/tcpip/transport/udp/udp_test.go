@@ -16,6 +16,7 @@ package udp_test
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io/ioutil"
 	"math"
@@ -1978,6 +1979,77 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestChecksumWithZeroValueOnesComplementSum(t *testing.T) {
+	c := context.New(t, []stack.TransportProtocolFactory{udp.NewProtocol})
+	defer c.Cleanup()
+
+	c.CreateEndpoint(ipv6.ProtocolNumber, udp.ProtocolNumber)
+	var writeOpts tcpip.WriteOptions
+	h := context.UnicastV6.MakeHeader4Tuple(context.Outgoing)
+	writeDstAddr := context.UnicastV6.MapAddrIfApplicable(h.Dst.Addr)
+	writeOpts = tcpip.WriteOptions{
+		To: &tcpip.FullAddress{Addr: writeDstAddr, Port: h.Dst.Port},
+	}
+
+	// Write a packet to calculate what the checksum value will be with a zero
+	// value payload. We will then take that checksum value to construct another
+	// packet which would result in the ones complement of the packet to be zero.
+	var payload [2]byte
+	{
+		var r bytes.Reader
+		r.Reset(payload[:])
+		n, err := c.EP.Write(&r, writeOpts)
+		if err != nil {
+			t.Fatalf("Write failed: %s", err)
+		}
+		if want := int64(len(payload)); n != want {
+			t.Fatalf("got n = %d, want = %d", n, want)
+		}
+
+		pkt := c.LinkEP.Read()
+		if pkt == nil {
+			t.Fatal("Packet wasn't written out")
+		}
+
+		v := stack.PayloadSince(pkt.NetworkHeader())
+		checker.IPv6(t, v, checker.UDP())
+
+		// Simply replacing the payload with the checksum value is enough to make
+		// sure that we end up with an all ones value for the ones complement sum
+		// because the checksum value is held the ones complement of the ones
+		// complement sum.
+		//
+		// In ones complement arithmetic, adding a value A with a ones complement of
+		// another value B is the same as subtracting B from A.
+		//
+		// The resulting ones complement will be  C' = C - C so we know C' will be
+		// zero. The stack should never send a zero value though so we expect all
+		// ones below.
+		binary.BigEndian.PutUint16(payload[:], header.UDP(header.IPv6(v).Payload()).Checksum())
+	}
+
+	{
+		var r bytes.Reader
+		r.Reset(payload[:])
+		n, err := c.EP.Write(&r, writeOpts)
+		if err != nil {
+			t.Fatalf("Write failed: %s", err)
+		}
+		if want := int64(len(payload)); n != want {
+			t.Fatalf("got n = %d, want = %d", n, want)
+		}
+	}
+
+	{
+		pkt := c.LinkEP.Read()
+		if pkt == nil {
+			t.Fatal("Packet wasn't written out")
+		}
+
+		checker.IPv6(t, stack.PayloadSince(pkt.NetworkHeader()), checker.UDP(checker.TransportChecksum(math.MaxUint16)))
 	}
 }
 

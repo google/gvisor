@@ -565,6 +565,17 @@ func DstPort(port uint16) TransportChecker {
 	}
 }
 
+// TransportChecksum creates a checker that checks the checksum value.
+func TransportChecksum(want uint16) TransportChecker {
+	return func(t *testing.T, transportHdr header.Transport) {
+		t.Helper()
+
+		if got := transportHdr.Checksum(); got != want {
+			t.Errorf("got transportHdr.Checksum() = %d, want = %d", got, want)
+		}
+	}
+}
+
 // NoChecksum creates a checker that checks if the checksum is zero.
 func NoChecksum(noChecksum bool) TransportChecker {
 	return func(t *testing.T, h header.Transport) {
