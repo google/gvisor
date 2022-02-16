@@ -697,8 +697,9 @@ func (fs *filesystem) Release(ctx context.Context) {
 	// If leak checking is enabled, release all outstanding references in the
 	// filesystem. We deliberately avoid doing this outside of leak checking; we
 	// have released all external resources above rather than relying on dentry
-	// destructors.
-	if refs_vfs1.GetLeakMode() != refs_vfs1.NoLeakChecking {
+	// destructors. fs.root may be nil if creating the client or initializing the
+	// root dentry failed in GetFilesystem.
+	if refs_vfs1.GetLeakMode() != refs_vfs1.NoLeakChecking && fs.root != nil {
 		fs.renameMu.Lock()
 		fs.root.releaseSyntheticRecursiveLocked(ctx)
 		fs.evictAllCachedDentriesLocked(ctx)
