@@ -2142,6 +2142,91 @@ TEST_P(UdpSocketControlMessagesTest, SendAndReceiveTOSorTClass) {
   EXPECT_EQ(recv_data_len, sizeof(sent_data));
 }
 
+TEST_P(UdpSocketControlMessagesTest, SetAndReceiveTTLOrHopLimit) {
+  // Enable receiving TTL and maybe HOPLIMIT on the receiver.
+  ASSERT_THAT(setsockopt(server_.get(), SOL_IP, IP_RECVTTL, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  if (ServerAddressFamily() == AF_INET6) {
+    ASSERT_THAT(setsockopt(server_.get(), SOL_IPV6, IPV6_RECVHOPLIMIT,
+                           &kSockOptOn, sizeof(kSockOptOn)),
+                SyscallSucceeds());
+  }
+
+  // Set custom TTL and maybe HOPLIMIT on the sender.
+  constexpr int kTTL = 21;
+  constexpr int kHopLimit = 42;
+  ASSERT_NE(kTTL, kHopLimit);
+
+  ASSERT_THAT(setsockopt(client_.get(), SOL_IP, IP_TTL, &kTTL, sizeof(kTTL)),
+              SyscallSucceeds());
+  if (ClientAddressFamily() == AF_INET6) {
+    ASSERT_THAT(setsockopt(client_.get(), SOL_IPV6, IPV6_UNICAST_HOPS,
+                           &kHopLimit, sizeof(kHopLimit)),
+                SyscallSucceeds());
+  }
+
+  constexpr size_t kArbitrarySendSize = 1042;
+  constexpr char sent_data[kArbitrarySendSize] = {};
+  ASSERT_THAT(RetryEINTR(send)(client_.get(), sent_data, sizeof(sent_data), 0),
+              SyscallSucceedsWithValue(sizeof(sent_data)));
+
+  char recv_data[sizeof(sent_data)];
+  size_t recv_data_len = sizeof(recv_data);
+
+  if (ClientAddressFamily() == AF_INET) {
+    int ttl;
+    ASSERT_NO_FATAL_FAILURE(
+        RecvTTL(server_.get(), recv_data, &recv_data_len, &ttl));
+    EXPECT_EQ(ttl, kTTL);
+  } else {
+    int hoplimit;
+    ASSERT_NO_FATAL_FAILURE(
+        RecvHopLimit(server_.get(), recv_data, &recv_data_len, &hoplimit));
+    EXPECT_EQ(hoplimit, kHopLimit);
+  }
+  EXPECT_EQ(recv_data_len, sizeof(sent_data));
+}
+
+TEST_P(UdpSocketControlMessagesTest, SendAndReceiveTTLOrHopLimit) {
+  // TODO(b/146661005): Setting TTL/HopLimit via sendmsg is not supported by
+  // netstack.
+  SKIP_IF(IsRunningOnGvisor() && !IsRunningWithHostinet());
+
+  // Enable receiving TTL and maybe HOPLIMIT on the receiver.
+  ASSERT_THAT(setsockopt(server_.get(), SOL_IP, IP_RECVTTL, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  if (ServerAddressFamily() == AF_INET6) {
+    ASSERT_THAT(setsockopt(server_.get(), SOL_IPV6, IPV6_RECVHOPLIMIT,
+                           &kSockOptOn, sizeof(kSockOptOn)),
+                SyscallSucceeds());
+  }
+
+  constexpr int kSendCmsgValue = 42;
+  constexpr size_t kArbitrarySendSize = 1024;
+  char sent_data[kArbitrarySendSize];
+  char recv_data[sizeof(sent_data) + 1];
+  size_t recv_data_len = sizeof(recv_data);
+
+  if (ClientAddressFamily() == AF_INET) {
+    ASSERT_NO_FATAL_FAILURE(SendTTL(client_.get(), sent_data,
+                                    size_t(sizeof(sent_data)), kSendCmsgValue));
+    int ttl;
+    ASSERT_NO_FATAL_FAILURE(
+        RecvTTL(server_.get(), recv_data, &recv_data_len, &ttl));
+    EXPECT_EQ(ttl, kSendCmsgValue);
+  } else {
+    ASSERT_NO_FATAL_FAILURE(SendHopLimit(
+        client_.get(), sent_data, size_t(sizeof(sent_data)), kSendCmsgValue));
+    int hoplimit;
+    ASSERT_NO_FATAL_FAILURE(
+        RecvHopLimit(server_.get(), recv_data, &recv_data_len, &hoplimit));
+    EXPECT_EQ(hoplimit, kSendCmsgValue);
+  }
+  EXPECT_EQ(recv_data_len, sizeof(sent_data));
+}
+
 TEST_P(UdpSocketControlMessagesTest, SetAndReceivePktInfo) {
   // Enable receiving IP_PKTINFO and maybe IPV6_PKTINFO on the receiver.
   ASSERT_THAT(setsockopt(server_.get(), SOL_IP, IP_PKTINFO, &kSockOptOn,

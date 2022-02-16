@@ -367,6 +367,16 @@ func hostInetFilters() seccomp.SyscallRules {
 			{
 				seccomp.MatchAny{},
 				seccomp.EqualTo(unix.SOL_IP),
+				seccomp.EqualTo(unix.IP_TTL),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SOL_IP),
+				seccomp.EqualTo(unix.IP_RECVTTL),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SOL_IP),
 				seccomp.EqualTo(unix.IP_PKTINFO),
 			},
 			{
@@ -393,6 +403,21 @@ func hostInetFilters() seccomp.SyscallRules {
 				seccomp.MatchAny{},
 				seccomp.EqualTo(unix.SOL_IPV6),
 				seccomp.EqualTo(unix.IPV6_RECVPKTINFO),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SOL_IPV6),
+				seccomp.EqualTo(unix.IPV6_UNICAST_HOPS),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SOL_IPV6),
+				seccomp.EqualTo(unix.IPV6_MULTICAST_HOPS),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SOL_IPV6),
+				seccomp.EqualTo(unix.IPV6_RECVHOPLIMIT),
 			},
 			{
 				seccomp.MatchAny{},
@@ -549,6 +574,20 @@ func hostInetFilters() seccomp.SyscallRules {
 			{
 				seccomp.MatchAny{},
 				seccomp.EqualTo(unix.SOL_IP),
+				seccomp.EqualTo(unix.IP_TTL),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(4),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SOL_IP),
+				seccomp.EqualTo(unix.IP_RECVTTL),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(4),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SOL_IP),
 				seccomp.EqualTo(unix.IP_PKTINFO),
 				seccomp.MatchAny{},
 				seccomp.EqualTo(4),
@@ -585,6 +624,27 @@ func hostInetFilters() seccomp.SyscallRules {
 				seccomp.MatchAny{},
 				seccomp.EqualTo(unix.SOL_IPV6),
 				seccomp.EqualTo(unix.IPV6_RECVTCLASS),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(4),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SOL_IPV6),
+				seccomp.EqualTo(unix.IPV6_UNICAST_HOPS),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(4),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SOL_IPV6),
+				seccomp.EqualTo(unix.IPV6_MULTICAST_HOPS),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(4),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SOL_IPV6),
+				seccomp.EqualTo(unix.IPV6_RECVHOPLIMIT),
 				seccomp.MatchAny{},
 				seccomp.EqualTo(4),
 			},

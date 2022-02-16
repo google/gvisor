@@ -63,6 +63,22 @@ func TestReceiveControlMessage(t *testing.T) {
 					absenceChecker:   checker.NoTClassReceived(),
 				},
 				{
+					name:             "TTL",
+					optionProtocol:   header.IPv4ProtocolNumber,
+					getReceiveOption: func(ep tcpip.Endpoint) bool { return ep.SocketOptions().GetReceiveTTL() },
+					setReceiveOption: func(ep tcpip.Endpoint, value bool) { ep.SocketOptions().SetReceiveTTL(value) },
+					presenceChecker:  checker.ReceiveTTL(testTTL),
+					absenceChecker:   checker.NoTTLReceived(),
+				},
+				{
+					name:             "HopLimit",
+					optionProtocol:   header.IPv6ProtocolNumber,
+					getReceiveOption: func(ep tcpip.Endpoint) bool { return ep.SocketOptions().GetReceiveHopLimit() },
+					setReceiveOption: func(ep tcpip.Endpoint, value bool) { ep.SocketOptions().SetReceiveHopLimit(value) },
+					presenceChecker:  checker.ReceiveHopLimit(testTTL),
+					absenceChecker:   checker.NoHopLimitReceived(),
+				},
+				{
 					name:             "IPPacketInfo",
 					optionProtocol:   header.IPv4ProtocolNumber,
 					getReceiveOption: func(ep tcpip.Endpoint) bool { return ep.SocketOptions().GetReceivePacketInfo() },

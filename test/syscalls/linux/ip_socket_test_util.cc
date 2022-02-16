@@ -327,6 +327,22 @@ void SendTClass(int sock, char buf[], size_t buf_size, int tclass) {
   SendCmsg(sock, SOL_IPV6, IPV6_TCLASS, buf, buf_size, tclass);
 }
 
+void RecvTTL(int sock, char buf[], size_t* buf_size, int* out_ttl) {
+  RecvCmsg(sock, SOL_IP, IP_TTL, buf, buf_size, out_ttl);
+}
+
+void SendTTL(int sock, char buf[], size_t buf_size, int ttl) {
+  SendCmsg(sock, SOL_IP, IP_TTL, buf, buf_size, ttl);
+}
+
+void RecvHopLimit(int sock, char buf[], size_t* buf_size, int* out_hoplimit) {
+  RecvCmsg(sock, SOL_IPV6, IPV6_HOPLIMIT, buf, buf_size, out_hoplimit);
+}
+
+void SendHopLimit(int sock, char buf[], size_t buf_size, int hoplimit) {
+  SendCmsg(sock, SOL_IPV6, IPV6_HOPLIMIT, buf, buf_size, hoplimit);
+}
+
 void RecvPktInfo(int sock, char buf[], size_t* buf_size,
                  in_pktinfo* out_pktinfo) {
   RecvCmsg(sock, SOL_IP, IP_PKTINFO, buf, buf_size, out_pktinfo);

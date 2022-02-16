@@ -433,11 +433,23 @@ type ControlMessages struct {
 	// Inq is the number of bytes ready to be received.
 	Inq int32
 
-	// HasTOS indicates whether Tos is valid/set.
+	// HasTOS indicates whether TOS is valid/set.
 	HasTOS bool
 
 	// TOS is the IPv4 type of service of the associated packet.
 	TOS uint8
+
+	// HasTTL indicates whether TTL is valid/set.
+	HasTTL bool
+
+	// TTL is the IPv4 Time To Live of the associated packet.
+	TTL uint8
+
+	// HasHopLimit indicates whether HopLimit is valid/set.
+	HasHopLimit bool
+
+	// HopLimit is the IPv6 Hop Limit of the associated packet.
+	HopLimit uint8
 
 	// HasTClass indicates whether TClass is valid/set.
 	HasTClass bool
