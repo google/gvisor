@@ -90,8 +90,8 @@ var _ genericFD = (*ControlFD)(nil)
 func (fd *ControlFD) DecRef(context.Context) {
 	fd.controlFDRefs.DecRef(func() {
 		fd.conn.server.renameMu.RLock()
+		defer fd.conn.server.renameMu.RUnlock()
 		fd.destroyLocked()
-		fd.conn.server.renameMu.RUnlock()
 	})
 }
 
