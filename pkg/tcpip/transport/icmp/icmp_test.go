@@ -43,7 +43,10 @@ var (
 	remoteV4Addr = testutil.MustParse4("10.0.0.3")
 )
 
-const testTOS = 0x80
+const (
+	testTOS = 0x80
+	testTTL = 42
+)
 
 func addNICWithDefaultRoute(t *testing.T, s *stack.Stack, id tcpip.NICID, name string, addrV4 tcpip.Address) *channel.Endpoint {
 	t.Helper()
@@ -245,7 +248,6 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 }
 
 func buildV4EchoReplyPacket(payload []byte, h context.Header4Tuple) (buffer.View, buffer.View) {
-	const ttl = 65
 	// Allocate a buffer for data and headers.
 	buf := buffer.NewView(header.IPv4MinimumSize + header.ICMPv4MinimumSize + len(payload))
 	payloadStart := len(buf) - len(payload)
@@ -256,7 +258,7 @@ func buildV4EchoReplyPacket(payload []byte, h context.Header4Tuple) (buffer.View
 	ip.Encode(&header.IPv4Fields{
 		TOS:         testTOS,
 		TotalLength: uint16(len(buf)),
-		TTL:         ttl,
+		TTL:         testTTL,
 		Protocol:    uint8(icmp.ProtocolNumber4),
 		SrcAddr:     h.Src.Addr,
 		DstAddr:     h.Dst.Addr,
@@ -274,7 +276,6 @@ func buildV4EchoReplyPacket(payload []byte, h context.Header4Tuple) (buffer.View
 }
 
 func buildV6EchoReplyPacket(payload []byte, h context.Header4Tuple) (buffer.View, buffer.View) {
-	const hoplimit = 65
 	// Allocate a buffer for data and headers.
 	buf := buffer.NewView(header.IPv6MinimumSize + header.ICMPv6EchoMinimumSize + len(payload))
 	payloadStart := len(buf) - len(payload)
@@ -286,7 +287,7 @@ func buildV6EchoReplyPacket(payload []byte, h context.Header4Tuple) (buffer.View
 		TrafficClass:      testTOS,
 		PayloadLength:     uint16(header.ICMPv6EchoMinimumSize + len(payload)),
 		TransportProtocol: icmp.ProtocolNumber6,
-		HopLimit:          hoplimit,
+		HopLimit:          testTTL,
 		SrcAddr:           h.Src.Addr,
 		DstAddr:           h.Dst.Addr,
 	})
@@ -345,6 +346,22 @@ func TestReceiveControlMessages(t *testing.T) {
 					setReceiveOption: func(ep tcpip.Endpoint, value bool) { ep.SocketOptions().SetReceiveTClass(value) },
 					presenceChecker:  checker.ReceiveTClass(testTOS),
 					absenceChecker:   checker.NoTClassReceived(),
+				},
+				{
+					name:             "TTL",
+					optionProtocol:   header.IPv4ProtocolNumber,
+					getReceiveOption: func(ep tcpip.Endpoint) bool { return ep.SocketOptions().GetReceiveTTL() },
+					setReceiveOption: func(ep tcpip.Endpoint, value bool) { ep.SocketOptions().SetReceiveTTL(value) },
+					presenceChecker:  checker.ReceiveTTL(testTTL),
+					absenceChecker:   checker.NoTTLReceived(),
+				},
+				{
+					name:             "HopLimit",
+					optionProtocol:   header.IPv6ProtocolNumber,
+					getReceiveOption: func(ep tcpip.Endpoint) bool { return ep.SocketOptions().GetReceiveHopLimit() },
+					setReceiveOption: func(ep tcpip.Endpoint, value bool) { ep.SocketOptions().SetReceiveHopLimit(value) },
+					presenceChecker:  checker.ReceiveHopLimit(testTTL),
+					absenceChecker:   checker.NoHopLimitReceived(),
 				},
 				{
 					name:             "IPPacketInfo",

@@ -565,11 +565,17 @@ const SizeOfControlMessageInq = 4
 // SizeOfControlMessageTOS is the size of an IP_TOS control message.
 const SizeOfControlMessageTOS = 1
 
+// SizeOfControlMessageTTL is the size of an IP_TTL control message.
+const SizeOfControlMessageTTL = 4
+
 // SizeOfControlMessageTClass is the size of an IPV6_TCLASS control message.
 const SizeOfControlMessageTClass = 4
 
-// SizeOfControlMessageIPPacketInfo is the size of an IP_PKTINFO
-// control message.
+// SizeOfControlMessageHopLimit is the size of an IPV6_HOPLIMIT control message.
+const SizeOfControlMessageHopLimit = 4
+
+// SizeOfControlMessageIPPacketInfo is the size of an IP_PKTINFO control
+// message.
 const SizeOfControlMessageIPPacketInfo = 12
 
 // SizeOfControlMessageIPv6PacketInfo is the size of a

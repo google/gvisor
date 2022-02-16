@@ -333,6 +333,54 @@ func NoTOSReceived() ControlMessagesChecker {
 	}
 }
 
+// ReceiveTTL creates a checker that checks the TTL field in
+// ControlMessages.
+func ReceiveTTL(want uint8) ControlMessagesChecker {
+	return func(t *testing.T, cm tcpip.ControlMessages) {
+		t.Helper()
+		if !cm.HasTTL {
+			t.Errorf("got cm.HasTTL = %t, want = true", cm.HasTTL)
+		} else if got := cm.TTL; got != want {
+			t.Errorf("got cm.TTL = %d, want = %d", got, want)
+		}
+	}
+}
+
+// NoTTLReceived creates a checker that checks the absence of the TTL field in
+// ControlMessages.
+func NoTTLReceived() ControlMessagesChecker {
+	return func(t *testing.T, cm tcpip.ControlMessages) {
+		t.Helper()
+		if cm.HasTTL {
+			t.Error("got cm.HasTTL = true, want = false")
+		}
+	}
+}
+
+// ReceiveHopLimit creates a checker that checks the HopLimit field in
+// ControlMessages.
+func ReceiveHopLimit(want uint8) ControlMessagesChecker {
+	return func(t *testing.T, cm tcpip.ControlMessages) {
+		t.Helper()
+		if !cm.HasHopLimit {
+			t.Errorf("got cm.HasHopLimit = %t, want = true", cm.HasHopLimit)
+		} else if got := cm.HopLimit; got != want {
+			t.Errorf("got cm.HopLimit = %d, want = %d", got, want)
+		}
+	}
+}
+
+// NoHopLimitReceived creates a checker that checks the absence of the HopLimit
+// field in ControlMessages.
+func NoHopLimitReceived() ControlMessagesChecker {
+	return func(t *testing.T, cm tcpip.ControlMessages) {
+		t.Helper()
+		if cm.HasHopLimit {
+			t.Error("got cm.HasHopLimit = true, want = false")
+		}
+	}
+}
+
 // ReceiveIPPacketInfo creates a checker that checks the PacketInfo field in
 // ControlMessages.
 func ReceiveIPPacketInfo(want tcpip.IPPacketInfo) ControlMessagesChecker {

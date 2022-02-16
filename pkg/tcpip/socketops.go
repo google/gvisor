@@ -166,6 +166,14 @@ type SocketOptions struct {
 	// passed with incoming packets.
 	receiveTOSEnabled uint32
 
+	// receiveTTLEnabled is used to specify if the TTL ancillary message is passed
+	// with incoming packets.
+	receiveTTLEnabled uint32
+
+	// receiveHopLimitEnabled is used to specify if the HopLimit ancillary message
+	// is passed with incoming packets.
+	receiveHopLimitEnabled uint32
+
 	// receiveTClassEnabled is used to specify if the IPV6_TCLASS ancillary
 	// message is passed with incoming packets.
 	receiveTClassEnabled uint32
@@ -342,6 +350,26 @@ func (so *SocketOptions) GetReceiveTOS() bool {
 // SetReceiveTOS sets value for IP_RECVTOS option.
 func (so *SocketOptions) SetReceiveTOS(v bool) {
 	storeAtomicBool(&so.receiveTOSEnabled, v)
+}
+
+// GetReceiveTTL gets value for IP_RECVTTL option.
+func (so *SocketOptions) GetReceiveTTL() bool {
+	return atomic.LoadUint32(&so.receiveTTLEnabled) != 0
+}
+
+// SetReceiveTTL sets value for IP_RECVTTL option.
+func (so *SocketOptions) SetReceiveTTL(v bool) {
+	storeAtomicBool(&so.receiveTTLEnabled, v)
+}
+
+// GetReceiveHopLimit gets value for IP_RECVHOPLIMIT option.
+func (so *SocketOptions) GetReceiveHopLimit() bool {
+	return atomic.LoadUint32(&so.receiveHopLimitEnabled) != 0
+}
+
+// SetReceiveHopLimit sets value for IP_RECVHOPLIMIT option.
+func (so *SocketOptions) SetReceiveHopLimit(v bool) {
+	storeAtomicBool(&so.receiveHopLimitEnabled, v)
 }
 
 // GetReceiveTClass gets value for IPV6_RECVTCLASS option.

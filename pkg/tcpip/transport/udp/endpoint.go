@@ -42,6 +42,8 @@ type udpPacket struct {
 	// tosOrTClass stores either the Type of Service for IPv4 or the Traffic Class
 	// for IPv6.
 	tosOrTClass uint8
+	// ttlOrHopLimit stores either the TTL for IPv4 or the HopLimit for IPv6
+	ttlOrHopLimit uint8
 }
 
 // endpoint represents a UDP endpoint. This struct serves as the interface
@@ -246,6 +248,10 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 			cm.HasTOS = true
 			cm.TOS = p.tosOrTClass
 		}
+		if e.ops.GetReceiveTTL() {
+			cm.HasTTL = true
+			cm.TTL = p.ttlOrHopLimit
+		}
 		if e.ops.GetReceivePacketInfo() {
 			cm.HasIPPacketInfo = true
 			cm.PacketInfo = p.packetInfo
@@ -255,6 +261,10 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 			cm.HasTClass = true
 			// Although TClass is an 8-bit value it's read in the CMsg as a uint32.
 			cm.TClass = uint32(p.tosOrTClass)
+		}
+		if e.ops.GetReceiveHopLimit() {
+			cm.HasHopLimit = true
+			cm.HopLimit = p.ttlOrHopLimit
 		}
 		if e.ops.GetIPv6ReceivePacketInfo() {
 			cm.HasIPv6PacketInfo = true
@@ -927,6 +937,12 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 
 	// Save any useful information from the network header to the packet.
 	packet.tosOrTClass, _ = pkt.Network().TOS()
+	switch pkt.NetworkProtocolNumber {
+	case header.IPv4ProtocolNumber:
+		packet.ttlOrHopLimit = header.IPv4(pkt.NetworkHeader().View()).TTL()
+	case header.IPv6ProtocolNumber:
+		packet.ttlOrHopLimit = header.IPv6(pkt.NetworkHeader().View()).HopLimit()
+	}
 
 	// TODO(gvisor.dev/issue/3556): r.LocalAddress may be a multicast or broadcast
 	// address. packetInfo.LocalAddr should hold a unicast address that can be

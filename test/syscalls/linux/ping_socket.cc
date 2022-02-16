@@ -116,21 +116,16 @@ TEST(PingSocket, ReceiveTOS) {
                          sizeof(kSockOptOn)),
               SyscallSucceeds());
 
-  struct {
-    icmphdr icmp;
-
-    // Add an extra byte to confirm we did not read unexpected bytes.
-    char unused;
-  } ABSL_ATTRIBUTE_PACKED recv_buf;
+  icmphdr recv_buf;
   size_t recv_buf_len = sizeof(recv_buf);
   uint8_t received_tos;
   ASSERT_NO_FATAL_FAILURE(RecvTOS(ping.get(),
                                   reinterpret_cast<char*>(&recv_buf),
                                   &recv_buf_len, &received_tos));
-  ASSERT_EQ(recv_buf_len, sizeof(icmphdr));
+  ASSERT_EQ(recv_buf_len, sizeof(kSendIcmp));
 
-  EXPECT_EQ(recv_buf.icmp.type, ICMP_ECHOREPLY);
-  EXPECT_EQ(recv_buf.icmp.code, 0);
+  EXPECT_EQ(recv_buf.type, ICMP_ECHOREPLY);
+  EXPECT_EQ(recv_buf.code, 0);
 
   EXPECT_EQ(received_tos, kArbitraryTOS);
 }
@@ -187,6 +182,98 @@ TEST(PingSocket, ReceiveTClass) {
   EXPECT_EQ(recv_buf.icmpv6.icmp6_code, 0);
 
   EXPECT_EQ(received_tclass, kArbitraryTClass);
+}
+
+TEST(PingSocket, ReceiveTTL) {
+  PosixErrorOr<FileDescriptor> result =
+      Socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
+  if (!result.ok()) {
+    int errno_value = result.error().errno_value();
+    ASSERT_EQ(errno_value, EACCES) << strerror(errno_value);
+    GTEST_SKIP() << "ping socket not supported";
+  }
+  FileDescriptor& ping = result.ValueOrDie();
+
+  const sockaddr_in kAddr = {
+      .sin_family = AF_INET,
+      .sin_addr = {.s_addr = htonl(INADDR_LOOPBACK)},
+  };
+  ASSERT_THAT(bind(ping.get(), reinterpret_cast<const sockaddr*>(&kAddr),
+                   sizeof(kAddr)),
+              SyscallSucceeds());
+
+  constexpr icmphdr kSendIcmp = {
+      .type = ICMP_ECHO,
+  };
+  ASSERT_THAT(sendto(ping.get(), &kSendIcmp, sizeof(kSendIcmp), 0,
+                     reinterpret_cast<const sockaddr*>(&kAddr), sizeof(kAddr)),
+              SyscallSucceedsWithValue(sizeof(kSendIcmp)));
+
+  // Register to receive TTL.
+  constexpr int kOne = 1;
+  ASSERT_THAT(
+      setsockopt(ping.get(), IPPROTO_IP, IP_RECVTTL, &kOne, sizeof(kOne)),
+      SyscallSucceeds());
+
+  icmphdr recv_icmp;
+  size_t recv_len = sizeof(recv_icmp);
+  int received_ttl;
+  ASSERT_NO_FATAL_FAILURE(RecvTTL(ping.get(),
+                                  reinterpret_cast<char*>(&recv_icmp),
+                                  &recv_len, &received_ttl));
+  ASSERT_EQ(recv_len, sizeof(kSendIcmp));
+
+  EXPECT_EQ(recv_icmp.type, ICMP_ECHOREPLY);
+  EXPECT_EQ(recv_icmp.code, 0);
+
+  constexpr int kDefaultTTL = 64;
+  EXPECT_EQ(received_ttl, kDefaultTTL);
+}
+
+TEST(PingSocket, ReceiveHopLimit) {
+  PosixErrorOr<FileDescriptor> result =
+      Socket(AF_INET6, SOCK_DGRAM, IPPROTO_ICMPV6);
+  if (!result.ok()) {
+    int errno_value = result.error().errno_value();
+    ASSERT_EQ(errno_value, EACCES) << strerror(errno_value);
+    GTEST_SKIP() << "ping socket not supported";
+  }
+  FileDescriptor& ping = result.ValueOrDie();
+
+  const sockaddr_in6 kAddr = {
+      .sin6_family = AF_INET6,
+      .sin6_addr = in6addr_loopback,
+  };
+  ASSERT_THAT(bind(ping.get(), reinterpret_cast<const sockaddr*>(&kAddr),
+                   sizeof(kAddr)),
+              SyscallSucceeds());
+
+  constexpr icmp6_hdr kSendIcmp = {
+      .icmp6_type = ICMP6_ECHO_REQUEST,
+  };
+  ASSERT_THAT(sendto(ping.get(), &kSendIcmp, sizeof(kSendIcmp), 0,
+                     reinterpret_cast<const sockaddr*>(&kAddr), sizeof(kAddr)),
+              SyscallSucceedsWithValue(sizeof(kSendIcmp)));
+
+  // Register to receive HOPLIMIT.
+  constexpr int kOne = 1;
+  ASSERT_THAT(setsockopt(ping.get(), IPPROTO_IPV6, IPV6_RECVHOPLIMIT, &kOne,
+                         sizeof(kOne)),
+              SyscallSucceeds());
+
+  icmp6_hdr recv_icmpv6;
+  size_t recv_len = sizeof(recv_icmpv6);
+  int received_hoplimit;
+  ASSERT_NO_FATAL_FAILURE(RecvHopLimit(ping.get(),
+                                       reinterpret_cast<char*>(&recv_icmpv6),
+                                       &recv_len, &received_hoplimit));
+  ASSERT_EQ(recv_len, sizeof(kSendIcmp));
+
+  EXPECT_EQ(recv_icmpv6.icmp6_type, ICMP6_ECHO_REPLY);
+  EXPECT_EQ(recv_icmpv6.icmp6_code, 0);
+
+  constexpr int kDefaultHopLimit = 64;
+  EXPECT_EQ(received_hoplimit, kDefaultHopLimit);
 }
 
 TEST(PingSocket, ReceiveIPPacketInfo) {
