@@ -196,10 +196,6 @@ func (m *machine) createVCPU(id int) *vCPU {
 	return c // Done.
 }
 
-// readOnlyGuestRegions contains regions that have to be mapped read-only into
-// the guest physical address space. Right now, it is used on arm64 only.
-var readOnlyGuestRegions []virtualRegion
-
 // newMachine returns a new VM context.
 func newMachine(vm int) (*machine, error) {
 	// Create the machine.
@@ -282,23 +278,14 @@ func newMachine(vm int) (*machine, error) {
 			}
 
 			// Ensure the physical range is mapped.
-			m.mapPhysical(physical, length, physicalRegions, flags)
+			m.mapPhysical(physical, length, physicalRegions)
 			virtual += length
 		}
-	}
-
-	for _, vr := range readOnlyGuestRegions {
-		mapRegion(vr, _KVM_MEM_READONLY)
 	}
 
 	applyVirtualRegions(func(vr virtualRegion) {
 		if excludeVirtualRegion(vr) {
 			return // skip region.
-		}
-		for _, r := range readOnlyGuestRegions {
-			if vr.virtual == r.virtual {
-				return
-			}
 		}
 		// Take into account that the stack can grow down.
 		if vr.filename == "[stack]" {
@@ -348,17 +335,17 @@ func (m *machine) hasSlot(physical uintptr) bool {
 // This panics on error.
 //
 //go:nosplit
-func (m *machine) mapPhysical(physical, length uintptr, phyRegions []physicalRegion, flags uint32) {
+func (m *machine) mapPhysical(physical, length uintptr, phyRegions []physicalRegion) {
 	for end := physical + length; physical < end; {
-		_, physicalStart, length, ok := calculateBluepillFault(physical, phyRegions)
-		if !ok {
+		_, physicalStart, length, pr := calculateBluepillFault(physical, phyRegions)
+		if pr == nil {
 			// Should never happen.
 			panic("mapPhysical on unknown physical address")
 		}
 
 		// Is this already mapped? Check the usedSlots.
 		if !m.hasSlot(physicalStart) {
-			if _, ok := handleBluepillFault(m, physical, phyRegions, flags); !ok {
+			if _, ok := handleBluepillFault(m, physical, phyRegions); !ok {
 				panic("handleBluepillFault failed")
 			}
 		}
