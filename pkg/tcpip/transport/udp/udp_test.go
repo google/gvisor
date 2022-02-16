@@ -513,6 +513,7 @@ func testWriteAndVerifyInternal(c *context.Context, flow context.TestFlow, setDe
 	}
 
 	vv := buffer.NewVectorisedView(p.Size(), p.Views())
+	p.DecRef()
 	b := vv.ToView()
 
 	h := flow.MakeHeader4Tuple(context.Outgoing)
@@ -1374,6 +1375,7 @@ func TestV4UnknownDestination(t *testing.T) {
 			}
 
 			vv := buffer.NewVectorisedView(p.Size(), p.Views())
+			p.DecRef()
 			pkt := vv.ToView()
 			if got, want := len(pkt), header.IPv4MinimumProcessableDatagramSize; got > want {
 				t.Fatalf("got an ICMP packet of size: %d, want: sz <= %d", got, want)
@@ -1468,6 +1470,7 @@ func TestV6UnknownDestination(t *testing.T) {
 			}
 
 			vv := buffer.NewVectorisedView(p.Size(), p.Views())
+			p.DecRef()
 			pkt := vv.ToView()
 			if got, want := len(pkt), header.IPv6MinimumMTU; got > want {
 				t.Fatalf("got an ICMP packet of size: %d, want: sz <= %d", got, want)
@@ -2015,6 +2018,7 @@ func TestChecksumWithZeroValueOnesComplementSum(t *testing.T) {
 		}
 
 		v := stack.PayloadSince(pkt.NetworkHeader())
+		pkt.DecRef()
 		checker.IPv6(t, v, checker.UDP())
 
 		// Simply replacing the payload with the checksum value is enough to make
@@ -2050,6 +2054,7 @@ func TestChecksumWithZeroValueOnesComplementSum(t *testing.T) {
 		}
 
 		checker.IPv6(t, stack.PayloadSince(pkt.NetworkHeader()), checker.UDP(checker.TransportChecksum(math.MaxUint16)))
+		pkt.DecRef()
 	}
 }
 

@@ -246,6 +246,7 @@ func (d *Device) Read() ([]byte, error) {
 		}
 
 		v, ok := d.encodePkt(pkt)
+		pkt.DecRef()
 		if !ok {
 			// Ignore unsupported packet.
 			continue

@@ -515,6 +515,7 @@ func TestMulticastForwarding(t *testing.T) {
 
 			if test.expectForward {
 				test.checker(t, stack.PayloadSince(p.NetworkHeader()))
+				p.DecRef()
 			}
 		})
 	}
@@ -685,11 +686,13 @@ func TestPerInterfaceForwarding(t *testing.T) {
 					test.rx(subTest.nicEP, test.srcAddr, test.dstAddr)
 					if p := subTest.nicEP.Read(); p != nil {
 						t.Errorf("unexpectedly got a response from the interface the packet arrived on: %#v", p)
+						p.DecRef()
 					}
 					if p := subTest.otherNICEP.Read(); (p != nil) != subTest.expectForwarding {
 						t.Errorf("got otherNICEP.Read() = (%#v, %t), want = (_, %t)", p, ok, subTest.expectForwarding)
 					} else if subTest.expectForwarding {
 						test.checker(t, stack.PayloadSince(p.NetworkHeader()))
+						p.DecRef()
 					}
 				})
 			}

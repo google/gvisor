@@ -206,6 +206,7 @@ func checkInitialIPv6Groups(t *testing.T, e *channel.Endpoint, s *stack.Stack, c
 		t.Fatal("expected a report message to be sent")
 	} else {
 		validateMLDPacket(t, p, ipv6AddrSNMC, mldReport, 0, ipv6AddrSNMC)
+		p.DecRef()
 	}
 
 	// Leave the group to not affect the tests. This is fine since we are not
@@ -221,6 +222,7 @@ func checkInitialIPv6Groups(t *testing.T, e *channel.Endpoint, s *stack.Stack, c
 		t.Fatal("expected a report message to be sent")
 	} else {
 		validateMLDPacket(t, p, header.IPv6AllRoutersLinkLocalMulticastAddress, mldDone, 0, ipv6AddrSNMC)
+		p.DecRef()
 	}
 
 	// Should not send any more packets.
@@ -560,6 +562,7 @@ func TestMGPJoinGroup(t *testing.T) {
 				t.Fatal("expected a report message to be sent")
 			} else {
 				test.validateReport(t, p)
+				p.DecRef()
 			}
 			if t.Failed() {
 				t.FailNow()
@@ -580,6 +583,7 @@ func TestMGPJoinGroup(t *testing.T) {
 				t.Fatal("expected a report message to be sent")
 			} else {
 				test.validateReport(t, p)
+				p.DecRef()
 			}
 
 			// Should not send any more packets.
@@ -672,6 +676,7 @@ func TestMGPLeaveGroup(t *testing.T) {
 				t.Fatal("expected a report message to be sent")
 			} else {
 				test.validateReport(t, p)
+				p.DecRef()
 			}
 			if t.Failed() {
 				t.FailNow()
@@ -689,6 +694,7 @@ func TestMGPLeaveGroup(t *testing.T) {
 				t.Fatal("expected a leave message to be sent")
 			} else {
 				test.validateLeave(t, p)
+				p.DecRef()
 			}
 
 			// Should not send any more packets.
@@ -815,6 +821,7 @@ func TestMGPQueryMessages(t *testing.T) {
 							t.Fatalf("expected %d-th report message to be sent", i)
 						} else {
 							test.validateReport(t, p)
+							p.DecRef()
 						}
 						clock.Advance(test.maxUnsolicitedResponseDelay)
 					}
@@ -847,6 +854,7 @@ func TestMGPQueryMessages(t *testing.T) {
 							t.Fatal("expected a report message to be sent")
 						} else {
 							test.validateReport(t, p)
+							p.DecRef()
 						}
 					}
 
@@ -944,6 +952,7 @@ func TestMGPReportMessages(t *testing.T) {
 				t.Fatal("expected a report message to be sent")
 			} else {
 				test.validateReport(t, p)
+				p.DecRef()
 			}
 			if t.Failed() {
 				t.FailNow()
@@ -1131,6 +1140,7 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 					t.Fatalf("expected a report message to be sent for %s", a)
 				} else {
 					test.validateReport(t, p, a)
+					p.DecRef()
 				}
 			}
 			if t.Failed() {
@@ -1160,6 +1170,7 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 					}
 
 					test.validateLeave(t, p, test.getAndCheckGroupAddress(t, seen, p))
+					p.DecRef()
 				}
 			}
 			if t.Failed() {
@@ -1187,6 +1198,7 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 					}
 
 					test.validateReport(t, p, test.getAndCheckGroupAddress(t, seen, p))
+					p.DecRef()
 				}
 			}
 			if t.Failed() {
@@ -1202,8 +1214,10 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 				t.Errorf("got sentLeaveStat.Value() = %d, want = %d", got, leaveCounter)
 			}
 			for i := range test.multicastAddrs {
-				if e.Read() == nil {
+				if p := e.Read(); p == nil {
 					t.Fatalf("expected (%d-th) leave message to be sent", i)
+				} else {
+					p.DecRef()
 				}
 			}
 			for _, a := range test.multicastAddrs {
@@ -1240,6 +1254,7 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 				t.Fatal("expected a report message to be sent")
 			} else {
 				test.validateReport(t, p, test.finalMulticastAddr)
+				p.DecRef()
 			}
 
 			clock.Advance(test.maxUnsolicitedResponseDelay)
@@ -1251,6 +1266,7 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 				t.Fatal("expected a report message to be sent")
 			} else {
 				test.validateReport(t, p, test.finalMulticastAddr)
+				p.DecRef()
 			}
 
 			// Should not send any more packets.

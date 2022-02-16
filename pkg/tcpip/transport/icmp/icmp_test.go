@@ -145,6 +145,7 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 		}
 
 		vv := buffer.NewVectorisedView(p.Size(), p.Views())
+		p.DecRef()
 		b := vv.ToView()
 
 		checker.IPv4(t, b, []checker.NetworkChecker{
@@ -192,6 +193,7 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 		}
 
 		vv := buffer.NewVectorisedView(p.Size(), p.Views())
+		p.DecRef()
 		b := vv.ToView()
 
 		checker.IPv4(t, b, []checker.NetworkChecker{
@@ -229,6 +231,7 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 		}
 
 		vv := buffer.NewVectorisedView(p.Size(), p.Views())
+		p.DecRef()
 		b := vv.ToView()
 
 		checker.IPv4(t, b, []checker.NetworkChecker{

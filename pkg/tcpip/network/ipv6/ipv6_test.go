@@ -1031,6 +1031,7 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 				// Pack the output packet into a single buffer.View as the checkers
 				// assume that.
 				vv := buffer.NewVectorisedView(p.Size(), p.Views())
+				p.DecRef()
 				pkt := vv.ToView()
 				if got, want := len(pkt), header.IPv6FixedHeaderSize+header.ICMPv6MinimumSize+hdr.UsedLength(); got != want {
 					t.Fatalf("got an ICMP packet of size = %d, want = %d", got, want)
@@ -2238,6 +2239,7 @@ func TestInvalidIPv6Fragments(t *testing.T) {
 					checker.ICMPv6Payload(expectICMPPayload),
 				),
 			)
+			reply.DecRef()
 		})
 	}
 }
@@ -2491,6 +2493,7 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 					checker.ICMPv6Payload(firstFragmentSent),
 				),
 			)
+			reply.DecRef()
 		})
 	}
 }
@@ -3339,6 +3342,7 @@ func TestForwarding(t *testing.T) {
 						checker.ICMPv6Payload(hdr.View()[:expectedICMPPayloadLength()]),
 					),
 				)
+				reply.DecRef()
 
 				if n := outgoingEndpoint.Drain(); n != 0 {
 					t.Fatalf("got e2.Drain() = %d, want = 0", n)
@@ -3364,6 +3368,7 @@ func TestForwarding(t *testing.T) {
 						checker.ICMPv6Payload(nil),
 					),
 				)
+				reply.DecRef()
 
 				if n := incomingEndpoint.Drain(); n != 0 {
 					t.Fatalf("got e1.Drain() = %d, want = 0", n)
@@ -3520,6 +3525,7 @@ func TestIcmpRateLimit(t *testing.T) {
 					checker.ICMPv6(
 						checker.ICMPv6Type(header.ICMPv6EchoReply),
 					))
+				p.DecRef()
 			},
 		},
 		{
@@ -3567,6 +3573,7 @@ func TestIcmpRateLimit(t *testing.T) {
 					checker.ICMPv6(
 						checker.ICMPv6Type(header.ICMPv6DstUnreachable),
 					))
+				p.DecRef()
 			},
 		},
 	}

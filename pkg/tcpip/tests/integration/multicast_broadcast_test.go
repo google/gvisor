@@ -164,6 +164,7 @@ func TestPingMulticastBroadcast(t *testing.T) {
 			if dst != test.srcAddr {
 				t.Errorf("got pkt destination = %s, want = %s", dst, test.srcAddr)
 			}
+			pkt.DecRef()
 		})
 	}
 

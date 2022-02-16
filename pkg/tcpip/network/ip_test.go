@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -238,6 +239,7 @@ func newTestContext() *testContext {
 func (ctx *testContext) cleanup() {
 	ctx.s.Close()
 	ctx.s.Wait()
+	refsvfs2.DoRepeatedLeakCheck()
 }
 
 func buildIPv4Route(ctx *testContext, local, remote tcpip.Address) (*stack.Route, tcpip.Error) {
@@ -1772,6 +1774,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 						t.Fatal("expected a packet to be written")
 					}
 					test.checker(t, pkt, subTest.srcAddr)
+					pkt.DecRef()
 				})
 			}
 		})
@@ -2025,6 +2028,7 @@ func TestICMPInclusionSize(t *testing.T) {
 				t.Fatalf("got %d bytes of icmp error packet, want %d", got, want)
 			}
 			test.checker(t, pkt, v)
+			pkt.DecRef()
 		})
 	}
 }

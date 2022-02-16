@@ -319,6 +319,7 @@ func (c *Context) GetPacketWithTimeout(timeout time.Duration) []byte {
 	if pkt == nil {
 		return nil
 	}
+	defer pkt.DecRef()
 
 	if got, want := pkt.NetworkProtocolNumber, ipv4.ProtocolNumber; got != want {
 		c.t.Fatalf("got pkt.NetworkProtocolNumber = %d, want = %d", got, want)
@@ -369,6 +370,7 @@ func (c *Context) GetPacketNonBlocking() []byte {
 	if pkt == nil {
 		return nil
 	}
+	defer pkt.DecRef()
 
 	if got, want := pkt.NetworkProtocolNumber, ipv4.ProtocolNumber; got != want {
 		c.t.Fatalf("got pkt.NetworkProtocolNumber = %d, want = %d", got, want)
@@ -615,6 +617,7 @@ func (c *Context) GetV6Packet() []byte {
 		c.t.Fatalf("Packet wasn't written out")
 		return nil
 	}
+	defer pkt.DecRef()
 
 	if got, want := pkt.NetworkProtocolNumber, ipv6.ProtocolNumber; got != want {
 		c.t.Fatalf("got pkt.NetworkProtocolNumber = %d, want = %d", got, want)

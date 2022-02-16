@@ -4616,6 +4616,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			if pkt.EgressRoute.RemoteAddress != test.netCfg.remoteAddr {
 				t.Errorf("got pkt.EgressRoute.RemoteAddress = %s, want = %s", pkt.EgressRoute.RemoteAddress, test.netCfg.remoteAddr)
 			}
+			pkt.DecRef()
 
 			if !test.forwardingEnabled || !test.dependentOnForwarding {
 				return
@@ -4688,6 +4689,7 @@ func TestWritePacketToRemote(t *testing.T) {
 			if diff := cmp.Diff(pkt.Data().AsRange().ToOwnedView(), buffer.View(test.payload)); diff != "" {
 				t.Errorf("pkt.Data mismatch (-want +got):\n%s", diff)
 			}
+			pkt.DecRef()
 		})
 	}
 

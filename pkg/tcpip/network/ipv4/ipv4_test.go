@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -69,6 +70,7 @@ func newTestContext() testContext {
 func (ctx testContext) cleanup() {
 	ctx.s.Close()
 	ctx.s.Wait()
+	refsvfs2.DoRepeatedLeakCheck()
 }
 
 func TestExcludeBroadcast(t *testing.T) {
@@ -479,6 +481,7 @@ func TestForwarding(t *testing.T) {
 						checker.ICMPv4Payload(hdr.View()[:expectedICMPPayloadLength()]),
 					),
 				)
+				reply.DecRef()
 			} else if reply != nil {
 				t.Fatalf("expected no ICMP packet through incoming NIC, instead found: %#v", reply)
 			}
@@ -505,6 +508,9 @@ func TestForwarding(t *testing.T) {
 					if err := compareFragments(fragmentedPackets, requestPkt, test.mtu, test.expectedFragmentsForwarded, header.ICMPv4ProtocolNumber, true /* withIPHeader */, expectedAvailableHeaderBytes); err != nil {
 						t.Error(err)
 					}
+					for _, pkt := range fragmentedPackets {
+						pkt.DecRef()
+					}
 				} else {
 					reply := outgoingEndpoint.Read()
 					if reply == nil {
@@ -523,6 +529,7 @@ func TestForwarding(t *testing.T) {
 							checker.ICMPv4Payload(nil),
 						),
 					)
+					reply.DecRef()
 				}
 			} else {
 				if reply := outgoingEndpoint.Read(); reply != nil {
@@ -1280,6 +1287,7 @@ func TestIPv4Sanity(t *testing.T) {
 				}
 				t.Fatal("expected ICMP echo reply missing")
 			}
+			defer reply.DecRef()
 
 			// We didn't expect a packet. Register our surprise but carry on to
 			// provide more information about what we got.
@@ -2255,6 +2263,7 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 					checker.ICMPv4Payload(firstFragmentSent),
 				),
 			)
+			reply.DecRef()
 		})
 	}
 }
@@ -3032,6 +3041,7 @@ func TestPacketQueuing(t *testing.T) {
 					checker.ICMPv4(
 						checker.ICMPv4Type(header.ICMPv4DstUnreachable),
 						checker.ICMPv4Code(header.ICMPv4PortUnreachable)))
+				p.DecRef()
 			},
 		},
 
@@ -3077,6 +3087,7 @@ func TestPacketQueuing(t *testing.T) {
 					checker.ICMPv4(
 						checker.ICMPv4Type(header.ICMPv4EchoReply),
 						checker.ICMPv4Code(header.ICMPv4UnusedCode)))
+				p.DecRef()
 			},
 		},
 	}
@@ -3134,6 +3145,7 @@ func TestPacketQueuing(t *testing.T) {
 				if got := tcpip.Address(rep.ProtocolAddressTarget()); got != host2IPv4Addr.AddressWithPrefix.Address {
 					t.Errorf("got ProtocolAddressTarget = %s, want = %s", got, host2IPv4Addr.AddressWithPrefix.Address)
 				}
+				p.DecRef()
 			}
 
 			// Send an ARP reply to complete link address resolution.
@@ -3364,6 +3376,7 @@ func TestIcmpRateLimit(t *testing.T) {
 					checker.ICMPv4(
 						checker.ICMPv4Type(header.ICMPv4EchoReply),
 					))
+				p.DecRef()
 			},
 		},
 		{
@@ -3405,6 +3418,7 @@ func TestIcmpRateLimit(t *testing.T) {
 					checker.ICMPv4(
 						checker.ICMPv4Type(header.ICMPv4DstUnreachable),
 					))
+				p.DecRef()
 			},
 		},
 	}

@@ -23,6 +23,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/time/rate"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -213,6 +214,7 @@ func newTestContext(clock tcpip.Clock) *testContext {
 func (c *testContext) cleanup() {
 	c.s.Close()
 	c.s.Wait()
+	refsvfs2.DoRepeatedLeakCheck()
 }
 
 func TestICMPCounts(t *testing.T) {
@@ -535,6 +537,7 @@ func routeICMPv6Packet(t *testing.T, clock *faketime.ManualClock, args routeArgs
 	// Pull the full payload since network header. Needed for header.IPv6 to
 	// extract its payload.
 	ipv6 := header.IPv6(stack.PayloadSince(pi.NetworkHeader()))
+	pi.DecRef()
 	transProto := tcpip.TransportProtocolNumber(ipv6.NextHeader())
 	if transProto != header.ICMPv6ProtocolNumber {
 		t.Errorf("unexpected transport protocol number %d", transProto)
@@ -1342,6 +1345,7 @@ func TestLinkAddressRequest(t *testing.T) {
 					checker.NDPNSTargetAddress(lladdr0),
 					checker.NDPNSOptions([]header.NDPOption{header.NDPSourceLinkLayerAddressOption(linkAddr0)}),
 				))
+			pkt.DecRef()
 		})
 	}
 }
@@ -1419,6 +1423,7 @@ func TestPacketQueing(t *testing.T) {
 					checker.ICMPv6(
 						checker.ICMPv6Type(header.ICMPv6DstUnreachable),
 						checker.ICMPv6Code(header.ICMPv6PortUnreachable)))
+				p.DecRef()
 			},
 		},
 
@@ -1467,6 +1472,7 @@ func TestPacketQueing(t *testing.T) {
 					checker.ICMPv6(
 						checker.ICMPv6Type(header.ICMPv6EchoReply),
 						checker.ICMPv6Code(header.ICMPv6UnusedCode)))
+				p.DecRef()
 			},
 		},
 	}
@@ -1523,6 +1529,7 @@ func TestPacketQueing(t *testing.T) {
 						checker.NDPNSTargetAddress(host2IPv6Addr.AddressWithPrefix.Address),
 						checker.NDPNSOptions([]header.NDPOption{header.NDPSourceLinkLayerAddressOption(host1NICLinkAddr)}),
 					))
+				p.DecRef()
 			}
 
 			// Send a neighbor advertisement to complete link address resolution.

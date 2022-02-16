@@ -495,6 +495,7 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 							header.NDPSourceLinkLayerAddressOption(nicLinkAddr),
 						}),
 					))
+				p.DecRef()
 
 				ser := header.NDPOptionsSerializer{
 					header.NDPTargetLinkLayerAddressOption(linkAddr1),
@@ -559,6 +560,7 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 						header.NDPTargetLinkLayerAddressOption(nicLinkAddr[:]),
 					}),
 				))
+			p.DecRef()
 		})
 	}
 }
@@ -1311,6 +1313,7 @@ func TestCheckDuplicateAddress(t *testing.T) {
 				checker.NDPNSTargetAddress(lladdr0),
 				checker.NDPNSOptions([]header.NDPOption{header.NDPNonceOption(nonces[dadPacketsSent])}),
 			))
+		p.DecRef()
 	}
 	protocolAddr := tcpip.ProtocolAddress{
 		Protocol:          ProtocolNumber,

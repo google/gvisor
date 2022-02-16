@@ -164,6 +164,7 @@ func TestIGMPV1Present(t *testing.T) {
 			t.Fatalf("got V2MembershipReport messages sent = %d, want = 1", got)
 		}
 		validateIgmpPacket(t, p, header.IGMPv2MembershipReport, 0, stackAddr, multicastAddr, multicastAddr)
+		p.DecRef()
 	}
 	if t.Failed() {
 		t.FailNow()
@@ -199,6 +200,7 @@ func TestIGMPV1Present(t *testing.T) {
 			t.Fatalf("got V1MembershipReport messages sent = %d, want = 1", got)
 		}
 		validateIgmpPacket(t, p, header.IGMPv1MembershipReport, 0, stackAddr, multicastAddr, multicastAddr)
+		p.DecRef()
 	}
 
 	// Cycling the interface should reset the V1 present flag.
@@ -217,6 +219,7 @@ func TestIGMPV1Present(t *testing.T) {
 			t.Fatalf("got V2MembershipReport messages sent = %d, want = 2", got)
 		}
 		validateIgmpPacket(t, p, header.IGMPv2MembershipReport, 0, stackAddr, multicastAddr, multicastAddr)
+		p.DecRef()
 	}
 }
 
@@ -260,6 +263,7 @@ func TestSendQueuedIGMPReports(t *testing.T) {
 		t.Error("expected to send an IGMP membership report")
 	} else {
 		validateIgmpPacket(t, p, header.IGMPv2MembershipReport, 0, stackAddr, multicastAddr, multicastAddr)
+		p.DecRef()
 	}
 	if t.Failed() {
 		t.FailNow()
@@ -272,6 +276,7 @@ func TestSendQueuedIGMPReports(t *testing.T) {
 		t.Error("expected to send an IGMP membership report")
 	} else {
 		validateIgmpPacket(t, p, header.IGMPv2MembershipReport, 0, stackAddr, multicastAddr, multicastAddr)
+		p.DecRef()
 	}
 	if t.Failed() {
 		t.FailNow()

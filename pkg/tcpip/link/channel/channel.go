@@ -56,6 +56,7 @@ func (q *queue) Close() {
 func (q *queue) Read() *stack.PacketBuffer {
 	select {
 	case p := <-q.c:
+		p.ResumePooling()
 		return p
 	default:
 		return nil
@@ -65,6 +66,7 @@ func (q *queue) Read() *stack.PacketBuffer {
 func (q *queue) ReadContext(ctx context.Context) *stack.PacketBuffer {
 	select {
 	case pkt := <-q.c:
+		pkt.ResumePooling()
 		return pkt
 	case <-ctx.Done():
 		return nil
@@ -80,10 +82,10 @@ func (q *queue) Write(pkt *stack.PacketBuffer) bool {
 	// to Write() (e.g writing to this endpoint and then exiting). This
 	// causes tests and analyzers to detect erroneous "leaks" for expected
 	// behavior. To prevent this, we allow the refcount to go to zero, and
-	// make a call to  PreserveObject(), which prevents the PacketBuffer
-	// pooling implementation from reclaiming this instance, even when
-	// the refcount goes to zero.
-	pkt.PreserveObject()
+	// make a call to PausePooling(), which prevents the PacketBuffer
+	// pooling implementation from reclaiming this instance while it is in
+	// the queue, even when the refcount goes to zero.
+	pkt.PausePooling()
 	wrote := false
 	select {
 	case q.c <- pkt:
@@ -175,7 +177,8 @@ func (e *Endpoint) ReadContext(ctx context.Context) *stack.PacketBuffer {
 // Drain removes all outbound packets from the channel and counts them.
 func (e *Endpoint) Drain() int {
 	c := 0
-	for e.Read() != nil {
+	for pkt := e.Read(); pkt != nil; pkt = e.Read() {
+		pkt.DecRef()
 		c++
 	}
 	return c
