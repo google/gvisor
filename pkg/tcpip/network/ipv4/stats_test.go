@@ -45,10 +45,27 @@ func knownNICIDs(proto *protocol) []tcpip.NICID {
 	return nicIDs
 }
 
-func TestClearEndpointFromProtocolOnClose(t *testing.T) {
+type statsTestContext struct {
+	s *stack.Stack
+}
+
+func newStatsTestContext() statsTestContext {
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
 	})
+	return statsTestContext{s: s}
+}
+
+func (ctx statsTestContext) cleanup() {
+	ctx.s.Close()
+	ctx.s.Wait()
+}
+
+func TestClearEndpointFromProtocolOnClose(t *testing.T) {
+	ctx := newStatsTestContext()
+	defer ctx.cleanup()
+	s := ctx.s
+
 	proto := s.NetworkProtocolInstance(ProtocolNumber).(*protocol)
 	nic := testInterface{nicID: 1}
 	ep := proto.NewEndpoint(&nic, nil).(*endpoint)
@@ -78,9 +95,10 @@ func TestClearEndpointFromProtocolOnClose(t *testing.T) {
 }
 
 func TestMultiCounterStatsInitialization(t *testing.T) {
-	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
-	})
+	ctx := newStatsTestContext()
+	defer ctx.cleanup()
+	s := ctx.s
+
 	proto := s.NetworkProtocolInstance(ProtocolNumber).(*protocol)
 	var nic testInterface
 	ep := proto.NewEndpoint(&nic, nil).(*endpoint)
