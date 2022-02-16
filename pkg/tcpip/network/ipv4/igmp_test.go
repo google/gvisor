@@ -63,7 +63,18 @@ func validateIgmpPacket(t *testing.T, pkt *stack.PacketBuffer, igmpType header.I
 	)
 }
 
-func createStack(t *testing.T, igmpEnabled bool) (*channel.Endpoint, *stack.Stack, *faketime.ManualClock) {
+type igmpTestContext struct {
+	s     *stack.Stack
+	ep    *channel.Endpoint
+	clock *faketime.ManualClock
+}
+
+func (ctx igmpTestContext) cleanup() {
+	ctx.s.Close()
+	ctx.s.Wait()
+}
+
+func newIGMPTestContext(t *testing.T, igmpEnabled bool) igmpTestContext {
 	t.Helper()
 
 	// Create an endpoint of queue size 1, since no more than 1 packets are ever
@@ -81,7 +92,12 @@ func createStack(t *testing.T, igmpEnabled bool) (*channel.Endpoint, *stack.Stac
 	if err := s.CreateNIC(nicID, e); err != nil {
 		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 	}
-	return e, s, clock
+
+	return igmpTestContext{
+		ep:    e,
+		s:     s,
+		clock: clock,
+	}
 }
 
 func createAndInjectIGMPPacket(e *channel.Endpoint, igmpType header.IGMPType, maxRespTime byte, ttl uint8, srcAddr, dstAddr, groupAddress tcpip.Address, hasRouterAlertOption bool) {
@@ -109,17 +125,22 @@ func createAndInjectIGMPPacket(e *channel.Endpoint, igmpType header.IGMPType, ma
 	igmp.SetMaxRespTime(maxRespTime)
 	igmp.SetGroupAddress(groupAddress)
 	igmp.SetChecksum(header.IGMPCalculateChecksum(igmp))
-
-	e.InjectInbound(ipv4.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	}))
+	})
+	e.InjectInbound(ipv4.ProtocolNumber, pkt)
+	pkt.DecRef()
 }
 
 // TestIGMPV1Present tests the node's ability to fallback to V1 when a V1
 // router is detected. V1 present status is expected to be reset when the NIC
 // cycles.
 func TestIGMPV1Present(t *testing.T) {
-	e, s, clock := createStack(t, true)
+	ctx := newIGMPTestContext(t, true /* igmpEnabled */)
+	defer ctx.cleanup()
+	s := ctx.s
+	e := ctx.ep
+
 	protocolAddr := tcpip.ProtocolAddress{
 		Protocol:          ipv4.ProtocolNumber,
 		AddressWithPrefix: tcpip.AddressWithPrefix{Address: stackAddr, PrefixLen: defaultPrefixLength},
@@ -168,7 +189,7 @@ func TestIGMPV1Present(t *testing.T) {
 	if p := e.Read(); p != nil {
 		t.Fatalf("sent unexpected packet, expected V1MembershipReport only after advancing the clock = %+v", p)
 	}
-	clock.Advance(ipv4.UnsolicitedReportIntervalMax)
+	ctx.clock.Advance(ipv4.UnsolicitedReportIntervalMax)
 	{
 		p := e.Read()
 		if p == nil {
@@ -200,7 +221,11 @@ func TestIGMPV1Present(t *testing.T) {
 }
 
 func TestSendQueuedIGMPReports(t *testing.T) {
-	e, s, clock := createStack(t, true)
+	ctx := newIGMPTestContext(t, true /* igmpEnabled */)
+	defer ctx.cleanup()
+	s := ctx.s
+	e := ctx.ep
+	clock := ctx.clock
 
 	// Joining a group without an assigned address should queue IGMP packets; none
 	// should be sent without an assigned address.
@@ -358,7 +383,11 @@ func TestIGMPPacketValidation(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			e, s, _ := createStack(t, true)
+			ctx := newIGMPTestContext(t, true /* igmpEnabled */)
+			defer ctx.cleanup()
+			s := ctx.s
+			e := ctx.ep
+
 			for _, address := range test.stackAddresses {
 				protocolAddr := tcpip.ProtocolAddress{
 					Protocol:          ipv4.ProtocolNumber,
