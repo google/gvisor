@@ -116,7 +116,6 @@ TEST_F(ReadTest, ReadDirectoryFails) {
 }
 
 TEST_F(ReadTest, ReadWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_PATH));

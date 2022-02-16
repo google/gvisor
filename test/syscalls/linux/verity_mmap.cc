@@ -36,9 +36,6 @@ namespace {
 class MmapTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    // Verity is implemented in VFS2.
-    SKIP_IF(IsRunningWithVFS1());
-
     SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
     // Mount a tmpfs file system, to be wrapped by a verity fs.
     tmpfs_dir_ = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());

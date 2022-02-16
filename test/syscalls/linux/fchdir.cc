@@ -72,7 +72,6 @@ TEST(FchdirTest, NotDir) {
 }
 
 TEST(FchdirTest, FchdirWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   auto temp_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(temp_dir.path(), O_PATH));
   ASSERT_THAT(open(temp_dir.path().c_str(), O_DIRECTORY | O_PATH),

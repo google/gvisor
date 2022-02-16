@@ -221,7 +221,6 @@ TEST(MountTest, UmountDetach) {
 }
 
 TEST(MountTest, UmountMountsStackedOnDot) {
-  SKIP_IF(IsRunningWithVFS1());
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   // Verify that unmounting at "." properly unmounts the mount at the top of
   // mount stack.
@@ -405,7 +404,6 @@ TEST(MountTest, RenameRemoveMountPoint) {
 }
 
 TEST(MountTest, MountInfo) {
-  SKIP_IF(IsRunningWithVFS1());
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());

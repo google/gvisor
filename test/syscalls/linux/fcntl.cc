@@ -221,7 +221,6 @@ PosixErrorOr<Cleanup> SubprocessLock(std::string const& path, bool for_write,
 }
 
 TEST(FcntlTest, FcntlDupWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(f.path(), O_PATH));
 
@@ -236,7 +235,6 @@ TEST(FcntlTest, FcntlDupWithOpath) {
 }
 
 TEST(FcntlTest, SetFileStatusFlagWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   TempPath path = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(path.path(), O_PATH));
 
@@ -244,7 +242,6 @@ TEST(FcntlTest, SetFileStatusFlagWithOpath) {
 }
 
 TEST(FcntlTest, BadFcntlsWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   TempPath path = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(path.path(), O_PATH));
 
@@ -275,7 +272,6 @@ TEST(FcntlTest, SetCloExec) {
 }
 
 TEST(FcntlTest, SetCloExecWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   // Open a file descriptor with FD_CLOEXEC descriptor flag not set.
   TempPath path = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(path.path(), O_PATH));
@@ -287,7 +283,6 @@ TEST(FcntlTest, SetCloExecWithOpath) {
 }
 
 TEST(FcntlTest, DupFDCloExecWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   // Open a file descriptor with FD_CLOEXEC descriptor flag not set.
   TempPath path = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(path.path(), O_PATH));
@@ -344,7 +339,6 @@ TEST(FcntlTest, GetAllFlags) {
 // When O_PATH is specified in flags, flag bits other than O_CLOEXEC,
 // O_DIRECTORY, and O_NOFOLLOW are ignored.
 TEST(FcntlTest, GetOpathFlag) {
-  SKIP_IF(IsRunningWithVFS1());
   TempPath path = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   int flags = O_RDWR | O_DIRECT | O_SYNC | O_NONBLOCK | O_APPEND | O_PATH |
               O_NOFOLLOW | O_DIRECTORY;
@@ -403,8 +397,6 @@ TEST_F(FcntlLockTest, SetLockDir) {
 }
 
 TEST_F(FcntlLockTest, SetLockSymlink) {
-  SKIP_IF(IsRunningWithVFS1());
-
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   auto symlink = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateSymlinkTo(GetAbsoluteTestTmpdir(), file.path()));
@@ -421,8 +413,6 @@ TEST_F(FcntlLockTest, SetLockProc) {
 }
 
 TEST_F(FcntlLockTest, SetLockPipe) {
-  SKIP_IF(IsRunningWithVFS1());
-
   int fds[2];
   ASSERT_THAT(pipe(fds), SyscallSucceeds());
 
@@ -437,8 +427,6 @@ TEST_F(FcntlLockTest, SetLockPipe) {
 }
 
 TEST_F(FcntlLockTest, SetLockSocket) {
-  SKIP_IF(IsRunningWithVFS1());
-
   int sock = socket(AF_UNIX, SOCK_STREAM, 0);
   ASSERT_THAT(sock, SyscallSucceeds());
 
@@ -484,7 +472,6 @@ TEST_F(FcntlLockTest, SetLockBadOpenFlagsRead) {
 }
 
 TEST_F(FcntlLockTest, SetLockWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_PATH));
 
@@ -1171,8 +1158,6 @@ TEST(FcntlTest, GetOwnExNone) {
 }
 
 TEST(FcntlTest, SetOwnInvalidPid) {
-  SKIP_IF(IsRunningWithVFS1());
-
   FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
       Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
 
@@ -1181,8 +1166,6 @@ TEST(FcntlTest, SetOwnInvalidPid) {
 }
 
 TEST(FcntlTest, SetOwnInvalidPgrp) {
-  SKIP_IF(IsRunningWithVFS1());
-
   FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
       Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
 
@@ -1359,8 +1342,6 @@ TEST(FcntlTest, SetOwnExPgrp) {
 }
 
 TEST(FcntlTest, SetOwnExUnset) {
-  SKIP_IF(IsRunningWithVFS1());
-
   FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
       Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
 
@@ -1752,7 +1733,6 @@ TEST(FcntlTest, SetFlSetOwnSetSigDoNotRace) {
 }
 
 TEST_F(FcntlLockTest, GetLockOnNothing) {
-  SKIP_IF(IsRunningWithVFS1());
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
@@ -1767,7 +1747,6 @@ TEST_F(FcntlLockTest, GetLockOnNothing) {
 }
 
 TEST_F(FcntlLockTest, GetLockOnLockSameProcess) {
-  SKIP_IF(IsRunningWithVFS1());
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
@@ -1788,7 +1767,6 @@ TEST_F(FcntlLockTest, GetLockOnLockSameProcess) {
 }
 
 TEST_F(FcntlLockTest, GetReadLockOnReadLock) {
-  SKIP_IF(IsRunningWithVFS1());
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
@@ -1813,7 +1791,6 @@ TEST_F(FcntlLockTest, GetReadLockOnReadLock) {
 }
 
 TEST_F(FcntlLockTest, GetReadLockOnWriteLock) {
-  SKIP_IF(IsRunningWithVFS1());
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
@@ -1841,7 +1818,6 @@ TEST_F(FcntlLockTest, GetReadLockOnWriteLock) {
 }
 
 TEST_F(FcntlLockTest, GetWriteLockOnReadLock) {
-  SKIP_IF(IsRunningWithVFS1());
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
@@ -1869,7 +1845,6 @@ TEST_F(FcntlLockTest, GetWriteLockOnReadLock) {
 }
 
 TEST_F(FcntlLockTest, GetWriteLockOnWriteLock) {
-  SKIP_IF(IsRunningWithVFS1());
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
@@ -1898,7 +1873,6 @@ TEST_F(FcntlLockTest, GetWriteLockOnWriteLock) {
 // Tests that the pid returned from F_GETLK is relative to the caller's PID
 // namespace.
 TEST_F(FcntlLockTest, GetLockRespectsPIDNamespace) {
-  SKIP_IF(IsRunningWithVFS1());
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   std::string filename = file.path();

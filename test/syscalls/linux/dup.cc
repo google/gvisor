@@ -70,7 +70,6 @@ TEST(DupTest, DupClearsCloExec) {
 }
 
 TEST(DupTest, DupWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(f.path(), O_PATH));
   int flags;
@@ -148,7 +147,6 @@ TEST(DupTest, Dup2SameFD) {
 }
 
 TEST(DupTest, Dup2WithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(f.path(), O_PATH));
   int flags;
@@ -198,7 +196,6 @@ TEST(DupTest, Dup3FailsSameFD) {
 }
 
 TEST(DupTest, Dup3WithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(f.path(), O_PATH));
   EXPECT_THAT(fcntl(fd.get(), F_GETFD), SyscallSucceedsWithValue(0));

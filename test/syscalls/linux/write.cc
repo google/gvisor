@@ -221,7 +221,6 @@ TEST_F(WriteTest, PwriteNoChangeOffset) {
 }
 
 TEST_F(WriteTest, WriteWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   TempPath tmpfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor f =
       ASSERT_NO_ERRNO_AND_VALUE(Open(tmpfile.path().c_str(), O_PATH));
@@ -231,7 +230,6 @@ TEST_F(WriteTest, WriteWithOpath) {
 }
 
 TEST_F(WriteTest, WritevWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   TempPath tmpfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor f =
       ASSERT_NO_ERRNO_AND_VALUE(Open(tmpfile.path().c_str(), O_PATH));
@@ -246,7 +244,6 @@ TEST_F(WriteTest, WritevWithOpath) {
 }
 
 TEST_F(WriteTest, PwriteWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   TempPath tmpfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor f =
       ASSERT_NO_ERRNO_AND_VALUE(Open(tmpfile.path().c_str(), O_PATH));
