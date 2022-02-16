@@ -32,10 +32,13 @@ go_test(
     srcs = [
         "icmp_test.go",
         "ipv6_test.go",
+        "main_test.go",
         "ndp_test.go",
     ],
     library = ":ipv6",
     deps = [
+        "//pkg/refs",
+        "//pkg/refsvfs2",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/checker",
@@ -61,6 +64,8 @@ go_test(
     srcs = ["mld_test.go"],
     deps = [
         ":ipv6",
+        "//pkg/refs",
+        "//pkg/refsvfs2",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/checker",

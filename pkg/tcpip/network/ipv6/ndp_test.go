@@ -81,6 +81,7 @@ func TestStackNDPEndpointInvalidateDefaultRouter(t *testing.T) {
 			NDPDisp: &ndpDisp,
 		})},
 	})
+	defer s.Close()
 
 	if err := s.CreateNIC(nicID, &stubLinkEndpoint{}); err != nil {
 		t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
@@ -136,9 +137,10 @@ func TestNeighborSolicitationWithSourceLinkLayerOption(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
-			})
+			c := newTestContext(nil /* clock */)
+			defer c.cleanup()
+			s := c.s
+
 			e := channel.New(0, 1280, linkAddr0)
 			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 			if err := s.CreateNIC(nicID, e); err != nil {
@@ -182,9 +184,11 @@ func TestNeighborSolicitationWithSourceLinkLayerOption(t *testing.T) {
 				t.Fatalf("got invalid = %d, want = 0", got)
 			}
 
-			e.InjectInbound(ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+			pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Data: hdr.View().ToVectorisedView(),
-			}))
+			})
+			e.InjectInbound(ProtocolNumber, pktBuf)
+			pktBuf.DecRef()
 
 			neighbors, err := s.Neighbors(nicID, ProtocolNumber)
 			if err != nil {
@@ -388,10 +392,10 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			clock := faketime.NewManualClock()
-			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
-				Clock:            clock,
-			})
+			c := newTestContext(clock)
+			defer c.cleanup()
+			s := c.s
+
 			e := channel.New(1, 1280, nicLinkAddr)
 			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 			if err := s.CreateNIC(nicID, e); err != nil {
@@ -442,9 +446,11 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 				t.Fatalf("got invalid = %d, want = 0", got)
 			}
 
-			e.InjectInbound(ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+			pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Data: hdr.View().ToVectorisedView(),
-			}))
+			})
+			e.InjectInbound(ProtocolNumber, pktBuf)
+			pktBuf.DecRef()
 
 			if test.nsInvalid {
 				if got := invalid.Value(); got != 1 {
@@ -516,9 +522,11 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 					SrcAddr:           test.nsSrc,
 					DstAddr:           nicAddr,
 				})
-				e.InjectInbound(ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+				pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Data: hdr.View().ToVectorisedView(),
-				}))
+				})
+				e.InjectInbound(ProtocolNumber, pktBuf)
+				pktBuf.DecRef()
 			}
 
 			clock.RunImmediatelyScheduledJobs()
@@ -590,9 +598,10 @@ func TestNeighborAdvertisementWithTargetLinkLayerOption(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
-			})
+			c := newTestContext(nil /* clock */)
+			defer c.cleanup()
+			s := c.s
+
 			e := channel.New(0, 1280, linkAddr0)
 			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 			if err := s.CreateNIC(nicID, e); err != nil {
@@ -635,10 +644,11 @@ func TestNeighborAdvertisementWithTargetLinkLayerOption(t *testing.T) {
 			if got := invalid.Value(); got != 0 {
 				t.Fatalf("got invalid = %d, want = 0", got)
 			}
-
-			e.InjectInbound(ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+			pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Data: hdr.View().ToVectorisedView(),
-			}))
+			})
+			e.InjectInbound(ProtocolNumber, pktBuf)
+			pktBuf.DecRef()
 
 			neighbors, err := s.Neighbors(nicID, ProtocolNumber)
 			if err != nil {
@@ -696,9 +706,11 @@ func TestNDPValidation(t *testing.T) {
 		})
 		vv := ip.ToVectorisedView()
 		vv.AppendView(payload)
-		ep.HandlePacket(stack.NewPacketBuffer(stack.PacketBufferOptions{
+		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Data: vv,
-		}))
+		})
+		ep.HandlePacket(pkt)
+		pkt.DecRef()
 	}
 
 	var tllData [header.NDPLinkLayerAddressSize]byte
@@ -816,10 +828,9 @@ func TestNDPValidation(t *testing.T) {
 			t.Run(name, func(t *testing.T) {
 				for _, test := range subTests {
 					t.Run(test.name, func(t *testing.T) {
-						s := stack.New(stack.Options{
-							NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
-							TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6},
-						})
+						c := newTestContext(nil /* clock */)
+						defer c.cleanup()
+						s := c.s
 
 						if isRouter {
 							if err := s.SetForwardingDefaultAndAllNICs(ProtocolNumber, true); err != nil {
@@ -958,9 +969,10 @@ func TestNeighborAdvertisementValidation(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
-			})
+			c := newTestContext(nil /* clock */)
+			defer c.cleanup()
+			s := c.s
+
 			e := channel.New(0, header.IPv6MinimumMTU, linkAddr0)
 			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 			if err := s.CreateNIC(nicID, e); err != nil {
@@ -1007,9 +1019,11 @@ func TestNeighborAdvertisementValidation(t *testing.T) {
 				t.Fatalf("got invalid = %d, want = 0", got)
 			}
 
-			e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+			pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Data: hdr.View().ToVectorisedView(),
-			}))
+			})
+			e.InjectInbound(header.IPv6ProtocolNumber, pktBuf)
+			pktBuf.DecRef()
 
 			if got := rxNA.Value(); got != 1 {
 				t.Fatalf("got rxNA = %d, want = 1", got)
@@ -1163,12 +1177,12 @@ func TestRouterAdvertValidation(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			c := newTestContext(nil /* clock */)
+			defer c.cleanup()
+			s := c.s
+
 			e := channel.New(10, 1280, linkAddr1)
 			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
-			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
-			})
-
 			if err := s.CreateNIC(1, e); err != nil {
 				t.Fatalf("CreateNIC(_) = %s", err)
 			}
@@ -1205,9 +1219,11 @@ func TestRouterAdvertValidation(t *testing.T) {
 				t.Fatalf("got rxRA = %d, want = 0", got)
 			}
 
-			e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+			pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Data: hdr.View().ToVectorisedView(),
-			}))
+			})
+			e.InjectInbound(header.IPv6ProtocolNumber, pktBuf)
+			pktBuf.DecRef()
 
 			if got := rxRA.Value(); got != 1 {
 				t.Fatalf("got rxRA = %d, want = 1", got)
@@ -1256,6 +1272,11 @@ func TestCheckDuplicateAddress(t *testing.T) {
 			DADConfigs: dadConfigs,
 		})},
 	})
+	defer func() {
+		s.Close()
+		s.Wait()
+	}()
+
 	// This test is expected to send at max 2 DAD messages. We allow an extra
 	// packet to be stored to catch unexpected packets.
 	e := channel.New(3, header.IPv6MinimumMTU, linkAddr0)
