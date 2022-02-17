@@ -194,6 +194,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:fpsig_mut_test",
+)
+
+syscall_test(
     test = "//test/syscalls/linux:fpsig_nested_test",
 )
 

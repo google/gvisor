@@ -22,10 +22,11 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/hostarch"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
-	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // SignalContext64 is equivalent to struct sigcontext, the type passed as the
@@ -59,7 +60,7 @@ type SignalContext64 struct {
 	Trapno  uint64
 	Oldmask linux.SignalSet
 	Cr2     uint64
-	// Pointer to a struct _fpstate. See b/33003106#comment8.
+	// Pointer to a struct _fpstate.
 	Fpstate  uint64
 	Reserved [8]uint64
 }
@@ -82,28 +83,38 @@ type UContext64 struct {
 	Sigset   linux.SignalSet
 }
 
-// From Linux 'arch/x86/include/uapi/asm/sigcontext.h' the following is the
-// size of the magic cookie at the end of the xsave frame.
+// FPSoftwareFrame is equivalent to struct _fpx_sw_bytes, the data stored by
+// Linux in bytes 464:511 of the fxsave/xsave frame.
 //
-// NOTE(b/33003106#comment11): Currently we don't actually populate the fpstate
-// on the signal stack.
-const _FP_XSTATE_MAGIC2_SIZE = 4
-
-func (c *context64) fpuFrameSize() (size int, useXsave bool) {
-	size = len(c.fpState)
-	if size > 512 {
-		// Make room for the magic cookie at the end of the xsave frame.
-		size += _FP_XSTATE_MAGIC2_SIZE
-		useXsave = true
-	}
-	return size, useXsave
+// +marshal
+type FPSoftwareFrame struct {
+	Magic1       uint32
+	ExtendedSize uint32
+	Xfeatures    uint64
+	XstateSize   uint32
+	Padding      [7]uint32
 }
+
+// From Linux's arch/x86/include/uapi/asm/sigcontext.h.
+const (
+	// Value of FPSoftwareFrame.Magic1.
+	_FP_XSTATE_MAGIC1 = 0x46505853
+
+	// Value written to the 4 bytes inserted by Linux after the fxsave/xsave
+	// area in the signal frame.
+	_FP_XSTATE_MAGIC2      = 0x46505845
+	_FP_XSTATE_MAGIC2_SIZE = 4
+)
+
+// From Linux's arch/x86/include/asm/fpu/types.h.
+const (
+	// xsave features that are always enabled in signal frame fpstate.
+	_XFEATURE_MASK_FPSSE = 0x3
+)
 
 // SignalSetup implements Context.SignalSetup. (Compare to Linux's
 // arch/x86/kernel/signal.c:__setup_rt_frame().)
-func (c *context64) SignalSetup(st *Stack, act *linux.SigAction, info *linux.SignalInfo, alt *linux.SignalStack, sigset linux.SignalSet) error {
-	sp := st.Bottom
-
+func (c *context64) SignalSetup(st *Stack, act *linux.SigAction, info *linux.SignalInfo, alt *linux.SignalStack, sigset linux.SignalSet, featureSet cpuid.FeatureSet) error {
 	// "The 128-byte area beyond the location pointed to by %rsp is considered
 	// to be reserved and shall not be modified by signal or interrupt
 	// handlers. ... leaf functions may use this area for their entire stack
@@ -112,23 +123,22 @@ func (c *context64) SignalSetup(st *Stack, act *linux.SigAction, info *linux.Sig
 	//
 	// (But this doesn't apply if we're starting at the top of the signal
 	// stack, in which case there is no following stack frame.)
+	sp := st.Bottom
 	if !(alt.IsEnabled() && sp == alt.Top()) {
 		sp -= 128
 	}
 
 	// Allocate space for floating point state on the stack.
-	//
-	// This isn't strictly necessary because we don't actually populate
-	// the fpstate. However we do store the floating point state of the
-	// interrupted thread inside the sentry. Simply accounting for this
-	// space on the user stack naturally caps the amount of memory the
-	// sentry will allocate for this purpose.
-	fpSize, _ := c.fpuFrameSize()
-	sp = (sp - hostarch.Addr(fpSize)) & ^hostarch.Addr(63)
+	fpSize, fpAlign := featureSet.ExtendedStateSize()
+	if fpSize < 512 {
+		// We expect support for at least FXSAVE.
+		fpSize = 512
+	}
+	fpSize += _FP_XSTATE_MAGIC2_SIZE
+	fpStart := (sp - hostarch.Addr(fpSize)) & ^hostarch.Addr(fpAlign-1)
 
 	// Construct the UContext64 now since we need its size.
 	uc := &UContext64{
-		// No _UC_FP_XSTATE: see Fpstate above.
 		// No _UC_STRICT_RESTORE_SS: we don't allow SS changes.
 		Flags: _UC_SIGCONTEXT_SS,
 		Stack: *alt,
@@ -154,8 +164,12 @@ func (c *context64) SignalSetup(st *Stack, act *linux.SigAction, info *linux.Sig
 			Cs:      uint16(c.Regs.Cs),
 			Ss:      uint16(c.Regs.Ss),
 			Oldmask: sigset,
+			Fpstate: uint64(fpStart),
 		},
 		Sigset: sigset,
+	}
+	if featureSet.UseXsave() {
+		uc.Flags |= _UC_FP_XSTATE
 	}
 
 	// TODO(gvisor.dev/issue/159): Set SignalContext64.Err, Trapno, and Cr2
@@ -171,21 +185,46 @@ func (c *context64) SignalSetup(st *Stack, act *linux.SigAction, info *linux.Sig
 	ucSize := uc.SizeBytes()
 	// st.Arch.Width() is for the restorer address. sizeof(siginfo) == 128.
 	frameSize := int(st.Arch.Width()) + ucSize + 128
-	frameBottom := (sp-hostarch.Addr(frameSize)) & ^hostarch.Addr(15) - 8
-	sp = frameBottom + hostarch.Addr(frameSize)
-	st.Bottom = sp
+	frameStart := (fpStart-hostarch.Addr(frameSize)) & ^hostarch.Addr(15) - 8
+	frameEnd := frameStart + hostarch.Addr(frameSize)
 
 	// Prior to proceeding, figure out if the frame will exhaust the range
 	// for the signal stack. This is not allowed, and should immediately
 	// force signal delivery (reverting to the default handler).
-	if act.Flags&linux.SA_ONSTACK != 0 && alt.IsEnabled() && !alt.Contains(frameBottom) {
+	if act.Flags&linux.SA_ONSTACK != 0 && alt.IsEnabled() && !alt.Contains(frameStart) {
 		return unix.EFAULT
+	}
+
+	// Set up floating point state on the stack. Compare Linux's
+	// arch/x86/kernel/fpu/signal.c:copy_fpstate_to_sigframe().
+	if _, err := st.IO.CopyOut(context.Background(), fpStart, c.fpState[:464], usermem.IOOpts{}); err != nil {
+		return err
+	}
+	fpsw := FPSoftwareFrame{
+		Magic1:       _FP_XSTATE_MAGIC1,
+		ExtendedSize: uint32(fpSize),
+		Xfeatures:    _XFEATURE_MASK_FPSSE | featureSet.ValidXCR0Mask(),
+		XstateSize:   uint32(fpSize) - _FP_XSTATE_MAGIC2_SIZE,
+	}
+	st.Bottom = fpStart + 512
+	if _, err := fpsw.CopyOut(st, StackBottomMagic); err != nil {
+		return err
+	}
+	if len(c.fpState) > 512 {
+		if _, err := st.IO.CopyOut(context.Background(), fpStart+512, c.fpState[512:], usermem.IOOpts{}); err != nil {
+			return err
+		}
+	}
+	st.Bottom = fpStart + hostarch.Addr(fpSize)
+	if _, err := primitive.CopyUint32Out(st, StackBottomMagic, _FP_XSTATE_MAGIC2); err != nil {
+		return err
 	}
 
 	// Adjust the code.
 	info.FixSignalCodeForUser()
 
 	// Set up the stack frame.
+	st.Bottom = frameEnd
 	if _, err := info.CopyOut(st, StackBottomMagic); err != nil {
 		return err
 	}
@@ -212,23 +251,21 @@ func (c *context64) SignalSetup(st *Stack, act *linux.SigAction, info *linux.Sig
 	c.Regs.Rsi = uint64(infoAddr)
 	c.Regs.Rdx = uint64(ucAddr)
 	c.Regs.Rax = 0
+	c.Regs.Eflags &^= eflagsDF | eflagsRF | eflagsTF
 	c.Regs.Ds = userDS
 	c.Regs.Es = userDS
 	c.Regs.Cs = userCS
 	c.Regs.Ss = userDS
 
-	// Save the thread's floating point state.
-	c.sigFPState = append(c.sigFPState, c.fpState)
-
-	// Signal handler gets a clean floating point state.
-	c.fpState = fpu.NewState()
+	// Clear floating point registers.
+	c.fpState.Reset()
 
 	return nil
 }
 
 // SignalRestore implements Context.SignalRestore. (Compare to Linux's
 // arch/x86/kernel/signal.c:sys_rt_sigreturn().)
-func (c *context64) SignalRestore(st *Stack, rt bool) (linux.SignalSet, linux.SignalStack, error) {
+func (c *context64) SignalRestore(st *Stack, rt bool, featureSet cpuid.FeatureSet) (linux.SignalSet, linux.SignalStack, error) {
 	// Copy out the stack frame.
 	var uc UContext64
 	if _, err := uc.CopyIn(st, StackBottomMagic); err != nil {
@@ -262,20 +299,18 @@ func (c *context64) SignalRestore(st *Stack, rt bool) (linux.SignalSet, linux.Si
 	// N.B. _UC_STRICT_RESTORE_SS not supported.
 	c.Regs.Orig_rax = math.MaxUint64
 
-	// Restore floating point state.
-	l := len(c.sigFPState)
-	if l > 0 {
-		c.fpState = c.sigFPState[l-1]
-		// NOTE(cl/133042258): State save requires that any slice
-		// elements from '[len:cap]' to be zero value.
-		c.sigFPState[l-1] = nil
-		c.sigFPState = c.sigFPState[0 : l-1]
+	// Restore floating point state. Compare Linux's
+	// arch/x86/kernel/fpu/signal.c:fpu__restore_sig().
+	if uc.MContext.Fpstate == 0 {
+		c.fpState.Reset()
 	} else {
-		// This might happen if sigreturn(2) calls are unbalanced with
-		// respect to signal handler entries. This is not expected so
-		// don't bother to do anything fancy with the floating point
-		// state.
-		log.Infof("sigreturn unable to restore application fpstate")
+		fpSize, _ := featureSet.ExtendedStateSize()
+		f := make([]byte, fpSize)
+		if _, err := st.IO.CopyIn(context.Background(), hostarch.Addr(uc.MContext.Fpstate), f, usermem.IOOpts{}); err != nil {
+			return 0, linux.SignalStack{}, err
+		}
+		copy(c.fpState, f)
+		c.fpState.SanitizeUser(featureSet)
 	}
 
 	return uc.Sigset, uc.Stack, nil
