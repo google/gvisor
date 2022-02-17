@@ -23,6 +23,7 @@
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/save_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
@@ -85,6 +86,19 @@ TEST(RenameTest, FileToSameDirectory) {
   f.reset(newpath);
   EXPECT_THAT(Exists(oldpath), IsPosixErrorOkAndHolds(false));
   EXPECT_THAT(Exists(newpath), IsPosixErrorOkAndHolds(true));
+}
+
+TEST(RenameTest, RenameAfterWritableFDAndChmod) {
+  // Restore will require re-opening the writable FD which will fail.
+  const DisableSave ds;
+  const std::string data = "hello world\n";
+  auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  auto wfd = ASSERT_NO_ERRNO_AND_VALUE(Open(f.path(), O_WRONLY));
+  ASSERT_THAT(chmod(f.path().c_str(), 0444), SyscallSucceeds());
+  std::string const newpath = NewTempAbsPath();
+  ASSERT_THAT(rename(f.path().c_str(), newpath.c_str()), SyscallSucceeds());
+  EXPECT_THAT(WriteFd(wfd.get(), data.c_str(), data.size()),
+              SyscallSucceedsWithValue(data.size()));
 }
 
 TEST(RenameTest, DirectoryToSameDirectory) {
