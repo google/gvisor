@@ -226,13 +226,13 @@ type testContext struct {
 	s *stack.Stack
 }
 
-func newTestContext() *testContext {
+func newTestContext() testContext {
 	s := stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
 		TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol, tcp.NewProtocol},
 		RawFactory:         raw.EndpointFactory{},
 	})
-	return &testContext{s: s}
+	return testContext{s: s}
 }
 
 func (ctx *testContext) cleanup() {
@@ -240,7 +240,7 @@ func (ctx *testContext) cleanup() {
 	ctx.s.Wait()
 }
 
-func buildIPv4Route(ctx *testContext, local, remote tcpip.Address) (*stack.Route, tcpip.Error) {
+func buildIPv4Route(ctx testContext, local, remote tcpip.Address) (*stack.Route, tcpip.Error) {
 	s := ctx.s
 	s.CreateNIC(nicID, loopback.New())
 	protocolAddr := tcpip.ProtocolAddress{
@@ -259,7 +259,7 @@ func buildIPv4Route(ctx *testContext, local, remote tcpip.Address) (*stack.Route
 	return s.FindRoute(nicID, local, remote, ipv4.ProtocolNumber, false /* multicastLoop */)
 }
 
-func buildIPv6Route(ctx *testContext, local, remote tcpip.Address) (*stack.Route, tcpip.Error) {
+func buildIPv6Route(ctx testContext, local, remote tcpip.Address) (*stack.Route, tcpip.Error) {
 	s := ctx.s
 	s.CreateNIC(nicID, loopback.New())
 	protocolAddr := tcpip.ProtocolAddress{
