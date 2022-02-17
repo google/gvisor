@@ -889,6 +889,22 @@ cc_binary(
 )
 
 cc_binary(
+    name = "fpsig_mut_test",
+    testonly = 1,
+    srcs = select_arch(
+        amd64 = ["fpsig_mut_amd64.cc"],
+        arm64 = [],
+    ),
+    linkstatic = 1,
+    deps = [
+        gtest,
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "//test/util:thread_util",
+    ],
+)
+
+cc_binary(
     name = "fpsig_nested_test",
     testonly = 1,
     srcs = ["fpsig_nested.cc"],

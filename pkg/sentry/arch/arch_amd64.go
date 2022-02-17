@@ -106,20 +106,11 @@ const (
 // +stateify savable
 type context64 struct {
 	State
-	sigFPState []fpu.State // fpstate to be restored on sigreturn.
 }
 
 // Arch implements Context.Arch.
 func (c *context64) Arch() Arch {
 	return AMD64
-}
-
-func (c *context64) copySigFPState() []fpu.State {
-	var sigfps []fpu.State
-	for _, s := range c.sigFPState {
-		sigfps = append(sigfps, s.Fork())
-	}
-	return sigfps
 }
 
 func (c *context64) FloatingPointData() *fpu.State {
@@ -129,8 +120,7 @@ func (c *context64) FloatingPointData() *fpu.State {
 // Fork returns an exact copy of this context.
 func (c *context64) Fork() Context {
 	return &context64{
-		State:      c.State.Fork(),
-		sigFPState: c.copySigFPState(),
+		State: c.State.Fork(),
 	}
 }
 
