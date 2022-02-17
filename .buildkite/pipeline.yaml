@@ -175,6 +175,14 @@ steps:
     command: make containerd-test-1.5.4
     agents:
             queue: "cgroupv2"
+  - <<: *common
+    label: ":docker: Containerd 1.6.0-rc.4 tests"
+    command: make containerd-test-1.6.0-rc.4
+  - <<: *common
+    label: ":docker: Containerd 1.6.0-rc.4 tests (cgroupv2)"
+    command: make containerd-test-1.6.0-rc.4
+    agents:
+            queue: "cgroupv2"
 
   # Check the website builds.
   - <<: *common

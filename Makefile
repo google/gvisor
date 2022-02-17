@@ -337,6 +337,7 @@ containerd-tests: containerd-test-1.3.9
 endif
 containerd-tests: containerd-test-1.4.3
 containerd-tests: containerd-test-1.5.4
+containerd-tests: containerd-test-1.6.0-rc.4
 
 ##
 ## Benchmarks.
