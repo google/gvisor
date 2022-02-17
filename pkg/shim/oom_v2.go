@@ -65,15 +65,17 @@ func (w *watcherV2) run(ctx context.Context) {
 			return
 		case i := <-w.itemCh:
 			if i.err != nil {
+				logrus.WithError(i.err).Debugf("Error listening for OOM, id: %q", i.id)
 				delete(lastOOMMap, i.id)
 				continue
 			}
+			logrus.Debugf("Received OOM event, id: %q, event: %+v", i.id, i.ev)
 			lastOOM := lastOOMMap[i.id]
 			if i.ev.OOM > lastOOM {
 				if err := w.publisher.Publish(ctx, runtime.TaskOOMEventTopic, &TaskOOM{
 					ContainerID: i.id,
 				}); err != nil {
-					logrus.WithError(err).Error("publish OOM event")
+					logrus.WithError(err).Error("Publish OOM event")
 				}
 			}
 			if i.ev.OOM > 0 {
@@ -89,8 +91,9 @@ func (w *watcherV2) add(id string, cgx interface{}) error {
 	if !ok {
 		return fmt.Errorf("expected *cgroupsv2.Manager, got: %T", cgx)
 	}
-	// NOTE: containerd/cgroups/v2 does not support closing eventCh routine currently.
-	// The routine shuts down when an error happens, mostly when the cgroup is deleted.
+	// NOTE: containerd/cgroups/v2 does not support closing eventCh routine
+	// currently. The routine shuts down when an error happens, mostly when the
+	// cgroup is deleted.
 	eventCh, errCh := cg.EventChan()
 	go func() {
 		for {
