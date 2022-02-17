@@ -148,7 +148,9 @@ type Context interface {
 	// stack is not going to be used).
 	//
 	// sigset is the signal mask before entering the signal handler.
-	SignalSetup(st *Stack, act *linux.SigAction, info *linux.SignalInfo, alt *linux.SignalStack, sigset linux.SignalSet) error
+	//
+	// featureSet is the application CPU feature set.
+	SignalSetup(st *Stack, act *linux.SigAction, info *linux.SignalInfo, alt *linux.SignalStack, sigset linux.SignalSet, featureSet cpuid.FeatureSet) error
 
 	// SignalRestore restores context after returning from a signal
 	// handler.
@@ -157,8 +159,11 @@ type Context interface {
 	//
 	// rt is true if SignalRestore is being entered from rt_sigreturn and
 	// false if SignalRestore is being entered from sigreturn.
+	//
+	// featureSet is the application CPU feature set.
+	//
 	// SignalRestore returns the thread's new signal mask.
-	SignalRestore(st *Stack, rt bool) (linux.SignalSet, linux.SignalStack, error)
+	SignalRestore(st *Stack, rt bool, featureSet cpuid.FeatureSet) (linux.SignalSet, linux.SignalStack, error)
 
 	// SingleStep returns true if single stepping is enabled.
 	SingleStep() bool

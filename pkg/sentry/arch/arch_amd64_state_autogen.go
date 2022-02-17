@@ -16,7 +16,6 @@ func (c *context64) StateTypeName() string {
 func (c *context64) StateFields() []string {
 	return []string{
 		"State",
-		"sigFPState",
 	}
 }
 
@@ -26,7 +25,6 @@ func (c *context64) beforeSave() {}
 func (c *context64) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	stateSinkObject.Save(0, &c.State)
-	stateSinkObject.Save(1, &c.sigFPState)
 }
 
 func (c *context64) afterLoad() {}
@@ -34,7 +32,6 @@ func (c *context64) afterLoad() {}
 // +checklocksignore
 func (c *context64) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.State)
-	stateSourceObject.Load(1, &c.sigFPState)
 }
 
 func init() {

@@ -397,7 +397,6 @@ func New(arch Arch) Context {
 			State{
 				fpState: fpu.NewState(),
 			},
-			[]fpu.State(nil),
 		}
 	}
 	panic(fmt.Sprintf("unknown architecture %v", arch))

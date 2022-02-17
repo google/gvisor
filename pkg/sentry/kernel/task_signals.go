@@ -282,7 +282,7 @@ func (t *Task) deliverSignalToHandler(info *linux.SignalInfo, act linux.SigActio
 		act.Restorer = mm.VDSOSigReturn()
 	}
 
-	if err := t.Arch().SignalSetup(st, &act, info, &alt, mask); err != nil {
+	if err := t.Arch().SignalSetup(st, &act, info, &alt, mask, t.k.featureSet); err != nil {
 		return err
 	}
 	t.p.FullStateChanged()
@@ -304,7 +304,7 @@ var ctrlResume = &SyscallControl{ignoreReturn: true}
 // rt is true).
 func (t *Task) SignalReturn(rt bool) (*SyscallControl, error) {
 	st := t.Stack()
-	sigset, alt, err := t.Arch().SignalRestore(st, rt)
+	sigset, alt, err := t.Arch().SignalRestore(st, rt, t.k.featureSet)
 	if err != nil {
 		return nil, err
 	}
