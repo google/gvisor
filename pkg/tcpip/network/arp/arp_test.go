@@ -16,10 +16,13 @@ package arp_test
 
 import (
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
@@ -171,6 +174,8 @@ func makeTestContext(t *testing.T, eventDepth int, packetDepth int) testContext 
 
 func (c *testContext) cleanup() {
 	c.linkEP.Close()
+	c.s.Close()
+	c.s.Wait()
 }
 
 func TestMalformedPacket(t *testing.T) {
@@ -183,6 +188,7 @@ func TestMalformedPacket(t *testing.T) {
 	})
 
 	c.linkEP.InjectInbound(arp.ProtocolNumber, pkt)
+	pkt.DecRef()
 
 	if got := c.s.Stats().ARP.PacketsReceived.Value(); got != 1 {
 		t.Errorf("got c.s.Stats().ARP.PacketsReceived.Value() = %d, want = 1", got)
@@ -208,6 +214,7 @@ func TestDisabledEndpoint(t *testing.T) {
 	})
 
 	c.linkEP.InjectInbound(arp.ProtocolNumber, pkt)
+	pkt.DecRef()
 
 	if got := c.s.Stats().ARP.PacketsReceived.Value(); got != 1 {
 		t.Errorf("got c.s.Stats().ARP.PacketsReceived.Value() = %d, want = 1", got)
@@ -239,6 +246,7 @@ func TestDirectReply(t *testing.T) {
 	})
 
 	c.linkEP.InjectInbound(arp.ProtocolNumber, pkt)
+	pkt.DecRef()
 
 	if got := c.s.Stats().ARP.PacketsReceived.Value(); got != 1 {
 		t.Errorf("got c.s.Stats().ARP.PacketsReceived.Value() = %d, want = 1", got)
@@ -249,9 +257,6 @@ func TestDirectReply(t *testing.T) {
 }
 
 func TestDirectRequest(t *testing.T) {
-	c := makeTestContext(t, 1, 1)
-	defer c.cleanup()
-
 	tests := []struct {
 		name           string
 		senderAddr     tcpip.Address
@@ -284,6 +289,9 @@ func TestDirectRequest(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			c := makeTestContext(t, 1, 1)
+			defer c.cleanup()
+
 			packetsRecv := c.s.Stats().ARP.PacketsReceived.Value()
 			requestsRecv := c.s.Stats().ARP.RequestsReceived.Value()
 			requestsRecvUnknownAddr := c.s.Stats().ARP.RequestsReceivedUnknownTargetAddress.Value()
@@ -297,9 +305,11 @@ func TestDirectRequest(t *testing.T) {
 			copy(h.HardwareAddressSender(), test.senderLinkAddr)
 			copy(h.ProtocolAddressSender(), test.senderAddr)
 			copy(h.ProtocolAddressTarget(), test.targetAddr)
-			c.linkEP.InjectInbound(arp.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Data: v.ToVectorisedView(),
-			}))
+			})
+			c.linkEP.InjectInbound(arp.ProtocolNumber, pkt)
+			pkt.DecRef()
 
 			if got, want := c.s.Stats().ARP.PacketsReceived.Value(), packetsRecv+1; got != want {
 				t.Errorf("got c.s.Stats().ARP.PacketsReceived.Value() = %d, want = %d", got, want)
@@ -558,7 +568,12 @@ func TestLinkAddressRequest(t *testing.T) {
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol},
 			})
+			defer func() {
+				s.Close()
+				s.Wait()
+			}()
 			linkEP := channel.New(1, header.IPv4MinimumMTU, stackLinkAddr)
+			defer linkEP.Close()
 			if err := s.CreateNIC(nicID, &testLinkEndpoint{LinkEndpoint: linkEP, writeErr: test.linkErr}); err != nil {
 				t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
 			}
@@ -645,7 +660,12 @@ func TestDADARPRequestPacket(t *testing.T) {
 		}), ipv4.NewProtocol},
 		Clock: clock,
 	})
+	defer func() {
+		s.Close()
+		s.Wait()
+	}()
 	e := channel.New(1, header.IPv4MinimumMTU, stackLinkAddr)
+	defer e.Close()
 	if err := s.CreateNIC(nicID, e); err != nil {
 		t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
 	}
@@ -685,4 +705,11 @@ func TestDADARPRequestPacket(t *testing.T) {
 	if got := tcpip.Address(req.ProtocolAddressTarget()); got != remoteAddr {
 		t.Errorf("got req.ProtocolAddressTarget() = %s, want = %s", got, remoteAddr)
 	}
+}
+
+func TestMain(m *testing.M) {
+	refs.SetLeakMode(refs.LeaksPanic)
+	code := m.Run()
+	refsvfs2.DoLeakCheck()
+	os.Exit(code)
 }
