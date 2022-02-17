@@ -201,13 +201,13 @@ type testContext struct {
 	s *stack.Stack
 }
 
-func newTestContext(clock tcpip.Clock) *testContext {
+func newTestContext(clock tcpip.Clock) testContext {
 	s := stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
 		TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6, udp.NewProtocol},
 		Clock:              clock,
 	})
-	return &testContext{s: s}
+	return testContext{s: s}
 }
 
 func (c *testContext) cleanup() {
@@ -409,7 +409,7 @@ func (e endpointWithResolutionCapability) Capabilities() stack.LinkEndpointCapab
 	return e.LinkEndpoint.Capabilities() | stack.CapabilityResolutionRequired
 }
 
-func newMultiStackTestContext(t *testing.T) *multiStackTestContext {
+func newMultiStackTestContext(t *testing.T) multiStackTestContext {
 	clock := faketime.NewManualClock()
 	s0 := stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
@@ -421,7 +421,7 @@ func newMultiStackTestContext(t *testing.T) *multiStackTestContext {
 		TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6},
 		Clock:              clock,
 	})
-	c := &multiStackTestContext{
+	c := multiStackTestContext{
 		s0:    s0,
 		s1:    s1,
 		clock: clock,

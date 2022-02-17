@@ -2605,7 +2605,7 @@ func TestWriteStats(t *testing.T) {
 			ep := iptestutil.NewMockLinkEndpoint(header.IPv6MinimumMTU, &tcpip.ErrInvalidEndpointState{}, test.allowPackets)
 			defer ep.Close()
 
-			rt := buildRoute(c, t, ep)
+			rt := buildRoute(t, c, ep)
 			test.setup(t, rt.Stack())
 
 			nWritten := 0
@@ -2638,7 +2638,7 @@ func TestWriteStats(t *testing.T) {
 	}
 }
 
-func buildRoute(c *testContext, t *testing.T, ep stack.LinkEndpoint) *stack.Route {
+func buildRoute(t *testing.T, c testContext, ep stack.LinkEndpoint) *stack.Route {
 	s := c.s
 	if err := s.CreateNIC(1, ep); err != nil {
 		t.Fatalf("CreateNIC(1, _) failed: %s", err)
@@ -2813,7 +2813,7 @@ func TestFragmentationWritePacket(t *testing.T) {
 			ep := iptestutil.NewMockLinkEndpoint(ft.mtu, nil, math.MaxInt32)
 			defer ep.Close()
 
-			r := buildRoute(c, t, ep)
+			r := buildRoute(t, c, ep)
 			err := r.WritePacket(stack.NetworkHeaderParams{
 				Protocol: tcp.ProtocolNumber,
 				TTL:      ttl,
@@ -2915,7 +2915,7 @@ func TestFragmentationErrors(t *testing.T) {
 			ep := iptestutil.NewMockLinkEndpoint(ft.mtu, ft.mockError, ft.allowPackets)
 			defer ep.Close()
 
-			r := buildRoute(c, t, ep)
+			r := buildRoute(t, c, ep)
 			err := r.WritePacket(stack.NetworkHeaderParams{
 				Protocol: tcp.ProtocolNumber,
 				TTL:      ttl,

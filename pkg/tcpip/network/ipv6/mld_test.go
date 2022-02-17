@@ -69,7 +69,7 @@ func (c *mldTestContext) cleanup() {
 	c.s.Wait()
 }
 
-func newMLDTestContext() *mldTestContext {
+func newMLDTestContext() mldTestContext {
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 			MLD: ipv6.MLDOptions{
@@ -77,7 +77,7 @@ func newMLDTestContext() *mldTestContext {
 			},
 		})},
 	})
-	return &mldTestContext{s: s}
+	return mldTestContext{s: s}
 }
 
 func TestIPv6JoinLeaveSolicitedNodeAddressPerformsMLD(t *testing.T) {
