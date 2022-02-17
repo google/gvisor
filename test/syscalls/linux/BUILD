@@ -2148,6 +2148,7 @@ cc_binary(
         "//test/util:fs_util",
         "@com_google_absl//absl/strings",
         gtest,
+        "//test/util:save_util",
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",
