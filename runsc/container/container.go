@@ -329,7 +329,28 @@ func New(conf *config.Config, args Args) (*Container, error) {
 		return nil, err
 	}
 
-	// Write the PID file. Containerd considers the create complete after
+	// "If any prestart hook fails, the runtime MUST generate an error,
+	// stop and destroy the container" -OCI spec.
+	if c.Spec.Hooks != nil {
+		// Even though the hook name is Prestart, runc used to call it from create.
+		// For this reason, it's now deprecated, but the spec requires it to be
+		// called *before* CreateRuntime and CreateRuntime must be called in create.
+		//
+		// "For runtimes that implement the deprecated prestart hooks as
+		// createRuntime hooks, createRuntime hooks MUST be called after the
+		// prestart hooks."
+		if err := executeHooks(c.Spec.Hooks.Prestart, c.State()); err != nil {
+			return nil, err
+		}
+		if err := executeHooks(c.Spec.Hooks.CreateRuntime, c.State()); err != nil {
+			return nil, err
+		}
+		if len(c.Spec.Hooks.CreateContainer) > 0 {
+			log.Warningf("CreateContainer hook skipped because running inside container namespace is not supported")
+		}
+	}
+
+	// Write the PID file. Containerd considers the call to create complete after
 	// this file is created, so it must be the last thing we do.
 	if args.PIDFile != "" {
 		if err := ioutil.WriteFile(args.PIDFile, []byte(strconv.Itoa(c.SandboxPid())), 0644); err != nil {
@@ -357,10 +378,8 @@ func (c *Container) Start(conf *config.Config) error {
 
 	// "If any prestart hook fails, the runtime MUST generate an error,
 	// stop and destroy the container" -OCI spec.
-	if c.Spec.Hooks != nil {
-		if err := executeHooks(c.Spec.Hooks.Prestart, c.State()); err != nil {
-			return err
-		}
+	if c.Spec.Hooks != nil && len(c.Spec.Hooks.StartContainer) > 0 {
+		log.Warningf("StartContainer hook skipped because running inside container namespace is not supported")
 	}
 
 	if isRoot(c.Spec) {
@@ -442,10 +461,8 @@ func (c *Container) Restore(spec *specs.Spec, conf *config.Config, restoreFile s
 
 	// "If any prestart hook fails, the runtime MUST generate an error,
 	// stop and destroy the container" -OCI spec.
-	if c.Spec.Hooks != nil {
-		if err := executeHooks(c.Spec.Hooks.Prestart, c.State()); err != nil {
-			return err
-		}
+	if c.Spec.Hooks != nil && len(c.Spec.Hooks.StartContainer) > 0 {
+		log.Warningf("StartContainer hook skipped because running inside container namespace is not supported")
 	}
 
 	if err := c.Sandbox.Restore(c.ID, spec, conf, restoreFile); err != nil {
@@ -687,11 +704,12 @@ func (c *Container) Stream(filters []string, out *os.File) error {
 // State returns the metadata of the container.
 func (c *Container) State() specs.State {
 	return specs.State{
-		Version: specs.Version,
-		ID:      c.ID,
-		Status:  c.Status,
-		Pid:     c.SandboxPid(),
-		Bundle:  c.BundleDir,
+		Version:     specs.Version,
+		ID:          c.ID,
+		Status:      c.Status,
+		Pid:         c.SandboxPid(),
+		Bundle:      c.BundleDir,
+		Annotations: c.Spec.Annotations,
 	}
 }
 
