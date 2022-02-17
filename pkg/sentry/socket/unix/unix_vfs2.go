@@ -324,6 +324,11 @@ func (s *SocketVFS2) EventUnregister(e *waiter.Entry) {
 	s.socketOpsCommon.EventUnregister(e)
 }
 
+// Epollable implements FileDescriptionImpl.Epollable.
+func (s *SocketVFS2) Epollable() bool {
+	return true
+}
+
 // SetSockOpt implements the linux syscall setsockopt(2) for sockets backed by
 // a transport.Endpoint.
 func (s *SocketVFS2) SetSockOpt(t *kernel.Task, level int, name int, optVal []byte) *syserr.Error {

@@ -14,8 +14,10 @@
 
 #include <err.h>
 #include <errno.h>
+#include <stddef.h>
 #include <sys/epoll.h>
 #include <sys/ioctl.h>
+#include <sys/select.h>
 #include <unistd.h>
 
 // Tests that FIONREAD is supported with host FD.
@@ -49,8 +51,24 @@ void testEpoll() {
   }
 }
 
+// Docker maps stdin to /dev/null. Check that select(2) works with stdin.
+void testSelect() {
+  fd_set rfds;
+  struct timeval tv;
+  int res;
+  FD_ZERO(&rfds);
+  FD_SET(0, &rfds);
+  tv.tv_sec = 0;
+  tv.tv_usec = 1;
+  res = select(1, &rfds, NULL, NULL, &tv);
+  if (res == -1) {
+    err(1, "select(1, [STDIN], NULL, NULL) returned error");
+  }
+}
+
 int main(int argc, char** argv) {
   testFionread();
   testEpoll();
+  testSelect();
   return 0;
 }

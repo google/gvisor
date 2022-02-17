@@ -143,3 +143,8 @@ func (fd *queueFD) EventRegister(e *waiter.Entry) error {
 func (fd *queueFD) EventUnregister(e *waiter.Entry) {
 	fd.queue.EventUnregister(e)
 }
+
+// Epollable implements FileDescriptionImpl.Epollable.
+func (fd *queueFD) Epollable() bool {
+	return true
+}

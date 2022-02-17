@@ -105,6 +105,11 @@ func (s *SocketVFS2) EventUnregister(e *waiter.Entry) {
 	s.socketOpsCommon.EventUnregister(e)
 }
 
+// Epollable implements FileDescriptionImpl.Epollable.
+func (s *SocketVFS2) Epollable() bool {
+	return true
+}
+
 // Ioctl implements vfs.FileDescriptionImpl.
 func (*SocketVFS2) Ioctl(context.Context, usermem.IO, arch.SyscallArguments) (uintptr, error) {
 	// TODO(b/68878065): no ioctls supported.
