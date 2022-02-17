@@ -183,6 +183,11 @@ func (i *Inotify) Readiness(mask waiter.EventMask) waiter.EventMask {
 	return mask & ready
 }
 
+// Epollable implements FileDescriptionImpl.Epollable.
+func (i *Inotify) Epollable() bool {
+	return true
+}
+
 // PRead implements FileDescriptionImpl.PRead.
 func (*Inotify) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts ReadOptions) (int64, error) {
 	return 0, linuxerr.ESPIPE

@@ -29,6 +29,7 @@
 #include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
+#include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
@@ -530,6 +531,19 @@ TEST(EpollTest, DoubleLayerEpoll) {
     char readBuf[sizeof(data)];
     ASSERT_EQ(ReadFd(rfd.get(), readBuf, sizeof(data)), sizeof(data));
   }
+}
+
+TEST(EPollTest, RegularFiles) {
+  auto epollfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+
+  struct epoll_event event;
+  event.events = EPOLLIN | EPOLLOUT;
+  event.data.u64 = kMagicConstant;
+
+  auto path = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(path.path(), O_RDONLY));
+  EXPECT_THAT(epoll_ctl(epollfd.get(), EPOLL_CTL_ADD, fd.get(), &event),
+              SyscallFailsWithErrno(EPERM));
 }
 
 }  // namespace

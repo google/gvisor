@@ -74,6 +74,22 @@ func (v *virtualOwner) atomicMode() uint32 {
 	return atomic.LoadUint32(&v.mode)
 }
 
+func isEpollable(fd int) bool {
+	epollfd, err := unix.EpollCreate1(0)
+	if err != nil {
+		// This shouldn't happen. If it does, just say file doesn't support epoll.
+		return false
+	}
+	defer unix.Close(epollfd)
+
+	event := unix.EpollEvent{
+		Fd:     int32(fd),
+		Events: unix.EPOLLIN,
+	}
+	err = unix.EpollCtl(epollfd, unix.EPOLL_CTL_ADD, fd, &event)
+	return err == nil
+}
+
 // inode implements kernfs.Inode.
 //
 // +stateify savable
@@ -105,11 +121,11 @@ type inode struct {
 	// This field is initialized at creation time and is immutable.
 	ftype uint16
 
-	// mayBlock is true if hostFD is non-blocking, and operations on it may
-	// return EAGAIN or EWOULDBLOCK instead of blocking.
+	// epollable indicates whether the hostFD can be used with epoll_ctl(2). This
+	// also indicates that hostFD has been set to non-blocking.
 	//
 	// This field is initialized at creation time and is immutable.
-	mayBlock bool
+	epollable bool
 
 	// seekable is false if lseek(hostFD) returns ESPIPE. We assume that file
 	// offsets are meaningful iff seekable is true.
@@ -156,20 +172,20 @@ func newInode(ctx context.Context, fs *filesystem, hostFD int, savable bool, fil
 	}
 
 	i := &inode{
-		hostFD:   hostFD,
-		ino:      fs.NextIno(),
-		ftype:    uint16(fileType),
-		mayBlock: fileType != unix.S_IFREG && fileType != unix.S_IFDIR,
-		seekable: seekable,
-		isTTY:    isTTY,
-		savable:  savable,
+		hostFD:    hostFD,
+		ino:       fs.NextIno(),
+		ftype:     uint16(fileType),
+		epollable: isEpollable(hostFD),
+		seekable:  seekable,
+		isTTY:     isTTY,
+		savable:   savable,
 	}
 	i.InitRefs()
 	i.CachedMappable.Init(hostFD)
 
 	// If the hostFD can return EWOULDBLOCK when set to non-blocking, do so and
 	// handle blocking behavior in the sentry.
-	if i.mayBlock {
+	if i.epollable {
 		if err := unix.SetNonblock(i.hostFD, true); err != nil {
 			return nil, err
 		}
@@ -551,7 +567,7 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 // DecRef implements kernfs.Inode.DecRef.
 func (i *inode) DecRef(ctx context.Context) {
 	i.inodeRefs.DecRef(func() {
-		if i.mayBlock {
+		if i.epollable {
 			fdnotifier.RemoveFD(int32(i.hostFD))
 		}
 		if err := unix.Close(i.hostFD); err != nil {
@@ -909,7 +925,7 @@ func (f *fileDescription) ConfigureMMap(_ context.Context, opts *memmap.MMapOpts
 // EventRegister implements waiter.Waitable.EventRegister.
 func (f *fileDescription) EventRegister(e *waiter.Entry) error {
 	f.inode.queue.EventRegister(e)
-	if f.inode.mayBlock {
+	if f.inode.epollable {
 		if err := fdnotifier.UpdateFD(int32(f.inode.hostFD)); err != nil {
 			f.inode.queue.EventUnregister(e)
 			return err
@@ -921,7 +937,7 @@ func (f *fileDescription) EventRegister(e *waiter.Entry) error {
 // EventUnregister implements waiter.Waitable.EventUnregister.
 func (f *fileDescription) EventUnregister(e *waiter.Entry) {
 	f.inode.queue.EventUnregister(e)
-	if f.inode.mayBlock {
+	if f.inode.epollable {
 		if err := fdnotifier.UpdateFD(int32(f.inode.hostFD)); err != nil {
 			panic(fmt.Sprint("UpdateFD:", err))
 		}
@@ -931,6 +947,11 @@ func (f *fileDescription) EventUnregister(e *waiter.Entry) {
 // Readiness uses the poll() syscall to check the status of the underlying FD.
 func (f *fileDescription) Readiness(mask waiter.EventMask) waiter.EventMask {
 	return fdnotifier.NonBlockingPoll(int32(f.inode.hostFD), mask)
+}
+
+// Epollable implements FileDescriptionImpl.Epollable.
+func (f *fileDescription) Epollable() bool {
+	return f.inode.epollable
 }
 
 // Ioctl queries the underlying FD for allowed ioctl commands.
