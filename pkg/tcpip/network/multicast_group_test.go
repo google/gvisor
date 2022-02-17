@@ -124,12 +124,12 @@ type multicastTestContext struct {
 	clock *faketime.ManualClock
 }
 
-func newMulticastTestContext(t *testing.T, v4, mgpEnabled bool) *multicastTestContext {
+func newMulticastTestContext(t *testing.T, v4, mgpEnabled bool) multicastTestContext {
 	t.Helper()
 
 	e := channel.New(maxUnsolicitedReports, header.IPv6MinimumMTU, linkAddr)
 	s, clock := createStackWithLinkEndpoint(t, v4, mgpEnabled, e)
-	return &multicastTestContext{
+	return multicastTestContext{
 		s:     s,
 		e:     e,
 		clock: clock,
