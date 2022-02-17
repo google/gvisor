@@ -87,6 +87,11 @@ func (FileDescriptionDefaultImpl) EventRegister(e *waiter.Entry) error {
 func (FileDescriptionDefaultImpl) EventUnregister(e *waiter.Entry) {
 }
 
+// Epollable implements FileDescriptionImpl.Epollable.
+func (FileDescriptionDefaultImpl) Epollable() bool {
+	return false
+}
+
 // PRead implements FileDescriptionImpl.PRead analogously to
 // file_operations::read == file_operations::read_iter == NULL in Linux.
 func (FileDescriptionDefaultImpl) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts ReadOptions) (int64, error) {

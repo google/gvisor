@@ -59,7 +59,7 @@ func (i *inode) beforeSave() {
 
 // afterLoad is invoked by stateify.
 func (i *inode) afterLoad() {
-	if i.mayBlock {
+	if i.epollable {
 		if err := unix.SetNonblock(i.hostFD, true); err != nil {
 			panic(fmt.Sprintf("host.inode.afterLoad: failed to set host FD %d non-blocking: %v", i.hostFD, err))
 		}

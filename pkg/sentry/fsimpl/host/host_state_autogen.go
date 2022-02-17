@@ -56,7 +56,7 @@ func (i *inode) StateFields() []string {
 		"hostFD",
 		"ino",
 		"ftype",
-		"mayBlock",
+		"epollable",
 		"seekable",
 		"isTTY",
 		"savable",
@@ -80,7 +80,7 @@ func (i *inode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &i.hostFD)
 	stateSinkObject.Save(8, &i.ino)
 	stateSinkObject.Save(9, &i.ftype)
-	stateSinkObject.Save(10, &i.mayBlock)
+	stateSinkObject.Save(10, &i.epollable)
 	stateSinkObject.Save(11, &i.seekable)
 	stateSinkObject.Save(12, &i.isTTY)
 	stateSinkObject.Save(13, &i.savable)
@@ -102,7 +102,7 @@ func (i *inode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(7, &i.hostFD)
 	stateSourceObject.Load(8, &i.ino)
 	stateSourceObject.Load(9, &i.ftype)
-	stateSourceObject.Load(10, &i.mayBlock)
+	stateSourceObject.Load(10, &i.epollable)
 	stateSourceObject.Load(11, &i.seekable)
 	stateSourceObject.Load(12, &i.isTTY)
 	stateSourceObject.Load(13, &i.savable)

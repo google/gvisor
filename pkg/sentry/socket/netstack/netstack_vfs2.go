@@ -100,6 +100,11 @@ func (s *SocketVFS2) EventUnregister(e *waiter.Entry) {
 	s.socketOpsCommon.EventUnregister(e)
 }
 
+// Epollable implements FileDescriptionImpl.Epollable.
+func (s *SocketVFS2) Epollable() bool {
+	return true
+}
+
 // Read implements vfs.FileDescriptionImpl.
 func (s *SocketVFS2) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
 	// All flags other than RWF_NOWAIT should be ignored.

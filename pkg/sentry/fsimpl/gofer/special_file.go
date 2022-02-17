@@ -190,6 +190,14 @@ func (fd *specialFileFD) EventUnregister(e *waiter.Entry) {
 	fd.fileDescription.EventUnregister(e)
 }
 
+// Epollable implements FileDescriptionImpl.Epollable.
+func (fd *specialFileFD) Epollable() bool {
+	if fd.haveQueue {
+		return true
+	}
+	return fd.fileDescription.Epollable()
+}
+
 func (fd *specialFileFD) Allocate(ctx context.Context, mode, offset, length uint64) error {
 	if fd.isRegularFile {
 		d := fd.dentry()

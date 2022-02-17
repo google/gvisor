@@ -127,6 +127,11 @@ func (rfd *replicaFileDescription) Readiness(mask waiter.EventMask) waiter.Event
 	return rfd.inode.t.ld.replicaReadiness()
 }
 
+// Epollable implements FileDescriptionImpl.Epollable.
+func (rfd *replicaFileDescription) Epollable() bool {
+	return true
+}
+
 // Read implements vfs.FileDescriptionImpl.Read.
 func (rfd *replicaFileDescription) Read(ctx context.Context, dst usermem.IOSequence, _ vfs.ReadOptions) (int64, error) {
 	return rfd.inode.t.ld.inputQueueRead(ctx, dst)

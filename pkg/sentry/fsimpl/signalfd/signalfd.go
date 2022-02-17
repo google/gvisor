@@ -146,6 +146,11 @@ func (sfd *SignalFileDescription) NotifyEvent(mask waiter.EventMask) {
 	sfd.queue.Notify(waiter.EventIn) // Always notify data available.
 }
 
+// Epollable implements FileDescriptionImpl.Epollable.
+func (sfd *SignalFileDescription) Epollable() bool {
+	return true
+}
+
 // Release implements vfs.FileDescriptionImpl.Release.
 func (sfd *SignalFileDescription) Release(context.Context) {
 	sfd.target.SignalUnregister(&sfd.entry)
