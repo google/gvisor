@@ -4612,6 +4612,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			if pkt == nil {
 				t.Fatal("packet not sent through ep2")
 			}
+			defer pkt.DecRef()
 			if pkt.EgressRoute.LocalAddress != test.localAddrWithPrefix.Address {
 				t.Errorf("got pkt.EgressRoute.LocalAddress = %s, want = %s", pkt.EgressRoute.LocalAddress, test.localAddrWithPrefix.Address)
 			}
@@ -4755,6 +4756,7 @@ func TestWritePacketToRemote(t *testing.T) {
 			if got, want := pkt != nil, true; got != want {
 				t.Fatalf("e.Read() = %t, want %t", got, want)
 			}
+			defer pkt.DecRef()
 			if got, want := pkt.NetworkProtocolNumber, test.protocol; got != want {
 				t.Fatalf("pkt.NetworkProtocolNumber = %d, want %d", got, want)
 			}

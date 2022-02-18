@@ -464,11 +464,13 @@ func TestMulticastForwarding(t *testing.T) {
 			})
 
 			e1 := channel.New(1, header.IPv6MinimumMTU, "")
+			defer e1.Close()
 			if err := s.CreateNIC(nicID1, e1); err != nil {
 				t.Fatalf("s.CreateNIC(%d, _): %s", nicID1, err)
 			}
 
 			e2 := channel.New(1, header.IPv6MinimumMTU, "")
+			defer e2.Close()
 			if err := s.CreateNIC(nicID2, e2); err != nil {
 				t.Fatalf("s.CreateNIC(%d, _): %s", nicID2, err)
 			}
@@ -515,6 +517,7 @@ func TestMulticastForwarding(t *testing.T) {
 
 			if test.expectForward {
 				test.checker(t, stack.PayloadSince(p.NetworkHeader()))
+				p.DecRef()
 			}
 		})
 	}
@@ -590,11 +593,13 @@ func TestPerInterfaceForwarding(t *testing.T) {
 			})
 
 			e1 := channel.New(1, header.IPv6MinimumMTU, "")
+			defer e1.Close()
 			if err := s.CreateNIC(nicID1, e1); err != nil {
 				t.Fatalf("s.CreateNIC(%d, _): %s", nicID1, err)
 			}
 
 			e2 := channel.New(1, header.IPv6MinimumMTU, "")
+			defer e2.Close()
 			if err := s.CreateNIC(nicID2, e2); err != nil {
 				t.Fatalf("s.CreateNIC(%d, _): %s", nicID2, err)
 			}
@@ -685,11 +690,15 @@ func TestPerInterfaceForwarding(t *testing.T) {
 					test.rx(subTest.nicEP, test.srcAddr, test.dstAddr)
 					if p := subTest.nicEP.Read(); p != nil {
 						t.Errorf("unexpectedly got a response from the interface the packet arrived on: %#v", p)
+						p.DecRef()
 					}
-					if p := subTest.otherNICEP.Read(); (p != nil) != subTest.expectForwarding {
+					p := subTest.otherNICEP.Read()
+					if (p != nil) != subTest.expectForwarding {
 						t.Errorf("got otherNICEP.Read() = (%#v, %t), want = (_, %t)", p, ok, subTest.expectForwarding)
-					} else if subTest.expectForwarding {
+					}
+					if p != nil {
 						test.checker(t, stack.PayloadSince(p.NetworkHeader()))
+						p.DecRef()
 					}
 				})
 			}

@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -69,6 +70,7 @@ func newTestContext() testContext {
 func (ctx testContext) cleanup() {
 	ctx.s.Close()
 	ctx.s.Wait()
+	refsvfs2.DoRepeatedLeakCheck()
 }
 
 func TestExcludeBroadcast(t *testing.T) {
@@ -76,7 +78,9 @@ func TestExcludeBroadcast(t *testing.T) {
 	defer ctx.cleanup()
 	s := ctx.s
 
-	ep := stack.LinkEndpoint(channel.New(256, defaultMTU, ""))
+	ch := channel.New(256, defaultMTU, "")
+	defer ch.Close()
+	ep := stack.LinkEndpoint(ch)
 	if testing.Verbose() {
 		ep = sniffer.New(ep)
 	}
@@ -373,6 +377,7 @@ func TestForwarding(t *testing.T) {
 
 			// We expect at most a single packet in response to our ICMP Echo Request.
 			incomingEndpoint := channel.New(1, test.mtu, "")
+			defer incomingEndpoint.Close()
 			if err := s.CreateNIC(incomingNICID, incomingEndpoint); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", incomingNICID, err)
 			}
@@ -386,6 +391,7 @@ func TestForwarding(t *testing.T) {
 				expectedEmittedPacketCount = len(test.expectedFragmentsForwarded)
 			}
 			outgoingEndpoint := channel.New(expectedEmittedPacketCount, test.mtu, outgoingLinkAddr)
+			defer outgoingEndpoint.Close()
 			if err := s.CreateNIC(outgoingNICID, outgoingEndpoint); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", outgoingNICID, err)
 			}
@@ -479,6 +485,7 @@ func TestForwarding(t *testing.T) {
 						checker.ICMPv4Payload(hdr.View()[:expectedICMPPayloadLength()]),
 					),
 				)
+				reply.DecRef()
 			} else if reply != nil {
 				t.Fatalf("expected no ICMP packet through incoming NIC, instead found: %#v", reply)
 			}
@@ -505,6 +512,9 @@ func TestForwarding(t *testing.T) {
 					if err := compareFragments(fragmentedPackets, requestPkt, test.mtu, test.expectedFragmentsForwarded, header.ICMPv4ProtocolNumber, true /* withIPHeader */, expectedAvailableHeaderBytes); err != nil {
 						t.Error(err)
 					}
+					for _, pkt := range fragmentedPackets {
+						pkt.DecRef()
+					}
 				} else {
 					reply := outgoingEndpoint.Read()
 					if reply == nil {
@@ -523,6 +533,7 @@ func TestForwarding(t *testing.T) {
 							checker.ICMPv4Payload(nil),
 						),
 					)
+					reply.DecRef()
 				}
 			} else {
 				if reply := outgoingEndpoint.Read(); reply != nil {
@@ -1200,6 +1211,7 @@ func TestIPv4Sanity(t *testing.T) {
 
 			// We expect at most a single packet in response to our ICMP Echo Request.
 			e := channel.New(1, ipv4.MaxTotalSize, "")
+			defer e.Close()
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
 			}
@@ -1280,6 +1292,7 @@ func TestIPv4Sanity(t *testing.T) {
 				}
 				t.Fatal("expected ICMP echo reply missing")
 			}
+			defer reply.DecRef()
 
 			// We didn't expect a packet. Register our surprise but carry on to
 			// provide more information about what we got.
@@ -1957,6 +1970,7 @@ func TestInvalidFragments(t *testing.T) {
 			s := ctx.s
 
 			e := channel.New(0, 1500, linkAddr)
+			defer e.Close()
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
@@ -2186,6 +2200,7 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 			clock := ctx.clock
 
 			e := channel.New(1, 1500, linkAddr)
+			defer e.Close()
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
@@ -2255,6 +2270,7 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 					checker.ICMPv4Payload(firstFragmentSent),
 				),
 			)
+			reply.DecRef()
 		})
 	}
 }
@@ -2655,6 +2671,7 @@ func TestReceiveFragments(t *testing.T) {
 			s := ctx.s
 
 			e := channel.New(0, 1280, "\xf0\x00")
+			defer e.Close()
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
@@ -3020,6 +3037,7 @@ func TestPacketQueuing(t *testing.T) {
 				if p == nil {
 					t.Fatalf("timed out waiting for packet")
 				}
+				defer p.DecRef()
 				if p.NetworkProtocolNumber != header.IPv4ProtocolNumber {
 					t.Errorf("got p.NetworkProtocolNumber = %d, want = %d", p.NetworkProtocolNumber, header.IPv4ProtocolNumber)
 				}
@@ -3065,6 +3083,7 @@ func TestPacketQueuing(t *testing.T) {
 				if p == nil {
 					t.Fatalf("timed out waiting for packet")
 				}
+				defer p.DecRef()
 				if p.NetworkProtocolNumber != header.IPv4ProtocolNumber {
 					t.Errorf("got p.NetworkProtocolNumber = %d, want = %d", p.NetworkProtocolNumber, header.IPv4ProtocolNumber)
 				}
@@ -3089,6 +3108,7 @@ func TestPacketQueuing(t *testing.T) {
 			clock := ctx.clock
 
 			e := channel.New(1, defaultMTU, host1NICLinkAddr)
+			defer e.Close()
 			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
@@ -3122,6 +3142,7 @@ func TestPacketQueuing(t *testing.T) {
 					t.Errorf("got p.EgressRoute.RemoteLinkAddress = %s, want = %s", p.EgressRoute.RemoteLinkAddress, header.EthernetBroadcastAddress)
 				}
 				rep := header.ARP(p.NetworkHeader().View())
+				p.DecRef()
 				if got := rep.Op(); got != header.ARPRequest {
 					t.Errorf("got Op() = %d, want = %d", got, header.ARPRequest)
 				}
@@ -3212,6 +3233,7 @@ func TestCloseLocking(t *testing.T) {
 	s.IPTables().ReplaceTable(stack.NATID, table, false /* ipv6 */)
 
 	e := channel.New(0, defaultMTU, "")
+	defer e.Close()
 	if err := s.CreateNIC(nicID1, e); err != nil {
 		t.Fatalf("CreateNIC(%d, _): %s", nicID1, err)
 	}
@@ -3273,7 +3295,9 @@ func TestCloseLocking(t *testing.T) {
 		defer wg.Done()
 
 		for i := 0; i < iterations; i++ {
-			if err := s.CreateNIC(nicID2, stack.LinkEndpoint(channel.New(0, defaultMTU, ""))); err != nil {
+			ch := channel.New(0, defaultMTU, "")
+			defer ch.Close()
+			if err := s.CreateNIC(nicID2, ch); err != nil {
 				t.Errorf("CreateNIC(%d, _): %s", nicID2, err)
 				return
 			}
@@ -3310,6 +3334,7 @@ func TestIcmpRateLimit(t *testing.T) {
 	s.SetICMPBurst(icmpBurst)
 
 	e := channel.New(1, defaultMTU, tcpip.LinkAddress(""))
+	defer e.Close()
 	if err := s.CreateNIC(nicID, e); err != nil {
 		t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
 	}
@@ -3355,6 +3380,7 @@ func TestIcmpRateLimit(t *testing.T) {
 				if p == nil {
 					t.Fatalf("expected echo response, no packet read in endpoint in round %d", round)
 				}
+				defer p.DecRef()
 				if got, want := p.NetworkProtocolNumber, header.IPv4ProtocolNumber; got != want {
 					t.Errorf("got p.NetworkProtocolNumber = %d, want = %d", got, want)
 				}
@@ -3393,12 +3419,14 @@ func TestIcmpRateLimit(t *testing.T) {
 				if round >= icmpBurst {
 					if p != nil {
 						t.Errorf("got packet %x in round %d, expected ICMP rate limit to stop it", p.Data().Views(), round)
+						p.DecRef()
 					}
 					return
 				}
 				if p == nil {
 					t.Fatalf("expected unreachable in round %d, no packet read in endpoint", round)
 				}
+				defer p.DecRef()
 				checker.IPv4(t, stack.PayloadSince(p.NetworkHeader()),
 					checker.SrcAddr(host1IPv4Addr.AddressWithPrefix.Address),
 					checker.DstAddr(host2IPv4Addr.AddressWithPrefix.Address),

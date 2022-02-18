@@ -260,6 +260,7 @@ func (d *Device) Read() ([]byte, error) {
 		}
 
 		v, ok := d.encodePkt(pkt)
+		pkt.DecRef()
 		if !ok {
 			// Ignore unsupported packet.
 			continue
@@ -339,6 +340,7 @@ type tunEndpoint struct {
 // DecRef decrements refcount of e, removing NIC if it reaches 0.
 func (e *tunEndpoint) DecRef(ctx context.Context) {
 	e.tunEndpointRefs.DecRef(func() {
+		e.Close()
 		e.stack.RemoveNIC(e.nicID)
 	})
 }

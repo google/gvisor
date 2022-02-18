@@ -137,11 +137,12 @@ func TestNeighborSolicitationWithSourceLinkLayerOption(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			c := newTestContext(nil /* clock */)
+			c := newTestContext()
 			defer c.cleanup()
 			s := c.s
 
 			e := channel.New(0, 1280, linkAddr0)
+			defer e.Close()
 			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
@@ -391,12 +392,12 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			clock := faketime.NewManualClock()
-			c := newTestContext(clock)
+			c := newTestContext()
 			defer c.cleanup()
 			s := c.s
 
 			e := channel.New(1, 1280, nicLinkAddr)
+			defer e.Close()
 			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
@@ -470,7 +471,7 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 			}
 
 			if test.performsLinkResolution {
-				clock.RunImmediatelyScheduledJobs()
+				c.clock.RunImmediatelyScheduledJobs()
 				p := e.Read()
 				if p == nil {
 					t.Fatal("expected an NDP NS response")
@@ -495,6 +496,7 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 							header.NDPSourceLinkLayerAddressOption(nicLinkAddr),
 						}),
 					))
+				p.DecRef()
 
 				ser := header.NDPOptionsSerializer{
 					header.NDPTargetLinkLayerAddressOption(linkAddr1),
@@ -529,11 +531,12 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 				pktBuf.DecRef()
 			}
 
-			clock.RunImmediatelyScheduledJobs()
+			c.clock.RunImmediatelyScheduledJobs()
 			p := e.Read()
 			if p == nil {
 				t.Fatal("expected an NDP NA response")
 			}
+			defer p.DecRef()
 
 			if p.EgressRoute.LocalAddress != test.naSrc {
 				t.Errorf("got p.EgressRoute.LocalAddress = %s, want = %s", p.EgressRoute.LocalAddress, test.naSrc)
@@ -598,11 +601,12 @@ func TestNeighborAdvertisementWithTargetLinkLayerOption(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			c := newTestContext(nil /* clock */)
+			c := newTestContext()
 			defer c.cleanup()
 			s := c.s
 
 			e := channel.New(0, 1280, linkAddr0)
+			defer e.Close()
 			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
@@ -828,7 +832,7 @@ func TestNDPValidation(t *testing.T) {
 			t.Run(name, func(t *testing.T) {
 				for _, test := range subTests {
 					t.Run(test.name, func(t *testing.T) {
-						c := newTestContext(nil /* clock */)
+						c := newTestContext()
 						defer c.cleanup()
 						s := c.s
 
@@ -969,11 +973,12 @@ func TestNeighborAdvertisementValidation(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			c := newTestContext(nil /* clock */)
+			c := newTestContext()
 			defer c.cleanup()
 			s := c.s
 
 			e := channel.New(0, header.IPv6MinimumMTU, linkAddr0)
+			defer e.Close()
 			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
@@ -1177,11 +1182,12 @@ func TestRouterAdvertValidation(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			c := newTestContext(nil /* clock */)
+			c := newTestContext()
 			defer c.cleanup()
 			s := c.s
 
 			e := channel.New(10, 1280, linkAddr1)
+			defer e.Close()
 			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 			if err := s.CreateNIC(1, e); err != nil {
 				t.Fatalf("CreateNIC(_) = %s", err)
@@ -1280,6 +1286,7 @@ func TestCheckDuplicateAddress(t *testing.T) {
 	// This test is expected to send at max 2 DAD messages. We allow an extra
 	// packet to be stored to catch unexpected packets.
 	e := channel.New(3, header.IPv6MinimumMTU, linkAddr0)
+	defer e.Close()
 	e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 	if err := s.CreateNIC(nicID, e); err != nil {
 		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
@@ -1294,6 +1301,7 @@ func TestCheckDuplicateAddress(t *testing.T) {
 		if p == nil {
 			t.Fatalf("expected %d-th DAD message", dadPacketsSent)
 		}
+		defer p.DecRef()
 
 		if p.NetworkProtocolNumber != header.IPv6ProtocolNumber {
 			t.Errorf("(i=%d) got p.NetworkProtocolNumber = %d, want = %d", dadPacketsSent, p.NetworkProtocolNumber, header.IPv6ProtocolNumber)

@@ -28,7 +28,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
-	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	iptestutil "gvisor.dev/gvisor/pkg/tcpip/network/internal/testutil"
@@ -247,11 +246,12 @@ func TestReceiveOnAllNodesMulticastAddr(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			c := newTestContext(nil /* clock */)
+			c := newTestContext()
 			defer c.cleanup()
 			s := c.s
 
 			e := channel.New(10, header.IPv6MinimumMTU, linkAddr1)
+			defer e.Close()
 			if err := s.CreateNIC(1, e); err != nil {
 				t.Fatalf("CreateNIC(_) = %s", err)
 			}
@@ -279,11 +279,12 @@ func TestReceiveOnSolicitedNodeAddr(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			c := newTestContext(nil /* clock */)
+			c := newTestContext()
 			defer c.cleanup()
 			s := c.s
 
 			e := channel.New(1, header.IPv6MinimumMTU, linkAddr1)
+			defer e.Close()
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
@@ -376,7 +377,7 @@ func TestAddIpv6Address(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			c := newTestContext(nil /* clock */)
+			c := newTestContext()
 			defer c.cleanup()
 			s := c.s
 
@@ -904,11 +905,12 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			c := newTestContext(nil /* clock */)
+			c := newTestContext()
 			defer c.cleanup()
 			s := c.s
 
 			e := channel.New(1, header.IPv6MinimumMTU, linkAddr1)
+			defer e.Close()
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
@@ -1031,6 +1033,7 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 				// Pack the output packet into a single buffer.View as the checkers
 				// assume that.
 				vv := buffer.NewVectorisedView(p.Size(), p.Views())
+				p.DecRef()
 				pkt := vv.ToView()
 				if got, want := len(pkt), header.IPv6FixedHeaderSize+header.ICMPv6MinimumSize+hdr.UsedLength(); got != want {
 					t.Fatalf("got an ICMP packet of size = %d, want = %d", got, want)
@@ -2003,11 +2006,12 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			c := newTestContext(nil /* clock */)
+			c := newTestContext()
 			defer c.cleanup()
 			s := c.s
 
 			e := channel.New(0, header.IPv6MinimumMTU, linkAddr1)
+			defer e.Close()
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
@@ -2165,11 +2169,12 @@ func TestInvalidIPv6Fragments(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			c := newTestContext(nil /* clock */)
+			c := newTestContext()
 			defer c.cleanup()
 			s := c.s
 
 			e := channel.New(1, 1500, linkAddr1)
+			defer e.Close()
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
@@ -2238,6 +2243,7 @@ func TestInvalidIPv6Fragments(t *testing.T) {
 					checker.ICMPv6Payload(expectICMPPayload),
 				),
 			)
+			reply.DecRef()
 		})
 	}
 }
@@ -2418,12 +2424,12 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			clock := faketime.NewManualClock()
-			c := newTestContext(clock)
+			c := newTestContext()
 			defer c.cleanup()
 			s := c.s
 
 			e := channel.New(1, 1500, linkAddr1)
+			defer e.Close()
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
@@ -2465,7 +2471,7 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 				pkt.DecRef()
 			}
 
-			clock.Advance(ReassembleTimeout)
+			c.clock.Advance(ReassembleTimeout)
 
 			reply := e.Read()
 			if !test.expectICMP {
@@ -2491,6 +2497,7 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 					checker.ICMPv6Payload(firstFragmentSent),
 				),
 			)
+			reply.DecRef()
 		})
 	}
 }
@@ -2599,7 +2606,7 @@ func TestWriteStats(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			c := newTestContext(nil /* clock */)
+			c := newTestContext()
 			defer c.cleanup()
 
 			ep := iptestutil.NewMockLinkEndpoint(header.IPv6MinimumMTU, &tcpip.ErrInvalidEndpointState{}, test.allowPackets)
@@ -2703,7 +2710,7 @@ func knownNICIDs(proto *protocol) []tcpip.NICID {
 }
 
 func TestClearEndpointFromProtocolOnClose(t *testing.T) {
-	c := newTestContext(nil /* clock */)
+	c := newTestContext()
 	defer c.cleanup()
 	s := c.s
 
@@ -2802,7 +2809,7 @@ func TestFragmentationWritePacket(t *testing.T) {
 
 	for _, ft := range fragmentationTests {
 		t.Run(ft.description, func(t *testing.T) {
-			c := newTestContext(nil /* clock */)
+			c := newTestContext()
 			defer c.cleanup()
 
 			pkt := iptestutil.MakeRandPkt(ft.transHdrLen, extraHeaderReserve+header.IPv6MinimumSize, []int{ft.payloadSize}, header.IPv6ProtocolNumber)
@@ -2907,7 +2914,7 @@ func TestFragmentationErrors(t *testing.T) {
 
 	for _, ft := range tests {
 		t.Run(ft.description, func(t *testing.T) {
-			c := newTestContext(nil /* clock */)
+			c := newTestContext()
 			defer c.cleanup()
 
 			pkt := iptestutil.MakeRandPkt(ft.transHdrLen, extraHeaderReserve+header.IPv6MinimumSize, []int{ft.payloadSize}, header.IPv6ProtocolNumber)
@@ -3224,12 +3231,13 @@ func TestForwarding(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			c := newTestContext(nil /* clock */)
+			c := newTestContext()
 			defer c.cleanup()
 			s := c.s
 
 			// We expect at most a single packet in response to our ICMP Echo Request.
 			incomingEndpoint := channel.New(1, header.IPv6MinimumMTU, "")
+			defer incomingEndpoint.Close()
 			if err := s.CreateNIC(incomingNICID, incomingEndpoint); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", incomingNICID, err)
 			}
@@ -3239,6 +3247,7 @@ func TestForwarding(t *testing.T) {
 			}
 
 			outgoingEndpoint := channel.New(1, header.IPv6MinimumMTU, "")
+			defer outgoingEndpoint.Close()
 			if err := s.CreateNIC(outgoingNICID, outgoingEndpoint); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", outgoingNICID, err)
 			}
@@ -3339,6 +3348,7 @@ func TestForwarding(t *testing.T) {
 						checker.ICMPv6Payload(hdr.View()[:expectedICMPPayloadLength()]),
 					),
 				)
+				reply.DecRef()
 
 				if n := outgoingEndpoint.Drain(); n != 0 {
 					t.Fatalf("got e2.Drain() = %d, want = 0", n)
@@ -3364,6 +3374,7 @@ func TestForwarding(t *testing.T) {
 						checker.ICMPv6Payload(nil),
 					),
 				)
+				reply.DecRef()
 
 				if n := incomingEndpoint.Drain(); n != 0 {
 					t.Fatalf("got e1.Drain() = %d, want = 0", n)
@@ -3411,7 +3422,7 @@ func TestForwarding(t *testing.T) {
 }
 
 func TestMultiCounterStatsInitialization(t *testing.T) {
-	c := newTestContext(nil /* clock */)
+	c := newTestContext()
 	defer c.cleanup()
 	s := c.s
 
@@ -3455,13 +3466,14 @@ func TestIcmpRateLimit(t *testing.T) {
 	)
 	const icmpBurst = 5
 
-	c := newTestContext(faketime.NewManualClock())
+	c := newTestContext()
 	defer c.cleanup()
 	s := c.s
 
 	s.SetICMPBurst(icmpBurst)
 
 	e := channel.New(1, defaultMTU, tcpip.LinkAddress(""))
+	defer e.Close()
 	if err := s.CreateNIC(nicID, e); err != nil {
 		t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
 	}
@@ -3511,6 +3523,7 @@ func TestIcmpRateLimit(t *testing.T) {
 				if p == nil {
 					t.Fatalf("expected echo response, no packet read in endpoint in round %d", round)
 				}
+				defer p.DecRef()
 				if got, want := p.NetworkProtocolNumber, header.IPv6ProtocolNumber; got != want {
 					t.Errorf("got p.NetworkProtocolNumber = %d, want = %d", got, want)
 				}
@@ -3555,6 +3568,7 @@ func TestIcmpRateLimit(t *testing.T) {
 				if round >= icmpBurst {
 					if p != nil {
 						t.Errorf("got packet %x in round %d, expected ICMP rate limit to stop it", p.Data().Views(), round)
+						p.DecRef()
 					}
 					return
 				}
@@ -3567,6 +3581,7 @@ func TestIcmpRateLimit(t *testing.T) {
 					checker.ICMPv6(
 						checker.ICMPv6Type(header.ICMPv6DstUnreachable),
 					))
+				p.DecRef()
 			},
 		},
 	}

@@ -503,6 +503,7 @@ func testWriteAndVerifyInternal(c *context.Context, flow context.TestFlow, setDe
 	if p == nil {
 		c.T.Fatalf("Packet wasn't written out")
 	}
+	defer p.DecRef()
 
 	if got, want := p.NetworkProtocolNumber, flow.NetProto(); got != want {
 		c.T.Fatalf("got p.NetworkProtocolNumber = %d, want = %d", got, want)
@@ -1374,6 +1375,7 @@ func TestV4UnknownDestination(t *testing.T) {
 			}
 
 			vv := buffer.NewVectorisedView(p.Size(), p.Views())
+			p.DecRef()
 			pkt := vv.ToView()
 			if got, want := len(pkt), header.IPv4MinimumProcessableDatagramSize; got > want {
 				t.Fatalf("got an ICMP packet of size: %d, want: sz <= %d", got, want)
@@ -1468,6 +1470,7 @@ func TestV6UnknownDestination(t *testing.T) {
 			}
 
 			vv := buffer.NewVectorisedView(p.Size(), p.Views())
+			p.DecRef()
 			pkt := vv.ToView()
 			if got, want := len(pkt), header.IPv6MinimumMTU; got > want {
 				t.Fatalf("got an ICMP packet of size: %d, want: sz <= %d", got, want)
@@ -1903,6 +1906,7 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 				Clock:              &faketime.NullClock{},
 			})
 			e := channel.New(0, context.DefaultMTU, "")
+			defer e.Close()
 			if err := s.CreateNIC(nicID1, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", nicID1, err)
 			}
@@ -2015,6 +2019,7 @@ func TestChecksumWithZeroValueOnesComplementSum(t *testing.T) {
 		}
 
 		v := stack.PayloadSince(pkt.NetworkHeader())
+		pkt.DecRef()
 		checker.IPv6(t, v, checker.UDP())
 
 		// Simply replacing the payload with the checksum value is enough to make
@@ -2048,6 +2053,7 @@ func TestChecksumWithZeroValueOnesComplementSum(t *testing.T) {
 		if pkt == nil {
 			t.Fatal("Packet wasn't written out")
 		}
+		defer pkt.DecRef()
 
 		v := stack.PayloadSince(pkt.NetworkHeader())
 		checker.IPv6(t, stack.PayloadSince(pkt.NetworkHeader()), checker.UDP(checker.TransportChecksum(math.MaxUint16)))

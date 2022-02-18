@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -238,6 +239,7 @@ func newTestContext() testContext {
 func (ctx *testContext) cleanup() {
 	ctx.s.Close()
 	ctx.s.Wait()
+	refsvfs2.DoRepeatedLeakCheck()
 }
 
 func buildIPv4Route(ctx testContext, local, remote tcpip.Address) (*stack.Route, tcpip.Error) {
@@ -485,6 +487,7 @@ func TestSourceAddressValidation(t *testing.T) {
 			s := ctx.s
 
 			e := addLinkEndpointToStack(t, s)
+			defer e.Close()
 			test.rxICMP(e, test.srcAddress)
 
 			var wantValid uint64
@@ -1733,6 +1736,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 					}()
 
 					e := channel.New(1, header.IPv6MinimumMTU, "")
+					defer e.Close()
 					if err := s.CreateNIC(nicID, e); err != nil {
 						t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
 					}
@@ -1772,6 +1776,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 						t.Fatal("expected a packet to be written")
 					}
 					test.checker(t, pkt, subTest.srcAddr)
+					pkt.DecRef()
 				})
 			}
 		})
@@ -1999,6 +2004,7 @@ func TestICMPInclusionSize(t *testing.T) {
 			s := ctx.s
 
 			e := addLinkEndpointToStackWithMTU(t, s, test.linkMTU)
+			defer e.Close()
 			// Allocate and initialize the payload view.
 			payload := buffer.NewView(test.payloadLength)
 			for i := 0; i < len(payload); i++ {
@@ -2025,6 +2031,7 @@ func TestICMPInclusionSize(t *testing.T) {
 				t.Fatalf("got %d bytes of icmp error packet, want %d", got, want)
 			}
 			test.checker(t, pkt, v)
+			pkt.DecRef()
 		})
 	}
 }
