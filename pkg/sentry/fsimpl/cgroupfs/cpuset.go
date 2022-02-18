@@ -61,6 +61,20 @@ func newCPUSetController(k *kernel.Kernel, fs *filesystem) *cpusetController {
 	return c
 }
 
+// Clone implements controller.Clone.
+func (c *cpusetController) Clone() controller {
+	cpus := c.cpus.Clone()
+	mems := c.mems.Clone()
+	new := &cpusetController{
+		maxCpus: c.maxCpus,
+		maxMems: c.maxMems,
+		cpus:    &cpus,
+		mems:    &mems,
+	}
+	new.controllerCommon.cloneFrom(&c.controllerCommon)
+	return new
+}
+
 // AddControlFiles implements controller.AddControlFiles.
 func (c *cpusetController) AddControlFiles(ctx context.Context, creds *auth.Credentials, _ *cgroupInode, contents map[string]kernfs.Inode) {
 	contents["cpuset.cpus"] = c.fs.newControllerWritableFile(ctx, creds, &cpusData{c: c})

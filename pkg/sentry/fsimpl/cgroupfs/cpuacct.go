@@ -38,6 +38,13 @@ func newCPUAcctController(fs *filesystem) *cpuacctController {
 	return c
 }
 
+// Clone implements controller.Clone.
+func (c *cpuacctController) Clone() controller {
+	new := &cpuacctController{}
+	new.controllerCommon.cloneFrom(&new.controllerCommon)
+	return c
+}
+
 // AddControlFiles implements controller.AddControlFiles.
 func (c *cpuacctController) AddControlFiles(ctx context.Context, creds *auth.Credentials, cg *cgroupInode, contents map[string]kernfs.Inode) {
 	cpuacctCG := &cpuacctCgroup{cg}

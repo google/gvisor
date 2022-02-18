@@ -38,6 +38,15 @@ func newJobController(fs *filesystem) *jobController {
 	return c
 }
 
+// Clone implements controller.Clone.
+func (c *jobController) Clone() controller {
+	new := &jobController{
+		id: c.id,
+	}
+	new.controllerCommon.cloneFrom(&c.controllerCommon)
+	return new
+}
+
 func (c *jobController) AddControlFiles(ctx context.Context, creds *auth.Credentials, _ *cgroupInode, contents map[string]kernfs.Inode) {
 	contents["job.id"] = c.fs.newControllerWritableFile(ctx, creds, &jobIDData{c: c})
 }

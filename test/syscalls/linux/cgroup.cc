@@ -298,6 +298,34 @@ TEST(Cgroup, SubcontainerInitiallyEmpty) {
   EXPECT_TRUE(procs.empty());
 }
 
+TEST(Cgroup, SubcontainersHaveIndependentState) {
+  SKIP_IF(!CgroupsAvailable());
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  // Use the job cgroup as a simple cgroup with state we can modify.
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("job"));
+
+  // Initially job.id should be the default value of 0.
+  EXPECT_THAT(c.ReadIntegerControlFile("job.id"), IsPosixErrorOkAndHolds(0));
+
+  // Set id so it is no longer the default.
+  ASSERT_NO_ERRNO(c.WriteIntegerControlFile("job.id", 1234));
+
+  // Create a child. The child should inherit the value from the parent, and not
+  // the default value of 0.
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child1"));
+  EXPECT_THAT(child.ReadIntegerControlFile("job.id"),
+              IsPosixErrorOkAndHolds(1234));
+
+  // Setting the parent doesn't change the child.
+  ASSERT_NO_ERRNO(c.WriteIntegerControlFile("job.id", 5678));
+  EXPECT_THAT(child.ReadIntegerControlFile("job.id"),
+              IsPosixErrorOkAndHolds(1234));
+
+  // Likewise, setting the child doesn't change the parent.
+  ASSERT_NO_ERRNO(child.WriteIntegerControlFile("job.id", 9012));
+  EXPECT_THAT(c.ReadIntegerControlFile("job.id"), IsPosixErrorOkAndHolds(5678));
+}
+
 TEST(MemoryCgroup, MemoryUsageInBytes) {
   SKIP_IF(!CgroupsAvailable());
 

@@ -63,6 +63,17 @@ func newMemoryController(fs *filesystem, defaults map[string]int64) *memoryContr
 	return c
 }
 
+// Clone implements controller.Clone.
+func (c *memoryController) Clone() controller {
+	new := &memoryController{
+		limitBytes:            c.limitBytes,
+		softLimitBytes:        c.softLimitBytes,
+		moveChargeAtImmigrate: c.moveChargeAtImmigrate,
+	}
+	new.controllerCommon.cloneFrom(&c.controllerCommon)
+	return new
+}
+
 // AddControlFiles implements controller.AddControlFiles.
 func (c *memoryController) AddControlFiles(ctx context.Context, creds *auth.Credentials, _ *cgroupInode, contents map[string]kernfs.Inode) {
 	contents["memory.usage_in_bytes"] = c.fs.newControllerFile(ctx, creds, &memoryUsageInBytesData{})
