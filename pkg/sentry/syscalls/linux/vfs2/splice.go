@@ -380,8 +380,20 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		}
 	} else {
 		// Read inFile to buffer, then write the contents to outFile.
-		buf := make([]byte, count)
+		//
+		// The buffer size has to be limited to avoid large memory
+		// allocations and long delays. In Linux, the buffer size is
+		// limited by a size of an internl pipe. Here, we repeat this
+		// behavior.
+		bufSize := count
+		if bufSize > pipe.MaximumPipeSize {
+			bufSize = pipe.MaximumPipeSize
+		}
+		buf := make([]byte, bufSize)
 		for {
+			if int64(len(buf)) > count-total {
+				buf = buf[:count-total]
+			}
 			var readN int64
 			if offset != -1 {
 				readN, err = inFile.PRead(t, usermem.BytesIOSequence(buf), offset, vfs.ReadOptions{})
@@ -423,7 +435,6 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 			}
 
 			total += readN
-			buf = buf[readN:]
 			if total == count {
 				break
 			}
