@@ -45,6 +45,11 @@ func (c *controllerCommon) init(ty kernel.CgroupControllerType, fs *filesystem) 
 	c.fs = fs
 }
 
+func (c *controllerCommon) cloneFrom(other *controllerCommon) {
+	c.ty = other.ty
+	c.fs = other.fs
+}
+
 // Type implements kernel.CgroupController.Type.
 func (c *controllerCommon) Type() kernel.CgroupControllerType {
 	return kernel.CgroupControllerType(c.ty)
@@ -78,6 +83,11 @@ func (c *controllerCommon) RootCgroup() kernel.Cgroup {
 type controller interface {
 	kernel.CgroupController
 
+	// Clone creates a new controller based on the internal state of the current
+	// controller. This is used to initialize a sub-cgroup based on the state of
+	// the parent.
+	Clone() controller
+
 	// AddControlFiles should extend the contents map with inodes representing
 	// control files defined by this controller.
 	AddControlFiles(ctx context.Context, creds *auth.Credentials, c *cgroupInode, contents map[string]kernfs.Inode)
@@ -89,6 +99,12 @@ type controller interface {
 type cgroupInode struct {
 	dir
 
+	// controllers is the set of controllers for this cgroup. This is used to
+	// store controller-specific state per cgroup. The set of controllers should
+	// match the controllers for this hierarchy as tracked by the filesystem
+	// object. Immutable.
+	controllers map[kernel.CgroupControllerType]controller
+
 	// ts is the list of tasks in this cgroup. The kernel is responsible for
 	// removing tasks from this list before they're destroyed, so any tasks on
 	// this list are always valid.
@@ -99,10 +115,11 @@ type cgroupInode struct {
 
 var _ kernel.CgroupImpl = (*cgroupInode)(nil)
 
-func (fs *filesystem) newCgroupInode(ctx context.Context, creds *auth.Credentials) kernfs.Inode {
+func (fs *filesystem) newCgroupInode(ctx context.Context, creds *auth.Credentials, parent *cgroupInode) kernfs.Inode {
 	c := &cgroupInode{
-		dir: dir{fs: fs},
-		ts:  make(map[*kernel.Task]struct{}),
+		dir:         dir{fs: fs},
+		ts:          make(map[*kernel.Task]struct{}),
+		controllers: make(map[kernel.CgroupControllerType]controller),
 	}
 	c.dir.cgi = c
 
@@ -110,8 +127,19 @@ func (fs *filesystem) newCgroupInode(ctx context.Context, creds *auth.Credential
 	contents["cgroup.procs"] = fs.newControllerFile(ctx, creds, &cgroupProcsData{c})
 	contents["tasks"] = fs.newControllerFile(ctx, creds, &tasksData{c})
 
-	for _, ctl := range fs.controllers {
-		ctl.AddControlFiles(ctx, creds, c, contents)
+	if parent != nil {
+		for ty, ctl := range parent.controllers {
+			new := ctl.Clone()
+			c.controllers[ty] = new
+			new.AddControlFiles(ctx, creds, c, contents)
+		}
+	} else {
+		for _, ctl := range fs.controllers {
+			new := ctl.Clone()
+			// Uniqueness of controllers enforced by the filesystem on creation.
+			c.controllers[ctl.Type()] = new
+			new.AddControlFiles(ctx, creds, c, contents)
+		}
 	}
 
 	c.dir.InodeAttrs.Init(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|linux.FileMode(0555))

@@ -41,6 +41,7 @@ func (c *cgroupInode) StateTypeName() string {
 func (c *cgroupInode) StateFields() []string {
 	return []string{
 		"dir",
+		"controllers",
 		"ts",
 	}
 }
@@ -51,7 +52,8 @@ func (c *cgroupInode) beforeSave() {}
 func (c *cgroupInode) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	stateSinkObject.Save(0, &c.dir)
-	stateSinkObject.Save(1, &c.ts)
+	stateSinkObject.Save(1, &c.controllers)
+	stateSinkObject.Save(2, &c.ts)
 }
 
 func (c *cgroupInode) afterLoad() {}
@@ -59,7 +61,8 @@ func (c *cgroupInode) afterLoad() {}
 // +checklocksignore
 func (c *cgroupInode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.dir)
-	stateSourceObject.Load(1, &c.ts)
+	stateSourceObject.Load(1, &c.controllers)
+	stateSourceObject.Load(2, &c.ts)
 }
 
 func (d *cgroupProcsData) StateTypeName() string {
