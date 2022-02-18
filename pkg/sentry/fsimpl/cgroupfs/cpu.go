@@ -62,6 +62,17 @@ func newCPUController(fs *filesystem, defaults map[string]int64) *cpuController 
 	return c
 }
 
+// Clone implements controller.Clone.
+func (c *cpuController) Clone() controller {
+	new := &cpuController{
+		cfsPeriod: c.cfsPeriod,
+		cfsQuota:  c.cfsQuota,
+		shares:    c.shares,
+	}
+	new.controllerCommon.cloneFrom(&c.controllerCommon)
+	return new
+}
+
 // AddControlFiles implements controller.AddControlFiles.
 func (c *cpuController) AddControlFiles(ctx context.Context, creds *auth.Credentials, _ *cgroupInode, contents map[string]kernfs.Inode) {
 	contents["cpu.cfs_period_us"] = c.fs.newStaticControllerFile(ctx, creds, linux.FileMode(0644), fmt.Sprintf("%d\n", c.cfsPeriod))
