@@ -425,17 +425,18 @@ func (m *machine) Get() *vCPU {
 	m.mu.RUnlock()
 	runtime.UnlockOSThread()
 	m.mu.Lock()
-	runtime.LockOSThread()
-	tid = procid.Current()
-
-	// Recheck for an exact match.
-	if c := m.vCPUsByTID[tid]; c != nil {
-		c.lock()
-		m.mu.Unlock()
-		return c
-	}
 
 	for {
+		runtime.LockOSThread()
+		tid = procid.Current()
+
+		// Recheck for an exact match.
+		if c := m.vCPUsByTID[tid]; c != nil {
+			c.lock()
+			m.mu.Unlock()
+			return c
+		}
+
 		// Scan for an available vCPU.
 		for origTID, c := range m.vCPUsByTID {
 			if atomic.CompareAndSwapUint32(&c.state, vCPUReady, vCPUUser) {
@@ -464,6 +465,9 @@ func (m *machine) Get() *vCPU {
 				continue
 			}
 
+			// Steal the vCPU.
+			delete(m.vCPUsByTID, origTID)
+			m.mu.Unlock()
 			// The vCPU is not be able to transition to
 			// vCPUGuest|vCPUWaiter or to vCPUUser because that
 			// transition requires holding the machine mutex, as we
@@ -476,8 +480,7 @@ func (m *machine) Get() *vCPU {
 				}
 			}
 
-			// Steal the vCPU.
-			delete(m.vCPUsByTID, origTID)
+			m.mu.Lock()
 			m.vCPUsByTID[tid] = c
 			m.mu.Unlock()
 			c.loadSegments(tid)
@@ -488,6 +491,7 @@ func (m *machine) Get() *vCPU {
 		// is available.  Note that signaling the condition variable
 		// will have the extra effect of kicking the vCPUs out of guest
 		// mode if that's where they were.
+		runtime.UnlockOSThread()
 		m.available.Wait()
 	}
 }
