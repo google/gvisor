@@ -382,7 +382,7 @@ func (e *connectionedEndpoint) Connect(ctx context.Context, server BoundEndpoint
 }
 
 // Listen starts listening on the connection.
-func (e *connectionedEndpoint) Listen(backlog int) *syserr.Error {
+func (e *connectionedEndpoint) Listen(ctx context.Context, backlog int) *syserr.Error {
 	e.Lock()
 	defer e.Unlock()
 	if e.ListeningLocked() {
@@ -409,7 +409,7 @@ func (e *connectionedEndpoint) Listen(backlog int) *syserr.Error {
 }
 
 // Accept accepts a new connection.
-func (e *connectionedEndpoint) Accept(peerAddr *tcpip.FullAddress) (Endpoint, *syserr.Error) {
+func (e *connectionedEndpoint) Accept(ctx context.Context, peerAddr *tcpip.FullAddress) (Endpoint, *syserr.Error) {
 	e.Lock()
 
 	if !e.ListeningLocked() {

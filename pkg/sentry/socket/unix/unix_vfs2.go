@@ -128,7 +128,7 @@ func (s *SocketVFS2) blockingAccept(t *kernel.Task, peerAddr *tcpip.FullAddress)
 	// Try to accept the connection; if it fails, then wait until we get a
 	// notification.
 	for {
-		if ep, err := s.ep.Accept(peerAddr); err != syserr.ErrWouldBlock {
+		if ep, err := s.ep.Accept(t, peerAddr); err != syserr.ErrWouldBlock {
 			return ep, err
 		}
 
@@ -145,7 +145,7 @@ func (s *SocketVFS2) Accept(t *kernel.Task, peerRequested bool, flags int, block
 	if peerRequested {
 		peerAddr = &tcpip.FullAddress{}
 	}
-	ep, err := s.ep.Accept(peerAddr)
+	ep, err := s.ep.Accept(t, peerAddr)
 	if err != nil {
 		if err != syserr.ErrWouldBlock || !blocking {
 			return 0, nil, 0, err

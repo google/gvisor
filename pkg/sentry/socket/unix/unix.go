@@ -200,7 +200,7 @@ func (s *SocketOperations) GetSockOpt(t *kernel.Task, level, name int, outPtr ho
 // Listen implements the linux syscall listen(2) for sockets backed by
 // a transport.Endpoint.
 func (s *socketOpsCommon) Listen(t *kernel.Task, backlog int) *syserr.Error {
-	return s.ep.Listen(backlog)
+	return s.ep.Listen(t, backlog)
 }
 
 // blockingAccept implements a blocking version of accept(2), that is, if no
@@ -214,7 +214,7 @@ func (s *SocketOperations) blockingAccept(t *kernel.Task, peerAddr *tcpip.FullAd
 	// Try to accept the connection; if it fails, then wait until we get a
 	// notification.
 	for {
-		if ep, err := s.ep.Accept(peerAddr); err != syserr.ErrWouldBlock {
+		if ep, err := s.ep.Accept(t, peerAddr); err != syserr.ErrWouldBlock {
 			return ep, err
 		}
 
@@ -231,7 +231,7 @@ func (s *SocketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 	if peerRequested {
 		peerAddr = &tcpip.FullAddress{}
 	}
-	ep, err := s.ep.Accept(peerAddr)
+	ep, err := s.ep.Accept(t, peerAddr)
 	if err != nil {
 		if err != syserr.ErrWouldBlock || !blocking {
 			return 0, nil, 0, err
