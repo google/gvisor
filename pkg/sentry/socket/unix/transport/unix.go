@@ -152,7 +152,7 @@ type Endpoint interface {
 
 	// Listen puts the endpoint in "listen" mode, which allows it to accept
 	// new connections.
-	Listen(backlog int) *syserr.Error
+	Listen(ctx context.Context, backlog int) *syserr.Error
 
 	// Accept returns a new endpoint if a peer has established a connection
 	// to an endpoint previously set to listen mode. This method does not
@@ -162,7 +162,7 @@ type Endpoint interface {
 	//
 	// peerAddr if not nil will be populated with the address of the connected
 	// peer on a successful accept.
-	Accept(peerAddr *tcpip.FullAddress) (Endpoint, *syserr.Error)
+	Accept(ctx context.Context, peerAddr *tcpip.FullAddress) (Endpoint, *syserr.Error)
 
 	// Bind binds the endpoint to a specific local address and port.
 	// Specifying a NIC is optional.
