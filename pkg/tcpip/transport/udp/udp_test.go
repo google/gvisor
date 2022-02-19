@@ -2049,7 +2049,15 @@ func TestChecksumWithZeroValueOnesComplementSum(t *testing.T) {
 			t.Fatal("Packet wasn't written out")
 		}
 
+		v := stack.PayloadSince(pkt.NetworkHeader())
 		checker.IPv6(t, stack.PayloadSince(pkt.NetworkHeader()), checker.UDP(checker.TransportChecksum(math.MaxUint16)))
+
+		// Make sure the all ones checksum is valid.
+		hdr := header.IPv6(v)
+		udp := header.UDP(hdr.Payload())
+		if src, dst, payloadXsum := hdr.SourceAddress(), hdr.DestinationAddress(), header.Checksum(udp.Payload(), 0); !udp.IsChecksumValid(src, dst, payloadXsum) {
+			t.Errorf("got udp.IsChecksumValid(%s, %s, %d) = false, want = true", src, dst, payloadXsum)
+		}
 	}
 }
 
