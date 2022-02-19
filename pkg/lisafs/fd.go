@@ -26,7 +26,7 @@ import (
 // Each connection has its own FDID namespace.
 //
 // +marshal boundCheck slice:FDIDSlice
-type FDID uint32
+type FDID uint64
 
 // InvalidFDID represents an invalid FDID.
 const InvalidFDID FDID = 0
