@@ -668,14 +668,21 @@ func (fd *controlFDLisa) Renamed() {
 }
 
 // GetXattr implements lisafs.ControlFDImpl.GetXattr.
-func (fd *controlFDLisa) GetXattr(name string, dataBuf []byte) (uint16, error) {
+func (fd *controlFDLisa) GetXattr(name string, size uint32, getValueBuf func(uint32) []byte) (uint16, error) {
 	if !fd.Conn().ServerImpl().(*LisafsServer).config.EnableVerityXattr {
 		return 0, unix.EOPNOTSUPP
 	}
 	if _, ok := verityXattrs[name]; !ok {
 		return 0, unix.EOPNOTSUPP
 	}
-	n, err := unix.Fgetxattr(fd.hostFD, name, dataBuf)
+	if size == 0 {
+		n, err := unix.Fgetxattr(fd.hostFD, name, nil)
+		if err != nil {
+			return 0, err
+		}
+		size = uint32(n)
+	}
+	n, err := unix.Fgetxattr(fd.hostFD, name, getValueBuf(size))
 	return uint16(n), err
 }
 
