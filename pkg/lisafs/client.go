@@ -101,7 +101,7 @@ func NewClient(sock *unet.Socket) (*Client, Inode, error) {
 		mountReq  MountReq
 		mountResp MountResp
 	)
-	if err := c.SndRcvMessage(Mount, uint32(mountReq.SizeBytes()), mountReq.MarshalBytes, mountResp.CheckedUnmarshal, nil, mountResp.String, mountResp.String); err != nil {
+	if err := c.SndRcvMessage(Mount, uint32(mountReq.SizeBytes()), mountReq.MarshalBytes, mountResp.CheckedUnmarshal, nil, mountReq.String, mountResp.String); err != nil {
 		return nil, Inode{}, err
 	}
 
