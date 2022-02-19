@@ -319,7 +319,6 @@ func (s *StringArray) CheckedUnmarshal(src []byte) ([]byte, bool) {
 // +marshal slice:InodeSlice
 type Inode struct {
 	ControlFD FDID
-	_         uint32 // Need to make struct packed.
 	Stat      linux.Statx
 }
 
@@ -434,7 +433,6 @@ func (s *StatReq) String() string {
 // +marshal boundCheck
 type SetStatReq struct {
 	FD    FDID
-	_     uint32
 	Mask  uint32
 	Mode  uint32 // Only permissions part is settable.
 	UID   UID
@@ -630,6 +628,7 @@ func (w *WalkStatResp) CheckedUnmarshal(src []byte) ([]byte, bool) {
 type OpenAtReq struct {
 	FD    FDID
 	Flags uint32
+	_     uint32 // Need to make struct packed.
 }
 
 // String implements fmt.Stringer.String.
@@ -652,10 +651,12 @@ func (o *OpenAtResp) String() string {
 // +marshal
 type createCommon struct {
 	DirFD FDID
-	Mode  linux.FileMode
-	_     uint16 // Need to make struct packed.
 	UID   UID
 	GID   GID
+	Mode  linux.FileMode
+	// The following are needed to make the struct packed.
+	_ uint16
+	_ uint32
 }
 
 // OpenCreateAtReq is used to make OpenCreateAt requests.
@@ -702,7 +703,6 @@ func (o *OpenCreateAtReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
 type OpenCreateAtResp struct {
 	Child Inode
 	NewFD FDID
-	_     uint32 // Need to make struct packed.
 }
 
 // String implements fmt.Stringer.String.
@@ -832,6 +832,7 @@ type PReadReq struct {
 	Offset uint64
 	FD     FDID
 	Count  uint32
+	_      uint32 // Need to make struct packed.
 }
 
 // String implements fmt.Stringer.String.
@@ -1177,7 +1178,6 @@ func (s *StatFS) String() string {
 // +marshal boundCheck
 type FAllocateReq struct {
 	FD     FDID
-	_      uint32
 	Mode   uint64
 	Offset uint64
 	Length uint64
@@ -1262,6 +1262,7 @@ type ConnectReq struct {
 	// case, SockType = 0 means that the socket type does not matter and the
 	// requester will accept any socket type.
 	SockType uint32
+	_        uint32 // Need to make struct packed.
 }
 
 // String implements fmt.Stringer.String.
@@ -1387,6 +1388,7 @@ type Getdents64Req struct {
 	// getdents64(2). Implementations must use the absolute value of Count to
 	// determine the number of bytes to read.
 	Count int32
+	_     uint32 // Need to make struct packed.
 }
 
 // String implements fmt.Stringer.String.
@@ -1659,7 +1661,6 @@ func (*FRemoveXattrResp) String() string {
 // +marshal boundCheck
 type FListXattrReq struct {
 	FD   FDID
-	_    uint32
 	Size uint64
 }
 
