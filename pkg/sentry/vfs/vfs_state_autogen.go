@@ -648,6 +648,7 @@ func (fd *DynamicBytesFileDescriptionImpl) StateTypeName() string {
 
 func (fd *DynamicBytesFileDescriptionImpl) StateFields() []string {
 	return []string{
+		"vfsfd",
 		"data",
 		"buf",
 		"off",
@@ -662,20 +663,22 @@ func (fd *DynamicBytesFileDescriptionImpl) StateSave(stateSinkObject state.Sink)
 	fd.beforeSave()
 	var bufValue []byte
 	bufValue = fd.saveBuf()
-	stateSinkObject.SaveValue(1, bufValue)
-	stateSinkObject.Save(0, &fd.data)
-	stateSinkObject.Save(2, &fd.off)
-	stateSinkObject.Save(3, &fd.lastRead)
+	stateSinkObject.SaveValue(2, bufValue)
+	stateSinkObject.Save(0, &fd.vfsfd)
+	stateSinkObject.Save(1, &fd.data)
+	stateSinkObject.Save(3, &fd.off)
+	stateSinkObject.Save(4, &fd.lastRead)
 }
 
 func (fd *DynamicBytesFileDescriptionImpl) afterLoad() {}
 
 // +checklocksignore
 func (fd *DynamicBytesFileDescriptionImpl) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &fd.data)
-	stateSourceObject.Load(2, &fd.off)
-	stateSourceObject.Load(3, &fd.lastRead)
-	stateSourceObject.LoadValue(1, new([]byte), func(y interface{}) { fd.loadBuf(y.([]byte)) })
+	stateSourceObject.Load(0, &fd.vfsfd)
+	stateSourceObject.Load(1, &fd.data)
+	stateSourceObject.Load(3, &fd.off)
+	stateSourceObject.Load(4, &fd.lastRead)
+	stateSourceObject.LoadValue(2, new([]byte), func(y interface{}) { fd.loadBuf(y.([]byte)) })
 }
 
 func (fd *LockFD) StateTypeName() string {
