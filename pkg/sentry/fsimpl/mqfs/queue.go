@@ -77,7 +77,7 @@ func (fd *queueFD) Init(m *vfs.Mount, d *kernfs.Dentry, data vfs.DynamicBytesSou
 		return err
 	}
 	fd.inode = d.Inode()
-	fd.SetDataSource(data)
+	fd.DynamicBytesFileDescriptionImpl.Init(&fd.vfsfd, data)
 	return nil
 }
 

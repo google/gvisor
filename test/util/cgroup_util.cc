@@ -106,6 +106,24 @@ PosixError Cgroup::ContainsCallingProcess() const {
   return NoError();
 }
 
+PosixError Cgroup::ContainsCallingThread() const {
+  ASSIGN_OR_RETURN_ERRNO(const absl::flat_hash_set<pid_t> tasks, Tasks());
+  const pid_t tid = syscall(SYS_gettid);
+  if (!tasks.contains(tid)) {
+    return PosixError(ENOENT,
+                      absl::StrFormat("Cgroup doesn't contain task %d", tid));
+  }
+  return NoError();
+}
+
+PosixError Cgroup::Enter(pid_t pid) const {
+  return WriteIntegerControlFile("cgroup.procs", static_cast<int64_t>(pid));
+}
+
+PosixError Cgroup::EnterThread(pid_t pid) const {
+  return WriteIntegerControlFile("tasks", static_cast<int64_t>(pid));
+}
+
 PosixErrorOr<absl::flat_hash_set<pid_t>> Cgroup::ParsePIDList(
     absl::string_view data) const {
   absl::flat_hash_set<pid_t> res;

@@ -4497,6 +4497,7 @@ cc_binary(
         "//test/util:fs_util",
         "//test/util:mount_util",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/synchronization",
         gtest,
         "//test/util:cleanup",
         "//test/util:posix_error",
