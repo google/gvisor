@@ -30,6 +30,7 @@ import (
 // +stateify savable
 type memoryController struct {
 	controllerCommon
+	controllerNoopMigrate
 
 	limitBytes            int64
 	softLimitBytes        int64

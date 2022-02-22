@@ -61,7 +61,7 @@ func (d *storeData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 }
 
 // Generate implements WritableDynamicBytesSource.
-func (d *storeData) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
+func (d *storeData) Write(ctx context.Context, _ *FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
 	buf := make([]byte, src.NumBytes())
 	n, err := src.CopyIn(ctx, buf)
 	if err != nil {
@@ -84,9 +84,9 @@ func newTestFD(ctx context.Context, vfsObj *VirtualFilesystem, statusFlags uint3
 	vd := vfsObj.NewAnonVirtualDentry("genCountFD")
 	defer vd.DecRef(ctx)
 	var fd testFD
-	fd.vfsfd.Init(&fd, statusFlags, vd.Mount(), vd.Dentry(), &FileDescriptionOptions{})
-	fd.DynamicBytesFileDescriptionImpl.SetDataSource(data)
-	return &fd.vfsfd
+	fd.fileDescription.vfsfd.Init(&fd, statusFlags, vd.Mount(), vd.Dentry(), &FileDescriptionOptions{})
+	fd.DynamicBytesFileDescriptionImpl.Init(&fd.fileDescription.vfsfd, data)
+	return &fd.fileDescription.vfsfd
 }
 
 // Release implements FileDescriptionImpl.Release.

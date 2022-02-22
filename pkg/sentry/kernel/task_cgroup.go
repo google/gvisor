@@ -58,15 +58,9 @@ func (t *Task) EnterCgroup(c Cgroup) error {
 	defer t.mu.Unlock()
 
 	for oldCG, _ := range t.cgroups {
-		for _, oldCtl := range oldCG.Controllers() {
-			if _, ok := newControllers[oldCtl.Type()]; ok {
-				// Already in a cgroup with the same controller as one of the
-				// new ones.  Requires migration between cgroups.
-				//
-				// TODO(b/183137098): Implement cgroup migration.
-				log.Warningf("Cgroup migration is not implemented")
-				return linuxerr.EBUSY
-			}
+		if oldCG.HierarchyID() == c.HierarchyID() {
+			log.Warningf("Cannot enter new cgroup %v due to conflicting controllers. Try migrate instead?", c)
+			return linuxerr.EBUSY
 		}
 	}
 
@@ -105,6 +99,82 @@ func (t *Task) leaveCgroupLocked(c Cgroup) {
 	c.Leave(t)
 	delete(t.cgroups, c)
 	c.decRef()
+}
+
+// +checklocks:t.mu
+func (t *Task) findCgroupWithMatchingHierarchyLocked(other Cgroup) (Cgroup, bool) {
+	for c, _ := range t.cgroups {
+		if c.HierarchyID() != other.HierarchyID() {
+			continue
+		}
+		return c, true
+	}
+	return Cgroup{}, false
+}
+
+// CgroupPrepareMigrate starts a cgroup migration for this task to dst. The
+// migration must be completed through the returned context.
+func (t *Task) CgroupPrepareMigrate(dst Cgroup) (*CgroupMigrationContext, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	src, found := t.findCgroupWithMatchingHierarchyLocked(dst)
+	if !found {
+		log.Warningf("Cannot migrate to cgroup %v since task %v not currently in target hierarchy %v", dst, t, dst.HierarchyID())
+		return nil, linuxerr.EINVAL
+	}
+	if err := dst.PrepareMigrate(t, &src); err != nil {
+		return nil, err
+	}
+	return &CgroupMigrationContext{
+		src: src,
+		dst: dst,
+		t:   t,
+	}, nil
+}
+
+// MigrateCgroup migrates all tasks in tg to the dst cgroup. Either all tasks
+// are migrated, or none are. Atomicity of migrations wrt cgroup membership
+// (i.e. a task can't switch cgroups mid-migration due to another migration) is
+// guaranteed because migrations are serialized by TaskSet.mu.
+func (tg *ThreadGroup) MigrateCgroup(dst Cgroup) error {
+	tg.pidns.owner.mu.RLock()
+	defer tg.pidns.owner.mu.RUnlock()
+
+	var ctxs []*CgroupMigrationContext
+
+	// Prepare migrations. On partial failure, abort.
+	for t := tg.tasks.Front(); t != nil; t = t.Next() {
+		ctx, err := t.CgroupPrepareMigrate(dst)
+		if err != nil {
+			// Rollback.
+			for _, ctx := range ctxs {
+				ctx.Abort()
+			}
+			return err
+		}
+		ctxs = append(ctxs, ctx)
+	}
+
+	// All migrations are now guaranteed to succeed.
+
+	for _, ctx := range ctxs {
+		ctx.Commit()
+	}
+
+	return nil
+}
+
+// MigrateCgroup migrates this task to the dst cgroup.
+func (t *Task) MigrateCgroup(dst Cgroup) error {
+	t.tg.pidns.owner.mu.RLock()
+	defer t.tg.pidns.owner.mu.RUnlock()
+
+	ctx, err := t.CgroupPrepareMigrate(dst)
+	if err != nil {
+		return err
+	}
+	ctx.Commit()
+	return nil
 }
 
 // taskCgroupEntry represents a line in /proc/<pid>/cgroup, and is used to

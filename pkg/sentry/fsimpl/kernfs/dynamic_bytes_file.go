@@ -101,7 +101,7 @@ func (fd *DynamicBytesFD) Init(m *vfs.Mount, d *Dentry, data vfs.DynamicBytesSou
 		return err
 	}
 	fd.inode = d.inode
-	fd.SetDataSource(data)
+	fd.DynamicBytesFileDescriptionImpl.Init(&fd.vfsfd, data)
 	return nil
 }
 

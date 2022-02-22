@@ -28,6 +28,7 @@ import (
 // +stateify savable
 type cpuacctController struct {
 	controllerCommon
+	controllerNoopMigrate
 }
 
 var _ controller = (*cpuacctController)(nil)

@@ -303,6 +303,7 @@ type idMapData struct {
 }
 
 var _ dynamicInode = (*idMapData)(nil)
+var _ vfs.WritableDynamicBytesSource = (*idMapData)(nil)
 
 // Generate implements vfs.WritableDynamicBytesSource.Generate.
 func (d *idMapData) Generate(ctx context.Context, buf *bytes.Buffer) error {
@@ -319,7 +320,7 @@ func (d *idMapData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 }
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
-func (d *idMapData) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
+func (d *idMapData) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
 	// "In addition, the number of bytes written to the file must be less than
 	// the system page size, and the write must be performed at the start of
 	// the file ..." - user_namespaces(7)
@@ -718,7 +719,7 @@ func (s *statusInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs
 	if err := fd.vfsfd.Init(fd, opts.Flags, rp.Mount(), d.VFSDentry(), &vfs.FileDescriptionOptions{}); err != nil {
 		return nil, err
 	}
-	fd.SetDataSource(fd)
+	fd.DynamicBytesFileDescriptionImpl.Init(&fd.vfsfd, fd)
 	return &fd.vfsfd, nil
 }
 
@@ -863,7 +864,7 @@ func (o *oomScoreAdj) Generate(ctx context.Context, buf *bytes.Buffer) error {
 }
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
-func (o *oomScoreAdj) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
+func (o *oomScoreAdj) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
 	if src.NumBytes() == 0 {
 		return 0, nil
 	}

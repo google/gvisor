@@ -26,6 +26,7 @@ import (
 // +stateify savable
 type cpuController struct {
 	controllerCommon
+	controllerNoopMigrate
 
 	// CFS bandwidth control parameters, values in microseconds.
 	cfsPeriod int64

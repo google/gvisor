@@ -21,12 +21,15 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // +stateify savable
 type jobController struct {
 	controllerCommon
+	controllerNoopMigrate
+
 	id int64
 }
 
@@ -63,7 +66,7 @@ func (d *jobIDData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 }
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
-func (d *jobIDData) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
+func (d *jobIDData) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
 	val, n, err := parseInt64FromString(ctx, src)
 	if err != nil {
 		return n, err
