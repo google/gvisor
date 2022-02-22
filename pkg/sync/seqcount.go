@@ -117,7 +117,17 @@ func (s *SeqCount) BeginWrite() {
 	}
 }
 
-// EndWrite ends the effect of a preceding BeginWrite.
+// BeginWriteOk combines the semantics of ReadOk and BeginWrite. If the reader
+// critical section initiated by a previous call to BeginRead() that returned
+// epoch did not race with any writer critical sections, it begins a writer
+// critical section and returns true. Otherwise it does nothing and returns
+// false.
+func (s *SeqCount) BeginWriteOk(epoch SeqCountEpoch) bool {
+	return atomic.CompareAndSwapUint32(&s.epoch, uint32(epoch), uint32(epoch)+1)
+}
+
+// EndWrite ends the effect of a preceding BeginWrite or successful
+// BeginWriteOk.
 func (s *SeqCount) EndWrite() {
 	if epoch := atomic.AddUint32(&s.epoch, 1); epoch&1 != 0 {
 		panic("SeqCount.EndWrite outside writer critical section")
