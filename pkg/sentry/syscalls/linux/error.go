@@ -156,9 +156,12 @@ func handleIOErrorImpl(ctx context.Context, partialResult bool, errOrig, intr er
 		return true, nil
 	case linuxerr.Equals(linuxerr.ECONNRESET, translatedErr):
 		fallthrough
+	case linuxerr.Equals(linuxerr.ECONNABORTED, translatedErr):
+		fallthrough
 	case linuxerr.Equals(linuxerr.ETIMEDOUT, translatedErr):
-		// For TCP sendfile connections, we may have a reset or timeout. But we
-		// should just return n as the result.
+		// For TCP sendfile connections, we may have a reset, abort or timeout. But
+		// we should just return the partial result. The next call will return the
+		// error without a partial IO operation.
 		return true, nil
 	case linuxerr.Equals(linuxerr.EWOULDBLOCK, translatedErr):
 		// Syscall would block, but completed a partial read/write.
