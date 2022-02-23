@@ -379,7 +379,7 @@ func checkDeleted(h *Harness, file p9.File) {
 	if _, err := file.Readdir(0, 1); err != unix.EINVAL {
 		h.t.Errorf("readdir while deleted, got %v, want EINVAL", err)
 	}
-	if _, err := file.Connect(p9.ConnectFlags(0)); err != unix.EINVAL {
+	if _, err := file.Connect(p9.SocketType(0)); err != unix.EINVAL {
 		h.t.Errorf("connect while deleted, got %v, want EINVAL", err)
 	}
 
@@ -998,7 +998,7 @@ func TestConnect(t *testing.T) {
 			// Catch all the non-socket cases.
 			if !backend.Attr.Mode.IsSocket() {
 				// This has been set up to fail if Connect is called.
-				if _, err := f.Connect(p9.ConnectFlags(0)); err != unix.EINVAL {
+				if _, err := f.Connect(p9.SocketType(0)); err != unix.EINVAL {
 					t.Errorf("connect got %v, wanted EINVAL", err)
 				}
 				return
@@ -1006,8 +1006,8 @@ func TestConnect(t *testing.T) {
 
 			// Ensure the fd exchange works.
 			fdTest(t, func(send *fd.FD) *fd.FD {
-				backend.EXPECT().Connect(p9.ConnectFlags(0)).Return(send, nil)
-				recv, err := backend.Connect(p9.ConnectFlags(0))
+				backend.EXPECT().Connect(p9.SocketType(0)).Return(send, nil)
+				recv, err := backend.Connect(p9.SocketType(0))
 				if err != nil {
 					t.Fatalf("connect got %v, wanted nil", err)
 				}
@@ -1334,7 +1334,7 @@ func TestClose(t *testing.T) {
 				if _, _, _, _, err := f.WalkGetAttr(nil); err != unix.EBADF {
 					t.Errorf("walkgetattr got %v, wanted EBADF", err)
 				}
-				if _, err := f.Connect(p9.ConnectFlags(0)); err != unix.EBADF {
+				if _, err := f.Connect(p9.SocketType(0)); err != unix.EBADF {
 					t.Errorf("connect got %v, wanted EBADF", err)
 				}
 			})
@@ -1953,7 +1953,7 @@ func TestConcurrency(t *testing.T) {
 			name:  "connect",
 			match: func(mode p9.FileMode) bool { return mode.IsSocket() },
 			op: func(h *Harness, backend *Mock, f p9.File, callback func()) {
-				backend.EXPECT().Connect(gomock.Any()).Do(func(p9.ConnectFlags) {
+				backend.EXPECT().Connect(gomock.Any()).Do(func(p9.SocketType) {
 					callback()
 				})
 				f.Connect(0)
