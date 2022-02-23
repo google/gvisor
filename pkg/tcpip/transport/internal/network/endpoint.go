@@ -329,11 +329,22 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 	}
 
 	var tos uint8
+	var ttl uint8
 	switch netProto := route.NetProto(); netProto {
 	case header.IPv4ProtocolNumber:
 		tos = e.ipv4TOS
+		if opts.ControlMessages.HasTTL {
+			ttl = opts.ControlMessages.TTL
+		} else {
+			ttl = e.calculateTTL(route)
+		}
 	case header.IPv6ProtocolNumber:
 		tos = e.ipv6TClass
+		if opts.ControlMessages.HasHopLimit {
+			ttl = opts.ControlMessages.HopLimit
+		} else {
+			ttl = e.calculateTTL(route)
+		}
 	default:
 		panic(fmt.Sprintf("invalid protocol number = %d", netProto))
 	}
@@ -341,7 +352,7 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 	return WriteContext{
 		transProto: e.transProto,
 		route:      route,
-		ttl:        e.calculateTTL(route),
+		ttl:        ttl,
 		tos:        tos,
 		owner:      e.owner,
 	}, nil

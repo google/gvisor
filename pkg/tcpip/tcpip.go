@@ -416,13 +416,28 @@ func (l *LimitedWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// ReceivableControlMessages holds control messages that can be received.
+// SendableControlMessages contains socket control messages that can be written.
+//
+// +stateify savable
+type SendableControlMessages struct {
+	// HasTTL indicates whether TTL is valid/set.
+	HasTTL bool
+
+	// TTL is the IPv4 Time To Live of the associated packet.
+	TTL uint8
+
+	// HasHopLimit indicates whether HopLimit is valid/set.
+	HasHopLimit bool
+
+	// HopLimit is the IPv6 Hop Limit of the associated packet.
+	HopLimit uint8
+}
+
+// ReceivableControlMessages contains socket control messages that can be
+// received.
 //
 // +stateify savable
 type ReceivableControlMessages struct {
-	// HasTimestamp indicates whether Timestamp is valid/set.
-	HasTimestamp bool
-
 	// Timestamp is the time that the last packet used to create the read data
 	// was received.
 	Timestamp time.Time `state:".(int64)"`
@@ -450,6 +465,9 @@ type ReceivableControlMessages struct {
 
 	// HopLimit is the IPv6 Hop Limit of the associated packet.
 	HopLimit uint8
+
+	// HasTimestamp indicates whether Timestamp is valid/set.
+	HasTimestamp bool
 
 	// HasTClass indicates whether TClass is valid/set.
 	HasTClass bool
@@ -699,6 +717,9 @@ type WriteOptions struct {
 	// endpoint. If Atomic is false, then data fetched from the Payloader may be
 	// discarded if available endpoint buffer space is unsufficient.
 	Atomic bool
+
+	// ControlMessages contains optional overrides used when writing a packet.
+	ControlMessages SendableControlMessages
 }
 
 // SockOptInt represents socket options which values have the int type.

@@ -2869,7 +2869,7 @@ func (s *socketOpsCommon) nonBlockingRead(ctx context.Context, dst usermem.IOSeq
 			flags |= linux.MSG_TRUNC
 		}
 
-		return msgLen, flags, addr, addrLen, s.controlMessages(res.ControlMessages), nil
+		return msgLen, flags, addr, addrLen, s.netstackToLinuxControlMessages(res.ControlMessages), nil
 	}
 
 	if peek {
@@ -2892,12 +2892,12 @@ func (s *socketOpsCommon) nonBlockingRead(ctx context.Context, dst usermem.IOSeq
 		s.Endpoint.ModerateRecvBuf(n)
 	}
 
-	cmsg := s.controlMessages(res.ControlMessages)
+	cmsg := s.netstackToLinuxControlMessages(res.ControlMessages)
 	s.fillCmsgInq(&cmsg)
 	return res.Count, 0, nil, 0, cmsg, syserr.TranslateNetstackError(err)
 }
 
-func (s *socketOpsCommon) controlMessages(cm tcpip.ReceivableControlMessages) socket.ControlMessages {
+func (s *socketOpsCommon) netstackToLinuxControlMessages(cm tcpip.ReceivableControlMessages) socket.ControlMessages {
 	readCM := socket.NewIPControlMessages(s.family, cm)
 	return socket.ControlMessages{
 		IP: socket.IPControlMessages{
@@ -2920,6 +2920,15 @@ func (s *socketOpsCommon) controlMessages(cm tcpip.ReceivableControlMessages) so
 			OriginalDstAddress: readCM.OriginalDstAddress,
 			SockErr:            readCM.SockErr,
 		},
+	}
+}
+
+func (s *socketOpsCommon) linuxToNetstackControlMessages(cm socket.ControlMessages) tcpip.SendableControlMessages {
+	return tcpip.SendableControlMessages{
+		HasTTL:      cm.IP.HasTTL,
+		TTL:         uint8(cm.IP.TTL),
+		HasHopLimit: cm.IP.HasHopLimit,
+		HopLimit:    uint8(cm.IP.HopLimit),
 	}
 }
 
@@ -3083,9 +3092,10 @@ func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []b
 	}
 
 	opts := tcpip.WriteOptions{
-		To:          addr,
-		More:        flags&linux.MSG_MORE != 0,
-		EndOfRecord: flags&linux.MSG_EOR != 0,
+		To:              addr,
+		More:            flags&linux.MSG_MORE != 0,
+		EndOfRecord:     flags&linux.MSG_EOR != 0,
+		ControlMessages: s.linuxToNetstackControlMessages(controlMessages),
 	}
 
 	r := src.Reader(t)

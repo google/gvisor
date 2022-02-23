@@ -1129,13 +1129,46 @@ func (f *FullAddress) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &f.Port)
 }
 
+func (s *SendableControlMessages) StateTypeName() string {
+	return "pkg/tcpip.SendableControlMessages"
+}
+
+func (s *SendableControlMessages) StateFields() []string {
+	return []string{
+		"HasTTL",
+		"TTL",
+		"HasHopLimit",
+		"HopLimit",
+	}
+}
+
+func (s *SendableControlMessages) beforeSave() {}
+
+// +checklocksignore
+func (s *SendableControlMessages) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.HasTTL)
+	stateSinkObject.Save(1, &s.TTL)
+	stateSinkObject.Save(2, &s.HasHopLimit)
+	stateSinkObject.Save(3, &s.HopLimit)
+}
+
+func (s *SendableControlMessages) afterLoad() {}
+
+// +checklocksignore
+func (s *SendableControlMessages) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.HasTTL)
+	stateSourceObject.Load(1, &s.TTL)
+	stateSourceObject.Load(2, &s.HasHopLimit)
+	stateSourceObject.Load(3, &s.HopLimit)
+}
+
 func (c *ReceivableControlMessages) StateTypeName() string {
 	return "pkg/tcpip.ReceivableControlMessages"
 }
 
 func (c *ReceivableControlMessages) StateFields() []string {
 	return []string{
-		"HasTimestamp",
 		"Timestamp",
 		"HasInq",
 		"Inq",
@@ -1145,6 +1178,7 @@ func (c *ReceivableControlMessages) StateFields() []string {
 		"TTL",
 		"HasHopLimit",
 		"HopLimit",
+		"HasTimestamp",
 		"HasTClass",
 		"TClass",
 		"HasIPPacketInfo",
@@ -1164,16 +1198,16 @@ func (c *ReceivableControlMessages) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	var TimestampValue int64
 	TimestampValue = c.saveTimestamp()
-	stateSinkObject.SaveValue(1, TimestampValue)
-	stateSinkObject.Save(0, &c.HasTimestamp)
-	stateSinkObject.Save(2, &c.HasInq)
-	stateSinkObject.Save(3, &c.Inq)
-	stateSinkObject.Save(4, &c.HasTOS)
-	stateSinkObject.Save(5, &c.TOS)
-	stateSinkObject.Save(6, &c.HasTTL)
-	stateSinkObject.Save(7, &c.TTL)
-	stateSinkObject.Save(8, &c.HasHopLimit)
-	stateSinkObject.Save(9, &c.HopLimit)
+	stateSinkObject.SaveValue(0, TimestampValue)
+	stateSinkObject.Save(1, &c.HasInq)
+	stateSinkObject.Save(2, &c.Inq)
+	stateSinkObject.Save(3, &c.HasTOS)
+	stateSinkObject.Save(4, &c.TOS)
+	stateSinkObject.Save(5, &c.HasTTL)
+	stateSinkObject.Save(6, &c.TTL)
+	stateSinkObject.Save(7, &c.HasHopLimit)
+	stateSinkObject.Save(8, &c.HopLimit)
+	stateSinkObject.Save(9, &c.HasTimestamp)
 	stateSinkObject.Save(10, &c.HasTClass)
 	stateSinkObject.Save(11, &c.TClass)
 	stateSinkObject.Save(12, &c.HasIPPacketInfo)
@@ -1189,15 +1223,15 @@ func (c *ReceivableControlMessages) afterLoad() {}
 
 // +checklocksignore
 func (c *ReceivableControlMessages) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &c.HasTimestamp)
-	stateSourceObject.Load(2, &c.HasInq)
-	stateSourceObject.Load(3, &c.Inq)
-	stateSourceObject.Load(4, &c.HasTOS)
-	stateSourceObject.Load(5, &c.TOS)
-	stateSourceObject.Load(6, &c.HasTTL)
-	stateSourceObject.Load(7, &c.TTL)
-	stateSourceObject.Load(8, &c.HasHopLimit)
-	stateSourceObject.Load(9, &c.HopLimit)
+	stateSourceObject.Load(1, &c.HasInq)
+	stateSourceObject.Load(2, &c.Inq)
+	stateSourceObject.Load(3, &c.HasTOS)
+	stateSourceObject.Load(4, &c.TOS)
+	stateSourceObject.Load(5, &c.HasTTL)
+	stateSourceObject.Load(6, &c.TTL)
+	stateSourceObject.Load(7, &c.HasHopLimit)
+	stateSourceObject.Load(8, &c.HopLimit)
+	stateSourceObject.Load(9, &c.HasTimestamp)
 	stateSourceObject.Load(10, &c.HasTClass)
 	stateSourceObject.Load(11, &c.TClass)
 	stateSourceObject.Load(12, &c.HasIPPacketInfo)
@@ -1207,7 +1241,7 @@ func (c *ReceivableControlMessages) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(16, &c.HasOriginalDstAddress)
 	stateSourceObject.Load(17, &c.OriginalDstAddress)
 	stateSourceObject.Load(18, &c.SockErr)
-	stateSourceObject.LoadValue(1, new(int64), func(y interface{}) { c.loadTimestamp(y.(int64)) })
+	stateSourceObject.LoadValue(0, new(int64), func(y interface{}) { c.loadTimestamp(y.(int64)) })
 }
 
 func (l *LinkPacketInfo) StateTypeName() string {
@@ -1587,6 +1621,7 @@ func init() {
 	state.Register((*stdClock)(nil))
 	state.Register((*MonotonicTime)(nil))
 	state.Register((*FullAddress)(nil))
+	state.Register((*SendableControlMessages)(nil))
 	state.Register((*ReceivableControlMessages)(nil))
 	state.Register((*LinkPacketInfo)(nil))
 	state.Register((*ICMPv6Filter)(nil))
