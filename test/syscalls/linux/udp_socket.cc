@@ -2189,10 +2189,6 @@ TEST_P(UdpSocketControlMessagesTest, SetAndReceiveTTLOrHopLimit) {
 }
 
 TEST_P(UdpSocketControlMessagesTest, SendAndReceiveTTLOrHopLimit) {
-  // TODO(b/146661005): Setting TTL/HopLimit via sendmsg is not supported by
-  // netstack.
-  SKIP_IF(IsRunningOnGvisor() && !IsRunningWithHostinet());
-
   // Enable receiving TTL and maybe HOPLIMIT on the receiver.
   ASSERT_THAT(setsockopt(server_.get(), SOL_IP, IP_RECVTTL, &kSockOptOn,
                          sizeof(kSockOptOn)),

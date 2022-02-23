@@ -1300,44 +1300,63 @@ TEST(RawSocketTest, ReceiveTTL) {
   ASSERT_THAT(
       bind(raw.get(), reinterpret_cast<const sockaddr*>(&kAddr), sizeof(kAddr)),
       SyscallSucceeds());
+  ASSERT_THAT(connect(raw.get(), reinterpret_cast<const sockaddr*>(&kAddr),
+                      sizeof(kAddr)),
+              SyscallSucceeds());
 
   constexpr int kArbitraryTTL = 42;
   ASSERT_THAT(setsockopt(raw.get(), IPPROTO_IP, IP_TTL, &kArbitraryTTL,
                          sizeof(kArbitraryTTL)),
               SyscallSucceeds());
 
-  constexpr char kSendBuf[] = "malformed UDP";
-  ASSERT_THAT(sendto(raw.get(), kSendBuf, sizeof(kSendBuf), 0 /* flags */,
-                     reinterpret_cast<const sockaddr*>(&kAddr), sizeof(kAddr)),
-              SyscallSucceedsWithValue(sizeof(kSendBuf)));
+  char send_buf[] = "malformed UDP";
+  auto test_recv_ttl = [&](int expected_ttl) {
+    // Register to receive TTL.
+    constexpr int kOne = 1;
+    ASSERT_THAT(
+        setsockopt(raw.get(), IPPROTO_IP, IP_RECVTTL, &kOne, sizeof(kOne)),
+        SyscallSucceeds());
 
-  // Register to receive TTL.
-  constexpr int kOne = 1;
-  ASSERT_THAT(
-      setsockopt(raw.get(), IPPROTO_IP, IP_RECVTTL, &kOne, sizeof(kOne)),
-      SyscallSucceeds());
+    struct {
+      iphdr ip;
+      char data[sizeof(send_buf)];
+    } ABSL_ATTRIBUTE_PACKED recv_buf;
 
-  struct {
-    iphdr ip;
-    char data[sizeof(kSendBuf)];
-  } ABSL_ATTRIBUTE_PACKED recv_buf;
-  int recv_ttl;
-  size_t recv_buf_len = sizeof(recv_buf);
-  ASSERT_NO_FATAL_FAILURE(RecvTTL(raw.get(), reinterpret_cast<char*>(&recv_buf),
-                                  &recv_buf_len, &recv_ttl));
-  ASSERT_EQ(recv_buf_len, sizeof(iphdr) + sizeof(kSendBuf));
+    int recv_ttl;
+    size_t recv_buf_len = sizeof(recv_buf);
+    ASSERT_NO_FATAL_FAILURE(RecvTTL(raw.get(),
+                                    reinterpret_cast<char*>(&recv_buf),
+                                    &recv_buf_len, &recv_ttl));
+    ASSERT_EQ(recv_buf_len, sizeof(iphdr) + sizeof(send_buf));
 
-  EXPECT_EQ(recv_buf.ip.version, static_cast<unsigned int>(IPVERSION));
-  // IHL holds the number of header bytes in 4 byte units.
-  EXPECT_EQ(recv_buf.ip.ihl, sizeof(iphdr) / 4);
-  EXPECT_EQ(ntohs(recv_buf.ip.tot_len), sizeof(iphdr) + sizeof(kSendBuf));
-  EXPECT_EQ(recv_buf.ip.protocol, IPPROTO_UDP);
-  EXPECT_EQ(ntohl(recv_buf.ip.saddr), INADDR_LOOPBACK);
-  EXPECT_EQ(ntohl(recv_buf.ip.daddr), INADDR_LOOPBACK);
+    EXPECT_EQ(recv_buf.ip.version, static_cast<unsigned int>(IPVERSION));
+    // IHL holds the number of header bytes in 4 byte units.
+    EXPECT_EQ(recv_buf.ip.ihl, sizeof(iphdr) / 4);
+    EXPECT_EQ(ntohs(recv_buf.ip.tot_len), sizeof(iphdr) + sizeof(send_buf));
+    EXPECT_EQ(recv_buf.ip.protocol, IPPROTO_UDP);
+    EXPECT_EQ(ntohl(recv_buf.ip.saddr), INADDR_LOOPBACK);
+    EXPECT_EQ(ntohl(recv_buf.ip.daddr), INADDR_LOOPBACK);
+    EXPECT_EQ(recv_buf.ip.ttl, static_cast<uint8_t>(expected_ttl));
 
-  EXPECT_EQ(memcmp(kSendBuf, &recv_buf.data, sizeof(kSendBuf)), 0);
+    EXPECT_EQ(memcmp(send_buf, &recv_buf.data, sizeof(send_buf)), 0);
 
-  EXPECT_EQ(recv_ttl, kArbitraryTTL);
+    EXPECT_EQ(recv_ttl, expected_ttl);
+  };
+
+  ASSERT_THAT(send(raw.get(), send_buf, sizeof(send_buf), /*flags=*/0),
+              SyscallSucceedsWithValue(sizeof(send_buf)));
+  {
+    SCOPED_TRACE("receive ttl set by option");
+    ASSERT_NO_FATAL_FAILURE(test_recv_ttl(kArbitraryTTL));
+  }
+
+  constexpr int kArbitrarySendmsgTTL = kArbitraryTTL + 1;
+  ASSERT_NO_FATAL_FAILURE(SendTTL(raw.get(), send_buf, size_t(sizeof(send_buf)),
+                                  kArbitrarySendmsgTTL));
+  {
+    SCOPED_TRACE("receive ttl set by cmsg");
+    ASSERT_NO_FATAL_FAILURE(test_recv_ttl(kArbitrarySendmsgTTL));
+  }
 }
 
 TEST(RawSocketTest, ReceiveHopLimit) {
@@ -1353,16 +1372,14 @@ TEST(RawSocketTest, ReceiveHopLimit) {
   ASSERT_THAT(
       bind(raw.get(), reinterpret_cast<const sockaddr*>(&kAddr), sizeof(kAddr)),
       SyscallSucceeds());
+  ASSERT_THAT(connect(raw.get(), reinterpret_cast<const sockaddr*>(&kAddr),
+                      sizeof(kAddr)),
+              SyscallSucceeds());
 
   constexpr int kArbitraryHopLimit = 42;
   ASSERT_THAT(setsockopt(raw.get(), IPPROTO_IPV6, IPV6_UNICAST_HOPS,
                          &kArbitraryHopLimit, sizeof(kArbitraryHopLimit)),
               SyscallSucceeds());
-
-  constexpr char send_buf[] = "malformed UDP";
-  ASSERT_THAT(sendto(raw.get(), send_buf, sizeof(send_buf), 0 /* flags */,
-                     reinterpret_cast<const sockaddr*>(&kAddr), sizeof(kAddr)),
-              SyscallSucceedsWithValue(sizeof(send_buf)));
 
   // Register to receive HOPLIMIT.
   constexpr int kOne = 1;
@@ -1370,15 +1387,34 @@ TEST(RawSocketTest, ReceiveHopLimit) {
                          sizeof(kOne)),
               SyscallSucceeds());
 
-  char recv_buf[sizeof(send_buf) + 1];
-  size_t recv_buf_len = sizeof(recv_buf);
-  int recv_hoplimit;
-  ASSERT_NO_FATAL_FAILURE(
-      RecvHopLimit(raw.get(), recv_buf, &recv_buf_len, &recv_hoplimit));
-  ASSERT_EQ(recv_buf_len, sizeof(send_buf));
+  char send_buf[] = "malformed UDP";
+  auto test_recv_hoplimit = [&](int expected_hoplimit) {
+    char recv_buf[sizeof(send_buf)];
+    size_t recv_buf_len = sizeof(recv_buf);
+    int recv_hoplimit;
+    ASSERT_NO_FATAL_FAILURE(
+        RecvHopLimit(raw.get(), recv_buf, &recv_buf_len, &recv_hoplimit));
+    ASSERT_EQ(recv_buf_len, sizeof(send_buf));
 
-  EXPECT_EQ(memcmp(send_buf, recv_buf, sizeof(send_buf)), 0);
-  EXPECT_EQ(recv_hoplimit, kArbitraryHopLimit);
+    EXPECT_EQ(memcmp(send_buf, recv_buf, sizeof(send_buf)), 0);
+    EXPECT_EQ(recv_hoplimit, expected_hoplimit);
+  };
+
+  ASSERT_THAT(send(raw.get(), send_buf, sizeof(send_buf), /*flags=*/0),
+              SyscallSucceedsWithValue(sizeof(send_buf)));
+  {
+    SCOPED_TRACE("receive hoplimit set by option");
+    ASSERT_NO_FATAL_FAILURE(test_recv_hoplimit(kArbitraryHopLimit));
+  }
+
+  constexpr int kArbitrarySendmsgHopLimit = kArbitraryHopLimit + 1;
+  ASSERT_NO_FATAL_FAILURE(SendHopLimit(raw.get(), send_buf,
+                                       size_t(sizeof(send_buf)),
+                                       kArbitrarySendmsgHopLimit));
+  {
+    SCOPED_TRACE("receive hoplimit set by cmsg");
+    ASSERT_NO_FATAL_FAILURE(test_recv_hoplimit(kArbitrarySendmsgHopLimit));
+  }
 }
 
 TEST(RawSocketTest, SetIPv6ChecksumError_MultipleOf2) {

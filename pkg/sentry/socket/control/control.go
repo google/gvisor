@@ -17,6 +17,7 @@
 package control
 
 import (
+	"math"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -522,6 +523,10 @@ func CmsgsSpace(t *kernel.Task, cmsgs socket.ControlMessages) int {
 }
 
 // Parse parses a raw socket control message into portable objects.
+// TODO(https://gvisor.dev/issue/7188): Parse is only called on raw cmsg that
+// are used when sending a messages. We should fail with EINVAL when we find a
+// non-sendable control messages (such as IP_RECVERR). And the function should
+// be renamed to reflect that.
 func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte, width uint) (socket.ControlMessages, error) {
 	var (
 		cmsgs socket.ControlMessages
@@ -601,10 +606,13 @@ func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte, width uint)
 				if length < linux.SizeOfControlMessageTTL {
 					return socket.ControlMessages{}, linuxerr.EINVAL
 				}
-				cmsgs.IP.HasTTL = true
 				var ttl primitive.Uint32
 				ttl.UnmarshalUnsafe(buf)
+				if ttl == 0 || ttl > math.MaxUint8 {
+					return socket.ControlMessages{}, linuxerr.EINVAL
+				}
 				cmsgs.IP.TTL = uint32(ttl)
+				cmsgs.IP.HasTTL = true
 
 			case linux.IP_PKTINFO:
 				if length < linux.SizeOfControlMessageIPPacketInfo {
@@ -661,9 +669,12 @@ func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte, width uint)
 				if length < linux.SizeOfControlMessageHopLimit {
 					return socket.ControlMessages{}, linuxerr.EINVAL
 				}
-				cmsgs.IP.HasHopLimit = true
 				var hoplimit primitive.Uint32
 				hoplimit.UnmarshalUnsafe(buf)
+				if hoplimit > math.MaxUint8 {
+					return socket.ControlMessages{}, linuxerr.EINVAL
+				}
+				cmsgs.IP.HasHopLimit = true
 				cmsgs.IP.HopLimit = uint32(hoplimit)
 
 			case linux.IPV6_RECVORIGDSTADDR:
