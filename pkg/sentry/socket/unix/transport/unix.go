@@ -37,6 +37,23 @@ const (
 	maxBufferSize = 4 << 20 // 4 MiB 4 MiB (default in linux for net.core.wmem_max)
 )
 
+// EndpointState represents the state of a unix endpoint.
+type EndpointState uint32
+
+// Wrapper around linux socket states to implement tcpip.Endpoint.State.
+const (
+	EndpointStateFree          = linux.SS_FREE
+	EndpointStateUnconnected   = linux.SS_UNCONNECTED
+	EndpointStateConnecting    = linux.SS_CONNECTING
+	EndpointStateConnected     = linux.SS_CONNECTED
+	EndpointStateDisconnecting = linux.SS_DISCONNECTING
+)
+
+// Value implements tcpip.Endpoint.Value.
+func (s *EndpointState) Value() uint32 {
+	return uint32(*s)
+}
+
 // A RightsControlMessage is a control message containing FDs.
 //
 // +stateify savable
@@ -199,7 +216,7 @@ type Endpoint interface {
 
 	// State returns the current state of the socket, as represented by Linux in
 	// procfs.
-	State() uint32
+	State() tcpip.EndpointState
 
 	// LastError clears and returns the last error reported by the endpoint.
 	LastError() tcpip.Error

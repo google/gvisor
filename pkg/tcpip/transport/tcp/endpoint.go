@@ -36,7 +36,12 @@ import (
 )
 
 // EndpointState represents the state of a TCP endpoint.
-type EndpointState tcpip.EndpointState
+type EndpointState uint8
+
+// Value implements tcpip.Endpoint.Value.
+func (s *EndpointState) Value() uint32 {
+	return uint32(*s)
+}
 
 // Endpoint states. Note that are represented in a netstack-specific manner and
 // may not be meaningful externally. Specifically, they need to be translated to
@@ -2023,9 +2028,9 @@ func (e *endpoint) getTCPInfo() tcpip.TCPInfoOption {
 	info := tcpip.TCPInfoOption{}
 	e.LockUser()
 	if state := e.EndpointState(); state.internal() {
-		info.State = tcpip.EndpointState(StateClose)
+		info.State = uint8(StateClose)
 	} else {
-		info.State = tcpip.EndpointState(state)
+		info.State = uint8(state)
 	}
 	snd := e.snd
 	if snd != nil {
@@ -3066,8 +3071,9 @@ func (e *endpoint) initGSO() {
 
 // State implements tcpip.Endpoint.State. It exports the endpoint's protocol
 // state for diagnostics.
-func (e *endpoint) State() uint32 {
-	return uint32(e.EndpointState())
+func (e *endpoint) State() tcpip.EndpointState {
+	s := e.EndpointState()
+	return &s
 }
 
 // Info returns a copy of the endpoint info.

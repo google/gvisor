@@ -16,12 +16,15 @@ package transport
 
 import (
 	"fmt"
-
-	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
-// DatagramEndpointState is the state of a datagram-based endpoint.
-type DatagramEndpointState tcpip.EndpointState
+// DatagramEndpointState represents the state of a datagram-based endpoint.
+type DatagramEndpointState uint8
+
+// Value implements tcpip.Endpoint.Value.
+func (s *DatagramEndpointState) Value() uint32 {
+	return uint32(*s)
+}
 
 // The states a datagram-based endpoint may be in.
 const (

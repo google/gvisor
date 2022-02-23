@@ -9,5 +9,4 @@ go_library(
         "transport.go",
     ],
     visibility = ["//visibility:public"],
-    deps = ["//pkg/tcpip"],
 )

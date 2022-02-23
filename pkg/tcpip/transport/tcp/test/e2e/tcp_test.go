@@ -760,7 +760,7 @@ func TestClosingWithEnqueuedSegments(t *testing.T) {
 	ep := c.EP
 	c.EP = nil
 
-	if got, want := tcp.EndpointState(ep.State()), tcp.StateEstablished; got != want {
+	if got, want := *ep.State().(*tcp.EndpointState), tcp.StateEstablished; got != want {
 		t.Errorf("unexpected endpoint state: want %d, got %d", want, got)
 	}
 
@@ -789,7 +789,7 @@ func TestClosingWithEnqueuedSegments(t *testing.T) {
 	// state.
 	time.Sleep(10 * time.Millisecond)
 
-	if got, want := tcp.EndpointState(ep.State()), tcp.StateCloseWait; got != want {
+	if got, want := *ep.State().(*tcp.EndpointState), tcp.StateCloseWait; got != want {
 		t.Errorf("unexpected endpoint state: want %d, got %d", want, got)
 	}
 
@@ -806,7 +806,7 @@ func TestClosingWithEnqueuedSegments(t *testing.T) {
 		),
 	)
 
-	if got, want := tcp.EndpointState(ep.State()), tcp.StateLastAck; got != want {
+	if got, want := *ep.State().(*tcp.EndpointState), tcp.StateLastAck; got != want {
 		t.Errorf("unexpected endpoint state: want %s, got %s", want, got)
 	}
 
@@ -843,7 +843,7 @@ func TestClosingWithEnqueuedSegments(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	// Expect the endpoint to be closed.
-	if got, want := tcp.EndpointState(ep.State()), tcp.StateClose; got != want {
+	if got, want := *ep.State().(*tcp.EndpointState), tcp.StateClose; got != want {
 		t.Errorf("unexpected endpoint state: want %s, got %s", want, got)
 	}
 
@@ -1615,7 +1615,7 @@ func TestConnectBindToDevice(t *testing.T) {
 					checker.TCPFlags(header.TCPFlagSyn),
 				),
 			)
-			if got, want := tcp.EndpointState(c.EP.State()), tcp.StateSynSent; got != want {
+			if got, want := *c.EP.State().(*tcp.EndpointState), tcp.StateSynSent; got != want {
 				t.Fatalf("unexpected endpoint state: want %s, got %s", want, got)
 			}
 			tcpHdr := header.TCP(header.IPv4(b).Payload())
@@ -1634,7 +1634,7 @@ func TestConnectBindToDevice(t *testing.T) {
 			})
 
 			c.GetPacket()
-			if got, want := tcp.EndpointState(c.EP.State()), test.want; got != want {
+			if got, want := *c.EP.State().(*tcp.EndpointState), test.want; got != want {
 				t.Fatalf("unexpected endpoint state: want %s, got %s", want, got)
 			}
 		})
@@ -1677,7 +1677,7 @@ func TestShutdownConnectingSocket(t *testing.T) {
 				),
 			)
 
-			if got, want := tcp.EndpointState(c.EP.State()), tcp.StateSynSent; got != want {
+			if got, want := *c.EP.State().(*tcp.EndpointState), tcp.StateSynSent; got != want {
 				t.Fatalf("got State() = %s, want %s", got, want)
 			}
 
@@ -1686,7 +1686,7 @@ func TestShutdownConnectingSocket(t *testing.T) {
 			}
 
 			// The endpoint internal state is updated immediately.
-			if got, want := tcp.EndpointState(c.EP.State()), tcp.StateError; got != want {
+			if got, want := *c.EP.State().(*tcp.EndpointState), tcp.StateError; got != want {
 				t.Fatalf("got State() = %s, want %s", got, want)
 			}
 
@@ -1742,7 +1742,7 @@ func TestSynSent(t *testing.T) {
 				),
 			)
 
-			if got, want := tcp.EndpointState(c.EP.State()), tcp.StateSynSent; got != want {
+			if got, want := *c.EP.State().(*tcp.EndpointState), tcp.StateSynSent; got != want {
 				t.Fatalf("got State() = %s, want %s", got, want)
 			}
 			tcpHdr := header.TCP(header.IPv4(b).Payload())
@@ -1785,7 +1785,7 @@ func TestSynSent(t *testing.T) {
 			}
 
 			// Due to the RST the endpoint should be in an error state.
-			if got, want := tcp.EndpointState(c.EP.State()), tcp.StateError; got != want {
+			if got, want := *c.EP.State().(*tcp.EndpointState), tcp.StateError; got != want {
 				t.Fatalf("got State() = %s, want %s", got, want)
 			}
 		})
@@ -1987,7 +1987,7 @@ func TestRstOnCloseWithUnreadData(t *testing.T) {
 			checker.TCPSeqNum(uint32(c.IRS)+1),
 		))
 	// The RST puts the endpoint into an error state.
-	if got, want := tcp.EndpointState(c.EP.State()), tcp.StateError; got != want {
+	if got, want := *c.EP.State().(*tcp.EndpointState), tcp.StateError; got != want {
 		t.Errorf("unexpected endpoint state: want %s, got %s", want, got)
 	}
 
@@ -2057,7 +2057,7 @@ func TestRstOnCloseWithUnreadDataFinConvertRst(t *testing.T) {
 			checker.TCPSeqNum(uint32(c.IRS)+1),
 		))
 
-	if got, want := tcp.EndpointState(c.EP.State()), tcp.StateFinWait1; got != want {
+	if got, want := *c.EP.State().(*tcp.EndpointState), tcp.StateFinWait1; got != want {
 		t.Errorf("unexpected endpoint state: want %s, got %s", want, got)
 	}
 
@@ -2078,7 +2078,7 @@ func TestRstOnCloseWithUnreadDataFinConvertRst(t *testing.T) {
 			checker.TCPSeqNum(uint32(c.IRS)+2),
 		))
 	// The RST puts the endpoint into an error state.
-	if got, want := tcp.EndpointState(c.EP.State()), tcp.StateError; got != want {
+	if got, want := *c.EP.State().(*tcp.EndpointState), tcp.StateError; got != want {
 		t.Errorf("unexpected endpoint state: want %s, got %s", want, got)
 	}
 
@@ -3716,7 +3716,7 @@ loop:
 		}
 	}
 
-	if tcp.EndpointState(c.EP.State()) != tcp.StateError {
+	if *c.EP.State().(*tcp.EndpointState) != tcp.StateError {
 		t.Fatalf("got EP state is not StateError")
 	}
 
@@ -4698,7 +4698,7 @@ func TestReadAfterClosedState(t *testing.T) {
 		),
 	)
 
-	if got, want := tcp.EndpointState(c.EP.State()), tcp.StateFinWait1; got != want {
+	if got, want := *c.EP.State().(*tcp.EndpointState), tcp.StateFinWait1; got != want {
 		t.Errorf("unexpected endpoint state: want %s, got %s", want, got)
 	}
 
@@ -4727,7 +4727,7 @@ func TestReadAfterClosedState(t *testing.T) {
 	// TIME_WAIT.
 	time.Sleep(tcpTimeWaitTimeout * 2)
 
-	if got, want := tcp.EndpointState(c.EP.State()), tcp.StateClose; got != want {
+	if got, want := *c.EP.State().(*tcp.EndpointState), tcp.StateClose; got != want {
 		t.Errorf("unexpected endpoint state: want %s, got %s", want, got)
 	}
 
@@ -6371,13 +6371,13 @@ func TestPassiveConnectionAttemptIncrement(t *testing.T) {
 	if err := ep.Bind(tcpip.FullAddress{Addr: context.StackAddr, Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %s", err)
 	}
-	if got, want := tcp.EndpointState(ep.State()), tcp.StateBound; got != want {
+	if got, want := *ep.State().(*tcp.EndpointState), tcp.StateBound; got != want {
 		t.Errorf("unexpected endpoint state: want %s, got %s", want, got)
 	}
 	if err := c.EP.Listen(1); err != nil {
 		t.Fatalf("Listen failed: %s", err)
 	}
-	if got, want := tcp.EndpointState(c.EP.State()), tcp.StateListen; got != want {
+	if got, want := *c.EP.State().(*tcp.EndpointState), tcp.StateListen; got != want {
 		t.Errorf("unexpected endpoint state: want %s, got %s", want, got)
 	}
 
@@ -6547,7 +6547,7 @@ func TestEndpointBindListenAcceptState(t *testing.T) {
 	if err := ep.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %s", err)
 	}
-	if got, want := tcp.EndpointState(ep.State()), tcp.StateBound; got != want {
+	if got, want := *ep.State().(*tcp.EndpointState), tcp.StateBound; got != want {
 		t.Errorf("unexpected endpoint state: want %s, got %s", want, got)
 	}
 
@@ -6560,7 +6560,7 @@ func TestEndpointBindListenAcceptState(t *testing.T) {
 	if err := ep.Listen(10); err != nil {
 		t.Fatalf("Listen failed: %s", err)
 	}
-	if got, want := tcp.EndpointState(ep.State()), tcp.StateListen; got != want {
+	if got, want := *ep.State().(*tcp.EndpointState), tcp.StateListen; got != want {
 		t.Errorf("unexpected endpoint state: want %s, got %s", want, got)
 	}
 
@@ -6585,7 +6585,7 @@ func TestEndpointBindListenAcceptState(t *testing.T) {
 			t.Fatalf("Timed out waiting for accept")
 		}
 	}
-	if got, want := tcp.EndpointState(aep.State()), tcp.StateEstablished; got != want {
+	if got, want := *aep.State().(*tcp.EndpointState), tcp.StateEstablished; got != want {
 		t.Errorf("unexpected endpoint state: want %s, got %s", want, got)
 	}
 	{
@@ -6595,18 +6595,18 @@ func TestEndpointBindListenAcceptState(t *testing.T) {
 		}
 	}
 	// Listening endpoint remains in listen state.
-	if got, want := tcp.EndpointState(ep.State()), tcp.StateListen; got != want {
+	if got, want := *ep.State().(*tcp.EndpointState), tcp.StateListen; got != want {
 		t.Errorf("unexpected endpoint state: want %s, got %s", want, got)
 	}
 
 	ep.Close()
 	// Give worker goroutines time to receive the close notification.
 	time.Sleep(1 * time.Second)
-	if got, want := tcp.EndpointState(ep.State()), tcp.StateClose; got != want {
+	if got, want := *ep.State().(*tcp.EndpointState), tcp.StateClose; got != want {
 		t.Errorf("unexpected endpoint state: want %s, got %s", want, got)
 	}
 	// Accepted endpoint remains open when the listen endpoint is closed.
-	if got, want := tcp.EndpointState(aep.State()), tcp.StateEstablished; got != want {
+	if got, want := *aep.State().(*tcp.EndpointState), tcp.StateEstablished; got != want {
 		t.Errorf("unexpected endpoint state: want %s, got %s", want, got)
 	}
 

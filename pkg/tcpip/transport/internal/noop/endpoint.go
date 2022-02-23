@@ -25,6 +25,14 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+// EndpointState represents the state of a noop endpoint.
+type EndpointState uint8
+
+// Value implements tcpip.Endpoint.Value.
+func (s *EndpointState) Value() uint32 {
+	return uint32(*s)
+}
+
 // endpoint can be created, but all interactions have no effect or
 // return errors.
 //
@@ -142,8 +150,9 @@ func (*endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 }
 
 // State implements socket.Socket.State.
-func (*endpoint) State() uint32 {
-	return 0
+func (*endpoint) State() tcpip.EndpointState {
+	var s EndpointState
+	return &s
 }
 
 // Wait implements stack.TransportEndpoint.Wait.

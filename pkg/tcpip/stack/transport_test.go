@@ -242,8 +242,8 @@ func (f *fakeTransportEndpoint) HandleError(stack.TransportError, *stack.PacketB
 	f.proto.controlCount++
 }
 
-func (*fakeTransportEndpoint) State() uint32 {
-	return 0
+func (*fakeTransportEndpoint) State() tcpip.EndpointState {
+	return nil
 }
 
 func (*fakeTransportEndpoint) ModerateRecvBuf(copied int) {}

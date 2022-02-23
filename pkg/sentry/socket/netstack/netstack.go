@@ -327,9 +327,9 @@ type commonEndpoint interface {
 	// transport.Endpoint.GetSockOpt.
 	GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error)
 
-	// State returns a socket's lifecycle state. The returned value is
-	// protocol-specific and is primarily used for diagnostics.
-	State() uint32
+	// State returns a socket's lifecycle state. The returned value is specific to
+	// the socket type and is primarily used for diagnostics.
+	State() tcpip.EndpointState
 
 	// LastError implements tcpip.Endpoint.LastError and
 	// transport.Endpoint.LastError.
@@ -1059,7 +1059,7 @@ func getSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, fam
 		// This option is only viable for TCP endpoints.
 		var v bool
 		if _, skType, skProto := s.Type(); isTCPSocket(skType, skProto) {
-			v = tcp.EndpointState(ep.State()) == tcp.StateListen
+			v = *ep.State().(*tcp.EndpointState) == tcp.StateListen
 		}
 		vP := primitive.Int32(boolToInt32(v))
 		return &vP, nil
@@ -2205,9 +2205,9 @@ func setSockOptIPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name 
 			return syserr.ErrInvalidArgument
 		}
 
-		if isTCPSocket(skType, skProto) && tcp.EndpointState(ep.State()) != tcp.StateInitial {
+		if isTCPSocket(skType, skProto) && *ep.State().(*tcp.EndpointState) != tcp.StateInitial {
 			return syserr.ErrInvalidEndpointState
-		} else if isUDPSocket(skType, skProto) && transport.DatagramEndpointState(ep.State()) != transport.DatagramEndpointStateInitial {
+		} else if isUDPSocket(skType, skProto) && *ep.State().(*transport.DatagramEndpointState) != transport.DatagramEndpointStateInitial {
 			return syserr.ErrInvalidEndpointState
 		}
 
@@ -3514,7 +3514,7 @@ func (s *socketOpsCommon) State() uint32 {
 	switch {
 	case isTCPSocket(s.skType, s.protocol):
 		// TCP socket.
-		switch tcp.EndpointState(s.Endpoint.State()) {
+		switch *s.Endpoint.State().(*tcp.EndpointState) {
 		case tcp.StateEstablished:
 			return linux.TCP_ESTABLISHED
 		case tcp.StateSynSent:
@@ -3543,7 +3543,7 @@ func (s *socketOpsCommon) State() uint32 {
 		}
 	case isUDPSocket(s.skType, s.protocol):
 		// UDP socket.
-		switch transport.DatagramEndpointState(s.Endpoint.State()) {
+		switch *s.Endpoint.State().(*transport.DatagramEndpointState) {
 		case transport.DatagramEndpointStateInitial, transport.DatagramEndpointStateBound, transport.DatagramEndpointStateClosed:
 			return linux.TCP_CLOSE
 		case transport.DatagramEndpointStateConnected:

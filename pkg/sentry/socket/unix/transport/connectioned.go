@@ -63,8 +63,8 @@ type ConnectingEndpoint interface {
 	WaiterQueue() *waiter.Queue
 }
 
-// connectionedEndpoint is a Unix-domain connected or connectable endpoint and implements
-// ConnectingEndpoint, BoundEndpoint and tcpip.Endpoint.
+// connectionedEndpoint is a Unix-domain connected or connectable endpoint and
+// implements ConnectingEndpoint, BoundEndpoint and tcpip.Endpoint.
 //
 // connectionedEndpoints must be in connected state in order to transfer data.
 //
@@ -108,6 +108,7 @@ type connectionedEndpoint struct {
 
 var (
 	_ = BoundEndpoint((*connectionedEndpoint)(nil))
+	_ = ConnectingEndpoint((*connectionedEndpoint)(nil))
 	_ = Endpoint((*connectionedEndpoint)(nil))
 )
 
@@ -506,15 +507,19 @@ func (e *connectionedEndpoint) Readiness(mask waiter.EventMask) waiter.EventMask
 	return ready
 }
 
-// State implements socket.Socket.State.
-func (e *connectionedEndpoint) State() uint32 {
+// State implements tcpip.Endpoint.
+func (e *connectionedEndpoint) State() tcpip.EndpointState {
 	e.Lock()
 	defer e.Unlock()
 
-	if e.Connected() {
-		return linux.SS_CONNECTED
-	}
-	return linux.SS_UNCONNECTED
+	s := func() EndpointState {
+		if e.Connected() {
+			return EndpointState(linux.SS_CONNECTED)
+		}
+		return EndpointState(linux.SS_UNCONNECTED)
+	}()
+
+	return &s
 }
 
 // OnSetSendBufferSize implements tcpip.SocketOptionsHandler.OnSetSendBufferSize.

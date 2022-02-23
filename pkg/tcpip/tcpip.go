@@ -648,9 +648,9 @@ type Endpoint interface {
 	// value has the int type.
 	GetSockOptInt(SockOptInt) (int, Error)
 
-	// State returns a socket's lifecycle state. The returned value is
-	// protocol-specific and is primarily used for diagnostics.
-	State() uint32
+	// State returns a socket's lifecycle state. The returned value is specific to
+	// the socket type and is primarily used for diagnostics.
+	State() EndpointState
 
 	// ModerateRecvBuf should be called everytime data is copied to the user
 	// space. This allows for dynamic tuning of recv buffer space for a
@@ -699,6 +699,12 @@ type EndpointStats interface {
 	// IsEndpointStats is an empty method to implement the tcpip.EndpointStats
 	// marker interface.
 	IsEndpointStats()
+}
+
+// EndpointState is the interface implemented by each endpoint state type.
+type EndpointState interface {
+	// Value returns the state as a uint32 value.
+	Value() uint32
 }
 
 // WriteOptions contains options for Endpoint.Write.
@@ -976,9 +982,6 @@ func (*ICMPv6Filter) isGettableSocketOption() {}
 
 func (*ICMPv6Filter) isSettableSocketOption() {}
 
-// EndpointState represents the state of an endpoint.
-type EndpointState uint8
-
 // CongestionControlState indicates the current congestion control state for
 // TCP sender.
 type CongestionControlState int
@@ -1016,7 +1019,7 @@ type TCPInfoOption struct {
 	RTO time.Duration
 
 	// State is the current endpoint protocol state.
-	State EndpointState
+	State uint8
 
 	// CcState is the congestion control state.
 	CcState CongestionControlState

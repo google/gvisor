@@ -711,7 +711,7 @@ func (c *Context) Connect(iss seqnum.Value, rcvWnd seqnum.Size, options []byte) 
 			checker.TCPFlags(header.TCPFlagSyn),
 		),
 	)
-	if got, want := tcp.EndpointState(c.EP.State()), tcp.StateSynSent; got != want {
+	if got, want := *c.EP.State().(*tcp.EndpointState), tcp.StateSynSent; got != want {
 		c.t.Fatalf("Unexpected endpoint state: want %v, got %v", want, got)
 	}
 
@@ -748,7 +748,7 @@ func (c *Context) Connect(iss seqnum.Value, rcvWnd seqnum.Size, options []byte) 
 	case <-time.After(1 * time.Second):
 		c.t.Fatalf("Timed out waiting for connection")
 	}
-	if got, want := tcp.EndpointState(c.EP.State()), tcp.StateEstablished; got != want {
+	if got, want := *c.EP.State().(*tcp.EndpointState), tcp.StateEstablished; got != want {
 		c.t.Fatalf("Unexpected endpoint state: want %v, got %v", want, got)
 	}
 
@@ -908,7 +908,7 @@ func (c *Context) CreateConnectedWithOptions(wantOptions header.TCPSynOptions, d
 	if err != nil {
 		c.t.Fatalf("c.s.NewEndpoint(tcp, ipv4...) = %v", err)
 	}
-	if got, want := tcp.EndpointState(c.EP.State()), tcp.StateInitial; got != want {
+	if got, want := *c.EP.State().(*tcp.EndpointState), tcp.StateInitial; got != want {
 		c.t.Fatalf("Unexpected endpoint state: want %v, got %v", want, got)
 	}
 
@@ -939,7 +939,7 @@ func (c *Context) CreateConnectedWithOptions(wantOptions header.TCPSynOptions, d
 		}),
 	)
 	checker.IPv4(c.t, b, synChecker)
-	if got, want := tcp.EndpointState(c.EP.State()), tcp.StateSynSent; got != want {
+	if got, want := *c.EP.State().(*tcp.EndpointState), tcp.StateSynSent; got != want {
 		c.t.Fatalf("Unexpected endpoint state: want %v, got %v", want, got)
 	}
 
@@ -1022,7 +1022,7 @@ func (c *Context) CreateConnectedWithOptions(wantOptions header.TCPSynOptions, d
 	case <-time.After(1 * time.Second):
 		c.t.Fatalf("Timed out waiting for connection")
 	}
-	if got, want := tcp.EndpointState(c.EP.State()), tcp.StateEstablished; got != want {
+	if got, want := *c.EP.State().(*tcp.EndpointState), tcp.StateEstablished; got != want {
 		c.t.Fatalf("Unexpected endpoint state: want %v, got %v", want, got)
 	}
 
@@ -1070,14 +1070,14 @@ func (c *Context) AcceptWithOptions(wndScale int, synOptions header.TCPSynOption
 	if err := ep.Bind(tcpip.FullAddress{Port: StackPort}); err != nil {
 		c.t.Fatalf("Bind failed: %v", err)
 	}
-	if got, want := tcp.EndpointState(ep.State()), tcp.StateBound; got != want {
+	if got, want := *ep.State().(*tcp.EndpointState), tcp.StateBound; got != want {
 		c.t.Errorf("Unexpected endpoint state: want %v, got %v", want, got)
 	}
 
 	if err := ep.Listen(10); err != nil {
 		c.t.Fatalf("Listen failed: %v", err)
 	}
-	if got, want := tcp.EndpointState(ep.State()), tcp.StateListen; got != want {
+	if got, want := *ep.State().(*tcp.EndpointState), tcp.StateListen; got != want {
 		c.t.Errorf("Unexpected endpoint state: want %v, got %v", want, got)
 	}
 
@@ -1102,7 +1102,7 @@ func (c *Context) AcceptWithOptions(wndScale int, synOptions header.TCPSynOption
 			c.t.Fatalf("Timed out waiting for accept")
 		}
 	}
-	if got, want := tcp.EndpointState(c.EP.State()), tcp.StateEstablished; got != want {
+	if got, want := *c.EP.State().(*tcp.EndpointState), tcp.StateEstablished; got != want {
 		c.t.Errorf("Unexpected endpoint state: want %v, got %v", want, got)
 	}
 

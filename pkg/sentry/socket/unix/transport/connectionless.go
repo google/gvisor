@@ -205,19 +205,23 @@ func (e *connectionlessEndpoint) Readiness(mask waiter.EventMask) waiter.EventMa
 	return ready
 }
 
-// State implements socket.Socket.State.
-func (e *connectionlessEndpoint) State() uint32 {
+// State implements tcpip.Endpoint.
+func (e *connectionlessEndpoint) State() tcpip.EndpointState {
 	e.Lock()
 	defer e.Unlock()
 
-	switch {
-	case e.isBound():
-		return linux.SS_UNCONNECTED
-	case e.Connected():
-		return linux.SS_CONNECTING
-	default:
-		return linux.SS_DISCONNECTING
-	}
+	s := func() EndpointState {
+		switch {
+		case e.isBound():
+			return EndpointState(linux.SS_UNCONNECTED)
+		case e.Connected():
+			return EndpointState(linux.SS_CONNECTING)
+		default:
+			return EndpointState(linux.SS_DISCONNECTING)
+		}
+	}()
+
+	return &s
 }
 
 // OnSetSendBufferSize implements tcpip.SocketOptionsHandler.OnSetSendBufferSize.

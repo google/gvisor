@@ -773,7 +773,7 @@ func (s *Socket) Write(ctx context.Context, _ *fs.File, src usermem.IOSequence, 
 
 // State implements socket.Socket.State.
 func (s *socketOpsCommon) State() uint32 {
-	return s.ep.State()
+	return s.ep.State().Value()
 }
 
 // Type implements socket.Socket.Type.

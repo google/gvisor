@@ -1627,7 +1627,7 @@ func (e *endpoint) handleTimeWaitSegments() (extendTimeWait bool, reuseTW func()
 			for _, netProto := range netProtos {
 				if listenEP := e.stack.FindTransportEndpoint(netProto, info.TransProto, newID, s.nicID); listenEP != nil {
 					tcpEP := listenEP.(*endpoint)
-					if EndpointState(tcpEP.State()) == StateListen {
+					if tcpEP.EndpointState() == StateListen {
 						reuseTW = func() {
 							if !tcpEP.enqueueSegment(s) {
 								s.decRef()

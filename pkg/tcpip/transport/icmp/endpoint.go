@@ -769,8 +769,9 @@ func (*endpoint) HandleError(stack.TransportError, *stack.PacketBuffer) {}
 
 // State implements tcpip.Endpoint.State. The ICMP endpoint currently doesn't
 // expose internal socket state.
-func (e *endpoint) State() uint32 {
-	return 0
+func (e *endpoint) State() tcpip.EndpointState {
+	s := e.net.State()
+	return &s
 }
 
 // Info returns a copy of the endpoint info.

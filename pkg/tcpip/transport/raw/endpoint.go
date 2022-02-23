@@ -712,8 +712,9 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 }
 
 // State implements socket.Socket.State.
-func (e *endpoint) State() uint32 {
-	return 0
+func (e *endpoint) State() tcpip.EndpointState {
+	s := e.net.State()
+	return &s
 }
 
 // Info returns a copy of the endpoint info.

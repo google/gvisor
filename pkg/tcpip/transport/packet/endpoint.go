@@ -36,6 +36,14 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+// EndpointState represents the state of a packet endpoint.
+type EndpointState uint8
+
+// Value implements tcpip.Endpoint.Value.
+func (s *EndpointState) Value() uint32 {
+	return uint32(*s)
+}
+
 // +stateify savable
 type packet struct {
 	packetEntry
@@ -473,8 +481,9 @@ func (ep *endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtoc
 }
 
 // State implements socket.Socket.State.
-func (*endpoint) State() uint32 {
-	return 0
+func (*endpoint) State() tcpip.EndpointState {
+	s := EndpointState(0)
+	return &s
 }
 
 // Info returns a copy of the endpoint info.

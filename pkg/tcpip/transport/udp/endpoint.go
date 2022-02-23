@@ -1035,8 +1035,9 @@ func (e *endpoint) HandleError(transErr stack.TransportError, pkt *stack.PacketB
 }
 
 // State implements tcpip.Endpoint.
-func (e *endpoint) State() uint32 {
-	return uint32(e.net.State())
+func (e *endpoint) State() tcpip.EndpointState {
+	s := e.net.State()
+	return &s
 }
 
 // Info returns a copy of the endpoint info.
