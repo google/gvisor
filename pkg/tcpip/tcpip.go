@@ -416,10 +416,10 @@ func (l *LimitedWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// A ControlMessages contains socket control messages for IP sockets.
+// ReceivableControlMessages holds control messages that can be received.
 //
 // +stateify savable
-type ControlMessages struct {
+type ReceivableControlMessages struct {
 	// HasTimestamp indicates whether Timestamp is valid/set.
 	HasTimestamp bool
 
@@ -514,7 +514,7 @@ type ReadResult struct {
 	Total int
 
 	// ControlMessages is the control messages received.
-	ControlMessages ControlMessages
+	ControlMessages ReceivableControlMessages
 
 	// RemoteAddr is the remote address if ReadOptions.NeedAddr is true.
 	RemoteAddr FullAddress

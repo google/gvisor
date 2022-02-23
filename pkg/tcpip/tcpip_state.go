@@ -18,10 +18,10 @@ import (
 	"time"
 )
 
-func (c *ControlMessages) saveTimestamp() int64 {
+func (c *ReceivableControlMessages) saveTimestamp() int64 {
 	return c.Timestamp.UnixNano()
 }
 
-func (c *ControlMessages) loadTimestamp(nsec int64) {
+func (c *ReceivableControlMessages) loadTimestamp(nsec int64) {
 	c.Timestamp = time.Unix(0, nsec)
 }

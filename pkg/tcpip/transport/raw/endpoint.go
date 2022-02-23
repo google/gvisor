@@ -236,7 +236,7 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 	// Control Messages
 	// TODO(https://gvisor.dev/issue/7012): Share control message code with other
 	// network endpoints.
-	cm := tcpip.ControlMessages{
+	cm := tcpip.ReceivableControlMessages{
 		HasTimestamp: true,
 		Timestamp:    pkt.receivedAt,
 	}
