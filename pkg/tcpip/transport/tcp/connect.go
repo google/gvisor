@@ -214,12 +214,11 @@ func (h *handshake) resetToSynRcvd(iss seqnum.Value, irs seqnum.Value, opts head
 // response.
 func (h *handshake) checkAck(s *segment) bool {
 	if s.flags.Contains(header.TCPFlagAck) && s.ackNumber != h.iss+1 {
-		// RFC 793, page 36, states that a reset must be generated when
-		// the connection is in any non-synchronized state and an
-		// incoming segment acknowledges something not yet sent. The
-		// connection remains in the same state.
-		ack := s.sequenceNumber.Add(s.logicalLen())
-		h.ep.sendRaw(buffer.VectorisedView{}, header.TCPFlagRst|header.TCPFlagAck, s.ackNumber, ack, 0)
+		// RFC 793, page 72 (https://datatracker.ietf.org/doc/html/rfc793#page-72):
+		//   If the segment acknowledgment is not acceptable, form a reset segment,
+		//        <SEQ=SEG.ACK><CTL=RST>
+		//   and send it.
+		h.ep.sendRaw(buffer.VectorisedView{}, header.TCPFlagRst, s.ackNumber, 0, 0)
 		return false
 	}
 
