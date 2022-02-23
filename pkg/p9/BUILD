@@ -22,6 +22,7 @@ go_library(
         "version.go",
     ],
     deps = [
+        "//pkg/abi/linux",
         "//pkg/errors",
         "//pkg/errors/linuxerr",
         "//pkg/fd",

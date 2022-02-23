@@ -24,6 +24,7 @@ import (
 	"syscall"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
 // OpenFlags is the mode passed to Open and Create operations.
@@ -49,25 +50,53 @@ const (
 	OpenTruncate OpenFlags = 01000
 )
 
-// ConnectFlags is the mode passed to Connect operations.
+// SocketType is the socket type passed in Connect and Bind operations.
 //
 // These correspond to bits sent over the wire.
-type ConnectFlags uint32
+type SocketType uint32
 
 const (
-	// StreamSocket is a Tlconnect flag indicating SOCK_STREAM mode.
-	StreamSocket ConnectFlags = 0
+	// StreamSocket indicates SOCK_STREAM mode.
+	StreamSocket SocketType = 0
 
-	// DgramSocket is a Tlconnect flag indicating SOCK_DGRAM mode.
-	DgramSocket ConnectFlags = 1
+	// DgramSocket indicates SOCK_DGRAM mode.
+	DgramSocket SocketType = 1
 
-	// SeqpacketSocket is a Tlconnect flag indicating SOCK_SEQPACKET mode.
-	SeqpacketSocket ConnectFlags = 2
+	// SeqpacketSocket indicates SOCK_SEQPACKET mode.
+	SeqpacketSocket SocketType = 2
 
-	// AnonymousSocket is a Tlconnect flag indicating that the mode does not
-	// matter and that the requester will accept any socket type.
-	AnonymousSocket ConnectFlags = 3
+	// AnonymousSocket is only valid for Connect calls, and indicates that
+	// the caller will accept any socket type.
+	AnonymousSocket SocketType = 3
 )
+
+// ToLinux maps the SocketType to a Linux socket type.
+func (st SocketType) ToLinux() (linux.SockType, bool) {
+	switch st {
+	case StreamSocket:
+		return linux.SOCK_STREAM, true
+	case DgramSocket:
+		return linux.SOCK_DGRAM, true
+	case SeqpacketSocket:
+		return linux.SOCK_SEQPACKET, true
+	default:
+		return 0, false
+	}
+}
+
+// SocketTypeFromLinux maps a Linux socket type to a SocketType.
+func SocketTypeFromLinux(st linux.SockType) (SocketType, bool) {
+	switch st {
+	case linux.SOCK_STREAM:
+		return StreamSocket, true
+	case linux.SOCK_DGRAM:
+		return DgramSocket, true
+	case linux.SOCK_SEQPACKET:
+		return SeqpacketSocket, true
+	default:
+		return 0, false
+	}
+}
 
 // OSFlags converts a p9.OpenFlags to an int compatible with open(2).
 func (o OpenFlags) OSFlags() int {

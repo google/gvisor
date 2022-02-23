@@ -158,9 +158,9 @@ func (b *buffer) ReadOpenFlags() OpenFlags {
 	return OpenFlags(b.Read32())
 }
 
-// ReadConnectFlags reads a ConnectFlags.
-func (b *buffer) ReadConnectFlags() ConnectFlags {
-	return ConnectFlags(b.Read32())
+// ReadSocketType reads a SocketType.
+func (b *buffer) ReadSocketType() SocketType {
+	return SocketType(b.Read32())
 }
 
 // ReadMsgType writes a MsgType.
@@ -244,8 +244,8 @@ func (b *buffer) WriteOpenFlags(flags OpenFlags) {
 	b.Write32(uint32(flags))
 }
 
-// WriteConnectFlags writes a ConnectFlags.
-func (b *buffer) WriteConnectFlags(flags ConnectFlags) {
+// WriteSocketType writes a SocketType.
+func (b *buffer) WriteSocketType(flags SocketType) {
 	b.Write32(uint32(flags))
 }
 

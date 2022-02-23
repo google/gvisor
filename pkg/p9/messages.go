@@ -2532,20 +2532,20 @@ type Tlconnect struct {
 	// FID is the FID to be connected.
 	FID FID
 
-	// Flags are the connect flags.
-	Flags ConnectFlags
+	// SocketType is the socket type to be connected to.
+	SocketType SocketType
 }
 
 // decode implements encoder.decode.
 func (t *Tlconnect) decode(b *buffer) {
 	t.FID = b.ReadFID()
-	t.Flags = b.ReadConnectFlags()
+	t.SocketType = b.ReadSocketType()
 }
 
 // encode implements encoder.encode.
 func (t *Tlconnect) encode(b *buffer) {
 	b.WriteFID(t.FID)
-	b.WriteConnectFlags(t.Flags)
+	b.WriteSocketType(t.SocketType)
 }
 
 // Type implements message.Type.
@@ -2555,7 +2555,7 @@ func (*Tlconnect) Type() MsgType {
 
 // String implements fmt.Stringer.
 func (t *Tlconnect) String() string {
-	return fmt.Sprintf("Tlconnect{FID: %d, Flags: %v}", t.FID, t.Flags)
+	return fmt.Sprintf("Tlconnect{FID: %d, SocketType: %v}", t.FID, t.SocketType)
 }
 
 // Rlconnect is a connect response.

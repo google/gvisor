@@ -210,9 +210,9 @@ func (c *contextFile) walkGetAttr(ctx context.Context, names []string) ([]p9.QID
 	return q, contextFile{file: f}, m, a, nil
 }
 
-func (c *contextFile) connect(ctx context.Context, flags p9.ConnectFlags) (*fd.FD, error) {
+func (c *contextFile) connect(ctx context.Context, socketType p9.SocketType) (*fd.FD, error) {
 	ctx.UninterruptibleSleepStart(false)
-	f, err := c.file.Connect(flags)
+	f, err := c.file.Connect(socketType)
 	ctx.UninterruptibleSleepFinish(false)
 	return f, err
 }
