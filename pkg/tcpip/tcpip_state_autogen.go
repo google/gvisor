@@ -1129,11 +1129,11 @@ func (f *FullAddress) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &f.Port)
 }
 
-func (c *ControlMessages) StateTypeName() string {
-	return "pkg/tcpip.ControlMessages"
+func (c *ReceivableControlMessages) StateTypeName() string {
+	return "pkg/tcpip.ReceivableControlMessages"
 }
 
-func (c *ControlMessages) StateFields() []string {
+func (c *ReceivableControlMessages) StateFields() []string {
 	return []string{
 		"HasTimestamp",
 		"Timestamp",
@@ -1157,10 +1157,10 @@ func (c *ControlMessages) StateFields() []string {
 	}
 }
 
-func (c *ControlMessages) beforeSave() {}
+func (c *ReceivableControlMessages) beforeSave() {}
 
 // +checklocksignore
-func (c *ControlMessages) StateSave(stateSinkObject state.Sink) {
+func (c *ReceivableControlMessages) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	var TimestampValue int64
 	TimestampValue = c.saveTimestamp()
@@ -1185,10 +1185,10 @@ func (c *ControlMessages) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(18, &c.SockErr)
 }
 
-func (c *ControlMessages) afterLoad() {}
+func (c *ReceivableControlMessages) afterLoad() {}
 
 // +checklocksignore
-func (c *ControlMessages) StateLoad(stateSourceObject state.Source) {
+func (c *ReceivableControlMessages) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.HasTimestamp)
 	stateSourceObject.Load(2, &c.HasInq)
 	stateSourceObject.Load(3, &c.Inq)
@@ -1587,7 +1587,7 @@ func init() {
 	state.Register((*stdClock)(nil))
 	state.Register((*MonotonicTime)(nil))
 	state.Register((*FullAddress)(nil))
-	state.Register((*ControlMessages)(nil))
+	state.Register((*ReceivableControlMessages)(nil))
 	state.Register((*LinkPacketInfo)(nil))
 	state.Register((*ICMPv6Filter)(nil))
 	state.Register((*LingerOption)(nil))

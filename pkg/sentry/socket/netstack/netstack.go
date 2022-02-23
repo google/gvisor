@@ -2897,7 +2897,7 @@ func (s *socketOpsCommon) nonBlockingRead(ctx context.Context, dst usermem.IOSeq
 	return res.Count, 0, nil, 0, cmsg, syserr.TranslateNetstackError(err)
 }
 
-func (s *socketOpsCommon) controlMessages(cm tcpip.ControlMessages) socket.ControlMessages {
+func (s *socketOpsCommon) controlMessages(cm tcpip.ReceivableControlMessages) socket.ControlMessages {
 	readCM := socket.NewIPControlMessages(s.family, cm)
 	return socket.ControlMessages{
 		IP: socket.IPControlMessages{
@@ -2927,7 +2927,7 @@ func (s *socketOpsCommon) controlMessages(cm tcpip.ControlMessages) socket.Contr
 // successfully writing packet data out to userspace.
 //
 // Precondition: s.readMu must be locked.
-func (s *socketOpsCommon) updateTimestamp(cm tcpip.ControlMessages) {
+func (s *socketOpsCommon) updateTimestamp(cm tcpip.ReceivableControlMessages) {
 	// Save the SIOCGSTAMP timestamp only if SO_TIMESTAMP is disabled.
 	if !s.sockOptTimestamp {
 		s.timestampValid = true
@@ -2984,7 +2984,7 @@ func (s *socketOpsCommon) recvErr(t *kernel.Task, dst usermem.IOSequence) (int, 
 	// The original destination address of the datagram that caused the error is
 	// supplied via msg_name.  -- recvmsg(2)
 	dstAddr, dstAddrLen := socket.ConvertAddress(addrFamilyFromNetProto(sockErr.NetProto), sockErr.Dst)
-	cmgs := socket.ControlMessages{IP: socket.NewIPControlMessages(s.family, tcpip.ControlMessages{SockErr: sockErr})}
+	cmgs := socket.ControlMessages{IP: socket.NewIPControlMessages(s.family, tcpip.ReceivableControlMessages{SockErr: sockErr})}
 	return n, msgFlags, dstAddr, dstAddrLen, cmgs, syserr.FromError(err)
 }
 

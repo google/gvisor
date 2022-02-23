@@ -119,9 +119,9 @@ func sockErrCmsgToLinux(sockErr *tcpip.SockError) linux.SockErrCMsg {
 	}
 }
 
-// NewIPControlMessages converts the tcpip ControlMessages (which does not have
-// Linux specific format) to Linux format.
-func NewIPControlMessages(family int, cmgs tcpip.ControlMessages) IPControlMessages {
+// NewIPControlMessages converts the tcpip.ReceivableControlMessages (which does
+// not have Linux specific format) to Linux format.
+func NewIPControlMessages(family int, cmgs tcpip.ReceivableControlMessages) IPControlMessages {
 	var orgDstAddr linux.SockAddr
 	if cmgs.HasOriginalDstAddress {
 		orgDstAddr, _ = ConvertAddress(family, cmgs.OriginalDstAddress)
