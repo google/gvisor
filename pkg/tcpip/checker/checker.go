@@ -36,7 +36,7 @@ type NetworkChecker func(*testing.T, []header.Network)
 type TransportChecker func(*testing.T, header.Transport)
 
 // ControlMessagesChecker is a function to check a property of ancillary data.
-type ControlMessagesChecker func(*testing.T, tcpip.ControlMessages)
+type ControlMessagesChecker func(*testing.T, tcpip.ReceivableControlMessages)
 
 // IPv4 checks the validity and properties of the given IPv4 packet. It is
 // expected to be used in conjunction with other network checkers for specific
@@ -289,7 +289,7 @@ func FragmentFlags(flags uint8) NetworkChecker {
 // ReceiveTClass creates a checker that checks the TCLASS field in
 // ControlMessages.
 func ReceiveTClass(want uint32) ControlMessagesChecker {
-	return func(t *testing.T, cm tcpip.ControlMessages) {
+	return func(t *testing.T, cm tcpip.ReceivableControlMessages) {
 		t.Helper()
 		if !cm.HasTClass {
 			t.Error("got cm.HasTClass = false, want = true")
@@ -302,7 +302,7 @@ func ReceiveTClass(want uint32) ControlMessagesChecker {
 // NoTClassReceived creates a checker that checks the absence of the TCLASS
 // field in ControlMessages.
 func NoTClassReceived() ControlMessagesChecker {
-	return func(t *testing.T, cm tcpip.ControlMessages) {
+	return func(t *testing.T, cm tcpip.ReceivableControlMessages) {
 		t.Helper()
 		if cm.HasTClass {
 			t.Error("got cm.HasTClass = true, want = false")
@@ -312,7 +312,7 @@ func NoTClassReceived() ControlMessagesChecker {
 
 // ReceiveTOS creates a checker that checks the TOS field in ControlMessages.
 func ReceiveTOS(want uint8) ControlMessagesChecker {
-	return func(t *testing.T, cm tcpip.ControlMessages) {
+	return func(t *testing.T, cm tcpip.ReceivableControlMessages) {
 		t.Helper()
 		if !cm.HasTOS {
 			t.Error("got cm.HasTOS = false, want = true")
@@ -325,7 +325,7 @@ func ReceiveTOS(want uint8) ControlMessagesChecker {
 // NoTOSReceived creates a checker that checks the absence of the TOS field in
 // ControlMessages.
 func NoTOSReceived() ControlMessagesChecker {
-	return func(t *testing.T, cm tcpip.ControlMessages) {
+	return func(t *testing.T, cm tcpip.ReceivableControlMessages) {
 		t.Helper()
 		if cm.HasTOS {
 			t.Error("got cm.HasTOS = true, want = false")
@@ -336,7 +336,7 @@ func NoTOSReceived() ControlMessagesChecker {
 // ReceiveTTL creates a checker that checks the TTL field in
 // ControlMessages.
 func ReceiveTTL(want uint8) ControlMessagesChecker {
-	return func(t *testing.T, cm tcpip.ControlMessages) {
+	return func(t *testing.T, cm tcpip.ReceivableControlMessages) {
 		t.Helper()
 		if !cm.HasTTL {
 			t.Errorf("got cm.HasTTL = %t, want = true", cm.HasTTL)
@@ -349,7 +349,7 @@ func ReceiveTTL(want uint8) ControlMessagesChecker {
 // NoTTLReceived creates a checker that checks the absence of the TTL field in
 // ControlMessages.
 func NoTTLReceived() ControlMessagesChecker {
-	return func(t *testing.T, cm tcpip.ControlMessages) {
+	return func(t *testing.T, cm tcpip.ReceivableControlMessages) {
 		t.Helper()
 		if cm.HasTTL {
 			t.Error("got cm.HasTTL = true, want = false")
@@ -360,7 +360,7 @@ func NoTTLReceived() ControlMessagesChecker {
 // ReceiveHopLimit creates a checker that checks the HopLimit field in
 // ControlMessages.
 func ReceiveHopLimit(want uint8) ControlMessagesChecker {
-	return func(t *testing.T, cm tcpip.ControlMessages) {
+	return func(t *testing.T, cm tcpip.ReceivableControlMessages) {
 		t.Helper()
 		if !cm.HasHopLimit {
 			t.Errorf("got cm.HasHopLimit = %t, want = true", cm.HasHopLimit)
@@ -373,7 +373,7 @@ func ReceiveHopLimit(want uint8) ControlMessagesChecker {
 // NoHopLimitReceived creates a checker that checks the absence of the HopLimit
 // field in ControlMessages.
 func NoHopLimitReceived() ControlMessagesChecker {
-	return func(t *testing.T, cm tcpip.ControlMessages) {
+	return func(t *testing.T, cm tcpip.ReceivableControlMessages) {
 		t.Helper()
 		if cm.HasHopLimit {
 			t.Error("got cm.HasHopLimit = true, want = false")
@@ -384,7 +384,7 @@ func NoHopLimitReceived() ControlMessagesChecker {
 // ReceiveIPPacketInfo creates a checker that checks the PacketInfo field in
 // ControlMessages.
 func ReceiveIPPacketInfo(want tcpip.IPPacketInfo) ControlMessagesChecker {
-	return func(t *testing.T, cm tcpip.ControlMessages) {
+	return func(t *testing.T, cm tcpip.ReceivableControlMessages) {
 		t.Helper()
 		if !cm.HasIPPacketInfo {
 			t.Error("got cm.HasIPPacketInfo = false, want = true")
@@ -397,7 +397,7 @@ func ReceiveIPPacketInfo(want tcpip.IPPacketInfo) ControlMessagesChecker {
 // NoIPPacketInfoReceived creates a checker that checks the PacketInfo field in
 // ControlMessages.
 func NoIPPacketInfoReceived() ControlMessagesChecker {
-	return func(t *testing.T, cm tcpip.ControlMessages) {
+	return func(t *testing.T, cm tcpip.ReceivableControlMessages) {
 		t.Helper()
 		if cm.HasIPPacketInfo {
 			t.Error("got cm.HasIPPacketInfo = true, want = false")
@@ -408,7 +408,7 @@ func NoIPPacketInfoReceived() ControlMessagesChecker {
 // ReceiveIPv6PacketInfo creates a checker that checks the IPv6PacketInfo field
 // in ControlMessages.
 func ReceiveIPv6PacketInfo(want tcpip.IPv6PacketInfo) ControlMessagesChecker {
-	return func(t *testing.T, cm tcpip.ControlMessages) {
+	return func(t *testing.T, cm tcpip.ReceivableControlMessages) {
 		t.Helper()
 		if !cm.HasIPv6PacketInfo {
 			t.Error("got cm.HasIPv6PacketInfo = false, want = true")
@@ -421,7 +421,7 @@ func ReceiveIPv6PacketInfo(want tcpip.IPv6PacketInfo) ControlMessagesChecker {
 // NoIPv6PacketInfoReceived creates a checker that checks the PacketInfo field
 // in ControlMessages.
 func NoIPv6PacketInfoReceived() ControlMessagesChecker {
-	return func(t *testing.T, cm tcpip.ControlMessages) {
+	return func(t *testing.T, cm tcpip.ReceivableControlMessages) {
 		t.Helper()
 		if cm.HasIPv6PacketInfo {
 			t.Error("got cm.HasIPv6PacketInfo = true, want = false")
@@ -432,7 +432,7 @@ func NoIPv6PacketInfoReceived() ControlMessagesChecker {
 // ReceiveOriginalDstAddr creates a checker that checks the OriginalDstAddress
 // field in ControlMessages.
 func ReceiveOriginalDstAddr(want tcpip.FullAddress) ControlMessagesChecker {
-	return func(t *testing.T, cm tcpip.ControlMessages) {
+	return func(t *testing.T, cm tcpip.ReceivableControlMessages) {
 		t.Helper()
 		if !cm.HasOriginalDstAddress {
 			t.Error("got cm.HasOriginalDstAddress = false, want = true")

@@ -180,7 +180,7 @@ func (ep *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResul
 
 	res := tcpip.ReadResult{
 		Total: packet.data.Size(),
-		ControlMessages: tcpip.ControlMessages{
+		ControlMessages: tcpip.ReceivableControlMessages{
 			HasTimestamp: true,
 			Timestamp:    packet.receivedAt,
 		},
