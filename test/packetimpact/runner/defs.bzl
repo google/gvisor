@@ -309,7 +309,6 @@ ALL_TESTS = [
     ),
     PacketimpactTestInfo(
         name = "tcp_acceptable_ack_syn_rcvd",
-        expect_netstack_failure = True,
     ),
 ]
 
