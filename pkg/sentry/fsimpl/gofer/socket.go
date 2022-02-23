@@ -44,18 +44,6 @@ type endpoint struct {
 	path string
 }
 
-func sockTypeToP9(t linux.SockType) (p9.ConnectFlags, bool) {
-	switch t {
-	case linux.SOCK_STREAM:
-		return p9.StreamSocket, true
-	case linux.SOCK_SEQPACKET:
-		return p9.SeqpacketSocket, true
-	case linux.SOCK_DGRAM:
-		return p9.DgramSocket, true
-	}
-	return 0, false
-}
-
 // BidirectionalConnect implements BoundEndpoint.BidirectionalConnect.
 func (e *endpoint) BidirectionalConnect(ctx context.Context, ce transport.ConnectingEndpoint, returnConnect func(transport.Receiver, transport.ConnectedEndpoint)) *syserr.Error {
 	// No lock ordering required as only the ConnectingEndpoint has a mutex.
@@ -121,7 +109,7 @@ func (e *endpoint) newConnectedEndpoint(ctx context.Context, sockType linux.Sock
 		return c, nil
 	}
 
-	flags, ok := sockTypeToP9(sockType)
+	flags, ok := p9.SocketTypeFromLinux(sockType)
 	if !ok {
 		return nil, syserr.ErrConnectionRefused
 	}

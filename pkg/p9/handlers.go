@@ -1469,7 +1469,7 @@ func (t *Tlconnect) handle(cs *connState) message {
 		}
 
 		// Do the connect.
-		osFile, err = ref.file.Connect(t.Flags)
+		osFile, err = ref.file.Connect(t.SocketType)
 		return err
 	}); err != nil {
 		return newErr(err)
