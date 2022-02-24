@@ -22,6 +22,15 @@ import (
 	"unsafe"
 )
 
+// Goyield is runtime.goyield, which is similar to runtime.Gosched but only
+// yields the processor to other goroutines already on the processor's
+// runqueue.
+//
+//go:nosplit
+func Goyield() {
+	goyield()
+}
+
 // Gopark is runtime.gopark. Gopark calls unlockf(pointer to runtime.g, lock);
 // if unlockf returns true, Gopark blocks until Goready(pointer to runtime.g)
 // is called. unlockf and its callees must be nosplit and norace, since stack
