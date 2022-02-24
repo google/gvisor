@@ -797,6 +797,10 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 			return nil, linuxerr.EEXIST
 		}
 		if start.isRegularFile() && mayWrite {
+			if err := rp.Mount().CheckBeginWrite(); err != nil {
+				return nil, err
+			}
+			defer rp.Mount().EndWrite()
 			if err := start.copyUpLocked(ctx); err != nil {
 				return nil, err
 			}
@@ -851,6 +855,10 @@ afterTrailingSymlink:
 		return nil, linuxerr.ENOTDIR
 	}
 	if child.isRegularFile() && mayWrite {
+		if err := rp.Mount().CheckBeginWrite(); err != nil {
+			return nil, err
+		}
+		defer rp.Mount().EndWrite()
 		if err := child.copyUpLocked(ctx); err != nil {
 			return nil, err
 		}
