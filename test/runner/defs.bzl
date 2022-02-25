@@ -132,6 +132,7 @@ def syscall_test(
         add_uds_tree = False,
         add_hostinet = False,
         fuse = False,
+        allow_native = True,
         debug = True,
         tags = None,
         **kwargs):
@@ -144,6 +145,7 @@ def syscall_test(
       add_uds_tree: add a UDS test.
       add_hostinet: add a hostinet test.
       fuse: enable FUSE support.
+      allow_native: generate a native test variant.
       debug: enable debug output.
       tags: starting test tags.
       **kwargs: additional test arguments.
@@ -151,8 +153,8 @@ def syscall_test(
     if not tags:
         tags = []
 
-    if not fuse:
-        # Generate a native test if fuse is not required.
+    if not fuse and allow_native:
+        # Generate a native test if fuse is not required and if it is allowed.
         _syscall_test(
             test = test,
             platform = "native",

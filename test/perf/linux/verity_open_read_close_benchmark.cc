@@ -36,12 +36,6 @@ namespace testing {
 namespace {
 
 void BM_VerityOpenReadClose(benchmark::State& state) {
-  // CAP_SYS_ADMIN is needed for making mount(2) syscall.
-  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN))) {
-    state.SkipWithError("CAP_SYS_ADMIN missing. Skipping benchmark.");
-    return;
-  }
-
   const int size = state.range(0);
 
   // Mount a tmpfs file system to be wrapped by a verity fs.

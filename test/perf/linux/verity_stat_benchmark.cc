@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <linux/capability.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -24,7 +23,6 @@
 #include "gtest/gtest.h"
 #include "absl/strings/str_cat.h"
 #include "benchmark/benchmark.h"
-#include "test/util/capability_util.h"
 #include "test/util/fs_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -38,12 +36,6 @@ namespace {
 // Creates a file in a nested directory hierarchy at least `depth` directories
 // deep, and stats that file multiple times.
 void BM_VerityStat(benchmark::State& state) {
-  // CAP_SYS_ADMIN is needed for making mount(2) syscall.
-  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN))) {
-    state.SkipWithError("CAP_SYS_ADMIN missing. Skipping benchmark.");
-    return;
-  }
-
   // Create nested directories with given depth.
   int depth = state.range(0);
 

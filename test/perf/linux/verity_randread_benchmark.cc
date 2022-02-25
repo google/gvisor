@@ -13,7 +13,6 @@
 // limitations under the License.
 
 #include <fcntl.h>
-#include <linux/capability.h>
 #include <stdlib.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
@@ -22,7 +21,6 @@
 
 #include "gtest/gtest.h"
 #include "benchmark/benchmark.h"
-#include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -85,12 +83,6 @@ GlobalState& GetGlobalState() {
 }
 
 void BM_VerityRandRead(benchmark::State& state) {
-  // CAP_SYS_ADMIN is needed for making mount(2) syscall.
-  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN))) {
-    state.SkipWithError("CAP_SYS_ADMIN missing. Skipping benchmark.");
-    return;
-  }
-
   const int size = state.range(0);
 
   GlobalState& global_state = GetGlobalState();
