@@ -298,7 +298,7 @@ func (e *endpoint) IsAttached() bool {
 // MTU implements stack.LinkEndpoint.MTU. It returns the value initialized
 // during construction.
 func (e *endpoint) MTU() uint32 {
-	return e.mtu - e.hdrSize
+	return e.mtu
 }
 
 // Capabilities implements stack.LinkEndpoint.Capabilities.
