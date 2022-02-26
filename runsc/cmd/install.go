@@ -78,7 +78,7 @@ func (i *Install) Execute(_ context.Context, f *flag.FlagSet, _ ...interface{}) 
 	if err != nil {
 		log.Fatalf("invalid platform: %v", err)
 	}
-	deviceFile, err := p.OpenDevice()
+	deviceFile, err := p.OpenDevice(conf.PlatformDevicePath)
 	if err != nil {
 		log.Printf("WARNING: unable to open platform, runsc may fail to start: %v", err)
 	}
