@@ -114,6 +114,11 @@ type Config struct {
 	// Platform is the platform to run on.
 	Platform string `flag:"platform"`
 
+	// PlatformDevicePath is the path to the device file used by the platform.
+	// e.g. "/dev/kvm" for the KVM platform.
+	// If unset, a sane platform-specific default will be used.
+	PlatformDevicePath string `flag:"platform_device_path"`
+
 	// Strace indicates that strace should be enabled.
 	Strace bool `flag:"strace"`
 

@@ -42,7 +42,7 @@ type testHarness interface {
 
 func kvmTest(t testHarness, setup func(*KVM), fn func(*vCPU) bool) {
 	// Create the machine.
-	deviceFile, err := OpenDevice()
+	deviceFile, err := OpenDevice("")
 	if err != nil {
 		t.Fatalf("error opening device file: %v", err)
 	}
