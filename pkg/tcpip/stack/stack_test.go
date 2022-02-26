@@ -305,10 +305,12 @@ func (f *fakeNetworkEndpoint) Forwarding() bool {
 }
 
 // SetForwarding implements stack.ForwardingNetworkEndpoint.
-func (f *fakeNetworkEndpoint) SetForwarding(v bool) {
+func (f *fakeNetworkEndpoint) SetForwarding(v bool) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	prev := f.mu.forwarding
 	f.mu.forwarding = v
+	return prev
 }
 
 func fakeNetFactory(s *stack.Stack) stack.NetworkProtocol {
@@ -4637,6 +4639,80 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			}
 			if n := ep2.Drain(); n != 0 {
 				t.Errorf("got %d unexpected packets from ep2", n)
+			}
+		})
+	}
+}
+
+func TestNICForwarding(t *testing.T) {
+	const nicID = 1
+
+	tests := []struct {
+		name     string
+		factory  stack.NetworkProtocolFactory
+		netProto tcpip.NetworkProtocolNumber
+	}{
+		{
+			name:     "Fake Network",
+			factory:  fakeNetFactory,
+			netProto: fakeNetNumber,
+		},
+		{
+			name:     "IPv4",
+			factory:  ipv4.NewProtocol,
+			netProto: ipv4.ProtocolNumber,
+		},
+		{
+			name:     "IPv6",
+			factory:  ipv6.NewProtocol,
+			netProto: ipv6.ProtocolNumber,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocolFactory{test.factory},
+			})
+			if err := s.CreateNIC(nicID, channel.New(0, defaultMTU, "")); err != nil {
+				t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
+			}
+
+			// Forwarding should initially be disabled.
+			if forwarding, err := s.NICForwarding(nicID, test.netProto); err != nil {
+				t.Fatalf("s.NICForwarding(%d, %d): %s", nicID, test.netProto, err)
+			} else if forwarding {
+				t.Errorf("got s.NICForwarding(%d, %d) = true, want = false", nicID, test.netProto)
+			}
+
+			// Setting forwarding to be enabled should return the previous
+			// configuration of false. Enabling it a second time should be a no-op.
+			for _, wantPrevForwarding := range [...]bool{false, true} {
+				if prevForwarding, err := s.SetNICForwarding(nicID, test.netProto, true); err != nil {
+					t.Fatalf("s.SetNICForwarding(%d, %d, true): %s", nicID, test.netProto, err)
+				} else if prevForwarding != wantPrevForwarding {
+					t.Errorf("got s.SetNICForwarding(%d, %d, true) = %t, want = %t", nicID, test.netProto, prevForwarding, wantPrevForwarding)
+				}
+				if forwarding, err := s.NICForwarding(nicID, test.netProto); err != nil {
+					t.Fatalf("s.NICForwarding(%d, %d): %s", nicID, test.netProto, err)
+				} else if !forwarding {
+					t.Errorf("got s.NICForwarding(%d, %d) = false, want = true", nicID, test.netProto)
+				}
+			}
+
+			// Setting forwarding to be disabled should return the previous
+			// configuration of true. Disabling it a second time should be a no-op.
+			for _, wantPrevForwarding := range [...]bool{true, false} {
+				if prevForwarding, err := s.SetNICForwarding(nicID, test.netProto, false); err != nil {
+					t.Fatalf("s.SetNICForwarding(%d, %d, false): %s", nicID, test.netProto, err)
+				} else if prevForwarding != wantPrevForwarding {
+					t.Errorf("got s.SetNICForwarding(%d, %d, false) = %t, want = %t", nicID, test.netProto, prevForwarding, wantPrevForwarding)
+				}
+				if forwarding, err := s.NICForwarding(nicID, test.netProto); err != nil {
+					t.Fatalf("s.NICForwarding(%d, %d): %s", nicID, test.netProto, err)
+				} else if forwarding {
+					t.Errorf("got s.NICForwarding(%d, %d) = true, want = false", nicID, test.netProto)
+				}
 			}
 		})
 	}

@@ -439,23 +439,24 @@ func (e *endpoint) Forwarding() bool {
 
 // setForwarding sets the forwarding status for the endpoint.
 //
-// Returns true if the forwarding status was updated.
+// Returns the previous forwarding status.
 func (e *endpoint) setForwarding(v bool) bool {
 	forwarding := uint32(forwardingDisabled)
 	if v {
 		forwarding = forwardingEnabled
 	}
 
-	return atomic.SwapUint32(&e.forwarding, forwarding) != forwarding
+	return atomic.SwapUint32(&e.forwarding, forwarding) != forwardingDisabled
 }
 
 // SetForwarding implements stack.ForwardingNetworkEndpoint.
-func (e *endpoint) SetForwarding(forwarding bool) {
+func (e *endpoint) SetForwarding(forwarding bool) bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	if !e.setForwarding(forwarding) {
-		return
+	prevForwarding := e.setForwarding(forwarding)
+	if prevForwarding == forwarding {
+		return prevForwarding
 	}
 
 	allRoutersGroups := [...]tcpip.Address{
@@ -501,6 +502,7 @@ func (e *endpoint) SetForwarding(forwarding bool) {
 	}
 
 	e.mu.ndp.forwardingChanged(forwarding)
+	return prevForwarding
 }
 
 // Enable implements stack.NetworkEndpoint.
