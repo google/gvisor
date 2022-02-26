@@ -138,6 +138,13 @@ type Config struct {
 	// disabled. Pardon the double negation, but default to enabled is important.
 	DisableSeccomp bool
 
+	// EnableCoreTags indicates whether the Sentry process and children will be
+	// run in a core tagged process. This isolates the sentry from sharing
+	// physical cores with other core tagged processes. This is useful as a
+	// mitigation for hyperthreading side channel based attacks. Requires host
+	// linux kernel >= 5.14.
+	EnableCoreTags bool `flag:"enable-core-tags"`
+
 	// WatchdogAction sets what action the watchdog takes when triggered.
 	WatchdogAction watchdog.Action `flag:"watchdog-action"`
 
