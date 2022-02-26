@@ -426,7 +426,11 @@ type Constructor interface {
 	//
 	// * deviceFile - the device file (e.g. /dev/kvm for the KVM platform).
 	New(deviceFile *os.File) (Platform, error)
-	OpenDevice() (*os.File, error)
+
+	// OpenDevice opens the path to the device used by the platform.
+	// Passing in an empty string will use the default path for the device,
+	// e.g. "/dev/kvm" for the KVM platform.
+	OpenDevice(devicePath string) (*os.File, error)
 
 	// Requirements returns platform specific requirements.
 	Requirements() Requirements

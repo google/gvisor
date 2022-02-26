@@ -322,7 +322,7 @@ func (s *Sandbox) Restore(cid string, spec *specs.Spec, conf *config.Config, fil
 	}
 
 	// If the platform needs a device FD we must pass it in.
-	if deviceFile, err := deviceFileForPlatform(conf.Platform); err != nil {
+	if deviceFile, err := deviceFileForPlatform(conf.Platform, conf.PlatformDevicePath); err != nil {
 		return err
 	} else if deviceFile != nil {
 		defer deviceFile.Close()
@@ -596,7 +596,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		return err
 	}
 
-	if deviceFile, err := gPlatform.OpenDevice(); err != nil {
+	if deviceFile, err := gPlatform.OpenDevice(conf.PlatformDevicePath); err != nil {
 		return fmt.Errorf("opening device file for platform %q: %v", conf.Platform, err)
 	} else if deviceFile != nil {
 		defer deviceFile.Close()
@@ -1407,13 +1407,14 @@ func (s *Sandbox) configureStdios(conf *config.Config, stdios []*os.File) error 
 
 // deviceFileForPlatform opens the device file for the given platform. If the
 // platform does not need a device file, then nil is returned.
-func deviceFileForPlatform(name string) (*os.File, error) {
+// devicePath may be empty to use a sane platform-specific default.
+func deviceFileForPlatform(name, devicePath string) (*os.File, error) {
 	p, err := platform.Lookup(name)
 	if err != nil {
 		return nil, err
 	}
 
-	f, err := p.OpenDevice()
+	f, err := p.OpenDevice(devicePath)
 	if err != nil {
 		return nil, fmt.Errorf("opening device file for platform %q: %w", name, err)
 	}
