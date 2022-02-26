@@ -686,7 +686,9 @@ type ForwardingNetworkEndpoint interface {
 	Forwarding() bool
 
 	// SetForwarding sets the forwarding configuration.
-	SetForwarding(bool)
+	//
+	// Returns the previous forwarding configuration.
+	SetForwarding(bool) bool
 }
 
 // NetworkProtocol is the interface that needs to be implemented by network

@@ -628,7 +628,7 @@ func TestPerInterfaceForwarding(t *testing.T) {
 			// Only enable forwarding on NIC1 and make sure that only packets arriving
 			// on NIC1 are forwarded.
 			for _, netProto := range netProtos {
-				if err := s.SetNICForwarding(nicID1, netProto, true); err != nil {
+				if _, err := s.SetNICForwarding(nicID1, netProto, true); err != nil {
 					t.Fatalf("s.SetNICForwarding(%d, %d, true): %s", nicID1, netProtos, err)
 				}
 			}

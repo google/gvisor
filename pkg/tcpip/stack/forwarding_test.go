@@ -241,10 +241,12 @@ func (f *fwdTestNetworkEndpoint) Forwarding() bool {
 }
 
 // SetForwarding implements stack.ForwardingNetworkEndpoint.
-func (f *fwdTestNetworkEndpoint) SetForwarding(v bool) {
+func (f *fwdTestNetworkEndpoint) SetForwarding(v bool) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	prev := f.mu.forwarding
 	f.mu.forwarding = v
+	return prev
 }
 
 var _ LinkEndpoint = (*fwdTestLinkEndpoint)(nil)
