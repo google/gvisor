@@ -23,6 +23,7 @@ import (
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/coretag"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/runsc/boot"
@@ -235,6 +236,23 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	}
 	mountsFile.Close()
 	spec.Mounts = cleanMounts
+
+	if conf.EnableCoreTags {
+		if err := coretag.Enable(); err != nil {
+			Fatalf("Failed to core tag sentry: %v", err)
+		}
+
+		// Verify that all sentry threads are properly core tagged, and log
+		// current core tag.
+		coreTags, err := coretag.GetAllCoreTags(os.Getpid())
+		if err != nil {
+			Fatalf("Failed read current core tags: %v", err)
+		}
+		if len(coreTags) != 1 {
+			Fatalf("Not all child threads were core tagged the same. Tags=%v", coreTags)
+		}
+		log.Infof("Core tag enabled (core tag=%d)", coreTags[0])
+	}
 
 	// Create the loader.
 	bootArgs := boot.Args{
