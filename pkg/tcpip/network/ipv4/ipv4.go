@@ -190,23 +190,24 @@ func (e *endpoint) Forwarding() bool {
 
 // setForwarding sets the forwarding status for the endpoint.
 //
-// Returns true if the forwarding status was updated.
+// Returns the previous forwarding status.
 func (e *endpoint) setForwarding(v bool) bool {
 	forwarding := uint32(forwardingDisabled)
 	if v {
 		forwarding = forwardingEnabled
 	}
 
-	return atomic.SwapUint32(&e.forwarding, forwarding) != forwarding
+	return atomic.SwapUint32(&e.forwarding, forwarding) != forwardingDisabled
 }
 
 // SetForwarding implements stack.ForwardingNetworkEndpoint.
-func (e *endpoint) SetForwarding(forwarding bool) {
+func (e *endpoint) SetForwarding(forwarding bool) bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	if !e.setForwarding(forwarding) {
-		return
+	prevForwarding := e.setForwarding(forwarding)
+	if prevForwarding == forwarding {
+		return prevForwarding
 	}
 
 	if forwarding {
@@ -221,7 +222,7 @@ func (e *endpoint) SetForwarding(forwarding bool) {
 			panic(fmt.Sprintf("e.joinGroupLocked(%s): %s", header.IPv4AllRoutersGroup, err))
 		}
 
-		return
+		return prevForwarding
 	}
 
 	switch err := e.leaveGroupLocked(header.IPv4AllRoutersGroup).(type) {
@@ -231,6 +232,8 @@ func (e *endpoint) SetForwarding(forwarding bool) {
 	default:
 		panic(fmt.Sprintf("e.leaveGroupLocked(%s): %s", header.IPv4AllRoutersGroup, err))
 	}
+
+	return prevForwarding
 }
 
 // Enable implements stack.NetworkEndpoint.

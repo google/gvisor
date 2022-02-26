@@ -1013,19 +1013,18 @@ func (n *nic) checkDuplicateAddress(protocol tcpip.NetworkProtocolNumber, addr t
 	return d.CheckDuplicateAddress(addr, h), nil
 }
 
-func (n *nic) setForwarding(protocol tcpip.NetworkProtocolNumber, enable bool) tcpip.Error {
+func (n *nic) setForwarding(protocol tcpip.NetworkProtocolNumber, enable bool) (bool, tcpip.Error) {
 	ep := n.getNetworkEndpoint(protocol)
 	if ep == nil {
-		return &tcpip.ErrUnknownProtocol{}
+		return false, &tcpip.ErrUnknownProtocol{}
 	}
 
 	forwardingEP, ok := ep.(ForwardingNetworkEndpoint)
 	if !ok {
-		return &tcpip.ErrNotSupported{}
+		return false, &tcpip.ErrNotSupported{}
 	}
 
-	forwardingEP.SetForwarding(enable)
-	return nil
+	return forwardingEP.SetForwarding(enable), nil
 }
 
 func (n *nic) forwarding(protocol tcpip.NetworkProtocolNumber) (bool, tcpip.Error) {
