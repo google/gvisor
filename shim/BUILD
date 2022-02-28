@@ -5,6 +5,11 @@ package(licenses = ["notice"])
 go_binary(
     name = "containerd-shim-runsc-v1",
     srcs = ["main.go"],
+    gc_linkopts = [
+        # Statically link
+        "-linkmode external",
+        "-extldflags -static",
+    ],
     static = True,
     tags = ["staging"],
     visibility = [
