@@ -73,6 +73,9 @@ type descriptor struct {
 	flags    FDFlags
 }
 
+// MaxFdLimit defines the upper limit on the integer value of file descriptors.
+const MaxFdLimit int32 = int32(bitmap.MaxBitEntryLimit)
+
 // FDTable is used to manage File references and flags.
 //
 // +stateify savable
@@ -184,16 +187,19 @@ func (f *FDTable) DecRef(ctx context.Context) {
 	})
 }
 
-// forEach iterates over all non-nil files in sorted order.
+// forEachUpTo iterates over all non-nil files upto maxFds (non-inclusive) in sorted order.
 //
 // It is the caller's responsibility to acquire an appropriate lock.
-func (f *FDTable) forEach(ctx context.Context, fn func(fd int32, file *fs.File, fileVFS2 *vfs.FileDescription, flags FDFlags)) {
+func (f *FDTable) forEachUpTo(ctx context.Context, maxFds int32, fn func(fd int32, file *fs.File, fileVFS2 *vfs.FileDescription, flags FDFlags)) {
 	// retries tracks the number of failed TryIncRef attempts for the same FD.
 	retries := 0
 	fds := f.fdBitmap.ToSlice()
 	// Iterate through the fdBitmap.
 	for _, ufd := range fds {
 		fd := int32(ufd)
+		if fd >= maxFds {
+			break
+		}
 		file, fileVFS2, flags, ok := f.getAll(fd)
 		if !ok {
 			break
@@ -222,6 +228,13 @@ func (f *FDTable) forEach(ctx context.Context, fn func(fd int32, file *fs.File, 
 		}
 		retries = 0
 	}
+}
+
+// forEach iterates over all non-nil files upto maxFd in sorted order.
+//
+// It is the caller's responsibility to acquire an appropriate lock.
+func (f *FDTable) forEach(ctx context.Context, fn func(fd int32, file *fs.File, fileVFS2 *vfs.FileDescription, flags FDFlags)) {
+	f.forEachUpTo(ctx, MaxFdLimit, fn)
 }
 
 // String is a stringer for FDTable.
@@ -263,7 +276,7 @@ func (f *FDTable) NewFDs(ctx context.Context, minFD int32, files []*fs.File, fla
 	}
 
 	// Default limit.
-	end := int32(math.MaxInt32)
+	end := MaxFdLimit
 
 	// Ensure we don't get past the provided limit.
 	if limitSet := limits.FromContext(ctx); limitSet != nil {
@@ -294,8 +307,8 @@ func (f *FDTable) NewFDs(ctx context.Context, minFD int32, files []*fs.File, fla
 	for len(fds) < len(files) {
 		// Try to use free bit in fdBitmap.
 		// If all bits in fdBitmap are used, expand fd to the max.
-		fd := f.fdBitmap.FirstZero(uint32(minFD))
-		if fd == math.MaxInt32 {
+		fd, err := f.fdBitmap.FirstZero(uint32(minFD))
+		if err != nil {
 			fd = uint32(max)
 			max++
 		}
@@ -340,7 +353,7 @@ func (f *FDTable) NewFDsVFS2(ctx context.Context, minFD int32, files []*vfs.File
 	}
 
 	// Default limit.
-	end := int32(math.MaxInt32)
+	end := MaxFdLimit
 
 	// Ensure we don't get past the provided limit.
 	if limitSet := limits.FromContext(ctx); limitSet != nil {
@@ -371,8 +384,8 @@ func (f *FDTable) NewFDsVFS2(ctx context.Context, minFD int32, files []*vfs.File
 	for len(fds) < len(files) {
 		// Try to use free bit in fdBitmap.
 		// If all bits in fdBitmap are used, expand fd to the max.
-		fd := f.fdBitmap.FirstZero(uint32(minFD))
-		if fd == math.MaxInt32 {
+		fd, err := f.fdBitmap.FirstZero(uint32(minFD))
+		if err != nil {
 			fd = uint32(max)
 			max++
 		}
@@ -494,6 +507,25 @@ func (f *FDTable) SetFlags(ctx context.Context, fd int32, flags FDFlags) error {
 	return nil
 }
 
+// SetFlagsForRange sets the flags for the given range of file descriptors
+// (inclusive: [startFd, endFd]).
+func (f *FDTable) SetFlagsForRange(ctx context.Context, startFd int32, endFd int32, flags FDFlags) error {
+	if startFd < 0 || startFd > endFd {
+		return unix.EBADF
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	for fd, err := f.fdBitmap.FirstOne(uint32(startFd)); err == nil && fd <= uint32(endFd); fd, err = f.fdBitmap.FirstOne(fd + 1) {
+		fdI32 := int32(fd)
+		file, _, _ := f.get(fdI32)
+		f.set(ctx, fdI32, file, flags)
+	}
+
+	return nil
+}
+
 // SetFlagsVFS2 sets the flags for the given file descriptor.
 //
 // True is returned iff flags were changed.
@@ -514,6 +546,25 @@ func (f *FDTable) SetFlagsVFS2(ctx context.Context, fd int32, flags FDFlags) err
 
 	// Update the flags.
 	f.setVFS2(ctx, fd, file, flags)
+	return nil
+}
+
+// SetFlagsForRangeVFS2 sets the flags for the given range of file descriptors
+// (inclusive: [startFd, endFd]).
+func (f *FDTable) SetFlagsForRangeVFS2(ctx context.Context, startFd int32, endFd int32, flags FDFlags) error {
+	if startFd < 0 || startFd > endFd {
+		return unix.EBADF
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	for fd, err := f.fdBitmap.FirstOne(uint32(startFd)); err == nil && fd <= uint32(endFd); fd, err = f.fdBitmap.FirstOne(fd + 1) {
+		fdI32 := int32(fd)
+		file, _, _ := f.getVFS2(fdI32)
+		f.setVFS2(ctx, fdI32, file, flags)
+	}
+
 	return nil
 }
 
@@ -581,12 +632,12 @@ func (f *FDTable) GetFDs(ctx context.Context) []int32 {
 	return fds
 }
 
-// Fork returns an independent FDTable.
-func (f *FDTable) Fork(ctx context.Context) *FDTable {
+// Fork returns an independent FDTable, cloning all FDs up to maxFds (non-inclusive).
+func (f *FDTable) Fork(ctx context.Context, maxFds int32) *FDTable {
 	clone := f.k.NewFDTable()
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.forEach(ctx, func(fd int32, file *fs.File, fileVFS2 *vfs.FileDescription, flags FDFlags) {
+	f.forEachUpTo(ctx, maxFds, func(fd int32, file *fs.File, fileVFS2 *vfs.FileDescription, flags FDFlags) {
 		// The set function here will acquire an appropriate table
 		// reference for the clone. We don't need anything else.
 		if df, dfVFS2 := clone.setAll(ctx, fd, file, fileVFS2, flags); df != nil || dfVFS2 != nil {
@@ -597,9 +648,10 @@ func (f *FDTable) Fork(ctx context.Context) *FDTable {
 	return clone
 }
 
-// Remove removes an FD from and returns a non-file iff successful.
+// Remove removes an FD from and returns a tuple where one of the files is non-nil
+// iff successful.
 //
-// N.B. Callers are required to use DecRef when they are done.
+// N.B. Callers are required to use DecRef on the returned file when they are done.
 func (f *FDTable) Remove(ctx context.Context, fd int32) (*fs.File, *vfs.FileDescription) {
 	if fd < 0 {
 		return nil, nil
@@ -607,30 +659,30 @@ func (f *FDTable) Remove(ctx context.Context, fd int32) (*fs.File, *vfs.FileDesc
 
 	f.mu.Lock()
 
-	orig, orig2, _, _ := f.getAll(fd)
+	file, fileVFS2, _, _ := f.getAll(fd)
 
 	// Add reference for caller.
 	switch {
-	case orig != nil:
-		orig.IncRef()
-	case orig2 != nil:
-		orig2.IncRef()
+	case file != nil:
+		file.IncRef()
+	case fileVFS2 != nil:
+		fileVFS2.IncRef()
 	}
 
-	if orig != nil || orig2 != nil {
-		orig, orig2 = f.setAll(ctx, fd, nil, nil, FDFlags{}) // Zap entry.
+	if file != nil || fileVFS2 != nil {
+		file, fileVFS2 = f.setAll(ctx, fd, nil, nil, FDFlags{}) // Zap entry.
 		f.fdBitmap.Remove(uint32(fd))
 	}
 	f.mu.Unlock()
 
-	if orig != nil {
-		f.drop(ctx, orig)
+	if file != nil {
+		f.drop(ctx, file)
 	}
-	if orig2 != nil {
-		f.dropVFS2(ctx, orig2)
+	if fileVFS2 != nil {
+		f.dropVFS2(ctx, fileVFS2)
 	}
 
-	return orig, orig2
+	return file, fileVFS2
 }
 
 // RemoveIf removes all FDs where cond is true.
@@ -661,4 +713,56 @@ func (f *FDTable) RemoveIf(ctx context.Context, cond func(*fs.File, *vfs.FileDes
 	for _, file := range filesVFS2 {
 		f.dropVFS2(ctx, file)
 	}
+}
+
+// RemoveNextInRange removes the next FD that falls within the given range,
+// and returns a tuple where one of the files is non-nil iff successful.
+//
+// N.B. Callers are required to use DecRef on the returned file when they are done.
+func (f *FDTable) RemoveNextInRange(ctx context.Context, startFd int32, endFd int32) (int32, *fs.File, *vfs.FileDescription) {
+	if startFd < 0 || startFd > endFd {
+		return MaxFdLimit, nil, nil
+	}
+
+	f.mu.Lock()
+
+	fdUint, err := f.fdBitmap.FirstOne(uint32(startFd))
+	fd := int32(fdUint)
+	if err != nil || fd > endFd {
+		f.mu.Unlock()
+		return MaxFdLimit, nil, nil
+	}
+	file, fileVFS2, _, _ := f.getAll(fd)
+
+	// Add reference for caller.
+	switch {
+	case file != nil:
+		file.IncRef()
+	case fileVFS2 != nil:
+		fileVFS2.IncRef()
+	}
+
+	if file != nil || fileVFS2 != nil {
+		file, fileVFS2 = f.setAll(ctx, fd, nil, nil, FDFlags{}) // Zap entry.
+		f.fdBitmap.Remove(uint32(fd))
+	}
+	f.mu.Unlock()
+
+	if file != nil {
+		f.drop(ctx, file)
+	}
+	if fileVFS2 != nil {
+		f.dropVFS2(ctx, fileVFS2)
+	}
+
+	return fd, file, fileVFS2
+}
+
+// GetLastFd returns the last set FD in the FDTable bitmap.
+func (f *FDTable) GetLastFd() int32 {
+	last := f.fdBitmap.Maximum()
+	if last > bitmap.MaxBitEntryLimit {
+		return MaxFdLimit
+	}
+	return int32(last)
 }

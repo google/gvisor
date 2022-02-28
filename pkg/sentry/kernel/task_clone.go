@@ -156,7 +156,7 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 
 	var fdTable *FDTable
 	if args.Flags&linux.CLONE_FILES == 0 {
-		fdTable = t.fdTable.Fork(t)
+		fdTable = t.fdTable.Fork(t, MaxFdLimit)
 	} else {
 		fdTable = t.fdTable
 		fdTable.IncRef()
@@ -480,7 +480,7 @@ func (t *Task) Unshare(flags int32) error {
 	var oldFDTable *FDTable
 	if flags&linux.CLONE_FILES != 0 {
 		oldFDTable = t.fdTable
-		t.fdTable = oldFDTable.Fork(t)
+		t.fdTable = oldFDTable.Fork(t, MaxFdLimit)
 	}
 	var oldFSContext *FSContext
 	if flags&linux.CLONE_FS != 0 {
@@ -495,6 +495,19 @@ func (t *Task) Unshare(flags int32) error {
 		oldFSContext.DecRef(t)
 	}
 	return nil
+}
+
+// UnshareFdTable unshares the FdTable that task t shares with other tasks, upto
+// the maxFd.
+//
+// Preconditions: The caller must be running on the task goroutine.
+func (t *Task) UnshareFdTable(maxFd int32) {
+	t.mu.Lock()
+	oldFDTable := t.fdTable
+	t.fdTable = oldFDTable.Fork(t, maxFd)
+	t.mu.Unlock()
+
+	oldFDTable.DecRef(t)
 }
 
 // vforkStop is a TaskStop imposed on a task that creates a child with

@@ -214,7 +214,7 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 	t.tg.pidns.owner.mu.Unlock()
 
 	oldFDTable := t.fdTable
-	t.fdTable = t.fdTable.Fork(t)
+	t.fdTable = t.fdTable.Fork(t, int32(t.fdTable.CurrentMaxFDs()))
 	oldFDTable.DecRef(t)
 
 	// Remove FDs with the CloseOnExec flag set.
