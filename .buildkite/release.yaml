@@ -1,0 +1,35 @@
+agents:
+  queue: release
+_templates:
+  common: &common
+    timeout_in_minutes: 120
+    retry:
+      automatic:
+        - exit_status: -1
+          limit: 10
+        - exit_status: "*"
+          limit: 2
+    # This is enforced by the environment hooks on the release agents
+    # as well, only the master branch may be built there.
+    if: build.branch == "master" || build.tag != null
+
+steps:
+  - <<: *common
+    label: ":ship: Push all images (x86_64)"
+    commands:
+      - make push-all-images
+  - <<: *common
+    label: "ship: Push all images (aarch64)"
+    commands:
+      - make ARCH=aarch64 push-all-images
+  - <<: *common
+    label: ":ship: Release"
+    commands:
+      - make artifacts/x86_64
+      - make BAZEL_OPTIONS=--config=cross-aarch64 artifacts/aarch64
+      - make release RELEASE_NIGHTLY=$$RELEASE_NIGHTLY
+      - cd repo && gsutil cp -r . gs://gvisor/releases/
+  - <<: *common
+    label: ":ship: Website Deploy"
+    commands:
+      - make website-deploy
