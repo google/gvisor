@@ -64,7 +64,9 @@ type PacketBufferOptions struct {
 // LinkHeader, NetworkHeader, TransportHeader, and Data. Any of them can be
 // empty. Use of PacketBuffer in any other order is unsupported.
 //
-// PacketBuffer must be created with NewPacketBuffer.
+// PacketBuffer must be created with NewPacketBuffer, which sets the initial
+// reference count to 1. Owners should call `DecRef()` when they are finished
+// with the buffer to return it to the pool.
 //
 // Internal structure: A PacketBuffer holds a pointer to buffer.Buffer, which
 // exposes a logically-contiguous byte storage. The underlying storage structure
@@ -161,8 +163,6 @@ type PacketBuffer struct {
 	NetworkPacketInfo NetworkPacketInfo
 
 	tuple *tuple
-
-	preserveObject bool
 }
 
 // NewPacketBuffer creates a new PacketBuffer with opts.
@@ -183,18 +183,12 @@ func NewPacketBuffer(opts PacketBufferOptions) *PacketBuffer {
 	return pk
 }
 
-// PreserveObject marks this PacketBuffer so it is not recycled by internal
-// pooling.
-func (pk *PacketBuffer) PreserveObject() {
-	pk.preserveObject = true
-}
-
 // DecRef decrements the PacketBuffer's refcount. If the refcount is
 // decremented to zero, the PacketBuffer is returned to the PacketBuffer
 // pool.
 func (pk *PacketBuffer) DecRef() {
 	pk.packetBufferRefs.DecRef(func() {
-		if pk.packetBufferRefs.refCount == 0 && !pk.preserveObject {
+		if pk.packetBufferRefs.refCount == 0 {
 			pkPool.Put(pk)
 		}
 	})

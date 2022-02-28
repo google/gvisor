@@ -43,14 +43,19 @@ type NotificationHandle struct {
 
 type queue struct {
 	// c is the outbound packet channel.
-	c chan *stack.PacketBuffer
-	// mu protects fields below.
-	mu     sync.RWMutex
+	c  chan *stack.PacketBuffer
+	mu sync.RWMutex
+	// +checklocks:mu
 	notify []*NotificationHandle
+	// +checklocks:mu
+	closed bool
 }
 
 func (q *queue) Close() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	close(q.c)
+	q.closed = true
 }
 
 func (q *queue) Read() *stack.PacketBuffer {
@@ -71,36 +76,33 @@ func (q *queue) ReadContext(ctx context.Context) *stack.PacketBuffer {
 	}
 }
 
-func (q *queue) Write(pkt *stack.PacketBuffer) bool {
+func (q *queue) Write(pkt *stack.PacketBuffer) tcpip.Error {
 	// q holds the PacketBuffer.
+	q.mu.RLock()
+	if q.closed {
+		q.mu.RUnlock()
+		return &tcpip.ErrClosedForSend{}
+	}
 
-	// Ideally, Write() should take a reference here, since it is adding
-	// the underlying PacketBuffer to the channel. However, in practice,
-	// calls to Read() are not necessarily symetric with calls
-	// to Write() (e.g writing to this endpoint and then exiting). This
-	// causes tests and analyzers to detect erroneous "leaks" for expected
-	// behavior. To prevent this, we allow the refcount to go to zero, and
-	// make a call to  PreserveObject(), which prevents the PacketBuffer
-	// pooling implementation from reclaiming this instance, even when
-	// the refcount goes to zero.
-	pkt.PreserveObject()
+	pkt.IncRef()
 	wrote := false
 	select {
 	case q.c <- pkt:
 		wrote = true
 	default:
+		pkt.DecRef()
 	}
-	q.mu.Lock()
 	notify := q.notify
-	q.mu.Unlock()
+	q.mu.RUnlock()
 
 	if wrote {
 		// Send notification outside of lock.
 		for _, h := range notify {
 			h.n.WriteNotify()
 		}
+		return nil
 	}
-	return wrote
+	return &tcpip.ErrNoBufferSpace{}
 }
 
 func (q *queue) Num() int {
@@ -155,10 +157,11 @@ func New(size int, mtu uint32, linkAddr tcpip.LinkAddress) *Endpoint {
 	}
 }
 
-// Close closes e. Further packet injections will panic. Reads continue to
-// succeed until all packets are read.
+// Close closes e. Further packet injections will return an error, and all pending
+// packets are discarded. Close may be called concurrently with WritePackets.
 func (e *Endpoint) Close() {
 	e.q.Close()
+	e.Drain()
 }
 
 // Read does non-blocking read one packet from the outbound packet queue.
@@ -175,7 +178,8 @@ func (e *Endpoint) ReadContext(ctx context.Context) *stack.PacketBuffer {
 // Drain removes all outbound packets from the channel and counts them.
 func (e *Endpoint) Drain() int {
 	c := 0
-	for e.Read() != nil {
+	for pkt := e.Read(); pkt != nil; pkt = e.Read() {
+		pkt.DecRef()
 		c++
 	}
 	return c
@@ -235,10 +239,14 @@ func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
 }
 
 // WritePackets stores outbound packets into the channel.
+// Multiple concurrent calls are permitted.
 func (e *Endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 	n := 0
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
-		if !e.q.Write(pkt) {
+		if err := e.q.Write(pkt); err != nil {
+			if _, ok := err.(*tcpip.ErrNoBufferSpace); !ok && n == 0 {
+				return 0, err
+			}
 			break
 		}
 		n++

@@ -433,7 +433,6 @@ func (pk *PacketBuffer) StateFields() []string {
 		"RXTransportChecksumValidated",
 		"NetworkPacketInfo",
 		"tuple",
-		"preserveObject",
 	}
 }
 
@@ -462,7 +461,6 @@ func (pk *PacketBuffer) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(17, &pk.RXTransportChecksumValidated)
 	stateSinkObject.Save(18, &pk.NetworkPacketInfo)
 	stateSinkObject.Save(19, &pk.tuple)
-	stateSinkObject.Save(20, &pk.preserveObject)
 }
 
 func (pk *PacketBuffer) afterLoad() {}
@@ -489,7 +487,6 @@ func (pk *PacketBuffer) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(17, &pk.RXTransportChecksumValidated)
 	stateSourceObject.Load(18, &pk.NetworkPacketInfo)
 	stateSourceObject.Load(19, &pk.tuple)
-	stateSourceObject.Load(20, &pk.preserveObject)
 }
 
 func (h *headerInfo) StateTypeName() string {
