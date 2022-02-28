@@ -115,6 +115,7 @@ func TestPingMulticastBroadcast(t *testing.T) {
 			})
 			// We only expect a single packet in response to our ICMP Echo Request.
 			e := channel.New(1, defaultMTU, "")
+			defer e.Close()
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
 			}
@@ -145,6 +146,7 @@ func TestPingMulticastBroadcast(t *testing.T) {
 			if pkt == nil {
 				t.Fatal("expected ICMP response")
 			}
+			defer pkt.DecRef()
 
 			if pkt.EgressRoute.LocalAddress != test.expectedSrc {
 				t.Errorf("got pkt.EgressRoute.LocalAddress = %s, want = %s", pkt.EgressRoute.LocalAddress, test.expectedSrc)
@@ -392,6 +394,7 @@ func TestIncomingMulticastAndBroadcast(t *testing.T) {
 				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 			})
 			e := channel.New(0, defaultMTU, "")
+			defer e.Close()
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
 			}
@@ -638,6 +641,7 @@ func TestUDPAddRemoveMembershipSocketOption(t *testing.T) {
 						TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 					})
 					e := channel.New(0, defaultMTU, "")
+					defer e.Close()
 					if err := s.CreateNIC(nicID, e); err != nil {
 						t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
 					}

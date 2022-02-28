@@ -151,6 +151,7 @@ func TestWritePacketToRemoteAddHeader(t *testing.T) {
 		}
 
 		eth := header.Ethernet(pkt.LinkHeader().View())
+		pkt.DecRef()
 		if got := eth.SourceAddress(); got != localLinkAddr {
 			t.Errorf("got eth.SourceAddress() = %s, want = %s", got, localLinkAddr)
 		}

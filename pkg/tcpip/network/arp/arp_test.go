@@ -349,6 +349,7 @@ func TestDirectRequest(t *testing.T) {
 				t.Fatalf("expected %d, got network protocol number %d", want, got)
 			}
 			rep := header.ARP(pi.NetworkHeader().View())
+			pi.DecRef()
 			if !rep.IsValid() {
 				t.Fatalf("invalid ARP response: len = %d; response = %x", len(rep), rep)
 			}
@@ -631,6 +632,7 @@ func TestLinkAddressRequest(t *testing.T) {
 			}
 
 			rep := header.ARP(stack.PayloadSince(pkt.NetworkHeader()))
+			pkt.DecRef()
 			if got := rep.Op(); got != header.ARPRequest {
 				t.Errorf("got Op = %d, want = %d", got, header.ARPRequest)
 			}
@@ -687,6 +689,7 @@ func TestDADARPRequestPacket(t *testing.T) {
 	}
 
 	req := header.ARP(stack.PayloadSince(pkt.NetworkHeader()))
+	pkt.DecRef()
 	if !req.IsValid() {
 		t.Errorf("got req.IsValid() = false, want = true")
 	}

@@ -23,6 +23,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/time/rate"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -198,25 +199,32 @@ func handleICMPInIPv6(ep stack.NetworkEndpoint, src, dst tcpip.Address, icmp hea
 }
 
 type testContext struct {
-	s *stack.Stack
+	s     *stack.Stack
+	clock *faketime.ManualClock
 }
 
-func newTestContext(clock tcpip.Clock) testContext {
+func newTestContext() testContext {
+	clock := faketime.NewManualClock()
 	s := stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
 		TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6, udp.NewProtocol},
 		Clock:              clock,
 	})
-	return testContext{s: s}
+	return testContext{s: s, clock: clock}
 }
 
 func (c *testContext) cleanup() {
 	c.s.Close()
 	c.s.Wait()
+	// Stack.Wait() closes all devices and transports synchronously, but it
+	// does not guarantee that all packets will reach refcount zero until
+	// after an asynchronous followup from neighborEntry.notifyCompletionLocked().
+	c.clock.RunImmediatelyScheduledJobs()
+	refsvfs2.DoRepeatedLeakCheck()
 }
 
 func TestICMPCounts(t *testing.T) {
-	c := newTestContext(nil)
+	c := newTestContext()
 	defer c.cleanup()
 	s := c.s
 
@@ -514,6 +522,7 @@ func routeICMPv6Packet(t *testing.T, clock *faketime.ManualClock, args routeArgs
 	if pi == nil {
 		t.Fatal("packet didn't arrive")
 	}
+	defer pi.DecRef()
 
 	{
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -716,7 +725,7 @@ func TestICMPChecksumValidationSimple(t *testing.T) {
 				name += " (Router)"
 			}
 			t.Run(name, func(t *testing.T) {
-				c := newTestContext(nil)
+				c := newTestContext()
 				defer c.cleanup()
 				s := c.s
 
@@ -925,11 +934,12 @@ func TestICMPChecksumValidationWithPayload(t *testing.T) {
 
 	for _, typ := range types {
 		t.Run(typ.name, func(t *testing.T) {
-			c := newTestContext(nil)
+			c := newTestContext()
 			defer c.cleanup()
 			s := c.s
 
 			e := channel.New(10, 1280, linkAddr0)
+			defer e.Close()
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(_, _) = %s", err)
 			}
@@ -1113,11 +1123,12 @@ func TestICMPChecksumValidationWithPayloadMultipleViews(t *testing.T) {
 
 	for _, typ := range types {
 		t.Run(typ.name, func(t *testing.T) {
-			c := newTestContext(nil)
+			c := newTestContext()
 			defer c.cleanup()
 			s := c.s
 
 			e := channel.New(10, 1280, linkAddr0)
+			defer e.Close()
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
@@ -1283,7 +1294,7 @@ func TestLinkAddressRequest(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			c := newTestContext(nil)
+			c := newTestContext()
 			defer c.cleanup()
 			s := c.s
 
@@ -1326,6 +1337,7 @@ func TestLinkAddressRequest(t *testing.T) {
 			if pkt == nil {
 				t.Fatal("expected to send a link address request")
 			}
+			defer pkt.DecRef()
 
 			var want stack.RouteInfo
 			want.NetProto = ProtocolNumber
@@ -1407,6 +1419,7 @@ func TestPacketQueing(t *testing.T) {
 				if p == nil {
 					t.Fatalf("timed out waiting for packet")
 				}
+				defer p.DecRef()
 				if p.NetworkProtocolNumber != ProtocolNumber {
 					t.Errorf("got p.NetworkProtocolNumber = %d, want = %d", p.NetworkProtocolNumber, ProtocolNumber)
 				}
@@ -1455,6 +1468,7 @@ func TestPacketQueing(t *testing.T) {
 				if p == nil {
 					t.Fatalf("timed out waiting for packet")
 				}
+				defer p.DecRef()
 				if p.NetworkProtocolNumber != ProtocolNumber {
 					t.Errorf("got p.NetworkProtocolNumber = %d, want = %d", p.NetworkProtocolNumber, ProtocolNumber)
 				}
@@ -1473,8 +1487,7 @@ func TestPacketQueing(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			clock := faketime.NewManualClock()
-			c := newTestContext(clock)
+			c := newTestContext()
 			defer c.cleanup()
 			s := c.s
 
@@ -1503,7 +1516,7 @@ func TestPacketQueing(t *testing.T) {
 			// Wait for a neighbor solicitation since link address resolution should
 			// be performed.
 			{
-				clock.RunImmediatelyScheduledJobs()
+				c.clock.RunImmediatelyScheduledJobs()
 				p := e.Read()
 				if p == nil {
 					t.Fatalf("timed out waiting for packet")
@@ -1523,6 +1536,7 @@ func TestPacketQueing(t *testing.T) {
 						checker.NDPNSTargetAddress(host2IPv6Addr.AddressWithPrefix.Address),
 						checker.NDPNSOptions([]header.NDPOption{header.NDPSourceLinkLayerAddressOption(host1NICLinkAddr)}),
 					))
+				p.DecRef()
 			}
 
 			// Send a neighbor advertisement to complete link address resolution.
@@ -1560,7 +1574,7 @@ func TestPacketQueing(t *testing.T) {
 			}
 
 			// Expect the response now that the link address has resolved.
-			clock.RunImmediatelyScheduledJobs()
+			c.clock.RunImmediatelyScheduledJobs()
 			test.checkResp(t, e)
 
 			// Since link resolution was already performed, it shouldn't be performed
@@ -1734,7 +1748,7 @@ func TestCallsToNeighborCache(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			c := newTestContext(nil)
+			c := newTestContext()
 			defer c.cleanup()
 			s := c.s
 

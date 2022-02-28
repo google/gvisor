@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -72,6 +73,8 @@ type igmpTestContext struct {
 func (ctx igmpTestContext) cleanup() {
 	ctx.s.Close()
 	ctx.s.Wait()
+	ctx.ep.Close()
+	refsvfs2.DoRepeatedLeakCheck()
 }
 
 func newIGMPTestContext(t *testing.T, igmpEnabled bool) igmpTestContext {
@@ -164,6 +167,7 @@ func TestIGMPV1Present(t *testing.T) {
 			t.Fatalf("got V2MembershipReport messages sent = %d, want = 1", got)
 		}
 		validateIgmpPacket(t, p, header.IGMPv2MembershipReport, 0, stackAddr, multicastAddr, multicastAddr)
+		p.DecRef()
 	}
 	if t.Failed() {
 		t.FailNow()
@@ -199,6 +203,7 @@ func TestIGMPV1Present(t *testing.T) {
 			t.Fatalf("got V1MembershipReport messages sent = %d, want = 1", got)
 		}
 		validateIgmpPacket(t, p, header.IGMPv1MembershipReport, 0, stackAddr, multicastAddr, multicastAddr)
+		p.DecRef()
 	}
 
 	// Cycling the interface should reset the V1 present flag.
@@ -217,6 +222,7 @@ func TestIGMPV1Present(t *testing.T) {
 			t.Fatalf("got V2MembershipReport messages sent = %d, want = 2", got)
 		}
 		validateIgmpPacket(t, p, header.IGMPv2MembershipReport, 0, stackAddr, multicastAddr, multicastAddr)
+		p.DecRef()
 	}
 }
 
@@ -260,6 +266,7 @@ func TestSendQueuedIGMPReports(t *testing.T) {
 		t.Error("expected to send an IGMP membership report")
 	} else {
 		validateIgmpPacket(t, p, header.IGMPv2MembershipReport, 0, stackAddr, multicastAddr, multicastAddr)
+		p.DecRef()
 	}
 	if t.Failed() {
 		t.FailNow()
@@ -272,6 +279,7 @@ func TestSendQueuedIGMPReports(t *testing.T) {
 		t.Error("expected to send an IGMP membership report")
 	} else {
 		validateIgmpPacket(t, p, header.IGMPv2MembershipReport, 0, stackAddr, multicastAddr, multicastAddr)
+		p.DecRef()
 	}
 	if t.Failed() {
 		t.FailNow()

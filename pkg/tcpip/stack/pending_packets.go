@@ -152,6 +152,7 @@ func (f *packetsPendingLinkResolution) enqueue(r *Route, pkt *PacketBuffer) tcpi
 
 	if len(packets) > maxPendingPacketsPerResolution {
 		f.incrementOutgoingPacketErrors(packets[0].pkt)
+		packets[0].pkt.DecRef()
 		packets[0] = pendingPacket{}
 		packets = packets[1:]
 
