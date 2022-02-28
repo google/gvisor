@@ -226,3 +226,48 @@ func BenchmarkFDLookupAndDecRefConcurrent(b *testing.B) {
 		wg.Wait()
 	})
 }
+
+func TestSetFlagsForRange(t *testing.T) {
+	type testCase struct {
+		name    string
+		startFd int32
+		endFd   int32
+		wantErr bool
+	}
+	testCases := []testCase{
+		{"negative ranges", -100, -10, true},
+		{"inverted positive ranges", 100, 10, true},
+		{"good range", maxFD / 4, maxFD / 2, false},
+	}
+
+	for _, test := range testCases {
+		runTest(t, func(ctx context.Context, fdTable *FDTable, file *fs.File, _ *limits.LimitSet) {
+			for i := 0; i < maxFD; i++ {
+				if _, err := fdTable.NewFDs(ctx, 0, []*fs.File{file}, FDFlags{}); err != nil {
+					t.Fatalf("testCase: %v\nfdTable.NewFDs(_, 0, %+v, FDFlags{}): %d, want: nil", test, []*fs.File{file}, err)
+				}
+			}
+
+			newFlags := FDFlags{CloseOnExec: true}
+			if err := fdTable.SetFlagsForRange(ctx, test.startFd, test.endFd, newFlags); (err == nil) == test.wantErr {
+				t.Fatalf("testCase: %v\nfdTable.SetFlagsForRange(_, %d, %d, %v): %v, waf: %t", test, test.startFd, test.endFd, newFlags, err, test.wantErr)
+			}
+
+			if test.wantErr {
+				return
+			}
+
+			testRangeFlags := func(start int32, end int32, expected FDFlags) {
+				for i := start; i <= end; i++ {
+					file, flags := fdTable.Get(i)
+					if file == nil || flags != expected {
+						t.Fatalf("testCase: %v\nfdTable.Get(%d): (%v, %v), wanted (non-nil, %v)", test, i, file, flags, expected)
+					}
+				}
+			}
+			testRangeFlags(0, test.startFd-1, FDFlags{})
+			testRangeFlags(test.startFd, test.endFd, newFlags)
+			testRangeFlags(test.endFd+1, maxFD-1, FDFlags{})
+		})
+	}
+}

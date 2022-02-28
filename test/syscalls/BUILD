@@ -1078,3 +1078,8 @@ syscall_test(
 syscall_test(
     test = "//test/syscalls/linux:deleted_test",
 )
+
+syscall_test(
+    size = "small",
+    test = "//test/syscalls/linux:close_range_test",
+)
