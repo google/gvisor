@@ -619,6 +619,7 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 				}
 
 				test.linkResolutionRequestChecker(t, request, test.outgoingAddr.Address, test.destAddr)
+				request.DecRef()
 
 				// Advance the clock the span of one request timeout.
 				clock.Advance(nudConfigs.RetransmitTimer)
@@ -634,6 +635,7 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 			}
 
 			test.icmpReplyChecker(t, stack.PayloadSince(reply.NetworkHeader()), test.incomingAddr.Address, test.sourceAddr)
+			reply.DecRef()
 
 			// Since link resolution failed, we don't expect the packet to be
 			// forwarded.

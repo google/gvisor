@@ -8258,6 +8258,7 @@ func TestHandshakeRTT(t *testing.T) {
 		t.Run(fmt.Sprintf("connect=%t,TS=%t,cookie=%t,retrans=%t)", tt.connect, tt.tsEnabled, tt.useCookie, tt.retrans), func(t *testing.T) {
 			t.Parallel()
 			c := context.New(t, e2e.DefaultMTU)
+			defer c.Cleanup()
 			if tt.useCookie {
 				opt := tcpip.TCPAlwaysUseSynCookies(true)
 				if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {

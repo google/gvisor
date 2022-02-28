@@ -22,6 +22,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/time/rate"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -154,6 +155,7 @@ func (c *Context) Cleanup() {
 	if c.EP != nil {
 		c.EP.Close()
 	}
+	refsvfs2.DoRepeatedLeakCheck()
 }
 
 // CreateEndpoint creates the Context's Endpoint.

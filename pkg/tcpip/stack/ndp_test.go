@@ -643,6 +643,7 @@ func TestDADResolve(t *testing.T) {
 				if l, want := p.AvailableHeaderBytes(), int(test.linkHeaderLen); l != want {
 					t.Errorf("got p.AvailableHeaderBytes() = %d; want = %d", l, want)
 				}
+				p.DecRef()
 			}
 		})
 	}
@@ -1323,6 +1324,7 @@ func TestDynamicConfigurationsDisabled(t *testing.T) {
 						t.Error("expected router solicitation packet")
 					} else if p.NetworkProtocolNumber != header.IPv6ProtocolNumber {
 						t.Errorf("got Proto = %d, want = %d", p.NetworkProtocolNumber, header.IPv6ProtocolNumber)
+						p.DecRef()
 					} else {
 						if want := header.EthernetAddressFromMulticastIPv6Address(header.IPv6AllRoutersLinkLocalMulticastAddress); p.EgressRoute.RemoteLinkAddress != want {
 							t.Errorf("got remote link address = %s, want = %s", p.EgressRoute.RemoteLinkAddress, want)
@@ -1334,6 +1336,7 @@ func TestDynamicConfigurationsDisabled(t *testing.T) {
 							checker.TTL(header.NDPHopLimit),
 							checker.NDPRS(checker.NDPRSOptions(nil)),
 						)
+						p.DecRef()
 					}
 
 					// Make sure we do not discover any routers or prefixes, or perform
@@ -5352,6 +5355,7 @@ func TestRouterSolicitation(t *testing.T) {
 						if p == nil {
 							t.Fatal("expected router solicitation packet")
 						}
+						defer p.DecRef()
 
 						if p.NetworkProtocolNumber != header.IPv6ProtocolNumber {
 							t.Fatalf("got Proto = %d, want = %d", p.NetworkProtocolNumber, header.IPv6ProtocolNumber)
@@ -5551,6 +5555,7 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 					checker.DstAddr(header.IPv6AllRoutersLinkLocalMulticastAddress),
 					checker.TTL(header.NDPHopLimit),
 					checker.NDPRS())
+				p.DecRef()
 			}
 			clock := faketime.NewManualClock()
 			s := stack.New(stack.Options{
@@ -5571,7 +5576,8 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 			// Stop soliciting routers.
 			test.stopFn(t, s, true /* first */)
 			clock.Advance(delay)
-			if e.Read() != nil {
+			if p := e.Read(); p != nil {
+				p.DecRef()
 				// A single RS may have been sent before solicitations were stopped.
 				clock.Advance(interval)
 				if e.Read() != nil {
