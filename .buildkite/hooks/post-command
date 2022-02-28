@@ -1,3 +1,6 @@
+# Clear any downloaded credentials.
+rm -f repo.key
+
 # Upload all relevant test failures.
 make -s testlogs 2>/dev/null | grep // | sort | uniq | (
   declare log_count=0

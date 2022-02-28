@@ -46,7 +46,9 @@ steps:
     label: ":fire: Smoke race tests"
     command: make smoke-race-tests
 
-  # Check that the Go branch builds.
+  # Check that the Go branch builds. This is not technically required, as this build is maintained
+  # as a GitHub action in order to preserve this maintaince across forks. However, providing the
+  # action here may provide easier debuggability and diagnosis on failure.
   - <<: *common
     label: ":golang: Go branch"
     commands:
@@ -118,7 +120,7 @@ steps:
     label: ":test_tube: Unit tests (cgroupv2)"
     command: make unit-tests
     agents:
-            queue: "cgroupv2"
+      queue: "cgroupv2"
   - <<: *common
     label: ":test_tube: Container tests"
     command: make container-tests
@@ -126,7 +128,7 @@ steps:
     label: ":test_tube: Container tests (cgroupv2)"
     command: make container-tests
     agents:
-            queue: "cgroupv2"
+      queue: "cgroupv2"
 
   # All system call tests.
   - <<: *common
@@ -142,7 +144,7 @@ steps:
     label: ":docker: Docker tests (cgroupv2)"
     command: make docker-tests
     agents:
-            queue: "cgroupv2"
+      queue: "cgroupv2"
   - <<: *common
     label: ":goggles: Overlay tests"
     command: make overlay-tests
@@ -174,7 +176,7 @@ steps:
     label: ":docker: Containerd 1.5.4 tests (cgroupv2)"
     command: make containerd-test-1.5.4
     agents:
-            queue: "cgroupv2"
+      queue: "cgroupv2"
   - <<: *common
     label: ":docker: Containerd 1.6.0-rc.4 tests"
     command: make containerd-test-1.6.0-rc.4
@@ -182,7 +184,7 @@ steps:
     label: ":docker: Containerd 1.6.0-rc.4 tests (cgroupv2)"
     command: make containerd-test-1.6.0-rc.4
     agents:
-            queue: "cgroupv2"
+      queue: "cgroupv2"
 
   # Check the website builds.
   - <<: *common
