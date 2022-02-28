@@ -244,6 +244,9 @@ const (
 
 	// MmapFlags is the flags argument in mmap(2).
 	MmapFlags
+
+	// CloseRangeFlags are close_range(2) flags.
+	CloseRangeFlags
 )
 
 // defaultFormat is the syscall argument format to use if the actual format is

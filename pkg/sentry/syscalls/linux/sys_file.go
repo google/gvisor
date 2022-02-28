@@ -15,6 +15,8 @@
 package linux
 
 import (
+	"math"
+
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -799,6 +801,60 @@ func Close(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	err := file.Flush(t)
 	return 0, nil, handleIOError(t, false /* partial */, err, linuxerr.EINTR, "close", file)
+}
+
+// CloseRange implements linux syscall close_range(2).
+func CloseRange(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	first := args[0].Uint()
+	last := args[1].Uint()
+	flags := args[2].Uint()
+
+	if (first > last) || (last > math.MaxInt32) {
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	if (flags & ^(linux.CLOSE_RANGE_CLOEXEC | linux.CLOSE_RANGE_UNSHARE)) != 0 {
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	cloexec := flags & linux.CLOSE_RANGE_CLOEXEC
+	unshare := flags & linux.CLOSE_RANGE_UNSHARE
+
+	if unshare != 0 {
+		// If possible, we don't want to copy FDs to the new unshared table, because those FDs will
+		// be promptly closed and no longer used. So in the case where we know the range extends all
+		// the way to the end of the FdTable, we can simply copy the FdTable only up to the start of
+		// the range that we are closing.
+		if cloexec == 0 && int32(last) >= t.FDTable().GetLastFd() {
+			t.UnshareFdTable(int32(first))
+		} else {
+			t.UnshareFdTable(math.MaxInt32)
+		}
+	}
+
+	if cloexec != 0 {
+		flagToApply := kernel.FDFlags{
+			CloseOnExec: true,
+		}
+		t.FDTable().SetFlagsForRange(t.AsyncContext(), int32(first), int32(last), flagToApply)
+		return 0, nil, nil
+	}
+
+	fdTable := t.FDTable()
+	fd := int32(first)
+	for {
+		fd, file, _ := fdTable.RemoveNextInRange(t, fd, int32(last))
+		if file == nil {
+			break
+		}
+
+		fd++
+		// Per the close_range(2) documentation, errors upon closing file descriptors are ignored.
+		_ = file.Flush(t)
+		file.DecRef(t)
+	}
+
+	return 0, nil, nil
 }
 
 // Dup implements linux syscall dup(2).

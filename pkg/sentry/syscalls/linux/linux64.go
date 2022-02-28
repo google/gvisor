@@ -404,6 +404,7 @@ var AMD64 = &kernel.SyscallTable{
 		433: syscalls.ErrorWithEvent("fspick", linuxerr.ENOSYS, "", nil),
 		434: syscalls.ErrorWithEvent("pidfd_open", linuxerr.ENOSYS, "", nil),
 		435: syscalls.ErrorWithEvent("clone3", linuxerr.ENOSYS, "", nil),
+		436: syscalls.Supported("close_range", CloseRange),
 		441: syscalls.Supported("epoll_pwait2", EpollPwait2),
 	},
 	Emulate: map[hostarch.Addr]uintptr{
@@ -723,6 +724,7 @@ var ARM64 = &kernel.SyscallTable{
 		433: syscalls.ErrorWithEvent("fspick", linuxerr.ENOSYS, "", nil),
 		434: syscalls.ErrorWithEvent("pidfd_open", linuxerr.ENOSYS, "", nil),
 		435: syscalls.ErrorWithEvent("clone3", linuxerr.ENOSYS, "", nil),
+		436: syscalls.Supported("close_range", CloseRange),
 		441: syscalls.Supported("epoll_pwait2", EpollPwait2),
 	},
 	Emulate: map[hostarch.Addr]uintptr{},

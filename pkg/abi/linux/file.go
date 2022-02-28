@@ -394,3 +394,9 @@ const (
 	FALLOC_FL_INSERT_RANGE   = 0x20
 	FALLOC_FL_UNSHARE_RANGE  = 0x40
 )
+
+// Constants related to close_range(2). Source: /include/uapi/linux/close_range.h
+const (
+	CLOSE_RANGE_UNSHARE = uint32(1 << 1)
+	CLOSE_RANGE_CLOEXEC = uint32(1 << 2)
+)

@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "capability.go",
         "clone.go",
+        "close_range.go",
         "epoll.go",
         "futex.go",
         "linux64_amd64.go",

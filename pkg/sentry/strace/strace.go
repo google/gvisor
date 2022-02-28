@@ -496,6 +496,8 @@ func (i *SyscallInfo) pre(t *kernel.Task, args arch.SyscallArguments, maximumBlo
 			output = append(output, ProtectionFlagSet.Parse(uint64(args[arg].Uint())))
 		case MmapFlags:
 			output = append(output, MmapFlagSet.Parse(uint64(args[arg].Uint())))
+		case CloseRangeFlags:
+			output = append(output, CloseRangeFlagSet.Parse(uint64(args[arg].Uint())))
 		case Oct:
 			output = append(output, "0o"+strconv.FormatUint(args[arg].Uint64(), 8))
 		case Hex:

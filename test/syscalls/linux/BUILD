@@ -4524,3 +4524,20 @@ cc_binary(
         "//test/util:test_util",
     ],
 )
+
+cc_binary(
+    name = "close_range_test",
+    testonly = 1,
+    srcs = ["close_range.cc"],
+    linkstatic = 1,
+    deps = [
+        "//test/util:file_descriptor",
+        "@com_google_absl//absl/base:core_headers",
+        gtest,
+        "//test/util:cleanup",
+        "//test/util:posix_error",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
