@@ -19,7 +19,7 @@ steps:
     commands:
       - make push-all-images
   - <<: *common
-    label: "ship: Push all images (aarch64)"
+    label: ":ship: Push all images (aarch64)"
     commands:
       - make ARCH=aarch64 push-all-images
   - <<: *common
