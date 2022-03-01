@@ -41,7 +41,8 @@ descriptor to the Sentry via [SCM_RIGHTS][scmrights][^1].
 These files may be read from and written to through standard system calls, and
 also mapped into the associated application's address space. This allows the
 same host memory to be shared across multiple sandboxes, although this mechanism
-does not preclude the use of side-channels (see [Security Model](./security.md).
+does not preclude the use of side-channels (see
+[Security Model](./security.md)).
 
 Note that some file systems exist only within the context of the sandbox. For
 example, in many cases a `tmpfs` mount will be available at `/tmp` or
