@@ -84,6 +84,12 @@ trap cleanup EXIT
 gpg "${gpg_opts[@]}" --import "${private_key}" || \
   gpg "${gpg_opts[@]}" --import "${private_key}"
 
+# Select the private key version. For some versions of gpg, it seems like some
+# will fail with the "no default secret" error.
+declare keyid
+keyid="$(gpg --no-default-keyring --secret-keyring "${keyring}" --list-secret-keys | grep -E '^    ' | tail -1)"
+readonly keyid
+
 # Copy the packages into the root.
 for pkg in "$@"; do
   if ! [[ -f "${pkg}" ]]; then
@@ -105,12 +111,14 @@ for pkg in "$@"; do
   # Copy & sign the package.
   mkdir -p "${destdir}"
   cp -a -L "$(dirname "${pkg}")/${name}.deb" "${destdir}"
-  cp -a -L "$(dirname "${pkg}")/${name}.changes" "${destdir}"
+  if [[ -f "$(dirname "${pkg}")/${name}.changes" ]]; then
+    cp -a -L "$(dirname "${pkg}")/${name}.changes" "${destdir}"
+  fi
   chmod 0644 "${destdir}"/"${name}".*
   # Sign a package only if it isn't signed yet.
   # We use [*] here to expand the gpg_opts array into a single shell-word.
   dpkg-sig -g "${gpg_opts[*]}" --verify "${destdir}/${name}.deb" ||
-  dpkg-sig -g "${gpg_opts[*]}" --sign builder "${destdir}/${name}.deb"
+  dpkg-sig -g "${gpg_opts[*]}" --sign builder -k "${keyid}" "${destdir}/${name}.deb"
 done
 
 # Build the package list.
