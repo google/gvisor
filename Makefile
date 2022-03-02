@@ -240,7 +240,7 @@ do-tests: $(RUNTIME_BIN)
 	@sudo $(RUNTIME_BIN) do true
 .PHONY: do-tests
 
-arm-qemu-smoke-test: BAZEL_OPTIONS=--config=cross-aarch64
+arm-qemu-smoke-test: BAZEL_OPTIONS=--config=aarch64
 arm-qemu-smoke-test: $(RUNTIME_BIN) load-arm-qemu
 	export T=$$(mktemp -d --tmpdir release.XXXXXX); \
 	mkdir -p $$T/bin/arm64/ && \

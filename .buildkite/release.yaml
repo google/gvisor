@@ -17,7 +17,7 @@ steps:
   - <<: *common
     label: ":ship: Push all images (x86_64)"
     commands:
-      - make push-all-images
+      - make ARCH=x86_64 push-all-images
   - <<: *common
     label: ":ship: Push all images (aarch64)"
     commands:
@@ -25,11 +25,12 @@ steps:
   - <<: *common
     label: ":ship: Release"
     commands:
-      - make artifacts/x86_64
-      - make BAZEL_OPTIONS=--config=cross-aarch64 artifacts/aarch64
+      - make BAZEL_OPTIONS=--config=x86_64 artifacts/x86_64
+      - make BAZEL_OPTIONS=--config=aarch64 artifacts/aarch64
       - make release RELEASE_NIGHTLY=$$RELEASE_NIGHTLY
       - cd repo && gsutil cp -r . gs://gvisor/releases/
   - <<: *common
     label: ":ship: Website Deploy"
     commands:
-      - make website-deploy
+      # The built website image must be x86_64.
+      - make BAZEL_OPTIONS=--config=x86_64 website-deploy
