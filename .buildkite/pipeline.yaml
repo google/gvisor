@@ -205,23 +205,23 @@ steps:
   # Runtime tests.
   - <<: *common
     label: ":php: PHP runtime tests"
-    command: make php7.3.6-runtime-tests_vfs2
+    command: make php7.3.6-runtime-tests
     parallelism: 10
   - <<: *common
     label: ":java: Java runtime tests"
-    command: make java11-runtime-tests_vfs2
+    command: make java11-runtime-tests
     parallelism: 40
   - <<: *common
     label: ":golang: Go runtime tests"
-    command: make go1.12-runtime-tests_vfs2
+    command: make go1.12-runtime-tests
     parallelism: 10
   - <<: *common
     label: ":node: NodeJS runtime tests"
-    command: make nodejs12.4.0-runtime-tests_vfs2
+    command: make nodejs12.4.0-runtime-tests
     parallelism: 10
   - <<: *common
     label: ":python: Python runtime tests"
-    command: make python3.7.3-runtime-tests_vfs2
+    command: make python3.7.3-runtime-tests
     parallelism: 10
 
   # ARM tests.

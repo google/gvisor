@@ -22,6 +22,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -34,7 +35,7 @@ var (
 	// runtime is the runtime to use for tests. This will be applied to all
 	// containers. Note that the default here ("runsc") corresponds to the
 	// default used by the installations.
-	runtime = flag.String("runtime", "runsc", "specify which runtime to use")
+	runtime = flag.String("runtime", os.Getenv("RUNTIME"), "specify which runtime to use")
 
 	// config is the default Docker daemon configuration path.
 	config = flag.String("config_path", "/etc/docker/daemon.json", "configuration file for reading paths")
@@ -89,27 +90,6 @@ func RuntimePath() (string, error) {
 		return "", fmt.Errorf("runtime does not declare a path: %v", rs)
 	}
 	return p, nil
-}
-
-// UsingVFS2 returns true if the 'runtime' has the vfs2 flag set.
-// TODO(gvisor.dev/issue/1624): Remove.
-func UsingVFS2() (bool, error) {
-	rMap, err := runtimeMap()
-	if err != nil {
-		return false, err
-	}
-
-	list, ok := rMap["runtimeArgs"].([]interface{})
-	if !ok {
-		return false, fmt.Errorf("unexpected format: %v", rMap)
-	}
-
-	for _, element := range list {
-		if element == "--vfs2" {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 func runtimeMap() (map[string]interface{}, error) {
