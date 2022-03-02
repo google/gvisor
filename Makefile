@@ -315,22 +315,18 @@ else
 endif
 	@$(call sudo,test/root:root_test,--runtime=$(RUNTIME) -test.v)
 
-ifeq ($(CGROUPV2),false)
-containerd-tests-min: containerd-test-1.3.9
-else
-containerd-tests-min: containerd-test-1.4.3
-endif
+containerd-tests-min: containerd-test-1.4.12
 
-# The shim builds with containerd 1.3.9 and it's not backward compatible. Test
-# with 1.3.9 and newer versions.
-# When run under cgroupv2 environment, skip 1.3.9 as it does not support cgroupv2
-containerd-tests: ## Runs all supported containerd version tests.
-ifeq ($(CGROUPV2),false)
-containerd-tests: containerd-test-1.3.9
-endif
-containerd-tests: containerd-test-1.4.3
-containerd-tests: containerd-test-1.5.4
-containerd-tests: containerd-test-1.6.0-rc.4
+##
+## Containerd tests.
+##
+## Runs all supported containerd version tests. Update as new versions become
+## available.
+##
+containerd-tests:
+containerd-tests: containerd-test-1.4.12
+containerd-tests: containerd-test-1.5.9
+containerd-tests: containerd-test-1.6.0
 
 ##
 ## Benchmarks.
