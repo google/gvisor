@@ -43,7 +43,7 @@ sudo rm -rf /tmp/profile
 # Download credentials, if a release agent.
 if test "${BUILDKITE_AGENT_META_DATA_QUEUE}" = "release"; then
   # Pull down secrets.
-  gcloud secrets versions access --secret="repo-key" latest > repo.key
+  gcloud secrets versions access --secret="repo-key" --format='get(payload.data)' latest | tr '_-' '/+' | base64 -d  > repo.key
 
   # Configure the Docker credential helper (to push images).
   gcloud auth configure-docker -q
