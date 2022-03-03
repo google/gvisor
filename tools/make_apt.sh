@@ -81,13 +81,14 @@ trap cleanup EXIT
 # is not found. This isn't actually a failure for us, because we don't require
 # the public key (this may be stored separately). The second import will succeed
 # because, in reality, the first import succeeded and it's a no-op.
-gpg "${gpg_opts[@]}" --import "${private_key}" || \
-  gpg "${gpg_opts[@]}" --import "${private_key}"
-
-# Select the private key version. For some versions of gpg, it seems like some
-# will fail with the "no default secret" error.
 declare keyid
-keyid="$(gpg --no-default-keyring --secret-keyring "${keyring}" --list-secret-keys | grep -E '^    ' | tail -1)"
+keyid=$(
+  (gpg "${gpg_opts[@]}" --import "${private_key}" 2>&1 ||
+   gpg "${gpg_opts[@]}" --import "${private_key}" 2>&1) |
+  grep "secret key imported" |
+  head -1 |
+  cut -d':' -f2 |
+  awk '{print $2;}')
 readonly keyid
 
 # Copy the packages into the root.
