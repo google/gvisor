@@ -56,15 +56,16 @@ func (fs *filesystem) Sync(ctx context.Context) error {
 	var retErr error
 
 	if fs.opts.lisaEnabled {
-		// Try accumulating all FDIDs to fsync and fsync then via one RPC as
-		// opposed to making an RPC per FDID. Passing a non-nil accFsyncFDIDs to
-		// dentry.syncCachedFile() and specialFileFD.sync() will cause them to not
-		// make an RPC, instead accumulate syncable FDIDs in the passed slice.
-		accFsyncFDIDs := make([]lisafs.FDID, 0, len(ds)+len(sffds))
+		// Note that lisafs is capable of batching FSync RPCs. However, we can not
+		// batch all the FDIDs to be synced from ds and sffds. Because the error
+		// handling varies based on file type. FSync errors are only considered for
+		// regular file FDIDs that were opened for writing. We could do individual
+		// RPCs for such FDIDs and batch the rest, but it increases code complexity
+		// substantially. We could implement it in the future if need be.
 
 		// Sync syncable dentries.
 		for _, d := range ds {
-			if err := d.syncCachedFile(ctx, true /* forFilesystemSync */, &accFsyncFDIDs); err != nil {
+			if err := d.syncCachedFile(ctx, true /* forFilesystemSync */); err != nil {
 				ctx.Infof("gofer.filesystem.Sync: dentry.syncCachedFile failed: %v", err)
 				if retErr == nil {
 					retErr = err
@@ -75,18 +76,11 @@ func (fs *filesystem) Sync(ctx context.Context) error {
 		// Sync special files, which may be writable but do not use dentry shared
 		// handles (so they won't be synced by the above).
 		for _, sffd := range sffds {
-			if err := sffd.sync(ctx, true /* forFilesystemSync */, &accFsyncFDIDs); err != nil {
+			if err := sffd.sync(ctx, true /* forFilesystemSync */); err != nil {
 				ctx.Infof("gofer.filesystem.Sync: specialFileFD.sync failed: %v", err)
 				if retErr == nil {
 					retErr = err
 				}
-			}
-		}
-
-		if err := fs.clientLisa.SyncFDs(ctx, accFsyncFDIDs); err != nil {
-			ctx.Infof("gofer.filesystem.Sync: fs.fsyncMultipleFDLisa failed: %v", err)
-			if retErr == nil {
-				retErr = err
 			}
 		}
 
@@ -95,7 +89,7 @@ func (fs *filesystem) Sync(ctx context.Context) error {
 
 	// Sync syncable dentries.
 	for _, d := range ds {
-		if err := d.syncCachedFile(ctx, true /* forFilesystemSync */, nil /* accFsyncFDIDsLisa */); err != nil {
+		if err := d.syncCachedFile(ctx, true /* forFilesystemSync */); err != nil {
 			ctx.Infof("gofer.filesystem.Sync: dentry.syncCachedFile failed: %v", err)
 			if retErr == nil {
 				retErr = err
@@ -106,7 +100,7 @@ func (fs *filesystem) Sync(ctx context.Context) error {
 	// Sync special files, which may be writable but do not use dentry shared
 	// handles (so they won't be synced by the above).
 	for _, sffd := range sffds {
-		if err := sffd.sync(ctx, true /* forFilesystemSync */, nil /* accFsyncFDIDsLisa */); err != nil {
+		if err := sffd.sync(ctx, true /* forFilesystemSync */); err != nil {
 			ctx.Infof("gofer.filesystem.Sync: specialFileFD.sync failed: %v", err)
 			if retErr == nil {
 				retErr = err
