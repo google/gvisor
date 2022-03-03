@@ -169,6 +169,11 @@ class WaitAnyChildTest : public ::testing::TestWithParam<
   }
 };
 
+// Return immediately with ECHILD if the process has no children.
+TEST_P(WaitAnyChildTest, NoChildren) {
+  EXPECT_THAT(WaitAny(0), PosixErrorIs(ECHILD, ::testing::_));
+}
+
 // Wait for any child to exit.
 TEST_P(WaitAnyChildTest, Fork) {
   pid_t child;
