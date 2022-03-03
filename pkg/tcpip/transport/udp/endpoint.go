@@ -922,7 +922,7 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 	e.stats.PacketsReceived.Increment()
 
 	e.rcvMu.Lock()
-	// Drop the packet if our buffer is currently full.
+	// Drop the packet if our buffer is not ready to receive packets.
 	if !e.rcvReady || e.rcvClosed {
 		e.rcvMu.Unlock()
 		e.stack.Stats().UDP.ReceiveBufferErrors.Increment()
@@ -931,6 +931,7 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 	}
 
 	rcvBufSize := e.ops.GetReceiveBufferSize()
+	// Drop the packet if our buffer is currently full.
 	if e.frozen || e.rcvBufSize >= int(rcvBufSize) {
 		e.rcvMu.Unlock()
 		e.stack.Stats().UDP.ReceiveBufferErrors.Increment()
