@@ -222,6 +222,8 @@ func (e *connectionlessEndpoint) State() uint32 {
 
 // OnSetSendBufferSize implements tcpip.SocketOptionsHandler.OnSetSendBufferSize.
 func (e *connectionlessEndpoint) OnSetSendBufferSize(v int64) (newSz int64) {
+	e.Lock()
+	defer e.Unlock()
 	if e.Connected() {
 		return e.baseEndpoint.connected.SetSendBufferSize(v)
 	}

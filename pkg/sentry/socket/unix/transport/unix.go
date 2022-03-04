@@ -813,6 +813,8 @@ func (e *baseEndpoint) ConnectedPasscred() bool {
 }
 
 // Connected implements ConnectingEndpoint.Connected.
+//
+// Preconditions: e.mu must be held.
 func (e *baseEndpoint) Connected() bool {
 	return e.receiver != nil && e.connected != nil
 }
