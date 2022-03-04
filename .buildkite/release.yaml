@@ -9,7 +9,6 @@ _templates:
           limit: 10
         - exit_status: "*"
           limit: 2
-
 env:
   # Force a clean checkout every time to avoid reuse of files between runs.
   BUILDKITE_CLEAN_CHECKOUT: true
@@ -33,6 +32,12 @@ steps:
       - make BAZEL_OPTIONS=--config=aarch64 artifacts/aarch64
       - make release RELEASE_NIGHTLY=$$RELEASE_NIGHTLY
       - cd repo && gsutil cp -r . gs://gvisor/releases/
+  - <<: *common
+    label: ":ship: Kythe"
+    if: build.branch == "master" && build.tag == null
+    commands:
+      - make kythe-index
+      - gsutil cp *.kzip gs://gvisor-kythe-xrefs
   - <<: *common
     label: ":ship: Website Deploy"
     if: build.branch == "master" && build.tag == null

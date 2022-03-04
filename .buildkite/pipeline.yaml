@@ -65,6 +65,11 @@ steps:
     command: "make build OPTIONS=--build_tag_filters=-nogo TARGETS=//..."
     agents:
       arch: "amd64"
+  - <<: *common
+    label: ":world_map: Kythe"
+    command: make kythe-index
+    agents:
+      arch: "amd64"
 
   # Check that the Go branch builds. This is not technically required, as this build is maintained
   # as a GitHub action in order to preserve this maintaince across forks. However, providing the

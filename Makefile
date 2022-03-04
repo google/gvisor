@@ -514,3 +514,34 @@ release: $(RELEASE_KEY) $(RELEASE_ARTIFACTS)/$(ARCH)
 tag: ## Creates and pushes a release tag.
 	@tools/tag_release.sh "$(RELEASE_COMMIT)" "$(RELEASE_NAME)" "$(RELEASE_NOTES)"
 .PHONY: tag
+
+##
+## Kythe helpers.
+##
+##   This builds a source index. The following variables may be set:
+##     KYTHE_VERSION     - The kythe version to use.
+##     KYTHE_DIR         - The directory to install kythe.
+##     KYTHE_FILENAME    - The file to generate.
+##
+KYTHE_VERSION  := v0.0.52
+KYTHE_DIR      := kythe-$(KYTHE_VERSION)
+KYTHE_FILENAME := $(COMMIT_NAME).kzip
+
+$(KYTHE_DIR):
+	@export T=$$(mktemp kythe.XXXXXX); \
+	mkdir -p $@ && \
+	wget -q -O "$$T" "https://github.com/kythe/kythe/releases/download/$(KYTHE_VERSION)/kythe-$(KYTHE_VERSION).tar.gz" && \
+	tar --no-same-owner -xzf "$$T" --strip-components 1 --directory "$(KYTHE_DIR)"; \
+	rc=$$?; rm -f $$T; exit $$rc
+
+$(KYTHE_FILENAME): STARTUP_OPTIONS = --bazelrc=$(KYTHE_DIR)/extractors.bazelrc
+$(KYTHE_FILENAME): $(KYTHE_DIR)
+	$(call build,--spawn_strategy=standalone \
+	              --override_repository=kythe_release=$(CURDIR)/$(KYTHE_DIR) \
+	              --define=kythe_corpus=github.com/google/gvisor \
+	              --cxxopt=-std=c++17 //...)
+	$(KYTHE_DIR)/tools/kzip merge --output "$@" -recursive $$(find $(BUILD_ROOTS) -maxdepth 2 -name extra_actions -a -type d)
+
+kythe-index: ## Build a kythe index.
+kythe-index: $(KYTHE_FILENAME)
+.PHONY: kythe-index

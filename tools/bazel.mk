@@ -44,6 +44,7 @@ endif
 BRANCH_NAME := $(shell (git branch --show-current 2>/dev/null || \
   git rev-parse --abbrev-ref HEAD 2>/dev/null) | \
   xargs -n 1 basename 2>/dev/null)
+COMMIT_NAME := $(git rev-parse HEAD)
 BUILD_ROOTS := bazel-bin/ bazel-out/
 RACE_FLAGS := --@io_bazel_rules_go//go/config:race
 
@@ -72,13 +73,13 @@ PRE_BAZEL_INIT ?=
 ##
 STARTUP_OPTIONS :=
 BAZEL_OPTIONS   :=
-BAZEL           := bazel $(STARTUP_OPTIONS)
 BASE_OPTIONS    := --color=no --curses=no
 TEST_OPTIONS += $(BASE_OPTIONS) \
   --test_output=errors \
   --keep_going \
   --verbose_failures=true \
   --build_event_json_file=.build_events.json
+BAZEL = bazel $(STARTUP_OPTIONS)
 
 # Basic options.
 UID := $(shell id -u ${USER})
