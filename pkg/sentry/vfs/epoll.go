@@ -38,13 +38,19 @@ type EpollInstance struct {
 	// q holds waiters on this EpollInstance.
 	q waiter.Queue
 
-	// interest is the set of file descriptors that are registered with the
-	// EpollInstance for monitoring. interest is protected by interestMu.
+	// interestMu protects interest and most fields in registered
+	// epollInterests. interestMu is analogous to Linux's struct
+	// eventpoll::mtx.
 	interestMu sync.Mutex `state:"nosave"`
-	interest   map[epollInterestKey]*epollInterest
 
-	// mu protects fields in registered epollInterests.
-	mu sync.Mutex `state:"nosave"`
+	// interest is the set of file descriptors that are registered with the
+	// EpollInstance for monitoring.
+	interest map[epollInterestKey]*epollInterest
+
+	// readyMu protects ready, epollInterest.ready, and
+	// epollInterest.epollInterestEntry. ready is analogous to Linux's struct
+	// eventpoll::lock.
+	readyMu sync.Mutex `state:"nosave"`
 
 	// ready is the set of file descriptors that may be "ready" for I/O. Note
 	// that this must be an ordered list, not a map: "If more than maxevents
@@ -79,20 +85,21 @@ type epollInterest struct {
 	// key is the file to which this epollInterest applies. key is immutable.
 	key epollInterestKey
 
-	// waiter is registered with key.file. entry is protected by epoll.mu.
+	// waiter is registered with key.file. entry is protected by
+	// epoll.interestMu.
 	waiter waiter.Entry
 
 	// mask is the event mask associated with this registration, including
-	// flags EPOLLET and EPOLLONESHOT. mask is protected by epoll.mu.
+	// flags EPOLLET and EPOLLONESHOT. mask is protected by epoll.interestMu.
 	mask uint32
 
 	// ready is true if epollInterestEntry is linked into epoll.ready. ready
-	// and epollInterestEntry are protected by epoll.mu.
+	// and epollInterestEntry are protected by epoll.readyMu.
 	ready bool
 	epollInterestEntry
 
 	// userData is the struct epoll_event::data associated with this
-	// epollInterest. userData is protected by epoll.mu.
+	// epollInterest. userData is protected by epoll.interestMu.
 	userData [2]int32
 }
 
@@ -134,19 +141,45 @@ func (ep *EpollInstance) Readiness(mask waiter.EventMask) waiter.EventMask {
 	if mask&waiter.ReadableEvents == 0 {
 		return 0
 	}
-	ep.mu.Lock()
+
+	// We can't call FileDescription.Readiness() while holding ep.readyMu.
+	// Instead, hold ep.interestMu to prevent changes to the set of
+	// epollInterests, then temporarily move all epollInterests already on
+	// ep.ready to a local list that we can iterate without holding ep.readyMu.
+	// epollInterest.ready is left set to true so that
+	// epollInterest.NotifyEvent() doesn't touch epollInterestEntry.
+	ep.interestMu.Lock()
+	defer ep.interestMu.Unlock()
+	var (
+		ready    epollInterestList
+		notReady epollInterestList
+	)
+	ep.readyMu.Lock()
+	ready.PushBackList(&ep.ready)
+	ep.readyMu.Unlock()
+	if ready.Empty() {
+		return 0
+	}
+	defer func() {
+		ep.readyMu.Lock()
+		ep.ready.PushFrontList(&ready)
+		for epi := notReady.Front(); epi != nil; epi = epi.Next() {
+			epi.ready = false
+		}
+		ep.readyMu.Unlock()
+	}()
+
 	var next *epollInterest
-	for epi := ep.ready.Front(); epi != nil; epi = next {
+	for epi := ready.Front(); epi != nil; epi = next {
 		next = epi.Next()
 		wmask := waiter.EventMaskFromLinux(epi.mask)
 		if epi.key.file.Readiness(wmask)&wmask != 0 {
-			ep.mu.Unlock()
 			return waiter.ReadableEvents
 		}
-		ep.ready.Remove(epi)
-		epi.ready = false
+		// epi.key.file was readied spuriously; leave it off of ep.ready.
+		ready.Remove(epi)
+		notReady.PushBack(epi)
 	}
-	ep.mu.Unlock()
 	return 0
 }
 
@@ -279,10 +312,8 @@ func (ep *EpollInstance) ModifyInterest(file *FileDescription, num int32, event 
 
 	// Update epi for the next call to ep.ReadEvents().
 	mask := event.Events | linux.EPOLLERR | linux.EPOLLHUP
-	ep.mu.Lock()
 	epi.mask = mask
 	epi.userData = event.Data
-	ep.mu.Unlock()
 
 	// Re-register with the new mask.
 	file.EventUnregister(&epi.waiter)
@@ -332,13 +363,13 @@ func (ep *EpollInstance) DeleteInterest(file *FileDescription, num int32) error 
 // NotifyEvent implements waiter.EventListener.NotifyEvent.
 func (epi *epollInterest) NotifyEvent(waiter.EventMask) {
 	newReady := false
-	epi.epoll.mu.Lock()
+	epi.epoll.readyMu.Lock()
 	if !epi.ready {
 		newReady = true
 		epi.ready = true
 		epi.epoll.ready.PushBack(epi)
 	}
-	epi.epoll.mu.Unlock()
+	epi.epoll.readyMu.Unlock()
 	if newReady {
 		epi.epoll.q.Notify(waiter.ReadableEvents)
 	}
@@ -347,32 +378,61 @@ func (epi *epollInterest) NotifyEvent(waiter.EventMask) {
 // Preconditions: ep.interestMu must be locked.
 func (ep *EpollInstance) removeLocked(epi *epollInterest) {
 	delete(ep.interest, epi.key)
-	ep.mu.Lock()
+	ep.readyMu.Lock()
 	if epi.ready {
 		epi.ready = false
 		ep.ready.Remove(epi)
 	}
-	ep.mu.Unlock()
+	ep.readyMu.Unlock()
 }
 
 // ReadEvents appends up to maxReady events to events and returns the updated
 // slice of events.
 func (ep *EpollInstance) ReadEvents(events []linux.EpollEvent, maxEvents int) []linux.EpollEvent {
+	// We can't call FileDescription.Readiness() while holding ep.readyMu.
+	// Instead, hold ep.interestMu to prevent changes to the set of
+	// epollInterests, then temporarily move all epollInterests already on
+	// ep.ready to a local list that we can iterate without holding ep.readyMu.
+	// epollInterest.ready is left set to true so that
+	// epollInterest.NotifyEvent() doesn't touch epollInterestEntry.
+	ep.interestMu.Lock()
+	defer ep.interestMu.Unlock()
+	var (
+		ready    epollInterestList
+		requeue  epollInterestList
+		notReady epollInterestList
+	)
+	ep.readyMu.Lock()
+	ready.PushBackList(&ep.ready)
+	ep.readyMu.Unlock()
+	if ready.Empty() {
+		return nil
+	}
+	defer func() {
+		ep.readyMu.Lock()
+		// epollInterests that we never checked are re-inserted at the start of
+		// ep.ready. epollInterests that were ready are re-inserted at the end
+		// for reasons described by EpollInstance.ready.
+		ep.ready.PushFrontList(&ready)
+		ep.ready.PushBackList(&requeue)
+		for epi := notReady.Front(); epi != nil; epi = epi.Next() {
+			epi.ready = false
+		}
+		ep.readyMu.Unlock()
+	}()
+
 	i := 0
-	// Hot path: avoid defer.
-	ep.mu.Lock()
 	var next *epollInterest
-	var requeue epollInterestList
-	for epi := ep.ready.Front(); epi != nil; epi = next {
+	for epi := ready.Front(); epi != nil; epi = next {
 		next = epi.Next()
 		// Regardless of what else happens, epi is initially removed from the
 		// ready list.
-		ep.ready.Remove(epi)
+		ready.Remove(epi)
 		wmask := waiter.EventMaskFromLinux(epi.mask)
 		ievents := epi.key.file.Readiness(wmask) & wmask
 		if ievents == 0 {
 			// Leave epi off the ready list.
-			epi.ready = false
+			notReady.PushBack(epi)
 			continue
 		}
 		// Determine what we should do with epi.
@@ -384,7 +444,7 @@ func (ep *EpollInstance) ReadEvents(events []linux.EpollEvent, maxEvents int) []
 			fallthrough
 		case epi.mask&linux.EPOLLET != 0:
 			// Leave epi off the ready list.
-			epi.ready = false
+			notReady.PushBack(epi)
 		default:
 			// Queue epi to be moved to the end of the ready list.
 			requeue.PushBack(epi)
@@ -399,7 +459,5 @@ func (ep *EpollInstance) ReadEvents(events []linux.EpollEvent, maxEvents int) []
 			break
 		}
 	}
-	ep.ready.PushBackList(&requeue)
-	ep.mu.Unlock()
 	return events
 }
