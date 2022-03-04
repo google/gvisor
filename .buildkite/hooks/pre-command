@@ -3,7 +3,14 @@
 function install_pkgs() {
   export DEBIAN_FRONTEND=noninteractive
   while true; do
-    if sudo -E apt-get update && sudo -E apt-get install -y "$@"; then
+    if sudo -E apt-get update && \
+       sudo -E apt-get install -y \
+                       -o Dpkg::Options::=--force-confold \
+                       -o Dpkg::Options::=--force-confdef \
+                       --allow-downgrades \
+                       --allow-remove-essential \
+                       --allow-change-held-packages \
+                       "$@"; then
       break
     fi
   done
