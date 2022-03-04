@@ -610,6 +610,7 @@ cc_binary(
         "//test/util:file_descriptor",
         gtest,
         "//test/util:posix_error",
+        "//test/util:signal_util",
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",

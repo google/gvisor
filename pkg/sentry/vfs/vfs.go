@@ -18,14 +18,13 @@
 //
 // EpollInstance.interestMu
 //   FileDescription.epollMu
-//     FilesystemImpl/FileDescriptionImpl locks
+//     Locks acquired by FilesystemImpl/FileDescriptionImpl methods
 //       VirtualFilesystem.mountMu
 //         Dentry.mu
 //           Locks acquired by FilesystemImpls between Prepare{Delete,Rename}Dentry and Commit{Delete,Rename*}Dentry
 //         VirtualFilesystem.filesystemsMu
 //       fdnotifier.notifier.mu
-//         EpollInstance.mu
-//           Locks acquired by FileDescriptionImpl.Readiness
+//         EpollInstance.readyMu
 //       Inotify.mu
 //         Watches.mu
 //           Inotify.evMu

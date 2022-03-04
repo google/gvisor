@@ -183,9 +183,36 @@ func (*EventPoll) Write(context.Context, *fs.File, usermem.IOSequence, int64) (i
 
 // eventsAvailable determines if 'e' has events available for delivery.
 func (e *EventPoll) eventsAvailable() bool {
-	e.listsMu.Lock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
 
-	for it := e.readyList.Front(); it != nil; {
+	// We can't call fs.File.Readiness() while holding e.listsMu due to lock
+	// ordering requirements. Instead, hold e.mu to prevent changes to the set
+	// of pollEntries, then temporarily move all pollEntries already on
+	// e.readyList to a local list that we can iterate without holding
+	// e.listsMu. pollEntry.curList is left set to &e.readyList so that
+	// pollEntry.NotifyEvent() doesn't touch pollEntryEntry.
+	var (
+		readyList   pollEntryList
+		waitingList pollEntryList
+	)
+	e.listsMu.Lock()
+	readyList.PushBackList(&e.readyList)
+	e.listsMu.Unlock()
+	if readyList.Empty() {
+		return false
+	}
+	defer func() {
+		e.listsMu.Lock()
+		e.readyList.PushFrontList(&readyList)
+		for entry := waitingList.Front(); entry != nil; entry = entry.Next() {
+			entry.curList = &e.waitingList
+		}
+		e.waitingList.PushBackList(&waitingList)
+		e.listsMu.Unlock()
+	}()
+
+	for it := readyList.Front(); it != nil; {
 		entry := it
 		it = it.Next()
 
@@ -193,17 +220,14 @@ func (e *EventPoll) eventsAvailable() bool {
 		// ready for delivery.
 		ready := entry.id.File.Readiness(entry.mask)
 		if ready != 0 {
-			e.listsMu.Unlock()
 			return true
 		}
 
-		// Entry is not ready, so move it to waiting list.
-		e.readyList.Remove(entry)
-		e.waitingList.PushBack(entry)
-		entry.curList = &e.waitingList
+		// Entry is not ready, so move it to waiting list. entry.curList will
+		// be updated with e.listsMu locked in the deferred function above.
+		readyList.Remove(entry)
+		waitingList.PushBack(entry)
 	}
-
-	e.listsMu.Unlock()
 
 	return false
 }
@@ -222,13 +246,45 @@ func (e *EventPoll) Readiness(mask waiter.EventMask) waiter.EventMask {
 
 // ReadEvents returns up to max available events.
 func (e *EventPoll) ReadEvents(max int) []linux.EpollEvent {
-	var local pollEntryList
-	var ret []linux.EpollEvent
+	e.mu.Lock()
+	defer e.mu.Unlock()
 
+	// We can't call fs.File.Readiness() while holding e.listsMu due to lock
+	// ordering requirements. Instead, hold e.mu to prevent changes to the set
+	// of pollEntries, then temporarily move all pollEntries already on
+	// e.readyList to a local list that we can iterate without holding
+	// e.listsMu. pollEntry.curList is left set to &e.readyList so that
+	// pollEntry.NotifyEvent() doesn't touch pollEntryEntry.
+	var (
+		readyList    pollEntryList
+		requeueList  pollEntryList
+		waitingList  pollEntryList
+		disabledList pollEntryList
+		ret          []linux.EpollEvent
+	)
 	e.listsMu.Lock()
+	readyList.PushBackList(&e.readyList)
+	e.listsMu.Unlock()
+	if readyList.Empty() {
+		return nil
+	}
+	defer func() {
+		e.listsMu.Lock()
+		e.readyList.PushFrontList(&readyList)
+		e.readyList.PushBackList(&requeueList)
+		for entry := waitingList.Front(); entry != nil; entry = entry.Next() {
+			entry.curList = &e.waitingList
+		}
+		e.waitingList.PushBackList(&waitingList)
+		for entry := disabledList.Front(); entry != nil; entry = entry.Next() {
+			entry.curList = &e.disabledList
+		}
+		e.disabledList.PushBackList(&disabledList)
+		e.listsMu.Unlock()
+	}()
 
 	// Go through all entries we believe may be ready.
-	for it := e.readyList.Front(); it != nil && len(ret) < max; {
+	for it := readyList.Front(); it != nil && len(ret) < max; {
 		entry := it
 		it = it.Next()
 
@@ -237,10 +293,8 @@ func (e *EventPoll) ReadEvents(max int) []linux.EpollEvent {
 		// entry.
 		ready := entry.id.File.Readiness(entry.mask) & entry.mask
 		if ready == 0 {
-			e.readyList.Remove(entry)
-			e.waitingList.PushBack(entry)
-			entry.curList = &e.waitingList
-
+			readyList.Remove(entry)
+			waitingList.PushBack(entry)
 			continue
 		}
 
@@ -256,21 +310,15 @@ func (e *EventPoll) ReadEvents(max int) []linux.EpollEvent {
 		// list so that its readiness can be checked the next time
 		// around; however, we must move it to the end of the list so
 		// that other events can be delivered as well.
-		e.readyList.Remove(entry)
+		readyList.Remove(entry)
 		if entry.flags&OneShot != 0 {
-			e.disabledList.PushBack(entry)
-			entry.curList = &e.disabledList
+			disabledList.PushBack(entry)
 		} else if entry.flags&EdgeTriggered != 0 {
-			e.waitingList.PushBack(entry)
-			entry.curList = &e.waitingList
+			waitingList.PushBack(entry)
 		} else {
-			local.PushBack(entry)
+			requeueList.PushBack(entry)
 		}
 	}
-
-	e.readyList.PushBackList(&local)
-
-	e.listsMu.Unlock()
 
 	return ret
 }
