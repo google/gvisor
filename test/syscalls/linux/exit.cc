@@ -16,10 +16,16 @@
 #include <unistd.h>
 
 #include "gtest/gtest.h"
+#include "absl/flags/flag.h"
 #include "absl/time/time.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/multiprocess_util.h"
 #include "test/util/test_util.h"
+#include "test/util/thread_util.h"
 #include "test/util/time_util.h"
+
+ABSL_FLAG(bool, test_child, false,
+          "If true, run the ExitAllThreads child workload.");
 
 namespace gvisor {
 namespace testing {
@@ -72,7 +78,39 @@ TEST(ExitTest, CloseFds) {
               SyscallSucceedsWithValue(0));
 }
 
+TEST(ExitTest, ExitAllThreads) {
+  pid_t child_pid = -1;
+  int execve_errno = 0;
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(
+      ForkAndExec("/proc/self/exe", {"/proc/self/exe", "--test_child"}, {},
+                  nullptr, &child_pid, &execve_errno));
+  ASSERT_GT(child_pid, 0);
+  ASSERT_EQ(execve_errno, 0);
+
+  int status;
+  EXPECT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0), SyscallSucceeds());
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0) << status;
+}
+
+void RunChild() {
+  ScopedThread t([] { _exit(0); });
+  t.Join();
+  // Should not be reached
+  abort();
+}
+
 }  // namespace
 
 }  // namespace testing
 }  // namespace gvisor
+
+int main(int argc, char** argv) {
+  gvisor::testing::TestInit(&argc, &argv);
+
+  if (absl::GetFlag(FLAGS_test_child)) {
+    gvisor::testing::RunChild();
+    return 1;
+  }
+
+  return gvisor::testing::RunAllTests();
+}
