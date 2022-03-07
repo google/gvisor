@@ -47,6 +47,7 @@ func (p *pollEntry) StateFields() []string {
 		"mask",
 		"flags",
 		"epoll",
+		"readySeq",
 	}
 }
 
@@ -62,6 +63,7 @@ func (p *pollEntry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &p.mask)
 	stateSinkObject.Save(5, &p.flags)
 	stateSinkObject.Save(6, &p.epoll)
+	stateSinkObject.Save(7, &p.readySeq)
 }
 
 // +checklocksignore
@@ -73,6 +75,7 @@ func (p *pollEntry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(4, &p.mask)
 	stateSourceObject.Load(5, &p.flags)
 	stateSourceObject.Load(6, &p.epoll)
+	stateSourceObject.Load(7, &p.readySeq)
 	stateSourceObject.AfterLoad(p.afterLoad)
 }
 
@@ -87,6 +90,7 @@ func (e *EventPoll) StateFields() []string {
 		"readyList",
 		"waitingList",
 		"disabledList",
+		"readySeq",
 	}
 }
 
@@ -118,6 +122,7 @@ func (e *EventPoll) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &e.readyList)
 	stateSinkObject.Save(3, &e.waitingList)
 	stateSinkObject.Save(4, &e.disabledList)
+	stateSinkObject.Save(5, &e.readySeq)
 }
 
 // +checklocksignore
@@ -127,6 +132,7 @@ func (e *EventPoll) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &e.readyList)
 	stateSourceObject.Load(3, &e.waitingList)
 	stateSourceObject.Load(4, &e.disabledList)
+	stateSourceObject.Load(5, &e.readySeq)
 	stateSourceObject.AfterLoad(e.afterLoad)
 }
 

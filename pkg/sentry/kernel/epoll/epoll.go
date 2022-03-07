@@ -77,6 +77,8 @@ type pollEntry struct {
 	// in-struct pointers. Instead, EventPoll will properly set this field
 	// in its loading logic.
 	curList *pollEntryList `state:"nosave"`
+
+	readySeq uint32
 }
 
 // WeakRefGone implements refs.WeakRefUser.WeakRefGone.
@@ -130,6 +132,12 @@ type EventPoll struct {
 	readyList    pollEntryList
 	waitingList  pollEntryList
 	disabledList pollEntryList
+
+	// readySeq is used to detect calls to pollEntry.NotifyEvent() while
+	// eventsAvailable() or ReadEvents() are running with listsMu unlocked.
+	// readySeq is protected by both mu and listsMu; reading requires either
+	// mutex to be locked, but mutation requires both mutexes to be locked.
+	readySeq uint32
 }
 
 // cycleMu is used to serialize all the cycle checks. This is only used when
@@ -198,6 +206,7 @@ func (e *EventPoll) eventsAvailable() bool {
 	)
 	e.listsMu.Lock()
 	readyList.PushBackList(&e.readyList)
+	e.readySeq++
 	e.listsMu.Unlock()
 	if readyList.Empty() {
 		return false
@@ -205,8 +214,16 @@ func (e *EventPoll) eventsAvailable() bool {
 	defer func() {
 		e.listsMu.Lock()
 		e.readyList.PushFrontList(&readyList)
-		for entry := waitingList.Front(); entry != nil; entry = entry.Next() {
-			entry.curList = &e.waitingList
+		var next *pollEntry
+		for entry := waitingList.Front(); entry != nil; entry = next {
+			next = entry.Next()
+			if entry.readySeq == e.readySeq {
+				// entry.NotifyEvent() was called while we were running.
+				waitingList.Remove(entry)
+				e.readyList.PushBack(entry)
+			} else {
+				entry.curList = &e.waitingList
+			}
 		}
 		e.waitingList.PushBackList(&waitingList)
 		e.listsMu.Unlock()
@@ -257,13 +274,14 @@ func (e *EventPoll) ReadEvents(max int) []linux.EpollEvent {
 	// pollEntry.NotifyEvent() doesn't touch pollEntryEntry.
 	var (
 		readyList    pollEntryList
-		requeueList  pollEntryList
 		waitingList  pollEntryList
+		requeueList  pollEntryList
 		disabledList pollEntryList
 		ret          []linux.EpollEvent
 	)
 	e.listsMu.Lock()
 	readyList.PushBackList(&e.readyList)
+	e.readySeq++
 	e.listsMu.Unlock()
 	if readyList.Empty() {
 		return nil
@@ -271,10 +289,18 @@ func (e *EventPoll) ReadEvents(max int) []linux.EpollEvent {
 	defer func() {
 		e.listsMu.Lock()
 		e.readyList.PushFrontList(&readyList)
-		e.readyList.PushBackList(&requeueList)
-		for entry := waitingList.Front(); entry != nil; entry = entry.Next() {
-			entry.curList = &e.waitingList
+		var next *pollEntry
+		for entry := waitingList.Front(); entry != nil; entry = next {
+			next = entry.Next()
+			if entry.readySeq == e.readySeq {
+				// entry.NotifyEvent() was called while we were running.
+				waitingList.Remove(entry)
+				e.readyList.PushBack(entry)
+			} else {
+				entry.curList = &e.waitingList
+			}
 		}
+		e.readyList.PushBackList(&requeueList)
 		e.waitingList.PushBackList(&waitingList)
 		for entry := disabledList.Front(); entry != nil; entry = entry.Next() {
 			entry.curList = &e.disabledList
@@ -331,6 +357,8 @@ func (p *pollEntry) NotifyEvent(waiter.EventMask) {
 	e := p.epoll
 
 	e.listsMu.Lock()
+
+	p.readySeq = e.readySeq
 
 	if p.curList == &e.waitingList {
 		e.waitingList.Remove(p)

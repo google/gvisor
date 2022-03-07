@@ -47,7 +47,7 @@ type EpollInstance struct {
 	// EpollInstance for monitoring.
 	interest map[epollInterestKey]*epollInterest
 
-	// readyMu protects ready, epollInterest.ready, and
+	// readyMu protects ready, readySeq, epollInterest.ready, and
 	// epollInterest.epollInterestEntry. ready is analogous to Linux's struct
 	// eventpoll::lock.
 	readyMu sync.Mutex `state:"nosave"`
@@ -61,6 +61,12 @@ type EpollInstance struct {
 	// because it focuses on a set of file descriptors that are already known
 	// to be ready." - epoll_wait(2)
 	ready epollInterestList
+
+	// readySeq is used to detect calls to epollInterest.NotifyEvent() while
+	// Readiness() or ReadEvents() are running with readyMu unlocked. readySeq
+	// is protected by both interestMu and readyMu; reading requires either
+	// mutex to be locked, but mutation requires both mutexes to be locked.
+	readySeq uint32
 }
 
 // +stateify savable
@@ -93,10 +99,12 @@ type epollInterest struct {
 	// flags EPOLLET and EPOLLONESHOT. mask is protected by epoll.interestMu.
 	mask uint32
 
-	// ready is true if epollInterestEntry is linked into epoll.ready. ready
-	// and epollInterestEntry are protected by epoll.readyMu.
+	// ready is true if epollInterestEntry is linked into epoll.ready. readySeq
+	// is the value of epoll.readySeq when NotifyEvent() was last called.
+	// ready, epollInterestEntry, and readySeq are protected by epoll.readyMu.
 	ready bool
 	epollInterestEntry
+	readySeq uint32
 
 	// userData is the struct epoll_event::data associated with this
 	// epollInterest. userData is protected by epoll.interestMu.
@@ -156,6 +164,7 @@ func (ep *EpollInstance) Readiness(mask waiter.EventMask) waiter.EventMask {
 	)
 	ep.readyMu.Lock()
 	ready.PushBackList(&ep.ready)
+	ep.readySeq++
 	ep.readyMu.Unlock()
 	if ready.Empty() {
 		return 0
@@ -163,8 +172,16 @@ func (ep *EpollInstance) Readiness(mask waiter.EventMask) waiter.EventMask {
 	defer func() {
 		ep.readyMu.Lock()
 		ep.ready.PushFrontList(&ready)
-		for epi := notReady.Front(); epi != nil; epi = epi.Next() {
-			epi.ready = false
+		var next *epollInterest
+		for epi := notReady.Front(); epi != nil; epi = next {
+			next = epi.Next()
+			if epi.readySeq == ep.readySeq {
+				// epi.NotifyEvent() was called while we were running.
+				notReady.Remove(epi)
+				ep.ready.PushBack(epi)
+			} else {
+				epi.ready = false
+			}
 		}
 		ep.readyMu.Unlock()
 	}()
@@ -369,6 +386,7 @@ func (epi *epollInterest) NotifyEvent(waiter.EventMask) {
 		epi.ready = true
 		epi.epoll.ready.PushBack(epi)
 	}
+	epi.readySeq = epi.epoll.readySeq
 	epi.epoll.readyMu.Unlock()
 	if newReady {
 		epi.epoll.q.Notify(waiter.ReadableEvents)
@@ -399,11 +417,12 @@ func (ep *EpollInstance) ReadEvents(events []linux.EpollEvent, maxEvents int) []
 	defer ep.interestMu.Unlock()
 	var (
 		ready    epollInterestList
-		requeue  epollInterestList
 		notReady epollInterestList
+		requeue  epollInterestList
 	)
 	ep.readyMu.Lock()
 	ready.PushBackList(&ep.ready)
+	ep.readySeq++
 	ep.readyMu.Unlock()
 	if ready.Empty() {
 		return nil
@@ -414,10 +433,18 @@ func (ep *EpollInstance) ReadEvents(events []linux.EpollEvent, maxEvents int) []
 		// ep.ready. epollInterests that were ready are re-inserted at the end
 		// for reasons described by EpollInstance.ready.
 		ep.ready.PushFrontList(&ready)
-		ep.ready.PushBackList(&requeue)
-		for epi := notReady.Front(); epi != nil; epi = epi.Next() {
-			epi.ready = false
+		var next *epollInterest
+		for epi := notReady.Front(); epi != nil; epi = next {
+			next = epi.Next()
+			if epi.readySeq == ep.readySeq {
+				// epi.NotifyEvent() was called while we were running.
+				notReady.Remove(epi)
+				ep.ready.PushBack(epi)
+			} else {
+				epi.ready = false
+			}
 		}
+		ep.ready.PushBackList(&requeue)
 		ep.readyMu.Unlock()
 	}()
 
