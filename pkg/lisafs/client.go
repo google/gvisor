@@ -122,16 +122,13 @@ func NewClient(sock *unet.Socket) (*Client, Inode, error) {
 	// channels and costly initialization like flipcall.Endpoint.Connect can
 	// proceed parallely.
 	var channelsWg sync.WaitGroup
-	channelErrs := make([]error, maxChans)
 	for i := 0; i < maxChans; i++ {
 		channelsWg.Add(1)
-		curChanID := i
 		go func() {
 			defer channelsWg.Done()
 			ch, err := c.createChannel()
 			if err != nil {
 				log.Warningf("channel creation failed: %v", err)
-				channelErrs[curChanID] = err
 				return
 			}
 			c.channelsMu.Lock()
@@ -142,14 +139,7 @@ func NewClient(sock *unet.Socket) (*Client, Inode, error) {
 	}
 	channelsWg.Wait()
 
-	for _, channelErr := range channelErrs {
-		// Return the first non-nil channel creation error.
-		if channelErr != nil {
-			return nil, Inode{}, channelErr
-		}
-	}
 	cu.Release()
-
 	return c, mountResp.Root, nil
 }
 
