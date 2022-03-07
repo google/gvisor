@@ -749,10 +749,12 @@ cc_binary(
     linkstatic = 1,
     deps = [
         "//test/util:file_descriptor",
+        "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/time",
         gtest,
-        "//test/util:test_main",
+        "//test/util:multiprocess_util",
         "//test/util:test_util",
+        "//test/util:thread_util",
         "//test/util:time_util",
     ],
 )
