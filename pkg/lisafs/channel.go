@@ -102,8 +102,12 @@ func (c *Connection) createChannel(maxMessageSize uint32) (*channel, flipcall.Pa
 	c.channelsMu.Lock()
 	defer c.channelsMu.Unlock()
 	// If c.channels is nil, the connection has closed.
-	if c.channels == nil || len(c.channels) >= maxChannels() {
+	if c.channels == nil {
 		return nil, flipcall.PacketWindowDescriptor{}, -1, unix.ENOSYS
+	}
+	// Return ENOMEM to indicate that the server has hit its max channels limit.
+	if len(c.channels) >= maxChannels() {
+		return nil, flipcall.PacketWindowDescriptor{}, -1, unix.ENOMEM
 	}
 	ch := &channel{}
 
