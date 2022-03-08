@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/hostarch"
-	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/safemem"
@@ -392,10 +391,10 @@ func (fd *specialFileFD) Seek(ctx context.Context, offset int64, whence int32) (
 
 // Sync implements vfs.FileDescriptionImpl.Sync.
 func (fd *specialFileFD) Sync(ctx context.Context) error {
-	return fd.sync(ctx, false /* forFilesystemSync */, nil /* accFsyncFDIDsLisa */)
+	return fd.sync(ctx, false /* forFilesystemSync */)
 }
 
-func (fd *specialFileFD) sync(ctx context.Context, forFilesystemSync bool, accFsyncFDIDsLisa *[]lisafs.FDID) error {
+func (fd *specialFileFD) sync(ctx context.Context, forFilesystemSync bool) error {
 	// Locks to ensure it didn't race with fd.Release().
 	fd.releaseMu.RLock()
 	defer fd.releaseMu.RUnlock()
@@ -413,10 +412,6 @@ func (fd *specialFileFD) sync(ctx context.Context, forFilesystemSync bool, accFs
 			return err
 		}
 		if fs := fd.filesystem(); fs.opts.lisaEnabled {
-			if accFsyncFDIDsLisa != nil {
-				*accFsyncFDIDsLisa = append(*accFsyncFDIDsLisa, fd.handle.fdLisa.ID())
-				return nil
-			}
 			return fd.handle.fdLisa.Sync(ctx)
 		}
 		return fd.handle.file.fsync(ctx)

@@ -697,7 +697,7 @@ func regularFileSeekLocked(ctx context.Context, d *dentry, fdOffset, offset int6
 
 // Sync implements vfs.FileDescriptionImpl.Sync.
 func (fd *regularFileFD) Sync(ctx context.Context) error {
-	return fd.dentry().syncCachedFile(ctx, false /* forFilesystemSync */, nil /* accFsyncFDIDsLisa */)
+	return fd.dentry().syncCachedFile(ctx, false /* forFilesystemSync */)
 }
 
 // ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
