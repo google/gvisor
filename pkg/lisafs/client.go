@@ -128,7 +128,11 @@ func NewClient(sock *unet.Socket) (*Client, Inode, error) {
 			defer channelsWg.Done()
 			ch, err := c.createChannel()
 			if err != nil {
-				log.Warningf("channel creation failed: %v", err)
+				if err == unix.ENOMEM {
+					log.Debugf("channel creation failed because server hit max channels limit")
+				} else {
+					log.Warningf("channel creation failed: %v", err)
+				}
 				return
 			}
 			c.channelsMu.Lock()
@@ -138,6 +142,16 @@ func NewClient(sock *unet.Socket) (*Client, Inode, error) {
 		}()
 	}
 	channelsWg.Wait()
+
+	// Check that atleast 1 channel is created. This is not required by lisafs
+	// protocol. It exists to flag server side issues in channel creation.
+	c.channelsMu.Lock()
+	numChannels := len(c.channels)
+	c.channelsMu.Unlock()
+	if maxChans > 0 && numChannels == 0 {
+		log.Warningf("all channel RPCs failed")
+		return nil, Inode{}, unix.ENOMEM
+	}
 
 	cu.Release()
 	return c, mountResp.Root, nil
