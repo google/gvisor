@@ -129,7 +129,7 @@ func genPacketV4() *stack.PacketBuffer {
 		TotalLength:    uint16(pktSize),
 		ID:             1,
 		Flags:          0,
-		FragmentOffset: 16,
+		FragmentOffset: 0,
 		TTL:            48,
 		Protocol:       99,
 		SrcAddr:        srcAddrV4,

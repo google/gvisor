@@ -79,6 +79,10 @@ type MultiCounterIPStats struct {
 	// layer.
 	PacketsReceived tcpip.MultiCounterStat
 
+	// ValidFragmentsReceived is the number of valid IP fragments that reached the
+	// IP layer.
+	ValidFragmentsReceived tcpip.MultiCounterStat
+
 	// ValidPacketsReceived is the number of valid IP packets that reached the IP
 	// layer.
 	ValidPacketsReceived tcpip.MultiCounterStat
@@ -159,6 +163,7 @@ type MultiCounterIPStats struct {
 // Init sets internal counters to track a and b counters.
 func (m *MultiCounterIPStats) Init(a, b *tcpip.IPStats) {
 	m.PacketsReceived.Init(a.PacketsReceived, b.PacketsReceived)
+	m.ValidFragmentsReceived.Init(a.ValidFragmentsReceived, b.ValidFragmentsReceived)
 	m.ValidPacketsReceived.Init(a.ValidPacketsReceived, b.ValidPacketsReceived)
 	m.DisabledPacketsReceived.Init(a.DisabledPacketsReceived, b.DisabledPacketsReceived)
 	m.InvalidDestinationAddressesReceived.Init(a.InvalidDestinationAddressesReceived, b.InvalidDestinationAddressesReceived)

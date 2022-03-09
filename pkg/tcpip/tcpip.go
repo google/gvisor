@@ -1707,6 +1707,10 @@ type IPStats struct {
 	// PacketsReceived is the number of IP packets received from the link layer.
 	PacketsReceived *StatCounter
 
+	// ValidFragmentsReceived is the number of valid IP fragments that reached the
+	// IP layer.
+	ValidFragmentsReceived *StatCounter
+
 	// ValidPacketsReceived is the number of valid IP packets that reached the IP
 	// layer.
 	ValidPacketsReceived *StatCounter

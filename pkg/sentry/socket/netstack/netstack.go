@@ -210,6 +210,8 @@ var Metrics = tcpip.Stats{
 		PacketsDelivered:                    mustCreateMetric("/netstack/ip/packets_delivered", "Number of incoming IP packets that are successfully delivered to the transport layer via HandlePacket."),
 		PacketsSent:                         mustCreateMetric("/netstack/ip/packets_sent", "Number of IP packets sent via WritePacket."),
 		OutgoingPacketErrors:                mustCreateMetric("/netstack/ip/outgoing_packet_errors", "Number of IP packets which failed to write to a link-layer endpoint."),
+		ValidPacketsReceived:                mustCreateMetric("/netstack/ip/valid_packets_received", "Number of valid IP packets received."),
+		ValidFragmentsReceived:              mustCreateMetric("/netstack/ip/valid_fragments_received", "Number of valid IP fragments received."),
 		MalformedPacketsReceived:            mustCreateMetric("/netstack/ip/malformed_packets_received", "Number of IP packets which failed IP header validation checks."),
 		MalformedFragmentsReceived:          mustCreateMetric("/netstack/ip/malformed_fragments_received", "Number of IP fragments which failed IP fragment validation checks."),
 		IPTablesPreroutingDropped:           mustCreateMetric("/netstack/ip/iptables/prerouting_dropped", "Number of IP packets dropped in the Prerouting chain."),
