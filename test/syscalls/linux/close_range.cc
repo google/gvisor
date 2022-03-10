@@ -23,6 +23,7 @@
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
+#include "test/util/thread_util.h"
 
 namespace gvisor {
 namespace testing {
@@ -365,6 +366,37 @@ TEST_F(CloseRangeTest, InvalidFlags) {
   flags = CLOSE_RANGE_CLOEXEC | 0xF00;
   EXPECT_THAT(close_range(fds_[0], fds_[num_files_in_range - 1], flags),
               SyscallFailsWithErrno(EINVAL));
+}
+
+// Test that calling close_range concurrently while creating new files yields
+// expected results.
+TEST_F(CloseRangeTest, ConcurrentCalls) {
+  SKIP_IF(!IsRunningOnGvisor() && close_range(1, 0, 0) < 0 && errno == ENOSYS);
+  const int num_files_in_range = 10;
+  const unsigned int flags = CLOSE_RANGE_UNSHARE;
+  const int num_threads = 100;
+  std::unique_ptr<ScopedThread> threads[num_threads];
+
+  CreateFiles(num_files_in_range);
+  OpenFilesRdwr();
+
+  auto cr_call = []() {
+    EXPECT_THAT(close_range(num_files_in_range / 2,
+                            num_files_in_range + num_threads, flags),
+                SyscallSucceeds());
+  };
+  auto open_file_call = []() {
+    auto file = NewTempAbsPath();
+    EXPECT_THAT(open(file.c_str(), O_CREAT, 0644), SyscallSucceeds());
+  };
+
+  for (int i = 0; i < num_threads; i++) {
+    if (i % 2 == 0) {
+      threads[i] = std::make_unique<ScopedThread>(cr_call);
+    } else {
+      threads[i] = std::make_unique<ScopedThread>(open_file_call);
+    }
+  }
 }
 
 }  // namespace

@@ -760,6 +760,9 @@ func (f *FDTable) RemoveNextInRange(ctx context.Context, startFd int32, endFd in
 
 // GetLastFd returns the last set FD in the FDTable bitmap.
 func (f *FDTable) GetLastFd() int32 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	last := f.fdBitmap.Maximum()
 	if last > bitmap.MaxBitEntryLimit {
 		return MaxFdLimit
