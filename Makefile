@@ -231,8 +231,8 @@ packetimpact-tests:
 .PHONY: packetimpact-tests
 
 %-runtime-tests: load-runtimes_% $(RUNTIME_BIN)
-	@$(call install_runtime,$(RUNTIME),) # Ensure flags are cleared.
-	@$(call test_runtime,$(RUNTIME),--test_timeout=10800 //test/runtimes:$*)
+	@$(call install_runtime,$(RUNTIME),--watchdog-action=panic)
+	@$(call test_runtime,$(RUNTIME),--test_timeout=1800 //test/runtimes:$*)
 
 do-tests: $(RUNTIME_BIN)
 	@$(RUNTIME_BIN) --rootless do true
