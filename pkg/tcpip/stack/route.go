@@ -132,7 +132,7 @@ func (r *Route) fieldsLocked() RouteInfo {
 //
 // Returns an empty route if validation fails.
 func constructAndValidateRoute(netProto tcpip.NetworkProtocolNumber, addressEndpoint AssignableAddressEndpoint, localAddressNIC, outgoingNIC *nic, gateway, localAddr, remoteAddr tcpip.Address, handleLocal, multicastLoop bool) *Route {
-	if len(localAddr) == 0 {
+	if addressEndpoint != nil && len(localAddr) == 0 {
 		localAddr = addressEndpoint.AddressWithPrefix().Address
 	}
 
@@ -168,7 +168,7 @@ func makeRoute(netProto tcpip.NetworkProtocolNumber, gateway, localAddr, remoteA
 		panic(fmt.Sprintf("cannot create a route with NICs from different stacks"))
 	}
 
-	if len(localAddr) == 0 {
+	if localAddressEndpoint != nil && len(localAddr) == 0 {
 		localAddr = localAddressEndpoint.AddressWithPrefix().Address
 	}
 
@@ -184,8 +184,10 @@ func makeRoute(netProto tcpip.NetworkProtocolNumber, gateway, localAddr, remoteA
 			loop |= PacketLoop
 		} else if remoteAddr == header.IPv4Broadcast {
 			loop |= PacketLoop
-		} else if subnet := localAddressEndpoint.AddressWithPrefix().Subnet(); subnet.IsBroadcast(remoteAddr) {
-			loop |= PacketLoop
+		} else if localAddressEndpoint != nil {
+			if subnet := localAddressEndpoint.AddressWithPrefix().Subnet(); subnet.IsBroadcast(remoteAddr) {
+				loop |= PacketLoop
+			}
 		}
 	}
 
