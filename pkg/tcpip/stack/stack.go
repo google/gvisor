@@ -1169,7 +1169,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 			}
 
 			plen := route.Destination.Mask().Prefix()
-			if plen <= bestPrefixLen {
+			if plen < bestPrefixLen {
 				continue
 			}
 
@@ -1182,7 +1182,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 
 					if r := constructAndValidateRoute(netProto, addressEndpoint, nic /* outgoingNIC */, nic /* outgoingNIC */, gateway, localAddr, remoteAddr, s.handleLocal, multicastLoop); r == nil {
 						panic(fmt.Sprintf("non-forwarding route validation failed with route table entry = %#v, id = %d, localAddr = %s, remoteAddr = %s", route, id, localAddr, remoteAddr))
-					} else if plen > bestPrefixLen {
+					} else if plen >= bestPrefixLen {
 						bestRoute, bestPrefixLen = r, plen
 					}
 				} else {
@@ -1191,7 +1191,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 					// construct a route that uses the remote address as the gateway.
 					if r := constructAndValidateRoute(netProto, nil, nic /* outgoingNIC */, nic /* outgoingNIC */, remoteAddr, localAddr, remoteAddr, s.handleLocal, multicastLoop); r == nil {
 						panic(fmt.Sprintf("non-forwarding route validation failed with route table entry = %#v, id = %d, localAddr = %s, remoteAddr = %s", route, id, localAddr, remoteAddr))
-					} else if plen > bestPrefixLen {
+					} else if plen >= bestPrefixLen {
 						bestRoute, bestPrefixLen = r, plen
 					}
 				}
