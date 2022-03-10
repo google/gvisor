@@ -1096,7 +1096,7 @@ func (l *localFile) readDirent(f int, offset uint64, count uint32, skip uint64) 
 		for _, name := range names {
 			stat, err := statAt(l.file.FD(), name)
 			if err != nil {
-				log.Warningf("Readdir is skipping file with failed stat %q, err: %v", l.hostPath, err)
+				log.Warningf("Readdir is skipping file %q with failed stat, err: %v", path.Join(l.hostPath, name), err)
 				continue
 			}
 			qid := l.attachPoint.makeQID(&stat)

@@ -685,7 +685,7 @@ func (c *containerMounter) mountTmpVFS2(ctx context.Context, conf *config.Config
 			log.Infof(`Skipping internal tmpfs mount for "/tmp" because it's not empty`)
 			return nil
 		default:
-			return err
+			return fmt.Errorf("fd.IterDirents failed: %v", err)
 		}
 		fallthrough
 
@@ -699,8 +699,10 @@ func (c *containerMounter) mountTmpVFS2(ctx context.Context, conf *config.Config
 			// another user. This is normally done for /tmp.
 			Options: []string{"mode=01777"},
 		}
-		_, err := c.mountSubmountVFS2(ctx, conf, mns, creds, &mountAndFD{mount: &tmpMount})
-		return err
+		if _, err := c.mountSubmountVFS2(ctx, conf, mns, creds, &mountAndFD{mount: &tmpMount}); err != nil {
+			return fmt.Errorf("mountSubmountVFS2 failed: %v", err)
+		}
+		return nil
 
 	case linuxerr.Equals(linuxerr.ENOTDIR, err):
 		// Not a dir?! Let it be.
