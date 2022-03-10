@@ -160,6 +160,7 @@ dev: $(RUNTIME_BIN) ## Installs a set of local runtimes. Requires sudo.
 	@$(call configure_noreload,$(RUNTIME)-p,--net-raw --profile)
 	@$(call configure_noreload,$(RUNTIME)-fuse-d,--net-raw --debug --strace --log-packets --fuse)
 	@$(call configure_noreload,$(RUNTIME)-cgroup-d,--net-raw --debug --strace --log-packets --cgroupfs)
+	@$(call configure_noreload,$(RUNTIME)-lisafs-d,--net-raw --debug --strace --log-packets --lisafs)
 	@$(call reload_docker)
 .PHONY: dev
 
@@ -234,6 +235,10 @@ packetimpact-tests:
 	@$(call install_runtime,$(RUNTIME),--watchdog-action=panic)
 	@$(call test_runtime,$(RUNTIME),--test_timeout=1800 //test/runtimes:$*)
 
+%-runtime-tests_lisafs: load-runtimes_% $(RUNTIME_BIN)
+	@$(call install_runtime,$(RUNTIME), --lisafs)
+	@$(call test_runtime,$(RUNTIME),--test_timeout=10800 //test/runtimes:$*)
+
 do-tests: $(RUNTIME_BIN)
 	@$(RUNTIME_BIN) --rootless do true
 	@$(RUNTIME_BIN) --rootless -network=none do true
@@ -256,6 +261,8 @@ INTEGRATION_TARGETS := //test/image:image_test //test/e2e:integration_test
 
 docker-tests: load-basic $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),) # Clear flags.
+	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS))
+	@$(call install_runtime,$(RUNTIME), --lisafs) # Run again with lisafs.
 	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS))
 .PHONY: docker-tests
 
