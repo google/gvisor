@@ -169,7 +169,9 @@ func (n *Node) WithChildrenMu(fn func()) {
 // operation. The returned path should be free of any intermediate symlinks
 // because all internal (non-leaf) nodes are directories.
 //
-// Precondition: server's rename mutex must be at least read locked.
+// Precondition:
+// * server's rename mutex must be at least read locked. Calling handlers must
+//   at least have read concurrency guarantee from the server.
 func (n *Node) FilePath() string {
 	// Walk upwards and prepend name to res.
 	var res fspath.Builder
