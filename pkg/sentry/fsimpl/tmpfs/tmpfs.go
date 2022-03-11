@@ -24,6 +24,7 @@
 //       regularFile.mapsMu
 //         *** "memmap.Mappable locks taken by Translate" below this point
 //         regularFile.dataMu
+//           fs.pagesUsedMu
 //     directory.iterMu
 package tmpfs
 
@@ -88,6 +89,15 @@ type filesystem struct {
 	root *dentry
 
 	maxFilenameLen int
+
+	// maxSizeInPages is the maximum permissible size for the tmpfs in terms of pages.
+	// This field is immutable.
+	maxSizeInPages uint64
+
+	// pagesUsed is the pages used out of the tmpfs size.
+	// pagesUsed is protected by pagesUsedMu.
+	pagesUsedMu sync.Mutex `state:"nosave"`
+	pagesUsed   uint64
 }
 
 // Name implements vfs.FilesystemType.Name.
@@ -189,6 +199,24 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		}
 		rootKGID = kgid
 	}
+	maxSizeStr, ok := mopts["size"]
+	var maxSizeInPages uint64
+	if ok {
+		delete(mopts, "size")
+		maxSizeInBytes, err := strconv.ParseUint(maxSizeStr, 10, 64)
+		if err != nil {
+			ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: invalid size: %q", maxSizeStr)
+			return nil, nil, linuxerr.EINVAL
+		}
+		// Convert size in bytes to nearest Page Size bytes
+		// as Linux allocates memory in terms of Page size.
+		maxSizeInPages, ok = hostarch.ToPages(maxSizeInBytes)
+		if !ok {
+			ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: Pages RoundUp Overflow error: %q", ok)
+			return nil, nil, linuxerr.EINVAL
+		}
+	}
+
 	if len(mopts) != 0 {
 		ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: unknown options: %v", mopts)
 		return nil, nil, linuxerr.EINVAL
@@ -210,6 +238,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		mopts:          opts.Data,
 		usage:          memUsage,
 		maxFilenameLen: linux.NAME_MAX,
+		maxSizeInPages: maxSizeInPages,
 	}
 	fs.vfsfs.Init(vfsObj, newFSType, &fs)
 	if tmpfsOptsOk && tmpfsOpts.MaxFilenameLen > 0 {
@@ -273,23 +302,37 @@ func (d *dentry) releaseChildrenLocked(ctx context.Context) {
 	}
 }
 
-// immutable
-var globalStatfs = linux.Statfs{
-	Type:         linux.TMPFS_MAGIC,
-	BlockSize:    hostarch.PageSize,
-	FragmentSize: hostarch.PageSize,
-	NameLength:   linux.NAME_MAX,
+func (fs *filesystem) statFS() linux.Statfs {
+	st := linux.Statfs{
+		Type:         linux.TMPFS_MAGIC,
+		BlockSize:    hostarch.PageSize,
+		FragmentSize: hostarch.PageSize,
+		NameLength:   linux.NAME_MAX,
+	}
 
-	// tmpfs currently does not support configurable size limits. In Linux,
-	// such a tmpfs mount will return f_blocks == f_bfree == f_bavail == 0 from
-	// statfs(2). However, many applications treat this as having a size limit
+	// tmpfs supports configurable size limits.
+	// In Linux, if tmpfs is mounted with size option,
+	// we return the block sizes as set by the user.
+	if fs.maxSizeInPages > 0 {
+		// If size is set for tmpfs return set values.
+		st.Blocks = fs.maxSizeInPages
+		fs.pagesUsedMu.Lock()
+		defer fs.pagesUsedMu.Unlock()
+		st.BlocksFree = fs.maxSizeInPages - fs.pagesUsed
+		st.BlocksAvailable = fs.maxSizeInPages - fs.pagesUsed
+		return st
+	}
+	// In Linux, if tmpfs is mounted with no size option,
+	// such a tmpfs mount will return
+	// f_blocks == f_bfree == f_bavail == 0 from statfs(2).
+	// However, many applications treat this as having a size limit
 	// of 0. To work around this, claim to have a very large but non-zero size,
 	// chosen to ensure that BlockSize * Blocks does not overflow int64 (which
 	// applications may also handle incorrectly).
-	// TODO(b/29637826): allow configuring a tmpfs size and enforce it.
-	Blocks:          math.MaxInt64 / hostarch.PageSize,
-	BlocksFree:      math.MaxInt64 / hostarch.PageSize,
-	BlocksAvailable: math.MaxInt64 / hostarch.PageSize,
+	st.Blocks = math.MaxInt64 / hostarch.PageSize
+	st.BlocksFree = math.MaxInt64 / hostarch.PageSize
+	st.BlocksAvailable = math.MaxInt64 / hostarch.PageSize
+	return st
 }
 
 // dentry implements vfs.DentryImpl.
@@ -528,8 +571,7 @@ func (i *inode) statTo(stat *linux.Statx) {
 		// too expensive to compute here. Cache it in regularFile.
 		stat.Blocks = allocatedBlocksForSize(stat.Size)
 	case *directory:
-		// "20" is mm/shmem.c:BOGO_DIRENT_SIZE.
-		stat.Size = 20 * (2 + uint64(impl.numChildren.Load()))
+		stat.Size = direntSize * (2 + uint64(impl.numChildren.Load()))
 		// stat.Blocks is 0.
 	case *symlink:
 		stat.Size = uint64(len(impl.target))
@@ -845,7 +887,7 @@ func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions)
 
 // StatFS implements vfs.FileDescriptionImpl.StatFS.
 func (fd *fileDescription) StatFS(ctx context.Context) (linux.Statfs, error) {
-	return globalStatfs, nil
+	return fd.filesystem().statFS(), nil
 }
 
 // ListXattr implements vfs.FileDescriptionImpl.ListXattr.

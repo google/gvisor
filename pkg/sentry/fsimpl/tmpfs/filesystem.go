@@ -22,10 +22,21 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+)
+
+const (
+	// direntSize is the size of each directory entry
+	// that Linux uses for computing directory size.
+	// "20" is mm/shmem.c:BOGO_DIRENT_SIZE.
+	direntSize = 20
+	// Linux implementation uses a SHORT_SYMLINK_LEN 128.
+	// It accounts size for only SYMLINK with size >= 128.
+	shortSymlinkLen = 128
 )
 
 // Sync implements vfs.FilesystemImpl.Sync.
@@ -733,12 +744,17 @@ func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linu
 	if _, err := resolveLocked(ctx, rp); err != nil {
 		return linux.Statfs{}, err
 	}
-	return globalStatfs, nil
+	return fs.statFS(), nil
 }
 
 // SymlinkAt implements vfs.FilesystemImpl.SymlinkAt.
 func (fs *filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, target string) error {
 	return fs.doCreateAt(ctx, rp, false /* dir */, func(parentDir *directory, name string) error {
+		if len(target) >= shortSymlinkLen {
+			if err := fs.updatePagesUsed(0, uint64(len(target))); err != nil {
+				return err
+			}
+		}
 		creds := rp.Credentials()
 		child := fs.newDentry(fs.newSymlink(creds.EffectiveKUID, creds.EffectiveKGID, 0777, target, parentDir))
 		parentDir.insertChildLocked(child, name)
@@ -785,12 +801,29 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	if err := vfsObj.PrepareDeleteDentry(mntns, &child.vfsd); err != nil {
 		return err
 	}
+	// Remove pages used if child being removed is a SymLink or Regular File.
+	switch impl := child.inode.impl.(type) {
+	case *symlink:
+		if len(impl.target) >= shortSymlinkLen {
+			if err := fs.updatePagesUsed(uint64(len(impl.target)), 0); err != nil {
+				vfsObj.AbortDeleteDentry(&child.vfsd)
+				return err
+			}
+		}
+	case *regularFile:
+		impl.inode.mu.Lock()
+		if err := fs.updatePagesUsed(impl.size.Load(), 0); err != nil {
+			impl.inode.mu.Unlock()
+			vfsObj.AbortDeleteDentry(&child.vfsd)
+			return err
+		}
+		impl.inode.mu.Unlock()
+	}
 
 	// Generate inotify events. Note that this must take place before the link
 	// count of the child is decremented, or else the watches may be dropped
 	// before these events are added.
 	vfs.InotifyRemoveChild(ctx, &child.inode.watches, &parentDir.inode.watches, name)
-
 	parentDir.removeChildLocked(child)
 	child.inode.decLinksLocked(ctx)
 	vfsObj.CommitDeleteDentry(ctx, &child.vfsd)
@@ -915,4 +948,43 @@ func (fs *filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDe
 // MountOptions implements vfs.FilesystemImpl.MountOptions.
 func (fs *filesystem) MountOptions() string {
 	return fs.mopts
+}
+
+// updatePagesUsed updates the pagesUsed in filesystem struct
+// if tmpfs is mounted with size option.
+// Assumption: for all the int conversions overflow never occurs.
+func (fs *filesystem) updatePagesUsed(oldFileSize, newFileSize uint64) error {
+	if fs.maxSizeInPages == 0 {
+		return nil
+	}
+	oldFileSizePages, ok := hostarch.ToPages(oldFileSize)
+	if !ok {
+		return linuxerr.EINVAL
+	}
+	newFileSizePages, ok := hostarch.ToPages(newFileSize)
+	if !ok {
+		return linuxerr.EINVAL
+	}
+
+	pagesDelta := int64(newFileSizePages) - int64(oldFileSizePages)
+	if pagesDelta == 0 {
+		// No update required.
+		return nil
+	}
+	// Need to acquire fs.pagesUsedMu for fs.pagesUsed.
+	fs.pagesUsedMu.Lock()
+	defer fs.pagesUsedMu.Unlock()
+	pagesFree := fs.maxSizeInPages - fs.pagesUsed
+
+	if int64(pagesFree) < pagesDelta {
+		return linuxerr.ENOSPC
+	}
+
+	newPagesReqd := int64(fs.pagesUsed) + pagesDelta
+	if newPagesReqd < 0 {
+		panic("Deallocating more pages than allocated.")
+	}
+
+	fs.pagesUsed = uint64(newPagesReqd)
+	return nil
 }
