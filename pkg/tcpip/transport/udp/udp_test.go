@@ -423,7 +423,7 @@ func TestV4ReadBroadcastOnBoundToWildcard(t *testing.T) {
 // and verifies it fails with the provided error code.
 // TODO(https://gvisor.dev/issue/5623): Extract the test write methods in the
 // testing context.
-func testFailingWrite(c *context.Context, flow context.TestFlow, wantErr tcpip.Error) {
+func testFailingWrite(c *context.Context, flow context.TestFlow, payloadSize int, wantErr tcpip.Error) {
 	c.T.Helper()
 	// Take a snapshot of the stats to validate them at the end of the test.
 	epstats := c.EP.Stats().(*tcpip.TransportEndpointStats).Clone()
@@ -431,7 +431,7 @@ func testFailingWrite(c *context.Context, flow context.TestFlow, wantErr tcpip.E
 	writeDstAddr := flow.MapAddrIfApplicable(h.Dst.Addr)
 
 	var r bytes.Reader
-	r.Reset(newRandomPayload(arbitraryPayloadSize))
+	r.Reset(newRandomPayload(payloadSize))
 	_, gotErr := c.EP.Write(&r, tcpip.WriteOptions{
 		To: &tcpip.FullAddress{Addr: writeDstAddr, Port: h.Dst.Port},
 	})
@@ -590,7 +590,7 @@ func TestDualWriteConnectedToV6(t *testing.T) {
 	testWrite(c, context.UnicastV6)
 
 	// Write to V4 mapped address.
-	testFailingWrite(c, context.UnicastV4in6, &tcpip.ErrNetworkUnreachable{})
+	testFailingWrite(c, context.UnicastV4in6, arbitraryPayloadSize, &tcpip.ErrNetworkUnreachable{})
 	const want = 1
 	if got := c.EP.Stats().(*tcpip.TransportEndpointStats).SendErrors.NoRoute.Value(); got != want {
 		c.T.Fatalf("Endpoint stat not updated. got %d want %d", got, want)
@@ -611,7 +611,7 @@ func TestDualWriteConnectedToV4Mapped(t *testing.T) {
 	testWrite(c, context.UnicastV4in6)
 
 	// Write to v6 address.
-	testFailingWrite(c, context.UnicastV6, &tcpip.ErrInvalidEndpointState{})
+	testFailingWrite(c, context.UnicastV6, arbitraryPayloadSize, &tcpip.ErrInvalidEndpointState{})
 }
 
 func TestV4WriteOnV6Only(t *testing.T) {
@@ -621,7 +621,7 @@ func TestV4WriteOnV6Only(t *testing.T) {
 	c.CreateEndpointForFlow(context.UnicastV6Only, udp.ProtocolNumber)
 
 	// Write to V4 mapped address.
-	testFailingWrite(c, context.UnicastV4in6, &tcpip.ErrNoRoute{})
+	testFailingWrite(c, context.UnicastV4in6, arbitraryPayloadSize, &tcpip.ErrNoRoute{})
 }
 
 func TestV6WriteOnBoundToV4Mapped(t *testing.T) {
@@ -636,7 +636,7 @@ func TestV6WriteOnBoundToV4Mapped(t *testing.T) {
 	}
 
 	// Write to v6 address.
-	testFailingWrite(c, context.UnicastV6, &tcpip.ErrInvalidEndpointState{})
+	testFailingWrite(c, context.UnicastV6, arbitraryPayloadSize, &tcpip.ErrInvalidEndpointState{})
 }
 
 func TestV6WriteOnConnected(t *testing.T) {
@@ -1772,7 +1772,7 @@ func TestShutdownWrite(t *testing.T) {
 		t.Fatalf("Shutdown failed: %s", err)
 	}
 
-	testFailingWrite(c, context.UnicastV6, &tcpip.ErrClosedForSend{})
+	testFailingWrite(c, context.UnicastV6, arbitraryPayloadSize, &tcpip.ErrClosedForSend{})
 }
 
 func TestOutgoingSubnetBroadcast(t *testing.T) {
@@ -2065,6 +2065,22 @@ func TestChecksumWithZeroValueOnesComplementSum(t *testing.T) {
 			t.Errorf("got udp.IsChecksumValid(%s, %s, %d) = false, want = true", src, dst, payloadXsum)
 		}
 	}
+}
+
+// TestWritePayloadSizeTooBig verifies that writing anything bigger than
+// header.UDPMaximumPacketSize fails.
+func TestWritePayloadSizeTooBig(t *testing.T) {
+	c := context.New(t, []stack.TransportProtocolFactory{udp.NewProtocol, icmp.NewProtocol6, icmp.NewProtocol4})
+	defer c.Cleanup()
+
+	c.CreateEndpoint(ipv6.ProtocolNumber, udp.ProtocolNumber)
+
+	if err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestV6Addr, Port: context.TestPort}); err != nil {
+		c.T.Fatalf("Connect failed: %s", err)
+	}
+
+	testWrite(c, context.UnicastV6)
+	testFailingWrite(c, context.UnicastV6, header.UDPMaximumPacketSize+1, &tcpip.ErrMessageTooLong{})
 }
 
 func TestMain(m *testing.M) {

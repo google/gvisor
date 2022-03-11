@@ -16,6 +16,7 @@
 
 #include <errno.h>
 #ifdef __linux__
+#include <linux/errqueue.h>
 #include <linux/in6.h>
 #endif  // __linux__
 #include <netinet/in.h>
@@ -540,6 +541,108 @@ TEST_P(UDPSocketPairTest, GetSocketAcceptConn) {
   ASSERT_EQ(length, sizeof(got));
   EXPECT_EQ(got, 0);
 }
+
+#ifdef __linux__
+TEST_P(UDPSocketPairTest, PayloadTooBig) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  // Set IP_RECVERR socket option to enable error queueing.
+  int v = kSockOptOn;
+  socklen_t optlen = sizeof(v);
+  int opt_level = SOL_IP;
+  int opt_type = IP_RECVERR;
+  if (sockets->first_addr()->sa_family == AF_INET6) {
+    opt_level = SOL_IPV6;
+    opt_type = IPV6_RECVERR;
+  }
+  ASSERT_THAT(setsockopt(sockets->first_fd(), opt_level, opt_type, &v, optlen),
+              SyscallSucceeds());
+
+  // Buffers bigger than 0xffff should receive an error.
+  const int kBufLen = 0x10000;
+  char buf[kBufLen];
+  RandomizeBuffer(buf, sizeof(buf));
+
+  EXPECT_THAT(send(sockets->first_fd(), buf, sizeof(buf), 0),
+              SyscallFailsWithErrno(EMSGSIZE));
+
+  // Dequeue error using recvmsg(MSG_ERRQUEUE). Give a buffer big-enough for
+  // the original message just in case.
+  char got[kBufLen];
+  struct iovec iov;
+  iov.iov_base = reinterpret_cast<void*>(got);
+  iov.iov_len = kBufLen;
+
+  const int addrlen_ = sockets->second_addr_size();
+  size_t control_buf_len = CMSG_SPACE(sizeof(sock_extended_err) + addrlen_);
+  std::vector<char> control_buf(control_buf_len);
+  struct sockaddr_storage remote;
+  memset(&remote, 0, sizeof(remote));
+  struct msghdr msg = {};
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+  msg.msg_flags = 0;
+  msg.msg_control = control_buf.data();
+  msg.msg_controllen = control_buf_len;
+  msg.msg_name = reinterpret_cast<void*>(&remote);
+  msg.msg_namelen = addrlen_;
+
+  struct sockaddr_storage addr;
+  optlen = sizeof(addr);
+  EXPECT_THAT(getpeername(sockets->first_fd(), AsSockAddr(&addr), &optlen),
+              SyscallSucceeds());
+  bool ipv6 = false;
+  if (addr.ss_family == AF_INET6) {
+    auto ipv6addr = reinterpret_cast<struct sockaddr_in6*>(&addr);
+
+    // Exclude IPv4-mapped addresses.
+    uint8_t v4MappedPrefix[12] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                  0x00, 0x00, 0x00, 0x00, 0xff, 0xff};
+    ipv6 = memcmp(&ipv6addr->sin6_addr.s6_addr[0], v4MappedPrefix,
+                  sizeof(v4MappedPrefix)) != 0;
+  }
+  // Native behaviour for IPv4 packets is to not report to ERRQUEUE.
+  if (!ipv6) {
+    EXPECT_THAT(recvmsg(sockets->first_fd(), &msg, MSG_ERRQUEUE),
+                SyscallFailsWithErrno(EAGAIN));
+    return;
+  }
+
+  ASSERT_THAT(recvmsg(sockets->first_fd(), &msg, MSG_ERRQUEUE),
+              SyscallSucceedsWithValue(0));
+
+  EXPECT_NE(msg.msg_flags & MSG_ERRQUEUE, 0);
+  EXPECT_EQ(memcmp(&remote, sockets->second_addr(), addrlen_), 0);
+
+  // Check the contents of the control message.
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+  ASSERT_NE(cmsg, nullptr);
+  EXPECT_EQ(CMSG_NXTHDR(&msg, cmsg), nullptr);
+  EXPECT_EQ(cmsg->cmsg_level, opt_level);
+  EXPECT_EQ(cmsg->cmsg_type, opt_type);
+  EXPECT_EQ(cmsg->cmsg_len,
+            sizeof(sock_extended_err) + addrlen_ + sizeof(cmsghdr));
+
+  // Check the contents of socket error.
+  struct sock_extended_err* sock_err =
+      reinterpret_cast<sock_extended_err*>(CMSG_DATA(cmsg));
+  EXPECT_EQ(sock_err->ee_errno, EMSGSIZE);
+  EXPECT_EQ(sock_err->ee_origin, SO_EE_ORIGIN_LOCAL);
+  EXPECT_EQ(sock_err->ee_type, ICMP_ECHOREPLY);
+  EXPECT_EQ(sock_err->ee_code, ICMP_NET_UNREACH);
+  EXPECT_EQ(sock_err->ee_info, kBufLen);
+  EXPECT_EQ(sock_err->ee_data, 0);
+
+  // Verify that no socket error was put on the queue.
+  int err;
+  optlen = sizeof(err);
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), SOL_SOCKET, SO_ERROR, &err, &optlen),
+      SyscallSucceeds());
+  ASSERT_EQ(err, 0);
+  ASSERT_EQ(optlen, sizeof(err));
+}
+#endif  // __linux__
 
 }  // namespace testing
 }  // namespace gvisor
