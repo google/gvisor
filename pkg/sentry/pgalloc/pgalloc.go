@@ -344,7 +344,7 @@ func NewMemoryFile(file *os.File, opts MemoryFileOpts) (*MemoryFile, error) {
 			}
 		}, "low")
 		if err != nil {
-			return nil, fmt.Errorf("failed to configure memcg pressure level notifications: %v", err)
+			return nil, fmt.Errorf("failed to configure memcg pressure level notifications: %w", err)
 		}
 		f.stopNotifyPressure = stop
 	}

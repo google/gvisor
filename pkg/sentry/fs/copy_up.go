@@ -222,7 +222,7 @@ func copyUpLocked(ctx context.Context, parent *Dirent, next *Dirent) error {
 		}
 		childUpper, err := parentUpper.Lookup(ctx, next.name)
 		if err != nil {
-			werr := fmt.Errorf("copy up failed to lookup directory: %v", err)
+			werr := fmt.Errorf("copy up failed to lookup directory: %w", err)
 			cleanupUpper(ctx, parentUpper, next.name, werr)
 			return linuxerr.EIO
 		}
@@ -242,7 +242,7 @@ func copyUpLocked(ctx context.Context, parent *Dirent, next *Dirent) error {
 		}
 		childUpper, err := parentUpper.Lookup(ctx, next.name)
 		if err != nil {
-			werr := fmt.Errorf("copy up failed to lookup symlink: %v", err)
+			werr := fmt.Errorf("copy up failed to lookup symlink: %w", err)
 			cleanupUpper(ctx, parentUpper, next.name, werr)
 			return linuxerr.EIO
 		}
@@ -256,14 +256,14 @@ func copyUpLocked(ctx context.Context, parent *Dirent, next *Dirent) error {
 	// Bring file attributes up to date. This does not include size, which will be
 	// brought up to date with copyContentsLocked.
 	if err := copyAttributesLocked(ctx, childUpperInode, next.Inode.overlay.lower); err != nil {
-		werr := fmt.Errorf("copy up failed to copy up attributes: %v", err)
+		werr := fmt.Errorf("copy up failed to copy up attributes: %w", err)
 		cleanupUpper(ctx, parentUpper, next.name, werr)
 		return linuxerr.EIO
 	}
 
 	// Copy the entire file.
 	if err := copyContentsLocked(ctx, childUpperInode, next.Inode.overlay.lower, attrs.Size); err != nil {
-		werr := fmt.Errorf("copy up failed to copy up contents: %v", err)
+		werr := fmt.Errorf("copy up failed to copy up contents: %w", err)
 		cleanupUpper(ctx, parentUpper, next.name, werr)
 		return linuxerr.EIO
 	}

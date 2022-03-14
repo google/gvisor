@@ -40,7 +40,7 @@ func main() {
 		testfunc: func() error {
 			dir2Path := filepath.Join(tempdir, "subdir2")
 			if err := unix.Mount(filepath.Join(tempdir, "subdir"), dir2Path, "bind", unix.MS_BIND, ""); err != nil {
-				return fmt.Errorf("mount: %v", err)
+				return fmt.Errorf("mount: %w", err)
 			}
 			return unix.Unmount(dir2Path, unix.MNT_DETACH)
 		},
@@ -50,7 +50,7 @@ func main() {
 		testfunc: func() error {
 			symlinkPath := filepath.Join(tempdir, "symlink")
 			if err := unix.Mount(filepath.Join(tempdir, "subdir"), symlinkPath, "bind", unix.MS_BIND, ""); err != nil {
-				return fmt.Errorf("mount: %v", err)
+				return fmt.Errorf("mount: %w", err)
 			}
 			return unix.Unmount(symlinkPath, unix.MNT_DETACH)
 		},
@@ -59,7 +59,7 @@ func main() {
 		testfunc: func() error {
 			dir2Path := filepath.Join(tempdir, "subdir2")
 			if err := specutils.SafeMount(filepath.Join(tempdir, "subdir"), dir2Path, "bind", unix.MS_BIND, "", "/proc"); err != nil {
-				return fmt.Errorf("SafeMount: %v", err)
+				return fmt.Errorf("SafeMount: %w", err)
 			}
 			return unix.Unmount(dir2Path, unix.MNT_DETACH)
 		},
@@ -72,7 +72,7 @@ func main() {
 			}
 			var symErr *specutils.ErrSymlinkMount
 			if !errors.As(err, &symErr) {
-				return fmt.Errorf("expected SafeMount to fail with ErrSymlinkMount, but got: %v", err)
+				return fmt.Errorf("expected SafeMount to fail with ErrSymlinkMount, but got: %w", err)
 			}
 			return nil
 		},
@@ -108,7 +108,7 @@ func runTest(tempdir string, testfunc func() error) error {
 	// Create tempdir/symlink, which points to ./subdir2.
 	symlinkPath := filepath.Join(tempdir, "symlink")
 	if err := os.Symlink("./subdir2", symlinkPath); err != nil {
-		return fmt.Errorf("failed to create symlink %s: %v", symlinkPath, err)
+		return fmt.Errorf("failed to create symlink %s: %w", symlinkPath, err)
 	}
 	defer os.Remove(symlinkPath)
 

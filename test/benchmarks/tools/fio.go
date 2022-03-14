@@ -97,7 +97,7 @@ type fioMetrics map[string]json.RawMessage
 func (f *Fio) parseFioJSON(data, op, metric string) (float64, error) {
 	var result fioResult
 	if err := json.Unmarshal([]byte(data), &result); err != nil {
-		return 0, fmt.Errorf("could not unmarshal data: %v", err)
+		return 0, fmt.Errorf("could not unmarshal data: %w", err)
 	}
 
 	if len(result.Jobs) < 1 {
@@ -106,7 +106,7 @@ func (f *Fio) parseFioJSON(data, op, metric string) (float64, error) {
 
 	var metrics fioMetrics
 	if err := json.Unmarshal(result.Jobs[0][op], &metrics); err != nil {
-		return 0, fmt.Errorf("could not unmarshal jobs: %v", err)
+		return 0, fmt.Errorf("could not unmarshal jobs: %w", err)
 	}
 
 	if _, ok := metrics[metric]; !ok {

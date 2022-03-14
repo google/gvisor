@@ -168,7 +168,7 @@ func (a AnalyzerConfig) RegexpCount() int64 {
 func (a AnalyzerConfig) compile() error {
 	for name, gc := range a {
 		if err := gc.compile(); err != nil {
-			return fmt.Errorf("invalid group %q: %v", name, err)
+			return fmt.Errorf("invalid group %q: %w", name, err)
 		}
 	}
 	return nil

@@ -49,7 +49,7 @@ func (e *Events) AttachDebugEmitter(o *EventsOpts, _ *struct{}) error {
 	// SocketEmitter takes ownership of sockFD.
 	emitter, err := eventchannel.SocketEmitter(sockFD)
 	if err != nil {
-		return fmt.Errorf("failed to create SocketEmitter for FD %d: %v", sockFD, err)
+		return fmt.Errorf("failed to create SocketEmitter for FD %d: %w", sockFD, err)
 	}
 
 	// If there is already a debug emitter, close the old one.

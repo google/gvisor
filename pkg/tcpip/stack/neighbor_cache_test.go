@@ -282,7 +282,7 @@ func addReachableEntryWithRemoved(nudDisp *testNUDDispatcher, clock *faketime.Ma
 		gotLinkResolutionResult = r
 	})
 	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-		return fmt.Errorf("got linkRes.neigh.entry(%s, '', _) = %v, want = %s", entry.Addr, err, &tcpip.ErrWouldBlock{})
+		return fmt.Errorf("got linkRes.neigh.entry(%s, '', _) = %w, want = %s", entry.Addr, err, &tcpip.ErrWouldBlock{})
 	}
 
 	{
@@ -479,7 +479,7 @@ func (c *testContext) overflowCache(opts overflowOptions) error {
 			return fmt.Errorf("got c.linkRes.entries.entry(%d) = _, false, want = true", i)
 		}
 		if err := addReachableEntryWithRemoved(c.nudDisp, c.clock, c.linkRes, entry, removedEntries); err != nil {
-			return fmt.Errorf("addReachableEntryWithRemoved(...) = %s", err)
+			return fmt.Errorf("addReachableEntryWithRemoved(...) = %w", err)
 		}
 	}
 

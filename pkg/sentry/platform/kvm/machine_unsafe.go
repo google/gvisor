@@ -73,7 +73,7 @@ func mapRunData(fd int) (*runData, error) {
 		uintptr(fd),
 		0)
 	if errno != 0 {
-		return nil, fmt.Errorf("error mapping runData: %v", errno)
+		return nil, fmt.Errorf("error mapping runData: %w", error(errno))
 	}
 	return (*runData)(unsafe.Pointer(r)), nil
 }
@@ -85,7 +85,7 @@ func unmapRunData(r *runData) error {
 		uintptr(unsafe.Pointer(r)),
 		uintptr(runDataSize),
 		0); errno != 0 {
-		return fmt.Errorf("error unmapping runData: %v", errno)
+		return fmt.Errorf("error unmapping runData: %w", error(errno))
 	}
 	return nil
 }
@@ -167,7 +167,7 @@ func (c *vCPU) setSignalMask() error {
 		uintptr(c.fd),
 		_KVM_SET_SIGNAL_MASK,
 		uintptr(unsafe.Pointer(&data))); errno != 0 {
-		return fmt.Errorf("error setting signal mask: %v", errno)
+		return fmt.Errorf("error setting signal mask: %w", error(errno))
 	}
 
 	return nil

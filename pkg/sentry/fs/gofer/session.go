@@ -377,12 +377,12 @@ func (s *session) fillKeyMap(ctx context.Context) error {
 	for ep, dirPath := range s.overrides.pathMap {
 		_, file, err := s.attach.walk(ctx, splitAbsolutePath(dirPath))
 		if err != nil {
-			return fmt.Errorf("error filling endpointmaps, failed to walk to %q: %v", dirPath, err)
+			return fmt.Errorf("error filling endpointmaps, failed to walk to %q: %w", dirPath, err)
 		}
 
 		qid, _, attr, err := file.getAttr(ctx, p9.AttrMaskAll())
 		if err != nil {
-			return fmt.Errorf("failed to get file attributes of %s: %v", dirPath, err)
+			return fmt.Errorf("failed to get file attributes of %s: %w", dirPath, err)
 		}
 
 		key := device.MultiDeviceKey{
@@ -420,7 +420,7 @@ func (s *session) restoreEndpointMaps(ctx context.Context) error {
 	// maps got stored through the save.
 	s.overrides.keyMap = make(map[device.MultiDeviceKey]*overrideInfo)
 	if err := s.fillKeyMap(ctx); err != nil {
-		return fmt.Errorf("failed to insert sockets into endpoint map: %v", err)
+		return fmt.Errorf("failed to insert sockets into endpoint map: %w", err)
 	}
 
 	// Re-create pathMap because it can no longer be trusted as socket paths can

@@ -224,7 +224,7 @@ func (cm *containerManager) StartRoot(cid *string, _ *struct{}) error {
 	// Tell the root container to start and wait for the result.
 	cm.startChan <- struct{}{}
 	if err := <-cm.startResultChan; err != nil {
-		return fmt.Errorf("starting sandbox: %v", err)
+		return fmt.Errorf("starting sandbox: %w", err)
 	}
 	return nil
 }
@@ -400,7 +400,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 		// Can't take ownership away from os.File. dup them to get a new FD.
 		fd, err := unix.Dup(int(o.Files[1].Fd()))
 		if err != nil {
-			return fmt.Errorf("failed to dup file: %v", err)
+			return fmt.Errorf("failed to dup file: %w", err)
 		}
 		deviceFile = os.NewFile(uintptr(fd), "platform device")
 		fallthrough
@@ -417,14 +417,14 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 
 	p, err := createPlatform(cm.l.root.conf, deviceFile)
 	if err != nil {
-		return fmt.Errorf("creating platform: %v", err)
+		return fmt.Errorf("creating platform: %w", err)
 	}
 	k := &kernel.Kernel{
 		Platform: p,
 	}
 	mf, err := createMemoryFile()
 	if err != nil {
-		return fmt.Errorf("creating memory file: %v", err)
+		return fmt.Errorf("creating memory file: %w", err)
 	}
 	k.SetMemoryFile(mf)
 	networkStack := cm.l.k.RootNetworkNamespace().Stack()
@@ -436,12 +436,12 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	if kernel.VFS2Enabled {
 		ctx, err = mntr.configureRestore(ctx)
 		if err != nil {
-			return fmt.Errorf("configuring filesystem restore: %v", err)
+			return fmt.Errorf("configuring filesystem restore: %w", err)
 		}
 	} else {
 		renv, err := mntr.createRestoreEnvironment(cm.l.root.conf)
 		if err != nil {
-			return fmt.Errorf("creating RestoreEnvironment: %v", err)
+			return fmt.Errorf("creating RestoreEnvironment: %w", err)
 		}
 		fs.SetRestoreEnvironment(*renv)
 	}
@@ -501,7 +501,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	// Tell the root container to start and wait for the result.
 	cm.startChan <- struct{}{}
 	if err := <-cm.startResultChan; err != nil {
-		return fmt.Errorf("starting sandbox: %v", err)
+		return fmt.Errorf("starting sandbox: %w", err)
 	}
 
 	return nil

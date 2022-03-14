@@ -99,7 +99,7 @@ func (ep *Endpoint) Init(side EndpointSide, pwd PacketWindowDescriptor, opts ...
 	}
 	m, err := memutil.MapFile(0, uintptr(pwd.Length), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED, uintptr(pwd.FD), uintptr(pwd.Offset))
 	if err != nil {
-		return fmt.Errorf("failed to mmap packet window: %v", err)
+		return fmt.Errorf("failed to mmap packet window: %w", err)
 	}
 	ep.packet = m
 	ep.dataCap = uint32(pwd.Length) - uint32(PacketHeaderBytes)

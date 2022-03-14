@@ -87,7 +87,7 @@ func startGofer(root string) (int, func(), error) {
 	if err != nil {
 		unix.Close(sandboxEnd)
 		unix.Close(goferEnd)
-		return 0, nil, fmt.Errorf("error creating server on FD %d: %v", goferEnd, err)
+		return 0, nil, fmt.Errorf("error creating server on FD %d: %w", goferEnd, err)
 	}
 	at, err := fsgofer.NewAttachPoint(root, fsgofer.Config{ROMount: true})
 	if err != nil {
@@ -96,7 +96,7 @@ func startGofer(root string) (int, func(), error) {
 	go func() {
 		s := p9.NewServer(at)
 		if err := s.Handle(socket); err != nil {
-			log.Infof("Gofer is stopping. FD: %d, err: %v\n", goferEnd, err)
+			log.Infof("Gofer is stopping. FD: %d, err: %w\n", goferEnd, err)
 		}
 	}()
 	// Closing the gofer socket will stop the gofer and exit goroutine above.

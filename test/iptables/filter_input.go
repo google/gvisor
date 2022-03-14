@@ -81,7 +81,7 @@ func (*FilterInputDropUDP) ContainerAction(ctx context.Context, ip net.IP, ipv6 
 	if err := listenUDP(timedCtx, dropPort, ipv6); err == nil {
 		return fmt.Errorf("packets on port %d should have been dropped, but got a packet", dropPort)
 	} else if !errors.Is(err, context.DeadlineExceeded) {
-		return fmt.Errorf("error reading: %v", err)
+		return fmt.Errorf("error reading: %w", err)
 	}
 
 	// At this point we know that reading timed out and never received a
@@ -112,7 +112,7 @@ func (*FilterInputDropOnlyUDP) ContainerAction(ctx context.Context, ip net.IP, i
 
 	// Listen for a TCP connection, which should be allowed.
 	if err := listenTCP(ctx, acceptPort, ipv6); err != nil {
-		return fmt.Errorf("failed to establish a connection %v", err)
+		return fmt.Errorf("failed to establish a connection %w", err)
 	}
 
 	return nil
@@ -147,7 +147,7 @@ func (*FilterInputDropUDPPort) ContainerAction(ctx context.Context, ip net.IP, i
 	if err := listenUDP(timedCtx, dropPort, ipv6); err == nil {
 		return fmt.Errorf("packets on port %d should have been dropped, but got a packet", dropPort)
 	} else if !errors.Is(err, context.DeadlineExceeded) {
-		return fmt.Errorf("error reading: %v", err)
+		return fmt.Errorf("error reading: %w", err)
 	}
 
 	// At this point we know that reading timed out and never received a
@@ -179,7 +179,7 @@ func (*FilterInputDropDifferentUDPPort) ContainerAction(ctx context.Context, ip 
 
 	// Listen for UDP packets on another port.
 	if err := listenUDP(ctx, acceptPort, ipv6); err != nil {
-		return fmt.Errorf("packets on port %d should be allowed, but encountered an error: %v", acceptPort, err)
+		return fmt.Errorf("packets on port %d should be allowed, but encountered an error: %w", acceptPort, err)
 	}
 
 	return nil
@@ -212,7 +212,7 @@ func (*FilterInputDropTCPDestPort) ContainerAction(ctx context.Context, ip net.I
 	if err := listenTCP(timedCtx, dropPort, ipv6); err == nil {
 		return fmt.Errorf("connection on port %d should not be accepted, but got accepted", dropPort)
 	} else if !errors.Is(err, context.DeadlineExceeded) {
-		return fmt.Errorf("error reading: %v", err)
+		return fmt.Errorf("error reading: %w", err)
 	}
 
 	return nil
@@ -252,7 +252,7 @@ func (*FilterInputDropTCPSrcPort) ContainerAction(ctx context.Context, ip net.IP
 	if err := listenTCP(timedCtx, acceptPort, ipv6); err == nil {
 		return fmt.Errorf("connection destined to port %d should not be accepted, but was", dropPort)
 	} else if !errors.Is(err, context.DeadlineExceeded) {
-		return fmt.Errorf("error reading: %v", err)
+		return fmt.Errorf("error reading: %w", err)
 	}
 
 	return nil
@@ -291,7 +291,7 @@ func (*FilterInputDropAll) ContainerAction(ctx context.Context, ip net.IP, ipv6 
 	if err := listenUDP(timedCtx, dropPort, ipv6); err == nil {
 		return fmt.Errorf("packets should have been dropped, but got a packet")
 	} else if !errors.Is(err, context.DeadlineExceeded) {
-		return fmt.Errorf("error reading: %v", err)
+		return fmt.Errorf("error reading: %w", err)
 	}
 
 	// At this point we know that reading timed out and never received a
@@ -431,7 +431,7 @@ func (*FilterInputDefaultPolicyDrop) ContainerAction(ctx context.Context, ip net
 	if err := listenUDP(timedCtx, dropPort, ipv6); err == nil {
 		return fmt.Errorf("packets on port %d should have been dropped, but got a packet", dropPort)
 	} else if !errors.Is(err, context.DeadlineExceeded) {
-		return fmt.Errorf("error reading: %v", err)
+		return fmt.Errorf("error reading: %w", err)
 	}
 
 	// At this point we know that reading timed out and never received a
@@ -596,7 +596,7 @@ func (*FilterInputJumpReturnDrop) ContainerAction(ctx context.Context, ip net.IP
 	if err := listenUDP(timedCtx, dropPort, ipv6); err == nil {
 		return fmt.Errorf("packets on port %d should have been dropped, but got a packet", dropPort)
 	} else if !errors.Is(err, context.DeadlineExceeded) {
-		return fmt.Errorf("error reading: %v", err)
+		return fmt.Errorf("error reading: %w", err)
 	}
 
 	// At this point we know that reading timed out and never received a

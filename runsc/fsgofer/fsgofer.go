@@ -128,17 +128,17 @@ func (a *attachPoint) Attach() (p9.File, error) {
 		return fd.Open(a.prefix, openFlags|mode, 0)
 	})
 	if err != nil {
-		return nil, fmt.Errorf("unable to open %q: %v", a.prefix, err)
+		return nil, fmt.Errorf("unable to open %q: %w", a.prefix, err)
 	}
 
 	stat, err := fstat(f.FD())
 	if err != nil {
-		return nil, fmt.Errorf("unable to stat %q: %v", a.prefix, err)
+		return nil, fmt.Errorf("unable to stat %q: %w", a.prefix, err)
 	}
 
 	lf, err := newLocalFile(a, f, a.prefix, readable, &stat)
 	if err != nil {
-		return nil, fmt.Errorf("unable to create localFile %q: %v", a.prefix, err)
+		return nil, fmt.Errorf("unable to create localFile %q: %w", a.prefix, err)
 	}
 	a.attached = true
 	return lf, nil
@@ -262,7 +262,7 @@ var procSelfFD *fd.FD
 func OpenProcSelfFD() error {
 	d, err := unix.Open("/proc/self/fd", unix.O_RDONLY|unix.O_DIRECTORY, 0)
 	if err != nil {
-		return fmt.Errorf("error opening /proc/self/fd: %v", err)
+		return fmt.Errorf("error opening /proc/self/fd: %w", err)
 	}
 	procSelfFD = fd.New(d)
 	return nil

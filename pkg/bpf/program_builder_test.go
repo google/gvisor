@@ -24,15 +24,15 @@ import (
 func validate(p *ProgramBuilder, expected []linux.BPFInstruction) error {
 	instructions, err := p.Instructions()
 	if err != nil {
-		return fmt.Errorf("Instructions() failed: %v", err)
+		return fmt.Errorf("Instructions() failed: %w", err)
 	}
 	got, err := DecodeInstructions(instructions)
 	if err != nil {
-		return fmt.Errorf("DecodeInstructions('instructions') failed: %v", err)
+		return fmt.Errorf("DecodeInstructions('instructions') failed: %w", err)
 	}
 	expectedDecoded, err := DecodeInstructions(expected)
 	if err != nil {
-		return fmt.Errorf("DecodeInstructions('expected') failed: %v", err)
+		return fmt.Errorf("DecodeInstructions('expected') failed: %w", err)
 	}
 	if got != expectedDecoded {
 		return fmt.Errorf("DecodeInstructions() failed, expected: %q, got: %q", expectedDecoded, got)

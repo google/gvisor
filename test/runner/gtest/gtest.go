@@ -152,9 +152,9 @@ func ParseBenchmarks(binary string, extraArgs ...string) ([]TestCase, error) {
 		// We requested them, so we return an error in this case.
 		exitErr, ok := err.(*exec.ExitError)
 		if !ok {
-			return nil, fmt.Errorf("could not enumerate benchmarks: %v", err)
+			return nil, fmt.Errorf("could not enumerate benchmarks: %w", err)
 		}
-		return nil, fmt.Errorf("could not enumerate benchmarks: %v\nstderr\n%s", err, exitErr.Stderr)
+		return nil, fmt.Errorf("could not enumerate benchmarks: %w\nstderr\n%s", err, exitErr.Stderr)
 	}
 
 	benches := strings.Trim(string(out), "\n")

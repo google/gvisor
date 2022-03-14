@@ -43,7 +43,7 @@ func MaxPossibleCPU() (uint32, error) {
 	// lib/bitmap.c:bitmap_print_to_pagebuf()
 	i, err := maxValueInLinuxBitmap(str)
 	if err != nil {
-		return 0, fmt.Errorf("invalid %s (%q): %v", path, str, err)
+		return 0, fmt.Errorf("invalid %s (%q): %w", path, str, err)
 	}
 	return uint32(i), nil
 }

@@ -182,7 +182,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 	}
 
 	if err := os.MkdirAll(conf.RootDir, 0711); err != nil {
-		return nil, fmt.Errorf("creating container root directory %q: %v", conf.RootDir, err)
+		return nil, fmt.Errorf("creating container root directory %q: %w", conf.RootDir, err)
 	}
 
 	sandboxID := args.ID
@@ -333,7 +333,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 	// this file is created, so it must be the last thing we do.
 	if args.PIDFile != "" {
 		if err := ioutil.WriteFile(args.PIDFile, []byte(strconv.Itoa(c.SandboxPid())), 0644); err != nil {
-			return nil, fmt.Errorf("error writing PID file: %v", err)
+			return nil, fmt.Errorf("error writing PID file: %w", err)
 		}
 	}
 
@@ -385,7 +385,7 @@ func (c *Container) Start(conf *config.Config) error {
 
 			cleanMounts, err := specutils.ReadMounts(mountsFile)
 			if err != nil {
-				return fmt.Errorf("reading mounts file: %v", err)
+				return fmt.Errorf("reading mounts file: %w", err)
 			}
 			c.Spec.Mounts = cleanMounts
 
@@ -460,7 +460,7 @@ func Run(conf *config.Config, args Args) (unix.WaitStatus, error) {
 	log.Debugf("Run container, cid: %s, rootDir: %q", args.ID, conf.RootDir)
 	c, err := New(conf, args)
 	if err != nil {
-		return 0, fmt.Errorf("creating container: %v", err)
+		return 0, fmt.Errorf("creating container: %w", err)
 	}
 	// Clean up partially created container if an error occurs.
 	// Any errors returned by Destroy() itself are ignored.
@@ -472,11 +472,11 @@ func Run(conf *config.Config, args Args) (unix.WaitStatus, error) {
 	if conf.RestoreFile != "" {
 		log.Debugf("Restore: %v", conf.RestoreFile)
 		if err := c.Restore(args.Spec, conf, conf.RestoreFile); err != nil {
-			return 0, fmt.Errorf("starting container: %v", err)
+			return 0, fmt.Errorf("starting container: %w", err)
 		}
 	} else {
 		if err := c.Start(conf); err != nil {
-			return 0, fmt.Errorf("starting container: %v", err)
+			return 0, fmt.Errorf("starting container: %w", err)
 		}
 	}
 	if args.Attached {
@@ -629,7 +629,7 @@ func (c *Container) Pause() error {
 	}
 
 	if err := c.Sandbox.Pause(c.ID); err != nil {
-		return fmt.Errorf("pausing container %q: %v", c.ID, err)
+		return fmt.Errorf("pausing container %q: %w", c.ID, err)
 	}
 	c.changeStatus(Paused)
 	return c.saveLocked()
@@ -648,7 +648,7 @@ func (c *Container) Resume() error {
 		return fmt.Errorf("cannot resume container %q in state %v", c.ID, c.Status)
 	}
 	if err := c.Sandbox.Resume(c.ID); err != nil {
-		return fmt.Errorf("resuming container: %v", err)
+		return fmt.Errorf("resuming container: %w", err)
 	}
 	c.changeStatus(Running)
 	return c.saveLocked()
@@ -730,13 +730,13 @@ func (c *Container) Destroy() error {
 	// of errors return their concatenation.
 	var errs []string
 	if err := c.stop(); err != nil {
-		err = fmt.Errorf("stopping container: %v", err)
+		err = fmt.Errorf("stopping container: %w", err)
 		log.Warningf("%v", err)
 		errs = append(errs, err.Error())
 	}
 
 	if err := c.Saver.destroy(); err != nil {
-		err = fmt.Errorf("deleting container state files: %v", err)
+		err = fmt.Errorf("deleting container state files: %w", err)
 		log.Warningf("%v", err)
 		errs = append(errs, err.Error())
 	}
@@ -780,7 +780,7 @@ func (c *Container) Destroy() error {
 func (c *Container) saveLocked() error {
 	log.Debugf("Save container, cid: %s", c.ID)
 	if err := c.Saver.saveLocked(c); err != nil {
-		return fmt.Errorf("saving container metadata: %v", err)
+		return fmt.Errorf("saving container metadata: %w", err)
 	}
 	return nil
 }
@@ -794,7 +794,7 @@ func (c *Container) stop() error {
 	if c.Sandbox != nil {
 		log.Debugf("Destroying container, cid: %s", c.ID)
 		if err := c.Sandbox.DestroyContainer(c.ID); err != nil {
-			return fmt.Errorf("destroying container %q: %v", c.ID, err)
+			return fmt.Errorf("destroying container %q: %w", c.ID, err)
 		}
 		// Only uninstall parentCgroup for sandbox stop.
 		if c.Sandbox.IsRootContainer(c.ID) {
@@ -848,7 +848,7 @@ func (c *Container) waitForStopped() error {
 		// The gofer process is a child of the current process,
 		// so we can wait it and collect its zombie.
 		if _, err := unix.Wait4(int(c.GoferPid), nil, 0, nil); err != nil {
-			return fmt.Errorf("error waiting the gofer process: %v", err)
+			return fmt.Errorf("error waiting the gofer process: %w", err)
 		}
 		c.GoferPid = 0
 		return nil
@@ -880,7 +880,7 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 	if conf.LogFilename != "" {
 		logFile, err := os.OpenFile(conf.LogFilename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
-			return nil, nil, fmt.Errorf("opening log file %q: %v", conf.LogFilename, err)
+			return nil, nil, fmt.Errorf("opening log file %q: %w", conf.LogFilename, err)
 		}
 		defer logFile.Close()
 		goferEnds = append(goferEnds, logFile)
@@ -898,7 +898,7 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 		}
 		debugLogFile, err := specutils.DebugLogFile(conf.DebugLog, "gofer", test)
 		if err != nil {
-			return nil, nil, fmt.Errorf("opening debug log file in %q: %v", conf.DebugLog, err)
+			return nil, nil, fmt.Errorf("opening debug log file in %q: %w", conf.DebugLog, err)
 		}
 		defer debugLogFile.Close()
 		goferEnds = append(goferEnds, debugLogFile)
@@ -911,7 +911,7 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 	// Open the spec file to donate to the sandbox.
 	specFile, err := specutils.OpenSpec(bundleDir)
 	if err != nil {
-		return nil, nil, fmt.Errorf("opening spec file: %v", err)
+		return nil, nil, fmt.Errorf("opening spec file: %w", err)
 	}
 	defer specFile.Close()
 	goferEnds = append(goferEnds, specFile)
@@ -993,7 +993,7 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 	// Start the gofer in the given namespace.
 	log.Debugf("Starting gofer: %s %v", binPath, args)
 	if err := specutils.StartInNS(cmd, nss); err != nil {
-		return nil, nil, fmt.Errorf("gofer: %v", err)
+		return nil, nil, fmt.Errorf("gofer: %w", err)
 	}
 	log.Infof("Gofer started, PID: %d", cmd.Process.Pid)
 	c.GoferPid = cmd.Process.Pid
@@ -1100,7 +1100,7 @@ func adjustSandboxOOMScoreAdj(s *sandbox.Sandbox, spec *specs.Spec, rootDir stri
 
 	containers, err := loadSandbox(rootDir, s.ID)
 	if err != nil {
-		return fmt.Errorf("loading sandbox containers: %v", err)
+		return fmt.Errorf("loading sandbox containers: %w", err)
 	}
 
 	// Do nothing if the sandbox has been terminated.
@@ -1167,7 +1167,7 @@ func setOOMScoreAdj(pid int, scoreAdj int) error {
 			log.Warningf("Process (%d) exited while setting oom_score_adj", pid)
 			return nil
 		}
-		return fmt.Errorf("setting oom_score_adj to %q: %v", scoreAdj, err)
+		return fmt.Errorf("setting oom_score_adj to %q: %w", scoreAdj, err)
 	}
 	return nil
 }
@@ -1288,7 +1288,7 @@ func cgroupInstall(conf *config.Config, cg cgroup.Cgroup, res *specs.LinuxResour
 			log.Warningf("Skipping cgroup configuration in rootless mode: %v", err)
 			return nil, nil
 		default:
-			return nil, fmt.Errorf("configuring cgroup: %v", err)
+			return nil, fmt.Errorf("configuring cgroup: %w", err)
 		}
 	}
 	return cg, nil

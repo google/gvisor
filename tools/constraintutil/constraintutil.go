@@ -131,7 +131,7 @@ func CombineFromFiles(paths []string) (constraint.Expr, error) {
 	for _, path := range paths {
 		e, err := FromFile(path)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read build constraints from %q: %v", path, err)
+			return nil, fmt.Errorf("failed to read build constraints from %q: %w", path, err)
 		}
 		if e != nil {
 			es = append(es, e)

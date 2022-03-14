@@ -156,7 +156,7 @@ func MaybeAddExecUserHome(ctx context.Context, mns *fs.MountNamespace, uid auth.
 	// the user.
 	homeDir, err := getExecUserHome(ctx, mns, uid)
 	if err != nil {
-		return nil, fmt.Errorf("error reading exec user: %v", err)
+		return nil, fmt.Errorf("error reading exec user: %w", err)
 	}
 
 	return append(envv, "HOME="+homeDir), nil
@@ -179,7 +179,7 @@ func MaybeAddExecUserHomeVFS2(ctx context.Context, vmns *vfs.MountNamespace, uid
 	// the user.
 	homeDir, err := getExecUserHomeVFS2(ctx, vmns, uid)
 	if err != nil {
-		return nil, fmt.Errorf("error reading exec user: %v", err)
+		return nil, fmt.Errorf("error reading exec user: %w", err)
 	}
 	return append(envv, "HOME="+homeDir), nil
 }

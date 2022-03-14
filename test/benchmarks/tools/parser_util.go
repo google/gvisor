@@ -91,7 +91,7 @@ type Metric struct {
 func ParseCustomMetric(value, metric string) (*Metric, error) {
 	sample, err := strconv.ParseFloat(value, 64)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse value: %v", err)
+		return nil, fmt.Errorf("failed to parse value: %w", err)
 	}
 	nameUnit := strings.Split(metric, ".")
 	if len(nameUnit) != 2 {

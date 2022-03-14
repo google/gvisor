@@ -2342,11 +2342,11 @@ func TestSmallReceiveBufferReadiness(t *testing.T) {
 								break
 							}
 						default:
-							return fmt.Errorf("server.Write failed: %s", err)
+							return fmt.Errorf("server.Write failed: %w", err)
 						}
 					}
 					if err := server.Shutdown(tcpip.ShutdownWrite); err != nil {
-						return fmt.Errorf("server.Shutdown failed: %s", err)
+						return fmt.Errorf("server.Shutdown failed: %w", err)
 					}
 					t.Logf("server end shutdown done")
 					return nil
@@ -2383,7 +2383,7 @@ func TestSmallReceiveBufferReadiness(t *testing.T) {
 								break
 							}
 						default:
-							return fmt.Errorf("client.Write failed: %s", err)
+							return fmt.Errorf("client.Write failed: %w", err)
 						}
 					}
 				}(); err != nil {

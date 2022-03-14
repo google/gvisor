@@ -123,7 +123,7 @@ func ApplyNS(ns specs.LinuxNamespace) (func(), error) {
 	log.Infof("Applying namespace %v at path %q", ns.Type, ns.Path)
 	newNS, err := os.Open(ns.Path)
 	if err != nil {
-		return nil, fmt.Errorf("error opening %q: %v", ns.Path, err)
+		return nil, fmt.Errorf("error opening %q: %w", ns.Path, err)
 	}
 	defer newNS.Close()
 
@@ -131,14 +131,14 @@ func ApplyNS(ns specs.LinuxNamespace) (func(), error) {
 	curPath := nsPath(ns.Type)
 	oldNS, err := os.Open(curPath)
 	if err != nil {
-		return nil, fmt.Errorf("error opening %q: %v", curPath, err)
+		return nil, fmt.Errorf("error opening %q: %w", curPath, err)
 	}
 
 	// Set namespace to the one requested and setup function to restore it back.
 	flag := nsCloneFlag(ns.Type)
 	if err := setNS(newNS.Fd(), flag); err != nil {
 		oldNS.Close()
-		return nil, fmt.Errorf("error setting namespace of type %v and path %q: %v", ns.Type, ns.Path, err)
+		return nil, fmt.Errorf("error setting namespace of type %v and path %q: %w", ns.Type, ns.Path, err)
 	}
 	return func() {
 		log.Infof("Restoring namespace %v", ns.Type)

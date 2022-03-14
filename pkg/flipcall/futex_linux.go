@@ -40,7 +40,7 @@ func (ep *Endpoint) futexSetPeerActive() error {
 
 func (ep *Endpoint) futexWakePeer() error {
 	if err := ep.futexWakeConnState(1); err != nil {
-		return fmt.Errorf("failed to FUTEX_WAKE peer Endpoint: %v", err)
+		return fmt.Errorf("failed to FUTEX_WAKE peer Endpoint: %w", err)
 	}
 	return nil
 }
@@ -55,7 +55,7 @@ func (ep *Endpoint) futexWaitUntilActive() error {
 				return ShutdownError{}
 			}
 			if err := ep.futexWaitConnState(ep.inactiveState); err != nil {
-				return fmt.Errorf("failed to FUTEX_WAIT for peer Endpoint: %v", err)
+				return fmt.Errorf("failed to FUTEX_WAIT for peer Endpoint: %w", err)
 			}
 			continue
 		case csShutdown:

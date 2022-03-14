@@ -32,7 +32,7 @@ func (i *inodeFileState) afterLoad() {
 	// Remap the inode number.
 	var s unix.Stat_t
 	if err := unix.Fstat(i.FD(), &s); err != nil {
-		panic(fs.ErrCorruption{fmt.Errorf("failed to get metadata for fd %d: %v", i.FD(), err)})
+		panic(fs.ErrCorruption{fmt.Errorf("failed to get metadata for fd %d: %w", i.FD(), err)})
 	}
 	key := device.MultiDeviceKey{
 		Device: s.Dev,

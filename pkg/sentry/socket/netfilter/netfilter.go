@@ -320,7 +320,7 @@ func parseMatchers(task *kernel.Task, filter stack.IPHeaderFilter, optVal []byte
 		// Parse the specific matcher.
 		matcher, err := unmarshalMatcher(task, match, filter, optVal[linux.SizeOfXTEntryMatch:match.MatchSize])
 		if err != nil {
-			return nil, fmt.Errorf("failed to create matcher: %v", err)
+			return nil, fmt.Errorf("failed to create matcher: %w", err)
 		}
 		matchers = append(matchers, matcher)
 

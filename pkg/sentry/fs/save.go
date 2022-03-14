@@ -72,6 +72,6 @@ func SaveFileFsyncError(err error) error {
 		return nil
 	default:
 		// We failed in some way that indicates potential data loss.
-		return fmt.Errorf("failed to sync: %v, data loss may occur", err)
+		return fmt.Errorf("failed to sync: %w, data loss may occur", err)
 	}
 }

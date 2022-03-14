@@ -319,13 +319,13 @@ func TestOutboundNATRedirect(t *testing.T) {
 	dialFunc := func(protocol, address string) (net.Conn, error) {
 		host, port, err := net.SplitHostPort(address)
 		if err != nil {
-			return nil, fmt.Errorf("unable to parse address: %s, err: %s", address, err)
+			return nil, fmt.Errorf("unable to parse address: %s, err: %w", address, err)
 		}
 
 		remoteServerIP := net.ParseIP(host)
 		remoteServerPort, err := strconv.Atoi(port)
 		if err != nil {
-			return nil, fmt.Errorf("unable to parse port from string %s, err: %s", port, err)
+			return nil, fmt.Errorf("unable to parse port from string %s, err: %w", port, err)
 		}
 		remoteAddress := tcpip.FullAddress{
 			Addr: tcpip.Address(remoteServerIP.To4()),

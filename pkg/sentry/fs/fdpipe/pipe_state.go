@@ -78,10 +78,10 @@ func (p *pipeOperations) afterLoad() {
 			Write: p.flags.Write,
 		})
 		if err != nil {
-			return fmt.Errorf("unable to open pipe %v: %v", p, err)
+			return fmt.Errorf("unable to open pipe %v: %w", p, err)
 		}
 		if err := p.init(); err != nil {
-			return fmt.Errorf("unable to initialize pipe %v: %v", p, err)
+			return fmt.Errorf("unable to initialize pipe %v: %w", p, err)
 		}
 		return nil
 	}

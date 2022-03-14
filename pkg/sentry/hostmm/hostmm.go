@@ -62,7 +62,7 @@ func NotifyCurrentMemcgPressureCallback(f func(), level string) (func(), error) 
 	eventControlStr := fmt.Sprintf("%d %d %s", eventFD.FD(), pressureFile.Fd(), level)
 	if n, err := eventControlFile.Write([]byte(eventControlStr)); n != len(eventControlStr) || err != nil {
 		eventFD.Close()
-		return nil, fmt.Errorf("error writing %q to %s: got (%d, %v), wanted (%d, nil)", eventControlStr, eventControlPath, n, err, len(eventControlStr))
+		return nil, fmt.Errorf("error writing %q to %s: got (%d, %w), wanted (%d, nil)", eventControlStr, eventControlPath, n, err, len(eventControlStr))
 	}
 
 	log.Debugf("Receiving memory pressure level notifications from %s at level %q", pressurePath, level)

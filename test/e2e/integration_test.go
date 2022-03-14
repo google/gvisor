@@ -61,7 +61,7 @@ func httpRequestSucceeds(client http.Client, server string, port int) error {
 	// Ensure that content is being served.
 	resp, err := client.Get(url)
 	if err != nil {
-		return fmt.Errorf("error reaching http server: %v", err)
+		return fmt.Errorf("error reaching http server: %w", err)
 	}
 	if want := http.StatusOK; resp.StatusCode != want {
 		return fmt.Errorf("wrong response code, got: %d, want: %d", resp.StatusCode, want)

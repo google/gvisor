@@ -161,7 +161,7 @@ func OpenSpec(bundleDir string) (*os.File, error) {
 func ReadSpec(bundleDir string, conf *config.Config) (*specs.Spec, error) {
 	specFile, err := OpenSpec(bundleDir)
 	if err != nil {
-		return nil, fmt.Errorf("error opening spec file %q: %v", filepath.Join(bundleDir, "config.json"), err)
+		return nil, fmt.Errorf("error opening spec file %q: %w", filepath.Join(bundleDir, "config.json"), err)
 	}
 	defer specFile.Close()
 	return ReadSpecFromFile(bundleDir, specFile, conf)
@@ -171,15 +171,15 @@ func ReadSpec(bundleDir string, conf *config.Config) (*specs.Spec, error) {
 // normalizes all relative paths into absolute by prepending the bundle dir.
 func ReadSpecFromFile(bundleDir string, specFile *os.File, conf *config.Config) (*specs.Spec, error) {
 	if _, err := specFile.Seek(0, io.SeekStart); err != nil {
-		return nil, fmt.Errorf("error seeking to beginning of file %q: %v", specFile.Name(), err)
+		return nil, fmt.Errorf("error seeking to beginning of file %q: %w", specFile.Name(), err)
 	}
 	specBytes, err := ioutil.ReadAll(specFile)
 	if err != nil {
-		return nil, fmt.Errorf("error reading spec from file %q: %v", specFile.Name(), err)
+		return nil, fmt.Errorf("error reading spec from file %q: %w", specFile.Name(), err)
 	}
 	var spec specs.Spec
 	if err := json.Unmarshal(specBytes, &spec); err != nil {
-		return nil, fmt.Errorf("error unmarshaling spec from file %q: %v\n %s", specFile.Name(), err, string(specBytes))
+		return nil, fmt.Errorf("error unmarshaling spec from file %q: %w\n %s", specFile.Name(), err, string(specBytes))
 	}
 	if err := ValidateSpec(&spec); err != nil {
 		return nil, err
@@ -213,11 +213,11 @@ func ReadSpecFromFile(bundleDir string, specFile *os.File, conf *config.Config) 
 func ReadMounts(f *os.File) ([]specs.Mount, error) {
 	bytes, err := ioutil.ReadAll(f)
 	if err != nil {
-		return nil, fmt.Errorf("error reading mounts: %v", err)
+		return nil, fmt.Errorf("error reading mounts: %w", err)
 	}
 	var mounts []specs.Mount
 	if err := json.Unmarshal(bytes, &mounts); err != nil {
-		return nil, fmt.Errorf("error unmarshaling mounts: %v\nJSON bytes:\n%s", err, string(bytes))
+		return nil, fmt.Errorf("error unmarshaling mounts: %w\nJSON bytes:\n%s", err, string(bytes))
 	}
 	return mounts, nil
 }
@@ -402,7 +402,7 @@ func WaitForReady(pid int, timeout time.Duration, ready func() (bool, error)) er
 		var ru unix.Rusage
 		child, err := unix.Wait4(pid, &ws, unix.WNOHANG, &ru)
 		if err != nil {
-			return backoff.Permanent(fmt.Errorf("error waiting for process: %v", err))
+			return backoff.Permanent(fmt.Errorf("error waiting for process: %w", err))
 		} else if child == pid {
 			return backoff.Permanent(fmt.Errorf("process %d has terminated", pid))
 		}
@@ -429,7 +429,7 @@ func DebugLogFile(logPattern, command, test string) (*os.File, error) {
 
 	dir := filepath.Dir(logPattern)
 	if err := os.MkdirAll(dir, 0775); err != nil {
-		return nil, fmt.Errorf("error creating dir %q: %v", dir, err)
+		return nil, fmt.Errorf("error creating dir %q: %w", dir, err)
 	}
 	return os.OpenFile(logPattern, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0664)
 }
@@ -445,7 +445,7 @@ func SafeSetupAndMount(src, dst, typ string, flags uint32, procPath string) erro
 		// Special case, as there is no source directory for proc mounts.
 		isDir = true
 	} else if fi, err := os.Stat(src); err != nil {
-		return fmt.Errorf("stat(%q) failed: %v", src, err)
+		return fmt.Errorf("stat(%q) failed: %w", src, err)
 	} else {
 		isDir = fi.IsDir()
 	}
@@ -453,25 +453,25 @@ func SafeSetupAndMount(src, dst, typ string, flags uint32, procPath string) erro
 	if isDir {
 		// Create the destination directory.
 		if err := os.MkdirAll(dst, 0777); err != nil {
-			return fmt.Errorf("mkdir(%q) failed: %v", dst, err)
+			return fmt.Errorf("mkdir(%q) failed: %w", dst, err)
 		}
 	} else {
 		// Create the parent destination directory.
 		parent := path.Dir(dst)
 		if err := os.MkdirAll(parent, 0777); err != nil {
-			return fmt.Errorf("mkdir(%q) failed: %v", parent, err)
+			return fmt.Errorf("mkdir(%q) failed: %w", parent, err)
 		}
 		// Create the destination file if it does not exist.
 		f, err := os.OpenFile(dst, unix.O_CREAT, 0777)
 		if err != nil {
-			return fmt.Errorf("open(%q) failed: %v", dst, err)
+			return fmt.Errorf("open(%q) failed: %w", dst, err)
 		}
 		f.Close()
 	}
 
 	// Do the mount.
 	if err := SafeMount(src, dst, typ, uintptr(flags), "", procPath); err != nil {
-		return fmt.Errorf("mount(%q, %q, %d) failed: %v", src, dst, flags, err)
+		return fmt.Errorf("mount(%q, %q, %d) failed: %w", src, dst, flags, err)
 	}
 	return nil
 }

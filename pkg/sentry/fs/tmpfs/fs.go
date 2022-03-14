@@ -100,7 +100,7 @@ func (f *Filesystem) Mount(ctx context.Context, device string, flags fs.MountSou
 	if m, ok := options[modeKey]; ok {
 		i, err := strconv.ParseUint(m, 8, 32)
 		if err != nil {
-			return nil, fmt.Errorf("mode value not parsable 'mode=%s': %v", m, err)
+			return nil, fmt.Errorf("mode value not parsable 'mode=%s': %w", m, err)
 		}
 		if i&^modeMask != 0 {
 			return nil, fmt.Errorf("invalid mode %q: must be less than %o", m, modeMask)
@@ -114,7 +114,7 @@ func (f *Filesystem) Mount(ctx context.Context, device string, flags fs.MountSou
 	if uidstr, ok := options[rootUIDKey]; ok {
 		uid, err := strconv.ParseInt(uidstr, 10, 32)
 		if err != nil {
-			return nil, fmt.Errorf("uid value not parsable 'uid=%d': %v", uid, err)
+			return nil, fmt.Errorf("uid value not parsable 'uid=%d': %w", uid, err)
 		}
 		owner.UID = creds.UserNamespace.MapToKUID(auth.UID(uid))
 		delete(options, rootUIDKey)
@@ -123,7 +123,7 @@ func (f *Filesystem) Mount(ctx context.Context, device string, flags fs.MountSou
 	if gidstr, ok := options[rootGIDKey]; ok {
 		gid, err := strconv.ParseInt(gidstr, 10, 32)
 		if err != nil {
-			return nil, fmt.Errorf("gid value not parsable 'gid=%d': %v", gid, err)
+			return nil, fmt.Errorf("gid value not parsable 'gid=%d': %w", gid, err)
 		}
 		owner.GID = creds.UserNamespace.MapToKGID(auth.GID(gid))
 		delete(options, rootGIDKey)

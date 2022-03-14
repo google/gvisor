@@ -90,10 +90,10 @@ func copyPipes(ctx context.Context, rio runc.IO, stdin, stdout, stderr string, w
 		)
 		if ok {
 			if fw, err = fifo.OpenFifo(ctx, i.name, unix.O_WRONLY, 0); err != nil {
-				return fmt.Errorf("gvisor-containerd-shim: opening %s failed: %s", i.name, err)
+				return fmt.Errorf("gvisor-containerd-shim: opening %s failed: %w", i.name, err)
 			}
 			if fr, err = fifo.OpenFifo(ctx, i.name, unix.O_RDONLY, 0); err != nil {
-				return fmt.Errorf("gvisor-containerd-shim: opening %s failed: %s", i.name, err)
+				return fmt.Errorf("gvisor-containerd-shim: opening %s failed: %w", i.name, err)
 			}
 		} else {
 			if sameFile != nil {
@@ -102,7 +102,7 @@ func copyPipes(ctx context.Context, rio runc.IO, stdin, stdout, stderr string, w
 				continue
 			}
 			if fw, err = os.OpenFile(i.name, unix.O_WRONLY|unix.O_APPEND, 0); err != nil {
-				return fmt.Errorf("gvisor-containerd-shim: opening %s failed: %s", i.name, err)
+				return fmt.Errorf("gvisor-containerd-shim: opening %s failed: %w", i.name, err)
 			}
 			if stdout == stderr {
 				sameFile = &countingWriteCloser{
@@ -118,7 +118,7 @@ func copyPipes(ctx context.Context, rio runc.IO, stdin, stdout, stderr string, w
 	}
 	f, err := fifo.OpenFifo(context.Background(), stdin, unix.O_RDONLY|unix.O_NONBLOCK, 0)
 	if err != nil {
-		return fmt.Errorf("gvisor-containerd-shim: opening %s failed: %s", stdin, err)
+		return fmt.Errorf("gvisor-containerd-shim: opening %s failed: %w", stdin, err)
 	}
 	go func() {
 		p := bufPool.Get().(*[]byte)

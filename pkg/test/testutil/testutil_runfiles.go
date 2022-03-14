@@ -62,7 +62,7 @@ func FindFile(path string) (string, error) {
 		if err != nil {
 			// "The only possible returned error is ErrBadPattern,
 			// when pattern is malformed." -godoc
-			return "", fmt.Errorf("error globbing %q: %v", p, err)
+			return "", fmt.Errorf("error globbing %q: %w", p, err)
 		}
 		switch len(matches) {
 		case 0:

@@ -65,12 +65,12 @@ func getIP() (net.IP, error) {
 	}
 	listener, err := net.ListenTCP("tcp", &localAddr)
 	if err != nil {
-		return net.IP{}, fmt.Errorf("failed listening for IP: %v", err)
+		return net.IP{}, fmt.Errorf("failed listening for IP: %w", err)
 	}
 	defer listener.Close()
 	conn, err := listener.AcceptTCP()
 	if err != nil {
-		return net.IP{}, fmt.Errorf("failed accepting IP: %v", err)
+		return net.IP{}, fmt.Errorf("failed accepting IP: %w", err)
 	}
 	defer conn.Close()
 	log.Printf("Connected to %v", conn.RemoteAddr())

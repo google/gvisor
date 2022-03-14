@@ -288,23 +288,23 @@ func (m *Metric) debugString(sb *strings.Builder, prefix string) {
 func InitBigQuery(ctx context.Context, projectID, datasetID, tableID string, opts []option.ClientOption) error {
 	client, err := bq.NewClient(ctx, projectID, opts...)
 	if err != nil {
-		return fmt.Errorf("failed to initialize client on project %s: %v", projectID, err)
+		return fmt.Errorf("failed to initialize client on project %s: %w", projectID, err)
 	}
 	defer client.Close()
 
 	dataset := client.Dataset(datasetID)
 	if err := dataset.Create(ctx, nil); err != nil && !checkDuplicateError(err) {
-		return fmt.Errorf("failed to create dataset: %s: %v", datasetID, err)
+		return fmt.Errorf("failed to create dataset: %s: %w", datasetID, err)
 	}
 
 	table := dataset.Table(tableID)
 	schema, err := bq.InferSchema(Suite{})
 	if err != nil {
-		return fmt.Errorf("failed to infer schema: %v", err)
+		return fmt.Errorf("failed to infer schema: %w", err)
 	}
 
 	if err := table.Create(ctx, &bq.TableMetadata{Schema: schema}); err != nil && !checkDuplicateError(err) {
-		return fmt.Errorf("failed to create table: %s: %v", tableID, err)
+		return fmt.Errorf("failed to create table: %s: %w", tableID, err)
 	}
 	return nil
 }
@@ -332,13 +332,13 @@ func NewSuite(name string, official bool) *Suite {
 func SendBenchmarks(ctx context.Context, suite *Suite, projectID, datasetID, tableID string, opts []option.ClientOption) error {
 	client, err := bq.NewClient(ctx, projectID, opts...)
 	if err != nil {
-		return fmt.Errorf("failed to initialize client on project: %s: %v", projectID, err)
+		return fmt.Errorf("failed to initialize client on project: %s: %w", projectID, err)
 	}
 	defer client.Close()
 
 	uploader := client.Dataset(datasetID).Table(tableID).Uploader()
 	if err = uploader.Put(ctx, suite); err != nil {
-		return fmt.Errorf("failed to upload benchmarks %s to project %s, table %s.%s: %v", suite.Name, projectID, datasetID, tableID, err)
+		return fmt.Errorf("failed to upload benchmarks %s to project %s, table %s.%s: %w", suite.Name, projectID, datasetID, tableID, err)
 	}
 
 	return nil

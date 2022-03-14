@@ -107,7 +107,7 @@ func iptablesTest(t *testing.T, test TestCase, ipv6 bool) {
 	go func() {
 		defer wg.Done()
 		if err := test.LocalAction(ctx, ip, ipv6); err != nil && !errors.Is(err, context.Canceled) {
-			errCh <- fmt.Errorf("LocalAction failed: %v", err)
+			errCh <- fmt.Errorf("LocalAction failed: %w", err)
 		} else {
 			errCh <- nil
 		}
@@ -124,7 +124,7 @@ func iptablesTest(t *testing.T, test TestCase, ipv6 bool) {
 		// effect that all container logs will appear within the
 		// individual test context.
 		if _, err := d.WaitForOutput(ctx, TerminalStatement, TestTimeout); err != nil && !errors.Is(err, context.Canceled) {
-			errCh <- fmt.Errorf("ContainerAction failed: %v", err)
+			errCh <- fmt.Errorf("ContainerAction failed: %w", err)
 		} else {
 			errCh <- nil
 		}
@@ -157,10 +157,10 @@ func sendIP(ip net.IP) error {
 		return err
 	}
 	if err := testutil.Poll(cb, TestTimeout); err != nil {
-		return fmt.Errorf("timed out waiting to send IP, most recent error: %v", err)
+		return fmt.Errorf("timed out waiting to send IP, most recent error: %w", err)
 	}
 	if _, err := conn.Write([]byte{0}); err != nil {
-		return fmt.Errorf("error writing to container: %v", err)
+		return fmt.Errorf("error writing to container: %w", err)
 	}
 	return nil
 }

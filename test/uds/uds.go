@@ -33,26 +33,26 @@ import (
 func createEchoSocket(path string, protocol int) (cleanup func(), err error) {
 	fd, err := unix.Socket(unix.AF_UNIX, protocol, 0)
 	if err != nil {
-		return nil, fmt.Errorf("error creating echo(%d) socket: %v", protocol, err)
+		return nil, fmt.Errorf("error creating echo(%d) socket: %w", protocol, err)
 	}
 
 	if err := unix.Bind(fd, &unix.SockaddrUnix{Name: path}); err != nil {
-		return nil, fmt.Errorf("error binding echo(%d) socket: %v", protocol, err)
+		return nil, fmt.Errorf("error binding echo(%d) socket: %w", protocol, err)
 	}
 
 	if err := unix.Listen(fd, 0); err != nil {
-		return nil, fmt.Errorf("error listening echo(%d) socket: %v", protocol, err)
+		return nil, fmt.Errorf("error listening echo(%d) socket: %w", protocol, err)
 	}
 
 	server, err := unet.NewServerSocket(fd)
 	if err != nil {
-		return nil, fmt.Errorf("error creating echo(%d) unet socket: %v", protocol, err)
+		return nil, fmt.Errorf("error creating echo(%d) unet socket: %w", protocol, err)
 	}
 
 	acceptAndEchoOne := func() error {
 		s, err := server.Accept()
 		if err != nil {
-			return fmt.Errorf("failed to accept: %v", err)
+			return fmt.Errorf("failed to accept: %w", err)
 		}
 		defer s.Close()
 
@@ -64,12 +64,12 @@ func createEchoSocket(path string, protocol int) (cleanup func(), err error) {
 					return nil
 				}
 				if err != nil {
-					return fmt.Errorf("failed to read: %d, %v", n, err)
+					return fmt.Errorf("failed to read: %d, %w", n, err)
 				}
 
 				n, err = s.Write(buf[:n])
 				if err != nil {
-					return fmt.Errorf("failed to write: %d, %v", n, err)
+					return fmt.Errorf("failed to write: %d, %w", n, err)
 				}
 			}
 		}
@@ -99,16 +99,16 @@ func createEchoSocket(path string, protocol int) (cleanup func(), err error) {
 func createNonListeningSocket(path string, protocol int) (cleanup func(), err error) {
 	fd, err := unix.Socket(unix.AF_UNIX, protocol, 0)
 	if err != nil {
-		return nil, fmt.Errorf("error creating nonlistening(%d) socket: %v", protocol, err)
+		return nil, fmt.Errorf("error creating nonlistening(%d) socket: %w", protocol, err)
 	}
 
 	if err := unix.Bind(fd, &unix.SockaddrUnix{Name: path}); err != nil {
-		return nil, fmt.Errorf("error binding nonlistening(%d) socket: %v", protocol, err)
+		return nil, fmt.Errorf("error binding nonlistening(%d) socket: %w", protocol, err)
 	}
 
 	cleanup = func() {
 		if err := unix.Close(fd); err != nil {
-			log.Warningf("Failed to close nonlistening(%d) socket: %v", protocol, err)
+			log.Warningf("Failed to close nonlistening(%d) socket: %w", protocol, err)
 		}
 	}
 
@@ -121,16 +121,16 @@ func createNonListeningSocket(path string, protocol int) (cleanup func(), err er
 func createNullSocket(path string, protocol int) (cleanup func(), err error) {
 	fd, err := unix.Socket(unix.AF_UNIX, protocol, 0)
 	if err != nil {
-		return nil, fmt.Errorf("error creating null(%d) socket: %v", protocol, err)
+		return nil, fmt.Errorf("error creating null(%d) socket: %w", protocol, err)
 	}
 
 	if err := unix.Bind(fd, &unix.SockaddrUnix{Name: path}); err != nil {
-		return nil, fmt.Errorf("error binding null(%d) socket: %v", protocol, err)
+		return nil, fmt.Errorf("error binding null(%d) socket: %w", protocol, err)
 	}
 
 	s, err := unet.NewSocket(fd)
 	if err != nil {
-		return nil, fmt.Errorf("error creating null(%d) unet socket: %v", protocol, err)
+		return nil, fmt.Errorf("error creating null(%d) unet socket: %w", protocol, err)
 	}
 
 	go func() {
@@ -165,7 +165,7 @@ type socketCreator func(path string, proto int) (cleanup func(), err error)
 func CreateSocketTree(baseDir string) (dir string, cleanup func(), err error) {
 	dir, err = ioutil.TempDir(baseDir, "sockets")
 	if err != nil {
-		return "", nil, fmt.Errorf("error creating temp dir: %v", err)
+		return "", nil, fmt.Errorf("error creating temp dir: %w", err)
 	}
 
 	var protocols = []struct {
@@ -202,14 +202,14 @@ func CreateSocketTree(baseDir string) (dir string, cleanup func(), err error) {
 	for _, proto := range protocols {
 		protoDir := filepath.Join(dir, proto.name)
 		if err := os.Mkdir(protoDir, 0755); err != nil {
-			return "", nil, fmt.Errorf("error creating %s dir: %v", proto.name, err)
+			return "", nil, fmt.Errorf("error creating %s dir: %w", proto.name, err)
 		}
 
 		for name, fn := range proto.sockets {
 			path := filepath.Join(protoDir, name)
 			cleanup, err := fn(path, proto.protocol)
 			if err != nil {
-				return "", nil, fmt.Errorf("error creating %s %s socket: %v", proto.name, name, err)
+				return "", nil, fmt.Errorf("error creating %s %s socket: %w", proto.name, name, err)
 			}
 
 			cleanups = append(cleanups, cleanup)

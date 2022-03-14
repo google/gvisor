@@ -243,7 +243,7 @@ func (c *vCPU) setOneRegister(reg *kvmOneReg) error {
 		uintptr(c.fd),
 		_KVM_SET_ONE_REG,
 		uintptr(unsafe.Pointer(reg))); errno != 0 {
-		return fmt.Errorf("error setting one register: %v", errno)
+		return fmt.Errorf("error setting one register: %w", error(errno))
 	}
 	return nil
 }
@@ -254,7 +254,7 @@ func (c *vCPU) getOneRegister(reg *kvmOneReg) error {
 		uintptr(c.fd),
 		_KVM_GET_ONE_REG,
 		uintptr(unsafe.Pointer(reg))); errno != 0 {
-		return fmt.Errorf("error getting one register: %v", errno)
+		return fmt.Errorf("error getting one register: %w", error(errno))
 	}
 	return nil
 }

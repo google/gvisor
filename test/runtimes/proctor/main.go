@@ -45,13 +45,13 @@ func setNumFilesLimit() error {
 	rLimit := unix.Rlimit{}
 	err := unix.Getrlimit(unix.RLIMIT_NOFILE, &rLimit)
 	if err != nil {
-		return fmt.Errorf("failed to get RLIMIT_NOFILE: %v", err)
+		return fmt.Errorf("failed to get RLIMIT_NOFILE: %w", err)
 	}
 	if rLimit.Cur > nofile {
 		rLimit.Cur = nofile
 		err := unix.Setrlimit(unix.RLIMIT_NOFILE, &rLimit)
 		if err != nil {
-			return fmt.Errorf("failed to set RLIMIT_NOFILE: %v", err)
+			return fmt.Errorf("failed to set RLIMIT_NOFILE: %w", err)
 		}
 	}
 	return nil

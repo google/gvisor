@@ -48,7 +48,7 @@ func (i *intFlags) GetArray() []int {
 func (i *intFlags) Set(s string) error {
 	fd, err := strconv.Atoi(s)
 	if err != nil {
-		return fmt.Errorf("invalid flag value: %v", err)
+		return fmt.Errorf("invalid flag value: %w", err)
 	}
 	if fd < 0 {
 		return fmt.Errorf("flag value must be greater than 0: %d", fd)
@@ -66,13 +66,13 @@ func setCapsAndCallSelf(args []string, caps *specs.LinuxCapabilities) error {
 	defer runtime.UnlockOSThread()
 
 	if err := applyCaps(caps); err != nil {
-		return fmt.Errorf("applyCaps() failed: %v", err)
+		return fmt.Errorf("applyCaps() failed: %w", err)
 	}
 	binPath := specutils.ExePath
 
 	log.Infof("Execve %q again, bye!", binPath)
 	err := unix.Exec(binPath, args, []string{})
-	return fmt.Errorf("error executing %s: %v", binPath, err)
+	return fmt.Errorf("error executing %s: %w", binPath, err)
 }
 
 // callSelfAsNobody sets UID and GID to nobody and then execve's itself again.
@@ -84,15 +84,15 @@ func callSelfAsNobody(args []string) error {
 	const nobody = 65534
 
 	if _, _, err := unix.RawSyscall(unix.SYS_SETGID, uintptr(nobody), 0, 0); err != 0 {
-		return fmt.Errorf("error setting uid: %v", err)
+		return fmt.Errorf("error setting uid: %w", err)
 	}
 	if _, _, err := unix.RawSyscall(unix.SYS_SETUID, uintptr(nobody), 0, 0); err != 0 {
-		return fmt.Errorf("error setting gid: %v", err)
+		return fmt.Errorf("error setting gid: %w", err)
 	}
 
 	binPath := specutils.ExePath
 
 	log.Infof("Execve %q again, bye!", binPath)
 	err := unix.Exec(binPath, args, []string{})
-	return fmt.Errorf("error executing %s: %v", binPath, err)
+	return fmt.Errorf("error executing %s: %w", binPath, err)
 }

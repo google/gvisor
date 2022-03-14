@@ -40,14 +40,14 @@ func construct(root string, dirs []dir) error {
 		p := path.Join(root, d.rel)
 		if d.link == "" {
 			if err := os.MkdirAll(p, 0755); err != nil {
-				return fmt.Errorf("error creating dir: %v", err)
+				return fmt.Errorf("error creating dir: %w", err)
 			}
 		} else {
 			if err := os.MkdirAll(path.Dir(p), 0755); err != nil {
-				return fmt.Errorf("error creating dir: %v", err)
+				return fmt.Errorf("error creating dir: %w", err)
 			}
 			if err := os.Symlink(d.link, p); err != nil {
-				return fmt.Errorf("error creating symlink: %v", err)
+				return fmt.Errorf("error creating symlink: %w", err)
 			}
 		}
 	}

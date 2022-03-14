@@ -200,22 +200,22 @@ func writeConfig(c map[string]interface{}, filename string) error {
 	old, err := ioutil.ReadFile(filename)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			return fmt.Errorf("error reading config file %q: %v", filename, err)
+			return fmt.Errorf("error reading config file %q: %w", filename, err)
 		}
 	} else {
 		if err := ioutil.WriteFile(filename+"~", old, 0644); err != nil {
-			return fmt.Errorf("error backing up config file %q: %v", filename, err)
+			return fmt.Errorf("error backing up config file %q: %w", filename, err)
 		}
 	}
 
 	// Make the necessary directories.
 	if err := os.MkdirAll(path.Dir(filename), 0755); err != nil {
-		return fmt.Errorf("error creating config directory for %q: %v", filename, err)
+		return fmt.Errorf("error creating config directory for %q: %w", filename, err)
 	}
 
 	// Write the new configuration.
 	if err := ioutil.WriteFile(filename, b, 0644); err != nil {
-		return fmt.Errorf("error writing config file %q: %v", filename, err)
+		return fmt.Errorf("error writing config file %q: %w", filename, err)
 	}
 
 	return nil

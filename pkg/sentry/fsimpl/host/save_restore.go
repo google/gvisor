@@ -48,7 +48,7 @@ func (i *inode) beforeSave() {
 				if err == io.EOF || err == unix.EAGAIN || err == unix.EBADF {
 					break
 				}
-				panic(fmt.Errorf("host.inode.beforeSave: buffering from pipe failed: %v", err))
+				panic(fmt.Errorf("host.inode.beforeSave: buffering from pipe failed: %w", err))
 			}
 		}
 		if len(i.buf) != 0 {

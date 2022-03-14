@@ -98,7 +98,7 @@ func executeHook(h specs.Hook, s specs.State) error {
 	select {
 	case err := <-c:
 		if err != nil {
-			return fmt.Errorf("failure executing hook %q, err: %v\nstdout: %s\nstderr: %s", h.Path, err, stdout.String(), stderr.String())
+			return fmt.Errorf("failure executing hook %q, err: %w\nstdout: %s\nstderr: %s", h.Path, err, stdout.String(), stderr.String())
 		}
 	case <-timer:
 		_ = cmd.Process.Kill()

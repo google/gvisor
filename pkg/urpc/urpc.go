@@ -641,7 +641,7 @@ func (c *Client) Call(method string, arg interface{}, result interface{}) error 
 	callR := callResult{Result: result}
 	newFs, err := unmarshal(c.Socket, &callR)
 	if err != nil {
-		return fmt.Errorf("urpc method %q failed: %v", method, err)
+		return fmt.Errorf("urpc method %q failed: %w", method, err)
 	}
 
 	// Set the file payload.

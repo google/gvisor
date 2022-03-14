@@ -74,7 +74,7 @@ func startContainers(conf *config.Config, specs []*specs.Spec, ids []string) ([]
 	for i, spec := range specs {
 		bundleDir, cleanup, err := testutil.SetupBundleDir(spec)
 		if err != nil {
-			return nil, nil, fmt.Errorf("error setting up container: %v", err)
+			return nil, nil, fmt.Errorf("error setting up container: %w", err)
 		}
 		cu.Add(cleanup)
 
@@ -85,13 +85,13 @@ func startContainers(conf *config.Config, specs []*specs.Spec, ids []string) ([]
 		}
 		cont, err := New(conf, args)
 		if err != nil {
-			return nil, nil, fmt.Errorf("error creating container: %v", err)
+			return nil, nil, fmt.Errorf("error creating container: %w", err)
 		}
 		cu.Add(func() { cont.Destroy() })
 		containers = append(containers, cont)
 
 		if err := cont.Start(conf); err != nil {
-			return nil, nil, fmt.Errorf("error starting container: %v", err)
+			return nil, nil, fmt.Errorf("error starting container: %w", err)
 		}
 	}
 

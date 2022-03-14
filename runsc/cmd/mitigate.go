@@ -178,7 +178,7 @@ func (*machineControlImpl) getCPUs() (mitigate.CPUSet, error) {
 	}
 	set, err := mitigate.NewCPUSet(string(data))
 	if err != nil {
-		return nil, fmt.Errorf("getCPUs: %v", err)
+		return nil, fmt.Errorf("getCPUs: %w", err)
 	}
 	return set, nil
 }

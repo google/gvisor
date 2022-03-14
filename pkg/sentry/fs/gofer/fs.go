@@ -186,13 +186,13 @@ func options(data string) (opts, error) {
 	// Parse the read fd.
 	rfd, err := strconv.Atoi(srfd)
 	if err != nil {
-		return o, fmt.Errorf("invalid fd for 'rfdno=%s': %v", srfd, err)
+		return o, fmt.Errorf("invalid fd for 'rfdno=%s': %w", srfd, err)
 	}
 
 	// Parse the write fd.
 	wfd, err := strconv.Atoi(swfd)
 	if err != nil {
-		return o, fmt.Errorf("invalid fd for 'wfdno=%s': %v", swfd, err)
+		return o, fmt.Errorf("invalid fd for 'wfdno=%s': %w", swfd, err)
 	}
 
 	// Require that the read and write fd are the same.
@@ -224,7 +224,7 @@ func options(data string) (opts, error) {
 	if m, ok := options[msizeKey]; ok {
 		i, err := strconv.ParseUint(m, 10, 32)
 		if err != nil {
-			return o, fmt.Errorf("invalid message size for 'msize=%s': %v", m, err)
+			return o, fmt.Errorf("invalid message size for 'msize=%s': %w", m, err)
 		}
 		o.msize = uint32(i)
 		delete(options, msizeKey)
@@ -241,7 +241,7 @@ func options(data string) (opts, error) {
 	if v, ok := options[privateUnixSocketKey]; ok {
 		b, err := strconv.ParseBool(v)
 		if err != nil {
-			return o, fmt.Errorf("invalid boolean value for '%s=%s': %v", privateUnixSocketKey, v, err)
+			return o, fmt.Errorf("invalid boolean value for '%s=%s': %w", privateUnixSocketKey, v, err)
 		}
 		o.privateunixsocket = b
 		delete(options, privateUnixSocketKey)

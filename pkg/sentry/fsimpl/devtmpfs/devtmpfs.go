@@ -169,7 +169,7 @@ func (a *Accessor) CreateDeviceFile(ctx context.Context, pathname string, kind v
 	if err := a.vfsObj.MkdirAllAt(ctx, parent, a.root, a.creds, &vfs.MkdirOptions{
 		Mode: 0755,
 	}); err != nil {
-		return fmt.Errorf("failed to create device parent directory %q: %v", parent, err)
+		return fmt.Errorf("failed to create device parent directory %q: %w", parent, err)
 	}
 
 	// NOTE: Linux's devtmpfs refuses to automatically delete files it didn't
@@ -211,7 +211,7 @@ func (a *Accessor) UserspaceInit(ctx context.Context) error {
 		{source: "ptmx", target: "pts/ptmx"},
 	} {
 		if err := a.vfsObj.SymlinkAt(actx, a.creds, a.pathOperationAt(symlink.source), symlink.target); err != nil {
-			return fmt.Errorf("failed to create symlink %q => %q: %v", symlink.source, symlink.target, err)
+			return fmt.Errorf("failed to create symlink %q => %q: %w", symlink.source, symlink.target, err)
 		}
 	}
 
@@ -224,7 +224,7 @@ func (a *Accessor) UserspaceInit(ctx context.Context) error {
 			// systemd: src/core/mount-setup.c:mount_one()
 			Mode: 0755,
 		}); err != nil {
-			return fmt.Errorf("failed to create directory %q: %v", dir, err)
+			return fmt.Errorf("failed to create directory %q: %w", dir, err)
 		}
 	}
 

@@ -64,14 +64,14 @@ func ResolveExecutablePath(ctx context.Context, args *kernel.CreateProcessArgs) 
 	if kernel.VFS2Enabled {
 		f, err := resolveVFS2(ctx, args.Credentials, args.MountNamespaceVFS2, paths, name)
 		if err != nil {
-			return "", fmt.Errorf("error finding executable %q in PATH %v: %v", name, paths, err)
+			return "", fmt.Errorf("error finding executable %q in PATH %v: %w", name, paths, err)
 		}
 		return f, nil
 	}
 
 	f, err := resolve(ctx, args.MountNamespace, paths, name)
 	if err != nil {
-		return "", fmt.Errorf("error finding executable %q in PATH %v: %v", name, paths, err)
+		return "", fmt.Errorf("error finding executable %q in PATH %v: %w", name, paths, err)
 	}
 	return f, nil
 }

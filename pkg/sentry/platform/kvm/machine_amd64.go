@@ -150,7 +150,7 @@ func (c *vCPU) initArchState() error {
 
 	// Set the user registers.
 	if errno := c.setUserRegisters(&kernelUserRegs); errno != 0 {
-		return fmt.Errorf("error setting user registers: %v", errno)
+		return fmt.Errorf("error setting user registers: %w", error(errno))
 	}
 
 	// Set the time offset to the host native time.

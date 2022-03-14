@@ -197,26 +197,26 @@ func PrepareVDSO(mfp pgalloc.MemoryFileProvider) (*VDSO, error) {
 	mf := mfp.MemoryFile()
 	vdso, err := mf.Allocate(uint64(size), pgalloc.AllocOpts{Kind: usage.System})
 	if err != nil {
-		return nil, fmt.Errorf("unable to allocate VDSO memory: %v", err)
+		return nil, fmt.Errorf("unable to allocate VDSO memory: %w", err)
 	}
 
 	ims, err := mf.MapInternal(vdso, hostarch.ReadWrite)
 	if err != nil {
 		mf.DecRef(vdso)
-		return nil, fmt.Errorf("unable to map VDSO memory: %v", err)
+		return nil, fmt.Errorf("unable to map VDSO memory: %w", err)
 	}
 
 	_, err = safemem.CopySeq(ims, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(vdsodata.Binary)))
 	if err != nil {
 		mf.DecRef(vdso)
-		return nil, fmt.Errorf("unable to copy VDSO into memory: %v", err)
+		return nil, fmt.Errorf("unable to copy VDSO into memory: %w", err)
 	}
 
 	// Finally, allocate a param page for this VDSO.
 	paramPage, err := mf.Allocate(hostarch.PageSize, pgalloc.AllocOpts{Kind: usage.System})
 	if err != nil {
 		mf.DecRef(vdso)
-		return nil, fmt.Errorf("unable to allocate VDSO param page: %v", err)
+		return nil, fmt.Errorf("unable to allocate VDSO param page: %w", err)
 	}
 
 	return &VDSO{

@@ -69,12 +69,12 @@ func parseBenchmarks(ctx context.Context) error {
 	debugLog("Reading file: %s", *file)
 	data, err := ioutil.ReadFile(*file)
 	if err != nil {
-		return fmt.Errorf("failed to read file %s: %v", *file, err)
+		return fmt.Errorf("failed to read file %s: %w", *file, err)
 	}
 	debugLog("Parsing output: %s", string(data))
 	suite, err := parsers.ParseOutput(string(data), *name, *official)
 	if err != nil {
-		return fmt.Errorf("failed parse data: %v", err)
+		return fmt.Errorf("failed parse data: %w", err)
 	}
 	debugLog("Parsed benchmarks: %d", len(suite.Benchmarks))
 	if len(suite.Benchmarks) < 1 {

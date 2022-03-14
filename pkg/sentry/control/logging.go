@@ -92,13 +92,13 @@ func (l *Logging) Change(args *LoggingArgs, code *int) error {
 
 	if args.SetStrace {
 		if err := l.configureStrace(args); err != nil {
-			return fmt.Errorf("error configuring strace: %v", err)
+			return fmt.Errorf("error configuring strace: %w", err)
 		}
 	}
 
 	if args.SetEventStrace {
 		if err := l.configureEventStrace(args); err != nil {
-			return fmt.Errorf("error configuring event strace: %v", err)
+			return fmt.Errorf("error configuring event strace: %w", err)
 		}
 	}
 

@@ -89,7 +89,7 @@ func newStackWithOptions(stackOpts stackOptions) (*stack.Stack, error) {
 		QDisc: qDisc,
 	}
 	if err := st.CreateNICWithOptions(nicID, ep, opts); err != nil {
-		return nil, fmt.Errorf("method CreateNICWithOptions(%d, _, %v) failed: %s", nicID, opts, err)
+		return nil, fmt.Errorf("method CreateNICWithOptions(%d, _, %v) failed: %w", nicID, opts, err)
 	}
 
 	// Add Protocol Address.
@@ -104,7 +104,7 @@ func newStackWithOptions(stackOpts stackOptions) (*stack.Stack, error) {
 		AddressWithPrefix: stackOpts.addr.WithPrefix(),
 	}
 	if err := st.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
-		return nil, fmt.Errorf("AddProtocolAddress(%d, %v, {}): %s", nicID, protocolAddr, err)
+		return nil, fmt.Errorf("AddProtocolAddress(%d, %v, {}): %w", nicID, protocolAddr, err)
 	}
 
 	// Setup route table.
@@ -123,11 +123,11 @@ func newClientStack(t *testing.T, qPair *sharedmem.QueuePair, peerFD int) (*stac
 		PeerFD:      peerFD,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create sharedmem endpoint: %s", err)
+		return nil, fmt.Errorf("failed to create sharedmem endpoint: %w", err)
 	}
 	st, err := newStackWithOptions(stackOptions{ep: ep, addr: localIPv4Address, enablePacketLogs: true})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create client stack: %s", err)
+		return nil, fmt.Errorf("failed to create client stack: %w", err)
 	}
 	return st, nil
 }
@@ -142,11 +142,11 @@ func newServerStack(t *testing.T, qPair *sharedmem.QueuePair, peerFD int) (*stac
 		PeerFD:      peerFD,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create sharedmem endpoint: %s", err)
+		return nil, fmt.Errorf("failed to create sharedmem endpoint: %w", err)
 	}
 	st, err := newStackWithOptions(stackOptions{ep: ep, addr: remoteIPv4Address, enablePacketLogs: true})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create client stack: %s", err)
+		return nil, fmt.Errorf("failed to create client stack: %w", err)
 	}
 	return st, nil
 }
@@ -269,14 +269,14 @@ func TestServerRoundTripStress(t *testing.T) {
 		errs.Go(func() error {
 			response, err := makeRequest(ctx)
 			if err != nil {
-				return fmt.Errorf("httpClient.Get(\"/\") failed: %s", err)
+				return fmt.Errorf("httpClient.Get(\"/\") failed: %w", err)
 			}
 			if got, want := response.StatusCode, http.StatusOK; got != want {
 				return fmt.Errorf("unexpected status code got: %d, want: %d", got, want)
 			}
 			body, err := io.ReadAll(response.Body)
 			if err != nil {
-				return fmt.Errorf("io.ReadAll(response.Body) failed: %s", err)
+				return fmt.Errorf("io.ReadAll(response.Body) failed: %w", err)
 			}
 			response.Body.Close()
 			if got, want := string(body), responseString; got != want {

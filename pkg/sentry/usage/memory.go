@@ -122,11 +122,11 @@ func Init() error {
 	const name = "memory-usage"
 	fd, err := memutil.CreateMemFD(name, 0)
 	if err != nil {
-		return fmt.Errorf("error creating usage file: %v", err)
+		return fmt.Errorf("error creating usage file: %w", err)
 	}
 	file := os.NewFile(uintptr(fd), name)
 	if err := file.Truncate(int64(RTMemoryStatsSize)); err != nil {
-		return fmt.Errorf("error truncating usage file: %v", err)
+		return fmt.Errorf("error truncating usage file: %w", err)
 	}
 	// Note: We rely on the returned page being initially zeroed. This will
 	// always be the case for a newly mapped page from /dev/shm. If we obtain
@@ -134,7 +134,7 @@ func Init() error {
 	// explicitly zero the page.
 	mmap, err := memutil.MapFile(0, RTMemoryStatsSize, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED, file.Fd(), 0)
 	if err != nil {
-		return fmt.Errorf("error mapping usage file: %v", err)
+		return fmt.Errorf("error mapping usage file: %w", err)
 	}
 
 	MemoryAccounting = &MemoryLocked{

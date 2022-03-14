@@ -49,7 +49,7 @@ func (javaRunner) ListTests() ([]string, error) {
 	cmd.Stderr = os.Stderr
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("jtreg -listtests : %v", err)
+		return nil, fmt.Errorf("jtreg -listtests : %w", err)
 	}
 	var testSlice []string
 	for _, test := range strings.Split(string(out), "\n") {

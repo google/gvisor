@@ -36,7 +36,7 @@ func (f *fileOperations) afterLoad() {
 
 		f.handles, err = f.inodeOperations.fileState.getHandles(context.Background(), flags, f.inodeOperations.cachingInodeOps)
 		if err != nil {
-			return fmt.Errorf("failed to re-open handle: %v", err)
+			return fmt.Errorf("failed to re-open handle: %w", err)
 		}
 		return nil
 	}
