@@ -257,11 +257,11 @@ func (i *Inotify) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallAr
 	switch args[1].Int() {
 	case linux.FIONREAD:
 		i.evMu.Lock()
-		defer i.evMu.Unlock()
 		var n uint32
 		for e := i.events.Front(); e != nil; e = e.Next() {
 			n += uint32(e.sizeOf())
 		}
+		i.evMu.Unlock()
 		var buf [4]byte
 		hostarch.ByteOrder.PutUint32(buf[:], n)
 		_, err := uio.CopyOut(ctx, args[2].Pointer(), buf[:], usermem.IOOpts{})
