@@ -668,14 +668,21 @@ func (fd *controlFDLisa) Renamed() {
 }
 
 // GetXattr implements lisafs.ControlFDImpl.GetXattr.
-func (fd *controlFDLisa) GetXattr(name string, dataBuf []byte) (uint16, error) {
+func (fd *controlFDLisa) GetXattr(name string, size uint32, getValueBuf func(uint32) []byte) (uint16, error) {
 	if !fd.Conn().ServerImpl().(*LisafsServer).config.EnableVerityXattr {
 		return 0, unix.EOPNOTSUPP
 	}
 	if _, ok := verityXattrs[name]; !ok {
 		return 0, unix.EOPNOTSUPP
 	}
-	n, err := unix.Fgetxattr(fd.hostFD, name, dataBuf)
+	if size == 0 {
+		n, err := unix.Fgetxattr(fd.hostFD, name, nil)
+		if err != nil {
+			return 0, err
+		}
+		size = uint32(n)
+	}
+	n, err := unix.Fgetxattr(fd.hostFD, name, getValueBuf(size))
 	return uint16(n), err
 }
 
@@ -802,7 +809,6 @@ func (fd *openFDLisa) Getdent64(count uint32, seek0 bool, recordDirent func(lisa
 		}
 		bytesRead += n
 
-		var statErr error
 		parseDirents(direntsBuf[:n], func(ino uint64, off int64, ftype uint8, name string) bool {
 			dirent := lisafs.Dirent64{
 				Ino:  primitive.Uint64(ino),
@@ -815,17 +821,14 @@ func (fd *openFDLisa) Getdent64(count uint32, seek0 bool, recordDirent func(lisa
 			// additional syscall per dirent. Live with it.
 			stat, err := statAt(fd.hostFD, name)
 			if err != nil {
-				statErr = err
-				return false
+				log.Warningf("Getdent64: skipping file %q with failed stat, err: %v", path.Join(fd.ControlFD().FD().Node().FilePath(), name), err)
+				return true
 			}
 			dirent.DevMinor = primitive.Uint32(unix.Minor(stat.Dev))
 			dirent.DevMajor = primitive.Uint32(unix.Major(stat.Dev))
 			recordDirent(dirent)
 			return true
 		})
-		if statErr != nil {
-			return statErr
-		}
 	}
 	return nil
 }

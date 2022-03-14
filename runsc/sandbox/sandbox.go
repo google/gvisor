@@ -48,6 +48,7 @@ import (
 	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/console"
+	"gvisor.dev/gvisor/runsc/donation"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -171,7 +172,12 @@ type Args struct {
 // New creates the sandbox process. The caller must call Destroy() on the
 // sandbox.
 func New(conf *config.Config, args *Args) (*Sandbox, error) {
-	s := &Sandbox{ID: args.ID, CgroupJSON: cgroup.CgroupJSON{Cgroup: args.Cgroup}}
+	s := &Sandbox{
+		ID:         args.ID,
+		CgroupJSON: cgroup.CgroupJSON{Cgroup: args.Cgroup},
+		UID:        -1, // prevent usage before it's set.
+		GID:        -1, // prevent usage before it's set.
+	}
 	// The Cleanup object cleans up partially created sandboxes when an error
 	// occurs. Any errors occurring during cleanup itself are ignored.
 	c := cleanup.Make(func() {
@@ -322,7 +328,7 @@ func (s *Sandbox) Restore(cid string, spec *specs.Spec, conf *config.Config, fil
 	}
 
 	// If the platform needs a device FD we must pass it in.
-	if deviceFile, err := deviceFileForPlatform(conf.Platform); err != nil {
+	if deviceFile, err := deviceFileForPlatform(conf.Platform, conf.PlatformDevicePath); err != nil {
 		return err
 	} else if deviceFile != nil {
 		defer deviceFile.Close()
@@ -428,26 +434,16 @@ func (s *Sandbox) connError(err error) error {
 // createSandboxProcess starts the sandbox as a subprocess by running the "boot"
 // command, passing in the bundle dir.
 func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyncFile *os.File) error {
-	// nextFD is used to get unused FDs that we can pass to the sandbox.  It
-	// starts at 3 because 0, 1, and 2 are taken by stdin/out/err.
-	nextFD := 3
+	donations := donation.Agency{}
+	defer donations.Close()
 
-	binPath := specutils.ExePath
-	cmd := exec.Command(binPath, conf.ToFlags()...)
-	cmd.SysProcAttr = &unix.SysProcAttr{}
-
-	// Open the log files to pass to the sandbox as FDs.
 	//
 	// These flags must come BEFORE the "boot" command in cmd.Args.
-	if conf.LogFilename != "" {
-		logFile, err := os.OpenFile(conf.LogFilename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			return fmt.Errorf("opening log file %q: %w", conf.LogFilename, err)
-		}
-		defer logFile.Close()
-		cmd.ExtraFiles = append(cmd.ExtraFiles, logFile)
-		cmd.Args = append(cmd.Args, "--log-fd="+strconv.Itoa(nextFD))
-		nextFD++
+	//
+
+	// Open the log files to pass to the sandbox as FDs.
+	if err := donations.OpenAndDonate("log-fd", conf.LogFilename, os.O_CREATE|os.O_WRONLY|os.O_APPEND); err != nil {
+		return err
 	}
 
 	test := ""
@@ -457,45 +453,66 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 			test = t
 		}
 	}
-	if conf.DebugLog != "" {
-		debugLogFile, err := specutils.DebugLogFile(conf.DebugLog, "boot", test)
-		if err != nil {
-			return fmt.Errorf("opening debug log file in %q: %w", conf.DebugLog, err)
-		}
-		defer debugLogFile.Close()
-		cmd.ExtraFiles = append(cmd.ExtraFiles, debugLogFile)
-		cmd.Args = append(cmd.Args, "--debug-log-fd="+strconv.Itoa(nextFD))
-		nextFD++
+
+	if err := donations.DonateDebugLogFile("debug-log-fd", conf.DebugLog, "boot", test); err != nil {
+		return err
 	}
-	if conf.PanicLog != "" {
-		panicLogFile, err := specutils.DebugLogFile(conf.PanicLog, "panic", test)
-		if err != nil {
-			return fmt.Errorf("opening panic log file in %q: %w", conf.PanicLog, err)
-		}
-		defer panicLogFile.Close()
-		cmd.ExtraFiles = append(cmd.ExtraFiles, panicLogFile)
-		cmd.Args = append(cmd.Args, "--panic-log-fd="+strconv.Itoa(nextFD))
-		nextFD++
+	if err := donations.DonateDebugLogFile("panic-log-fd", conf.PanicLog, "panic", test); err != nil {
+		return err
 	}
 	covFilename := conf.CoverageReport
 	if covFilename == "" {
 		covFilename = os.Getenv("GO_COVERAGE_FILE")
 	}
 	if covFilename != "" && coverage.Available() {
-		covFile, err := specutils.DebugLogFile(covFilename, "cov", test)
-		if err != nil {
-			return fmt.Errorf("opening debug log file in %q: %w", covFilename, err)
+		if err := donations.DonateDebugLogFile("coverage-fd", covFilename, "cov", test); err != nil {
+			return err
 		}
-		defer covFile.Close()
-		cmd.ExtraFiles = append(cmd.ExtraFiles, covFile)
-		cmd.Args = append(cmd.Args, "--coverage-fd="+strconv.Itoa(nextFD))
-		nextFD++
 	}
+
+	cmd := exec.Command(specutils.ExePath, conf.ToFlags()...)
+	cmd.SysProcAttr = &unix.SysProcAttr{
+		// Detach from this session, otherwise cmd will get SIGHUP and SIGCONT
+		// when re-parented.
+		Setsid: true,
+	}
+
+	// Set Args[0] to make easier to spot the sandbox process. Otherwise it's
+	// shown as `exe`.
+	cmd.Args[0] = "runsc-sandbox"
+
+	// Tranfer FDs that need to be present before the "boot" command.
+	// Start at 3 because 0, 1, and 2 are taken by stdin/out/err.
+	nextFD := donations.Transfer(cmd, 3)
 
 	// Add the "boot" command to the args.
 	//
 	// All flags after this must be for the boot command
 	cmd.Args = append(cmd.Args, "boot", "--bundle="+args.BundleDir)
+
+	// If there is a gofer, sends all socket ends to the sandbox.
+	donations.DonateAndClose("io-fds", args.IOFiles...)
+	donations.DonateAndClose("mounts-fd", args.MountsFile)
+	donations.Donate("start-sync-fd", startSyncFile)
+	if err := donations.OpenAndDonate("user-log-fd", args.UserLog, os.O_CREATE|os.O_WRONLY|os.O_APPEND); err != nil {
+		return err
+	}
+	const profFlags = os.O_CREATE | os.O_WRONLY | os.O_TRUNC
+	if err := donations.OpenAndDonate("profile-block-fd", conf.ProfileBlock, profFlags); err != nil {
+		return err
+	}
+	if err := donations.OpenAndDonate("profile-cpu-fd", conf.ProfileCPU, profFlags); err != nil {
+		return err
+	}
+	if err := donations.OpenAndDonate("profile-heap-fd", conf.ProfileHeap, profFlags); err != nil {
+		return err
+	}
+	if err := donations.OpenAndDonate("profile-mutex-fd", conf.ProfileMutex, profFlags); err != nil {
+		return err
+	}
+	if err := donations.OpenAndDonate("trace-fd", conf.TraceFile, profFlags); err != nil {
+		return err
+	}
 
 	// Create a socket for the control server and donate it to the sandbox.
 	addr := boot.ControlSocketAddr(s.ID)
@@ -504,105 +521,24 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	if err != nil {
 		return fmt.Errorf("creating control server socket for sandbox %q: %w", s.ID, err)
 	}
-	controllerFile := os.NewFile(uintptr(sockFD), "control_server_socket")
-	defer controllerFile.Close()
-	cmd.ExtraFiles = append(cmd.ExtraFiles, controllerFile)
-	cmd.Args = append(cmd.Args, "--controller-fd="+strconv.Itoa(nextFD))
-	nextFD++
-
-	defer args.MountsFile.Close()
-	cmd.ExtraFiles = append(cmd.ExtraFiles, args.MountsFile)
-	cmd.Args = append(cmd.Args, "--mounts-fd="+strconv.Itoa(nextFD))
-	nextFD++
+	donations.DonateAndClose("controller-fd", os.NewFile(uintptr(sockFD), "control_server_socket"))
 
 	specFile, err := specutils.OpenSpec(args.BundleDir)
 	if err != nil {
 		return err
 	}
-	defer specFile.Close()
-	cmd.ExtraFiles = append(cmd.ExtraFiles, specFile)
-	cmd.Args = append(cmd.Args, "--spec-fd="+strconv.Itoa(nextFD))
-	nextFD++
 
-	cmd.ExtraFiles = append(cmd.ExtraFiles, startSyncFile)
-	cmd.Args = append(cmd.Args, "--start-sync-fd="+strconv.Itoa(nextFD))
-	nextFD++
-
-	if conf.ProfileBlock != "" {
-		blockFile, err := os.OpenFile(conf.ProfileBlock, os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			return fmt.Errorf("opening block profiling file %q: %w", conf.ProfileBlock, err)
-		}
-		defer blockFile.Close()
-		cmd.ExtraFiles = append(cmd.ExtraFiles, blockFile)
-		cmd.Args = append(cmd.Args, "--profile-block-fd="+strconv.Itoa(nextFD))
-		nextFD++
-	}
-
-	if conf.ProfileCPU != "" {
-		cpuFile, err := os.OpenFile(conf.ProfileCPU, os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			return fmt.Errorf("opening cpu profiling file %q: %w", conf.ProfileCPU, err)
-		}
-		defer cpuFile.Close()
-		cmd.ExtraFiles = append(cmd.ExtraFiles, cpuFile)
-		cmd.Args = append(cmd.Args, "--profile-cpu-fd="+strconv.Itoa(nextFD))
-		nextFD++
-	}
-
-	if conf.ProfileHeap != "" {
-		heapFile, err := os.OpenFile(conf.ProfileHeap, os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			return fmt.Errorf("opening heap profiling file %q: %w", conf.ProfileHeap, err)
-		}
-		defer heapFile.Close()
-		cmd.ExtraFiles = append(cmd.ExtraFiles, heapFile)
-		cmd.Args = append(cmd.Args, "--profile-heap-fd="+strconv.Itoa(nextFD))
-		nextFD++
-	}
-
-	if conf.ProfileMutex != "" {
-		mutexFile, err := os.OpenFile(conf.ProfileMutex, os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			return fmt.Errorf("opening mutex profiling file %q: %w", conf.ProfileMutex, err)
-		}
-		defer mutexFile.Close()
-		cmd.ExtraFiles = append(cmd.ExtraFiles, mutexFile)
-		cmd.Args = append(cmd.Args, "--profile-mutex-fd="+strconv.Itoa(nextFD))
-		nextFD++
-	}
-
-	if conf.TraceFile != "" {
-		traceFile, err := os.OpenFile(conf.TraceFile, os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			return fmt.Errorf("opening trace file %q: %w", conf.TraceFile, err)
-		}
-		defer traceFile.Close()
-		cmd.ExtraFiles = append(cmd.ExtraFiles, traceFile)
-		cmd.Args = append(cmd.Args, "--trace-fd="+strconv.Itoa(nextFD))
-		nextFD++
-	}
-
-	// If there is a gofer, sends all socket ends to the sandbox.
-	for _, f := range args.IOFiles {
-		defer f.Close()
-		cmd.ExtraFiles = append(cmd.ExtraFiles, f)
-		cmd.Args = append(cmd.Args, "--io-fds="+strconv.Itoa(nextFD))
-		nextFD++
-	}
+	donations.DonateAndClose("spec-fd", specFile)
 
 	gPlatform, err := platform.Lookup(conf.Platform)
 	if err != nil {
 		return err
 	}
 
-	if deviceFile, err := gPlatform.OpenDevice(); err != nil {
-		return fmt.Errorf("opening device file for platform %q: %w", conf.Platform, err)
+	if deviceFile, err := gPlatform.OpenDevice(conf.PlatformDevicePath); err != nil {
+		return fmt.Errorf("opening device file for platform %q: %v", conf.Platform, err)
 	} else if deviceFile != nil {
-		defer deviceFile.Close()
-		cmd.ExtraFiles = append(cmd.ExtraFiles, deviceFile)
-		cmd.Args = append(cmd.Args, "--device-fd="+strconv.Itoa(nextFD))
-		nextFD++
+		donations.DonateAndClose("device-fd", deviceFile)
 	}
 
 	// TODO(b/151157106): syscall tests fail by timeout if asyncpreemptoff
@@ -610,66 +546,6 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	if conf.Platform == "kvm" {
 		cmd.Env = append(cmd.Env, "GODEBUG=asyncpreemptoff=1")
 	}
-
-	// The current process' stdio must be passed to the application via the
-	// --stdio-fds flag. The stdio of the sandbox process itself must not
-	// be connected to the same FDs, otherwise we risk leaking sandbox
-	// errors to the application, so we set the sandbox stdio to nil,
-	// causing them to read/write from the null device.
-	cmd.Stdin = nil
-	cmd.Stdout = nil
-	cmd.Stderr = nil
-	var stdios [3]*os.File
-
-	// If the console control socket file is provided, then create a new
-	// pty master/replica pair and set the TTY on the sandbox process.
-	if args.Spec.Process.Terminal && args.ConsoleSocket != "" {
-		// console.NewWithSocket will send the master on the given
-		// socket, and return the replica.
-		tty, err := console.NewWithSocket(args.ConsoleSocket)
-		if err != nil {
-			return fmt.Errorf("setting up console with socket %q: %w", args.ConsoleSocket, err)
-		}
-		defer tty.Close()
-
-		// Set the TTY as a controlling TTY on the sandbox process.
-		cmd.SysProcAttr.Setctty = true
-		// The Ctty FD must be the FD in the child process's FD table,
-		// which will be nextFD in this case.
-		// See https://github.com/golang/go/issues/29458.
-		cmd.SysProcAttr.Ctty = nextFD
-
-		// Pass the tty as all stdio fds to sandbox.
-		stdios[0] = tty
-		stdios[1] = tty
-		stdios[2] = tty
-
-		if conf.Debug {
-			// If debugging, send the boot process stdio to the
-			// TTY, so that it is easier to find.
-			cmd.Stdin = tty
-			cmd.Stdout = tty
-			cmd.Stderr = tty
-		}
-	} else {
-		// If not using a console, pass our current stdio as the
-		// container stdio via flags.
-		stdios[0] = os.Stdin
-		stdios[1] = os.Stdout
-		stdios[2] = os.Stderr
-
-		if conf.Debug {
-			// If debugging, send the boot process stdio to the
-			// this process' stdio, so that is is easier to find.
-			cmd.Stdin = os.Stdin
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-		}
-	}
-
-	// Detach from this session, otherwise cmd will get SIGHUP and SIGCONT
-	// when re-parented.
-	cmd.SysProcAttr.Setsid = true
 
 	// nss is the set of namespaces to join or create before starting the sandbox
 	// process. Mount, IPC and UTS namespaces from the host are not used as they
@@ -706,7 +582,8 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		nss = append(nss, specs.LinuxNamespace{Type: specs.NetworkNamespace})
 	}
 
-	// These are set to the uid/gid that the sandbox process will use.
+	// These are set to the uid/gid that the sandbox process will use. May be
+	// overriden below.
 	s.UID = os.Getuid()
 	s.GID = os.Getgid()
 
@@ -783,18 +660,71 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		}
 	}
 
+	// The current process' stdio must be passed to the application via the
+	// --stdio-fds flag. The stdio of the sandbox process itself must not
+	// be connected to the same FDs, otherwise we risk leaking sandbox
+	// errors to the application, so we set the sandbox stdio to nil,
+	// causing them to read/write from the null device.
+	cmd.Stdin = nil
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	var stdios [3]*os.File
+
+	// If the console control socket file is provided, then create a new
+	// pty master/replica pair and set the TTY on the sandbox process.
+	if args.Spec.Process.Terminal && args.ConsoleSocket != "" {
+		// console.NewWithSocket will send the master on the given
+		// socket, and return the replica.
+		tty, err := console.NewWithSocket(args.ConsoleSocket)
+		if err != nil {
+			return fmt.Errorf("setting up console with socket %q: %v", args.ConsoleSocket, err)
+		}
+		defer tty.Close()
+
+		// Set the TTY as a controlling TTY on the sandbox process.
+		cmd.SysProcAttr.Setctty = true
+
+		// Inconveniently, the Ctty must be the FD in the *child* process's FD
+		// table. So transfer all files we have so far and make sure the next file
+		// added to donations is stdin.
+		//
+		// See https://github.com/golang/go/issues/29458.
+		nextFD = donations.Transfer(cmd, nextFD)
+		cmd.SysProcAttr.Ctty = nextFD
+
+		// Pass the tty as all stdio fds to sandbox.
+		stdios[0] = tty
+		stdios[1] = tty
+		stdios[2] = tty
+
+		if conf.Debug {
+			// If debugging, send the boot process stdio to the
+			// TTY, so that it is easier to find.
+			cmd.Stdin = tty
+			cmd.Stdout = tty
+			cmd.Stderr = tty
+		}
+	} else {
+		// If not using a console, pass our current stdio as the
+		// container stdio via flags.
+		stdios[0] = os.Stdin
+		stdios[1] = os.Stdout
+		stdios[2] = os.Stderr
+
+		if conf.Debug {
+			// If debugging, send the boot process stdio to the
+			// this process' stdio, so that is is easier to find.
+			cmd.Stdin = os.Stdin
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+		}
+	}
 	if err := s.configureStdios(conf, stdios[:]); err != nil {
 		return fmt.Errorf("configuring stdios: %w", err)
 	}
-	for _, file := range stdios {
-		cmd.ExtraFiles = append(cmd.ExtraFiles, file)
-		cmd.Args = append(cmd.Args, "--stdio-fds="+strconv.Itoa(nextFD))
-		nextFD++
-	}
-
-	// Set Args[0] to make easier to spot the sandbox process. Otherwise it's
-	// shown as `exe`.
-	cmd.Args[0] = "runsc-sandbox"
+	// Note: this must be done right after "cmd.SysProcAttr.Ctty" is set above
+	// because it relies on stdin being the next FD donated.
+	donations.Donate("stdio-fds", stdios[:]...)
 
 	mem, err := totalSystemMemory()
 	if err != nil {
@@ -838,20 +768,6 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	}
 	cmd.Args = append(cmd.Args, "--total-memory", strconv.FormatUint(mem, 10))
 
-	if args.UserLog != "" {
-		f, err := os.OpenFile(args.UserLog, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0664)
-		if err != nil {
-			return fmt.Errorf("opening compat log file: %w", err)
-		}
-		defer f.Close()
-
-		cmd.ExtraFiles = append(cmd.ExtraFiles, f)
-		cmd.Args = append(cmd.Args, "--user-log-fd", strconv.Itoa(nextFD))
-		nextFD++
-	}
-
-	_ = nextFD // All FD assignment is finished.
-
 	if args.Attached {
 		// Kill sandbox if parent process exits in attached mode.
 		cmd.SysProcAttr.Pdeathsig = unix.SIGKILL
@@ -859,15 +775,14 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		cmd.Args = append(cmd.Args, "--attached")
 	}
 
-	// Add container as the last argument.
+	// nextFD must not be used beyond this point.
+	_ = donations.Transfer(cmd, nextFD)
+
+	// Add container ID as the last argument.
 	cmd.Args = append(cmd.Args, s.ID)
 
-	// Log the FDs we are donating to the sandbox process.
-	for i, f := range cmd.ExtraFiles {
-		log.Debugf("Donating FD %d: %q", i+3, f.Name())
-	}
-
-	log.Debugf("Starting sandbox: %s %v", binPath, cmd.Args)
+	donation.LogDonations(cmd)
+	log.Debugf("Starting sandbox: %s %v", cmd.Path, cmd.Args)
 	log.Debugf("SysProcAttr: %+v", cmd.SysProcAttr)
 	if err := specutils.StartInNS(cmd, nss); err != nil {
 		err := fmt.Errorf("starting sandbox: %w", err)
@@ -1396,6 +1311,9 @@ func (s *Sandbox) configureStdios(conf *config.Config, stdios []*os.File) error 
 		return nil
 	}
 
+	if s.UID < 0 || s.GID < 0 {
+		panic(fmt.Sprintf("sandbox UID/GID is not set: %d/%d", s.UID, s.GID))
+	}
 	for _, file := range stdios {
 		log.Debugf("Changing %q ownership to %d/%d", file.Name(), s.UID, s.GID)
 		if err := file.Chown(s.UID, s.GID); err != nil {
@@ -1407,13 +1325,14 @@ func (s *Sandbox) configureStdios(conf *config.Config, stdios []*os.File) error 
 
 // deviceFileForPlatform opens the device file for the given platform. If the
 // platform does not need a device file, then nil is returned.
-func deviceFileForPlatform(name string) (*os.File, error) {
+// devicePath may be empty to use a sane platform-specific default.
+func deviceFileForPlatform(name, devicePath string) (*os.File, error) {
 	p, err := platform.Lookup(name)
 	if err != nil {
 		return nil, err
 	}
 
-	f, err := p.OpenDevice()
+	f, err := p.OpenDevice(devicePath)
 	if err != nil {
 		return nil, fmt.Errorf("opening device file for platform %q: %w", name, err)
 	}

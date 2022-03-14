@@ -1224,8 +1224,6 @@ TEST(ProcSelfCwd, Absolute) {
 
 // Sanity check that /proc/cmdline is present.
 TEST(ProcCmdline, IsPresent) {
-  SKIP_IF(IsRunningWithVFS1());
-
   std::string proc_cmdline =
       ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/cmdline"));
   ASSERT_FALSE(proc_cmdline.empty());
@@ -1268,8 +1266,6 @@ TEST(ProcCpuinfo, DeniesWriteNonRoot) {
 // With root privileges, it is possible to open /proc/cpuinfo with write mode,
 // but all write operations should fail.
 TEST(ProcCpuinfo, DeniesWriteRoot) {
-  // VFS1 does not behave differently for root/non-root.
-  SKIP_IF(IsRunningWithVFS1());
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_FOWNER)));
 
   int fd;
@@ -1666,7 +1662,6 @@ TEST(ProcPidStatusTest, HasBasicFields) {
                             Pair("PPid", absl::StrCat(getppid())),
                         }));
 
-    if (!IsRunningWithVFS1()) {
       uid_t ruid, euid, suid;
       ASSERT_THAT(getresuid(&ruid, &euid, &suid), SyscallSucceeds());
       gid_t rgid, egid, sgid;
@@ -1693,7 +1688,6 @@ TEST(ProcPidStatusTest, HasBasicFields) {
               Pair("Groups",
                    StartsWith(absl::StrJoin(supplementary_gids, " "))),
           }));
-    }
   });
 }
 
@@ -2727,11 +2721,7 @@ TEST(Proc, PidTidIOAccounting) {
 TEST(Proc, Statfs) {
   struct statfs st;
   EXPECT_THAT(statfs("/proc", &st), SyscallSucceeds());
-  if (IsRunningWithVFS1()) {
-    EXPECT_EQ(st.f_type, ANON_INODE_FS_MAGIC);
-  } else {
-    EXPECT_EQ(st.f_type, PROC_SUPER_MAGIC);
-  }
+  EXPECT_EQ(st.f_type, PROC_SUPER_MAGIC);
   EXPECT_EQ(st.f_bsize, getpagesize());
   EXPECT_EQ(st.f_namelen, NAME_MAX);
 }

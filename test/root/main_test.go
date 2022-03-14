@@ -15,13 +15,14 @@
 package root
 
 import (
-	"flag"
 	"fmt"
 	"os"
 	"testing"
 
 	"github.com/syndtr/gocapability/capability"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
+	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -29,6 +30,7 @@ import (
 // supported docker version, required capabilities, and configures the executable
 // path for runsc.
 func TestMain(m *testing.M) {
+	config.RegisterFlags(flag.CommandLine)
 	flag.Parse()
 
 	if !specutils.HasCapabilities(capability.CAP_SYS_ADMIN, capability.CAP_DAC_OVERRIDE) {

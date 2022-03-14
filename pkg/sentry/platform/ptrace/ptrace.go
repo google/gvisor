@@ -262,7 +262,7 @@ func (*constructor) New(*os.File) (platform.Platform, error) {
 	return New()
 }
 
-func (*constructor) OpenDevice() (*os.File, error) {
+func (*constructor) OpenDevice(_ string) (*os.File, error) {
 	return nil, nil
 }
 

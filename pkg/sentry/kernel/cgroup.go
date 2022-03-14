@@ -86,11 +86,46 @@ func (c *Cgroup) HierarchyID() uint32 {
 	return c.Controllers()[0].HierarchyID()
 }
 
+// CgroupMigrationContext represents an in-flight cgroup migration for
+// a single task.
+type CgroupMigrationContext struct {
+	src Cgroup
+	dst Cgroup
+	t   *Task
+}
+
+// Abort cancels a migration.
+func (ctx *CgroupMigrationContext) Abort() {
+	ctx.dst.AbortMigrate(ctx.t, &ctx.src)
+}
+
+// Commit completes a migration.
+func (ctx *CgroupMigrationContext) Commit() {
+	ctx.dst.CommitMigrate(ctx.t, &ctx.src)
+}
+
 // CgroupImpl is the common interface to cgroups.
 type CgroupImpl interface {
+	// Controllers lists the controller associated with this cgroup.
 	Controllers() []CgroupController
+
+	// Enter moves t into this cgroup.
 	Enter(t *Task)
+
+	// Leave moves t out of this cgroup.
 	Leave(t *Task)
+
+	// PrepareMigrate initiates a migration of t from src to this cgroup. See
+	// cgroupfs.controller.PrepareMigrate.
+	PrepareMigrate(t *Task, src *Cgroup) error
+
+	// CommitMigrate completes an in-flight migration. See
+	// cgroupfs.controller.CommitMigrate.
+	CommitMigrate(t *Task, src *Cgroup)
+
+	// AbortMigrate cancels an in-flight migration. See
+	// cgroupfs.controller.AbortMigrate.
+	AbortMigrate(t *Task, src *Cgroup)
 }
 
 // hierarchy represents a cgroupfs filesystem instance, with a unique set of

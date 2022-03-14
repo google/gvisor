@@ -304,7 +304,7 @@ type File interface {
 	//
 	// Bind is an extension to 9P2000.L, see version.go.
 	//
-	// On the server, UnlinkAt has a write concurrency guarantee.
+	// On the server, Bind has a write concurrency guarantee.
 	Bind(sockType uint32, sockName string, uid UID, gid GID) (File, QID, AttrMask, Attr, error)
 
 	// Connect establishes a new host-socket backed connection with a
@@ -319,7 +319,7 @@ type File interface {
 	// Flags indicates the requested type of socket.
 	//
 	// On the server, Connect has a read concurrency guarantee.
-	Connect(flags ConnectFlags) (*fd.FD, error)
+	Connect(socketType SocketType) (*fd.FD, error)
 
 	// Renamed is called when this node is renamed.
 	//

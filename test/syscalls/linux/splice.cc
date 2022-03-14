@@ -517,11 +517,6 @@ TEST(TeeTest, TwoPipesPartialWrite) {
 }
 
 TEST(SpliceTest, TwoPipesCircular) {
-  // This test deadlocks the sentry on VFS1 because VFS1 splice ordering is
-  // based on fs.File.UniqueID, which does not prevent circular ordering between
-  // e.g. inode-level locks taken by fs.FileOperations.
-  SKIP_IF(IsRunningWithVFS1());
-
   // Create two pipes.
   int fds[2];
   ASSERT_THAT(pipe(fds), SyscallSucceeds());

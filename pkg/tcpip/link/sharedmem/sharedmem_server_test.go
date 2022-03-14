@@ -125,7 +125,7 @@ func newClientStack(t *testing.T, qPair *sharedmem.QueuePair, peerFD int) (*stac
 	if err != nil {
 		return nil, fmt.Errorf("failed to create sharedmem endpoint: %w", err)
 	}
-	st, err := newStackWithOptions(stackOptions{ep: ep, addr: localIPv4Address, enablePacketLogs: true})
+	st, err := newStackWithOptions(stackOptions{ep: ep, addr: localIPv4Address, enablePacketLogs: false})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create client stack: %w", err)
 	}
@@ -144,7 +144,7 @@ func newServerStack(t *testing.T, qPair *sharedmem.QueuePair, peerFD int) (*stac
 	if err != nil {
 		return nil, fmt.Errorf("failed to create sharedmem endpoint: %w", err)
 	}
-	st, err := newStackWithOptions(stackOptions{ep: ep, addr: remoteIPv4Address, enablePacketLogs: true})
+	st, err := newStackWithOptions(stackOptions{ep: ep, addr: remoteIPv4Address, enablePacketLogs: false})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create client stack: %w", err)
 	}
@@ -195,12 +195,13 @@ func (ctx *testContext) cleanup() {
 	unix.Close(ctx.peerFDs[1])
 	ctx.clientStk.Close()
 	ctx.serverStk.Close()
+	ctx.clientStk.Wait()
+	ctx.serverStk.Wait()
 }
 
-func makeRequest(ctx *testContext) (*http.Response, error) {
-	listenAddr := tcpip.FullAddress{Addr: remoteIPv4Address, Port: serverPort}
+func makeRequest(serverAddr tcpip.FullAddress, clientStk *stack.Stack) (*http.Response, error) {
 	dialFunc := func(address, protocol string) (net.Conn, error) {
-		return gonet.DialTCP(ctx.clientStk, listenAddr, ipv4.ProtocolNumber)
+		return gonet.DialTCP(clientStk, serverAddr, ipv4.ProtocolNumber)
 	}
 	httpClient := &http.Client{
 		Transport: &http.Transport{
@@ -210,7 +211,7 @@ func makeRequest(ctx *testContext) (*http.Response, error) {
 	// Close idle "keep alive" connections. If any connections remain open after
 	// a test ends, DoLeakCheck() will erroneously detect leaked packets.
 	defer httpClient.CloseIdleConnections()
-	serverURL := fmt.Sprintf("http://[%s]:%d/", net.IP(remoteIPv4Address), serverPort)
+	serverURL := fmt.Sprintf("http://[%s]:%d/", net.IP(serverAddr.Addr), serverAddr.Port)
 	response, err := httpClient.Get(serverURL)
 	return response, err
 }
@@ -231,7 +232,7 @@ func TestServerRoundTrip(t *testing.T) {
 		}))
 	}()
 
-	response, err := makeRequest(ctx)
+	response, err := makeRequest(listenAddr, ctx.clientStk)
 	if err != nil {
 		t.Fatalf("httpClient.Get(\"/\") failed: %s", err)
 	}
@@ -267,7 +268,7 @@ func TestServerRoundTripStress(t *testing.T) {
 	var errs errgroup.Group
 	for i := 0; i < 1000; i++ {
 		errs.Go(func() error {
-			response, err := makeRequest(ctx)
+			response, err := makeRequest(listenAddr, ctx.clientStk)
 			if err != nil {
 				return fmt.Errorf("httpClient.Get(\"/\") failed: %w", err)
 			}
@@ -282,12 +283,125 @@ func TestServerRoundTripStress(t *testing.T) {
 			if got, want := string(body), responseString; got != want {
 				return fmt.Errorf("unexpected response got: %s, want: %s", got, want)
 			}
-			log.Infof("worker: %d read %d bytes", len(body))
+			log.Infof("worker: read %d bytes", len(body))
 			return nil
 		})
 	}
 	if err := errs.Wait(); err != nil {
 		t.Fatalf("request failed: %s", err)
+	}
+}
+
+func TestServerBulkTransfer(t *testing.T) {
+	var payloadSizes = []int{
+		512 << 20,  // 512 MiB
+		1024 << 20, // 1 GiB
+		2048 << 20, // 2 GiB
+		4096 << 20, // 4 GiB
+		8192 << 20, // 8 GiB
+	}
+
+	for _, payloadSize := range payloadSizes {
+		t.Run(fmt.Sprintf("%d bytes", payloadSize), func(t *testing.T) {
+			ctx := newTestContext(t)
+			defer ctx.cleanup()
+			listenAddr := tcpip.FullAddress{Addr: remoteIPv4Address, Port: serverPort}
+			l, err := gonet.ListenTCP(ctx.serverStk, listenAddr, ipv4.ProtocolNumber)
+			if err != nil {
+				t.Fatalf("failed to start TCP Listener: %s", err)
+			}
+			defer l.Close()
+
+			const chunkSize = 4 << 20 // 4 MiB
+			var responseString = strings.Repeat("r", chunkSize)
+			go func() {
+				http.Serve(l, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					for done := 0; done < payloadSize; {
+						n, err := w.Write([]byte(responseString))
+						if err != nil {
+							log.Infof("failed to write response : %s", err)
+							return
+						}
+						done += n
+					}
+				}))
+			}()
+
+			response, err := makeRequest(listenAddr, ctx.clientStk)
+			if err != nil {
+				t.Fatalf("httpClient.Get(\"/\") failed: %s", err)
+			}
+			if got, want := response.StatusCode, http.StatusOK; got != want {
+				t.Fatalf("unexpected status code got: %d, want: %d", got, want)
+			}
+			n, err := io.Copy(io.Discard, response.Body)
+			if err != nil {
+				t.Fatalf("io.Copy(io.Discard, response.Body) failed: %s", err)
+			}
+			response.Body.Close()
+			if got, want := int(n), payloadSize; got != want {
+				t.Fatalf("unexpected resposne size got: %d, want: %d", got, want)
+			}
+			log.Infof("read %d bytes", n)
+		})
+	}
+
+}
+
+func TestClientBulkTransfer(t *testing.T) {
+	var payloadSizes = []int{
+		512 << 20,  // 512 MiB
+		1024 << 20, // 1 GiB
+		2048 << 20, // 2 GiB
+		4096 << 20, // 4 GiB
+		8192 << 20, // 8 GiB
+	}
+
+	for _, payloadSize := range payloadSizes {
+		t.Run(fmt.Sprintf("%d bytes", payloadSize), func(t *testing.T) {
+			ctx := newTestContext(t)
+			defer ctx.cleanup()
+			listenAddr := tcpip.FullAddress{Addr: localIPv4Address, Port: serverPort}
+			l, err := gonet.ListenTCP(ctx.clientStk, listenAddr, ipv4.ProtocolNumber)
+			if err != nil {
+				t.Fatalf("failed to start TCP Listener: %s", err)
+			}
+			defer l.Close()
+			const chunkSize = 4 << 20 // 4 MiB
+			var responseString = strings.Repeat("r", chunkSize)
+			go func() {
+				http.Serve(l, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					for done := 0; done < payloadSize; {
+						n, err := w.Write([]byte(responseString))
+						if err != nil {
+							log.Infof("failed to write response : %s", err)
+							return
+						}
+						done += n
+					}
+				}))
+			}()
+
+			response, err := makeRequest(listenAddr, ctx.serverStk)
+			if err != nil {
+				t.Fatalf("httpClient.Get(\"/\") failed: %s", err)
+			}
+			if err != nil {
+				t.Fatalf("httpClient.Get(\"/\") failed: %s", err)
+			}
+			if got, want := response.StatusCode, http.StatusOK; got != want {
+				t.Fatalf("unexpected status code got: %d, want: %d", got, want)
+			}
+			n, err := io.Copy(io.Discard, response.Body)
+			if err != nil {
+				t.Fatalf("io.Copy(io.Discard, response.Body) failed: %s", err)
+			}
+			response.Body.Close()
+			if got, want := int(n), payloadSize; got != want {
+				t.Fatalf("unexpected resposne size got: %d, want: %d", got, want)
+			}
+			log.Infof("read %d bytes", n)
+		})
 	}
 }
 

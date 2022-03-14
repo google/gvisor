@@ -118,6 +118,11 @@ func (mfd *masterFileDescription) Readiness(mask waiter.EventMask) waiter.EventM
 	return mfd.t.ld.masterReadiness()
 }
 
+// Epollable implements FileDescriptionImpl.Epollable.
+func (mfd *masterFileDescription) Epollable() bool {
+	return true
+}
+
 // Read implements vfs.FileDescriptionImpl.Read.
 func (mfd *masterFileDescription) Read(ctx context.Context, dst usermem.IOSequence, _ vfs.ReadOptions) (int64, error) {
 	return mfd.t.ld.outputQueueRead(ctx, dst)

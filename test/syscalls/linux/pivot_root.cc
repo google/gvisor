@@ -49,7 +49,6 @@ namespace {
 TEST(PivotRootTest, Success) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_CHROOT)));
-  SKIP_IF(IsRunningWithVFS1());
 
   auto root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   EXPECT_THAT(mount("", root.path().c_str(), "tmpfs", 0, "mode=0700"),
@@ -75,7 +74,6 @@ TEST(PivotRootTest, Success) {
 TEST(PivotRootTest, CreatesNewRoot) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_CHROOT)));
-  SKIP_IF(IsRunningWithVFS1());
 
   auto root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   EXPECT_THAT(mount("", root.path().c_str(), "tmpfs", 0, "mode=0700"),
@@ -132,7 +130,6 @@ TEST(PivotRootTest, CreatesNewRoot) {
 TEST(PivotRootTest, MovesOldRoot) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_CHROOT)));
-  SKIP_IF(IsRunningWithVFS1());
 
   auto root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   EXPECT_THAT(mount("", root.path().c_str(), "tmpfs", 0, "mode=0700"),
@@ -176,7 +173,6 @@ TEST(PivotRootTest, MovesOldRoot) {
 TEST(PivotRootTest, ChangesCwdForAllProcesses) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_CHROOT)));
-  SKIP_IF(IsRunningWithVFS1());
 
   auto root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   EXPECT_THAT(mount("", root.path().c_str(), "tmpfs", 0, "mode=0700"),
@@ -214,7 +210,6 @@ TEST(PivotRootTest, ChangesCwdForAllProcesses) {
 TEST(PivotRootTest, DotDot) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_CHROOT)));
-  SKIP_IF(IsRunningWithVFS1());
 
   auto root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   EXPECT_THAT(mount("", root.path().c_str(), "tmpfs", 0, "mode=0700"),
@@ -245,7 +240,6 @@ TEST(PivotRootTest, DotDot) {
 
 TEST(PivotRootTest, NotDir) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
-  SKIP_IF(IsRunningWithVFS1());
 
   auto file1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   auto file2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
@@ -263,7 +257,6 @@ TEST(PivotRootTest, NotDir) {
 
 TEST(PivotRootTest, NotExist) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
-  SKIP_IF(IsRunningWithVFS1());
 
   auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   EXPECT_THAT(syscall(__NR_pivot_root, "/foo/bar", "/bar/baz"),
@@ -276,7 +269,6 @@ TEST(PivotRootTest, NotExist) {
 
 TEST(PivotRootTest, WithoutCapability) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETPCAP)));
-  SKIP_IF(IsRunningWithVFS1());
 
   auto new_root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const std::string new_root_path = new_root.path();
@@ -295,7 +287,6 @@ TEST(PivotRootTest, WithoutCapability) {
 TEST(PivotRootTest, NewRootOnRootMount) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_CHROOT)));
-  SKIP_IF(IsRunningWithVFS1());
 
   auto root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   EXPECT_THAT(mount("", root.path().c_str(), "tmpfs", 0, "mode=0700"),
@@ -322,7 +313,6 @@ TEST(PivotRootTest, NewRootOnRootMount) {
 TEST(PivotRootTest, NewRootNotAMountpoint) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_CHROOT)));
-  SKIP_IF(IsRunningWithVFS1());
 
   auto root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   EXPECT_THAT(mount("", root.path().c_str(), "tmpfs", 0, "mode=0700"),
@@ -355,7 +345,6 @@ TEST(PivotRootTest, NewRootNotAMountpoint) {
 TEST(PivotRootTest, PutOldNotUnderNewRoot) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_CHROOT)));
-  SKIP_IF(IsRunningWithVFS1());
 
   auto root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   EXPECT_THAT(mount("", root.path().c_str(), "tmpfs", 0, "mode=0700"),
@@ -385,7 +374,6 @@ TEST(PivotRootTest, PutOldNotUnderNewRoot) {
 TEST(PivotRootTest, CurrentRootNotAMountPoint) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_CHROOT)));
-  SKIP_IF(IsRunningWithVFS1());
 
   auto root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto new_root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(root.path()));
@@ -409,7 +397,6 @@ TEST(PivotRootTest, CurrentRootNotAMountPoint) {
 TEST(PivotRootTest, OnRootFS) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_CHROOT)));
-  SKIP_IF(IsRunningWithVFS1());
 
   auto new_root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const std::string new_root_path = new_root.path();

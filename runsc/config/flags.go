@@ -23,88 +23,112 @@ import (
 
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
-var registration sync.Once
-
 // RegisterFlags registers flags used to populate Config.
-func RegisterFlags() {
-	registration.Do(func() {
-		// Although these flags are not part of the OCI spec, they are used by
-		// Docker, and thus should not be changed.
-		flag.String("root", "", "root directory for storage of container state.")
-		flag.String("log", "", "file path where internal debug information is written, default is stdout.")
-		flag.String("log-format", "text", "log format: text (default), json, or json-k8s.")
-		flag.Bool("debug", false, "enable debug logging.")
+func RegisterFlags(flagSet *flag.FlagSet) {
+	// Although these flags are not part of the OCI spec, they are used by
+	// Docker, and thus should not be changed.
+	flagSet.String("root", "", "root directory for storage of container state.")
+	flagSet.String("log", "", "file path where internal debug information is written, default is stdout.")
+	flagSet.String("log-format", "text", "log format: text (default), json, or json-k8s.")
+	flagSet.Bool("debug", false, "enable debug logging.")
 
-		// These flags are unique to runsc, and are used to configure parts of the
-		// system that are not covered by the runtime spec.
+	// These flags are unique to runsc, and are used to configure parts of the
+	// system that are not covered by the runtime spec.
 
-		// Debugging flags.
-		flag.String("debug-log", "", "additional location for logs. If it ends with '/', log files are created inside the directory with default names. The following variables are available: %TIMESTAMP%, %COMMAND%.")
-		flag.String("panic-log", "", "file path where panic reports and other Go's runtime messages are written.")
-		flag.String("coverage-report", "", "file path where Go coverage reports are written. Reports will only be generated if runsc is built with --collect_code_coverage and --instrumentation_filter Bazel flags.")
-		flag.Bool("log-packets", false, "enable network packet logging.")
-		flag.String("debug-log-format", "text", "log format: text (default), json, or json-k8s.")
-		flag.Bool("alsologtostderr", false, "send log messages to stderr.")
-		flag.Bool("allow-flag-override", false, "allow OCI annotations (dev.gvisor.flag.<name>) to override flags for debugging.")
-		flag.String("traceback", "system", "golang runtime's traceback level")
+	// Debugging flags.
+	flagSet.String("debug-log", "", "additional location for logs. If it ends with '/', log files are created inside the directory with default names. The following variables are available: %TIMESTAMP%, %COMMAND%.")
+	flagSet.String("panic-log", "", "file path where panic reports and other Go's runtime messages are written.")
+	flagSet.String("coverage-report", "", "file path where Go coverage reports are written. Reports will only be generated if runsc is built with --collect_code_coverage and --instrumentation_filter Bazel flags.")
+	flagSet.Bool("log-packets", false, "enable network packet logging.")
+	flagSet.String("debug-log-format", "text", "log format: text (default), json, or json-k8s.")
+	flagSet.Bool("alsologtostderr", false, "send log messages to stderr.")
+	flagSet.Bool("allow-flag-override", false, "allow OCI annotations (dev.gvisor.flag.<name>) to override flags for debugging.")
+	flagSet.String("traceback", "system", "golang runtime's traceback level")
 
-		// Debugging flags: strace related
-		flag.Bool("strace", false, "enable strace.")
-		flag.String("strace-syscalls", "", "comma-separated list of syscalls to trace. If --strace is true and this list is empty, then all syscalls will be traced.")
-		flag.Uint("strace-log-size", 1024, "default size (in bytes) to log data argument blobs.")
-		flag.Bool("strace-event", false, "send strace to event.")
+	// Debugging flags: strace related
+	flagSet.Bool("strace", false, "enable strace.")
+	flagSet.String("strace-syscalls", "", "comma-separated list of syscalls to trace. If --strace is true and this list is empty, then all syscalls will be traced.")
+	flagSet.Uint("strace-log-size", 1024, "default size (in bytes) to log data argument blobs.")
+	flagSet.Bool("strace-event", false, "send strace to event.")
 
-		// Flags that control sandbox runtime behavior.
-		flag.String("platform", "ptrace", "specifies which platform to use: ptrace (default), kvm.")
-		flag.Var(watchdogActionPtr(watchdog.LogWarning), "watchdog-action", "sets what action the watchdog takes when triggered: log (default), panic.")
-		flag.Int("panic-signal", -1, "register signal handling that panics. Usually set to SIGUSR2(12) to troubleshoot hangs. -1 disables it.")
-		flag.Bool("profile", false, "prepares the sandbox to use Golang profiler. Note that enabling profiler loosens the seccomp protection added to the sandbox (DO NOT USE IN PRODUCTION).")
-		flag.String("profile-block", "", "collects a block profile to this file path for the duration of the container execution. Requires -profile=true.")
-		flag.String("profile-cpu", "", "collects a CPU profile to this file path for the duration of the container execution. Requires -profile=true.")
-		flag.String("profile-heap", "", "collects a heap profile to this file path for the duration of the container execution. Requires -profile=true.")
-		flag.String("profile-mutex", "", "collects a mutex profile to this file path for the duration of the container execution. Requires -profile=true.")
-		flag.String("trace", "", "collects a Go runtime execution trace to this file path for the duration of the container execution.")
-		flag.Bool("rootless", false, "it allows the sandbox to be started with a user that is not root. Sandbox and Gofer processes may run with same privileges as current user.")
-		flag.Var(leakModePtr(refs.NoLeakChecking), "ref-leak-mode", "sets reference leak check mode: disabled (default), log-names, log-traces.")
-		flag.Bool("cpu-num-from-quota", false, "set cpu number to cpu quota (least integer greater or equal to quota value, but not less than 2)")
-		flag.Bool("oci-seccomp", false, "Enables loading OCI seccomp filters inside the sandbox.")
-		flag.Var(defaultControlConfig(), "controls", "Sentry control endpoints.")
+	// Flags that control sandbox runtime behavior.
+	flagSet.String("platform", "ptrace", "specifies which platform to use: ptrace (default), kvm.")
+	flagSet.String("platform_device_path", "", "path to a platform-specific device file (e.g. /dev/kvm for KVM platform). If unset, will use a sane platform-specific default.")
+	flagSet.Var(watchdogActionPtr(watchdog.LogWarning), "watchdog-action", "sets what action the watchdog takes when triggered: log (default), panic.")
+	flagSet.Int("panic-signal", -1, "register signal handling that panics. Usually set to SIGUSR2(12) to troubleshoot hangs. -1 disables it.")
+	flagSet.Bool("profile", false, "prepares the sandbox to use Golang profiler. Note that enabling profiler loosens the seccomp protection added to the sandbox (DO NOT USE IN PRODUCTION).")
+	flagSet.String("profile-block", "", "collects a block profile to this file path for the duration of the container execution. Requires -profile=true.")
+	flagSet.String("profile-cpu", "", "collects a CPU profile to this file path for the duration of the container execution. Requires -profile=true.")
+	flagSet.String("profile-heap", "", "collects a heap profile to this file path for the duration of the container execution. Requires -profile=true.")
+	flagSet.String("profile-mutex", "", "collects a mutex profile to this file path for the duration of the container execution. Requires -profile=true.")
+	flagSet.String("trace", "", "collects a Go runtime execution trace to this file path for the duration of the container execution.")
+	flagSet.Bool("rootless", false, "it allows the sandbox to be started with a user that is not root. Sandbox and Gofer processes may run with same privileges as current user.")
+	flagSet.Var(leakModePtr(refs.NoLeakChecking), "ref-leak-mode", "sets reference leak check mode: disabled (default), log-names, log-traces.")
+	flagSet.Bool("cpu-num-from-quota", false, "set cpu number to cpu quota (least integer greater or equal to quota value, but not less than 2)")
+	flagSet.Bool("oci-seccomp", false, "Enables loading OCI seccomp filters inside the sandbox.")
+	flagSet.Var(defaultControlConfig(), "controls", "Sentry control endpoints.")
+	flagSet.Bool("enable-core-tags", false, "enables core tagging. Requires host linux kernel >= 5.14.")
 
-		// Flags that control sandbox runtime behavior: FS related.
-		flag.Var(fileAccessTypePtr(FileAccessExclusive), "file-access", "specifies which filesystem validation to use for the root mount: exclusive (default), shared.")
-		flag.Var(fileAccessTypePtr(FileAccessShared), "file-access-mounts", "specifies which filesystem validation to use for volumes other than the root mount: shared (default), exclusive.")
-		flag.Bool("overlay", false, "wrap filesystem mounts with writable overlay. All modifications are stored in memory inside the sandbox.")
-		flag.Bool("verity", false, "specifies whether a verity file system will be mounted.")
-		flag.Bool("fsgofer-host-uds", false, "allow the gofer to mount Unix Domain Sockets.")
-		flag.Bool("vfs2", true, "enables VFSv2. This uses the new VFS layer that is faster than the previous one.")
-		flag.Bool("fuse", false, "TEST ONLY; use while FUSE in VFSv2 is landing. This allows the use of the new experimental FUSE filesystem.")
-		flag.Bool("lisafs", false, "Enables lisafs protocol instead of 9P. This is only effective with VFS2.")
-		flag.Bool("cgroupfs", false, "Automatically mount cgroupfs.")
-		flag.Bool("ignore-cgroups", false, "don't configure cgroups.")
+	// Flags that control sandbox runtime behavior: FS related.
+	flagSet.Var(fileAccessTypePtr(FileAccessExclusive), "file-access", "specifies which filesystem validation to use for the root mount: exclusive (default), shared.")
+	flagSet.Var(fileAccessTypePtr(FileAccessShared), "file-access-mounts", "specifies which filesystem validation to use for volumes other than the root mount: shared (default), exclusive.")
+	flagSet.Bool("overlay", false, "wrap filesystem mounts with writable overlay. All modifications are stored in memory inside the sandbox.")
+	flagSet.Bool("verity", false, "specifies whether a verity file system will be mounted.")
+	flagSet.Bool("fsgofer-host-uds", false, "allow the gofer to mount Unix Domain Sockets.")
+	flagSet.Bool("vfs2", true, "enables VFSv2. This uses the new VFS layer that is faster than the previous one.")
+	flagSet.Bool("fuse", false, "TEST ONLY; use while FUSE in VFSv2 is landing. This allows the use of the new experimental FUSE filesystem.")
+	flagSet.Bool("lisafs", false, "Enables lisafs protocol instead of 9P. This is only effective with VFS2.")
+	flagSet.Bool("cgroupfs", false, "Automatically mount cgroupfs.")
+	flagSet.Bool("ignore-cgroups", false, "don't configure cgroups.")
 
-		// Flags that control sandbox runtime behavior: network related.
-		flag.Var(networkTypePtr(NetworkSandbox), "network", "specifies which network to use: sandbox (default), host, none. Using network inside the sandbox is more secure because it's isolated from the host network.")
-		flag.Bool("net-raw", false, "enable raw sockets. When false, raw sockets are disabled by removing CAP_NET_RAW from containers (`runsc exec` will still be able to utilize raw sockets). Raw sockets allow malicious containers to craft packets and potentially attack the network.")
-		flag.Bool("gso", true, "enable hardware segmentation offload if it is supported by a network device.")
-		flag.Bool("software-gso", true, "enable software segmentation offload when hardware offload can't be enabled.")
-		flag.Bool("tx-checksum-offload", false, "enable TX checksum offload.")
-		flag.Bool("rx-checksum-offload", true, "enable RX checksum offload.")
-		flag.Var(queueingDisciplinePtr(QDiscFIFO), "qdisc", "specifies which queueing discipline to apply by default to the non loopback nics used by the sandbox.")
-		flag.Int("num-network-channels", 1, "number of underlying channels(FDs) to use for network link endpoints.")
+	// Flags that control sandbox runtime behavior: network related.
+	flagSet.Var(networkTypePtr(NetworkSandbox), "network", "specifies which network to use: sandbox (default), host, none. Using network inside the sandbox is more secure because it's isolated from the host network.")
+	flagSet.Bool("net-raw", false, "enable raw sockets. When false, raw sockets are disabled by removing CAP_NET_RAW from containers (`runsc exec` will still be able to utilize raw sockets). Raw sockets allow malicious containers to craft packets and potentially attack the network.")
+	flagSet.Bool("gso", true, "enable hardware segmentation offload if it is supported by a network device.")
+	flagSet.Bool("software-gso", true, "enable software segmentation offload when hardware offload can't be enabled.")
+	flagSet.Bool("tx-checksum-offload", false, "enable TX checksum offload.")
+	flagSet.Bool("rx-checksum-offload", true, "enable RX checksum offload.")
+	flagSet.Var(queueingDisciplinePtr(QDiscFIFO), "qdisc", "specifies which queueing discipline to apply by default to the non loopback nics used by the sandbox.")
+	flagSet.Int("num-network-channels", 1, "number of underlying channels(FDs) to use for network link endpoints.")
 
-		// Test flags, not to be used outside tests, ever.
-		flag.Bool("TESTONLY-unsafe-nonroot", false, "TEST ONLY; do not ever use! This skips many security measures that isolate the host from the sandbox.")
-		flag.String("TESTONLY-test-name-env", "", "TEST ONLY; do not ever use! Used for automated tests to improve logging.")
-		flag.Bool("TESTONLY-allow-packet-endpoint-write", false, "TEST ONLY; do not ever use! Used for tests to allow writes on packet sockets.")
-	})
+	// Test flags, not to be used outside tests, ever.
+	flagSet.Bool("TESTONLY-unsafe-nonroot", false, "TEST ONLY; do not ever use! This skips many security measures that isolate the host from the sandbox.")
+	flagSet.String("TESTONLY-test-name-env", "", "TEST ONLY; do not ever use! Used for automated tests to improve logging.")
+	flagSet.Bool("TESTONLY-allow-packet-endpoint-write", false, "TEST ONLY; do not ever use! Used for tests to allow writes on packet sockets.")
+}
+
+// overrideAllowlist lists all flags that can be changed using OCI
+// annotations without an administrator setting `--allow-flag-override` on the
+// runtime. Flags in this list can be set by container authors and should not
+// make the sandbox less secure.
+var overrideAllowlist = map[string]struct {
+	check func(name string, value string) error
+}{
+	"debug":           {},
+	"strace":          {},
+	"strace-syscalls": {},
+	"strace-log-size": {},
+
+	"oci-seccomp": {check: checkOciSeccomp},
+}
+
+// checkOciSeccomp ensures that seccomp can be enabled but not disabled.
+func checkOciSeccomp(name string, value string) error {
+	enable, err := strconv.ParseBool(value)
+	if err != nil {
+		return err
+	}
+	if !enable {
+		return fmt.Errorf("disabling %q requires flag %q to be enabled", name, "allow-flag-override")
+	}
+	return nil
 }
 
 // NewFromFlags creates a new Config with values coming from command line flags.
-func NewFromFlags() (*Config, error) {
+func NewFromFlags(flagSet *flag.FlagSet) (*Config, error) {
 	conf := &Config{}
 
 	obj := reflect.ValueOf(conf).Elem()
@@ -116,7 +140,7 @@ func NewFromFlags() (*Config, error) {
 			// No flag set for this field.
 			continue
 		}
-		fl := flag.CommandLine.Lookup(name)
+		fl := flagSet.Lookup(name)
 		if fl == nil {
 			panic(fmt.Sprintf("Flag %q not found", name))
 		}
@@ -143,6 +167,10 @@ func NewFromFlags() (*Config, error) {
 func (c *Config) ToFlags() []string {
 	var rv []string
 
+	// Construct a temporary set for default plumbing.
+	flagSet := flag.NewFlagSet("tmp", flag.ContinueOnError)
+	RegisterFlags(flagSet)
+
 	obj := reflect.ValueOf(c).Elem()
 	st := obj.Type()
 	for i := 0; i < st.NumField(); i++ {
@@ -154,7 +182,7 @@ func (c *Config) ToFlags() []string {
 		}
 		val := getVal(obj.Field(i))
 
-		flag := flag.CommandLine.Lookup(name)
+		flag := flagSet.Lookup(name)
 		if flag == nil {
 			panic(fmt.Sprintf("Flag %q not found", name))
 		}
@@ -167,11 +195,7 @@ func (c *Config) ToFlags() []string {
 }
 
 // Override writes a new value to a flag.
-func (c *Config) Override(name string, value string) error {
-	if !c.AllowFlagOverride {
-		return fmt.Errorf("flag override disabled, use --allow-flag-override to enable it")
-	}
-
+func (c *Config) Override(flagSet *flag.FlagSet, name string, value string) error {
 	obj := reflect.ValueOf(c).Elem()
 	st := obj.Type()
 	for i := 0; i < st.NumField(); i++ {
@@ -181,10 +205,13 @@ func (c *Config) Override(name string, value string) error {
 			// Not a flag field, or flag name doesn't match.
 			continue
 		}
-		fl := flag.CommandLine.Lookup(name)
+		fl := flagSet.Lookup(name)
 		if fl == nil {
 			// Flag must exist if there is a field match above.
 			panic(fmt.Sprintf("Flag %q not found", name))
+		}
+		if err := c.isOverrideAllowed(name, value); err != nil {
+			return fmt.Errorf("error setting flag %s=%q: %w", name, value, err)
 		}
 
 		// Use flag to convert the string value to the underlying flag type, using
@@ -199,6 +226,23 @@ func (c *Config) Override(name string, value string) error {
 		return c.validate()
 	}
 	return fmt.Errorf("flag %q not found. Cannot set it to %q", name, value)
+}
+
+func (c *Config) isOverrideAllowed(name string, value string) error {
+	if c.AllowFlagOverride {
+		return nil
+	}
+	// If the global override flag is not enabled, check if individual flag is
+	// safe to apply.
+	if allow, ok := overrideAllowlist[name]; ok {
+		if allow.check != nil {
+			if err := allow.check(name, value); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return fmt.Errorf("flag override disabled, use --allow-flag-override to enable it")
 }
 
 func getVal(field reflect.Value) string {

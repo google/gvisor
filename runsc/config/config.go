@@ -31,9 +31,11 @@ import (
 // Follow these steps to add a new flag:
 //   1. Create a new field in Config.
 //   2. Add a field tag with the flag name
-//   3. Register a new flag in flags.go, with name and description
+//   3. Register a new flag in flags.go, with same name and add a description
 //   4. Add any necessary validation into validate()
 //   5. If adding an enum, follow the same pattern as FileAccessType
+//   6. Evaluate if the flag can be changed with OCI annotations. See
+//      overrideAllowlist for more details
 //
 type Config struct {
 	// RootDir is the runtime root directory.
@@ -112,6 +114,11 @@ type Config struct {
 	// Platform is the platform to run on.
 	Platform string `flag:"platform"`
 
+	// PlatformDevicePath is the path to the device file used by the platform.
+	// e.g. "/dev/kvm" for the KVM platform.
+	// If unset, a sane platform-specific default will be used.
+	PlatformDevicePath string `flag:"platform_device_path"`
+
 	// Strace indicates that strace should be enabled.
 	Strace bool `flag:"strace"`
 
@@ -130,6 +137,13 @@ type Config struct {
 	// DisableSeccomp indicates whether seccomp syscall filters should be
 	// disabled. Pardon the double negation, but default to enabled is important.
 	DisableSeccomp bool
+
+	// EnableCoreTags indicates whether the Sentry process and children will be
+	// run in a core tagged process. This isolates the sentry from sharing
+	// physical cores with other core tagged processes. This is useful as a
+	// mitigation for hyperthreading side channel based attacks. Requires host
+	// linux kernel >= 5.14.
+	EnableCoreTags bool `flag:"enable-core-tags"`
 
 	// WatchdogAction sets what action the watchdog takes when triggered.
 	WatchdogAction watchdog.Action `flag:"watchdog-action"`

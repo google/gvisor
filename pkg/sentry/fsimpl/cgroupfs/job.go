@@ -21,12 +21,15 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // +stateify savable
 type jobController struct {
 	controllerCommon
+	controllerNoopMigrate
+
 	id int64
 }
 
@@ -36,6 +39,15 @@ func newJobController(fs *filesystem) *jobController {
 	c := &jobController{}
 	c.controllerCommon.init(controllerJob, fs)
 	return c
+}
+
+// Clone implements controller.Clone.
+func (c *jobController) Clone() controller {
+	new := &jobController{
+		id: c.id,
+	}
+	new.controllerCommon.cloneFrom(&c.controllerCommon)
+	return new
 }
 
 func (c *jobController) AddControlFiles(ctx context.Context, creds *auth.Credentials, _ *cgroupInode, contents map[string]kernfs.Inode) {
@@ -54,7 +66,7 @@ func (d *jobIDData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 }
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
-func (d *jobIDData) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
+func (d *jobIDData) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
 	val, n, err := parseInt64FromString(ctx, src)
 	if err != nil {
 		return n, err

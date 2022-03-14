@@ -23,6 +23,7 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/str_split.h"
+#include "absl/synchronization/notification.h"
 #include "test/util/capability_util.h"
 #include "test/util/cgroup_util.h"
 #include "test/util/cleanup.h"
@@ -49,9 +50,42 @@ std::vector<std::string> known_controllers = {
 };
 
 bool CgroupsAvailable() {
-  return IsRunningOnGvisor() && !IsRunningWithVFS1() &&
+  return IsRunningOnGvisor() &&
          TEST_CHECK_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN));
 }
+
+// NoopThreads spawns a set of threads that do nothing until they're asked to
+// exit. Useful for testing functionality that requires a process with multiple
+// threads.
+class NoopThreads {
+ public:
+  NoopThreads(int count) {
+    auto noop = [this]() { exit_.WaitForNotification(); };
+
+    for (int i = 0; i < count; ++i) {
+      threads_.emplace_back(noop);
+    }
+  }
+
+  ~NoopThreads() { Join(); }
+
+  void Join() {
+    if (joined_) {
+      return;
+    }
+
+    joined_ = true;
+    exit_.Notify();
+    for (auto& thread : threads_) {
+      thread.Join();
+    }
+  }
+
+ private:
+  std::list<ScopedThread> threads_;
+  absl::Notification exit_;
+  bool joined_ = false;
+};
 
 TEST(Cgroup, MountSucceeds) {
   SKIP_IF(!CgroupsAvailable());
@@ -296,6 +330,77 @@ TEST(Cgroup, SubcontainerInitiallyEmpty) {
   Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child1"));
   auto procs = ASSERT_NO_ERRNO_AND_VALUE(child.Procs());
   EXPECT_TRUE(procs.empty());
+}
+
+TEST(Cgroup, SubcontainersHaveIndependentState) {
+  SKIP_IF(!CgroupsAvailable());
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  // Use the job cgroup as a simple cgroup with state we can modify.
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("job"));
+
+  // Initially job.id should be the default value of 0.
+  EXPECT_THAT(c.ReadIntegerControlFile("job.id"), IsPosixErrorOkAndHolds(0));
+
+  // Set id so it is no longer the default.
+  ASSERT_NO_ERRNO(c.WriteIntegerControlFile("job.id", 1234));
+
+  // Create a child. The child should inherit the value from the parent, and not
+  // the default value of 0.
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child1"));
+  EXPECT_THAT(child.ReadIntegerControlFile("job.id"),
+              IsPosixErrorOkAndHolds(1234));
+
+  // Setting the parent doesn't change the child.
+  ASSERT_NO_ERRNO(c.WriteIntegerControlFile("job.id", 5678));
+  EXPECT_THAT(child.ReadIntegerControlFile("job.id"),
+              IsPosixErrorOkAndHolds(1234));
+
+  // Likewise, setting the child doesn't change the parent.
+  ASSERT_NO_ERRNO(child.WriteIntegerControlFile("job.id", 9012));
+  EXPECT_THAT(c.ReadIntegerControlFile("job.id"), IsPosixErrorOkAndHolds(5678));
+}
+
+TEST(Cgroup, MigrateToSubcontainer) {
+  SKIP_IF(!CgroupsAvailable());
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child1"));
+
+  // Initially, test process should be in the root cgroup c.
+  EXPECT_NO_ERRNO(c.ContainsCallingProcess());
+
+  pid_t pid = getpid();
+
+  EXPECT_NO_ERRNO(child.Enter(pid));
+
+  // After migration, child should contain the test process, and the c should
+  // not.
+  EXPECT_NO_ERRNO(child.ContainsCallingProcess());
+  auto procs = ASSERT_NO_ERRNO_AND_VALUE(c.Procs());
+  EXPECT_FALSE(procs.contains(pid));
+}
+
+TEST(Cgroup, MigrateToSubcontainerThread) {
+  SKIP_IF(!CgroupsAvailable());
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child1"));
+
+  // Ensure there are some threads for this process.
+  NoopThreads threads(10);
+
+  // Initially, test process should be in the root cgroup c.
+  EXPECT_NO_ERRNO(c.ContainsCallingThread());
+
+  const pid_t tid = syscall(SYS_gettid);
+
+  EXPECT_NO_ERRNO(child.EnterThread(tid));
+
+  // After migration, child should contain the test process, and the c should
+  // not.
+  EXPECT_NO_ERRNO(child.ContainsCallingThread());
+  auto tasks = ASSERT_NO_ERRNO_AND_VALUE(c.Tasks());
+  EXPECT_FALSE(tasks.contains(tid));
 }
 
 TEST(MemoryCgroup, MemoryUsageInBytes) {

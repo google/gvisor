@@ -416,13 +416,28 @@ func (l *LimitedWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// A ControlMessages contains socket control messages for IP sockets.
+// SendableControlMessages contains socket control messages that can be written.
 //
 // +stateify savable
-type ControlMessages struct {
-	// HasTimestamp indicates whether Timestamp is valid/set.
-	HasTimestamp bool
+type SendableControlMessages struct {
+	// HasTTL indicates whether TTL is valid/set.
+	HasTTL bool
 
+	// TTL is the IPv4 Time To Live of the associated packet.
+	TTL uint8
+
+	// HasHopLimit indicates whether HopLimit is valid/set.
+	HasHopLimit bool
+
+	// HopLimit is the IPv6 Hop Limit of the associated packet.
+	HopLimit uint8
+}
+
+// ReceivableControlMessages contains socket control messages that can be
+// received.
+//
+// +stateify savable
+type ReceivableControlMessages struct {
 	// Timestamp is the time that the last packet used to create the read data
 	// was received.
 	Timestamp time.Time `state:".(int64)"`
@@ -433,11 +448,26 @@ type ControlMessages struct {
 	// Inq is the number of bytes ready to be received.
 	Inq int32
 
-	// HasTOS indicates whether Tos is valid/set.
+	// HasTOS indicates whether TOS is valid/set.
 	HasTOS bool
 
 	// TOS is the IPv4 type of service of the associated packet.
 	TOS uint8
+
+	// HasTTL indicates whether TTL is valid/set.
+	HasTTL bool
+
+	// TTL is the IPv4 Time To Live of the associated packet.
+	TTL uint8
+
+	// HasHopLimit indicates whether HopLimit is valid/set.
+	HasHopLimit bool
+
+	// HopLimit is the IPv6 Hop Limit of the associated packet.
+	HopLimit uint8
+
+	// HasTimestamp indicates whether Timestamp is valid/set.
+	HasTimestamp bool
 
 	// HasTClass indicates whether TClass is valid/set.
 	HasTClass bool
@@ -502,7 +532,7 @@ type ReadResult struct {
 	Total int
 
 	// ControlMessages is the control messages received.
-	ControlMessages ControlMessages
+	ControlMessages ReceivableControlMessages
 
 	// RemoteAddr is the remote address if ReadOptions.NeedAddr is true.
 	RemoteAddr FullAddress
@@ -687,6 +717,9 @@ type WriteOptions struct {
 	// endpoint. If Atomic is false, then data fetched from the Payloader may be
 	// discarded if available endpoint buffer space is unsufficient.
 	Atomic bool
+
+	// ControlMessages contains optional overrides used when writing a packet.
+	ControlMessages SendableControlMessages
 }
 
 // SockOptInt represents socket options which values have the int type.

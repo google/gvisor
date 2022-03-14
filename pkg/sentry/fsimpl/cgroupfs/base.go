@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -27,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -43,6 +45,11 @@ type controllerCommon struct {
 func (c *controllerCommon) init(ty kernel.CgroupControllerType, fs *filesystem) {
 	c.ty = ty
 	c.fs = fs
+}
+
+func (c *controllerCommon) cloneFrom(other *controllerCommon) {
+	c.ty = other.ty
+	c.fs = other.fs
 }
 
 // Type implements kernel.CgroupController.Type.
@@ -78,9 +85,34 @@ func (c *controllerCommon) RootCgroup() kernel.Cgroup {
 type controller interface {
 	kernel.CgroupController
 
+	// Clone creates a new controller based on the internal state of the current
+	// controller. This is used to initialize a sub-cgroup based on the state of
+	// the parent.
+	Clone() controller
+
 	// AddControlFiles should extend the contents map with inodes representing
 	// control files defined by this controller.
 	AddControlFiles(ctx context.Context, creds *auth.Credentials, c *cgroupInode, contents map[string]kernfs.Inode)
+
+	// PrepareMigrate signals the controller that a migration is about to
+	// happen. The controller should check for any conditions that would prevent
+	// the migration. If PrepareMigrate succeeds, the controller must
+	// unconditionally either accept the migration via CommitMigrate, or roll it
+	// back via AbortMigrate.
+	//
+	// Postcondition: If PrepareMigrate returns nil, caller must resolve the
+	// migration by calling either CommitMigrate or AbortMigrate.
+	PrepareMigrate(t *kernel.Task, src controller) error
+
+	// CommitMigrate completes an in-flight migration.
+	//
+	// Precondition: Caller must call a corresponding PrepareMigrate.
+	CommitMigrate(t *kernel.Task, src controller)
+
+	// AbortMigrate cancels an in-flight migration.
+	//
+	// Precondition: Caller must call a corresponding PrepareMigrate.
+	AbortMigrate(t *kernel.Task, src controller)
 }
 
 // cgroupInode implements kernel.CgroupImpl and kernfs.Inode.
@@ -88,6 +120,12 @@ type controller interface {
 // +stateify savable
 type cgroupInode struct {
 	dir
+
+	// controllers is the set of controllers for this cgroup. This is used to
+	// store controller-specific state per cgroup. The set of controllers should
+	// match the controllers for this hierarchy as tracked by the filesystem
+	// object. Immutable.
+	controllers map[kernel.CgroupControllerType]controller
 
 	// ts is the list of tasks in this cgroup. The kernel is responsible for
 	// removing tasks from this list before they're destroyed, so any tasks on
@@ -99,10 +137,11 @@ type cgroupInode struct {
 
 var _ kernel.CgroupImpl = (*cgroupInode)(nil)
 
-func (fs *filesystem) newCgroupInode(ctx context.Context, creds *auth.Credentials) kernfs.Inode {
+func (fs *filesystem) newCgroupInode(ctx context.Context, creds *auth.Credentials, parent *cgroupInode) kernfs.Inode {
 	c := &cgroupInode{
-		dir: dir{fs: fs},
-		ts:  make(map[*kernel.Task]struct{}),
+		dir:         dir{fs: fs},
+		ts:          make(map[*kernel.Task]struct{}),
+		controllers: make(map[kernel.CgroupControllerType]controller),
 	}
 	c.dir.cgi = c
 
@@ -110,8 +149,19 @@ func (fs *filesystem) newCgroupInode(ctx context.Context, creds *auth.Credential
 	contents["cgroup.procs"] = fs.newControllerFile(ctx, creds, &cgroupProcsData{c})
 	contents["tasks"] = fs.newControllerFile(ctx, creds, &tasksData{c})
 
-	for _, ctl := range fs.controllers {
-		ctl.AddControlFiles(ctx, creds, c, contents)
+	if parent != nil {
+		for ty, ctl := range parent.controllers {
+			new := ctl.Clone()
+			c.controllers[ty] = new
+			new.AddControlFiles(ctx, creds, c, contents)
+		}
+	} else {
+		for _, ctl := range fs.controllers {
+			new := ctl.Clone()
+			// Uniqueness of controllers enforced by the filesystem on creation.
+			c.controllers[ctl.Type()] = new
+			new.AddControlFiles(ctx, creds, c, contents)
+		}
 	}
 
 	c.dir.InodeAttrs.Init(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|linux.FileMode(0555))
@@ -157,6 +207,54 @@ func (c *cgroupInode) Leave(t *kernel.Task) {
 	c.fs.tasksMu.Unlock()
 }
 
+// PrepareMigrate implements kernel.CgroupImpl.PrepareMigrate.
+func (c *cgroupInode) PrepareMigrate(t *kernel.Task, src *kernel.Cgroup) error {
+	prepared := make([]controller, 0, len(c.controllers))
+	rollback := func() {
+		for _, p := range prepared {
+			c.controllers[p.Type()].AbortMigrate(t, p)
+		}
+	}
+
+	for srcType, srcCtl := range src.CgroupImpl.(*cgroupInode).controllers {
+		ctl := c.controllers[srcType]
+		if err := ctl.PrepareMigrate(t, srcCtl); err != nil {
+			rollback()
+			return err
+		}
+		prepared = append(prepared, srcCtl)
+	}
+	return nil
+}
+
+// CommitMigrate implements kernel.CgroupImpl.CommitMigrate.
+func (c *cgroupInode) CommitMigrate(t *kernel.Task, src *kernel.Cgroup) {
+	for srcType, srcCtl := range src.CgroupImpl.(*cgroupInode).controllers {
+		c.controllers[srcType].CommitMigrate(t, srcCtl)
+	}
+
+	srcI := src.CgroupImpl.(*cgroupInode)
+	c.fs.tasksMu.Lock()
+	defer c.fs.tasksMu.Unlock()
+
+	delete(srcI.ts, t)
+	c.ts[t] = struct{}{}
+}
+
+// AbortMigrate implements kernel.CgroupImpl.AbortMigrate.
+func (c *cgroupInode) AbortMigrate(t *kernel.Task, src *kernel.Cgroup) {
+	for srcType, srcCtl := range src.CgroupImpl.(*cgroupInode).controllers {
+		c.controllers[srcType].AbortMigrate(t, srcCtl)
+	}
+}
+
+func (c *cgroupInode) Cgroup(fd *vfs.FileDescription) kernel.Cgroup {
+	return kernel.Cgroup{
+		Dentry:     fd.Dentry().Impl().(*kernfs.Dentry),
+		CgroupImpl: c,
+	}
+}
+
 func sortTIDs(tids []kernel.ThreadID) {
 	sort.Slice(tids, func(i, j int) bool { return tids[i] < tids[j] })
 }
@@ -195,9 +293,16 @@ func (d *cgroupProcsData) Generate(ctx context.Context, buf *bytes.Buffer) error
 }
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
-func (d *cgroupProcsData) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
-	// TODO(b/183137098): Payload is the pid for a process to add to this cgroup.
-	return src.NumBytes(), nil
+func (d *cgroupProcsData) Write(ctx context.Context, fd *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
+	tgid, n, err := parseInt64FromString(ctx, src)
+	if err != nil {
+		return n, err
+	}
+
+	t := kernel.TaskFromContext(ctx)
+	currPidns := t.ThreadGroup().PIDNamespace()
+	targetTG := currPidns.ThreadGroupWithID(kernel.ThreadID(tgid))
+	return n, targetTG.MigrateCgroup(d.Cgroup(fd))
 }
 
 // +stateify savable
@@ -227,9 +332,16 @@ func (d *tasksData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 }
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
-func (d *tasksData) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
-	// TODO(b/183137098): Payload is the pid for a process to add to this cgroup.
-	return src.NumBytes(), nil
+func (d *tasksData) Write(ctx context.Context, fd *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
+	tid, n, err := parseInt64FromString(ctx, src)
+	if err != nil {
+		return n, err
+	}
+
+	t := kernel.TaskFromContext(ctx)
+	currPidns := t.ThreadGroup().PIDNamespace()
+	targetTask := currPidns.TaskWithID(kernel.ThreadID(tid))
+	return n, targetTask.MigrateCgroup(d.Cgroup(fd))
 }
 
 // parseInt64FromString interprets src as string encoding a int64 value, and
@@ -244,15 +356,30 @@ func parseInt64FromString(ctx context.Context, src usermem.IOSequence) (val, len
 	if err != nil {
 		return 0, int64(n), err
 	}
-	buf = buf[:n]
+	str := strings.TrimSpace(string(buf[:n]))
 
-	val, err = strconv.ParseInt(string(buf), 10, 64)
+	val, err = strconv.ParseInt(str, 10, 64)
 	if err != nil {
 		// Note: This also handles zero-len writes if offset is beyond the end
 		// of src, or src is empty.
-		ctx.Warningf("cgroupfs.parseInt64FromString: failed to parse %q: %v", string(buf), err)
+		ctx.Warningf("cgroupfs.parseInt64FromString: failed to parse %q: %v", str, err)
 		return 0, int64(n), linuxerr.EINVAL
 	}
 
 	return val, int64(n), nil
 }
+
+// controllerNoopMigrate partially implements controller. It stubs the migration
+// methods with noops for a stateless controller.
+type controllerNoopMigrate struct{}
+
+// PrepareMigrate implements controller.PrepareMigrate.
+func (*controllerNoopMigrate) PrepareMigrate(t *kernel.Task, src controller) error {
+	return nil
+}
+
+// CommitMigrate implements controller.CommitMigrate.
+func (*controllerNoopMigrate) CommitMigrate(t *kernel.Task, src controller) {}
+
+// AbortMigrate implements controller.AbortMigrate.
+func (*controllerNoopMigrate) AbortMigrate(t *kernel.Task, src controller) {}

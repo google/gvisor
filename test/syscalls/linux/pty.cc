@@ -388,8 +388,6 @@ PosixErrorOr<size_t> PollAndReadFd(int fd, void* buf, size_t count,
 }
 
 TEST(PtyTrunc, Truncate) {
-  SKIP_IF(IsRunningWithVFS1());
-
   // setsid either puts us in a new session or fails because we're already the
   // session leader. Either way, this ensures we're the session leader and have
   // no controlling terminal.
@@ -479,7 +477,6 @@ TEST(BasicPtyTest, OpenMasterReplica) {
 }
 
 TEST(BasicPtyTest, OpenSetsControllingTTY) {
-  SKIP_IF(IsRunningWithVFS1());
   // setsid either puts us in a new session or fails because we're already the
   // session leader. Either way, this ensures we're the session leader.
   ASSERT_THAT(setsid(), AnyOf(SyscallSucceeds(), SyscallFailsWithErrno(EPERM)));
@@ -506,7 +503,6 @@ TEST(BasicPtyTest, OpenSetsControllingTTY) {
 }
 
 TEST(BasicPtyTest, OpenMasterDoesNotSetsControllingTTY) {
-  SKIP_IF(IsRunningWithVFS1());
   // setsid either puts us in a new session or fails because we're already the
   // session leader. Either way, this ensures we're the session leader.
   ASSERT_THAT(setsid(), AnyOf(SyscallSucceeds(), SyscallFailsWithErrno(EPERM)));
@@ -518,7 +514,6 @@ TEST(BasicPtyTest, OpenMasterDoesNotSetsControllingTTY) {
 }
 
 TEST(BasicPtyTest, OpenNOCTTY) {
-  SKIP_IF(IsRunningWithVFS1());
   // setsid either puts us in a new session or fails because we're already the
   // session leader. Either way, this ensures we're the session leader.
   ASSERT_THAT(setsid(), AnyOf(SyscallSucceeds(), SyscallFailsWithErrno(EPERM)));

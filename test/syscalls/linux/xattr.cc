@@ -608,7 +608,6 @@ TEST_F(XattrTest, XattrWithFD) {
 }
 
 TEST_F(XattrTest, XattrWithOPath) {
-  SKIP_IF(IsRunningWithVFS1());
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(test_file_name_.c_str(), O_PATH));
   const char name[] = "user.test";
@@ -629,9 +628,6 @@ TEST_F(XattrTest, XattrWithOPath) {
 }
 
 TEST_F(XattrTest, TrustedNamespaceWithCapSysAdmin) {
-  // Trusted namespace not supported in VFS1.
-  SKIP_IF(IsRunningWithVFS1());
-
   // TODO(b/166162845): Only gVisor tmpfs currently supports trusted namespace.
   SKIP_IF(IsRunningOnGvisor() &&
           !ASSERT_NO_ERRNO_AND_VALUE(IsTmpfs(test_file_name_)));
@@ -672,9 +668,6 @@ TEST_F(XattrTest, TrustedNamespaceWithCapSysAdmin) {
 }
 
 TEST_F(XattrTest, TrustedNamespaceWithoutCapSysAdmin) {
-  // Trusted namespace not supported in VFS1.
-  SKIP_IF(IsRunningWithVFS1());
-
   // TODO(b/66162845): Only gVisor tmpfs currently supports trusted namespace.
   SKIP_IF(IsRunningOnGvisor() &&
           !ASSERT_NO_ERRNO_AND_VALUE(IsTmpfs(test_file_name_)));

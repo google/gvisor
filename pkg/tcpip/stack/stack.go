@@ -506,13 +506,15 @@ func (s *Stack) Stats() tcpip.Stats {
 
 // SetNICForwarding enables or disables packet forwarding on the specified NIC
 // for the passed protocol.
-func (s *Stack) SetNICForwarding(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber, enable bool) tcpip.Error {
+//
+// Returns the previous configuration on the NIC.
+func (s *Stack) SetNICForwarding(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber, enable bool) (bool, tcpip.Error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	nic, ok := s.nics[id]
 	if !ok {
-		return &tcpip.ErrUnknownNICID{}
+		return false, &tcpip.ErrUnknownNICID{}
 	}
 
 	return nic.setForwarding(protocol, enable)
@@ -539,7 +541,7 @@ func (s *Stack) SetForwardingDefaultAndAllNICs(protocol tcpip.NetworkProtocolNum
 
 	doneOnce := false
 	for id, nic := range s.nics {
-		if err := nic.setForwarding(protocol, enable); err != nil {
+		if _, err := nic.setForwarding(protocol, enable); err != nil {
 			// Expect forwarding to be settable on all interfaces if it was set on
 			// one.
 			if doneOnce {
@@ -699,7 +701,7 @@ func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOp
 
 	n := newNIC(s, id, ep, opts)
 	for proto := range s.defaultForwardingEnabled {
-		if err := n.setForwarding(proto, true); err != nil {
+		if _, err := n.setForwarding(proto, true); err != nil {
 			panic(fmt.Sprintf("newNIC(%d, ...).setForwarding(%d, true): %s", id, proto, err))
 		}
 	}

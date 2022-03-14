@@ -166,6 +166,20 @@ func attachOrCreateNIC(s *stack.Stack, name, prefix string, linkCaps stack.LinkE
 	}
 }
 
+// MTU returns the tun enpoint MTU (maximum transmission unit).
+func (d *Device) MTU() (uint32, error) {
+	d.mu.RLock()
+	endpoint := d.endpoint
+	d.mu.RUnlock()
+	if endpoint == nil {
+		return 0, linuxerr.EBADFD
+	}
+	if !endpoint.IsAttached() {
+		return 0, linuxerr.EIO
+	}
+	return endpoint.MTU(), nil
+}
+
 // Write inject one inbound packet to the network interface.
 func (d *Device) Write(data []byte) (int64, error) {
 	d.mu.RLock()
@@ -246,6 +260,7 @@ func (d *Device) Read() ([]byte, error) {
 		}
 
 		v, ok := d.encodePkt(pkt)
+		pkt.DecRef()
 		if !ok {
 			// Ignore unsupported packet.
 			continue
@@ -325,6 +340,7 @@ type tunEndpoint struct {
 // DecRef decrements refcount of e, removing NIC if it reaches 0.
 func (e *tunEndpoint) DecRef(ctx context.Context) {
 	e.tunEndpointRefs.DecRef(func() {
+		e.Close()
 		e.stack.RemoveNIC(e.nicID)
 	})
 }

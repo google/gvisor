@@ -294,13 +294,49 @@ func TestBitmapNumOnes(t *testing.T) {
 	}
 }
 
+type BitmapGetFirstTestcase struct {
+	queryValue    uint32
+	expectedValue uint32
+	wantErr       bool
+}
+
 func TestFirstZero(t *testing.T) {
 	bitmap := New(uint32(1000))
 	bitmap.FlipRange(200, 400)
-	for i, j := range map[uint32]uint32{0: 0, 201: 400, 200: 400, 199: 199, 400: 400, 10000: math.MaxInt32} {
-		v := bitmap.FirstZero(i)
-		if v != j {
-			t.Errorf("Minimum() returns: %v, wanted: %v", v, j)
+	testcases := []BitmapGetFirstTestcase{
+		{0, 0, false},
+		{201, 400, false},
+		{200, 400, false},
+		{199, 199, false},
+		{400, 400, false},
+		{10000, math.MaxInt32, true},
+	}
+	for _, tc := range testcases {
+		v, err := bitmap.FirstZero(tc.queryValue)
+		if v != tc.expectedValue && (err != nil) == tc.wantErr {
+			t.Errorf("FirstZero() returns: %v, wanted: %v", v, tc.expectedValue)
+		}
+	}
+}
+
+func TestFirstOne(t *testing.T) {
+	bitmap := New(uint32(1000))
+	bitmap.FlipRange(200, 400)
+	bitmap.FlipRange(700, 701)
+	testcases := []BitmapGetFirstTestcase{
+		{0, 200, false},
+		{199, 200, false},
+		{200, 200, false},
+		{399, 399, false},
+		{400, 700, false},
+		{700, 700, false},
+		{701, math.MaxInt32, true},
+		{10000, math.MaxInt32, true},
+	}
+	for _, tc := range testcases {
+		v, err := bitmap.FirstOne(tc.queryValue)
+		if v != tc.expectedValue && (err != nil) == tc.wantErr {
+			t.Errorf("FirstOne() returns: %v, wanted: %v", v, tc.expectedValue)
 		}
 	}
 }

@@ -3,8 +3,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.13 && !go1.19
-// +build go1.13,!go1.19
+//go:build go1.13 && !go1.20
+// +build go1.13,!go1.20
 
 // //go:linkname directives type-checked by checklinkname. Any other
 // non-linkname assumptions outside the Go 1 compatibility guarantee should
@@ -21,6 +21,15 @@ import (
 	"reflect"
 	"unsafe"
 )
+
+// Goyield is runtime.goyield, which is similar to runtime.Gosched but only
+// yields the processor to other goroutines already on the processor's
+// runqueue.
+//
+//go:nosplit
+func Goyield() {
+	goyield()
+}
 
 // Gopark is runtime.gopark. Gopark calls unlockf(pointer to runtime.g, lock);
 // if unlockf returns true, Gopark blocks until Goready(pointer to runtime.g)

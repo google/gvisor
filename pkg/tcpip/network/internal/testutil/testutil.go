@@ -69,6 +69,7 @@ func (ep *MockLinkEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpi
 			return n, ep.err
 		}
 		ep.allowPackets--
+		pkt.IncRef()
 		ep.WrittenPackets = append(ep.WrittenPackets, pkt)
 		n++
 	}
@@ -89,6 +90,14 @@ func (*MockLinkEndpoint) ARPHardwareType() header.ARPHardwareType { return heade
 
 // AddHeader implements LinkEndpoint.AddHeader.
 func (*MockLinkEndpoint) AddHeader(*stack.PacketBuffer) {}
+
+// Close releases all resources.
+func (ep *MockLinkEndpoint) Close() {
+	for _, pkt := range ep.WrittenPackets {
+		pkt.DecRef()
+	}
+	ep.WrittenPackets = nil
+}
 
 // MakeRandPkt generates a randomized packet. transportHeaderLength indicates
 // how many random bytes will be copied in the Transport Header.

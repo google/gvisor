@@ -174,7 +174,7 @@ func (r *reassembler) process(first, last uint16, more bool, proto uint8, pkt *s
 	for i := 1; i < len(r.holes); i++ {
 		stack.MergeFragment(resPkt, r.holes[i].pkt)
 	}
-	return resPkt, r.proto, true, memConsumed, nil
+	return resPkt, r.proto, true /* done */, memConsumed, nil
 }
 
 func (r *reassembler) checkDoneOrMark() bool {

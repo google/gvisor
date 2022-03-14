@@ -45,6 +45,7 @@ go_library(
         "//runsc:__subpackages__",
     ],
     deps = [
+        "//pkg/coretag",
         "//pkg/coverage",
         "//pkg/log",
         "//pkg/p9",

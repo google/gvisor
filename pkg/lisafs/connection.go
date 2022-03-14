@@ -245,11 +245,11 @@ func (c *Connection) close() {
 
 	// Cleanup all FDs.
 	c.fdsMu.Lock()
+	defer c.fdsMu.Unlock()
 	for fdid := range c.fds {
 		fd := c.stopTrackingFD(fdid)
 		fd.DecRef(nil) // Drop the ref held by c.
 	}
-	c.fdsMu.Unlock()
 }
 
 // Postcondition: The caller gains a ref on the FD on success.

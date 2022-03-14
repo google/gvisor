@@ -54,7 +54,7 @@ go_test(
 
 go_test(
     name = "sharedmem_server_test",
-    size = "medium",
+    size = "large",
     srcs = ["sharedmem_server_test.go"],
     deps = [
         ":sharedmem",

@@ -74,7 +74,18 @@ class Cgroup {
   PosixErrorOr<absl::flat_hash_set<pid_t>> Tasks() const;
 
   // ContainsCallingProcess checks whether the calling process is part of the
+  // cgroup.
   PosixError ContainsCallingProcess() const;
+
+  // ContainsCallingThread checks whether the calling thread is part of the
+  // cgroup.
+  PosixError ContainsCallingThread() const;
+
+  // Moves process with the specified pid to this cgroup.
+  PosixError Enter(pid_t pid) const;
+
+  // Moves thread with the specified pid to this cgroup.
+  PosixError EnterThread(pid_t pid) const;
 
  private:
   PosixErrorOr<absl::flat_hash_set<pid_t>> ParsePIDList(

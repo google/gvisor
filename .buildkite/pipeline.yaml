@@ -41,12 +41,14 @@ steps:
   - <<: *common
     label: ":fire: Smoke tests"
     command: make smoke-tests
+  - wait
   - <<: *common
     label: ":fire: Smoke race tests"
     command: make smoke-race-tests
-  - wait
 
-  # Check that the Go branch builds.
+  # Check that the Go branch builds. This is not technically required, as this build is maintained
+  # as a GitHub action in order to preserve this maintaince across forks. However, providing the
+  # action here may provide easier debuggability and diagnosis on failure.
   - <<: *common
     label: ":golang: Go branch"
     commands:
@@ -95,8 +97,8 @@ steps:
   - <<: *common
     label: ":ship: Release tests"
     commands:
-      - make artifacts/x86_64
-      - make BAZEL_OPTIONS=--config=cross-aarch64 artifacts/aarch64
+      - make BAZEL_OPTIONS=--config=x86_64 artifacts/x86_64
+      - make BAZEL_OPTIONS=--config=aarch64 artifacts/aarch64
       - make release
 
   # Images tests.
@@ -118,7 +120,7 @@ steps:
     label: ":test_tube: Unit tests (cgroupv2)"
     command: make unit-tests
     agents:
-            queue: "cgroupv2"
+      queue: "cgroupv2"
   - <<: *common
     label: ":test_tube: Container tests"
     command: make container-tests
@@ -126,13 +128,13 @@ steps:
     label: ":test_tube: Container tests (cgroupv2)"
     command: make container-tests
     agents:
-            queue: "cgroupv2"
+      queue: "cgroupv2"
 
   # All system call tests.
   - <<: *common
     label: ":toolbox: System call tests"
     command: make syscall-tests
-    parallelism: 60
+    parallelism: 20
 
   # Integration tests.
   - <<: *common
@@ -142,7 +144,7 @@ steps:
     label: ":docker: Docker tests (cgroupv2)"
     command: make docker-tests
     agents:
-            queue: "cgroupv2"
+      queue: "cgroupv2"
   - <<: *common
     label: ":goggles: Overlay tests"
     command: make overlay-tests
@@ -174,7 +176,15 @@ steps:
     label: ":docker: Containerd 1.5.4 tests (cgroupv2)"
     command: make containerd-test-1.5.4
     agents:
-            queue: "cgroupv2"
+      queue: "cgroupv2"
+  - <<: *common
+    label: ":docker: Containerd 1.6.0-rc.4 tests"
+    command: make containerd-test-1.6.0-rc.4
+  - <<: *common
+    label: ":docker: Containerd 1.6.0-rc.4 tests (cgroupv2)"
+    command: make containerd-test-1.6.0-rc.4
+    agents:
+      queue: "cgroupv2"
 
   # Check the website builds.
   - <<: *common
@@ -195,51 +205,51 @@ steps:
   # Runtime tests.
   - <<: *common
     label: ":php: PHP runtime tests"
-    command: make php7.3.6-runtime-tests_vfs2
-    parallelism: 20
+    command: make php7.3.6-runtime-tests
+    parallelism: 10
   - <<: *common
     label: ":java: Java runtime tests"
-    command: make java11-runtime-tests_vfs2
-    parallelism: 120
+    command: make java11-runtime-tests
+    parallelism: 40
   - <<: *common
     label: ":golang: Go runtime tests"
-    command: make go1.12-runtime-tests_vfs2
-    parallelism: 20
+    command: make go1.12-runtime-tests
+    parallelism: 10
   - <<: *common
     label: ":node: NodeJS runtime tests"
-    command: make nodejs12.4.0-runtime-tests_vfs2
+    command: make nodejs12.4.0-runtime-tests
     parallelism: 10
   - <<: *common
     label: ":python: Python runtime tests"
-    command: make python3.7.3-runtime-tests_vfs2
-    parallelism: 20
-
-  # Runtime tests (VFS1).
-  - <<: *common
-    label: ":php: PHP runtime tests (VFS1)"
-    command: make php7.3.6-runtime-tests
-    parallelism: 20
-    if: build.message =~ /VFS1/ || build.branch == "master"
-  - <<: *common
-    label: ":java: Java runtime tests (VFS1)"
-    command: make java11-runtime-tests
-    parallelism: 120
-    if: build.message =~ /VFS1/ || build.branch == "master"
-  - <<: *common
-    label: ":golang: Go runtime tests (VFS1)"
-    command: make go1.12-runtime-tests
-    parallelism: 20
-    if: build.message =~ /VFS1/ || build.branch == "master"
-  - <<: *common
-    label: ":node: NodeJS runtime tests (VFS1)"
-    command: make nodejs12.4.0-runtime-tests
-    parallelism: 10
-    if: build.message =~ /VFS1/ || build.branch == "master"
-  - <<: *common
-    label: ":python: Python runtime tests (VFS1)"
     command: make python3.7.3-runtime-tests
-    parallelism: 20
-    if: build.message =~ /VFS1/ || build.branch == "master"
+    parallelism: 10
+
+  # Runtime tests (LISAFS).
+  - <<: *common
+    label: ":php: PHP runtime tests (LISAFS)"
+    command: make php7.3.6-runtime-tests_lisafs
+    parallelism: 10
+    if: build.message =~ /lisafs/ || build.branch == "master"
+  - <<: *common
+    label: ":java: Java runtime tests (LISAFS)"
+    command: make java11-runtime-tests_lisafs
+    parallelism: 40
+    if: build.message =~ /lisafs/ || build.branch == "master"
+  - <<: *common
+    label: ":golang: Go runtime tests (LISAFS)"
+    command: make go1.12-runtime-tests_lisafs
+    parallelism: 10
+    if: build.message =~ /lisafs/ || build.branch == "master"
+  - <<: *common
+    label: ":node: NodeJS runtime tests (LISAFS)"
+    command: make nodejs12.4.0-runtime-tests_lisafs
+    parallelism: 10
+    if: build.message =~ /lisafs/ || build.branch == "master"
+  - <<: *common
+    label: ":python: Python runtime tests (LISAFS)"
+    command: make python3.7.3-runtime-tests_lisafs
+    parallelism: 10
+    if: build.message =~ /lisafs/ || build.branch == "master"
 
   # ARM tests.
   - <<: *common

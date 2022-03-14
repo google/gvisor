@@ -1096,7 +1096,7 @@ func (l *localFile) readDirent(f int, offset uint64, count uint32, skip uint64) 
 		for _, name := range names {
 			stat, err := statAt(l.file.FD(), name)
 			if err != nil {
-				log.Warningf("Readdir is skipping file with failed stat %q, err: %v", l.hostPath, err)
+				log.Warningf("Readdir is skipping file %q with failed stat, err: %v", path.Join(l.hostPath, name), err)
 				continue
 			}
 			qid := l.attachPoint.makeQID(&stat)
@@ -1209,7 +1209,7 @@ func (l *localFile) Bind(sockType uint32, sockName string, uid p9.UID, gid p9.GI
 }
 
 // Connect implements p9.File.
-func (l *localFile) Connect(flags p9.ConnectFlags) (*fd.FD, error) {
+func (l *localFile) Connect(socketType p9.SocketType) (*fd.FD, error) {
 	if !l.attachPoint.conf.HostUDS {
 		return nil, unix.ECONNREFUSED
 	}
@@ -1222,19 +1222,12 @@ func (l *localFile) Connect(flags p9.ConnectFlags) (*fd.FD, error) {
 		return nil, unix.ECONNREFUSED
 	}
 
-	var stype int
-	switch flags {
-	case p9.StreamSocket:
-		stype = unix.SOCK_STREAM
-	case p9.DgramSocket:
-		stype = unix.SOCK_DGRAM
-	case p9.SeqpacketSocket:
-		stype = unix.SOCK_SEQPACKET
-	default:
+	stype, ok := socketType.ToLinux()
+	if !ok {
 		return nil, unix.ENXIO
 	}
 
-	f, err := unix.Socket(unix.AF_UNIX, stype, 0)
+	f, err := unix.Socket(unix.AF_UNIX, int(stype), 0)
 	if err != nil {
 		return nil, err
 	}

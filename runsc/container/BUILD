@@ -25,6 +25,7 @@ go_library(
         "//runsc/cgroup",
         "//runsc/config",
         "//runsc/console",
+        "//runsc/donation",
         "//runsc/sandbox",
         "//runsc/specutils",
         "@com_github_cenkalti_backoff//:go_default_library",
@@ -46,10 +47,12 @@ go_test(
     # Only run the default platform for the tsan test, which should
     # be compatible. For non-tsan builds, run all platforms.
     args = select({
-        "//conditions:default": ["-test_platforms=%s" % ",".join(
-            [p for (p, tags) in platforms.items() if "manual" not in tags],
-        )],
-        "//tools:gotsan": ["-test_platforms=%s" % default_platform],
+        "//conditions:default": [
+            "--test_platforms=%s" % ",".join([p for (p, tags) in platforms.items() if "manual" not in tags]) or default_platform,
+        ],
+        "//tools:gotsan": [
+            "--test_platforms=%s" % default_platform,
+        ],
     }),
     data = [
         "//runsc",

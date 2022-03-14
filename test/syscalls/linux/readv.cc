@@ -252,7 +252,6 @@ TEST_F(ReadvTest, IovecOutsideTaskAddressRangeInNonemptyArray) {
 }
 
 TEST_F(ReadvTest, ReadvWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   char buffer[1024];
   struct iovec iov[1];
   iov[0].iov_base = buffer;

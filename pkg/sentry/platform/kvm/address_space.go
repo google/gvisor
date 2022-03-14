@@ -123,7 +123,7 @@ func (as *addressSpace) mapLocked(addr hostarch.Addr, m hostMapEntry, at hostarc
 		// not have physical mappings, the KVM module may inject
 		// spurious exceptions when emulation fails (i.e. it tries to
 		// emulate because the RIP is pointed at those pages).
-		as.machine.mapPhysical(physical, length, physicalRegions, _KVM_MEM_FLAGS_NONE)
+		as.machine.mapPhysical(physical, length, physicalRegions)
 
 		// Install the page table mappings. Note that the ordering is
 		// important; if the pagetable mappings were installed before

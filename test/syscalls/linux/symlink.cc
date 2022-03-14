@@ -270,7 +270,6 @@ TEST(SymlinkTest, SymlinkAtDegradedPermissions) {
 }
 
 TEST(SymlinkTest, SymlinkAtDirWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const std::string filepath = NewTempAbsPathInDir(dir.path());
   const std::string base = std::string(Basename(filepath));
@@ -282,7 +281,6 @@ TEST(SymlinkTest, SymlinkAtDirWithOpath) {
 }
 
 TEST(SymlinkTest, ReadlinkAtDirWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const std::string filepath = NewTempAbsPathInDir(dir.path());
   const std::string base = std::string(Basename(filepath));

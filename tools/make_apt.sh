@@ -81,8 +81,15 @@ trap cleanup EXIT
 # is not found. This isn't actually a failure for us, because we don't require
 # the public key (this may be stored separately). The second import will succeed
 # because, in reality, the first import succeeded and it's a no-op.
-gpg "${gpg_opts[@]}" --import "${private_key}" || \
-  gpg "${gpg_opts[@]}" --import "${private_key}"
+declare keyid
+keyid=$(
+  (gpg "${gpg_opts[@]}" --import "${private_key}" 2>&1 ||
+   gpg "${gpg_opts[@]}" --import "${private_key}" 2>&1) |
+  grep "secret key imported" |
+  head -1 |
+  cut -d':' -f2 |
+  awk '{print $2;}')
+readonly keyid
 
 # Copy the packages into the root.
 for pkg in "$@"; do
@@ -105,12 +112,14 @@ for pkg in "$@"; do
   # Copy & sign the package.
   mkdir -p "${destdir}"
   cp -a -L "$(dirname "${pkg}")/${name}.deb" "${destdir}"
-  cp -a -L "$(dirname "${pkg}")/${name}.changes" "${destdir}"
+  if [[ -f "$(dirname "${pkg}")/${name}.changes" ]]; then
+    cp -a -L "$(dirname "${pkg}")/${name}.changes" "${destdir}"
+  fi
   chmod 0644 "${destdir}"/"${name}".*
   # Sign a package only if it isn't signed yet.
   # We use [*] here to expand the gpg_opts array into a single shell-word.
   dpkg-sig -g "${gpg_opts[*]}" --verify "${destdir}/${name}.deb" ||
-  dpkg-sig -g "${gpg_opts[*]}" --sign builder "${destdir}/${name}.deb"
+  dpkg-sig -g "${gpg_opts[*]}" --sign builder -k "${keyid}" "${destdir}/${name}.deb"
 done
 
 # Build the package list.

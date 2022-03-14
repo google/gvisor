@@ -2198,8 +2198,6 @@ TEST(PtraceTest, SeizeSetOptions) {
 }
 
 TEST(PtraceTest, SetYAMAPtraceScope) {
-  SKIP_IF(IsRunningWithVFS1());
-
   // Do not modify the ptrace scope on the host.
   SKIP_IF(!IsRunningOnGvisor());
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));

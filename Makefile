@@ -99,6 +99,7 @@ endif
 ##     RUNTIME_BIN     - The runtime binary (default: $RUNTIME_DIR/runsc).
 ##     RUNTIME_LOG_DIR - The logs directory (default: $RUNTIME_DIR/logs).
 ##     RUNTIME_LOGS    - The log pattern (default: $RUNTIME_LOG_DIR/runsc.log.%TEST%.%TIMESTAMP%.%COMMAND%).
+##     RUNTIME_ARGS    - Arguments passed to the runtime when installed.
 ##     STAGED_BINARIES - A tarball of staged binaries. If this is set, then binaries
 ##                       will be installed from this staged bundle instead of built.
 ##
@@ -112,6 +113,7 @@ endif
 RUNTIME_BIN     := $(RUNTIME_DIR)/runsc
 RUNTIME_LOG_DIR := $(RUNTIME_DIR)/logs
 RUNTIME_LOGS    := $(RUNTIME_LOG_DIR)/runsc.log.%TEST%.%TIMESTAMP%.%COMMAND%
+RUNTIME_ARGS    ?=
 
 ifeq ($(shell stat -f -c "%T" /sys/fs/cgroup 2>/dev/null),cgroup2fs)
 CGROUPV2 := true
@@ -133,7 +135,7 @@ endif
 # Configure helpers for below.
 configure_noreload = \
   $(call header,CONFIGURE $(1) → $(RUNTIME_BIN) $(2)); \
-  sudo $(RUNTIME_BIN) install --experimental=true --runtime="$(1)" -- --debug-log "$(RUNTIME_LOGS)" $(2) && \
+  sudo $(RUNTIME_BIN) install --experimental=true --runtime="$(1)" -- $(RUNTIME_ARGS) --debug-log "$(RUNTIME_LOGS)" $(2) && \
   sudo rm -rf "$(RUNTIME_LOG_DIR)" && mkdir -p "$(RUNTIME_LOG_DIR)"
 reload_docker = \
   sudo systemctl reload docker && \
@@ -147,7 +149,7 @@ configure = $(call configure_noreload,$(1),$(2)) && $(reload_docker)
 install_runtime = $(call configure,$(1),$(2) --TESTONLY-test-name-env=RUNSC_TEST_NAME)
 # Don't use cached results, otherwise multiple runs using different runtimes
 # may be skipped, if all other inputs are the same.
-test_runtime = $(call test,--test_arg=--runtime=$(1) --nocache_test_results $(PARTITIONS) $(2))
+test_runtime = $(call test,--test_env=RUNTIME=$(1) --nocache_test_results $(PARTITIONS) $(2))
 
 refresh: $(RUNTIME_BIN) ## Updates the runtime binary.
 .PHONY: refresh
@@ -156,9 +158,9 @@ dev: $(RUNTIME_BIN) ## Installs a set of local runtimes. Requires sudo.
 	@$(call configure_noreload,$(RUNTIME),--net-raw)
 	@$(call configure_noreload,$(RUNTIME)-d,--net-raw --debug --strace --log-packets)
 	@$(call configure_noreload,$(RUNTIME)-p,--net-raw --profile)
-	@$(call configure_noreload,$(RUNTIME)-vfs2-d,--net-raw --debug --strace --log-packets --vfs2)
-	@$(call configure_noreload,$(RUNTIME)-vfs2-fuse-d,--net-raw --debug --strace --log-packets --vfs2 --fuse)
-	@$(call configure_noreload,$(RUNTIME)-vfs2-cgroup-d,--net-raw --debug --strace --log-packets --vfs2 --cgroupfs)
+	@$(call configure_noreload,$(RUNTIME)-fuse-d,--net-raw --debug --strace --log-packets --fuse)
+	@$(call configure_noreload,$(RUNTIME)-cgroup-d,--net-raw --debug --strace --log-packets --cgroupfs)
+	@$(call configure_noreload,$(RUNTIME)-lisafs-d,--net-raw --debug --strace --log-packets --lisafs)
 	@$(call reload_docker)
 .PHONY: dev
 
@@ -175,7 +177,7 @@ dev: $(RUNTIME_BIN) ## Installs a set of local runtimes. Requires sudo.
 ##
 PARTITION        ?= 1
 TOTAL_PARTITIONS ?= 1
-PARTITIONS       := --test_arg=--partition=$(PARTITION) --test_arg=--total_partitions=$(TOTAL_PARTITIONS)
+PARTITIONS       := --test_env=PARTITION=$(PARTITION) --test_env=TOTAL_PARTITIONS=$(TOTAL_PARTITIONS)
 
 runsc: ## Builds the runsc binary.
 	@$(call build,-c opt //runsc)
@@ -205,7 +207,7 @@ unit-tests: ## Local package unit tests in pkg/..., tools/.., etc.
 
 # See unit-tests: this includes runsc/container.
 container-tests: $(RUNTIME_BIN) ## Run all tests in runsc/container/...
-	@$(call test,--test_arg=--runsc=$(RUNTIME_BIN) runsc/container/...)
+	@$(call test,--test_env=RUNTIME=$(RUNTIME_BIN) runsc/container/...)
 .PHONY: container-tests
 
 tests: ## Runs all unit tests and syscall tests.
@@ -221,18 +223,8 @@ network-tests: ## Run all networking integration tests.
 network-tests: iptables-tests packetdrill-tests packetimpact-tests
 .PHONY: network-tests
 
-# The set of system call targets.
-SYSCALL_TARGETS := test/syscalls/... test/fuse/...
-
-syscall-%-tests:
-	@$(call test,--test_tag_filters=runsc_$* $(PARTITIONS) test/syscalls/...)
-
-syscall-native-tests:
-	@$(call test,--test_tag_filters=native $(PARTITIONS) test/syscalls/...)
-.PHONY: syscall-native-tests
-
-syscall-tests: ## Run all system call tests.
-	@$(call test,$(PARTITIONS) test/syscalls/...)
+syscall-tests: $(RUNTIME_BIN) ## Run all system call tests.
+	@$(call test,--test_env=RUNTIME=$(RUNTIME_BIN) $(PARTITIONS) test/syscalls/... test/fuse/...)
 .PHONY: syscall-tests
 
 packetimpact-tests:
@@ -240,11 +232,11 @@ packetimpact-tests:
 .PHONY: packetimpact-tests
 
 %-runtime-tests: load-runtimes_% $(RUNTIME_BIN)
-	@$(call install_runtime,$(RUNTIME),) # Ensure flags are cleared.
-	@$(call test_runtime,$(RUNTIME),--test_timeout=10800 //test/runtimes:$*)
+	@$(call install_runtime,$(RUNTIME),--watchdog-action=panic)
+	@$(call test_runtime,$(RUNTIME),--test_timeout=1800 //test/runtimes:$*)
 
-%-runtime-tests_vfs2: load-runtimes_% $(RUNTIME_BIN)
-	@$(call install_runtime,$(RUNTIME),--vfs2)
+%-runtime-tests_lisafs: load-runtimes_% $(RUNTIME_BIN)
+	@$(call install_runtime,$(RUNTIME), --lisafs)
 	@$(call test_runtime,$(RUNTIME),--test_timeout=10800 //test/runtimes:$*)
 
 do-tests: $(RUNTIME_BIN)
@@ -253,7 +245,7 @@ do-tests: $(RUNTIME_BIN)
 	@sudo $(RUNTIME_BIN) do true
 .PHONY: do-tests
 
-arm-qemu-smoke-test: BAZEL_OPTIONS=--config=cross-aarch64
+arm-qemu-smoke-test: BAZEL_OPTIONS=--config=aarch64
 arm-qemu-smoke-test: $(RUNTIME_BIN) load-arm-qemu
 	export T=$$(mktemp -d --tmpdir release.XXXXXX); \
 	mkdir -p $$T/bin/arm64/ && \
@@ -270,7 +262,7 @@ INTEGRATION_TARGETS := //test/image:image_test //test/e2e:integration_test
 docker-tests: load-basic $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),) # Clear flags.
 	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS))
-	@$(call install_runtime,$(RUNTIME),--vfs2)
+	@$(call install_runtime,$(RUNTIME), --lisafs) # Run again with lisafs.
 	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS))
 .PHONY: docker-tests
 
@@ -286,7 +278,7 @@ swgso-tests: load-basic $(RUNTIME_BIN)
 
 hostnet-tests: load-basic $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),--network=host)
-	@$(call test_runtime,$(RUNTIME),--test_arg=-checkpoint=false  --test_arg=-hostnet=true $(INTEGRATION_TARGETS))
+	@$(call test_runtime,$(RUNTIME),--test_env=CHECKPOINT=false  --test_env=HOSTNET=true $(INTEGRATION_TARGETS))
 .PHONY: hostnet-tests
 
 kvm-tests: load-basic $(RUNTIME_BIN)
@@ -300,7 +292,10 @@ kvm-tests: load-basic $(RUNTIME_BIN)
 iptables-tests: load-iptables $(RUNTIME_BIN)
 	@sudo modprobe iptable_filter
 	@sudo modprobe ip6table_filter
-	@$(call test,--test_arg=-runtime=runc $(PARTITIONS) //test/iptables:iptables_test)
+	@sudo modprobe iptable_nat
+	@sudo modprobe ip6table_nat
+	@# FIXME(b/218923513): Need to fix permissions issues.
+	@#$(call test,--test_env=RUNTIME=runc //test/iptables:iptables_test)
 	@$(call install_runtime,$(RUNTIME),--net-raw)
 	@$(call test_runtime,$(RUNTIME),//test/iptables:iptables_test)
 .PHONY: iptables-tests
@@ -311,7 +306,7 @@ packetdrill-tests: load-packetdrill $(RUNTIME_BIN)
 .PHONY: packetdrill-tests
 
 fsstress-test: load-basic $(RUNTIME_BIN)
-	@$(call install_runtime,$(RUNTIME),--vfs2)
+	@$(call install_runtime,$(RUNTIME))
 	@$(call test_runtime,$(RUNTIME),//test/fsstress:fsstress_test)
 .PHONY: fsstress-test
 
@@ -327,21 +322,18 @@ else
 endif
 	@$(call sudo,test/root:root_test,--runtime=$(RUNTIME) -test.v)
 
-ifeq ($(CGROUPV2),false)
-containerd-tests-min: containerd-test-1.3.9
-else
-containerd-tests-min: containerd-test-1.4.3
-endif
+containerd-tests-min: containerd-test-1.4.12
 
-# The shim builds with containerd 1.3.9 and it's not backward compatible. Test
-# with 1.3.9 and newer versions.
-# When run under cgroupv2 environment, skip 1.3.9 as it does not support cgroupv2
-containerd-tests: ## Runs all supported containerd version tests.
-ifeq ($(CGROUPV2),false)
-containerd-tests: containerd-test-1.3.9
-endif
-containerd-tests: containerd-test-1.4.3
-containerd-tests: containerd-test-1.5.4
+##
+## Containerd tests.
+##
+## Runs all supported containerd version tests. Update as new versions become
+## available.
+##
+containerd-tests:
+containerd-tests: containerd-test-1.4.12
+containerd-tests: containerd-test-1.5.9
+containerd-tests: containerd-test-1.6.0
 
 ##
 ## Benchmarks.
@@ -358,7 +350,6 @@ containerd-tests: containerd-test-1.5.4
 ##     BENCHMARKS_FILTER    - filter to be applied to the test suite.
 ##     BENCHMARKS_OPTIONS   - options to be passed to the test.
 ##     BENCHMARKS_PROFILE   - profile options to be passed to the test.
-##     BENCH_RUNTIME_ARGS   - args to configure the runtime which runs the benchmarks.
 ##
 BENCHMARKS_PROJECT   ?= gvisor-benchmarks
 BENCHMARKS_DATASET   ?= kokoro
@@ -371,8 +362,6 @@ BENCHMARKS_FILTER    := .
 BENCHMARKS_OPTIONS   := -test.benchtime=30s
 BENCHMARKS_ARGS      := -test.v -test.bench=$(BENCHMARKS_FILTER) $(BENCHMARKS_OPTIONS)
 BENCHMARKS_PROFILE   := -pprof-dir=/tmp/profile -pprof-cpu -pprof-heap -pprof-block -pprof-mutex
-BENCH_VFS            := --vfs2
-BENCH_RUNTIME_ARGS   ?=
 
 init-benchmark-table: ## Initializes a BigQuery table with the benchmark schema.
 	@$(call run,//tools/parsers:parser,init --project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE))
@@ -394,14 +383,13 @@ run_benchmark = \
 benchmark-platforms: load-benchmarks $(RUNTIME_BIN) ## Runs benchmarks for runc and all platforms.
 	@set -xe; for PLATFORM in $$($(RUNTIME_BIN) help platforms); do \
 	  export PLATFORM; \
-	  $(call run_benchmark,$${PLATFORM},--platform=$${PLATFORM} $(BENCH_RUNTIME_ARGS) --vfs2); \
+	  $(call run_benchmark,$${PLATFORM},--platform=$${PLATFORM}); \
 	done
 	@$(call run_benchmark,runc)
 .PHONY: benchmark-platforms
 
 run-benchmark: load-benchmarks $(RUNTIME_BIN) ## Runs single benchmark and optionally sends data to BigQuery.
-	@if test "$(RUNTIME)" = "runc"; then $(call run_benchmark,$(RUNTIME)); fi;
-	@if test "$(RUNTIME)" != "runc"; then $(call run_benchmark,$(RUNTIME)$(BENCH_VFS),$(BENCH_RUNTIME_ARGS) $(BENCH_VFS)); fi;
+	@$(call run_benchmark,$(RUNTIME))
 .PHONY: run-benchmark
 
 ##

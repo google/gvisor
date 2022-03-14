@@ -294,7 +294,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		fs.kcontrollers = append(fs.kcontrollers, c)
 	}
 
-	root := fs.newCgroupInode(ctx, creds)
+	root := fs.newCgroupInode(ctx, creds, nil)
 	var rootD kernfs.Dentry
 	rootD.InitRoot(&fs.Filesystem, root)
 	fs.root = &rootD
@@ -451,7 +451,7 @@ func (d *dir) NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) (k
 	}
 	return d.OrderedChildren.Inserter(name, func() kernfs.Inode {
 		d.IncLinks(1)
-		return d.fs.newCgroupInode(ctx, auth.CredentialsFromContext(ctx))
+		return d.fs.newCgroupInode(ctx, auth.CredentialsFromContext(ctx), d.cgi)
 	})
 }
 

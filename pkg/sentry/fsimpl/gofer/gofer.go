@@ -541,9 +541,9 @@ func (fs *filesystem) initClientLisa(ctx context.Context) (lisafs.Inode, error) 
 		return rootInode, nil
 	}
 
-	// Walk to the attach point from root inode.
+	// Walk to the attach point from root inode. aname is always absolute.
 	rootFD := fs.clientLisa.NewFD(rootInode.ControlFD)
-	status, inodes, err := rootFD.WalkMultiple(ctx, strings.Split(fs.opts.aname, "/"))
+	status, inodes, err := rootFD.WalkMultiple(ctx, strings.Split(fs.opts.aname, "/")[1:])
 	rootFD.CloseBatched(ctx)
 	if err != nil {
 		return lisafs.Inode{}, err
@@ -697,8 +697,9 @@ func (fs *filesystem) Release(ctx context.Context) {
 	// If leak checking is enabled, release all outstanding references in the
 	// filesystem. We deliberately avoid doing this outside of leak checking; we
 	// have released all external resources above rather than relying on dentry
-	// destructors.
-	if refs_vfs1.GetLeakMode() != refs_vfs1.NoLeakChecking {
+	// destructors. fs.root may be nil if creating the client or initializing the
+	// root dentry failed in GetFilesystem.
+	if refs_vfs1.GetLeakMode() != refs_vfs1.NoLeakChecking && fs.root != nil {
 		fs.renameMu.Lock()
 		fs.root.releaseSyntheticRecursiveLocked(ctx)
 		fs.evictAllCachedDentriesLocked(ctx)
@@ -2383,11 +2384,11 @@ func (d *dentry) writeHandleLocked() handle {
 func (d *dentry) syncRemoteFile(ctx context.Context) error {
 	d.handleMu.RLock()
 	defer d.handleMu.RUnlock()
-	return d.syncRemoteFileLocked(ctx, nil /* accFsyncFDIDsLisa */)
+	return d.syncRemoteFileLocked(ctx)
 }
 
 // Preconditions: d.handleMu must be locked.
-func (d *dentry) syncRemoteFileLocked(ctx context.Context, accFsyncFDIDsLisa *[]lisafs.FDID) error {
+func (d *dentry) syncRemoteFileLocked(ctx context.Context) error {
 	// If we have a host FD, fsyncing it is likely to be faster than an fsync
 	// RPC. Prefer syncing write handles over read handles, since some remote
 	// filesystem implementations may not sync changes made through write
@@ -2399,10 +2400,6 @@ func (d *dentry) syncRemoteFileLocked(ctx context.Context, accFsyncFDIDsLisa *[]
 		return err
 	}
 	if d.fs.opts.lisaEnabled && d.writeFDLisa.Ok() {
-		if accFsyncFDIDsLisa != nil {
-			*accFsyncFDIDsLisa = append(*accFsyncFDIDsLisa, d.writeFDLisa.ID())
-			return nil
-		}
 		return d.writeFDLisa.Sync(ctx)
 	} else if !d.fs.opts.lisaEnabled && !d.writeFile.isNil() {
 		return d.writeFile.fsync(ctx)
@@ -2414,10 +2411,6 @@ func (d *dentry) syncRemoteFileLocked(ctx context.Context, accFsyncFDIDsLisa *[]
 		return err
 	}
 	if d.fs.opts.lisaEnabled && d.readFDLisa.Ok() {
-		if accFsyncFDIDsLisa != nil {
-			*accFsyncFDIDsLisa = append(*accFsyncFDIDsLisa, d.readFDLisa.ID())
-			return nil
-		}
 		return d.readFDLisa.Sync(ctx)
 	} else if !d.fs.opts.lisaEnabled && !d.readFile.isNil() {
 		return d.readFile.fsync(ctx)
@@ -2425,7 +2418,7 @@ func (d *dentry) syncRemoteFileLocked(ctx context.Context, accFsyncFDIDsLisa *[]
 	return nil
 }
 
-func (d *dentry) syncCachedFile(ctx context.Context, forFilesystemSync bool, accFsyncFDIDsLisa *[]lisafs.FDID) error {
+func (d *dentry) syncCachedFile(ctx context.Context, forFilesystemSync bool) error {
 	d.handleMu.RLock()
 	defer d.handleMu.RUnlock()
 	h := d.writeHandleLocked()
@@ -2438,7 +2431,7 @@ func (d *dentry) syncCachedFile(ctx context.Context, forFilesystemSync bool, acc
 			return err
 		}
 	}
-	if err := d.syncRemoteFileLocked(ctx, accFsyncFDIDsLisa); err != nil {
+	if err := d.syncRemoteFileLocked(ctx); err != nil {
 		if !forFilesystemSync {
 			return err
 		}

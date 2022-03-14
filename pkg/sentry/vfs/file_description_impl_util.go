@@ -87,6 +87,11 @@ func (FileDescriptionDefaultImpl) EventRegister(e *waiter.Entry) error {
 func (FileDescriptionDefaultImpl) EventUnregister(e *waiter.Entry) {
 }
 
+// Epollable implements FileDescriptionImpl.Epollable.
+func (FileDescriptionDefaultImpl) Epollable() bool {
+	return false
+}
+
 // PRead implements FileDescriptionImpl.PRead analogously to
 // file_operations::read == file_operations::read_iter == NULL in Linux.
 func (FileDescriptionDefaultImpl) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts ReadOptions) (int64, error) {
@@ -246,7 +251,7 @@ type WritableDynamicBytesSource interface {
 	DynamicBytesSource
 
 	// Write sends writes to the source.
-	Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error)
+	Write(ctx context.Context, fd *FileDescription, src usermem.IOSequence, offset int64) (int64, error)
 }
 
 // DynamicBytesFileDescriptionImpl may be embedded by implementations of
@@ -257,11 +262,12 @@ type WritableDynamicBytesSource interface {
 // If data additionally implements WritableDynamicBytesSource, writes are
 // dispatched to the implementer. The source data is not automatically modified.
 //
-// DynamicBytesFileDescriptionImpl.SetDataSource() must be called before first
+// DynamicBytesFileDescriptionImpl.Init() must be called before first
 // use.
 //
 // +stateify savable
 type DynamicBytesFileDescriptionImpl struct {
+	vfsfd    *FileDescription   // immutable
 	data     DynamicBytesSource // immutable
 	mu       sync.Mutex         `state:"nosave"` // protects the following fields
 	buf      bytes.Buffer       `state:".([]byte)"`
@@ -277,8 +283,9 @@ func (fd *DynamicBytesFileDescriptionImpl) loadBuf(p []byte) {
 	fd.buf.Write(p)
 }
 
-// SetDataSource must be called exactly once on fd before first use.
-func (fd *DynamicBytesFileDescriptionImpl) SetDataSource(data DynamicBytesSource) {
+// Init must be called before first use.
+func (fd *DynamicBytesFileDescriptionImpl) Init(vfsfd *FileDescription, data DynamicBytesSource) {
+	fd.vfsfd = vfsfd
 	fd.data = data
 }
 
@@ -371,7 +378,7 @@ func (fd *DynamicBytesFileDescriptionImpl) pwriteLocked(ctx context.Context, src
 	if !ok {
 		return 0, linuxerr.EIO
 	}
-	n, err := writable.Write(ctx, src, offset)
+	n, err := writable.Write(ctx, fd.vfsfd, src, offset)
 	if err != nil {
 		return 0, err
 	}

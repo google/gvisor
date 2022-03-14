@@ -28,13 +28,11 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
-	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	iptestutil "gvisor.dev/gvisor/pkg/tcpip/network/internal/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/testutil"
-	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -84,9 +82,11 @@ func testReceiveICMP(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst
 		DstAddr:           dst,
 	})
 
-	e.InjectInbound(ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+	pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: hdr.View().ToVectorisedView(),
-	}))
+	})
+	e.InjectInbound(ProtocolNumber, pktBuf)
+	pktBuf.DecRef()
 
 	stats := s.Stats().ICMP.V6.PacketsReceived
 
@@ -142,9 +142,11 @@ func testReceiveUDP(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst 
 		DstAddr:           dst,
 	})
 
-	e.InjectInbound(ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: hdr.View().ToVectorisedView(),
-	}))
+	})
+	e.InjectInbound(ProtocolNumber, pkt)
+	pkt.DecRef()
 
 	stat := s.Stats().UDP.PacketsReceived
 
@@ -235,21 +237,21 @@ func compareFragments(packets []*stack.PacketBuffer, sourcePacket *stack.PacketB
 // UDP packets destined to the IPv6 link-local all-nodes multicast address.
 func TestReceiveOnAllNodesMulticastAddr(t *testing.T) {
 	tests := []struct {
-		name            string
-		protocolFactory stack.TransportProtocolFactory
-		rxf             func(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst tcpip.Address, want uint64)
+		name string
+		rxf  func(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst tcpip.Address, want uint64)
 	}{
-		{"ICMP", icmp.NewProtocol6, testReceiveICMP},
-		{"UDP", udp.NewProtocol, testReceiveUDP},
+		{"ICMP", testReceiveICMP},
+		{"UDP", testReceiveUDP},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			s := stack.New(stack.Options{
-				NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
-				TransportProtocols: []stack.TransportProtocolFactory{test.protocolFactory},
-			})
+			c := newTestContext()
+			defer c.cleanup()
+			s := c.s
+
 			e := channel.New(10, header.IPv6MinimumMTU, linkAddr1)
+			defer e.Close()
 			if err := s.CreateNIC(1, e); err != nil {
 				t.Fatalf("CreateNIC(_) = %s", err)
 			}
@@ -266,23 +268,23 @@ func TestReceiveOnAllNodesMulticastAddr(t *testing.T) {
 // address.
 func TestReceiveOnSolicitedNodeAddr(t *testing.T) {
 	tests := []struct {
-		name            string
-		protocolFactory stack.TransportProtocolFactory
-		rxf             func(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst tcpip.Address, want uint64)
+		name string
+		rxf  func(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst tcpip.Address, want uint64)
 	}{
-		{"ICMP", icmp.NewProtocol6, testReceiveICMP},
-		{"UDP", udp.NewProtocol, testReceiveUDP},
+		{"ICMP", testReceiveICMP},
+		{"UDP", testReceiveUDP},
 	}
 
 	snmc := header.SolicitedNodeAddr(addr2)
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			s := stack.New(stack.Options{
-				NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
-				TransportProtocols: []stack.TransportProtocolFactory{test.protocolFactory},
-			})
+			c := newTestContext()
+			defer c.cleanup()
+			s := c.s
+
 			e := channel.New(1, header.IPv6MinimumMTU, linkAddr1)
+			defer e.Close()
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
@@ -375,9 +377,10 @@ func TestAddIpv6Address(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
-			})
+			c := newTestContext()
+			defer c.cleanup()
+			s := c.s
+
 			if err := s.CreateNIC(nicID, &stubLinkEndpoint{}); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
@@ -902,11 +905,12 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			s := stack.New(stack.Options{
-				NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
-				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
-			})
+			c := newTestContext()
+			defer c.cleanup()
+			s := c.s
+
 			e := channel.New(1, header.IPv6MinimumMTU, linkAddr1)
+			defer e.Close()
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
@@ -996,10 +1000,11 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 				}
 			}
 
-			e.InjectInbound(ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Data: hdr.View().ToVectorisedView(),
-			}))
-
+			})
+			e.InjectInbound(ProtocolNumber, pkt)
+			pkt.DecRef()
 			for i := range counters {
 				if got := counters[i].Value(); got != 1 {
 					t.Errorf("after writing packet: got test.countersToBeIncremented(&stats)[%d].Value() = %d, want = 1", i, got)
@@ -1028,6 +1033,7 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 				// Pack the output packet into a single buffer.View as the checkers
 				// assume that.
 				vv := buffer.NewVectorisedView(p.Size(), p.Views())
+				p.DecRef()
 				pkt := vv.ToView()
 				if got, want := len(pkt), header.IPv6FixedHeaderSize+header.ICMPv6MinimumSize+hdr.UsedLength(); got != want {
 					t.Fatalf("got an ICMP packet of size = %d, want = %d", got, want)
@@ -2000,11 +2006,12 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			s := stack.New(stack.Options{
-				NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
-				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
-			})
+			c := newTestContext()
+			defer c.cleanup()
+			s := c.s
+
 			e := channel.New(0, header.IPv6MinimumMTU, linkAddr1)
+			defer e.Close()
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
@@ -2049,10 +2056,11 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 
 				vv := hdr.View().ToVectorisedView()
 				vv.Append(f.data)
-
-				e.InjectInbound(ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Data: vv,
-				}))
+				})
+				e.InjectInbound(ProtocolNumber, pkt)
+				pkt.DecRef()
 			}
 
 			if got, want := s.Stats().UDP.PacketsReceived.Value(), uint64(len(test.expectedPayloads)); got != want {
@@ -2161,12 +2169,12 @@ func TestInvalidIPv6Fragments(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocolFactory{
-					NewProtocol,
-				},
-			})
+			c := newTestContext()
+			defer c.cleanup()
+			s := c.s
+
 			e := channel.New(1, 1500, linkAddr1)
+			defer e.Close()
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
@@ -2203,6 +2211,7 @@ func TestInvalidIPv6Fragments(t *testing.T) {
 				}
 
 				e.InjectInbound(ProtocolNumber, pkt)
+				pkt.DecRef()
 			}
 
 			if got, want := s.Stats().IP.MalformedPacketsReceived.Value(), test.wantMalformedIPPackets; got != want {
@@ -2234,6 +2243,7 @@ func TestInvalidIPv6Fragments(t *testing.T) {
 					checker.ICMPv6Payload(expectICMPPayload),
 				),
 			)
+			reply.DecRef()
 		})
 	}
 }
@@ -2414,15 +2424,12 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			clock := faketime.NewManualClock()
-			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocolFactory{
-					NewProtocol,
-				},
-				Clock: clock,
-			})
+			c := newTestContext()
+			defer c.cleanup()
+			s := c.s
 
 			e := channel.New(1, 1500, linkAddr1)
+			defer e.Close()
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
@@ -2461,9 +2468,10 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 				}
 
 				e.InjectInbound(ProtocolNumber, pkt)
+				pkt.DecRef()
 			}
 
-			clock.Advance(ReassembleTimeout)
+			c.clock.Advance(ReassembleTimeout)
 
 			reply := e.Read()
 			if !test.expectICMP {
@@ -2489,6 +2497,7 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 					checker.ICMPv6Payload(firstFragmentSent),
 				),
 			)
+			reply.DecRef()
 		})
 	}
 }
@@ -2597,8 +2606,13 @@ func TestWriteStats(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			c := newTestContext()
+			defer c.cleanup()
+
 			ep := iptestutil.NewMockLinkEndpoint(header.IPv6MinimumMTU, &tcpip.ErrInvalidEndpointState{}, test.allowPackets)
-			rt := buildRoute(t, ep)
+			defer ep.Close()
+
+			rt := buildRoute(t, c, ep)
 			test.setup(t, rt.Stack())
 
 			nWritten := 0
@@ -2607,6 +2621,7 @@ func TestWriteStats(t *testing.T) {
 					ReserveHeaderBytes: header.UDPMinimumSize + int(rt.MaxHeaderLength()),
 					Data:               buffer.NewView(0).ToVectorisedView(),
 				})
+				defer pkt.DecRef()
 				pkt.TransportHeader().Push(header.UDPMinimumSize)
 				if err := rt.WritePacket(stack.NetworkHeaderParams{}, pkt); err != nil {
 					break
@@ -2630,10 +2645,8 @@ func TestWriteStats(t *testing.T) {
 	}
 }
 
-func buildRoute(t *testing.T, ep stack.LinkEndpoint) *stack.Route {
-	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
-	})
+func buildRoute(t *testing.T, c testContext, ep stack.LinkEndpoint) *stack.Route {
+	s := c.s
 	if err := s.CreateNIC(1, ep); err != nil {
 		t.Fatalf("CreateNIC(1, _) failed: %s", err)
 	}
@@ -2697,9 +2710,10 @@ func knownNICIDs(proto *protocol) []tcpip.NICID {
 }
 
 func TestClearEndpointFromProtocolOnClose(t *testing.T) {
-	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
-	})
+	c := newTestContext()
+	defer c.cleanup()
+	s := c.s
+
 	proto := s.NetworkProtocolInstance(ProtocolNumber).(*protocol)
 	var nic testInterface
 	ep := proto.NewEndpoint(&nic, nil).(*endpoint)
@@ -2795,10 +2809,18 @@ func TestFragmentationWritePacket(t *testing.T) {
 
 	for _, ft := range fragmentationTests {
 		t.Run(ft.description, func(t *testing.T) {
+			c := newTestContext()
+			defer c.cleanup()
+
 			pkt := iptestutil.MakeRandPkt(ft.transHdrLen, extraHeaderReserve+header.IPv6MinimumSize, []int{ft.payloadSize}, header.IPv6ProtocolNumber)
+			defer pkt.DecRef()
 			source := pkt.Clone()
+			defer source.DecRef()
+
 			ep := iptestutil.NewMockLinkEndpoint(ft.mtu, nil, math.MaxInt32)
-			r := buildRoute(t, ep)
+			defer ep.Close()
+
+			r := buildRoute(t, c, ep)
 			err := r.WritePacket(stack.NetworkHeaderParams{
 				Protocol: tcp.ProtocolNumber,
 				TTL:      ttl,
@@ -2892,9 +2914,15 @@ func TestFragmentationErrors(t *testing.T) {
 
 	for _, ft := range tests {
 		t.Run(ft.description, func(t *testing.T) {
+			c := newTestContext()
+			defer c.cleanup()
+
 			pkt := iptestutil.MakeRandPkt(ft.transHdrLen, extraHeaderReserve+header.IPv6MinimumSize, []int{ft.payloadSize}, header.IPv6ProtocolNumber)
+			defer pkt.DecRef()
 			ep := iptestutil.NewMockLinkEndpoint(ft.mtu, ft.mockError, ft.allowPackets)
-			r := buildRoute(t, ep)
+			defer ep.Close()
+
+			r := buildRoute(t, c, ep)
 			err := r.WritePacket(stack.NetworkHeaderParams{
 				Protocol: tcp.ProtocolNumber,
 				TTL:      ttl,
@@ -3203,12 +3231,13 @@ func TestForwarding(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			s := stack.New(stack.Options{
-				NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
-				TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6},
-			})
+			c := newTestContext()
+			defer c.cleanup()
+			s := c.s
+
 			// We expect at most a single packet in response to our ICMP Echo Request.
 			incomingEndpoint := channel.New(1, header.IPv6MinimumMTU, "")
+			defer incomingEndpoint.Close()
 			if err := s.CreateNIC(incomingNICID, incomingEndpoint); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", incomingNICID, err)
 			}
@@ -3218,6 +3247,7 @@ func TestForwarding(t *testing.T) {
 			}
 
 			outgoingEndpoint := channel.New(1, header.IPv6MinimumMTU, "")
+			defer outgoingEndpoint.Close()
 			if err := s.CreateNIC(outgoingNICID, outgoingEndpoint); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", outgoingNICID, err)
 			}
@@ -3282,10 +3312,11 @@ func TestForwarding(t *testing.T) {
 				SrcAddr:           test.sourceAddr,
 				DstAddr:           test.destAddr,
 			})
-			reques := stack.NewPacketBuffer(stack.PacketBufferOptions{
+			request := stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Data: hdr.View().ToVectorisedView(),
 			})
-			incomingEndpoint.InjectInbound(ProtocolNumber, reques)
+			incomingEndpoint.InjectInbound(ProtocolNumber, request)
+			request.DecRef()
 
 			reply := incomingEndpoint.Read()
 
@@ -3317,6 +3348,7 @@ func TestForwarding(t *testing.T) {
 						checker.ICMPv6Payload(hdr.View()[:expectedICMPPayloadLength()]),
 					),
 				)
+				reply.DecRef()
 
 				if n := outgoingEndpoint.Drain(); n != 0 {
 					t.Fatalf("got e2.Drain() = %d, want = 0", n)
@@ -3342,6 +3374,7 @@ func TestForwarding(t *testing.T) {
 						checker.ICMPv6Payload(nil),
 					),
 				)
+				reply.DecRef()
 
 				if n := incomingEndpoint.Drain(); n != 0 {
 					t.Fatalf("got e1.Drain() = %d, want = 0", n)
@@ -3389,9 +3422,10 @@ func TestForwarding(t *testing.T) {
 }
 
 func TestMultiCounterStatsInitialization(t *testing.T) {
-	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
-	})
+	c := newTestContext()
+	defer c.cleanup()
+	s := c.s
+
 	proto := s.NetworkProtocolInstance(ProtocolNumber).(*protocol)
 	var nic testInterface
 	ep := proto.NewEndpoint(&nic, nil).(*endpoint)
@@ -3431,14 +3465,15 @@ func TestIcmpRateLimit(t *testing.T) {
 		}
 	)
 	const icmpBurst = 5
-	e := channel.New(1, defaultMTU, tcpip.LinkAddress(""))
-	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
-		TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
-		Clock:              faketime.NewManualClock(),
-	})
+
+	c := newTestContext()
+	defer c.cleanup()
+	s := c.s
+
 	s.SetICMPBurst(icmpBurst)
 
+	e := channel.New(1, defaultMTU, tcpip.LinkAddress(""))
+	defer e.Close()
 	if err := s.CreateNIC(nicID, e); err != nil {
 		t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
 	}
@@ -3488,6 +3523,7 @@ func TestIcmpRateLimit(t *testing.T) {
 				if p == nil {
 					t.Fatalf("expected echo response, no packet read in endpoint in round %d", round)
 				}
+				defer p.DecRef()
 				if got, want := p.NetworkProtocolNumber, header.IPv6ProtocolNumber; got != want {
 					t.Errorf("got p.NetworkProtocolNumber = %d, want = %d", got, want)
 				}
@@ -3532,6 +3568,7 @@ func TestIcmpRateLimit(t *testing.T) {
 				if round >= icmpBurst {
 					if p != nil {
 						t.Errorf("got packet %x in round %d, expected ICMP rate limit to stop it", p.Data().Views(), round)
+						p.DecRef()
 					}
 					return
 				}
@@ -3544,15 +3581,18 @@ func TestIcmpRateLimit(t *testing.T) {
 					checker.ICMPv6(
 						checker.ICMPv6Type(header.ICMPv6DstUnreachable),
 					))
+				p.DecRef()
 			},
 		},
 	}
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
 			for round := 0; round < icmpBurst+1; round++ {
-				e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Data: testCase.createPacket().ToVectorisedView(),
-				}))
+				})
+				e.InjectInbound(header.IPv6ProtocolNumber, pkt)
+				pkt.DecRef()
 				testCase.check(t, e, round)
 			}
 		})

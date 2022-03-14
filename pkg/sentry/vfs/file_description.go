@@ -352,6 +352,9 @@ type FileDescriptionImpl interface {
 	// waiter.Waitable methods may be used to poll for I/O events.
 	waiter.Waitable
 
+	// Epollable indicates whether this file can be used with epoll_ctl(2).
+	Epollable() bool
+
 	// PRead reads from the file into dst, starting at the given offset, and
 	// returns the number of bytes read. PRead is permitted to return partial
 	// reads with a nil error.
@@ -595,6 +598,11 @@ func (fd *FileDescription) EventRegister(e *waiter.Entry) error {
 // It unregisters e for I/O readiness events.
 func (fd *FileDescription) EventUnregister(e *waiter.Entry) {
 	fd.impl.EventUnregister(e)
+}
+
+// Epollable returns whether this file can be used with epoll_ctl(2).
+func (fd *FileDescription) Epollable() bool {
+	return fd.impl.Epollable()
 }
 
 // PRead reads from the file represented by fd into dst, starting at the given

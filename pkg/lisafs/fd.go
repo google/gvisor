@@ -26,7 +26,7 @@ import (
 // Each connection has its own FDID namespace.
 //
 // +marshal boundCheck slice:FDIDSlice
-type FDID uint32
+type FDID uint64
 
 // InvalidFDID represents an invalid FDID.
 const InvalidFDID FDID = 0
@@ -90,8 +90,8 @@ var _ genericFD = (*ControlFD)(nil)
 func (fd *ControlFD) DecRef(context.Context) {
 	fd.controlFDRefs.DecRef(func() {
 		fd.conn.server.renameMu.RLock()
+		defer fd.conn.server.renameMu.RUnlock()
 		fd.destroyLocked()
-		fd.conn.server.renameMu.RUnlock()
 	})
 }
 
@@ -458,13 +458,18 @@ type ControlFDImpl interface {
 	Renamed()
 
 	// GetXattr returns extended attributes of this file. It returns the number
-	// of bytes written into dataBuf.
+	// of bytes written into the buffer returned by getValueBuf which can be used
+	// to request buffer for some size.
 	//
-	// If the value is larger than len(dataBuf), implementations may return
-	// ERANGE to indicate that the buffer is too small.
+	// If the value is larger than size, implementations may return ERANGE to
+	// indicate that the buffer is too small.
+	//
+	// N.B. size may be 0, in which can the implementation must first find out
+	// the attribute value size using getxattr(2) by passing size=0. Then request
+	// a buffer large enough using getValueBuf and write the value there.
 	//
 	// On the server, GetXattr has a read concurrency guarantee.
-	GetXattr(name string, dataBuf []byte) (uint16, error)
+	GetXattr(name string, size uint32, getValueBuf func(uint32) []byte) (uint16, error)
 
 	// SetXattr sets extended attributes on this file.
 	//

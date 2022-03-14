@@ -17,6 +17,7 @@ package udp
 import (
 	"fmt"
 	"io"
+	"math"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/sync"
@@ -42,6 +43,8 @@ type udpPacket struct {
 	// tosOrTClass stores either the Type of Service for IPv4 or the Traffic Class
 	// for IPv6.
 	tosOrTClass uint8
+	// ttlOrHopLimit stores either the TTL for IPv4 or the HopLimit for IPv6
+	ttlOrHopLimit uint8
 }
 
 // endpoint represents a UDP endpoint. This struct serves as the interface
@@ -236,7 +239,7 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 	// Control Messages
 	// TODO(https://gvisor.dev/issue/7012): Share control message code with other
 	// network endpoints.
-	cm := tcpip.ControlMessages{
+	cm := tcpip.ReceivableControlMessages{
 		HasTimestamp: true,
 		Timestamp:    p.receivedAt,
 	}
@@ -245,6 +248,10 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 		if e.ops.GetReceiveTOS() {
 			cm.HasTOS = true
 			cm.TOS = p.tosOrTClass
+		}
+		if e.ops.GetReceiveTTL() {
+			cm.HasTTL = true
+			cm.TTL = p.ttlOrHopLimit
 		}
 		if e.ops.GetReceivePacketInfo() {
 			cm.HasIPPacketInfo = true
@@ -255,6 +262,10 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 			cm.HasTClass = true
 			// Although TClass is an 8-bit value it's read in the CMsg as a uint32.
 			cm.TClass = uint32(p.tosOrTClass)
+		}
+		if e.ops.GetReceiveHopLimit() {
+			cm.HasHopLimit = true
+			cm.HopLimit = p.ttlOrHopLimit
 		}
 		if e.ops.GetIPv6ReceivePacketInfo() {
 			cm.HasIPv6PacketInfo = true
@@ -385,26 +396,30 @@ func (e *endpoint) prepareForWrite(p tcpip.Payloader, opts tcpip.WriteOptions) (
 		return udpPacketInfo{}, err
 	}
 
+	if p.Len() > header.UDPMaximumPacketSize {
+		// Native linux behaviour differs for IPv4 and IPv6 packets; IPv4 packet
+		// errors aren't report to the error queue at all.
+		if ctx.PacketInfo().NetProto == header.IPv6ProtocolNumber {
+			so := e.SocketOptions()
+			if so.GetRecvError() {
+				so.QueueLocalErr(
+					&tcpip.ErrMessageTooLong{},
+					e.net.NetProto(),
+					uint32(p.Len()),
+					dst,
+					nil,
+				)
+			}
+		}
+		ctx.Release()
+		return udpPacketInfo{}, &tcpip.ErrMessageTooLong{}
+	}
+
 	// TODO(https://gvisor.dev/issue/6538): Avoid this allocation.
 	v := make([]byte, p.Len())
 	if _, err := io.ReadFull(p, v); err != nil {
 		ctx.Release()
 		return udpPacketInfo{}, &tcpip.ErrBadBuffer{}
-	}
-	if len(v) > header.UDPMaximumPacketSize {
-		// Payload can't possibly fit in a packet.
-		so := e.SocketOptions()
-		if so.GetRecvError() {
-			so.QueueLocalErr(
-				&tcpip.ErrMessageTooLong{},
-				e.net.NetProto(),
-				header.UDPMaximumPacketSize,
-				dst,
-				v,
-			)
-		}
-		ctx.Release()
-		return udpPacketInfo{}, &tcpip.ErrMessageTooLong{}
 	}
 
 	return udpPacketInfo{
@@ -461,10 +476,33 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 	// On IPv6, UDP checksum is not optional (RFC2460 Section 8.1).
 	if pktInfo.RequiresTXTransportChecksum &&
 		(!e.ops.GetNoChecksum() || pktInfo.NetProto == header.IPv6ProtocolNumber) {
-		udp.SetChecksum(^udp.CalculateChecksum(header.ChecksumCombine(
+		xsum := udp.CalculateChecksum(header.ChecksumCombine(
 			header.PseudoHeaderChecksum(ProtocolNumber, pktInfo.LocalAddress, pktInfo.RemoteAddress, length),
 			pkt.Data().AsRange().Checksum(),
-		)))
+		))
+		// As per RFC 768 page 2,
+		//
+		//   Checksum is the 16-bit one's complement of the one's complement sum of
+		//   a pseudo header of information from the IP header, the UDP header, and
+		//   the data, padded with zero octets at the end (if necessary) to make a
+		//   multiple of two octets.
+		//
+		//	 The pseudo header conceptually prefixed to the UDP header contains the
+		//   source address, the destination address, the protocol, and the UDP
+		//   length. This information gives protection against misrouted datagrams.
+		//   This checksum procedure is the same as is used in TCP.
+		//
+		//   If the computed checksum is zero, it is transmitted as all ones (the
+		//   equivalent in one's complement arithmetic). An all zero transmitted
+		//   checksum value means that the transmitter generated no checksum (for
+		//   debugging or for higher level protocols that don't care).
+		//
+		// To avoid the zero value, we only calculate the one's complement of the
+		// one's complement sum if the sum is not all ones.
+		if xsum != math.MaxUint16 {
+			xsum = ^xsum
+		}
+		udp.SetChecksum(xsum)
 	}
 	if err := udpInfo.ctx.WritePacket(pkt, false /* headerIncluded */); err != nil {
 		e.stack.Stats().UDP.PacketSendErrors.Increment()
@@ -888,7 +926,7 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 	e.stats.PacketsReceived.Increment()
 
 	e.rcvMu.Lock()
-	// Drop the packet if our buffer is currently full.
+	// Drop the packet if our buffer is not ready to receive packets.
 	if !e.rcvReady || e.rcvClosed {
 		e.rcvMu.Unlock()
 		e.stack.Stats().UDP.ReceiveBufferErrors.Increment()
@@ -897,6 +935,7 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 	}
 
 	rcvBufSize := e.ops.GetReceiveBufferSize()
+	// Drop the packet if our buffer is currently full.
 	if e.frozen || e.rcvBufSize >= int(rcvBufSize) {
 		e.rcvMu.Unlock()
 		e.stack.Stats().UDP.ReceiveBufferErrors.Increment()
@@ -927,6 +966,12 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 
 	// Save any useful information from the network header to the packet.
 	packet.tosOrTClass, _ = pkt.Network().TOS()
+	switch pkt.NetworkProtocolNumber {
+	case header.IPv4ProtocolNumber:
+		packet.ttlOrHopLimit = header.IPv4(pkt.NetworkHeader().View()).TTL()
+	case header.IPv6ProtocolNumber:
+		packet.ttlOrHopLimit = header.IPv6(pkt.NetworkHeader().View()).HopLimit()
+	}
 
 	// TODO(gvisor.dev/issue/3556): r.LocalAddress may be a multicast or broadcast
 	// address. packetInfo.LocalAddr should hold a unicast address that can be

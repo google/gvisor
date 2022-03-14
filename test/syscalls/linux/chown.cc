@@ -49,7 +49,6 @@ TEST(ChownTest, FchownatBadF) {
 }
 
 TEST(ChownTest, FchownFileWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_PATH));
 
@@ -58,7 +57,6 @@ TEST(ChownTest, FchownFileWithOpath) {
 }
 
 TEST(ChownTest, FchownDirWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   const auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const auto fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_DIRECTORY | O_PATH));
@@ -68,7 +66,6 @@ TEST(ChownTest, FchownDirWithOpath) {
 }
 
 TEST(ChownTest, FchownatWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   const auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dir.path()));
   const auto dirfd =

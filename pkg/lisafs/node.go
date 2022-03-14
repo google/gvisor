@@ -161,15 +161,17 @@ func (n *Node) LookupChildLocked(name string) *Node {
 // WithChildrenMu executes fn with n.childrenMu locked.
 func (n *Node) WithChildrenMu(fn func()) {
 	n.childrenMu.Lock()
+	defer n.childrenMu.Unlock()
 	fn()
-	n.childrenMu.Unlock()
 }
 
 // FilePath returns the absolute path of the backing file. This is an expensive
 // operation. The returned path should be free of any intermediate symlinks
 // because all internal (non-leaf) nodes are directories.
 //
-// Precondition: server's rename mutex must be at least read locked.
+// Precondition:
+// * server's rename mutex must be at least read locked. Calling handlers must
+//   at least have read concurrency guarantee from the server.
 func (n *Node) FilePath() string {
 	// Walk upwards and prepend name to res.
 	var res fspath.Builder
@@ -188,22 +190,22 @@ func (n *Node) isDeleted() bool {
 
 func (n *Node) removeFD(fd *ControlFD) {
 	n.controlFDsMu.Lock()
+	defer n.controlFDsMu.Unlock()
 	n.controlFDs.Remove(fd)
-	n.controlFDsMu.Unlock()
 }
 
 func (n *Node) insertFD(fd *ControlFD) {
 	n.controlFDsMu.Lock()
+	defer n.controlFDsMu.Unlock()
 	n.controlFDs.PushBack(fd)
-	n.controlFDsMu.Unlock()
 }
 
 func (n *Node) forEachFD(fn func(*ControlFD)) {
 	n.controlFDsMu.Lock()
+	defer n.controlFDsMu.Unlock()
 	for fd := n.controlFDs.Front(); fd != nil; fd = fd.Next() {
 		fn(fd)
 	}
-	n.controlFDsMu.Unlock()
 }
 
 // removeChildLocked removes child with given name from n and returns the

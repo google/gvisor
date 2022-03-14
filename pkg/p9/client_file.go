@@ -424,7 +424,7 @@ func (c *clientFile) Bind(sockType uint32, sockName string, uid UID, gid GID) (F
 }
 
 // Connect implements File.Connect.
-func (c *clientFile) Connect(flags ConnectFlags) (*fd.FD, error) {
+func (c *clientFile) Connect(socketType SocketType) (*fd.FD, error) {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return nil, unix.EBADF
 	}
@@ -434,7 +434,7 @@ func (c *clientFile) Connect(flags ConnectFlags) (*fd.FD, error) {
 	}
 
 	rlconnect := Rlconnect{}
-	if err := c.client.sendRecv(&Tlconnect{FID: c.fid, Flags: flags}, &rlconnect); err != nil {
+	if err := c.client.sendRecv(&Tlconnect{FID: c.fid, SocketType: socketType}, &rlconnect); err != nil {
 		return nil, err
 	}
 

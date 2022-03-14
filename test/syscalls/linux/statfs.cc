@@ -68,7 +68,6 @@ TEST(FstatfsTest, TempPath) {
 }
 
 TEST(FstatfsTest, CanStatFileWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   auto temp_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(temp_file.path(), O_PATH));

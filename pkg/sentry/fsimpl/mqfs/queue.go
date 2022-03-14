@@ -77,7 +77,7 @@ func (fd *queueFD) Init(m *vfs.Mount, d *kernfs.Dentry, data vfs.DynamicBytesSou
 		return err
 	}
 	fd.inode = d.Inode()
-	fd.SetDataSource(data)
+	fd.DynamicBytesFileDescriptionImpl.Init(&fd.vfsfd, data)
 	return nil
 }
 
@@ -142,4 +142,9 @@ func (fd *queueFD) EventRegister(e *waiter.Entry) error {
 // EventUnregister implements Waitable.EventUnregister.
 func (fd *queueFD) EventUnregister(e *waiter.Entry) {
 	fd.queue.EventUnregister(e)
+}
+
+// Epollable implements FileDescriptionImpl.Epollable.
+func (fd *queueFD) Epollable() bool {
+	return true
 }

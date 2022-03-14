@@ -294,3 +294,8 @@ func (efd *EventFileDescription) EventUnregister(entry *waiter.Entry) {
 		}
 	}
 }
+
+// Epollable implements FileDescriptionImpl.Epollable.
+func (efd *EventFileDescription) Epollable() bool {
+	return true
+}

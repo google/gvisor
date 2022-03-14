@@ -47,8 +47,8 @@ var (
 	useTmpfs           = flag.Bool("use-tmpfs", false, "mounts tmpfs for /tmp")
 	fileAccess         = flag.String("file-access", "exclusive", "mounts root in exclusive or shared mode")
 	overlay            = flag.Bool("overlay", false, "wrap filesystem mounts with writable tmpfs overlay")
-	vfs2               = flag.Bool("vfs2", false, "enable VFS2")
 	fuse               = flag.Bool("fuse", false, "enable FUSE")
+	lisafs             = flag.Bool("lisafs", false, "enable lisafs protocol if vfs2 is also enabled")
 	container          = flag.Bool("container", false, "run tests in their own namespaces (user ns, network ns, etc), pretending to be root")
 	setupContainerPath = flag.String("setup-container", "", "path to setup_container binary (for use with --container)")
 
@@ -179,9 +179,11 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 	if *overlay {
 		args = append(args, "-overlay")
 	}
-	args = append(args, fmt.Sprintf("-vfs2=%t", *vfs2))
-	if *vfs2 && *fuse {
+	if *fuse {
 		args = append(args, "-fuse")
+	}
+	if *lisafs {
+		args = append(args, "-lisafs")
 	}
 	if *debug {
 		args = append(args, "-debug", "-log-packets=true")
@@ -390,20 +392,22 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 
 	// Set environment variables that indicate we are running in gVisor with
 	// the given platform, network, and filesystem stack.
-	platformVar := "TEST_ON_GVISOR"
-	networkVar := "GVISOR_NETWORK"
+	const (
+		platformVar = "TEST_ON_GVISOR"
+		networkVar  = "GVISOR_NETWORK"
+		fuseVar     = "FUSE_ENABLED"
+		lisafsVar   = "LISAFS_ENABLED"
+	)
 	env := append(os.Environ(), platformVar+"="+*platform, networkVar+"="+*network)
-	vfsVar := "GVISOR_VFS"
-	if *vfs2 {
-		env = append(env, vfsVar+"=VFS2")
-		fuseVar := "FUSE_ENABLED"
-		if *fuse {
-			env = append(env, fuseVar+"=TRUE")
-		} else {
-			env = append(env, fuseVar+"=FALSE")
-		}
+	if *fuse {
+		env = append(env, fuseVar+"=TRUE")
 	} else {
-		env = append(env, vfsVar+"=VFS1")
+		env = append(env, fuseVar+"=FALSE")
+	}
+	if *lisafs {
+		env = append(env, lisafsVar+"=TRUE")
+	} else {
+		env = append(env, lisafsVar+"=FALSE")
 	}
 
 	// Remove shard env variables so that the gunit binary does not try to

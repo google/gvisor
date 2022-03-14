@@ -67,8 +67,6 @@ TEST(SocketTest, ProtocolInet) {
 }
 
 TEST(SocketTest, UnixSocketStat) {
-  SKIP_IF(IsRunningWithVFS1());
-
   FileDescriptor bound =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, PF_UNIX));
 
@@ -91,16 +89,12 @@ TEST(SocketTest, UnixSocketStat) {
   EXPECT_EQ(statbuf.st_mode, S_IFSOCK | (sock_perm & ~mask));
 
   // Timestamps should be equal and non-zero.
-  if (!IsRunningWithVFS1()) {
-    EXPECT_NE(statbuf.st_atime, 0);
-    EXPECT_EQ(statbuf.st_atime, statbuf.st_mtime);
-    EXPECT_EQ(statbuf.st_atime, statbuf.st_ctime);
-  }
+  EXPECT_NE(statbuf.st_atime, 0);
+  EXPECT_EQ(statbuf.st_atime, statbuf.st_mtime);
+  EXPECT_EQ(statbuf.st_atime, statbuf.st_ctime);
 }
 
 TEST(SocketTest, UnixSocketStatFS) {
-  SKIP_IF(IsRunningWithVFS1());
-
   FileDescriptor bound =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, PF_UNIX));
 
@@ -184,8 +178,6 @@ TEST(SocketTest, UnixSCMRightsOnlyPassedOnce) {
 }
 
 TEST(SocketTest, Permission) {
-  SKIP_IF(IsRunningWithVFS1());
-
   FileDescriptor socket =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_DGRAM, 0));
 
@@ -197,9 +189,6 @@ using SocketOpenTest = ::testing::TestWithParam<int>;
 
 // UDS cannot be opened.
 TEST_P(SocketOpenTest, Unix) {
-  // FIXME(b/142001530): Open incorrectly succeeds on gVisor.
-  SKIP_IF(IsRunningWithVFS1());
-
   FileDescriptor bound =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, PF_UNIX));
 

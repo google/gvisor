@@ -32,6 +32,7 @@ type region struct {
 type physicalRegion struct {
 	region
 	physical uintptr
+	readOnly bool
 }
 
 // physicalRegions contains a list of available physical regions.

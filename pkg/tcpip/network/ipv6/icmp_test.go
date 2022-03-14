@@ -23,6 +23,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/time/rate"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -84,6 +85,8 @@ func (*stubLinkEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.E
 func (*stubLinkEndpoint) Attach(stack.NetworkDispatcher) {}
 
 func (*stubLinkEndpoint) AddHeader(*stack.PacketBuffer) {}
+
+func (*stubLinkEndpoint) Wait() {}
 
 type stubDispatcher struct {
 	stack.TransportDispatcher
@@ -188,16 +191,43 @@ func handleICMPInIPv6(ep stack.NetworkEndpoint, src, dst tcpip.Address, icmp hea
 
 	vv := ip.ToVectorisedView()
 	vv.AppendView(buffer.View(icmp))
-	ep.HandlePacket(stack.NewPacketBuffer(stack.PacketBufferOptions{
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: vv,
-	}))
+	})
+	ep.HandlePacket(pkt)
+	pkt.DecRef()
+}
+
+type testContext struct {
+	s     *stack.Stack
+	clock *faketime.ManualClock
+}
+
+func newTestContext() testContext {
+	clock := faketime.NewManualClock()
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6, udp.NewProtocol},
+		Clock:              clock,
+	})
+	return testContext{s: s, clock: clock}
+}
+
+func (c *testContext) cleanup() {
+	c.s.Close()
+	c.s.Wait()
+	// Stack.Wait() closes all devices and transports synchronously, but it
+	// does not guarantee that all packets will reach refcount zero until
+	// after an asynchronous followup from neighborEntry.notifyCompletionLocked().
+	c.clock.RunImmediatelyScheduledJobs()
+	refsvfs2.DoRepeatedLeakCheck()
 }
 
 func TestICMPCounts(t *testing.T) {
-	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
-		TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6},
-	})
+	c := newTestContext()
+	defer c.cleanup()
+	s := c.s
+
 	if err := s.CreateNIC(nicID, &stubLinkEndpoint{}); err != nil {
 		t.Fatalf("CreateNIC(_, _) = %s", err)
 	}
@@ -369,7 +399,7 @@ func visitStats(v reflect.Value, f func(string, *tcpip.StatCounter)) {
 	}
 }
 
-type testContext struct {
+type multiStackTestContext struct {
 	s0 *stack.Stack
 	s1 *stack.Stack
 
@@ -387,19 +417,21 @@ func (e endpointWithResolutionCapability) Capabilities() stack.LinkEndpointCapab
 	return e.LinkEndpoint.Capabilities() | stack.CapabilityResolutionRequired
 }
 
-func newTestContext(t *testing.T) *testContext {
+func newMultiStackTestContext(t *testing.T) multiStackTestContext {
 	clock := faketime.NewManualClock()
-	c := &testContext{
-		s0: stack.New(stack.Options{
-			NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
-			TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6},
-			Clock:              clock,
-		}),
-		s1: stack.New(stack.Options{
-			NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
-			TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6},
-			Clock:              clock,
-		}),
+	s0 := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6},
+		Clock:              clock,
+	})
+	s1 := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6},
+		Clock:              clock,
+	})
+	c := multiStackTestContext{
+		s0:    s0,
+		s1:    s1,
 		clock: clock,
 	}
 
@@ -469,6 +501,13 @@ func newTestContext(t *testing.T) *testContext {
 	return c
 }
 
+func (c *multiStackTestContext) cleanup() {
+	c.s0.Close()
+	c.s1.Close()
+	c.s0.Wait()
+	c.s1.Wait()
+}
+
 type routeArgs struct {
 	src, dst       *channel.Endpoint
 	typ            header.ICMPv6Type
@@ -483,12 +522,14 @@ func routeICMPv6Packet(t *testing.T, clock *faketime.ManualClock, args routeArgs
 	if pi == nil {
 		t.Fatal("packet didn't arrive")
 	}
+	defer pi.DecRef()
 
 	{
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Data: buffer.NewVectorisedView(pi.Size(), pi.Views()),
 		})
 		args.dst.InjectInbound(pi.NetworkProtocolNumber, pkt)
+		pkt.DecRef()
 	}
 
 	if pi.NetworkProtocolNumber != ProtocolNumber {
@@ -519,7 +560,7 @@ func routeICMPv6Packet(t *testing.T, clock *faketime.ManualClock, args routeArgs
 }
 
 func TestLinkResolution(t *testing.T) {
-	c := newTestContext(t)
+	c := newMultiStackTestContext(t)
 
 	r, err := c.s0.FindRoute(nicID, lladdr0, lladdr1, ProtocolNumber, false /* multicastLoop */)
 	if err != nil {
@@ -684,21 +725,21 @@ func TestICMPChecksumValidationSimple(t *testing.T) {
 				name += " (Router)"
 			}
 			t.Run(name, func(t *testing.T) {
-				e := channel.New(0, 1280, linkAddr0)
+				c := newTestContext()
+				defer c.cleanup()
+				s := c.s
 
-				// Indicate that resolution for link layer addresses is required to
-				// send packets over this link. This is needed so the NIC knows to
-				// allocate a neighbor table.
-				e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
-
-				s := stack.New(stack.Options{
-					NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
-				})
 				if isRouter {
 					if err := s.SetForwardingDefaultAndAllNICs(ProtocolNumber, true); err != nil {
 						t.Fatalf("SetForwardingDefaultAndAllNICs(%d, true): %s", ProtocolNumber, err)
 					}
 				}
+
+				e := channel.New(0, 1280, linkAddr0)
+				// Indicate that resolution for link layer addresses is required to
+				// send packets over this link. This is needed so the NIC knows to
+				// allocate a neighbor table.
+				e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 				if err := s.CreateNIC(nicID, e); err != nil {
 					t.Fatalf("CreateNIC(_, _) = %s", err)
 				}
@@ -746,6 +787,7 @@ func TestICMPChecksumValidationSimple(t *testing.T) {
 						Data: buffer.NewVectorisedView(len(ip)+len(icmp), []buffer.View{buffer.View(ip), buffer.View(icmp)}),
 					})
 					e.InjectInbound(ProtocolNumber, pkt)
+					pkt.DecRef()
 				}
 
 				stats := s.Stats().ICMP.V6.PacketsReceived
@@ -892,10 +934,12 @@ func TestICMPChecksumValidationWithPayload(t *testing.T) {
 
 	for _, typ := range types {
 		t.Run(typ.name, func(t *testing.T) {
+			c := newTestContext()
+			defer c.cleanup()
+			s := c.s
+
 			e := channel.New(10, 1280, linkAddr0)
-			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
-			})
+			defer e.Close()
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(_, _) = %s", err)
 			}
@@ -947,6 +991,7 @@ func TestICMPChecksumValidationWithPayload(t *testing.T) {
 					Data: hdr.View().ToVectorisedView(),
 				})
 				e.InjectInbound(ProtocolNumber, pkt)
+				pkt.DecRef()
 			}
 
 			stats := s.Stats().ICMP.V6.PacketsReceived
@@ -1078,10 +1123,12 @@ func TestICMPChecksumValidationWithPayloadMultipleViews(t *testing.T) {
 
 	for _, typ := range types {
 		t.Run(typ.name, func(t *testing.T) {
+			c := newTestContext()
+			defer c.cleanup()
+			s := c.s
+
 			e := channel.New(10, 1280, linkAddr0)
-			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
-			})
+			defer e.Close()
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
@@ -1136,6 +1183,7 @@ func TestICMPChecksumValidationWithPayloadMultipleViews(t *testing.T) {
 					Data: buffer.NewVectorisedView(header.IPv6MinimumSize+size+payloadSize, []buffer.View{hdr.View(), payload}),
 				})
 				e.InjectInbound(ProtocolNumber, pkt)
+				pkt.DecRef()
 			}
 
 			stats := s.Stats().ICMP.V6.PacketsReceived
@@ -1246,9 +1294,9 @@ func TestLinkAddressRequest(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
-			})
+			c := newTestContext()
+			defer c.cleanup()
+			s := c.s
 
 			linkEP := channel.New(defaultChannelSize, defaultMTU, linkAddr0)
 			if err := s.CreateNIC(nicID, linkEP); err != nil {
@@ -1289,6 +1337,7 @@ func TestLinkAddressRequest(t *testing.T) {
 			if pkt == nil {
 				t.Fatal("expected to send a link address request")
 			}
+			defer pkt.DecRef()
 
 			var want stack.RouteInfo
 			want.NetProto = ProtocolNumber
@@ -1359,15 +1408,18 @@ func TestPacketQueing(t *testing.T) {
 					SrcAddr:           host2IPv6Addr.AddressWithPrefix.Address,
 					DstAddr:           host1IPv6Addr.AddressWithPrefix.Address,
 				})
-				e.InjectInbound(ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Data: hdr.View().ToVectorisedView(),
-				}))
+				})
+				e.InjectInbound(ProtocolNumber, pkt)
+				pkt.DecRef()
 			},
 			checkResp: func(t *testing.T, e *channel.Endpoint) {
 				p := e.Read()
 				if p == nil {
 					t.Fatalf("timed out waiting for packet")
 				}
+				defer p.DecRef()
 				if p.NetworkProtocolNumber != ProtocolNumber {
 					t.Errorf("got p.NetworkProtocolNumber = %d, want = %d", p.NetworkProtocolNumber, ProtocolNumber)
 				}
@@ -1405,15 +1457,18 @@ func TestPacketQueing(t *testing.T) {
 					SrcAddr:           host2IPv6Addr.AddressWithPrefix.Address,
 					DstAddr:           host1IPv6Addr.AddressWithPrefix.Address,
 				})
-				e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+				pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Data: hdr.View().ToVectorisedView(),
-				}))
+				})
+				e.InjectInbound(header.IPv6ProtocolNumber, pktBuf)
+				pktBuf.DecRef()
 			},
 			checkResp: func(t *testing.T, e *channel.Endpoint) {
 				p := e.Read()
 				if p == nil {
 					t.Fatalf("timed out waiting for packet")
 				}
+				defer p.DecRef()
 				if p.NetworkProtocolNumber != ProtocolNumber {
 					t.Errorf("got p.NetworkProtocolNumber = %d, want = %d", p.NetworkProtocolNumber, ProtocolNumber)
 				}
@@ -1432,18 +1487,15 @@ func TestPacketQueing(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			c := newTestContext()
+			defer c.cleanup()
+			s := c.s
 
-			e := channel.New(1, header.IPv6MinimumMTU, host1NICLinkAddr)
-			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
-			clock := faketime.NewManualClock()
-			s := stack.New(stack.Options{
-				NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
-				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
-				Clock:              clock,
-			})
 			// Make sure ICMP rate limiting doesn't get in our way.
 			s.SetICMPLimit(rate.Inf)
 
+			e := channel.New(1, header.IPv6MinimumMTU, host1NICLinkAddr)
+			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
 			}
@@ -1464,7 +1516,7 @@ func TestPacketQueing(t *testing.T) {
 			// Wait for a neighbor solicitation since link address resolution should
 			// be performed.
 			{
-				clock.RunImmediatelyScheduledJobs()
+				c.clock.RunImmediatelyScheduledJobs()
 				p := e.Read()
 				if p == nil {
 					t.Fatalf("timed out waiting for packet")
@@ -1484,6 +1536,7 @@ func TestPacketQueing(t *testing.T) {
 						checker.NDPNSTargetAddress(host2IPv6Addr.AddressWithPrefix.Address),
 						checker.NDPNSOptions([]header.NDPOption{header.NDPSourceLinkLayerAddressOption(host1NICLinkAddr)}),
 					))
+				p.DecRef()
 			}
 
 			// Send a neighbor advertisement to complete link address resolution.
@@ -1513,13 +1566,15 @@ func TestPacketQueing(t *testing.T) {
 					SrcAddr:           host2IPv6Addr.AddressWithPrefix.Address,
 					DstAddr:           host1IPv6Addr.AddressWithPrefix.Address,
 				})
-				e.InjectInbound(ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+				pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Data: hdr.View().ToVectorisedView(),
-				}))
+				})
+				e.InjectInbound(ProtocolNumber, pktBuf)
+				pktBuf.DecRef()
 			}
 
 			// Expect the response now that the link address has resolved.
-			clock.RunImmediatelyScheduledJobs()
+			c.clock.RunImmediatelyScheduledJobs()
 			test.checkResp(t, e)
 
 			// Since link resolution was already performed, it shouldn't be performed
@@ -1693,10 +1748,10 @@ func TestCallsToNeighborCache(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			s := stack.New(stack.Options{
-				NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
-				TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6},
-			})
+			c := newTestContext()
+			defer c.cleanup()
+			s := c.s
+
 			{
 				if err := s.CreateNIC(nicID, &stubLinkEndpoint{}); err != nil {
 					t.Fatalf("CreateNIC(_, _) = %s", err)

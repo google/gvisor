@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <arpa/inet.h>
+#include <net/if.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
@@ -875,6 +876,20 @@ TEST_P(RawSocketTest, GetSocketDetachFilter) {
               SyscallFailsWithErrno(ENOPROTOOPT));
 }
 
+TEST_P(RawSocketTest, BindToDevice) {
+  constexpr char kLoopbackDeviceName[] = "lo";
+  ASSERT_THAT(setsockopt(s_, SOL_SOCKET, SO_BINDTODEVICE, &kLoopbackDeviceName,
+                         sizeof(kLoopbackDeviceName)),
+              SyscallSucceeds());
+
+  char got[IFNAMSIZ];
+  socklen_t got_len = sizeof(got);
+  ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_BINDTODEVICE, &got, &got_len),
+              SyscallSucceeds());
+  ASSERT_EQ(got_len, sizeof(kLoopbackDeviceName));
+  EXPECT_EQ(strcmp(kLoopbackDeviceName, got), 0);
+}
+
 // AF_INET6+SOCK_RAW+IPPROTO_RAW sockets can be created, but not written to.
 TEST(RawSocketTest, IPv6ProtoRaw) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
@@ -1076,12 +1091,12 @@ TEST(RawSocketTest, ReceiveIPPacketInfo) {
       SyscallSucceeds());
 
   // Register to receive IP packet info.
-  constexpr int one = 1;
-  ASSERT_THAT(setsockopt(raw.get(), IPPROTO_IP, IP_PKTINFO, &one, sizeof(one)),
+  ASSERT_THAT(setsockopt(raw.get(), IPPROTO_IP, IP_PKTINFO, &kSockOptOn,
+                         sizeof(kSockOptOn)),
               SyscallSucceeds());
 
   constexpr char send_buf[] = "malformed UDP";
-  ASSERT_THAT(sendto(raw.get(), send_buf, sizeof(send_buf), 0 /* flags */,
+  ASSERT_THAT(sendto(raw.get(), send_buf, sizeof(send_buf), /*flags=*/0,
                      reinterpret_cast<const sockaddr*>(&addr_), sizeof(addr_)),
               SyscallSucceedsWithValue(sizeof(send_buf)));
 
@@ -1092,20 +1107,14 @@ TEST(RawSocketTest, ReceiveIPPacketInfo) {
     // Extra space in the receive buffer should be unused.
     char unused_space;
   } ABSL_ATTRIBUTE_PACKED recv_buf;
-  iovec recv_iov = {
-      .iov_base = &recv_buf,
-      .iov_len = sizeof(recv_buf),
-  };
+
+  size_t recv_buf_len = sizeof(recv_buf);
   in_pktinfo received_pktinfo;
-  char recv_cmsg_buf[CMSG_SPACE(sizeof(received_pktinfo))];
-  msghdr recv_msg = {
-      .msg_iov = &recv_iov,
-      .msg_iovlen = 1,
-      .msg_control = recv_cmsg_buf,
-      .msg_controllen = CMSG_LEN(sizeof(received_pktinfo)),
-  };
-  ASSERT_THAT(RetryEINTR(recvmsg)(raw.get(), &recv_msg, 0),
-              SyscallSucceedsWithValue(sizeof(iphdr) + sizeof(send_buf)));
+  ASSERT_NO_FATAL_FAILURE(RecvPktInfo(raw.get(),
+                                      reinterpret_cast<char*>(&recv_buf),
+                                      &recv_buf_len, &received_pktinfo));
+
+  EXPECT_EQ(recv_buf_len, sizeof(iphdr) + sizeof(send_buf));
   EXPECT_EQ(memcmp(send_buf, &recv_buf.data, sizeof(send_buf)), 0);
   EXPECT_EQ(recv_buf.ip.version, static_cast<unsigned int>(IPVERSION));
   // IHL holds the number of header bytes in 4 byte units.
@@ -1115,18 +1124,10 @@ TEST(RawSocketTest, ReceiveIPPacketInfo) {
   EXPECT_EQ(ntohl(recv_buf.ip.saddr), INADDR_LOOPBACK);
   EXPECT_EQ(ntohl(recv_buf.ip.daddr), INADDR_LOOPBACK);
 
-  cmsghdr* cmsg = CMSG_FIRSTHDR(&recv_msg);
-  ASSERT_THAT(cmsg, NotNull());
-  EXPECT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(received_pktinfo)));
-  EXPECT_EQ(cmsg->cmsg_level, IPPROTO_IP);
-  EXPECT_EQ(cmsg->cmsg_type, IP_PKTINFO);
-  memcpy(&received_pktinfo, CMSG_DATA(cmsg), sizeof(received_pktinfo));
   EXPECT_EQ(received_pktinfo.ipi_ifindex,
             ASSERT_NO_ERRNO_AND_VALUE(GetLoopbackIndex()));
   EXPECT_EQ(ntohl(received_pktinfo.ipi_spec_dst.s_addr), INADDR_LOOPBACK);
   EXPECT_EQ(ntohl(received_pktinfo.ipi_addr.s_addr), INADDR_LOOPBACK);
-
-  EXPECT_THAT(CMSG_NXTHDR(&recv_msg, cmsg), IsNull());
 }
 
 TEST(RawSocketTest, ReceiveIPv6PacketInfo) {
@@ -1144,46 +1145,28 @@ TEST(RawSocketTest, ReceiveIPv6PacketInfo) {
       SyscallSucceeds());
 
   // Register to receive IPv6 packet info.
-  constexpr int one = 1;
-  ASSERT_THAT(
-      setsockopt(raw.get(), IPPROTO_IPV6, IPV6_RECVPKTINFO, &one, sizeof(one)),
-      SyscallSucceeds());
+  ASSERT_THAT(setsockopt(raw.get(), IPPROTO_IPV6, IPV6_RECVPKTINFO, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
 
   constexpr char send_buf[] = "malformed UDP";
-  ASSERT_THAT(sendto(raw.get(), send_buf, sizeof(send_buf), 0 /* flags */,
+  ASSERT_THAT(sendto(raw.get(), send_buf, sizeof(send_buf), /*flags=*/0,
                      reinterpret_cast<const sockaddr*>(&addr_), sizeof(addr_)),
               SyscallSucceedsWithValue(sizeof(send_buf)));
 
   char recv_buf[sizeof(send_buf) + 1];
-  iovec recv_iov = {
-      .iov_base = recv_buf,
-      .iov_len = sizeof(recv_buf),
-  };
+  size_t recv_buf_len = sizeof(recv_buf);
   in6_pktinfo received_pktinfo;
-  char recv_cmsg_buf[CMSG_SPACE(sizeof(received_pktinfo))];
-  msghdr recv_msg = {
-      .msg_iov = &recv_iov,
-      .msg_iovlen = 1,
-      .msg_control = recv_cmsg_buf,
-      .msg_controllen = CMSG_LEN(sizeof(received_pktinfo)),
-  };
-  ASSERT_THAT(RetryEINTR(recvmsg)(raw.get(), &recv_msg, 0),
-              SyscallSucceedsWithValue(sizeof(send_buf)));
+  ASSERT_NO_FATAL_FAILURE(RecvIPv6PktInfo(raw.get(),
+                                          reinterpret_cast<char*>(&recv_buf),
+                                          &recv_buf_len, &received_pktinfo));
+  EXPECT_EQ(recv_buf_len, sizeof(send_buf));
   EXPECT_EQ(memcmp(send_buf, recv_buf, sizeof(send_buf)), 0);
-
-  cmsghdr* cmsg = CMSG_FIRSTHDR(&recv_msg);
-  ASSERT_THAT(cmsg, NotNull());
-  EXPECT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(received_pktinfo)));
-  EXPECT_EQ(cmsg->cmsg_level, IPPROTO_IPV6);
-  EXPECT_EQ(cmsg->cmsg_type, IPV6_PKTINFO);
-  memcpy(&received_pktinfo, CMSG_DATA(cmsg), sizeof(received_pktinfo));
   EXPECT_EQ(received_pktinfo.ipi6_ifindex,
             ASSERT_NO_ERRNO_AND_VALUE(GetLoopbackIndex()));
   ASSERT_EQ(memcmp(&received_pktinfo.ipi6_addr, &in6addr_loopback,
                    sizeof(in6addr_loopback)),
             0);
-
-  EXPECT_THAT(CMSG_NXTHDR(&recv_msg, cmsg), IsNull());
 }
 
 TEST(RawSocketTest, ReceiveTOS) {
@@ -1301,6 +1284,136 @@ TEST(RawSocketTest, ReceiveTClass) {
     EXPECT_EQ(recv_tclass, 0);
   } else {
     EXPECT_EQ(recv_tclass, kArbitraryTClass);
+  }
+}
+
+TEST(RawSocketTest, ReceiveTTL) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+
+  FileDescriptor raw =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_RAW, IPPROTO_UDP));
+
+  const sockaddr_in kAddr = {
+      .sin_family = AF_INET,
+      .sin_addr = {.s_addr = htonl(INADDR_LOOPBACK)},
+  };
+  ASSERT_THAT(
+      bind(raw.get(), reinterpret_cast<const sockaddr*>(&kAddr), sizeof(kAddr)),
+      SyscallSucceeds());
+  ASSERT_THAT(connect(raw.get(), reinterpret_cast<const sockaddr*>(&kAddr),
+                      sizeof(kAddr)),
+              SyscallSucceeds());
+
+  constexpr int kArbitraryTTL = 42;
+  ASSERT_THAT(setsockopt(raw.get(), IPPROTO_IP, IP_TTL, &kArbitraryTTL,
+                         sizeof(kArbitraryTTL)),
+              SyscallSucceeds());
+
+  char send_buf[] = "malformed UDP";
+  auto test_recv_ttl = [&](int expected_ttl) {
+    // Register to receive TTL.
+    constexpr int kOne = 1;
+    ASSERT_THAT(
+        setsockopt(raw.get(), IPPROTO_IP, IP_RECVTTL, &kOne, sizeof(kOne)),
+        SyscallSucceeds());
+
+    struct {
+      iphdr ip;
+      char data[sizeof(send_buf)];
+    } ABSL_ATTRIBUTE_PACKED recv_buf;
+
+    int recv_ttl;
+    size_t recv_buf_len = sizeof(recv_buf);
+    ASSERT_NO_FATAL_FAILURE(RecvTTL(raw.get(),
+                                    reinterpret_cast<char*>(&recv_buf),
+                                    &recv_buf_len, &recv_ttl));
+    ASSERT_EQ(recv_buf_len, sizeof(iphdr) + sizeof(send_buf));
+
+    EXPECT_EQ(recv_buf.ip.version, static_cast<unsigned int>(IPVERSION));
+    // IHL holds the number of header bytes in 4 byte units.
+    EXPECT_EQ(recv_buf.ip.ihl, sizeof(iphdr) / 4);
+    EXPECT_EQ(ntohs(recv_buf.ip.tot_len), sizeof(iphdr) + sizeof(send_buf));
+    EXPECT_EQ(recv_buf.ip.protocol, IPPROTO_UDP);
+    EXPECT_EQ(ntohl(recv_buf.ip.saddr), INADDR_LOOPBACK);
+    EXPECT_EQ(ntohl(recv_buf.ip.daddr), INADDR_LOOPBACK);
+    EXPECT_EQ(recv_buf.ip.ttl, static_cast<uint8_t>(expected_ttl));
+
+    EXPECT_EQ(memcmp(send_buf, &recv_buf.data, sizeof(send_buf)), 0);
+
+    EXPECT_EQ(recv_ttl, expected_ttl);
+  };
+
+  ASSERT_THAT(send(raw.get(), send_buf, sizeof(send_buf), /*flags=*/0),
+              SyscallSucceedsWithValue(sizeof(send_buf)));
+  {
+    SCOPED_TRACE("receive ttl set by option");
+    ASSERT_NO_FATAL_FAILURE(test_recv_ttl(kArbitraryTTL));
+  }
+
+  constexpr int kArbitrarySendmsgTTL = kArbitraryTTL + 1;
+  ASSERT_NO_FATAL_FAILURE(SendTTL(raw.get(), send_buf, size_t(sizeof(send_buf)),
+                                  kArbitrarySendmsgTTL));
+  {
+    SCOPED_TRACE("receive ttl set by cmsg");
+    ASSERT_NO_FATAL_FAILURE(test_recv_ttl(kArbitrarySendmsgTTL));
+  }
+}
+
+TEST(RawSocketTest, ReceiveHopLimit) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+
+  FileDescriptor raw =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_RAW, IPPROTO_UDP));
+
+  const sockaddr_in6 kAddr = {
+      .sin6_family = AF_INET6,
+      .sin6_addr = in6addr_loopback,
+  };
+  ASSERT_THAT(
+      bind(raw.get(), reinterpret_cast<const sockaddr*>(&kAddr), sizeof(kAddr)),
+      SyscallSucceeds());
+  ASSERT_THAT(connect(raw.get(), reinterpret_cast<const sockaddr*>(&kAddr),
+                      sizeof(kAddr)),
+              SyscallSucceeds());
+
+  constexpr int kArbitraryHopLimit = 42;
+  ASSERT_THAT(setsockopt(raw.get(), IPPROTO_IPV6, IPV6_UNICAST_HOPS,
+                         &kArbitraryHopLimit, sizeof(kArbitraryHopLimit)),
+              SyscallSucceeds());
+
+  // Register to receive HOPLIMIT.
+  constexpr int kOne = 1;
+  ASSERT_THAT(setsockopt(raw.get(), IPPROTO_IPV6, IPV6_RECVHOPLIMIT, &kOne,
+                         sizeof(kOne)),
+              SyscallSucceeds());
+
+  char send_buf[] = "malformed UDP";
+  auto test_recv_hoplimit = [&](int expected_hoplimit) {
+    char recv_buf[sizeof(send_buf)];
+    size_t recv_buf_len = sizeof(recv_buf);
+    int recv_hoplimit;
+    ASSERT_NO_FATAL_FAILURE(
+        RecvHopLimit(raw.get(), recv_buf, &recv_buf_len, &recv_hoplimit));
+    ASSERT_EQ(recv_buf_len, sizeof(send_buf));
+
+    EXPECT_EQ(memcmp(send_buf, recv_buf, sizeof(send_buf)), 0);
+    EXPECT_EQ(recv_hoplimit, expected_hoplimit);
+  };
+
+  ASSERT_THAT(send(raw.get(), send_buf, sizeof(send_buf), /*flags=*/0),
+              SyscallSucceedsWithValue(sizeof(send_buf)));
+  {
+    SCOPED_TRACE("receive hoplimit set by option");
+    ASSERT_NO_FATAL_FAILURE(test_recv_hoplimit(kArbitraryHopLimit));
+  }
+
+  constexpr int kArbitrarySendmsgHopLimit = kArbitraryHopLimit + 1;
+  ASSERT_NO_FATAL_FAILURE(SendHopLimit(raw.get(), send_buf,
+                                       size_t(sizeof(send_buf)),
+                                       kArbitrarySendmsgHopLimit));
+  {
+    SCOPED_TRACE("receive hoplimit set by cmsg");
+    ASSERT_NO_FATAL_FAILURE(test_recv_hoplimit(kArbitrarySendmsgHopLimit));
   }
 }
 

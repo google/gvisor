@@ -200,8 +200,7 @@ TEST(FaccessatTest, SymlinkFollowed) {
 }
 
 PosixErrorOr<bool> Faccessat2Supported() {
-  if (IsRunningOnGvisor() && !IsRunningWithVFS1()) {
-    // faccessat2 support is expected on VFS2.
+  if (IsRunningOnGvisor()) {
     return true;
   }
   int ret = sys_faccessat2(-1, "/", F_OK, 0);

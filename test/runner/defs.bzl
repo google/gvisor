@@ -60,7 +60,7 @@ def _syscall_test(
         file_access = "exclusive",
         overlay = False,
         add_uds_tree = False,
-        vfs2 = False,
+        lisafs = False,
         fuse = False,
         **kwargs):
     # Prepend "runsc" to non-native platform names.
@@ -72,10 +72,10 @@ def _syscall_test(
         name += "_shared"
     if overlay:
         name += "_overlay"
-    if vfs2:
-        name += "_vfs2"
-        if fuse:
-            name += "_fuse"
+    if fuse:
+        name += "_fuse"
+    if lisafs:
+        name += "_lisafs"
     if network != "none":
         name += "_" + network + "net"
 
@@ -113,7 +113,7 @@ def _syscall_test(
         "--file-access=" + file_access,
         "--overlay=" + str(overlay),
         "--add-uds-tree=" + str(add_uds_tree),
-        "--vfs2=" + str(vfs2),
+        "--lisafs=" + str(lisafs),
         "--fuse=" + str(fuse),
         "--strace=" + str(debug),
         "--debug=" + str(debug),
@@ -135,9 +135,9 @@ def syscall_test(
         add_overlay = False,
         add_uds_tree = False,
         add_hostinet = False,
-        vfs1 = True,
-        vfs2 = True,
+        add_lisafs = True,
         fuse = False,
+        allow_native = True,
         debug = True,
         tags = None,
         **kwargs):
@@ -149,9 +149,9 @@ def syscall_test(
       add_overlay: add an overlay test.
       add_uds_tree: add a UDS test.
       add_hostinet: add a hostinet test.
-      vfs1: enable VFS1 tests. Could be false only if vfs2 is true.
-      vfs2: enable VFS2 support.
+      add_lisafs: add a lisafs test.
       fuse: enable FUSE support.
+      allow_native: generate a native test variant.
       debug: enable debug output.
       tags: starting test tags.
       **kwargs: additional test arguments.
@@ -159,22 +159,8 @@ def syscall_test(
     if not tags:
         tags = []
 
-    if vfs2 and vfs1 and not fuse:
-        # Generate a vfs1 plain test. Most testing will now be
-        # biased towards vfs2, with only a single vfs1 case.
-        _syscall_test(
-            test = test,
-            platform = default_platform,
-            use_tmpfs = use_tmpfs,
-            add_uds_tree = add_uds_tree,
-            tags = tags + platforms[default_platform],
-            debug = debug,
-            vfs2 = False,
-            **kwargs
-        )
-
-    if vfs1 and not fuse:
-        # Generate a native test if fuse is not required.
+    if not fuse and allow_native:
+        # Generate a native test if fuse is not required and if it is allowed.
         _syscall_test(
             test = test,
             platform = "native",
@@ -193,11 +179,23 @@ def syscall_test(
             add_uds_tree = add_uds_tree,
             tags = platform_tags + tags,
             fuse = fuse,
-            vfs2 = vfs2,
             debug = debug,
             **kwargs
         )
 
+    if add_lisafs:
+        # Generate a *_lisafs variant with the default platform.
+        _syscall_test(
+            test = test,
+            platform = default_platform,
+            use_tmpfs = use_tmpfs,
+            add_uds_tree = add_uds_tree,
+            tags = platforms[default_platform] + tags + ["lisafs"],
+            debug = debug,
+            fuse = fuse,
+            lisafs = True,
+            **kwargs
+        )
     if add_overlay:
         _syscall_test(
             test = test,
@@ -207,7 +205,6 @@ def syscall_test(
             tags = platforms[default_platform] + tags,
             debug = debug,
             fuse = fuse,
-            vfs2 = vfs2,
             overlay = True,
             **kwargs
         )
@@ -221,7 +218,6 @@ def syscall_test(
             tags = platforms[default_platform] + tags,
             debug = debug,
             fuse = fuse,
-            vfs2 = vfs2,
             **kwargs
         )
     if not use_tmpfs:
@@ -235,6 +231,5 @@ def syscall_test(
             debug = debug,
             file_access = "shared",
             fuse = fuse,
-            vfs2 = vfs2,
             **kwargs
         )

@@ -40,6 +40,7 @@ import (
 	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/console"
+	"gvisor.dev/gvisor/runsc/donation"
 	"gvisor.dev/gvisor/runsc/sandbox"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
@@ -329,7 +330,28 @@ func New(conf *config.Config, args Args) (*Container, error) {
 		return nil, err
 	}
 
-	// Write the PID file. Containerd considers the create complete after
+	// "If any prestart hook fails, the runtime MUST generate an error,
+	// stop and destroy the container" -OCI spec.
+	if c.Spec.Hooks != nil {
+		// Even though the hook name is Prestart, runc used to call it from create.
+		// For this reason, it's now deprecated, but the spec requires it to be
+		// called *before* CreateRuntime and CreateRuntime must be called in create.
+		//
+		// "For runtimes that implement the deprecated prestart hooks as
+		// createRuntime hooks, createRuntime hooks MUST be called after the
+		// prestart hooks."
+		if err := executeHooks(c.Spec.Hooks.Prestart, c.State()); err != nil {
+			return nil, err
+		}
+		if err := executeHooks(c.Spec.Hooks.CreateRuntime, c.State()); err != nil {
+			return nil, err
+		}
+		if len(c.Spec.Hooks.CreateContainer) > 0 {
+			log.Warningf("CreateContainer hook skipped because running inside container namespace is not supported")
+		}
+	}
+
+	// Write the PID file. Containerd considers the call to create complete after
 	// this file is created, so it must be the last thing we do.
 	if args.PIDFile != "" {
 		if err := ioutil.WriteFile(args.PIDFile, []byte(strconv.Itoa(c.SandboxPid())), 0644); err != nil {
@@ -357,10 +379,8 @@ func (c *Container) Start(conf *config.Config) error {
 
 	// "If any prestart hook fails, the runtime MUST generate an error,
 	// stop and destroy the container" -OCI spec.
-	if c.Spec.Hooks != nil {
-		if err := executeHooks(c.Spec.Hooks.Prestart, c.State()); err != nil {
-			return err
-		}
+	if c.Spec.Hooks != nil && len(c.Spec.Hooks.StartContainer) > 0 {
+		log.Warningf("StartContainer hook skipped because running inside container namespace is not supported")
 	}
 
 	if isRoot(c.Spec) {
@@ -442,10 +462,8 @@ func (c *Container) Restore(spec *specs.Spec, conf *config.Config, restoreFile s
 
 	// "If any prestart hook fails, the runtime MUST generate an error,
 	// stop and destroy the container" -OCI spec.
-	if c.Spec.Hooks != nil {
-		if err := executeHooks(c.Spec.Hooks.Prestart, c.State()); err != nil {
-			return err
-		}
+	if c.Spec.Hooks != nil && len(c.Spec.Hooks.StartContainer) > 0 {
+		log.Warningf("StartContainer hook skipped because running inside container namespace is not supported")
 	}
 
 	if err := c.Sandbox.Restore(c.ID, spec, conf, restoreFile); err != nil {
@@ -687,11 +705,12 @@ func (c *Container) Stream(filters []string, out *os.File) error {
 // State returns the metadata of the container.
 func (c *Container) State() specs.State {
 	return specs.State{
-		Version: specs.Version,
-		ID:      c.ID,
-		Status:  c.Status,
-		Pid:     c.SandboxPid(),
-		Bundle:  c.BundleDir,
+		Version:     specs.Version,
+		ID:          c.ID,
+		Status:      c.Status,
+		Pid:         c.SandboxPid(),
+		Bundle:      c.BundleDir,
+		Annotations: c.Spec.Annotations,
 	}
 }
 
@@ -868,26 +887,12 @@ func (c *Container) waitForStopped() error {
 }
 
 func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bundleDir string, attached bool) ([]*os.File, *os.File, error) {
-	// Start with the general config flags.
-	args := conf.ToFlags()
+	donations := donation.Agency{}
+	defer donations.Close()
 
-	var goferEnds []*os.File
-
-	// nextFD is the next available file descriptor for the gofer process.
-	// It starts at 3 because 0-2 are used by stdin/stdout/stderr.
-	nextFD := 3
-
-	if conf.LogFilename != "" {
-		logFile, err := os.OpenFile(conf.LogFilename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			return nil, nil, fmt.Errorf("opening log file %q: %w", conf.LogFilename, err)
-		}
-		defer logFile.Close()
-		goferEnds = append(goferEnds, logFile)
-		args = append(args, "--log-fd="+strconv.Itoa(nextFD))
-		nextFD++
+	if err := donations.OpenAndDonate("log-fd", conf.LogFilename, os.O_CREATE|os.O_WRONLY|os.O_APPEND); err != nil {
+		return nil, nil, err
 	}
-
 	if conf.DebugLog != "" {
 		test := ""
 		if len(conf.TestOnlyTestNameEnv) != 0 {
@@ -896,27 +901,31 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 				test = t
 			}
 		}
-		debugLogFile, err := specutils.DebugLogFile(conf.DebugLog, "gofer", test)
-		if err != nil {
-			return nil, nil, fmt.Errorf("opening debug log file in %q: %w", conf.DebugLog, err)
+		if err := donations.DonateDebugLogFile("debug-log-fd", conf.DebugLog, "gofer", test); err != nil {
+			return nil, nil, err
 		}
-		defer debugLogFile.Close()
-		goferEnds = append(goferEnds, debugLogFile)
-		args = append(args, "--debug-log-fd="+strconv.Itoa(nextFD))
-		nextFD++
 	}
 
-	args = append(args, "gofer", "--bundle", bundleDir)
+	// Start with the general config flags.
+	cmd := exec.Command(specutils.ExePath, conf.ToFlags()...)
+	cmd.SysProcAttr = &unix.SysProcAttr{}
+
+	// Set Args[0] to make easier to spot the gofer process. Otherwise it's
+	// shown as `exe`.
+	cmd.Args[0] = "runsc-gofer"
+
+	// Tranfer FDs that need to be present before the "gofer" command.
+	// Start at 3 because 0, 1, and 2 are taken by stdin/out/err.
+	nextFD := donations.Transfer(cmd, 3)
+
+	cmd.Args = append(cmd.Args, "gofer", "--bundle", bundleDir)
 
 	// Open the spec file to donate to the sandbox.
 	specFile, err := specutils.OpenSpec(bundleDir)
 	if err != nil {
 		return nil, nil, fmt.Errorf("opening spec file: %w", err)
 	}
-	defer specFile.Close()
-	goferEnds = append(goferEnds, specFile)
-	args = append(args, "--spec-fd="+strconv.Itoa(nextFD))
-	nextFD++
+	donations.DonateAndClose("spec-fd", specFile)
 
 	// Create pipe that allows gofer to send mount list to sandbox after all paths
 	// have been resolved.
@@ -924,10 +933,7 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 	if err != nil {
 		return nil, nil, err
 	}
-	defer mountsGofer.Close()
-	goferEnds = append(goferEnds, mountsGofer)
-	args = append(args, fmt.Sprintf("--mounts-fd=%d", nextFD))
-	nextFD++
+	donations.DonateAndClose("mounts-fd", mountsGofer)
 
 	// Add root mount and then add any other additional mounts.
 	mountCount := 1
@@ -946,27 +952,13 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 		sandEnds = append(sandEnds, os.NewFile(uintptr(fds[0]), "sandbox IO FD"))
 
 		goferEnd := os.NewFile(uintptr(fds[1]), "gofer IO FD")
-		defer goferEnd.Close()
-		goferEnds = append(goferEnds, goferEnd)
-
-		args = append(args, fmt.Sprintf("--io-fds=%d", nextFD))
-		nextFD++
+		donations.DonateAndClose("io-fds", goferEnd)
 	}
-
-	binPath := specutils.ExePath
-	cmd := exec.Command(binPath, args...)
-	cmd.ExtraFiles = goferEnds
-
-	// Set Args[0] to make easier to spot the gofer process. Otherwise it's
-	// shown as `exe`.
-	cmd.Args[0] = "runsc-gofer"
 
 	if attached {
 		// The gofer is attached to the lifetime of this process, so it
 		// should synchronously die when this process dies.
-		cmd.SysProcAttr = &unix.SysProcAttr{
-			Pdeathsig: unix.SIGKILL,
-		}
+		cmd.SysProcAttr.Pdeathsig = unix.SIGKILL
 	}
 
 	// Enter new namespaces to isolate from the rest of the system. Don't unshare
@@ -990,8 +982,11 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 		cmd.SysProcAttr.Credential = &syscall.Credential{Uid: 0, Gid: 0}
 	}
 
+	donations.Transfer(cmd, nextFD)
+
 	// Start the gofer in the given namespace.
-	log.Debugf("Starting gofer: %s %v", binPath, args)
+	donation.LogDonations(cmd)
+	log.Debugf("Starting gofer: %s %v", cmd.Path, cmd.Args)
 	if err := specutils.StartInNS(cmd, nss); err != nil {
 		return nil, nil, fmt.Errorf("gofer: %w", err)
 	}

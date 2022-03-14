@@ -610,6 +610,8 @@ cc_binary(
         "//test/util:file_descriptor",
         gtest,
         "//test/util:posix_error",
+        "//test/util:signal_util",
+        "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",
         "//test/util:thread_util",
@@ -747,10 +749,12 @@ cc_binary(
     linkstatic = 1,
     deps = [
         "//test/util:file_descriptor",
+        "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/time",
         gtest,
-        "//test/util:test_main",
+        "//test/util:multiprocess_util",
         "//test/util:test_util",
+        "//test/util:thread_util",
         "//test/util:time_util",
     ],
 )
@@ -882,6 +886,22 @@ cc_binary(
     deps = [
         gtest,
         "//test/util:logging",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "//test/util:thread_util",
+    ],
+)
+
+cc_binary(
+    name = "fpsig_mut_test",
+    testonly = 1,
+    srcs = select_arch(
+        amd64 = ["fpsig_mut_amd64.cc"],
+        arm64 = [],
+    ),
+    linkstatic = 1,
+    deps = [
+        gtest,
         "//test/util:test_main",
         "//test/util:test_util",
         "//test/util:thread_util",
@@ -2132,6 +2152,7 @@ cc_binary(
         "//test/util:fs_util",
         "@com_google_absl//absl/strings",
         gtest,
+        "//test/util:save_util",
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",
@@ -4479,6 +4500,7 @@ cc_binary(
         "//test/util:fs_util",
         "//test/util:mount_util",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/synchronization",
         gtest,
         "//test/util:cleanup",
         "//test/util:posix_error",
@@ -4503,5 +4525,23 @@ cc_binary(
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",
+    ],
+)
+
+cc_binary(
+    name = "close_range_test",
+    testonly = 1,
+    srcs = ["close_range.cc"],
+    linkstatic = 1,
+    deps = [
+        "//test/util:file_descriptor",
+        "@com_google_absl//absl/base:core_headers",
+        gtest,
+        "//test/util:cleanup",
+        "//test/util:posix_error",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "//test/util:thread_util",
     ],
 )

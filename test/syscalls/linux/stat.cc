@@ -222,7 +222,6 @@ TEST_F(StatTest, TrailingSlashNotCleanedReturnsENOTDIR) {
 }
 
 TEST_F(StatTest, FstatFileWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   struct stat st;
   TempPath tmpfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor fd =
@@ -233,7 +232,6 @@ TEST_F(StatTest, FstatFileWithOpath) {
 }
 
 TEST_F(StatTest, FstatDirWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   struct stat st;
   TempPath tmpdir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   FileDescriptor dirfd = ASSERT_NO_ERRNO_AND_VALUE(
@@ -245,7 +243,6 @@ TEST_F(StatTest, FstatDirWithOpath) {
 
 // fstatat with an O_PATH fd
 TEST_F(StatTest, FstatatDirWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   TempPath tmpdir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   FileDescriptor dirfd = ASSERT_NO_ERRNO_AND_VALUE(
       Open(tmpdir.path().c_str(), O_PATH | O_DIRECTORY));
@@ -589,13 +586,6 @@ TEST_F(StatTest, LstatELOOPPath) {
 }
 
 TEST(SimpleStatTest, DifferentFilesHaveDifferentDeviceInodeNumberPairs) {
-  // TODO(gvisor.dev/issue/1624): This test case fails in VFS1 save/restore
-  // tests because VFS1 gofer inode number assignment restarts after
-  // save/restore, such that the inodes for file1 and file2 (which are
-  // unreferenced and therefore not retained in sentry checkpoints before the
-  // calls to lstat()) are assigned the same inode number.
-  SKIP_IF(IsRunningWithVFS1() && IsRunningWithSaveRestore());
-
   TempPath file1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   TempPath file2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
 

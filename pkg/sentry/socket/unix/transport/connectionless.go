@@ -147,12 +147,12 @@ func (e *connectionlessEndpoint) Connect(ctx context.Context, server BoundEndpoi
 }
 
 // Listen starts listening on the connection.
-func (*connectionlessEndpoint) Listen(int) *syserr.Error {
+func (*connectionlessEndpoint) Listen(context.Context, int) *syserr.Error {
 	return syserr.ErrNotSupported
 }
 
 // Accept accepts a new connection.
-func (*connectionlessEndpoint) Accept(*tcpip.FullAddress) (Endpoint, *syserr.Error) {
+func (*connectionlessEndpoint) Accept(context.Context, *tcpip.FullAddress) (Endpoint, *syserr.Error) {
 	return nil, syserr.ErrNotSupported
 }
 
@@ -222,6 +222,8 @@ func (e *connectionlessEndpoint) State() uint32 {
 
 // OnSetSendBufferSize implements tcpip.SocketOptionsHandler.OnSetSendBufferSize.
 func (e *connectionlessEndpoint) OnSetSendBufferSize(v int64) (newSz int64) {
+	e.Lock()
+	defer e.Unlock()
 	if e.Connected() {
 		return e.baseEndpoint.connected.SetSendBufferSize(v)
 	}

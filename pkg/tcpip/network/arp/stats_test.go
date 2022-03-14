@@ -15,9 +15,12 @@
 package arp
 
 import (
+	"os"
 	"reflect"
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/testutil"
@@ -51,4 +54,11 @@ func TestMultiCounterStatsInitialization(t *testing.T) {
 	}); err != nil {
 		t.Error(err)
 	}
+}
+
+func TestMain(m *testing.M) {
+	refs.SetLeakMode(refs.LeaksPanic)
+	code := m.Run()
+	refsvfs2.DoLeakCheck()
+	os.Exit(code)
 }

@@ -220,6 +220,11 @@ func (fd *VFSPipeFD) EventUnregister(e *waiter.Entry) {
 	fd.pipe.EventUnregister(e)
 }
 
+// Epollable implements FileDescriptionImpl.Epollable.
+func (fd *VFSPipeFD) Epollable() bool {
+	return true
+}
+
 // Read implements vfs.FileDescriptionImpl.Read.
 func (fd *VFSPipeFD) Read(ctx context.Context, dst usermem.IOSequence, _ vfs.ReadOptions) (int64, error) {
 	return fd.pipe.Read(ctx, dst)

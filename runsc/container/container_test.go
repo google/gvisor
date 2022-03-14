@@ -48,6 +48,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	config.RegisterFlags(flag.CommandLine)
 	log.SetLevel(log.Debug)
 	if err := testutil.ConfigureExePath(); err != nil {
 		panic(err.Error())
@@ -390,16 +391,21 @@ func run(spec *specs.Spec, conf *config.Config) error {
 }
 
 // platforms must be provided by the BUILD rule, or all platforms are included.
-var platforms = flag.String("test_platforms", strings.Join(platform.List(), ","), "Platforms to test with.")
+var platforms = flag.String("test_platforms", os.Getenv("TEST_PLATFORMS"), "Platforms to test with.")
 
 // configs generates different configurations to run tests.
 //
 // TODO(gvisor.dev/issue/1624): Remove VFS1 dimension.
 func configs(t *testing.T, noOverlay bool) map[string]*config.Config {
-	cs := make(map[string]*config.Config)
-	ps := strings.Split(*platforms, ",")
+	var ps []string
+	if *platforms == "" {
+		ps = platform.List()
+	} else {
+		ps = strings.Split(*platforms, ",")
+	}
 
 	// Non-overlay versions.
+	cs := make(map[string]*config.Config)
 	for _, p := range ps {
 		c := testutil.TestConfig(t)
 		c.Platform = p

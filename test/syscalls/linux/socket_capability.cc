@@ -25,8 +25,6 @@ namespace gvisor {
 namespace testing {
 
 TEST(SocketTest, UnixConnectNeedsWritePerm) {
-  SKIP_IF(IsRunningWithVFS1());
-
   FileDescriptor bound =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, PF_UNIX));
 

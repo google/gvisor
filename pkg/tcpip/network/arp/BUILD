@@ -26,6 +26,8 @@ go_test(
     srcs = ["arp_test.go"],
     deps = [
         ":arp",
+        "//pkg/refs",
+        "//pkg/refsvfs2",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/faketime",
@@ -46,6 +48,8 @@ go_test(
     srcs = ["stats_test.go"],
     library = ":arp",
     deps = [
+        "//pkg/refs",
+        "//pkg/refsvfs2",
         "//pkg/tcpip",
         "//pkg/tcpip/stack",
         "//pkg/tcpip/testutil",

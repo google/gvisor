@@ -21,6 +21,7 @@
 #include <string.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
+#include <sys/signalfd.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -29,6 +30,8 @@
 #include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
+#include "test/util/signal_util.h"
+#include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
@@ -530,6 +533,67 @@ TEST(EpollTest, DoubleLayerEpoll) {
     char readBuf[sizeof(data)];
     ASSERT_EQ(ReadFd(rfd.get(), readBuf, sizeof(data)), sizeof(data));
   }
+}
+
+TEST(EpollTest, RegularFiles) {
+  auto epollfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+
+  struct epoll_event event;
+  event.events = EPOLLIN | EPOLLOUT;
+  event.data.u64 = kMagicConstant;
+
+  auto path = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(path.path(), O_RDONLY));
+  EXPECT_THAT(epoll_ctl(epollfd.get(), EPOLL_CTL_ADD, fd.get(), &event),
+              SyscallFailsWithErrno(EPERM));
+}
+
+// Regression test for b/222369818.
+TEST(EpollTest, ReadyMutexCircularity) {
+  constexpr int kSignal = SIGUSR1;
+  sigset_t set;
+  sigemptyset(&set);
+  sigaddset(&set, kSignal);
+  auto cleanup_sigmask =
+      ASSERT_NO_ERRNO_AND_VALUE(ScopedSignalMask(SIG_BLOCK, set));
+  int sigfd_raw;
+  ASSERT_THAT(sigfd_raw = signalfd(-1 /* fd */, &set, SFD_NONBLOCK),
+              SyscallSucceeds());
+  FileDescriptor sigfd(sigfd_raw);
+
+  auto epollfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  ASSERT_NO_ERRNO(RegisterEpollFD(epollfd.get(), sigfd.get(), EPOLLIN, 0));
+
+  // The test passes if this does not deadlock.
+  constexpr int kIterations = 25000;
+  auto pid = getpid();
+  auto tid = gettid();
+  DisableSave ds;
+  ScopedThread sender_thread([&] {
+    for (int i = 0; i < kIterations; i++) {
+      ASSERT_THAT(tgkill(pid, tid, kSignal), SyscallSucceeds());
+    }
+  });
+  int num_signals = 0;
+  signalfd_siginfo info;
+  while (true) {
+    struct epoll_event ev;
+    int ret = RetryEINTR(epoll_wait)(epollfd.get(), &ev, 1, 1000 /* timeout */);
+    ASSERT_THAT(ret, SyscallSucceeds());
+    if (ret == 0) {
+      break;
+    }
+    ASSERT_THAT(read(sigfd.get(), &info, sizeof(info)),
+                SyscallSucceedsWithValue(sizeof(info)));
+    num_signals++;
+  }
+  EXPECT_GT(num_signals, 0);
+  sender_thread.Join();
+  // epoll_wait() may have timed out before sender_thread finished executing
+  // (possible on slower platforms like ptrace), so read from sigfd (which is
+  // non-blocking) one more time to potentially dequeue the signal before
+  // unmasking it in cleanup_sigmask's destructor.
+  read(sigfd.get(), &info, sizeof(info));
 }
 
 }  // namespace

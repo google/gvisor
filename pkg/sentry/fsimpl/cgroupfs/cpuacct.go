@@ -28,6 +28,7 @@ import (
 // +stateify savable
 type cpuacctController struct {
 	controllerCommon
+	controllerNoopMigrate
 }
 
 var _ controller = (*cpuacctController)(nil)
@@ -35,6 +36,13 @@ var _ controller = (*cpuacctController)(nil)
 func newCPUAcctController(fs *filesystem) *cpuacctController {
 	c := &cpuacctController{}
 	c.controllerCommon.init(controllerCPUAcct, fs)
+	return c
+}
+
+// Clone implements controller.Clone.
+func (c *cpuacctController) Clone() controller {
+	new := &cpuacctController{}
+	new.controllerCommon.cloneFrom(&new.controllerCommon)
 	return c
 }
 

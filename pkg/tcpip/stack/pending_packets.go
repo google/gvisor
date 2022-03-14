@@ -70,6 +70,20 @@ func (f *packetsPendingLinkResolution) init(nic *nic) {
 	f.mu.packets = make(map[<-chan struct{}][]pendingPacket)
 }
 
+// cancel drains all pending packet queues and release all packet
+// references.
+func (f *packetsPendingLinkResolution) cancel() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for ch, pendingPackets := range f.mu.packets {
+		for _, p := range pendingPackets {
+			p.pkt.DecRef()
+		}
+		delete(f.mu.packets, ch)
+	}
+	f.mu.cancelChans = nil
+}
+
 // dequeue any pending packets associated with ch.
 //
 // If err is nil, packets will be written and sent to the given remote link
@@ -138,6 +152,7 @@ func (f *packetsPendingLinkResolution) enqueue(r *Route, pkt *PacketBuffer) tcpi
 
 	if len(packets) > maxPendingPacketsPerResolution {
 		f.incrementOutgoingPacketErrors(packets[0].pkt)
+		packets[0].pkt.DecRef()
 		packets[0] = pendingPacket{}
 		packets = packets[1:]
 

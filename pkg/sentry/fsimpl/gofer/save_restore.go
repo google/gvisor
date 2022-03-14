@@ -325,7 +325,7 @@ func (d *dentry) restoreFileLisa(ctx context.Context, inode *lisafs.Inode, opts 
 	defer d.metadataMu.Unlock()
 	if d.isRegularFile() {
 		if opts.ValidateFileSizes {
-			if inode.Stat.Mask&linux.STATX_SIZE != 0 {
+			if inode.Stat.Mask&linux.STATX_SIZE == 0 {
 				return vfs.ErrCorruption{fmt.Errorf("gofer.dentry(%q).restoreFile: file size validation failed: file size not available", genericDebugPathname(d))}
 			}
 			if d.size != inode.Stat.Size {

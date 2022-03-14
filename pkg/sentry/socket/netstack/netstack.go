@@ -1394,6 +1394,14 @@ func getSockOptIPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name 
 
 		return &vP, nil
 
+	case linux.IPV6_RECVHOPLIMIT:
+		if outLen < sizeOfInt32 {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		v := primitive.Int32(boolToInt32(ep.SocketOptions().GetReceiveHopLimit()))
+		return &v, nil
+
 	case linux.IPV6_PATHMTU:
 		t.Kernel().EmitUnimplementedEvent(t)
 
@@ -1557,6 +1565,14 @@ func getSockOptIP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name in
 		}
 
 		return &vP, nil
+
+	case linux.IP_RECVTTL:
+		if outLen < sizeOfInt32 {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		v := primitive.Int32(boolToInt32(ep.SocketOptions().GetReceiveTTL()))
+		return &v, nil
 
 	case linux.IP_MULTICAST_TTL:
 		if outLen < sizeOfInt32 {
@@ -2265,6 +2281,15 @@ func setSockOptIPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name 
 		}
 		return syserr.TranslateNetstackError(ep.SetSockOptInt(tcpip.IPv6HopLimitOption, int(v)))
 
+	case linux.IPV6_RECVHOPLIMIT:
+		v, err := parseIntOrChar(optVal)
+		if err != nil {
+			return err
+		}
+
+		ep.SocketOptions().SetReceiveHopLimit(v != 0)
+		return nil
+
 	case linux.IPV6_TCLASS:
 		if len(optVal) < sizeOfInt32 {
 			return syserr.ErrInvalidArgument
@@ -2477,6 +2502,14 @@ func setSockOptIP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name in
 		}
 		return syserr.TranslateNetstackError(ep.SetSockOptInt(tcpip.IPv4TTLOption, int(v)))
 
+	case linux.IP_RECVTTL:
+		v, err := parseIntOrChar(optVal)
+		if err != nil {
+			return err
+		}
+		ep.SocketOptions().SetReceiveTTL(v != 0)
+		return nil
+
 	case linux.IP_TOS:
 		if len(optVal) == 0 {
 			return nil
@@ -2577,7 +2610,6 @@ func setSockOptIP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name in
 		linux.IP_PASSSEC,
 		linux.IP_RECVFRAGSIZE,
 		linux.IP_RECVOPTS,
-		linux.IP_RECVTTL,
 		linux.IP_RETOPTS,
 		linux.IP_TRANSPARENT,
 		linux.IP_UNBLOCK_SOURCE,
@@ -2837,7 +2869,7 @@ func (s *socketOpsCommon) nonBlockingRead(ctx context.Context, dst usermem.IOSeq
 			flags |= linux.MSG_TRUNC
 		}
 
-		return msgLen, flags, addr, addrLen, s.controlMessages(res.ControlMessages), nil
+		return msgLen, flags, addr, addrLen, s.netstackToLinuxControlMessages(res.ControlMessages), nil
 	}
 
 	if peek {
@@ -2860,12 +2892,12 @@ func (s *socketOpsCommon) nonBlockingRead(ctx context.Context, dst usermem.IOSeq
 		s.Endpoint.ModerateRecvBuf(n)
 	}
 
-	cmsg := s.controlMessages(res.ControlMessages)
+	cmsg := s.netstackToLinuxControlMessages(res.ControlMessages)
 	s.fillCmsgInq(&cmsg)
 	return res.Count, 0, nil, 0, cmsg, syserr.TranslateNetstackError(err)
 }
 
-func (s *socketOpsCommon) controlMessages(cm tcpip.ControlMessages) socket.ControlMessages {
+func (s *socketOpsCommon) netstackToLinuxControlMessages(cm tcpip.ReceivableControlMessages) socket.ControlMessages {
 	readCM := socket.NewIPControlMessages(s.family, cm)
 	return socket.ControlMessages{
 		IP: socket.IPControlMessages{
@@ -2877,6 +2909,10 @@ func (s *socketOpsCommon) controlMessages(cm tcpip.ControlMessages) socket.Contr
 			TOS:                readCM.TOS,
 			HasTClass:          readCM.HasTClass,
 			TClass:             readCM.TClass,
+			HasTTL:             readCM.HasTTL,
+			TTL:                readCM.TTL,
+			HasHopLimit:        readCM.HasHopLimit,
+			HopLimit:           readCM.HopLimit,
 			HasIPPacketInfo:    readCM.HasIPPacketInfo,
 			PacketInfo:         readCM.PacketInfo,
 			HasIPv6PacketInfo:  readCM.HasIPv6PacketInfo,
@@ -2887,11 +2923,20 @@ func (s *socketOpsCommon) controlMessages(cm tcpip.ControlMessages) socket.Contr
 	}
 }
 
+func (s *socketOpsCommon) linuxToNetstackControlMessages(cm socket.ControlMessages) tcpip.SendableControlMessages {
+	return tcpip.SendableControlMessages{
+		HasTTL:      cm.IP.HasTTL,
+		TTL:         uint8(cm.IP.TTL),
+		HasHopLimit: cm.IP.HasHopLimit,
+		HopLimit:    uint8(cm.IP.HopLimit),
+	}
+}
+
 // updateTimestamp sets the timestamp for SIOCGSTAMP. It should be called after
 // successfully writing packet data out to userspace.
 //
 // Precondition: s.readMu must be locked.
-func (s *socketOpsCommon) updateTimestamp(cm tcpip.ControlMessages) {
+func (s *socketOpsCommon) updateTimestamp(cm tcpip.ReceivableControlMessages) {
 	// Save the SIOCGSTAMP timestamp only if SO_TIMESTAMP is disabled.
 	if !s.sockOptTimestamp {
 		s.timestampValid = true
@@ -2948,7 +2993,7 @@ func (s *socketOpsCommon) recvErr(t *kernel.Task, dst usermem.IOSequence) (int, 
 	// The original destination address of the datagram that caused the error is
 	// supplied via msg_name.  -- recvmsg(2)
 	dstAddr, dstAddrLen := socket.ConvertAddress(addrFamilyFromNetProto(sockErr.NetProto), sockErr.Dst)
-	cmgs := socket.ControlMessages{IP: socket.NewIPControlMessages(s.family, tcpip.ControlMessages{SockErr: sockErr})}
+	cmgs := socket.ControlMessages{IP: socket.NewIPControlMessages(s.family, tcpip.ReceivableControlMessages{SockErr: sockErr})}
 	return n, msgFlags, dstAddr, dstAddrLen, cmgs, syserr.FromError(err)
 }
 
@@ -3047,9 +3092,10 @@ func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []b
 	}
 
 	opts := tcpip.WriteOptions{
-		To:          addr,
-		More:        flags&linux.MSG_MORE != 0,
-		EndOfRecord: flags&linux.MSG_EOR != 0,
+		To:              addr,
+		More:            flags&linux.MSG_MORE != 0,
+		EndOfRecord:     flags&linux.MSG_EOR != 0,
+		ControlMessages: s.linuxToNetstackControlMessages(controlMessages),
 	}
 
 	r := src.Reader(t)

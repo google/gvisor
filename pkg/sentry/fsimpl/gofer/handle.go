@@ -18,6 +18,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/lisafs"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/hostfd"
@@ -42,7 +43,7 @@ func openHandle(ctx context.Context, file p9file, read, write, trunc bool) (hand
 	if err != nil {
 		return handle{fd: -1}, err
 	}
-	var flags p9.OpenFlags
+	flags := p9.ReadOnly
 	switch {
 	case read && !write:
 		flags = p9.ReadOnly
@@ -50,6 +51,8 @@ func openHandle(ctx context.Context, file p9file, read, write, trunc bool) (hand
 		flags = p9.WriteOnly
 	case read && write:
 		flags = p9.ReadWrite
+	default:
+		log.Debugf("openHandle called with read = write = false. Falling back to read only FD.")
 	}
 	if trunc {
 		flags |= p9.OpenTruncate
@@ -71,7 +74,7 @@ func openHandle(ctx context.Context, file p9file, read, write, trunc bool) (hand
 
 // Preconditions: read || write.
 func openHandleLisa(ctx context.Context, fdLisa lisafs.ClientFD, read, write, trunc bool) (handle, error) {
-	var flags uint32
+	flags := uint32(unix.O_RDONLY)
 	switch {
 	case read && write:
 		flags = unix.O_RDWR
@@ -80,7 +83,7 @@ func openHandleLisa(ctx context.Context, fdLisa lisafs.ClientFD, read, write, tr
 	case write:
 		flags = unix.O_WRONLY
 	default:
-		panic("tried to open unreadable and unwritable handle")
+		log.Debugf("openHandleLisa called with read = write = false. Falling back to read only FD.")
 	}
 	if trunc {
 		flags |= unix.O_TRUNC
@@ -105,7 +108,7 @@ func (h *handle) isOpen() bool {
 
 func (h *handle) close(ctx context.Context) {
 	if h.fdLisa.Client() != nil {
-		h.fdLisa.CloseBatched(ctx)
+		h.fdLisa.Close(ctx)
 	} else {
 		h.file.close(ctx)
 		h.file = p9file{}

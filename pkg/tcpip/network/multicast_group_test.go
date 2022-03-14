@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -118,12 +119,29 @@ func validateIGMPPacket(t *testing.T, p *stack.PacketBuffer, remoteAddress tcpip
 	)
 }
 
-func createStack(t *testing.T, v4, mgpEnabled bool) (*channel.Endpoint, *stack.Stack, *faketime.ManualClock) {
+type multicastTestContext struct {
+	s     *stack.Stack
+	e     *channel.Endpoint
+	clock *faketime.ManualClock
+}
+
+func newMulticastTestContext(t *testing.T, v4, mgpEnabled bool) multicastTestContext {
 	t.Helper()
 
 	e := channel.New(maxUnsolicitedReports, header.IPv6MinimumMTU, linkAddr)
 	s, clock := createStackWithLinkEndpoint(t, v4, mgpEnabled, e)
-	return e, s, clock
+	return multicastTestContext{
+		s:     s,
+		e:     e,
+		clock: clock,
+	}
+}
+
+func (ctx *multicastTestContext) cleanup() {
+	ctx.s.Close()
+	ctx.s.Wait()
+	ctx.e.Close()
+	refsvfs2.DoRepeatedLeakCheck()
 }
 
 func createStackWithLinkEndpoint(t *testing.T, v4, mgpEnabled bool, e stack.LinkEndpoint) (*stack.Stack, *faketime.ManualClock) {
@@ -191,6 +209,7 @@ func checkInitialIPv6Groups(t *testing.T, e *channel.Endpoint, s *stack.Stack, c
 		t.Fatal("expected a report message to be sent")
 	} else {
 		validateMLDPacket(t, p, ipv6AddrSNMC, mldReport, 0, ipv6AddrSNMC)
+		p.DecRef()
 	}
 
 	// Leave the group to not affect the tests. This is fine since we are not
@@ -206,6 +225,7 @@ func checkInitialIPv6Groups(t *testing.T, e *channel.Endpoint, s *stack.Stack, c
 		t.Fatal("expected a report message to be sent")
 	} else {
 		validateMLDPacket(t, p, header.IPv6AllRoutersLinkLocalMulticastAddress, mldDone, 0, ipv6AddrSNMC)
+		p.DecRef()
 	}
 
 	// Should not send any more packets.
@@ -241,9 +261,11 @@ func createAndInjectIGMPPacket(e *channel.Endpoint, igmpType byte, maxRespTime b
 	igmp.SetGroupAddress(groupAddress)
 	igmp.SetChecksum(header.IGMPCalculateChecksum(igmp))
 
-	e.InjectInbound(ipv4.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	}))
+	})
+	e.InjectInbound(ipv4.ProtocolNumber, pkt)
+	pkt.DecRef()
 }
 
 // createAndInjectMLDPacket creates and injects an MLD packet with the
@@ -280,9 +302,11 @@ func createAndInjectMLDPacket(e *channel.Endpoint, mldType uint8, maxRespDelay b
 		Dst:    header.IPv6AllNodesMulticastAddress,
 	}))
 
-	e.InjectInbound(ipv6.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	}))
+	})
+	e.InjectInbound(ipv6.ProtocolNumber, pkt)
+	pkt.DecRef()
 }
 
 // TestMGPDisabled tests that the multicast group protocol is not enabled by
@@ -328,7 +352,11 @@ func TestMGPDisabled(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			e, s, clock := createStack(t, test.protoNum == ipv4.ProtocolNumber /* v4 */, false /* mgpEnabled */)
+			ctx := newMulticastTestContext(t, test.protoNum == ipv4.ProtocolNumber /* v4 */, false /* mgpEnabled */)
+			defer ctx.cleanup()
+			s := ctx.s
+			e := ctx.e
+			clock := ctx.clock
 
 			// This NIC may join multicast groups when it is enabled but since MGP is
 			// disabled, no reports should be sent.
@@ -451,10 +479,11 @@ func TestMGPReceiveCounters(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			e, s, _ := createStack(t, len(test.groupAddress) == header.IPv4AddressSize /* v4 */, true /* mgpEnabled */)
+			ctx := newMulticastTestContext(t, len(test.groupAddress) == header.IPv4AddressSize /* v4 */, true /* mgpEnabled */)
+			defer ctx.cleanup()
 
-			test.rxMGPkt(e, test.headerType, test.maxRespTime, test.groupAddress)
-			if got := test.statCounter(s).Value(); got != 1 {
+			test.rxMGPkt(ctx.e, test.headerType, test.maxRespTime, test.groupAddress)
+			if got := test.statCounter(ctx.s).Value(); got != 1 {
 				t.Fatalf("got %s received = %d, want = 1", test.name, got)
 			}
 		})
@@ -513,7 +542,9 @@ func TestMGPJoinGroup(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			e, s, clock := createStack(t, test.protoNum == ipv4.ProtocolNumber /* v4 */, true /* mgpEnabled */)
+			ctx := newMulticastTestContext(t, test.protoNum == ipv4.ProtocolNumber /* v4 */, true /* mgpEnabled */)
+			defer ctx.cleanup()
+			s, e, clock := ctx.s, ctx.e, ctx.clock
 
 			var reportCounter uint64
 			if test.checkInitialGroups != nil {
@@ -534,6 +565,7 @@ func TestMGPJoinGroup(t *testing.T) {
 				t.Fatal("expected a report message to be sent")
 			} else {
 				test.validateReport(t, p)
+				p.DecRef()
 			}
 			if t.Failed() {
 				t.FailNow()
@@ -554,6 +586,7 @@ func TestMGPJoinGroup(t *testing.T) {
 				t.Fatal("expected a report message to be sent")
 			} else {
 				test.validateReport(t, p)
+				p.DecRef()
 			}
 
 			// Should not send any more packets.
@@ -625,7 +658,9 @@ func TestMGPLeaveGroup(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			e, s, clock := createStack(t, test.protoNum == ipv4.ProtocolNumber /* v4 */, true /* mgpEnabled */)
+			ctx := newMulticastTestContext(t, test.protoNum == ipv4.ProtocolNumber /* v4 */, true /* mgpEnabled */)
+			defer ctx.cleanup()
+			s, e, clock := ctx.s, ctx.e, ctx.clock
 
 			var reportCounter uint64
 			var leaveCounter uint64
@@ -644,6 +679,7 @@ func TestMGPLeaveGroup(t *testing.T) {
 				t.Fatal("expected a report message to be sent")
 			} else {
 				test.validateReport(t, p)
+				p.DecRef()
 			}
 			if t.Failed() {
 				t.FailNow()
@@ -661,6 +697,7 @@ func TestMGPLeaveGroup(t *testing.T) {
 				t.Fatal("expected a leave message to be sent")
 			} else {
 				test.validateLeave(t, p)
+				p.DecRef()
 			}
 
 			// Should not send any more packets.
@@ -764,7 +801,9 @@ func TestMGPQueryMessages(t *testing.T) {
 
 			for _, subTest := range subTests {
 				t.Run(subTest.name, func(t *testing.T) {
-					e, s, clock := createStack(t, test.protoNum == ipv4.ProtocolNumber /* v4 */, true /* mgpEnabled */)
+					ctx := newMulticastTestContext(t, test.protoNum == ipv4.ProtocolNumber /* v4 */, true /* mgpEnabled */)
+					defer ctx.cleanup()
+					s, e, clock := ctx.s, ctx.e, ctx.clock
 
 					var reportCounter uint64
 					if test.checkInitialGroups != nil {
@@ -785,6 +824,7 @@ func TestMGPQueryMessages(t *testing.T) {
 							t.Fatalf("expected %d-th report message to be sent", i)
 						} else {
 							test.validateReport(t, p)
+							p.DecRef()
 						}
 						clock.Advance(test.maxUnsolicitedResponseDelay)
 					}
@@ -817,6 +857,7 @@ func TestMGPQueryMessages(t *testing.T) {
 							t.Fatal("expected a report message to be sent")
 						} else {
 							test.validateReport(t, p)
+							p.DecRef()
 						}
 					}
 
@@ -892,7 +933,9 @@ func TestMGPReportMessages(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			e, s, clock := createStack(t, test.protoNum == ipv4.ProtocolNumber /* v4 */, true /* mgpEnabled */)
+			ctx := newMulticastTestContext(t, test.protoNum == ipv4.ProtocolNumber /* v4 */, true /* mgpEnabled */)
+			defer ctx.cleanup()
+			s, e, clock := ctx.s, ctx.e, ctx.clock
 
 			var reportCounter uint64
 			var leaveCounter uint64
@@ -912,6 +955,7 @@ func TestMGPReportMessages(t *testing.T) {
 				t.Fatal("expected a report message to be sent")
 			} else {
 				test.validateReport(t, p)
+				p.DecRef()
 			}
 			if t.Failed() {
 				t.FailNow()
@@ -1076,7 +1120,9 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			e, s, clock := createStack(t, test.protoNum == ipv4.ProtocolNumber /* v4 */, true /* mgpEnabled */)
+			ctx := newMulticastTestContext(t, test.protoNum == ipv4.ProtocolNumber /* v4 */, true /* mgpEnabled */)
+			defer ctx.cleanup()
+			s, e, clock := ctx.s, ctx.e, ctx.clock
 
 			var reportCounter uint64
 			var leaveCounter uint64
@@ -1097,6 +1143,7 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 					t.Fatalf("expected a report message to be sent for %s", a)
 				} else {
 					test.validateReport(t, p, a)
+					p.DecRef()
 				}
 			}
 			if t.Failed() {
@@ -1126,6 +1173,7 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 					}
 
 					test.validateLeave(t, p, test.getAndCheckGroupAddress(t, seen, p))
+					p.DecRef()
 				}
 			}
 			if t.Failed() {
@@ -1153,6 +1201,7 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 					}
 
 					test.validateReport(t, p, test.getAndCheckGroupAddress(t, seen, p))
+					p.DecRef()
 				}
 			}
 			if t.Failed() {
@@ -1168,8 +1217,10 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 				t.Errorf("got sentLeaveStat.Value() = %d, want = %d", got, leaveCounter)
 			}
 			for i := range test.multicastAddrs {
-				if e.Read() == nil {
+				if p := e.Read(); p == nil {
 					t.Fatalf("expected (%d-th) leave message to be sent", i)
+				} else {
+					p.DecRef()
 				}
 			}
 			for _, a := range test.multicastAddrs {
@@ -1206,6 +1257,7 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 				t.Fatal("expected a report message to be sent")
 			} else {
 				test.validateReport(t, p, test.finalMulticastAddr)
+				p.DecRef()
 			}
 
 			clock.Advance(test.maxUnsolicitedResponseDelay)
@@ -1217,6 +1269,7 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 				t.Fatal("expected a report message to be sent")
 			} else {
 				test.validateReport(t, p, test.finalMulticastAddr)
+				p.DecRef()
 			}
 
 			// Should not send any more packets.
@@ -1258,7 +1311,10 @@ func TestMGPDisabledOnLoopback(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			s, clock := createStackWithLinkEndpoint(t, test.protoNum == ipv4.ProtocolNumber /* v4 */, true /* mgpEnabled */, loopback.New())
-
+			defer func() {
+				s.Close()
+				s.Wait()
+			}()
 			sentReportStat := test.sentReportStat(s)
 			if got := sentReportStat.Value(); got != 0 {
 				t.Fatalf("got sentReportStat.Value() = %d, want = 0", got)

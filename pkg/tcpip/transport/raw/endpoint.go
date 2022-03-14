@@ -54,6 +54,8 @@ type rawPacket struct {
 	// tosOrTClass stores either the Type of Service for IPv4 or the Traffic Class
 	// for IPv6.
 	tosOrTClass uint8
+	// ttlOrHopLimit stores either the TTL for IPv4 or the HopLimit for IPv6
+	ttlOrHopLimit uint8
 }
 
 // endpoint is the raw socket implementation of tcpip.Endpoint. It is legal to
@@ -160,6 +162,11 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProt
 	return e, nil
 }
 
+// HasNIC implements tcpip.SocketOptionsHandler.
+func (e *endpoint) HasNIC(id int32) bool {
+	return e.stack.HasNIC(tcpip.NICID(id))
+}
+
 // Abort implements stack.TransportEndpoint.Abort.
 func (e *endpoint) Abort() {
 	e.Close()
@@ -229,7 +236,7 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 	// Control Messages
 	// TODO(https://gvisor.dev/issue/7012): Share control message code with other
 	// network endpoints.
-	cm := tcpip.ControlMessages{
+	cm := tcpip.ReceivableControlMessages{
 		HasTimestamp: true,
 		Timestamp:    pkt.receivedAt,
 	}
@@ -238,6 +245,10 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 		if e.ops.GetReceiveTOS() {
 			cm.HasTOS = true
 			cm.TOS = pkt.tosOrTClass
+		}
+		if e.ops.GetReceiveTTL() {
+			cm.HasTTL = true
+			cm.TTL = pkt.ttlOrHopLimit
 		}
 		if e.ops.GetReceivePacketInfo() {
 			cm.HasIPPacketInfo = true
@@ -248,6 +259,10 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 			cm.HasTClass = true
 			// Although TClass is an 8-bit value it's read in the CMsg as a uint32.
 			cm.TClass = uint32(pkt.tosOrTClass)
+		}
+		if e.ops.GetReceiveHopLimit() {
+			cm.HasHopLimit = true
+			cm.HopLimit = pkt.ttlOrHopLimit
 		}
 		if e.ops.GetIPv6ReceivePacketInfo() {
 			cm.HasIPv6PacketInfo = true
@@ -624,6 +639,12 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 
 		// Save any useful information from the network header to the packet.
 		packet.tosOrTClass, _ = pkt.Network().TOS()
+		switch pkt.NetworkProtocolNumber {
+		case header.IPv4ProtocolNumber:
+			packet.ttlOrHopLimit = header.IPv4(pkt.NetworkHeader().View()).TTL()
+		case header.IPv6ProtocolNumber:
+			packet.ttlOrHopLimit = header.IPv6(pkt.NetworkHeader().View()).HopLimit()
+		}
 
 		// Raw IPv4 endpoints return the IP header, but IPv6 endpoints do not.
 		// We copy headers' underlying bytes because pkt.*Header may point to
@@ -692,7 +713,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 
 // State implements socket.Socket.State.
 func (e *endpoint) State() uint32 {
-	return 0
+	return uint32(e.net.State())
 }
 
 // Info returns a copy of the endpoint info.

@@ -15,7 +15,6 @@
 package gofer
 
 import (
-	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/p9"
@@ -66,21 +65,9 @@ type endpoint struct {
 	path string
 }
 
-func sockTypeToP9(t linux.SockType) (p9.ConnectFlags, bool) {
-	switch t {
-	case linux.SOCK_STREAM:
-		return p9.StreamSocket, true
-	case linux.SOCK_SEQPACKET:
-		return p9.SeqpacketSocket, true
-	case linux.SOCK_DGRAM:
-		return p9.DgramSocket, true
-	}
-	return 0, false
-}
-
 // BidirectionalConnect implements BoundEndpoint.BidirectionalConnect.
 func (e *endpoint) BidirectionalConnect(ctx context.Context, ce transport.ConnectingEndpoint, returnConnect func(transport.Receiver, transport.ConnectedEndpoint)) *syserr.Error {
-	cf, ok := sockTypeToP9(ce.Type())
+	cf, ok := p9.SocketTypeFromLinux(ce.Type())
 	if !ok {
 		return syserr.ErrConnectionRefused
 	}

@@ -727,9 +727,8 @@ func (vfs *VirtualFilesystem) PivotRoot(ctx context.Context, creds *auth.Credent
 	rootVd := RootFromContext(ctx)
 	defer rootVd.DecRef(ctx)
 
-	vfs.mountMu.Lock()
-	defer vfs.mountMu.Unlock()
-
+retry:
+	epoch := vfs.mounts.seq.BeginRead()
 	// Neither new_root nor put_old can be on the same mount as the current
 	//root mount.
 	if newRootVd.mount == rootVd.mount || putOldVd.mount == rootVd.mount {
@@ -763,7 +762,13 @@ func (vfs *VirtualFilesystem) PivotRoot(ctx context.Context, creds *auth.Credent
 	// pivot_root-ing new_root/put_old mounts with MS_SHARED propagation once it
 	// is implemented in gVisor.
 
-	vfs.mounts.seq.BeginWrite()
+	vfs.mountMu.Lock()
+	if !vfs.mounts.seq.BeginWriteOk(epoch) {
+		// Checks above raced with a mount change.
+		vfs.mountMu.Unlock()
+		goto retry
+	}
+	defer vfs.mountMu.Unlock()
 	mp := vfs.disconnectLocked(newRootVd.mount)
 	mp.DecRef(ctx)
 	rootMp := vfs.disconnectLocked(rootVd.mount)

@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -33,6 +34,7 @@ import (
 // +stateify savable
 type cpusetController struct {
 	controllerCommon
+	controllerNoopMigrate
 
 	maxCpus uint32
 	maxMems uint32
@@ -61,6 +63,20 @@ func newCPUSetController(k *kernel.Kernel, fs *filesystem) *cpusetController {
 	return c
 }
 
+// Clone implements controller.Clone.
+func (c *cpusetController) Clone() controller {
+	cpus := c.cpus.Clone()
+	mems := c.mems.Clone()
+	new := &cpusetController{
+		maxCpus: c.maxCpus,
+		maxMems: c.maxMems,
+		cpus:    &cpus,
+		mems:    &mems,
+	}
+	new.controllerCommon.cloneFrom(&c.controllerCommon)
+	return new
+}
+
 // AddControlFiles implements controller.AddControlFiles.
 func (c *cpusetController) AddControlFiles(ctx context.Context, creds *auth.Credentials, _ *cgroupInode, contents map[string]kernfs.Inode) {
 	contents["cpuset.cpus"] = c.fs.newControllerWritableFile(ctx, creds, &cpusData{c: c})
@@ -81,7 +97,7 @@ func (d *cpusData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 }
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
-func (d *cpusData) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
+func (d *cpusData) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
 	if src.NumBytes() > hostarch.PageSize {
 		return 0, linuxerr.EINVAL
 	}
@@ -125,7 +141,7 @@ func (d *memsData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 }
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
-func (d *memsData) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
+func (d *memsData) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
 	if src.NumBytes() > hostarch.PageSize {
 		return 0, linuxerr.EINVAL
 	}

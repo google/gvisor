@@ -15,47 +15,13 @@
 package cpuid
 
 import (
-	"fmt"
 	"io/ioutil"
 	"regexp"
-	"strconv"
 	"strings"
 	"testing"
 
-	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/hostos"
 )
-
-func kernelVersion() (int, int, error) {
-	var u unix.Utsname
-	if err := unix.Uname(&u); err != nil {
-		return 0, 0, err
-	}
-
-	var sb strings.Builder
-	for _, b := range u.Release {
-		if b == 0 {
-			break
-		}
-		sb.WriteByte(byte(b))
-	}
-
-	s := strings.Split(sb.String(), ".")
-	if len(s) < 2 {
-		return 0, 0, fmt.Errorf("kernel release missing major and minor component: %s", sb.String())
-	}
-
-	major, err := strconv.Atoi(s[0])
-	if err != nil {
-		return 0, 0, fmt.Errorf("error parsing major version %q in %q: %w", s[0], sb.String(), err)
-	}
-
-	minor, err := strconv.Atoi(s[1])
-	if err != nil {
-		return 0, 0, fmt.Errorf("error parsing minor version %q in %q: %w", s[1], sb.String(), err)
-	}
-
-	return major, minor, nil
-}
 
 // TestHostFeatureFlags tests that all features detected by HostFeatureSet are
 // on the host.
@@ -65,7 +31,7 @@ func kernelVersion() (int, int, error) {
 // analog in the actual CPUID feature set.
 func TestHostFeatureFlags(t *testing.T) {
 	// Extract the kernel version.
-	major, minor, err := kernelVersion()
+	major, minor, err := hostos.KernelVersion()
 	if err != nil {
 		t.Fatalf("Unable to parse kernel version: %v", err)
 	}

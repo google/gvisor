@@ -44,7 +44,8 @@ import (
 )
 
 var (
-	platformFlag = flag.String("platform", "ptrace", "specify which platform to use")
+	platformFlag           = flag.String("platform", "ptrace", "specify which platform to use")
+	platformDevicePathFlag = flag.String("platform_device_path", "", "path to a platform-specific device file (e.g. /dev/kvm for KVM platform). If unset, will use a sane platform-specific default.")
 )
 
 // Boot initializes a new bare bones kernel for test.
@@ -53,7 +54,7 @@ func Boot() (*kernel.Kernel, error) {
 	if err != nil {
 		return nil, fmt.Errorf("platform not found: %w", err)
 	}
-	deviceFile, err := platformCtr.OpenDevice()
+	deviceFile, err := platformCtr.OpenDevice(*platformDevicePathFlag)
 	if err != nil {
 		return nil, fmt.Errorf("creating platform: %w", err)
 	}

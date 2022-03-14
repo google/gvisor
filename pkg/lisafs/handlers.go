@@ -1295,17 +1295,19 @@ func FGetXattrHandler(c *Connection, comm Communicator, payloadLen uint32) (uint
 	// FGetXattrResp simply is a wrapper around SizedString.
 	var valueLen primitive.Uint16
 	respMetaSize := uint32(valueLen.SizeBytes())
-	payloadBuf := comm.PayloadBuf(respMetaSize + uint32(req.BufSize))
 	var n uint16
 	if err := fd.safelyRead(func() error {
 		if fd.node.isDeleted() {
 			return unix.EINVAL
 		}
-		n, err = fd.impl.GetXattr(string(req.Name), payloadBuf[respMetaSize:])
+		n, err = fd.impl.GetXattr(string(req.Name), uint32(req.BufSize), func(dataLen uint32) []byte {
+			return comm.PayloadBuf(dataLen + respMetaSize)[respMetaSize:]
+		})
 		return err
 	}); err != nil {
 		return 0, err
 	}
+	payloadBuf := comm.PayloadBuf(respMetaSize)
 	valueLen = primitive.Uint16(n)
 	valueLen.MarshalBytes(payloadBuf)
 	return respMetaSize + uint32(n), nil

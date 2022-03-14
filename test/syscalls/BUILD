@@ -194,6 +194,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:fpsig_mut_test",
+)
+
+syscall_test(
     test = "//test/syscalls/linux:fpsig_nested_test",
 )
 
@@ -605,7 +609,7 @@ syscall_test(
 )
 
 # TODO(b/119826902): Enable once the test passes in runsc.
-# syscall_test(vfs2="True",test = "//test/syscalls/linux:sigaltstack_test")
+# syscall_test(test = "//test/syscalls/linux:sigaltstack_test")
 
 syscall_test(
     test = "//test/syscalls/linux:sigreturn_test",
@@ -1073,4 +1077,9 @@ syscall_test(
 
 syscall_test(
     test = "//test/syscalls/linux:deleted_test",
+)
+
+syscall_test(
+    size = "small",
+    test = "//test/syscalls/linux:close_range_test",
 )

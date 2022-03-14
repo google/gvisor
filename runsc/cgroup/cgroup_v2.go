@@ -74,29 +74,16 @@ type cgroupV2 struct {
 }
 
 func newCgroupV2(mountpoint string, group string) (*cgroupV2, error) {
-	cg := &cgroupV2{
-		Mountpoint: mountpoint,
-		Path:       group,
-	}
-	err := cg.setupControllers()
-	return cg, err
-}
-
-// setupControllers setup all supported controllers based on cgroup.controllers
-// in the unified cgroup mount point
-func (c *cgroupV2) setupControllers() error {
-	if c.Controllers != nil {
-		return nil
-	}
-
-	data, err := ioutil.ReadFile(filepath.Join(c.Mountpoint, "cgroup.controllers"))
+	data, err := ioutil.ReadFile(filepath.Join(mountpoint, "cgroup.controllers"))
 	if err != nil {
-		return err
+		return nil, err
 	}
-	fields := strings.Fields(string(data))
-	c.Controllers = fields
 
-	return nil
+	return &cgroupV2{
+		Mountpoint:  mountpoint,
+		Path:        group,
+		Controllers: strings.Fields(string(data)),
+	}, nil
 }
 
 // Install creates and configures cgroups.
@@ -179,7 +166,7 @@ func (c *cgroupV2) Uninstall() error {
 	defer cancel()
 	b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
 
-	// delete last entry in owned first
+	// Deletion must occur reverse order, because they may contain ancestors.
 	for i := len(c.Own) - 1; i >= 0; i-- {
 		current := c.Own[i]
 		log.Debugf("Removing cgroup for path=%q", current)
@@ -207,7 +194,8 @@ func (c *cgroupV2) Join() (func(), error) {
 	if err != nil {
 		return nil, err
 	}
-	// since this is unified, get the first path of current process's cgroup is enough
+	// Since this is unified, get the first path of current process's cgroup is
+	// enough.
 	undoPath := filepath.Join(c.Mountpoint, paths[cgroup2Key])
 
 	cu := cleanup.Make(func() {
@@ -390,8 +378,8 @@ func (*memory2) set(spec *specs.LinuxResources, path string) error {
 
 	if spec.Memory.Swap != nil {
 		// in cgroup v2, we set memory and swap separately, but the spec specifies
-		// Swap field as memory+swap, so we need memory limit here to be set in order
-		// to get the correct swap value
+		// Swap field as memory+swap, so we need memory limit here to be set in
+		// order to get the correct swap value.
 		if spec.Memory.Limit == nil {
 			return errors.New("cgroup: Memory.Swap is set without Memory.Limit")
 		}
@@ -571,8 +559,9 @@ func convertCPUSharesToCgroupV2Value(cpuShares uint64) uint64 {
 }
 
 // convertMemorySwapToCgroupV2Value converts MemorySwap value from OCI spec
-// for use by cgroup v2 drivers. A conversion is needed since Resources.MemorySwap
-// is defined as memory+swap combined, while in cgroup v2 swap is a separate value.
+// for use by cgroup v2 drivers. A conversion is needed since
+// Resources.MemorySwap is defined as memory+swap combined, while in cgroup v2
+// swap is a separate value.
 func convertMemorySwapToCgroupV2Value(memorySwap, memory int64) (int64, error) {
 	// for compatibility with cgroup1 controller, set swap to unlimited in
 	// case the memory is set to unlimited, and swap is not explicitly set,
@@ -640,7 +629,8 @@ func bfqDeviceWeightSupported(bfq *os.File) bool {
 	if _, err := bfq.Read(buf); err != nil {
 		return false
 	}
-	// If only a single number (default weight) if read back, we have older kernel.
+	// If only a single number (default weight) if read back, we have older
+	// kernel.
 	_, err := strconv.ParseInt(string(bytes.TrimSpace(buf)), 10, 64)
 	return err != nil
 }

@@ -119,9 +119,9 @@ func sockErrCmsgToLinux(sockErr *tcpip.SockError) linux.SockErrCMsg {
 	}
 }
 
-// NewIPControlMessages converts the tcpip ControlMessgaes (which does not
-// have Linux specific format) to Linux format.
-func NewIPControlMessages(family int, cmgs tcpip.ControlMessages) IPControlMessages {
+// NewIPControlMessages converts the tcpip.ReceivableControlMessages (which does
+// not have Linux specific format) to Linux format.
+func NewIPControlMessages(family int, cmgs tcpip.ReceivableControlMessages) IPControlMessages {
 	var orgDstAddr linux.SockAddr
 	if cmgs.HasOriginalDstAddress {
 		orgDstAddr, _ = ConvertAddress(family, cmgs.OriginalDstAddress)
@@ -133,6 +133,10 @@ func NewIPControlMessages(family int, cmgs tcpip.ControlMessages) IPControlMessa
 		Inq:                cmgs.Inq,
 		HasTOS:             cmgs.HasTOS,
 		TOS:                cmgs.TOS,
+		HasTTL:             cmgs.HasTTL,
+		TTL:                uint32(cmgs.TTL),
+		HasHopLimit:        cmgs.HasHopLimit,
+		HopLimit:           uint32(cmgs.HopLimit),
 		HasTClass:          cmgs.HasTClass,
 		TClass:             cmgs.TClass,
 		HasIPPacketInfo:    cmgs.HasIPPacketInfo,
@@ -172,6 +176,18 @@ type IPControlMessages struct {
 
 	// TOS is the IPv4 type of service of the associated packet.
 	TOS uint8
+
+	// HasTTL indicates whether TTL is valid/set.
+	HasTTL bool
+
+	// TTL is the IPv4 Time To Live of the associated packet.
+	TTL uint32
+
+	// HasHopLimit indicates whether HopLimit is valid/set.
+	HasHopLimit bool
+
+	// HopLimit is the IPv6 Hop Limit of the associated packet.
+	HopLimit uint32
 
 	// HasTClass indicates whether TClass is valid/set.
 	HasTClass bool

@@ -17,6 +17,7 @@
 package control
 
 import (
+	"math"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -344,6 +345,28 @@ func PackTClass(t *kernel.Task, tClass uint32, buf []byte) []byte {
 	)
 }
 
+// PackTTL packs an IP_TTL socket control message.
+func PackTTL(t *kernel.Task, ttl uint32, buf []byte) []byte {
+	return putCmsgStruct(
+		buf,
+		linux.SOL_IP,
+		linux.IP_TTL,
+		t.Arch().Width(),
+		primitive.AllocateUint32(ttl),
+	)
+}
+
+// PackHopLimit packs an IPV6_HOPLIMIT socket control message.
+func PackHopLimit(t *kernel.Task, hoplimit uint32, buf []byte) []byte {
+	return putCmsgStruct(
+		buf,
+		linux.SOL_IPV6,
+		linux.IPV6_HOPLIMIT,
+		t.Arch().Width(),
+		primitive.AllocateUint32(hoplimit),
+	)
+}
+
 // PackIPPacketInfo packs an IP_PKTINFO socket control message.
 func PackIPPacketInfo(t *kernel.Task, packetInfo *linux.ControlMessageIPPacketInfo, buf []byte) []byte {
 	return putCmsgStruct(
@@ -415,8 +438,16 @@ func PackControlMessages(t *kernel.Task, cmsgs socket.ControlMessages, buf []byt
 		buf = PackTOS(t, cmsgs.IP.TOS, buf)
 	}
 
+	if cmsgs.IP.HasTTL {
+		buf = PackTTL(t, cmsgs.IP.TTL, buf)
+	}
+
 	if cmsgs.IP.HasTClass {
 		buf = PackTClass(t, cmsgs.IP.TClass, buf)
+	}
+
+	if cmsgs.IP.HasHopLimit {
+		buf = PackHopLimit(t, cmsgs.IP.HopLimit, buf)
 	}
 
 	if cmsgs.IP.HasIPPacketInfo {
@@ -460,8 +491,16 @@ func CmsgsSpace(t *kernel.Task, cmsgs socket.ControlMessages) int {
 		space += cmsgSpace(t, linux.SizeOfControlMessageTOS)
 	}
 
+	if cmsgs.IP.HasTTL {
+		space += cmsgSpace(t, linux.SizeOfControlMessageTTL)
+	}
+
 	if cmsgs.IP.HasTClass {
 		space += cmsgSpace(t, linux.SizeOfControlMessageTClass)
+	}
+
+	if cmsgs.IP.HasHopLimit {
+		space += cmsgSpace(t, linux.SizeOfControlMessageHopLimit)
 	}
 
 	if cmsgs.IP.HasIPPacketInfo {
@@ -484,6 +523,10 @@ func CmsgsSpace(t *kernel.Task, cmsgs socket.ControlMessages) int {
 }
 
 // Parse parses a raw socket control message into portable objects.
+// TODO(https://gvisor.dev/issue/7188): Parse is only called on raw cmsg that
+// are used when sending a messages. We should fail with EINVAL when we find a
+// non-sendable control messages (such as IP_RECVERR). And the function should
+// be renamed to reflect that.
 func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte, width uint) (socket.ControlMessages, error) {
 	var (
 		cmsgs socket.ControlMessages
@@ -559,6 +602,18 @@ func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte, width uint)
 				tos.UnmarshalUnsafe(buf)
 				cmsgs.IP.TOS = uint8(tos)
 
+			case linux.IP_TTL:
+				if length < linux.SizeOfControlMessageTTL {
+					return socket.ControlMessages{}, linuxerr.EINVAL
+				}
+				var ttl primitive.Uint32
+				ttl.UnmarshalUnsafe(buf)
+				if ttl == 0 || ttl > math.MaxUint8 {
+					return socket.ControlMessages{}, linuxerr.EINVAL
+				}
+				cmsgs.IP.TTL = uint32(ttl)
+				cmsgs.IP.HasTTL = true
+
 			case linux.IP_PKTINFO:
 				if length < linux.SizeOfControlMessageIPPacketInfo {
 					return socket.ControlMessages{}, linuxerr.EINVAL
@@ -599,6 +654,28 @@ func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte, width uint)
 				var tclass primitive.Uint32
 				tclass.UnmarshalUnsafe(buf)
 				cmsgs.IP.TClass = uint32(tclass)
+
+			case linux.IPV6_PKTINFO:
+				if length < linux.SizeOfControlMessageIPv6PacketInfo {
+					return socket.ControlMessages{}, linuxerr.EINVAL
+				}
+
+				cmsgs.IP.HasIPv6PacketInfo = true
+				var packetInfo linux.ControlMessageIPv6PacketInfo
+				packetInfo.UnmarshalUnsafe(buf)
+				cmsgs.IP.IPv6PacketInfo = packetInfo
+
+			case linux.IPV6_HOPLIMIT:
+				if length < linux.SizeOfControlMessageHopLimit {
+					return socket.ControlMessages{}, linuxerr.EINVAL
+				}
+				var hoplimit primitive.Uint32
+				hoplimit.UnmarshalUnsafe(buf)
+				if hoplimit > math.MaxUint8 {
+					return socket.ControlMessages{}, linuxerr.EINVAL
+				}
+				cmsgs.IP.HasHopLimit = true
+				cmsgs.IP.HopLimit = uint32(hoplimit)
 
 			case linux.IPV6_RECVORIGDSTADDR:
 				var addr linux.SockAddrInet6

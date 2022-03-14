@@ -62,6 +62,7 @@ fi
 readonly BTRFS_DEV
 
 # Install dependencies for the crictl tests.
+export DEBIAN_FRONTEND=noninteractive
 while true; do
   if (apt-get update && apt-get install -y \
       "${BTRFS_DEV}" \

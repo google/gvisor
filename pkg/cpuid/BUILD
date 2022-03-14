@@ -42,5 +42,5 @@ go_test(
     ],
     library = ":cpuid",
     tags = ["manual"],
-    deps = ["@org_golang_x_sys//unix:go_default_library"],
+    deps = ["//pkg/hostos"],
 )

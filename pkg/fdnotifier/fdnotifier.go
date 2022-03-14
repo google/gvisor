@@ -155,13 +155,20 @@ func (n *notifier) waitAndNotify() error {
 			return err
 		}
 
+		notified := false
 		n.mu.Lock()
 		for i := 0; i < v; i++ {
 			if fi, ok := n.fdMap[e[i].Fd]; ok {
 				fi.queue.Notify(waiter.EventMaskFromLinux(e[i].Events))
+				notified = true
 			}
 		}
 		n.mu.Unlock()
+		if notified {
+			// Let goroutines woken by Notify get a chance to run before we
+			// epoll_wait again.
+			sync.Goyield()
+		}
 	}
 }
 

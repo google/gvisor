@@ -389,6 +389,11 @@ func (fd *DeviceFD) EventUnregister(e *waiter.Entry) {
 	fd.waitQueue.EventUnregister(e)
 }
 
+// Epollable implements FileDescriptionImpl.Epollable.
+func (fd *DeviceFD) Epollable() bool {
+	return true
+}
+
 // Seek implements vfs.FileDescriptionImpl.Seek.
 func (fd *DeviceFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
 	// Operations on /dev/fuse don't make sense until a FUSE filesystem is mounted.
