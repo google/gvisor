@@ -34,7 +34,7 @@ var redirects = map[string]string{
 	"/change":    "https://github.com/google/gvisor",
 	"/issue":     "https://github.com/google/gvisor/issues",
 	"/issues":    "https://github.com/google/gvisor/issues",
-	"/issue/new": "https://github.com/google/gvisor/issues/new",
+	"/issue/new": "https://github.com/google/gvisor/issues/new/choose",
 	"/pr":        "https://github.com/google/gvisor/pulls",
 
 	// For links.
