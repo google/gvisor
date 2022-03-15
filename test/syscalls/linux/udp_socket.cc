@@ -551,7 +551,7 @@ TEST_P(UdpSocketTest, DisconnectAfterConnectAnyWithPort) {
 
   struct sockaddr_storage addr;
   socklen_t addrlen = sizeof(addr);
-  EXPECT_THAT(getpeername(sock_.get(), AsSockAddr(&addr), &addrlen),
+  ASSERT_THAT(getpeername(sock_.get(), AsSockAddr(&addr), &addrlen),
               SyscallSucceeds());
 
   EXPECT_EQ(addrlen, addrlen_);
