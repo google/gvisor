@@ -66,7 +66,7 @@ func decode(inst linux.BPFInstruction, line int, w *bytes.Buffer) error {
 	case Misc:
 		err = decodeMisc(inst, w)
 	default:
-		return fmt.Errorf("invalid BPF instruction: %w", inst)
+		return fmt.Errorf("invalid BPF instruction: %v", inst)
 	}
 	return err
 }
@@ -95,7 +95,7 @@ func decodeLd(inst linux.BPFInstruction, w *bytes.Buffer) error {
 	case Len:
 		w.WriteString("len")
 	default:
-		return fmt.Errorf("invalid BPF LD instruction: %w", inst)
+		return fmt.Errorf("invalid BPF LD instruction: %v", inst)
 	}
 	return nil
 }
@@ -109,7 +109,7 @@ func decodeLdSize(inst linux.BPFInstruction, w *bytes.Buffer) error {
 	case B:
 		w.WriteString("1")
 	default:
-		return fmt.Errorf("invalid BPF LD size: %w", inst)
+		return fmt.Errorf("invalid BPF LD size: %v", inst)
 	}
 	return nil
 }
@@ -128,7 +128,7 @@ func decodeLdx(inst linux.BPFInstruction, w *bytes.Buffer) error {
 	case Msh:
 		w.WriteString(fmt.Sprintf("4*(P[%v:1]&0xf)", inst.K))
 	default:
-		return fmt.Errorf("invalid BPF LDX instruction: %w", inst)
+		return fmt.Errorf("invalid BPF LDX instruction: %v", inst)
 	}
 	return nil
 }
@@ -164,7 +164,7 @@ func decodeAlu(inst linux.BPFInstruction, w *bytes.Buffer) error {
 	case Xor:
 		w.WriteString("^ ")
 	default:
-		return fmt.Errorf("invalid BPF ALU instruction: %w", inst)
+		return fmt.Errorf("invalid BPF ALU instruction: %v", inst)
 	}
 	return decodeSource(inst, w)
 }
@@ -176,7 +176,7 @@ func decodeSource(inst linux.BPFInstruction, w *bytes.Buffer) error {
 	case X:
 		w.WriteString("X")
 	default:
-		return fmt.Errorf("invalid BPF ALU/JMP source instruction: %w", inst)
+		return fmt.Errorf("invalid BPF ALU/JMP source instruction: %v", inst)
 	}
 	return nil
 }
@@ -200,7 +200,7 @@ func decodeJmp(inst linux.BPFInstruction, line int, w *bytes.Buffer) error {
 		case Jset:
 			w.WriteString("& ")
 		default:
-			return fmt.Errorf("invalid BPF ALU instruction: %w", inst)
+			return fmt.Errorf("invalid BPF ALU instruction: %v", inst)
 		}
 		if err := decodeSource(inst, w); err != nil {
 			return err
@@ -231,7 +231,7 @@ func decodeRet(inst linux.BPFInstruction, w *bytes.Buffer) error {
 	case A:
 		w.WriteString("A")
 	default:
-		return fmt.Errorf("invalid BPF RET source instruction: %w", inst)
+		return fmt.Errorf("invalid BPF RET source instruction: %v", inst)
 	}
 	return nil
 }
@@ -244,7 +244,7 @@ func decodeMisc(inst linux.BPFInstruction, w *bytes.Buffer) error {
 	case Txa:
 		w.WriteString("A <- X")
 	default:
-		return fmt.Errorf("invalid BPF ALU/JMP source instruction: %w", inst)
+		return fmt.Errorf("invalid BPF ALU/JMP source instruction: %v", inst)
 	}
 	return nil
 }
