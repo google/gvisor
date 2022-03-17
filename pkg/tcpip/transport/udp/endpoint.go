@@ -697,9 +697,9 @@ func (e *endpoint) Shutdown(flags tcpip.ShutdownFlags) tcpip.Error {
 	defer e.mu.Unlock()
 
 	switch state := e.net.State(); state {
-	case transport.DatagramEndpointStateInitial, transport.DatagramEndpointStateClosed:
+	case transport.DatagramEndpointStateInitial, transport.DatagramEndpointStateClosed, transport.DatagramEndpointStateBound:
 		return &tcpip.ErrNotConnected{}
-	case transport.DatagramEndpointStateBound, transport.DatagramEndpointStateConnected:
+	case transport.DatagramEndpointStateConnected:
 	default:
 		panic(fmt.Sprintf("unhandled state = %s", state))
 	}

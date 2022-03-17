@@ -1732,9 +1732,19 @@ func TestShutdownRead(t *testing.T) {
 
 	c.CreateEndpoint(ipv6.ProtocolNumber, udp.ProtocolNumber)
 
+	err := c.EP.Shutdown(tcpip.ShutdownRead)
+	if _, ok := err.(*tcpip.ErrNotConnected); !ok {
+		t.Fatalf("expect Shutdown to fail with ErrNotConnected when endpoint just initialized, instead got: %s", err)
+	}
+
 	// Bind to wildcard.
 	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
 		c.T.Fatalf("Bind failed: %s", err)
+	}
+
+	err = c.EP.Shutdown(tcpip.ShutdownRead)
+	if _, ok := err.(*tcpip.ErrNotConnected); !ok {
+		t.Fatalf("expect Shutdown to fail with ErrNotConnected when endpoint is bound but not connected, instead got: %s", err)
 	}
 
 	if err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestV6Addr, Port: context.TestPort}); err != nil {
@@ -1763,6 +1773,21 @@ func TestShutdownWrite(t *testing.T) {
 	defer c.Cleanup()
 
 	c.CreateEndpoint(ipv6.ProtocolNumber, udp.ProtocolNumber)
+
+	err := c.EP.Shutdown(tcpip.ShutdownWrite)
+	if _, ok := err.(*tcpip.ErrNotConnected); !ok {
+		t.Fatalf("expect Shutdown to fail with ErrNotConnected when endpoint is not connected, instead got: %s", err)
+	}
+
+	// Bind to wildcard.
+	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+		c.T.Fatalf("Bind failed: %s", err)
+	}
+
+	err = c.EP.Shutdown(tcpip.ShutdownWrite)
+	if _, ok := err.(*tcpip.ErrNotConnected); !ok {
+		t.Fatalf("expect Shutdown to fail with ErrNotConnected when endpoint is not connected, instead got: %s", err)
+	}
 
 	if err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestV6Addr, Port: context.TestPort}); err != nil {
 		c.T.Fatalf("Connect failed: %s", err)

@@ -1237,6 +1237,15 @@ TEST_P(UdpSocketTest, ReadShutdownDifferentThread) {
               SyscallSucceedsWithValue(0));
 }
 
+TEST_P(UdpSocketTest, ReadShutdownNotConnected) {
+  EXPECT_THAT(shutdown(bind_.get(), SHUT_RD), SyscallFailsWithErrno(ENOTCONN));
+}
+
+TEST_P(UdpSocketTest, ReadShutdownBoundNotConnected) {
+  ASSERT_NO_ERRNO(BindLoopback());
+  EXPECT_THAT(shutdown(bind_.get(), SHUT_RD), SyscallFailsWithErrno(ENOTCONN));
+}
+
 TEST_P(UdpSocketTest, WriteShutdown) {
   ASSERT_NO_ERRNO(BindLoopback());
   EXPECT_THAT(shutdown(sock_.get(), SHUT_WR), SyscallFailsWithErrno(ENOTCONN));
@@ -1636,6 +1645,11 @@ TEST_P(UdpSocketTest, SoTimestamp) {
 }
 
 TEST_P(UdpSocketTest, WriteShutdownNotConnected) {
+  EXPECT_THAT(shutdown(bind_.get(), SHUT_WR), SyscallFailsWithErrno(ENOTCONN));
+}
+
+TEST_P(UdpSocketTest, WriteShutdownBoundNotConnected) {
+  ASSERT_NO_ERRNO(BindLoopback());
   EXPECT_THAT(shutdown(bind_.get(), SHUT_WR), SyscallFailsWithErrno(ENOTCONN));
 }
 
