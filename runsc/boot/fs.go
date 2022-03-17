@@ -622,15 +622,20 @@ type containerMounter struct {
 	k *kernel.Kernel
 
 	hints *podMountHints
+
+	// productName is the value to show in
+	// /sys/devices/virtual/dmi/id/product_name.
+	productName string
 }
 
-func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *podMountHints, vfs2Enabled bool) *containerMounter {
+func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *podMountHints, vfs2Enabled bool, productName string) *containerMounter {
 	return &containerMounter{
-		root:   info.spec.Root,
-		mounts: compileMounts(info.spec, info.conf, vfs2Enabled),
-		fds:    fdDispenser{fds: info.goferFDs},
-		k:      k,
-		hints:  hints,
+		root:        info.spec.Root,
+		mounts:      compileMounts(info.spec, info.conf, vfs2Enabled),
+		fds:         fdDispenser{fds: info.goferFDs},
+		k:           k,
+		hints:       hints,
+		productName: productName,
 	}
 }
 
