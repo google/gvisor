@@ -282,7 +282,7 @@ func addReachableEntryWithRemoved(nudDisp *testNUDDispatcher, clock *faketime.Ma
 		gotLinkResolutionResult = r
 	})
 	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-		return fmt.Errorf("got linkRes.neigh.entry(%s, '', _) = %w, want = %s", entry.Addr, err, &tcpip.ErrWouldBlock{})
+		return fmt.Errorf("got linkRes.neigh.entry(%s, '', _) = %v, want = %s", entry.Addr, err, &tcpip.ErrWouldBlock{})
 	}
 
 	{

@@ -64,7 +64,7 @@ const (
 
 func checkGetMainNICAddress(s *stack.Stack, nicID tcpip.NICID, proto tcpip.NetworkProtocolNumber, want tcpip.AddressWithPrefix) error {
 	if addr, err := s.GetMainNICAddress(nicID, proto); err != nil {
-		return fmt.Errorf("stack.GetMainNICAddress(%d, %d): %w", nicID, proto, err)
+		return fmt.Errorf("stack.GetMainNICAddress(%d, %d): %v", nicID, proto, err)
 	} else if addr != want {
 		return fmt.Errorf("got stack.GetMainNICAddress(%d, %d) = %s, want = %s", nicID, proto, addr, want)
 	}

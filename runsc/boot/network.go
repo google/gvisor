@@ -297,7 +297,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 // addresses.
 func (n *Network) createNICWithAddrs(id tcpip.NICID, ep stack.LinkEndpoint, opts stack.NICOptions, addrs []IPWithPrefix) error {
 	if err := n.Stack.CreateNICWithOptions(id, ep, opts); err != nil {
-		return fmt.Errorf("CreateNICWithOptions(%d, _, %+v) failed: %w", id, opts, err)
+		return fmt.Errorf("CreateNICWithOptions(%d, _, %+v) failed: %v", id, opts, err)
 	}
 
 	for _, addr := range addrs {
@@ -310,7 +310,7 @@ func (n *Network) createNICWithAddrs(id tcpip.NICID, ep stack.LinkEndpoint, opts
 			},
 		}
 		if err := n.Stack.AddProtocolAddress(id, protocolAddr, stack.AddressProperties{}); err != nil {
-			return fmt.Errorf("AddProtocolAddress(%d, %+v, {}) failed: %w", id, protocolAddr, err)
+			return fmt.Errorf("AddProtocolAddress(%d, %+v, {}) failed: %v", id, protocolAddr, err)
 		}
 	}
 	return nil

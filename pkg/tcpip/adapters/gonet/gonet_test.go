@@ -621,7 +621,7 @@ func TestConnectedPacketConnTransfer(t *testing.T) {
 func makePipe() (c1, c2 net.Conn, stop func(), err error) {
 	s, e := newLoopbackStack()
 	if e != nil {
-		return nil, nil, nil, fmt.Errorf("newLoopbackStack() = %w", e)
+		return nil, nil, nil, fmt.Errorf("newLoopbackStack() = %v", e)
 	}
 
 	ip := tcpip.Address(net.IPv4(169, 254, 10, 1).To4())
@@ -631,7 +631,7 @@ func makePipe() (c1, c2 net.Conn, stop func(), err error) {
 		AddressWithPrefix: ip.WithPrefix(),
 	}
 	if err := s.AddProtocolAddress(NICID, protocolAddr, stack.AddressProperties{}); err != nil {
-		return nil, nil, nil, fmt.Errorf("AddProtocolAddress(%d, %+v, {}): %w", NICID, protocolAddr, err)
+		return nil, nil, nil, fmt.Errorf("AddProtocolAddress(%d, %+v, {}): %v", NICID, protocolAddr, err)
 	}
 
 	l, err := ListenTCP(s, addr, ipv4.ProtocolNumber)
