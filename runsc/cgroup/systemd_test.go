@@ -18,8 +18,6 @@ package cgroup
 
 import (
 	"errors"
-	"path/filepath"
-	"strconv"
 	"testing"
 
 	systemdDbus "github.com/coreos/go-systemd/v22/dbus"
@@ -27,38 +25,85 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
-var defaultProps = []systemdDbus.Property{}
+var (
+	defaultProps         = []systemdDbus.Property{}
+	mandatoryControllers = []string{"cpu", "cpuset", "io", "memory", "pids"}
+)
+
+func TestIsValidSlice(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		slice string
+		err   error
+	}{
+		{
+			name:  "success",
+			slice: "system.slice",
+		},
+		{
+			name:  "root slice",
+			slice: "-.slice",
+		},
+		{
+			name:  "path in slice",
+			slice: "system-child-grandchild.slice",
+		},
+		{
+			name:  "bad suffix",
+			slice: "system.scope",
+			err:   ErrInvalidSlice,
+		},
+		{
+			name:  "has path seperators",
+			slice: "systemd.slice/child.slice",
+			err:   ErrInvalidSlice,
+		},
+		{
+			name:  "invalid separator pattern",
+			slice: "systemd--child.slice",
+			err:   ErrInvalidSlice,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validSlice(tc.slice)
+			if !errors.Is(err, tc.err) {
+				t.Errorf("validSlice(%s) = %v, want %v", tc.slice, err, tc.err)
+			}
+		})
+	}
+}
+
+func TestExpandSlice(t *testing.T) {
+	original := "test-a-b.slice"
+	want := "/test.slice/test-a.slice/test-a-b.slice"
+	expanded := expandSlice(original)
+	if expanded != want {
+		t.Errorf("expandSlice(%q) = %q, want %q", original, expanded, want)
+	}
+}
 
 func TestInstall(t *testing.T) {
 	for _, tc := range []struct {
-		name       string
-		res        *specs.LinuxResources
-		cgroupPath string
-		wantProps  []systemdDbus.Property
-		err        error
+		name      string
+		res       *specs.LinuxResources
+		wantProps []systemdDbus.Property
+		err       error
 	}{
 		{
-			name:       "bad parent",
-			res:        nil,
-			cgroupPath: "not_a_slice",
-			err:        ErrInvalidGroupPath,
-		},
-		{
-			name: "no limits",
+			name: "defaults",
 			res:  nil,
 			wantProps: []systemdDbus.Property{
 				{"Slice", dbus.MakeVariant("parent.slice")},
-				{Name: "Description", Value: dbus.MakeVariant("runsc container ")},
+				{Name: "Description", Value: dbus.MakeVariant("Secure container 123")},
 				{Name: "MemoryAccounting", Value: dbus.MakeVariant(true)},
 				{Name: "CPUAccounting", Value: dbus.MakeVariant(true)},
 				{Name: "TasksAccounting", Value: dbus.MakeVariant(true)},
 				{Name: "IOAccounting", Value: dbus.MakeVariant(true)},
 				{Name: "Delegate", Value: dbus.MakeVariant(true)},
+				{Name: "DefaultDependencies", Value: dbus.MakeVariant(false)},
 			},
-			cgroupPath: "parent.slice",
 		},
 		{
 			name: "memory",
@@ -69,11 +114,10 @@ func TestInstall(t *testing.T) {
 					Reservation: int64Ptr(3),
 				},
 			},
-			cgroupPath: "parent.slice",
 			wantProps: []systemdDbus.Property{
-				{"MemoryMax", dbus.MakeVariant(int64(1))},
-				{"MemoryLow", dbus.MakeVariant(int64(3))},
-				{"MemorySwapMax", dbus.MakeVariant("1")},
+				{"MemoryMax", dbus.MakeVariant(uint64(1))},
+				{"MemoryLow", dbus.MakeVariant(uint64(3))},
+				{"MemorySwapMax", dbus.MakeVariant(uint64(1))},
 			},
 		},
 		{
@@ -83,21 +127,19 @@ func TestInstall(t *testing.T) {
 					Swap: int64Ptr(1),
 				},
 			},
-			err:        ErrBadResourceSpec,
-			cgroupPath: "parent.slice",
+			err: ErrBadResourceSpec,
 		},
 		{
 			name: "cpu defaults",
 			res: &specs.LinuxResources{
 				CPU: &specs.LinuxCPU{
 					Shares: uint64Ptr(0),
-					Quota:  int64Ptr(0),
+					Quota:  int64Ptr(5),
 					Period: uint64Ptr(0),
 				},
 			},
-			cgroupPath: "parent.slice",
 			wantProps: []systemdDbus.Property{
-				{"CPUQuotaPeriodSec", dbus.MakeVariant(strconv.FormatUint(defaultPeriod/10, 10) + "ms")},
+				{"CPUQuotaPerSecUSec", dbus.MakeVariant(uint64(10000))},
 			},
 		},
 		{
@@ -105,19 +147,31 @@ func TestInstall(t *testing.T) {
 			res: &specs.LinuxResources{
 				CPU: &specs.LinuxCPU{
 					Shares: uint64Ptr(1),
-					Period: uint64Ptr(20),
-					Quota:  int64Ptr(3),
+					Period: uint64Ptr(20000),
+					Quota:  int64Ptr(300000),
 					Cpus:   "4",
 					Mems:   "5",
 				},
 			},
-			cgroupPath: "parent.slice",
 			wantProps: []systemdDbus.Property{
-				{"CPUShares", dbus.MakeVariant(convertCPUSharesToCgroupV2Value(1))},
-				{"CPUQuotaPeriodSec", dbus.MakeVariant("2ms")},
-				{"CPUQuota", dbus.MakeVariant("3%")},
-				{"AllowedCPUs", dbus.MakeVariant("4")},
-				{"AllowedMemoryNodes", dbus.MakeVariant("5")},
+				{"CPUWeight", dbus.MakeVariant(convertCPUSharesToCgroupV2Value(1))},
+				{"CPUQuotaPeriodUSec", dbus.MakeVariant(uint64(20000))},
+				{"CPUQuotaPerSecUSec", dbus.MakeVariant(uint64(15000000))},
+				{"AllowedCPUs", dbus.MakeVariant([]byte{1 << 4})},
+				{"AllowedMemoryNodes", dbus.MakeVariant([]byte{1 << 5})},
+			},
+		},
+		{
+			name: "cpuset",
+			res: &specs.LinuxResources{
+				CPU: &specs.LinuxCPU{
+					Cpus: "1-3,5",
+					Mems: "5-8",
+				},
+			},
+			wantProps: []systemdDbus.Property{
+				{"AllowedCPUs", dbus.MakeVariant([]byte{0b_101110})},
+				{"AllowedMemoryNodes", dbus.MakeVariant([]byte{1, 0b_11100000})},
 			},
 		},
 		{
@@ -144,29 +198,24 @@ func TestInstall(t *testing.T) {
 					},
 				},
 			},
-			cgroupPath: "parent.slice",
 			wantProps: []systemdDbus.Property{
-				{"IOWeight", dbus.MakeVariant(uint16(1))},
-				{"IODevice", dbus.MakeVariant("2:3 4")},
-				{"IODevice", dbus.MakeVariant("5:6 7")},
-				{"IOReadBandwidth", dbus.MakeVariant("8:9 10")},
-				{"IOReadBandwidth", dbus.MakeVariant("11:12 13")},
-				{"IOWriteBandwidth", dbus.MakeVariant("14:15 16")},
-				{"IOReadIOPS", dbus.MakeVariant("17:18 19")},
-				{"IOWriteIOPS", dbus.MakeVariant("20:21 22")},
+				{"IOWeight", dbus.MakeVariant(convertBlkIOToIOWeightValue(1))},
+				{"IODeviceWeight", dbus.MakeVariant("2:3 4")},
+				{"IODeviceWeight", dbus.MakeVariant("5:6 7")},
+				{"IOReadBandwidthMax", dbus.MakeVariant("8:9 10")},
+				{"IOReadBandwidthMax", dbus.MakeVariant("11:12 13")},
+				{"IOWriteBandwidthMax", dbus.MakeVariant("14:15 16")},
+				{"IOReadIOPSMax", dbus.MakeVariant("17:18 19")},
+				{"IOWriteIOPSMax", dbus.MakeVariant("20:21 22")},
 			},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			dir := testutil.TmpDir()
-			testPath := filepath.Join(dir, tc.cgroupPath)
-
-			cg := cgroupSystemd{
-				Path: testPath,
-			}
+			cg := cgroupSystemd{Name: "123", Parent: "parent.slice"}
+			cg.Controllers = mandatoryControllers
 			err := cg.Install(tc.res)
 			if !errors.Is(err, tc.err) {
-				t.Fatalf("Wrong error, got: %s, want: %s", tc.err, err)
+				t.Fatalf("Wrong error, got: %s, want: %s", err, tc.err)
 			}
 			cmper := cmp.Comparer(func(a dbus.Variant, b dbus.Variant) bool {
 				return a.String() == b.String()

@@ -28,7 +28,7 @@ To run image and integration tests, run:
 
 To run root tests, run:
 
-`make root-tests`
+`make sudo TARGETS=test/root:root_test`
 
 There are a few other interesting variations for image and integration tests:
 

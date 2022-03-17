@@ -332,25 +332,34 @@ type cgroupV1 struct {
 
 // NewFromSpec creates a new Cgroup instance if the spec includes a cgroup path.
 // Returns nil otherwise. Cgroup paths are loaded based on the current process.
-func NewFromSpec(spec *specs.Spec) (Cgroup, error) {
+// If useSystemd is true, the Cgroup will be created and managed with
+// systemd. This requires systemd (>=v244) to be running on the host and the
+// cgroup path to be in the form `slice:prefix:name`.
+func NewFromSpec(spec *specs.Spec, useSystemd bool) (Cgroup, error) {
 	if spec.Linux == nil || spec.Linux.CgroupsPath == "" {
 		return nil, nil
 	}
-	return NewFromPath(spec.Linux.CgroupsPath)
+	return NewFromPath(spec.Linux.CgroupsPath, useSystemd)
 }
 
 // NewFromPath creates a new Cgroup instance from the specified relative path.
 // Cgroup paths are loaded based on the current process.
-func NewFromPath(cgroupsPath string) (Cgroup, error) {
-	return new("self", cgroupsPath)
+// If useSystemd is true, the Cgroup will be created and managed with
+// systemd. This requires systemd (>=v244) to be running on the host and the
+// cgroup path to be in the form `slice:prefix:name`.
+func NewFromPath(cgroupsPath string, useSystemd bool) (Cgroup, error) {
+	return new("self", cgroupsPath, useSystemd)
 }
 
 // NewFromPid loads cgroup for the given process.
-func NewFromPid(pid int) (Cgroup, error) {
-	return new(strconv.Itoa(pid), "")
+// If useSystemd is true, the Cgroup will be created and managed with
+// systemd. This requires systemd (>=v244) to be running on the host and the
+// cgroup path to be in the form `slice:prefix:name`.
+func NewFromPid(pid int, useSystemd bool) (Cgroup, error) {
+	return new(strconv.Itoa(pid), "", useSystemd)
 }
 
-func new(pid, cgroupsPath string) (Cgroup, error) {
+func new(pid, cgroupsPath string, useSystemd bool) (Cgroup, error) {
 	var (
 		parents map[string]string
 		err     error
@@ -367,13 +376,15 @@ func new(pid, cgroupsPath string) (Cgroup, error) {
 	}
 
 	if IsOnlyV2() {
-		if p, ok := parents[cgroup2Key]; ok {
+		// The cgroupsPath is in a special `slice:prefix:name` format for systemd
+		// that should not be modified.
+		if p, ok := parents[cgroup2Key]; ok && !useSystemd {
 			// The cgroup of current pid will have tasks in it and we can't use
 			// that, instead, use the its parent which should not have tasks in it.
 			cgroupsPath = filepath.Join(filepath.Dir(p), cgroupsPath)
 		}
 		// Assume that for v2, cgroup is always mounted at cgroupRoot.
-		cg, err = newCgroupV2(cgroupRoot, cgroupsPath)
+		cg, err = newCgroupV2(cgroupRoot, cgroupsPath, useSystemd)
 		if err != nil {
 			return nil, err
 		}
@@ -390,7 +401,8 @@ func new(pid, cgroupsPath string) (Cgroup, error) {
 
 // CgroupJSON is a wrapper for Cgroup that can be encoded to JSON.
 type CgroupJSON struct {
-	Cgroup Cgroup `json:"cgroup"`
+	Cgroup     Cgroup `json:"cgroup"`
+	UseSystemd bool   `json:"useSystemd"`
 }
 
 type cgroupJSONv1 struct {
@@ -401,8 +413,23 @@ type cgroupJSONv2 struct {
 	Cgroup *cgroupV2 `json:"cgroup"`
 }
 
+type cgroupJSONSystemd struct {
+	Cgroup *cgroupSystemd `json:"cgroup"`
+}
+
 // UnmarshalJSON implements json.Unmarshaler.UnmarshalJSON
 func (c *CgroupJSON) UnmarshalJSON(data []byte) error {
+	if c.UseSystemd {
+		systemd := cgroupJSONSystemd{}
+		if err := json.Unmarshal(data, &systemd); err != nil {
+			return err
+		}
+		if systemd.Cgroup != nil {
+			c.Cgroup = systemd.Cgroup
+		}
+		return nil
+	}
+
 	if IsOnlyV2() {
 		v2 := cgroupJSONv2{}
 		err := json.Unmarshal(data, &v2)
@@ -426,6 +453,10 @@ func (c *CgroupJSON) MarshalJSON() ([]byte, error) {
 		return json.Marshal(&v1)
 	}
 	if IsOnlyV2() {
+		if c.UseSystemd {
+			systemd := cgroupJSONSystemd{Cgroup: c.Cgroup.(*cgroupSystemd)}
+			return json.Marshal(&systemd)
+		}
 		v2 := cgroupJSONv2{Cgroup: c.Cgroup.(*cgroupV2)}
 		return json.Marshal(&v2)
 	}

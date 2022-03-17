@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/test/testutil"
+	"gvisor.dev/gvisor/runsc/cgroup"
 )
 
 var (
@@ -54,6 +55,11 @@ var (
 	pprofCPU   = flag.Bool("pprof-cpu", false, "enables CPU profiling with runsc debug")
 	pprofHeap  = flag.Bool("pprof-heap", false, "enables heap profiling with runsc debug")
 	pprofMutex = flag.Bool("pprof-mutex", false, "enables mutex profiling with runsc debug")
+
+	// This matches the string "native.cgroupdriver=systemd" (including optional
+	// whitespace), which can be found in a docker daemon configuration file's
+	// exec-opts field.
+	useSystemdRgx = regexp.MustCompile("\\s*(native\\.cgroupdriver)\\s*=\\s*(systemd)\\s*")
 )
 
 // EnsureSupportedDockerVersion checks if correct docker is installed.
@@ -90,6 +96,39 @@ func RuntimePath() (string, error) {
 		return "", fmt.Errorf("runtime does not declare a path: %v", rs)
 	}
 	return p, nil
+}
+
+// UsingSystemdCgroup returns true if the docker configuration has the
+// native.cgroupdriver=systemd option set in "exec-opts", or if the
+// system is using cgroupv2, in which case systemd is the default driver.
+func UsingSystemdCgroup() (bool, error) {
+	// Read the configuration data; the file must exist.
+	configBytes, err := ioutil.ReadFile(*config)
+	if err != nil {
+		return false, err
+	}
+	// Unmarshal the configuration.
+	c := make(map[string]interface{})
+	if err := json.Unmarshal(configBytes, &c); err != nil {
+		return false, err
+	}
+	// Decode the expected configuration.
+	e, ok := c["exec-opts"]
+	if !ok {
+		// No exec-opts. Default is true on cgroupv2, false otherwise.
+		return cgroup.IsOnlyV2(), nil
+	}
+	eos, ok := e.([]interface{})
+	if !ok {
+		// The exec opts are not an array.
+		return false, fmt.Errorf("unexpected format: %+v", eos)
+	}
+	for _, opt := range eos {
+		if optStr, ok := opt.(string); ok && useSystemdRgx.MatchString(optStr) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func runtimeMap() (map[string]interface{}, error) {

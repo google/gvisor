@@ -31,7 +31,9 @@ import (
 // path for runsc.
 func TestMain(m *testing.M) {
 	config.RegisterFlags(flag.CommandLine)
-	flag.Parse()
+	if !flag.CommandLine.Parsed() {
+		flag.Parse()
+	}
 
 	if !specutils.HasCapabilities(capability.CAP_SYS_ADMIN, capability.CAP_DAC_OVERRIDE) {
 		fmt.Println("Test requires sysadmin privileges to run. Try again with sudo.")
