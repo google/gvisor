@@ -479,7 +479,7 @@ func (c *testContext) overflowCache(opts overflowOptions) error {
 			return fmt.Errorf("got c.linkRes.entries.entry(%d) = _, false, want = true", i)
 		}
 		if err := addReachableEntryWithRemoved(c.nudDisp, c.clock, c.linkRes, entry, removedEntries); err != nil {
-			return fmt.Errorf("addReachableEntryWithRemoved(...) = %s", err)
+			return fmt.Errorf("addReachableEntryWithRemoved(...) = %w", err)
 		}
 	}
 

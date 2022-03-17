@@ -78,7 +78,7 @@ func newVerityRoot(t *testing.T, hashAlg HashAlgorithm) (*vfs.VirtualFilesystem,
 	rand.Seed(time.Now().UnixNano())
 	vfsObj := &vfs.VirtualFilesystem{}
 	if err := vfsObj.Init(ctx); err != nil {
-		return nil, vfs.VirtualDentry{}, nil, fmt.Errorf("VFS init: %v", err)
+		return nil, vfs.VirtualDentry{}, nil, fmt.Errorf("VFS init: %w", err)
 	}
 
 	vfsObj.MustRegisterFilesystemType("verity", FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
@@ -102,7 +102,7 @@ func newVerityRoot(t *testing.T, hashAlg HashAlgorithm) (*vfs.VirtualFilesystem,
 		},
 	})
 	if err != nil {
-		return nil, vfs.VirtualDentry{}, nil, fmt.Errorf("NewMountNamespace: %v", err)
+		return nil, vfs.VirtualDentry{}, nil, fmt.Errorf("NewMountNamespace: %w", err)
 	}
 	root := mntns.Root()
 	root.IncRef()
@@ -290,11 +290,11 @@ func flipRandomBit(ctx context.Context, fd *vfs.FileDescription, size int) error
 	randomPos := int64(rand.Intn(size))
 	byteToModify := make([]byte, 1)
 	if _, err := fd.PRead(ctx, usermem.BytesIOSequence(byteToModify), randomPos, vfs.ReadOptions{}); err != nil {
-		return fmt.Errorf("lowerFD.PRead: %v", err)
+		return fmt.Errorf("lowerFD.PRead: %w", err)
 	}
 	byteToModify[0] ^= 1
 	if _, err := fd.PWrite(ctx, usermem.BytesIOSequence(byteToModify), randomPos, vfs.WriteOptions{}); err != nil {
-		return fmt.Errorf("lowerFD.PWrite: %v", err)
+		return fmt.Errorf("lowerFD.PWrite: %w", err)
 	}
 	return nil
 }

@@ -78,12 +78,12 @@ func (e *eventProcessor) processOne(src io.Reader, out *os.File) error {
 	// event.
 	encodedEv := emptyAny()
 	if err := proto.Unmarshal(buf, encodedEv); err != nil {
-		return fmt.Errorf("failed to unmarshal 'any' protobuf message: %v", err)
+		return fmt.Errorf("failed to unmarshal 'any' protobuf message: %w", err)
 	}
 
 	var ev pb.DebugEvent
 	if err := (encodedEv).UnmarshalTo(&ev); err != nil {
-		return fmt.Errorf("failed to decode 'any' protobuf message: %v", err)
+		return fmt.Errorf("failed to decode 'any' protobuf message: %w", err)
 	}
 
 	if e.filtering && e.allowlist[ev.Name] {

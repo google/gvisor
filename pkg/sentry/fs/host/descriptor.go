@@ -74,7 +74,7 @@ func (d *descriptor) initAfterLoad(id uint64, queue *waiter.Queue) error {
 	var err error
 	d.value, err = unix.Dup(d.origFD)
 	if err != nil {
-		return fmt.Errorf("failed to dup restored fd %d: %v", d.origFD, err)
+		return fmt.Errorf("failed to dup restored fd %d: %w", d.origFD, err)
 	}
 	if d.wouldBlock {
 		if err := unix.SetNonblock(d.value, true); err != nil {

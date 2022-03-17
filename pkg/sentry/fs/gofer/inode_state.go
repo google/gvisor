@@ -123,7 +123,7 @@ func (i *inodeFileState) afterLoad() {
 
 		_, i.file, err = i.s.attach.walk(ctx, splitAbsolutePath(name))
 		if err != nil {
-			return fs.ErrCorruption{fmt.Errorf("failed to walk to %q: %v", name, err)}
+			return fs.ErrCorruption{fmt.Errorf("failed to walk to %q: %w", name, err)}
 		}
 
 		// Remap the saved inode number into the gofer device using the
@@ -131,7 +131,7 @@ func (i *inodeFileState) afterLoad() {
 		// environment.
 		qid, mask, attrs, err := i.file.getAttr(ctx, p9.AttrMaskAll())
 		if err != nil {
-			return fs.ErrCorruption{fmt.Errorf("failed to get file attributes of %s: %v", name, err)}
+			return fs.ErrCorruption{fmt.Errorf("failed to get file attributes of %s: %w", name, err)}
 		}
 		if !mask.RDev {
 			return fs.ErrCorruption{fmt.Errorf("file %s lacks device", name)}

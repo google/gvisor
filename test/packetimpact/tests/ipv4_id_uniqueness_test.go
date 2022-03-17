@@ -34,7 +34,7 @@ func init() {
 func recvTCPSegment(t *testing.T, conn *testbench.TCPIPv4, expect *testbench.TCP, expectPayload *testbench.Payload) (uint16, error) {
 	layers, err := conn.ExpectData(t, expect, expectPayload, time.Second)
 	if err != nil {
-		return 0, fmt.Errorf("failed to receive TCP segment: %s", err)
+		return 0, fmt.Errorf("failed to receive TCP segment: %w", err)
 	}
 	if len(layers) < 2 {
 		return 0, fmt.Errorf("got packet with layers: %v, expected to have at least 2 layers (link and network)", layers)

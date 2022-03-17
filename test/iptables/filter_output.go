@@ -67,7 +67,7 @@ func (*FilterOutputDropTCPDestPort) ContainerAction(ctx context.Context, ip net.
 	if err := listenTCP(timedCtx, acceptPort, ipv6); err == nil {
 		return fmt.Errorf("connection destined to port %d should not be accepted, but got accepted", dropPort)
 	} else if !errors.Is(err, context.DeadlineExceeded) {
-		return fmt.Errorf("error reading: %v", err)
+		return fmt.Errorf("error reading: %w", err)
 	}
 
 	return nil
@@ -107,7 +107,7 @@ func (*FilterOutputDropTCPSrcPort) ContainerAction(ctx context.Context, ip net.I
 	if err := listenTCP(timedCtx, dropPort, ipv6); err == nil {
 		return fmt.Errorf("connection on port %d should not be accepted, but got accepted", dropPort)
 	} else if !errors.Is(err, context.DeadlineExceeded) {
-		return fmt.Errorf("error reading: %v", err)
+		return fmt.Errorf("error reading: %w", err)
 	}
 
 	return nil
@@ -171,7 +171,7 @@ func (*FilterOutputDropTCPOwner) ContainerAction(ctx context.Context, ip net.IP,
 	if err := listenTCP(timedCtx, acceptPort, ipv6); err == nil {
 		return fmt.Errorf("connection on port %d should be dropped, but got accepted", acceptPort)
 	} else if !errors.Is(err, context.DeadlineExceeded) {
-		return fmt.Errorf("error reading: %v", err)
+		return fmt.Errorf("error reading: %w", err)
 	}
 
 	return nil
@@ -242,7 +242,7 @@ func (*FilterOutputDropUDPOwner) LocalAction(ctx context.Context, ip net.IP, ipv
 	if err := listenUDP(timedCtx, dropPort, ipv6); err == nil {
 		return fmt.Errorf("packets should not be received")
 	} else if !errors.Is(err, context.DeadlineExceeded) {
-		return fmt.Errorf("error reading: %v", err)
+		return fmt.Errorf("error reading: %w", err)
 	}
 
 	return nil
@@ -321,7 +321,7 @@ func (*FilterOutputDropGIDOwner) ContainerAction(ctx context.Context, ip net.IP,
 	if err := listenTCP(timedCtx, acceptPort, ipv6); err == nil {
 		return fmt.Errorf("connection on port %d should not be accepted, but got accepted", acceptPort)
 	} else if !errors.Is(err, context.DeadlineExceeded) {
-		return fmt.Errorf("error reading: %v", err)
+		return fmt.Errorf("error reading: %w", err)
 	}
 
 	return nil
@@ -364,7 +364,7 @@ func (*FilterOutputInvertGIDOwner) ContainerAction(ctx context.Context, ip net.I
 	if err := listenTCP(timedCtx, acceptPort, ipv6); err == nil {
 		return fmt.Errorf("connection on port %d should not be accepted, but got accepted", acceptPort)
 	} else if !errors.Is(err, context.DeadlineExceeded) {
-		return fmt.Errorf("error reading: %v", err)
+		return fmt.Errorf("error reading: %w", err)
 	}
 
 	return nil
@@ -437,7 +437,7 @@ func (*FilterOutputInvertUIDAndGIDOwner) ContainerAction(ctx context.Context, ip
 	if err := listenTCP(timedCtx, acceptPort, ipv6); err == nil {
 		return fmt.Errorf("connection on port %d should not be accepted, but got accepted", acceptPort)
 	} else if !errors.Is(err, context.DeadlineExceeded) {
-		return fmt.Errorf("error reading: %v", err)
+		return fmt.Errorf("error reading: %w", err)
 	}
 
 	return nil
@@ -583,7 +583,7 @@ func (*FilterOutputInterfaceDrop) LocalAction(ctx context.Context, ip net.IP, ip
 	if err := listenUDP(timedCtx, acceptPort, ipv6); err == nil {
 		return fmt.Errorf("packets should not be received on port %v, but are received", acceptPort)
 	} else if !errors.Is(err, context.DeadlineExceeded) {
-		return fmt.Errorf("error reading: %v", err)
+		return fmt.Errorf("error reading: %w", err)
 	}
 
 	return nil
@@ -641,7 +641,7 @@ func (*FilterOutputInterfaceBeginsWith) LocalAction(ctx context.Context, ip net.
 	if err := listenUDP(timedCtx, acceptPort, ipv6); err == nil {
 		return fmt.Errorf("packets should not be received on port %v, but are received", acceptPort)
 	} else if !errors.Is(err, context.DeadlineExceeded) {
-		return fmt.Errorf("error reading: %v", err)
+		return fmt.Errorf("error reading: %w", err)
 	}
 
 	return nil
@@ -670,7 +670,7 @@ func (*FilterOutputInterfaceInvertDrop) ContainerAction(ctx context.Context, ip 
 	if err := listenTCP(timedCtx, acceptPort, ipv6); err == nil {
 		return fmt.Errorf("connection on port %d should not be accepted, but got accepted", acceptPort)
 	} else if !errors.Is(err, context.DeadlineExceeded) {
-		return fmt.Errorf("error reading: %v", err)
+		return fmt.Errorf("error reading: %w", err)
 	}
 
 	return nil

@@ -56,14 +56,14 @@ func setupNetwork(conn *urpc.Client, pid int, conf *config.Config) error {
 	case config.NetworkNone:
 		log.Infof("Network is disabled, create loopback interface only")
 		if err := createDefaultLoopbackInterface(conn); err != nil {
-			return fmt.Errorf("creating default loopback interface: %v", err)
+			return fmt.Errorf("creating default loopback interface: %w", err)
 		}
 	case config.NetworkSandbox:
 		// Build the path to the net namespace of the sandbox process.
 		// This is what we will copy.
 		nsPath := filepath.Join("/proc", strconv.Itoa(pid), "ns/net")
 		if err := createInterfacesAndRoutesFromNS(conn, nsPath, conf.HardwareGSO, conf.SoftwareGSO, conf.TXChecksumOffload, conf.RXChecksumOffload, conf.NumNetworkChannels, conf.QDisc); err != nil {
-			return fmt.Errorf("creating interfaces from net namespace %q: %v", nsPath, err)
+			return fmt.Errorf("creating interfaces from net namespace %q: %w", nsPath, err)
 		}
 	case config.NetworkHost:
 		// Nothing to do here.
@@ -77,7 +77,7 @@ func createDefaultLoopbackInterface(conn *urpc.Client) error {
 	if err := conn.Call(boot.NetworkCreateLinksAndRoutes, &boot.CreateLinksAndRoutesArgs{
 		LoopbackLinks: []boot.LoopbackLink{boot.DefaultLoopbackLink},
 	}, nil); err != nil {
-		return fmt.Errorf("creating loopback link and routes: %v", err)
+		return fmt.Errorf("creating loopback link and routes: %w", err)
 	}
 	return nil
 }
@@ -90,7 +90,7 @@ func joinNetNS(nsPath string) (func(), error) {
 	})
 	if err != nil {
 		runtime.UnlockOSThread()
-		return nil, fmt.Errorf("joining net namespace %q: %v", nsPath, err)
+		return nil, fmt.Errorf("joining net namespace %q: %w", nsPath, err)
 	}
 	return func() {
 		restoreNS()
@@ -108,7 +108,7 @@ func isRootNS() (bool, error) {
 	case unix.ENOENT:
 		return false, nil
 	default:
-		return false, fmt.Errorf("failed to access /proc/sys/net/core/rmem_default: %v", err)
+		return false, fmt.Errorf("failed to access /proc/sys/net/core/rmem_default: %w", err)
 	}
 }
 
@@ -194,7 +194,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, hardwareG
 		// will remove the routes as well.
 		routes, defv4, defv6, err := routesForIface(iface)
 		if err != nil {
-			return fmt.Errorf("getting routes for interface %q: %v", iface.Name, err)
+			return fmt.Errorf("getting routes for interface %q: %w", iface.Name, err)
 		}
 		if defv4 != nil {
 			if !args.Defaultv4Gateway.Route.Empty() {
@@ -289,7 +289,7 @@ func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool) (
 	const protocol = 0x0300 // htons(ETH_P_ALL)
 	fd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW, protocol)
 	if err != nil {
-		return nil, fmt.Errorf("unable to create raw socket: %v", err)
+		return nil, fmt.Errorf("unable to create raw socket: %w", err)
 	}
 	deviceFile := os.NewFile(uintptr(fd), "raw-device-fd")
 	// Bind to the appropriate device.
@@ -298,18 +298,18 @@ func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool) (
 		Ifindex:  iface.Index,
 	}
 	if err := unix.Bind(fd, &ll); err != nil {
-		return nil, fmt.Errorf("unable to bind to %q: %v", iface.Name, err)
+		return nil, fmt.Errorf("unable to bind to %q: %w", iface.Name, err)
 	}
 
 	gsoMaxSize := uint32(0)
 	if enableGSO {
 		gso, err := isGSOEnabled(fd, iface.Name)
 		if err != nil {
-			return nil, fmt.Errorf("getting GSO for interface %q: %v", iface.Name, err)
+			return nil, fmt.Errorf("getting GSO for interface %q: %w", iface.Name, err)
 		}
 		if gso {
 			if err := unix.SetsockoptInt(fd, unix.SOL_PACKET, unix.PACKET_VNET_HDR, 1); err != nil {
-				return nil, fmt.Errorf("unable to enable the PACKET_VNET_HDR option: %v", err)
+				return nil, fmt.Errorf("unable to enable the PACKET_VNET_HDR option: %w", err)
 			}
 			gsoMaxSize = ifaceLink.Attrs().GSOMaxSize
 		} else {
@@ -380,7 +380,7 @@ func routesForIface(iface net.Interface) ([]boot.Route, *boot.Route, *boot.Route
 	}
 	rs, err := netlink.RouteList(link, netlink.FAMILY_ALL)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("getting routes from %q: %v", iface.Name, err)
+		return nil, nil, nil, fmt.Errorf("getting routes from %q: %w", iface.Name, err)
 	}
 
 	var defv4, defv6 *boot.Route

@@ -258,7 +258,7 @@ func NewSpecWithArgs(args ...string) *specs.Spec {
 func SetupRootDir() (string, func(), error) {
 	rootDir, err := ioutil.TempDir(TmpDir(), "containers")
 	if err != nil {
-		return "", nil, fmt.Errorf("error creating root dir: %v", err)
+		return "", nil, fmt.Errorf("error creating root dir: %w", err)
 	}
 	return rootDir, func() { os.RemoveAll(rootDir) }, nil
 }
@@ -286,12 +286,12 @@ func SetupContainer(spec *specs.Spec, conf *config.Config) (rootDir, bundleDir s
 func SetupBundleDir(spec *specs.Spec) (string, func(), error) {
 	bundleDir, err := ioutil.TempDir(TmpDir(), "bundle")
 	if err != nil {
-		return "", nil, fmt.Errorf("error creating bundle dir: %v", err)
+		return "", nil, fmt.Errorf("error creating bundle dir: %w", err)
 	}
 	cleanup := func() { os.RemoveAll(bundleDir) }
 	if err := writeSpec(bundleDir, spec); err != nil {
 		cleanup()
-		return "", nil, fmt.Errorf("error writing spec: %v", err)
+		return "", nil, fmt.Errorf("error writing spec: %w", err)
 	}
 	return bundleDir, cleanup, nil
 }
@@ -531,7 +531,7 @@ func KillCommand(cmd *exec.Cmd) error {
 	}
 	if err := cmd.Process.Kill(); err != nil {
 		if !strings.Contains(err.Error(), "process already finished") {
-			return fmt.Errorf("failed to kill process %v: %v", cmd, err)
+			return fmt.Errorf("failed to kill process %v: %w", cmd, err)
 		}
 	}
 	return cmd.Wait()
@@ -600,11 +600,11 @@ func TestIndicesForShard(numTests int) ([]int, error) {
 		var err error
 		shardIndex, err = strconv.Atoi(indexStr)
 		if err != nil {
-			return nil, fmt.Errorf("invalid TEST_SHARD_INDEX %q: %v", indexStr, err)
+			return nil, fmt.Errorf("invalid TEST_SHARD_INDEX %q: %w", indexStr, err)
 		}
 		shardTotal, err = strconv.Atoi(totalStr)
 		if err != nil {
-			return nil, fmt.Errorf("invalid TEST_TOTAL_SHARDS %q: %v", totalStr, err)
+			return nil, fmt.Errorf("invalid TEST_TOTAL_SHARDS %q: %w", totalStr, err)
 		}
 	}
 

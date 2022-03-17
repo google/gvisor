@@ -46,7 +46,7 @@ func WaitUntilServing(ctx context.Context, machine Machine, server net.IP, port 
 // DropCaches drops caches on the provided machine. Requires root.
 func DropCaches(machine Machine) error {
 	if out, err := machine.RunCommand("/bin/sh", "-c", "sync && sysctl vm.drop_caches=3"); err != nil {
-		return fmt.Errorf("failed to drop caches: %v logs: %s", err, out)
+		return fmt.Errorf("failed to drop caches: %w logs: %s", err, out)
 	}
 	return nil
 }
@@ -83,7 +83,7 @@ func MakeMount(machine Machine, fsType FileSystemType, cu *cleanup.Cleanup) ([]m
 	case BindFS:
 		dir, err := machine.RunCommand("mktemp", "-d")
 		if err != nil {
-			return mounts, "", fmt.Errorf("failed to create tempdir: %v", err)
+			return mounts, "", fmt.Errorf("failed to create tempdir: %w", err)
 		}
 		dir = strings.TrimSuffix(dir, "\n")
 		cu.Add(func() {
@@ -91,7 +91,7 @@ func MakeMount(machine Machine, fsType FileSystemType, cu *cleanup.Cleanup) ([]m
 		})
 		out, err := machine.RunCommand("chmod", "777", dir)
 		if err != nil {
-			return mounts, "", fmt.Errorf("failed modify directory: %v %s", err, out)
+			return mounts, "", fmt.Errorf("failed modify directory: %w %s", err, out)
 		}
 		mounts = append(mounts, mount.Mount{
 			Target: target,

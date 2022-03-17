@@ -80,14 +80,14 @@ type PacketWindowAllocator struct {
 func (pwa *PacketWindowAllocator) Init() error {
 	fd, err := memutil.CreateMemFD("flipcall_packet_windows", linux.MFD_CLOEXEC|linux.MFD_ALLOW_SEALING)
 	if err != nil {
-		return fmt.Errorf("failed to create memfd: %v", err)
+		return fmt.Errorf("failed to create memfd: %w", err)
 	}
 	// Apply F_SEAL_SHRINK to prevent either party from causing SIGBUS in the
 	// other by truncating the file, and F_SEAL_SEAL to prevent either party
 	// from applying F_SEAL_GROW or F_SEAL_WRITE.
 	if _, _, e := unix.RawSyscall(unix.SYS_FCNTL, uintptr(fd), linux.F_ADD_SEALS, linux.F_SEAL_SHRINK|linux.F_SEAL_SEAL); e != 0 {
 		unix.Close(fd)
-		return fmt.Errorf("failed to apply memfd seals: %v", e)
+		return fmt.Errorf("failed to apply memfd seals: %w", e)
 	}
 	pwa.fd = fd
 	return nil
@@ -159,7 +159,7 @@ func (pwa *PacketWindowAllocator) ensureFileSize(min int64) error {
 		newSize = newNewSize
 	}
 	if err := unix.Ftruncate(pwa.FD(), newSize); err != nil {
-		return fmt.Errorf("ftruncate failed: %v", err)
+		return fmt.Errorf("ftruncate failed: %w", err)
 	}
 	pwa.fileSize = newSize
 	return nil

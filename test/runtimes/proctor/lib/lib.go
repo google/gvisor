@@ -101,7 +101,7 @@ func Search(root string, testFilter *regexp.Regexp) ([]string, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("walking %q: %v", root, err)
+		return nil, fmt.Errorf("walking %q: %w", root, err)
 	}
 
 	return testSlice, nil

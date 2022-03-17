@@ -50,7 +50,7 @@ func (f *Fs) Cat(o *CatOpts, _ *struct{}) error {
 	output := o.FilePayload.Files[0]
 	for _, file := range o.Files {
 		if err := cat(f.Kernel, file, output); err != nil {
-			return fmt.Errorf("cannot read from file %s: %v", file, err)
+			return fmt.Errorf("cannot read from file %s: %w", file, err)
 		}
 	}
 
@@ -78,13 +78,13 @@ func cat(k *kernel.Kernel, path string, output *os.File) error {
 	remainingTraversals := uint(fs.DefaultTraversalLimit)
 	d, err := mns.FindInode(ctx, root, nil, path, &remainingTraversals)
 	if err != nil {
-		return fmt.Errorf("cannot find file %s: %v", path, err)
+		return fmt.Errorf("cannot find file %s: %w", path, err)
 	}
 	defer d.DecRef(ctx)
 
 	file, err := d.Inode.GetFile(ctx, d, fs.FileFlags{Read: true})
 	if err != nil {
-		return fmt.Errorf("cannot get file for path %s: %v", path, err)
+		return fmt.Errorf("cannot get file for path %s: %w", path, err)
 	}
 	defer file.DecRef(ctx)
 

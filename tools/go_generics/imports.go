@@ -72,7 +72,7 @@ func convertExpression(s string, imports mapValue, used map[string]*importedPack
 	// Parse the expression in the input string.
 	expr, err := parser.ParseExpr(s)
 	if err != nil {
-		return "", fmt.Errorf("unable to parse \"%s\": %v", s, err)
+		return "", fmt.Errorf("unable to parse \"%s\": %w", s, err)
 	}
 
 	// Go through the AST and update references.

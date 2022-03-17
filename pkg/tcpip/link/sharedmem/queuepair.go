@@ -91,7 +91,7 @@ func NewQueuePair(opts QueueOptions) (*QueuePair, error) {
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to create tx queue: %s", err)
+		return nil, fmt.Errorf("failed to create tx queue: %w", err)
 	}
 
 	rxCfg, err := createQueueFDs(opts.SharedMemPath, queueSizes{
@@ -103,7 +103,7 @@ func NewQueuePair(opts QueueOptions) (*QueuePair, error) {
 
 	if err != nil {
 		closeFDs(txCfg)
-		return nil, fmt.Errorf("failed to create rx queue: %s", err)
+		return nil, fmt.Errorf("failed to create rx queue: %w", err)
 	}
 
 	return &QueuePair{
@@ -153,23 +153,23 @@ func createQueueFDs(sharedMemPath string, s queueSizes) (QueueConfig, error) {
 	}()
 	eventFD, err := eventfd.Create()
 	if err != nil {
-		return QueueConfig{}, fmt.Errorf("eventfd failed: %v", err)
+		return QueueConfig{}, fmt.Errorf("eventfd failed: %w", err)
 	}
 	dataFD, err = createFile(sharedMemPath, s.dataSize, false)
 	if err != nil {
-		return QueueConfig{}, fmt.Errorf("failed to create dataFD: %s", err)
+		return QueueConfig{}, fmt.Errorf("failed to create dataFD: %w", err)
 	}
 	txPipeFD, err = createFile(sharedMemPath, s.txPipeSize, true)
 	if err != nil {
-		return QueueConfig{}, fmt.Errorf("failed to create txPipeFD: %s", err)
+		return QueueConfig{}, fmt.Errorf("failed to create txPipeFD: %w", err)
 	}
 	rxPipeFD, err = createFile(sharedMemPath, s.rxPipeSize, true)
 	if err != nil {
-		return QueueConfig{}, fmt.Errorf("failed to create rxPipeFD: %s", err)
+		return QueueConfig{}, fmt.Errorf("failed to create rxPipeFD: %w", err)
 	}
 	sharedDataFD, err = createFile(sharedMemPath, s.sharedDataSize, false)
 	if err != nil {
-		return QueueConfig{}, fmt.Errorf("failed to create sharedDataFD: %s", err)
+		return QueueConfig{}, fmt.Errorf("failed to create sharedDataFD: %w", err)
 	}
 	success = true
 	return QueueConfig{
@@ -188,7 +188,7 @@ func createFile(sharedMemPath string, size int64, initQueue bool) (fd int, err e
 	}
 	f, err := ioutil.TempFile(tmpDir, "sharedmem_test")
 	if err != nil {
-		return -1, fmt.Errorf("TempFile failed: %v", err)
+		return -1, fmt.Errorf("TempFile failed: %w", err)
 	}
 	defer f.Close()
 	unix.Unlink(f.Name())
@@ -196,18 +196,18 @@ func createFile(sharedMemPath string, size int64, initQueue bool) (fd int, err e
 	if initQueue {
 		// Write the "slot-free" flag in the initial queue.
 		if _, err := f.WriteAt([]byte{0, 0, 0, 0, 0, 0, 0, 0x80}, 0); err != nil {
-			return -1, fmt.Errorf("WriteAt failed: %v", err)
+			return -1, fmt.Errorf("WriteAt failed: %w", err)
 		}
 	}
 
 	fd, err = unix.Dup(int(f.Fd()))
 	if err != nil {
-		return -1, fmt.Errorf("unix.Dup(%d) failed: %v", f.Fd(), err)
+		return -1, fmt.Errorf("unix.Dup(%d) failed: %w", f.Fd(), err)
 	}
 
 	if err := unix.Ftruncate(fd, size); err != nil {
 		unix.Close(fd)
-		return -1, fmt.Errorf("ftruncate(%d, %d) failed: %v", fd, size, err)
+		return -1, fmt.Errorf("ftruncate(%d, %d) failed: %w", fd, size, err)
 	}
 
 	return fd, nil

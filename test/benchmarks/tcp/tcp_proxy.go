@@ -100,7 +100,7 @@ func setupNetwork(ifaceName string, numChannels int) (fds []int, err error) {
 	// Get all interfaces in the namespace.
 	ifaces, err := net.Interfaces()
 	if err != nil {
-		return nil, fmt.Errorf("querying interfaces: %v", err)
+		return nil, fmt.Errorf("querying interfaces: %w", err)
 	}
 
 	for _, iface := range ifaces {
@@ -113,7 +113,7 @@ func setupNetwork(ifaceName string, numChannels int) (fds []int, err error) {
 		for i := range fds {
 			fd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW, protocol)
 			if err != nil {
-				return nil, fmt.Errorf("unable to create raw socket: %v", err)
+				return nil, fmt.Errorf("unable to create raw socket: %w", err)
 			}
 
 			// Bind to the appropriate device.
@@ -123,22 +123,22 @@ func setupNetwork(ifaceName string, numChannels int) (fds []int, err error) {
 				Pkttype:  unix.PACKET_HOST,
 			}
 			if err := unix.Bind(fd, &ll); err != nil {
-				return nil, fmt.Errorf("unable to bind to %q: %v", iface.Name, err)
+				return nil, fmt.Errorf("unable to bind to %q: %w", iface.Name, err)
 			}
 
 			// RAW Sockets by default have a very small SO_RCVBUF of 256KB,
 			// up it to at least 4MB to reduce packet drops.
 			if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_RCVBUF, bufSize); err != nil {
-				return nil, fmt.Errorf("setsockopt(..., SO_RCVBUF, %v,..) = %v", bufSize, err)
+				return nil, fmt.Errorf("setsockopt(..., SO_RCVBUF, %v,..) = %w", bufSize, err)
 			}
 
 			if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_SNDBUF, bufSize); err != nil {
-				return nil, fmt.Errorf("setsockopt(..., SO_SNDBUF, %v,..) = %v", bufSize, err)
+				return nil, fmt.Errorf("setsockopt(..., SO_SNDBUF, %v,..) = %w", bufSize, err)
 			}
 
 			if !*swgso && *gso != 0 {
 				if err := unix.SetsockoptInt(fd, unix.SOL_PACKET, unix.PACKET_VNET_HDR, 1); err != nil {
-					return nil, fmt.Errorf("unable to enable the PACKET_VNET_HDR option: %v", err)
+					return nil, fmt.Errorf("unable to enable the PACKET_VNET_HDR option: %w", err)
 				}
 			}
 			fds[i] = fd
@@ -203,24 +203,24 @@ func newNetstackImpl(mode string) (impl, error) {
 		SoftwareGSOEnabled: *swgso,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create FD endpoint: %v", err)
+		return nil, fmt.Errorf("failed to create FD endpoint: %w", err)
 	}
 	qDisc := fifo.New(ep, runtime.GOMAXPROCS(0), 1000)
 	opts := stack.NICOptions{QDisc: qDisc}
 	if err := s.CreateNICWithOptions(nicID, ep, opts); err != nil {
-		return nil, fmt.Errorf("error creating NIC %q: %v", *iface, err)
+		return nil, fmt.Errorf("error creating NIC %q: %w", *iface, err)
 	}
 	protocolAddr := tcpip.ProtocolAddress{
 		Protocol:          ipv4.ProtocolNumber,
 		AddressWithPrefix: parsedAddr.WithPrefix(),
 	}
 	if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
-		return nil, fmt.Errorf("error adding IP address %+v to %q: %s", protocolAddr, *iface, err)
+		return nil, fmt.Errorf("error adding IP address %+v to %q: %w", protocolAddr, *iface, err)
 	}
 
 	subnet, err := tcpip.NewSubnet(parsedDest, parsedMask)
 	if err != nil {
-		return nil, fmt.Errorf("tcpip.Subnet(%s, %s): %s", parsedDest, parsedMask, err)
+		return nil, fmt.Errorf("tcpip.Subnet(%s, %s): %w", parsedDest, parsedMask, err)
 	}
 	// Add default route; we only support
 	s.SetRouteTable([]tcpip.Route{
@@ -234,14 +234,14 @@ func newNetstackImpl(mode string) (impl, error) {
 	{
 		opt := tcpip.TCPSACKEnabled(*sack)
 		if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
-			return nil, fmt.Errorf("SetTransportProtocolOption(%d, &%T(%t)): %s", tcp.ProtocolNumber, opt, opt, err)
+			return nil, fmt.Errorf("SetTransportProtocolOption(%d, &%T(%t)): %w", tcp.ProtocolNumber, opt, opt, err)
 		}
 	}
 
 	if *rack {
 		opt := tcpip.TCPRecovery(tcpip.TCPRACKLossDetection)
 		if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
-			return nil, fmt.Errorf("enabling RACK failed: %v", err)
+			return nil, fmt.Errorf("enabling RACK failed: %w", err)
 		}
 	}
 
@@ -249,7 +249,7 @@ func newNetstackImpl(mode string) (impl, error) {
 	{
 		opt := tcpip.TCPModerateReceiveBufferOption(*moderateRecvBuf)
 		if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
-			return nil, fmt.Errorf("SetTransportProtocolOption(%d, &%T(%t)): %s", tcp.ProtocolNumber, opt, opt, err)
+			return nil, fmt.Errorf("SetTransportProtocolOption(%d, &%T(%t)): %w", tcp.ProtocolNumber, opt, opt, err)
 		}
 	}
 
@@ -257,7 +257,7 @@ func newNetstackImpl(mode string) (impl, error) {
 	if *cubic {
 		opt := tcpip.CongestionControlOption("cubic")
 		if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
-			return nil, fmt.Errorf("SetTransportProtocolOption(%d, &%T(%s)): %s", tcp.ProtocolNumber, opt, opt, err)
+			return nil, fmt.Errorf("SetTransportProtocolOption(%d, &%T(%s)): %w", tcp.ProtocolNumber, opt, opt, err)
 		}
 	}
 

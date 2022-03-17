@@ -107,12 +107,12 @@ func (b *GitHubBugger) Activate(todo *Todo) (bool, error) {
 	req := &github.IssueRequest{State: github.String("open")}
 	_, _, err = b.client.Issues.Edit(ctx, b.owner, b.repo, id, req)
 	if err != nil {
-		return true, fmt.Errorf("failed to reactivate issue %d: %v", id, err)
+		return true, fmt.Errorf("failed to reactivate issue %d: %w", id, err)
 	}
 
 	_, _, err = b.client.Issues.AddLabelsToIssue(ctx, b.owner, b.repo, id, []string{"revived"})
 	if err != nil {
-		return true, fmt.Errorf("failed to set label on issue %d: %v", id, err)
+		return true, fmt.Errorf("failed to set label on issue %d: %w", id, err)
 	}
 
 	cmt := &github.IssueComment{
@@ -120,7 +120,7 @@ func (b *GitHubBugger) Activate(todo *Todo) (bool, error) {
 		Reactions: &github.Reactions{Confused: github.Int(1)},
 	}
 	if _, _, err := b.client.Issues.CreateComment(ctx, b.owner, b.repo, id, cmt); err != nil {
-		return true, fmt.Errorf("failed to add comment to issue %d: %v", id, err)
+		return true, fmt.Errorf("failed to add comment to issue %d: %w", id, err)
 	}
 
 	return true, nil

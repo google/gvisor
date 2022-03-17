@@ -466,7 +466,7 @@ func httpGet(crictl *criutil.Crictl, podID, filePath string) error {
 	// Get the IP of the httpd server.
 	ip, err := crictl.PodIP(podID)
 	if err != nil {
-		return fmt.Errorf("failed to get IP from pod %q: %v", podID, err)
+		return fmt.Errorf("failed to get IP from pod %q: %w", podID, err)
 	}
 
 	// GET the page. We may be waiting for the server to start, so retry

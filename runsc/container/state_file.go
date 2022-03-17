@@ -60,7 +60,7 @@ func Load(rootDir string, id FullID, opts LoadOpts) (*Container, error) {
 	}
 
 	if err := id.validate(); err != nil {
-		return nil, fmt.Errorf("invalid container id: %v", err)
+		return nil, fmt.Errorf("invalid container id: %w", err)
 	}
 	state := StateFile{
 		RootDir: rootDir,
@@ -74,7 +74,7 @@ func Load(rootDir string, id FullID, opts LoadOpts) (*Container, error) {
 			// Preserve error so that callers can distinguish 'not found' errors.
 			return nil, err
 		}
-		return nil, fmt.Errorf("reading container metadata file %q: %v", state.statePath(), err)
+		return nil, fmt.Errorf("reading container metadata file %q: %w", state.statePath(), err)
 	}
 
 	if !opts.SkipCheck {
@@ -142,7 +142,7 @@ func loadSandbox(rootDir, id string) ([]*Container, error) {
 			if os.IsNotExist(err) {
 				continue
 			}
-			return nil, fmt.Errorf("loading sandbox %q, failed to load container %q: %v", id, cid, err)
+			return nil, fmt.Errorf("loading sandbox %q, failed to load container %q: %w", id, cid, err)
 		}
 		containers = append(containers, container)
 	}
@@ -249,7 +249,7 @@ func (s *StateFile) lock() error {
 	})
 
 	if err := s.flock.Lock(); err != nil {
-		return fmt.Errorf("acquiring lock on %q: %v", s.flock, err)
+		return fmt.Errorf("acquiring lock on %q: %w", s.flock, err)
 	}
 	return nil
 }
@@ -268,7 +268,7 @@ func (s *StateFile) lockForNew() error {
 		return fmt.Errorf("container already exists")
 	} else if !os.IsNotExist(err) {
 		s.unlockOrDie()
-		return fmt.Errorf("looking for existing container: %v", err)
+		return fmt.Errorf("looking for existing container: %w", err)
 	}
 	return nil
 }
@@ -281,7 +281,7 @@ func (s *StateFile) unlock() error {
 
 	if err := s.flock.Unlock(); err != nil {
 		log.Warningf("Error to release lock on %q: %v", s.flock, err)
-		return fmt.Errorf("releasing lock on %q: %v", s.flock, err)
+		return fmt.Errorf("releasing lock on %q: %w", s.flock, err)
 	}
 	return nil
 }
@@ -308,7 +308,7 @@ func (s *StateFile) saveLocked(v interface{}) error {
 		return err
 	}
 	if err := ioutil.WriteFile(s.statePath(), meta, 0640); err != nil {
-		return fmt.Errorf("writing json file: %v", err)
+		return fmt.Errorf("writing json file: %w", err)
 	}
 	return nil
 }

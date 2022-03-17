@@ -60,7 +60,7 @@ func cgroupRootDirectory(ctrl string) (string, error) {
 		line := scanner.Text()
 		n, err := fmt.Sscan(line, &spec, &file, &vfstype, &mntopts, &freq, &passno)
 		if err != nil {
-			return "", fmt.Errorf("failed to parse %s: %v", path, err)
+			return "", fmt.Errorf("failed to parse %s: %w", path, err)
 		}
 		if n != nrfields {
 			return "", fmt.Errorf("failed to parse %s: line %q: got %d fields, wanted %d", path, line, n, nrfields)

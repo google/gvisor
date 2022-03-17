@@ -308,7 +308,7 @@ func (c *Client) openChannel(id int) error {
 		ID:      uint32(id),
 		Control: 0,
 	}, &rchannel0); err != nil {
-		return fmt.Errorf("error handling Tchannel message: %v", err)
+		return fmt.Errorf("error handling Tchannel message: %w", err)
 	}
 	if rchannel0.FilePayload() == nil {
 		return fmt.Errorf("missing file descriptor on primary channel")

@@ -45,7 +45,7 @@ func tableCmd(ipv6 bool, table string, args []string) error {
 	}
 	cmd := exec.Command(binary, args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("error running iptables with args %v\nerror: %v\noutput: %s", args, err, string(out))
+		return fmt.Errorf("error running iptables with args %v\nerror: %w\noutput: %s", args, err, string(out))
 	}
 	return nil
 }

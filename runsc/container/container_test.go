@@ -97,11 +97,11 @@ func executeCombinedOutput(conf *config.Config, cont *Container, name string, ar
 func (c *Container) executeSync(conf *config.Config, args *control.ExecArgs) (unix.WaitStatus, error) {
 	pid, err := c.Execute(conf, args)
 	if err != nil {
-		return 0, fmt.Errorf("error executing: %v", err)
+		return 0, fmt.Errorf("error executing: %w", err)
 	}
 	ws, err := c.WaitPID(pid)
 	if err != nil {
-		return 0, fmt.Errorf("error waiting: %v", err)
+		return 0, fmt.Errorf("error waiting: %w", err)
 	}
 	return ws, nil
 }
@@ -289,12 +289,12 @@ func procListToString(pl []*control.Process) string {
 func createWriteableOutputFile(path string) (*os.File, error) {
 	outputFile, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0666)
 	if err != nil {
-		return nil, fmt.Errorf("error creating file: %q, %v", path, err)
+		return nil, fmt.Errorf("error creating file: %q, %w", path, err)
 	}
 
 	// Chmod to allow writing after umask.
 	if err := outputFile.Chmod(0666); err != nil {
-		return nil, fmt.Errorf("error chmoding file: %q, %v", path, err)
+		return nil, fmt.Errorf("error chmoding file: %q, %w", path, err)
 	}
 	return outputFile, nil
 }
@@ -330,17 +330,17 @@ func waitForFileExist(path string) error {
 func readOutputNum(file string, position int) (int, error) {
 	f, err := os.Open(file)
 	if err != nil {
-		return 0, fmt.Errorf("error opening file: %q, %v", file, err)
+		return 0, fmt.Errorf("error opening file: %q, %w", file, err)
 	}
 
 	// Ensure that there is content in output file.
 	if err := waitForFileNotEmpty(f); err != nil {
-		return 0, fmt.Errorf("error waiting for output file: %v", err)
+		return 0, fmt.Errorf("error waiting for output file: %w", err)
 	}
 
 	b, err := ioutil.ReadAll(f)
 	if err != nil {
-		return 0, fmt.Errorf("error reading file: %v", err)
+		return 0, fmt.Errorf("error reading file: %w", err)
 	}
 	if len(b) == 0 {
 		return 0, fmt.Errorf("error no content was read")
@@ -359,7 +359,7 @@ func readOutputNum(file string, position int) (int, error) {
 	}
 	num, err := strconv.Atoi(nums[position])
 	if err != nil {
-		return 0, fmt.Errorf("error getting number from file: %v", err)
+		return 0, fmt.Errorf("error getting number from file: %w", err)
 	}
 	return num, nil
 }
@@ -369,7 +369,7 @@ func readOutputNum(file string, position int) (int, error) {
 func run(spec *specs.Spec, conf *config.Config) error {
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
-		return fmt.Errorf("error setting up container: %v", err)
+		return fmt.Errorf("error setting up container: %w", err)
 	}
 	defer cleanup()
 
@@ -382,7 +382,7 @@ func run(spec *specs.Spec, conf *config.Config) error {
 	}
 	ws, err := Run(conf, args)
 	if err != nil {
-		return fmt.Errorf("running container: %v", err)
+		return fmt.Errorf("running container: %w", err)
 	}
 	if !ws.Exited() || ws.ExitStatus() != 0 {
 		return fmt.Errorf("container failed, waitStatus: %v", ws)
@@ -2451,7 +2451,7 @@ func TestTTYField(t *testing.T) {
 				cb := func() error {
 					ps, err := c.Processes()
 					if err != nil {
-						err = fmt.Errorf("error getting process data from container: %v", err)
+						err = fmt.Errorf("error getting process data from container: %w", err)
 						return &backoff.PermanentError{Err: err}
 					}
 					for _, p := range ps {

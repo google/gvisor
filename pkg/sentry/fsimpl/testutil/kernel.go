@@ -52,15 +52,15 @@ var (
 func Boot() (*kernel.Kernel, error) {
 	platformCtr, err := platform.Lookup(*platformFlag)
 	if err != nil {
-		return nil, fmt.Errorf("platform not found: %v", err)
+		return nil, fmt.Errorf("platform not found: %w", err)
 	}
 	deviceFile, err := platformCtr.OpenDevice(*platformDevicePathFlag)
 	if err != nil {
-		return nil, fmt.Errorf("creating platform: %v", err)
+		return nil, fmt.Errorf("creating platform: %w", err)
 	}
 	plat, err := platformCtr.New(deviceFile)
 	if err != nil {
-		return nil, fmt.Errorf("creating platform: %v", err)
+		return nil, fmt.Errorf("creating platform: %w", err)
 	}
 
 	kernel.VFS2Enabled = true
@@ -77,7 +77,7 @@ func Boot() (*kernel.Kernel, error) {
 	// Pass k as the platform since it is savable, unlike the actual platform.
 	vdso, err := loader.PrepareVDSO(k)
 	if err != nil {
-		return nil, fmt.Errorf("creating vdso: %v", err)
+		return nil, fmt.Errorf("creating vdso: %w", err)
 	}
 
 	// Create timekeeper.
@@ -99,7 +99,7 @@ func Boot() (*kernel.Kernel, error) {
 		RootAbstractSocketNamespace: kernel.NewAbstractSocketNamespace(),
 		PIDNamespace:                kernel.NewRootPIDNamespace(creds.UserNamespace),
 	}); err != nil {
-		return nil, fmt.Errorf("initializing kernel: %v", err)
+		return nil, fmt.Errorf("initializing kernel: %w", err)
 	}
 
 	k.VFS().MustRegisterFilesystemType(tmpfs.Name, &tmpfs.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
@@ -173,13 +173,13 @@ func createMemoryFile() (*pgalloc.MemoryFile, error) {
 	const memfileName = "test-memory"
 	memfd, err := memutil.CreateMemFD(memfileName, 0)
 	if err != nil {
-		return nil, fmt.Errorf("error creating memfd: %v", err)
+		return nil, fmt.Errorf("error creating memfd: %w", err)
 	}
 	memfile := os.NewFile(uintptr(memfd), memfileName)
 	mf, err := pgalloc.NewMemoryFile(memfile, pgalloc.MemoryFileOpts{})
 	if err != nil {
 		_ = memfile.Close()
-		return nil, fmt.Errorf("error creating pgalloc.MemoryFile: %v", err)
+		return nil, fmt.Errorf("error creating pgalloc.MemoryFile: %w", err)
 	}
 	return mf, nil
 }

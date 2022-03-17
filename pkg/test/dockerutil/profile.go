@@ -78,7 +78,7 @@ func (p *profile) createProcess(c *Container) error {
 	// Find the runtime to invoke.
 	path, err := RuntimePath()
 	if err != nil {
-		return fmt.Errorf("failed to get runtime path: %v", err)
+		return fmt.Errorf("failed to get runtime path: %w", err)
 	}
 
 	// The root directory of this container's runtime.
@@ -102,7 +102,7 @@ func (p *profile) createProcess(c *Container) error {
 	// Best effort wait until container is running.
 	for now := time.Now(); time.Since(now) < 5*time.Second; {
 		if status, err := c.Status(context.Background()); err != nil {
-			return fmt.Errorf("failed to get status with: %v", err)
+			return fmt.Errorf("failed to get status with: %w", err)
 		} else if status.Running {
 			break
 		}
@@ -111,7 +111,7 @@ func (p *profile) createProcess(c *Container) error {
 	p.cmd = exec.Command(path, args...)
 	p.cmd.Stderr = os.Stderr // Pass through errors.
 	if err := p.cmd.Start(); err != nil {
-		return fmt.Errorf("start process failed: %v", err)
+		return fmt.Errorf("start process failed: %w", err)
 	}
 
 	return nil

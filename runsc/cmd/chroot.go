@@ -31,14 +31,14 @@ func mountInChroot(chroot, src, dst, typ string, flags uint32) error {
 	log.Infof("Mounting %q at %q", src, chrootDst)
 
 	if err := specutils.SafeSetupAndMount(src, chrootDst, typ, flags, "/proc"); err != nil {
-		return fmt.Errorf("error mounting %q at %q: %v", src, chrootDst, err)
+		return fmt.Errorf("error mounting %q at %q: %w", src, chrootDst, err)
 	}
 	return nil
 }
 
 func pivotRoot(root string) error {
 	if err := os.Chdir(root); err != nil {
-		return fmt.Errorf("error changing working directory: %v", err)
+		return fmt.Errorf("error changing working directory: %w", err)
 	}
 	// pivot_root(new_root, put_old) moves the root filesystem (old_root)
 	// of the calling process to the directory put_old and makes new_root
@@ -50,11 +50,11 @@ func pivotRoot(root string) error {
 	// new_root, so after umounting the old_root, we will see only
 	// the new_root in "/".
 	if err := unix.PivotRoot(".", "."); err != nil {
-		return fmt.Errorf("pivot_root failed, make sure that the root mount has a parent: %v", err)
+		return fmt.Errorf("pivot_root failed, make sure that the root mount has a parent: %w", err)
 	}
 
 	if err := unix.Unmount(".", unix.MNT_DETACH); err != nil {
-		return fmt.Errorf("error umounting the old root file system: %v", err)
+		return fmt.Errorf("error umounting the old root file system: %w", err)
 	}
 	return nil
 }
@@ -88,15 +88,15 @@ func setUpChroot(pidns bool) error {
 	// Convert all shared mounts into slave to be sure that nothing will be
 	// propagated outside of our namespace.
 	if err := specutils.SafeMount("", "/", "", unix.MS_SLAVE|unix.MS_REC, "", "/proc"); err != nil {
-		return fmt.Errorf("error converting mounts: %v", err)
+		return fmt.Errorf("error converting mounts: %w", err)
 	}
 
 	if err := specutils.SafeMount("runsc-root", chroot, "tmpfs", unix.MS_NOSUID|unix.MS_NODEV|unix.MS_NOEXEC, "", "/proc"); err != nil {
-		return fmt.Errorf("error mounting tmpfs in choot: %v", err)
+		return fmt.Errorf("error mounting tmpfs in choot: %w", err)
 	}
 
 	if err := os.Mkdir(filepath.Join(chroot, "etc"), 0755); err != nil {
-		return fmt.Errorf("error creating /etc in chroot: %v", err)
+		return fmt.Errorf("error creating /etc in chroot: %w", err)
 	}
 
 	if err := copyFile(filepath.Join(chroot, "etc/localtime"), "/etc/localtime"); err != nil {
@@ -106,16 +106,16 @@ func setUpChroot(pidns bool) error {
 	if pidns {
 		flags := uint32(unix.MS_NOSUID | unix.MS_NODEV | unix.MS_NOEXEC | unix.MS_RDONLY)
 		if err := mountInChroot(chroot, "proc", "/proc", "proc", flags); err != nil {
-			return fmt.Errorf("error mounting proc in chroot: %v", err)
+			return fmt.Errorf("error mounting proc in chroot: %w", err)
 		}
 	} else {
 		if err := mountInChroot(chroot, "/proc", "/proc", "bind", unix.MS_BIND|unix.MS_RDONLY|unix.MS_REC); err != nil {
-			return fmt.Errorf("error mounting proc in chroot: %v", err)
+			return fmt.Errorf("error mounting proc in chroot: %w", err)
 		}
 	}
 
 	if err := specutils.SafeMount("", chroot, "", unix.MS_REMOUNT|unix.MS_RDONLY|unix.MS_BIND, "", "/proc"); err != nil {
-		return fmt.Errorf("error remounting chroot in read-only: %v", err)
+		return fmt.Errorf("error remounting chroot in read-only: %w", err)
 	}
 
 	return pivotRoot(chroot)

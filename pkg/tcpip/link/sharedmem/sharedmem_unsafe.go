@@ -44,7 +44,7 @@ func getBuffer(fd int) ([]byte, error) {
 
 	addr, err := memutil.MapFile(0 /* addr */, uintptr(s.Size), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED|unix.MAP_FILE, uintptr(fd), 0 /*offset*/)
 	if err != nil {
-		return nil, fmt.Errorf("failed to map memory for buffer fd: %d, error: %s", fd, err)
+		return nil, fmt.Errorf("failed to map memory for buffer fd: %d, error: %w", fd, err)
 	}
 
 	// Use unsafe to conver addr into a []byte.

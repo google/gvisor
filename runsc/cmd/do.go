@@ -173,11 +173,11 @@ func resolvePath(path string) (string, error) {
 	var err error
 	path, err = filepath.Abs(path)
 	if err != nil {
-		return "", fmt.Errorf("resolving %q: %v", path, err)
+		return "", fmt.Errorf("resolving %q: %w", path, err)
 	}
 	path = filepath.Clean(path)
 	if err := unix.Access(path, 0); err != nil {
-		return "", fmt.Errorf("unable to access %q: %v", path, err)
+		return "", fmt.Errorf("unable to access %q: %w", path, err)
 	}
 	return path, nil
 }
@@ -225,7 +225,7 @@ func (c *Do) setupNet(cid string, spec *specs.Spec) (func(), error) {
 		cmd := exec.Command(args[0], args[1:]...)
 		if err := cmd.Run(); err != nil {
 			c.cleanupNet(cid, "", "", "")
-			return nil, fmt.Errorf("failed to run %q: %v", cmd, err)
+			return nil, fmt.Errorf("failed to run %q: %w", cmd, err)
 		}
 	}
 
@@ -339,7 +339,7 @@ func calculatePeerIP(ip string) (string, error) {
 	}
 	n, err := strconv.Atoi(parts[3])
 	if err != nil {
-		return "", fmt.Errorf("invalid IP format %q: %v", ip, err)
+		return "", fmt.Errorf("invalid IP format %q: %w", ip, err)
 	}
 	n++
 	if n > 255 {

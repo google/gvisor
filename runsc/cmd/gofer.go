@@ -383,7 +383,7 @@ func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 
 	// Mount root path followed by submounts.
 	if err := specutils.SafeMount(spec.Root.Path, root, "bind", unix.MS_BIND|unix.MS_REC, "", procPath); err != nil {
-		return fmt.Errorf("mounting root on root (%q) err: %v", root, err)
+		return fmt.Errorf("mounting root on root (%q) err: %w", root, err)
 	}
 
 	flags := uint32(unix.MS_SLAVE | unix.MS_REC)
@@ -391,7 +391,7 @@ func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 		flags = specutils.PropOptionsToFlags([]string{spec.Linux.RootfsPropagation})
 	}
 	if err := specutils.SafeMount("", root, "", uintptr(flags), "", procPath); err != nil {
-		return fmt.Errorf("mounting root (%q) with flags: %#x, err: %v", root, flags, err)
+		return fmt.Errorf("mounting root (%q) with flags: %#x, err: %w", root, flags, err)
 	}
 
 	// Replace the current spec, with the clean spec with symlinks resolved.
@@ -403,11 +403,11 @@ func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 	if spec.Process.Cwd != "" {
 		dst, err := resolveSymlinks(root, spec.Process.Cwd)
 		if err != nil {
-			return fmt.Errorf("resolving symlinks to %q: %v", spec.Process.Cwd, err)
+			return fmt.Errorf("resolving symlinks to %q: %w", spec.Process.Cwd, err)
 		}
 		log.Infof("Create working directory %q if needed", spec.Process.Cwd)
 		if err := os.MkdirAll(dst, 0755); err != nil {
-			return fmt.Errorf("creating working directory %q: %v", spec.Process.Cwd, err)
+			return fmt.Errorf("creating working directory %q: %w", spec.Process.Cwd, err)
 		}
 	}
 
@@ -418,7 +418,7 @@ func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 		log.Infof("Remounting root as readonly: %q", root)
 		flags := uintptr(unix.MS_BIND | unix.MS_REMOUNT | unix.MS_RDONLY | unix.MS_REC)
 		if err := specutils.SafeMount(root, root, "bind", flags, "", procPath); err != nil {
-			return fmt.Errorf("remounting root as read-only with source: %q, target: %q, flags: %#x, err: %v", root, root, flags, err)
+			return fmt.Errorf("remounting root as read-only with source: %q, target: %q, flags: %#x, err: %w", root, root, flags, err)
 		}
 	}
 
@@ -444,7 +444,7 @@ func setupMounts(conf *config.Config, mounts []specs.Mount, root, procPath strin
 
 		dst, err := resolveSymlinks(root, m.Destination)
 		if err != nil {
-			return fmt.Errorf("resolving symlinks to %q: %v", m.Destination, err)
+			return fmt.Errorf("resolving symlinks to %q: %w", m.Destination, err)
 		}
 
 		flags := specutils.OptionsToFlags(m.Options) | unix.MS_BIND
@@ -455,14 +455,14 @@ func setupMounts(conf *config.Config, mounts []specs.Mount, root, procPath strin
 
 		log.Infof("Mounting src: %q, dst: %q, flags: %#x", m.Source, dst, flags)
 		if err := specutils.SafeSetupAndMount(m.Source, dst, m.Type, flags, procPath); err != nil {
-			return fmt.Errorf("mounting %+v: %v", m, err)
+			return fmt.Errorf("mounting %+v: %w", m, err)
 		}
 
 		// Set propagation options that cannot be set together with other options.
 		flags = specutils.PropOptionsToFlags(m.Options)
 		if flags != 0 {
 			if err := specutils.SafeMount("", dst, "", uintptr(flags), "", procPath); err != nil {
-				return fmt.Errorf("mount dst: %q, flags: %#x, err: %v", dst, flags, err)
+				return fmt.Errorf("mount dst: %q, flags: %#x, err: %w", dst, flags, err)
 			}
 		}
 	}
@@ -484,11 +484,11 @@ func resolveMounts(conf *config.Config, mounts []specs.Mount, root string) ([]sp
 		}
 		dst, err := resolveSymlinks(root, m.Destination)
 		if err != nil {
-			return nil, fmt.Errorf("resolving symlinks to %q: %v", m.Destination, err)
+			return nil, fmt.Errorf("resolving symlinks to %q: %w", m.Destination, err)
 		}
 		relDst, err := filepath.Rel(root, dst)
 		if err != nil {
-			panic(fmt.Sprintf("%q could not be made relative to %q: %v", dst, root, err))
+			panic(fmt.Sprintf("%q could not be made relative to %q: %w", dst, root, err))
 		}
 
 		opts, err := adjustMountOptions(conf, filepath.Join(root, relDst), m.Options)

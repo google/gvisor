@@ -67,7 +67,7 @@ func runHTTPRequest(ip string, port int) error {
 	url := fmt.Sprintf("http://%s:%d/not-found", ip, port)
 	resp, err := http.Get(url)
 	if err != nil {
-		return fmt.Errorf("error reaching http server: %v", err)
+		return fmt.Errorf("error reaching http server: %w", err)
 	}
 	if want := http.StatusNotFound; resp.StatusCode != want {
 		return fmt.Errorf("Wrong response code, got: %d, want: %d", resp.StatusCode, want)
@@ -76,7 +76,7 @@ func runHTTPRequest(ip string, port int) error {
 	url = fmt.Sprintf("http://%s:%d/latin10k.txt", ip, port)
 	resp, err = http.Get(url)
 	if err != nil {
-		return fmt.Errorf("Error reaching http server: %v", err)
+		return fmt.Errorf("Error reaching http server: %w", err)
 	}
 	if want := http.StatusOK; resp.StatusCode != want {
 		return fmt.Errorf("Wrong response code, got: %d, want: %d", resp.StatusCode, want)
@@ -84,7 +84,7 @@ func runHTTPRequest(ip string, port int) error {
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("Error reading http response: %v", err)
+		return fmt.Errorf("Error reading http response: %w", err)
 	}
 	defer resp.Body.Close()
 

@@ -47,11 +47,11 @@ func socketPath(bundleDir string) (string, error) {
 	// Path is too large, try to make it smaller.
 	cwd, err := os.Getwd()
 	if err != nil {
-		return "", fmt.Errorf("error getting cwd: %v", err)
+		return "", fmt.Errorf("error getting cwd: %w", err)
 	}
 	path, err = filepath.Rel(cwd, path)
 	if err != nil {
-		return "", fmt.Errorf("error getting relative path for %q from cwd %q: %v", path, cwd, err)
+		return "", fmt.Errorf("error getting relative path for %q from cwd %q: %w", path, cwd, err)
 	}
 	if len(path) > maxPathLen {
 		return "", fmt.Errorf("could not get socket path under length limit %d: %s", maxPathLen, path)
@@ -88,7 +88,7 @@ func createConsoleSocket(t *testing.T, path string) (*unet.ServerSocket, func())
 func receiveConsolePTY(srv *unet.ServerSocket) (*os.File, error) {
 	sock, err := srv.Accept()
 	if err != nil {
-		return nil, fmt.Errorf("error accepting socket connection: %v", err)
+		return nil, fmt.Errorf("error accepting socket connection: %w", err)
 	}
 
 	// Allow 3 fds to be received.  We only expect 1.
@@ -99,13 +99,13 @@ func receiveConsolePTY(srv *unet.ServerSocket) (*os.File, error) {
 	// an allowed error.
 	b := [][]byte{{}}
 	if _, err := r.ReadVec(b); err != nil && err != io.EOF {
-		return nil, fmt.Errorf("error reading from socket connection: %v", err)
+		return nil, fmt.Errorf("error reading from socket connection: %w", err)
 	}
 
 	// We should have gotten a control message.
 	fds, err := r.ExtractFDs()
 	if err != nil {
-		return nil, fmt.Errorf("error extracting fds from socket connection: %v", err)
+		return nil, fmt.Errorf("error extracting fds from socket connection: %w", err)
 	}
 	if len(fds) != 1 {
 		return nil, fmt.Errorf("got %d fds from socket, wanted 1", len(fds))
@@ -113,7 +113,7 @@ func receiveConsolePTY(srv *unet.ServerSocket) (*os.File, error) {
 
 	// Verify that the fd is a terminal.
 	if _, err := unix.IoctlGetTermios(fds[0], unix.TCGETS); err != nil {
-		return nil, fmt.Errorf("fd is not a terminal (ioctl TGGETS got %v)", err)
+		return nil, fmt.Errorf("fd is not a terminal (ioctl TGGETS got %w)", err)
 	}
 
 	return os.NewFile(uintptr(fds[0]), "pty_master"), nil

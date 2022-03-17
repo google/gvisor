@@ -76,13 +76,13 @@ func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, 
 	}
 	d.CopyFiles(&opts, "/proctor", "test/runtimes/proctor/proctor")
 	if err := d.Spawn(ctx, opts, "/proctor/proctor", "--pause"); err != nil {
-		return nil, fmt.Errorf("docker run failed: %v", err)
+		return nil, fmt.Errorf("docker run failed: %w", err)
 	}
 
 	// Get a list of all tests in the image.
 	list, err := d.Exec(ctx, dockerutil.ExecOpts{}, "/proctor/proctor", "--runtime", lang, "--list")
 	if err != nil {
-		return nil, fmt.Errorf("docker exec failed: %v", err)
+		return nil, fmt.Errorf("docker exec failed: %w", err)
 	}
 
 	// Calculate a subset of tests.
@@ -90,7 +90,7 @@ func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, 
 	sort.Strings(tests)
 	indices, err := testutil.TestIndicesForShard(len(tests))
 	if err != nil {
-		return nil, fmt.Errorf("TestsForShard() failed: %v", err)
+		return nil, fmt.Errorf("TestsForShard() failed: %w", err)
 	}
 
 	var itests []testing.InternalTest

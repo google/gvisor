@@ -93,7 +93,7 @@ func (cc *Crictl) CleanUp() {
 func (cc *Crictl) RunPod(runtime, sbSpecFile string) (string, error) {
 	podID, err := cc.run("runp", "--runtime", runtime, sbSpecFile)
 	if err != nil {
-		return "", fmt.Errorf("runp failed: %v", err)
+		return "", fmt.Errorf("runp failed: %w", err)
 	}
 	// Strip the trailing newline from crictl output.
 	return strings.TrimSpace(podID), nil
@@ -117,11 +117,11 @@ func (cc *Crictl) Create(podID, contSpecFile, sbSpecFile string) (string, error)
 	}
 	major, err := strconv.ParseUint(vs[1], 10, 64)
 	if err != nil {
-		return "", fmt.Errorf("crictl had invalid version: %v (%s)", err, out)
+		return "", fmt.Errorf("crictl had invalid version: %w (%s)", err, out)
 	}
 	minor, err := strconv.ParseUint(vs[2], 10, 64)
 	if err != nil {
-		return "", fmt.Errorf("crictl had invalid version: %v (%s)", err, out)
+		return "", fmt.Errorf("crictl had invalid version: %w (%s)", err, out)
 	}
 
 	args := []string{"create"}
@@ -135,7 +135,7 @@ func (cc *Crictl) Create(podID, contSpecFile, sbSpecFile string) (string, error)
 	podID, err = cc.run(args...)
 	if err != nil {
 		time.Sleep(10 * time.Minute) // XXX
-		return "", fmt.Errorf("create failed: %v", err)
+		return "", fmt.Errorf("create failed: %w", err)
 	}
 
 	// Strip the trailing newline from crictl output.
@@ -146,7 +146,7 @@ func (cc *Crictl) Create(podID, contSpecFile, sbSpecFile string) (string, error)
 func (cc *Crictl) Start(contID string) (string, error) {
 	output, err := cc.run("start", contID)
 	if err != nil {
-		return "", fmt.Errorf("start failed: %v", err)
+		return "", fmt.Errorf("start failed: %w", err)
 	}
 	return output, nil
 }
@@ -163,7 +163,7 @@ func (cc *Crictl) Exec(contID string, args ...string) (string, error) {
 	a = append(a, args...)
 	output, err := cc.run(a...)
 	if err != nil {
-		return "", fmt.Errorf("exec failed: %v", err)
+		return "", fmt.Errorf("exec failed: %w", err)
 	}
 	return output, nil
 }
@@ -174,7 +174,7 @@ func (cc *Crictl) Logs(contID string, args ...string) (string, error) {
 	a = append(a, args...)
 	output, err := cc.run(a...)
 	if err != nil {
-		return "", fmt.Errorf("logs failed: %v", err)
+		return "", fmt.Errorf("logs failed: %w", err)
 	}
 	return output, nil
 }
@@ -214,7 +214,7 @@ func (cc *Crictl) PodIP(podID string) (string, error) {
 	}
 	conf := &containerConfig{}
 	if err := json.Unmarshal([]byte(output), conf); err != nil {
-		return "", fmt.Errorf("failed to unmarshal JSON: %v, %s", err, output)
+		return "", fmt.Errorf("failed to unmarshal JSON: %w, %s", err, output)
 	}
 	if conf.Status.Network.IP == "" {
 		return "", fmt.Errorf("no IP found in config: %s", output)
@@ -275,12 +275,12 @@ func (cc *Crictl) StartContainer(podID, image, sbSpec, contSpec string) (string,
 	// Write the specs to files that can be read by crictl.
 	sbSpecFile, cleanup, err := testutil.WriteTmpFile("sbSpec", sbSpec)
 	if err != nil {
-		return "", fmt.Errorf("failed to write sandbox spec: %v", err)
+		return "", fmt.Errorf("failed to write sandbox spec: %w", err)
 	}
 	cc.cleanup = append(cc.cleanup, cleanup)
 	contSpecFile, cleanup, err := testutil.WriteTmpFile("contSpec", contSpec)
 	if err != nil {
-		return "", fmt.Errorf("failed to write container spec: %v", err)
+		return "", fmt.Errorf("failed to write container spec: %w", err)
 	}
 	cc.cleanup = append(cc.cleanup, cleanup)
 
@@ -290,11 +290,11 @@ func (cc *Crictl) StartContainer(podID, image, sbSpec, contSpec string) (string,
 func (cc *Crictl) startContainer(podID, image, sbSpecFile, contSpecFile string) (string, error) {
 	contID, err := cc.Create(podID, contSpecFile, sbSpecFile)
 	if err != nil {
-		return "", fmt.Errorf("failed to create container in pod %q: %v", podID, err)
+		return "", fmt.Errorf("failed to create container in pod %q: %w", podID, err)
 	}
 
 	if _, err := cc.Start(contID); err != nil {
-		return "", fmt.Errorf("failed to start container %q in pod %q: %v", contID, podID, err)
+		return "", fmt.Errorf("failed to start container %q in pod %q: %w", contID, podID, err)
 	}
 
 	return contID, nil
@@ -303,11 +303,11 @@ func (cc *Crictl) startContainer(podID, image, sbSpecFile, contSpecFile string) 
 // StopContainer stops and deletes the container with the given container ID.
 func (cc *Crictl) StopContainer(contID string) error {
 	if err := cc.Stop(contID); err != nil {
-		return fmt.Errorf("failed to stop container %q: %v", contID, err)
+		return fmt.Errorf("failed to stop container %q: %w", contID, err)
 	}
 
 	if err := cc.Rm(contID); err != nil {
-		return fmt.Errorf("failed to remove container %q: %v", contID, err)
+		return fmt.Errorf("failed to remove container %q: %w", contID, err)
 	}
 
 	return nil
@@ -323,12 +323,12 @@ func (cc *Crictl) StartPodAndContainer(runtime, image, sbSpec, contSpec string) 
 	// Write the specs to files that can be read by crictl.
 	sbSpecFile, cleanup, err := testutil.WriteTmpFile("sbSpec", sbSpec)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to write sandbox spec: %v", err)
+		return "", "", fmt.Errorf("failed to write sandbox spec: %w", err)
 	}
 	cc.cleanup = append(cc.cleanup, cleanup)
 	contSpecFile, cleanup, err := testutil.WriteTmpFile("contSpec", contSpec)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to write container spec: %v", err)
+		return "", "", fmt.Errorf("failed to write container spec: %w", err)
 	}
 	cc.cleanup = append(cc.cleanup, cleanup)
 
@@ -345,15 +345,15 @@ func (cc *Crictl) StartPodAndContainer(runtime, image, sbSpec, contSpec string) 
 // StopPodAndContainer stops a container and pod.
 func (cc *Crictl) StopPodAndContainer(podID, contID string) error {
 	if err := cc.StopContainer(contID); err != nil {
-		return fmt.Errorf("failed to stop container %q in pod %q: %v", contID, podID, err)
+		return fmt.Errorf("failed to stop container %q in pod %q: %w", contID, podID, err)
 	}
 
 	if err := cc.StopPod(podID); err != nil {
-		return fmt.Errorf("failed to stop pod %q: %v", podID, err)
+		return fmt.Errorf("failed to stop pod %q: %w", podID, err)
 	}
 
 	if err := cc.RmPod(podID); err != nil {
-		return fmt.Errorf("failed to remove pod %q: %v", podID, err)
+		return fmt.Errorf("failed to remove pod %q: %w", podID, err)
 	}
 
 	return nil

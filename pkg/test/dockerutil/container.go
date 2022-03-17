@@ -165,7 +165,7 @@ func (c *Container) SpawnProcess(ctx context.Context, r RunOpts, args ...string)
 			Stderr: true,
 		})
 	if err != nil {
-		return Process{}, fmt.Errorf("connect failed container id %s: %v", c.id, err)
+		return Process{}, fmt.Errorf("connect failed container id %s: %w", c.id, err)
 	}
 
 	c.cleanups = append(c.cleanups, func() { stream.Close() })
@@ -269,7 +269,7 @@ func (c *Container) hostConfig(r RunOpts) *container.HostConfig {
 // Start is analogous to 'docker start'.
 func (c *Container) Start(ctx context.Context) error {
 	if err := c.client.ContainerStart(ctx, c.id, types.ContainerStartOptions{}); err != nil {
-		return fmt.Errorf("ContainerStart failed: %v", err)
+		return fmt.Errorf("ContainerStart failed: %w", err)
 	}
 
 	if c.profile != nil {
@@ -365,19 +365,19 @@ func (c *Container) FindIP(ctx context.Context, ipv6 bool) (net.IP, error) {
 func (c *Container) FindPort(ctx context.Context, sandboxPort int) (int, error) {
 	desc, err := c.client.ContainerInspect(ctx, c.id)
 	if err != nil {
-		return -1, fmt.Errorf("error retrieving port: %v", err)
+		return -1, fmt.Errorf("error retrieving port: %w", err)
 	}
 
 	format := fmt.Sprintf("%d/tcp", sandboxPort)
 	ports, ok := desc.NetworkSettings.Ports[nat.Port(format)]
 	if !ok {
-		return -1, fmt.Errorf("error retrieving port: %v", err)
+		return -1, fmt.Errorf("error retrieving port: %w", err)
 
 	}
 
 	port, err := strconv.Atoi(ports[0].HostPort)
 	if err != nil {
-		return -1, fmt.Errorf("error parsing port %q: %v", port, err)
+		return -1, fmt.Errorf("error parsing port %q: %w", port, err)
 	}
 	return port, nil
 }
@@ -386,12 +386,12 @@ func (c *Container) FindPort(ctx context.Context, sandboxPort int) (int, error) 
 func (c *Container) CopyFiles(opts *RunOpts, target string, sources ...string) {
 	dir, err := ioutil.TempDir("", c.Name)
 	if err != nil {
-		c.copyErr = fmt.Errorf("ioutil.TempDir failed: %v", err)
+		c.copyErr = fmt.Errorf("ioutil.TempDir failed: %w", err)
 		return
 	}
 	c.cleanups = append(c.cleanups, func() { os.RemoveAll(dir) })
 	if err := os.Chmod(dir, 0755); err != nil {
-		c.copyErr = fmt.Errorf("os.Chmod(%q, 0755) failed: %v", dir, err)
+		c.copyErr = fmt.Errorf("os.Chmod(%q, 0755) failed: %w", dir, err)
 		return
 	}
 	for _, name := range sources {
@@ -405,7 +405,7 @@ func (c *Container) CopyFiles(opts *RunOpts, target string, sources ...string) {
 		}
 		dst := path.Join(dir, path.Base(name))
 		if err := testutil.Copy(src, dst); err != nil {
-			c.copyErr = fmt.Errorf("testutil.Copy(%q, %q) failed: %v", src, dst, err)
+			c.copyErr = fmt.Errorf("testutil.Copy(%q, %q) failed: %w", src, dst, err)
 			return
 		}
 		c.logger.Logf("copy: %s -> %s", src, dst)
@@ -485,7 +485,7 @@ func (c *Container) WaitForOutputSubmatch(ctx context.Context, pattern string, t
 	for {
 		logs, err := c.Logs(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get logs: %v logs: %s", err, logs)
+			return nil, fmt.Errorf("failed to get logs: %w logs: %s", err, logs)
 		}
 		if matches := re.FindStringSubmatch(logs); matches != nil {
 			return matches, nil

@@ -76,7 +76,7 @@ func (me *multiEmitter) Emit(msg proto.Message) (bool, error) {
 		hangup, eerr := e.Emit(msg)
 		if eerr != nil {
 			if err == nil {
-				err = fmt.Errorf("error emitting %v: on %v: %v", msg, e, eerr)
+				err = fmt.Errorf("error emitting %v: on %v: %w", msg, e, eerr)
 			} else {
 				err = fmt.Errorf("%v; on %v: %v", err, e, eerr)
 			}

@@ -70,7 +70,7 @@ func (*NATPreRedirectUDPPort) ContainerAction(ctx context.Context, ip net.IP, ip
 	}
 
 	if err := listenUDP(ctx, redirectPort, ipv6); err != nil {
-		return fmt.Errorf("packets on port %d should be allowed, but encountered an error: %v", redirectPort, err)
+		return fmt.Errorf("packets on port %d should be allowed, but encountered an error: %w", redirectPort, err)
 	}
 
 	return nil
@@ -203,7 +203,7 @@ func (*NATDropUDP) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) er
 	if err := listenUDP(timedCtx, acceptPort, ipv6); err == nil {
 		return fmt.Errorf("packets on port %d should have been redirected to port %d", acceptPort, redirectPort)
 	} else if !errors.Is(err, context.DeadlineExceeded) {
-		return fmt.Errorf("error reading: %v", err)
+		return fmt.Errorf("error reading: %w", err)
 	}
 
 	return nil
@@ -231,7 +231,7 @@ func (*NATAcceptAll) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) 
 	}
 
 	if err := listenUDP(ctx, acceptPort, ipv6); err != nil {
-		return fmt.Errorf("packets on port %d should be allowed, but encountered an error: %v", acceptPort, err)
+		return fmt.Errorf("packets on port %d should be allowed, but encountered an error: %w", acceptPort, err)
 	}
 
 	return nil
@@ -796,12 +796,12 @@ func recvWithRECVORIGDSTADDR(ctx context.Context, ipv6 bool, expectedDst *net.IP
 	defer unix.Close(sockfd)
 
 	if err := unix.Bind(sockfd, bindAddr); err != nil {
-		return fmt.Errorf("failed Bind(%d, %+v): %v", sockfd, bindAddr, err)
+		return fmt.Errorf("failed Bind(%d, %+v): %w", sockfd, bindAddr, err)
 	}
 
 	// Enable IP_RECVORIGDSTADDR.
 	if err := unix.SetsockoptInt(sockfd, level, option, 1); err != nil {
-		return fmt.Errorf("failed SetsockoptByte(%d, %d, %d, 1): %v", sockfd, level, option, err)
+		return fmt.Errorf("failed SetsockoptByte(%d, %d, %d, 1): %w", sockfd, level, option, err)
 	}
 
 	addrCh := make(chan interface{})

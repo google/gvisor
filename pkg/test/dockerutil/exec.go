@@ -69,12 +69,12 @@ func (c *Container) doExec(ctx context.Context, r ExecOpts, args []string) (Proc
 	config := c.execConfig(r, args)
 	resp, err := c.client.ContainerExecCreate(ctx, c.id, config)
 	if err != nil {
-		return Process{}, fmt.Errorf("exec create failed with err: %v", err)
+		return Process{}, fmt.Errorf("exec create failed with err: %w", err)
 	}
 
 	hijack, err := c.client.ContainerExecAttach(ctx, resp.ID, types.ExecStartCheck{})
 	if err != nil {
-		return Process{}, fmt.Errorf("exec attach failed with err: %v", err)
+		return Process{}, fmt.Errorf("exec attach failed with err: %w", err)
 	}
 
 	return Process{

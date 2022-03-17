@@ -68,13 +68,13 @@ func newPacketMMapDispatcher(fd int, e *endpoint) (linkDispatcher, error) {
 	}
 	// Setup PACKET_RX_RING.
 	if err := setsockopt(d.fd, unix.SOL_PACKET, unix.PACKET_RX_RING, unsafe.Pointer(&tReq), unsafe.Sizeof(tReq)); err != nil {
-		return nil, fmt.Errorf("failed to enable PACKET_RX_RING: %v", err)
+		return nil, fmt.Errorf("failed to enable PACKET_RX_RING: %w", err)
 	}
 	// Let's mmap the blocks.
 	sz := tpBlockSize * tpBlockNR
 	buf, err := unix.Mmap(d.fd, 0, sz, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED)
 	if err != nil {
-		return nil, fmt.Errorf("unix.Mmap(...,0, %v, ...) failed = %v", sz, err)
+		return nil, fmt.Errorf("unix.Mmap(...,0, %v, ...) failed = %w", sz, err)
 	}
 	d.ringBuffer = buf
 	return d, nil

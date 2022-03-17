@@ -317,7 +317,7 @@ func ProcessListToTable(pl []*Process) string {
 func ProcessListToJSON(pl []*Process) (string, error) {
 	b, err := json.MarshalIndent(pl, "", "  ")
 	if err != nil {
-		return "", fmt.Errorf("couldn't marshal process list %v: %v", pl, err)
+		return "", fmt.Errorf("couldn't marshal process list %v: %w", pl, err)
 	}
 	return string(b), nil
 }
@@ -331,7 +331,7 @@ func PrintPIDsJSON(pl []*Process) (string, error) {
 	}
 	b, err := json.Marshal(pids)
 	if err != nil {
-		return "", fmt.Errorf("couldn't marshal PIDs %v: %v", pids, err)
+		return "", fmt.Errorf("couldn't marshal PIDs %v: %w", pids, err)
 	}
 	return string(b), nil
 }

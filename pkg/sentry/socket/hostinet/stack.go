@@ -147,7 +147,7 @@ func ExtractHostInterfaces(links []syscall.NetlinkMessage, addrs []syscall.Netli
 		// accordingly.
 		attrs, err := syscall.ParseNetlinkRouteAttr(&link)
 		if err != nil {
-			return fmt.Errorf("RTM_GETLINK returned RTM_NEWLINK message with invalid rtattrs: %v", err)
+			return fmt.Errorf("RTM_GETLINK returned RTM_NEWLINK message with invalid rtattrs: %w", err)
 		}
 		for _, attr := range attrs {
 			switch attr.Attr.Type {
@@ -176,7 +176,7 @@ func ExtractHostInterfaces(links []syscall.NetlinkMessage, addrs []syscall.Netli
 		}
 		attrs, err := syscall.ParseNetlinkRouteAttr(&addr)
 		if err != nil {
-			return fmt.Errorf("RTM_GETADDR returned RTM_NEWADDR message with invalid rtattrs: %v", err)
+			return fmt.Errorf("RTM_GETADDR returned RTM_NEWADDR message with invalid rtattrs: %w", err)
 		}
 		for _, attr := range attrs {
 			switch attr.Attr.Type {
@@ -218,7 +218,7 @@ func ExtractHostRoutes(routeMsgs []syscall.NetlinkMessage) ([]inet.Route, error)
 		// accordingly.
 		attrs, err := syscall.ParseNetlinkRouteAttr(&routeMsg)
 		if err != nil {
-			return nil, fmt.Errorf("RTM_GETROUTE returned RTM_NEWROUTE message with invalid rtattrs: %v", err)
+			return nil, fmt.Errorf("RTM_GETROUTE returned RTM_NEWROUTE message with invalid rtattrs: %w", err)
 		}
 
 		for _, attr := range attrs {
@@ -249,12 +249,12 @@ func ExtractHostRoutes(routeMsgs []syscall.NetlinkMessage) ([]inet.Route, error)
 func addHostInterfaces(s *Stack) error {
 	links, err := doNetlinkRouteRequest(unix.RTM_GETLINK)
 	if err != nil {
-		return fmt.Errorf("RTM_GETLINK failed: %v", err)
+		return fmt.Errorf("RTM_GETLINK failed: %w", err)
 	}
 
 	addrs, err := doNetlinkRouteRequest(unix.RTM_GETADDR)
 	if err != nil {
-		return fmt.Errorf("RTM_GETADDR failed: %v", err)
+		return fmt.Errorf("RTM_GETADDR failed: %w", err)
 	}
 
 	if err := ExtractHostInterfaces(links, addrs, s.interfaces, s.interfaceAddrs); err != nil {
@@ -271,7 +271,7 @@ func addHostInterfaces(s *Stack) error {
 func addHostRoutes(s *Stack) error {
 	routes, err := doNetlinkRouteRequest(unix.RTM_GETROUTE)
 	if err != nil {
-		return fmt.Errorf("RTM_GETROUTE failed: %v", err)
+		return fmt.Errorf("RTM_GETROUTE failed: %w", err)
 	}
 
 	s.routes, err = ExtractHostRoutes(routes)
@@ -293,12 +293,12 @@ func doNetlinkRouteRequest(req int) ([]syscall.NetlinkMessage, error) {
 func readTCPBufferSizeFile(filename string) (inet.TCPBufferSize, error) {
 	contents, err := ioutil.ReadFile(filename)
 	if err != nil {
-		return inet.TCPBufferSize{}, fmt.Errorf("failed to read %s: %v", filename, err)
+		return inet.TCPBufferSize{}, fmt.Errorf("failed to read %s: %w", filename, err)
 	}
 	ioseq := usermem.BytesIOSequence(contents)
 	fields := make([]int32, 3)
 	if n, err := usermem.CopyInt32StringsInVec(context.Background(), ioseq.IO, ioseq.Addrs, fields, ioseq.Opts); n != ioseq.NumBytes() || err != nil {
-		return inet.TCPBufferSize{}, fmt.Errorf("failed to parse %s (%q): got %v after %d/%d bytes", filename, contents, err, n, ioseq.NumBytes())
+		return inet.TCPBufferSize{}, fmt.Errorf("failed to parse %s (%q): got %w after %d/%d bytes", filename, contents, err, n, ioseq.NumBytes())
 	}
 	return inet.TCPBufferSize{
 		Min:     int(fields[0]),
@@ -469,7 +469,7 @@ func (s *Stack) Statistics(stat interface{}, arg string) error {
 			sliceStat[i], err = strconv.ParseUint(fields[i], 10, 64)
 		}
 		if err != nil {
-			return fmt.Errorf("failed to parse field %d from: %q, %v", i, rawLine, err)
+			return fmt.Errorf("failed to parse field %d from: %q, %w", i, rawLine, err)
 		}
 	}
 

@@ -467,7 +467,7 @@ func (s *Stack) RestoreCleanupEndpoints(es []stack.TransportEndpoint) {
 // SetForwarding implements inet.Stack.SetForwarding.
 func (s *Stack) SetForwarding(protocol tcpip.NetworkProtocolNumber, enable bool) error {
 	if err := s.Stack.SetForwardingDefaultAndAllNICs(protocol, enable); err != nil {
-		return fmt.Errorf("SetForwardingDefaultAndAllNICs(%d, %t): %s", protocol, enable, err)
+		return fmt.Errorf("SetForwardingDefaultAndAllNICs(%d, %t): %v", protocol, enable, err)
 	}
 	return nil
 }

@@ -317,7 +317,7 @@ func (ex *Exec) argsFromCLI(argv []string, enableRaw bool) (*control.ExecArgs, e
 		var err error
 		caps, err = capabilities(ex.caps, enableRaw)
 		if err != nil {
-			return nil, fmt.Errorf("capabilities error: %v", err)
+			return nil, fmt.Errorf("capabilities error: %w", err)
 		}
 	}
 
@@ -336,12 +336,12 @@ func (ex *Exec) argsFromCLI(argv []string, enableRaw bool) (*control.ExecArgs, e
 func (ex *Exec) argsFromProcessFile(enableRaw bool) (*control.ExecArgs, error) {
 	f, err := os.Open(ex.processPath)
 	if err != nil {
-		return nil, fmt.Errorf("error opening process file: %s, %v", ex.processPath, err)
+		return nil, fmt.Errorf("error opening process file: %s, %w", ex.processPath, err)
 	}
 	defer f.Close()
 	var p specs.Process
 	if err := json.NewDecoder(f).Decode(&p); err != nil {
-		return nil, fmt.Errorf("error parsing process file: %s, %v", ex.processPath, err)
+		return nil, fmt.Errorf("error parsing process file: %s, %w", ex.processPath, err)
 	}
 	return argsFromProcess(&p, enableRaw)
 }
@@ -359,7 +359,7 @@ func argsFromProcess(p *specs.Process, enableRaw bool) (*control.ExecArgs, error
 		// CAP_NET_RAW in the same way as container start.
 		caps, err = specutils.Capabilities(enableRaw, p.Capabilities)
 		if err != nil {
-			return nil, fmt.Errorf("error creating capabilities: %v", err)
+			return nil, fmt.Errorf("error creating capabilities: %w", err)
 		}
 	}
 

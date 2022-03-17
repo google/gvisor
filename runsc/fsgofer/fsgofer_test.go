@@ -73,7 +73,7 @@ func testReadWrite(f p9.File, flags p9.OpenFlags, content []byte) error {
 	w, err := f.WriteAt(b, uint64(len(content)))
 	if flags == p9.WriteOnly || flags == p9.ReadWrite {
 		if err != nil {
-			return fmt.Errorf("WriteAt(): %v", err)
+			return fmt.Errorf("WriteAt(): %w", err)
 		}
 		if w != len(b) {
 			return fmt.Errorf("WriteAt() was partial, got: %d, want: %d", w, len(b))
@@ -89,7 +89,7 @@ func testReadWrite(f p9.File, flags p9.OpenFlags, content []byte) error {
 	r, err := f.ReadAt(rBuf, 0)
 	if flags == p9.ReadOnly || flags == p9.ReadWrite {
 		if err != nil {
-			return fmt.Errorf("ReadAt(): %v", err)
+			return fmt.Errorf("ReadAt(): %w", err)
 		}
 		if r != len(rBuf) {
 			return fmt.Errorf("ReadAt() was partial, got: %d, want: %d", r, len(rBuf))
@@ -176,7 +176,7 @@ func runCustom(t *testing.T, types []uint32, confs []Config, test func(*testing.
 func setup(fileType uint32) (string, string, error) {
 	path, err := ioutil.TempDir(testutil.TmpDir(), "root-")
 	if err != nil {
-		return "", "", fmt.Errorf("ioutil.TempDir() failed, err: %v", err)
+		return "", "", fmt.Errorf("ioutil.TempDir() failed, err: %w", err)
 	}
 
 	// First attach with writable configuration to setup tree.
@@ -186,7 +186,7 @@ func setup(fileType uint32) (string, string, error) {
 	}
 	root, err := a.Attach()
 	if err != nil {
-		return "", "", fmt.Errorf("attach failed, err: %v", err)
+		return "", "", fmt.Errorf("attach failed, err: %w", err)
 	}
 	defer root.Close()
 
@@ -196,7 +196,7 @@ func setup(fileType uint32) (string, string, error) {
 		name = "file"
 		fd, f, _, _, err := root.Create(name, p9.ReadWrite, 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid()))
 		if err != nil {
-			return "", "", fmt.Errorf("createFile(root, %q) failed, err: %v", "test", err)
+			return "", "", fmt.Errorf("createFile(root, %q) failed, err: %w", "test", err)
 		}
 		if fd != nil {
 			fd.Close()
@@ -205,12 +205,12 @@ func setup(fileType uint32) (string, string, error) {
 	case unix.S_IFDIR:
 		name = "dir"
 		if _, err := root.Mkdir(name, 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid())); err != nil {
-			return "", "", fmt.Errorf("root.MkDir(%q) failed, err: %v", name, err)
+			return "", "", fmt.Errorf("root.MkDir(%q) failed, err: %w", name, err)
 		}
 	case unix.S_IFLNK:
 		name = "symlink"
 		if _, err := root.Symlink("/some/target", name, p9.UID(os.Getuid()), p9.GID(os.Getgid())); err != nil {
-			return "", "", fmt.Errorf("root.Symlink(%q) failed, err: %v", name, err)
+			return "", "", fmt.Errorf("root.Symlink(%q) failed, err: %w", name, err)
 		}
 	default:
 		panic(fmt.Sprintf("unknown file type %v", fileType))
@@ -278,7 +278,7 @@ func TestCreate(t *testing.T) {
 func checkIDs(f p9.File, uid, gid int) error {
 	_, _, stat, err := f.GetAttr(p9.AttrMask{UID: true, GID: true})
 	if err != nil {
-		return fmt.Errorf("GetAttr() failed, err: %v", err)
+		return fmt.Errorf("GetAttr() failed, err: %w", err)
 	}
 	if want := p9.UID(uid); stat.UID != want {
 		return fmt.Errorf("wrong UID, want: %v, got: %v", want, stat.UID)

@@ -84,7 +84,7 @@ func OpenDevice(devicePath string) (*os.File, error) {
 	}
 	f, err := os.OpenFile(devicePath, unix.O_RDWR, 0)
 	if err != nil {
-		return nil, fmt.Errorf("error opening KVM device file (%s): %v", devicePath, err)
+		return nil, fmt.Errorf("error opening KVM device file (%s): %w", devicePath, err)
 	}
 	return f, nil
 }
@@ -112,7 +112,7 @@ func New(deviceFile *os.File) (*KVM, error) {
 			continue
 		}
 		if errno != 0 {
-			return nil, fmt.Errorf("creating VM: %v", errno)
+			return nil, fmt.Errorf("creating VM: %w", error(errno))
 		}
 		break
 	}

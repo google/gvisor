@@ -149,13 +149,13 @@ func runTestCaseNative(testBin string, tc gtest.TestCase, t *testing.T) {
 func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 	bundleDir, cleanup, err := testutil.SetupBundleDir(spec)
 	if err != nil {
-		return fmt.Errorf("SetupBundleDir failed: %v", err)
+		return fmt.Errorf("SetupBundleDir failed: %w", err)
 	}
 	defer cleanup()
 
 	rootDir, cleanup, err := testutil.SetupRootDir()
 	if err != nil {
-		return fmt.Errorf("SetupRootDir failed: %v", err)
+		return fmt.Errorf("SetupRootDir failed: %w", err)
 	}
 	defer cleanup()
 
@@ -203,11 +203,11 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 		// Create log directory dedicated for this test.
 		testLogDir = filepath.Join(undeclaredOutputsDir, strings.Replace(name, "/", "_", -1))
 		if err := os.MkdirAll(testLogDir, 0755); err != nil {
-			return fmt.Errorf("could not create test dir: %v", err)
+			return fmt.Errorf("could not create test dir: %w", err)
 		}
 		debugLogDir, err := ioutil.TempDir(testLogDir, "runsc")
 		if err != nil {
-			return fmt.Errorf("could not create temp dir: %v", err)
+			return fmt.Errorf("could not create temp dir: %w", err)
 		}
 		debugLogDir += "/"
 		log.Infof("runsc logs: %s", debugLogDir)
@@ -293,7 +293,7 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 func setupUDSTree(spec *specs.Spec) (cleanup func(), err error) {
 	socketDir, cleanup, err := uds.CreateSocketTree("/tmp")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create socket tree: %v", err)
+		return nil, fmt.Errorf("failed to create socket tree: %w", err)
 	}
 
 	// Standard access to entire tree.

@@ -52,7 +52,7 @@ func (ep *Endpoint) ctrlConnect() error {
 	// Write the connection request.
 	w := ep.NewWriter()
 	if err := json.NewEncoder(w).Encode(struct{}{}); err != nil {
-		return fmt.Errorf("error writing connection request: %v", err)
+		return fmt.Errorf("error writing connection request: %w", err)
 	}
 	*ep.dataLen() = w.Len()
 
@@ -74,7 +74,7 @@ func (ep *Endpoint) ctrlConnect() error {
 		return fmt.Errorf("invalid connection response length %d (maximum %d)", respLen, ep.dataCap)
 	}
 	if err := json.NewDecoder(ep.NewReader(respLen)).Decode(&resp); err != nil {
-		return fmt.Errorf("error reading connection response: %v", err)
+		return fmt.Errorf("error reading connection response: %w", err)
 	}
 
 	return nil
@@ -98,13 +98,13 @@ func (ep *Endpoint) ctrlWaitFirst() error {
 	}
 	var req struct{}
 	if err := json.NewDecoder(ep.NewReader(reqLen)).Decode(&req); err != nil {
-		return fmt.Errorf("error reading connection request: %v", err)
+		return fmt.Errorf("error reading connection request: %w", err)
 	}
 
 	// Write the connection response.
 	w := ep.NewWriter()
 	if err := json.NewEncoder(w).Encode(struct{}{}); err != nil {
-		return fmt.Errorf("error writing connection response: %v", err)
+		return fmt.Errorf("error writing connection response: %w", err)
 	}
 	*ep.dataLen() = w.Len()
 

@@ -95,13 +95,13 @@ func runTableTests(ctx context.Context, table []testTable, dirent *fs.Dirent) er
 	for _, tt := range table {
 		file, err := dirent.Inode.InodeOperations.GetFile(ctx, dirent, fs.FileFlags{Read: true})
 		if err != nil {
-			return fmt.Errorf("GetFile returned error: %v", err)
+			return fmt.Errorf("GetFile returned error: %w", err)
 		}
 
 		data := make([]byte, tt.readBufferSize)
 		resultLen, err := file.Preadv(ctx, usermem.BytesIOSequence(data), tt.offset)
 		if err != tt.expectedError {
-			return fmt.Errorf("t.Preadv(len: %v, offset: %v) (error) => %v expected %v", tt.readBufferSize, tt.offset, err, tt.expectedError)
+			return fmt.Errorf("t.Preadv(len: %v, offset: %v) (error) => %w expected %v", tt.readBufferSize, tt.offset, err, tt.expectedError)
 		}
 		expectedLen := int64(len(tt.expectedData))
 		if resultLen != expectedLen {

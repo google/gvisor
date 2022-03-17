@@ -111,7 +111,7 @@ func checkFiles(basePath string, expectedFiles []string) error {
 	for _, file := range expectedFiles {
 		stat, err := os.Stat(filepath.Join(basePath, file))
 		if err != nil {
-			return fmt.Errorf("stat failed with: %v", err)
+			return fmt.Errorf("stat failed with: %w", err)
 		} else if stat.Size() < 1 {
 			return fmt.Errorf("file not written to: %+v", stat)
 		}

@@ -35,7 +35,7 @@ func newTmpfsRoot(ctx context.Context) (*vfs.VirtualFilesystem, vfs.VirtualDentr
 
 	vfsObj := &vfs.VirtualFilesystem{}
 	if err := vfsObj.Init(ctx); err != nil {
-		return nil, vfs.VirtualDentry{}, nil, fmt.Errorf("VFS init: %v", err)
+		return nil, vfs.VirtualDentry{}, nil, fmt.Errorf("VFS init: %w", err)
 	}
 
 	vfsObj.MustRegisterFilesystemType("tmpfs", FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
@@ -43,7 +43,7 @@ func newTmpfsRoot(ctx context.Context) (*vfs.VirtualFilesystem, vfs.VirtualDentr
 	})
 	mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", "tmpfs", &vfs.MountOptions{})
 	if err != nil {
-		return nil, vfs.VirtualDentry{}, nil, fmt.Errorf("failed to create tmpfs root mount: %v", err)
+		return nil, vfs.VirtualDentry{}, nil, fmt.Errorf("failed to create tmpfs root mount: %w", err)
 	}
 	root := mntns.Root()
 	root.IncRef()
@@ -76,7 +76,7 @@ func newFileFD(ctx context.Context, mode linux.FileMode) (*vfs.FileDescription, 
 	})
 	if err != nil {
 		cleanup()
-		return nil, nil, fmt.Errorf("failed to create file %q: %v", filename, err)
+		return nil, nil, fmt.Errorf("failed to create file %q: %w", filename, err)
 	}
 
 	return fd, cleanup, nil
@@ -101,7 +101,7 @@ func newDirFD(ctx context.Context, mode linux.FileMode) (*vfs.FileDescription, f
 		Mode: linux.ModeDirectory | mode,
 	}); err != nil {
 		cleanup()
-		return nil, nil, fmt.Errorf("failed to create directory %q: %v", dirname, err)
+		return nil, nil, fmt.Errorf("failed to create directory %q: %w", dirname, err)
 	}
 
 	// Open the dir and return it.
@@ -114,7 +114,7 @@ func newDirFD(ctx context.Context, mode linux.FileMode) (*vfs.FileDescription, f
 	})
 	if err != nil {
 		cleanup()
-		return nil, nil, fmt.Errorf("failed to open directory %q: %v", dirname, err)
+		return nil, nil, fmt.Errorf("failed to open directory %q: %w", dirname, err)
 	}
 
 	return fd, cleanup, nil
@@ -138,7 +138,7 @@ func newPipeFD(ctx context.Context, mode linux.FileMode) (*vfs.FileDescription, 
 		Mode: linux.ModeNamedPipe | mode,
 	}); err != nil {
 		cleanup()
-		return nil, nil, fmt.Errorf("failed to create pipe %q: %v", name, err)
+		return nil, nil, fmt.Errorf("failed to create pipe %q: %w", name, err)
 	}
 
 	fd, err := vfsObj.OpenAt(ctx, creds, &vfs.PathOperation{
@@ -150,7 +150,7 @@ func newPipeFD(ctx context.Context, mode linux.FileMode) (*vfs.FileDescription, 
 	})
 	if err != nil {
 		cleanup()
-		return nil, nil, fmt.Errorf("failed to open pipe %q: %v", name, err)
+		return nil, nil, fmt.Errorf("failed to open pipe %q: %w", name, err)
 	}
 
 	return fd, cleanup, nil

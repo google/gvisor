@@ -39,7 +39,7 @@ func init() {
 	serverCert, serverCertErr = ioutil.ReadFile("serverCert.pem")
 	for _, err := range []error{caKeyErr, caCertErr, serverKeyErr, serverCertErr} {
 		if err != nil {
-			panic(fmt.Errorf("unable to create certificates: %v", err))
+			panic(fmt.Errorf("unable to create certificates: %w", err))
 		}
 	}
 }

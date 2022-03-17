@@ -119,19 +119,19 @@ func runServerWorkload(ctx context.Context, b *testing.B, args base.ServerArgs) 
 			}()
 			harness.DebugLog(b, "Spawning container: %s", args.RunOpts.Image)
 			if err := server.Spawn(ctx, args.RunOpts, args.Cmd...); err != nil {
-				return fmt.Errorf("failed to spawn node instance: %v", err)
+				return fmt.Errorf("failed to spawn node instance: %w", err)
 			}
 
 			harness.DebugLog(b, "Finding Container IP")
 			servingIP, err := server.FindIP(ctx, false)
 			if err != nil {
-				return fmt.Errorf("failed to get ip from server: %v", err)
+				return fmt.Errorf("failed to get ip from server: %w", err)
 			}
 
 			// Wait until the Client sees the server as up.
 			harness.DebugLog(b, "Waiting for container to start.")
 			if err := harness.WaitUntilServing(ctx, args.Machine, servingIP, args.Port); err != nil {
-				return fmt.Errorf("failed to wait for serving: %v", err)
+				return fmt.Errorf("failed to wait for serving: %w", err)
 			}
 			return nil
 		}(); err != nil {

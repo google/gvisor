@@ -418,7 +418,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 		k.useHostCores = true
 		maxCPU, err := hostcpu.MaxPossibleCPU()
 		if err != nil {
-			return fmt.Errorf("failed to get maximum CPU number: %v", err)
+			return fmt.Errorf("failed to get maximum CPU number: %w", err)
 		}
 		minAppCores := uint(maxCPU) + 1
 		if k.applicationCores < minAppCores {
@@ -437,17 +437,17 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	if VFS2Enabled {
 		ctx := k.SupervisorContext()
 		if err := k.vfs.Init(ctx); err != nil {
-			return fmt.Errorf("failed to initialize VFS: %v", err)
+			return fmt.Errorf("failed to initialize VFS: %w", err)
 		}
 
 		err := k.rootIPCNamespace.InitPosixQueues(ctx, &k.vfs, auth.CredentialsFromContext(ctx))
 		if err != nil {
-			return fmt.Errorf("failed to create mqfs filesystem: %v", err)
+			return fmt.Errorf("failed to create mqfs filesystem: %w", err)
 		}
 
 		pipeFilesystem, err := pipefs.NewFilesystem(&k.vfs)
 		if err != nil {
-			return fmt.Errorf("failed to create pipefs filesystem: %v", err)
+			return fmt.Errorf("failed to create pipefs filesystem: %w", err)
 		}
 		defer pipeFilesystem.DecRef(ctx)
 		pipeMount := k.vfs.NewDisconnectedMount(pipeFilesystem, nil, &vfs.MountOptions{})
@@ -455,7 +455,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 
 		tmpfsFilesystem, tmpfsRoot, err := tmpfs.NewFilesystem(ctx, &k.vfs, auth.NewRootCredentials(k.rootUserNamespace))
 		if err != nil {
-			return fmt.Errorf("failed to create tmpfs filesystem: %v", err)
+			return fmt.Errorf("failed to create tmpfs filesystem: %w", err)
 		}
 		defer tmpfsFilesystem.DecRef(ctx)
 		defer tmpfsRoot.DecRef(ctx)
@@ -463,7 +463,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 
 		socketFilesystem, err := sockfs.NewFilesystem(&k.vfs)
 		if err != nil {
-			return fmt.Errorf("failed to create sockfs filesystem: %v", err)
+			return fmt.Errorf("failed to create sockfs filesystem: %w", err)
 		}
 		defer socketFilesystem.DecRef(ctx)
 		k.socketMount = k.vfs.NewDisconnectedMount(socketFilesystem, nil, &vfs.MountOptions{})
@@ -496,7 +496,7 @@ func (k *Kernel) SaveTo(ctx context.Context, w wire.Writer) error {
 	if VFS2Enabled {
 		// Discard unsavable mappings, such as those for host file descriptors.
 		if err := k.invalidateUnsavableMappings(ctx); err != nil {
-			return fmt.Errorf("failed to invalidate unsavable mappings: %v", err)
+			return fmt.Errorf("failed to invalidate unsavable mappings: %w", err)
 		}
 
 		// Prepare filesystems for saving. This must be done after
@@ -535,7 +535,7 @@ func (k *Kernel) SaveTo(ctx context.Context, w wire.Writer) error {
 		// obsolete since AIO callbacks are now waited-for by Kernel.Pause(),
 		// but this order is conservatively retained for VFS1.
 		if err := k.invalidateUnsavableMappings(ctx); err != nil {
-			return fmt.Errorf("failed to invalidate unsavable mappings: %v", err)
+			return fmt.Errorf("failed to invalidate unsavable mappings: %w", err)
 		}
 	}
 
@@ -966,7 +966,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 				CheckSearchable: true,
 			})
 			if err != nil {
-				return nil, 0, fmt.Errorf("failed to find initial working directory %q: %v", args.WorkingDirectory, err)
+				return nil, 0, fmt.Errorf("failed to find initial working directory %q: %w", args.WorkingDirectory, err)
 			}
 			defer wd.DecRef(ctx)
 		}
@@ -992,7 +992,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 			var err error
 			wd, err = mntns.FindInode(ctx, root, nil, args.WorkingDirectory, &remainingTraversals)
 			if err != nil {
-				return nil, 0, fmt.Errorf("failed to find initial working directory %q: %v", args.WorkingDirectory, err)
+				return nil, 0, fmt.Errorf("failed to find initial working directory %q: %w", args.WorkingDirectory, err)
 			}
 			defer wd.DecRef(ctx)
 		}

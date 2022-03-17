@@ -84,19 +84,19 @@ func addOverlay(ctx context.Context, lower *fs.Inode, name string, lowerFlags fs
 	// Create overlay on top of mount dir.
 	upper, err := tmpFS.Mount(ctx, name+"-upper", upperFlags, "", nil)
 	if err != nil {
-		return nil, fmt.Errorf("creating tmpfs overlay: %v", err)
+		return nil, fmt.Errorf("creating tmpfs overlay: %w", err)
 	}
 
 	// Replicate permissions and owner from lower to upper mount point.
 	attr, err := lower.UnstableAttr(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("reading attributes from lower mount point: %v", err)
+		return nil, fmt.Errorf("reading attributes from lower mount point: %w", err)
 	}
 	if !upper.InodeOperations.SetPermissions(ctx, upper, attr.Perms) {
 		return nil, fmt.Errorf("error setting permission to upper mount point")
 	}
 	if err := upper.InodeOperations.SetOwner(ctx, upper, attr.Owner); err != nil {
-		return nil, fmt.Errorf("setting owner to upper mount point: %v", err)
+		return nil, fmt.Errorf("setting owner to upper mount point: %w", err)
 	}
 
 	return fs.NewOverlayRoot(ctx, upper, lower, upperFlags)
@@ -302,11 +302,11 @@ func addSubmountOverlay(ctx context.Context, inode *fs.Inode, submounts []string
 	msrc := fs.NewCachingMountSource(ctx, nil, fs.MountSourceFlags{})
 	mountTree, err := ramfs.MakeDirectoryTree(ctx, msrc, submounts)
 	if err != nil {
-		return nil, fmt.Errorf("creating mount tree: %v", err)
+		return nil, fmt.Errorf("creating mount tree: %w", err)
 	}
 	overlayInode, err := fs.NewOverlayRoot(ctx, inode, mountTree, mf)
 	if err != nil {
-		return nil, fmt.Errorf("adding mount overlay: %v", err)
+		return nil, fmt.Errorf("adding mount overlay: %w", err)
 	}
 	return overlayInode, err
 }
@@ -347,7 +347,7 @@ func setupContainerFS(ctx context.Context, conf *config.Config, mntr *containerM
 func adjustDirentCache(k *kernel.Kernel) error {
 	var hl unix.Rlimit
 	if err := unix.Getrlimit(unix.RLIMIT_NOFILE, &hl); err != nil {
-		return fmt.Errorf("getting RLIMIT_NOFILE: %v", err)
+		return fmt.Errorf("getting RLIMIT_NOFILE: %w", err)
 	}
 	if hl.Cur != unix.RLIM_INFINITY {
 		newSize := hl.Cur / 2
@@ -651,7 +651,7 @@ func (c *containerMounter) processHints(conf *config.Config, creds *auth.Credent
 		log.Infof("Mounting master of shared mount %q from %q type %q", hint.name, hint.mount.Source, hint.mount.Type)
 		inode, err := c.mountSharedMaster(ctx, conf, hint)
 		if err != nil {
-			return fmt.Errorf("mounting shared master %q: %v", hint.name, err)
+			return fmt.Errorf("mounting shared master %q: %w", hint.name, err)
 		}
 		hint.root = inode
 	}
@@ -690,11 +690,11 @@ func (c *containerMounter) setupFS(conf *config.Config, procArgs *kernel.CreateP
 func (c *containerMounter) createMountNamespace(ctx context.Context, conf *config.Config) (*fs.MountNamespace, error) {
 	rootInode, err := c.createRootMount(ctx, conf)
 	if err != nil {
-		return nil, fmt.Errorf("creating filesystem for container: %v", err)
+		return nil, fmt.Errorf("creating filesystem for container: %w", err)
 	}
 	mns, err := fs.NewMountNamespace(ctx, rootInode)
 	if err != nil {
-		return nil, fmt.Errorf("creating new mount namespace for container: %v", err)
+		return nil, fmt.Errorf("creating new mount namespace for container: %w", err)
 	}
 	return mns, nil
 }
@@ -708,17 +708,17 @@ func (c *containerMounter) mountSubmounts(ctx context.Context, conf *config.Conf
 		log.Debugf("Mounting %q to %q, type: %s, options: %s", m.Source, m.Destination, m.Type, m.Options)
 		if hint := c.hints.findMount(m); hint != nil && hint.isSupported() {
 			if err := c.mountSharedSubmount(ctx, mns, root, m, hint); err != nil {
-				return fmt.Errorf("mount shared mount %q to %q: %v", hint.name, m.Destination, err)
+				return fmt.Errorf("mount shared mount %q to %q: %w", hint.name, m.Destination, err)
 			}
 		} else {
 			if err := c.mountSubmount(ctx, conf, mns, root, m); err != nil {
-				return fmt.Errorf("mount submount %q: %v", m.Destination, err)
+				return fmt.Errorf("mount submount %q: %w", m.Destination, err)
 			}
 		}
 	}
 
 	if err := c.mountTmp(ctx, conf, mns, root); err != nil {
-		return fmt.Errorf("mount submount %q: %v", "tmp", err)
+		return fmt.Errorf("mount submount %q: %w", "tmp", err)
 	}
 
 	if err := c.checkDispenser(); err != nil {
@@ -761,7 +761,7 @@ func (c *containerMounter) mountSharedMaster(ctx context.Context, conf *config.C
 
 	inode, err := filesystem.Mount(ctx, mountDevice(&hint.mount), mf, strings.Join(opts, ","), nil)
 	if err != nil {
-		return nil, fmt.Errorf("creating mount %q: %v", hint.name, err)
+		return nil, fmt.Errorf("creating mount %q: %w", hint.name, err)
 	}
 
 	if useOverlay {
@@ -792,7 +792,7 @@ func (c *containerMounter) createRootMount(ctx context.Context, conf *config.Con
 
 	rootInode, err := p9FS.Mount(ctx, rootDevice, mf, strings.Join(opts, ","), nil)
 	if err != nil {
-		return nil, fmt.Errorf("creating root mount point: %v", err)
+		return nil, fmt.Errorf("creating root mount point: %w", err)
 	}
 
 	// We need to overlay the root on top of a ramfs with stub directories
@@ -801,7 +801,7 @@ func (c *containerMounter) createRootMount(ctx context.Context, conf *config.Con
 	submounts := append(subtargets("/", c.mounts), "/dev", "/sys", "/proc", "/tmp")
 	rootInode, err = addSubmountOverlay(ctx, rootInode, submounts, mf)
 	if err != nil {
-		return nil, fmt.Errorf("adding submount overlay: %v", err)
+		return nil, fmt.Errorf("adding submount overlay: %w", err)
 	}
 
 	if conf.Overlay && !c.root.Readonly {
@@ -894,7 +894,7 @@ func (c *containerMounter) mountSubmount(ctx context.Context, conf *config.Confi
 
 	inode, err := filesystem.Mount(ctx, mountDevice(m), mf, strings.Join(opts, ","), nil)
 	if err != nil {
-		err := fmt.Errorf("creating mount with source %q: %v", m.Source, err)
+		err := fmt.Errorf("creating mount with source %q: %w", m.Source, err)
 		// Check to see if this is a common error due to a Linux bug.
 		// This error is generated here in order to cause it to be
 		// printed to the user using Docker via 'runsc create' etc. rather
@@ -905,7 +905,7 @@ func (c *containerMounter) mountSubmount(ctx context.Context, conf *config.Confi
 		// implementation (e.g. p9).
 		// TODO(gvisor.dev/issue/1765): Remove message when bug is resolved.
 		if strings.Contains(err.Error(), unix.EIO.Error()) || strings.Contains(err.Error(), unix.EPIPE.Error()) {
-			return fmt.Errorf("%v: %s", err, specutils.FaqErrorMsg("memlock", "you may be encountering a Linux kernel bug"))
+			return fmt.Errorf("%w: %s", err, specutils.FaqErrorMsg("memlock", "you may be encountering a Linux kernel bug"))
 		}
 		return err
 	}
@@ -917,7 +917,7 @@ func (c *containerMounter) mountSubmount(ctx context.Context, conf *config.Confi
 		log.Infof("Adding submount overlay over %q", m.Destination)
 		inode, err = addSubmountOverlay(ctx, inode, submounts, mf)
 		if err != nil {
-			return fmt.Errorf("adding submount overlay: %v", err)
+			return fmt.Errorf("adding submount overlay: %w", err)
 		}
 	}
 
@@ -932,11 +932,11 @@ func (c *containerMounter) mountSubmount(ctx context.Context, conf *config.Confi
 	maxTraversals := uint(0)
 	dirent, err := mns.FindInode(ctx, root, root, m.Destination, &maxTraversals)
 	if err != nil {
-		return fmt.Errorf("can't find mount destination %q: %v", m.Destination, err)
+		return fmt.Errorf("can't find mount destination %q: %w", m.Destination, err)
 	}
 	defer dirent.DecRef(ctx)
 	if err := mns.Mount(ctx, dirent, inode); err != nil {
-		return fmt.Errorf("mount %q error: %v", m.Destination, err)
+		return fmt.Errorf("mount %q error: %w", m.Destination, err)
 	}
 
 	log.Infof("Mounted %q to %q type: %s, internal-options: %q", m.Source, m.Destination, m.Type, opts)

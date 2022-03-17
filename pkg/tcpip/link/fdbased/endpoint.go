@@ -287,7 +287,7 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 	// Create per channel dispatchers.
 	for _, fd := range opts.FDs {
 		if err := unix.SetNonblock(fd, true); err != nil {
-			return nil, fmt.Errorf("unix.SetNonblock(%v) failed: %v", fd, err)
+			return nil, fmt.Errorf("unix.SetNonblock(%v) failed: %w", fd, err)
 		}
 
 		isSocket, err := isSocketFD(fd)
@@ -307,7 +307,7 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 		}
 		inboundDispatcher, err := createInboundDispatcher(e, fd, isSocket, fid)
 		if err != nil {
-			return nil, fmt.Errorf("createInboundDispatcher(...) = %v", err)
+			return nil, fmt.Errorf("createInboundDispatcher(...) = %w", err)
 		}
 		e.inboundDispatchers = append(e.inboundDispatchers, inboundDispatcher)
 	}
@@ -320,13 +320,13 @@ func createInboundDispatcher(e *endpoint, fd int, isSocket bool, fID int32) (lin
 	// FDs (tap/tun/unix domain sockets and af_packet).
 	inboundDispatcher, err := newReadVDispatcher(fd, e)
 	if err != nil {
-		return nil, fmt.Errorf("newReadVDispatcher(%d, %+v) = %v", fd, e, err)
+		return nil, fmt.Errorf("newReadVDispatcher(%d, %+v) = %w", fd, e, err)
 	}
 
 	if isSocket {
 		sa, err := unix.Getsockname(fd)
 		if err != nil {
-			return nil, fmt.Errorf("unix.Getsockname(%d) = %v", fd, err)
+			return nil, fmt.Errorf("unix.Getsockname(%d) = %w", fd, err)
 		}
 		switch sa.(type) {
 		case *unix.SockaddrLinklayer:
@@ -352,7 +352,7 @@ func createInboundDispatcher(e *endpoint, fd int, isSocket bool, fID int32) (lin
 			const fanoutType = unix.PACKET_FANOUT_HASH
 			fanoutArg := (int(fID) & 0xffff) | fanoutType<<16
 			if err := unix.SetsockoptInt(fd, unix.SOL_PACKET, unix.PACKET_FANOUT, fanoutArg); err != nil {
-				return nil, fmt.Errorf("failed to enable PACKET_FANOUT option: %v", err)
+				return nil, fmt.Errorf("failed to enable PACKET_FANOUT option: %w", err)
 			}
 		}
 
@@ -360,7 +360,7 @@ func createInboundDispatcher(e *endpoint, fd int, isSocket bool, fID int32) (lin
 		case PacketMMap:
 			inboundDispatcher, err = newPacketMMapDispatcher(fd, e)
 			if err != nil {
-				return nil, fmt.Errorf("newPacketMMapDispatcher(%d, %+v) = %v", fd, e, err)
+				return nil, fmt.Errorf("newPacketMMapDispatcher(%d, %+v) = %w", fd, e, err)
 			}
 		case RecvMMsg:
 			// If the provided FD is a socket then we optimize
@@ -368,7 +368,7 @@ func createInboundDispatcher(e *endpoint, fd int, isSocket bool, fID int32) (lin
 			// read packets in a batch.
 			inboundDispatcher, err = newRecvMMsgDispatcher(fd, e)
 			if err != nil {
-				return nil, fmt.Errorf("newRecvMMsgDispatcher(%d, %+v) = %v", fd, e, err)
+				return nil, fmt.Errorf("newRecvMMsgDispatcher(%d, %+v) = %w", fd, e, err)
 			}
 		}
 	}
@@ -378,7 +378,7 @@ func createInboundDispatcher(e *endpoint, fd int, isSocket bool, fID int32) (lin
 func isSocketFD(fd int) (bool, error) {
 	var stat unix.Stat_t
 	if err := unix.Fstat(fd, &stat); err != nil {
-		return false, fmt.Errorf("unix.Fstat(%v,...) failed: %v", fd, err)
+		return false, fmt.Errorf("unix.Fstat(%v,...) failed: %w", fd, err)
 	}
 	return (stat.Mode & unix.S_IFSOCK) == unix.S_IFSOCK, nil
 }

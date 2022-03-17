@@ -51,7 +51,7 @@ func (goRunner) ListTests() ([]string, error) {
 	cmd.Stderr = os.Stderr
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("failed to list: %v", err)
+		return nil, fmt.Errorf("failed to list: %w", err)
 	}
 	var toolSlice []string
 	for _, test := range strings.Split(string(out), "\n") {

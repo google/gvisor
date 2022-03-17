@@ -111,7 +111,7 @@ func registerFilesystems(k *kernel.Kernel) error {
 	tunSupported := tundev.IsNetTunSupported(inet.StackFromContext(ctx))
 	if tunSupported {
 		if err := tundev.Register(vfsObj); err != nil {
-			return fmt.Errorf("registering tundev: %v", err)
+			return fmt.Errorf("registering tundev: %w", err)
 		}
 	}
 
@@ -283,7 +283,7 @@ func (c *containerMounter) configureOverlay(ctx context.Context, creds *auth.Cre
 		Mask: linux.STATX_UID | linux.STATX_GID | linux.STATX_MODE | linux.STATX_TYPE,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to stat lower layer's root: %v", err)
+		return nil, nil, fmt.Errorf("failed to stat lower layer's root: %w", err)
 	}
 	if stat.Mask&linux.STATX_TYPE == 0 {
 		return nil, nil, fmt.Errorf("failed to get file type of lower layer's root")
@@ -299,7 +299,7 @@ func (c *containerMounter) configureOverlay(ctx context.Context, creds *auth.Cre
 	}
 	upper, err := c.k.VFS().MountDisconnected(ctx, creds, "" /* source */, tmpfs.Name, &upperOpts)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create upper layer for overlay, opts: %+v: %v", upperOpts, err)
+		return nil, nil, fmt.Errorf("failed to create upper layer for overlay, opts: %+v: %w", upperOpts, err)
 	}
 	cu.Add(func() { upper.DecRef(ctx) })
 
@@ -315,7 +315,7 @@ func (c *containerMounter) configureOverlay(ctx context.Context, creds *auth.Cre
 			Flags: linux.O_RDONLY,
 		})
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to open lower layer root for copying: %v", err)
+			return nil, nil, fmt.Errorf("failed to open lower layer root for copying: %w", err)
 		}
 		defer lowerFD.DecRef(ctx)
 		upperFD, err := c.k.VFS().OpenAt(ctx, creds, &vfs.PathOperation{
@@ -325,11 +325,11 @@ func (c *containerMounter) configureOverlay(ctx context.Context, creds *auth.Cre
 			Flags: linux.O_WRONLY,
 		})
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to open upper layer root for copying: %v", err)
+			return nil, nil, fmt.Errorf("failed to open upper layer root for copying: %w", err)
 		}
 		defer upperFD.DecRef(ctx)
 		if _, err := vfs.CopyRegularFileData(ctx, upperFD, lowerFD); err != nil {
-			return nil, nil, fmt.Errorf("failed to copy up overlay file: %v", err)
+			return nil, nil, fmt.Errorf("failed to copy up overlay file: %w", err)
 		}
 	}
 
@@ -375,7 +375,7 @@ func (c *containerMounter) mountSubmountsVFS2(ctx context.Context, conf *config.
 		if hint := c.hints.findMount(submount.mount); hint != nil && hint.isSupported() {
 			mnt, err = c.mountSharedSubmountVFS2(ctx, conf, mns, creds, submount.mount, hint)
 			if err != nil {
-				return fmt.Errorf("mount shared mount %q to %q: %v", hint.name, submount.mount.Destination, err)
+				return fmt.Errorf("mount shared mount %q to %q: %w", hint.name, submount.mount.Destination, err)
 			}
 		} else {
 			mnt, err = c.mountSubmountVFS2(ctx, conf, mns, creds, submount)
@@ -728,7 +728,7 @@ func (c *containerMounter) processHintsVFS2(conf *config.Config, creds *auth.Cre
 		log.Infof("Mounting master of shared mount %q from %q type %q", hint.name, hint.mount.Source, hint.mount.Type)
 		mnt, err := c.mountSharedMasterVFS2(ctx, conf, hint, creds)
 		if err != nil {
-			return fmt.Errorf("mounting shared master %q: %v", hint.name, err)
+			return fmt.Errorf("mounting shared master %q: %w", hint.name, err)
 		}
 		hint.vfsMount = mnt
 	}

@@ -39,10 +39,10 @@ func init() {
 func checkProcessCaps(pid int, wantCaps *specs.LinuxCapabilities) error {
 	curCaps, err := capability.NewPid2(pid)
 	if err != nil {
-		return fmt.Errorf("capability.NewPid2(%d) failed: %v", pid, err)
+		return fmt.Errorf("capability.NewPid2(%d) failed: %w", pid, err)
 	}
 	if err := curCaps.Load(); err != nil {
-		return fmt.Errorf("unable to load capabilities: %v", err)
+		return fmt.Errorf("unable to load capabilities: %w", err)
 	}
 	fmt.Printf("Capabilities (PID: %d): %v\n", pid, curCaps)
 

@@ -457,7 +457,7 @@ func (conn *Connection) Close(t *testing.T) {
 	errs := multierr.Combine(conn.sniffer.close(), conn.injector.close())
 	for _, s := range conn.layerStates {
 		if err := s.close(); err != nil {
-			errs = multierr.Append(errs, fmt.Errorf("unable to close %+v: %s", s, err))
+			errs = multierr.Append(errs, fmt.Errorf("unable to close %+v: %w", s, err))
 		}
 	}
 	if errs != nil {

@@ -56,7 +56,7 @@ func (c *vCPU) setCPUID() error {
 		uintptr(c.fd),
 		_KVM_SET_CPUID2,
 		uintptr(unsafe.Pointer(&cpuidSupported))); errno != 0 {
-		return fmt.Errorf("error setting CPUID: %v", errno)
+		return fmt.Errorf("error setting CPUID: %w", error(errno))
 	}
 	return nil
 }
@@ -83,7 +83,7 @@ func (c *vCPU) setTSCFreq(freq uintptr) error {
 		uintptr(c.fd),
 		_KVM_SET_TSC_KHZ,
 		freq /* khz */); errno != 0 {
-		return fmt.Errorf("error setting TSC frequency: %v", errno)
+		return fmt.Errorf("error setting TSC frequency: %w", error(errno))
 	}
 	return nil
 }
@@ -101,7 +101,7 @@ func (c *vCPU) setTSC(value uint64) error {
 		uintptr(c.fd),
 		_KVM_SET_MSRS,
 		uintptr(unsafe.Pointer(&registers))); errno != 0 {
-		return fmt.Errorf("error setting tsc: %v", errno)
+		return fmt.Errorf("error setting tsc: %w", error(errno))
 	}
 	return nil
 }
@@ -143,7 +143,7 @@ func (c *vCPU) setSystemRegisters(sregs *systemRegs) error {
 		uintptr(c.fd),
 		_KVM_SET_SREGS,
 		uintptr(unsafe.Pointer(sregs))); errno != 0 {
-		return fmt.Errorf("error setting system registers: %v", errno)
+		return fmt.Errorf("error setting system registers: %w", error(errno))
 	}
 	return nil
 }

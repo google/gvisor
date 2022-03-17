@@ -35,7 +35,7 @@ func ParseOutput(output string, name string, official bool) (*bigquery.Suite, er
 	for _, line := range lines {
 		bm, err := parseLine(line)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse line '%s': %v", line, err)
+			return nil, fmt.Errorf("failed to parse line '%s': %w", line, err)
 		}
 		if bm != nil {
 			suite.Benchmarks = append(suite.Benchmarks, bm)
@@ -70,12 +70,12 @@ func parseLine(line string) (*bigquery.Benchmark, error) {
 
 	iters, err := strconv.Atoi(fields[1])
 	if err != nil {
-		return nil, fmt.Errorf("expecting number of runs, got %s: %v", fields[1], err)
+		return nil, fmt.Errorf("expecting number of runs, got %s: %w", fields[1], err)
 	}
 
 	name, params, err := parseNameParams(fields[0])
 	if err != nil {
-		return nil, fmt.Errorf("parse name/params: %v", err)
+		return nil, fmt.Errorf("parse name/params: %w", err)
 	}
 
 	bm := bigquery.NewBenchmark(name, iters)
@@ -87,7 +87,7 @@ func parseLine(line string) (*bigquery.Benchmark, error) {
 		value := fields[2*i]
 		metric := fields[2*i+1]
 		if err := makeMetric(bm, value, metric); err != nil {
-			return nil, fmt.Errorf("makeMetric on metric %q value: %s: %v", metric, value, err)
+			return nil, fmt.Errorf("makeMetric on metric %q value: %s: %w", metric, value, err)
 		}
 	}
 	return bm, nil
@@ -121,7 +121,7 @@ func parseNameParams(field string) (string, []*tools.Parameter, error) {
 
 	ps, err := tools.NameToParameters(p)
 	if err != nil {
-		return "", nil, fmt.Errorf("NameToParameters %s: %v", field, err)
+		return "", nil, fmt.Errorf("NameToParameters %s: %w", field, err)
 	}
 	params = append(params, ps...)
 	return name, params, nil
@@ -136,13 +136,13 @@ func makeMetric(bm *bigquery.Benchmark, value, metric string) error {
 	case "ns/op":
 		val, err := strconv.ParseFloat(value, 64)
 		if err != nil {
-			return fmt.Errorf("ParseFloat %s: %v", value, err)
+			return fmt.Errorf("ParseFloat %s: %w", value, err)
 		}
 		bm.AddMetric(metric /*metric name*/, metric /*unit*/, val /*sample*/)
 	default:
 		m, err := tools.ParseCustomMetric(value, metric)
 		if err != nil {
-			return fmt.Errorf("ParseCustomMetric %s: %v ", metric, err)
+			return fmt.Errorf("ParseCustomMetric %s: %w ", metric, err)
 		}
 		bm.AddMetric(m.Name, m.Unit, m.Sample)
 	}

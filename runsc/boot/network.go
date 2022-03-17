@@ -205,7 +205,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			oldFD := args.FilePayload.Files[fdOffset].Fd()
 			newFD, err := unix.Dup(int(oldFD))
 			if err != nil {
-				return fmt.Errorf("failed to dup FD %v: %v", oldFD, err)
+				return fmt.Errorf("failed to dup FD %v: %w", oldFD, err)
 			}
 			FDs = append(FDs, newFD)
 			fdOffset++
@@ -310,7 +310,7 @@ func (n *Network) createNICWithAddrs(id tcpip.NICID, ep stack.LinkEndpoint, opts
 			},
 		}
 		if err := n.Stack.AddProtocolAddress(id, protocolAddr, stack.AddressProperties{}); err != nil {
-			return fmt.Errorf("AddProtocolAddress(%d, %+v, {}) failed: %s", id, protocolAddr, err)
+			return fmt.Errorf("AddProtocolAddress(%d, %+v, {}) failed: %v", id, protocolAddr, err)
 		}
 	}
 	return nil

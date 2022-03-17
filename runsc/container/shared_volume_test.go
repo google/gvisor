@@ -169,11 +169,11 @@ func TestSharedVolume(t *testing.T) {
 func checkFile(conf *config.Config, c *Container, filename string, want []byte) error {
 	cpy := filename + ".copy"
 	if _, err := execute(conf, c, "/bin/cp", "-f", filename, cpy); err != nil {
-		return fmt.Errorf("unexpected error copying file %q to %q: %v", filename, cpy, err)
+		return fmt.Errorf("unexpected error copying file %q to %q: %w", filename, cpy, err)
 	}
 	got, err := ioutil.ReadFile(cpy)
 	if err != nil {
-		return fmt.Errorf("error reading file %q: %v", filename, err)
+		return fmt.Errorf("error reading file %q: %w", filename, err)
 	}
 	if !bytes.Equal(got, want) {
 		return fmt.Errorf("file content inside the sandbox is wrong, got: %q, want: %q", got, want)

@@ -35,7 +35,7 @@ type Eventfd struct {
 func Create() (Eventfd, error) {
 	fd, _, err := unix.RawSyscall(unix.SYS_EVENTFD2, 0, 0, 0)
 	if err != 0 {
-		return Eventfd{}, fmt.Errorf("failed to create eventfd: %v", error(err))
+		return Eventfd{}, fmt.Errorf("failed to create eventfd: %w", error(err))
 	}
 	if err := unix.SetNonblock(int(fd), true); err != nil {
 		unix.Close(int(fd))

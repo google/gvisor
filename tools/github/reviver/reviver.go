@@ -107,7 +107,7 @@ func (r *Reviver) processPath(path string, wg *sync.WaitGroup) {
 	fmt.Printf("Processing dir %q\n", path)
 	fis, err := ioutil.ReadDir(path)
 	if err != nil {
-		r.addErr(fmt.Errorf("error processing dir %q: %v", path, err))
+		r.addErr(fmt.Errorf("error processing dir %q: %w", path, err))
 		return
 	}
 
