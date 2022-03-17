@@ -798,3 +798,23 @@ func TestDeleteInterface(t *testing.T) {
 		t.Fatalf("loopback interface is removed")
 	}
 }
+
+func TestProductName(t *testing.T) {
+	want, err := ioutil.ReadFile("/sys/devices/virtual/dmi/id/product_name")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	opts := dockerutil.RunOpts{Image: "basic/alpine"}
+	got, err := d.Run(ctx, opts, "cat", "/sys/devices/virtual/dmi/id/product_name")
+	if err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	if string(want) != got {
+		t.Errorf("invalid product name, want: %q, got: %q", want, got)
+	}
+}

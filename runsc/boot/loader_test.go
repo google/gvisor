@@ -447,7 +447,7 @@ func TestCreateMountNamespace(t *testing.T) {
 				goferFDs: []*fd.FD{fd.New(sandEnd)},
 			}
 
-			mntr := newContainerMounter(&info, nil, &podMountHints{}, false /* vfs2Enabled */)
+			mntr := newContainerMounter(&info, nil, &podMountHints{}, false /* vfs2Enabled */, "")
 			mns, err := mntr.createMountNamespace(ctx, conf)
 			if err != nil {
 				t.Fatalf("failed to create mount namespace: %v", err)
@@ -487,7 +487,7 @@ func TestCreateMountNamespaceVFS2(t *testing.T) {
 			defer l.Destroy()
 			defer loaderCleanup()
 
-			mntr := newContainerMounter(&l.root, l.k, l.mountHints, true /* vfs2Enabled */)
+			mntr := newContainerMounter(&l.root, l.k, l.mountHints, true /* vfs2Enabled */, "")
 			if err := mntr.processHints(l.root.conf, l.root.procArgs.Credentials); err != nil {
 				t.Fatalf("failed process hints: %v", err)
 			}
@@ -716,7 +716,7 @@ func TestRestoreEnvironment(t *testing.T) {
 				spec:     tc.spec,
 				goferFDs: ioFDs,
 			}
-			mntr := newContainerMounter(&info, nil, &podMountHints{}, conf.VFS2)
+			mntr := newContainerMounter(&info, nil, &podMountHints{}, conf.VFS2, "")
 			actualRenv, err := mntr.createRestoreEnvironment(conf)
 			if !tc.errorExpected && err != nil {
 				t.Fatalf("could not create restore environment for test:%s", tc.name)
