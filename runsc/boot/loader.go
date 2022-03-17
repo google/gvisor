@@ -144,6 +144,10 @@ type Loader struct {
 	// mountHints provides extra information about mounts for containers that
 	// apply to the entire pod.
 	mountHints *podMountHints
+
+	// productName is the value to show in
+	// /sys/devices/virtual/dmi/id/product_name.
+	productName string
 }
 
 // execID uniquely identifies a sentry process that is executed in a container.
@@ -219,6 +223,9 @@ type Args struct {
 	// TraceFD is the file descriptor to write a Go execution trace to.
 	// Valid if >=0.
 	TraceFD int
+	// ProductName is the value to show in
+	// /sys/devices/virtual/dmi/id/product_name.
+	ProductName string
 }
 
 // make sure stdioFDs are always the same on initial start and on restore
@@ -424,6 +431,7 @@ func New(args Args) (*Loader, error) {
 		mountHints:    mountHints,
 		root:          info,
 		stopProfiling: stopProfiling,
+		productName:   args.ProductName,
 	}
 
 	// We don't care about child signals; some platforms can generate a
@@ -769,7 +777,7 @@ func (l *Loader) createContainerProcess(root bool, cid string, info *containerIn
 	}
 	l.startGoferMonitor(cid, int32(info.goferFDs[0].FD()))
 
-	mntr := newContainerMounter(info, l.k, l.mountHints, kernel.VFS2Enabled)
+	mntr := newContainerMounter(info, l.k, l.mountHints, kernel.VFS2Enabled, l.productName)
 	if root {
 		if err := mntr.processHints(info.conf, info.procArgs.Credentials); err != nil {
 			return nil, nil, nil, err
