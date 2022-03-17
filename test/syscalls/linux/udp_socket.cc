@@ -382,6 +382,11 @@ TEST_P(UdpSocketTest, ConnectWriteToInvalidPort) {
   ASSERT_THAT(sendto(sock_.get(), buf, sizeof(buf), 0, addr, addrlen_),
               SyscallSucceedsWithValue(sizeof(buf)));
 
+  // Poll to make sure we get the ICMP error back.
+  constexpr int kTimeout = 1000;
+  struct pollfd pfd = {sock_.get(), POLLERR, 0};
+  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
+
   // Now verify that we got an ICMP error back of ECONNREFUSED.
   int err;
   socklen_t optlen = sizeof(err);
