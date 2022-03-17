@@ -20,6 +20,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -30,7 +31,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bits-and-blooms/bitset"
 	"github.com/cenkalti/backoff"
+	"github.com/coreos/go-systemd/v22/dbus"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
@@ -51,7 +54,7 @@ var (
 	ErrInvalidGroupPath = errors.New("cgroup: invalid group path")
 
 	// controllers2 is the group of all supported cgroupv2 controllers
-	controllers2 = map[string]controller{
+	controllers2 = map[string]controllerv2{
 		"cpu":     &cpu2{},
 		"cpuset":  &cpuset2{},
 		"io":      &io2{},
@@ -73,28 +76,23 @@ type cgroupV2 struct {
 	Own []string `json:"own"`
 }
 
-func newCgroupV2(mountpoint string, group string) (*cgroupV2, error) {
+func newCgroupV2(mountpoint, group string, useSystemd bool) (Cgroup, error) {
 	data, err := ioutil.ReadFile(filepath.Join(mountpoint, "cgroup.controllers"))
 	if err != nil {
 		return nil, err
 	}
-
-	return &cgroupV2{
+	cg := &cgroupV2{
 		Mountpoint:  mountpoint,
 		Path:        group,
 		Controllers: strings.Fields(string(data)),
-	}, nil
+	}
+	if useSystemd {
+		return newCgroupV2Systemd(cg)
+	}
+	return cg, err
 }
 
-// Install creates and configures cgroups.
-func (c *cgroupV2) Install(res *specs.LinuxResources) error {
-	log.Debugf("Installing cgroup path %q", c.MakePath(""))
-
-	// Clean up partially created cgroups on error. Errors during cleanup itself
-	// are ignored.
-	clean := cleanup.Make(func() { _ = c.Uninstall() })
-	defer clean.Clean()
-
+func (c *cgroupV2) createCgroupPaths() (bool, error) {
 	// setup all known controllers for the current subtree
 	// For example, given path /foo/bar and mount /sys/fs/cgroup, we need to write
 	// the controllers to:
@@ -103,14 +101,14 @@ func (c *cgroupV2) Install(res *specs.LinuxResources) error {
 	val := "+" + strings.Join(c.Controllers, " +")
 	elements := strings.Split(c.Path, "/")
 	current := c.Mountpoint
+	created := false
 
 	for i, e := range elements {
 		current = filepath.Join(current, e)
-		created := false
 		if i > 0 {
 			if err := os.Mkdir(current, 0o755); err != nil {
 				if !os.IsExist(err) {
-					return err
+					return false, err
 				}
 			} else {
 				created = true
@@ -120,33 +118,49 @@ func (c *cgroupV2) Install(res *specs.LinuxResources) error {
 		// enable all known controllers for subtree
 		if i < len(elements)-1 {
 			if err := writeFile(filepath.Join(current, subtreeControl), []byte(val), 0700); err != nil {
-				return err
+				return false, err
 			}
-		} else if created {
-			// if we created our final cgroup path then we can set the resources
-			for controllerName, ctrlr := range controllers2 {
-				// first check if our controller is found in the system
-				found := false
-				for _, knownController := range c.Controllers {
-					if controllerName == knownController {
-						found = true
-					}
-				}
+		}
+	}
+	return created, nil
+}
 
-				// if we don't have the controller
-				if found {
-					if err := ctrlr.set(res, current); err != nil {
-						return err
-					}
-					continue
+// Install creates and configures cgroups.
+func (c *cgroupV2) Install(res *specs.LinuxResources) error {
+	log.Debugf("Installing cgroup path %q", c.MakePath(""))
+	// Clean up partially created cgroups on error. Errors during cleanup itself
+	// are ignored.
+	clean := cleanup.Make(func() { _ = c.Uninstall() })
+	defer clean.Clean()
+
+	created, err := c.createCgroupPaths()
+	if err != nil {
+		return err
+	}
+	if created {
+		// If we created our final cgroup path then we can set the resources.
+		for controllerName, ctrlr := range controllers2 {
+			// First check if our controller is found in the system.
+			found := false
+			for _, knownController := range c.Controllers {
+				if controllerName == knownController {
+					found = true
 				}
-				if ctrlr.optional() {
-					if err := ctrlr.skip(res); err != nil {
-						return err
-					}
-				} else {
-					return fmt.Errorf("mandatory cgroup controller %q is missing for %q", controllerName, current)
+			}
+
+			// In case we don't have the controller.
+			if found {
+				if err := ctrlr.set(res, c.MakePath("")); err != nil {
+					return err
 				}
+				continue
+			}
+			if ctrlr.optional() {
+				if err := ctrlr.skip(res); err != nil {
+					return err
+				}
+			} else {
+				return fmt.Errorf("mandatory cgroup controller %q is missing for %q", controllerName, c.MakePath(""))
 			}
 		}
 	}
@@ -303,8 +317,61 @@ func (c *cgroupV2) MakePath(controllerName string) string {
 	return filepath.Join(c.Mountpoint, c.Path)
 }
 
+type controllerv2 interface {
+	controller
+	generateProperties(spec *specs.LinuxResources) ([]dbus.Property, error)
+}
+
 type cpu2 struct {
 	mandatory
+}
+
+func (*cpu2) generateProperties(spec *specs.LinuxResources) ([]dbus.Property, error) {
+	props := []dbus.Property{}
+	if spec == nil || spec.CPU == nil {
+		return props, nil
+	}
+	cpu := spec.CPU
+	if cpu.Shares != nil {
+		weight := convertCPUSharesToCgroupV2Value(*cpu.Shares)
+		if weight != 0 {
+			props = append(props, newProp("CPUWeight", weight))
+		}
+	}
+	var (
+		period uint64
+		quota  int64
+	)
+	if cpu.Period != nil {
+		period = *cpu.Period
+	}
+	if cpu.Quota != nil {
+		quota = *cpu.Quota
+	}
+	if period != 0 {
+		props = append(props, newProp("CPUQuotaPeriodUSec", period))
+	}
+	if quota != 0 || period != 0 {
+		// Corresponds to USEC_INFINITY in systemd.
+		cpuQuotaPerSecUSec := uint64(math.MaxUint64)
+		if quota > 0 {
+			if period == 0 {
+				// Assume the default.
+				period = defaultPeriod
+			}
+			// systemd converts CPUQuotaPerSecUSec (microseconds per CPU second) to
+			// CPUQuota (integer percentage of CPU) internally. This means that if a
+			// fractional percent of CPU is indicated by spec.CPU.Quota, we need to
+			// round up to the nearest 10ms (1% of a second) such that child cgroups
+			// can set the cpu.cfs_quota_us they expect.
+			cpuQuotaPerSecUSec = uint64(quota*1000000) / period
+			if cpuQuotaPerSecUSec%10000 != 0 {
+				cpuQuotaPerSecUSec = ((cpuQuotaPerSecUSec / 10000) + 1) * 10000
+			}
+		}
+		props = append(props, newProp("CPUQuotaPerSecUSec", cpuQuotaPerSecUSec))
+	}
+	return props, nil
 }
 
 func (*cpu2) set(spec *specs.LinuxResources, path string) error {
@@ -347,6 +414,34 @@ type cpuset2 struct {
 	mandatory
 }
 
+func (*cpuset2) generateProperties(spec *specs.LinuxResources) ([]dbus.Property, error) {
+	props := []dbus.Property{}
+	if spec == nil || spec.CPU == nil {
+		return props, nil
+	}
+	cpu := spec.CPU
+	if cpu.Cpus == "" && cpu.Mems == "" {
+		return props, nil
+	}
+	cpus := cpu.Cpus
+	mems := cpu.Mems
+	if cpus != "" {
+		bits, err := RangeToBits(cpus)
+		if err != nil {
+			return nil, fmt.Errorf("%w: cpus=%q conversion error: %v", ErrBadResourceSpec, cpus, err)
+		}
+		props = append(props, newProp("AllowedCPUs", bits))
+	}
+	if mems != "" {
+		bits, err := RangeToBits(mems)
+		if err != nil {
+			return nil, fmt.Errorf("%w: mems=%q conversion error: %v", ErrBadResourceSpec, mems, err)
+		}
+		props = append(props, newProp("AllowedMemoryNodes", bits))
+	}
+	return props, nil
+}
+
 func (*cpuset2) set(spec *specs.LinuxResources, path string) error {
 	if spec == nil || spec.CPU == nil {
 		return nil
@@ -369,6 +464,31 @@ func (*cpuset2) set(spec *specs.LinuxResources, path string) error {
 
 type memory2 struct {
 	mandatory
+}
+
+func (*memory2) generateProperties(spec *specs.LinuxResources) ([]dbus.Property, error) {
+	props := []dbus.Property{}
+	if spec == nil || spec.Memory == nil {
+		return props, nil
+	}
+	mem := spec.Memory
+	if mem.Swap != nil {
+		if mem.Limit == nil {
+			return nil, ErrBadResourceSpec
+		}
+		swap, err := convertMemorySwapToCgroupV2Value(*mem.Swap, *mem.Limit)
+		if err != nil {
+			return nil, err
+		}
+		props = append(props, newProp("MemorySwapMax", uint64(swap)))
+	}
+	if mem.Limit != nil {
+		props = append(props, newProp("MemoryMax", uint64(*mem.Limit)))
+	}
+	if mem.Reservation != nil {
+		props = append(props, newProp("MemoryLow", uint64(*mem.Reservation)))
+	}
+	return props, nil
 }
 
 func (*memory2) set(spec *specs.LinuxResources, path string) error {
@@ -424,6 +544,13 @@ type pid2 struct {
 	mandatory
 }
 
+func (*pid2) generateProperties(spec *specs.LinuxResources) ([]dbus.Property, error) {
+	if spec != nil && spec.Pids != nil {
+		return []dbus.Property{newProp("TasksMax", uint64(spec.Pids.Limit))}, nil
+	}
+	return []dbus.Property{}, nil
+}
+
 func (*pid2) set(spec *specs.LinuxResources, path string) error {
 	if spec == nil || spec.Pids == nil {
 		return nil
@@ -438,6 +565,29 @@ func (*pid2) set(spec *specs.LinuxResources, path string) error {
 
 type io2 struct {
 	mandatory
+}
+
+func (*io2) generateProperties(spec *specs.LinuxResources) ([]dbus.Property, error) {
+	props := []dbus.Property{}
+	if spec == nil || spec.BlockIO == nil {
+		return props, nil
+	}
+	io := spec.BlockIO
+	if io != nil {
+		if io.Weight != nil && *io.Weight != 0 {
+			ioWeight := convertBlkIOToIOWeightValue(*io.Weight)
+			props = append(props, newProp("IOWeight", ioWeight))
+		}
+		for _, dev := range io.WeightDevice {
+			val := fmt.Sprintf("%d:%d %d", dev.Major, dev.Minor, *dev.Weight)
+			props = append(props, newProp("IODeviceWeight", val))
+		}
+		props = addIOProps(props, "IOReadBandwidthMax", io.ThrottleReadBpsDevice)
+		props = addIOProps(props, "IOWriteBandwidthMax", io.ThrottleWriteBpsDevice)
+		props = addIOProps(props, "IOReadIOPSMax", io.ThrottleReadIOPSDevice)
+		props = addIOProps(props, "IOWriteIOPSMax", io.ThrottleWriteIOPSDevice)
+	}
+	return props, nil
 }
 
 func (*io2) set(spec *specs.LinuxResources, path string) error {
@@ -530,6 +680,10 @@ func (*hugeTLB2) skip(spec *specs.LinuxResources) error {
 		return fmt.Errorf("HugepageLimits set but hugetlb cgroup controller not found")
 	}
 	return nil
+}
+
+func (*hugeTLB2) generateProperties(spec *specs.LinuxResources) ([]dbus.Property, error) {
+	return nil, nil
 }
 
 func (*hugeTLB2) set(spec *specs.LinuxResources, path string) error {
@@ -672,4 +826,60 @@ func parseUint(s string, base, bitSize int) (uint64, error) {
 	}
 
 	return value, nil
+}
+
+// RangeToBits converts a text representation of a CPU mask (as written to
+// or read from cgroups' cpuset.* files, e.g. "1,3-5") to a slice of bytes
+// with the corresponding bits set (as consumed by systemd over dbus as
+// AllowedCPUs/AllowedMemoryNodes unit property value).
+// Copied from runc.
+func RangeToBits(str string) ([]byte, error) {
+	bits := &bitset.BitSet{}
+	for _, r := range strings.Split(str, ",") {
+		// allow extra spaces around
+		r = strings.TrimSpace(r)
+		// allow empty elements (extra commas)
+		if r == "" {
+			continue
+		}
+		ranges := strings.SplitN(r, "-", 2)
+		if len(ranges) > 1 {
+			start, err := strconv.ParseUint(ranges[0], 10, 32)
+			if err != nil {
+				return nil, err
+			}
+			end, err := strconv.ParseUint(ranges[1], 10, 32)
+			if err != nil {
+				return nil, err
+			}
+			if start > end {
+				return nil, errors.New("invalid range: " + r)
+			}
+			for i := uint(start); i <= uint(end); i++ {
+				bits.Set(i)
+			}
+		} else {
+			val, err := strconv.ParseUint(ranges[0], 10, 32)
+			if err != nil {
+				return nil, err
+			}
+			bits.Set(uint(val))
+		}
+	}
+
+	val := bits.Bytes()
+	if len(val) == 0 {
+		// do not allow empty values
+		return nil, errors.New("empty value")
+	}
+	ret := make([]byte, len(val)*8)
+	for i := range val {
+		// bitset uses BigEndian internally
+		binary.BigEndian.PutUint64(ret[i*8:], val[len(val)-1-i])
+	}
+	// remove upper all-zero bytes
+	for ret[0] == 0 {
+		ret = ret[1:]
+	}
+	return ret, nil
 }

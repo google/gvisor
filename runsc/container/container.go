@@ -1226,13 +1226,13 @@ func (c *Container) setupCgroupForRoot(conf *config.Config, spec *specs.Spec) (c
 	var parentCgroup cgroup.Cgroup
 	if parentPath, ok := spec.Annotations[cgroupParentAnnotation]; ok {
 		var err error
-		parentCgroup, err = cgroup.NewFromPath(parentPath)
+		parentCgroup, err = cgroup.NewFromPath(parentPath, conf.SystemdCgroup)
 		if err != nil {
 			return nil, nil, err
 		}
 	} else {
 		var err error
-		parentCgroup, err = cgroup.NewFromSpec(spec)
+		parentCgroup, err = cgroup.NewFromSpec(spec, conf.SystemdCgroup)
 		if parentCgroup == nil || err != nil {
 			return nil, nil, err
 		}
@@ -1263,7 +1263,7 @@ func (c *Container) setupCgroupForSubcontainer(conf *config.Config, spec *specs.
 		}
 	}
 
-	cg, err := cgroup.NewFromSpec(spec)
+	cg, err := cgroup.NewFromSpec(spec, conf.SystemdCgroup)
 	if cg == nil || err != nil {
 		return nil, err
 	}

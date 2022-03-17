@@ -5,6 +5,7 @@ go 1.17
 require (
 	github.com/BurntSushi/toml v0.3.1
 	github.com/bazelbuild/rules_go v0.30.0
+	github.com/bits-and-blooms/bitset v1.2.0
 	github.com/cenkalti/backoff v1.1.1-0.20190506075156-2146c9339422
 	github.com/containerd/cgroups v1.0.1
 	github.com/containerd/console v1.0.1
@@ -12,6 +13,7 @@ require (
 	github.com/containerd/fifo v1.0.0
 	github.com/containerd/go-runc v1.0.0
 	github.com/containerd/typeurl v1.0.2
+	github.com/coreos/go-systemd/v22 v22.3.2
 	github.com/gofrs/flock v0.8.0
 	github.com/gogo/protobuf v1.3.2
 	github.com/google/btree v1.0.1
@@ -39,10 +41,9 @@ require (
 	github.com/cilium/ebpf v0.4.0 // indirect
 	github.com/containerd/continuity v0.2.1 // indirect
 	github.com/containerd/ttrpc v1.0.2 // indirect
-	github.com/coreos/go-systemd/v22 v22.1.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/docker/go-units v0.4.0 // indirect
-	github.com/godbus/dbus/v5 v5.0.3 // indirect
+	github.com/godbus/dbus/v5 v5.0.4 // indirect
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/google/go-cmp v0.5.6 // indirect
