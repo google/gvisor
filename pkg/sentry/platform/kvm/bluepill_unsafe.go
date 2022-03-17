@@ -66,6 +66,7 @@ func bluepillArchContext(context unsafe.Pointer) *arch.SignalContext64 {
 func bluepillGuestExit(c *vCPU, context unsafe.Pointer) {
 	// Increment our counter.
 	atomic.AddUint64(&c.guestExits, 1)
+	globalGuestExits.IncrementByNoFields(1)
 
 	// Copy out registers.
 	bluepillArchExit(c, bluepillArchContext(context))
@@ -109,6 +110,9 @@ func bluepillHandler(context unsafe.Pointer) {
 	default:
 		throw("invalid state")
 	}
+
+	// Increment the counter.
+	globalHostExits.IncrementByNoFields(1)
 
 	for {
 		_, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(c.fd), _KVM_RUN, 0) // escapes: no.

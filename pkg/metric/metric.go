@@ -290,6 +290,12 @@ func (m *Uint64Metric) Increment(fieldValues ...string) {
 	m.IncrementBy(1, fieldValues...)
 }
 
+// IncrementByNoFields increments the metric by v, disregarding field values.
+//go:nosplit
+func (m *Uint64Metric) IncrementByNoFields(v uint64) {
+	atomic.AddUint64(&m.value, v)
+}
+
 // IncrementBy increments the metric by v.
 func (m *Uint64Metric) IncrementBy(v uint64, fieldValues ...string) {
 	if m.numFields != len(fieldValues) {

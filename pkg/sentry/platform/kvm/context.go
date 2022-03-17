@@ -98,6 +98,7 @@ restart:
 
 	// Increment the number of user exits.
 	atomic.AddUint64(&cpu.userExits, 1)
+	globalUserExits.IncrementByNoFields(1)
 
 	// Release resources.
 	c.machine.Put(cpu)

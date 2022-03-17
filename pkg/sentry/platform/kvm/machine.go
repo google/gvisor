@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/procid"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
@@ -157,6 +158,19 @@ type dieState struct {
 	// allocation inside nosplit function.
 	guestRegs userRegs
 }
+
+var (
+	// globalGuestExits is analogous to vCPU.guestExits, but tracks the guest to host world switches
+	// of all vCPUs instead of just one.
+	globalGuestExits = metric.MustCreateNewUint64Metric("/kvm/globalGuestExits", false, "")
+
+	// globalUserExits is analogous to vCPU.userExits, but tracks the user exits of all vCPUs instead
+	// of just one.
+	globalUserExits = metric.MustCreateNewUint64Metric("/kvm/globalUserExits", false, "")
+
+	// globalHostExits is the global number of host to guest world switches.
+	globalHostExits = metric.MustCreateNewUint64Metric("/kvm/globalHostExits", false, "")
+)
 
 // createVCPU creates and returns a new vCPU.
 //
