@@ -30,6 +30,7 @@ readonly root
 shift; shift; shift # For "$@" below.
 
 # Ensure that we have the correct packages installed.
+export DEBIAN_FRONTEND=noninteractive
 function apt_install() {
   while true; do
     sudo apt-get update &&
