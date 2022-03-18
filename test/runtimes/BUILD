@@ -19,6 +19,14 @@ runtime_test(
 )
 
 runtime_test(
+    name = "java17",
+    batch = 100,
+    exclude_file = "exclude/java17.csv",
+    lang = "java",
+    shard_count = most_shards,
+)
+
+runtime_test(
     name = "nodejs12.4.0",
     exclude_file = "exclude/nodejs12.4.0.csv",
     lang = "nodejs",
