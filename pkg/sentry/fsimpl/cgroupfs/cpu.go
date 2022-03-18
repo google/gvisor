@@ -15,9 +15,6 @@
 package cgroupfs
 
 import (
-	"fmt"
-
-	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -76,7 +73,7 @@ func (c *cpuController) Clone() controller {
 
 // AddControlFiles implements controller.AddControlFiles.
 func (c *cpuController) AddControlFiles(ctx context.Context, creds *auth.Credentials, _ *cgroupInode, contents map[string]kernfs.Inode) {
-	contents["cpu.cfs_period_us"] = c.fs.newStaticControllerFile(ctx, creds, linux.FileMode(0644), fmt.Sprintf("%d\n", c.cfsPeriod))
-	contents["cpu.cfs_quota_us"] = c.fs.newStaticControllerFile(ctx, creds, linux.FileMode(0644), fmt.Sprintf("%d\n", c.cfsQuota))
-	contents["cpu.shares"] = c.fs.newStaticControllerFile(ctx, creds, linux.FileMode(0644), fmt.Sprintf("%d\n", c.shares))
+	contents["cpu.cfs_period_us"] = c.fs.newStubControllerFile(ctx, creds, &c.cfsPeriod)
+	contents["cpu.cfs_quota_us"] = c.fs.newStubControllerFile(ctx, creds, &c.cfsQuota)
+	contents["cpu.shares"] = c.fs.newStubControllerFile(ctx, creds, &c.shares)
 }
