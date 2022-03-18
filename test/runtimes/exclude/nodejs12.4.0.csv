@@ -11,10 +11,6 @@ parallel/test-dgram-bind-fd.js,b/132447356,
 parallel/test-dgram-socket-buffer-size.js,b/68847921,
 parallel/test-dns-channel-timeout.js,b/161893056,
 parallel/test-fs-access.js,,Broken test
-parallel/test-fs-watchfile.js,b/166819807,Flaky - VFS1 only
-parallel/test-fs-write-stream.js,b/166819807,Flaky - VFS1 only
-parallel/test-fs-write-stream-double-close.js,b/166819807,Flaky - VFS1 only
-parallel/test-fs-write-stream-throw-type-error.js,b/166819807,Flaky - VFS1 only
 parallel/test-http-writable-true-after-close.js,b/171301436,Flaky - Mismatched <anonymous> function calls. Expected exactly 1 actual 2
 parallel/test-os.js,b/63997097,
 parallel/test-process-uid-gid.js,,Does not work inside Docker with gid nobody
@@ -42,5 +38,5 @@ pseudo-tty/test-tty-window-size.js,b/162801321,
 pseudo-tty/test-tty-wrap.js,b/162801321,
 pummel/test-net-pingpong.js,,Broken test
 pummel/test-vm-memleak.js,b/162799436,
-pummel/test-watch-file.js,,Flaky - VFS1 only
+pummel/test-watch-file.js,,Flaky test which was fixed in https://github.com/nodejs/node/commit/b0b52b2023f5cd0df4ae921850815586b4313dca. Unexclude when bumping nodejs version.
 tick-processor/test-tick-processor-builtin.js,,Broken test
