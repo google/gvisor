@@ -283,57 +283,85 @@ func (d *dir) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(9, &d.cgi)
 }
 
-func (c *controllerFile) StateTypeName() string {
+func (f *controllerFile) StateTypeName() string {
 	return "pkg/sentry/fsimpl/cgroupfs.controllerFile"
 }
 
-func (c *controllerFile) StateFields() []string {
+func (f *controllerFile) StateFields() []string {
 	return []string{
 		"DynamicBytesFile",
 	}
 }
 
-func (c *controllerFile) beforeSave() {}
+func (f *controllerFile) beforeSave() {}
 
 // +checklocksignore
-func (c *controllerFile) StateSave(stateSinkObject state.Sink) {
-	c.beforeSave()
-	stateSinkObject.Save(0, &c.DynamicBytesFile)
+func (f *controllerFile) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.DynamicBytesFile)
 }
 
-func (c *controllerFile) afterLoad() {}
+func (f *controllerFile) afterLoad() {}
 
 // +checklocksignore
-func (c *controllerFile) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &c.DynamicBytesFile)
+func (f *controllerFile) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.DynamicBytesFile)
 }
 
-func (s *staticControllerFile) StateTypeName() string {
+func (f *staticControllerFile) StateTypeName() string {
 	return "pkg/sentry/fsimpl/cgroupfs.staticControllerFile"
 }
 
-func (s *staticControllerFile) StateFields() []string {
+func (f *staticControllerFile) StateFields() []string {
 	return []string{
 		"DynamicBytesFile",
 		"StaticData",
 	}
 }
 
-func (s *staticControllerFile) beforeSave() {}
+func (f *staticControllerFile) beforeSave() {}
 
 // +checklocksignore
-func (s *staticControllerFile) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.Save(0, &s.DynamicBytesFile)
-	stateSinkObject.Save(1, &s.StaticData)
+func (f *staticControllerFile) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.DynamicBytesFile)
+	stateSinkObject.Save(1, &f.StaticData)
 }
 
-func (s *staticControllerFile) afterLoad() {}
+func (f *staticControllerFile) afterLoad() {}
 
 // +checklocksignore
-func (s *staticControllerFile) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.DynamicBytesFile)
-	stateSourceObject.Load(1, &s.StaticData)
+func (f *staticControllerFile) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.DynamicBytesFile)
+	stateSourceObject.Load(1, &f.StaticData)
+}
+
+func (f *stubControllerFile) StateTypeName() string {
+	return "pkg/sentry/fsimpl/cgroupfs.stubControllerFile"
+}
+
+func (f *stubControllerFile) StateFields() []string {
+	return []string{
+		"controllerFile",
+		"data",
+	}
+}
+
+func (f *stubControllerFile) beforeSave() {}
+
+// +checklocksignore
+func (f *stubControllerFile) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.controllerFile)
+	stateSinkObject.Save(1, &f.data)
+}
+
+func (f *stubControllerFile) afterLoad() {}
+
+// +checklocksignore
+func (f *stubControllerFile) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.controllerFile)
+	stateSourceObject.Load(1, &f.data)
 }
 
 func (c *cpuController) StateTypeName() string {
@@ -671,31 +699,6 @@ func (c *jobController) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &c.id)
 }
 
-func (d *jobIDData) StateTypeName() string {
-	return "pkg/sentry/fsimpl/cgroupfs.jobIDData"
-}
-
-func (d *jobIDData) StateFields() []string {
-	return []string{
-		"c",
-	}
-}
-
-func (d *jobIDData) beforeSave() {}
-
-// +checklocksignore
-func (d *jobIDData) StateSave(stateSinkObject state.Sink) {
-	d.beforeSave()
-	stateSinkObject.Save(0, &d.c)
-}
-
-func (d *jobIDData) afterLoad() {}
-
-// +checklocksignore
-func (d *jobIDData) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &d.c)
-}
-
 func (c *memoryController) StateTypeName() string {
 	return "pkg/sentry/fsimpl/cgroupfs.memoryController"
 }
@@ -707,6 +710,7 @@ func (c *memoryController) StateFields() []string {
 		"limitBytes",
 		"softLimitBytes",
 		"moveChargeAtImmigrate",
+		"pressureLevel",
 	}
 }
 
@@ -720,6 +724,7 @@ func (c *memoryController) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &c.limitBytes)
 	stateSinkObject.Save(3, &c.softLimitBytes)
 	stateSinkObject.Save(4, &c.moveChargeAtImmigrate)
+	stateSinkObject.Save(5, &c.pressureLevel)
 }
 
 func (c *memoryController) afterLoad() {}
@@ -731,6 +736,7 @@ func (c *memoryController) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &c.limitBytes)
 	stateSourceObject.Load(3, &c.softLimitBytes)
 	stateSourceObject.Load(4, &c.moveChargeAtImmigrate)
+	stateSourceObject.Load(5, &c.pressureLevel)
 }
 
 func (d *memoryUsageInBytesData) StateTypeName() string {
@@ -766,6 +772,7 @@ func init() {
 	state.Register((*dir)(nil))
 	state.Register((*controllerFile)(nil))
 	state.Register((*staticControllerFile)(nil))
+	state.Register((*stubControllerFile)(nil))
 	state.Register((*cpuController)(nil))
 	state.Register((*cpuacctController)(nil))
 	state.Register((*cpuacctCgroup)(nil))
@@ -778,7 +785,6 @@ func init() {
 	state.Register((*memsData)(nil))
 	state.Register((*dirRefs)(nil))
 	state.Register((*jobController)(nil))
-	state.Register((*jobIDData)(nil))
 	state.Register((*memoryController)(nil))
 	state.Register((*memoryUsageInBytesData)(nil))
 }
