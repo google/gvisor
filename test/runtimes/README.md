@@ -26,12 +26,12 @@ To run an entire runtime test locally, use the following table.
 Note: java runtime test take 1+ hours with 16 cores.
 
 Language | Version | Running the test suite
--------- | ------- | ----------------------------------------
-Go       | 1.12    | `make go1.12-runtime-tests{_vfs2}`
-Java     | 11      | `make java11-runtime-tests{_vfs2}`
-NodeJS   | 12.4.0  | `make nodejs12.4.0-runtime-tests{_vfs2}`
-Php      | 7.3.6   | `make php7.3.6-runtime-tests{_vfs2}`
-Python   | 3.7.3   | `make python3.7.3-runtime-tests{_vfs2}`
+-------- | ------- | ---------------------------------
+Go       | 1.12    | `make go1.12-runtime-tests`
+Java     | 11      | `make java11-runtime-tests`
+NodeJS   | 12.4.0  | `make nodejs12.4.0-runtime-tests`
+Php      | 7.3.6   | `make php7.3.6-runtime-tests`
+Python   | 3.7.3   | `make python3.7.3-runtime-tests`
 
 #### Clean Up
 
