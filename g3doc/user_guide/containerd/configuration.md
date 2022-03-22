@@ -68,7 +68,7 @@ version = 2
   runtime_type = "io.containerd.runc.v2"
 [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runsc]
   runtime_type = "io.containerd.runsc.v1"
-[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runsc.option]
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runsc.options]
   TypeUrl = "io.containerd.runsc.v1.options"
   ConfigPath = "/etc/containerd/runsc.toml"
 EOF
