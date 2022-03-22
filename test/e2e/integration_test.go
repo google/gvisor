@@ -818,3 +818,96 @@ func TestProductName(t *testing.T) {
 		t.Errorf("invalid product name, want: %q, got: %q", want, got)
 	}
 }
+
+// TestRevalidateSymlinkChain tests that when a symlink in the middle of chain
+// gets updated externally, the change is noticed and the internal cache is
+// updated accordingly.
+func TestRevalidateSymlinkChain(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	// Create the following structure:
+	// dir
+	//  + gen1
+	//  |  + file [content: 123]
+	//  |
+	//  + gen2
+	//  |  + file [content: 456]
+	//  |
+	//  + file -> sym1/file
+	//  + sym1 -> sym2
+	//  + sym2 -> gen1
+	//
+	dir, err := ioutil.TempDir(testutil.TmpDir(), "sub-mount")
+	if err != nil {
+		t.Fatalf("TempDir(): %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "gen1"), 0777); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "gen2"), 0777); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "gen1", "file"), []byte("123"), 0666); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "gen2", "file"), []byte("456"), 0666); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("sym1/file", filepath.Join(dir, "file")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("sym2", filepath.Join(dir, "sym1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("gen1", filepath.Join(dir, "sym2")); err != nil {
+		t.Fatal(err)
+	}
+
+	// Mount dir inside the container so that external changes are propagated to
+	// the container.
+	opts := dockerutil.RunOpts{
+		Image:      "basic/alpine",
+		Privileged: true, // Required for umount
+		Mounts: []mount.Mount{
+			{
+				Type:   mount.TypeBind,
+				Source: dir,
+				Target: "/foo",
+			},
+		},
+	}
+	if err := d.Create(ctx, opts, "sleep", "1000"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	if err := d.Start(ctx); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	// Read and cache symlinks pointing to gen1/file.
+	got, err := d.Exec(ctx, dockerutil.ExecOpts{}, "cat", "/foo/file")
+	if err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	if want := "123"; got != want {
+		t.Fatalf("Read wrong file, want: %q, got: %q", want, got)
+	}
+
+	// Change the symlink to point to gen2 file.
+	if err := os.Remove(filepath.Join(dir, "sym2")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("gen2", filepath.Join(dir, "sym2")); err != nil {
+		t.Fatal(err)
+	}
+
+	// Read symlink chain again and check that it got updated to gen2/file.
+	got, err = d.Exec(ctx, dockerutil.ExecOpts{}, "cat", "/foo/file")
+	if err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	if want := "456"; got != want {
+		t.Fatalf("Read wrong file, want: %q, got: %q", want, got)
+	}
+}
