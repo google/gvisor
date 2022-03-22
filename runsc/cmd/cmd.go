@@ -50,8 +50,8 @@ func (i *intFlags) Set(s string) error {
 	if err != nil {
 		return fmt.Errorf("invalid flag value: %v", err)
 	}
-	if fd < 0 {
-		return fmt.Errorf("flag value must be greater than 0: %d", fd)
+	if fd < -1 {
+		return fmt.Errorf("flag value must be >= -1: %d", fd)
 	}
 	*i = append(*i, fd)
 	return nil
