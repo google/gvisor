@@ -21,6 +21,7 @@ import (
 
 	"github.com/google/subcommands"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -66,7 +67,7 @@ func (wt *Wait) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	}
 	// You can't specify both -pid and -rootpid.
 	if wt.rootPID != unsetPID && wt.pid != unsetPID {
-		Fatalf("only one of -pid and -rootPid can be set")
+		util.Fatalf("only one of -pid and -rootPid can be set")
 	}
 
 	id := f.Arg(0)
@@ -74,7 +75,7 @@ func (wt *Wait) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 
 	c, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
 	if err != nil {
-		Fatalf("loading container: %v", err)
+		util.Fatalf("loading container: %v", err)
 	}
 
 	var waitStatus unix.WaitStatus
@@ -83,21 +84,21 @@ func (wt *Wait) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	case wt.rootPID == unsetPID && wt.pid == unsetPID:
 		ws, err := c.Wait()
 		if err != nil {
-			Fatalf("waiting on container %q: %v", c.ID, err)
+			util.Fatalf("waiting on container %q: %v", c.ID, err)
 		}
 		waitStatus = ws
 	// Wait on a PID in the root PID namespace.
 	case wt.rootPID != unsetPID:
 		ws, err := c.WaitRootPID(int32(wt.rootPID))
 		if err != nil {
-			Fatalf("waiting on PID in root PID namespace %d in container %q: %v", wt.rootPID, c.ID, err)
+			util.Fatalf("waiting on PID in root PID namespace %d in container %q: %v", wt.rootPID, c.ID, err)
 		}
 		waitStatus = ws
 	// Wait on a PID in the container's PID namespace.
 	case wt.pid != unsetPID:
 		ws, err := c.WaitPID(int32(wt.pid))
 		if err != nil {
-			Fatalf("waiting on PID %d in container %q: %v", wt.pid, c.ID, err)
+			util.Fatalf("waiting on PID %d in container %q: %v", wt.pid, c.ID, err)
 		}
 		waitStatus = ws
 	}
@@ -107,7 +108,7 @@ func (wt *Wait) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	}
 	// Write json-encoded wait result directly to stdout.
 	if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
-		Fatalf("marshaling wait result: %v", err)
+		util.Fatalf("marshaling wait result: %v", err)
 	}
 	return subcommands.ExitSuccess
 }

@@ -16,6 +16,7 @@ go_library(
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/epoll",
         "//pkg/sentry/kernel/time",
+        "//pkg/sentry/seccheck",
         "//pkg/waiter",
     ],
 )

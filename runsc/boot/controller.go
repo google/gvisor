@@ -29,6 +29,7 @@ import (
 	controlpb "gvisor.dev/gvisor/pkg/sentry/control/control_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	"gvisor.dev/gvisor/pkg/sentry/state"
 	"gvisor.dev/gvisor/pkg/sentry/time"
@@ -80,6 +81,10 @@ const (
 
 	// ContMgrRootContainerStart starts a new sandbox with a root container.
 	ContMgrRootContainerStart = "containerManager.StartRoot"
+
+	ContMgrCreateTraceSession = "containerManager.CreateTraceSession"
+	ContMgrDeleteTraceSession = "containerManager.DeleteTraceSession"
+	ContMgrListTraceSessions  = "containerManager.ListTraceSessions"
 )
 
 const (
@@ -589,4 +594,34 @@ type SignalArgs struct {
 func (cm *containerManager) Signal(args *SignalArgs, _ *struct{}) error {
 	log.Debugf("containerManager.Signal: cid: %s, PID: %d, signal: %d, mode: %v", args.CID, args.PID, args.Signo, args.Mode)
 	return cm.l.signal(args.CID, args.PID, args.Signo, args.Mode)
+}
+
+type CreateTraceSessionArgs struct {
+	Config seccheck.SessionConfig
+	urpc.FilePayload
+}
+
+func (cm *containerManager) CreateTraceSession(args *CreateTraceSessionArgs, _ *struct{}) error {
+	log.Debugf("containerManager.CreateTraceSession: config: %+v", args.Config)
+	for i, sinkFile := range args.Files {
+		if sinkFile != nil {
+			fd, err := fd.NewFromFile(sinkFile)
+			if err != nil {
+				return err
+			}
+			args.Config.Sinks[i].FD = fd
+		}
+	}
+	return seccheck.Create(&args.Config)
+}
+
+func (cm *containerManager) DeleteTraceSession(name *string, _ *struct{}) error {
+	log.Debugf("containerManager.DeleteTraceSession: name: %q", *name)
+	return seccheck.Delete(*name)
+}
+
+func (cm *containerManager) ListTraceSessions(_ *struct{}, out *[]seccheck.SessionConfig) error {
+	log.Debugf("containerManager.ListTraceSessions")
+	seccheck.List(out)
+	return nil
 }

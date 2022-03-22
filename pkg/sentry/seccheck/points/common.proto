@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2022 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,22 +12,37 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build go1.1
-// +build go1.1
+syntax = "proto3";
 
-package eventchannel
+package gvisor.common;
 
-import (
-	"google.golang.org/protobuf/types/known/anypb"
+message Credentials {
+  uint32 real_uid = 1;
+  uint32 effective_uid = 2;
+  uint32 saved_uid = 3;
 
-	"google.golang.org/protobuf/proto"
-)
-
-func newAny(m proto.Message) (*anypb.Any, error) {
-	return anypb.New(m)
+  uint32 real_gid = 4;
+  uint32 effective_gid = 5;
+  uint32 saved_gid = 6;
+  // ...
 }
 
-func emptyAny() *anypb.Any {
-	var any anypb.Any
-	return &any
+message Common {
+  int64 time_ns = 1;
+
+  int32 thread_id = 2;
+
+  int64 thread_start_time_ns = 3;
+
+  int32 thread_group_id = 4;
+
+  int64 thread_group_start_time_ns = 5;
+
+  string container_id = 6;
+
+  Credentials credentials = 7;
+
+  string cwd = 8;
+
+  string process_name = 9;
 }

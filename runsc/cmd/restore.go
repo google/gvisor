@@ -20,6 +20,7 @@ import (
 
 	"github.com/google/subcommands"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -81,7 +82,7 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...interface{
 	waitStatus := args[1].(*unix.WaitStatus)
 
 	if conf.Rootless {
-		return Errorf("Rootless mode not supported with %q", r.Name())
+		return util.Errorf("Rootless mode not supported with %q", r.Name())
 	}
 
 	bundleDir := r.bundleDir
@@ -90,12 +91,12 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...interface{
 	}
 	spec, err := specutils.ReadSpec(bundleDir, conf)
 	if err != nil {
-		return Errorf("reading spec: %v", err)
+		return util.Errorf("reading spec: %v", err)
 	}
 	specutils.LogSpec(spec)
 
 	if r.imagePath == "" {
-		return Errorf("image-path flag must be provided")
+		return util.Errorf("image-path flag must be provided")
 	}
 
 	conf.RestoreFile = filepath.Join(r.imagePath, checkpointFileName)
@@ -111,7 +112,7 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...interface{
 	}
 	ws, err := container.Run(conf, runArgs)
 	if err != nil {
-		return Errorf("running container: %v", err)
+		return util.Errorf("running container: %v", err)
 	}
 	*waitStatus = ws
 

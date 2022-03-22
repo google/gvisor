@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -101,6 +102,9 @@ type Boot struct {
 	// Valid if >= 0.
 	traceFD int
 
+	podInitConfig int
+	sinkFDs       intFlags
+
 	// pidns is set if the sandbox is in its own pid namespace.
 	pidns bool
 
@@ -154,6 +158,8 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&b.profileHeapFD, "profile-heap-fd", -1, "file descriptor to write heap profile to. -1 disables profiling.")
 	f.IntVar(&b.profileMutexFD, "profile-mutex-fd", -1, "file descriptor to write mutex profile to. -1 disables profiling.")
 	f.IntVar(&b.traceFD, "trace-fd", -1, "file descriptor to write Go execution trace to. -1 disables tracing.")
+	f.IntVar(&b.podInitConfig, "pod-init-config-fd", -1, "file descriptor to the pod init configuration file.")
+	f.Var(&b.sinkFDs, "sink-fds", "TODO")
 }
 
 // Execute implements subcommands.Command.Execute.  It starts a sandbox in a
@@ -184,13 +190,13 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 		// attached mode is enabled. In the unfortunate event that the parent
 		// terminates before this point, this process leaks.
 		if err := unix.Prctl(unix.PR_SET_PDEATHSIG, uintptr(unix.SIGKILL), 0, 0, 0); err != nil {
-			Fatalf("error setting parent death signal: %v", err)
+			util.Fatalf("error setting parent death signal: %v", err)
 		}
 	}
 
 	if b.setUpRoot {
 		if err := setUpChroot(b.pidns); err != nil {
-			Fatalf("error setting up chroot: %v", err)
+			util.Fatalf("error setting up chroot: %v", err)
 		}
 
 		if !b.applyCaps && !conf.Rootless {
@@ -201,7 +207,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 			// we will read it again after the exec call. This works
 			// because the ReadSpecFromFile function seeks to the beginning
 			// of the file before reading.
-			Fatalf("callSelfAsNobody(%v): %v", args, callSelfAsNobody(args))
+			util.Fatalf("callSelfAsNobody(%v): %v", args, callSelfAsNobody(args))
 			panic("unreachable")
 		}
 	}
@@ -211,7 +217,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	defer specFile.Close()
 	spec, err := specutils.ReadSpecFromFile(b.bundleDir, specFile, conf)
 	if err != nil {
-		Fatalf("reading spec: %v", err)
+		util.Fatalf("reading spec: %v", err)
 	}
 	specutils.LogSpec(spec)
 
@@ -223,7 +229,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 
 		gPlatform, err := platform.Lookup(conf.Platform)
 		if err != nil {
-			Fatalf("loading platform: %v", err)
+			util.Fatalf("loading platform: %v", err)
 		}
 		if gPlatform.Requirements().RequiresCapSysPtrace {
 			// Ptrace platform requires extra capabilities.
@@ -241,7 +247,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 		// we will read it again after the exec call. This works
 		// because the ReadSpecFromFile function seeks to the beginning
 		// of the file before reading.
-		Fatalf("setCapsAndCallSelf(%v, %v): %v", args, caps, setCapsAndCallSelf(args, caps))
+		util.Fatalf("setCapsAndCallSelf(%v, %v): %v", args, caps, setCapsAndCallSelf(args, caps))
 		panic("unreachable")
 	}
 
@@ -250,24 +256,24 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	cleanMounts, err := specutils.ReadMounts(mountsFile)
 	if err != nil {
 		mountsFile.Close()
-		Fatalf("Error reading mounts file: %v", err)
+		util.Fatalf("Error reading mounts file: %v", err)
 	}
 	mountsFile.Close()
 	spec.Mounts = cleanMounts
 
 	if conf.EnableCoreTags {
 		if err := coretag.Enable(); err != nil {
-			Fatalf("Failed to core tag sentry: %v", err)
+			util.Fatalf("Failed to core tag sentry: %v", err)
 		}
 
 		// Verify that all sentry threads are properly core tagged, and log
 		// current core tag.
 		coreTags, err := coretag.GetAllCoreTags(os.Getpid())
 		if err != nil {
-			Fatalf("Failed read current core tags: %v", err)
+			util.Fatalf("Failed read current core tags: %v", err)
 		}
 		if len(coreTags) != 1 {
-			Fatalf("Not all child threads were core tagged the same. Tags=%v", coreTags)
+			util.Fatalf("Not all child threads were core tagged the same. Tags=%v", coreTags)
 		}
 		log.Infof("Core tag enabled (core tag=%d)", coreTags[0])
 	}
@@ -290,10 +296,12 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 		ProfileMutexFD: b.profileMutexFD,
 		TraceFD:        b.traceFD,
 		ProductName:    b.productName,
+		PodInitConfig:  b.podInitConfig,
+		SinkFDs:        b.sinkFDs.GetArray(),
 	}
 	l, err := boot.New(bootArgs)
 	if err != nil {
-		Fatalf("creating loader: %v", err)
+		util.Fatalf("creating loader: %v", err)
 	}
 
 	// Fatalf exits the process and doesn't run defers.
@@ -305,7 +313,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	buf := make([]byte, 1)
 	if w, err := startSyncFile.Write(buf); err != nil || w != 1 {
 		l.Destroy()
-		Fatalf("unable to write into the start-sync descriptor: %v", err)
+		util.Fatalf("unable to write into the start-sync descriptor: %v", err)
 	}
 	// Closes startSyncFile because 'l.Run()' only returns when the sandbox exits.
 	startSyncFile.Close()
@@ -316,7 +324,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	// Run the application and wait for it to finish.
 	if err := l.Run(); err != nil {
 		l.Destroy()
-		Fatalf("running sandbox: %v", err)
+		util.Fatalf("running sandbox: %v", err)
 	}
 
 	ws := l.WaitExit()

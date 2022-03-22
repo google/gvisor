@@ -91,9 +91,13 @@ func (f *Agency) DonateDebugLogFile(flag, logPattern, command, test string) erro
 func (f *Agency) Transfer(cmd *exec.Cmd, nextFD int) int {
 	for _, d := range f.donations {
 		for _, file := range d.files {
-			cmd.ExtraFiles = append(cmd.ExtraFiles, file)
-			cmd.Args = append(cmd.Args, fmt.Sprintf("--%s=%d", d.flag, nextFD))
-			nextFD++
+			fd := -1
+			if file != nil {
+				cmd.ExtraFiles = append(cmd.ExtraFiles, file)
+				fd = nextFD
+				nextFD++
+			}
+			cmd.Args = append(cmd.Args, fmt.Sprintf("--%s=%d", d.flag, fd))
 		}
 	}
 	// Reset donations made so far in case more transfers are needed.
@@ -104,7 +108,9 @@ func (f *Agency) Transfer(cmd *exec.Cmd, nextFD int) int {
 // Close closes any files the agency has taken ownership over.
 func (f *Agency) Close() {
 	for _, file := range f.closePending {
-		_ = file.Close()
+		if file != nil {
+			_ = file.Close()
+		}
 	}
 	f.closePending = nil
 }

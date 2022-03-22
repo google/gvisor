@@ -36,4 +36,6 @@ type TaskInfo struct {
 	// ThreadGroupStartTime is the thread's group leader's CLOCK_REALTIME start
 	// time.
 	ThreadGroupStartTime ktime.Time
+
+	ContainerID string
 }

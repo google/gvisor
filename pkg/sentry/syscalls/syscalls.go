@@ -31,6 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 )
 
 // Supported returns a syscall that is fully supported.
@@ -43,6 +44,12 @@ func Supported(name string, fn kernel.SyscallFn) kernel.Syscall {
 	}
 }
 
+func SupportedPoint(name string, fn kernel.SyscallFn, cb seccheck.SyscallToProto) kernel.Syscall {
+	sys := Supported(name, fn)
+	sys.PointCallback = cb
+	return sys
+}
+
 // PartiallySupported returns a syscall that has a partial implementation.
 func PartiallySupported(name string, fn kernel.SyscallFn, note string, urls []string) kernel.Syscall {
 	return kernel.Syscall{
@@ -52,6 +59,12 @@ func PartiallySupported(name string, fn kernel.SyscallFn, note string, urls []st
 		Note:         note,
 		URLs:         urls,
 	}
+}
+
+func PartiallySupportedPoint(name string, fn kernel.SyscallFn, cb seccheck.SyscallToProto, note string, urls []string) kernel.Syscall {
+	sys := PartiallySupported(name, fn, note, urls)
+	sys.PointCallback = cb
+	return sys
 }
 
 // Error returns a syscall handler that will always give the passed error.

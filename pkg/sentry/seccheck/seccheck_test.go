@@ -19,20 +19,21 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/context"
+	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 )
 
 type testChecker struct {
 	CheckerDefaults
 
-	onClone func(ctx context.Context, mask CloneFieldSet, info CloneInfo) error
+	onClone func(ctx context.Context, fields FieldSet, info *pb.CloneInfo) error
 }
 
 // Clone implements Checker.Clone.
-func (c *testChecker) Clone(ctx context.Context, mask CloneFieldSet, info CloneInfo) error {
+func (c *testChecker) Clone(ctx context.Context, fields FieldSet, info *pb.CloneInfo) error {
 	if c.onClone == nil {
 		return nil
 	}
-	return c.onClone(ctx, mask, info)
+	return c.onClone(ctx, fields, info)
 }
 
 func TestNoChecker(t *testing.T) {
@@ -44,7 +45,7 @@ func TestNoChecker(t *testing.T) {
 
 func TestCheckerNotRegisteredForPoint(t *testing.T) {
 	var s State
-	s.AppendChecker(&testChecker{}, &CheckerReq{})
+	s.AppendChecker(&testChecker{}, nil)
 	if s.Enabled(PointClone) {
 		t.Errorf("Enabled(PointClone): got true, wanted false")
 	}
@@ -53,23 +54,28 @@ func TestCheckerNotRegisteredForPoint(t *testing.T) {
 func TestCheckerRegistered(t *testing.T) {
 	var s State
 	checkerCalled := false
-	s.AppendChecker(&testChecker{onClone: func(ctx context.Context, mask CloneFieldSet, info CloneInfo) error {
-		checkerCalled = true
-		return nil
-	}}, &CheckerReq{
-		Points: []Point{PointClone},
-		Clone: CloneFields{
-			Credentials: true,
+	checker := &testChecker{
+		onClone: func(context.Context, FieldSet, *pb.CloneInfo) error {
+			checkerCalled = true
+			return nil
 		},
-	})
+	}
+	req := []PointReq{
+		{
+			Pt:     PointClone,
+			Fields: FieldSet{Context: MakeFieldMask(FieldCommonCredentials)},
+		},
+	}
+	s.AppendChecker(checker, req)
 
 	if !s.Enabled(PointClone) {
 		t.Errorf("Enabled(PointClone): got false, wanted true")
 	}
-	if !s.CloneReq().Contains(CloneFieldCredentials) {
-		t.Errorf("CloneReq().Contains(CloneFieldCredentials): got false, wanted true")
+	fields := s.GetFieldSet(PointClone)
+	if !fields.Context.Contains(FieldCommonCredentials) {
+		t.Errorf("fields.Context.Contains(PointContextCredentials): got false, wanted true")
 	}
-	if err := s.Clone(context.Background(), CloneFieldSet{}, &CloneInfo{}); err != nil {
+	if err := s.Clone(context.Background(), fields, &pb.CloneInfo{}); err != nil {
 		t.Errorf("Clone(): got %v, wanted nil", err)
 	}
 	if !checkerCalled {
@@ -80,40 +86,33 @@ func TestCheckerRegistered(t *testing.T) {
 func TestMultipleCheckersRegistered(t *testing.T) {
 	var s State
 	checkersCalled := [2]bool{}
-	s.AppendChecker(&testChecker{onClone: func(ctx context.Context, mask CloneFieldSet, info CloneInfo) error {
-		checkersCalled[0] = true
-		return nil
-	}}, &CheckerReq{
-		Points: []Point{PointClone},
-		Clone: CloneFields{
-			Args: true,
+	checker := &testChecker{
+		onClone: func(context.Context, FieldSet, *pb.CloneInfo) error {
+			checkersCalled[0] = true
+			return nil
 		},
-	})
-	s.AppendChecker(&testChecker{onClone: func(ctx context.Context, mask CloneFieldSet, info CloneInfo) error {
+	}
+	reqs := []PointReq{
+		{Pt: PointClone},
+	}
+	s.AppendChecker(checker, reqs)
+
+	checker = &testChecker{onClone: func(context.Context, FieldSet, *pb.CloneInfo) error {
 		checkersCalled[1] = true
 		return nil
-	}}, &CheckerReq{
-		Points: []Point{PointClone},
-		Clone: CloneFields{
-			Created: TaskFields{
-				ThreadID: true,
-			},
-		},
-	})
+	}}
+	reqs = []PointReq{
+		{Pt: PointClone},
+	}
+	s.AppendChecker(checker, reqs)
 
 	if !s.Enabled(PointClone) {
 		t.Errorf("Enabled(PointClone): got false, wanted true")
 	}
 	// CloneReq() should return the union of requested fields from all calls to
 	// AppendChecker.
-	req := s.CloneReq()
-	if !req.Contains(CloneFieldArgs) {
-		t.Errorf("req.Contains(CloneFieldArgs): got false, wanted true")
-	}
-	if !req.Created.Contains(TaskFieldThreadID) {
-		t.Errorf("req.Created.Contains(TaskFieldThreadID): got false, wanted true")
-	}
-	if err := s.Clone(context.Background(), CloneFieldSet{}, &CloneInfo{}); err != nil {
+	fields := s.GetFieldSet(PointClone)
+	if err := s.Clone(context.Background(), fields, &pb.CloneInfo{}); err != nil {
 		t.Errorf("Clone(): got %v, wanted nil", err)
 	}
 	for i := range checkersCalled {
@@ -129,23 +128,30 @@ func TestCheckpointReturnsFirstCheckerError(t *testing.T) {
 
 	var s State
 	checkersCalled := [2]bool{}
-	s.AppendChecker(&testChecker{onClone: func(ctx context.Context, mask CloneFieldSet, info CloneInfo) error {
-		checkersCalled[0] = true
-		return errFirstChecker
-	}}, &CheckerReq{
-		Points: []Point{PointClone},
-	})
-	s.AppendChecker(&testChecker{onClone: func(ctx context.Context, mask CloneFieldSet, info CloneInfo) error {
-		checkersCalled[1] = true
-		return errSecondChecker
-	}}, &CheckerReq{
-		Points: []Point{PointClone},
-	})
+	checker := &testChecker{
+		onClone: func(context.Context, FieldSet, *pb.CloneInfo) error {
+			checkersCalled[0] = true
+			return errFirstChecker
+		},
+	}
+	reqs := []PointReq{
+		{Pt: PointClone},
+	}
+
+	s.AppendChecker(checker, reqs)
+
+	checker = &testChecker{
+		onClone: func(context.Context, FieldSet, *pb.CloneInfo) error {
+			checkersCalled[1] = true
+			return errSecondChecker
+		},
+	}
+	s.AppendChecker(checker, reqs)
 
 	if !s.Enabled(PointClone) {
 		t.Errorf("Enabled(PointClone): got false, wanted true")
 	}
-	if err := s.Clone(context.Background(), CloneFieldSet{}, &CloneInfo{}); err != errFirstChecker {
+	if err := s.Clone(context.Background(), FieldSet{}, &pb.CloneInfo{}); err != errFirstChecker {
 		t.Errorf("Clone(): got %v, wanted %v", err, errFirstChecker)
 	}
 	if !checkersCalled[0] {

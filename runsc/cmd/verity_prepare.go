@@ -23,6 +23,7 @@ import (
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -67,13 +68,13 @@ func (c *VerityPrepare) Execute(_ context.Context, f *flag.FlagSet, args ...inte
 
 	hostname, err := os.Hostname()
 	if err != nil {
-		return Errorf("Error to retrieve hostname: %v", err)
+		return util.Errorf("Error to retrieve hostname: %v", err)
 	}
 
 	// Map the entire host file system.
 	absRoot, err := resolvePath(c.root)
 	if err != nil {
-		return Errorf("Error resolving root: %v", err)
+		return util.Errorf("Error resolving root: %v", err)
 	}
 
 	spec := &specs.Spec{

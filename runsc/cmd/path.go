@@ -16,13 +16,15 @@ package cmd
 
 import (
 	"os"
+
+	"gvisor.dev/gvisor/runsc/cmd/util"
 )
 
 // getwdOrDie returns the current working directory and dies if it cannot.
 func getwdOrDie() string {
 	wd, err := os.Getwd()
 	if err != nil {
-		Fatalf("getting current working directory: %v", err)
+		util.Fatalf("getting current working directory: %v", err)
 	}
 	return wd
 }

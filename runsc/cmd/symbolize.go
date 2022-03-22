@@ -23,6 +23,7 @@ import (
 
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/pkg/coverage"
+	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
@@ -66,13 +67,13 @@ func (c *Symbolize) Execute(_ context.Context, f *flag.FlagSet, args ...interfac
 		return subcommands.ExitUsageError
 	}
 	if !coverage.Available() {
-		return Errorf("symbolize can only be used when coverage is available.")
+		return util.Errorf("symbolize can only be used when coverage is available.")
 	}
 	coverage.InitCoverageData()
 
 	if c.dumpAll {
 		if err := coverage.WriteAllBlocks(os.Stdout); err != nil {
-			return Errorf("Failed to write out blocks: %v", err)
+			return util.Errorf("Failed to write out blocks: %v", err)
 		}
 		return subcommands.ExitSuccess
 	}
@@ -83,10 +84,10 @@ func (c *Symbolize) Execute(_ context.Context, f *flag.FlagSet, args ...interfac
 		str := strings.TrimPrefix(scanner.Text(), "0x")
 		pc, err := strconv.ParseUint(str, 16 /* base */, 64 /* bitSize */)
 		if err != nil {
-			return Errorf("Failed to symbolize \"%s\": %v", scanner.Text(), err)
+			return util.Errorf("Failed to symbolize \"%s\": %v", scanner.Text(), err)
 		}
 		if err := coverage.Symbolize(os.Stdout, pc); err != nil {
-			return Errorf("Failed to symbolize \"%s\": %v", scanner.Text(), err)
+			return util.Errorf("Failed to symbolize \"%s\": %v", scanner.Text(), err)
 		}
 	}
 	return subcommands.ExitSuccess

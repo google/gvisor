@@ -17,6 +17,8 @@ package auth
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck"
+	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 )
 
 // Credentials contains information required to authorize privileged operations
@@ -259,4 +261,18 @@ func (c *Credentials) SetGID(gid GID) error {
 	c.EffectiveKGID = kgid
 	c.SavedKGID = kgid
 	return nil
+}
+
+func (c *Credentials) LoadSeccheckInfo(mask seccheck.FieldMask, info *pb.Common) {
+	if !mask.Contains(seccheck.FieldCommonCredentials) {
+		return
+	}
+	info.Credentials = &pb.Credentials{
+		RealUid:      uint32(c.RealKUID),
+		EffectiveUid: uint32(c.EffectiveKUID),
+		SavedUid:     uint32(c.SavedKUID),
+		RealGid:      uint32(c.RealKGID),
+		EffectiveGid: uint32(c.EffectiveKGID),
+		SavedGid:     uint32(c.SavedKGID),
+	}
 }

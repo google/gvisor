@@ -31,6 +31,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -92,25 +93,25 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) su
 
 	if conf.Rootless {
 		if err := specutils.MaybeRunAsRoot(); err != nil {
-			return Errorf("Error executing inside namespace: %v", err)
+			return util.Errorf("Error executing inside namespace: %v", err)
 		}
 		// Execution will continue here if no more capabilities are needed...
 	}
 
 	hostname, err := os.Hostname()
 	if err != nil {
-		return Errorf("Error to retrieve hostname: %v", err)
+		return util.Errorf("Error to retrieve hostname: %v", err)
 	}
 
 	// Map the entire host file system, optionally using an overlay.
 	conf.Overlay = c.overlay
 	absRoot, err := resolvePath(c.root)
 	if err != nil {
-		return Errorf("Error resolving root: %v", err)
+		return util.Errorf("Error resolving root: %v", err)
 	}
 	absCwd, err := resolvePath(c.cwd)
 	if err != nil {
-		return Errorf("Error resolving current directory: %v", err)
+		return util.Errorf("Error resolving current directory: %v", err)
 	}
 
 	spec := &specs.Spec{
@@ -148,7 +149,7 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) su
 			defer clean()
 
 		default:
-			return Errorf("Error setting up network: %v", err)
+			return util.Errorf("Error setting up network: %v", err)
 		}
 	}
 
@@ -356,11 +357,11 @@ func startContainerAndWait(spec *specs.Spec, conf *config.Config, cid string, wa
 
 	out, err := json.Marshal(spec)
 	if err != nil {
-		return Errorf("Error to marshal spec: %v", err)
+		return util.Errorf("Error to marshal spec: %v", err)
 	}
 	tmpDir, err := ioutil.TempDir("", "runsc-do")
 	if err != nil {
-		return Errorf("Error to create tmp dir: %v", err)
+		return util.Errorf("Error to create tmp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
@@ -369,7 +370,7 @@ func startContainerAndWait(spec *specs.Spec, conf *config.Config, cid string, wa
 
 	cfgPath := filepath.Join(tmpDir, "config.json")
 	if err := ioutil.WriteFile(cfgPath, out, 0755); err != nil {
-		return Errorf("Error write spec: %v", err)
+		return util.Errorf("Error write spec: %v", err)
 	}
 
 	containerArgs := container.Args{
@@ -381,12 +382,12 @@ func startContainerAndWait(spec *specs.Spec, conf *config.Config, cid string, wa
 
 	ct, err := container.New(conf, containerArgs)
 	if err != nil {
-		return Errorf("creating container: %v", err)
+		return util.Errorf("creating container: %v", err)
 	}
 	defer ct.Destroy()
 
 	if err := ct.Start(conf); err != nil {
-		return Errorf("starting container: %v", err)
+		return util.Errorf("starting container: %v", err)
 	}
 
 	// Forward signals to init in the container. Thus if we get SIGINT from
@@ -399,7 +400,7 @@ func startContainerAndWait(spec *specs.Spec, conf *config.Config, cid string, wa
 
 	ws, err := ct.Wait()
 	if err != nil {
-		return Errorf("waiting for container: %v", err)
+		return util.Errorf("waiting for container: %v", err)
 	}
 
 	*waitStatus = ws

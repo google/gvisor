@@ -6,7 +6,6 @@ go_library(
     name = "eventchannel",
     srcs = [
         "event.go",
-        "event_any.go",
         "processor.go",
         "rate.go",
     ],

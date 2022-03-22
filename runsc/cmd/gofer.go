@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
+	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/fsgofer"
@@ -105,12 +106,12 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	defer specFile.Close()
 	spec, err := specutils.ReadSpecFromFile(g.bundleDir, specFile, conf)
 	if err != nil {
-		Fatalf("reading spec: %v", err)
+		util.Fatalf("reading spec: %v", err)
 	}
 
 	if g.setUpRoot {
 		if err := setupRootFS(spec, conf); err != nil {
-			Fatalf("Error setting up root FS: %v", err)
+			util.Fatalf("Error setting up root FS: %v", err)
 		}
 	}
 	if g.applyCaps {
@@ -118,7 +119,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		// Note: minimal argument handling for the default case to keep it simple.
 		args := os.Args
 		args = append(args, "--apply-caps=false", "--setup-root=false")
-		Fatalf("setCapsAndCallSelf(%v, %v): %v", args, goferCaps, setCapsAndCallSelf(args, goferCaps))
+		util.Fatalf("setCapsAndCallSelf(%v, %v): %v", args, goferCaps, setCapsAndCallSelf(args, goferCaps))
 		panic("unreachable")
 	}
 
@@ -135,7 +136,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	// setupRootFS().
 	cleanMounts, err := resolveMounts(conf, spec.Mounts, root)
 	if err != nil {
-		Fatalf("Failure to resolve mounts: %v", err)
+		util.Fatalf("Failure to resolve mounts: %v", err)
 	}
 	spec.Mounts = cleanMounts
 	go func() {
@@ -151,14 +152,14 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	unix.Umask(0)
 
 	if err := fsgofer.OpenProcSelfFD(); err != nil {
-		Fatalf("failed to open /proc/self/fd: %v", err)
+		util.Fatalf("failed to open /proc/self/fd: %v", err)
 	}
 
 	if err := unix.Chroot(root); err != nil {
-		Fatalf("failed to chroot to %q: %v", root, err)
+		util.Fatalf("failed to chroot to %q: %v", root, err)
 	}
 	if err := unix.Chdir("/"); err != nil {
-		Fatalf("changing working dir: %v", err)
+		util.Fatalf("changing working dir: %v", err)
 	}
 	log.Infof("Process chroot'd to %q", root)
 
@@ -172,7 +173,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	}
 
 	if err := filter.Install(); err != nil {
-		Fatalf("installing seccomp filters: %v", err)
+		util.Fatalf("installing seccomp filters: %v", err)
 	}
 
 	if conf.Lisafs {
@@ -184,7 +185,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 func newSocket(ioFD int) *unet.Socket {
 	socket, err := unet.NewSocket(ioFD)
 	if err != nil {
-		Fatalf("creating server on FD %d: %v", ioFD, err)
+		util.Fatalf("creating server on FD %d: %v", ioFD, err)
 	}
 	return socket
 }
@@ -218,10 +219,10 @@ func (g *Gofer) serveLisafs(spec *specs.Spec, conf *config.Config, root string) 
 		}
 
 		if !filepath.IsAbs(m.Destination) {
-			Fatalf("mount destination must be absolute: %q", m.Destination)
+			util.Fatalf("mount destination must be absolute: %q", m.Destination)
 		}
 		if mountIdx >= len(g.ioFDs) {
-			Fatalf("no FD found for mount. Did you forget --io-fd? FDs: %d, Mount: %+v", len(g.ioFDs), m)
+			util.Fatalf("no FD found for mount. Did you forget --io-fd? FDs: %d, Mount: %+v", len(g.ioFDs), m)
 		}
 
 		cfgs = append(cfgs, connectionConfig{
@@ -235,14 +236,14 @@ func (g *Gofer) serveLisafs(spec *specs.Spec, conf *config.Config, root string) 
 	}
 
 	if mountIdx != len(g.ioFDs) {
-		Fatalf("too many FDs passed for mounts. mounts: %d, FDs: %d", mountIdx, len(g.ioFDs))
+		util.Fatalf("too many FDs passed for mounts. mounts: %d, FDs: %d", mountIdx, len(g.ioFDs))
 	}
 	cfgs = cfgs[:mountIdx]
 
 	for _, cfg := range cfgs {
 		conn, err := server.CreateConnection(cfg.sock, cfg.mountPath, cfg.readonly)
 		if err != nil {
-			Fatalf("starting connection on FD %d for gofer mount failed: %v", cfg.sock.FD(), err)
+			util.Fatalf("starting connection on FD %d for gofer mount failed: %v", cfg.sock.FD(), err)
 		}
 		server.StartConnection(conn)
 	}
@@ -261,7 +262,7 @@ func (g *Gofer) serve9P(spec *specs.Spec, conf *config.Config, root string) subc
 		EnableVerityXattr: conf.Verity,
 	})
 	if err != nil {
-		Fatalf("creating attach point: %v", err)
+		util.Fatalf("creating attach point: %v", err)
 	}
 	ats = append(ats, ap)
 	log.Infof("Serving %q mapped to %q on FD %d (ro: %t)", "/", root, g.ioFDs[0], spec.Root.Readonly)
@@ -276,19 +277,19 @@ func (g *Gofer) serve9P(spec *specs.Spec, conf *config.Config, root string) subc
 			}
 			ap, err := fsgofer.NewAttachPoint(m.Destination, cfg)
 			if err != nil {
-				Fatalf("creating attach point: %v", err)
+				util.Fatalf("creating attach point: %v", err)
 			}
 			ats = append(ats, ap)
 
 			if mountIdx >= len(g.ioFDs) {
-				Fatalf("no FD found for mount. Did you forget --io-fd? mount: %d, %v", len(g.ioFDs), m)
+				util.Fatalf("no FD found for mount. Did you forget --io-fd? mount: %d, %v", len(g.ioFDs), m)
 			}
 			log.Infof("Serving %q mapped on FD %d (ro: %t)", m.Destination, g.ioFDs[mountIdx], cfg.ROMount)
 			mountIdx++
 		}
 	}
 	if mountIdx != len(g.ioFDs) {
-		Fatalf("too many FDs passed for mounts. mounts: %d, FDs: %d", mountIdx, len(g.ioFDs))
+		util.Fatalf("too many FDs passed for mounts. mounts: %d, FDs: %d", mountIdx, len(g.ioFDs))
 	}
 
 	// Run the loops and wait for all to exit.
@@ -298,11 +299,11 @@ func (g *Gofer) serve9P(spec *specs.Spec, conf *config.Config, root string) subc
 		go func(ioFD int, at p9.Attacher) {
 			socket, err := unet.NewSocket(ioFD)
 			if err != nil {
-				Fatalf("creating server on FD %d: %v", ioFD, err)
+				util.Fatalf("creating server on FD %d: %v", ioFD, err)
 			}
 			s := p9.NewServer(at)
 			if err := s.Handle(socket); err != nil {
-				Fatalf("P9 server returned error. Gofer is shutting down. FD: %d, err: %v", ioFD, err)
+				util.Fatalf("P9 server returned error. Gofer is shutting down. FD: %d, err: %v", ioFD, err)
 			}
 			wg.Done()
 		}(ioFD, ats[i])
@@ -345,7 +346,7 @@ func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 	// propagated outside of our namespace.
 	procPath := "/proc"
 	if err := specutils.SafeMount("", "/", "", unix.MS_SLAVE|unix.MS_REC, "", procPath); err != nil {
-		Fatalf("error converting mounts: %v", err)
+		util.Fatalf("error converting mounts: %v", err)
 	}
 
 	root := spec.Root.Path
@@ -358,23 +359,23 @@ func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 		// runsc can't start without /proc, so we can use it for this.
 		flags := uintptr(unix.MS_NOSUID | unix.MS_NODEV | unix.MS_NOEXEC)
 		if err := specutils.SafeMount("runsc-root", "/proc", "tmpfs", flags, "", procPath); err != nil {
-			Fatalf("error mounting tmpfs: %v", err)
+			util.Fatalf("error mounting tmpfs: %v", err)
 		}
 
 		// Prepare tree structure for pivot_root(2).
 		if err := os.Mkdir("/proc/proc", 0755); err != nil {
-			Fatalf("error creating /proc/proc: %v", err)
+			util.Fatalf("error creating /proc/proc: %v", err)
 		}
 		if err := os.Mkdir("/proc/root", 0755); err != nil {
-			Fatalf("error creating /proc/root: %v", err)
+			util.Fatalf("error creating /proc/root: %v", err)
 		}
 		if err := os.Mkdir("/proc/etc", 0755); err != nil {
-			Fatalf("error creating /proc/etc: %v", err)
+			util.Fatalf("error creating /proc/etc: %v", err)
 		}
 		// This cannot use SafeMount because there's no available procfs. But we
 		// know that /proc is an empty tmpfs mount, so this is safe.
 		if err := unix.Mount("runsc-proc", "/proc/proc", "proc", flags|unix.MS_RDONLY, ""); err != nil {
-			Fatalf("error mounting proc: %v", err)
+			util.Fatalf("error mounting proc: %v", err)
 		}
 		if err := copyFile("/proc/etc/localtime", "/etc/localtime"); err != nil {
 			log.Warningf("Failed to copy /etc/localtime: %v. UTC timezone will be used.", err)
@@ -398,7 +399,7 @@ func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 
 	// Replace the current spec, with the clean spec with symlinks resolved.
 	if err := setupMounts(conf, spec.Mounts, root, procPath); err != nil {
-		Fatalf("error setting up FS: %v", err)
+		util.Fatalf("error setting up FS: %v", err)
 	}
 
 	// Create working directory if needed.
@@ -426,10 +427,10 @@ func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 
 	if !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 		if err := pivotRoot("/proc"); err != nil {
-			Fatalf("failed to change the root file system: %v", err)
+			util.Fatalf("failed to change the root file system: %v", err)
 		}
 		if err := os.Chdir("/"); err != nil {
-			Fatalf("failed to change working directory")
+			util.Fatalf("failed to change working directory")
 		}
 	}
 	return nil

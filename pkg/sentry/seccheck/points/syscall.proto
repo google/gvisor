@@ -1,0 +1,86 @@
+// Copyright 2022 The gVisor Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package gvisor.syscall;
+
+import "pkg/sentry/seccheck/points/common.proto";
+
+message Exit {
+  int64 result = 1;
+  int64 errorno = 2;
+}
+
+message Syscall {
+  gvisor.common.Common common = 1;
+  Exit exit = 2;
+  uint64 sysno = 4;
+  uint64 arg1 = 5;
+  uint64 arg2 = 6;
+  uint64 arg3 = 7;
+  uint64 arg4 = 8;
+  uint64 arg5 = 9;
+  uint64 arg6 = 10;
+}
+
+message Open {
+  gvisor.common.Common common = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int64 fd = 4;
+  string fd_path = 5;
+  string pathname = 6;
+  uint32 flags = 7;
+  uint32 mode = 8;
+}
+
+message Close {
+  gvisor.common.Common common = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int64 fd = 4;
+  string fd_path = 5;
+}
+
+message Read {
+  gvisor.common.Common common = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int64 fd = 4;
+  string fd_path = 5;
+  uint64 count = 6;
+  bytes data = 7;
+}
+
+message Connect {
+  gvisor.common.Common common = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int64 fd = 4;
+  string fd_path = 5;
+  bytes address = 6;
+}
+
+message Execve {
+  gvisor.common.Common common = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int64 fd = 4;
+  string fd_path = 5;
+  string pathname = 6;
+  repeated string argv = 7;
+  repeated string envv = 8;
+  uint32 flags = 9;
+}

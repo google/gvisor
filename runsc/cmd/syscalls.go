@@ -27,6 +27,7 @@ import (
 
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
@@ -106,7 +107,7 @@ func (s *Syscalls) SetFlags(f *flag.FlagSet) {
 func (s *Syscalls) Execute(context.Context, *flag.FlagSet, ...interface{}) subcommands.ExitStatus {
 	out, ok := outputMap[s.format]
 	if !ok {
-		Fatalf("Unsupported output format %q", s.format)
+		util.Fatalf("Unsupported output format %q", s.format)
 	}
 
 	// Build map of all supported architectures.
@@ -123,18 +124,18 @@ func (s *Syscalls) Execute(context.Context, *flag.FlagSet, ...interface{}) subco
 	// Build a map of the architectures we want to output.
 	info, err := getCompatibilityInfo(s.os, s.arch)
 	if err != nil {
-		Fatalf("%v", err)
+		util.Fatalf("%v", err)
 	}
 
 	w := os.Stdout // Default.
 	if s.filename != "" {
 		w, err = os.OpenFile(s.filename, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 		if err != nil {
-			Fatalf("Error opening %q: %v", s.filename, err)
+			util.Fatalf("Error opening %q: %v", s.filename, err)
 		}
 	}
 	if err := out(w, info); err != nil {
-		Fatalf("Error writing output: %v", err)
+		util.Fatalf("Error writing output: %v", err)
 	}
 
 	return subcommands.ExitSuccess

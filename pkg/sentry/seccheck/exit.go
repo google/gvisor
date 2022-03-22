@@ -15,31 +15,9 @@
 package seccheck
 
 import (
-	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 )
-
-// ExitNotifyParentInfo contains information used by the ExitNotifyParent
-// checkpoint.
-//
-// +fieldenum ExitNotifyParent
-type ExitNotifyParentInfo struct {
-	// Exiter identifies the exiting thread. Note that by the checkpoint's
-	// definition, Exiter.ThreadID == Exiter.ThreadGroupID and
-	// Exiter.ThreadStartTime == Exiter.ThreadGroupStartTime, so requesting
-	// ThreadGroup* fields is redundant.
-	Exiter TaskInfo
-
-	// ExitStatus is the exiting thread group's exit status, as reported
-	// by wait*().
-	ExitStatus linux.WaitStatus
-}
-
-// ExitNotifyParentReq returns fields required by the ExitNotifyParent
-// checkpoint.
-func (s *State) ExitNotifyParentReq() ExitNotifyParentFieldSet {
-	return s.exitNotifyParentReq.Load()
-}
 
 // ExitNotifyParent is called at the ExitNotifyParent checkpoint.
 //
@@ -47,9 +25,9 @@ func (s *State) ExitNotifyParentReq() ExitNotifyParentFieldSet {
 // not waiting for exit acknowledgement from a non-parent ptracer, becomes the
 // last non-dead thread in its thread group and notifies its parent of its
 // exiting.
-func (s *State) ExitNotifyParent(ctx context.Context, mask ExitNotifyParentFieldSet, info *ExitNotifyParentInfo) error {
+func (s *State) ExitNotifyParent(ctx context.Context, fields FieldSet, info *pb.ExitNotifyParentInfo) error {
 	for _, c := range s.getCheckers() {
-		if err := c.ExitNotifyParent(ctx, mask, *info); err != nil {
+		if err := c.ExitNotifyParent(ctx, fields, info); err != nil {
 			return err
 		}
 	}

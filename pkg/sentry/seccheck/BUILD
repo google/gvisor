@@ -1,20 +1,7 @@
 load("//tools:defs.bzl", "go_library", "go_test")
-load("//tools/go_fieldenum:defs.bzl", "go_fieldenum")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 licenses(["notice"])
-
-go_fieldenum(
-    name = "seccheck_fieldenum",
-    srcs = [
-        "clone.go",
-        "execve.go",
-        "exit.go",
-        "task.go",
-    ],
-    out = "seccheck_fieldenum.go",
-    package = "seccheck",
-)
 
 go_template_instance(
     name = "seqatomic_checkerslice",
@@ -31,21 +18,30 @@ go_library(
     name = "seccheck",
     srcs = [
         "clone.go",
+        "config.go",
         "execve.go",
         "exit.go",
+        "metadata.go",
+        "metadata_amd64.go",
         "seccheck.go",
-        "seccheck_fieldenum.go",
+        "seccheck_amd64.go",
+        "seccheck_arm64.go",
         "seqatomic_checkerslice_unsafe.go",
+        "syscall.go",
         "task.go",
     ],
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/fd",
         "//pkg/gohacks",
-        "//pkg/sentry/kernel/auth",
+        "//pkg/log",
+        "//pkg/sentry/arch",
         "//pkg/sentry/kernel/time",
+        "//pkg/sentry/seccheck/points:points_go_proto",
         "//pkg/sync",
+        "@org_golang_google_protobuf//proto:go_default_library",
     ],
 )
 
@@ -54,5 +50,8 @@ go_test(
     size = "small",
     srcs = ["seccheck_test.go"],
     library = ":seccheck",
-    deps = ["//pkg/context"],
+    deps = [
+        "//pkg/context",
+        "//pkg/sentry/seccheck/points:points_go_proto",
+    ],
 )

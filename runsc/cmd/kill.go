@@ -22,6 +22,7 @@ import (
 
 	"github.com/google/subcommands"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -65,12 +66,12 @@ func (k *Kill) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	conf := args[0].(*config.Config)
 
 	if k.pid != 0 && k.all {
-		Fatalf("it is invalid to specify both --all and --pid")
+		util.Fatalf("it is invalid to specify both --all and --pid")
 	}
 
 	c, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
 	if err != nil {
-		Fatalf("loading container: %v", err)
+		util.Fatalf("loading container: %v", err)
 	}
 
 	// The OCI command-line spec says that the signal should be specified
@@ -83,16 +84,16 @@ func (k *Kill) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 
 	sig, err := parseSignal(signal)
 	if err != nil {
-		Fatalf("%v", err)
+		util.Fatalf("%v", err)
 	}
 
 	if k.pid != 0 {
 		if err := c.SignalProcess(sig, int32(k.pid)); err != nil {
-			Fatalf("failed to signal pid %d: %v", k.pid, err)
+			util.Fatalf("failed to signal pid %d: %v", k.pid, err)
 		}
 	} else {
 		if err := c.SignalContainer(sig, k.all); err != nil {
-			Fatalf("%v", err)
+			util.Fatalf("%v", err)
 		}
 	}
 	return subcommands.ExitSuccess

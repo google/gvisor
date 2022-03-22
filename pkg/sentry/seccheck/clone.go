@@ -15,37 +15,14 @@
 package seccheck
 
 import (
-	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 )
 
-// CloneInfo contains information used by the Clone checkpoint.
-//
-// +fieldenum Clone
-type CloneInfo struct {
-	// Invoker identifies the invoking thread.
-	Invoker TaskInfo
-
-	// Credentials are the invoking thread's credentials.
-	Credentials *auth.Credentials
-
-	// Args contains the arguments to kernel.Task.Clone().
-	Args linux.CloneArgs
-
-	// Created identifies the created thread.
-	Created TaskInfo
-}
-
-// CloneReq returns fields required by the Clone checkpoint.
-func (s *State) CloneReq() CloneFieldSet {
-	return s.cloneReq.Load()
-}
-
 // Clone is called at the Clone checkpoint.
-func (s *State) Clone(ctx context.Context, mask CloneFieldSet, info *CloneInfo) error {
+func (s *State) Clone(ctx context.Context, fields FieldSet, info *pb.CloneInfo) error {
 	for _, c := range s.getCheckers() {
-		if err := c.Clone(ctx, mask, *info); err != nil {
+		if err := c.Clone(ctx, fields, info); err != nil {
 			return err
 		}
 	}

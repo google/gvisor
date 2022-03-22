@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -77,6 +78,8 @@ type Syscall struct {
 	Note string
 	// URLs is set of URLs to any relevant bugs or issues.
 	URLs []string
+
+	PointCallback seccheck.SyscallToProto
 }
 
 // SyscallFn is a syscall implementation.
@@ -265,6 +268,8 @@ type SyscallTable struct {
 
 	// FeatureEnable stores the strace and one-shot enable bits.
 	FeatureEnable SyscallFlagsTable
+
+	pointCallbacks [maxSyscallNum + 1]seccheck.SyscallToProto
 }
 
 // MaxSysno returns the largest system call number.
@@ -325,6 +330,10 @@ func (s *SyscallTable) Init() {
 		s.lookup[num] = sc.Fn
 	}
 
+	for num, sc := range s.Table {
+		s.pointCallbacks[num] = sc.PointCallback
+	}
+
 	// Initialize all features.
 	s.FeatureEnable.init(s.Table)
 }
@@ -368,4 +377,11 @@ func (s *SyscallTable) mapLookup(sysno uintptr) SyscallFn {
 		return sc.Fn
 	}
 	return nil
+}
+
+func (s *SyscallTable) LookupSyscallToProto(sysno uintptr) seccheck.SyscallToProto {
+	if sysno > maxSyscallNum {
+		return nil
+	}
+	return s.pointCallbacks[sysno]
 }
