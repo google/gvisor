@@ -84,8 +84,9 @@ type fakeNetworkEndpoint struct {
 	mu struct {
 		sync.RWMutex
 
-		enabled    bool
-		forwarding bool
+		enabled             bool
+		forwarding          bool
+		multicastForwarding bool
 	}
 
 	nic        stack.NetworkInterface
@@ -310,6 +311,22 @@ func (f *fakeNetworkEndpoint) SetForwarding(v bool) bool {
 	defer f.mu.Unlock()
 	prev := f.mu.forwarding
 	f.mu.forwarding = v
+	return prev
+}
+
+// MulticastForwarding implements stack.MulticastForwardingNetworkEndpoint.
+func (f *fakeNetworkEndpoint) MulticastForwarding() bool {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.mu.multicastForwarding
+}
+
+// SetMulticastForwarding implements stack.MulticastForwardingNetworkEndpoint.
+func (f *fakeNetworkEndpoint) SetMulticastForwarding(v bool) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	prev := f.mu.multicastForwarding
+	f.mu.multicastForwarding = v
 	return prev
 }
 
@@ -4670,50 +4687,110 @@ func TestNICForwarding(t *testing.T) {
 		},
 	}
 
+	subTests := []struct {
+		name                     string
+		getForwardingFunc        func(*stack.Stack, tcpip.NICID, tcpip.NetworkProtocolNumber) (bool, tcpip.Error)
+		getForwardingFuncName    string
+		setForwardingFunc        func(*stack.Stack, tcpip.NICID, tcpip.NetworkProtocolNumber, bool) (bool, tcpip.Error)
+		setForwardingFuncName    string
+		getNicInfoForwardingMap  func(stack.NICInfo) map[tcpip.NetworkProtocolNumber]bool
+		nicInfoForwardingMapName string
+	}{
+		{
+			name:                     "unicast",
+			getForwardingFunc:        (*stack.Stack).NICForwarding,
+			getForwardingFuncName:    "NICForwarding",
+			setForwardingFunc:        (*stack.Stack).SetNICForwarding,
+			setForwardingFuncName:    "SetNICForwarding",
+			getNicInfoForwardingMap:  func(info stack.NICInfo) map[tcpip.NetworkProtocolNumber]bool { return info.Forwarding },
+			nicInfoForwardingMapName: "Forwarding",
+		},
+		{
+			name:                     "multicast",
+			getForwardingFunc:        (*stack.Stack).NICMulticastForwarding,
+			getForwardingFuncName:    "NICMulticastForwarding",
+			setForwardingFunc:        (*stack.Stack).SetNICMulticastForwarding,
+			setForwardingFuncName:    "SetNICMulticastForwarding",
+			getNicInfoForwardingMap:  func(info stack.NICInfo) map[tcpip.NetworkProtocolNumber]bool { return info.MulticastForwarding },
+			nicInfoForwardingMapName: "MulticastForwarding",
+		},
+	}
+
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocolFactory{test.factory},
-			})
-			if err := s.CreateNIC(nicID, channel.New(0, defaultMTU, "")); err != nil {
-				t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
-			}
+			for _, subTest := range subTests {
+				t.Run(subTest.name, func(t *testing.T) {
+					s := stack.New(stack.Options{
+						NetworkProtocols: []stack.NetworkProtocolFactory{test.factory},
+					})
+					if err := s.CreateNIC(nicID, channel.New(0, defaultMTU, "")); err != nil {
+						t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
+					}
 
-			// Forwarding should initially be disabled.
-			if forwarding, err := s.NICForwarding(nicID, test.netProto); err != nil {
-				t.Fatalf("s.NICForwarding(%d, %d): %s", nicID, test.netProto, err)
-			} else if forwarding {
-				t.Errorf("got s.NICForwarding(%d, %d) = true, want = false", nicID, test.netProto)
-			}
+					// Forwarding should initially be disabled.
+					if forwarding, err := subTest.getForwardingFunc(s, nicID, test.netProto); err != nil {
+						t.Fatalf("s.%s(%d, %d): %s", subTest.getForwardingFuncName, nicID, test.netProto, err)
+					} else if forwarding {
+						t.Errorf("got s.%s(%d, %d) = true, want = false", subTest.getForwardingFuncName, nicID, test.netProto)
+					}
 
-			// Setting forwarding to be enabled should return the previous
-			// configuration of false. Enabling it a second time should be a no-op.
-			for _, wantPrevForwarding := range [...]bool{false, true} {
-				if prevForwarding, err := s.SetNICForwarding(nicID, test.netProto, true); err != nil {
-					t.Fatalf("s.SetNICForwarding(%d, %d, true): %s", nicID, test.netProto, err)
-				} else if prevForwarding != wantPrevForwarding {
-					t.Errorf("got s.SetNICForwarding(%d, %d, true) = %t, want = %t", nicID, test.netProto, prevForwarding, wantPrevForwarding)
-				}
-				if forwarding, err := s.NICForwarding(nicID, test.netProto); err != nil {
-					t.Fatalf("s.NICForwarding(%d, %d): %s", nicID, test.netProto, err)
-				} else if !forwarding {
-					t.Errorf("got s.NICForwarding(%d, %d) = false, want = true", nicID, test.netProto)
-				}
-			}
+					// Setting forwarding to be enabled should return the previous
+					// configuration of false. Enabling it a second time should be a
+					// no-op.
+					for _, wantPrevForwarding := range [...]bool{false, true} {
+						if prevForwarding, err := subTest.setForwardingFunc(s, nicID, test.netProto, true); err != nil {
+							t.Fatalf("s.%s(%d, %d, true): %s", subTest.setForwardingFuncName, nicID, test.netProto, err)
+						} else if prevForwarding != wantPrevForwarding {
+							t.Errorf("got s.%s(%d, %d, true) = %t, want = %t", subTest.setForwardingFuncName, nicID, test.netProto, prevForwarding, wantPrevForwarding)
+						}
+						if forwarding, err := subTest.getForwardingFunc(s, nicID, test.netProto); err != nil {
+							t.Fatalf("s.%s(%d, %d): %s", subTest.getForwardingFuncName, nicID, test.netProto, err)
+						} else if !forwarding {
+							t.Errorf("got s.%s(%d, %d) = false, want = true", subTest.getForwardingFuncName, nicID, test.netProto)
+						}
+						// Verify that the NICInfo also contains the expected value.
+						allNICInfo := s.NICInfo()
+						if info, ok := allNICInfo[nicID]; !ok {
+							t.Fatalf("entry for %d missing from allNICInfo = %+v", nicID, allNICInfo)
+						} else {
+							forwardingMap := subTest.getNicInfoForwardingMap(info)
+							if forward, ok := forwardingMap[test.netProto]; !ok {
+								t.Fatalf("entry for %d missing from info.%s = %+v", test.netProto, subTest.nicInfoForwardingMapName, forwardingMap)
+							} else if !forward {
+								t.Errorf("got info.%s[%d] = %t, want = true", subTest.nicInfoForwardingMapName, test.netProto, forward)
+							}
+						}
+					}
 
-			// Setting forwarding to be disabled should return the previous
-			// configuration of true. Disabling it a second time should be a no-op.
-			for _, wantPrevForwarding := range [...]bool{true, false} {
-				if prevForwarding, err := s.SetNICForwarding(nicID, test.netProto, false); err != nil {
-					t.Fatalf("s.SetNICForwarding(%d, %d, false): %s", nicID, test.netProto, err)
-				} else if prevForwarding != wantPrevForwarding {
-					t.Errorf("got s.SetNICForwarding(%d, %d, false) = %t, want = %t", nicID, test.netProto, prevForwarding, wantPrevForwarding)
-				}
-				if forwarding, err := s.NICForwarding(nicID, test.netProto); err != nil {
-					t.Fatalf("s.NICForwarding(%d, %d): %s", nicID, test.netProto, err)
-				} else if forwarding {
-					t.Errorf("got s.NICForwarding(%d, %d) = true, want = false", nicID, test.netProto)
-				}
+					// Setting forwarding to be disabled should return the previous
+					// configuration of true. Disabling it a second time should be a
+					// no-op.
+					for _, wantPrevForwarding := range [...]bool{true, false} {
+						if prevForwarding, err := subTest.setForwardingFunc(s, nicID, test.netProto, false); err != nil {
+							t.Fatalf("s.%s(%d, %d, false): %s", subTest.setForwardingFuncName, nicID, test.netProto, err)
+						} else if prevForwarding != wantPrevForwarding {
+							t.Errorf("got s.%s(%d, %d, false) = %t, want = %t", subTest.setForwardingFuncName, nicID, test.netProto, prevForwarding, wantPrevForwarding)
+						}
+						if forwarding, err := subTest.getForwardingFunc(s, nicID, test.netProto); err != nil {
+							t.Fatalf("s.%s(%d, %d): %s", subTest.getForwardingFuncName, nicID, test.netProto, err)
+						} else if forwarding {
+							t.Errorf("got s.%s(%d, %d) = true, want = false", subTest.getForwardingFuncName, nicID, test.netProto)
+						}
+						// Verify that the NICInfo also contains the expected value.
+						allNICInfo := s.NICInfo()
+						if info, ok := allNICInfo[nicID]; !ok {
+							t.Fatalf("entry for %d missing from allNICInfo = %+v", nicID, allNICInfo)
+						} else {
+							forwardingMap := subTest.getNicInfoForwardingMap(info)
+							if forward, ok := forwardingMap[test.netProto]; !ok {
+								t.Fatalf("entry for %d missing from info.%s = %+v", test.netProto, subTest.nicInfoForwardingMapName, forwardingMap)
+							} else if forward {
+								t.Errorf("got info.%s[%d] = %t, want = false", subTest.nicInfoForwardingMapName, test.netProto, forward)
+							}
+						}
+					}
+
+				})
 			}
 		})
 	}
