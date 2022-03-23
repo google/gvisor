@@ -90,9 +90,3 @@ func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 
 	return
 }
-
-// RestoreKernelFPState restores the Sentry floating point state.
-//
-//go:nosplit
-func RestoreKernelFPState() {
-}
