@@ -324,7 +324,6 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 	})
 	g.emit("}\n\n")
 	g.emit("// CopyOutN implements marshal.Marshallable.CopyOutN.\n")
-	g.emit("//go:nosplit\n")
 	g.recordUsedImport("marshal")
 	g.recordUsedImport("hostarch")
 	g.emit("func (%s *%s) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {\n", g.r, g.typeName())
@@ -357,7 +356,6 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 	g.emit("}\n\n")
 
 	g.emit("// CopyOut implements marshal.Marshallable.CopyOut.\n")
-	g.emit("//go:nosplit\n")
 	g.recordUsedImport("marshal")
 	g.recordUsedImport("hostarch")
 	g.emit("func (%s *%s) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {\n", g.r, g.typeName())
@@ -367,7 +365,6 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 	g.emit("}\n\n")
 
 	g.emit("// CopyIn implements marshal.Marshallable.CopyIn.\n")
-	g.emit("//go:nosplit\n")
 	g.recordUsedImport("marshal")
 	g.recordUsedImport("hostarch")
 	g.emit("func (%s *%s) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {\n", g.r, g.typeName())

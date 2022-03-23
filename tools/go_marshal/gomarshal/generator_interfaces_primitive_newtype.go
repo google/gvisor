@@ -167,7 +167,6 @@ func (g *interfaceGenerator) emitMarshallableForPrimitiveNewtype(nt *ast.Ident) 
 	g.emit("}\n\n")
 
 	g.emit("// CopyOutN implements marshal.Marshallable.CopyOutN.\n")
-	g.emit("//go:nosplit\n")
 	g.emit("func (%s *%s) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.emitCastToByteSlice(g.r, "buf", fmt.Sprintf("%s.SizeBytes()", g.r))
@@ -179,7 +178,6 @@ func (g *interfaceGenerator) emitMarshallableForPrimitiveNewtype(nt *ast.Ident) 
 	g.emit("}\n\n")
 
 	g.emit("// CopyOut implements marshal.Marshallable.CopyOut.\n")
-	g.emit("//go:nosplit\n")
 	g.emit("func (%s *%s) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.emit("return %s.CopyOutN(cc, addr, %s.SizeBytes())\n", g.r, g.r)
@@ -187,7 +185,6 @@ func (g *interfaceGenerator) emitMarshallableForPrimitiveNewtype(nt *ast.Ident) 
 	g.emit("}\n\n")
 
 	g.emit("// CopyIn implements marshal.Marshallable.CopyIn.\n")
-	g.emit("//go:nosplit\n")
 	g.emit("func (%s *%s) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.emitCastToByteSlice(g.r, "buf", fmt.Sprintf("%s.SizeBytes()", g.r))
@@ -254,7 +251,6 @@ func (g *interfaceGenerator) emitMarshallableSliceForPrimitiveNewtype(nt *ast.Id
 	}
 
 	g.emit("// Copy%sIn copies in a slice of %s objects from the task's memory.\n", slice.ident, eltType)
-	g.emit("//go:nosplit\n")
 	g.emit("func Copy%sIn(cc marshal.CopyContext, addr hostarch.Addr, dst []%s) (int, error) {\n", slice.ident, eltType)
 	g.inIndent(func() {
 		g.emit("count := len(dst)\n")
@@ -274,7 +270,6 @@ func (g *interfaceGenerator) emitMarshallableSliceForPrimitiveNewtype(nt *ast.Id
 	g.emit("}\n\n")
 
 	g.emit("// Copy%sOut copies a slice of %s objects to the task's memory.\n", slice.ident, eltType)
-	g.emit("//go:nosplit\n")
 	g.emit("func Copy%sOut(cc marshal.CopyContext, addr hostarch.Addr, src []%s) (int, error) {\n", slice.ident, eltType)
 	g.inIndent(func() {
 		g.emit("count := len(src)\n")
