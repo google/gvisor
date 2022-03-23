@@ -16,12 +16,14 @@ package metric
 
 import (
 	"math"
+	"reflect"
 	"testing"
 	"time"
 
 	"google.golang.org/protobuf/proto"
 	"gvisor.dev/gvisor/pkg/eventchannel"
 	pb "gvisor.dev/gvisor/pkg/metric/metric_go_proto"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // sliceEmitter implements eventchannel.Emitter by appending all messages to a
@@ -638,13 +640,77 @@ func TestMetricUpdateStageTiming(t *testing.T) {
 	}
 }
 
+func TestTimerMetric(t *testing.T) {
+	defer reset()
+	// This bucketer just has 2 finite buckets: [0, 500ms) and [500ms, 1s).
+	bucketer := NewExponentialBucketer(2, uint64((500 * time.Millisecond).Nanoseconds()), 0, 1)
+	field1 := NewField("field1", []string{"foo", "bar"})
+	field2 := NewField("field2", []string{"baz", "quux"})
+	timer, err := NewTimerMetric("/timer", bucketer, "a timer metric", field1, field2)
+	if err != nil {
+		t.Fatalf("NewTimerMetric: %v", err)
+	}
+	if err := Initialize(); err != nil {
+		t.Fatalf("Initialize(): %s", err)
+	}
+	// Don't care about the registration metrics.
+	emitter.Reset()
+
+	// Create timer data.
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			op := timer.Start("foo")
+			defer op.Finish("quux")
+			time.Sleep(250 * time.Millisecond)
+		}()
+	}
+	for i := 0; i < 3; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			op := timer.Start()
+			defer op.Finish("foo", "quux")
+			time.Sleep(750 * time.Millisecond)
+		}()
+	}
+	wg.Wait()
+	EmitMetricUpdate()
+	if len(emitter) != 1 {
+		t.Fatalf("EmitMetricUpdate emitted %d events want %d", len(emitter), 1)
+	}
+	m := emitter[0].(*pb.MetricUpdate).Metrics[0]
+	wantFields := []string{"foo", "quux"}
+	if !reflect.DeepEqual(m.GetFieldValues(), wantFields) {
+		t.Errorf("%+v: got fields %v want %v", m, m.GetFieldValues(), wantFields)
+	}
+	dv, ok := m.Value.(*pb.MetricValue_DistributionValue)
+	if !ok {
+		t.Fatalf("%+v: want pb.MetricValue_DistributionValue", m)
+	}
+	samples := dv.DistributionValue.GetNewSamples()
+	if len(samples) != 4 {
+		t.Fatalf("%+v: got %d buckets, want %d", dv.DistributionValue, len(samples), 4)
+	}
+	wantSamples := []uint64{0, 5, 3, 0}
+	for i, s := range samples {
+		if s != wantSamples[i] {
+			t.Errorf("%+v: sample %d: got %d want %d", dv.DistributionValue, i, s, wantSamples[i])
+		}
+	}
+}
+
 func TestBucketer(t *testing.T) {
 	for _, test := range []struct {
-		name                string
-		bucketer            Bucketer
-		minSample           int64
-		maxSample           int64
-		firstFewLowerBounds []int64
+		name                    string
+		bucketer                Bucketer
+		minSample               int64
+		maxSample               int64
+		step                    int64
+		firstFewLowerBounds     []int64
+		successiveBucketSamples []int64
 	}{
 		{
 			name:                "static-sized buckets",
@@ -667,9 +733,33 @@ func TestBucketer(t *testing.T) {
 				50 + int64(math.Floor(2*1.5*1.5*1.5*1.5)),
 			},
 		},
+		{
+			name:      "timer buckets",
+			bucketer:  NewDurationBucketer(8, time.Second, time.Minute),
+			minSample: 0,
+			maxSample: (5 * time.Minute).Nanoseconds(),
+			step:      (500 * time.Millisecond).Nanoseconds(),
+			successiveBucketSamples: []int64{
+				// Roughly exponential successive durations:
+				(500 * time.Millisecond).Nanoseconds(),
+				(1200 * time.Millisecond).Nanoseconds(),
+				(2500 * time.Millisecond).Nanoseconds(),
+				(5 * time.Second).Nanoseconds(),
+				(15 * time.Second).Nanoseconds(),
+				(35 * time.Second).Nanoseconds(),
+				(75 * time.Second).Nanoseconds(),
+				(3 * time.Minute).Nanoseconds(),
+				(7 * time.Minute).Nanoseconds(),
+			},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			numFiniteBuckets := test.bucketer.NumFiniteBuckets()
+			t.Logf("Underflow bucket has bounds (-inf, %d)", test.bucketer.LowerBound(0))
+			for b := 0; b < numFiniteBuckets; b++ {
+				t.Logf("Bucket %d has bounds [%d, %d)", b, test.bucketer.LowerBound(b), test.bucketer.LowerBound(b+1))
+			}
+			t.Logf("Overflow bucket has bounds [%d, +inf)", test.bucketer.LowerBound(numFiniteBuckets))
 			testAround := func(bound int64, bucketIndex int) {
 				for sample := bound - 2; sample <= bound+2; sample++ {
 					gotIndex := test.bucketer.BucketIndex(sample)
@@ -678,7 +768,11 @@ func TestBucketer(t *testing.T) {
 					}
 				}
 			}
-			for sample := test.minSample; sample <= test.maxSample; sample++ {
+			step := test.step
+			if step == 0 {
+				step = 1
+			}
+			for sample := test.minSample; sample <= test.maxSample; sample += step {
 				bucket := test.bucketer.BucketIndex(sample)
 				if bucket == -1 {
 					lowestBound := test.bucketer.LowerBound(0)
@@ -711,6 +805,41 @@ func TestBucketer(t *testing.T) {
 				if got := test.bucketer.LowerBound(bi); got != want {
 					t.Errorf("bucket %d has lower bound %d, want %d", bi, got, want)
 				}
+			}
+			previousBucket := -1
+			for i, sample := range test.successiveBucketSamples {
+				gotBucket := test.bucketer.BucketIndex(sample)
+				if gotBucket != previousBucket+1 {
+					t.Errorf("successive-bucket sample #%d (%d) fell in bucket %d whereas previous sample fell in bucket %d", i, sample, gotBucket, previousBucket)
+				}
+				previousBucket = gotBucket
+			}
+		})
+	}
+}
+
+func TestBucketerPanics(t *testing.T) {
+	for name, fn := range map[string]func(){
+		"NewExponentialBucketer @ 0": func() {
+			NewExponentialBucketer(0, 2, 0, 1)
+		},
+		"NewExponentialBucketer @ 120": func() {
+			NewExponentialBucketer(120, 2, 0, 1)
+		},
+		"NewDurationBucketer @ 2": func() {
+			NewDurationBucketer(2, time.Second, time.Minute)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var recovered interface{}
+			func() {
+				defer func() {
+					recovered = recover()
+				}()
+				fn()
+			}()
+			if recovered == nil {
+				t.Error("did not panic")
 			}
 		})
 	}

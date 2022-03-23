@@ -290,6 +290,33 @@ func (m fieldMapper) lookup(fields ...string) string {
 	return m.key
 }
 
+// lookupConcat looks up a key within the fieldMapper where the fields are
+// the concatenation of two list of fields.
+// It needs to allocate no memory and be nosplit-compatible, so it cannot be
+// recursive, and cannot allocate a concatenated []string.
+// This *must* be called with the correct number of fields, or it will panic.
+// +checkescape:all
+//go:nosplit
+func (m fieldMapper) lookupConcat(fields1, fields2 []string) string {
+	depth1 := len(fields1)
+	depth2 := len(fields2)
+	if depth1+depth2 != m.depth {
+		panic("invalid field lookup depth")
+	}
+	var found bool
+	for i := 0; i < depth1; i++ {
+		if m, found = m.children[fields1[i]]; !found {
+			panic("disallowed field value")
+		}
+	}
+	for i := 0; i < depth2; i++ {
+		if m, found = m.children[fields2[i]]; !found {
+			panic("disallowed field value")
+		}
+	}
+	return m.key
+}
+
 // all iterates over all keys within the fieldMapper.
 func (m fieldMapper) all() []string {
 	var all []string
@@ -514,8 +541,17 @@ type ExponentialBucketer struct {
 	lowerBounds []int64
 }
 
+// Minimum/maximum finite buckets for exponential bucketers.
+const (
+	exponentialMinBuckets = 1
+	exponentialMaxBuckets = 100
+)
+
 // NewExponentialBucketer returns a new Bucketer with exponential buckets.
 func NewExponentialBucketer(numFiniteBuckets int, width uint64, scale, growth float64) *ExponentialBucketer {
+	if numFiniteBuckets < exponentialMinBuckets || numFiniteBuckets > exponentialMaxBuckets {
+		panic(fmt.Sprintf("number of finite buckets must be in [%d, %d]", exponentialMinBuckets, exponentialMaxBuckets))
+	}
 	b := &ExponentialBucketer{
 		numFiniteBuckets: numFiniteBuckets,
 		width:            float64(width),
@@ -679,9 +715,109 @@ func MustRegisterDistributionMetric(name string, sync bool, bucketer Bucketer, u
 // +checkescape:all
 //go:nosplit
 func (d *DistributionMetric) AddSample(sample int64, fields ...string) {
-	key := d.fieldsToKey.lookup(fields...)
+	d.addSampleByKey(sample, d.fieldsToKey.lookup(fields...))
+}
+
+// addSampleByKey works like AddSample, with the field key already known.
+// +checkescape:all
+//go:nosplit
+func (d *DistributionMetric) addSampleByKey(sample int64, key string) {
 	bucket := d.exponentialBucketer.BucketIndex(sample)
 	atomic.AddUint64(&d.samples[key][bucket+1], 1)
+}
+
+// Minimum number of buckets for NewDurationBucket.
+const durationMinBuckets = 3
+
+// NewDurationBucketer returns a Bucketer well-suited for measuring durations in
+// nanoseconds. Useful for NewTimerMetric.
+// minDuration and maxDuration are conservative estimates of the minimum and
+// maximum durations expected to be accurately measured by the Bucketer.
+func NewDurationBucketer(numFiniteBuckets int, minDuration, maxDuration time.Duration) Bucketer {
+	if numFiniteBuckets < durationMinBuckets {
+		panic(fmt.Sprintf("duration bucketer must have at least %d buckets, got %d", durationMinBuckets, numFiniteBuckets))
+	}
+	minNs := minDuration.Nanoseconds()
+	exponentCoversNs := float64(maxDuration.Nanoseconds()-int64(numFiniteBuckets-durationMinBuckets)*minNs) / float64(minNs)
+	exponent := math.Log(exponentCoversNs) / math.Log(float64(numFiniteBuckets-durationMinBuckets))
+	minNs = int64(float64(minNs) / exponent)
+	return NewExponentialBucketer(numFiniteBuckets, uint64(minNs), float64(minNs), exponent)
+}
+
+// TimerMetric wraps a distribution metric with convenience functions for
+// latency measurements, which is a popular specialization of distribution
+// metrics.
+type TimerMetric struct {
+	DistributionMetric
+}
+
+// NewTimerMetric provides a convenient way to measure latencies.
+// The arguments are the same as `NewDistributionMetric`, except:
+// - `nanoBucketer`: Same as `NewDistribution`'s `bucketer`, expected to hold
+//                   durations in nanoseconds. Adjust parameters accordingly.
+//                   NewDurationBucketer may be helpful here.
+func NewTimerMetric(name string, nanoBucketer Bucketer, description string, fields ...Field) (*TimerMetric, error) {
+	distrib, err := NewDistributionMetric(name, false, nanoBucketer, pb.MetricMetadata_UNITS_NANOSECONDS, description, fields...)
+	if err != nil {
+		return nil, err
+	}
+	return &TimerMetric{
+		DistributionMetric: *distrib,
+	}, nil
+}
+
+// MustRegisterTimerMetric creates and registers a timer metric.
+// If an error occurs, it panics.
+func MustRegisterTimerMetric(name string, nanoBucketer Bucketer, description string, fields ...Field) *TimerMetric {
+	timer, err := NewTimerMetric(name, nanoBucketer, description, fields...)
+	if err != nil {
+		panic(err)
+	}
+	return timer
+}
+
+// TimedOperation is used by TimerMetric to keep track of the time elapsed
+// between an operation starting and stopping.
+type TimedOperation struct {
+	// metric is a reference to the timer metric for the operation.
+	metric *TimerMetric
+
+	// partialFields is a prefix of the fields used in this operation.
+	// The rest of the fields is provided in TimedOperation.Finish.
+	partialFields []string
+
+	// startedNs is the number of nanoseconds measured in TimerMetric.Start().
+	startedNs int64
+}
+
+// Start starts a timer measurement for the given combination of fields.
+// It returns a TimedOperation which can be passed around as necessary to
+// measure the duration of the operation.
+// Once the operation is finished, call Finish on the TimedOperation.
+// The fields passed to Start may be partially specified; if so, the remaining
+// fields must be passed to TimedOperation.Finish. This is useful for cases
+// where which path an operation took is only known after it happens. This
+// path can be part of the fields passed to Finish.
+//+checkescape:all
+//go:nosplit
+func (t *TimerMetric) Start(fields ...string) TimedOperation {
+	return TimedOperation{
+		metric:        t,
+		partialFields: fields,
+		startedNs:     CheapNowNano(),
+	}
+}
+
+// Finish marks an operation as finished and records its duration.
+// `extraFields` is the rest of the fields appended to the fields passed to
+// `TimerMetric.Start`. The concatenation of these two must be the exact
+// number of fields that the underlying metric has.
+//+checkescape:all
+//go:nosplit
+func (o TimedOperation) Finish(extraFields ...string) {
+	ended := CheapNowNano()
+	fieldKey := o.metric.fieldsToKey.lookupConcat(o.partialFields, extraFields)
+	o.metric.addSampleByKey(ended-o.startedNs, fieldKey)
 }
 
 // stageTiming contains timing data for an initialization stage.
