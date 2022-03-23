@@ -35,6 +35,7 @@ go_test(
     deps = [
         ":metric_go_proto",
         "//pkg/eventchannel",
+        "//pkg/sync",
         "@org_golang_google_protobuf//proto:go_default_library",
     ],
 )
