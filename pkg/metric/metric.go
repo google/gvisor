@@ -18,7 +18,9 @@ package metric
 import (
 	"errors"
 	"fmt"
+	"math"
 	"sort"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -37,6 +39,10 @@ var (
 	// ErrInitializationDone indicates that the caller tried to create a
 	// new metric after initialization.
 	ErrInitializationDone = errors.New("metric cannot be created after initialization is complete")
+
+	// ErrFieldValueContainsIllegalChar indicates that the value of a metric
+	// field had an invalid character in it.
+	ErrFieldValueContainsIllegalChar = errors.New("metric field value contains illegal character")
 
 	// WeirdnessMetric is a metric with fields created to track the number
 	// of weird occurrences such as time fallback, partial_result, vsyscall
@@ -118,7 +124,10 @@ func Initialize() error {
 	}
 
 	m := pb.MetricRegistration{}
-	for _, v := range allMetrics.m {
+	for _, v := range allMetrics.uint64Metrics {
+		m.Metrics = append(m.Metrics, v.metadata)
+	}
+	for _, v := range allMetrics.distributionMetrics {
 		m.Metrics = append(m.Metrics, v.metadata)
 	}
 	m.Stages = make([]string, 0, len(allStages))
@@ -172,6 +181,132 @@ type Field struct {
 	allowedValues []string
 }
 
+// NewField defines a new Field that can be used to break down a metric.
+func NewField(name string, allowedValues []string) Field {
+	return Field{
+		name:          name,
+		allowedValues: allowedValues,
+	}
+}
+
+// toProto returns the proto definition of this field, for use in metric
+// metadata.
+func (f Field) toProto() *pb.MetricMetadata_Field {
+	return &pb.MetricMetadata_Field{
+		FieldName:     f.name,
+		AllowedValues: f.allowedValues,
+	}
+}
+
+// multiFieldToKey returns a concatenated version of the given fields.
+// It can be used as a unique key within multi-dimensional metrics.
+// Does not allow commas as valid character within field values.
+func multiFieldToKey(fields ...string) (string, error) {
+	if len(fields) == 0 {
+		return "", nil
+	}
+	for _, f := range fields {
+		if strings.ContainsRune(f, ',') {
+			return "", ErrFieldValueContainsIllegalChar
+		}
+	}
+	return strings.Join(fields, ","), nil
+}
+
+// keyToMultiField is the reverse of multiFieldToKey.
+func keyToMultiField(key string) []string {
+	if key == "" {
+		return nil
+	}
+	return strings.Split(key, ",")
+}
+
+// fieldMapper provides multi-dimensional fields to a single concatenated key
+// that can be used as string key for multi-dimensional metrics.
+// fieldMapper is a recursive struct, but its lookup function is not.
+// It pays for its allocation-free, low-stack lookup by preallocating a map of
+// all possible field values, so it is memory-hungry.
+type fieldMapper struct {
+	// depth is 0 at the lowest level of fieldMapper.
+	depth int
+	// key is set only at the lowest level of fieldMapper, i.e. depth == 0.
+	// It contains the full concatenated key of all the parent field values.
+	key string
+	// children is set only at depth > 0.
+	// For depth=d, children[fields[d]] is the fieldMapper that can be used to
+	// look up keys for fields[d+1:].
+	children map[string]fieldMapper
+}
+
+// newFieldMapper returns a new fieldMapper for the given set of fields.
+func newFieldMapper(fields ...Field) (fieldMapper, error) {
+	var initFieldMapper func(values []string, remaining ...Field) (fieldMapper, error)
+	initFieldMapper = func(values []string, remaining ...Field) (fieldMapper, error) {
+		depth := len(remaining)
+		if depth == 0 {
+			key, err := multiFieldToKey(values...)
+			if err != nil {
+				return fieldMapper{}, err
+			}
+			return fieldMapper{key: key}, nil
+		}
+		current := remaining[0]
+		children := make(map[string]fieldMapper, len(current.allowedValues))
+		for _, value := range current.allowedValues {
+			newValues := make([]string, len(values)+1)
+			copy(newValues, values)
+			newValues[len(values)] = value
+			child, err := initFieldMapper(newValues, remaining[1:]...)
+			if err != nil {
+				return fieldMapper{}, err
+			}
+			children[value] = child
+		}
+		return fieldMapper{
+			depth:    depth,
+			children: children,
+		}, nil
+	}
+	return initFieldMapper(nil, fields...)
+}
+
+// lookup looks up a key within the fieldMapper.
+// It needs to allocate no memory and be nosplit-compatible, so it cannot be
+// recursive.
+// This *must* be called with the correct number of fields, or it will panic.
+// +checkescape:all
+//go:nosplit
+func (m fieldMapper) lookup(fields ...string) string {
+	depth := len(fields)
+	if depth != m.depth {
+		panic("invalid field lookup depth")
+	}
+	var found bool
+	for i := 0; i < depth; i++ {
+		if m, found = m.children[fields[i]]; !found {
+			panic("disallowed field value")
+		}
+	}
+	return m.key
+}
+
+// all iterates over all keys within the fieldMapper.
+func (m fieldMapper) all() []string {
+	var all []string
+	var visit func(fm fieldMapper)
+	visit = func(fm fieldMapper) {
+		if fm.depth == 0 {
+			all = append(all, fm.key)
+		} else {
+			for _, child := range fm.children {
+				visit(child)
+			}
+		}
+	}
+	visit(m)
+	return all
+}
+
 // RegisterCustomUint64Metric registers a metric with the given name.
 //
 // Register must only be called at init and will return and error if called
@@ -186,11 +321,14 @@ func RegisterCustomUint64Metric(name string, cumulative, sync bool, units pb.Met
 		return ErrInitializationDone
 	}
 
-	if _, ok := allMetrics.m[name]; ok {
+	if _, ok := allMetrics.uint64Metrics[name]; ok {
+		return ErrNameInUse
+	}
+	if _, ok := allMetrics.distributionMetrics[name]; ok {
 		return ErrNameInUse
 	}
 
-	allMetrics.m[name] = customUint64Metric{
+	allMetrics.uint64Metrics[name] = customUint64Metric{
 		metadata: &pb.MetricMetadata{
 			Name:        name,
 			Description: description,
@@ -208,10 +346,7 @@ func RegisterCustomUint64Metric(name string, cumulative, sync bool, units pb.Met
 	}
 
 	for _, field := range fields {
-		allMetrics.m[name].metadata.Fields = append(allMetrics.m[name].metadata.Fields, &pb.MetricMetadata_Field{
-			FieldName:     field.name,
-			AllowedValues: field.allowedValues,
-		})
+		allMetrics.uint64Metrics[name].metadata.Fields = append(allMetrics.uint64Metrics[name].metadata.Fields, field.toProto())
 	}
 	return nil
 }
@@ -314,6 +449,241 @@ func (m *Uint64Metric) IncrementBy(v uint64, fieldValues ...string) {
 	}
 }
 
+// Bucketer is an interface to bucket values into finite, distinct buckets.
+type Bucketer interface {
+	// NumFiniteBuckets is the number of finite buckets in the distribution.
+	// This is only called once and never expected to return a different value.
+	NumFiniteBuckets() int
+
+	// LowerBound takes the index of a bucket (within [0, NumBuckets()]) and
+	// returns the inclusive lower bound of that bucket.
+	// In other words, the lowest value of `x` for which `BucketIndex(x) == i`
+	// should be `x = LowerBound(i)`.
+	// The upper bound of a bucket is the lower bound of the next bucket.
+	// The last bucket (with `bucketIndex == NumFiniteBuckets()`) is infinite,
+	// i.e. it has no upper bound (but it still has a lower bound).
+	LowerBound(bucketIndex int) int64
+
+	// BucketIndex takes a sample and returns the index of the bucket that the
+	// sample should fall into.
+	// Must return either:
+	//   - A value within [0, NumBuckets() -1] if the sample falls within a
+	//     finite bucket
+	//   - NumBuckets() if the sample falls within the last (infinite) bucket
+	//   - '-1' if the sample is lower than what any bucket can represent, i.e.
+	//     the sample should be in the implicit "underflow" bucket.
+	// This function must be go:nosplit-compatible and have no escapes.
+	// +checkescape:all
+	BucketIndex(sample int64) int
+}
+
+// ExponentialBucketer implements Bucketer, with the first bucket starting
+// with 0 as lowest bound with `Width` width, and each subsequent bucket being
+// wider by a scaled exponentially-growing series, until `NumFiniteBuckets`
+// buckets exist.
+type ExponentialBucketer struct {
+	// numFinitebuckets is the total number of finite buckets in the scheme.
+	numFiniteBuckets int
+
+	// width is the size of the first (0-th) finite bucket.
+	width float64
+
+	// scale is a factor applied uniformly to the exponential growth portion
+	// of the bucket size.
+	scale float64
+
+	// growth is the exponential growth factor for finite buckets.
+	// The n-th bucket is `growth` times wider than the (n-1)-th bucket.
+	// Bucket sizes are floored, so `width` and `growth` must be large enough
+	// such that the second bucket is actually wider than the first after
+	// flooring (unless, of course, fixed-width buckets are what's desired).
+	growth float64
+
+	// growthLog is math.Log(growth).
+	growthLog float64
+
+	// maxSample is the max sample value which can be represented in a finite
+	// bucket.
+	maxSample int64
+
+	// lowerbounds is a precomputed set of lower bounds of the buckets.
+	// The "underflow" bucket has no lower bound, so it is not included here.
+	// lowerBounds[0] is the lower bound of the first finite bucket, which is
+	// also the upper bound of the underflow bucket.
+	// lowerBounds[numFiniteBuckets] is the lower bound of the overflow bucket.
+	lowerBounds []int64
+}
+
+// NewExponentialBucketer returns a new Bucketer with exponential buckets.
+func NewExponentialBucketer(numFiniteBuckets int, width uint64, scale, growth float64) *ExponentialBucketer {
+	b := &ExponentialBucketer{
+		numFiniteBuckets: numFiniteBuckets,
+		width:            float64(width),
+		scale:            scale,
+		growth:           growth,
+		growthLog:        math.Log(growth),
+		lowerBounds:      make([]int64, numFiniteBuckets+1),
+	}
+	b.lowerBounds[0] = 0
+	for i := 1; i <= numFiniteBuckets; i++ {
+		b.lowerBounds[i] = int64(b.width*float64(i) + b.scale*math.Pow(b.growth, float64(i-1)))
+	}
+	b.maxSample = b.lowerBounds[numFiniteBuckets] - 1
+	return b
+}
+
+// NumFiniteBuckets implements Bucketer.NumFiniteBuckets.
+func (b *ExponentialBucketer) NumFiniteBuckets() int {
+	return int(b.numFiniteBuckets)
+}
+
+// LowerBound implements Bucketer.LowerBound.
+func (b *ExponentialBucketer) LowerBound(bucketIndex int) int64 {
+	return b.lowerBounds[bucketIndex]
+}
+
+// BucketIndex implements Bucketer.BucketIndex.
+// +checkescape:all
+//go:nosplit
+func (b *ExponentialBucketer) BucketIndex(sample int64) int {
+	if sample < 0 {
+		return -1
+	}
+	if sample == 0 {
+		return 0
+	}
+	if sample > b.maxSample {
+		return b.numFiniteBuckets
+	}
+	// Do a binary search. For the number of buckets we expect to deal with in
+	// this code (a few dozen at most), this may be faster than computing a
+	// logarithm. We can't use recursion because this would violate go:nosplit.
+	lowIndex := 0
+	highIndex := b.numFiniteBuckets
+	for {
+		pivotIndex := (highIndex + lowIndex) >> 1
+		lowerBound := b.lowerBounds[pivotIndex]
+		if sample < lowerBound {
+			highIndex = pivotIndex
+			continue
+		}
+		upperBound := b.lowerBounds[pivotIndex+1]
+		if sample >= upperBound {
+			lowIndex = pivotIndex
+			continue
+		}
+		return pivotIndex
+	}
+}
+
+// Verify that ExponentialBucketer implements Bucketer.
+var _ = (Bucketer)((*ExponentialBucketer)(nil))
+
+// DistributionMetric represents a distribution of values in finite buckets.
+// It also separately keeps track of min/max in order to ascertain whether the
+// buckets can faithfully represent the range of values encountered in the
+// distribution.
+type DistributionMetric struct {
+	// exponentialBucketer is the bucketing scheme used for this metric.
+	// Because we need DistributionMetric.AddSample to be go:nosplit-compatible,
+	// we cannot use an interface reference here, as we would not be able to call
+	// it in AddSample. Instead, we need one field per Bucketer implementation,
+	// and we call whichever one is in use in AddSample.
+	exponentialBucketer *ExponentialBucketer
+
+	// metadata is the metadata about this metric.
+	metadata *pb.MetricMetadata
+
+	// fieldsToKey converts a multi-dimensional fields to a single string to use
+	// as key for `samples`.
+	fieldsToKey fieldMapper
+
+	// samples is the number of samples that fell within each bucket.
+	// It is mapped by the concatenation of the fields, using fieldsToKey.
+	// The value is a list of bucket sample counts, with the 0-th being the
+	// "underflow bucket", i.e. the bucket of samples which cannot fall into
+	// any bucket that the bucketer supports.
+	// The i-th value is the number of samples that fell into the bucketer's
+	// (i-1)-th finite bucket.
+	// The last value is the number of samples that fell into the bucketer's
+	// last (i.e. infinite) bucket.
+	samples map[string][]uint64
+}
+
+// NewDistributionMetric creates and registers a new distribution metric.
+func NewDistributionMetric(name string, sync bool, bucketer Bucketer, unit pb.MetricMetadata_Units, description string, fields ...Field) (*DistributionMetric, error) {
+	if initialized {
+		return nil, ErrInitializationDone
+	}
+	if _, ok := allMetrics.uint64Metrics[name]; ok {
+		return nil, ErrNameInUse
+	}
+	if _, ok := allMetrics.distributionMetrics[name]; ok {
+		return nil, ErrNameInUse
+	}
+
+	var exponentialBucketer *ExponentialBucketer
+	if expBucketer, ok := bucketer.(*ExponentialBucketer); ok {
+		exponentialBucketer = expBucketer
+	} else {
+		return nil, fmt.Errorf("unsupported bucketer implementation: %T", bucketer)
+	}
+	fieldsToKey, err := newFieldMapper(fields...)
+	if err != nil {
+		return nil, err
+	}
+	allKeys := fieldsToKey.all()
+	samples := make(map[string][]uint64, len(allKeys))
+	numFiniteBuckets := bucketer.NumFiniteBuckets()
+	for _, key := range allKeys {
+		samples[key] = make([]uint64, numFiniteBuckets+2)
+	}
+	protoFields := make([]*pb.MetricMetadata_Field, len(fields))
+	for i, f := range fields {
+		protoFields[i] = f.toProto()
+	}
+	lowerBounds := make([]int64, numFiniteBuckets+1)
+	for i := 0; i <= numFiniteBuckets; i++ {
+		lowerBounds[i] = bucketer.LowerBound(i)
+	}
+	allMetrics.distributionMetrics[name] = &DistributionMetric{
+		exponentialBucketer: exponentialBucketer,
+		fieldsToKey:         fieldsToKey,
+		samples:             samples,
+		metadata: &pb.MetricMetadata{
+			Name:                          name,
+			Description:                   description,
+			Cumulative:                    false,
+			Sync:                          sync,
+			Type:                          pb.MetricMetadata_TYPE_DISTRIBUTION,
+			Units:                         unit,
+			Fields:                        protoFields,
+			DistributionBucketLowerBounds: lowerBounds,
+		},
+	}
+	return allMetrics.distributionMetrics[name], nil
+}
+
+// MustRegisterDistributionMetric creates and registers a distribution metric.
+// If an error occurs, it panics.
+func MustRegisterDistributionMetric(name string, sync bool, bucketer Bucketer, unit pb.MetricMetadata_Units, description string, fields ...Field) *DistributionMetric {
+	distrib, err := NewDistributionMetric(name, sync, bucketer, unit, description, fields...)
+	if err != nil {
+		panic(err)
+	}
+	return distrib
+}
+
+// AddSample adds a sample to the distribution.
+// This *must* be called with the correct number of fields, or it will panic.
+// +checkescape:all
+//go:nosplit
+func (d *DistributionMetric) AddSample(sample int64, fields ...string) {
+	key := d.fieldsToKey.lookup(fields...)
+	bucket := d.exponentialBucketer.BucketIndex(sample)
+	atomic.AddUint64(&d.samples[key][bucket+1], 1)
+}
+
 // stageTiming contains timing data for an initialization stage.
 type stageTiming struct {
 	stage   InitStage
@@ -329,8 +699,11 @@ func (s stageTiming) inProgress() bool {
 
 // metricSet holds metric data.
 type metricSet struct {
-	// Map of metrics.
-	m map[string]customUint64Metric
+	// Map of uint64 metrics.
+	uint64Metrics map[string]customUint64Metric
+
+	// Map of distribution metrics.
+	distributionMetrics map[string]*DistributionMetric
 
 	// mu protects the fields below.
 	mu sync.RWMutex
@@ -346,8 +719,9 @@ type metricSet struct {
 // makeMetricSet returns a new metricSet.
 func makeMetricSet() metricSet {
 	return metricSet{
-		m:        make(map[string]customUint64Metric),
-		finished: make([]stageTiming, 0, len(allStages)),
+		uint64Metrics:       make(map[string]customUint64Metric),
+		distributionMetrics: make(map[string]*DistributionMetric),
+		finished:            make([]stageTiming, 0, len(allStages)),
 	}
 }
 
@@ -358,34 +732,74 @@ func (m *metricSet) Values() metricValues {
 	m.mu.Unlock()
 
 	vals := metricValues{
-		m:      make(map[string]interface{}, len(m.m)),
-		stages: stages,
+		uint64Metrics:            make(map[string]interface{}, len(m.uint64Metrics)),
+		distributionMetrics:      make(map[string]map[string][]uint64, len(m.distributionMetrics)),
+		distributionTotalSamples: make(map[string]map[string]uint64, len(m.distributionMetrics)),
+		stages:                   stages,
 	}
-
-	for k, v := range m.m {
+	for k, v := range m.uint64Metrics {
 		fields := v.metadata.GetFields()
 		switch len(fields) {
 		case 0:
-			vals.m[k] = v.value()
+			vals.uint64Metrics[k] = v.value()
 		case 1:
 			values := fields[0].GetAllowedValues()
 			fieldsMap := make(map[string]uint64)
 			for _, fieldValue := range values {
 				fieldsMap[fieldValue] = v.value(fieldValue)
 			}
-			vals.m[k] = fieldsMap
+			vals.uint64Metrics[k] = fieldsMap
 		default:
 			panic(fmt.Sprintf("Unsupported number of metric fields: %d", len(fields)))
 		}
+	}
+	for name, metric := range m.distributionMetrics {
+		fieldKeysToValues := make(map[string][]uint64, len(metric.samples))
+		fieldKeysToTotalSamples := make(map[string]uint64, len(metric.samples))
+		for fieldKey, samples := range metric.samples {
+			samplesSnapshot := snapshotDistribution(samples)
+			totalSamples := uint64(0)
+			for _, bucket := range samplesSnapshot {
+				totalSamples += bucket
+			}
+			if totalSamples == 0 {
+				// No samples recorded for this combination of field, so leave
+				// the maps for this fieldKey as nil. This lessens the memory cost
+				// of distributions with unused field combinations.
+				fieldKeysToTotalSamples[fieldKey] = 0
+				fieldKeysToValues[fieldKey] = nil
+			} else {
+				fieldKeysToTotalSamples[fieldKey] = totalSamples
+				fieldKeysToValues[fieldKey] = samplesSnapshot
+			}
+		}
+		vals.distributionMetrics[name] = fieldKeysToValues
+		vals.distributionTotalSamples[name] = fieldKeysToTotalSamples
 	}
 	return vals
 }
 
 // metricValues contains a copy of the values of all metrics.
 type metricValues struct {
-	// m is a map with key as metric name and value can be either uint64 or
-	// map[string]uint64 to support metrics with one field.
-	m map[string]interface{}
+	// uint64Metrics is a map of uint64 metrics,
+	// with key as metric name. Value can be either uint64, or map[string]uint64
+	// to support metrics with one field.
+	uint64Metrics map[string]interface{}
+
+	// distributionMetrics is a map of distribution metrics.
+	// The first key level is the metric name.
+	// The second key level is the concatenated view of the fields.
+	// The value is the number of samples in each bucket of the distribution,
+	// with the first (0-th) element being the underflow bucket and the last
+	// element being the "infinite" (overflow) bucket.
+	distributionMetrics map[string]map[string][]uint64
+
+	// distributionTotalSamples is the total number of samples for each
+	// distribution metric and field values.
+	// It allows performing a quick diff between snapshots without having to
+	// iterate over all the buckets individually, so that distributions with
+	// no new samples are not retransmitted.
+	distributionTotalSamples map[string]map[string]uint64
 
 	// Information on when initialization stages were reached. Does not include
 	// the currently-ongoing stage, if any.
@@ -419,8 +833,8 @@ func EmitMetricUpdate() {
 	m := pb.MetricUpdate{}
 	// On the first call metricsAtLastEmit will be empty. Include all
 	// metrics then.
-	for k, v := range snapshot.m {
-		prev, ok := metricsAtLastEmit.m[k]
+	for k, v := range snapshot.uint64Metrics {
+		prev, ok := metricsAtLastEmit.uint64Metrics[k]
 		switch t := v.(type) {
 		case uint64:
 			// Metric exists and value did not change.
@@ -448,6 +862,43 @@ func EmitMetricUpdate() {
 					Value:       &pb.MetricValue_Uint64Value{Uint64Value: metricValue},
 				})
 			}
+		}
+	}
+	for name, dist := range snapshot.distributionTotalSamples {
+		prev, ok := metricsAtLastEmit.distributionTotalSamples[name]
+		for fieldKey, currentTotal := range dist {
+			if currentTotal == 0 {
+				continue
+			}
+			if ok {
+				if prevTotal, ok2 := prev[fieldKey]; ok2 && prevTotal == currentTotal {
+					continue
+				}
+			}
+			oldSamples := metricsAtLastEmit.distributionMetrics[name][fieldKey]
+			var newSamples []uint64
+			if oldSamples != nil {
+				currentSamples := snapshot.distributionMetrics[name][fieldKey]
+				numBuckets := len(currentSamples)
+				newSamples = make([]uint64, numBuckets)
+				for i := 0; i < numBuckets; i++ {
+					newSamples[i] = currentSamples[i] - oldSamples[i]
+				}
+			} else {
+				// oldSamples == nil means that the previous snapshot has no samples.
+				// This means the delta is the current number of samples, no need for
+				// a copy.
+				newSamples = snapshot.distributionMetrics[name][fieldKey]
+			}
+			m.Metrics = append(m.Metrics, &pb.MetricValue{
+				Name:        name,
+				FieldValues: keyToMultiField(fieldKey),
+				Value: &pb.MetricValue_DistributionValue{
+					DistributionValue: &pb.Samples{
+						NewSamples: newSamples,
+					},
+				},
+			})
 		}
 	}
 
