@@ -28,6 +28,7 @@ message MetricMetadata {
   string description = 2;
 
   // cumulative indicates that this metric is never decremented.
+  // Only applies for uint64-type metrics.
   bool cumulative = 3;
 
   // sync indicates that values from the final metric event should be
@@ -38,7 +39,10 @@ message MetricMetadata {
   // the monitoring system.
   bool sync = 4;
 
-  enum Type { TYPE_UINT64 = 0; }
+  enum Type {
+    TYPE_UINT64 = 0;
+    TYPE_DISTRIBUTION = 1;
+  }
 
   // type is the type of the metric value.
   Type type = 5;
@@ -56,9 +60,15 @@ message MetricMetadata {
     repeated string allowed_values = 2;
   }
 
-  // fields contains the metric fields. Currently a metric can have at most
-  // one field.
+  // fields contains the metric fields for this metric.
   repeated Field fields = 7;
+
+  // For distribution-typed metrics, this list contains the lower bound of all
+  // buckets (other than the underflow bucket, which has no lower bound).
+  // A distribution with n finite buckets should have n+1 values here.
+  // The (n+1)-th value is the upper bound of the n-th bucket, and the lower
+  // bound of the "overflow" bucket (which has no upper bound).
+  repeated int64 distribution_bucket_lower_bounds = 8;
 }
 
 // MetricRegistration contains the metadata for all metrics that will be in
@@ -66,6 +76,24 @@ message MetricMetadata {
 message MetricRegistration {
   repeated MetricMetadata metrics = 1;
   repeated string stages = 2;
+}
+
+// Samples contains the number of samples in each bucket of a distribution.
+message Samples {
+  // new_samples contains the number of *new* samples in each bucket of a
+  // distribution metric. "New" means the number of new samples added since the
+  // last MetricValue update for this metric and combination of fields.
+  // Given a distribution metrics with `num_finite_buckets` finite buckets,
+  // this means:
+  //   - num_samples[0] is the number of new samples in the "underflow" bucket,
+  //     i.e. samples which are smaller than the lower bound of the
+  //     distribution's first (0-th) finite bucket.
+  //   - num_samples[i] is the number of new samples in the distribution's
+  //     0-based (i-1)-th finite bucket.
+  //   - num_samples[num_finite_buckets+1] is the number of new samples in the
+  //     distribution's last bucket, which is infinite (i.e. it has a lower
+  //     bound but no upper bound).
+  repeated uint64 new_samples = 1;
 }
 
 // MetricValue the value of a metric at a single point in time.
@@ -77,6 +105,7 @@ message MetricValue {
   // depends on the type of the metric.
   oneof value {
     uint64 uint64_value = 2;
+    Samples distribution_value = 3;
   }
 
   repeated string field_values = 4;
