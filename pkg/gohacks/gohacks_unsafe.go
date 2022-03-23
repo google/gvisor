@@ -95,3 +95,14 @@ func Memmove(to, from unsafe.Pointer, n uintptr) {
 //go:linkname memmove runtime.memmove
 //go:noescape
 func memmove(to, from unsafe.Pointer, n uintptr)
+
+// Nanotime is runtime.nanotime.
+//
+//go:nosplit
+func Nanotime() int64 {
+	return nanotime()
+}
+
+//go:linkname nanotime runtime.nanotime
+//go:noescape
+func nanotime() int64
