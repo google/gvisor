@@ -173,6 +173,11 @@ var allowedSyscalls = seccomp.SyscallRules{
 			seccomp.EqualTo(linux.TIOCGWINSZ),
 			seccomp.MatchAny{}, /* winsize struct */
 		},
+		{
+			seccomp.MatchAny{}, /* fd */
+			seccomp.EqualTo(linux.SIOCGIFTXQLEN),
+			seccomp.MatchAny{}, /* ifreq struct */
+		},
 	},
 	unix.SYS_LSEEK:   {},
 	unix.SYS_MADVISE: {},
