@@ -62,7 +62,7 @@ DOCKER_CONFIG := /etc/docker
 ##     STARTUP_OPTIONS - Startup options passed to Bazel.
 ##
 STARTUP_OPTIONS :=
-BAZEL_OPTIONS   :=
+BAZEL_OPTIONS   := --//tools/nogo:fast
 BAZEL           := bazel $(STARTUP_OPTIONS)
 BASE_OPTIONS    := --color=no --curses=no
 TEST_OPTIONS += $(BASE_OPTIONS) \

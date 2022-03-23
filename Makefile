@@ -196,6 +196,7 @@ smoke-race-tests: ## Runs a smoke test after build building runsc in race config
 	@$(call run,$(RACE_FLAGS) //runsc:runsc-race,--alsologtostderr --network none --debug --TESTONLY-unsafe-nonroot=true --rootless do true)
 .PHONY: smoke-race-tests
 
+nogo-tests: BAZEL_OPTIONS=
 nogo-tests:
 	@$(call test,--build_tag_filters=nogo --test_tag_filters=nogo //:all pkg/... tools/...)
 .PHONY: nogo-tests

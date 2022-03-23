@@ -202,15 +202,20 @@ steps:
     label: ":hammer: Packetimpact tests"
     command: make packetimpact-tests
 
-  # Runtime tests.
+  # Build everything.
   - <<: *common
-    label: ":php: PHP runtime tests"
-    command: make php7.3.6-runtime-tests
-    parallelism: 10
+    label: ":world_map: Build everything"
+    command: "make build OPTIONS=--build_tag_filters=-nogo TARGETS=//..."
+
+  # Runtime tests.
   - <<: *common
     label: ":java: Java runtime tests"
     command: make java11-runtime-tests
     parallelism: 40
+  - <<: *common
+    label: ":php: PHP runtime tests"
+    command: make php7.3.6-runtime-tests
+    parallelism: 10
   - <<: *common
     label: ":golang: Go runtime tests"
     command: make go1.12-runtime-tests
@@ -226,14 +231,14 @@ steps:
 
   # Runtime tests (LISAFS).
   - <<: *common
-    label: ":php: PHP runtime tests (LISAFS)"
-    command: make php7.3.6-runtime-tests_lisafs
-    parallelism: 10
-    if: build.message =~ /lisafs/ || build.branch == "master"
-  - <<: *common
     label: ":java: Java runtime tests (LISAFS)"
     command: make java11-runtime-tests_lisafs
     parallelism: 40
+    if: build.message =~ /lisafs/ || build.branch == "master"
+  - <<: *common
+    label: ":php: PHP runtime tests (LISAFS)"
+    command: make php7.3.6-runtime-tests_lisafs
+    parallelism: 10
     if: build.message =~ /lisafs/ || build.branch == "master"
   - <<: *common
     label: ":golang: Go runtime tests (LISAFS)"
@@ -255,11 +260,6 @@ steps:
   - <<: *common
     label: ":mechanical_arm: ARM"
     command: make arm-qemu-smoke-test
-
-  # Build everything.
-  - <<: *common
-    label: ":world_map: Build everything"
-    command: "make build OPTIONS=--build_tag_filters=-nogo TARGETS=//..."
 
   # Run basic benchmarks smoke tests (no upload).
   - <<: *common
