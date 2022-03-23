@@ -49,14 +49,14 @@ func (t *dummyCopyContext) MarshalUnsafe(addr hostarch.Addr, marshallable marsha
 	t.CopyOutBytes(addr, buf)
 }
 
-// +checkescape:all
+// +checkescape:hard
 //go:nosplit
 func doCopyIn(t *dummyCopyContext) {
 	var stat test.Stat
 	stat.CopyIn(t, hostarch.Addr(0xf000ba12))
 }
 
-// +checkescape:all
+// +checkescape:hard
 //go:nosplit
 func doCopyOut(t *dummyCopyContext) {
 	var stat test.Stat
