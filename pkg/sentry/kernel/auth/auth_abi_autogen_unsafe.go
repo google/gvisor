@@ -56,7 +56,6 @@ func (gid *GID) UnmarshalUnsafe(src []byte) []byte {
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
 func (gid *GID) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
@@ -73,13 +72,11 @@ func (gid *GID) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) 
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
 func (gid *GID) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return gid.CopyOutN(cc, addr, gid.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
 func (gid *GID) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
@@ -112,7 +109,6 @@ func (gid *GID) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // CopyGIDSliceIn copies in a slice of GID objects from the task's memory.
-//go:nosplit
 func CopyGIDSliceIn(cc marshal.CopyContext, addr hostarch.Addr, dst []GID) (int, error) {
     count := len(dst)
     if count == 0 {
@@ -138,7 +134,6 @@ func CopyGIDSliceIn(cc marshal.CopyContext, addr hostarch.Addr, dst []GID) (int,
 }
 
 // CopyGIDSliceOut copies a slice of GID objects to the task's memory.
-//go:nosplit
 func CopyGIDSliceOut(cc marshal.CopyContext, addr hostarch.Addr, src []GID) (int, error) {
     count := len(src)
     if count == 0 {
@@ -229,7 +224,6 @@ func (uid *UID) UnmarshalUnsafe(src []byte) []byte {
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
 func (uid *UID) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
@@ -246,13 +240,11 @@ func (uid *UID) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) 
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
 func (uid *UID) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return uid.CopyOutN(cc, addr, uid.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
 func (uid *UID) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte

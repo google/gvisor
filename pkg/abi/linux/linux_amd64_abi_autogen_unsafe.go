@@ -79,7 +79,6 @@ func (e *EpollEvent) UnmarshalUnsafe(src []byte) []byte {
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
 func (e *EpollEvent) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
@@ -96,13 +95,11 @@ func (e *EpollEvent) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit 
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
 func (e *EpollEvent) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return e.CopyOutN(cc, addr, e.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
 func (e *EpollEvent) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
@@ -312,7 +309,6 @@ func (s *Stat) UnmarshalUnsafe(src []byte) []byte {
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
 func (s *Stat) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !s.ATime.Packed() && s.CTime.Packed() && s.MTime.Packed() {
         // Type Stat doesn't have a packed layout in memory, fall back to MarshalBytes.
@@ -336,13 +332,11 @@ func (s *Stat) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
 func (s *Stat) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return s.CopyOutN(cc, addr, s.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
 func (s *Stat) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     if !s.ATime.Packed() && s.CTime.Packed() && s.MTime.Packed() {
         // Type Stat doesn't have a packed layout in memory, fall back to UnmarshalBytes.
@@ -536,7 +530,6 @@ func (p *PtraceRegs) UnmarshalUnsafe(src []byte) []byte {
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
 func (p *PtraceRegs) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
@@ -553,13 +546,11 @@ func (p *PtraceRegs) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit 
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
 func (p *PtraceRegs) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return p.CopyOutN(cc, addr, p.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
 func (p *PtraceRegs) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
@@ -664,7 +655,6 @@ func (s *SemidDS) UnmarshalUnsafe(src []byte) []byte {
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
 func (s *SemidDS) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !s.SemCTime.Packed() && s.SemOTime.Packed() && s.SemPerm.Packed() {
         // Type SemidDS doesn't have a packed layout in memory, fall back to MarshalBytes.
@@ -688,13 +678,11 @@ func (s *SemidDS) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
 func (s *SemidDS) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return s.CopyOutN(cc, addr, s.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
 func (s *SemidDS) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     if !s.SemCTime.Packed() && s.SemOTime.Packed() && s.SemPerm.Packed() {
         // Type SemidDS doesn't have a packed layout in memory, fall back to UnmarshalBytes.

@@ -68,7 +68,6 @@ func (n *nfNATTarget) UnmarshalUnsafe(src []byte) []byte {
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
 func (n *nfNATTarget) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !n.Range.Packed() && n.Target.Packed() {
         // Type nfNATTarget doesn't have a packed layout in memory, fall back to MarshalBytes.
@@ -92,13 +91,11 @@ func (n *nfNATTarget) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
 func (n *nfNATTarget) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return n.CopyOutN(cc, addr, n.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
 func (n *nfNATTarget) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     if !n.Range.Packed() && n.Target.Packed() {
         // Type nfNATTarget doesn't have a packed layout in memory, fall back to UnmarshalBytes.
