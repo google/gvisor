@@ -193,6 +193,8 @@ func (e *endpoint) Resume(s *stack.Stack) {
 	}
 
 	bind := func() {
+		e.mu.Lock()
+		defer e.mu.Unlock()
 		addr, _, err := e.checkV4MappedLocked(tcpip.FullAddress{Addr: e.BindAddr, Port: e.TransportEndpointInfo.ID.LocalPort})
 		if err != nil {
 			panic("unable to parse BindAddr: " + err.String())

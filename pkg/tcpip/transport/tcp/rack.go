@@ -186,6 +186,7 @@ func (s *sender) schedulePTO() {
 
 // probeTimerExpired is the same as TLP_send_probe() as defined in
 // https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.5.2.
+// +checklocks:s.ep.mu
 func (s *sender) probeTimerExpired() tcpip.Error {
 	if !s.probeTimer.checkExpiration() {
 		return nil
@@ -384,6 +385,7 @@ func (rc *rackControl) detectLoss(rcvTime tcpip.MonotonicTime) int {
 
 // reorderTimerExpired will retransmit the segments which have not been acked
 // before the reorder timer expired.
+// +checklocks:rc.snd.ep.mu
 func (rc *rackControl) reorderTimerExpired() tcpip.Error {
 	// Check if the timer actually expired or if it's a spurious wake due
 	// to a previously orphaned runtime timer.
@@ -408,6 +410,7 @@ func (rc *rackControl) reorderTimerExpired() tcpip.Error {
 }
 
 // DoRecovery implements lossRecovery.DoRecovery.
+// +checklocks:rc.snd.ep.mu
 func (rc *rackControl) DoRecovery(_ *segment, fastRetransmit bool) {
 	snd := rc.snd
 	if fastRetransmit {

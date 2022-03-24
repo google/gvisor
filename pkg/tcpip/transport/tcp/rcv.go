@@ -96,6 +96,7 @@ func (r *receiver) currentWindow() (curWnd seqnum.Size) {
 
 // getSendParams returns the parameters needed by the sender when building
 // segments to send.
+// +checklocks:r.ep.mu
 func (r *receiver) getSendParams() (RcvNxt seqnum.Value, rcvWnd seqnum.Size) {
 	newWnd := r.ep.selectWindow()
 	curWnd := r.currentWindow()
@@ -185,6 +186,8 @@ func (r *receiver) getSendParams() (RcvNxt seqnum.Value, rcvWnd seqnum.Size) {
 // nonZeroWindow is called when the receive window grows from zero to nonzero;
 // in such cases we may need to send an ack to indicate to our peer that it can
 // resume sending data.
+// +checklocks:r.ep.mu
+// +checklocksalias:r.ep.snd.ep.mu=r.ep.mu
 func (r *receiver) nonZeroWindow() {
 	// Immediately send an ack.
 	r.ep.snd.sendAck()
@@ -196,6 +199,8 @@ func (r *receiver) nonZeroWindow() {
 //
 // Returns true if the segment was consumed, false if it cannot be consumed
 // yet because of a missing segment.
+// +checklocks:r.ep.mu
+// +checklocksalias:r.ep.snd.ep.mu=r.ep.mu
 func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum.Size) bool {
 	if segLen > 0 {
 		// If the segment doesn't include the seqnum we're expecting to
@@ -347,6 +352,8 @@ func (r *receiver) updateRTT() {
 	r.ep.rcvQueueInfo.rcvQueueMu.Unlock()
 }
 
+// +checklocks:r.ep.mu
+// +checklocksalias:r.ep.snd.ep.mu=r.ep.mu
 func (r *receiver) handleRcvdSegmentClosing(s *segment, state EndpointState, closed bool) (drop bool, err tcpip.Error) {
 	r.ep.rcvQueueInfo.rcvQueueMu.Lock()
 	rcvClosed := r.ep.rcvQueueInfo.RcvClosed || r.closed
@@ -443,6 +450,8 @@ func (r *receiver) handleRcvdSegmentClosing(s *segment, state EndpointState, clo
 
 // handleRcvdSegment handles TCP segments directed at the connection managed by
 // r as they arrive. It is called by the protocol main loop.
+// +checklocks:r.ep.mu
+// +checklocksalias:r.ep.snd.ep.mu=r.ep.mu
 func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err tcpip.Error) {
 	state := r.ep.EndpointState()
 	closed := r.ep.closed
@@ -524,6 +533,8 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err tcpip.Error) {
 
 // handleTimeWaitSegment handles inbound segments received when the endpoint
 // has entered the TIME_WAIT state.
+// +checklocks:r.ep.mu
+// +checklocksalias:r.ep.snd.ep.mu=r.ep.mu
 func (r *receiver) handleTimeWaitSegment(s *segment) (resetTimeWait bool, newSyn bool) {
 	segSeq := s.sequenceNumber
 	segLen := seqnum.Size(s.data.Size())

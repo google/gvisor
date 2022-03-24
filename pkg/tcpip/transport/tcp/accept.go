@@ -181,8 +181,10 @@ func (l *listenContext) isCookieValid(id stack.TransportEndpointID, cookie seqnu
 }
 
 // createConnectingEndpoint creates a new endpoint in a connecting state, with
-// the connection parameters given by the arguments.
-func (l *listenContext) createConnectingEndpoint(s *segment, rcvdSynOpts header.TCPSynOptions, queue *waiter.Queue) (*endpoint, tcpip.Error) {
+// the connection parameters given by the arguments. The newly created endpoint
+// will be locked.
+// +checklocksacquire:n.mu
+func (l *listenContext) createConnectingEndpoint(s *segment, rcvdSynOpts header.TCPSynOptions, queue *waiter.Queue) (n *endpoint, _ tcpip.Error) {
 	// Create a new endpoint.
 	netProto := l.netProto
 	if netProto == 0 {
@@ -191,10 +193,11 @@ func (l *listenContext) createConnectingEndpoint(s *segment, rcvdSynOpts header.
 
 	route, err := l.stack.FindRoute(s.nicID, s.dstAddr, s.srcAddr, s.netProto, false /* multicastLoop */)
 	if err != nil {
-		return nil, err
+		return nil, err // +checklocksignore
 	}
 
-	n := newEndpoint(l.stack, l.protocol, netProto, queue)
+	n = newEndpoint(l.stack, l.protocol, netProto, queue)
+	n.mu.Lock()
 	n.ops.SetV6Only(l.v6Only)
 	n.TransportEndpointInfo.ID = s.id
 	n.boundNICID = s.nicID
@@ -225,19 +228,16 @@ func (l *listenContext) createConnectingEndpoint(s *segment, rcvdSynOpts header.
 // On success, a handshake h is returned with h.ep.mu held.
 //
 // Precondition: if l.listenEP != nil, l.listenEP.mu must be locked.
-func (l *listenContext) startHandshake(s *segment, opts header.TCPSynOptions, queue *waiter.Queue, owner tcpip.PacketOwner) (*handshake, tcpip.Error) {
+// +checklocksacquire:h.ep.mu
+func (l *listenContext) startHandshake(s *segment, opts header.TCPSynOptions, queue *waiter.Queue, owner tcpip.PacketOwner) (h *handshake, _ tcpip.Error) {
 	// Create new endpoint.
 	irs := s.sequenceNumber
 	isn := generateSecureISN(s.id, l.stack.Clock(), l.protocol.seqnumSecret)
 	ep, err := l.createConnectingEndpoint(s, opts, queue)
 	if err != nil {
-		return nil, err
+		return nil, err // +checklocksignore
 	}
 
-	// Lock the endpoint before registering to ensure that no out of
-	// band changes are possible due to incoming packets etc till
-	// the endpoint is done initializing.
-	ep.mu.Lock()
 	ep.owner = owner
 
 	// listenEP is nil when listenContext is used by tcp.Forwarder.
@@ -250,7 +250,7 @@ func (l *listenContext) startHandshake(s *segment, opts header.TCPSynOptions, qu
 			ep.mu.Unlock()
 			ep.Close()
 
-			return nil, &tcpip.ErrConnectionAborted{}
+			return nil, &tcpip.ErrConnectionAborted{} // +checklocksignore
 		}
 
 		// Propagate any inheritable options from the listening endpoint
@@ -261,7 +261,7 @@ func (l *listenContext) startHandshake(s *segment, opts header.TCPSynOptions, qu
 			ep.mu.Unlock()
 			ep.Close()
 
-			return nil, &tcpip.ErrConnectionAborted{}
+			return nil, &tcpip.ErrConnectionAborted{} // +checklocksignore
 		}
 
 		deferAccept = l.listenEP.deferAccept
@@ -281,13 +281,13 @@ func (l *listenContext) startHandshake(s *segment, opts header.TCPSynOptions, qu
 
 		ep.drainClosingSegmentQueue()
 
-		return nil, err
+		return nil, err // +checklocksignore
 	}
 
 	ep.isRegistered = true
 
 	// Initialize and start the handshake.
-	h := ep.newPassiveHandshake(isn, irs, opts, deferAccept)
+	h = ep.newPassiveHandshake(isn, irs, opts, deferAccept)
 	h.listenEP = l.listenEP
 	h.start()
 	return h, nil
@@ -661,8 +661,6 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 			return err
 		}
 
-		n.mu.Lock()
-
 		// Propagate any inheritable options from the listening endpoint
 		// to the newly created endpoint.
 		e.propagateInheritableOptionsLocked(n)
@@ -711,6 +709,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 			mss:                 rcvdSynOptions.MSS,
 			sampleRTTWithTSOnly: true,
 		}
+		h.ep.AssertLockHeld(n)
 		h.transitionToStateEstablishedLocked(s)
 
 		// Requeue the segment if the ACK completing the handshake has more info
