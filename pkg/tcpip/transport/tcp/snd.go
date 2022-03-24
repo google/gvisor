@@ -333,7 +333,7 @@ func (s *sender) updateMaxPayloadSize(mtu, count int) {
 
 	// Since we likely reduced the number of outstanding packets, we may be
 	// ready to send some more.
-	s.writeNext = nextSeg
+	s.updateWriteNext(nextSeg)
 	s.sendData()
 }
 
@@ -545,7 +545,7 @@ func (s *sender) retransmitTimerExpired() bool {
 	// information as we lack more rigorous checks to validate if the SACK
 	// information is usable after an RTO.
 	s.ep.scoreboard.Reset()
-	s.writeNext = s.writeList.Front()
+	s.updateWriteNext(s.writeList.Front())
 
 	// RFC 1122 4.2.2.17: Start sending zero window probes when we still see a
 	// zero receive window after retransmission interval and we have data to
@@ -752,7 +752,7 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 				}
 				seg.merge(nSeg)
 				s.writeList.Remove(nSeg)
-				nSeg.decRef()
+				nSeg.DecRef()
 			}
 			if !nextTooBig && seg.data.Size() < available {
 				// Segment is not full.
@@ -972,7 +972,7 @@ func (s *sender) sendData() {
 		if s.isAssignedSequenceNumber(seg) && s.ep.SACKPermitted && s.ep.scoreboard.IsSACKED(seg.sackBlock()) {
 			// Move writeNext along so that we don't try and scan data that
 			// has already been SACKED.
-			s.writeNext = seg.Next()
+			s.updateWriteNext(seg.Next())
 			continue
 		}
 		if sent := s.maybeSendSegment(seg, limit, end); !sent {
@@ -980,7 +980,7 @@ func (s *sender) sendData() {
 		}
 		dataSent = true
 		s.Outstanding += s.pCount(seg, s.MaxPayloadSize)
-		s.writeNext = seg.Next()
+		s.updateWriteNext(seg.Next())
 	}
 
 	s.postXmit(dataSent, true /* shouldScheduleProbe */)
@@ -1526,7 +1526,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 			}
 
 			if s.writeNext == seg {
-				s.writeNext = seg.Next()
+				s.updateWriteNext(seg.Next())
 			}
 
 			// Update the RACK fields if SACK is enabled.
@@ -1545,7 +1545,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 			} else {
 				s.SackedOut -= s.pCount(seg, s.MaxPayloadSize)
 			}
-			seg.decRef()
+			seg.DecRef()
 			ackLeft -= datalen
 		}
 
@@ -1698,4 +1698,14 @@ func (s *sender) maybeSendOutOfWindowAck(seg *segment) {
 	if seg.payloadSize() > 0 || s.ep.allowOutOfWindowAck() {
 		s.sendAck()
 	}
+}
+
+func (s *sender) updateWriteNext(seg *segment) {
+	if s.writeNext != nil {
+		s.writeNext.DecRef()
+	}
+	if seg != nil {
+		seg.IncRef()
+	}
+	s.writeNext = seg
 }
