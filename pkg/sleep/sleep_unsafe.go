@@ -166,6 +166,7 @@ func (s *Sleeper) AddWaker(w *Waker) {
 // block, then we will need to explicitly wake a runtime P.
 //
 // Precondition: wakepOrSleep may be true iff block is true.
+//go:nosplit
 func (s *Sleeper) nextWaker(block, wakepOrSleep bool) *Waker {
 	// Attempt to replenish the local list if it's currently empty.
 	if s.localList == nil {
@@ -282,7 +283,7 @@ func (s *Sleeper) Fetch(block bool) *Waker {
 //
 // N.B. Like Fetch, this method is *not* thread-safe. This will also yield the current
 //      P to the next goroutine, avoiding associated scheduled overhead.
-//+checkescapes:all
+// +checkescape:all
 //go:nosplit
 func (s *Sleeper) AssertAndFetch(n *Waker) *Waker {
 	n.assert(false /* wakep */)
@@ -325,6 +326,7 @@ func (s *Sleeper) Done() {
 
 // enqueueAssertedWaker enqueues an asserted waker to the "ready" circular list
 // of wakers that want to notify the sleeper.
+//go:nosplit
 func (s *Sleeper) enqueueAssertedWaker(w *Waker, wakep bool) {
 	// Add the new waker to the front of the list.
 	for {

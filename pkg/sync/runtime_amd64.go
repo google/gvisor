@@ -20,10 +20,12 @@ func addrOfSpinning() *int32
 // nmspinning caches addrOfSpinning.
 var nmspinning = addrOfSpinning()
 
+//go:nosplit
 func preGoReadyWakeSuppression() {
 	atomic.AddInt32(nmspinning, 1)
 }
 
+//go:nosplit
 func postGoReadyWakeSuppression() {
 	atomic.AddInt32(nmspinning, -1)
 }

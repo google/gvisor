@@ -798,7 +798,7 @@ type TimedOperation struct {
 // fields must be passed to TimedOperation.Finish. This is useful for cases
 // where which path an operation took is only known after it happens. This
 // path can be part of the fields passed to Finish.
-//+checkescape:all
+// +checkescape:all
 //go:nosplit
 func (t *TimerMetric) Start(fields ...string) TimedOperation {
 	return TimedOperation{
@@ -812,7 +812,7 @@ func (t *TimerMetric) Start(fields ...string) TimedOperation {
 // `extraFields` is the rest of the fields appended to the fields passed to
 // `TimerMetric.Start`. The concatenation of these two must be the exact
 // number of fields that the underlying metric has.
-//+checkescape:all
+// +checkescape:all
 //go:nosplit
 func (o TimedOperation) Finish(extraFields ...string) {
 	ended := CheapNowNano()
