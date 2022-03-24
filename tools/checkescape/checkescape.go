@@ -84,6 +84,10 @@ const (
 	// magic is the magic annotation.
 	magic = "// +checkescape"
 
+	// Bad versions of `magic` observed in the wilderness of the codebase.
+	badMagicNoSpace = "//+checkescape"
+	badMagicPlural  = "// +checkescapes"
+
 	// magicParams is the magic annotation with specific parameters.
 	magicParams = magic + ":"
 
@@ -573,6 +577,10 @@ func findReasons(pass *analysis.Pass, fdecl *ast.FuncDecl) ([]EscapeReason, bool
 	// Scan all lines.
 	found := false
 	for _, c := range fdecl.Doc.List {
+		if strings.HasPrefix(c.Text, badMagicNoSpace) || strings.HasPrefix(c.Text, badMagicPlural) {
+			pass.Reportf(fdecl.Pos(), "misspelled checkescape prefix: please use %q instead", magic)
+			continue
+		}
 		// Does the comment contain a +checkescape line?
 		if !strings.HasPrefix(c.Text, magic) && !strings.HasPrefix(c.Text, testMagic) {
 			continue
