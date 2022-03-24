@@ -403,6 +403,20 @@ TEST(Cgroup, MigrateToSubcontainerThread) {
   EXPECT_FALSE(tasks.contains(tid));
 }
 
+TEST(Cgroup, MigrateInvalidPID) {
+  SKIP_IF(!CgroupsAvailable());
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
+
+  EXPECT_THAT(c.WriteControlFile("cgroup.procs", "-1"), PosixErrorIs(EINVAL));
+  EXPECT_THAT(c.WriteControlFile("cgroup.procs", "not-a-number"),
+              PosixErrorIs(EINVAL));
+
+  EXPECT_THAT(c.WriteControlFile("tasks", "-1"), PosixErrorIs(EINVAL));
+  EXPECT_THAT(c.WriteControlFile("tasks", "not-a-number"),
+              PosixErrorIs(EINVAL));
+}
+
 // Regression test for b/222278194.
 TEST(Cgroup, DuplicateUnlinkOnDirFD) {
   SKIP_IF(!CgroupsAvailable());
