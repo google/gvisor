@@ -115,7 +115,7 @@ func (p *processor) start(wg *sync.WaitGroup) {
 			// this should be fine as all normal shutdown states are handled by
 			// handleSegments and if the endpoint moves to a CLOSED/ERROR state
 			// then handleSegments is a noop.
-			if ep.EndpointState() == StateEstablished && ep.mu.TryLock() {
+			if ep.EndpointState() == StateEstablished && ep.TryLock() {
 				// If the endpoint is in a connected state then we do direct delivery
 				// to ensure low latency and avoid scheduler interactions.
 				switch err := ep.handleSegmentsLocked(true /* fastPath */); {
@@ -128,7 +128,7 @@ func (p *processor) start(wg *sync.WaitGroup) {
 				case !ep.segmentQueue.empty():
 					p.epQ.enqueue(ep)
 				}
-				ep.mu.Unlock() // +checklocksforce
+				ep.mu.Unlock()
 			} else {
 				ep.newSegmentWaker.Assert()
 			}

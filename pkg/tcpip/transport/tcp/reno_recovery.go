@@ -26,6 +26,7 @@ func newRenoRecovery(s *sender) *renoRecovery {
 	return &renoRecovery{s: s}
 }
 
+// +checklocks:rr.s.ep.mu
 func (rr *renoRecovery) DoRecovery(rcvdSeg *segment, fastRetransmit bool) {
 	ack := rcvdSeg.ackNumber
 	snd := rr.s
