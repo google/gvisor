@@ -157,6 +157,8 @@ func (e *endpoint) Abort() {
 	e.Close()
 }
 
+func (*endpoint) Release() {}
+
 // Close puts the endpoint in a closed state and frees all resources
 // associated with it.
 func (e *endpoint) Close() {

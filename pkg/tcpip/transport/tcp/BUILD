@@ -16,6 +16,17 @@ go_template_instance(
 )
 
 go_template_instance(
+    name = "tcp_segment_refs",
+    out = "tcp_segment_refs.go",
+    package = "tcp",
+    prefix = "segment",
+    template = "//pkg/refsvfs2:refs_template",
+    types = {
+        "T": "segment",
+    },
+)
+
+go_template_instance(
     name = "tcp_endpoint_list",
     out = "tcp_endpoint_list.go",
     package = "tcp",
@@ -54,6 +65,7 @@ go_library(
         "snd.go",
         "tcp_endpoint_list.go",
         "tcp_segment_list.go",
+        "tcp_segment_refs.go",
         "timer.go",
     ],
     imports = ["gvisor.dev/gvisor/pkg/tcpip/buffer"],
@@ -61,6 +73,7 @@ go_library(
     deps = [
         "//pkg/log",
         "//pkg/rand",
+        "//pkg/refsvfs2",
         "//pkg/sleep",
         "//pkg/sync",
         "//pkg/tcpip",

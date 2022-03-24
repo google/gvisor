@@ -41,6 +41,7 @@ func TestForwarderSendMSSLessThanMTU(t *testing.T) {
 		c.EP, err = r.CreateEndpoint(&c.WQ)
 		ch <- err
 		close(ch)
+		r.Complete(false)
 	})
 	s.SetTransportProtocolHandler(tcp.ProtocolNumber, f.HandlePacket)
 
@@ -85,6 +86,7 @@ func TestForwarderDoesNotRejectECNFlags(t *testing.T) {
 				c.EP, err = r.CreateEndpoint(&c.WQ)
 				ch <- err
 				close(ch)
+				r.Complete(false)
 			})
 			s.SetTransportProtocolHandler(tcp.ProtocolNumber, f.HandlePacket)
 

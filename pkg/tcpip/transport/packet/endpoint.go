@@ -492,6 +492,9 @@ func (ep *endpoint) Stats() tcpip.EndpointStats {
 // SetOwner implements tcpip.Endpoint.SetOwner.
 func (*endpoint) SetOwner(tcpip.PacketOwner) {}
 
+// Release implements tcpip.Release.
+func (*endpoint) Release() {}
+
 // SocketOptions implements tcpip.Endpoint.SocketOptions.
 func (ep *endpoint) SocketOptions() *tcpip.SocketOptions {
 	return &ep.ops

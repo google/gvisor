@@ -15,6 +15,7 @@
 package tcp
 
 import (
+	"container/heap"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -999,6 +1000,71 @@ func (e *endpoint) notifyProtocolGoroutine(n uint32) {
 	}
 }
 
+func (e *endpoint) Release() {
+	e.LockUser()
+	defer e.UnlockUser()
+	e.releaseLocked()
+}
+
+// +checklocks:e.mu
+func (e *endpoint) releaseLocked() {
+	e.purgeReadQueue()
+	e.purgeWriteQueue()
+	for {
+		s := e.segmentQueue.dequeue()
+		if s == nil {
+			break
+		}
+		s.DecRef()
+	}
+}
+
+// Purging pending rcv segments is only necessary on RST.
+func (e *endpoint) purgePendingRcvQueue() {
+	if e.rcv != nil {
+		for e.rcv.pendingRcvdSegments.Len() > 0 {
+			s := heap.Pop(&e.rcv.pendingRcvdSegments).(*segment)
+			s.DecRef()
+		}
+	}
+}
+
+// +checklocks:e.mu
+func (e *endpoint) purgeReadQueue() {
+	if e.rcv != nil {
+		e.rcvQueueInfo.rcvQueueMu.Lock()
+		defer e.rcvQueueInfo.rcvQueueMu.Unlock()
+		for {
+			s := e.rcvQueueInfo.rcvQueue.Front()
+			if s == nil {
+				break
+			}
+			e.rcvQueueInfo.rcvQueue.Remove(s)
+			s.DecRef()
+		}
+		e.rcvQueueInfo.RcvBufUsed = 0
+	}
+}
+
+// +checklocks:e.mu
+func (e *endpoint) purgeWriteQueue() {
+	if e.snd != nil {
+		e.sndQueueInfo.sndQueueMu.Lock()
+		defer e.sndQueueInfo.sndQueueMu.Unlock()
+		e.snd.updateWriteNext(nil)
+		for {
+			s := e.snd.writeList.Front()
+			if s == nil {
+				break
+			}
+			e.snd.writeList.Remove(s)
+			s.DecRef()
+		}
+		e.sndQueueInfo.SndBufUsed = 0
+		e.sndQueueInfo.SndClosed = true
+	}
+}
+
 // Abort implements stack.TransportEndpoint.Abort.
 func (e *endpoint) Abort() {
 	// The abort notification is not processed synchronously, so no
@@ -1041,6 +1107,9 @@ func (e *endpoint) Close() {
 		return
 	}
 
+	// We always want to purge the read queue, but do so after the checks in
+	// shutdownLocked.
+	defer e.purgeReadQueue()
 	linger := e.SocketOptions().GetLinger()
 	if linger.Enabled && linger.Timeout == 0 {
 		s := e.EndpointState()
@@ -1066,6 +1135,10 @@ func (e *endpoint) Close() {
 	// if we're connected, or stop accepting if we're listening.
 	e.shutdownLocked(tcpip.ShutdownWrite | tcpip.ShutdownRead)
 	e.closeNoShutdownLocked()
+	switch e.EndpointState() {
+	case StateClose, StateError:
+		e.releaseLocked()
+	}
 }
 
 // closeNoShutdown closes the endpoint without doing a full shutdown.
@@ -1187,6 +1260,8 @@ func (e *endpoint) cleanupLocked() {
 		e.route = nil
 	}
 
+	// It's not safe to purge the read queues yet, there could be unread data.
+	e.purgeWriteQueue()
 	e.stack.CompleteTransportEndpointCleanup(e)
 	tcpip.DeleteDanglingEndpoint(e)
 }
@@ -1470,10 +1545,16 @@ func (e *endpoint) commitRead(done int) *segment {
 		// Memory is only considered released when the whole segment has been
 		// read.
 		memDelta += s.segMemSize()
-		s.decRef()
+		s.DecRef()
 		s = e.rcvQueueInfo.rcvQueue.Front()
 	}
-	e.rcvQueueInfo.RcvBufUsed -= done
+	// Concurrent calls to Close() and Read() could cause RcvBufUsed to be
+	// negative because Read() unlocks between startRead() and commitRead(). In
+	// this case the read is allowed, but we refrain from subtracting from
+	// RcvBufUsed since it should already be zero.
+	if e.rcvQueueInfo.RcvBufUsed != 0 {
+		e.rcvQueueInfo.RcvBufUsed -= done
+	}
 
 	if memDelta > 0 {
 		// If the window was small before this read and if the read freed up
@@ -1599,6 +1680,7 @@ func (e *endpoint) queueSegment(p tcpip.Payloader, opts tcpip.WriteOptions) (*se
 	// Add data to the send queue.
 	s := newOutgoingSegment(e.TransportEndpointInfo.ID, e.stack.Clock(), v)
 	e.sndQueueInfo.SndBufUsed += len(v)
+	s.IncRef()
 	e.snd.writeList.PushBack(s)
 
 	return s, len(v), nil
@@ -1616,6 +1698,9 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 	// Return if either we didn't queue anything or if an error occurred while
 	// attempting to queue data.
 	nextSeg, n, err := e.queueSegment(p, opts)
+	if nextSeg != nil {
+		defer nextSeg.DecRef()
+	}
 	if n == 0 || err != nil {
 		return 0, err
 	}
@@ -2892,7 +2977,7 @@ func (e *endpoint) readyToRead(s *segment) {
 	e.rcvQueueInfo.rcvQueueMu.Lock()
 	if s != nil {
 		e.rcvQueueInfo.RcvBufUsed += s.payloadSize()
-		s.incRef()
+		s.IncRef()
 		e.rcvQueueInfo.rcvQueue.PushBack(s)
 	} else {
 		e.rcvQueueInfo.RcvClosed = true

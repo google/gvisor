@@ -43,9 +43,9 @@ func TestSegmentMerge(t *testing.T) {
 	var clock faketime.NullClock
 	id := stack.TransportEndpointID{}
 	seg1 := newOutgoingSegment(id, &clock, buffer.NewView(10))
-	defer seg1.decRef()
+	defer seg1.DecRef()
 	seg2 := newOutgoingSegment(id, &clock, buffer.NewView(20))
-	defer seg2.decRef()
+	defer seg2.DecRef()
 
 	checkSegmentSize(t, "seg1", seg1, segmentSizeWants{
 		DataSize:   10,

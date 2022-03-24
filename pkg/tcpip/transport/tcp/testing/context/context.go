@@ -280,9 +280,17 @@ func NewWithOpts(t *testing.T, opts Options) *Context {
 func (c *Context) Cleanup() {
 	if c.EP != nil {
 		c.EP.Close()
+		c.EP.Release()
 	}
 	c.Stack().Close()
 	c.Stack().Wait()
+	c.linkEP.Close()
+}
+
+// CloseNoWait closes the link and transport endpoints and does not wait for
+// them to finish processing.
+func (c *Context) CloseNoWait() {
+	c.EP.Close()
 	c.linkEP.Close()
 }
 

@@ -423,7 +423,6 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 		// Requeue the segment if the ACK completing the handshake has more info
 		// to be procesed by the newly established endpoint.
 		if (s.flags.Contains(header.TCPFlagFin) || s.data.Size() > 0) && h.ep.enqueueSegment(s) {
-			s.incRef()
 			h.ep.newSegmentWaker.Assert()
 		}
 		return nil
@@ -459,7 +458,7 @@ func (h *handshake) processSegments() tcpip.Error {
 		}
 
 		err := h.handleSegment(s)
-		s.decRef()
+		s.DecRef()
 		if err != nil {
 			return err
 		}
@@ -590,7 +589,7 @@ func (h *handshake) complete() tcpip.Error {
 				for !h.ep.segmentQueue.empty() {
 					s := h.ep.segmentQueue.dequeue()
 					err := h.handleSegment(s)
-					s.decRef()
+					s.DecRef()
 					if err != nil {
 						return err
 					}
@@ -969,7 +968,7 @@ func (e *endpoint) sendData(next *segment) {
 		if next == nil {
 			return
 		}
-		e.snd.writeNext = next
+		e.snd.updateWriteNext(next)
 	}
 
 	// Push out any new packets.
@@ -1003,6 +1002,10 @@ func (e *endpoint) resetConnectionLocked(err tcpip.Error) {
 		}
 		e.sendRaw(buffer.VectorisedView{}, header.TCPFlagAck|header.TCPFlagRst, resetSeqNum, e.rcv.RcvNxt, 0)
 	}
+	// Don't purge read queues here. If there's buffered data, it's still allowed
+	// to be read.
+	e.purgeWriteQueue()
+	e.purgePendingRcvQueue()
 }
 
 // completeWorkerLocked is called by the worker goroutine when it's about to
@@ -1058,7 +1061,6 @@ func (e *endpoint) tryDeliverSegmentFromClosedEndpoint(s *segment) {
 	}
 	if ep == nil {
 		replyWithReset(e.stack, s, stack.DefaultTOS, tcpip.UseDefaultIPv4TTL, tcpip.UseDefaultIPv6HopLimit)
-		s.decRef()
 		return
 	}
 
@@ -1082,6 +1084,7 @@ func (e *endpoint) drainClosingSegmentQueue() {
 		}
 
 		e.tryDeliverSegmentFromClosedEndpoint(s)
+		s.DecRef()
 	}
 }
 
@@ -1150,7 +1153,7 @@ func (e *endpoint) handleSegmentsLocked(fastPath bool) tcpip.Error {
 		}
 
 		cont, err := e.handleSegmentLocked(s)
-		s.decRef()
+		s.DecRef()
 		if err != nil {
 			return err
 		}
@@ -1553,6 +1556,7 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 		e.workerCleanup = true
 		if err != nil {
 			e.resetConnectionLocked(err)
+			e.releaseLocked()
 		}
 	}
 
@@ -1656,15 +1660,13 @@ func (e *endpoint) handleTimeWaitSegments() (extendTimeWait bool, reuseTW func()
 					if EndpointState(tcpEP.State()) == StateListen {
 						reuseTW = func() {
 							if !tcpEP.enqueueSegment(s) {
-								s.decRef()
 								return
 							}
 							tcpEP.newSegmentWaker.Assert()
+							s.DecRef()
 						}
-						// We explicitly do not decRef
-						// the segment as it's still
-						// valid and being reflected to
-						// a listening endpoint.
+						// We explicitly do not DecRef the segment as it's still valid and
+						// being reflected to a listening endpoint.
 						return false, reuseTW
 					}
 				}
@@ -1673,7 +1675,7 @@ func (e *endpoint) handleTimeWaitSegments() (extendTimeWait bool, reuseTW func()
 		if extTW {
 			extendTimeWait = true
 		}
-		s.decRef()
+		s.DecRef()
 	}
 	if checkRequeue && !e.segmentQueue.empty() {
 		e.newSegmentWaker.Assert()
