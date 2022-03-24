@@ -43,6 +43,9 @@ class Cgroup {
   // cgroupfs directory.
   static PosixErrorOr<Cgroup> Create(std::string_view path);
 
+  // Deletes the current cgroup represented by this object.
+  PosixError Delete();
+
   const std::string& Path() const { return cgroup_path_; }
 
   // Creates a child cgroup under this cgroup with the given name.

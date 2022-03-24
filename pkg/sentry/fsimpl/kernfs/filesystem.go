@@ -242,6 +242,15 @@ func checkDeleteLocked(ctx context.Context, rp *vfs.ResolvingPath, d *Dentry) er
 	if parent.vfsd.IsDead() {
 		return linuxerr.ENOENT
 	}
+	if d.vfsd.IsDead() {
+		// This implies a duplicate unlink on an orphaned dentry, where the path
+		// resolution was successful. This is possible when the orphan is
+		// replaced by a new node of the same name (so the path resolution
+		// succeeds), and the orphan is unlinked again through a dirfd using
+		// unlinkat(2) (so the unlink refers to the orphan and not the new
+		// node). See Linux, fs/namei.c:do_rmdir().
+		return linuxerr.EINVAL
+	}
 	if err := parent.inode.CheckPermissions(ctx, rp.Credentials(), vfs.MayWrite|vfs.MayExec); err != nil {
 		return err
 	}

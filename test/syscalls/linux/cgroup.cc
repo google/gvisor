@@ -403,6 +403,26 @@ TEST(Cgroup, MigrateToSubcontainerThread) {
   EXPECT_FALSE(tasks.contains(tid));
 }
 
+// Regression test for b/222278194.
+TEST(Cgroup, DuplicateUnlinkOnDirFD) {
+  SKIP_IF(!CgroupsAvailable());
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child"));
+
+  // Orphan child directory by opening FD to it then deleting it.
+  const FileDescriptor dirfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(child.Path(), 0, 0));
+  ASSERT_NO_ERRNO(child.Delete());
+
+  // Replace orphan with new directory of same name, so path resolution
+  // succeeds.
+  Cgroup child_new = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child"));
+
+  // Attempt to delete orphaned child again through dirfd.
+  EXPECT_THAT(UnlinkAt(dirfd, ".", AT_REMOVEDIR), PosixErrorIs(EINVAL));
+}
+
 TEST(MemoryCgroup, MemoryUsageInBytes) {
   SKIP_IF(!CgroupsAvailable());
 
