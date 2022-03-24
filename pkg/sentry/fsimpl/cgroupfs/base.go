@@ -302,6 +302,9 @@ func (d *cgroupProcsData) Write(ctx context.Context, fd *vfs.FileDescription, sr
 	t := kernel.TaskFromContext(ctx)
 	currPidns := t.ThreadGroup().PIDNamespace()
 	targetTG := currPidns.ThreadGroupWithID(kernel.ThreadID(tgid))
+	if targetTG == nil {
+		return 0, linuxerr.EINVAL
+	}
 	return n, targetTG.MigrateCgroup(d.Cgroup(fd))
 }
 
@@ -341,6 +344,9 @@ func (d *tasksData) Write(ctx context.Context, fd *vfs.FileDescription, src user
 	t := kernel.TaskFromContext(ctx)
 	currPidns := t.ThreadGroup().PIDNamespace()
 	targetTask := currPidns.TaskWithID(kernel.ThreadID(tid))
+	if targetTask == nil {
+		return 0, linuxerr.EINVAL
+	}
 	return n, targetTask.MigrateCgroup(d.Cgroup(fd))
 }
 
@@ -362,7 +368,7 @@ func parseInt64FromString(ctx context.Context, src usermem.IOSequence) (val, len
 	if err != nil {
 		// Note: This also handles zero-len writes if offset is beyond the end
 		// of src, or src is empty.
-		ctx.Warningf("cgroupfs.parseInt64FromString: failed to parse %q: %v", str, err)
+		ctx.Debugf("cgroupfs.parseInt64FromString: failed to parse %q: %v", str, err)
 		return 0, int64(n), linuxerr.EINVAL
 	}
 
