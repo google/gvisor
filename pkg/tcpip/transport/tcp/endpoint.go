@@ -665,7 +665,7 @@ func (e *endpoint) LockUser() {
 		// Try first if the sock is locked then check if it's owned
 		// by another user goroutine if not then we spin, otherwise
 		// we just go to sleep on the Lock() and wait.
-		if !e.mu.TryLock() {
+		if !e.TryLock() {
 			// If socket is owned by the user then just go to sleep
 			// as the lock could be held for a reasonably long time.
 			if atomic.LoadUint32(&e.ownedByUser) == 1 {
@@ -679,7 +679,7 @@ func (e *endpoint) LockUser() {
 			continue
 		}
 		atomic.StoreUint32(&e.ownedByUser, 1)
-		return // +checklocksforce
+		return
 	}
 }
 
@@ -743,11 +743,37 @@ func (e *endpoint) ResumeWork() {
 	e.mu.Unlock()
 }
 
+// AssertLockHeld forces the checklocks analyzer to consider e.mu held. This is
+// used in places where we know that e.mu is held, but checklocks does not,
+// which can happen when creating new locked objects. You must pass the known
+// locked endpoint to this function and it must be the same as the caller
+// endpoint.
+// TODO(b/226403629): Remove this function once checklocks understands local
+// variable locks.
+// +checklocks:locked.mu
+// +checklocksacquire:e.mu
+func (e *endpoint) AssertLockHeld(locked *endpoint) {
+	if e != locked {
+		panic("AssertLockHeld failed: locked endpoint != asserting endpoint")
+	}
+}
+
+// TryLock is a helper that calls TryLock on the endpoint's mutex and
+// adds the necessary checklocks annotations.
+// TODO(b/226403629): Remove this once checklocks understands TryLock.
+// +checklocksacquire:e.mu
+func (e *endpoint) TryLock() bool {
+	if e.mu.TryLock() {
+		return true // +checklocksforce
+	}
+	return false // +checklocksignore
+}
+
 // setEndpointState updates the state of the endpoint to state atomically. This
 // method is unexported as the only place we should update the state is in this
 // package but we allow the state to be read freely without holding e.mu.
 //
-// Precondition: e.mu must be held to call this method.
+// +checklocks:e.mu
 func (e *endpoint) setEndpointState(state EndpointState) {
 	oldstate := EndpointState(atomic.SwapUint32(&e.state, uint32(state)))
 	switch state {
@@ -1043,6 +1069,7 @@ func (e *endpoint) Close() {
 }
 
 // closeNoShutdown closes the endpoint without doing a full shutdown.
+// +checklocks:e.mu
 func (e *endpoint) closeNoShutdownLocked() {
 	// For listening sockets, we always release ports inline so that they
 	// are immediately available for reuse after Close() is called. If also
@@ -1124,6 +1151,7 @@ func (e *endpoint) closePendingAcceptableConnectionsLocked() {
 // cleanupLocked frees all resources associated with the endpoint. It is called
 // after Close() is called and the worker goroutine (if any) is done with its
 // work.
+// +checklocks:e.mu
 func (e *endpoint) cleanupLocked() {
 	// Close all endpoints that might have been accepted by TCP but not by
 	// the client.
@@ -1274,14 +1302,14 @@ func (e *endpoint) SetOwner(owner tcpip.PacketOwner) {
 	e.owner = owner
 }
 
-// Preconditions: e.mu must be held to call this function.
+// +checklocks:e.mu
 func (e *endpoint) hardErrorLocked() tcpip.Error {
 	err := e.hardError
 	e.hardError = nil
 	return err
 }
 
-// Preconditions: e.mu must be held to call this function.
+// +checklocks:e.mu
 func (e *endpoint) lastErrorLocked() tcpip.Error {
 	e.lastErrorMu.Lock()
 	defer e.lastErrorMu.Unlock()
@@ -1300,8 +1328,9 @@ func (e *endpoint) LastError() tcpip.Error {
 	return e.lastErrorLocked()
 }
 
-// LastErrorLocked reads and clears lastError with e.mu held.
+// LastErrorLocked reads and clears lastError.
 // Only to be used in tests.
+// +checklocks:e.mu
 func (e *endpoint) LastErrorLocked() tcpip.Error {
 	return e.lastErrorLocked()
 }
@@ -1376,7 +1405,7 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 // startRead checks that endpoint is in a readable state, and return the
 // inclusive range of segments that can be read.
 //
-// Precondition: e.rcvReadMu must be held.
+// +checklocks:e.rcvReadMu
 func (e *endpoint) startRead() (first, last *segment, err tcpip.Error) {
 	e.LockUser()
 	defer e.UnlockUser()
@@ -1427,7 +1456,7 @@ func (e *endpoint) startRead() (first, last *segment, err tcpip.Error) {
 // do this per segment read, hence this method conveniently returns the next
 // segment to read while holding the lock.
 //
-// Precondition: e.rcvReadMu must be held.
+// +checklocks:e.rcvReadMu
 func (e *endpoint) commitRead(done int) *segment {
 	e.LockUser()
 	defer e.UnlockUser()
@@ -1463,7 +1492,8 @@ func (e *endpoint) commitRead(done int) *segment {
 // and also returns the number of bytes that can be written at this
 // moment. If the endpoint is not writable then it returns an error
 // indicating the reason why it's not writable.
-// Caller must hold e.mu and e.sndQueueMu
+// +checklocks:e.mu
+// +checklocks:e.sndQueueInfo.sndQueueMu
 func (e *endpoint) isEndpointWritableLocked() (int, tcpip.Error) {
 	// The endpoint cannot be written to if it's not connected.
 	switch s := e.EndpointState(); {
@@ -1596,7 +1626,8 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 
 // selectWindowLocked returns the new window without checking for shrinking or scaling
 // applied.
-// Precondition: e.mu and e.rcvQueueMu must be held.
+// +checklocks:e.mu
+// +checklocks:e.rcvQueueInfo.rcvQueueMu
 func (e *endpoint) selectWindowLocked(rcvBufSize int) (wnd seqnum.Size) {
 	wndFromAvailable := wndFromSpace(e.receiveBufferAvailableLocked(rcvBufSize))
 	maxWindow := wndFromSpace(rcvBufSize)
@@ -1619,6 +1650,7 @@ func (e *endpoint) selectWindowLocked(rcvBufSize int) (wnd seqnum.Size) {
 }
 
 // selectWindow invokes selectWindowLocked after acquiring e.rcvQueueMu.
+// +checklocks:e.mu
 func (e *endpoint) selectWindow() (wnd seqnum.Size) {
 	e.rcvQueueInfo.rcvQueueMu.Lock()
 	wnd = e.selectWindowLocked(int(e.ops.GetReceiveBufferSize()))
@@ -1640,7 +1672,8 @@ func (e *endpoint) selectWindow() (wnd seqnum.Size) {
 // above will be true if the new window is >= ACK threshold and false
 // otherwise.
 //
-// Precondition: e.mu and e.rcvQueueMu must be held.
+// +checklocks:e.mu
+// +checklocks:e.rcvQueueInfo.rcvQueueMu
 func (e *endpoint) windowCrossedACKThresholdLocked(deltaBefore int, rcvBufSize int) (crossed bool, above bool) {
 	newAvail := int(e.selectWindowLocked(rcvBufSize))
 	oldAvail := newAvail - deltaBefore
@@ -2104,6 +2137,7 @@ func (e *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
 
 // checkV4MappedLocked determines the effective network protocol and converts
 // addr to its canonical form.
+// +checklocks:e.mu
 func (e *endpoint) checkV4MappedLocked(addr tcpip.FullAddress) (tcpip.FullAddress, tcpip.NetworkProtocolNumber, tcpip.Error) {
 	unwrapped, netProto, err := e.TransportEndpointInfo.AddrNetProtoLocked(addr, e.ops.GetV6Only())
 	if err != nil {
@@ -2375,6 +2409,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) tcp
 			}
 		}
 		e.segmentQueue.mu.Unlock()
+		e.snd.ep.AssertLockHeld(e)
 		e.snd.updateMaxPayloadSize(int(e.route.MTU()), 0)
 		e.setEndpointState(StateEstablished)
 		// Set the new auto tuned send buffer size after entering
@@ -2421,6 +2456,7 @@ func (e *endpoint) Shutdown(flags tcpip.ShutdownFlags) tcpip.Error {
 	return e.shutdownLocked(flags)
 }
 
+// +checklocks:e.mu
 func (e *endpoint) shutdownLocked(flags tcpip.ShutdownFlags) tcpip.Error {
 	e.shutdownFlags |= flags
 	switch {
@@ -2635,6 +2671,7 @@ func (e *endpoint) Bind(addr tcpip.FullAddress) (err tcpip.Error) {
 	return e.bindLocked(addr)
 }
 
+// +checklocks:e.mu
 func (e *endpoint) bindLocked(addr tcpip.FullAddress) (err tcpip.Error) {
 	// Don't allow binding once endpoint is not in the initial state
 	// anymore. This is because once the endpoint goes into a connected or
@@ -2866,7 +2903,7 @@ func (e *endpoint) readyToRead(s *segment) {
 
 // receiveBufferAvailableLocked calculates how many bytes are still available
 // in the receive buffer.
-// rcvQueueMu must be held when this function is called.
+// +checklocks:e.rcvQueueInfo.rcvQueueMu
 func (e *endpoint) receiveBufferAvailableLocked(rcvBufSize int) int {
 	// We may use more bytes than the buffer size when the receive buffer
 	// shrinks.
@@ -2994,7 +3031,7 @@ func (e *endpoint) maxOptionSize() (size int) {
 // completeStateLocked makes a full copy of the endpoint and returns it. This is
 // used before invoking the probe.
 //
-// Precondition: e.mu must be held.
+// +checklocks:e.mu
 func (e *endpoint) completeStateLocked() stack.TCPEndpointState {
 	s := stack.TCPEndpointState{
 		TCPEndpointStateInner: e.TCPEndpointStateInner,

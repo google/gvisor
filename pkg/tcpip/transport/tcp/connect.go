@@ -109,13 +109,16 @@ type handshake struct {
 	sampleRTTWithTSOnly bool
 }
 
-func (e *endpoint) newHandshake() *handshake {
-	h := &handshake{
+// +checklocks:e.mu
+// +checklocksacquire:h.ep.mu
+func (e *endpoint) newHandshake() (h *handshake) {
+	h = &handshake{
 		ep:          e,
 		active:      true,
 		rcvWnd:      seqnum.Size(e.initialReceiveWindow()),
 		rcvWndScale: e.rcvWndScaleForHandshake(),
 	}
+	h.ep.AssertLockHeld(e)
 	h.resetState()
 	// Store reference to handshake state in endpoint.
 	e.h = h
@@ -124,8 +127,10 @@ func (e *endpoint) newHandshake() *handshake {
 	return h
 }
 
-func (e *endpoint) newPassiveHandshake(isn, irs seqnum.Value, opts header.TCPSynOptions, deferAccept time.Duration) *handshake {
-	h := e.newHandshake()
+// +checklocks:e.mu
+// +checklocksacquire:h.ep.mu
+func (e *endpoint) newPassiveHandshake(isn, irs seqnum.Value, opts header.TCPSynOptions, deferAccept time.Duration) (h *handshake) {
+	h = e.newHandshake()
 	h.resetToSynRcvd(isn, irs, opts, deferAccept)
 	return h
 }
@@ -197,6 +202,7 @@ func (h *handshake) effectiveRcvWndScale() uint8 {
 
 // resetToSynRcvd resets the state of the handshake object to the SYN-RCVD
 // state.
+// +checklocks:h.ep.mu
 func (h *handshake) resetToSynRcvd(iss seqnum.Value, irs seqnum.Value, opts header.TCPSynOptions, deferAccept time.Duration) {
 	h.active = false
 	h.state = handshakeSynRcvd
@@ -227,6 +233,7 @@ func (h *handshake) checkAck(s *segment) bool {
 
 // synSentState handles a segment received when the TCP 3-way handshake is in
 // the SYN-SENT state.
+// +checklocks:h.ep.mu
 func (h *handshake) synSentState(s *segment) tcpip.Error {
 	// RFC 793, page 37, states that in the SYN-SENT state, a reset is
 	// acceptable if the ack field acknowledges the SYN.
@@ -314,6 +321,7 @@ func (h *handshake) synSentState(s *segment) tcpip.Error {
 
 // synRcvdState handles a segment received when the TCP 3-way handshake is in
 // the SYN-RCVD state.
+// +checklocks:h.ep.mu
 func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 	if s.flags.Contains(header.TCPFlagRst) {
 		// RFC 793, page 37, states that in the SYN-RCVD state, a reset
@@ -424,6 +432,7 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 	return nil
 }
 
+// +checklocks:h.ep.mu
 func (h *handshake) handleSegment(s *segment) tcpip.Error {
 	h.sndWnd = s.window
 	if !s.flags.Contains(header.TCPFlagSyn) && h.sndWndScale > 0 {
@@ -441,6 +450,7 @@ func (h *handshake) handleSegment(s *segment) tcpip.Error {
 
 // processSegments goes through the segment queue and processes up to
 // maxSegmentsPerWake (if they're available).
+// +checklocks:h.ep.mu
 func (h *handshake) processSegments() tcpip.Error {
 	for i := 0; i < maxSegmentsPerWake; i++ {
 		s := h.ep.segmentQueue.dequeue()
@@ -615,6 +625,7 @@ func (h *handshake) complete() tcpip.Error {
 // transitionToStateEstablisedLocked transitions the endpoint of the handshake
 // to an established state given the last segment received from peer. It also
 // initializes sender/receiver.
+// +checklocks:h.ep.mu
 func (h *handshake) transitionToStateEstablishedLocked(s *segment) {
 	// Transfer handshake state to TCP connection. We disable
 	// receive window scaling if the peer doesn't support it
@@ -950,7 +961,8 @@ func (e *endpoint) sendRaw(data buffer.VectorisedView, flags header.TCPFlags, se
 	return err
 }
 
-// Precondition: e.mu must be locked.
+// +checklocks:e.mu
+// +checklocksalias:e.snd.ep.mu=e.mu
 func (e *endpoint) sendData(next *segment) {
 	// Initialize the next segment to write if it's currently nil.
 	if e.snd.writeNext == nil {
@@ -968,6 +980,7 @@ func (e *endpoint) sendData(next *segment) {
 // error code and sends a RST if and only if the error is not ErrConnectionReset
 // indicating that the connection is being reset due to receiving a RST. This
 // method must only be called from the protocol goroutine.
+// +checklocks:e.mu
 func (e *endpoint) resetConnectionLocked(err tcpip.Error) {
 	// Only send a reset if the connection is being aborted for a reason
 	// other than receiving a reset.
@@ -994,6 +1007,7 @@ func (e *endpoint) resetConnectionLocked(err tcpip.Error) {
 
 // completeWorkerLocked is called by the worker goroutine when it's about to
 // exit.
+// +checklocks:e.mu
 func (e *endpoint) completeWorkerLocked() {
 	// Worker is terminating(either due to moving to
 	// CLOSED or ERROR state, ensure we release all
@@ -1010,6 +1024,7 @@ func (e *endpoint) completeWorkerLocked() {
 // StateClose. This will ensure that no packet will be
 // delivered to this endpoint from the demuxer when the endpoint
 // is transitioned to StateClose.
+// +checklocks:e.mu
 func (e *endpoint) transitionToStateCloseLocked() {
 	s := e.EndpointState()
 	if s == StateClose {
@@ -1070,6 +1085,7 @@ func (e *endpoint) drainClosingSegmentQueue() {
 	}
 }
 
+// +checklocks:e.mu
 func (e *endpoint) handleReset(s *segment) (ok bool, err tcpip.Error) {
 	if e.rcv.acceptable(s.sequenceNumber, 0) {
 		// RFC 793, page 37 states that "in all states
@@ -1119,7 +1135,8 @@ func (e *endpoint) handleReset(s *segment) (ok bool, err tcpip.Error) {
 
 // handleSegments processes all inbound segments.
 //
-// Precondition: e.mu must be held.
+// +checklocks:e.mu
+// +checklocksalias:e.snd.ep.mu=e.mu
 func (e *endpoint) handleSegmentsLocked(fastPath bool) tcpip.Error {
 	checkRequeue := true
 	for i := 0; i < maxSegmentsPerWake; i++ {
@@ -1159,7 +1176,7 @@ func (e *endpoint) handleSegmentsLocked(fastPath bool) tcpip.Error {
 	return nil
 }
 
-// Precondition: e.mu must be held.
+// +checklocks:e.mu
 func (e *endpoint) probeSegmentLocked() {
 	if fn := e.probe; fn != nil {
 		fn(e.completeStateLocked())
@@ -1169,7 +1186,9 @@ func (e *endpoint) probeSegmentLocked() {
 // handleSegment handles a given segment and notifies the worker goroutine if
 // if the connection should be terminated.
 //
-// Precondition: e.mu must be held.
+// +checklocks:e.mu
+// +checklocksalias:e.rcv.ep.mu=e.mu
+// +checklocksalias:e.snd.ep.mu=e.mu
 func (e *endpoint) handleSegmentLocked(s *segment) (cont bool, err tcpip.Error) {
 	// Invoke the tcp probe if installed. The tcp probe function will update
 	// the TCPEndpointState after the segment is processed.
@@ -1243,6 +1262,8 @@ func (e *endpoint) handleSegmentLocked(s *segment) (cont bool, err tcpip.Error) 
 // keepaliveTimerExpired is called when the keepaliveTimer fires. We send TCP
 // keepalive packets periodically when the connection is idle. If we don't hear
 // from the other side after a number of tries, we terminate the connection.
+// +checklocks:e.mu
+// +checklocksalias:e.snd.ep.mu=e.mu
 func (e *endpoint) keepaliveTimerExpired() tcpip.Error {
 	userTimeout := e.userTimeout
 
@@ -1334,6 +1355,9 @@ func (e *endpoint) protocolMainLoopDone(closeTimer tcpip.Timer) {
 // handleWakeup handles a wakeup event while connected.
 //
 // +checklocks:e.mu
+// +checklocksalias:e.snd.ep.mu=e.mu
+// +checklocksalias:e.rcv.ep.mu=e.mu
+// +checklocksalias:e.snd.rc.snd.ep.mu=e.mu
 func (e *endpoint) handleWakeup(w, closeWaker *sleep.Waker, closeTimer *tcpip.Timer) tcpip.Error {
 	switch w {
 	case &e.sndQueueInfo.sndWaker:
@@ -1603,6 +1627,8 @@ loop:
 
 // handleTimeWaitSegments processes segments received during TIME_WAIT
 // state.
+// +checklocks:e.mu
+// +checklocksalias:e.rcv.ep.mu=e.mu
 func (e *endpoint) handleTimeWaitSegments() (extendTimeWait bool, reuseTW func()) {
 	checkRequeue := true
 	for i := 0; i < maxSegmentsPerWake; i++ {
