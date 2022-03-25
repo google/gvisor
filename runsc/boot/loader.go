@@ -515,6 +515,9 @@ func (l *Loader) Destroy() {
 	// save/restore.
 	l.k.Release()
 
+	// Release any dangling tcp connections.
+	tcpip.ReleaseDanglingEndpoints()
+
 	// In the success case, stdioFDs and goferFDs will only contain
 	// released/closed FDs that ownership has been passed over to host FDs and
 	// gofer sessions. Close them here in case of failure.

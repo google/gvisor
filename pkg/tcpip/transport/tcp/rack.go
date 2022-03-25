@@ -197,7 +197,7 @@ func (s *sender) probeTimerExpired() tcpip.Error {
 		dataSent = s.maybeSendSegment(s.writeNext, int(s.ep.scoreboard.SMSS()), s.SndUna.Add(s.SndWnd))
 		if dataSent {
 			s.Outstanding += s.pCount(s.writeNext, s.MaxPayloadSize)
-			s.writeNext = s.writeNext.Next()
+			s.updateWriteNext(s.writeNext.Next())
 		}
 	}
 

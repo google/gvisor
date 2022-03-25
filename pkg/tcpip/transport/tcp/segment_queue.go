@@ -60,6 +60,7 @@ func (q *segmentQueue) enqueue(s *segment) bool {
 	allow := (used <= int(bufSz) || s.payloadSize() == 0) && !q.frozen
 
 	if allow {
+		s.IncRef()
 		q.list.PushBack(s)
 		// Set the owner now that the endpoint owns the segment.
 		s.setOwner(q.ep, recvQ)

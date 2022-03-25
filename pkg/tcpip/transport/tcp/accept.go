@@ -715,7 +715,6 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		// Requeue the segment if the ACK completing the handshake has more info
 		// to be procesed by the newly established endpoint.
 		if (s.flags.Contains(header.TCPFlagFin) || s.data.Size() > 0) && n.enqueueSegment(s) {
-			s.incRef()
 			n.newSegmentWaker.Assert()
 		}
 
@@ -780,7 +779,7 @@ func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) {
 					// TODO(gvisor.dev/issue/4690): Better handle errors instead of
 					// silently dropping.
 					_ = e.handleListenSegment(ctx, s)
-					s.decRef()
+					s.DecRef()
 				}
 				close(e.drainDone)
 				e.mu.Unlock()
@@ -801,7 +800,7 @@ func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) {
 				// TODO(gvisor.dev/issue/4690): Better handle errors instead of
 				// silently dropping.
 				_ = e.handleListenSegment(ctx, s)
-				s.decRef()
+				s.DecRef()
 			}
 
 			// If the queue is not empty, make sure we'll wake up

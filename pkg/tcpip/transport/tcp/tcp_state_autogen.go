@@ -682,7 +682,7 @@ func (s *segment) StateTypeName() string {
 func (s *segment) StateFields() []string {
 	return []string{
 		"segmentEntry",
-		"refCnt",
+		"segmentRefs",
 		"ep",
 		"qFlags",
 		"srcAddr",
@@ -721,7 +721,7 @@ func (s *segment) StateSave(stateSinkObject state.Sink) {
 	optionsValue = s.saveOptions()
 	stateSinkObject.SaveValue(17, optionsValue)
 	stateSinkObject.Save(0, &s.segmentEntry)
-	stateSinkObject.Save(1, &s.refCnt)
+	stateSinkObject.Save(1, &s.segmentRefs)
 	stateSinkObject.Save(2, &s.ep)
 	stateSinkObject.Save(3, &s.qFlags)
 	stateSinkObject.Save(4, &s.srcAddr)
@@ -750,7 +750,7 @@ func (s *segment) afterLoad() {}
 // +checklocksignore
 func (s *segment) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.segmentEntry)
-	stateSourceObject.Load(1, &s.refCnt)
+	stateSourceObject.Load(1, &s.segmentRefs)
 	stateSourceObject.Load(2, &s.ep)
 	stateSourceObject.Load(3, &s.qFlags)
 	stateSourceObject.Load(4, &s.srcAddr)
@@ -1014,6 +1014,30 @@ func (e *segmentEntry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &e.prev)
 }
 
+func (r *segmentRefs) StateTypeName() string {
+	return "pkg/tcpip/transport/tcp.segmentRefs"
+}
+
+func (r *segmentRefs) StateFields() []string {
+	return []string{
+		"refCount",
+	}
+}
+
+func (r *segmentRefs) beforeSave() {}
+
+// +checklocksignore
+func (r *segmentRefs) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.refCount)
+}
+
+// +checklocksignore
+func (r *segmentRefs) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(r.afterLoad)
+}
+
 func init() {
 	state.Register((*acceptQueue)(nil))
 	state.Register((*cubicState)(nil))
@@ -1039,4 +1063,5 @@ func init() {
 	state.Register((*endpointEntry)(nil))
 	state.Register((*segmentList)(nil))
 	state.Register((*segmentEntry)(nil))
+	state.Register((*segmentRefs)(nil))
 }

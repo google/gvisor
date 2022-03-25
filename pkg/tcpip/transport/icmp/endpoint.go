@@ -767,6 +767,9 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 // HandleError implements stack.TransportEndpoint.
 func (*endpoint) HandleError(stack.TransportError, *stack.PacketBuffer) {}
 
+// Release implements stack.TransportEndpoint.
+func (*endpoint) Release() {}
+
 // State implements tcpip.Endpoint.State. The ICMP endpoint currently doesn't
 // expose internal socket state.
 func (e *endpoint) State() uint32 {

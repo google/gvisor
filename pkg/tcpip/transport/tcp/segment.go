@@ -16,7 +16,6 @@ package tcp
 
 import (
 	"fmt"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -41,7 +40,8 @@ const (
 // +stateify savable
 type segment struct {
 	segmentEntry
-	refCnt int32
+	segmentRefs
+
 	ep     *endpoint
 	qFlags queueFlags
 	id     stack.TransportEndpointID `state:"manual"`
@@ -90,13 +90,13 @@ type segment struct {
 func newIncomingSegment(id stack.TransportEndpointID, clock tcpip.Clock, pkt *stack.PacketBuffer) *segment {
 	netHdr := pkt.Network()
 	s := &segment{
-		refCnt:   1,
 		id:       id,
 		srcAddr:  netHdr.SourceAddress(),
 		dstAddr:  netHdr.DestinationAddress(),
 		netProto: pkt.NetworkProtocolNumber,
 		nicID:    pkt.NICID,
 	}
+	s.InitRefs()
 	s.data = pkt.Data().ExtractVV().Clone(s.views[:])
 	s.hdr = header.TCP(pkt.TransportHeader().View())
 	s.rcvdTime = clock.NowMonotonic()
@@ -106,9 +106,9 @@ func newIncomingSegment(id stack.TransportEndpointID, clock tcpip.Clock, pkt *st
 
 func newOutgoingSegment(id stack.TransportEndpointID, clock tcpip.Clock, v buffer.View) *segment {
 	s := &segment{
-		refCnt: 1,
-		id:     id,
+		id: id,
 	}
+	s.InitRefs()
 	s.rcvdTime = clock.NowMonotonic()
 	if len(v) != 0 {
 		s.views[0] = v
@@ -120,7 +120,6 @@ func newOutgoingSegment(id stack.TransportEndpointID, clock tcpip.Clock, v buffe
 
 func (s *segment) clone() *segment {
 	t := &segment{
-		refCnt:         1,
 		id:             s.id,
 		sequenceNumber: s.sequenceNumber,
 		ackNumber:      s.ackNumber,
@@ -135,6 +134,7 @@ func (s *segment) clone() *segment {
 		qFlags:         s.qFlags,
 		dataMemSize:    s.dataMemSize,
 	}
+	t.InitRefs()
 	t.data = s.data.Clone(t.views[:])
 	return t
 }
@@ -164,8 +164,8 @@ func (s *segment) setOwner(ep *endpoint, qFlags queueFlags) {
 	s.qFlags = qFlags
 }
 
-func (s *segment) decRef() {
-	if atomic.AddInt32(&s.refCnt, -1) == 0 {
+func (s *segment) DecRef() {
+	s.segmentRefs.DecRef(func() {
 		if s.ep != nil {
 			switch s.qFlags {
 			case recvQ:
@@ -176,11 +176,7 @@ func (s *segment) decRef() {
 				panic(fmt.Sprintf("unexpected queue flag %b set for segment", s.qFlags))
 			}
 		}
-	}
-}
-
-func (s *segment) incRef() {
-	atomic.AddInt32(&s.refCnt, 1)
+	})
 }
 
 // logicalLen is the segment length in the sequence number space. It's defined
