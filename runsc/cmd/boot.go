@@ -16,6 +16,7 @@ package cmd
 
 import (
 	"context"
+	"io/ioutil"
 	"os"
 	"runtime/debug"
 	"strings"
@@ -107,6 +108,10 @@ type Boot struct {
 	// terminates. This flag is set when the command execve's itself because
 	// parent death signal doesn't propagate through execve when uid/gid changes.
 	attached bool
+
+	// productName is the value to show in
+	// /sys/devices/virtual/dmi/id/product_name.
+	productName string
 }
 
 // Name implements subcommands.Command.Name.
@@ -127,16 +132,20 @@ func (*Boot) Usage() string {
 // SetFlags implements subcommands.Command.SetFlags.
 func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&b.bundleDir, "bundle", "", "required path to the root of the bundle directory")
-	f.IntVar(&b.specFD, "spec-fd", -1, "required fd with the container spec")
-	f.IntVar(&b.controllerFD, "controller-fd", -1, "required FD of a stream socket for the control server that must be donated to this process")
-	f.IntVar(&b.deviceFD, "device-fd", -1, "FD for the platform device file")
-	f.Var(&b.ioFDs, "io-fds", "list of FDs to connect 9P clients. They must follow this order: root first, then mounts as defined in the spec")
-	f.Var(&b.stdioFDs, "stdio-fds", "list of FDs containing sandbox stdin, stdout, and stderr in that order")
 	f.BoolVar(&b.applyCaps, "apply-caps", false, "if true, apply capabilities defined in the spec to the process")
 	f.BoolVar(&b.setUpRoot, "setup-root", false, "if true, set up an empty root for the process")
 	f.BoolVar(&b.pidns, "pidns", false, "if true, the sandbox is in its own PID namespace")
 	f.IntVar(&b.cpuNum, "cpu-num", 0, "number of CPUs to create inside the sandbox")
 	f.Uint64Var(&b.totalMem, "total-memory", 0, "sets the initial amount of total memory to report back to the container")
+	f.BoolVar(&b.attached, "attached", false, "if attached is true, kills the sandbox process when the parent process terminates")
+	f.StringVar(&b.productName, "product-name", "", "value to show in /sys/devices/virtual/dmi/id/product_name")
+
+	// Open FDs that are donated to the sandbox.
+	f.IntVar(&b.specFD, "spec-fd", -1, "required fd with the container spec")
+	f.IntVar(&b.controllerFD, "controller-fd", -1, "required FD of a stream socket for the control server that must be donated to this process")
+	f.IntVar(&b.deviceFD, "device-fd", -1, "FD for the platform device file")
+	f.Var(&b.ioFDs, "io-fds", "list of FDs to connect 9P clients. They must follow this order: root first, then mounts as defined in the spec")
+	f.Var(&b.stdioFDs, "stdio-fds", "list of FDs containing sandbox stdin, stdout, and stderr in that order")
 	f.IntVar(&b.userLogFD, "user-log-fd", 0, "file descriptor to write user logs to. 0 means no logging.")
 	f.IntVar(&b.startSyncFD, "start-sync-fd", -1, "required FD to used to synchronize sandbox startup")
 	f.IntVar(&b.mountsFD, "mounts-fd", -1, "mountsFD is the file descriptor to read list of mounts after they have been resolved (direct paths, no symlinks).")
@@ -145,7 +154,6 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&b.profileHeapFD, "profile-heap-fd", -1, "file descriptor to write heap profile to. -1 disables profiling.")
 	f.IntVar(&b.profileMutexFD, "profile-mutex-fd", -1, "file descriptor to write mutex profile to. -1 disables profiling.")
 	f.IntVar(&b.traceFD, "trace-fd", -1, "file descriptor to write Go execution trace to. -1 disables tracing.")
-	f.BoolVar(&b.attached, "attached", false, "if attached is true, kills the sandbox process when the parent process terminates")
 }
 
 // Execute implements subcommands.Command.Execute.  It starts a sandbox in a
@@ -160,6 +168,16 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 
 	// Set traceback level
 	debug.SetTraceback(conf.Traceback)
+
+	if len(b.productName) == 0 {
+		// Do this before chroot takes effect, otherwise we can't read /sys.
+		if product, err := ioutil.ReadFile("/sys/devices/virtual/dmi/id/product_name"); err != nil {
+			log.Warningf("Not setting product_name: %v", err)
+		} else {
+			b.productName = strings.TrimSpace(string(product))
+			log.Infof("Setting product_name: %q", b.productName)
+		}
+	}
 
 	if b.attached {
 		// Ensure this process is killed after parent process terminates when
@@ -177,7 +195,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 
 		if !b.applyCaps && !conf.Rootless {
 			// Remove --apply-caps arg to call myself. It has already been done.
-			args := prepareArgs(b.attached, "setup-root")
+			args := b.prepareArgs("setup-root")
 
 			// Note that we've already read the spec from the spec FD, and
 			// we will read it again after the exec call. This works
@@ -217,7 +235,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 
 		// Remove --apply-caps and --setup-root arg to call myself. Both have
 		// already been done.
-		args := prepareArgs(b.attached, "setup-root", "apply-caps")
+		args := b.prepareArgs("setup-root", "apply-caps")
 
 		// Note that we've already read the spec from the spec FD, and
 		// we will read it again after the exec call. This works
@@ -271,6 +289,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 		ProfileHeapFD:  b.profileHeapFD,
 		ProfileMutexFD: b.profileMutexFD,
 		TraceFD:        b.traceFD,
+		ProductName:    b.productName,
 	}
 	l, err := boot.New(bootArgs)
 	if err != nil {
@@ -308,7 +327,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	return subcommands.ExitSuccess
 }
 
-func prepareArgs(attached bool, exclude ...string) []string {
+func (b *Boot) prepareArgs(exclude ...string) []string {
 	var args []string
 	for _, arg := range os.Args {
 		for _, excl := range exclude {
@@ -317,10 +336,17 @@ func prepareArgs(attached bool, exclude ...string) []string {
 			}
 		}
 		args = append(args, arg)
-		if attached && arg == "boot" {
-			// Strategicaly place "--attached" after the command. This is needed
-			// to ensure the new process is killed when the parent process terminates.
-			args = append(args, "--attached")
+		// Strategically add parameters after the command and before the container
+		// ID at the end.
+		if arg == "boot" {
+			if b.attached {
+				// This is needed to ensure the new process is killed when the parent
+				// process terminates.
+				args = append(args, "--attached")
+			}
+			if len(b.productName) > 0 {
+				args = append(args, "--product-name", b.productName)
+			}
 		}
 	skip:
 	}

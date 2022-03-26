@@ -161,6 +161,7 @@ dev: $(RUNTIME_BIN) ## Installs a set of local runtimes. Requires sudo.
 	@$(call configure_noreload,$(RUNTIME)-fuse-d,--net-raw --debug --strace --log-packets --fuse)
 	@$(call configure_noreload,$(RUNTIME)-cgroup-d,--net-raw --debug --strace --log-packets --cgroupfs)
 	@$(call configure_noreload,$(RUNTIME)-lisafs-d,--net-raw --debug --strace --log-packets --lisafs)
+	@$(call configure_noreload,$(RUNTIME)-systemd-d,--net-raw --debug --strace --log-packets --systemd-cgroup)
 	@$(call reload_docker)
 .PHONY: dev
 
@@ -236,8 +237,8 @@ packetimpact-tests:
 	@$(call test_runtime,$(RUNTIME),--test_timeout=1800 //test/runtimes:$*)
 
 %-runtime-tests_lisafs: load-runtimes_% $(RUNTIME_BIN)
-	@$(call install_runtime,$(RUNTIME), --lisafs)
-	@$(call test_runtime,$(RUNTIME),--test_timeout=10800 //test/runtimes:$*)
+	@$(call install_runtime,$(RUNTIME), --lisafs --watchdog-action=panic)
+	@$(call test_runtime,$(RUNTIME),--test_timeout=1800 //test/runtimes:$*)
 
 do-tests: $(RUNTIME_BIN)
 	@$(RUNTIME_BIN) --rootless do true
@@ -367,14 +368,13 @@ init-benchmark-table: ## Initializes a BigQuery table with the benchmark schema.
 	@$(call run,//tools/parsers:parser,init --project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE))
 .PHONY: init-benchmark-table
 
-# $(1) is the runtime name, $(2) are the arguments.
+# $(1) is the runtime name.
 run_benchmark = \
-  ($(call header,BENCHMARK $(1) $(2)); \
+  ($(call header,BENCHMARK $(1)); \
   set -euo pipefail; \
   export T=$$(mktemp --tmpdir logs.$(1).XXXXXX); \
   if test "$(1)" = "runc"; then $(call sudo,$(BENCHMARKS_TARGETS),-runtime=$(1) $(BENCHMARKS_ARGS)) | tee $$T; fi; \
-  if test "$(1)" != "runc"; then $(call install_runtime,$(1),--profile $(2)); \
-  $(call sudo,$(BENCHMARKS_TARGETS),-runtime=$(1) $(BENCHMARKS_ARGS) $(BENCHMARKS_PROFILE)) | tee $$T; fi; \
+  if test "$(1)" != "runc"; then $(call sudo,$(BENCHMARKS_TARGETS),-runtime=$(1) $(BENCHMARKS_ARGS) $(BENCHMARKS_PROFILE)) | tee $$T; fi; \
   if test "$(BENCHMARKS_UPLOAD)" = "true"; then \
     $(call run,tools/parsers:parser,parse --debug --file=$$T --runtime=$(1) --suite_name=$(BENCHMARKS_SUITE) --project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE) --official=$(BENCHMARKS_OFFICIAL)); \
   fi; \
@@ -383,12 +383,13 @@ run_benchmark = \
 benchmark-platforms: load-benchmarks $(RUNTIME_BIN) ## Runs benchmarks for runc and all platforms.
 	@set -xe; for PLATFORM in $$($(RUNTIME_BIN) help platforms); do \
 	  export PLATFORM; \
-	  $(call run_benchmark,$${PLATFORM},--platform=$${PLATFORM}); \
+	  $(call install_runtime,$${PLATFORM},--platform $${PLATFORM}); \
+	  $(call run_benchmark,$${PLATFORM}); \
 	done
 	@$(call run_benchmark,runc)
 .PHONY: benchmark-platforms
 
-run-benchmark: load-benchmarks $(RUNTIME_BIN) ## Runs single benchmark and optionally sends data to BigQuery.
+run-benchmark: load-benchmarks ## Runs single benchmark and optionally sends data to BigQuery.
 	@$(call run_benchmark,$(RUNTIME))
 .PHONY: run-benchmark
 

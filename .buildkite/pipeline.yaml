@@ -205,49 +205,49 @@ steps:
   # Runtime tests.
   - <<: *common
     label: ":php: PHP runtime tests"
-    command: make php7.3.6-runtime-tests
+    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} php7.3.6-runtime-tests
     parallelism: 10
   - <<: *common
     label: ":java: Java runtime tests"
-    command: make java11-runtime-tests
+    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} java11-runtime-tests
     parallelism: 40
   - <<: *common
     label: ":golang: Go runtime tests"
-    command: make go1.12-runtime-tests
+    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} go1.12-runtime-tests
     parallelism: 10
   - <<: *common
     label: ":node: NodeJS runtime tests"
-    command: make nodejs12.4.0-runtime-tests
+    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} nodejs12.4.0-runtime-tests
     parallelism: 10
   - <<: *common
     label: ":python: Python runtime tests"
-    command: make python3.7.3-runtime-tests
+    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} python3.7.3-runtime-tests
     parallelism: 10
 
   # Runtime tests (LISAFS).
   - <<: *common
     label: ":php: PHP runtime tests (LISAFS)"
-    command: make php7.3.6-runtime-tests_lisafs
+    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} php7.3.6-runtime-tests_lisafs
     parallelism: 10
     if: build.message =~ /lisafs/ || build.branch == "master"
   - <<: *common
     label: ":java: Java runtime tests (LISAFS)"
-    command: make java11-runtime-tests_lisafs
+    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} java11-runtime-tests_lisafs
     parallelism: 40
     if: build.message =~ /lisafs/ || build.branch == "master"
   - <<: *common
     label: ":golang: Go runtime tests (LISAFS)"
-    command: make go1.12-runtime-tests_lisafs
+    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} go1.12-runtime-tests_lisafs
     parallelism: 10
     if: build.message =~ /lisafs/ || build.branch == "master"
   - <<: *common
     label: ":node: NodeJS runtime tests (LISAFS)"
-    command: make nodejs12.4.0-runtime-tests_lisafs
+    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} nodejs12.4.0-runtime-tests_lisafs
     parallelism: 10
     if: build.message =~ /lisafs/ || build.branch == "master"
   - <<: *common
     label: ":python: Python runtime tests (LISAFS)"
-    command: make python3.7.3-runtime-tests_lisafs
+    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} python3.7.3-runtime-tests_lisafs
     parallelism: 10
     if: build.message =~ /lisafs/ || build.branch == "master"
 
@@ -264,20 +264,20 @@ steps:
   # Run basic benchmarks smoke tests (no upload).
   - <<: *common
     label: ":fire: Benchmarks smoke test"
-    command: make benchmark-platforms
+    command: make benchmark-platforms BENCHMARKS_TARGETS=test/benchmarks/base:startup_test BENCHMARKS_FILTER=BenchmarkStartupEmpty BENCHMARKS_OPTIONS=-test.benchtime=1ns
     # Use the opposite of the benchmarks filter.
     if: build.branch != "master"
 
   # Run all benchmarks.
   - <<: *benchmarks
     label: ":bazel: ABSL build benchmarks"
-    command: make -i benchmark-platforms BENCHMARKS_FILTER="ABSL/page_cache.clean" BENCHMARKS_SUITE=absl BENCHMARKS_TARGETS=test/benchmarks/fs:bazel_test
+    command: make -i benchmark-platforms BENCHMARKS_FILTER="ABSL/page_cache.clean" BENCHMARKS_SUITE=absl BENCHMARKS_TARGETS=test/benchmarks/fs:bazel_test BENCHMARKS_OPTIONS=-test.benchtime=1ns
   - <<: *benchmarks
     label: ":go: runsc build benchmarks"
-    command: make -i benchmark-platforms BENCHMARKS_FILTER="Runsc/page_cache.clean/filesystem.bind" BENCHMARKS_SUITE=runsc BENCHMARKS_TARGETS=test/benchmarks/fs:bazel_test
+    command: make -i benchmark-platforms BENCHMARKS_FILTER="Runsc/page_cache.clean/filesystem.bind" BENCHMARKS_SUITE=runsc BENCHMARKS_TARGETS=test/benchmarks/fs:bazel_test BENCHMARKS_OPTIONS=-test.benchtime=1ns
   - <<: *benchmarks
     label: ":metal: FFMPEG benchmarks"
-    command: make -i benchmark-platforms BENCHMARKS_SUITE=ffmpeg BENCHMARKS_TARGETS=test/benchmarks/media:ffmpeg_test
+    command: make -i benchmark-platforms BENCHMARKS_SUITE=ffmpeg BENCHMARKS_TARGETS=test/benchmarks/media:ffmpeg_test BENCHMARKS_OPTIONS=-test.benchtime=1ns
   # For fio, running with --test.benchtime=Xs scales the written/read
   # bytes to several GB. This is not a problem for root/bind/volume mounts,
   # but for tmpfs mounts, the size can grow to more memory than the machine
@@ -318,4 +318,4 @@ steps:
     command: make -i benchmark-platforms BENCHMARKS_SUITE=sysbench BENCHMARKS_TARGETS=test/benchmarks/base:sysbench_test
   - <<: *benchmarks
     label: ":tensorflow: TensorFlow benchmarks"
-    command: make -i benchmark-platforms BENCHMARKS_SUITE=tensorflow BENCHMARKS_TARGETS=test/benchmarks/ml:tensorflow_test
+    command: make -i benchmark-platforms BENCHMARKS_SUITE=tensorflow BENCHMARKS_TARGETS=test/benchmarks/ml:tensorflow_test BENCHMARKS_OPTIONS=-test.benchtime=1ns

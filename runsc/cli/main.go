@@ -39,11 +39,9 @@ import (
 )
 
 var (
-	// Although these flags are not part of the OCI spec, they are used by
+	// Although this flags is not part of the OCI spec, it is used by
 	// Docker, and thus should not be changed.
-	// TODO(gvisor.dev/issue/193): support systemd cgroups
-	systemdCgroup = flag.Bool("systemd-cgroup", false, "Use systemd for cgroups. NOT SUPPORTED.")
-	showVersion   = flag.Bool("version", false, "show version and exit.")
+	showVersion = flag.Bool("version", false, "show version and exit.")
 
 	// These flags are unique to runsc, and are used to configure parts of the
 	// system that are not covered by the runtime spec.
@@ -118,12 +116,6 @@ func Main(version string) {
 	conf, err := config.NewFromFlags(flag.CommandLine)
 	if err != nil {
 		cmd.Fatalf(err.Error())
-	}
-
-	// TODO(gvisor.dev/issue/193): support systemd cgroups
-	if *systemdCgroup {
-		fmt.Fprintln(os.Stderr, "systemd cgroup flag passed, but systemd cgroups not supported. See gvisor.dev/issue/193")
-		os.Exit(1)
 	}
 
 	var errorLogger io.Writer
@@ -231,6 +223,7 @@ func Main(version string) {
 	log.Infof("\t\tStrace: %t, max size: %d, syscalls: %s", conf.Strace, conf.StraceLogSize, conf.StraceSyscalls)
 	log.Infof("\t\tVFS2 enabled: %t, LISAFS: %t", conf.VFS2, conf.Lisafs)
 	log.Infof("\t\tDebug: %v", conf.Debug)
+	log.Infof("\t\tSystemd: %v", conf.SystemdCgroup)
 	log.Infof("***************************")
 
 	if conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {

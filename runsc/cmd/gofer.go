@@ -83,9 +83,11 @@ func (*Gofer) Usage() string {
 // SetFlags implements subcommands.Command.
 func (g *Gofer) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&g.bundleDir, "bundle", "", "path to the root of the bundle directory, defaults to the current directory")
-	f.Var(&g.ioFDs, "io-fds", "list of FDs to connect gofer servers. They must follow this order: root first, then mounts as defined in the spec")
 	f.BoolVar(&g.applyCaps, "apply-caps", true, "if true, apply capabilities to restrict what the Gofer process can do")
 	f.BoolVar(&g.setUpRoot, "setup-root", true, "if true, set up an empty root for the process")
+
+	// Open FDs that are donated to the gofer.
+	f.Var(&g.ioFDs, "io-fds", "list of FDs to connect gofer servers. They must follow this order: root first, then mounts as defined in the spec")
 	f.IntVar(&g.specFD, "spec-fd", -1, "required fd with the container spec")
 	f.IntVar(&g.mountsFD, "mounts-fd", -1, "mountsFD is the file descriptor to write list of mounts after they have been resolved (direct paths, no symlinks).")
 }

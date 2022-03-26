@@ -191,7 +191,9 @@ func (fs *filesystem) renameMuUnlockAndCheckCaching(ctx context.Context, ds **[]
 }
 
 // stepLocked resolves rp.Component() to an existing file, starting from the
-// given directory.
+// given directory. If the file at rp.Component is a symlink and
+// mayFollowSymlinks is set, the symlink is resolved and the result returned to
+// the caller (single step).
 //
 // Dentries which may become cached as a result of the traversal are appended
 // to *ds.
@@ -202,8 +204,6 @@ func (fs *filesystem) renameMuUnlockAndCheckCaching(ctx context.Context, ds **[]
 // * !rp.Done().
 // * If !d.cachedMetadataAuthoritative(), then d and all children that are
 //   part of rp must have been revalidated.
-//
-// Postconditions: The returned dentry's cached metadata is up to date.
 func (fs *filesystem) stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry, mayFollowSymlinks bool, ds **[]*dentry) (*dentry, bool, error) {
 	if !d.isDir() {
 		return nil, false, linuxerr.ENOTDIR
@@ -211,25 +211,23 @@ func (fs *filesystem) stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *
 	if err := d.checkPermissions(rp.Credentials(), vfs.MayExec); err != nil {
 		return nil, false, err
 	}
-	followedSymlink := false
-afterSymlink:
 	name := rp.Component()
 	if name == "." {
 		rp.Advance()
-		return d, followedSymlink, nil
+		return d, false, nil
 	}
 	if name == ".." {
 		if isRoot, err := rp.CheckRoot(ctx, &d.vfsd); err != nil {
 			return nil, false, err
 		} else if isRoot || d.parent == nil {
 			rp.Advance()
-			return d, followedSymlink, nil
+			return d, false, nil
 		}
 		if err := rp.CheckMount(ctx, &d.parent.vfsd); err != nil {
 			return nil, false, err
 		}
 		rp.Advance()
-		return d.parent, followedSymlink, nil
+		return d.parent, false, nil
 	}
 	var child *dentry
 	var err error
@@ -252,11 +250,10 @@ afterSymlink:
 		if err := rp.HandleSymlink(target); err != nil {
 			return nil, false, err
 		}
-		followedSymlink = true
-		goto afterSymlink // don't check the current directory again
+		return d, true, nil
 	}
 	rp.Advance()
-	return child, followedSymlink, nil
+	return child, false, nil
 }
 
 // Preconditions:
@@ -933,7 +930,7 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		// to creating a synthetic one, i.e. one that is kept entirely in memory.
 
 		// Check that we're not overriding an existing file with a synthetic one.
-		_, _, err = fs.stepLocked(ctx, rp, parent, true, ds)
+		_, _, err = fs.stepLocked(ctx, rp, parent, false, ds)
 		switch {
 		case err == nil:
 			// Step succeeded, another file exists.

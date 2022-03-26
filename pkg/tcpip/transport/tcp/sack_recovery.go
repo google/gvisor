@@ -30,6 +30,7 @@ func newSACKRecovery(s *sender) *sackRecovery {
 
 // handleSACKRecovery implements the loss recovery phase as described in RFC6675
 // section 5, step C.
+// +checklocks:sr.s.ep.mu
 func (sr *sackRecovery) handleSACKRecovery(limit int, end seqnum.Value) (dataSent bool) {
 	snd := sr.s
 	snd.SetPipe()
@@ -68,7 +69,7 @@ func (sr *sackRecovery) handleSACKRecovery(limit int, end seqnum.Value) (dataSen
 			}
 			dataSent = true
 			snd.Outstanding++
-			snd.writeNext = nextSeg.Next()
+			snd.updateWriteNext(nextSeg.Next())
 			continue
 		}
 
@@ -102,6 +103,7 @@ func (sr *sackRecovery) handleSACKRecovery(limit int, end seqnum.Value) (dataSen
 	return dataSent
 }
 
+// +checklocks:sr.s.ep.mu
 func (sr *sackRecovery) DoRecovery(rcvdSeg *segment, fastRetransmit bool) {
 	snd := sr.s
 	if fastRetransmit {

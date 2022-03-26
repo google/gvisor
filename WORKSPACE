@@ -1491,8 +1491,8 @@ go_repository(
 go_repository(
     name = "com_github_coreos_go_systemd_v22",
     importpath = "github.com/coreos/go-systemd/v22",
-    sum = "h1:kq/SbG2BCKLkDKkjQf5OWwKWUKj1lgs3lFI4PxnR5lg=",
-    version = "v22.1.0",
+    sum = "h1:D9/bQk5vlXQFZ6Kwuu6zaiXJ9oTPe68++AzAJc1DzSI=",
+    version = "v22.3.2",
 )
 
 go_repository(
@@ -1895,4 +1895,11 @@ go_repository(
     importpath = "github.com/xeipuuv/gojsonschema",
     sum = "h1:LhYJRs+L4fBtjZUfuSZIKGeVu0QRy8e5Xi7D17UxZ74=",
     version = "v1.2.0",
+)
+
+go_repository(
+    name = "com_github_bits_and_blooms_bitset",
+    importpath = "github.com/bits-and-blooms/bitset",
+    sum = "h1:M+/hrU9xlMp7t4TyTDQW97d3tRPVuKFC6zBEK16QnXY=",
+    version = "v1.2.1",
 )

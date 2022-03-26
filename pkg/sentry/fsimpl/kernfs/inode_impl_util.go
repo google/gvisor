@@ -590,7 +590,7 @@ func (o *OrderedChildren) checkExistingLocked(name string, child Inode) error {
 		return linuxerr.ENOENT
 	}
 	if s.inode != child {
-		panic(fmt.Sprintf("Inode doesn't match what kernfs thinks! OrderedChild: %+v, kernfs: %+v", s.inode, child))
+		panic(fmt.Sprintf("Inode doesn't match what kernfs thinks! Name: %q, OrderedChild: %p, kernfs: %p", name, s.inode, child))
 	}
 	return nil
 }

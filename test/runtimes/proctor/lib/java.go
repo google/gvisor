@@ -66,9 +66,9 @@ func (javaRunner) TestCmds(tests []string) []*exec.Cmd {
 		[]string{
 			"-agentvm",            // Execute each action using a pool of reusable JVMs.
 			"-dir:" + javaTestDir, // Base directory for test files and directories.
-			"-noreport",           // Do not generate a final report.
-			"-timeoutFactor:20",   // Extend the default timeout (2 min) of all tests by this factor.
-			"-verbose:nopass",     // Verbose output but supress it for tests that passed.
+			"-timeoutFactor:5",    // Extend the default timeout (2 min) of all tests by this factor.
+			"-verbose:all",        // Verbose output.
+			"-tl:200",             // Do not run tests which specify a timeout longer than 200s.
 		},
 		tests...,
 	)

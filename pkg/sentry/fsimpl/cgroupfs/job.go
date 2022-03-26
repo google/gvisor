@@ -15,14 +15,9 @@
 package cgroupfs
 
 import (
-	"bytes"
-	"fmt"
-
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // +stateify savable
@@ -51,26 +46,5 @@ func (c *jobController) Clone() controller {
 }
 
 func (c *jobController) AddControlFiles(ctx context.Context, creds *auth.Credentials, _ *cgroupInode, contents map[string]kernfs.Inode) {
-	contents["job.id"] = c.fs.newControllerWritableFile(ctx, creds, &jobIDData{c: c})
-}
-
-// +stateify savable
-type jobIDData struct {
-	c *jobController
-}
-
-// Generate implements vfs.DynamicBytesSource.Generate.
-func (d *jobIDData) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	fmt.Fprintf(buf, "%d\n", d.c.id)
-	return nil
-}
-
-// Write implements vfs.WritableDynamicBytesSource.Write.
-func (d *jobIDData) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
-	val, n, err := parseInt64FromString(ctx, src)
-	if err != nil {
-		return n, err
-	}
-	d.c.id = val
-	return n, nil
+	contents["job.id"] = c.fs.newStubControllerFile(ctx, creds, &c.id)
 }

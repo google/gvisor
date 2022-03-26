@@ -6,11 +6,13 @@ go_library(
     name = "metric",
     srcs = [
         "metric.go",
+        "metric_unsafe.go",
     ],
     visibility = ["//:sandbox"],
     deps = [
         ":metric_go_proto",
         "//pkg/eventchannel",
+        "//pkg/gohacks",
         "//pkg/log",
         "//pkg/sync",
         "@org_golang_google_protobuf//types/known/timestamppb",
@@ -33,6 +35,7 @@ go_test(
     deps = [
         ":metric_go_proto",
         "//pkg/eventchannel",
+        "//pkg/sync",
         "@org_golang_google_protobuf//proto:go_default_library",
     ],
 )

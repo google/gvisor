@@ -78,6 +78,8 @@ func (f *fakeTransportEndpoint) Abort() {
 	f.Close()
 }
 
+func (*fakeTransportEndpoint) Release() {}
+
 func (f *fakeTransportEndpoint) Close() {
 	// TODO(gvisor.dev/issue/5153): Consider retaining the route.
 	f.route.Release()

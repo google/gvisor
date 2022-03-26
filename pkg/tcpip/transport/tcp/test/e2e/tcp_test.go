@@ -855,7 +855,7 @@ func TestClosingWithEnqueuedSegments(t *testing.T) {
 		t.Errorf("got stats.TCP.CurrentEstablished.Value() = %d, want = 0", got)
 	}
 
-	// Check if the endpoint was moved to CLOSED and netstack a reset in
+	// Check if the endpoint was moved to CLOSED and netstack sent a reset in
 	// response to the ACK packet that we sent after last-ACK.
 	checker.IPv4(t, c.GetPacket(),
 		checker.TCP(
@@ -8628,9 +8628,43 @@ func TestECNFlagsAccept(t *testing.T) {
 	}
 }
 
+func TestReadAfterCloseWithBufferedData(t *testing.T) {
+	c := context.New(t, e2e.DefaultMTU)
+	defer c.Cleanup()
+	con := c.CreateConnectedWithOptionsNoDelay(header.TCPSynOptions{})
+	// Fill up the receive queue.
+	for i := 0; i < 300; i++ {
+		con.SendPacket([]byte{1, 2, 3, 4}, nil)
+	}
+
+	timeout := time.After(5 * time.Second)
+	// If the receive queue is not properly drained, the endpoint will never
+	// return ErrClosedForReceive.
+	c.EP.Close()
+	for {
+		select {
+		case <-timeout:
+			t.Fatalf("timed out waiting for read to return error %q", &tcpip.ErrClosedForReceive{})
+			return
+		default:
+			if _, err := c.EP.Read(ioutil.Discard, tcpip.ReadOptions{}); cmp.Equal(err, &tcpip.ErrClosedForReceive{}) {
+				return
+			}
+		}
+	}
+}
+
+func TestReleaseAfterClose(t *testing.T) {
+	c := context.New(t, e2e.DefaultMTU)
+	c.CreateConnectedWithOptionsNoDelay(header.TCPSynOptions{})
+	c.CloseNoWait()
+	c.EP.Release()
+}
+
 func TestMain(m *testing.M) {
 	refs.SetLeakMode(refs.LeaksPanic)
 	code := m.Run()
+	tcpip.ReleaseDanglingEndpoints()
 	// Allow TCP async work to complete to avoid false reports of leaks.
 	// TODO(gvisor.dev/issue/5940): Use fake clock in tests.
 	time.Sleep(1 * time.Second)

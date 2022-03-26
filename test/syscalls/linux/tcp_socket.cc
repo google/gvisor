@@ -1043,8 +1043,8 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnectNoListener) {
       ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
   socklen_t addrlen = sizeof(addr);
 
-  const FileDescriptor s =
-      nonBlockingConnectNoListener(GetParam(), addr, addrlen).ValueOrDie();
+  const FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
+      nonBlockingConnectNoListener(GetParam(), addr, addrlen));
 
   int err;
   socklen_t optlen = sizeof(err);
@@ -1069,8 +1069,8 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnectNoListenerRead) {
       ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
   socklen_t addrlen = sizeof(addr);
 
-  const FileDescriptor s =
-      nonBlockingConnectNoListener(GetParam(), addr, addrlen).ValueOrDie();
+  const FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
+      nonBlockingConnectNoListener(GetParam(), addr, addrlen));
 
   unsigned char c;
   ASSERT_THAT(read(s.get(), &c, 1), SyscallFailsWithErrno(ECONNREFUSED));
@@ -1084,8 +1084,8 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnectNoListenerPeek) {
       ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
   socklen_t addrlen = sizeof(addr);
 
-  const FileDescriptor s =
-      nonBlockingConnectNoListener(GetParam(), addr, addrlen).ValueOrDie();
+  const FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
+      nonBlockingConnectNoListener(GetParam(), addr, addrlen));
 
   unsigned char c;
   ASSERT_THAT(recv(s.get(), &c, 1, MSG_PEEK),

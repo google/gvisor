@@ -41,6 +41,8 @@ PosixErrorOr<Cgroup> Cgroup::Create(absl::string_view path) {
   return Cgroup(path);
 }
 
+PosixError Cgroup::Delete() { return Rmdir(cgroup_path_); }
+
 PosixErrorOr<Cgroup> Cgroup::CreateChild(absl::string_view name) const {
   return Cgroup::Create(JoinPath(Path(), name));
 }

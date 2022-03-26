@@ -214,7 +214,7 @@ func (c *Do) setupNet(cid string, spec *specs.Spec) (func(), error) {
 
 		// Enable network access.
 		"sysctl -w net.ipv4.ip_forward=1",
-		fmt.Sprintf("iptables -t nat -A POSTROUTING -s %s -o %s -j MASQUERADE", c.ip, dev),
+		fmt.Sprintf("iptables -t nat -A POSTROUTING -s %s -o %s -m comment --comment runsc-%s -j MASQUERADE", c.ip, dev, peer),
 		fmt.Sprintf("iptables -A FORWARD -i %s -o %s -j ACCEPT", dev, peer),
 		fmt.Sprintf("iptables -A FORWARD -o %s -i %s -j ACCEPT", dev, peer),
 	}
@@ -231,18 +231,18 @@ func (c *Do) setupNet(cid string, spec *specs.Spec) (func(), error) {
 
 	resolvPath, err := makeFile("/etc/resolv.conf", "nameserver 8.8.8.8\n", spec)
 	if err != nil {
-		c.cleanupNet(cid, "", "", "")
+		c.cleanupNet(cid, dev, "", "", "")
 		return nil, err
 	}
 	hostnamePath, err := makeFile("/etc/hostname", cid+"\n", spec)
 	if err != nil {
-		c.cleanupNet(cid, resolvPath, "", "")
+		c.cleanupNet(cid, dev, resolvPath, "", "")
 		return nil, err
 	}
 	hosts := fmt.Sprintf("127.0.0.1\tlocalhost\n%s\t%s\n", c.ip, cid)
 	hostsPath, err := makeFile("/etc/hosts", hosts, spec)
 	if err != nil {
-		c.cleanupNet(cid, resolvPath, hostnamePath, "")
+		c.cleanupNet(cid, dev, resolvPath, hostnamePath, "")
 		return nil, err
 	}
 
@@ -252,7 +252,7 @@ func (c *Do) setupNet(cid string, spec *specs.Spec) (func(), error) {
 	}
 	addNamespace(spec, netns)
 
-	return func() { c.cleanupNet(cid, resolvPath, hostnamePath, hostsPath) }, nil
+	return func() { c.cleanupNet(cid, dev, resolvPath, hostnamePath, hostsPath) }, nil
 }
 
 // cleanupNet tries to cleanup the network setup in setupNet.
@@ -262,12 +262,15 @@ func (c *Do) setupNet(cid string, spec *specs.Spec) (func(), error) {
 //
 // Unfortunately none of this can be automatically cleaned up on process exit,
 // we must do so explicitly.
-func (c *Do) cleanupNet(cid, resolvPath, hostnamePath, hostsPath string) {
+func (c *Do) cleanupNet(cid, dev, resolvPath, hostnamePath, hostsPath string) {
 	_, peer := deviceNames(cid)
 
 	cmds := []string{
 		fmt.Sprintf("ip link delete %s", peer),
 		fmt.Sprintf("ip netns delete %s", cid),
+		fmt.Sprintf("iptables -t nat -D POSTROUTING -s %s -o %s -m comment --comment runsc-%s -j MASQUERADE", c.ip, dev, peer),
+		fmt.Sprintf("iptables -D FORWARD -i %s -o %s -j ACCEPT", dev, peer),
+		fmt.Sprintf("iptables -D FORWARD -o %s -i %s -j ACCEPT", dev, peer),
 	}
 
 	for _, cmd := range cmds {

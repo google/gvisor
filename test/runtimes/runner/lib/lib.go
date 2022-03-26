@@ -131,7 +131,7 @@ func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, 
 				}
 
 				go func() {
-					output, err = d.Exec(ctx, dockerutil.ExecOpts{}, "/proctor/proctor", "--runtime", lang, "--tests", strings.Join(tcs, ","))
+					output, err = d.Exec(ctx, dockerutil.ExecOpts{}, "/proctor/proctor", "--runtime", lang, "--tests", strings.Join(tcs, ","), fmt.Sprintf("--timeout=%s", timeout))
 					close(done)
 				}()
 
@@ -141,9 +141,10 @@ func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, 
 						fmt.Printf("PASS: (%v) %d tests passed\n", time.Since(now), len(tcs))
 						return
 					}
-					t.Errorf("FAIL: (%v):\nBatch:\n%s\nOutput:\n%s\n", time.Since(now), strings.Join(tcs, "\n"), output)
-				case <-time.After(timeout):
-					t.Errorf("TIMEOUT: (%v):\nBatch:\n%s\nOutput:\n%s\n", time.Since(now), strings.Join(tcs, "\n"), output)
+					t.Fatalf("FAIL: (%v):\nBatch:\n%s\nOutput:\n%s\n", time.Since(now), strings.Join(tcs, "\n"), output)
+				// Add one minute to let proctor handle timeout.
+				case <-time.After(timeout + time.Minute):
+					t.Fatalf("TIMEOUT: (%v):\nBatch:\n%s\nOutput:\n%s\n", time.Since(now), strings.Join(tcs, "\n"), output)
 				}
 			},
 		})

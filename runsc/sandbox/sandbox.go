@@ -173,10 +173,13 @@ type Args struct {
 // sandbox.
 func New(conf *config.Config, args *Args) (*Sandbox, error) {
 	s := &Sandbox{
-		ID:         args.ID,
-		CgroupJSON: cgroup.CgroupJSON{Cgroup: args.Cgroup},
-		UID:        -1, // prevent usage before it's set.
-		GID:        -1, // prevent usage before it's set.
+		ID: args.ID,
+		CgroupJSON: cgroup.CgroupJSON{
+			Cgroup:     args.Cgroup,
+			UseSystemd: conf.SystemdCgroup,
+		},
+		UID: -1, // prevent usage before it's set.
+		GID: -1, // prevent usage before it's set.
 	}
 	// The Cleanup object cleans up partially created sandboxes when an error
 	// occurs. Any errors occurring during cleanup itself are ignored.
@@ -373,7 +376,7 @@ func (s *Sandbox) Processes(cid string) ([]*control.Process, error) {
 
 // NewCGroup returns the sandbox's Cgroup, or an error if it does not have one.
 func (s *Sandbox) NewCGroup() (cgroup.Cgroup, error) {
-	return cgroup.NewFromPid(s.Pid.load())
+	return cgroup.NewFromPid(s.Pid.load(), false /* useSystemd */)
 }
 
 // Execute runs the specified command in the container. It returns the PID of

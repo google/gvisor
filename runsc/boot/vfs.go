@@ -500,11 +500,16 @@ func (c *containerMounter) getMountNameAndOptionsVFS2(conf *config.Config, m *mo
 
 	// Find filesystem name and FS specific data field.
 	switch m.mount.Type {
-	case devpts.Name, devtmpfs.Name, proc.Name, sys.Name:
+	case devpts.Name, devtmpfs.Name, proc.Name:
 		// Nothing to do.
 
 	case nonefs:
 		fsName = sys.Name
+
+	case sys.Name:
+		if len(c.productName) > 0 {
+			internalData = &sys.InternalData{ProductName: c.productName}
+		}
 
 	case tmpfs.Name:
 		var err error

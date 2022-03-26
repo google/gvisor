@@ -77,6 +77,10 @@ func TestMemCgroup(t *testing.T) {
 	gid := d.ID()
 	t.Logf("cgroup ID: %s", gid)
 
+	useSystemd, err := dockerutil.UsingSystemdCgroup()
+	if err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
 	// Wait when the container will allocate memory.
 	memUsage := 0
 	start := time.Now()
@@ -86,13 +90,13 @@ func TestMemCgroup(t *testing.T) {
 		// or after looping below (so the application can start).
 		time.Sleep(100 * time.Millisecond)
 
-		var path string
-
 		// Read the cgroup memory limit.
+		path := filepath.Join("/sys/fs/cgroup/memory/docker", gid, "memory.limit_in_bytes")
 		if cgroup.IsOnlyV2() {
 			path = filepath.Join("/sys/fs/cgroup/docker", gid, "memory.max")
-		} else {
-			path = filepath.Join("/sys/fs/cgroup/memory/docker", gid, "memory.limit_in_bytes")
+			if useSystemd {
+				path = filepath.Join("/sys/fs/cgroup/system.slice/docker-"+gid+".scope", "memory.max")
+			}
 		}
 		// Read the cgroup memory limit.
 		outRaw, err := ioutil.ReadFile(path)
@@ -110,12 +114,14 @@ func TestMemCgroup(t *testing.T) {
 			continue
 		}
 
+		path = filepath.Join("/sys/fs/cgroup/memory/docker", gid, "memory.max_usage_in_bytes")
 		if cgroup.IsOnlyV2() {
 			// v2 does not have max_usage_in_bytes equivalent, so memory.current is the
 			// next best thing that we can use
 			path = filepath.Join("/sys/fs/cgroup/docker", gid, "memory.current")
-		} else {
-			path = filepath.Join("/sys/fs/cgroup/memory/docker", gid, "memory.max_usage_in_bytes")
+			if useSystemd {
+				path = filepath.Join("/sys/fs/cgroup/system.slice/docker-"+gid+".scope", "memory.current")
+			}
 		}
 		// Read the cgroup memory usage.
 		outRaw, err = ioutil.ReadFile(path)
@@ -333,6 +339,7 @@ func TestCgroupV2(t *testing.T) {
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
+	defaultTestCPUQuota := int64(100000)
 
 	// This is not a comprehensive list of attributes.
 	//
@@ -357,7 +364,7 @@ func TestCgroupV2(t *testing.T) {
 			field: "cpu-period",
 			value: 2000,
 			file:  "cpu.max",
-			want:  "max 2000",
+			want:  fmt.Sprintf("%d 2000", defaultTestCPUQuota),
 		},
 		{
 			field: "memory",
@@ -394,6 +401,14 @@ func TestCgroupV2(t *testing.T) {
 		},
 	}
 
+	useSystemd, err := dockerutil.UsingSystemdCgroup()
+	if err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	baseCgroupPath := "/sys/fs/cgroup/docker"
+	if useSystemd {
+		baseCgroupPath = fmt.Sprintf("/sys/fs/cgroup/system.slice")
+	}
 	// Make configs.
 	conf, hostconf, _ := d.ConfigsFrom(dockerutil.RunOpts{
 		Image: "basic/alpine",
@@ -406,6 +421,8 @@ func TestCgroupV2(t *testing.T) {
 			hostconf.Resources.CPUShares = attr.value
 		case "cpu-period":
 			hostconf.Resources.CPUPeriod = attr.value
+			// systemd throws out the period if quota is not also set.
+			hostconf.Resources.CPUQuota = defaultTestCPUQuota
 		case "cpu-quota":
 			hostconf.Resources.CPUQuota = attr.value
 		case "kernel-memory":
@@ -421,7 +438,7 @@ func TestCgroupV2(t *testing.T) {
 			hostconf.Resources.MemorySwappiness = &val
 		case "blkio-weight":
 			// detect existence of io.bfq.weight as this is not always loaded
-			_, err := ioutil.ReadFile(filepath.Join("/sys/fs/cgroup/docker", attr.file))
+			_, err := ioutil.ReadFile(filepath.Join(baseCgroupPath, attr.file))
 			if err == nil || !attr.skipIfNotFound {
 				hostconf.Resources.BlkioWeight = uint16(attr.value)
 			}
@@ -448,6 +465,9 @@ func TestCgroupV2(t *testing.T) {
 	// Check list of attributes defined above.
 	for _, attr := range attrs {
 		path := filepath.Join("/sys/fs/cgroup/docker", gid, attr.file)
+		if useSystemd {
+			path = filepath.Join(baseCgroupPath, "docker-"+gid+".scope", attr.file)
+		}
 		out, err := ioutil.ReadFile(path)
 		if err != nil {
 			if os.IsNotExist(err) && attr.skipIfNotFound {
@@ -467,6 +487,9 @@ func TestCgroupV2(t *testing.T) {
 		t.Fatalf("SandboxPid: %v", err)
 	}
 	path := filepath.Join("/sys/fs/cgroup/docker", gid, "cgroup.procs")
+	if useSystemd {
+		path = filepath.Join(baseCgroupPath, "docker-"+gid+".scope", "cgroup.procs")
+	}
 	if err := verifyPid(pid, path); err != nil {
 		t.Errorf("cgroup control processes: %v", err)
 	}
@@ -478,9 +501,16 @@ func TestCgroupParent(t *testing.T) {
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
+	useSystemd, err := dockerutil.UsingSystemdCgroup()
+	if err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
 
 	// Construct a known cgroup name.
 	parent := testutil.RandomID("runsc-")
+	if useSystemd {
+		parent = "system-runsc.slice"
+	}
 	conf, hostconf, _ := d.ConfigsFrom(dockerutil.RunOpts{
 		Image: "basic/alpine",
 	}, "sleep", "10000")
@@ -515,11 +545,14 @@ func TestCgroupParent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("invalid PID (%s): %v", ppidStr, err)
 	}
-	cgroups, err := cgroup.NewFromPid(ppid)
+	cgroups, err := cgroup.NewFromPid(ppid, false /* useSystemd */)
 	if err != nil {
 		t.Fatalf("cgroup.NewFromPid(%d): %v", ppid, err)
 	}
 	path := filepath.Join(cgroups.MakePath("cpuacct"), parent, gid, "cgroup.procs")
+	if useSystemd {
+		path = filepath.Join(cgroups.MakePath("cpuacct"), parent, "docker-"+gid+".scope", "cgroup.procs")
+	}
 	if err := verifyPid(pid, path); err != nil {
 		t.Errorf("cgroup control %q processes: %v", "memory", err)
 	}

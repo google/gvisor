@@ -20,6 +20,7 @@ import (
 	"os"
 	"runtime/debug"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -93,5 +94,15 @@ func TestSigbusOnMemmove(t *testing.T) {
 
 	if !testCopy(a, b) {
 		t.Fatalf("testCopy didn't panic when it should have")
+	}
+}
+
+func TestNanotime(t *testing.T) {
+	// Verify that nanotime increases over time.
+	nano1 := Nanotime()
+	time.Sleep(10 * time.Millisecond)
+	nano2 := Nanotime()
+	if nano2 <= nano1 {
+		t.Errorf("runtime.nanotime() did not increase after 10ms: %d vs %d", nano1, nano2)
 	}
 }

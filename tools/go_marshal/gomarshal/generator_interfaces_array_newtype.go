@@ -107,7 +107,6 @@ func (g *interfaceGenerator) emitMarshallableForArrayNewtype(n *ast.Ident, a *as
 	g.emit("}\n\n")
 
 	g.emit("// CopyOutN implements marshal.Marshallable.CopyOutN.\n")
-	g.emit("//go:nosplit\n")
 	g.emit("func (%s *%s) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.emitCastToByteSlice(g.r, "buf", fmt.Sprintf("%s.SizeBytes()", g.r))
@@ -119,7 +118,6 @@ func (g *interfaceGenerator) emitMarshallableForArrayNewtype(n *ast.Ident, a *as
 	g.emit("}\n\n")
 
 	g.emit("// CopyOut implements marshal.Marshallable.CopyOut.\n")
-	g.emit("//go:nosplit\n")
 	g.emit("func (%s *%s) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.emit("return %s.CopyOutN(cc, addr, %s.SizeBytes())\n", g.r, g.r)
@@ -127,7 +125,6 @@ func (g *interfaceGenerator) emitMarshallableForArrayNewtype(n *ast.Ident, a *as
 	g.emit("}\n\n")
 
 	g.emit("// CopyIn implements marshal.Marshallable.CopyIn.\n")
-	g.emit("//go:nosplit\n")
 	g.emit("func (%s *%s) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.emitCastToByteSlice(g.r, "buf", fmt.Sprintf("%s.SizeBytes()", g.r))

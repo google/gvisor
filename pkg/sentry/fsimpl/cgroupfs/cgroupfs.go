@@ -57,10 +57,12 @@
 package cgroupfs
 
 import (
+	"bytes"
 	"fmt"
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -71,6 +73,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 const (
@@ -546,6 +549,11 @@ type controllerFile struct {
 	kernfs.DynamicBytesFile
 }
 
+// SetStat implements kernfs.Inode.SetStat.
+func (f *controllerFile) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error {
+	return f.InodeAttrs.SetStat(ctx, fs, creds, opts)
+}
+
 func (fs *filesystem) newControllerFile(ctx context.Context, creds *auth.Credentials, data vfs.DynamicBytesSource) kernfs.Inode {
 	f := &controllerFile{}
 	f.Init(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), data, readonlyFileMode)
@@ -568,6 +576,11 @@ type staticControllerFile struct {
 	vfs.StaticData
 }
 
+// SetStat implements kernfs.Inode.SetStat.
+func (f *staticControllerFile) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error {
+	return f.InodeAttrs.SetStat(ctx, fs, creds, opts)
+}
+
 // Note: We let the caller provide the mode so that static files may be used to
 // fake both readable and writable control files. However, static files are
 // effectively readonly, as attempting to write to them will return EIO
@@ -575,5 +588,42 @@ type staticControllerFile struct {
 func (fs *filesystem) newStaticControllerFile(ctx context.Context, creds *auth.Credentials, mode linux.FileMode, data string) kernfs.Inode {
 	f := &staticControllerFile{StaticData: vfs.StaticData{Data: data}}
 	f.Init(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), f, mode)
+	return f
+}
+
+// stubControllerFile is a writable control file that remembers the control
+// value written to it.
+//
+// +stateify savable
+type stubControllerFile struct {
+	controllerFile
+
+	// data is accessed through atomic ops.
+	data *int64
+}
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (f *stubControllerFile) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	fmt.Fprintf(buf, "%d\n", atomic.LoadInt64(f.data))
+	return nil
+}
+
+// Write implements vfs.WritableDynamicBytesSource.Write.
+func (f *stubControllerFile) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
+	val, n, err := parseInt64FromString(ctx, src)
+	if err != nil {
+		return 0, err
+	}
+	atomic.StoreInt64(f.data, val)
+	return n, nil
+}
+
+// newStubControllerFile creates a new stub controller file tbat loads and
+// stores a control value from data.
+func (fs *filesystem) newStubControllerFile(ctx context.Context, creds *auth.Credentials, data *int64) kernfs.Inode {
+	f := &stubControllerFile{
+		data: data,
+	}
+	f.Init(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), f, writableFileMode)
 	return f
 }

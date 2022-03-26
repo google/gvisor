@@ -674,6 +674,9 @@ type Endpoint interface {
 	// SocketOptions returns the structure which contains all the socket
 	// level options.
 	SocketOptions() *SocketOptions
+
+	// Release releases all reference counted objects held by the endpoint.
+	Release()
 }
 
 // LinkPacketInfo holds Link layer information for a received packet.
@@ -2488,6 +2491,18 @@ func GetDanglingEndpoints() []Endpoint {
 	}
 	danglingEndpointsMu.Unlock()
 	return es
+}
+
+// ReleaseDanglingEndpoints clears out all all reference counted objects held by
+// dangling endpoints.
+func ReleaseDanglingEndpoints() {
+	// Get the dangling endpoints first to avoid locking around Release(), which
+	// can cause a lock inversion with endpoint.mu and danglingEndpointsMu.
+	// Calling Release on a dangling endpoint that has been deleted is a noop.
+	eps := GetDanglingEndpoints()
+	for _, ep := range eps {
+		ep.Release()
+	}
 }
 
 // AddDanglingEndpoint adds a dangling endpoint.

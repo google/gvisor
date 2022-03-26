@@ -76,6 +76,9 @@ var knownLinknames = map[string]map[string]linknameSignatures{
 		"wakep": linknameSignatures{
 			local: "func()",
 		},
+		"nanotime": linknameSignatures{
+			local: "func() int64",
+		},
 	},
 	"sync": map[string]linknameSignatures{
 		"runtime_canSpin": linknameSignatures{

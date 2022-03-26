@@ -48,15 +48,27 @@ func (c *Container) Exec(ctx context.Context, opts ExecOpts, args ...string) (st
 	if err != nil {
 		return "", err
 	}
+	done := make(chan struct{})
+	var (
+		out    string
+		outErr error
+	)
+	// Read logs from another go-routine to be sure that it doesn't block on
+	// writing into standard file descriptors.
+	go func() {
+		out, outErr = p.Logs()
+		close(done)
+	}()
 
 	if exitStatus, err := p.WaitExitStatus(ctx); err != nil {
 		return "", err
 	} else if exitStatus != 0 {
-		out, _ := p.Logs()
+		<-done
 		return out, fmt.Errorf("process terminated with status: %d", exitStatus)
 	}
 
-	return p.Logs()
+	<-done
+	return out, outErr
 }
 
 // ExecProcess creates a process inside the container and returns a process struct
