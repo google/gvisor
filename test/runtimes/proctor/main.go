@@ -22,6 +22,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/test/runtimes/proctor/lib"
@@ -32,6 +33,7 @@ var (
 	list      = flag.Bool("list", false, "list all available tests")
 	testNames = flag.String("tests", "", "run a subset of the available tests")
 	pause     = flag.Bool("pause", false, "cause container to pause indefinitely, reaping any zombie children")
+	timeout   = flag.Duration("timeout", 90*time.Minute, "batch timeout")
 )
 
 // setNumFilesLimit changes the NOFILE soft rlimit if it is too high.
@@ -69,6 +71,8 @@ func main() {
 		log.Fatalf("runtime flag must be provided")
 	}
 
+	timer := time.NewTimer(*timeout)
+
 	tr, err := lib.TestRunnerForRuntime(*runtime)
 	if err != nil {
 		log.Fatalf("%v", err)
@@ -85,6 +89,14 @@ func main() {
 		}
 		return
 	}
+
+	// heartbeat
+	go func() {
+		for {
+			time.Sleep(15 * time.Second)
+			log.Println("Proctor checking in " + time.Now().String())
+		}
+	}()
 
 	var tests []string
 	if *testNames == "" {
@@ -104,6 +116,33 @@ func main() {
 
 	// Run tests.
 	cmds := tr.TestCmds(tests)
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-done:
+			return
+		case <-timer.C:
+			log.Println("The timeout duration is exceeded")
+			killed := false
+			for _, cmd := range cmds {
+				p := cmd.Process
+				if p == nil || cmd.ProcessState != nil {
+					continue
+				}
+				pid := p.Pid
+				if pid > 0 {
+					unix.Kill(pid, unix.SIGTERM)
+					killed = true
+				}
+			}
+			if killed {
+				// Let tests to handle signals
+				time.Sleep(5 * time.Second)
+			}
+			panic("FAIL: The timeout duration is exceeded")
+		}
+	}()
 	for _, cmd := range cmds {
 		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 		if err := cmd.Run(); err != nil {
