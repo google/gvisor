@@ -428,6 +428,7 @@ func (ep *EpollInstance) ReadEvents(events []linux.EpollEvent, maxEvents int) []
 		return nil
 	}
 	defer func() {
+		notify := false
 		ep.readyMu.Lock()
 		// epollInterests that we never checked are re-inserted at the start of
 		// ep.ready. epollInterests that were ready are re-inserted at the end
@@ -440,12 +441,16 @@ func (ep *EpollInstance) ReadEvents(events []linux.EpollEvent, maxEvents int) []
 				// epi.NotifyEvent() was called while we were running.
 				notReady.Remove(epi)
 				ep.ready.PushBack(epi)
+				notify = true
 			} else {
 				epi.ready = false
 			}
 		}
 		ep.ready.PushBackList(&requeue)
 		ep.readyMu.Unlock()
+		if notify {
+			ep.q.Notify(waiter.ReadableEvents)
+		}
 	}()
 
 	i := 0

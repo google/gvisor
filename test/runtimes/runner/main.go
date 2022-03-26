@@ -29,10 +29,30 @@ var (
 	image       = flag.String("image", "", "docker image with runtime tests")
 	excludeFile = flag.String("exclude_file", "", "file containing list of tests to exclude, in CSV format with fields: test name, bug id, comment")
 	batchSize   = flag.Int("batch", 50, "number of test cases run in one command")
-	timeout     = flag.Duration("timeout", 20*time.Minute, "batch timeout")
+	timeout     = flag.Duration("timeout", 18*time.Minute, "batch timeout")
 )
 
 func main() {
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-done:
+			return
+		case <-time.After(time.Minute * 20):
+			panic("timed out!!!")
+		}
+	}()
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			case <-time.After(time.Minute):
+				fmt.Fprintf(os.Stderr, "runner checking in %s\n", time.Now().String())
+			}
+		}
+	}()
 	flag.Parse()
 	if *lang == "" || *image == "" {
 		fmt.Fprintf(os.Stderr, "lang and image flags must not be empty\n")
