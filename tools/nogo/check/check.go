@@ -746,9 +746,7 @@ func SplitPackages(srcs []string, srcRootPrefix string) map[string][]string {
 //
 // TODO(b/201686256): remove once tooling can handle type parameters.
 var usesTypeParams = map[string]struct{}{
-	"constraints": struct{}{}, // golang.org/issue/45458
-	"maps":        struct{}{}, // golang.org/issue/47649
-	"slices":      struct{}{}, // golang.org/issue/45955
+	"sync/atomic": struct{}{}, // https://go.dev/issue/50860
 }
 
 // Bundle checks a bundle of files (typically the standard library).
