@@ -329,6 +329,7 @@ func (pk *PacketBuffer) headerView(typ headerType) tcpipbuffer.View {
 // shared. Hence, no modifications is done to underlying packet payload.
 func (pk *PacketBuffer) Clone() *PacketBuffer {
 	newPk := pkPool.Get().(*PacketBuffer)
+	newPk.reset()
 	newPk.PacketBufferEntry = pk.PacketBufferEntry
 	newPk.buf = pk.buf.Clone()
 	newPk.reserved = pk.reserved
