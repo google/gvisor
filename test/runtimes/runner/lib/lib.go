@@ -68,22 +68,44 @@ func RunTests(lang, image, excludeFile string, batchSize int, timeout time.Durat
 	return m.Run()
 }
 
+func dockerHeartbeat(ctx context.Context, d *dockerutil.Container) chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			case <-time.After(30 * time.Second):
+				out, err := d.Exec(ctx, dockerutil.ExecOpts{}, "ps", "axf")
+				log.Infof("runner checking in: %s\n%s", err, out)
+			}
+		}
+	}()
+
+	return done
+}
+
 // getTests executes all tests as table tests.
 func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, batchSize int, timeout time.Duration, excludes map[string]struct{}) ([]testing.InternalTest, error) {
+	hdone := dockerHeartbeat(ctx, d)
+	defer close(hdone)
 	// Start the container.
 	opts := dockerutil.RunOpts{
 		Image: fmt.Sprintf("runtimes/%s", image),
 	}
+	log.Infof("Copy proctor")
 	d.CopyFiles(&opts, "/proctor", "test/runtimes/proctor/proctor")
 	if err := d.Spawn(ctx, opts, "/proctor/proctor", "--pause"); err != nil {
 		return nil, fmt.Errorf("docker run failed: %v", err)
 	}
 
+	log.Infof("List tests")
 	// Get a list of all tests in the image.
 	list, err := d.Exec(ctx, dockerutil.ExecOpts{}, "/proctor/proctor", "--runtime", lang, "--list")
 	if err != nil {
 		return nil, fmt.Errorf("docker exec failed: %v", err)
 	}
+	log.Infof("All tests: %s", list)
 
 	// Calculate a subset of tests.
 	tests := strings.Fields(list)
@@ -92,6 +114,7 @@ func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, 
 	if err != nil {
 		return nil, fmt.Errorf("TestsForShard() failed: %v", err)
 	}
+	log.Infof("indices: %s", indices)
 
 	var itests []testing.InternalTest
 	for i := 0; i < len(indices); i += batchSize {
@@ -112,6 +135,7 @@ func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, 
 			// No tests to add to this batch.
 			continue
 		}
+		log.Infof("Tests: %s", tcs)
 		itests = append(itests, testing.InternalTest{
 			Name: strings.Join(tcs, ", "),
 			F: func(t *testing.T) {
@@ -121,22 +145,31 @@ func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, 
 					output string
 					err    error
 				)
+				log.Infof("Run: %s", strings.Join(tcs, ", "))
 
+				hdone := dockerHeartbeat(ctx, d)
+				defer close(hdone)
+
+				log.Infof("Get status")
 				state, err := d.Status(ctx)
 				if err != nil {
 					t.Fatalf("Could not find container status: %v", err)
 				}
+				log.Infof("Get status: %s %s", err, state)
 				if !state.Running {
 					t.Fatalf("container is not running: state = %s", state.Status)
 				}
 
 				go func() {
+					log.Infof("Run tests: %s", strings.Join(tcs, ","))
 					output, err = d.Exec(ctx, dockerutil.ExecOpts{}, "/proctor/proctor", "--runtime", lang, "--tests", strings.Join(tcs, ","), fmt.Sprintf("--timeout=%s", timeout))
+					log.Infof("proctor exited: %s", err)
 					close(done)
 				}()
 
 				select {
 				case <-done:
+					log.Infof("Handle test results")
 					if err == nil {
 						fmt.Printf("PASS: (%v) %d tests passed\n", time.Since(now), len(tcs))
 						return
@@ -144,6 +177,16 @@ func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, 
 					t.Fatalf("FAIL: (%v):\nBatch:\n%s\nOutput:\n%s\n", time.Since(now), strings.Join(tcs, "\n"), output)
 				// Add one minute to let proctor handle timeout.
 				case <-time.After(timeout + time.Minute):
+					log.Infof("timed out: \n%s", log.Stacks(true))
+					go func() {
+						time.Sleep(30 * time.Second)
+						log.Warningf("timed out!!!")
+						go func() {
+							panic("timed out!!!")
+						}()
+						time.Sleep(5 * time.Second)
+						os.Exit(5)
+					}()
 					t.Fatalf("TIMEOUT: (%v):\nBatch:\n%s\nOutput:\n%s\n", time.Since(now), strings.Join(tcs, "\n"), output)
 				}
 			},

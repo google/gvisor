@@ -35,6 +35,7 @@ var _ TestRunner = javaRunner{}
 
 // ListTests implements TestRunner.ListTests.
 func (javaRunner) ListTests() ([]string, error) {
+	return javeTestList, nil
 	args := []string{
 		"-dir:" + javaTestDir,
 		"-ignore:quiet",

@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "go.go",
         "java.go",
+        "java_test_list.go",
         "lib.go",
         "nodejs.go",
         "php.go",

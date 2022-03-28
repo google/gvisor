@@ -44,10 +44,12 @@ type ExecOpts struct {
 
 // Exec creates a process inside the container.
 func (c *Container) Exec(ctx context.Context, opts ExecOpts, args ...string) (string, error) {
+	c.logger.Logf("Exec %v", args)
 	p, err := c.doExec(ctx, opts, args)
 	if err != nil {
 		return "", err
 	}
+	c.logger.Logf("Exec-ed %v", args)
 	done := make(chan struct{})
 	var (
 		out    string
@@ -61,11 +63,14 @@ func (c *Container) Exec(ctx context.Context, opts ExecOpts, args ...string) (st
 	}()
 
 	if exitStatus, err := p.WaitExitStatus(ctx); err != nil {
+		c.logger.Logf("Failed %v", err)
 		return "", err
 	} else if exitStatus != 0 {
+		c.logger.Logf("Exit status: %v", exitStatus)
 		<-done
 		return out, fmt.Errorf("process terminated with status: %d", exitStatus)
 	}
+	c.logger.Logf("Exit status: 0")
 
 	<-done
 	return out, outErr

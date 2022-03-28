@@ -234,11 +234,11 @@ packetimpact-tests:
 
 %-runtime-tests: load-runtimes_% $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),--watchdog-action=panic)
-	@$(call test_runtime,$(RUNTIME),--test_timeout=1800 //test/runtimes:$*)
+	@$(call test_runtime,$(RUNTIME),--test_timeout=1500 //test/runtimes:$*)
 
 %-runtime-tests_lisafs: load-runtimes_% $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME), --lisafs --watchdog-action=panic)
-	@$(call test_runtime,$(RUNTIME),--test_timeout=1800 //test/runtimes:$*)
+	@$(call test_runtime,$(RUNTIME),--test_timeout=1500 //test/runtimes:$*)
 
 do-tests: $(RUNTIME_BIN)
 	@$(RUNTIME_BIN) --rootless do true
