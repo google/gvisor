@@ -1064,6 +1064,14 @@ func getSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, fam
 		vP := primitive.Int32(boolToInt32(v))
 		return &vP, nil
 
+	case linux.SO_RCVLOWAT:
+		if outLen < sizeOfInt32 {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		v := primitive.Int32(ep.SocketOptions().GetRcvlowat())
+		return &v, nil
+
 	default:
 		socket.GetSockOptEmitUnimplementedEvent(t, name)
 	}
@@ -2001,6 +2009,17 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 		// optval is ignored.
 		var v tcpip.SocketDetachFilterOption
 		return syserr.TranslateNetstackError(ep.SetSockOpt(&v))
+
+	// TODO(b/226603727): Add support for SO_RCVLOWAT option. For now, only
+	// the unsupported syscall message is removed.
+	case linux.SO_RCVLOWAT:
+		if len(optVal) < sizeOfInt32 {
+			return syserr.ErrInvalidArgument
+		}
+
+		v := hostarch.ByteOrder.Uint32(optVal)
+		ep.SocketOptions().SetRcvlowat(int32(v))
+		return nil
 
 	default:
 		socket.SetSockOptEmitUnimplementedEvent(t, name)
