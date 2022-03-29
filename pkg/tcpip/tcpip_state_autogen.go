@@ -913,6 +913,7 @@ func (so *SocketOptions) StateFields() []string {
 		"sendBufferSize",
 		"receiveBufferSize",
 		"linger",
+		"rcvlowat",
 	}
 }
 
@@ -947,6 +948,7 @@ func (so *SocketOptions) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(23, &so.sendBufferSize)
 	stateSinkObject.Save(24, &so.receiveBufferSize)
 	stateSinkObject.Save(25, &so.linger)
+	stateSinkObject.Save(26, &so.rcvlowat)
 }
 
 func (so *SocketOptions) afterLoad() {}
@@ -979,6 +981,7 @@ func (so *SocketOptions) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(23, &so.sendBufferSize)
 	stateSourceObject.Load(24, &so.receiveBufferSize)
 	stateSourceObject.Load(25, &so.linger)
+	stateSourceObject.Load(26, &so.rcvlowat)
 }
 
 func (l *LocalSockError) StateTypeName() string {

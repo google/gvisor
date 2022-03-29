@@ -583,7 +583,6 @@ func emitUnimplementedEvent(t *kernel.Task, name int) {
 		linux.SO_PEEK_OFF,
 		linux.SO_PRIORITY,
 		linux.SO_RCVBUF,
-		linux.SO_RCVLOWAT,
 		linux.SO_RCVTIMEO,
 		linux.SO_REUSEADDR,
 		linux.SO_REUSEPORT,
