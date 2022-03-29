@@ -295,6 +295,13 @@ type TCPSenderState struct {
 
 	// SpuriousRecovery indicates if the sender entered recovery spuriously.
 	SpuriousRecovery bool
+
+	// UndoMarker is set when the sender entered a recovery episode.
+	UndoMarker bool
+
+	// UnackedRetrans indicates the number of retransmissions which are not
+	// acknowledged.
+	UnackedRetrans int32
 }
 
 // TCPSACKInfo holds TCP SACK related information for a given TCP endpoint.

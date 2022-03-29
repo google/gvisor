@@ -946,6 +946,103 @@ func TestNoSpuriousRecoveryWithDSACK(t *testing.T) {
 	verifySpuriousRecoveryMetric(t, c, 0 /* numSpuriousRecovery */, 0 /* numSpuriousRTO */)
 }
 
+func TestInitializeUndoCwndReduction(t *testing.T) {
+	c := context.New(t, uint32(mtu))
+	defer c.Cleanup()
+
+	probeDone := make(chan struct{})
+	numAck := 0
+	c.Stack().AddTCPProbe(func(s stack.TCPEndpointState) {
+		if numAck != 2 {
+			return
+		}
+		if !s.Sender.UndoMarker {
+			t.Fatalf("UndoMarker did not get updated, got: false want: true")
+		}
+		if s.Sender.UnackedRetrans != 2 {
+			t.Fatalf("UnackedRetrans did not get updated, got: %d want: 2", s.Sender.UnackedRetrans)
+		}
+		close(probeDone)
+	})
+	numPackets := 5
+	e2e.SetStackSACKPermitted(t, c, true)
+	e2e.CreateConnectedWithSACKAndTS(c)
+	data := make([]byte, numPackets*maxPayload)
+	for i := range data {
+		data[i] = byte(i)
+	}
+	// Write the data.
+	var r bytes.Reader
+	r.Reset(data)
+	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
+		t.Fatalf("Write failed: %s", err)
+	}
+
+	var bytesRead uint32
+	for i := 0; i < numPackets; i++ {
+		b := c.GetPacket()
+		tcpHdr := header.TCP(header.IPv4(b).Payload())
+		checkReceivedPacket(t, c, tcpHdr, bytesRead, b, data)
+		bytesRead += uint32(len(tcpHdr.Payload()))
+	}
+
+	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+
+	// Expect #5 to be retransmitted because of TLP.
+	c.ReceiveAndCheckPacketWithOptions(data, 4*maxPayload, maxPayload, tsOptionSize)
+
+	// Now SACK #3, #4 and #5 packets, the sender will enter recovery and
+	// retransmit the #1 and #2 packet.
+	p3Start := c.IRS.Add(1 + seqnum.Size(2*maxPayload))
+	p3End := p3Start.Add(maxPayload)
+	p4Start := p3End
+	p4End := p4Start.Add(maxPayload)
+	p5Start := p4End
+	p5End := p5Start.Add(maxPayload)
+	numAck++
+	c.SendAckWithSACK(seq, 0, []header.SACKBlock{{p3Start, p5End}})
+
+	// Expect #1 to be retransmitted.
+	c.ReceiveAndCheckPacketWithOptions(data, 0, maxPayload, tsOptionSize)
+
+	// Expect #2 to be retransmitted.
+	c.ReceiveAndCheckPacketWithOptions(data, maxPayload, maxPayload, tsOptionSize)
+
+	// Send the ACK again to verify that number of unacked retransmits.
+	numAck++
+	c.SendAckWithSACK(seq, 0, []header.SACKBlock{{p3Start, p5End}})
+
+	// Wait for the probe function to finish processing the
+	// ACK before the test completes.
+	<-probeDone
+
+	metricPollFn := func() error {
+		tcpStats := c.Stack().Stats().TCP
+		stats := []struct {
+			stat *tcpip.StatCounter
+			name string
+			want uint64
+		}{
+			// SACK recovery must have happened.
+			{tcpStats.FastRetransmit, "stats.TCP.FastRetransmit", 1},
+			{tcpStats.SACKRecovery, "stats.TCP.SACKRecovery", 1},
+			{tcpStats.Retransmits, "stats.TCP.Retransmits", 3},
+			// No RTOs should have fired yet.
+			{tcpStats.Timeouts, "stats.TCP.Timeouts", 0},
+		}
+		for _, s := range stats {
+			if got, want := s.stat.Value(), s.want; got != want {
+				return fmt.Errorf("got %s.Value() = %d, want = %d", s.name, got, want)
+			}
+		}
+		return nil
+	}
+
+	if err := testutil.Poll(metricPollFn, 1*time.Second); err != nil {
+		t.Error(err)
+	}
+}
+
 func TestMain(m *testing.M) {
 	refs.SetLeakMode(refs.LeaksPanic)
 	code := m.Run()

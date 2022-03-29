@@ -3107,6 +3107,8 @@ func (e *endpoint) completeStateLocked() stack.TCPEndpointState {
 	s.Sender.RACKState = e.snd.rc.TCPRACKState
 	s.Sender.RetransmitTS = e.snd.retransmitTS
 	s.Sender.SpuriousRecovery = e.snd.spuriousRecovery
+	s.Sender.UndoMarker = e.snd.undoMarker
+	s.Sender.UnackedRetrans = e.snd.unackedRetrans
 	return s
 }
 

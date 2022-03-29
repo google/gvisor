@@ -149,6 +149,13 @@ type sender struct {
 	// segment after entering an RTO for the first time as described in
 	// RFC3522 Section 3.2.
 	retransmitTS uint32
+
+	// undoMarker when set indicates a new recovery episode.
+	undoMarker bool
+
+	// unackedRetrans is the number of retransmits which are not
+	// acknowledged.
+	unackedRetrans int32
 }
 
 // rtt is a synchronization wrapper used to appease stateify. See the comment
@@ -232,7 +239,6 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 		panic(fmt.Sprintf("unable to get maxRetries from stack: %s", err))
 	}
 	s.maxRetries = uint32(maxRetries)
-
 	return s
 }
 
@@ -512,6 +518,9 @@ func (s *sender) retransmitTimerExpired() tcpip.Error {
 		// has already been updated when entered fast-recovery.
 		s.leaveRecovery()
 	}
+
+	// Initialize variables for undo of congestion window reduction.
+	s.initUndoCwnd()
 
 	// Record retransmitTS if the sender is not in recovery as per:
 	// https://datatracker.ietf.org/doc/html/rfc3522#section-3.2 Step 2
@@ -984,6 +993,11 @@ func (s *sender) sendData() {
 	s.postXmit(dataSent, true /* shouldScheduleProbe */)
 }
 
+// Initialize variables for undo of congestion window reduction.
+func (s *sender) initUndoCwnd() {
+	s.undoMarker = true
+}
+
 func (s *sender) enterRecovery() {
 	// Initialize the variables used to detect spurious recovery after
 	// entering recovery.
@@ -1010,6 +1024,9 @@ func (s *sender) enterRecovery() {
 	// Record retransmitTS if the sender is not in recovery as per:
 	// https://datatracker.ietf.org/doc/html/rfc3522#section-3.2 Step 2
 	s.recordRetransmitTS()
+
+	// Initialize variables for undo of congestion window reduction.
+	s.initUndoCwnd()
 
 	if s.ep.SACKPermitted {
 		s.state = tcpip.SACKRecovery
@@ -1231,6 +1248,10 @@ func (s *sender) walkSACK(rcvdSeg *segment) bool {
 				s.rc.detectReorder(seg)
 				seg.acked = true
 				s.SackedOut += s.pCount(seg, s.MaxPayloadSize)
+
+				if seg.xmitCount > 1 {
+					s.unackedRetrans -= int32(s.pCount(seg, s.MaxPayloadSize))
+				}
 			}
 			seg = seg.Next()
 		}
@@ -1528,6 +1549,9 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 			// already been accounted for in SetPipe().
 			if !s.ep.SACKPermitted || !s.ep.scoreboard.IsSACKED(seg.sackBlock()) {
 				s.Outstanding -= s.pCount(seg, s.MaxPayloadSize)
+				if seg.xmitCount > 1 {
+					s.unackedRetrans -= int32(s.pCount(seg, s.MaxPayloadSize))
+				}
 			} else {
 				s.SackedOut -= s.pCount(seg, s.MaxPayloadSize)
 			}
@@ -1629,6 +1653,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 // +checklocks:s.ep.mu
 func (s *sender) sendSegment(seg *segment) tcpip.Error {
 	if seg.xmitCount > 0 {
+		s.unackedRetrans += int32(s.pCount(seg, s.MaxPayloadSize))
 		s.ep.stack.Stats().TCP.Retransmits.Increment()
 		s.ep.stats.SendErrors.Retransmits.Increment()
 		if s.SndCwnd < s.Ssthresh {
