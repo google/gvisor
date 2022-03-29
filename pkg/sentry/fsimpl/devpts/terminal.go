@@ -32,56 +32,51 @@ type Terminal struct {
 	// ld is the line discipline of the terminal. It is immutable.
 	ld *lineDiscipline
 
-	// masterKTTY contains the controlling process of the master end of
-	// this terminal. This field is immutable.
-	masterKTTY *kernel.TTY
-
-	// replicaKTTY contains the controlling process of the replica end of this
-	// terminal. This field is immutable.
-	replicaKTTY *kernel.TTY
+	// kTTY contains the controlling process of this terminal. This field
+	// is immutable.
+	kTTY *kernel.TTY
 }
 
 func newTerminal(n uint32) *Terminal {
 	termios := linux.DefaultReplicaTermios
 	t := Terminal{
-		n:           n,
-		ld:          newLineDiscipline(termios),
-		masterKTTY:  &kernel.TTY{Index: n},
-		replicaKTTY: &kernel.TTY{Index: n},
+		n:    n,
+		ld:   newLineDiscipline(termios),
+		kTTY: &kernel.TTY{Index: n},
 	}
 	return &t
 }
 
 // setControllingTTY makes tm the controlling terminal of the calling thread
 // group.
-func (tm *Terminal) setControllingTTY(ctx context.Context, steal bool, isMaster, isReadable bool) error {
+func (tm *Terminal) setControllingTTY(ctx context.Context, steal bool, isReadable bool) error {
 	task := kernel.TaskFromContext(ctx)
 	if task == nil {
 		panic("setControllingTTY must be called from a task context")
 	}
 
-	return task.ThreadGroup().SetControllingTTY(tm.tty(isMaster), steal, isReadable)
+	return task.ThreadGroup().SetControllingTTY(tm.kTTY, steal, isReadable)
 }
 
 // releaseControllingTTY removes tm as the controlling terminal of the calling
 // thread group.
-func (tm *Terminal) releaseControllingTTY(ctx context.Context, isMaster bool) error {
+func (tm *Terminal) releaseControllingTTY(ctx context.Context) error {
 	task := kernel.TaskFromContext(ctx)
 	if task == nil {
 		panic("releaseControllingTTY must be called from a task context")
 	}
 
-	return task.ThreadGroup().ReleaseControllingTTY(tm.tty(isMaster))
+	return task.ThreadGroup().ReleaseControllingTTY(tm.kTTY)
 }
 
 // foregroundProcessGroup gets the process group ID of tm's foreground process.
-func (tm *Terminal) foregroundProcessGroup(ctx context.Context, args arch.SyscallArguments, isMaster bool) (uintptr, error) {
+func (tm *Terminal) foregroundProcessGroup(ctx context.Context, args arch.SyscallArguments) (uintptr, error) {
 	task := kernel.TaskFromContext(ctx)
 	if task == nil {
 		panic("foregroundProcessGroup must be called from a task context")
 	}
 
-	ret, err := task.ThreadGroup().ForegroundProcessGroup(tm.tty(isMaster))
+	ret, err := task.ThreadGroup().ForegroundProcessGroup(tm.kTTY)
 	if err != nil {
 		return 0, err
 	}
@@ -93,7 +88,7 @@ func (tm *Terminal) foregroundProcessGroup(ctx context.Context, args arch.Syscal
 }
 
 // foregroundProcessGroup sets tm's foreground process.
-func (tm *Terminal) setForegroundProcessGroup(ctx context.Context, args arch.SyscallArguments, isMaster bool) (uintptr, error) {
+func (tm *Terminal) setForegroundProcessGroup(ctx context.Context, args arch.SyscallArguments) (uintptr, error) {
 	task := kernel.TaskFromContext(ctx)
 	if task == nil {
 		panic("setForegroundProcessGroup must be called from a task context")
@@ -105,13 +100,6 @@ func (tm *Terminal) setForegroundProcessGroup(ctx context.Context, args arch.Sys
 		return 0, err
 	}
 
-	ret, err := task.ThreadGroup().SetForegroundProcessGroup(tm.tty(isMaster), kernel.ProcessGroupID(pgid))
+	ret, err := task.ThreadGroup().SetForegroundProcessGroup(tm.kTTY, kernel.ProcessGroupID(pgid))
 	return uintptr(ret), err
-}
-
-func (tm *Terminal) tty(isMaster bool) *kernel.TTY {
-	if isMaster {
-		return tm.masterKTTY
-	}
-	return tm.replicaKTTY
 }
