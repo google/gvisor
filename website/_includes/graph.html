@@ -90,7 +90,7 @@ d3.csv("{{ include.url }}", function(d, i, columns) {
         var x1_domain = runtimes;
     }
 
-    // Determine varaible margins.
+    // Determine variable margins.
     var x0_domain = data.map(d => d[x0_key]);
     var margin_bottom_pad = 0;
     if (x0_domain.length > 8) {
@@ -170,7 +170,7 @@ d3.csv("{{ include.url }}", function(d, i, columns) {
     }
     g.append("g")
         .attr("class", "axis")
-        .call(d3.axisLeft(y).ticks(null, "s"))
+        .call(d3.axisLeft(y).ticks(null, ".1s"))
         .append("text")
         .attr("x", -30.0)
         .attr("y", y(y.ticks().pop()) - 10.0)
