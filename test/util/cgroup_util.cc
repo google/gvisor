@@ -92,6 +92,37 @@ PosixErrorOr<absl::flat_hash_set<pid_t>> Cgroup::Tasks() const {
   return ParsePIDList(buf);
 }
 
+PosixError Cgroup::PollControlFileForChange(absl::string_view name,
+                                            absl::Duration timeout) const {
+  const absl::Duration poll_interval = absl::Milliseconds(10);
+  const absl::Time deadline = absl::Now() + timeout;
+  const std::string alias_path = absl::StrFormat("[cg#%d]/%s", id_, name);
+
+  ASSIGN_OR_RETURN_ERRNO(const int64_t initial_value,
+                         ReadIntegerControlFile(name));
+
+  while (true) {
+    ASSIGN_OR_RETURN_ERRNO(const int64_t current_value,
+                           ReadIntegerControlFile(name));
+    if (current_value != initial_value) {
+      std::cerr << absl::StreamFormat(
+                       "Control file '%s' changed from '%d' to '%d'",
+                       alias_path, initial_value, current_value)
+                << std::endl;
+      return NoError();
+    }
+    if (absl::Now() >= deadline) {
+      return PosixError(ETIME, absl::StrCat(alias_path, " didn't change in ",
+                                            absl::FormatDuration(timeout)));
+    }
+    std::cerr << absl::StreamFormat(
+                     "Waiting for control file '%s' to change from '%d'...",
+                     alias_path, initial_value)
+              << std::endl;
+    absl::SleepFor(poll_interval);
+  }
+}
+
 PosixError Cgroup::ContainsCallingProcess() const {
   ASSIGN_OR_RETURN_ERRNO(const absl::flat_hash_set<pid_t> procs, Procs());
   ASSIGN_OR_RETURN_ERRNO(const absl::flat_hash_set<pid_t> tasks, Tasks());

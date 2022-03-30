@@ -508,6 +508,143 @@ TEST(CPUAcctCgroup, CPUAcctStat) {
   EXPECT_THAT(Atoi<int64_t>(sys_tokens[1]), IsPosixErrorOkAndHolds(Ge(0)));
 }
 
+TEST(CPUAcctCgroup, HierarchicalAccounting) {
+  SKIP_IF(!CgroupsAvailable());
+
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup root = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("cpuacct"));
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(root.CreateChild("child1"));
+
+  // Root should have non-zero CPU usage since the test itself will be running
+  // in the root cgroup.
+  EXPECT_THAT(root.ReadIntegerControlFile("cpuacct.usage"),
+              IsPosixErrorOkAndHolds(Gt(0)));
+
+  // Child should have zero usage since it is initially empty.
+  EXPECT_THAT(child.ReadIntegerControlFile("cpuacct.usage"),
+              IsPosixErrorOkAndHolds(Eq(0)));
+
+  // Move test into child and confirm child starts incurring usage.
+  const int64_t before_move =
+      ASSERT_NO_ERRNO_AND_VALUE(root.ReadIntegerControlFile("cpuacct.usage"));
+  ASSERT_NO_ERRNO(child.Enter(getpid()));
+  ASSERT_NO_ERRNO(
+      child.PollControlFileForChange("cpuacct.usage", absl::Seconds(30)));
+
+  EXPECT_THAT(child.ReadIntegerControlFile("cpuacct.usage"),
+              IsPosixErrorOkAndHolds(Gt(0)));
+
+  // Root shouldn't lose usage due to the migration.
+  const int64_t after_move =
+      ASSERT_NO_ERRNO_AND_VALUE(root.ReadIntegerControlFile("cpuacct.usage"));
+  EXPECT_GE(after_move, before_move);
+
+  // Root should continue to gain usage after the move since child is a
+  // subcgroup.
+  ASSERT_NO_ERRNO(
+      child.PollControlFileForChange("cpuacct.usage", absl::Seconds(30)));
+  EXPECT_THAT(root.ReadIntegerControlFile("cpuacct.usage"),
+              IsPosixErrorOkAndHolds(Ge(after_move)));
+}
+
+TEST(CPUAcctCgroup, IndirectCharge) {
+  SKIP_IF(!CgroupsAvailable());
+
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup root = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("cpuacct"));
+  Cgroup child1 = ASSERT_NO_ERRNO_AND_VALUE(root.CreateChild("child1"));
+  Cgroup child2 = ASSERT_NO_ERRNO_AND_VALUE(root.CreateChild("child2"));
+  Cgroup child2a = ASSERT_NO_ERRNO_AND_VALUE(child2.CreateChild("child2a"));
+
+  ASSERT_NO_ERRNO(child1.Enter(getpid()));
+  ASSERT_NO_ERRNO(
+      child1.PollControlFileForChange("cpuacct.usage", absl::Seconds(30)));
+
+  // Only root and child1 should have usage.
+  for (auto const& cg : {root, child1}) {
+    EXPECT_THAT(cg.ReadIntegerControlFile("cpuacct.usage"),
+                IsPosixErrorOkAndHolds(Gt(0)));
+  }
+  for (auto const& cg : {child2, child2a}) {
+    EXPECT_THAT(cg.ReadIntegerControlFile("cpuacct.usage"),
+                IsPosixErrorOkAndHolds(Eq(0)));
+  }
+
+  ASSERT_NO_ERRNO(child2a.Enter(getpid()));
+  ASSERT_NO_ERRNO(
+      child2a.PollControlFileForChange("cpuacct.usage", absl::Seconds(30)));
+
+  const int64_t snapshot_root =
+      ASSERT_NO_ERRNO_AND_VALUE(root.ReadIntegerControlFile("cpuacct.usage"));
+  const int64_t snapshot_child1 =
+      ASSERT_NO_ERRNO_AND_VALUE(child1.ReadIntegerControlFile("cpuacct.usage"));
+  const int64_t snapshot_child2 =
+      ASSERT_NO_ERRNO_AND_VALUE(child2.ReadIntegerControlFile("cpuacct.usage"));
+  const int64_t snapshot_child2a = ASSERT_NO_ERRNO_AND_VALUE(
+      child2a.ReadIntegerControlFile("cpuacct.usage"));
+
+  ASSERT_NO_ERRNO(
+      child2a.PollControlFileForChange("cpuacct.usage", absl::Seconds(30)));
+
+  // Root, child2 and child2a should've accumulated new usage. Child1 should
+  // not.
+  const int64_t now_root =
+      ASSERT_NO_ERRNO_AND_VALUE(root.ReadIntegerControlFile("cpuacct.usage"));
+  const int64_t now_child1 =
+      ASSERT_NO_ERRNO_AND_VALUE(child1.ReadIntegerControlFile("cpuacct.usage"));
+  const int64_t now_child2 =
+      ASSERT_NO_ERRNO_AND_VALUE(child2.ReadIntegerControlFile("cpuacct.usage"));
+  const int64_t now_child2a = ASSERT_NO_ERRNO_AND_VALUE(
+      child2a.ReadIntegerControlFile("cpuacct.usage"));
+
+  EXPECT_GT(now_root, snapshot_root);
+  EXPECT_GT(now_child2, snapshot_child2);
+  EXPECT_GT(now_child2a, snapshot_child2a);
+  EXPECT_EQ(now_child1, snapshot_child1);
+}
+
+TEST(CPUAcctCgroup, NoDoubleAccounting) {
+  SKIP_IF(!CgroupsAvailable());
+
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup root = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("cpuacct"));
+  Cgroup parent = ASSERT_NO_ERRNO_AND_VALUE(root.CreateChild("parent"));
+  Cgroup a = ASSERT_NO_ERRNO_AND_VALUE(parent.CreateChild("a"));
+  Cgroup b = ASSERT_NO_ERRNO_AND_VALUE(parent.CreateChild("b"));
+
+  ASSERT_NO_ERRNO(a.Enter(getpid()));
+  ASSERT_NO_ERRNO(
+      a.PollControlFileForChange("cpuacct.usage", absl::Seconds(30)));
+
+  ASSERT_NO_ERRNO(b.Enter(getpid()));
+  ASSERT_NO_ERRNO(
+      b.PollControlFileForChange("cpuacct.usage", absl::Seconds(30)));
+
+  ASSERT_NO_ERRNO(root.Enter(getpid()));
+  ASSERT_NO_ERRNO(
+      root.PollControlFileForChange("cpuacct.usage", absl::Seconds(30)));
+
+  // The usage for parent, a & b should now be frozen, since they no longer have
+  // any tasks. Root will continue to accumulate usage.
+  const int64_t usage_root =
+      ASSERT_NO_ERRNO_AND_VALUE(root.ReadIntegerControlFile("cpuacct.usage"));
+  const int64_t usage_parent =
+      ASSERT_NO_ERRNO_AND_VALUE(parent.ReadIntegerControlFile("cpuacct.usage"));
+  const int64_t usage_a =
+      ASSERT_NO_ERRNO_AND_VALUE(a.ReadIntegerControlFile("cpuacct.usage"));
+  const int64_t usage_b =
+      ASSERT_NO_ERRNO_AND_VALUE(b.ReadIntegerControlFile("cpuacct.usage"));
+
+  EXPECT_GT(usage_root, 0);
+  EXPECT_GT(usage_parent, 0);
+  EXPECT_GT(usage_a, 0);
+  EXPECT_GT(usage_b, 0);
+  EXPECT_EQ(usage_parent, usage_a + usage_b);
+  EXPECT_GE(usage_parent, usage_a);
+  EXPECT_GE(usage_parent, usage_b);
+  EXPECT_GE(usage_root, usage_parent);
+}
+
 // WriteAndVerifyControlValue attempts to write val to a cgroup file at path,
 // and verify the value by reading it afterwards.
 PosixError WriteAndVerifyControlValue(const Cgroup& c, std::string_view path,
