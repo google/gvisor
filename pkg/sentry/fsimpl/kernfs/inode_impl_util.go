@@ -486,6 +486,16 @@ func (o *OrderedChildren) Lookup(ctx context.Context, name string) (Inode, error
 	return s.inode, nil
 }
 
+// ForEachChild calls fn on all childrens tracked by this ordered children.
+func (o *OrderedChildren) ForEachChild(fn func(string, Inode)) {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+
+	for name, slot := range o.set {
+		fn(name, slot.inode)
+	}
+}
+
 // IterDirents implements Inode.IterDirents.
 func (o *OrderedChildren) IterDirents(ctx context.Context, mnt *vfs.Mount, cb vfs.IterDirentsCallback, offset, relOffset int64) (newOffset int64, err error) {
 	// All entries from OrderedChildren have already been handled in

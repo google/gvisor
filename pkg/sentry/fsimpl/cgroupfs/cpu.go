@@ -23,7 +23,7 @@ import (
 // +stateify savable
 type cpuController struct {
 	controllerCommon
-	controllerNoopMigrate
+	controllerStateless
 
 	// CFS bandwidth control parameters, values in microseconds.
 	cfsPeriod int64
@@ -67,7 +67,7 @@ func (c *cpuController) Clone() controller {
 		cfsQuota:  c.cfsQuota,
 		shares:    c.shares,
 	}
-	new.controllerCommon.cloneFrom(&c.controllerCommon)
+	new.controllerCommon.cloneFromParent(c)
 	return new
 }
 

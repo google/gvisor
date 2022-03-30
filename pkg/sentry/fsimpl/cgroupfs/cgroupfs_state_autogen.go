@@ -14,6 +14,7 @@ func (c *controllerCommon) StateFields() []string {
 	return []string{
 		"ty",
 		"fs",
+		"parent",
 	}
 }
 
@@ -24,6 +25,7 @@ func (c *controllerCommon) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	stateSinkObject.Save(0, &c.ty)
 	stateSinkObject.Save(1, &c.fs)
+	stateSinkObject.Save(2, &c.parent)
 }
 
 func (c *controllerCommon) afterLoad() {}
@@ -32,6 +34,7 @@ func (c *controllerCommon) afterLoad() {}
 func (c *controllerCommon) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.ty)
 	stateSourceObject.Load(1, &c.fs)
+	stateSourceObject.Load(2, &c.parent)
 }
 
 func (c *cgroupInode) StateTypeName() string {
@@ -371,7 +374,7 @@ func (c *cpuController) StateTypeName() string {
 func (c *cpuController) StateFields() []string {
 	return []string{
 		"controllerCommon",
-		"controllerNoopMigrate",
+		"controllerStateless",
 		"cfsPeriod",
 		"cfsQuota",
 		"shares",
@@ -384,7 +387,7 @@ func (c *cpuController) beforeSave() {}
 func (c *cpuController) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	stateSinkObject.Save(0, &c.controllerCommon)
-	stateSinkObject.Save(1, &c.controllerNoopMigrate)
+	stateSinkObject.Save(1, &c.controllerStateless)
 	stateSinkObject.Save(2, &c.cfsPeriod)
 	stateSinkObject.Save(3, &c.cfsQuota)
 	stateSinkObject.Save(4, &c.shares)
@@ -395,7 +398,7 @@ func (c *cpuController) afterLoad() {}
 // +checklocksignore
 func (c *cpuController) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.controllerCommon)
-	stateSourceObject.Load(1, &c.controllerNoopMigrate)
+	stateSourceObject.Load(1, &c.controllerStateless)
 	stateSourceObject.Load(2, &c.cfsPeriod)
 	stateSourceObject.Load(3, &c.cfsQuota)
 	stateSourceObject.Load(4, &c.shares)
@@ -408,7 +411,9 @@ func (c *cpuacctController) StateTypeName() string {
 func (c *cpuacctController) StateFields() []string {
 	return []string{
 		"controllerCommon",
-		"controllerNoopMigrate",
+		"controllerStateless",
+		"taskCommittedCharges",
+		"usage",
 	}
 }
 
@@ -418,7 +423,9 @@ func (c *cpuacctController) beforeSave() {}
 func (c *cpuacctController) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	stateSinkObject.Save(0, &c.controllerCommon)
-	stateSinkObject.Save(1, &c.controllerNoopMigrate)
+	stateSinkObject.Save(1, &c.controllerStateless)
+	stateSinkObject.Save(2, &c.taskCommittedCharges)
+	stateSinkObject.Save(3, &c.usage)
 }
 
 func (c *cpuacctController) afterLoad() {}
@@ -426,7 +433,9 @@ func (c *cpuacctController) afterLoad() {}
 // +checklocksignore
 func (c *cpuacctController) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.controllerCommon)
-	stateSourceObject.Load(1, &c.controllerNoopMigrate)
+	stateSourceObject.Load(1, &c.controllerStateless)
+	stateSourceObject.Load(2, &c.taskCommittedCharges)
+	stateSourceObject.Load(3, &c.usage)
 }
 
 func (c *cpuacctCgroup) StateTypeName() string {
@@ -561,7 +570,7 @@ func (c *cpusetController) StateTypeName() string {
 func (c *cpusetController) StateFields() []string {
 	return []string{
 		"controllerCommon",
-		"controllerNoopMigrate",
+		"controllerStateless",
 		"maxCpus",
 		"maxMems",
 		"cpus",
@@ -575,7 +584,7 @@ func (c *cpusetController) beforeSave() {}
 func (c *cpusetController) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	stateSinkObject.Save(0, &c.controllerCommon)
-	stateSinkObject.Save(1, &c.controllerNoopMigrate)
+	stateSinkObject.Save(1, &c.controllerStateless)
 	stateSinkObject.Save(2, &c.maxCpus)
 	stateSinkObject.Save(3, &c.maxMems)
 	stateSinkObject.Save(4, &c.cpus)
@@ -587,7 +596,7 @@ func (c *cpusetController) afterLoad() {}
 // +checklocksignore
 func (c *cpusetController) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.controllerCommon)
-	stateSourceObject.Load(1, &c.controllerNoopMigrate)
+	stateSourceObject.Load(1, &c.controllerStateless)
 	stateSourceObject.Load(2, &c.maxCpus)
 	stateSourceObject.Load(3, &c.maxMems)
 	stateSourceObject.Load(4, &c.cpus)
@@ -675,7 +684,7 @@ func (c *jobController) StateTypeName() string {
 func (c *jobController) StateFields() []string {
 	return []string{
 		"controllerCommon",
-		"controllerNoopMigrate",
+		"controllerStateless",
 		"id",
 	}
 }
@@ -686,7 +695,7 @@ func (c *jobController) beforeSave() {}
 func (c *jobController) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	stateSinkObject.Save(0, &c.controllerCommon)
-	stateSinkObject.Save(1, &c.controllerNoopMigrate)
+	stateSinkObject.Save(1, &c.controllerStateless)
 	stateSinkObject.Save(2, &c.id)
 }
 
@@ -695,7 +704,7 @@ func (c *jobController) afterLoad() {}
 // +checklocksignore
 func (c *jobController) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.controllerCommon)
-	stateSourceObject.Load(1, &c.controllerNoopMigrate)
+	stateSourceObject.Load(1, &c.controllerStateless)
 	stateSourceObject.Load(2, &c.id)
 }
 
@@ -706,7 +715,7 @@ func (c *memoryController) StateTypeName() string {
 func (c *memoryController) StateFields() []string {
 	return []string{
 		"controllerCommon",
-		"controllerNoopMigrate",
+		"controllerStateless",
 		"limitBytes",
 		"softLimitBytes",
 		"moveChargeAtImmigrate",
@@ -720,7 +729,7 @@ func (c *memoryController) beforeSave() {}
 func (c *memoryController) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	stateSinkObject.Save(0, &c.controllerCommon)
-	stateSinkObject.Save(1, &c.controllerNoopMigrate)
+	stateSinkObject.Save(1, &c.controllerStateless)
 	stateSinkObject.Save(2, &c.limitBytes)
 	stateSinkObject.Save(3, &c.softLimitBytes)
 	stateSinkObject.Save(4, &c.moveChargeAtImmigrate)
@@ -732,7 +741,7 @@ func (c *memoryController) afterLoad() {}
 // +checklocksignore
 func (c *memoryController) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.controllerCommon)
-	stateSourceObject.Load(1, &c.controllerNoopMigrate)
+	stateSourceObject.Load(1, &c.controllerStateless)
 	stateSourceObject.Load(2, &c.limitBytes)
 	stateSourceObject.Load(3, &c.softLimitBytes)
 	stateSourceObject.Load(4, &c.moveChargeAtImmigrate)

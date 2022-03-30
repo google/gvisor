@@ -44,3 +44,14 @@ func (s *CPUStats) Accumulate(s2 CPUStats) {
 	s.SysTime += s2.SysTime
 	s.VoluntarySwitches += s2.VoluntarySwitches
 }
+
+// DifferenceSince computes s - earlierSample.
+//
+// Precondition: s >= earlierSample.
+func (s *CPUStats) DifferenceSince(earlierSample CPUStats) CPUStats {
+	return CPUStats{
+		UserTime:          s.UserTime - earlierSample.UserTime,
+		SysTime:           s.SysTime - earlierSample.SysTime,
+		VoluntarySwitches: s.VoluntarySwitches - earlierSample.VoluntarySwitches,
+	}
+}
