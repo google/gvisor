@@ -698,6 +698,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:socket_ipv6_udp_unbound_external_networking_test",
+)
+
+syscall_test(
     size = "large",
     shard_count = most_shards,
     test = "//test/syscalls/linux:socket_ip_tcp_generic_loopback_test",
