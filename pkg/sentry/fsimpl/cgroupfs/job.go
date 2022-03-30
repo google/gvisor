@@ -23,7 +23,7 @@ import (
 // +stateify savable
 type jobController struct {
 	controllerCommon
-	controllerNoopMigrate
+	controllerStateless
 
 	id int64
 }
@@ -41,7 +41,7 @@ func (c *jobController) Clone() controller {
 	new := &jobController{
 		id: c.id,
 	}
-	new.controllerCommon.cloneFrom(&c.controllerCommon)
+	new.controllerCommon.cloneFromParent(c)
 	return new
 }
 

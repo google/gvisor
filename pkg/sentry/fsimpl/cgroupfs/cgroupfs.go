@@ -541,6 +541,14 @@ func (d *dir) RmDir(ctx context.Context, name string, child kernfs.Inode) error 
 	return err
 }
 
+func (d *dir) forEachChildDir(fn func(*dir)) {
+	d.OrderedChildren.ForEachChild(func(_ string, i kernfs.Inode) {
+		if childI, ok := i.(*cgroupInode); ok {
+			fn(&childI.dir)
+		}
+	})
+}
+
 // controllerFile represents a generic control file that appears within a cgroup
 // directory.
 //

@@ -70,6 +70,10 @@ class Cgroup {
   PosixError WriteIntegerControlFile(absl::string_view name,
                                      int64_t value) const;
 
+  // Waits for a control file's value to change.
+  PosixError PollControlFileForChange(absl::string_view name,
+                                      absl::Duration timeout) const;
+
   // Returns the thread ids of the leaders of thread groups managed by this
   // cgroup.
   PosixErrorOr<absl::flat_hash_set<pid_t>> Procs() const;

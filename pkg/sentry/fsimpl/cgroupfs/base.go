@@ -40,6 +40,11 @@ import (
 type controllerCommon struct {
 	ty kernel.CgroupControllerType
 	fs *filesystem
+	// parent is the parent controller if any. Immutable.
+	//
+	// Note that we don't have to update this on renames, since cgroup
+	// directories can't be moved to a different parent directory.
+	parent controller
 }
 
 func (c *controllerCommon) init(ty kernel.CgroupControllerType, fs *filesystem) {
@@ -47,9 +52,15 @@ func (c *controllerCommon) init(ty kernel.CgroupControllerType, fs *filesystem) 
 	c.fs = fs
 }
 
-func (c *controllerCommon) cloneFrom(other *controllerCommon) {
-	c.ty = other.ty
-	c.fs = other.fs
+func (c *controllerCommon) cloneFromParent(parent controller) {
+	c.ty = parent.Type()
+	c.fs = parent.Filesystem()
+	c.parent = parent
+}
+
+// Filesystem implements controller.Filesystem.
+func (c *controllerCommon) Filesystem() *filesystem {
+	return c.fs
 }
 
 // Type implements kernel.CgroupController.Type.
@@ -85,7 +96,10 @@ func (c *controllerCommon) RootCgroup() kernel.Cgroup {
 type controller interface {
 	kernel.CgroupController
 
-	// Clone creates a new controller based on the internal state of the current
+	// Filesystem returns the cgroupfs filesystem backing this controller.
+	Filesystem() *filesystem
+
+	// Clone creates a new controller based on the internal state of this
 	// controller. This is used to initialize a sub-cgroup based on the state of
 	// the parent.
 	Clone() controller
@@ -93,6 +107,18 @@ type controller interface {
 	// AddControlFiles should extend the contents map with inodes representing
 	// control files defined by this controller.
 	AddControlFiles(ctx context.Context, creds *auth.Credentials, c *cgroupInode, contents map[string]kernfs.Inode)
+
+	// Enter is called when a task initially moves into a cgroup. This is
+	// distinct from migration because the task isn't migrating away from a
+	// cgroup. Enter is called when a task is created and joins its initial
+	// cgroup, or when cgroupfs is mounted and existing tasks are moved into
+	// cgroups.
+	Enter(t *kernel.Task)
+
+	// Leave is called when a task leaves a cgroup. This is distinct from
+	// migration because the task isn't migrating to another cgroup. Leave is
+	// called when a task exits.
+	Leave(t *kernel.Task)
 
 	// PrepareMigrate signals the controller that a migration is about to
 	// happen. The controller should check for any conditions that would prevent
@@ -186,6 +212,7 @@ func (c *cgroupInode) Controllers() []kernel.CgroupController {
 func (c *cgroupInode) tasks() []*kernel.Task {
 	c.fs.tasksMu.RLock()
 	defer c.fs.tasksMu.RUnlock()
+
 	ts := make([]*kernel.Task, 0, len(c.ts))
 	for t := range c.ts {
 		ts = append(ts, t)
@@ -196,15 +223,23 @@ func (c *cgroupInode) tasks() []*kernel.Task {
 // Enter implements kernel.CgroupImpl.Enter.
 func (c *cgroupInode) Enter(t *kernel.Task) {
 	c.fs.tasksMu.Lock()
+	defer c.fs.tasksMu.Unlock()
+
 	c.ts[t] = struct{}{}
-	c.fs.tasksMu.Unlock()
+	for _, ctl := range c.controllers {
+		ctl.Enter(t)
+	}
 }
 
 // Leave implements kernel.CgroupImpl.Leave.
 func (c *cgroupInode) Leave(t *kernel.Task) {
 	c.fs.tasksMu.Lock()
+	defer c.fs.tasksMu.Unlock()
+
+	for _, ctl := range c.controllers {
+		ctl.Leave(t)
+	}
 	delete(c.ts, t)
-	c.fs.tasksMu.Unlock()
 }
 
 // PrepareMigrate implements kernel.CgroupImpl.PrepareMigrate.
@@ -229,14 +264,14 @@ func (c *cgroupInode) PrepareMigrate(t *kernel.Task, src *kernel.Cgroup) error {
 
 // CommitMigrate implements kernel.CgroupImpl.CommitMigrate.
 func (c *cgroupInode) CommitMigrate(t *kernel.Task, src *kernel.Cgroup) {
+	c.fs.tasksMu.Lock()
+	defer c.fs.tasksMu.Unlock()
+
 	for srcType, srcCtl := range src.CgroupImpl.(*cgroupInode).controllers {
 		c.controllers[srcType].CommitMigrate(t, srcCtl)
 	}
 
 	srcI := src.CgroupImpl.(*cgroupInode)
-	c.fs.tasksMu.Lock()
-	defer c.fs.tasksMu.Unlock()
-
 	delete(srcI.ts, t)
 	c.ts[t] = struct{}{}
 }
@@ -375,17 +410,23 @@ func parseInt64FromString(ctx context.Context, src usermem.IOSequence) (val, len
 	return val, int64(n), nil
 }
 
-// controllerNoopMigrate partially implements controller. It stubs the migration
+// controllerStateless partially implements controller. It stubs the migration
 // methods with noops for a stateless controller.
-type controllerNoopMigrate struct{}
+type controllerStateless struct{}
+
+// Enter implements controller.Enter.
+func (*controllerStateless) Enter(t *kernel.Task) {}
+
+// Leave implements controller.Leave.
+func (*controllerStateless) Leave(t *kernel.Task) {}
 
 // PrepareMigrate implements controller.PrepareMigrate.
-func (*controllerNoopMigrate) PrepareMigrate(t *kernel.Task, src controller) error {
+func (*controllerStateless) PrepareMigrate(t *kernel.Task, src controller) error {
 	return nil
 }
 
 // CommitMigrate implements controller.CommitMigrate.
-func (*controllerNoopMigrate) CommitMigrate(t *kernel.Task, src controller) {}
+func (*controllerStateless) CommitMigrate(t *kernel.Task, src controller) {}
 
 // AbortMigrate implements controller.AbortMigrate.
-func (*controllerNoopMigrate) AbortMigrate(t *kernel.Task, src controller) {}
+func (*controllerStateless) AbortMigrate(t *kernel.Task, src controller) {}

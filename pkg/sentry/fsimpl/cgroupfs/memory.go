@@ -30,7 +30,7 @@ import (
 // +stateify savable
 type memoryController struct {
 	controllerCommon
-	controllerNoopMigrate
+	controllerStateless
 
 	limitBytes            int64
 	softLimitBytes        int64
@@ -72,7 +72,7 @@ func (c *memoryController) Clone() controller {
 		softLimitBytes:        c.softLimitBytes,
 		moveChargeAtImmigrate: c.moveChargeAtImmigrate,
 	}
-	new.controllerCommon.cloneFrom(&c.controllerCommon)
+	new.controllerCommon.cloneFromParent(c)
 	return new
 }
 
