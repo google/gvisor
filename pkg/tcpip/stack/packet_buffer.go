@@ -188,9 +188,7 @@ func NewPacketBuffer(opts PacketBufferOptions) *PacketBuffer {
 // pool.
 func (pk *PacketBuffer) DecRef() {
 	pk.packetBufferRefs.DecRef(func() {
-		if pk.packetBufferRefs.refCount == 0 {
-			pkPool.Put(pk)
-		}
+		pkPool.Put(pk)
 	})
 }
 
