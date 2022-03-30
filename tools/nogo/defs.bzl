@@ -65,7 +65,7 @@ NogoStdlibInfo = provider(
 
 def _nogo_stdlib_impl(ctx):
     # If this is disabled, return nothing.
-    if ctx.attr._fast[BuildSettingInfo].value:
+    if not ctx.attr._nogo_full[BuildSettingInfo].value:
         return [NogoStdlibInfo(
             facts = None,
             raw_findings = [],
@@ -123,8 +123,8 @@ nogo_stdlib = go_rule(
             default = "//tools/nogo:target",
             cfg = "target",
         ),
-        "_fast": attr.label(
-            default = "//tools/nogo:fast",
+        "_nogo_full": attr.label(
+            default = "//tools/nogo:full",
             cfg = "host",
         ),
     },
@@ -418,6 +418,10 @@ nogo_test = rule(
         "_target": attr.label(
             default = "//tools/nogo:target",
             cfg = "target",
+        ),
+        "_nogo_full": attr.label(
+            default = "//tools/nogo:full",
+            cfg = "exec",
         ),
     },
     test = True,
