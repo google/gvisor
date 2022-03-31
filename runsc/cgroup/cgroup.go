@@ -39,7 +39,9 @@ import (
 )
 
 const (
-	cgroupRoot = "/sys/fs/cgroup"
+	cgroupRoot     = "/sys/fs/cgroup"
+	cgroupv1FsName = "cgroup"
+	cgroupv2FsName = "cgroup2"
 )
 
 var controllers = map[string]controller{
@@ -255,6 +257,7 @@ func loadPathsHelper(cgroup, mountinfo io.Reader, unified bool) (map[string]stri
 	// which don't exist in container, so recover the container paths here by
 	// double-checking with /proc/[pid]/mountinfo
 	mountScanner := bufio.NewScanner(mountinfo)
+	haveCg2Path := false
 	for mountScanner.Scan() {
 		// Format: ID parent major:minor root mount-point options opt-fields - fs-type source super-options
 		// Example: 39 32 0:34 / /sys/fs/cgroup/devices rw,noexec shared:18 - cgroup cgroup rw,devices
@@ -264,7 +267,7 @@ func loadPathsHelper(cgroup, mountinfo io.Reader, unified bool) (map[string]stri
 			continue
 		}
 		switch fields[len(fields)-3] {
-		case "cgroup":
+		case cgroupv1FsName:
 			// Cgroup controller type is in the super-options field.
 			superOptions := strings.Split(fields[len(fields)-1], ",")
 			for _, opt := range superOptions {
@@ -286,13 +289,14 @@ func loadPathsHelper(cgroup, mountinfo io.Reader, unified bool) (map[string]stri
 					}
 				}
 			}
-		case "cgroup2":
-			if cgroupPath, ok := paths[cgroup2Key]; ok {
+		case cgroupv2FsName:
+			if cgroupPath, ok := paths[cgroup2Key]; !haveCg2Path && ok {
 				root := fields[3]
 				relCgroupPath, err := filepath.Rel(root, cgroupPath)
 				if err != nil {
 					return nil, err
 				}
+				haveCg2Path = true
 				paths[cgroup2Key] = relCgroupPath
 			}
 		}
