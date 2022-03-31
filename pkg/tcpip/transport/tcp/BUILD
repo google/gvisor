@@ -4,6 +4,105 @@ load("//tools/go_generics:defs.bzl", "go_template_instance")
 package(licenses = ["notice"])
 
 go_template_instance(
+    name = "snd_queue_mutex",
+    out = "snd_queue_mutex.go",
+    package = "tcp",
+    prefix = "sndQueue",
+    substrs = {
+        "genericMark": "sndQueue",
+    },
+    template = "//pkg/sync/locking:generic_mutex",
+)
+
+go_template_instance(
+    name = "rcv_queue_mutex",
+    out = "rcv_queue_mutex.go",
+    package = "tcp",
+    prefix = "rcvQueue",
+    substrs = {
+        "genericMark": "rcvQueue",
+    },
+    template = "//pkg/sync/locking:generic_mutex",
+)
+
+go_template_instance(
+    name = "rcv_read_mutex",
+    out = "rcv_read_mutex.go",
+    package = "tcp",
+    prefix = "rcvRead",
+    substrs = {
+        "genericMark": "rcvRead",
+    },
+    template = "//pkg/sync/locking:generic_mutex",
+)
+
+go_template_instance(
+    name = "accept_mutex",
+    out = "accept_mutex.go",
+    package = "tcp",
+    prefix = "accept",
+    substrs = {
+        "genericMark": "accept",
+    },
+    template = "//pkg/sync/locking:generic_mutex",
+)
+
+go_template_instance(
+    name = "last_error_mutex",
+    out = "last_error_mutex.go",
+    package = "tcp",
+    prefix = "lastError",
+    substrs = {
+        "genericMark": "lastError",
+    },
+    template = "//pkg/sync/locking:generic_mutex",
+)
+
+go_template_instance(
+    name = "segment_queue_mutex",
+    out = "segment_queue_mutex.go",
+    package = "tcp",
+    prefix = "segmentQueue",
+    substrs = {
+        "genericMark": "segmentQueue",
+    },
+    template = "//pkg/sync/locking:generic_mutex",
+)
+
+go_template_instance(
+    name = "ep_queue_mutex",
+    out = "ep_queue_mutex.go",
+    package = "tcp",
+    prefix = "epQueue",
+    substrs = {
+        "genericMark": "epQueue",
+    },
+    template = "//pkg/sync/locking:generic_mutex",
+)
+
+go_template_instance(
+    name = "forwarder_mutex",
+    out = "forwarder_mutex.go",
+    package = "tcp",
+    prefix = "forwarder",
+    substrs = {
+        "genericMark": "forwarder",
+    },
+    template = "//pkg/sync/locking:generic_mutex",
+)
+
+go_template_instance(
+    name = "forwarder_request_mutex",
+    out = "forwarder_request_mutex.go",
+    package = "tcp",
+    prefix = "forwarderRequest",
+    substrs = {
+        "genericMark": "forwarderRequest",
+    },
+    template = "//pkg/sync/locking:generic_mutex",
+)
+
+go_template_instance(
     name = "tcp_segment_list",
     out = "tcp_segment_list.go",
     package = "tcp",
@@ -67,6 +166,15 @@ go_library(
         "tcp_segment_list.go",
         "tcp_segment_refs.go",
         "timer.go",
+        "snd_queue_mutex.go",
+        "rcv_queue_mutex.go",
+        "rcv_read_mutex.go",
+        "accept_mutex.go",
+        "last_error_mutex.go",
+        "segment_queue_mutex.go",
+        "ep_queue_mutex.go",
+        "forwarder_mutex.go",
+        "forwarder_request_mutex.go",
     ],
     imports = ["gvisor.dev/gvisor/pkg/tcpip/buffer"],
     visibility = ["//visibility:public"],
@@ -88,6 +196,7 @@ go_library(
         "//pkg/tcpip/stack",
         "//pkg/tcpip/transport/raw",
         "//pkg/waiter",
+        "//pkg/sync/locking",
         "@com_github_google_btree//:go_default_library",
     ],
 )

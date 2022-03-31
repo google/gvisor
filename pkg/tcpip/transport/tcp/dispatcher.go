@@ -30,7 +30,7 @@ import (
 
 // epQueue is a queue of endpoints.
 type epQueue struct {
-	mu   sync.Mutex
+	mu   epQueueMutex
 	list endpointList
 }
 

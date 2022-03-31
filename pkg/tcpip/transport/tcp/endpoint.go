@@ -275,7 +275,7 @@ func (*Stats) IsEndpointStats() {}
 //
 // +stateify savable
 type sndQueueInfo struct {
-	sndQueueMu sync.Mutex `state:"nosave"`
+	sndQueueMu sndQueueMutex `state:"nosave"`
 	stack.TCPSndBufState
 
 	// sndWaker is used to signal the protocol goroutine when there may be
@@ -297,7 +297,7 @@ func (sq *sndQueueInfo) CloneState(other *stack.TCPSndBufState) {
 //
 // +stateify savable
 type rcvQueueInfo struct {
-	rcvQueueMu sync.Mutex `state:"nosave"`
+	rcvQueueMu rcvQueueMutex `state:"nosave"`
 	stack.TCPRcvBufState
 
 	// rcvQueue is the queue for ready-for-delivery segments. This struct's
@@ -377,7 +377,7 @@ type endpoint struct {
 
 	// lastError represents the last error that the endpoint reported;
 	// access to it is protected by the following mutex.
-	lastErrorMu sync.Mutex `state:"nosave"`
+	lastErrorMu lastErrorMutex `state:"nosave"`
 	lastError   tcpip.Error
 
 	// rcvReadMu synchronizes calls to Read.
@@ -387,7 +387,7 @@ type endpoint struct {
 	// do not interleave.
 	//
 	// rcvReadMu should be held before holding mu.
-	rcvReadMu sync.Mutex `state:"nosave"`
+	rcvReadMu rcvReadMutex `state:"nosave"`
 
 	// rcvQueueInfo holds the implementation of the endpoint's receive buffer.
 	// The data within rcvQueueInfo should only be accessed while rcvReadMu, mu,
@@ -520,7 +520,7 @@ type endpoint struct {
 	deferAccept time.Duration
 
 	// acceptMu protects accepQueue
-	acceptMu sync.Mutex `state:"nosave"`
+	acceptMu acceptMutex `state:"nosave"`
 
 	// acceptQueue is used by a listening endpoint to send newly accepted
 	// connections to the endpoint so that they can be read by Accept()
