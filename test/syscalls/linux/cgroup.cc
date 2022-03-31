@@ -437,6 +437,37 @@ TEST(Cgroup, DuplicateUnlinkOnDirFD) {
   EXPECT_THAT(UnlinkAt(dirfd, ".", AT_REMOVEDIR), PosixErrorIs(EINVAL));
 }
 
+TEST(Cgroup, DirSetStat) {
+  SKIP_IF(!CgroupsAvailable());
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
+
+  const struct stat before = ASSERT_NO_ERRNO_AND_VALUE(Stat(c.Path()));
+  EXPECT_TRUE(S_ISDIR(before.st_mode));
+
+  // Cgroup directories default to 0555.
+  EXPECT_THAT(before.st_mode, PermissionIs(0555));
+
+  // Change permissions and verify they're accepted.
+  ASSERT_NO_ERRNO(Chmod(c.Path(), 0755));
+  const struct stat after = ASSERT_NO_ERRNO_AND_VALUE(Stat(c.Path()));
+  EXPECT_THAT(after.st_mode, PermissionIs(0755));
+
+  // Try the same with non-root directory.
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child"));
+  const struct stat child_before =
+      ASSERT_NO_ERRNO_AND_VALUE(Stat(child.Path()));
+  EXPECT_THAT(child_before.st_mode, PermissionIs(0555));  // Default.
+
+  ASSERT_NO_ERRNO(Chmod(child.Path(), 0757));
+  const struct stat child_after = ASSERT_NO_ERRNO_AND_VALUE(Stat(child.Path()));
+  EXPECT_THAT(child_after.st_mode, PermissionIs(0757));
+
+  // Child chmod didn't affect parent.
+  const struct stat parent_after = ASSERT_NO_ERRNO_AND_VALUE(Stat(c.Path()));
+  EXPECT_THAT(parent_after.st_mode, PermissionIs(0755));
+}
+
 TEST(MemoryCgroup, MemoryUsageInBytes) {
   SKIP_IF(!CgroupsAvailable());
 

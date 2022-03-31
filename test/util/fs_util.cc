@@ -732,5 +732,10 @@ PosixError CheckSameFile(const FileDescriptor& fd1, const FileDescriptor& fd2) {
 
   return NoError();
 }
+
+::testing::Matcher<mode_t> PermissionIs(mode_t want) {
+  return MakeMatcher(new ModePermissionMatcher(want));
+}
+
 }  // namespace testing
 }  // namespace gvisor
