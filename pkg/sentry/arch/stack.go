@@ -190,7 +190,7 @@ func (s *Stack) Load(args []string, env []string, aux Auxv) (StackLayout, error)
 	// NOTE: We need an extra zero here per spec.
 	// The Push function will automatically terminate
 	// strings and arrays with a single null value.
-	auxv := make([]hostarch.Addr, 0, len(aux))
+	auxv := make([]hostarch.Addr, 0, len(aux)*2+1)
 	for _, a := range aux {
 		auxv = append(auxv, hostarch.Addr(a.Key), a.Value)
 	}
