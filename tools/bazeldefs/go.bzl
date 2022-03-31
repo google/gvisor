@@ -146,7 +146,7 @@ def go_context(ctx, goos = None, goarch = None, std = False):
         goarch = goarch,
         goos = goos,
         gotags = go_ctx.tags,
-        nogo_args = [],
+        nogo_args = ctx.actions.args(),
         runfiles = depset([go_ctx.go] + go_ctx.sdk.srcs + go_ctx.sdk.tools + go_ctx.stdlib.libs),
         stdlib_srcs = go_ctx.sdk.srcs,
     )

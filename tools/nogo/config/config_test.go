@@ -40,6 +40,11 @@ func TestShouldReport(t *testing.T) {
 				Regex:   "^default-disabled-omitted-from-global/",
 				Default: false,
 			},
+			{
+				Name:    "default-enabled",
+				Regex:   "^default-enabled-second-regex/",
+				Default: true,
+			},
 		},
 		Global: AnalyzerConfig{
 			"default-enabled": &ItemConfig{
@@ -127,6 +132,20 @@ func TestShouldReport(t *testing.T) {
 				Category: "foo",
 				Position: token.Position{
 					Filename: "default-enabled/excluded.go",
+					Offset:   0,
+					Line:     1,
+					Column:   1,
+				},
+				Message: "message",
+			},
+			want: false,
+		},
+		{
+			name: "second regex",
+			finding: check.Finding{
+				Category: "foo",
+				Position: token.Position{
+					Filename: "default-enabled-second-regex/excluded.go",
 					Offset:   0,
 					Line:     1,
 					Column:   1,

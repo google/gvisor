@@ -77,6 +77,13 @@ def _nogo_stdlib_impl(ctx):
     # Build the analyzer command.
     facts_file = ctx.actions.declare_file(ctx.label.name + ".facts")
     findings_file = ctx.actions.declare_file(ctx.label.name + ".raw_findings")
+    args.add("bundle")
+    args.add("-findings=%s" % findings_file.path)
+    args.add("-facts=%s" % facts_file.path)
+    args.add("-root=.*?/src/")
+
+    # stdlib_srcs may be a single directory. add_all expands to all contents.
+    args.add_all(go_ctx.stdlib_srcs)
     ctx.actions.run(
         # For the standard library, we need to include the full set of Go
         # sources in the inputs.
@@ -92,12 +99,7 @@ def _nogo_stdlib_impl(ctx):
         # be enabled without any issues for correctness, but we want to avoid
         # paying the FUSE penalty.
         execution_requirements = {"no-sandbox": "1"},
-        arguments = args + [
-            "bundle",
-            "-findings=%s" % findings_file.path,
-            "-facts=%s" % facts_file.path,
-            "-root=.*?/src/",
-        ] + [f.path for f in go_ctx.stdlib_srcs],
+        arguments = [args],
     )
 
     # Return the stdlib facts as output.
@@ -173,12 +175,13 @@ def _nogo_config(ctx, deps):
     # Returns (go_ctx, args, inputs, raw_findings).
     nogo_target_info = ctx.attr._target[NogoTargetInfo]
     go_ctx = go_context(ctx, goos = nogo_target_info.goos, goarch = nogo_target_info.goarch)
-    args = go_ctx.nogo_args + [
-        "-go=%s" % go_ctx.go.path,
-        "-GOOS=%s" % go_ctx.goos,
-        "-GOARCH=%s" % go_ctx.goarch,
-        "-tags=%s" % (",".join(go_ctx.gotags)),
-    ]
+
+    args = go_ctx.nogo_args
+    args.add("-go=%s" % go_ctx.go.path)
+    args.add("-GOOS=%s" % go_ctx.goos)
+    args.add("-GOARCH=%s" % go_ctx.goarch)
+    args.add("-tags=%s" % (",".join(go_ctx.gotags)))
+
     inputs = []
     raw_findings = []
     for dep in deps:
@@ -193,9 +196,9 @@ def _nogo_config(ctx, deps):
         # use .x and .a regardless of whether this is a go_binary rule, since
         # these dependencies must be go_library rules.
         a_file, x_file = _select_objfile(info.binaries)
-        args.append("-archive=%s=%s" % (info.importpath, a_file.path))
-        args.append("-import=%s=%s" % (info.importpath, x_file.path))
-        args.append("-facts=%s=%s" % (info.importpath, info.facts.path))
+        args.add("-archive=%s=%s" % (info.importpath, a_file.path))
+        args.add("-import=%s=%s" % (info.importpath, x_file.path))
+        args.add("-facts=%s=%s" % (info.importpath, info.facts.path))
 
         # Collect all findings; duplicates are resolved at the end.
         raw_findings.extend(info.raw_findings)
@@ -220,8 +223,8 @@ def _nogo_package_config(ctx, deps, importpath = None, target = None):
         binaries.extend(target.files.to_list())
     target_afile, target_xfile = _select_objfile(binaries)
     if target_xfile != None:
-        args.append("-archive=%s=%s" % (importpath, target_afile.path))
-        args.append("-import=%s=%s" % (importpath, target_xfile.path))
+        args.add("-archive=%s=%s" % (importpath, target_afile.path))
+        args.add("-import=%s=%s" % (importpath, target_xfile.path))
         inputs.append(target_afile)
         inputs.append(target_xfile)
 
@@ -230,7 +233,7 @@ def _nogo_package_config(ctx, deps, importpath = None, target = None):
     stdlib_facts = stdlib_info.facts
     if stdlib_facts:
         inputs.append(stdlib_facts)
-        args.append("-bundle=%s" % stdlib_facts.path)
+        args.add("-bundle=%s" % stdlib_facts.path)
 
     # Flatten all findings from all dependencies.
     #
@@ -286,6 +289,11 @@ def _nogo_aspect_impl(target, ctx):
     # Build the argument file, and the runner.
     facts_file = ctx.actions.declare_file(ctx.label.name + ".facts")
     findings_file = ctx.actions.declare_file(ctx.label.name + ".findings")
+    args.add("check")
+    args.add("-findings=%s" % findings_file.path)
+    args.add("-facts=%s" % facts_file.path)
+    args.add("-package=%s" % importpath)
+    args.add_all(srcs)
     ctx.actions.run(
         inputs = inputs + srcs,
         outputs = [findings_file, facts_file],
@@ -296,12 +304,7 @@ def _nogo_aspect_impl(target, ctx):
         progress_message = "Analyzing %s" % target.label,
         # See above.
         execution_requirements = {"no-sandbox": "1"},
-        arguments = args + [
-            "check",
-            "-findings=%s" % findings_file.path,
-            "-facts=%s" % facts_file.path,
-            "-package=%s" % importpath,
-        ] + [src.path for src in srcs],
+        arguments = [args],
     )
 
     # Return the package facts as output.
@@ -451,6 +454,10 @@ def _nogo_facts_impl(ctx):
     go_ctx, args, inputs, _ = _nogo_package_config(ctx, ctx.attr.deps)
 
     # Build the runner.
+    args.add("render")
+    args.add("-template=%s" % ctx.files.template[0].path)
+    args.add("-output=%s" % ctx.outputs.output.path)
+    args.add_all(ctx.files.srcs)
     ctx.actions.run(
         inputs = inputs + ctx.files.srcs + ctx.files.template,
         outputs = [ctx.outputs.output],
@@ -461,11 +468,7 @@ def _nogo_facts_impl(ctx):
         progress_message = "Generating %s" % ctx.label,
         # See above.
         execution_requirements = {"no-sandbox": "1"},
-        arguments = args + [
-            "render",
-            "-template=%s" % ctx.files.template[0].path,
-            "-output=%s" % ctx.outputs.output.path,
-        ] + [src.path for src in ctx.files.srcs],
+        arguments = [args],
     )
 
     # Return the output.
