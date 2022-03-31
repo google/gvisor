@@ -26,7 +26,12 @@ import (
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
-var cgroupv2MountInfo = `29 22 0:26 / /sys/fs/cgroup rw shared:4 - cgroup2 cgroup2 rw,seclabel,nsdelegate`
+var (
+	cgroupv2MountInfo    = `29 22 0:26 / /sys/fs/cgroup rw shared:4 - cgroup2 cgroup2 rw,seclabel,nsdelegate`
+	multipleCg2MountInfo = `34 28 0:29 / /sys/fs/cgroup rw,nosuid,nodev,noexec,relatime shared:8 - cgroup2 cgroup2 rw
+1479 28 0:29 / /run/some/module/cgroupv2 rw,relatime shared:650 - cgroup2 none rw
+`
+)
 
 func TestIO(t *testing.T) {
 	for _, tc := range []struct {
@@ -147,6 +152,14 @@ func TestLoadPathsCgroupv2(t *testing.T) {
 			mountinfo: cgroupv2MountInfo,
 			want: map[string]string{
 				"cgroup2": ".",
+			},
+		},
+		{
+			name:      "multiple-cgv2",
+			cgroups:   "0::/system.slice/containerd.service\n",
+			mountinfo: multipleCg2MountInfo,
+			want: map[string]string{
+				"cgroup2": "system.slice/containerd.service",
 			},
 		},
 	} {
