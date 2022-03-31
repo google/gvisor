@@ -464,6 +464,7 @@ func (t *Task) Unshare(flags int32) error {
 		// new user namespace is used if there is one.
 		t.utsns = t.utsns.Clone(creds.UserNamespace)
 	}
+	var oldIPCNS *IPCNamespace
 	if flags&linux.CLONE_NEWIPC != 0 {
 		if !haveCapSysAdmin {
 			t.mu.Unlock()
@@ -471,7 +472,7 @@ func (t *Task) Unshare(flags int32) error {
 		}
 		// Note that "If CLONE_NEWIPC is set, then create the process in a new IPC
 		// namespace"
-		t.ipcns.DecRef(t)
+		oldIPCNS = t.ipcns
 		t.ipcns = NewIPCNamespace(creds.UserNamespace)
 		if VFS2Enabled {
 			t.ipcns.InitPosixQueues(t, t.k.VFS(), creds)
@@ -488,6 +489,9 @@ func (t *Task) Unshare(flags int32) error {
 		t.fsContext = oldFSContext.Fork()
 	}
 	t.mu.Unlock()
+	if oldIPCNS != nil {
+		oldIPCNS.DecRef(t)
+	}
 	if oldFDTable != nil {
 		oldFDTable.DecRef(t)
 	}
