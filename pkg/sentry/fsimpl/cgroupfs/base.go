@@ -283,9 +283,15 @@ func (c *cgroupInode) AbortMigrate(t *kernel.Task, src *kernel.Cgroup) {
 	}
 }
 
-func (c *cgroupInode) Cgroup(fd *vfs.FileDescription) kernel.Cgroup {
+func (c *cgroupInode) CgroupFromControlFileFD(fd *vfs.FileDescription) kernel.Cgroup {
+	controlFileDentry := fd.Dentry().Impl().(*kernfs.Dentry)
+	// The returned parent dentry remains valid without holding locks because in
+	// cgroupfs, the parent directory relationship of a control file is
+	// effectively immutable. Control files cannot be unlinked, renamed or
+	// destroyed independently from their parent directory.
+	parentD := controlFileDentry.Parent()
 	return kernel.Cgroup{
-		Dentry:     fd.Dentry().Impl().(*kernfs.Dentry),
+		Dentry:     parentD,
 		CgroupImpl: c,
 	}
 }
@@ -340,7 +346,7 @@ func (d *cgroupProcsData) Write(ctx context.Context, fd *vfs.FileDescription, sr
 	if targetTG == nil {
 		return 0, linuxerr.EINVAL
 	}
-	return n, targetTG.MigrateCgroup(d.Cgroup(fd))
+	return n, targetTG.MigrateCgroup(d.CgroupFromControlFileFD(fd))
 }
 
 // +stateify savable
@@ -382,7 +388,7 @@ func (d *tasksData) Write(ctx context.Context, fd *vfs.FileDescription, src user
 	if targetTask == nil {
 		return 0, linuxerr.EINVAL
 	}
-	return n, targetTask.MigrateCgroup(d.Cgroup(fd))
+	return n, targetTask.MigrateCgroup(d.CgroupFromControlFileFD(fd))
 }
 
 // parseInt64FromString interprets src as string encoding a int64 value, and

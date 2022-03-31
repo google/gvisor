@@ -258,7 +258,7 @@ TEST(Cgroup, MountRace) {
     }
   });
 
-  Cgroup c = Cgroup(mountpoint.path());
+  Cgroup c = Cgroup::RootCgroup(mountpoint.path());
   // c should be a valid cgroup.
   EXPECT_NO_ERRNO(c.ContainsCallingProcess());
 }
@@ -958,6 +958,67 @@ TEST(ProcCgroup, ProcfsReportsCgroupfsMountOptions) {
       EXPECT_THAT(mopts, Not(Contains(Key("memory"))));
     }
   }
+}
+
+TEST(ProcCgroups, ProcfsRreportsHierarchyID) {
+  SKIP_IF(!CgroupsAvailable());
+
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup h1 = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("memory,cpuacct"));
+  Cgroup h2 = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("cpu"));
+
+  absl::flat_hash_map<std::string, CgroupsEntry> entries =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcCgroupsEntries());
+
+  EXPECT_EQ(entries["memory"].hierarchy, entries["cpuacct"].hierarchy);
+
+  // Hierarhcy IDs are allocated sequentially, starting at 1.
+  EXPECT_EQ(entries["memory"].hierarchy, 1);
+  EXPECT_EQ(entries["cpu"].hierarchy, 2);
+}
+
+TEST(ProcCgroups, ProcfsReportsTasksCgroup) {
+  SKIP_IF(!CgroupsAvailable());
+
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup h1 = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("memory"));
+  Cgroup h2 = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("cpu,cpuacct"));
+
+  Cgroup h1c1 = ASSERT_NO_ERRNO_AND_VALUE(h1.CreateChild("memory_child1"));
+  Cgroup h1c2 = ASSERT_NO_ERRNO_AND_VALUE(h1.CreateChild("memory_child2"));
+
+  Cgroup h2c1 = ASSERT_NO_ERRNO_AND_VALUE(h2.CreateChild("cpu_child1"));
+  Cgroup h2c2 = ASSERT_NO_ERRNO_AND_VALUE(h2.CreateChild("cpu_child2"));
+
+  // Test should initially be in the hierarchy roots.
+  auto entries = ASSERT_NO_ERRNO_AND_VALUE(ProcPIDCgroupEntries(getpid()));
+  EXPECT_EQ(h1.CanonicalPath(), entries["memory"].path);
+  EXPECT_EQ(h2.CanonicalPath(), entries["cpu,cpuacct"].path);
+
+  // Move to child for hierarchy #1 and check paths. Note that we haven't moved
+  // in hierarchy #2.
+  ASSERT_NO_ERRNO(h1c1.Enter(getpid()));
+  entries = ASSERT_NO_ERRNO_AND_VALUE(ProcPIDCgroupEntries(getpid()));
+  EXPECT_EQ(h1c1.CanonicalPath(), entries["memory"].path);
+  EXPECT_EQ(h2.CanonicalPath(), entries["cpu,cpuacct"].path);
+
+  // Move h2; h1 should remain unchanged.
+  ASSERT_NO_ERRNO(h2c1.Enter(getpid()));
+  entries = ASSERT_NO_ERRNO_AND_VALUE(ProcPIDCgroupEntries(getpid()));
+  EXPECT_EQ(h1c1.CanonicalPath(), entries["memory"].path);
+  EXPECT_EQ(h2c1.CanonicalPath(), entries["cpu,cpuacct"].path);
+
+  // Move the thread rather than process group.
+  const pid_t tid = syscall(SYS_gettid);
+  ASSERT_NO_ERRNO(h1c2.EnterThread(tid));
+  entries = ASSERT_NO_ERRNO_AND_VALUE(ProcPIDCgroupEntries(tid));
+  EXPECT_EQ(h1c2.CanonicalPath(), entries["memory"].path);
+  EXPECT_EQ(h2c1.CanonicalPath(), entries["cpu,cpuacct"].path);
+
+  ASSERT_NO_ERRNO(h2c2.EnterThread(tid));
+  entries = ASSERT_NO_ERRNO_AND_VALUE(ProcPIDCgroupEntries(tid));
+  EXPECT_EQ(h1c2.CanonicalPath(), entries["memory"].path);
+  EXPECT_EQ(h2c2.CanonicalPath(), entries["cpu,cpuacct"].path);
 }
 
 }  // namespace
