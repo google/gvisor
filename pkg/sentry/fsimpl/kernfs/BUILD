@@ -82,6 +82,39 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "filesystem_mutex",
+    out = "filesystem_mutex.go",
+    package = "kernfs",
+    prefix = "filesystem",
+    substrs = {
+        "genericMark": "filesystem",
+    },
+    template = "//pkg/sync/locking:generic_rwmutex",
+)
+
+go_template_instance(
+    name = "dir_mutex",
+    out = "dir_mutex.go",
+    package = "kernfs",
+    prefix = "dir",
+    substrs = {
+        "genericMark": "dir",
+    },
+    template = "//pkg/sync/locking:generic_mutex",
+)
+
+go_template_instance(
+    name = "deferred_dec_refs_mutex",
+    out = "deferred_dec_refs_mutex.go",
+    package = "kernfs",
+    prefix = "deferredDecRefs",
+    substrs = {
+        "genericMark": "deferredDecRefs",
+    },
+    template = "//pkg/sync/locking:generic_mutex",
+)
+
 go_library(
     name = "kernfs",
     srcs = [
@@ -99,6 +132,9 @@ go_library(
         "symlink.go",
         "synthetic_directory.go",
         "synthetic_directory_refs.go",
+        "filesystem_mutex.go",
+        "dir_mutex.go",
+        "deferred_dec_refs_mutex.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
@@ -109,6 +145,7 @@ go_library(
         "//pkg/fspath",
         "//pkg/hostarch",
         "//pkg/log",
+        "//pkg/sync/locking",
         "//pkg/refs",
         "//pkg/refsvfs2",
         "//pkg/safemem",
