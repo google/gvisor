@@ -429,9 +429,9 @@ func (*dir) Keep() bool {
 	return true
 }
 
-// SetStat implements kernfs.Inode.SetStat not allowing inode attributes to be changed.
-func (*dir) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
-	return linuxerr.EPERM
+// SetStat implements kernfs.Inode.SetStat.
+func (d *dir) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error {
+	return d.InodeAttrs.SetStat(ctx, fs, creds, opts)
 }
 
 // Open implements kernfs.Inode.Open.
