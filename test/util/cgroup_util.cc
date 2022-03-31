@@ -25,26 +25,19 @@
 namespace gvisor {
 namespace testing {
 
-Cgroup::Cgroup(absl::string_view path) : cgroup_path_(path) {
+Cgroup::Cgroup(absl::string_view path, absl::string_view mountpoint)
+    : cgroup_path_(path), mountpoint_(mountpoint) {
   id_ = ++Cgroup::next_id_;
   std::cerr << absl::StreamFormat("[cg#%d] <= %s", id_, cgroup_path_)
             << std::endl;
 }
 
-PosixErrorOr<Cgroup> Cgroup::RecursivelyCreate(absl::string_view path) {
-  RETURN_IF_ERRNO(RecursivelyCreateDir(path));
-  return Cgroup(path);
-}
-
-PosixErrorOr<Cgroup> Cgroup::Create(absl::string_view path) {
-  RETURN_IF_ERRNO(Mkdir(path));
-  return Cgroup(path);
-}
-
 PosixError Cgroup::Delete() { return Rmdir(cgroup_path_); }
 
 PosixErrorOr<Cgroup> Cgroup::CreateChild(absl::string_view name) const {
-  return Cgroup::Create(JoinPath(Path(), name));
+  std::string path = JoinPath(Path(), name);
+  RETURN_IF_ERRNO(Mkdir(path));
+  return Cgroup(path, mountpoint_);
 }
 
 PosixErrorOr<std::string> Cgroup::ReadControlFile(
@@ -183,7 +176,7 @@ PosixErrorOr<Cgroup> Mounter::MountCgroupfs(std::string mopts) {
                    "Mount(\"none\", \"%s\", \"cgroup\", 0, \"%s\", 0) => OK",
                    mountpath, mopts)
             << std::endl;
-  Cgroup cg = Cgroup(mountpath);
+  Cgroup cg = Cgroup::RootCgroup(mountpath);
   mountpoints_[cg.id()] = std::move(mountpoint);
   mounts_[cg.id()] = std::move(mount);
   return cg;
