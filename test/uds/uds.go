@@ -108,7 +108,7 @@ func createNonListeningSocket(path string, protocol int) (cleanup func(), err er
 
 	cleanup = func() {
 		if err := unix.Close(fd); err != nil {
-			log.Warningf("Failed to close nonlistening(%d) socket: %w", protocol, err)
+			log.Warningf("Failed to close nonlistening(%d) socket: %v", protocol, err)
 		}
 	}
 

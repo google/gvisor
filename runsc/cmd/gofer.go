@@ -490,7 +490,7 @@ func resolveMounts(conf *config.Config, mounts []specs.Mount, root string) ([]sp
 		}
 		relDst, err := filepath.Rel(root, dst)
 		if err != nil {
-			panic(fmt.Sprintf("%q could not be made relative to %q: %w", dst, root, err))
+			panic(fmt.Sprintf("%q could not be made relative to %q: %v", dst, root, err))
 		}
 
 		opts, err := adjustMountOptions(conf, filepath.Join(root, relDst), m.Options)

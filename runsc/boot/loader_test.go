@@ -98,7 +98,7 @@ func startGofer(root string) (int, func(), error) {
 	go func() {
 		s := p9.NewServer(at)
 		if err := s.Handle(socket); err != nil {
-			log.Infof("Gofer is stopping. FD: %d, err: %w\n", goferEnd, err)
+			log.Infof("Gofer is stopping. FD: %d, err: %v\n", goferEnd, err)
 		}
 	}()
 	// Closing the gofer socket will stop the gofer and exit goroutine above.
