@@ -1003,6 +1003,8 @@ func (e *endpoint) notifyProtocolGoroutine(n uint32) {
 func (e *endpoint) Release() {
 	e.LockUser()
 	defer e.UnlockUser()
+	e.transitionToStateCloseLocked()
+	e.notifyProtocolGoroutine(notifyTickleWorker)
 	e.releaseLocked()
 }
 
