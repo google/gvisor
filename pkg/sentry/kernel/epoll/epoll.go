@@ -212,6 +212,7 @@ func (e *EventPoll) eventsAvailable() bool {
 		return false
 	}
 	defer func() {
+		notify := true
 		e.listsMu.Lock()
 		e.readyList.PushFrontList(&readyList)
 		var next *pollEntry
@@ -221,12 +222,16 @@ func (e *EventPoll) eventsAvailable() bool {
 				// entry.NotifyEvent() was called while we were running.
 				waitingList.Remove(entry)
 				e.readyList.PushBack(entry)
+				notify = true
 			} else {
 				entry.curList = &e.waitingList
 			}
 		}
 		e.waitingList.PushBackList(&waitingList)
 		e.listsMu.Unlock()
+		if notify {
+			e.Notify(waiter.ReadableEvents)
+		}
 	}()
 
 	for it := readyList.Front(); it != nil; {
@@ -287,6 +292,7 @@ func (e *EventPoll) ReadEvents(max int) []linux.EpollEvent {
 		return nil
 	}
 	defer func() {
+		notify := false
 		e.listsMu.Lock()
 		e.readyList.PushFrontList(&readyList)
 		var next *pollEntry
@@ -296,6 +302,7 @@ func (e *EventPoll) ReadEvents(max int) []linux.EpollEvent {
 				// entry.NotifyEvent() was called while we were running.
 				waitingList.Remove(entry)
 				e.readyList.PushBack(entry)
+				notify = true
 			} else {
 				entry.curList = &e.waitingList
 			}
@@ -307,6 +314,9 @@ func (e *EventPoll) ReadEvents(max int) []linux.EpollEvent {
 		}
 		e.disabledList.PushBackList(&disabledList)
 		e.listsMu.Unlock()
+		if notify {
+			e.Notify(waiter.ReadableEvents)
+		}
 	}()
 
 	// Go through all entries we believe may be ready.
