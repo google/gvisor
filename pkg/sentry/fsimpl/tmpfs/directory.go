@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // +stateify savable
@@ -44,7 +43,7 @@ type directory struct {
 	// (with inode == nil) that represent the iteration position of
 	// directoryFDs. childList is used to support directoryFD.IterDirents()
 	// efficiently. childList is protected by iterMu.
-	iterMu    sync.Mutex `state:"nosave"`
+	iterMu    iterMutex `state:"nosave"`
 	childList dentryList
 }
 

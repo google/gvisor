@@ -45,7 +45,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sentry/vfs/memxattr"
-	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // Name is the default filesystem name.
@@ -82,7 +81,7 @@ type filesystem struct {
 
 	// mu serializes changes to the Dentry tree.
 	//	mu filesystemRWMutex `state:"nosave"`
-	mu sync.RWMutex `state:"nosave"`
+	mu filesystemRWMutex `state:"nosave"`
 
 	nextInoMinusOne atomicbitops.Uint64 // accessed using atomic memory operations
 
@@ -96,7 +95,7 @@ type filesystem struct {
 
 	// pagesUsed is the pages used out of the tmpfs size.
 	// pagesUsed is protected by pagesUsedMu.
-	pagesUsedMu sync.Mutex `state:"nosave"`
+	pagesUsedMu pagesUsedMutex `state:"nosave"`
 	pagesUsed   uint64
 }
 
@@ -435,7 +434,7 @@ type inode struct {
 
 	// Inode metadata. Writing multiple fields atomically requires holding
 	// mu, othewise atomic operations can be used.
-	mu    sync.Mutex          `state:"nosave"`
+	mu    inodeMutex          `state:"nosave"`
 	mode  atomicbitops.Uint32 // file type and mode
 	nlink atomicbitops.Uint32 // protected by filesystem.mu instead of inode.mu
 	uid   atomicbitops.Uint32 // auth.KUID, but stored as raw uint32 for sync/atomic

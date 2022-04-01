@@ -49,6 +49,28 @@ go_template_instance(
 )
 
 go_template_instance(
+    name = "pages_used_mutex",
+    out = "pages_used_mutex.go",
+    package = "tmpfs",
+    prefix = "pagesUsed",
+    substrs = {
+        "genericMark": "pagesUsed",
+    },
+    template = "//pkg/sync/locking:generic_mutex",
+)
+
+go_template_instance(
+    name = "iter_mutex",
+    out = "iter_mutex.go",
+    package = "tmpfs",
+    prefix = "iter",
+    substrs = {
+        "genericMark": "inode",
+    },
+    template = "//pkg/sync/locking:generic_mutex",
+)
+
+go_template_instance(
     name = "filesystem_mutex",
     out = "filesystem_mutex.go",
     package = "tmpfs",
@@ -70,7 +92,9 @@ go_library(
         "fstree.go",
         "inode_mutex.go",
         "inode_refs.go",
+        "iter_mutex.go",
         "named_pipe.go",
+        "pages_used_mutex.go",
         "regular_file.go",
         "save_restore.go",
         "socket_file.go",
