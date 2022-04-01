@@ -80,6 +80,21 @@ func bluepillGuestExit(c *vCPU, context unsafe.Pointer) {
 	}
 }
 
+var hexSyms = []byte("0123456789abcdef")
+
+//go:nosplit
+func printHex(title []byte, val uint64) {
+	var str [18]byte
+	for i := 0; i < 16; i++ {
+		str[16-i] = hexSyms[val&0xf]
+		val = val >> 4
+	}
+	str[0] = ' '
+	str[17] = '\n'
+	unix.RawSyscall(unix.SYS_WRITE, 2, uintptr(unsafe.Pointer(&title[0])), uintptr(len(title)))
+	unix.RawSyscall(unix.SYS_WRITE, 2, uintptr(unsafe.Pointer(&str)), 18)
+}
+
 // bluepillHandler is called from the signal stub.
 //
 // The world may be stopped while this is executing, and it executes on the
@@ -183,6 +198,7 @@ func bluepillHandler(context unsafe.Pointer) {
 			c.die(bluepillArchContext(context), "debug")
 			return
 		case _KVM_EXIT_HLT:
+			c.hltSanityCheck()
 			bluepillGuestExit(c, context)
 			return
 		case _KVM_EXIT_MMIO:
@@ -203,6 +219,7 @@ func bluepillHandler(context unsafe.Pointer) {
 			c.die(bluepillArchContext(context), "entry failed")
 			return
 		default:
+			printHex([]byte("exitReason="), uint64(c.runData.exitReason))
 			bluepillArchHandleExit(c, context)
 			return
 		}
