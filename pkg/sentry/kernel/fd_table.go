@@ -241,28 +241,48 @@ func (f *FDTable) forEach(ctx context.Context, fn func(fd int32, file *fs.File, 
 func (f *FDTable) String() string {
 	var buf strings.Builder
 	ctx := context.Background()
+	files := make(map[int32]*fs.File)
+	filesVFS2 := make(map[int32]*vfs.FileDescription)
 	f.mu.Lock()
-	defer f.mu.Unlock()
+	// Can't release f.mu from defer, because vfsObj.PathnameWithDeleted
+	// should not be called under the fdtable mutex.
 	f.forEach(ctx, func(fd int32, file *fs.File, fileVFS2 *vfs.FileDescription, flags FDFlags) {
 		switch {
 		case file != nil:
-			n, _ := file.Dirent.FullName(nil /* root */)
-			fmt.Fprintf(&buf, "\tfd:%d => name %s\n", fd, n)
+			file.IncRef()
+			files[fd] = file
 
 		case fileVFS2 != nil:
-			vfsObj := fileVFS2.Mount().Filesystem().VirtualFilesystem()
-			vd := fileVFS2.VirtualDentry()
-			if vd.Dentry() == nil {
-				panic(fmt.Sprintf("fd %d (type %T) has nil dentry: %#v", fd, fileVFS2.Impl(), fileVFS2))
-			}
-			name, err := vfsObj.PathnameWithDeleted(ctx, vfs.VirtualDentry{}, fileVFS2.VirtualDentry())
-			if err != nil {
-				fmt.Fprintf(&buf, "<err: %v>\n", err)
-				return
-			}
-			fmt.Fprintf(&buf, "\tfd:%d => name %s\n", fd, name)
+			fileVFS2.IncRef()
+			filesVFS2[fd] = fileVFS2
 		}
 	})
+	f.mu.Unlock()
+	defer func() {
+		for _, f := range files {
+			f.DecRef(ctx)
+		}
+		for _, f := range filesVFS2 {
+			f.DecRef(ctx)
+		}
+	}()
+	for fd, file := range files {
+		n, _ := file.Dirent.FullName(nil /* root */)
+		fmt.Fprintf(&buf, "\tfd:%d => name %s\n", fd, n)
+	}
+
+	for fd, fileVFS2 := range filesVFS2 {
+		vfsObj := fileVFS2.Mount().Filesystem().VirtualFilesystem()
+		vd := fileVFS2.VirtualDentry()
+		if vd.Dentry() == nil {
+			panic(fmt.Sprintf("fd %d (type %T) has nil dentry: %#v", fd, fileVFS2.Impl(), fileVFS2))
+		}
+		name, err := vfsObj.PathnameWithDeleted(ctx, vfs.VirtualDentry{}, fileVFS2.VirtualDentry())
+		if err != nil {
+			fmt.Fprintf(&buf, "<err: %v>\n", err)
+		}
+		fmt.Fprintf(&buf, "\tfd:%d => name %s\n", fd, name)
+	}
 	return buf.String()
 }
 
