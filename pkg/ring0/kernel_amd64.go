@@ -21,6 +21,7 @@ import (
 	"encoding/binary"
 	"reflect"
 
+	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
@@ -293,7 +294,11 @@ func startGo(c *CPU) {
 	// Need to sync XCR0 with the host, because xsave and xrstor can be
 	// called from different contexts.
 	if hasXSAVE {
-		xsetbv(0, localXCR0)
+		// Exclude MPX bits. MPX has been deprecated and removed fromt
+		// the Linux kernel. We have a KVM VM doesn't support MPX and
+		// xsetbv generates #GP.
+		xcr0 := localXCR0 &^ (cpuid.XSAVEFeatureBNDCSR | cpuid.XSAVEFeatureBNDREGS)
+		xsetbv(0, xcr0)
 	}
 
 	// Set the syscall target.
