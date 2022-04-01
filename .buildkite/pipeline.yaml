@@ -209,7 +209,7 @@ steps:
     parallelism: 10
   - <<: *common
     label: ":java: Java runtime tests"
-    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} java11-runtime-tests
+    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} java17-runtime-tests
     parallelism: 40
   - <<: *common
     label: ":golang: Go runtime tests"
@@ -232,7 +232,7 @@ steps:
     if: build.message =~ /lisafs/ || build.branch == "master"
   - <<: *common
     label: ":java: Java runtime tests (LISAFS)"
-    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} java11-runtime-tests_lisafs
+    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} java17-runtime-tests_lisafs
     parallelism: 40
     if: build.message =~ /lisafs/ || build.branch == "master"
   - <<: *common
