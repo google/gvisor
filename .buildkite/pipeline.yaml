@@ -205,7 +205,7 @@ steps:
   # Runtime tests.
   - <<: *common
     label: ":php: PHP runtime tests"
-    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} php7.3.6-runtime-tests
+    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} php8.1.1-runtime-tests
     parallelism: 10
   - <<: *common
     label: ":java: Java runtime tests"
@@ -213,21 +213,21 @@ steps:
     parallelism: 40
   - <<: *common
     label: ":golang: Go runtime tests"
-    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} go1.12-runtime-tests
+    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} go1.16-runtime-tests
     parallelism: 10
   - <<: *common
     label: ":node: NodeJS runtime tests"
-    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} nodejs12.4.0-runtime-tests
+    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} nodejs16.13.2-runtime-tests
     parallelism: 10
   - <<: *common
     label: ":python: Python runtime tests"
-    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} python3.7.3-runtime-tests
+    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} python3.10.2-runtime-tests
     parallelism: 10
 
   # Runtime tests (LISAFS).
   - <<: *common
     label: ":php: PHP runtime tests (LISAFS)"
-    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} php7.3.6-runtime-tests_lisafs
+    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} php8.1.1-runtime-tests_lisafs
     parallelism: 10
     if: build.message =~ /lisafs/ || build.branch == "master"
   - <<: *common
@@ -237,17 +237,17 @@ steps:
     if: build.message =~ /lisafs/ || build.branch == "master"
   - <<: *common
     label: ":golang: Go runtime tests (LISAFS)"
-    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} go1.12-runtime-tests_lisafs
+    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} go1.16-runtime-tests_lisafs
     parallelism: 10
     if: build.message =~ /lisafs/ || build.branch == "master"
   - <<: *common
     label: ":node: NodeJS runtime tests (LISAFS)"
-    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} nodejs12.4.0-runtime-tests_lisafs
+    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} nodejs16.13.2-runtime-tests_lisafs
     parallelism: 10
     if: build.message =~ /lisafs/ || build.branch == "master"
   - <<: *common
     label: ":python: Python runtime tests (LISAFS)"
-    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} python3.7.3-runtime-tests_lisafs
+    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} python3.10.2-runtime-tests_lisafs
     parallelism: 10
     if: build.message =~ /lisafs/ || build.branch == "master"
 
