@@ -231,8 +231,8 @@ template <typename PosixErrorOrType>
 class IsPosixErrorOkAndHoldsMatcherImpl
     : public ::testing::MatcherInterface<PosixErrorOrType> {
  public:
-  using ValueType = typename std::remove_reference<decltype(
-      std::declval<PosixErrorOrType>().ValueOrDie())>::type;
+  using ValueType = typename std::remove_reference<
+      decltype(std::declval<PosixErrorOrType>().ValueOrDie())>::type;
 
   template <typename InnerMatcher>
   explicit IsPosixErrorOkAndHoldsMatcherImpl(InnerMatcher&& inner_matcher)
@@ -435,7 +435,7 @@ IsPosixErrorOkAndHolds(InnerMatcher&& inner_matcher) {
 #define RETURN_IF_ERRNO(s) \
   do {                     \
     if (!s.ok()) {         \
-      return s;            \
+      return s.error();    \
     }                      \
   } while (false);
 
