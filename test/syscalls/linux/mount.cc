@@ -15,17 +15,25 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <sys/eventfd.h>
 #include <sys/mount.h>
+#include <sys/resource.h>
+#include <sys/signalfd.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
 #include <functional>
+#include <iostream>
 #include <memory>
+#include <ostream>
 #include <string>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
 #include "absl/time/time.h"
@@ -433,6 +441,89 @@ TEST(MountTest, MountInfo) {
   }
 }
 
+// TODO(b/29637826): Enable this test on gVisor once tmpfs supports size option.
+TEST(MountTest, TmpfsSizeRoundUpSinglePageSize) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)) ||
+          IsRunningOnGvisor());
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto tmpfs_size_opt = absl::StrCat("size=", kPageSize / 2);
+  auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir.path(), "tmpfs", 0, tmpfs_size_opt, 0));
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(JoinPath(dir.path(), "foo"), O_CREAT | O_RDWR, 0777));
+
+  // Check that it starts at size zero.
+  struct stat buf;
+  ASSERT_THAT(fstat(fd.get(), &buf), SyscallSucceeds());
+  EXPECT_EQ(buf.st_size, 0);
+
+  // Grow to 1 Page Size.
+  ASSERT_THAT(fallocate(fd.get(), 0, 0, kPageSize), SyscallSucceeds());
+  ASSERT_THAT(fstat(fd.get(), &buf), SyscallSucceeds());
+  EXPECT_EQ(buf.st_size, kPageSize);
+
+  // Grow to size beyond tmpfs allocated bytes.
+  ASSERT_THAT(fallocate(fd.get(), 0, 0, kPageSize + 1),
+              SyscallFailsWithErrno(ENOSPC));
+  ASSERT_THAT(fstat(fd.get(), &buf), SyscallSucceeds());
+  EXPECT_EQ(buf.st_size, kPageSize);
+}
+
+TEST(MountTest, TmpfsSizeRoundUpMultiplePages) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)) ||
+          IsRunningOnGvisor());
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto page_multiple = 2;
+  auto size = kPageSize * page_multiple;
+  auto tmpfs_size_opt = absl::StrCat("size=", size);
+  auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir.path(), "tmpfs", 0, tmpfs_size_opt, 0));
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(JoinPath(dir.path(), "foo"), O_CREAT | O_RDWR, 0777));
+
+  // Check that it starts at size zero.
+  struct stat buf;
+  ASSERT_THAT(fstat(fd.get(), &buf), SyscallSucceeds());
+  EXPECT_EQ(buf.st_size, 0);
+
+  // Grow to multiple of page size.
+  ASSERT_THAT(fallocate(fd.get(), 0, 0, size), SyscallSucceeds());
+  ASSERT_THAT(fstat(fd.get(), &buf), SyscallSucceeds());
+  EXPECT_EQ(buf.st_size, size);
+
+  // Grow to beyond tmpfs size bytes.
+  ASSERT_THAT(fallocate(fd.get(), 0, 0, size + 1),
+              SyscallFailsWithErrno(ENOSPC));
+  ASSERT_THAT(fstat(fd.get(), &buf), SyscallSucceeds());
+  EXPECT_EQ(buf.st_size, size);
+}
+
+TEST(MountTest, TmpfsSizeMoreThanSinglePgSZMultipleFiles) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)) ||
+          IsRunningOnGvisor());
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const page_multiple = 10;
+  auto const size = kPageSize * page_multiple;
+  auto tmpfs_size_opt = absl::StrCat("size=", size);
+  auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir.path(), "tmpfs", 0, tmpfs_size_opt, 0));
+  for (int i = 0; i < page_multiple; i++) {
+    auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(
+        JoinPath(dir.path(), absl::StrCat("foo_", i)), O_CREAT | O_RDWR, 0777));
+    // Create buffer & Grow to 100 bytes.
+    struct stat buf;
+    ASSERT_THAT(fstat(fd.get(), &buf), SyscallSucceeds());
+    ASSERT_THAT(fallocate(fd.get(), 0, 0, 100), SyscallSucceeds());
+    ASSERT_THAT(fstat(fd.get(), &buf), SyscallSucceeds());
+    EXPECT_EQ(buf.st_size, 100);
+  }
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(JoinPath(dir.path(), absl::StrCat("foo_", page_multiple + 1)),
+           O_CREAT | O_RDWR, 0777));
+  // Grow to beyond tmpfs size bytes after exhausting the size.
+  ASSERT_THAT(fallocate(fd.get(), 0, 0, kPageSize),
+              SyscallFailsWithErrno(ENOSPC));
+}
 }  // namespace
 
 }  // namespace testing
