@@ -1152,11 +1152,15 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 		defer s.routeMu.RUnlock()
 
 		// We want to find the route that has the longest prefix length,
-		// so that more specific routes will win.
+		// so that more specific routes will win. The chosen interface
+		// may not have an address assigned so also keep a track of which
+		// the best source address was that we found, even if it is from
+		// a different interface.
 		// TODO: Probably should have additional tie-breaks here so that
 		// the result is always deterministic.
 		var bestPrefixLen int
 		var bestRoute *Route
+		var bestLocalAddr tcpip.Address
 
 		for _, route := range s.routeTable {
 			if len(remoteAddr) != 0 && !route.Destination.Contains(remoteAddr) {
@@ -1183,13 +1187,13 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 					if r := constructAndValidateRoute(netProto, addressEndpoint, nic /* outgoingNIC */, nic /* outgoingNIC */, gateway, localAddr, remoteAddr, s.handleLocal, multicastLoop); r == nil {
 						panic(fmt.Sprintf("non-forwarding route validation failed with route table entry = %#v, id = %d, localAddr = %s, remoteAddr = %s", route, id, localAddr, remoteAddr))
 					} else if plen >= bestPrefixLen {
-						bestRoute, bestPrefixLen = r, plen
+						bestRoute, bestPrefixLen, bestLocalAddr = r, plen, localAddr
 					}
 				} else {
 					// There's no local address on the NIC but this route suggests that
 					// we can still reach this destination address via this NIC, so just
 					// construct a route that uses the remote address as the gateway.
-					if r := constructAndValidateRoute(netProto, nil, nic /* outgoingNIC */, nic /* outgoingNIC */, remoteAddr, localAddr, remoteAddr, s.handleLocal, multicastLoop); r == nil {
+					if r := constructAndValidateRoute(netProto, nil, nic /* outgoingNIC */, nic /* outgoingNIC */, remoteAddr, bestLocalAddr, remoteAddr, s.handleLocal, multicastLoop); r == nil {
 						panic(fmt.Sprintf("non-forwarding route validation failed with route table entry = %#v, id = %d, localAddr = %s, remoteAddr = %s", route, id, localAddr, remoteAddr))
 					} else if plen >= bestPrefixLen {
 						bestRoute, bestPrefixLen = r, plen
