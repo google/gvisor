@@ -21,6 +21,7 @@
 #include <iostream>
 
 #include "gtest/gtest.h"
+#include "absl/strings/string_view.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/fs_util.h"
@@ -34,7 +35,7 @@ namespace {
 
 std::atomic<uint64_t> global_temp_file_number = ATOMIC_VAR_INIT(1);
 
-void TryDeleteRecursively(std::string const& path) {
+void TryDeleteRecursively(absl::string_view path) {
   if (!path.empty()) {
     int undeleted_dirs = 0;
     int undeleted_files = 0;

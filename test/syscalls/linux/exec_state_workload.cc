@@ -25,6 +25,7 @@
 #include <string>
 
 #include "absl/strings/numbers.h"
+#include "absl/strings/string_view.h"
 
 #ifndef ANDROID  // Conflicts with existing operator<< on Android.
 
@@ -122,7 +123,7 @@ int PrintExecName() {
   return 0;
 }
 
-void usage(const std::string& prog) {
+void usage(absl::string_view prog) {
   std::cerr << "usage:\n"
             << "\t" << prog << " CheckSigHandler <signo> <handler addr (hex)>\n"
             << "\t" << prog << " CheckSigBlocked <signo>\n"
