@@ -563,6 +563,40 @@ func (s *Stack) SetForwardingDefaultAndAllNICs(protocol tcpip.NetworkProtocolNum
 	return nil
 }
 
+// SetNICMulticastForwarding enables or disables multicast packet forwarding on
+// the specified NIC for the passed protocol.
+//
+// Returns the previous configuration on the NIC.
+//
+// TODO(https://gvisor.dev/issue/7338): Implement support for multicast
+// forwarding. Currently, setting this value is a no-op and is not ready for
+// use.
+func (s *Stack) SetNICMulticastForwarding(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber, enable bool) (bool, tcpip.Error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	nic, ok := s.nics[id]
+	if !ok {
+		return false, &tcpip.ErrUnknownNICID{}
+	}
+
+	return nic.setMulticastForwarding(protocol, enable)
+}
+
+// NICMulticastForwarding returns the multicast forwarding configuration for
+// the specified NIC.
+func (s *Stack) NICMulticastForwarding(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber) (bool, tcpip.Error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	nic, ok := s.nics[id]
+	if !ok {
+		return false, &tcpip.ErrUnknownNICID{}
+	}
+
+	return nic.multicastForwarding(protocol)
+}
+
 // PortRange returns the UDP and TCP inclusive range of ephemeral ports used in
 // both IPv4 and IPv6.
 func (s *Stack) PortRange() (uint16, uint16) {
@@ -843,6 +877,10 @@ type NICInfo struct {
 	// Forwarding holds the forwarding status for each network endpoint that
 	// supports forwarding.
 	Forwarding map[tcpip.NetworkProtocolNumber]bool
+
+	// MulticastForwarding holds the forwarding status for each network endpoint
+	// that supports multicast forwarding.
+	MulticastForwarding map[tcpip.NetworkProtocolNumber]bool
 }
 
 // HasNIC returns true if the NICID is defined in the stack.
@@ -857,6 +895,21 @@ func (s *Stack) HasNIC(id tcpip.NICID) bool {
 func (s *Stack) NICInfo() map[tcpip.NICID]NICInfo {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
+	type forwardingFn func(tcpip.NetworkProtocolNumber) (bool, tcpip.Error)
+	forwardingValue := func(forwardingFn forwardingFn, proto tcpip.NetworkProtocolNumber, nicID tcpip.NICID, fnName string) (forward bool, ok bool) {
+		switch forwarding, err := forwardingFn(proto); err.(type) {
+		case nil:
+			return forwarding, true
+		case *tcpip.ErrUnknownProtocol:
+			panic(fmt.Sprintf("expected network protocol %d to be available on NIC %d", proto, nicID))
+		case *tcpip.ErrNotSupported:
+			// Not all network protocols support forwarding.
+		default:
+			panic(fmt.Sprintf("nic(id=%d).%s(%d): %s", nicID, fnName, proto, err))
+		}
+		return false, false
+	}
 
 	nics := make(map[tcpip.NICID]NICInfo)
 	for id, nic := range s.nics {
@@ -873,28 +926,26 @@ func (s *Stack) NICInfo() map[tcpip.NICID]NICInfo {
 		}
 
 		info := NICInfo{
-			Name:              nic.name,
-			LinkAddress:       nic.NetworkLinkEndpoint.LinkAddress(),
-			ProtocolAddresses: nic.primaryAddresses(),
-			Flags:             flags,
-			MTU:               nic.NetworkLinkEndpoint.MTU(),
-			Stats:             nic.stats.local,
-			NetworkStats:      netStats,
-			Context:           nic.context,
-			ARPHardwareType:   nic.NetworkLinkEndpoint.ARPHardwareType(),
-			Forwarding:        make(map[tcpip.NetworkProtocolNumber]bool),
+			Name:                nic.name,
+			LinkAddress:         nic.NetworkLinkEndpoint.LinkAddress(),
+			ProtocolAddresses:   nic.primaryAddresses(),
+			Flags:               flags,
+			MTU:                 nic.NetworkLinkEndpoint.MTU(),
+			Stats:               nic.stats.local,
+			NetworkStats:        netStats,
+			Context:             nic.context,
+			ARPHardwareType:     nic.NetworkLinkEndpoint.ARPHardwareType(),
+			Forwarding:          make(map[tcpip.NetworkProtocolNumber]bool),
+			MulticastForwarding: make(map[tcpip.NetworkProtocolNumber]bool),
 		}
 
 		for proto := range s.networkProtocols {
-			switch forwarding, err := nic.forwarding(proto); err.(type) {
-			case nil:
+			if forwarding, ok := forwardingValue(nic.forwarding, proto, id, "forwarding"); ok {
 				info.Forwarding[proto] = forwarding
-			case *tcpip.ErrUnknownProtocol:
-				panic(fmt.Sprintf("expected network protocol %d to be available on NIC %d", proto, nic.ID()))
-			case *tcpip.ErrNotSupported:
-				// Not all network protocols support forwarding.
-			default:
-				panic(fmt.Sprintf("nic(id=%d).forwarding(%d): %s", nic.ID(), proto, err))
+			}
+
+			if multicastForwarding, ok := forwardingValue(nic.multicastForwarding, proto, id, "multicastForwarding"); ok {
+				info.MulticastForwarding[proto] = multicastForwarding
 			}
 		}
 

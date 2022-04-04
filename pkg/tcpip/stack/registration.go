@@ -691,6 +691,21 @@ type ForwardingNetworkEndpoint interface {
 	SetForwarding(bool) bool
 }
 
+// MulticastForwardingNetworkEndpoint is a network endpoint that may forward
+// multicast packets.
+type MulticastForwardingNetworkEndpoint interface {
+	ForwardingNetworkEndpoint
+
+	// MulticastForwarding returns true if multicast forwarding is enabled.
+	// Otherwise, returns false.
+	MulticastForwarding() bool
+
+	// SetMulticastForwarding sets the multicast forwarding configuration.
+	//
+	// Returns the previous forwarding configuration.
+	SetMulticastForwarding(bool) bool
+}
+
 // NetworkProtocol is the interface that needs to be implemented by network
 // protocols (e.g., ipv4, ipv6) that want to be part of the networking stack.
 type NetworkProtocol interface {

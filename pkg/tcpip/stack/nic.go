@@ -1040,3 +1040,35 @@ func (n *nic) forwarding(protocol tcpip.NetworkProtocolNumber) (bool, tcpip.Erro
 
 	return forwardingEP.Forwarding(), nil
 }
+
+func (n *nic) multicastForwardingEndpoint(protocol tcpip.NetworkProtocolNumber) (MulticastForwardingNetworkEndpoint, tcpip.Error) {
+	ep := n.getNetworkEndpoint(protocol)
+	if ep == nil {
+		return nil, &tcpip.ErrUnknownProtocol{}
+	}
+
+	forwardingEP, ok := ep.(MulticastForwardingNetworkEndpoint)
+	if !ok {
+		return nil, &tcpip.ErrNotSupported{}
+	}
+
+	return forwardingEP, nil
+}
+
+func (n *nic) setMulticastForwarding(protocol tcpip.NetworkProtocolNumber, enable bool) (bool, tcpip.Error) {
+	ep, err := n.multicastForwardingEndpoint(protocol)
+	if err != nil {
+		return false, err
+	}
+
+	return ep.SetMulticastForwarding(enable), nil
+}
+
+func (n *nic) multicastForwarding(protocol tcpip.NetworkProtocolNumber) (bool, tcpip.Error) {
+	ep, err := n.multicastForwardingEndpoint(protocol)
+	if err != nil {
+		return false, err
+	}
+
+	return ep.MulticastForwarding(), nil
+}

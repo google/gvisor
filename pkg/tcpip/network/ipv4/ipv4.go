@@ -72,6 +72,7 @@ var ipv4BroadcastAddr = header.IPv4Broadcast.WithPrefix()
 
 var _ stack.LinkResolvableNetworkEndpoint = (*endpoint)(nil)
 var _ stack.ForwardingNetworkEndpoint = (*endpoint)(nil)
+var _ stack.MulticastForwardingNetworkEndpoint = (*endpoint)(nil)
 var _ stack.GroupAddressableEndpoint = (*endpoint)(nil)
 var _ stack.AddressableEndpoint = (*endpoint)(nil)
 var _ stack.NetworkEndpoint = (*endpoint)(nil)
@@ -93,6 +94,15 @@ type endpoint struct {
 	//
 	// +checkatomic
 	forwarding uint32
+
+	// multicastForwarding is set to forwardingEnabled when the endpoint has
+	// forwarding enabled and forwardingDisabled when it is disabled.
+	//
+	// TODO(https://gvisor.dev/issue/7338): Implement support for multicast
+	//forwarding. Currently, setting this value to true is a no-op.
+	//
+	// +checkatomic
+	multicastForwarding uint32
 
 	// mu protects below.
 	mu sync.RWMutex
@@ -234,6 +244,24 @@ func (e *endpoint) SetForwarding(forwarding bool) bool {
 	}
 
 	return prevForwarding
+}
+
+// MulticastForwarding implements stack.MulticastForwardingNetworkEndpoint.
+func (e *endpoint) MulticastForwarding() bool {
+	return atomic.LoadUint32(&e.multicastForwarding) == forwardingEnabled
+}
+
+// SetMulticastForwarding implements stack.MulticastForwardingNetworkEndpoint.
+func (e *endpoint) SetMulticastForwarding(forwarding bool) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	updatedForwarding := uint32(forwardingDisabled)
+	if forwarding {
+		updatedForwarding = forwardingEnabled
+	}
+
+	return atomic.SwapUint32(&e.multicastForwarding, updatedForwarding) != forwardingDisabled
 }
 
 // Enable implements stack.NetworkEndpoint.
