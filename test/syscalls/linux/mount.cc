@@ -337,6 +337,8 @@ TEST(MountTest, MountReadonly) {
   const struct stat s = ASSERT_NO_ERRNO_AND_VALUE(Stat(dir.path()));
   EXPECT_EQ(s.st_mode, S_IFDIR | 0777);
 
+  EXPECT_THAT(access(dir.path().c_str(), W_OK), SyscallFailsWithErrno(EROFS));
+
   std::string const filename = JoinPath(dir.path(), "foo");
   EXPECT_THAT(open(filename.c_str(), O_RDWR | O_CREAT, 0777),
               SyscallFailsWithErrno(EROFS));
