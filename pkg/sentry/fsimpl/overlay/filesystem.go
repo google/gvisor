@@ -567,7 +567,13 @@ func (fs *filesystem) AccessAt(ctx context.Context, rp *vfs.ResolvingPath, creds
 	if err != nil {
 		return err
 	}
-	return d.checkPermissions(creds, ats)
+	if err := d.checkPermissions(creds, ats); err != nil {
+		return err
+	}
+	if ats.MayWrite() && rp.Mount().ReadOnly() {
+		return linuxerr.EROFS
+	}
+	return nil
 }
 
 // BoundEndpointAt implements vfs.FilesystemImpl.BoundEndpointAt.
