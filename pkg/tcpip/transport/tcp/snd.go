@@ -1496,18 +1496,6 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		// Remove all acknowledged data from the write list.
 		acked := s.SndUna.Size(ack)
 		s.SndUna = ack
-
-		// The remote ACK-ing at least 1 byte is an indication that we have a
-		// full-duplex connection to the remote as the only way we will receive an
-		// ACK is if the remote received data that we previously sent.
-		//
-		// As of writing, linux seems to only confirm a route as reachable when
-		// forward progress is made which is indicated by an ACK that removes data
-		// from the retransmit queue.
-		if acked > 0 {
-			s.ep.route.ConfirmReachable()
-		}
-
 		ackLeft := acked
 		originalOutstanding := s.Outstanding
 		for ackLeft > 0 {
