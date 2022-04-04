@@ -1142,6 +1142,7 @@ func (e *endpoint) handleReset(s *segment) (ok bool, err tcpip.Error) {
 // +checklocksalias:e.snd.ep.mu=e.mu
 func (e *endpoint) handleSegmentsLocked(fastPath bool) tcpip.Error {
 	checkRequeue := true
+	sndUna := e.snd.SndUna
 	for i := 0; i < maxSegmentsPerWake; i++ {
 		if state := e.EndpointState(); state.closed() || state == StateTimeWait {
 			return nil
@@ -1162,6 +1163,16 @@ func (e *endpoint) handleSegmentsLocked(fastPath bool) tcpip.Error {
 		}
 	}
 
+	// The remote ACK-ing at least 1 byte is an indication that we have a
+	// full-duplex connection to the remote as the only way we will receive an
+	// ACK is if the remote received data that we previously sent.
+	//
+	// As of writing, Linux seems to only confirm a route as reachable when
+	// forward progress is made which is indicated by an ACK that removes data
+	// from the retransmit queue, i.e. sender makes forward progress.
+	if sndUna.LessThan(e.snd.SndUna) {
+		e.route.ConfirmReachable()
+	}
 	// When fastPath is true we don't want to wake up the worker
 	// goroutine. If the endpoint has more segments to process the
 	// dispatcher will call handleSegments again anyway.
