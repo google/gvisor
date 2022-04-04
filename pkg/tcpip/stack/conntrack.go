@@ -60,7 +60,7 @@ type tuple struct {
 	// packet seen on the connection.
 	reply bool
 
-	mu sync.RWMutex `state:"nosave"`
+	mu tupleRWMutex `state:"nosave"`
 	// +checklocks:mu
 	tupleID tupleID
 }
@@ -146,7 +146,7 @@ type conn struct {
 	// Holds a finalizeResult.
 	finalizeResult atomicbitops.Uint32
 
-	mu sync.RWMutex `state:"nosave"`
+	mu connRWMutex `state:"nosave"`
 	// sourceManip indicates the source manipulation type.
 	//
 	// +checklocks:mu
@@ -156,7 +156,7 @@ type conn struct {
 	// +checklocks:mu
 	destinationManip manipType
 
-	stateMu sync.RWMutex `state:"nosave"`
+	stateMu connRWMutex `state:"nosave"`
 	// tcb is TCB control block. It is used to keep track of states
 	// of tcp connection.
 	//
@@ -237,7 +237,7 @@ type ConnTrack struct {
 	clock tcpip.Clock
 	rand  *rand.Rand
 
-	mu sync.RWMutex `state:"nosave"`
+	mu connTrackRWMutex `state:"nosave"`
 	// mu protects the buckets slice, but not buckets' contents. Only take
 	// the write lock if you are modifying the slice or saving for S/R.
 	//
@@ -247,7 +247,7 @@ type ConnTrack struct {
 
 // +stateify savable
 type bucket struct {
-	mu sync.RWMutex `state:"nosave"`
+	mu bucketRWMutex `state:"nosave"`
 	// +checklocks:mu
 	tuples tupleList
 }

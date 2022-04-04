@@ -50,6 +50,61 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "tuple_mutex",
+    out = "tuple_mutex.go",
+    package = "stack",
+    prefix = "tuple",
+    substrs = {
+        "genericMark": "tuple",
+    },
+    template = "//pkg/sync/locking:generic_rwmutex",
+)
+
+go_template_instance(
+    name = "bucket_mutex",
+    out = "bucket_mutex.go",
+    package = "stack",
+    prefix = "bucket",
+    substrs = {
+        "genericMark": "bucket",
+    },
+    template = "//pkg/sync/locking:generic_rwmutex",
+)
+
+go_template_instance(
+    name = "conntrack_mutex",
+    out = "conntrack_mutex.go",
+    package = "stack",
+    prefix = "connTrack",
+    substrs = {
+        "genericMark": "conntrack",
+    },
+    template = "//pkg/sync/locking:generic_rwmutex",
+)
+
+go_template_instance(
+    name = "conn_mutex",
+    out = "conn_mutex.go",
+    package = "stack",
+    prefix = "conn",
+    substrs = {
+        "genericMark": "conn",
+    },
+    template = "//pkg/sync/locking:generic_rwmutex",
+)
+
+go_template_instance(
+    name = "conn_state_mutex",
+    out = "conn_state_mutex.go",
+    package = "stack",
+    prefix = "connState",
+    substrs = {
+        "genericMark": "connState",
+    },
+    template = "//pkg/sync/locking:generic_rwmutex",
+)
+
 go_library(
     name = "stack",
     srcs = [
@@ -83,6 +138,11 @@ go_library(
         "tcp.go",
         "transport_demuxer.go",
         "tuple_list.go",
+        "tuple_mutex.go",
+        "bucket_mutex.go",
+        "conntrack_mutex.go",
+        "conn_mutex.go",
+        "conn_state_mutex.go",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -94,6 +154,7 @@ go_library(
         "//pkg/refsvfs2",
         "//pkg/sleep",
         "//pkg/sync",
+        "//pkg/sync/locking",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/hash/jenkins",
