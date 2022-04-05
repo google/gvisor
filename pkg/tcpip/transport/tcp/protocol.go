@@ -20,7 +20,6 @@ import (
 	"strings"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/hash/jenkins"
@@ -88,7 +87,7 @@ const (
 type protocol struct {
 	stack *stack.Stack
 
-	mu                         sync.RWMutex
+	mu                         protocolRWMutex
 	sackEnabled                bool
 	recovery                   tcpip.TCPRecovery
 	delayEnabled               bool

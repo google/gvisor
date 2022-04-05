@@ -1,10 +1,23 @@
 load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(licenses = ["notice"])
+
+go_template_instance(
+    name = "endpoint_mutex",
+    out = "endpoint_mutex.go",
+    package = "ipv4",
+    prefix = "endpoint",
+    substrs = {
+        "genericMark": "endpoint",
+    },
+    template = "//pkg/sync/locking:generic_rwmutex",
+)
 
 go_library(
     name = "ipv4",
     srcs = [
+        "endpoint_mutex.go",
         "icmp.go",
         "igmp.go",
         "ipv4.go",
@@ -14,6 +27,7 @@ go_library(
     deps = [
         "//pkg/atomicbitops",
         "//pkg/sync",
+        "//pkg/sync/locking",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",

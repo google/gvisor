@@ -99,7 +99,7 @@ type endpoint struct {
 	multicastForwarding atomicbitops.Uint32
 
 	// mu protects below.
-	mu sync.RWMutex
+	mu endpointRWMutex
 
 	// +checklocks:mu
 	addressableEndpointState stack.AddressableEndpointState

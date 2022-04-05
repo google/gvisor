@@ -214,7 +214,7 @@ type GenericMulticastProtocolState struct {
 	memberships map[tcpip.Address]multicastGroupState
 
 	// protocolMU is the mutex used to protect the protocol.
-	protocolMU *sync.RWMutex
+	protocolMU sync.Locker
 }
 
 // Init initializes the Generic Multicast Protocol state.
@@ -227,7 +227,7 @@ type GenericMulticastProtocolState struct {
 //
 // Note: the methods on opts.Protocol will always be called while protocolMU is
 // held.
-func (g *GenericMulticastProtocolState) Init(protocolMU *sync.RWMutex, opts GenericMulticastProtocolOptions) {
+func (g *GenericMulticastProtocolState) Init(protocolMU sync.Locker, opts GenericMulticastProtocolOptions) {
 	if g.memberships != nil {
 		panic("attempted to initialize generic membership protocol state twice")
 	}
