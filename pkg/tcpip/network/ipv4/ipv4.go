@@ -253,9 +253,6 @@ func (e *endpoint) MulticastForwarding() bool {
 
 // SetMulticastForwarding implements stack.MulticastForwardingNetworkEndpoint.
 func (e *endpoint) SetMulticastForwarding(forwarding bool) bool {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
 	updatedForwarding := uint32(forwardingDisabled)
 	if forwarding {
 		updatedForwarding = forwardingEnabled
