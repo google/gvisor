@@ -126,7 +126,7 @@ func (r *receiver) getSendParams() (RcvNxt seqnum.Value, rcvWnd seqnum.Size) {
 	//
 	// Also, if the application is reading the data, we keep growing the right
 	// edge, as we are still advertising a window that we think can be serviced.
-	toGrow := unackLen >= SegSize || bufUsed <= r.prevBufUsed
+	toGrow := unackLen >= SegOverheadSize || bufUsed <= r.prevBufUsed
 
 	// Update RcvAcc only if new window is > previously advertised window. We
 	// should never shrink the acceptable sequence space once it has been
@@ -216,7 +216,7 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 			segLen -= diff
 			segSeq.UpdateForward(diff)
 			s.sequenceNumber.UpdateForward(diff)
-			s.data.TrimFront(int(diff))
+			s.TrimFront(diff)
 		}
 
 		// Move segment to ready-to-deliver list. Wakeup any waiters.
@@ -400,7 +400,7 @@ func (r *receiver) handleRcvdSegmentClosing(s *segment, state EndpointState, clo
 		// incoming FIN or the user calling shutdown(..,
 		// SHUT_RD) then any data past the RcvNxt should
 		// trigger a RST.
-		endDataSeq := s.sequenceNumber.Add(seqnum.Size(s.data.Size()))
+		endDataSeq := s.sequenceNumber.Add(seqnum.Size(s.payloadSize()))
 		if state != StateCloseWait && rcvClosed && r.RcvNxt.LessThan(endDataSeq) {
 			return true, &tcpip.ErrConnectionAborted{}
 		}
@@ -441,7 +441,7 @@ func (r *receiver) handleRcvdSegmentClosing(s *segment, state EndpointState, clo
 	// NOTE: We still want to permit a FIN as it's possible only our
 	// end has closed and the peer is yet to send a FIN. Hence we
 	// compare only the payload.
-	segEnd := s.sequenceNumber.Add(seqnum.Size(s.data.Size()))
+	segEnd := s.sequenceNumber.Add(seqnum.Size(s.payloadSize()))
 	if rcvClosed && !segEnd.LessThanEq(r.RcvNxt) {
 		return true, nil
 	}
@@ -456,7 +456,7 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err tcpip.Error) {
 	state := r.ep.EndpointState()
 	closed := r.ep.closed
 
-	segLen := seqnum.Size(s.data.Size())
+	segLen := seqnum.Size(s.payloadSize())
 	segSeq := s.sequenceNumber
 
 	// If the sequence number range is outside the acceptable range, just
@@ -513,7 +513,7 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err tcpip.Error) {
 	// now. So try to do it.
 	for !r.closed && r.pendingRcvdSegments.Len() > 0 {
 		s := r.pendingRcvdSegments[0]
-		segLen := seqnum.Size(s.data.Size())
+		segLen := seqnum.Size(s.payloadSize())
 		segSeq := s.sequenceNumber
 
 		// Skip segment altogether if it has already been acknowledged.
@@ -537,7 +537,7 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err tcpip.Error) {
 // +checklocksalias:r.ep.snd.ep.mu=r.ep.mu
 func (r *receiver) handleTimeWaitSegment(s *segment) (resetTimeWait bool, newSyn bool) {
 	segSeq := s.sequenceNumber
-	segLen := seqnum.Size(s.data.Size())
+	segLen := seqnum.Size(s.payloadSize())
 
 	// Just silently drop any RST packets in TIME_WAIT. We do not support
 	// TIME_WAIT assasination as a result we confirm w/ fix 1 as described

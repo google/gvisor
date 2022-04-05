@@ -71,6 +71,7 @@ go_library(
         "packet_buffer.go",
         "packet_buffer_list.go",
         "packet_buffer_refs.go",
+        "packet_buffer_state.go",
         "packet_buffer_unsafe.go",
         "pending_packets.go",
         "rand.go",
