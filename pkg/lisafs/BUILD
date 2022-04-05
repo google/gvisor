@@ -88,6 +88,7 @@ go_library(
     marshal = True,
     deps = [
         "//pkg/abi/linux",
+        "//pkg/atomicbitops",
         "//pkg/cleanup",
         "//pkg/context",
         "//pkg/fdchannel",
