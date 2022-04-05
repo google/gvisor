@@ -2,8 +2,8 @@ package stack
 
 import (
 	"fmt"
-	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 )
 
@@ -37,13 +37,13 @@ type packetBufferRefs struct {
 	// Speculative references are used for TryIncRef, to avoid a CompareAndSwap
 	// loop. See IncRef, DecRef and TryIncRef for details of how these fields are
 	// used.
-	refCount int64
+	refCount atomicbitops.AlignedAtomicInt64
 }
 
 // InitRefs initializes r with one reference and, if enabled, activates leak
 // checking.
 func (r *packetBufferRefs) InitRefs() {
-	atomic.StoreInt64(&r.refCount, 1)
+	r.refCount.Store(1)
 	refsvfs2.Register(r)
 }
 
@@ -65,14 +65,14 @@ func (r *packetBufferRefs) LogRefs() bool {
 // ReadRefs returns the current number of references. The returned count is
 // inherently racy and is unsafe to use without external synchronization.
 func (r *packetBufferRefs) ReadRefs() int64 {
-	return atomic.LoadInt64(&r.refCount)
+	return r.refCount.Load()
 }
 
 // IncRef implements refs.RefCounter.IncRef.
 //
 //go:nosplit
 func (r *packetBufferRefs) IncRef() {
-	v := atomic.AddInt64(&r.refCount, 1)
+	v := r.refCount.Add(1)
 	if packetBufferenableLogging {
 		refsvfs2.LogIncRef(r, v)
 	}
@@ -90,13 +90,13 @@ func (r *packetBufferRefs) IncRef() {
 //go:nosplit
 func (r *packetBufferRefs) TryIncRef() bool {
 	const speculativeRef = 1 << 32
-	if v := atomic.AddInt64(&r.refCount, speculativeRef); int32(v) == 0 {
+	if v := r.refCount.Add(speculativeRef); int32(v) == 0 {
 
-		atomic.AddInt64(&r.refCount, -speculativeRef)
+		r.refCount.Add(-speculativeRef)
 		return false
 	}
 
-	v := atomic.AddInt64(&r.refCount, -speculativeRef+1)
+	v := r.refCount.Add(-speculativeRef + 1)
 	if packetBufferenableLogging {
 		refsvfs2.LogTryIncRef(r, v)
 	}
@@ -116,7 +116,7 @@ func (r *packetBufferRefs) TryIncRef() bool {
 //
 //go:nosplit
 func (r *packetBufferRefs) DecRef(destroy func()) {
-	v := atomic.AddInt64(&r.refCount, -1)
+	v := r.refCount.Add(-1)
 	if packetBufferenableLogging {
 		refsvfs2.LogDecRef(r, v)
 	}
