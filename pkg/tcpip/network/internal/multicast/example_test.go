@@ -18,9 +18,11 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/network/internal/multicast"
@@ -28,17 +30,27 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 )
 
+const (
+	defaultMinTTL             = 10
+	inputNICID    tcpip.NICID = 1
+	outgoingNICID tcpip.NICID = 2
+)
+
 // Example shows how to interact with a multicast RouteTable.
 func Example() {
 	address := testutil.MustParse4("192.168.1.1")
+	defaultOutgoingInterfaces := []multicast.OutgoingInterface{{ID: outgoingNICID, MinTTL: defaultMinTTL}}
 	routeKey := multicast.RouteKey{UnicastSource: address, MulticastDestination: address}
 
 	pkt := newPacketBuffer("hello")
 	defer pkt.DecRef()
 
+	clock := faketime.NewManualClock()
+	clock.Advance(10 * time.Second)
+
 	// Create a route table from a specified config.
 	table := multicast.RouteTable{}
-	config := multicast.DefaultConfig(faketime.NewManualClock())
+	config := multicast.DefaultConfig(clock)
 
 	if err := table.Init(config); err != nil {
 		panic(err)
@@ -72,12 +84,48 @@ func Example() {
 		deliverPktLocally(pkt)
 	}
 
+	// To transition a pending route to the installed state, call:
+	route := table.NewInstalledRoute(inputNICID, defaultOutgoingInterfaces)
+	pendingRoute, ok := table.AddInstalledRoute(routeKey, route)
+
+	if !ok {
+		return
+	}
+
+	// If there was a pending route, then the caller is responsible for
+	// flushing any pending packets.
+	for !pendingRoute.IsEmpty() {
+		pkt, err := pendingRoute.Dequeue()
+		if err != nil {
+			panic(fmt.Sprintf("pendingRoute.Dequeue() = (_, %s)", err))
+		}
+		forwardPkt(pkt, route)
+	}
+
+	// To obtain the last used time of the route, call:
+	timestamp, found := table.GetLastUsedTimestamp(routeKey)
+
+	if !found {
+		panic(fmt.Sprintf("table.GetLastUsedTimestamp(%#v) = (_, false)", routeKey))
+	}
+
+	fmt.Printf("Last used timestamp: %d", timestamp.Nanoseconds())
+
+	// Finally, to remove an installed route, call:
+	if removed := table.RemoveInstalledRoute(routeKey); !removed {
+		panic(fmt.Sprintf("table.RemoveInstalledRoute(%#v) = false", routeKey))
+	}
+
 	// Output:
 	// emitMissingRouteEvent
 	// deliverPktLocally
+	// forwardPkt
+	// Last used timestamp: 10000000000
 }
 
-func forwardPkt(*stack.PacketBuffer, *multicast.InstalledRoute) {}
+func forwardPkt(*stack.PacketBuffer, *multicast.InstalledRoute) {
+	fmt.Println("forwardPkt")
+}
 
 func emitMissingRouteEvent(multicast.RouteKey) {
 	fmt.Println("emitMissingRouteEvent")

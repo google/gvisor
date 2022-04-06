@@ -71,6 +71,11 @@ type MonotonicTime struct {
 	nanoseconds int64
 }
 
+// Nanoseconds returns the monotonic time in nanoseconds.
+func (mt MonotonicTime) Nanoseconds() int64 {
+	return mt.nanoseconds
+}
+
 // Before reports whether the monotonic clock reading mt is before u.
 func (mt MonotonicTime) Before(u MonotonicTime) bool {
 	return mt.nanoseconds < u.nanoseconds
