@@ -338,21 +338,3 @@ func SetCPUIDFaulting(on bool) bool {
 func ReadCR2() uintptr {
 	return readCR2()
 }
-
-// kernelMXCSR is the value of the mxcsr register in the Sentry.
-//
-// The MXCSR control configuration is initialized once and never changed. Look
-// at src/cmd/compile/abi-internal.md in the golang sources for more details.
-var kernelMXCSR uint32
-
-// RestoreKernelFPState restores the Sentry floating point state.
-//
-//go:nosplit
-func RestoreKernelFPState() {
-	// Restore the MXCSR control configuration.
-	ldmxcsr(&kernelMXCSR)
-}
-
-func init() {
-	stmxcsr(&kernelMXCSR)
-}
