@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 	pb "gvisor.dev/gvisor/pkg/eventchannel/eventchannel_go_proto"
 )
 
@@ -76,13 +77,13 @@ func (e *eventProcessor) processOne(src io.Reader, out *os.File) error {
 
 	// Unmarshal the payload into an "Any" protobuf, which encodes the actual
 	// event.
-	encodedEv := emptyAny()
-	if err := proto.Unmarshal(buf, encodedEv); err != nil {
+	encodedEv := anypb.Any{}
+	if err := proto.Unmarshal(buf, &encodedEv); err != nil {
 		return fmt.Errorf("failed to unmarshal 'any' protobuf message: %v", err)
 	}
 
 	var ev pb.DebugEvent
-	if err := (encodedEv).UnmarshalTo(&ev); err != nil {
+	if err := encodedEv.UnmarshalTo(&ev); err != nil {
 		return fmt.Errorf("failed to decode 'any' protobuf message: %v", err)
 	}
 
