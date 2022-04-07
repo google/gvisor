@@ -61,6 +61,7 @@ go_library(
         "iptables.go",
         "iptables_targets.go",
         "iptables_types.go",
+        "multicast.go",
         "neighbor_cache.go",
         "neighbor_entry.go",
         "neighbor_entry_list.go",
