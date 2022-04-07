@@ -78,9 +78,11 @@ import (
 
 const (
 	// Name is the default filesystem name.
-	Name                     = "cgroup"
-	readonlyFileMode         = linux.FileMode(0444)
-	writableFileMode         = linux.FileMode(0644)
+	Name             = "cgroup"
+	readonlyFileMode = linux.FileMode(0444)
+	writableFileMode = linux.FileMode(0644)
+	defaultDirMode   = linux.FileMode(0555) | linux.ModeDirectory
+
 	defaultMaxCachedDentries = uint64(1000)
 )
 
@@ -297,7 +299,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		fs.kcontrollers = append(fs.kcontrollers, c)
 	}
 
-	root := fs.newCgroupInode(ctx, creds, nil)
+	root := fs.newCgroupInode(ctx, creds, nil, defaultDirMode)
 	var rootD kernfs.Dentry
 	rootD.InitRoot(&fs.Filesystem, root)
 	fs.root = &rootD
@@ -346,7 +348,7 @@ func (fs *filesystem) prepareInitialCgroup(ctx context.Context, vfsObj *vfs.Virt
 	// Have initial cgroup target, create the tree.
 	cgDir := fs.root.Inode().(*cgroupInode)
 	for pit := initPath.Begin; pit.Ok(); pit = pit.Next() {
-		cgDirI, err := cgDir.NewDir(ctx, pit.String(), vfs.MkdirOptions{})
+		cgDirI, err := cgDir.NewDir(ctx, pit.String(), vfs.MkdirOptions{Mode: defaultDirMode})
 		if err != nil {
 			return err
 		}
@@ -452,9 +454,10 @@ func (d *dir) NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) (k
 	if strings.Contains(name, "\n") {
 		return nil, linuxerr.EINVAL
 	}
+	mode := opts.Mode.Permissions() | linux.ModeDirectory
 	return d.OrderedChildren.Inserter(name, func() kernfs.Inode {
 		d.IncLinks(1)
-		return d.fs.newCgroupInode(ctx, auth.CredentialsFromContext(ctx), d.cgi)
+		return d.fs.newCgroupInode(ctx, auth.CredentialsFromContext(ctx), d.cgi, mode)
 	})
 }
 
