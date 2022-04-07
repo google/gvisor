@@ -56,6 +56,23 @@ func TestHostFeatureSet(t *testing.T) {
 	}
 }
 
+func TestFixedExtendedState(t *testing.T) {
+	hostFeatures := HostFeatureSet()
+	fixedFeatures := hostFeatures.Fixed()
+	for i, allowed := range allowedBasicFunctions {
+		if !allowed {
+			continue
+		}
+		in := In{Eax: uint32(i) + uint32(extendedStart)}
+		h := hostFeatures.Query(in)
+		f := fixedFeatures.Query(in)
+		if h != f {
+			t.Errorf("native: %x fixed: %x", h, f)
+		}
+	}
+
+}
+
 func TestHasFeature(t *testing.T) {
 	if !justFPU.HasFeature(X86FeatureFPU) {
 		t.Errorf("HasFeature failed, %q should contain %v", justFPU.FlagString(), X86FeatureFPU)
