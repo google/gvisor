@@ -457,7 +457,8 @@ TEST(Cgroup, DirSetStat) {
   Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child"));
   const struct stat child_before =
       ASSERT_NO_ERRNO_AND_VALUE(Stat(child.Path()));
-  EXPECT_THAT(child_before.st_mode, PermissionIs(0555));  // Default.
+  // Mkdir passes 0755 by default.
+  EXPECT_THAT(child_before.st_mode, PermissionIs(0755));
 
   ASSERT_NO_ERRNO(Chmod(child.Path(), 0757));
   const struct stat child_after = ASSERT_NO_ERRNO_AND_VALUE(Stat(child.Path()));
@@ -466,6 +467,25 @@ TEST(Cgroup, DirSetStat) {
   // Child chmod didn't affect parent.
   const struct stat parent_after = ASSERT_NO_ERRNO_AND_VALUE(Stat(c.Path()));
   EXPECT_THAT(parent_after.st_mode, PermissionIs(0755));
+}
+
+TEST(Cgroup, MkdirWithPermissions) {
+  SKIP_IF(!CgroupsAvailable());
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
+
+  std::string child1_path = JoinPath(c.Path(), "child1");
+  std::string child2_path = JoinPath(c.Path(), "child2");
+
+  ASSERT_NO_ERRNO(Mkdir(child1_path, 0444));
+  const struct stat s1 = ASSERT_NO_ERRNO_AND_VALUE(Stat(child1_path));
+  EXPECT_THAT(s1.st_mode, PermissionIs(0444));
+  EXPECT_TRUE(S_ISDIR(s1.st_mode));
+
+  ASSERT_NO_ERRNO(Mkdir(child2_path, 0));
+  const struct stat s2 = ASSERT_NO_ERRNO_AND_VALUE(Stat(child2_path));
+  EXPECT_THAT(s2.st_mode, PermissionIs(0000));
+  EXPECT_TRUE(S_ISDIR(s2.st_mode));
 }
 
 TEST(MemoryCgroup, MemoryUsageInBytes) {
