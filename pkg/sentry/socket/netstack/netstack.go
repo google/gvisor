@@ -2944,10 +2944,15 @@ func (s *socketOpsCommon) netstackToLinuxControlMessages(cm tcpip.ReceivableCont
 
 func (s *socketOpsCommon) linuxToNetstackControlMessages(cm socket.ControlMessages) tcpip.SendableControlMessages {
 	return tcpip.SendableControlMessages{
-		HasTTL:      cm.IP.HasTTL,
-		TTL:         uint8(cm.IP.TTL),
-		HasHopLimit: cm.IP.HasHopLimit,
-		HopLimit:    uint8(cm.IP.HopLimit),
+		HasTTL:            cm.IP.HasTTL,
+		TTL:               uint8(cm.IP.TTL),
+		HasHopLimit:       cm.IP.HasHopLimit,
+		HopLimit:          uint8(cm.IP.HopLimit),
+		HasIPv6PacketInfo: cm.IP.HasIPv6PacketInfo,
+		IPv6PacketInfo: tcpip.IPv6PacketInfo{
+			NIC:  tcpip.NICID(cm.IP.IPv6PacketInfo.NIC),
+			Addr: tcpip.Address(cm.IP.IPv6PacketInfo.Addr[:]),
+		},
 	}
 }
 

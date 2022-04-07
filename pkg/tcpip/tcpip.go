@@ -431,6 +431,12 @@ type SendableControlMessages struct {
 
 	// HopLimit is the IPv6 Hop Limit of the associated packet.
 	HopLimit uint8
+
+	// HasIPv6PacketInfo indicates whether IPv6PacketInfo is set.
+	HasIPv6PacketInfo bool
+
+	// IPv6PacketInfo holds interface and address data on an incoming packet.
+	IPv6PacketInfo IPv6PacketInfo
 }
 
 // ReceivableControlMessages contains socket control messages that can be

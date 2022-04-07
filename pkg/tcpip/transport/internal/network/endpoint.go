@@ -284,43 +284,88 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 		return WriteContext{}, &tcpip.ErrClosedForSend{}
 	}
 
-	route := e.connectedRoute
-	if opts.To == nil {
-		// If the user doesn't specify a destination, they should have
-		// connected to another address.
-		if e.State() != transport.DatagramEndpointStateConnected {
-			return WriteContext{}, &tcpip.ErrDestinationRequired{}
-		}
-
-		route.Acquire()
-	} else {
-		// Reject destination address if it goes through a different
-		// NIC than the endpoint was bound to.
-		nicID := opts.To.NIC
-		if nicID == 0 {
-			nicID = tcpip.NICID(e.ops.GetBindToDevice())
-		}
-		info := e.Info()
-		if info.BindNICID != 0 {
-			if nicID != 0 && nicID != info.BindNICID {
-				return WriteContext{}, &tcpip.ErrNoRoute{}
+	route, err := func() (*stack.Route, tcpip.Error) {
+		// A destination address must be provided unless the endpoint is connected.
+		if opts.To == nil {
+			if e.State() != transport.DatagramEndpointStateConnected {
+				return nil, &tcpip.ErrDestinationRequired{}
 			}
 
+			// If the IPv6PacketInfo control message is included, don't default to the
+			// connected route as may need to find a new route.
+			if !opts.ControlMessages.HasIPv6PacketInfo {
+				e.connectedRoute.Acquire()
+				return e.connectedRoute, nil
+			}
+		}
+
+		// Reject destination address if it goes through a different NIC than the
+		// endpoint is bound to.
+
+		// Selection #1
+		nicID := opts.To.NIC
+
+		info := e.Info()
+		bindToDeviceNICID := tcpip.NICID(e.ops.GetBindToDevice())
+		if nicID != 0 {
+			if bindToDeviceNICID != 0 && nicID != bindToDeviceNICID {
+				return nil, &tcpip.ErrNoRoute{}
+			}
+		} else {
+			// Selection #2
+			nicID = bindToDeviceNICID
+		}
+
+		if nicID != 0 {
+			if info.BindNICID != 0 && nicID != info.BindNICID {
+				return nil, &tcpip.ErrNoRoute{}
+			}
+		} else {
+			// Selection #3
 			nicID = info.BindNICID
 		}
+
+		cm := opts.ControlMessages
+		var packetInfoNIC tcpip.NICID
+		if cm.HasIPv6PacketInfo {
+			packetInfoNIC = cm.IPv6PacketInfo.NIC
+		}
+		if nicID != 0 {
+			if packetInfoNIC != 0 && nicID != packetInfoNIC {
+				return nil, &tcpip.ErrInvalidOptionValue{}
+			}
+		} else {
+			// Selection #4
+			nicID = packetInfoNIC
+		}
+
 		if nicID == 0 {
+			// Selection #5
 			nicID = info.RegisterNICID
 		}
 
+		// Whew. We have our NIC now.
+
 		dst, netProto, err := e.checkV4Mapped(*opts.To)
 		if err != nil {
-			return WriteContext{}, err
+			return nil, err
 		}
 
-		route, _, err = e.connectRouteRLocked(nicID, dst, netProto)
+		localAddr := func() tcpip.Address {
+			if cm.HasIPv6PacketInfo && len(cm.IPv6PacketInfo.Addr) != 0 && cm.IPv6PacketInfo.Addr != header.IPv6Any {
+				return cm.IPv6PacketInfo.Addr
+			}
+			return e.Info().ID.LocalAddress
+		}()
+		route, _, err := e.connectRouteRLocked(nicID, localAddr, dst, netProto)
 		if err != nil {
-			return WriteContext{}, err
+			return nil, err
 		}
+
+		return route, nil
+	}()
+	if err != nil {
+		return WriteContext{}, err
 	}
 
 	if !e.ops.GetBroadcast() && route.IsOutboundBroadcast() {
@@ -389,14 +434,13 @@ func (e *Endpoint) Disconnect() {
 // specified address is a multicast address.
 //
 // +checklocksread:e.mu
-func (e *Endpoint) connectRouteRLocked(nicID tcpip.NICID, addr tcpip.FullAddress, netProto tcpip.NetworkProtocolNumber) (*stack.Route, tcpip.NICID, tcpip.Error) {
-	localAddr := e.Info().ID.LocalAddress
+func (e *Endpoint) connectRouteRLocked(nicID tcpip.NICID, localAddr tcpip.Address, destAddr tcpip.FullAddress, netProto tcpip.NetworkProtocolNumber) (*stack.Route, tcpip.NICID, tcpip.Error) {
 	if e.isBroadcastOrMulticast(nicID, netProto, localAddr) {
 		// A packet can only originate from a unicast address (i.e., an interface).
 		localAddr = ""
 	}
 
-	if header.IsV4MulticastAddress(addr.Addr) || header.IsV6MulticastAddress(addr.Addr) {
+	if header.IsV4MulticastAddress(destAddr.Addr) || header.IsV6MulticastAddress(destAddr.Addr) {
 		if nicID == 0 {
 			nicID = e.multicastNICID
 		}
@@ -406,7 +450,7 @@ func (e *Endpoint) connectRouteRLocked(nicID tcpip.NICID, addr tcpip.FullAddress
 	}
 
 	// Find a route to the desired destination.
-	r, err := e.stack.FindRoute(nicID, localAddr, addr.Addr, netProto, e.ops.GetMulticastLoop())
+	r, err := e.stack.FindRoute(nicID, localAddr, destAddr.Addr, netProto, e.ops.GetMulticastLoop())
 	if err != nil {
 		return nil, 0, err
 	}
@@ -456,7 +500,7 @@ func (e *Endpoint) ConnectAndThen(addr tcpip.FullAddress, f func(netProto tcpip.
 		return err
 	}
 
-	r, nicID, err := e.connectRouteRLocked(nicID, addr, netProto)
+	r, nicID, err := e.connectRouteRLocked(nicID, info.ID.LocalAddress, addr, netProto)
 	if err != nil {
 		return err
 	}
@@ -553,6 +597,14 @@ func (e *Endpoint) BindAndThen(addr tcpip.FullAddress, f func(tcpip.NetworkProto
 			return &tcpip.ErrBadLocalAddress{}
 		}
 	}
+
+	// bind() LL%iface0:
+	//   e.BindNICID = iface0
+	//   e.RegisterNICID = iface0
+	//
+	// bind() ipv6:
+	//   e.BindNICID = 0
+	//   e.RegisterNICID = find the NIC that owns addr
 
 	if err := f(netProto, addr.Addr); err != nil {
 		return err
