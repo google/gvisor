@@ -163,13 +163,13 @@ func (d *dentry) getDirentsLocked(ctx context.Context) ([]vfs.Dirent, error) {
 		{
 			Name:    ".",
 			Type:    linux.DT_DIR,
-			Ino:     d.ino,
+			Ino:     d.ino.Load(),
 			NextOff: 1,
 		},
 		{
 			Name:    "..",
 			Type:    uint8(atomic.LoadUint32(&parent.mode) >> 12),
-			Ino:     parent.ino,
+			Ino:     parent.ino.Load(),
 			NextOff: 2,
 		},
 	}

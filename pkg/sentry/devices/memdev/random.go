@@ -15,8 +15,7 @@
 package memdev
 
 import (
-	"sync/atomic"
-
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/safemem"
@@ -56,7 +55,7 @@ type randomFD struct {
 
 	// off is the "file offset". off is accessed using atomic memory
 	// operations.
-	off int64
+	off atomicbitops.Int64
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
@@ -72,7 +71,7 @@ func (fd *randomFD) PRead(ctx context.Context, dst usermem.IOSequence, offset in
 // Read implements vfs.FileDescriptionImpl.Read.
 func (fd *randomFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
 	n, err := dst.CopyOutFrom(ctx, safemem.FromIOReader{rand.Reader})
-	atomic.AddInt64(&fd.off, n)
+	fd.off.Add(n)
 	return n, err
 }
 
@@ -85,7 +84,7 @@ func (fd *randomFD) PWrite(ctx context.Context, src usermem.IOSequence, offset i
 
 // Write implements vfs.FileDescriptionImpl.Write.
 func (fd *randomFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
-	atomic.AddInt64(&fd.off, src.NumBytes())
+	fd.off.Add(src.NumBytes())
 	return src.NumBytes(), nil
 }
 
@@ -93,5 +92,5 @@ func (fd *randomFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.
 func (fd *randomFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
 	// Linux: drivers/char/random.c:random_fops.llseek == urandom_fops.llseek
 	// == noop_llseek
-	return atomic.LoadInt64(&fd.off), nil
+	return fd.off.Load(), nil
 }

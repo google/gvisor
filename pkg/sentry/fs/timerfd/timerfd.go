@@ -17,8 +17,7 @@
 package timerfd
 
 import (
-	"sync/atomic"
-
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -49,7 +48,7 @@ type TimerOperations struct {
 	// val is the number of timer expirations since the last successful call to
 	// Readv, Preadv, or SetTime. val is accessed using atomic memory
 	// operations.
-	val uint64
+	val atomicbitops.Uint64
 }
 
 // NewFile returns a timerfd File that receives time from c.
@@ -95,13 +94,13 @@ func (t *TimerOperations) GetTime() (ktime.Time, ktime.Setting) {
 // of expirations to 0, and returns the previous setting and the time at which
 // it was observed.
 func (t *TimerOperations) SetTime(s ktime.Setting) (ktime.Time, ktime.Setting) {
-	return t.timer.SwapAnd(s, func() { atomic.StoreUint64(&t.val, 0) })
+	return t.timer.SwapAnd(s, func() { t.val.Store(0) })
 }
 
 // Readiness implements waiter.Waitable.Readiness.
 func (t *TimerOperations) Readiness(mask waiter.EventMask) waiter.EventMask {
 	var ready waiter.EventMask
-	if atomic.LoadUint64(&t.val) != 0 {
+	if t.val.Load() != 0 {
 		ready |= waiter.ReadableEvents
 	}
 	return ready
@@ -124,7 +123,7 @@ func (t *TimerOperations) Read(ctx context.Context, file *fs.File, dst usermem.I
 	if dst.NumBytes() < sizeofUint64 {
 		return 0, linuxerr.EINVAL
 	}
-	if val := atomic.SwapUint64(&t.val, 0); val != 0 {
+	if val := t.val.Swap(0); val != 0 {
 		var buf [sizeofUint64]byte
 		hostarch.ByteOrder.PutUint64(buf[:], val)
 		if _, err := dst.CopyOut(ctx, buf[:]); err != nil {
@@ -144,7 +143,7 @@ func (t *TimerOperations) Write(context.Context, *fs.File, usermem.IOSequence, i
 
 // NotifyTimer implements ktime.TimerListener.NotifyTimer.
 func (t *TimerOperations) NotifyTimer(exp uint64, setting ktime.Setting) (ktime.Setting, bool) {
-	atomic.AddUint64(&t.val, exp)
+	t.val.Add(exp)
 	t.events.Notify(waiter.ReadableEvents)
 	return ktime.Setting{}, false
 }

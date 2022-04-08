@@ -57,7 +57,7 @@ type taskRunState interface {
 // make it visible in stack dumps. A goroutine for a given task can be identified
 // searching for Task.run()'s argument value.
 func (t *Task) run(threadID uintptr) {
-	atomic.StoreInt64(&t.goid, goid.Get())
+	t.goid.Store(goid.Get())
 
 	// Construct t.blockingTimer here. We do this here because we can't
 	// reconstruct t.blockingTimer during restore in Task.afterLoad(), because
@@ -103,7 +103,7 @@ func (t *Task) run(threadID uintptr) {
 
 			// Deferring this store triggers a false positive in the race
 			// detector (https://github.com/golang/go/issues/42599).
-			atomic.StoreInt64(&t.goid, 0)
+			t.goid.Store(0)
 			// Keep argument alive because stack trace for dead variables may not be correct.
 			runtime.KeepAlive(threadID)
 			return
@@ -347,14 +347,14 @@ func (app *runApp) execute(t *Task) taskRunState {
 // assertTaskGoroutine panics if the caller is not running on t's task
 // goroutine.
 func (t *Task) assertTaskGoroutine() {
-	if got, want := goid.Get(), atomic.LoadInt64(&t.goid); got != want {
+	if got, want := goid.Get(), t.goid.Load(); got != want {
 		panic(fmt.Sprintf("running on goroutine %d (task goroutine for kernel.Task %p is %d)", got, t, want))
 	}
 }
 
 // GoroutineID returns the ID of t's task goroutine.
 func (t *Task) GoroutineID() int64 {
-	return atomic.LoadInt64(&t.goid)
+	return t.goid.Load()
 }
 
 // waitGoroutineStoppedOrExited blocks until t's task goroutine stops or exits.
@@ -373,6 +373,6 @@ func (tg *ThreadGroup) WaitExited() {
 
 // Yield yields the processor for the calling task.
 func (t *Task) Yield() {
-	atomic.AddUint64(&t.yieldCount, 1)
+	t.yieldCount.Add(1)
 	runtime.Gosched()
 }

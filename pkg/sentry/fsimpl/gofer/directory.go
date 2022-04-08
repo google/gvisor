@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -112,17 +113,17 @@ type createSyntheticOpts struct {
 func (d *dentry) createSyntheticChildLocked(opts *createSyntheticOpts) {
 	now := d.fs.clock.Now().Nanoseconds()
 	child := &dentry{
-		refs:      1, // held by d
+		refs:      atomicbitops.FromInt64(1), // held by d
 		fs:        d.fs,
 		ino:       d.fs.nextIno(),
 		mode:      uint32(opts.mode),
 		uid:       uint32(opts.kuid),
 		gid:       uint32(opts.kgid),
 		blockSize: hostarch.PageSize, // arbitrary
-		atime:     now,
-		mtime:     now,
-		ctime:     now,
-		btime:     now,
+		atime:     atomicbitops.FromInt64(now),
+		mtime:     atomicbitops.FromInt64(now),
+		ctime:     atomicbitops.FromInt64(now),
+		btime:     atomicbitops.FromInt64(now),
 		readFD:    -1,
 		writeFD:   -1,
 		mmapFD:    -1,

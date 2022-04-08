@@ -37,7 +37,7 @@ type IPCNamespaceRefs struct {
 	// Speculative references are used for TryIncRef, to avoid a CompareAndSwap
 	// loop. See IncRef, DecRef and TryIncRef for details of how these fields are
 	// used.
-	refCount atomicbitops.AlignedAtomicInt64
+	refCount atomicbitops.Int64
 }
 
 // InitRefs initializes r with one reference and, if enabled, activates leak

@@ -23,6 +23,7 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
@@ -76,7 +77,7 @@ type Mount struct {
 	// The lower 63 bits of refs are a reference count. The MSB of refs is set
 	// if the Mount has been eagerly umounted, as by umount(2) without the
 	// MNT_DETACH flag. refs is accessed using atomic memory operations.
-	refs int64
+	refs atomicbitops.Int64
 
 	// children is the set of all Mounts for which Mount.key.parent is this
 	// Mount. children is protected by VirtualFilesystem.mountMu.
@@ -91,18 +92,18 @@ type Mount struct {
 	// Mount.CheckBeginWrite() that have not yet been paired with a call to
 	// Mount.EndWrite(). The MSB of writers is set if MS_RDONLY is in effect.
 	// writers is accessed using atomic memory operations.
-	writers int64
+	writers atomicbitops.Int64
 }
 
 func newMount(vfs *VirtualFilesystem, fs *Filesystem, root *Dentry, mntns *MountNamespace, opts *MountOptions) *Mount {
 	mnt := &Mount{
-		ID:    atomic.AddUint64(&vfs.lastMountID, 1),
+		ID:    vfs.lastMountID.Add(1),
 		Flags: opts.Flags,
 		vfs:   vfs,
 		fs:    fs,
 		root:  root,
 		ns:    mntns,
-		refs:  1,
+		refs:  atomicbitops.FromInt64(1),
 	}
 	if opts.ReadOnly {
 		mnt.setReadOnlyLocked(true)
@@ -349,7 +350,7 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 		if !vd.mount.umounted {
 			expectedRefs = 2
 		}
-		if atomic.LoadInt64(&vd.mount.refs)&^math.MinInt64 != expectedRefs { // mask out MSB
+		if vd.mount.refs.Load()&^math.MinInt64 != expectedRefs { // mask out MSB
 			vfs.mounts.seq.EndWrite()
 			vfs.mountMu.Unlock()
 			return linuxerr.EBUSY
@@ -410,11 +411,11 @@ func (vfs *VirtualFilesystem) umountRecursiveLocked(mnt *Mount, opts *umountRecu
 	}
 	if opts.eager {
 		for {
-			refs := atomic.LoadInt64(&mnt.refs)
+			refs := mnt.refs.Load()
 			if refs < 0 {
 				break
 			}
-			if atomic.CompareAndSwapInt64(&mnt.refs, refs, refs|math.MinInt64) {
+			if mnt.refs.CompareAndSwap(refs, refs|math.MinInt64) {
 				break
 			}
 		}
@@ -494,11 +495,11 @@ func (vfs *VirtualFilesystem) disconnectLocked(mnt *Mount) VirtualDentry {
 // tryIncMountedRef does not require that a reference is held on mnt.
 func (mnt *Mount) tryIncMountedRef() bool {
 	for {
-		r := atomic.LoadInt64(&mnt.refs)
+		r := mnt.refs.Load()
 		if r <= 0 { // r < 0 => MSB set => eagerly unmounted
 			return false
 		}
-		if atomic.CompareAndSwapInt64(&mnt.refs, r, r+1) {
+		if mnt.refs.CompareAndSwap(r, r+1) {
 			if mnt.LogRefs() {
 				refsvfs2.LogTryIncRef(mnt, r+1)
 			}
@@ -511,7 +512,7 @@ func (mnt *Mount) tryIncMountedRef() bool {
 func (mnt *Mount) IncRef() {
 	// In general, negative values for mnt.refs are valid because the MSB is
 	// the eager-unmount bit.
-	r := atomic.AddInt64(&mnt.refs, 1)
+	r := mnt.refs.Add(1)
 	if mnt.LogRefs() {
 		refsvfs2.LogIncRef(mnt, r)
 	}
@@ -519,7 +520,7 @@ func (mnt *Mount) IncRef() {
 
 // DecRef decrements mnt's reference count.
 func (mnt *Mount) DecRef(ctx context.Context) {
-	r := atomic.AddInt64(&mnt.refs, -1)
+	r := mnt.refs.Add(-1)
 	if mnt.LogRefs() {
 		refsvfs2.LogDecRef(mnt, r)
 	}
@@ -554,7 +555,7 @@ func (mnt *Mount) RefType() string {
 
 // LeakMessage implements refsvfs2.CheckedObject.LeakMessage.
 func (mnt *Mount) LeakMessage() string {
-	return fmt.Sprintf("[vfs.Mount %p] reference count of %d instead of 0", mnt, atomic.LoadInt64(&mnt.refs))
+	return fmt.Sprintf("[vfs.Mount %p] reference count of %d instead of 0", mnt, mnt.refs.Load())
 }
 
 // LogRefs implements refsvfs2.CheckedObject.LogRefs.
@@ -802,8 +803,8 @@ func (vfs *VirtualFilesystem) SetMountReadOnly(mnt *Mount, ro bool) error {
 // If CheckBeginWrite succeeds, EndWrite must be called when the write
 // operation is finished.
 func (mnt *Mount) CheckBeginWrite() error {
-	if atomic.AddInt64(&mnt.writers, 1) < 0 {
-		atomic.AddInt64(&mnt.writers, -1)
+	if mnt.writers.Add(1) < 0 {
+		mnt.writers.Add(-1)
 		return linuxerr.EROFS
 	}
 	return nil
@@ -812,29 +813,29 @@ func (mnt *Mount) CheckBeginWrite() error {
 // EndWrite indicates that a write operation signaled by a previous successful
 // call to CheckBeginWrite has finished.
 func (mnt *Mount) EndWrite() {
-	atomic.AddInt64(&mnt.writers, -1)
+	mnt.writers.Add(-1)
 }
 
 // Preconditions: VirtualFilesystem.mountMu must be locked.
 func (mnt *Mount) setReadOnlyLocked(ro bool) error {
-	if oldRO := atomic.LoadInt64(&mnt.writers) < 0; oldRO == ro {
+	if oldRO := mnt.writers.Load() < 0; oldRO == ro {
 		return nil
 	}
 	if ro {
-		if !atomic.CompareAndSwapInt64(&mnt.writers, 0, math.MinInt64) {
+		if !mnt.writers.CompareAndSwap(0, math.MinInt64) {
 			return linuxerr.EBUSY
 		}
 		return nil
 	}
 	// Unset MSB without dropping any temporary increments from failed calls to
 	// mnt.CheckBeginWrite().
-	atomic.AddInt64(&mnt.writers, math.MinInt64)
+	mnt.writers.Add(math.MinInt64)
 	return nil
 }
 
 // ReadOnly returns true if mount is readonly.
 func (mnt *Mount) ReadOnly() bool {
-	return atomic.LoadInt64(&mnt.writers) < 0
+	return mnt.writers.Load() < 0
 }
 
 // Filesystem returns the mounted Filesystem. It does not take a reference on

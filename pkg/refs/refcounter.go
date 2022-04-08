@@ -23,6 +23,7 @@ import (
 	"runtime"
 	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -199,7 +200,7 @@ type AtomicRefCount struct {
 	// Speculative references are used for TryIncRef, to avoid a
 	// CompareAndSwap loop. See IncRef, DecRef and TryIncRef for details of
 	// how these fields are used.
-	refCount int64
+	refCount atomicbitops.Int64
 
 	// name is the name of the type which owns this ref count.
 	//
@@ -418,7 +419,7 @@ func (r *AtomicRefCount) EnableLeakCheck(name string) {
 // inherently racy and is unsafe to use without external synchronization.
 func (r *AtomicRefCount) ReadRefs() int64 {
 	// Account for the internal -1 offset on refcounts.
-	return atomic.LoadInt64(&r.refCount) + 1
+	return r.refCount.Load() + 1
 }
 
 // IncRef increments this object's reference count. While the count is kept
@@ -429,7 +430,7 @@ func (r *AtomicRefCount) ReadRefs() int64 {
 //
 //go:nosplit
 func (r *AtomicRefCount) IncRef() {
-	if v := atomic.AddInt64(&r.refCount, 1); v <= 0 {
+	if v := r.refCount.Add(1); v <= 0 {
 		panic("Incrementing non-positive ref count")
 	}
 }
@@ -446,15 +447,15 @@ func (r *AtomicRefCount) IncRef() {
 //go:nosplit
 func (r *AtomicRefCount) TryIncRef() bool {
 	const speculativeRef = 1 << 32
-	v := atomic.AddInt64(&r.refCount, speculativeRef)
+	v := r.refCount.Add(speculativeRef)
 	if int32(v) < 0 {
 		// This object has already been freed.
-		atomic.AddInt64(&r.refCount, -speculativeRef)
+		r.refCount.Add(-speculativeRef)
 		return false
 	}
 
 	// Turn into a real reference.
-	atomic.AddInt64(&r.refCount, -speculativeRef+1)
+	r.refCount.Add(-speculativeRef + 1)
 	return true
 }
 
@@ -487,7 +488,7 @@ func (r *AtomicRefCount) dropWeakRef(w *WeakRef) {
 //
 //go:nosplit
 func (r *AtomicRefCount) DecRefWithDestructor(ctx context.Context, destroy func(context.Context)) {
-	switch v := atomic.AddInt64(&r.refCount, -1); {
+	switch v := r.refCount.Add(-1); {
 	case v < -1:
 		panic("Decrementing non-positive ref count")
 

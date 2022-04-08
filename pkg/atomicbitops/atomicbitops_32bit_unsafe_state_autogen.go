@@ -9,63 +9,63 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (aa *AlignedAtomicInt64) StateTypeName() string {
-	return "pkg/atomicbitops.AlignedAtomicInt64"
+func (i *Int64) StateTypeName() string {
+	return "pkg/atomicbitops.Int64"
 }
 
-func (aa *AlignedAtomicInt64) StateFields() []string {
+func (i *Int64) StateFields() []string {
 	return []string{
 		"value",
 		"value32",
 	}
 }
 
-func (aa *AlignedAtomicInt64) beforeSave() {}
+func (i *Int64) beforeSave() {}
 
 // +checklocksignore
-func (aa *AlignedAtomicInt64) StateSave(stateSinkObject state.Sink) {
-	aa.beforeSave()
-	stateSinkObject.Save(0, &aa.value)
-	stateSinkObject.Save(1, &aa.value32)
+func (i *Int64) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.value)
+	stateSinkObject.Save(1, &i.value32)
 }
 
-func (aa *AlignedAtomicInt64) afterLoad() {}
+func (i *Int64) afterLoad() {}
 
 // +checklocksignore
-func (aa *AlignedAtomicInt64) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &aa.value)
-	stateSourceObject.Load(1, &aa.value32)
+func (i *Int64) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.value)
+	stateSourceObject.Load(1, &i.value32)
 }
 
-func (aa *AlignedAtomicUint64) StateTypeName() string {
-	return "pkg/atomicbitops.AlignedAtomicUint64"
+func (u *Uint64) StateTypeName() string {
+	return "pkg/atomicbitops.Uint64"
 }
 
-func (aa *AlignedAtomicUint64) StateFields() []string {
+func (u *Uint64) StateFields() []string {
 	return []string{
 		"value",
 		"value32",
 	}
 }
 
-func (aa *AlignedAtomicUint64) beforeSave() {}
+func (u *Uint64) beforeSave() {}
 
 // +checklocksignore
-func (aa *AlignedAtomicUint64) StateSave(stateSinkObject state.Sink) {
-	aa.beforeSave()
-	stateSinkObject.Save(0, &aa.value)
-	stateSinkObject.Save(1, &aa.value32)
+func (u *Uint64) StateSave(stateSinkObject state.Sink) {
+	u.beforeSave()
+	stateSinkObject.Save(0, &u.value)
+	stateSinkObject.Save(1, &u.value32)
 }
 
-func (aa *AlignedAtomicUint64) afterLoad() {}
+func (u *Uint64) afterLoad() {}
 
 // +checklocksignore
-func (aa *AlignedAtomicUint64) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &aa.value)
-	stateSourceObject.Load(1, &aa.value32)
+func (u *Uint64) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &u.value)
+	stateSourceObject.Load(1, &u.value32)
 }
 
 func init() {
-	state.Register((*AlignedAtomicInt64)(nil))
-	state.Register((*AlignedAtomicUint64)(nil))
+	state.Register((*Int64)(nil))
+	state.Register((*Uint64)(nil))
 }

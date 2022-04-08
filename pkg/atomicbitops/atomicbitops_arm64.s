@@ -60,7 +60,7 @@ done:
   MOVW R3, prev+16(FP)
   RET
 
-TEXT ·AndUint64(SB),NOSPLIT,$0-16
+TEXT ·andUint64(SB),NOSPLIT,$0-16
   MOVD    ptr+0(FP), R0
   MOVD    val+8(FP), R1
 again:
@@ -70,7 +70,7 @@ again:
   CBNZ    R3, again
   RET
 
-TEXT ·OrUint64(SB),NOSPLIT,$0-16
+TEXT ·orUint64(SB),NOSPLIT,$0-16
   MOVD    ptr+0(FP), R0
   MOVD    val+8(FP), R1
 again:
@@ -80,7 +80,7 @@ again:
   CBNZ    R3, again
   RET
 
-TEXT ·XorUint64(SB),NOSPLIT,$0-16
+TEXT ·xorUint64(SB),NOSPLIT,$0-16
   MOVD    ptr+0(FP), R0
   MOVD    val+8(FP), R1
 again:
@@ -90,7 +90,7 @@ again:
   CBNZ    R3, again
   RET
 
-TEXT ·CompareAndSwapUint64(SB),NOSPLIT,$0-32
+TEXT ·compareAndSwapUint64(SB),NOSPLIT,$0-32
   MOVD addr+0(FP), R0
   MOVD old+8(FP), R1
   MOVD new+16(FP), R2

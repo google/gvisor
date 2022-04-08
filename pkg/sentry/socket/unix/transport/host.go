@@ -16,10 +16,10 @@ package transport
 
 import (
 	"fmt"
-	"sync/atomic"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
@@ -78,7 +78,7 @@ type HostConnectedEndpoint struct {
 	// GetSockOpt and message splitting/rejection in SendMsg, but do not
 	// prevent lots of small messages from filling the real send buffer
 	// size on the host.
-	sndbuf int64 `state:"nosave"`
+	sndbuf atomicbitops.Int64 `state:"nosave"`
 
 	// stype is the type of Unix socket.
 	stype linux.SockType
@@ -117,7 +117,7 @@ func (c *HostConnectedEndpoint) initFromOptions() *syserr.Error {
 	}
 
 	c.stype = linux.SockType(stype)
-	atomic.StoreInt64(&c.sndbuf, int64(sndbuf))
+	c.sndbuf.Store(int64(sndbuf))
 
 	return nil
 }
@@ -314,14 +314,14 @@ func (c *HostConnectedEndpoint) RecvQueuedSize() int64 {
 
 // SendMaxQueueSize implements Receiver.SendMaxQueueSize.
 func (c *HostConnectedEndpoint) SendMaxQueueSize() int64 {
-	return atomic.LoadInt64(&c.sndbuf)
+	return c.sndbuf.Load()
 }
 
 // RecvMaxQueueSize implements Receiver.RecvMaxQueueSize.
 func (c *HostConnectedEndpoint) RecvMaxQueueSize() int64 {
 	// N.B. Unix sockets don't use the receive buffer. We'll claim it is
 	// the same size as the send buffer.
-	return atomic.LoadInt64(&c.sndbuf)
+	return c.sndbuf.Load()
 }
 
 func (c *HostConnectedEndpoint) destroyLocked() {
@@ -344,7 +344,7 @@ func (c *HostConnectedEndpoint) CloseUnread() {}
 func (c *HostConnectedEndpoint) SetSendBufferSize(v int64) (newSz int64) {
 	// gVisor does not permit setting of SO_SNDBUF for host backed unix
 	// domain sockets.
-	return atomic.LoadInt64(&c.sndbuf)
+	return c.sndbuf.Load()
 }
 
 // SetReceiveBufferSize implements ConnectedEndpoint.SetReceiveBufferSize.
@@ -352,7 +352,7 @@ func (c *HostConnectedEndpoint) SetReceiveBufferSize(v int64) (newSz int64) {
 	// gVisor does not permit setting of SO_RCVBUF for host backed unix
 	// domain sockets. Receive buffer does not have any effect for unix
 	// sockets and we claim to be the same as send buffer.
-	return atomic.LoadInt64(&c.sndbuf)
+	return c.sndbuf.Load()
 }
 
 // SCMConnectedEndpoint represents an endpoint backed by a host fd that was

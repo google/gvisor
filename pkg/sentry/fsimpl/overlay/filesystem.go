@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
@@ -97,7 +98,7 @@ func (fs *filesystem) renameMuRUnlockAndCheckDrop(ctx context.Context, dsp **[]*
 	// re-locking renameMu) if we actually have any dentries with zero refs.
 	checkAny := false
 	for i := range ds {
-		if atomic.LoadInt64(&ds[i].refs) == 0 {
+		if ds[i].refs.Load() == 0 {
 			checkAny = true
 			break
 		}
@@ -286,7 +287,7 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 			child.gid = stat.GID
 			child.devMajor = stat.DevMajor
 			child.devMinor = stat.DevMinor
-			child.ino = stat.Ino
+			child.ino = atomicbitops.FromUint64(stat.Ino)
 		}
 
 		// For non-directory files, only the topmost layer that contains a file

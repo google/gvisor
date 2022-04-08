@@ -25,7 +25,6 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -33,6 +32,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/syndtr/gocapability/capability"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/control/client"
 	"gvisor.dev/gvisor/pkg/control/server"
@@ -54,16 +54,15 @@ import (
 
 // pid is an atomic type that implements JSON marshal/unmarshal interfaces.
 type pid struct {
-	// +checkatomics
-	val int64
+	val atomicbitops.Int64
 }
 
 func (p *pid) store(pid int) {
-	atomic.StoreInt64(&p.val, int64(pid))
+	p.val.Store(int64(pid))
 }
 
 func (p *pid) load() int {
-	return int(atomic.LoadInt64(&p.val))
+	return int(p.val.Load())
 }
 
 // UnmarshalJSON implements json.Unmarshaler.UnmarshalJSON.

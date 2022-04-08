@@ -30,6 +30,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 )
 
 //go:linkname entersyscall runtime.entersyscall
@@ -175,7 +176,7 @@ func (c *vCPU) setSignalMask() error {
 
 // seccompMmapHandlerCnt is a number of currently running seccompMmapHandler
 // instances.
-var seccompMmapHandlerCnt int64
+var seccompMmapHandlerCnt atomicbitops.Int64
 
 // seccompMmapSync waits for all currently runnuing seccompMmapHandler
 // instances.
@@ -188,7 +189,7 @@ var seccompMmapHandlerCnt int64
 // once, and the probability is racing with seccompMmapHandler is very low the
 // spinlock-like way looks more reasonable.
 func seccompMmapSync() {
-	for atomic.LoadInt64(&seccompMmapHandlerCnt) != 0 {
+	for seccompMmapHandlerCnt.Load() != 0 {
 		runtime.Gosched()
 	}
 }
@@ -206,7 +207,7 @@ func seccompMmapHandler(context unsafe.Pointer) {
 		return
 	}
 
-	atomic.AddInt64(&seccompMmapHandlerCnt, 1)
+	seccompMmapHandlerCnt.Add(1)
 	for i := uint32(0); i < atomic.LoadUint32(&machinePoolLen); i++ {
 		m := machinePool[i].Load()
 		if m == nil {
@@ -235,5 +236,5 @@ func seccompMmapHandler(context unsafe.Pointer) {
 			virtual += length
 		}
 	}
-	atomic.AddInt64(&seccompMmapHandlerCnt, -1)
+	seccompMmapHandlerCnt.Add(-1)
 }

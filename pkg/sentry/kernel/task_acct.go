@@ -124,7 +124,8 @@ func (tg *ThreadGroup) IOUsage() *usage.IO {
 	tg.pidns.owner.mu.RLock()
 	defer tg.pidns.owner.mu.RUnlock()
 
-	io := *tg.ioUsage
+	var io usage.IO
+	tg.ioUsage.Clone(&io)
 	// Account for active tasks.
 	for t := tg.tasks.Front(); t != nil; t = t.Next() {
 		io.Accumulate(t.IOUsage())
