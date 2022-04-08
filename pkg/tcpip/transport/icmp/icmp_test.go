@@ -37,12 +37,6 @@ import (
 // TODO(https://gvisor.dev/issues/5623): Finish unit testing the icmp package.
 // See the issue for remaining areas of work.
 
-var (
-	localV4Addr1 = testutil.MustParse4("10.0.0.1")
-	localV4Addr2 = testutil.MustParse4("10.0.0.2")
-	remoteV4Addr = testutil.MustParse4("10.0.0.3")
-)
-
 const (
 	testTOS = 0x80
 	testTTL = 42
@@ -92,6 +86,16 @@ func writePayload(buf []byte) {
 // Only IPv4 is tested. The logic to determine which NIC to use is agnostic to
 // the version of IP.
 func TestWriteUnboundWithBindToDevice(t *testing.T) {
+	const (
+		defaultNICID   = 1
+		alternateNICID = 2
+	)
+	var (
+		v4AddrDefaultNIC   = testutil.MustParse4("10.0.0.1")
+		v4AddrAlternateNIC = testutil.MustParse4("10.0.0.2")
+		remoteV4Addr       = testutil.MustParse4("10.0.0.3")
+	)
+
 	s := stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
 		TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol4},
@@ -100,8 +104,8 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 
 	// Add two NICs, both with default routes on the same subnet. The first NIC
 	// added will be the default NIC for that subnet.
-	defaultEP := addNICWithDefaultRoute(t, s, 1, "default", localV4Addr1)
-	alternateEP := addNICWithDefaultRoute(t, s, 2, "alternate", localV4Addr2)
+	defaultEP := addNICWithDefaultRoute(t, s, defaultNICID, "default", v4AddrDefaultNIC)
+	alternateEP := addNICWithDefaultRoute(t, s, alternateNICID, "alternate", v4AddrAlternateNIC)
 
 	socket, err := s.NewEndpoint(icmp.ProtocolNumber4, ipv4.ProtocolNumber, &waiter.Queue{})
 	if err != nil {
@@ -110,26 +114,18 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 	defer socket.Close()
 
 	echoPayloadSize := defaultEP.MTU() - header.IPv4MinimumSize - header.ICMPv4MinimumSize
+	sendICMPv4EchoRequest := func(to *tcpip.FullAddress) buffer.View {
+		t.Helper()
 
-	newICMPv4EchoRequest := func() buffer.View {
 		buf := buffer.NewView(header.ICMPv4MinimumSize + int(echoPayloadSize))
 		writePayload(buf[header.ICMPv4MinimumSize:])
-
 		icmp := header.ICMPv4(buf)
 		icmp.SetType(header.ICMPv4Echo)
 		// No need to set the checksum; it is reset by the socket before the packet
 		// is sent.
-
-		return buf
-	}
-
-	// Send a packet without SO_BINDTODEVICE. This verifies that the first NIC
-	// to be added is the default NIC to send packets when not explicitly bound.
-	{
-		buf := newICMPv4EchoRequest()
 		r := buf.Reader()
 		n, err := socket.Write(&r, tcpip.WriteOptions{
-			To: &tcpip.FullAddress{Addr: remoteV4Addr},
+			To: to,
 		})
 		if err != nil {
 			t.Fatalf("socket.Write(_, {To:%s}) = %s", remoteV4Addr, err)
@@ -137,6 +133,14 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 		if n != int64(len(buf)) {
 			t.Fatalf("got n = %d, want n = %d", n, len(buf))
 		}
+
+		return buf
+	}
+
+	// Send a packet without SO_BINDTODEVICE. This verifies that the first NIC
+	// to be added is the default NIC to send packets when not explicitly bound.
+	{
+		buf := sendICMPv4EchoRequest(&tcpip.FullAddress{Addr: remoteV4Addr})
 
 		// Verify the packet was sent out the default NIC.
 		p := defaultEP.Read()
@@ -147,9 +151,8 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 		vv := buffer.NewVectorisedView(p.Size(), p.Views())
 		p.DecRef()
 		b := vv.ToView()
-
 		checker.IPv4(t, b, []checker.NetworkChecker{
-			checker.SrcAddr(localV4Addr1),
+			checker.SrcAddr(v4AddrDefaultNIC),
 			checker.DstAddr(remoteV4Addr),
 			checker.ICMPv4(
 				checker.ICMPv4Type(header.ICMPv4Echo),
@@ -169,18 +172,7 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 		// Use SO_BINDTODEVICE to send over the alternate NIC by default.
 		socket.SocketOptions().SetBindToDevice(2)
 
-		buf := newICMPv4EchoRequest()
-		r := buf.Reader()
-		n, err := socket.Write(&r, tcpip.WriteOptions{
-			To: &tcpip.FullAddress{Addr: remoteV4Addr},
-		})
-		if err != nil {
-			t.Fatalf("socket.Write(_, {To:%s}) = %s", tcpip.Address(remoteV4Addr), err)
-		}
-		if n != int64(len(buf)) {
-			t.Fatalf("got n = %d, want n = %d", n, len(buf))
-		}
-
+		buf := sendICMPv4EchoRequest(&tcpip.FullAddress{Addr: remoteV4Addr})
 		// Verify the packet was not sent out the default NIC.
 		if p := defaultEP.Read(); p != nil {
 			t.Fatalf("got defaultEP.Read(_) = %+v, true; want = _, false", p)
@@ -195,9 +187,8 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 		vv := buffer.NewVectorisedView(p.Size(), p.Views())
 		p.DecRef()
 		b := vv.ToView()
-
 		checker.IPv4(t, b, []checker.NetworkChecker{
-			checker.SrcAddr(localV4Addr2),
+			checker.SrcAddr(v4AddrAlternateNIC),
 			checker.DstAddr(remoteV4Addr),
 			checker.ICMPv4(
 				checker.ICMPv4Type(header.ICMPv4Echo),
@@ -206,24 +197,44 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 		}...)
 	}
 
+	// Connect the socket, and send another packet. This verifies that sockets in
+	// the connected state respect SO_BINDTODEVICE.
+	{
+		socket.Connect(tcpip.FullAddress{Addr: remoteV4Addr})
+
+		buf := sendICMPv4EchoRequest(nil)
+		// Verify the packet was sent out the alternate NIC.
+		p := alternateEP.Read()
+		if p == nil {
+			t.Fatalf("got defaultEP.Read(_) = _, false; want = _, true (packet wasn't written out)")
+		}
+
+		vv := buffer.NewVectorisedView(p.Size(), p.Views())
+		p.DecRef()
+		b := vv.ToView()
+		checker.IPv4(t, b, []checker.NetworkChecker{
+			checker.SrcAddr(v4AddrAlternateNIC),
+			checker.DstAddr(remoteV4Addr),
+			checker.ICMPv4(
+				checker.ICMPv4Type(header.ICMPv4Echo),
+				checker.ICMPv4Payload(buf[header.ICMPv4MinimumSize:]),
+			),
+		}...)
+
+		// Verify the packet was not sent out the alternate NIC.
+		if p := defaultEP.Read(); p != nil {
+			t.Fatalf("got alternateEP.Read(_) = %+v, true; want = _, false", p)
+		}
+		socket.Disconnect()
+	}
+
 	// Send a packet with SO_BINDTODEVICE cleared. This verifies that clearing
 	// the device binding will fallback to using the default NIC to send
 	// packets.
 	{
 		socket.SocketOptions().SetBindToDevice(0)
 
-		buf := newICMPv4EchoRequest()
-		r := buf.Reader()
-		n, err := socket.Write(&r, tcpip.WriteOptions{
-			To: &tcpip.FullAddress{Addr: remoteV4Addr},
-		})
-		if err != nil {
-			t.Fatalf("socket.Write(_, {To:%s}) = %s", tcpip.Address(remoteV4Addr), err)
-		}
-		if n != int64(len(buf)) {
-			t.Fatalf("got n = %d, want n = %d", n, len(buf))
-		}
-
+		buf := sendICMPv4EchoRequest(&tcpip.FullAddress{Addr: remoteV4Addr})
 		// Verify the packet was sent out the default NIC.
 		p := defaultEP.Read()
 		if p == nil {
@@ -233,9 +244,8 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 		vv := buffer.NewVectorisedView(p.Size(), p.Views())
 		p.DecRef()
 		b := vv.ToView()
-
 		checker.IPv4(t, b, []checker.NetworkChecker{
-			checker.SrcAddr(localV4Addr1),
+			checker.SrcAddr(v4AddrDefaultNIC),
 			checker.DstAddr(remoteV4Addr),
 			checker.ICMPv4(
 				checker.ICMPv4Type(header.ICMPv4Echo),

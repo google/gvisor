@@ -284,26 +284,39 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 		return WriteContext{}, &tcpip.ErrClosedForSend{}
 	}
 
-	route := e.connectedRoute
-	if opts.To == nil {
-		// If the user doesn't specify a destination, they should have
-		// connected to another address.
-		if e.State() != transport.DatagramEndpointStateConnected {
-			return WriteContext{}, &tcpip.ErrDestinationRequired{}
+	route, err := func() (*stack.Route, tcpip.Error) {
+		to := opts.To
+		bindToDevice := tcpip.NICID(e.ops.GetBindToDevice())
+		if to == nil {
+			// If the user doesn't specify a destination, they should have connected to
+			// another address.
+			if e.State() != transport.DatagramEndpointStateConnected {
+				return nil, &tcpip.ErrDestinationRequired{}
+			}
+
+			if bindToDevice == 0 || e.connectedRoute.NICID() == bindToDevice {
+				e.connectedRoute.Acquire()
+				return e.connectedRoute, nil
+			}
+
+			// We can't use the connected route, because the BindToDevice option tells
+			// us to use a different NIC.
+			//
+			// Fill in the destination address and continue as if we were not
+			// connected.
+			to = &tcpip.FullAddress{Addr: e.connectedRoute.RemoteAddress()}
 		}
 
-		route.Acquire()
-	} else {
 		// Reject destination address if it goes through a different
 		// NIC than the endpoint was bound to.
-		nicID := opts.To.NIC
+		nicID := to.NIC
 		if nicID == 0 {
 			nicID = tcpip.NICID(e.ops.GetBindToDevice())
 		}
 		info := e.Info()
 		if info.BindNICID != 0 {
 			if nicID != 0 && nicID != info.BindNICID {
-				return WriteContext{}, &tcpip.ErrNoRoute{}
+				return nil, &tcpip.ErrNoRoute{}
 			}
 
 			nicID = info.BindNICID
@@ -312,15 +325,16 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 			nicID = info.RegisterNICID
 		}
 
-		dst, netProto, err := e.checkV4Mapped(*opts.To)
+		dst, netProto, err := e.checkV4Mapped(*to)
 		if err != nil {
-			return WriteContext{}, err
+			return nil, err
 		}
 
-		route, _, err = e.connectRouteRLocked(nicID, dst, netProto)
-		if err != nil {
-			return WriteContext{}, err
-		}
+		route, _, err := e.connectRouteRLocked(nicID, dst, netProto)
+		return route, err
+	}()
+	if err != nil {
+		return WriteContext{}, err
 	}
 
 	if !e.ops.GetBroadcast() && route.IsOutboundBroadcast() {
