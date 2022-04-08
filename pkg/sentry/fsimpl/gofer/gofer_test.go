@@ -15,7 +15,6 @@
 package gofer
 
 import (
-	"sync/atomic"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/p9"
@@ -57,11 +56,11 @@ func TestDestroyIdempotent(t *testing.T) {
 	fs.renameMu.Lock()
 	defer fs.renameMu.Unlock()
 	child.checkCachingLocked(ctx, true /* renameMuWriteLocked */)
-	if got := atomic.LoadInt64(&child.refs); got != -1 {
+	if got := child.refs.Load(); got != -1 {
 		t.Fatalf("child.refs=%d, want: -1", got)
 	}
 	// Parent will also be destroyed when child reference is removed.
-	if got := atomic.LoadInt64(&parent.refs); got != -1 {
+	if got := parent.refs.Load(); got != -1 {
 		t.Fatalf("parent.refs=%d, want: -1", got)
 	}
 	child.checkCachingLocked(ctx, true /* renameMuWriteLocked */)

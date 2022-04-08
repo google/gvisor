@@ -62,9 +62,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
@@ -140,7 +140,7 @@ type filesystem struct {
 	controllers  []controller
 	kcontrollers []kernel.CgroupController
 
-	numCgroups uint64 // Protected by atomic ops.
+	numCgroups atomicbitops.Uint64 // Protected by atomic ops.
 
 	root *kernfs.Dentry
 	// effectiveRoot is the initial cgroup new tasks are created in. Unless
@@ -610,12 +610,12 @@ type stubControllerFile struct {
 	controllerFile
 
 	// data is accessed through atomic ops.
-	data *int64
+	data *atomicbitops.Int64
 }
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (f *stubControllerFile) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	fmt.Fprintf(buf, "%d\n", atomic.LoadInt64(f.data))
+	fmt.Fprintf(buf, "%d\n", f.data.Load())
 	return nil
 }
 
@@ -625,13 +625,13 @@ func (f *stubControllerFile) Write(ctx context.Context, _ *vfs.FileDescription, 
 	if err != nil {
 		return 0, err
 	}
-	atomic.StoreInt64(f.data, val)
+	f.data.Store(val)
 	return n, nil
 }
 
-// newStubControllerFile creates a new stub controller file tbat loads and
+// newStubControllerFile creates a new stub controller file that loads and
 // stores a control value from data.
-func (fs *filesystem) newStubControllerFile(ctx context.Context, creds *auth.Credentials, data *int64) kernfs.Inode {
+func (fs *filesystem) newStubControllerFile(ctx context.Context, creds *auth.Credentials, data *atomicbitops.Int64) kernfs.Inode {
 	f := &stubControllerFile{
 		data: data,
 	}

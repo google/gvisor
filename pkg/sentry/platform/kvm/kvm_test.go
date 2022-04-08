@@ -414,7 +414,7 @@ func TestWrongVCPU(t *testing.T) {
 			// Basic test, one then the other.
 			bluepill(c1)
 			bluepill(c2)
-			if c1.guestExits == 0 {
+			if c1.guestExits.Load() == 0 {
 				// Check: vCPU1 will exit due to redpill() in bluepill(c2).
 				// Don't allow the test to proceed if this fails.
 				t.Fatalf("wrong vCPU#1 exits: vCPU1=%+v,vCPU2=%+v", c1, c2)
@@ -426,10 +426,10 @@ func TestWrongVCPU(t *testing.T) {
 				bluepill(c1)
 				bluepill(c2)
 			}
-			if count := c1.guestExits; count < 90 {
+			if count := c1.guestExits.Load(); count < 90 {
 				t.Errorf("wrong vCPU#1 exits: vCPU1=%+v,vCPU2=%+v", c1, c2)
 			}
-			if count := c2.guestExits; count < 90 {
+			if count := c2.guestExits.Load(); count < 90 {
 				t.Errorf("wrong vCPU#2 exits: vCPU1=%+v,vCPU2=%+v", c1, c2)
 			}
 			return false
@@ -471,7 +471,7 @@ func TestKernelVDSO(t *testing.T) {
 			bluepill(c)
 			time.Now()
 		}
-		if c.guestExits >= n {
+		if c.guestExits.Load() >= n {
 			t.Errorf("vdso calls trigger vmexit")
 		}
 		return false

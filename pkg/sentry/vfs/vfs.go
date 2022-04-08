@@ -40,6 +40,7 @@ import (
 	"path"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
@@ -90,7 +91,7 @@ type VirtualFilesystem struct {
 
 	// lastMountID is the last allocated mount ID. lastMountID is accessed
 	// using atomic memory operations.
-	lastMountID uint64
+	lastMountID atomicbitops.Uint64
 
 	// anonMount is a Mount, not included in mounts or mountpoints,
 	// representing an anonFilesystem. anonMount is used to back

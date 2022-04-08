@@ -20,6 +20,7 @@ go_library(
         "//shim:__subpackages__",
     ],
     deps = [
+        "//pkg/atomicbitops",
         "//pkg/cleanup",
         "//pkg/shim/runsc",
         "//pkg/shim/utils",

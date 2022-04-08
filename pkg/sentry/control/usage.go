@@ -205,5 +205,6 @@ func (m *MemoryUsageRecord) Fetch() (mapped, unknown, total uint64, err error) {
 		return 0, 0, 0, err
 	}
 	fmem := uint64(stat.Blocks) * 512
-	return m.stats.RTMapped, fmem, m.stats.RTMapped + fmem, nil
+	rtmapped := m.stats.RTMapped.Load()
+	return rtmapped, fmem, rtmapped + fmem, nil
 }

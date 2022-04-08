@@ -39,6 +39,7 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
@@ -250,7 +251,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 	// Construct the root dentry.
 	root := fs.newDentry()
-	root.refs = 1
+	root.refs = atomicbitops.FromInt64(1)
 	if fs.opts.UpperRoot.Ok() {
 		fs.opts.UpperRoot.IncRef()
 		root.copiedUp = 1
@@ -297,7 +298,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		return nil, nil, err
 	}
 	root.devMinor = rootDevMinor
-	root.ino = rootStat.Ino
+	root.ino.Store(rootStat.Ino)
 
 	return &fs.vfsfs, &root.vfsd, nil
 }
@@ -377,7 +378,7 @@ func (fs *filesystem) getPrivateDevMinor(layerMajor, layerMinor uint32) (uint32,
 type dentry struct {
 	vfsd vfs.Dentry
 
-	refs int64
+	refs atomicbitops.Int64
 
 	// fs is the owning filesystem. fs is immutable.
 	fs *filesystem
@@ -429,7 +430,7 @@ type dentry struct {
 	// using atomic memory operations.
 	devMajor uint32
 	devMinor uint32
-	ino      uint64
+	ino      atomicbitops.Uint64
 
 	// If this dentry represents a regular file, then:
 	//
@@ -488,7 +489,7 @@ func (fs *filesystem) newDentry() *dentry {
 func (d *dentry) IncRef() {
 	// d.refs may be 0 if d.fs.renameMu is locked, which serializes against
 	// d.checkDropLocked().
-	r := atomic.AddInt64(&d.refs, 1)
+	r := d.refs.Add(1)
 	if d.LogRefs() {
 		refsvfs2.LogIncRef(d, r)
 	}
@@ -497,11 +498,11 @@ func (d *dentry) IncRef() {
 // TryIncRef implements vfs.DentryImpl.TryIncRef.
 func (d *dentry) TryIncRef() bool {
 	for {
-		r := atomic.LoadInt64(&d.refs)
+		r := d.refs.Load()
 		if r <= 0 {
 			return false
 		}
-		if atomic.CompareAndSwapInt64(&d.refs, r, r+1) {
+		if d.refs.CompareAndSwap(r, r+1) {
 			if d.LogRefs() {
 				refsvfs2.LogTryIncRef(d, r+1)
 			}
@@ -512,7 +513,7 @@ func (d *dentry) TryIncRef() bool {
 
 // DecRef implements vfs.DentryImpl.DecRef.
 func (d *dentry) DecRef(ctx context.Context) {
-	r := atomic.AddInt64(&d.refs, -1)
+	r := d.refs.Add(-1)
 	if d.LogRefs() {
 		refsvfs2.LogDecRef(d, r)
 	}
@@ -526,7 +527,7 @@ func (d *dentry) DecRef(ctx context.Context) {
 }
 
 func (d *dentry) decRefLocked(ctx context.Context) {
-	r := atomic.AddInt64(&d.refs, -1)
+	r := d.refs.Add(-1)
 	if d.LogRefs() {
 		refsvfs2.LogDecRef(d, r)
 	}
@@ -547,7 +548,7 @@ func (d *dentry) checkDropLocked(ctx context.Context) {
 	// resolution, which requires renameMu, so if d.refs is zero then it will
 	// remain zero while we hold renameMu for writing.) Dentries with a
 	// negative reference count have already been destroyed.
-	if atomic.LoadInt64(&d.refs) != 0 {
+	if d.refs.Load() != 0 {
 		return
 	}
 
@@ -569,10 +570,10 @@ func (d *dentry) checkDropLocked(ctx context.Context) {
 // * d.fs.renameMu must be locked for writing.
 // * d.refs == 0.
 func (d *dentry) destroyLocked(ctx context.Context) {
-	switch atomic.LoadInt64(&d.refs) {
+	switch d.refs.Load() {
 	case 0:
 		// Mark the dentry destroyed.
-		atomic.StoreInt64(&d.refs, -1)
+		d.refs.Store(-1)
 	case -1:
 		panic("overlay.dentry.destroyLocked() called on already destroyed dentry")
 	default:
@@ -608,7 +609,7 @@ func (d *dentry) RefType() string {
 
 // LeakMessage implements refsvfs2.CheckedObject.LeakMessage.
 func (d *dentry) LeakMessage() string {
-	return fmt.Sprintf("[overlay.dentry %p] reference count of %d instead of -1", d, atomic.LoadInt64(&d.refs))
+	return fmt.Sprintf("[overlay.dentry %p] reference count of %d instead of -1", d, d.refs.Load())
 }
 
 // LogRefs implements refsvfs2.CheckedObject.LogRefs.
@@ -645,7 +646,7 @@ func (d *dentry) Watches() *vfs.Watches {
 
 // OnZeroWatches implements vfs.DentryImpl.OnZeroWatches.
 func (d *dentry) OnZeroWatches(ctx context.Context) {
-	if atomic.LoadInt64(&d.refs) == 0 {
+	if d.refs.Load() == 0 {
 		d.fs.renameMu.Lock()
 		d.checkDropLocked(ctx)
 		d.fs.renameMu.Unlock()
@@ -718,7 +719,7 @@ func (d *dentry) statInternalTo(ctx context.Context, opts *vfs.StatOptions, stat
 	stat.UID = atomic.LoadUint32(&d.uid)
 	stat.GID = atomic.LoadUint32(&d.gid)
 	stat.Mode = uint16(atomic.LoadUint32(&d.mode))
-	stat.Ino = atomic.LoadUint64(&d.ino)
+	stat.Ino = d.ino.Load()
 	stat.DevMajor = atomic.LoadUint32(&d.devMajor)
 	stat.DevMinor = atomic.LoadUint32(&d.devMinor)
 }

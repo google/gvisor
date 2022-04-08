@@ -13,6 +13,7 @@ go_library(
     visibility = ["//tools/nogo:__subpackages__"],
     deps = [
         "//runsc/flag",
+        "//tools/checkaligned",
         "//tools/checkescape",
         "//tools/checkinfo",
         "//tools/checklinkname",

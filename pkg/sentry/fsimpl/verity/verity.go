@@ -47,6 +47,7 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
@@ -379,7 +380,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	// Set the root's reference count to 2. One reference is returned to
 	// the caller, and the other is held by fs to prevent the root from
 	// being "cached" and subsequently evicted.
-	d.refs = 2
+	d.refs = atomicbitops.FromInt64(2)
 	lowerVD := vfs.MakeVirtualDentry(lowerMount, lowerMount.Root())
 	lowerVD.IncRef()
 	d.lowerVD = lowerVD
@@ -582,7 +583,7 @@ type dentry struct {
 	// added to the cache or destroyed. If refs == -1, the dentry has
 	// already been destroyed. refs is accessed using atomic memory
 	// operations.
-	refs int64
+	refs atomicbitops.Int64
 
 	// fs is the owning filesystem. fs is immutable.
 	fs *filesystem
@@ -664,7 +665,7 @@ func (fs *filesystem) newDentry() *dentry {
 
 // IncRef implements vfs.DentryImpl.IncRef.
 func (d *dentry) IncRef() {
-	r := atomic.AddInt64(&d.refs, 1)
+	r := d.refs.Add(1)
 	if d.LogRefs() {
 		refsvfs2.LogIncRef(d, r)
 	}
@@ -673,11 +674,11 @@ func (d *dentry) IncRef() {
 // TryIncRef implements vfs.DentryImpl.TryIncRef.
 func (d *dentry) TryIncRef() bool {
 	for {
-		r := atomic.LoadInt64(&d.refs)
+		r := d.refs.Load()
 		if r <= 0 {
 			return false
 		}
-		if atomic.CompareAndSwapInt64(&d.refs, r, r+1) {
+		if d.refs.CompareAndSwap(r, r+1) {
 			if d.LogRefs() {
 				refsvfs2.LogTryIncRef(d, r+1)
 			}
@@ -697,7 +698,7 @@ func (d *dentry) DecRef(ctx context.Context) {
 // d.checkCachingLocked, even if d's reference count reaches 0; callers are
 // responsible for ensuring that d.checkCachingLocked will be called later.
 func (d *dentry) decRefNoCaching() int64 {
-	r := atomic.AddInt64(&d.refs, -1)
+	r := d.refs.Add(-1)
 	if d.LogRefs() {
 		refsvfs2.LogDecRef(d, r)
 	}
@@ -713,10 +714,10 @@ func (d *dentry) decRefNoCaching() int64 {
 // * d.fs.renameMu must be locked for writing.
 // * d.refs == 0.
 func (d *dentry) destroyLocked(ctx context.Context) {
-	switch atomic.LoadInt64(&d.refs) {
+	switch d.refs.Load() {
 	case 0:
 		// Mark the dentry destroyed.
-		atomic.StoreInt64(&d.refs, -1)
+		d.refs.Store(-1)
 	case -1:
 		panic("verity.dentry.destroyLocked() called on already destroyed dentry")
 	default:
@@ -752,7 +753,7 @@ func (d *dentry) RefType() string {
 
 // LeakMessage implements refsvfs2.CheckedObject.LeakMessage.
 func (d *dentry) LeakMessage() string {
-	return fmt.Sprintf("[verity.dentry %p] reference count of %d instead of -1", d, atomic.LoadInt64(&d.refs))
+	return fmt.Sprintf("[verity.dentry %p] reference count of %d instead of -1", d, d.refs.Load())
 }
 
 // LogRefs implements refsvfs2.CheckedObject.LogRefs.
@@ -797,7 +798,7 @@ func (d *dentry) OnZeroWatches(context.Context) {
 // renameMuWriteLocked is true; it may be temporarily unlocked.
 func (d *dentry) checkCachingLocked(ctx context.Context, renameMuWriteLocked bool) {
 	d.cachingMu.Lock()
-	refs := atomic.LoadInt64(&d.refs)
+	refs := d.refs.Load()
 	if refs == -1 {
 		// Dentry has already been destroyed.
 		d.cachingMu.Unlock()
@@ -897,7 +898,7 @@ func (fs *filesystem) evictCachedDentryLocked(ctx context.Context) {
 	victim.removeFromCacheLocked()
 	// victim.refs may have become non-zero from an earlier path resolution
 	// since it was inserted into fs.cachedDentries.
-	if atomic.LoadInt64(&victim.refs) != 0 {
+	if victim.refs.Load() != 0 {
 		victim.cachingMu.Unlock()
 		return
 	}

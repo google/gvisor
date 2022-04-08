@@ -232,7 +232,7 @@ func (pg *ProcessGroup) Session() *Session {
 }
 
 // SendSignal sends a signal to all processes inside the process group. It is
-// analagous to kernel/signal.c:kill_pgrp.
+// analogous to kernel/signal.c:kill_pgrp.
 func (pg *ProcessGroup) SendSignal(info *linux.SignalInfo) error {
 	tasks := pg.originator.TaskSet()
 	tasks.mu.RLock()

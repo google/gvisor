@@ -322,7 +322,7 @@ func (fd *specialFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 		// Set offset to file size if the regular file was opened with O_APPEND.
 		if fd.vfsfd.StatusFlags()&linux.O_APPEND != 0 {
 			// Holding d.metadataMu is sufficient for reading d.size.
-			offset = int64(d.size)
+			offset = int64(d.size.RacyLoad())
 		}
 		limit, err := vfs.CheckLimit(ctx, offset, src.NumBytes())
 		if err != nil {
@@ -352,10 +352,10 @@ func (fd *specialFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 	// Update file size for regular files.
 	if fd.isRegularFile {
 		// d.metadataMu is already locked at this point.
-		if uint64(offset) > d.size {
+		if uint64(offset) > d.size.RacyLoad() {
 			d.dataMu.Lock()
 			defer d.dataMu.Unlock()
-			atomic.StoreUint64(&d.size, uint64(offset))
+			d.size.Store(uint64(offset))
 		}
 	}
 	return int64(n), offset, err

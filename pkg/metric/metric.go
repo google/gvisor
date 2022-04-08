@@ -21,10 +21,10 @@ import (
 	"math"
 	"sort"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/eventchannel"
 	"gvisor.dev/gvisor/pkg/log"
 	pb "gvisor.dev/gvisor/pkg/metric/metric_go_proto"
@@ -91,7 +91,7 @@ var (
 // TODO(b/67298427): Support metric fields.
 type Uint64Metric struct {
 	// value is the actual value of the metric. It must be accessed atomically.
-	value uint64
+	value atomicbitops.Uint64
 
 	// numFields is the number of metric fields. It is immutable once
 	// initialized.
@@ -432,7 +432,7 @@ func (m *Uint64Metric) Value(fieldValues ...string) uint64 {
 
 	switch m.numFields {
 	case 0:
-		return atomic.LoadUint64(&m.value)
+		return m.value.Load()
 	case 1:
 		m.mu.RLock()
 		defer m.mu.RUnlock()
@@ -460,7 +460,7 @@ func (m *Uint64Metric) IncrementBy(v uint64, fieldValues ...string) {
 
 	switch m.numFields {
 	case 0:
-		atomic.AddUint64(&m.value, v)
+		m.value.Add(v)
 		return
 	case 1:
 		fieldValue := fieldValues[0]
@@ -643,7 +643,7 @@ type DistributionMetric struct {
 	// (i-1)-th finite bucket.
 	// The last value is the number of samples that fell into the bucketer's
 	// last (i.e. infinite) bucket.
-	samples map[string][]uint64
+	samples map[string][]atomicbitops.Uint64
 }
 
 // NewDistributionMetric creates and registers a new distribution metric.
@@ -669,10 +669,10 @@ func NewDistributionMetric(name string, sync bool, bucketer Bucketer, unit pb.Me
 		return nil, err
 	}
 	allKeys := fieldsToKey.all()
-	samples := make(map[string][]uint64, len(allKeys))
+	samples := make(map[string][]atomicbitops.Uint64, len(allKeys))
 	numFiniteBuckets := bucketer.NumFiniteBuckets()
 	for _, key := range allKeys {
-		samples[key] = make([]uint64, numFiniteBuckets+2)
+		samples[key] = make([]atomicbitops.Uint64, numFiniteBuckets+2)
 	}
 	protoFields := make([]*pb.MetricMetadata_Field, len(fields))
 	for i, f := range fields {
@@ -723,7 +723,7 @@ func (d *DistributionMetric) AddSample(sample int64, fields ...string) {
 //go:nosplit
 func (d *DistributionMetric) addSampleByKey(sample int64, key string) {
 	bucket := d.exponentialBucketer.BucketIndex(sample)
-	atomic.AddUint64(&d.samples[key][bucket+1], 1)
+	d.samples[key][bucket+1].Add(1)
 }
 
 // Minimum number of buckets for NewDurationBucket.

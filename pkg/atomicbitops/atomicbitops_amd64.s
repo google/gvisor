@@ -46,28 +46,28 @@ TEXT ·CompareAndSwapUint32(SB),NOSPLIT,$0-20
   MOVL  AX, ret+16(FP)
   RET
 
-TEXT ·AndUint64(SB),NOSPLIT,$0-16
+TEXT ·andUint64(SB),NOSPLIT,$0-16
   MOVQ  addr+0(FP), BX
   MOVQ  val+8(FP), AX
   LOCK
   ANDQ   AX, 0(BX)
   RET
 
-TEXT ·OrUint64(SB),NOSPLIT,$0-16
+TEXT ·orUint64(SB),NOSPLIT,$0-16
   MOVQ  addr+0(FP), BX
   MOVQ  val+8(FP), AX
   LOCK
   ORQ   AX, 0(BX)
   RET
 
-TEXT ·XorUint64(SB),NOSPLIT,$0-16
+TEXT ·xorUint64(SB),NOSPLIT,$0-16
   MOVQ  addr+0(FP), BX
   MOVQ  val+8(FP), AX
   LOCK
   XORQ   AX, 0(BX)
   RET
 
-TEXT ·CompareAndSwapUint64(SB),NOSPLIT,$0-32
+TEXT ·compareAndSwapUint64(SB),NOSPLIT,$0-32
   MOVQ  addr+0(FP), DI
   MOVQ  old+8(FP), AX
   MOVQ  new+16(FP), DX

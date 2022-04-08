@@ -20,7 +20,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -75,7 +74,7 @@ func (c *controllerCommon) HierarchyID() uint32 {
 
 // NumCgroups implements kernel.CgroupController.NumCgroups.
 func (c *controllerCommon) NumCgroups() uint64 {
-	return atomic.LoadUint64(&c.fs.numCgroups)
+	return c.fs.numCgroups.Load()
 }
 
 // Enabled implements kernel.CgroupController.Enabled.
@@ -194,7 +193,7 @@ func (fs *filesystem) newCgroupInode(ctx context.Context, creds *auth.Credential
 	c.dir.OrderedChildren.Init(kernfs.OrderedChildrenOptions{Writable: true})
 	c.dir.IncLinks(c.dir.OrderedChildren.Populate(contents))
 
-	atomic.AddUint64(&fs.numCgroups, 1)
+	fs.numCgroups.Add(1)
 
 	return c
 }

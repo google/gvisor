@@ -43,20 +43,20 @@ func detectRaces32(val, target uint32, fn func(*uint32, uint32)) bool {
 	return false
 }
 
-func detectRaces64(val, target uint64, fn func(*uint64, uint64)) bool {
+func detectRaces64(val, target uint64, fn func(*Uint64, uint64)) bool {
 	runtime.GOMAXPROCS(100)
 	for n := 0; n < iterations; n++ {
-		x := val
+		x := FromUint64(val)
 		var wg sync.WaitGroup
 		for i := uint64(0); i < 64; i++ {
 			wg.Add(1)
-			go func(a *uint64, i uint64) {
+			go func(a *Uint64, i uint64) {
 				defer wg.Done()
 				fn(a, uint64(1<<i))
 			}(&x, i)
 		}
 		wg.Wait()
-		if x != target {
+		if x != FromUint64(target) {
 			return true
 		}
 	}
@@ -186,12 +186,12 @@ func TestCompareAndSwapUint64(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		val := test.prev
+		val := FromUint64(test.prev)
 		prev := CompareAndSwapUint64(&val, test.old, test.new)
 		if got, want := prev, test.prev; got != want {
 			t.Errorf("%s: incorrect returned previous value: got %d, expected %d", test.name, got, want)
 		}
-		if got, want := val, test.next; got != want {
+		if got, want := val.Load(), test.next; got != want {
 			t.Errorf("%s: incorrect value stored in val: got %d, expected %d", test.name, got, want)
 		}
 	}

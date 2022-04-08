@@ -18,6 +18,7 @@ package context
 
 import (
 	"bytes"
+	"reflect"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -208,8 +209,9 @@ func (c *Context) CreateRawEndpointForFlow(flow TestFlow, transport tcpip.Transp
 
 // CheckEndpointWriteStats checks that the write statistic related to the given
 // error has been incremented as expected.
-func (c *Context) CheckEndpointWriteStats(incr uint64, want tcpip.TransportEndpointStats, err tcpip.Error) {
-	got := c.EP.Stats().(*tcpip.TransportEndpointStats).Clone()
+func (c *Context) CheckEndpointWriteStats(incr uint64, want *tcpip.TransportEndpointStats, err tcpip.Error) {
+	var got tcpip.TransportEndpointStats
+	c.EP.Stats().(*tcpip.TransportEndpointStats).Clone(&got)
 	switch err.(type) {
 	case nil:
 		want.PacketsSent.IncrementBy(incr)
@@ -224,17 +226,18 @@ func (c *Context) CheckEndpointWriteStats(incr uint64, want tcpip.TransportEndpo
 	default:
 		want.SendErrors.SendToNetworkFailed.IncrementBy(incr)
 	}
-	if got != want {
-		c.T.Errorf("Endpoint stats not matching for error %s: got %#v, want %#v", err, got, want)
+	if !reflect.DeepEqual(&got, want) {
+		c.T.Errorf("Endpoint stats not matching for error %s: got %#v, want %#v", err, &got, want)
 	}
 }
 
 // CheckEndpointReadStats checks that the read statistic related to the given
 // error has been incremented as expected.
-func (c *Context) CheckEndpointReadStats(incr uint64, want tcpip.TransportEndpointStats, err tcpip.Error) {
+func (c *Context) CheckEndpointReadStats(incr uint64, want *tcpip.TransportEndpointStats, err tcpip.Error) {
 	c.T.Helper()
 
-	got := c.EP.Stats().(*tcpip.TransportEndpointStats).Clone()
+	var got tcpip.TransportEndpointStats
+	c.EP.Stats().(*tcpip.TransportEndpointStats).Clone(&got)
 	switch err.(type) {
 	case nil, *tcpip.ErrWouldBlock:
 	case *tcpip.ErrClosedForReceive:
@@ -242,8 +245,8 @@ func (c *Context) CheckEndpointReadStats(incr uint64, want tcpip.TransportEndpoi
 	default:
 		c.T.Errorf("Endpoint error missing stats update for err %s", err)
 	}
-	if got != want {
-		c.T.Errorf("Endpoint stats not matching for error %s: got %#v, want %#v", err, got, want)
+	if !reflect.DeepEqual(&got, want) {
+		c.T.Errorf("Endpoint stats not matching for error %s: got %#v, want %#v", err, &got, want)
 	}
 }
 
@@ -276,7 +279,8 @@ func (c *Context) readFromEndpoint(expectations readExpectations, checkers ...ch
 	defer c.WQ.EventUnregister(&we)
 
 	// Take a snapshot of the stats to validate them at the end of the test.
-	epstats := c.EP.Stats().(*tcpip.TransportEndpointStats).Clone()
+	var epstats tcpip.TransportEndpointStats
+	c.EP.Stats().(*tcpip.TransportEndpointStats).Clone(&epstats)
 
 	var buf bytes.Buffer
 	res, err := c.EP.Read(&buf, tcpip.ReadOptions{NeedRemoteAddr: true})
@@ -293,7 +297,7 @@ func (c *Context) readFromEndpoint(expectations readExpectations, checkers ...ch
 	}
 
 	if expectations.readShouldFail && err != nil {
-		c.CheckEndpointReadStats(1, epstats, err)
+		c.CheckEndpointReadStats(1, &epstats, err)
 		return
 	}
 
@@ -329,7 +333,7 @@ func (c *Context) readFromEndpoint(expectations readExpectations, checkers ...ch
 		f(c.T, res.ControlMessages)
 	}
 
-	c.CheckEndpointReadStats(1, epstats, err)
+	c.CheckEndpointReadStats(1, &epstats, err)
 }
 
 // ReadFromEndpointExpectSuccess attempts to reads from the endpoint and

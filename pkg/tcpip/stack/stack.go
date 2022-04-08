@@ -58,10 +58,10 @@ type ResumableEndpoint interface {
 }
 
 // uniqueIDGenerator is a default unique ID generator.
-type uniqueIDGenerator atomicbitops.AlignedAtomicUint64
+type uniqueIDGenerator atomicbitops.Uint64
 
 func (u *uniqueIDGenerator) UniqueID() uint64 {
-	return ((*atomicbitops.AlignedAtomicUint64)(u)).Add(1)
+	return ((*atomicbitops.Uint64)(u)).Add(1)
 }
 
 // Stack is a networking stack, with all supported protocols, NICs, and route

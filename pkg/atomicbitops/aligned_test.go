@@ -21,7 +21,7 @@ import (
 func TestAtomiciInt64(t *testing.T) {
 	v := struct {
 		v8  int8
-		v64 AlignedAtomicInt64
+		v64 Int64
 	}{}
 	v.v64.Add(1)
 }
@@ -29,7 +29,7 @@ func TestAtomiciInt64(t *testing.T) {
 func TestAtomicUint64(t *testing.T) {
 	v := struct {
 		v8  uint8
-		v64 AlignedAtomicUint64
+		v64 Uint64
 	}{}
 	v.v64.Add(1)
 }

@@ -133,6 +133,7 @@ go_test(
     library = ":vfs",
     deps = [
         "//pkg/abi/linux",
+        "//pkg/atomicbitops",
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/sentry/contexttest",

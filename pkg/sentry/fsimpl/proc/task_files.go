@@ -833,13 +833,13 @@ func (i *ioData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	io := usage.IO{}
 	io.Accumulate(i.IOUsage())
 
-	fmt.Fprintf(buf, "char: %d\n", io.CharsRead)
-	fmt.Fprintf(buf, "wchar: %d\n", io.CharsWritten)
-	fmt.Fprintf(buf, "syscr: %d\n", io.ReadSyscalls)
-	fmt.Fprintf(buf, "syscw: %d\n", io.WriteSyscalls)
-	fmt.Fprintf(buf, "read_bytes: %d\n", io.BytesRead)
-	fmt.Fprintf(buf, "write_bytes: %d\n", io.BytesWritten)
-	fmt.Fprintf(buf, "cancelled_write_bytes: %d\n", io.BytesWriteCancelled)
+	fmt.Fprintf(buf, "char: %d\n", io.CharsRead.RacyLoad())
+	fmt.Fprintf(buf, "wchar: %d\n", io.CharsWritten.RacyLoad())
+	fmt.Fprintf(buf, "syscr: %d\n", io.ReadSyscalls.RacyLoad())
+	fmt.Fprintf(buf, "syscw: %d\n", io.WriteSyscalls.RacyLoad())
+	fmt.Fprintf(buf, "read_bytes: %d\n", io.BytesRead.RacyLoad())
+	fmt.Fprintf(buf, "write_bytes: %d\n", io.BytesWritten.RacyLoad())
+	fmt.Fprintf(buf, "cancelled_write_bytes: %d\n", io.BytesWriteCancelled.RacyLoad())
 	return nil
 }
 

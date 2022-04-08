@@ -15,13 +15,11 @@
 package overlay
 
 import (
-	"sync/atomic"
-
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 )
 
 func (d *dentry) afterLoad() {
-	if atomic.LoadInt64(&d.refs) != -1 {
+	if d.refs.Load() != -1 {
 		refsvfs2.Register(d)
 	}
 }

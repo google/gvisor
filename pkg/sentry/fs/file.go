@@ -16,8 +16,8 @@ package fs
 
 import (
 	"math"
-	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/refs"
@@ -97,7 +97,7 @@ type File struct {
 
 	// offset is the File's offset. Updating offset is protected by mu but
 	// can be read atomically via File.Offset() outside of mu.
-	offset int64
+	offset atomicbitops.Int64
 }
 
 // NewFile returns a File. It takes a reference on the Dirent and owns the
@@ -172,7 +172,7 @@ func (f *File) SetFlags(newFlags SettableFileFlags) {
 
 // Offset atomically loads the File's offset.
 func (f *File) Offset() int64 {
-	return atomic.LoadInt64(&f.offset)
+	return f.offset.Load()
 }
 
 // Readiness implements waiter.Waitable.Readiness.
@@ -201,7 +201,7 @@ func (f *File) Seek(ctx context.Context, whence SeekWhence, offset int64) (int64
 
 	newOffset, err := f.FileOperations.Seek(ctx, f, whence, offset)
 	if err == nil {
-		atomic.StoreInt64(&f.offset, newOffset)
+		f.offset.Store(newOffset)
 	}
 	return newOffset, err
 }
@@ -220,7 +220,7 @@ func (f *File) Readdir(ctx context.Context, serializer DentrySerializer) error {
 	defer f.mu.Unlock()
 
 	offset, err := f.FileOperations.Readdir(ctx, f, serializer)
-	atomic.StoreInt64(&f.offset, offset)
+	f.offset.Store(offset)
 	return err
 }
 
@@ -234,9 +234,9 @@ func (f *File) Readv(ctx context.Context, dst usermem.IOSequence) (int64, error)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	fsmetric.Reads.Increment()
-	n, err := f.FileOperations.Read(ctx, f, dst, f.offset)
+	n, err := f.FileOperations.Read(ctx, f, dst, f.offset.RacyLoad())
 	if n > 0 && !f.flags.NonSeekable {
-		atomic.AddInt64(&f.offset, n)
+		f.offset.Add(n)
 	}
 	return n, err
 }
@@ -277,7 +277,7 @@ func (f *File) Writev(ctx context.Context, src usermem.IOSequence) (int64, error
 	}
 
 	// Enforce file limits.
-	limit, ok := f.checkLimit(ctx, f.offset)
+	limit, ok := f.checkLimit(ctx, f.offset.RacyLoad())
 	switch {
 	case ok && limit == 0:
 		unlockAppendMu()
@@ -287,9 +287,9 @@ func (f *File) Writev(ctx context.Context, src usermem.IOSequence) (int64, error
 	}
 
 	// We must hold the lock during the write.
-	n, err := f.FileOperations.Write(ctx, f, src, f.offset)
+	n, err := f.FileOperations.Write(ctx, f, src, f.offset.RacyLoad())
 	if n >= 0 && !f.flags.NonSeekable {
-		atomic.StoreInt64(&f.offset, f.offset+n)
+		f.offset.Store(f.offset.RacyLoad() + n)
 	}
 	unlockAppendMu()
 	return n, err
@@ -309,7 +309,8 @@ func (f *File) Pwritev(ctx context.Context, src usermem.IOSequence, offset int64
 	unlockAppendMu := f.Dirent.Inode.lockAppendMu(f.Flags().Append)
 	defer unlockAppendMu()
 	if f.Flags().Append {
-		if err := f.offsetForAppend(ctx, &offset); err != nil {
+		off := atomicbitops.FromInt64(offset)
+		if err := f.offsetForAppend(ctx, &off); err != nil {
 			return 0, err
 		}
 	}
@@ -330,7 +331,7 @@ func (f *File) Pwritev(ctx context.Context, src usermem.IOSequence, offset int64
 //
 // Precondition: the file.Dirent.Inode.appendMu mutex should be held for
 // writing.
-func (f *File) offsetForAppend(ctx context.Context, offset *int64) error {
+func (f *File) offsetForAppend(ctx context.Context, offset *atomicbitops.Int64) error {
 	uattr, err := f.Dirent.Inode.UnstableAttr(ctx)
 	if err != nil {
 		// This is an odd error, we treat it as evidence that
@@ -339,7 +340,7 @@ func (f *File) offsetForAppend(ctx context.Context, offset *int64) error {
 	}
 
 	// Update the offset.
-	atomic.StoreInt64(offset, uattr.Size)
+	offset.Store(uattr.Size)
 
 	return nil
 }

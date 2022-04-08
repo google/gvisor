@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -39,7 +40,7 @@ type directory struct {
 
 	// numChildren is len(childMap), but accessed using atomic memory
 	// operations to avoid locking in inode.statTo().
-	numChildren int64
+	numChildren atomicbitops.Int64
 
 	// childList is a list containing (1) child dentries and (2) fake dentries
 	// (with inode == nil) that represent the iteration position of
@@ -68,7 +69,7 @@ func (dir *directory) insertChildLocked(child *dentry, name string) {
 		dir.childMap = make(map[string]*dentry)
 	}
 	dir.childMap[name] = child
-	atomic.AddInt64(&dir.numChildren, 1)
+	dir.numChildren.Add(1)
 	dir.iterMu.Lock()
 	dir.childList.PushBack(child)
 	dir.iterMu.Unlock()
@@ -77,7 +78,7 @@ func (dir *directory) insertChildLocked(child *dentry, name string) {
 // Preconditions: filesystem.mu must be locked for writing.
 func (dir *directory) removeChildLocked(child *dentry) {
 	delete(dir.childMap, child.name)
-	atomic.AddInt64(&dir.numChildren, -1)
+	dir.numChildren.Add(-1)
 	dir.iterMu.Lock()
 	dir.childList.Remove(child)
 	dir.iterMu.Unlock()
