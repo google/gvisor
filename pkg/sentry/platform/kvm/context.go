@@ -15,8 +15,6 @@
 package kvm
 
 import (
-	"sync/atomic"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	pkgcontext "gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -97,7 +95,7 @@ restart:
 	cpu.active.set(nil)
 
 	// Increment the number of user exits.
-	atomic.AddUint64(&cpu.userExits, 1)
+	cpu.userExits.Add(1)
 
 	// Release resources.
 	c.machine.Put(cpu)

@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 )
 
 func TestSetNegOne(t *testing.T) {
@@ -109,7 +110,7 @@ func TestFileDotFile(t *testing.T) {
 }
 
 func TestFileDotFileError(t *testing.T) {
-	f := &FD{ReadWriter{-2}}
+	f := &FD{ReadWriter{atomicbitops.FromInt64(-2)}}
 
 	if of, err := f.File(); err == nil {
 		t.Errorf("File %v got nil err want non-nil", of)

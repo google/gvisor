@@ -280,7 +280,7 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 		}
 		atomic.StoreUint32(&d.devMajor, upperStat.DevMajor)
 		atomic.StoreUint32(&d.devMinor, upperStat.DevMinor)
-		atomic.StoreUint64(&d.ino, upperStat.Ino)
+		d.ino.Store(upperStat.Ino)
 	}
 
 	if mmapOpts != nil && mmapOpts.Mappable != nil {

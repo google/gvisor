@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 	"unsafe"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/gohacks"
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -92,7 +93,7 @@ type mountTable struct {
 	// anyway (cf. runtime.bucketShift()), and length isn't used by lookup;
 	// thus this bit packing gets us more bits for the length (vs. storing
 	// length and cap in separate uint32s) for ~free.
-	size uint64
+	size atomicbitops.Uint64
 
 	slots unsafe.Pointer `state:"nosave"` // []mountSlot; never nil after Init
 }
@@ -146,7 +147,7 @@ func init() {
 
 // Init must be called exactly once on each mountTable before use.
 func (mt *mountTable) Init() {
-	mt.size = mtInitOrder
+	mt.size = atomicbitops.FromUint64(mtInitOrder)
 	mt.slots = newMountTableSlots(mtInitCap)
 }
 
@@ -167,7 +168,7 @@ func (mt *mountTable) Lookup(parent *Mount, point *Dentry) *Mount {
 loop:
 	for {
 		epoch := mt.seq.BeginRead()
-		size := atomic.LoadUint64(&mt.size)
+		size := mt.size.Load()
 		slots := atomic.LoadPointer(&mt.slots)
 		if !mt.seq.ReadOk(epoch) {
 			continue
@@ -209,7 +210,7 @@ loop:
 // Range calls f on each Mount in mt. If f returns false, Range stops iteration
 // and returns immediately.
 func (mt *mountTable) Range(f func(*Mount) bool) {
-	tcap := uintptr(1) << (mt.size & mtSizeOrderMask)
+	tcap := uintptr(1) << (mt.size.Load() & mtSizeOrderMask)
 	slotPtr := mt.slots
 	last := unsafe.Pointer(uintptr(mt.slots) + ((tcap - 1) * mountSlotBytes))
 	for {
@@ -248,12 +249,12 @@ func (mt *mountTable) insertSeqed(mount *Mount) {
 	//
 	//          (len+1) / cap <= mtMaxLoadNum / mtMaxLoadDen
 	// (len+1) * mtMaxLoadDen <= mtMaxLoadNum * cap
-	tlen := mt.size >> mtSizeLenLSB
-	order := mt.size & mtSizeOrderMask
+	tlen := mt.size.RacyLoad() >> mtSizeLenLSB
+	order := mt.size.RacyLoad() & mtSizeOrderMask
 	tcap := uintptr(1) << order
 	if ((tlen + 1) * mtMaxLoadDen) <= (uint64(mtMaxLoadNum) << order) {
 		// Atomically insert the new element into the table.
-		atomic.AddUint64(&mt.size, mtSizeLenOne)
+		mt.size.Add(mtSizeLenOne)
 		mtInsertLocked(mt.slots, tcap, unsafe.Pointer(mount), hash)
 		return
 	}
@@ -287,7 +288,7 @@ func (mt *mountTable) insertSeqed(mount *Mount) {
 	// Insert the new element into the new table.
 	mtInsertLocked(newSlots, newCap, unsafe.Pointer(mount), hash)
 	// Switch to the new table.
-	atomic.AddUint64(&mt.size, mtSizeLenOne|mtSizeOrderOne)
+	mt.size.Add(mtSizeLenOne | mtSizeOrderOne)
 	atomic.StorePointer(&mt.slots, newSlots)
 }
 
@@ -342,7 +343,7 @@ func (mt *mountTable) Remove(mount *Mount) {
 // * mt must contain mount.
 func (mt *mountTable) removeSeqed(mount *Mount) {
 	hash := mount.key.hash()
-	tcap := uintptr(1) << (mt.size & mtSizeOrderMask)
+	tcap := uintptr(1) << (mt.size.RacyLoad() & mtSizeOrderMask)
 	mask := tcap - 1
 	slots := mt.slots
 	off := (hash & mask) * mountSlotBytes
@@ -372,7 +373,7 @@ func (mt *mountTable) removeSeqed(mount *Mount) {
 				slot = nextSlot
 			}
 			atomic.StorePointer(&slot.value, nil)
-			atomic.AddUint64(&mt.size, mtSizeLenNegOne)
+			mt.size.Add(mtSizeLenNegOne)
 			return
 		}
 		if checkInvariants && slotValue == nil {

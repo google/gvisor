@@ -229,7 +229,7 @@ type SocketOptions struct {
 	getSendBufferLimits GetSendBufferLimits `state:"manual"`
 
 	// sendBufferSize determines the send buffer size for this socket.
-	sendBufferSize atomicbitops.AlignedAtomicInt64
+	sendBufferSize atomicbitops.Int64
 
 	// getReceiveBufferLimits provides the handler to get the min, default and
 	// max size for receive buffer. It is initialized at the creation time and
@@ -237,7 +237,7 @@ type SocketOptions struct {
 	getReceiveBufferLimits GetReceiveBufferLimits `state:"manual"`
 
 	// receiveBufferSize determines the receive buffer size for this socket.
-	receiveBufferSize atomicbitops.AlignedAtomicInt64
+	receiveBufferSize atomicbitops.Int64
 
 	// mu protects the access to the below fields.
 	mu sync.Mutex `state:"nosave"`

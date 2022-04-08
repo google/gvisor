@@ -14,6 +14,7 @@ go_library(
         "//runsc:__subpackages__",
     ],
     deps = [
+        "//pkg/atomicbitops",
         "//pkg/cleanup",
         "//pkg/control/client",
         "//pkg/control/server",

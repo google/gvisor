@@ -46,6 +46,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -176,7 +177,7 @@ type filesystem struct {
 
 	// lastIno is the last inode number assigned to a file. lastIno is accessed
 	// using atomic memory operations.
-	lastIno uint64
+	lastIno atomicbitops.Uint64
 
 	// savedDentryRW records open read/write handles during save/restore.
 	savedDentryRW map[*dentry]savedDentryRW
@@ -519,7 +520,7 @@ func (fs *filesystem) initClientAndRoot(ctx context.Context) error {
 	// caller, and the other is held by fs to prevent the root from being "cached"
 	// and subsequently evicted.
 	if err == nil {
-		fs.root.refs = 2
+		fs.root.refs = atomicbitops.FromInt64(2)
 	}
 	return err
 }
@@ -668,7 +669,7 @@ func (fs *filesystem) Release(ctx context.Context) {
 		d.dataMu.Lock()
 		if h := d.writeHandleLocked(); h.isOpen() {
 			// Write dirty cached data to the remote file.
-			if err := fsutil.SyncDirtyAll(ctx, &d.cache, &d.dirty, d.size, mf, h.writeFromBlocksAt); err != nil {
+			if err := fsutil.SyncDirtyAll(ctx, &d.cache, &d.dirty, d.size.Load(), mf, h.writeFromBlocksAt); err != nil {
 				log.Warningf("gofer.filesystem.Release: failed to flush dentry: %v", err)
 			}
 			// TODO(jamieliu): Do we need to flushf/fsync d?
@@ -776,7 +777,7 @@ type dentry struct {
 	// reaches 0, the dentry may be added to the cache or destroyed. If refs ==
 	// -1, the dentry has already been destroyed. refs is accessed using atomic
 	// memory operations.
-	refs int64
+	refs atomicbitops.Int64
 
 	// fs is the owning filesystem. fs is immutable.
 	fs *filesystem
@@ -865,10 +866,10 @@ type dentry struct {
 	gid        uint32     // auth.KGID, but ...
 	blockSize  uint32     // 0 if unknown
 	// Timestamps, all nsecs from the Unix epoch.
-	atime int64
-	mtime int64
-	ctime int64
-	btime int64
+	atime atomicbitops.Int64
+	mtime atomicbitops.Int64
+	ctime atomicbitops.Int64
+	btime atomicbitops.Int64
 	// File size, which differs from other metadata in two ways:
 	//
 	// - We make a best-effort attempt to keep it up to date even if
@@ -876,7 +877,7 @@ type dentry struct {
 	//
 	// - size is protected by both metadataMu and dataMu (i.e. both must be
 	// locked to mutate it; locking either is sufficient to access it).
-	size uint64
+	size atomicbitops.Uint64
 	// If this dentry does not represent a synthetic file, deleted is 0, and
 	// atimeDirty/mtimeDirty are non-zero, atime/mtime may have diverged from the
 	// remote file's timestamps, which should be updated when this dentry is
@@ -1025,22 +1026,22 @@ func (fs *filesystem) newDentry(ctx context.Context, file p9file, qid p9.QID, ma
 		d.gid = dentryGIDFromP9GID(attr.GID)
 	}
 	if mask.Size {
-		d.size = attr.Size
+		d.size = atomicbitops.FromUint64(attr.Size)
 	}
 	if attr.BlockSize != 0 {
 		d.blockSize = uint32(attr.BlockSize)
 	}
 	if mask.ATime {
-		d.atime = dentryTimestampFromP9(attr.ATimeSeconds, attr.ATimeNanoSeconds)
+		d.atime = atomicbitops.FromInt64(dentryTimestampFromP9(attr.ATimeSeconds, attr.ATimeNanoSeconds))
 	}
 	if mask.MTime {
-		d.mtime = dentryTimestampFromP9(attr.MTimeSeconds, attr.MTimeNanoSeconds)
+		d.mtime = atomicbitops.FromInt64(dentryTimestampFromP9(attr.MTimeSeconds, attr.MTimeNanoSeconds))
 	}
 	if mask.CTime {
-		d.ctime = dentryTimestampFromP9(attr.CTimeSeconds, attr.CTimeNanoSeconds)
+		d.ctime = atomicbitops.FromInt64(dentryTimestampFromP9(attr.CTimeSeconds, attr.CTimeNanoSeconds))
 	}
 	if mask.BTime {
-		d.btime = dentryTimestampFromP9(attr.BTimeSeconds, attr.BTimeNanoSeconds)
+		d.btime = atomicbitops.FromInt64(dentryTimestampFromP9(attr.BTimeSeconds, attr.BTimeNanoSeconds))
 	}
 	if mask.NLink {
 		d.nlink = uint32(attr.NLink)
@@ -1086,22 +1087,22 @@ func (fs *filesystem) newDentryLisa(ctx context.Context, ino *lisafs.Inode) (*de
 		d.gid = dentryGIDFromLisaGID(lisafs.GID(ino.Stat.GID))
 	}
 	if ino.Stat.Mask&linux.STATX_SIZE != 0 {
-		d.size = ino.Stat.Size
+		d.size = atomicbitops.FromUint64(ino.Stat.Size)
 	}
 	if ino.Stat.Blksize != 0 {
 		d.blockSize = ino.Stat.Blksize
 	}
 	if ino.Stat.Mask&linux.STATX_ATIME != 0 {
-		d.atime = dentryTimestampFromLisa(ino.Stat.Atime)
+		d.atime = atomicbitops.FromInt64(dentryTimestampFromLisa(ino.Stat.Atime))
 	}
 	if ino.Stat.Mask&linux.STATX_MTIME != 0 {
-		d.mtime = dentryTimestampFromLisa(ino.Stat.Mtime)
+		d.mtime = atomicbitops.FromInt64(dentryTimestampFromLisa(ino.Stat.Mtime))
 	}
 	if ino.Stat.Mask&linux.STATX_CTIME != 0 {
-		d.ctime = dentryTimestampFromLisa(ino.Stat.Ctime)
+		d.ctime = atomicbitops.FromInt64(dentryTimestampFromLisa(ino.Stat.Ctime))
 	}
 	if ino.Stat.Mask&linux.STATX_BTIME != 0 {
-		d.btime = dentryTimestampFromLisa(ino.Stat.Btime)
+		d.btime = atomicbitops.FromInt64(dentryTimestampFromLisa(ino.Stat.Btime))
 	}
 	if ino.Stat.Mask&linux.STATX_NLINK != 0 {
 		d.nlink = ino.Stat.Nlink
@@ -1138,7 +1139,7 @@ func (fs *filesystem) inoFromQIDPath(qidPath uint64) uint64 {
 }
 
 func (fs *filesystem) nextIno() uint64 {
-	return atomic.AddUint64(&fs.lastIno, 1)
+	return fs.lastIno.Add(1)
 }
 
 func (d *dentry) isSynthetic() bool {
@@ -1173,16 +1174,16 @@ func (d *dentry) updateFromP9AttrsLocked(mask p9.AttrMask, attr *p9.Attr) {
 	// Don't override newer client-defined timestamps with old server-defined
 	// ones.
 	if mask.ATime && atomic.LoadUint32(&d.atimeDirty) == 0 {
-		atomic.StoreInt64(&d.atime, dentryTimestampFromP9(attr.ATimeSeconds, attr.ATimeNanoSeconds))
+		d.atime.Store(dentryTimestampFromP9(attr.ATimeSeconds, attr.ATimeNanoSeconds))
 	}
 	if mask.MTime && atomic.LoadUint32(&d.mtimeDirty) == 0 {
-		atomic.StoreInt64(&d.mtime, dentryTimestampFromP9(attr.MTimeSeconds, attr.MTimeNanoSeconds))
+		d.mtime.Store(dentryTimestampFromP9(attr.MTimeSeconds, attr.MTimeNanoSeconds))
 	}
 	if mask.CTime {
-		atomic.StoreInt64(&d.ctime, dentryTimestampFromP9(attr.CTimeSeconds, attr.CTimeNanoSeconds))
+		d.ctime.Store(dentryTimestampFromP9(attr.CTimeSeconds, attr.CTimeNanoSeconds))
 	}
 	if mask.BTime {
-		atomic.StoreInt64(&d.btime, dentryTimestampFromP9(attr.BTimeSeconds, attr.BTimeNanoSeconds))
+		d.btime.Store(dentryTimestampFromP9(attr.BTimeSeconds, attr.BTimeNanoSeconds))
 	}
 	if mask.NLink {
 		atomic.StoreUint32(&d.nlink, uint32(attr.NLink))
@@ -1217,16 +1218,16 @@ func (d *dentry) updateFromLisaStatLocked(stat *linux.Statx) {
 	// Don't override newer client-defined timestamps with old server-defined
 	// ones.
 	if stat.Mask&linux.STATX_ATIME != 0 && atomic.LoadUint32(&d.atimeDirty) == 0 {
-		atomic.StoreInt64(&d.atime, dentryTimestampFromLisa(stat.Atime))
+		d.atime.Store(dentryTimestampFromLisa(stat.Atime))
 	}
 	if stat.Mask&linux.STATX_MTIME != 0 && atomic.LoadUint32(&d.mtimeDirty) == 0 {
-		atomic.StoreInt64(&d.mtime, dentryTimestampFromLisa(stat.Mtime))
+		d.mtime.Store(dentryTimestampFromLisa(stat.Mtime))
 	}
 	if stat.Mask&linux.STATX_CTIME != 0 {
-		atomic.StoreInt64(&d.ctime, dentryTimestampFromLisa(stat.Ctime))
+		d.ctime.Store(dentryTimestampFromLisa(stat.Ctime))
 	}
 	if stat.Mask&linux.STATX_BTIME != 0 {
-		atomic.StoreInt64(&d.btime, dentryTimestampFromLisa(stat.Btime))
+		d.btime.Store(dentryTimestampFromLisa(stat.Btime))
 	}
 	if stat.Mask&linux.STATX_NLINK != 0 {
 		atomic.StoreUint32(&d.nlink, stat.Nlink)
@@ -1372,14 +1373,14 @@ func (d *dentry) statTo(stat *linux.Statx) {
 	stat.GID = atomic.LoadUint32(&d.gid)
 	stat.Mode = uint16(atomic.LoadUint32(&d.mode))
 	stat.Ino = uint64(d.ino)
-	stat.Size = atomic.LoadUint64(&d.size)
+	stat.Size = d.size.Load()
 	// This is consistent with regularFileFD.Seek(), which treats regular files
 	// as having no holes.
 	stat.Blocks = (stat.Size + 511) / 512
-	stat.Atime = linux.NsecToStatxTimestamp(atomic.LoadInt64(&d.atime))
-	stat.Btime = linux.NsecToStatxTimestamp(atomic.LoadInt64(&d.btime))
-	stat.Ctime = linux.NsecToStatxTimestamp(atomic.LoadInt64(&d.ctime))
-	stat.Mtime = linux.NsecToStatxTimestamp(atomic.LoadInt64(&d.mtime))
+	stat.Atime = linux.NsecToStatxTimestamp(d.atime.Load())
+	stat.Btime = linux.NsecToStatxTimestamp(d.btime.Load())
+	stat.Ctime = linux.NsecToStatxTimestamp(d.ctime.Load())
+	stat.Mtime = linux.NsecToStatxTimestamp(d.mtime.Load())
 	stat.DevMajor = linux.UNNAMED_MAJOR
 	stat.DevMinor = d.fs.devMinor
 }
@@ -1540,14 +1541,14 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs
 	// !d.cachedMetadataAuthoritative() then we returned after calling
 	// d.file.setAttr(). For the same reason, now must have been initialized.
 	if stat.Mask&linux.STATX_ATIME != 0 && failureMask&linux.STATX_ATIME == 0 {
-		atomic.StoreInt64(&d.atime, stat.Atime.ToNsec())
+		d.atime.Store(stat.Atime.ToNsec())
 		atomic.StoreUint32(&d.atimeDirty, 0)
 	}
 	if stat.Mask&linux.STATX_MTIME != 0 && failureMask&linux.STATX_MTIME == 0 {
-		atomic.StoreInt64(&d.mtime, stat.Mtime.ToNsec())
+		d.mtime.Store(stat.Mtime.ToNsec())
 		atomic.StoreUint32(&d.mtimeDirty, 0)
 	}
-	atomic.StoreInt64(&d.ctime, now)
+	d.ctime.Store(now)
 	if failureMask != 0 {
 		// Setting some attribute failed on the remote filesystem.
 		return failureErr
@@ -1563,7 +1564,7 @@ func (d *dentry) doAllocate(ctx context.Context, offset, length uint64, allocate
 
 	// Allocating a smaller size is a noop.
 	size := offset + length
-	if d.cachedMetadataAuthoritative() && size <= d.size {
+	if d.cachedMetadataAuthoritative() && size <= d.size.RacyLoad() {
 		return nil
 	}
 
@@ -1589,8 +1590,8 @@ func (d *dentry) updateSizeLocked(newSize uint64) {
 // Postconditions: d.dataMu is unlocked.
 // +checklocksrelease:d.dataMu
 func (d *dentry) updateSizeAndUnlockDataMuLocked(newSize uint64) {
-	oldSize := d.size
-	atomic.StoreUint64(&d.size, newSize)
+	oldSize := d.size.RacyLoad()
+	d.size.Store(newSize)
 	// d.dataMu must be unlocked to lock d.mapsMu and invalidate mappings
 	// below. This allows concurrent calls to Read/Translate/etc. These
 	// functions synchronize with truncation by refusing to use cache
@@ -1688,7 +1689,7 @@ func dentryGIDFromLisaGID(gid lisafs.GID) uint32 {
 func (d *dentry) IncRef() {
 	// d.refs may be 0 if d.fs.renameMu is locked, which serializes against
 	// d.checkCachingLocked().
-	r := atomic.AddInt64(&d.refs, 1)
+	r := d.refs.Add(1)
 	if d.LogRefs() {
 		refsvfs2.LogIncRef(d, r)
 	}
@@ -1697,11 +1698,11 @@ func (d *dentry) IncRef() {
 // TryIncRef implements vfs.DentryImpl.TryIncRef.
 func (d *dentry) TryIncRef() bool {
 	for {
-		r := atomic.LoadInt64(&d.refs)
+		r := d.refs.Load()
 		if r <= 0 {
 			return false
 		}
-		if atomic.CompareAndSwapInt64(&d.refs, r, r+1) {
+		if d.refs.CompareAndSwap(r, r+1) {
 			if d.LogRefs() {
 				refsvfs2.LogTryIncRef(d, r+1)
 			}
@@ -1721,7 +1722,7 @@ func (d *dentry) DecRef(ctx context.Context) {
 // d.checkCachingLocked, even if d's reference count reaches 0; callers are
 // responsible for ensuring that d.checkCachingLocked will be called later.
 func (d *dentry) decRefNoCaching() int64 {
-	r := atomic.AddInt64(&d.refs, -1)
+	r := d.refs.Add(-1)
 	if d.LogRefs() {
 		refsvfs2.LogDecRef(d, r)
 	}
@@ -1738,7 +1739,7 @@ func (d *dentry) RefType() string {
 
 // LeakMessage implements refsvfs2.CheckedObject.LeakMessage.
 func (d *dentry) LeakMessage() string {
-	return fmt.Sprintf("[gofer.dentry %p] reference count of %d instead of -1", d, atomic.LoadInt64(&d.refs))
+	return fmt.Sprintf("[gofer.dentry %p] reference count of %d instead of -1", d, d.refs.Load())
 }
 
 // LogRefs implements refsvfs2.CheckedObject.LogRefs.
@@ -1794,7 +1795,7 @@ func (d *dentry) OnZeroWatches(ctx context.Context) {
 // renameMuWriteLocked is true; it may be temporarily unlocked.
 func (d *dentry) checkCachingLocked(ctx context.Context, renameMuWriteLocked bool) {
 	d.cachingMu.Lock()
-	refs := atomic.LoadInt64(&d.refs)
+	refs := d.refs.Load()
 	if refs == -1 {
 		// Dentry has already been destroyed.
 		d.cachingMu.Unlock()
@@ -1821,7 +1822,7 @@ func (d *dentry) checkCachingLocked(ctx context.Context, renameMuWriteLocked boo
 			defer d.fs.renameMu.Unlock()
 			// Now that renameMu is locked for writing, no more refs can be taken on
 			// d because path resolution requires renameMu for reading at least.
-			if atomic.LoadInt64(&d.refs) != 0 {
+			if d.refs.Load() != 0 {
 				// Destroy d only if its ref is still 0. If not, either someone took a
 				// ref on it or it got destroyed before fs.renameMu could be acquired.
 				return
@@ -1928,7 +1929,7 @@ func (fs *filesystem) evictCachedDentryLocked(ctx context.Context) {
 	victim.removeFromCacheLocked()
 	// victim.refs or victim.watches.Size() may have become non-zero from an
 	// earlier path resolution since it was inserted into fs.cachedDentries.
-	if atomic.LoadInt64(&victim.refs) != 0 || victim.watches.Size() != 0 {
+	if victim.refs.Load() != 0 || victim.watches.Size() != 0 {
 		victim.cachingMu.Unlock()
 		return
 	}
@@ -1962,10 +1963,10 @@ func (fs *filesystem) evictCachedDentryLocked(ctx context.Context) {
 //   from its former parent dentry.
 // +checklocks:d.fs.renameMu
 func (d *dentry) destroyLocked(ctx context.Context) {
-	switch atomic.LoadInt64(&d.refs) {
+	switch d.refs.Load() {
 	case 0:
 		// Mark the dentry destroyed.
-		atomic.StoreInt64(&d.refs, -1)
+		d.refs.Store(-1)
 	case -1:
 		panic("dentry.destroyLocked() called on already destroyed dentry")
 	default:
@@ -1981,7 +1982,7 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 	d.dataMu.Lock()
 	if h := d.writeHandleLocked(); h.isOpen() {
 		// Write dirty pages back to the remote filesystem.
-		if err := fsutil.SyncDirtyAll(ctx, &d.cache, &d.dirty, d.size, mf, h.writeFromBlocksAt); err != nil {
+		if err := fsutil.SyncDirtyAll(ctx, &d.cache, &d.dirty, d.size.Load(), mf, h.writeFromBlocksAt); err != nil {
 			log.Warningf("gofer.dentry.destroyLocked: failed to write dirty data back: %v", err)
 		}
 	}
@@ -2425,7 +2426,7 @@ func (d *dentry) syncCachedFile(ctx context.Context, forFilesystemSync bool) err
 	if h.isOpen() {
 		// Write back dirty pages to the remote file.
 		d.dataMu.Lock()
-		err := fsutil.SyncDirtyAll(ctx, &d.cache, &d.dirty, d.size, d.fs.mfp.MemoryFile(), h.writeFromBlocksAt)
+		err := fsutil.SyncDirtyAll(ctx, &d.cache, &d.dirty, d.size.Load(), d.fs.mfp.MemoryFile(), h.writeFromBlocksAt)
 		d.dataMu.Unlock()
 		if err != nil {
 			return err

@@ -65,7 +65,7 @@ func bluepillArchContext(context unsafe.Pointer) *arch.SignalContext64 {
 //go:nosplit
 func bluepillGuestExit(c *vCPU, context unsafe.Pointer) {
 	// Increment our counter.
-	atomic.AddUint64(&c.guestExits, 1)
+	c.guestExits.Add(1)
 
 	// Copy out registers.
 	bluepillArchExit(c, bluepillArchContext(context))

@@ -20,11 +20,11 @@ import (
 	"math"
 	"os"
 	"strings"
-	"sync/atomic"
 	"syscall"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 )
 
 // OpenFlags is the mode passed to Open and Create operations.
@@ -511,7 +511,7 @@ func (q *QID) encode(b *buffer) {
 type QIDGenerator struct {
 	// uids is an ever increasing value that can be atomically incremented
 	// to provide unique Path values for QIDs.
-	uids uint64
+	uids atomicbitops.Uint64
 }
 
 // Get returns a new 9P unique ID with a unique Path given a QID type.
@@ -523,7 +523,7 @@ func (q *QIDGenerator) Get(t QIDType) QID {
 	return QID{
 		Type:    t,
 		Version: 0,
-		Path:    atomic.AddUint64(&q.uids, 1),
+		Path:    q.uids.Add(1),
 	}
 }
 

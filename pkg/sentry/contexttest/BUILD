@@ -8,6 +8,7 @@ go_library(
     srcs = ["contexttest.go"],
     visibility = ["//pkg/sentry:internal"],
     deps = [
+        "//pkg/atomicbitops",
         "//pkg/context",
         "//pkg/memutil",
         "//pkg/sentry/kernel/auth",

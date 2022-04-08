@@ -39,7 +39,7 @@ func (d *dentry) touchAtime(mnt *vfs.Mount) {
 	}
 	now := d.fs.clock.Now().Nanoseconds()
 	d.metadataMu.Lock()
-	atomic.StoreInt64(&d.atime, now)
+	d.atime.Store(now)
 	atomic.StoreUint32(&d.atimeDirty, 1)
 	d.metadataMu.Unlock()
 	mnt.EndWrite()
@@ -54,7 +54,7 @@ func (d *dentry) touchAtimeLocked(mnt *vfs.Mount) {
 		return
 	}
 	now := d.fs.clock.Now().Nanoseconds()
-	atomic.StoreInt64(&d.atime, now)
+	d.atime.Store(now)
 	atomic.StoreUint32(&d.atimeDirty, 1)
 	mnt.EndWrite()
 }
@@ -65,7 +65,7 @@ func (d *dentry) touchAtimeLocked(mnt *vfs.Mount) {
 func (d *dentry) touchCtime() {
 	now := d.fs.clock.Now().Nanoseconds()
 	d.metadataMu.Lock()
-	atomic.StoreInt64(&d.ctime, now)
+	d.ctime.Store(now)
 	d.metadataMu.Unlock()
 }
 
@@ -75,8 +75,8 @@ func (d *dentry) touchCtime() {
 func (d *dentry) touchCMtime() {
 	now := d.fs.clock.Now().Nanoseconds()
 	d.metadataMu.Lock()
-	atomic.StoreInt64(&d.mtime, now)
-	atomic.StoreInt64(&d.ctime, now)
+	d.mtime.Store(now)
+	d.ctime.Store(now)
 	atomic.StoreUint32(&d.mtimeDirty, 1)
 	d.metadataMu.Unlock()
 }
@@ -86,7 +86,7 @@ func (d *dentry) touchCMtime() {
 // * The caller has locked d.metadataMu.
 func (d *dentry) touchCMtimeLocked() {
 	now := d.fs.clock.Now().Nanoseconds()
-	atomic.StoreInt64(&d.mtime, now)
-	atomic.StoreInt64(&d.ctime, now)
+	d.mtime.Store(now)
+	d.ctime.Store(now)
 	atomic.StoreUint32(&d.mtimeDirty, 1)
 }

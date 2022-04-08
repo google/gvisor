@@ -14,77 +14,86 @@
 
 package usage
 
-import (
-	"sync/atomic"
-)
+import "gvisor.dev/gvisor/pkg/atomicbitops"
 
 // IO contains I/O-related statistics.
 //
 // +stateify savable
 type IO struct {
 	// CharsRead is the number of bytes read by read syscalls.
-	CharsRead uint64
+	CharsRead atomicbitops.Uint64
 
 	// CharsWritten is the number of bytes written by write syscalls.
-	CharsWritten uint64
+	CharsWritten atomicbitops.Uint64
 
 	// ReadSyscalls is the number of read syscalls.
-	ReadSyscalls uint64
+	ReadSyscalls atomicbitops.Uint64
 
 	// WriteSyscalls is the number of write syscalls.
-	WriteSyscalls uint64
+	WriteSyscalls atomicbitops.Uint64
 
 	// The following counter is only meaningful when Sentry has internal
 	// pagecache.
 
 	// BytesRead is the number of bytes actually read into pagecache.
-	BytesRead uint64
+	BytesRead atomicbitops.Uint64
 
 	// BytesWritten is the number of bytes actually written from pagecache.
-	BytesWritten uint64
+	BytesWritten atomicbitops.Uint64
 
 	// BytesWriteCancelled is the number of bytes not written out due to
 	// truncation.
-	BytesWriteCancelled uint64
+	BytesWriteCancelled atomicbitops.Uint64
+}
+
+// Clone turns other into a clone of i.
+func (i *IO) Clone(other *IO) {
+	other.CharsRead.Store(i.CharsRead.Load())
+	other.CharsWritten.Store(i.CharsWritten.Load())
+	other.ReadSyscalls.Store(i.ReadSyscalls.Load())
+	other.WriteSyscalls.Store(i.WriteSyscalls.Load())
+	other.BytesRead.Store(i.BytesRead.Load())
+	other.BytesWritten.Store(i.BytesWritten.Load())
+	other.BytesWriteCancelled.Store(i.BytesWriteCancelled.Load())
 }
 
 // AccountReadSyscall does the accounting for a read syscall.
 func (i *IO) AccountReadSyscall(bytes int64) {
-	atomic.AddUint64(&i.ReadSyscalls, 1)
+	i.ReadSyscalls.Add(1)
 	if bytes > 0 {
-		atomic.AddUint64(&i.CharsRead, uint64(bytes))
+		i.CharsRead.Add(uint64(bytes))
 	}
 }
 
 // AccountWriteSyscall does the accounting for a write syscall.
 func (i *IO) AccountWriteSyscall(bytes int64) {
-	atomic.AddUint64(&i.WriteSyscalls, 1)
+	i.WriteSyscalls.Add(1)
 	if bytes > 0 {
-		atomic.AddUint64(&i.CharsWritten, uint64(bytes))
+		i.CharsWritten.Add(uint64(bytes))
 	}
 }
 
 // AccountReadIO does the accounting for a read IO into the file system.
 func (i *IO) AccountReadIO(bytes int64) {
 	if bytes > 0 {
-		atomic.AddUint64(&i.BytesRead, uint64(bytes))
+		i.BytesRead.Add(uint64(bytes))
 	}
 }
 
 // AccountWriteIO does the accounting for a write IO into the file system.
 func (i *IO) AccountWriteIO(bytes int64) {
 	if bytes > 0 {
-		atomic.AddUint64(&i.BytesWritten, uint64(bytes))
+		i.BytesWritten.Add(uint64(bytes))
 	}
 }
 
 // Accumulate adds up io usages.
 func (i *IO) Accumulate(io *IO) {
-	atomic.AddUint64(&i.CharsRead, atomic.LoadUint64(&io.CharsRead))
-	atomic.AddUint64(&i.CharsWritten, atomic.LoadUint64(&io.CharsWritten))
-	atomic.AddUint64(&i.ReadSyscalls, atomic.LoadUint64(&io.ReadSyscalls))
-	atomic.AddUint64(&i.WriteSyscalls, atomic.LoadUint64(&io.WriteSyscalls))
-	atomic.AddUint64(&i.BytesRead, atomic.LoadUint64(&io.BytesRead))
-	atomic.AddUint64(&i.BytesWritten, atomic.LoadUint64(&io.BytesWritten))
-	atomic.AddUint64(&i.BytesWriteCancelled, atomic.LoadUint64(&io.BytesWriteCancelled))
+	i.CharsRead.Add(io.CharsRead.Load())
+	i.CharsWritten.Add(io.CharsWritten.Load())
+	i.ReadSyscalls.Add(io.ReadSyscalls.Load())
+	i.WriteSyscalls.Add(io.WriteSyscalls.Load())
+	i.BytesRead.Add(io.BytesRead.Load())
+	i.BytesWritten.Add(io.BytesWritten.Load())
+	i.BytesWriteCancelled.Add(io.BytesWriteCancelled.Load())
 }

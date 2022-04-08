@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -62,7 +63,7 @@ type Task struct {
 	// but since it's used to detect cases where non-task goroutines
 	// incorrectly access state owned by, or exclusive to, the task goroutine,
 	// goid is always accessed using atomic memory operations.
-	goid int64 `state:"nosave"`
+	goid atomicbitops.Int64 `state:"nosave"`
 
 	// runState is what the task goroutine is executing if it is not stopped.
 	// If runState is nil, the task goroutine should exit or has exited.
@@ -111,7 +112,7 @@ type Task struct {
 	//
 	// yieldCount is accessed using atomic memory operations. yieldCount is
 	// owned by the task goroutine.
-	yieldCount uint64
+	yieldCount atomicbitops.Uint64
 
 	// pendingSignals is the set of pending signals that may be handled only by
 	// this task.
@@ -128,7 +129,7 @@ type Task struct {
 	// signal mutex is locked or if atomic memory operations are used, while
 	// writing signalMask requires both). signalMask is owned by the task
 	// goroutine.
-	signalMask linux.SignalSet
+	signalMask atomicbitops.Uint64
 
 	// If the task goroutine is currently executing Task.sigtimedwait,
 	// realSignalMask is the previous value of signalMask, which has temporarily

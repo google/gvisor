@@ -15,8 +15,9 @@
 package pipe
 
 import (
-	"sync/atomic"
 	"unsafe"
+
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 )
 
 func (p *pipe) write(idx uint64, v uint64) {
@@ -25,11 +26,11 @@ func (p *pipe) write(idx uint64, v uint64) {
 }
 
 func (p *pipe) writeAtomic(idx uint64, v uint64) {
-	ptr := (*uint64)(unsafe.Pointer(&p.buffer[idx&offsetMask:][:8][0]))
-	atomic.StoreUint64(ptr, v)
+	ptr := (*atomicbitops.Uint64)(unsafe.Pointer(&p.buffer[idx&offsetMask:][:8][0]))
+	ptr.Store(v)
 }
 
 func (p *pipe) readAtomic(idx uint64) uint64 {
-	ptr := (*uint64)(unsafe.Pointer(&p.buffer[idx&offsetMask:][:8][0]))
-	return atomic.LoadUint64(ptr)
+	ptr := (*atomicbitops.Uint64)(unsafe.Pointer(&p.buffer[idx&offsetMask:][:8][0]))
+	return ptr.Load()
 }

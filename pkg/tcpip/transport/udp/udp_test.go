@@ -426,7 +426,8 @@ func TestV4ReadBroadcastOnBoundToWildcard(t *testing.T) {
 func testFailingWrite(c *context.Context, flow context.TestFlow, payloadSize int, wantErr tcpip.Error) {
 	c.T.Helper()
 	// Take a snapshot of the stats to validate them at the end of the test.
-	epstats := c.EP.Stats().(*tcpip.TransportEndpointStats).Clone()
+	var epstats tcpip.TransportEndpointStats
+	c.EP.Stats().(*tcpip.TransportEndpointStats).Clone(&epstats)
 	h := flow.MakeHeader4Tuple(context.Outgoing)
 	writeDstAddr := flow.MapAddrIfApplicable(h.Dst.Addr)
 
@@ -435,7 +436,7 @@ func testFailingWrite(c *context.Context, flow context.TestFlow, payloadSize int
 	_, gotErr := c.EP.Write(&r, tcpip.WriteOptions{
 		To: &tcpip.FullAddress{Addr: writeDstAddr, Port: h.Dst.Port},
 	})
-	c.CheckEndpointWriteStats(1, epstats, gotErr)
+	c.CheckEndpointWriteStats(1, &epstats, gotErr)
 	if gotErr != wantErr {
 		c.T.Fatalf("Write returned unexpected error: got %v, want %v", gotErr, wantErr)
 	}
@@ -468,7 +469,8 @@ func testWriteWithoutDestination(c *context.Context, flow context.TestFlow, chec
 func testWriteNoVerify(c *context.Context, flow context.TestFlow, setDest bool) buffer.View {
 	c.T.Helper()
 	// Take a snapshot of the stats to validate them at the end of the test.
-	epstats := c.EP.Stats().(*tcpip.TransportEndpointStats).Clone()
+	var epstats tcpip.TransportEndpointStats
+	c.EP.Stats().(*tcpip.TransportEndpointStats).Clone(&epstats)
 
 	writeOpts := tcpip.WriteOptions{}
 	if setDest {
@@ -488,7 +490,7 @@ func testWriteNoVerify(c *context.Context, flow context.TestFlow, setDest bool) 
 	if n != int64(len(payload)) {
 		c.T.Fatalf("Bad number of bytes written: got %v, want %v", n, len(payload))
 	}
-	c.CheckEndpointWriteStats(1, epstats, err)
+	c.CheckEndpointWriteStats(1, &epstats, err)
 	return payload
 }
 

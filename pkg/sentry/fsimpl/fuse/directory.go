@@ -15,8 +15,6 @@
 package fuse
 
 import (
-	"sync/atomic"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -62,7 +60,7 @@ func (dir *directoryFD) IterDirents(ctx context.Context, callback vfs.IterDirent
 
 	in := linux.FUSEReadIn{
 		Fh:     dir.Fh,
-		Offset: uint64(atomic.LoadInt64(&dir.off)),
+		Offset: uint64(dir.off.Load()),
 		Size:   linux.FUSE_PAGE_SIZE,
 		Flags:  dir.statusFlags(),
 	}
@@ -94,7 +92,7 @@ func (dir *directoryFD) IterDirents(ctx context.Context, callback vfs.IterDirent
 		if err := callback.Handle(dirent); err != nil {
 			return err
 		}
-		atomic.StoreInt64(&dir.off, nextOff)
+		dir.off.Store(nextOff)
 	}
 
 	return nil

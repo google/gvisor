@@ -68,46 +68,46 @@ func CompareAndSwapUint32(addr *uint32, old, new uint32) (prev uint32) {
 }
 
 //go:nosplit
-func AndUint64(addr *uint64, val uint64) {
+func AndUint64(addr *Uint64, val uint64) {
 	for {
-		o := atomic.LoadUint64(addr)
+		o := atomic.LoadUint64(addr.ptr())
 		n := o & val
-		if atomic.CompareAndSwapUint64(addr, o, n) {
+		if atomic.CompareAndSwapUint64(addr.ptr(), o, n) {
 			break
 		}
 	}
 }
 
 //go:nosplit
-func OrUint64(addr *uint64, val uint64) {
+func OrUint64(addr *Uint64, val uint64) {
 	for {
-		o := atomic.LoadUint64(addr)
+		o := atomic.LoadUint64(addr.ptr())
 		n := o | val
-		if atomic.CompareAndSwapUint64(addr, o, n) {
+		if atomic.CompareAndSwapUint64(addr.ptr(), o, n) {
 			break
 		}
 	}
 }
 
 //go:nosplit
-func XorUint64(addr *uint64, val uint64) {
+func XorUint64(addr *Uint64, val uint64) {
 	for {
-		o := atomic.LoadUint64(addr)
+		o := atomic.LoadUint64(addr.ptr())
 		n := o ^ val
-		if atomic.CompareAndSwapUint64(addr, o, n) {
+		if atomic.CompareAndSwapUint64(addr.ptr(), o, n) {
 			break
 		}
 	}
 }
 
 //go:nosplit
-func CompareAndSwapUint64(addr *uint64, old, new uint64) (prev uint64) {
+func CompareAndSwapUint64(addr *Uint64, old, new uint64) (prev uint64) {
 	for {
-		prev = atomic.LoadUint64(addr)
+		prev = atomic.LoadUint64(addr.ptr())
 		if prev != old {
 			return
 		}
-		if atomic.CompareAndSwapUint64(addr, old, new) {
+		if atomic.CompareAndSwapUint64(addr.ptr(), old, new) {
 			return
 		}
 	}

@@ -774,13 +774,13 @@ func (i *ioData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]se
 	io.Accumulate(i.IOUsage())
 
 	var buf bytes.Buffer
-	fmt.Fprintf(&buf, "rchar: %d\n", io.CharsRead)
-	fmt.Fprintf(&buf, "wchar: %d\n", io.CharsWritten)
-	fmt.Fprintf(&buf, "syscr: %d\n", io.ReadSyscalls)
-	fmt.Fprintf(&buf, "syscw: %d\n", io.WriteSyscalls)
-	fmt.Fprintf(&buf, "read_bytes: %d\n", io.BytesRead)
-	fmt.Fprintf(&buf, "write_bytes: %d\n", io.BytesWritten)
-	fmt.Fprintf(&buf, "cancelled_write_bytes: %d\n", io.BytesWriteCancelled)
+	fmt.Fprintf(&buf, "rchar: %d\n", io.CharsRead.Load())
+	fmt.Fprintf(&buf, "wchar: %d\n", io.CharsWritten.Load())
+	fmt.Fprintf(&buf, "syscr: %d\n", io.ReadSyscalls.Load())
+	fmt.Fprintf(&buf, "syscw: %d\n", io.WriteSyscalls.Load())
+	fmt.Fprintf(&buf, "read_bytes: %d\n", io.BytesRead.Load())
+	fmt.Fprintf(&buf, "write_bytes: %d\n", io.BytesWritten.Load())
+	fmt.Fprintf(&buf, "cancelled_write_bytes: %d\n", io.BytesWriteCancelled.Load())
 
 	return []seqfile.SeqData{{Buf: buf.Bytes(), Handle: (*ioData)(nil)}}, 0
 }

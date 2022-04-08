@@ -60,6 +60,7 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
@@ -109,7 +110,7 @@ type Filesystem struct {
 
 	// nextInoMinusOne is used to to allocate inode numbers on this
 	// filesystem. Must be accessed by atomic operations.
-	nextInoMinusOne uint64
+	nextInoMinusOne atomicbitops.Uint64
 
 	// cachedDentries contains all dentries with 0 references. (Due to race
 	// conditions, it may also contain dentries with non-zero references.)
@@ -184,7 +185,7 @@ func (fs *Filesystem) VFSFilesystem() *vfs.Filesystem {
 
 // NextIno allocates a new inode number on this filesystem.
 func (fs *Filesystem) NextIno() uint64 {
-	return atomic.AddUint64(&fs.nextInoMinusOne, 1)
+	return fs.nextInoMinusOne.Add(1)
 }
 
 // These consts are used in the Dentry.flags field.
@@ -214,7 +215,7 @@ type Dentry struct {
 	// added to the cache or destroyed. If refs == -1, the dentry has already
 	// been destroyed. refs are allowed to go to 0 and increase again. refs is
 	// accessed using atomic memory operations.
-	refs int64
+	refs atomicbitops.Int64
 
 	// fs is the owning filesystem. fs is immutable.
 	fs *Filesystem
@@ -247,7 +248,7 @@ type Dentry struct {
 func (d *Dentry) IncRef() {
 	// d.refs may be 0 if d.fs.mu is locked, which serializes against
 	// d.cacheLocked().
-	r := atomic.AddInt64(&d.refs, 1)
+	r := d.refs.Add(1)
 	if d.LogRefs() {
 		refsvfs2.LogIncRef(d, r)
 	}
@@ -256,11 +257,11 @@ func (d *Dentry) IncRef() {
 // TryIncRef implements vfs.DentryImpl.TryIncRef.
 func (d *Dentry) TryIncRef() bool {
 	for {
-		r := atomic.LoadInt64(&d.refs)
+		r := d.refs.Load()
 		if r <= 0 {
 			return false
 		}
-		if atomic.CompareAndSwapInt64(&d.refs, r, r+1) {
+		if d.refs.CompareAndSwap(r, r+1) {
 			if d.LogRefs() {
 				refsvfs2.LogTryIncRef(d, r+1)
 			}
@@ -271,7 +272,7 @@ func (d *Dentry) TryIncRef() bool {
 
 // DecRef implements vfs.DentryImpl.DecRef.
 func (d *Dentry) DecRef(ctx context.Context) {
-	r := atomic.AddInt64(&d.refs, -1)
+	r := d.refs.Add(-1)
 	if d.LogRefs() {
 		refsvfs2.LogDecRef(d, r)
 	}
@@ -285,7 +286,7 @@ func (d *Dentry) DecRef(ctx context.Context) {
 }
 
 func (d *Dentry) decRefLocked(ctx context.Context) {
-	r := atomic.AddInt64(&d.refs, -1)
+	r := d.refs.Add(-1)
 	if d.LogRefs() {
 		refsvfs2.LogDecRef(d, r)
 	}
@@ -309,7 +310,7 @@ func (d *Dentry) cacheLocked(ctx context.Context) {
 	// to obtain a reference on a dentry with zero references is via path
 	// resolution, which requires d.fs.mu, so if d.refs is zero then it will
 	// remain zero while we hold d.fs.mu for writing.)
-	refs := atomic.LoadInt64(&d.refs)
+	refs := d.refs.Load()
 	if refs == -1 {
 		// Dentry has already been destroyed.
 		return
@@ -370,7 +371,7 @@ func (fs *Filesystem) evictCachedDentryLocked(ctx context.Context) {
 	victim.cached = false
 	// victim.refs may have become non-zero from an earlier path resolution
 	// after it was inserted into fs.cachedDentries.
-	if atomic.LoadInt64(&victim.refs) == 0 {
+	if victim.refs.Load() == 0 {
 		if !victim.vfsd.IsDead() {
 			victim.parent.dirMu.Lock()
 			// Note that victim can't be a mount point (in any mount
@@ -394,11 +395,11 @@ func (fs *Filesystem) evictCachedDentryLocked(ctx context.Context) {
 //   by path traversal.
 // * d.vfsd.IsDead() is true.
 func (d *Dentry) destroyLocked(ctx context.Context) {
-	refs := atomic.LoadInt64(&d.refs)
+	refs := d.refs.Load()
 	switch refs {
 	case 0:
 		// Mark the dentry destroyed.
-		atomic.StoreInt64(&d.refs, -1)
+		d.refs.Store(-1)
 	case -1:
 		panic("dentry.destroyLocked() called on already destroyed dentry")
 	default:
@@ -422,7 +423,7 @@ func (d *Dentry) RefType() string {
 
 // LeakMessage implements refsvfs2.CheckedObject.LeakMessage.
 func (d *Dentry) LeakMessage() string {
-	return fmt.Sprintf("[kernfs.Dentry %p] reference count of %d instead of -1", d, atomic.LoadInt64(&d.refs))
+	return fmt.Sprintf("[kernfs.Dentry %p] reference count of %d instead of -1", d, d.refs.Load())
 }
 
 // LogRefs implements refsvfs2.CheckedObject.LogRefs.
@@ -455,7 +456,7 @@ func (d *Dentry) Init(fs *Filesystem, inode Inode) {
 	d.vfsd.Init(d)
 	d.fs = fs
 	d.inode = inode
-	atomic.StoreInt64(&d.refs, 1)
+	d.refs.Store(1)
 	ftype := inode.Mode().FileType()
 	if ftype == linux.ModeDirectory {
 		d.flags |= dflagsIsDir

@@ -17,9 +17,9 @@ package usage
 import (
 	"fmt"
 	"os"
-	"sync/atomic"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -76,16 +76,27 @@ const (
 	Mapped
 )
 
-// MemoryStats tracks application memory usage in bytes. All fields correspond to the
+// memoryStats tracks application memory usage in bytes. All fields correspond to the
 // memory category with the same name. This object is thread-safe if accessed
 // through the provided methods. The public fields may be safely accessed
 // directly on a copy of the object obtained from Memory.Copy().
+type memoryStats struct {
+	System    atomicbitops.Uint64
+	Anonymous atomicbitops.Uint64
+	PageCache atomicbitops.Uint64
+	Tmpfs     atomicbitops.Uint64
+	// Lazily updated based on the value in RTMapped.
+	Mapped    atomicbitops.Uint64
+	Ramdiskfs atomicbitops.Uint64
+}
+
+// MemoryStats tracks application memory usage in bytes. All fields correspond
+// to the memory category with the same name.
 type MemoryStats struct {
 	System    uint64
 	Anonymous uint64
 	PageCache uint64
 	Tmpfs     uint64
-	// Lazily updated based on the value in RTMapped.
 	Mapped    uint64
 	Ramdiskfs uint64
 }
@@ -102,14 +113,14 @@ type MemoryStats struct {
 // initially zeroed. Any added field will be ignored by an older API and will be
 // zero if read by a newer API.
 type RTMemoryStats struct {
-	RTMapped uint64
+	RTMapped atomicbitops.Uint64
 }
 
 // MemoryLocked is Memory with access methods.
 type MemoryLocked struct {
 	mu sync.RWMutex
-	// MemoryStats records the memory stats.
-	MemoryStats
+	// memoryStats records the memory stats.
+	memoryStats
 	// RTMemoryStats records the memory stats that need to be exposed through
 	// shared page.
 	*RTMemoryStats
@@ -154,17 +165,17 @@ var MemoryAccounting *MemoryLocked
 func (m *MemoryLocked) incLocked(val uint64, kind MemoryKind) {
 	switch kind {
 	case System:
-		atomic.AddUint64(&m.System, val)
+		m.System.Add(val)
 	case Anonymous:
-		atomic.AddUint64(&m.Anonymous, val)
+		m.Anonymous.Add(val)
 	case PageCache:
-		atomic.AddUint64(&m.PageCache, val)
+		m.PageCache.Add(val)
 	case Mapped:
-		atomic.AddUint64(&m.RTMapped, val)
+		m.RTMapped.Add(val)
 	case Tmpfs:
-		atomic.AddUint64(&m.Tmpfs, val)
+		m.Tmpfs.Add(val)
 	case Ramdiskfs:
-		atomic.AddUint64(&m.Ramdiskfs, val)
+		m.Ramdiskfs.Add(val)
 	default:
 		panic(fmt.Sprintf("invalid memory kind: %v", kind))
 	}
@@ -182,17 +193,17 @@ func (m *MemoryLocked) Inc(val uint64, kind MemoryKind) {
 func (m *MemoryLocked) decLocked(val uint64, kind MemoryKind) {
 	switch kind {
 	case System:
-		atomic.AddUint64(&m.System, ^(val - 1))
+		m.System.Add(^(val - 1))
 	case Anonymous:
-		atomic.AddUint64(&m.Anonymous, ^(val - 1))
+		m.Anonymous.Add(^(val - 1))
 	case PageCache:
-		atomic.AddUint64(&m.PageCache, ^(val - 1))
+		m.PageCache.Add(^(val - 1))
 	case Mapped:
-		atomic.AddUint64(&m.RTMapped, ^(val - 1))
+		m.RTMapped.Add(^(val - 1))
 	case Tmpfs:
-		atomic.AddUint64(&m.Tmpfs, ^(val - 1))
+		m.Tmpfs.Add(^(val - 1))
 	case Ramdiskfs:
-		atomic.AddUint64(&m.Ramdiskfs, ^(val - 1))
+		m.Ramdiskfs.Add(^(val - 1))
 	default:
 		panic(fmt.Sprintf("invalid memory kind: %v", kind))
 	}
@@ -223,12 +234,12 @@ func (m *MemoryLocked) Move(val uint64, to MemoryKind, from MemoryKind) {
 //
 // Precondition: must be called when locked.
 func (m *MemoryLocked) totalLocked() (total uint64) {
-	total += atomic.LoadUint64(&m.System)
-	total += atomic.LoadUint64(&m.Anonymous)
-	total += atomic.LoadUint64(&m.PageCache)
-	total += atomic.LoadUint64(&m.RTMapped)
-	total += atomic.LoadUint64(&m.Tmpfs)
-	total += atomic.LoadUint64(&m.Ramdiskfs)
+	total += m.System.Load()
+	total += m.Anonymous.Load()
+	total += m.PageCache.Load()
+	total += m.RTMapped.Load()
+	total += m.Tmpfs.Load()
+	total += m.Ramdiskfs.Load()
 	return
 }
 
@@ -247,8 +258,14 @@ func (m *MemoryLocked) Total() uint64 {
 func (m *MemoryLocked) Copy() (MemoryStats, uint64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	ms := m.MemoryStats
-	ms.Mapped = m.RTMapped
+	ms := MemoryStats{
+		System:    m.System.RacyLoad(),
+		Anonymous: m.Anonymous.RacyLoad(),
+		PageCache: m.PageCache.RacyLoad(),
+		Tmpfs:     m.Tmpfs.RacyLoad(),
+		Mapped:    m.RTMapped.RacyLoad(),
+		Ramdiskfs: m.Ramdiskfs.RacyLoad(),
+	}
 	return ms, m.totalLocked()
 }
 

@@ -116,13 +116,13 @@ type vCPU struct {
 	fd int
 
 	// tid is the last set tid.
-	tid uint64
+	tid atomicbitops.Uint64
 
 	// userExits is the count of user exits.
-	userExits uint64
+	userExits atomicbitops.Uint64
 
 	// guestExits is the count of guest to host world switches.
-	guestExits uint64
+	guestExits atomicbitops.Uint64
 
 	// faults is a count of world faults (informational only).
 	faults uint32
@@ -505,7 +505,8 @@ func (m *machine) Put(c *vCPU) {
 // newDirtySet returns a new dirty set.
 func (m *machine) newDirtySet() *dirtySet {
 	return &dirtySet{
-		vCPUMasks: make([]uint64, (m.maxVCPUs+63)/64, (m.maxVCPUs+63)/64),
+		vCPUMasks: make([]atomicbitops.Uint64,
+			(m.maxVCPUs+63)/64, (m.maxVCPUs+63)/64),
 	}
 }
 
@@ -587,8 +588,8 @@ var pid = unix.Getpid()
 //
 // This effectively unwinds the state machine.
 func (c *vCPU) bounce(forceGuestExit bool) {
-	origGuestExits := atomic.LoadUint64(&c.guestExits)
-	origUserExits := atomic.LoadUint64(&c.userExits)
+	origGuestExits := c.guestExits.Load()
+	origUserExits := c.userExits.Load()
 	for {
 		switch state := atomic.LoadUint32(&c.state); state {
 		case vCPUReady, vCPUWaiter:
@@ -623,7 +624,7 @@ func (c *vCPU) bounce(forceGuestExit bool) {
 				// under memory pressure. Since we already
 				// marked ourselves as a waiter, we need to
 				// ensure that a signal is actually delivered.
-				if err := unix.Tgkill(pid, int(atomic.LoadUint64(&c.tid)), bounceSignal); err == nil {
+				if err := unix.Tgkill(pid, int(c.tid.Load()), bounceSignal); err == nil {
 					break
 				} else if err.(unix.Errno) == unix.EAGAIN {
 					continue
@@ -647,8 +648,8 @@ func (c *vCPU) bounce(forceGuestExit bool) {
 
 		// Check if we've missed the state transition, but
 		// we can safely return at this point in time.
-		newGuestExits := atomic.LoadUint64(&c.guestExits)
-		newUserExits := atomic.LoadUint64(&c.userExits)
+		newGuestExits := c.guestExits.Load()
+		newUserExits := c.userExits.Load()
 		if newUserExits != origUserExits && (!forceGuestExit || newGuestExits != origGuestExits) {
 			return
 		}

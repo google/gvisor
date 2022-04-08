@@ -186,7 +186,7 @@ func (t *Task) cpuStatsAt(now uint64) usage.CPUStats {
 	return usage.CPUStats{
 		UserTime:          time.Duration(tsched.userTicksAt(now) * uint64(linux.ClockTick)),
 		SysTime:           time.Duration(tsched.sysTicksAt(now) * uint64(linux.ClockTick)),
-		VoluntarySwitches: atomic.LoadUint64(&t.yieldCount),
+		VoluntarySwitches: t.yieldCount.Load(),
 	}
 }
 
@@ -360,7 +360,7 @@ func (ticker *kernelCPUClockTicker) NotifyTimer(exp uint64, setting ktime.Settin
 	// presumably task goroutines as well, from executing for a long period of
 	// time. It's also necessary to prevent CPU clocks from seeing large
 	// discontinuous jumps.
-	now := atomic.AddUint64(&ticker.k.cpuClock, 1)
+	now := ticker.k.cpuClock.Add(1)
 
 	// Check thread group CPU timers.
 	tgs := ticker.k.tasks.Root.ThreadGroupsAppend(ticker.tgs)
@@ -451,11 +451,11 @@ func (ticker *kernelCPUClockTicker) NotifyTimer(exp uint64, setting ktime.Settin
 	ticker.tgs = tgs[:0]
 
 	// If nothing is running, we can disable the timer.
-	tasks := atomic.LoadInt64(&ticker.k.runningTasks)
+	tasks := ticker.k.runningTasks.Load()
 	if tasks == 0 {
 		ticker.k.runningTasksMu.Lock()
 		defer ticker.k.runningTasksMu.Unlock()
-		tasks := atomic.LoadInt64(&ticker.k.runningTasks)
+		tasks := ticker.k.runningTasks.Load()
 		if tasks != 0 {
 			// Raced with a 0 -> 1 transition.
 			return setting, false

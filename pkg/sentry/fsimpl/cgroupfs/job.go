@@ -15,6 +15,7 @@
 package cgroupfs
 
 import (
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -25,7 +26,7 @@ type jobController struct {
 	controllerCommon
 	controllerStateless
 
-	id int64
+	id atomicbitops.Int64
 }
 
 var _ controller = (*jobController)(nil)
@@ -39,7 +40,7 @@ func newJobController(fs *filesystem) *jobController {
 // Clone implements controller.Clone.
 func (c *jobController) Clone() controller {
 	new := &jobController{
-		id: c.id,
+		id: atomicbitops.FromInt64(c.id.Load()),
 	}
 	new.controllerCommon.cloneFromParent(c)
 	return new
