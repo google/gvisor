@@ -22,9 +22,9 @@ import (
 	"math"
 	"runtime"
 	"strings"
-	"sync/atomic"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -305,6 +305,16 @@ type sndQueueInfo struct {
 	sndWaker sleep.Waker `state:"manual"`
 }
 
+// CloneState clones sq into other. It is not thread safe
+func (sq *sndQueueInfo) CloneState(other *stack.TCPSndBufState) {
+	other.SndBufSize = sq.SndBufSize
+	other.SndBufUsed = sq.SndBufUsed
+	other.SndClosed = sq.SndClosed
+	other.PacketTooBigCount = sq.PacketTooBigCount
+	other.SndMTU = sq.SndMTU
+	other.AutoTuneSndBufDisabled = atomicbitops.FromUint32(sq.AutoTuneSndBufDisabled.RacyLoad())
+}
+
 // rcvQueueInfo contains the endpoint's rcvQueue and associated metadata.
 //
 // +stateify savable
@@ -412,9 +422,7 @@ type endpoint struct {
 	// compute the window and the actual available buffer space. This is distinct
 	// from rcvBufUsed above which is the actual number of payload bytes held in
 	// the buffer not including any segment overheads.
-	//
-	// rcvMemUsed must be accessed atomically.
-	rcvMemUsed int32
+	rcvMemUsed atomicbitops.Int32
 
 	// mu protects all endpoint fields unless documented otherwise. mu must
 	// be acquired before interacting with the endpoint fields.
@@ -422,11 +430,11 @@ type endpoint struct {
 	// During handshake, mu is locked by the protocol listen goroutine and
 	// released by the handshake completion goroutine.
 	mu          sync.CrossGoroutineMutex `state:"nosave"`
-	ownedByUser uint32
+	ownedByUser atomicbitops.Uint32
 
 	// state must be read/set using the EndpointState()/setEndpointState()
 	// methods.
-	state uint32 `state:".(EndpointState)"`
+	state atomicbitops.Uint32 `state:".(EndpointState)"`
 
 	// origEndpointState is only used during a restore phase to save the
 	// endpoint state at restore time as the socket is moved to it's correct
@@ -528,8 +536,8 @@ type endpoint struct {
 	notificationWaker sleep.Waker `state:"manual"`
 
 	// notifyFlags is a bitmask of flags used to indicate to the protocol
-	// goroutine what it was notified; this is only accessed atomically.
-	notifyFlags uint32 `state:"nosave"`
+	// goroutine what it was notified.
+	notifyFlags atomicbitops.Uint32 `state:"nosave"`
 
 	// keepalive manages TCP keepalive state. When the connection is idle
 	// (no data sent or received) for keepaliveIdle, we start sending
@@ -669,9 +677,9 @@ func (e *endpoint) LockUser() {
 		if !e.TryLock() {
 			// If socket is owned by the user then just go to sleep
 			// as the lock could be held for a reasonably long time.
-			if atomic.LoadUint32(&e.ownedByUser) == 1 {
+			if e.ownedByUser.Load() == 1 {
 				e.mu.Lock()
-				atomic.StoreUint32(&e.ownedByUser, 1)
+				e.ownedByUser.Store(1)
 				return
 			}
 			// Spin but yield the processor since the lower half
@@ -679,7 +687,7 @@ func (e *endpoint) LockUser() {
 			runtime.Gosched()
 			continue
 		}
-		atomic.StoreUint32(&e.ownedByUser, 1)
+		e.ownedByUser.Store(1)
 		return
 	}
 }
@@ -705,7 +713,7 @@ func (e *endpoint) UnlockUser() {
 	for {
 		e.segmentQueue.mu.Lock()
 		if e.segmentQueue.emptyLocked() {
-			if atomic.SwapUint32(&e.ownedByUser, 0) != 1 {
+			if e.ownedByUser.Swap(0) != 1 {
 				panic("e.UnlockUser() called without calling e.LockUser()")
 			}
 			e.mu.Unlock()
@@ -723,7 +731,7 @@ func (e *endpoint) UnlockUser() {
 			// Since we are waking the endpoint goroutine here just unlock
 			// and let it process the queued segments.
 			e.newSegmentWaker.Assert()
-			if atomic.SwapUint32(&e.ownedByUser, 0) != 1 {
+			if e.ownedByUser.Swap(0) != 1 {
 				panic("e.UnlockUser() called without calling e.LockUser()")
 			}
 			e.mu.Unlock()
@@ -776,7 +784,7 @@ func (e *endpoint) TryLock() bool {
 //
 // +checklocks:e.mu
 func (e *endpoint) setEndpointState(state EndpointState) {
-	oldstate := EndpointState(atomic.SwapUint32(&e.state, uint32(state)))
+	oldstate := EndpointState(e.state.Swap(uint32(state)))
 	switch state {
 	case StateEstablished:
 		e.stack.Stats().TCP.CurrentEstablished.Increment()
@@ -797,7 +805,7 @@ func (e *endpoint) setEndpointState(state EndpointState) {
 
 // EndpointState returns the current state of the endpoint.
 func (e *endpoint) EndpointState() EndpointState {
-	return EndpointState(atomic.LoadUint32(&e.state))
+	return EndpointState(e.state.Load())
 }
 
 // setRecentTimestamp sets the recentTS field to the provided value.
@@ -858,7 +866,7 @@ func newEndpoint(s *stack.Stack, protocol *protocol, netProto tcpip.NetworkProto
 			},
 		},
 		waiterQueue: waiterQueue,
-		state:       uint32(StateInitial),
+		state:       atomicbitops.FromUint32(uint32(StateInitial)),
 		keepalive: keepalive{
 			idle:     DefaultKeepaliveIdle,
 			interval: DefaultKeepaliveInterval,
@@ -977,18 +985,18 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 }
 
 func (e *endpoint) fetchNotifications() uint32 {
-	return atomic.SwapUint32(&e.notifyFlags, 0)
+	return e.notifyFlags.Swap(0)
 }
 
 func (e *endpoint) notifyProtocolGoroutine(n uint32) {
 	for {
-		v := atomic.LoadUint32(&e.notifyFlags)
+		v := e.notifyFlags.Load()
 		if v&n == n {
 			// The flags are already set.
 			return
 		}
 
-		if atomic.CompareAndSwapUint32(&e.notifyFlags, v, v|n) {
+		if e.notifyFlags.CompareAndSwap(v, v|n) {
 			if v == 0 {
 				// We are causing a transition from no flags to
 				// at least one flag set, so we must cause the
@@ -1855,7 +1863,7 @@ func (e *endpoint) OnSetReceiveBufferSize(rcvBufSz, oldSz int64) (newSz int64) {
 
 // OnSetSendBufferSize implements tcpip.SocketOptionsHandler.OnSetSendBufferSize.
 func (e *endpoint) OnSetSendBufferSize(sz int64) int64 {
-	atomic.StoreUint32(&e.sndQueueInfo.TCPSndBufState.AutoTuneSndBufDisabled, 1)
+	e.sndQueueInfo.TCPSndBufState.AutoTuneSndBufDisabled.Store(1)
 	return sz
 }
 
@@ -3023,12 +3031,12 @@ func (e *endpoint) receiveBufferUsed() int {
 // receiveMemUsed returns the total memory in use by segments held by this
 // endpoint.
 func (e *endpoint) receiveMemUsed() int {
-	return int(atomic.LoadInt32(&e.rcvMemUsed))
+	return int(e.rcvMemUsed.Load())
 }
 
 // updateReceiveMemUsed adds the provided delta to e.rcvMemUsed.
 func (e *endpoint) updateReceiveMemUsed(delta int) {
-	atomic.AddInt32(&e.rcvMemUsed, int32(delta))
+	e.rcvMemUsed.Add(int32(delta))
 }
 
 // maxReceiveBufferSize returns the stack wide maximum receive buffer size for
@@ -3119,19 +3127,17 @@ func (e *endpoint) maxOptionSize() (size int) {
 // used before invoking the probe.
 //
 // +checklocks:e.mu
-func (e *endpoint) completeStateLocked() stack.TCPEndpointState {
-	s := stack.TCPEndpointState{
-		TCPEndpointStateInner: e.TCPEndpointStateInner,
-		ID:                    stack.TCPEndpointID(e.TransportEndpointInfo.ID),
-		SegTime:               e.stack.Clock().NowMonotonic(),
-		Receiver:              e.rcv.TCPReceiverState,
-		Sender:                e.snd.TCPSenderState,
-	}
+func (e *endpoint) completeStateLocked(s *stack.TCPEndpointState) {
+	s.TCPEndpointStateInner = e.TCPEndpointStateInner
+	s.ID = stack.TCPEndpointID(e.TransportEndpointInfo.ID)
+	s.SegTime = e.stack.Clock().NowMonotonic()
+	s.Receiver = e.rcv.TCPReceiverState
+	s.Sender = e.snd.TCPSenderState
 
 	sndBufSize := e.getSendBufferSize()
 	// Copy the send buffer atomically.
 	e.sndQueueInfo.sndQueueMu.Lock()
-	s.SndBufState = e.sndQueueInfo.TCPSndBufState
+	e.sndQueueInfo.CloneState(&s.SndBufState)
 	s.SndBufState.SndBufSize = sndBufSize
 	e.sndQueueInfo.sndQueueMu.Unlock()
 
@@ -3157,7 +3163,6 @@ func (e *endpoint) completeStateLocked() stack.TCPEndpointState {
 	s.Sender.RACKState = e.snd.rc.TCPRACKState
 	s.Sender.RetransmitTS = e.snd.retransmitTS
 	s.Sender.SpuriousRecovery = e.snd.spuriousRecovery
-	return s
 }
 
 func (e *endpoint) initHardwareGSO() {
@@ -3282,7 +3287,7 @@ func (e *endpoint) computeTCPSendBufferSize() int64 {
 
 	// Auto tuning is disabled when the user explicitly sets the send
 	// buffer size with SO_SNDBUF option.
-	if disabled := atomic.LoadUint32(&e.sndQueueInfo.TCPSndBufState.AutoTuneSndBufDisabled); disabled == 1 {
+	if disabled := e.sndQueueInfo.TCPSndBufState.AutoTuneSndBufDisabled.Load(); disabled == 1 {
 		return curSndBufSz
 	}
 

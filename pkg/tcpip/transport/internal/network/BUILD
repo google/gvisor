@@ -14,6 +14,7 @@ go_library(
         "//pkg/tcpip/transport/udp:__pkg__",
     ],
     deps = [
+        "//pkg/atomicbitops",
         "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/header",

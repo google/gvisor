@@ -22,9 +22,9 @@ import (
 	"math"
 	"reflect"
 	"sort"
-	"sync/atomic"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -189,24 +189,18 @@ type endpoint struct {
 
 	// enabled is set to 1 when the endpoint is enabled and 0 when it is
 	// disabled.
-	//
-	// Must be accessed using atomic operations.
-	enabled uint32
+	enabled atomicbitops.Uint32
 
 	// forwarding is set to forwardingEnabled when the endpoint has forwarding
 	// enabled and forwardingDisabled when it is disabled.
-	//
-	// Must be accessed using atomic operations.
-	forwarding uint32
+	forwarding atomicbitops.Uint32
 
 	// multicastForwarding is set to forwardingEnabled when the endpoint has
 	// forwarding enabled and forwardingDisabled when it is disabled.
 	//
 	// TODO(https://gvisor.dev/issue/7338): Implement support for multicast
 	// forwarding. Currently, setting this value to true is a no-op.
-	//
-	// Must be accessed using atomic operations.
-	multicastForwarding uint32
+	multicastForwarding atomicbitops.Uint32
 
 	mu struct {
 		sync.RWMutex
@@ -444,7 +438,7 @@ func (e *endpoint) dupTentativeAddrDetected(addr tcpip.Address, holderLinkAddr t
 
 // Forwarding implements stack.ForwardingNetworkEndpoint.
 func (e *endpoint) Forwarding() bool {
-	return atomic.LoadUint32(&e.forwarding) == forwardingEnabled
+	return e.forwarding.Load() == forwardingEnabled
 }
 
 // setForwarding sets the forwarding status for the endpoint.
@@ -456,7 +450,7 @@ func (e *endpoint) setForwarding(v bool) bool {
 		forwarding = forwardingEnabled
 	}
 
-	return atomic.SwapUint32(&e.forwarding, forwarding) != forwardingDisabled
+	return e.forwarding.Swap(forwarding) != forwardingDisabled
 }
 
 // SetForwarding implements stack.ForwardingNetworkEndpoint.
@@ -517,7 +511,7 @@ func (e *endpoint) SetForwarding(forwarding bool) bool {
 
 // MulticastForwarding implements stack.MulticastForwardingNetworkEndpoint.
 func (e *endpoint) MulticastForwarding() bool {
-	return atomic.LoadUint32(&e.multicastForwarding) == forwardingEnabled
+	return e.multicastForwarding.Load() == forwardingEnabled
 }
 
 // SetMulticastForwarding implements stack.MulticastForwardingNetworkEndpoint.
@@ -527,7 +521,7 @@ func (e *endpoint) SetMulticastForwarding(forwarding bool) bool {
 		updatedForwarding = forwardingEnabled
 	}
 
-	return atomic.SwapUint32(&e.multicastForwarding, updatedForwarding) != forwardingDisabled
+	return e.multicastForwarding.Swap(updatedForwarding) != forwardingDisabled
 }
 
 // Enable implements stack.NetworkEndpoint.
@@ -621,7 +615,7 @@ func (e *endpoint) Enabled() bool {
 // isEnabled returns true if the endpoint is enabled, regardless of the
 // enabled status of the NIC.
 func (e *endpoint) isEnabled() bool {
-	return atomic.LoadUint32(&e.enabled) == 1
+	return e.enabled.Load() == 1
 }
 
 // setEnabled sets the enabled status for the endpoint.
@@ -629,9 +623,9 @@ func (e *endpoint) isEnabled() bool {
 // Returns true if the enabled status was updated.
 func (e *endpoint) setEnabled(v bool) bool {
 	if v {
-		return atomic.SwapUint32(&e.enabled, 1) == 0
+		return e.enabled.Swap(1) == 0
 	}
-	return atomic.SwapUint32(&e.enabled, 0) == 1
+	return e.enabled.Swap(0) == 1
 }
 
 // Disable implements stack.NetworkEndpoint.
@@ -754,7 +748,7 @@ func (e *endpoint) handleFragments(r *stack.Route, networkMTU uint32, pkt *stack
 	}
 
 	pf := fragmentation.MakePacketFragmenter(pkt, fragmentPayloadLen, calculateFragmentReserve(pkt))
-	id := atomic.AddUint32(&e.protocol.ids[hashRoute(r, e.protocol.hashIV)%buckets], 1)
+	id := e.protocol.ids[hashRoute(r, e.protocol.hashIV)%buckets].Add(1)
 
 	var n int
 	for {
@@ -1966,14 +1960,12 @@ type protocol struct {
 		icmpRateLimitedTypes map[header.ICMPv6Type]struct{}
 	}
 
-	ids    []uint32
+	ids    []atomicbitops.Uint32
 	hashIV uint32
 
 	// defaultTTL is the current default TTL for the protocol. Only the
 	// uint8 portion of it is meaningful.
-	//
-	// Must be accessed using atomic operations.
-	defaultTTL uint32
+	defaultTTL atomicbitops.Uint32
 
 	fragmentation   *fragmentation.Fragmentation
 	icmpRateLimiter *stack.ICMPRateLimiter
@@ -2097,12 +2089,12 @@ func (p *protocol) Option(option tcpip.GettableNetworkProtocolOption) tcpip.Erro
 
 // SetDefaultTTL sets the default TTL for endpoints created with this protocol.
 func (p *protocol) SetDefaultTTL(ttl uint8) {
-	atomic.StoreUint32(&p.defaultTTL, uint32(ttl))
+	p.defaultTTL.Store(uint32(ttl))
 }
 
 // DefaultTTL returns the default TTL for endpoints created with this protocol.
 func (p *protocol) DefaultTTL() uint8 {
-	return uint8(atomic.LoadUint32(&p.defaultTTL))
+	return uint8(p.defaultTTL.Load())
 }
 
 // Close implements stack.TransportProtocol.
@@ -2277,12 +2269,17 @@ func NewProtocolWithOptions(opts Options) stack.NetworkProtocolFactory {
 	ids := hash.RandN32(buckets)
 	hashIV := hash.RandN32(1)[0]
 
+	atomicIds := make([]atomicbitops.Uint32, len(ids))
+	for i := range ids {
+		atomicIds[i] = atomicbitops.FromUint32(ids[i])
+	}
+
 	return func(s *stack.Stack) stack.NetworkProtocol {
 		p := &protocol{
 			stack:   s,
 			options: opts,
 
-			ids:    ids,
+			ids:    atomicIds,
 			hashIV: hashIV,
 		}
 		p.fragmentation = fragmentation.NewFragmentation(header.IPv6FragmentExtHdrFragmentOffsetBytesPerUnit, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, ReassembleTimeout, s.Clock(), p)

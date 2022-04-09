@@ -17,7 +17,6 @@ package contexttest
 
 import (
 	"os"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -88,8 +87,8 @@ func (*globalUniqueIDProvider) UniqueID() uint64 {
 }
 
 // lastInotifyCookie is a monotonically increasing counter for generating unique
-// inotify cookies. Must be accessed using atomic ops.
-var lastInotifyCookie uint32
+// inotify cookies.
+var lastInotifyCookie atomicbitops.Uint32
 
 // hostClock implements ktime.Clock.
 type hostClock struct {
@@ -126,7 +125,7 @@ func (t *TestContext) Value(key interface{}) interface{} {
 	case uniqueid.CtxGlobalUniqueIDProvider:
 		return &globalUniqueIDProvider{}
 	case uniqueid.CtxInotifyCookie:
-		return atomic.AddUint32(&lastInotifyCookie, 1)
+		return lastInotifyCookie.Add(1)
 	case ktime.CtxRealtimeClock:
 		return &hostClock{}
 	default:

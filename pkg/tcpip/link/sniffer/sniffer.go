@@ -24,9 +24,9 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"sync/atomic"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -38,16 +38,12 @@ import (
 
 // LogPackets is a flag used to enable or disable packet logging via the log
 // package. Valid values are 0 or 1.
-//
-// LogPackets must be accessed atomically.
-var LogPackets uint32 = 1
+var LogPackets atomicbitops.Uint32 = atomicbitops.FromUint32(1)
 
 // LogPacketsToPCAP is a flag used to enable or disable logging packets to a
 // pcap writer. Valid values are 0 or 1. A writer must have been specified when the
 // sniffer was created for this flag to have effect.
-//
-// LogPacketsToPCAP must be accessed atomically.
-var LogPacketsToPCAP uint32 = 1
+var LogPacketsToPCAP atomicbitops.Uint32 = atomicbitops.FromUint32(1)
 
 type endpoint struct {
 	nested.Endpoint
@@ -142,10 +138,10 @@ func (e *endpoint) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pk
 
 func (e *endpoint) dumpPacket(dir direction, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	writer := e.writer
-	if writer == nil && atomic.LoadUint32(&LogPackets) == 1 {
+	if writer == nil && LogPackets.Load() == 1 {
 		logPacket(e.logPrefix, dir, protocol, pkt)
 	}
-	if writer != nil && atomic.LoadUint32(&LogPacketsToPCAP) == 1 {
+	if writer != nil && LogPacketsToPCAP.Load() == 1 {
 		packet := pcapPacket{
 			timestamp:     time.Now(),
 			packet:        pkt,

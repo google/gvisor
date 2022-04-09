@@ -20,12 +20,12 @@ import (
 	"math/rand"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 )
@@ -1273,9 +1273,9 @@ func TestNeighborCacheResolutionFailed(t *testing.T) {
 	clock := faketime.NewManualClock()
 	linkRes := newTestNeighborResolver(&nudDisp, config, clock)
 
-	var requestCount uint32
+	var requestCount atomicbitops.Uint32
 	linkRes.onLinkAddressRequest = func() {
-		atomic.AddUint32(&requestCount, 1)
+		requestCount.Add(1)
 	}
 
 	entry, ok := linkRes.entries.entry(0)
@@ -1303,7 +1303,7 @@ func TestNeighborCacheResolutionFailed(t *testing.T) {
 	}
 
 	// Verify address resolution fails for an unknown address.
-	before := atomic.LoadUint32(&requestCount)
+	before := requestCount.Load()
 
 	entry.Addr += "2"
 	{
@@ -1325,7 +1325,7 @@ func TestNeighborCacheResolutionFailed(t *testing.T) {
 	}
 
 	maxAttempts := linkRes.neigh.config().MaxUnicastProbes
-	if got, want := atomic.LoadUint32(&requestCount)-before, maxAttempts; got != want {
+	if got, want := requestCount.Load()-before, maxAttempts; got != want {
 		t.Errorf("got link address request count = %d, want = %d", got, want)
 	}
 }

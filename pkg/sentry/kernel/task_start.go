@@ -224,12 +224,13 @@ func (ts *TaskSet) newTask(cfg *TaskConfig) (*Task, error) {
 	tg.activeTasks++
 
 	// Propagate external TaskSet stops to the new task.
-	t.stopCount = ts.stopCount
+	t.stopCount = atomicbitops.FromInt32(ts.stopCount)
 
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	t.cpu = assignCPU(t.allowedCPUMask, ts.Root.tids[t])
+	t.cpu = atomicbitops.FromInt32(assignCPU(t.allowedCPUMask, ts.Root.tids[t]))
+
 	t.startTime = t.k.RealtimeClock().Now()
 
 	// As a final step, initialize the platform context. This may require

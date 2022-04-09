@@ -20,7 +20,6 @@ import (
 	"math"
 	"sort"
 	"strings"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -446,7 +445,7 @@ func (vfs *VirtualFilesystem) connectLocked(mnt *Mount, vd VirtualDentry, mntns 
 		vd.mount.children = make(map[*Mount]struct{})
 	}
 	vd.mount.children[mnt] = struct{}{}
-	atomic.AddUint32(&vd.dentry.mounts, 1)
+	vd.dentry.mounts.Add(1)
 	mnt.ns = mntns
 	mntns.mountpoints[vd.dentry]++
 	vfs.mounts.insertSeqed(mnt)
@@ -474,7 +473,7 @@ func (vfs *VirtualFilesystem) disconnectLocked(mnt *Mount) VirtualDentry {
 	}
 	mnt.loadKey(VirtualDentry{})
 	delete(vd.mount.children, mnt)
-	atomic.AddUint32(&vd.dentry.mounts, math.MaxUint32) // -1
+	vd.dentry.mounts.Add(math.MaxUint32) // -1
 	mnt.ns.mountpoints[vd.dentry]--
 	if mnt.ns.mountpoints[vd.dentry] == 0 {
 		delete(mnt.ns.mountpoints, vd.dentry)

@@ -16,9 +16,9 @@ package tcp
 
 import (
 	"fmt"
-	"sync/atomic"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -146,15 +146,16 @@ func (e *endpoint) loadState(epState EndpointState) {
 	// Directly update the state here rather than using e.setEndpointState
 	// as the endpoint is still being loaded and the stack reference is not
 	// yet initialized.
-	atomic.StoreUint32((*uint32)(&e.state), uint32(epState))
+	e.state.Store(uint32(epState))
 }
 
 // afterLoad is invoked by stateify.
 func (e *endpoint) afterLoad() {
-	e.origEndpointState = e.state
+	// RacyLoad() can be used because we are initializing e.
+	e.origEndpointState = e.state.RacyLoad()
 	// Restore the endpoint to InitialState as it will be moved to
 	// its origEndpointState during Resume.
-	e.state = uint32(StateInitial)
+	e.state = atomicbitops.FromUint32(uint32(StateInitial))
 	// Condition variables and mutexs are not S/R'ed so reinitialize
 	// acceptCond with e.acceptMu.
 	e.acceptCond = sync.NewCond(&e.acceptMu)
@@ -238,7 +239,7 @@ func (e *endpoint) Resume(s *stack.Stack) {
 			panic("endpoint connecting failed: " + err.String())
 		}
 		e.mu.Lock()
-		e.state = e.origEndpointState
+		e.state.Store(e.origEndpointState)
 		closed := e.closed
 		e.mu.Unlock()
 		e.notifyProtocolGoroutine(notifyTickleWorker)
@@ -291,11 +292,11 @@ func (e *endpoint) Resume(s *stack.Stack) {
 		}()
 	case epState == StateClose:
 		e.isPortReserved = false
-		e.state = uint32(StateClose)
+		e.state.Store(uint32(StateClose))
 		e.stack.CompleteTransportEndpointCleanup(e)
 		tcpip.DeleteDanglingEndpoint(e)
 	case epState == StateError:
-		e.state = uint32(StateError)
+		e.state.Store(uint32(StateError))
 		e.stack.CompleteTransportEndpointCleanup(e)
 		tcpip.DeleteDanglingEndpoint(e)
 	}

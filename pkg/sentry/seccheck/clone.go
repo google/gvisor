@@ -43,7 +43,7 @@ func (s *State) CloneReq() CloneFieldSet {
 }
 
 // Clone is called at the Clone checkpoint.
-func (s *State) Clone(ctx context.Context, mask CloneFieldSet, info *CloneInfo) error {
+func (s *State) Clone(ctx context.Context, mask *CloneFieldSet, info *CloneInfo) error {
 	for _, c := range s.getCheckers() {
 		if err := c.Clone(ctx, mask, *info); err != nil {
 			return err

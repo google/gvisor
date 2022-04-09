@@ -367,7 +367,7 @@ func TestSACKRecovery(t *testing.T) {
 	c := context.New(t, uint32(header.TCPMinimumSize+header.IPv4MinimumSize+e2e.MaxTCPOptionSize+maxPayload))
 	defer c.Cleanup()
 
-	c.Stack().AddTCPProbe(func(s stack.TCPEndpointState) {
+	c.Stack().AddTCPProbe(func(s *stack.TCPEndpointState) {
 		// We use log.Printf instead of t.Logf here because this probe
 		// can fire even when the test function has finished. This is
 		// because closing the endpoint in cleanup() does not mean the
@@ -745,7 +745,7 @@ func TestDetectSpuriousRecoveryWithRTO(t *testing.T) {
 	defer c.Cleanup()
 
 	probeDone := make(chan struct{})
-	c.Stack().AddTCPProbe(func(s stack.TCPEndpointState) {
+	c.Stack().AddTCPProbe(func(s *stack.TCPEndpointState) {
 		if s.Sender.RetransmitTS == 0 {
 			t.Fatalf("RetransmitTS did not get updated, got: 0 want > 0")
 		}
@@ -826,7 +826,7 @@ func TestSACKDetectSpuriousRecoveryWithDupACK(t *testing.T) {
 
 	numAck := 0
 	probeDone := make(chan struct{})
-	c.Stack().AddTCPProbe(func(s stack.TCPEndpointState) {
+	c.Stack().AddTCPProbe(func(s *stack.TCPEndpointState) {
 		if numAck < 3 {
 			numAck++
 			return

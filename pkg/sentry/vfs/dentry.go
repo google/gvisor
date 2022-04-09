@@ -15,8 +15,7 @@
 package vfs
 
 import (
-	"sync/atomic"
-
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -68,8 +67,7 @@ type Dentry struct {
 	dead bool
 
 	// mounts is the number of Mounts for which this Dentry is Mount.point.
-	// mounts is accessed using atomic memory operations.
-	mounts uint32
+	mounts atomicbitops.Uint32
 
 	// impl is the DentryImpl associated with this Dentry. impl is immutable.
 	// This should be the last field in Dentry.
@@ -166,7 +164,7 @@ func (d *Dentry) IsDead() bool {
 }
 
 func (d *Dentry) isMounted() bool {
-	return atomic.LoadUint32(&d.mounts) != 0
+	return d.mounts.Load() != 0
 }
 
 // InotifyWithParent notifies all watches on the targets represented by d and

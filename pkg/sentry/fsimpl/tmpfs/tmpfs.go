@@ -32,7 +32,6 @@ import (
 	"math"
 	"strconv"
 	"strings"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -392,12 +391,12 @@ type inode struct {
 
 	// Inode metadata. Writing multiple fields atomically requires holding
 	// mu, othewise atomic operations can be used.
-	mu    sync.Mutex `state:"nosave"`
-	mode  uint32     // file type and mode
-	nlink uint32     // protected by filesystem.mu instead of inode.mu
-	uid   uint32     // auth.KUID, but stored as raw uint32 for sync/atomic
-	gid   uint32     // auth.KGID, but ...
-	ino   uint64     // immutable
+	mu    sync.Mutex          `state:"nosave"`
+	mode  atomicbitops.Uint32 // file type and mode
+	nlink atomicbitops.Uint32 // protected by filesystem.mu instead of inode.mu
+	uid   atomicbitops.Uint32 // auth.KUID, but stored as raw uint32 for sync/atomic
+	gid   atomicbitops.Uint32 // auth.KGID, but ...
+	ino   uint64              // immutable
 
 	// Linux's tmpfs has no concept of btime.
 	atime atomicbitops.Int64 // nanoseconds
@@ -420,17 +419,17 @@ func (i *inode) init(impl interface{}, fs *filesystem, kuid auth.KUID, kgid auth
 	}
 
 	// Inherit the group and setgid bit as in fs/inode.c:inode_init_owner().
-	if parentDir != nil && atomic.LoadUint32(&parentDir.inode.mode)&linux.S_ISGID == linux.S_ISGID {
-		kgid = auth.KGID(atomic.LoadUint32(&parentDir.inode.gid))
+	if parentDir != nil && parentDir.inode.mode.Load()&linux.S_ISGID == linux.S_ISGID {
+		kgid = auth.KGID(parentDir.inode.gid.Load())
 		if mode&linux.S_IFDIR == linux.S_IFDIR {
 			mode |= linux.S_ISGID
 		}
 	}
 
 	i.fs = fs
-	i.mode = uint32(mode)
-	i.uid = uint32(kuid)
-	i.gid = uint32(kgid)
+	i.mode = atomicbitops.FromUint32(uint32(mode))
+	i.uid = atomicbitops.FromUint32(uint32(kuid))
+	i.gid = atomicbitops.FromUint32(uint32(kgid))
 	i.ino = fs.nextInoMinusOne.Add(1)
 	// Tmpfs creation sets atime, ctime, and mtime to current time.
 	now := fs.clock.Now().Nanoseconds()
@@ -446,16 +445,17 @@ func (i *inode) init(impl interface{}, fs *filesystem, kuid auth.KUID, kgid auth
 //
 // Preconditions:
 // * filesystem.mu must be locked for writing.
+// * i.mu must be lcoked.
 // * i.nlink != 0.
 // * i.nlink < maxLinks.
 func (i *inode) incLinksLocked() {
-	if i.nlink == 0 {
+	if i.nlink.RacyLoad() == 0 {
 		panic("tmpfs.inode.incLinksLocked() called with no existing links")
 	}
-	if i.nlink == maxLinks {
+	if i.nlink.RacyLoad() == maxLinks {
 		panic("tmpfs.inode.incLinksLocked() called with maximum link count")
 	}
-	atomic.AddUint32(&i.nlink, 1)
+	i.nlink.Add(1)
 }
 
 // decLinksLocked decrements i's link count. If the link count reaches 0, we
@@ -463,12 +463,13 @@ func (i *inode) incLinksLocked() {
 //
 // Preconditions:
 // * filesystem.mu must be locked for writing.
+// * i.mu must be lcoked.
 // * i.nlink != 0.
 func (i *inode) decLinksLocked(ctx context.Context) {
-	if i.nlink == 0 {
+	if i.nlink.RacyLoad() == 0 {
 		panic("tmpfs.inode.decLinksLocked() called with no existing links")
 	}
-	if atomic.AddUint32(&i.nlink, ^uint32(0)) == 0 {
+	if i.nlink.Add(^uint32(0)) == 0 {
 		i.decRef(ctx)
 	}
 }
@@ -494,8 +495,8 @@ func (i *inode) decRef(ctx context.Context) {
 }
 
 func (i *inode) checkPermissions(creds *auth.Credentials, ats vfs.AccessTypes) error {
-	mode := linux.FileMode(atomic.LoadUint32(&i.mode))
-	return vfs.GenericCheckPermissions(creds, ats, mode, auth.KUID(atomic.LoadUint32(&i.uid)), auth.KGID(atomic.LoadUint32(&i.gid)))
+	mode := linux.FileMode(i.mode.Load())
+	return vfs.GenericCheckPermissions(creds, ats, mode, auth.KUID(i.uid.Load()), auth.KGID(i.gid.Load()))
 }
 
 // Go won't inline this function, and returning linux.Statx (which is quite
@@ -510,10 +511,10 @@ func (i *inode) statTo(stat *linux.Statx) {
 		linux.STATX_BLOCKS | linux.STATX_ATIME | linux.STATX_CTIME |
 		linux.STATX_MTIME
 	stat.Blksize = hostarch.PageSize
-	stat.Nlink = atomic.LoadUint32(&i.nlink)
-	stat.UID = atomic.LoadUint32(&i.uid)
-	stat.GID = atomic.LoadUint32(&i.gid)
-	stat.Mode = uint16(atomic.LoadUint32(&i.mode))
+	stat.Nlink = i.nlink.Load()
+	stat.UID = i.uid.Load()
+	stat.GID = i.gid.Load()
+	stat.Mode = uint16(i.mode.Load())
 	stat.Ino = i.ino
 	stat.Atime = linux.NsecToStatxTimestamp(i.atime.Load())
 	stat.Ctime = linux.NsecToStatxTimestamp(i.ctime.Load())
@@ -553,8 +554,8 @@ func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs.
 	if stat.Mask&^(linux.STATX_MODE|linux.STATX_UID|linux.STATX_GID|linux.STATX_ATIME|linux.STATX_MTIME|linux.STATX_CTIME|linux.STATX_SIZE) != 0 {
 		return linuxerr.EPERM
 	}
-	mode := linux.FileMode(atomic.LoadUint32(&i.mode))
-	if err := vfs.CheckSetStat(ctx, creds, opts, mode, auth.KUID(atomic.LoadUint32(&i.uid)), auth.KGID(atomic.LoadUint32(&i.gid))); err != nil {
+	mode := linux.FileMode(i.mode.Load())
+	if err := vfs.CheckSetStat(ctx, creds, opts, mode, auth.KUID(i.uid.Load()), auth.KGID(i.gid.Load())); err != nil {
 		return err
 	}
 
@@ -585,24 +586,24 @@ func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs.
 		}
 	}
 	if mask&linux.STATX_UID != 0 {
-		atomic.StoreUint32(&i.uid, stat.UID)
+		i.uid.Store(stat.UID)
 		needsCtimeBump = true
 		clearSID = true
 	}
 	if mask&linux.STATX_GID != 0 {
-		atomic.StoreUint32(&i.gid, stat.GID)
+		i.gid.Store(stat.GID)
 		needsCtimeBump = true
 		clearSID = true
 	}
 	if mask&linux.STATX_MODE != 0 {
 		for {
-			old := atomic.LoadUint32(&i.mode)
+			old := i.mode.Load()
 			ft := old & linux.S_IFMT
 			newMode := ft | uint32(stat.Mode & ^uint16(linux.S_IFMT))
 			if clearSID {
 				newMode = vfs.ClearSUIDAndSGID(newMode)
 			}
-			if swapped := atomic.CompareAndSwapUint32(&i.mode, old, newMode); swapped {
+			if swapped := i.mode.CompareAndSwap(old, newMode); swapped {
 				clearSID = false
 				break
 			}
@@ -642,9 +643,9 @@ func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs.
 	// STATX_MODE.
 	if clearSID {
 		for {
-			old := atomic.LoadUint32(&i.mode)
+			old := i.mode.Load()
 			newMode := vfs.ClearSUIDAndSGID(old)
-			if swapped := atomic.CompareAndSwapUint32(&i.mode, old, newMode); swapped {
+			if swapped := i.mode.CompareAndSwap(old, newMode); swapped {
 				break
 			}
 		}
@@ -697,7 +698,7 @@ func (i *inode) direntType() uint8 {
 }
 
 func (i *inode) isDir() bool {
-	mode := linux.FileMode(atomic.LoadUint32(&i.mode))
+	mode := linux.FileMode(i.mode.Load())
 	return mode.FileType() == linux.S_IFDIR
 }
 
@@ -765,9 +766,9 @@ func (i *inode) getXattr(creds *auth.Credentials, opts *vfs.GetXattrOptions) (st
 	if err := checkXattrName(opts.Name); err != nil {
 		return "", err
 	}
-	mode := linux.FileMode(atomic.LoadUint32(&i.mode))
-	kuid := auth.KUID(atomic.LoadUint32(&i.uid))
-	kgid := auth.KGID(atomic.LoadUint32(&i.gid))
+	mode := linux.FileMode(i.mode.Load())
+	kuid := auth.KUID(i.uid.Load())
+	kgid := auth.KGID(i.gid.Load())
 	if err := vfs.GenericCheckPermissions(creds, vfs.MayRead, mode, kuid, kgid); err != nil {
 		return "", err
 	}
@@ -778,9 +779,9 @@ func (i *inode) setXattr(creds *auth.Credentials, opts *vfs.SetXattrOptions) err
 	if err := checkXattrName(opts.Name); err != nil {
 		return err
 	}
-	mode := linux.FileMode(atomic.LoadUint32(&i.mode))
-	kuid := auth.KUID(atomic.LoadUint32(&i.uid))
-	kgid := auth.KGID(atomic.LoadUint32(&i.gid))
+	mode := linux.FileMode(i.mode.Load())
+	kuid := auth.KUID(i.uid.Load())
+	kgid := auth.KGID(i.gid.Load())
 	if err := vfs.GenericCheckPermissions(creds, vfs.MayWrite, mode, kuid, kgid); err != nil {
 		return err
 	}
@@ -791,9 +792,9 @@ func (i *inode) removeXattr(creds *auth.Credentials, name string) error {
 	if err := checkXattrName(name); err != nil {
 		return err
 	}
-	mode := linux.FileMode(atomic.LoadUint32(&i.mode))
-	kuid := auth.KUID(atomic.LoadUint32(&i.uid))
-	kgid := auth.KGID(atomic.LoadUint32(&i.gid))
+	mode := linux.FileMode(i.mode.Load())
+	kuid := auth.KUID(i.uid.Load())
+	kgid := auth.KGID(i.gid.Load())
 	if err := vfs.GenericCheckPermissions(creds, vfs.MayWrite, mode, kuid, kgid); err != nil {
 		return err
 	}

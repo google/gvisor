@@ -16,10 +16,10 @@ package syncevent
 
 import (
 	"fmt"
-	"sync/atomic"
 	"testing"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -53,16 +53,16 @@ func TestWaiterWaitFor(t *testing.T) {
 	evWaited := Set(1)
 	evOther := Set(2)
 	w.Notify(evOther)
-	notifiedEvent := uint32(0)
+	notifiedEvent := atomicbitops.FromUint32(0)
 	go func() {
 		time.Sleep(100 * time.Millisecond)
-		atomic.StoreUint32(&notifiedEvent, 1)
+		notifiedEvent.Store(1)
 		w.Notify(evWaited)
 	}()
 	if got, want := w.WaitFor(evWaited), evWaited|evOther; got != want {
 		t.Errorf("Waiter.WaitFor: got %#x, wanted %#x", got, want)
 	}
-	if atomic.LoadUint32(&notifiedEvent) == 0 {
+	if notifiedEvent.Load() == 0 {
 		t.Errorf("Waiter.WaitFor returned before goroutine notified waited-for event")
 	}
 }

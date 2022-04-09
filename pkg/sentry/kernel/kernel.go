@@ -35,7 +35,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"sync/atomic"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -239,9 +238,8 @@ type Kernel struct {
 	// nextInotifyCookie is a monotonically increasing counter used for
 	// generating unique inotify event cookies.
 	//
-	// nextInotifyCookie is mutable, and is accessed using atomic memory
-	// operations.
-	nextInotifyCookie uint32
+	// nextInotifyCookie is mutable.
+	nextInotifyCookie atomicbitops.Uint32
 
 	// netlinkPorts manages allocation of netlink socket port IDs.
 	netlinkPorts *port.Manager
@@ -325,7 +323,7 @@ type Kernel struct {
 	ptraceExceptions map[*Task]*Task
 
 	// YAMAPtraceScope is the current level of YAMA ptrace restrictions.
-	YAMAPtraceScope int32
+	YAMAPtraceScope atomicbitops.Int32
 
 	// cgroupRegistry contains the set of active cgroup controllers on the
 	// system. It is controller by cgroupfs. Nil if cgroupfs is unavailable on
@@ -431,7 +429,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	k.futexes = futex.NewManager()
 	k.netlinkPorts = port.New()
 	k.ptraceExceptions = make(map[*Task]*Task)
-	k.YAMAPtraceScope = linux.YAMA_SCOPE_RELATIONAL
+	k.YAMAPtraceScope = atomicbitops.FromInt32(linux.YAMA_SCOPE_RELATIONAL)
 	k.userCountersMap = make(map[auth.KUID]*userCounters)
 
 	if VFS2Enabled {
@@ -1492,10 +1490,10 @@ func (k *Kernel) Syslog() *syslog {
 // space is exhausted. 0 is not a valid cookie value, all other values
 // representable in a uint32 are allowed.
 func (k *Kernel) GenerateInotifyCookie() uint32 {
-	id := atomic.AddUint32(&k.nextInotifyCookie, 1)
+	id := k.nextInotifyCookie.Add(1)
 	// Wrap-around is explicitly allowed for inotify event cookies.
 	if id == 0 {
-		id = atomic.AddUint32(&k.nextInotifyCookie, 1)
+		id = k.nextInotifyCookie.Add(1)
 	}
 	return id
 }

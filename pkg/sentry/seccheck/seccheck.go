@@ -17,8 +17,7 @@
 package seccheck
 
 import (
-	"sync/atomic"
-
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -48,9 +47,9 @@ const (
 // may be missing requested fields in some cases (e.g. if the Checker is
 // registered concurrently with invocations of checkpoints).
 type Checker interface {
-	Clone(ctx context.Context, mask CloneFieldSet, info CloneInfo) error
-	Execve(ctx context.Context, mask ExecveFieldSet, info ExecveInfo) error
-	ExitNotifyParent(ctx context.Context, mask ExitNotifyParentFieldSet, info ExitNotifyParentInfo) error
+	Clone(ctx context.Context, mask *CloneFieldSet, info CloneInfo) error
+	Execve(ctx context.Context, mask *ExecveFieldSet, info ExecveInfo) error
+	ExitNotifyParent(ctx context.Context, mask *ExitNotifyParentFieldSet, info ExitNotifyParentInfo) error
 }
 
 // CheckerDefaults may be embedded by implementations of Checker to obtain
@@ -58,17 +57,17 @@ type Checker interface {
 type CheckerDefaults struct{}
 
 // Clone implements Checker.Clone.
-func (CheckerDefaults) Clone(ctx context.Context, mask CloneFieldSet, info CloneInfo) error {
+func (CheckerDefaults) Clone(ctx context.Context, mask *CloneFieldSet, info CloneInfo) error {
 	return nil
 }
 
 // Execve implements Checker.Execve.
-func (CheckerDefaults) Execve(ctx context.Context, mask ExecveFieldSet, info ExecveInfo) error {
+func (CheckerDefaults) Execve(ctx context.Context, mask *ExecveFieldSet, info ExecveInfo) error {
 	return nil
 }
 
 // ExitNotifyParent implements Checker.ExitNotifyParent.
-func (CheckerDefaults) ExitNotifyParent(ctx context.Context, mask ExitNotifyParentFieldSet, info ExitNotifyParentInfo) error {
+func (CheckerDefaults) ExitNotifyParent(ctx context.Context, mask *ExitNotifyParentFieldSet, info ExitNotifyParentInfo) error {
 	return nil
 }
 
@@ -102,7 +101,7 @@ type State struct {
 	//
 	// enabledPoints is accessed using atomic memory operations. Mutation of
 	// enabledPoints is serialized by registrationMu.
-	enabledPoints [numPointBitmaskUint32s]uint32
+	enabledPoints [numPointBitmaskUint32s]atomicbitops.Uint32
 
 	// registrationSeq supports store-free atomic reads of registeredCheckers.
 	registrationSeq sync.SeqCount
@@ -136,14 +135,14 @@ func (s *State) AppendChecker(c Checker, req *CheckerReq) {
 	s.appendCheckerLocked(c)
 	for _, p := range req.Points {
 		word, bit := p/32, p%32
-		atomic.StoreUint32(&s.enabledPoints[word], s.enabledPoints[word]|(uint32(1)<<bit))
+		s.enabledPoints[word].Store(s.enabledPoints[word].RacyLoad() | (uint32(1) << bit))
 	}
 }
 
 // Enabled returns true if any Checker is registered for the given checkpoint.
 func (s *State) Enabled(p Point) bool {
 	word, bit := p/32, p%32
-	return atomic.LoadUint32(&s.enabledPoints[word])&(uint32(1)<<bit) != 0
+	return s.enabledPoints[word].Load()&(uint32(1)<<bit) != 0
 }
 
 func (s *State) getCheckers() []Checker {

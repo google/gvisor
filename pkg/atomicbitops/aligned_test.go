@@ -16,6 +16,7 @@ package atomicbitops
 
 import (
 	"testing"
+	"unsafe"
 )
 
 func TestAtomiciInt64(t *testing.T) {
@@ -32,4 +33,19 @@ func TestAtomicUint64(t *testing.T) {
 		v64 Uint64
 	}{}
 	v.v64.Add(1)
+}
+
+func TestSize(t *testing.T) {
+	if size := unsafe.Sizeof(Int32{}); size != 4 {
+		t.Errorf("Int32 should be 4 bytes in size, but is %d bytes", size)
+	}
+	if size := unsafe.Sizeof(Uint32{}); size != 4 {
+		t.Errorf("Uint32 should be 4 bytes in size, but is %d bytes", size)
+	}
+	if size := unsafe.Sizeof(Int64{}); size != 8 {
+		t.Errorf("Int32 should be 8 bytes in size, but is %d bytes", size)
+	}
+	if size := unsafe.Sizeof(Uint64{}); size != 8 {
+		t.Errorf("Int32 should be 8 bytes in size, but is %d bytes", size)
+	}
 }

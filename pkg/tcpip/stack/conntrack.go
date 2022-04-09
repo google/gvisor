@@ -20,9 +20,9 @@ import (
 	"math"
 	"math/rand"
 	"sync"
-	"sync/atomic"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/hash/jenkins"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -144,9 +144,7 @@ type conn struct {
 
 	finalizeOnce sync.Once
 	// Holds a finalizeResult.
-	//
-	// +checkatomics
-	finalizeResult uint32
+	finalizeResult atomicbitops.Uint32
 
 	mu sync.RWMutex `state:"nosave"`
 	// sourceManip indicates the source manipulation type.
@@ -653,7 +651,7 @@ func (ct *ConnTrack) finalize(cn *conn) finalizeResult {
 }
 
 func (cn *conn) getFinalizeResult() finalizeResult {
-	return finalizeResult(atomic.LoadUint32(&cn.finalizeResult))
+	return finalizeResult(cn.finalizeResult.Load())
 }
 
 // finalize attempts to finalize the connection and returns true iff the
@@ -667,7 +665,7 @@ func (cn *conn) getFinalizeResult() finalizeResult {
 // goroutines will block until the finalizing goroutine finishes finalizing.
 func (cn *conn) finalize() bool {
 	cn.finalizeOnce.Do(func() {
-		atomic.StoreUint32(&cn.finalizeResult, uint32(cn.ct.finalize(cn)))
+		cn.finalizeResult.Store(uint32(cn.ct.finalize(cn)))
 	})
 
 	switch res := cn.getFinalizeResult(); res {

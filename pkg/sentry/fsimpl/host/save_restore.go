@@ -17,7 +17,6 @@ package host
 import (
 	"fmt"
 	"io"
-	"sync/atomic"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
@@ -52,7 +51,7 @@ func (i *inode) beforeSave() {
 			}
 		}
 		if len(i.buf) != 0 {
-			atomic.StoreUint32(&i.haveBuf, 1)
+			i.haveBuf.Store(1)
 		}
 	}
 }

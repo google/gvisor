@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"runtime"
 	"runtime/trace"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -113,7 +112,7 @@ func (t *Task) run(threadID uintptr) {
 
 // doStop is called by Task.run to block until the task is not stopped.
 func (t *Task) doStop() {
-	if atomic.LoadInt32(&t.stopCount) == 0 {
+	if t.stopCount.Load() == 0 {
 		return
 	}
 	t.Deactivate()
@@ -128,7 +127,7 @@ func (t *Task) doStop() {
 	defer t.tg.pidns.owner.runningGoroutines.Add(1)
 	t.goroutineStopped.Add(-1)
 	defer t.goroutineStopped.Add(1)
-	for t.stopCount > 0 {
+	for t.stopCount.RacyLoad() > 0 {
 		t.endStopCond.Wait()
 	}
 }
@@ -148,11 +147,11 @@ func (app *runApp) execute(t *Task) taskRunState {
 	}
 
 	// Execute any task work callbacks before returning to user space.
-	if atomic.LoadInt32(&t.taskWorkCount) > 0 {
+	if t.taskWorkCount.Load() > 0 {
 		t.taskWorkMu.Lock()
 		queue := t.taskWork
 		t.taskWork = nil
-		atomic.StoreInt32(&t.taskWorkCount, 0)
+		t.taskWorkCount.Store(0)
 		t.taskWorkMu.Unlock()
 
 		// Do not hold taskWorkMu while executing task work, which may register

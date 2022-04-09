@@ -18,8 +18,7 @@
 package fifo
 
 import (
-	"sync/atomic"
-
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -44,8 +43,7 @@ type discipline struct {
 	wg          sync.WaitGroup
 	dispatchers []queueDispatcher
 
-	// +checkatomic
-	closed int32
+	closed atomicbitops.Int32
 }
 
 // queueDispatcher is responsible for dispatching all outbound packets in its
@@ -134,7 +132,7 @@ func (qd *queueDispatcher) dispatchLoop() {
 //  - pkt.GSOOptions
 //  - pkt.NetworkProtocolNumber
 func (d *discipline) WritePacket(pkt *stack.PacketBuffer) tcpip.Error {
-	if atomic.LoadInt32(&d.closed) == qDiscClosed {
+	if d.closed.Load() == qDiscClosed {
 		return &tcpip.ErrClosedForSend{}
 	}
 	qd := &d.dispatchers[int(pkt.Hash)%len(d.dispatchers)]
@@ -154,7 +152,7 @@ func (d *discipline) WritePacket(pkt *stack.PacketBuffer) tcpip.Error {
 }
 
 func (d *discipline) Close() {
-	atomic.StoreInt32(&d.closed, qDiscClosed)
+	d.closed.Store(qDiscClosed)
 	for i := range d.dispatchers {
 		d.dispatchers[i].closeWaker.Assert()
 	}

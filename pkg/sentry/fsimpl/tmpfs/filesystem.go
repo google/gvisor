@@ -16,7 +16,6 @@ package tmpfs
 
 import (
 	"fmt"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -259,13 +258,13 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 		if i.isDir() {
 			return linuxerr.EPERM
 		}
-		if err := vfs.MayLink(auth.CredentialsFromContext(ctx), linux.FileMode(atomic.LoadUint32(&i.mode)), auth.KUID(atomic.LoadUint32(&i.uid)), auth.KGID(atomic.LoadUint32(&i.gid))); err != nil {
+		if err := vfs.MayLink(auth.CredentialsFromContext(ctx), linux.FileMode(i.mode.Load()), auth.KUID(i.uid.Load()), auth.KGID(i.gid.Load())); err != nil {
 			return err
 		}
-		if i.nlink == 0 {
+		if i.nlink.Load() == 0 {
 			return linuxerr.ENOENT
 		}
-		if i.nlink == maxLinks {
+		if i.nlink.Load() == maxLinks {
 			return linuxerr.EMLINK
 		}
 		i.incLinksLocked()
@@ -279,7 +278,7 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.MkdirOptions) error {
 	return fs.doCreateAt(ctx, rp, true /* dir */, func(parentDir *directory, name string) error {
 		creds := rp.Credentials()
-		if parentDir.inode.nlink == maxLinks {
+		if parentDir.inode.nlink.Load() == maxLinks {
 			return linuxerr.EMLINK
 		}
 		parentDir.inode.incLinksLocked() // from child's ".."
@@ -586,7 +585,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			}
 		}
 	} else {
-		if renamed.inode.isDir() && newParentDir.inode.nlink == maxLinks {
+		if renamed.inode.isDir() && newParentDir.inode.nlink.Load() == maxLinks {
 			return linuxerr.EMLINK
 		}
 	}

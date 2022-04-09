@@ -208,7 +208,7 @@ func seccompMmapHandler(context unsafe.Pointer) {
 	}
 
 	seccompMmapHandlerCnt.Add(1)
-	for i := uint32(0); i < atomic.LoadUint32(&machinePoolLen); i++ {
+	for i := uint32(0); i < machinePoolLen.Load(); i++ {
 		m := machinePool[i].Load()
 		if m == nil {
 			continue

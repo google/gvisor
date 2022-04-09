@@ -16,8 +16,8 @@ package mm
 
 import (
 	"fmt"
-	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -34,7 +34,7 @@ func NewMemoryManager(p platform.Platform, mfp pgalloc.MemoryFileProvider, sleep
 		mfp:                mfp,
 		haveASIO:           p.SupportsAddressSpaceIO(),
 		privateRefs:        &privateRefs{},
-		users:              1,
+		users:              atomicbitops.FromInt32(1),
 		auxv:               arch.Auxv{},
 		dumpability:        UserDumpable,
 		aioManager:         aioManager{contexts: make(map[uint64]*AIOContext)},
@@ -69,7 +69,7 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 		haveASIO:    mm.haveASIO,
 		layout:      mm.layout,
 		privateRefs: mm.privateRefs,
-		users:       1,
+		users:       atomicbitops.FromInt32(1),
 		brk:         mm.brk,
 		usageAS:     mm.usageAS,
 		dataAS:      mm.dataAS,
@@ -234,11 +234,11 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 // already 0, IncUsers does nothing and returns false.
 func (mm *MemoryManager) IncUsers() bool {
 	for {
-		users := atomic.LoadInt32(&mm.users)
+		users := mm.users.Load()
 		if users == 0 {
 			return false
 		}
-		if atomic.CompareAndSwapInt32(&mm.users, users, users+1) {
+		if mm.users.CompareAndSwap(users, users+1) {
 			return true
 		}
 	}
@@ -247,7 +247,7 @@ func (mm *MemoryManager) IncUsers() bool {
 // DecUsers decrements mm's user count. If the user count reaches 0, all
 // mappings in mm are unmapped.
 func (mm *MemoryManager) DecUsers(ctx context.Context) {
-	if users := atomic.AddInt32(&mm.users, -1); users > 0 {
+	if users := mm.users.Add(-1); users > 0 {
 		return
 	} else if users < 0 {
 		panic(fmt.Sprintf("Invalid MemoryManager.users: %d", users))
@@ -265,7 +265,7 @@ func (mm *MemoryManager) DecUsers(ctx context.Context) {
 
 	mm.activeMu.Lock()
 	// Sanity check.
-	if atomic.LoadInt32(&mm.active) != 0 {
+	if mm.active.Load() != 0 {
 		panic("active address space lost?")
 	}
 	// Make sure the AddressSpace is returned.

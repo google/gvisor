@@ -61,7 +61,7 @@ func (s *State) ExecveReq() ExecveFieldSet {
 }
 
 // Execve is called at the Execve checkpoint.
-func (s *State) Execve(ctx context.Context, mask ExecveFieldSet, info *ExecveInfo) error {
+func (s *State) Execve(ctx context.Context, mask *ExecveFieldSet, info *ExecveInfo) error {
 	for _, c := range s.getCheckers() {
 		if err := c.Execve(ctx, mask, *info); err != nil {
 			return err

@@ -96,8 +96,9 @@ func (*execStop) Killable() bool { return true }
 func (t *Task) Execve(newImage *TaskImage, argv, env []string, executable fsbridge.File, pathname string) (*SyscallControl, error) {
 	// We can't clearly hold kernel package locks while stat'ing executable.
 	if seccheck.Global.Enabled(seccheck.PointExecve) {
-		mask, info := getExecveSeccheckInfo(t, argv, env, executable, pathname)
-		if err := seccheck.Global.Execve(t, mask, &info); err != nil {
+		var mask seccheck.ExecveFieldSet
+		info := getExecveSeccheckInfo(t, argv, env, executable, pathname, &mask)
+		if err := seccheck.Global.Execve(t, &mask, &info); err != nil {
 			newImage.release()
 			return nil, err
 		}
@@ -302,14 +303,13 @@ func (t *Task) promoteLocked() {
 	oldLeader.exitNotifyLocked(false)
 }
 
-func getExecveSeccheckInfo(t *Task, argv, env []string, executable fsbridge.File, pathname string) (seccheck.ExecveFieldSet, seccheck.ExecveInfo) {
+func getExecveSeccheckInfo(t *Task, argv, env []string, executable fsbridge.File, pathname string, mask *seccheck.ExecveFieldSet) seccheck.ExecveInfo {
 	req := seccheck.Global.ExecveReq()
 	info := seccheck.ExecveInfo{
 		Credentials: t.Credentials(),
 		Argv:        argv,
 		Env:         env,
 	}
-	var mask seccheck.ExecveFieldSet
 	mask.Add(seccheck.ExecveFieldCredentials)
 	mask.Add(seccheck.ExecveFieldArgv)
 	mask.Add(seccheck.ExecveFieldEnv)
@@ -349,6 +349,6 @@ func getExecveSeccheckInfo(t *Task, argv, env []string, executable fsbridge.File
 	}
 	t.k.tasks.mu.RLock()
 	defer t.k.tasks.mu.RUnlock()
-	t.loadSeccheckInfoLocked(req.Invoker, &mask.Invoker, &info.Invoker)
-	return mask, info
+	t.loadSeccheckInfoLocked(&req.Invoker, &mask.Invoker, &info.Invoker)
+	return info
 }

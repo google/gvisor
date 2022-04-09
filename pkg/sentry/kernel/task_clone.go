@@ -15,9 +15,8 @@
 package kernel
 
 import (
-	"sync/atomic"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -181,7 +180,7 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 			sh = sh.Fork()
 		}
 		tg = t.k.NewThreadGroup(tg.mounts, pidns, sh, linux.Signal(args.ExitSignal), tg.limits.GetCopy())
-		tg.oomScoreAdj = atomic.LoadInt32(&t.tg.oomScoreAdj)
+		tg.oomScoreAdj = atomicbitops.FromInt32(t.tg.oomScoreAdj.Load())
 		rseqAddr = t.rseqAddr
 		rseqSignature = t.rseqSignature
 	}
@@ -247,8 +246,9 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	defer nt.Start(tid)
 
 	if seccheck.Global.Enabled(seccheck.PointClone) {
-		mask, info := getCloneSeccheckInfo(t, nt, args)
-		if err := seccheck.Global.Clone(t, mask, &info); err != nil {
+		var mask seccheck.CloneFieldSet
+		info := getCloneSeccheckInfo(t, nt, args, &mask)
+		if err := seccheck.Global.Clone(t, &mask, &info); err != nil {
 			// nt has been visible to the rest of the system since NewTask, so
 			// it may be blocking execve or a group stop, have been notified
 			// for group signal delivery, had children reparented to it, etc.
@@ -306,20 +306,19 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	return ntid, nil, nil
 }
 
-func getCloneSeccheckInfo(t, nt *Task, args *linux.CloneArgs) (seccheck.CloneFieldSet, seccheck.CloneInfo) {
+func getCloneSeccheckInfo(t, nt *Task, args *linux.CloneArgs, mask *seccheck.CloneFieldSet) seccheck.CloneInfo {
 	req := seccheck.Global.CloneReq()
 	info := seccheck.CloneInfo{
 		Credentials: t.Credentials(),
 		Args:        *args,
 	}
-	var mask seccheck.CloneFieldSet
 	mask.Add(seccheck.CloneFieldCredentials)
 	mask.Add(seccheck.CloneFieldArgs)
 	t.k.tasks.mu.RLock()
 	defer t.k.tasks.mu.RUnlock()
-	t.loadSeccheckInfoLocked(req.Invoker, &mask.Invoker, &info.Invoker)
-	nt.loadSeccheckInfoLocked(req.Created, &mask.Created, &info.Created)
-	return mask, info
+	t.loadSeccheckInfoLocked(&req.Invoker, &mask.Invoker, &info.Invoker)
+	nt.loadSeccheckInfoLocked(&req.Created, &mask.Created, &info.Created)
+	return info
 }
 
 // maybeBeginVforkStop checks if a previously-started vfork child is still

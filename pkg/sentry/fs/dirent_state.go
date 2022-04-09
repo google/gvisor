@@ -16,7 +16,6 @@ package fs
 
 import (
 	"fmt"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/refs"
@@ -37,7 +36,7 @@ func (d *Dirent) beforeSave() {
 	// perfectly OK to save---we are simply disallowing it here to prevent
 	// generating non-restorable state dumps. As the program continues its
 	// execution, it may become allowed to save again.
-	if !d.Inode.IsVirtual() && atomic.LoadInt32(&d.deleted) != 0 {
+	if !d.Inode.IsVirtual() && d.deleted.Load() != 0 {
 		n, _ := d.FullName(nil /* root */)
 		panic(ErrSaveRejection{fmt.Errorf("deleted file %q still has open fds", n)})
 	}

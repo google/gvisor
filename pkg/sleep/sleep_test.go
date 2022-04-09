@@ -18,9 +18,10 @@ import (
 	"math/rand"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
+
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 )
 
 // ZeroWakerNotAsserted tests that a zero-value waker is in non-asserted state.
@@ -351,7 +352,7 @@ func TestAssertFetch(t *testing.T) {
 		}
 	}()
 	var (
-		count int32
+		count atomicbitops.Int32
 		wg    sync.WaitGroup
 	)
 	for i := 0; i < sleeperWakers; i++ {
@@ -361,7 +362,7 @@ func TestAssertFetch(t *testing.T) {
 			ss[i].Fetch(true /* block */)
 			w := &ws[(i+1)%sleeperWakers]
 			for n := 0; n < wakeRequests; n++ {
-				atomic.AddInt32(&count, 1)
+				count.Add(1)
 				ss[i].AssertAndFetch(w)
 			}
 			w.Assert() // Final wake-up.
@@ -373,8 +374,8 @@ func TestAssertFetch(t *testing.T) {
 	wg.Wait()
 
 	// Check what we got.
-	if want := int32(sleeperWakers * wakeRequests); count != want {
-		t.Errorf("unexpected count: got %d, wanted %d", count, want)
+	if got, want := count.Load(), int32(sleeperWakers*wakeRequests); got != want {
+		t.Errorf("unexpected count: got %d, wanted %d", got, want)
 	}
 }
 

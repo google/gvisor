@@ -12,13 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package checkaligned ensures that atomic (u)int64 operations happen
+// Package checkaligned ensures that atomic (u)int operations happen
 // exclusively via the atomicbitops package.
 package checkaligned
 
 import (
 	"fmt"
 	"go/ast"
+	"strings"
 
 	"golang.org/x/tools/go/analysis"
 )
@@ -26,7 +27,7 @@ import (
 // Analyzer defines the entrypoint.
 var Analyzer = &analysis.Analyzer{
 	Name: "checkaligned",
-	Doc:  "prohibits direct use of 64 bit atomic operations",
+	Doc:  "prohibits direct use of atomic int operations",
 	Run:  run,
 }
 
@@ -45,12 +46,51 @@ var blocklist = []string{
 	"StoreUint64",
 	"SwapInt64",
 	"SwapUint64",
+
+	"AddInt32",
+	"AddUint32",
+	"CompareAndSwapInt32",
+	"CompareAndSwapUint32",
+	"LoadInt32",
+	"LoadUint32",
+	"StoreInt32",
+	"StoreUint32",
+	"SwapInt32",
+	"SwapUint32",
+}
+
+// packageAllowlist is the small list of packages that are allowed to use
+// sync/atomic. Be careful when adding to this.
+var packageAllowlist = []string{
+	"gvisor.dev/gvisor/pkg/atomicbitops",
+	"gvisor.dev/gvisor/pkg/sync",
+	"gvisor.dev/gvisor/pkg/log",
+	"gvisor.dev/gvisor/pkg/checklocks/test",
+	"gvisor.dev/gvisor/pkg/sentry/platform/systrap",
+	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg",
+	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/usertrap",
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
-	// atomicbitops uses 64 bit values safely.
-	if pass.Pkg.Name() == "atomicbitops" {
-		return nil, nil
+	// A few packages are allowlisted.
+	pkgPath := pass.Pkg.Path()
+	for _, allowed := range packageAllowlist {
+		if pkgPath == allowed {
+			return nil, nil
+		}
+	}
+
+	// We also support a "// +checkalignedignore" escape hatch in the package
+	// comment.
+	for _, file := range pass.Files {
+		if file.Doc == nil {
+			continue
+		}
+		for _, comment := range file.Doc.List {
+			if len(comment.Text) > 2 && strings.HasPrefix(comment.Text[2:], " +checkalignedignore") {
+				return nil, nil
+			}
+		}
 	}
 
 	for _, file := range pass.Files {

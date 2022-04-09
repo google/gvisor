@@ -22,17 +22,33 @@
 package atomicbitops
 
 // AndUint32 atomically applies bitwise AND operation to *addr with val.
-func AndUint32(addr *uint32, val uint32)
+func AndUint32(addr *Uint32, val uint32) {
+	andUint32(&addr.value, val)
+}
+
+func andUint32(addr *uint32, val uint32)
 
 // OrUint32 atomically applies bitwise OR operation to *addr with val.
-func OrUint32(addr *uint32, val uint32)
+func OrUint32(addr *Uint32, val uint32) {
+	orUint32(&addr.value, val)
+}
+
+func orUint32(addr *uint32, val uint32)
 
 // XorUint32 atomically applies bitwise XOR operation to *addr with val.
-func XorUint32(addr *uint32, val uint32)
+func XorUint32(addr *Uint32, val uint32) {
+	xorUint32(&addr.value, val)
+}
+
+func xorUint32(addr *uint32, val uint32)
 
 // CompareAndSwapUint32 is like sync/atomic.CompareAndSwapUint32, but returns
 // the value previously stored at addr.
-func CompareAndSwapUint32(addr *uint32, old, new uint32) uint32
+func CompareAndSwapUint32(addr *Uint32, old, new uint32) uint32 {
+	return compareAndSwapUint32(&addr.value, old, new)
+}
+
+func compareAndSwapUint32(addr *uint32, old, new uint32) uint32
 
 // AndUint64 atomically applies bitwise AND operation to *addr with val.
 func AndUint64(addr *Uint64, val uint64) {

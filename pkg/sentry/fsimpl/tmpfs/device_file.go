@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
@@ -45,6 +46,6 @@ func (fs *filesystem) newDeviceFile(kuid auth.KUID, kgid auth.KGID, mode linux.F
 		panic(fmt.Sprintf("invalid DeviceKind: %v", kind))
 	}
 	file.inode.init(file, fs, kuid, kgid, mode, parentDir)
-	file.inode.nlink = 1 // from parent directory
+	file.inode.nlink = atomicbitops.FromUint32(1) // from parent directory
 	return &file.inode
 }

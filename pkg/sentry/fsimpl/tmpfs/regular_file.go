@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -100,7 +99,7 @@ func (fs *filesystem) newRegularFile(kuid auth.KUID, kgid auth.KGID, mode linux.
 		seals:           linux.F_SEAL_SEAL,
 	}
 	file.inode.init(file, fs, kuid, kgid, linux.S_IFREG|mode, parentDir)
-	file.inode.nlink = 1 // from parent directory
+	file.inode.nlink = atomicbitops.FromUint32(1) // from parent directory
 	return &file.inode
 }
 
@@ -446,9 +445,9 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 	n, err := src.CopyInTo(ctx, rw)
 	f.inode.touchCMtimeLocked()
 	for {
-		old := atomic.LoadUint32(&f.inode.mode)
+		old := f.inode.mode.Load()
 		new := vfs.ClearSUIDAndSGID(old)
-		if swapped := atomic.CompareAndSwapUint32(&f.inode.mode, old, new); swapped {
+		if swapped := f.inode.mode.CompareAndSwap(old, new); swapped {
 			break
 		}
 	}

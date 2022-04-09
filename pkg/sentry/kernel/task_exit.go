@@ -645,8 +645,9 @@ func (t *Task) exitNotifyLocked(fromPtraceDetach bool) {
 				t.parent.tg.eventQueue.Notify(EventExit | EventChildGroupStop | EventGroupContinue)
 			}
 			if seccheck.Global.Enabled(seccheck.PointExitNotifyParent) {
-				mask, info := getExitNotifyParentSeccheckInfo(t)
-				seccheck.Global.ExitNotifyParent(t, mask, &info)
+				var mask seccheck.ExitNotifyParentFieldSet
+				info := getExitNotifyParentSeccheckInfo(t, &mask)
+				seccheck.Global.ExitNotifyParent(t, &mask, &info)
 			}
 		}
 	}
@@ -697,15 +698,14 @@ func (t *Task) exitNotificationSignal(sig linux.Signal, receiver *Task) *linux.S
 }
 
 // Preconditions: The TaskSet mutex must be locked.
-func getExitNotifyParentSeccheckInfo(t *Task) (seccheck.ExitNotifyParentFieldSet, seccheck.ExitNotifyParentInfo) {
+func getExitNotifyParentSeccheckInfo(t *Task, mask *seccheck.ExitNotifyParentFieldSet) seccheck.ExitNotifyParentInfo {
 	req := seccheck.Global.ExitNotifyParentReq()
 	info := seccheck.ExitNotifyParentInfo{
 		ExitStatus: t.tg.exitStatus,
 	}
-	var mask seccheck.ExitNotifyParentFieldSet
 	mask.Add(seccheck.ExitNotifyParentFieldExitStatus)
-	t.loadSeccheckInfoLocked(req.Exiter, &mask.Exiter, &info.Exiter)
-	return mask, info
+	t.loadSeccheckInfoLocked(&req.Exiter, &mask.Exiter, &info.Exiter)
+	return info
 }
 
 // ExitStatus returns t's exit status, which is only guaranteed to be

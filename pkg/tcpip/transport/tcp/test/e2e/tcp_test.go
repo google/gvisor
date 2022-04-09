@@ -5303,7 +5303,7 @@ func TestTCPEndpointProbe(t *testing.T) {
 	defer c.Cleanup()
 
 	invoked := make(chan struct{})
-	c.Stack().AddTCPProbe(func(state stack.TCPEndpointState) {
+	c.Stack().AddTCPProbe(func(state *stack.TCPEndpointState) {
 		// Validate that the endpoint ID is what we expect.
 		//
 		// We don't do an extensive validation of every field but a
