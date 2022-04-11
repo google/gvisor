@@ -32,7 +32,7 @@ type protocolIDs struct {
 // transportEndpoints manages all endpoints of a given protocol. It has its own
 // mutex so as to reduce interference between protocols.
 type transportEndpoints struct {
-	mu sync.RWMutex
+	mu transportDemuxerRWMutex
 	// +checklocks:mu
 	endpoints map[TransportEndpointID]*endpointsByNIC
 	// rawEndpoints contains endpoints for raw sockets, which receive all

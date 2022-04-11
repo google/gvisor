@@ -62,6 +62,17 @@ go_template_instance(
 )
 
 go_template_instance(
+    name = "route_mutex",
+    out = "route_mutex.go",
+    package = "stack",
+    prefix = "route",
+    substrs = {
+        "genericMark": "route",
+    },
+    template = "//pkg/sync/locking:generic_rwmutex",
+)
+
+go_template_instance(
     name = "bucket_mutex",
     out = "bucket_mutex.go",
     package = "stack",
@@ -105,11 +116,26 @@ go_template_instance(
     template = "//pkg/sync/locking:generic_rwmutex",
 )
 
+go_template_instance(
+    name = "transport_demuxer_mutex",
+    out = "transport_demuxer_mutex.go",
+    package = "stack",
+    prefix = "transportDemuxer",
+    substrs = {
+        "genericMark": "transportDemuxer",
+    },
+    template = "//pkg/sync/locking:generic_rwmutex",
+)
+
 go_library(
     name = "stack",
     srcs = [
         "addressable_endpoint_state.go",
+        "bucket_mutex.go",
+        "conn_mutex.go",
+        "conn_state_mutex.go",
         "conntrack.go",
+        "conntrack_mutex.go",
         "headertype_string.go",
         "hook_string.go",
         "icmp_rate_limit.go",
@@ -132,17 +158,15 @@ go_library(
         "rand.go",
         "registration.go",
         "route.go",
+        "route_mutex.go",
         "stack.go",
         "stack_global_state.go",
         "stack_options.go",
         "tcp.go",
         "transport_demuxer.go",
+        "transport_demuxer_mutex.go",
         "tuple_list.go",
         "tuple_mutex.go",
-        "bucket_mutex.go",
-        "conntrack_mutex.go",
-        "conn_mutex.go",
-        "conn_state_mutex.go",
     ],
     visibility = ["//visibility:public"],
     deps = [
