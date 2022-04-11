@@ -310,7 +310,7 @@ func (n *Network) createNICWithAddrs(id tcpip.NICID, ep stack.LinkEndpoint, opts
 			},
 		}
 		if err := n.Stack.AddProtocolAddress(id, protocolAddr, stack.AddressProperties{}); err != nil {
-			return fmt.Errorf("AddProtocolAddress(%d, %+v, {}) failed: %v", id, protocolAddr, err)
+			return fmt.Errorf("AddProtocolAddress(%d, %+v, {}) failed: %s", id, protocolAddr, err)
 		}
 	}
 	return nil

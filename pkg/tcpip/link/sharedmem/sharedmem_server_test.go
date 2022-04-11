@@ -89,7 +89,7 @@ func newStackWithOptions(stackOpts stackOptions) (*stack.Stack, error) {
 		QDisc: qDisc,
 	}
 	if err := st.CreateNICWithOptions(nicID, ep, opts); err != nil {
-		return nil, fmt.Errorf("method CreateNICWithOptions(%d, _, %v) failed: %v", nicID, opts, err)
+		return nil, fmt.Errorf("method CreateNICWithOptions(%d, _, %v) failed: %s", nicID, opts, err)
 	}
 
 	// Add Protocol Address.
@@ -104,7 +104,7 @@ func newStackWithOptions(stackOpts stackOptions) (*stack.Stack, error) {
 		AddressWithPrefix: stackOpts.addr.WithPrefix(),
 	}
 	if err := st.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
-		return nil, fmt.Errorf("AddProtocolAddress(%d, %v, {}): %v", nicID, protocolAddr, err)
+		return nil, fmt.Errorf("AddProtocolAddress(%d, %v, {}): %s", nicID, protocolAddr, err)
 	}
 
 	// Setup route table.

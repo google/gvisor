@@ -497,7 +497,7 @@ func DialTCPWithBind(ctx context.Context, s *stack.Stack, localAddr, remoteAddr 
 	// Bind before connect if requested.
 	if localAddr != (tcpip.FullAddress{}) {
 		if err = ep.Bind(localAddr); err != nil {
-			return nil, fmt.Errorf("ep.Bind(%+v) = %v", localAddr, err)
+			return nil, fmt.Errorf("ep.Bind(%+v) = %s", localAddr, err)
 		}
 	}
 

@@ -224,7 +224,7 @@ func (c *Do) setupNet(cid string, spec *specs.Spec) (func(), error) {
 		args := strings.Split(cmd, " ")
 		cmd := exec.Command(args[0], args[1:]...)
 		if err := cmd.Run(); err != nil {
-			c.cleanupNet(cid, "", "", "")
+			c.cleanupNet(cid, dev, "", "", "")
 			return nil, fmt.Errorf("failed to run %q: %w", cmd, err)
 		}
 	}

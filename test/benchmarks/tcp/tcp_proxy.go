@@ -215,7 +215,7 @@ func newNetstackImpl(mode string) (impl, error) {
 		AddressWithPrefix: parsedAddr.WithPrefix(),
 	}
 	if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
-		return nil, fmt.Errorf("error adding IP address %+v to %q: %w", protocolAddr, *iface, err)
+		return nil, fmt.Errorf("error adding IP address %+v to %q: %s", protocolAddr, *iface, err)
 	}
 
 	subnet, err := tcpip.NewSubnet(parsedDest, parsedMask)
@@ -234,14 +234,14 @@ func newNetstackImpl(mode string) (impl, error) {
 	{
 		opt := tcpip.TCPSACKEnabled(*sack)
 		if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
-			return nil, fmt.Errorf("SetTransportProtocolOption(%d, &%T(%t)): %w", tcp.ProtocolNumber, opt, opt, err)
+			return nil, fmt.Errorf("SetTransportProtocolOption(%d, &%T(%t)): %s", tcp.ProtocolNumber, opt, opt, err)
 		}
 	}
 
 	if *rack {
 		opt := tcpip.TCPRecovery(tcpip.TCPRACKLossDetection)
 		if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
-			return nil, fmt.Errorf("enabling RACK failed: %w", err)
+			return nil, fmt.Errorf("enabling RACK failed: %s", err)
 		}
 	}
 
@@ -249,7 +249,7 @@ func newNetstackImpl(mode string) (impl, error) {
 	{
 		opt := tcpip.TCPModerateReceiveBufferOption(*moderateRecvBuf)
 		if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
-			return nil, fmt.Errorf("SetTransportProtocolOption(%d, &%T(%t)): %w", tcp.ProtocolNumber, opt, opt, err)
+			return nil, fmt.Errorf("SetTransportProtocolOption(%d, &%T(%t)): %s", tcp.ProtocolNumber, opt, opt, err)
 		}
 	}
 
@@ -257,7 +257,7 @@ func newNetstackImpl(mode string) (impl, error) {
 	if *cubic {
 		opt := tcpip.CongestionControlOption("cubic")
 		if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
-			return nil, fmt.Errorf("SetTransportProtocolOption(%d, &%T(%s)): %w", tcp.ProtocolNumber, opt, opt, err)
+			return nil, fmt.Errorf("SetTransportProtocolOption(%d, &%T(%s)): %s", tcp.ProtocolNumber, opt, opt, err)
 		}
 	}
 

@@ -80,7 +80,7 @@ func writer(ch chan struct{}, ep tcpip.Endpoint) {
 
 			for b.Len() != 0 {
 				if _, err := ep.Write(&b, tcpip.WriteOptions{Atomic: true}); err != nil {
-					return fmt.Errorf("ep.Write failed: %v", err)
+					return fmt.Errorf("ep.Write failed: %s", err)
 				}
 			}
 		}
