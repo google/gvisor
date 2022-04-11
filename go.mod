@@ -5,7 +5,6 @@ go 1.17
 require (
 	github.com/BurntSushi/toml v0.3.1
 	github.com/bazelbuild/rules_go v0.30.0
-	github.com/bits-and-blooms/bitset v1.2.0
 	github.com/cenkalti/backoff v1.1.1-0.20190506075156-2146c9339422
 	github.com/containerd/cgroups v1.0.1
 	github.com/containerd/console v1.0.1
@@ -13,7 +12,6 @@ require (
 	github.com/containerd/fifo v1.0.0
 	github.com/containerd/go-runc v1.0.0
 	github.com/containerd/typeurl v1.0.2
-	github.com/coreos/go-systemd/v22 v22.3.2
 	github.com/gofrs/flock v0.8.0
 	github.com/gogo/protobuf v1.3.2
 	github.com/google/btree v1.0.1
@@ -36,41 +34,43 @@ require (
 )
 
 require (
-	cloud.google.com/go/bigquery v1.8.0
 	github.com/Microsoft/go-winio v0.5.1 // indirect
 	github.com/Microsoft/hcsshim v0.8.14 // indirect
+	github.com/cilium/ebpf v0.4.0 // indirect
 	github.com/containerd/continuity v0.2.1 // indirect
 	github.com/containerd/ttrpc v1.0.2 // indirect
-	github.com/coreos/go-systemd/v22 v22.1.0
-	github.com/docker/distribution v2.8.1+incompatible // indirect
-	github.com/docker/docker v20.10.13+incompatible
-	github.com/docker/go-connections v0.4.0
-	github.com/godbus/dbus/v5 v5.0.3
-	github.com/golang/mock v1.4.4
-	github.com/google/go-cmp v0.5.6
-	github.com/google/go-github v17.0.0+incompatible
-	github.com/google/go-querystring v1.1.0 // indirect
-	github.com/google/gopacket v1.1.19
-	github.com/google/pprof v0.0.0-20200708004538-1a94d8640e99
-	github.com/google/uuid v1.1.2
+	github.com/coreos/go-systemd/v22 v22.1.0 // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/docker/go-units v0.4.0 // indirect
+	github.com/godbus/dbus/v5 v5.0.3 // indirect
+	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
+	github.com/golang/protobuf v1.5.2 // indirect
+	github.com/google/go-cmp v0.5.6 // indirect
+	github.com/google/gofuzz v1.0.0 // indirect
 	github.com/googleapis/gnostic v0.4.0 // indirect
-	github.com/gorilla/mux v1.8.0 // indirect
+	github.com/hashicorp/errwrap v1.0.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.0 // indirect
-	github.com/moby/term v0.0.0-20210619224110-3f7ff695adc6 // indirect
-	github.com/morikuni/aec v1.0.0 // indirect
-	github.com/opencontainers/image-spec v1.0.2 // indirect
+	github.com/json-iterator/go v1.1.7 // indirect
+	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
+	github.com/modern-go/reflect2 v1.0.1 // indirect
+	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/runc v1.0.0-rc90 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
 	github.com/vishvananda/netns v0.0.0-20211101163701-50045581ed74 // indirect
-	github.com/xeipuuv/gojsonschema v1.2.0
+	github.com/yuin/goldmark v1.4.1 // indirect
 	go.opencensus.io v0.23.0 // indirect
-	go.uber.org/multierr v1.1.0
-	golang.org/x/net v0.0.0-20211015210444-4f30a5c0130f
-	golang.org/x/oauth2 v0.0.0-20211005180243-6b3c2da341f1
-	golang.org/x/tools v0.1.9
-	google.golang.org/api v0.30.0
+	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9 // indirect
+	golang.org/x/mod v0.5.1 // indirect
+	golang.org/x/net v0.0.0-20211015210444-4f30a5c0130f // indirect
+	golang.org/x/oauth2 v0.0.0-20211005180243-6b3c2da341f1 // indirect
+	golang.org/x/text v0.3.7 // indirect
+	golang.org/x/tools v0.1.9 // indirect
+	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20210722135532-667f2b7c528f // indirect
-	gopkg.in/yaml.v2 v2.2.8
-	gotest.tools/v3 v3.1.0 // indirect
-	honnef.co/go/tools v0.0.1-2020.1.4
+	gopkg.in/inf.v0 v0.9.1 // indirect
+	gopkg.in/yaml.v2 v2.2.8 // indirect
+	k8s.io/klog v1.0.0 // indirect
+	k8s.io/utils v0.0.0-20190801114015-581e00157fb1 // indirect
+	sigs.k8s.io/yaml v1.1.0 // indirect
 )
