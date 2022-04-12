@@ -195,7 +195,7 @@ build    = $(call header,BUILD $(1)) && $(call build_paths,$(1),echo {})
 copy     = $(call header,COPY $(1) $(2)) && $(call build_paths,$(1),cp -fa {} $(2))
 run      = $(call header,RUN $(1) $(2)) && $(call build_paths,$(1),{} $(2))
 sudo     = $(call header,SUDO $(1) $(2)) && $(call build_paths,$(1),sudo -E {} $(2))
-test     = $(call header,TEST $(1)) && $(call wrapper,$(BAZEL) test $(TEST_OPTIONS) $(1))
+test     = $(call header,TEST $(1)) && $(call wrapper,$(BAZEL) test $(BAZEL_OPTIONS) $(TEST_OPTIONS) $(1))
 sudocopy = $(call header,COPY $(1) $(2)) && $(call build_paths,$(1),sudo cp -fa {} $(2))
 
 clean: ## Cleans the bazel cache.
