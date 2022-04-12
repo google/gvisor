@@ -140,7 +140,7 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 
 		// Verify the packet was sent out the default NIC.
 		p := defaultEP.Read()
-		if p == nil {
+		if p.IsNil() {
 			t.Fatalf("got defaultEP.Read(_) = _, false; want = _, true (packet wasn't written out)")
 		}
 
@@ -158,7 +158,7 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 		}...)
 
 		// Verify the packet was not sent out the alternate NIC.
-		if p := alternateEP.Read(); p != nil {
+		if p := alternateEP.Read(); !p.IsNil() {
 			t.Fatalf("got alternateEP.Read(_) = %+v, true; want = _, false", p)
 		}
 	}
@@ -182,13 +182,13 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 		}
 
 		// Verify the packet was not sent out the default NIC.
-		if p := defaultEP.Read(); p != nil {
+		if p := defaultEP.Read(); !p.IsNil() {
 			t.Fatalf("got defaultEP.Read(_) = %+v, true; want = _, false", p)
 		}
 
 		// Verify the packet was sent out the alternate NIC.
 		p := alternateEP.Read()
-		if p == nil {
+		if p.IsNil() {
 			t.Fatalf("got alternateEP.Read(_) = _, false; want = _, true (packet wasn't written out)")
 		}
 
@@ -226,7 +226,7 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 
 		// Verify the packet was sent out the default NIC.
 		p := defaultEP.Read()
-		if p == nil {
+		if p.IsNil() {
 			t.Fatalf("got defaultEP.Read(_) = _, false; want = _, true (packet wasn't written out)")
 		}
 
@@ -244,7 +244,7 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 		}...)
 
 		// Verify the packet was not sent out the alternate NIC.
-		if p := alternateEP.Read(); p != nil {
+		if p := alternateEP.Read(); !p.IsNil() {
 			t.Fatalf("got alternateEP.Read(_) = %+v, true; want = _, false", p)
 		}
 	}

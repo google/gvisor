@@ -163,7 +163,7 @@ func (e *endpoint) checkLocalAddress(addr tcpip.Address) bool {
 // the original packet that caused the ICMP one to be sent. This information is
 // used to find out which transport endpoint must be notified about the ICMP
 // packet.
-func (e *endpoint) handleControl(transErr stack.TransportError, pkt *stack.PacketBuffer) {
+func (e *endpoint) handleControl(transErr stack.TransportError, pkt stack.PacketBufferPtr) {
 	h, ok := pkt.Data().PullUp(header.IPv6MinimumSize)
 	if !ok {
 		return
@@ -266,7 +266,7 @@ func getTargetLinkAddr(it header.NDPOptionIterator) (tcpip.LinkAddress, bool) {
 	})
 }
 
-func isMLDValid(pkt *stack.PacketBuffer, iph header.IPv6, routerAlert *header.IPv6RouterAlertOption) bool {
+func isMLDValid(pkt stack.PacketBufferPtr, iph header.IPv6, routerAlert *header.IPv6RouterAlertOption) bool {
 	// As per RFC 2710 section 3:
 	//   All MLD messages described in this document are sent with a link-local
 	//   IPv6 Source Address, an IPv6 Hop Limit of 1, and an IPv6 Router Alert
@@ -286,7 +286,7 @@ func isMLDValid(pkt *stack.PacketBuffer, iph header.IPv6, routerAlert *header.IP
 	return true
 }
 
-func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, routerAlert *header.IPv6RouterAlertOption) {
+func (e *endpoint) handleICMP(pkt stack.PacketBufferPtr, hasFragmentHeader bool, routerAlert *header.IPv6RouterAlertOption) {
 	sent := e.stats.icmp.packetsSent
 	received := e.stats.icmp.packetsReceived
 	h := header.ICMPv6(pkt.TransportHeader().View())
@@ -1041,7 +1041,7 @@ func (*icmpReasonReassemblyTimeout) respondsToMulticast() bool {
 
 // returnError takes an error descriptor and generates the appropriate ICMP
 // error packet for IPv6 and sends it.
-func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, deliveredLocally bool) tcpip.Error {
+func (p *protocol) returnError(reason icmpReason, pkt stack.PacketBufferPtr, deliveredLocally bool) tcpip.Error {
 	origIPHdr := header.IPv6(pkt.NetworkHeader().View())
 	origIPHdrSrc := origIPHdr.SourceAddress()
 	origIPHdrDst := origIPHdr.DestinationAddress()
@@ -1205,14 +1205,14 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, deliv
 }
 
 // OnReassemblyTimeout implements fragmentation.TimeoutHandler.
-func (p *protocol) OnReassemblyTimeout(pkt *stack.PacketBuffer) {
+func (p *protocol) OnReassemblyTimeout(pkt stack.PacketBufferPtr) {
 	// OnReassemblyTimeout sends a Time Exceeded Message as per RFC 2460 Section
 	// 4.5:
 	//
 	//   If the first fragment (i.e., the one with a Fragment Offset of zero) has
 	//   been received, an ICMP Time Exceeded -- Fragment Reassembly Time Exceeded
 	//   message should be sent to the source of that fragment.
-	if pkt != nil {
+	if !pkt.IsNil() {
 		p.returnError(&icmpReasonReassemblyTimeout{}, pkt, true /* deliveredLocally */)
 	}
 }

@@ -40,7 +40,7 @@ func vv(size int, pieces ...string) buffer.VectorisedView {
 	return buffer.NewVectorisedView(size, views)
 }
 
-func pkt(size int, pieces ...string) *stack.PacketBuffer {
+func pkt(size int, pieces ...string) stack.PacketBufferPtr {
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: vv(size, pieces...),
 	})
@@ -52,7 +52,7 @@ type processInput struct {
 	last  uint16
 	more  bool
 	proto uint8
-	pkt   *stack.PacketBuffer
+	pkt   stack.PacketBufferPtr
 }
 
 type processOutput struct {
@@ -112,7 +112,7 @@ func TestFragmentationProcess(t *testing.T) {
 			for i, in := range c.in {
 				defer in.pkt.DecRef()
 				resPkt, proto, done, err := f.Process(in.id, in.first, in.last, in.more, in.proto, in.pkt)
-				if resPkt != nil {
+				if !resPkt.IsNil() {
 					defer resPkt.DecRef()
 				}
 				if err != nil {
@@ -262,7 +262,7 @@ func TestReassemblingTimeout(t *testing.T) {
 					p := pkt(len(frag.data), frag.data)
 					defer p.DecRef()
 					pkt, _, done, err := f.Process(FragmentID{}, frag.first, frag.last, frag.more, protocol, p)
-					if pkt != nil {
+					if !pkt.IsNil() {
 						pkt.DecRef()
 					}
 					if err != nil {
@@ -445,7 +445,7 @@ func TestErrors(t *testing.T) {
 			f := NewFragmentation(test.blockSize, HighFragThreshold, LowFragThreshold, reassembleTimeout, c, nil)
 			resPkt, _, done, err := f.Process(FragmentID{}, test.first, test.last, test.more, 0, p0)
 
-			if resPkt != nil {
+			if !resPkt.IsNil() {
 				resPkt.DecRef()
 			}
 			if !errors.Is(err, test.err) {
@@ -569,10 +569,10 @@ func TestPacketFragmenter(t *testing.T) {
 }
 
 type testTimeoutHandler struct {
-	pkt *stack.PacketBuffer
+	pkt stack.PacketBufferPtr
 }
 
-func (h *testTimeoutHandler) OnReassemblyTimeout(pkt *stack.PacketBuffer) {
+func (h *testTimeoutHandler) OnReassemblyTimeout(pkt stack.PacketBufferPtr) {
 	h.pkt = pkt
 }
 
@@ -590,14 +590,14 @@ func TestTimeoutHandler(t *testing.T) {
 		first uint16
 		last  uint16
 		more  bool
-		pkt   *stack.PacketBuffer
+		pkt   stack.PacketBufferPtr
 	}
 
 	tests := []struct {
 		name      string
 		params    []processParam
 		wantError bool
-		wantPkt   *stack.PacketBuffer
+		wantPkt   stack.PacketBufferPtr
 	}{
 		{
 			name: "onTimeout runs",
@@ -623,7 +623,7 @@ func TestTimeoutHandler(t *testing.T) {
 				},
 			},
 			wantError: false,
-			wantPkt:   nil,
+			wantPkt:   stack.PacketBufferPtr{},
 		},
 		{
 			name: "second pkt is ignored",
@@ -655,7 +655,7 @@ func TestTimeoutHandler(t *testing.T) {
 				},
 			},
 			wantError: true,
-			wantPkt:   nil,
+			wantPkt:   stack.PacketBufferPtr{},
 		},
 	}
 
@@ -663,7 +663,7 @@ func TestTimeoutHandler(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			handler := &testTimeoutHandler{pkt: nil}
+			handler := &testTimeoutHandler{pkt: stack.PacketBufferPtr{}}
 
 			f := NewFragmentation(minBlockSize, HighFragThreshold, LowFragThreshold, reassembleTimeout, &faketime.NullClock{}, handler)
 
@@ -680,11 +680,11 @@ func TestTimeoutHandler(t *testing.T) {
 				f.release(r, true)
 			}
 			switch {
-			case handler.pkt != nil && test.wantPkt == nil:
+			case !handler.pkt.IsNil() && test.wantPkt.IsNil():
 				t.Errorf("got handler.pkt = not nil (pkt.Data = %x), want = nil", handler.pkt.Data().AsRange().ToOwnedView())
-			case handler.pkt == nil && test.wantPkt != nil:
+			case handler.pkt.IsNil() && !test.wantPkt.IsNil():
 				t.Errorf("got handler.pkt = nil, want = not nil (pkt.Data = %x)", test.wantPkt.Data().AsRange().ToOwnedView())
-			case handler.pkt != nil && test.wantPkt != nil:
+			case !handler.pkt.IsNil() && !test.wantPkt.IsNil():
 				if diff := cmp.Diff(test.wantPkt.Data().AsRange().ToOwnedView(), handler.pkt.Data().AsRange().ToOwnedView()); diff != "" {
 					t.Errorf("pkt.Data mismatch (-want, +got):\n%s", diff)
 				}
@@ -694,7 +694,7 @@ func TestTimeoutHandler(t *testing.T) {
 }
 
 func TestFragmentSurvivesReleaseJob(t *testing.T) {
-	handler := &testTimeoutHandler{pkt: nil}
+	handler := &testTimeoutHandler{pkt: stack.PacketBufferPtr{}}
 	c := faketime.NewManualClock()
 	f := NewFragmentation(minBlockSize, HighFragThreshold, LowFragThreshold, reassembleTimeout, c, handler)
 	pkt := pkt(2, "01")

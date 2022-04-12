@@ -84,7 +84,7 @@ func (*stubLinkEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.E
 
 func (*stubLinkEndpoint) Attach(stack.NetworkDispatcher) {}
 
-func (*stubLinkEndpoint) AddHeader(*stack.PacketBuffer) {}
+func (*stubLinkEndpoint) AddHeader(stack.PacketBufferPtr) {}
 
 func (*stubLinkEndpoint) Wait() {}
 
@@ -92,11 +92,11 @@ type stubDispatcher struct {
 	stack.TransportDispatcher
 }
 
-func (*stubDispatcher) DeliverTransportPacket(tcpip.TransportProtocolNumber, *stack.PacketBuffer) stack.TransportPacketDisposition {
+func (*stubDispatcher) DeliverTransportPacket(tcpip.TransportProtocolNumber, stack.PacketBufferPtr) stack.TransportPacketDisposition {
 	return stack.TransportPacketHandled
 }
 
-func (*stubDispatcher) DeliverRawPacket(tcpip.TransportProtocolNumber, *stack.PacketBuffer) {
+func (*stubDispatcher) DeliverRawPacket(tcpip.TransportProtocolNumber, stack.PacketBufferPtr) {
 	// No-op.
 }
 
@@ -135,7 +135,7 @@ func (*testInterface) Spoofing() bool {
 	return false
 }
 
-func (t *testInterface) WritePacket(r *stack.Route, pkt *stack.PacketBuffer) tcpip.Error {
+func (t *testInterface) WritePacket(r *stack.Route, pkt stack.PacketBufferPtr) tcpip.Error {
 	pkt.EgressRoute = r.Fields()
 	var pkts stack.PacketBufferList
 	pkts.PushBack(pkt)
@@ -143,7 +143,7 @@ func (t *testInterface) WritePacket(r *stack.Route, pkt *stack.PacketBuffer) tcp
 	return err
 }
 
-func (t *testInterface) WritePacketToRemote(remoteLinkAddr tcpip.LinkAddress, pkt *stack.PacketBuffer) tcpip.Error {
+func (t *testInterface) WritePacketToRemote(remoteLinkAddr tcpip.LinkAddress, pkt stack.PacketBufferPtr) tcpip.Error {
 	pkt.EgressRoute.NetProto = pkt.NetworkProtocolNumber
 	pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
 	var pkts stack.PacketBufferList
@@ -519,7 +519,7 @@ func routeICMPv6Packet(t *testing.T, clock *faketime.ManualClock, args routeArgs
 
 	clock.RunImmediatelyScheduledJobs()
 	pi := args.src.Read()
-	if pi == nil {
+	if pi.IsNil() {
 		t.Fatal("packet didn't arrive")
 	}
 	defer pi.DecRef()
@@ -1334,7 +1334,7 @@ func TestLinkAddressRequest(t *testing.T) {
 			}
 
 			pkt := linkEP.Read()
-			if pkt == nil {
+			if pkt.IsNil() {
 				t.Fatal("expected to send a link address request")
 			}
 			defer pkt.DecRef()
@@ -1416,7 +1416,7 @@ func TestPacketQueing(t *testing.T) {
 			},
 			checkResp: func(t *testing.T, e *channel.Endpoint) {
 				p := e.Read()
-				if p == nil {
+				if p.IsNil() {
 					t.Fatalf("timed out waiting for packet")
 				}
 				defer p.DecRef()
@@ -1465,7 +1465,7 @@ func TestPacketQueing(t *testing.T) {
 			},
 			checkResp: func(t *testing.T, e *channel.Endpoint) {
 				p := e.Read()
-				if p == nil {
+				if p.IsNil() {
 					t.Fatalf("timed out waiting for packet")
 				}
 				defer p.DecRef()
@@ -1518,7 +1518,7 @@ func TestPacketQueing(t *testing.T) {
 			{
 				c.clock.RunImmediatelyScheduledJobs()
 				p := e.Read()
-				if p == nil {
+				if p.IsNil() {
 					t.Fatalf("timed out waiting for packet")
 				}
 				if p.NetworkProtocolNumber != ProtocolNumber {

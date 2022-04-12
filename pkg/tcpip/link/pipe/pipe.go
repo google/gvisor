@@ -53,7 +53,7 @@ func (e *Endpoint) deliverPackets(pkts stack.PacketBufferList) {
 		return
 	}
 
-	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
+	for _, pkt := range pkts.AsSlice() {
 		newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Data: buffer.NewVectorisedView(pkt.Size(), pkt.Views()),
 		})
@@ -108,4 +108,4 @@ func (*Endpoint) ARPHardwareType() header.ARPHardwareType {
 }
 
 // AddHeader implements stack.LinkEndpoint.
-func (*Endpoint) AddHeader(*stack.PacketBuffer) {}
+func (*Endpoint) AddHeader(stack.PacketBufferPtr) {}

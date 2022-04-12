@@ -46,7 +46,7 @@ var (
 // validateIgmpPacket checks that a passed packet is an IPv4 IGMP packet sent
 // to the provided address with the passed fields set. Raises a t.Error if any
 // field does not match.
-func validateIgmpPacket(t *testing.T, pkt *stack.PacketBuffer, igmpType header.IGMPType, maxRespTime byte, srcAddr, dstAddr, groupAddress tcpip.Address) {
+func validateIgmpPacket(t *testing.T, pkt stack.PacketBufferPtr, igmpType header.IGMPType, maxRespTime byte, srcAddr, dstAddr, groupAddress tcpip.Address) {
 	t.Helper()
 
 	payload := header.IPv4(stack.PayloadSince(pkt.NetworkHeader()))
@@ -160,7 +160,7 @@ func TestIGMPV1Present(t *testing.T) {
 	// the IGMPv1 General Membership Query in.
 	{
 		p := e.Read()
-		if p == nil {
+		if p.IsNil() {
 			t.Fatal("unable to Read IGMP packet, expected V2MembershipReport")
 		}
 		if got := s.Stats().IGMP.PacketsSent.V2MembershipReport.Value(); got != 1 {
@@ -190,13 +190,13 @@ func TestIGMPV1Present(t *testing.T) {
 
 	// Verify the solicited Membership Report is sent. Now that this NIC has seen
 	// an IGMPv1 query, it should send an IGMPv1 Membership Report.
-	if p := e.Read(); p != nil {
+	if p := e.Read(); !p.IsNil() {
 		t.Fatalf("sent unexpected packet, expected V1MembershipReport only after advancing the clock = %+v", p)
 	}
 	ctx.clock.Advance(ipv4.UnsolicitedReportIntervalMax)
 	{
 		p := e.Read()
-		if p == nil {
+		if p.IsNil() {
 			t.Fatal("unable to Read IGMP packet, expected V1MembershipReport")
 		}
 		if got := s.Stats().IGMP.PacketsSent.V1MembershipReport.Value(); got != 1 {
@@ -215,7 +215,7 @@ func TestIGMPV1Present(t *testing.T) {
 	}
 	{
 		p := e.Read()
-		if p == nil {
+		if p.IsNil() {
 			t.Fatal("unable to Read IGMP packet, expected V2MembershipReport")
 		}
 		if got := s.Stats().IGMP.PacketsSent.V2MembershipReport.Value(); got != 2 {
@@ -243,7 +243,7 @@ func TestSendQueuedIGMPReports(t *testing.T) {
 		t.Errorf("got reportStat.Value() = %d, want = 0", got)
 	}
 	clock.Advance(time.Hour)
-	if p := e.Read(); p != nil {
+	if p := e.Read(); !p.IsNil() {
 		t.Fatalf("got unexpected packet = %#v", p)
 	}
 
@@ -262,7 +262,7 @@ func TestSendQueuedIGMPReports(t *testing.T) {
 	if got := reportStat.Value(); got != 1 {
 		t.Errorf("got reportStat.Value() = %d, want = 1", got)
 	}
-	if p := e.Read(); p == nil {
+	if p := e.Read(); p.IsNil() {
 		t.Error("expected to send an IGMP membership report")
 	} else {
 		validateIgmpPacket(t, p, header.IGMPv2MembershipReport, 0, stackAddr, multicastAddr, multicastAddr)
@@ -275,7 +275,7 @@ func TestSendQueuedIGMPReports(t *testing.T) {
 	if got := reportStat.Value(); got != 2 {
 		t.Errorf("got reportStat.Value() = %d, want = 2", got)
 	}
-	if p := e.Read(); p == nil {
+	if p := e.Read(); p.IsNil() {
 		t.Error("expected to send an IGMP membership report")
 	} else {
 		validateIgmpPacket(t, p, header.IGMPv2MembershipReport, 0, stackAddr, multicastAddr, multicastAddr)
@@ -288,7 +288,7 @@ func TestSendQueuedIGMPReports(t *testing.T) {
 	// Should have no more packets to send after the initial set of unsolicited
 	// reports.
 	clock.Advance(time.Hour)
-	if p := e.Read(); p != nil {
+	if p := e.Read(); !p.IsNil() {
 		t.Fatalf("got unexpected packet = %#v", p)
 	}
 }

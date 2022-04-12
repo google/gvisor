@@ -41,7 +41,7 @@ var (
 	dstAddr    = testutil.MustParse6("c::3")
 )
 
-func v6PacketBufferWithSrcAddr(srcAddr tcpip.Address) *PacketBuffer {
+func v6PacketBufferWithSrcAddr(srcAddr tcpip.Address) PacketBufferPtr {
 	pkt := NewPacketBuffer(PacketBufferOptions{
 		ReserveHeaderBytes: header.IPv6MinimumSize + header.UDPMinimumSize,
 	})
@@ -68,7 +68,7 @@ func v6PacketBufferWithSrcAddr(srcAddr tcpip.Address) *PacketBuffer {
 	return pkt
 }
 
-func v6PacketBuffer() *PacketBuffer {
+func v6PacketBuffer() PacketBufferPtr {
 	return v6PacketBufferWithSrcAddr(srcAddr)
 }
 
@@ -238,19 +238,19 @@ func TestNATedConnectionReap(t *testing.T) {
 func TestNATAlwaysPerformed(t *testing.T) {
 	tests := []struct {
 		name     string
-		dnatHook func(*testing.T, *IPTables, *PacketBuffer)
-		snatHook func(*testing.T, *IPTables, *PacketBuffer)
+		dnatHook func(*testing.T, *IPTables, PacketBufferPtr)
+		snatHook func(*testing.T, *IPTables, PacketBufferPtr)
 	}{
 		{
 			name: "Prerouting and Input",
-			dnatHook: func(t *testing.T, iptables *IPTables, pkt *PacketBuffer) {
+			dnatHook: func(t *testing.T, iptables *IPTables, pkt PacketBufferPtr) {
 				t.Helper()
 
 				if !iptables.CheckPrerouting(pkt, nil /* addressEP */, "" /* inNicName */) {
 					t.Fatal("got iptables.CheckPrerouting(...) = false, want = true")
 				}
 			},
-			snatHook: func(t *testing.T, iptables *IPTables, pkt *PacketBuffer) {
+			snatHook: func(t *testing.T, iptables *IPTables, pkt PacketBufferPtr) {
 				t.Helper()
 
 				if !iptables.CheckInput(pkt, "" /* inNicName */) {
@@ -260,7 +260,7 @@ func TestNATAlwaysPerformed(t *testing.T) {
 		},
 		{
 			name: "Output and Postrouting",
-			dnatHook: func(t *testing.T, iptables *IPTables, pkt *PacketBuffer) {
+			dnatHook: func(t *testing.T, iptables *IPTables, pkt PacketBufferPtr) {
 				t.Helper()
 
 				// Output hook depends on a route but if the route is local, we don't
@@ -274,7 +274,7 @@ func TestNATAlwaysPerformed(t *testing.T) {
 					t.Fatal("got iptables.CheckOutput(...) = false, want = true")
 				}
 			},
-			snatHook: func(t *testing.T, iptables *IPTables, pkt *PacketBuffer) {
+			snatHook: func(t *testing.T, iptables *IPTables, pkt PacketBufferPtr) {
 				t.Helper()
 
 				// Postrouting hook depends on a route but if the route is local, we
@@ -326,11 +326,11 @@ func TestNATConflict(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		checkIPTables func(*testing.T, *IPTables, *PacketBuffer, bool)
+		checkIPTables func(*testing.T, *IPTables, PacketBufferPtr, bool)
 	}{
 		{
 			name: "Prerouting and Input",
-			checkIPTables: func(t *testing.T, iptables *IPTables, pkt *PacketBuffer, lastHookOK bool) {
+			checkIPTables: func(t *testing.T, iptables *IPTables, pkt PacketBufferPtr, lastHookOK bool) {
 				t.Helper()
 
 				if !iptables.CheckPrerouting(pkt, nil /* addressEP */, "" /* inNicName */) {
@@ -343,7 +343,7 @@ func TestNATConflict(t *testing.T) {
 		},
 		{
 			name: "Output and Postrouting",
-			checkIPTables: func(t *testing.T, iptables *IPTables, pkt *PacketBuffer, lastHookOK bool) {
+			checkIPTables: func(t *testing.T, iptables *IPTables, pkt PacketBufferPtr, lastHookOK bool) {
 				t.Helper()
 
 				// Output and Postrouting hooks depends on a route but if the route is

@@ -205,7 +205,7 @@ func (e *serverEndpoint) LinkAddress() tcpip.LinkAddress {
 }
 
 // AddHeader implements stack.LinkEndpoint.AddHeader.
-func (e *serverEndpoint) AddHeader(pkt *stack.PacketBuffer) {
+func (e *serverEndpoint) AddHeader(pkt stack.PacketBufferPtr) {
 	// Add ethernet header if needed.
 	if len(e.addr) == 0 {
 		return
@@ -219,13 +219,13 @@ func (e *serverEndpoint) AddHeader(pkt *stack.PacketBuffer) {
 	})
 }
 
-func (e *serverEndpoint) AddVirtioNetHeader(pkt *stack.PacketBuffer) {
+func (e *serverEndpoint) AddVirtioNetHeader(pkt stack.PacketBufferPtr) {
 	virtio := header.VirtioNetHeader(pkt.VirtioNetHeader().Push(header.VirtioNetHeaderSize))
 	virtio.Encode(&header.VirtioNetHeaderFields{})
 }
 
 // +checklocks:e.mu
-func (e *serverEndpoint) writePacketLocked(r stack.RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
+func (e *serverEndpoint) writePacketLocked(r stack.RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) tcpip.Error {
 	if e.virtioNetHeaderRequired {
 		e.AddVirtioNetHeader(pkt)
 	}
@@ -242,7 +242,7 @@ func (e *serverEndpoint) writePacketLocked(r stack.RouteInfo, protocol tcpip.Net
 // WritePacket writes outbound packets to the file descriptor. If it is not
 // currently writable, the packet is dropped.
 // WritePacket implements stack.LinkEndpoint.WritePacket.
-func (e *serverEndpoint) WritePacket(_ stack.RouteInfo, _ tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
+func (e *serverEndpoint) WritePacket(_ stack.RouteInfo, _ tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) tcpip.Error {
 	// Transmit the packet.
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -259,7 +259,7 @@ func (e *serverEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.E
 	var err tcpip.Error
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
+	for _, pkt := range pkts.AsSlice() {
 		if err = e.writePacketLocked(pkt.EgressRoute, pkt.NetworkProtocolNumber, pkt); err != nil {
 			break
 		}

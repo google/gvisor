@@ -130,22 +130,22 @@ type OutgoingInterface struct {
 // for the entry. For such routes, packets are added to an expiring queue until
 // a route is installed.
 type pendingRoute struct {
-	packets []*stack.PacketBuffer
+	packets []stack.PacketBufferPtr
 }
 
 func newPendingRoute(maxSize uint8) pendingRoute {
-	return pendingRoute{packets: make([]*stack.PacketBuffer, 0, maxSize)}
+	return pendingRoute{packets: make([]stack.PacketBufferPtr, 0, maxSize)}
 }
 
 // Dequeue removes the first element in the queue and returns it.
 //
 // If the queue is empty, then an error will be returned.
-func (p *pendingRoute) Dequeue() (*stack.PacketBuffer, error) {
+func (p *pendingRoute) Dequeue() (stack.PacketBufferPtr, error) {
 	if len(p.packets) == 0 {
-		return nil, errors.New("dequeue called on queue empty")
+		return stack.PacketBufferPtr{}, errors.New("dequeue called on queue empty")
 	}
 	val := p.packets[0]
-	p.packets[0] = nil
+	p.packets[0] = stack.PacketBufferPtr{}
 	p.packets = p.packets[1:]
 	return val, nil
 }
@@ -272,7 +272,7 @@ func (e PendingRouteState) String() string {
 // If the relevant pending route queue is at max capacity, then
 // ErrNoBufferSpace is returned. In such a case, callers are typically expected
 // to only deliver the pkt locally (if relevant).
-func (r *RouteTable) GetRouteOrInsertPending(key RouteKey, pkt *stack.PacketBuffer) (GetRouteResult, error) {
+func (r *RouteTable) GetRouteOrInsertPending(key RouteKey, pkt stack.PacketBufferPtr) (GetRouteResult, error) {
 	r.installedMu.RLock()
 	defer r.installedMu.RUnlock()
 

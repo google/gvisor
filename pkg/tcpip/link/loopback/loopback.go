@@ -76,7 +76,7 @@ func (*endpoint) Wait() {}
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.
 func (e *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
-	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
+	for _, pkt := range pkts.AsSlice() {
 		newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Data: buffer.NewVectorisedView(pkt.Size(), pkt.Views()),
 		})
@@ -91,4 +91,4 @@ func (*endpoint) ARPHardwareType() header.ARPHardwareType {
 	return header.ARPHardwareLoopback
 }
 
-func (*endpoint) AddHeader(*stack.PacketBuffer) {}
+func (*endpoint) AddHeader(stack.PacketBufferPtr) {}

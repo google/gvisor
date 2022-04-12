@@ -53,18 +53,18 @@ func (e *nullEndpoint) Attach(d stack.NetworkDispatcher)      { e.disp = d }
 func (e *nullEndpoint) IsAttached() bool                      { return e.disp != nil }
 func (*nullEndpoint) Wait()                                   {}
 func (*nullEndpoint) ARPHardwareType() header.ARPHardwareType { return header.ARPHardwareNone }
-func (*nullEndpoint) AddHeader(*stack.PacketBuffer)           {}
+func (*nullEndpoint) AddHeader(stack.PacketBufferPtr)         {}
 
 var _ stack.NetworkDispatcher = (*testNetworkDispatcher)(nil)
 
 type linkPacketInfo struct {
-	pkt      *stack.PacketBuffer
+	pkt      stack.PacketBufferPtr
 	protocol tcpip.NetworkProtocolNumber
 	incoming bool
 }
 
 type networkPacketInfo struct {
-	pkt      *stack.PacketBuffer
+	pkt      stack.PacketBufferPtr
 	protocol tcpip.NetworkProtocolNumber
 }
 
@@ -77,19 +77,19 @@ type testNetworkDispatcher struct {
 }
 
 func (t *testNetworkDispatcher) reset() {
-	if pkt := t.linkPacket.pkt; pkt != nil {
+	if pkt := t.linkPacket.pkt; !pkt.IsNil() {
 		pkt.DecRef()
 	}
-	if pkt := t.networkPacket.pkt; pkt != nil {
+	if pkt := t.networkPacket.pkt; !pkt.IsNil() {
 		pkt.DecRef()
 	}
 
 	*t = testNetworkDispatcher{}
 }
 
-func (t *testNetworkDispatcher) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func (t *testNetworkDispatcher) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
 	networkPacket := networkPacketInfo{
-		pkt:      pkt,
+		pkt:      pkt.IncRef(),
 		protocol: protocol,
 	}
 
@@ -97,14 +97,12 @@ func (t *testNetworkDispatcher) DeliverNetworkPacket(protocol tcpip.NetworkProto
 		t.t.Fatalf("already delivered network packet = %#v; new = %#v", t.networkPacket, networkPacket)
 	}
 
-	pkt.IncRef()
-
 	t.networkPacket = networkPacket
 }
 
-func (t *testNetworkDispatcher) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer, incoming bool) {
+func (t *testNetworkDispatcher) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr, incoming bool) {
 	linkPacket := linkPacketInfo{
-		pkt:      pkt,
+		pkt:      pkt.IncRef(),
 		protocol: protocol,
 		incoming: incoming,
 	}
@@ -112,8 +110,6 @@ func (t *testNetworkDispatcher) DeliverLinkPacket(protocol tcpip.NetworkProtocol
 	if t.linkPacket != (linkPacketInfo{}) {
 		t.t.Fatalf("already delivered link packet = %#v; new = %#v", t.linkPacket, linkPacket)
 	}
-
-	pkt.IncRef()
 
 	t.linkPacket = linkPacket
 }

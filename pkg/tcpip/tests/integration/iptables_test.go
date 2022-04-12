@@ -49,7 +49,7 @@ func (*inputIfNameMatcher) Name() string {
 	return "inputIfNameMatcher"
 }
 
-func (im *inputIfNameMatcher) Match(hook stack.Hook, _ *stack.PacketBuffer, inNicName, _ string) (bool, bool) {
+func (im *inputIfNameMatcher) Match(hook stack.Hook, _ stack.PacketBufferPtr, inNicName, _ string) (bool, bool) {
 	return (hook == stack.Input && im.name != "" && im.name == inNicName), false
 }
 
@@ -105,7 +105,7 @@ func genStackV4(t *testing.T) (*stack.Stack, *channel.Endpoint) {
 	return s, e
 }
 
-func genPacketV6() *stack.PacketBuffer {
+func genPacketV6() stack.PacketBufferPtr {
 	pktSize := header.IPv6MinimumSize + payloadSize
 	hdr := buffer.NewPrependable(pktSize)
 	ip := header.IPv6(hdr.Prepend(pktSize))
@@ -120,7 +120,7 @@ func genPacketV6() *stack.PacketBuffer {
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{Data: vv})
 }
 
-func genPacketV4() *stack.PacketBuffer {
+func genPacketV4() stack.PacketBufferPtr {
 	pktSize := header.IPv4MinimumSize + payloadSize
 	hdr := buffer.NewPrependable(pktSize)
 	ip := header.IPv4(hdr.Prepend(pktSize))
@@ -146,7 +146,7 @@ func TestIPTablesStatsForInput(t *testing.T) {
 		name               string
 		setupStack         func(*testing.T) (*stack.Stack, *channel.Endpoint)
 		setupFilter        func(*testing.T, *stack.Stack)
-		genPacket          func() *stack.PacketBuffer
+		genPacket          func() stack.PacketBufferPtr
 		proto              tcpip.NetworkProtocolNumber
 		expectReceived     int
 		expectInputDropped int
@@ -358,7 +358,7 @@ func (*udpSourcePortMatcher) Name() string {
 	return "udpSourcePortMatcher"
 }
 
-func (m *udpSourcePortMatcher) Match(_ stack.Hook, pkt *stack.PacketBuffer, _, _ string) (matches, hotdrop bool) {
+func (m *udpSourcePortMatcher) Match(_ stack.Hook, pkt stack.PacketBufferPtr, _, _ string) (matches, hotdrop bool) {
 	udp := header.UDP(pkt.TransportHeader().View())
 	if len(udp) < header.UDPMinimumSize {
 		// Drop immediately as the packet is invalid.
@@ -409,7 +409,7 @@ func TestIPTableWritePackets(t *testing.T) {
 				})
 				hdr := pkt.TransportHeader().Push(header.UDPMinimumSize)
 				udpHdr(hdr, r.LocalAddress(), r.RemoteAddress(), utils.LocalPort, utils.RemotePort)
-				pkts.PushFront(pkt)
+				pkts.PushBack(pkt)
 
 				return pkts
 			},
@@ -469,7 +469,7 @@ func TestIPTableWritePackets(t *testing.T) {
 					})
 					hdr := pkt.TransportHeader().Push(header.UDPMinimumSize)
 					udpHdr(hdr, r.LocalAddress(), r.RemoteAddress(), utils.LocalPort, utils.RemotePort)
-					pkts.PushFront(pkt)
+					pkts.PushBack(pkt)
 				}
 				for i := 0; i < dropPackets; i++ {
 					pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -477,7 +477,7 @@ func TestIPTableWritePackets(t *testing.T) {
 					})
 					hdr := pkt.TransportHeader().Push(header.UDPMinimumSize)
 					udpHdr(hdr, r.LocalAddress(), r.RemoteAddress(), dropLocalPort, utils.RemotePort)
-					pkts.PushFront(pkt)
+					pkts.PushBack(pkt)
 				}
 
 				return pkts
@@ -498,7 +498,7 @@ func TestIPTableWritePackets(t *testing.T) {
 				})
 				hdr := pkt.TransportHeader().Push(header.UDPMinimumSize)
 				udpHdr(hdr, r.LocalAddress(), r.RemoteAddress(), utils.LocalPort, utils.RemotePort)
-				pkts.PushFront(pkt)
+				pkts.PushBack(pkt)
 
 				return pkts
 			},
@@ -558,7 +558,7 @@ func TestIPTableWritePackets(t *testing.T) {
 					})
 					hdr := pkt.TransportHeader().Push(header.UDPMinimumSize)
 					udpHdr(hdr, r.LocalAddress(), r.RemoteAddress(), utils.LocalPort, utils.RemotePort)
-					pkts.PushFront(pkt)
+					pkts.PushBack(pkt)
 				}
 				for i := 0; i < dropPackets; i++ {
 					pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -566,7 +566,7 @@ func TestIPTableWritePackets(t *testing.T) {
 					})
 					hdr := pkt.TransportHeader().Push(header.UDPMinimumSize)
 					udpHdr(hdr, r.LocalAddress(), r.RemoteAddress(), dropLocalPort, utils.RemotePort)
-					pkts.PushFront(pkt)
+					pkts.PushBack(pkt)
 				}
 
 				return pkts
@@ -626,10 +626,7 @@ func TestIPTableWritePackets(t *testing.T) {
 			defer r.Release()
 
 			pkts := test.genPacket(r)
-			pktsLen := pkts.Len()
-			for i := 0; i < pktsLen; i++ {
-				pkt := pkts.Front()
-				pkts.Remove(pkt)
+			for _, pkt := range pkts.AsSlice() {
 				if err := r.WritePacket(stack.NetworkHeaderParams{
 					Protocol: header.UDPProtocolNumber,
 					TTL:      64,
@@ -937,7 +934,7 @@ func TestForwardingHook(t *testing.T) {
 					}
 
 					p := e2.Read()
-					if (p != nil) != expectTransmitPacket {
+					if (!p.IsNil()) != expectTransmitPacket {
 						t.Fatalf("got e2.Read() = %#v, want = (_ == nil) = %t", p, expectTransmitPacket)
 					}
 					if expectTransmitPacket {
@@ -1176,14 +1173,14 @@ func TestFilteringEchoPacketsWithLocalForwarding(t *testing.T) {
 
 					expectPacket := subTest.expectResult == noneDropped
 					p := e1.Read()
-					if (p != nil) != expectPacket {
+					if (!p.IsNil()) != expectPacket {
 						t.Errorf("got e1.Read() = %#v, want = (_ == nil) = %t", p, expectPacket)
 					}
-					if p != nil {
+					if !p.IsNil() {
 						test.checker(t, stack.PayloadSince(p.NetworkHeader()))
 						p.DecRef()
 					}
-					if p := e2.Read(); p != nil {
+					if p := e2.Read(); !p.IsNil() {
 						t.Errorf("got e1.Read() = %#v, want = nil)", p)
 						p.DecRef()
 					}
@@ -1531,7 +1528,7 @@ func TestNATEcho(t *testing.T) {
 									Data: test.echoPkt(natTypeTest.requestSrc, natTypeTest.requestDst, false /* reply */).ToVectorisedView(),
 								}))
 								pkt := ep1.Read()
-								if pkt == nil {
+								if pkt.IsNil() {
 									t.Fatal("expected to read a packet on ep1")
 								}
 								test.checkEchoPkt(t, stack.PayloadSince(pkt.NetworkHeader()), natTypeTest.expectedRequestSrc, natTypeTest.expectedRequestDst, false /* reply */)
@@ -1548,7 +1545,7 @@ func TestNATEcho(t *testing.T) {
 									Data: test.echoPkt(natTypeTest.expectedRequestDst, natTypeTest.expectedRequestSrc, true /* reply */).ToVectorisedView(),
 								}))
 								pkt := ep2.Read()
-								if pkt == nil {
+								if pkt.IsNil() {
 									t.Fatal("expected to read a packet on ep2")
 								}
 								test.checkEchoPkt(t, stack.PayloadSince(pkt.NetworkHeader()), natTypeTest.requestDst, natTypeTest.requestSrc, true /* reply */)
@@ -2514,7 +2511,7 @@ func TestNATICMPError(t *testing.T) {
 
 									{
 										pkt := ep1.Read()
-										if pkt == nil {
+										if pkt.IsNil() {
 											t.Fatal("expected to read a packet on ep1")
 										}
 										pktView := stack.PayloadSince(pkt.NetworkHeader())
@@ -2534,7 +2531,7 @@ func TestNATICMPError(t *testing.T) {
 
 									pkt := ep2.Read()
 									expectResponse := icmpType.expectResponse && trimTest.expectNATedICMP
-									if (pkt != nil) != expectResponse {
+									if (!pkt.IsNil()) != expectResponse {
 										t.Fatalf("got ep2.Read() = %#v, want = (_ == nil) = %t", pkt, expectResponse)
 									}
 									if !expectResponse {
@@ -2880,7 +2877,7 @@ func TestSNATHandlePortOrIdentConflicts(t *testing.T) {
 													}))
 
 													pkt := ep1.Read()
-													if pkt == nil {
+													if pkt.IsNil() {
 														t.Fatal("expected to read a packet on ep1")
 													}
 													pktView := stack.PayloadSince(pkt.NetworkHeader())
@@ -3020,7 +3017,7 @@ type icmpv4Matcher struct {
 	icmpType header.ICMPv4Type
 }
 
-func (m *icmpv4Matcher) Match(_ stack.Hook, pkt *stack.PacketBuffer, _, _ string) (matches bool, hotdrop bool) {
+func (m *icmpv4Matcher) Match(_ stack.Hook, pkt stack.PacketBufferPtr, _, _ string) (matches bool, hotdrop bool) {
 	if pkt.NetworkProtocolNumber != header.IPv4ProtocolNumber {
 		return false, false
 	}
@@ -3036,7 +3033,7 @@ type icmpv6Matcher struct {
 	icmpType header.ICMPv6Type
 }
 
-func (m *icmpv6Matcher) Match(_ stack.Hook, pkt *stack.PacketBuffer, _, _ string) (matches bool, hotdrop bool) {
+func (m *icmpv6Matcher) Match(_ stack.Hook, pkt stack.PacketBufferPtr, _, _ string) (matches bool, hotdrop bool) {
 	if pkt.NetworkProtocolNumber != header.IPv6ProtocolNumber {
 		return false, false
 	}
@@ -3286,7 +3283,7 @@ func TestRejectWith(t *testing.T) {
 
 							{
 								pkt := ep1.Read()
-								if pkt == nil {
+								if pkt.IsNil() {
 									t.Fatal("expected to read a packet on ep1")
 								}
 								test.icmpChecker(

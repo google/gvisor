@@ -35,11 +35,11 @@ type testNetworkDispatcher struct {
 	networkPackets int
 }
 
-func (t *testNetworkDispatcher) DeliverNetworkPacket(tcpip.NetworkProtocolNumber, *stack.PacketBuffer) {
+func (t *testNetworkDispatcher) DeliverNetworkPacket(tcpip.NetworkProtocolNumber, stack.PacketBufferPtr) {
 	t.networkPackets++
 }
 
-func (*testNetworkDispatcher) DeliverLinkPacket(tcpip.NetworkProtocolNumber, *stack.PacketBuffer, bool) {
+func (*testNetworkDispatcher) DeliverLinkPacket(tcpip.NetworkProtocolNumber, stack.PacketBufferPtr, bool) {
 	panic("not implemented")
 }
 
@@ -146,7 +146,7 @@ func TestWritePacketToRemoteAddHeader(t *testing.T) {
 
 	{
 		pkt := c.Read()
-		if pkt == nil {
+		if pkt.IsNil() {
 			t.Fatal("expected to read a packet")
 		}
 

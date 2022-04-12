@@ -53,13 +53,10 @@ type discipline struct {
 // through the lower LinkWriter.
 type queueDispatcher struct {
 	lower stack.LinkWriter
-	limit int
 
 	mu sync.Mutex
 	// +checklocks:mu
-	queue stack.PacketBufferList
-	// +checklocks:mu
-	used int
+	queue stack.PacketBufferCircularList
 
 	newPacketWaker sleep.Waker
 	closeWaker     sleep.Waker
@@ -67,6 +64,8 @@ type queueDispatcher struct {
 
 // New creates a new fifo queuing discipline  with the n queues with maximum
 // capacity of queueLen.
+//
+// +checklocksignore: we don't have to hold locks during initialization.
 func New(lower stack.LinkWriter, n int, queueLen int) stack.QueueingDiscipline {
 	d := &discipline{
 		dispatchers: make([]queueDispatcher, n),
@@ -75,7 +74,7 @@ func New(lower stack.LinkWriter, n int, queueLen int) stack.QueueingDiscipline {
 	for i := range d.dispatchers {
 		qd := &d.dispatchers[i]
 		qd.lower = lower
-		qd.limit = queueLen
+		qd.queue.Init(queueLen)
 
 		d.wg.Add(1)
 		go func() {
@@ -98,10 +97,9 @@ func (qd *queueDispatcher) dispatchLoop() {
 		case &qd.newPacketWaker:
 		case &qd.closeWaker:
 			qd.mu.Lock()
-			for p := qd.queue.Front(); p != nil; p = qd.queue.Front() {
-				qd.queue.Remove(p)
+			for p := qd.queue.Front(); !p.IsNil(); p = qd.queue.Front() {
+				qd.queue.RemoveFront()
 				p.DecRef()
-				qd.used--
 			}
 			qd.queue.DecRef()
 			qd.mu.Unlock()
@@ -110,16 +108,14 @@ func (qd *queueDispatcher) dispatchLoop() {
 			panic("unknown waker")
 		}
 		qd.mu.Lock()
-		for pkt := qd.queue.Front(); pkt != nil; pkt = qd.queue.Front() {
-			qd.queue.Remove(pkt)
-			qd.used--
+		for pkt := qd.queue.Front(); !pkt.IsNil(); pkt = qd.queue.Front() {
+			qd.queue.RemoveFront()
 			batch.PushBack(pkt)
-			if batch.Len() < BatchSize && qd.used != 0 {
+			if batch.Len() < BatchSize && !qd.queue.IsEmpty() {
 				continue
 			}
 			qd.mu.Unlock()
 			_, _ = qd.lower.WritePackets(batch)
-			batch.DecRef()
 			batch.Reset()
 			qd.mu.Lock()
 		}
@@ -133,17 +129,15 @@ func (qd *queueDispatcher) dispatchLoop() {
 //  - pkt.EgressRoute
 //  - pkt.GSOOptions
 //  - pkt.NetworkProtocolNumber
-func (d *discipline) WritePacket(pkt *stack.PacketBuffer) tcpip.Error {
+func (d *discipline) WritePacket(pkt stack.PacketBufferPtr) tcpip.Error {
 	if atomic.LoadInt32(&d.closed) == qDiscClosed {
 		return &tcpip.ErrClosedForSend{}
 	}
 	qd := &d.dispatchers[int(pkt.Hash)%len(d.dispatchers)]
 	qd.mu.Lock()
-	haveSpace := qd.used < qd.limit
+	haveSpace := qd.queue.HasSpace()
 	if haveSpace {
-		pkt.IncRef()
-		qd.queue.PushBack(pkt)
-		qd.used++
+		qd.queue.PushBack(pkt.IncRef())
 	}
 	qd.mu.Unlock()
 	if !haveSpace {

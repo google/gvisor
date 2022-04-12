@@ -77,17 +77,17 @@ func Example() {
 	// deliverPktLocally
 }
 
-func forwardPkt(*stack.PacketBuffer, *multicast.InstalledRoute) {}
+func forwardPkt(stack.PacketBufferPtr, *multicast.InstalledRoute) {}
 
 func emitMissingRouteEvent(multicast.RouteKey) {
 	fmt.Println("emitMissingRouteEvent")
 }
 
-func deliverPktLocally(*stack.PacketBuffer) {
+func deliverPktLocally(stack.PacketBufferPtr) {
 	fmt.Println("deliverPktLocally")
 }
 
-func newPacketBuffer(body string) *stack.PacketBuffer {
+func newPacketBuffer(body string) stack.PacketBufferPtr {
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buffer.View(body).ToVectorisedView(),
 	})

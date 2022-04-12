@@ -252,7 +252,7 @@ func (c *WriteContext) PacketInfo() WritePacketInfo {
 }
 
 // WritePacket attempts to write the packet.
-func (c *WriteContext) WritePacket(pkt *stack.PacketBuffer, headerIncluded bool) tcpip.Error {
+func (c *WriteContext) WritePacket(pkt stack.PacketBufferPtr, headerIncluded bool) tcpip.Error {
 	pkt.Owner = c.owner
 
 	if headerIncluded {

@@ -15,6 +15,8 @@
 // Package ilist provides the implementation of intrusive linked lists.
 package ilist
 
+// TODO: ITTT
+
 // Linker is the interface that objects must implement if they want to be added
 // to and/or removed from List objects.
 //

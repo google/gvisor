@@ -560,7 +560,7 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 }
 
 // HandlePacket implements stack.RawTransportEndpoint.HandlePacket.
-func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
+func (e *endpoint) HandlePacket(pkt stack.PacketBufferPtr) {
 	notifyReadableEvents := func() bool {
 		e.mu.RLock()
 		defer e.mu.RUnlock()

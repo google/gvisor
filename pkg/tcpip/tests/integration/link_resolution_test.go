@@ -430,7 +430,7 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 		utils.RxICMPv6EchoRequest(e, src, dst, ttl)
 	}
 
-	arpChecker := func(t *testing.T, request *stack.PacketBuffer, src, dst tcpip.Address) {
+	arpChecker := func(t *testing.T, request stack.PacketBufferPtr, src, dst tcpip.Address) {
 		if request.NetworkProtocolNumber != arp.ProtocolNumber {
 			t.Errorf("got request.NetworkProtocolNumber = %d, want = %d", request.NetworkProtocolNumber, arp.ProtocolNumber)
 		}
@@ -452,7 +452,7 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 		}
 	}
 
-	ndpChecker := func(t *testing.T, request *stack.PacketBuffer, src, dst tcpip.Address) {
+	ndpChecker := func(t *testing.T, request stack.PacketBufferPtr, src, dst tcpip.Address) {
 		if request.NetworkProtocolNumber != header.IPv6ProtocolNumber {
 			t.Fatalf("got Proto = %d, want = %d", request.NetworkProtocolNumber, header.IPv6ProtocolNumber)
 		}
@@ -506,7 +506,7 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 		outgoingAddr                 tcpip.AddressWithPrefix
 		transportProtocol            func(*stack.Stack) stack.TransportProtocol
 		rx                           func(*channel.Endpoint, tcpip.Address, tcpip.Address)
-		linkResolutionRequestChecker func(*testing.T, *stack.PacketBuffer, tcpip.Address, tcpip.Address)
+		linkResolutionRequestChecker func(*testing.T, stack.PacketBufferPtr, tcpip.Address, tcpip.Address)
 		icmpReplyChecker             func(*testing.T, []byte, tcpip.Address, tcpip.Address)
 		mtu                          uint32
 	}{
@@ -614,7 +614,7 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 
 			for i := 0; i < int(nudConfigs.MaxMulticastProbes); i++ {
 				request := outgoingEndpoint.Read()
-				if request == nil {
+				if request.IsNil() {
 					t.Fatal("expected ARP packet through outgoing NIC")
 				}
 
@@ -630,7 +630,7 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 			// link resolution fails, and this dequeue is what triggers the ICMP
 			// error.
 			reply := incomingEndpoint.Read()
-			if reply == nil {
+			if reply.IsNil() {
 				t.Fatal("expected ICMP packet through incoming NIC")
 			}
 
@@ -640,7 +640,7 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 			// Since link resolution failed, we don't expect the packet to be
 			// forwarded.
 			forwardedPacket := outgoingEndpoint.Read()
-			if forwardedPacket != nil {
+			if !forwardedPacket.IsNil() {
 				t.Fatalf("expected no ICMP Echo packet through outgoing NIC, instead found: %#v", forwardedPacket)
 			}
 

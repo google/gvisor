@@ -43,7 +43,7 @@ var (
 	defaultOutgoingInterfaces = []OutgoingInterface{{ID: outgoingNICID, MinTTL: defaultMinTTL}}
 )
 
-func newPacketBuffer(body string) *stack.PacketBuffer {
+func newPacketBuffer(body string) stack.PacketBufferPtr {
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buffer.View(body).ToVectorisedView(),
 	})

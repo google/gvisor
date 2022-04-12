@@ -87,7 +87,7 @@ type segment struct {
 	lost bool
 }
 
-func newIncomingSegment(id stack.TransportEndpointID, clock tcpip.Clock, pkt *stack.PacketBuffer) *segment {
+func newIncomingSegment(id stack.TransportEndpointID, clock tcpip.Clock, pkt stack.PacketBufferPtr) *segment {
 	netHdr := pkt.Network()
 	s := &segment{
 		id:       id,

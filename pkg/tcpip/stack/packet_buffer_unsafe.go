@@ -16,4 +16,4 @@ package stack
 
 import "unsafe"
 
-const packetBufferStructSize = int(unsafe.Sizeof(PacketBuffer{}))
+const packetBufferStructSize = int(unsafe.Sizeof(packetBuffer{}))

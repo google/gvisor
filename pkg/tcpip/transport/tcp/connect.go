@@ -813,7 +813,7 @@ func (e *endpoint) sendTCP(r *stack.Route, tf tcpFields, data buffer.VectorisedV
 	return nil
 }
 
-func buildTCPHdr(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso stack.GSO) {
+func buildTCPHdr(r *stack.Route, tf tcpFields, pkt stack.PacketBufferPtr, gso stack.GSO) {
 	optLen := len(tf.opts)
 	tcp := header.TCP(pkt.TransportHeader().Push(header.TCPMinimumSize + optLen))
 	pkt.TransportProtocolNumber = header.TCPProtocolNumber

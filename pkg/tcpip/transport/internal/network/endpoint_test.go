@@ -209,7 +209,7 @@ func TestEndpointStateTransitions(t *testing.T) {
 			if err := ctx.WritePacket(injectPkt, false /* headerIncluded */); err != nil {
 				t.Fatalf("ctx.WritePacket(_, false): %s", err)
 			}
-			if pkt := e.Read(); pkt == nil {
+			if pkt := e.Read(); pkt.IsNil() {
 				t.Fatalf("expected packet to be read from link endpoint")
 			} else {
 				test.checker(t, stack.PayloadSince(pkt.NetworkHeader()))

@@ -16,18 +16,6 @@ go_template_instance(
 )
 
 go_template_instance(
-    name = "packet_buffer_list",
-    out = "packet_buffer_list.go",
-    package = "stack",
-    prefix = "PacketBuffer",
-    template = "//pkg/ilist:generic_list",
-    types = {
-        "Element": "*PacketBuffer",
-        "Linker": "*PacketBuffer",
-    },
-)
-
-go_template_instance(
     name = "tuple_list",
     out = "tuple_list.go",
     package = "stack",
@@ -36,17 +24,6 @@ go_template_instance(
     types = {
         "Element": "*tuple",
         "Linker": "*tuple",
-    },
-)
-
-go_template_instance(
-    name = "packet_buffer_refs",
-    out = "packet_buffer_refs.go",
-    package = "stack",
-    prefix = "packetBuffer",
-    template = "//pkg/refsvfs2:refs_template",
-    types = {
-        "T": "PacketBuffer",
     },
 )
 
@@ -69,6 +46,7 @@ go_library(
         "nic_stats.go",
         "nud.go",
         "packet_buffer.go",
+        "packet_buffer_circular_list.go",
         "packet_buffer_list.go",
         "packet_buffer_refs.go",
         "packet_buffer_unsafe.go",
@@ -151,10 +129,12 @@ go_test(
         "neighbor_cache_test.go",
         "neighbor_entry_test.go",
         "nic_test.go",
+        "packet_buffer_refs_test.go",
         "packet_buffer_test.go",
     ],
     library = ":stack",
     deps = [
+        "//pkg/atomicbitops",
         "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",

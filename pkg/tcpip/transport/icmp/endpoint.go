@@ -679,7 +679,7 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 
 // HandlePacket is called by the stack when new packets arrive to this transport
 // endpoint.
-func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
+func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt stack.PacketBufferPtr) {
 	// Only accept echo replies.
 	switch e.net.NetProto() {
 	case header.IPv4ProtocolNumber:
@@ -765,7 +765,7 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 }
 
 // HandleError implements stack.TransportEndpoint.
-func (*endpoint) HandleError(stack.TransportError, *stack.PacketBuffer) {}
+func (*endpoint) HandleError(stack.TransportError, stack.PacketBufferPtr) {}
 
 // State implements tcpip.Endpoint.State. The ICMP endpoint currently doesn't
 // expose internal socket state.

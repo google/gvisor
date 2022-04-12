@@ -404,7 +404,7 @@ func (d *dispatcher) wait() {
 
 // queuePacket queues an incoming packet to the matching tcp endpoint and
 // also queues the endpoint to a processor queue for processing.
-func (d *dispatcher) queuePacket(stackEP stack.TransportEndpoint, id stack.TransportEndpointID, clock tcpip.Clock, pkt *stack.PacketBuffer) {
+func (d *dispatcher) queuePacket(stackEP stack.TransportEndpoint, id stack.TransportEndpointID, clock tcpip.Clock, pkt stack.PacketBufferPtr) {
 	d.mu.Lock()
 	closed := d.closed
 	d.mu.Unlock()

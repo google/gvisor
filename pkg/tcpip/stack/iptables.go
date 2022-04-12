@@ -273,7 +273,7 @@ type checkTable struct {
 //
 // If IPTables should not be skipped, tables will be updated with the
 // specified table.
-func (it *IPTables) shouldSkipOrPopulateTables(tables []checkTable, pkt *PacketBuffer) bool {
+func (it *IPTables) shouldSkipOrPopulateTables(tables []checkTable, pkt PacketBufferPtr) bool {
 	switch pkt.NetworkProtocolNumber {
 	case header.IPv4ProtocolNumber, header.IPv6ProtocolNumber:
 	default:
@@ -303,7 +303,7 @@ func (it *IPTables) shouldSkipOrPopulateTables(tables []checkTable, pkt *PacketB
 // must be dropped if false is returned.
 //
 // Precondition: The packet's network and transport header must be set.
-func (it *IPTables) CheckPrerouting(pkt *PacketBuffer, addressEP AddressableEndpoint, inNicName string) bool {
+func (it *IPTables) CheckPrerouting(pkt PacketBufferPtr, addressEP AddressableEndpoint, inNicName string) bool {
 	tables := [...]checkTable{
 		{
 			fn:      it.check,
@@ -336,7 +336,7 @@ func (it *IPTables) CheckPrerouting(pkt *PacketBuffer, addressEP AddressableEndp
 // must be dropped if false is returned.
 //
 // Precondition: The packet's network and transport header must be set.
-func (it *IPTables) CheckInput(pkt *PacketBuffer, inNicName string) bool {
+func (it *IPTables) CheckInput(pkt PacketBufferPtr, inNicName string) bool {
 	tables := [...]checkTable{
 		{
 			fn:      it.checkNAT,
@@ -371,7 +371,7 @@ func (it *IPTables) CheckInput(pkt *PacketBuffer, inNicName string) bool {
 // must be dropped if false is returned.
 //
 // Precondition: The packet's network and transport header must be set.
-func (it *IPTables) CheckForward(pkt *PacketBuffer, inNicName, outNicName string) bool {
+func (it *IPTables) CheckForward(pkt PacketBufferPtr, inNicName, outNicName string) bool {
 	tables := [...]checkTable{
 		{
 			fn:      it.check,
@@ -398,7 +398,7 @@ func (it *IPTables) CheckForward(pkt *PacketBuffer, inNicName, outNicName string
 // must be dropped if false is returned.
 //
 // Precondition: The packet's network and transport header must be set.
-func (it *IPTables) CheckOutput(pkt *PacketBuffer, r *Route, outNicName string) bool {
+func (it *IPTables) CheckOutput(pkt PacketBufferPtr, r *Route, outNicName string) bool {
 	tables := [...]checkTable{
 		{
 			fn:      it.check,
@@ -435,7 +435,7 @@ func (it *IPTables) CheckOutput(pkt *PacketBuffer, r *Route, outNicName string) 
 // must be dropped if false is returned.
 //
 // Precondition: The packet's network and transport header must be set.
-func (it *IPTables) CheckPostrouting(pkt *PacketBuffer, r *Route, addressEP AddressableEndpoint, outNicName string) bool {
+func (it *IPTables) CheckPostrouting(pkt PacketBufferPtr, r *Route, addressEP AddressableEndpoint, outNicName string) bool {
 	tables := [...]checkTable{
 		{
 			fn:      it.check,
@@ -464,12 +464,12 @@ func (it *IPTables) CheckPostrouting(pkt *PacketBuffer, r *Route, addressEP Addr
 	return true
 }
 
-type checkTableFn func(table Table, hook Hook, pkt *PacketBuffer, r *Route, addressEP AddressableEndpoint, inNicName, outNicName string) bool
+type checkTableFn func(table Table, hook Hook, pkt PacketBufferPtr, r *Route, addressEP AddressableEndpoint, inNicName, outNicName string) bool
 
 // checkNAT runs the packet through the NAT table.
 //
 // See check.
-func (it *IPTables) checkNAT(table Table, hook Hook, pkt *PacketBuffer, r *Route, addressEP AddressableEndpoint, inNicName, outNicName string) bool {
+func (it *IPTables) checkNAT(table Table, hook Hook, pkt PacketBufferPtr, r *Route, addressEP AddressableEndpoint, inNicName, outNicName string) bool {
 	t := pkt.tuple
 	if t != nil && t.conn.handlePacket(pkt, hook, r) {
 		return true
@@ -512,7 +512,7 @@ func (it *IPTables) checkNAT(table Table, hook Hook, pkt *PacketBuffer, r *Route
 // network stack or tables, or false when it must be dropped.
 //
 // Precondition: The packet's network and transport header must be set.
-func (it *IPTables) check(table Table, hook Hook, pkt *PacketBuffer, r *Route, addressEP AddressableEndpoint, inNicName, outNicName string) bool {
+func (it *IPTables) check(table Table, hook Hook, pkt PacketBufferPtr, r *Route, addressEP AddressableEndpoint, inNicName, outNicName string) bool {
 	ruleIdx := table.BuiltinChains[hook]
 	switch verdict := it.checkChain(hook, pkt, table, ruleIdx, r, addressEP, inNicName, outNicName); verdict {
 	// If the table returns Accept, move on to the next table.
@@ -565,7 +565,7 @@ func (it *IPTables) startReaper(interval time.Duration) {
 // Preconditions:
 // * pkt is a IPv4 packet of at least length header.IPv4MinimumSize.
 // * pkt.NetworkHeader is not nil.
-func (it *IPTables) checkChain(hook Hook, pkt *PacketBuffer, table Table, ruleIdx int, r *Route, addressEP AddressableEndpoint, inNicName, outNicName string) chainVerdict {
+func (it *IPTables) checkChain(hook Hook, pkt PacketBufferPtr, table Table, ruleIdx int, r *Route, addressEP AddressableEndpoint, inNicName, outNicName string) chainVerdict {
 	// Start from ruleIdx and walk the list of rules until a rule gives us
 	// a verdict.
 	for ruleIdx < len(table.Rules) {
@@ -612,7 +612,7 @@ func (it *IPTables) checkChain(hook Hook, pkt *PacketBuffer, table Table, ruleId
 // Preconditions:
 // * pkt is a IPv4 packet of at least length header.IPv4MinimumSize.
 // * pkt.NetworkHeader is not nil.
-func (it *IPTables) checkRule(hook Hook, pkt *PacketBuffer, table Table, ruleIdx int, r *Route, addressEP AddressableEndpoint, inNicName, outNicName string) (RuleVerdict, int) {
+func (it *IPTables) checkRule(hook Hook, pkt PacketBufferPtr, table Table, ruleIdx int, r *Route, addressEP AddressableEndpoint, inNicName, outNicName string) (RuleVerdict, int) {
 	rule := table.Rules[ruleIdx]
 
 	// Check whether the packet matches the IP header filter.

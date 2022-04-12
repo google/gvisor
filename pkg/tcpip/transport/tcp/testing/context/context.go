@@ -306,7 +306,7 @@ func (c *Context) CheckNoPacketTimeout(errMsg string, wait time.Duration) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
-	if c.linkEP.ReadContext(ctx) != nil {
+	if pkt := c.linkEP.ReadContext(ctx); !pkt.IsNil() {
 		c.t.Fatal(errMsg)
 	}
 }
@@ -326,7 +326,7 @@ func (c *Context) GetPacketWithTimeout(timeout time.Duration) []byte {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	pkt := c.linkEP.ReadContext(ctx)
-	if pkt == nil {
+	if pkt.IsNil() {
 		return nil
 	}
 	defer pkt.DecRef()
@@ -377,7 +377,7 @@ func (c *Context) GetPacketNonBlocking() []byte {
 	c.t.Helper()
 
 	pkt := c.linkEP.Read()
-	if pkt == nil {
+	if pkt.IsNil() {
 		return nil
 	}
 	defer pkt.DecRef()
@@ -623,7 +623,7 @@ func (c *Context) GetV6Packet() []byte {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	pkt := c.linkEP.ReadContext(ctx)
-	if pkt == nil {
+	if pkt.IsNil() {
 		c.t.Fatalf("Packet wasn't written out")
 		return nil
 	}
