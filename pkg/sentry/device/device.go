@@ -19,9 +19,9 @@ package device
 import (
 	"bytes"
 	"fmt"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -37,7 +37,7 @@ import (
 type Registry struct {
 	// lastAnonDeviceMinor is the last minor device number used for an anonymous
 	// device. Must be accessed atomically.
-	lastAnonDeviceMinor uint64
+	lastAnonDeviceMinor atomicbitops.Uint64
 
 	// mu protects the fields below.
 	mu sync.Mutex `state:"nosave"`
@@ -62,7 +62,7 @@ func (r *Registry) newAnonID() ID {
 		// Anon devices always have a major number of 0.
 		Major: 0,
 		// Use the next minor number.
-		Minor: atomic.AddUint64(&r.lastAnonDeviceMinor, 1),
+		Minor: r.lastAnonDeviceMinor.Add(1),
 	}
 }
 
@@ -96,7 +96,7 @@ func (r *Registry) LoadFrom(other *Registry) {
 		}
 		ourD.loadFrom(otherD)
 	}
-	atomic.StoreUint64(&r.lastAnonDeviceMinor, atomic.LoadUint64(&other.lastAnonDeviceMinor))
+	r.lastAnonDeviceMinor.Store(other.lastAnonDeviceMinor.Load())
 }
 
 // ID identifies a device.
@@ -138,7 +138,7 @@ type Device struct {
 	ID
 
 	// last is the last generated inode.
-	last uint64
+	last atomicbitops.Uint64
 }
 
 // loadFrom initializes d from other. The IDs of both devices must match.
@@ -146,12 +146,12 @@ func (d *Device) loadFrom(other *Device) {
 	if d.ID != other.ID {
 		panic(fmt.Sprintf("Attempting to initialize a device %+v from %+v, but device IDs don't match", d, other))
 	}
-	atomic.StoreUint64(&d.last, atomic.LoadUint64(&other.last))
+	d.last.Store(other.last.Load())
 }
 
 // NextIno generates a new inode number
 func (d *Device) NextIno() uint64 {
-	return atomic.AddUint64(&d.last, 1)
+	return d.last.Add(1)
 }
 
 // MultiDeviceKey provides a hashable key for a MultiDevice. The key consists

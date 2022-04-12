@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fdchannel"
@@ -140,7 +141,7 @@ type fidRef struct {
 	// refs is an active refence count.
 	//
 	// The node above will be closed only when refs reaches zero.
-	refs int64
+	refs atomicbitops.Int64
 
 	// opened indicates whether this has been opened already.
 	//
@@ -183,12 +184,12 @@ type fidRef struct {
 
 // IncRef increases the references on a fid.
 func (f *fidRef) IncRef() {
-	atomic.AddInt64(&f.refs, 1)
+	f.refs.Add(1)
 }
 
 // DecRef should be called when you're finished with a fid.
 func (f *fidRef) DecRef() {
-	if atomic.AddInt64(&f.refs, -1) == 0 {
+	if f.refs.Add(-1) == 0 {
 		f.file.Close()
 
 		// Drop the parent reference.
@@ -209,11 +210,11 @@ func (f *fidRef) DecRef() {
 // the fid has been destroyed.
 func (f *fidRef) TryIncRef() bool {
 	for {
-		r := atomic.LoadInt64(&f.refs)
+		r := f.refs.Load()
 		if r <= 0 {
 			return false
 		}
-		if atomic.CompareAndSwapInt64(&f.refs, r, r+1) {
+		if f.refs.CompareAndSwap(r, r+1) {
 			return true
 		}
 	}

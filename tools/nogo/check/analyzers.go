@@ -49,6 +49,7 @@ import (
 	"honnef.co/go/tools/staticcheck"
 	"honnef.co/go/tools/stylecheck"
 
+	"gvisor.dev/gvisor/tools/checkaligned"
 	"gvisor.dev/gvisor/tools/checkescape"
 	"gvisor.dev/gvisor/tools/checkinfo"
 	"gvisor.dev/gvisor/tools/checklinkname"
@@ -182,6 +183,7 @@ func init() {
 	register(&plainAnalyzer{checkunsafe.Analyzer})
 	register(&plainAnalyzer{checklinkname.Analyzer})
 	register(&plainAnalyzer{checklocks.Analyzer})
+	register(&plainAnalyzer{checkaligned.Analyzer})
 
 	// Add all staticcheck analyzers.
 	for _, a := range staticcheck.Analyzers {

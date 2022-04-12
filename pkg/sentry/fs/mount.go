@@ -17,8 +17,8 @@ package fs
 import (
 	"bytes"
 	"fmt"
-	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/refs"
 )
@@ -124,7 +124,7 @@ type MountSource struct {
 	// walks to Dirents in this MountSource.
 	//
 	// direntRefs must be atomically changed.
-	direntRefs uint64
+	direntRefs atomicbitops.Uint64
 }
 
 // DefaultDirentCacheSize is the number of Dirents that the VFS can hold an
@@ -150,17 +150,17 @@ func NewMountSource(ctx context.Context, mops MountSourceOperations, filesystem 
 
 // DirentRefs returns the current mount direntRefs.
 func (msrc *MountSource) DirentRefs() uint64 {
-	return atomic.LoadUint64(&msrc.direntRefs)
+	return msrc.direntRefs.Load()
 }
 
 // IncDirentRefs increases direntRefs.
 func (msrc *MountSource) IncDirentRefs() {
-	atomic.AddUint64(&msrc.direntRefs, 1)
+	msrc.direntRefs.Add(1)
 }
 
 // DecDirentRefs decrements direntRefs.
 func (msrc *MountSource) DecDirentRefs() {
-	if atomic.AddUint64(&msrc.direntRefs, ^uint64(0)) == ^uint64(0) {
+	if msrc.direntRefs.Add(^uint64(0)) == ^uint64(0) {
 		panic("Decremented zero mount reference direntRefs")
 	}
 }

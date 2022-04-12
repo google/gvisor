@@ -20,11 +20,11 @@ package socket
 import (
 	"bytes"
 	"fmt"
-	"sync/atomic"
 	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
@@ -485,32 +485,32 @@ type SendReceiveTimeout struct {
 	// send is length of the send timeout in nanoseconds.
 	//
 	// send must be accessed atomically.
-	send int64
+	send atomicbitops.Int64
 
 	// recv is length of the receive timeout in nanoseconds.
 	//
 	// recv must be accessed atomically.
-	recv int64
+	recv atomicbitops.Int64
 }
 
 // SetRecvTimeout implements Socket.SetRecvTimeout.
 func (to *SendReceiveTimeout) SetRecvTimeout(nanoseconds int64) {
-	atomic.StoreInt64(&to.recv, nanoseconds)
+	to.recv.Store(nanoseconds)
 }
 
 // RecvTimeout implements Socket.RecvTimeout.
 func (to *SendReceiveTimeout) RecvTimeout() int64 {
-	return atomic.LoadInt64(&to.recv)
+	return to.recv.Load()
 }
 
 // SetSendTimeout implements Socket.SetSendTimeout.
 func (to *SendReceiveTimeout) SetSendTimeout(nanoseconds int64) {
-	atomic.StoreInt64(&to.send, nanoseconds)
+	to.send.Store(nanoseconds)
 }
 
 // SendTimeout implements Socket.SendTimeout.
 func (to *SendReceiveTimeout) SendTimeout() int64 {
-	return atomic.LoadInt64(&to.send)
+	return to.send.Load()
 }
 
 // GetSockOptEmitUnimplementedEvent emits unimplemented event if name is valid.
@@ -583,7 +583,6 @@ func emitUnimplementedEvent(t *kernel.Task, name int) {
 		linux.SO_PEEK_OFF,
 		linux.SO_PRIORITY,
 		linux.SO_RCVBUF,
-		linux.SO_RCVLOWAT,
 		linux.SO_RCVTIMEO,
 		linux.SO_REUSEADDR,
 		linux.SO_REUSEPORT,

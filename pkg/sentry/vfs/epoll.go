@@ -170,6 +170,7 @@ func (ep *EpollInstance) Readiness(mask waiter.EventMask) waiter.EventMask {
 		return 0
 	}
 	defer func() {
+		notify := false
 		ep.readyMu.Lock()
 		ep.ready.PushFrontList(&ready)
 		var next *epollInterest
@@ -179,11 +180,15 @@ func (ep *EpollInstance) Readiness(mask waiter.EventMask) waiter.EventMask {
 				// epi.NotifyEvent() was called while we were running.
 				notReady.Remove(epi)
 				ep.ready.PushBack(epi)
+				notify = true
 			} else {
 				epi.ready = false
 			}
 		}
 		ep.readyMu.Unlock()
+		if notify {
+			ep.q.Notify(waiter.ReadableEvents)
+		}
 	}()
 
 	var next *epollInterest
@@ -428,6 +433,7 @@ func (ep *EpollInstance) ReadEvents(events []linux.EpollEvent, maxEvents int) []
 		return nil
 	}
 	defer func() {
+		notify := false
 		ep.readyMu.Lock()
 		// epollInterests that we never checked are re-inserted at the start of
 		// ep.ready. epollInterests that were ready are re-inserted at the end
@@ -440,12 +446,16 @@ func (ep *EpollInstance) ReadEvents(events []linux.EpollEvent, maxEvents int) []
 				// epi.NotifyEvent() was called while we were running.
 				notReady.Remove(epi)
 				ep.ready.PushBack(epi)
+				notify = true
 			} else {
 				epi.ready = false
 			}
 		}
 		ep.ready.PushBackList(&requeue)
 		ep.readyMu.Unlock()
+		if notify {
+			ep.q.Notify(waiter.ReadableEvents)
+		}
 	}()
 
 	i := 0

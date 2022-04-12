@@ -25,26 +25,19 @@
 namespace gvisor {
 namespace testing {
 
-Cgroup::Cgroup(absl::string_view path) : cgroup_path_(path) {
+Cgroup::Cgroup(absl::string_view path, absl::string_view mountpoint)
+    : cgroup_path_(path), mountpoint_(mountpoint) {
   id_ = ++Cgroup::next_id_;
   std::cerr << absl::StreamFormat("[cg#%d] <= %s", id_, cgroup_path_)
             << std::endl;
 }
 
-PosixErrorOr<Cgroup> Cgroup::RecursivelyCreate(absl::string_view path) {
-  RETURN_IF_ERRNO(RecursivelyCreateDir(path));
-  return Cgroup(path);
-}
-
-PosixErrorOr<Cgroup> Cgroup::Create(absl::string_view path) {
-  RETURN_IF_ERRNO(Mkdir(path));
-  return Cgroup(path);
-}
-
 PosixError Cgroup::Delete() { return Rmdir(cgroup_path_); }
 
 PosixErrorOr<Cgroup> Cgroup::CreateChild(absl::string_view name) const {
-  return Cgroup::Create(JoinPath(Path(), name));
+  std::string path = JoinPath(Path(), name);
+  RETURN_IF_ERRNO(Mkdir(path));
+  return Cgroup(path, mountpoint_);
 }
 
 PosixErrorOr<std::string> Cgroup::ReadControlFile(
@@ -90,6 +83,37 @@ PosixErrorOr<absl::flat_hash_set<pid_t>> Cgroup::Procs() const {
 PosixErrorOr<absl::flat_hash_set<pid_t>> Cgroup::Tasks() const {
   ASSIGN_OR_RETURN_ERRNO(std::string buf, ReadControlFile("tasks"));
   return ParsePIDList(buf);
+}
+
+PosixError Cgroup::PollControlFileForChange(absl::string_view name,
+                                            absl::Duration timeout) const {
+  const absl::Duration poll_interval = absl::Milliseconds(10);
+  const absl::Time deadline = absl::Now() + timeout;
+  const std::string alias_path = absl::StrFormat("[cg#%d]/%s", id_, name);
+
+  ASSIGN_OR_RETURN_ERRNO(const int64_t initial_value,
+                         ReadIntegerControlFile(name));
+
+  while (true) {
+    ASSIGN_OR_RETURN_ERRNO(const int64_t current_value,
+                           ReadIntegerControlFile(name));
+    if (current_value != initial_value) {
+      std::cerr << absl::StreamFormat(
+                       "Control file '%s' changed from '%d' to '%d'",
+                       alias_path, initial_value, current_value)
+                << std::endl;
+      return NoError();
+    }
+    if (absl::Now() >= deadline) {
+      return PosixError(ETIME, absl::StrCat(alias_path, " didn't change in ",
+                                            absl::FormatDuration(timeout)));
+    }
+    std::cerr << absl::StreamFormat(
+                     "Waiting for control file '%s' to change from '%d'...",
+                     alias_path, initial_value)
+              << std::endl;
+    absl::SleepFor(poll_interval);
+  }
 }
 
 PosixError Cgroup::ContainsCallingProcess() const {
@@ -152,7 +176,7 @@ PosixErrorOr<Cgroup> Mounter::MountCgroupfs(std::string mopts) {
                    "Mount(\"none\", \"%s\", \"cgroup\", 0, \"%s\", 0) => OK",
                    mountpath, mopts)
             << std::endl;
-  Cgroup cg = Cgroup(mountpath);
+  Cgroup cg = Cgroup::RootCgroup(mountpath);
   mountpoints_[cg.id()] = std::move(mountpoint);
   mounts_[cg.id()] = std::move(mount);
   return cg;

@@ -99,6 +99,11 @@ func fillAddressSpace() (excludedRegions []region) {
 			unix.MAP_ANONYMOUS|unix.MAP_PRIVATE|unix.MAP_NORESERVE,
 			0, 0)
 		if errno != 0 {
+			// One page is the smallest mapping that can be allocated.
+			if current == hostarch.PageSize {
+				current = 0
+				break
+			}
 			// Attempt half the size; overflow not possible.
 			currentAddr, _ := hostarch.Addr(current >> 1).RoundUp()
 			current = uintptr(currentAddr)
@@ -106,13 +111,28 @@ func fillAddressSpace() (excludedRegions []region) {
 		}
 		// We filled a block.
 		filled += current
-		excludedRegions = append(excludedRegions, region{
-			virtual: addr,
-			length:  current,
-		})
-		// See comment above.
-		if filled != required {
-			required += faultBlockSize
+		// Check whether a new region is merged with a previous one.
+		for i := range excludedRegions {
+			if excludedRegions[i].virtual == addr+current {
+				excludedRegions[i].virtual = addr
+				addr = 0
+				break
+			}
+			if excludedRegions[i].virtual+excludedRegions[i].length == addr {
+				excludedRegions[i].length += current
+				addr = 0
+				break
+			}
+		}
+		if addr != 0 {
+			excludedRegions = append(excludedRegions, region{
+				virtual: addr,
+				length:  current,
+			})
+			// See comment above.
+			if filled != required {
+				required += faultBlockSize
+			}
 		}
 	}
 	if current == 0 {

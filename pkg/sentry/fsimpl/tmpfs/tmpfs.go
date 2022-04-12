@@ -35,6 +35,7 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -82,7 +83,7 @@ type filesystem struct {
 	// mu serializes changes to the Dentry tree.
 	mu sync.RWMutex `state:"nosave"`
 
-	nextInoMinusOne uint64 // accessed using atomic memory operations
+	nextInoMinusOne atomicbitops.Uint64 // accessed using atomic memory operations
 
 	root *dentry
 
@@ -399,9 +400,9 @@ type inode struct {
 	ino   uint64     // immutable
 
 	// Linux's tmpfs has no concept of btime.
-	atime int64 // nanoseconds
-	ctime int64 // nanoseconds
-	mtime int64 // nanoseconds
+	atime atomicbitops.Int64 // nanoseconds
+	ctime atomicbitops.Int64 // nanoseconds
+	mtime atomicbitops.Int64 // nanoseconds
 
 	locks vfs.FileLocks
 
@@ -430,12 +431,12 @@ func (i *inode) init(impl interface{}, fs *filesystem, kuid auth.KUID, kgid auth
 	i.mode = uint32(mode)
 	i.uid = uint32(kuid)
 	i.gid = uint32(kgid)
-	i.ino = atomic.AddUint64(&fs.nextInoMinusOne, 1)
+	i.ino = fs.nextInoMinusOne.Add(1)
 	// Tmpfs creation sets atime, ctime, and mtime to current time.
 	now := fs.clock.Now().Nanoseconds()
-	i.atime = now
-	i.ctime = now
-	i.mtime = now
+	i.atime = atomicbitops.FromInt64(now)
+	i.ctime = atomicbitops.FromInt64(now)
+	i.mtime = atomicbitops.FromInt64(now)
 	// i.nlink initialized by caller
 	i.impl = impl
 	i.refs.InitRefs()
@@ -514,21 +515,21 @@ func (i *inode) statTo(stat *linux.Statx) {
 	stat.GID = atomic.LoadUint32(&i.gid)
 	stat.Mode = uint16(atomic.LoadUint32(&i.mode))
 	stat.Ino = i.ino
-	stat.Atime = linux.NsecToStatxTimestamp(atomic.LoadInt64(&i.atime))
-	stat.Ctime = linux.NsecToStatxTimestamp(atomic.LoadInt64(&i.ctime))
-	stat.Mtime = linux.NsecToStatxTimestamp(atomic.LoadInt64(&i.mtime))
+	stat.Atime = linux.NsecToStatxTimestamp(i.atime.Load())
+	stat.Ctime = linux.NsecToStatxTimestamp(i.ctime.Load())
+	stat.Mtime = linux.NsecToStatxTimestamp(i.mtime.Load())
 	stat.DevMajor = linux.UNNAMED_MAJOR
 	stat.DevMinor = i.fs.devMinor
 	switch impl := i.impl.(type) {
 	case *regularFile:
 		stat.Mask |= linux.STATX_SIZE | linux.STATX_BLOCKS
-		stat.Size = uint64(atomic.LoadUint64(&impl.size))
+		stat.Size = uint64(impl.size.Load())
 		// TODO(jamieliu): This should be impl.data.Span() / 512, but this is
 		// too expensive to compute here. Cache it in regularFile.
 		stat.Blocks = allocatedBlocksForSize(stat.Size)
 	case *directory:
 		// "20" is mm/shmem.c:BOGO_DIRENT_SIZE.
-		stat.Size = 20 * (2 + uint64(atomic.LoadInt64(&impl.numChildren)))
+		stat.Size = 20 * (2 + uint64(impl.numChildren.Load()))
 		// stat.Blocks is 0.
 	case *symlink:
 		stat.Size = uint64(len(impl.target))
@@ -611,17 +612,17 @@ func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs.
 	now := i.fs.clock.Now().Nanoseconds()
 	if mask&linux.STATX_ATIME != 0 {
 		if stat.Atime.Nsec == linux.UTIME_NOW {
-			atomic.StoreInt64(&i.atime, now)
+			i.atime.Store(now)
 		} else {
-			atomic.StoreInt64(&i.atime, stat.Atime.ToNsecCapped())
+			i.atime.Store(stat.Atime.ToNsecCapped())
 		}
 		needsCtimeBump = true
 	}
 	if mask&linux.STATX_MTIME != 0 {
 		if stat.Mtime.Nsec == linux.UTIME_NOW {
-			atomic.StoreInt64(&i.mtime, now)
+			i.mtime.Store(now)
 		} else {
-			atomic.StoreInt64(&i.mtime, stat.Mtime.ToNsecCapped())
+			i.mtime.Store(stat.Mtime.ToNsecCapped())
 		}
 		needsCtimeBump = true
 		// Ignore the mtime bump, since we just set it ourselves.
@@ -629,9 +630,9 @@ func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs.
 	}
 	if mask&linux.STATX_CTIME != 0 {
 		if stat.Ctime.Nsec == linux.UTIME_NOW {
-			atomic.StoreInt64(&i.ctime, now)
+			i.ctime.Store(now)
 		} else {
-			atomic.StoreInt64(&i.ctime, stat.Ctime.ToNsecCapped())
+			i.ctime.Store(stat.Ctime.ToNsecCapped())
 		}
 		// Ignore the ctime bump, since we just set it ourselves.
 		needsCtimeBump = false
@@ -651,10 +652,10 @@ func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs.
 	}
 
 	if needsMtimeBump {
-		atomic.StoreInt64(&i.mtime, now)
+		i.mtime.Store(now)
 	}
 	if needsCtimeBump {
-		atomic.StoreInt64(&i.ctime, now)
+		i.ctime.Store(now)
 	}
 
 	return nil
@@ -709,7 +710,7 @@ func (i *inode) touchAtime(mnt *vfs.Mount) {
 	}
 	now := i.fs.clock.Now().Nanoseconds()
 	i.mu.Lock()
-	atomic.StoreInt64(&i.atime, now)
+	i.atime.Store(now)
 	i.mu.Unlock()
 	mnt.EndWrite()
 }
@@ -718,7 +719,7 @@ func (i *inode) touchAtime(mnt *vfs.Mount) {
 func (i *inode) touchCtime() {
 	now := i.fs.clock.Now().Nanoseconds()
 	i.mu.Lock()
-	atomic.StoreInt64(&i.ctime, now)
+	i.ctime.Store(now)
 	i.mu.Unlock()
 }
 
@@ -726,8 +727,8 @@ func (i *inode) touchCtime() {
 func (i *inode) touchCMtime() {
 	now := i.fs.clock.Now().Nanoseconds()
 	i.mu.Lock()
-	atomic.StoreInt64(&i.mtime, now)
-	atomic.StoreInt64(&i.ctime, now)
+	i.mtime.Store(now)
+	i.ctime.Store(now)
 	i.mu.Unlock()
 }
 
@@ -736,8 +737,8 @@ func (i *inode) touchCMtime() {
 // * inode.mu must be locked.
 func (i *inode) touchCMtimeLocked() {
 	now := i.fs.clock.Now().Nanoseconds()
-	atomic.StoreInt64(&i.mtime, now)
-	atomic.StoreInt64(&i.ctime, now)
+	i.mtime.Store(now)
+	i.ctime.Store(now)
 }
 
 func checkXattrName(name string) error {

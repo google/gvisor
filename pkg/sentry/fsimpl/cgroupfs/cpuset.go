@@ -34,7 +34,7 @@ import (
 // +stateify savable
 type cpusetController struct {
 	controllerCommon
-	controllerNoopMigrate
+	controllerStateless
 
 	maxCpus uint32
 	maxMems uint32
@@ -73,7 +73,7 @@ func (c *cpusetController) Clone() controller {
 		cpus:    &cpus,
 		mems:    &mems,
 	}
-	new.controllerCommon.cloneFrom(&c.controllerCommon)
+	new.controllerCommon.cloneFromParent(c)
 	return new
 }
 

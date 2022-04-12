@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -176,7 +177,7 @@ func (InodeNotSymlink) Getlink(context.Context, *vfs.Mount) (vfs.VirtualDentry, 
 type InodeAttrs struct {
 	devMajor  uint32
 	devMinor  uint32
-	ino       uint64
+	ino       atomicbitops.Uint64
 	mode      uint32
 	uid       uint32
 	gid       uint32
@@ -184,9 +185,9 @@ type InodeAttrs struct {
 	blockSize uint32
 
 	// Timestamps, all nsecs from the Unix epoch.
-	atime int64
-	mtime int64
-	ctime int64
+	atime atomicbitops.Int64
+	mtime atomicbitops.Int64
+	ctime atomicbitops.Int64
 }
 
 // Init initializes this InodeAttrs.
@@ -201,16 +202,16 @@ func (a *InodeAttrs) Init(ctx context.Context, creds *auth.Credentials, devMajor
 	}
 	a.devMajor = devMajor
 	a.devMinor = devMinor
-	atomic.StoreUint64(&a.ino, ino)
+	a.ino.Store(ino)
 	atomic.StoreUint32(&a.mode, uint32(mode))
 	atomic.StoreUint32(&a.uid, uint32(creds.EffectiveKUID))
 	atomic.StoreUint32(&a.gid, uint32(creds.EffectiveKGID))
 	atomic.StoreUint32(&a.nlink, nlink)
 	atomic.StoreUint32(&a.blockSize, hostarch.PageSize)
 	now := ktime.NowFromContext(ctx).Nanoseconds()
-	atomic.StoreInt64(&a.atime, now)
-	atomic.StoreInt64(&a.mtime, now)
-	atomic.StoreInt64(&a.ctime, now)
+	a.atime.Store(now)
+	a.mtime.Store(now)
+	a.ctime.Store(now)
 }
 
 // DevMajor returns the device major number.
@@ -225,7 +226,7 @@ func (a *InodeAttrs) DevMinor() uint32 {
 
 // Ino returns the inode id.
 func (a *InodeAttrs) Ino() uint64 {
-	return atomic.LoadUint64(&a.ino)
+	return a.ino.Load()
 }
 
 // Mode implements Inode.Mode.
@@ -246,7 +247,7 @@ func (a *InodeAttrs) TouchAtime(ctx context.Context, mnt *vfs.Mount) {
 	if err := mnt.CheckBeginWrite(); err != nil {
 		return
 	}
-	atomic.StoreInt64(&a.atime, ktime.NowFromContext(ctx).Nanoseconds())
+	a.atime.Store(ktime.NowFromContext(ctx).Nanoseconds())
 	mnt.EndWrite()
 }
 
@@ -255,8 +256,8 @@ func (a *InodeAttrs) TouchAtime(ctx context.Context, mnt *vfs.Mount) {
 // value.
 func (a *InodeAttrs) TouchCMtime(ctx context.Context) {
 	now := ktime.NowFromContext(ctx).Nanoseconds()
-	atomic.StoreInt64(&a.mtime, now)
-	atomic.StoreInt64(&a.ctime, now)
+	a.mtime.Store(now)
+	a.ctime.Store(now)
 }
 
 // Stat partially implements Inode.Stat. Note that this function doesn't provide
@@ -267,15 +268,15 @@ func (a *InodeAttrs) Stat(context.Context, *vfs.Filesystem, vfs.StatOptions) (li
 	stat.Mask = linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | linux.STATX_INO | linux.STATX_NLINK | linux.STATX_ATIME | linux.STATX_MTIME | linux.STATX_CTIME
 	stat.DevMajor = a.devMajor
 	stat.DevMinor = a.devMinor
-	stat.Ino = atomic.LoadUint64(&a.ino)
+	stat.Ino = a.ino.Load()
 	stat.Mode = uint16(a.Mode())
 	stat.UID = atomic.LoadUint32(&a.uid)
 	stat.GID = atomic.LoadUint32(&a.gid)
 	stat.Nlink = atomic.LoadUint32(&a.nlink)
 	stat.Blksize = atomic.LoadUint32(&a.blockSize)
-	stat.Atime = linux.NsecToStatxTimestamp(atomic.LoadInt64(&a.atime))
-	stat.Mtime = linux.NsecToStatxTimestamp(atomic.LoadInt64(&a.mtime))
-	stat.Ctime = linux.NsecToStatxTimestamp(atomic.LoadInt64(&a.ctime))
+	stat.Atime = linux.NsecToStatxTimestamp(a.atime.Load())
+	stat.Mtime = linux.NsecToStatxTimestamp(a.mtime.Load())
+	stat.Ctime = linux.NsecToStatxTimestamp(a.ctime.Load())
 	return stat, nil
 }
 
@@ -341,13 +342,13 @@ func (a *InodeAttrs) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *aut
 		if stat.Atime.Nsec == linux.UTIME_NOW {
 			stat.Atime = linux.NsecToStatxTimestamp(now)
 		}
-		atomic.StoreInt64(&a.atime, stat.Atime.ToNsec())
+		a.atime.Store(stat.Atime.ToNsec())
 	}
 	if stat.Mask&linux.STATX_MTIME != 0 {
 		if stat.Mtime.Nsec == linux.UTIME_NOW {
 			stat.Mtime = linux.NsecToStatxTimestamp(now)
 		}
-		atomic.StoreInt64(&a.mtime, stat.Mtime.ToNsec())
+		a.mtime.Store(stat.Mtime.ToNsec())
 	}
 
 	return nil
@@ -484,6 +485,16 @@ func (o *OrderedChildren) Lookup(ctx context.Context, name string) (Inode, error
 
 	s.inode.IncRef() // This ref is passed to the dentry upon creation via Init.
 	return s.inode, nil
+}
+
+// ForEachChild calls fn on all childrens tracked by this ordered children.
+func (o *OrderedChildren) ForEachChild(fn func(string, Inode)) {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+
+	for name, slot := range o.set {
+		fn(name, slot.inode)
+	}
 }
 
 // IterDirents implements Inode.IterDirents.

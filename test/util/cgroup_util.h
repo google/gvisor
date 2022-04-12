@@ -30,23 +30,27 @@ namespace testing {
 // Cgroup represents a cgroup directory on a mounted cgroupfs.
 class Cgroup {
  public:
-  Cgroup(std::string_view path);
+  static Cgroup RootCgroup(absl::string_view path) {
+    return Cgroup(path, path);
+  }
 
   uint64_t id() const { return id_; }
-
-  // RecursivelyCreate creates cgroup specified by path, including all
-  // components leading up to path. Path should end inside a cgroupfs mount. If
-  // path already exists, RecursivelyCreate does nothing and silently succeeds.
-  static PosixErrorOr<Cgroup> RecursivelyCreate(std::string_view path);
-
-  // Creates a new cgroup at path. The parent directory must exist and be a
-  // cgroupfs directory.
-  static PosixErrorOr<Cgroup> Create(std::string_view path);
 
   // Deletes the current cgroup represented by this object.
   PosixError Delete();
 
   const std::string& Path() const { return cgroup_path_; }
+
+  // Returns the canonical path for this cgroup, which is the absolute path
+  // starting at the hierarchy root.
+  const std::string CanonicalPath() const {
+    std::string relpath =
+        GetRelativePath(mountpoint_, cgroup_path_).ValueOrDie();
+    if (relpath == ".") {
+      return "/";
+    }
+    return "/" + relpath;
+  }
 
   // Creates a child cgroup under this cgroup with the given name.
   PosixErrorOr<Cgroup> CreateChild(std::string_view name) const;
@@ -70,6 +74,10 @@ class Cgroup {
   PosixError WriteIntegerControlFile(absl::string_view name,
                                      int64_t value) const;
 
+  // Waits for a control file's value to change.
+  PosixError PollControlFileForChange(absl::string_view name,
+                                      absl::Duration timeout) const;
+
   // Returns the thread ids of the leaders of thread groups managed by this
   // cgroup.
   PosixErrorOr<absl::flat_hash_set<pid_t>> Procs() const;
@@ -91,12 +99,15 @@ class Cgroup {
   PosixError EnterThread(pid_t pid) const;
 
  private:
+  Cgroup(std::string_view path, std::string_view mountpoint);
+
   PosixErrorOr<absl::flat_hash_set<pid_t>> ParsePIDList(
       absl::string_view data) const;
 
   static int64_t next_id_;
   int64_t id_;
   const std::string cgroup_path_;
+  const std::string mountpoint_;
 };
 
 // Mounter is a utility for creating cgroupfs mounts. It automatically manages

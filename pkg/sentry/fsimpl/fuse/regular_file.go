@@ -18,7 +18,6 @@ import (
 	"io"
 	"math"
 	"sync"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -64,18 +63,18 @@ func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 	inode := fd.inode()
 
 	// Reading beyond EOF, update file size if outdated.
-	if uint64(offset+size) > atomic.LoadUint64(&inode.size) {
+	if uint64(offset+size) > inode.size.Load() {
 		if err := inode.reviseAttr(ctx, linux.FUSE_GETATTR_FH, fd.Fh); err != nil {
 			return 0, err
 		}
 		// If the offset after update is still too large, return error.
-		if uint64(offset) >= atomic.LoadUint64(&inode.size) {
+		if uint64(offset) >= inode.size.Load() {
 			return 0, io.EOF
 		}
 	}
 
 	// Truncate the read with updated file size.
-	fileSize := atomic.LoadUint64(&inode.size)
+	fileSize := inode.size.Load()
 	if uint64(offset+size) > fileSize {
 		size = int64(fileSize) - offset
 	}
@@ -163,7 +162,7 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 	// be true before we switch out from kernfs.
 	if fd.vfsfd.StatusFlags()&linux.O_APPEND != 0 {
 		// Locking inode.metadataMu is sufficient for reading size
-		offset = int64(inode.size)
+		offset = int64(inode.size.Load())
 	}
 
 	srclen := src.NumBytes()
@@ -221,9 +220,9 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 	written = int64(n)
 	finalOff = offset + written
 
-	if finalOff > int64(inode.size) {
-		atomic.StoreUint64(&inode.size, uint64(finalOff))
-		atomic.AddUint64(&inode.fs.conn.attributeVersion, 1)
+	if finalOff > int64(inode.size.Load()) {
+		inode.size.Store(uint64(finalOff))
+		inode.fs.conn.attributeVersion.Add(1)
 	}
 
 	return

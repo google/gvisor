@@ -19,7 +19,6 @@ package kvm
 
 import (
 	"fmt"
-	"sync/atomic"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -46,7 +45,7 @@ func (c *vCPU) loadSegments(tid uint64) {
 		0); errno != 0 {
 		throw("getting GS segment")
 	}
-	atomic.StoreUint64(&c.tid, tid)
+	c.tid.Store(tid)
 }
 
 // setCPUID sets the CPUID to be used by the guest.

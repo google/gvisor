@@ -24,6 +24,7 @@ import (
 	"sync/atomic"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/errors"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fd"
@@ -299,7 +300,7 @@ func (t *Tattach) handle(cs *connState) message {
 		server:   cs.server,
 		parent:   nil,
 		file:     sf,
-		refs:     1,
+		refs:     atomicbitops.FromInt64(1),
 		mode:     attr.Mode.FileType(),
 		pathNode: cs.server.pathTree,
 	}

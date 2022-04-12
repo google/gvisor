@@ -17,56 +17,178 @@
 
 package atomicbitops
 
-import "sync/atomic"
+import (
+	"sync/atomic"
 
-// AlignedAtomicInt64 is an atomic int64 that is guaranteed to be 64-bit
+	"gvisor.dev/gvisor/pkg/sync"
+)
+
+// Int64 is an atomic int64 that is guaranteed to be 64-bit
 // aligned, even on 32-bit systems. On most architectures, it's just a regular
 // int64.
 //
-// See aligned_unsafe.go in this directory for justification.
+// The default value is zero.
+//
+// See aligned_32bit_unsafe.go in this directory for justification.
 //
 // +stateify savable
-type AlignedAtomicInt64 struct {
+type Int64 struct {
+	_     sync.NoCopy
 	value int64
 }
 
-// Load is analagous to atomic.LoadInt64.
-func (aa *AlignedAtomicInt64) Load() int64 {
-	return atomic.LoadInt64(&aa.value)
+// FromInt64 returns an Int64 initialized to value v.
+//go:nosplit
+func FromInt64(v int64) Int64 {
+	return Int64{value: v}
 }
 
-// Store is analagous to atomic.StoreInt64.
-func (aa *AlignedAtomicInt64) Store(v int64) {
-	atomic.StoreInt64(&aa.value, v)
+// Load is analogous to atomic.LoadInt64.
+//go:nosplit
+func (i *Int64) Load() int64 {
+	return atomic.LoadInt64(&i.value)
 }
 
-// Add is analagous to atomic.AddInt64.
-func (aa *AlignedAtomicInt64) Add(v int64) int64 {
-	return atomic.AddInt64(&aa.value, v)
+// RacyLoad is analogous to reading an atomic value without using
+// synchronization.
+//
+// It may be helpful to document why a racy operation is permitted.
+//
+//go:nosplit
+func (i *Int64) RacyLoad() int64 {
+	return i.value
 }
 
-// AlignedAtomicUint64 is an atomic uint64 that is guaranteed to be 64-bit
+// Store is analogous to atomic.StoreInt64.
+//go:nosplit
+func (i *Int64) Store(v int64) {
+	atomic.StoreInt64(&i.value, v)
+}
+
+// RacyStore is analogous to setting an atomic value without using
+// synchronization.
+//
+// It may be helpful to document why a racy operation is permitted.
+//
+//go:nosplit
+func (i *Int64) RacyStore(v int64) {
+	i.value = v
+}
+
+// Add is analogous to atomic.AddInt64.
+//go:nosplit
+func (i *Int64) Add(v int64) int64 {
+	return atomic.AddInt64(&i.value, v)
+}
+
+// RacyAdd is analogous to adding to an atomic value without using
+// synchronization.
+//
+// It may be helpful to document why a racy operation is permitted.
+//
+//go:nosplit
+func (i *Int64) RacyAdd(v int64) int64 {
+	i.value += v
+	return i.value
+}
+
+// Swap is analogous to atomic.SwapInt64.
+//go:nosplit
+func (i *Int64) Swap(v int64) int64 {
+	return atomic.SwapInt64(&i.value, v)
+}
+
+// CompareAndSwap is analogous to atomic.CompareAndSwapInt64.
+//go:nosplit
+func (i *Int64) CompareAndSwap(oldVal, newVal int64) bool {
+	return atomic.CompareAndSwapInt64(&i.value, oldVal, newVal)
+}
+
+//go:nosplit
+func (i *Int64) ptr() *int64 {
+	return &i.value
+}
+
+// Uint64 is an atomic uint64 that is guaranteed to be 64-bit
 // aligned, even on 32-bit systems. On most architectures, it's just a regular
 // uint64.
 //
 // See aligned_unsafe.go in this directory for justification.
 //
 // +stateify savable
-type AlignedAtomicUint64 struct {
+type Uint64 struct {
+	_     sync.NoCopy
 	value uint64
 }
 
-// Load is analagous to atomic.LoadUint64.
-func (aa *AlignedAtomicUint64) Load() uint64 {
-	return atomic.LoadUint64(&aa.value)
+// FromUint64 returns an Uint64 initialized to value v.
+//go:nosplit
+func FromUint64(v uint64) Uint64 {
+	return Uint64{value: v}
 }
 
-// Store is analagous to atomic.StoreUint64.
-func (aa *AlignedAtomicUint64) Store(v uint64) {
-	atomic.StoreUint64(&aa.value, v)
+// Load is analogous to atomic.LoadUint64.
+//go:nosplit
+func (u *Uint64) Load() uint64 {
+	return atomic.LoadUint64(&u.value)
 }
 
-// Add is analagous to atomic.AddUint64.
-func (aa *AlignedAtomicUint64) Add(v uint64) uint64 {
-	return atomic.AddUint64(&aa.value, v)
+// RacyLoad is analogous to reading an atomic value without using
+// synchronization.
+//
+// It may be helpful to document why a racy operation is permitted.
+//
+//go:nosplit
+func (u *Uint64) RacyLoad() uint64 {
+	return u.value
+}
+
+// Store is analogous to atomic.StoreUint64.
+//go:nosplit
+func (u *Uint64) Store(v uint64) {
+	atomic.StoreUint64(&u.value, v)
+}
+
+// RacyStore is analogous to setting an atomic value without using
+// synchronization.
+//
+// It may be helpful to document why a racy operation is permitted.
+//
+//go:nosplit
+func (u *Uint64) RacyStore(v uint64) {
+	u.value = v
+}
+
+// Add is analogous to atomic.AddUint64.
+//go:nosplit
+func (u *Uint64) Add(v uint64) uint64 {
+	return atomic.AddUint64(&u.value, v)
+}
+
+// RacyAdd is analogous to adding to an atomic value without using
+// synchronization.
+//
+// It may be helpful to document why a racy operation is permitted.
+//
+//go:nosplit
+func (u *Uint64) RacyAdd(v uint64) uint64 {
+	u.value += v
+	return u.value
+}
+
+// Swap is analogous to atomic.SwapUint64.
+//go:nosplit
+func (u *Uint64) Swap(v uint64) uint64 {
+	return atomic.SwapUint64(&u.value, v)
+}
+
+// CompareAndSwap is analogous to atomic.CompareAndSwapUint64.
+//go:nosplit
+func (u *Uint64) CompareAndSwap(oldVal, newVal uint64) bool {
+	return atomic.CompareAndSwapUint64(&u.value, oldVal, newVal)
+}
+
+//go:nosplit
+func (u *Uint64) ptr() *uint64 {
+	return &u.value
 }

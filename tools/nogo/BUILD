@@ -4,8 +4,9 @@ load("//tools/nogo:defs.bzl", "nogo_stdlib", "nogo_target")
 package(licenses = ["notice"])
 
 bool_flag(
-    name = "fast",
+    name = "full",
     build_setting_default = False,
+    visibility = ["//visibility:public"],
 )
 
 nogo_target(

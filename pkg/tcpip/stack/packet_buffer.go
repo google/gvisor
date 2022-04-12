@@ -188,9 +188,7 @@ func NewPacketBuffer(opts PacketBufferOptions) *PacketBuffer {
 // pool.
 func (pk *PacketBuffer) DecRef() {
 	pk.packetBufferRefs.DecRef(func() {
-		if pk.packetBufferRefs.refCount == 0 {
-			pkPool.Put(pk)
-		}
+		pkPool.Put(pk)
 	})
 }
 
@@ -329,6 +327,7 @@ func (pk *PacketBuffer) headerView(typ headerType) tcpipbuffer.View {
 // shared. Hence, no modifications is done to underlying packet payload.
 func (pk *PacketBuffer) Clone() *PacketBuffer {
 	newPk := pkPool.Get().(*PacketBuffer)
+	newPk.reset()
 	newPk.PacketBufferEntry = pk.PacketBufferEntry
 	newPk.buf = pk.buf.Clone()
 	newPk.reserved = pk.reserved

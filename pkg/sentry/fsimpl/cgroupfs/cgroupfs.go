@@ -62,9 +62,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
@@ -78,9 +78,11 @@ import (
 
 const (
 	// Name is the default filesystem name.
-	Name                     = "cgroup"
-	readonlyFileMode         = linux.FileMode(0444)
-	writableFileMode         = linux.FileMode(0644)
+	Name             = "cgroup"
+	readonlyFileMode = linux.FileMode(0444)
+	writableFileMode = linux.FileMode(0644)
+	defaultDirMode   = linux.FileMode(0555) | linux.ModeDirectory
+
 	defaultMaxCachedDentries = uint64(1000)
 )
 
@@ -138,7 +140,7 @@ type filesystem struct {
 	controllers  []controller
 	kcontrollers []kernel.CgroupController
 
-	numCgroups uint64 // Protected by atomic ops.
+	numCgroups atomicbitops.Uint64 // Protected by atomic ops.
 
 	root *kernfs.Dentry
 	// effectiveRoot is the initial cgroup new tasks are created in. Unless
@@ -297,7 +299,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		fs.kcontrollers = append(fs.kcontrollers, c)
 	}
 
-	root := fs.newCgroupInode(ctx, creds, nil)
+	root := fs.newCgroupInode(ctx, creds, nil, defaultDirMode)
 	var rootD kernfs.Dentry
 	rootD.InitRoot(&fs.Filesystem, root)
 	fs.root = &rootD
@@ -346,7 +348,7 @@ func (fs *filesystem) prepareInitialCgroup(ctx context.Context, vfsObj *vfs.Virt
 	// Have initial cgroup target, create the tree.
 	cgDir := fs.root.Inode().(*cgroupInode)
 	for pit := initPath.Begin; pit.Ok(); pit = pit.Next() {
-		cgDirI, err := cgDir.NewDir(ctx, pit.String(), vfs.MkdirOptions{})
+		cgDirI, err := cgDir.NewDir(ctx, pit.String(), vfs.MkdirOptions{Mode: defaultDirMode})
 		if err != nil {
 			return err
 		}
@@ -429,9 +431,9 @@ func (*dir) Keep() bool {
 	return true
 }
 
-// SetStat implements kernfs.Inode.SetStat not allowing inode attributes to be changed.
-func (*dir) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
-	return linuxerr.EPERM
+// SetStat implements kernfs.Inode.SetStat.
+func (d *dir) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error {
+	return d.InodeAttrs.SetStat(ctx, fs, creds, opts)
 }
 
 // Open implements kernfs.Inode.Open.
@@ -452,9 +454,10 @@ func (d *dir) NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) (k
 	if strings.Contains(name, "\n") {
 		return nil, linuxerr.EINVAL
 	}
+	mode := opts.Mode.Permissions() | linux.ModeDirectory
 	return d.OrderedChildren.Inserter(name, func() kernfs.Inode {
 		d.IncLinks(1)
-		return d.fs.newCgroupInode(ctx, auth.CredentialsFromContext(ctx), d.cgi)
+		return d.fs.newCgroupInode(ctx, auth.CredentialsFromContext(ctx), d.cgi, mode)
 	})
 }
 
@@ -541,6 +544,14 @@ func (d *dir) RmDir(ctx context.Context, name string, child kernfs.Inode) error 
 	return err
 }
 
+func (d *dir) forEachChildDir(fn func(*dir)) {
+	d.OrderedChildren.ForEachChild(func(_ string, i kernfs.Inode) {
+		if childI, ok := i.(*cgroupInode); ok {
+			fn(&childI.dir)
+		}
+	})
+}
+
 // controllerFile represents a generic control file that appears within a cgroup
 // directory.
 //
@@ -599,12 +610,12 @@ type stubControllerFile struct {
 	controllerFile
 
 	// data is accessed through atomic ops.
-	data *int64
+	data *atomicbitops.Int64
 }
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (f *stubControllerFile) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	fmt.Fprintf(buf, "%d\n", atomic.LoadInt64(f.data))
+	fmt.Fprintf(buf, "%d\n", f.data.Load())
 	return nil
 }
 
@@ -614,13 +625,13 @@ func (f *stubControllerFile) Write(ctx context.Context, _ *vfs.FileDescription, 
 	if err != nil {
 		return 0, err
 	}
-	atomic.StoreInt64(f.data, val)
+	f.data.Store(val)
 	return n, nil
 }
 
-// newStubControllerFile creates a new stub controller file tbat loads and
+// newStubControllerFile creates a new stub controller file that loads and
 // stores a control value from data.
-func (fs *filesystem) newStubControllerFile(ctx context.Context, creds *auth.Credentials, data *int64) kernfs.Inode {
+func (fs *filesystem) newStubControllerFile(ctx context.Context, creds *auth.Credentials, data *atomicbitops.Int64) kernfs.Inode {
 	f := &stubControllerFile{
 		data: data,
 	}

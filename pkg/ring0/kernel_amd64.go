@@ -21,6 +21,7 @@ import (
 	"encoding/binary"
 	"reflect"
 
+	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
@@ -293,7 +294,10 @@ func startGo(c *CPU) {
 	// Need to sync XCR0 with the host, because xsave and xrstor can be
 	// called from different contexts.
 	if hasXSAVE {
-		xsetbv(0, localXCR0)
+		// Exclude MPX bits. MPX has been deprecated and we have seen
+		// cases when it isn't supported in VM.
+		xcr0 := localXCR0 &^ (cpuid.XSAVEFeatureBNDCSR | cpuid.XSAVEFeatureBNDREGS)
+		xsetbv(0, xcr0)
 	}
 
 	// Set the syscall target.
@@ -333,22 +337,4 @@ func SetCPUIDFaulting(on bool) bool {
 //go:nosplit
 func ReadCR2() uintptr {
 	return readCR2()
-}
-
-// kernelMXCSR is the value of the mxcsr register in the Sentry.
-//
-// The MXCSR control configuration is initialized once and never changed. Look
-// at src/cmd/compile/abi-internal.md in the golang sources for more details.
-var kernelMXCSR uint32
-
-// RestoreKernelFPState restores the Sentry floating point state.
-//
-//go:nosplit
-func RestoreKernelFPState() {
-	// Restore the MXCSR control configuration.
-	ldmxcsr(&kernelMXCSR)
-}
-
-func init() {
-	stmxcsr(&kernelMXCSR)
 }

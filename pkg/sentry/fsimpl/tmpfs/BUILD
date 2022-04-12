@@ -56,6 +56,7 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/atomicbitops",
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/fspath",
@@ -116,6 +117,7 @@ go_test(
     library = ":tmpfs",
     deps = [
         "//pkg/abi/linux",
+        "//pkg/atomicbitops",
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/fspath",

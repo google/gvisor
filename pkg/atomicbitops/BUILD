@@ -13,6 +13,7 @@ go_library(
         "atomicbitops_noasm.go",
     ],
     visibility = ["//:sandbox"],
+    deps = ["//pkg/sync"],
 )
 
 go_test(

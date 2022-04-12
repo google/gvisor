@@ -16,6 +16,7 @@ package kernel
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -141,7 +142,7 @@ func (ts *TaskSet) newTask(cfg *TaskConfig) (*Task, error) {
 		},
 		runState:           (*runApp)(nil),
 		interruptChan:      make(chan struct{}, 1),
-		signalMask:         cfg.SignalMask,
+		signalMask:         atomicbitops.FromUint64(uint64(cfg.SignalMask)),
 		signalStack:        linux.SignalStack{Flags: linux.SS_DISABLE},
 		image:              *image,
 		fsContext:          cfg.FSContext,

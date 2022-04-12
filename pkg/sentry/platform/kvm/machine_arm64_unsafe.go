@@ -20,7 +20,6 @@ package kvm
 import (
 	"fmt"
 	"reflect"
-	"sync/atomic"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -234,7 +233,7 @@ func (c *vCPU) setSystemTime() error {
 func (c *vCPU) loadSegments(tid uint64) {
 	// TODO(gvisor.dev/issue/1238):  TLS is not supported.
 	// Get TLS from tpidr_el0.
-	atomic.StoreUint64(&c.tid, tid)
+	c.tid.Store(tid)
 }
 
 func (c *vCPU) setOneRegister(reg *kvmOneReg) error {

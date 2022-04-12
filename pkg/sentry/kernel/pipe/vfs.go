@@ -31,7 +31,7 @@ import (
 // This file contains types enabling the pipe package to be used with the vfs
 // package.
 
-// VFSPipe represents the actual pipe, analagous to an inode. VFSPipes should
+// VFSPipe represents the actual pipe, analogous to an inode. VFSPipes should
 // not be copied.
 //
 // +stateify savable

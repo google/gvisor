@@ -15,6 +15,7 @@ go_library(
         "//:sandbox",
     ],
     deps = [
+        "//pkg/atomicbitops",
         "//pkg/bits",
         "//pkg/memutil",
         "//pkg/sync",

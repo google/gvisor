@@ -10,7 +10,12 @@ go_library(
         "rx.go",
         "tx.go",
     ],
-    visibility = ["//visibility:public"],
+    visibility = [
+        "//visibility:public",
+    ],
+    deps = [
+        "//pkg/atomicbitops",
+    ],
 )
 
 go_test(

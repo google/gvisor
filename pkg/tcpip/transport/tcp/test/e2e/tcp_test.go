@@ -8661,6 +8661,49 @@ func TestReleaseAfterClose(t *testing.T) {
 	c.EP.Release()
 }
 
+func TestReleaseDanglingEndpoints(t *testing.T) {
+	c := context.New(t, e2e.DefaultMTU)
+	defer c.Cleanup()
+
+	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
+	ep := c.EP
+	c.EP = nil
+
+	// Close the endpoint, make sure we get a FIN segment. The endpoint should be
+	// dangling.
+	ep.Close()
+	iss := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+	checker.IPv4(t, c.GetPacket(),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.TCPSeqNum(uint32(c.IRS)+1),
+			checker.TCPAckNum(uint32(iss)),
+			checker.TCPFlags(header.TCPFlagAck|header.TCPFlagFin),
+		),
+	)
+	tcpip.ReleaseDanglingEndpoints()
+
+	// Now send an ACK and it should trigger a RST as Release should Close the
+	// endpoint.
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: c.Port,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  iss,
+		AckNum:  c.IRS.Add(2),
+		RcvWnd:  30000,
+	})
+
+	checker.IPv4(t, c.GetPacket(),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.TCPSeqNum(uint32(c.IRS)+2),
+			checker.TCPAckNum(0),
+			checker.TCPFlags(header.TCPFlagRst),
+		),
+	)
+}
+
 func TestMain(m *testing.M) {
 	refs.SetLeakMode(refs.LeaksPanic)
 	code := m.Run()

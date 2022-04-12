@@ -102,6 +102,13 @@ func (ctx *CgroupMigrationContext) Abort() {
 // Commit completes a migration.
 func (ctx *CgroupMigrationContext) Commit() {
 	ctx.dst.CommitMigrate(ctx.t, &ctx.src)
+
+	ctx.t.mu.Lock()
+	delete(ctx.t.cgroups, ctx.src)
+	ctx.src.DecRef(ctx.t)
+	ctx.dst.IncRef()
+	ctx.t.cgroups[ctx.dst] = struct{}{}
+	ctx.t.mu.Unlock()
 }
 
 // CgroupImpl is the common interface to cgroups.

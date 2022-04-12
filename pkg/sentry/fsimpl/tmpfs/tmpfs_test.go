@@ -16,9 +16,9 @@ package tmpfs
 
 import (
 	"fmt"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -26,7 +26,7 @@ import (
 )
 
 // nextFileID is used to generate unique file names.
-var nextFileID int64
+var nextFileID atomicbitops.Int64
 
 // newTmpfsRoot creates a new tmpfs mount, and returns the root. If the error
 // is not nil, then cleanup should be called when the root is no longer needed.
@@ -63,7 +63,7 @@ func newFileFD(ctx context.Context, mode linux.FileMode) (*vfs.FileDescription, 
 		return nil, nil, err
 	}
 
-	filename := fmt.Sprintf("tmpfs-test-file-%d", atomic.AddInt64(&nextFileID, 1))
+	filename := fmt.Sprintf("tmpfs-test-file-%d", nextFileID.Add(1))
 
 	// Create the file that will be write/read.
 	fd, err := vfsObj.OpenAt(ctx, creds, &vfs.PathOperation{
@@ -90,7 +90,7 @@ func newDirFD(ctx context.Context, mode linux.FileMode) (*vfs.FileDescription, f
 		return nil, nil, err
 	}
 
-	dirname := fmt.Sprintf("tmpfs-test-dir-%d", atomic.AddInt64(&nextFileID, 1))
+	dirname := fmt.Sprintf("tmpfs-test-dir-%d", nextFileID.Add(1))
 
 	// Create the dir.
 	if err := vfsObj.MkdirAt(ctx, creds, &vfs.PathOperation{
@@ -128,7 +128,7 @@ func newPipeFD(ctx context.Context, mode linux.FileMode) (*vfs.FileDescription, 
 		return nil, nil, err
 	}
 
-	name := fmt.Sprintf("tmpfs-test-%d", atomic.AddInt64(&nextFileID, 1))
+	name := fmt.Sprintf("tmpfs-test-%d", nextFileID.Add(1))
 
 	if err := vfsObj.MknodAt(ctx, creds, &vfs.PathOperation{
 		Root:  root,

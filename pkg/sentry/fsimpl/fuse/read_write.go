@@ -16,7 +16,6 @@ package fuse
 
 import (
 	"io"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -34,7 +33,7 @@ import (
 // We do not support direct IO (which read the exact number of bytes)
 // at this moment.
 func (fs *filesystem) ReadInPages(ctx context.Context, fd *regularFileFD, off uint64, size uint32) ([][]byte, uint32, error) {
-	attributeVersion := atomic.LoadUint64(&fs.conn.attributeVersion)
+	attributeVersion := fs.conn.attributeVersion.Load()
 
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
@@ -138,10 +137,9 @@ func (fs *filesystem) ReadCallback(ctx context.Context, fd *regularFileFD, off u
 		// Update existing size.
 		newSize := off + uint64(sizeRead)
 		fs.conn.mu.Lock()
-		if attributeVersion == i.attributeVersion && newSize < atomic.LoadUint64(&i.size) {
-			fs.conn.attributeVersion++
-			i.attributeVersion = i.fs.conn.attributeVersion
-			atomic.StoreUint64(&i.size, newSize)
+		if attributeVersion == i.attributeVersion.Load() && newSize < i.size.Load() {
+			i.attributeVersion.Store(i.fs.conn.attributeVersion.Add(1))
+			i.size.Store(newSize)
 		}
 		fs.conn.mu.Unlock()
 	}

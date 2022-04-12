@@ -39,6 +39,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/cpuid"
@@ -101,19 +102,18 @@ var FUSEEnabled = false
 type userCounters struct {
 	uid auth.KUID
 
-	// +checkatomic
-	rlimitNProc uint64
+	rlimitNProc atomicbitops.Uint64
 }
 
 // incRLimitNProc increments the rlimitNProc counter.
 func (uc *userCounters) incRLimitNProc(ctx context.Context) error {
 	lim := limits.FromContext(ctx).Get(limits.ProcessCount)
 	creds := auth.CredentialsFromContext(ctx)
-	nproc := atomic.AddUint64(&uc.rlimitNProc, 1)
+	nproc := uc.rlimitNProc.Add(1)
 	if nproc > lim.Cur &&
 		!creds.HasCapability(linux.CAP_SYS_ADMIN) &&
 		!creds.HasCapability(linux.CAP_SYS_RESOURCE) {
-		atomic.AddUint64(&uc.rlimitNProc, ^uint64(0))
+		uc.rlimitNProc.Add(^uint64(0))
 		return linuxerr.EAGAIN
 	}
 	return nil
@@ -121,7 +121,7 @@ func (uc *userCounters) incRLimitNProc(ctx context.Context) error {
 
 // decRLimitNProc decrements the rlimitNProc counter.
 func (uc *userCounters) decRLimitNProc() {
-	atomic.AddUint64(&uc.rlimitNProc, ^uint64(0))
+	uc.rlimitNProc.Add(^uint64(0))
 }
 
 // Kernel represents an emulated Linux kernel. It must be initialized by calling
@@ -198,7 +198,7 @@ type Kernel struct {
 	//
 	// runningTasks must be accessed atomically. Increments from 0 to 1 are
 	// further protected by runningTasksMu (see incRunningTasks).
-	runningTasks int64
+	runningTasks atomicbitops.Int64
 
 	// cpuClock is incremented every linux.ClockTick. cpuClock is used to
 	// measure task CPU usage, since sampling monotonicClock twice on every
@@ -210,7 +210,7 @@ type Kernel struct {
 	// doesn't provide this information.
 	//
 	// cpuClock is mutable, and is accessed using atomic memory operations.
-	cpuClock uint64
+	cpuClock atomicbitops.Uint64
 
 	// cpuClockTicker increments cpuClock.
 	cpuClockTicker *ktime.Timer `state:"nosave"`
@@ -234,7 +234,7 @@ type Kernel struct {
 	// uniqueID is used to generate unique identifiers.
 	//
 	// uniqueID is mutable, and is accessed using atomic memory operations.
-	uniqueID uint64
+	uniqueID atomicbitops.Uint64
 
 	// nextInotifyCookie is a monotonically increasing counter used for
 	// generating unique inotify event cookies.
@@ -300,7 +300,7 @@ type Kernel struct {
 	pipeMount *vfs.Mount
 
 	// shmMount is the Mount used for anonymous files created by the
-	// memfd_create() syscalls. It is analagous to Linux's shm_mnt.
+	// memfd_create() syscalls. It is analogous to Linux's shm_mnt.
 	shmMount *vfs.Mount
 
 	// socketMount is the Mount used for sockets created by the socket() and
@@ -757,7 +757,7 @@ func (k *Kernel) LoadFrom(ctx context.Context, r wire.Reader, timeReady chan str
 
 // UniqueID returns a unique identifier.
 func (k *Kernel) UniqueID() uint64 {
-	id := atomic.AddUint64(&k.uniqueID, 1)
+	id := k.uniqueID.Add(1)
 	if id == 0 {
 		panic("unique identifier generator wrapped around")
 	}
@@ -1202,10 +1202,10 @@ func (k *Kernel) resumeTimeLocked(ctx context.Context) {
 
 func (k *Kernel) incRunningTasks() {
 	for {
-		tasks := atomic.LoadInt64(&k.runningTasks)
+		tasks := k.runningTasks.Load()
 		if tasks != 0 {
 			// Standard case. Simply increment.
-			if !atomic.CompareAndSwapInt64(&k.runningTasks, tasks, tasks+1) {
+			if !k.runningTasks.CompareAndSwap(tasks, tasks+1) {
 				continue
 			}
 			return
@@ -1213,18 +1213,18 @@ func (k *Kernel) incRunningTasks() {
 
 		// Transition from 0 -> 1. Synchronize with other transitions and timer.
 		k.runningTasksMu.Lock()
-		tasks = atomic.LoadInt64(&k.runningTasks)
+		tasks = k.runningTasks.Load()
 		if tasks != 0 {
 			// We're no longer the first task, no need to
 			// re-enable.
-			atomic.AddInt64(&k.runningTasks, 1)
+			k.runningTasks.Add(1)
 			k.runningTasksMu.Unlock()
 			return
 		}
 
 		if !k.cpuClockTickerDisabled {
 			// Timer was never disabled.
-			atomic.StoreInt64(&k.runningTasks, 1)
+			k.runningTasks.Store(1)
 			k.runningTasksMu.Unlock()
 			return
 		}
@@ -1260,12 +1260,12 @@ func (k *Kernel) incRunningTasks() {
 		// don't matter.
 		setting, exp := k.cpuClockTickerSetting.At(k.timekeeper.monotonicClock.Now())
 		if exp > 0 {
-			atomic.AddUint64(&k.cpuClock, exp)
+			k.cpuClock.Add(exp)
 		}
 
 		// Now that cpuClock is updated it is safe to allow other tasks to
 		// transition to running.
-		atomic.StoreInt64(&k.runningTasks, 1)
+		k.runningTasks.Store(1)
 
 		// N.B. we must unlock before calling Swap to maintain lock ordering.
 		//
@@ -1285,7 +1285,7 @@ func (k *Kernel) incRunningTasks() {
 }
 
 func (k *Kernel) decRunningTasks() {
-	tasks := atomic.AddInt64(&k.runningTasks, -1)
+	tasks := k.runningTasks.Add(-1)
 	if tasks < 0 {
 		panic(fmt.Sprintf("Invalid running count %d", tasks))
 	}
@@ -1478,7 +1478,7 @@ func (k *Kernel) MonotonicClock() ktime.Clock {
 
 // CPUClockNow returns the current value of k.cpuClock.
 func (k *Kernel) CPUClockNow() uint64 {
-	return atomic.LoadUint64(&k.cpuClock)
+	return k.cpuClock.Load()
 }
 
 // Syslog returns the syslog.

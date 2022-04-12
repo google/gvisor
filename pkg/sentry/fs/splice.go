@@ -16,8 +16,8 @@ package fs
 
 import (
 	"io"
-	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 )
@@ -67,16 +67,16 @@ func Splice(ctx context.Context, dst *File, src *File, opts SpliceOpts) (int64, 
 			srcLock = false
 		}
 		// Use both offsets (locked).
-		opts.DstStart = dst.offset
-		opts.SrcStart = src.offset
+		opts.DstStart = dst.offset.RacyLoad()
+		opts.SrcStart = src.offset.RacyLoad()
 	case dstLock:
 		// Acquire only dst.
 		dst.mu.Lock()
-		opts.DstStart = dst.offset // Safe: locked.
+		opts.DstStart = dst.offset.RacyLoad() // Safe: locked.
 	case srcLock:
 		// Acquire only src.
 		src.mu.Lock()
-		opts.SrcStart = src.offset // Safe: locked.
+		opts.SrcStart = src.offset.RacyLoad() // Safe: locked.
 	}
 
 	var err error
@@ -85,7 +85,10 @@ func Splice(ctx context.Context, dst *File, src *File, opts SpliceOpts) (int64, 
 		defer unlock()
 
 		// Figure out the appropriate offset to use.
-		err = dst.offsetForAppend(ctx, &opts.DstStart)
+
+		dstStart := atomicbitops.FromInt64(opts.DstStart)
+		err = dst.offsetForAppend(ctx, &dstStart)
+		opts.DstStart = dstStart.RacyLoad()
 	}
 	if err == nil && !dstPipe {
 		// Enforce file limits.
@@ -147,10 +150,10 @@ func Splice(ctx context.Context, dst *File, src *File, opts SpliceOpts) (int64, 
 	// Update offsets, if required.
 	if n > 0 {
 		if !dstPipe && !opts.DstOffset {
-			atomic.StoreInt64(&dst.offset, dst.offset+n)
+			dst.offset.Add(n)
 		}
 		if !srcPipe && !opts.SrcOffset {
-			atomic.StoreInt64(&src.offset, src.offset+n)
+			src.offset.Add(n)
 		}
 	}
 

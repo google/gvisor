@@ -229,7 +229,7 @@ type SocketOptions struct {
 	getSendBufferLimits GetSendBufferLimits `state:"manual"`
 
 	// sendBufferSize determines the send buffer size for this socket.
-	sendBufferSize atomicbitops.AlignedAtomicInt64
+	sendBufferSize atomicbitops.Int64
 
 	// getReceiveBufferLimits provides the handler to get the min, default and
 	// max size for receive buffer. It is initialized at the creation time and
@@ -237,7 +237,7 @@ type SocketOptions struct {
 	getReceiveBufferLimits GetReceiveBufferLimits `state:"manual"`
 
 	// receiveBufferSize determines the receive buffer size for this socket.
-	receiveBufferSize atomicbitops.AlignedAtomicInt64
+	receiveBufferSize atomicbitops.Int64
 
 	// mu protects the access to the below fields.
 	mu sync.Mutex `state:"nosave"`
@@ -245,6 +245,10 @@ type SocketOptions struct {
 	// linger determines the amount of time the socket should linger before
 	// close. We currently implement this option for TCP socket only.
 	linger LingerOption
+
+	// rcvlowat specifies the minimum number of bytes which should be
+	// received to indicate the socket as readable.
+	rcvlowat int32
 }
 
 // InitHandler initializes the handler. This must be called before using the
@@ -701,4 +705,18 @@ func (so *SocketOptions) SetReceiveBufferSize(receiveBufferSize int64, notify bo
 		receiveBufferSize = so.handler.OnSetReceiveBufferSize(receiveBufferSize, oldSz)
 	}
 	so.receiveBufferSize.Store(receiveBufferSize)
+}
+
+// GetRcvlowat gets value for SO_RCVLOWAT option.
+func (so *SocketOptions) GetRcvlowat() int32 {
+	// TODO(b/226603727): Return so.rcvlowat after adding complete support
+	// for SO_RCVLOWAT option. For now, return the default value of 1.
+	defaultRcvlowat := int32(1)
+	return defaultRcvlowat
+}
+
+// SetRcvlowat sets value for SO_RCVLOWAT option.
+func (so *SocketOptions) SetRcvlowat(rcvlowat int32) Error {
+	atomic.StoreInt32(&so.rcvlowat, rcvlowat)
+	return nil
 }
