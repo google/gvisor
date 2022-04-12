@@ -205,7 +205,7 @@ func (c *cpuidEntries) Set(in cpuid.In, out cpuid.Out) {
 		}
 	}
 	if i == _KVM_NR_CPUID_ENTRIES {
-		panic("exceede KVM_NR_CPUID_ENTRIES")
+		panic("exceeded KVM_NR_CPUID_ENTRIES")
 	}
 
 	c.entries[i].eax = out.Eax
