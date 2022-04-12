@@ -911,3 +911,46 @@ func TestRevalidateSymlinkChain(t *testing.T) {
 		t.Fatalf("Read wrong file, want: %q, got: %q", want, got)
 	}
 }
+
+// TestTmpMountWithSize checks when '/tmp' is mounted
+// with size option the limit is not exceeded.
+func TestTmpMountWithSize(t *testing.T) {
+	dir, err := ioutil.TempDir(testutil.TmpDir(), "tmp-mount")
+	if err != nil {
+		t.Fatalf("TempDir(): %v", err)
+	}
+
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	opts := dockerutil.RunOpts{
+		Image: "basic/alpine",
+		Mounts: []mount.Mount{
+			{
+				Type:   mount.TypeTmpfs,
+				Source: dir,
+				Target: "/tmp/foo",
+				TmpfsOptions: &mount.TmpfsOptions{
+					SizeBytes: 4096,
+				},
+			},
+		},
+	}
+	got, err := d.Create(ctx, opts)
+	if err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	if err := d.Start(ctx); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	got, err := d.Exec(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", "echo hello > /tmp/foo/test1.txt")
+	if err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	want, err := d.Exec(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", "echo world > /tmp/foo/test2.txt")
+	if want != err {
+		t.Fatalf("docker size check failed: %v", want)
+	}
+
+}
