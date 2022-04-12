@@ -383,7 +383,7 @@ run_benchmark = \
 benchmark-platforms: load-benchmarks $(RUNTIME_BIN) ## Runs benchmarks for runc and all platforms.
 	@set -xe; for PLATFORM in $$($(RUNTIME_BIN) help platforms); do \
 	  export PLATFORM; \
-	  $(call install_runtime,$${PLATFORM},--platform $${PLATFORM}); \
+	  $(call install_runtime,$${PLATFORM},--platform $${PLATFORM} --profile); \
 	  $(call run_benchmark,$${PLATFORM}); \
 	done
 	@$(call run_benchmark,runc)
