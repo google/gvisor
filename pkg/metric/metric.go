@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"strings"
 	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -43,6 +42,14 @@ var (
 	// ErrFieldValueContainsIllegalChar indicates that the value of a metric
 	// field had an invalid character in it.
 	ErrFieldValueContainsIllegalChar = errors.New("metric field value contains illegal character")
+
+	// ErrFieldHasNoAllowedValues indicates that the field needs to define some
+	// allowed values to be a valid and useful field.
+	ErrFieldHasNoAllowedValues = errors.New("metric field does not define any allowed values")
+
+	// ErrTooManyFieldCombinations indicates that the number of unique
+	// combinations of fields is too large to support.
+	ErrTooManyFieldCombinations = errors.New("metric has too many combinations of allowed field values")
 
 	// WeirdnessMetric is a metric with fields created to track the number
 	// of weird occurrences such as time fallback, partial_result, vsyscall
@@ -198,140 +205,132 @@ func (f Field) toProto() *pb.MetricMetadata_Field {
 	}
 }
 
-// multiFieldToKey returns a concatenated version of the given fields.
-// It can be used as a unique key within multi-dimensional metrics.
-// Does not allow commas as valid character within field values.
-func multiFieldToKey(fields ...string) (string, error) {
-	if len(fields) == 0 {
-		return "", nil
-	}
-	for _, f := range fields {
-		if strings.ContainsRune(f, ',') {
-			return "", ErrFieldValueContainsIllegalChar
-		}
-	}
-	return strings.Join(fields, ","), nil
-}
-
-// keyToMultiField is the reverse of multiFieldToKey.
-func keyToMultiField(key string) []string {
-	if key == "" {
-		return nil
-	}
-	return strings.Split(key, ",")
-}
-
-// fieldMapper provides multi-dimensional fields to a single concatenated key
-// that can be used as string key for multi-dimensional metrics.
-// fieldMapper is a recursive struct, but its lookup function is not.
-// It pays for its allocation-free, low-stack lookup by preallocating a map of
-// all possible field values, so it is memory-hungry.
+// fieldMapper provides multi-dimensional fields to a single unique integer key
 type fieldMapper struct {
-	// depth is 0 at the lowest level of fieldMapper.
-	depth int
-	// key is set only at the lowest level of fieldMapper, i.e. depth == 0.
-	// It contains the full concatenated key of all the parent field values.
-	key string
-	// children is set only at depth > 0.
-	// For depth=d, children[fields[d]] is the fieldMapper that can be used to
-	// look up keys for fields[d+1:].
-	children map[string]fieldMapper
+	// fields is a list of Field objects, which importantly include individual
+	// Field names which are used to perform the keyToMultiField function; and
+	// allowedValues for each field type which are used to perform the lookup
+	// function.
+	fields []Field
+
+	// numFieldCombinations is the number of unique keys for all possible field
+	// combinations.
+	numFieldCombinations int
 }
 
 // newFieldMapper returns a new fieldMapper for the given set of fields.
 func newFieldMapper(fields ...Field) (fieldMapper, error) {
-	var initFieldMapper func(values []string, remaining ...Field) (fieldMapper, error)
-	initFieldMapper = func(values []string, remaining ...Field) (fieldMapper, error) {
-		depth := len(remaining)
-		if depth == 0 {
-			key, err := multiFieldToKey(values...)
-			if err != nil {
-				return fieldMapper{}, err
-			}
-			return fieldMapper{key: key}, nil
+	numFieldCombinations := 1
+	for _, f := range fields {
+		// Disallow fields with no possible values. We could also ignore them
+		// instead, but passing in a no-allowed-values field is probably a mistake.
+		if len(f.allowedValues) == 0 {
+			return fieldMapper{nil, 0}, ErrFieldHasNoAllowedValues
 		}
-		current := remaining[0]
-		children := make(map[string]fieldMapper, len(current.allowedValues))
-		for _, value := range current.allowedValues {
-			newValues := make([]string, len(values)+1)
-			copy(newValues, values)
-			newValues[len(values)] = value
-			child, err := initFieldMapper(newValues, remaining[1:]...)
-			if err != nil {
-				return fieldMapper{}, err
-			}
-			children[value] = child
-		}
-		return fieldMapper{
-			depth:    depth,
-			children: children,
-		}, nil
-	}
-	return initFieldMapper(nil, fields...)
-}
+		numFieldCombinations *= len(f.allowedValues)
 
-// lookup looks up a key within the fieldMapper.
-// It needs to allocate no memory and be nosplit-compatible, so it cannot be
-// recursive.
-// This *must* be called with the correct number of fields, or it will panic.
-// +checkescape:all
-//go:nosplit
-func (m fieldMapper) lookup(fields ...string) string {
-	depth := len(fields)
-	if depth != m.depth {
-		panic("invalid field lookup depth")
-	}
-	var found bool
-	for i := 0; i < depth; i++ {
-		if m, found = m.children[fields[i]]; !found {
-			panic("disallowed field value")
+		// Sanity check, could be useful in case someone dynamically generates too
+		// many fields accidentally.
+		if numFieldCombinations > math.MaxUint32 || numFieldCombinations < 0 {
+			return fieldMapper{nil, 0}, ErrTooManyFieldCombinations
 		}
 	}
-	return m.key
+
+	return fieldMapper{
+		fields:               fields,
+		numFieldCombinations: numFieldCombinations,
+	}, nil
 }
 
 // lookupConcat looks up a key within the fieldMapper where the fields are
 // the concatenation of two list of fields.
-// It needs to allocate no memory and be nosplit-compatible, so it cannot be
-// recursive, and cannot allocate a concatenated []string.
+// The returned key is an index that can be used to access to map created by
+// makeMap().
 // This *must* be called with the correct number of fields, or it will panic.
 // +checkescape:all
 //go:nosplit
-func (m fieldMapper) lookupConcat(fields1, fields2 []string) string {
-	depth1 := len(fields1)
-	depth2 := len(fields2)
-	if depth1+depth2 != m.depth {
+func (m fieldMapper) lookupConcat(fields1, fields2 []string) int {
+	if (len(fields1) + len(fields2)) != len(m.fields) {
 		panic("invalid field lookup depth")
 	}
-	var found bool
-	for i := 0; i < depth1; i++ {
-		if m, found = m.children[fields1[i]]; !found {
-			panic("disallowed field value")
-		}
-	}
-	for i := 0; i < depth2; i++ {
-		if m, found = m.children[fields2[i]]; !found {
-			panic("disallowed field value")
-		}
-	}
-	return m.key
-}
+	idx := 0
+	remainingCombinationBucket := m.numFieldCombinations
 
-// all iterates over all keys within the fieldMapper.
-func (m fieldMapper) all() []string {
-	var all []string
-	var visit func(fm fieldMapper)
-	visit = func(fm fieldMapper) {
-		if fm.depth == 0 {
-			all = append(all, fm.key)
-		} else {
-			for _, child := range fm.children {
-				visit(child)
+IdxLookup1:
+	for i, val := range fields1 {
+		for valIdx, allowedVal := range m.fields[i].allowedValues {
+			if val == allowedVal {
+				remainingCombinationBucket /= len(m.fields[i].allowedValues)
+				idx += remainingCombinationBucket * valIdx
+				continue IdxLookup1
 			}
 		}
+
+		panic("disallowed field value")
 	}
-	visit(m)
-	return all
+
+IdxLookup2:
+	for i, val := range fields2 {
+		for valIdx, allowedVal := range m.fields[i+len(fields1)].allowedValues {
+			if val == allowedVal {
+				remainingCombinationBucket /= len(m.fields[i+len(fields1)].allowedValues)
+				idx += remainingCombinationBucket * valIdx
+				continue IdxLookup2
+			}
+		}
+
+		panic("disallowed field value")
+	}
+
+	return idx
+}
+
+// lookup looks up a key within the fieldMapper.
+// The returned key is an index that can be used to access to map created by
+// makeMap().
+// This *must* be called with the correct number of fields, or it will panic.
+// +checkescape:all
+//go:nosplit
+func (m fieldMapper) lookup(fields ...string) int {
+	return m.lookupConcat(fields, nil)
+}
+
+// numKeys returns the total number of key-to-field-combinations mappings
+// defined by the fieldMapper.
+func (m fieldMapper) numKeys() int {
+	// Reserve an extra slot for a metric with no fields.
+	return m.numFieldCombinations
+}
+
+// makeDistributionSampleMap creates a two dimensional array, where:
+// - The first level corresponds to unique field value combinations and is
+//   accessed using index "keys" made by fieldMapper.
+// - The second level corresponds to buckets within a metric. The number of
+//   buckets is specified by numBuckets.
+func (m fieldMapper) makeDistributionSampleMap(numBuckets int) [][]atomicbitops.Uint64 {
+	samples := make([][]atomicbitops.Uint64, m.numKeys())
+	for i := range samples {
+		samples[i] = make([]atomicbitops.Uint64, numBuckets)
+	}
+	return samples
+}
+
+// keyToMultiField is the reverse of lookup/lookupConcat. The returned list of
+// field values corresponds to the same order of fields that were passed in to
+// newFieldMapper.
+func (m fieldMapper) keyToMultiField(key int) []string {
+	if len(m.fields) == 0 && key == 0 {
+		return nil
+	}
+	depth := len(m.fields)
+	fields := make([]string, depth)
+	remainingCombinationBucket := m.numFieldCombinations
+	for i := 0; i < depth; i++ {
+		remainingCombinationBucket /= len(m.fields[i].allowedValues)
+		fields[i] = m.fields[i].allowedValues[key/remainingCombinationBucket]
+		key = key % remainingCombinationBucket
+	}
+	return fields
 }
 
 // RegisterCustomUint64Metric registers a metric with the given name.
@@ -643,7 +642,7 @@ type DistributionMetric struct {
 	// (i-1)-th finite bucket.
 	// The last value is the number of samples that fell into the bucketer's
 	// last (i.e. infinite) bucket.
-	samples map[string][]atomicbitops.Uint64
+	samples [][]atomicbitops.Uint64
 }
 
 // NewDistributionMetric creates and registers a new distribution metric.
@@ -668,12 +667,9 @@ func NewDistributionMetric(name string, sync bool, bucketer Bucketer, unit pb.Me
 	if err != nil {
 		return nil, err
 	}
-	allKeys := fieldsToKey.all()
-	samples := make(map[string][]atomicbitops.Uint64, len(allKeys))
+
 	numFiniteBuckets := bucketer.NumFiniteBuckets()
-	for _, key := range allKeys {
-		samples[key] = make([]atomicbitops.Uint64, numFiniteBuckets+2)
-	}
+	samples := fieldsToKey.makeDistributionSampleMap(numFiniteBuckets + 2)
 	protoFields := make([]*pb.MetricMetadata_Field, len(fields))
 	for i, f := range fields {
 		protoFields[i] = f.toProto()
@@ -721,7 +717,7 @@ func (d *DistributionMetric) AddSample(sample int64, fields ...string) {
 // addSampleByKey works like AddSample, with the field key already known.
 // +checkescape:all
 //go:nosplit
-func (d *DistributionMetric) addSampleByKey(sample int64, key string) {
+func (d *DistributionMetric) addSampleByKey(sample int64, key int) {
 	bucket := d.exponentialBucketer.BucketIndex(sample)
 	d.samples[key][bucket+1].Add(1)
 }
@@ -869,8 +865,8 @@ func (m *metricSet) Values() metricValues {
 
 	vals := metricValues{
 		uint64Metrics:            make(map[string]interface{}, len(m.uint64Metrics)),
-		distributionMetrics:      make(map[string]map[string][]uint64, len(m.distributionMetrics)),
-		distributionTotalSamples: make(map[string]map[string]uint64, len(m.distributionMetrics)),
+		distributionMetrics:      make(map[string][][]uint64, len(m.distributionMetrics)),
+		distributionTotalSamples: make(map[string][]uint64, len(m.distributionMetrics)),
 		stages:                   stages,
 	}
 	for k, v := range m.uint64Metrics {
@@ -890,8 +886,8 @@ func (m *metricSet) Values() metricValues {
 		}
 	}
 	for name, metric := range m.distributionMetrics {
-		fieldKeysToValues := make(map[string][]uint64, len(metric.samples))
-		fieldKeysToTotalSamples := make(map[string]uint64, len(metric.samples))
+		fieldKeysToValues := make([][]uint64, len(metric.samples))
+		fieldKeysToTotalSamples := make([]uint64, len(metric.samples))
 		for fieldKey, samples := range metric.samples {
 			samplesSnapshot := snapshotDistribution(samples)
 			totalSamples := uint64(0)
@@ -924,18 +920,19 @@ type metricValues struct {
 
 	// distributionMetrics is a map of distribution metrics.
 	// The first key level is the metric name.
-	// The second key level is the concatenated view of the fields.
+	// The second key level is an index ID corresponding to the combination of
+	// field values. The index is decoded to field strings using keyToMultiField.
 	// The value is the number of samples in each bucket of the distribution,
 	// with the first (0-th) element being the underflow bucket and the last
 	// element being the "infinite" (overflow) bucket.
-	distributionMetrics map[string]map[string][]uint64
+	distributionMetrics map[string][][]uint64
 
 	// distributionTotalSamples is the total number of samples for each
 	// distribution metric and field values.
 	// It allows performing a quick diff between snapshots without having to
 	// iterate over all the buckets individually, so that distributions with
 	// no new samples are not retransmitted.
-	distributionTotalSamples map[string]map[string]uint64
+	distributionTotalSamples map[string][]uint64
 
 	// Information on when initialization stages were reached. Does not include
 	// the currently-ongoing stage, if any.
@@ -1007,18 +1004,18 @@ func EmitMetricUpdate() {
 				continue
 			}
 			if ok {
-				if prevTotal, ok2 := prev[fieldKey]; ok2 && prevTotal == currentTotal {
+				if prevTotal := prev[fieldKey]; prevTotal == currentTotal {
 					continue
 				}
 			}
-			oldSamples := metricsAtLastEmit.distributionMetrics[name][fieldKey]
+			oldSamples := metricsAtLastEmit.distributionMetrics[name]
 			var newSamples []uint64
-			if oldSamples != nil {
+			if oldSamples != nil && oldSamples[fieldKey] != nil {
 				currentSamples := snapshot.distributionMetrics[name][fieldKey]
 				numBuckets := len(currentSamples)
 				newSamples = make([]uint64, numBuckets)
 				for i := 0; i < numBuckets; i++ {
-					newSamples[i] = currentSamples[i] - oldSamples[i]
+					newSamples[i] = currentSamples[i] - oldSamples[fieldKey][i]
 				}
 			} else {
 				// oldSamples == nil means that the previous snapshot has no samples.
@@ -1028,7 +1025,7 @@ func EmitMetricUpdate() {
 			}
 			m.Metrics = append(m.Metrics, &pb.MetricValue{
 				Name:        name,
-				FieldValues: keyToMultiField(fieldKey),
+				FieldValues: allMetrics.distributionMetrics[name].fieldsToKey.keyToMultiField(fieldKey),
 				Value: &pb.MetricValue_DistributionValue{
 					DistributionValue: &pb.Samples{
 						NewSamples: newSamples,

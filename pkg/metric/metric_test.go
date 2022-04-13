@@ -15,6 +15,7 @@
 package metric
 
 import (
+	"fmt"
 	"math"
 	"reflect"
 	"testing"
@@ -842,5 +843,106 @@ func TestBucketerPanics(t *testing.T) {
 				t.Error("did not panic")
 			}
 		})
+	}
+}
+
+func TestFieldMapperWithFields(t *testing.T) {
+	generateFields := func(fieldSizes []int) []Field {
+		fields := make([]Field, len(fieldSizes))
+		for i, fieldSize := range fieldSizes {
+			fieldName := fmt.Sprintf("%c", 'A'+i)
+			allowedValues := make([]string, fieldSize)
+			for val := range allowedValues {
+				allowedValues[val] = fmt.Sprintf("%s%d", fieldName, val)
+			}
+			fields[i] = NewField(fieldName, allowedValues)
+		}
+		return fields
+	}
+
+	for _, test := range []struct {
+		name          string
+		fields        []Field
+		errOnCreation error
+	}{
+		{
+			name:          "FieldMapper8x10",
+			fields:        generateFields([]int{8, 10}),
+			errOnCreation: nil,
+		},
+		{
+			name:          "FieldMapper3x4x5",
+			fields:        generateFields([]int{3, 4, 5}),
+			errOnCreation: nil,
+		},
+		{
+			name:          "FieldMapper4x5x6x7",
+			fields:        generateFields([]int{4, 5, 6, 7}),
+			errOnCreation: nil,
+		},
+		{
+			name:          "FieldMapperErrNoAllowedValues",
+			fields:        []Field{NewField("TheNoValuesField", []string{})},
+			errOnCreation: ErrFieldHasNoAllowedValues,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			m, err := newFieldMapper(test.fields...)
+			if err != test.errOnCreation {
+				t.Fatalf("newFieldMapper err: got %v wanted %v", err, test.errOnCreation)
+			}
+
+			// Test that every field value combination corresponds to just one entry.
+			mapping := make([]int, m.numKeys())
+			var visitCombinations func(curFields []string, remFields []Field)
+			visitCombinations = func(curFields []string, remFields []Field) {
+				depth := len(remFields)
+				if depth == 0 {
+					return
+				}
+				if depth == 1 {
+					for _, val := range remFields[0].allowedValues {
+						fields := append(curFields, val)
+						key := m.lookup(fields...)
+						mapping[key]++
+
+						// Assert that the reverse operation is also correct.
+						fields2 := m.keyToMultiField(key)
+						for i, f1val := range fields {
+							if f1val != fields2[i] {
+								t.Errorf("Field values put into the map are not the same as ones returned: got %v wanted %v", fields2, f1val)
+							}
+						}
+					}
+				} else {
+					for _, val := range remFields[0].allowedValues {
+						visitCombinations(append(curFields, val), remFields[1:])
+					}
+				}
+			}
+			visitCombinations(nil, test.fields)
+
+			for i, numVisits := range mapping {
+				if numVisits != 1 {
+					t.Errorf("Index key %d incorrect number of mappings: got %d wanted 1", i, numVisits)
+				}
+			}
+		})
+	}
+}
+
+func TestFieldMapperNoFields(t *testing.T) {
+	m, err := newFieldMapper()
+	if err != nil {
+		t.Fatalf("newFieldMapper err: got %v wanted nil", err)
+	}
+
+	if n := m.numKeys(); n > 1 {
+		t.Fatalf("m.numKeys() err: got %d wanted 1", n)
+	}
+
+	key := m.lookup()
+	if len(m.keyToMultiField(key)) != 0 {
+		t.Errorf("keyToMultiField using key %v (corresponding to no field values): expected no values, got some", key)
 	}
 }
