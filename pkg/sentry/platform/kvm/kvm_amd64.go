@@ -219,7 +219,9 @@ func (c *cpuidEntries) Set(in cpuid.In, out cpuid.Out) {
 
 // updateGlobalOnce does global initialization. It has to be called only once.
 func updateGlobalOnce(fd int) error {
-	err := updateSystemValues(int(fd))
+	if err := updateSystemValues(int(fd)); err != nil {
+		return err
+	}
 	fs := cpuid.FeatureSet{
 		Function: &cpuidSupported,
 	}
@@ -238,5 +240,5 @@ func updateGlobalOnce(fd int) error {
 		Function: s,
 	})
 	physicalInit()
-	return err
+	return nil
 }
