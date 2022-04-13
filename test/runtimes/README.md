@@ -1,27 +1,28 @@
 # gVisor Runtime Tests
 
-App Engine uses gvisor to sandbox application containers. The runtime tests aim
-to test `runsc` compatibility with these
-[standard runtimes](https://cloud.google.com/appengine/docs/standard/runtimes).
-The test itself runs the language-defined tests inside the sandboxed standard
-runtime container.
+These tests execute language runtime test suites inside gVisor. They serve as
+high-level integration tests for the various runtimes.
 
-Note: [Ruby runtime](https://cloud.google.com/appengine/docs/standard/ruby) is
-currently in beta mode and so we do not run tests for it yet.
+## Runtime Test Components
 
-### Testing Locally
+The runtime tests have the following components:
 
-To run runtime tests individually from a given runtime, use the following table.
+-   [`images`][runtime-images] - These are Docker images for each language
+    runtime we test. The images contain all the particular runtime tests, and
+    whatever other libraries or utilities are required to run the tests.
+-   [`proctor`](proctor) - This is a binary that acts as an agent inside the
+    container and provides a uniform command-line API to list and run the
+    various language tests.
+-   [`runner`](runner) - This is the test entrypoint invoked by `bazel run`.
+    This binary spawns Docker (using `runsc` runtime) and runs the language
+    image with `proctor` binary mounted.
+-   [`exclude`](exclude) - Holds a CSV file for each language runtime containing
+    the full path of tests that should be excluded from running along with a
+    reason for exclusion.
 
-Language | Version | Download Image                              | Run Test(s)
--------- | ------- | ------------------------------------------- | -----------
-Go       | 1.12    | `make -C images load-runtimes_go1.12`       | If the test name ends with `.go`, it is an on-disk test: <br> `docker run --runtime=runsc -it gvisor.dev/images/runtimes/go1.12 ( cd /usr/local/go/test ; go run run.go -v -- <TEST_NAME>... )` <br> Otherwise it is a tool test: <br> `docker run --runtime=runsc -it gvisor.dev/images/runtimes/go1.12 go tool dist test -v -no-rebuild ^TEST1$\|^TEST2$...`
-Java     | 11      | `make -C images load-runtimes_java11`       | `docker run --runtime=runsc -it gvisor.dev/images/runtimes/java11 jtreg -agentvm -dir:/root/test/jdk -noreport -timeoutFactor:20 -verbose:summary <TEST_NAME>...`
-NodeJS   | 12.4.0  | `make -C images load-runtimes_nodejs12.4.0` | `docker run --runtime=runsc -it gvisor.dev/images/runtimes/nodejs12.4.0 python tools/test.py --timeout=180 <TEST_NAME>...`
-Php      | 7.3.6   | `make -C images load-runtimes_php7.3.6`     | `docker run --runtime=runsc -it gvisor.dev/images/runtimes/php7.3.6 make test "TESTS=<TEST_NAME>..."`
-Python   | 3.7.3   | `make -C images load-runtimes_python3.7.3`  | `docker run --runtime=runsc -it gvisor.dev/images/runtimes/python3.7.3 ./python -m test <TEST_NAME>...`
+## Testing Locally
 
-To run an entire runtime test locally, use the following table.
+The following `make` targets will run an entire runtime test suite locally.
 
 Note: java runtime test take 1+ hours with 16 cores.
 
@@ -33,7 +34,18 @@ NodeJS   | 12.4.0  | `make nodejs12.4.0-runtime-tests`
 Php      | 7.3.6   | `make php7.3.6-runtime-tests`
 Python   | 3.7.3   | `make python3.7.3-runtime-tests`
 
-#### Clean Up
+To run runtime tests individually from a given runtime, you must build or
+download the language image and call Docker directly with the test arguments.
+
+Language | Version | Download Image                    | Run Test(s)
+-------- | ------- | --------------------------------- | -----------
+Go       | 1.12    | `make load-runtimes_go1.12`       | If the test name ends with `.go`, it is an on-disk test: <br> `docker run --runtime=runsc -it gvisor.dev/images/runtimes/go1.12 ( cd /usr/local/go/test ; go run run.go -v -- <TEST_NAME>... )` <br> Otherwise it is a tool test: <br> `docker run --runtime=runsc -it gvisor.dev/images/runtimes/go1.12 go tool dist test -v -no-rebuild ^TEST1$\|^TEST2$...`
+Java     | 11      | `make load-runtimes_java11`       | `docker run --runtime=runsc -it gvisor.dev/images/runtimes/java11 jtreg -agentvm -dir:/root/test/jdk -noreport -timeoutFactor:20 -verbose:summary <TEST_NAME>...`
+NodeJS   | 12.4.0  | `make load-runtimes_nodejs12.4.0` | `docker run --runtime=runsc -it gvisor.dev/images/runtimes/nodejs12.4.0 python tools/test.py --timeout=180 <TEST_NAME>...`
+Php      | 7.3.6   | `make load-runtimes_php7.3.6`     | `docker run --runtime=runsc -it gvisor.dev/images/runtimes/php7.3.6 make test "TESTS=<TEST_NAME>..."`
+Python   | 3.7.3   | `make load-runtimes_python3.7.3`  | `docker run --runtime=runsc -it gvisor.dev/images/runtimes/python3.7.3 ./python -m test <TEST_NAME>...`
+
+### Clean Up
 
 Sometimes when runtime tests fail or when the testing container itself crashes
 unexpectedly, the containers are not removed or sometimes do not even exit. This
@@ -48,15 +60,29 @@ docker rm $(docker ps -a -q)  # Removes all exited containers.
 docker system prune  # Remove unused data.
 ```
 
-### Testing Infrastructure
+## Updating Runtime Tests
 
-There are 3 components to this tests infrastructure:
+To bump the version of an existing runtime test:
 
--   [`runner`](runner) - This is the test entrypoint. This is the binary is
-    invoked by `bazel test`. The runner spawns the target runtime container
-    using `runsc` and then copies over the `proctor` binary into the container.
--   [`proctor`](proctor) - This binary acts as our agent inside the container
-    which communicates with the runner and actually executes tests.
--   [`exclude`](exclude) - Holds a CSV file for each language runtime containing
-    the full path of tests that should be excluded from running along with a
-    reason for exclusion.
+1.  Create a new [Docker image](runtime-images) for the new runtime version.
+    This will likely look similar to the older version, so start by copying the
+    older one. Update any packages or downloaded urls to point to the new
+    version. Test building the image with `docker build
+    third_party/gvisor/images/runtime/<new_runtime>`
+
+2.  Create a new [`runtime_test`](BUILD) target. The `name` field must be the
+    dirctory name for the Docker image you created in Step 1.
+
+3.  Run the tests, and triage any failures. Some language tests are flaky (or
+    never pass at all), other failures may indicate a gVisor bug or divergence
+    from Linux behavior. Known or expected failures can be added to the
+    [exclude](exclude) file for the new version, and they will be skipped in
+    future runs.
+
+Creating new runtime tests for an entirely new language is similar to the above,
+except that Step 1 is a bit harder. You have to figure out how to download and
+run the language tests in a Docker container. Once you have that, you must also
+implement the [`proctor/TestRunner`](proctor/lib/lib.go) interface for that
+language, so that proctor can list and run the tests in the image you created.
+
+[runtime-images]: ../../images/runtimes/

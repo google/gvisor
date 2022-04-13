@@ -11,9 +11,9 @@ runtime_test(
 )
 
 runtime_test(
-    name = "java11",
+    name = "java17",
     batch = 100,
-    exclude_file = "exclude/java11.csv",
+    exclude_file = "exclude/java17.csv",
     lang = "java",
     shard_count = most_shards,
 )

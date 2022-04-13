@@ -1,9 +1,11 @@
-test name,bug id,comment
 com/sun/crypto/provider/Cipher/PBE/PKCS12Cipher.java,,Fails in Docker
+test name,bug id,comment
 com/sun/jdi/InvokeHangTest.java,https://bugs.openjdk.java.net/browse/JDK-8218463,
 com/sun/jdi/NashornPopFrameTest.java,,
 com/sun/jdi/OnJcmdTest.java,b/180542784,
 com/sun/jdi/ProcessAttachTest.java,,
+com/sun/jndi/ldap/LdapPoolTimeoutTest.java,,
+com/sun/jndi/ldap/LdapTimeoutTest.java,,
 com/sun/management/HotSpotDiagnosticMXBean/CheckOrigin.java,,Fails in Docker
 com/sun/management/OperatingSystemMXBean/GetCommittedVirtualMemorySize.java,,
 com/sun/management/ThreadMXBean/ThreadCpuTimeArray.java,,Test assumes high CPU clock precision
@@ -14,17 +16,21 @@ com/sun/tools/attach/PermissionTest.java,,
 com/sun/tools/attach/StartManagementAgent.java,,
 com/sun/tools/attach/TempDirTest.java,,
 com/sun/tools/attach/modules/Driver.java,,
+java/io/File/GetXSpace.java,,
 java/lang/Character/CheckScript.java,,Fails in Docker
 java/lang/Character/CheckUnicode.java,,Fails in Docker
 java/lang/Class/GetPackageBootLoaderChildLayer.java,,
 java/lang/ClassLoader/nativeLibrary/NativeLibraryTest.java,,Fails in Docker
-java/lang/module/ModuleDescriptorTest.java,,
+java/lang/ProcessBuilder/Basic.java#id0,,
 java/lang/String/nativeEncoding/StringPlatformChars.java,,
+java/lang/instrument/HiddenClass/HiddenClassAgent.java,,
+java/lang/invoke/LFCaching/LFGarbageCollectedTest.java,,
+java/lang/invoke/lambda/LambdaFileEncodingSerialization.java,,
+java/lang/module/ModuleDescriptorTest.java,,
+java/lang/reflect/exeCallerAccessTest/CallerAccessTest.java,,
 java/net/CookieHandler/B6791927.java,,java.lang.RuntimeException: Expiration date shouldn't be 0
+java/net/DatagramSocket/AddressNotSet.java,,
 java/net/DatagramSocket/SetGetReceiveBufferSize.java,b/180507650,
-java/net/httpclient/websocket/WebSocketProxyTest.java,,Times out on runc too
-java/net/ipv6tests/TcpTest.java,,java.net.ConnectException: Connection timed out (Connection timed out)
-java/net/ipv6tests/UdpTest.java,,Times out
 java/net/Inet6Address/B6558853.java,,Times out
 java/net/InetAddress/CheckJNI.java,,java.net.ConnectException: Connection timed out (Connection timed out)
 java/net/InterfaceAddress/NetworkPrefixLength.java,b/78507103,
@@ -34,7 +40,10 @@ java/net/MulticastSocket/MulticastTTL.java,,
 java/net/MulticastSocket/NetworkInterfaceEmptyGetInetAddressesTest.java,,java.net.SocketException: Protocol not available (Error getting socket option)
 java/net/MulticastSocket/NoLoopbackPackets.java,,java.net.SocketException: Protocol not available
 java/net/MulticastSocket/Promiscuous.java,,
+java/net/MulticastSocket/SendPortZero.java,,
 java/net/MulticastSocket/SetLoopbackMode.java,,
+java/net/MulticastSocket/SetLoopbackModeIPv4.java,,
+java/net/MulticastSocket/SetLoopbackOption.java,,
 java/net/MulticastSocket/SetTTLAndGetTTL.java,,
 java/net/MulticastSocket/Test.java,,
 java/net/MulticastSocket/TestDefaults.java,,
@@ -42,26 +51,35 @@ java/net/MulticastSocket/TimeToLive.java,,
 java/net/NetworkInterface/NetworkInterfaceStreamTest.java,,
 java/net/Socket/LinkLocal.java,,java.net.SocketTimeoutException: Receive timed out
 java/net/Socket/SetSoLinger.java,b/78527327,SO_LINGER is not yet supported
+java/net/Socket/SocketAcceptInterruptTest.java,,
+java/net/Socket/SocketReadInterruptTest.java,,
 java/net/Socket/UrgentDataTest.java,b/111515323,
 java/net/SocketOption/OptionsTest.java,,Fails in Docker
 java/net/SocketPermission/SocketPermissionTest.java,,
 java/net/URLConnection/6212146/TestDriver.java,,Fails in Docker
 java/net/httpclient/RequestBuilderTest.java,,Fails in Docker
+java/net/httpclient/websocket/WebSocketProxyTest.java,,Times out on runc too
+java/net/ipv6tests/TcpTest.java,,java.net.ConnectException: Connection timed out (Connection timed out)
+java/net/ipv6tests/UdpTest.java,,Times out
 java/nio/channels/DatagramChannel/BasicMulticastTests.java,,
 java/nio/channels/DatagramChannel/SocketOptionTests.java,,java.net.SocketException: Invalid argument
 java/nio/channels/DatagramChannel/UseDGWithIPv6.java,,
 java/nio/channels/FileChannel/directio/DirectIOTest.java,,Fails in Docker
 java/nio/channels/FileChannel/directio/PwriteDirect.java,,java.io.IOException: Invalid argument
+java/nio/channels/Selector/OutOfBand.java#id0,,
 java/nio/channels/Selector/OutOfBand.java,,
 java/nio/channels/Selector/SelectWithConsumer.java,,Flaky
 java/nio/channels/ServerSocketChannel/SocketOptionTests.java,,
 java/nio/channels/SocketChannel/LingerOnClose.java,,
 java/nio/channels/SocketChannel/SocketOptionTests.java,b/77965901,
+java/nio/channels/etc/PrintSupportedOptions.java,,
 java/nio/channels/spi/SelectorProvider/inheritedChannel/InheritedChannelTest.java,,Fails in Docker
+java/nio/channels/unixdomain/SocketOptions.java,,
+java/nio/file/Files/probeContentType/Basic.java,,
 java/rmi/activation/Activatable/extLoadedImpl/ext.sh,,
 java/rmi/transport/checkLeaseInfoLeak/CheckLeaseLeak.java,,
 java/security/cert/PolicyNode/GetPolicyQualifiers.java,b/170263154,Kokoro executor cert expired
-java/text/Format/NumberFormat/CurrencyFormat.java,,Fails in Docker
+java/security/misc/Versions.java,,
 java/text/Format/NumberFormat/CurrencyFormat.java,,Fails in Docker
 java/util/Calendar/JapaneseEraNameTest.java,,
 java/util/Currency/CurrencyTest.java,,Fails in Docker
@@ -70,6 +88,7 @@ java/util/EnumSet/BogusEnumSet.java,,"java.io.InvalidClassException: java.util.E
 java/util/Locale/Bug8040211.java,,java.lang.RuntimeException: Failed.
 java/util/Locale/LSRDataTest.java,,
 java/util/Properties/CompatibilityTest.java,,"java.lang.RuntimeException: jdk.internal.org.xml.sax.SAXParseException; Internal DTD subset is not allowed. The Properties XML document must have the following DOCTYPE declaration: <!DOCTYPE properties SYSTEM ""http://java.sun.com/dtd/properties.dtd"">"
+java/util/ResourceBundle/Control/MissingResourceCauseTestRun.java,,
 java/util/ResourceBundle/Control/XMLResourceBundleTest.java,,java.util.MissingResourceException: Can't find bundle for base name XmlRB locale
 java/util/ResourceBundle/modules/xmlformat/xmlformat.sh,,Timeout reached: 60000. Process is not alive!
 java/util/TimeZone/TimeZoneTest.java,,Uncaught exception thrown in test method TestShortZoneIDs
@@ -80,6 +99,7 @@ java/util/logging/TestLoggerWeakRefLeak.java,,
 java/util/spi/ResourceBundleControlProvider/UserDefaultControlTest.java,,java.util.MissingResourceException: Can't find bundle for base name com.foo.XmlRB locale
 javax/imageio/AppletResourceTest.java,,
 javax/imageio/plugins/jpeg/JPEGsNotAcceleratedTest.java,,java.awt.HeadlessException: No X11 DISPLAY variable was set but this program performed an operation which requires it.
+javax/management/remote/mandatory/connection/RMIConnector_NPETest.java,,
 javax/management/security/HashedPasswordFileTest.java,,
 javax/net/ssl/DTLS/DTLSBufferOverflowUnderflowTest.java,,Compilation failed
 javax/net/ssl/DTLS/DTLSDataExchangeTest.java,,Compilation failed
@@ -108,6 +128,8 @@ javax/net/ssl/DTLSv10/DTLSv10RehandshakeWithDataExTest.java,,Compilation failed
 javax/net/ssl/DTLSv10/DTLSv10SequenceNumberTest.java,,Compilation failed
 javax/net/ssl/DTLSv10/DTLSv10UnsupportedCiphersTest.java,,Compilation failed
 javax/net/ssl/SSLSession/JSSERenegotiate.java,,Fails in Docker
+javax/net/ssl/Stapling/HttpsUrlConnClient.java,,
+javax/net/ssl/Stapling/SSLSocketWithStapling.java,,
 javax/net/ssl/TLS/TLSDataExchangeTest.java,,Compilation failed
 javax/net/ssl/TLS/TLSEnginesClosureTest.java,,Compilation failed
 javax/net/ssl/TLS/TLSHandshakeTest.java,,Compilation failed
@@ -137,6 +159,17 @@ javax/net/ssl/TLSv11/TLSRehandshakeWithDataExTest.java,,Compilation failed
 javax/net/ssl/TLSv11/TLSUnsupportedCiphersTest.java,,Compilation failed
 javax/net/ssl/TLSv12/TLSEnginesClosureTest.java,,Compilation failed
 javax/sound/sampled/AudioInputStream/FrameLengthAfterConversion.java,,
+jdk/internal/jline/KeyConversionTest.java,,
+jdk/internal/loader/NativeLibraries/Main.java,,
+jdk/jfr/api/consumer/log/TestDynamicStart.java,,
+jdk/jfr/api/consumer/streaming/TestBaseRepositoryAfterStart.java,,Times out
+jdk/jfr/api/consumer/streaming/TestBaseRepositoryLastModified.java,,Times out
+jdk/jfr/api/consumer/streaming/TestCrossProcessStreaming.java,,Times out
+jdk/jfr/api/consumer/streaming/TestInProcessMigration.java,,
+jdk/jfr/api/consumer/streaming/TestJVMCrash.java,,
+jdk/jfr/api/consumer/streaming/TestJVMExit.java,,
+jdk/jfr/api/consumer/streaming/TestOutOfProcessMigration.java,,
+jdk/jfr/api/consumer/streaming/TestRepositoryProperty.java,,
 jdk/jfr/cmd/TestHelp.java,,java.lang.RuntimeException: 'Available commands are:' missing from stdout/stderr
 jdk/jfr/cmd/TestPrint.java,,Missing file' missing from stdout/stderr
 jdk/jfr/cmd/TestPrintDefault.java,,java.lang.RuntimeException: 'JVMInformation' missing from stdout/stderr
@@ -146,6 +179,7 @@ jdk/jfr/cmd/TestReconstruct.java,,java.lang.RuntimeException: 'Too few arguments
 jdk/jfr/cmd/TestSplit.java,,java.lang.RuntimeException: 'Missing file' missing from stdout/stderr
 jdk/jfr/cmd/TestSummary.java,,java.lang.RuntimeException: 'Missing file' missing from stdout/stderr
 jdk/jfr/event/compiler/TestCompilerStats.java,,java.lang.RuntimeException: Field nmetodsSize not in event
+jdk/jfr/event/gc/detailed/TestZUncommitEvent.java,,
 jdk/jfr/event/metadata/TestDefaultConfigurations.java,,Setting 'threshold' in event 'jdk.SecurityPropertyModification' was not configured in the configuration 'default'
 jdk/jfr/event/oldobject/TestLargeRootSet.java,,Flaky - `main' threw exception: java.lang.RuntimeException: Could not find root object
 jdk/jfr/event/runtime/TestActiveSettingEvent.java,,java.lang.Exception: Could not find setting with name jdk.X509Validation#threshold
@@ -164,6 +198,7 @@ jdk/jfr/jcmd/TestJcmdDumpWithFileName.java,b/180542783,
 jdk/jfr/jcmd/TestJcmdLegacy.java,,
 jdk/jfr/jcmd/TestJcmdSaveToFile.java,,
 jdk/jfr/jcmd/TestJcmdStartDirNotExist.java,,
+jdk/jfr/jcmd/TestJcmdStartFlushInterval.java,,
 jdk/jfr/jcmd/TestJcmdStartInvaldFile.java,,
 jdk/jfr/jcmd/TestJcmdStartPathToGCRoots.java,,
 jdk/jfr/jcmd/TestJcmdStartStopDefault.java,,
@@ -178,6 +213,10 @@ jdk/modules/incubator/ImageModules.java,,
 jdk/net/Sockets/ExtOptionTest.java,,
 jdk/net/Sockets/QuickAckTest.java,,
 lib/security/cacerts/VerifyCACerts.java,,
+sun/management/jdp/JdpDefaultsTest.java,,
+sun/management/jdp/JdpJmxRemoteDynamicPortTest.java,,
+sun/management/jdp/JdpOffTest.java,,
+sun/management/jdp/JdpSpecificAddressTest.java,,
 sun/management/jmxremote/bootstrap/CustomLauncherTest.java,,
 sun/management/jmxremote/bootstrap/JvmstatCountersTest.java,,
 sun/management/jmxremote/bootstrap/LocalManagementTest.java,,
@@ -186,33 +225,77 @@ sun/management/jmxremote/bootstrap/RmiSslBootstrapTest.sh,,
 sun/management/jmxremote/startstop/JMXStartStopTest.java,,
 sun/management/jmxremote/startstop/JMXStatusPerfCountersTest.java,,
 sun/management/jmxremote/startstop/JMXStatusTest.java,,
-sun/management/jdp/JdpDefaultsTest.java,,
-sun/management/jdp/JdpJmxRemoteDynamicPortTest.java,,
-sun/management/jdp/JdpOffTest.java,,
-sun/management/jdp/JdpSpecificAddressTest.java,,
 sun/text/resources/LocaleDataTest.java,,
+sun/tools/jcmd/JcmdOutputEncodingTest.java,,
 sun/tools/jcmd/TestJcmdSanity.java,,
 sun/tools/jhsdb/AlternateHashingTest.java,,
 sun/tools/jhsdb/BasicLauncherTest.java,,
 sun/tools/jhsdb/HeapDumpTest.java,,
-sun/tools/jhsdb/heapconfig/JMapHeapConfigTest.java,,
+sun/tools/jhsdb/HeapDumpTestWithActiveProcess.java,,
 sun/tools/jhsdb/JShellHeapDumpTest.java,,Fails on runc too
+sun/tools/jhsdb/JStackStressTest.java,,
+sun/tools/jhsdb/heapconfig/JMapHeapConfigTest.java,,
 sun/tools/jinfo/BasicJInfoTest.java,,
 sun/tools/jinfo/JInfoTest.java,,
+sun/tools/jmap/BasicJMapTest.java#G1,,
+sun/tools/jmap/BasicJMapTest.java#Parallel,,
+sun/tools/jmap/BasicJMapTest.java#Serial,,
+sun/tools/jmap/BasicJMapTest.java#Shenandoah,,
+sun/tools/jmap/BasicJMapTest.java#Z,,
 sun/tools/jmap/BasicJMapTest.java,,
 sun/tools/jstack/BasicJStackTest.java,,
 sun/tools/jstack/DeadlockDetectionTest.java,,
+sun/tools/jstat/jstatClassloadOutput1.sh,,
 sun/tools/jstatd/TestJstatdExternalRegistry.java,,
 sun/tools/jstatd/TestJstatdPort.java,,Flaky
 sun/tools/jstatd/TestJstatdPortAndServer.java,,Flaky
 sun/util/calendar/zi/TestZoneInfo310.java,,
+tools/jar/ContentOrder.java,,
+tools/jar/ReproducibleJar.java,,
 tools/jar/modularJar/Basic.java,,
 tools/jar/multiRelease/Basic.java,,
 tools/jimage/JImageExtractTest.java,,
+tools/jimage/JImageNonAsciiNameTest.java,,
 tools/jimage/JImageTest.java,,
+tools/jlink/JLinkReproducible3Test.java,,
 tools/jlink/JLinkTest.java,,
 tools/jlink/plugins/IncludeLocalesPluginTest.java,,
+tools/jlink/plugins/StripNativeDebugSymbolsPlugin/StripNativeDebugSymbolsPluginTest.java,,
+tools/jmod/JmodTest.java,,
 tools/jmod/hashes/HashesTest.java,,
+tools/jpackage/junit/junit.java,,
+tools/jpackage/linux/AppAboutUrlTest.java#id0,,
+tools/jpackage/linux/AppCategoryTest.java,,
+tools/jpackage/linux/LinuxBundleNameTest.java,,
+tools/jpackage/linux/MaintainerTest.java,,
+tools/jpackage/linux/PackageDepsTest.java,,
+tools/jpackage/linux/ReleaseTest.java,,
+tools/jpackage/linux/ShortcutHintTest.java#id0,,
+tools/jpackage/linux/jdk/jpackage/tests/UsrTreeTest.java,,
+tools/jpackage/share/AddLauncherTest.java#id1,,
+tools/jpackage/share/AppLauncherEnvTest.java,,
+tools/jpackage/share/ArgumentsTest.java,,
+tools/jpackage/share/EmptyFolderPackageTest.java,,
+tools/jpackage/share/EmptyFolderTest.java,,
+tools/jpackage/share/InstallDirTest.java#id0,,
+tools/jpackage/share/LicenseTest.java#id0,,
+tools/jpackage/share/MultiLauncherTwoPhaseTest.java,,
+tools/jpackage/share/RuntimePackageTest.java#id0,,
+tools/jpackage/share/SimplePackageTest.java,,
+tools/jpackage/share/jdk/jpackage/tests/AppVersionTest.java,,
+tools/jpackage/share/jdk/jpackage/tests/BasicTest.java,,
+tools/jpackage/share/jdk/jpackage/tests/CookedRuntimeTest.java,,
+tools/jpackage/share/jdk/jpackage/tests/DotInNameTest.java,,
+tools/jpackage/share/jdk/jpackage/tests/JLinkOptionsTest.java,,
+tools/jpackage/share/jdk/jpackage/tests/JavaOptionsEqualsTest.java#id0,,
+tools/jpackage/share/jdk/jpackage/tests/JavaOptionsEqualsTest.java#id1,,
+tools/jpackage/share/jdk/jpackage/tests/MainClassTest.java,,
+tools/jpackage/share/jdk/jpackage/tests/ModulePathTest.java,,
+tools/jpackage/share/jdk/jpackage/tests/ModulePathTest2.java,,
+tools/jpackage/share/jdk/jpackage/tests/ModulePathTest3.java,,
+tools/jpackage/share/jdk/jpackage/tests/MultipleJarAppTest.java,,
+tools/jpackage/share/jdk/jpackage/tests/NoMPathRuntimeTest.java,,
+tools/jpackage/share/jdk/jpackage/tests/VendorTest.java#id1,,
 tools/launcher/BigJar.java,b/111611473,
 tools/launcher/HelpFlagsTest.java,,java.lang.AssertionError: HelpFlagsTest failed: Tool jfr not covered by this test. Add specification to jdkTools array!
 tools/launcher/JliLaunchTest.java,,Fails on runc too
