@@ -830,6 +830,9 @@ func TestBucketerPanics(t *testing.T) {
 		"NewDurationBucketer @ 2": func() {
 			NewDurationBucketer(2, time.Second, time.Minute)
 		},
+		"NewDurationBucketer @ 80": func() {
+			NewDurationBucketer(80, time.Microsecond, 50*time.Microsecond)
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var recovered interface{}
