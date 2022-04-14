@@ -130,12 +130,12 @@ func NewWithWriter(lower stack.LinkEndpoint, writer io.Writer, snapLen uint32) (
 // DeliverNetworkPacket implements the stack.NetworkDispatcher interface. It is
 // called by the link-layer endpoint being wrapped when a packet arrives, and
 // logs the packet before forwarding to the actual dispatcher.
-func (e *endpoint) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func (e *endpoint) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
 	e.dumpPacket(directionRecv, protocol, pkt)
 	e.Endpoint.DeliverNetworkPacket(protocol, pkt)
 }
 
-func (e *endpoint) dumpPacket(dir direction, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func (e *endpoint) dumpPacket(dir direction, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
 	writer := e.writer
 	if writer == nil && LogPackets.Load() == 1 {
 		logPacket(e.logPrefix, dir, protocol, pkt)
@@ -166,7 +166,7 @@ func (e *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) 
 	return e.Endpoint.WritePackets(pkts)
 }
 
-func logPacket(prefix string, dir direction, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func logPacket(prefix string, dir direction, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
 	// Figure out the network layer info.
 	var transProto uint8
 	src := tcpip.Address("unknown")

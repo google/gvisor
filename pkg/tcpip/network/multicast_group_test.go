@@ -81,7 +81,7 @@ var (
 
 // validateMLDPacket checks that a passed PacketInfo is an IPv6 MLD packet
 // sent to the provided address with the passed fields set.
-func validateMLDPacket(t *testing.T, p *stack.PacketBuffer, remoteAddress tcpip.Address, mldType uint8, maxRespTime byte, groupAddress tcpip.Address) {
+func validateMLDPacket(t *testing.T, p stack.PacketBufferPtr, remoteAddress tcpip.Address, mldType uint8, maxRespTime byte, groupAddress tcpip.Address) {
 	t.Helper()
 
 	payload := header.IPv6(stack.PayloadSince(p.NetworkHeader()))
@@ -102,7 +102,7 @@ func validateMLDPacket(t *testing.T, p *stack.PacketBuffer, remoteAddress tcpip.
 
 // validateIGMPPacket checks that a passed PacketInfo is an IPv4 IGMP packet
 // sent to the provided address with the passed fields set.
-func validateIGMPPacket(t *testing.T, p *stack.PacketBuffer, remoteAddress tcpip.Address, igmpType uint8, maxRespTime byte, groupAddress tcpip.Address) {
+func validateIGMPPacket(t *testing.T, p stack.PacketBufferPtr, remoteAddress tcpip.Address, igmpType uint8, maxRespTime byte, groupAddress tcpip.Address) {
 	t.Helper()
 
 	payload := header.IPv4(stack.PayloadSince(p.NetworkHeader()))
@@ -501,7 +501,7 @@ func TestMGPJoinGroup(t *testing.T) {
 		maxUnsolicitedResponseDelay time.Duration
 		sentReportStat              func(*stack.Stack) *tcpip.StatCounter
 		receivedQueryStat           func(*stack.Stack) *tcpip.StatCounter
-		validateReport              func(*testing.T, *stack.PacketBuffer)
+		validateReport              func(*testing.T, stack.PacketBufferPtr)
 		checkInitialGroups          func(*testing.T, *channel.Endpoint, *stack.Stack, *faketime.ManualClock) (uint64, uint64)
 	}{
 		{
@@ -515,7 +515,7 @@ func TestMGPJoinGroup(t *testing.T) {
 			receivedQueryStat: func(s *stack.Stack) *tcpip.StatCounter {
 				return s.Stats().IGMP.PacketsReceived.MembershipQuery
 			},
-			validateReport: func(t *testing.T, p *stack.PacketBuffer) {
+			validateReport: func(t *testing.T, p stack.PacketBufferPtr) {
 				t.Helper()
 
 				validateIGMPPacket(t, p, ipv4MulticastAddr1, igmpv2MembershipReport, 0, ipv4MulticastAddr1)
@@ -532,7 +532,7 @@ func TestMGPJoinGroup(t *testing.T) {
 			receivedQueryStat: func(s *stack.Stack) *tcpip.StatCounter {
 				return s.Stats().ICMP.V6.PacketsReceived.MulticastListenerQuery
 			},
-			validateReport: func(t *testing.T, p *stack.PacketBuffer) {
+			validateReport: func(t *testing.T, p stack.PacketBufferPtr) {
 				t.Helper()
 
 				validateMLDPacket(t, p, ipv6MulticastAddr1, mldReport, 0, ipv6MulticastAddr1)
@@ -608,8 +608,8 @@ func TestMGPLeaveGroup(t *testing.T) {
 		multicastAddr      tcpip.Address
 		sentReportStat     func(*stack.Stack) *tcpip.StatCounter
 		sentLeaveStat      func(*stack.Stack) *tcpip.StatCounter
-		validateReport     func(*testing.T, *stack.PacketBuffer)
-		validateLeave      func(*testing.T, *stack.PacketBuffer)
+		validateReport     func(*testing.T, stack.PacketBufferPtr)
+		validateLeave      func(*testing.T, stack.PacketBufferPtr)
 		checkInitialGroups func(*testing.T, *channel.Endpoint, *stack.Stack, *faketime.ManualClock) (uint64, uint64)
 	}{
 		{
@@ -622,12 +622,12 @@ func TestMGPLeaveGroup(t *testing.T) {
 			sentLeaveStat: func(s *stack.Stack) *tcpip.StatCounter {
 				return s.Stats().IGMP.PacketsSent.LeaveGroup
 			},
-			validateReport: func(t *testing.T, p *stack.PacketBuffer) {
+			validateReport: func(t *testing.T, p stack.PacketBufferPtr) {
 				t.Helper()
 
 				validateIGMPPacket(t, p, ipv4MulticastAddr1, igmpv2MembershipReport, 0, ipv4MulticastAddr1)
 			},
-			validateLeave: func(t *testing.T, p *stack.PacketBuffer) {
+			validateLeave: func(t *testing.T, p stack.PacketBufferPtr) {
 				t.Helper()
 
 				validateIGMPPacket(t, p, header.IPv4AllRoutersGroup, igmpLeaveGroup, 0, ipv4MulticastAddr1)
@@ -643,12 +643,12 @@ func TestMGPLeaveGroup(t *testing.T) {
 			sentLeaveStat: func(s *stack.Stack) *tcpip.StatCounter {
 				return s.Stats().ICMP.V6.PacketsSent.MulticastListenerDone
 			},
-			validateReport: func(t *testing.T, p *stack.PacketBuffer) {
+			validateReport: func(t *testing.T, p stack.PacketBufferPtr) {
 				t.Helper()
 
 				validateMLDPacket(t, p, ipv6MulticastAddr1, mldReport, 0, ipv6MulticastAddr1)
 			},
-			validateLeave: func(t *testing.T, p *stack.PacketBuffer) {
+			validateLeave: func(t *testing.T, p stack.PacketBufferPtr) {
 				t.Helper()
 
 				validateMLDPacket(t, p, header.IPv6AllRoutersLinkLocalMulticastAddress, mldDone, 0, ipv6MulticastAddr1)
@@ -721,7 +721,7 @@ func TestMGPQueryMessages(t *testing.T) {
 		sentReportStat              func(*stack.Stack) *tcpip.StatCounter
 		receivedQueryStat           func(*stack.Stack) *tcpip.StatCounter
 		rxQuery                     func(*channel.Endpoint, uint8, tcpip.Address)
-		validateReport              func(*testing.T, *stack.PacketBuffer)
+		validateReport              func(*testing.T, stack.PacketBufferPtr)
 		maxRespTimeToDuration       func(uint8) time.Duration
 		checkInitialGroups          func(*testing.T, *channel.Endpoint, *stack.Stack, *faketime.ManualClock) (uint64, uint64)
 	}{
@@ -739,7 +739,7 @@ func TestMGPQueryMessages(t *testing.T) {
 			rxQuery: func(e *channel.Endpoint, maxRespTime uint8, groupAddress tcpip.Address) {
 				createAndInjectIGMPPacket(e, igmpMembershipQuery, maxRespTime, groupAddress)
 			},
-			validateReport: func(t *testing.T, p *stack.PacketBuffer) {
+			validateReport: func(t *testing.T, p stack.PacketBufferPtr) {
 				t.Helper()
 
 				validateIGMPPacket(t, p, ipv4MulticastAddr1, igmpv2MembershipReport, 0, ipv4MulticastAddr1)
@@ -760,7 +760,7 @@ func TestMGPQueryMessages(t *testing.T) {
 			rxQuery: func(e *channel.Endpoint, maxRespTime uint8, groupAddress tcpip.Address) {
 				createAndInjectMLDPacket(e, mldQuery, maxRespTime, groupAddress)
 			},
-			validateReport: func(t *testing.T, p *stack.PacketBuffer) {
+			validateReport: func(t *testing.T, p stack.PacketBufferPtr) {
 				t.Helper()
 
 				validateMLDPacket(t, p, ipv6MulticastAddr1, mldReport, 0, ipv6MulticastAddr1)
@@ -883,7 +883,7 @@ func TestMGPReportMessages(t *testing.T) {
 		sentReportStat        func(*stack.Stack) *tcpip.StatCounter
 		sentLeaveStat         func(*stack.Stack) *tcpip.StatCounter
 		rxReport              func(*channel.Endpoint)
-		validateReport        func(*testing.T, *stack.PacketBuffer)
+		validateReport        func(*testing.T, stack.PacketBufferPtr)
 		maxRespTimeToDuration func(uint8) time.Duration
 		checkInitialGroups    func(*testing.T, *channel.Endpoint, *stack.Stack, *faketime.ManualClock) (uint64, uint64)
 	}{
@@ -900,7 +900,7 @@ func TestMGPReportMessages(t *testing.T) {
 			rxReport: func(e *channel.Endpoint) {
 				createAndInjectIGMPPacket(e, igmpv2MembershipReport, 0, ipv4MulticastAddr1)
 			},
-			validateReport: func(t *testing.T, p *stack.PacketBuffer) {
+			validateReport: func(t *testing.T, p stack.PacketBufferPtr) {
 				t.Helper()
 
 				validateIGMPPacket(t, p, ipv4MulticastAddr1, igmpv2MembershipReport, 0, ipv4MulticastAddr1)
@@ -920,7 +920,7 @@ func TestMGPReportMessages(t *testing.T) {
 			rxReport: func(e *channel.Endpoint) {
 				createAndInjectMLDPacket(e, mldReport, 0, ipv6MulticastAddr1)
 			},
-			validateReport: func(t *testing.T, p *stack.PacketBuffer) {
+			validateReport: func(t *testing.T, p stack.PacketBufferPtr) {
 				t.Helper()
 
 				validateMLDPacket(t, p, ipv6MulticastAddr1, mldReport, 0, ipv6MulticastAddr1)
@@ -1004,9 +1004,9 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 		maxUnsolicitedResponseDelay time.Duration
 		sentReportStat              func(*stack.Stack) *tcpip.StatCounter
 		sentLeaveStat               func(*stack.Stack) *tcpip.StatCounter
-		validateReport              func(*testing.T, *stack.PacketBuffer, tcpip.Address)
-		validateLeave               func(*testing.T, *stack.PacketBuffer, tcpip.Address)
-		getAndCheckGroupAddress     func(*testing.T, map[tcpip.Address]bool, *stack.PacketBuffer) tcpip.Address
+		validateReport              func(*testing.T, stack.PacketBufferPtr, tcpip.Address)
+		validateLeave               func(*testing.T, stack.PacketBufferPtr, tcpip.Address)
+		getAndCheckGroupAddress     func(*testing.T, map[tcpip.Address]bool, stack.PacketBufferPtr) tcpip.Address
 		checkInitialGroups          func(*testing.T, *channel.Endpoint, *stack.Stack, *faketime.ManualClock) (uint64, uint64)
 	}{
 		{
@@ -1021,17 +1021,17 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 			sentLeaveStat: func(s *stack.Stack) *tcpip.StatCounter {
 				return s.Stats().IGMP.PacketsSent.LeaveGroup
 			},
-			validateReport: func(t *testing.T, p *stack.PacketBuffer, addr tcpip.Address) {
+			validateReport: func(t *testing.T, p stack.PacketBufferPtr, addr tcpip.Address) {
 				t.Helper()
 
 				validateIGMPPacket(t, p, addr, igmpv2MembershipReport, 0, addr)
 			},
-			validateLeave: func(t *testing.T, p *stack.PacketBuffer, addr tcpip.Address) {
+			validateLeave: func(t *testing.T, p stack.PacketBufferPtr, addr tcpip.Address) {
 				t.Helper()
 
 				validateIGMPPacket(t, p, header.IPv4AllRoutersGroup, igmpLeaveGroup, 0, addr)
 			},
-			getAndCheckGroupAddress: func(t *testing.T, seen map[tcpip.Address]bool, p *stack.PacketBuffer) tcpip.Address {
+			getAndCheckGroupAddress: func(t *testing.T, seen map[tcpip.Address]bool, p stack.PacketBufferPtr) tcpip.Address {
 				t.Helper()
 
 				ipv4 := header.IPv4(stack.PayloadSince(p.NetworkHeader()))
@@ -1062,17 +1062,17 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 			sentLeaveStat: func(s *stack.Stack) *tcpip.StatCounter {
 				return s.Stats().ICMP.V6.PacketsSent.MulticastListenerDone
 			},
-			validateReport: func(t *testing.T, p *stack.PacketBuffer, addr tcpip.Address) {
+			validateReport: func(t *testing.T, p stack.PacketBufferPtr, addr tcpip.Address) {
 				t.Helper()
 
 				validateMLDPacket(t, p, addr, mldReport, 0, addr)
 			},
-			validateLeave: func(t *testing.T, p *stack.PacketBuffer, addr tcpip.Address) {
+			validateLeave: func(t *testing.T, p stack.PacketBufferPtr, addr tcpip.Address) {
 				t.Helper()
 
 				validateMLDPacket(t, p, header.IPv6AllRoutersLinkLocalMulticastAddress, mldDone, 0, addr)
 			},
-			getAndCheckGroupAddress: func(t *testing.T, seen map[tcpip.Address]bool, p *stack.PacketBuffer) tcpip.Address {
+			getAndCheckGroupAddress: func(t *testing.T, seen map[tcpip.Address]bool, p stack.PacketBufferPtr) tcpip.Address {
 				t.Helper()
 
 				ipv6 := header.IPv6(stack.PayloadSince(p.NetworkHeader()))

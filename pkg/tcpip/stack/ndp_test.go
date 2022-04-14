@@ -1066,7 +1066,7 @@ func TestSetNDPConfigurations(t *testing.T) {
 
 // raBuf returns a valid NDP Router Advertisement with options, router
 // preference and DHCPv6 configurations specified.
-func raBuf(ip tcpip.Address, rl uint16, managedAddress, otherConfigurations bool, prf header.NDPRoutePreference, optSer header.NDPOptionsSerializer) *stack.PacketBuffer {
+func raBuf(ip tcpip.Address, rl uint16, managedAddress, otherConfigurations bool, prf header.NDPRoutePreference, optSer header.NDPOptionsSerializer) stack.PacketBufferPtr {
 	const flagsByte = 1
 	const routerLifetimeOffset = 2
 
@@ -1117,7 +1117,7 @@ func raBuf(ip tcpip.Address, rl uint16, managedAddress, otherConfigurations bool
 //
 // Note, raBufWithOpts does not populate any of the RA fields other than the
 // Router Lifetime.
-func raBufWithOpts(ip tcpip.Address, rl uint16, optSer header.NDPOptionsSerializer) *stack.PacketBuffer {
+func raBufWithOpts(ip tcpip.Address, rl uint16, optSer header.NDPOptionsSerializer) stack.PacketBufferPtr {
 	return raBuf(ip, rl, false /* managedAddress */, false /* otherConfigurations */, 0 /* prf */, optSer)
 }
 
@@ -1126,7 +1126,7 @@ func raBufWithOpts(ip tcpip.Address, rl uint16, optSer header.NDPOptionsSerializ
 //
 // Note, raBufWithDHCPv6 does not populate any of the RA fields other than the
 // DHCPv6 related ones.
-func raBufWithDHCPv6(ip tcpip.Address, managedAddresses, otherConfigurations bool) *stack.PacketBuffer {
+func raBufWithDHCPv6(ip tcpip.Address, managedAddresses, otherConfigurations bool) stack.PacketBufferPtr {
 	return raBuf(ip, 0, managedAddresses, otherConfigurations, 0 /* prf */, header.NDPOptionsSerializer{})
 }
 
@@ -1134,7 +1134,7 @@ func raBufWithDHCPv6(ip tcpip.Address, managedAddresses, otherConfigurations boo
 //
 // Note, raBuf does not populate any of the RA fields other than the
 // Router Lifetime.
-func raBufSimple(ip tcpip.Address, rl uint16) *stack.PacketBuffer {
+func raBufSimple(ip tcpip.Address, rl uint16) stack.PacketBufferPtr {
 	return raBufWithOpts(ip, rl, header.NDPOptionsSerializer{})
 }
 
@@ -1142,7 +1142,7 @@ func raBufSimple(ip tcpip.Address, rl uint16) *stack.PacketBuffer {
 //
 // Note, raBufWithPrf does not populate any of the RA fields other than the
 // Router Lifetime and Default Router Preference fields.
-func raBufWithPrf(ip tcpip.Address, rl uint16, prf header.NDPRoutePreference) *stack.PacketBuffer {
+func raBufWithPrf(ip tcpip.Address, rl uint16, prf header.NDPRoutePreference) stack.PacketBufferPtr {
 	return raBuf(ip, rl, false /* managedAddress */, false /* otherConfigurations */, prf, header.NDPOptionsSerializer{})
 }
 
@@ -1151,7 +1151,7 @@ func raBufWithPrf(ip tcpip.Address, rl uint16, prf header.NDPRoutePreference) *s
 //
 // Note, raBufWithPI does not populate any of the RA fields other than the
 // Router Lifetime.
-func raBufWithPI(ip tcpip.Address, rl uint16, prefix tcpip.AddressWithPrefix, onLink, auto bool, vl, pl uint32) *stack.PacketBuffer {
+func raBufWithPI(ip tcpip.Address, rl uint16, prefix tcpip.AddressWithPrefix, onLink, auto bool, vl, pl uint32) stack.PacketBufferPtr {
 	flags := uint8(0)
 	if onLink {
 		// The OnLink flag is the 7th bit in the flags byte.
@@ -1188,7 +1188,7 @@ func raBufWithPI(ip tcpip.Address, rl uint16, prefix tcpip.AddressWithPrefix, on
 // Information option.
 //
 // All fields in the RA will be zero except the RIO option.
-func raBufWithRIO(t *testing.T, ip tcpip.Address, prefix tcpip.AddressWithPrefix, lifetimeSeconds uint32, prf header.NDPRoutePreference) *stack.PacketBuffer {
+func raBufWithRIO(t *testing.T, ip tcpip.Address, prefix tcpip.AddressWithPrefix, lifetimeSeconds uint32, prf header.NDPRoutePreference) stack.PacketBufferPtr {
 	// buf will hold the route information option after the Type and Length
 	// fields.
 	//
@@ -1231,7 +1231,7 @@ func TestDynamicConfigurationsDisabled(t *testing.T) {
 	tests := []struct {
 		name   string
 		config func(bool) ipv6.NDPConfigurations
-		ra     *stack.PacketBuffer
+		ra     stack.PacketBufferPtr
 	}{
 		{
 			name: "No Router Discovery",
@@ -1420,14 +1420,14 @@ func TestOffLinkRouteDiscovery(t *testing.T) {
 		discoverMoreSpecificRoutes bool
 
 		dest tcpip.Subnet
-		ra   func(*testing.T, tcpip.Address, uint16, header.NDPRoutePreference) *stack.PacketBuffer
+		ra   func(*testing.T, tcpip.Address, uint16, header.NDPRoutePreference) stack.PacketBufferPtr
 	}{
 		{
 			name:                       "Default router discovery",
 			discoverDefaultRouters:     true,
 			discoverMoreSpecificRoutes: false,
 			dest:                       header.IPv6EmptySubnet,
-			ra: func(_ *testing.T, router tcpip.Address, lifetimeSeconds uint16, prf header.NDPRoutePreference) *stack.PacketBuffer {
+			ra: func(_ *testing.T, router tcpip.Address, lifetimeSeconds uint16, prf header.NDPRoutePreference) stack.PacketBufferPtr {
 				return raBufWithPrf(router, lifetimeSeconds, prf)
 			},
 		},
@@ -1436,7 +1436,7 @@ func TestOffLinkRouteDiscovery(t *testing.T) {
 			discoverDefaultRouters:     false,
 			discoverMoreSpecificRoutes: true,
 			dest:                       moreSpecificPrefix.Subnet(),
-			ra: func(t *testing.T, router tcpip.Address, lifetimeSeconds uint16, prf header.NDPRoutePreference) *stack.PacketBuffer {
+			ra: func(t *testing.T, router tcpip.Address, lifetimeSeconds uint16, prf header.NDPRoutePreference) stack.PacketBufferPtr {
 				return raBufWithRIO(t, router, moreSpecificPrefix, uint32(lifetimeSeconds), prf)
 			},
 		},

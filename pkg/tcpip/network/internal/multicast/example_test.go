@@ -115,7 +115,7 @@ func Example() {
 	// Last used timestamp: 10000000000
 }
 
-func forwardPkt(*stack.PacketBuffer, *multicast.InstalledRoute) {
+func forwardPkt(stack.PacketBufferPtr, *multicast.InstalledRoute) {
 	fmt.Println("forwardPkt")
 }
 
@@ -123,11 +123,11 @@ func emitMissingRouteEvent(stack.UnicastSourceAndMulticastDestination) {
 	fmt.Println("emitMissingRouteEvent")
 }
 
-func deliverPktLocally(*stack.PacketBuffer) {
+func deliverPktLocally(stack.PacketBufferPtr) {
 	fmt.Println("deliverPktLocally")
 }
 
-func newPacketBuffer(body string) *stack.PacketBuffer {
+func newPacketBuffer(body string) stack.PacketBufferPtr {
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Payload: buffer.NewWithData([]byte(body)),
 	})

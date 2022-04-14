@@ -45,7 +45,7 @@ var (
 	defaultRoute              = stack.MulticastRoute{inputNICID, defaultOutgoingInterfaces}
 )
 
-func newPacketBuffer(body string) *stack.PacketBuffer {
+func newPacketBuffer(body string) stack.PacketBufferPtr {
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Payload: buffer.NewWithData([]byte(body)),
 	})

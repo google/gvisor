@@ -29,7 +29,7 @@ type processParams struct {
 	first     uint16
 	last      uint16
 	more      bool
-	pkt       *stack.PacketBuffer
+	pkt       stack.PacketBufferPtr
 	wantDone  bool
 	wantError error
 }
@@ -45,7 +45,7 @@ func TestReassemblerProcess(t *testing.T) {
 		return payload
 	}
 
-	pkt := func(sizes ...int) *stack.PacketBuffer {
+	pkt := func(sizes ...int) stack.PacketBufferPtr {
 		var buf buffer.Buffer
 		for _, size := range sizes {
 			buf.Append(v(size))
@@ -59,7 +59,7 @@ func TestReassemblerProcess(t *testing.T) {
 		name    string
 		params  []processParams
 		want    []hole
-		wantPkt *stack.PacketBuffer
+		wantPkt stack.PacketBufferPtr
 	}{
 		{
 			name:   "No fragments",
@@ -199,7 +199,7 @@ func TestReassemblerProcess(t *testing.T) {
 					r.pkt.DecRef()
 				}
 			}()
-			var resPkt *stack.PacketBuffer
+			var resPkt stack.PacketBufferPtr
 			var isDone bool
 			for _, param := range test.params {
 				pkt, _, done, _, err := r.process(param.first, param.last, param.more, proto, param.pkt)
@@ -215,8 +215,8 @@ func TestReassemblerProcess(t *testing.T) {
 				}
 			}
 
-			ignorePkt := func(a, b *stack.PacketBuffer) bool { return true }
-			cmpPktData := func(a, b *stack.PacketBuffer) bool {
+			ignorePkt := func(a, b stack.PacketBufferPtr) bool { return true }
+			cmpPktData := func(a, b stack.PacketBufferPtr) bool {
 				if a == nil || b == nil {
 					return a == b
 				}

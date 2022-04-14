@@ -53,18 +53,18 @@ func (e *nullEndpoint) Attach(d stack.NetworkDispatcher)      { e.disp = d }
 func (e *nullEndpoint) IsAttached() bool                      { return e.disp != nil }
 func (*nullEndpoint) Wait()                                   {}
 func (*nullEndpoint) ARPHardwareType() header.ARPHardwareType { return header.ARPHardwareNone }
-func (*nullEndpoint) AddHeader(*stack.PacketBuffer)           {}
+func (*nullEndpoint) AddHeader(stack.PacketBufferPtr)         {}
 
 var _ stack.NetworkDispatcher = (*testNetworkDispatcher)(nil)
 
 type linkPacketInfo struct {
-	pkt      *stack.PacketBuffer
+	pkt      stack.PacketBufferPtr
 	protocol tcpip.NetworkProtocolNumber
 	incoming bool
 }
 
 type networkPacketInfo struct {
-	pkt      *stack.PacketBuffer
+	pkt      stack.PacketBufferPtr
 	protocol tcpip.NetworkProtocolNumber
 }
 
@@ -87,7 +87,7 @@ func (t *testNetworkDispatcher) reset() {
 	*t = testNetworkDispatcher{}
 }
 
-func (t *testNetworkDispatcher) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func (t *testNetworkDispatcher) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
 	networkPacket := networkPacketInfo{
 		pkt:      pkt.IncRef(),
 		protocol: protocol,
@@ -100,7 +100,7 @@ func (t *testNetworkDispatcher) DeliverNetworkPacket(protocol tcpip.NetworkProto
 	t.networkPacket = networkPacket
 }
 
-func (t *testNetworkDispatcher) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer, incoming bool) {
+func (t *testNetworkDispatcher) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr, incoming bool) {
 	linkPacket := linkPacketInfo{
 		pkt:      pkt.IncRef(),
 		protocol: protocol,

@@ -46,7 +46,7 @@ var (
 // validateIgmpPacket checks that a passed packet is an IPv4 IGMP packet sent
 // to the provided address with the passed fields set. Raises a t.Error if any
 // field does not match.
-func validateIgmpPacket(t *testing.T, pkt *stack.PacketBuffer, igmpType header.IGMPType, maxRespTime byte, srcAddr, dstAddr, groupAddress tcpip.Address) {
+func validateIgmpPacket(t *testing.T, pkt stack.PacketBufferPtr, igmpType header.IGMPType, maxRespTime byte, srcAddr, dstAddr, groupAddress tcpip.Address) {
 	t.Helper()
 
 	payload := header.IPv4(stack.PayloadSince(pkt.NetworkHeader()))

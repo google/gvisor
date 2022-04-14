@@ -207,7 +207,7 @@ var _ stack.NetworkDispatcher = (*EndpointWithDestinationCheck)(nil)
 var _ stack.LinkEndpoint = (*EndpointWithDestinationCheck)(nil)
 
 // DeliverNetworkPacket implements stack.NetworkDispatcher.
-func (e *EndpointWithDestinationCheck) DeliverNetworkPacket(proto tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func (e *EndpointWithDestinationCheck) DeliverNetworkPacket(proto tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
 	if dst := header.Ethernet(pkt.LinkHeader().View()).DestinationAddress(); dst == e.Endpoint.LinkAddress() || dst == header.EthernetBroadcastAddress || header.IsMulticastEthernetAddress(dst) {
 		e.Endpoint.DeliverNetworkPacket(proto, pkt)
 	}

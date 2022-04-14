@@ -49,7 +49,7 @@ func (*inputIfNameMatcher) Name() string {
 	return "inputIfNameMatcher"
 }
 
-func (im *inputIfNameMatcher) Match(hook stack.Hook, _ *stack.PacketBuffer, inNicName, _ string) (bool, bool) {
+func (im *inputIfNameMatcher) Match(hook stack.Hook, _ stack.PacketBufferPtr, inNicName, _ string) (bool, bool) {
 	return (hook == stack.Input && im.name != "" && im.name == inNicName), false
 }
 
@@ -105,7 +105,7 @@ func genStackV4(t *testing.T) (*stack.Stack, *channel.Endpoint) {
 	return s, e
 }
 
-func genPacketV6() *stack.PacketBuffer {
+func genPacketV6() stack.PacketBufferPtr {
 	pktSize := header.IPv6MinimumSize + payloadSize
 	hdr := buffer.NewPrependable(pktSize)
 	ip := header.IPv6(hdr.Prepend(pktSize))
@@ -120,7 +120,7 @@ func genPacketV6() *stack.PacketBuffer {
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{Data: vv})
 }
 
-func genPacketV4() *stack.PacketBuffer {
+func genPacketV4() stack.PacketBufferPtr {
 	pktSize := header.IPv4MinimumSize + payloadSize
 	hdr := buffer.NewPrependable(pktSize)
 	ip := header.IPv4(hdr.Prepend(pktSize))
@@ -146,7 +146,7 @@ func TestIPTablesStatsForInput(t *testing.T) {
 		name               string
 		setupStack         func(*testing.T) (*stack.Stack, *channel.Endpoint)
 		setupFilter        func(*testing.T, *stack.Stack)
-		genPacket          func() *stack.PacketBuffer
+		genPacket          func() stack.PacketBufferPtr
 		proto              tcpip.NetworkProtocolNumber
 		expectReceived     int
 		expectInputDropped int
@@ -358,7 +358,7 @@ func (*udpSourcePortMatcher) Name() string {
 	return "udpSourcePortMatcher"
 }
 
-func (m *udpSourcePortMatcher) Match(_ stack.Hook, pkt *stack.PacketBuffer, _, _ string) (matches, hotdrop bool) {
+func (m *udpSourcePortMatcher) Match(_ stack.Hook, pkt stack.PacketBufferPtr, _, _ string) (matches, hotdrop bool) {
 	udp := header.UDP(pkt.TransportHeader().View())
 	if len(udp) < header.UDPMinimumSize {
 		// Drop immediately as the packet is invalid.
@@ -3017,7 +3017,7 @@ type icmpv4Matcher struct {
 	icmpType header.ICMPv4Type
 }
 
-func (m *icmpv4Matcher) Match(_ stack.Hook, pkt *stack.PacketBuffer, _, _ string) (matches bool, hotdrop bool) {
+func (m *icmpv4Matcher) Match(_ stack.Hook, pkt stack.PacketBufferPtr, _, _ string) (matches bool, hotdrop bool) {
 	if pkt.NetworkProtocolNumber != header.IPv4ProtocolNumber {
 		return false, false
 	}
@@ -3033,7 +3033,7 @@ type icmpv6Matcher struct {
 	icmpType header.ICMPv6Type
 }
 
-func (m *icmpv6Matcher) Match(_ stack.Hook, pkt *stack.PacketBuffer, _, _ string) (matches bool, hotdrop bool) {
+func (m *icmpv6Matcher) Match(_ stack.Hook, pkt stack.PacketBufferPtr, _, _ string) (matches bool, hotdrop bool) {
 	if pkt.NetworkProtocolNumber != header.IPv6ProtocolNumber {
 		return false, false
 	}

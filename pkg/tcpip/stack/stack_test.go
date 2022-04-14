@@ -122,7 +122,7 @@ func (*fakeNetworkEndpoint) DefaultTTL() uint8 {
 	return 123
 }
 
-func (f *fakeNetworkEndpoint) HandlePacket(pkt *stack.PacketBuffer) {
+func (f *fakeNetworkEndpoint) HandlePacket(pkt stack.PacketBufferPtr) {
 	if _, _, ok := f.proto.Parse(pkt); !ok {
 		return
 	}
@@ -179,7 +179,7 @@ func (f *fakeNetworkEndpoint) NetworkProtocolNumber() tcpip.NetworkProtocolNumbe
 	return f.proto.Number()
 }
 
-func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, params stack.NetworkHeaderParams, pkt *stack.PacketBuffer) tcpip.Error {
+func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, params stack.NetworkHeaderParams, pkt stack.PacketBufferPtr) tcpip.Error {
 	// Increment the sent packet count in the protocol descriptor.
 	f.proto.sendPacketCount[int(r.RemoteAddress()[0])%len(f.proto.sendPacketCount)]++
 
@@ -206,7 +206,7 @@ func (*fakeNetworkEndpoint) WritePackets(*stack.Route, stack.PacketBufferList, s
 	panic("not implemented")
 }
 
-func (*fakeNetworkEndpoint) WriteHeaderIncludedPacket(*stack.Route, *stack.PacketBuffer) tcpip.Error {
+func (*fakeNetworkEndpoint) WriteHeaderIncludedPacket(*stack.Route, stack.PacketBufferPtr) tcpip.Error {
 	return &tcpip.ErrNotSupported{}
 }
 
@@ -299,7 +299,7 @@ func (*fakeNetworkProtocol) Close() {}
 func (*fakeNetworkProtocol) Wait() {}
 
 // Parse implements NetworkProtocol.Parse.
-func (*fakeNetworkProtocol) Parse(pkt *stack.PacketBuffer) (tcpip.TransportProtocolNumber, bool, bool) {
+func (*fakeNetworkProtocol) Parse(pkt stack.PacketBufferPtr) (tcpip.TransportProtocolNumber, bool, bool) {
 	hdr, ok := pkt.NetworkHeader().Consume(fakeNetHeaderLen)
 	if !ok {
 		return 0, false, false

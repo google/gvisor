@@ -40,7 +40,7 @@ func buf(size int, pieces ...string) buffer.Buffer {
 	return buf
 }
 
-func pkt(size int, pieces ...string) *stack.PacketBuffer {
+func pkt(size int, pieces ...string) stack.PacketBufferPtr {
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Payload: buf(size, pieces...),
 	})
@@ -52,7 +52,7 @@ type processInput struct {
 	last  uint16
 	more  bool
 	proto uint8
-	pkt   *stack.PacketBuffer
+	pkt   stack.PacketBufferPtr
 }
 
 type processOutput struct {
@@ -570,10 +570,10 @@ func TestPacketFragmenter(t *testing.T) {
 }
 
 type testTimeoutHandler struct {
-	pkt *stack.PacketBuffer
+	pkt stack.PacketBufferPtr
 }
 
-func (h *testTimeoutHandler) OnReassemblyTimeout(pkt *stack.PacketBuffer) {
+func (h *testTimeoutHandler) OnReassemblyTimeout(pkt stack.PacketBufferPtr) {
 	h.pkt = pkt
 }
 
@@ -591,14 +591,14 @@ func TestTimeoutHandler(t *testing.T) {
 		first uint16
 		last  uint16
 		more  bool
-		pkt   *stack.PacketBuffer
+		pkt   stack.PacketBufferPtr
 	}
 
 	tests := []struct {
 		name      string
 		params    []processParam
 		wantError bool
-		wantPkt   *stack.PacketBuffer
+		wantPkt   stack.PacketBufferPtr
 	}{
 		{
 			name: "onTimeout runs",

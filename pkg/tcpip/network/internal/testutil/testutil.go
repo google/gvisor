@@ -30,7 +30,7 @@ import (
 // to it and can mock errors.
 type MockLinkEndpoint struct {
 	// WrittenPackets is where packets written to the endpoint are stored.
-	WrittenPackets []*stack.PacketBuffer
+	WrittenPackets []stack.PacketBufferPtr
 
 	mtu          uint32
 	err          tcpip.Error
@@ -88,7 +88,7 @@ func (*MockLinkEndpoint) Wait() {}
 func (*MockLinkEndpoint) ARPHardwareType() header.ARPHardwareType { return header.ARPHardwareNone }
 
 // AddHeader implements LinkEndpoint.AddHeader.
-func (*MockLinkEndpoint) AddHeader(*stack.PacketBuffer) {}
+func (*MockLinkEndpoint) AddHeader(stack.PacketBufferPtr) {}
 
 // Close releases all resources.
 func (ep *MockLinkEndpoint) Close() {
@@ -103,7 +103,7 @@ func (ep *MockLinkEndpoint) Close() {
 // extraHeaderReserveLength indicates how much extra space will be reserved for
 // the other headers. The payload is made from Views of the sizes listed in
 // viewSizes.
-func MakeRandPkt(transportHeaderLength int, extraHeaderReserveLength int, viewSizes []int, proto tcpip.NetworkProtocolNumber) *stack.PacketBuffer {
+func MakeRandPkt(transportHeaderLength int, extraHeaderReserveLength int, viewSizes []int, proto tcpip.NetworkProtocolNumber) stack.PacketBufferPtr {
 	var buffer buffer.Buffer
 
 	for _, s := range viewSizes {

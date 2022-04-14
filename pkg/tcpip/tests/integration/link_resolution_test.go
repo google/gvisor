@@ -431,7 +431,7 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 		utils.RxICMPv6EchoRequest(e, src, dst, ttl)
 	}
 
-	arpChecker := func(t *testing.T, request *stack.PacketBuffer, src, dst tcpip.Address) {
+	arpChecker := func(t *testing.T, request stack.PacketBufferPtr, src, dst tcpip.Address) {
 		if request.NetworkProtocolNumber != arp.ProtocolNumber {
 			t.Errorf("got request.NetworkProtocolNumber = %d, want = %d", request.NetworkProtocolNumber, arp.ProtocolNumber)
 		}
@@ -453,7 +453,7 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 		}
 	}
 
-	ndpChecker := func(t *testing.T, request *stack.PacketBuffer, src, dst tcpip.Address) {
+	ndpChecker := func(t *testing.T, request stack.PacketBufferPtr, src, dst tcpip.Address) {
 		if request.NetworkProtocolNumber != header.IPv6ProtocolNumber {
 			t.Fatalf("got Proto = %d, want = %d", request.NetworkProtocolNumber, header.IPv6ProtocolNumber)
 		}
@@ -507,7 +507,7 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 		outgoingAddr                 tcpip.AddressWithPrefix
 		transportProtocol            func(*stack.Stack) stack.TransportProtocol
 		rx                           func(*channel.Endpoint, tcpip.Address, tcpip.Address)
-		linkResolutionRequestChecker func(*testing.T, *stack.PacketBuffer, tcpip.Address, tcpip.Address)
+		linkResolutionRequestChecker func(*testing.T, stack.PacketBufferPtr, tcpip.Address, tcpip.Address)
 		icmpReplyChecker             func(*testing.T, []byte, tcpip.Address, tcpip.Address)
 		mtu                          uint32
 	}{

@@ -308,7 +308,7 @@ func (c *WriteContext) TryNewPacketBuffer(reserveHdrBytes int, data buffer.Vecto
 }
 
 // WritePacket attempts to write the packet.
-func (c *WriteContext) WritePacket(pkt *stack.PacketBuffer, headerIncluded bool) tcpip.Error {
+func (c *WriteContext) WritePacket(pkt stack.PacketBufferPtr, headerIncluded bool) tcpip.Error {
 	c.e.mu.RLock()
 	pkt.Owner = c.e.owner
 	c.e.mu.RUnlock()

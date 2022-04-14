@@ -116,7 +116,7 @@ func (r *InstalledRoute) SetLastUsedTimestamp(monotonicTime tcpip.MonotonicTime)
 // for the entry. For such routes, packets are added to an expiring queue until
 // a route is installed.
 type PendingRoute struct {
-	packets []*stack.PacketBuffer
+	packets []stack.PacketBufferPtr
 
 	// expiration is the timestamp at which the pending route should be expired.
 	//
@@ -326,7 +326,7 @@ func (e GetRouteResultState) String() string {
 //
 // If the relevant pending route queue is at max capacity, then returns false.
 // Otherwise, returns true.
-func (r *RouteTable) GetRouteOrInsertPending(key stack.UnicastSourceAndMulticastDestination, pkt *stack.PacketBuffer) (GetRouteResult, bool) {
+func (r *RouteTable) GetRouteOrInsertPending(key stack.UnicastSourceAndMulticastDestination, pkt stack.PacketBufferPtr) (GetRouteResult, bool) {
 	r.installedMu.RLock()
 	defer r.installedMu.RUnlock()
 

@@ -85,7 +85,7 @@ type segment struct {
 	lost bool
 }
 
-func newIncomingSegment(id stack.TransportEndpointID, clock tcpip.Clock, pkt *stack.PacketBuffer) (*segment, error) {
+func newIncomingSegment(id stack.TransportEndpointID, clock tcpip.Clock, pkt stack.PacketBufferPtr) (*segment, error) {
 	// We check that the offset to the data respects the following constraints:
 	// 1. That it's at least the minimum header size; if we don't do this
 	//    then part of the header would be delivered to user.

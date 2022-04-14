@@ -156,7 +156,7 @@ func testReceiveUDP(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst 
 	}
 }
 
-func compareFragments(packets []*stack.PacketBuffer, sourcePacket *stack.PacketBuffer, mtu uint32, wantFragments []fragmentInfo, proto tcpip.TransportProtocolNumber) error {
+func compareFragments(packets []stack.PacketBufferPtr, sourcePacket stack.PacketBufferPtr, mtu uint32, wantFragments []fragmentInfo, proto tcpip.TransportProtocolNumber) error {
 	// sourcePacket does not have its IP Header populated. Let's copy the one
 	// from the first fragment.
 	source := header.IPv6(packets[0].NetworkHeader().View())
@@ -2610,7 +2610,7 @@ func (*limitedMatcher) Name() string {
 }
 
 // Match implements Matcher.Match.
-func (lm *limitedMatcher) Match(stack.Hook, *stack.PacketBuffer, string, string) (bool, bool) {
+func (lm *limitedMatcher) Match(stack.Hook, stack.PacketBufferPtr, string, string) (bool, bool) {
 	if lm.limit == 0 {
 		return true, false
 	}
