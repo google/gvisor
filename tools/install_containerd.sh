@@ -22,7 +22,7 @@ declare -r CONTAINERD_MINOR="$(echo ${CONTAINERD_VERSION} | awk -F '.' '{ print 
 declare -r CRITOOLS_VERSION=${CRITOOLS_VERSION:-1.18.0}
 
 if [[ "${CONTAINERD_MAJOR}" -eq 1 ]] && [[ "${CONTAINERD_MINOR}" -le 4 ]]; then
-  # We're running Go 1.16, but using pre-module containerd and cri-tools.
+  # We're running Go 1.17, but using pre-module containerd and cri-tools.
   export GO111MODULE=off
 fi
 
