@@ -50,6 +50,7 @@ deps_test(
         "//pkg/atomicbitops",
         "//pkg/buffer",
         "//pkg/context",
+        "//pkg/cpuid",
         "//pkg/gohacks",
         "//pkg/goid",
         "//pkg/ilist",
