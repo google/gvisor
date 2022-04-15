@@ -1653,6 +1653,7 @@ TEST_F(JobControlTest, SetForegroundProcessGroupSIGTTOUBackground) {
     int wstatus;
     TEST_PCHECK(waitpid(grandchild, &wstatus, WSTOPPED) == grandchild);
     TEST_PCHECK(WSTOPSIG(wstatus) == SIGTTOU);
+    EXPECT_THAT(kill(grandchild, SIGKILL), SyscallSucceeds());
   });
   ASSERT_NO_ERRNO(res);
 }
