@@ -15,8 +15,6 @@
 package gofer
 
 import (
-	"sync/atomic"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
@@ -40,7 +38,7 @@ func (d *dentry) touchAtime(mnt *vfs.Mount) {
 	now := d.fs.clock.Now().Nanoseconds()
 	d.metadataMu.Lock()
 	d.atime.Store(now)
-	atomic.StoreUint32(&d.atimeDirty, 1)
+	d.atimeDirty.Store(1)
 	d.metadataMu.Unlock()
 	mnt.EndWrite()
 }
@@ -55,7 +53,7 @@ func (d *dentry) touchAtimeLocked(mnt *vfs.Mount) {
 	}
 	now := d.fs.clock.Now().Nanoseconds()
 	d.atime.Store(now)
-	atomic.StoreUint32(&d.atimeDirty, 1)
+	d.atimeDirty.Store(1)
 	mnt.EndWrite()
 }
 
@@ -77,7 +75,7 @@ func (d *dentry) touchCMtime() {
 	d.metadataMu.Lock()
 	d.mtime.Store(now)
 	d.ctime.Store(now)
-	atomic.StoreUint32(&d.mtimeDirty, 1)
+	d.mtimeDirty.Store(1)
 	d.metadataMu.Unlock()
 }
 
@@ -88,5 +86,5 @@ func (d *dentry) touchCMtimeLocked() {
 	now := d.fs.clock.Now().Nanoseconds()
 	d.mtime.Store(now)
 	d.ctime.Store(now)
-	atomic.StoreUint32(&d.mtimeDirty, 1)
+	d.mtimeDirty.Store(1)
 }

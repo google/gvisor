@@ -42,7 +42,6 @@ import (
 	"path"
 	"strconv"
 	"strings"
-	"sync/atomic"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -182,9 +181,8 @@ type filesystem struct {
 	// savedDentryRW records open read/write handles during save/restore.
 	savedDentryRW map[*dentry]savedDentryRW
 
-	// released is nonzero once filesystem.Release has been called. It is accessed
-	// with atomic memory operations.
-	released int32
+	// released is nonzero once filesystem.Release has been called.
+	released atomicbitops.Int32
 }
 
 // +stateify savable
@@ -660,7 +658,7 @@ func (fs *filesystem) dial(ctx context.Context) error {
 
 // Release implements vfs.FilesystemImpl.Release.
 func (fs *filesystem) Release(ctx context.Context) {
-	atomic.StoreInt32(&fs.released, 1)
+	fs.released.Store(1)
 
 	mf := fs.mfp.MemoryFile()
 	fs.syncMu.Lock()
@@ -678,16 +676,17 @@ func (fs *filesystem) Release(ctx context.Context) {
 		d.cache.DropAll(mf)
 		d.dirty.RemoveAll()
 		d.dataMu.Unlock()
-		// Close host FDs if they exist.
-		if d.readFD >= 0 {
-			_ = unix.Close(int(d.readFD))
+		// Close host FDs if they exist. We can use RacyLoad() because d.handleMu
+		// is locked.
+		if d.readFD.RacyLoad() >= 0 {
+			_ = unix.Close(int(d.readFD.RacyLoad()))
 		}
-		if d.writeFD >= 0 && d.readFD != d.writeFD {
-			_ = unix.Close(int(d.writeFD))
+		if d.writeFD.RacyLoad() >= 0 && d.readFD.RacyLoad() != d.writeFD.RacyLoad() {
+			_ = unix.Close(int(d.writeFD.RacyLoad()))
 		}
-		d.readFD = -1
-		d.writeFD = -1
-		d.mmapFD = -1
+		d.readFD = atomicbitops.FromInt32(-1)
+		d.writeFD = atomicbitops.FromInt32(-1)
+		d.mmapFD = atomicbitops.FromInt32(-1)
 		d.handleMu.Unlock()
 	}
 	// There can't be any specialFileFDs still using fs, since each such
@@ -814,8 +813,8 @@ type dentry struct {
 	controlFDLisa lisafs.ClientFD `state:"nosave"`
 
 	// If deleted is non-zero, the file represented by this dentry has been
-	// deleted. deleted is accessed using atomic memory operations.
-	deleted uint32
+	//  deleted is accessed using atomic memory operations.
+	deleted atomicbitops.Uint32
 
 	// cachingMu is used to synchronize concurrent dentry caching attempts on
 	// this dentry.
@@ -859,12 +858,12 @@ type dentry struct {
 	// To mutate:
 	//   - Lock metadataMu and use atomic operations to update because we might
 	//     have atomic readers that don't hold the lock.
-	metadataMu sync.Mutex `state:"nosave"`
-	ino        uint64     // immutable
-	mode       uint32     // type is immutable, perms are mutable
-	uid        uint32     // auth.KUID, but stored as raw uint32 for sync/atomic
-	gid        uint32     // auth.KGID, but ...
-	blockSize  uint32     // 0 if unknown
+	metadataMu sync.Mutex          `state:"nosave"`
+	ino        uint64              // immutable
+	mode       atomicbitops.Uint32 // type is immutable, perms are mutable
+	uid        atomicbitops.Uint32 // auth.KUID, but stored as raw uint32 for sync/atomic
+	gid        atomicbitops.Uint32 // auth.KGID, but ...
+	blockSize  atomicbitops.Uint32 // 0 if unknown
 	// Timestamps, all nsecs from the Unix epoch.
 	atime atomicbitops.Int64
 	mtime atomicbitops.Int64
@@ -882,13 +881,13 @@ type dentry struct {
 	// atimeDirty/mtimeDirty are non-zero, atime/mtime may have diverged from the
 	// remote file's timestamps, which should be updated when this dentry is
 	// evicted.
-	atimeDirty uint32
-	mtimeDirty uint32
+	atimeDirty atomicbitops.Uint32
+	mtimeDirty atomicbitops.Uint32
 
 	// nlink counts the number of hard links to this dentry. It's updated and
 	// accessed using atomic operations. It's not protected by metadataMu like the
 	// other metadata fields.
-	nlink uint32
+	nlink atomicbitops.Uint32
 
 	mapsMu sync.Mutex `state:"nosave"`
 
@@ -923,14 +922,14 @@ type dentry struct {
 	// always either -1 or equal to readFD; if !writeFile.isNil() (the file has
 	// been opened for writing), it is additionally either -1 or equal to
 	// writeFD.
-	handleMu    sync.RWMutex    `state:"nosave"`
-	readFile    p9file          `state:"nosave"`
-	writeFile   p9file          `state:"nosave"`
-	readFDLisa  lisafs.ClientFD `state:"nosave"`
-	writeFDLisa lisafs.ClientFD `state:"nosave"`
-	readFD      int32           `state:"nosave"`
-	writeFD     int32           `state:"nosave"`
-	mmapFD      int32           `state:"nosave"`
+	handleMu    sync.RWMutex       `state:"nosave"`
+	readFile    p9file             `state:"nosave"`
+	writeFile   p9file             `state:"nosave"`
+	readFDLisa  lisafs.ClientFD    `state:"nosave"`
+	writeFDLisa lisafs.ClientFD    `state:"nosave"`
+	readFD      atomicbitops.Int32 `state:"nosave"`
+	writeFD     atomicbitops.Int32 `state:"nosave"`
+	mmapFD      atomicbitops.Int32 `state:"nosave"`
 
 	dataMu sync.RWMutex `state:"nosave"`
 
@@ -1010,26 +1009,26 @@ func (fs *filesystem) newDentry(ctx context.Context, file p9file, qid p9.QID, ma
 		qidPath:   qid.Path,
 		file:      file,
 		ino:       fs.inoFromQIDPath(qid.Path),
-		mode:      uint32(attr.Mode),
-		uid:       uint32(fs.opts.dfltuid),
-		gid:       uint32(fs.opts.dfltgid),
-		blockSize: hostarch.PageSize,
-		readFD:    -1,
-		writeFD:   -1,
-		mmapFD:    -1,
+		mode:      atomicbitops.FromUint32(uint32(attr.Mode)),
+		uid:       atomicbitops.FromUint32(uint32(fs.opts.dfltuid)),
+		gid:       atomicbitops.FromUint32(uint32(fs.opts.dfltgid)),
+		blockSize: atomicbitops.FromUint32(hostarch.PageSize),
+		readFD:    atomicbitops.FromInt32(-1),
+		writeFD:   atomicbitops.FromInt32(-1),
+		mmapFD:    atomicbitops.FromInt32(-1),
 	}
 	d.pf.dentry = d
 	if mask.UID {
-		d.uid = dentryUIDFromP9UID(attr.UID)
+		d.uid = atomicbitops.FromUint32(dentryUIDFromP9UID(attr.UID))
 	}
 	if mask.GID {
-		d.gid = dentryGIDFromP9GID(attr.GID)
+		d.gid = atomicbitops.FromUint32(dentryGIDFromP9GID(attr.GID))
 	}
 	if mask.Size {
 		d.size = atomicbitops.FromUint64(attr.Size)
 	}
 	if attr.BlockSize != 0 {
-		d.blockSize = uint32(attr.BlockSize)
+		d.blockSize = atomicbitops.FromUint32(uint32(attr.BlockSize))
 	}
 	if mask.ATime {
 		d.atime = atomicbitops.FromInt64(dentryTimestampFromP9(attr.ATimeSeconds, attr.ATimeNanoSeconds))
@@ -1044,7 +1043,7 @@ func (fs *filesystem) newDentry(ctx context.Context, file p9file, qid p9.QID, ma
 		d.btime = atomicbitops.FromInt64(dentryTimestampFromP9(attr.BTimeSeconds, attr.BTimeNanoSeconds))
 	}
 	if mask.NLink {
-		d.nlink = uint32(attr.NLink)
+		d.nlink = atomicbitops.FromUint32(uint32(attr.NLink))
 	}
 	d.vfsd.Init(d)
 	refsvfs2.Register(d)
@@ -1069,28 +1068,28 @@ func (fs *filesystem) newDentryLisa(ctx context.Context, ino *lisafs.Inode) (*de
 		fs:            fs,
 		inoKey:        inoKey,
 		ino:           fs.inoFromKey(inoKey),
-		mode:          uint32(ino.Stat.Mode),
-		uid:           uint32(fs.opts.dfltuid),
-		gid:           uint32(fs.opts.dfltgid),
-		blockSize:     hostarch.PageSize,
-		readFD:        -1,
-		writeFD:       -1,
-		mmapFD:        -1,
+		mode:          atomicbitops.FromUint32(uint32(ino.Stat.Mode)),
+		uid:           atomicbitops.FromUint32(uint32(fs.opts.dfltuid)),
+		gid:           atomicbitops.FromUint32(uint32(fs.opts.dfltgid)),
+		blockSize:     atomicbitops.FromUint32(hostarch.PageSize),
+		readFD:        atomicbitops.FromInt32(-1),
+		writeFD:       atomicbitops.FromInt32(-1),
+		mmapFD:        atomicbitops.FromInt32(-1),
 		controlFDLisa: fs.clientLisa.NewFD(ino.ControlFD),
 	}
 
 	d.pf.dentry = d
 	if ino.Stat.Mask&linux.STATX_UID != 0 {
-		d.uid = dentryUIDFromLisaUID(lisafs.UID(ino.Stat.UID))
+		d.uid = atomicbitops.FromUint32(dentryUIDFromLisaUID(lisafs.UID(ino.Stat.UID)))
 	}
 	if ino.Stat.Mask&linux.STATX_GID != 0 {
-		d.gid = dentryGIDFromLisaGID(lisafs.GID(ino.Stat.GID))
+		d.gid = atomicbitops.FromUint32(dentryGIDFromLisaGID(lisafs.GID(ino.Stat.GID)))
 	}
 	if ino.Stat.Mask&linux.STATX_SIZE != 0 {
 		d.size = atomicbitops.FromUint64(ino.Stat.Size)
 	}
 	if ino.Stat.Blksize != 0 {
-		d.blockSize = ino.Stat.Blksize
+		d.blockSize = atomicbitops.FromUint32(ino.Stat.Blksize)
 	}
 	if ino.Stat.Mask&linux.STATX_ATIME != 0 {
 		d.atime = atomicbitops.FromInt64(dentryTimestampFromLisa(ino.Stat.Atime))
@@ -1105,7 +1104,7 @@ func (fs *filesystem) newDentryLisa(ctx context.Context, ino *lisafs.Inode) (*de
 		d.btime = atomicbitops.FromInt64(dentryTimestampFromLisa(ino.Stat.Btime))
 	}
 	if ino.Stat.Mask&linux.STATX_NLINK != 0 {
-		d.nlink = ino.Stat.Nlink
+		d.nlink = atomicbitops.FromUint32(ino.Stat.Nlink)
 	}
 	d.vfsd.Init(d)
 	refsvfs2.Register(d)
@@ -1159,24 +1158,24 @@ func (d *dentry) updateFromP9AttrsLocked(mask p9.AttrMask, attr *p9.Attr) {
 		if got, want := uint32(attr.Mode.FileType()), d.fileType(); got != want {
 			panic(fmt.Sprintf("gofer.dentry file type changed from %#o to %#o", want, got))
 		}
-		atomic.StoreUint32(&d.mode, uint32(attr.Mode))
+		d.mode.Store(uint32(attr.Mode))
 	}
 	if mask.UID {
-		atomic.StoreUint32(&d.uid, dentryUIDFromP9UID(attr.UID))
+		d.uid.Store(dentryUIDFromP9UID(attr.UID))
 	}
 	if mask.GID {
-		atomic.StoreUint32(&d.gid, dentryGIDFromP9GID(attr.GID))
+		d.gid.Store(dentryGIDFromP9GID(attr.GID))
 	}
 	// There is no P9_GETATTR_* bit for I/O block size.
 	if attr.BlockSize != 0 {
-		atomic.StoreUint32(&d.blockSize, uint32(attr.BlockSize))
+		d.blockSize.Store(uint32(attr.BlockSize))
 	}
 	// Don't override newer client-defined timestamps with old server-defined
 	// ones.
-	if mask.ATime && atomic.LoadUint32(&d.atimeDirty) == 0 {
+	if mask.ATime && d.atimeDirty.Load() == 0 {
 		d.atime.Store(dentryTimestampFromP9(attr.ATimeSeconds, attr.ATimeNanoSeconds))
 	}
-	if mask.MTime && atomic.LoadUint32(&d.mtimeDirty) == 0 {
+	if mask.MTime && d.mtimeDirty.Load() == 0 {
 		d.mtime.Store(dentryTimestampFromP9(attr.MTimeSeconds, attr.MTimeNanoSeconds))
 	}
 	if mask.CTime {
@@ -1186,7 +1185,7 @@ func (d *dentry) updateFromP9AttrsLocked(mask p9.AttrMask, attr *p9.Attr) {
 		d.btime.Store(dentryTimestampFromP9(attr.BTimeSeconds, attr.BTimeNanoSeconds))
 	}
 	if mask.NLink {
-		atomic.StoreUint32(&d.nlink, uint32(attr.NLink))
+		d.nlink.Store(uint32(attr.NLink))
 	}
 	if mask.Size {
 		d.updateSizeLocked(attr.Size)
@@ -1204,23 +1203,23 @@ func (d *dentry) updateFromLisaStatLocked(stat *linux.Statx) {
 		}
 	}
 	if stat.Mask&linux.STATX_MODE != 0 {
-		atomic.StoreUint32(&d.mode, uint32(stat.Mode))
+		d.mode.Store(uint32(stat.Mode))
 	}
 	if stat.Mask&linux.STATX_UID != 0 {
-		atomic.StoreUint32(&d.uid, dentryUIDFromLisaUID(lisafs.UID(stat.UID)))
+		d.uid.Store(dentryUIDFromLisaUID(lisafs.UID(stat.UID)))
 	}
 	if stat.Mask&linux.STATX_GID != 0 {
-		atomic.StoreUint32(&d.gid, dentryGIDFromLisaGID(lisafs.GID(stat.GID)))
+		d.gid.Store(dentryGIDFromLisaGID(lisafs.GID(stat.GID)))
 	}
 	if stat.Blksize != 0 {
-		atomic.StoreUint32(&d.blockSize, stat.Blksize)
+		d.blockSize.Store(stat.Blksize)
 	}
 	// Don't override newer client-defined timestamps with old server-defined
 	// ones.
-	if stat.Mask&linux.STATX_ATIME != 0 && atomic.LoadUint32(&d.atimeDirty) == 0 {
+	if stat.Mask&linux.STATX_ATIME != 0 && d.atimeDirty.Load() == 0 {
 		d.atime.Store(dentryTimestampFromLisa(stat.Atime))
 	}
-	if stat.Mask&linux.STATX_MTIME != 0 && atomic.LoadUint32(&d.mtimeDirty) == 0 {
+	if stat.Mask&linux.STATX_MTIME != 0 && d.mtimeDirty.Load() == 0 {
 		d.mtime.Store(dentryTimestampFromLisa(stat.Mtime))
 	}
 	if stat.Mask&linux.STATX_CTIME != 0 {
@@ -1230,7 +1229,7 @@ func (d *dentry) updateFromLisaStatLocked(stat *linux.Statx) {
 		d.btime.Store(dentryTimestampFromLisa(stat.Btime))
 	}
 	if stat.Mask&linux.STATX_NLINK != 0 {
-		atomic.StoreUint32(&d.nlink, stat.Nlink)
+		d.nlink.Store(stat.Nlink)
 	}
 	if stat.Mask&linux.STATX_SIZE != 0 {
 		d.updateSizeLocked(stat.Size)
@@ -1243,7 +1242,8 @@ func (d *dentry) updateFromLisaStatLocked(stat *linux.Statx) {
 func (d *dentry) refreshSizeLocked(ctx context.Context) error {
 	d.handleMu.RLock()
 
-	if d.writeFD < 0 {
+	// Can use RacyLoad() because handleMu is locked.
+	if d.writeFD.RacyLoad() < 0 {
 		d.handleMu.RUnlock()
 		// Ask the gofer if we don't have a host FD.
 		if d.fs.opts.lisaEnabled {
@@ -1253,7 +1253,8 @@ func (d *dentry) refreshSizeLocked(ctx context.Context) error {
 	}
 
 	var stat unix.Statx_t
-	err := unix.Statx(int(d.writeFD), "", unix.AT_EMPTY_PATH, unix.STATX_SIZE, &stat)
+	// Can use RacyLoad() because handleMu is locked.
+	err := unix.Statx(int(d.writeFD.RacyLoad()), "", unix.AT_EMPTY_PATH, unix.STATX_SIZE, &stat)
 	d.handleMu.RUnlock() // must be released before updateSizeLocked()
 	if err != nil {
 		return err
@@ -1354,13 +1355,13 @@ func (d *dentry) updateFromGetattrLocked(ctx context.Context, file p9file) error
 }
 
 func (d *dentry) fileType() uint32 {
-	return atomic.LoadUint32(&d.mode) & linux.S_IFMT
+	return d.mode.Load() & linux.S_IFMT
 }
 
 func (d *dentry) statTo(stat *linux.Statx) {
 	stat.Mask = linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_NLINK | linux.STATX_UID | linux.STATX_GID | linux.STATX_ATIME | linux.STATX_MTIME | linux.STATX_CTIME | linux.STATX_INO | linux.STATX_SIZE | linux.STATX_BLOCKS | linux.STATX_BTIME
-	stat.Blksize = atomic.LoadUint32(&d.blockSize)
-	stat.Nlink = atomic.LoadUint32(&d.nlink)
+	stat.Blksize = d.blockSize.Load()
+	stat.Nlink = d.nlink.Load()
 	if stat.Nlink == 0 {
 		// The remote filesystem doesn't support link count; just make
 		// something up. This is consistent with Linux, where
@@ -1369,9 +1370,9 @@ func (d *dentry) statTo(stat *linux.Statx) {
 		// it's not provided by the remote filesystem.
 		stat.Nlink = 1
 	}
-	stat.UID = atomic.LoadUint32(&d.uid)
-	stat.GID = atomic.LoadUint32(&d.gid)
-	stat.Mode = uint16(atomic.LoadUint32(&d.mode))
+	stat.UID = d.uid.Load()
+	stat.GID = d.gid.Load()
+	stat.Mode = uint16(d.mode.Load())
 	stat.Ino = uint64(d.ino)
 	stat.Size = d.size.Load()
 	// This is consistent with regularFileFD.Seek(), which treats regular files
@@ -1393,8 +1394,8 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs
 	if stat.Mask&^(linux.STATX_MODE|linux.STATX_UID|linux.STATX_GID|linux.STATX_ATIME|linux.STATX_MTIME|linux.STATX_SIZE) != 0 {
 		return linuxerr.EPERM
 	}
-	mode := linux.FileMode(atomic.LoadUint32(&d.mode))
-	if err := vfs.CheckSetStat(ctx, creds, opts, mode, auth.KUID(atomic.LoadUint32(&d.uid)), auth.KGID(atomic.LoadUint32(&d.gid))); err != nil {
+	mode := linux.FileMode(d.mode.Load())
+	if err := vfs.CheckSetStat(ctx, creds, opts, mode, auth.KUID(d.uid.Load()), auth.KGID(d.gid.Load())); err != nil {
 		return err
 	}
 	if err := mnt.CheckBeginWrite(); err != nil {
@@ -1441,14 +1442,14 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs
 	// As with Linux, if the UID, GID, or file size is changing, we have to
 	// clear permission bits. Note that when set, clearSGID may cause
 	// permissions to be updated.
-	clearSGID := (stat.Mask&linux.STATX_UID != 0 && stat.UID != atomic.LoadUint32(&d.uid)) ||
-		(stat.Mask&linux.STATX_GID != 0 && stat.GID != atomic.LoadUint32(&d.gid)) ||
+	clearSGID := (stat.Mask&linux.STATX_UID != 0 && stat.UID != d.uid.Load()) ||
+		(stat.Mask&linux.STATX_GID != 0 && stat.GID != d.gid.Load()) ||
 		stat.Mask&linux.STATX_SIZE != 0
 	if clearSGID {
 		if stat.Mask&linux.STATX_MODE != 0 {
 			stat.Mode = uint16(vfs.ClearSUIDAndSGID(uint32(stat.Mode)))
 		} else {
-			oldMode := atomic.LoadUint32(&d.mode)
+			oldMode := d.mode.Load()
 			if updatedMode := vfs.ClearSUIDAndSGID(oldMode); updatedMode != oldMode {
 				stat.Mode = uint16(updatedMode)
 				stat.Mask |= linux.STATX_MODE
@@ -1527,13 +1528,13 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs
 		}
 	}
 	if stat.Mask&linux.STATX_MODE != 0 && failureMask&linux.STATX_MODE == 0 {
-		atomic.StoreUint32(&d.mode, d.fileType()|uint32(stat.Mode))
+		d.mode.Store(d.fileType() | uint32(stat.Mode))
 	}
 	if stat.Mask&linux.STATX_UID != 0 && failureMask&linux.STATX_UID == 0 {
-		atomic.StoreUint32(&d.uid, stat.UID)
+		d.uid.Store(stat.UID)
 	}
 	if stat.Mask&linux.STATX_GID != 0 && failureMask&linux.STATX_GID == 0 {
-		atomic.StoreUint32(&d.gid, stat.GID)
+		d.gid.Store(stat.GID)
 	}
 	// Note that stat.Atime.Nsec and stat.Mtime.Nsec can't be UTIME_NOW because
 	// if d.cachedMetadataAuthoritative() then we converted stat.Atime and
@@ -1542,11 +1543,11 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs
 	// d.file.setAttr(). For the same reason, now must have been initialized.
 	if stat.Mask&linux.STATX_ATIME != 0 && failureMask&linux.STATX_ATIME == 0 {
 		d.atime.Store(stat.Atime.ToNsec())
-		atomic.StoreUint32(&d.atimeDirty, 0)
+		d.atimeDirty.Store(0)
 	}
 	if stat.Mask&linux.STATX_MTIME != 0 && failureMask&linux.STATX_MTIME == 0 {
 		d.mtime.Store(stat.Mtime.ToNsec())
-		atomic.StoreUint32(&d.mtimeDirty, 0)
+		d.mtimeDirty.Store(0)
 	}
 	d.ctime.Store(now)
 	if failureMask != 0 {
@@ -1623,7 +1624,7 @@ func (d *dentry) updateSizeAndUnlockDataMuLocked(newSize uint64) {
 }
 
 func (d *dentry) checkPermissions(creds *auth.Credentials, ats vfs.AccessTypes) error {
-	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(atomic.LoadUint32(&d.mode)), auth.KUID(atomic.LoadUint32(&d.uid)), auth.KGID(atomic.LoadUint32(&d.gid)))
+	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(d.mode.Load()), auth.KUID(d.uid.Load()), auth.KGID(d.gid.Load()))
 }
 
 func (d *dentry) checkXattrPermissions(creds *auth.Credentials, name string, ats vfs.AccessTypes) error {
@@ -1638,9 +1639,9 @@ func (d *dentry) checkXattrPermissions(creds *auth.Credentials, name string, ats
 	if strings.HasPrefix(name, linux.XATTR_SECURITY_PREFIX) || strings.HasPrefix(name, linux.XATTR_SYSTEM_PREFIX) || strings.HasPrefix(name, linux.XATTR_TRUSTED_PREFIX) {
 		return linuxerr.EOPNOTSUPP
 	}
-	mode := linux.FileMode(atomic.LoadUint32(&d.mode))
-	kuid := auth.KUID(atomic.LoadUint32(&d.uid))
-	kgid := auth.KGID(atomic.LoadUint32(&d.gid))
+	mode := linux.FileMode(d.mode.Load())
+	kuid := auth.KUID(d.uid.Load())
+	kgid := auth.KGID(d.gid.Load())
 	if err := vfs.GenericCheckPermissions(creds, ats, mode, kuid, kgid); err != nil {
 		return err
 	}
@@ -1650,10 +1651,10 @@ func (d *dentry) checkXattrPermissions(creds *auth.Credentials, name string, ats
 func (d *dentry) mayDelete(creds *auth.Credentials, child *dentry) error {
 	return vfs.CheckDeleteSticky(
 		creds,
-		linux.FileMode(atomic.LoadUint32(&d.mode)),
-		auth.KUID(atomic.LoadUint32(&d.uid)),
-		auth.KUID(atomic.LoadUint32(&child.uid)),
-		auth.KGID(atomic.LoadUint32(&child.gid)),
+		linux.FileMode(d.mode.Load()),
+		auth.KUID(d.uid.Load()),
+		auth.KUID(child.uid.Load()),
+		auth.KGID(child.gid.Load()),
 	)
 }
 
@@ -1846,7 +1847,7 @@ func (d *dentry) checkCachingLocked(ctx context.Context, renameMuWriteLocked boo
 		return
 	}
 
-	if atomic.LoadInt32(&d.fs.released) != 0 {
+	if d.fs.released.Load() != 0 {
 		d.cachingMu.Unlock()
 		if !renameMuWriteLocked {
 			// Need to lock d.fs.renameMu to access d.parent. Lock it for writing as
@@ -2011,15 +2012,16 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 		d.readFile = p9file{}
 		d.writeFile = p9file{}
 	}
-	if d.readFD >= 0 {
-		_ = unix.Close(int(d.readFD))
+	// Can use RacyLoad() because handleMu is locked.
+	if d.readFD.RacyLoad() >= 0 {
+		_ = unix.Close(int(d.readFD.RacyLoad()))
 	}
-	if d.writeFD >= 0 && d.readFD != d.writeFD {
-		_ = unix.Close(int(d.writeFD))
+	if d.writeFD.RacyLoad() >= 0 && d.readFD.RacyLoad() != d.writeFD.RacyLoad() {
+		_ = unix.Close(int(d.writeFD.RacyLoad()))
 	}
-	d.readFD = -1
-	d.writeFD = -1
-	d.mmapFD = -1
+	d.readFD = atomicbitops.FromInt32(-1)
+	d.writeFD = atomicbitops.FromInt32(-1)
+	d.mmapFD = atomicbitops.FromInt32(-1)
 	d.handleMu.Unlock()
 
 	if d.isControlFileOk() {
@@ -2059,11 +2061,11 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 }
 
 func (d *dentry) isDeleted() bool {
-	return atomic.LoadUint32(&d.deleted) != 0
+	return d.deleted.Load() != 0
 }
 
 func (d *dentry) setDeleted() {
-	atomic.StoreUint32(&d.deleted, 1)
+	d.deleted.Store(1)
 }
 
 func (d *dentry) isControlFileOk() bool {
@@ -2214,11 +2216,11 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 			return err
 		}
 
-		// Update d.readFD and d.writeFD.
+		// Update d.readFD and d.writeFD
 		if h.fd >= 0 {
-			if openReadable && openWritable && (d.readFD < 0 || d.writeFD < 0 || d.readFD != d.writeFD) {
+			if openReadable && openWritable && (d.readFD.RacyLoad() < 0 || d.writeFD.RacyLoad() < 0 || d.readFD.RacyLoad() != d.writeFD.RacyLoad()) {
 				// Replace existing FDs with this one.
-				if d.readFD >= 0 {
+				if d.readFD.RacyLoad() >= 0 {
 					// We already have a readable FD that may be in use by
 					// concurrent callers of d.pf.FD().
 					if d.fs.opts.overlayfsStaleRead {
@@ -2232,9 +2234,9 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 							h.close(ctx)
 							return err
 						}
-						fdsToClose = append(fdsToClose, d.readFD)
+						fdsToClose = append(fdsToClose, d.readFD.RacyLoad())
 						invalidateTranslations = true
-						atomic.StoreInt32(&d.readFD, h.fd)
+						d.readFD.Store(h.fd)
 					} else {
 						// Otherwise, we want to avoid invalidating existing
 						// memmap.Translations (which is expensive); instead, use
@@ -2244,26 +2246,26 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 						// may use the old or new file description, but this
 						// doesn't matter since they refer to the same file, and
 						// any racing mappings must be read-only.
-						if err := unix.Dup3(int(h.fd), int(d.readFD), unix.O_CLOEXEC); err != nil {
-							oldFD := d.readFD
+						if err := unix.Dup3(int(h.fd), int(d.readFD.RacyLoad()), unix.O_CLOEXEC); err != nil {
+							oldFD := d.readFD.RacyLoad()
 							d.handleMu.Unlock()
 							ctx.Warningf("gofer.dentry.ensureSharedHandle: failed to dup fd %d to fd %d: %v", h.fd, oldFD, err)
 							h.close(ctx)
 							return err
 						}
 						fdsToClose = append(fdsToClose, h.fd)
-						h.fd = d.readFD
+						h.fd = d.readFD.RacyLoad()
 					}
 				} else {
-					atomic.StoreInt32(&d.readFD, h.fd)
+					d.readFD.Store(h.fd)
 				}
-				if d.writeFD != h.fd && d.writeFD >= 0 {
-					fdsToClose = append(fdsToClose, d.writeFD)
+				if d.writeFD.RacyLoad() != h.fd && d.writeFD.RacyLoad() >= 0 {
+					fdsToClose = append(fdsToClose, d.writeFD.RacyLoad())
 				}
-				atomic.StoreInt32(&d.writeFD, h.fd)
-				atomic.StoreInt32(&d.mmapFD, h.fd)
-			} else if openReadable && d.readFD < 0 {
-				atomic.StoreInt32(&d.readFD, h.fd)
+				d.writeFD.Store(h.fd)
+				d.mmapFD.Store(h.fd)
+			} else if openReadable && d.readFD.RacyLoad() < 0 {
+				d.readFD.Store(h.fd)
 				// If the file has not been opened for writing, the new FD may
 				// be used for read-only memory mappings. If the file was
 				// previously opened for reading (without an FD), then existing
@@ -2272,17 +2274,17 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 				if d.fs.opts.lisaEnabled {
 					if !d.writeFDLisa.Ok() {
 						invalidateTranslations = d.readFDLisa.Ok()
-						atomic.StoreInt32(&d.mmapFD, h.fd)
+						d.mmapFD.Store(h.fd)
 					}
 				} else {
 					if d.writeFile.isNil() {
 						invalidateTranslations = !d.readFile.isNil()
-						atomic.StoreInt32(&d.mmapFD, h.fd)
+						d.mmapFD.Store(h.fd)
 					}
 				}
-			} else if openWritable && d.writeFD < 0 {
-				atomic.StoreInt32(&d.writeFD, h.fd)
-				if d.readFD >= 0 {
+			} else if openWritable && d.writeFD.RacyLoad() < 0 {
+				d.writeFD.Store(h.fd)
+				if d.readFD.RacyLoad() >= 0 {
 					// We have an existing read-only FD, but the file has just
 					// been opened for writing, so we need to start supporting
 					// writable memory mappings. However, the new FD is not
@@ -2290,19 +2292,19 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 					// writable memory mappings. Switch to using the internal
 					// page cache.
 					invalidateTranslations = true
-					atomic.StoreInt32(&d.mmapFD, -1)
+					d.mmapFD.Store(-1)
 				}
 			} else {
 				// The new FD is not useful.
 				fdsToClose = append(fdsToClose, h.fd)
 			}
-		} else if openWritable && d.writeFD < 0 && d.mmapFD >= 0 {
+		} else if openWritable && d.writeFD.RacyLoad() < 0 && d.mmapFD.RacyLoad() >= 0 {
 			// We have an existing read-only FD, but the file has just been
 			// opened for writing, so we need to start supporting writable
 			// memory mappings. However, we have no writable host FD. Switch to
 			// using the internal page cache.
 			invalidateTranslations = true
-			atomic.StoreInt32(&d.mmapFD, -1)
+			d.mmapFD.Store(-1)
 		}
 
 		// Switch to new fids/FDs.
@@ -2369,7 +2371,7 @@ func (d *dentry) readHandleLocked() handle {
 	return handle{
 		fdLisa: d.readFDLisa,
 		file:   d.readFile,
-		fd:     d.readFD,
+		fd:     d.readFD.RacyLoad(),
 	}
 }
 
@@ -2378,7 +2380,7 @@ func (d *dentry) writeHandleLocked() handle {
 	return handle{
 		fdLisa: d.writeFDLisa,
 		file:   d.writeFile,
-		fd:     d.writeFD,
+		fd:     d.writeFD.RacyLoad(),
 	}
 }
 
@@ -2394,9 +2396,9 @@ func (d *dentry) syncRemoteFileLocked(ctx context.Context) error {
 	// RPC. Prefer syncing write handles over read handles, since some remote
 	// filesystem implementations may not sync changes made through write
 	// handles otherwise.
-	if d.writeFD >= 0 {
+	if d.writeFD.RacyLoad() >= 0 {
 		ctx.UninterruptibleSleepStart(false)
-		err := unix.Fsync(int(d.writeFD))
+		err := unix.Fsync(int(d.writeFD.RacyLoad()))
 		ctx.UninterruptibleSleepFinish(false)
 		return err
 	}
@@ -2405,9 +2407,9 @@ func (d *dentry) syncRemoteFileLocked(ctx context.Context) error {
 	} else if !d.fs.opts.lisaEnabled && !d.writeFile.isNil() {
 		return d.writeFile.fsync(ctx)
 	}
-	if d.readFD >= 0 {
+	if d.readFD.RacyLoad() >= 0 {
 		ctx.UninterruptibleSleepStart(false)
-		err := unix.Fsync(int(d.readFD))
+		err := unix.Fsync(int(d.readFD.RacyLoad()))
 		ctx.UninterruptibleSleepFinish(false)
 		return err
 	}
@@ -2448,20 +2450,20 @@ func (d *dentry) syncCachedFile(ctx context.Context, forFilesystemSync bool) err
 
 // incLinks increments link count.
 func (d *dentry) incLinks() {
-	if atomic.LoadUint32(&d.nlink) == 0 {
+	if d.nlink.Load() == 0 {
 		// The remote filesystem doesn't support link count.
 		return
 	}
-	atomic.AddUint32(&d.nlink, 1)
+	d.nlink.Add(1)
 }
 
 // decLinks decrements link count.
 func (d *dentry) decLinks() {
-	if atomic.LoadUint32(&d.nlink) == 0 {
+	if d.nlink.Load() == 0 {
 		// The remote filesystem doesn't support link count.
 		return
 	}
-	atomic.AddUint32(&d.nlink, ^uint32(0))
+	d.nlink.Add(^uint32(0))
 }
 
 // fileDescription is embedded by gofer implementations of

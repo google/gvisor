@@ -17,10 +17,10 @@ package futex
 import (
 	"math"
 	"runtime"
-	"sync/atomic"
 	"testing"
 	"unsafe"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -44,19 +44,19 @@ func newTestData(size uint) testData {
 }
 
 func (t testData) SwapUint32(addr hostarch.Addr, new uint32) (uint32, error) {
-	val := atomic.SwapUint32((*uint32)(unsafe.Pointer(&t.data[addr])), new)
+	val := (*atomicbitops.Uint32)(unsafe.Pointer(&t.data[addr])).Swap(new)
 	return val, nil
 }
 
 func (t testData) CompareAndSwapUint32(addr hostarch.Addr, old, new uint32) (uint32, error) {
-	if atomic.CompareAndSwapUint32((*uint32)(unsafe.Pointer(&t.data[addr])), old, new) {
+	if (*atomicbitops.Uint32)(unsafe.Pointer(&t.data[addr])).CompareAndSwap(old, new) {
 		return old, nil
 	}
-	return atomic.LoadUint32((*uint32)(unsafe.Pointer(&t.data[addr]))), nil
+	return (*atomicbitops.Uint32)(unsafe.Pointer(&t.data[addr])).Load(), nil
 }
 
 func (t testData) LoadUint32(addr hostarch.Addr) (uint32, error) {
-	return atomic.LoadUint32((*uint32)(unsafe.Pointer(&t.data[addr]))), nil
+	return (*atomicbitops.Uint32)(unsafe.Pointer(&t.data[addr])).Load(), nil
 }
 
 func (t testData) GetSharedKey(addr hostarch.Addr) (Key, error) {
@@ -477,8 +477,7 @@ func newTestMutex(addr hostarch.Addr, d testData, m *Manager) *testMutex {
 func (t *testMutex) Lock() {
 	for {
 		// Attempt to grab the lock.
-		if atomic.CompareAndSwapUint32(
-			(*uint32)(unsafe.Pointer(&t.d.data[t.a])),
+		if (*atomicbitops.Uint32)(unsafe.Pointer(&t.d.data[t.a])).CompareAndSwap(
 			testMutexUnlocked,
 			testMutexLocked) {
 			// Lock held.
@@ -504,7 +503,7 @@ func (t *testMutex) Lock() {
 // This will notify any waiters via the futex manager.
 func (t *testMutex) Unlock() {
 	// Unlock.
-	atomic.StoreUint32((*uint32)(unsafe.Pointer(&t.d.data[t.a])), testMutexUnlocked)
+	(*atomicbitops.Uint32)(unsafe.Pointer(&t.d.data[t.a])).Store(testMutexUnlocked)
 
 	// Notify all waiters.
 	t.m.Wake(t.d, t.a, true, ^uint32(0), math.MaxInt32)

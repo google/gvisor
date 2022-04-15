@@ -36,7 +36,6 @@ package overlay
 import (
 	"fmt"
 	"strings"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -254,7 +253,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	root.refs = atomicbitops.FromInt64(1)
 	if fs.opts.UpperRoot.Ok() {
 		fs.opts.UpperRoot.IncRef()
-		root.copiedUp = 1
+		root.copiedUp = atomicbitops.FromUint32(1)
 		root.upperVD = fs.opts.UpperRoot
 	}
 	for _, lowerRoot := range fs.opts.LowerRoots {
@@ -286,10 +285,10 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		fs.vfsfs.DecRef(ctx)
 		return nil, nil, linuxerr.EINVAL
 	}
-	root.mode = uint32(rootStat.Mode)
-	root.uid = rootStat.UID
-	root.gid = rootStat.GID
-	root.devMajor = linux.UNNAMED_MAJOR
+	root.mode = atomicbitops.FromUint32(uint32(rootStat.Mode))
+	root.uid = atomicbitops.FromUint32(rootStat.UID)
+	root.gid = atomicbitops.FromUint32(rootStat.GID)
+	root.devMajor = atomicbitops.FromUint32(linux.UNNAMED_MAJOR)
 	rootDevMinor, err := fs.getPrivateDevMinor(rootStat.DevMajor, rootStat.DevMinor)
 	if err != nil {
 		ctx.Infof("overlay.FilesystemType.GetFilesystem: failed to get device number for root: %v", err)
@@ -297,7 +296,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		fs.vfsfs.DecRef(ctx)
 		return nil, nil, err
 	}
-	root.devMinor = rootDevMinor
+	root.devMinor = atomicbitops.FromUint32(rootDevMinor)
 	root.ino.Store(rootStat.Ino)
 
 	return &fs.vfsfs, &root.vfsd, nil
@@ -386,14 +385,14 @@ type dentry struct {
 	// mode, uid, and gid are the file mode, owner, and group of the file in
 	// the topmost layer (and therefore the overlay file as well), and are used
 	// for permission checks on this dentry. These fields are protected by
-	// copyMu and accessed using atomic memory operations.
-	mode uint32
-	uid  uint32
-	gid  uint32
+	// copyMu.
+	mode atomicbitops.Uint32
+	uid  atomicbitops.Uint32
+	gid  atomicbitops.Uint32
 
 	// copiedUp is 1 if this dentry has been copied-up (i.e. upperVD.Ok()) and
-	// 0 otherwise. copiedUp is accessed using atomic memory operations.
-	copiedUp uint32
+	// 0 otherwise.
+	copiedUp atomicbitops.Uint32
 
 	// parent is the dentry corresponding to this dentry's parent directory.
 	// name is this dentry's name in parent. If this dentry is a filesystem
@@ -426,10 +425,9 @@ type dentry struct {
 	inlineLowerVDs [1]vfs.VirtualDentry
 
 	// devMajor, devMinor, and ino are the device major/minor and inode numbers
-	// used by this dentry. These fields are protected by copyMu and accessed
-	// using atomic memory operations.
-	devMajor uint32
-	devMinor uint32
+	// used by this dentry. These fields are protected by copyMu.
+	devMajor atomicbitops.Uint32
+	devMinor atomicbitops.Uint32
 	ino      atomicbitops.Uint64
 
 	// If this dentry represents a regular file, then:
@@ -459,7 +457,7 @@ type dentry struct {
 	lowerMappings   memmap.MappingSet
 	dataMu          sync.RWMutex `state:"nosave"`
 	wrappedMappable memmap.Mappable
-	isMappable      uint32
+	isMappable      atomicbitops.Uint32
 
 	locks vfs.FileLocks
 
@@ -688,13 +686,13 @@ func (d *dentry) topLookupLayer() lookupLayer {
 }
 
 func (d *dentry) checkPermissions(creds *auth.Credentials, ats vfs.AccessTypes) error {
-	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(atomic.LoadUint32(&d.mode)), auth.KUID(atomic.LoadUint32(&d.uid)), auth.KGID(atomic.LoadUint32(&d.gid)))
+	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(d.mode.Load()), auth.KUID(d.uid.Load()), auth.KGID(d.gid.Load()))
 }
 
 func (d *dentry) checkXattrPermissions(creds *auth.Credentials, name string, ats vfs.AccessTypes) error {
-	mode := linux.FileMode(atomic.LoadUint32(&d.mode))
-	kuid := auth.KUID(atomic.LoadUint32(&d.uid))
-	kgid := auth.KGID(atomic.LoadUint32(&d.gid))
+	mode := linux.FileMode(d.mode.Load())
+	kuid := auth.KUID(d.uid.Load())
+	kgid := auth.KGID(d.gid.Load())
 	if err := vfs.GenericCheckPermissions(creds, ats, mode, kuid, kgid); err != nil {
 		return err
 	}
@@ -716,34 +714,34 @@ func (d *dentry) statInternalTo(ctx context.Context, opts *vfs.StatOptions, stat
 		// and some of our tests expect this.
 		stat.Nlink = 2
 	}
-	stat.UID = atomic.LoadUint32(&d.uid)
-	stat.GID = atomic.LoadUint32(&d.gid)
-	stat.Mode = uint16(atomic.LoadUint32(&d.mode))
+	stat.UID = d.uid.Load()
+	stat.GID = d.gid.Load()
+	stat.Mode = uint16(d.mode.Load())
 	stat.Ino = d.ino.Load()
-	stat.DevMajor = atomic.LoadUint32(&d.devMajor)
-	stat.DevMinor = atomic.LoadUint32(&d.devMinor)
+	stat.DevMajor = d.devMajor.Load()
+	stat.DevMinor = d.devMinor.Load()
 }
 
 // Preconditions: d.copyMu must be locked for writing.
 func (d *dentry) updateAfterSetStatLocked(opts *vfs.SetStatOptions) {
 	if opts.Stat.Mask&linux.STATX_MODE != 0 {
-		atomic.StoreUint32(&d.mode, (d.mode&linux.S_IFMT)|uint32(opts.Stat.Mode&^linux.S_IFMT))
+		d.mode.Store((d.mode.RacyLoad() & linux.S_IFMT) | uint32(opts.Stat.Mode&^linux.S_IFMT))
 	}
 	if opts.Stat.Mask&linux.STATX_UID != 0 {
-		atomic.StoreUint32(&d.uid, opts.Stat.UID)
+		d.uid.Store(opts.Stat.UID)
 	}
 	if opts.Stat.Mask&linux.STATX_GID != 0 {
-		atomic.StoreUint32(&d.gid, opts.Stat.GID)
+		d.gid.Store(opts.Stat.GID)
 	}
 }
 
 func (d *dentry) mayDelete(creds *auth.Credentials, child *dentry) error {
 	return vfs.CheckDeleteSticky(
 		creds,
-		linux.FileMode(atomic.LoadUint32(&d.mode)),
-		auth.KUID(atomic.LoadUint32(&d.uid)),
-		auth.KUID(atomic.LoadUint32(&child.uid)),
-		auth.KGID(atomic.LoadUint32(&child.gid)),
+		linux.FileMode(d.mode.Load()),
+		auth.KUID(d.uid.Load()),
+		auth.KUID(child.uid.Load()),
+		auth.KGID(child.gid.Load()),
 	)
 }
 
@@ -758,8 +756,8 @@ func (d *dentry) newChildOwnerStat(mode linux.FileMode, creds *auth.Credentials)
 	// Set GID and possibly the SGID bit if the parent is an SGID directory.
 	d.copyMu.RLock()
 	defer d.copyMu.RUnlock()
-	if atomic.LoadUint32(&d.mode)&linux.ModeSetGID == linux.ModeSetGID {
-		stat.GID = atomic.LoadUint32(&d.gid)
+	if d.mode.Load()&linux.ModeSetGID == linux.ModeSetGID {
+		stat.GID = d.gid.Load()
 		if stat.Mode&linux.ModeDirectory == linux.ModeDirectory {
 			stat.Mode = uint16(mode) | linux.ModeSetGID
 			stat.Mask |= linux.STATX_MODE

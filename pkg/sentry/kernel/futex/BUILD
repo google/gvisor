@@ -52,6 +52,7 @@ go_test(
     srcs = ["futex_test.go"],
     library = ":futex",
     deps = [
+        "//pkg/atomicbitops",
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/hostarch",

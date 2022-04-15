@@ -15,8 +15,6 @@
 package overlay
 
 import (
-	"sync/atomic"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -26,7 +24,7 @@ import (
 )
 
 func (d *dentry) isDir() bool {
-	return atomic.LoadUint32(&d.mode)&linux.S_IFMT == linux.S_IFDIR
+	return d.mode.Load()&linux.S_IFMT == linux.S_IFDIR
 }
 
 // Preconditions:
@@ -168,7 +166,7 @@ func (d *dentry) getDirentsLocked(ctx context.Context) ([]vfs.Dirent, error) {
 		},
 		{
 			Name:    "..",
-			Type:    uint8(atomic.LoadUint32(&parent.mode) >> 12),
+			Type:    uint8(parent.mode.Load() >> 12),
 			Ino:     parent.ino.Load(),
 			NextOff: 2,
 		},

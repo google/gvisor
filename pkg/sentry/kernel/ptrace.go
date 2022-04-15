@@ -16,7 +16,6 @@ package kernel
 
 import (
 	"fmt"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -129,7 +128,7 @@ func (t *Task) CanTrace(target *Task, attach bool) bool {
 		return true
 	}
 
-	if atomic.LoadInt32(&t.k.YAMAPtraceScope) == linux.YAMA_SCOPE_RELATIONAL {
+	if t.k.YAMAPtraceScope.Load() == linux.YAMA_SCOPE_RELATIONAL {
 		t.tg.pidns.owner.mu.RLock()
 		defer t.tg.pidns.owner.mu.RUnlock()
 		if !t.canTraceYAMALocked(target) {
@@ -155,7 +154,7 @@ func (t *Task) canTraceLocked(target *Task, attach bool) bool {
 		return true
 	}
 
-	if atomic.LoadInt32(&t.k.YAMAPtraceScope) == linux.YAMA_SCOPE_RELATIONAL {
+	if t.k.YAMAPtraceScope.Load() == linux.YAMA_SCOPE_RELATIONAL {
 		if !t.canTraceYAMALocked(target) {
 			return false
 		}

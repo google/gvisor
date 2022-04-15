@@ -16,7 +16,6 @@ package kernfs
 
 import (
 	"fmt"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -178,11 +177,11 @@ type InodeAttrs struct {
 	devMajor  uint32
 	devMinor  uint32
 	ino       atomicbitops.Uint64
-	mode      uint32
-	uid       uint32
-	gid       uint32
-	nlink     uint32
-	blockSize uint32
+	mode      atomicbitops.Uint32
+	uid       atomicbitops.Uint32
+	gid       atomicbitops.Uint32
+	nlink     atomicbitops.Uint32
+	blockSize atomicbitops.Uint32
 
 	// Timestamps, all nsecs from the Unix epoch.
 	atime atomicbitops.Int64
@@ -203,11 +202,11 @@ func (a *InodeAttrs) Init(ctx context.Context, creds *auth.Credentials, devMajor
 	a.devMajor = devMajor
 	a.devMinor = devMinor
 	a.ino.Store(ino)
-	atomic.StoreUint32(&a.mode, uint32(mode))
-	atomic.StoreUint32(&a.uid, uint32(creds.EffectiveKUID))
-	atomic.StoreUint32(&a.gid, uint32(creds.EffectiveKGID))
-	atomic.StoreUint32(&a.nlink, nlink)
-	atomic.StoreUint32(&a.blockSize, hostarch.PageSize)
+	a.mode.Store(uint32(mode))
+	a.uid.Store(uint32(creds.EffectiveKUID))
+	a.gid.Store(uint32(creds.EffectiveKGID))
+	a.nlink.Store(nlink)
+	a.blockSize.Store(hostarch.PageSize)
 	now := ktime.NowFromContext(ctx).Nanoseconds()
 	a.atime.Store(now)
 	a.mtime.Store(now)
@@ -231,12 +230,12 @@ func (a *InodeAttrs) Ino() uint64 {
 
 // Mode implements Inode.Mode.
 func (a *InodeAttrs) Mode() linux.FileMode {
-	return linux.FileMode(atomic.LoadUint32(&a.mode))
+	return linux.FileMode(a.mode.Load())
 }
 
 // Links returns the link count.
 func (a *InodeAttrs) Links() uint32 {
-	return atomic.LoadUint32(&a.nlink)
+	return a.nlink.Load()
 }
 
 // TouchAtime updates a.atime to the current time.
@@ -270,10 +269,10 @@ func (a *InodeAttrs) Stat(context.Context, *vfs.Filesystem, vfs.StatOptions) (li
 	stat.DevMinor = a.devMinor
 	stat.Ino = a.ino.Load()
 	stat.Mode = uint16(a.Mode())
-	stat.UID = atomic.LoadUint32(&a.uid)
-	stat.GID = atomic.LoadUint32(&a.gid)
-	stat.Nlink = atomic.LoadUint32(&a.nlink)
-	stat.Blksize = atomic.LoadUint32(&a.blockSize)
+	stat.UID = a.uid.Load()
+	stat.GID = a.gid.Load()
+	stat.Nlink = a.nlink.Load()
+	stat.Blksize = a.blockSize.Load()
 	stat.Atime = linux.NsecToStatxTimestamp(a.atime.Load())
 	stat.Mtime = linux.NsecToStatxTimestamp(a.mtime.Load())
 	stat.Ctime = linux.NsecToStatxTimestamp(a.ctime.Load())
@@ -296,29 +295,29 @@ func (a *InodeAttrs) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *aut
 	if opts.Stat.Mask&linux.STATX_SIZE != 0 && a.Mode().IsDir() {
 		return linuxerr.EISDIR
 	}
-	if err := vfs.CheckSetStat(ctx, creds, &opts, a.Mode(), auth.KUID(atomic.LoadUint32(&a.uid)), auth.KGID(atomic.LoadUint32(&a.gid))); err != nil {
+	if err := vfs.CheckSetStat(ctx, creds, &opts, a.Mode(), auth.KUID(a.uid.Load()), auth.KGID(a.gid.Load())); err != nil {
 		return err
 	}
 
 	clearSID := false
 	stat := opts.Stat
 	if stat.Mask&linux.STATX_UID != 0 {
-		atomic.StoreUint32(&a.uid, stat.UID)
+		a.uid.Store(stat.UID)
 		clearSID = true
 	}
 	if stat.Mask&linux.STATX_GID != 0 {
-		atomic.StoreUint32(&a.gid, stat.GID)
+		a.gid.Store(stat.GID)
 		clearSID = true
 	}
 	if stat.Mask&linux.STATX_MODE != 0 {
 		for {
-			old := atomic.LoadUint32(&a.mode)
+			old := a.mode.Load()
 			ft := old & linux.S_IFMT
 			newMode := ft | uint32(stat.Mode & ^uint16(linux.S_IFMT))
 			if clearSID {
 				newMode = vfs.ClearSUIDAndSGID(newMode)
 			}
-			if swapped := atomic.CompareAndSwapUint32(&a.mode, old, newMode); swapped {
+			if swapped := a.mode.CompareAndSwap(old, newMode); swapped {
 				clearSID = false
 				break
 			}
@@ -329,9 +328,9 @@ func (a *InodeAttrs) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *aut
 	// STATX_MODE.
 	if clearSID {
 		for {
-			old := atomic.LoadUint32(&a.mode)
+			old := a.mode.Load()
 			newMode := vfs.ClearSUIDAndSGID(old)
-			if swapped := atomic.CompareAndSwapUint32(&a.mode, old, newMode); swapped {
+			if swapped := a.mode.CompareAndSwap(old, newMode); swapped {
 				break
 			}
 		}
@@ -360,21 +359,21 @@ func (a *InodeAttrs) CheckPermissions(_ context.Context, creds *auth.Credentials
 		creds,
 		ats,
 		a.Mode(),
-		auth.KUID(atomic.LoadUint32(&a.uid)),
-		auth.KGID(atomic.LoadUint32(&a.gid)),
+		auth.KUID(a.uid.Load()),
+		auth.KGID(a.gid.Load()),
 	)
 }
 
 // IncLinks implements Inode.IncLinks.
 func (a *InodeAttrs) IncLinks(n uint32) {
-	if atomic.AddUint32(&a.nlink, n) <= n {
+	if a.nlink.Add(n) <= n {
 		panic("InodeLink.IncLinks called with no existing links")
 	}
 }
 
 // DecLinks implements Inode.DecLinks.
 func (a *InodeAttrs) DecLinks() {
-	if nlink := atomic.AddUint32(&a.nlink, ^uint32(0)); nlink == ^uint32(0) {
+	if nlink := a.nlink.Add(^uint32(0)); nlink == ^uint32(0) {
 		// Negative overflow
 		panic("Inode.DecLinks called at 0 links")
 	}

@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -59,10 +58,10 @@ func newRegularFileFD(mnt *vfs.Mount, d *dentry, flags uint32) (*regularFileFD, 
 	}); err != nil {
 		return nil, err
 	}
-	if fd.vfsfd.IsWritable() && (atomic.LoadUint32(&d.mode)&0111 != 0) {
+	if fd.vfsfd.IsWritable() && (d.mode.Load()&0111 != 0) {
 		metric.SuspiciousOperationsMetric.Increment("opened_write_execute_file")
 	}
-	if atomic.LoadInt32(&d.mmapFD) >= 0 {
+	if d.mmapFD.Load() >= 0 {
 		fsmetric.GoferOpensHost.Increment()
 	} else {
 		fsmetric.GoferOpens9P.Increment()
@@ -128,7 +127,7 @@ func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 	start := fsmetric.StartReadWait()
 	d := fd.dentry()
 	defer func() {
-		if atomic.LoadInt32(&d.readFD) >= 0 {
+		if d.readFD.Load() >= 0 {
 			fsmetric.GoferReadsHost.Increment()
 			fsmetric.FinishReadWait(fsmetric.GoferReadWaitHost, start)
 		} else {
@@ -286,11 +285,11 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 
 	// As with Linux, writing clears the setuid and setgid bits.
 	if n > 0 {
-		oldMode := atomic.LoadUint32(&d.mode)
+		oldMode := d.mode.Load()
 		// If setuid or setgid were set, update d.mode and propagate
 		// changes to the host.
 		if newMode := vfs.ClearSUIDAndSGID(oldMode); newMode != oldMode {
-			atomic.StoreUint32(&d.mode, newMode)
+			d.mode.Store(newMode)
 			if d.fs.opts.lisaEnabled {
 				stat := linux.Statx{Mask: linux.STATX_MODE, Mode: uint16(newMode)}
 				failureMask, failureErr, err := d.controlFDLisa.SetStat(ctx, &stat)
@@ -399,7 +398,7 @@ func (rw *dentryReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) 
 	// dentry.readHandleLocked() without locking dentry.dataMu.
 	rw.d.handleMu.RLock()
 	h := rw.d.readHandleLocked()
-	if (rw.d.mmapFD >= 0 && !rw.d.fs.opts.forcePageCache) || rw.d.fs.opts.interop == InteropModeShared || rw.direct {
+	if (rw.d.mmapFD.RacyLoad() >= 0 && !rw.d.fs.opts.forcePageCache) || rw.d.fs.opts.interop == InteropModeShared || rw.direct {
 		n, err := h.readToBlocksAt(rw.ctx, dsts, rw.off)
 		rw.d.handleMu.RUnlock()
 		rw.off += n
@@ -519,7 +518,7 @@ func (rw *dentryReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, erro
 	// without locking dentry.dataMu.
 	rw.d.handleMu.RLock()
 	h := rw.d.writeHandleLocked()
-	if (rw.d.mmapFD >= 0 && !rw.d.fs.opts.forcePageCache) || rw.d.fs.opts.interop == InteropModeShared || rw.direct {
+	if (rw.d.mmapFD.RacyLoad() >= 0 && !rw.d.fs.opts.forcePageCache) || rw.d.fs.opts.interop == InteropModeShared || rw.direct {
 		n, err := h.writeFromBlocksAt(rw.ctx, srcs, rw.off)
 		rw.off += n
 		rw.d.dataMu.Lock()
@@ -720,7 +719,7 @@ func (fd *regularFileFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpt
 		case InteropModeShared:
 			// All mappings require a host FD to be coherent with other
 			// filesystem users.
-			if atomic.LoadInt32(&d.mmapFD) < 0 {
+			if d.mmapFD.Load() < 0 {
 				return linuxerr.ENODEV
 			}
 		default:
@@ -790,7 +789,7 @@ func (d *dentry) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR,
 // Translate implements memmap.Mappable.Translate.
 func (d *dentry) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	d.handleMu.RLock()
-	if d.mmapFD >= 0 && !d.fs.opts.forcePageCache {
+	if d.mmapFD.RacyLoad() >= 0 && !d.fs.opts.forcePageCache {
 		d.handleMu.RUnlock()
 		mr := optional
 		if d.fs.opts.limitHostFDTranslation {
@@ -981,12 +980,12 @@ func (d *dentryPlatformFile) DecRef(fr memmap.FileRange) {
 func (d *dentryPlatformFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (safemem.BlockSeq, error) {
 	d.handleMu.RLock()
 	defer d.handleMu.RUnlock()
-	return d.hostFileMapper.MapInternal(fr, int(d.mmapFD), at.Write)
+	return d.hostFileMapper.MapInternal(fr, int(d.mmapFD.RacyLoad()), at.Write)
 }
 
 // FD implements memmap.File.FD.
 func (d *dentryPlatformFile) FD() int {
 	d.handleMu.RLock()
 	defer d.handleMu.RUnlock()
-	return int(d.mmapFD)
+	return int(d.mmapFD.RacyLoad())
 }

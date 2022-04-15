@@ -75,7 +75,7 @@ type connection struct {
 	// initialized after receiving FUSE_INIT reply.
 	// Until it's set, suspend sending FUSE requests.
 	// Use SetInitialized() and IsInitialized() for atomic access.
-	initialized int32
+	initialized atomicbitops.Int32
 
 	// initializedChan is used to block requests before initialization.
 	initializedChan chan struct{} `state:".(bool)"`

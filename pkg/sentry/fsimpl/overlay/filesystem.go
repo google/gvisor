@@ -17,7 +17,6 @@ package overlay
 import (
 	"fmt"
 	"strings"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -272,7 +271,7 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 		childVD.IncRef()
 		if isUpper {
 			child.upperVD = childVD
-			child.copiedUp = 1
+			child.copiedUp = atomicbitops.FromUint32(1)
 		} else {
 			child.lowerVDs = append(child.lowerVDs, childVD)
 		}
@@ -282,11 +281,11 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 			} else {
 				topLookupLayer = lookupLayerLower
 			}
-			child.mode = uint32(stat.Mode)
-			child.uid = stat.UID
-			child.gid = stat.GID
-			child.devMajor = stat.DevMajor
-			child.devMinor = stat.DevMinor
+			child.mode = atomicbitops.FromUint32(uint32(stat.Mode))
+			child.uid = atomicbitops.FromUint32(stat.UID)
+			child.gid = atomicbitops.FromUint32(stat.GID)
+			child.devMajor = atomicbitops.FromUint32(stat.DevMajor)
+			child.devMinor = atomicbitops.FromUint32(stat.DevMinor)
 			child.ino = atomicbitops.FromUint64(stat.Ino)
 		}
 
@@ -319,14 +318,15 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 
 	// Device and inode numbers were copied from the topmost layer above. Remap
 	// the device number to an appropriate overlay-private one.
-	childDevMinor, err := fs.getPrivateDevMinor(child.devMajor, child.devMinor)
+	// We can use RacyLoad() because child is still being initialized.
+	childDevMinor, err := fs.getPrivateDevMinor(child.devMajor.RacyLoad(), child.devMinor.RacyLoad())
 	if err != nil {
-		ctx.Infof("overlay.filesystem.lookupLocked: failed to map layer device number (%d, %d) to an overlay-specific device number: %v", child.devMajor, child.devMinor, err)
+		ctx.Infof("overlay.filesystem.lookupLocked: failed to map layer device number (%d, %d) to an overlay-specific device number: %v", child.devMajor.RacyLoad(), child.devMinor.RacyLoad(), err)
 		child.destroyLocked(ctx)
 		return nil, topLookupLayer, err
 	}
-	child.devMajor = linux.UNNAMED_MAJOR
-	child.devMinor = childDevMinor
+	child.devMajor = atomicbitops.FromUint32(linux.UNNAMED_MAJOR)
+	child.devMinor = atomicbitops.FromUint32(childDevMinor)
 
 	parent.IncRef()
 	child.parent = parent
@@ -887,7 +887,7 @@ func (d *dentry) openCopiedUp(ctx context.Context, rp *vfs.ResolvingPath, opts *
 
 	// Directory FDs open FDs from each layer when directory entries are read,
 	// so they don't require opening an FD from d.topLayer() up front.
-	ftype := atomic.LoadUint32(&d.mode) & linux.S_IFMT
+	ftype := d.mode.Load() & linux.S_IFMT
 	if ftype == linux.S_IFDIR {
 		// Can't open directories with O_CREAT.
 		if opts.Flags&linux.O_CREAT != 0 {
@@ -1440,8 +1440,8 @@ func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts
 
 // Precondition: d.fs.renameMu must be held for reading.
 func (d *dentry) setStatLocked(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetStatOptions) error {
-	mode := linux.FileMode(atomic.LoadUint32(&d.mode))
-	if err := vfs.CheckSetStat(ctx, rp.Credentials(), &opts, mode, auth.KUID(atomic.LoadUint32(&d.uid)), auth.KGID(atomic.LoadUint32(&d.gid))); err != nil {
+	mode := linux.FileMode(d.mode.Load())
+	if err := vfs.CheckSetStat(ctx, rp.Credentials(), &opts, mode, auth.KUID(d.uid.Load()), auth.KGID(d.gid.Load())); err != nil {
 		return err
 	}
 	mnt := rp.Mount()

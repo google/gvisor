@@ -57,7 +57,6 @@ package kernfs
 
 import (
 	"fmt"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -221,8 +220,8 @@ type Dentry struct {
 	fs *Filesystem
 
 	// flags caches useful information about the dentry from the inode. See the
-	// dflags* consts above. Must be accessed by atomic ops.
-	flags uint32
+	// dflags* consts above.
+	flags atomicbitops.Uint32
 
 	parent *Dentry
 	name   string
@@ -459,10 +458,10 @@ func (d *Dentry) Init(fs *Filesystem, inode Inode) {
 	d.refs.Store(1)
 	ftype := inode.Mode().FileType()
 	if ftype == linux.ModeDirectory {
-		d.flags |= dflagsIsDir
+		d.flags = atomicbitops.FromUint32(d.flags.RacyLoad() | dflagsIsDir)
 	}
 	if ftype == linux.ModeSymlink {
-		d.flags |= dflagsIsSymlink
+		d.flags = atomicbitops.FromUint32(d.flags.RacyLoad() | dflagsIsSymlink)
 	}
 	refsvfs2.Register(d)
 }
@@ -474,12 +473,12 @@ func (d *Dentry) VFSDentry() *vfs.Dentry {
 
 // isDir checks whether the dentry points to a directory inode.
 func (d *Dentry) isDir() bool {
-	return atomic.LoadUint32(&d.flags)&dflagsIsDir != 0
+	return d.flags.Load()&dflagsIsDir != 0
 }
 
 // isSymlink checks whether the dentry points to a symlink inode.
 func (d *Dentry) isSymlink() bool {
-	return atomic.LoadUint32(&d.flags)&dflagsIsSymlink != 0
+	return d.flags.Load()&dflagsIsSymlink != 0
 }
 
 // InotifyWithParent implements vfs.DentryImpl.InotifyWithParent.

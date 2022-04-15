@@ -19,10 +19,10 @@ package host
 import (
 	"fmt"
 	"math"
-	"sync/atomic"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
@@ -55,23 +55,23 @@ type virtualOwner struct {
 	// mu protects the fields below and they can be accessed using atomic memory
 	// operations.
 	mu  sync.Mutex `state:"nosave"`
-	uid uint32
-	gid uint32
+	uid atomicbitops.Uint32
+	gid atomicbitops.Uint32
 	// mode is also stored, otherwise setting the host file to `0000` could remove
 	// access to the file.
-	mode uint32
+	mode atomicbitops.Uint32
 }
 
 func (v *virtualOwner) atomicUID() uint32 {
-	return atomic.LoadUint32(&v.uid)
+	return v.uid.Load()
 }
 
 func (v *virtualOwner) atomicGID() uint32 {
-	return atomic.LoadUint32(&v.gid)
+	return v.gid.Load()
 }
 
 func (v *virtualOwner) atomicMode() uint32 {
-	return atomic.LoadUint32(&v.mode)
+	return v.mode.Load()
 }
 
 func isEpollable(fd int) bool {
@@ -153,10 +153,9 @@ type inode struct {
 
 	// If haveBuf is non-zero, hostFD represents a pipe, and buf contains data
 	// read from the pipe from previous calls to inode.beforeSave(). haveBuf
-	// and buf are protected by bufMu. haveBuf is accessed using atomic memory
-	// operations.
+	// and buf are protected by bufMu.
 	bufMu   sync.Mutex `state:"nosave"`
-	haveBuf uint32
+	haveBuf atomicbitops.Uint32
 	buf     []byte
 }
 
@@ -249,9 +248,9 @@ func NewFD(ctx context.Context, mnt *vfs.Mount, hostFD int, opts *NewFDOptions) 
 	}
 	if opts.VirtualOwner {
 		i.virtualOwner.enabled = true
-		i.virtualOwner.uid = uint32(opts.UID)
-		i.virtualOwner.gid = uint32(opts.GID)
-		i.virtualOwner.mode = stat.Mode
+		i.virtualOwner.uid = atomicbitops.FromUint32(uint32(opts.UID))
+		i.virtualOwner.gid = atomicbitops.FromUint32(uint32(opts.GID))
+		i.virtualOwner.mode = atomicbitops.FromUint32(stat.Mode)
 	}
 
 	d := &kernfs.Dentry{}
@@ -521,7 +520,8 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 
 	if m&linux.STATX_MODE != 0 {
 		if i.virtualOwner.enabled {
-			i.virtualOwner.mode = uint32(opts.Stat.Mode)
+			// We hold i.virtualOwner.mu.
+			i.virtualOwner.mode = atomicbitops.FromUint32(uint32(opts.Stat.Mode))
 		} else {
 			if err := unix.Fchmod(i.hostFD, uint32(s.Mode)); err != nil {
 				return err
@@ -555,10 +555,12 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 	}
 	if i.virtualOwner.enabled {
 		if m&linux.STATX_UID != 0 {
-			i.virtualOwner.uid = opts.Stat.UID
+			// We hold i.virtualOwner.mu.
+			i.virtualOwner.uid = atomicbitops.FromUint32(opts.Stat.UID)
 		}
 		if m&linux.STATX_GID != 0 {
-			i.virtualOwner.gid = opts.Stat.GID
+			// We hold i.virtualOwner.mu.
+			i.virtualOwner.gid = atomicbitops.FromUint32(opts.Stat.GID)
 		}
 	}
 	return nil
@@ -757,7 +759,7 @@ func (f *fileDescription) Read(ctx context.Context, dst usermem.IOSequence, opts
 }
 
 func (i *inode) readFromBuf(ctx context.Context, dst *usermem.IOSequence) (int64, error) {
-	if atomic.LoadUint32(&i.haveBuf) == 0 {
+	if i.haveBuf.Load() == 0 {
 		return 0, nil
 	}
 	i.bufMu.Lock()
@@ -769,7 +771,7 @@ func (i *inode) readFromBuf(ctx context.Context, dst *usermem.IOSequence) (int64
 	*dst = dst.DropFirst(n)
 	i.buf = i.buf[n:]
 	if len(i.buf) == 0 {
-		atomic.StoreUint32(&i.haveBuf, 0)
+		i.haveBuf.Store(0)
 		i.buf = nil
 	}
 	return int64(n), err
