@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -284,69 +285,80 @@ func (s *SocketOperations) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 		return syserr.ErrInvalidArgument
 	}
 
-	return s.ep.Bind(tcpip.FullAddress{Addr: tcpip.Address(p)}, func() *syserr.Error {
-		// Is it abstract?
-		if p[0] == 0 {
-			if t.IsNetworkNamespaced() {
-				return syserr.ErrInvalidEndpointState
-			}
-			asn := t.AbstractSockets()
-			name := p[1:]
-			if err := asn.Bind(t, name, bep, s); err != nil {
-				// syserr.ErrPortInUse corresponds to EADDRINUSE.
-				return syserr.ErrPortInUse
-			}
-			s.abstractName = name
-			s.abstractNamespace = asn
-		} else {
-			// The parent and name.
-			var d *fs.Dirent
-			var name string
-
-			cwd := t.FSContext().WorkingDirectory()
-			defer cwd.DecRef(t)
-
-			// Is there no slash at all?
-			if !strings.Contains(p, "/") {
-				d = cwd
-				name = p
-			} else {
-				root := t.FSContext().RootDirectory()
-				defer root.DecRef(t)
-				// Find the last path component, we know that something follows
-				// that final slash, otherwise extractPath() would have failed.
-				lastSlash := strings.LastIndex(p, "/")
-				subPath := p[:lastSlash]
-				if subPath == "" {
-					// Fix up subpath in case file is in root.
-					subPath = "/"
-				}
-				var err error
-				remainingTraversals := uint(fs.DefaultTraversalLimit)
-				d, err = t.MountNamespace().FindInode(t, root, cwd, subPath, &remainingTraversals)
-				if err != nil {
-					// No path available.
-					return syserr.ErrNoSuchFile
-				}
-				defer d.DecRef(t)
-				name = p[lastSlash+1:]
-			}
-
-			// Create the socket.
-			//
-			// Note that the file permissions here are not set correctly (see
-			// gvisor.dev/issue/2324). There is no convenient way to get permissions
-			// on the socket referred to by s, so we will leave this discrepancy
-			// unresolved until VFS2 replaces this code.
-			childDir, err := d.Bind(t, t.FSContext().RootDirectory(), name, bep, fs.FilePermissions{User: fs.PermMask{Read: true}})
-			if err != nil {
-				return syserr.ErrPortInUse
-			}
-			childDir.DecRef(t)
+	if p[0] == 0 {
+		// Abstract socket. See net/unix/af_unix.c:unix_bind_abstract().
+		if t.IsNetworkNamespaced() {
+			return syserr.ErrInvalidEndpointState
 		}
-
+		asn := t.AbstractSockets()
+		name := p[1:]
+		if err := asn.Bind(t, name, bep, s); err != nil {
+			// syserr.ErrPortInUse corresponds to EADDRINUSE.
+			return syserr.ErrPortInUse
+		}
+		if err := s.ep.Bind(tcpip.FullAddress{Addr: tcpip.Address(p)}); err != nil {
+			asn.Remove(name, s)
+			return err
+		}
+		// The socket has been successfully bound. We can update the following.
+		s.abstractName = name
+		s.abstractNamespace = asn
 		return nil
-	})
+	}
+
+	// See net/unix/af_unix.c:unix_bind_bsd().
+
+	// The parent and name.
+	var d *fs.Dirent
+	var name string
+
+	cwd := t.FSContext().WorkingDirectory()
+	defer cwd.DecRef(t)
+
+	// Is there no slash at all?
+	if !strings.Contains(p, "/") {
+		d = cwd
+		name = p
+	} else {
+		root := t.FSContext().RootDirectory()
+		defer root.DecRef(t)
+		// Find the last path component, we know that something follows
+		// that final slash, otherwise extractPath() would have failed.
+		lastSlash := strings.LastIndex(p, "/")
+		subPath := p[:lastSlash]
+		if subPath == "" {
+			// Fix up subpath in case file is in root.
+			subPath = "/"
+		}
+		var err error
+		remainingTraversals := uint(fs.DefaultTraversalLimit)
+		d, err = t.MountNamespace().FindInode(t, root, cwd, subPath, &remainingTraversals)
+		if err != nil {
+			// No path available.
+			return syserr.ErrNoSuchFile
+		}
+		defer d.DecRef(t)
+		name = p[lastSlash+1:]
+	}
+
+	// Create the socket.
+	//
+	// Note that the file permissions here are not set correctly (see
+	// gvisor.dev/issue/2324). There is no convenient way to get permissions
+	// on the socket referred to by s, so we will leave this discrepancy
+	// unresolved until VFS2 replaces this code.
+	childDir, err := d.Bind(t, t.FSContext().RootDirectory(), name, bep, fs.FilePermissions{User: fs.PermMask{Read: true}})
+	if err != nil {
+		return syserr.ErrPortInUse
+	}
+	childDir.DecRef(t)
+	if err := s.ep.Bind(tcpip.FullAddress{Addr: tcpip.Address(p)}); err != nil {
+		if removeErr := d.Remove(t, t.FSContext().RootDirectory(), name, false /* dirPath */); removeErr != nil {
+			log.Warningf("failed to remove socket file created for bind(%q): %v", p, removeErr)
+		}
+		return err
+	}
+	return nil
 }
 
 // extractEndpoint retrieves the transport.BoundEndpoint associated with a Unix

@@ -164,7 +164,7 @@ func (*connectionlessEndpoint) Accept(context.Context, *tcpip.FullAddress) (Endp
 //
 // Bind will fail only if the socket is connected, bound or the passed address
 // is invalid (the empty string).
-func (e *connectionlessEndpoint) Bind(addr tcpip.FullAddress, commit func() *syserr.Error) *syserr.Error {
+func (e *connectionlessEndpoint) Bind(addr tcpip.FullAddress) *syserr.Error {
 	e.Lock()
 	defer e.Unlock()
 	if e.isBound() {
@@ -173,11 +173,6 @@ func (e *connectionlessEndpoint) Bind(addr tcpip.FullAddress, commit func() *sys
 	if addr.Addr == "" {
 		// The empty string is not permitted.
 		return syserr.ErrBadLocalAddress
-	}
-	if commit != nil {
-		if err := commit(); err != nil {
-			return err
-		}
 	}
 
 	// Save the bound address.
