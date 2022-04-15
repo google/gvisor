@@ -50,6 +50,7 @@ java/net/MulticastSocket/TestDefaults.java,,
 java/net/MulticastSocket/TimeToLive.java,,
 java/net/NetworkInterface/NetworkInterfaceStreamTest.java,,
 java/net/Socket/LinkLocal.java,,java.net.SocketTimeoutException: Receive timed out
+java/net/Socket/ReadAfterReset.java,b/228068134,java.lang.RuntimeException: Client read 0 expected 1000
 java/net/Socket/SetSoLinger.java,b/78527327,SO_LINGER is not yet supported
 java/net/Socket/SocketAcceptInterruptTest.java,,
 java/net/Socket/SocketReadInterruptTest.java,,

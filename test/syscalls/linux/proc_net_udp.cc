@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC
+// Copyright 2022 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@
 #include <unistd.h>
 
 #include "gtest/gtest.h"
+#include "absl/strings/match.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_join.h"
 #include "absl/strings/str_split.h"
@@ -34,9 +35,9 @@ using absl::StrCat;
 using absl::StrFormat;
 using absl::StrSplit;
 
-constexpr char kProcNetUDPHeader[] =
-    "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when "
-    "retrnsmt   uid  timeout inode ref pointer drops             ";
+constexpr char kProcNetUDPHeaderSubStr[] =
+    "sl  local_address rem_address   st tx_queue rx_queue tr tm->when "
+    "retrnsmt   uid  timeout inode ref pointer drops";
 
 // UDPEntry represents a single entry from /proc/net/udp.
 struct UDPEntry {
@@ -120,12 +121,9 @@ PosixErrorOr<std::vector<UDPEntry>> ProcNetUDPEntries() {
   bool found_header = false;
   std::vector<UDPEntry> entries;
   std::vector<std::string> lines = StrSplit(content, '\n');
-  std::cerr << "<contents of /proc/net/udp>" << std::endl;
   for (const std::string& line : lines) {
-    std::cerr << line << std::endl;
-
     if (!found_header) {
-      EXPECT_EQ(line, kProcNetUDPHeader);
+      EXPECT_TRUE(absl::StrContains(line, kProcNetUDPHeaderSubStr));
       found_header = true;
       continue;
     }
@@ -181,8 +179,7 @@ PosixErrorOr<std::vector<UDPEntry>> ProcNetUDPEntries() {
 TEST(ProcNetUDP, Exists) {
   const std::string content =
       ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/net/udp"));
-  const std::string header_line = StrCat(kProcNetUDPHeader, "\n");
-  EXPECT_THAT(content, ::testing::StartsWith(header_line));
+  EXPECT_TRUE(absl::StrContains(content, kProcNetUDPHeaderSubStr));
 }
 
 TEST(ProcNetUDP, EntryUID) {
