@@ -69,8 +69,8 @@ func (ns *UserNamespace) mapID(m *idMapSet, id uint32) uint32 {
 //
 // Preconditions: end >= start.
 func (ns *UserNamespace) allIDsMapped(m *idMapSet, start, end uint32) bool {
-	ns.mu.Lock()
-	defer ns.mu.Unlock()
+	ns.mu.NestedLock()
+	defer ns.mu.NestedUnlock()
 	return m.SpanRange(idMapRange{start, end}) == end-start
 }
 

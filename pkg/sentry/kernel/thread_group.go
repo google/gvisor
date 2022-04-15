@@ -381,9 +381,9 @@ func (tg *ThreadGroup) SetControllingTTY(tty *TTY, steal bool, isReadable bool) 
 			//   the same session as the tty's controlling thread
 			//   group.
 			if othertg.processGroup.session == tty.tg.processGroup.session {
-				othertg.signalHandlers.mu.Lock()
+				othertg.signalHandlers.mu.NestedLock()
 				othertg.tty = nil
-				othertg.signalHandlers.mu.Unlock()
+				othertg.signalHandlers.mu.NestedUnlock()
 			}
 		}
 	}
