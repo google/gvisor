@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sockfs"
@@ -198,52 +199,63 @@ func (s *SocketVFS2) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 		return syserr.ErrInvalidArgument
 	}
 
-	return s.ep.Bind(tcpip.FullAddress{Addr: tcpip.Address(p)}, func() *syserr.Error {
-		// Is it abstract?
-		if p[0] == 0 {
-			if t.IsNetworkNamespaced() {
-				return syserr.ErrInvalidEndpointState
-			}
-			asn := t.AbstractSockets()
-			name := p[1:]
-			if err := asn.Bind(t, name, bep, s); err != nil {
-				// syserr.ErrPortInUse corresponds to EADDRINUSE.
-				return syserr.ErrPortInUse
-			}
-			s.abstractName = name
-			s.abstractNamespace = asn
-		} else {
-			path := fspath.Parse(p)
-			root := t.FSContext().RootDirectoryVFS2()
-			defer root.DecRef(t)
-			start := root
-			relPath := !path.Absolute
-			if relPath {
-				start = t.FSContext().WorkingDirectoryVFS2()
-				defer start.DecRef(t)
-			}
-			pop := vfs.PathOperation{
-				Root:  root,
-				Start: start,
-				Path:  path,
-			}
-			stat, err := s.vfsfd.Stat(t, vfs.StatOptions{Mask: linux.STATX_MODE})
-			if err != nil {
-				return syserr.FromError(err)
-			}
-			err = t.Kernel().VFS().MknodAt(t, t.Credentials(), &pop, &vfs.MknodOptions{
-				// File permissions correspond to net/unix/af_unix.c:unix_bind.
-				Mode:     linux.FileMode(linux.S_IFSOCK | uint(stat.Mode)&^t.FSContext().Umask()),
-				Endpoint: bep,
-			})
-			if linuxerr.Equals(linuxerr.EEXIST, err) {
-				return syserr.ErrAddressInUse
-			}
-			return syserr.FromError(err)
+	if p[0] == 0 {
+		// Abstract socket. See net/unix/af_unix.c:unix_bind_abstract().
+		if t.IsNetworkNamespaced() {
+			return syserr.ErrInvalidEndpointState
 		}
-
+		asn := t.AbstractSockets()
+		name := p[1:]
+		if err := asn.Bind(t, name, bep, s); err != nil {
+			// syserr.ErrPortInUse corresponds to EADDRINUSE.
+			return syserr.ErrPortInUse
+		}
+		if err := s.ep.Bind(tcpip.FullAddress{Addr: tcpip.Address(p)}); err != nil {
+			asn.Remove(name, s)
+			return err
+		}
+		// The socket has been successfully bound. We can update the following.
+		s.abstractName = name
+		s.abstractNamespace = asn
 		return nil
+	}
+
+	// See net/unix/af_unix.c:unix_bind_bsd().
+	path := fspath.Parse(p)
+	root := t.FSContext().RootDirectoryVFS2()
+	defer root.DecRef(t)
+	start := root
+	relPath := !path.Absolute
+	if relPath {
+		start = t.FSContext().WorkingDirectoryVFS2()
+		defer start.DecRef(t)
+	}
+	pop := vfs.PathOperation{
+		Root:  root,
+		Start: start,
+		Path:  path,
+	}
+	stat, err := s.vfsfd.Stat(t, vfs.StatOptions{Mask: linux.STATX_MODE})
+	if err != nil {
+		return syserr.FromError(err)
+	}
+	err = t.Kernel().VFS().MknodAt(t, t.Credentials(), &pop, &vfs.MknodOptions{
+		Mode:     linux.FileMode(linux.S_IFSOCK | uint(stat.Mode)&^t.FSContext().Umask()),
+		Endpoint: bep,
 	})
+	if linuxerr.Equals(linuxerr.EEXIST, err) {
+		return syserr.ErrAddressInUse
+	}
+	if err != nil {
+		return syserr.FromError(err)
+	}
+	if err := s.ep.Bind(tcpip.FullAddress{Addr: tcpip.Address(p)}); err != nil {
+		if unlinkErr := t.Kernel().VFS().UnlinkAt(t, t.Credentials(), &pop); unlinkErr != nil {
+			log.Warningf("failed to unlink socket file created for bind(%q): %v", p, unlinkErr)
+		}
+		return err
+	}
+	return nil
 }
 
 // Ioctl implements vfs.FileDescriptionImpl.

@@ -138,7 +138,7 @@ func NewSocket(t *kernel.Task, skType linux.SockType, protocol Protocol) (*Socke
 
 	// Bind the endpoint for good measure so we can connect to it. The
 	// bound address will never be exposed.
-	if err := ep.Bind(tcpip.FullAddress{Addr: "dummy"}, nil); err != nil {
+	if err := ep.Bind(tcpip.FullAddress{Addr: "dummy"}); err != nil {
 		ep.Close(t)
 		return nil, err
 	}
