@@ -16,7 +16,7 @@
 
 #include "textflag.h"
 
-TEXT ·AndUint32(SB),NOSPLIT,$0-12
+TEXT ·andUint32(SB),NOSPLIT,$0-12
   MOVD    ptr+0(FP), R0
   MOVW    val+8(FP), R1
 again:
@@ -26,7 +26,7 @@ again:
   CBNZ    R3, again
   RET
 
-TEXT ·OrUint32(SB),NOSPLIT,$0-12
+TEXT ·orUint32(SB),NOSPLIT,$0-12
   MOVD    ptr+0(FP), R0
   MOVW    val+8(FP), R1
 again:
@@ -36,7 +36,7 @@ again:
   CBNZ    R3, again
   RET
 
-TEXT ·XorUint32(SB),NOSPLIT,$0-12
+TEXT ·xorUint32(SB),NOSPLIT,$0-12
   MOVD    ptr+0(FP), R0
   MOVW    val+8(FP), R1
 again:
@@ -46,7 +46,7 @@ again:
   CBNZ    R3, again
   RET
 
-TEXT ·CompareAndSwapUint32(SB),NOSPLIT,$0-20
+TEXT ·compareAndSwapUint32(SB),NOSPLIT,$0-20
   MOVD addr+0(FP), R0
   MOVW old+8(FP), R1
   MOVW new+12(FP), R2

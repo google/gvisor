@@ -17,51 +17,49 @@
 
 package atomicbitops
 
-import (
-	"sync/atomic"
-)
+import "sync/atomic"
 
 //go:nosplit
-func AndUint32(addr *uint32, val uint32) {
+func AndUint32(addr *Uint32, val uint32) {
 	for {
-		o := atomic.LoadUint32(addr)
+		o := addr.Load()
 		n := o & val
-		if atomic.CompareAndSwapUint32(addr, o, n) {
+		if atomic.CompareAndSwapUint32(&addr.value, o, n) {
 			break
 		}
 	}
 }
 
 //go:nosplit
-func OrUint32(addr *uint32, val uint32) {
+func OrUint32(addr *Uint32, val uint32) {
 	for {
-		o := atomic.LoadUint32(addr)
+		o := addr.Load()
 		n := o | val
-		if atomic.CompareAndSwapUint32(addr, o, n) {
+		if atomic.CompareAndSwapUint32(&addr.value, o, n) {
 			break
 		}
 	}
 }
 
 //go:nosplit
-func XorUint32(addr *uint32, val uint32) {
+func XorUint32(addr *Uint32, val uint32) {
 	for {
-		o := atomic.LoadUint32(addr)
+		o := addr.Load()
 		n := o ^ val
-		if atomic.CompareAndSwapUint32(addr, o, n) {
+		if atomic.CompareAndSwapUint32(&addr.value, o, n) {
 			break
 		}
 	}
 }
 
 //go:nosplit
-func CompareAndSwapUint32(addr *uint32, old, new uint32) (prev uint32) {
+func CompareAndSwapUint32(addr *Uint32, old, new uint32) (prev uint32) {
 	for {
-		prev = atomic.LoadUint32(addr)
+		prev = addr.Load()
 		if prev != old {
 			return
 		}
-		if atomic.CompareAndSwapUint32(addr, old, new) {
+		if atomic.CompareAndSwapUint32(&addr.value, old, new) {
 			return
 		}
 	}

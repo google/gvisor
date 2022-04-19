@@ -17,7 +17,6 @@ package kvm
 import (
 	"math/rand"
 	"reflect"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -88,7 +87,7 @@ func bluepillTest(t testHarness, fn func(*vCPU)) {
 func TestKernelSyscall(t *testing.T) {
 	bluepillTest(t, func(c *vCPU) {
 		redpill() // Leave guest mode.
-		if got := atomic.LoadUint32(&c.state); got != vCPUUser {
+		if got := c.state.Load(); got != vCPUUser {
 			t.Errorf("vCPU not in ready state: got %v", got)
 		}
 	})
@@ -106,7 +105,7 @@ func TestKernelFault(t *testing.T) {
 	hostFault() // Ensure recovery works.
 	bluepillTest(t, func(c *vCPU) {
 		hostFault()
-		if got := atomic.LoadUint32(&c.state); got != vCPUUser {
+		if got := c.state.Load(); got != vCPUUser {
 			t.Errorf("vCPU not in ready state: got %v", got)
 		}
 	})

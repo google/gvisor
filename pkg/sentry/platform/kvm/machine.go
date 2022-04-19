@@ -44,9 +44,9 @@ type machine struct {
 
 	// nextSlot is the next slot for setMemoryRegion.
 	//
-	// This must be accessed atomically. If nextSlot is ^uint32(0), then
-	// slots are currently being updated, and the caller should retry.
-	nextSlot uint32
+	// If nextSlot is ^uint32(0), then slots are currently being updated, and the
+	// caller should retry.
+	nextSlot atomicbitops.Uint32
 
 	// upperSharedPageTables tracks the read-only shared upper of all the pagetables.
 	upperSharedPageTables *pagetables.PageTables
@@ -130,7 +130,7 @@ type vCPU struct {
 	// state is the vCPU state.
 	//
 	// This is a bitmask of the three fields (vCPU*) described above.
-	state uint32
+	state atomicbitops.Uint32
 
 	// runData for this vCPU.
 	runData *runData
@@ -314,7 +314,7 @@ func newMachine(vm int) (*machine, error) {
 //
 //go:nosplit
 func (m *machine) hasSlot(physical uintptr) bool {
-	slotLen := int(atomic.LoadUint32(&m.nextSlot))
+	slotLen := int(m.nextSlot.Load())
 	// When slots are being updated, nextSlot is ^uint32(0). As this situation
 	// is less likely happen, we just set the slotLen to m.maxSlots, and scan
 	// the whole usedSlots array.
@@ -438,7 +438,7 @@ func (m *machine) Get() *vCPU {
 	for {
 		// Scan for an available vCPU.
 		for origTID, c := range m.vCPUsByTID {
-			if atomic.CompareAndSwapUint32(&c.state, vCPUReady, vCPUUser) {
+			if c.state.CompareAndSwap(vCPUReady, vCPUUser) {
 				delete(m.vCPUsByTID, origTID)
 				m.vCPUsByTID[tid] = c
 				m.mu.Unlock()
@@ -460,7 +460,7 @@ func (m *machine) Get() *vCPU {
 
 		// Scan for something not in user mode.
 		for origTID, c := range m.vCPUsByTID {
-			if !atomic.CompareAndSwapUint32(&c.state, vCPUGuest, vCPUGuest|vCPUWaiter) {
+			if !c.state.CompareAndSwap(vCPUGuest, vCPUGuest|vCPUWaiter) {
 				continue
 			}
 
@@ -471,7 +471,7 @@ func (m *machine) Get() *vCPU {
 			// just the vCPUReady state.
 			for {
 				c.waitUntilNot(vCPUGuest | vCPUWaiter)
-				if atomic.CompareAndSwapUint32(&c.state, vCPUReady, vCPUUser) {
+				if c.state.CompareAndSwap(vCPUReady, vCPUUser) {
 					break
 				}
 			}
@@ -591,7 +591,7 @@ func (c *vCPU) bounce(forceGuestExit bool) {
 	origGuestExits := c.guestExits.Load()
 	origUserExits := c.userExits.Load()
 	for {
-		switch state := atomic.LoadUint32(&c.state); state {
+		switch state := c.state.Load(); state {
 		case vCPUReady, vCPUWaiter:
 			// There is nothing to be done, we're already in the
 			// kernel pre-acquisition. The Bounce criteria have
@@ -602,7 +602,7 @@ func (c *vCPU) bounce(forceGuestExit bool) {
 			// transition. When the transition takes place, then we
 			// can inject an interrupt to ensure a return to host
 			// mode.
-			atomic.CompareAndSwapUint32(&c.state, state, state|vCPUWaiter)
+			c.state.CompareAndSwap(state, state|vCPUWaiter)
 		case vCPUUser | vCPUWaiter:
 			// Wait for the transition to guest mode. This should
 			// come from the bluepill handler.
@@ -615,7 +615,7 @@ func (c *vCPU) bounce(forceGuestExit bool) {
 			}
 			// The vCPU is in user or kernel mode. Attempt to
 			// register a notification on change.
-			if !atomic.CompareAndSwapUint32(&c.state, state, state|vCPUWaiter) {
+			if !c.state.CompareAndSwap(state, state|vCPUWaiter) {
 				break // Retry.
 			}
 			for {
@@ -707,7 +707,7 @@ const machinePoolSize = 16
 // machinePool is enumerated from the seccompMmapHandler signal handler
 var (
 	machinePool          [machinePoolSize]machineAtomicPtr
-	machinePoolLen       uint32
+	machinePoolLen       atomicbitops.Uint32
 	machinePoolMu        sync.Mutex
 	seccompMmapRulesOnce gosync.Once
 )
@@ -752,7 +752,7 @@ func seccompMmapRules(m *machine) {
 	})
 
 	machinePoolMu.Lock()
-	n := atomic.LoadUint32(&machinePoolLen)
+	n := machinePoolLen.Load()
 	i := uint32(0)
 	for ; i < n; i++ {
 		if machinePool[i].Load() == nil {
@@ -764,7 +764,7 @@ func seccompMmapRules(m *machine) {
 			machinePoolMu.Unlock()
 			panic("machinePool is full")
 		}
-		atomic.AddUint32(&machinePoolLen, 1)
+		machinePoolLen.Add(1)
 	}
 	machinePool[i].Store(m)
 	m.machinePoolIndex = i
