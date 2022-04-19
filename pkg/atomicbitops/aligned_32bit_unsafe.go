@@ -27,6 +27,9 @@ import (
 // Int64 is an atomic int64 that is guaranteed to be 64-bit
 // aligned, even on 32-bit systems.
 //
+// Don't add fields to this struct. It is important that it remain the same
+// size as its builtin analogue.
+//
 // Per https://golang.org/pkg/sync/atomic/#pkg-note-BUG:
 //
 // "On ARM, 386, and 32-bit MIPS, it is the caller's responsibility to arrange
@@ -120,6 +123,9 @@ func (i *Int64) CompareAndSwap(oldVal, newVal int64) bool {
 
 // Uint64 is an atomic uint64 that is guaranteed to be 64-bit
 // aligned, even on 32-bit systems.
+//
+// Don't add fields to this struct. It is important that it remain the same
+// size as its builtin analogue.
 //
 // Per https://golang.org/pkg/sync/atomic/#pkg-note-BUG:
 //

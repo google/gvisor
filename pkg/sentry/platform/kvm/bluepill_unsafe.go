@@ -22,7 +22,6 @@
 package kvm
 
 import (
-	"sync/atomic"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -71,8 +70,8 @@ func bluepillGuestExit(c *vCPU, context unsafe.Pointer) {
 	bluepillArchExit(c, bluepillArchContext(context))
 
 	// Return to the vCPUReady state; notify any waiters.
-	user := atomic.LoadUint32(&c.state) & vCPUUser
-	switch atomic.SwapUint32(&c.state, user) {
+	user := c.state.Load() & vCPUUser
+	switch c.state.Swap(user) {
 	case user | vCPUGuest: // Expected case.
 	case user | vCPUGuest | vCPUWaiter:
 		c.notify()
@@ -102,7 +101,7 @@ func bluepillHandler(context unsafe.Pointer) {
 	c := bluepillArchEnter(bluepillArchContext(context))
 
 	// Mark this as guest mode.
-	switch atomic.SwapUint32(&c.state, vCPUGuest|vCPUUser) {
+	switch c.state.Swap(vCPUGuest | vCPUUser) {
 	case vCPUUser: // Expected case.
 	case vCPUUser | vCPUWaiter:
 		c.notify()

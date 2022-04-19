@@ -87,10 +87,10 @@ func handleBluepillFault(m *machine, physical uintptr, phyRegions []physicalRegi
 	//
 	// First, we need to acquire the exclusive right to set a slot.  See
 	// machine.nextSlot for information about the protocol.
-	slot := atomic.SwapUint32(&m.nextSlot, ^uint32(0))
+	slot := m.nextSlot.Swap(^uint32(0))
 	for slot == ^uint32(0) {
 		yield() // Race with another call.
-		slot = atomic.SwapUint32(&m.nextSlot, ^uint32(0))
+		slot = m.nextSlot.Swap(^uint32(0))
 	}
 	flags := _KVM_MEM_FLAGS_NONE
 	if pr.readOnly {
@@ -104,12 +104,12 @@ func handleBluepillFault(m *machine, physical uintptr, phyRegions []physicalRegi
 		atomic.StoreUintptr(&m.usedSlots[slot], physicalStart)
 		// Successfully added region; we can increment nextSlot and
 		// allow another set to proceed here.
-		atomic.StoreUint32(&m.nextSlot, slot+1)
+		m.nextSlot.Store(slot + 1)
 		return virtualStart + (physical - physicalStart), true
 	}
 
 	// Release our slot (still available).
-	atomic.StoreUint32(&m.nextSlot, slot)
+	m.nextSlot.Store(slot)
 
 	switch errno {
 	case unix.EEXIST:
