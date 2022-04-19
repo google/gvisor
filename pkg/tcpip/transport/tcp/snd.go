@@ -336,7 +336,7 @@ func (s *sender) updateMaxPayloadSize(mtu, count int) {
 // sendAck sends an ACK segment.
 // +checklocks:s.ep.mu
 func (s *sender) sendAck() {
-	s.sendSegmentFromView(buffer.VectorisedView{}, header.TCPFlagAck, s.SndNxt)
+	s.sendEmptySegment(header.TCPFlagAck, s.SndNxt)
 }
 
 // updateRTO updates the retransmit timeout when a new roud-trip time is
@@ -879,13 +879,11 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 }
 
 // +checklocks:s.ep.mu
-// +checklocksalias:s.ep.rcv.ep.mu=s.ep.mu
 func (s *sender) sendZeroWindowProbe() {
-	ack, win := s.ep.rcv.getSendParams()
 	s.unackZeroWindowProbes++
 	// Send a zero window probe with sequence number pointing to
 	// the last acknowledged byte.
-	s.ep.sendRaw(buffer.VectorisedView{}, header.TCPFlagAck, s.SndUna-1, ack, win)
+	s.sendEmptySegment(header.TCPFlagAck, s.SndUna-1)
 	// Rearm the timer to continue probing.
 	s.resendTimer.enable(s.RTO)
 }
@@ -1673,6 +1671,13 @@ func (s *sender) sendSegmentFromView(data buffer.VectorisedView, flags header.TC
 	s.MaxSentAck = rcvNxt
 
 	return s.ep.sendRaw(data, flags, seq, rcvNxt, rcvWnd)
+}
+
+// sendEmptySegment sends a new segment containing the given flags and sequence
+// number.
+// +checklocks:s.ep.mu
+func (s *sender) sendEmptySegment(flags header.TCPFlags, seq seqnum.Value) tcpip.Error {
+	return s.sendSegmentFromView(buffer.VectorisedView{}, flags, seq)
 }
 
 // maybeSendOutOfWindowAck sends an ACK if we are not being rate limited
