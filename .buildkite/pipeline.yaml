@@ -135,6 +135,12 @@ steps:
     label: ":toolbox: System call tests"
     command: make syscall-tests
     parallelism: 20
+  - <<: *common
+    label: ":muscle: System call tests (ARM64)"
+    command: make BAZEL_OPTIONS=--test_tag_filters=runsc_ptrace syscall-tests
+    parallelism: 10
+    agents:
+      queue: "arm64"
 
   # Integration tests.
   - <<: *common
