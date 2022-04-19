@@ -61,6 +61,15 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 	defer mm.AddressSpace().PostFork()
 	mm.metadataMu.Lock()
 	defer mm.metadataMu.Unlock()
+
+	var droppedIDs []memmap.MappingIdentity
+	// This must run after {mm,mm2}.mappingMu.Unlock().
+	defer func() {
+		for _, id := range droppedIDs {
+			id.DecRef(ctx)
+		}
+	}()
+
 	mm.mappingMu.RLock()
 	defer mm.mappingMu.RUnlock()
 	mm2 := &MemoryManager{
@@ -109,7 +118,7 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 		// Inform the Mappable, if any, of the new mapping.
 		if vma.mappable != nil {
 			if err := vma.mappable.AddMapping(ctx, mm2, vmaAR, vma.off, vma.canWriteMappableLocked()); err != nil {
-				mm2.removeVMAsLocked(ctx, mm2.applicationAddrRange())
+				_, droppedIDs = mm2.removeVMAsLocked(ctx, mm2.applicationAddrRange(), droppedIDs)
 				return nil, err
 			}
 		}
@@ -275,11 +284,16 @@ func (mm *MemoryManager) DecUsers(ctx context.Context) {
 	}
 	mm.activeMu.Unlock()
 
+	var droppedIDs []memmap.MappingIdentity
 	mm.mappingMu.Lock()
-	defer mm.mappingMu.Unlock()
 	// If mm is being dropped before mm.SetMmapLayout was called,
 	// mm.applicationAddrRange() will be empty.
 	if ar := mm.applicationAddrRange(); ar.Length() != 0 {
-		mm.unmapLocked(ctx, ar)
+		_, droppedIDs = mm.unmapLocked(ctx, ar, droppedIDs)
+	}
+	mm.mappingMu.Unlock()
+
+	for _, id := range droppedIDs {
+		id.DecRef(ctx)
 	}
 }
