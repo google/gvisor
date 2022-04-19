@@ -443,10 +443,8 @@ TEST(MountTest, MountInfo) {
   }
 }
 
-// TODO(b/29637826): Enable this test on gVisor once tmpfs supports size option.
 TEST(MountTest, TmpfsSizeRoundUpSinglePageSize) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)) ||
-          IsRunningOnGvisor());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto tmpfs_size_opt = absl::StrCat("size=", kPageSize / 2);
   auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
@@ -472,8 +470,7 @@ TEST(MountTest, TmpfsSizeRoundUpSinglePageSize) {
 }
 
 TEST(MountTest, TmpfsSizeRoundUpMultiplePages) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)) ||
-          IsRunningOnGvisor());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto page_multiple = 2;
   auto size = kPageSize * page_multiple;
@@ -501,8 +498,7 @@ TEST(MountTest, TmpfsSizeRoundUpMultiplePages) {
 }
 
 TEST(MountTest, TmpfsSizeMoreThanSinglePgSZMultipleFiles) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)) ||
-          IsRunningOnGvisor());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const page_multiple = 10;
   auto const size = kPageSize * page_multiple;
@@ -526,6 +522,66 @@ TEST(MountTest, TmpfsSizeMoreThanSinglePgSZMultipleFiles) {
   ASSERT_THAT(fallocate(fd.get(), 0, 0, kPageSize),
               SyscallFailsWithErrno(ENOSPC));
 }
+
+// Test shows directory does not take up any pages.
+TEST(MountTest, TmpfsDirectoryAllocCheck) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  auto const dir_parent = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  auto tmpfs_size_opt = absl::StrCat("size=", kPageSize);
+  auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir_parent.path(), "tmpfs", 0, tmpfs_size_opt, 0));
+
+  auto const dir_tmp =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir_parent.path()));
+
+  // Creating only 1 regular file allocates 1 page size.
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(JoinPath(dir_parent.path(), "foo"), O_CREAT | O_RDWR, 0777));
+
+  // Check that it starts at size zero.
+  struct stat buf;
+  ASSERT_THAT(fstat(fd.get(), &buf), SyscallSucceeds());
+  EXPECT_EQ(buf.st_size, 0);
+
+  // Grow to 1 Page Size.
+  ASSERT_THAT(fallocate(fd.get(), 0, 0, kPageSize), SyscallSucceeds());
+  ASSERT_THAT(fstat(fd.get(), &buf), SyscallSucceeds());
+  EXPECT_EQ(buf.st_size, kPageSize);
+
+  // Grow to beyond 1 Page Size.
+  ASSERT_THAT(fallocate(fd.get(), 0, 0, kPageSize + 1),
+              SyscallFailsWithErrno(ENOSPC));
+}
+
+// Tests memory allocation for symlinks.
+TEST(MountTest, TmpfsSymlinkAllocCheck) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  auto const dir_parent = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  auto tmpfs_size_opt = absl::StrCat("size=", kPageSize);
+  auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir_parent.path(), "tmpfs", 0, tmpfs_size_opt, 0));
+
+  const int target_size = 128;
+  auto target = std::string(target_size - 1, 'a');
+  auto pathname = JoinPath(dir_parent.path(), "foo1");
+  EXPECT_THAT(symlink(target.c_str(), pathname.c_str()), SyscallSucceeds());
+
+  target = std::string(target_size, 'a');
+  pathname = absl::StrCat(dir_parent.path(), "/foo2");
+  EXPECT_THAT(symlink(target.c_str(), pathname.c_str()), SyscallSucceeds());
+
+  target = std::string(target_size, 'a');
+  pathname = absl::StrCat(dir_parent.path(), "/foo3");
+  EXPECT_THAT(symlink(target.c_str(), pathname.c_str()),
+              SyscallFailsWithErrno(ENOSPC));
+
+  target = std::string(target_size - 1, 'a');
+  pathname = absl::StrCat(dir_parent.path(), "/foo4");
+  EXPECT_THAT(symlink(target.c_str(), pathname.c_str()), SyscallSucceeds());
+}
+
 }  // namespace
 
 }  // namespace testing
