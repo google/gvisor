@@ -19,6 +19,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/shm"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
 )
 
 // DetachShm unmaps a sysv shared memory segment.
@@ -29,6 +30,16 @@ func (mm *MemoryManager) DetachShm(ctx context.Context, addr hostarch.Addr) erro
 	}
 
 	var detached *shm.Shm
+	var vgap vmaGapIterator
+
+	var droppedIDs []memmap.MappingIdentity
+	// This must run after mm.mappingMu.Unlock().
+	defer func() {
+		for _, id := range droppedIDs {
+			id.DecRef(ctx)
+		}
+	}()
+
 	mm.mappingMu.Lock()
 	defer mm.mappingMu.Unlock()
 
@@ -39,7 +50,8 @@ func (mm *MemoryManager) DetachShm(ctx context.Context, addr hostarch.Addr) erro
 		vma := vseg.ValuePtr()
 		if shm, ok := vma.mappable.(*shm.Shm); ok && vseg.Start() >= addr && uint64(vseg.Start()-addr) == vma.off {
 			detached = shm
-			vseg = mm.unmapLocked(ctx, vseg.Range()).NextSegment()
+			vgap, droppedIDs = mm.unmapLocked(ctx, vseg.Range(), droppedIDs)
+			vseg = vgap.NextSegment()
 			break
 		} else {
 			vseg = vseg.NextSegment()
@@ -56,7 +68,8 @@ func (mm *MemoryManager) DetachShm(ctx context.Context, addr hostarch.Addr) erro
 	for vseg.Ok() && vseg.End() <= end {
 		vma := vseg.ValuePtr()
 		if vma.mappable == detached && uint64(vseg.Start()-addr) == vma.off {
-			vseg = mm.unmapLocked(ctx, vseg.Range()).NextSegment()
+			vgap, droppedIDs = mm.unmapLocked(ctx, vseg.Range(), droppedIDs)
+			vseg = vgap.NextSegment()
 		} else {
 			vseg = vseg.NextSegment()
 		}

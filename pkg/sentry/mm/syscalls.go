@@ -115,11 +115,12 @@ func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (hostar
 	}
 
 	// Get the new vma.
+	var droppedIDs []memmap.MappingIdentity
 	mm.mappingMu.Lock()
 	if opts.MLockMode < mm.defMLockMode {
 		opts.MLockMode = mm.defMLockMode
 	}
-	vseg, ar, err := mm.createVMALocked(ctx, opts)
+	vseg, ar, droppedIDs, err := mm.createVMALocked(ctx, opts, droppedIDs)
 	if err != nil {
 		mm.mappingMu.Unlock()
 		return 0, err
@@ -146,6 +147,10 @@ func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (hostar
 
 	default:
 		mm.mappingMu.Unlock()
+	}
+
+	for _, id := range droppedIDs {
+		id.DecRef(ctx)
 	}
 
 	return ar.Start, nil
@@ -264,9 +269,11 @@ func (mm *MemoryManager) MapStack(ctx context.Context) (hostarch.AddrRange, erro
 		return hostarch.AddrRange{}, linuxerr.ENOMEM
 	}
 	stackStart := stackEnd - szaddr
+	var droppedIDs []memmap.MappingIdentity
+	var ar hostarch.AddrRange
+	var err error
 	mm.mappingMu.Lock()
-	defer mm.mappingMu.Unlock()
-	_, ar, err := mm.createVMALocked(ctx, memmap.MMapOpts{
+	_, ar, droppedIDs, err = mm.createVMALocked(ctx, memmap.MMapOpts{
 		Length:    sz,
 		Addr:      stackStart,
 		Perms:     hostarch.ReadWrite,
@@ -275,7 +282,11 @@ func (mm *MemoryManager) MapStack(ctx context.Context) (hostarch.AddrRange, erro
 		GrowsDown: true,
 		MLockMode: mm.defMLockMode,
 		Hint:      "[stack]",
-	})
+	}, droppedIDs)
+	mm.mappingMu.Unlock()
+	for _, id := range droppedIDs {
+		id.DecRef(ctx)
+	}
 	return ar, err
 }
 
@@ -296,9 +307,15 @@ func (mm *MemoryManager) MUnmap(ctx context.Context, addr hostarch.Addr, length 
 		return linuxerr.EINVAL
 	}
 
+	var droppedIDs []memmap.MappingIdentity
 	mm.mappingMu.Lock()
-	defer mm.mappingMu.Unlock()
-	mm.unmapLocked(ctx, ar)
+	_, droppedIDs = mm.unmapLocked(ctx, ar, droppedIDs)
+	mm.mappingMu.Unlock()
+
+	for _, id := range droppedIDs {
+		id.DecRef(ctx)
+	}
+
 	return nil
 }
 
@@ -350,6 +367,14 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 		return 0, linuxerr.EINVAL
 	}
 
+	var droppedIDs []memmap.MappingIdentity
+	// This must run after mm.mappingMu.Unlock().
+	defer func() {
+		for _, id := range droppedIDs {
+			id.DecRef(ctx)
+		}
+	}()
+
 	mm.mappingMu.Lock()
 	defer mm.mappingMu.Unlock()
 
@@ -394,7 +419,7 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 				// If oldAddr+oldSize didn't overflow, oldAddr+newSize can't
 				// either.
 				newEnd := oldAddr + hostarch.Addr(newSize)
-				mm.unmapLocked(ctx, hostarch.AddrRange{newEnd, oldEnd})
+				_, droppedIDs = mm.unmapLocked(ctx, hostarch.AddrRange{newEnd, oldEnd}, droppedIDs)
 			}
 			return oldAddr, nil
 		}
@@ -411,7 +436,10 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 		if vma.mappable != nil {
 			newOffset = vseg.mappableRange().End
 		}
-		vseg, ar, err := mm.createVMALocked(ctx, memmap.MMapOpts{
+		var vseg vmaIterator
+		var ar hostarch.AddrRange
+		var err error
+		vseg, ar, droppedIDs, err = mm.createVMALocked(ctx, memmap.MMapOpts{
 			Length:          newSize - oldSize,
 			MappingIdentity: vma.id,
 			Mappable:        vma.mappable,
@@ -424,7 +452,7 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 			GrowsDown:       vma.growsDown,
 			MLockMode:       vma.mlockMode,
 			Hint:            vma.hint,
-		})
+		}, droppedIDs)
 		if err == nil {
 			if vma.mlockMode == memmap.MLockEager {
 				mm.populateVMA(ctx, vseg, ar, true)
@@ -473,7 +501,7 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 		}
 
 		// Unmap any mappings at the destination.
-		mm.unmapLocked(ctx, newAR)
+		_, droppedIDs = mm.unmapLocked(ctx, newAR, droppedIDs)
 
 		// If the sizes specify shrinking, unmap everything between the new and
 		// old sizes at the source. Unmapping before the following checks is
@@ -481,7 +509,7 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 		// vma_to_resize().
 		if newSize < oldSize {
 			oldNewEnd := oldAddr + hostarch.Addr(newSize)
-			mm.unmapLocked(ctx, hostarch.AddrRange{oldNewEnd, oldEnd})
+			_, droppedIDs = mm.unmapLocked(ctx, hostarch.AddrRange{oldNewEnd, oldEnd}, droppedIDs)
 			oldEnd = oldNewEnd
 		}
 
@@ -690,13 +718,17 @@ func (mm *MemoryManager) MProtect(addr hostarch.Addr, length uint64, realPerms h
 
 // BrkSetup sets mm's brk address to addr and its brk size to 0.
 func (mm *MemoryManager) BrkSetup(ctx context.Context, addr hostarch.Addr) {
+	var droppedIDs []memmap.MappingIdentity
 	mm.mappingMu.Lock()
-	defer mm.mappingMu.Unlock()
 	// Unmap the existing brk.
 	if mm.brk.Length() != 0 {
-		mm.unmapLocked(ctx, mm.brk)
+		_, droppedIDs = mm.unmapLocked(ctx, mm.brk, droppedIDs)
 	}
 	mm.brk = hostarch.AddrRange{addr, addr}
+	mm.mappingMu.Unlock()
+	for _, id := range droppedIDs {
+		id.DecRef(ctx)
+	}
 }
 
 // Brk implements the semantics of Linux's brk(2), except that it returns an
@@ -730,9 +762,21 @@ func (mm *MemoryManager) Brk(ctx context.Context, addr hostarch.Addr) (hostarch.
 		return addr, linuxerr.EFAULT
 	}
 
+	var vseg vmaIterator
+	var ar hostarch.AddrRange
+	var err error
+
+	var droppedIDs []memmap.MappingIdentity
+	// This must run after mm.mappingMu.Unlock().
+	defer func() {
+		for _, id := range droppedIDs {
+			id.DecRef(ctx)
+		}
+	}()
+
 	switch {
 	case oldbrkpg < newbrkpg:
-		vseg, ar, err := mm.createVMALocked(ctx, memmap.MMapOpts{
+		vseg, ar, droppedIDs, err = mm.createVMALocked(ctx, memmap.MMapOpts{
 			Length: uint64(newbrkpg - oldbrkpg),
 			Addr:   oldbrkpg,
 			Fixed:  true,
@@ -745,7 +789,7 @@ func (mm *MemoryManager) Brk(ctx context.Context, addr hostarch.Addr) (hostarch.
 			// mm->def_flags.
 			MLockMode: mm.defMLockMode,
 			Hint:      "[heap]",
-		})
+		}, droppedIDs)
 		if err != nil {
 			addr = mm.brk.End
 			mm.mappingMu.Unlock()
@@ -759,7 +803,7 @@ func (mm *MemoryManager) Brk(ctx context.Context, addr hostarch.Addr) (hostarch.
 		}
 
 	case newbrkpg < oldbrkpg:
-		mm.unmapLocked(ctx, hostarch.AddrRange{newbrkpg, oldbrkpg})
+		_, droppedIDs = mm.unmapLocked(ctx, hostarch.AddrRange{newbrkpg, oldbrkpg}, droppedIDs)
 		fallthrough
 
 	default:
