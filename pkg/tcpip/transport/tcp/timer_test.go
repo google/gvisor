@@ -32,7 +32,7 @@ func TestCleanup(t *testing.T) {
 
 	tmr := timer{}
 	w := sleep.Waker{}
-	tmr.init(clock, &w)
+	tmr.init(clock, w.Assert)
 	tmr.enable(timerDurationSeconds * time.Second)
 	tmr.cleanup()
 

@@ -55,8 +55,10 @@ type SocketOptionsHandler interface {
 	// buffer size. It also returns the newly set value.
 	OnSetSendBufferSize(v int64) (newSz int64)
 
-	// OnSetReceiveBufferSize is invoked by SO_RCVBUF and SO_RCVBUFFORCE.
-	OnSetReceiveBufferSize(v, oldSz int64) (newSz int64)
+	// OnSetReceiveBufferSize is invoked by SO_RCVBUF and SO_RCVBUFFORCE. The
+	// handler can optionally return a callback which will be called after
+	// the buffer size is updated to newSz.
+	OnSetReceiveBufferSize(v, oldSz int64) (newSz int64, postSet func())
 
 	// WakeupWriters is invoked when the send buffer size for an endpoint is
 	// changed. The handler notifies the writers if the send buffer size is
@@ -107,8 +109,8 @@ func (*DefaultSocketOptionsHandler) OnSetSendBufferSize(v int64) (newSz int64) {
 func (*DefaultSocketOptionsHandler) WakeupWriters() {}
 
 // OnSetReceiveBufferSize implements SocketOptionsHandler.OnSetReceiveBufferSize.
-func (*DefaultSocketOptionsHandler) OnSetReceiveBufferSize(v, oldSz int64) (newSz int64) {
-	return v
+func (*DefaultSocketOptionsHandler) OnSetReceiveBufferSize(v, oldSz int64) (newSz int64, postSet func()) {
+	return v, nil
 }
 
 // StackHandler holds methods to access the stack options. These must be
@@ -700,11 +702,15 @@ func (so *SocketOptions) ReceiveBufferLimits() (min, max int64) {
 // SetReceiveBufferSize sets the value of the SO_RCVBUF option, optionally
 // notifying the owning endpoint.
 func (so *SocketOptions) SetReceiveBufferSize(receiveBufferSize int64, notify bool) {
+	var postSet func()
 	if notify {
 		oldSz := so.receiveBufferSize.Load()
-		receiveBufferSize = so.handler.OnSetReceiveBufferSize(receiveBufferSize, oldSz)
+		receiveBufferSize, postSet = so.handler.OnSetReceiveBufferSize(receiveBufferSize, oldSz)
 	}
 	so.receiveBufferSize.Store(receiveBufferSize)
+	if postSet != nil {
+		postSet()
+	}
 }
 
 // GetRcvlowat gets value for SO_RCVLOWAT option.

@@ -47,9 +47,9 @@ func init() {
 	liveObjects = make(map[CheckedObject]struct{})
 }
 
-// leakCheckEnabled returns whether leak checking is enabled. The following
+// LeakCheckEnabled returns whether leak checking is enabled. The following
 // functions should only be called if it returns true.
-func leakCheckEnabled() bool {
+func LeakCheckEnabled() bool {
 	return refs_vfs1.GetLeakMode() != refs_vfs1.NoLeakChecking
 }
 
@@ -61,14 +61,14 @@ func leakCheckPanicEnabled() bool {
 
 // Register adds obj to the live object map.
 func Register(obj CheckedObject) {
-	if leakCheckEnabled() {
+	if LeakCheckEnabled() {
 		liveObjectsMu.Lock()
 		if _, ok := liveObjects[obj]; ok {
 			panic(fmt.Sprintf("Unexpected entry in leak checking map: reference %p already added", obj))
 		}
 		liveObjects[obj] = struct{}{}
 		liveObjectsMu.Unlock()
-		if leakCheckEnabled() && obj.LogRefs() {
+		if LeakCheckEnabled() && obj.LogRefs() {
 			logEvent(obj, "registered")
 		}
 	}
@@ -76,14 +76,14 @@ func Register(obj CheckedObject) {
 
 // Unregister removes obj from the live object map.
 func Unregister(obj CheckedObject) {
-	if leakCheckEnabled() {
+	if LeakCheckEnabled() {
 		liveObjectsMu.Lock()
 		defer liveObjectsMu.Unlock()
 		if _, ok := liveObjects[obj]; !ok {
 			panic(fmt.Sprintf("Expected to find entry in leak checking map for reference %p", obj))
 		}
 		delete(liveObjects, obj)
-		if leakCheckEnabled() && obj.LogRefs() {
+		if LeakCheckEnabled() && obj.LogRefs() {
 			logEvent(obj, "unregistered")
 		}
 	}
@@ -91,21 +91,21 @@ func Unregister(obj CheckedObject) {
 
 // LogIncRef logs a reference increment.
 func LogIncRef(obj CheckedObject, refs int64) {
-	if leakCheckEnabled() && obj.LogRefs() {
+	if LeakCheckEnabled() && obj.LogRefs() {
 		logEvent(obj, fmt.Sprintf("IncRef to %d", refs))
 	}
 }
 
 // LogTryIncRef logs a successful TryIncRef call.
 func LogTryIncRef(obj CheckedObject, refs int64) {
-	if leakCheckEnabled() && obj.LogRefs() {
+	if LeakCheckEnabled() && obj.LogRefs() {
 		logEvent(obj, fmt.Sprintf("TryIncRef to %d", refs))
 	}
 }
 
 // LogDecRef logs a reference decrement.
 func LogDecRef(obj CheckedObject, refs int64) {
-	if leakCheckEnabled() && obj.LogRefs() {
+	if LeakCheckEnabled() && obj.LogRefs() {
 		logEvent(obj, fmt.Sprintf("DecRef to %d", refs))
 	}
 }
@@ -128,7 +128,7 @@ var checkOnce sync.Once
 // anymore, at which point anything left in the map is considered a leak. On
 // multiple calls, only the first call will perform the leak check.
 func DoLeakCheck() {
-	if leakCheckEnabled() {
+	if LeakCheckEnabled() {
 		checkOnce.Do(doLeakCheck)
 	}
 }
@@ -136,7 +136,7 @@ func DoLeakCheck() {
 // DoRepeatedLeakCheck is the same as DoLeakCheck except that it can be called
 // multiple times by the caller to incrementally perform leak checking.
 func DoRepeatedLeakCheck() {
-	if leakCheckEnabled() {
+	if LeakCheckEnabled() {
 		doLeakCheck()
 	}
 }

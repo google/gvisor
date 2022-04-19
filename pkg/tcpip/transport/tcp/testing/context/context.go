@@ -280,8 +280,8 @@ func NewWithOpts(t *testing.T, opts Options) *Context {
 func (c *Context) Cleanup() {
 	if c.EP != nil {
 		c.EP.Close()
-		c.EP.Release()
 	}
+	tcpip.ReleaseDanglingEndpoints()
 	c.Stack().Close()
 	c.Stack().Wait()
 	c.linkEP.Close()

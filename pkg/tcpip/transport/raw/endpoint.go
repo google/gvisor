@@ -735,9 +735,6 @@ func (*endpoint) LastError() tcpip.Error {
 	return nil
 }
 
-// Release implements stack.TransportEndpoint.Release.
-func (*endpoint) Release() {}
-
 // SocketOptions implements tcpip.Endpoint.SocketOptions.
 func (e *endpoint) SocketOptions() *tcpip.SocketOptions {
 	return &e.ops

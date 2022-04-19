@@ -164,9 +164,5 @@ func (r *ForwarderRequest) CreateEndpoint(queue *waiter.Queue) (tcpip.Endpoint, 
 		return nil, err
 	}
 
-	// Start the protocol goroutine. Note that the endpoint is returned
-	// from performHandshake locked.
-	ep.startAcceptedLoop() // +checklocksforce
-
 	return ep, nil
 }

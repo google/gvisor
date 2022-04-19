@@ -181,22 +181,22 @@ func (epsByNIC *endpointsByNIC) handlePacket(id TransportEndpointID, pkt *Packet
 		epsByNIC.mu.RUnlock()
 		return true
 	}
+	epsByNIC.mu.RUnlock()
 
 	transEP.HandlePacket(id, pkt)
-	epsByNIC.mu.RUnlock() // Don't use defer for performance reasons.
 	return true
 }
 
 // handleError delivers an error to the transport endpoint identified by id.
 func (epsByNIC *endpointsByNIC) handleError(n *nic, id TransportEndpointID, transErr TransportError, pkt *PacketBuffer) {
 	epsByNIC.mu.RLock()
-	defer epsByNIC.mu.RUnlock()
 
 	mpep, ok := epsByNIC.endpoints[n.ID()]
 	if !ok {
 		mpep, ok = epsByNIC.endpoints[0]
 	}
 	if !ok {
+		epsByNIC.mu.RUnlock()
 		return
 	}
 
@@ -204,7 +204,10 @@ func (epsByNIC *endpointsByNIC) handleError(n *nic, id TransportEndpointID, tran
 	// broadcast like we are doing with handlePacket above?
 
 	// multiPortEndpoints are guaranteed to have at least one element.
-	mpep.selectEndpoint(id, epsByNIC.seed).HandleError(transErr, pkt)
+	transEP := mpep.selectEndpoint(id, epsByNIC.seed)
+	epsByNIC.mu.RUnlock()
+
+	transEP.HandleError(transErr, pkt)
 }
 
 // registerEndpoint returns true if it succeeds. It fails and returns
