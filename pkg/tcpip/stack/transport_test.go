@@ -331,6 +331,12 @@ func (*fakeTransportProtocol) Close() {}
 // Wait implements TransportProtocol.Wait.
 func (*fakeTransportProtocol) Wait() {}
 
+// Pause implements TransportProtocol.Pause.
+func (*fakeTransportProtocol) Pause() {}
+
+// Resume implements TransportProtocol.Resume.
+func (*fakeTransportProtocol) Resume() {}
+
 // Parse implements TransportProtocol.Parse.
 func (*fakeTransportProtocol) Parse(pkt *stack.PacketBuffer) bool {
 	if _, ok := pkt.TransportHeader().Consume(fakeTransHeaderLen); ok {

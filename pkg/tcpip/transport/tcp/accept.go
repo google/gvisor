@@ -23,7 +23,6 @@ import (
 	"io"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -225,10 +224,12 @@ func (l *listenContext) createConnectingEndpoint(s *segment, rcvdSynOpts header.
 // handshake in progress, which includes the new endpoint in the SYN-RCVD
 // state.
 //
-// On success, a handshake h is returned with h.ep.mu held.
+// On success, a handshake h is returned.
+//
+// NOTE: h.ep.mu is not held and must be acquired if any state needs to be
+// modified.
 //
 // Precondition: if l.listenEP != nil, l.listenEP.mu must be locked.
-// +checklocksacquire:h.ep.mu
 func (l *listenContext) startHandshake(s *segment, opts header.TCPSynOptions, queue *waiter.Queue, owner tcpip.PacketOwner) (h *handshake, _ tcpip.Error) {
 	// Create new endpoint.
 	irs := s.sequenceNumber
@@ -290,57 +291,56 @@ func (l *listenContext) startHandshake(s *segment, opts header.TCPSynOptions, qu
 	h = ep.newPassiveHandshake(isn, irs, opts, deferAccept)
 	h.listenEP = l.listenEP
 	h.start()
+	h.ep.mu.Unlock()
 	return h, nil
 }
 
 // performHandshake performs a TCP 3-way handshake. On success, the new
-// established endpoint is returned with e.mu held.
+// established endpoint is returned.
 //
 // Precondition: if l.listenEP != nil, l.listenEP.mu must be locked.
 func (l *listenContext) performHandshake(s *segment, opts header.TCPSynOptions, queue *waiter.Queue, owner tcpip.PacketOwner) (*endpoint, tcpip.Error) {
+	waitEntry, notifyCh := waiter.NewChannelEntry(waiter.WritableEvents)
+	queue.EventRegister(&waitEntry)
+	defer queue.EventUnregister(&waitEntry)
+
 	h, err := l.startHandshake(s, opts, queue, owner)
 	if err != nil {
 		return nil, err
 	}
-	ep := h.ep
 
-	// N.B. the endpoint is generated above by startHandshake, and will be
-	// returned locked. This first call is forced.
-	if err := h.complete(); err != nil { // +checklocksforce
+	// performHandshake is used by the Forwarder which will block till the
+	// handshake either succeeds or fails. We do this by registering for
+	// events above and block on the notification channel.
+	<-notifyCh
+
+	ep := h.ep
+	ep.mu.Lock()
+	if !ep.EndpointState().connected() {
 		ep.stack.Stats().TCP.FailedConnectionAttempts.Increment()
 		ep.stats.FailedConnectionAttempts.Increment()
-		l.cleanupFailedHandshake(h)
+		ep.h = nil
+		ep.mu.Unlock()
+		ep.Close()
+		ep.notifyAborted()
+		ep.drainClosingSegmentQueue()
 		return nil, err
 	}
-	l.cleanupCompletedHandshake(h)
-	return ep, nil
-}
 
-// +checklocks:h.ep.mu
-func (l *listenContext) cleanupFailedHandshake(h *handshake) {
-	e := h.ep
-	e.mu.Unlock()
-	e.Close()
-	e.notifyAborted()
-	e.drainClosingSegmentQueue()
-	e.h = nil
-}
+	ep.isConnectNotified = true
 
-// cleanupCompletedHandshake transfers any state from the completed handshake to
-// the new endpoint.
-//
-// +checklocks:h.ep.mu
-func (l *listenContext) cleanupCompletedHandshake(h *handshake) {
-	e := h.ep
-	e.isConnectNotified = true
-
+	// Transfer any state from the completed handshake to the endpoint.
+	//
 	// Update the receive window scaling. We can't do it before the
 	// handshake because it's possible that the peer doesn't support window
 	// scaling.
-	e.rcv.RcvWndScale = e.h.effectiveRcvWndScale()
+	ep.rcv.RcvWndScale = ep.h.effectiveRcvWndScale()
 
-	// Clean up handshake state stored in the endpoint so that it can be GCed.
-	e.h = nil
+	// Clean up handshake state stored in the endpoint so that it can be
+	// GCed.
+	ep.h = nil
+	ep.mu.Unlock()
+	return ep, nil
 }
 
 // propagateInheritableOptionsLocked propagates any options set on the listening
@@ -418,7 +418,7 @@ type acceptQueue struct {
 }
 
 func (a *acceptQueue) isFull() bool {
-	return a.endpoints.Len() == a.capacity
+	return a.endpoints.Len() >= a.capacity
 }
 
 // handleListenSegment is called when a listening endpoint receives a segment
@@ -478,59 +478,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 				e.stats.FailedConnectionAttempts.Increment()
 				return false, err
 			}
-
 			e.acceptQueue.pendingEndpoints[h.ep] = struct{}{}
-			e.pendingAccepted.Add(1)
-
-			go func() {
-				defer func() {
-					e.pendingAccepted.Done()
-
-					e.acceptMu.Lock()
-					defer e.acceptMu.Unlock()
-					delete(e.acceptQueue.pendingEndpoints, h.ep)
-				}()
-
-				// Note that startHandshake returns a locked endpoint. The force call
-				// here just makes it so.
-				if err := h.complete(); err != nil { // +checklocksforce
-					e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
-					e.stats.FailedConnectionAttempts.Increment()
-					ctx.cleanupFailedHandshake(h)
-					return
-				}
-				ctx.cleanupCompletedHandshake(h)
-				h.ep.startAcceptedLoop()
-				e.stack.Stats().TCP.PassiveConnectionOpenings.Increment()
-
-				// Deliver the endpoint to the accept queue.
-				//
-				// Drop the lock before notifying to avoid deadlock in user-specified
-				// callbacks.
-				delivered := func() bool {
-					e.acceptMu.Lock()
-					defer e.acceptMu.Unlock()
-					for {
-						// The listener is transitioning out of the Listen state; bail.
-						if e.acceptQueue.capacity == 0 {
-							return false
-						}
-						if e.acceptQueue.isFull() {
-							e.acceptCond.Wait()
-							continue
-						}
-
-						e.acceptQueue.endpoints.PushBack(h.ep)
-						return true
-					}
-				}()
-
-				if delivered {
-					e.waiterQueue.Notify(waiter.ReadableEvents)
-				} else {
-					h.ep.notifyProtocolGoroutine(notifyReset)
-				}
-			}()
 
 			return false, nil
 		}()
@@ -711,15 +659,14 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		}
 		h.ep.AssertLockHeld(n)
 		h.transitionToStateEstablishedLocked(s)
+		n.mu.Unlock()
 
 		// Requeue the segment if the ACK completing the handshake has more info
 		// to be procesed by the newly established endpoint.
 		if (s.flags.Contains(header.TCPFlagFin) || s.data.Size() > 0) && n.enqueueSegment(s) {
-			n.newSegmentWaker.Assert()
+			n.notifyProcessor()
 		}
 
-		// Start the protocol goroutine.
-		n.startAcceptedLoop()
 		e.stack.Stats().TCP.PassiveConnectionOpenings.Increment()
 
 		// Deliver the endpoint to the accept queue.
@@ -732,82 +679,5 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 	default:
 		e.stack.Stats().DroppedPackets.Increment()
 		return nil
-	}
-}
-
-// protocolListenLoop is the main loop of a listening TCP endpoint. It runs in
-// its own goroutine and is responsible for handling connection requests.
-func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) {
-	e.mu.Lock()
-	v6Only := e.ops.GetV6Only()
-	ctx := newListenContext(e.stack, e.protocol, e, rcvWnd, v6Only, e.NetProto)
-
-	defer func() {
-		e.setEndpointState(StateClose)
-
-		// Do cleanup if needed.
-		e.completeWorkerLocked()
-
-		if e.drainDone != nil {
-			close(e.drainDone)
-		}
-		e.mu.Unlock()
-
-		e.drainClosingSegmentQueue()
-
-		// Notify waiters that the endpoint is shutdown.
-		e.waiterQueue.Notify(waiter.ReadableEvents | waiter.WritableEvents | waiter.EventHUp | waiter.EventErr)
-	}()
-
-	var s sleep.Sleeper
-	s.AddWaker(&e.notificationWaker)
-	s.AddWaker(&e.newSegmentWaker)
-	defer s.Done()
-	for {
-		e.mu.Unlock()
-		w := s.Fetch(true)
-		e.mu.Lock()
-		switch w {
-		case &e.notificationWaker:
-			n := e.fetchNotifications()
-			if n&notifyClose != 0 {
-				return
-			}
-			if n&notifyDrain != 0 {
-				for !e.segmentQueue.empty() {
-					s := e.segmentQueue.dequeue()
-					// TODO(gvisor.dev/issue/4690): Better handle errors instead of
-					// silently dropping.
-					_ = e.handleListenSegment(ctx, s)
-					s.DecRef()
-				}
-				close(e.drainDone)
-				e.mu.Unlock()
-				<-e.undrain
-				e.mu.Lock()
-			}
-
-		case &e.newSegmentWaker:
-			// Process at most maxSegmentsPerWake segments.
-			mayRequeue := true
-			for i := 0; i < maxSegmentsPerWake; i++ {
-				s := e.segmentQueue.dequeue()
-				if s == nil {
-					mayRequeue = false
-					break
-				}
-
-				// TODO(gvisor.dev/issue/4690): Better handle errors instead of
-				// silently dropping.
-				_ = e.handleListenSegment(ctx, s)
-				s.DecRef()
-			}
-
-			// If the queue is not empty, make sure we'll wake up
-			// in the next iteration.
-			if mayRequeue && !e.segmentQueue.empty() {
-				e.newSegmentWaker.Assert()
-			}
-		}
 	}
 }

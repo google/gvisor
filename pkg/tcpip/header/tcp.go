@@ -134,6 +134,8 @@ type TCPFields struct {
 
 // TCPSynOptions is used to return the parsed TCP Options in a syn
 // segment.
+//
+// +stateify savable
 type TCPSynOptions struct {
 	// MSS is the maximum segment size provided by the peer in the SYN.
 	MSS uint16

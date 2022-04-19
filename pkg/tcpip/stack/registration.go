@@ -225,6 +225,13 @@ type TransportProtocol interface {
 	// Wait waits for any worker goroutines owned by the protocol to stop.
 	Wait()
 
+	// Pause requests that any protocol level background workers pause.
+	Pause()
+
+	// Resume resumes any protocol level background workers that were
+	// previously paused by Pause.
+	Resume()
+
 	// Parse sets pkt.TransportHeader and trims pkt.Data appropriately. It does
 	// neither and returns false if pkt.Data is too small, i.e. pkt.Data.Size() <
 	// MinimumPacketSize()

@@ -17,7 +17,6 @@ package tcp
 import (
 	"fmt"
 	"sync/atomic"
-	"time"
 
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -25,23 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/ports"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
-
-// +checklocks:e.mu
-func (e *endpoint) drainSegmentLocked() {
-	// Drain only up to once.
-	if e.drainDone != nil {
-		return
-	}
-
-	e.drainDone = make(chan struct{})
-	e.undrain = make(chan struct{})
-	e.mu.Unlock()
-
-	e.notifyProtocolGoroutine(notifyDrain)
-	<-e.drainDone
-
-	e.mu.Lock()
-}
 
 // beforeSave is invoked by stateify.
 func (e *endpoint) beforeSave() {
@@ -66,30 +48,11 @@ func (e *endpoint) beforeSave() {
 			e.Close()
 			e.mu.Lock()
 		}
-		if !e.workerRunning {
-			// The endpoint must be in the accepted queue or has been just
-			// disconnected and closed.
-			break
-		}
 		fallthrough
-	case epState == StateListen || epState == StateConnecting:
-		e.drainSegmentLocked()
-		// Refresh epState, since drainSegmentLocked may have changed it.
-		epState = e.EndpointState()
-		if !epState.closed() {
-			if !e.workerRunning {
-				panic("endpoint has no worker running in listen, connecting, or connected state")
-			}
-		}
+	case epState == StateListen:
+		// Nothing to do.
 	case epState.closed():
-		for e.workerRunning {
-			e.mu.Unlock()
-			time.Sleep(100 * time.Millisecond)
-			e.mu.Lock()
-		}
-		if e.workerRunning {
-			panic(fmt.Sprintf("endpoint: %+v still has worker running in closed or error state", e.TransportEndpointInfo.ID))
-		}
+		// Nothing to do.
 	default:
 		panic(fmt.Sprintf("endpoint in unknown state %v", e.EndpointState()))
 	}
@@ -155,19 +118,16 @@ func (e *endpoint) afterLoad() {
 	// Restore the endpoint to InitialState as it will be moved to
 	// its origEndpointState during Resume.
 	e.state = uint32(StateInitial)
-	// Condition variables and mutexs are not S/R'ed so reinitialize
-	// acceptCond with e.acceptMu.
-	e.acceptCond = sync.NewCond(&e.acceptMu)
 	stack.StackFromEnv.RegisterRestoredEndpoint(e)
 }
 
 // Resume implements tcpip.ResumableEndpoint.Resume.
 func (e *endpoint) Resume(s *stack.Stack) {
-	e.keepalive.timer.init(s.Clock(), &e.keepalive.waker)
 	if snd := e.snd; snd != nil {
-		snd.resendTimer.init(s.Clock(), &snd.resendWaker)
-		snd.reorderTimer.init(s.Clock(), &snd.reorderWaker)
-		snd.probeTimer.init(s.Clock(), &snd.probeWaker)
+		e.keepalive.timer.init(s.Clock(), maybeFailTimerHandler(e, e.keepaliveTimerExpired))
+		snd.resendTimer.init(s.Clock(), maybeFailTimerHandler(e, e.snd.retransmitTimerExpired))
+		snd.reorderTimer.init(s.Clock(), timerHandler(e, e.snd.rc.reorderTimerExpired))
+		snd.probeTimer.init(s.Clock(), timerHandler(e, e.snd.probeTimerExpired))
 	}
 	e.stack = s
 	e.protocol = protocolFromStack(s)
@@ -233,20 +193,22 @@ func (e *endpoint) Resume(s *stack.Stack) {
 		// Reset the scoreboard to reinitialize the sack information as
 		// we do not restore SACK information.
 		e.scoreboard.Reset()
-		err := e.connect(tcpip.FullAddress{NIC: e.boundNICID, Addr: e.connectingAddress, Port: e.TransportEndpointInfo.ID.RemotePort}, false, e.workerRunning)
+		e.mu.Lock()
+		err := e.connect(tcpip.FullAddress{NIC: e.boundNICID, Addr: e.connectingAddress, Port: e.TransportEndpointInfo.ID.RemotePort}, false /* handshake */)
 		if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
 			panic("endpoint connecting failed: " + err.String())
 		}
-		e.mu.Lock()
 		e.state = e.origEndpointState
-		closed := e.closed
-		e.mu.Unlock()
-		e.notifyProtocolGoroutine(notifyTickleWorker)
-		if epState == StateFinWait2 && closed {
-			// If the endpoint has been closed then make sure we notify so
-			// that the FIN_WAIT2 timer is started after a restore.
-			e.notifyProtocolGoroutine(notifyClose)
+		// For FIN-WAIT-2 and TIME-WAIT we need to start the appropriate timers so
+		// that the socket is closed correctly.
+		switch epState {
+		case StateFinWait2:
+			e.finWait2Timer = e.stack.Clock().AfterFunc(e.tcpLingerTimeout, e.finWait2TimerExpired)
+		case StateTimeWait:
+			e.timeWaitTimer = e.stack.Clock().AfterFunc(e.getTimeWaitDuration(), e.timeWaitTimerExpired)
 		}
+
+		e.mu.Unlock()
 		connectedLoading.Done()
 	case epState == StateListen:
 		tcpip.AsyncLoading.Add(1)
@@ -267,7 +229,8 @@ func (e *endpoint) Resume(s *stack.Stack) {
 			listenLoading.Done()
 			tcpip.AsyncLoading.Done()
 		}()
-	case epState.connecting():
+	case epState == StateConnecting:
+		// Initial SYN hasn't been sent yet so initiate a connect.
 		tcpip.AsyncLoading.Add(1)
 		go func() {
 			connectedLoading.Wait()
@@ -280,6 +243,27 @@ func (e *endpoint) Resume(s *stack.Stack) {
 			connectingLoading.Done()
 			tcpip.AsyncLoading.Done()
 		}()
+	case epState == StateSynSent || epState == StateSynRecv:
+		connectedLoading.Wait()
+		listenLoading.Wait()
+		// Initial SYN has been sent/received so we should bind the
+		// ports start the retransmit timer for the SYNs and let it
+		// naturally complete the connection.
+		bind()
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		e.setEndpointState(epState)
+		r, err := e.stack.FindRoute(e.boundNICID, e.TransportEndpointInfo.ID.LocalAddress, e.TransportEndpointInfo.ID.RemoteAddress, e.effectiveNetProtos[0], false /* multicastLoop */)
+		if err != nil {
+			panic(fmt.Sprintf("FindRoute failed when restoring endpoint w/ ID: %+v", e.ID))
+		}
+		e.route = r
+		timer, err := newBackoffTimer(e.stack.Clock(), InitialRTO, MaxRTO, maybeFailTimerHandler(e, e.h.retransmitHandlerLocked))
+		if err != nil {
+			panic(fmt.Sprintf("newBackOffTimer(_, %s, %s, _) failed: %s", InitialRTO, MaxRTO, err))
+		}
+		e.h.retransmitTimer = timer
+		connectingLoading.Done()
 	case epState == StateBound:
 		tcpip.AsyncLoading.Add(1)
 		go func() {

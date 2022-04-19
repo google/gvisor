@@ -109,6 +109,12 @@ func (*protocol) Close() {}
 // Wait implements stack.TransportProtocol.Wait.
 func (*protocol) Wait() {}
 
+// Pause implements stack.TransportProtocol.Pause.
+func (*protocol) Pause() {}
+
+// Resume implements stack.TransportProtocol.Resume.
+func (*protocol) Resume() {}
+
 // Parse implements stack.TransportProtocol.Parse.
 func (*protocol) Parse(pkt *stack.PacketBuffer) bool {
 	return parse.UDP(pkt)

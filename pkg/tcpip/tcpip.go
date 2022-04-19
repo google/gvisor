@@ -674,9 +674,6 @@ type Endpoint interface {
 	// SocketOptions returns the structure which contains all the socket
 	// level options.
 	SocketOptions() *SocketOptions
-
-	// Release releases all reference counted objects held by the endpoint.
-	Release()
 }
 
 // LinkPacketInfo holds Link layer information for a received packet.
@@ -2499,7 +2496,7 @@ func ReleaseDanglingEndpoints() {
 	// Calling Release on a dangling endpoint that has been deleted is a noop.
 	eps := GetDanglingEndpoints()
 	for _, ep := range eps {
-		ep.Release()
+		ep.Abort()
 	}
 }
 

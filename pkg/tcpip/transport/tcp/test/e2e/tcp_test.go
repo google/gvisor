@@ -179,15 +179,8 @@ func TestConnectICMPError(t *testing.T) {
 	checker.IPv4(t, syn, checker.TCP(checker.TCPFlags(header.TCPFlagSyn)))
 
 	wep := ep.(interface {
-		StopWork()
-		ResumeWork()
 		LastErrorLocked() tcpip.Error
 	})
-
-	// Stop the protocol loop, ensure that the ICMP error is processed and
-	// the last ICMP error is read before the loop is resumed. This sanity
-	// tests the handshake completion logic on ICMP errors.
-	wep.StopWork()
 
 	c.SendICMPPacket(header.ICMPv4DstUnreachable, header.ICMPv4HostUnreachable, nil, syn, e2e.DefaultMTU)
 
@@ -200,8 +193,6 @@ func TestConnectICMPError(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-
-	wep.ResumeWork()
 
 	<-notifyCh
 
@@ -373,9 +364,8 @@ func TestTCPResetsSentIncrement(t *testing.T) {
 	}
 }
 
-// TestTCPResetsSentNoICMP confirms that we don't get an ICMP
-// DstUnreachable packet when we try send a packet which is not part
-// of an active session.
+// TestTCPResetsSentNoICMP confirms that we don't get an ICMP DstUnreachable
+// packet when we try send a packet which is not part of an active session.
 func TestTCPResetsSentNoICMP(t *testing.T) {
 	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
@@ -8654,13 +8644,6 @@ func TestReadAfterCloseWithBufferedData(t *testing.T) {
 	}
 }
 
-func TestReleaseAfterClose(t *testing.T) {
-	c := context.New(t, e2e.DefaultMTU)
-	c.CreateConnectedWithOptionsNoDelay(header.TCPSynOptions{})
-	c.CloseNoWait()
-	c.EP.Release()
-}
-
 func TestReleaseDanglingEndpoints(t *testing.T) {
 	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
@@ -8683,8 +8666,18 @@ func TestReleaseDanglingEndpoints(t *testing.T) {
 	)
 	tcpip.ReleaseDanglingEndpoints()
 
-	// Now send an ACK and it should trigger a RST as Release should Close the
-	// endpoint.
+	// ReleaseDanglingEndpoints should abort the half-closed endpoint causing
+	// a RST to be sent.
+	checker.IPv4(t, c.GetPacket(),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.TCPSeqNum(uint32(c.IRS)+2),
+			checker.TCPAckNum(uint32(iss)),
+			checker.TCPFlags(header.TCPFlagRst|header.TCPFlagAck),
+		),
+	)
+
+	// Now send an ACK and it should trigger a RST as the endpoint is aborted.
 	c.SendPacket(nil, &context.Headers{
 		SrcPort: context.TestPort,
 		DstPort: c.Port,

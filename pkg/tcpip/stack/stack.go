@@ -1606,6 +1606,13 @@ func (s *Stack) Wait() {
 	}
 }
 
+// Pause pauses any protocol level background workers.
+func (s *Stack) Pause() {
+	for _, p := range s.transportProtocols {
+		p.proto.Pause()
+	}
+}
+
 // Resume restarts the stack after a restore. This must be called after the
 // entire system has been restored.
 func (s *Stack) Resume() {
@@ -1617,6 +1624,10 @@ func (s *Stack) Resume() {
 	s.mu.Unlock()
 	for _, e := range eps {
 		e.Resume(s)
+	}
+	// Now resume any protocol level background workers.
+	for _, p := range s.transportProtocols {
+		p.proto.Resume()
 	}
 }
 

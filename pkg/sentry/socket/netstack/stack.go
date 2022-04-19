@@ -444,6 +444,11 @@ func (s *Stack) IPTables() (*stack.IPTables, error) {
 	return s.Stack.IPTables(), nil
 }
 
+// Pause implements inet.Stack.Pause.
+func (s *Stack) Pause() {
+	s.Stack.Pause()
+}
+
 // Resume implements inet.Stack.Resume.
 func (s *Stack) Resume() {
 	s.Stack.Resume()
