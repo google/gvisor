@@ -123,3 +123,13 @@ func PageRoundUp(x uint64) (addr uint64, ok bool) {
 	ok = addr >= x
 	return
 }
+
+// ToPages returns number of Pages for x.
+// x is rounded up to the nearest page boundary.
+func ToPages(x uint64) (uint64, bool) {
+	xRoundedUp, ok := PageRoundUp(x)
+	if !ok {
+		return 0, false
+	}
+	return xRoundedUp / PageSize, true
+}

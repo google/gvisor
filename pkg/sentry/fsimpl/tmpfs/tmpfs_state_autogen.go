@@ -381,6 +381,8 @@ func (fs *filesystem) StateFields() []string {
 		"nextInoMinusOne",
 		"root",
 		"maxFilenameLen",
+		"maxSizeInPages",
+		"pagesUsed",
 	}
 }
 
@@ -398,6 +400,8 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &fs.nextInoMinusOne)
 	stateSinkObject.Save(7, &fs.root)
 	stateSinkObject.Save(8, &fs.maxFilenameLen)
+	stateSinkObject.Save(9, &fs.maxSizeInPages)
+	stateSinkObject.Save(10, &fs.pagesUsed)
 }
 
 func (fs *filesystem) afterLoad() {}
@@ -413,6 +417,8 @@ func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(6, &fs.nextInoMinusOne)
 	stateSourceObject.Load(7, &fs.root)
 	stateSourceObject.Load(8, &fs.maxFilenameLen)
+	stateSourceObject.Load(9, &fs.maxSizeInPages)
+	stateSourceObject.Load(10, &fs.pagesUsed)
 }
 
 func (f *FilesystemOpts) StateTypeName() string {

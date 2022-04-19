@@ -139,6 +139,11 @@ func newUnlinkedRegularFileDescription(ctx context.Context, creds *auth.Credenti
 // Preconditions: mount must be a tmpfs mount.
 func NewZeroFile(ctx context.Context, creds *auth.Credentials, mount *vfs.Mount, size uint64) (*vfs.FileDescription, error) {
 	// Compare mm/shmem.c:shmem_zero_setup().
+	fs := mount.Filesystem().Impl().(*filesystem)
+	if err := fs.updatePagesUsed(0, size); err != nil {
+		return nil, err
+	}
+
 	fd, err := newUnlinkedRegularFileDescription(ctx, creds, mount, "dev/zero")
 	if err != nil {
 		return nil, err
@@ -189,6 +194,10 @@ func (rf *regularFile) truncateLocked(newSize uint64) (bool, error) {
 			return false, linuxerr.EPERM
 		}
 		// We only need to update the file size.
+		if err := rf.inode.fs.updatePagesUsed(rf.size.Load(), newSize); err != nil {
+			rf.dataMu.Unlock()
+			return false, err
+		}
 		rf.size.Store(newSize)
 		rf.dataMu.Unlock()
 		return true, nil
@@ -201,6 +210,10 @@ func (rf *regularFile) truncateLocked(newSize uint64) (bool, error) {
 	}
 
 	// Update the file size.
+	if err := rf.inode.fs.updatePagesUsed(rf.size.Load(), newSize); err != nil {
+		rf.dataMu.Unlock()
+		return false, err
+	}
 	rf.size.Store(newSize)
 	rf.dataMu.Unlock()
 
@@ -441,9 +454,18 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 		return 0, offset, err
 	}
 	src = src.TakeFirst64(srclen)
-
+	reservedSize := f.size.Load() + uint64(srclen)
+	if err = f.inode.fs.updatePagesUsed(f.size.Load(), reservedSize); err != nil {
+		return 0, 0, err
+	}
 	rw := getRegularFileReadWriter(f, offset)
 	n, err := src.CopyInTo(ctx, rw)
+	if unwritten := srclen - n; unwritten != 0 {
+		if err := f.inode.fs.updatePagesUsed(reservedSize, f.size.Load()); err != nil {
+			return 0, 0, err
+		}
+	}
+
 	f.inode.touchCMtimeLocked()
 	for {
 		old := atomic.LoadUint32(&f.inode.mode)
