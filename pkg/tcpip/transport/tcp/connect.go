@@ -16,10 +16,10 @@ package tcp
 
 import (
 	"encoding/binary"
+	"fmt"
 	"math"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -60,6 +60,8 @@ const (
 //
 // NOTE: handshake.ep.mu is held during handshake processing. It is released if
 // we are going to block and reacquired when we start processing an event.
+//
+// +stateify savable
 type handshake struct {
 	ep       *endpoint
 	listenEP *endpoint
@@ -107,6 +109,65 @@ type handshake struct {
 	// tell; then RTT can only be sampled when the incoming segment has timestamp
 	// options enabled.
 	sampleRTTWithTSOnly bool
+
+	// retransmitTimer is used to retransmit SYN/SYN-ACK with exponential backoff
+	// till handshake is either completed or timesout.
+	retransmitTimer *backoffTimer `state:"nosave"`
+}
+
+// maybeFailTimerHandler takes a handler function for a timer that may fail and
+// returns a function that will invoke the provided handler with the endpoint
+// mutex held. In addition the returned function will perform any cleanup that
+// maybe required if the timer handler returns an error and in case of no errors
+// will notify the processor if there are pending segments that need to be
+// processed.
+
+// NOTE: e.mu is held for the duration of the call to f().
+func maybeFailTimerHandler(e *endpoint, f func() tcpip.Error) func() {
+	return func() {
+		e.mu.Lock()
+		if err := f(); err != nil {
+			e.lastErrorMu.Lock()
+			e.lastError = err
+			e.lastErrorMu.Unlock()
+			e.hardError = err
+			e.stack.Stats().TCP.CurrentConnected.Decrement()
+			e.cleanupLocked()
+			e.setEndpointState(StateError)
+			e.mu.Unlock()
+			e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
+			return
+		}
+		processor := e.protocol.dispatcher.selectProcessor(e.ID)
+		e.mu.Unlock()
+
+		// notify processor if there are pending segments to be
+		// processed.
+		if !e.segmentQueue.empty() {
+			processor.queueEndpoint(e)
+		}
+	}
+}
+
+// timerHandler takes a handler function for a timer that never results in a
+// connection being aborted and returns a function that will invoke the provided
+// handler with the endpoint mutex held. In addition the returned function will
+// notify the processor if there are pending segments that need to be processed
+// once the handler function completes.
+//
+// NOTE: e.mu is held for the duration of the call to f()
+func timerHandler(e *endpoint, f func()) func() {
+	return func() {
+		e.mu.Lock()
+		f()
+		processor := e.protocol.dispatcher.selectProcessor(e.ID)
+		e.mu.Unlock()
+		// notify processor if there are pending segments to be
+		// processed.
+		if !e.segmentQueue.empty() {
+			processor.queueEndpoint(e)
+		}
+	}
 }
 
 // +checklocks:e.mu
@@ -124,6 +185,11 @@ func (e *endpoint) newHandshake() (h *handshake) {
 	e.h = h
 	// By the time handshake is created, e.ID is already initialized.
 	e.TSOffset = e.protocol.tsOffset(e.ID.LocalAddress, e.ID.RemoteAddress)
+	timer, err := newBackoffTimer(h.ep.stack.Clock(), InitialRTO, MaxRTO, maybeFailTimerHandler(e, h.retransmitHandlerLocked))
+	if err != nil {
+		panic(fmt.Sprintf("newBackOffTimer(_, %s, %s, _) failed: %s", InitialRTO, MaxRTO, err))
+	}
+	h.retransmitTimer = timer
 	return h
 }
 
@@ -242,7 +308,6 @@ func (h *handshake) synSentState(s *segment) tcpip.Error {
 			// RFC 793, page 67, states that "If the RST bit is set [and] If the ACK
 			// was acceptable then signal the user "error: connection reset", drop
 			// the segment, enter CLOSED state, delete TCB, and return."
-			h.ep.workerCleanup = true
 			// Although the RFC above calls out ECONNRESET, Linux actually returns
 			// ECONNREFUSED here so we do as well.
 			return &tcpip.ErrConnectionRefused{}
@@ -417,13 +482,13 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 		}
 
 		h.state = handshakeCompleted
-
 		h.transitionToStateEstablishedLocked(s)
 
 		// Requeue the segment if the ACK completing the handshake has more info
 		// to be procesed by the newly established endpoint.
 		if (s.flags.Contains(header.TCPFlagFin) || s.data.Size() > 0) && h.ep.enqueueSegment(s) {
-			h.ep.newSegmentWaker.Assert()
+			h.ep.protocol.dispatcher.selectProcessor(h.ep.ID).queueEndpoint(h.ep)
+
 		}
 		return nil
 	}
@@ -469,12 +534,6 @@ func (h *handshake) processSegments() tcpip.Error {
 		if h.state == handshakeCompleted {
 			break
 		}
-	}
-
-	// If the queue is not empty, make sure we'll wake up in the next
-	// iteration.
-	if !h.ep.segmentQueue.empty() {
-		h.ep.newSegmentWaker.Assert()
 	}
 
 	return nil
@@ -525,99 +584,45 @@ func (h *handshake) start() {
 	}, synOpts)
 }
 
-// complete completes the TCP 3-way handshake initiated by h.start().
+// retransmitHandler handles retransmissions of un-acked SYNs.
 // +checklocks:h.ep.mu
-func (h *handshake) complete() tcpip.Error {
-	// Set up the wakers.
-	var s sleep.Sleeper
-	resendWaker := sleep.Waker{}
-	s.AddWaker(&resendWaker)
-	s.AddWaker(&h.ep.notificationWaker)
-	s.AddWaker(&h.ep.newSegmentWaker)
-	defer s.Done()
+func (h *handshake) retransmitHandlerLocked() tcpip.Error {
+	e := h.ep
+	// If the endpoint has already transition out of a connecting state due
+	// to say an error (e.g) peer send RST or an ICMP error. Then just
+	// return. Any required cleanup should have been done when the RST/error
+	// was handled.
+	if !e.EndpointState().connecting() {
+		return nil
+	}
 
-	// Initialize the resend timer.
-	timer, err := newBackoffTimer(h.ep.stack.Clock(), InitialRTO, MaxRTO, resendWaker.Assert)
-	if err != nil {
+	if err := h.retransmitTimer.reset(); err != nil {
 		return err
 	}
-	defer timer.stop()
-	for h.state != handshakeCompleted {
-		// Unlock before blocking, and reacquire again afterwards (h.ep.mu is held
-		// throughout handshake processing).
-		h.ep.mu.Unlock()
-		w := s.Fetch(true /* block */)
-		h.ep.mu.Lock()
-		switch w {
-		case &resendWaker:
-			if err := timer.reset(); err != nil {
-				return err
-			}
-			// Resend the SYN/SYN-ACK only if the following conditions hold.
-			//  - It's an active handshake (deferAccept does not apply)
-			//  - It's a passive handshake and we have not yet got the final-ACK.
-			//  - It's a passive handshake and we got an ACK but deferAccept is
-			//    enabled and we are now past the deferAccept duration.
-			// The last is required to provide a way for the peer to complete
-			// the connection with another ACK or data (as ACKs are never
-			// retransmitted on their own).
-			if h.active || !h.acked || h.deferAccept != 0 && h.ep.stack.Clock().NowMonotonic().Sub(h.startTime) > h.deferAccept {
-				h.ep.sendSynTCP(h.ep.route, tcpFields{
-					id:     h.ep.TransportEndpointInfo.ID,
-					ttl:    calculateTTL(h.ep.route, h.ep.ipv4TTL, h.ep.ipv6HopLimit),
-					tos:    h.ep.sendTOS,
-					flags:  h.flags,
-					seq:    h.iss,
-					ack:    h.ackNum,
-					rcvWnd: h.rcvWnd,
-				}, h.sendSYNOpts)
-				// If we have ever retransmitted the SYN-ACK or
-				// SYN segment, we should only measure RTT if
-				// TS option is present.
-				h.sampleRTTWithTSOnly = true
-			}
 
-		case &h.ep.notificationWaker:
-			n := h.ep.fetchNotifications()
-			if (n&notifyClose)|(n&notifyAbort) != 0 {
-				return &tcpip.ErrAborted{}
-			}
-			if n&notifyShutdown != 0 {
-				return &tcpip.ErrConnectionReset{}
-			}
-			if n&notifyDrain != 0 {
-				for !h.ep.segmentQueue.empty() {
-					s := h.ep.segmentQueue.dequeue()
-					err := h.handleSegment(s)
-					s.DecRef()
-					if err != nil {
-						return err
-					}
-					if h.state == handshakeCompleted {
-						return nil
-					}
-				}
-				close(h.ep.drainDone)
-				h.ep.mu.Unlock()
-				<-h.ep.undrain
-				h.ep.mu.Lock()
-			}
-			// Check for any ICMP errors notified to us.
-			if n&notifyError != 0 {
-				if err := h.ep.lastErrorLocked(); err != nil {
-					return err
-				}
-				// Flag the handshake failure as aborted if the lastError is
-				// cleared because of a socket layer call.
-				return &tcpip.ErrConnectionAborted{}
-			}
-		case &h.ep.newSegmentWaker:
-			if err := h.processSegments(); err != nil {
-				return err
-			}
-		}
+	// Resend the SYN/SYN-ACK only if the following conditions hold.
+	//  - It's an active handshake (deferAccept does not apply)
+	//  - It's a passive handshake and we have not yet got the final-ACK.
+	//  - It's a passive handshake and we got an ACK but deferAccept is
+	//    enabled and we are now past the deferAccept duration.
+	// The last is required to provide a way for the peer to complete
+	// the connection with another ACK or data (as ACKs are never
+	// retransmitted on their own).
+	if h.active || !h.acked || h.deferAccept != 0 && e.stack.Clock().NowMonotonic().Sub(h.startTime) > h.deferAccept {
+		e.sendSynTCP(e.route, tcpFields{
+			id:     e.TransportEndpointInfo.ID,
+			ttl:    calculateTTL(e.route, e.ipv4TTL, e.ipv6HopLimit),
+			tos:    e.sendTOS,
+			flags:  h.flags,
+			seq:    h.iss,
+			ack:    h.ackNum,
+			rcvWnd: h.rcvWnd,
+		}, h.sendSYNOpts)
+		// If we have ever retransmitted the SYN-ACK or
+		// SYN segment, we should only measure RTT if
+		// TS option is present.
+		h.sampleRTTWithTSOnly = true
 	}
-
 	return nil
 }
 
@@ -626,6 +631,11 @@ func (h *handshake) complete() tcpip.Error {
 // initializes sender/receiver.
 // +checklocks:h.ep.mu
 func (h *handshake) transitionToStateEstablishedLocked(s *segment) {
+	// Stop the SYN retransmissions now that handshake is complete.
+	if h.retransmitTimer != nil {
+		h.retransmitTimer.stop()
+	}
+
 	// Transfer handshake state to TCP connection. We disable
 	// receive window scaling if the peer doesn't support it
 	// (indicated by a negative send window scale).
@@ -654,6 +664,14 @@ func (h *handshake) transitionToStateEstablishedLocked(s *segment) {
 	h.ep.rcvQueueInfo.rcvQueueMu.Unlock()
 
 	h.ep.setEndpointState(StateEstablished)
+
+	// Completing the 3-way handshake is an indication that the route is valid
+	// and the remote is reachable as the only way we can complete a handshake
+	// is if our SYN reached the remote and their ACK reached us.
+	h.ep.route.ConfirmReachable()
+
+	// Tell waiters that the endpoint is connected and writable.
+	h.ep.waiterQueue.Notify(waiter.WritableEvents)
 }
 
 type backoffTimer struct {
@@ -983,7 +1001,6 @@ func (e *endpoint) sendData(next *segment) {
 func (e *endpoint) resetConnectionLocked(err tcpip.Error) {
 	// Only send a reset if the connection is being aborted for a reason
 	// other than receiving a reset.
-	e.setEndpointState(StateError)
 	e.hardError = err
 	switch err.(type) {
 	case *tcpip.ErrConnectionReset, *tcpip.ErrTimeout:
@@ -1006,20 +1023,8 @@ func (e *endpoint) resetConnectionLocked(err tcpip.Error) {
 	// to be read.
 	e.purgeWriteQueue()
 	e.purgePendingRcvQueue()
-}
-
-// completeWorkerLocked is called by the worker goroutine when it's about to
-// exit.
-// +checklocks:e.mu
-func (e *endpoint) completeWorkerLocked() {
-	// Worker is terminating(either due to moving to
-	// CLOSED or ERROR state, ensure we release all
-	// registrations port reservations even if the socket
-	// itself is not yet closed by the application.
-	e.workerRunning = false
-	if e.workerCleanup {
-		e.cleanupLocked()
-	}
+	e.cleanupLocked()
+	e.setEndpointState(StateError)
 }
 
 // transitionToStateCloseLocked ensures that the endpoint is
@@ -1039,8 +1044,8 @@ func (e *endpoint) transitionToStateCloseLocked() {
 		e.stack.Stats().TCP.EstablishedClosed.Increment()
 	}
 
-	// Mark the endpoint as fully closed for reads/writes.
 	e.cleanupLocked()
+	// Mark the endpoint as fully closed for reads/writes.
 	e.setEndpointState(StateClose)
 }
 
@@ -1060,16 +1065,18 @@ func (e *endpoint) tryDeliverSegmentFromClosedEndpoint(s *segment) {
 		)
 	}
 	if ep == nil {
-		replyWithReset(e.stack, s, stack.DefaultTOS, tcpip.UseDefaultIPv4TTL, tcpip.UseDefaultIPv6HopLimit)
+		if !s.flags.Contains(header.TCPFlagRst) {
+			replyWithReset(e.stack, s, stack.DefaultTOS, tcpip.UseDefaultIPv4TTL, tcpip.UseDefaultIPv6HopLimit)
+		}
 		return
 	}
 
 	if e == ep {
-		panic("current endpoint not removed from demuxer, enqueing segments to itself")
+		panic(fmt.Sprintf("current endpoint not removed from demuxer, enqueing segments to itself, endpoint in state %v", e.EndpointState()))
 	}
 
 	if ep := ep.(*endpoint); ep.enqueueSegment(s) {
-		ep.newSegmentWaker.Assert()
+		ep.notifyProcessor()
 	}
 }
 
@@ -1118,7 +1125,6 @@ func (e *endpoint) handleReset(s *segment) (ok bool, err tcpip.Error) {
 		case StateCloseWait:
 			e.transitionToStateCloseLocked()
 			e.hardError = &tcpip.ErrAborted{}
-			e.notifyProtocolGoroutine(notifyTickleWorker)
 			return false, nil
 		default:
 			// RFC 793, page 37 states that "in all states
@@ -1129,7 +1135,6 @@ func (e *endpoint) handleReset(s *segment) (ok bool, err tcpip.Error) {
 			// Notify protocol goroutine. This is required when
 			// handleSegment is invoked from the processor goroutine
 			// rather than the worker goroutine.
-			e.notifyProtocolGoroutine(notifyResetByPeer)
 			return false, &tcpip.ErrConnectionReset{}
 		}
 	}
@@ -1140,19 +1145,16 @@ func (e *endpoint) handleReset(s *segment) (ok bool, err tcpip.Error) {
 //
 // +checklocks:e.mu
 // +checklocksalias:e.snd.ep.mu=e.mu
-func (e *endpoint) handleSegmentsLocked(fastPath bool) tcpip.Error {
-	checkRequeue := true
+func (e *endpoint) handleSegmentsLocked() tcpip.Error {
 	sndUna := e.snd.SndUna
 	for i := 0; i < maxSegmentsPerWake; i++ {
-		if state := e.EndpointState(); state.closed() || state == StateTimeWait {
+		if state := e.EndpointState(); state.closed() || state == StateTimeWait || state == StateError {
 			return nil
 		}
 		s := e.segmentQueue.dequeue()
 		if s == nil {
-			checkRequeue = false
 			break
 		}
-
 		cont, err := e.handleSegmentLocked(s)
 		s.DecRef()
 		if err != nil {
@@ -1172,12 +1174,6 @@ func (e *endpoint) handleSegmentsLocked(fastPath bool) tcpip.Error {
 	// from the retransmit queue, i.e. sender makes forward progress.
 	if sndUna.LessThan(e.snd.SndUna) {
 		e.route.ConfirmReachable()
-	}
-	// When fastPath is true we don't want to wake up the worker
-	// goroutine. If the endpoint has more segments to process the
-	// dispatcher will call handleSegments again anyway.
-	if !fastPath && checkRequeue && !e.segmentQueue.empty() {
-		e.newSegmentWaker.Assert()
 	}
 
 	// Send an ACK for all processed packets if needed.
@@ -1282,7 +1278,7 @@ func (e *endpoint) keepaliveTimerExpired() tcpip.Error {
 	userTimeout := e.userTimeout
 
 	e.keepalive.Lock()
-	if !e.SocketOptions().GetKeepAlive() || !e.keepalive.timer.checkExpiration() {
+	if !e.SocketOptions().GetKeepAlive() || e.keepalive.timer.isZero() || !e.keepalive.timer.checkExpiration() {
 		e.keepalive.Unlock()
 		return nil
 	}
@@ -1339,305 +1335,31 @@ func (e *endpoint) disableKeepaliveTimer() {
 	e.keepalive.Unlock()
 }
 
-// protocolMainLoopDone is called at the end of protocolMainLoop.
-// +checklocksrelease:e.mu
-func (e *endpoint) protocolMainLoopDone(closeTimer tcpip.Timer) {
-	if e.snd != nil {
-		e.snd.resendTimer.cleanup()
-		e.snd.probeTimer.cleanup()
-		e.snd.reorderTimer.cleanup()
-	}
-
-	if closeTimer != nil {
-		closeTimer.Stop()
-	}
-
-	e.completeWorkerLocked()
-
-	if e.drainDone != nil {
-		close(e.drainDone)
-	}
-
+// finWait2TimerExpired is called when the FIN-WAIT-2 timeout is hit
+// and the peer hasn't sent us a FIN.
+func (e *endpoint) finWait2TimerExpired() {
+	e.mu.Lock()
+	e.transitionToStateCloseLocked()
 	e.mu.Unlock()
-
 	e.drainClosingSegmentQueue()
-
-	// When the protocol loop exits we should wake up our waiters.
 	e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
 }
 
-// handleWakeup handles a wakeup event while connected.
-//
 // +checklocks:e.mu
-// +checklocksalias:e.snd.ep.mu=e.mu
-// +checklocksalias:e.rcv.ep.mu=e.mu
-// +checklocksalias:e.snd.rc.snd.ep.mu=e.mu
-func (e *endpoint) handleWakeup(w, closeWaker *sleep.Waker, closeTimer *tcpip.Timer) tcpip.Error {
-	switch w {
-	case &e.sndQueueInfo.sndWaker:
-		e.sendData(nil /* next */)
-	case &e.newSegmentWaker:
-		return e.handleSegmentsLocked(false /* fastPath */)
-	case &e.snd.resendWaker:
-		if !e.snd.retransmitTimerExpired() {
-			e.stack.Stats().TCP.EstablishedTimedout.Increment()
-			return &tcpip.ErrTimeout{}
-		}
-	case closeWaker:
-		// This means the socket is being closed due to the
-		// TCP-FIN-WAIT2 timeout was hit. Just mark the socket as
-		// closed.
-		e.transitionToStateCloseLocked()
-		e.workerCleanup = true
-	case &e.snd.probeWaker:
-		return e.snd.probeTimerExpired()
-	case &e.keepalive.waker:
-		return e.keepaliveTimerExpired()
-	case &e.notificationWaker:
-		n := e.fetchNotifications()
-		if n&notifyNonZeroReceiveWindow != 0 {
-			e.rcv.nonZeroWindow()
-		}
-
-		if n&notifyMTUChanged != 0 {
-			e.sndQueueInfo.sndQueueMu.Lock()
-			count := e.sndQueueInfo.PacketTooBigCount
-			e.sndQueueInfo.PacketTooBigCount = 0
-			mtu := e.sndQueueInfo.SndMTU
-			e.sndQueueInfo.sndQueueMu.Unlock()
-
-			e.snd.updateMaxPayloadSize(mtu, count)
-		}
-
-		if n&notifyReset != 0 || n&notifyAbort != 0 {
-			return &tcpip.ErrConnectionAborted{}
-		}
-
-		if n&notifyResetByPeer != 0 {
-			return &tcpip.ErrConnectionReset{}
-		}
-
-		if n&notifyClose != 0 && e.closed {
-			switch e.EndpointState() {
-			case StateEstablished:
-				// Perform full shutdown if the endpoint is
-				// still established. This can occur when
-				// notifyClose was asserted just before
-				// becoming established.
-				e.shutdownLocked(tcpip.ShutdownWrite | tcpip.ShutdownRead)
-			case StateFinWait2:
-				// The socket has been closed and we are in
-				// FIN_WAIT2 so start the FIN_WAIT2 timer.
-				if *closeTimer == nil {
-					*closeTimer = e.stack.Clock().AfterFunc(e.tcpLingerTimeout, closeWaker.Assert)
-				}
-			}
-		}
-
-		if n&notifyKeepaliveChanged != 0 {
-			// The timer could fire in background when the endpoint
-			// is drained. That's OK. See above.
-			e.resetKeepaliveTimer(true)
-		}
-
-		if n&notifyDrain != 0 {
-			for !e.segmentQueue.empty() {
-				if err := e.handleSegmentsLocked(false /* fastPath */); err != nil {
-					return err
-				}
-			}
-			if !e.EndpointState().closed() {
-				// Only block the worker if the endpoint
-				// is not in closed state or error state.
-				close(e.drainDone)
-				e.mu.Unlock()
-				<-e.undrain
-				e.mu.Lock()
-			}
-		}
-
-		// N.B. notifyTickleWorker may be set, but there is no action
-		// to take in this case.
-	case &e.snd.reorderWaker:
-		return e.snd.rc.reorderTimerExpired()
-	default:
-		panic("unknown waker") // Shouldn't happen.
+func (e *endpoint) handshakeFailed(err tcpip.Error) {
+	e.lastErrorMu.Lock()
+	e.lastError = err
+	e.lastErrorMu.Unlock()
+	// handshakeFailed is also called from startHandshake when a listener
+	// transitions out of Listen state by the time the SYN is processed. In
+	// such cases the handshake is never initialized and the newly created
+	// endpoint is closed right away.
+	if e.h != nil && e.h.retransmitTimer != nil {
+		e.h.retransmitTimer.stop()
 	}
-	return nil
-}
-
-// protocolMainLoop is the main loop of the TCP protocol. It runs in its own
-// goroutine and is responsible for sending segments and handling received
-// segments.
-func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{}) {
-	var (
-		closeTimer tcpip.Timer
-		closeWaker sleep.Waker
-	)
-
-	e.mu.Lock()
-	if handshake {
-		if err := e.h.complete(); err != nil { // +checklocksforce
-			e.lastErrorMu.Lock()
-			e.lastError = err
-			e.lastErrorMu.Unlock()
-
-			e.setEndpointState(StateError)
-			e.hardError = err
-
-			e.workerCleanup = true
-			e.protocolMainLoopDone(closeTimer)
-			return
-		}
-	}
-
-	// Reaching this point means that we successfully completed the 3-way
-	// handshake with our peer. The current endpoint state could be any state
-	// post ESTABLISHED, including CLOSED or ERROR if the endpoint processes a
-	// RST from the peer via the dispatcher fast path, before the loop is
-	// started.
-	if s := e.EndpointState(); !s.connected() {
-		switch s {
-		case StateClose, StateError:
-			// If the endpoint is in CLOSED/ERROR state, sender state has to be
-			// initialized if the endpoint was previously established.
-			if e.snd != nil {
-				break
-			}
-			fallthrough
-		default:
-			panic("endpoint was not established, current state " + s.String())
-		}
-	}
-
-	// Completing the 3-way handshake is an indication that the route is valid
-	// and the remote is reachable as the only way we can complete a handshake
-	// is if our SYN reached the remote and their ACK reached us.
-	e.route.ConfirmReachable()
-
-	drained := e.drainDone != nil
-	if drained {
-		close(e.drainDone)
-		e.mu.Unlock()
-		<-e.undrain
-		e.mu.Lock()
-	}
-
-	// Add all wakers.
-	var s sleep.Sleeper
-	s.AddWaker(&e.sndQueueInfo.sndWaker)
-	s.AddWaker(&e.newSegmentWaker)
-	s.AddWaker(&e.snd.resendWaker)
-	s.AddWaker(&e.snd.probeWaker)
-	s.AddWaker(&closeWaker)
-	s.AddWaker(&e.keepalive.waker)
-	s.AddWaker(&e.notificationWaker)
-	s.AddWaker(&e.snd.reorderWaker)
-
-	// Notify the caller that the waker initialization is complete and the
-	// endpoint is ready.
-	if wakerInitDone != nil {
-		close(wakerInitDone)
-	}
-
-	// Tell waiters that the endpoint is connected and writable.
-	e.waiterQueue.Notify(waiter.WritableEvents)
-
-	// The following assertions and notifications are needed for restored
-	// endpoints. Fresh newly created endpoints have empty states and should
-	// not invoke any.
-	if !e.segmentQueue.empty() {
-		e.newSegmentWaker.Assert()
-	}
-
-	e.rcvQueueInfo.rcvQueueMu.Lock()
-	if !e.rcvQueueInfo.rcvQueue.Empty() {
-		e.waiterQueue.Notify(waiter.ReadableEvents)
-	}
-	e.rcvQueueInfo.rcvQueueMu.Unlock()
-
-	if e.workerCleanup {
-		e.notifyProtocolGoroutine(notifyClose)
-	}
-
-	// Main loop. Handle segments until both send and receive ends of the
-	// connection have completed.
-	cleanupOnError := func(err tcpip.Error) {
-		e.stack.Stats().TCP.CurrentConnected.Decrement()
-		e.workerCleanup = true
-		if err != nil {
-			e.resetConnectionLocked(err)
-			e.releaseLocked()
-		}
-	}
-
-loop:
-	for {
-		switch e.EndpointState() {
-		case StateTimeWait, StateClose, StateError:
-			break loop
-		}
-
-		e.mu.Unlock()
-		w := s.Fetch(true /* block */)
-		e.mu.Lock()
-
-		// We need to double check here because the notification may be
-		// stale by the time we got around to processing it.
-		switch e.EndpointState() {
-		case StateError:
-			// If the endpoint has already transitioned to an ERROR
-			// state just pass nil here as any reset that may need
-			// to be sent etc should already have been done and we
-			// just want to terminate the loop and cleanup the
-			// endpoint.
-			cleanupOnError(nil)
-			e.protocolMainLoopDone(closeTimer)
-			return
-		case StateTimeWait:
-			fallthrough
-		case StateClose:
-			break loop
-		default:
-			if err := e.handleWakeup(w, &closeWaker, &closeTimer); err != nil {
-				cleanupOnError(err)
-				e.protocolMainLoopDone(closeTimer)
-				return
-			}
-		}
-	}
-
-	var reuseTW func()
-	if e.EndpointState() == StateTimeWait {
-		// Disable close timer as we now entering real TIME_WAIT.
-		if closeTimer != nil {
-			closeTimer.Stop()
-		}
-		// Mark the current sleeper done so as to free all associated
-		// wakers.
-		s.Done()
-		// Wake up any waiters before we enter TIME_WAIT.
-		e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
-		e.workerCleanup = true
-		reuseTW = e.doTimeWait()
-	}
-
-	// Handle any StateError transition from StateTimeWait.
-	if e.EndpointState() == StateError {
-		cleanupOnError(nil)
-		e.protocolMainLoopDone(closeTimer)
-		return
-	}
-
-	e.transitionToStateCloseLocked()
-
-	e.protocolMainLoopDone(closeTimer)
-
-	// A new SYN was received during TIME_WAIT and we need to abort
-	// the timewait and redirect the segment to the listener queue
-	if reuseTW != nil {
-		reuseTW()
-	}
+	e.hardError = err
+	e.cleanupLocked()
+	e.setEndpointState(StateError)
 }
 
 // handleTimeWaitSegments processes segments received during TIME_WAIT
@@ -1645,11 +1367,9 @@ loop:
 // +checklocks:e.mu
 // +checklocksalias:e.rcv.ep.mu=e.mu
 func (e *endpoint) handleTimeWaitSegments() (extendTimeWait bool, reuseTW func()) {
-	checkRequeue := true
 	for i := 0; i < maxSegmentsPerWake; i++ {
 		s := e.segmentQueue.dequeue()
 		if s == nil {
-			checkRequeue = false
 			break
 		}
 		extTW, newSyn := e.rcv.handleTimeWaitSegment(s)
@@ -1673,7 +1393,7 @@ func (e *endpoint) handleTimeWaitSegments() (extendTimeWait bool, reuseTW func()
 							if !tcpEP.enqueueSegment(s) {
 								return
 							}
-							tcpEP.newSegmentWaker.Assert()
+							tcpEP.notifyProcessor()
 							s.DecRef()
 						}
 						// We explicitly do not DecRef the segment as it's still valid and
@@ -1688,22 +1408,11 @@ func (e *endpoint) handleTimeWaitSegments() (extendTimeWait bool, reuseTW func()
 		}
 		s.DecRef()
 	}
-	if checkRequeue && !e.segmentQueue.empty() {
-		e.newSegmentWaker.Assert()
-	}
 	return extendTimeWait, nil
 }
 
-// doTimeWait is responsible for handling the TCP behaviour once a socket
-// enters the TIME_WAIT state. Optionally it can return a closure that
-// should be executed after releasing the endpoint registrations. This is
-// done in cases where a new SYN is received during TIME_WAIT that carries
-// a sequence number larger than one see on the connection.
 // +checklocks:e.mu
-func (e *endpoint) doTimeWait() (twReuse func()) {
-	// Trigger a 2 * MSL time wait state. During this period
-	// we will drop all incoming segments.
-	// NOTE: On Linux this is not configurable and is fixed at 60 seconds.
+func (e *endpoint) getTimeWaitDuration() time.Duration {
 	timeWaitDuration := DefaultTCPTimeWaitTimeout
 
 	// Get the stack wide configuration.
@@ -1711,50 +1420,36 @@ func (e *endpoint) doTimeWait() (twReuse func()) {
 	if err := e.stack.TransportProtocolOption(ProtocolNumber, &tcpTW); err == nil {
 		timeWaitDuration = time.Duration(tcpTW)
 	}
+	return timeWaitDuration
+}
 
-	var s sleep.Sleeper
-	defer s.Done()
-	s.AddWaker(&e.newSegmentWaker)
-	s.AddWaker(&e.notificationWaker)
-
-	var timeWaitWaker sleep.Waker
-	s.AddWaker(&timeWaitWaker)
-	timeWaitTimer := e.stack.Clock().AfterFunc(timeWaitDuration, timeWaitWaker.Assert)
-	defer timeWaitTimer.Stop()
-
-	for {
+// timeWaitTimerExpired is called when an endpoint completes the required time
+// (typically 2 * MSL unless configured to something else at a stack level) in
+// TIME-WAIT state.
+func (e *endpoint) timeWaitTimerExpired() {
+	e.mu.Lock()
+	if e.EndpointState() != StateTimeWait {
 		e.mu.Unlock()
-		w := s.Fetch(true /* block */)
-		e.mu.Lock()
-		switch w {
-		case &e.newSegmentWaker:
-			extendTimeWait, reuseTW := e.handleTimeWaitSegments()
-			if reuseTW != nil {
-				return reuseTW
-			}
-			if extendTimeWait {
-				timeWaitTimer.Reset(timeWaitDuration)
-			}
-		case &e.notificationWaker:
-			n := e.fetchNotifications()
-			if n&notifyAbort != 0 {
-				return nil
-			}
-			if n&notifyDrain != 0 {
-				for !e.segmentQueue.empty() {
-					// Ignore extending TIME_WAIT during a
-					// save. For sockets in TIME_WAIT we just
-					// terminate the TIME_WAIT early.
-					e.handleTimeWaitSegments()
-				}
-				close(e.drainDone)
-				e.mu.Unlock()
-				<-e.undrain
-				e.mu.Lock()
-				return nil
-			}
-		case &timeWaitWaker:
-			return nil
-		}
+		return
 	}
+	e.transitionToStateCloseLocked()
+	e.mu.Unlock()
+	e.drainClosingSegmentQueue()
+	e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
+}
+
+// notifyProcessor queues this endpoint for processing to its TCP processor.
+func (e *endpoint) notifyProcessor() {
+	// We use TryLock here to avoid deadlocks in cases where a listening endpoint that is being
+	// closed tries to abort half completed connections which in turn try to queue any segments
+	// queued to that endpoint back to the same listening endpoint (because it may have got
+	// segments that matched its id but were either a RST or a new SYN which must be handled
+	// by a listening endpoint). In such cases the Close() on the listening endpoint will handle
+	// any queued segments after it releases the lock.
+	if !e.mu.TryLock() {
+		return
+	}
+	processor := e.protocol.dispatcher.selectProcessor(e.ID)
+	e.mu.Unlock()
+	processor.queueEndpoint(e)
 }

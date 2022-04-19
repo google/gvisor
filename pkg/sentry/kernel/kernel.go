@@ -552,6 +552,15 @@ func (k *Kernel) SaveTo(ctx context.Context, w wire.Writer) error {
 
 	// Save the timekeeper's state.
 
+	if rootNS := k.rootNetworkNamespace; rootNS != nil && rootNS.Stack() != nil {
+		// Pause the network stack.
+		netstackPauseStart := time.Now()
+		log.Infof("Pausing root network namespace")
+		k.rootNetworkNamespace.Stack().Pause()
+		defer k.rootNetworkNamespace.Stack().Resume()
+		log.Infof("Pausing root network namespace took [%s].", time.Since(netstackPauseStart))
+	}
+
 	// Save the kernel state.
 	kernelStart := time.Now()
 	stats, err := state.Save(ctx, w, k)

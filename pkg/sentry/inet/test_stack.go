@@ -144,6 +144,9 @@ func (s *TestStack) RouteTable() []Route {
 	return s.RouteList
 }
 
+// Pause implements Stack.
+func (s *TestStack) Pause() {}
+
 // Resume implements Stack.
 func (s *TestStack) Resume() {}
 

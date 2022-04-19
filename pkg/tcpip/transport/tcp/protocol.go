@@ -486,6 +486,16 @@ func (p *protocol) Wait() {
 	p.dispatcher.wait()
 }
 
+// Pause implements stack.TransportProtocol.Pause.
+func (p *protocol) Pause() {
+	p.dispatcher.pause()
+}
+
+// Resume implements stack.TransportProtocol.Resume.
+func (p *protocol) Resume() {
+	p.dispatcher.resume()
+}
+
 // Parse implements stack.TransportProtocol.Parse.
 func (*protocol) Parse(pkt *stack.PacketBuffer) bool {
 	return parse.TCP(pkt)

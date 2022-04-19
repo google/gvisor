@@ -287,9 +287,9 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 		for i := first; i < len(r.pendingRcvdSegments); i++ {
 			r.PendingBufUsed -= r.pendingRcvdSegments[i].segMemSize()
 			r.pendingRcvdSegments[i].DecRef()
-			// Note that slice truncation does not allow garbage collection of
-			// truncated items, thus truncated items must be set to nil to avoid
-			// memory leaks.
+			// Note that slice truncation does not allow garbage
+			// collection of truncated items, thus truncated items
+			// must be set to nil to avoid memory leaks.
 			r.pendingRcvdSegments[i] = nil
 		}
 		r.pendingRcvdSegments = r.pendingRcvdSegments[:first]
@@ -303,11 +303,12 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 		switch r.ep.EndpointState() {
 		case StateFinWait1:
 			r.ep.setEndpointState(StateFinWait2)
-			// Notify protocol goroutine that we have received an
-			// ACK to our FIN so that it can start the FIN_WAIT2
-			// timer to abort connection if the other side does
-			// not close within 2MSL.
-			r.ep.notifyProtocolGoroutine(notifyClose)
+			if e := r.ep; e.closed {
+				// The socket has been closed and we are in
+				// FIN-WAIT-2 so start the FIN-WAIT-2 timer.
+				e.finWait2Timer = e.stack.Clock().AfterFunc(e.tcpLingerTimeout, e.finWait2TimerExpired)
+			}
+
 		case StateClosing:
 			r.ep.setEndpointState(StateTimeWait)
 		case StateLastAck:
