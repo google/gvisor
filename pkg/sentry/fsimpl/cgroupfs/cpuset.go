@@ -65,6 +65,8 @@ func newCPUSetController(k *kernel.Kernel, fs *filesystem) *cpusetController {
 
 // Clone implements controller.Clone.
 func (c *cpusetController) Clone() controller {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	cpus := c.cpus.Clone()
 	mems := c.mems.Clone()
 	new := &cpusetController{
