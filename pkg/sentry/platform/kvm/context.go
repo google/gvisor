@@ -49,6 +49,7 @@ func (c *context) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac a
 	as := mm.AddressSpace()
 	localAS := as.(*addressSpace)
 
+restart:
 	// Grab a vCPU.
 	cpu := c.machine.Get()
 
@@ -67,7 +68,6 @@ func (c *context) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac a
 	// that the flush can occur naturally on the next user entry.
 	cpu.active.set(localAS)
 
-restart:
 	// Prepare switch options.
 	switchOpts := ring0.SwitchOpts{
 		Registers:          &ac.StateData().Regs,
@@ -79,17 +79,6 @@ restart:
 
 	// Take the blue pill.
 	at, err := cpu.SwitchToUser(switchOpts, &c.info)
-	if err != nil {
-		if _, ok := err.(tryCPUIDError); ok {
-			// Does emulation work for the CPUID?
-			if platform.TryCPUIDEmulate(ctx, mm, ac) {
-				goto restart
-			}
-			// If not a valid CPUID, then the signal should be
-			// delivered as is and the information is filled.
-			err = platform.ErrContextSignal
-		}
-	}
 
 	// Clear the address space.
 	cpu.active.set(nil)
@@ -102,6 +91,24 @@ restart:
 
 	// All done.
 	c.interrupt.Disable()
+
+	if err != nil {
+		if _, ok := err.(tryCPUIDError); ok {
+			// Does emulation work for the CPUID?
+			//
+			// We have to put the current vCPU, because
+			// TryCPUIDEmulate needs to read a user memory and it
+			// has to lock mm.activeMu for that, but it can race
+			// with as.invalidate that bonce all vcpu-s to gr0 and
+			// is called under mm.activeMu too.
+			if platform.TryCPUIDEmulate(ctx, mm, ac) {
+				goto restart
+			}
+			// If not a valid CPUID, then the signal should be
+			// delivered as is and the information is filled.
+			err = platform.ErrContextSignal
+		}
+	}
 	return &c.info, at, err
 }
 
