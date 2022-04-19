@@ -5,6 +5,8 @@ package(licenses = ["notice"])
 go_library(
     name = "atomicbitops",
     srcs = [
+        "32b_32bit.go",
+        "32b_64bit.go",
         "aligned_32bit_unsafe.go",
         "aligned_64bit.go",
         "atomicbitops.go",
