@@ -33,6 +33,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
+	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -646,7 +647,7 @@ func (t *Task) exitNotifyLocked(fromPtraceDetach bool) {
 			}
 			if seccheck.Global.Enabled(seccheck.PointExitNotifyParent) {
 				mask, info := getExitNotifyParentSeccheckInfo(t)
-				seccheck.Global.ExitNotifyParent(t, mask, &info)
+				seccheck.Global.ExitNotifyParent(t, mask, info)
 			}
 		}
 	}
@@ -697,15 +698,18 @@ func (t *Task) exitNotificationSignal(sig linux.Signal, receiver *Task) *linux.S
 }
 
 // Preconditions: The TaskSet mutex must be locked.
-func getExitNotifyParentSeccheckInfo(t *Task) (seccheck.ExitNotifyParentFieldSet, seccheck.ExitNotifyParentInfo) {
-	req := seccheck.Global.ExitNotifyParentReq()
-	info := seccheck.ExitNotifyParentInfo{
-		ExitStatus: t.tg.exitStatus,
+func getExitNotifyParentSeccheckInfo(t *Task) (seccheck.FieldSet, *pb.ExitNotifyParentInfo) {
+	fields := seccheck.Global.GetFieldSet(seccheck.PointExitNotifyParent)
+
+	info := &pb.ExitNotifyParentInfo{
+		ExitStatus: int32(t.tg.exitStatus),
 	}
-	var mask seccheck.ExitNotifyParentFieldSet
-	mask.Add(seccheck.ExitNotifyParentFieldExitStatus)
-	t.loadSeccheckInfoLocked(req.Exiter, &mask.Exiter, &info.Exiter)
-	return mask, info
+	if !fields.Context.Empty() {
+		info.ContextData = &pb.ContextData{}
+		LoadSeccheckDataLocked(t, fields.Context, info.ContextData)
+	}
+
+	return fields, info
 }
 
 // ExitStatus returns t's exit status, which is only guaranteed to be
