@@ -65,6 +65,8 @@ go_library(
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/log",
+        "//pkg/sentry/seccheck",
+        "//pkg/sentry/seccheck/points:points_go_proto",
         "//pkg/sync",
     ],
 )
