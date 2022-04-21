@@ -1064,6 +1064,51 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnectNoListener) {
               SyscallFailsWithErrno(ECONNABORTED));
 }
 
+TEST_P(SimpleTcpSocketTest, ListenConnectParallel) {
+  int family = GetParam();
+  sockaddr_storage addr =
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+  socklen_t addrlen = sizeof(addr);
+  constexpr int sock_type = SOCK_STREAM;
+
+  FileDescriptor l =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(family, sock_type, IPPROTO_TCP));
+  EXPECT_THAT(bind(l.get(), AsSockAddr(&addr), addrlen), SyscallSucceeds());
+
+  // Get the address bound by the listening socket.
+  EXPECT_THAT(getsockname(l.get(), AsSockAddr(&addr), &addrlen),
+              SyscallSucceeds());
+
+  constexpr int num_threads = 100;
+  ScopedThread t([&l]() {
+    absl::SleepFor(absl::Microseconds(1000));
+    EXPECT_THAT(listen(l.get(), num_threads), SyscallSucceeds());
+  });
+
+  // Initiate connects in a separate thread.
+  std::vector<ScopedThread*> threads;
+  for (int i = 0; i < num_threads; i++) {
+    ScopedThread t([&addr, &addrlen, family]() {
+      const FileDescriptor c = ASSERT_NO_ERRNO_AND_VALUE(
+          Socket(family, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
+
+      // Now connect to the bound address and this should fail as nothing
+      // is listening on the bound address.
+      EXPECT_THAT(RetryEINTR(connect)(c.get(), AsSockAddr(&addr), addrlen),
+                  SyscallFailsWithErrno(EINPROGRESS));
+      // Wait for the connect to fail or succeed as it can race with the socket
+      // listening.
+      struct pollfd poll_fd = {c.get(), POLLERR | POLLOUT, 0};
+      EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, 1000),
+                  SyscallSucceedsWithValue(1));
+    });
+    threads.push_back(&t);
+  }
+  for (auto t : threads) {
+    t->Join();
+  }
+}
+
 TEST_P(SimpleTcpSocketTest, NonBlockingConnectNoListenerRead) {
   sockaddr_storage addr =
       ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));

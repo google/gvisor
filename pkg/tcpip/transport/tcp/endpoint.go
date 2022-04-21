@@ -2618,13 +2618,18 @@ func (e *endpoint) listen(backlog int) tcpip.Error {
 		return &tcpip.ErrInvalidEndpointState{}
 	}
 
+	// Setting this state after RegisterTransportEndpoint will result in a
+	// race where the endpoint is in Bound but reachable via the demuxer. Instead
+	// we set it to listen so that incoming packets will just be queued to the
+	// inbound segment queue by the TCP processor.
+	e.setEndpointState(StateListen)
 	// Register the endpoint.
 	if err := e.stack.RegisterTransportEndpoint(e.effectiveNetProtos, ProtocolNumber, e.TransportEndpointInfo.ID, e, e.boundPortFlags, e.boundBindToDevice); err != nil {
+		e.transitionToStateCloseLocked()
 		return err
 	}
 
 	e.isRegistered = true
-	e.setEndpointState(StateListen)
 
 	// The queue may be non-zero when we're restoring the endpoint, and it
 	// may be pre-populated with some previously accepted (but not Accepted)
