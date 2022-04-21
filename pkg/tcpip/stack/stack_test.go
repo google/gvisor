@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -296,6 +297,11 @@ func (*fakeNetworkProtocol) Parse(pkt *stack.PacketBuffer) (tcpip.TransportProto
 	}
 	pkt.NetworkProtocolNumber = fakeNetNumber
 	return tcpip.TransportProtocolNumber(hdr[protocolNumberOffset]), true, true
+}
+
+// AddMulticastRoute implements MulticastForwardingNetworkProtocol.AddMulticastRoute.
+func (*fakeNetworkProtocol) AddMulticastRoute(addresses stack.UnicastSourceAndMulticastDestination, route stack.MulticastRoute) tcpip.Error {
+	return nil
 }
 
 // Forwarding implements stack.ForwardingNetworkEndpoint.
@@ -4657,6 +4663,53 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			}
 			if n := ep2.Drain(); n != 0 {
 				t.Errorf("got %d unexpected packets from ep2", n)
+			}
+		})
+	}
+}
+
+func TestAddMulticastRoute(t *testing.T) {
+	const nicID = 1
+	address := testutil.MustParse4("192.168.1.1")
+	outgoingInterfaces := []stack.OutgoingInterface{{ID: nicID, MinTTL: 3}}
+	addresses := stack.UnicastSourceAndMulticastDestination{Source: address, Destination: address}
+	route := stack.MulticastRoute{ExpectedInputInterface: nicID, OutgoingInterfaces: outgoingInterfaces}
+
+	tests := []struct {
+		name     string
+		netProto tcpip.NetworkProtocolNumber
+		factory  stack.NetworkProtocolFactory
+		wantErr  tcpip.Error
+	}{
+		{
+			name:     "valid",
+			netProto: fakeNetNumber,
+			factory:  fakeNetFactory,
+			wantErr:  nil,
+		},
+		{
+			name:     "unknown protocol",
+			factory:  fakeNetFactory,
+			netProto: arp.ProtocolNumber,
+			wantErr:  &tcpip.ErrUnknownProtocol{},
+		},
+		{
+			name:     "not supported",
+			factory:  arp.NewProtocol,
+			netProto: arp.ProtocolNumber,
+			wantErr:  &tcpip.ErrNotSupported{},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocolFactory{test.factory},
+			})
+
+			err := s.AddMulticastRoute(test.netProto, addresses, route)
+
+			if !cmp.Equal(err, test.wantErr, cmpopts.EquateErrors()) {
+				t.Errorf("got s.AddMulticastRoute(%d, %#v, %#v) = %s, want %s", test.netProto, addresses, route, err, test.wantErr)
 			}
 		})
 	}

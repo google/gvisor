@@ -563,6 +563,28 @@ func (s *Stack) SetForwardingDefaultAndAllNICs(protocol tcpip.NetworkProtocolNum
 	return nil
 }
 
+// AddMulticastRoute adds a route to the specified protocol's multicast routing
+// table.
+//
+// If successful, packets matching the addresses will be forwarded using the
+// provided route.
+//
+// TODO(https://gvisor.dev/issue/7338): Support adding a route for IPv4 and
+// IPv6. Currently, no protocols support this.
+func (s *Stack) AddMulticastRoute(protocol tcpip.NetworkProtocolNumber, addresses UnicastSourceAndMulticastDestination, route MulticastRoute) tcpip.Error {
+	netProto, ok := s.networkProtocols[protocol]
+	if !ok {
+		return &tcpip.ErrUnknownProtocol{}
+	}
+
+	forwardingNetProto, ok := netProto.(MulticastForwardingNetworkProtocol)
+	if !ok {
+		return &tcpip.ErrNotSupported{}
+	}
+
+	return forwardingNetProto.AddMulticastRoute(addresses, route)
+}
+
 // SetNICMulticastForwarding enables or disables multicast packet forwarding on
 // the specified NIC for the passed protocol.
 //
