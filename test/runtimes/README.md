@@ -27,23 +27,23 @@ The following `make` targets will run an entire runtime test suite locally.
 Note: java runtime test take 1+ hours with 16 cores.
 
 Language | Version | Running the test suite
--------- | ------- | ---------------------------------
-Go       | 1.12    | `make go1.12-runtime-tests`
-Java     | 11      | `make java11-runtime-tests`
-NodeJS   | 12.4.0  | `make nodejs12.4.0-runtime-tests`
-Php      | 7.3.6   | `make php7.3.6-runtime-tests`
-Python   | 3.7.3   | `make python3.7.3-runtime-tests`
+-------- | ------- | ----------------------------------
+Go       | 1.16    | `make go1.16-runtime-tests`
+Java     | 17      | `make java17-runtime-tests`
+NodeJS   | 16.13.2 | `make nodejs16.13.2-runtime-tests`
+Php      | 8.1.1   | `make php8.1.1-runtime-tests`
+Python   | 3.10.2  | `make python3.10.2-runtime-tests`
 
 To run runtime tests individually from a given runtime, you must build or
 download the language image and call Docker directly with the test arguments.
 
-Language | Version | Download Image                    | Run Test(s)
--------- | ------- | --------------------------------- | -----------
-Go       | 1.12    | `make load-runtimes_go1.12`       | If the test name ends with `.go`, it is an on-disk test: <br> `docker run --runtime=runsc -it gvisor.dev/images/runtimes/go1.12 ( cd /usr/local/go/test ; go run run.go -v -- <TEST_NAME>... )` <br> Otherwise it is a tool test: <br> `docker run --runtime=runsc -it gvisor.dev/images/runtimes/go1.12 go tool dist test -v -no-rebuild ^TEST1$\|^TEST2$...`
-Java     | 11      | `make load-runtimes_java11`       | `docker run --runtime=runsc -it gvisor.dev/images/runtimes/java11 jtreg -agentvm -dir:/root/test/jdk -noreport -timeoutFactor:20 -verbose:summary <TEST_NAME>...`
-NodeJS   | 12.4.0  | `make load-runtimes_nodejs12.4.0` | `docker run --runtime=runsc -it gvisor.dev/images/runtimes/nodejs12.4.0 python tools/test.py --timeout=180 <TEST_NAME>...`
-Php      | 7.3.6   | `make load-runtimes_php7.3.6`     | `docker run --runtime=runsc -it gvisor.dev/images/runtimes/php7.3.6 make test "TESTS=<TEST_NAME>..."`
-Python   | 3.7.3   | `make load-runtimes_python3.7.3`  | `docker run --runtime=runsc -it gvisor.dev/images/runtimes/python3.7.3 ./python -m test <TEST_NAME>...`
+Language | Version | Download Image                     | Run Test(s)
+-------- | ------- | ---------------------------------- | -----------
+Go       | 1.16    | `make load-runtimes_go1.16`        | If the test name ends with `.go`, it is an on-disk test: <br> `docker run --runtime=runsc -it gvisor.dev/images/runtimes/go1.16 ( cd /usr/local/go/test ; go run run.go -v -- <TEST_NAME>... )` <br> Otherwise it is a tool test: <br> `docker run --runtime=runsc -it gvisor.dev/images/runtimes/go1.16 go tool dist test -v -no-rebuild ^TEST1$\|^TEST2$...`
+Java     | 17      | `make load-runtimes_java17`        | `docker run --runtime=runsc -it gvisor.dev/images/runtimes/java17 jtreg -agentvm -dir:/root/test/jdk -noreport -timeoutFactor:20 -verbose:summary <TEST_NAME>...`
+NodeJS   | 16.13.2 | `make load-runtimes_nodejs16.13.2` | `docker run --runtime=runsc -it gvisor.dev/images/runtimes/nodejs16.13.2 python tools/test.py --timeout=180 <TEST_NAME>...`
+Php      | 8.1.1   | `make load-runtimes_php8.1.1`      | `docker run --runtime=runsc -it gvisor.dev/images/runtimes/php8.1.1 make test "TESTS=<TEST_NAME>..."`
+Python   | 3.10.2  | `make load-runtimes_python3.10.2`  | `docker run --runtime=runsc -it gvisor.dev/images/runtimes/python3.10.2 ./python -m test <TEST_NAME>...`
 
 ### Clean Up
 
