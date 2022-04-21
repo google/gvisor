@@ -2756,7 +2756,7 @@ func TestReceiveFragments(t *testing.T) {
 
 				// Check IPv4 header in packet delivered by raw endpoint.
 				buf.Reset()
-				result, err = epRaw.Read(&buf, tcpip.ReadOptions{})
+				_, err = epRaw.Read(&buf, tcpip.ReadOptions{})
 				if err != nil {
 					t.Fatalf("(i=%d) epRaw.Read: %s", i, err)
 				}
