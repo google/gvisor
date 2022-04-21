@@ -230,7 +230,6 @@ func BenchmarkVFS2TmpfsStat(b *testing.B) {
 				Mode:  0644,
 			})
 			vd.DecRef(ctx)
-			vd = vfs.VirtualDentry{}
 			if err != nil {
 				b.Fatalf("failed to create file %q: %v", filename, err)
 			}
