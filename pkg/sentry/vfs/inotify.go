@@ -17,9 +17,9 @@ package vfs
 import (
 	"bytes"
 	"fmt"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -304,7 +304,7 @@ func (i *Inotify) newWatchLocked(d *Dentry, ws *Watches, mask uint32) *Watch {
 		owner:  i,
 		wd:     i.nextWatchIDLocked(),
 		target: d,
-		mask:   mask,
+		mask:   atomicbitops.FromUint32(mask),
 	}
 
 	// Hold the watch in this inotify instance as well as the watch set on the
@@ -346,9 +346,9 @@ func (i *Inotify) AddWatch(target *Dentry, mask uint32) (int32, error) {
 		if mask&linux.IN_MASK_ADD != 0 {
 			// "Add (OR) events to watch mask for this pathname if it already
 			// exists (instead of replacing mask)." -- inotify(7)
-			newmask |= atomic.LoadUint32(&existing.mask)
+			newmask |= existing.mask.Load()
 		}
-		atomic.StoreUint32(&existing.mask, newmask)
+		existing.mask.Store(newmask)
 		return existing.wd, nil
 	}
 
@@ -498,7 +498,7 @@ func (w *Watches) cleanupExpiredWatches(ctx context.Context) {
 	var toRemove []*Watch
 	w.mu.RLock()
 	for _, watch := range w.ws {
-		if atomic.LoadInt32(&watch.expired) == 1 {
+		if watch.expired.Load() == 1 {
 			toRemove = append(toRemove, watch)
 		}
 	}
@@ -563,14 +563,12 @@ type Watch struct {
 	// This field is immutable after creation.
 	target *Dentry
 
-	// Events being monitored via this watch. Must be accessed with atomic
-	// memory operations.
-	mask uint32
+	// Events being monitored via this watch.
+	mask atomicbitops.Uint32
 
 	// expired is set to 1 to indicate that this watch is a one-shot that has
-	// already sent a notification and therefore can be removed. Must be accessed
-	// with atomic memory operations.
-	expired int32
+	// already sent a notification and therefore can be removed.
+	expired atomicbitops.Int32
 }
 
 // OwnerID returns the id of the inotify instance that owns this watch.
@@ -584,20 +582,20 @@ func (w *Watch) OwnerID() uint64 {
 // For example, if "foo/bar" is opened and then unlinked, operations on the
 // open fd may be ignored by watches on "foo" and "foo/bar" with IN_EXCL_UNLINK.
 func (w *Watch) ExcludeUnlinked() bool {
-	return atomic.LoadUint32(&w.mask)&linux.IN_EXCL_UNLINK != 0
+	return w.mask.Load()&linux.IN_EXCL_UNLINK != 0
 }
 
 // Notify queues a new event on this watch. Returns true if this is a one-shot
 // watch that should be deleted, after this event was successfully queued.
 func (w *Watch) Notify(name string, events uint32, cookie uint32) bool {
-	if atomic.LoadInt32(&w.expired) == 1 {
+	if w.expired.Load() == 1 {
 		// This is a one-shot watch that is already in the process of being
 		// removed. This may happen if a second event reaches the watch target
 		// before this watch has been removed.
 		return false
 	}
 
-	mask := atomic.LoadUint32(&w.mask)
+	mask := w.mask.Load()
 	if mask&events == 0 {
 		// We weren't watching for this event.
 		return false
@@ -610,7 +608,7 @@ func (w *Watch) Notify(name string, events uint32, cookie uint32) bool {
 	matchedEvents := effectiveMask & events
 	w.owner.queueEvent(newEvent(w.wd, name, matchedEvents, cookie))
 	if mask&linux.IN_ONESHOT != 0 {
-		atomic.StoreInt32(&w.expired, 1)
+		w.expired.Store(1)
 		return true
 	}
 	return false

@@ -16,9 +16,9 @@ package fs
 
 import (
 	"io"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -258,7 +258,7 @@ func (i *Inotify) newWatchLocked(target *Dirent, mask uint32) *Watch {
 	watch := &Watch{
 		owner:  i,
 		wd:     wd,
-		mask:   mask,
+		mask:   atomicbitops.FromUint32(mask),
 		target: target.Inode,
 		pins:   make(map[*Dirent]bool),
 	}
@@ -307,9 +307,9 @@ func (i *Inotify) AddWatch(target *Dirent, mask uint32) int32 {
 		if mergeMask := mask&linux.IN_MASK_ADD != 0; mergeMask {
 			// "Add (OR) events to watch mask for this pathname if it already
 			// exists (instead of replacing mask)." -- inotify(7)
-			newmask |= atomic.LoadUint32(&existing.mask)
+			newmask |= existing.mask.Load()
 		}
-		atomic.StoreUint32(&existing.mask, newmask)
+		existing.mask.Store(newmask)
 		return existing.wd
 	}
 

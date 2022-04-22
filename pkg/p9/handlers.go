@@ -21,7 +21,6 @@ import (
 	"os"
 	"path"
 	"strings"
-	"sync/atomic"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -127,7 +126,7 @@ func (t *Tversion) handle(cs *connState) message {
 	if t.MSize > maximumLength {
 		return newErr(unix.EINVAL)
 	}
-	atomic.StoreUint32(&cs.messageSize, t.MSize)
+	cs.messageSize.Store(t.MSize)
 	requested, ok := parseVersion(t.Version)
 	if !ok {
 		return newErr(unix.EINVAL)
@@ -139,7 +138,7 @@ func (t *Tversion) handle(cs *connState) message {
 	}
 	// From Tversion(9P): "The server may respond with the client’s version
 	// string, or a version string identifying an earlier defined protocol version".
-	atomic.StoreUint32(&cs.version, requested)
+	cs.version.Store(requested)
 	return &Rversion{
 		MSize:   t.MSize,
 		Version: t.Version,
@@ -1583,7 +1582,7 @@ func (t *Tmultigetattr) handle(cs *connState) message {
 		}
 
 		parentNode.opMu.RLock()
-		if atomic.LoadUint32(&parentNode.deleted) != 0 {
+		if parentNode.deleted.Load() != 0 {
 			parentNode.opMu.RUnlock()
 			break
 		}

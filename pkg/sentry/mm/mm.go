@@ -39,6 +39,7 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -79,9 +80,7 @@ type MemoryManager struct {
 	// users is the number of dependencies on the mappings in the MemoryManager.
 	// When the number of references in users reaches zero, all mappings are
 	// unmapped.
-	//
-	// users is accessed using atomic memory operations.
-	users int32
+	users atomicbitops.Int32
 
 	// mappingMu is analogous to Linux's struct mm_struct::mmap_sem.
 	mappingMu sync.RWMutex `state:"nosave"`
@@ -169,7 +168,7 @@ type MemoryManager struct {
 	// activeMu. (This is because such transitions may need to be atomic with
 	// changes to as.)
 	as     platform.AddressSpace `state:"nosave"`
-	active int32                 `state:"zerovalue"`
+	active atomicbitops.Int32    `state:"zerovalue"`
 
 	// unmapAllOnActivate indicates that the next Activate call should activate
 	// an empty AddressSpace.
@@ -243,15 +242,11 @@ type MemoryManager struct {
 	// previously been called. Since, as of this writing,
 	// MEMBARRIER_CMD_PRIVATE_EXPEDITED is implemented as a global memory
 	// barrier, membarrierPrivateEnabled has no other effect.
-	//
-	// membarrierPrivateEnabled is accessed using atomic memory operations.
-	membarrierPrivateEnabled uint32
+	membarrierPrivateEnabled atomicbitops.Uint32
 
 	// membarrierRSeqEnabled is non-zero if EnableMembarrierRSeq has previously
 	// been called.
-	//
-	// membarrierRSeqEnabled is accessed using atomic memory operations.
-	membarrierRSeqEnabled uint32
+	membarrierRSeqEnabled atomicbitops.Uint32
 }
 
 // vma represents a virtual memory area.

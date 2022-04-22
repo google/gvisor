@@ -20,17 +20,16 @@ package flipcall
 import (
 	"fmt"
 	"runtime"
-	"sync/atomic"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
 func (ep *Endpoint) futexSetPeerActive() error {
-	if atomic.CompareAndSwapUint32(ep.connState(), ep.activeState, ep.inactiveState) {
+	if ep.connState().CompareAndSwap(ep.activeState, ep.inactiveState) {
 		return nil
 	}
-	switch cs := atomic.LoadUint32(ep.connState()); cs {
+	switch cs := ep.connState().Load(); cs {
 	case csShutdown:
 		return ShutdownError{}
 	default:
@@ -47,7 +46,7 @@ func (ep *Endpoint) futexWakePeer() error {
 
 func (ep *Endpoint) futexWaitUntilActive() error {
 	for {
-		switch cs := atomic.LoadUint32(ep.connState()); cs {
+		switch cs := ep.connState().Load(); cs {
 		case ep.activeState:
 			return nil
 		case ep.inactiveState:
