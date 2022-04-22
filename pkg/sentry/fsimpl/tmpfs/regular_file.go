@@ -443,7 +443,8 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 		// Locking f.inode.mu is sufficient for reading f.size.
 		offset = int64(f.size.RacyLoad())
 	}
-	if end := offset + srclen; end < offset {
+	end := offset + srclen
+	if end < offset {
 		// Overflow.
 		return 0, offset, linuxerr.EINVAL
 	}
@@ -452,15 +453,18 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 	if err != nil {
 		return 0, offset, err
 	}
+	maybeSizeInc := false
 	src = src.TakeFirst64(srclen)
-	reservedSize := f.size.Load() + uint64(srclen)
-	if err = f.inode.fs.updatePagesUsed(f.size.Load(), reservedSize); err != nil {
-		return 0, 0, err
+	if uint64(end) > f.size.Load() {
+		maybeSizeInc = true
+		if err = f.inode.fs.updatePagesUsed(f.size.Load(), uint64(end)); err != nil {
+			return 0, 0, err
+		}
 	}
 	rw := getRegularFileReadWriter(f, offset)
 	n, err := src.CopyInTo(ctx, rw)
-	if unwritten := srclen - n; unwritten != 0 {
-		if err := f.inode.fs.updatePagesUsed(reservedSize, f.size.Load()); err != nil {
+	if unwritten := srclen - n; maybeSizeInc && unwritten != 0 {
+		if err := f.inode.fs.updatePagesUsed(uint64(end), f.size.Load()); err != nil {
 			return 0, 0, err
 		}
 	}
