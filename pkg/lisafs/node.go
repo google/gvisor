@@ -15,8 +15,7 @@
 package lisafs
 
 import (
-	"sync/atomic"
-
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -69,7 +68,7 @@ type Node struct {
 	// anymore. This node may have been replaced with something hazardous.
 	// deleted is protected by opMu. deleted must only be accessed/mutated using
 	// atomics; see markDeletedRecursive for more details.
-	deleted uint32
+	deleted atomicbitops.Uint32
 
 	// name is the name of the file represented by this Node in parent. If this
 	// FD represents the root directory, then name is an empty string. name is
@@ -185,7 +184,7 @@ func (n *Node) FilePath() string {
 }
 
 func (n *Node) isDeleted() bool {
-	return atomic.LoadUint32(&n.deleted) != 0
+	return n.deleted.Load() != 0
 }
 
 func (n *Node) removeFD(fd *ControlFD) {
@@ -279,7 +278,7 @@ func (n *Node) forEachChild(fn func(*Node)) {
 // Precondition: opMu must be locked for writing on the root node being marked
 // as deleted.
 func (n *Node) markDeletedRecursive() {
-	atomic.StoreUint32(&n.deleted, 1)
+	n.deleted.Store(1)
 
 	// No need to hold opMu for children as it introduces lock ordering issues
 	// because forEachChild locks childrenMu. Locking opMu after childrenMu

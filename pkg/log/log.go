@@ -29,6 +29,8 @@
 // This is because the log.Debugf(...) statement alone will generate a
 // significant amount of garbage and churn in many cases, even if no log
 // message is ultimately emitted.
+//
+// +checkalignedignore
 package log
 
 import (
@@ -92,7 +94,8 @@ type Writer struct {
 	// errors counts failures to write log messages so it can be reported
 	// when writer start to work again. Needs to be accessed using atomics
 	// to make race detector happy because it's read outside the mutex.
-	errors int32
+	// +checklocks
+	atomicErrors int32
 }
 
 // Write writes out the given bytes, handling non-blocking sockets.
@@ -112,7 +115,7 @@ func (l *Writer) Write(data []byte) (int, error) {
 		// Some other error?
 		if err != nil {
 			l.mu.Lock()
-			atomic.AddInt32(&l.errors, 1)
+			atomic.AddInt32(&l.atomicErrors, 1)
 			l.mu.Unlock()
 			return n, err
 		}
@@ -124,15 +127,15 @@ func (l *Writer) Write(data []byte) (int, error) {
 	}
 
 	// Dirty read in case there were errors (rare).
-	if atomic.LoadInt32(&l.errors) > 0 {
+	if atomic.LoadInt32(&l.atomicErrors) > 0 {
 		l.mu.Lock()
 		defer l.mu.Unlock()
 
 		// Recheck condition under lock.
-		if e := atomic.LoadInt32(&l.errors); e > 0 {
+		if e := atomic.LoadInt32(&l.atomicErrors); e > 0 {
 			msg := fmt.Sprintf("\n*** Dropped %d log messages ***\n", e)
 			if _, err := l.Next.Write([]byte(msg)); err == nil {
-				atomic.StoreInt32(&l.errors, 0)
+				atomic.StoreInt32(&l.atomicErrors, 0)
 			}
 		}
 	}

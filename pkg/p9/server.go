@@ -17,7 +17,6 @@ package p9
 import (
 	"io"
 	"runtime/debug"
-	"sync/atomic"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -84,11 +83,11 @@ type connState struct {
 
 	// messageSize is the maximum message size. The server does not
 	// do automatic splitting of messages.
-	messageSize uint32
+	messageSize atomicbitops.Uint32
 
 	// version is the agreed upon version X of 9P2000.L.Google.X.
 	// version 0 implies 9P2000.L.
-	version uint32
+	version atomicbitops.Uint32
 
 	// reqGate counts requests that are still being handled.
 	reqGate sync.Gate
@@ -99,9 +98,8 @@ type connState struct {
 	recvMu sync.Mutex
 
 	// recvIdle is the number of goroutines in handleRequests() attempting to
-	// lock recvMu so that they can receive from conn. recvIdle is accessed
-	// using atomic memory operations.
-	recvIdle int32
+	// lock recvMu so that they can receive from conn.
+	recvIdle atomicbitops.Int32
 
 	// If recvShutdown is true, at least one goroutine has observed a
 	// connection error while receiving from conn, and all goroutines in
@@ -225,7 +223,7 @@ func (f *fidRef) TryIncRef() bool {
 // Precondition: this must be called via safelyRead, safelyWrite or
 // safelyGlobal.
 func (f *fidRef) isDeleted() bool {
-	return atomic.LoadUint32(&f.pathNode.deleted) != 0
+	return f.pathNode.deleted.Load() != 0
 }
 
 // isRoot indicates whether this is a root fid.
@@ -245,7 +243,7 @@ func (f *fidRef) maybeParent() *fidRef {
 //
 // Precondition: this must be called via safelyWrite or safelyGlobal.
 func notifyDelete(pn *pathNode) {
-	atomic.StoreUint32(&pn.deleted, 1)
+	pn.deleted.Store(1)
 
 	// Call on all subtrees.
 	pn.forEachChildNode(func(pn *pathNode) {
@@ -537,9 +535,9 @@ func (cs *connState) handle(m message) (r message) {
 // continue handling requests and false if it should terminate.
 func (cs *connState) handleRequest() bool {
 	// Obtain the right to receive a message from cs.conn.
-	atomic.AddInt32(&cs.recvIdle, 1)
+	cs.recvIdle.Add(1)
 	cs.recvMu.Lock()
-	atomic.AddInt32(&cs.recvIdle, -1)
+	cs.recvIdle.Add(-1)
 
 	if cs.recvShutdown {
 		// Another goroutine already detected a connection problem; exit
@@ -548,7 +546,7 @@ func (cs *connState) handleRequest() bool {
 		return false
 	}
 
-	messageSize := atomic.LoadUint32(&cs.messageSize)
+	messageSize := cs.messageSize.Load()
 	if messageSize == 0 {
 		// Default or not yet negotiated.
 		messageSize = maximumLength
@@ -565,7 +563,7 @@ func (cs *connState) handleRequest() bool {
 	}
 
 	// Ensure that another goroutine is available to receive from cs.conn.
-	if atomic.LoadInt32(&cs.recvIdle) == 0 {
+	if cs.recvIdle.Load() == 0 {
 		go cs.handleRequests() // S/R-SAFE: Irrelevant.
 	}
 	cs.recvMu.Unlock()

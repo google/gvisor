@@ -16,7 +16,6 @@ package unet
 
 import (
 	"io"
-	"sync/atomic"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -30,7 +29,7 @@ func (s *Socket) wait(write bool) error {
 	for {
 		// Checking the FD on each loop is not strictly necessary, it
 		// just avoids an extra poll call.
-		fd := atomic.LoadInt32(&s.fd)
+		fd := s.fd.Load()
 		if fd < 0 {
 			return errClosing
 		}
@@ -168,7 +167,7 @@ func (r *SocketReader) ReadVec(bufs [][]byte) (int, error) {
 
 	if r.race != nil {
 		// See comments on Socket.race.
-		atomic.AddInt32(r.race, 1)
+		r.race.Add(1)
 	}
 
 	if int(n) > length {
@@ -187,7 +186,7 @@ func (w *SocketWriter) WriteVec(bufs [][]byte) (int, error) {
 
 	if w.race != nil {
 		// See comments on Socket.race.
-		atomic.AddInt32(w.race, 1)
+		w.race.Add(1)
 	}
 
 	var msg unix.Msghdr

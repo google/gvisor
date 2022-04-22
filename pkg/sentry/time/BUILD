@@ -36,6 +36,7 @@ go_library(
     ],
     visibility = ["//:sandbox"],
     deps = [
+        "//pkg/atomicbitops",
         "//pkg/errors/linuxerr",
         "//pkg/gohacks",
         "//pkg/log",

@@ -18,6 +18,7 @@ import (
 	"reflect"
 	"unsafe"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -40,12 +41,12 @@ const (
 	PacketHeaderBytes = 16
 )
 
-func (ep *Endpoint) connState() *uint32 {
-	return (*uint32)(unsafe.Pointer(ep.packet))
+func (ep *Endpoint) connState() *atomicbitops.Uint32 {
+	return (*atomicbitops.Uint32)(unsafe.Pointer(ep.packet))
 }
 
-func (ep *Endpoint) dataLen() *uint32 {
-	return (*uint32)(unsafe.Pointer(ep.packet + 4))
+func (ep *Endpoint) dataLen() *atomicbitops.Uint32 {
+	return (*atomicbitops.Uint32)(unsafe.Pointer(ep.packet + 4))
 }
 
 // Data returns the datagram part of ep's packet window as a byte slice.

@@ -15,6 +15,8 @@
 // Package test is a test package.
 //
 // Tests are all compilation tests in separate files.
+//
+// +checkalignedignore
 package test
 
 import (

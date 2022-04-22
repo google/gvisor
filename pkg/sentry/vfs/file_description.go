@@ -16,9 +16,9 @@ package vfs
 
 import (
 	"io"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -51,7 +51,7 @@ type FileDescription struct {
 	// modified by fcntl()" - fcntl(2). statusFlags can be read using atomic
 	// memory operations when it does not need to be synchronized with an
 	// access to asyncHandler.
-	statusFlags uint32
+	statusFlags atomicbitops.Uint32
 
 	// asyncHandler handles O_ASYNC signal generation. It is set with the
 	// F_SETOWN or F_SETOWN_EX fcntls. For asyncHandler to be used, O_ASYNC must
@@ -84,7 +84,7 @@ type FileDescription struct {
 	// writable is analogous to Linux's FMODE_WRITE.
 	writable bool
 
-	usedLockBSD uint32
+	usedLockBSD atomicbitops.Uint32
 
 	// impl is the FileDescriptionImpl associated with this Filesystem. impl is
 	// immutable. This should be the last field in FileDescription.
@@ -142,7 +142,7 @@ func (fd *FileDescription) Init(impl FileDescriptionImpl, flags uint32, mnt *Mou
 
 	// Remove "file creation flags" to mirror the behavior from file.f_flags in
 	// fs/open.c:do_dentry_open.
-	fd.statusFlags = flags &^ FileCreationFlags
+	fd.statusFlags = atomicbitops.FromUint32(flags &^ FileCreationFlags)
 	fd.vd = VirtualDentry{
 		mount:  mnt,
 		dentry: d,
@@ -184,7 +184,7 @@ func (fd *FileDescription) DecRef(ctx context.Context) {
 		}
 
 		// If BSD locks were used, release any lock that it may have acquired.
-		if atomic.LoadUint32(&fd.usedLockBSD) != 0 {
+		if fd.usedLockBSD.Load() != 0 {
 			fd.impl.UnlockBSD(context.Background(), fd)
 		}
 
@@ -195,7 +195,7 @@ func (fd *FileDescription) DecRef(ctx context.Context) {
 		}
 		fd.vd.DecRef(ctx)
 		fd.flagsMu.Lock()
-		if fd.statusFlags&linux.O_ASYNC != 0 && fd.asyncHandler != nil {
+		if fd.statusFlags.RacyLoad()&linux.O_ASYNC != 0 && fd.asyncHandler != nil {
 			fd.asyncHandler.Unregister(fd)
 		}
 		fd.asyncHandler = nil
@@ -228,7 +228,7 @@ func (fd *FileDescription) Options() FileDescriptionOptions {
 
 // StatusFlags returns file description status flags, as for fcntl(F_GETFL).
 func (fd *FileDescription) StatusFlags() uint32 {
-	return atomic.LoadUint32(&fd.statusFlags)
+	return fd.statusFlags.Load()
 }
 
 // SetStatusFlags sets file description status flags, as for fcntl(F_SETFL).
@@ -279,15 +279,15 @@ func (fd *FileDescription) SetStatusFlags(ctx context.Context, creds *auth.Crede
 	if fd.asyncHandler != nil {
 		// Use fd.statusFlags instead of oldFlags, which may have become outdated,
 		// to avoid double registering/unregistering.
-		if fd.statusFlags&linux.O_ASYNC == 0 && flags&linux.O_ASYNC != 0 {
+		if fd.statusFlags.RacyLoad()&linux.O_ASYNC == 0 && flags&linux.O_ASYNC != 0 {
 			if err := fd.asyncHandler.Register(fd); err != nil {
 				return err
 			}
-		} else if fd.statusFlags&linux.O_ASYNC != 0 && flags&linux.O_ASYNC == 0 {
+		} else if fd.statusFlags.RacyLoad()&linux.O_ASYNC != 0 && flags&linux.O_ASYNC == 0 {
 			fd.asyncHandler.Unregister(fd)
 		}
 	}
-	atomic.StoreUint32(&fd.statusFlags, (oldFlags&^settableFlags)|(flags&settableFlags))
+	fd.statusFlags.Store((oldFlags &^ settableFlags) | (flags & settableFlags))
 	fd.flagsMu.Unlock()
 	return nil
 }
@@ -836,7 +836,7 @@ func (fd *FileDescription) SupportsLocks() bool {
 
 // LockBSD tries to acquire a BSD-style advisory file lock.
 func (fd *FileDescription) LockBSD(ctx context.Context, ownerPID int32, lockType lock.LockType, block bool) error {
-	atomic.StoreUint32(&fd.usedLockBSD, 1)
+	fd.usedLockBSD.Store(1)
 	return fd.impl.LockBSD(ctx, fd, ownerPID, lockType, block)
 }
 
@@ -909,7 +909,7 @@ func (fd *FileDescription) SetAsyncHandler(newHandler func() FileAsync) (FileAsy
 	defer fd.flagsMu.Unlock()
 	if fd.asyncHandler == nil {
 		fd.asyncHandler = newHandler()
-		if fd.statusFlags&linux.O_ASYNC != 0 {
+		if fd.statusFlags.RacyLoad()&linux.O_ASYNC != 0 {
 			if err := fd.asyncHandler.Register(fd); err != nil {
 				return nil, err
 			}
