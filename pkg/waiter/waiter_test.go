@@ -15,8 +15,9 @@
 package waiter
 
 import (
-	"sync/atomic"
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 )
 
 func TestEmptyQueue(t *testing.T) {
@@ -141,14 +142,14 @@ func TestConcurrentRegistration(t *testing.T) {
 
 func TestConcurrentNotification(t *testing.T) {
 	var q Queue
-	var cnt int32
+	var cnt atomicbitops.Int32
 	const concurrency = 1000
 	const waiterCount = 1000
 
 	// Register waiters.
 	for i := 0; i < waiterCount; i++ {
 		e := NewFunctionEntry(EventIn|EventErr, func(mask EventMask) {
-			atomic.AddInt32(&cnt, 1)
+			cnt.Add(1)
 			if mask != EventIn {
 				t.Errorf("mask = %#x want %#x", mask, EventIn)
 			}
@@ -175,7 +176,7 @@ func TestConcurrentNotification(t *testing.T) {
 	}
 
 	// Check the count.
-	if cnt != concurrency*waiterCount {
-		t.Errorf("cnt = %d, want %d", cnt, concurrency*waiterCount)
+	if cnt.Load() != concurrency*waiterCount {
+		t.Errorf("cnt = %d, want %d", cnt.Load(), concurrency*waiterCount)
 	}
 }

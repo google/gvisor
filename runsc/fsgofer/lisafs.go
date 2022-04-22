@@ -19,10 +19,10 @@ import (
 	"math"
 	"path"
 	"strconv"
-	"sync/atomic"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	rwfd "gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/lisafs"
@@ -66,7 +66,7 @@ func (s *LisafsServer) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*lis
 
 	rootFD := &controlFDLisa{
 		hostFD:         rootHostFD,
-		writableHostFD: -1,
+		writableHostFD: atomicbitops.FromInt32(-1),
 	}
 	mountNode.IncRef() // Ref is transferred to ControlFD.
 	rootFD.ControlFD.Init(c, mountNode, linux.FileMode(stat.Mode), rootFD)
@@ -117,10 +117,10 @@ type controlFDLisa struct {
 	// hostFD is the file descriptor which can be used to make host syscalls.
 	hostFD int
 
-	// writableHostFD is the file descriptor number for a writable FD opened on the
-	// same FD as `hostFD`. writableHostFD must only be accessed using atomic
-	// operations. It is initialized to -1, and can change in value exactly once.
-	writableHostFD int32
+	// writableHostFD is the file descriptor number for a writable FD opened on
+	// the same FD as `hostFD`. It is initialized to -1, and can change in value
+	// exactly once.
+	writableHostFD atomicbitops.Int32
 }
 
 var _ lisafs.ControlFDImpl = (*controlFDLisa)(nil)
@@ -152,13 +152,13 @@ func newControlFDLisa(hostFD int, parent *controlFDLisa, name string, mode linux
 		}
 	})
 	childFD.hostFD = hostFD
-	childFD.writableHostFD = -1
+	childFD.writableHostFD = atomicbitops.FromInt32(-1)
 	childFD.ControlFD.Init(parent.Conn(), childNode, mode, childFD)
 	return childFD
 }
 
 func (fd *controlFDLisa) getWritableFD() (int, error) {
-	if writableFD := atomic.LoadInt32(&fd.writableHostFD); writableFD != -1 {
+	if writableFD := fd.writableHostFD.Load(); writableFD != -1 {
 		return int(writableFD), nil
 	}
 
@@ -166,10 +166,10 @@ func (fd *controlFDLisa) getWritableFD() (int, error) {
 	if err != nil {
 		return -1, err
 	}
-	if !atomic.CompareAndSwapInt32(&fd.writableHostFD, -1, int32(writableFD)) {
+	if !fd.writableHostFD.CompareAndSwap(-1, int32(writableFD)) {
 		// Race detected, use the new value and clean this up.
 		unix.Close(writableFD)
-		return int(atomic.LoadInt32(&fd.writableHostFD)), nil
+		return int(fd.writableHostFD.Load()), nil
 	}
 	return writableFD, nil
 }
@@ -189,9 +189,9 @@ func (fd *controlFDLisa) Close() {
 		fd.hostFD = -1
 	}
 	// No concurrent access is possible so no need to use atomics.
-	if fd.writableHostFD >= 0 {
-		_ = unix.Close(int(fd.writableHostFD))
-		fd.writableHostFD = -1
+	if fd.writableHostFD.RacyLoad() >= 0 {
+		_ = unix.Close(int(fd.writableHostFD.RacyLoad()))
+		fd.writableHostFD = atomicbitops.FromInt32(-1)
 	}
 }
 

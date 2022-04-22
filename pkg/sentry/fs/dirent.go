@@ -17,10 +17,10 @@ package fs
 import (
 	"fmt"
 	"path"
-	"sync/atomic"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/refs"
@@ -118,7 +118,7 @@ type Dirent struct {
 	parent *Dirent
 
 	// deleted may be set atomically when removed.
-	deleted int32
+	deleted atomicbitops.Int32
 
 	// mounted is true if Dirent is a mount point, similar to include/linux/dcache.h:DCACHE_MOUNTED.
 	mounted bool
@@ -373,7 +373,7 @@ func (d *Dirent) fullName(root *Dirent) (string, bool) {
 	d.parent.mu.Unlock()
 	parentName, reachable := d.parent.fullName(root)
 	s := path.Join(parentName, name)
-	if atomic.LoadInt32(&d.deleted) != 0 {
+	if d.deleted.Load() != 0 {
 		return s + " (deleted)", reachable
 	}
 	return s, reachable
@@ -961,7 +961,7 @@ func (d *Dirent) isMountPointLocked() bool {
 // Precondition: must be called with mm.withMountLocked held on `d`.
 func (d *Dirent) mount(ctx context.Context, inode *Inode) (newChild *Dirent, err error) {
 	// Did we race with deletion?
-	if atomic.LoadInt32(&d.deleted) != 0 {
+	if d.deleted.Load() != 0 {
 		return nil, linuxerr.ENOENT
 	}
 
@@ -996,7 +996,7 @@ func (d *Dirent) mount(ctx context.Context, inode *Inode) (newChild *Dirent, err
 // Precondition: must be called with mm.withMountLocked held on `d`.
 func (d *Dirent) unmount(ctx context.Context, replacement *Dirent) error {
 	// Did we race with deletion?
-	if atomic.LoadInt32(&d.deleted) != 0 {
+	if d.deleted.Load() != 0 {
 		return linuxerr.ENOENT
 	}
 
@@ -1058,7 +1058,7 @@ func (d *Dirent) Remove(ctx context.Context, root *Dirent, name string, dirPath 
 	child.Inode.Watches.Notify("", linux.IN_ATTRIB, 0)
 
 	// Mark name as deleted and remove from children.
-	atomic.StoreInt32(&child.deleted, 1)
+	child.deleted.Store(1)
 	if w, ok := d.children[name]; ok {
 		delete(d.children, name)
 		w.Drop(ctx)
@@ -1124,7 +1124,7 @@ func (d *Dirent) RemoveDirectory(ctx context.Context, root *Dirent, name string)
 	}
 
 	// Mark name as deleted and remove from children.
-	atomic.StoreInt32(&child.deleted, 1)
+	child.deleted.Store(1)
 	if w, ok := d.children[name]; ok {
 		delete(d.children, name)
 		w.Drop(ctx)

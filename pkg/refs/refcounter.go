@@ -289,16 +289,16 @@ func (l LeakMode) String() string {
 // Values must be one of the LeakMode values.
 //
 // leakMode must be accessed atomically.
-var leakMode uint32
+var leakMode atomicbitops.Uint32
 
 // SetLeakMode configures the reference leak checker.
 func SetLeakMode(mode LeakMode) {
-	atomic.StoreUint32(&leakMode, uint32(mode))
+	leakMode.Store(uint32(mode))
 }
 
 // GetLeakMode returns the current leak mode.
 func GetLeakMode() LeakMode {
-	return LeakMode(atomic.LoadUint32(&leakMode))
+	return LeakMode(leakMode.Load())
 }
 
 const maxStackFrames = 40
@@ -375,7 +375,7 @@ func FormatStack(pcs []uintptr) string {
 
 func (r *AtomicRefCount) finalize() {
 	var note string
-	switch LeakMode(atomic.LoadUint32(&leakMode)) {
+	switch LeakMode(leakMode.Load()) {
 	case NoLeakChecking:
 		return
 	case UninitializedLeakChecking:
@@ -405,7 +405,7 @@ func (r *AtomicRefCount) EnableLeakCheck(name string) {
 	if name == "" {
 		panic("invalid name")
 	}
-	switch LeakMode(atomic.LoadUint32(&leakMode)) {
+	switch LeakMode(leakMode.Load()) {
 	case NoLeakChecking:
 		return
 	case LeaksLogTraces:
@@ -533,7 +533,7 @@ func (r *AtomicRefCount) DecRef(ctx context.Context) {
 // finalizer will run before exiting, but this at least ensures that they will
 // be discovered/enqueued by GC.
 func OnExit() {
-	if LeakMode(atomic.LoadUint32(&leakMode)) != NoLeakChecking {
+	if LeakMode(leakMode.Load()) != NoLeakChecking {
 		runtime.GC()
 	}
 }

@@ -23,6 +23,9 @@
 // coverage surface. This causes bazel to use the Go cover tool manually to
 // generate instrumented files. It injects a hook that registers all coverage
 // data with the coverdata package.
+//
+// Using coverdata.Counters requires sync/atomic integers.
+// +checkalignedignore
 package coverage
 
 import (

@@ -18,4 +18,5 @@ go_test(
         "sleep_test.go",
     ],
     library = ":sleep",
+    deps = ["//pkg/atomicbitops"],
 )

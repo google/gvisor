@@ -19,9 +19,9 @@ import (
 	"go/token"
 	"go/types"
 	"strings"
-	"sync/atomic"
 
 	"golang.org/x/tools/go/ssa"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 )
 
 // lockInfo describes a held lock.
@@ -52,12 +52,12 @@ type lockState struct {
 
 	// refs indicates the number of references on this structure. If it's
 	// greater than one, we will do copy-on-write.
-	refs *int32
+	refs *atomicbitops.Int32
 }
 
 // newLockState makes a new lockState.
 func newLockState() *lockState {
-	refs := int32(1) // Not shared.
+	refs := atomicbitops.FromInt32(1) // Not shared.
 	return &lockState{
 		lockedMutexes: make(map[string]lockInfo),
 		used:          make(map[ssa.Value]struct{}),
@@ -73,7 +73,7 @@ func (l *lockState) fork() *lockState {
 	if l == nil {
 		return newLockState()
 	}
-	atomic.AddInt32(l.refs, 1)
+	l.refs.Add(1)
 	return &lockState{
 		lockedMutexes: l.lockedMutexes,
 		used:          make(map[ssa.Value]struct{}),
@@ -85,7 +85,7 @@ func (l *lockState) fork() *lockState {
 
 // modify indicates that this state will be modified.
 func (l *lockState) modify() {
-	if atomic.LoadInt32(l.refs) > 1 {
+	if l.refs.Load() > 1 {
 		// Copy the lockedMutexes.
 		lm := make(map[string]lockInfo)
 		for k, v := range l.lockedMutexes {
@@ -109,8 +109,8 @@ func (l *lockState) modify() {
 		l.defers = ds
 
 		// Drop our reference.
-		atomic.AddInt32(l.refs, -1)
-		newRefs := int32(1) // Not shared.
+		l.refs.Add(-1)
+		newRefs := atomicbitops.FromInt32(1) // Not shared.
 		l.refs = &newRefs
 	}
 }
