@@ -26,6 +26,7 @@ go_library(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/atomicbitops",
         "//pkg/context",
         "//pkg/gohacks",
         "//pkg/sentry/kernel/time",

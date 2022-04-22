@@ -18,8 +18,8 @@ import (
 	"bytes"
 	"fmt"
 	"sort"
-	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -180,9 +180,9 @@ type cgroupFS interface {
 // +stateify savable
 type CgroupRegistry struct {
 	// lastHierarchyID is the id of the last allocated cgroup hierarchy. Valid
-	// ids are from 1 to math.MaxUint32. Must be accessed through atomic ops.
+	// ids are from 1 to math.MaxUint32.
 	//
-	lastHierarchyID uint32
+	lastHierarchyID atomicbitops.Uint32
 
 	mu sync.Mutex `state:"nosave"`
 
@@ -207,7 +207,7 @@ func newCgroupRegistry() *CgroupRegistry {
 
 // nextHierarchyID returns a newly allocated, unique hierarchy ID.
 func (r *CgroupRegistry) nextHierarchyID() (uint32, error) {
-	if hid := atomic.AddUint32(&r.lastHierarchyID, 1); hid != 0 {
+	if hid := r.lastHierarchyID.Add(1); hid != 0 {
 		return hid, nil
 	}
 	return InvalidCgroupHierarchyID, fmt.Errorf("cgroup hierarchy ID overflow")

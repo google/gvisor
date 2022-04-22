@@ -16,7 +16,6 @@ package gofer
 
 import (
 	"fmt"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -116,18 +115,18 @@ func (d *dentry) createSyntheticChildLocked(opts *createSyntheticOpts) {
 		refs:      atomicbitops.FromInt64(1), // held by d
 		fs:        d.fs,
 		ino:       d.fs.nextIno(),
-		mode:      uint32(opts.mode),
-		uid:       uint32(opts.kuid),
-		gid:       uint32(opts.kgid),
-		blockSize: hostarch.PageSize, // arbitrary
+		mode:      atomicbitops.FromUint32(uint32(opts.mode)),
+		uid:       atomicbitops.FromUint32(uint32(opts.kuid)),
+		gid:       atomicbitops.FromUint32(uint32(opts.kgid)),
+		blockSize: atomicbitops.FromUint32(hostarch.PageSize), // arbitrary
 		atime:     atomicbitops.FromInt64(now),
 		mtime:     atomicbitops.FromInt64(now),
 		ctime:     atomicbitops.FromInt64(now),
 		btime:     atomicbitops.FromInt64(now),
-		readFD:    -1,
-		writeFD:   -1,
-		mmapFD:    -1,
-		nlink:     uint32(2),
+		readFD:    atomicbitops.FromInt32(-1),
+		writeFD:   atomicbitops.FromInt32(-1),
+		mmapFD:    atomicbitops.FromInt32(-1),
+		nlink:     atomicbitops.FromUint32(2),
 	}
 	refsvfs2.Register(child)
 	switch opts.mode.FileType() {
@@ -228,7 +227,7 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 		},
 		{
 			Name:    "..",
-			Type:    uint8(atomic.LoadUint32(&parent.mode) >> 12),
+			Type:    uint8(parent.mode.Load() >> 12),
 			Ino:     uint64(parent.ino),
 			NextOff: 2,
 		},
@@ -338,7 +337,7 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 			}
 			dirents = append(dirents, vfs.Dirent{
 				Name:    child.name,
-				Type:    uint8(atomic.LoadUint32(&child.mode) >> 12),
+				Type:    uint8(child.mode.Load() >> 12),
 				Ino:     uint64(child.ino),
 				NextOff: int64(len(dirents) + 1),
 			})

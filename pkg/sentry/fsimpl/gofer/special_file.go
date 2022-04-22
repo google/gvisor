@@ -16,10 +16,10 @@ package gofer
 
 import (
 	"fmt"
-	"sync/atomic"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
@@ -74,10 +74,9 @@ type specialFileFD struct {
 
 	// If haveBuf is non-zero, this FD represents a pipe, and buf contains data
 	// read from the pipe from previous calls to specialFileFD.savePipeData().
-	// haveBuf and buf are protected by bufMu. haveBuf is accessed using atomic
-	// memory operations.
+	// haveBuf and buf are protected by bufMu.
 	bufMu   sync.Mutex `state:"nosave"`
-	haveBuf uint32
+	haveBuf atomicbitops.Uint32
 	buf     []byte
 
 	// If handle.fd >= 0, hostFileMapper caches mappings of handle.fd, and
@@ -119,7 +118,7 @@ func newSpecialFileFD(h handle, mnt *vfs.Mount, d *dentry, flags uint32) (*speci
 	d.fs.syncMu.Lock()
 	d.fs.specialFileFDs[fd] = struct{}{}
 	d.fs.syncMu.Unlock()
-	if fd.vfsfd.IsWritable() && (atomic.LoadUint32(&d.mode)&0111 != 0) {
+	if fd.vfsfd.IsWritable() && (d.mode.Load()&0111 != 0) {
 		metric.SuspiciousOperationsMetric.Increment("opened_write_execute_file")
 	}
 	if h.fd >= 0 {
@@ -239,7 +238,7 @@ func (fd *specialFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 	}
 
 	bufN := int64(0)
-	if atomic.LoadUint32(&fd.haveBuf) != 0 {
+	if fd.haveBuf.Load() != 0 {
 		var err error
 		fd.bufMu.Lock()
 		if len(fd.buf) != 0 {
@@ -248,7 +247,7 @@ func (fd *specialFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 			dst = dst.DropFirst(n)
 			fd.buf = fd.buf[n:]
 			if len(fd.buf) == 0 {
-				atomic.StoreUint32(&fd.haveBuf, 0)
+				fd.haveBuf.Store(0)
 				fd.buf = nil
 			}
 			bufN = int64(n)

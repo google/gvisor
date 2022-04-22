@@ -16,7 +16,6 @@ package overlay
 
 import (
 	"fmt"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -29,7 +28,7 @@ import (
 )
 
 func (d *dentry) isCopiedUp() bool {
-	return atomic.LoadUint32(&d.copiedUp) != 0
+	return d.copiedUp.Load() != 0
 }
 
 // copyUpLocked ensures that d exists on the upper layer, i.e. d.upperVD.Ok().
@@ -49,7 +48,7 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 	// credentials from context rather an take an explicit creds parameter.
 	ctx = auth.ContextWithCredentials(ctx, d.fs.creds)
 
-	ftype := atomic.LoadUint32(&d.mode) & linux.S_IFMT
+	ftype := d.mode.Load() & linux.S_IFMT
 	switch ftype {
 	case linux.S_IFREG, linux.S_IFDIR, linux.S_IFLNK, linux.S_IFBLK, linux.S_IFCHR:
 		// Can be copied-up.
@@ -126,7 +125,8 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 		defer oldFD.DecRef(ctx)
 		newFD, err := vfsObj.OpenAt(ctx, d.fs.creds, &newpop, &vfs.OpenOptions{
 			Flags: linux.O_WRONLY | linux.O_CREAT | linux.O_EXCL,
-			Mode:  linux.FileMode(d.mode &^ linux.S_IFMT),
+			// d.mode can be read because d.copyMu is locked.
+			Mode: linux.FileMode(d.mode.RacyLoad() &^ linux.S_IFMT),
 		})
 		if err != nil {
 			return err
@@ -157,9 +157,10 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 		}
 		if err := newFD.SetStat(ctx, vfs.SetStatOptions{
 			Stat: linux.Statx{
-				Mask:  linux.STATX_UID | linux.STATX_GID | oldStat.Mask&timestampsMask,
-				UID:   d.uid,
-				GID:   d.gid,
+				Mask: linux.STATX_UID | linux.STATX_GID | oldStat.Mask&timestampsMask,
+				// d.uid and d.gid can be read because d.copyMu is locked.
+				UID:   d.uid.RacyLoad(),
+				GID:   d.gid.RacyLoad(),
 				Atime: oldStat.Atime,
 				Mtime: oldStat.Mtime,
 			},
@@ -172,16 +173,18 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 
 	case linux.S_IFDIR:
 		if err := vfsObj.MkdirAt(ctx, d.fs.creds, &newpop, &vfs.MkdirOptions{
-			Mode:                   linux.FileMode(d.mode &^ linux.S_IFMT),
+			// d.mode can be read because d.copyMu is locked.
+			Mode:                   linux.FileMode(d.mode.RacyLoad() &^ linux.S_IFMT),
 			ForSyntheticMountpoint: forSyntheticMountpoint,
 		}); err != nil {
 			return err
 		}
 		if err := vfsObj.SetStatAt(ctx, d.fs.creds, &newpop, &vfs.SetStatOptions{
 			Stat: linux.Statx{
-				Mask:  linux.STATX_UID | linux.STATX_GID | oldStat.Mask&timestampsMask,
-				UID:   d.uid,
-				GID:   d.gid,
+				Mask: linux.STATX_UID | linux.STATX_GID | oldStat.Mask&timestampsMask,
+				// d.uid and d.gid can be read because d.copyMu is locked.
+				UID:   d.uid.RacyLoad(),
+				GID:   d.gid.RacyLoad(),
 				Atime: oldStat.Atime,
 				Mtime: oldStat.Mtime,
 			},
@@ -206,10 +209,11 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 		}
 		if err := vfsObj.SetStatAt(ctx, d.fs.creds, &newpop, &vfs.SetStatOptions{
 			Stat: linux.Statx{
-				Mask:  linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | oldStat.Mask&timestampsMask,
-				Mode:  uint16(d.mode),
-				UID:   d.uid,
-				GID:   d.gid,
+				Mask: linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | oldStat.Mask&timestampsMask,
+				// d.{uid,gid,mode} can be read because d.copyMu is locked.
+				Mode:  uint16(d.mode.RacyLoad()),
+				UID:   d.uid.RacyLoad(),
+				GID:   d.gid.RacyLoad(),
 				Atime: oldStat.Atime,
 				Mtime: oldStat.Mtime,
 			},
@@ -226,7 +230,8 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 
 	case linux.S_IFBLK, linux.S_IFCHR:
 		if err := vfsObj.MknodAt(ctx, d.fs.creds, &newpop, &vfs.MknodOptions{
-			Mode:     linux.FileMode(d.mode),
+			// d.mode can be read because d.copyMu is locked.
+			Mode:     linux.FileMode(d.mode.RacyLoad()),
 			DevMajor: oldStat.RdevMajor,
 			DevMinor: oldStat.RdevMinor,
 		}); err != nil {
@@ -234,9 +239,10 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 		}
 		if err := vfsObj.SetStatAt(ctx, d.fs.creds, &newpop, &vfs.SetStatOptions{
 			Stat: linux.Statx{
-				Mask:  linux.STATX_UID | linux.STATX_GID | oldStat.Mask&timestampsMask,
-				UID:   d.uid,
-				GID:   d.gid,
+				Mask: linux.STATX_UID | linux.STATX_GID | oldStat.Mask&timestampsMask,
+				// d.uid and d.gid can be read because d.copyMu is locked.
+				UID:   d.uid.RacyLoad(),
+				GID:   d.gid.RacyLoad(),
 				Atime: oldStat.Atime,
 				Mtime: oldStat.Mtime,
 			},
@@ -278,8 +284,8 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 			cleanupUndoCopyUp()
 			return linuxerr.EREMOTE
 		}
-		atomic.StoreUint32(&d.devMajor, upperStat.DevMajor)
-		atomic.StoreUint32(&d.devMinor, upperStat.DevMinor)
+		d.devMajor.Store(upperStat.DevMajor)
+		d.devMinor.Store(upperStat.DevMinor)
 		d.ino.Store(upperStat.Ino)
 	}
 
@@ -339,7 +345,7 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 		d.lowerMappings.RemoveAll()
 	}
 
-	atomic.StoreUint32(&d.copiedUp, 1)
+	d.copiedUp.Store(1)
 	return nil
 }
 

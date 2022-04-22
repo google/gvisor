@@ -15,9 +15,8 @@
 package kernel
 
 import (
-	"sync/atomic"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -182,7 +181,7 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 			sh = sh.Fork()
 		}
 		tg = t.k.NewThreadGroup(tg.mounts, pidns, sh, linux.Signal(args.ExitSignal), tg.limits.GetCopy())
-		tg.oomScoreAdj = atomic.LoadInt32(&t.tg.oomScoreAdj)
+		tg.oomScoreAdj = atomicbitops.FromInt32(t.tg.oomScoreAdj.Load())
 		rseqAddr = t.rseqAddr
 		rseqSignature = t.rseqSignature
 	}

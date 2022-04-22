@@ -44,7 +44,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -217,9 +216,8 @@ type filesystem struct {
 	// enabled the same time.
 	verityMu sync.RWMutex `state:"nosave"`
 
-	// released is nonzero once filesystem.Release has been called. It is accessed
-	// with atomic memory operations.
-	released int32
+	// released is nonzero once filesystem.Release has been called.
+	released atomicbitops.Int32
 }
 
 // InternalFilesystemOptions may be passed as
@@ -462,9 +460,9 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		return nil, nil, err
 	}
 
-	d.mode = uint32(stat.Mode)
-	d.uid = stat.UID
-	d.gid = stat.GID
+	d.mode = atomicbitops.FromUint32(uint32(stat.Mode))
+	d.uid = atomicbitops.FromUint32(stat.UID)
+	d.gid = atomicbitops.FromUint32(stat.GID)
 	d.childrenNames = make(map[string]struct{})
 
 	d.hashMu.Lock()
@@ -555,7 +553,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 // Release implements vfs.FilesystemImpl.Release.
 func (fs *filesystem) Release(ctx context.Context) {
-	atomic.StoreInt32(&fs.released, 1)
+	fs.released.Store(1)
 	fs.lowerMount.DecRef(ctx)
 
 	fs.renameMu.Lock()
@@ -591,9 +589,9 @@ type dentry struct {
 	// mode, uid, gid and size are the file mode, owner, group, and size of
 	// the file in the underlying file system. They are set when a dentry
 	// is initialized, and never modified.
-	mode uint32
-	uid  uint32
-	gid  uint32
+	mode atomicbitops.Uint32
+	uid  atomicbitops.Uint32
+	gid  atomicbitops.Uint32
 	size uint32
 
 	// parent is the dentry corresponding to this dentry's parent directory.
@@ -815,7 +813,7 @@ func (d *dentry) checkCachingLocked(ctx context.Context, renameMuWriteLocked boo
 		return
 	}
 
-	if atomic.LoadInt32(&d.fs.released) != 0 {
+	if d.fs.released.Load() != 0 {
 		d.cachingMu.Unlock()
 		if !renameMuWriteLocked {
 			// Need to lock d.fs.renameMu to access d.parent. Lock it for writing as
@@ -915,15 +913,15 @@ func (fs *filesystem) evictCachedDentryLocked(ctx context.Context) {
 }
 
 func (d *dentry) isSymlink() bool {
-	return atomic.LoadUint32(&d.mode)&linux.S_IFMT == linux.S_IFLNK
+	return d.mode.Load()&linux.S_IFMT == linux.S_IFLNK
 }
 
 func (d *dentry) isDir() bool {
-	return atomic.LoadUint32(&d.mode)&linux.S_IFMT == linux.S_IFDIR
+	return d.mode.Load()&linux.S_IFMT == linux.S_IFDIR
 }
 
 func (d *dentry) checkPermissions(creds *auth.Credentials, ats vfs.AccessTypes) error {
-	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(atomic.LoadUint32(&d.mode)), auth.KUID(atomic.LoadUint32(&d.uid)), auth.KGID(atomic.LoadUint32(&d.gid)))
+	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(d.mode.Load()), auth.KUID(d.uid.Load()), auth.KGID(d.gid.Load()))
 }
 
 // verityEnabled checks whether the file is enabled with verity features. It
@@ -1173,7 +1171,7 @@ func (fd *fileDescription) generateMerkleLocked(ctx context.Context) ([]byte, ui
 		GID:            stat.GID,
 	}
 
-	switch atomic.LoadUint32(&fd.d.mode) & linux.S_IFMT {
+	switch fd.d.mode.Load() & linux.S_IFMT {
 	case linux.S_IFREG:
 		// For a regular file, generate a Merkle tree based on its
 		// content.
@@ -1470,9 +1468,9 @@ func (fd *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, of
 		Tree:                  &merkleReader,
 		Size:                  int64(size),
 		Name:                  fd.d.name,
-		Mode:                  fd.d.mode,
-		UID:                   fd.d.uid,
-		GID:                   fd.d.gid,
+		Mode:                  fd.d.mode.Load(),
+		UID:                   fd.d.uid.Load(),
+		GID:                   fd.d.gid.Load(),
 		Children:              fd.d.childrenList,
 		HashAlgorithms:        fd.d.fs.alg.toLinuxHashAlg(),
 		ReadOffset:            offset,
@@ -1595,9 +1593,9 @@ func (fd *fileDescription) Translate(ctx context.Context, required, optional mem
 			Tree:                  &merkleReader,
 			Size:                  int64(size),
 			Name:                  fd.d.name,
-			Mode:                  fd.d.mode,
-			UID:                   fd.d.uid,
-			GID:                   fd.d.gid,
+			Mode:                  fd.d.mode.Load(),
+			UID:                   fd.d.uid.Load(),
+			GID:                   fd.d.gid.Load(),
 			HashAlgorithms:        fd.d.fs.alg.toLinuxHashAlg(),
 			ReadOffset:            int64(t.Source.Start),
 			ReadSize:              int64(t.Source.Length()),

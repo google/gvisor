@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -183,9 +184,8 @@ type ThreadGroup struct {
 	// itimerProfSetting.Enabled is true, rlimitCPUSoftSetting.Enabled is true,
 	// or limits.Get(CPU) is finite.
 	//
-	// cpuTimersEnabled is protected by the signal mutex. cpuTimersEnabled is
-	// accessed using atomic memory operations.
-	cpuTimersEnabled uint32
+	// cpuTimersEnabled is protected by the signal mutex.
+	cpuTimersEnabled atomicbitops.Uint32
 
 	// timers is the thread group's POSIX interval timers. nextTimerID is the
 	// TimerID at which allocation should begin searching for an unused ID.
@@ -258,9 +258,7 @@ type ThreadGroup struct {
 	// oomScoreAdj is the thread group's OOM score adjustment. This is
 	// currently not used but is maintained for consistency.
 	// TODO(gvisor.dev/issue/1967)
-	//
-	// oomScoreAdj is accessed using atomic memory operations.
-	oomScoreAdj int32
+	oomScoreAdj atomicbitops.Int32
 }
 
 // NewThreadGroup returns a new, empty thread group in PID namespace pidns. The

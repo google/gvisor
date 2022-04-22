@@ -15,8 +15,6 @@
 package tmpfs
 
 import (
-	"sync/atomic"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
@@ -53,7 +51,7 @@ type directory struct {
 func (fs *filesystem) newDirectory(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, parentDir *directory) *directory {
 	dir := &directory{}
 	dir.inode.init(dir, fs, kuid, kgid, linux.S_IFDIR|mode, parentDir)
-	dir.inode.nlink = 2 // from "." and parent directory or ".." for root
+	dir.inode.nlink = atomicbitops.FromUint32(2) // from "." and parent directory or ".." for root
 	dir.dentry.inode = &dir.inode
 	dir.dentry.vfsd.Init(&dir.dentry)
 	return dir
@@ -87,10 +85,10 @@ func (dir *directory) removeChildLocked(child *dentry) {
 func (dir *directory) mayDelete(creds *auth.Credentials, child *dentry) error {
 	return vfs.CheckDeleteSticky(
 		creds,
-		linux.FileMode(atomic.LoadUint32(&dir.inode.mode)),
-		auth.KUID(atomic.LoadUint32(&dir.inode.uid)),
-		auth.KUID(atomic.LoadUint32(&child.inode.uid)),
-		auth.KGID(atomic.LoadUint32(&child.inode.gid)),
+		linux.FileMode(dir.inode.mode.Load()),
+		auth.KUID(dir.inode.uid.Load()),
+		auth.KUID(child.inode.uid.Load()),
+		auth.KGID(child.inode.gid.Load()),
 	)
 }
 
