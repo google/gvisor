@@ -18,9 +18,9 @@ package pipe
 import (
 	"fmt"
 	"io"
-	"sync/atomic"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -120,24 +120,16 @@ type Pipe struct {
 	isNamed bool
 
 	// The number of active readers for this pipe.
-	//
-	// Access atomically.
-	readers int32
+	readers atomicbitops.Int32
 
 	// The total number of readers for this pipe.
-	//
-	// Access atomically.
-	totalReaders int32
+	totalReaders atomicbitops.Int32
 
 	// The number of active writers for this pipe.
-	//
-	// Access atomically.
-	writers int32
+	writers atomicbitops.Int32
 
 	// The total number of writers for this pipe.
-	//
-	// Access atomically.
-	totalWriters int32
+	totalWriters atomicbitops.Int32
 
 	// mu protects all pipe internal state below.
 	mu sync.Mutex `state:"nosave"`
@@ -382,8 +374,8 @@ func (p *Pipe) writeLocked(count int64, f func(safemem.BlockSeq) (uint64, error)
 
 // rOpen signals a new reader of the pipe.
 func (p *Pipe) rOpen() {
-	atomic.AddInt32(&p.readers, 1)
-	atomic.AddInt32(&p.totalReaders, 1)
+	p.readers.Add(1)
+	p.totalReaders.Add(1)
 
 	// Notify for blocking openers.
 	p.queue.Notify(waiter.EventInternal)
@@ -393,8 +385,8 @@ func (p *Pipe) rOpen() {
 func (p *Pipe) wOpen() {
 	p.mu.Lock()
 	p.hadWriter = true
-	atomic.AddInt32(&p.writers, 1)
-	atomic.AddInt32(&p.totalWriters, 1)
+	p.writers.Add(1)
+	p.totalWriters.Add(1)
 	p.mu.Unlock()
 
 	// Notify for blocking openers.
@@ -403,26 +395,26 @@ func (p *Pipe) wOpen() {
 
 // rClose signals that a reader has closed their end of the pipe.
 func (p *Pipe) rClose() {
-	if newReaders := atomic.AddInt32(&p.readers, -1); newReaders < 0 {
+	if newReaders := p.readers.Add(-1); newReaders < 0 {
 		panic(fmt.Sprintf("Refcounting bug, pipe has negative readers: %v", newReaders))
 	}
 }
 
 // wClose signals that a writer has closed their end of the pipe.
 func (p *Pipe) wClose() {
-	if newWriters := atomic.AddInt32(&p.writers, -1); newWriters < 0 {
+	if newWriters := p.writers.Add(-1); newWriters < 0 {
 		panic(fmt.Sprintf("Refcounting bug, pipe has negative writers: %v.", newWriters))
 	}
 }
 
 // HasReaders returns whether the pipe has any active readers.
 func (p *Pipe) HasReaders() bool {
-	return atomic.LoadInt32(&p.readers) > 0
+	return p.readers.Load() > 0
 }
 
 // HasWriters returns whether the pipe has any active writers.
 func (p *Pipe) HasWriters() bool {
-	return atomic.LoadInt32(&p.writers) > 0
+	return p.writers.Load() > 0
 }
 
 // rReadinessLocked calculates the read readiness.

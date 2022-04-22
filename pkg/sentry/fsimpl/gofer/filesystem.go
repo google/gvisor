@@ -19,10 +19,10 @@ import (
 	"math"
 	"strings"
 	"sync"
-	"sync/atomic"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
@@ -625,7 +625,7 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 	// Load child if sticky bit is set because we need to determine whether
 	// deletion is allowed.
 	var child *dentry
-	if atomic.LoadUint32(&parent.mode)&linux.ModeSticky == 0 {
+	if parent.mode.Load()&linux.ModeSticky == 0 {
 		var ok bool
 		child, ok = parent.children[name]
 		if ok && child == nil {
@@ -821,16 +821,16 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 		if d.isDir() {
 			return linuxerr.EPERM
 		}
-		gid := auth.KGID(atomic.LoadUint32(&d.gid))
-		uid := auth.KUID(atomic.LoadUint32(&d.uid))
-		mode := linux.FileMode(atomic.LoadUint32(&d.mode))
+		gid := auth.KGID(d.gid.Load())
+		uid := auth.KUID(d.uid.Load())
+		mode := linux.FileMode(d.mode.Load())
 		if err := vfs.MayLink(rp.Credentials(), mode, uid, gid); err != nil {
 			return err
 		}
-		if d.nlink == 0 {
+		if d.nlink.Load() == 0 {
 			return linuxerr.ENOENT
 		}
-		if d.nlink == math.MaxUint32 {
+		if d.nlink.Load() == math.MaxUint32 {
 			return linuxerr.EMLINK
 		}
 		if fs.opts.lisaEnabled {
@@ -858,8 +858,8 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		// rather than the caller's and enable setgid.
 		kgid := creds.EffectiveKGID
 		mode := opts.Mode
-		if atomic.LoadUint32(&parent.mode)&linux.S_ISGID != 0 {
-			kgid = auth.KGID(atomic.LoadUint32(&parent.gid))
+		if parent.mode.Load()&linux.S_ISGID != 0 {
+			kgid = auth.KGID(parent.gid.Load())
 			mode |= linux.S_ISGID
 		}
 		var err error
@@ -1130,7 +1130,7 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 		if err := fd.vfsfd.Init(fd, opts.Flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{}); err != nil {
 			return nil, err
 		}
-		if atomic.LoadInt32(&d.readFD) >= 0 {
+		if d.readFD.Load() >= 0 {
 			fsmetric.GoferOpensHost.Increment()
 		} else {
 			fsmetric.GoferOpens9P.Increment()
@@ -1280,8 +1280,8 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 	// If the parent is a setgid directory, use the parent's GID rather
 	// than the caller's.
 	kgid := creds.EffectiveKGID
-	if atomic.LoadUint32(&d.mode)&linux.S_ISGID != 0 {
-		kgid = auth.KGID(atomic.LoadUint32(&d.gid))
+	if d.mode.Load()&linux.S_ISGID != 0 {
+		kgid = auth.KGID(d.gid.Load())
 	}
 
 	var child *dentry
@@ -1357,14 +1357,14 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 			child.readFile = openP9File
 			child.readFDLisa = d.fs.clientLisa.NewFD(openLisaFD)
 			if openHostFD != -1 {
-				child.readFD = openHostFD
-				child.mmapFD = openHostFD
+				child.readFD = atomicbitops.FromInt32(openHostFD)
+				child.mmapFD = atomicbitops.FromInt32(openHostFD)
 			}
 		}
 		if vfs.MayWriteFileWithOpenFlags(opts.Flags) {
 			child.writeFile = openP9File
 			child.writeFDLisa = d.fs.clientLisa.NewFD(openLisaFD)
-			child.writeFD = openHostFD
+			child.writeFD = atomicbitops.FromInt32(openHostFD)
 		}
 		child.handleMu.Unlock()
 	}

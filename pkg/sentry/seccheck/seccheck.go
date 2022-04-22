@@ -17,8 +17,7 @@
 package seccheck
 
 import (
-	"sync/atomic"
-
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -159,9 +158,8 @@ type State struct {
 	// enabledPoints is a bitmask of checkpoints for which at least one Checker
 	// is registered.
 	//
-	// enabledPoints is accessed using atomic memory operations. Mutation of
-	// enabledPoints is serialized by registrationMu.
-	enabledPoints [numPointBitmaskUint32s]uint32
+	// Mutation of enabledPoints is serialized by registrationMu.
+	enabledPoints [numPointBitmaskUint32s]atomicbitops.Uint32
 
 	// registrationSeq supports store-free atomic reads of registeredCheckers.
 	registrationSeq sync.SeqCount
@@ -188,7 +186,7 @@ func (s *State) AppendChecker(c Checker, reqs []PointReq) {
 	}
 	for _, req := range reqs {
 		word, bit := req.Pt/32, req.Pt%32
-		atomic.StoreUint32(&s.enabledPoints[word], s.enabledPoints[word]|(uint32(1)<<bit))
+		s.enabledPoints[word].Store(s.enabledPoints[word].RacyLoad() | (uint32(1) << bit))
 
 		s.pointFields[req.Pt] = req.Fields
 	}
@@ -197,7 +195,7 @@ func (s *State) AppendChecker(c Checker, reqs []PointReq) {
 // Enabled returns true if any Checker is registered for the given checkpoint.
 func (s *State) Enabled(p Point) bool {
 	word, bit := p/32, p%32
-	return atomic.LoadUint32(&s.enabledPoints[word])&(uint32(1)<<bit) != 0
+	return s.enabledPoints[word].Load()&(uint32(1)<<bit) != 0
 }
 
 func (s *State) getCheckers() []Checker {
