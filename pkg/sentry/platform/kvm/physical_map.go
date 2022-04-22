@@ -115,6 +115,7 @@ func fillAddressSpace() (excludedRegions []region) {
 		for i := range excludedRegions {
 			if excludedRegions[i].virtual == addr+current {
 				excludedRegions[i].virtual = addr
+				excludedRegions[i].length += current
 				addr = 0
 				break
 			}
