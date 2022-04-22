@@ -63,7 +63,6 @@ package kernel
 
 import (
 	"fmt"
-	"sync/atomic"
 )
 
 // A TaskStop is a condition visible to the task control flow graph that
@@ -168,7 +167,7 @@ func (t *Task) EndExternalStop() {
 //
 // Preconditions: The signal mutex must be locked.
 func (t *Task) beginStopLocked() {
-	if newval := atomic.AddInt32(&t.stopCount, 1); newval <= 0 {
+	if newval := t.stopCount.Add(1); newval <= 0 {
 		// Most likely overflow.
 		panic(fmt.Sprintf("Invalid stopCount: %d", newval))
 	}
@@ -179,7 +178,7 @@ func (t *Task) beginStopLocked() {
 //
 // Preconditions: The signal mutex must be locked.
 func (t *Task) endStopLocked() {
-	if newval := atomic.AddInt32(&t.stopCount, -1); newval < 0 {
+	if newval := t.stopCount.Add(-1); newval < 0 {
 		panic(fmt.Sprintf("Invalid stopCount: %d", newval))
 	} else if newval == 0 {
 		t.endStopCond.Signal()

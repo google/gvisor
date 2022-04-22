@@ -16,9 +16,9 @@ package kernel
 
 import (
 	"fmt"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -121,10 +121,10 @@ type SyscallFlagsTable struct {
 	//
 	// missing syscalls have the same value in enable as missingEnable to
 	// avoid an extra branch in Word.
-	enable [maxSyscallNum + 1]uint32
+	enable [maxSyscallNum + 1]atomicbitops.Uint32
 
 	// missingEnable contains the enable bits for missing syscalls.
-	missingEnable uint32
+	missingEnable atomicbitops.Uint32
 }
 
 // Init initializes the struct, with all syscalls in table set to enable.
@@ -132,17 +132,17 @@ type SyscallFlagsTable struct {
 // max is the largest syscall number in table.
 func (e *SyscallFlagsTable) init(table map[uintptr]Syscall) {
 	for num := range table {
-		e.enable[num] = syscallPresent
+		e.enable[num] = atomicbitops.FromUint32(syscallPresent)
 	}
 }
 
 // Word returns the enable bitfield for sysno.
 func (e *SyscallFlagsTable) Word(sysno uintptr) uint32 {
 	if sysno <= maxSyscallNum {
-		return atomic.LoadUint32(&e.enable[sysno])
+		return e.enable[sysno].Load()
 	}
 
-	return atomic.LoadUint32(&e.missingEnable)
+	return e.missingEnable.Load()
 }
 
 // Enable sets enable bit bit for all syscalls based on s.
@@ -158,19 +158,19 @@ func (e *SyscallFlagsTable) Enable(bit uint32, s map[uintptr]bool, missingEnable
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	missingVal := atomic.LoadUint32(&e.missingEnable)
+	missingVal := e.missingEnable.Load()
 	if missingEnable {
 		missingVal |= bit
 	} else {
 		missingVal &^= bit
 	}
-	atomic.StoreUint32(&e.missingEnable, missingVal)
+	e.missingEnable.Store(missingVal)
 
 	for num := range e.enable {
-		val := atomic.LoadUint32(&e.enable[num])
+		val := e.enable[num].Load()
 		if !bits.IsOn32(val, syscallPresent) {
 			// Missing.
-			atomic.StoreUint32(&e.enable[num], missingVal)
+			e.enable[num].Store(missingVal)
 			continue
 		}
 
@@ -179,7 +179,7 @@ func (e *SyscallFlagsTable) Enable(bit uint32, s map[uintptr]bool, missingEnable
 		} else {
 			val &^= bit
 		}
-		atomic.StoreUint32(&e.enable[num], val)
+		e.enable[num].Store(val)
 	}
 }
 
@@ -188,20 +188,20 @@ func (e *SyscallFlagsTable) EnableAll(bit uint32) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	missingVal := atomic.LoadUint32(&e.missingEnable)
+	missingVal := e.missingEnable.Load()
 	missingVal |= bit
-	atomic.StoreUint32(&e.missingEnable, missingVal)
+	e.missingEnable.Store(missingVal)
 
 	for num := range e.enable {
-		val := atomic.LoadUint32(&e.enable[num])
+		val := e.enable[num].Load()
 		if !bits.IsOn32(val, syscallPresent) {
 			// Missing.
-			atomic.StoreUint32(&e.enable[num], missingVal)
+			e.enable[num].Store(missingVal)
 			continue
 		}
 
 		val |= bit
-		atomic.StoreUint32(&e.enable[num], val)
+		e.enable[num].Store(val)
 	}
 }
 

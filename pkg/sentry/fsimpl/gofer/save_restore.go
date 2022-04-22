@@ -17,9 +17,9 @@ package gofer
 import (
 	"fmt"
 	"io"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
@@ -100,7 +100,7 @@ func (fd *specialFileFD) savePipeData(ctx context.Context) error {
 		}
 	}
 	if len(fd.buf) != 0 {
-		atomic.StoreUint32(&fd.haveBuf, 1)
+		fd.haveBuf.Store(1)
 	}
 	return nil
 }
@@ -149,9 +149,9 @@ func (d *dentry) beforeSave() {
 
 // afterLoad is invoked by stateify.
 func (d *dentry) afterLoad() {
-	d.readFD = -1
-	d.writeFD = -1
-	d.mmapFD = -1
+	d.readFD = atomicbitops.FromInt32(-1)
+	d.writeFD = atomicbitops.FromInt32(-1)
+	d.mmapFD = atomicbitops.FromInt32(-1)
 	if d.refs.Load() != -1 {
 		refsvfs2.Register(d)
 	}

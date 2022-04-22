@@ -14,8 +14,6 @@
 
 package kernel
 
-import "sync/atomic"
-
 // TaskWorker is a deferred task.
 //
 // This must be savable.
@@ -33,6 +31,6 @@ type TaskWorker interface {
 func (t *Task) RegisterWork(work TaskWorker) {
 	t.taskWorkMu.Lock()
 	defer t.taskWorkMu.Unlock()
-	atomic.AddInt32(&t.taskWorkCount, 1)
+	t.taskWorkCount.Add(1)
 	t.taskWork = append(t.taskWork, work)
 }

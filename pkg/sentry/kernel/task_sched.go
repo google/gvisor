@@ -19,7 +19,6 @@ package kernel
 import (
 	"fmt"
 	"math/rand"
-	"sync/atomic"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -365,7 +364,7 @@ func (ticker *kernelCPUClockTicker) NotifyTimer(exp uint64, setting ktime.Settin
 	// Check thread group CPU timers.
 	tgs := ticker.k.tasks.Root.ThreadGroupsAppend(ticker.tgs)
 	for _, tg := range tgs {
-		if atomic.LoadUint32(&tg.cpuTimersEnabled) == 0 {
+		if tg.cpuTimersEnabled.Load() == 0 {
 			continue
 		}
 
@@ -522,9 +521,9 @@ func (t *Task) NotifyRlimitCPUUpdated() {
 func (tg *ThreadGroup) updateCPUTimersEnabledLocked() {
 	rlimitCPU := tg.limits.Get(limits.CPU)
 	if tg.itimerVirtSetting.Enabled || tg.itimerProfSetting.Enabled || tg.rlimitCPUSoftSetting.Enabled || rlimitCPU.Max != limits.Infinity {
-		atomic.StoreUint32(&tg.cpuTimersEnabled, 1)
+		tg.cpuTimersEnabled.Store(1)
 	} else {
-		atomic.StoreUint32(&tg.cpuTimersEnabled, 0)
+		tg.cpuTimersEnabled.Store(0)
 	}
 }
 
@@ -612,7 +611,7 @@ func (t *Task) SetCPUMask(mask sched.CPUSet) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.allowedCPUMask = mask
-	atomic.StoreInt32(&t.cpu, assignCPU(mask, rootTID))
+	t.cpu.Store(assignCPU(mask, rootTID))
 	return nil
 }
 
@@ -622,7 +621,7 @@ func (t *Task) CPU() int32 {
 		return int32(hostcpu.GetCPU())
 	}
 
-	return atomic.LoadInt32(&t.cpu)
+	return t.cpu.Load()
 }
 
 // assignCPU returns the virtualized CPU number for the task with global TID

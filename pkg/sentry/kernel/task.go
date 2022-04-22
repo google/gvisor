@@ -71,9 +71,7 @@ type Task struct {
 
 	// taskWorkCount represents the current size of the task work queue. It is
 	// used to avoid acquiring taskWorkMu when the queue is empty.
-	//
-	// Must accessed with atomic memory operations.
-	taskWorkCount int32
+	taskWorkCount atomicbitops.Int32
 
 	// taskWorkMu protects taskWork.
 	taskWorkMu sync.Mutex `state:"nosave"`
@@ -218,7 +216,7 @@ type Task struct {
 	// stop; after a save/restore cycle, the restored sentry has no knowledge
 	// of the pre-save sentryctl command, and the stopped task would remain
 	// stopped forever.)
-	stopCount int32 `state:"nosave"`
+	stopCount atomicbitops.Int32 `state:"nosave"`
 
 	// endStopCond is signaled when stopCount transitions to 0. The combination
 	// of stopCount and endStopCond effectively form a sync.WaitGroup, but
@@ -483,9 +481,7 @@ type Task struct {
 
 	// cpu is the fake cpu number returned by getcpu(2). cpu is ignored
 	// entirely if Kernel.useHostCores is true.
-	//
-	// cpu is accessed using atomic memory operations.
-	cpu int32
+	cpu atomicbitops.Int32
 
 	// This is used to keep track of changes made to a process' priority/niceness.
 	// It is mostly used to provide some reasonable return value from
@@ -624,7 +620,7 @@ func (t *Task) afterLoad() {
 	t.interruptChan = make(chan struct{}, 1)
 	t.gosched.State = TaskGoroutineNonexistent
 	if t.stop != nil {
-		t.stopCount = 1
+		t.stopCount = atomicbitops.FromInt32(1)
 	}
 	t.endStopCond.L = &t.tg.signalHandlers.mu
 	t.rseqPreempted = true
@@ -844,7 +840,7 @@ func (t *Task) ContainerID() string {
 
 // OOMScoreAdj gets the task's thread group's OOM score adjustment.
 func (t *Task) OOMScoreAdj() int32 {
-	return atomic.LoadInt32(&t.tg.oomScoreAdj)
+	return t.tg.oomScoreAdj.Load()
 }
 
 // SetOOMScoreAdj sets the task's thread group's OOM score adjustment. The
@@ -853,7 +849,7 @@ func (t *Task) SetOOMScoreAdj(adj int32) error {
 	if adj > 1000 || adj < -1000 {
 		return linuxerr.EINVAL
 	}
-	atomic.StoreInt32(&t.tg.oomScoreAdj, adj)
+	t.tg.oomScoreAdj.Store(adj)
 	return nil
 }
 

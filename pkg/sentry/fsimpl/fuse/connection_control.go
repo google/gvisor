@@ -15,8 +15,6 @@
 package fuse
 
 import (
-	"sync/atomic"
-
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -65,13 +63,13 @@ func (conn *connection) SetInitialized() {
 	// And it prevents the newer tasks from gaining
 	// unnecessary higher chance to be issued before the blocked one.
 
-	atomic.StoreInt32(&(conn.initialized), int32(1))
+	conn.initialized.Store(1)
 }
 
-// IsInitialized atomically check if the connection is initialized.
-// pairs with SetInitialized().
+// Initialized atomically check if the connection is initialized. pairs with
+// SetInitialized().
 func (conn *connection) Initialized() bool {
-	return atomic.LoadInt32(&(conn.initialized)) != 0
+	return conn.initialized.Load() != 0
 }
 
 // InitSend sends a FUSE_INIT request.

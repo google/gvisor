@@ -17,9 +17,9 @@ package proc
 import (
 	"bytes"
 	"fmt"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -44,14 +44,14 @@ type yamaPtraceScope struct {
 	kernfs.DynamicBytesFile
 
 	// level is the ptrace_scope level.
-	level *int32
+	level *atomicbitops.Int32
 }
 
 var _ vfs.WritableDynamicBytesSource = (*yamaPtraceScope)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (s *yamaPtraceScope) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	_, err := fmt.Fprintf(buf, "%d\n", atomic.LoadInt32(s.level))
+	_, err := fmt.Fprintf(buf, "%d\n", s.level.Load())
 	return err
 }
 
@@ -79,6 +79,6 @@ func (s *yamaPtraceScope) Write(ctx context.Context, _ *vfs.FileDescription, src
 		return 0, linuxerr.EINVAL
 	}
 
-	atomic.StoreInt32(s.level, v)
+	s.level.Store(v)
 	return n, nil
 }

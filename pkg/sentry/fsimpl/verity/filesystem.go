@@ -21,9 +21,9 @@ import (
 	"io"
 	"strconv"
 	"strings"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
@@ -408,7 +408,7 @@ func (fs *filesystem) verifyStatAndChildrenLocked(ctx context.Context, d *dentry
 		DataAndTreeInSameFile: false,
 	}
 	d.hashMu.RUnlock()
-	if atomic.LoadUint32(&d.mode)&linux.S_IFMT == linux.S_IFDIR {
+	if d.mode.Load()&linux.S_IFMT == linux.S_IFDIR {
 		params.DataAndTreeInSameFile = true
 	}
 
@@ -426,9 +426,9 @@ func (fs *filesystem) verifyStatAndChildrenLocked(ctx context.Context, d *dentry
 	if _, err := merkletree.Verify(params); err != nil && err != io.EOF {
 		return fs.alertIntegrityViolation(fmt.Sprintf("Verification stat for %s failed: %v", childPath, err))
 	}
-	d.mode = uint32(stat.Mode)
-	d.uid = stat.UID
-	d.gid = stat.GID
+	d.mode.Store(uint32(stat.Mode))
+	d.uid.Store(stat.UID)
+	d.gid.Store(stat.GID)
 	d.size = uint32(size)
 	d.symlinkTarget = params.SymlinkTarget
 	return nil
@@ -604,9 +604,9 @@ func (fs *filesystem) lookupAndVerifyLocked(ctx context.Context, parent *dentry,
 
 	child.name = name
 
-	child.mode = uint32(stat.Mode)
-	child.uid = stat.UID
-	child.gid = stat.GID
+	child.mode = atomicbitops.FromUint32(uint32(stat.Mode))
+	child.uid = atomicbitops.FromUint32(stat.UID)
+	child.gid = atomicbitops.FromUint32(stat.GID)
 	child.childrenNames = make(map[string]struct{})
 
 	// Verify child hash. This should always be performed unless in
