@@ -1075,9 +1075,9 @@ void SetupTimeWaitClose(const TestAddress* listener,
     ASSERT_THAT(poll(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
   }
 
-  // This sleep is needed to reduce flake to ensure that the passive-close
-  // ensures the state transitions to CLOSE from LAST_ACK.
-  absl::SleepFor(absl::Seconds(1));
+  // Close the passive socket. This ensures that it transitions from LAST_ACK to
+  // CLOSE.
+  passive_closefd.reset();
 }
 
 constexpr char kRangeFile[] = "/proc/sys/net/ipv4/ip_local_port_range";
