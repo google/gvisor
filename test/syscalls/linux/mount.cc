@@ -582,6 +582,38 @@ TEST(MountTest, TmpfsSymlinkAllocCheck) {
   EXPECT_THAT(symlink(target.c_str(), pathname.c_str()), SyscallSucceeds());
 }
 
+// Tests memory allocation for Hard Links is not double allocated.
+TEST(MountTest, TmpfsHardLinkAllocCheck) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto tmpfs_size_opt = absl::StrCat("size=", kPageSize);
+  auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir.path(), "tmpfs", 0, tmpfs_size_opt, 0));
+  const std::string fileOne = JoinPath(dir.path(), "foo1");
+  const std::string fileTwo = JoinPath(dir.path(), "foo2");
+  auto const fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(fileOne, O_CREAT | O_RDWR, 0777));
+  EXPECT_THAT(link(fileOne.c_str(), fileTwo.c_str()), SyscallSucceeds());
+
+  // Check that it starts at size zero.
+  struct stat buf;
+  ASSERT_THAT(fstat(fd.get(), &buf), SyscallSucceeds());
+  EXPECT_EQ(buf.st_size, 0);
+
+  // Grow to 1 Page Size.
+  ASSERT_THAT(fallocate(fd.get(), 0, 0, kPageSize), SyscallSucceeds());
+  ASSERT_THAT(fstat(fd.get(), &buf), SyscallSucceeds());
+  EXPECT_EQ(buf.st_size, kPageSize);
+
+  // Grow to size beyond tmpfs allocated bytes.
+  ASSERT_THAT(fallocate(fd.get(), 0, 0, kPageSize + 1),
+              SyscallFailsWithErrno(ENOSPC));
+  ASSERT_THAT(fstat(fd.get(), &buf), SyscallSucceeds());
+  EXPECT_EQ(buf.st_size, kPageSize);
+  EXPECT_THAT(unlink(fileTwo.c_str()), SyscallSucceeds());
+  EXPECT_THAT(unlink(fileOne.c_str()), SyscallSucceeds());
+}
+
 }  // namespace
 
 }  // namespace testing
