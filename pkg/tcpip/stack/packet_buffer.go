@@ -176,9 +176,7 @@ func NewPacketBuffer(opts PacketBufferOptions) *PacketBuffer {
 	for _, v := range opts.Data.Views() {
 		pk.buf.AppendOwned(v)
 	}
-	if opts.IsForwardedPacket {
-		pk.NetworkPacketInfo.IsForwardedPacket = opts.IsForwardedPacket
-	}
+	pk.NetworkPacketInfo.IsForwardedPacket = opts.IsForwardedPacket
 	pk.InitRefs()
 	return pk
 }
