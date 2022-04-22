@@ -528,12 +528,26 @@ func (i *inode) tryIncRef() bool {
 func (i *inode) decRef(ctx context.Context) {
 	i.refs.DecRef(func() {
 		i.watches.HandleDeletion(ctx)
-		if regFile, ok := i.impl.(*regularFile); ok {
+		// Remove pages used if child being removed is a SymLink or Regular File.
+		switch impl := i.impl.(type) {
+		case *symlink:
+			if len(impl.target) >= shortSymlinkLen {
+				if err := i.fs.updatePagesUsed(uint64(len(impl.target)), 0); err != nil {
+					panic(fmt.Sprintf("Encountered error: %v while accounting tmpfs size.", err))
+				}
+			}
+		case *regularFile:
+			impl.inode.mu.Lock()
+			if err := i.fs.updatePagesUsed(impl.size.Load(), 0); err != nil {
+				panic(fmt.Sprintf("Encountered error: %v while accounting tmpfs size.", err))
+			}
+			impl.inode.mu.Unlock()
 			// Release memory used by regFile to store data. Since regFile is
 			// no longer usable, we don't need to grab any locks or update any
 			// metadata.
-			regFile.data.DropAll(regFile.memFile)
+			impl.data.DropAll(impl.memFile)
 		}
+
 	})
 }
 
