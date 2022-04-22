@@ -324,6 +324,12 @@ func (l *listenContext) performHandshake(s *segment, opts header.TCPSynOptions, 
 		ep.Close()
 		ep.notifyAborted()
 		ep.drainClosingSegmentQueue()
+		err := ep.LastError()
+		if err == nil {
+			// If err was nil then return the best error we can to indicate
+			// a connection failure.
+			err = &tcpip.ErrConnectionAborted{}
+		}
 		return nil, err
 	}
 

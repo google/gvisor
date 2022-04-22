@@ -22,7 +22,9 @@ import (
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp/test/e2e"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp/testing/context"
@@ -103,6 +105,67 @@ func TestForwarderDoesNotRejectECNFlags(t *testing.T) {
 				t.Fatalf("Timed out waiting for connection")
 			}
 		})
+	}
+}
+
+func TestForwarderFailedConnect(t *testing.T) {
+	const mtu = 1200
+	c := context.New(t, mtu)
+	defer c.Cleanup()
+
+	s := c.Stack()
+	ch := make(chan tcpip.Error, 1)
+	f := tcp.NewForwarder(s, 65536, 10, func(r *tcp.ForwarderRequest) {
+		var err tcpip.Error
+		c.EP, err = r.CreateEndpoint(&c.WQ)
+		ch <- err
+		close(ch)
+		r.Complete(false)
+	})
+	s.SetTransportProtocolHandler(tcp.ProtocolNumber, f.HandlePacket)
+
+	// Initiate a connection that will be forwarded by the Forwarder.
+	// Send a SYN request.
+	iss := seqnum.Value(context.TestInitialSequenceNumber)
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagSyn,
+		SeqNum:  iss,
+		RcvWnd:  30000,
+	})
+
+	// Receive the SYN-ACK reply. Make sure MSS and other expected options
+	// are present.
+	b := c.GetPacket()
+	tcp := header.TCP(header.IPv4(b).Payload())
+	c.IRS = seqnum.Value(tcp.SequenceNumber())
+
+	tcpCheckers := []checker.TransportChecker{
+		checker.SrcPort(context.StackPort),
+		checker.DstPort(context.TestPort),
+		checker.TCPFlags(header.TCPFlagAck | header.TCPFlagSyn),
+		checker.TCPAckNum(uint32(iss) + 1),
+	}
+	checker.IPv4(t, b, checker.TCP(tcpCheckers...))
+
+	// Now send an active RST to abort the handshake.
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagRst,
+		SeqNum:  iss + 1,
+		RcvWnd:  0,
+	})
+
+	// Wait for connect to fail.
+	select {
+	case err := <-ch:
+		if err == nil {
+			t.Fatalf("endpoint creation should have failed")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("Timed out waiting for connection to fail")
 	}
 }
 
