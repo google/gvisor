@@ -172,7 +172,7 @@ func init() {
 
 	// Points from the sentry namespace.
 	registerPoint(PointDesc{
-		ID:            PointClone,
+		ID:            PointCloneProcess,
 		Name:          "sentry/clone",
 		ContextFields: defaultContextFields,
 	})

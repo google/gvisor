@@ -38,7 +38,7 @@ func (c *testChecker) Clone(ctx context.Context, fields FieldSet, info *pb.Clone
 
 func TestNoChecker(t *testing.T) {
 	var s State
-	if s.Enabled(PointClone) {
+	if s.Enabled(PointCloneProcess) {
 		t.Errorf("Enabled(PointClone): got true, wanted false")
 	}
 }
@@ -46,7 +46,7 @@ func TestNoChecker(t *testing.T) {
 func TestCheckerNotRegisteredForPoint(t *testing.T) {
 	var s State
 	s.AppendChecker(&testChecker{}, nil)
-	if s.Enabled(PointClone) {
+	if s.Enabled(PointCloneProcess) {
 		t.Errorf("Enabled(PointClone): got true, wanted false")
 	}
 }
@@ -62,16 +62,16 @@ func TestCheckerRegistered(t *testing.T) {
 	}
 	req := []PointReq{
 		{
-			Pt:     PointClone,
+			Pt:     PointCloneProcess,
 			Fields: FieldSet{Context: MakeFieldMask(FieldCtxtCredentials)},
 		},
 	}
 	s.AppendChecker(checker, req)
 
-	if !s.Enabled(PointClone) {
+	if !s.Enabled(PointCloneProcess) {
 		t.Errorf("Enabled(PointClone): got false, wanted true")
 	}
-	fields := s.GetFieldSet(PointClone)
+	fields := s.GetFieldSet(PointCloneProcess)
 	if !fields.Context.Contains(FieldCtxtCredentials) {
 		t.Errorf("fields.Context.Contains(PointContextCredentials): got false, wanted true")
 	}
@@ -95,7 +95,7 @@ func TestMultipleCheckersRegistered(t *testing.T) {
 		},
 	}
 	reqs := []PointReq{
-		{Pt: PointClone},
+		{Pt: PointCloneProcess},
 	}
 	s.AppendChecker(checker, reqs)
 
@@ -104,16 +104,16 @@ func TestMultipleCheckersRegistered(t *testing.T) {
 		return nil
 	}}
 	reqs = []PointReq{
-		{Pt: PointClone},
+		{Pt: PointCloneProcess},
 	}
 	s.AppendChecker(checker, reqs)
 
-	if !s.Enabled(PointClone) {
+	if !s.Enabled(PointCloneProcess) {
 		t.Errorf("Enabled(PointClone): got false, wanted true")
 	}
 	// CloneReq() should return the union of requested fields from all calls to
 	// AppendChecker.
-	fields := s.GetFieldSet(PointClone)
+	fields := s.GetFieldSet(PointCloneProcess)
 	if err := s.SendToCheckers(func(c Checker) error {
 		return c.Clone(context.Background(), fields, &pb.CloneInfo{})
 	}); err != nil {
@@ -139,7 +139,7 @@ func TestCheckpointReturnsFirstCheckerError(t *testing.T) {
 		},
 	}
 	reqs := []PointReq{
-		{Pt: PointClone},
+		{Pt: PointCloneProcess},
 	}
 
 	s.AppendChecker(checker, reqs)
@@ -152,7 +152,7 @@ func TestCheckpointReturnsFirstCheckerError(t *testing.T) {
 	}
 	s.AppendChecker(checker, reqs)
 
-	if !s.Enabled(PointClone) {
+	if !s.Enabled(PointCloneProcess) {
 		t.Errorf("Enabled(PointClone): got false, wanted true")
 	}
 	if err := s.SendToCheckers(func(c Checker) error {
