@@ -91,24 +91,16 @@ var (
 )
 
 // Uint64Metric encapsulates a uint64 that represents some kind of metric to be
-// monitored. We currently support metrics with at most one field.
+// monitored.
 //
 // Metrics are not saved across save/restore and thus reset to zero on restore.
-//
-// TODO(b/67298427): Support metric fields.
 type Uint64Metric struct {
-	// value is the actual value of the metric. It must be accessed atomically.
-	value atomicbitops.Uint64
+	// fields is the map of field-value combination index keys to Uint64 counters.
+	fields []atomicbitops.Uint64
 
-	// numFields is the number of metric fields. It is immutable once
-	// initialized.
-	numFields int
-
-	// mu protects the below fields.
-	mu sync.RWMutex `state:"nosave"`
-
-	// fields is the map of fields in the metric.
-	fields map[string]uint64
+	// fieldMapper is used to generate index keys for the fields array (above)
+	// based on field value combinations, and vice-versa.
+	fieldMapper fieldMapper
 }
 
 var (
@@ -390,15 +382,13 @@ func MustRegisterCustomUint64Metric(name string, cumulative, sync bool, descript
 //
 // Metrics must be statically defined (i.e., at init).
 func NewUint64Metric(name string, sync bool, units pb.MetricMetadata_Units, description string, fields ...Field) (*Uint64Metric, error) {
-	m := Uint64Metric{
-		numFields: len(fields),
+	f, err := newFieldMapper(fields...)
+	if err != nil {
+		return nil, err
 	}
-
-	if m.numFields == 1 {
-		m.fields = make(map[string]uint64)
-		for _, fieldValue := range fields[0].allowedValues {
-			m.fields[fieldValue] = 0
-		}
+	m := Uint64Metric{
+		fieldMapper: f,
+		fields:      make([]atomicbitops.Uint64, f.numKeys()),
 	}
 	return &m, RegisterCustomUint64Metric(name, true /* cumulative */, sync, units, description, m.Value, fields...)
 }
@@ -424,55 +414,26 @@ func MustCreateNewUint64NanosecondsMetric(name string, sync bool, description st
 }
 
 // Value returns the current value of the metric for the given set of fields.
+// This must be called with the correct number of field values or it will panic.
+//go:nosplit
 func (m *Uint64Metric) Value(fieldValues ...string) uint64 {
-	if m.numFields != len(fieldValues) {
-		panic(fmt.Sprintf("Number of fieldValues %d is not equal to the number of metric fields %d", len(fieldValues), m.numFields))
-	}
-
-	switch m.numFields {
-	case 0:
-		return m.value.Load()
-	case 1:
-		m.mu.RLock()
-		defer m.mu.RUnlock()
-
-		fieldValue := fieldValues[0]
-		if _, ok := m.fields[fieldValue]; !ok {
-			panic(fmt.Sprintf("Metric does not allow to have field value %s", fieldValue))
-		}
-		return m.fields[fieldValue]
-	default:
-		panic("Sentry metrics do not support more than one field")
-	}
+	key := m.fieldMapper.lookup(fieldValues...)
+	return m.fields[key].Load()
 }
 
 // Increment increments the metric field by 1.
+// This must be called with the correct number of field values or it will panic.
+//go:nosplit
 func (m *Uint64Metric) Increment(fieldValues ...string) {
 	m.IncrementBy(1, fieldValues...)
 }
 
 // IncrementBy increments the metric by v.
+// This must be called with the correct number of field values or it will panic.
+//go:nosplit
 func (m *Uint64Metric) IncrementBy(v uint64, fieldValues ...string) {
-	if m.numFields != len(fieldValues) {
-		panic(fmt.Sprintf("Number of fieldValues %d is not equal to the number of metric fields %d", len(fieldValues), m.numFields))
-	}
-
-	switch m.numFields {
-	case 0:
-		m.value.Add(v)
-		return
-	case 1:
-		fieldValue := fieldValues[0]
-		m.mu.Lock()
-		defer m.mu.Unlock()
-
-		if _, ok := m.fields[fieldValue]; !ok {
-			panic(fmt.Sprintf("Metric does not allow to have field value %s", fieldValue))
-		}
-		m.fields[fieldValue] += v
-	default:
-		panic("Sentry metrics do not support more than one field")
-	}
+	key := m.fieldMapper.lookup(fieldValues...)
+	m.fields[key].Add(v)
 }
 
 // Bucketer is an interface to bucket values into finite, distinct buckets.
