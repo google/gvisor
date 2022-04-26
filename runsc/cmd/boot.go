@@ -101,6 +101,10 @@ type Boot struct {
 	// Valid if >= 0.
 	traceFD int
 
+	podInitConfigFD int
+
+	sinkFDs intFlags
+
 	// pidns is set if the sandbox is in its own pid namespace.
 	pidns bool
 
@@ -154,6 +158,8 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&b.profileHeapFD, "profile-heap-fd", -1, "file descriptor to write heap profile to. -1 disables profiling.")
 	f.IntVar(&b.profileMutexFD, "profile-mutex-fd", -1, "file descriptor to write mutex profile to. -1 disables profiling.")
 	f.IntVar(&b.traceFD, "trace-fd", -1, "file descriptor to write Go execution trace to. -1 disables tracing.")
+	f.IntVar(&b.podInitConfigFD, "pod-init-config-fd", -1, "file descriptor to the pod init configuration file.")
+	f.Var(&b.sinkFDs, "sink-fds", "ordered list of file descriptors to be used by the sinks defined in --pod-init-config.")
 }
 
 // Execute implements subcommands.Command.Execute.  It starts a sandbox in a
@@ -274,22 +280,24 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 
 	// Create the loader.
 	bootArgs := boot.Args{
-		ID:             f.Arg(0),
-		Spec:           spec,
-		Conf:           conf,
-		ControllerFD:   b.controllerFD,
-		Device:         os.NewFile(uintptr(b.deviceFD), "platform device"),
-		GoferFDs:       b.ioFDs.GetArray(),
-		StdioFDs:       b.stdioFDs.GetArray(),
-		NumCPU:         b.cpuNum,
-		TotalMem:       b.totalMem,
-		UserLogFD:      b.userLogFD,
-		ProfileBlockFD: b.profileBlockFD,
-		ProfileCPUFD:   b.profileCPUFD,
-		ProfileHeapFD:  b.profileHeapFD,
-		ProfileMutexFD: b.profileMutexFD,
-		TraceFD:        b.traceFD,
-		ProductName:    b.productName,
+		ID:              f.Arg(0),
+		Spec:            spec,
+		Conf:            conf,
+		ControllerFD:    b.controllerFD,
+		Device:          os.NewFile(uintptr(b.deviceFD), "platform device"),
+		GoferFDs:        b.ioFDs.GetArray(),
+		StdioFDs:        b.stdioFDs.GetArray(),
+		NumCPU:          b.cpuNum,
+		TotalMem:        b.totalMem,
+		UserLogFD:       b.userLogFD,
+		ProfileBlockFD:  b.profileBlockFD,
+		ProfileCPUFD:    b.profileCPUFD,
+		ProfileHeapFD:   b.profileHeapFD,
+		ProfileMutexFD:  b.profileMutexFD,
+		TraceFD:         b.traceFD,
+		ProductName:     b.productName,
+		PodInitConfigFD: b.podInitConfigFD,
+		SinkFDs:         b.sinkFDs.GetArray(),
 	}
 	l, err := boot.New(bootArgs)
 	if err != nil {
