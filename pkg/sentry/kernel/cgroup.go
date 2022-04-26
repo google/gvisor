@@ -32,6 +32,26 @@ const InvalidCgroupHierarchyID uint32 = 0
 // CgroupControllerType is the name of a cgroup controller.
 type CgroupControllerType string
 
+// Available cgroup controllers.
+const (
+	CgroupControllerCPU     = CgroupControllerType("cpu")
+	CgroupControllerCPUAcct = CgroupControllerType("cpuacct")
+	CgroupControllerCPUSet  = CgroupControllerType("cpuset")
+	CgroupControllerJob     = CgroupControllerType("job")
+	CgroupControllerMemory  = CgroupControllerType("memory")
+	CgroupControllerPIDs    = CgroupControllerType("pids")
+)
+
+// CgroupResourceType represents a resource type tracked by a particular
+// controller.
+type CgroupResourceType int
+
+// Resources for the cpuacct controller.
+const (
+	// CgroupResourcePID represents a charge for pids.current.
+	CgroupResourcePID CgroupResourceType = iota
+)
+
 // CgroupController is the common interface to cgroup controllers available to
 // the entire sentry. The controllers themselves are defined by cgroupfs.
 //
@@ -133,6 +153,18 @@ type CgroupImpl interface {
 	// AbortMigrate cancels an in-flight migration. See
 	// cgroupfs.controller.AbortMigrate.
 	AbortMigrate(t *Task, src *Cgroup)
+
+	// Charge charges a controller in this cgroup for a particular resource. key
+	// must match a valid resource for the specified controller type.
+	//
+	// The implementer should silently succeed if no matching controllers are
+	// found.
+	//
+	// The underlying implementaion will panic if passed an incompatible
+	// resource type for a given controller.
+	//
+	// See cgroupfs.controller.Charge.
+	Charge(t *Task, d *kernfs.Dentry, ctl CgroupControllerType, res CgroupResourceType, value int64) error
 }
 
 // hierarchy represents a cgroupfs filesystem instance, with a unique set of

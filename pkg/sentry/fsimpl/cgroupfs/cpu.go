@@ -18,6 +18,7 @@ import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
 
@@ -25,6 +26,7 @@ import (
 type cpuController struct {
 	controllerCommon
 	controllerStateless
+	controllerNoResource
 
 	// CFS bandwidth control parameters, values in microseconds.
 	cfsPeriod atomicbitops.Int64
@@ -57,7 +59,7 @@ func newCPUController(fs *filesystem, defaults map[string]int64) *cpuController 
 		delete(defaults, "cpu.shares")
 	}
 
-	c.controllerCommon.init(controllerCPU, fs)
+	c.controllerCommon.init(kernel.CgroupControllerCPU, fs)
 	return c
 }
 

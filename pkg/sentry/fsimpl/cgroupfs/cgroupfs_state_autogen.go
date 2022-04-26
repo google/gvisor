@@ -375,6 +375,7 @@ func (c *cpuController) StateFields() []string {
 	return []string{
 		"controllerCommon",
 		"controllerStateless",
+		"controllerNoResource",
 		"cfsPeriod",
 		"cfsQuota",
 		"shares",
@@ -388,9 +389,10 @@ func (c *cpuController) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	stateSinkObject.Save(0, &c.controllerCommon)
 	stateSinkObject.Save(1, &c.controllerStateless)
-	stateSinkObject.Save(2, &c.cfsPeriod)
-	stateSinkObject.Save(3, &c.cfsQuota)
-	stateSinkObject.Save(4, &c.shares)
+	stateSinkObject.Save(2, &c.controllerNoResource)
+	stateSinkObject.Save(3, &c.cfsPeriod)
+	stateSinkObject.Save(4, &c.cfsQuota)
+	stateSinkObject.Save(5, &c.shares)
 }
 
 func (c *cpuController) afterLoad() {}
@@ -399,9 +401,10 @@ func (c *cpuController) afterLoad() {}
 func (c *cpuController) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.controllerCommon)
 	stateSourceObject.Load(1, &c.controllerStateless)
-	stateSourceObject.Load(2, &c.cfsPeriod)
-	stateSourceObject.Load(3, &c.cfsQuota)
-	stateSourceObject.Load(4, &c.shares)
+	stateSourceObject.Load(2, &c.controllerNoResource)
+	stateSourceObject.Load(3, &c.cfsPeriod)
+	stateSourceObject.Load(4, &c.cfsQuota)
+	stateSourceObject.Load(5, &c.shares)
 }
 
 func (c *cpuacctController) StateTypeName() string {
@@ -411,7 +414,7 @@ func (c *cpuacctController) StateTypeName() string {
 func (c *cpuacctController) StateFields() []string {
 	return []string{
 		"controllerCommon",
-		"controllerStateless",
+		"controllerNoResource",
 		"taskCommittedCharges",
 		"usage",
 	}
@@ -423,7 +426,7 @@ func (c *cpuacctController) beforeSave() {}
 func (c *cpuacctController) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	stateSinkObject.Save(0, &c.controllerCommon)
-	stateSinkObject.Save(1, &c.controllerStateless)
+	stateSinkObject.Save(1, &c.controllerNoResource)
 	stateSinkObject.Save(2, &c.taskCommittedCharges)
 	stateSinkObject.Save(3, &c.usage)
 }
@@ -433,7 +436,7 @@ func (c *cpuacctController) afterLoad() {}
 // +checklocksignore
 func (c *cpuacctController) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.controllerCommon)
-	stateSourceObject.Load(1, &c.controllerStateless)
+	stateSourceObject.Load(1, &c.controllerNoResource)
 	stateSourceObject.Load(2, &c.taskCommittedCharges)
 	stateSourceObject.Load(3, &c.usage)
 }
@@ -571,6 +574,7 @@ func (c *cpusetController) StateFields() []string {
 	return []string{
 		"controllerCommon",
 		"controllerStateless",
+		"controllerNoResource",
 		"maxCpus",
 		"maxMems",
 		"cpus",
@@ -585,10 +589,11 @@ func (c *cpusetController) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	stateSinkObject.Save(0, &c.controllerCommon)
 	stateSinkObject.Save(1, &c.controllerStateless)
-	stateSinkObject.Save(2, &c.maxCpus)
-	stateSinkObject.Save(3, &c.maxMems)
-	stateSinkObject.Save(4, &c.cpus)
-	stateSinkObject.Save(5, &c.mems)
+	stateSinkObject.Save(2, &c.controllerNoResource)
+	stateSinkObject.Save(3, &c.maxCpus)
+	stateSinkObject.Save(4, &c.maxMems)
+	stateSinkObject.Save(5, &c.cpus)
+	stateSinkObject.Save(6, &c.mems)
 }
 
 func (c *cpusetController) afterLoad() {}
@@ -597,10 +602,11 @@ func (c *cpusetController) afterLoad() {}
 func (c *cpusetController) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.controllerCommon)
 	stateSourceObject.Load(1, &c.controllerStateless)
-	stateSourceObject.Load(2, &c.maxCpus)
-	stateSourceObject.Load(3, &c.maxMems)
-	stateSourceObject.Load(4, &c.cpus)
-	stateSourceObject.Load(5, &c.mems)
+	stateSourceObject.Load(2, &c.controllerNoResource)
+	stateSourceObject.Load(3, &c.maxCpus)
+	stateSourceObject.Load(4, &c.maxMems)
+	stateSourceObject.Load(5, &c.cpus)
+	stateSourceObject.Load(6, &c.mems)
 }
 
 func (d *cpusData) StateTypeName() string {
@@ -685,6 +691,7 @@ func (c *jobController) StateFields() []string {
 	return []string{
 		"controllerCommon",
 		"controllerStateless",
+		"controllerNoResource",
 		"id",
 	}
 }
@@ -696,7 +703,8 @@ func (c *jobController) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	stateSinkObject.Save(0, &c.controllerCommon)
 	stateSinkObject.Save(1, &c.controllerStateless)
-	stateSinkObject.Save(2, &c.id)
+	stateSinkObject.Save(2, &c.controllerNoResource)
+	stateSinkObject.Save(3, &c.id)
 }
 
 func (c *jobController) afterLoad() {}
@@ -705,7 +713,8 @@ func (c *jobController) afterLoad() {}
 func (c *jobController) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.controllerCommon)
 	stateSourceObject.Load(1, &c.controllerStateless)
-	stateSourceObject.Load(2, &c.id)
+	stateSourceObject.Load(2, &c.controllerNoResource)
+	stateSourceObject.Load(3, &c.id)
 }
 
 func (c *memoryController) StateTypeName() string {
@@ -716,6 +725,7 @@ func (c *memoryController) StateFields() []string {
 	return []string{
 		"controllerCommon",
 		"controllerStateless",
+		"controllerNoResource",
 		"limitBytes",
 		"softLimitBytes",
 		"moveChargeAtImmigrate",
@@ -730,10 +740,11 @@ func (c *memoryController) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	stateSinkObject.Save(0, &c.controllerCommon)
 	stateSinkObject.Save(1, &c.controllerStateless)
-	stateSinkObject.Save(2, &c.limitBytes)
-	stateSinkObject.Save(3, &c.softLimitBytes)
-	stateSinkObject.Save(4, &c.moveChargeAtImmigrate)
-	stateSinkObject.Save(5, &c.pressureLevel)
+	stateSinkObject.Save(2, &c.controllerNoResource)
+	stateSinkObject.Save(3, &c.limitBytes)
+	stateSinkObject.Save(4, &c.softLimitBytes)
+	stateSinkObject.Save(5, &c.moveChargeAtImmigrate)
+	stateSinkObject.Save(6, &c.pressureLevel)
 }
 
 func (c *memoryController) afterLoad() {}
@@ -742,10 +753,11 @@ func (c *memoryController) afterLoad() {}
 func (c *memoryController) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.controllerCommon)
 	stateSourceObject.Load(1, &c.controllerStateless)
-	stateSourceObject.Load(2, &c.limitBytes)
-	stateSourceObject.Load(3, &c.softLimitBytes)
-	stateSourceObject.Load(4, &c.moveChargeAtImmigrate)
-	stateSourceObject.Load(5, &c.pressureLevel)
+	stateSourceObject.Load(2, &c.controllerNoResource)
+	stateSourceObject.Load(3, &c.limitBytes)
+	stateSourceObject.Load(4, &c.softLimitBytes)
+	stateSourceObject.Load(5, &c.moveChargeAtImmigrate)
+	stateSourceObject.Load(6, &c.pressureLevel)
 }
 
 func (d *memoryUsageInBytesData) StateTypeName() string {
@@ -767,6 +779,96 @@ func (d *memoryUsageInBytesData) afterLoad() {}
 
 // +checklocksignore
 func (d *memoryUsageInBytesData) StateLoad(stateSourceObject state.Source) {
+}
+
+func (c *pidsController) StateTypeName() string {
+	return "pkg/sentry/fsimpl/cgroupfs.pidsController"
+}
+
+func (c *pidsController) StateFields() []string {
+	return []string{
+		"controllerCommon",
+		"isRoot",
+		"pendingTotal",
+		"pendingPool",
+		"committed",
+		"max",
+	}
+}
+
+func (c *pidsController) beforeSave() {}
+
+// +checklocksignore
+func (c *pidsController) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	stateSinkObject.Save(0, &c.controllerCommon)
+	stateSinkObject.Save(1, &c.isRoot)
+	stateSinkObject.Save(2, &c.pendingTotal)
+	stateSinkObject.Save(3, &c.pendingPool)
+	stateSinkObject.Save(4, &c.committed)
+	stateSinkObject.Save(5, &c.max)
+}
+
+func (c *pidsController) afterLoad() {}
+
+// +checklocksignore
+func (c *pidsController) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.controllerCommon)
+	stateSourceObject.Load(1, &c.isRoot)
+	stateSourceObject.Load(2, &c.pendingTotal)
+	stateSourceObject.Load(3, &c.pendingPool)
+	stateSourceObject.Load(4, &c.committed)
+	stateSourceObject.Load(5, &c.max)
+}
+
+func (d *pidsCurrentData) StateTypeName() string {
+	return "pkg/sentry/fsimpl/cgroupfs.pidsCurrentData"
+}
+
+func (d *pidsCurrentData) StateFields() []string {
+	return []string{
+		"c",
+	}
+}
+
+func (d *pidsCurrentData) beforeSave() {}
+
+// +checklocksignore
+func (d *pidsCurrentData) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.c)
+}
+
+func (d *pidsCurrentData) afterLoad() {}
+
+// +checklocksignore
+func (d *pidsCurrentData) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.c)
+}
+
+func (d *pidsMaxData) StateTypeName() string {
+	return "pkg/sentry/fsimpl/cgroupfs.pidsMaxData"
+}
+
+func (d *pidsMaxData) StateFields() []string {
+	return []string{
+		"c",
+	}
+}
+
+func (d *pidsMaxData) beforeSave() {}
+
+// +checklocksignore
+func (d *pidsMaxData) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.c)
+}
+
+func (d *pidsMaxData) afterLoad() {}
+
+// +checklocksignore
+func (d *pidsMaxData) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.c)
 }
 
 func init() {
@@ -796,4 +898,7 @@ func init() {
 	state.Register((*jobController)(nil))
 	state.Register((*memoryController)(nil))
 	state.Register((*memoryUsageInBytesData)(nil))
+	state.Register((*pidsController)(nil))
+	state.Register((*pidsCurrentData)(nil))
+	state.Register((*pidsMaxData)(nil))
 }

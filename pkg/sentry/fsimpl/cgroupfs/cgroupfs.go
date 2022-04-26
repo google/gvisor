@@ -86,24 +86,17 @@ const (
 	defaultMaxCachedDentries = uint64(1000)
 )
 
-const (
-	controllerCPU     = kernel.CgroupControllerType("cpu")
-	controllerCPUAcct = kernel.CgroupControllerType("cpuacct")
-	controllerCPUSet  = kernel.CgroupControllerType("cpuset")
-	controllerJob     = kernel.CgroupControllerType("job")
-	controllerMemory  = kernel.CgroupControllerType("memory")
-)
-
 var allControllers = []kernel.CgroupControllerType{
-	controllerCPU,
-	controllerCPUAcct,
-	controllerCPUSet,
-	controllerJob,
-	controllerMemory,
+	kernel.CgroupControllerCPU,
+	kernel.CgroupControllerCPUAcct,
+	kernel.CgroupControllerCPUSet,
+	kernel.CgroupControllerJob,
+	kernel.CgroupControllerMemory,
+	kernel.CgroupControllerPIDs,
 }
 
 // SupportedMountOptions is the set of supported mount options for cgroupfs.
-var SupportedMountOptions = []string{"all", "cpu", "cpuacct", "cpuset", "job", "memory"}
+var SupportedMountOptions = []string{"all", "cpu", "cpuacct", "cpuset", "job", "memory", "pids"}
 
 // FilesystemType implements vfs.FilesystemType.
 //
@@ -188,23 +181,27 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	var wantControllers []kernel.CgroupControllerType
 	if _, ok := mopts["cpu"]; ok {
 		delete(mopts, "cpu")
-		wantControllers = append(wantControllers, controllerCPU)
+		wantControllers = append(wantControllers, kernel.CgroupControllerCPU)
 	}
 	if _, ok := mopts["cpuacct"]; ok {
 		delete(mopts, "cpuacct")
-		wantControllers = append(wantControllers, controllerCPUAcct)
+		wantControllers = append(wantControllers, kernel.CgroupControllerCPUAcct)
 	}
 	if _, ok := mopts["cpuset"]; ok {
 		delete(mopts, "cpuset")
-		wantControllers = append(wantControllers, controllerCPUSet)
+		wantControllers = append(wantControllers, kernel.CgroupControllerCPUSet)
 	}
 	if _, ok := mopts["job"]; ok {
 		delete(mopts, "job")
-		wantControllers = append(wantControllers, controllerJob)
+		wantControllers = append(wantControllers, kernel.CgroupControllerJob)
 	}
 	if _, ok := mopts["memory"]; ok {
 		delete(mopts, "memory")
-		wantControllers = append(wantControllers, controllerMemory)
+		wantControllers = append(wantControllers, kernel.CgroupControllerMemory)
+	}
+	if _, ok := mopts["pids"]; ok {
+		delete(mopts, "pids")
+		wantControllers = append(wantControllers, kernel.CgroupControllerPIDs)
 	}
 	if _, ok := mopts["all"]; ok {
 		if len(wantControllers) > 0 {
@@ -269,16 +266,18 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	for _, ty := range wantControllers {
 		var c controller
 		switch ty {
-		case controllerCPU:
+		case kernel.CgroupControllerCPU:
 			c = newCPUController(fs, defaults)
-		case controllerCPUAcct:
+		case kernel.CgroupControllerCPUAcct:
 			c = newCPUAcctController(fs)
-		case controllerCPUSet:
+		case kernel.CgroupControllerCPUSet:
 			c = newCPUSetController(k, fs)
-		case controllerJob:
+		case kernel.CgroupControllerJob:
 			c = newJobController(fs)
-		case controllerMemory:
+		case kernel.CgroupControllerMemory:
 			c = newMemoryController(fs, defaults)
+		case kernel.CgroupControllerPIDs:
+			c = newRootPIDsController(fs)
 		default:
 			panic(fmt.Sprintf("Unreachable: unknown cgroup controller %q", ty))
 		}
