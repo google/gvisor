@@ -21,7 +21,6 @@ import (
 	mrand "math/rand"
 	"os"
 	"runtime"
-	"sync/atomic"
 	gtime "time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -383,10 +382,10 @@ func New(args Args) (*Loader, error) {
 	// Turn on packet logging if enabled.
 	if args.Conf.LogPackets {
 		log.Infof("Packet logging enabled")
-		atomic.StoreUint32(&sniffer.LogPackets, 1)
+		sniffer.LogPackets.Store(1)
 	} else {
 		log.Infof("Packet logging disabled")
-		atomic.StoreUint32(&sniffer.LogPackets, 0)
+		sniffer.LogPackets.Store(0)
 	}
 
 	// Create a watchdog.

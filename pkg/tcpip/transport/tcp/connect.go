@@ -1194,7 +1194,9 @@ func (e *endpoint) handleSegmentsLocked() tcpip.Error {
 // +checklocks:e.mu
 func (e *endpoint) probeSegmentLocked() {
 	if fn := e.probe; fn != nil {
-		fn(e.completeStateLocked())
+		var state stack.TCPEndpointState
+		e.completeStateLocked(&state)
+		fn(&state)
 	}
 }
 

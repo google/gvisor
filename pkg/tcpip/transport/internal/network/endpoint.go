@@ -18,8 +18,8 @@ package network
 
 import (
 	"fmt"
-	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -95,9 +95,7 @@ type Endpoint struct {
 	// lock when delivering packets/errors to endpoints).
 	//
 	// Writes must be performed through setEndpointState.
-	//
-	// +checkatomics
-	state uint32
+	state atomicbitops.Uint32
 }
 
 // +stateify savable
@@ -156,12 +154,12 @@ func (e *Endpoint) NetProto() tcpip.NetworkProtocolNumber {
 //
 // +checklocks:e.mu
 func (e *Endpoint) setEndpointState(state transport.DatagramEndpointState) {
-	atomic.StoreUint32(&e.state, uint32(state))
+	e.state.Store(uint32(state))
 }
 
 // State returns the state of the endpoint.
 func (e *Endpoint) State() transport.DatagramEndpointState {
-	return transport.DatagramEndpointState(atomic.LoadUint32(&e.state))
+	return transport.DatagramEndpointState(e.state.Load())
 }
 
 // Close cleans the endpoint's resources and leaves the endpoint in a closed

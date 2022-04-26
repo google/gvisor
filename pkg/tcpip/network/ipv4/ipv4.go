@@ -19,9 +19,9 @@ import (
 	"fmt"
 	"math"
 	"reflect"
-	"sync/atomic"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -85,24 +85,18 @@ type endpoint struct {
 
 	// enabled is set to 1 when the endpoint is enabled and 0 when it is
 	// disabled.
-	//
-	// +checkatomic
-	enabled uint32
+	enabled atomicbitops.Uint32
 
 	// forwarding is set to forwardingEnabled when the endpoint has forwarding
 	// enabled and forwardingDisabled when it is disabled.
-	//
-	// +checkatomic
-	forwarding uint32
+	forwarding atomicbitops.Uint32
 
 	// multicastForwarding is set to forwardingEnabled when the endpoint has
 	// forwarding enabled and forwardingDisabled when it is disabled.
 	//
 	// TODO(https://gvisor.dev/issue/7338): Implement support for multicast
 	//forwarding. Currently, setting this value to true is a no-op.
-	//
-	// +checkatomic
-	multicastForwarding uint32
+	multicastForwarding atomicbitops.Uint32
 
 	// mu protects below.
 	mu sync.RWMutex
@@ -195,7 +189,7 @@ func (p *protocol) forgetEndpoint(nicID tcpip.NICID) {
 
 // Forwarding implements stack.ForwardingNetworkEndpoint.
 func (e *endpoint) Forwarding() bool {
-	return atomic.LoadUint32(&e.forwarding) == forwardingEnabled
+	return e.forwarding.Load() == forwardingEnabled
 }
 
 // setForwarding sets the forwarding status for the endpoint.
@@ -207,7 +201,7 @@ func (e *endpoint) setForwarding(v bool) bool {
 		forwarding = forwardingEnabled
 	}
 
-	return atomic.SwapUint32(&e.forwarding, forwarding) != forwardingDisabled
+	return e.forwarding.Swap(forwarding) != forwardingDisabled
 }
 
 // SetForwarding implements stack.ForwardingNetworkEndpoint.
@@ -248,7 +242,7 @@ func (e *endpoint) SetForwarding(forwarding bool) bool {
 
 // MulticastForwarding implements stack.MulticastForwardingNetworkEndpoint.
 func (e *endpoint) MulticastForwarding() bool {
-	return atomic.LoadUint32(&e.multicastForwarding) == forwardingEnabled
+	return e.multicastForwarding.Load() == forwardingEnabled
 }
 
 // SetMulticastForwarding implements stack.MulticastForwardingNetworkEndpoint.
@@ -258,7 +252,7 @@ func (e *endpoint) SetMulticastForwarding(forwarding bool) bool {
 		updatedForwarding = forwardingEnabled
 	}
 
-	return atomic.SwapUint32(&e.multicastForwarding, updatedForwarding) != forwardingDisabled
+	return e.multicastForwarding.Swap(updatedForwarding) != forwardingDisabled
 }
 
 // Enable implements stack.NetworkEndpoint.
@@ -316,7 +310,7 @@ func (e *endpoint) Enabled() bool {
 // isEnabled returns true if the endpoint is enabled, regardless of the
 // enabled status of the NIC.
 func (e *endpoint) isEnabled() bool {
-	return atomic.LoadUint32(&e.enabled) == 1
+	return e.enabled.Load() == 1
 }
 
 // setEnabled sets the enabled status for the endpoint.
@@ -324,9 +318,9 @@ func (e *endpoint) isEnabled() bool {
 // Returns true if the enabled status was updated.
 func (e *endpoint) setEnabled(v bool) bool {
 	if v {
-		return atomic.SwapUint32(&e.enabled, 1) == 0
+		return e.enabled.Swap(1) == 0
 	}
-	return atomic.SwapUint32(&e.enabled, 0) == 1
+	return e.enabled.Swap(0) == 1
 }
 
 // Disable implements stack.NetworkEndpoint.
@@ -416,7 +410,7 @@ func (e *endpoint) addIPHeader(srcAddr, dstAddr tcpip.Address, pkt *stack.Packet
 	// RFC 6864 section 4.3 mandates uniqueness of ID values for non-atomic
 	// datagrams. Since the DF bit is never being set here, all datagrams
 	// are non-atomic and need an ID.
-	id := atomic.AddUint32(&e.protocol.ids[hashRoute(srcAddr, dstAddr, params.Protocol, e.protocol.hashIV)%buckets], 1)
+	id := e.protocol.ids[hashRoute(srcAddr, dstAddr, params.Protocol, e.protocol.hashIV)%buckets].Add(1)
 	ipH.Encode(&header.IPv4Fields{
 		TotalLength: uint16(length),
 		ID:          uint16(id),
@@ -588,7 +582,7 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBu
 		// non-atomic datagrams, so assign an ID to all such datagrams
 		// according to the definition given in RFC 6864 section 4.
 		if ipH.Flags()&header.IPv4FlagDontFragment == 0 || ipH.Flags()&header.IPv4FlagMoreFragments != 0 || ipH.FragmentOffset() > 0 {
-			ipH.SetID(uint16(atomic.AddUint32(&e.protocol.ids[hashRoute(r.LocalAddress(), r.RemoteAddress(), 0 /* protocol */, e.protocol.hashIV)%buckets], 1)))
+			ipH.SetID(uint16(e.protocol.ids[hashRoute(r.LocalAddress(), r.RemoteAddress(), 0 /* protocol */, e.protocol.hashIV)%buckets].Add(1)))
 		}
 	}
 
@@ -1206,11 +1200,9 @@ type protocol struct {
 
 	// defaultTTL is the current default TTL for the protocol. Only the
 	// uint8 portion of it is meaningful.
-	//
-	// +checkatomic
-	defaultTTL uint32
+	defaultTTL atomicbitops.Uint32
 
-	ids    []uint32
+	ids    []atomicbitops.Uint32
 	hashIV uint32
 
 	fragmentation *fragmentation.Fragmentation
@@ -1258,12 +1250,12 @@ func (p *protocol) Option(option tcpip.GettableNetworkProtocolOption) tcpip.Erro
 
 // SetDefaultTTL sets the default TTL for endpoints created with this protocol.
 func (p *protocol) SetDefaultTTL(ttl uint8) {
-	atomic.StoreUint32(&p.defaultTTL, uint32(ttl))
+	p.defaultTTL.Store(uint32(ttl))
 }
 
 // DefaultTTL returns the default TTL for endpoints created with this protocol.
 func (p *protocol) DefaultTTL() uint8 {
-	return uint8(atomic.LoadUint32(&p.defaultTTL))
+	return uint8(p.defaultTTL.Load())
 }
 
 // Close implements stack.TransportProtocol.
@@ -1426,12 +1418,12 @@ type Options struct {
 
 // NewProtocolWithOptions returns an IPv4 network protocol.
 func NewProtocolWithOptions(opts Options) stack.NetworkProtocolFactory {
-	ids := make([]uint32, buckets)
+	ids := make([]atomicbitops.Uint32, buckets)
 
 	// Randomly initialize hashIV and the ids.
 	r := hash.RandN32(1 + buckets)
 	for i := range ids {
-		ids[i] = r[i]
+		ids[i] = atomicbitops.FromUint32(r[i])
 	}
 	hashIV := r[buckets]
 
@@ -1440,7 +1432,7 @@ func NewProtocolWithOptions(opts Options) stack.NetworkProtocolFactory {
 			stack:      s,
 			ids:        ids,
 			hashIV:     hashIV,
-			defaultTTL: DefaultTTL,
+			defaultTTL: atomicbitops.FromUint32(DefaultTTL),
 			options:    opts,
 		}
 		p.fragmentation = fragmentation.NewFragmentation(fragmentblockSize, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, ReassembleTimeout, s.Clock(), p)
