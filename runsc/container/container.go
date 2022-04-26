@@ -1279,7 +1279,7 @@ func (c *Container) setupCgroupForSubcontainer(conf *config.Config, spec *specs.
 func cgroupInstall(conf *config.Config, cg cgroup.Cgroup, res *specs.LinuxResources) (cgroup.Cgroup, error) {
 	if err := cg.Install(res); err != nil {
 		switch {
-		case errors.Is(err, unix.EACCES) && conf.Rootless:
+		case (errors.Is(err, unix.EACCES) || errors.Is(err, unix.EROFS)) && conf.Rootless:
 			log.Warningf("Skipping cgroup configuration in rootless mode: %v", err)
 			return nil, nil
 		default:
