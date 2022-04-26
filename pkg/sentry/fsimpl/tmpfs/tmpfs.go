@@ -202,7 +202,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	var maxSizeInPages uint64
 	if ok {
 		delete(mopts, "size")
-		maxSizeInBytes, err := strconv.ParseUint(maxSizeStr, 10, 64)
+		maxSizeInBytes, err := parseSize(maxSizeStr)
 		if err != nil {
 			ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: invalid size: %q", maxSizeStr)
 			return nil, nil, linuxerr.EINVAL
@@ -943,4 +943,34 @@ func (fd *fileDescription) RemoveXattr(ctx context.Context, name string) error {
 // filesystem state is in-memory.
 func (*fileDescription) Sync(context.Context) error {
 	return nil
+}
+
+// parseSize converts size in string to an integer bytes.
+// Supported suffixes in string are:K, M, G, T, P, E.
+func parseSize(s string) (uint64, error) {
+	suffix := s[len(s)-1]
+	count := 1
+	switch suffix {
+	case 'e', 'E':
+		count = count << 10
+		fallthrough
+	case 'p', 'P':
+		count = count << 10
+		fallthrough
+	case 't', 'T':
+		count = count << 10
+		fallthrough
+	case 'g', 'G':
+		count = count << 10
+		fallthrough
+	case 'm', 'M':
+		count = count << 10
+		fallthrough
+	case 'k', 'K':
+		count = count << 10
+		s = s[:len(s)-1]
+	}
+	bytes, err := strconv.ParseUint(s, 10, 64)
+	bytes = bytes * uint64(count)
+	return bytes, err
 }

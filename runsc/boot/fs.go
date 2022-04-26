@@ -67,7 +67,7 @@ const (
 )
 
 // tmpfs has some extra supported options that we must pass through.
-var tmpfsAllowedData = []string{"mode", "uid", "gid"}
+var tmpfsAllowedData = []string{"mode", "size", "uid", "gid"}
 
 func addOverlay(ctx context.Context, lower *fs.Inode, name string, lowerFlags fs.MountSourceFlags) (*fs.Inode, error) {
 	// Upper layer uses the same flags as lower, but it must be read-write.

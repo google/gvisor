@@ -16,6 +16,7 @@ package tmpfs
 
 import (
 	"fmt"
+	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -154,4 +155,38 @@ func newPipeFD(ctx context.Context, mode linux.FileMode) (*vfs.FileDescription, 
 	}
 
 	return fd, cleanup, nil
+}
+
+func TestParseSize(t *testing.T) {
+	var tests = []struct {
+		s         string
+		want      uint64
+		wantError bool
+	}{
+		{"500", 500, false},
+		{"5k", (5 * 1024), false},
+		{"5m", (5 * 1024 * 1024), false},
+		{"5G", (5 * 1024 * 1024 * 1024), false},
+		{"5t", (5 * 1024 * 1024 * 1024 * 1024), false},
+		{"5P", (5 * 1024 * 1024 * 1024 * 1024 * 1024), false},
+		{"5e", (5 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024), false},
+		{"5e3", 0, true},
+	}
+	for _, tt := range tests {
+		testname := fmt.Sprintf("%s", tt.s)
+		t.Run(testname, func(t *testing.T) {
+			size, err := parseSize(tt.s)
+			if tt.wantError && err == nil {
+				t.Errorf("Invalid input: %v parsed", tt.s)
+			}
+			if !tt.wantError {
+				if err != nil {
+					t.Errorf("Couldn't parse size, Error: %v", err)
+				}
+				if size != tt.want {
+					t.Errorf("got: %v, want %v", size, tt.want)
+				}
+			}
+		})
+	}
 }
