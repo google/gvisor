@@ -17,6 +17,7 @@
 
 #include <errno.h>
 #include <netinet/ip.h>
+#include <netinet/ip6.h>
 #include <netinet/ip_icmp.h>
 #include <netinet/udp.h>
 #include <sys/socket.h>
@@ -540,15 +541,18 @@ TestAddress V6MulticastLinkLocalAllNodes();
 TestAddress V6MulticastLinkLocalAllRouters();
 
 // Compute the internet checksum of an IP header.
-uint16_t IPChecksum(struct iphdr ip);
+uint16_t IPChecksum(iphdr ip);
 
 // Compute the internet checksum of a UDP header.
-uint16_t UDPChecksum(struct iphdr iphdr, struct udphdr udphdr,
-                     const char* payload, ssize_t payload_len);
+uint16_t UDPChecksum(iphdr ip, udphdr udp, const char* payload,
+                     ssize_t payload_len);
+
+// Compute the internet checksum of a UDP header over IPv6.
+uint16_t UDPv6Checksum(ip6_hdr ipv6, udphdr udp, const char* payload,
+                       ssize_t payload_len);
 
 // Compute the internet checksum of an ICMP header.
-uint16_t ICMPChecksum(struct icmphdr icmphdr, const char* payload,
-                      ssize_t payload_len);
+uint16_t ICMPChecksum(icmphdr icmp, const char* payload, ssize_t payload_len);
 
 // Convenient functions for reinterpreting common types to sockaddr pointer.
 inline sockaddr* AsSockAddr(sockaddr_storage* s) {
@@ -591,6 +595,10 @@ void SetupTimeWaitClose(const TestAddress* listener,
 // MaybeLimitEphemeralPorts attempts to reduce the number of ephemeral ports and
 // returns the number of ephemeral ports.
 PosixErrorOr<int> MaybeLimitEphemeralPorts();
+
+// AllowMartianPacketsOnLoopback tells the kernel to not drop martian packets,
+// and returns a function to restore the original configuration.
+PosixErrorOr<std::function<PosixError()>> AllowMartianPacketsOnLoopback();
 
 namespace internal {
 PosixErrorOr<int> TryPortAvailable(int port, AddressFamily family,

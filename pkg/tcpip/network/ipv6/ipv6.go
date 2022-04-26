@@ -1076,10 +1076,6 @@ func (e *endpoint) handleLocalPacket(pkt *stack.PacketBuffer, canSkipRXChecksum 
 func (e *endpoint) handleValidatedPacket(h header.IPv6, pkt *stack.PacketBuffer, inNICName string) {
 	pkt.NICID = e.nic.ID()
 
-	// Raw socket packets are delivered based solely on the transport protocol
-	// number. We only require that the packet be valid IPv6.
-	e.dispatcher.DeliverRawPacket(h.TransportProtocol(), pkt)
-
 	stats := e.stats.ip
 	stats.ValidPacketsReceived.Increment()
 
@@ -1507,6 +1503,9 @@ func (e *endpoint) processExtensionHeaders(h header.IPv6, pkt *stack.PacketBuffe
 			if pkt.TransportHeader().View().IsEmpty() {
 				e.protocol.parseTransport(pkt, proto)
 			}
+
+			// Raw socket packets are delivered once extension headers are processed.
+			e.dispatcher.DeliverRawPacket(proto, pkt)
 
 			stats.PacketsDelivered.Increment()
 			if proto == header.ICMPv6ProtocolNumber {

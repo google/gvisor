@@ -19,6 +19,7 @@
 #include <net/if_arp.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
+#include <netinet/ip6.h>
 #include <netinet/udp.h>
 #include <netpacket/packet.h>
 #include <poll.h>
@@ -122,6 +123,9 @@ class CookedPacketTest : public ::testing::TestWithParam<int> {
 
   // The socket used for both reading and writing.
   int socket_;
+
+  // The function to restore the original system configuration.
+  std::function<PosixError()> restore_config_;
 };
 
 void CookedPacketTest::SetUp() {
@@ -131,25 +135,17 @@ void CookedPacketTest::SetUp() {
     GTEST_SKIP();
   }
 
-  if (!IsRunningOnGvisor()) {
-    FileDescriptor acceptLocal = ASSERT_NO_ERRNO_AND_VALUE(
-        Open("/proc/sys/net/ipv4/conf/lo/accept_local", O_RDONLY));
-    FileDescriptor routeLocalnet = ASSERT_NO_ERRNO_AND_VALUE(
-        Open("/proc/sys/net/ipv4/conf/lo/route_localnet", O_RDONLY));
-    char enabled;
-    ASSERT_THAT(read(acceptLocal.get(), &enabled, 1),
-                SyscallSucceedsWithValue(1));
-    ASSERT_EQ(enabled, '1');
-    ASSERT_THAT(read(routeLocalnet.get(), &enabled, 1),
-                SyscallSucceedsWithValue(1));
-    ASSERT_EQ(enabled, '1');
-  }
-
   ASSERT_THAT(socket_ = socket(AF_PACKET, SOCK_DGRAM, htons(GetParam())),
               SyscallSucceeds());
+
+  restore_config_ = ASSERT_NO_ERRNO_AND_VALUE(AllowMartianPacketsOnLoopback());
 }
 
 void CookedPacketTest::TearDown() {
+  if (restore_config_) {
+    EXPECT_NO_ERRNO(restore_config_());
+  }
+
   // TearDown will be run even if we skip the test.
   if (ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability())) {
     EXPECT_THAT(close(socket_), SyscallSucceeds());
@@ -541,9 +537,252 @@ TEST_P(CookedPacketTest, BindFail) {
       SyscallFailsWithErrno(EINVAL));
 }
 
+TEST_P(CookedPacketTest, SendIPv4FragmentsReceiveReassembledFromRaw) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+  FileDescriptor rawfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_RAW, IPPROTO_UDP));
+  FileDescriptor udpfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+
+  {
+    const sockaddr_in bind_addr = {
+        .sin_family = AF_INET,
+        .sin_port = kPort,
+        .sin_addr = {.s_addr = htonl(INADDR_LOOPBACK)},
+    };
+    ASSERT_THAT(
+        bind(udpfd.get(), reinterpret_cast<const struct sockaddr*>(&bind_addr),
+             sizeof(bind_addr)),
+        SyscallSucceeds());
+  }
+
+  const int loopback_index =
+      EXPECT_NO_ERRNO_AND_VALUE(gvisor::testing::GetLoopbackIndex());
+  ASSERT_NE(loopback_index, 0);
+
+  // Set up the destination physical address.
+  const struct sockaddr_ll dest = {
+      .sll_family = AF_PACKET,
+      .sll_protocol = htons(ETH_P_IP),
+      .sll_ifindex = loopback_index,
+      .sll_halen = ETH_ALEN,
+  };
+
+  // Set up the IP header. The total len and checksum fields will be set
+  // independently for each fragment.
+  struct iphdr ip = {
+      .ihl = 5,
+      .version = 4,
+      // Use an arbitrary ID. If we clash with an in-use ID the test will fail,
+      // but we have no way of getting an ID we know to be good.
+      .id = htons(1337),
+      .ttl = 64,
+      .protocol = IPPROTO_UDP,
+      .saddr = htonl(INADDR_LOOPBACK),
+      .daddr = htonl(INADDR_LOOPBACK),
+  };
+
+  // Set up the UDP header.
+  constexpr char kUdpPayload[] = "124567890";
+  udphdr udp = {
+      .source = kPort,
+      .dest = kPort,
+      .len = htons(sizeof(udphdr) + sizeof(kUdpPayload)),
+  };
+  udp.check = UDPChecksum(ip, udp, kUdpPayload, sizeof(kUdpPayload));
+
+  // Send the first fragment. Its payload only contains the UDP header.
+  {
+    // The first IP fragment's payload length must be a multiple of 8.
+    ASSERT_EQ(sizeof(udp) % 8, 0);
+    ip.tot_len = htons(sizeof(ip) + sizeof(udp));
+    // Set the MF (More Fragment) flags, and set a fragment offset of zero.
+    ip.frag_off = (1 << 5);
+    ip.check = IPChecksum(ip);
+
+    char send_buf[sizeof(ip) + sizeof(udp)];
+    memcpy(send_buf, &ip, sizeof(ip));
+    memcpy(send_buf + sizeof(ip), &udp, sizeof(udp));
+    ASSERT_THAT(
+        sendto(socket_, send_buf, sizeof(send_buf), 0,
+               reinterpret_cast<const struct sockaddr*>(&dest), sizeof(dest)),
+        SyscallSucceedsWithValue(sizeof(send_buf)));
+  }
+
+  // Send the second fragment. Its payload only contains the UDP payload.
+  {
+    ip.tot_len = htons(sizeof(ip) + sizeof(kUdpPayload));
+    // Clear the MF (More Fragment) flags, and set the fragment offset (in
+    // multiple of 8-bytes).
+    ip.frag_off = htons(sizeof(udp) / 8);
+    // Clear the checksum before re-calculating it.
+    ip.check = 0;
+    ip.check = IPChecksum(ip);
+
+    char send_buf[sizeof(ip) + sizeof(kUdpPayload)];
+    memcpy(send_buf, &ip, sizeof(ip));
+    memcpy(send_buf + sizeof(ip), kUdpPayload, sizeof(kUdpPayload));
+    ASSERT_THAT(
+        sendto(socket_, send_buf, sizeof(send_buf), 0,
+               reinterpret_cast<const struct sockaddr*>(&dest), sizeof(dest)),
+        SyscallSucceedsWithValue(sizeof(send_buf)));
+  }
+
+  {
+    struct pollfd pfd = {
+        .fd = udpfd.get(),
+        .events = POLLIN,
+    };
+    ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, 5000), SyscallSucceedsWithValue(1));
+    char recv_buf[sizeof(kUdpPayload) + 1] = {0};
+    ASSERT_THAT(recv(udpfd.get(), recv_buf, sizeof(recv_buf), 0),
+                SyscallSucceedsWithValue(sizeof(kUdpPayload)));
+    EXPECT_STREQ(recv_buf, kUdpPayload);
+  }
+
+  {
+    struct pollfd pfd = {
+        .fd = rawfd.get(),
+        .events = POLLIN,
+    };
+    ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, 5000), SyscallSucceedsWithValue(1));
+    char recv_buf[sizeof(ip) + sizeof(udp) + sizeof(kUdpPayload) + 1] = {0};
+    EXPECT_THAT(recv(rawfd.get(), recv_buf, sizeof(recv_buf), 0),
+                SyscallSucceedsWithValue(sizeof(ip) + sizeof(udp) +
+                                         sizeof(kUdpPayload)));
+    EXPECT_STREQ(recv_buf + sizeof(ip) + sizeof(udp), kUdpPayload);
+  }
+}
+
+TEST_P(CookedPacketTest, SendIPv6FragmentsReceiveReassembledFromRaw) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+  FileDescriptor rawfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_RAW, IPPROTO_UDP));
+  FileDescriptor udpfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_DGRAM, 0));
+
+  {
+    const sockaddr_in6 bind_addr = {
+        .sin6_family = AF_INET6,
+        .sin6_port = kPort,
+        .sin6_addr = in6addr_loopback,
+    };
+    ASSERT_THAT(
+        bind(udpfd.get(), reinterpret_cast<const struct sockaddr*>(&bind_addr),
+             sizeof(bind_addr)),
+        SyscallSucceeds());
+  }
+
+  const int loopback_index =
+      EXPECT_NO_ERRNO_AND_VALUE(gvisor::testing::GetLoopbackIndex());
+  ASSERT_NE(loopback_index, 0);
+
+  // Set up the destination physical address.
+  const struct sockaddr_ll dest = {
+      .sll_family = AF_PACKET,
+      .sll_protocol = htons(ETH_P_IPV6),
+      .sll_ifindex = loopback_index,
+      .sll_halen = ETH_ALEN,
+  };
+
+  // Set up the IP header. The total len field will be set independently for
+  // each fragment.
+  struct ip6_hdr ipv6 = {
+      .ip6_ctlun =
+          {
+              .ip6_un1 =
+                  {
+                      .ip6_un1_flow = htonl(/*version=*/6 << 28),
+                      .ip6_un1_nxt = IPPROTO_FRAGMENT,
+                      .ip6_un1_hlim = 64,
+                  },
+          },
+      .ip6_src = in6addr_loopback,
+      .ip6_dst = in6addr_loopback,
+  };
+
+  // Set up the UDP header.
+  constexpr char kUdpPayload[] = "124567890";
+  udphdr udp = {
+      .source = kPort,
+      .dest = kPort,
+      .len = htons(sizeof(udphdr) + sizeof(kUdpPayload)),
+  };
+  udp.check = UDPv6Checksum(ipv6, udp, kUdpPayload, sizeof(kUdpPayload));
+
+  // Send the first fragment. Its payload contains the fragment extension header
+  // and the UDP header.
+  {
+    // The first IP fragment's total payload length must be a multiple of 8.
+    ASSERT_EQ((sizeof(ip6_frag) + sizeof(udp)) % 8, 0);
+    ipv6.ip6_ctlun.ip6_un1.ip6_un1_plen = htons(sizeof(ip6_frag) + sizeof(udp));
+
+    const ip6_frag frag = {
+        .ip6f_nxt = IPPROTO_UDP,
+        .ip6f_offlg = htons(1),  // set the More fragments bit.
+        .ip6f_ident = htonl(1337),
+    };
+
+    char send_buf[sizeof(ipv6) + sizeof(frag) + sizeof(udp)];
+    memcpy(send_buf, &ipv6, sizeof(ipv6));
+    memcpy(send_buf + sizeof(ipv6), &frag, sizeof(frag));
+    memcpy(send_buf + sizeof(ipv6) + sizeof(frag), &udp, sizeof(udp));
+    ASSERT_THAT(
+        sendto(socket_, send_buf, sizeof(send_buf), 0,
+               reinterpret_cast<const struct sockaddr*>(&dest), sizeof(dest)),
+        SyscallSucceedsWithValue(sizeof(send_buf)));
+  }
+
+  // Send the second fragment. Its payload contains the fragment extension
+  // header and the UDP payload.
+  {
+    ipv6.ip6_ctlun.ip6_un1.ip6_un1_plen =
+        htons(sizeof(ip6_frag) + sizeof(kUdpPayload));
+
+    const ip6_frag frag = {
+        .ip6f_nxt = IPPROTO_UDP,
+        .ip6f_offlg = htons(1 << 3),  // set the fragment offset field to 1.
+        .ip6f_ident = htonl(1337),
+    };
+
+    char send_buf[sizeof(ipv6) + sizeof(frag) + sizeof(kUdpPayload)];
+    memcpy(send_buf, &ipv6, sizeof(ipv6));
+    memcpy(send_buf + sizeof(ipv6), &frag, sizeof(frag));
+    memcpy(send_buf + sizeof(ipv6) + sizeof(frag), kUdpPayload,
+           sizeof(kUdpPayload));
+    ASSERT_THAT(
+        sendto(socket_, send_buf, sizeof(send_buf), 0,
+               reinterpret_cast<const struct sockaddr*>(&dest), sizeof(dest)),
+        SyscallSucceedsWithValue(sizeof(send_buf)));
+  }
+
+  {
+    struct pollfd pfd = {
+        .fd = udpfd.get(),
+        .events = POLLIN,
+    };
+    ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, 5000), SyscallSucceedsWithValue(1));
+    char recv_buf[sizeof(kUdpPayload) + 1] = {0};
+    ASSERT_THAT(recv(udpfd.get(), recv_buf, sizeof(recv_buf), 0),
+                SyscallSucceedsWithValue(sizeof(kUdpPayload)));
+    EXPECT_STREQ(recv_buf, kUdpPayload);
+  }
+
+  {
+    struct pollfd pfd = {
+        .fd = rawfd.get(),
+        .events = POLLIN,
+    };
+    ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, 5000), SyscallSucceedsWithValue(1));
+    char recv_buf[sizeof(udp) + sizeof(kUdpPayload) + 1] = {0};
+    ASSERT_THAT(recv(rawfd.get(), recv_buf, sizeof(recv_buf), 0),
+                SyscallSucceedsWithValue(sizeof(udp) + sizeof(kUdpPayload)));
+    EXPECT_STREQ(recv_buf + sizeof(udp), kUdpPayload);
+  }
+}
+
 INSTANTIATE_TEST_SUITE_P(AllInetTests, CookedPacketTest,
                          ::testing::Values(ETH_P_IP, ETH_P_ALL));
-
 }  // namespace
 
 }  // namespace testing

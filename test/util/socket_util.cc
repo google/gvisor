@@ -16,10 +16,13 @@
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <netinet/ip6.h>
 #include <poll.h>
 #include <sys/socket.h>
 
+#include <functional>
 #include <memory>
+#include <stack>
 
 #include "gtest/gtest.h"
 #include "absl/memory/memory.h"
@@ -893,7 +896,7 @@ TestAddress V6MulticastLinkLocalAllRouters() {
 }
 
 // Checksum computes the internet checksum of a buffer.
-uint16_t Checksum(uint16_t* buf, ssize_t buf_size) {
+uint16_t Checksum(const uint16_t* buf, ssize_t buf_size) {
   // Add up the 16-bit values in the buffer.
   uint32_t total = 0;
   for (unsigned int i = 0; i < buf_size; i += sizeof(*buf)) {
@@ -903,7 +906,7 @@ uint16_t Checksum(uint16_t* buf, ssize_t buf_size) {
 
   // If buf has an odd size, add the remaining byte.
   if (buf_size % 2) {
-    total += *(reinterpret_cast<unsigned char*>(buf) - 1);
+    total += *(reinterpret_cast<const unsigned char*>(buf) - 1);
   }
 
   // This carries any bits past the lower 16 until everything fits in 16 bits.
@@ -917,7 +920,24 @@ uint16_t Checksum(uint16_t* buf, ssize_t buf_size) {
 }
 
 uint16_t IPChecksum(struct iphdr ip) {
-  return Checksum(reinterpret_cast<uint16_t*>(&ip), sizeof(ip));
+  return Checksum(reinterpret_cast<const uint16_t*>(&ip), sizeof(ip));
+}
+
+namespace {
+
+template <typename T>
+static uint16_t PseudoHeaderUDPChecksum(T pseudo_hdr, udphdr udp,
+                                        const char* payload,
+                                        ssize_t payload_len) {
+  const ssize_t buf_size = sizeof(pseudo_hdr) + sizeof(udphdr) + payload_len;
+  char* buf = static_cast<char*>(malloc(buf_size));
+  memcpy(buf, &pseudo_hdr, sizeof(pseudo_hdr));
+  memcpy(buf + sizeof(pseudo_hdr), &udp, sizeof(udp));
+  memcpy(buf + sizeof(pseudo_hdr) + sizeof(udp), payload, payload_len);
+  const uint16_t csum =
+      Checksum(reinterpret_cast<const uint16_t*>(buf), buf_size);
+  free(buf);
+  return csum;
 }
 
 // The pseudo-header defined in RFC 768 for calculating the UDP checksum.
@@ -927,36 +947,53 @@ struct udp_pseudo_hdr {
   char zero;
   char protocol;
   uint16_t udplen;
-};
+} __attribute__((packed));
 
-uint16_t UDPChecksum(struct iphdr iphdr, struct udphdr udphdr,
-                     const char* payload, ssize_t payload_len) {
-  struct udp_pseudo_hdr phdr = {};
-  phdr.srcip = iphdr.saddr;
-  phdr.destip = iphdr.daddr;
-  phdr.zero = 0;
-  phdr.protocol = IPPROTO_UDP;
-  phdr.udplen = udphdr.len;
+// The pseudo-header defined in RFC 2640 for calculating the UDP checksum.
+struct udpv6_pseudo_hdr {
+  in6_addr srcip;
+  in6_addr destip;
+  uint32_t udplen;
+  char zero[3];
+  char nexthdr;
+} __attribute__((packed));
 
-  ssize_t buf_size = sizeof(phdr) + sizeof(udphdr) + payload_len;
-  char* buf = static_cast<char*>(malloc(buf_size));
-  memcpy(buf, &phdr, sizeof(phdr));
-  memcpy(buf + sizeof(phdr), &udphdr, sizeof(udphdr));
-  memcpy(buf + sizeof(phdr) + sizeof(udphdr), payload, payload_len);
+}  // namespace
 
-  uint16_t csum = Checksum(reinterpret_cast<uint16_t*>(buf), buf_size);
-  free(buf);
-  return csum;
+uint16_t UDPChecksum(iphdr ip, udphdr udp, const char* payload,
+                     ssize_t payload_len) {
+  const struct udp_pseudo_hdr phdr = {
+      .srcip = ip.saddr,
+      .destip = ip.daddr,
+      .zero = 0,
+      .protocol = IPPROTO_UDP,
+      .udplen = udp.len,
+  };
+
+  return PseudoHeaderUDPChecksum(phdr, udp, payload, payload_len);
 }
 
-uint16_t ICMPChecksum(struct icmphdr icmphdr, const char* payload,
+uint16_t UDPv6Checksum(ip6_hdr ipv6, udphdr udp, const char* payload,
+                       ssize_t payload_len) {
+  const udpv6_pseudo_hdr phdr = {
+      .srcip = ipv6.ip6_src,
+      .destip = ipv6.ip6_dst,
+      .udplen = udp.len,
+      .nexthdr = IPPROTO_UDP,
+  };
+
+  return PseudoHeaderUDPChecksum(phdr, udp, payload, payload_len);
+}
+
+uint16_t ICMPChecksum(icmphdr icmphdr, const char* payload,
                       ssize_t payload_len) {
-  ssize_t buf_size = sizeof(icmphdr) + payload_len;
+  const ssize_t buf_size = sizeof(icmphdr) + payload_len;
   char* buf = static_cast<char*>(malloc(buf_size));
   memcpy(buf, &icmphdr, sizeof(icmphdr));
   memcpy(buf + sizeof(icmphdr), payload, payload_len);
 
-  uint16_t csum = Checksum(reinterpret_cast<uint16_t*>(buf), buf_size);
+  const uint16_t csum =
+      Checksum(reinterpret_cast<const uint16_t*>(buf), buf_size);
   free(buf);
   return csum;
 }
@@ -1123,6 +1160,55 @@ PosixErrorOr<int> MaybeLimitEphemeralPorts() {
     }
   }
   return max - min;
+}
+
+PosixErrorOr<std::function<PosixError()>> AllowMartianPacketsOnLoopback() {
+  if (IsRunningOnGvisor()) {
+    return std::function<PosixError()>([]() { return NoError(); });
+  }
+
+  constexpr std::array<const char*, 2> files = {
+      "/proc/sys/net/ipv4/conf/lo/accept_local",
+      "/proc/sys/net/ipv4/conf/lo/route_localnet",
+  };
+  std::stack<std::pair<const char*, char>> initial_configs;
+
+  // Record and update the initial configurations.
+  PosixError err = [&]() -> PosixError {
+    for (const char* f : files) {
+      ASSIGN_OR_RETURN_ERRNO(FileDescriptor fd, Open(f, O_RDWR));
+      char initial_config;
+      RETURN_ERROR_IF_SYSCALL_FAIL(
+          read(fd.get(), &initial_config, sizeof(initial_config)));
+
+      constexpr char kEnabled = '1';
+      RETURN_ERROR_IF_SYSCALL_FAIL(lseek(fd.get(), 0, SEEK_SET));
+      RETURN_ERROR_IF_SYSCALL_FAIL(
+          write(fd.get(), &kEnabled, sizeof(kEnabled)));
+      initial_configs.push(std::make_pair(f, initial_config));
+    }
+    return NoError();
+  }();
+
+  // Only define the restore function after we're done updating the config to
+  // capture the initialized initial_configs std::stack.
+  std::function<PosixError()> restore = [initial_configs]() mutable {
+    while (!initial_configs.empty()) {
+      std::pair<const char*, char> cfg = initial_configs.top();
+      initial_configs.pop();
+      ASSIGN_OR_RETURN_ERRNO(FileDescriptor fd, Open(cfg.first, O_WRONLY));
+      RETURN_ERROR_IF_SYSCALL_FAIL(
+          write(fd.get(), &cfg.second, sizeof(cfg.second)));
+    }
+    return NoError();
+  };
+
+  if (!err.ok()) {
+    PosixError ignored_err __attribute__((unused)) = restore();
+    return err;
+  }
+
+  return restore;
 }
 
 }  // namespace testing
