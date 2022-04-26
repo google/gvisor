@@ -416,13 +416,13 @@ func WaitForReady(pid int, timeout time.Duration, ready func() (bool, error)) er
 // ends with '/', it's used as a directory with default file name.
 // 'logPattern' can contain variables that are substituted:
 //   - %TIMESTAMP%: is replaced with a timestamp using the following format:
-//			<yyyymmdd-hhmmss.uuuuuu>
-//	 - %COMMAND%: is replaced with 'command'
-//	 - %TEST%: is replaced with 'test' (omitted by default)
+//     <yyyymmdd-hhmmss.uuuuuu>
+//   - %COMMAND%: is replaced with 'command'
+//   - %TEST%: is replaced with 'test' (omitted by default)
 func DebugLogFile(logPattern, command, test string) (*os.File, error) {
 	if strings.HasSuffix(logPattern, "/") {
-		// Default format: <debug-log>/runsc.log.<yyyymmdd-hhmmss.uuuuuu>.<command>
-		logPattern += "runsc.log.%TIMESTAMP%.%COMMAND%"
+		// Default format: <debug-log>/runsc.log.<yyyymmdd-hhmmss.uuuuuu>.<command>.txt
+		logPattern += "runsc.log.%TIMESTAMP%.%COMMAND%.txt"
 	}
 	logPattern = strings.Replace(logPattern, "%TIMESTAMP%", time.Now().Format("20060102-150405.000000"), -1)
 	logPattern = strings.Replace(logPattern, "%COMMAND%", command, -1)
