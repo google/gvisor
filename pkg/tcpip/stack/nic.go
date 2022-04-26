@@ -17,8 +17,8 @@ package stack
 import (
 	"fmt"
 	"reflect"
-	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -61,9 +61,7 @@ type nic struct {
 	duplicateAddressDetectors map[tcpip.NetworkProtocolNumber]DuplicateAddressDetector
 
 	// enabled is set to 1 when the NIC is enabled and 0 when it is disabled.
-	//
-	// Must be accessed using atomic operations.
-	enabled uint32
+	enabled atomicbitops.Uint32
 
 	// linkResQueue holds packets that are waiting for link resolution to
 	// complete.
@@ -221,7 +219,7 @@ func (n *nic) getNetworkEndpoint(proto tcpip.NetworkProtocolNumber) NetworkEndpo
 
 // Enabled implements NetworkInterface.
 func (n *nic) Enabled() bool {
-	return atomic.LoadUint32(&n.enabled) == 1
+	return n.enabled.Load() == 1
 }
 
 // setEnabled sets the enabled status for the NIC.
@@ -229,9 +227,9 @@ func (n *nic) Enabled() bool {
 // Returns true if the enabled status was updated.
 func (n *nic) setEnabled(v bool) bool {
 	if v {
-		return atomic.SwapUint32(&n.enabled, 1) == 0
+		return n.enabled.Swap(1) == 0
 	}
-	return atomic.SwapUint32(&n.enabled, 0) == 1
+	return n.enabled.Swap(0) == 1
 }
 
 // disable disables n.

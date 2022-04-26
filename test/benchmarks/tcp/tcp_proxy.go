@@ -324,7 +324,7 @@ func (n netstackImpl) installProbe(probeFileName string) (close func()) {
 	}
 	probeEncoder := gob.NewEncoder(probeFile)
 	// Install a TCP Probe.
-	n.s.AddTCPProbe(func(state stack.TCPEndpointState) {
+	n.s.AddTCPProbe(func(state *stack.TCPEndpointState) {
 		probeEncoder.Encode(state)
 	})
 	return func() { probeFile.Close() }

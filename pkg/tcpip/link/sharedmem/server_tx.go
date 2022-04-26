@@ -18,9 +18,8 @@
 package sharedmem
 
 import (
-	"sync/atomic"
-
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/eventfd"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -50,7 +49,7 @@ type serverTx struct {
 
 	// sharedEventFDState is the memory region in sharedData used to enable/disable
 	// notifications on eventFD.
-	sharedEventFDState *uint32
+	sharedEventFDState *atomicbitops.Uint32
 }
 
 // init initializes all tstate needed by the serverTx queue based on the
@@ -198,7 +197,7 @@ func (s *serverTx) transmit(views []buffer.View) bool {
 
 func (s *serverTx) notificationsEnabled() bool {
 	// notifications are considered to be enabled unless explicitly disabled.
-	return atomic.LoadUint32(s.sharedEventFDState) != queue.EventFDDisabled
+	return s.sharedEventFDState.Load() != queue.EventFDDisabled
 }
 
 func (s *serverTx) notify() {

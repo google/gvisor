@@ -46,7 +46,7 @@ func TestRACKUpdate(t *testing.T) {
 
 	var xmitTime tcpip.MonotonicTime
 	probeDone := make(chan struct{})
-	c.Stack().AddTCPProbe(func(state stack.TCPEndpointState) {
+	c.Stack().AddTCPProbe(func(state *stack.TCPEndpointState) {
 		// Validate that the endpoint Sender.RACKState is what we expect.
 		if state.Sender.RACKState.XmitTime.Before(xmitTime) {
 			t.Fatalf("RACK transmit time failed to update when an ACK is received")
@@ -99,7 +99,7 @@ func TestRACKDetectReorder(t *testing.T) {
 	var n int
 	const ackNumToVerify = 2
 	probeDone := make(chan struct{})
-	c.Stack().AddTCPProbe(func(state stack.TCPEndpointState) {
+	c.Stack().AddTCPProbe(func(state *stack.TCPEndpointState) {
 		gotSeq := state.Sender.RACKState.FACK
 		wantSeq := state.Sender.SndNxt
 		// FACK should be updated to the highest ending sequence number of the
@@ -160,7 +160,7 @@ const (
 
 func addDSACKSeenCheckerProbe(t *testing.T, c *context.Context, numACK int, probeDone chan int) {
 	var n int
-	c.Stack().AddTCPProbe(func(state stack.TCPEndpointState) {
+	c.Stack().AddTCPProbe(func(state *stack.TCPEndpointState) {
 		// Validate that RACK detects DSACK.
 		n++
 		if n < numACK {
@@ -808,7 +808,7 @@ func TestRACKWithInvalidDSACKBlock(t *testing.T) {
 	probeDone := make(chan struct{})
 	const ackNumToVerify = 2
 	var n int
-	c.Stack().AddTCPProbe(func(state stack.TCPEndpointState) {
+	c.Stack().AddTCPProbe(func(state *stack.TCPEndpointState) {
 		// Validate that RACK does not detect DSACK when DSACK block is
 		// not the first SACK block.
 		n++
@@ -854,7 +854,7 @@ func TestRACKWithInvalidDSACKBlock(t *testing.T) {
 
 func addReorderWindowCheckerProbe(c *context.Context, numACK int, probeDone chan error) {
 	var n int
-	c.Stack().AddTCPProbe(func(state stack.TCPEndpointState) {
+	c.Stack().AddTCPProbe(func(state *stack.TCPEndpointState) {
 		// Validate that RACK detects DSACK.
 		n++
 		if n < numACK {
@@ -965,7 +965,7 @@ func TestRACKUpdateSackedOut(t *testing.T) {
 
 	probeDone := make(chan struct{})
 	ackNum := 0
-	c.Stack().AddTCPProbe(func(state stack.TCPEndpointState) {
+	c.Stack().AddTCPProbe(func(state *stack.TCPEndpointState) {
 		// Validate that the endpoint Sender.SackedOut is what we expect.
 		if state.Sender.SackedOut != 2 && ackNum == 0 {
 			t.Fatalf("SackedOut got updated to wrong value got: %v want: 2", state.Sender.SackedOut)

@@ -17,6 +17,7 @@ package stack
 import (
 	"time"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/internal/tcp"
@@ -25,7 +26,7 @@ import (
 
 // TCPProbeFunc is the expected function type for a TCP probe function to be
 // passed to stack.AddTCPProbe.
-type TCPProbeFunc func(s TCPEndpointState)
+type TCPProbeFunc func(s *TCPEndpointState)
 
 // TCPCubicState is used to hold a copy of the internal cubic state when the
 // TCPProbeFunc is invoked.
@@ -396,9 +397,7 @@ type TCPSndBufState struct {
 
 	// AutoTuneSndBufDisabled indicates that the auto tuning of send buffer
 	// is disabled.
-	//
-	// Must be accessed using atomic operations.
-	AutoTuneSndBufDisabled uint32
+	AutoTuneSndBufDisabled atomicbitops.Uint32
 }
 
 // TCPEndpointStateInner contains the members of TCPEndpointState used directly
