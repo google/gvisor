@@ -18,6 +18,7 @@ import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
 
@@ -25,6 +26,7 @@ import (
 type jobController struct {
 	controllerCommon
 	controllerStateless
+	controllerNoResource
 
 	id atomicbitops.Int64
 }
@@ -33,7 +35,7 @@ var _ controller = (*jobController)(nil)
 
 func newJobController(fs *filesystem) *jobController {
 	c := &jobController{}
-	c.controllerCommon.init(controllerJob, fs)
+	c.controllerCommon.init(kernel.CgroupControllerJob, fs)
 	return c
 }
 

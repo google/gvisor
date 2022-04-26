@@ -32,6 +32,7 @@ import (
 type memoryController struct {
 	controllerCommon
 	controllerStateless
+	controllerNoResource
 
 	limitBytes            atomicbitops.Int64
 	softLimitBytes        atomicbitops.Int64
@@ -62,7 +63,7 @@ func newMemoryController(fs *filesystem, defaults map[string]int64) *memoryContr
 	consumeDefault("memory.soft_limit_in_bytes", &c.softLimitBytes)
 	consumeDefault("memory.move_charge_at_immigrate", &c.moveChargeAtImmigrate)
 
-	c.controllerCommon.init(controllerMemory, fs)
+	c.controllerCommon.init(kernel.CgroupControllerMemory, fs)
 	return c
 }
 

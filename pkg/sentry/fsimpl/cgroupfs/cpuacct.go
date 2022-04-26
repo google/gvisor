@@ -44,7 +44,7 @@ import (
 // +stateify savable
 type cpuacctController struct {
 	controllerCommon
-	controllerStateless
+	controllerNoResource
 
 	mu sync.Mutex `state:"nosave"`
 
@@ -65,7 +65,7 @@ func newCPUAcctController(fs *filesystem) *cpuacctController {
 	c := &cpuacctController{
 		taskCommittedCharges: make(map[*kernel.Task]usage.CPUStats),
 	}
-	c.controllerCommon.init(controllerCPUAcct, fs)
+	c.controllerCommon.init(kernel.CgroupControllerCPUAcct, fs)
 	return c
 }
 
@@ -133,7 +133,7 @@ type cpuacctCgroup struct {
 }
 
 func (c *cpuacctCgroup) cpuacctController() *cpuacctController {
-	return c.controllers[controllerCPUAcct].(*cpuacctController)
+	return c.controllers[kernel.CgroupControllerCPUAcct].(*cpuacctController)
 }
 
 // checklocks:c.fs.tasksMu

@@ -26,7 +26,9 @@ import (
 
 // EnterInitialCgroups moves t into an initial set of cgroups.
 //
-// Precondition: t isn't in any cgroups yet, t.cgs is empty.
+// This is analogous to Linux's kernel/cgroup/cgroup.c:cgroup_css_set_fork().
+//
+// Precondition: t isn't in any cgroups yet, t.cgroups is empty.
 func (t *Task) EnterInitialCgroups(parent *Task) {
 	var inherit map[Cgroup]struct{}
 	if parent != nil {
@@ -211,4 +213,21 @@ func (t *Task) GenerateProcTaskCgroup(buf *bytes.Buffer) {
 	for _, cgE := range cgEntries {
 		fmt.Fprintf(buf, "%d:%s:%s\n", cgE.hierarchyID, cgE.controllers, cgE.path)
 	}
+}
+
+// +checklocks:t.mu
+func (t *Task) chargeLocked(target *Task, ctl CgroupControllerType, res CgroupResourceType, value int64) error {
+	for c, _ := range t.cgroups {
+		if err := c.Charge(target, c.Dentry, ctl, res, value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ChargeFor charges t's cgroup on behalf of some other task.
+func (t *Task) ChargeFor(other *Task, ctl CgroupControllerType, res CgroupResourceType, value int64) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.chargeLocked(other, ctl, res, value)
 }

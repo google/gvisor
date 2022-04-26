@@ -46,7 +46,7 @@ using ::testing::Key;
 using ::testing::Not;
 
 std::vector<std::string> known_controllers = {
-    "cpu", "cpuset", "cpuacct", "job", "memory",
+    "cpu", "cpuset", "cpuacct", "job", "memory", "pids",
 };
 
 bool CgroupsAvailable() {
@@ -86,6 +86,8 @@ class NoopThreads {
   absl::Notification exit_;
   bool joined_ = false;
 };
+
+void* DummyThreadBody(void* unused) { return nullptr; }
 
 TEST(Cgroup, MountSucceeds) {
   SKIP_IF(!CgroupsAvailable());
@@ -1070,6 +1072,160 @@ TEST(ProcCgroups, ProcfsReportsTasksCgroup) {
   entries = ASSERT_NO_ERRNO_AND_VALUE(ProcPIDCgroupEntries(tid));
   EXPECT_EQ(h1c2.CanonicalPath(), entries["memory"].path);
   EXPECT_EQ(h2c2.CanonicalPath(), entries["cpu,cpuacct"].path);
+}
+
+TEST(PIDsCgroup, ControlFilesExist) {
+  SKIP_IF(!CgroupsAvailable());
+
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("pids"));
+
+  // The pids.max file isn't available for the root cgroup.
+  EXPECT_THAT(c.ReadControlFile("pids.max"), PosixErrorIs(ENOENT, _));
+
+  // There should be at least one PID in use in the root controller, since the
+  // test process is running in the root controller.
+  const int64_t current =
+      ASSERT_NO_ERRNO_AND_VALUE(c.ReadIntegerControlFile("pids.current"));
+  EXPECT_GE(current, 1);
+
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child"));
+
+  // The limit file should exist for any child cgroups, and should be unlimited
+  // by default.
+  const std::string child_limit =
+      ASSERT_NO_ERRNO_AND_VALUE(child.ReadControlFile("pids.max"));
+  EXPECT_EQ(child_limit, "max\n");
+
+  // The child cgroup should have no tasks, and thus no pids usage.
+  const int64_t current_child =
+      ASSERT_NO_ERRNO_AND_VALUE(child.ReadIntegerControlFile("pids.current"));
+  EXPECT_EQ(current_child, 0);
+}
+
+TEST(PIDsCgroup, ChargeMigration) {
+  SKIP_IF(!CgroupsAvailable());
+
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("pids"));
+
+  const int64_t root_start =
+      ASSERT_NO_ERRNO_AND_VALUE(c.ReadIntegerControlFile("pids.current"));
+  // Root should have at least one task.
+  ASSERT_GE(root_start, 1);
+
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child"));
+
+  // Child initially has no charge.
+  EXPECT_THAT(child.ReadIntegerControlFile("pids.current"),
+              IsPosixErrorOkAndHolds(0));
+
+  // Move the test process. The root cgroup should lose charges equal to the
+  // number of tasks moved to the child.
+  ASSERT_NO_ERRNO(child.Enter(getpid()));
+
+  const int64_t child_after =
+      ASSERT_NO_ERRNO_AND_VALUE(child.ReadIntegerControlFile("pids.current"));
+  EXPECT_GE(child_after, 1);
+
+  const int64_t root_after =
+      ASSERT_NO_ERRNO_AND_VALUE(c.ReadIntegerControlFile("pids.current"));
+  EXPECT_EQ(root_start - root_after, child_after);
+}
+
+TEST(PIDsCgroup, MigrationCanExceedLimit) {
+  SKIP_IF(!CgroupsAvailable());
+
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("pids"));
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child"));
+
+  // Set child limit to 0, and try move tasks into it. This should be allowed,
+  // as the limit isn't enforced on migration.
+  ASSERT_NO_ERRNO(child.WriteIntegerControlFile("pids.max", 0));
+  ASSERT_NO_ERRNO(child.Enter(getpid()));
+  EXPECT_THAT(child.ReadIntegerControlFile("pids.current"),
+              IsPosixErrorOkAndHolds(Gt(0)));
+}
+
+TEST(PIDsCgroup, SetInvalidLimit) {
+  SKIP_IF(!CgroupsAvailable());
+
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("pids"));
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child"));
+
+  // Set a valid limit, so we can verify it doesn't change after invalid writes.
+  ASSERT_NO_ERRNO(child.WriteIntegerControlFile("pids.max", 1234));
+
+  EXPECT_THAT(child.WriteControlFile("pids.max", "m a x"),
+              PosixErrorIs(EINVAL, _));
+  EXPECT_THAT(child.WriteControlFile("pids.max", "some-invalid-string"),
+              PosixErrorIs(EINVAL, _));
+  EXPECT_THAT(child.WriteControlFile("pids.max", "-1"),
+              PosixErrorIs(EINVAL, _));
+  EXPECT_THAT(child.WriteControlFile("pids.max", "-3894732"),
+              PosixErrorIs(EINVAL, _));
+  // This value is much larger than the maximum allowed value of ~ 1<<22.
+  EXPECT_THAT(child.WriteIntegerControlFile("pids.max", LLONG_MAX - 1),
+              PosixErrorIs(EINVAL, _));
+
+  // The initial valid limit should remain unchanged.
+  EXPECT_THAT(child.ReadIntegerControlFile("pids.max"),
+              IsPosixErrorOkAndHolds(1234));
+}
+
+TEST(PIDsCgroup, CanLowerLimitBelowCurrentCharge) {
+  SKIP_IF(!CgroupsAvailable());
+
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("pids"));
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child"));
+  ASSERT_NO_ERRNO(child.Enter(getpid()));
+  // Confirm current charge is non-zero.
+  ASSERT_THAT(child.ReadIntegerControlFile("pids.current"),
+              IsPosixErrorOkAndHolds(Gt(0)));
+  // Try set limit to zero.
+  EXPECT_NO_ERRNO(child.WriteIntegerControlFile("pids.max", 0));
+}
+
+TEST(PIDsCgroup, LimitEnforced) {
+  SKIP_IF(!CgroupsAvailable());
+
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("pids"));
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child"));
+  ASSERT_NO_ERRNO(child.Enter(getpid()));
+
+  // Set limit to so we have room for one more task.
+  const int64_t baseline =
+      ASSERT_NO_ERRNO_AND_VALUE(child.ReadIntegerControlFile("pids.current"));
+  ASSERT_NO_ERRNO(child.WriteIntegerControlFile("pids.max", baseline + 1));
+
+  // Spawning a thread should succeed.
+  NoopThreads t1(1);
+  ASSERT_THAT(child.ReadIntegerControlFile("pids.current"),
+              IsPosixErrorOkAndHolds(baseline + 1));
+
+  // Attempting to spawn another thread should fail.
+  pthread_t pt;
+  EXPECT_EQ(pthread_create(&pt, nullptr, &DummyThreadBody, nullptr), EAGAIN);
+  ASSERT_THAT(child.ReadIntegerControlFile("pids.current"),
+              IsPosixErrorOkAndHolds(baseline + 1));
+
+  // Exit the first thread and try create a thread again, which should succeed.
+  t1.Join();
+  ASSERT_THAT(child.ReadIntegerControlFile("pids.current"),
+              IsPosixErrorOkAndHolds(baseline));
+  NoopThreads t2(1);
+  EXPECT_THAT(child.ReadIntegerControlFile("pids.current"),
+              IsPosixErrorOkAndHolds(baseline + 1));
+
+  // Increase the limit and try again.
+  ASSERT_NO_ERRNO(child.WriteIntegerControlFile("pids.max", baseline + 2));
+  NoopThreads t3(1);
+  EXPECT_THAT(child.ReadIntegerControlFile("pids.current"),
+              IsPosixErrorOkAndHolds(baseline + 2));
 }
 
 }  // namespace

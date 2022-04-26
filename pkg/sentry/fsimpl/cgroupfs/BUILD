@@ -26,6 +26,7 @@ go_library(
         "dir_refs.go",
         "job.go",
         "memory.go",
+        "pids.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
