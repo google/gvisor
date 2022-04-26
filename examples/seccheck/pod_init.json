@@ -1,0 +1,19 @@
+{
+  "trace_session": {
+    "name": "Default",
+    "points": [
+      {
+        "name": "sentry/clone"
+      }
+    ],
+    "sinks": [
+      {
+        "name": "remote",
+        "config": {
+          "endpoint": "/tmp/gvisor_events.sock"
+        },
+        "ignore_setup_error": true
+      }
+    ]
+  }
+}

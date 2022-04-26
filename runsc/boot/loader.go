@@ -225,6 +225,12 @@ type Args struct {
 	// ProductName is the value to show in
 	// /sys/devices/virtual/dmi/id/product_name.
 	ProductName string
+	// PodInitConfigFD is the file descriptor to a file passed in the
+	// --pod-init-config flag
+	PodInitConfigFD int
+	// SinkFDs is an ordered array of file descriptors to be used by seccheck
+	// sinks configured from the --pod-init-config file.
+	SinkFDs []int
 }
 
 // make sure stdioFDs are always the same on initial start and on restore
@@ -419,6 +425,12 @@ func New(args Args) (*Loader, error) {
 		}
 		defer hostFilesystem.DecRef(k.SupervisorContext())
 		k.SetHostMount(k.VFS().NewDisconnectedMount(hostFilesystem, nil, &vfs.MountOptions{}))
+	}
+
+	if args.PodInitConfigFD >= 0 {
+		if err := setupSeccheck(args.PodInitConfigFD, args.SinkFDs); err != nil {
+			log.Warningf("unable to configure event session: %v", err)
+		}
 	}
 
 	eid := execID{cid: args.ID}

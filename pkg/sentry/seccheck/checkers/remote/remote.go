@@ -33,6 +33,14 @@ import (
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 )
 
+func init() {
+	seccheck.RegisterSink(seccheck.SinkDesc{
+		Name:  "remote",
+		Setup: Setup,
+		New:   New,
+	})
+}
+
 // Remote sends a serialized point to a remote process asynchronously over a
 // SOCK_SEQPACKET Unix-domain socket. Each message corresponds to a single
 // serialized point proto, preceded by a standard header. If the point cannot
@@ -45,6 +53,21 @@ type Remote struct {
 }
 
 var _ seccheck.Checker = (*Remote)(nil)
+
+// Setup starts the connection to the remote process and returns a file that
+// can be used to communicate with it. The caller is responsible to close to
+// file.
+func Setup(config map[string]interface{}) (*os.File, error) {
+	addrOpaque, ok := config["endpoint"]
+	if !ok {
+		return nil, fmt.Errorf("endpoint not present in configuration")
+	}
+	addr, ok := addrOpaque.(string)
+	if !ok {
+		return nil, fmt.Errorf("endpoint %q is not a string", addrOpaque)
+	}
+	return setup(addr)
+}
 
 func setup(path string) (*os.File, error) {
 	log.Debugf("Remote sink connecting to %q", path)
