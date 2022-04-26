@@ -138,6 +138,10 @@ type controller interface {
 	//
 	// Precondition: Caller must call a corresponding PrepareMigrate.
 	AbortMigrate(t *kernel.Task, src controller)
+
+	// Charge charges a controller for a particular resource. The implementation
+	// should panic if passed a resource type they do not control.
+	Charge(t *kernel.Task, d *kernfs.Dentry, res kernel.CgroupResourceType, value int64) error
 }
 
 // cgroupInode implements kernel.CgroupImpl and kernfs.Inode.
@@ -182,10 +186,11 @@ func (fs *filesystem) newCgroupInode(ctx context.Context, creds *auth.Credential
 		}
 	} else {
 		for _, ctl := range fs.controllers {
-			new := ctl.Clone()
-			// Uniqueness of controllers enforced by the filesystem on creation.
-			c.controllers[ctl.Type()] = new
-			new.AddControlFiles(ctx, creds, c, contents)
+			// Uniqueness of controllers enforced by the filesystem on
+			// creation. The root cgroup uses the controllers directly from the
+			// filesystem.
+			c.controllers[ctl.Type()] = ctl
+			ctl.AddControlFiles(ctx, creds, c, contents)
 		}
 	}
 
@@ -282,6 +287,7 @@ func (c *cgroupInode) AbortMigrate(t *kernel.Task, src *kernel.Cgroup) {
 	}
 }
 
+// CgroupFromControlFileFD returns a cgroup object given a control file FD for the cgroup.
 func (c *cgroupInode) CgroupFromControlFileFD(fd *vfs.FileDescription) kernel.Cgroup {
 	controlFileDentry := fd.Dentry().Impl().(*kernfs.Dentry)
 	// The returned parent dentry remains valid without holding locks because in
@@ -293,6 +299,22 @@ func (c *cgroupInode) CgroupFromControlFileFD(fd *vfs.FileDescription) kernel.Cg
 		Dentry:     parentD,
 		CgroupImpl: c,
 	}
+}
+
+// Charge implements kernel.CgroupImpl.Charge.
+//
+// Charge notifies a matching controller of a change in resource usage. Due to
+// the uniqueness of controllers, at most one controller will match. If no
+// matching controller is present in this directory, the call silently
+// succeeds. The caller should call Charge on all hierarchies to ensure any
+// matching controller across the entire system is charged.
+func (c *cgroupInode) Charge(t *kernel.Task, d *kernfs.Dentry, ctlType kernel.CgroupControllerType, res kernel.CgroupResourceType, value int64) error {
+	c.fs.tasksMu.RLock()
+	defer c.fs.tasksMu.RUnlock()
+	if ctl, ok := c.controllers[ctlType]; ok {
+		return ctl.Charge(t, d, res, value)
+	}
+	return nil
 }
 
 func sortTIDs(tids []kernel.ThreadID) {
@@ -435,3 +457,13 @@ func (*controllerStateless) CommitMigrate(t *kernel.Task, src controller) {}
 
 // AbortMigrate implements controller.AbortMigrate.
 func (*controllerStateless) AbortMigrate(t *kernel.Task, src controller) {}
+
+// controllerNoResource partially implements controller. It stubs out the Charge
+// method for controllers that don't track resource usage through the charge
+// mechanism.
+type controllerNoResource struct{}
+
+// Charge implements controller.Charge.
+func (*controllerNoResource) Charge(t *kernel.Task, d *kernfs.Dentry, res kernel.CgroupResourceType, value int64) error {
+	panic(fmt.Sprintf("cgroupfs: Attempted to charge a controller with unknown resource %v for value %v", res, value))
+}

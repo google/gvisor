@@ -494,6 +494,14 @@ func (t *Task) Parent() *Task {
 	return t.parent
 }
 
+// ParentLocked returns t's parent. Caller must ensure t's TaskSet mu
+// is locked for at least reading.
+//
+// +checklocks:t.tg.pidns.owner.mu
+func (t *Task) ParentLocked() *Task {
+	return t.parent
+}
+
 // ThreadID returns t's thread ID in its own PID namespace. If the task is
 // dead, ThreadID returns 0.
 func (t *Task) ThreadID() ThreadID {

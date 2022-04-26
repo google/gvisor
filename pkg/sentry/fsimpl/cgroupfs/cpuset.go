@@ -35,6 +35,7 @@ import (
 type cpusetController struct {
 	controllerCommon
 	controllerStateless
+	controllerNoResource
 
 	maxCpus uint32
 	maxMems uint32
@@ -59,7 +60,7 @@ func newCPUSetController(k *kernel.Kernel, fs *filesystem) *cpusetController {
 		maxCpus: uint32(k.ApplicationCores()),
 		maxMems: 1, // We always report a single NUMA node.
 	}
-	c.controllerCommon.init(controllerCPUSet, fs)
+	c.controllerCommon.init(kernel.CgroupControllerCPUSet, fs)
 	return c
 }
 
