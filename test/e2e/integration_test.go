@@ -911,3 +911,42 @@ func TestRevalidateSymlinkChain(t *testing.T) {
 		t.Fatalf("Read wrong file, want: %q, got: %q", want, got)
 	}
 }
+
+// TestTmpMountWithSize checks when 'tmpfs' is mounted
+// with size option the limit is not exceeded.
+func TestTmpMountWithSize(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	opts := dockerutil.RunOpts{
+		Image: "basic/alpine",
+		Mounts: []mount.Mount{
+			{
+				Type:   mount.TypeTmpfs,
+				Target: "/tmp/foo",
+				TmpfsOptions: &mount.TmpfsOptions{
+					SizeBytes: 4096,
+				},
+			},
+		},
+	}
+	if err := d.Create(ctx, opts, "sleep", "1000"); err != nil {
+		t.Fatalf("docker create failed: %v", err)
+	}
+	if err := d.Start(ctx); err != nil {
+		t.Fatalf("docker start failed: %v", err)
+	}
+
+	if _, err := d.Exec(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", "echo hello > /tmp/foo/test1.txt"); err != nil {
+		t.Fatalf("docker exec failed: %v", err)
+	}
+	echoOutput, err := d.Exec(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", "echo world > /tmp/foo/test2.txt")
+	if err == nil {
+		t.Fatalf("docker exec size check failed: %v", err)
+	}
+	wantErr := "No space left on device"
+	if !strings.Contains(echoOutput, wantErr) {
+		t.Errorf("unexpected echo error:Expected: %v, Got: %v", wantErr, echoOutput)
+	}
+}
