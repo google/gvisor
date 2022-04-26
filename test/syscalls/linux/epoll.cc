@@ -26,11 +26,13 @@
 #include <unistd.h>
 
 #include "gtest/gtest.h"
+#include "absl/synchronization/mutex.h"
 #include "test/util/epoll_util.h"
 #include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
 #include "test/util/signal_util.h"
+#include "test/util/socket_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -349,6 +351,98 @@ TEST(EpollTest, Oneshot) {
   // One-shot entry means that the second epoll_wait should timeout.
   EXPECT_THAT(RetryEINTR(epoll_wait)(epollfd.get(), result, kFDsPerEpoll, 100),
               SyscallSucceedsWithValue(0));
+}
+
+// NOTE(b/228468030): This test aims to test epoll functionality when 2 epoll
+// instances are used to track the same FD using EPOLLONESHOT.
+TEST(EpollTest, DoubleEpollOneShot) {
+  int sockets[2];
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets), SyscallSucceeds());
+  auto epollfd1 = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  auto epollfd2 = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+
+  ASSERT_NO_ERRNO(RegisterEpollFD(epollfd1.get(), sockets[1],
+                                  EPOLLIN | EPOLLONESHOT, kMagicConstant));
+  ASSERT_NO_ERRNO(RegisterEpollFD(epollfd2.get(), sockets[1],
+                                  EPOLLIN | EPOLLONESHOT, kMagicConstant));
+
+  const DisableSave ds;  // May trigger spurious event.
+
+  constexpr char msg1[] = "hello";
+  constexpr char msg2[] = "world";
+  // For the purpose of this test, msg1 and msg2 should be equal in size.
+  ASSERT_EQ(sizeof(msg1), sizeof(msg2));
+  const auto msg_size = sizeof(msg1);
+
+  // Server and client here only communicate with `msg_size` sized messages.
+  // When client sees msg2, it will shutdown. All other communication is msg1.
+  const uint n = 1 << 14;  // Arbitrary to trigger race.
+  ScopedThread server([&sockets, &msg1, &msg2]() {
+    char tmp[msg_size];
+    for (uint i = 0; i < n; ++i) {
+      // Read request.
+      ASSERT_THAT(ReadFd(sockets[0], &tmp, sizeof(tmp)),
+                  SyscallSucceedsWithValue(sizeof(tmp)));
+      EXPECT_EQ(strcmp(tmp, msg1), 0);
+      // Respond to request.
+      if (i < n - 2) {
+        ASSERT_EQ(WriteFd(sockets[0], msg1, sizeof(msg1)), sizeof(msg1));
+      } else {
+        ASSERT_EQ(WriteFd(sockets[0], msg2, sizeof(msg2)), sizeof(msg2));
+      }
+    }
+  });
+
+  // m is used to synchronize reads on sockets[1].
+  absl::Mutex m;
+
+  auto clientFn = [&sockets, &msg1, &msg2, &m](FileDescriptor& epollfd) {
+    char tmp[msg_size];
+    bool rearm = false;
+    while (true) {
+      if (rearm) {
+        // Rearm with EPOLLONESHOT.
+        struct epoll_event event;
+        event.events = EPOLLIN | EPOLLONESHOT;
+        event.data.u64 = kMagicConstant;
+        ASSERT_THAT(epoll_ctl(epollfd.get(), EPOLL_CTL_MOD, sockets[1], &event),
+                    SyscallSucceeds());
+      }
+
+      // Make request.
+      {
+        absl::MutexLock lock(&m);
+        ASSERT_EQ(WriteFd(sockets[1], msg1, sizeof(msg1)), sizeof(msg1));
+      }
+
+      // Wait for response.
+      struct epoll_event result[kFDsPerEpoll];
+      ASSERT_THAT(
+          RetryEINTR(epoll_wait)(epollfd.get(), result, kFDsPerEpoll, -1),
+          SyscallSucceedsWithValue(1));
+      EXPECT_EQ(result[0].data.u64, kMagicConstant);
+      rearm = true;
+
+      // Read response.
+      {
+        absl::MutexLock lock(&m);
+        ASSERT_THAT(ReadFd(sockets[1], &tmp, sizeof(tmp)),
+                    SyscallSucceedsWithValue(sizeof(tmp)));
+      }
+      if (strcmp(tmp, msg2) == 0) {
+        break;
+      }
+      EXPECT_EQ(strcmp(tmp, msg1), 0);
+    }
+  };
+
+  ScopedThread client1([&epollfd1, &clientFn]() { clientFn(epollfd1); });
+
+  ScopedThread client2([&epollfd2, &clientFn]() { clientFn(epollfd2); });
+
+  server.Join();
+  client1.Join();
+  client2.Join();
 }
 
 TEST(EpollTest, EdgeTriggered) {
