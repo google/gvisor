@@ -19,8 +19,8 @@ package ports
 import (
 	"math"
 	"math/rand"
-	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -231,7 +231,7 @@ type PortManager struct {
 	//
 	// hint must be accessed using the portHint/incPortHint helpers.
 	// TODO(gvisor.dev/issue/940): S/R this field.
-	hint uint32
+	hint atomicbitops.Uint32
 }
 
 // NewPortManager creates new PortManager.
@@ -264,12 +264,12 @@ func (pm *PortManager) PickEphemeralPort(rng *rand.Rand, testPort PortTester) (p
 
 // portHint atomically reads and returns the pm.hint value.
 func (pm *PortManager) portHint() uint32 {
-	return atomic.LoadUint32(&pm.hint)
+	return pm.hint.Load()
 }
 
 // incPortHint atomically increments pm.hint by 1.
 func (pm *PortManager) incPortHint() {
-	atomic.AddUint32(&pm.hint, 1)
+	pm.hint.Add(1)
 }
 
 // PickEphemeralPortStable starts at the specified offset + pm.portHint and

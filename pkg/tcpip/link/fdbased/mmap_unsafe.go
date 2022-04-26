@@ -19,10 +19,10 @@ package fdbased
 
 import (
 	"fmt"
-	"sync/atomic"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 )
 
 // tPacketHdrlen is the TPACKET_HDRLEN variable defined in <linux/if_packet.h>.
@@ -34,7 +34,7 @@ var tPacketHdrlen = tPacketAlign(unsafe.Sizeof(tPacketHdr{}) + unsafe.Sizeof(uni
 func (t tPacketHdr) tpStatus() uint32 {
 	hdr := unsafe.Pointer(&t[0])
 	statusPtr := unsafe.Pointer(uintptr(hdr) + uintptr(tpStatusOffset))
-	return atomic.LoadUint32((*uint32)(statusPtr))
+	return (*atomicbitops.Uint32)(statusPtr).Load()
 }
 
 // setTPStatus set's the frame status to the provided status.
@@ -43,7 +43,7 @@ func (t tPacketHdr) tpStatus() uint32 {
 func (t tPacketHdr) setTPStatus(status uint32) {
 	hdr := unsafe.Pointer(&t[0])
 	statusPtr := unsafe.Pointer(uintptr(hdr) + uintptr(tpStatusOffset))
-	atomic.StoreUint32((*uint32)(statusPtr), status)
+	(*atomicbitops.Uint32)(statusPtr).Store(status)
 }
 
 func newPacketMMapDispatcher(fd int, e *endpoint) (linkDispatcher, error) {

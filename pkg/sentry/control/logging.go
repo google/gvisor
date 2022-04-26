@@ -16,7 +16,6 @@ package control
 
 import (
 	"fmt"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/strace"
@@ -83,11 +82,11 @@ func (l *Logging) Change(args *LoggingArgs, code *int) error {
 
 	if args.SetLogPackets {
 		if args.LogPackets {
-			atomic.StoreUint32(&sniffer.LogPackets, 1)
+			sniffer.LogPackets.Store(1)
 		} else {
-			atomic.StoreUint32(&sniffer.LogPackets, 0)
+			sniffer.LogPackets.Store(0)
 		}
-		log.Infof("LogPackets set to: %v", atomic.LoadUint32(&sniffer.LogPackets))
+		log.Infof("LogPackets set to: %v", sniffer.LogPackets.Load())
 	}
 
 	if args.SetStrace {

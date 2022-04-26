@@ -298,29 +298,29 @@ func (s *Stats) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(6, &s.WriteErrors)
 }
 
-func (s *sndQueueInfo) StateTypeName() string {
+func (sq *sndQueueInfo) StateTypeName() string {
 	return "pkg/tcpip/transport/tcp.sndQueueInfo"
 }
 
-func (s *sndQueueInfo) StateFields() []string {
+func (sq *sndQueueInfo) StateFields() []string {
 	return []string{
 		"TCPSndBufState",
 	}
 }
 
-func (s *sndQueueInfo) beforeSave() {}
+func (sq *sndQueueInfo) beforeSave() {}
 
 // +checklocksignore
-func (s *sndQueueInfo) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.Save(0, &s.TCPSndBufState)
+func (sq *sndQueueInfo) StateSave(stateSinkObject state.Sink) {
+	sq.beforeSave()
+	stateSinkObject.Save(0, &sq.TCPSndBufState)
 }
 
-func (s *sndQueueInfo) afterLoad() {}
+func (sq *sndQueueInfo) afterLoad() {}
 
 // +checklocksignore
-func (s *sndQueueInfo) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.TCPSndBufState)
+func (sq *sndQueueInfo) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &sq.TCPSndBufState)
 }
 
 func (r *rcvQueueInfo) StateTypeName() string {

@@ -18,8 +18,8 @@ package queue
 
 import (
 	"encoding/binary"
-	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/pipe"
 )
@@ -77,12 +77,12 @@ type RxBuffer struct {
 type Rx struct {
 	tx                 pipe.Tx
 	rx                 pipe.Rx
-	sharedEventFDState *uint32
+	sharedEventFDState *atomicbitops.Uint32
 }
 
 // Init initializes the receive queue with the given pipes, and shared state
 // pointer -- the latter is used to enable/disable eventfd notifications.
-func (r *Rx) Init(tx, rx []byte, sharedEventFDState *uint32) {
+func (r *Rx) Init(tx, rx []byte, sharedEventFDState *atomicbitops.Uint32) {
 	r.sharedEventFDState = sharedEventFDState
 	r.tx.Init(tx)
 	r.rx.Init(rx)
@@ -91,13 +91,13 @@ func (r *Rx) Init(tx, rx []byte, sharedEventFDState *uint32) {
 // EnableNotification updates the shared state such that the peer will notify
 // the eventfd when there are packets to be dequeued.
 func (r *Rx) EnableNotification() {
-	atomic.StoreUint32(r.sharedEventFDState, EventFDEnabled)
+	r.sharedEventFDState.Store(EventFDEnabled)
 }
 
 // DisableNotification updates the shared state such that the peer will not
 // notify the eventfd.
 func (r *Rx) DisableNotification() {
-	atomic.StoreUint32(r.sharedEventFDState, EventFDDisabled)
+	r.sharedEventFDState.Store(EventFDDisabled)
 }
 
 // PostedBuffersLimit returns the maximum number of buffers that can be posted
