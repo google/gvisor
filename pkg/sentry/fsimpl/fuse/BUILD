@@ -26,11 +26,23 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "connection_refs",
+    out = "connection_refs.go",
+    package = "fuse",
+    prefix = "connection",
+    template = "//pkg/refsvfs2:refs_template",
+    types = {
+        "T": "connection",
+    },
+)
+
 go_library(
     name = "fuse",
     srcs = [
         "connection.go",
         "connection_control.go",
+        "connection_refs.go",
         "dev.go",
         "directory.go",
         "file.go",

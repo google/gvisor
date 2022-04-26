@@ -15,6 +15,7 @@
 package fuse
 
 import (
+	"fmt"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -60,9 +61,30 @@ func newTestConnection(system *testutil.System, k *kernel.Kernel, maxActiveReque
 	fsopts := filesystemOptions{
 		maxActiveRequests: maxActiveRequests,
 	}
-	fs, err := newFUSEFilesystem(system.Ctx, system.VFS, &FilesystemType{}, fuseDev, 0, &fsopts)
+	conn, err := newFUSEConnection(system.Ctx, fuseDev, &fsopts)
 	if err != nil {
 		return nil, nil, err
 	}
-	return fs.conn, &fuseDev.vfsfd, nil
+	fuseDev.conn = conn
+	conn.fd = fuseDev
+
+	return conn, &fuseDev.vfsfd, nil
+}
+
+// newTestFilesystem creates a filesystem that the sentry can communicate with
+// and the FD for the server to communicate with.
+func newTestFilesystem(system *testutil.System, fd *vfs.FileDescription, maxActiveRequests uint64) (*filesystem, error) {
+	fuseFD, ok := fd.Impl().(*DeviceFD)
+	if !ok {
+		return nil, fmt.Errorf("newTestFilesystem: FD is %T, not a FUSE device", fd)
+	}
+	fsopts := filesystemOptions{
+		maxActiveRequests: maxActiveRequests,
+	}
+
+	fs, err := newFUSEFilesystem(system.Ctx, system.VFS, &FilesystemType{}, fuseFD, 0, &fsopts)
+	if err != nil {
+		return nil, err
+	}
+	return fs, nil
 }

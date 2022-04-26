@@ -47,6 +47,8 @@ const (
 //
 // +stateify savable
 type connection struct {
+	connectionRefs
+
 	fd *DeviceFD
 
 	// mu protects access to struct members.
@@ -217,7 +219,7 @@ func newFUSEConnection(_ context.Context, fuseFD *DeviceFD, opts *filesystemOpti
 	fuseFD.writeCursor = 0
 	fuseFD.mu.Unlock()
 
-	return &connection{
+	c := &connection{
 		fd:                       fuseFD,
 		asyncNumMax:              fuseDefaultMaxBackground,
 		asyncCongestionThreshold: fuseDefaultCongestionThreshold,
@@ -226,7 +228,20 @@ func newFUSEConnection(_ context.Context, fuseFD *DeviceFD, opts *filesystemOpti
 		maxActiveRequests:        opts.maxActiveRequests,
 		initializedChan:          make(chan struct{}),
 		connected:                true,
-	}, nil
+	}
+	c.InitRefs()
+	return c, nil
+}
+
+// DecRef decrements the connection's reference count. If the reference count is
+// decremented to zero, it also aborts the connection and notifies any waiters.
+func (conn *connection) DecRef(ctx context.Context) {
+	conn.connectionRefs.DecRef(func() {
+		conn.fd.mu.Lock()
+		conn.Abort(ctx)
+		conn.fd.waitQueue.Notify(waiter.ReadableEvents)
+		conn.fd.mu.Unlock()
+	})
 }
 
 // CallAsync makes an async (aka background) request.

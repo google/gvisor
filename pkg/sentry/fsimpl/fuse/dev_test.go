@@ -136,6 +136,33 @@ func TestFUSECommunication(t *testing.T) {
 	}
 }
 
+func TestReuseFd(t *testing.T) {
+	s := setup(t)
+	defer s.Destroy()
+	k := kernel.KernelFromContext(s.Ctx)
+	_, fd, err := newTestConnection(s, k, maxActiveRequestsDefault)
+	if err != nil {
+		t.Fatalf("newTestConnection: %v", err)
+	}
+	fs1, err := newTestFilesystem(s, fd, maxActiveRequestsDefault)
+	if err != nil {
+		t.Fatalf("newTestConnection: %v", err)
+	}
+	defer fs1.Release(s.Ctx)
+	fs2, err := newTestFilesystem(s, fd, maxActiveRequestsDefault)
+	if err != nil {
+		t.Fatalf("newTestConnection: %v", err)
+	}
+	defer fs2.Release(s.Ctx)
+	if fs1.conn != fs2.conn {
+		t.Errorf("TestReuseFd: fs1 connection != fs2 connection")
+	}
+	refCount := fs1.conn.refCount.Load()
+	if refCount != 3 {
+		t.Errorf("TestReuseFd: fs1.connection.refCount = 3, got %v", refCount)
+	}
+}
+
 // CallTest makes a request to the server and blocks the invoking
 // goroutine until a server responds with a response. Doesn't block
 // a kernel.Task. Analogous to Connection.Call but used for testing.
@@ -143,7 +170,7 @@ func CallTest(conn *connection, t *kernel.Task, r *Request, i uint32) (*Response
 	conn.fd.mu.Lock()
 
 	// Wait until we're certain that a new request can be processed.
-	for conn.fd.numActiveRequests == conn.fd.fs.opts.maxActiveRequests {
+	for conn.fd.numActiveRequests == conn.maxActiveRequests {
 		conn.fd.mu.Unlock()
 		select {
 		case <-conn.fd.fullQueueCh:
