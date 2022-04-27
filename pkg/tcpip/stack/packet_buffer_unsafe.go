@@ -16,4 +16,5 @@ package stack
 
 import "unsafe"
 
-const packetBufferStructSize = int(unsafe.Sizeof(PacketBuffer{}))
+// PacketBufferStructSize is the minimal size of the packet buffer overhead.
+const PacketBufferStructSize = int(unsafe.Sizeof(PacketBuffer{}))
