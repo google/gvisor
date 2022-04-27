@@ -1,9 +1,8 @@
-// Copyright 2020 The gVisor Authors.
+// Copyright 2022 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
+// You may obtain a copy of the License at //
 //     http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
@@ -12,12 +11,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tcp
+package stack
 
-import (
-	"unsafe"
-)
+// saveBuf is invoked by stateify.
+func (pk *PacketBuffer) saveBuf() []byte {
+	var bytes []byte
+	pk.buf.Apply(func(v []byte) {
+		bytes = append(bytes, v...)
+	})
+	return bytes
+}
 
-const (
-	segSize = int(unsafe.Sizeof(segment{}))
-)
+// loadBuf is invoked by stateify.
+func (pk *PacketBuffer) loadBuf(data []byte) {
+	pk.buf.Append(data)
+}
