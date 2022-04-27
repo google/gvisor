@@ -1214,7 +1214,8 @@ TEST(PIDsCgroup, LimitEnforced) {
               IsPosixErrorOkAndHolds(baseline + 1));
 
   // Exit the first thread and try create a thread again, which should succeed.
-  t1.Join();
+  ASSERT_NO_ERRNO(child.PollControlFileForChangeAfter(
+      "pids.current", absl::Seconds(30), [&t1]() { t1.Join(); }));
   ASSERT_THAT(child.ReadIntegerControlFile("pids.current"),
               IsPosixErrorOkAndHolds(baseline));
   NoopThreads t2(1);
