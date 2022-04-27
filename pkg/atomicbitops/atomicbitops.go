@@ -19,6 +19,8 @@
 //
 // All read-modify-write operations implemented by this package have
 // acquire-release memory ordering (like sync/atomic).
+//
+// +checkalignedignore
 package atomicbitops
 
 // AndUint32 atomically applies bitwise AND operation to *addr with val.

@@ -4,4 +4,6 @@
 // license that can be found in the LICENSE file.
 
 // Package sync provides synchronization primitives.
+//
+// +checkalignedignore
 package sync
