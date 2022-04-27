@@ -9,6 +9,7 @@ cc_binary(
     deps = [
         # any_cc_proto placeholder,
         "//pkg/sentry/seccheck/points:points_cc_proto",
+        "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/strings",
     ],
 )

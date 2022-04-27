@@ -3,6 +3,9 @@
     "name": "Default",
     "points": [
       {
+        "name": "container/start"
+      },
+      {
         "name": "sentry/clone"
       }
     ],
