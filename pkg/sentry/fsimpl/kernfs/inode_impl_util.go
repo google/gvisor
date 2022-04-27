@@ -400,6 +400,16 @@ type OrderedChildrenOptions struct {
 	Writable bool
 }
 
+// inodeWithOrderedChildren allows extraction of an OrderedChildren from an
+// Inode implementation. A concrete type that both implements the Inode
+// interface and embeds OrderedChildren will be castable to this interface, and
+// we can get to the embedded OrderedChildren through the orderedChildren
+// method.
+type inodeWithOrderedChildren interface {
+	Inode
+	orderedChildren() *OrderedChildren
+}
+
 // OrderedChildren partially implements the Inode interface. OrderedChildren can
 // be embedded in directory inodes to keep track of children in the
 // directory, and can then be used to implement a generic directory FD -- see
@@ -425,6 +435,11 @@ type OrderedChildren struct {
 	mu    sync.RWMutex `state:"nosave"`
 	order slotList
 	set   map[string]*slot
+}
+
+// orderedChildren implements inodeWithOrderedChildren.orderedChildren.
+func (o *OrderedChildren) orderedChildren() *OrderedChildren {
+	return o
 }
 
 // Init initializes an OrderedChildren.
@@ -572,27 +587,6 @@ func (o *OrderedChildren) removeLocked(name string) {
 	}
 }
 
-// Precondition: caller must hold o.mu for writing.
-func (o *OrderedChildren) replaceChildLocked(ctx context.Context, name string, newI Inode) {
-	if s, ok := o.set[name]; ok {
-		if s.static {
-			panic(fmt.Sprintf("replacing a static inode: %v", s.inode))
-		}
-
-		// Existing slot with given name, simply replace the dentry.
-		s.inode = newI
-	}
-
-	// No existing slot with given name, create and hash new slot.
-	s := &slot{
-		name:   name,
-		inode:  newI,
-		static: false,
-	}
-	o.order.PushBack(s)
-	o.set[name] = s
-}
-
 // Precondition: caller must hold o.mu for reading or writing.
 func (o *OrderedChildren) checkExistingLocked(name string, child Inode) error {
 	s, ok := o.set[name]
@@ -640,11 +634,11 @@ func (o *OrderedChildren) Rename(ctx context.Context, oldname, newname string, c
 	if !o.writable {
 		return linuxerr.EPERM
 	}
-
-	dst, ok := dstDir.(interface{}).(*OrderedChildren)
+	dstIOC, ok := dstDir.(inodeWithOrderedChildren)
 	if !ok {
 		return linuxerr.EXDEV
 	}
+	dst := dstIOC.orderedChildren()
 	if !dst.writable {
 		return linuxerr.EPERM
 	}
@@ -659,12 +653,28 @@ func (o *OrderedChildren) Rename(ctx context.Context, oldname, newname string, c
 		dst.mu.Lock()
 		defer dst.mu.Unlock()
 	}
+
+	// Ensure target inode exists in src.
 	if err := o.checkExistingLocked(oldname, child); err != nil {
 		return err
 	}
+
+	// Ensure no name collision in dst.
+	if _, ok := dst.set[newname]; ok {
+		return linuxerr.EEXIST
+	}
+
+	// Remove from src.
 	o.removeLocked(oldname)
 
-	dst.replaceChildLocked(ctx, newname, child)
+	// Add to dst.
+	s := &slot{
+		name:  newname,
+		inode: child,
+	}
+	dst.order.PushBack(s)
+	dst.set[newname] = s
+
 	return nil
 }
 
