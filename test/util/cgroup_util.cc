@@ -87,12 +87,20 @@ PosixErrorOr<absl::flat_hash_set<pid_t>> Cgroup::Tasks() const {
 
 PosixError Cgroup::PollControlFileForChange(absl::string_view name,
                                             absl::Duration timeout) const {
+  return PollControlFileForChangeAfter(name, timeout, []() {});
+}
+
+PosixError Cgroup::PollControlFileForChangeAfter(
+    absl::string_view name, absl::Duration timeout,
+    std::function<void()> body) const {
   const absl::Duration poll_interval = absl::Milliseconds(10);
   const absl::Time deadline = absl::Now() + timeout;
   const std::string alias_path = absl::StrFormat("[cg#%d]/%s", id_, name);
 
   ASSIGN_OR_RETURN_ERRNO(const int64_t initial_value,
                          ReadIntegerControlFile(name));
+
+  body();
 
   while (true) {
     ASSIGN_OR_RETURN_ERRNO(const int64_t current_value,

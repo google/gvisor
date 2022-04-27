@@ -78,6 +78,11 @@ class Cgroup {
   PosixError PollControlFileForChange(absl::string_view name,
                                       absl::Duration timeout) const;
 
+  // Waits for a control file's value to change after calling body.
+  PosixError PollControlFileForChangeAfter(absl::string_view name,
+                                           absl::Duration timeout,
+                                           std::function<void()> body) const;
+
   // Returns the thread ids of the leaders of thread groups managed by this
   // cgroup.
   PosixErrorOr<absl::flat_hash_set<pid_t>> Procs() const;
