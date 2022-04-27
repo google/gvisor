@@ -490,6 +490,65 @@ TEST(Cgroup, MkdirWithPermissions) {
   EXPECT_TRUE(S_ISDIR(s2.st_mode));
 }
 
+TEST(Cgroup, CantRenameControlFile) {
+  SKIP_IF(!CgroupsAvailable());
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
+
+  const std::string control_file_path = c.Relpath("cgroup.procs");
+  EXPECT_THAT(
+      rename(c.Relpath("cgroup.procs").c_str(), c.Relpath("foo").c_str()),
+      SyscallFailsWithErrno(ENOTDIR));
+}
+
+TEST(Cgroup, CrossDirRenameNotAllowed) {
+  SKIP_IF(!CgroupsAvailable());
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
+
+  Cgroup dir1 = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("dir1"));
+  Cgroup dir2 = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("dir2"));
+
+  Cgroup target = ASSERT_NO_ERRNO_AND_VALUE(dir1.CreateChild("target"));
+  // Move to sibling directory.
+  EXPECT_THAT(rename(target.Path().c_str(), dir2.Relpath("target").c_str()),
+              SyscallFailsWithErrno(EIO));
+  // Move to parent directory.
+  EXPECT_THAT(rename(target.Path().c_str(), c.Relpath("target").c_str()),
+              SyscallFailsWithErrno(EIO));
+
+  // Original directory unaffected.
+  EXPECT_THAT(Exists(target.Path()), IsPosixErrorOkAndHolds(true));
+}
+
+TEST(Cgroup, RenameNameCollision) {
+  SKIP_IF(!CgroupsAvailable());
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
+
+  Cgroup dir1 = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("dir1"));
+  Cgroup dir2 = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("dir2"));
+
+  // Collision with dir.
+  EXPECT_THAT(rename(dir1.Path().c_str(), dir2.Path().c_str()),
+              SyscallFailsWithErrno(EEXIST));
+  // Collision with control file.
+  EXPECT_THAT(rename(dir1.Path().c_str(), c.Relpath("cgroup.procs").c_str()),
+              SyscallFailsWithErrno(EEXIST));
+}
+
+TEST(Cgroup, Rename) {
+  SKIP_IF(!CgroupsAvailable());
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child"));
+  Cgroup target = ASSERT_NO_ERRNO_AND_VALUE(child.CreateChild("oldname"));
+  ASSERT_THAT(rename(target.Path().c_str(), child.Relpath("newname").c_str()),
+              SyscallSucceeds());
+  EXPECT_THAT(Exists(child.Relpath("newname")), IsPosixErrorOkAndHolds(true));
+  EXPECT_THAT(Exists(child.Relpath("oldname")), IsPosixErrorOkAndHolds(false));
+}
+
 TEST(MemoryCgroup, MemoryUsageInBytes) {
   SKIP_IF(!CgroupsAvailable());
 
