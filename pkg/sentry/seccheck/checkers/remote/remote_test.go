@@ -283,8 +283,11 @@ func TestExample(t *testing.T) {
 		t.Fatalf("ExitNotifyParent: %v", err)
 	}
 	check := func() error {
-		if got := server.out.String(); !strings.Contains(got, "gvisor.sentry.ExitNotifyParentInfo => exit_status: 123") {
-			return fmt.Errorf("ExitNotifyParentInfo point didn't get to the server, out: %q", got)
+		gotRaw := server.out.String()
+		// Collapse whitespace.
+		got := strings.Join(strings.Fields(gotRaw), " ")
+		if !strings.Contains(got, "gvisor.sentry.ExitNotifyParentInfo => exit_status: 123") {
+			return fmt.Errorf("ExitNotifyParentInfo point didn't get to the server, out: %q, raw: %q", got, gotRaw)
 		}
 		return nil
 	}
