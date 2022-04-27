@@ -33,10 +33,6 @@ func LoadSeccheckDataLocked(t *Task, mask seccheck.FieldMask, info *pb.ContextDa
 	if mask.Contains(seccheck.FieldCtxtTime) {
 		info.TimeNs = t.k.RealtimeClock().Now().Nanoseconds()
 	}
-
-	if t == nil {
-		return
-	}
 	if mask.Contains(seccheck.FieldCtxtThreadID) {
 		info.ThreadId = int32(t.k.tasks.Root.tids[t])
 	}

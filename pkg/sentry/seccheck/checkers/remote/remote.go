@@ -173,3 +173,8 @@ func (r *Remote) ExitNotifyParent(_ context.Context, _ seccheck.FieldSet, info *
 	r.write(info)
 	return nil
 }
+
+func (r *Remote) ContainerStart(_ context.Context, _ seccheck.FieldSet, info *pb.Start) error {
+	r.write(info)
+	return nil
+}

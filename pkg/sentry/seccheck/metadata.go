@@ -21,6 +21,12 @@ import (
 	"gvisor.dev/gvisor/pkg/fd"
 )
 
+const (
+	// ContainerStartFieldEnv is an optional field to collect list of environment
+	// variables set for the container start process.
+	ContainerStartFieldEnv Field = iota
+)
+
 var points = map[string]PointDesc{}
 var sinks = map[string]SinkDesc{}
 
@@ -146,6 +152,18 @@ func validateFields(fields []FieldDesc) error {
 
 // These are all the points available in the system.
 func init() {
+	// Points from the container namespace.
+	registerPoint(PointDesc{
+		ID:   PointContainerStart,
+		Name: "container/start",
+		OptionalFields: []FieldDesc{
+			{
+				ID:   ContainerStartFieldEnv,
+				Name: "env",
+			},
+		},
+	})
+
 	// Points from the sentry namespace.
 	registerPoint(PointDesc{
 		ID:            PointClone,

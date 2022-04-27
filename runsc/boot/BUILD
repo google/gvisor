@@ -84,6 +84,7 @@ go_library(
         "//pkg/sentry/platform",
         "//pkg/sentry/seccheck",
         "//pkg/sentry/seccheck/checkers/remote",
+        "//pkg/sentry/seccheck/points:points_go_proto",
         "//pkg/sentry/socket/hostinet",
         "//pkg/sentry/socket/netfilter",
         "//pkg/sentry/socket/netlink",

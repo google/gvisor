@@ -8,6 +8,7 @@ proto_library(
     name = "points",
     srcs = [
         "common.proto",
+        "container.proto",
         "sentry.proto",
     ],
 )

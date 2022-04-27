@@ -27,7 +27,9 @@
 #include <vector>
 
 #include "google/protobuf/any.pb.h"
+#include "absl/cleanup/cleanup.h"
 #include "absl/strings/string_view.h"
+#include "pkg/sentry/seccheck/points/container.pb.h"
 #include "pkg/sentry/seccheck/points/sentry.pb.h"
 
 typedef std::function<void(const google::protobuf::Any& any)> Callback;
@@ -65,6 +67,7 @@ void unpack(const google::protobuf::Any& any) {
 }
 
 std::map<std::string, Callback> dispatchers = {
+    {"gvisor.container.Start", unpack<::gvisor::container::Start>},
     {"gvisor.sentry.CloneInfo", unpack<::gvisor::sentry::CloneInfo>},
     {"gvisor.sentry.ExecveInfo", unpack<::gvisor::sentry::ExecveInfo>},
     {"gvisor.sentry.ExitNotifyParentInfo",
@@ -179,6 +182,7 @@ extern "C" int main(int argc, char** argv) {
   if (sock < 0) {
     err(1, "socket");
   }
+  auto sock_closer = absl::MakeCleanup([sock] { close(sock); });
 
   struct sockaddr_un addr;
   addr.sun_family = AF_UNIX;
@@ -194,6 +198,7 @@ extern "C" int main(int argc, char** argv) {
   if (epoll_fd < 0) {
     err(1, "epoll_create");
   }
+  auto epoll_closer = absl::MakeCleanup([epoll_fd] { close(epoll_fd); });
   startPollThread(epoll_fd);
 
   for (;;) {
@@ -213,9 +218,4 @@ extern "C" int main(int argc, char** argv) {
       err(1, "epoll_ctl(ADD)");
     }
   }
-
-  close(sock);
-  unlink(path.c_str());
-
-  return 0;
 }
