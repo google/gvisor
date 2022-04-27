@@ -336,6 +336,30 @@ func TestPacketHeaderConsumeCalledAtMostOnce(t *testing.T) {
 	}
 }
 
+func TestResetHeadersAllowsDoublePush(t *testing.T) {
+	link1 := makeView(10)
+	link2 := makeView(20)
+	data := makeView(30)
+	pk := NewPacketBuffer(PacketBufferOptions{
+		ReserveHeaderBytes: len(link1),
+		Data:               data.ToVectorisedView(),
+	})
+
+	copy(pk.LinkHeader().Push(len(link1)), link1)
+	checkPacketContents(t, "" /* prefix */, pk, packetContents{
+		link: link1,
+		data: data,
+	})
+
+	pk.ResetHeaders(len(link2))
+
+	copy(pk.LinkHeader().Push(len(link2)), link2)
+	checkPacketContents(t, "" /* prefix */, pk, packetContents{
+		link: link2,
+		data: data,
+	})
+}
+
 func TestPacketHeaderPushThenConsumePanics(t *testing.T) {
 	const headerSize = 10
 
@@ -416,16 +440,19 @@ func TestPacketBufferData(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// PullUp
-			for _, n := range []int{1, len(tc.data)} {
-				t.Run(fmt.Sprintf("PullUp%d", n), func(t *testing.T) {
-					pkt := tc.makePkt(t)
-					v, ok := pkt.Data().PullUp(n)
-					wantV := []byte(tc.data)[:n]
-					if !ok || !bytes.Equal(v, wantV) {
-						t.Errorf("pkt.Data().PullUp(%d) = %q, %t; want %q, true", n, v, ok, wantV)
-					}
-				})
-			}
+			t.Run("PullUp", func(t *testing.T) {
+				for _, n := range []int{1, len(tc.data)} {
+					t.Run(fmt.Sprintf("%dbytes", n), func(t *testing.T) {
+						pkt := tc.makePkt(t)
+						v, ok := pkt.Data().PullUp(n)
+						wantV := []byte(tc.data)[:n]
+						if !ok || !bytes.Equal(v, wantV) {
+							t.Errorf("pkt.Data().PullUp(%d) = %q, %t; want %q, true", n, v, ok, wantV)
+						}
+					})
+				}
+			})
+
 			t.Run("PullUpOutOfBounds", func(t *testing.T) {
 				n := len(tc.data) + 1
 				pkt := tc.makePkt(t)
@@ -436,34 +463,38 @@ func TestPacketBufferData(t *testing.T) {
 			})
 
 			// Consume.
-			for _, n := range []int{1, len(tc.data)} {
-				t.Run(fmt.Sprintf("Consume%d", n), func(t *testing.T) {
-					pkt := tc.makePkt(t)
-					v, ok := pkt.Data().Consume(n)
-					if !ok {
-						t.Fatalf("Consume failed")
-					}
-					if want := []byte(tc.data)[:n]; !bytes.Equal(v, want) {
-						t.Fatalf("pkt.Data().Consume(n) = 0x%x, want 0x%x", v, want)
-					}
+			t.Run("Consume", func(t *testing.T) {
+				for _, n := range []int{1, len(tc.data)} {
+					t.Run(fmt.Sprintf("%dbytes", n), func(t *testing.T) {
+						pkt := tc.makePkt(t)
+						v, ok := pkt.Data().Consume(n)
+						if !ok {
+							t.Fatalf("Consume failed")
+						}
+						if want := []byte(tc.data)[:n]; !bytes.Equal(v, want) {
+							t.Fatalf("pkt.Data().Consume(n) = 0x%x, want 0x%x", v, want)
+						}
 
-					checkData(t, pkt, []byte(tc.data)[n:])
-				})
-			}
+						checkData(t, pkt, []byte(tc.data)[n:])
+					})
+				}
+			})
 
 			// CapLength
-			for _, n := range []int{0, 1, len(tc.data)} {
-				t.Run(fmt.Sprintf("CapLength%d", n), func(t *testing.T) {
-					pkt := tc.makePkt(t)
-					pkt.Data().CapLength(n)
+			t.Run("CapLength", func(t *testing.T) {
+				for _, n := range []int{0, 1, len(tc.data)} {
+					t.Run("%dbytes", func(t *testing.T) {
+						pkt := tc.makePkt(t)
+						pkt.Data().CapLength(n)
 
-					want := []byte(tc.data)
-					if n < len(want) {
-						want = want[:n]
-					}
-					checkData(t, pkt, want)
-				})
-			}
+						want := []byte(tc.data)
+						if n < len(want) {
+							want = want[:n]
+						}
+						checkData(t, pkt, want)
+					})
+				}
+			})
 
 			// Views
 			t.Run("Views", func(t *testing.T) {
@@ -482,21 +513,23 @@ func TestPacketBufferData(t *testing.T) {
 			})
 
 			// ReadFromVV
-			for _, n := range []int{0, 1, 2, 7, 10, 14, 20} {
-				t.Run(fmt.Sprintf("ReadFromVV%d", n), func(t *testing.T) {
-					s := "TO READ"
-					srcVV := vv(s, s)
-					s += s
+			t.Run("ReadFromVV", func(t *testing.T) {
+				for _, n := range []int{0, 1, 2, 7, 10, 14, 20} {
+					t.Run(fmt.Sprintf("%dbytes", n), func(t *testing.T) {
+						s := "TO READ"
+						srcVV := vv(s, s)
+						s += s
 
-					pkt := tc.makePkt(t)
-					pkt.Data().ReadFromVV(&srcVV, n)
+						pkt := tc.makePkt(t)
+						pkt.Data().ReadFromVV(&srcVV, n)
 
-					if n < len(s) {
-						s = s[:n]
-					}
-					checkData(t, pkt, []byte(tc.data+s))
-				})
-			}
+						if n < len(s) {
+							s = s[:n]
+						}
+						checkData(t, pkt, []byte(tc.data+s))
+					})
+				}
+			})
 
 			// ExtractVV
 			t.Run("ExtractVV", func(t *testing.T) {
@@ -507,6 +540,59 @@ func TestPacketBufferData(t *testing.T) {
 				want := []byte(tc.data)
 				if !bytes.Equal(got, want) {
 					t.Errorf("pkt.Data().ExtractVV().ToOwnedView() = %q, want %q", got, want)
+				}
+			})
+
+			t.Run("AppendRange", func(t *testing.T) {
+				pkt1 := tc.makePkt(t)
+				pkt2 := tc.makePkt(t)
+				subRangeStart := 2
+				pkt1.Data().AppendRange(pkt2.Data().AsRange().SubRange(subRangeStart))
+				checkData(t, pkt1, []byte(tc.data+tc.data[subRangeStart:]))
+			})
+
+			t.Run("Merge", func(t *testing.T) {
+				pkt1 := tc.makePkt(t)
+				pkt2 := tc.makePkt(t)
+				pkt1.Data().Merge(pkt2.Data())
+
+				checkData(t, pkt1, []byte(tc.data+tc.data))
+				if pkt2.buf.Size() != 0 {
+					t.Errorf("pkt.buf.Size() = %v, want %v", 0, pkt2.buf.Size())
+				}
+			})
+
+			t.Run("ReadFrom", func(t *testing.T) {
+				for _, n := range []int{0, 1, 2, 7, 10, 14, 20} {
+					t.Run(fmt.Sprintf("%dbytes", n), func(t *testing.T) {
+						pkt1 := tc.makePkt(t)
+						pkt2 := tc.makePkt(t)
+						pkt1.Data().ReadFrom(pkt2.Data(), n)
+
+						want1 := tc.data
+						want2 := ""
+						if n < len(tc.data) {
+							want1 = tc.data[:n]
+							want2 = tc.data[n:]
+						}
+						checkData(t, pkt1, []byte(tc.data+want1))
+						checkData(t, pkt2, []byte(want2))
+					})
+				}
+			})
+
+			t.Run("TrimFront", func(t *testing.T) {
+				for _, n := range []int{0, 1, 2, 7, 10, 14, 20} {
+					t.Run(fmt.Sprintf("%dbytes", n), func(t *testing.T) {
+						pkt := tc.makePkt(t)
+						pkt.Data().TrimFront(n)
+
+						want := ""
+						if n < len(tc.data) {
+							want = tc.data[n:]
+						}
+						checkData(t, pkt, []byte(want))
+					})
 				}
 			})
 		})

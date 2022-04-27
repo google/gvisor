@@ -65,11 +65,14 @@ func NewForwarder(s *stack.Stack, rcvWnd, maxInFlight int, handler func(*Forward
 // This function is expected to be passed as an argument to the
 // stack.SetTransportProtocolHandler function.
 func (f *Forwarder) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
-	s := newIncomingSegment(id, f.stack.Clock(), pkt)
+	s, err := newIncomingSegment(id, f.stack.Clock(), pkt)
+	if err != nil {
+		return false
+	}
 	defer s.DecRef()
 
 	// We only care about well-formed SYN packets (not SYN-ACK) packets.
-	if !s.parse(pkt.RXTransportChecksumValidated) || !s.csumValid || !s.flags.Contains(header.TCPFlagSyn) || s.flags.Contains(header.TCPFlagAck) {
+	if !s.csumValid || !s.flags.Contains(header.TCPFlagSyn) || s.flags.Contains(header.TCPFlagAck) {
 		return false
 	}
 
