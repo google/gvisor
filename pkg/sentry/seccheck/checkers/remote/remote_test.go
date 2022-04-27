@@ -21,7 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
+	"regexp"
 	"testing"
 	"time"
 
@@ -283,7 +283,9 @@ func TestExample(t *testing.T) {
 		t.Fatalf("ExitNotifyParent: %v", err)
 	}
 	check := func() error {
-		if got := server.out.String(); !strings.Contains(got, "gvisor.sentry.ExitNotifyParentInfo => exit_status: 123") {
+		got := server.out.String()
+		match, _ := regexp.MatchString("gvisor.sentry.ExitNotifyParentInfo => exit_status: [ \t]*123", got)
+		if !match {
 			return fmt.Errorf("ExitNotifyParentInfo point didn't get to the server, out: %q", got)
 		}
 		return nil
