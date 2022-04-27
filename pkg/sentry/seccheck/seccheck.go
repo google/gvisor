@@ -31,6 +31,7 @@ const (
 	PointClone Point = iota
 	PointExecve
 	PointExitNotifyParent
+	PointContainerStart
 	// Add new Points above this line.
 	pointLength
 
@@ -116,6 +117,7 @@ type Checker interface {
 	Clone(ctx context.Context, fields FieldSet, info *pb.CloneInfo) error
 	Execve(ctx context.Context, fields FieldSet, info *pb.ExecveInfo) error
 	ExitNotifyParent(ctx context.Context, fields FieldSet, info *pb.ExitNotifyParentInfo) error
+	ContainerStart(context.Context, FieldSet, *pb.Start) error
 }
 
 // CheckerDefaults may be embedded by implementations of Checker to obtain
@@ -136,6 +138,11 @@ func (CheckerDefaults) Execve(context.Context, FieldSet, *pb.ExecveInfo) error {
 
 // ExitNotifyParent implements Checker.ExitNotifyParent.
 func (CheckerDefaults) ExitNotifyParent(context.Context, FieldSet, *pb.ExitNotifyParentInfo) error {
+	return nil
+}
+
+// ContainerStart implements Checker.ContainerStart.
+func (CheckerDefaults) ContainerStart(context.Context, FieldSet, *pb.Start) error {
 	return nil
 }
 
@@ -207,6 +214,16 @@ func (s *State) appendCheckerLocked(c Checker) {
 	s.registrationSeq.BeginWrite()
 	s.checkers = append(s.checkers, c)
 	s.registrationSeq.EndWrite()
+}
+
+// SendToCheckers iterates over all checkers and calls fn for each one of them.
+func (s *State) SendToCheckers(fn func(c Checker) error) error {
+	for _, c := range s.getCheckers() {
+		if err := fn(c); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // GetFieldSet returns the FieldSet that has been configured for a given Point.

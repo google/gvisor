@@ -48,6 +48,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/loader"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck"
+	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netfilter"
 	"gvisor.dev/gvisor/pkg/sentry/syscalls/linux/vfs2"
 	"gvisor.dev/gvisor/pkg/sentry/time"
@@ -642,6 +644,23 @@ func (l *Loader) run() error {
 		if err != nil {
 			return err
 		}
+
+		if seccheck.Global.Enabled(seccheck.PointContainerStart) {
+			evt := pb.Start{
+				Id:   l.sandboxID,
+				Cwd:  l.root.spec.Process.Cwd,
+				Args: l.root.spec.Process.Args,
+			}
+			fields := seccheck.Global.GetFieldSet(seccheck.PointContainerStart)
+			if fields.Local.Contains(seccheck.ContainerStartFieldEnv) {
+				evt.Env = l.root.spec.Process.Env
+			}
+
+			ctx := l.root.procArgs.NewContext(l.k)
+			_ = seccheck.Global.SendToCheckers(func(c seccheck.Checker) error {
+				return c.ContainerStart(ctx, fields, &evt)
+			})
+		}
 	}
 
 	ep.tg = l.k.GlobalInit()
@@ -770,6 +789,23 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 	if err != nil {
 		return err
 	}
+
+	if seccheck.Global.Enabled(seccheck.PointContainerStart) {
+		evt := pb.Start{
+			Id:   cid,
+			Cwd:  spec.Process.Cwd,
+			Args: spec.Process.Args,
+		}
+		fields := seccheck.Global.GetFieldSet(seccheck.PointContainerStart)
+		if fields.Local.Contains(seccheck.ContainerStartFieldEnv) {
+			evt.Env = spec.Process.Env
+		}
+		ctx := info.procArgs.NewContext(l.k)
+		_ = seccheck.Global.SendToCheckers(func(c seccheck.Checker) error {
+			return c.ContainerStart(ctx, fields, &evt)
+		})
+	}
+
 	l.k.StartProcess(ep.tg)
 	return nil
 }
