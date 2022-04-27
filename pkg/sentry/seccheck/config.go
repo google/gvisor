@@ -1,0 +1,158 @@
+// Copyright 2022 The gVisor Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package seccheck
+
+import (
+	"fmt"
+	"os"
+
+	"gvisor.dev/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/log"
+)
+
+// SessionConfig describes a new session configuration. A session consists of a
+// set of points to be enabled and sinks where the points are sent to.
+type SessionConfig struct {
+	// Name is the unique session name.
+	Name string `json:"name,omitempty"`
+	// Points is the set of points to enable in this session.
+	Points []PointConfig `json:"points,omitempty"`
+	// Sinks are the sinks that will process the points enabled above.
+	Sinks []SinkConfig `json:"sinks,omitempty"`
+}
+
+// PointConfig describes a point to be enabled in a given session.
+type PointConfig struct {
+	// Name is the point to be enabled. The point must exist in the system.
+	Name string `json:"name,omitempty"`
+	// OptionalFields is the list of optional fields to collect from the point.
+	OptionalFields []string `json:"optional_fields,omitempty"`
+	// ContextFields is the list of context fields to collect.
+	ContextFields []string `json:"context_fields,omitempty"`
+}
+
+// SinkConfig describes the sink that will process the points in a given
+// session.
+type SinkConfig struct {
+	// Name is the sink to be created. The sink must exist in the system.
+	Name string `json:"name,omitempty"`
+	// Config is a opaque json object that is passed to the sink.
+	Config map[string]interface{} `json:"config,omitempty"`
+	// IgnoreSetupError makes errors during sink setup to be ignored. Otherwise,
+	// failures will prevent the container from starting.
+	IgnoreSetupError bool `json:"ignore_setup_error,omitempty"`
+	// FD is the endpoint returned from Setup. It may be nil.
+	FD *fd.FD `json:"-"`
+}
+
+// Configure reads the session configuration and applies it to the system.
+func Configure(conf *SessionConfig) error {
+	log.Debugf("Configuring seccheck: %+v", conf)
+	state, err := findSession(conf.Name)
+	if err != nil {
+		return err
+	}
+
+	var reqs []PointReq
+	for _, ptConfig := range conf.Points {
+		desc, err := findPointDesc(ptConfig.Name)
+		if err != nil {
+			return err
+		}
+		req := PointReq{Pt: desc.ID}
+
+		mask, err := setFields(ptConfig.OptionalFields, desc.OptionalFields)
+		if err != nil {
+			return err
+		}
+		req.Fields.Local = mask
+
+		mask, err = setFields(ptConfig.ContextFields, desc.ContextFields)
+		if err != nil {
+			return err
+		}
+		req.Fields.Context = mask
+
+		reqs = append(reqs, req)
+	}
+
+	for _, sinkConfig := range conf.Sinks {
+		sink, err := findSinkDesc(sinkConfig.Name)
+		if err != nil {
+			return err
+		}
+		checker, err := sink.New(sinkConfig.Config, sinkConfig.FD)
+		if err != nil {
+			return fmt.Errorf("creating event sink: %w", err)
+		}
+		state.AppendChecker(checker, reqs)
+	}
+
+	return nil
+}
+
+// SetupSink runs the setup step for a given sink.
+func SetupSink(config SinkConfig) (*os.File, error) {
+	sink, err := findSinkDesc(config.Name)
+	if err != nil {
+		return nil, err
+	}
+	if sink.Setup == nil {
+		return nil, nil
+	}
+	return sink.Setup(config.Config)
+}
+
+func findSession(name string) (*State, error) {
+	if name != "Default" {
+		return nil, fmt.Errorf(`only a single "Default" session is supported`)
+	}
+	return &Global, nil
+}
+
+func findPointDesc(name string) (PointDesc, error) {
+	if desc, ok := points[name]; ok {
+		return desc, nil
+	}
+	return PointDesc{}, fmt.Errorf("point %q not found", name)
+}
+
+func findField(name string, fields []FieldDesc) (FieldDesc, error) {
+	for _, f := range fields {
+		if f.Name == name {
+			return f, nil
+		}
+	}
+	return FieldDesc{}, fmt.Errorf("field %q not found", name)
+}
+
+func setFields(names []string, fields []FieldDesc) (FieldMask, error) {
+	fm := FieldMask{}
+	for _, name := range names {
+		desc, err := findField(name, fields)
+		if err != nil {
+			return FieldMask{}, err
+		}
+		fm.Add(desc.ID)
+	}
+	return fm, nil
+}
+
+func findSinkDesc(name string) (SinkDesc, error) {
+	if desc, ok := sinks[name]; ok {
+		return desc, nil
+	}
+	return SinkDesc{}, fmt.Errorf("sink %q not found", name)
+}

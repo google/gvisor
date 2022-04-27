@@ -229,6 +229,10 @@ type Config struct {
 	// Use systemd to configure cgroups.
 	SystemdCgroup bool `flag:"systemd-cgroup"`
 
+	// PodInitConfig is the path to configuration file with additional steps to
+	// take during pod creation.
+	PodInitConfig string `flag:"pod-init-config"`
+
 	// TestOnlyAllowRunAsCurrentUserWithoutChroot should only be used in
 	// tests. It allows runsc to start the sandbox process as the current
 	// user, and without chrooting the sandbox process. This can be
