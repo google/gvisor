@@ -8,6 +8,7 @@ cc_binary(
     visibility = ["//:sandbox"],
     deps = [
         # any_cc_proto placeholder,
+        "//net/proto2/public",
         "//pkg/sentry/seccheck/points:points_cc_proto",
         "@com_google_absl//absl/strings",
     ],

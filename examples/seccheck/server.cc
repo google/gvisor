@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "google/protobuf/any.pb.h"
+#include "net/proto2/public/text_format.h"
 #include "absl/strings/string_view.h"
 #include "pkg/sentry/seccheck/points/sentry.pb.h"
 
@@ -53,15 +54,33 @@ void log(const char* fmt, ...) {
   }
 }
 
+std::string printShortTextProto(const proto2::Message& message) {
+  std::string message_text;
+
+  proto2::TextFormat::Printer printer;
+  printer.SetSingleLineMode(true);
+  printer.SetExpandAny(true);
+
+  printer.PrintToString(message, &message_text);
+  // Single line mode currently might have an extra space at the end.
+  if (!message_text.empty() && message_text.back() == ' ') {
+    message_text.pop_back();
+  }
+
+  return message_text;
+}
+
 template <class T>
 void unpack(const google::protobuf::Any& any) {
   T evt;
   if (!any.UnpackTo(&evt)) {
-    err(1, "UnpackTo(): %s", any.DebugString().c_str());
+    std::string any_textproto;
+    proto2::TextFormat::PrintToString(any, &any_textproto);
+    err(1, "UnpackTo(): %s", any_textproto.c_str());
   }
   auto name = any.type_url().substr(prefixLen);
   log("%.*s => %s\n", static_cast<int>(name.size()), name.data(),
-      evt.ShortDebugString().c_str());
+      printShortTextProto(evt).c_str());
 }
 
 std::map<std::string, Callback> dispatchers = {
