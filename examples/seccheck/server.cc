@@ -72,6 +72,7 @@ std::map<std::string, Callback> dispatchers = {
     {"gvisor.sentry.ExecveInfo", unpack<::gvisor::sentry::ExecveInfo>},
     {"gvisor.sentry.ExitNotifyParentInfo",
      unpack<::gvisor::sentry::ExitNotifyParentInfo>},
+    {"gvisor.sentry.TaskExit", unpack<::gvisor::sentry::TaskExit>},
 };
 
 void unpack(const absl::string_view buf) {

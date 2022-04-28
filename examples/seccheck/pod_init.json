@@ -7,6 +7,9 @@
       },
       {
         "name": "sentry/clone"
+      },
+      {
+        "name": "sentry/task_exit"
       }
     ],
     "sinks": [
