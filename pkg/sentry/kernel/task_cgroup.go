@@ -90,17 +90,15 @@ func (t *Task) enterCgroupIfNotYetLocked(c Cgroup) {
 // LeaveCgroups removes t out from all its cgroups.
 func (t *Task) LeaveCgroups() {
 	t.mu.Lock()
-	defer t.mu.Unlock()
-	for c, _ := range t.cgroups {
-		t.leaveCgroupLocked(c)
+	cgs := t.cgroups
+	t.cgroups = nil
+	for c := range cgs {
+		c.Leave(t)
 	}
-}
-
-// +checklocks:t.mu
-func (t *Task) leaveCgroupLocked(c Cgroup) {
-	c.Leave(t)
-	delete(t.cgroups, c)
-	c.decRef()
+	t.mu.Unlock()
+	for c := range cgs {
+		c.decRef()
+	}
 }
 
 // +checklocks:t.mu
