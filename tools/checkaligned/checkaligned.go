@@ -35,9 +35,6 @@ var Analyzer = &analysis.Analyzer{
 }
 
 // blocklist lists prohibited identifiers in the atomic package.
-//
-// TODO(b/228378998): We can further genericize this to ban other things we
-// don't like (e.g. os.File).
 var blocklist = []string{
 	"AddInt64",
 	"AddUint64",
@@ -96,7 +93,15 @@ func run(pass *analysis.Pass) (interface{}, error) {
 
 			for _, blocked := range blocklist {
 				if selExpr.Sel.Name == blocked {
-					pass.Reportf(selExpr.Pos(), fmt.Sprintf("don't call atomic.%s; use the atomicbitops package instead", blocked))
+					// All blocked functions end in Int32 or Uint32, which we can use to
+					// suggest the correct type.
+					typeNameLen := len("Int")
+					if unsigned := "Uint"; strings.Contains(blocked, unsigned) {
+						typeNameLen = len(unsigned)
+					}
+					typeNameLen += 2 // Account for the "32" or "64" suffix.
+					typeName := blocked[len(blocked)-typeNameLen:]
+					pass.Reportf(selExpr.Pos(), fmt.Sprintf("don't call atomic.%s; use atomicbitops.%s instead", blocked, typeName))
 				}
 			}
 
