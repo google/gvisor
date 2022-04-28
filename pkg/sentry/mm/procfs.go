@@ -60,8 +60,8 @@ func (mm *MemoryManager) NeedsUpdate(generation int64) bool {
 // ReadMapsDataInto is called by fsimpl/proc.mapsData.Generate to
 // implement /proc/[pid]/maps.
 func (mm *MemoryManager) ReadMapsDataInto(ctx context.Context, buf *bytes.Buffer) {
-	mm.mappingMu.RLock()
-	defer mm.mappingMu.RUnlock()
+	mm.mappingMu.RLockBypass()
+	defer mm.mappingMu.RUnlockBypass()
 	var start hostarch.Addr
 
 	for vseg := mm.vmas.LowerBoundSegment(start); vseg.Ok(); vseg = vseg.NextSegment() {
@@ -85,8 +85,8 @@ func (mm *MemoryManager) ReadMapsDataInto(ctx context.Context, buf *bytes.Buffer
 // ReadMapsSeqFileData is called by fs/proc.mapsData.ReadSeqFileData to
 // implement /proc/[pid]/maps.
 func (mm *MemoryManager) ReadMapsSeqFileData(ctx context.Context, handle seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
-	mm.mappingMu.RLock()
-	defer mm.mappingMu.RUnlock()
+	mm.mappingMu.RLockBypass()
+	defer mm.mappingMu.RUnlockBypass()
 	var data []seqfile.SeqData
 	var start hostarch.Addr
 	if handle != nil {
@@ -175,8 +175,8 @@ func (mm *MemoryManager) appendVMAMapsEntryLocked(ctx context.Context, vseg vmaI
 // ReadSmapsDataInto is called by fsimpl/proc.smapsData.Generate to
 // implement /proc/[pid]/maps.
 func (mm *MemoryManager) ReadSmapsDataInto(ctx context.Context, buf *bytes.Buffer) {
-	mm.mappingMu.RLock()
-	defer mm.mappingMu.RUnlock()
+	mm.mappingMu.RLockBypass()
+	defer mm.mappingMu.RUnlockBypass()
 	var start hostarch.Addr
 
 	for vseg := mm.vmas.LowerBoundSegment(start); vseg.Ok(); vseg = vseg.NextSegment() {
@@ -193,8 +193,8 @@ func (mm *MemoryManager) ReadSmapsDataInto(ctx context.Context, buf *bytes.Buffe
 // ReadSmapsSeqFileData is called by fs/proc.smapsData.ReadSeqFileData to
 // implement /proc/[pid]/smaps.
 func (mm *MemoryManager) ReadSmapsSeqFileData(ctx context.Context, handle seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
-	mm.mappingMu.RLock()
-	defer mm.mappingMu.RUnlock()
+	mm.mappingMu.RLockBypass()
+	defer mm.mappingMu.RUnlockBypass()
 	var data []seqfile.SeqData
 	var start hostarch.Addr
 	if handle != nil {
@@ -238,7 +238,7 @@ func (mm *MemoryManager) vmaSmapsEntryIntoLocked(ctx context.Context, vseg vmaIt
 	// requiring it to be locked as a precondition, to reduce the latency
 	// impact of reading /proc/[pid]/smaps on concurrent performance-sensitive
 	// operations requiring activeMu for writing like faults.
-	mm.activeMu.RLock()
+	mm.activeMu.RLockBypass()
 	var rss uint64
 	var anon uint64
 	vsegAR := vseg.Range()
@@ -250,7 +250,7 @@ func (mm *MemoryManager) vmaSmapsEntryIntoLocked(ctx context.Context, vseg vmaIt
 			anon += size
 		}
 	}
-	mm.activeMu.RUnlock()
+	mm.activeMu.RUnlockBypass()
 
 	fmt.Fprintf(b, "Size:           %8d kB\n", vseg.Range().Length()/1024)
 	fmt.Fprintf(b, "Rss:            %8d kB\n", rss/1024)

@@ -48,6 +48,16 @@ func (m *RWMutex) RUnlock() {
 }
 
 // +checklocksignore
+func (m *RWMutex) RLockBypass() {
+	m.mu.RLock()
+}
+
+// +checklocksignore
+func (m *RWMutex) RUnlockBypass() {
+	m.mu.RUnlock()
+}
+
+// +checklocksignore
 func (m *RWMutex) DowngradeLock() {
 	m.mu.DowngradeLock()
 }
