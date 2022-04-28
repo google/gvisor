@@ -9,7 +9,6 @@ go_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "//pkg/atomicbitops",
         "//pkg/tcpip",
         "//pkg/tcpip/stack",
     ],
@@ -21,7 +20,6 @@ go_test(
     srcs = ["route_table_test.go"],
     library = ":multicast",
     deps = [
-        "//pkg/atomicbitops",
         "//pkg/refs",
         "//pkg/refsvfs2",
         "//pkg/tcpip",
@@ -42,6 +40,7 @@ go_test(
         ":multicast",
         "//pkg/refs",
         "//pkg/refsvfs2",
+        "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/faketime",
         "//pkg/tcpip/stack",
