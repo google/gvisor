@@ -204,6 +204,21 @@ type runExitMain struct{}
 
 func (*runExitMain) execute(t *Task) taskRunState {
 	t.traceExitEvent()
+
+	if seccheck.Global.Enabled(seccheck.PointTaskExit) {
+		info := &pb.TaskExit{
+			ExitStatus: int32(t.tg.exitStatus),
+		}
+		fields := seccheck.Global.GetFieldSet(seccheck.PointTaskExit)
+		if !fields.Context.Empty() {
+			info.ContextData = &pb.ContextData{}
+			LoadSeccheckData(t, fields.Context, info.ContextData)
+		}
+		seccheck.Global.SendToCheckers(func(c seccheck.Checker) error {
+			return c.TaskExit(t, fields, info)
+		})
+	}
+
 	lastExiter := t.exitThreadGroup()
 
 	t.ResetKcov()

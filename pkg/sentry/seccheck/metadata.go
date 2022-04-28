@@ -192,4 +192,9 @@ func init() {
 		Name:          "sentry/exit_notify_parent",
 		ContextFields: defaultContextFields,
 	})
+	registerPoint(PointDesc{
+		ID:            PointTaskExit,
+		Name:          "sentry/task_exit",
+		ContextFields: defaultContextFields,
+	})
 }

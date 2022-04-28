@@ -249,6 +249,61 @@ func (x *ExitNotifyParentInfo) GetExitStatus() int32 {
 	return 0
 }
 
+type TaskExit struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	ContextData *ContextData `protobuf:"bytes,1,opt,name=context_data,json=contextData,proto3" json:"context_data,omitempty"`
+	ExitStatus  int32        `protobuf:"varint,2,opt,name=exit_status,json=exitStatus,proto3" json:"exit_status,omitempty"`
+}
+
+func (x *TaskExit) Reset() {
+	*x = TaskExit{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_pkg_sentry_seccheck_points_sentry_proto_msgTypes[3]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *TaskExit) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TaskExit) ProtoMessage() {}
+
+func (x *TaskExit) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_sentry_seccheck_points_sentry_proto_msgTypes[3]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TaskExit.ProtoReflect.Descriptor instead.
+func (*TaskExit) Descriptor() ([]byte, []int) {
+	return file_pkg_sentry_seccheck_points_sentry_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *TaskExit) GetContextData() *ContextData {
+	if x != nil {
+		return x.ContextData
+	}
+	return nil
+}
+
+func (x *TaskExit) GetExitStatus() int32 {
+	if x != nil {
+		return x.ExitStatus
+	}
+	return 0
+}
+
 var File_pkg_sentry_seccheck_points_sentry_proto protoreflect.FileDescriptor
 
 var file_pkg_sentry_seccheck_points_sentry_proto_rawDesc = []byte{
@@ -298,7 +353,14 @@ var file_pkg_sentry_seccheck_points_sentry_proto_rawDesc = []byte{
 	0x44, 0x61, 0x74, 0x61, 0x52, 0x0b, 0x63, 0x6f, 0x6e, 0x74, 0x65, 0x78, 0x74, 0x44, 0x61, 0x74,
 	0x61, 0x12, 0x1f, 0x0a, 0x0b, 0x65, 0x78, 0x69, 0x74, 0x5f, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73,
 	0x18, 0x02, 0x20, 0x01, 0x28, 0x05, 0x52, 0x0a, 0x65, 0x78, 0x69, 0x74, 0x53, 0x74, 0x61, 0x74,
-	0x75, 0x73, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x75, 0x73, 0x22, 0x6a, 0x0a, 0x08, 0x54, 0x61, 0x73, 0x6b, 0x45, 0x78, 0x69, 0x74, 0x12, 0x3d,
+	0x0a, 0x0c, 0x63, 0x6f, 0x6e, 0x74, 0x65, 0x78, 0x74, 0x5f, 0x64, 0x61, 0x74, 0x61, 0x18, 0x01,
+	0x20, 0x01, 0x28, 0x0b, 0x32, 0x1a, 0x2e, 0x67, 0x76, 0x69, 0x73, 0x6f, 0x72, 0x2e, 0x63, 0x6f,
+	0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x43, 0x6f, 0x6e, 0x74, 0x65, 0x78, 0x74, 0x44, 0x61, 0x74, 0x61,
+	0x52, 0x0b, 0x63, 0x6f, 0x6e, 0x74, 0x65, 0x78, 0x74, 0x44, 0x61, 0x74, 0x61, 0x12, 0x1f, 0x0a,
+	0x0b, 0x65, 0x78, 0x69, 0x74, 0x5f, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x18, 0x02, 0x20, 0x01,
+	0x28, 0x05, 0x52, 0x0a, 0x65, 0x78, 0x69, 0x74, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x62, 0x06,
+	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -313,22 +375,24 @@ func file_pkg_sentry_seccheck_points_sentry_proto_rawDescGZIP() []byte {
 	return file_pkg_sentry_seccheck_points_sentry_proto_rawDescData
 }
 
-var file_pkg_sentry_seccheck_points_sentry_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_pkg_sentry_seccheck_points_sentry_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_pkg_sentry_seccheck_points_sentry_proto_goTypes = []interface{}{
 	(*CloneInfo)(nil),            // 0: gvisor.sentry.CloneInfo
 	(*ExecveInfo)(nil),           // 1: gvisor.sentry.ExecveInfo
 	(*ExitNotifyParentInfo)(nil), // 2: gvisor.sentry.ExitNotifyParentInfo
-	(*ContextData)(nil),          // 3: gvisor.common.ContextData
+	(*TaskExit)(nil),             // 3: gvisor.sentry.TaskExit
+	(*ContextData)(nil),          // 4: gvisor.common.ContextData
 }
 var file_pkg_sentry_seccheck_points_sentry_proto_depIdxs = []int32{
-	3, // 0: gvisor.sentry.CloneInfo.context_data:type_name -> gvisor.common.ContextData
-	3, // 1: gvisor.sentry.ExecveInfo.context_data:type_name -> gvisor.common.ContextData
-	3, // 2: gvisor.sentry.ExitNotifyParentInfo.context_data:type_name -> gvisor.common.ContextData
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	4, // 0: gvisor.sentry.CloneInfo.context_data:type_name -> gvisor.common.ContextData
+	4, // 1: gvisor.sentry.ExecveInfo.context_data:type_name -> gvisor.common.ContextData
+	4, // 2: gvisor.sentry.ExitNotifyParentInfo.context_data:type_name -> gvisor.common.ContextData
+	4, // 3: gvisor.sentry.TaskExit.context_data:type_name -> gvisor.common.ContextData
+	4, // [4:4] is the sub-list for method output_type
+	4, // [4:4] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_pkg_sentry_seccheck_points_sentry_proto_init() }
@@ -374,6 +438,18 @@ func file_pkg_sentry_seccheck_points_sentry_proto_init() {
 				return nil
 			}
 		}
+		file_pkg_sentry_seccheck_points_sentry_proto_msgTypes[3].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*TaskExit); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -381,7 +457,7 @@ func file_pkg_sentry_seccheck_points_sentry_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_pkg_sentry_seccheck_points_sentry_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

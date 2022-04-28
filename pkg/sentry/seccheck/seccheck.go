@@ -32,6 +32,7 @@ const (
 	PointExecve
 	PointExitNotifyParent
 	PointContainerStart
+	PointTaskExit
 	// Add new Points above this line.
 	pointLength
 
@@ -117,6 +118,7 @@ type Checker interface {
 	Clone(ctx context.Context, fields FieldSet, info *pb.CloneInfo) error
 	Execve(ctx context.Context, fields FieldSet, info *pb.ExecveInfo) error
 	ExitNotifyParent(ctx context.Context, fields FieldSet, info *pb.ExitNotifyParentInfo) error
+	TaskExit(context.Context, FieldSet, *pb.TaskExit) error
 	ContainerStart(context.Context, FieldSet, *pb.Start) error
 }
 
@@ -143,6 +145,11 @@ func (CheckerDefaults) ExitNotifyParent(context.Context, FieldSet, *pb.ExitNotif
 
 // ContainerStart implements Checker.ContainerStart.
 func (CheckerDefaults) ContainerStart(context.Context, FieldSet, *pb.Start) error {
+	return nil
+}
+
+// TaskExit implements Checker.TaskExit.
+func (CheckerDefaults) TaskExit(context.Context, FieldSet, *pb.TaskExit) error {
 	return nil
 }
 
