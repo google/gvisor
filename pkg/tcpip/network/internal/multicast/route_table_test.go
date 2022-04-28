@@ -180,50 +180,134 @@ func TestPendingRouteStates(t *testing.T) {
 	}
 }
 
+func TestPendingRouteExpiration(t *testing.T) {
+	pkt := newPacketBuffer("foo")
+	defer pkt.DecRef()
+
+	testCases := []struct {
+		name                string
+		advanceBeforeInsert time.Duration
+		advanceAfterInsert  time.Duration
+		wantPendingRoute    bool
+	}{
+		{
+			name:                "not expired",
+			advanceBeforeInsert: DefaultCleanupInterval / 2,
+			// The time is advanced far enough to run the cleanup routine, but not
+			// far enough to expire the route.
+			advanceAfterInsert: DefaultCleanupInterval,
+			wantPendingRoute:   true,
+		},
+		{
+			name: "expired",
+			// The cleanup routine will be run twice. The second invocation will
+			// remove the expired route.
+			advanceBeforeInsert: DefaultCleanupInterval / 2,
+			advanceAfterInsert:  DefaultCleanupInterval * 2,
+			wantPendingRoute:    false,
+		},
+	}
+
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			clock := faketime.NewManualClock()
+
+			table := RouteTable{}
+			config := defaultConfig(withClock(clock))
+
+			if err := table.Init(config); err != nil {
+				t.Fatalf("table.Init(%#v): %s", config, err)
+			}
+
+			clock.Advance(test.advanceBeforeInsert)
+
+			if _, err := table.GetRouteOrInsertPending(defaultRouteKey, pkt); err != nil {
+				t.Fatalf("table.GetRouteOrInsertPending(%#v, %#v): %v", defaultRouteKey, pkt, err)
+			}
+
+			clock.Advance(test.advanceAfterInsert)
+
+			table.pendingMu.RLock()
+			_, ok := table.pendingRoutes[defaultRouteKey]
+			table.pendingMu.RUnlock()
+
+			if test.wantPendingRoute != ok {
+				t.Errorf("got table.pendingRoutes[%#v] = (_, %t), want = (_, %t)", defaultRouteKey, ok, test.wantPendingRoute)
+			}
+		})
+	}
+}
+
 func TestAddInstalledRouteWithPending(t *testing.T) {
-	table := RouteTable{}
-	config := defaultConfig()
-	if err := table.Init(config); err != nil {
-		t.Fatalf("table.Init(%#v): %s", config, err)
+	pkt := newPacketBuffer("foo")
+	defer pkt.DecRef()
+
+	testCases := []struct {
+		name    string
+		advance time.Duration
+		want    *stack.PacketBuffer
+	}{
+		{
+			name:    "not expired",
+			advance: DefaultPendingRouteExpiration,
+			want:    pkt,
+		},
+		{
+			name:    "expired",
+			advance: DefaultPendingRouteExpiration + 1,
+			want:    nil,
+		},
 	}
 
-	wantPkt := newPacketBuffer("hello")
-	defer wantPkt.DecRef()
-	// Queue a pending packet. This packet should later be returned in a
-	// PendingRoute when table.AddInstalledRoute is invoked.
-	_, err := table.GetRouteOrInsertPending(defaultRouteKey, wantPkt)
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			clock := faketime.NewManualClock()
 
-	if err != nil {
-		t.Fatalf("table.GetRouteOrInsertPending(%#v, %#v): %v", defaultRouteKey, wantPkt, err)
-	}
+			table := RouteTable{}
+			config := defaultConfig(withClock(clock))
 
-	route := table.NewInstalledRoute(inputNICID, defaultOutgoingInterfaces)
+			if err := table.Init(config); err != nil {
+				t.Fatalf("table.Init(%#v): %s", config, err)
+			}
+			// Disable the cleanup routine.
+			table.cleanupPendingRoutesTimer.Stop()
 
-	pendingRoute, wasPending := table.AddInstalledRoute(defaultRouteKey, route)
-	if !wasPending {
-		t.Fatalf("got table.AddInstalledRoute(%#v, %#v) = (nil, false), want = (_, true)", defaultRouteKey, route)
-	}
+			if _, err := table.GetRouteOrInsertPending(defaultRouteKey, pkt); err != nil {
+				t.Fatalf("table.GetRouteOrInsertPending(%#v, %#v): %v", defaultRouteKey, pkt, err)
+			}
 
-	// Verify that packets are properly dequeued from the PendingRoute.
-	pkt, err := pendingRoute.Dequeue()
+			clock.Advance(test.advance)
 
-	if err != nil {
-		t.Fatalf("got pendingRoute.Dequeue() = (_, %v), want = (_, nil)", err)
-	}
+			route := table.NewInstalledRoute(inputNICID, defaultOutgoingInterfaces)
+			pendingRoute, wasPending := table.AddInstalledRoute(defaultRouteKey, route)
 
-	if !cmp.Equal(wantPkt.Views(), pkt.Views()) {
-		t.Errorf("got pendingRoute.Dequeue() = (%v, nil), want = (%v, nil)", pkt.Views(), wantPkt.Views())
-	}
+			if test.want == nil {
+				if wasPending {
+					t.Errorf("got table.AddInstalledRoute(%#v, %#v) = (%#v, true), want = (_, false)", defaultRouteKey, route, pendingRoute)
+				}
+			} else {
+				if !wasPending {
+					t.Fatalf("got table.AddInstalledRoute(%#v, %#v) = (nil, false), want = (_, true)", defaultRouteKey, route)
+				}
 
-	if !pendingRoute.IsEmpty() {
-		t.Errorf("got pendingRoute.IsEmpty() = false, want = true")
-	}
+				pkt, err := pendingRoute.Dequeue()
 
-	// Verify that the pending route is deleted (not returned on subsequent
-	// calls to AddInstalledRoute).
-	pendingRoute, wasPending = table.AddInstalledRoute(defaultRouteKey, route)
-	if wasPending {
-		t.Errorf("got table.AddInstalledRoute(%#v, %#v) = (%#v, true), want (_, false)", defaultRouteKey, route, pendingRoute)
+				if err != nil {
+					t.Fatalf("got pendingRoute.Dequeue() = (_, %v), want = (_, nil)", err)
+				}
+
+				if !cmp.Equal(test.want.Views(), pkt.Views()) {
+					t.Errorf("got pkt = %v, want = %v", pkt.Views(), test.want.Views())
+				}
+			}
+
+			// Verify that the pending route is actually deleted.
+			table.pendingMu.RLock()
+			if pendingRoute, ok := table.pendingRoutes[defaultRouteKey]; ok {
+				t.Errorf("got table.pendingRoutes[%#v] = (%#v, true), want (_, false)", defaultRouteKey, pendingRoute)
+			}
+			table.pendingMu.RUnlock()
+		})
 	}
 }
 

@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -38,9 +39,6 @@ type RouteTable struct {
 	// 3. This structure is similar to the Linux implementation:
 	//		https://github.com/torvalds/linux/blob/cffb2b72d3e/include/linux/mroute_base.h#L250
 
-	// TODO(https://gvisor.dev/issue/7338): Implement time based expiration of
-	// pending packets.
-
 	// The installedMu lock should typically be acquired before the pendingMu
 	// lock. This ensures that installed routes can continue to be read even when
 	// the pending routes are write locked.
@@ -56,6 +54,10 @@ type RouteTable struct {
 	pendingRoutes map[RouteKey]PendingRoute
 
 	config Config
+
+	// cleanupPendingRoutesTimer is a timer that triggers a routine to remove
+	// pending routes that are expired.
+	cleanupPendingRoutesTimer tcpip.Timer
 }
 
 var (
@@ -141,18 +143,21 @@ type OutgoingInterface struct {
 // a route is installed.
 type PendingRoute struct {
 	packets []*stack.PacketBuffer
+
+	// expiration is the timestamp at which the pending route should be expired.
+	//
+	// If this value is before the current time, then this pending route will
+	// be dropped.
+	expiration tcpip.MonotonicTime
 }
 
-func newPendingRoute(maxSize uint8) PendingRoute {
-	return PendingRoute{packets: make([]*stack.PacketBuffer, 0, maxSize)}
+func (p *PendingRoute) isExpired(currentTime tcpip.MonotonicTime) bool {
+	return currentTime.After(p.expiration)
 }
 
 // Dequeue removes the first element in the queue and returns it.
 //
 // If the queue is empty, then an error will be returned.
-//
-// TODO(https://gvisor.dev/issue/7338): Remove this and instead just return the
-// list of packets from AddInstalledRoute.
 func (p *PendingRoute) Dequeue() (*stack.PacketBuffer, error) {
 	if len(p.packets) == 0 {
 		return nil, errors.New("dequeue called on queue empty")
@@ -169,12 +174,28 @@ func (p *PendingRoute) IsEmpty() bool {
 	return len(p.packets) == 0
 }
 
-// DefaultMaxPendingQueueSize corresponds to the number of elements that can be
-// in the packet queue for a pending route.
-//
-// Matches the Linux default queue size:
-// https://github.com/torvalds/linux/blob/26291c54e11/net/ipv6/ip6mr.c#L1186
-const DefaultMaxPendingQueueSize uint8 = 3
+const (
+	// DefaultMaxPendingQueueSize corresponds to the number of elements that can
+	// be in the packet queue for a pending route.
+	//
+	// Matches the Linux default queue size:
+	// https://github.com/torvalds/linux/blob/26291c54e11/net/ipv6/ip6mr.c#L1186
+	DefaultMaxPendingQueueSize uint8 = 3
+
+	// DefaultPendingRouteExpiration is the default maximum lifetime of a pending
+	// route.
+	//
+	// Matches the Linux default:
+	// https://github.com/torvalds/linux/blob/26291c54e11/net/ipv6/ip6mr.c#L991
+	DefaultPendingRouteExpiration time.Duration = 10 * time.Second
+
+	// DefaultCleanupInterval is the default frequency of the routine that
+	// expires pending routes.
+	//
+	// Matches the Linux default:
+	// https://github.com/torvalds/linux/blob/26291c54e11/net/ipv6/ip6mr.c#L793
+	DefaultCleanupInterval time.Duration = 10 * time.Second
+)
 
 // Config represents the options for configuring a RouteTable.
 type Config struct {
@@ -194,7 +215,10 @@ type Config struct {
 
 // DefaultConfig returns the default configuration for the table.
 func DefaultConfig(clock tcpip.Clock) Config {
-	return Config{MaxPendingQueueSize: DefaultMaxPendingQueueSize, Clock: clock}
+	return Config{
+		MaxPendingQueueSize: DefaultMaxPendingQueueSize,
+		Clock:               clock,
+	}
 }
 
 // Init initializes the RouteTable with the provided config.
@@ -219,7 +243,29 @@ func (r *RouteTable) Init(config Config) error {
 	r.config = config
 	r.installedRoutes = make(map[RouteKey]*InstalledRoute)
 	r.pendingRoutes = make(map[RouteKey]PendingRoute)
+
+	r.cleanupPendingRoutesTimer = r.config.Clock.AfterFunc(DefaultCleanupInterval, r.cleanupPendingRoutes)
 	return nil
+}
+
+func (r *RouteTable) cleanupPendingRoutes() {
+	currentTime := r.config.Clock.NowMonotonic()
+	r.pendingMu.Lock()
+	defer r.pendingMu.Unlock()
+
+	for key, route := range r.pendingRoutes {
+		if route.isExpired(currentTime) {
+			delete(r.pendingRoutes, key)
+		}
+	}
+	r.cleanupPendingRoutesTimer.Reset(DefaultCleanupInterval)
+}
+
+func (r *RouteTable) newPendingRoute() PendingRoute {
+	return PendingRoute{
+		packets:    make([]*stack.PacketBuffer, 0, r.config.MaxPendingQueueSize),
+		expiration: r.config.Clock.NowMonotonic().Add(DefaultPendingRouteExpiration),
+	}
 }
 
 // NewInstalledRoute instatiates an installed route for the table.
@@ -314,9 +360,7 @@ func (r *RouteTable) getOrCreatePendingRouteRLocked(key RouteKey) (PendingRoute,
 	if pendingRoute, ok := r.pendingRoutes[key]; ok {
 		return pendingRoute, PendingRouteStateAppended
 	}
-
-	pendingRoute := newPendingRoute(r.config.MaxPendingQueueSize)
-	return pendingRoute, PendingRouteStateInstalled
+	return r.newPendingRoute(), PendingRouteStateInstalled
 }
 
 // AddInstalledRoute adds the provided route to the table.
@@ -333,14 +377,19 @@ func (r *RouteTable) AddInstalledRoute(key RouteKey, route *InstalledRoute) (Pen
 	r.installedRoutes[key] = route
 
 	r.pendingMu.Lock()
-	defer r.pendingMu.Unlock()
-
 	pendingRoute, ok := r.pendingRoutes[key]
 	delete(r.pendingRoutes, key)
-	return pendingRoute, ok
+	r.pendingMu.Unlock()
+
+	// Ignore the pending route if it is expired. It may be in this state since
+	// the cleanup process is only run periodically.
+	if !ok || pendingRoute.isExpired(r.config.Clock.NowMonotonic()) {
+		return PendingRoute{}, false
+	}
+	return pendingRoute, true
 }
 
-// RemoveInstalledRoute deletes the installed route that matches the provided
+// RemoveInstalledRoute deletes any installed route that matches the provided
 // key.
 //
 // Returns true if a route was removed. Otherwise returns false.
