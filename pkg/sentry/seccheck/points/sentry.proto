@@ -65,3 +65,11 @@ message ExitNotifyParentInfo {
   // by wait*().
   int32 exit_status = 2;
 }
+
+message TaskExit {
+  gvisor.common.ContextData context_data = 1;
+
+  // ExitStatus is the exiting thread group's exit status, as reported
+  // by wait*().
+  int32 exit_status = 2;
+}

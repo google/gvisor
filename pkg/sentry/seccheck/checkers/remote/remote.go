@@ -174,6 +174,13 @@ func (r *Remote) ExitNotifyParent(_ context.Context, _ seccheck.FieldSet, info *
 	return nil
 }
 
+// TaskExit implements seccheck.Checker.
+func (r *Remote) TaskExit(_ context.Context, _ seccheck.FieldSet, info *pb.TaskExit) error {
+	r.write(info)
+	return nil
+}
+
+// ContainerStart implements seccheck.Checker.
 func (r *Remote) ContainerStart(_ context.Context, _ seccheck.FieldSet, info *pb.Start) error {
 	r.write(info)
 	return nil
