@@ -31,6 +31,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
@@ -647,7 +648,11 @@ func (t *Task) exitNotifyLocked(fromPtraceDetach bool) {
 			}
 			if seccheck.Global.Enabled(seccheck.PointExitNotifyParent) {
 				mask, info := getExitNotifyParentSeccheckInfo(t)
-				seccheck.Global.ExitNotifyParent(t, mask, info)
+				if err := seccheck.Global.SendToCheckers(func(c seccheck.Checker) error {
+					return c.ExitNotifyParent(t, mask, info)
+				}); err != nil {
+					log.Infof("Ignoring error from ExitNotifyParent point: %v", err)
+				}
 			}
 		}
 	}
