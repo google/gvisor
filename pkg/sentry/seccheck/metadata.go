@@ -27,6 +27,12 @@ const (
 	ContainerStartFieldEnv Field = iota
 )
 
+const (
+	// ExecveFieldBinaryInfo is an optional field to collect information about the
+	// binary being executed.
+	ExecveFieldBinaryInfo Field = iota
+)
+
 var points = map[string]PointDesc{}
 var sinks = map[string]SinkDesc{}
 

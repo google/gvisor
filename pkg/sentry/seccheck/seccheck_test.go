@@ -75,7 +75,9 @@ func TestCheckerRegistered(t *testing.T) {
 	if !fields.Context.Contains(FieldCtxtCredentials) {
 		t.Errorf("fields.Context.Contains(PointContextCredentials): got false, wanted true")
 	}
-	if err := s.Clone(context.Background(), fields, &pb.CloneInfo{}); err != nil {
+	if err := s.SendToCheckers(func(c Checker) error {
+		return c.Clone(context.Background(), fields, &pb.CloneInfo{})
+	}); err != nil {
 		t.Errorf("Clone(): got %v, wanted nil", err)
 	}
 	if !checkerCalled {
@@ -112,7 +114,9 @@ func TestMultipleCheckersRegistered(t *testing.T) {
 	// CloneReq() should return the union of requested fields from all calls to
 	// AppendChecker.
 	fields := s.GetFieldSet(PointClone)
-	if err := s.Clone(context.Background(), fields, &pb.CloneInfo{}); err != nil {
+	if err := s.SendToCheckers(func(c Checker) error {
+		return c.Clone(context.Background(), fields, &pb.CloneInfo{})
+	}); err != nil {
 		t.Errorf("Clone(): got %v, wanted nil", err)
 	}
 	for i := range checkersCalled {
@@ -151,7 +155,9 @@ func TestCheckpointReturnsFirstCheckerError(t *testing.T) {
 	if !s.Enabled(PointClone) {
 		t.Errorf("Enabled(PointClone): got false, wanted true")
 	}
-	if err := s.Clone(context.Background(), FieldSet{}, &pb.CloneInfo{}); err != errFirstChecker {
+	if err := s.SendToCheckers(func(c Checker) error {
+		return c.Clone(context.Background(), FieldSet{}, &pb.CloneInfo{})
+	}); err != errFirstChecker {
 		t.Errorf("Clone(): got %v, wanted %v", err, errFirstChecker)
 	}
 	if !checkersCalled[0] {
