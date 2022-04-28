@@ -91,6 +91,8 @@ type Cgroup struct {
 	CgroupImpl
 }
 
+// decRef drops a reference on the cgroup. This must happen outside a Task.mu
+// critical section.
 func (c *Cgroup) decRef() {
 	c.Dentry.DecRef(context.Background())
 }

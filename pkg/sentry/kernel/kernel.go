@@ -1871,7 +1871,11 @@ func (k *Kernel) PopulateNewCgroupHierarchy(root Cgroup) {
 // hierarchy with the provided id.  This is intended for use during hierarchy
 // teardown, as otherwise the tasks would be orphaned w.r.t to some controllers.
 func (k *Kernel) ReleaseCgroupHierarchy(hid uint32) {
+	var releasedCGs []Cgroup
+
 	k.tasks.mu.RLock()
+	// We'll have one cgroup per hierarchy per task.
+	releasedCGs = make([]Cgroup, 0, len(k.tasks.Root.tids))
 	k.tasks.forEachTaskLocked(func(t *Task) {
 		if t.exitState != TaskExitNone {
 			return
@@ -1879,12 +1883,22 @@ func (k *Kernel) ReleaseCgroupHierarchy(hid uint32) {
 		t.mu.Lock()
 		for cg := range t.cgroups {
 			if cg.HierarchyID() == hid {
-				t.leaveCgroupLocked(cg)
+				cg.Leave(t)
+				delete(t.cgroups, cg)
+				releasedCGs = append(releasedCGs, cg)
+				// A task can't be part of multiple cgroups from the same
+				// hierarchy, so we can skip checking the rest once we find a
+				// match.
+				break
 			}
 		}
 		t.mu.Unlock()
 	})
 	k.tasks.mu.RUnlock()
+
+	for _, c := range releasedCGs {
+		c.decRef()
+	}
 }
 
 func (k *Kernel) ReplaceFSContextRoots(ctx context.Context, oldRoot vfs.VirtualDentry, newRoot vfs.VirtualDentry) {

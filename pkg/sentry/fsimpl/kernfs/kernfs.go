@@ -48,6 +48,8 @@
 // Lock ordering:
 //
 // kernfs.Filesystem.mu
+//   kernel.TaskSet.mu
+//     kernel.Task.mu
 //   kernfs.Dentry.dirMu
 //     vfs.VirtualFilesystem.mountMu
 //       vfs.Dentry.mu
