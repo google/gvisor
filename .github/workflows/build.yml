@@ -1,0 +1,34 @@
+name: CI
+
+"on":
+  push:
+    branches:
+      - "*"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: bazel
+      run: |
+        export DEBIAN_FRONTEND=noninteractive
+        sudo -E apt update && sudo -E apt install -y make
+
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: build
+      run: |
+          mkdir -p bin
+          make copy TARGETS=runsc DESTINATION=bin/
+
+    - name: Upload runsc
+      uses: actions/upload-artifact@v4
+      with:
+          name: runsc
+          path: bin/runsc
