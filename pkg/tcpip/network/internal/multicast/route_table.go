@@ -19,9 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"time"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -55,7 +53,7 @@ type RouteTable struct {
 
 	pendingMu sync.RWMutex
 	// +checklocks:pendingMu
-	pendingRoutes map[RouteKey]pendingRoute
+	pendingRoutes map[RouteKey]PendingRoute
 
 	config Config
 }
@@ -69,7 +67,7 @@ var (
 	// Config, but is required.
 	ErrMissingClock = errors.New("clock must not be nil")
 
-	// ErrAlreadyInitialized indicate that RouteTable.Init was already invoked.
+	// ErrAlreadyInitialized indicates that RouteTable.Init was already invoked.
 	ErrAlreadyInitialized = errors.New("table is already initialized")
 )
 
@@ -86,8 +84,10 @@ type RouteKey struct {
 type InstalledRoute struct {
 	expectedInputInterface tcpip.NICID
 	outgoingInterfaces     []OutgoingInterface
-	// +checkatomic
-	lastUsedTimestamp atomicbitops.Int64
+
+	lastUsedTimestampMu sync.RWMutex
+	// +checklocks:lastUsedTimestampMu
+	lastUsedTimestamp tcpip.MonotonicTime
 }
 
 // ExpectedInputInterface returns the expected input interface for the route.
@@ -100,17 +100,27 @@ func (r *InstalledRoute) OutgoingInterfaces() []OutgoingInterface {
 	return r.outgoingInterfaces
 }
 
-// LastUsedTimestamp returns a Unix based timestamp in microseconds that
-// corresponds to the last time the route was used or updated.
-func (r *InstalledRoute) LastUsedTimestamp() int64 {
-	return r.lastUsedTimestamp.Load()
+// LastUsedTimestamp returns a monotonic timestamp that corresponds to the last
+// time the route was used or updated.
+func (r *InstalledRoute) LastUsedTimestamp() tcpip.MonotonicTime {
+	r.lastUsedTimestampMu.RLock()
+	defer r.lastUsedTimestampMu.RUnlock()
+
+	return r.lastUsedTimestamp
 }
 
 // SetLastUsedTimestamp sets the time that the route was last used.
 //
-// Callers should invoke this anytime the route is used to forward a packet.
-func (r *InstalledRoute) SetLastUsedTimestamp(time time.Time) {
-	r.lastUsedTimestamp.Store(time.UnixMicro())
+// The timestamp is only updated if it occurs after the currently set
+// timestamp. Callers should invoke this anytime the route is used to forward a
+// packet.
+func (r *InstalledRoute) SetLastUsedTimestamp(monotonicTime tcpip.MonotonicTime) {
+	r.lastUsedTimestampMu.Lock()
+	defer r.lastUsedTimestampMu.Unlock()
+
+	if monotonicTime.After(r.lastUsedTimestamp) {
+		r.lastUsedTimestamp = monotonicTime
+	}
 }
 
 // OutgoingInterface represents an interface that packets should be forwarded
@@ -124,23 +134,26 @@ type OutgoingInterface struct {
 	MinTTL uint8
 }
 
-// pendingRoute represents a route that is in the "pending" state.
+// PendingRoute represents a route that is in the "pending" state.
 //
 // A route is in the pending state if an installed route does not yet exist
 // for the entry. For such routes, packets are added to an expiring queue until
 // a route is installed.
-type pendingRoute struct {
+type PendingRoute struct {
 	packets []*stack.PacketBuffer
 }
 
-func newPendingRoute(maxSize uint8) pendingRoute {
-	return pendingRoute{packets: make([]*stack.PacketBuffer, 0, maxSize)}
+func newPendingRoute(maxSize uint8) PendingRoute {
+	return PendingRoute{packets: make([]*stack.PacketBuffer, 0, maxSize)}
 }
 
 // Dequeue removes the first element in the queue and returns it.
 //
 // If the queue is empty, then an error will be returned.
-func (p *pendingRoute) Dequeue() (*stack.PacketBuffer, error) {
+//
+// TODO(https://gvisor.dev/issue/7338): Remove this and instead just return the
+// list of packets from AddInstalledRoute.
+func (p *PendingRoute) Dequeue() (*stack.PacketBuffer, error) {
 	if len(p.packets) == 0 {
 		return nil, errors.New("dequeue called on queue empty")
 	}
@@ -152,7 +165,7 @@ func (p *pendingRoute) Dequeue() (*stack.PacketBuffer, error) {
 
 // IsEmpty returns true if the queue contains no more elements. Otherwise,
 // returns false.
-func (p *pendingRoute) IsEmpty() bool {
+func (p *PendingRoute) IsEmpty() bool {
 	return len(p.packets) == 0
 }
 
@@ -205,7 +218,7 @@ func (r *RouteTable) Init(config Config) error {
 
 	r.config = config
 	r.installedRoutes = make(map[RouteKey]*InstalledRoute)
-	r.pendingRoutes = make(map[RouteKey]pendingRoute)
+	r.pendingRoutes = make(map[RouteKey]PendingRoute)
 	return nil
 }
 
@@ -214,7 +227,7 @@ func (r *RouteTable) NewInstalledRoute(inputInterface tcpip.NICID, outgoingInter
 	return &InstalledRoute{
 		expectedInputInterface: inputInterface,
 		outgoingInterfaces:     outgoingInterfaces,
-		lastUsedTimestamp:      atomicbitops.FromInt64(r.config.Clock.Now().UnixMicro()),
+		lastUsedTimestamp:      r.config.Clock.NowMonotonic(),
 	}
 }
 
@@ -297,11 +310,62 @@ func (r *RouteTable) GetRouteOrInsertPending(key RouteKey, pkt *stack.PacketBuff
 }
 
 // +checklocks:r.pendingMu
-func (r *RouteTable) getOrCreatePendingRouteRLocked(key RouteKey) (pendingRoute, PendingRouteState) {
+func (r *RouteTable) getOrCreatePendingRouteRLocked(key RouteKey) (PendingRoute, PendingRouteState) {
 	if pendingRoute, ok := r.pendingRoutes[key]; ok {
 		return pendingRoute, PendingRouteStateAppended
 	}
 
 	pendingRoute := newPendingRoute(r.config.MaxPendingQueueSize)
 	return pendingRoute, PendingRouteStateInstalled
+}
+
+// AddInstalledRoute adds the provided route to the table.
+//
+// Returns true if the route was previously in the pending state. Otherwise,
+// returns false.
+//
+// If the route was previously pending, then the caller is responsible for
+// flushing the returned pending route packet queue. Conversely, if the route
+// was not pending, then any existing installed route will be overwritten.
+func (r *RouteTable) AddInstalledRoute(key RouteKey, route *InstalledRoute) (PendingRoute, bool) {
+	r.installedMu.Lock()
+	defer r.installedMu.Unlock()
+	r.installedRoutes[key] = route
+
+	r.pendingMu.Lock()
+	defer r.pendingMu.Unlock()
+
+	pendingRoute, ok := r.pendingRoutes[key]
+	delete(r.pendingRoutes, key)
+	return pendingRoute, ok
+}
+
+// RemoveInstalledRoute deletes the installed route that matches the provided
+// key.
+//
+// Returns true if a route was removed. Otherwise returns false.
+func (r *RouteTable) RemoveInstalledRoute(key RouteKey) bool {
+	r.installedMu.Lock()
+	defer r.installedMu.Unlock()
+
+	if _, ok := r.installedRoutes[key]; ok {
+		delete(r.installedRoutes, key)
+		return true
+	}
+
+	return false
+}
+
+// GetLastUsedTimestamp returns a monotonic timestamp that represents the last
+// time the route that matches the provided key was used or updated.
+//
+// Returns true if a matching route was found. Otherwise returns false.
+func (r *RouteTable) GetLastUsedTimestamp(key RouteKey) (tcpip.MonotonicTime, bool) {
+	r.installedMu.RLock()
+	defer r.installedMu.RUnlock()
+
+	if route, ok := r.installedRoutes[key]; ok {
+		return route.LastUsedTimestamp(), true
+	}
+	return tcpip.MonotonicTime{}, false
 }
