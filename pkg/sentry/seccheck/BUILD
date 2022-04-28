@@ -17,10 +17,7 @@ go_template_instance(
 go_library(
     name = "seccheck",
     srcs = [
-        "clone.go",
         "config.go",
-        "execve.go",
-        "exit.go",
         "metadata.go",
         "seccheck.go",
         "seqatomic_checkerslice_unsafe.go",
