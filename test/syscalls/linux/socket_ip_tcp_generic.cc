@@ -515,6 +515,41 @@ TEST_P(TCPSocketPairTest, SetSoKeepalive) {
   EXPECT_EQ(get, kSockOptOff);
 }
 
+TEST_P(TCPSocketPairTest, SetSoKeepaliveClosed) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  // Force a RST to be sent using SO_LINGER.
+  auto linger_opt = linger{.l_onoff = 1, .l_linger = 0};
+  ASSERT_THAT(setsockopt(sockets->second_fd(), SOL_SOCKET, SO_LINGER,
+                         &linger_opt, sizeof(linger_opt)),
+              SyscallSucceeds());
+  ASSERT_THAT(close(sockets->release_second_fd()), SyscallSucceeds());
+
+  // Wait for the other end to receive the RST (up to 20 seconds).
+  constexpr int kPollTimeoutMs = 20000;
+  auto pfd = pollfd{
+      .fd = sockets->first_fd(),
+      .events = POLLIN | POLLHUP,
+      .revents = 0,
+  };
+  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, kPollTimeoutMs),
+              SyscallSucceedsWithValue(1));
+  ASSERT_EQ(pfd.revents & POLLHUP, POLLHUP);
+
+  // Now that the connection is closed, we should still be able to set
+  // SO_KEEPALIVE.
+  ASSERT_THAT(setsockopt(sockets->first_fd(), SOL_SOCKET, SO_KEEPALIVE,
+                         &kSockOptOn, sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), SOL_SOCKET, SO_KEEPALIVE, &get, &get_len),
+      SyscallSucceeds());
+  ASSERT_EQ(get, kSockOptOn);
+  ASSERT_EQ(get_len, sizeof(get));
+}
+
 TEST_P(TCPSocketPairTest, TCPKeepidleDefault) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 

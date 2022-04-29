@@ -1328,6 +1328,13 @@ func (e *endpoint) keepaliveTimerExpired() tcpip.Error {
 // whether it is enabled for this endpoint.
 func (e *endpoint) resetKeepaliveTimer(receivedData bool) {
 	e.keepalive.Lock()
+	defer e.keepalive.Unlock()
+	if e.keepalive.timer.isZero() {
+		if state := e.EndpointState(); !state.closed() {
+			panic(fmt.Sprintf("Unexpected state when the keepalive time is cleaned up, got %s, want %s or %s", state, StateClose, StateError))
+		}
+		return
+	}
 	if receivedData {
 		e.keepalive.unacked = 0
 	}
@@ -1335,7 +1342,6 @@ func (e *endpoint) resetKeepaliveTimer(receivedData bool) {
 	// data to send.
 	if !e.SocketOptions().GetKeepAlive() || e.snd == nil || e.snd.SndUna != e.snd.SndNxt {
 		e.keepalive.timer.disable()
-		e.keepalive.Unlock()
 		return
 	}
 	if e.keepalive.unacked > 0 {
@@ -1343,7 +1349,6 @@ func (e *endpoint) resetKeepaliveTimer(receivedData bool) {
 	} else {
 		e.keepalive.timer.enable(e.keepalive.idle)
 	}
-	e.keepalive.Unlock()
 }
 
 // disableKeepaliveTimer stops the keepalive timer.
