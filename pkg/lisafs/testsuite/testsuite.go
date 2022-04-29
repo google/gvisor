@@ -51,15 +51,20 @@ type Tester interface {
 
 // RunAllLocalFSTests runs all local FS tests as subtests.
 func RunAllLocalFSTests(t *testing.T, tester Tester) {
-	refs.SetLeakMode(refs.LeaksPanic)
 	for name, testFn := range localFSTests {
-		runServerClient(t, tester, name, testFn)
+		mountPath, err := ioutil.TempDir(os.Getenv("TEST_TMPDIR"), "")
+		if err != nil {
+			t.Fatalf("creation of temporary mountpoint failed: %v", err)
+		}
+		RunTest(t, tester, name, testFn, mountPath)
+		os.RemoveAll(mountPath)
 	}
 }
 
-type testFunc func(context.Context, *testing.T, Tester, lisafs.ClientFD)
+// TestFunc describes the signature of a test method.
+type TestFunc func(context.Context, *testing.T, Tester, lisafs.ClientFD)
 
-var localFSTests map[string]testFunc = map[string]testFunc{
+var localFSTests map[string]TestFunc = map[string]TestFunc{
 	"Stat":            testStat,
 	"RegularFileIO":   testRegularFileIO,
 	"RegularFileOpen": testRegularFileOpen,
@@ -75,13 +80,9 @@ var localFSTests map[string]testFunc = map[string]testFunc{
 	"Getdents":        testGetdents,
 }
 
-func runServerClient(t *testing.T, tester Tester, testName string, testFn testFunc) {
-	mountPath, err := ioutil.TempDir(os.Getenv("TEST_TMPDIR"), "")
-	if err != nil {
-		t.Fatalf("creation of temporary mountpoint failed: %v", err)
-	}
-	defer os.RemoveAll(mountPath)
-
+// RunTest runs the passed test function as a subtest.
+func RunTest(t *testing.T, tester Tester, testName string, testFn TestFunc, mountPath string) {
+	refs.SetLeakMode(refs.LeaksPanic)
 	// server should run with a umask of 0, because we want to preserve file
 	// modes exactly for testing purposes.
 	unix.Umask(0)
