@@ -28,7 +28,7 @@ type Point uint
 
 // PointX represents the checkpoint X.
 const (
-	PointClone Point = iota
+	PointCloneProcess Point = iota
 	PointExecve
 	PointExitNotifyParent
 	PointContainerStart
