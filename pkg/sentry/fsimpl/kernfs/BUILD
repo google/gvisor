@@ -1,5 +1,6 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
+load("//pkg/sync/locking:locking.bzl", "declare_mutex", "declare_rwmutex")
 
 licenses(["notice"])
 
@@ -82,46 +83,22 @@ go_template_instance(
     },
 )
 
-go_template_instance(
-    name = "filesystem_mutex",
-    out = "filesystem_mutex.go",
-    package = "kernfs",
-    prefix = "filesystem",
-    substrs = {
-        "genericMark": "filesystem",
-    },
-    template = "//pkg/sync/locking:generic_rwmutex",
-)
+declare_rwmutex("kernfs", "filesystem_mutex", "filesystem")
 
-go_template_instance(
-    name = "dir_mutex",
-    out = "dir_mutex.go",
-    package = "kernfs",
-    prefix = "dir",
-    substrs = {
-        "genericMark": "dir",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
-)
+declare_mutex("kernfs", "dir_mutex", "dir")
 
-go_template_instance(
-    name = "deferred_dec_refs_mutex",
-    out = "deferred_dec_refs_mutex.go",
-    package = "kernfs",
-    prefix = "deferredDecRefs",
-    substrs = {
-        "genericMark": "deferredDecRefs",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
-)
+declare_mutex("kernfs", "deferred_dec_refs_mutex", "deferredDecRefs")
 
 go_library(
     name = "kernfs",
     srcs = [
+        "deferred_dec_refs_mutex.go",
         "dentry_list.go",
+        "dir_mutex.go",
         "dynamic_bytes_file.go",
         "fd_impl_util.go",
         "filesystem.go",
+        "filesystem_mutex.go",
         "fstree.go",
         "inode_impl_util.go",
         "kernfs.go",
@@ -132,9 +109,6 @@ go_library(
         "symlink.go",
         "synthetic_directory.go",
         "synthetic_directory_refs.go",
-        "filesystem_mutex.go",
-        "dir_mutex.go",
-        "deferred_dec_refs_mutex.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
@@ -145,7 +119,6 @@ go_library(
         "//pkg/fspath",
         "//pkg/hostarch",
         "//pkg/log",
-        "//pkg/sync/locking",
         "//pkg/refs",
         "//pkg/refsvfs2",
         "//pkg/safemem",
@@ -157,6 +130,7 @@ go_library(
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/vfs",
         "//pkg/sync",
+        "//pkg/sync/locking",
         "//pkg/usermem",
     ],
 )

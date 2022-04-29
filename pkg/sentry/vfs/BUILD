@@ -1,40 +1,18 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
+load("//pkg/sync/locking:locking.bzl", "declare_mutex", "declare_rwmutex")
 
 licenses(["notice"])
 
-go_template_instance(
-    name = "inotify_mutex",
-    out = "inotify_mutex.go",
-    package = "vfs",
-    prefix = "inotify",
-    substrs = {
-        "genericMark": "inotify",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
-)
+declare_mutex("vfs", "virtual_filesystem_mutex", "virtualFilesystem")
 
-go_template_instance(
-    name = "virtual_filesystem_mutex",
-    out = "virtual_filesystem_mutex.go",
-    package = "vfs",
-    prefix = "virtualFilesystem",
-    substrs = {
-        "genericMark": "virtualFilesystem",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
-)
+declare_mutex("vfs", "inotify_event_mutex", "inotifyEvent")
 
-go_template_instance(
-    name = "inotify_event_mutex",
-    out = "inotify_event_mutex.go",
-    package = "vfs",
-    prefix = "inotifyEvent",
-    substrs = {
-        "genericMark": "inotifyEvent",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
-)
+declare_mutex("vfs", "inotify_mutex", "inotify")
+
+declare_mutex("vfs", "epoll_instance_mutex", "epollReadyInstance")
+
+declare_mutex("vfs", "epoll_mutex", "epoll")
 
 go_template_instance(
     name = "epoll_interest_list",
@@ -46,28 +24,6 @@ go_template_instance(
         "Element": "*epollInterest",
         "Linker": "*epollInterest",
     },
-)
-
-go_template_instance(
-    name = "epoll_mutex",
-    out = "epoll_mutex.go",
-    package = "vfs",
-    prefix = "epoll",
-    substrs = {
-        "genericMark": "epoll",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
-)
-
-go_template_instance(
-    name = "epoll_instrance_mutex",
-    out = "epoll_instance_mutex.go",
-    package = "vfs",
-    prefix = "epollReadyInstance",
-    substrs = {
-        "genericMark": "epollReadyInstance",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
 )
 
 go_template_instance(

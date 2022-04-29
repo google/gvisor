@@ -1,87 +1,24 @@
 load("//tools:defs.bzl", "go_library", "go_test", "proto_library")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//pkg/sync/locking:locking.bzl", "declare_mutex")
+load("//pkg/sync/locking:locking.bzl", "declare_mutex", "declare_rwmutex")
 
 package(licenses = ["notice"])
 
 declare_mutex("kernel", "user_counters_mutex", "userCounters")
 
-go_template_instance(
-    name = "taskset_mutex",
-    out = "taskset_mutex.go",
-    package = "kernel",
-    prefix = "taskSet",
-    substrs = {
-        "genericMark": "taskSet",
-    },
-    template = "//pkg/sync/locking:generic_rwmutex",
-)
+declare_rwmutex("kernel", "taskset_mutex", "taskSet")
 
-go_template_instance(
-    name = "task_mutex",
-    out = "task_mutex.go",
-    package = "kernel",
-    prefix = "task",
-    substrs = {
-        "genericMark": "task",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
-)
+declare_mutex("kernel", "task_mutex", "task")
 
-go_template_instance(
-    name = "cgroup_mutex",
-    out = "cgroup_mutex.go",
-    package = "kernel",
-    prefix = "cgroup",
-    substrs = {
-        "genericMark": "cgroup",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
-)
+declare_mutex("kernel", "cgroup_mutex", "cgroup")
 
-go_template_instance(
-    name = "fd_table_mutex",
-    out = "fd_table_mutex.go",
-    package = "kernel",
-    prefix = "fdTable",
-    substrs = {
-        "genericMark": "fdTable",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
-)
+declare_mutex("kernel", "fd_table_mutex", "fdTable")
 
-go_template_instance(
-    name = "running_tasts_mutex",
-    out = "running_tasks_mutex.go",
-    package = "kernel",
-    prefix = "runningTasks",
-    substrs = {
-        "genericMark": "runningTasks",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
-)
+declare_mutex("kernel", "running_tasks_mutex", "runningTasks")
 
-go_template_instance(
-    name = "signal_handlers_mutex",
-    out = "signal_handlers_mutex.go",
-    package = "kernel",
-    prefix = "signalHandlers",
-    substrs = {
-        "genericMark": "signalHandlers",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
-)
+declare_mutex("kernel", "signal_handlers_mutex", "signalHandlers")
 
-go_template_instance(
-    name = "thread_group_timer_mutex",
-    out = "thread_group_timer_mutex.go",
-    package = "kernel",
-    prefix = "threadGroupTimer",
-    substrs = {
-        "genericMark": "threadGroupTimer",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
-)
+declare_mutex("kernel", "thread_group_timer_mutex", "threadGroupTimer")
 
 go_template_instance(
     name = "pending_signals_list",

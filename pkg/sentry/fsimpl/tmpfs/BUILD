@@ -1,5 +1,6 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
+load("//pkg/sync/locking:locking.bzl", "declare_mutex", "declare_rwmutex")
 
 licenses(["notice"])
 
@@ -37,49 +38,13 @@ go_template_instance(
     },
 )
 
-go_template_instance(
-    name = "inode_mutex",
-    out = "inode_mutex.go",
-    package = "tmpfs",
-    prefix = "inode",
-    substrs = {
-        "genericMark": "inode",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
-)
+declare_mutex("tmpfs", "inode_mutex", "inode")
 
-go_template_instance(
-    name = "pages_used_mutex",
-    out = "pages_used_mutex.go",
-    package = "tmpfs",
-    prefix = "pagesUsed",
-    substrs = {
-        "genericMark": "pagesUsed",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
-)
+declare_mutex("tmpfs", "pages_used_mutex", "pagesUsed")
 
-go_template_instance(
-    name = "iter_mutex",
-    out = "iter_mutex.go",
-    package = "tmpfs",
-    prefix = "iter",
-    substrs = {
-        "genericMark": "inode",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
-)
+declare_mutex("tmpfs", "iter_mutex", "iter")
 
-go_template_instance(
-    name = "filesystem_mutex",
-    out = "filesystem_mutex.go",
-    package = "tmpfs",
-    prefix = "filesystem",
-    substrs = {
-        "genericMark": "filesystem",
-    },
-    template = "//pkg/sync/locking:generic_rwmutex",
-)
+declare_rwmutex("tmpfs", "filesystem_mutex", "filesystem")
 
 go_library(
     name = "tmpfs",

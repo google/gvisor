@@ -12,115 +12,25 @@ declare_mutex("tcp", "keepalive_mutex", "keepalive")
 
 declare_mutex("tcp", "hasher_mutex", "hasher")
 
-go_template_instance(
-    name = "protocol_mutex",
-    out = "protocol_mutex.go",
-    package = "tcp",
-    prefix = "protocol",
-    substrs = {
-        "genericMark": "protocol",
-    },
-    template = "//pkg/sync/locking:generic_rwmutex",
-)
+declare_rwmutex("tcp", "protocol_mutex", "protocol")
 
-go_template_instance(
-    name = "snd_queue_mutex",
-    out = "snd_queue_mutex.go",
-    package = "tcp",
-    prefix = "sndQueue",
-    substrs = {
-        "genericMark": "sndQueue",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
-)
+declare_mutex("tcp", "snd_queue_mutex", "sndQueue")
 
-go_template_instance(
-    name = "rcv_queue_mutex",
-    out = "rcv_queue_mutex.go",
-    package = "tcp",
-    prefix = "rcvQueue",
-    substrs = {
-        "genericMark": "rcvQueue",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
-)
+declare_mutex("tcp", "rcv_queue_mutex", "rcvQueue")
 
-go_template_instance(
-    name = "rcv_read_mutex",
-    out = "rcv_read_mutex.go",
-    package = "tcp",
-    prefix = "rcvRead",
-    substrs = {
-        "genericMark": "rcvRead",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
-)
+declare_mutex("tcp", "rcv_read_mutex", "rcvRead")
 
-go_template_instance(
-    name = "accept_mutex",
-    out = "accept_mutex.go",
-    package = "tcp",
-    prefix = "accept",
-    substrs = {
-        "genericMark": "accept",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
-)
+declare_mutex("tcp", "accept_mutex", "accept")
 
-go_template_instance(
-    name = "last_error_mutex",
-    out = "last_error_mutex.go",
-    package = "tcp",
-    prefix = "lastError",
-    substrs = {
-        "genericMark": "lastError",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
-)
+declare_mutex("tcp", "last_error_mutex", "lastError")
 
-go_template_instance(
-    name = "segment_queue_mutex",
-    out = "segment_queue_mutex.go",
-    package = "tcp",
-    prefix = "segmentQueue",
-    substrs = {
-        "genericMark": "segmentQueue",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
-)
+declare_mutex("tcp", "segment_queue_mutex", "segmentQueue")
 
-go_template_instance(
-    name = "ep_queue_mutex",
-    out = "ep_queue_mutex.go",
-    package = "tcp",
-    prefix = "epQueue",
-    substrs = {
-        "genericMark": "epQueue",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
-)
+declare_mutex("tcp", "ep_queue_mutex", "epQueue")
 
-go_template_instance(
-    name = "forwarder_mutex",
-    out = "forwarder_mutex.go",
-    package = "tcp",
-    prefix = "forwarder",
-    substrs = {
-        "genericMark": "forwarder",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
-)
+declare_mutex("tcp", "forwarder_mutex", "forwarder")
 
-go_template_instance(
-    name = "forwarder_request_mutex",
-    out = "forwarder_request_mutex.go",
-    package = "tcp",
-    prefix = "forwarderRequest",
-    substrs = {
-        "genericMark": "forwarderRequest",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
-)
+declare_mutex("tcp", "forwarder_request_mutex", "forwarderRequest")
 
 go_template_instance(
     name = "tcp_segment_list",

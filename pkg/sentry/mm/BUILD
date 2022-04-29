@@ -1,73 +1,20 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
+load("//pkg/sync/locking:locking.bzl", "declare_mutex", "declare_rwmutex")
 
 package(licenses = ["notice"])
 
-go_template_instance(
-    name = "aio_context_mutex",
-    out = "aio_context_mutex.go",
-    package = "mm",
-    prefix = "aioContext",
-    substrs = {
-        "genericMark": "aio_context",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
-)
+declare_mutex("mm", "aio_context_mutex", "aioContext")
 
-go_template_instance(
-    name = "aio_manager_mutex",
-    out = "aio_manager_mutex.go",
-    package = "mm",
-    prefix = "aioManager",
-    substrs = {
-        "genericMark": "aioManager",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
-)
+declare_mutex("mm", "aio_manager_mutex", "aioManager")
 
-go_template_instance(
-    name = "mapping_mutex",
-    out = "mapping_mutex.go",
-    package = "mm",
-    prefix = "mapping",
-    substrs = {
-        "genericMark": "mapping",
-    },
-    template = "//pkg/sync/locking:generic_rwmutex",
-)
+declare_rwmutex("mm", "mapping_mutex", "mapping")
 
-go_template_instance(
-    name = "active_mutex",
-    out = "active_mutex.go",
-    package = "mm",
-    prefix = "active",
-    substrs = {
-        "genericMark": "active",
-    },
-    template = "//pkg/sync/locking:generic_rwmutex",
-)
+declare_rwmutex("mm", "active_mutex", "active")
 
-go_template_instance(
-    name = "metadata_mutex",
-    out = "metadata_mutex.go",
-    package = "mm",
-    prefix = "metadata",
-    substrs = {
-        "genericMark": "metadata",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
-)
+declare_mutex("mm", "metadata_mutex", "metadata")
 
-go_template_instance(
-    name = "private_refs_mutex",
-    out = "private_refs_mutex.go",
-    package = "mm",
-    prefix = "privateRefs",
-    substrs = {
-        "genericMark": "private_refs",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
-)
+declare_mutex("mm", "private_refs_mutex", "privateRefs")
 
 go_template_instance(
     name = "file_refcount_set",
@@ -164,12 +111,12 @@ go_template_instance(
 go_library(
     name = "mm",
     srcs = [
-        "aio_manager_mutex.go",
-        "aio_context_mutex.go",
         "active_mutex.go",
         "address_space.go",
         "aio_context.go",
+        "aio_context_mutex.go",
         "aio_context_state.go",
+        "aio_manager_mutex.go",
         "aio_mappable_refs.go",
         "debug.go",
         "file_refcount_set.go",
