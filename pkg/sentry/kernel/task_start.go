@@ -347,11 +347,7 @@ func (ns *PIDNamespace) allocateTID() (ThreadID, error) {
 
 // Start starts the task goroutine. Start must be called exactly once for each
 // task returned by NewTask.
-//
-// 'tid' must be the task's TID in the root PID namespace and it's used for
-// debugging purposes only (set as parameter to Task.run to make it visible
-// in stack dumps).
-func (t *Task) Start(tid ThreadID) {
+func (t *Task) Start() {
 	// If the task was restored, it may be "starting" after having already exited.
 	if t.runState == nil {
 		return
@@ -364,6 +360,5 @@ func (t *Task) Start(tid ThreadID) {
 	// Task is now running in system mode.
 	t.accountTaskGoroutineLeave(TaskGoroutineNonexistent)
 
-	// Use the task's TID in the root PID namespace to make it visible in stack dumps.
-	go t.run(uintptr(tid)) // S/R-SAFE: synchronizes with saving through stops
+	go t.run() // S/R-SAFE: synchronizes with saving through stops
 }
