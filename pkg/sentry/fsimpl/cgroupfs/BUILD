@@ -1,7 +1,10 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
+load("//pkg/sync/locking:locking.bzl", "declare_mutex")
 
 licenses(["notice"])
+
+declare_mutex("cgroupfs", "pids_controller_mutex", "pidsController")
 
 go_template_instance(
     name = "task_mutex",
@@ -38,6 +41,7 @@ go_library(
         "job.go",
         "memory.go",
         "pids.go",
+        "pids_controller_mutex.go",
         "task_mutex.go",
     ],
     visibility = ["//pkg/sentry:internal"],

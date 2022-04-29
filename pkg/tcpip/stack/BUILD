@@ -55,6 +55,8 @@ declare_rwmutex("stack", "tuple_mutex", "tuple")
 
 declare_rwmutex("stack", "route_mutex", "route")
 
+declare_rwmutex("stack", "stack_route_mutex", "stackRoute")
+
 declare_rwmutex("stack", "bucket_mutex", "bucket")
 
 declare_rwmutex("stack", "conntrack_mutex", "connTrack")
@@ -100,6 +102,7 @@ go_library(
         "stack.go",
         "stack_global_state.go",
         "stack_options.go",
+        "stack_route_mutex.go",
         "tcp.go",
         "transport_demuxer.go",
         "transport_demuxer_mutex.go",

@@ -1,7 +1,16 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
+load("//pkg/sync/locking:locking.bzl", "declare_mutex", "declare_rwmutex")
 
 package(licenses = ["notice"])
+
+declare_mutex("tcp", "pending_processing_mutex", "pendingProcessing")
+
+declare_mutex("tcp", "rtt_mutex", "rtt")
+
+declare_mutex("tcp", "keepalive_mutex", "keepalive")
+
+declare_mutex("tcp", "hasher_mutex", "hasher")
 
 go_template_instance(
     name = "protocol_mutex",
@@ -163,7 +172,10 @@ go_library(
         "forwarder.go",
         "forwarder_mutex.go",
         "forwarder_request_mutex.go",
+        "hasher_mutex.go",
+        "keepalive_mutex.go",
         "last_error_mutex.go",
+        "pending_processing_mutex.go",
         "protocol.go",
         "protocol_mutex.go",
         "rack.go",
@@ -172,6 +184,7 @@ go_library(
         "rcv_read_mutex.go",
         "reno.go",
         "reno_recovery.go",
+        "rtt_mutex.go",
         "sack.go",
         "sack_recovery.go",
         "sack_scoreboard.go",

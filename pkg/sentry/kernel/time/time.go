@@ -23,7 +23,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -428,7 +427,7 @@ type Timer struct {
 	listener Listener
 
 	// mu protects the following mutable fields.
-	mu sync.Mutex `state:"nosave"`
+	mu timerMutex `state:"nosave"`
 
 	// setting is the timer setting. setting is protected by mu.
 	setting Setting

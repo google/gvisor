@@ -1,7 +1,10 @@
 load("//tools:defs.bzl", "go_library", "go_test", "proto_library")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
+load("//pkg/sync/locking:locking.bzl", "declare_mutex")
 
 package(licenses = ["notice"])
+
+declare_mutex("kernel", "user_counters_mutex", "userCounters")
 
 go_template_instance(
     name = "taskset_mutex",
@@ -289,6 +292,7 @@ go_library(
         "timekeeper.go",
         "timekeeper_state.go",
         "tty.go",
+        "user_counters_mutex.go",
         "uts_namespace.go",
         "vdso.go",
         "version.go",

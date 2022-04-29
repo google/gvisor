@@ -20,7 +20,6 @@ import (
 	"sort"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
@@ -155,7 +154,7 @@ type sender struct {
 //
 // +stateify savable
 type rtt struct {
-	sync.Mutex `state:"nosave"`
+	rttMutex `state:"nosave"`
 
 	stack.TCPRTTState
 }

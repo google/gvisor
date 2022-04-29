@@ -330,9 +330,9 @@ type Kernel struct {
 	// the system.
 	cgroupRegistry *CgroupRegistry
 
-	// userCountersMa maps auth.KUID into a set of user counters.
+	// userCountersMap maps auth.KUID into a set of user counters.
 	userCountersMap   map[auth.KUID]*userCounters
-	userCountersMapMu sync.Mutex `state:"nosave"`
+	userCountersMapMu userCountersMutex `state:"nosave"`
 }
 
 // InitKernelArgs holds arguments to Init.

@@ -1,10 +1,16 @@
 load("//tools:defs.bzl", "go_library")
+load("//pkg/sync/locking:locking.bzl", "declare_mutex")
 
 licenses(["notice"])
 
+declare_mutex("signalfd", "signal_operations_mutex", "operations")
+
 go_library(
     name = "signalfd",
-    srcs = ["signalfd.go"],
+    srcs = [
+        "signal_operations_mutex.go",
+        "signalfd.go",
+    ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
@@ -15,6 +21,7 @@ go_library(
         "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/kernel",
         "//pkg/sync",
+        "//pkg/sync/locking",
         "//pkg/usermem",
         "//pkg/waiter",
     ],

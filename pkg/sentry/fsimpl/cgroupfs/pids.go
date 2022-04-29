@@ -27,7 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -61,7 +60,7 @@ type pidsController struct {
 	isRoot bool
 
 	// mu protects the fields below.
-	mu sync.Mutex `state:"nosave"`
+	mu pidsControllerMutex `state:"nosave"`
 
 	// pendingTotal and pendingPool tracks the charge for processes starting
 	// up. During startup, we check if PIDs are available by charging the

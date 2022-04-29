@@ -82,7 +82,7 @@ type Stack struct {
 	stats tcpip.Stats
 
 	// routeMu protects annotated fields below.
-	routeMu sync.RWMutex
+	routeMu stackRouteRWMutex
 
 	// +checklocks:routeMu
 	routeTable []tcpip.Route
