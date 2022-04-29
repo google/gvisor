@@ -14,6 +14,17 @@ go_template_instance(
     template = "//pkg/sync/locking:generic_rwmutex",
 )
 
+go_template_instance(
+    name = "protocol_mutex",
+    out = "protocol_mutex.go",
+    package = "ipv4",
+    prefix = "protocol",
+    substrs = {
+        "genericMark": "protocol",
+    },
+    template = "//pkg/sync/locking:generic_rwmutex",
+)
+
 go_library(
     name = "ipv4",
     srcs = [
@@ -21,6 +32,7 @@ go_library(
         "icmp.go",
         "igmp.go",
         "ipv4.go",
+        "protocol_mutex.go",
         "stats.go",
     ],
     visibility = ["//visibility:public"],

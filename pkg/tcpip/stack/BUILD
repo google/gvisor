@@ -1,5 +1,6 @@
 load("//tools:defs.bzl", "go_library", "go_test", "most_shards")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
+load("//pkg/sync/locking:locking.bzl", "declare_mutex", "declare_rwmutex")
 
 package(licenses = ["notice"])
 
@@ -50,82 +51,19 @@ go_template_instance(
     },
 )
 
-go_template_instance(
-    name = "tuple_mutex",
-    out = "tuple_mutex.go",
-    package = "stack",
-    prefix = "tuple",
-    substrs = {
-        "genericMark": "tuple",
-    },
-    template = "//pkg/sync/locking:generic_rwmutex",
-)
+declare_rwmutex("stack", "tuple_mutex", "tuple")
 
-go_template_instance(
-    name = "route_mutex",
-    out = "route_mutex.go",
-    package = "stack",
-    prefix = "route",
-    substrs = {
-        "genericMark": "route",
-    },
-    template = "//pkg/sync/locking:generic_rwmutex",
-)
+declare_rwmutex("stack", "route_mutex", "route")
 
-go_template_instance(
-    name = "bucket_mutex",
-    out = "bucket_mutex.go",
-    package = "stack",
-    prefix = "bucket",
-    substrs = {
-        "genericMark": "bucket",
-    },
-    template = "//pkg/sync/locking:generic_rwmutex",
-)
+declare_rwmutex("stack", "bucket_mutex", "bucket")
 
-go_template_instance(
-    name = "conntrack_mutex",
-    out = "conntrack_mutex.go",
-    package = "stack",
-    prefix = "connTrack",
-    substrs = {
-        "genericMark": "conntrack",
-    },
-    template = "//pkg/sync/locking:generic_rwmutex",
-)
+declare_rwmutex("stack", "conntrack_mutex", "connTrack")
 
-go_template_instance(
-    name = "conn_mutex",
-    out = "conn_mutex.go",
-    package = "stack",
-    prefix = "conn",
-    substrs = {
-        "genericMark": "conn",
-    },
-    template = "//pkg/sync/locking:generic_rwmutex",
-)
+declare_rwmutex("stack", "conn_mutex", "conn")
 
-go_template_instance(
-    name = "conn_state_mutex",
-    out = "conn_state_mutex.go",
-    package = "stack",
-    prefix = "connState",
-    substrs = {
-        "genericMark": "connState",
-    },
-    template = "//pkg/sync/locking:generic_rwmutex",
-)
+declare_rwmutex("stack", "conn_state_mutex", "connState")
 
-go_template_instance(
-    name = "transport_demuxer_mutex",
-    out = "transport_demuxer_mutex.go",
-    package = "stack",
-    prefix = "transportDemuxer",
-    substrs = {
-        "genericMark": "transportDemuxer",
-    },
-    template = "//pkg/sync/locking:generic_rwmutex",
-)
+declare_rwmutex("stack", "transport_demuxer_mutex", "transportDemuxer")
 
 go_library(
     name = "stack",

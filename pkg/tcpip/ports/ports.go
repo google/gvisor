@@ -21,7 +21,6 @@ import (
 	"math/rand"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -215,14 +214,14 @@ func (ad addrToDevice) isAvailable(res Reservation, portSpecified bool) bool {
 type PortManager struct {
 	// mu protects allocatedPorts.
 	// LOCK ORDERING: mu > ephemeralMu.
-	mu sync.RWMutex
+	mu portManagerRWMutex
 	// allocatedPorts is a nesting of maps that ultimately map Reservations
 	// to FlagCounters describing whether the Reservation is valid and can
 	// be reused.
 	allocatedPorts map[portDescriptor]addrToDevice
 
 	// ephemeralMu protects firstEphemeral and numEphemeral.
-	ephemeralMu    sync.RWMutex
+	ephemeralMu    ephemeralRWMutex
 	firstEphemeral uint16
 	numEphemeral   uint16
 
