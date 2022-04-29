@@ -246,7 +246,7 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	tid := nt.k.tasks.Root.IDOfTask(nt)
 	defer nt.Start(tid)
 
-	if seccheck.Global.Enabled(seccheck.PointClone) {
+	if args.Flags&linux.CLONE_THREAD == 0 && seccheck.Global.Enabled(seccheck.PointCloneProcess) {
 		mask, info := getCloneSeccheckInfo(t, nt)
 		if err := seccheck.Global.SendToCheckers(func(c seccheck.Checker) error {
 			return c.Clone(t, mask, info)
@@ -309,7 +309,7 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 }
 
 func getCloneSeccheckInfo(t, nt *Task) (seccheck.FieldSet, *pb.CloneInfo) {
-	fields := seccheck.Global.GetFieldSet(seccheck.PointClone)
+	fields := seccheck.Global.GetFieldSet(seccheck.PointCloneProcess)
 
 	t.k.tasks.mu.RLock()
 	defer t.k.tasks.mu.RUnlock()
