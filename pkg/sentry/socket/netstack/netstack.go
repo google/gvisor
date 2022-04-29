@@ -1447,7 +1447,7 @@ func getSockOptIPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name 
 			return nil, syserr.ErrInvalidArgument
 		}
 
-		v := primitive.Int32(boolToInt32(ep.SocketOptions().GetRecvError()))
+		v := primitive.Int32(boolToInt32(ep.SocketOptions().GetIPRecvError()))
 		return &v, nil
 
 	case linux.IPV6_RECVORIGDSTADDR:
@@ -1647,7 +1647,7 @@ func getSockOptIP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name in
 			return nil, syserr.ErrInvalidArgument
 		}
 
-		v := primitive.Int32(boolToInt32(ep.SocketOptions().GetRecvError()))
+		v := primitive.Int32(boolToInt32(ep.SocketOptions().GetIPRecvError()))
 		return &v, nil
 
 	case linux.IP_PKTINFO:
@@ -2338,7 +2338,7 @@ func setSockOptIPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name 
 		if err != nil {
 			return err
 		}
-		ep.SocketOptions().SetRecvError(v != 0)
+		ep.SocketOptions().SetIPRecvError(v != 0)
 		return nil
 
 	case linux.IP6T_SO_SET_REPLACE:
@@ -2555,7 +2555,7 @@ func setSockOptIP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name in
 		if err != nil {
 			return err
 		}
-		ep.SocketOptions().SetRecvError(v != 0)
+		ep.SocketOptions().SetIPRecvError(v != 0)
 		return nil
 
 	case linux.IP_PKTINFO:

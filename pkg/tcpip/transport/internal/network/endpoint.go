@@ -22,9 +22,11 @@ import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // Endpoint is a datagram-based endpoint. It only supports sending datagrams to
@@ -33,12 +35,15 @@ import (
 // +stateify savable
 type Endpoint struct {
 	// The following fields must only be set once then never changed.
-	stack      *stack.Stack `state:"manual"`
-	ops        *tcpip.SocketOptions
-	netProto   tcpip.NetworkProtocolNumber
-	transProto tcpip.TransportProtocolNumber
+	stack       *stack.Stack `state:"manual"`
+	ops         *tcpip.SocketOptions
+	netProto    tcpip.NetworkProtocolNumber
+	transProto  tcpip.TransportProtocolNumber
+	waiterQueue *waiter.Queue
 
 	mu sync.RWMutex `state:"nosave"`
+	// +checklocks:mu
+	sendBufferSizeInUse int64 `state:"nosave"`
 	// +checklocks:mu
 	wasBound bool
 	// owner is the owner of transmitted packets.
@@ -105,7 +110,7 @@ type multicastMembership struct {
 }
 
 // Init initializes the endpoint.
-func (e *Endpoint) Init(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, ops *tcpip.SocketOptions) {
+func (e *Endpoint) Init(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, ops *tcpip.SocketOptions, waiterQueue *waiter.Queue) {
 	e.mu.Lock()
 	memberships := e.multicastMemberships
 	e.mu.Unlock()
@@ -120,10 +125,11 @@ func (e *Endpoint) Init(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, tr
 	}
 
 	*e = Endpoint{
-		stack:      s,
-		ops:        ops,
-		netProto:   netProto,
-		transProto: transProto,
+		stack:       s,
+		ops:         ops,
+		netProto:    netProto,
+		transProto:  transProto,
+		waiterQueue: waiterQueue,
 
 		info: stack.TransportEndpointInfo{
 			NetProto:   netProto,
@@ -217,11 +223,11 @@ func (e *Endpoint) calculateTTL(route *stack.Route) uint8 {
 
 // WriteContext holds the context for a write.
 type WriteContext struct {
-	transProto tcpip.TransportProtocolNumber
-	route      *stack.Route
-	ttl        uint8
-	tos        uint8
-	owner      tcpip.PacketOwner
+	e     *Endpoint
+	route *stack.Route
+	ttl   uint8
+	tos   uint8
+	owner tcpip.PacketOwner
 }
 
 // Release releases held resources.
@@ -249,6 +255,50 @@ func (c *WriteContext) PacketInfo() WritePacketInfo {
 	}
 }
 
+// TryNewPacketBuffer returns a new packet buffer iff the endpoint's send buffer
+// is not full.
+//
+// If this method returns nil, the caller should wait for the endpoint to become
+// writable.
+func (c *WriteContext) TryNewPacketBuffer(reserveHdrBytes int, data buffer.VectorisedView) *stack.PacketBuffer {
+	e := c.e
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if !e.hasSendSpaceRLocked() {
+		return nil
+	}
+
+	// Note that we allow oversubscription - if there is any space at all in the
+	// send buffer, we accept the full packet which may be larger than the space
+	// available. This is because if the endpoint reports that it is writable,
+	// a write operation should succeed.
+	//
+	// This matches Linux behaviour:
+	// https://github.com/torvalds/linux/blob/38d741cb70b30741c0e802cbed7bd9cf4fd15fa4/include/net/sock.h#L2519
+	// https://github.com/torvalds/linux/blob/38d741cb70b30741c0e802cbed7bd9cf4fd15fa4/net/core/sock.c#L2588
+	pktSize := int64(reserveHdrBytes) + int64(data.Size())
+	e.sendBufferSizeInUse += pktSize
+
+	return stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: reserveHdrBytes,
+		Data:               data,
+		OnRelease: func() {
+			e.mu.Lock()
+			if got := e.sendBufferSizeInUse; got < pktSize {
+				e.mu.Unlock()
+				panic(fmt.Sprintf("e.sendBufferSizeInUse=(%d) < pktSize(=%d)", got, pktSize))
+			}
+			e.sendBufferSizeInUse -= pktSize
+			e.mu.Unlock()
+
+			// Let waiters know that we now have space in the send buffer.
+			e.waiterQueue.Notify(waiter.WritableEvents)
+		},
+	})
+}
+
 // WritePacket attempts to write the packet.
 func (c *WriteContext) WritePacket(pkt *stack.PacketBuffer, headerIncluded bool) tcpip.Error {
 	pkt.Owner = c.owner
@@ -258,10 +308,22 @@ func (c *WriteContext) WritePacket(pkt *stack.PacketBuffer, headerIncluded bool)
 	}
 
 	return c.route.WritePacket(stack.NetworkHeaderParams{
-		Protocol: c.transProto,
+		Protocol: c.e.transProto,
 		TTL:      c.ttl,
 		TOS:      c.tos,
 	}, pkt)
+}
+
+// HasSendSpace returns whether or not the send buffer has space.
+func (e *Endpoint) HasSendSpace() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.hasSendSpaceRLocked()
+}
+
+// +checklocksread:e.mu
+func (e *Endpoint) hasSendSpaceRLocked() bool {
+	return e.ops.GetSendBufferSize() > e.sendBufferSizeInUse
 }
 
 // AcquireContextForWrite acquires a WriteContext.
@@ -348,11 +410,11 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 	}
 
 	return WriteContext{
-		transProto: e.transProto,
-		route:      route,
-		ttl:        ttl,
-		tos:        tos,
-		owner:      e.owner,
+		e:     e,
+		route: route,
+		ttl:   ttl,
+		tos:   tos,
+		owner: e.owner,
 	}, nil
 }
 

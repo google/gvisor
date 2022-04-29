@@ -212,9 +212,9 @@ type SocketOptions struct {
 	// the incoming packet should be returned as an ancillary message.
 	receiveOriginalDstAddress atomicbitops.Uint32
 
-	// recvErrEnabled determines whether extended reliable error message passing
-	// is enabled.
-	recvErrEnabled atomicbitops.Uint32
+	// ipv4RecvErrEnabled determines whether extended reliable error message
+	// passing is enabled for IPv4.
+	ipv4RecvErrEnabled atomicbitops.Uint32
 
 	// errQueue is the per-socket error queue. It is protected by errQueueMu.
 	errQueueMu sync.Mutex `state:"nosave"`
@@ -470,14 +470,14 @@ func (so *SocketOptions) SetReceiveOriginalDstAddress(v bool) {
 	storeAtomicBool(&so.receiveOriginalDstAddress, v)
 }
 
-// GetRecvError gets value for IP*_RECVERR option.
-func (so *SocketOptions) GetRecvError() bool {
-	return so.recvErrEnabled.Load() != 0
+// GetIPRecvError gets value for IP_RECVERR option.
+func (so *SocketOptions) GetIPRecvError() bool {
+	return so.ipv4RecvErrEnabled.Load() != 0
 }
 
-// SetRecvError sets value for IP*_RECVERR option.
-func (so *SocketOptions) SetRecvError(v bool) {
-	storeAtomicBool(&so.recvErrEnabled, v)
+// SetIPRecvError sets value for IP_RECVERR option.
+func (so *SocketOptions) SetIPRecvError(v bool) {
+	storeAtomicBool(&so.ipv4RecvErrEnabled, v)
 	if !v {
 		so.pruneErrQueue()
 	}
@@ -627,7 +627,7 @@ func (so *SocketOptions) PeekErr() *SockError {
 
 // QueueErr inserts the error at the back of the error queue.
 //
-// Preconditions: so.GetRecvError() == true.
+// Preconditions: so.GetIPRecvError() == true.
 func (so *SocketOptions) QueueErr(err *SockError) {
 	so.errQueueMu.Lock()
 	defer so.errQueueMu.Unlock()

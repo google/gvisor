@@ -2348,6 +2348,47 @@ TEST_P(UdpSocketControlMessagesTest, SetAndReceivePktInfo) {
   }
 }
 
+TEST_P(UdpSocketTest, SendPacketLargerThanSendBufOnNonBlockingSocket) {
+  constexpr int kSendBufSize = 4096;
+  ASSERT_THAT(setsockopt(sock_.get(), SOL_SOCKET, SO_SNDBUF, &kSendBufSize,
+                         sizeof(kSendBufSize)),
+              SyscallSucceeds());
+
+  // Set sock to non-blocking.
+  {
+    int opts = 0;
+    ASSERT_THAT(opts = fcntl(sock_.get(), F_GETFL), SyscallSucceeds());
+    ASSERT_THAT(fcntl(sock_.get(), F_SETFL, opts | O_NONBLOCK),
+                SyscallSucceeds());
+  }
+
+  {
+    sockaddr_storage addr = InetLoopbackAddr();
+    ASSERT_NO_ERRNO(BindSocket(sock_.get(), AsSockAddr(&addr)));
+  }
+
+  sockaddr_storage addr;
+  socklen_t len = sizeof(sockaddr_storage);
+  ASSERT_THAT(getsockname(sock_.get(), AsSockAddr(&addr), &len),
+              SyscallSucceeds());
+  ASSERT_EQ(len, addrlen_);
+
+  // We are allowed to send packets as large as we want as long as there is
+  // space in the send buffer, even if the new packet will result in more bytes
+  // being used than available in the send buffer.
+  char buf[kSendBufSize + 1];
+  ASSERT_THAT(
+      sendto(sock_.get(), buf, sizeof(buf), 0, AsSockAddr(&addr), sizeof(addr)),
+      SyscallSucceedsWithValue(sizeof(buf)));
+
+  // The second write may fail with EAGAIN if the previous send is still
+  // in-flight.
+  ASSERT_THAT(
+      sendto(sock_.get(), buf, sizeof(buf), 0, AsSockAddr(&addr), sizeof(addr)),
+      AnyOf(SyscallSucceedsWithValue(sizeof(buf)),
+            SyscallFailsWithErrno(EAGAIN)));
+}
+
 INSTANTIATE_TEST_SUITE_P(AllInetTests, UdpSocketControlMessagesTest,
                          ::testing::Values(AddressFamily::kIpv4,
                                            AddressFamily::kIpv6,

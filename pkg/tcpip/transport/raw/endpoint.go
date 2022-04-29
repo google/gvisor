@@ -133,7 +133,7 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProt
 	e.ops.SetHeaderIncluded(!associated)
 	e.ops.SetSendBufferSize(32*1024, false /* notify */)
 	e.ops.SetReceiveBufferSize(32*1024, false /* notify */)
-	e.net.Init(s, netProto, transProto, &e.ops)
+	e.net.Init(s, netProto, transProto, &e.ops, waiterQueue)
 
 	// Override with stack defaults.
 	var ss tcpip.SendBufferSizeOption
@@ -353,10 +353,10 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 		header.PutChecksum(payloadBytes[ipv6ChecksumOffset:], ^xsum)
 	}
 
-	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		ReserveHeaderBytes: int(ctx.PacketInfo().MaxHeaderLength),
-		Data:               buffer.View(payloadBytes).ToVectorisedView(),
-	})
+	pkt := ctx.TryNewPacketBuffer(int(ctx.PacketInfo().MaxHeaderLength), buffer.View(payloadBytes).ToVectorisedView())
+	if pkt == nil {
+		return 0, &tcpip.ErrWouldBlock{}
+	}
 	defer pkt.DecRef()
 
 	if err := ctx.WritePacket(pkt, e.ops.GetHeaderIncluded()); err != nil {
@@ -443,8 +443,11 @@ func (*endpoint) GetRemoteAddress() (tcpip.FullAddress, tcpip.Error) {
 
 // Readiness implements tcpip.Endpoint.Readiness.
 func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
-	// The endpoint is always writable.
-	result := waiter.WritableEvents & mask
+	var result waiter.EventMask
+
+	if e.net.HasSendSpace() {
+		result |= waiter.WritableEvents & mask
+	}
 
 	// Determine whether the endpoint is readable.
 	if (mask & waiter.ReadableEvents) != 0 {

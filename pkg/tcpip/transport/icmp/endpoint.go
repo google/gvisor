@@ -91,7 +91,7 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProt
 	ep.ops.InitHandler(ep, ep.stack, tcpip.GetStackSendBufferLimits, tcpip.GetStackReceiveBufferLimits)
 	ep.ops.SetSendBufferSize(32*1024, false /* notify */)
 	ep.ops.SetReceiveBufferSize(32*1024, false /* notify */)
-	ep.net.Init(s, netProto, transProto, &ep.ops)
+	ep.net.Init(s, netProto, transProto, &ep.ops, waiterQueue)
 
 	// Override with stack defaults.
 	var ss tcpip.SendBufferSizeOption
@@ -399,9 +399,10 @@ func send4(s *stack.Stack, ctx *network.WriteContext, ident uint16, data buffer.
 		return &tcpip.ErrInvalidEndpointState{}
 	}
 
-	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		ReserveHeaderBytes: header.ICMPv4MinimumSize + int(maxHeaderLength),
-	})
+	pkt := ctx.TryNewPacketBuffer(header.ICMPv4MinimumSize+int(maxHeaderLength), buffer.VectorisedView{})
+	if pkt == nil {
+		return &tcpip.ErrWouldBlock{}
+	}
 	defer pkt.DecRef()
 
 	icmpv4 := header.ICMPv4(pkt.TransportHeader().Push(header.ICMPv4MinimumSize))
@@ -440,9 +441,10 @@ func send6(s *stack.Stack, ctx *network.WriteContext, ident uint16, data buffer.
 		return &tcpip.ErrInvalidEndpointState{}
 	}
 
-	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		ReserveHeaderBytes: header.ICMPv6MinimumSize + int(maxHeaderLength),
-	})
+	pkt := ctx.TryNewPacketBuffer(header.ICMPv6MinimumSize+int(maxHeaderLength), buffer.VectorisedView{})
+	if pkt == nil {
+		return &tcpip.ErrWouldBlock{}
+	}
 	defer pkt.DecRef()
 
 	icmpv6 := header.ICMPv6(pkt.TransportHeader().Push(header.ICMPv6MinimumSize))
@@ -662,8 +664,11 @@ func (e *endpoint) GetRemoteAddress() (tcpip.FullAddress, tcpip.Error) {
 // Readiness returns the current readiness of the endpoint. For example, if
 // waiter.EventIn is set, the endpoint is immediately readable.
 func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
-	// The endpoint is always writable.
-	result := waiter.WritableEvents & mask
+	var result waiter.EventMask
+
+	if e.net.HasSendSpace() {
+		result |= waiter.WritableEvents & mask
+	}
 
 	// Determine if the endpoint is readable if requested.
 	if (mask & waiter.ReadableEvents) != 0 {

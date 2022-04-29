@@ -2839,7 +2839,7 @@ func (e *endpoint) onICMPError(err tcpip.Error, transErr stack.TransportError, p
 	e.lastErrorMu.Unlock()
 
 	// Update the error queue if IP_RECVERR is enabled.
-	if e.SocketOptions().GetRecvError() {
+	if e.SocketOptions().GetIPRecvError() {
 		e.SocketOptions().QueueErr(&tcpip.SockError{
 			Err:   err,
 			Cause: transErr,
