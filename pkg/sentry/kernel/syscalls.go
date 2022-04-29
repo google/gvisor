@@ -17,11 +17,15 @@ package kernel
 import (
 	"fmt"
 
+	"google.golang.org/protobuf/proto"
 	"gvisor.dev/gvisor/pkg/abi"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/bits"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck"
+	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -31,7 +35,9 @@ const (
 	// The types below create fast lookup slices for all syscalls. This maximum
 	// serves as a sanity check that we don't allocate huge slices for a very large
 	// syscall. This is checked during registration.
+	// LINT.IfChange
 	maxSyscallNum = 2000
+	// LINT.ThenChange(../seccheck/syscall.go)
 )
 
 // SyscallSupportLevel is a syscall support levels.
@@ -77,6 +83,9 @@ type Syscall struct {
 	Note string
 	// URLs is set of URLs to any relevant bugs or issues.
 	URLs []string
+	// PointCallback is an optional callback that converts syscall arguments
+	// to a proto that can be used with seccheck.Checker.
+	PointCallback SyscallToProto
 }
 
 // SyscallFn is a syscall implementation.
@@ -242,6 +251,11 @@ type SyscallTable struct {
 	// their numbers). It is used for fast look ups.
 	lookup [maxSyscallNum + 1]SyscallFn
 
+	// pointCallbacks is a fixed-size array that holds SyscallToProto callbacks
+	// (indexed by syscall numbers). It is used for fast lookups when
+	// seccheck.Point is enabled for the syscall.
+	pointCallbacks [maxSyscallNum + 1]SyscallToProto
+
 	// Emulate is a collection of instruction addresses to emulate. The
 	// keys are addresses, and the values are system call numbers.
 	Emulate map[hostarch.Addr]uintptr
@@ -320,9 +334,12 @@ func (s *SyscallTable) Init() {
 		s.Emulate = make(map[hostarch.Addr]uintptr)
 	}
 
-	// Initialize the fast-lookup table.
+	// Initialize the fast-lookup tables.
 	for num, sc := range s.Table {
 		s.lookup[num] = sc.Fn
+	}
+	for num, sc := range s.Table {
+		s.pointCallbacks[num] = sc.PointCallback
 	}
 
 	// Initialize all features.
@@ -368,4 +385,26 @@ func (s *SyscallTable) mapLookup(sysno uintptr) SyscallFn {
 		return sc.Fn
 	}
 	return nil
+}
+
+// LookupSyscallToProto looks up the SyscallToProto callback for the given
+// syscall. It may return nil if none is registered.
+func (s *SyscallTable) LookupSyscallToProto(sysno uintptr) SyscallToProto {
+	if sysno > maxSyscallNum {
+		return nil
+	}
+	return s.pointCallbacks[sysno]
+}
+
+// SyscallToProto is a callback function that converts generic syscall data to
+// schematized protobuf for the corresponding syscall.
+type SyscallToProto func(context.Context, seccheck.FieldSet, *pb.ContextData, SyscallInfo) proto.Message
+
+// SyscallInfo provides generic information about the syscall.
+type SyscallInfo struct {
+	Exit  bool
+	Sysno uintptr
+	Args  arch.SyscallArguments
+	Rval  uintptr
+	Errno int
 }

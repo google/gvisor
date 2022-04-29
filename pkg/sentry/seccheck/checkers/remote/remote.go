@@ -185,3 +185,15 @@ func (r *Remote) ContainerStart(_ context.Context, _ seccheck.FieldSet, info *pb
 	r.write(info)
 	return nil
 }
+
+// RawSyscall implements seccheck.Checker.
+func (r *Remote) RawSyscall(_ context.Context, _ seccheck.FieldSet, info *pb.Syscall) error {
+	r.write(info)
+	return nil
+}
+
+// Syscall implements seccheck.Checker.
+func (r *Remote) Syscall(ctx context.Context, fields seccheck.FieldSet, ctxData *pb.ContextData, msg proto.Message) error {
+	r.write(msg)
+	return nil
+}

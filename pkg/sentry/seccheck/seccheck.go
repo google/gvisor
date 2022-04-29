@@ -17,6 +17,7 @@
 package seccheck
 
 import (
+	"google.golang.org/protobuf/proto"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
@@ -28,28 +29,8 @@ type Point uint
 
 // PointX represents the checkpoint X.
 const (
-	PointCloneProcess Point = iota
-	PointExecve
-	PointExitNotifyParent
-	PointContainerStart
-	PointTaskExit
-	// Add new Points above this line.
-	pointLength
-
-	numPointBitmaskUint32s = (int(pointLength)-1)/32 + 1
-)
-
-// FieldCtxtX represents a data field that comes from the Context.
-const (
-	FieldCtxtTime Field = iota
-	FieldCtxtThreadID
-	FieldCtxtThreadStartTime
-	FieldCtxtThreadGroupID
-	FieldCtxtThreadGroupStartTime
-	FieldCtxtContainerID
-	FieldCtxtCredentials
-	FieldCtxtCwd
-	FieldCtxtProcessName
+	totalPoints            = int(pointLengthBeforeSyscalls) + syscallPoints
+	numPointBitmaskUint32s = (totalPoints-1)/32 + 1
 )
 
 // FieldSet contains all optional fields to be collected by a given Point.
@@ -119,7 +100,11 @@ type Checker interface {
 	Execve(ctx context.Context, fields FieldSet, info *pb.ExecveInfo) error
 	ExitNotifyParent(ctx context.Context, fields FieldSet, info *pb.ExitNotifyParentInfo) error
 	TaskExit(context.Context, FieldSet, *pb.TaskExit) error
+
 	ContainerStart(context.Context, FieldSet, *pb.Start) error
+
+	Syscall(context.Context, FieldSet, *pb.ContextData, proto.Message) error
+	RawSyscall(context.Context, FieldSet, *pb.Syscall) error
 }
 
 // CheckerDefaults may be embedded by implementations of Checker to obtain
@@ -150,6 +135,16 @@ func (CheckerDefaults) ContainerStart(context.Context, FieldSet, *pb.Start) erro
 
 // TaskExit implements Checker.TaskExit.
 func (CheckerDefaults) TaskExit(context.Context, FieldSet, *pb.TaskExit) error {
+	return nil
+}
+
+// RawSyscall implements Checker.RawSyscall.
+func (CheckerDefaults) RawSyscall(context.Context, FieldSet, *pb.Syscall) error {
+	return nil
+}
+
+// Syscall implements Checker.Syscall.
+func (CheckerDefaults) Syscall(context.Context, FieldSet, *pb.ContextData, proto.Message) error {
 	return nil
 }
 
@@ -209,6 +204,9 @@ func (s *State) AppendChecker(c Checker, reqs []PointReq) {
 // Enabled returns true if any Checker is registered for the given checkpoint.
 func (s *State) Enabled(p Point) bool {
 	word, bit := p/32, p%32
+	if int(word) >= len(s.enabledPoints) {
+		return false
+	}
 	return s.enabledPoints[word].Load()&(uint32(1)<<bit) != 0
 }
 

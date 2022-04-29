@@ -21,6 +21,7 @@ go_library(
         "metadata.go",
         "seccheck.go",
         "seqatomic_checkerslice_unsafe.go",
+        "syscall.go",
     ],
     visibility = ["//:sandbox"],
     deps = [
