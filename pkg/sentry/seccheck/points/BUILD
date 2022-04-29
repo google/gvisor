@@ -10,5 +10,6 @@ proto_library(
         "common.proto",
         "container.proto",
         "sentry.proto",
+        "syscall.proto",
     ],
 )
