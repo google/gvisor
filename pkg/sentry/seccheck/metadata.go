@@ -21,6 +21,31 @@ import (
 	"gvisor.dev/gvisor/pkg/fd"
 )
 
+// PointX represents the checkpoint X.
+const (
+	PointCloneProcess Point = iota
+	PointContainerStart
+	PointExecve
+	PointExitNotifyParent
+	PointTaskExit
+
+	// Add new Points above this line.
+	pointLengthBeforeSyscalls
+)
+
+// FieldCtxtX represents a data field that comes from the Context.
+const (
+	FieldCtxtContainerID Field = iota
+	FieldCtxtCredentials
+	FieldCtxtCwd
+	FieldCtxtProcessName
+	FieldCtxtThreadGroupID
+	FieldCtxtThreadGroupStartTime
+	FieldCtxtThreadID
+	FieldCtxtThreadStartTime
+	FieldCtxtTime
+)
+
 const (
 	// ContainerStartFieldEnv is an optional field to collect list of environment
 	// variables set for the container start process.
