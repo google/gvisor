@@ -90,6 +90,10 @@ func StartSignalForwarding(handler func(linux.Signal)) func() {
 		if sig == int(linux.SIGURG) {
 			continue
 		}
+		// SIGPIPE is received when sending to disconnected host pipes/sockets.
+		if sig == int(linux.SIGPIPE) {
+			continue
+		}
 		signal.Notify(sigchan, unix.Signal(sig))
 	}
 	// Start up our listener.
