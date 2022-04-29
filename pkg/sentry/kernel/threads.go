@@ -428,9 +428,9 @@ func (tg *ThreadGroup) MemberIDs(pidns *PIDNamespace) []ThreadID {
 // ID returns tg's leader's thread ID in its own PID namespace. If tg's leader
 // is dead, ID returns 0.
 func (tg *ThreadGroup) ID() ThreadID {
-	tg.pidns.owner.mu.RLock()
+	tg.pidns.owner.mu.RLockBypass()
 	id := tg.pidns.tgids[tg]
-	tg.pidns.owner.mu.RUnlock()
+	tg.pidns.owner.mu.RUnlockBypass()
 	return id
 }
 
