@@ -885,6 +885,27 @@ TEST_P(TCPSocketPairTest, SetTCPLingerTimeoutZero) {
               AnyOf(Eq(kMaxTCPLingerTimeout), Eq(kOldMaxTCPLingerTimeout)));
 }
 
+TEST_P(TCPSocketPairTest, SoLingerOptionWithReset) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  // Set and get SO_LINGER with zero timeout.
+  struct linger sl;
+  sl.l_onoff = 1;
+  sl.l_linger = 0;
+  ASSERT_THAT(
+      setsockopt(sockets->first_fd(), SOL_SOCKET, SO_LINGER, &sl, sizeof(sl)),
+      SyscallSucceeds());
+  char buf[1000] = {};
+  ASSERT_THAT(RetryEINTR(write)(sockets->first_fd(), buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
+  ASSERT_THAT(close(sockets->release_first_fd()), SyscallSucceeds());
+
+  write(sockets->second_fd(), buf, sizeof(buf));
+  ASSERT_THAT(RetryEINTR(read)(sockets->second_fd(), buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
+}
+
 TEST_P(TCPSocketPairTest, SetTCPLingerTimeoutAboveMax) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
