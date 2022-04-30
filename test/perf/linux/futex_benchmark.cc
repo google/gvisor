@@ -162,7 +162,7 @@ void BM_FutexRoundtripDelayed(benchmark::State& state) {
   constexpr int64_t kBeforeWakeDelayNs = 500;
   std::atomic<int32_t> v(0);
   ScopedThread t([&] {
-    for (int i = 0; i < state.max_iterations; i++) {
+    for (benchmark::IterationCount i = 0; i < state.max_iterations; i++) {
       SpinNanos(delay_ns);
       while (v.load(std::memory_order_acquire) == 0) {
         FutexWait(&v, 0);

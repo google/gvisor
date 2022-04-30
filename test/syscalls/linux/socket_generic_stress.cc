@@ -209,7 +209,7 @@ TEST_P(DataTransferStressTest, BigDataTransfer) {
       if (r == 0) {
         break;
       }
-      for (size_t i = 0; i < r;) {
+      for (ssize_t i = 0; i < r;) {
         ssize_t w = write(server_fd, buf.data() + i, r - i);
         ASSERT_GE(w, 0);
         i += w;
@@ -240,8 +240,8 @@ TEST_P(DataTransferStressTest, BigDataTransfer) {
   while (!data.empty()) {
     ssize_t n = read(client_fd, buf.data(), buf.size());
     ASSERT_GE(n, 0);
-    for (size_t i = 0; i < n; i += chunk.size()) {
-      size_t c = std::min(chunk.size(), n - i);
+    for (ssize_t i = 0; i < n; i += chunk.size()) {
+      ssize_t c = std::min(ssize_t(chunk.size()), n - i);
       ASSERT_EQ(buf.substr(i, c), data.substr(i, c)) << "offset " << i;
     }
     data = data.substr(n);

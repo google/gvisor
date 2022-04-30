@@ -90,9 +90,7 @@ TEST_P(UnboundAbstractUnixSocketPairTest, ListenZeroBacklog) {
   {
     // Set the FD to O_NONBLOCK.
     int opts;
-    int orig_opts;
     ASSERT_THAT(opts = fcntl(sockets2->first_fd(), F_GETFL), SyscallSucceeds());
-    orig_opts = opts;
     opts |= O_NONBLOCK;
     ASSERT_THAT(fcntl(sockets2->first_fd(), F_SETFL, opts), SyscallSucceeds());
 
@@ -104,10 +102,8 @@ TEST_P(UnboundAbstractUnixSocketPairTest, ListenZeroBacklog) {
   {
     // Set the FD to O_NONBLOCK.
     int opts;
-    int orig_opts;
     ASSERT_THAT(opts = fcntl(sockets2->second_fd(), F_GETFL),
                 SyscallSucceeds());
-    orig_opts = opts;
     opts |= O_NONBLOCK;
     ASSERT_THAT(fcntl(sockets2->second_fd(), F_SETFL, opts), SyscallSucceeds());
 

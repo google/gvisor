@@ -203,9 +203,9 @@ TEST_P(ProcSelfUidGidMapTest, IdentityMapOwnID) {
   EXPECT_THAT(
       InNewUserNamespaceWithMapFD([&](int fd) {
         DenySelfSetgroups();
-        size_t n;
+        ssize_t n;
         TEST_PCHECK((n = write(fd, line.c_str(), line.size())) != -1);
-        TEST_CHECK(n == line.size());
+        TEST_CHECK(n == ssize_t(line.size()));
       }),
       IsPosixErrorOkAndHolds(0));
 }
@@ -222,9 +222,9 @@ TEST_P(ProcSelfUidGidMapTest, TrailingNewlineAndNULIgnored) {
         DenySelfSetgroups();
         // The write should return the full size of the write, even though
         // characters after the NUL were ignored.
-        size_t n;
+        ssize_t n;
         TEST_PCHECK((n = write(fd, line.c_str(), line.size())) != -1);
-        TEST_CHECK(n == line.size());
+        TEST_CHECK(n == ssize_t(line.size()));
       }),
       IsPosixErrorOkAndHolds(0));
 }

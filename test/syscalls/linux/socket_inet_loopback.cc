@@ -961,7 +961,7 @@ TEST_P(SocketInetLoopbackTest, TCPBacklogAcceptAll) {
 
   // Ensure that we accept all client connections. The waiting connections would
   // get enqueued as we drain the accept queue.
-  for (int i = 0; i < std::size(established_clients); i++) {
+  for (std::size_t i = 0; i < std::size(established_clients); i++) {
     SCOPED_TRACE(absl::StrCat("established clients i=", i));
     accept_connection();
   }
@@ -971,7 +971,7 @@ TEST_P(SocketInetLoopbackTest, TCPBacklogAcceptAll) {
   // (2) ESTABLISHED: if the listener sent back a SYNACK, but may have dropped
   // the ACK from the client if the accept queue was full (send out a data to
   // re-send that ACK, to address that case).
-  for (int i = 0; i < std::size(waiting_clients); i++) {
+  for (std::size_t i = 0; i < std::size(waiting_clients); i++) {
     SCOPED_TRACE(absl::StrCat("waiting clients i=", i));
     constexpr int kTimeout = 10000;
     pollfd pfd = {
