@@ -40,7 +40,7 @@ void BM_Pipe(benchmark::State& state) {
 
   ScopedThread t([&] {
     auto const fd = fds[1];
-    for (int i = 0; i < state.max_iterations; i++) {
+    for (benchmark::IterationCount i = 0; i < state.max_iterations; i++) {
       TEST_CHECK(WriteFd(fd, wbuf.data(), wbuf.size()) == size);
     }
   });
