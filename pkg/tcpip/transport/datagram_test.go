@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package datagram_test has tests shared by datagram-based transport endpoints.
-package datagram_test
+// Package transport_test has tests shared by datagram-based transport endpoints.
+package transport_test
 
 import (
 	"fmt"
