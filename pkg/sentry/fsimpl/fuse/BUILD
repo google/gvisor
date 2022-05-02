@@ -32,6 +32,7 @@ go_library(
         "connection.go",
         "connection_control.go",
         "dev.go",
+        "dev_state.go",
         "directory.go",
         "file.go",
         "fusefs.go",

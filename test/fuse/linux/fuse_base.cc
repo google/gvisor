@@ -24,6 +24,7 @@
 #include <sys/uio.h>
 #include <unistd.h>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/strings/str_format.h"
 #include "test/util/fuse_util.h"
@@ -149,13 +150,20 @@ void FuseTest::SetServerInodeLookup(const std::string& path, mode_t mode,
   WaitServerComplete();
 }
 
-void FuseTest::MountFuse(const char* mountOpts) {
-  EXPECT_THAT(dev_fd_ = open("/dev/fuse", O_RDWR), SyscallSucceeds());
+void FuseTest::MountFuse(const char* mount_opts) {
+  int dev_fd;
+  EXPECT_THAT(dev_fd = open("/dev/fuse", O_RDWR), SyscallSucceeds());
+  std::string fmt_mount_opts = absl::StrFormat("fd=%d,%s", dev_fd, mount_opts);
+  TempPath mount_point = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  MountFuse(dev_fd, mount_point, fmt_mount_opts.c_str());
+}
 
-  std::string mount_opts = absl::StrFormat("fd=%d,%s", dev_fd_, mountOpts);
-  mount_point_ = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+void FuseTest::MountFuse(int fd, TempPath& mount_point,
+                         const char* mount_opts) {
+  mount_point_ = std::move(mount_point);
+  dev_fd_ = fd;
   EXPECT_THAT(mount("fuse", mount_point_.path().c_str(), "fuse",
-                    MS_NODEV | MS_NOSUID, mount_opts.c_str()),
+                    MS_NODEV | MS_NOSUID, mount_opts),
               SyscallSucceeds());
 }
 
@@ -163,6 +171,7 @@ void FuseTest::UnmountFuse() {
   EXPECT_THAT(umount(mount_point_.path().c_str()), SyscallSucceeds());
   shutdown(sock_[0], SHUT_RDWR);
   fuse_server_->Join();
+  EXPECT_THAT(close(dev_fd_), SyscallSucceeds());
   // TODO(gvisor.dev/issue/3330): ensure the process is terminated successfully.
 }
 

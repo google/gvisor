@@ -83,7 +83,9 @@ func TestConnectionAbort(t *testing.T) {
 		futNormal = append(futNormal, fut)
 	}
 
+	conn.fd.mu.Lock()
 	conn.Abort(s.Ctx)
+	conn.fd.mu.Unlock()
 
 	// Abort should unblock the initialization channel.
 	// Note: no test requests are actually blocked on `conn.initializedChan`.

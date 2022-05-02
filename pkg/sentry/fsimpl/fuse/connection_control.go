@@ -188,7 +188,7 @@ func (conn *connection) initProcessReply(out *linux.FUSEInitOut, hasSysAdminCap 
 // It tries to acquire conn.fd.mu, conn.lock, conn.bgLock in order.
 // All possible requests waiting or blocking will be aborted.
 //
-// Preconditions: conn.fd.mu is locked.
+// +checklocks:conn.fd.mu
 func (conn *connection) Abort(ctx context.Context) {
 	conn.mu.Lock()
 	conn.asyncMu.Lock()
