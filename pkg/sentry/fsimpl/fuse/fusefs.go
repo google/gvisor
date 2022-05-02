@@ -31,7 +31,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // Name is the default filesystem name.
@@ -97,9 +96,6 @@ type filesystem struct {
 
 	// opts is the options the fusefs is initialized with.
 	opts *filesystemOptions
-
-	// umounted is true if filesystem.Release() has been called.
-	umounted bool
 }
 
 // Name implements vfs.FilesystemType.Name.
@@ -233,19 +229,24 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		return nil, nil, linuxerr.EINVAL
 	}
 
+	fuseFD.mu.Lock()
+	connected := fuseFD.connected()
 	// Create a new FUSE filesystem.
 	fs, err := newFUSEFilesystem(ctx, vfsObj, &fsType, fuseFD, devMinor, &fsopts)
 	if err != nil {
 		log.Warningf("%s.NewFUSEFilesystem: failed with error: %v", fsType.Name(), err)
+		fuseFD.mu.Unlock()
 		return nil, nil, err
 	}
+	fuseFD.mu.Unlock()
 
 	// Send a FUSE_INIT request to the FUSE daemon server before returning.
 	// This call is not blocking.
-	if err := fs.conn.InitSend(creds, uint32(kernelTask.ThreadID())); err != nil {
-		log.Warningf("%s.InitSend: failed with error: %v", fsType.Name(), err)
-		fs.VFSFilesystem().DecRef(ctx) // returned by newFUSEFilesystem
-		return nil, nil, err
+	if !connected {
+		if err := fs.conn.InitSend(creds, uint32(kernelTask.ThreadID())); err != nil {
+			log.Warningf("%s.InitSend: failed with error: %v", fsType.Name(), err)
+			return nil, nil, err
+		}
 	}
 
 	// root is the fusefs root directory.
@@ -255,45 +256,28 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 }
 
 // newFUSEFilesystem creates a new FUSE filesystem.
+// +checklocks:fuseFD.mu
 func newFUSEFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, fsType *FilesystemType, fuseFD *DeviceFD, devMinor uint32, opts *filesystemOptions) (*filesystem, error) {
-	conn, err := newFUSEConnection(ctx, fuseFD, opts)
-	if err != nil {
-		log.Warningf("fuse.NewFUSEFilesystem: NewFUSEConnection failed with error: %v", err)
-		return nil, linuxerr.EINVAL
+	if !fuseFD.connected() {
+		conn, err := newFUSEConnection(ctx, fuseFD, opts)
+		if err != nil {
+			log.Warningf("fuse.NewFUSEFilesystem: NewFUSEConnection failed with error: %v", err)
+			return nil, linuxerr.EINVAL
+		}
+		fuseFD.conn = conn
 	}
 
 	fs := &filesystem{
 		devMinor: devMinor,
 		opts:     opts,
-		conn:     conn,
+		conn:     fuseFD.conn,
 	}
 	fs.VFSFilesystem().Init(vfsObj, fsType, fs)
-
-	// FIXME(gvisor.dev/issue/4813): Doesn't conn or fs need to hold a
-	// reference on fuseFD, since conn uses fuseFD for communication with the
-	// server? Wouldn't doing so create a circular reference?
-	fs.VFSFilesystem().IncRef() // for fuseFD.fs
-
-	fuseFD.mu.Lock()
-	fs.conn.mu.Lock()
-	fuseFD.fs = fs
-	fs.conn.mu.Unlock()
-	fuseFD.mu.Unlock()
-
 	return fs, nil
 }
 
 // Release implements vfs.FilesystemImpl.Release.
 func (fs *filesystem) Release(ctx context.Context) {
-	fs.conn.fd.mu.Lock()
-
-	fs.umounted = true
-	fs.conn.Abort(ctx)
-	// Notify all the waiters on this fd.
-	fs.conn.fd.waitQueue.Notify(waiter.ReadableEvents)
-
-	fs.conn.fd.mu.Unlock()
-
 	fs.Filesystem.VFSFilesystem().VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
 	fs.Filesystem.Release(ctx)
 }

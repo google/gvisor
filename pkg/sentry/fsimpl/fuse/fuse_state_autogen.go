@@ -130,6 +130,8 @@ func (fd *DeviceFD) StateFields() []string {
 		"FileDescriptionDefaultImpl",
 		"DentryMetadataFileDescriptionImpl",
 		"NoLockFD",
+		"waitQueue",
+		"fullQueueCh",
 		"nextOpID",
 		"queue",
 		"numActiveRequests",
@@ -137,9 +139,7 @@ func (fd *DeviceFD) StateFields() []string {
 		"writeCursor",
 		"writeBuf",
 		"writeCursorFR",
-		"waitQueue",
-		"fullQueueCh",
-		"fs",
+		"conn",
 	}
 }
 
@@ -150,20 +150,20 @@ func (fd *DeviceFD) StateSave(stateSinkObject state.Sink) {
 	fd.beforeSave()
 	var fullQueueChValue int
 	fullQueueChValue = fd.saveFullQueueCh()
-	stateSinkObject.SaveValue(12, fullQueueChValue)
+	stateSinkObject.SaveValue(5, fullQueueChValue)
 	stateSinkObject.Save(0, &fd.vfsfd)
 	stateSinkObject.Save(1, &fd.FileDescriptionDefaultImpl)
 	stateSinkObject.Save(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSinkObject.Save(3, &fd.NoLockFD)
-	stateSinkObject.Save(4, &fd.nextOpID)
-	stateSinkObject.Save(5, &fd.queue)
-	stateSinkObject.Save(6, &fd.numActiveRequests)
-	stateSinkObject.Save(7, &fd.completions)
-	stateSinkObject.Save(8, &fd.writeCursor)
-	stateSinkObject.Save(9, &fd.writeBuf)
-	stateSinkObject.Save(10, &fd.writeCursorFR)
-	stateSinkObject.Save(11, &fd.waitQueue)
-	stateSinkObject.Save(13, &fd.fs)
+	stateSinkObject.Save(4, &fd.waitQueue)
+	stateSinkObject.Save(6, &fd.nextOpID)
+	stateSinkObject.Save(7, &fd.queue)
+	stateSinkObject.Save(8, &fd.numActiveRequests)
+	stateSinkObject.Save(9, &fd.completions)
+	stateSinkObject.Save(10, &fd.writeCursor)
+	stateSinkObject.Save(11, &fd.writeBuf)
+	stateSinkObject.Save(12, &fd.writeCursorFR)
+	stateSinkObject.Save(13, &fd.conn)
 }
 
 func (fd *DeviceFD) afterLoad() {}
@@ -174,16 +174,16 @@ func (fd *DeviceFD) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &fd.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSourceObject.Load(3, &fd.NoLockFD)
-	stateSourceObject.Load(4, &fd.nextOpID)
-	stateSourceObject.Load(5, &fd.queue)
-	stateSourceObject.Load(6, &fd.numActiveRequests)
-	stateSourceObject.Load(7, &fd.completions)
-	stateSourceObject.Load(8, &fd.writeCursor)
-	stateSourceObject.Load(9, &fd.writeBuf)
-	stateSourceObject.Load(10, &fd.writeCursorFR)
-	stateSourceObject.Load(11, &fd.waitQueue)
-	stateSourceObject.Load(13, &fd.fs)
-	stateSourceObject.LoadValue(12, new(int), func(y interface{}) { fd.loadFullQueueCh(y.(int)) })
+	stateSourceObject.Load(4, &fd.waitQueue)
+	stateSourceObject.Load(6, &fd.nextOpID)
+	stateSourceObject.Load(7, &fd.queue)
+	stateSourceObject.Load(8, &fd.numActiveRequests)
+	stateSourceObject.Load(9, &fd.completions)
+	stateSourceObject.Load(10, &fd.writeCursor)
+	stateSourceObject.Load(11, &fd.writeBuf)
+	stateSourceObject.Load(12, &fd.writeCursorFR)
+	stateSourceObject.Load(13, &fd.conn)
+	stateSourceObject.LoadValue(5, new(int), func(y interface{}) { fd.loadFullQueueCh(y.(int)) })
 }
 
 func (fsType *FilesystemType) StateTypeName() string {
@@ -263,7 +263,6 @@ func (fs *filesystem) StateFields() []string {
 		"devMinor",
 		"conn",
 		"opts",
-		"umounted",
 	}
 }
 
@@ -276,7 +275,6 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &fs.devMinor)
 	stateSinkObject.Save(2, &fs.conn)
 	stateSinkObject.Save(3, &fs.opts)
-	stateSinkObject.Save(4, &fs.umounted)
 }
 
 func (fs *filesystem) afterLoad() {}
@@ -287,7 +285,6 @@ func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &fs.devMinor)
 	stateSourceObject.Load(2, &fs.conn)
 	stateSourceObject.Load(3, &fs.opts)
-	stateSourceObject.Load(4, &fs.umounted)
 }
 
 func (i *inode) StateTypeName() string {
