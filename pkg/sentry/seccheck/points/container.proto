@@ -24,4 +24,6 @@ message Start {
   string cwd = 3;
   repeated string args = 4;
   repeated string env = 5;
+  // Set to true when TTY is enabled (e.g. -t docker flag).
+  bool terminal = 6;
 }
