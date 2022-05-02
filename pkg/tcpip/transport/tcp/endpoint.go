@@ -2488,7 +2488,6 @@ func (e *endpoint) Shutdown(flags tcpip.ShutdownFlags) tcpip.Error {
 		// method because that method is called during a close(2) (and closing a
 		// connecting socket is not an error).
 		e.handshakeFailed(&tcpip.ErrConnectionReset{})
-		e.cleanupLocked()
 		e.waiterQueue.Notify(waiter.WritableEvents | waiter.EventHUp | waiter.EventErr)
 		return nil
 	}
