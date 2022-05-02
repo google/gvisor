@@ -202,6 +202,7 @@ func (conn *connection) loadInitializedChan(closed bool) {
 }
 
 // newFUSEConnection creates a FUSE connection to fuseFD.
+// +checklocks:fuseFD.mu
 func newFUSEConnection(_ context.Context, fuseFD *DeviceFD, opts *filesystemOptions) (*connection, error) {
 	// Mark the device as ready so it can be used.
 	// FIXME(gvisor.dev/issue/4813): fuseFD's fields are accessed without
@@ -210,12 +211,10 @@ func newFUSEConnection(_ context.Context, fuseFD *DeviceFD, opts *filesystemOpti
 
 	// Create the writeBuf for the header to be stored in.
 	hdrLen := uint32((*linux.FUSEHeaderOut)(nil).SizeBytes())
-	fuseFD.mu.Lock()
 	fuseFD.writeBuf = make([]byte, hdrLen)
 	fuseFD.completions = make(map[linux.FUSEOpID]*futureResponse)
 	fuseFD.fullQueueCh = make(chan struct{}, opts.maxActiveRequests)
 	fuseFD.writeCursor = 0
-	fuseFD.mu.Unlock()
 
 	return &connection{
 		fd:                       fuseFD,

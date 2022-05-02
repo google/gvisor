@@ -58,32 +58,6 @@ type DeviceFD struct {
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
 
-	// nextOpID is used to create new requests.
-	nextOpID linux.FUSEOpID
-
-	// queue is the list of requests that need to be processed by the FUSE server.
-	queue requestList
-
-	// numActiveRequests is the number of requests made by the Sentry that has
-	// yet to be responded to.
-	numActiveRequests uint64
-
-	// completions is used to map a request to its response. A Writer will use this
-	// to notify the caller of a completed response.
-	completions map[linux.FUSEOpID]*futureResponse
-
-	writeCursor uint32
-
-	// writeBuf is the memory buffer used to copy in the FUSE out header from
-	// userspace.
-	writeBuf []byte
-
-	// writeCursorFR current FR being copied from server.
-	writeCursorFR *futureResponse
-
-	// mu protects all the queues, maps, buffers and cursors and nextOpID.
-	mu sync.Mutex `state:"nosave"`
-
 	// waitQueue is used to notify interested parties when the device becomes
 	// readable or writable.
 	waitQueue waiter.Queue
@@ -93,42 +67,79 @@ type DeviceFD struct {
 	// unprocessed in-flight requests.
 	fullQueueCh chan struct{} `state:".(int)"`
 
-	// fs is the FUSE filesystem that this FD is being used for. A reference is
-	// held on fs.
-	fs *filesystem
-}
+	// mu protects all the queues, maps, buffers and cursors and nextOpID.
+	mu sync.Mutex `state:"nosave"`
 
-func (fd *DeviceFD) saveFullQueueCh() int {
-	return cap(fd.fullQueueCh)
-}
+	// nextOpID is used to create new requests.
+	// +checklocks:mu
+	nextOpID linux.FUSEOpID
 
-func (fd *DeviceFD) loadFullQueueCh(capacity int) {
-	fd.fullQueueCh = make(chan struct{}, capacity)
+	// queue is the list of requests that need to be processed by the FUSE server.
+	// +checklocks:mu
+	queue requestList
+
+	// numActiveRequests is the number of requests made by the Sentry that has
+	// yet to be responded to.
+	// +checklocks:mu
+	numActiveRequests uint64
+
+	// completions is used to map a request to its response. A Writer will use this
+	// to notify the caller of a completed response.
+	// +checklocks:mu
+	completions map[linux.FUSEOpID]*futureResponse
+
+	// +checklocks:mu
+	writeCursor uint32
+
+	// writeBuf is the memory buffer used to copy in the FUSE out header from
+	// userspace.
+	// +checklocks:mu
+	writeBuf []byte
+
+	// writeCursorFR current FR being copied from server.
+	// +checklocks:mu
+	writeCursorFR *futureResponse
+
+	// conn is the FUSE connection that this FD is being used for.
+	// +checklocks:mu
+	conn *connection
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *DeviceFD) Release(ctx context.Context) {
-	if fd.fs != nil {
-		fd.fs.conn.mu.Lock()
-		fd.fs.conn.connected = false
-		fd.fs.conn.mu.Unlock()
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
+	if fd.conn != nil {
+		fd.conn.mu.Lock()
+		fd.conn.connected = false
+		fd.conn.mu.Unlock()
 
-		fd.fs.VFSFilesystem().DecRef(ctx)
-		fd.fs = nil
+		fd.conn.Abort(ctx) // +checklocksforce: fd.conn.fd.mu=fd.mu
+		fd.waitQueue.Notify(waiter.ReadableEvents)
+		fd.conn = nil
 	}
 }
 
-// filesystemIsInitialized returns true if fd.fs is set and the connection is
-// initialized.
-func (fd *DeviceFD) filesystemIsInitialized() bool {
-	// FIXME(gvisor.dev/issue/4813): Access to fd.fs should be synchronized.
-	return fd.fs != nil
+// connected returns true if fd.conn is set and the connection has not been
+// aborted.
+// +checklocks:fd.mu
+func (fd *DeviceFD) connected() bool {
+	if fd.conn != nil {
+		fd.conn.mu.Lock()
+		defer fd.conn.mu.Unlock()
+		return fd.conn.connected
+	}
+	return false
 }
 
 // PRead implements vfs.FileDescriptionImpl.PRead.
 func (fd *DeviceFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
-	// Operations on /dev/fuse don't make sense until a FUSE filesystem is mounted.
-	if !fd.filesystemIsInitialized() {
+	// Operations on /dev/fuse don't make sense until a FUSE filesystem is
+	// mounted. If there is an active connection we know there is at least one
+	// filesystem mounted.
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
+	if !fd.connected() {
 		return 0, linuxerr.EPERM
 	}
 
@@ -137,8 +148,12 @@ func (fd *DeviceFD) PRead(ctx context.Context, dst usermem.IOSequence, offset in
 
 // Read implements vfs.FileDescriptionImpl.Read.
 func (fd *DeviceFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
-	// Operations on /dev/fuse don't make sense until a FUSE filesystem is mounted.
-	if !fd.filesystemIsInitialized() {
+	// Operations on /dev/fuse don't make sense until a FUSE filesystem is
+	// mounted. If there is an active connection we know there is at least one
+	// filesystem mounted.
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
+	if !fd.connected() {
 		return 0, linuxerr.EPERM
 	}
 
@@ -150,11 +165,9 @@ func (fd *DeviceFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.R
 	inHdrLen := uint32((*linux.FUSEHeaderIn)(nil).SizeBytes())
 	writeHdrLen := uint32((*linux.FUSEWriteIn)(nil).SizeBytes())
 
-	fd.mu.Lock()
-	defer fd.mu.Unlock()
-	fd.fs.conn.mu.Lock()
-	negotiatedMinBuffSize := inHdrLen + writeHdrLen + fd.fs.conn.maxWrite
-	fd.fs.conn.mu.Unlock()
+	fd.conn.mu.Lock()
+	negotiatedMinBuffSize := inHdrLen + writeHdrLen + fd.conn.maxWrite
+	fd.conn.mu.Unlock()
 	if minBuffSize < negotiatedMinBuffSize {
 		minBuffSize = negotiatedMinBuffSize
 	}
@@ -231,8 +244,12 @@ func (fd *DeviceFD) readLocked(ctx context.Context, dst usermem.IOSequence, opts
 
 // PWrite implements vfs.FileDescriptionImpl.PWrite.
 func (fd *DeviceFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
-	// Operations on /dev/fuse don't make sense until a FUSE filesystem is mounted.
-	if !fd.filesystemIsInitialized() {
+	// Operations on /dev/fuse don't make sense until a FUSE filesystem is
+	// mounted. If there is an active connection we know there is at least one
+	// filesystem mounted.
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
+	if !fd.connected() {
 		return 0, linuxerr.EPERM
 	}
 
@@ -249,14 +266,11 @@ func (fd *DeviceFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.
 // writeLocked implements writing to the fuse device while locked with DeviceFD.mu.
 // +checklocks:fd.mu
 func (fd *DeviceFD) writeLocked(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
-	// Operations on /dev/fuse don't make sense until a FUSE filesystem is mounted.
-	if !fd.filesystemIsInitialized() {
+	// Operations on /dev/fuse don't make sense until a FUSE filesystem is
+	// mounted. If there is an active connection we know there is at least one
+	// filesystem mounted.
+	if !fd.connected() {
 		return 0, linuxerr.EPERM
-	}
-
-	// Return ENODEV if the filesystem is umounted.
-	if fd.fs.umounted {
-		return 0, linuxerr.ENODEV
 	}
 
 	var cn, n int64
@@ -363,7 +377,7 @@ func (fd *DeviceFD) Readiness(mask waiter.EventMask) waiter.EventMask {
 func (fd *DeviceFD) readinessLocked(mask waiter.EventMask) waiter.EventMask {
 	var ready waiter.EventMask
 
-	if !fd.filesystemIsInitialized() || fd.fs.umounted {
+	if !fd.connected() {
 		ready |= waiter.EventErr
 		return ready & mask
 	}
@@ -380,12 +394,16 @@ func (fd *DeviceFD) readinessLocked(mask waiter.EventMask) waiter.EventMask {
 
 // EventRegister implements waiter.Waitable.EventRegister.
 func (fd *DeviceFD) EventRegister(e *waiter.Entry) error {
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
 	fd.waitQueue.EventRegister(e)
 	return nil
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
 func (fd *DeviceFD) EventUnregister(e *waiter.Entry) {
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
 	fd.waitQueue.EventUnregister(e)
 }
 
@@ -396,8 +414,12 @@ func (fd *DeviceFD) Epollable() bool {
 
 // Seek implements vfs.FileDescriptionImpl.Seek.
 func (fd *DeviceFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
-	// Operations on /dev/fuse don't make sense until a FUSE filesystem is mounted.
-	if !fd.filesystemIsInitialized() {
+	// Operations on /dev/fuse don't make sense until a FUSE filesystem is
+	// mounted. If there is an active connection we know there is at least one
+	// filesystem mounted.
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
+	if !fd.connected() {
 		return 0, linuxerr.EPERM
 	}
 
@@ -406,7 +428,7 @@ func (fd *DeviceFD) Seek(ctx context.Context, offset int64, whence int32) (int64
 
 // sendResponse sends a response to the waiting task (if any).
 //
-// Preconditions: fd.mu must be held.
+// +checklocks:fd.mu
 func (fd *DeviceFD) sendResponse(ctx context.Context, fut *futureResponse) error {
 	// Signal the task waiting on a response if any.
 	defer close(fut.ch)
@@ -427,7 +449,7 @@ func (fd *DeviceFD) sendResponse(ctx context.Context, fut *futureResponse) error
 
 // sendError sends an error response to the waiting task (if any) by calling sendResponse().
 //
-// Preconditions: fd.mu must be held.
+// +checklocks:fd.mu
 func (fd *DeviceFD) sendError(ctx context.Context, errno int32, unique linux.FUSEOpID) error {
 	// Return the error to the calling task.
 	outHdrLen := uint32((*linux.FUSEHeaderOut)(nil).SizeBytes())
@@ -451,12 +473,13 @@ func (fd *DeviceFD) sendError(ctx context.Context, errno int32, unique linux.FUS
 
 // asyncCallBack executes pre-defined callback function for async requests.
 // Currently used by: FUSE_INIT.
+// +checklocks:fd.mu
 func (fd *DeviceFD) asyncCallBack(ctx context.Context, r *Response) error {
 	switch r.opcode {
 	case linux.FUSE_INIT:
 		creds := auth.CredentialsFromContext(ctx)
 		rootUserNs := kernel.KernelFromContext(ctx).RootUserNamespace()
-		return fd.fs.conn.InitRecv(r, creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, rootUserNs))
+		return fd.conn.InitRecv(r, creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, rootUserNs))
 		// TODO(gvisor.dev/issue/3247): support async read: correctly process the response.
 	}
 

@@ -252,8 +252,12 @@ cc_binary(
     srcs = ["mount_test.cc"],
     deps = [
         gtest,
+        ":fuse_base",
+        "//test/util:fs_util",
+        "//test/util:fuse_util",
         "//test/util:mount_util",
         "//test/util:temp_path",
+        "//test/util:temp_umask",
         "//test/util:test_main",
         "//test/util:test_util",
     ],
