@@ -34,3 +34,62 @@ message Syscall {
   uint64 arg5 = 9;
   uint64 arg6 = 10;
 }
+
+message Open {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int64 fd = 4;
+  string fd_path = 5;
+  string pathname = 6;
+  uint32 flags = 7;
+  uint32 mode = 8;
+}
+
+message Close {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int64 fd = 4;
+  string fd_path = 5;
+}
+
+message Read {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int64 fd = 4;
+  string fd_path = 5;
+  uint64 count = 6;
+  bytes data = 7;
+}
+
+message Connect {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int64 fd = 4;
+  string fd_path = 5;
+  bytes address = 6;
+}
+
+message Execve {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int64 fd = 4;
+  string fd_path = 5;
+  string pathname = 6;
+  repeated string argv = 7;
+  repeated string envv = 8;
+  uint32 flags = 9;
+}
+
+message Socket {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 domain = 4;
+  int32 type = 5;
+  int32 protocol = 6;
+}

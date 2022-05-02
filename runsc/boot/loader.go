@@ -656,7 +656,7 @@ func (l *Loader) run() error {
 				Terminal: l.root.spec.Process.Terminal,
 			}
 			fields := seccheck.Global.GetFieldSet(seccheck.PointContainerStart)
-			if fields.Local.Contains(seccheck.ContainerStartFieldEnv) {
+			if fields.Local.Contains(seccheck.FieldContainerStartEnv) {
 				evt.Env = l.root.spec.Process.Env
 			}
 			if !fields.Context.Empty() {
@@ -804,7 +804,7 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 			Terminal: spec.Process.Terminal,
 		}
 		fields := seccheck.Global.GetFieldSet(seccheck.PointContainerStart)
-		if fields.Local.Contains(seccheck.ContainerStartFieldEnv) {
+		if fields.Local.Contains(seccheck.FieldContainerStartEnv) {
 			evt.Env = spec.Process.Env
 		}
 		if !fields.Context.Empty() {

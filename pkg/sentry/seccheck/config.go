@@ -123,7 +123,7 @@ func findSession(name string) (*State, error) {
 }
 
 func findPointDesc(name string) (PointDesc, error) {
-	if desc, ok := points[name]; ok {
+	if desc, ok := Points[name]; ok {
 		return desc, nil
 	}
 	return PointDesc{}, fmt.Errorf("point %q not found", name)

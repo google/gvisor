@@ -313,7 +313,7 @@ func getExecveSeccheckInfo(t *Task, argv, env []string, executable fsbridge.File
 	if executable != nil {
 		info.BinaryPath = pathname
 		if vfs2bridgeFile, ok := executable.(*fsbridge.VFSFile); ok {
-			if fields.Local.Contains(seccheck.ExecveFieldBinaryInfo) {
+			if fields.Local.Contains(seccheck.FieldSentryExecveBinaryInfo) {
 				statOpts := vfs.StatOptions{
 					Mask: linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID,
 				}

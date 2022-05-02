@@ -35,7 +35,7 @@ func TestSinkRegistration(t *testing.T) {
 func TestPointRegistration(t *testing.T) {
 	point := PointDesc{Name: "test"}
 	registerPoint(point)
-	if _, ok := points["test"]; !ok {
+	if _, ok := Points["test"]; !ok {
 		t.Errorf("point registration failed")
 	}
 

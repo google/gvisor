@@ -19,6 +19,8 @@ go_library(
     srcs = [
         "config.go",
         "metadata.go",
+        "metadata_amd64.go",
+        "metadata_arm64.go",
         "seccheck.go",
         "seqatomic_checkerslice_unsafe.go",
         "syscall.go",
