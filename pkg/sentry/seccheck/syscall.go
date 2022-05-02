@@ -41,6 +41,21 @@ const (
 	syscallPoints = syscallsMax * int(syscallTypesCount)
 )
 
+// Fields that are common for many syscalls.
+const (
+	// FieldSyscallPath is an optional field to collect path from an FD. Given
+	// that many syscalls operate on FDs, this const is used across syscalls.
+	FieldSyscallPath Field = iota
+)
+
+// Fields for execve*(2) syscalls.
+const (
+	// FieldSyscallExecveEnvv is an optional field to collect list of environment
+	// variables. Start after FieldSyscallPath because execveat(2) can collect
+	// path from FD.
+	FieldSyscallExecveEnvv = FieldSyscallPath + 1
+)
+
 // GetPointForSyscall translates the syscall number to the corresponding Point.
 func GetPointForSyscall(typ SyscallType, sysno uintptr) Point {
 	return Point(sysno)*Point(syscallTypesCount) + Point(typ) + pointLengthBeforeSyscalls

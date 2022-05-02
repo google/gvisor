@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/bits"
-	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
@@ -85,6 +84,8 @@ type Syscall struct {
 	URLs []string
 	// PointCallback is an optional callback that converts syscall arguments
 	// to a proto that can be used with seccheck.Checker.
+	// Callback functions must follow this naming convention:
+	//   PointSyscallNameInCamelCase, e.g. PointReadat, PointRtSigaction.
 	PointCallback SyscallToProto
 }
 
@@ -398,7 +399,7 @@ func (s *SyscallTable) LookupSyscallToProto(sysno uintptr) SyscallToProto {
 
 // SyscallToProto is a callback function that converts generic syscall data to
 // schematized protobuf for the corresponding syscall.
-type SyscallToProto func(context.Context, seccheck.FieldSet, *pb.ContextData, SyscallInfo) proto.Message
+type SyscallToProto func(*Task, seccheck.FieldSet, *pb.ContextData, SyscallInfo) proto.Message
 
 // SyscallInfo provides generic information about the syscall.
 type SyscallInfo struct {

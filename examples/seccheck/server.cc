@@ -31,6 +31,7 @@
 #include "absl/strings/string_view.h"
 #include "pkg/sentry/seccheck/points/container.pb.h"
 #include "pkg/sentry/seccheck/points/sentry.pb.h"
+#include "pkg/sentry/seccheck/points/syscall.pb.h"
 
 typedef std::function<void(const google::protobuf::Any& any)> Callback;
 
@@ -56,6 +57,22 @@ void log(const char* fmt, ...) {
 }
 
 template <class T>
+void unpackSyscall(const google::protobuf::Any& any) {
+  T evt;
+  if (!any.UnpackTo(&evt)) {
+    err(1, "UnpackTo(): %s", any.DebugString().c_str());
+  }
+  auto last_dot = any.type_url().find_last_of('.');
+  if (last_dot == std::string::npos) {
+    err(1, "invalid name: %.*s", static_cast<int>(any.type_url().size()),
+        any.type_url().data());
+  }
+  auto name = any.type_url().substr(last_dot + 1);
+  log("%s %.*s %s\n", evt.has_exit() ? "X" : "E", static_cast<int>(name.size()),
+      name.data(), evt.ShortDebugString().c_str());
+}
+
+template <class T>
 void unpack(const google::protobuf::Any& any) {
   T evt;
   if (!any.UnpackTo(&evt)) {
@@ -67,6 +84,13 @@ void unpack(const google::protobuf::Any& any) {
 }
 
 std::map<std::string, Callback> dispatchers = {
+    {"gvisor.syscall.Syscall", unpackSyscall<::gvisor::syscall::Syscall>},
+    {"gvisor.syscall.Read", unpackSyscall<::gvisor::syscall::Read>},
+    {"gvisor.syscall.Open", unpackSyscall<::gvisor::syscall::Open>},
+    {"gvisor.syscall.Connect", unpackSyscall<::gvisor::syscall::Connect>},
+    {"gvisor.syscall.Execve", unpackSyscall<::gvisor::syscall::Execve>},
+    {"gvisor.syscall.Close", unpackSyscall<::gvisor::syscall::Close>},
+    {"gvisor.syscall.Socket", unpackSyscall<::gvisor::syscall::Socket>},
     {"gvisor.container.Start", unpack<::gvisor::container::Start>},
     {"gvisor.sentry.CloneInfo", unpack<::gvisor::sentry::CloneInfo>},
     {"gvisor.sentry.ExecveInfo", unpack<::gvisor::sentry::ExecveInfo>},
