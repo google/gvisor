@@ -193,6 +193,7 @@ func init() {
 				Name: "env",
 			},
 		},
+		ContextFields: defaultContextFields,
 	})
 
 	// Points from the sentry namespace.

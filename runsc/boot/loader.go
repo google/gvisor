@@ -639,26 +639,32 @@ func (l *Loader) run() error {
 
 		// Create the root container init task. It will begin running
 		// when the kernel is started.
-		var err error
-		_, ep.tty, ep.ttyVFS2, err = l.createContainerProcess(true, l.sandboxID, &l.root)
+		var (
+			tg  *kernel.ThreadGroup
+			err error
+		)
+		tg, ep.tty, ep.ttyVFS2, err = l.createContainerProcess(true, l.sandboxID, &l.root)
 		if err != nil {
 			return err
 		}
 
 		if seccheck.Global.Enabled(seccheck.PointContainerStart) {
 			evt := pb.Start{
-				Id:   l.sandboxID,
-				Cwd:  l.root.spec.Process.Cwd,
-				Args: l.root.spec.Process.Args,
+				Id:       l.sandboxID,
+				Cwd:      l.root.spec.Process.Cwd,
+				Args:     l.root.spec.Process.Args,
+				Terminal: l.root.spec.Process.Terminal,
 			}
 			fields := seccheck.Global.GetFieldSet(seccheck.PointContainerStart)
 			if fields.Local.Contains(seccheck.ContainerStartFieldEnv) {
 				evt.Env = l.root.spec.Process.Env
 			}
-
-			ctx := l.root.procArgs.NewContext(l.k)
+			if !fields.Context.Empty() {
+				evt.ContextData = &pb.ContextData{}
+				kernel.LoadSeccheckData(tg.Leader(), fields.Context, evt.ContextData)
+			}
 			_ = seccheck.Global.SendToCheckers(func(c seccheck.Checker) error {
-				return c.ContainerStart(ctx, fields, &evt)
+				return c.ContainerStart(context.Background(), fields, &evt)
 			})
 		}
 	}
@@ -792,17 +798,21 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 
 	if seccheck.Global.Enabled(seccheck.PointContainerStart) {
 		evt := pb.Start{
-			Id:   cid,
-			Cwd:  spec.Process.Cwd,
-			Args: spec.Process.Args,
+			Id:       cid,
+			Cwd:      spec.Process.Cwd,
+			Args:     spec.Process.Args,
+			Terminal: spec.Process.Terminal,
 		}
 		fields := seccheck.Global.GetFieldSet(seccheck.PointContainerStart)
 		if fields.Local.Contains(seccheck.ContainerStartFieldEnv) {
 			evt.Env = spec.Process.Env
 		}
-		ctx := info.procArgs.NewContext(l.k)
+		if !fields.Context.Empty() {
+			evt.ContextData = &pb.ContextData{}
+			kernel.LoadSeccheckData(ep.tg.Leader(), fields.Context, evt.ContextData)
+		}
 		_ = seccheck.Global.SendToCheckers(func(c seccheck.Checker) error {
-			return c.ContainerStart(ctx, fields, &evt)
+			return c.ContainerStart(context.Background(), fields, &evt)
 		})
 	}
 
