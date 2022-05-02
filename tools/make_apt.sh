@@ -92,7 +92,7 @@ keyid=$(
   awk '{print $2;}')
 readonly keyid
 
-# Copy the packages into the root.
+# Copy the packages into the pool.
 for pkg in "$@"; do
   if ! [[ -f "${pkg}" ]]; then
     continue
@@ -110,17 +110,22 @@ for pkg in "$@"; do
   version=${version// /} # Ditto.
   destdir="${root}/pool/${version}/binary-${arch}"
 
-  # Copy & sign the package.
+  # Copy & sign the package, only if not in the pool already.
   mkdir -p "${destdir}"
-  cp -a -L "$(dirname "${pkg}")/${name}.deb" "${destdir}"
-  if [[ -f "$(dirname "${pkg}")/${name}.changes" ]]; then
-    cp -a -L "$(dirname "${pkg}")/${name}.changes" "${destdir}"
+  if ! [[ -f "${destdir}/${name}.deb" ]]; then
+    # Copy the file.
+    cp -a -L "$(dirname "${pkg}")/${name}.deb" "${destdir}"
+    chmod 0644 "${destdir}"/"${name}".deb
+    # Sign a package only if it isn't signed yet.
+    # We use [*] here to expand the gpg_opts array into a single shell-word.
+    dpkg-sig -g "${gpg_opts[*]}" --verify "${destdir}/${name}.deb" ||
+    dpkg-sig -g "${gpg_opts[*]}" --sign builder -k "${keyid}" "${destdir}/${name}.deb"
   fi
-  chmod 0644 "${destdir}"/"${name}".*
-  # Sign a package only if it isn't signed yet.
-  # We use [*] here to expand the gpg_opts array into a single shell-word.
-  dpkg-sig -g "${gpg_opts[*]}" --verify "${destdir}/${name}.deb" ||
-  dpkg-sig -g "${gpg_opts[*]}" --sign builder -k "${keyid}" "${destdir}/${name}.deb"
+  if [[ -f "$(dirname "${pkg}")/${name}.changes" ]] && ! [[ -f "${destdir}/${name}.changes" ]]; then
+    # Copy the changes file.
+    cp -a -L "$(dirname "${pkg}")/${name}.changes" "${destdir}"
+    chmod 0644 "${destdir}"/"${name}".changes
+  fi
 done
 
 # Build the package list.
