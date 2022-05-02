@@ -43,6 +43,14 @@ func Supported(name string, fn kernel.SyscallFn) kernel.Syscall {
 	}
 }
 
+// SupportedPoint returns a syscall that is fully supported with a correspoding
+// seccheck.Point.
+func SupportedPoint(name string, fn kernel.SyscallFn, cb kernel.SyscallToProto) kernel.Syscall {
+	sys := Supported(name, fn)
+	sys.PointCallback = cb
+	return sys
+}
+
 // PartiallySupported returns a syscall that has a partial implementation.
 func PartiallySupported(name string, fn kernel.SyscallFn, note string, urls []string) kernel.Syscall {
 	return kernel.Syscall{
@@ -52,6 +60,14 @@ func PartiallySupported(name string, fn kernel.SyscallFn, note string, urls []st
 		Note:         note,
 		URLs:         urls,
 	}
+}
+
+// PartiallySupportedPoint returns a syscall that has a partial implementation
+// with a correspoding seccheck.Point.
+func PartiallySupportedPoint(name string, fn kernel.SyscallFn, cb kernel.SyscallToProto, note string, urls []string) kernel.Syscall {
+	sys := PartiallySupported(name, fn, note, urls)
+	sys.PointCallback = cb
+	return sys
 }
 
 // Error returns a syscall handler that will always give the passed error.

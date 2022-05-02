@@ -17,6 +17,7 @@ package seccheck
 import (
 	"fmt"
 	"os"
+	"path"
 
 	"gvisor.dev/gvisor/pkg/fd"
 )
@@ -46,22 +47,25 @@ const (
 	FieldCtxtTime
 )
 
+// Fields for container/start point.
 const (
-	// ContainerStartFieldEnv is an optional field to collect list of environment
+	// FieldContainerStartEnv is an optional field to collect list of environment
 	// variables set for the container start process.
-	ContainerStartFieldEnv Field = iota
+	FieldContainerStartEnv Field = iota
 )
 
+// Fields for sentry/execve point.
 const (
-	// ExecveFieldBinaryInfo is an optional field to collect information about the
-	// binary being executed.
-	ExecveFieldBinaryInfo Field = iota
+	// FieldSentryExecveBinaryInfo is an optional field to collect information
+	// about the binary being executed.
+	FieldSentryExecveBinaryInfo Field = iota
 )
 
-var points = map[string]PointDesc{}
+// Points is a map with all the Points registered in the system.
+var Points = map[string]PointDesc{}
 var sinks = map[string]SinkDesc{}
 
-// defaultContextFields are the fields present in most points.
+// defaultContextFields are the fields present in most Points.
 var defaultContextFields = []FieldDesc{
 	{
 		ID:   FieldCtxtTime,
@@ -127,7 +131,7 @@ func RegisterSink(sink SinkDesc) {
 // PointDesc describes a Point that is available to be configured.
 // Schema for these points are defined in pkg/sentry/seccheck/points/.
 type PointDesc struct {
-	// ID is the point unique indentifier.
+	// ID is the point unique identifier.
 	ID Point
 	// Name is the point unique name. Convention is to use the following format:
 	// namespace/name
@@ -153,7 +157,7 @@ type FieldDesc struct {
 }
 
 func registerPoint(pt PointDesc) {
-	if _, ok := points[pt.Name]; ok {
+	if _, ok := Points[pt.Name]; ok {
 		panic(fmt.Sprintf("Point %q already registered", pt.Name))
 	}
 	if err := validateFields(pt.OptionalFields); err != nil {
@@ -162,7 +166,7 @@ func registerPoint(pt PointDesc) {
 	if err := validateFields(pt.ContextFields); err != nil {
 		panic(err)
 	}
-	points[pt.Name] = pt
+	Points[pt.Name] = pt
 }
 
 func validateFields(fields []FieldDesc) error {
@@ -181,7 +185,30 @@ func validateFields(fields []FieldDesc) error {
 	return nil
 }
 
-// These are all the points available in the system.
+func addRawSyscallPoint(sysno uintptr) {
+	addSyscallPointHelper(SyscallRawEnter, sysno, fmt.Sprintf("sysno/%d", sysno), nil)
+}
+
+func addSyscallPoint(sysno uintptr, name string, optionalFields []FieldDesc) {
+	addSyscallPointHelper(SyscallEnter, sysno, name, optionalFields)
+}
+
+func addSyscallPointHelper(typ SyscallType, sysno uintptr, name string, optionalFields []FieldDesc) {
+	registerPoint(PointDesc{
+		ID:             GetPointForSyscall(typ, sysno),
+		Name:           path.Join("syscall", name, "enter"),
+		OptionalFields: optionalFields,
+		ContextFields:  defaultContextFields,
+	})
+	registerPoint(PointDesc{
+		ID:             GetPointForSyscall(typ+1, sysno),
+		Name:           path.Join("syscall", name, "exit"),
+		OptionalFields: optionalFields,
+		ContextFields:  defaultContextFields,
+	})
+}
+
+// These are all the Points available in the system.
 func init() {
 	// Points from the container namespace.
 	registerPoint(PointDesc{
@@ -189,7 +216,7 @@ func init() {
 		Name: "container/start",
 		OptionalFields: []FieldDesc{
 			{
-				ID:   ContainerStartFieldEnv,
+				ID:   FieldContainerStartEnv,
 				Name: "env",
 			},
 		},
@@ -207,7 +234,7 @@ func init() {
 		Name: "sentry/execve",
 		OptionalFields: []FieldDesc{
 			{
-				ID:   ExecveFieldBinaryInfo,
+				ID:   FieldSentryExecveBinaryInfo,
 				Name: "binary_info",
 			},
 		},
