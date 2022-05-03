@@ -441,11 +441,9 @@ func (pk *PacketBuffer) beforeSave() {}
 // +checklocksignore
 func (pk *PacketBuffer) StateSave(stateSinkObject state.Sink) {
 	pk.beforeSave()
-	var bufValue []byte
-	bufValue = pk.saveBuf()
-	stateSinkObject.SaveValue(2, bufValue)
 	stateSinkObject.Save(0, &pk.packetBufferRefs)
 	stateSinkObject.Save(1, &pk.PacketBufferEntry)
+	stateSinkObject.Save(2, &pk.buf)
 	stateSinkObject.Save(3, &pk.reserved)
 	stateSinkObject.Save(4, &pk.pushed)
 	stateSinkObject.Save(5, &pk.consumed)
@@ -471,6 +469,7 @@ func (pk *PacketBuffer) afterLoad() {}
 func (pk *PacketBuffer) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &pk.packetBufferRefs)
 	stateSourceObject.Load(1, &pk.PacketBufferEntry)
+	stateSourceObject.Load(2, &pk.buf)
 	stateSourceObject.Load(3, &pk.reserved)
 	stateSourceObject.Load(4, &pk.pushed)
 	stateSourceObject.Load(5, &pk.consumed)
@@ -488,7 +487,6 @@ func (pk *PacketBuffer) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(17, &pk.RXTransportChecksumValidated)
 	stateSourceObject.Load(18, &pk.NetworkPacketInfo)
 	stateSourceObject.Load(19, &pk.tuple)
-	stateSourceObject.LoadValue(2, new([]byte), func(y interface{}) { pk.loadBuf(y.([]byte)) })
 }
 
 func (h *headerInfo) StateTypeName() string {

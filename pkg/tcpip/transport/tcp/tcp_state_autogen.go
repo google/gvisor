@@ -4,6 +4,7 @@ package tcp
 
 import (
 	"gvisor.dev/gvisor/pkg/state"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 )
 
 func (a *acceptQueue) StateTypeName() string {
@@ -754,7 +755,12 @@ func (s *segment) StateFields() []string {
 		"segmentRefs",
 		"ep",
 		"qFlags",
-		"pkt",
+		"srcAddr",
+		"dstAddr",
+		"netProto",
+		"nicID",
+		"data",
+		"hdr",
 		"sequenceNumber",
 		"ackNumber",
 		"flags",
@@ -778,28 +784,35 @@ func (s *segment) beforeSave() {}
 // +checklocksignore
 func (s *segment) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
+	var dataValue buffer.VectorisedView
+	dataValue = s.saveData()
+	stateSinkObject.SaveValue(8, dataValue)
 	var optionsValue []byte
 	optionsValue = s.saveOptions()
-	stateSinkObject.SaveValue(12, optionsValue)
+	stateSinkObject.SaveValue(17, optionsValue)
 	stateSinkObject.Save(0, &s.segmentEntry)
 	stateSinkObject.Save(1, &s.segmentRefs)
 	stateSinkObject.Save(2, &s.ep)
 	stateSinkObject.Save(3, &s.qFlags)
-	stateSinkObject.Save(4, &s.pkt)
-	stateSinkObject.Save(5, &s.sequenceNumber)
-	stateSinkObject.Save(6, &s.ackNumber)
-	stateSinkObject.Save(7, &s.flags)
-	stateSinkObject.Save(8, &s.window)
-	stateSinkObject.Save(9, &s.csum)
-	stateSinkObject.Save(10, &s.csumValid)
-	stateSinkObject.Save(11, &s.parsedOptions)
-	stateSinkObject.Save(13, &s.hasNewSACKInfo)
-	stateSinkObject.Save(14, &s.rcvdTime)
-	stateSinkObject.Save(15, &s.xmitTime)
-	stateSinkObject.Save(16, &s.xmitCount)
-	stateSinkObject.Save(17, &s.acked)
-	stateSinkObject.Save(18, &s.dataMemSize)
-	stateSinkObject.Save(19, &s.lost)
+	stateSinkObject.Save(4, &s.srcAddr)
+	stateSinkObject.Save(5, &s.dstAddr)
+	stateSinkObject.Save(6, &s.netProto)
+	stateSinkObject.Save(7, &s.nicID)
+	stateSinkObject.Save(9, &s.hdr)
+	stateSinkObject.Save(10, &s.sequenceNumber)
+	stateSinkObject.Save(11, &s.ackNumber)
+	stateSinkObject.Save(12, &s.flags)
+	stateSinkObject.Save(13, &s.window)
+	stateSinkObject.Save(14, &s.csum)
+	stateSinkObject.Save(15, &s.csumValid)
+	stateSinkObject.Save(16, &s.parsedOptions)
+	stateSinkObject.Save(18, &s.hasNewSACKInfo)
+	stateSinkObject.Save(19, &s.rcvdTime)
+	stateSinkObject.Save(20, &s.xmitTime)
+	stateSinkObject.Save(21, &s.xmitCount)
+	stateSinkObject.Save(22, &s.acked)
+	stateSinkObject.Save(23, &s.dataMemSize)
+	stateSinkObject.Save(24, &s.lost)
 }
 
 func (s *segment) afterLoad() {}
@@ -810,22 +823,27 @@ func (s *segment) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &s.segmentRefs)
 	stateSourceObject.Load(2, &s.ep)
 	stateSourceObject.Load(3, &s.qFlags)
-	stateSourceObject.Load(4, &s.pkt)
-	stateSourceObject.Load(5, &s.sequenceNumber)
-	stateSourceObject.Load(6, &s.ackNumber)
-	stateSourceObject.Load(7, &s.flags)
-	stateSourceObject.Load(8, &s.window)
-	stateSourceObject.Load(9, &s.csum)
-	stateSourceObject.Load(10, &s.csumValid)
-	stateSourceObject.Load(11, &s.parsedOptions)
-	stateSourceObject.Load(13, &s.hasNewSACKInfo)
-	stateSourceObject.Load(14, &s.rcvdTime)
-	stateSourceObject.Load(15, &s.xmitTime)
-	stateSourceObject.Load(16, &s.xmitCount)
-	stateSourceObject.Load(17, &s.acked)
-	stateSourceObject.Load(18, &s.dataMemSize)
-	stateSourceObject.Load(19, &s.lost)
-	stateSourceObject.LoadValue(12, new([]byte), func(y interface{}) { s.loadOptions(y.([]byte)) })
+	stateSourceObject.Load(4, &s.srcAddr)
+	stateSourceObject.Load(5, &s.dstAddr)
+	stateSourceObject.Load(6, &s.netProto)
+	stateSourceObject.Load(7, &s.nicID)
+	stateSourceObject.Load(9, &s.hdr)
+	stateSourceObject.Load(10, &s.sequenceNumber)
+	stateSourceObject.Load(11, &s.ackNumber)
+	stateSourceObject.Load(12, &s.flags)
+	stateSourceObject.Load(13, &s.window)
+	stateSourceObject.Load(14, &s.csum)
+	stateSourceObject.Load(15, &s.csumValid)
+	stateSourceObject.Load(16, &s.parsedOptions)
+	stateSourceObject.Load(18, &s.hasNewSACKInfo)
+	stateSourceObject.Load(19, &s.rcvdTime)
+	stateSourceObject.Load(20, &s.xmitTime)
+	stateSourceObject.Load(21, &s.xmitCount)
+	stateSourceObject.Load(22, &s.acked)
+	stateSourceObject.Load(23, &s.dataMemSize)
+	stateSourceObject.Load(24, &s.lost)
+	stateSourceObject.LoadValue(8, new(buffer.VectorisedView), func(y interface{}) { s.loadData(y.(buffer.VectorisedView)) })
+	stateSourceObject.LoadValue(17, new([]byte), func(y interface{}) { s.loadOptions(y.([]byte)) })
 }
 
 func (q *segmentQueue) StateTypeName() string {

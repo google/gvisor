@@ -22,6 +22,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -313,7 +314,7 @@ func (s *sender) updateMaxPayloadSize(mtu, count int) {
 			break
 		}
 
-		if nextSeg == s.writeNext && seg.payloadSize() > m {
+		if nextSeg == s.writeNext && seg.data.Size() > m {
 			// We found a segment exceeding the MTU. Rewind
 			// writeNext and try to retransmit it.
 			nextSeg = seg
@@ -403,7 +404,7 @@ func (s *sender) resendSegment() {
 
 	// Resend the segment.
 	if seg := s.writeList.Front(); seg != nil {
-		if seg.payloadSize() > s.MaxPayloadSize {
+		if seg.data.Size() > s.MaxPayloadSize {
 			s.splitSeg(seg, s.MaxPayloadSize)
 		}
 
@@ -411,8 +412,8 @@ func (s *sender) resendSegment() {
 		//
 		// To prevent retransmission, set both the HighRXT and RescueRXT
 		// to the highest sequence number in the retransmitted segment.
-		s.FastRecovery.HighRxt = seg.sequenceNumber.Add(seqnum.Size(seg.payloadSize())) - 1
-		s.FastRecovery.RescueRxt = seg.sequenceNumber.Add(seqnum.Size(seg.payloadSize())) - 1
+		s.FastRecovery.HighRxt = seg.sequenceNumber.Add(seqnum.Size(seg.data.Size())) - 1
+		s.FastRecovery.RescueRxt = seg.sequenceNumber.Add(seqnum.Size(seg.data.Size())) - 1
 		s.sendSegment(seg)
 		s.ep.stack.Stats().TCP.FastRetransmit.Increment()
 		s.ep.stats.SendErrors.FastRetransmit.Increment()
@@ -571,7 +572,7 @@ func (s *sender) retransmitTimerExpired() tcpip.Error {
 // pCount returns the number of packets in the segment. Due to GSO, a segment
 // can be composed of multiple packets.
 func (s *sender) pCount(seg *segment, maxPayloadSize int) int {
-	size := seg.payloadSize()
+	size := seg.data.Size()
 	if size == 0 {
 		return 1
 	}
@@ -582,12 +583,12 @@ func (s *sender) pCount(seg *segment, maxPayloadSize int) int {
 // splitSeg splits a given segment at the size specified and inserts the
 // remainder as a new segment after the current one in the write list.
 func (s *sender) splitSeg(seg *segment, size int) {
-	if seg.payloadSize() <= size {
+	if seg.data.Size() <= size {
 		return
 	}
 	// Split this segment up.
 	nSeg := seg.clone()
-	nSeg.pkt.Data().AppendRange(seg.pkt.Data().AsRange().SubRange(size))
+	nSeg.data.TrimFront(size)
 	nSeg.sequenceNumber.UpdateForward(seqnum.Size(size))
 	s.writeList.InsertAfter(seg, nSeg)
 
@@ -600,10 +601,11 @@ func (s *sender) splitSeg(seg *segment, size int) {
 	// window space.
 	// ref: net/ipv4/tcp_output.c::tcp_write_xmit(), tcp_mss_split_point()
 	// ref: net/ipv4/tcp_output.c::tcp_write_wakeup(), tcp_snd_wnd_test()
-	if seg.payloadSize() > s.MaxPayloadSize {
+	if seg.data.Size() > s.MaxPayloadSize {
 		seg.flags ^= header.TCPFlagPsh
 	}
-	seg.pkt.Data().CapLength(size)
+
+	seg.data.CapLength(size)
 }
 
 // NextSeg implements the RFC6675 NextSeg() operation.
@@ -630,7 +632,7 @@ func (s *sender) NextSeg(nextSegHint *segment) (nextSeg, hint *segment, rescueRt
 			break
 		}
 		segSeq := seg.sequenceNumber
-		if smss := s.ep.scoreboard.SMSS(); seg.payloadSize() > int(smss) {
+		if smss := s.ep.scoreboard.SMSS(); seg.data.Size() > int(smss) {
 			s.splitSeg(seg, int(smss))
 		}
 
@@ -724,7 +726,7 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 	// assigned a sequence number to this segment.
 	if !s.isAssignedSequenceNumber(seg) {
 		// Merge segments if allowed.
-		if seg.payloadSize() != 0 {
+		if seg.data.Size() != 0 {
 			available := int(s.SndNxt.Size(end))
 			if available > limit {
 				available = limit
@@ -741,8 +743,8 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 			// triggering bugs in poorly written DNS
 			// implementations.
 			var nextTooBig bool
-			for nSeg := seg.Next(); nSeg != nil && nSeg.payloadSize() != 0; nSeg = seg.Next() {
-				if seg.payloadSize()+nSeg.payloadSize() > available {
+			for nSeg := seg.Next(); nSeg != nil && nSeg.data.Size() != 0; nSeg = seg.Next() {
+				if seg.data.Size()+nSeg.data.Size() > available {
 					nextTooBig = true
 					break
 				}
@@ -750,7 +752,7 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 				s.writeList.Remove(nSeg)
 				nSeg.DecRef()
 			}
-			if !nextTooBig && seg.payloadSize() < available {
+			if !nextTooBig && seg.data.Size() < available {
 				// Segment is not full.
 				if s.Outstanding > 0 && s.ep.ops.GetDelayOption() {
 					// Nagle's algorithm. From Wikipedia:
@@ -771,7 +773,7 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 				// send space and MSS.
 				// TODO(gvisor.dev/issue/2833): Drain the held segments after a
 				// timeout.
-				if seg.payloadSize() < s.MaxPayloadSize && s.ep.ops.GetCorkOption() {
+				if seg.data.Size() < s.MaxPayloadSize && s.ep.ops.GetCorkOption() {
 					return false
 				}
 			}
@@ -784,7 +786,7 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 	}
 
 	var segEnd seqnum.Value
-	if seg.payloadSize() == 0 {
+	if seg.data.Size() == 0 {
 		if s.writeList.Back() != seg {
 			panic("FIN segments must be the final segment in the write list.")
 		}
@@ -831,7 +833,7 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 		// the retransmit timer handler.
 		if s.SndUna != s.SndNxt {
 			switch {
-			case available >= seg.payloadSize():
+			case available >= seg.data.Size():
 				// OK to send, the whole segments fits in the
 				// receiver's advertised window.
 			case available >= s.MaxPayloadSize:
@@ -858,11 +860,11 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 			available = s.MaxPayloadSize
 		}
 
-		if seg.payloadSize() > available {
+		if seg.data.Size() > available {
 			s.splitSeg(seg, available)
 		}
 
-		segEnd = seg.sequenceNumber.Add(seqnum.Size(seg.payloadSize()))
+		segEnd = seg.sequenceNumber.Add(seqnum.Size(seg.data.Size()))
 	}
 
 	s.sendSegment(seg)
@@ -1053,10 +1055,10 @@ func (s *sender) SetPipe() {
 	}
 	pipe := 0
 	smss := seqnum.Size(s.ep.scoreboard.SMSS())
-	for s1 := s.writeList.Front(); s1 != nil && s1.payloadSize() != 0 && s.isAssignedSequenceNumber(s1); s1 = s1.Next() {
+	for s1 := s.writeList.Front(); s1 != nil && s1.data.Size() != 0 && s.isAssignedSequenceNumber(s1); s1 = s1.Next() {
 		// With GSO each segment can be much larger than SMSS. So check the segment
 		// in SMSS sized ranges.
-		segEnd := s1.sequenceNumber.Add(seqnum.Size(s1.payloadSize()))
+		segEnd := s1.sequenceNumber.Add(seqnum.Size(s1.data.Size()))
 		for startSeq := s1.sequenceNumber; startSeq.LessThan(segEnd); startSeq = startSeq.Add(smss) {
 			endSeq := startSeq.Add(smss)
 			if segEnd.LessThan(endSeq) {
@@ -1501,7 +1503,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 
 			if datalen > ackLeft {
 				prevCount := s.pCount(seg, s.MaxPayloadSize)
-				seg.TrimFront(ackLeft)
+				seg.data.TrimFront(int(ackLeft))
 				seg.sequenceNumber.UpdateForward(ackLeft)
 				s.Outstanding -= prevCount - s.pCount(seg, s.MaxPayloadSize)
 				break
@@ -1634,13 +1636,13 @@ func (s *sender) sendSegment(seg *segment) tcpip.Error {
 	seg.xmitTime = s.ep.stack.Clock().NowMonotonic()
 	seg.xmitCount++
 	seg.lost = false
-	err := s.sendSegmentFromPacketBuffer(seg.pkt, seg.flags, seg.sequenceNumber)
+	err := s.sendSegmentFromView(seg.data, seg.flags, seg.sequenceNumber)
 
 	// Every time a packet containing data is sent (including a
 	// retransmission), if SACK is enabled and we are retransmitting data
 	// then use the conservative timer described in RFC6675 Section 6.0,
 	// otherwise follow the standard time described in RFC6298 Section 5.1.
-	if err != nil && seg.payloadSize() != 0 {
+	if err != nil && seg.data.Size() != 0 {
 		if s.FastRecovery.Active && seg.xmitCount > 1 && s.ep.SACKPermitted {
 			s.resendTimer.enable(s.RTO)
 		} else {
@@ -1653,11 +1655,11 @@ func (s *sender) sendSegment(seg *segment) tcpip.Error {
 	return err
 }
 
-// sendSegmentFromPacketBuffer sends a new segment containing the given payload,
-// flags and sequence number.
+// sendSegmentFromView sends a new segment containing the given payload, flags
+// and sequence number.
 // +checklocks:s.ep.mu
 // +checklocksalias:s.ep.rcv.ep.mu=s.ep.mu
-func (s *sender) sendSegmentFromPacketBuffer(pkt *stack.PacketBuffer, flags header.TCPFlags, seq seqnum.Value) tcpip.Error {
+func (s *sender) sendSegmentFromView(data buffer.VectorisedView, flags header.TCPFlags, seq seqnum.Value) tcpip.Error {
 	s.LastSendTime = s.ep.stack.Clock().NowMonotonic()
 	if seq == s.RTTMeasureSeqNum {
 		s.RTTMeasureTime = s.LastSendTime
@@ -1668,16 +1670,14 @@ func (s *sender) sendSegmentFromPacketBuffer(pkt *stack.PacketBuffer, flags head
 	// Remember the max sent ack.
 	s.MaxSentAck = rcvNxt
 
-	return s.ep.sendRaw(pkt, flags, seq, rcvNxt, rcvWnd)
+	return s.ep.sendRaw(data, flags, seq, rcvNxt, rcvWnd)
 }
 
 // sendEmptySegment sends a new segment containing the given flags and sequence
 // number.
 // +checklocks:s.ep.mu
 func (s *sender) sendEmptySegment(flags header.TCPFlags, seq seqnum.Value) tcpip.Error {
-	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{})
-	defer pkt.DecRef()
-	return s.sendSegmentFromPacketBuffer(pkt, flags, seq)
+	return s.sendSegmentFromView(buffer.VectorisedView{}, flags, seq)
 }
 
 // maybeSendOutOfWindowAck sends an ACK if we are not being rate limited
