@@ -351,7 +351,12 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 
 		// ICMP sockets expect the ICMP header to be present, so we don't consume
 		// the ICMP header.
-		e.dispatcher.DeliverTransportPacket(header.ICMPv4ProtocolNumber, pkt)
+		if e.dispatcher.DeliverTransportPacket(header.ICMPv4ProtocolNumber, pkt) == stack.TransportPacketHandled {
+			// This must've been handled by an ICMP (ping) endpoint, which will have
+			// retained an extra reference to pkt. We must DecRef to prevent memory
+			// leaking.
+			pkt.DecRef()
+		}
 
 	case header.ICMPv4DstUnreachable:
 		received.dstUnreachable.Increment()

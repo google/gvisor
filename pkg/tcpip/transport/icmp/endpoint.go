@@ -34,10 +34,9 @@ import (
 // +stateify savable
 type icmpPacket struct {
 	icmpPacketEntry
-	senderAddress tcpip.FullAddress
-	packetInfo    tcpip.IPPacketInfo
-	data          buffer.VectorisedView `state:".(buffer.VectorisedView)"`
-	receivedAt    time.Time             `state:".(int64)"`
+	pkt        *stack.PacketBuffer
+	data       buffer.VectorisedView `state:".(buffer.VectorisedView)"`
+	receivedAt time.Time             `state:".(int64)"`
 
 	// tosOrTClass stores either the Type of Service for IPv4 or the Traffic Class
 	// for IPv6.
@@ -204,7 +203,16 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 		}
 		if e.ops.GetReceivePacketInfo() {
 			cm.HasIPPacketInfo = true
-			cm.PacketInfo = p.packetInfo
+			cm.PacketInfo = tcpip.IPPacketInfo{
+				// Linux does not 'prepare' [1] in_pktinfo on socket buffers destined to
+				// ping sockets (unlike UDP/RAW sockets). However the interface index [2]
+				// and the Header Destination Address [3] are always filled.
+				// [1] https://github.com/torvalds/linux/blob/dcb85f85fa6/net/ipv4/ip_sockglue.c#L1392
+				// [2] https://github.com/torvalds/linux/blob/dcb85f85fa6/net/ipv4/ip_input.c#L510
+				// [3] https://github.com/torvalds/linux/blob/dcb85f85fa6/net/ipv4/ip_sockglue.c#L60
+				NIC:             p.pkt.NICID,
+				DestinationAddr: p.pkt.Network().DestinationAddress(),
+			}
 		}
 		if e.ops.GetReceiveTTL() {
 			cm.HasTTL = true
@@ -219,8 +227,14 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 		if e.ops.GetIPv6ReceivePacketInfo() {
 			cm.HasIPv6PacketInfo = true
 			cm.IPv6PacketInfo = tcpip.IPv6PacketInfo{
-				NIC:  p.packetInfo.NIC,
-				Addr: p.packetInfo.DestinationAddr,
+				// Linux does not 'prepare' [1] in_pktinfo on socket buffers destined to
+				// ping sockets (unlike UDP/RAW sockets). However the interface index [2]
+				// and the Header Destination Address [3] are always filled.
+				// [1] https://github.com/torvalds/linux/blob/dcb85f85fa6/net/ipv4/ip_sockglue.c#L1392
+				// [2] https://github.com/torvalds/linux/blob/dcb85f85fa6/net/ipv4/ip_input.c#L510
+				// [3] https://github.com/torvalds/linux/blob/dcb85f85fa6/net/ipv4/ip_sockglue.c#L60
+				NIC:  p.pkt.NICID,
+				Addr: p.pkt.Network().DestinationAddress(),
 			}
 		}
 		if e.ops.GetReceiveHopLimit() {
@@ -236,7 +250,10 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 		ControlMessages: cm,
 	}
 	if opts.NeedRemoteAddr {
-		res.RemoteAddr = p.senderAddress
+		res.RemoteAddr = tcpip.FullAddress{
+			NIC:  p.pkt.NICID,
+			Addr: p.pkt.Network().SourceAddress(),
+		}
 	}
 
 	n, err := p.data.ReadTo(dst, opts.Peek)
@@ -728,28 +745,13 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 
 	wasEmpty := e.rcvBufSize == 0
 
-	net := pkt.Network()
-	dstAddr := net.DestinationAddress()
-	// Push new packet into receive list and increment the buffer size.
 	packet := &icmpPacket{
-		senderAddress: tcpip.FullAddress{
-			NIC:  pkt.NICID,
-			Addr: id.RemoteAddress,
-		},
-		packetInfo: tcpip.IPPacketInfo{
-			// Linux does not 'prepare' [1] in_pktinfo on socket buffers destined to
-			// ping sockets (unlike UDP/RAW sockets). However the interface index [2]
-			// and the Header Destination Address [3] are always filled.
-			// [1] https://github.com/torvalds/linux/blob/dcb85f85fa6/net/ipv4/ip_sockglue.c#L1392
-			// [2] https://github.com/torvalds/linux/blob/dcb85f85fa6/net/ipv4/ip_input.c#L510
-			// [3] https://github.com/torvalds/linux/blob/dcb85f85fa6/net/ipv4/ip_sockglue.c#L60
-			NIC:             pkt.NICID,
-			DestinationAddr: dstAddr,
-		},
+		pkt: pkt,
 	}
+	pkt.IncRef()
 
 	// Save any useful information from the network header to the packet.
-	packet.tosOrTClass, _ = net.TOS()
+	packet.tosOrTClass, _ = pkt.Network().TOS()
 	switch pkt.NetworkProtocolNumber {
 	case header.IPv4ProtocolNumber:
 		packet.ttlOrHopLimit = header.IPv4(pkt.NetworkHeader().View()).TTL()

@@ -709,7 +709,12 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 			received.invalid.Increment()
 			return
 		}
-		e.dispatcher.DeliverTransportPacket(header.ICMPv6ProtocolNumber, pkt)
+		if e.dispatcher.DeliverTransportPacket(header.ICMPv6ProtocolNumber, pkt) == stack.TransportPacketHandled {
+			// This must've been handled by an ICMP (ping) endpoint, which will have
+			// retained an extra reference to pkt. We must DecRef to prevent memory
+			// leaking.
+			pkt.DecRef()
+		}
 
 	case header.ICMPv6TimeExceeded:
 		received.timeExceeded.Increment()
