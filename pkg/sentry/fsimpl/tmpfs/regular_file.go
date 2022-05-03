@@ -453,6 +453,10 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 	if err != nil {
 		return 0, offset, err
 	}
+
+	// Reserve enough space assuming the entire write was successful. The
+	// corresponding update to f.size is done in WriteFromBlocks() which is
+	// called via src.CopyInTo() below.
 	maybeSizeInc := false
 	src = src.TakeFirst64(srclen)
 	if uint64(end) > f.size.Load() {
@@ -461,9 +465,13 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 			return 0, 0, err
 		}
 	}
+
+	// Perform the write.
 	rw := getRegularFileReadWriter(f, offset)
 	n, err := src.CopyInTo(ctx, rw)
-	if unwritten := srclen - n; maybeSizeInc && unwritten != 0 {
+
+	// Correct page accounting if this was a partial write.
+	if maybeSizeInc && srclen-n != 0 {
 		if err := f.inode.fs.updatePagesUsed(uint64(end), f.size.Load()); err != nil {
 			return 0, 0, err
 		}

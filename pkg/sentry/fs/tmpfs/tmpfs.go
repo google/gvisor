@@ -40,7 +40,7 @@ var fsInfo = fs.Info{
 	// of 0. To work around this, claim to have a very large but non-zero size,
 	// chosen to ensure that BlockSize * Blocks does not overflow int64 (which
 	// applications may also handle incorrectly).
-	// TODO(b/29637826): allow configuring a tmpfs size and enforce it.
+	// NOTE(b/29637826): Support for configurable tmpfs size was added to VFS2.
 	TotalBlocks: math.MaxInt64 / hostarch.PageSize,
 	FreeBlocks:  math.MaxInt64 / hostarch.PageSize,
 }
