@@ -401,6 +401,8 @@ func (s *socketOpsCommon) GetSockOpt(t *kernel.Task, level int, name int, optVal
 			optlen = sizeofInt32
 		case linux.SO_LINGER:
 			optlen = unix.SizeofLinger
+		case linux.SO_RCVTIMEO, linux.SO_SNDTIMEO:
+			optlen = linux.SizeOfTimeval
 		}
 	case linux.SOL_TCP:
 		switch name {
