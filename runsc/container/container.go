@@ -50,7 +50,7 @@ const cgroupParentAnnotation = "dev.gvisor.spec.cgroup-parent"
 // validateID validates the container id.
 func validateID(id string) error {
 	// See libcontainer/factory_linux.go.
-	idRegex := regexp.MustCompile(`^[\w+-\.]+$`)
+	idRegex := regexp.MustCompile(`^[\w+\.-]+$`)
 	if !idRegex.MatchString(id) {
 		return fmt.Errorf("invalid container id: %v", id)
 	}
