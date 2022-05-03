@@ -187,10 +187,10 @@ func (l *listenContext) createConnectingEndpoint(s *segment, rcvdSynOpts header.
 	// Create a new endpoint.
 	netProto := l.netProto
 	if netProto == 0 {
-		netProto = s.pkt.NetworkProtocolNumber
+		netProto = s.netProto
 	}
 
-	route, err := l.stack.FindRoute(s.pkt.NICID, s.pkt.Network().DestinationAddress(), s.pkt.Network().SourceAddress(), s.pkt.NetworkProtocolNumber, false /* multicastLoop */)
+	route, err := l.stack.FindRoute(s.nicID, s.dstAddr, s.srcAddr, s.netProto, false /* multicastLoop */)
 	if err != nil {
 		return nil, err // +checklocksignore
 	}
@@ -199,9 +199,9 @@ func (l *listenContext) createConnectingEndpoint(s *segment, rcvdSynOpts header.
 	n.mu.Lock()
 	n.ops.SetV6Only(l.v6Only)
 	n.TransportEndpointInfo.ID = s.id
-	n.boundNICID = s.pkt.NICID
+	n.boundNICID = s.nicID
 	n.route = route
-	n.effectiveNetProtos = []tcpip.NetworkProtocolNumber{s.pkt.NetworkProtocolNumber}
+	n.effectiveNetProtos = []tcpip.NetworkProtocolNumber{s.netProto}
 	n.ops.SetReceiveBufferSize(int64(l.rcvWnd), false /* notify */)
 	n.amss = calculateAdvertisedMSS(n.userMSS, n.route)
 	n.setEndpointState(StateConnecting)
@@ -495,8 +495,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 			return nil
 		}
 
-		net := s.pkt.Network()
-		route, err := e.stack.FindRoute(s.pkt.NICID, net.DestinationAddress(), net.SourceAddress(), s.pkt.NetworkProtocolNumber, false /* multicastLoop */)
+		route, err := e.stack.FindRoute(s.nicID, s.dstAddr, s.srcAddr, s.netProto, false /* multicastLoop */)
 		if err != nil {
 			return err
 		}
@@ -517,7 +516,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 			MSS:   calculateAdvertisedMSS(e.userMSS, route),
 		}
 		if opts.TS {
-			offset := e.protocol.tsOffset(net.DestinationAddress(), net.SourceAddress())
+			offset := e.protocol.tsOffset(s.dstAddr, s.srcAddr)
 			now := e.stack.Clock().NowMonotonic()
 			synOpts.TSVal = offset.TSVal(now)
 		}
@@ -649,8 +648,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		}
 
 		n.isRegistered = true
-		net := s.pkt.Network()
-		n.TSOffset = n.protocol.tsOffset(net.DestinationAddress(), net.SourceAddress())
+		n.TSOffset = n.protocol.tsOffset(s.dstAddr, s.srcAddr)
 
 		// Switch state to connected.
 		n.isConnectNotified = true
@@ -671,7 +669,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 
 		// Requeue the segment if the ACK completing the handshake has more info
 		// to be procesed by the newly established endpoint.
-		if (s.flags.Contains(header.TCPFlagFin) || s.payloadSize() > 0) && n.enqueueSegment(s) {
+		if (s.flags.Contains(header.TCPFlagFin) || s.data.Size() > 0) && n.enqueueSegment(s) {
 			n.notifyProcessor()
 		}
 
