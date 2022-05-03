@@ -42,7 +42,5 @@ pkg_deb(
     package_file_name = "runsc.deb",
     postinst = "postinst.sh",
     version_file = version,
-    visibility = [
-        "//visibility:public",
-    ],
+    visibility = ["//visibility:private"],
 )
