@@ -801,8 +801,9 @@ type keepalive struct {
 	interval   time.Duration
 	count      int
 	unacked    int
-	timer      timer       `state:"nosave"`
-	waker      sleep.Waker `state:"nosave"`
+	// should never be a zero timer if the endpoint is not closed.
+	timer timer       `state:"nosave"`
+	waker sleep.Waker `state:"nosave"`
 }
 
 func newEndpoint(s *stack.Stack, protocol *protocol, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) *endpoint {
@@ -879,6 +880,8 @@ func newEndpoint(s *stack.Stack, protocol *protocol, netProto tcpip.NetworkProto
 
 	e.segmentQueue.ep = e
 
+	// TODO(https://gvisor.dev/issues/7493): Defer creating the timer until TCP connection becomes
+	// established.
 	e.keepalive.timer.init(e.stack.Clock(), maybeFailTimerHandler(e, e.keepaliveTimerExpired))
 
 	return e
