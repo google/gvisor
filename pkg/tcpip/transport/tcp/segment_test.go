@@ -31,7 +31,7 @@ type segmentSizeWants struct {
 func checkSegmentSize(t *testing.T, name string, seg *segment, want segmentSizeWants) {
 	t.Helper()
 	got := segmentSizeWants{
-		DataSize:   seg.payloadSize(),
+		DataSize:   seg.data.Size(),
 		SegMemSize: seg.segMemSize(),
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
@@ -49,21 +49,21 @@ func TestSegmentMerge(t *testing.T) {
 
 	checkSegmentSize(t, "seg1", seg1, segmentSizeWants{
 		DataSize:   10,
-		SegMemSize: segSize + stack.PacketBufferStructSize + 10,
+		SegMemSize: SegSize + 10,
 	})
 	checkSegmentSize(t, "seg2", seg2, segmentSizeWants{
 		DataSize:   20,
-		SegMemSize: segSize + stack.PacketBufferStructSize + 20,
+		SegMemSize: SegSize + 20,
 	})
 
 	seg1.merge(seg2)
 
 	checkSegmentSize(t, "seg1", seg1, segmentSizeWants{
 		DataSize:   30,
-		SegMemSize: segSize + stack.PacketBufferStructSize + 30,
+		SegMemSize: SegSize + 30,
 	})
 	checkSegmentSize(t, "seg2", seg2, segmentSizeWants{
 		DataSize:   0,
-		SegMemSize: segSize + stack.PacketBufferStructSize,
+		SegMemSize: SegSize,
 	})
 }

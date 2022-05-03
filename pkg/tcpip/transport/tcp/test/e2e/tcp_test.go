@@ -2240,7 +2240,7 @@ func TestSmallReceiveBufferReadiness(t *testing.T) {
 	}
 
 	for i := 8; i > 0; i /= 2 {
-		size := int64(i << 12)
+		size := int64(i << 10)
 		t.Run(fmt.Sprintf("size=%d", size), func(t *testing.T) {
 			var clientWQ waiter.Queue
 			client, err := s.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &clientWQ)
@@ -2410,8 +2410,8 @@ func TestSmallSegReceiveWindowAdvertisement(t *testing.T) {
 	// of the window scaled value. This enables the test to perform equality
 	// checks on the incoming receive window.
 	payloadSize := 1 << c.RcvdWindowScale
-	if payloadSize >= tcp.SegOverheadSize {
-		t.Fatalf("payload size of %d is not less than the segment overhead of %d", payloadSize, tcp.SegOverheadSize)
+	if payloadSize >= tcp.SegSize {
+		t.Fatalf("payload size of %d is not less than the segment overhead of %d", payloadSize, tcp.SegSize)
 	}
 	payload := generateRandomPayload(t, payloadSize)
 	payloadLen := seqnum.Size(len(payload))
@@ -6648,7 +6648,7 @@ func TestReceiveBufferAutoTuningApplicationLimited(t *testing.T) {
 	time.Sleep(latency)
 	// Send an initial payload with atleast segment overhead size. The receive
 	// window would not grow for smaller segments.
-	rawEP.SendPacketWithTS(make([]byte, tcp.SegOverheadSize), tsVal)
+	rawEP.SendPacketWithTS(make([]byte, tcp.SegSize), tsVal)
 
 	pkt := rawEP.VerifyAndReturnACKWithTS(tsVal)
 	rcvWnd := header.TCP(header.IPv4(pkt).Payload()).WindowSize()
