@@ -476,6 +476,16 @@ func hostInetFilters() seccomp.SyscallRules {
 			},
 			{
 				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SOL_SOCKET),
+				seccomp.EqualTo(unix.SO_RCVTIMEO),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SOL_SOCKET),
+				seccomp.EqualTo(unix.SO_SNDTIMEO),
+			},
+			{
+				seccomp.MatchAny{},
 				seccomp.EqualTo(unix.SOL_TCP),
 				seccomp.EqualTo(unix.TCP_NODELAY),
 			},
