@@ -124,8 +124,10 @@ func (e *endpoint) afterLoad() {
 
 // Resume implements tcpip.ResumableEndpoint.Resume.
 func (e *endpoint) Resume(s *stack.Stack) {
-	if snd := e.snd; snd != nil {
+	if !e.EndpointState().closed() {
 		e.keepalive.timer.init(s.Clock(), maybeFailTimerHandler(e, e.keepaliveTimerExpired))
+	}
+	if snd := e.snd; snd != nil {
 		snd.resendTimer.init(s.Clock(), maybeFailTimerHandler(e, e.snd.retransmitTimerExpired))
 		snd.reorderTimer.init(s.Clock(), timerHandler(e, e.snd.rc.reorderTimerExpired))
 		snd.probeTimer.init(s.Clock(), timerHandler(e, e.snd.probeTimerExpired))
