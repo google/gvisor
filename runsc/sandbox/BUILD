@@ -29,6 +29,7 @@ go_library(
         "//pkg/tcpip/stack",
         "//pkg/unet",
         "//pkg/urpc",
+	"//pkg/abi/linux",
         "//runsc/boot",
         "//runsc/boot/procfs",
         "//runsc/cgroup",
