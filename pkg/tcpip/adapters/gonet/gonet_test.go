@@ -265,12 +265,14 @@ func TestCloseRead(t *testing.T) {
 		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", NICID, protocolAddr, err)
 	}
 
+	done := make(chan struct{})
 	fwd := tcp.NewForwarder(s, 30000, 10, func(r *tcp.ForwarderRequest) {
 		var wq waiter.Queue
 		_, err := r.CreateEndpoint(&wq)
 		if err != nil {
 			t.Fatalf("r.CreateEndpoint() = %v", err)
 		}
+		close(done)
 		// Endpoint will be closed in deferred s.Close (above).
 	})
 
@@ -293,6 +295,12 @@ func TestCloseRead(t *testing.T) {
 
 	if n, err := c.Write([]byte("abc123")); n != 6 || err != nil {
 		t.Errorf("c.Write() = (%d, %v), want (6, nil)", n, err)
+	}
+
+	select {
+	case <-done:
+	case <-time.After(1 * time.Second):
+		t.Fatalf("timed out waiting for r.CreateEndpoint(...) to complete")
 	}
 }
 
