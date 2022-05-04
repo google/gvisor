@@ -324,7 +324,8 @@ func TestTCPLinkResolutionFailure(t *testing.T) {
 			defer clientEP.Close()
 
 			sockOpts := clientEP.SocketOptions()
-			sockOpts.SetRecvError(true)
+			sockOpts.SetIPv4RecvError(true)
+			sockOpts.SetIPv6RecvError(true)
 
 			remoteAddr := listenerAddr
 			remoteAddr.Addr = test.remoteAddr
