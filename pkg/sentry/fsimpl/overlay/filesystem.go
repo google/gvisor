@@ -782,7 +782,6 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	mayCreate := opts.Flags&linux.O_CREAT != 0
 	mustCreate := opts.Flags&(linux.O_CREAT|linux.O_EXCL) == (linux.O_CREAT | linux.O_EXCL)
-	mayWrite := vfs.AccessTypesForOpenFlags(&opts).MayWrite()
 
 	var ds *[]*dentry
 	fs.renameMu.RLock()
@@ -803,14 +802,8 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		if mustCreate {
 			return nil, linuxerr.EEXIST
 		}
-		if start.isRegularFile() && mayWrite {
-			if err := rp.Mount().CheckBeginWrite(); err != nil {
-				return nil, err
-			}
-			defer rp.Mount().EndWrite()
-			if err := start.copyUpLocked(ctx); err != nil {
-				return nil, err
-			}
+		if err := start.ensureOpenableLocked(ctx, rp, &opts); err != nil {
+			return nil, err
 		}
 		start.IncRef()
 		defer start.DecRef(ctx)
@@ -861,14 +854,8 @@ afterTrailingSymlink:
 	if rp.MustBeDir() && !child.isDir() {
 		return nil, linuxerr.ENOTDIR
 	}
-	if child.isRegularFile() && mayWrite {
-		if err := rp.Mount().CheckBeginWrite(); err != nil {
-			return nil, err
-		}
-		defer rp.Mount().EndWrite()
-		if err := child.copyUpLocked(ctx); err != nil {
-			return nil, err
-		}
+	if err := child.ensureOpenableLocked(ctx, rp, &opts); err != nil {
+		return nil, err
 	}
 	child.IncRef()
 	defer child.DecRef(ctx)
@@ -876,30 +863,46 @@ afterTrailingSymlink:
 	return child.openCopiedUp(ctx, rp, &opts)
 }
 
+// Preconditions: filesystem.renameMu must be locked.
+func (d *dentry) ensureOpenableLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) error {
+	ats := vfs.AccessTypesForOpenFlags(opts)
+	if err := d.checkPermissions(rp.Credentials(), ats); err != nil {
+		return err
+	}
+	switch d.mode.Load() & linux.S_IFMT {
+	case linux.S_IFREG:
+		if ats.MayWrite() {
+			if err := rp.Mount().CheckBeginWrite(); err != nil {
+				return err
+			}
+			defer rp.Mount().EndWrite()
+			if err := d.copyUpLocked(ctx); err != nil {
+				return err
+			}
+		}
+	case linux.S_IFDIR:
+		if ats.MayWrite() {
+			return linuxerr.EISDIR
+		}
+		if opts.Flags&linux.O_CREAT != 0 {
+			return linuxerr.EISDIR
+		}
+		if opts.Flags&linux.O_DIRECT != 0 {
+			return linuxerr.EINVAL
+		}
+	}
+	return nil
+}
+
 // Preconditions: If vfs.AccessTypesForOpenFlags(opts).MayWrite(), then d has
 // been copied up.
 func (d *dentry) openCopiedUp(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
-	ats := vfs.AccessTypesForOpenFlags(opts)
-	if err := d.checkPermissions(rp.Credentials(), ats); err != nil {
-		return nil, err
-	}
 	mnt := rp.Mount()
 
 	// Directory FDs open FDs from each layer when directory entries are read,
 	// so they don't require opening an FD from d.topLayer() up front.
 	ftype := d.mode.Load() & linux.S_IFMT
 	if ftype == linux.S_IFDIR {
-		// Can't open directories with O_CREAT.
-		if opts.Flags&linux.O_CREAT != 0 {
-			return nil, linuxerr.EISDIR
-		}
-		// Can't open directories writably.
-		if ats.MayWrite() {
-			return nil, linuxerr.EISDIR
-		}
-		if opts.Flags&linux.O_DIRECT != 0 {
-			return nil, linuxerr.EINVAL
-		}
 		fd := &directoryFD{}
 		fd.LockFD.Init(&d.locks)
 		if err := fd.vfsfd.Init(fd, opts.Flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{
