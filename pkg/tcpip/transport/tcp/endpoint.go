@@ -2840,8 +2840,17 @@ func (e *endpoint) onICMPError(err tcpip.Error, transErr stack.TransportError, p
 	e.lastError = err
 	e.lastErrorMu.Unlock()
 
-	// Update the error queue if IP_RECVERR is enabled.
-	if e.SocketOptions().GetRecvError() {
+	var recvErr bool
+	switch pkt.NetworkProtocolNumber {
+	case header.IPv4ProtocolNumber:
+		recvErr = e.SocketOptions().GetIPv4RecvError()
+	case header.IPv6ProtocolNumber:
+		recvErr = e.SocketOptions().GetIPv6RecvError()
+	default:
+		panic(fmt.Sprintf("unhandled network protocol number = %d", pkt.NetworkProtocolNumber))
+	}
+
+	if recvErr {
 		e.SocketOptions().QueueErr(&tcpip.SockError{
 			Err:   err,
 			Cause: transErr,

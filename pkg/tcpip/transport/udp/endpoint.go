@@ -401,7 +401,7 @@ func (e *endpoint) prepareForWrite(p tcpip.Payloader, opts tcpip.WriteOptions) (
 		// errors aren't report to the error queue at all.
 		if ctx.PacketInfo().NetProto == header.IPv6ProtocolNumber {
 			so := e.SocketOptions()
-			if so.GetRecvError() {
+			if so.GetIPv6RecvError() {
 				so.QueueLocalErr(
 					&tcpip.ErrMessageTooLong{},
 					e.net.NetProto(),
@@ -996,8 +996,17 @@ func (e *endpoint) onICMPError(err tcpip.Error, transErr stack.TransportError, p
 	e.lastError = err
 	e.lastErrorMu.Unlock()
 
-	// Update the error queue if IP_RECVERR is enabled.
-	if e.SocketOptions().GetRecvError() {
+	var recvErr bool
+	switch pkt.NetworkProtocolNumber {
+	case header.IPv4ProtocolNumber:
+		recvErr = e.SocketOptions().GetIPv4RecvError()
+	case header.IPv6ProtocolNumber:
+		recvErr = e.SocketOptions().GetIPv6RecvError()
+	default:
+		panic(fmt.Sprintf("unhandled network protocol number = %d", pkt.NetworkProtocolNumber))
+	}
+
+	if recvErr {
 		// Linux passes the payload without the UDP header.
 		var payload []byte
 		udp := header.UDP(pkt.Data().AsRange().ToOwnedView())

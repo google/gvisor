@@ -811,6 +811,48 @@ TEST_P(UdpSocketTest, ConnectAndSendNoReceiver) {
 }
 
 #ifdef __linux__
+TEST_P(UdpSocketTest, RecvErrorConnRefusedOtherAFSockOpt) {
+  int got;
+  socklen_t got_len = sizeof(got);
+  if (GetParam() == AF_INET) {
+    EXPECT_THAT(setsockopt(sock_.get(), SOL_IPV6, IPV6_RECVERR, &kSockOptOn,
+                           sizeof(kSockOptOn)),
+                SyscallFailsWithErrno(ENOPROTOOPT));
+    EXPECT_THAT(getsockopt(sock_.get(), SOL_IPV6, IPV6_RECVERR, &got, &got_len),
+                SyscallFailsWithErrno(ENOTSUP));
+    ASSERT_THAT(got_len, sizeof(got));
+    return;
+  }
+  ASSERT_THAT(setsockopt(sock_.get(), SOL_IP, IP_RECVERR, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  {
+    EXPECT_THAT(getsockopt(sock_.get(), SOL_IP, IP_RECVERR, &got, &got_len),
+                SyscallSucceeds());
+    ASSERT_THAT(got_len, sizeof(got));
+    EXPECT_THAT(got, kSockOptOn);
+  }
+
+  // We will simulate an ICMP error and verify that we don't receive that error
+  // via recvmsg(MSG_ERRQUEUE) since we set another address family's RECVERR
+  // flag.
+  ASSERT_NO_ERRNO(BindLoopback());
+  ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
+  // Close the bind socket to release the port so that we get an ICMP error
+  // when sending packets to it.
+  ASSERT_THAT(close(bind_.release()), SyscallSucceeds());
+
+  // Send to an unbound port which should trigger a port unreachable error.
+  char buf[1];
+  EXPECT_THAT(send(sock_.get(), buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
+  // Should not have the error since we did not set the right socket option.
+  msghdr msg = {};
+  EXPECT_THAT(recvmsg(sock_.get(), &msg, MSG_ERRQUEUE),
+              SyscallFailsWithErrno(EAGAIN));
+}
+
 TEST_P(UdpSocketTest, RecvErrorConnRefused) {
   // We will simulate an ICMP error and verify that we do receive that error via
   // recvmsg(MSG_ERRQUEUE).
@@ -829,6 +871,14 @@ TEST_P(UdpSocketTest, RecvErrorConnRefused) {
   }
   ASSERT_THAT(setsockopt(sock_.get(), opt_level, opt_type, &v, optlen),
               SyscallSucceeds());
+  {
+    int got;
+    socklen_t got_len = sizeof(got);
+    EXPECT_THAT(getsockopt(sock_.get(), opt_level, opt_type, &got, &got_len),
+                SyscallSucceeds());
+    ASSERT_THAT(got_len, sizeof(got));
+    EXPECT_THAT(got, kSockOptOn);
+  }
 
   // Connect to loopback:bind_addr_ which should *hopefully* not be bound by an
   // UDP socket. There is no easy way to ensure that the UDP port is not bound
