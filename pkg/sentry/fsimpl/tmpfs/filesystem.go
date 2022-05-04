@@ -800,6 +800,25 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	if err := vfsObj.PrepareDeleteDentry(mntns, &child.vfsd); err != nil {
 		return err
 	}
+	// DNJP - Remove pages used if child being removed is a SymLink or Regular File.
+	switch impl := child.inode.impl.(type) {
+	case *symlink:
+		if len(impl.target) >= shortSymlinkLen {
+			if err := fs.updatePagesUsed(uint64(len(impl.target)), 0); err != nil {
+				vfsObj.AbortDeleteDentry(&child.vfsd)
+				return err
+			}
+		}
+	case *regularFile:
+		impl.inode.mu.Lock()
+		if err := fs.updatePagesUsed(impl.size.Load(), 0); err != nil {
+			impl.inode.mu.Unlock()
+			vfsObj.AbortDeleteDentry(&child.vfsd)
+			return err
+		}
+		impl.inode.mu.Unlock()
+	}
+
 	// Generate inotify events. Note that this must take place before the link
 	// count of the child is decremented, or else the watches may be dropped
 	// before these events are added.

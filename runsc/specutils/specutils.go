@@ -380,6 +380,15 @@ func IsSupportedDevMount(m specs.Mount, vfs2Enabled bool) bool {
 	return true
 }
 
+
+func IsSupportedDevice(d specs.LinuxDevice, vfs2Enabled bool) bool {
+	// VFS2 has no hardcoded files under /dev, so everything is allowed.
+	if vfs2Enabled {
+		return true
+	}
+	return true
+}
+
 // WaitForReady waits for a process to become ready. The process is ready when
 // the 'ready' function returns true. It continues to wait if 'ready' returns
 // false. It returns error on timeout, if the process stops or if 'ready' fails.
@@ -416,13 +425,13 @@ func WaitForReady(pid int, timeout time.Duration, ready func() (bool, error)) er
 // ends with '/', it's used as a directory with default file name.
 // 'logPattern' can contain variables that are substituted:
 //   - %TIMESTAMP%: is replaced with a timestamp using the following format:
-//     <yyyymmdd-hhmmss.uuuuuu>
-//   - %COMMAND%: is replaced with 'command'
-//   - %TEST%: is replaced with 'test' (omitted by default)
+//			<yyyymmdd-hhmmss.uuuuuu>
+//	 - %COMMAND%: is replaced with 'command'
+//	 - %TEST%: is replaced with 'test' (omitted by default)
 func DebugLogFile(logPattern, command, test string) (*os.File, error) {
 	if strings.HasSuffix(logPattern, "/") {
-		// Default format: <debug-log>/runsc.log.<yyyymmdd-hhmmss.uuuuuu>.<command>.txt
-		logPattern += "runsc.log.%TIMESTAMP%.%COMMAND%.txt"
+		// Default format: <debug-log>/runsc.log.<yyyymmdd-hhmmss.uuuuuu>.<command>
+		logPattern += "runsc.log.%TIMESTAMP%.%COMMAND%"
 	}
 	logPattern = strings.Replace(logPattern, "%TIMESTAMP%", time.Now().Format("20060102-150405.000000"), -1)
 	logPattern = strings.Replace(logPattern, "%COMMAND%", command, -1)

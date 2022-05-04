@@ -30,9 +30,11 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/devices"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/fsgofer"
 	"gvisor.dev/gvisor/runsc/fsgofer/filter"
+	"gvisor.dev/gvisor/runsc/securejoin"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -108,6 +110,12 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		Fatalf("reading spec: %v", err)
 	}
 
+	lastFD := g.ioFDs[len(g.ioFDs)-1]
+
+	for index, _ := range spec.Linux.Devices {
+		g.ioFDs = append(g.ioFDs, lastFD+index+1)
+	}
+
 	if g.setUpRoot {
 		if err := setupRootFS(spec, conf); err != nil {
 			Fatalf("Error setting up root FS: %v", err)
@@ -133,13 +141,13 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	//
 	// Note that all mount points have been mounted in the proper location in
 	// setupRootFS().
-	cleanMounts, err := resolveMounts(conf, spec.Mounts, root)
+	cleanMounts, err := resolveMounts(conf, spec.Mounts, spec.Linux.Devices, root)
 	if err != nil {
 		Fatalf("Failure to resolve mounts: %v", err)
 	}
 	spec.Mounts = cleanMounts
 	go func() {
-		if err := g.writeMounts(cleanMounts); err != nil {
+		if err := g.writeMounts(spec.Mounts); err != nil {
 			panic(fmt.Sprintf("Failed to write mounts: %v", err))
 		}
 	}()
@@ -234,6 +242,15 @@ func (g *Gofer) serveLisafs(spec *specs.Spec, conf *config.Config, root string) 
 		mountIdx++
 	}
 
+	// DNJP - Start with root device, then add any other additional mount as needed.
+	for _, d := range spec.Linux.Devices {
+		if !specutils.IsSupportedDevice(d, conf.VFS2) {
+			continue
+		}
+		mountIdx++
+		log.Debugf("mountIDx", mountIdx)
+	}
+
 	if mountIdx != len(g.ioFDs) {
 		Fatalf("too many FDs passed for mounts. mounts: %d, FDs: %d", mountIdx, len(g.ioFDs))
 	}
@@ -287,6 +304,29 @@ func (g *Gofer) serve9P(spec *specs.Spec, conf *config.Config, root string) subc
 			mountIdx++
 		}
 	}
+
+	// DNJP - Start with root device, then add any other additional mount as needed.
+	for _, d := range spec.Linux.Devices {
+		if specutils.IsSupportedDevice(d, conf.VFS2) {
+			cfg := fsgofer.Config{
+				ROMount:           conf.Overlay,
+				HostUDS:           conf.FSGoferHostUDS,
+				EnableVerityXattr: conf.Verity,
+			}
+			ap, err := fsgofer.NewAttachPoint(d.Path, cfg)
+			if err != nil {
+				Fatalf("creating attach point: %v", err)
+			}
+			ats = append(ats, ap)
+
+			if mountIdx >= len(g.ioFDs) {
+				Fatalf("no FD found for mount. Did you forget --io-fd? mount: %d, %v", len(g.ioFDs), d)
+			}
+			log.Infof("Serving %q mapped on FD %d (ro: %t)", d.Path, g.ioFDs[mountIdx], cfg.ROMount)
+			mountIdx++
+		}
+	}
+
 	if mountIdx != len(g.ioFDs) {
 		Fatalf("too many FDs passed for mounts. mounts: %d, FDs: %d", mountIdx, len(g.ioFDs))
 	}
@@ -397,7 +437,7 @@ func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 	}
 
 	// Replace the current spec, with the clean spec with symlinks resolved.
-	if err := setupMounts(conf, spec.Mounts, root, procPath); err != nil {
+	if err := setupMounts(conf, spec.Mounts, spec.Linux.Devices, root, procPath); err != nil {
 		Fatalf("error setting up FS: %v", err)
 	}
 
@@ -438,7 +478,7 @@ func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 // setupMounts bind mounts all mounts specified in the spec in their correct
 // location inside root. It will resolve relative paths and symlinks. It also
 // creates directories as needed.
-func setupMounts(conf *config.Config, mounts []specs.Mount, root, procPath string) error {
+func setupMounts(conf *config.Config, mounts []specs.Mount, devices []specs.LinuxDevice, root, procPath string) error {
 	for _, m := range mounts {
 		if !specutils.IsGoferMount(m, conf.VFS2) {
 			continue
@@ -468,6 +508,8 @@ func setupMounts(conf *config.Config, mounts []specs.Mount, root, procPath strin
 			}
 		}
 	}
+    // DNJP - Create the device nodes in the container.
+	createDevices(root, devices)
 	return nil
 }
 
@@ -477,7 +519,16 @@ func setupMounts(conf *config.Config, mounts []specs.Mount, root, procPath strin
 // Otherwise, it may follow symlinks to locations that would be overwritten
 // with another mount point and return the wrong location. In short, make sure
 // setupMounts() has been called before.
-func resolveMounts(conf *config.Config, mounts []specs.Mount, root string) ([]specs.Mount, error) {
+func resolveMounts(conf *config.Config, mounts []specs.Mount, devices []specs.LinuxDevice, root string) ([]specs.Mount, error) {
+
+	for _, device := range devices {
+		var deviceMount specs.Mount
+		deviceMount.Destination = device.Path
+		deviceMount.Type = "bind"
+		deviceMount.Source = device.Path
+		deviceMount.Options = []string{"rbind", "rprivate"}
+		mounts = append(mounts, deviceMount)
+	}
 	cleanMounts := make([]specs.Mount, 0, len(mounts))
 	for _, m := range mounts {
 		if !specutils.IsGoferMount(m, conf.VFS2) {
@@ -571,4 +622,125 @@ func adjustMountOptions(conf *config.Config, path string, opts []string) ([]stri
 		rv = append(rv, "overlayfs_stale_read")
 	}
 	return rv, nil
+}
+
+// DNJP - device mount changes
+// DNJP - Create the device nodes in the container.
+func createDevices(root string, specdevices []specs.LinuxDevice) error {
+	oldMask := unix.Umask(0o000)
+	linuxdevices := convertSpectoRuncDevices(specdevices)
+	for _, node := range linuxdevices {
+		log.Debugf("custom-latest~createDevices : %#v,major:%v,monir:%v", node.Path, node.Major, node.Minor)
+
+		// The /dev/ptmx device is setup by setupPtmx()
+		if CleanPath(node.Path) == "/dev/ptmx" {
+			continue
+		}
+
+		// containers running in a user namespace are not allowed to mknod
+		// devices so we can just bind mount it from the host.
+		if err := createDeviceNode(root, &node, false); err != nil {
+			unix.Umask(oldMask)
+			return err
+		}
+
+		// if err := dev.Accessor.CreateDeviceFile(context.Context, "fuse", vfs.CharDevice, node.Major, node.Minor, 0666 /* mode */); err != nil {
+		// 	return err
+		// }
+	}
+	unix.Umask(oldMask)
+	return nil
+}
+
+func convertSpectoRuncDevices(specdevices []specs.LinuxDevice) []devices.Device {
+	var linuxdevices []devices.Device
+	for _, device := range specdevices {
+		var linuxdevice devices.Device
+		log.Debugf("custom-Device info:major:%v,minor:%v,path:%v", device.Major, device.Minor, device.Path)
+		linuxdevice.Path = device.Path
+		linuxdevice.Type = 'c'
+		linuxdevice.Gid = *device.GID
+		linuxdevice.Uid = *device.UID
+		linuxdevice.Major = device.Major
+		linuxdevice.Minor = device.Minor
+		linuxdevice.FileMode = *device.FileMode
+		linuxdevice.Rule.Allow = true
+		linuxdevice.Rule.Major = device.Major
+		linuxdevice.Rule.Minor = device.Minor
+		linuxdevice.Rule.Type = 'c'
+		linuxdevices = append(linuxdevices, linuxdevice)
+
+	}
+	log.Debugf("custom-final Device:%+v", linuxdevices)
+	return linuxdevices
+}
+
+// DNJP - Creates the device node in the rootfs of the container.
+func createDeviceNode(rootfs string, node *devices.Device, bind bool) error {
+	log.Debugf("custom-latest~createDeviceNode : %#v %#v", rootfs, node)
+	if node.Path == "" {
+		// The node only exists for cgroup reasons, ignore it here.
+		return nil
+	}
+	dest, err := securejoin.SecureJoin(rootfs, node.Path)
+	if err != nil {
+		return err
+	}
+	log.Debugf("custom-latest~createDeviceNode : %#v", dest)
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return err
+	}
+	err = mknodDevice(dest, node)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func mknodDevice(dest string, node *devices.Device) error {
+	fileMode := node.FileMode
+	switch node.Type {
+	// case devices.BlockDevice:
+	// 	fileMode |= unix.S_IFBLK
+	case devices.CharDevice:
+		fileMode |= unix.S_IFCHR
+		log.Debugf("custom-latest~mknodDevice charector device: %#v", fileMode)
+	// case devices.FifoDevice:
+	// 	fileMode |= unix.S_IFIFO
+	default:
+		return fmt.Errorf("%c is not a valid device type for device %s", node.Type, node.Path)
+	}
+	dev, err := node.Mkdev()
+	if err != nil {
+		return err
+	}
+	log.Debugf("custom-latest~mknodDevice : %#v", dev)
+	if err := unix.Mknod(dest, uint32(fileMode), int(dev)); err != nil {
+		return &os.PathError{Op: "mknod", Path: dest, Err: err}
+	}
+	return os.Chown(dest, int(node.Uid), int(node.Gid))
+}
+
+func CleanPath(path string) string {
+	// Deal with empty strings nicely.
+	if path == "" {
+		return ""
+	}
+
+	// Ensure that all paths are cleaned (especially problematic ones like
+	// "/../../../../../" which can cause lots of issues).
+	path = filepath.Clean(path)
+
+	// If the path isn't absolute, we need to do more processing to fix paths
+	// such as "../../../../<etc>/some/path". We also shouldn't convert absolute
+	// paths to relative ones.
+	if !filepath.IsAbs(path) {
+		path = filepath.Clean(string(os.PathSeparator) + path)
+		// This can't fail, as (by definition) all paths are relative to root.
+		path, _ = filepath.Rel(string(os.PathSeparator), path)
+	}
+
+	// Clean the path again for good measure.
+	return filepath.Clean(path)
 }

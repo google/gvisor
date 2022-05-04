@@ -50,7 +50,7 @@ const cgroupParentAnnotation = "dev.gvisor.spec.cgroup-parent"
 // validateID validates the container id.
 func validateID(id string) error {
 	// See libcontainer/factory_linux.go.
-	idRegex := regexp.MustCompile(`^[\w+\.-]+$`)
+	idRegex := regexp.MustCompile(`^[\w+-\.]+$`)
 	if !idRegex.MatchString(id) {
 		return fmt.Errorf("invalid container id: %v", id)
 	}
@@ -943,6 +943,16 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 		}
 	}
 
+	// DNJP - Add root device and then add any other additional mounts.
+	for _, d := range spec.Linux.Devices {
+		log.Debugf("custom-specs path :%v", d.Path)
+		if specutils.IsSupportedDevice(d, conf.VFS2) {
+			mountCount++
+			log.Debugf("custom-mountcount", mountCount)
+		}
+	}
+	log.Debugf("custom-Total mountcount :%v", mountCount)
+
 	sandEnds := make([]*os.File, 0, mountCount)
 	for i := 0; i < mountCount; i++ {
 		fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
@@ -1279,7 +1289,7 @@ func (c *Container) setupCgroupForSubcontainer(conf *config.Config, spec *specs.
 func cgroupInstall(conf *config.Config, cg cgroup.Cgroup, res *specs.LinuxResources) (cgroup.Cgroup, error) {
 	if err := cg.Install(res); err != nil {
 		switch {
-		case (errors.Is(err, unix.EACCES) || errors.Is(err, unix.EROFS)) && conf.Rootless:
+		case errors.Is(err, unix.EACCES) && conf.Rootless:
 			log.Warningf("Skipping cgroup configuration in rootless mode: %v", err)
 			return nil, nil
 		default:

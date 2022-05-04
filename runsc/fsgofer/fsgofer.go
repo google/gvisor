@@ -332,7 +332,7 @@ func openAnyFile(pathDebug string, fn func(mode int) (*fd.FD, error)) (*fd.FD, b
 
 func checkSupportedFileType(mode uint32, permitSocket bool) error {
 	switch mode & unix.S_IFMT {
-	case unix.S_IFREG, unix.S_IFDIR, unix.S_IFLNK:
+	case unix.S_IFREG, unix.S_IFDIR, unix.S_IFLNK, unix.S_IFCHR:
 		return nil
 
 	case unix.S_IFSOCK:
@@ -348,8 +348,10 @@ func checkSupportedFileType(mode uint32, permitSocket bool) error {
 
 func newLocalFile(a *attachPoint, file *fd.FD, path string, readable bool, stat *unix.Stat_t) (*localFile, error) {
 	if err := checkSupportedFileType(stat.Mode, a.conf.HostUDS); err != nil {
+		log.Infof("FOO file type: %d (%#x): %v", stat.Mode&unix.S_IFMT, stat.Mode&unix.S_IFMT, err)
 		return nil, err
 	}
+	log.Infof("FOO file type: %d (%#x): supported", stat.Mode&unix.S_IFMT, stat.Mode&unix.S_IFMT)
 
 	return &localFile{
 		attachPoint:     a,
@@ -362,25 +364,34 @@ func newLocalFile(a *attachPoint, file *fd.FD, path string, readable bool, stat 
 	}, nil
 }
 
-// newFDMaybe creates a fd.FD from a file, dup'ing the FD and setting it as
-// non-blocking. If anything fails, returns nil. It's better to have a file
-// without host FD, than to fail the operation.
+// newFDMaybe is the same as newFD, but returns nil if anything fails. It's
+// better to have a file without host FD, than to fail the operation.
 func newFDMaybe(file *fd.FD) *fd.FD {
+	fd, err := newFD(file)
+	if err != nil {
+		return nil
+	}
+	return fd
+}
+
+// newFD creates a fd.FD from a file, dup'ing the FD and setting it as
+// non-blocking.
+func newFD(file *fd.FD) (*fd.FD, error) {
 	dupFD, err := unix.Dup(file.FD())
 	// Technically, the runtime may call the finalizer on file as soon as
 	// FD() returns.
 	runtime.KeepAlive(file)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	dup := fd.New(dupFD)
 
 	// fd is blocking; non-blocking is required.
 	if err := unix.SetNonblock(dup.FD(), true); err != nil {
 		_ = dup.Close()
-		return nil
+		return nil, err
 	}
-	return dup
+	return dup, nil
 }
 
 func fstat(fd int) (unix.Stat_t, error) {
@@ -443,9 +454,20 @@ func (l *localFile) Open(flags p9.OpenFlags) (*fd.FD, p9.QID, uint32, error) {
 	}
 
 	var fd *fd.FD
-	if l.fileType == unix.S_IFREG {
-		// Donate FD for regular files only.
+	switch l.fileType {
+	case unix.S_IFREG:
+		// Best effort to donate file to the Sentry (for perfomance only).
 		fd = newFDMaybe(newFile)
+
+	case unix.S_IFCHR:
+		// Character devices can block indefinitely, which is not allowed for gofer
+		// operations. Ensure that is donates an back to the sentry, so it can wait
+		// on the FD when read/write returns EWOULDBLOCK.
+		var err error
+		fd, err = newFD(newFile)
+		if err != nil {
+			return nil, p9.QID{}, 0, extractErrno(err)
+		}
 	}
 
 	// Close old file in case a new one was created.

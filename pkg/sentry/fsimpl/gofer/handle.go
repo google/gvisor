@@ -120,20 +120,25 @@ func (h *handle) close(ctx context.Context) {
 }
 
 func (h *handle) readToBlocksAt(ctx context.Context, dsts safemem.BlockSeq, offset uint64) (uint64, error) {
+	log.Infof("FOO readToBlocksAt, fd: %d", h.fd)
 	if dsts.IsEmpty() {
+		log.Infof("FOO readToBlocksAt done (empty)! fd: %d", h.fd)
 		return 0, nil
 	}
 	if h.fd >= 0 {
 		ctx.UninterruptibleSleepStart(false)
 		n, err := hostfd.Preadv2(h.fd, dsts, int64(offset), 0 /* flags */)
 		ctx.UninterruptibleSleepFinish(false)
+		log.Infof("FOO readToBlocksAt done (1)! fd: %d, read: %d, err: %v", h.fd, n, err)
 		return n, err
 	}
 	if dsts.NumBlocks() == 1 && !dsts.Head().NeedSafecopy() {
 		if h.fdLisa.Client() != nil {
 			return h.fdLisa.Read(ctx, dsts.Head().ToSlice(), offset)
 		}
-		return h.file.readAt(ctx, dsts.Head().ToSlice(), offset)
+		n, err := h.file.readAt(ctx, dsts.Head().ToSlice(), offset)
+		log.Infof("FOO readToBlocksAt done (2)! fd: %d, read: %d, err: %v", h.fd, n, err)
+		return n, err
 	}
 	// Buffer the read since p9.File.ReadAt() takes []byte.
 	buf := make([]byte, dsts.NumBytes())
@@ -145,11 +150,14 @@ func (h *handle) readToBlocksAt(ctx context.Context, dsts safemem.BlockSeq, offs
 		n, err = h.file.readAt(ctx, buf, offset)
 	}
 	if n == 0 {
+		log.Infof("FOO readToBlocksAt done (3)! fd: %d, read: %d, err: %v", h.fd, 0, err)
 		return 0, err
 	}
 	if cp, cperr := safemem.CopySeq(dsts, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf[:n]))); cperr != nil {
+		log.Infof("FOO readToBlocksAt done (4)! fd: %d, read: %d, err: %v", h.fd, cp, err)
 		return cp, cperr
 	}
+	log.Infof("FOO readToBlocksAt done (5)! fd: %d, read: %d, err: %v", h.fd, n, err)
 	return n, err
 }
 
