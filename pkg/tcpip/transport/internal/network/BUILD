@@ -17,9 +17,11 @@ go_library(
         "//pkg/atomicbitops",
         "//pkg/sync",
         "//pkg/tcpip",
+        "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
         "//pkg/tcpip/transport",
+        "//pkg/waiter",
     ],
 )
 
@@ -44,6 +46,7 @@ go_test(
         "//pkg/tcpip/testutil",
         "//pkg/tcpip/transport",
         "//pkg/tcpip/transport/udp",
+        "//pkg/waiter",
         "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )
