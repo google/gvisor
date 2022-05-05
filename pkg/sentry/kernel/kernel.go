@@ -950,6 +950,9 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 	if VFS2Enabled {
 		mntnsVFS2 = args.MountNamespaceVFS2
 		if mntnsVFS2 == nil {
+			if k.globalInit == nil {
+				return nil, 0, fmt.Errorf("mount namespace is nil")
+			}
 			// Add a reference to the namespace, which is transferred to the new process.
 			mntnsVFS2 = k.globalInit.Leader().MountNamespaceVFS2()
 			mntnsVFS2.IncRef()
@@ -983,6 +986,9 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 	} else {
 		mntns = args.MountNamespace
 		if mntns == nil {
+			if k.globalInit == nil {
+				return nil, 0, fmt.Errorf("mount namespace is nil")
+			}
 			mntns = k.GlobalInit().Leader().MountNamespace()
 			mntns.IncRef()
 		}
@@ -1100,9 +1106,6 @@ func (k *Kernel) Start() error {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
 
-	if k.globalInit == nil {
-		return fmt.Errorf("kernel contains no tasks")
-	}
 	if k.started {
 		return fmt.Errorf("kernel already started")
 	}
