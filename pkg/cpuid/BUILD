@@ -17,7 +17,6 @@ go_library(
     ],
     visibility = ["//:sandbox"],
     deps = [
-        "//pkg/context",
         "//pkg/log",
     ],
 )
