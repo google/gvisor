@@ -1375,7 +1375,7 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 	s := first
 	for s != nil {
 		var n int
-		n, err = s.data.ReadTo(dst, opts.Peek)
+		n, err = s.ReadTo(dst, opts.Peek)
 		// Book keeping first then error handling.
 
 		done += n
@@ -1475,7 +1475,7 @@ func (e *endpoint) commitRead(done int) *segment {
 	e.rcvQueueInfo.rcvQueueMu.Lock()
 	memDelta := 0
 	s := e.rcvQueueInfo.rcvQueue.Front()
-	for s != nil && s.data.Size() == 0 {
+	for s != nil && s.payloadSize() == 0 {
 		e.rcvQueueInfo.rcvQueue.Remove(s)
 		// Memory is only considered released when the whole segment has been
 		// read.
