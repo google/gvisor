@@ -151,27 +151,14 @@ type PendingRoute struct {
 	expiration tcpip.MonotonicTime
 }
 
+func (p *PendingRoute) releasePackets() {
+	for _, pkt := range p.packets {
+		pkt.DecRef()
+	}
+}
+
 func (p *PendingRoute) isExpired(currentTime tcpip.MonotonicTime) bool {
 	return currentTime.After(p.expiration)
-}
-
-// Dequeue removes the first element in the queue and returns it.
-//
-// If the queue is empty, then an error will be returned.
-func (p *PendingRoute) Dequeue() (*stack.PacketBuffer, error) {
-	if len(p.packets) == 0 {
-		return nil, errors.New("dequeue called on queue empty")
-	}
-	val := p.packets[0]
-	p.packets[0] = nil
-	p.packets = p.packets[1:]
-	return val, nil
-}
-
-// IsEmpty returns true if the queue contains no more elements. Otherwise,
-// returns false.
-func (p *PendingRoute) IsEmpty() bool {
-	return len(p.packets) == 0
 }
 
 const (
@@ -248,6 +235,24 @@ func (r *RouteTable) Init(config Config) error {
 	return nil
 }
 
+// Close cleans up resources held by the table.
+//
+// Calling this will stop the cleanup routine and release any packets owned by
+// the table.
+func (r *RouteTable) Close() {
+	if r.cleanupPendingRoutesTimer != nil {
+		r.cleanupPendingRoutesTimer.Stop()
+	}
+
+	r.pendingMu.Lock()
+	defer r.pendingMu.Unlock()
+
+	for key, route := range r.pendingRoutes {
+		delete(r.pendingRoutes, key)
+		route.releasePackets()
+	}
+}
+
 func (r *RouteTable) cleanupPendingRoutes() {
 	currentTime := r.config.Clock.NowMonotonic()
 	r.pendingMu.Lock()
@@ -256,6 +261,7 @@ func (r *RouteTable) cleanupPendingRoutes() {
 	for key, route := range r.pendingRoutes {
 		if route.isExpired(currentTime) {
 			delete(r.pendingRoutes, key)
+			route.releasePackets()
 		}
 	}
 	r.cleanupPendingRoutesTimer.Reset(DefaultCleanupInterval)
@@ -324,9 +330,9 @@ func (e PendingRouteState) String() string {
 // GetRouteOrInsertPending attempts to fetch the installed route that matches
 // the provided key.
 //
-// If no matching installed route is found, then the pkt is queued in a
-// pending route. The GetRouteResult.PendingRouteState will indicate whether
-// the pkt was queued in a new pending route or an existing one.
+// If no matching installed route is found, then the pkt is cloned and queued
+// in a pending route. The GetRouteResult.PendingRouteState will indicate
+// whether the pkt was queued in a new pending route or an existing one.
 //
 // If the relevant pending route queue is at max capacity, then
 // ErrNoBufferSpace is returned. In such a case, callers are typically expected
@@ -349,7 +355,7 @@ func (r *RouteTable) GetRouteOrInsertPending(key RouteKey, pkt *stack.PacketBuff
 		// https://github.com/torvalds/linux/blob/ae085d7f936/net/ipv4/ipmr.c#L1147
 		return GetRouteResult{}, ErrNoBufferSpace
 	}
-	pendingRoute.packets = append(pendingRoute.packets, pkt)
+	pendingRoute.packets = append(pendingRoute.packets, pkt.Clone())
 	r.pendingRoutes[key] = pendingRoute
 
 	return GetRouteResult{PendingRouteState: pendingRouteState, InstalledRoute: nil}, nil
@@ -365,13 +371,11 @@ func (r *RouteTable) getOrCreatePendingRouteRLocked(key RouteKey) (PendingRoute,
 
 // AddInstalledRoute adds the provided route to the table.
 //
-// Returns true if the route was previously in the pending state. Otherwise,
-// returns false.
-//
-// If the route was previously pending, then the caller is responsible for
-// flushing the returned pending route packet queue. Conversely, if the route
-// was not pending, then any existing installed route will be overwritten.
-func (r *RouteTable) AddInstalledRoute(key RouteKey, route *InstalledRoute) (PendingRoute, bool) {
+// Packets that were queued while the route was in the pending state are
+// returned. The caller assumes ownership of these packets and is responsible
+// for forwarding and relasing them. If an installed route already exists for
+// the provided key, then it is overwritten.
+func (r *RouteTable) AddInstalledRoute(key RouteKey, route *InstalledRoute) []*stack.PacketBuffer {
 	r.installedMu.Lock()
 	defer r.installedMu.Unlock()
 	r.installedRoutes[key] = route
@@ -384,9 +388,11 @@ func (r *RouteTable) AddInstalledRoute(key RouteKey, route *InstalledRoute) (Pen
 	// Ignore the pending route if it is expired. It may be in this state since
 	// the cleanup process is only run periodically.
 	if !ok || pendingRoute.isExpired(r.config.Clock.NowMonotonic()) {
-		return PendingRoute{}, false
+		pendingRoute.releasePackets()
+		return nil
 	}
-	return pendingRoute, true
+
+	return pendingRoute.packets
 }
 
 // RemoveInstalledRoute deletes any installed route that matches the provided

@@ -118,6 +118,7 @@ func TestInit(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			table := RouteTable{}
+			defer table.Close()
 			err := table.Init(tc.config)
 
 			if tc.invokeTwice {
@@ -133,6 +134,7 @@ func TestInit(t *testing.T) {
 
 func TestNewInstalledRoute(t *testing.T) {
 	table := RouteTable{}
+	defer table.Close()
 	clock := faketime.NewManualClock()
 	clock.Advance(5 * time.Second)
 
@@ -151,6 +153,7 @@ func TestNewInstalledRoute(t *testing.T) {
 
 func TestPendingRouteStates(t *testing.T) {
 	table := RouteTable{}
+	defer table.Close()
 	config := defaultConfig(withMaxPendingQueueSize(2))
 	if err := table.Init(config); err != nil {
 		t.Fatalf("table.Init(%#v): %s", config, err)
@@ -213,6 +216,7 @@ func TestPendingRouteExpiration(t *testing.T) {
 			clock := faketime.NewManualClock()
 
 			table := RouteTable{}
+			defer table.Close()
 			config := defaultConfig(withClock(clock))
 
 			if err := table.Init(config); err != nil {
@@ -242,15 +246,24 @@ func TestAddInstalledRouteWithPending(t *testing.T) {
 	pkt := newPacketBuffer("foo")
 	defer pkt.DecRef()
 
+	cmpOpts := []cmp.Option{
+		cmp.Transformer("AsViews", func(pkt *stack.PacketBuffer) []buffer.View {
+			return pkt.Views()
+		}),
+		cmp.Comparer(func(a []buffer.View, b []buffer.View) bool {
+			return cmp.Equal(a, b)
+		}),
+	}
+
 	testCases := []struct {
 		name    string
 		advance time.Duration
-		want    *stack.PacketBuffer
+		want    []*stack.PacketBuffer
 	}{
 		{
 			name:    "not expired",
 			advance: DefaultPendingRouteExpiration,
-			want:    pkt,
+			want:    []*stack.PacketBuffer{pkt},
 		},
 		{
 			name:    "expired",
@@ -264,6 +277,7 @@ func TestAddInstalledRouteWithPending(t *testing.T) {
 			clock := faketime.NewManualClock()
 
 			table := RouteTable{}
+			defer table.Close()
 			config := defaultConfig(withClock(clock))
 
 			if err := table.Init(config); err != nil {
@@ -279,26 +293,14 @@ func TestAddInstalledRouteWithPending(t *testing.T) {
 			clock.Advance(test.advance)
 
 			route := table.NewInstalledRoute(inputNICID, defaultOutgoingInterfaces)
-			pendingRoute, wasPending := table.AddInstalledRoute(defaultRouteKey, route)
+			pendingPackets := table.AddInstalledRoute(defaultRouteKey, route)
 
-			if test.want == nil {
-				if wasPending {
-					t.Errorf("got table.AddInstalledRoute(%#v, %#v) = (%#v, true), want = (_, false)", defaultRouteKey, route, pendingRoute)
-				}
-			} else {
-				if !wasPending {
-					t.Fatalf("got table.AddInstalledRoute(%#v, %#v) = (nil, false), want = (_, true)", defaultRouteKey, route)
-				}
+			if diff := cmp.Diff(test.want, pendingPackets, cmpOpts...); diff != "" {
+				t.Errorf("tableAddInstalledRoute(%#v, %#v) mismatch (-want +got):\n%s", defaultRouteKey, route, diff)
+			}
 
-				pkt, err := pendingRoute.Dequeue()
-
-				if err != nil {
-					t.Fatalf("got pendingRoute.Dequeue() = (_, %v), want = (_, nil)", err)
-				}
-
-				if !cmp.Equal(test.want.Views(), pkt.Views()) {
-					t.Errorf("got pkt = %v, want = %v", pkt.Views(), test.want.Views())
-				}
+			for _, pendingPkt := range pendingPackets {
+				pendingPkt.DecRef()
 			}
 
 			// Verify that the pending route is actually deleted.
@@ -313,6 +315,7 @@ func TestAddInstalledRouteWithPending(t *testing.T) {
 
 func TestAddInstalledRouteWithNoPending(t *testing.T) {
 	table := RouteTable{}
+	defer table.Close()
 	config := defaultConfig()
 	if err := table.Init(config); err != nil {
 		t.Fatalf("table.Init(%#v): %s", config, err)
@@ -324,8 +327,8 @@ func TestAddInstalledRouteWithNoPending(t *testing.T) {
 	pkt := newPacketBuffer("hello")
 	defer pkt.DecRef()
 	for _, route := range [...]*InstalledRoute{firstRoute, secondRoute} {
-		if pendingRoute, wasPending := table.AddInstalledRoute(defaultRouteKey, route); wasPending {
-			t.Errorf("got table.AddInstalledRoute(%#v, %#v) = (%#v, true), want = (_, false)", defaultRouteKey, route, pendingRoute)
+		if pendingPackets := table.AddInstalledRoute(defaultRouteKey, route); pendingPackets != nil {
+			t.Errorf("got table.AddInstalledRoute(%#v, %#v) = %#v, want = false", defaultRouteKey, route, pendingPackets)
 		}
 
 		// AddInstalledRoute is invoked for the same routeKey two times. Verify
@@ -349,6 +352,7 @@ func TestAddInstalledRouteWithNoPending(t *testing.T) {
 
 func TestRemoveInstalledRoute(t *testing.T) {
 	table := RouteTable{}
+	defer table.Close()
 	config := defaultConfig()
 	if err := table.Init(config); err != nil {
 		t.Fatalf("table.Init(%#v): %s", config, err)
@@ -378,6 +382,7 @@ func TestRemoveInstalledRoute(t *testing.T) {
 
 func TestRemoveInstalledRouteWithNoMatchingRoute(t *testing.T) {
 	table := RouteTable{}
+	defer table.Close()
 	config := defaultConfig()
 	if err := table.Init(config); err != nil {
 		t.Fatalf("table.Init(%#v): %s", config, err)
@@ -390,6 +395,7 @@ func TestRemoveInstalledRouteWithNoMatchingRoute(t *testing.T) {
 
 func TestGetLastUsedTimestampWithNoMatchingRoute(t *testing.T) {
 	table := RouteTable{}
+	defer table.Close()
 	config := defaultConfig()
 	if err := table.Init(config); err != nil {
 		t.Fatalf("table.Init(%#v): %s", config, err)
@@ -427,6 +433,7 @@ func TestSetLastUsedTimestamp(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			table := RouteTable{}
+			defer table.Close()
 			config := defaultConfig(withClock(clock))
 			if err := table.Init(config); err != nil {
 				t.Fatalf("table.Init(%#v): %s", config, err)
