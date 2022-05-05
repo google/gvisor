@@ -50,6 +50,7 @@ func Example() {
 
 	// Create a route table from a specified config.
 	table := multicast.RouteTable{}
+	defer table.Close()
 	config := multicast.DefaultConfig(clock)
 
 	if err := table.Init(config); err != nil {
@@ -86,20 +87,13 @@ func Example() {
 
 	// To transition a pending route to the installed state, call:
 	route := table.NewInstalledRoute(inputNICID, defaultOutgoingInterfaces)
-	pendingRoute, ok := table.AddInstalledRoute(routeKey, route)
-
-	if !ok {
-		return
-	}
+	pendingPackets := table.AddInstalledRoute(routeKey, route)
 
 	// If there was a pending route, then the caller is responsible for
 	// flushing any pending packets.
-	for !pendingRoute.IsEmpty() {
-		pkt, err := pendingRoute.Dequeue()
-		if err != nil {
-			panic(fmt.Sprintf("pendingRoute.Dequeue() = (_, %s)", err))
-		}
+	for _, pkt := range pendingPackets {
 		forwardPkt(pkt, route)
+		pkt.DecRef()
 	}
 
 	// To obtain the last used time of the route, call:
