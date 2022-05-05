@@ -11,11 +11,22 @@ go_library(
         "aligned_64bit.go",
         "atomicbitops.go",
         "atomicbitops_amd64.s",
+        "atomicbitops_arm64.go",
         "atomicbitops_arm64.s",
         "atomicbitops_noasm.go",
     ],
     visibility = ["//:sandbox"],
-    deps = ["//pkg/sync"],
+    deps = [
+        "//pkg/cpuid",
+        "//pkg/sync",
+    ],
+)
+
+go_test(
+    name = "atomicbitops_benchmark_test",
+    size = "small",
+    srcs = ["atomicbitops_benchmark_test.go"],
+    library = ":atomicbitops",
 )
 
 go_test(

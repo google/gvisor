@@ -30,8 +30,6 @@ package cpuid
 import (
 	"fmt"
 	"strings"
-
-	"gvisor.dev/gvisor/pkg/context"
 )
 
 // contextID is the package for context.Context.Value keys.
@@ -42,8 +40,13 @@ const (
 	CtxFeatureSet contextID = iota
 )
 
+// context represents context.Context.
+type context interface {
+	Value(key interface{}) interface{}
+}
+
 // FromContext returns the FeatureSet from the context, if available.
-func FromContext(ctx context.Context) FeatureSet {
+func FromContext(ctx context) FeatureSet {
 	v := ctx.Value(CtxFeatureSet)
 	if v == nil {
 		return FeatureSet{} // Panics if used.
