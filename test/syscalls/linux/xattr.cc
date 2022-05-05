@@ -613,18 +613,23 @@ TEST_F(XattrTest, XattrWithOPath) {
   const char name[] = "user.test";
   int val = 1234;
   size_t size = sizeof(val);
-  EXPECT_THAT(fsetxattr(fd.get(), name, &val, size, /*flags=*/0),
+
+  // Bionic's implementations of f*xattr() use *xattr() when O_PATH is set
+  // to circumvent the behavior this is testing for.
+  // Use syscall() here to avoid running through Bionic on Android.
+  EXPECT_THAT(syscall(SYS_fsetxattr, fd.get(), name, &val, size, /*flags=*/0),
               SyscallFailsWithErrno(EBADF));
 
   int buf;
-  EXPECT_THAT(fgetxattr(fd.get(), name, &buf, size),
+  EXPECT_THAT(syscall(SYS_fgetxattr, fd.get(), name, &buf, size),
               SyscallFailsWithErrno(EBADF));
 
   char list[sizeof(name)];
-  EXPECT_THAT(flistxattr(fd.get(), list, sizeof(list)),
+  EXPECT_THAT(syscall(SYS_flistxattr, fd.get(), list, sizeof(list)),
               SyscallFailsWithErrno(EBADF));
 
-  EXPECT_THAT(fremovexattr(fd.get(), name), SyscallFailsWithErrno(EBADF));
+  EXPECT_THAT(syscall(SYS_fremovexattr, fd.get(), name),
+              SyscallFailsWithErrno(EBADF));
 }
 
 TEST_F(XattrTest, TrustedNamespaceWithCapSysAdmin) {
