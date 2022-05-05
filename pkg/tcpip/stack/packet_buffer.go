@@ -53,6 +53,10 @@ type PacketBufferOptions struct {
 	// IsForwardedPacket identifies that the PacketBuffer being created is for a
 	// forwarded packet.
 	IsForwardedPacket bool
+
+	// OnRelease is a function to be run when the packet buffer is no longer
+	// referenced (released back to the pool).
+	OnRelease func()
 }
 
 // A PacketBuffer contains all the data of a network packet.
@@ -163,6 +167,10 @@ type PacketBuffer struct {
 	NetworkPacketInfo NetworkPacketInfo
 
 	tuple *tuple
+
+	// onRelease is a function to be run when the packet buffer is no longer
+	// referenced (released back to the pool).
+	onRelease func() `state:"nosave"`
 }
 
 // NewPacketBuffer creates a new PacketBuffer with opts.
@@ -177,6 +185,7 @@ func NewPacketBuffer(opts PacketBufferOptions) *PacketBuffer {
 		pk.buf.AppendOwned(v)
 	}
 	pk.NetworkPacketInfo.IsForwardedPacket = opts.IsForwardedPacket
+	pk.onRelease = opts.OnRelease
 	pk.InitRefs()
 	return pk
 }
@@ -186,6 +195,10 @@ func NewPacketBuffer(opts PacketBufferOptions) *PacketBuffer {
 // pool.
 func (pk *PacketBuffer) DecRef() {
 	pk.packetBufferRefs.DecRef(func() {
+		if pk.onRelease != nil {
+			pk.onRelease()
+		}
+
 		pkPool.Put(pk)
 	})
 }

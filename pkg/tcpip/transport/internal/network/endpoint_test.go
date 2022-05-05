@@ -36,6 +36,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/internal/network"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 var (
@@ -150,7 +151,8 @@ func TestEndpointStateTransitions(t *testing.T) {
 
 			var ops tcpip.SocketOptions
 			var ep network.Endpoint
-			ep.Init(s, test.netProto, udp.ProtocolNumber, &ops)
+			var wq waiter.Queue
+			ep.Init(s, test.netProto, udp.ProtocolNumber, &ops, &wq)
 			defer ep.Close()
 			if state := ep.State(); state != transport.DatagramEndpointStateInitial {
 				t.Fatalf("got ep.State() = %s, want = %s", state, transport.DatagramEndpointStateInitial)
@@ -289,7 +291,8 @@ func TestBindNICID(t *testing.T) {
 
 					var ops tcpip.SocketOptions
 					var ep network.Endpoint
-					ep.Init(s, test.netProto, udp.ProtocolNumber, &ops)
+					var wq waiter.Queue
+					ep.Init(s, test.netProto, udp.ProtocolNumber, &ops, &wq)
 					defer ep.Close()
 					if ep.WasBound() {
 						t.Fatal("got ep.WasBound() = true, want = false")
