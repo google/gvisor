@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/transport"
@@ -131,8 +132,9 @@ func TestStateUpdates(t *testing.T) {
 }
 
 type mockEndpoint struct {
-	disp stack.NetworkDispatcher
-	pkts stack.PacketBufferList
+	disp     stack.NetworkDispatcher
+	pkts     stack.PacketBufferList
+	writeErr tcpip.Error
 }
 
 func (*mockEndpoint) MTU() uint32 {
@@ -149,6 +151,10 @@ func (*mockEndpoint) LinkAddress() tcpip.LinkAddress {
 	return l
 }
 func (e *mockEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
+	if e.writeErr != nil {
+		return 0, e.writeErr
+	}
+
 	pkts.IncRef()
 	len := pkts.Len()
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
@@ -345,6 +351,146 @@ func TestSndBuf(t *testing.T) {
 			e.releasePackets()
 			checkWritableEvent()
 			checkWrites()
+		})
+	}
+}
+
+func TestDeviceReturnErrNoBufferSpace(t *testing.T) {
+	const nicID = 1
+
+	for _, networkTest := range []struct {
+		name       string
+		netProto   tcpip.NetworkProtocolNumber
+		localAddr  tcpip.Address
+		remoteAddr tcpip.Address
+		buf        buffer.View
+	}{
+		{
+			name:       "IPv4",
+			netProto:   ipv4.ProtocolNumber,
+			localAddr:  testutil.MustParse4("1.2.3.4"),
+			remoteAddr: testutil.MustParse4("1.0.0.1"),
+			buf: func() buffer.View {
+				buf := buffer.NewView(header.ICMPv4MinimumSize)
+				header.ICMPv4(buf).SetType(header.ICMPv4Echo)
+				return buf
+			}(),
+		},
+		{
+			name:       "IPv6",
+			netProto:   ipv6.ProtocolNumber,
+			localAddr:  testutil.MustParse6("a::1"),
+			remoteAddr: testutil.MustParse6("a::2"),
+			buf: func() buffer.View {
+				buf := buffer.NewView(header.ICMPv6MinimumSize)
+				header.ICMPv6(buf).SetType(header.ICMPv6EchoRequest)
+				return buf
+			}(),
+		},
+	} {
+		t.Run(networkTest.name, func(t *testing.T) {
+			for _, test := range []struct {
+				name           string
+				createEndpoint func(*stack.Stack) (tcpip.Endpoint, error)
+			}{
+				{
+					name: "UDP",
+					createEndpoint: func(s *stack.Stack) (tcpip.Endpoint, error) {
+						ep, err := s.NewEndpoint(udp.ProtocolNumber, networkTest.netProto, &waiter.Queue{})
+						if err != nil {
+							return nil, fmt.Errorf("s.NewEndpoint(%d, %d, _) failed: %s", udp.ProtocolNumber, networkTest.netProto, err)
+						}
+						return ep, nil
+					},
+				},
+				{
+					name: "ICMP",
+					createEndpoint: func(s *stack.Stack) (tcpip.Endpoint, error) {
+						proto := icmp.ProtocolNumber4
+						if networkTest.netProto == ipv6.ProtocolNumber {
+							proto = icmp.ProtocolNumber6
+						}
+						ep, err := s.NewEndpoint(proto, networkTest.netProto, &waiter.Queue{})
+						if err != nil {
+							return nil, fmt.Errorf("s.NewEndpoint(%d, %d, _) failed: %s", proto, networkTest.netProto, err)
+						}
+						return ep, nil
+					},
+				},
+				{
+					name: "RAW",
+					createEndpoint: func(s *stack.Stack) (tcpip.Endpoint, error) {
+						ep, err := s.NewRawEndpoint(udp.ProtocolNumber, networkTest.netProto, &waiter.Queue{}, true /* associated */)
+						if err != nil {
+							return nil, fmt.Errorf("s.NewRawEndpoint(%d, %d, _, true) failed: %s", udp.ProtocolNumber, networkTest.netProto, err)
+						}
+						return ep, nil
+					},
+				},
+			} {
+				t.Run(test.name, func(t *testing.T) {
+					s := stack.New(stack.Options{
+						NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+						TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol, icmp.NewProtocol4, icmp.NewProtocol6},
+						RawFactory:         &raw.EndpointFactory{},
+					})
+					e := mockEndpoint{writeErr: &tcpip.ErrNoBufferSpace{}}
+					defer e.releasePackets()
+					if err := s.CreateNIC(nicID, &e); err != nil {
+						t.Fatalf("s.CreateNIC(%d, _) failed: %s", nicID, err)
+					}
+					ep, err := test.createEndpoint(s)
+					if err != nil {
+						t.Fatalf("test.createEndpoint(_) failed: %s", err)
+					}
+					defer ep.Close()
+
+					addr := tcpip.ProtocolAddress{
+						Protocol:          networkTest.netProto,
+						AddressWithPrefix: networkTest.localAddr.WithPrefix(),
+					}
+					if err := s.AddProtocolAddress(nicID, addr, stack.AddressProperties{}); err != nil {
+						t.Fatalf("AddProtocolAddress(%d, %#v, {}): %s", nicID, addr, err)
+					}
+					s.SetRouteTable([]tcpip.Route{
+						{
+							Destination: header.IPv4EmptySubnet,
+							NIC:         nicID,
+						},
+						{
+							Destination: header.IPv6EmptySubnet,
+							NIC:         nicID,
+						},
+					})
+
+					to := tcpip.FullAddress{NIC: nicID, Addr: networkTest.remoteAddr, Port: 12345}
+					if err := ep.Connect(to); err != nil {
+						t.Fatalf("ep.Connect(%#v): %s", to, err)
+					}
+
+					ops := ep.SocketOptions()
+					checkWrite := func(netProto tcpip.NetworkProtocolNumber) {
+						t.Helper()
+
+						var r bytes.Reader
+						r.Reset(networkTest.buf)
+						var wantErr tcpip.Error
+						if netProto == networkTest.netProto {
+							wantErr = &tcpip.ErrNoBufferSpace{}
+						}
+						if n, err := ep.Write(&r, tcpip.WriteOptions{}); err != wantErr {
+							t.Fatalf("got Write(...) = (%d, %s), want = (_, %s)", n, err, wantErr)
+						}
+					}
+
+					ops.SetIPv4RecvError(true)
+					checkWrite(ipv4.ProtocolNumber)
+
+					ops.SetIPv4RecvError(false)
+					ops.SetIPv6RecvError(true)
+					checkWrite(ipv6.ProtocolNumber)
+				})
+			}
 		})
 	}
 }
