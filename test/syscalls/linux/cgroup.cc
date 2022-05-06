@@ -549,6 +549,42 @@ TEST(Cgroup, Rename) {
   EXPECT_THAT(Exists(child.Relpath("oldname")), IsPosixErrorOkAndHolds(false));
 }
 
+TEST(Cgroup, PIDZeroMovesSelf) {
+  SKIP_IF(!CgroupsAvailable());
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child"));
+
+  // Source contains this process.
+  EXPECT_NO_ERRNO(c.ContainsCallingProcess());
+
+  // Move to child by writing PID 0.
+  ASSERT_NO_ERRNO(child.WriteIntegerControlFile("cgroup.procs", 0));
+
+  // Destination now contains this process, and source does not.
+  EXPECT_NO_ERRNO(child.ContainsCallingProcess());
+  auto procs = ASSERT_NO_ERRNO_AND_VALUE(c.Procs());
+  EXPECT_FALSE(procs.contains(getpid()));
+}
+
+TEST(Cgroup, TIDZeroMovesSelf) {
+  SKIP_IF(!CgroupsAvailable());
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child"));
+
+  // Source contains this thread.
+  EXPECT_NO_ERRNO(c.ContainsCallingThread());
+
+  // Move to child by writing TID 0.
+  ASSERT_NO_ERRNO(child.WriteIntegerControlFile("tasks", 0));
+
+  // Destination now contains this thread, and source does not.
+  EXPECT_NO_ERRNO(child.ContainsCallingThread());
+  auto tasks = ASSERT_NO_ERRNO_AND_VALUE(c.Tasks());
+  EXPECT_FALSE(tasks.contains(syscall(SYS_gettid)));
+}
+
 TEST(MemoryCgroup, MemoryUsageInBytes) {
   SKIP_IF(!CgroupsAvailable());
 
