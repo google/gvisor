@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package cmd
+// Package util groups a bunch of common helper functions used by commands.
+package util
 
 import (
 	"encoding/json"

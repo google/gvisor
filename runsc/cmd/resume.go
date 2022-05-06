@@ -18,6 +18,7 @@ import (
 	"context"
 
 	"github.com/google/subcommands"
+	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -58,11 +59,11 @@ func (r *Resume) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}
 
 	cont, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
 	if err != nil {
-		Fatalf("loading container: %v", err)
+		util.Fatalf("loading container: %v", err)
 	}
 
 	if err := cont.Resume(); err != nil {
-		Fatalf("resume failed: %v", err)
+		util.Fatalf("resume failed: %v", err)
 	}
 
 	return subcommands.ExitSuccess

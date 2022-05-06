@@ -23,6 +23,7 @@ import (
 
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/mitigate"
 )
@@ -93,22 +94,22 @@ func (m *Mitigate) Execute(_ context.Context, f *flag.FlagSet, args ...interface
 func (m *Mitigate) execute() subcommands.ExitStatus {
 	beforeSet, err := m.control.getCPUs()
 	if err != nil {
-		return Errorf("Get before CPUSet failed: %v", err)
+		return util.Errorf("Get before CPUSet failed: %v", err)
 	}
 	log.Infof("CPUs before: %s", beforeSet.String())
 
 	if err := m.doEnableDisable(beforeSet); err != nil {
-		return Errorf("Enabled/Disable action failed on %q: %v", smtPath, err)
+		return util.Errorf("Enabled/Disable action failed on %q: %v", smtPath, err)
 	}
 
 	afterSet, err := m.control.getCPUs()
 	if err != nil {
-		return Errorf("Get after CPUSet failed: %v", err)
+		return util.Errorf("Get after CPUSet failed: %v", err)
 	}
 	log.Infof("CPUs after: %s", afterSet.String())
 
 	if err = m.postMitigate(afterSet); err != nil {
-		return Errorf("Post Mitigate failed: %v", err)
+		return util.Errorf("Post Mitigate failed: %v", err)
 	}
 
 	return subcommands.ExitSuccess
