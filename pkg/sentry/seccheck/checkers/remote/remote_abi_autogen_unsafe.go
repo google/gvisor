@@ -24,7 +24,7 @@ func (h *Header) SizeBytes() int {
 func (h *Header) MarshalBytes(dst []byte) []byte {
     hostarch.ByteOrder.PutUint16(dst[:2], uint16(h.HeaderSize))
     dst = dst[2:]
-    // Padding: dst[:sizeof(uint16)] ~= uint16(0)
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(h.MessageType))
     dst = dst[2:]
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(h.DroppedCount))
     dst = dst[4:]
@@ -35,7 +35,7 @@ func (h *Header) MarshalBytes(dst []byte) []byte {
 func (h *Header) UnmarshalBytes(src []byte) []byte {
     h.HeaderSize = uint16(hostarch.ByteOrder.Uint16(src[:2]))
     src = src[2:]
-    // Padding: var _ uint16 ~= src[:sizeof(uint16)]
+    h.MessageType = uint16(hostarch.ByteOrder.Uint16(src[:2]))
     src = src[2:]
     h.DroppedCount = uint32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
