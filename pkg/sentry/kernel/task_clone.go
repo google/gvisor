@@ -245,8 +245,8 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	// nt that it must receive before its task goroutine starts running.
 	defer nt.Start()
 
-	if args.Flags&linux.CLONE_THREAD == 0 && seccheck.Global.Enabled(seccheck.PointCloneProcess) {
-		mask, info := getCloneSeccheckInfo(t, nt)
+	if seccheck.Global.Enabled(seccheck.PointClone) {
+		mask, info := getCloneSeccheckInfo(t, nt, args.Flags)
 		if err := seccheck.Global.SendToCheckers(func(c seccheck.Checker) error {
 			return c.Clone(t, mask, info)
 		}); err != nil {
@@ -307,8 +307,8 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	return ntid, nil, nil
 }
 
-func getCloneSeccheckInfo(t, nt *Task) (seccheck.FieldSet, *pb.CloneInfo) {
-	fields := seccheck.Global.GetFieldSet(seccheck.PointCloneProcess)
+func getCloneSeccheckInfo(t, nt *Task, flags uint64) (seccheck.FieldSet, *pb.CloneInfo) {
+	fields := seccheck.Global.GetFieldSet(seccheck.PointClone)
 
 	t.k.tasks.mu.RLock()
 	defer t.k.tasks.mu.RUnlock()
@@ -316,6 +316,7 @@ func getCloneSeccheckInfo(t, nt *Task) (seccheck.FieldSet, *pb.CloneInfo) {
 		CreatedThreadId:          int32(nt.k.tasks.Root.tids[nt]),
 		CreatedThreadGroupId:     int32(nt.k.tasks.Root.tgids[nt.tg]),
 		CreatedThreadStartTimeNs: nt.startTime.Nanoseconds(),
+		Flags:                    flags,
 	}
 
 	if !fields.Context.Empty() {

@@ -24,7 +24,7 @@ import (
 
 // PointX represents the checkpoint X.
 const (
-	PointCloneProcess Point = iota
+	PointClone Point = iota
 	PointContainerStart
 	PointExecve
 	PointExitNotifyParent
@@ -225,7 +225,7 @@ func init() {
 
 	// Points from the sentry namespace.
 	registerPoint(PointDesc{
-		ID:            PointCloneProcess,
+		ID:            PointClone,
 		Name:          "sentry/clone",
 		ContextFields: defaultContextFields,
 	})

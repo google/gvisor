@@ -662,12 +662,9 @@ func (t *Task) exitNotifyLocked(fromPtraceDetach bool) {
 				t.parent.tg.eventQueue.Notify(EventExit | EventChildGroupStop | EventGroupContinue)
 			}
 
-			// We don't send exit events for threads because we don't send CloneProcessStart events
-			// for threads (clone calls with CLONE_THREAD set).
-			// We also don't send exit events for the root process because we don't send
+			// We don't send exit events for the root process because we don't send
 			// Clone or Exec events for the initial process.
-			shouldSendExit := t == t.tg.leader && t.tg != t.k.globalInit
-			if seccheck.Global.Enabled(seccheck.PointExitNotifyParent) && shouldSendExit {
+			if t.tg != t.k.globalInit && seccheck.Global.Enabled(seccheck.PointExitNotifyParent) {
 				mask, info := getExitNotifyParentSeccheckInfo(t)
 				if err := seccheck.Global.SendToCheckers(func(c seccheck.Checker) error {
 					return c.ExitNotifyParent(t, mask, info)
