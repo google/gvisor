@@ -317,11 +317,33 @@ func (c *WriteContext) WritePacket(pkt *stack.PacketBuffer, headerIncluded bool)
 		return c.route.WriteHeaderIncludedPacket(pkt)
 	}
 
-	return c.route.WritePacket(stack.NetworkHeaderParams{
+	err := c.route.WritePacket(stack.NetworkHeaderParams{
 		Protocol: c.e.transProto,
 		TTL:      c.ttl,
 		TOS:      c.tos,
 	}, pkt)
+
+	if _, ok := err.(*tcpip.ErrNoBufferSpace); ok {
+		var recvErr bool
+		switch netProto := c.route.NetProto(); netProto {
+		case header.IPv4ProtocolNumber:
+			recvErr = c.e.ops.GetIPv4RecvError()
+		case header.IPv6ProtocolNumber:
+			recvErr = c.e.ops.GetIPv6RecvError()
+		default:
+			panic(fmt.Sprintf("unhandled network protocol number = %d", netProto))
+		}
+
+		// Linux only returns ENOBUFS to the caller if IP{,V6}_RECVERR is set.
+		//
+		// https://github.com/torvalds/linux/blob/3e71713c9e75c/net/ipv4/udp.c#L969
+		// https://github.com/torvalds/linux/blob/3e71713c9e75c/net/ipv6/udp.c#L1260
+		if !recvErr {
+			err = nil
+		}
+	}
+
+	return err
 }
 
 // MaybeSignalWritable signals waiters with writable events if the send buffer
