@@ -15,9 +15,9 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/atomicbitops",
+        "//pkg/buffer",
         "//pkg/sync",
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/rawfile",
         "//pkg/tcpip/stack",
@@ -31,10 +31,10 @@ go_test(
     srcs = ["endpoint_test.go"],
     library = ":fdbased",
     deps = [
+        "//pkg/buffer",
         "//pkg/refs",
         "//pkg/refsvfs2",
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
         "@com_github_google_go_cmp//cmp:go_default_library",

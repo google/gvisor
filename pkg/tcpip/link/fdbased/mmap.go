@@ -22,8 +22,8 @@ import (
 	"fmt"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/rawfile"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -186,7 +186,7 @@ func (d *packetMMapDispatcher) dispatch() (bool, tcpip.Error) {
 	}
 
 	pbuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buffer.View(pkt).ToVectorisedView(),
+		Payload: buffer.NewWithData(pkt),
 	})
 	defer pbuf.DecRef()
 	if d.e.hdrSize > 0 {

@@ -33,6 +33,19 @@ type View struct {
 	pool pool
 }
 
+// NewWithData creates a new view initialized with given data.
+func NewWithData(b []byte) View {
+	v := View{
+		size: int64(len(b)),
+	}
+	if len(b) > 0 {
+		buf := v.pool.getNoInit()
+		buf.initWithData(b)
+		v.data.PushBack(buf)
+	}
+	return v
+}
+
 // TrimFront removes the first count bytes from the buffer.
 func (v *View) TrimFront(count int64) {
 	if count >= v.size {
