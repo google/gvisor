@@ -45,3 +45,22 @@ message ContextData {
 
   string process_name = 9;
 }
+
+// MessageType describes the payload of a message sent to the remote process.
+// LINT.IfChange
+enum MessageType {
+  MESSAGE_UNKNOWN = 0;
+  MESSAGE_CONTAINER_START = 1;
+  MESSAGE_SENTRY_CLONE = 2;
+  MESSAGE_SENTRY_EXEC = 3;
+  MESSAGE_SENTRY_EXIT_NOTIFY_PARENT = 4;
+  MESSAGE_SENTRY_TASK_EXIT = 5;
+  MESSAGE_SYSCALL_RAW = 6;
+  MESSAGE_SYSCALL_OPEN = 7;
+  MESSAGE_SYSCALL_CLOSE = 8;
+  MESSAGE_SYSCALL_READ = 9;
+  MESSAGE_SYSCALL_CONNECT = 10;
+  MESSAGE_SYSCALL_EXECVE = 11;
+  MESSAGE_SYSCALL_SOCKET = 12;
+}
+// LINT.ThenChange(../../../../examples/seccheck/server.cc)

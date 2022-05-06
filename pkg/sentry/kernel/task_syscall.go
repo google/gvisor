@@ -120,11 +120,10 @@ func (t *Task) executeSyscall(sysno uintptr, args arch.SyscallArguments) (rval u
 			Sysno: sysno,
 			Args:  args,
 		}
-		// TODO(fvoznika): Make cb take a *Task instead of Context.
 		cb := t.SyscallTable().LookupSyscallToProto(sysno)
-		msg := cb(t, fields, ctxData, info)
+		msg, msgType := cb(t, fields, ctxData, info)
 		seccheck.Global.SendToCheckers(func(c seccheck.Checker) error {
-			return c.Syscall(t, fields, ctxData, msg)
+			return c.Syscall(t, fields, ctxData, msgType, msg)
 		})
 	}
 
@@ -197,9 +196,9 @@ func (t *Task) executeSyscall(sysno uintptr, args arch.SyscallArguments) (rval u
 			Rval:  rval,
 			Errno: ExtractErrno(err, int(sysno)),
 		}
-		msg := cb(t, fields, ctxData, info)
+		msg, msgType := cb(t, fields, ctxData, info)
 		seccheck.Global.SendToCheckers(func(c seccheck.Checker) error {
-			return c.Syscall(t, fields, ctxData, msg)
+			return c.Syscall(t, fields, ctxData, msgType, msg)
 		})
 	}
 

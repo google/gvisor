@@ -54,7 +54,7 @@ func getFilePath(t *kernel.Task, fd int32) string {
 }
 
 // PointOpen converts open(2) syscall to proto.
-func PointOpen(t *kernel.Task, _ seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) proto.Message {
+func PointOpen(t *kernel.Task, _ seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
 	p := &pb.Open{
 		ContextData: cxtData,
 		Sysno:       uint64(info.Sysno),
@@ -70,11 +70,11 @@ func PointOpen(t *kernel.Task, _ seccheck.FieldSet, cxtData *pb.ContextData, inf
 		}
 	}
 	p.Exit = newExitMaybe(info)
-	return p
+	return p, pb.MessageType_MESSAGE_SYSCALL_OPEN
 }
 
 // PointOpenat converts openat(2) syscall to proto.
-func PointOpenat(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) proto.Message {
+func PointOpenat(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
 	p := &pb.Open{
 		ContextData: cxtData,
 		Sysno:       uint64(info.Sysno),
@@ -99,11 +99,11 @@ func PointOpenat(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextDa
 
 	p.Exit = newExitMaybe(info)
 
-	return p
+	return p, pb.MessageType_MESSAGE_SYSCALL_OPEN
 }
 
 // PointCreat converts creat(2) syscall to proto.
-func PointCreat(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) proto.Message {
+func PointCreat(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
 	p := &pb.Open{
 		ContextData: cxtData,
 		Sysno:       uint64(info.Sysno),
@@ -126,11 +126,11 @@ func PointCreat(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextDat
 
 	p.Exit = newExitMaybe(info)
 
-	return p
+	return p, pb.MessageType_MESSAGE_SYSCALL_OPEN
 }
 
 // PointClose converts close(2) syscall to proto.
-func PointClose(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) proto.Message {
+func PointClose(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
 	p := &pb.Close{
 		ContextData: cxtData,
 		Sysno:       uint64(info.Sysno),
@@ -142,11 +142,11 @@ func PointClose(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextDat
 	}
 
 	p.Exit = newExitMaybe(info)
-	return p
+	return p, pb.MessageType_MESSAGE_SYSCALL_CLOSE
 }
 
 // PointRead converts read(2) syscall to proto.
-func PointRead(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) proto.Message {
+func PointRead(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
 	p := &pb.Read{
 		ContextData: cxtData,
 		Sysno:       uint64(info.Sysno),
@@ -159,11 +159,11 @@ func PointRead(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData
 
 	p.Exit = newExitMaybe(info)
 
-	return p
+	return p, pb.MessageType_MESSAGE_SYSCALL_READ
 }
 
 // PointSocket converts socket(2) syscall to proto.
-func PointSocket(_ *kernel.Task, _ seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) proto.Message {
+func PointSocket(_ *kernel.Task, _ seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
 	p := &pb.Socket{
 		ContextData: cxtData,
 		Sysno:       uint64(info.Sysno),
@@ -174,11 +174,11 @@ func PointSocket(_ *kernel.Task, _ seccheck.FieldSet, cxtData *pb.ContextData, i
 
 	p.Exit = newExitMaybe(info)
 
-	return p
+	return p, pb.MessageType_MESSAGE_SYSCALL_SOCKET
 }
 
 // PointConnect converts connect(2) syscall to proto.
-func PointConnect(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) proto.Message {
+func PointConnect(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
 	p := &pb.Connect{
 		ContextData: cxtData,
 		Sysno:       uint64(info.Sysno),
@@ -198,11 +198,11 @@ func PointConnect(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextD
 
 	p.Exit = newExitMaybe(info)
 
-	return p
+	return p, pb.MessageType_MESSAGE_SYSCALL_CONNECT
 }
 
 // PointExecve converts execve(2) syscall to proto.
-func PointExecve(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) proto.Message {
+func PointExecve(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
 	p := &pb.Execve{
 		ContextData: cxtData,
 		Sysno:       uint64(info.Sysno),
@@ -226,11 +226,11 @@ func PointExecve(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextDa
 
 	p.Exit = newExitMaybe(info)
 
-	return p
+	return p, pb.MessageType_MESSAGE_SYSCALL_EXECVE
 }
 
 // PointExecveat converts execveat(2) syscall to proto.
-func PointExecveat(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) proto.Message {
+func PointExecveat(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
 	p := &pb.Execve{
 		ContextData: cxtData,
 		Sysno:       uint64(info.Sysno),
@@ -259,5 +259,5 @@ func PointExecveat(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.Context
 
 	p.Exit = newExitMaybe(info)
 
-	return p
+	return p, pb.MessageType_MESSAGE_SYSCALL_EXECVE
 }

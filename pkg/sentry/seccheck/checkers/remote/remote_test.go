@@ -98,7 +98,12 @@ type server struct {
 
 	mu sync.Mutex
 	// +checklocks:mu
-	points []*anypb.Any
+	points []message
+}
+
+type message struct {
+	msgType pb.MessageType
+	msg     []byte
 }
 
 func newServer() (*server, error) {
@@ -172,9 +177,9 @@ func (s *server) handleClient(client int) {
 		}
 		hdr := Header{}
 		hdr.UnmarshalUnsafe(buf[0:headerStructSize])
-		msg := &anypb.Any{}
-		if err := proto.Unmarshal(buf[hdr.HeaderSize:read], msg); err != nil {
-			panic("invalid proto")
+		msg := message{
+			msgType: pb.MessageType(hdr.MessageType),
+			msg:     buf[hdr.HeaderSize:read],
 		}
 		s.mu.Lock()
 		s.points = append(s.points, msg)
@@ -188,10 +193,10 @@ func (s *server) count() int {
 	return len(s.points)
 }
 
-func (s *server) getPoints() []*anypb.Any {
+func (s *server) getPoints() []message {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	cpy := make([]*anypb.Any, len(s.points))
+	cpy := make([]message, len(s.points))
 	copy(cpy, s.points)
 	return cpy
 }
@@ -242,11 +247,14 @@ func TestBasic(t *testing.T) {
 	if want, got := 1, server.count(); want != got {
 		t.Errorf("wrong number of points, want: %d, got: %d", want, got)
 	}
-	any := server.getPoints()[0]
+	pt := server.getPoints()[0]
 
+	if want := pb.MessageType_MESSAGE_SENTRY_EXIT_NOTIFY_PARENT; pt.msgType != want {
+		t.Errorf("wrong message type, want: %v, got: %v", want, pt.msgType)
+	}
 	got := &pb.ExitNotifyParentInfo{}
-	if err := any.UnmarshalTo(got); err != nil {
-		t.Errorf("any.UnmarshallTo(ExitNotifyParentInfo): %v", err)
+	if err := proto.Unmarshal(pt.msg, got); err != nil {
+		t.Errorf("proto.Unmarshal(ExitNotifyParentInfo): %v", err)
 	}
 	if !proto.Equal(info, got) {
 		t.Errorf("Received point is different, want: %+v, got: %+v", info, got)
@@ -286,13 +294,20 @@ func TestExample(t *testing.T) {
 		gotRaw := server.out.String()
 		// Collapse whitespace.
 		got := strings.Join(strings.Fields(gotRaw), " ")
-		if !strings.Contains(got, "gvisor.sentry.ExitNotifyParentInfo => exit_status: 123") {
+		if !strings.Contains(got, "ExitNotifyParentInfo => exit_status: 123") {
 			return fmt.Errorf("ExitNotifyParentInfo point didn't get to the server, out: %q, raw: %q", got, gotRaw)
 		}
 		return nil
 	}
 	if err := testutil.Poll(check, time.Second); err != nil {
 		t.Errorf(err.Error())
+	}
+}
+
+func TestHeaderSize(t *testing.T) {
+	hdr := Header{}
+	if want, got := hdr.SizeBytes(), hdr.SizeBytes(); want != got {
+		t.Errorf("wrong const header size, want: %v, got: %v", want, got)
 	}
 }
 
@@ -326,6 +341,36 @@ func BenchmarkSmall(t *testing.B) {
 			info := pb.ExitNotifyParentInfo{ExitStatus: 123}
 			if err := r.ExitNotifyParent(nil, seccheck.FieldSet{}, &info); err != nil {
 				t.Fatalf("ExitNotifyParent: %v", err)
+			}
+		}
+	})
+}
+
+func BenchmarkProtoAny(t *testing.B) {
+	info := &pb.ExitNotifyParentInfo{ExitStatus: 123}
+
+	t.ResetTimer()
+	t.RunParallel(func(sub *testing.PB) {
+		for sub.Next() {
+			any, err := anypb.New(info)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := proto.Marshal(any); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+}
+
+func BenchmarkProtoEnum(t *testing.B) {
+	info := &pb.ExitNotifyParentInfo{ExitStatus: 123}
+
+	t.ResetTimer()
+	t.RunParallel(func(sub *testing.PB) {
+		for sub.Next() {
+			if _, err := proto.Marshal(info); err != nil {
+				t.Fatal(err)
 			}
 		}
 	})

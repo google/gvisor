@@ -26,16 +26,14 @@
 #include <string>
 #include <vector>
 
-#include "google/protobuf/any.pb.h"
 #include "absl/cleanup/cleanup.h"
 #include "absl/strings/string_view.h"
 #include "pkg/sentry/seccheck/points/container.pb.h"
 #include "pkg/sentry/seccheck/points/sentry.pb.h"
 #include "pkg/sentry/seccheck/points/syscall.pb.h"
 
-typedef std::function<void(const google::protobuf::Any& any)> Callback;
+typedef std::function<void(absl::string_view buf)> Callback;
 
-constexpr size_t prefixLen = sizeof("type.googleapis.com/") - 1;
 constexpr size_t maxEventSize = 300 * 1024;
 
 bool quiet = false;
@@ -43,6 +41,7 @@ bool quiet = false;
 #pragma pack(push, 1)
 struct header {
   uint16_t header_size;
+  uint16_t message_type;
   uint32_t dropped_count;
 };
 #pragma pack(pop)
@@ -57,52 +56,49 @@ void log(const char* fmt, ...) {
 }
 
 template <class T>
-void unpackSyscall(const google::protobuf::Any& any) {
+void unpackSyscall(absl::string_view buf) {
   T evt;
-  if (!any.UnpackTo(&evt)) {
-    err(1, "UnpackTo(): %s", any.DebugString().c_str());
+  if (!evt.ParseFromArray(buf.data(), buf.size())) {
+    err(1, "ParseFromString(): %.*s", static_cast<int>(buf.size()), buf.data());
   }
-  auto last_dot = any.type_url().find_last_of('.');
-  if (last_dot == std::string::npos) {
-    err(1, "invalid name: %.*s", static_cast<int>(any.type_url().size()),
-        any.type_url().data());
-  }
-  auto name = any.type_url().substr(last_dot + 1);
-  log("%s %.*s %s\n", evt.has_exit() ? "X" : "E", static_cast<int>(name.size()),
-      name.data(), evt.ShortDebugString().c_str());
-}
-
-template <class T>
-void unpack(const google::protobuf::Any& any) {
-  T evt;
-  if (!any.UnpackTo(&evt)) {
-    err(1, "UnpackTo(): %s", any.DebugString().c_str());
-  }
-  auto name = any.type_url().substr(prefixLen);
-  log("%.*s => %s\n", static_cast<int>(name.size()), name.data(),
+  log("%s %s %s\n", evt.has_exit() ? "X" : "E",
+      evt.GetMetadata().descriptor->name().c_str(),
       evt.ShortDebugString().c_str());
 }
 
-std::map<std::string, Callback> dispatchers = {
-    {"gvisor.syscall.Syscall", unpackSyscall<::gvisor::syscall::Syscall>},
-    {"gvisor.syscall.Read", unpackSyscall<::gvisor::syscall::Read>},
-    {"gvisor.syscall.Open", unpackSyscall<::gvisor::syscall::Open>},
-    {"gvisor.syscall.Connect", unpackSyscall<::gvisor::syscall::Connect>},
-    {"gvisor.syscall.Execve", unpackSyscall<::gvisor::syscall::Execve>},
-    {"gvisor.syscall.Close", unpackSyscall<::gvisor::syscall::Close>},
-    {"gvisor.syscall.Socket", unpackSyscall<::gvisor::syscall::Socket>},
-    {"gvisor.container.Start", unpack<::gvisor::container::Start>},
-    {"gvisor.sentry.CloneInfo", unpack<::gvisor::sentry::CloneInfo>},
-    {"gvisor.sentry.ExecveInfo", unpack<::gvisor::sentry::ExecveInfo>},
-    {"gvisor.sentry.ExitNotifyParentInfo",
-     unpack<::gvisor::sentry::ExitNotifyParentInfo>},
-    {"gvisor.sentry.TaskExit", unpack<::gvisor::sentry::TaskExit>},
+template <class T>
+void unpack(absl::string_view buf) {
+  T evt;
+  if (!evt.ParseFromArray(buf.data(), buf.size())) {
+    err(1, "ParseFromString(): %.*s", static_cast<int>(buf.size()), buf.data());
+  }
+  log("%s => %s\n", evt.GetMetadata().descriptor->name().c_str(),
+      evt.ShortDebugString().c_str());
+}
+
+// List of dispatchers indexed based on MessageType enum values.
+std::vector<Callback> dispatchers = {
+    nullptr,
+    unpack<::gvisor::container::Start>,
+    unpack<::gvisor::sentry::CloneInfo>,
+    unpack<::gvisor::sentry::ExecveInfo>,
+    unpack<::gvisor::sentry::ExitNotifyParentInfo>,
+    unpack<::gvisor::sentry::TaskExit>,
+    unpackSyscall<::gvisor::syscall::Syscall>,
+    unpackSyscall<::gvisor::syscall::Open>,
+    unpackSyscall<::gvisor::syscall::Close>,
+    unpackSyscall<::gvisor::syscall::Read>,
+    unpackSyscall<::gvisor::syscall::Connect>,
+    unpackSyscall<::gvisor::syscall::Execve>,
+    unpackSyscall<::gvisor::syscall::Socket>,
 };
 
-void unpack(const absl::string_view buf) {
+void unpack(absl::string_view buf) {
   const header* hdr = reinterpret_cast<const header*>(&buf[0]);
+
+  // Payload size can be zero when proto object contains only defaults values.
   size_t payload_size = buf.size() - hdr->header_size;
-  if (payload_size <= 0) {
+  if (payload_size < 0) {
     printf("Header size (%u) is larger than message %lu\n", hdr->header_size,
            buf.size());
     return;
@@ -115,23 +111,12 @@ void unpack(const absl::string_view buf) {
     return;
   }
 
-  google::protobuf::Any any;
-  if (!any.ParseFromArray(proto.data(), proto.size())) {
-    err(1, "invalid proto message");
-  }
-
-  auto url = any.type_url();
-  if (url.size() <= prefixLen) {
-    printf("Invalid URL %s\n", any.type_url().data());
+  if (hdr->message_type == 0 || hdr->message_type >= dispatchers.size()) {
+    printf("Invalid message type: %u\n", hdr->message_type);
     return;
   }
-  const std::string name(url.substr(prefixLen));
-  Callback cb = dispatchers[name];
-  if (cb == nullptr) {
-    printf("No callback registered for %s. Skipping it...\n", name.c_str());
-  } else {
-    cb(any);
-  }
+  Callback cb = dispatchers[hdr->message_type];
+  cb(proto);
 }
 
 void* pollLoop(void* ptr) {

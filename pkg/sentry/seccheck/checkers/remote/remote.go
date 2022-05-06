@@ -29,7 +29,6 @@ import (
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 
-	"google.golang.org/protobuf/types/known/anypb"
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 )
 
@@ -47,8 +46,6 @@ func init() {
 // be sent, e.g. buffer full, the point is dropped on the floor to avoid
 // delaying/hanging indefinitely the application.
 type Remote struct {
-	seccheck.CheckerDefaults
-
 	endpoint *fd.FD
 }
 
@@ -106,6 +103,10 @@ func New(_ map[string]interface{}, endpoint *fd.FD) (seccheck.Checker, error) {
 
 // Header is used to describe the message being sent to the remote process.
 //
+//   0 --------- 16 ---------- 32 ----------- 64 -----------+
+//   | HeaderSize | MessageType | DroppedCount | Payload... |
+//   +---- 16 ----+---- 16 -----+----- 32 -----+------------+
+//
 // +marshal
 type Header struct {
 	// HeaderSize is the size of the header in bytes. The payload comes
@@ -113,7 +114,13 @@ type Header struct {
 	// expand in the future without breaking remotes that do not yet understand
 	// the new fields.
 	HeaderSize uint16
-	_          uint16
+
+	// MessageType describes the payload. It must be one of the pb.MessageType
+	// values and determine how the payload is interpreted. This is more efficient
+	// than using protobuf.Any because Any uses the full protobuf name to identify
+	// the type.
+	MessageType uint16
+
 	// DroppedCount is the number of points that failed to be written and had to
 	// be dropped. It wraps around after max(uint32).
 	DroppedCount uint32
@@ -122,78 +129,65 @@ type Header struct {
 // headerStructSize size of header struct in bytes.
 const headerStructSize = 8
 
-// TODO(gvisor.dev/issue/4805) Any requires writing the full type URL to the
-// message. We're not memory bandwidth bound, but having an enum event type in
-// the header to identify the proto type would reduce message size and speed
-// up event dispatch in the consumer.
-func (r *Remote) writeAny(any *anypb.Any) error {
-	out, err := proto.Marshal(any)
+func (r *Remote) write(msg proto.Message, msgType pb.MessageType) {
+	out, err := proto.Marshal(msg)
 	if err != nil {
-		return err
+		log.Debugf("Marshal(%+v): %v", msg, err)
+		return
 	}
 	hdr := Header{
-		HeaderSize: uint16(headerStructSize),
+		HeaderSize:  uint16(headerStructSize),
+		MessageType: uint16(msgType),
 	}
 	var hdrOut [headerStructSize]byte
 	hdr.MarshalUnsafe(hdrOut[:])
 
 	// TODO(gvisor.dev/issue/4805): Change to non-blocking write. Count as dropped
 	// if write fails.
-	_, err = unix.Writev(r.endpoint.FD(), [][]byte{hdrOut[:], out})
-	return err
-}
-
-func (r *Remote) write(msg proto.Message) {
-	any, err := anypb.New(msg)
-	if err != nil {
-		log.Debugf("anypd.New(%+v): %v", msg, err)
+	if _, err = unix.Writev(r.endpoint.FD(), [][]byte{hdrOut[:], out}); err != nil {
+		log.Debugf("write(%+v, %v): %v", msg, msgType, err)
 		return
 	}
-	if err := r.writeAny(any); err != nil {
-		log.Debugf("writeAny(%+v): %v", any, err)
-		return
-	}
-	return
 }
 
 // Clone implements seccheck.Checker.
 func (r *Remote) Clone(_ context.Context, _ seccheck.FieldSet, info *pb.CloneInfo) error {
-	r.write(info)
+	r.write(info, pb.MessageType_MESSAGE_SENTRY_CLONE)
 	return nil
 }
 
 // Execve implements seccheck.Checker.
 func (r *Remote) Execve(_ context.Context, _ seccheck.FieldSet, info *pb.ExecveInfo) error {
-	r.write(info)
+	r.write(info, pb.MessageType_MESSAGE_SENTRY_EXEC)
 	return nil
 }
 
 // ExitNotifyParent implements seccheck.Checker.
 func (r *Remote) ExitNotifyParent(_ context.Context, _ seccheck.FieldSet, info *pb.ExitNotifyParentInfo) error {
-	r.write(info)
+	r.write(info, pb.MessageType_MESSAGE_SENTRY_EXIT_NOTIFY_PARENT)
 	return nil
 }
 
 // TaskExit implements seccheck.Checker.
 func (r *Remote) TaskExit(_ context.Context, _ seccheck.FieldSet, info *pb.TaskExit) error {
-	r.write(info)
+	r.write(info, pb.MessageType_MESSAGE_SENTRY_TASK_EXIT)
 	return nil
 }
 
 // ContainerStart implements seccheck.Checker.
 func (r *Remote) ContainerStart(_ context.Context, _ seccheck.FieldSet, info *pb.Start) error {
-	r.write(info)
+	r.write(info, pb.MessageType_MESSAGE_CONTAINER_START)
 	return nil
 }
 
 // RawSyscall implements seccheck.Checker.
 func (r *Remote) RawSyscall(_ context.Context, _ seccheck.FieldSet, info *pb.Syscall) error {
-	r.write(info)
+	r.write(info, pb.MessageType_MESSAGE_SYSCALL_RAW)
 	return nil
 }
 
 // Syscall implements seccheck.Checker.
-func (r *Remote) Syscall(ctx context.Context, fields seccheck.FieldSet, ctxData *pb.ContextData, msg proto.Message) error {
-	r.write(msg)
+func (r *Remote) Syscall(ctx context.Context, fields seccheck.FieldSet, ctxData *pb.ContextData, msgType pb.MessageType, msg proto.Message) error {
+	r.write(msg, msgType)
 	return nil
 }
