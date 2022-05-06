@@ -417,7 +417,7 @@ func MustCreateNewUint64NanosecondsMetric(name string, sync bool, description st
 // This must be called with the correct number of field values or it will panic.
 //go:nosplit
 func (m *Uint64Metric) Value(fieldValues ...string) uint64 {
-	key := m.fieldMapper.lookup(fieldValues...)
+	key := m.fieldMapper.lookupConcat(fieldValues, nil)
 	return m.fields[key].Load()
 }
 
@@ -425,14 +425,15 @@ func (m *Uint64Metric) Value(fieldValues ...string) uint64 {
 // This must be called with the correct number of field values or it will panic.
 //go:nosplit
 func (m *Uint64Metric) Increment(fieldValues ...string) {
-	m.IncrementBy(1, fieldValues...)
+	key := m.fieldMapper.lookupConcat(fieldValues, nil)
+	m.fields[key].Add(1)
 }
 
 // IncrementBy increments the metric by v.
 // This must be called with the correct number of field values or it will panic.
 //go:nosplit
 func (m *Uint64Metric) IncrementBy(v uint64, fieldValues ...string) {
-	key := m.fieldMapper.lookup(fieldValues...)
+	key := m.fieldMapper.lookupConcat(fieldValues, nil)
 	m.fields[key].Add(v)
 }
 

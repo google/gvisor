@@ -16,9 +16,11 @@ package kvm
 
 // invalidate is the implementation for Invalidate.
 func (as *addressSpace) invalidate() {
+	timer := asInvalidateDuration.Start()
 	as.dirtySet.forEach(as.machine, func(c *vCPU) {
 		if c.active.get() == as { // If this happens to be active,
 			c.BounceToKernel() // ... force a kernel transition.
 		}
 	})
+	timer.Finish()
 }
