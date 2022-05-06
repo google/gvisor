@@ -22,13 +22,16 @@ import "pkg/sentry/seccheck/points/common.proto";
 message CloneInfo {
   gvisor.common.ContextData context_data = 1;
 
-  // CreatedThreadID is the thread's ID in the root PID namespace.
+  // created_thread_id is the thread's ID in the root PID namespace.
   int32 created_thread_id = 3;
 
   int32 created_thread_group_id = 4;
 
-  // CreatedThreadStartTime is the thread's CLOCK_REALTIME start time.
+  // created_thread_start_time_ns is the thread's CLOCK_REALTIME start time.
   int64 created_thread_start_time_ns = 5;
+
+  // flags are equivalent to the flags passed to clone(2).
+  uint64 flags = 6;
 }
 
 // ExecveInfo contains information used by the Execve checkpoint.
