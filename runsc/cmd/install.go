@@ -34,6 +34,7 @@ type Install struct {
 	ConfigFile   string
 	Runtime      string
 	Experimental bool
+	Clobber      bool
 	CgroupDriver string
 }
 
@@ -59,6 +60,7 @@ func (i *Install) SetFlags(fs *flag.FlagSet) {
 	fs.StringVar(&i.Runtime, "runtime", "runsc", "runtime name")
 	fs.BoolVar(&i.Experimental, "experimental", false, "enable experimental features")
 	fs.StringVar(&i.CgroupDriver, "cgroupdriver", "", "docker cgroup driver")
+	fs.BoolVar(&i.Clobber, "clobber", true, "clobber existing runtime configuration")
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -106,25 +108,29 @@ func (i *Install) Execute(_ context.Context, f *flag.FlagSet, _ ...interface{}) 
 		rts = make(map[string]interface{})
 		c["runtimes"] = rts
 	}
-	rts[i.Runtime] = struct {
-		Path        string   `json:"path,omitempty"`
-		RuntimeArgs []string `json:"runtimeArgs,omitempty"`
-	}{
-		Path:        path,
-		RuntimeArgs: runtimeArgs,
+	if _, ok := rts[i.Runtime]; !ok || i.Clobber {
+		rts[i.Runtime] = struct {
+			Path        string   `json:"path,omitempty"`
+			RuntimeArgs []string `json:"runtimeArgs,omitempty"`
+		}{
+			Path:        path,
+			RuntimeArgs: runtimeArgs,
+		}
 	}
 
-	// Set experimental if required.
-	if i.Experimental {
+	// Set experimental, if required.
+	if _, ok := c["experimental"]; !ok || i.Clobber {
 		c["experimental"] = true
 	}
 
+	// Set the cgroupdriver, if required.
 	if i.CgroupDriver != "" {
 		v, ok := c["exec-opts"]
-		if ok {
+		switch {
+		case ok && i.Clobber:
 			opts := v.([]interface{})
 			c["exec-opts"] = append(opts, fmt.Sprintf("native.cgroupdriver=%s", i.CgroupDriver))
-		} else {
+		case !ok:
 			c["exec-opts"] = []string{fmt.Sprintf("native.cgroupdriver=%s", i.CgroupDriver)}
 		}
 	}
