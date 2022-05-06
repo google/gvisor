@@ -17,7 +17,6 @@ package remote
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,14 +25,12 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
-	"golang.org/x/sys/unix"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
-	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck/checkers/remote/test"
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
@@ -91,133 +88,14 @@ func (s *exampleServer) stop() {
 	_ = os.Remove(s.path)
 }
 
-type server struct {
-	path   string
-	fd     *fd.FD
-	stopCh chan struct{}
-
-	mu sync.Mutex
-	// +checklocks:mu
-	points []message
-}
-
-type message struct {
-	msgType pb.MessageType
-	msg     []byte
-}
-
-func newServer() (*server, error) {
-	dir, err := ioutil.TempDir(os.TempDir(), "remote")
-	if err != nil {
-		return nil, err
-	}
-	server, err := newServerPath(filepath.Join(dir, "remote.sock"))
-	if err != nil {
-		_ = os.RemoveAll(dir)
-		return nil, err
-	}
-	return server, nil
-}
-
-func newServerPath(path string) (*server, error) {
-	socket, err := unix.Socket(unix.AF_UNIX, unix.SOCK_SEQPACKET, 0)
-	if err != nil {
-		return nil, fmt.Errorf("socket(AF_UNIX, SOCK_SEQPACKET, 0): %w", err)
-	}
-	cu := cleanup.Make(func() {
-		_ = unix.Close(socket)
-	})
-	defer cu.Clean()
-
-	sa := &unix.SockaddrUnix{Name: path}
-	if err := unix.Bind(socket, sa); err != nil {
-		return nil, fmt.Errorf("bind(%q): %w", path, err)
-	}
-	if err := unix.Listen(socket, 5); err != nil {
-		return nil, fmt.Errorf("listen(): %w", err)
-	}
-
-	server := &server{
-		path:   path,
-		fd:     fd.New(socket),
-		stopCh: make(chan struct{}),
-	}
-	go server.run()
-	cu.Release()
-	return server, nil
-}
-
-func (s *server) run() {
-	defer func() {
-		s.stopCh <- struct{}{}
-	}()
-	for {
-		client, _, err := unix.Accept(s.fd.FD())
-		if err != nil {
-			panic(err)
-		}
-		go s.handleClient(client)
-	}
-}
-
-func (s *server) handleClient(client int) {
-	defer unix.Close(client)
-
-	var buf = make([]byte, 1024*1024)
-	for {
-		read, err := unix.Read(client, buf)
-		if err != nil {
-			return
-		}
-		if read == 0 {
-			return
-		}
-		if read <= headerStructSize {
-			panic("invalid message")
-		}
-		hdr := Header{}
-		hdr.UnmarshalUnsafe(buf[0:headerStructSize])
-		msg := message{
-			msgType: pb.MessageType(hdr.MessageType),
-			msg:     buf[hdr.HeaderSize:read],
-		}
-		s.mu.Lock()
-		s.points = append(s.points, msg)
-		s.mu.Unlock()
-	}
-}
-
-func (s *server) count() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return len(s.points)
-}
-
-func (s *server) getPoints() []message {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	cpy := make([]message, len(s.points))
-	copy(cpy, s.points)
-	return cpy
-}
-
-func (s *server) wait() {
-	<-s.stopCh
-}
-
-func (s *server) close() {
-	_ = s.fd.Close()
-	_ = os.Remove(s.path)
-}
-
 func TestBasic(t *testing.T) {
-	server, err := newServer()
+	server, err := test.NewServer()
 	if err != nil {
 		t.Fatalf("newServer(): %v", err)
 	}
-	defer server.close()
+	defer server.Close()
 
-	endpoint, err := setup(server.path)
+	endpoint, err := setup(server.Path)
 	if err != nil {
 		t.Fatalf("setup(): %v", err)
 	}
@@ -238,26 +116,21 @@ func TestBasic(t *testing.T) {
 		t.Fatalf("ExitNotifyParent: %v", err)
 	}
 
-	testutil.Poll(func() error {
-		if server.count() == 0 {
-			return fmt.Errorf("waiting for points to arrive")
-		}
-		return nil
-	}, 5*time.Second)
-	if want, got := 1, server.count(); want != got {
-		t.Errorf("wrong number of points, want: %d, got: %d", want, got)
-	}
-	pt := server.getPoints()[0]
-
-	if want := pb.MessageType_MESSAGE_SENTRY_EXIT_NOTIFY_PARENT; pt.msgType != want {
-		t.Errorf("wrong message type, want: %v, got: %v", want, pt.msgType)
+	server.WaitForCount(1)
+	pt := server.GetPoints()[0]
+	if want := pb.MessageType_MESSAGE_SENTRY_EXIT_NOTIFY_PARENT; pt.MsgType != want {
+		t.Errorf("wrong message type, want: %v, got: %v", want, pt.MsgType)
 	}
 	got := &pb.ExitNotifyParentInfo{}
-	if err := proto.Unmarshal(pt.msg, got); err != nil {
+	if err := proto.Unmarshal(pt.Msg, got); err != nil {
 		t.Errorf("proto.Unmarshal(ExitNotifyParentInfo): %v", err)
 	}
 	if !proto.Equal(info, got) {
 		t.Errorf("Received point is different, want: %+v, got: %+v", info, got)
+	}
+	// Check that no more points were received.
+	if want, got := 1, server.Count(); want != got {
+		t.Errorf("wrong number of points, want: %d, got: %d", want, got)
 	}
 }
 
@@ -301,13 +174,6 @@ func TestExample(t *testing.T) {
 	}
 	if err := testutil.Poll(check, time.Second); err != nil {
 		t.Errorf(err.Error())
-	}
-}
-
-func TestHeaderSize(t *testing.T) {
-	hdr := Header{}
-	if want, got := hdr.SizeBytes(), hdr.SizeBytes(); want != got {
-		t.Errorf("wrong const header size, want: %v, got: %v", want, got)
 	}
 }
 

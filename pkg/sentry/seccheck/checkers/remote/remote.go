@@ -20,14 +20,14 @@ import (
 	"fmt"
 	"os"
 
-	"gvisor.dev/gvisor/pkg/log"
-
 	"golang.org/x/sys/unix"
 	"google.golang.org/protobuf/proto"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck/checkers/remote/header"
 
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 )
@@ -101,45 +101,17 @@ func New(_ map[string]interface{}, endpoint *fd.FD) (seccheck.Checker, error) {
 	return &Remote{endpoint: endpoint}, nil
 }
 
-// Header is used to describe the message being sent to the remote process.
-//
-//   0 --------- 16 ---------- 32 ----------- 64 -----------+
-//   | HeaderSize | MessageType | DroppedCount | Payload... |
-//   +---- 16 ----+---- 16 -----+----- 32 -----+------------+
-//
-// +marshal
-type Header struct {
-	// HeaderSize is the size of the header in bytes. The payload comes
-	// immediatelly after the header. The length is needed to allow the header to
-	// expand in the future without breaking remotes that do not yet understand
-	// the new fields.
-	HeaderSize uint16
-
-	// MessageType describes the payload. It must be one of the pb.MessageType
-	// values and determine how the payload is interpreted. This is more efficient
-	// than using protobuf.Any because Any uses the full protobuf name to identify
-	// the type.
-	MessageType uint16
-
-	// DroppedCount is the number of points that failed to be written and had to
-	// be dropped. It wraps around after max(uint32).
-	DroppedCount uint32
-}
-
-// headerStructSize size of header struct in bytes.
-const headerStructSize = 8
-
 func (r *Remote) write(msg proto.Message, msgType pb.MessageType) {
 	out, err := proto.Marshal(msg)
 	if err != nil {
 		log.Debugf("Marshal(%+v): %v", msg, err)
 		return
 	}
-	hdr := Header{
-		HeaderSize:  uint16(headerStructSize),
+	hdr := header.Header{
+		HeaderSize:  uint16(header.HeaderStructSize),
 		MessageType: uint16(msgType),
 	}
-	var hdrOut [headerStructSize]byte
+	var hdrOut [header.HeaderStructSize]byte
 	hdr.MarshalUnsafe(hdrOut[:])
 
 	// TODO(gvisor.dev/issue/4805): Change to non-blocking write. Count as dropped
