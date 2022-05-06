@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -594,6 +595,19 @@ type Task struct {
 	// userCounters instance must be atomically accessed.
 	userCounters *userCounters
 }
+
+// Task related metrics
+var (
+	// syscallCounter is a metric that tracks how many syscalls the sentry has
+	// executed.
+	syscallCounter = metric.MustCreateNewUint64Metric(
+		"/task/syscalls", false, "The number of syscalls the sentry has executed for the user.")
+
+	// faultCounter is a metric that tracks how many faults the sentry has had to
+	// handle.
+	faultCounter = metric.MustCreateNewUint64Metric(
+		"/task/faults", false, "The number of faults the sentry has handled.")
+)
 
 func (t *Task) savePtraceTracer() *Task {
 	return t.ptraceTracer.Load().(*Task)

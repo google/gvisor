@@ -202,6 +202,8 @@ func seccompMmapSync() {
 //
 //go:nosplit
 func seccompMmapHandler(context unsafe.Pointer) {
+	mmapCallCounter.Increment()
+
 	addr, length, errno := seccompMmapSyscall(context)
 	if errno != 0 {
 		return
