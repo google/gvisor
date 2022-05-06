@@ -363,7 +363,13 @@ func (d *cgroupProcsData) Write(ctx context.Context, fd *vfs.FileDescription, sr
 
 	t := kernel.TaskFromContext(ctx)
 	currPidns := t.ThreadGroup().PIDNamespace()
-	targetTG := currPidns.ThreadGroupWithID(kernel.ThreadID(tgid))
+	var targetTG *kernel.ThreadGroup
+	if tgid != 0 {
+		targetTG = currPidns.ThreadGroupWithID(kernel.ThreadID(tgid))
+	} else {
+		targetTG = t.ThreadGroup()
+	}
+
 	if targetTG == nil {
 		return 0, linuxerr.EINVAL
 	}
@@ -405,7 +411,12 @@ func (d *tasksData) Write(ctx context.Context, fd *vfs.FileDescription, src user
 
 	t := kernel.TaskFromContext(ctx)
 	currPidns := t.ThreadGroup().PIDNamespace()
-	targetTask := currPidns.TaskWithID(kernel.ThreadID(tid))
+	var targetTask *kernel.Task
+	if tid != 0 {
+		targetTask = currPidns.TaskWithID(kernel.ThreadID(tid))
+	} else {
+		targetTask = t
+	}
 	if targetTask == nil {
 		return 0, linuxerr.EINVAL
 	}
