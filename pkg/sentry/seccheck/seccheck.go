@@ -103,7 +103,7 @@ type Checker interface {
 
 	ContainerStart(context.Context, FieldSet, *pb.Start) error
 
-	Syscall(context.Context, FieldSet, *pb.ContextData, proto.Message) error
+	Syscall(context.Context, FieldSet, *pb.ContextData, pb.MessageType, proto.Message) error
 	RawSyscall(context.Context, FieldSet, *pb.Syscall) error
 }
 
@@ -144,7 +144,7 @@ func (CheckerDefaults) RawSyscall(context.Context, FieldSet, *pb.Syscall) error 
 }
 
 // Syscall implements Checker.Syscall.
-func (CheckerDefaults) Syscall(context.Context, FieldSet, *pb.ContextData, proto.Message) error {
+func (CheckerDefaults) Syscall(context.Context, FieldSet, *pb.ContextData, pb.MessageType, proto.Message) error {
 	return nil
 }
 

@@ -399,7 +399,7 @@ func (s *SyscallTable) LookupSyscallToProto(sysno uintptr) SyscallToProto {
 
 // SyscallToProto is a callback function that converts generic syscall data to
 // schematized protobuf for the corresponding syscall.
-type SyscallToProto func(*Task, seccheck.FieldSet, *pb.ContextData, SyscallInfo) proto.Message
+type SyscallToProto func(*Task, seccheck.FieldSet, *pb.ContextData, SyscallInfo) (proto.Message, pb.MessageType)
 
 // SyscallInfo provides generic information about the syscall.
 type SyscallInfo struct {
