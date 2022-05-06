@@ -25,6 +25,7 @@ import (
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -67,7 +68,7 @@ func (l *List) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	conf := args[0].(*config.Config)
 	ids, err := container.List(conf.RootDir)
 	if err != nil {
-		Fatalf("%v", err)
+		util.Fatalf("%v", err)
 	}
 
 	if l.quiet {
@@ -110,10 +111,10 @@ func (l *List) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 			states = append(states, c.State())
 		}
 		if err := json.NewEncoder(os.Stdout).Encode(states); err != nil {
-			Fatalf("marshaling container state: %v", err)
+			util.Fatalf("marshaling container state: %v", err)
 		}
 	default:
-		Fatalf("unknown list format %q", l.format)
+		util.Fatalf("unknown list format %q", l.format)
 	}
 	return subcommands.ExitSuccess
 }

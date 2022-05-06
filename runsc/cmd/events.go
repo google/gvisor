@@ -22,6 +22,7 @@ import (
 
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -82,12 +83,12 @@ func (evs *Events) Execute(ctx context.Context, f *flag.FlagSet, args ...interfa
 
 	c, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
 	if err != nil {
-		Fatalf("loading sandbox: %v", err)
+		util.Fatalf("loading sandbox: %v", err)
 	}
 
 	if evs.stream {
 		if err := c.Stream(evs.filters, os.Stdout); err != nil {
-			Fatalf("Stream failed: %v", err)
+			util.Fatalf("Stream failed: %v", err)
 		}
 		return subcommands.ExitSuccess
 	}
@@ -111,7 +112,7 @@ func (evs *Events) Execute(ctx context.Context, f *flag.FlagSet, args ...interfa
 			log.Warningf("Error while marshalling event %v: %v", ev.Event, err)
 		} else {
 			if _, err := os.Stdout.Write(b); err != nil {
-				Fatalf("Error writing to stdout: %v", err)
+				util.Fatalf("Error writing to stdout: %v", err)
 			}
 		}
 

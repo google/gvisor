@@ -18,6 +18,7 @@ import (
 	"context"
 
 	"github.com/google/subcommands"
+	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -57,16 +58,16 @@ func (*Start) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) s
 
 	c, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
 	if err != nil {
-		Fatalf("loading container: %v", err)
+		util.Fatalf("loading container: %v", err)
 	}
 	// Read the spec again here to ensure flag annotations from the spec are
 	// applied to "conf".
 	if _, err := specutils.ReadSpec(c.BundleDir, conf); err != nil {
-		Fatalf("reading spec: %v", err)
+		util.Fatalf("reading spec: %v", err)
 	}
 
 	if err := c.Start(conf); err != nil {
-		Fatalf("starting container: %v", err)
+		util.Fatalf("starting container: %v", err)
 	}
 	return subcommands.ExitSuccess
 }

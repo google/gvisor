@@ -18,6 +18,7 @@ import (
 	"context"
 
 	"github.com/google/subcommands"
+	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -84,7 +85,7 @@ func (c *Create) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}
 	conf := args[0].(*config.Config)
 
 	if conf.Rootless {
-		return Errorf("Rootless mode not supported with %q", c.Name())
+		return util.Errorf("Rootless mode not supported with %q", c.Name())
 	}
 
 	bundleDir := c.bundleDir
@@ -93,7 +94,7 @@ func (c *Create) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}
 	}
 	spec, err := specutils.ReadSpec(bundleDir, conf)
 	if err != nil {
-		return Errorf("reading spec: %v", err)
+		return util.Errorf("reading spec: %v", err)
 	}
 	specutils.LogSpec(spec)
 
@@ -109,7 +110,7 @@ func (c *Create) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}
 		UserLog:       c.userLog,
 	}
 	if _, err := container.New(conf, contArgs); err != nil {
-		return Errorf("creating container: %v", err)
+		return util.Errorf("creating container: %v", err)
 	}
 	return subcommands.ExitSuccess
 }

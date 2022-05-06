@@ -21,6 +21,7 @@ import (
 
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -59,7 +60,7 @@ func (*State) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) s
 
 	c, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
 	if err != nil {
-		Fatalf("loading container: %v", err)
+		util.Fatalf("loading container: %v", err)
 	}
 	log.Debugf("Returning state for container %+v", c)
 
@@ -69,10 +70,10 @@ func (*State) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) s
 	// Write json-encoded state directly to stdout.
 	b, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
-		Fatalf("marshaling container state: %v", err)
+		util.Fatalf("marshaling container state: %v", err)
 	}
 	if _, err := os.Stdout.Write(b); err != nil {
-		Fatalf("Error writing to stdout: %v", err)
+		util.Fatalf("Error writing to stdout: %v", err)
 	}
 	return subcommands.ExitSuccess
 }

@@ -22,6 +22,7 @@ import (
 	"github.com/google/subcommands"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -77,15 +78,15 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...interfa
 
 	cont, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
 	if err != nil {
-		Fatalf("loading container: %v", err)
+		util.Fatalf("loading container: %v", err)
 	}
 
 	if c.imagePath == "" {
-		Fatalf("image-path flag must be provided")
+		util.Fatalf("image-path flag must be provided")
 	}
 
 	if err := os.MkdirAll(c.imagePath, 0755); err != nil {
-		Fatalf("making directories at path provided: %v", err)
+		util.Fatalf("making directories at path provided: %v", err)
 	}
 
 	fullImagePath := filepath.Join(c.imagePath, checkpointFileName)
@@ -93,12 +94,12 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...interfa
 	// Create the image file and open for writing.
 	file, err := os.OpenFile(fullImagePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0644)
 	if err != nil {
-		Fatalf("os.OpenFile(%q) failed: %v", fullImagePath, err)
+		util.Fatalf("os.OpenFile(%q) failed: %v", fullImagePath, err)
 	}
 	defer file.Close()
 
 	if err := cont.Checkpoint(file); err != nil {
-		Fatalf("checkpoint failed: %v", err)
+		util.Fatalf("checkpoint failed: %v", err)
 	}
 
 	if !c.leaveRunning {
@@ -115,12 +116,12 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...interfa
 	// Restore into new container with same ID.
 	bundleDir := cont.BundleDir
 	if bundleDir == "" {
-		Fatalf("setting bundleDir")
+		util.Fatalf("setting bundleDir")
 	}
 
 	spec, err := specutils.ReadSpec(bundleDir, conf)
 	if err != nil {
-		Fatalf("reading spec: %v", err)
+		util.Fatalf("reading spec: %v", err)
 	}
 
 	specutils.LogSpec(spec)
@@ -130,7 +131,7 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...interfa
 	}
 
 	if err := cont.Destroy(); err != nil {
-		Fatalf("destroying container: %v", err)
+		util.Fatalf("destroying container: %v", err)
 	}
 
 	contArgs := container.Args{
@@ -140,17 +141,17 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...interfa
 	}
 	cont, err = container.New(conf, contArgs)
 	if err != nil {
-		Fatalf("restoring container: %v", err)
+		util.Fatalf("restoring container: %v", err)
 	}
 	defer cont.Destroy()
 
 	if err := cont.Restore(spec, conf, fullImagePath); err != nil {
-		Fatalf("starting container: %v", err)
+		util.Fatalf("starting container: %v", err)
 	}
 
 	ws, err := cont.Wait()
 	if err != nil {
-		Fatalf("Error waiting for container: %v", err)
+		util.Fatalf("Error waiting for container: %v", err)
 	}
 	*waitStatus = ws
 
