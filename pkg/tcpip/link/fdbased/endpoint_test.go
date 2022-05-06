@@ -29,10 +29,10 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -52,10 +52,10 @@ type packetInfo struct {
 }
 
 type packetContents struct {
-	LinkHeader      buffer.View
-	NetworkHeader   buffer.View
-	TransportHeader buffer.View
-	Data            buffer.View
+	LinkHeader      []byte
+	NetworkHeader   []byte
+	TransportHeader []byte
+	Data            []byte
 }
 
 func checkPacketInfoEqual(t *testing.T, got, want packetInfo) {
@@ -186,7 +186,7 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash u
 	defer c.cleanup()
 
 	// Build payload.
-	payload := buffer.NewView(plen)
+	payload := make([]byte, plen)
 	if _, err := rand.Read(payload); err != nil {
 		t.Fatalf("rand.Read(payload): %s", err)
 	}
@@ -195,7 +195,7 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash u
 	const netHdrLen = 100
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(c.ep.MaxHeaderLength()) + netHdrLen,
-		Data:               payload.ToVectorisedView(),
+		Payload:            buffer.NewWithData(payload),
 	})
 	pkt.Hash = hash
 	// Every PacketBuffer must have these set:
@@ -212,7 +212,7 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash u
 	}
 
 	// Write.
-	want := append(append(buffer.View(nil), b...), payload...)
+	want := append(append([]byte{}, b...), payload...)
 	const l3HdrLen = header.IPv6MinimumSize
 	if gsoMaxSize != 0 {
 		pkt.GSOOptions = stack.GSO{
@@ -336,7 +336,6 @@ func TestPreserveSrcAddress(t *testing.T) {
 		// the minimum size of the ethernet header.
 		// TODO(b/153685824): Figure out if this should use c.ep.MaxHeaderLength().
 		ReserveHeaderBytes: header.EthernetMinimumSize,
-		Data:               buffer.VectorisedView{},
 	})
 	defer pkt.DecRef()
 	// Every PacketBuffer must have these set:
@@ -387,7 +386,7 @@ func TestDeliverPacket(t *testing.T) {
 
 				wantPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					ReserveHeaderBytes: header.EthernetMinimumSize,
-					Data:               buffer.NewViewFromBytes(all).ToVectorisedView(),
+					Payload:            buffer.NewWithData(all),
 				})
 				defer wantPkt.DecRef()
 				if eth {
@@ -498,12 +497,12 @@ func TestIovecBuffer(t *testing.T) {
 			// later.
 			oldIovecs := append([]unix.Iovec(nil), iovecs...)
 
-			// Test the views that get pulled.
-			vv := b.pullViews(c.n)
+			// Test the buffer that get pulled.
+			buf := b.pullBuffer(c.n)
 			var lengths []int
-			for _, v := range vv.Views() {
+			buf.Apply(func(v []byte) {
 				lengths = append(lengths, len(v))
-			}
+			})
 			if !reflect.DeepEqual(lengths, c.wantLengths) {
 				t.Errorf("Pulled view lengths = %v, want %v", lengths, c.wantLengths)
 			}
@@ -550,11 +549,11 @@ func TestIovecBufferSkipVnetHdr(t *testing.T) {
 			b := newIovecBuffer([]int{10, 20, 50, 50}, true)
 			// Pretend a read happend.
 			b.nextIovecs()
-			vv := b.pullViews(test.readN)
-			if got, want := vv.Size(), test.wantLen; got != want {
+			buf := b.pullBuffer(test.readN)
+			if got, want := int(buf.Size()), test.wantLen; got != want {
 				t.Errorf("b.pullView(%d).Size() = %d; want %d", test.readN, got, want)
 			}
-			if got, want := len(vv.ToOwnedView()), test.wantLen; got != want {
+			if got, want := len(buf.Flatten()), test.wantLen; got != want {
 				t.Errorf("b.pullView(%d).ToOwnedView() has length %d; want %d", test.readN, got, want)
 			}
 		})
