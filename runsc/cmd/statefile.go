@@ -22,6 +22,7 @@ import (
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/pkg/state/pretty"
 	"gvisor.dev/gvisor/pkg/state/statefile"
+	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
@@ -62,7 +63,7 @@ func (s *Statefile) SetFlags(f *flag.FlagSet) {
 func (s *Statefile) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
 	// Check arguments.
 	if s.list && s.get != "" {
-		Fatalf("error: can't specify -list and -get simultaneously.")
+		util.Fatalf("error: can't specify -list and -get simultaneously.")
 	}
 
 	// Setup output.
@@ -70,11 +71,11 @@ func (s *Statefile) Execute(_ context.Context, f *flag.FlagSet, args ...interfac
 	if s.output != "" {
 		f, err := os.OpenFile(s.output, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0644)
 		if err != nil {
-			Fatalf("error opening output: %v", err)
+			util.Fatalf("error opening output: %v", err)
 		}
 		defer func() {
 			if err := f.Close(); err != nil {
-				Fatalf("error flushing output: %v", err)
+				util.Fatalf("error flushing output: %v", err)
 			}
 		}()
 		output = f
@@ -87,7 +88,7 @@ func (s *Statefile) Execute(_ context.Context, f *flag.FlagSet, args ...interfac
 	}
 	input, err := os.Open(f.Arg(0))
 	if err != nil {
-		Fatalf("error opening input: %v\n", err)
+		util.Fatalf("error opening input: %v\n", err)
 	}
 
 	if s.html {
@@ -103,15 +104,15 @@ func (s *Statefile) Execute(_ context.Context, f *flag.FlagSet, args ...interfac
 		}
 		rc, _, err := statefile.NewReader(input, key)
 		if err != nil {
-			Fatalf("error parsing statefile: %v", err)
+			util.Fatalf("error parsing statefile: %v", err)
 		}
 		if s.html {
 			if err := pretty.PrintHTML(output, rc); err != nil {
-				Fatalf("error printing state: %v", err)
+				util.Fatalf("error printing state: %v", err)
 			}
 		} else {
 			if err := pretty.PrintText(output, rc); err != nil {
-				Fatalf("error printing state: %v", err)
+				util.Fatalf("error printing state: %v", err)
 			}
 		}
 		return subcommands.ExitSuccess
@@ -120,14 +121,14 @@ func (s *Statefile) Execute(_ context.Context, f *flag.FlagSet, args ...interfac
 	// Load just the metadata.
 	metadata, err := statefile.MetadataUnsafe(input)
 	if err != nil {
-		Fatalf("error reading metadata: %v", err)
+		util.Fatalf("error reading metadata: %v", err)
 	}
 
 	// Is it a single key?
 	if s.get != "" {
 		val, ok := metadata[s.get]
 		if !ok {
-			Fatalf("metadata key %s: not found", s.get)
+			util.Fatalf("metadata key %s: not found", s.get)
 		}
 		fmt.Fprintf(output, "%s\n", val)
 		return subcommands.ExitSuccess

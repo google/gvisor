@@ -19,6 +19,7 @@ import (
 
 	"github.com/google/subcommands"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -69,11 +70,11 @@ func (r *Run) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) s
 
 	if conf.Rootless {
 		if conf.Network == config.NetworkSandbox {
-			return Errorf("sandbox network isn't supported with --rootless, use --network=none or --network=host")
+			return util.Errorf("sandbox network isn't supported with --rootless, use --network=none or --network=host")
 		}
 
 		if err := specutils.MaybeRunAsRoot(); err != nil {
-			return Errorf("Error executing inside namespace: %v", err)
+			return util.Errorf("Error executing inside namespace: %v", err)
 		}
 		// Execution will continue here if no more capabilities are needed...
 	}
@@ -84,7 +85,7 @@ func (r *Run) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) s
 	}
 	spec, err := specutils.ReadSpec(bundleDir, conf)
 	if err != nil {
-		return Errorf("reading spec: %v", err)
+		return util.Errorf("reading spec: %v", err)
 	}
 	specutils.LogSpec(spec)
 
@@ -99,7 +100,7 @@ func (r *Run) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) s
 	}
 	ws, err := container.Run(conf, runArgs)
 	if err != nil {
-		return Errorf("running container: %v", err)
+		return util.Errorf("running container: %v", err)
 	}
 
 	*waitStatus = ws

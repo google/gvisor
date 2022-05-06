@@ -21,6 +21,7 @@ import (
 	"os"
 
 	"github.com/google/subcommands"
+	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -65,26 +66,26 @@ func (u *Usage) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 
 	cont, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
 	if err != nil {
-		Fatalf("loading container: %v", err)
+		util.Fatalf("loading container: %v", err)
 	}
 
 	if !u.fd {
 		m, err := cont.Usage(u.full)
 		if err != nil {
-			Fatalf("usage failed: %v", err)
+			util.Fatalf("usage failed: %v", err)
 		}
 		if err := json.NewEncoder(os.Stdout).Encode(m); err != nil {
-			Fatalf("Encode MemoryUsage failed: %v", err)
+			util.Fatalf("Encode MemoryUsage failed: %v", err)
 		}
 	} else {
 		m, err := cont.UsageFD()
 		if err != nil {
-			Fatalf("usagefd failed: %v", err)
+			util.Fatalf("usagefd failed: %v", err)
 		}
 
 		mapped, unknown, total, err := m.Fetch()
 		if err != nil {
-			Fatalf("Fetch memory usage failed: %v", err)
+			util.Fatalf("Fetch memory usage failed: %v", err)
 		}
 
 		fmt.Printf("Mapped %v, Unknown %v, Total %v\n", mapped, unknown, total)

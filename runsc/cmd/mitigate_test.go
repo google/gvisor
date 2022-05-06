@@ -22,6 +22,7 @@ import (
 
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/mitigate"
 )
 
@@ -99,8 +100,8 @@ func TestExecute(t *testing.T) {
 		{
 			name:          "Empty",
 			cpu:           mitigate.Empty,
-			mitigateError: Errorf(`mitigate operation failed: no cpus found for: ""`),
-			reverseError:  Errorf(`mitigate operation failed: no cpus found for: ""`),
+			mitigateError: util.Errorf(`mitigate operation failed: no cpus found for: ""`),
+			reverseError:  util.Errorf(`mitigate operation failed: no cpus found for: ""`),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -33,6 +33,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/urpc"
+	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/console"
 	"gvisor.dev/gvisor/runsc/container"
@@ -108,13 +109,13 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	conf := args[0].(*config.Config)
 	e, id, err := ex.parseArgs(f, conf.EnableRaw)
 	if err != nil {
-		Fatalf("parsing process spec: %v", err)
+		util.Fatalf("parsing process spec: %v", err)
 	}
 	waitStatus := args[1].(*unix.WaitStatus)
 
 	c, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
 	if err != nil {
-		Fatalf("loading sandbox: %v", err)
+		util.Fatalf("loading sandbox: %v", err)
 	}
 
 	log.Debugf("Exec arguments: %+v", e)
@@ -127,14 +128,14 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	if e.Envv == nil {
 		e.Envv, err = specutils.ResolveEnvs(c.Spec.Process.Env, ex.env)
 		if err != nil {
-			Fatalf("getting environment variables: %v", err)
+			util.Fatalf("getting environment variables: %v", err)
 		}
 	}
 
 	if e.Capabilities == nil {
 		e.Capabilities, err = specutils.Capabilities(conf.EnableRaw, c.Spec.Process.Capabilities)
 		if err != nil {
-			Fatalf("creating capabilities: %v", err)
+			util.Fatalf("creating capabilities: %v", err)
 		}
 		log.Infof("Using exec capabilities from container: %+v", e.Capabilities)
 	}
@@ -153,7 +154,7 @@ func (ex *Exec) exec(conf *config.Config, c *container.Container, e *control.Exe
 	// Start the new process and get its pid.
 	pid, err := c.Execute(conf, e)
 	if err != nil {
-		return Errorf("executing processes for container: %v", err)
+		return util.Errorf("executing processes for container: %v", err)
 	}
 
 	if e.StdioIsPty {
@@ -167,7 +168,7 @@ func (ex *Exec) exec(conf *config.Config, c *container.Container, e *control.Exe
 	if ex.internalPidFile != "" {
 		pidStr := []byte(strconv.Itoa(int(pid)))
 		if err := ioutil.WriteFile(ex.internalPidFile, pidStr, 0644); err != nil {
-			return Errorf("writing internal pid file %q: %v", ex.internalPidFile, err)
+			return util.Errorf("writing internal pid file %q: %v", ex.internalPidFile, err)
 		}
 	}
 
@@ -176,14 +177,14 @@ func (ex *Exec) exec(conf *config.Config, c *container.Container, e *control.Exe
 	// `runsc exec -d` returns.
 	if ex.pidFile != "" {
 		if err := ioutil.WriteFile(ex.pidFile, []byte(strconv.Itoa(os.Getpid())), 0644); err != nil {
-			return Errorf("writing pid file: %v", err)
+			return util.Errorf("writing pid file: %v", err)
 		}
 	}
 
 	// Wait for the process to exit.
 	ws, err := c.WaitPID(pid)
 	if err != nil {
-		return Errorf("waiting on pid %d: %v", pid, err)
+		return util.Errorf("waiting on pid %d: %v", pid, err)
 	}
 	*waitStatus = ws
 	return subcommands.ExitSuccess
@@ -204,7 +205,7 @@ func (ex *Exec) execChildAndWait(waitStatus *unix.WaitStatus) subcommands.ExitSt
 	if pidFile == "" {
 		tmpDir, err := ioutil.TempDir("", "exec-pid-")
 		if err != nil {
-			Fatalf("creating TempDir: %v", err)
+			util.Fatalf("creating TempDir: %v", err)
 		}
 		defer os.RemoveAll(tmpDir)
 		pidFile = filepath.Join(tmpDir, "pid")
@@ -225,7 +226,7 @@ func (ex *Exec) execChildAndWait(waitStatus *unix.WaitStatus) subcommands.ExitSt
 		// Create a new TTY pair and send the master on the provided socket.
 		tty, err := console.NewWithSocket(ex.consoleSocket)
 		if err != nil {
-			Fatalf("setting up console with socket %q: %v", ex.consoleSocket, err)
+			util.Fatalf("setting up console with socket %q: %v", ex.consoleSocket, err)
 		}
 		defer tty.Close()
 
@@ -245,7 +246,7 @@ func (ex *Exec) execChildAndWait(waitStatus *unix.WaitStatus) subcommands.ExitSt
 	}
 
 	if err := cmd.Start(); err != nil {
-		Fatalf("failure to start child exec process, err: %v", err)
+		util.Fatalf("failure to start child exec process, err: %v", err)
 	}
 
 	log.Infof("Started child (PID: %d) to exec and wait: %s %s", cmd.Process.Pid, specutils.ExePath, args)
@@ -307,7 +308,7 @@ func (ex *Exec) argsFromCLI(argv []string, enableRaw bool) (*control.ExecArgs, e
 	for _, s := range ex.extraKGIDs {
 		kgid, err := strconv.Atoi(s)
 		if err != nil {
-			Fatalf("parsing GID: %s, %v", s, err)
+			util.Fatalf("parsing GID: %s, %v", s, err)
 		}
 		extraKGIDs = append(extraKGIDs, auth.KGID(kgid))
 	}
