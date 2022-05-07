@@ -971,12 +971,12 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 		{Type: specs.UTSNamespace},
 	}
 
-	rootless := unix.Getuid() != 0
+	rootlessEUID := unix.Getuid() != 0
 	var syncFile *os.File
 	// Setup any uid/gid mappings, and create or join the configured user
 	// namespace so the gofer's view of the filesystem aligns with the
 	// users in the sandbox.
-	if !rootless {
+	if !rootlessEUID {
 		userNS := specutils.FilterNS([]specs.LinuxNamespaceType{specs.UserNamespace}, spec)
 		nss = append(nss, userNS...)
 		specutils.SetUIDGIDMappings(cmd, spec)
@@ -997,7 +997,7 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 		defer syncFile.Close()
 
 		f := os.NewFile(uintptr(fds[1]), "sync other FD")
-		donations.DonateAndClose("sync-fd", f)
+		donations.DonateAndClose("sync-userns-fd", f)
 		if cmd.SysProcAttr == nil {
 			cmd.SysProcAttr = &unix.SysProcAttr{}
 		}
@@ -1025,7 +1025,7 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 		return nil, nil, fmt.Errorf("gofer: %v", err)
 	}
 
-	if rootless {
+	if rootlessEUID {
 		log.Debugf("Setting user mappings")
 		args := []string{strconv.Itoa(cmd.Process.Pid)}
 		for _, idMap := range spec.Linux.UIDMappings {

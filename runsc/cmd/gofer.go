@@ -67,7 +67,7 @@ type Gofer struct {
 
 	specFD   int
 	mountsFD int
-	syncFD   int
+	syncUsernsFD   int
 }
 
 // Name implements subcommands.Command.
@@ -95,7 +95,7 @@ func (g *Gofer) SetFlags(f *flag.FlagSet) {
 	f.Var(&g.ioFDs, "io-fds", "list of FDs to connect gofer servers. They must follow this order: root first, then mounts as defined in the spec")
 	f.IntVar(&g.specFD, "spec-fd", -1, "required fd with the container spec")
 	f.IntVar(&g.mountsFD, "mounts-fd", -1, "mountsFD is the file descriptor to write list of mounts after they have been resolved (direct paths, no symlinks).")
-	f.IntVar(&g.syncFD, "sync-fd", -1, "")
+	f.IntVar(&g.syncUsernsFD, "sync-userns-fd", -1, "file descriptor used to synchronize rootless user namespace initialization.")
 }
 
 // Execute implements subcommands.Command.
@@ -117,8 +117,8 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		util.Fatalf("reading spec: %v", err)
 	}
 
-	if g.syncFD >= 0 {
-		f := os.NewFile(uintptr(g.syncFD), "sync FD")
+	if g.syncUsernsFD >= 0 {
+		f := os.NewFile(uintptr(g.syncUsernsFD), "sync FD")
 		defer f.Close()
 		var b [1]byte
 		if n, err := f.Read(b[:]); n != 0 || err != io.EOF {
@@ -146,7 +146,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		// Disable caps when calling myself again.
 		// Note: minimal argument handling for the default case to keep it simple.
 		args := os.Args
-		args = append(args, "--apply-caps=false", "--setup-root=false", "--sync-fd=-1")
+		args = append(args, "--apply-caps=false", "--setup-root=false", "--sync-userns-fd=-1")
 		util.Fatalf("setCapsAndCallSelf(%v, %v): %v", args, goferCaps, setCapsAndCallSelf(args, goferCaps))
 		panic("unreachable")
 	}

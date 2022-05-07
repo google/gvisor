@@ -536,9 +536,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	donations := donation.Agency{}
 	defer donations.Close()
 
-	if unix.Getuid() != 0 {
-		conf.Rootless = true
-	}
+	rootlessEUID := unix.Getuid() != 0
 	//
 	// These flags must come BEFORE the "boot" command in cmd.Args.
 	//
@@ -725,13 +723,13 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		if conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 			log.Warningf("Running sandbox in test mode as current user (uid=%d gid=%d). This is only safe in tests!", os.Getuid(), os.Getgid())
 			log.Warningf("Running sandbox in test mode without chroot. This is only safe in tests!")
-		} else if conf.Rootless || specutils.HasCapabilities(capability.CAP_SETUID, capability.CAP_SETGID) {
+		} else if rootlessEUID || specutils.HasCapabilities(capability.CAP_SETUID, capability.CAP_SETGID) {
 			log.Infof("Sandbox will be started in new user namespace")
 			nss = append(nss, specs.LinuxNamespace{Type: specs.UserNamespace})
 			cmd.Args = append(cmd.Args, "--setup-root")
 
 			const nobody = 65534
-			if conf.Rootless {
+			if rootlessEUID || conf.Rootless {
 				log.Infof("Rootless mode: sandbox will run as nobody inside user namespace, mapped to the current user, uid: %d, gid: %d", os.Getuid(), os.Getgid())
 			} else {
 				// Map nobody in the new namespace to nobody in the parent namespace.
