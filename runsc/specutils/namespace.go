@@ -152,10 +152,22 @@ func ApplyNS(ns specs.LinuxNamespace) (func(), error) {
 // StartInNS joins or creates the given namespaces and calls cmd.Start before
 // restoring the namespaces to the original values.
 func StartInNS(cmd *exec.Cmd, nss []specs.LinuxNamespace) error {
+	errChan := make(chan error)
+	go func() {
+		errChan <-startInNS(cmd, nss)
+	}()
+	return <-errChan
+}
+
+func startInNS(cmd *exec.Cmd, nss []specs.LinuxNamespace) error {
 	// We are about to setup namespaces, which requires the os thread being
 	// locked so that Go doesn't change the thread out from under us.
+	//
+	// In case of rootless containers, it is impossible to restore a
+	// previous set of namespace, so we don't call runtime.UnlockOSThread
+	// here and the current system thread will be destroyed when this
+	// goroutin exits.
 	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
 
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &unix.SysProcAttr{}
@@ -169,11 +181,10 @@ func StartInNS(cmd *exec.Cmd, nss []specs.LinuxNamespace) error {
 		}
 		// Join the given namespace, and restore the current namespace
 		// before exiting.
-		restoreNS, err := ApplyNS(ns)
+		_, err := ApplyNS(ns)
 		if err != nil {
 			return err
 		}
-		defer restoreNS()
 	}
 
 	return cmd.Start()
