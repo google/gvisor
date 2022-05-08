@@ -18,6 +18,7 @@ package transport
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserr"
@@ -257,6 +258,16 @@ type BoundEndpoint interface {
 	// called before dropping all references to a BoundEndpoint returned by a
 	// function.
 	Release(ctx context.Context)
+}
+
+// HostBoundEndpoint is an interface that endpoints can implement if they support
+// binding listening and accepting connections from a bound Unix domain socket
+// on the host.
+type HostBoundEndpoint interface {
+	// SetBoundSocketFD will be called on supporting endpoints after
+	// binding a socket on the host filesystem. Implementations should use
+	// delegate Listen and Accept calls to the ClientBoundSocketFD.
+	SetBoundSocketFD(*lisafs.ClientBoundSocketFD)
 }
 
 // message represents a message passed over a Unix domain socket.

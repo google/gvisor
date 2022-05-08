@@ -418,6 +418,44 @@ func (f *ClientFD) Flush(ctx context.Context) error {
 	return err
 }
 
+// BindAt makes the BindAt RPC.
+func (f *ClientFD) BindAt(ctx context.Context, sockType linux.SockType, name string) (Inode, *ClientBoundSocketFD, error) {
+	req := BindAtReq{
+		DirFD:    f.fd,
+		SockType: primitive.Uint32(sockType),
+		Name:     SizedString(name),
+	}
+	var (
+		resp         BindAtResp
+		hostSocketFD [1]int
+	)
+	ctx.UninterruptibleSleepStart(false)
+	err := f.client.SndRcvMessage(BindAt, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, hostSocketFD[:], req.String, resp.String)
+	ctx.UninterruptibleSleepFinish(false)
+	if err == nil && hostSocketFD[0] < 0 {
+		// No host socket fd? We can't proceed.
+		// Clean up any resources the gofer sent to us.
+		if resp.Child.ControlFD.Ok() {
+			f.client.CloseFDBatched(ctx, resp.Child.ControlFD)
+		}
+		if resp.BoundSocketFD.Ok() {
+			f.client.CloseFDBatched(ctx, resp.BoundSocketFD)
+		}
+		err = unix.EBADF
+	}
+	if err != nil {
+		return Inode{}, nil, err
+	}
+
+	cbsFD := &ClientBoundSocketFD{
+		fd:             resp.BoundSocketFD,
+		notificationFD: int32(hostSocketFD[0]),
+		client:         f.client,
+	}
+
+	return resp.Child, cbsFD, err
+}
+
 // Connect makes the Connect RPC.
 func (f *ClientFD) Connect(ctx context.Context, sockType linux.SockType) (int, error) {
 	req := ConnectReq{FD: f.fd, SockType: uint32(sockType)}
@@ -531,4 +569,59 @@ func (f *ClientFD) RemoveXattr(ctx context.Context, name string) error {
 	err := f.client.SndRcvMessage(FRemoveXattr, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, nil, req.String, resp.String)
 	ctx.UninterruptibleSleepFinish(false)
 	return err
+}
+
+// ClientBoundSocketFD corresponds to a bound socket on the server.
+//
+// All fields are immutable.
+type ClientBoundSocketFD struct {
+	// fd is the FDID of the bound socket on the server.
+	fd FDID
+
+	// notificationFD is the host FD that can be used to notify when new
+	// clients connect to the socket.
+	notificationFD int32
+
+	client *Client
+}
+
+// Close closes the host and gofer-backed FDs associated to this bound socket.
+func (f *ClientBoundSocketFD) Close(ctx context.Context) {
+	_ = unix.Close(int(f.notificationFD))
+	f.client.CloseFDBatched(ctx, f.fd)
+}
+
+// NotificationFD is a host FD that can be used to notify when new clients
+// connect to the socket.
+func (f *ClientBoundSocketFD) NotificationFD() int32 {
+	return f.notificationFD
+}
+
+// Listen makes a Listen RPC.
+func (f *ClientBoundSocketFD) Listen(ctx context.Context, backlog int32) error {
+	req := ListenReq{
+		FD:      f.fd,
+		Backlog: backlog,
+	}
+	var resp ListenResp
+	ctx.UninterruptibleSleepStart(false)
+	err := f.client.SndRcvMessage(Listen, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, nil, req.String, resp.String)
+	ctx.UninterruptibleSleepFinish(false)
+	return err
+}
+
+// Accept makes an Accept RPC.
+func (f *ClientBoundSocketFD) Accept(ctx context.Context) (int, error) {
+	req := AcceptReq{
+		FD: f.fd,
+	}
+	var resp AcceptResp
+	var hostSocketFD [1]int
+	ctx.UninterruptibleSleepStart(false)
+	err := f.client.SndRcvMessage(Accept, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, hostSocketFD[:], req.String, resp.String)
+	ctx.UninterruptibleSleepFinish(false)
+	if err == nil && hostSocketFD[0] < 0 {
+		err = unix.EBADF
+	}
+	return hostSocketFD[0], err
 }

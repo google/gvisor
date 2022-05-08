@@ -212,6 +212,10 @@ var allowedSyscalls = seccomp.SyscallRules{
 }
 
 var udsSyscalls = seccomp.SyscallRules{
+	unix.SYS_ACCEPT4: {},
+	unix.SYS_BIND:    {},
+	unix.SYS_CONNECT: {},
+	unix.SYS_LISTEN:  {},
 	unix.SYS_SOCKET: []seccomp.Rule{
 		{
 			seccomp.EqualTo(unix.AF_UNIX),
@@ -227,11 +231,6 @@ var udsSyscalls = seccomp.SyscallRules{
 			seccomp.EqualTo(unix.AF_UNIX),
 			seccomp.EqualTo(unix.SOCK_SEQPACKET),
 			seccomp.EqualTo(0),
-		},
-	},
-	unix.SYS_CONNECT: []seccomp.Rule{
-		{
-			seccomp.MatchAny{},
 		},
 	},
 }

@@ -29,6 +29,17 @@ go_template_instance(
 )
 
 go_template_instance(
+    name = "bound_socket_fd_refs",
+    out = "bound_socket_fd_refs.go",
+    package = "lisafs",
+    prefix = "boundSocketFD",
+    template = "//pkg/refsvfs2:refs_template",
+    types = {
+        "T": "BoundSocketFD",
+    },
+)
+
+go_template_instance(
     name = "node_fd_refs",
     out = "node_fd_refs.go",
     package = "lisafs",
@@ -66,6 +77,7 @@ go_template_instance(
 go_library(
     name = "lisafs",
     srcs = [
+        "bound_socket_fd_refs.go",
         "channel.go",
         "client.go",
         "client_file.go",

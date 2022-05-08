@@ -297,6 +297,22 @@ func (c *Connection) lookupOpenFD(id FDID) (*OpenFD, error) {
 	return ofd, nil
 }
 
+// lookupBoundSocketFD retrieves the boundSockedFD identified by id on this
+// connection. On success, the caller gains a ref on the FD.
+func (c *Connection) lookupBoundSocketFD(id FDID) (*BoundSocketFD, error) {
+	fd, err := c.lookupFD(id)
+	if err != nil {
+		return nil, err
+	}
+
+	bsfd, ok := fd.(*BoundSocketFD)
+	if !ok {
+		fd.DecRef(nil)
+		return nil, unix.EINVAL
+	}
+	return bsfd, nil
+}
+
 // insertFD inserts the passed fd into the internal datastructure to track FDs.
 // The caller must hold a ref on fd which is transferred to the connection.
 func (c *Connection) insertFD(fd genericFD) FDID {

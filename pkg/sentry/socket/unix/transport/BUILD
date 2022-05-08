@@ -62,6 +62,7 @@ go_library(
         "//pkg/errors/linuxerr",
         "//pkg/fdnotifier",
         "//pkg/ilist",
+        "//pkg/lisafs",
         "//pkg/log",
         "//pkg/refs",
         "//pkg/refsvfs2",

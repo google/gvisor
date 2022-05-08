@@ -52,6 +52,13 @@ func (e *connectionedEndpoint) loadAcceptedChan(acceptedSlice []*connectionedEnd
 	}
 }
 
+// beforeSave is invoked by stateify.
+func (e *connectionedEndpoint) beforeSave() {
+	if e.boundSocketFD != nil {
+		panic("Cannot save endpoint with bound host socket")
+	}
+}
+
 // afterLoad is invoked by stateify.
 func (e *connectionedEndpoint) afterLoad() {
 	e.ops.InitHandler(e, &stackHandler{}, getSendBufferLimits, getReceiveBufferLimits)

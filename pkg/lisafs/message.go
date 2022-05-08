@@ -163,6 +163,15 @@ const (
 
 	// FRemoveXattr is analogous to fremovexattr(2).
 	FRemoveXattr MID = 28
+
+	// BindAt is analogous to bind(2).
+	BindAt MID = 29
+
+	// Listen is analogous to listen(2).
+	Listen MID = 30
+
+	// Accept is analogous to accept4(2).
+	Accept MID = 31
 )
 
 const (
@@ -1276,6 +1285,116 @@ type ConnectResp struct{ EmptyMessage }
 // String implements fmt.Stringer.String.
 func (*ConnectResp) String() string {
 	return "ConnectResp{}"
+}
+
+// BindAtReq is used to make BindAt requests.
+type BindAtReq struct {
+	DirFD    FDID
+	SockType primitive.Uint32
+	Name     SizedString
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (b *BindAtReq) SizeBytes() int {
+	return b.DirFD.SizeBytes() + b.SockType.SizeBytes() + b.Name.SizeBytes()
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (b *BindAtReq) MarshalBytes(dst []byte) []byte {
+	dst = b.DirFD.MarshalUnsafe(dst)
+	dst = b.SockType.MarshalUnsafe(dst)
+	return b.Name.MarshalBytes(dst)
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (b *BindAtReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	b.Name = ""
+	if b.SizeBytes() > len(src) {
+		return src, false
+	}
+	srcRemain := b.DirFD.UnmarshalUnsafe(src)
+	srcRemain = b.SockType.UnmarshalUnsafe(srcRemain)
+	if srcRemain, ok := b.Name.CheckedUnmarshal(srcRemain); ok {
+		return srcRemain, ok
+	}
+	return src, false
+}
+
+// String implements fmt.Stringer.String.
+func (b *BindAtReq) String() string {
+	return fmt.Sprintf("BindAtReq{DirFD: %d, SockType: %d, Name: %q}", b.DirFD, b.SockType, b.Name)
+}
+
+// BindAtResp is used to communicate BindAt response.
+//
+// +marshal boundCheck
+type BindAtResp struct {
+	Child         Inode
+	BoundSocketFD FDID
+}
+
+// String implements fmt.Stringer.String.
+func (b *BindAtResp) String() string {
+	return fmt.Sprintf("BindAtResp{Child: %+v, BoundSocketFD: %v}", b.Child, b.BoundSocketFD)
+}
+
+// ListenReq is used to make Listen requests.
+//
+// +marshal boundCheck
+type ListenReq struct {
+	FD      FDID
+	Backlog int32
+	_       uint32
+}
+
+// String implements fmt.Stringer.String.
+func (l *ListenReq) String() string {
+	return fmt.Sprintf("ListenReq{FD: %v, Backlog: %d}", l.FD, l.Backlog)
+}
+
+// ListenResp is an empty response to ListenResp.
+type ListenResp struct{ EmptyMessage }
+
+// String implements fmt.Stringer.String.
+func (*ListenResp) String() string {
+	return "ListenResp{}"
+}
+
+// AcceptReq is used to make AcceptRequests.
+//
+// +marshal boundCheck
+type AcceptReq struct {
+	FD FDID
+}
+
+// String implements fmt.Stringer.String.
+func (a *AcceptReq) String() string {
+	return fmt.Sprintf("AcceptReq{FD: %v}", a.FD)
+}
+
+// AcceptResp is an empty response to AcceptResp.
+type AcceptResp struct {
+	PeerAddr SizedString
+}
+
+// String implements fmt.Stringer.String.
+func (a *AcceptResp) String() string {
+	return fmt.Sprintf("AcceptResp{PeerAddr: %s}", a.PeerAddr)
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (a *AcceptResp) SizeBytes() int {
+	return a.PeerAddr.SizeBytes()
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (a *AcceptResp) MarshalBytes(dst []byte) []byte {
+	return a.PeerAddr.MarshalBytes(dst)
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (a *AcceptResp) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	return a.PeerAddr.CheckedUnmarshal(src)
 }
 
 // UnlinkAtReq is used to make UnlinkAt request.

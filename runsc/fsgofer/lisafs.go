@@ -17,7 +17,9 @@ package fsgofer
 import (
 	"io"
 	"math"
+	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 
 	"golang.org/x/sys/unix"
@@ -107,6 +109,9 @@ func (s *LisafsServer) SupportedMessages() []lisafs.MID {
 		lisafs.Getdents64,
 		lisafs.FGetXattr,
 		lisafs.FSetXattr,
+		lisafs.BindAt,
+		lisafs.Listen,
+		lisafs.Accept,
 	}
 }
 
@@ -620,7 +625,7 @@ func (fd *controlFDLisa) Readlink(getLinkBuf func(uint32) []byte) (uint16, error
 // Connect implements lisafs.ControlFDImpl.Connect.
 func (fd *controlFDLisa) Connect(sockType uint32) (int, error) {
 	if !fd.Conn().ServerImpl().(*LisafsServer).config.HostUDS {
-		return -1, unix.ECONNREFUSED
+		return -1, unix.EPERM
 	}
 
 	// TODO(gvisor.dev/issue/1003): Due to different app vs replacement
@@ -629,7 +634,7 @@ func (fd *controlFDLisa) Connect(sockType uint32) (int, error) {
 	// in order to actually connect to this socket.
 	hostPath := fd.Node().FilePath()
 	if len(hostPath) >= unixPathMax {
-		return -1, unix.ECONNREFUSED
+		return -1, unix.EINVAL
 	}
 
 	// Only the following types are supported.
@@ -650,6 +655,68 @@ func (fd *controlFDLisa) Connect(sockType uint32) (int, error) {
 		return -1, err
 	}
 	return sock, nil
+}
+
+// BindAt implements lisafs.ControlFDImpl.BindAt.
+func (fd *controlFDLisa) BindAt(name string, sockType uint32) (*lisafs.ControlFD, linux.Statx, *lisafs.BoundSocketFD, int, error) {
+	if !fd.Conn().ServerImpl().(*LisafsServer).config.HostUDS {
+		return nil, linux.Statx{}, nil, -1, unix.EPERM
+	}
+
+	// Because there is no "bindat" syscall in Linux, we must create an
+	// absolute path to the socket we are creating,
+	socketPath := filepath.Join(fd.Node().FilePath(), name)
+
+	// TODO(gvisor.dev/issue/1003): Due to different app vs replacement
+	// mappings, the app path may have fit in the sockaddr, but we can't fit
+	// hostPath in our sockaddr. We'd need to redirect through a shorter path
+	// in order to actually connect to this socket.
+	if len(socketPath) >= unixPathMax {
+		log.Warningf("BindAt called with name too long: %q (len=%d)", socketPath, len(socketPath))
+		return nil, linux.Statx{}, nil, -1, unix.EINVAL
+	}
+
+	// Only the following types are supported.
+	switch sockType {
+	case unix.SOCK_STREAM, unix.SOCK_SEQPACKET:
+	default:
+		return nil, linux.Statx{}, nil, -1, unix.ENXIO
+	}
+
+	// Create and bind the socket using the sockPath which may be a
+	// symlink.
+	sockFD, err := unix.Socket(unix.AF_UNIX, int(sockType), 0)
+	if err != nil {
+		return nil, linux.Statx{}, nil, -1, err
+	}
+	if err := unix.Bind(sockFD, &unix.SockaddrUnix{Name: socketPath}); err != nil {
+		return nil, linux.Statx{}, nil, -1, err
+	}
+
+	// Stat the socket.
+	sockStat, err := fstatTo(sockFD)
+	if err != nil {
+		_ = unix.Unlink(socketPath)
+		return nil, linux.Statx{}, nil, -1, err
+	}
+
+	// Get an os.File that will back future socket calls.
+	sockFile := os.NewFile(uintptr(sockFD), socketPath)
+
+	// Create an FD that will be donated to the sandbox.
+	sockFDToDonate, err := unix.Dup(int(sockFile.Fd()))
+	if err != nil {
+		_ = unix.Unlink(socketPath)
+		return nil, linux.Statx{}, nil, -1, err
+	}
+
+	socketControlFD := newControlFDLisa(sockFD, fd, socketPath, linux.ModeSocket)
+	boundSocketFD := &boundSocketFDLisa{
+		sock: sockFile,
+	}
+	boundSocketFD.Init(socketControlFD.FD(), boundSocketFD)
+
+	return socketControlFD.FD(), sockStat, boundSocketFD.FD(), sockFDToDonate, nil
 }
 
 // Unlink implements lisafs.ControlFDImpl.Unlink.
@@ -836,6 +903,44 @@ func (fd *openFDLisa) Getdent64(count uint32, seek0 bool, recordDirent func(lisa
 // Renamed implements lisafs.OpenFDImpl.Renamed.
 func (fd *openFDLisa) Renamed() {
 	// openFDLisa does not have any state to update on rename.
+}
+
+type boundSocketFDLisa struct {
+	lisafs.BoundSocketFD
+
+	sock *os.File
+}
+
+var _ lisafs.BoundSocketFDImpl = (*boundSocketFDLisa)(nil)
+
+// Close implements lisafs.BoundSocketFD.Close.
+func (fd *boundSocketFDLisa) Close() {
+	fd.sock.Close()
+}
+
+// FD implements lisafs.BoundSocketFD.FD.
+func (fd *boundSocketFDLisa) FD() *lisafs.BoundSocketFD {
+	if fd == nil {
+		return nil
+	}
+	return &fd.BoundSocketFD
+}
+
+// Listen implements lisafs.BoundSocketFD.Listen.
+func (fd *boundSocketFDLisa) Listen(backlog int32) error {
+	return unix.Listen(int(fd.sock.Fd()), int(backlog))
+}
+
+// Listen implements lisafs.BoundSocketFD.Accept.
+func (fd *boundSocketFDLisa) Accept() (int, string, error) {
+	flags := unix.O_NONBLOCK | unix.O_CLOEXEC
+	nfd, _, err := unix.Accept4(int(fd.sock.Fd()), flags)
+	if err != nil {
+		return -1, "", err
+	}
+	// Return an empty peer address so that we don't leak the actual host
+	// address.
+	return nfd, "", err
 }
 
 // tryOpen tries to open() with different modes as documented.
