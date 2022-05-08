@@ -60,6 +60,10 @@ type pidsController struct {
 	// since cgroupfs doesn't allow cross directory renames.
 	isRoot bool
 
+	// defaultMax is the default value for pids.max if set through
+	// internal mount options. Immutable.
+	defaultMax int64
+
 	// mu protects the fields below.
 	mu sync.Mutex `state:"nosave"`
 
@@ -88,12 +92,21 @@ var _ controller = (*pidsController)(nil)
 
 // newRootPIDsController creates the root node for a PIDs cgroup. Child
 // directories should be created through Clone.
-func newRootPIDsController(fs *filesystem) *pidsController {
+func newRootPIDsController(fs *filesystem, defaults map[string]int64) *pidsController {
 	c := &pidsController{
 		isRoot:      true,
+		defaultMax:  pidLimitUnlimited,
 		max:         pidLimitUnlimited,
 		pendingPool: make(map[*kernel.Task]int64),
 	}
+	if val, ok := defaults["pids.max"]; ok {
+		c.defaultMax = val
+		delete(defaults, "pids.max")
+		// Note: we store the default pids.max, but don't modify the limit for
+		// the root cgroup, since the root is never limited. This default will
+		// be applied on clone to sub cgroups.
+	}
+
 	c.controllerCommon.init(kernel.CgroupControllerPIDs, fs)
 	return c
 }
@@ -104,7 +117,8 @@ func (c *pidsController) Clone() controller {
 	defer c.mu.Unlock()
 	new := &pidsController{
 		isRoot:      false,
-		max:         pidLimitUnlimited,
+		defaultMax:  c.defaultMax,
+		max:         c.defaultMax,
 		pendingPool: make(map[*kernel.Task]int64),
 	}
 	new.controllerCommon.cloneFromParent(c)

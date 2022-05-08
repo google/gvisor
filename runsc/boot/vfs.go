@@ -359,7 +359,7 @@ func (c *containerMounter) configureOverlay(ctx context.Context, creds *auth.Cre
 }
 
 func (c *containerMounter) mountSubmountsVFS2(ctx context.Context, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials) error {
-	mounts, err := c.prepareMountsVFS2()
+	mounts, pidsControllerFound, err := c.prepareMountsVFS2()
 	if err != nil {
 		return err
 	}
@@ -401,15 +401,42 @@ func (c *containerMounter) mountSubmountsVFS2(ctx context.Context, conf *config.
 	if err := c.mountTmpVFS2(ctx, conf, creds, mns); err != nil {
 		return fmt.Errorf(`mount submount "\tmp": %w`, err)
 	}
+
+	if pidsMopts, ok := c.cgroupfsPIDHierarchyMountOptions(); !pidsControllerFound && ok {
+		if err := c.mountImplicitPIDsController(ctx, creds, mns, pidsMopts); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
 type mountAndFD struct {
 	mount *specs.Mount
 	fd    int
+	// hasPIDsController indicates this is a cgroupfs mount with a pids controller.
+	hasPIDsController bool
 }
 
-func (c *containerMounter) prepareMountsVFS2() ([]mountAndFD, error) {
+// Parses opts as the mount options for a cgroupfs filesystem, and returns
+// whether a pids controller was requested.
+func cgroupfsContainsPIDsController(opts []string) (bool, error) {
+	mopts := vfs.GenericParseMountOptions(strings.Join(opts, ","))
+	ctls, err := cgroupfs.ControllersFromMountOptions(mopts)
+	if err != nil {
+		return false, fmt.Errorf("failed to interpret cgroupfs mount options: %w", err)
+	}
+	for _, ctl := range ctls {
+		if ctl == kernel.CgroupControllerPIDs {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (c *containerMounter) prepareMountsVFS2() ([]mountAndFD, bool, error) {
+	var cgroupfsPIDsControllerFound bool
+
 	// Associate bind mounts with their FDs before sorting since there is an
 	// undocumented assumption that FDs are dispensed in the order in which
 	// they are required by mounts.
@@ -424,13 +451,26 @@ func (c *containerMounter) prepareMountsVFS2() ([]mountAndFD, error) {
 		if m.Type == bind {
 			fd = c.fds.remove()
 		}
-		mounts = append(mounts, mountAndFD{
+		mfd := mountAndFD{
 			mount: m,
 			fd:    fd,
-		})
+		}
+
+		if m.Type == cgroupfs.Name {
+			ok, err := cgroupfsContainsPIDsController(m.Options)
+			if err != nil {
+				return nil, false, err
+			}
+			if ok {
+				cgroupfsPIDsControllerFound = true
+				mfd.hasPIDsController = true
+			}
+		}
+
+		mounts = append(mounts, mfd)
 	}
 	if err := c.checkDispenser(); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	// Sort the mounts so that we don't place children before parents.
@@ -438,7 +478,7 @@ func (c *containerMounter) prepareMountsVFS2() ([]mountAndFD, error) {
 		return len(mounts[i].mount.Destination) < len(mounts[j].mount.Destination)
 	})
 
-	return mounts, nil
+	return mounts, cgroupfsPIDsControllerFound, nil
 }
 
 func (c *containerMounter) mountSubmountVFS2(ctx context.Context, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, submount *mountAndFD) (*vfs.Mount, error) {
@@ -447,7 +487,7 @@ func (c *containerMounter) mountSubmountVFS2(ctx context.Context, conf *config.C
 		return nil, fmt.Errorf("mountOptions failed: %w", err)
 	}
 	if len(fsName) == 0 {
-		// Filesystem is not supported (e.g. cgroup), just skip it.
+		// Filesystem is not supported, just skip it.
 		return nil, nil
 	}
 
@@ -538,6 +578,14 @@ func (c *containerMounter) getMountNameAndOptionsVFS2(conf *config.Config, m *mo
 		data, err = parseAndFilterOptions(m.mount.Options, cgroupfs.SupportedMountOptions...)
 		if err != nil {
 			return "", nil, false, err
+		}
+
+		// When the sentry cgroupfs is available, attempt to enforce any pid
+		// limits passed to docker inside the sandbox. If a pids controller was
+		// explicitly requested here, we'll use this mount. Otherwise, we'll
+		// create an new mount for the pids controller from prepareMountsVFS2.
+		if pidsMopts, ok := c.cgroupfsPIDHierarchyMountOptions(); m.hasPIDsController && ok {
+			internalData = pidsMopts
 		}
 
 	default:
@@ -830,7 +878,7 @@ func (c *containerMounter) makeMountPoint(ctx context.Context, creds *auth.Crede
 func (c *containerMounter) configureRestore(ctx context.Context) (context.Context, error) {
 	fdmap := make(map[string]int)
 	fdmap["/"] = c.fds.remove()
-	mounts, err := c.prepareMountsVFS2()
+	mounts, _, err := c.prepareMountsVFS2()
 	if err != nil {
 		return ctx, err
 	}
@@ -841,4 +889,57 @@ func (c *containerMounter) configureRestore(ctx context.Context) (context.Contex
 		}
 	}
 	return context.WithValue(ctx, gofer.CtxRestoreServerFDMap, fdmap), nil
+}
+
+func (c *containerMounter) cgroupfsPIDHierarchyMountOptions() (*cgroupfs.InternalData, bool) {
+	if c.spec.Linux == nil || c.spec.Linux.Resources == nil || c.spec.Linux.Resources.Pids == nil {
+		// No limit provided.
+		return nil, false
+	}
+
+	defaultsMap := make(map[string]int64)
+	defaultsMap["pids.max"] = c.spec.Linux.Resources.Pids.Limit
+
+	initialCgroupPath := "/docker"
+	if c.spec.Linux != nil && c.spec.Linux.CgroupsPath != "" {
+		initialCgroupPath = c.spec.Linux.CgroupsPath
+	}
+
+	return &cgroupfs.InternalData{
+		InitialCgroupPath:    initialCgroupPath,
+		DefaultControlValues: defaultsMap,
+	}, true
+}
+
+// mountImplicitPIDsController creates a cgroupfs with a pids controller to
+// enforce the pids limit set in the container spec. This must be called after
+// all submounts are mounted, so other cgroupfs submounts wont' be mounted over
+// this.
+func (c *containerMounter) mountImplicitPIDsController(ctx context.Context, creds *auth.Credentials, mns *vfs.MountNamespace, internalData *cgroupfs.InternalData) error {
+	root := mns.Root()
+	root.IncRef()
+	defer root.DecRef(ctx)
+	targetPath := "/sys/fs/cgroup/pids"
+	pop := vfs.PathOperation{
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse(targetPath),
+	}
+	opts := vfs.MountOptions{
+		GetFilesystemOptions: vfs.GetFilesystemOptions{
+			Data:         "pids",
+			InternalData: internalData,
+		},
+		InternalMount: true,
+	}
+
+	if err := c.makeMountPoint(ctx, creds, mns, targetPath); err != nil {
+		return fmt.Errorf("creating mount point %q: %w", targetPath, err)
+	}
+
+	if _, err := c.k.VFS().MountAt(ctx, creds, "", &pop, cgroupfs.Name, &opts); err != nil {
+		return fmt.Errorf("failed to implicitly mount %q (type: %s): %w, opts: %v", targetPath, cgroupfs.Name, err, opts)
+	}
+	log.Infof("Mounted %q to %q type: %s, internal-options: %q", "(implicit)", targetPath, cgroupfs.Name, opts.GetFilesystemOptions.Data)
+	return nil
 }

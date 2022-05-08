@@ -68,6 +68,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -160,24 +161,11 @@ func (FilesystemType) Name() string {
 // Release implements vfs.FilesystemType.Release.
 func (FilesystemType) Release(ctx context.Context) {}
 
-// GetFilesystem implements vfs.FilesystemType.GetFilesystem.
-func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
-	devMinor, err := vfsObj.GetAnonBlockDevMinor()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	mopts := vfs.GenericParseMountOptions(opts.Data)
-	maxCachedDentries := defaultMaxCachedDentries
-	if str, ok := mopts["dentry_cache_limit"]; ok {
-		delete(mopts, "dentry_cache_limit")
-		maxCachedDentries, err = strconv.ParseUint(str, 10, 64)
-		if err != nil {
-			ctx.Warningf("sys.FilesystemType.GetFilesystem: invalid dentry cache limit: dentry_cache_limit=%s", str)
-			return nil, nil, linuxerr.EINVAL
-		}
-	}
-
+// ControllersFromMountOptions interprets mopts to decide which controllers are
+// required. mopts should be the (potentially partially processed) output of
+// vfs.GenericParseMountOptions. Options that describe controllers are removed
+// from mopts.
+func ControllersFromMountOptions(mopts map[string]string) ([]kernel.CgroupControllerType, error) {
 	var wantControllers []kernel.CgroupControllerType
 	if _, ok := mopts["cpu"]; ok {
 		delete(mopts, "cpu")
@@ -205,8 +193,8 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 	if _, ok := mopts["all"]; ok {
 		if len(wantControllers) > 0 {
-			ctx.Debugf("cgroupfs.FilesystemType.GetFilesystem: other controllers specified with all: %v", wantControllers)
-			return nil, nil, linuxerr.EINVAL
+			log.Debugf("cgroupfs.FilesystemType.GetFilesystem: other controllers specified with all: %v", wantControllers)
+			return nil, linuxerr.EINVAL
 		}
 
 		delete(mopts, "all")
@@ -216,6 +204,31 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	if len(wantControllers) == 0 {
 		// Specifying no controllers implies all controllers.
 		wantControllers = allControllers
+	}
+	return wantControllers, nil
+}
+
+// GetFilesystem implements vfs.FilesystemType.GetFilesystem.
+func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
+	devMinor, err := vfsObj.GetAnonBlockDevMinor()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	mopts := vfs.GenericParseMountOptions(opts.Data)
+	maxCachedDentries := defaultMaxCachedDentries
+	if str, ok := mopts["dentry_cache_limit"]; ok {
+		delete(mopts, "dentry_cache_limit")
+		maxCachedDentries, err = strconv.ParseUint(str, 10, 64)
+		if err != nil {
+			ctx.Warningf("sys.FilesystemType.GetFilesystem: invalid dentry cache limit: dentry_cache_limit=%s", str)
+			return nil, nil, linuxerr.EINVAL
+		}
+	}
+
+	wantControllers, err := ControllersFromMountOptions(mopts)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	if len(mopts) != 0 {
@@ -277,7 +290,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		case kernel.CgroupControllerMemory:
 			c = newMemoryController(fs, defaults)
 		case kernel.CgroupControllerPIDs:
-			c = newRootPIDsController(fs)
+			c = newRootPIDsController(fs, defaults)
 		default:
 			panic(fmt.Sprintf("Unreachable: unknown cgroup controller %q", ty))
 		}

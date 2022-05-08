@@ -610,6 +610,8 @@ func (p *podMountHints) findMount(mount *specs.Mount) *mountHint {
 }
 
 type containerMounter struct {
+	spec *specs.Spec
+
 	root *specs.Root
 
 	// mounts is the set of submounts for the container. It's a copy from the spec
@@ -630,6 +632,7 @@ type containerMounter struct {
 
 func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *podMountHints, vfs2Enabled bool, productName string) *containerMounter {
 	return &containerMounter{
+		spec:        info.spec,
 		root:        info.spec.Root,
 		mounts:      compileMounts(info.spec, info.conf, vfs2Enabled),
 		fds:         fdDispenser{fds: info.goferFDs},
