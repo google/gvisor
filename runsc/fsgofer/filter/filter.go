@@ -31,7 +31,7 @@ func Install() error {
 }
 
 // InstallUDSFilters extends the allowed syscalls to include those necessary for
-// connecting to a host UDS.
+// creating and connecting to host UDS.
 func InstallUDSFilters() {
 	// Add additional filters required for connecting to the host's sockets.
 	allowedSyscalls.Merge(udsSyscalls)

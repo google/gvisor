@@ -6,6 +6,30 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (r *boundSocketFDRefs) StateTypeName() string {
+	return "pkg/lisafs.boundSocketFDRefs"
+}
+
+func (r *boundSocketFDRefs) StateFields() []string {
+	return []string{
+		"refCount",
+	}
+}
+
+func (r *boundSocketFDRefs) beforeSave() {}
+
+// +checklocksignore
+func (r *boundSocketFDRefs) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.refCount)
+}
+
+// +checklocksignore
+func (r *boundSocketFDRefs) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(r.afterLoad)
+}
+
 func (l *controlFDList) StateTypeName() string {
 	return "pkg/lisafs.controlFDList"
 }
@@ -191,6 +215,7 @@ func (r *openFDRefs) StateLoad(stateSourceObject state.Source) {
 }
 
 func init() {
+	state.Register((*boundSocketFDRefs)(nil))
 	state.Register((*controlFDList)(nil))
 	state.Register((*controlFDEntry)(nil))
 	state.Register((*controlFDRefs)(nil))

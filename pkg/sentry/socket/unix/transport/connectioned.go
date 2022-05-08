@@ -15,8 +15,13 @@
 package transport
 
 import (
+	"fmt"
+
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/fdnotifier"
+	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserr"
@@ -104,6 +109,12 @@ type connectionedEndpoint struct {
 	//
 	// If nil, then no listen call has been made.
 	acceptedChan chan *connectionedEndpoint `state:".([]*connectionedEndpoint)"`
+
+	// boundSocketFD corresponds to a bound socket on the host filesystem
+	// that may listen and accept incoming connections.
+	//
+	// boundSocketFD is protected by baseEndpoint.mu.
+	boundSocketFD *lisafs.ClientBoundSocketFD
 }
 
 var (
@@ -218,8 +229,11 @@ func (e *connectionedEndpoint) ListeningLocked() bool {
 func (e *connectionedEndpoint) Close(ctx context.Context) {
 	var acceptedChan chan *connectionedEndpoint
 	e.Lock()
-	var c ConnectedEndpoint
-	var r Receiver
+	var (
+		c ConnectedEndpoint
+		r Receiver
+	)
+	bsFD := e.boundSocketFD
 	switch {
 	case e.Connected():
 		e.connected.CloseSend()
@@ -251,6 +265,13 @@ func (e *connectionedEndpoint) Close(ctx context.Context) {
 		c.CloseNotify()
 		c.Release(ctx)
 	}
+
+	// Clean up any associated host bound socket.
+	if bsFD != nil {
+		fdnotifier.RemoveFD(bsFD.NotificationFD())
+		bsFD.Close(ctx)
+	}
+
 	if r != nil {
 		r.CloseNotify()
 		r.Release(ctx)
@@ -397,6 +418,11 @@ func (e *connectionedEndpoint) Listen(ctx context.Context, backlog int) *syserr.
 		for ep := range origChan {
 			e.acceptedChan <- ep
 		}
+		if e.boundSocketFD != nil {
+			if err := e.boundSocketFD.Listen(ctx, int32(backlog)); err != nil {
+				return syserr.FromError(err)
+			}
+		}
 		return nil
 	}
 	if !e.isBound() {
@@ -405,6 +431,12 @@ func (e *connectionedEndpoint) Listen(ctx context.Context, backlog int) *syserr.
 
 	// Normal case.
 	e.acceptedChan = make(chan *connectionedEndpoint, backlog)
+	if e.boundSocketFD != nil {
+		if err := e.boundSocketFD.Listen(ctx, int32(backlog)); err != nil {
+			return syserr.FromError(err)
+		}
+	}
+
 	return nil
 }
 
@@ -417,28 +449,61 @@ func (e *connectionedEndpoint) Accept(ctx context.Context, peerAddr *tcpip.FullA
 		return nil, syserr.ErrInvalidEndpointState
 	}
 
+	ne, err := e.getAcceptedEndpointLocked(ctx)
+	e.Unlock()
+	if err != nil {
+		return nil, err
+	}
+
+	if peerAddr != nil {
+		ne.Lock()
+		c := ne.connected
+		ne.Unlock()
+		if c != nil {
+			addr, err := c.GetLocalAddress()
+			if err != nil {
+				return nil, syserr.TranslateNetstackError(err)
+			}
+			*peerAddr = addr
+		}
+	}
+	return ne, nil
+}
+
+// Preconditions:
+// * e.Listening()
+// * e is locked.
+func (e *connectionedEndpoint) getAcceptedEndpointLocked(ctx context.Context) (*connectionedEndpoint, *syserr.Error) {
+	// Accept connections from within the sentry first, since this avoids
+	// an RPC to the gofer on the common path.
 	select {
 	case ne := <-e.acceptedChan:
-		e.Unlock()
-		if peerAddr != nil {
-			ne.Lock()
-			c := ne.connected
-			ne.Unlock()
-			if c != nil {
-				addr, err := c.GetLocalAddress()
-				if err != nil {
-					return nil, syserr.TranslateNetstackError(err)
-				}
-				*peerAddr = addr
-			}
-		}
 		return ne, nil
-
 	default:
-		e.Unlock()
-		// Nothing left.
+		// No internal connections.
+	}
+
+	if e.boundSocketFD == nil {
 		return nil, syserr.ErrWouldBlock
 	}
+
+	// Check for external connections.
+	nfd, err := e.boundSocketFD.Accept(ctx)
+	if err == unix.EWOULDBLOCK {
+		return nil, syserr.ErrWouldBlock
+	}
+	if err != nil {
+		return nil, syserr.FromError(err)
+	}
+	q := &waiter.Queue{}
+	scme, serr := NewSCMEndpoint(nfd, q, e.path)
+	if serr != nil {
+		unix.Close(nfd)
+		return nil, serr
+	}
+	scme.Init()
+	return NewExternal(e.stype, e.idGenerator, q, scme, scme).(*connectionedEndpoint), nil
+
 }
 
 // Bind binds the connection.
@@ -476,6 +541,13 @@ func (e *connectionedEndpoint) SendMsg(ctx context.Context, data [][]byte, c Con
 	return e.baseEndpoint.SendMsg(ctx, data, c, to)
 }
 
+func (e *connectionedEndpoint) isBoundSocketReadable() bool {
+	if e.boundSocketFD == nil {
+		return false
+	}
+	return fdnotifier.NonBlockingPoll(e.boundSocketFD.NotificationFD(), waiter.ReadableEvents)&waiter.ReadableEvents != 0
+}
+
 // Readiness returns the current readiness of the connectionedEndpoint. For
 // example, if waiter.EventIn is set, the connectionedEndpoint is immediately
 // readable.
@@ -493,7 +565,7 @@ func (e *connectionedEndpoint) Readiness(mask waiter.EventMask) waiter.EventMask
 			ready |= waiter.WritableEvents
 		}
 	case e.ListeningLocked():
-		if mask&waiter.ReadableEvents != 0 && len(e.acceptedChan) > 0 {
+		if mask&waiter.ReadableEvents != 0 && (len(e.acceptedChan) > 0 || e.isBoundSocketReadable()) {
 			ready |= waiter.ReadableEvents
 		}
 	}
@@ -524,3 +596,41 @@ func (e *connectionedEndpoint) OnSetSendBufferSize(v int64) (newSz int64) {
 
 // WakeupWriters implements tcpip.SocketOptionsHandler.WakeupWriters.
 func (e *connectionedEndpoint) WakeupWriters() {}
+
+// SetBoundSocketFD implement HostBountEndpoint.SetBoundSocketFD.
+func (e *connectionedEndpoint) SetBoundSocketFD(bsFD *lisafs.ClientBoundSocketFD) {
+	e.Lock()
+	defer e.Unlock()
+	if e.boundSocketFD != nil {
+		panic(fmt.Sprintf("SetBoundSocketFD called twice\nold: %v\nnew: %v", e.boundSocketFD, bsFD))
+	}
+	e.boundSocketFD = bsFD
+	fdnotifier.AddFD(bsFD.NotificationFD(), e.Queue)
+}
+
+// EventRegister implements waiter.Waitable.EventRegister.
+func (e *connectionedEndpoint) EventRegister(we *waiter.Entry) error {
+	if err := e.baseEndpoint.EventRegister(we); err != nil {
+		return err
+	}
+
+	e.Lock()
+	bsFD := e.boundSocketFD
+	e.Unlock()
+	if bsFD != nil {
+		fdnotifier.UpdateFD(bsFD.NotificationFD())
+	}
+	return nil
+}
+
+// EventUnregister implements waiter.Waitable.EventUnregister.
+func (e *connectionedEndpoint) EventUnregister(we *waiter.Entry) {
+	e.baseEndpoint.EventUnregister(we)
+
+	e.Lock()
+	bsFD := e.boundSocketFD
+	e.Unlock()
+	if bsFD != nil {
+		fdnotifier.UpdateFD(bsFD.NotificationFD())
+	}
+}
