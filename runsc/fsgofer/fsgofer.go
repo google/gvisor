@@ -73,8 +73,8 @@ type Config struct {
 	// PanicOnWrite panics on attempts to write to RO mounts.
 	PanicOnWrite bool
 
-	// HostUDS signals whether the gofer can mount a host's UDS and connect to it
-	// or bind (create) a host UDS and serve it.
+	// HostUDS signals whether the gofer can create and connect to host
+	// unix domain sockets.
 	HostUDS bool
 
 	// EnableVerityXattr allows access to extended attributes used by the

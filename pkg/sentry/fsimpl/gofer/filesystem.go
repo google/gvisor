@@ -916,12 +916,30 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.MknodOptions) error {
 	return fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, name string, ds **[]*dentry) error {
 		creds := rp.Credentials()
-		var err error
+		var (
+			childInode lisafs.Inode
+			err        error
+		)
 		if fs.opts.lisaEnabled {
-			var childInode lisafs.Inode
-			childInode, err = parent.controlFDLisa.MknodAt(ctx, name, opts.Mode, lisafs.UID(creds.EffectiveKUID), lisafs.GID(creds.EffectiveKGID), opts.DevMinor, opts.DevMajor)
+			if opts.Endpoint != nil {
+				// We are creating a socket. Defer to bindAt instead of MknodAt.
+				ep := opts.Endpoint.(transport.Endpoint)
+				sockType := ep.Type()
+				var boundSocketFD *lisafs.ClientBoundSocketFD
+				childInode, boundSocketFD, err = parent.controlFDLisa.BindAt(ctx, sockType, name)
+				if err == nil {
+					opts.Endpoint.(transport.HostBoundEndpoint).SetBoundSocketFD(boundSocketFD)
+				}
+			} else {
+				childInode, err = parent.controlFDLisa.MknodAt(ctx, name, opts.Mode, lisafs.UID(creds.EffectiveKUID), lisafs.GID(creds.EffectiveKGID), opts.DevMinor, opts.DevMajor)
+			}
 			if err == nil {
-				return parent.insertCreatedChildLocked(ctx, &childInode, name, nil, ds)
+				return parent.insertCreatedChildLocked(ctx, &childInode, name, func(child *dentry) {
+					if opts.Endpoint != nil && fs.opts.lisaEnabled {
+						// Set the endpoint on the newly created child dentry.
+						child.endpoint = opts.Endpoint
+					}
+				}, ds)
 			}
 		} else {
 			_, err = parent.file.mknod(ctx, name, (p9.FileMode)(opts.Mode), opts.DevMajor, opts.DevMinor, (p9.UID)(creds.EffectiveKUID), (p9.GID)(creds.EffectiveKGID))
@@ -1766,18 +1784,19 @@ func (fs *filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath
 	if err := d.checkPermissions(rp.Credentials(), vfs.MayWrite); err != nil {
 		return nil, err
 	}
-	if d.isSocket() {
-		if !d.isSynthetic() {
-			d.IncRef()
-			ds = appendDentry(ds, d)
-			return &endpoint{
-				dentry: d,
-				path:   opts.Addr,
-			}, nil
-		}
-		if d.endpoint != nil {
-			return d.endpoint, nil
-		}
+	if !d.isSocket() {
+		return nil, linuxerr.ECONNREFUSED
+	}
+	if d.endpoint != nil {
+		return d.endpoint, nil
+	}
+	if !d.isSynthetic() {
+		d.IncRef()
+		ds = appendDentry(ds, d)
+		return &endpoint{
+			dentry: d,
+			path:   opts.Addr,
+		}, nil
 	}
 	return nil, linuxerr.ECONNREFUSED
 }

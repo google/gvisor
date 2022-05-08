@@ -16,16 +16,32 @@
 package uds
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/unet"
 )
+
+func doEcho(s *unet.Socket) error {
+	buf := make([]byte, 512)
+	n, err := s.Read(buf)
+	if err != nil {
+		return fmt.Errorf("failed to read: %d, %w", n, err)
+	}
+
+	n, err = s.Write(buf[:n])
+	if err != nil {
+		return fmt.Errorf("failed to write: %d, %w", n, err)
+	}
+	return nil
+}
 
 // createEchoSocket creates a socket that echoes back anything received.
 //
@@ -57,20 +73,11 @@ func createEchoSocket(path string, protocol int) (cleanup func(), err error) {
 		defer s.Close()
 
 		for {
-			buf := make([]byte, 512)
-			for {
-				n, err := s.Read(buf)
-				if err == io.EOF {
+			if err := doEcho(s); err != nil {
+				if errors.Is(err, io.EOF) {
 					return nil
 				}
-				if err != nil {
-					return fmt.Errorf("failed to read: %d, %v", n, err)
-				}
-
-				n, err = s.Write(buf[:n])
-				if err != nil {
-					return fmt.Errorf("failed to write: %d, %v", n, err)
-				}
+				return err
 			}
 		}
 	}
@@ -91,6 +98,31 @@ func createEchoSocket(path string, protocol int) (cleanup func(), err error) {
 	}
 
 	return cleanup, nil
+}
+
+// connectAndBecomeEcho connects to the given socket and turns into an echo server.
+func connectAndBecomeEcho(path string, protocol int) (cleanup func(), err error) {
+	usePacket := protocol == unix.SOCK_SEQPACKET
+	go func() {
+		for {
+			sock, err := unet.Connect(path, usePacket)
+			log.Infof("Connecting to UDS at %q, got %v", path, err)
+			if err != nil {
+				// Wait and try again.
+				time.Sleep(500 * time.Millisecond)
+				continue
+			}
+			defer sock.Close()
+			for {
+				log.Infof("Connected to UDS at %q, running echo server", path)
+				if err := doEcho(sock); err != nil {
+					return
+				}
+			}
+		}
+	}()
+
+	return func() {}, nil
 }
 
 // createNonListeningSocket creates a socket that is bound but not listening.
@@ -162,6 +194,11 @@ type socketCreator func(path string, proto int) (cleanup func(), err error)
 //  * /seqpacket/echo
 //  * /seqpacket/nonlistening
 //  * /dgram/null
+//
+// Additionally, it will attempt to connect to sockets at the following
+// locations, and turn into an echo server once connected:
+//  * /stream/created-in-sandbox
+//  * /seqpacket/created-in-sandbox
 func CreateSocketTree(baseDir string) (dir string, cleanup func(), err error) {
 	dir, err = ioutil.TempDir(baseDir, "sockets")
 	if err != nil {
@@ -177,16 +214,18 @@ func CreateSocketTree(baseDir string) (dir string, cleanup func(), err error) {
 			protocol: unix.SOCK_STREAM,
 			name:     "stream",
 			sockets: map[string]socketCreator{
-				"echo":         createEchoSocket,
-				"nonlistening": createNonListeningSocket,
+				"echo":               createEchoSocket,
+				"nonlistening":       createNonListeningSocket,
+				"created-in-sandbox": connectAndBecomeEcho,
 			},
 		},
 		{
 			protocol: unix.SOCK_SEQPACKET,
 			name:     "seqpacket",
 			sockets: map[string]socketCreator{
-				"echo":         createEchoSocket,
-				"nonlistening": createNonListeningSocket,
+				"echo":               createEchoSocket,
+				"nonlistening":       createNonListeningSocket,
+				"created-in-sandbox": connectAndBecomeEcho,
 			},
 		},
 		{

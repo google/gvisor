@@ -110,6 +110,52 @@ TEST_P(GoferStreamSeqpacketTest, NonListening) {
               SyscallFailsWithErrno(ECONNREFUSED));
 }
 
+// Bind to a socket, then Listen and Accept.
+TEST_P(GoferStreamSeqpacketTest, BindListenAccept) {
+  // Binding to host socket requires LisaFS.
+  SKIP_IF(!IsLisafsEnabled());
+
+  std::string env;
+  ProtocolSocket proto;
+  std::tie(env, proto) = GetParam();
+
+  char* val = getenv(env.c_str());
+  ASSERT_NE(val, nullptr);
+  std::string root(val);
+
+  FileDescriptor sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, proto.protocol, 0));
+
+  std::string socket_path =
+      JoinPath("/tmp/sockets", proto.name, "created-in-sandbox");
+
+  struct sockaddr_un addr = {};
+  addr.sun_family = AF_UNIX;
+  memcpy(addr.sun_path, socket_path.c_str(), socket_path.length());
+
+  ASSERT_THAT(
+      bind(sock.get(), reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)),
+      SyscallSucceeds());
+
+  ASSERT_THAT(listen(sock.get(), 1), SyscallSucceeds());
+
+  FileDescriptor accSock =
+      ASSERT_NO_ERRNO_AND_VALUE(Accept(sock.get(), NULL, NULL));
+
+  // Other socket should be echo server.
+  constexpr int kBufferSize = 64;
+  char send_buffer[kBufferSize];
+  memset(send_buffer, 'a', sizeof(send_buffer));
+
+  ASSERT_THAT(WriteFd(accSock.get(), send_buffer, sizeof(send_buffer)),
+              SyscallSucceedsWithValue(sizeof(send_buffer)));
+
+  char recv_buffer[kBufferSize];
+  ASSERT_THAT(ReadFd(accSock.get(), recv_buffer, sizeof(recv_buffer)),
+              SyscallSucceedsWithValue(sizeof(recv_buffer)));
+  ASSERT_EQ(0, memcmp(send_buffer, recv_buffer, sizeof(send_buffer)));
+}
+
 INSTANTIATE_TEST_SUITE_P(
     StreamSeqpacket, GoferStreamSeqpacketTest,
     ::testing::Combine(

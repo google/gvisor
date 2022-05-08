@@ -67,7 +67,6 @@ var handlers = [...]RPCHandler{
 	FAllocate:    FAllocateHandler,
 	ReadLinkAt:   ReadLinkAtHandler,
 	Flush:        FlushHandler,
-	Connect:      ConnectHandler,
 	UnlinkAt:     UnlinkAtHandler,
 	RenameAt:     RenameAtHandler,
 	Getdents64:   Getdents64Handler,
@@ -75,6 +74,10 @@ var handlers = [...]RPCHandler{
 	FSetXattr:    FSetXattrHandler,
 	FListXattr:   FListXattrHandler,
 	FRemoveXattr: FRemoveXattrHandler,
+	Connect:      ConnectHandler,
+	BindAt:       BindAtHandler,
+	Listen:       ListenHandler,
+	Accept:       AcceptHandler,
 }
 
 // ErrorHandler handles Error message.
@@ -1066,6 +1069,116 @@ func ConnectHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32
 	}
 
 	return 0, comm.DonateFD(sock)
+}
+
+// BindAtHandler handles the BindAt RPC.
+func BindAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
+	var req BindAtReq
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
+
+	name := string(req.Name)
+	if err := checkSafeName(name); err != nil {
+		return 0, err
+	}
+
+	dir, err := c.lookupControlFD(req.DirFD)
+	if err != nil {
+		return 0, err
+	}
+	defer dir.DecRef(nil)
+
+	if !dir.IsDir() {
+		return 0, unix.ENOTDIR
+	}
+
+	var (
+		childFD       *ControlFD
+		childStat     linux.Statx
+		boundSocketFD *BoundSocketFD
+		hostSocketFD  int
+	)
+	if err := dir.safelyWrite(func() error {
+		if dir.node.isDeleted() {
+			return unix.EINVAL
+		}
+		childFD, childStat, boundSocketFD, hostSocketFD, err = dir.impl.BindAt(name, uint32(req.SockType))
+		return err
+	}); err != nil {
+		return 0, err
+	}
+
+	if err := comm.DonateFD(hostSocketFD); err != nil {
+		return 0, err
+	}
+
+	resp := BindAtResp{
+		Child: Inode{
+			ControlFD: childFD.id,
+			Stat:      childStat,
+		},
+		BoundSocketFD: boundSocketFD.id,
+	}
+	respLen := uint32(resp.SizeBytes())
+	resp.MarshalUnsafe(comm.PayloadBuf(respLen))
+	return respLen, nil
+}
+
+// ListenHandler handles the Listen RPC.
+func ListenHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
+	var req ListenReq
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
+	sock, err := c.lookupBoundSocketFD(req.FD)
+	if err != nil {
+		return 0, err
+	}
+	if err := sock.controlFD.safelyRead(func() error {
+		if sock.controlFD.node.isDeleted() {
+			return unix.EINVAL
+		}
+		return sock.impl.Listen(req.Backlog)
+	}); err != nil {
+		return 0, err
+	}
+	return 0, nil
+}
+
+// AcceptHandler handles the Accept RPC.
+func AcceptHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
+	var req AcceptReq
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
+	sock, err := c.lookupBoundSocketFD(req.FD)
+	if err != nil {
+		return 0, err
+	}
+	var (
+		newSock  int
+		peerAddr string
+	)
+	if err := sock.controlFD.safelyRead(func() error {
+		if sock.controlFD.node.isDeleted() {
+			return unix.EINVAL
+		}
+		var err error
+		newSock, peerAddr, err = sock.impl.Accept()
+		return err
+	}); err != nil {
+		return 0, err
+	}
+	if err := comm.DonateFD(newSock); err != nil {
+		return 0, err
+	}
+	resp := AcceptResp{
+		PeerAddr: SizedString(peerAddr),
+	}
+	respLen := uint32(resp.SizeBytes())
+	resp.MarshalBytes(comm.PayloadBuf(respLen))
+	return respLen, nil
 }
 
 // UnlinkAtHandler handles the UnlinkAt RPC.
