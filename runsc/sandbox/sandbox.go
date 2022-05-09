@@ -26,6 +26,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"errors"
 	"time"
 
 	"github.com/cenkalti/backoff"
@@ -1420,6 +1421,10 @@ func (s *Sandbox) configureStdios(conf *config.Config, stdios []*os.File) error 
 	for _, file := range stdios {
 		log.Debugf("Changing %q ownership to %d/%d", file.Name(), s.UID, s.GID)
 		if err := file.Chown(s.UID, s.GID); err != nil {
+			if errors.Is(err, unix.EINVAL) || errors.Is(err, unix.EPERM) || errors.Is(err, unix.EROFS) {
+				log.Warningf("can't change an owner of %s: %s", file.Name(), err)
+				continue
+			}
 			return err
 		}
 	}
