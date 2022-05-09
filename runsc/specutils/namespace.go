@@ -119,7 +119,7 @@ func setNS(fd, nsType uintptr) error {
 // that will restore the namespace to the original value.
 //
 // Preconditions: Must be called with os thread locked.
-func ApplyNS(ns specs.LinuxNamespace) (func(), error) {
+func ApplyNS(ns specs.LinuxNamespace) (func() error, error) {
 	log.Infof("Applying namespace %v at path %q", ns.Type, ns.Path)
 	newNS, err := os.Open(ns.Path)
 	if err != nil {
@@ -140,12 +140,13 @@ func ApplyNS(ns specs.LinuxNamespace) (func(), error) {
 		oldNS.Close()
 		return nil, fmt.Errorf("error setting namespace of type %v and path %q: %v", ns.Type, ns.Path, err)
 	}
-	return func() {
+	return func() error {
 		log.Infof("Restoring namespace %v", ns.Type)
 		defer oldNS.Close()
 		if err := setNS(oldNS.Fd(), flag); err != nil {
-			panic(fmt.Sprintf("error restoring namespace: of type %v: %v", ns.Type, err))
+			return fmt.Errorf("error restoring namespace: of type %v: %v", ns.Type, err)
 		}
+		return nil
 	}, nil
 }
 
@@ -154,25 +155,34 @@ func ApplyNS(ns specs.LinuxNamespace) (func(), error) {
 func StartInNS(cmd *exec.Cmd, nss []specs.LinuxNamespace) error {
 	errChan := make(chan error)
 	go func() {
-		errChan <-startInNS(cmd, nss)
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+
+		err, rstFuncs := startInNS(cmd, nss)
+		errChan <- err
+		for _, rstFunc := range(rstFuncs) {
+			err := rstFunc()
+			if err == nil {
+				continue
+			}
+
+			// One or more namespaces have not been restored, but
+			// we can't destroy the current system thread, because
+			// a child process is execited with Pdeathsig.
+			log.Debugf("Block the current system thread due to: %s", err)
+			c := make(chan interface{})
+			<-c
+		}
 	}()
 	return <-errChan
 }
 
-func startInNS(cmd *exec.Cmd, nss []specs.LinuxNamespace) error {
-	// We are about to setup namespaces, which requires the os thread being
-	// locked so that Go doesn't change the thread out from under us.
-	//
-	// In case of rootless containers, it is impossible to restore a
-	// previous set of namespace, so we don't call runtime.UnlockOSThread
-	// here and the current system thread will be destroyed when this
-	// goroutin exits.
-	runtime.LockOSThread()
-
+func startInNS(cmd *exec.Cmd, nss []specs.LinuxNamespace) (error, []func() error) {
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &unix.SysProcAttr{}
 	}
 
+	var deferFuncs []func() error
 	for _, ns := range nss {
 		if ns.Path == "" {
 			// No path.  Just set a flag to create a new namespace.
@@ -181,13 +191,14 @@ func startInNS(cmd *exec.Cmd, nss []specs.LinuxNamespace) error {
 		}
 		// Join the given namespace, and restore the current namespace
 		// before exiting.
-		_, err := ApplyNS(ns)
+		restoreNS, err := ApplyNS(ns)
 		if err != nil {
-			return err
+			return err, deferFuncs
 		}
+		deferFuncs = append(deferFuncs, restoreNS)
 	}
 
-	return cmd.Start()
+	return cmd.Start(), deferFuncs
 }
 
 // SetUIDGIDMappings sets the given uid/gid mappings from the spec on the cmd.
