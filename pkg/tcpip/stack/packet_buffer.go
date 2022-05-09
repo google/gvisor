@@ -286,6 +286,7 @@ func (pk *PacketBuffer) Data() PacketData {
 }
 
 // Views returns the underlying storage of the whole packet.
+// TODO(b/230896518): Remove this.
 func (pk *PacketBuffer) Views() []tcpipbuffer.View {
 	var views []tcpipbuffer.View
 	offset := pk.headerOffset()
@@ -293,6 +294,23 @@ func (pk *PacketBuffer) Views() []tcpipbuffer.View {
 		views = append(views, v)
 	})
 	return views
+}
+
+// Slices returns the underlying storage of the whole packet.
+func (pk *PacketBuffer) Slices() [][]byte {
+	var views [][]byte
+	offset := pk.headerOffset()
+	pk.buf.SubApply(offset, int(pk.buf.Size())-offset, func(v []byte) {
+		views = append(views, v)
+	})
+	return views
+}
+
+// Buffer returns the underlying storage of the whole packet.
+func (pk *PacketBuffer) Buffer() buffer.Buffer {
+	b := pk.buf.Clone()
+	b.TrimFront(int64(pk.headerOffset()))
+	return b
 }
 
 func (pk *PacketBuffer) headerOffset() int {
@@ -563,6 +581,15 @@ func (d PacketData) Views() []tcpipbuffer.View {
 		views = append(views, v)
 	})
 	return views
+}
+
+// AsBuffer returns the underlying storage of d in a buffer.Buffer. Caller
+// should not modify the returned buffer.
+func (d PacketData) AsBuffer() buffer.Buffer {
+	buf := d.pk.buf.Clone()
+	offset := d.pk.dataOffset()
+	buf.TrimFront(int64(offset))
+	return buf
 }
 
 // AppendView appends v into d, taking the ownership of v.

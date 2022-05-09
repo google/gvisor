@@ -22,7 +22,6 @@ package loopback
 
 import (
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -77,8 +76,11 @@ func (*endpoint) Wait() {}
 // WritePackets implements stack.LinkEndpoint.WritePackets.
 func (e *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
+		// In order to properly loop back to the inbound side we must create a
+		// fresh packet that only contains the underlying payload with no headers
+		// or struct fields set.
 		newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Data: buffer.NewVectorisedView(pkt.Size(), pkt.Views()),
+			Payload: pkt.Buffer(),
 		})
 		e.dispatcher.DeliverNetworkPacket(pkt.NetworkProtocolNumber, newPkt)
 		newPkt.DecRef()

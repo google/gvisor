@@ -19,7 +19,6 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/eventfd"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/queue"
 )
 
@@ -93,7 +92,7 @@ func (t *tx) cleanup() {
 
 // transmit sends a packet made of bufs. Returns a boolean that specifies
 // whether the packet was successfully transmitted.
-func (t *tx) transmit(bufs ...buffer.View) bool {
+func (t *tx) transmit(bufs ...[]byte) bool {
 	// Pull completions from the tx queue and add their buffers back to the
 	// pool so that we can reuse them.
 	for {
