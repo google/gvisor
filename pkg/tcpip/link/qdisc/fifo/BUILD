@@ -23,11 +23,11 @@ go_test(
     srcs = ["qdisc_test.go"],
     deps = [
         ":fifo",
+        "//pkg/buffer",
         "//pkg/refs",
         "//pkg/refsvfs2",
         "//pkg/sync",
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
         "//pkg/tcpip/stack",
     ],
 )

@@ -29,7 +29,6 @@ import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/header/parse"
 	"gvisor.dev/gvisor/pkg/tcpip/link/nested"
@@ -194,10 +193,10 @@ func logPacket(prefix string, dir direction, protocol tcpip.NetworkProtocolNumbe
 	//
 	// We trim the link headers from the cloned buffer as the sniffer doesn't
 	// handle link headers.
-	vv := buffer.NewVectorisedView(pkt.Size(), pkt.Views())
-	vv.TrimFront(len(pkt.VirtioNetHeader().View()))
-	vv.TrimFront(len(pkt.LinkHeader().View()))
-	pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{Data: vv})
+	buf := pkt.Buffer()
+	buf.TrimFront(int64(len(pkt.VirtioNetHeader().View())))
+	buf.TrimFront(int64(len(pkt.LinkHeader().View())))
+	pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buf})
 	defer pkt.DecRef()
 	switch protocol {
 	case header.IPv4ProtocolNumber:

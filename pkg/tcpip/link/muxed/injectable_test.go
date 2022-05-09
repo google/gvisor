@@ -21,10 +21,10 @@ import (
 	"testing"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/link/fdbased"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -50,7 +50,7 @@ func TestInjectableEndpointDispatch(t *testing.T) {
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: 1,
-		Data:               buffer.NewViewFromBytes([]byte{0xFB}).ToVectorisedView(),
+		Payload:            buffer.NewWithData([]byte{0xFB}),
 	})
 	defer pkt.DecRef()
 	pkt.TransportHeader().Push(1)[0] = 0xFA
@@ -78,7 +78,6 @@ func TestInjectableEndpointDispatchHdrOnly(t *testing.T) {
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: 1,
-		Data:               buffer.NewView(0).ToVectorisedView(),
 	})
 	defer pkt.DecRef()
 	pkt.TransportHeader().Push(1)[0] = 0xFA

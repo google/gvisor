@@ -17,11 +17,11 @@ package tun
 import (
 	"fmt"
 
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/packetsocket"
@@ -236,7 +236,7 @@ func (d *Device) Write(data []byte) (int64, error) {
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: len(ethHdr),
-		Data:               buffer.View(data).ToVectorisedView(),
+		Payload:            buffer.NewWithData(data),
 	})
 	defer pkt.DecRef()
 	copy(pkt.LinkHeader().Push(len(ethHdr)), ethHdr)
@@ -270,8 +270,8 @@ func (d *Device) Read() ([]byte, error) {
 }
 
 // encodePkt encodes packet for fd side.
-func (d *Device) encodePkt(pkt *stack.PacketBuffer) (buffer.View, bool) {
-	var vv buffer.VectorisedView
+func (d *Device) encodePkt(pkt *stack.PacketBuffer) ([]byte, bool) {
+	var buf buffer.Buffer
 
 	// Packet information.
 	if !d.flags.NoPacketInfo {
@@ -279,12 +279,13 @@ func (d *Device) encodePkt(pkt *stack.PacketBuffer) (buffer.View, bool) {
 		hdr.Encode(&PacketInfoFields{
 			Protocol: pkt.NetworkProtocolNumber,
 		})
-		vv.AppendView(buffer.View(hdr))
+		buf.AppendOwned(hdr)
 	}
 
-	vv.AppendViews(pkt.Views())
+	pktBuf := pkt.Buffer()
+	buf.Merge(&pktBuf)
 
-	return vv.ToView(), true
+	return buf.Flatten(), true
 }
 
 // Name returns the name of the attached network interface. Empty string if

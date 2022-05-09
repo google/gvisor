@@ -18,7 +18,6 @@ package pipe
 
 import (
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -54,8 +53,11 @@ func (e *Endpoint) deliverPackets(pkts stack.PacketBufferList) {
 	}
 
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
+		// Create a fresh packet with pkt's payload but without struct fields
+		// or headers set so the next link protocol can properly set the link
+		// header.
 		newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Data: buffer.NewVectorisedView(pkt.Size(), pkt.Views()),
+			Payload: pkt.Buffer(),
 		})
 		e.linked.dispatcher.DeliverNetworkPacket(pkt.NetworkProtocolNumber, newPkt)
 		newPkt.DecRef()

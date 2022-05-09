@@ -13,7 +13,6 @@ go_library(
         "//pkg/atomicbitops",
         "//pkg/log",
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
         "//pkg/tcpip/header/parse",
         "//pkg/tcpip/link/nested",
