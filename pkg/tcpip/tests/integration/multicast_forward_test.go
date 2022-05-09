@@ -419,6 +419,170 @@ func TestAddMulticastRoute(t *testing.T) {
 	}
 }
 
+func TestRemoveMulticastRoute(t *testing.T) {
+	endpointConfigs := map[tcpip.NICID]endpointAddrType{
+		incomingNICID: incomingEndpointAddr,
+		outgoingNICID: outgoingEndpointAddr,
+		otherNICID:    otherEndpointAddr,
+	}
+
+	tests := []struct {
+		name             string
+		srcAddr, dstAddr addrType
+		wantErr          tcpip.Error
+	}{
+		{
+			name:    "success",
+			srcAddr: remoteUnicastAddr,
+			dstAddr: multicastAddr,
+			wantErr: nil,
+		},
+		{
+			name:    "no matching route",
+			srcAddr: remoteUnicastAddr,
+			dstAddr: otherMulticastAddr,
+			wantErr: &tcpip.ErrNoRoute{},
+		},
+		{
+			name:    "multicast source",
+			srcAddr: multicastAddr,
+			dstAddr: multicastAddr,
+			wantErr: &tcpip.ErrBadAddress{},
+		},
+		{
+			name:    "any source",
+			srcAddr: anyAddr,
+			dstAddr: multicastAddr,
+			wantErr: &tcpip.ErrBadAddress{},
+		},
+		{
+			name:    "link-local unicast source",
+			srcAddr: linkLocalUnicastAddr,
+			dstAddr: multicastAddr,
+			wantErr: &tcpip.ErrBadAddress{},
+		},
+		{
+			name:    "empty source",
+			srcAddr: emptyAddr,
+			dstAddr: multicastAddr,
+			wantErr: &tcpip.ErrBadAddress{},
+		},
+		{
+			name:    "unicast destination",
+			srcAddr: remoteUnicastAddr,
+			dstAddr: remoteUnicastAddr,
+			wantErr: &tcpip.ErrBadAddress{},
+		},
+		{
+			name:    "empty destination",
+			srcAddr: remoteUnicastAddr,
+			dstAddr: emptyAddr,
+			wantErr: &tcpip.ErrBadAddress{},
+		},
+		{
+			name:    "link-local multicast destination",
+			srcAddr: remoteUnicastAddr,
+			dstAddr: linkLocalMulticastAddr,
+			wantErr: &tcpip.ErrBadAddress{},
+		},
+	}
+
+	for _, test := range tests {
+		for _, protocol := range []tcpip.NetworkProtocolNumber{ipv4.ProtocolNumber, ipv6.ProtocolNumber} {
+			t.Run(fmt.Sprintf("%s %d", test.name, protocol), func(t *testing.T) {
+				s := stack.New(stack.Options{
+					NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+					TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
+				})
+				defer s.Close()
+
+				endpoints := make(map[tcpip.NICID]*channel.Endpoint)
+				for nicID, addrType := range endpointConfigs {
+					ep := channel.New(1, ipv4.MaxTotalSize, "")
+					defer ep.Close()
+
+					if err := s.CreateNIC(nicID, ep); err != nil {
+						t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+					}
+					addr := tcpip.ProtocolAddress{
+						Protocol:          protocol,
+						AddressWithPrefix: getEndpointAddr(protocol, addrType),
+					}
+					if err := s.AddProtocolAddress(nicID, addr, stack.AddressProperties{}); err != nil {
+						t.Fatalf("s.AddProtocolAddress(%d, %#v, {}): %s", nicID, addr, err)
+					}
+					s.SetNICMulticastForwarding(nicID, protocol, true /* enabled */)
+					endpoints[nicID] = ep
+				}
+
+				srcAddr := getAddr(protocol, remoteUnicastAddr)
+				dstAddr := getAddr(protocol, multicastAddr)
+
+				outgoingInterfaces := []stack.MulticastRouteOutgoingInterface{
+					{ID: outgoingNICID, MinTTL: routeMinTTL},
+				}
+
+				addresses := stack.UnicastSourceAndMulticastDestination{
+					Source:      srcAddr,
+					Destination: dstAddr,
+				}
+
+				route := stack.MulticastRoute{
+					ExpectedInputInterface: incomingNICID,
+					OutgoingInterfaces:     outgoingInterfaces,
+				}
+
+				if err := s.AddMulticastRoute(protocol, addresses, route); err != nil {
+					t.Fatalf("got s.AddMulticastRoute(%d, %#v, %#v) = %s, want = nil", protocol, addresses, route, err)
+				}
+
+				addresses = stack.UnicastSourceAndMulticastDestination{
+					Source:      getAddr(protocol, test.srcAddr),
+					Destination: getAddr(protocol, test.dstAddr),
+				}
+				err := s.RemoveMulticastRoute(protocol, addresses)
+
+				if !cmp.Equal(err, test.wantErr, cmpopts.EquateErrors()) {
+					t.Errorf("got s.RemoveMulticastRoute(%d, %#v) = %s, want %s", protocol, addresses, err, test.wantErr)
+				}
+
+				incomingEp, ok := endpoints[incomingNICID]
+				if !ok {
+					t.Fatalf("got endpoints[%d] = (_, false), want (_, true)", incomingNICID)
+				}
+
+				injectPacket(incomingEp, protocol, srcAddr, dstAddr, packetTTL)
+				p := incomingEp.Read()
+
+				if p != nil {
+					// An ICMP error should never be sent in response to a multicast
+					// packet.
+					t.Errorf("expected no ICMP packet through incoming NIC, instead found: %#v", p)
+				}
+
+				outgoingEp, ok := endpoints[outgoingNICID]
+				if !ok {
+					t.Fatalf("got endpoints[%d] = (_, false), want (_, true)", outgoingNICID)
+				}
+
+				p = outgoingEp.Read()
+
+				// If the route was successfully removed, then the packet should not be
+				// forwarded.
+				expectForward := test.wantErr != nil
+				if (p != nil) != expectForward {
+					t.Fatalf("got outgoingEp.Read() = %#v, want = (_ == nil) = %t", p, expectForward)
+				}
+
+				if expectForward {
+					checkEchoRequest(t, protocol, p, srcAddr, dstAddr, packetTTL-1)
+					p.DecRef()
+				}
+			})
+		}
+	}
+}
+
 func TestMulticastForwarding(t *testing.T) {
 	endpointConfigs := map[tcpip.NICID]endpointAddrType{
 		incomingNICID:      incomingEndpointAddr,
