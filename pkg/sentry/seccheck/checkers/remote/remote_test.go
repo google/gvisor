@@ -21,6 +21,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -46,10 +47,28 @@ func waitForFile(path string) error {
 	}, 5*time.Second)
 }
 
+type syncBuffer struct {
+	mu sync.Mutex
+	// +checklocks:mu
+	buf bytes.Buffer
+}
+
+func (s *syncBuffer) Write(p []byte) (n int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.String()
+}
+
 type exampleServer struct {
 	path string
 	cmd  *exec.Cmd
-	out  bytes.Buffer
+	out  syncBuffer
 }
 
 func newExampleServer(quiet bool) (*exampleServer, error) {
