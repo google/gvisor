@@ -26,6 +26,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
+        "//pkg/buffer",
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/log",
@@ -33,7 +34,6 @@ go_library(
         "//pkg/refsvfs2",
         "//pkg/sync",
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/channel",
         "//pkg/tcpip/link/packetsocket",

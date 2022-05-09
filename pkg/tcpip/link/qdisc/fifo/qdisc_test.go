@@ -20,11 +20,11 @@ import (
 	"testing"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/link/qdisc/fifo"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -56,7 +56,7 @@ func TestFastSimultaneousWrites(t *testing.T) {
 	lower := &countWriter{}
 	linkEP := fifo.New(lower, 16, 1000)
 
-	v := make(buffer.View, 1)
+	v := make([]byte, 1)
 
 	// Simulate many simultaneous writes from various goroutines, similar to TCP's sendTCPBatch().
 	nWriters := 100
@@ -68,7 +68,7 @@ func TestFastSimultaneousWrites(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < nWrites; j++ {
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Data: v.ToVectorisedView(),
+					Payload: buffer.NewWithData(v),
 				})
 				pkt.Hash = rand.Uint32()
 				linkEP.WritePacket(pkt)
@@ -93,7 +93,7 @@ func TestWriteRefusedAfterClosed(t *testing.T) {
 
 func TestWriteMorePacketsThanBatchSize(t *testing.T) {
 	tc := []int{fifo.BatchSize + 1, fifo.BatchSize*2 + 1}
-	v := make(buffer.View, 1)
+	v := make([]byte, 1)
 
 	for _, want := range tc {
 		done := make(chan struct{})
@@ -101,7 +101,7 @@ func TestWriteMorePacketsThanBatchSize(t *testing.T) {
 		linkEp := fifo.New(lower, 1, 1000)
 		for i := 0; i < want; i++ {
 			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Data: v.ToVectorisedView(),
+				Payload: buffer.NewWithData(v),
 			})
 			linkEp.WritePacket(pkt)
 			pkt.DecRef()

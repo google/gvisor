@@ -19,9 +19,9 @@ package sharedmem
 
 import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/rawfile"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -228,7 +228,7 @@ func (e *serverEndpoint) writePacketLocked(r stack.RouteInfo, protocol tcpip.Net
 		e.AddVirtioNetHeader(pkt)
 	}
 
-	views := pkt.Views()
+	views := pkt.Slices()
 	ok := e.tx.transmit(views)
 	if !ok {
 		return &tcpip.ErrWouldBlock{}
@@ -295,7 +295,7 @@ func (e *serverEndpoint) dispatchLoop(d stack.NetworkDispatcher) {
 			}
 		}
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Data: buffer.View(b).ToVectorisedView(),
+			Payload: buffer.NewWithData(b),
 		})
 		if e.virtioNetHeaderRequired {
 			_, ok := pkt.VirtioNetHeader().Consume(header.VirtioNetHeaderSize)

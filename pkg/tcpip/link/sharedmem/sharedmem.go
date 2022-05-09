@@ -27,11 +27,11 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/eventfd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/rawfile"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/queue"
@@ -343,8 +343,10 @@ func (e *endpoint) writePacketLocked(r stack.RouteInfo, protocol tcpip.NetworkPr
 		e.AddVirtioNetHeader(pkt)
 	}
 
-	views := pkt.Views()
+	views := pkt.Slices()
 	// Transmit the packet.
+	// TODO(b/231582970): Change transmit() to take a buffer.Buffer instead of a
+	// collection of slices.
 	ok := e.tx.transmit(views...)
 	if !ok {
 		return &tcpip.ErrWouldBlock{}
@@ -411,7 +413,7 @@ func (e *endpoint) dispatchLoop(d stack.NetworkDispatcher) {
 		}
 
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Data: buffer.View(b).ToVectorisedView(),
+			Payload: buffer.NewWithData(b),
 		})
 
 		if e.virtioNetHeaderRequired {

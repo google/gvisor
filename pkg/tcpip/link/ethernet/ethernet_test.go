@@ -19,10 +19,11 @@ import (
 	"os"
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	tcpipbuffer "gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/ethernet"
@@ -61,13 +62,13 @@ func TestDeliverNetworkPacket(t *testing.T) {
 	// An ethernet frame with a destination link address that is not assigned to
 	// our ethernet link endpoint should still be delivered to the network
 	// dispatcher since the ethernet endpoint is not expected to filter frames.
-	eth := buffer.NewView(header.EthernetMinimumSize)
+	eth := make([]byte, header.EthernetMinimumSize)
 	header.Ethernet(eth).Encode(&header.EthernetFields{
 		SrcAddr: otherLinkAddr1,
 		DstAddr: otherLinkAddr2,
 		Type:    header.IPv4ProtocolNumber,
 	})
-	p := stack.NewPacketBuffer(stack.PacketBufferOptions{Data: eth.ToVectorisedView()})
+	p := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.NewWithData(eth)})
 	defer p.DecRef()
 	e.DeliverNetworkPacket(0, p)
 	if networkDispatcher.networkPackets != 1 {
@@ -140,7 +141,9 @@ func TestWritePacketToRemoteAddHeader(t *testing.T) {
 		t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
 	}
 
-	if err := s.WritePacketToRemote(nicID, remoteLinkAddr, netProto, buffer.VectorisedView{}); err != nil {
+	// TODO(b/230896518): Remove tcpipbuffer once WritePacketToRemote API is
+	// changed.
+	if err := s.WritePacketToRemote(nicID, remoteLinkAddr, netProto, tcpipbuffer.VectorisedView{}); err != nil {
 		t.Fatalf("s.WritePacketToRemote(%d, %s, _): %s", nicID, remoteLinkAddr, err)
 	}
 
