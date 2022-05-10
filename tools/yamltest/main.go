@@ -65,7 +65,7 @@ func loadFile(filename string) (gojsonschema.JSONLoader, error) {
 	}
 	defer f.Close()
 	dec := yaml.NewDecoder(f)
-	dec.SetStrict(true)
+	dec.SetStrict(false)
 	var object interface{}
 	if err := dec.Decode(&object); err != nil {
 		return nil, err

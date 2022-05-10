@@ -219,7 +219,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 	// Lock the container metadata file to prevent concurrent creations of
 	// containers with the same id.
 	if err := c.Saver.lockForNew(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("cannot lock container metadata file: %w", err)
 	}
 	defer c.Saver.unlockOrDie()
 
@@ -252,14 +252,14 @@ func New(conf *config.Config, args Args) (*Container, error) {
 			// part of the cgroup from the start (and all their children processes).
 			parentCgroup, subCgroup, err = c.setupCgroupForRoot(conf, args.Spec)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("cannot set up cgroup for root: %w", err)
 			}
 		}
 		c.CompatCgroup = cgroup.CgroupJSON{Cgroup: subCgroup}
 		if err := runInCgroup(parentCgroup, func() error {
 			ioFiles, specFile, err := c.createGoferProcess(args.Spec, conf, args.BundleDir, args.Attached)
 			if err != nil {
-				return err
+				return fmt.Errorf("cannot create gofer process: %w", err)
 			}
 
 			// Start a new sandbox for this container. Any errors after this point
@@ -277,7 +277,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 			}
 			sand, err := sandbox.New(conf, sandArgs)
 			if err != nil {
-				return err
+				return fmt.Errorf("cannot create sandbox: %w", err)
 			}
 			c.Sandbox = sand
 			return nil
@@ -295,7 +295,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 		}
 		sb, err := Load(conf.RootDir, fullID, LoadOpts{Exact: true})
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("cannot load sandbox: %w", err)
 		}
 		c.Sandbox = sb.Sandbox
 
@@ -320,7 +320,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 		}
 
 		if err := c.Sandbox.CreateSubcontainer(conf, c.ID, tty); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("cannot create subcontainer: %w", err)
 		}
 	}
 	c.changeStatus(Created)

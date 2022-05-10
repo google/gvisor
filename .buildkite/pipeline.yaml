@@ -7,6 +7,10 @@ _templates:
           limit: 10
         - exit_status: "*"
           limit: 2
+  source_test: &source_test
+    if: build.env("STAGED_BINARIES") == null
+  platform_specific_agents: &platform_specific_agents {}
+  kvm_agents: &kvm_agents {kvm: "true"}
   benchmarks: &benchmarks
     timeout_in_minutes: 120
     retry:
@@ -21,8 +25,8 @@ _templates:
       BENCHMARKS_TABLE: benchmarks
       BENCHMARKS_UPLOAD: true
     agents:
+      <<: *kvm_agents
       arch: "amd64"
-      kvm: "true"
   netstack_test: &netstack_test
     env:
       PACKAGES: >
@@ -42,14 +46,19 @@ env:
   # Force a clean checkout every time to avoid reuse of files between runs.
   BUILDKITE_CLEAN_CHECKOUT: true
 
+  # Optional filter for syscall tests.
+  SYSCALL_TEST_FILTERS: ''
+
 steps:
   # Run basic smoke tests before preceding to other tests.
   - <<: *common
+    <<: *source_test
     label: ":fire: Smoke tests (AMD64)"
     command: make smoke-tests
     agents:
       arch: "amd64"
   - <<: *common
+    <<: *source_test
     label: ":fire: Smoke tests (ARM64)"
     command: make smoke-tests
     agents:
@@ -57,13 +66,16 @@ steps:
 
   - wait
   - <<: *common
+    <<: *source_test
     label: ":fire: Smoke race tests"
     command: make smoke-race-tests
+  - wait
 
   # Check that the Go branch builds. This is not technically required, as this build is maintained
   # as a GitHub action in order to preserve this maintaince across forks. However, providing the
   # action here may provide easier debuggability and diagnosis on failure.
   - <<: *common
+    <<: *source_test
     label: ":golang: Go branch"
     commands:
       - tools/go_branch.sh
@@ -72,6 +84,7 @@ steps:
 
   # Check that commonly used netstack packages build on various platforms.
   - <<: *common
+    <<: *source_test
     <<: *netstack_test
     label: ":mac: Netstack on Mac"
     commands:
@@ -79,6 +92,7 @@ steps:
       - git checkout go && git clean -xf .
       - GOOS=darwin GOARCH=arm64 go build $$PACKAGES
   - <<: *common
+    <<: *source_test
     <<: *netstack_test
     label: ":windows: Netstack on Windows"
     commands:
@@ -86,6 +100,7 @@ steps:
       - git checkout go && git clean -xf .
       - GOOS=windows GOARCH=amd64 go build $$PACKAGES
   - <<: *common
+    <<: *source_test
     <<: *netstack_test
     label: ":freebsd: Netstack on FreeBSD"
     commands:
@@ -93,6 +108,7 @@ steps:
       - git checkout go && git clean -xf .
       - GOOS=freebsd GOARCH=amd64 go build $$PACKAGES
   - <<: *common
+    <<: *source_test
     <<: *netstack_test
     label: ":openbsd: Netstack on OpenBSD"
     commands:
@@ -100,6 +116,7 @@ steps:
       - git checkout go && git clean -xf .
       - GOOS=openbsd GOARCH=amd64 go build $$PACKAGES
   - <<: *common
+    <<: *source_test
     <<: *netstack_test
     label: ":older_man: Netstack on 32-bit Linux"
     commands:
@@ -109,6 +126,7 @@ steps:
 
   # Release workflow.
   - <<: *common
+    <<: *source_test
     label: ":ship: Release tests"
     commands:
       - make BAZEL_OPTIONS=--config=x86_64 artifacts/x86_64
@@ -119,11 +137,13 @@ steps:
 
   # Images tests.
   - <<: *common
+    <<: *source_test
     label: ":docker: Images (x86_64)"
     command: make ARCH=x86_64 load-all-images
     agents:
       arch: "amd64"
   - <<: *common
+    <<: *source_test
     label: ":docker: Images (aarch64)"
     command: make ARCH=aarch64 load-all-images
     agents:
@@ -131,44 +151,54 @@ steps:
 
   # Basic unit tests.
   - <<: *common
+    <<: *source_test
     label: ":golang: Nogo tests"
     command: make nogo-tests
   - <<: *common
+    <<: *source_test
     label: ":test_tube: Unit tests (cgroupv1)"
     command: make unit-tests
     agents:
       cgroup: "v1"
       arch: "amd64"
   - <<: *common
+    <<: *source_test
     label: ":test_tube: Unit tests (cgroupv2)"
     command: make unit-tests
     agents:
       cgroup: "v2"
       arch: "amd64"
   - <<: *common
+    <<: *source_test
     label: ":test_tube: Container tests (cgroupv1)"
     command: make container-tests
     agents:
+      <<: *kvm_agents
       cgroup: "v1"
-      kvm: "true"
       arch: "amd64"
   - <<: *common
+    # This variant is not really a source test, but we annotate it as such to
+    # avoid running binary-only tests for all variants of cgroups. It is
+    # sufficient to run cgroupv2 variants only for source changes.
+    <<: *source_test
     label: ":test_tube: Container tests (cgroupv2)"
     command: make container-tests
     agents:
+      <<: *kvm_agents
       cgroup: "v2"
-      kvm: "true"
       arch: "amd64"
 
   # All system call tests.
   - <<: *common
     label: ":toolbox: System call tests (AMD64)"
-    command: make syscall-tests
+    command: "make BAZEL_OPTIONS=--test_tag_filters=$SYSCALL_TEST_FILTERS syscall-tests"
     parallelism: 20
     agents:
+      <<: *platform_specific_agents
+      <<: *kvm_agents
       arch: "amd64"
-      kvm: "true"
   - <<: *common
+    <<: *source_test
     label: ":muscle: System call tests (ARM64)"
     command: make BAZEL_OPTIONS=--test_tag_filters=runsc_ptrace syscall-tests
     parallelism: 10
@@ -177,6 +207,7 @@ steps:
 
   # Integration tests.
   - <<: *common
+    <<: *source_test
     label: ":docker: Docker tests (cgroupv1)"
     command: make docker-tests
     agents:
@@ -184,6 +215,8 @@ steps:
       cgroup: "v1"
       os: "ubuntu"
   - <<: *common
+    # See above: not truly a source test.
+    <<: *source_test
     label: ":docker: Docker tests (cgroupv2)"
     command: make docker-tests
     agents:
@@ -194,41 +227,48 @@ steps:
     label: ":goggles: Overlay tests"
     command: make overlay-tests
     agents:
+      <<: *platform_specific_agents
       arch: "amd64"
       os: "ubuntu"
   - <<: *common
     label: ":safety_pin: Host network tests"
     command: make hostnet-tests
     agents:
+      <<: *platform_specific_agents
       arch: "amd64"
       os: "ubuntu"
   - <<: *common
     label: ":satellite: SWGSO tests"
     command: make swgso-tests
     agents:
+      <<: *platform_specific_agents
       arch: "amd64"
       os: "ubuntu"
   - <<: *common
+    <<: *source_test
     label: ":coffee: Do tests"
     command: make do-tests
     agents:
       arch: "amd64"
   - <<: *common
+    <<: *source_test
     label: ":person_in_lotus_position: KVM tests"
     command: make kvm-tests
     agents:
+      <<: *kvm_agents
       arch: "amd64"
-      kvm: "true"
   - <<: *common
     label: ":weight_lifter: Fsstress test"
     command: make fsstress-test
     agents:
+      <<: *platform_specific_agents
       arch: "amd64"
       os: "ubuntu"
   - <<: *common
     label: ":docker: Containerd 1.3.9 tests"
     command: make containerd-test-1.3.9
     agents:
+      <<: *platform_specific_agents
       cgroup: "v1"
       arch: "amd64"
       os: "ubuntu"
@@ -236,14 +276,18 @@ steps:
     label: ":docker: Containerd 1.4.3 tests"
     command: make containerd-test-1.4.3
     agents:
+      <<: *platform_specific_agents
       os: "ubuntu"
   - <<: *common
     label: ":docker: Containerd 1.5.4 tests (cgroupv1)"
     command: make containerd-test-1.5.4
     agents:
+      <<: *platform_specific_agents
       cgroup: "v1"
       os: "ubuntu"
   - <<: *common
+    # See above: not truly a source test.
+    <<: *source_test
     label: ":docker: Containerd 1.5.4 tests (cgroupv2)"
     command: make containerd-test-1.5.4
     agents:
@@ -253,9 +297,11 @@ steps:
     label: ":docker: Containerd 1.6.0-rc.4 tests (cgroupv1)"
     command: make containerd-test-1.6.0-rc.4
     agents:
+      <<: *platform_specific_agents
       cgroup: "v1"
       os: "ubuntu"
   - <<: *common
+    <<: *source_test
     label: ":docker: Containerd 1.6.0-rc.4 tests (cgroupv2)"
     command: make containerd-test-1.6.0-rc.4
     agents:
@@ -264,21 +310,25 @@ steps:
 
   # Check the website builds.
   - <<: *common
+    <<: *source_test
     label: ":earth_americas: Website tests"
     command: make website-build
 
   # Networking tests.
   - <<: *common
+    <<: *source_test
     label: ":table_tennis_paddle_and_ball: IPTables tests"
     command: make iptables-tests
     agents:
       os: "ubuntu"
   - <<: *common
+    <<: *source_test
     label: ":construction_worker: Packetdrill tests"
     command: make packetdrill-tests
     agents:
       os: "ubuntu"
   - <<: *common
+    <<: *source_test
     label: ":hammer: Packetimpact tests"
     command: make packetimpact-tests
     agents:
@@ -290,6 +340,7 @@ steps:
     command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} php8.1.1-runtime-tests
     parallelism: 10
     agents:
+      <<: *platform_specific_agents
       arch: "amd64"
       os: "ubuntu"
   - <<: *common
@@ -297,6 +348,7 @@ steps:
     command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} java17-runtime-tests
     parallelism: 40
     agents:
+      <<: *platform_specific_agents
       arch: "amd64"
       os: "ubuntu"
   - <<: *common
@@ -304,6 +356,7 @@ steps:
     command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} go1.16-runtime-tests
     parallelism: 10
     agents:
+      <<: *platform_specific_agents
       arch: "amd64"
       os: "ubuntu"
   - <<: *common
@@ -311,6 +364,7 @@ steps:
     command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} nodejs16.13.2-runtime-tests
     parallelism: 10
     agents:
+      <<: *platform_specific_agents
       arch: "amd64"
       os: "ubuntu"
   - <<: *common
@@ -318,6 +372,7 @@ steps:
     command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} python3.10.2-runtime-tests
     parallelism: 10
     agents:
+      <<: *platform_specific_agents
       arch: "amd64"
       os: "ubuntu"
 
@@ -328,6 +383,7 @@ steps:
     parallelism: 10
     if: build.message =~ /lisafs/ || build.branch == "master"
     agents:
+      <<: *platform_specific_agents
       arch: "amd64"
       os: "ubuntu"
   - <<: *common
@@ -336,6 +392,7 @@ steps:
     parallelism: 40
     if: build.message =~ /lisafs/ || build.branch == "master"
     agents:
+      <<: *platform_specific_agents
       arch: "amd64"
       os: "ubuntu"
   - <<: *common
@@ -344,6 +401,7 @@ steps:
     parallelism: 10
     if: build.message =~ /lisafs/ || build.branch == "master"
     agents:
+      <<: *platform_specific_agents
       arch: "amd64"
       os: "ubuntu"
   - <<: *common
@@ -352,6 +410,7 @@ steps:
     parallelism: 10
     if: build.message =~ /lisafs/ || build.branch == "master"
     agents:
+      <<: *platform_specific_agents
       arch: "amd64"
       os: "ubuntu"
   - <<: *common
@@ -360,11 +419,19 @@ steps:
     parallelism: 10
     if: build.message =~ /lisafs/ || build.branch == "master"
     agents:
+      <<: *platform_specific_agents
       arch: "amd64"
       os: "ubuntu"
 
+  # ARM tests.
+  - <<: *common
+    <<: *source_test
+    label: ":mechanical_arm: ARM"
+    command: make arm-qemu-smoke-test
+
   # Build everything.
   - <<: *common
+    <<: *source_test
     label: ":world_map: Build everything"
     command: "make build OPTIONS=--build_tag_filters=-nogo TARGETS=//..."
     agents:
@@ -377,19 +444,26 @@ steps:
     # Use the opposite of the benchmarks filter.
     if: build.branch != "master"
     agents:
+      <<: *platform_specific_agents
+      <<: *kvm_agents
       arch: "amd64"
-      kvm: "true"
 
   # Run all benchmarks.
   - <<: *benchmarks
     label: ":bazel: ABSL build benchmarks"
     command: make -i benchmark-platforms BENCHMARKS_FILTER="ABSL/page_cache.clean" BENCHMARKS_SUITE=absl BENCHMARKS_TARGETS=test/benchmarks/fs:bazel_test BENCHMARKS_OPTIONS=-test.benchtime=1ns
+    agents:
+      <<: *platform_specific_agents
   - <<: *benchmarks
     label: ":go: runsc build benchmarks"
     command: make -i benchmark-platforms BENCHMARKS_FILTER="Runsc/page_cache.clean/filesystem.bind" BENCHMARKS_SUITE=runsc BENCHMARKS_TARGETS=test/benchmarks/fs:bazel_test BENCHMARKS_OPTIONS=-test.benchtime=1ns
+    agents:
+      <<: *platform_specific_agents
   - <<: *benchmarks
     label: ":metal: FFMPEG benchmarks"
     command: make -i benchmark-platforms BENCHMARKS_SUITE=ffmpeg BENCHMARKS_TARGETS=test/benchmarks/media:ffmpeg_test BENCHMARKS_OPTIONS=-test.benchtime=1ns
+    agents:
+      <<: *platform_specific_agents
   # For fio, running with --test.benchtime=Xs scales the written/read
   # bytes to several GB. This is not a problem for root/bind/volume mounts,
   # but for tmpfs mounts, the size can grow to more memory than the machine
@@ -397,37 +471,61 @@ steps:
   - <<: *benchmarks
     label: ":floppy_disk: FIO benchmarks (read/write)"
     command: make -i benchmark-platforms BENCHMARKS_SUITE=fio BENCHMARKS_TARGETS=test/benchmarks/fs:fio_test BENCHMARKS_FILTER=Fio/operation\.[rw][er] BENCHMARKS_OPTIONS=--test.benchtime=1000x
+    agents:
+      <<: *platform_specific_agents
   # For rand(read|write) fio benchmarks, running 15s does not overwhelm the system for tmpfs mounts.
   - <<: *benchmarks
     label: ":cd: FIO benchmarks (randread/randwrite)"
     command: make -i benchmark-platforms BENCHMARKS_SUITE=fio BENCHMARKS_TARGETS=test/benchmarks/fs:fio_test BENCHMARKS_FILTER=Fio/operation\.rand BENCHMARKS_OPTIONS=--test.benchtime=15s
+    agents:
+      <<: *platform_specific_agents
   - <<: *benchmarks
     label: ":globe_with_meridians: HTTPD benchmarks"
     command: make -i benchmark-platforms BENCHMARKS_FILTER="Continuous" BENCHMARKS_SUITE=httpd BENCHMARKS_TARGETS=test/benchmarks/network:httpd_test
+    agents:
+      <<: *platform_specific_agents
   - <<: *benchmarks
     label: ":piedpiper: iperf benchmarks"
     command: make -i benchmark-platforms BENCHMARKS_SUITE=iperf BENCHMARKS_TARGETS=test/benchmarks/network:iperf_test
+    agents:
+      <<: *platform_specific_agents
   - <<: *benchmarks
     label: ":nginx: nginx benchmarks"
     command: make -i benchmark-platforms BENCHMARKS_FILTER="Continuous" BENCHMARKS_SUITE=nginx BENCHMARKS_TARGETS=test/benchmarks/network:nginx_test
+    agents:
+      <<: *platform_specific_agents
   - <<: *benchmarks
     label: ":node: node benchmarks"
     command: make -i benchmark-platforms BENCHMARKS_SUITE=node BENCHMARKS_TARGETS=test/benchmarks/network:node_test
+    agents:
+      <<: *platform_specific_agents
   - <<: *benchmarks
     label: ":redis: Redis benchmarks"
     command: make -i benchmark-platforms BENCHMARKS_SUITE=redis BENCHMARKS_TARGETS=test/benchmarks/database:redis_test BENCHMARKS_OPTIONS=-test.benchtime=15s
+    agents:
+      <<: *platform_specific_agents
   - <<: *benchmarks
     label: ":ruby: Ruby benchmarks"
     command: make -i benchmark-platforms BENCHMARKS_SUITE=ruby BENCHMARKS_TARGETS=test/benchmarks/network:ruby_test
+    agents:
+      <<: *platform_specific_agents
   - <<: *benchmarks
     label: ":weight_lifter: Size benchmarks"
     command: make -i benchmark-platforms  BENCHMARKS_SUITE=size BENCHMARKS_TARGETS=test/benchmarks/base:size_test
+    agents:
+      <<: *platform_specific_agents
   - <<: *benchmarks
     label: ":speedboat: Startup benchmarks"
     command: make -i benchmark-platforms BENCHMARKS_SUITE=startup BENCHMARKS_TARGETS=test/benchmarks/base:startup_test
+    agents:
+      <<: *platform_specific_agents
   - <<: *benchmarks
     label: ":computer: sysbench benchmarks"
     command: make -i benchmark-platforms BENCHMARKS_SUITE=sysbench BENCHMARKS_TARGETS=test/benchmarks/base:sysbench_test
+    agents:
+      <<: *platform_specific_agents
   - <<: *benchmarks
     label: ":tensorflow: TensorFlow benchmarks"
     command: make -i benchmark-platforms BENCHMARKS_SUITE=tensorflow BENCHMARKS_TARGETS=test/benchmarks/ml:tensorflow_test BENCHMARKS_OPTIONS=-test.benchtime=1ns
+    agents:
+      <<: *platform_specific_agents
