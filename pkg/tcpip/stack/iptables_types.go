@@ -17,8 +17,8 @@ package stack
 import (
 	"fmt"
 	"strings"
-	"sync"
 
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
