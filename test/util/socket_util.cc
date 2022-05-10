@@ -19,7 +19,9 @@
 #include <poll.h>
 #include <sys/socket.h>
 
+#include <functional>
 #include <memory>
+#include <stack>
 
 #include "gtest/gtest.h"
 #include "absl/memory/memory.h"
@@ -1123,6 +1125,55 @@ PosixErrorOr<int> MaybeLimitEphemeralPorts() {
     }
   }
   return max - min;
+}
+
+PosixErrorOr<std::function<PosixError()>> AllowMartianPacketsOnLoopback() {
+  if (IsRunningOnGvisor()) {
+    return std::function<PosixError()>([]() { return NoError(); });
+  }
+
+  constexpr std::array<const char*, 2> files = {
+      "/proc/sys/net/ipv4/conf/lo/accept_local",
+      "/proc/sys/net/ipv4/conf/lo/route_localnet",
+  };
+  std::stack<std::pair<const char*, char>> initial_configs;
+
+  // Record and update the initial configurations.
+  PosixError err = [&]() -> PosixError {
+    for (const char* f : files) {
+      ASSIGN_OR_RETURN_ERRNO(FileDescriptor fd, Open(f, O_RDWR));
+      char initial_config;
+      RETURN_ERROR_IF_SYSCALL_FAIL(
+          read(fd.get(), &initial_config, sizeof(initial_config)));
+
+      constexpr char kEnabled = '1';
+      RETURN_ERROR_IF_SYSCALL_FAIL(lseek(fd.get(), 0, SEEK_SET));
+      RETURN_ERROR_IF_SYSCALL_FAIL(
+          write(fd.get(), &kEnabled, sizeof(kEnabled)));
+      initial_configs.push(std::make_pair(f, initial_config));
+    }
+    return NoError();
+  }();
+
+  // Only define the restore function after we're done updating the config to
+  // capture the initialized initial_configs std::stack.
+  std::function<PosixError()> restore = [initial_configs]() mutable {
+    while (!initial_configs.empty()) {
+      std::pair<const char*, char> cfg = initial_configs.top();
+      initial_configs.pop();
+      ASSIGN_OR_RETURN_ERRNO(FileDescriptor fd, Open(cfg.first, O_WRONLY));
+      RETURN_ERROR_IF_SYSCALL_FAIL(
+          write(fd.get(), &cfg.second, sizeof(cfg.second)));
+    }
+    return NoError();
+  };
+
+  if (!err.ok()) {
+    restore().IgnoreError();
+    return err;
+  }
+
+  return restore;
 }
 
 }  // namespace testing
