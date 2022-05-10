@@ -36,6 +36,7 @@ go_binary(
         "main.go",
         "version.go",
     ],
+    gotags = ["lockdep"],
     static = True,
     visibility = [
         "//visibility:public",

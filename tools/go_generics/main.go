@@ -117,6 +117,7 @@ var (
 	types       = make(mapValue)
 	consts      = make(mapValue)
 	imports     = make(mapValue)
+	substr      = make(mapValue)
 )
 
 // mapValue implements flag.Value. We use a mapValue flag instead of a regular
@@ -165,6 +166,7 @@ func main() {
 	flag.Var(types, "t", "rename type A to B when `A=B` is passed in. Multiple such mappings are allowed.")
 	flag.Var(consts, "c", "reassign constant A to value B when `A=B` is passed in. Multiple such mappings are allowed.")
 	flag.Var(imports, "import", "specifies the import libraries to use when types are not local. `name=path` specifies that 'name', used in types as name.type, refers to the package living in 'path'.")
+	flag.Var(substr, "s", "replace sub-string A with B when `A=B` is passed in. Multiple such mappings are allowed.")
 	flag.Parse()
 
 	if *input == "" || *output == "" {
@@ -279,7 +281,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := ioutil.WriteFile(*output, buf.Bytes(), 0644); err != nil {
+	byteBuf := buf.Bytes()
+	for old, new := range substr {
+		byteBuf = bytes.ReplaceAll(byteBuf, []byte(old), []byte(new))
+	}
+
+	if err := ioutil.WriteFile(*output, byteBuf, 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
