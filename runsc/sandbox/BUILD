@@ -23,6 +23,7 @@ go_library(
         "//pkg/log",
         "//pkg/sentry/control",
         "//pkg/sentry/platform",
+        "//pkg/sentry/seccheck",
         "//pkg/sync",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",

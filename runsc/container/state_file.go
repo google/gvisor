@@ -38,6 +38,11 @@ type LoadOpts struct {
 
 	// SkipCheck tells Load() to skip checking if container is runnning.
 	SkipCheck bool
+
+	// RootContainer when true matches the search only with the root container of
+	// a sandbox. This is used when looking for a sandbox given that root
+	// container and sandbox share the same ID.
+	RootContainer bool
 }
 
 // Load loads a container with the given id from a metadata file. "id" may
@@ -75,6 +80,10 @@ func Load(rootDir string, id FullID, opts LoadOpts) (*Container, error) {
 			return nil, err
 		}
 		return nil, fmt.Errorf("reading container metadata file %q: %v", state.statePath(), err)
+	}
+
+	if opts.RootContainer && c.ID != c.Sandbox.ID {
+		return nil, fmt.Errorf("ID %q doesn't belong to a sandbox", id)
 	}
 
 	if !opts.SkipCheck {

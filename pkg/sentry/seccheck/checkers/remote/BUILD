@@ -5,7 +5,6 @@ package(licenses = ["notice"])
 go_library(
     name = "remote",
     srcs = ["remote.go"],
-    marshal = True,
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/cleanup",

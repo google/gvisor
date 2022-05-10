@@ -33,6 +33,7 @@ import (
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/runsc/cmd"
+	"gvisor.dev/gvisor/runsc/cmd/trace"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -83,11 +84,12 @@ func Main(version string) {
 	subcommands.Register(new(cmd.VerityPrepare), "")
 	subcommands.Register(new(cmd.Wait), "")
 
-	// Installation helpers.
+	// Helpers.
 	const helperGroup = "helpers"
 	subcommands.Register(new(cmd.Install), helperGroup)
 	subcommands.Register(new(cmd.Mitigate), helperGroup)
 	subcommands.Register(new(cmd.Uninstall), helperGroup)
+	subcommands.Register(new(trace.Trace), helperGroup)
 
 	const debugGroup = "debug"
 	subcommands.Register(new(cmd.Debug), debugGroup)

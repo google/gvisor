@@ -96,6 +96,9 @@ func (fm *FieldMask) Empty() bool {
 // may be missing requested fields in some cases (e.g. if the Checker is
 // registered concurrently with invocations of checkpoints).
 type Checker interface {
+	// Stop requests the checker to stop.
+	Stop()
+
 	Clone(ctx context.Context, fields FieldSet, info *pb.CloneInfo) error
 	Execve(ctx context.Context, fields FieldSet, info *pb.ExecveInfo) error
 	ExitNotifyParent(ctx context.Context, fields FieldSet, info *pb.ExitNotifyParentInfo) error
@@ -112,6 +115,9 @@ type Checker interface {
 type CheckerDefaults struct{}
 
 var _ Checker = (*CheckerDefaults)(nil)
+
+// Stop implements Checker.Stop.
+func (CheckerDefaults) Stop() {}
 
 // Clone implements Checker.Clone.
 func (CheckerDefaults) Clone(context.Context, FieldSet, *pb.CloneInfo) error {
@@ -198,6 +204,24 @@ func (s *State) AppendChecker(c Checker, reqs []PointReq) {
 		s.enabledPoints[word].Store(s.enabledPoints[word].RacyLoad() | (uint32(1) << bit))
 
 		s.pointFields[req.Pt] = req.Fields
+	}
+}
+
+func (s *State) clearCheckers() {
+	s.registrationMu.Lock()
+	defer s.registrationMu.Unlock()
+
+	for i := range s.enabledPoints {
+		s.enabledPoints[i].Store(0)
+	}
+	s.pointFields = nil
+
+	oldCheckers := s.getCheckers()
+	s.registrationSeq.BeginWrite()
+	s.checkers = nil
+	s.registrationSeq.EndWrite()
+	for _, checker := range oldCheckers {
+		checker.Stop()
 	}
 }
 

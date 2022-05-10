@@ -43,6 +43,7 @@ go_test(
         "container_test.go",
         "multi_container_test.go",
         "shared_volume_test.go",
+        "trace_test.go",
     ],
     # Only run the default platform for the tsan test, which should
     # be compatible. For non-tsan builds, run all platforms.
@@ -70,6 +71,9 @@ go_test(
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/platform",
+        "//pkg/sentry/seccheck",
+        "//pkg/sentry/seccheck/checkers/remote/test",
+        "//pkg/sentry/seccheck/points:points_go_proto",
         "//pkg/sync",
         "//pkg/test/testutil",
         "//pkg/unet",
@@ -81,6 +85,7 @@ go_test(
         "@com_github_cenkalti_backoff//:go_default_library",
         "@com_github_kr_pty//:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
+        "@org_golang_google_protobuf//proto:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

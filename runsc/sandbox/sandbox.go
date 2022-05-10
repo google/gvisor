@@ -41,6 +41,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/pkg/urpc"
@@ -196,7 +197,7 @@ func New(conf *config.Config, args *Args) (*Sandbox, error) {
 	if len(conf.PodInitConfig) > 0 {
 		initConf, err := boot.LoadInitConfig(conf.PodInitConfig)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("loading init config file: %w", err)
 		}
 		args.SinkFiles, err = initConf.Setup()
 		if err != nil {
@@ -386,6 +387,69 @@ func (s *Sandbox) Processes(cid string) ([]*control.Process, error) {
 		return nil, fmt.Errorf("retrieving process data from sandbox: %v", err)
 	}
 	return pl, nil
+}
+
+// CreateTraceSession creates a new trace session.
+func (s *Sandbox) CreateTraceSession(config *seccheck.SessionConfig) error {
+	log.Debugf("Creating trace session in sandbox %q", s.ID)
+
+	sinkFiles, err := seccheck.SetupSinks(config.Sinks)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		for _, f := range sinkFiles {
+			_ = f.Close()
+		}
+	}()
+
+	conn, err := s.sandboxConnect()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	arg := boot.CreateTraceSessionArgs{
+		Config: *config,
+		FilePayload: urpc.FilePayload{
+			Files: sinkFiles,
+		},
+	}
+	if err := conn.Call(boot.ContMgrCreateTraceSession, &arg, nil); err != nil {
+		return fmt.Errorf("creating trace session: %w", err)
+	}
+	return nil
+}
+
+// DeleteTraceSession deletes an existing trace session.
+func (s *Sandbox) DeleteTraceSession(name string) error {
+	log.Debugf("Deleting trace session %q in sandbox %q", name, s.ID)
+	conn, err := s.sandboxConnect()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	if err := conn.Call(boot.ContMgrDeleteTraceSession, name, nil); err != nil {
+		return fmt.Errorf("deleting trace session: %w", err)
+	}
+	return nil
+}
+
+// ListTraceSessions lists all trace sessions.
+func (s *Sandbox) ListTraceSessions() ([]seccheck.SessionConfig, error) {
+	log.Debugf("Listing trace sessions in sandbox %q", s.ID)
+	conn, err := s.sandboxConnect()
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	var sessions []seccheck.SessionConfig
+	if err := conn.Call(boot.ContMgrListTraceSessions, nil, &sessions); err != nil {
+		return nil, fmt.Errorf("listing trace session: %w", err)
+	}
+	return sessions, nil
 }
 
 // NewCGroup returns the sandbox's Cgroup, or an error if it does not have one.

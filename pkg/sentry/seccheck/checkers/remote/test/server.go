@@ -169,6 +169,16 @@ func (s *Server) Count() int {
 	return len(s.points)
 }
 
+// Reset throws aways all points received so far and returns the number of
+// points discarded.
+func (s *Server) Reset() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	count := len(s.points)
+	s.points = nil
+	return count
+}
+
 // GetPoints returns all points that it has received.
 func (s *Server) GetPoints() []Message {
 	s.mu.Lock()
