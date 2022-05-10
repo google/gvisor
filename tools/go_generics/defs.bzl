@@ -93,6 +93,7 @@ def _go_template_instance_impl(ctx):
     args += [("-t=%s=%s" % (p[0], p[1])) for p in ctx.attr.types.items()]
     args += [("-c=%s=%s" % (p[0], p[1])) for p in ctx.attr.consts.items()]
     args += [("-import=%s=%s" % (p[0], p[1])) for p in ctx.attr.imports.items()]
+    args += [("-s=%s=%s" % (p[0], p[1])) for p in ctx.attr.substrs.items()]
 
     if ctx.attr.anon:
         args.append("-anon")
@@ -119,6 +120,7 @@ go_template_instance = rule(
         "types": attr.string_dict(doc = "the map from generic type names to concrete ones"),
         "consts": attr.string_dict(doc = "the map from constant names to their values"),
         "imports": attr.string_dict(doc = "the map from imports used in types/consts to their import paths"),
+        "substrs": attr.string_dict(doc = "the map from sub-strings to their replacements"),
         "anon": attr.bool(doc = "whether anoymous fields should be processed", mandatory = False, default = False),
         "package": attr.string(doc = "the package for the generated source file", mandatory = False),
         "out": attr.output(doc = "output file", mandatory = True),

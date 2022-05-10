@@ -474,11 +474,12 @@ func (pc *passContext) checkFunctionCall(call callCommon, fn *types.Func, lff *l
 
 	// Check if it's a method dispatch for something in the sync package.
 	// See: https://godoc.org/golang.org/x/tools/go/ssa#Function
-	if fn.Pkg() != nil && fn.Pkg().Name() == "sync" && len(args) > 0 {
+
+	if (lockerRE.MatchString(fn.FullName()) || mutexRE.MatchString(fn.FullName())) && len(args) > 0 {
 		rv := makeResolvedValue(args[0], nil)
 		isExclusive := false
 		switch fn.Name() {
-		case "Lock":
+		case "Lock", "NestedLock":
 			isExclusive = true
 			fallthrough
 		case "RLock":
@@ -488,7 +489,7 @@ func (pc *passContext) checkFunctionCall(call callCommon, fn *types.Func, lff *l
 					pc.maybeFail(call.Pos(), "%s already locked (locks: %s)", s, ls.String())
 				}
 			}
-		case "Unlock":
+		case "Unlock", "NestedUnlock":
 			isExclusive = true
 			fallthrough
 		case "RUnlock":
