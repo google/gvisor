@@ -306,11 +306,11 @@ func (it *IPTables) shouldSkipOrPopulateTables(tables []checkTable, pkt *PacketB
 func (it *IPTables) CheckPrerouting(pkt *PacketBuffer, addressEP AddressableEndpoint, inNicName string) bool {
 	tables := [...]checkTable{
 		{
-			fn:      it.check,
+			fn:      check,
 			tableID: MangleID,
 		},
 		{
-			fn:      it.checkNAT,
+			fn:      checkNAT,
 			tableID: NATID,
 		},
 	}
@@ -322,7 +322,7 @@ func (it *IPTables) CheckPrerouting(pkt *PacketBuffer, addressEP AddressableEndp
 	pkt.tuple = it.connections.getConnAndUpdate(pkt)
 
 	for _, table := range tables {
-		if !table.fn(table.table, Prerouting, pkt, nil /* route */, addressEP, inNicName, "" /* outNicName */) {
+		if !table.fn(it, table.table, Prerouting, pkt, nil /* route */, addressEP, inNicName, "" /* outNicName */) {
 			return false
 		}
 	}
@@ -339,11 +339,11 @@ func (it *IPTables) CheckPrerouting(pkt *PacketBuffer, addressEP AddressableEndp
 func (it *IPTables) CheckInput(pkt *PacketBuffer, inNicName string) bool {
 	tables := [...]checkTable{
 		{
-			fn:      it.checkNAT,
+			fn:      checkNAT,
 			tableID: NATID,
 		},
 		{
-			fn:      it.check,
+			fn:      check,
 			tableID: FilterID,
 		},
 	}
@@ -353,7 +353,7 @@ func (it *IPTables) CheckInput(pkt *PacketBuffer, inNicName string) bool {
 	}
 
 	for _, table := range tables {
-		if !table.fn(table.table, Input, pkt, nil /* route */, nil /* addressEP */, inNicName, "" /* outNicName */) {
+		if !table.fn(it, table.table, Input, pkt, nil /* route */, nil /* addressEP */, inNicName, "" /* outNicName */) {
 			return false
 		}
 	}
@@ -374,7 +374,7 @@ func (it *IPTables) CheckInput(pkt *PacketBuffer, inNicName string) bool {
 func (it *IPTables) CheckForward(pkt *PacketBuffer, inNicName, outNicName string) bool {
 	tables := [...]checkTable{
 		{
-			fn:      it.check,
+			fn:      check,
 			tableID: FilterID,
 		},
 	}
@@ -384,7 +384,7 @@ func (it *IPTables) CheckForward(pkt *PacketBuffer, inNicName, outNicName string
 	}
 
 	for _, table := range tables {
-		if !table.fn(table.table, Forward, pkt, nil /* route */, nil /* addressEP */, inNicName, outNicName) {
+		if !table.fn(it, table.table, Forward, pkt, nil /* route */, nil /* addressEP */, inNicName, outNicName) {
 			return false
 		}
 	}
@@ -401,15 +401,15 @@ func (it *IPTables) CheckForward(pkt *PacketBuffer, inNicName, outNicName string
 func (it *IPTables) CheckOutput(pkt *PacketBuffer, r *Route, outNicName string) bool {
 	tables := [...]checkTable{
 		{
-			fn:      it.check,
+			fn:      check,
 			tableID: MangleID,
 		},
 		{
-			fn:      it.checkNAT,
+			fn:      checkNAT,
 			tableID: NATID,
 		},
 		{
-			fn:      it.check,
+			fn:      check,
 			tableID: FilterID,
 		},
 	}
@@ -421,7 +421,7 @@ func (it *IPTables) CheckOutput(pkt *PacketBuffer, r *Route, outNicName string) 
 	pkt.tuple = it.connections.getConnAndUpdate(pkt)
 
 	for _, table := range tables {
-		if !table.fn(table.table, Output, pkt, r, nil /* addressEP */, "" /* inNicName */, outNicName) {
+		if !table.fn(it, table.table, Output, pkt, r, nil /* addressEP */, "" /* inNicName */, outNicName) {
 			return false
 		}
 	}
@@ -438,11 +438,11 @@ func (it *IPTables) CheckOutput(pkt *PacketBuffer, r *Route, outNicName string) 
 func (it *IPTables) CheckPostrouting(pkt *PacketBuffer, r *Route, addressEP AddressableEndpoint, outNicName string) bool {
 	tables := [...]checkTable{
 		{
-			fn:      it.check,
+			fn:      check,
 			tableID: MangleID,
 		},
 		{
-			fn:      it.checkNAT,
+			fn:      checkNAT,
 			tableID: NATID,
 		},
 	}
@@ -452,7 +452,7 @@ func (it *IPTables) CheckPostrouting(pkt *PacketBuffer, r *Route, addressEP Addr
 	}
 
 	for _, table := range tables {
-		if !table.fn(table.table, Postrouting, pkt, r, addressEP, "" /* inNicName */, outNicName) {
+		if !table.fn(it, table.table, Postrouting, pkt, r, addressEP, "" /* inNicName */, outNicName) {
 			return false
 		}
 	}
@@ -464,7 +464,13 @@ func (it *IPTables) CheckPostrouting(pkt *PacketBuffer, r *Route, addressEP Addr
 	return true
 }
 
-type checkTableFn func(table Table, hook Hook, pkt *PacketBuffer, r *Route, addressEP AddressableEndpoint, inNicName, outNicName string) bool
+// Note: this used to omit the *IPTables parameter, but doing so caused
+// unnecessary allocations.
+type checkTableFn func(it *IPTables, table Table, hook Hook, pkt *PacketBuffer, r *Route, addressEP AddressableEndpoint, inNicName, outNicName string) bool
+
+func checkNAT(it *IPTables, table Table, hook Hook, pkt *PacketBuffer, r *Route, addressEP AddressableEndpoint, inNicName, outNicName string) bool {
+	return it.checkNAT(table, hook, pkt, r, addressEP, inNicName, outNicName)
+}
 
 // checkNAT runs the packet through the NAT table.
 //
@@ -505,6 +511,10 @@ func (it *IPTables) checkNAT(table Table, hook Hook, pkt *PacketBuffer, r *Route
 	}
 
 	return true
+}
+
+func check(it *IPTables, table Table, hook Hook, pkt *PacketBuffer, r *Route, addressEP AddressableEndpoint, inNicName, outNicName string) bool {
+	return it.check(table, hook, pkt, r, addressEP, inNicName, outNicName)
 }
 
 // check runs the packet through the rules in the specified table for the
