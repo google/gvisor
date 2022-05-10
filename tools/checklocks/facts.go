@@ -469,9 +469,9 @@ func (pc *passContext) findField(structType *types.Struct, fieldName string) (fl
 }
 
 var (
-	mutexRE   = regexp.MustCompile("((.*/)|^)sync.(CrossGoroutineMutex|Mutex)")
-	rwMutexRE = regexp.MustCompile("((.*/)|^)sync.(CrossGoroutineRWMutex|RWMutex)")
-	lockerRE  = regexp.MustCompile("((.*/)|^)sync.Locker")
+	mutexRE   = regexp.MustCompile(".*Mutex")
+	rwMutexRE = regexp.MustCompile(".*RWMutex")
+	lockerRE  = regexp.MustCompile(".*sync.Locker")
 )
 
 // validateMutex validates the mutex type.
@@ -482,15 +482,15 @@ func (pc *passContext) validateMutex(pos token.Pos, obj types.Object, exclusive 
 	// Check that it is indeed a mutex.
 	s := obj.Type().String()
 	switch {
+	case rwMutexRE.MatchString(s):
+		// Safe for all cases.
+		return true
 	case mutexRE.MatchString(s), lockerRE.MatchString(s):
 		// Safe for exclusive cases.
 		if !exclusive {
 			pc.maybeFail(pos, "field %s must be a RWMutex", obj.Name())
 			return false
 		}
-		return true
-	case rwMutexRE.MatchString(s):
-		// Safe for all cases.
 		return true
 	default:
 		// Not a mutex at all?
