@@ -28,7 +28,6 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck/checkers/remote/header"
-
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 )
 
@@ -101,6 +100,15 @@ func New(_ map[string]interface{}, endpoint *fd.FD) (seccheck.Checker, error) {
 	return &Remote{endpoint: endpoint}, nil
 }
 
+// Stop implements seccheck.Checker.
+func (r *Remote) Stop() {
+	if r.endpoint != nil {
+		// It's possible to race with Point firing, but in the worst case they will
+		// simply fail to be delivered.
+		r.endpoint.Close()
+	}
+}
+
 func (r *Remote) write(msg proto.Message, msgType pb.MessageType) {
 	out, err := proto.Marshal(msg)
 	if err != nil {
@@ -116,7 +124,7 @@ func (r *Remote) write(msg proto.Message, msgType pb.MessageType) {
 
 	// TODO(gvisor.dev/issue/4805): Change to non-blocking write. Count as dropped
 	// if write fails.
-	if _, err = unix.Writev(r.endpoint.FD(), [][]byte{hdrOut[:], out}); err != nil {
+	if _, err := unix.Writev(r.endpoint.FD(), [][]byte{hdrOut[:], out}); err != nil {
 		log.Debugf("write(%+v, %v): %v", msg, msgType, err)
 		return
 	}

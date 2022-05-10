@@ -16,6 +16,7 @@ go_library(
         "//pkg/refsvfs2",
         "//pkg/sentry/platform",
         "//runsc/cmd",
+        "//runsc/cmd/trace",
         "//runsc/cmd/util",
         "//runsc/config",
         "//runsc/flag",

@@ -17,9 +17,19 @@ package seccheck
 import (
 	"fmt"
 	"os"
+	"sync"
 
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
+)
+
+// DefaultSessionName is the name of the only session that can exist in the
+// system for now. When multiple sessions are supported, this can be removed.
+const DefaultSessionName = "Default"
+
+var (
+	sessionsMu = sync.Mutex{}
+	sessions   = make(map[string]*State)
 )
 
 // SessionConfig describes a new session configuration. A session consists of a
@@ -57,13 +67,18 @@ type SinkConfig struct {
 	FD *fd.FD `json:"-"`
 }
 
-// Configure reads the session configuration and applies it to the system.
-func Configure(conf *SessionConfig) error {
-	log.Debugf("Configuring seccheck: %+v", conf)
-	state, err := findSession(conf.Name)
-	if err != nil {
-		return err
+// Create reads the session configuration and applies it to the system.
+func Create(conf *SessionConfig) error {
+	log.Debugf("Creating seccheck: %+v", conf)
+	sessionsMu.Lock()
+	defer sessionsMu.Unlock()
+	if _, ok := sessions[conf.Name]; ok {
+		return fmt.Errorf("session %q already exists", conf.Name)
 	}
+	if conf.Name != DefaultSessionName {
+		return fmt.Errorf(`only a single "Default" session is supported`)
+	}
+	state := &Global
 
 	var reqs []PointReq
 	for _, ptConfig := range conf.Points {
@@ -100,11 +115,31 @@ func Configure(conf *SessionConfig) error {
 		state.AppendChecker(checker, reqs)
 	}
 
+	sessions[conf.Name] = state
 	return nil
 }
 
-// SetupSink runs the setup step for a given sink.
-func SetupSink(config SinkConfig) (*os.File, error) {
+// SetupSinks runs the setup step of all sinks in the configuration.
+func SetupSinks(sinks []SinkConfig) ([]*os.File, error) {
+	var files []*os.File
+	for _, sink := range sinks {
+		sinkFile, err := setupSink(sink)
+		if err != nil {
+			if !sink.IgnoreSetupError {
+				return nil, err
+			}
+			log.Warningf("Ignoring sink setup failure: %v", err)
+			// Set sinkFile is nil and append it to the list to ensure the file
+			// order is preserved.
+			sinkFile = nil
+		}
+		files = append(files, sinkFile)
+	}
+	return files, nil
+}
+
+// setupSink runs the setup step for a given sink.
+func setupSink(config SinkConfig) (*os.File, error) {
 	sink, err := findSinkDesc(config.Name)
 	if err != nil {
 		return nil, err
@@ -115,11 +150,30 @@ func SetupSink(config SinkConfig) (*os.File, error) {
 	return sink.Setup(config.Config)
 }
 
-func findSession(name string) (*State, error) {
-	if name != "Default" {
-		return nil, fmt.Errorf(`only a single "Default" session is supported`)
+// Delete deletes an existing session.
+func Delete(name string) error {
+	sessionsMu.Lock()
+	defer sessionsMu.Unlock()
+
+	session := sessions[name]
+	if session == nil {
+		return fmt.Errorf("session %q not found", name)
 	}
-	return &Global, nil
+
+	session.clearCheckers()
+	delete(sessions, name)
+	return nil
+}
+
+// List lists all existing sessions.
+func List(out *[]SessionConfig) {
+	sessionsMu.Lock()
+	defer sessionsMu.Unlock()
+
+	for name := range sessions {
+		// Only report session name. Consider adding rest of the fields as needed.
+		*out = append(*out, SessionConfig{Name: name})
+	}
 }
 
 func findPointDesc(name string) (PointDesc, error) {

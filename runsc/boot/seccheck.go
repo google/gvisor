@@ -20,7 +20,6 @@ import (
 	"os"
 
 	"gvisor.dev/gvisor/pkg/fd"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 
 	// Register supported of checkers.
@@ -41,7 +40,7 @@ func setupSeccheck(configFD int, sinkFDs []int) error {
 	if err != nil {
 		return err
 	}
-	return initConf.configure(sinkFDs)
+	return initConf.create(sinkFDs)
 }
 
 // LoadInitConfig loads an InitConfig struct from a json formatted file.
@@ -66,29 +65,14 @@ func loadInitConfig(reader io.Reader) (*InitConfig, error) {
 // Setup performs the actions defined in the InitConfig, e.g. setup seccheck
 // session.
 func (c *InitConfig) Setup() ([]*os.File, error) {
-	var files []*os.File
-	for _, sink := range c.TraceSession.Sinks {
-		sinkFile, err := seccheck.SetupSink(sink)
-		if err != nil {
-			if !sink.IgnoreSetupError {
-				return nil, err
-			}
-			log.Warningf("Ignoring sink setup failure: %v", err)
-			// Ensure sinkFile is nil and append it to the list to ensure the file
-			// order is preserved.
-			sinkFile = nil
-		}
-		files = append(files, sinkFile)
-	}
-	return files, nil
+	return seccheck.SetupSinks(c.TraceSession.Sinks)
 }
 
-func (c *InitConfig) configure(sinkFDs []int) error {
+func (c *InitConfig) create(sinkFDs []int) error {
 	for i, sinkFD := range sinkFDs {
 		if sinkFD >= 0 {
 			c.TraceSession.Sinks[i].FD = fd.New(sinkFD)
 		}
 	}
-	return seccheck.Configure(&c.TraceSession)
-
+	return seccheck.Create(&c.TraceSession)
 }
