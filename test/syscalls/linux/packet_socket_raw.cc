@@ -24,6 +24,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <functional>
+
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/base/internal/endian.h"
@@ -96,6 +98,9 @@ class RawPacketTest : public ::testing::TestWithParam<int> {
 
   // The socket used for both reading and writing.
   int s_;
+
+  // The function to restore the original system configuration.
+  std::function<PosixError()> restore_config_;
 };
 
 void RawPacketTest::SetUp() {
@@ -105,49 +110,17 @@ void RawPacketTest::SetUp() {
     GTEST_SKIP();
   }
 
-  if (!IsRunningOnGvisor()) {
-    // Ensure that looped back packets aren't rejected by the kernel.
-    FileDescriptor acceptLocal = ASSERT_NO_ERRNO_AND_VALUE(
-        Open("/proc/sys/net/ipv4/conf/lo/accept_local", O_RDWR));
-    FileDescriptor routeLocalnet = ASSERT_NO_ERRNO_AND_VALUE(
-        Open("/proc/sys/net/ipv4/conf/lo/route_localnet", O_RDWR));
-    char enabled;
-    ASSERT_THAT(read(acceptLocal.get(), &enabled, 1),
-                SyscallSucceedsWithValue(1));
-    if (enabled != '1') {
-      enabled = '1';
-      ASSERT_THAT(lseek(acceptLocal.get(), 0, SEEK_SET),
-                  SyscallSucceedsWithValue(0));
-      ASSERT_THAT(write(acceptLocal.get(), &enabled, 1),
-                  SyscallSucceedsWithValue(1));
-      ASSERT_THAT(lseek(acceptLocal.get(), 0, SEEK_SET),
-                  SyscallSucceedsWithValue(0));
-      ASSERT_THAT(read(acceptLocal.get(), &enabled, 1),
-                  SyscallSucceedsWithValue(1));
-      ASSERT_EQ(enabled, '1');
-    }
-
-    ASSERT_THAT(read(routeLocalnet.get(), &enabled, 1),
-                SyscallSucceedsWithValue(1));
-    if (enabled != '1') {
-      enabled = '1';
-      ASSERT_THAT(lseek(routeLocalnet.get(), 0, SEEK_SET),
-                  SyscallSucceedsWithValue(0));
-      ASSERT_THAT(write(routeLocalnet.get(), &enabled, 1),
-                  SyscallSucceedsWithValue(1));
-      ASSERT_THAT(lseek(routeLocalnet.get(), 0, SEEK_SET),
-                  SyscallSucceedsWithValue(0));
-      ASSERT_THAT(read(routeLocalnet.get(), &enabled, 1),
-                  SyscallSucceedsWithValue(1));
-      ASSERT_EQ(enabled, '1');
-    }
-  }
-
   ASSERT_THAT(s_ = socket(AF_PACKET, SOCK_RAW, htons(GetParam())),
               SyscallSucceeds());
+
+  restore_config_ = ASSERT_NO_ERRNO_AND_VALUE(AllowMartianPacketsOnLoopback());
 }
 
 void RawPacketTest::TearDown() {
+  if (restore_config_) {
+    EXPECT_NO_ERRNO(restore_config_());
+  }
+
   // TearDown will be run even if we skip the test.
   if (ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability())) {
     EXPECT_THAT(close(s_), SyscallSucceeds());

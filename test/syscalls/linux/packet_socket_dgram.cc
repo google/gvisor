@@ -122,6 +122,9 @@ class CookedPacketTest : public ::testing::TestWithParam<int> {
 
   // The socket used for both reading and writing.
   int socket_;
+
+  // The function to restore the original system configuration.
+  std::function<PosixError()> restore_config_;
 };
 
 void CookedPacketTest::SetUp() {
@@ -131,25 +134,17 @@ void CookedPacketTest::SetUp() {
     GTEST_SKIP();
   }
 
-  if (!IsRunningOnGvisor()) {
-    FileDescriptor acceptLocal = ASSERT_NO_ERRNO_AND_VALUE(
-        Open("/proc/sys/net/ipv4/conf/lo/accept_local", O_RDONLY));
-    FileDescriptor routeLocalnet = ASSERT_NO_ERRNO_AND_VALUE(
-        Open("/proc/sys/net/ipv4/conf/lo/route_localnet", O_RDONLY));
-    char enabled;
-    ASSERT_THAT(read(acceptLocal.get(), &enabled, 1),
-                SyscallSucceedsWithValue(1));
-    ASSERT_EQ(enabled, '1');
-    ASSERT_THAT(read(routeLocalnet.get(), &enabled, 1),
-                SyscallSucceedsWithValue(1));
-    ASSERT_EQ(enabled, '1');
-  }
-
   ASSERT_THAT(socket_ = socket(AF_PACKET, SOCK_DGRAM, htons(GetParam())),
               SyscallSucceeds());
+
+  restore_config_ = ASSERT_NO_ERRNO_AND_VALUE(AllowMartianPacketsOnLoopback());
 }
 
 void CookedPacketTest::TearDown() {
+  if (restore_config_) {
+    EXPECT_NO_ERRNO(restore_config_());
+  }
+
   // TearDown will be run even if we skip the test.
   if (ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability())) {
     EXPECT_THAT(close(socket_), SyscallSucceeds());

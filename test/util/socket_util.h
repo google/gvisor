@@ -592,6 +592,10 @@ void SetupTimeWaitClose(const TestAddress* listener,
 // returns the number of ephemeral ports.
 PosixErrorOr<int> MaybeLimitEphemeralPorts();
 
+// AllowMartianPacketsOnLoopback tells the kernel to not drop martian packets,
+// and returns a function to restore the original configuration.
+PosixErrorOr<std::function<PosixError()>> AllowMartianPacketsOnLoopback();
+
 namespace internal {
 PosixErrorOr<int> TryPortAvailable(int port, AddressFamily family,
                                    SocketType type, bool reuse_addr);
