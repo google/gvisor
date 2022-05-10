@@ -139,6 +139,46 @@ func (fsType *FilesystemType) afterLoad() {}
 func (fsType *FilesystemType) StateLoad(stateSourceObject state.Source) {
 }
 
+func (i *InitialCgroup) StateTypeName() string {
+	return "pkg/sentry/fsimpl/cgroupfs.InitialCgroup"
+}
+
+func (i *InitialCgroup) StateFields() []string {
+	return []string{
+		"Path",
+		"SetOwner",
+		"UID",
+		"GID",
+		"SetMode",
+		"Mode",
+	}
+}
+
+func (i *InitialCgroup) beforeSave() {}
+
+// +checklocksignore
+func (i *InitialCgroup) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.Path)
+	stateSinkObject.Save(1, &i.SetOwner)
+	stateSinkObject.Save(2, &i.UID)
+	stateSinkObject.Save(3, &i.GID)
+	stateSinkObject.Save(4, &i.SetMode)
+	stateSinkObject.Save(5, &i.Mode)
+}
+
+func (i *InitialCgroup) afterLoad() {}
+
+// +checklocksignore
+func (i *InitialCgroup) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.Path)
+	stateSourceObject.Load(1, &i.SetOwner)
+	stateSourceObject.Load(2, &i.UID)
+	stateSourceObject.Load(3, &i.GID)
+	stateSourceObject.Load(4, &i.SetMode)
+	stateSourceObject.Load(5, &i.Mode)
+}
+
 func (i *InternalData) StateTypeName() string {
 	return "pkg/sentry/fsimpl/cgroupfs.InternalData"
 }
@@ -146,7 +186,7 @@ func (i *InternalData) StateTypeName() string {
 func (i *InternalData) StateFields() []string {
 	return []string{
 		"DefaultControlValues",
-		"InitialCgroupPath",
+		"InitialCgroup",
 	}
 }
 
@@ -156,7 +196,7 @@ func (i *InternalData) beforeSave() {}
 func (i *InternalData) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.DefaultControlValues)
-	stateSinkObject.Save(1, &i.InitialCgroupPath)
+	stateSinkObject.Save(1, &i.InitialCgroup)
 }
 
 func (i *InternalData) afterLoad() {}
@@ -164,7 +204,7 @@ func (i *InternalData) afterLoad() {}
 // +checklocksignore
 func (i *InternalData) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.DefaultControlValues)
-	stateSourceObject.Load(1, &i.InitialCgroupPath)
+	stateSourceObject.Load(1, &i.InitialCgroup)
 }
 
 func (fs *filesystem) StateTypeName() string {
@@ -877,6 +917,7 @@ func init() {
 	state.Register((*cgroupProcsData)(nil))
 	state.Register((*tasksData)(nil))
 	state.Register((*FilesystemType)(nil))
+	state.Register((*InitialCgroup)(nil))
 	state.Register((*InternalData)(nil))
 	state.Register((*filesystem)(nil))
 	state.Register((*implStatFS)(nil))

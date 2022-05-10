@@ -103,13 +103,36 @@ var SupportedMountOptions = []string{"all", "cpu", "cpuacct", "cpuset", "job", "
 // +stateify savable
 type FilesystemType struct{}
 
+// InitialCgroup specifies properties of the cgroup for the init task.
+//
+// +stateify savable
+type InitialCgroup struct {
+	// Path is an absolute path relative to the root of a cgroupfs filesystem
+	// that indicates where to place the init task. An empty string indicates
+	// the root of the filesystem.
+	Path string
+
+	// SetOwner indicates the UID and GID fields contain valid values. If true,
+	// Both UID and GID must be provided.
+	SetOwner bool
+	// UID of the initial cgroup path components, excluding the root cgroup.
+	UID auth.KUID
+	// GID of the initial cgroup path components, excluding the root cgroup.
+	GID auth.KGID
+
+	// SetMode indicates the Mode field contains a valid value.
+	SetMode bool
+	// Mode of the initial cgroup path components, excluding the root cgroup.
+	Mode linux.FileMode
+}
+
 // InternalData contains internal data passed in to the cgroupfs mount via
 // vfs.GetFilesystemOptions.InternalData.
 //
 // +stateify savable
 type InternalData struct {
 	DefaultControlValues map[string]int64
-	InitialCgroupPath    string
+	InitialCgroup        InitialCgroup
 }
 
 // filesystem implements vfs.FilesystemImpl and kernel.cgroupFS.
@@ -333,7 +356,9 @@ func (fs *filesystem) prepareInitialCgroup(ctx context.Context, vfsObj *vfs.Virt
 	if opts.InternalData == nil {
 		return nil
 	}
-	initPathStr := opts.InternalData.(*InternalData).InitialCgroupPath
+	idata := opts.InternalData.(*InternalData)
+
+	initPathStr := idata.InitialCgroup.Path
 	if initPathStr == "" {
 		return nil
 	}
@@ -344,10 +369,20 @@ func (fs *filesystem) prepareInitialCgroup(ctx context.Context, vfsObj *vfs.Virt
 		return linuxerr.EINVAL
 	}
 
+	ownerCreds := auth.CredentialsFromContext(ctx).Fork()
+	if idata.InitialCgroup.SetOwner {
+		ownerCreds.EffectiveKUID = idata.InitialCgroup.UID
+		ownerCreds.EffectiveKGID = idata.InitialCgroup.GID
+	}
+	mode := defaultDirMode
+	if idata.InitialCgroup.SetMode {
+		mode = idata.InitialCgroup.Mode
+	}
+
 	// Have initial cgroup target, create the tree.
 	cgDir := fs.root.Inode().(*cgroupInode)
 	for pit := initPath.Begin; pit.Ok(); pit = pit.Next() {
-		cgDirI, err := cgDir.NewDir(ctx, pit.String(), vfs.MkdirOptions{Mode: defaultDirMode})
+		cgDirI, err := cgDir.newDirWithOwner(ctx, ownerCreds, pit.String(), vfs.MkdirOptions{Mode: mode})
 		if err != nil {
 			return err
 		}
@@ -448,6 +483,10 @@ func (d *dir) Open(ctx context.Context, rp *vfs.ResolvingPath, kd *kernfs.Dentry
 
 // NewDir implements kernfs.Inode.NewDir.
 func (d *dir) NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) (kernfs.Inode, error) {
+	return d.newDirWithOwner(ctx, auth.CredentialsFromContext(ctx), name, opts)
+}
+
+func (d *dir) newDirWithOwner(ctx context.Context, ownerCreds *auth.Credentials, name string, opts vfs.MkdirOptions) (kernfs.Inode, error) {
 	// "Do not accept '\n' to prevent making /proc/<pid>/cgroup unparsable."
 	//   -- Linux, kernel/cgroup.c:cgroup_mkdir().
 	if strings.Contains(name, "\n") {
@@ -456,7 +495,7 @@ func (d *dir) NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) (k
 	mode := opts.Mode.Permissions() | linux.ModeDirectory
 	return d.OrderedChildren.Inserter(name, func() kernfs.Inode {
 		d.IncLinks(1)
-		return d.fs.newCgroupInode(ctx, auth.CredentialsFromContext(ctx), d.cgi, mode)
+		return d.fs.newCgroupInode(ctx, ownerCreds, d.cgi, mode)
 	})
 }
 
