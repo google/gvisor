@@ -948,8 +948,11 @@ func (*fileDescription) Sync(context.Context) error {
 // parseSize converts size in string to an integer bytes.
 // Supported suffixes in string are:K, M, G, T, P, E.
 func parseSize(s string) (uint64, error) {
+	if len(s) == 0 {
+		return 0, fmt.Errorf("the size parameter must have a non-empty value")
+	}
 	suffix := s[len(s)-1]
-	count := 1
+	count := uint64(1)
 	switch suffix {
 	case 'e', 'E':
 		count = count << 10
@@ -971,6 +974,6 @@ func parseSize(s string) (uint64, error) {
 		s = s[:len(s)-1]
 	}
 	bytes, err := strconv.ParseUint(s, 10, 64)
-	bytes = bytes * uint64(count)
+	bytes = bytes * count
 	return bytes, err
 }
