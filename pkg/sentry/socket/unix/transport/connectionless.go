@@ -59,10 +59,8 @@ func (e *connectionlessEndpoint) isBound() bool {
 // with it.
 func (e *connectionlessEndpoint) Close(ctx context.Context) {
 	e.Lock()
-	if e.connected != nil {
-		e.connected.Release(ctx)
-		e.connected = nil
-	}
+	connected := e.connected
+	e.connected = nil
 
 	if e.isBound() {
 		e.path = ""
@@ -73,6 +71,9 @@ func (e *connectionlessEndpoint) Close(ctx context.Context) {
 	e.receiver = nil
 	e.Unlock()
 
+	if connected != nil {
+		connected.Release(ctx)
+	}
 	r.CloseNotify()
 	r.Release(ctx)
 }
