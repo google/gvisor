@@ -178,7 +178,7 @@ type Config struct {
 	// Controls defines the controls that may be enabled.
 	Controls controlConfig `flag:"controls"`
 
-	// RestoreFile is the path to the saved container image
+	// RestoreFile is the path to the saved container image.
 	RestoreFile string
 
 	// NumNetworkChannels controls the number of AF_PACKET sockets that map
