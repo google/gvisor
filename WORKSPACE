@@ -692,8 +692,8 @@ protobuf_deps()
 # Schemas for testing.
 http_file(
     name = "buildkite_pipeline_schema",
-    sha256 = "3369c58038b4d55c08928affafb653716eb1e7b3cabb4a391aef979dd921f4e1",
-    urls = ["https://raw.githubusercontent.com/buildkite/pipeline-schema/f7a0894074d194bcf19eec5411fec0528f7f4180/schema.json"],
+    sha256 = "3ea420df29623e22286c389b861383949df2319848e8317858af0d5ad962cff6",
+    urls = ["https://raw.githubusercontent.com/buildkite/pipeline-schema/f37f0d436de78ff1529d06e9e4cdee8ea590a169/schema.json"],
 )
 
 http_file(

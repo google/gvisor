@@ -35,6 +35,12 @@ _templates:
         ./pkg/tcpip/transport/tcp
         ./pkg/tcpip/transport/udp
         ./pkg/waiter
+  cgroup_test: &cgroup_test
+    agents:
+      cgroup: "{{matrix}}"
+    matrix:
+      - "v1"
+      - "v2"
 
 steps:
   # Run basic smoke tests before preceding to other tests.
@@ -103,54 +109,46 @@ steps:
 
   # Images tests.
   - <<: *common
-    label: ":docker: Images (x86_64)"
-    command: make ARCH=x86_64 load-all-images
-  - <<: *common
-    label: ":docker: Images (aarch64)"
-    command: make ARCH=aarch64 load-all-images
+    label: ":docker: Images ({{matrix}})"
+    command: make load-all-images
+    agents:
+       arch: "{{matrix}}"
+    matrix:
+      - "amd64"
+      - "arm64"
 
   # Basic unit tests.
   - <<: *common
     label: ":golang: Nogo tests"
     command: make nogo-tests
   - <<: *common
-    label: ":test_tube: Unit tests"
+    <<: *cgroup_test
+    label: ":test_tube: Unit tests (cgroup {{matrix}})"
     command: make unit-tests
   - <<: *common
-    label: ":test_tube: Unit tests (cgroupv2)"
-    command: make unit-tests
-    agents:
-      queue: "cgroupv2"
-  - <<: *common
-    label: ":test_tube: Container tests"
+    <<: *cgroup_test
+    label: ":test_tube: Container tests (cgroup {{matrix}})"
     command: make container-tests
-  - <<: *common
-    label: ":test_tube: Container tests (cgroupv2)"
-    command: make container-tests
-    agents:
-      queue: "cgroupv2"
 
   # All system call tests.
   - <<: *common
-    label: ":toolbox: System call tests"
+    label: ":toolbox: System call tests (AMD64)"
     command: make syscall-tests
     parallelism: 20
+    agents:
+      arch: "amd64"
   - <<: *common
     label: ":muscle: System call tests (ARM64)"
     command: make BAZEL_OPTIONS=--test_tag_filters=runsc_ptrace syscall-tests
     parallelism: 10
     agents:
-      queue: "arm64"
+      arch: "arm64"
 
   # Integration tests.
   - <<: *common
-    label: ":docker: Docker tests"
+    <<: *cgroup_test
+    label: ":docker: Docker tests (cgroup {{matrix}})"
     command: make docker-tests
-  - <<: *common
-    label: ":docker: Docker tests (cgroupv2)"
-    command: make docker-tests
-    agents:
-      queue: "cgroupv2"
   - <<: *common
     label: ":goggles: Overlay tests"
     command: make overlay-tests
@@ -176,21 +174,13 @@ steps:
     label: ":docker: Containerd 1.4.3 tests"
     command: make containerd-test-1.4.3
   - <<: *common
-    label: ":docker: Containerd 1.5.4 tests"
+    <<: *cgroup_test
+    label: ":docker: Containerd 1.5.4 tests (cgroup {{matrix}})"
     command: make containerd-test-1.5.4
   - <<: *common
-    label: ":docker: Containerd 1.5.4 tests (cgroupv2)"
-    command: make containerd-test-1.5.4
-    agents:
-      queue: "cgroupv2"
-  - <<: *common
-    label: ":docker: Containerd 1.6.0-rc.4 tests"
+    <<: *cgroup_test
+    label: ":docker: Containerd 1.6.0-rc.4 tests (cgroup {{matrix}})"
     command: make containerd-test-1.6.0-rc.4
-  - <<: *common
-    label: ":docker: Containerd 1.6.0-rc.4 tests (cgroupv2)"
-    command: make containerd-test-1.6.0-rc.4
-    agents:
-      queue: "cgroupv2"
 
   # Check the website builds.
   - <<: *common
