@@ -36,20 +36,52 @@ func putBuf(b *bytes.Buffer) {
 	bytesBufferPool.Put(b)
 }
 
-// FormatRunscLogPath parses runsc config, and fill in %ID% in the log path.
-func FormatRunscLogPath(id string, config map[string]string) {
-	if path, ok := config["debug-log"]; ok {
-		config["debug-log"] = strings.Replace(path, "%ID%", id, -1)
+// pathLikeFlags are runsc flags which refer to paths to files.
+var pathLikeFlags = []string{
+	"log",
+	"panic-log",
+	"debug-log",
+	"coverage-report",
+	"profile-block",
+	"profile-cpu",
+	"profile-heap",
+	"profile-mutex",
+	"trace",
+}
+
+// replaceID replaces %ID% in `path` with the given sandbox ID.
+func replaceID(id string, path string) string {
+	return strings.Replace(path, "%ID%", id, -1)
+}
+
+// EmittedPaths returns a list of file paths that the sandbox may need to
+// create using the given configuration. Useful to create parent directories.
+func EmittedPaths(id string, config map[string]string) []string {
+	var paths []string
+	for _, cfgFlag := range pathLikeFlags {
+		if path, ok := config[cfgFlag]; ok {
+			paths = append(paths, replaceID(id, path))
+		}
+	}
+	return paths
+}
+
+// FormatRunscPaths fills in %ID% in path-like flags.
+func FormatRunscPaths(id string, config map[string]string) {
+	for _, cfgFlag := range pathLikeFlags {
+		if path, ok := config[cfgFlag]; ok {
+			config[cfgFlag] = replaceID(id, path)
+		}
 	}
 }
 
 // FormatShimLogPath creates the file path to the log file. It replaces %ID%
 // in the path with the provided "id". It also uses a default log name if the
-// path end with '/'.
+// path ends with '/'.
 func FormatShimLogPath(path string, id string) string {
 	if strings.HasSuffix(path, "/") {
 		// Default format: <path>/runsc-shim-<ID>.log
 		path += "runsc-shim-%ID%.log"
 	}
-	return strings.Replace(path, "%ID%", id, -1)
+	return replaceID(id, path)
 }
