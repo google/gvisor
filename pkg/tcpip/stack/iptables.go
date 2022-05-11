@@ -275,8 +275,11 @@ type checkTable struct {
 // specified table.
 //
 // This is called in the hot path even when iptables are disabled, so we ensure
-// it does not allocate.
-// +checkescape:heap,builtin
+// it does not allocate. We check recursively for heap allocations, but not for:
+//   - Stack splitting, which can allocate.
+//   - Calls to interfaces, which can allocate.
+//   - Calls to dynamic functions, which can allocate.
+// +checkescape:hard
 func (it *IPTables) shouldSkipOrPopulateTables(tables []checkTable, pkt *PacketBuffer) bool {
 	switch pkt.NetworkProtocolNumber {
 	case header.IPv4ProtocolNumber, header.IPv6ProtocolNumber:
