@@ -267,6 +267,12 @@ steps:
     agents:
       cgroup: "v2"
       os: "ubuntu"
+  - <<: *common
+    label: ":podman: Podman"
+    command: sudo ./test/podman/run.sh
+    agents:
+      queue: "cgroupv2"
+      os: "ubuntu"
 
   # Check the website builds.
   - <<: *common
