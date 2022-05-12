@@ -614,6 +614,14 @@ TEST(MountTest, TmpfsHardLinkAllocCheck) {
   EXPECT_THAT(unlink(fileOne.c_str()), SyscallSucceeds());
 }
 
+// Tests memory allocation for empty size.
+TEST(MountTest, TmpfsEmptySizeAllocCheck) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  ASSERT_THAT(mount("", dir.path().c_str(), "tmpfs", 0, "size"),
+              SyscallFailsWithErrno(EINVAL));
+}
+
 }  // namespace
 
 }  // namespace testing
