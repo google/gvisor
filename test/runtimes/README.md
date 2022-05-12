@@ -79,6 +79,34 @@ To bump the version of an existing runtime test:
     [exclude](exclude) file for the new version, and they will be skipped in
     future runs.
 
+### Cleaning up exclude files
+
+Usually when the runtime is updated, a lot has changed. Tests may have been
+deleted, modified (fixed or broken) or added. After you have an exclude list
+from step 3 above with which all runtime tests pass, it is useful to clean up
+the exclude files with the following steps:
+
+1.  Check for the existence of tests in the runtime image. See how each runtime
+    lists all its tests (see `ListTests()` implementations in `proctor/lib`
+    directory). Then you can compare against that list and remove any excluded
+    tests that don't exist anymore.
+2.  Run all excluded tests with runc (native) for each runtime. If the test
+    fails, we can consider the test as broken. Such tests should be marked with
+    `Broken test` in the reason column. These tests don't provide a
+    compatibility gap signal for gvisor. We can happily ignore them. Some tests
+    which were previously broken may not be unbroken and for them the reason
+    field should be cleared.
+3.  Run all the unbroken and non-flaky tests on runsc (gVisor). If the test is
+    now passing, then the test should be removed from the exclude list. This
+    effectively increases our testing surface. Once upon a time, this test was
+    failing. Now it is passing. Something was fixed in between. Enabling this
+    test is equivalent to adding a regression test for the fix.
+4.  Some tests are excluded and marked flaky. Run these tests 100 times on runsc
+    (gVisor). If it does not flake, then you can remove it from the exclude
+    list.
+5.  Finally, close all corresponding bugs for tests that are now passing. These
+    bugs are stale.
+
 Creating new runtime tests for an entirely new language is similar to the above,
 except that Step 1 is a bit harder. You have to figure out how to download and
 run the language tests in a Docker container. Once you have that, you must also
