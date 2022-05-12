@@ -204,7 +204,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		delete(mopts, "size")
 		maxSizeInBytes, err := parseSize(maxSizeStr)
 		if err != nil {
-			ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: invalid size: %q", maxSizeStr)
+			ctx.Debugf("tmpfs.FilesystemType.GetFilesystem: parseSize() failed: %v", err)
 			return nil, nil, linuxerr.EINVAL
 		}
 		// Convert size in bytes to nearest Page Size bytes
@@ -948,6 +948,9 @@ func (*fileDescription) Sync(context.Context) error {
 // parseSize converts size in string to an integer bytes.
 // Supported suffixes in string are:K, M, G, T, P, E.
 func parseSize(s string) (uint64, error) {
+	if len(s) == 0 {
+		return 0, fmt.Errorf("size parameter empty")
+	}
 	suffix := s[len(s)-1]
 	count := 1
 	switch suffix {
