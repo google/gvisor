@@ -20,6 +20,9 @@ _templates:
       BENCHMARKS_PROJECT: gvisor-benchmarks
       BENCHMARKS_TABLE: benchmarks
       BENCHMARKS_UPLOAD: true
+    agents:
+      arch: "amd64"
+      kvm: "true"
   netstack_test: &netstack_test
     env:
       PACKAGES: >
@@ -39,8 +42,16 @@ _templates:
 steps:
   # Run basic smoke tests before preceding to other tests.
   - <<: *common
-    label: ":fire: Smoke tests"
+    label: ":fire: Smoke tests (AMD64)"
     command: make smoke-tests
+    agents:
+      arch: "amd64"
+  - <<: *common
+    label: ":fire: Smoke tests (ARM64)"
+    command: make smoke-tests
+    agents:
+      arch: "arm64"
+
   - wait
   - <<: *common
     label: ":fire: Smoke race tests"
@@ -105,92 +116,137 @@ steps:
   - <<: *common
     label: ":docker: Images (x86_64)"
     command: make ARCH=x86_64 load-all-images
+    agents:
+      arch: "amd64"
   - <<: *common
     label: ":docker: Images (aarch64)"
     command: make ARCH=aarch64 load-all-images
+    agents:
+      arch: "amd64"
 
   # Basic unit tests.
   - <<: *common
     label: ":golang: Nogo tests"
     command: make nogo-tests
   - <<: *common
-    label: ":test_tube: Unit tests"
+    label: ":test_tube: Unit tests (cgroupv1)"
     command: make unit-tests
+    agents:
+      cgroup: "v1"
+      arch: "amd64"
   - <<: *common
     label: ":test_tube: Unit tests (cgroupv2)"
     command: make unit-tests
     agents:
-      queue: "cgroupv2"
+      cgroup: "v2"
+      arch: "amd64"
   - <<: *common
-    label: ":test_tube: Container tests"
+    label: ":test_tube: Container tests (cgroupv1)"
     command: make container-tests
+    agents:
+      cgroup: "v1"
+      kvm: "true"
+      arch: "amd64"
   - <<: *common
     label: ":test_tube: Container tests (cgroupv2)"
     command: make container-tests
     agents:
-      queue: "cgroupv2"
+      cgroup: "v2"
+      kvm: "true"
+      arch: "amd64"
 
   # All system call tests.
   - <<: *common
-    label: ":toolbox: System call tests"
+    label: ":toolbox: System call tests (AMD64)"
     command: make syscall-tests
     parallelism: 20
+    agents:
+      arch: "amd64"
+      kvm: "true"
   - <<: *common
     label: ":muscle: System call tests (ARM64)"
     command: make BAZEL_OPTIONS=--test_tag_filters=runsc_ptrace syscall-tests
     parallelism: 10
     agents:
-      queue: "arm64"
+      arch: "arm64"
 
   # Integration tests.
   - <<: *common
-    label: ":docker: Docker tests"
+    label: ":docker: Docker tests (cgroupv1)"
     command: make docker-tests
+    agents:
+      arch: "amd64"
+      cgroup: "v1"
   - <<: *common
     label: ":docker: Docker tests (cgroupv2)"
     command: make docker-tests
     agents:
-      queue: "cgroupv2"
+      arch: "amd64"
+      cgroup: "v2"
   - <<: *common
     label: ":goggles: Overlay tests"
     command: make overlay-tests
+    agents:
+      arch: "amd64"
   - <<: *common
     label: ":safety_pin: Host network tests"
     command: make hostnet-tests
+    agents:
+      arch: "amd64"
   - <<: *common
     label: ":satellite: SWGSO tests"
     command: make swgso-tests
+    agents:
+      arch: "amd64"
   - <<: *common
     label: ":coffee: Do tests"
     command: make do-tests
+    agents:
+      arch: "amd64"
   - <<: *common
     label: ":person_in_lotus_position: KVM tests"
     command: make kvm-tests
+    agents:
+      arch: "amd64"
   - <<: *common
     label: ":weight_lifter: Fsstress test"
     command: make fsstress-test
+    agents:
+      arch: "amd64"
   - <<: *common
     label: ":docker: Containerd 1.3.9 tests"
     command: make containerd-test-1.3.9
+    agents:
+      arch: "amd64"
   - <<: *common
     label: ":docker: Containerd 1.4.3 tests"
     command: make containerd-test-1.4.3
+    agents:
+      arch: "amd64"
   - <<: *common
-    label: ":docker: Containerd 1.5.4 tests"
+    label: ":docker: Containerd 1.5.4 tests (cgroupv1)"
     command: make containerd-test-1.5.4
+    agents:
+      cgroup: "v1"
+      arch: "amd64"
   - <<: *common
     label: ":docker: Containerd 1.5.4 tests (cgroupv2)"
     command: make containerd-test-1.5.4
     agents:
-      queue: "cgroupv2"
+      cgroup: "v2"
+      arch: "amd64"
   - <<: *common
-    label: ":docker: Containerd 1.6.0-rc.4 tests"
+    label: ":docker: Containerd 1.6.0-rc.4 tests (cgroupv1)"
     command: make containerd-test-1.6.0-rc.4
+    agents:
+      cgroup: "v1"
+      arch: "amd64"
   - <<: *common
     label: ":docker: Containerd 1.6.0-rc.4 tests (cgroupv2)"
     command: make containerd-test-1.6.0-rc.4
     agents:
-      queue: "cgroupv2"
+      cgroup: "v2"
+      arch: "amd64"
 
   # Check the website builds.
   - <<: *common
@@ -213,22 +269,32 @@ steps:
     label: ":php: PHP runtime tests"
     command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} php8.1.1-runtime-tests
     parallelism: 10
+    agents:
+      arch: "amd64"
   - <<: *common
     label: ":java: Java runtime tests"
     command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} java17-runtime-tests
     parallelism: 40
+    agents:
+      arch: "amd64"
   - <<: *common
     label: ":golang: Go runtime tests"
     command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} go1.16-runtime-tests
     parallelism: 10
+    agents:
+      arch: "amd64"
   - <<: *common
     label: ":node: NodeJS runtime tests"
     command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} nodejs16.13.2-runtime-tests
     parallelism: 10
+    agents:
+      arch: "amd64"
   - <<: *common
     label: ":python: Python runtime tests"
     command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} python3.10.2-runtime-tests
     parallelism: 10
+    agents:
+      arch: "amd64"
 
   # Runtime tests (LISAFS).
   - <<: *common
@@ -236,36 +302,43 @@ steps:
     command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} php8.1.1-runtime-tests_lisafs
     parallelism: 10
     if: build.message =~ /lisafs/ || build.branch == "master"
+    agents:
+      arch: "amd64"
   - <<: *common
     label: ":java: Java runtime tests (LISAFS)"
     command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} java17-runtime-tests_lisafs
     parallelism: 40
     if: build.message =~ /lisafs/ || build.branch == "master"
+    agents:
+      arch: "amd64"
   - <<: *common
     label: ":golang: Go runtime tests (LISAFS)"
     command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} go1.16-runtime-tests_lisafs
     parallelism: 10
     if: build.message =~ /lisafs/ || build.branch == "master"
+    agents:
+      arch: "amd64"
   - <<: *common
     label: ":node: NodeJS runtime tests (LISAFS)"
     command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} nodejs16.13.2-runtime-tests_lisafs
     parallelism: 10
     if: build.message =~ /lisafs/ || build.branch == "master"
+    agents:
+      arch: "amd64"
   - <<: *common
     label: ":python: Python runtime tests (LISAFS)"
     command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} python3.10.2-runtime-tests_lisafs
     parallelism: 10
     if: build.message =~ /lisafs/ || build.branch == "master"
-
-  # ARM tests.
-  - <<: *common
-    label: ":mechanical_arm: ARM"
-    command: make arm-qemu-smoke-test
+    agents:
+      arch: "amd64"
 
   # Build everything.
   - <<: *common
     label: ":world_map: Build everything"
     command: "make build OPTIONS=--build_tag_filters=-nogo TARGETS=//..."
+    agents:
+      arch: "amd64"
 
   # Run basic benchmarks smoke tests (no upload).
   - <<: *common
@@ -273,6 +346,8 @@ steps:
     command: make benchmark-platforms BENCHMARKS_TARGETS=test/benchmarks/base:startup_test BENCHMARKS_FILTER=BenchmarkStartupEmpty BENCHMARKS_OPTIONS=-test.benchtime=1ns
     # Use the opposite of the benchmarks filter.
     if: build.branch != "master"
+    agents:
+      arch: "amd64"
 
   # Run all benchmarks.
   - <<: *benchmarks
