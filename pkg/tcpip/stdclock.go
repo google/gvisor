@@ -69,9 +69,13 @@ type stdClock struct {
 
 // NewStdClock returns an instance of a clock that uses the time package.
 func NewStdClock() Clock {
-	return &stdClock{
+	clock := &stdClock{
 		baseTime: time.Now(),
 	}
+
+	clock.monotonicOffset.Clock = clock
+	clock.maxMonotonic.Clock = clock
+	return clock
 }
 
 var _ Clock = (*stdClock)(nil)
@@ -106,6 +110,11 @@ func (*stdClock) AfterFunc(d time.Duration, f func()) Timer {
 	return &stdTimer{
 		t: time.AfterFunc(d, f),
 	}
+}
+
+// Elapsed implements Clock.Elapsed.
+func (s *stdClock) Elapsed(m MonotonicTime) time.Duration {
+	return m.Sub(MonotonicTime{Clock: s})
 }
 
 type stdTimer struct {

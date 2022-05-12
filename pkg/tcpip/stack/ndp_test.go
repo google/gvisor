@@ -2523,7 +2523,7 @@ func TestAutoGenTempAddrRegen(t *testing.T) {
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix, true, true, infiniteLifetimeSeconds, infiniteLifetimeSeconds))
 
 	// Wait for all the temporary addresses to get invalidated.
-	invalidateAfter := maxTempAddrValidLifetime - clock.NowMonotonic().Sub(tcpip.MonotonicTime{})
+	invalidateAfter := maxTempAddrValidLifetime - clock.Elapsed(clock.NowMonotonic())
 	for _, addr := range tempAddrs {
 		expectAutoGenAddrEventAsync(addr, invalidatedAddr, invalidateAfter)
 		invalidateAfter = tempAddrRegenenerationTime

@@ -69,6 +69,9 @@ func (e *ErrSaveRejection) Error() string {
 // +stateify savable
 type MonotonicTime struct {
 	nanoseconds int64
+
+	// Clock is the clock that was used to generate the MonotonicTime.
+	Clock Clock
 }
 
 // Nanoseconds returns the monotonic time in nanoseconds.
@@ -78,11 +81,17 @@ func (mt MonotonicTime) Nanoseconds() int64 {
 
 // Before reports whether the monotonic clock reading mt is before u.
 func (mt MonotonicTime) Before(u MonotonicTime) bool {
+	if mt.Clock != u.Clock {
+		panic("Clocks not equal in Before")
+	}
 	return mt.nanoseconds < u.nanoseconds
 }
 
 // After reports whether the monotonic clock reading mt is after u.
 func (mt MonotonicTime) After(u MonotonicTime) bool {
+	if mt.Clock != u.Clock {
+		panic("Clocks not equal in After")
+	}
 	return mt.nanoseconds > u.nanoseconds
 }
 
@@ -90,6 +99,7 @@ func (mt MonotonicTime) After(u MonotonicTime) bool {
 func (mt MonotonicTime) Add(d time.Duration) MonotonicTime {
 	return MonotonicTime{
 		nanoseconds: time.Unix(0, mt.nanoseconds).Add(d).Sub(time.Unix(0, 0)).Nanoseconds(),
+		Clock:       mt.Clock,
 	}
 }
 
@@ -97,6 +107,9 @@ func (mt MonotonicTime) Add(d time.Duration) MonotonicTime {
 // value that can be stored in a Duration, the maximum (or minimum) duration
 // will be returned. To compute t-d for a duration d, use t.Add(-d).
 func (mt MonotonicTime) Sub(u MonotonicTime) time.Duration {
+	if mt.Clock != u.Clock {
+		panic("Clocks not equal in Sub")
+	}
 	return time.Unix(0, mt.nanoseconds).Sub(time.Unix(0, u.nanoseconds))
 }
 
@@ -115,6 +128,9 @@ type Clock interface {
 	// goroutine. It returns a Timer that can be used to cancel the call using
 	// its Stop method.
 	AfterFunc(d time.Duration, f func()) Timer
+
+	// Elapsed returns the elapsed time.
+	Elapsed(m MonotonicTime) time.Duration
 }
 
 // Timer represents a single event. A Timer must be created with

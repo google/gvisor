@@ -39,6 +39,11 @@ func (*NullClock) NowMonotonic() tcpip.MonotonicTime {
 	return tcpip.MonotonicTime{}
 }
 
+// Elapsed implements tcpip.Clock.Elapsed.
+func (*NullClock) Elapsed(timestamp tcpip.MonotonicTime) time.Duration {
+	return time.Duration(0)
+}
+
 // AfterFunc implements tcpip.Clock.AfterFunc.
 func (*NullClock) AfterFunc(time.Duration, func()) tcpip.Timer {
 	return nil
@@ -127,8 +132,13 @@ func (mc *ManualClock) Now() time.Time {
 
 // NowMonotonic implements tcpip.Clock.NowMonotonic.
 func (mc *ManualClock) NowMonotonic() tcpip.MonotonicTime {
-	var mt tcpip.MonotonicTime
+	var mt = tcpip.MonotonicTime{Clock: mc}
 	return mt.Add(mc.Now().Sub(time.Unix(0, 0)))
+}
+
+// Elapsed implements tcpip.Clock.Elapsed.
+func (mc *ManualClock) Elapsed(timestamp tcpip.MonotonicTime) time.Duration {
+	return timestamp.Sub(tcpip.MonotonicTime{Clock: mc})
 }
 
 // AfterFunc implements tcpip.Clock.AfterFunc.

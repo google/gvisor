@@ -103,7 +103,7 @@ type listenContext struct {
 
 // timeStamp returns an 8-bit timestamp with a granularity of 64 seconds.
 func timeStamp(clock tcpip.Clock) uint32 {
-	return uint32(clock.NowMonotonic().Sub(tcpip.MonotonicTime{}).Seconds()) >> 6 & tsMask
+	return uint32(clock.Elapsed(clock.NowMonotonic()).Seconds()) >> 6 & tsMask
 }
 
 // newListenContext creates a new listen context.
@@ -518,7 +518,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		if opts.TS {
 			offset := e.protocol.tsOffset(s.dstAddr, s.srcAddr)
 			now := e.stack.Clock().NowMonotonic()
-			synOpts.TSVal = offset.TSVal(now)
+			synOpts.TSVal = offset.TSVal(now, e.stack.Clock())
 		}
 		cookie := ctx.createCookie(s.id, s.sequenceNumber, encodeMSS(opts.MSS))
 		fields := tcpFields{

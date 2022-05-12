@@ -8460,7 +8460,7 @@ func TestSendBufferTuning(t *testing.T) {
 func TestTimestampSynCookies(t *testing.T) {
 	clock := faketime.NewManualClock()
 	tsNow := func() uint32 {
-		return uint32(clock.NowMonotonic().Sub(tcpip.MonotonicTime{}).Milliseconds())
+		return uint32(clock.Elapsed(clock.NowMonotonic()).Milliseconds())
 	}
 	// Advance the clock so that NowMonotonic is non-zero.
 	clock.Advance(time.Second)

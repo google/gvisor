@@ -3053,7 +3053,7 @@ func (e *endpoint) maybeEnableTimestamp(synOpts header.TCPSynOptions) {
 }
 
 func (e *endpoint) tsVal(now tcpip.MonotonicTime) uint32 {
-	return e.TSOffset.TSVal(now)
+	return e.TSOffset.TSVal(now, e.stack.Clock())
 }
 
 func (e *endpoint) tsValNow() uint32 {
@@ -3061,7 +3061,7 @@ func (e *endpoint) tsValNow() uint32 {
 }
 
 func (e *endpoint) elapsed(now tcpip.MonotonicTime, tsEcr uint32) time.Duration {
-	return e.TSOffset.Elapsed(now, tsEcr)
+	return e.TSOffset.Elapsed(now, e.stack.Clock(), tsEcr)
 }
 
 // maybeEnableSACKPermitted marks the SACKPermitted option enabled for this endpoint

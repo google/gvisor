@@ -252,7 +252,7 @@ func generateSecureISN(id stack.TransportEndpointID, clock tcpip.Clock, seed uin
 	//
 	// Which sort of guarantees that we won't reuse the ISN for a new
 	// connection for the same tuple for at least 274s.
-	isn := isnHasher.Sum32() + uint32(clock.NowMonotonic().Sub(tcpip.MonotonicTime{}).Nanoseconds()>>6)
+	isn := isnHasher.Sum32() + uint32(clock.Elapsed(clock.NowMonotonic()).Nanoseconds()>>6)
 	return seqnum.Value(isn)
 }
 

@@ -194,8 +194,14 @@ func (t *Timekeeper) NowMonotonic() tcpip.MonotonicTime {
 	if err != nil {
 		panic("timekeeper.GetTime(sentrytime.Monotonic): " + err.Error())
 	}
-	var mt tcpip.MonotonicTime
-	return mt.Add(time.Duration(nsec) * time.Nanosecond)
+	var mt = tcpip.MonotonicTime{Clock: t}
+	newVal := mt.Add(time.Duration(nsec) * time.Nanosecond)
+	return newVal
+}
+
+// Elapsed implements tcpip.Clock.
+func (t *Timekeeper) Elapsed(timestamp tcpip.MonotonicTime) time.Duration {
+	return timestamp.Sub(tcpip.MonotonicTime{Clock: t})
 }
 
 // AfterFunc implements tcpip.Clock.

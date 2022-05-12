@@ -74,6 +74,7 @@ func (rc *rackControl) init(snd *sender, iss seqnum.Value) {
 	rc.FACK = iss
 	rc.ReoWndIncr = 1
 	rc.snd = snd
+	rc.XmitTime.Clock = snd.ep.stack.Clock()
 }
 
 // update will update the RACK related fields when an ACK has been received.

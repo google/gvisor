@@ -38,11 +38,11 @@ func NewTSOffset(milliseconds uint32) TSOffset {
 }
 
 // TSVal applies the offset to now and returns the timestamp in milliseconds.
-func (offset TSOffset) TSVal(now tcpip.MonotonicTime) uint32 {
-	return uint32(now.Sub(tcpip.MonotonicTime{}).Milliseconds()) + offset.milliseconds
+func (offset TSOffset) TSVal(now tcpip.MonotonicTime, clock tcpip.Clock) uint32 {
+	return uint32(clock.Elapsed(now).Milliseconds()) + offset.milliseconds
 }
 
 // Elapsed calculates the elapsed time given now and the echoed back timestamp.
-func (offset TSOffset) Elapsed(now tcpip.MonotonicTime, tsEcr uint32) time.Duration {
-	return time.Duration(offset.TSVal(now)-tsEcr) * time.Millisecond
+func (offset TSOffset) Elapsed(now tcpip.MonotonicTime, clock tcpip.Clock, tsEcr uint32) time.Duration {
+	return time.Duration(offset.TSVal(now, clock)-tsEcr) * time.Millisecond
 }
