@@ -193,6 +193,11 @@ type MemoryManager struct {
 	captureInvalidations  bool             `state:"zerovalue"`
 	capturedInvalidations []invalidateArgs `state:"nosave"`
 
+	// dumpability describes if and how this MemoryManager may be dumped to
+	// userspace. This is read under kernel.TaskSet.mu, so it can't be protected
+	// by metadataMu.
+	dumpability atomicbitops.Int32
+
 	metadataMu sync.Mutex `state:"nosave"`
 
 	// argv is the application argv. This is set up by the loader and may be
@@ -219,12 +224,6 @@ type MemoryManager struct {
 	//
 	// executable is protected by metadataMu.
 	executable fsbridge.File
-
-	// dumpability describes if and how this MemoryManager may be dumped to
-	// userspace.
-	//
-	// dumpability is protected by metadataMu.
-	dumpability Dumpability
 
 	// aioManager keeps track of AIOContexts used for async IOs. AIOManager
 	// must be cloned when CLONE_VM is used.
