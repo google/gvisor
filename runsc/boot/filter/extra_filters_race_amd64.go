@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2022 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,23 +19,12 @@ package filter
 
 import (
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/seccomp"
 )
 
-// instrumentationFilters returns additional filters for syscalls used by TSAN.
-func instrumentationFilters() seccomp.SyscallRules {
-	log.Warningf("*** SECCOMP WARNING: TSAN is enabled: syscall filters less restrictive!")
-	return archInstrumentationFilters(seccomp.SyscallRules{
-		unix.SYS_BRK:             {},
-		unix.SYS_CLOCK_NANOSLEEP: {},
-		unix.SYS_CLONE:           {},
-		unix.SYS_FUTEX:           {},
-		unix.SYS_MADVISE:         {},
-		unix.SYS_MMAP:            {},
-		unix.SYS_MUNLOCK:         {},
-		unix.SYS_NANOSLEEP:       {},
-		unix.SYS_OPENAT:          {},
-		unix.SYS_SET_ROBUST_LIST: {},
-	})
+func archInstrumentationFilters(f seccomp.SyscallRules) seccomp.SyscallRules {
+	f[unix.SYS_OPEN] = []seccomp.Rule{}
+	// Used within glibc's malloc.
+	f[unix.SYS_TIME] = []seccomp.Rule{}
+	return f
 }
