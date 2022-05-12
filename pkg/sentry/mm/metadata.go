@@ -39,16 +39,12 @@ const (
 
 // Dumpability returns the dumpability.
 func (mm *MemoryManager) Dumpability() Dumpability {
-	mm.metadataMu.Lock()
-	defer mm.metadataMu.Unlock()
-	return mm.dumpability
+	return Dumpability(mm.dumpability.Load())
 }
 
 // SetDumpability sets the dumpability.
 func (mm *MemoryManager) SetDumpability(d Dumpability) {
-	mm.metadataMu.Lock()
-	defer mm.metadataMu.Unlock()
-	mm.dumpability = d
+	mm.dumpability.Store(int32(d))
 }
 
 // ArgvStart returns the start of the application argument vector.

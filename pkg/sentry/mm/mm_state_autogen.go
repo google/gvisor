@@ -327,11 +327,11 @@ func (mm *MemoryManager) StateFields() []string {
 		"pmas",
 		"curRSS",
 		"maxRSS",
+		"dumpability",
 		"argv",
 		"envv",
 		"auxv",
 		"executable",
-		"dumpability",
 		"aioManager",
 		"sleepForActivation",
 		"vdsoSigReturnAddr",
@@ -363,11 +363,11 @@ func (mm *MemoryManager) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(11, &mm.pmas)
 	stateSinkObject.Save(12, &mm.curRSS)
 	stateSinkObject.Save(13, &mm.maxRSS)
-	stateSinkObject.Save(14, &mm.argv)
-	stateSinkObject.Save(15, &mm.envv)
-	stateSinkObject.Save(16, &mm.auxv)
-	stateSinkObject.Save(17, &mm.executable)
-	stateSinkObject.Save(18, &mm.dumpability)
+	stateSinkObject.Save(14, &mm.dumpability)
+	stateSinkObject.Save(15, &mm.argv)
+	stateSinkObject.Save(16, &mm.envv)
+	stateSinkObject.Save(17, &mm.auxv)
+	stateSinkObject.Save(18, &mm.executable)
 	stateSinkObject.Save(19, &mm.aioManager)
 	stateSinkObject.Save(20, &mm.sleepForActivation)
 	stateSinkObject.Save(21, &mm.vdsoSigReturnAddr)
@@ -391,11 +391,11 @@ func (mm *MemoryManager) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(11, &mm.pmas)
 	stateSourceObject.Load(12, &mm.curRSS)
 	stateSourceObject.Load(13, &mm.maxRSS)
-	stateSourceObject.Load(14, &mm.argv)
-	stateSourceObject.Load(15, &mm.envv)
-	stateSourceObject.Load(16, &mm.auxv)
-	stateSourceObject.Load(17, &mm.executable)
-	stateSourceObject.Load(18, &mm.dumpability)
+	stateSourceObject.Load(14, &mm.dumpability)
+	stateSourceObject.Load(15, &mm.argv)
+	stateSourceObject.Load(16, &mm.envv)
+	stateSourceObject.Load(17, &mm.auxv)
+	stateSourceObject.Load(18, &mm.executable)
 	stateSourceObject.Load(19, &mm.aioManager)
 	stateSourceObject.Load(20, &mm.sleepForActivation)
 	stateSourceObject.Load(21, &mm.vdsoSigReturnAddr)
