@@ -364,9 +364,13 @@ func (fs *filesystem) prepareInitialCgroup(ctx context.Context, vfsObj *vfs.Virt
 	}
 	ctx.Debugf("cgroupfs.FilesystemType.GetFilesystem: initial cgroup path: %v", initPathStr)
 	initPath := fspath.Parse(initPathStr)
-	if !initPath.Absolute || !initPath.HasComponents() {
+	if !initPath.Absolute {
 		ctx.Warningf("cgroupfs.FilesystemType.GetFilesystem: initial cgroup path invalid: %+v", initPath)
 		return linuxerr.EINVAL
+	}
+	if !initPath.HasComponents() {
+		// Explicit "/" as initial cgroup, nothing to do.
+		return nil
 	}
 
 	ownerCreds := auth.CredentialsFromContext(ctx).Fork()
