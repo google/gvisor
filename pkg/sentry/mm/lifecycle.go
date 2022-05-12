@@ -36,7 +36,7 @@ func NewMemoryManager(p platform.Platform, mfp pgalloc.MemoryFileProvider, sleep
 		privateRefs:        &privateRefs{},
 		users:              atomicbitops.FromInt32(1),
 		auxv:               arch.Auxv{},
-		dumpability:        UserDumpable,
+		dumpability:        atomicbitops.FromInt32(int32(UserDumpable)),
 		aioManager:         aioManager{contexts: make(map[uint64]*AIOContext)},
 		sleepForActivation: sleepForActivation,
 	}
@@ -92,7 +92,7 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 		auxv:                 append(arch.Auxv(nil), mm.auxv...),
 		// IncRef'd below, once we know that there isn't an error.
 		executable:         mm.executable,
-		dumpability:        mm.dumpability,
+		dumpability:        atomicbitops.FromInt32(mm.dumpability.Load()),
 		aioManager:         aioManager{contexts: make(map[uint64]*AIOContext)},
 		sleepForActivation: mm.sleepForActivation,
 		vdsoSigReturnAddr:  mm.vdsoSigReturnAddr,
