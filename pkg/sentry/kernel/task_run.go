@@ -261,8 +261,6 @@ func (app *runApp) execute(t *Task) taskRunState {
 		// an application-generated signal and we should continue execution
 		// normally.
 		if at.Any() {
-			faultCounter.Increment()
-
 			region := trace.StartRegion(t.traceContext, faultRegion)
 			addr := hostarch.Addr(info.Addr())
 			err := t.MemoryManager().HandleUserFault(t, addr, at, hostarch.Addr(t.Arch().Stack()))

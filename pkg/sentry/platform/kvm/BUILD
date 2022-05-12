@@ -92,7 +92,6 @@ go_library(
         "//pkg/cpuid",
         "//pkg/hostarch",
         "//pkg/log",
-        "//pkg/metric",
         "//pkg/procid",
         "//pkg/ring0",
         "//pkg/ring0/pagetables",

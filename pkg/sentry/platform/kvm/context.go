@@ -85,7 +85,6 @@ restart:
 
 	// Increment the number of user exits.
 	cpu.userExits.Add(1)
-	userExitCounter.Increment()
 
 	// Release resources.
 	c.machine.Put(cpu)

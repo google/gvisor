@@ -110,12 +110,10 @@ func bluepillHandler(context unsafe.Pointer) {
 	}
 
 	for {
-		hostExitCounter.Increment()
 		_, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(c.fd), _KVM_RUN, 0) // escapes: no.
 		switch errno {
 		case 0: // Expected case.
 		case unix.EINTR:
-			interruptCounter.Increment()
 			// First, we process whatever pending signal
 			// interrupted KVM. Since we're in a signal handler
 			// currently, all signals are masked and the signal

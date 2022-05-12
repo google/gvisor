@@ -19,14 +19,12 @@ import (
 	"runtime"
 	gosync "sync"
 	"sync/atomic"
-	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/procid"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
@@ -101,40 +99,6 @@ const (
 	//
 	// If this is set, then notify must be called on any state transitions.
 	vCPUWaiter uint32 = 1 << 2
-)
-
-var (
-	// hostExitCounter is a metric that tracks how many times the sentry
-	// performed a host to guest world switch.
-	hostExitCounter = metric.MustCreateNewUint64Metric(
-		"/kvm/host_exits", false, "The number of times the sentry performed a host to guest world switch.")
-
-	// userExitCounter is a metric that tracks how many times the sentry has
-	// had an exit from userspace. Analogous to vCPU.userExits.
-	userExitCounter = metric.MustCreateNewUint64Metric(
-		"/kvm/user_exits", false, "The number of times the sentry has had an exit from userspace.")
-
-	// interruptCounter is a metric that tracks how many times execution returned
-	// to the KVM host to handle a pending signal.
-	interruptCounter = metric.MustCreateNewUint64Metric(
-		"/kvm/interrupts", false, "The number of times the signal handler was invoked.")
-
-	// mmapCallCounter is a metric that tracks how many times the function
-	// seccompMmapSyscall has been called.
-	mmapCallCounter = metric.MustCreateNewUint64Metric(
-		"/kvm/mmap_calls", false, "The number of times seccompMmapSyscall has been called.")
-
-	// getVCPUFastPathDuration are durations of acquiring a VCPU
-	// (using machine.Get()).
-	getVCPUDuration = metric.MustRegisterTimerMetric("/kvm/get_vcpu",
-		metric.NewExponentialBucketer(20, uint64(time.Nanosecond*10), 1, 2),
-		"Duration of acquiring a VCPU, not including the fastest reuse path.",
-		metric.NewField("acquisition_type", []string{"fast_reused", "reused", "unused", "stolen"}))
-
-	// asInvalidateDuration are durations of calling addressSpace.invalidate().
-	asInvalidateDuration = metric.MustRegisterTimerMetric("/kvm/address_space_invalidate",
-		metric.NewExponentialBucketer(15, uint64(time.Nanosecond*100), 1, 2),
-		"Duration of calling addressSpace.invalidate().")
 )
 
 // vCPU is a single KVM vCPU.
@@ -441,8 +405,6 @@ func (m *machine) Destroy() {
 // the corrent context in guest, the vCPU of it must be the same as what
 // Get() returns.
 func (m *machine) Get() *vCPU {
-	timer := getVCPUDuration.Start()
-
 	m.mu.RLock()
 	runtime.LockOSThread()
 	tid := procid.Current()
@@ -451,7 +413,6 @@ func (m *machine) Get() *vCPU {
 	if c := m.vCPUsByTID[tid]; c != nil {
 		c.lock()
 		m.mu.RUnlock()
-		timer.Finish("fast_reused")
 		return c
 	}
 
@@ -471,7 +432,6 @@ func (m *machine) Get() *vCPU {
 	if c := m.vCPUsByTID[tid]; c != nil {
 		c.lock()
 		m.mu.Unlock()
-		timer.Finish("reused")
 		return c
 	}
 
@@ -483,7 +443,6 @@ func (m *machine) Get() *vCPU {
 				m.vCPUsByTID[tid] = c
 				m.mu.Unlock()
 				c.loadSegments(tid)
-				timer.Finish("unused")
 				return c
 			}
 		}
@@ -496,7 +455,6 @@ func (m *machine) Get() *vCPU {
 			m.vCPUsByTID[tid] = c
 			m.mu.Unlock()
 			c.loadSegments(tid)
-			timer.Finish("unused")
 			return c
 		}
 
@@ -523,7 +481,6 @@ func (m *machine) Get() *vCPU {
 			m.vCPUsByTID[tid] = c
 			m.mu.Unlock()
 			c.loadSegments(tid)
-			timer.Finish("stolen")
 			return c
 		}
 

@@ -253,7 +253,6 @@ func (t *Task) doSyscall() taskRunState {
 		}
 	}
 
-	syscallCounter.Increment()
 	return t.doSyscallEnter(sysno, args)
 }
 
