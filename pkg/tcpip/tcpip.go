@@ -71,9 +71,9 @@ type MonotonicTime struct {
 	nanoseconds int64
 }
 
-// Nanoseconds returns the monotonic time in nanoseconds.
-func (mt MonotonicTime) Nanoseconds() int64 {
-	return mt.nanoseconds
+// String implements Stringer.
+func (mt MonotonicTime) String() string {
+	return strconv.FormatInt(mt.nanoseconds, 10)
 }
 
 // Before reports whether the monotonic clock reading mt is before u.

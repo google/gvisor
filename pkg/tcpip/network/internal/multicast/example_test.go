@@ -103,7 +103,7 @@ func Example() {
 		panic(fmt.Sprintf("table.GetLastUsedTimestamp(%#v) = (_, false)", routeKey))
 	}
 
-	fmt.Printf("Last used timestamp: %d", timestamp.Nanoseconds())
+	fmt.Printf("Last used timestamp: %s", timestamp)
 
 	// Finally, to remove an installed route, call:
 	if removed := table.RemoveInstalledRoute(routeKey); !removed {

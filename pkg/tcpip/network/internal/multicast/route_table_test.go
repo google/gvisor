@@ -452,8 +452,8 @@ func TestSetLastUsedTimestamp(t *testing.T) {
 				t.Fatalf("got table.GetLastUsedTimestamp(%#v) = (_, false_), want = (_, true)", defaultRouteKey)
 			}
 
-			if got, want := timestamp.Nanoseconds(), test.wantLastUsedTime.Nanoseconds(); got != want {
-				t.Errorf("got table.GetLastUsedTimestamp(%#v) = (%v, _), want (%v, _)", defaultRouteKey, got, want)
+			if timestamp != test.wantLastUsedTime {
+				t.Errorf("got table.GetLastUsedTimestamp(%#v) = (%s, _), want = (%s, _)", defaultRouteKey, timestamp, test.wantLastUsedTime)
 			}
 		})
 	}
