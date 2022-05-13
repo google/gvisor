@@ -56,6 +56,7 @@ type multiCounterNICStats struct {
 	unknownL4ProtocolRcvdPacketCounts tcpip.MultiIntegralStatCounterMap
 	malformedL4RcvdPackets            tcpip.MultiCounterStat
 	tx                                multiCounterNICPacketStats
+	txPacketsDroppedNoBufferSpace     tcpip.MultiCounterStat
 	rx                                multiCounterNICPacketStats
 	disabledRx                        multiCounterNICPacketStats
 	neighbor                          multiCounterNICNeighborStats
@@ -66,6 +67,7 @@ func (m *multiCounterNICStats) init(a, b *tcpip.NICStats) {
 	m.unknownL4ProtocolRcvdPacketCounts.Init(a.UnknownL4ProtocolRcvdPacketCounts, b.UnknownL4ProtocolRcvdPacketCounts)
 	m.malformedL4RcvdPackets.Init(a.MalformedL4RcvdPackets, b.MalformedL4RcvdPackets)
 	m.tx.init(&a.Tx, &b.Tx)
+	m.txPacketsDroppedNoBufferSpace.Init(a.TxPacketsDroppedNoBufferSpace, b.TxPacketsDroppedNoBufferSpace)
 	m.rx.init(&a.Rx, &b.Rx)
 	m.disabledRx.init(&a.DisabledRx, &b.DisabledRx)
 	m.neighbor.init(&a.Neighbor, &b.Neighbor)
