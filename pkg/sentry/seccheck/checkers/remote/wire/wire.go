@@ -12,8 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package header contains the message header used in the remote checker.
-package header
+// Package wire defines structs used in the wire format for the remote checker.
+package wire
+
+// CurrentVersion is the current wire and protocol version.
+const CurrentVersion = 1
 
 // HeaderStructSize size of header struct in bytes.
 const HeaderStructSize = 8

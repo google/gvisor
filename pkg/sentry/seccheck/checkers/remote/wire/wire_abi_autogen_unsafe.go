@@ -1,6 +1,6 @@
 // Automatically generated marshal implementation. See tools/go_marshal.
 
-package header
+package wire
 
 import (
     "gvisor.dev/gvisor/pkg/gohacks"
