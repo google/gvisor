@@ -178,6 +178,8 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 	for _, it := range its {
 		it.DestroyTimer()
 	}
+	// Get the mm's max RSS size before locking TaskSet.mu.
+	mmMaxRSS := t.MemoryManager().MaxResidentSetSize()
 	t.tg.pidns.owner.mu.Lock()
 	// "During an execve(2), the dispositions of handled signals are reset to
 	// the default; the dispositions of ignored signals are left unchanged. ...
@@ -205,7 +207,7 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 	// See the JoinProcessGroup function in sessions.go for more context.
 	t.tg.execed = true
 	// Maximum RSS is preserved across execve(2).
-	t.updateRSSLocked()
+	t.updateRSSLocked(mmMaxRSS)
 	// Restartable sequence state is discarded.
 	t.rseqPreempted = false
 	t.rseqCPU = -1

@@ -243,9 +243,10 @@ func (*runExitMain) execute(t *Task) taskRunState {
 
 	// Deactivate the address space and update max RSS before releasing the
 	// task's MM.
+	mmMaxRSS := t.MemoryManager().MaxResidentSetSize()
 	t.Deactivate()
 	t.tg.pidns.owner.mu.Lock()
-	t.updateRSSLocked()
+	t.updateRSSLocked(mmMaxRSS)
 	t.tg.pidns.owner.mu.Unlock()
 
 	// Release the task image resources. Accessing these fields must be
@@ -1100,8 +1101,8 @@ func (t *Task) waitCollectZombieLocked(target *Task, opts *WaitOptions, asPtrace
 // updateRSSLocked updates t.tg.maxRSS.
 //
 // Preconditions: The TaskSet mutex must be locked for writing.
-func (t *Task) updateRSSLocked() {
-	if mmMaxRSS := t.MemoryManager().MaxResidentSetSize(); t.tg.maxRSS < mmMaxRSS {
+func (t *Task) updateRSSLocked(mmMaxRSS uint64) {
+	if t.tg.maxRSS < mmMaxRSS {
 		t.tg.maxRSS = mmMaxRSS
 	}
 }
