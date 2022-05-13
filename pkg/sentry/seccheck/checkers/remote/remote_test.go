@@ -31,6 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck/checkers/remote/test"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck/checkers/remote/wire"
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
@@ -151,6 +152,37 @@ func TestBasic(t *testing.T) {
 	if want, got := 1, server.Count(); want != got {
 		t.Errorf("wrong number of points, want: %d, got: %d", want, got)
 	}
+}
+
+func TestVersionUnsupported(t *testing.T) {
+	server, err := test.NewServer()
+	if err != nil {
+		t.Fatalf("newServer(): %v", err)
+	}
+	defer server.Close()
+
+	server.SetVersion(0)
+
+	_, err = setup(server.Path)
+	if err == nil || !strings.Contains(err.Error(), "remote version") {
+		t.Fatalf("Wrong error: %v", err)
+	}
+}
+
+func TestVersionNewer(t *testing.T) {
+	server, err := test.NewServer()
+	if err != nil {
+		t.Fatalf("newServer(): %v", err)
+	}
+	defer server.Close()
+
+	server.SetVersion(wire.CurrentVersion + 10)
+
+	endpoint, err := setup(server.Path)
+	if err != nil {
+		t.Fatalf("setup(): %v", err)
+	}
+	_ = endpoint.Close()
 }
 
 // Test that the example C++ server works. It's easier to test from here and
