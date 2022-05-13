@@ -4,6 +4,39 @@ load("//tools/go_generics:defs.bzl", "go_template_instance")
 package(licenses = ["notice"])
 
 go_template_instance(
+    name = "queue_mutex",
+    out = "queue_mutex.go",
+    package = "transport",
+    prefix = "queue",
+    substrs = {
+        "genericMark": "unixQueue",
+    },
+    template = "//pkg/sync/locking:generic_mutex",
+)
+
+go_template_instance(
+    name = "stream_queue_receiver_mutex",
+    out = "stream_queue_receiver_mutex.go",
+    package = "transport",
+    prefix = "streamQueueReceiver",
+    substrs = {
+        "genericMark": "streamQueueReceiver",
+    },
+    template = "//pkg/sync/locking:generic_mutex",
+)
+
+go_template_instance(
+    name = "endpoint_mutex",
+    out = "endpoint_mutex.go",
+    package = "transport",
+    prefix = "endpoint",
+    substrs = {
+        "genericMark": "unixEndpoint",
+    },
+    template = "//pkg/sync/locking:generic_mutex",
+)
+
+go_template_instance(
     name = "transport_message_list",
     out = "transport_message_list.go",
     package = "transport",
@@ -44,13 +77,16 @@ go_library(
         "connectioned_state.go",
         "connectionless.go",
         "connectionless_state.go",
+        "endpoint_mutex.go",
         "host.go",
         "host_connected_endpoint_refs.go",
         "host_iovec.go",
         "host_unsafe.go",
         "queue.go",
+        "queue_mutex.go",
         "queue_refs.go",
         "save_restore.go",
+        "stream_queue_receiver_mutex.go",
         "transport_message_list.go",
         "unix.go",
     ],
@@ -70,6 +106,7 @@ go_library(
         "//pkg/sentry/inet",
         "//pkg/sentry/uniqueid",
         "//pkg/sync",
+        "//pkg/sync/locking",
         "//pkg/syserr",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
