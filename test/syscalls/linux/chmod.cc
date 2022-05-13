@@ -14,6 +14,7 @@
 
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -102,7 +103,11 @@ TEST(ChmodTest, FchmodFileWithOpath) {
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_PATH));
 
-  ASSERT_THAT(fchmod(fd.get(), 0444), SyscallFailsWithErrno(EBADF));
+  // Bionic's implementation of fchmod() uses chmod() when O_PATH is set
+  // to circumvent the behavior this is testing for.
+  // Use syscall() here to avoid running through Bionic on Android.
+  ASSERT_THAT(syscall(SYS_fchmod, fd.get(), 0444),
+              SyscallFailsWithErrno(EBADF));
 }
 
 TEST(ChmodTest, FchmodDirWithOpath) {
@@ -110,7 +115,8 @@ TEST(ChmodTest, FchmodDirWithOpath) {
   const auto fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_DIRECTORY | O_PATH));
 
-  ASSERT_THAT(fchmod(fd.get(), 0444), SyscallFailsWithErrno(EBADF));
+  ASSERT_THAT(syscall(SYS_fchmod, fd.get(), 0444),
+              SyscallFailsWithErrno(EBADF));
 }
 
 TEST(ChmodTest, FchmodatWithOpath) {
