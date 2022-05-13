@@ -52,12 +52,14 @@ type RouteTable struct {
 	pendingMu sync.RWMutex
 	// +checklocks:pendingMu
 	pendingRoutes map[RouteKey]PendingRoute
-
-	config Config
-
 	// cleanupPendingRoutesTimer is a timer that triggers a routine to remove
 	// pending routes that are expired.
+	// +checklocks:pendingMu
 	cleanupPendingRoutesTimer tcpip.Timer
+	// +checklocks:pendingMu
+	isCleanupRoutineRunning bool
+
+	config Config
 }
 
 var (
@@ -231,7 +233,6 @@ func (r *RouteTable) Init(config Config) error {
 	r.installedRoutes = make(map[RouteKey]*InstalledRoute)
 	r.pendingRoutes = make(map[RouteKey]PendingRoute)
 
-	r.cleanupPendingRoutesTimer = r.config.Clock.AfterFunc(DefaultCleanupInterval, r.cleanupPendingRoutes)
 	return nil
 }
 
@@ -240,17 +241,37 @@ func (r *RouteTable) Init(config Config) error {
 // Calling this will stop the cleanup routine and release any packets owned by
 // the table.
 func (r *RouteTable) Close() {
+	r.pendingMu.Lock()
+	defer r.pendingMu.Unlock()
+
 	if r.cleanupPendingRoutesTimer != nil {
 		r.cleanupPendingRoutesTimer.Stop()
 	}
-
-	r.pendingMu.Lock()
-	defer r.pendingMu.Unlock()
 
 	for key, route := range r.pendingRoutes {
 		delete(r.pendingRoutes, key)
 		route.releasePackets()
 	}
+}
+
+// maybeStopCleanupRoutine stops the pending routes cleanup routine if no
+// pending routes exist.
+//
+// Returns true if the timer is not running. Otherwise, returns false.
+//
+// +checklocks:r.pendingMu
+func (r *RouteTable) maybeStopCleanupRoutineLocked() bool {
+	if !r.isCleanupRoutineRunning {
+		return true
+	}
+
+	if len(r.pendingRoutes) == 0 {
+		r.cleanupPendingRoutesTimer.Stop()
+		r.isCleanupRoutineRunning = false
+		return true
+	}
+
+	return false
 }
 
 func (r *RouteTable) cleanupPendingRoutes() {
@@ -264,7 +285,10 @@ func (r *RouteTable) cleanupPendingRoutes() {
 			route.releasePackets()
 		}
 	}
-	r.cleanupPendingRoutesTimer.Reset(DefaultCleanupInterval)
+
+	if stopped := r.maybeStopCleanupRoutineLocked(); !stopped {
+		r.cleanupPendingRoutesTimer.Reset(DefaultCleanupInterval)
+	}
 }
 
 func (r *RouteTable) newPendingRoute() PendingRoute {
@@ -358,6 +382,16 @@ func (r *RouteTable) GetRouteOrInsertPending(key RouteKey, pkt *stack.PacketBuff
 	pendingRoute.packets = append(pendingRoute.packets, pkt.Clone())
 	r.pendingRoutes[key] = pendingRoute
 
+	if !r.isCleanupRoutineRunning {
+		// The cleanup routine isn't running, but should be. Start it.
+		if r.cleanupPendingRoutesTimer == nil {
+			r.cleanupPendingRoutesTimer = r.config.Clock.AfterFunc(DefaultCleanupInterval, r.cleanupPendingRoutes)
+		} else {
+			r.cleanupPendingRoutesTimer.Reset(DefaultCleanupInterval)
+		}
+		r.isCleanupRoutineRunning = true
+	}
+
 	return GetRouteResult{PendingRouteState: pendingRouteState, InstalledRoute: nil}, nil
 }
 
@@ -383,6 +417,9 @@ func (r *RouteTable) AddInstalledRoute(key RouteKey, route *InstalledRoute) []*s
 	r.pendingMu.Lock()
 	pendingRoute, ok := r.pendingRoutes[key]
 	delete(r.pendingRoutes, key)
+	// No need to reset the timer here. The cleanup routine is responsible for
+	// doing so.
+	_ = r.maybeStopCleanupRoutineLocked()
 	r.pendingMu.Unlock()
 
 	// Ignore the pending route if it is expired. It may be in this state since
