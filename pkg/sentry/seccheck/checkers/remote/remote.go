@@ -17,7 +17,9 @@
 package remote
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"golang.org/x/sys/unix"
@@ -27,7 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
-	"gvisor.dev/gvisor/pkg/sentry/seccheck/checkers/remote/header"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck/checkers/remote/wire"
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 )
 
@@ -81,6 +83,38 @@ func setup(path string) (*os.File, error) {
 	if err := unix.Connect(int(f.Fd()), &addr); err != nil {
 		return nil, fmt.Errorf("connect(%q): %w", path, err)
 	}
+
+	// Perform handshake. See common.proto for details about the protocol.
+	hsOut := pb.Handshake{Version: wire.CurrentVersion}
+	out, err := proto.Marshal(&hsOut)
+	if err != nil {
+		return nil, fmt.Errorf("marshalling handshake message: %w", err)
+	}
+	if _, err := f.Write(out); err != nil {
+		return nil, fmt.Errorf("sending handshake message: %w", err)
+	}
+
+	in := make([]byte, 10240)
+	read, err := f.Read(in)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("reading handshake message: %w", err)
+	}
+	// Protect against the handshake becoming larger than the buffer allocated
+	// for it.
+	if read == len(in) {
+		return nil, fmt.Errorf("handshake message too big")
+	}
+	hsIn := pb.Handshake{}
+	if err := proto.Unmarshal(in[:read], &hsIn); err != nil {
+		return nil, fmt.Errorf("unmarshalling handshake message: %w", err)
+	}
+
+	// Check that remote version can be supported.
+	const minSupportedVersion = 1
+	if hsIn.Version < minSupportedVersion {
+		return nil, fmt.Errorf("remote version (%d) is smaller than minimum supported (%d)", hsIn.Version, minSupportedVersion)
+	}
+
 	cu.Release()
 	return f, nil
 }
@@ -90,13 +124,6 @@ func New(_ map[string]interface{}, endpoint *fd.FD) (seccheck.Checker, error) {
 	if endpoint == nil {
 		return nil, fmt.Errorf("remote sink requires an endpoint")
 	}
-	// TODO(gvisor.dev/issue/4805): perform version handshake with remote:
-	//   1. sentry and remote exchange versions
-	//	 2. sentry continues if remote >= min(sentry)
-	//   3. remote continues if sentry >= min(remote).
-	// min() being the minimal supported version. Let's say current sentry
-	// supports batching but remote doesn't, sentry can chose to not batch or
-	// refuse the connection.
 	return &Remote{endpoint: endpoint}, nil
 }
 
@@ -115,11 +142,11 @@ func (r *Remote) write(msg proto.Message, msgType pb.MessageType) {
 		log.Debugf("Marshal(%+v): %v", msg, err)
 		return
 	}
-	hdr := header.Header{
-		HeaderSize:  uint16(header.HeaderStructSize),
+	hdr := wire.Header{
+		HeaderSize:  uint16(wire.HeaderStructSize),
 		MessageType: uint16(msgType),
 	}
-	var hdrOut [header.HeaderStructSize]byte
+	var hdrOut [wire.HeaderStructSize]byte
 	hdr.MarshalUnsafe(hdrOut[:])
 
 	// TODO(gvisor.dev/issue/4805): Change to non-blocking write. Count as dropped

@@ -24,9 +24,10 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+	"google.golang.org/protobuf/proto"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/seccheck/checkers/remote/header"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck/checkers/remote/wire"
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/test/testutil"
@@ -46,6 +47,8 @@ type Server struct {
 
 	// +checklocks:mu
 	points []Message
+
+	version uint32
 }
 
 // Message corresponds to a single message sent from checkers.Remote.
@@ -97,8 +100,9 @@ func newServerPath(path string) (*Server, error) {
 	}
 
 	server := &Server{
-		Path:   path,
-		socket: ss,
+		Path:    path,
+		socket:  ss,
+		version: wire.CurrentVersion,
 	}
 	go server.run()
 	cu.Release()
@@ -115,11 +119,43 @@ func (s *Server) run() {
 			}
 			return
 		}
+		if err := s.handshake(client); err != nil {
+			log.Warningf(err.Error())
+			_ = client.Close()
+			continue
+		}
 		s.mu.Lock()
 		s.clients = append(s.clients, client)
 		s.mu.Unlock()
 		go s.handleClient(client)
 	}
+}
+
+// handshake performs version exchange with client. See common.proto for details
+// about the protocol.
+func (s *Server) handshake(client *unet.Socket) error {
+	var in [1024]byte
+	read, err := client.Read(in[:])
+	if err != nil {
+		return fmt.Errorf("reading handshake message: %w", err)
+	}
+	hsIn := pb.Handshake{}
+	if err := proto.Unmarshal(in[:read], &hsIn); err != nil {
+		return fmt.Errorf("unmarshalling handshake message: %w", err)
+	}
+	if hsIn.Version != wire.CurrentVersion {
+		return fmt.Errorf("wrong version number, want: %d, got, %d", wire.CurrentVersion, hsIn.Version)
+	}
+
+	hsOut := pb.Handshake{Version: s.version}
+	out, err := proto.Marshal(&hsOut)
+	if err != nil {
+		return fmt.Errorf("marshalling handshake message: %w", err)
+	}
+	if _, err := client.Write(out); err != nil {
+		return fmt.Errorf("sending handshake message: %w", err)
+	}
+	return nil
 }
 
 func (s *Server) handleClient(client *unet.Socket) {
@@ -144,11 +180,11 @@ func (s *Server) handleClient(client *unet.Socket) {
 		if read == 0 {
 			return
 		}
-		if read < header.HeaderStructSize {
+		if read < wire.HeaderStructSize {
 			panic("invalid message")
 		}
-		hdr := header.Header{}
-		hdr.UnmarshalUnsafe(buf[0:header.HeaderStructSize])
+		hdr := wire.Header{}
+		hdr.UnmarshalUnsafe(buf[0:wire.HeaderStructSize])
 		if read < int(hdr.HeaderSize) {
 			panic(fmt.Sprintf("message truncated, header size: %d, readL %d", hdr.HeaderSize, read))
 		}
@@ -208,4 +244,9 @@ func (s *Server) WaitForCount(count int) error {
 		}
 		return nil
 	}, 5*time.Second)
+}
+
+// SetVersion sets the version to be used in handshake.
+func (s *Server) SetVersion(newVersion uint32) {
+	s.version = newVersion
 }

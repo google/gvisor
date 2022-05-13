@@ -28,6 +28,7 @@
 
 #include "absl/cleanup/cleanup.h"
 #include "absl/strings/string_view.h"
+#include "pkg/sentry/seccheck/points/common.pb.h"
 #include "pkg/sentry/seccheck/points/container.pb.h"
 #include "pkg/sentry/seccheck/points/sentry.pb.h"
 #include "pkg/sentry/seccheck/points/syscall.pb.h"
@@ -163,6 +164,41 @@ void startPollThread(int poll_fd) {
   pthread_detach(thread);
 }
 
+// handshake performs version exchange with client. See common.proto for details
+// about the protocol.
+bool handshake(int client_fd) {
+  std::vector<char> buf(10240);
+  int bytes = read(client_fd, buf.data(), buf.size());
+  if (bytes < 0) {
+    printf("Error receiving handshake message: %d\n", errno);
+    return false;
+  } else if (bytes == buf.size()) {
+    // Protect against the handshake becoming larger than the buffer allocated
+    // for it.
+    printf("handshake message too big\n");
+    return false;
+  }
+  ::gvisor::common::Handshake in = {};
+  if (!in.ParseFromArray(buf.data(), bytes)) {
+    printf("Error parsing handshake message\n");
+    return false;
+  }
+
+  constexpr uint32_t minSupportedVersion = 1;
+  if (in.version() < minSupportedVersion) {
+    printf("Client has unsupported version %u\n", in.version());
+    return false;
+  }
+
+  ::gvisor::common::Handshake out;
+  out.set_version(1);
+  if (!out.SerializeToFileDescriptor(client_fd)) {
+    printf("Error sending handshake message: %d\n", errno);
+    return false;
+  }
+  return true;
+}
+
 extern "C" int main(int argc, char** argv) {
   for (int c = 0; (c = getopt(argc, argv, "q")) != -1;) {
     switch (c) {
@@ -220,6 +256,11 @@ extern "C" int main(int argc, char** argv) {
       err(1, "accept");
     }
     printf("Connection accepted\n");
+
+    if (!handshake(client)) {
+      close(client);
+      continue;
+    }
 
     struct epoll_event evt;
     evt.data.fd = client;
