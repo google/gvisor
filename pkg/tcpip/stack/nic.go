@@ -394,6 +394,9 @@ func (n *nic) writePacket(pkt *PacketBuffer) tcpip.Error {
 
 func (n *nic) writeRawPacket(pkt *PacketBuffer) tcpip.Error {
 	if err := n.qDisc.WritePacket(pkt); err != nil {
+		if _, ok := err.(*tcpip.ErrNoBufferSpace); ok {
+			n.stats.txPacketsDroppedNoBufferSpace.Increment()
+		}
 		return err
 	}
 
