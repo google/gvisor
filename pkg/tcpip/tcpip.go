@@ -2103,6 +2103,13 @@ type NICStats struct {
 	// Tx contains statistics about transmitted packets.
 	Tx NICPacketStats
 
+	// TxPacketsDroppedNoBufferSpace is the number of packets dropepd due to the
+	// NIC not having enough buffer space to send the packet.
+	//
+	// Packets may be dropped with a no buffer space error when the device TX
+	// queue is full.
+	TxPacketsDroppedNoBufferSpace *StatCounter
+
 	// Rx contains statistics about received packets.
 	Rx NICPacketStats
 

@@ -88,6 +88,7 @@ var Metrics = tcpip.Stats{
 			Packets: mustCreateMetric("/netstack/nic/tx/packets", "Number of packets transmitted."),
 			Bytes:   mustCreateMetric("/netstack/nic/tx/bytes", "Number of bytes transmitted."),
 		},
+		TxPacketsDroppedNoBufferSpace: mustCreateMetric("/netstack/nic/tx_packets_dropped_no_buffer_space", "Number of TX packets dropped as a result of no buffer space errors."),
 		Rx: tcpip.NICPacketStats{
 			Packets: mustCreateMetric("/netstack/nic/rx/packets", "Number of packets received."),
 			Bytes:   mustCreateMetric("/netstack/nic/rx/bytes", "Number of bytes received."),

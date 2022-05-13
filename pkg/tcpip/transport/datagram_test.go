@@ -468,7 +468,29 @@ func TestDeviceReturnErrNoBufferSpace(t *testing.T) {
 						t.Fatalf("ep.Connect(%#v): %s", to, err)
 					}
 
-					ops := ep.SocketOptions()
+					stackTxPacketsDroppedNoBufferSpace := s.Stats().NICs.TxPacketsDroppedNoBufferSpace
+
+					nicsInfo := s.NICInfo()
+					nicInfo, ok := nicsInfo[nicID]
+					if !ok {
+						t.Fatalf("expected NICInfo for nicID=%d; got s.NICInfo() = %#v", nicID, nicsInfo)
+					}
+					nicTxPacketsDroppedNoBufferSpace := nicInfo.Stats.TxPacketsDroppedNoBufferSpace
+
+					checkStats := func(want uint64) {
+						t.Helper()
+
+						if got := stackTxPacketsDroppedNoBufferSpace.Value(); got != want {
+							t.Errorf("got stackTxPacketsDroppedNoBufferSpace.Value() = %d, want = %d", got, want)
+						}
+						if got := nicTxPacketsDroppedNoBufferSpace.Value(); got != want {
+							t.Errorf("got nicTxPacketsDroppedNoBufferSpace.Value() = %d, want = %d", got, want)
+						}
+					}
+
+					droppedPkts := uint64(0)
+					checkStats(droppedPkts)
+
 					checkWrite := func(netProto tcpip.NetworkProtocolNumber) {
 						t.Helper()
 
@@ -481,8 +503,12 @@ func TestDeviceReturnErrNoBufferSpace(t *testing.T) {
 						if n, err := ep.Write(&r, tcpip.WriteOptions{}); err != wantErr {
 							t.Fatalf("got Write(...) = (%d, %s), want = (_, %s)", n, err, wantErr)
 						}
+
+						droppedPkts++
+						checkStats(droppedPkts)
 					}
 
+					ops := ep.SocketOptions()
 					ops.SetIPv4RecvError(true)
 					checkWrite(ipv4.ProtocolNumber)
 
