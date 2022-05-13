@@ -205,8 +205,8 @@ type Config struct {
 	// E.g. 0.2 CPU quota will result in 1, and 1.9 in 2.
 	CPUNumFromQuota bool `flag:"cpu-num-from-quota"`
 
-	// Enables VFS2.
-	VFS2 bool `flag:"vfs2"`
+	// DEPRECATED: VFS2 is always enabled and cannot be disabled.
+	VFS2 bool
 
 	// Enable lisafs.
 	Lisafs bool `flag:"lisafs"`

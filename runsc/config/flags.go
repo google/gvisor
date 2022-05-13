@@ -80,9 +80,9 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("overlay", false, "wrap filesystem mounts with writable overlay. All modifications are stored in memory inside the sandbox.")
 	flagSet.Bool("verity", false, "specifies whether a verity file system will be mounted.")
 	flagSet.Bool("fsgofer-host-uds", false, "allow the gofer to mount Unix Domain Sockets.")
-	flagSet.Bool("vfs2", true, "enables VFSv2. This uses the new VFS layer that is faster than the previous one.")
+	flagSet.Bool("vfs2", true, "DEPRECATED: this flag has no effect.")
 	flagSet.Bool("fuse", false, "TEST ONLY; use while FUSE in VFSv2 is landing. This allows the use of the new experimental FUSE filesystem.")
-	flagSet.Bool("lisafs", false, "Enables lisafs protocol instead of 9P. This is only effective with VFS2.")
+	flagSet.Bool("lisafs", false, "Enables lisafs protocol instead of 9P.")
 	flagSet.Bool("cgroupfs", false, "Automatically mount cgroupfs.")
 	flagSet.Bool("ignore-cgroups", false, "don't configure cgroups.")
 
@@ -131,7 +131,7 @@ func checkOciSeccomp(name string, value string) error {
 
 // NewFromFlags creates a new Config with values coming from command line flags.
 func NewFromFlags(flagSet *flag.FlagSet) (*Config, error) {
-	conf := &Config{}
+	conf := &Config{VFS2: true}
 
 	obj := reflect.ValueOf(conf).Elem()
 	st := obj.Type()
