@@ -126,7 +126,7 @@ func TestInit(t *testing.T) {
 			}
 
 			if !cmp.Equal(err, tc.wantErr, cmpopts.EquateErrors()) {
-				t.Errorf("got table.Init(%#v) = %s, want %s", tc.config, err, tc.wantErr)
+				t.Errorf("table.Init(%#v) = %s, want %s", tc.config, err, tc.wantErr)
 			}
 		})
 	}
@@ -147,7 +147,7 @@ func TestNewInstalledRoute(t *testing.T) {
 	expectedRoute := &InstalledRoute{expectedInputInterface: inputNICID, outgoingInterfaces: defaultOutgoingInterfaces, lastUsedTimestamp: clock.NowMonotonic()}
 
 	if diff := cmp.Diff(expectedRoute, route, cmp.Comparer(installedRouteComparer)); diff != "" {
-		t.Errorf("installed route mismatch (-want +got):\n%s", diff)
+		t.Errorf("Installed route mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -167,7 +167,7 @@ func TestPendingRouteStates(t *testing.T) {
 		routeResult, err := table.GetRouteOrInsertPending(defaultRouteKey, pkt)
 
 		if err != nil {
-			t.Errorf("got table.GetRouteOrInsertPending(%#v, %#v) = (_, %v), want = (_, nil)", defaultRouteKey, pkt, err)
+			t.Errorf("table.GetRouteOrInsertPending(%#v, %#v) = (_, %v), want = (_, nil)", defaultRouteKey, pkt, err)
 		}
 
 		expectedResult := GetRouteResult{PendingRouteState: wantPendingRouteState}
@@ -179,7 +179,7 @@ func TestPendingRouteStates(t *testing.T) {
 	// Queuing a third packet should yield an error since the pending queue is
 	// already at max capacity.
 	if _, err := table.GetRouteOrInsertPending(defaultRouteKey, pkt); err != ErrNoBufferSpace {
-		t.Errorf("got table.GetRouteOrInsertPending(%#v, %#v) = (_, %v), want = (_, ErrNoBufferSpace)", defaultRouteKey, pkt, err)
+		t.Errorf("table.GetRouteOrInsertPending(%#v, %#v) = (_, %v), want = (_, ErrNoBufferSpace)", defaultRouteKey, pkt, err)
 	}
 }
 
@@ -233,10 +233,14 @@ func TestPendingRouteExpiration(t *testing.T) {
 
 			table.pendingMu.RLock()
 			_, ok := table.pendingRoutes[defaultRouteKey]
+
+			if table.isCleanupRoutineRunning != test.wantPendingRoute {
+				t.Errorf("table.isCleanupRoutineRunning = %t, want = %t", table.isCleanupRoutineRunning, test.wantPendingRoute)
+			}
 			table.pendingMu.RUnlock()
 
 			if test.wantPendingRoute != ok {
-				t.Errorf("got table.pendingRoutes[%#v] = (_, %t), want = (_, %t)", defaultRouteKey, ok, test.wantPendingRoute)
+				t.Errorf("table.pendingRoutes[%#v] = (_, %t), want = (_, %t)", defaultRouteKey, ok, test.wantPendingRoute)
 			}
 		})
 	}
@@ -283,12 +287,13 @@ func TestAddInstalledRouteWithPending(t *testing.T) {
 			if err := table.Init(config); err != nil {
 				t.Fatalf("table.Init(%#v): %s", config, err)
 			}
-			// Disable the cleanup routine.
-			table.cleanupPendingRoutesTimer.Stop()
 
 			if _, err := table.GetRouteOrInsertPending(defaultRouteKey, pkt); err != nil {
 				t.Fatalf("table.GetRouteOrInsertPending(%#v, %#v): %v", defaultRouteKey, pkt, err)
 			}
+
+			// Disable the cleanup routine.
+			table.cleanupPendingRoutesTimer.Stop()
 
 			clock.Advance(test.advance)
 
@@ -296,7 +301,7 @@ func TestAddInstalledRouteWithPending(t *testing.T) {
 			pendingPackets := table.AddInstalledRoute(defaultRouteKey, route)
 
 			if diff := cmp.Diff(test.want, pendingPackets, cmpOpts...); diff != "" {
-				t.Errorf("tableAddInstalledRoute(%#v, %#v) mismatch (-want +got):\n%s", defaultRouteKey, route, diff)
+				t.Errorf("table.AddInstalledRoute(%#v, %#v) mismatch (-want +got):\n%s", defaultRouteKey, route, diff)
 			}
 
 			for _, pendingPkt := range pendingPackets {
@@ -306,7 +311,7 @@ func TestAddInstalledRouteWithPending(t *testing.T) {
 			// Verify that the pending route is actually deleted.
 			table.pendingMu.RLock()
 			if pendingRoute, ok := table.pendingRoutes[defaultRouteKey]; ok {
-				t.Errorf("got table.pendingRoutes[%#v] = (%#v, true), want (_, false)", defaultRouteKey, pendingRoute)
+				t.Errorf("table.pendingRoutes[%#v] = (%#v, true), want (_, false)", defaultRouteKey, pendingRoute)
 			}
 			table.pendingMu.RUnlock()
 		})
@@ -341,7 +346,7 @@ func TestAddInstalledRouteWithNoPending(t *testing.T) {
 		}
 
 		if routeResult.PendingRouteState != PendingRouteStateNone {
-			t.Errorf("got routeResult.PendingRouteState = %s, want = PendingRouteStateNone", routeResult.PendingRouteState)
+			t.Errorf("routeResult.PendingRouteState = %s, want = PendingRouteStateNone", routeResult.PendingRouteState)
 		}
 
 		if diff := cmp.Diff(route, routeResult.InstalledRoute, cmp.Comparer(installedRouteComparer)); diff != "" {
@@ -363,7 +368,7 @@ func TestRemoveInstalledRoute(t *testing.T) {
 	table.AddInstalledRoute(defaultRouteKey, route)
 
 	if removed := table.RemoveInstalledRoute(defaultRouteKey); !removed {
-		t.Errorf("got table.RemoveInstalledRoute(%#v) = false, want = true", defaultRouteKey)
+		t.Errorf("table.RemoveInstalledRoute(%#v) = false, want = true", defaultRouteKey)
 	}
 
 	pkt := newPacketBuffer("hello")
@@ -376,7 +381,7 @@ func TestRemoveInstalledRoute(t *testing.T) {
 	}
 
 	if result.InstalledRoute != nil {
-		t.Errorf("got result.InstalledRoute = %v, want = nil", result.InstalledRoute)
+		t.Errorf("result.InstalledRoute = %v, want = nil", result.InstalledRoute)
 	}
 }
 
@@ -389,7 +394,7 @@ func TestRemoveInstalledRouteWithNoMatchingRoute(t *testing.T) {
 	}
 
 	if removed := table.RemoveInstalledRoute(defaultRouteKey); removed {
-		t.Errorf("got table.RemoveInstalledRoute(%#v) = true, want = false", defaultRouteKey)
+		t.Errorf("table.RemoveInstalledRoute(%#v) = true, want = false", defaultRouteKey)
 	}
 }
 
@@ -402,7 +407,7 @@ func TestGetLastUsedTimestampWithNoMatchingRoute(t *testing.T) {
 	}
 
 	if _, found := table.GetLastUsedTimestamp(defaultRouteKey); found {
-		t.Errorf("got table.GetLastUsedTimetsamp(%#v) = (_, true), want = (_, false)", defaultRouteKey)
+		t.Errorf("table.GetLastUsedTimetsamp(%#v) = (_, true), want = (_, false)", defaultRouteKey)
 	}
 }
 
@@ -449,11 +454,11 @@ func TestSetLastUsedTimestamp(t *testing.T) {
 			timestamp, found := table.GetLastUsedTimestamp(defaultRouteKey)
 
 			if !found {
-				t.Fatalf("got table.GetLastUsedTimestamp(%#v) = (_, false_), want = (_, true)", defaultRouteKey)
+				t.Fatalf("table.GetLastUsedTimestamp(%#v) = (_, false_), want = (_, true)", defaultRouteKey)
 			}
 
 			if timestamp != test.wantLastUsedTime {
-				t.Errorf("got table.GetLastUsedTimestamp(%#v) = (%s, _), want = (%s, _)", defaultRouteKey, timestamp, test.wantLastUsedTime)
+				t.Errorf("table.GetLastUsedTimestamp(%#v) = (%s, _), want = (%s, _)", defaultRouteKey, timestamp, test.wantLastUsedTime)
 			}
 		})
 	}
