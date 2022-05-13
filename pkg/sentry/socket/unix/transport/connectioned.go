@@ -23,11 +23,17 @@ import (
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
+
+type locker interface {
+	Lock()
+	Unlock()
+	NestedLock()
+	NestedUnlock()
+}
 
 // A ConnectingEndpoint is a connectioned unix endpoint that is attempting to
 // establish a bidirectional connection with a BoundEndpoint.
@@ -51,7 +57,7 @@ type ConnectingEndpoint interface {
 
 	// Locker protects the following methods. While locked, only the holder of
 	// the lock can change the return value of the protected methods.
-	sync.Locker
+	locker
 
 	// Connected returns true iff the ConnectingEndpoint is in the connected
 	// state. ConnectingEndpoints can only be connected to a single endpoint,
@@ -292,27 +298,27 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 	// Do a dance to safely acquire locks on both endpoints.
 	if e.id < ce.ID() {
 		e.Lock()
-		ce.Lock()
+		ce.NestedLock()
 	} else {
 		ce.Lock()
-		e.Lock()
+		e.NestedLock()
 	}
 
 	// Check connecting state.
 	if ce.Connected() {
-		e.Unlock()
+		e.NestedUnlock()
 		ce.Unlock()
 		return syserr.ErrAlreadyConnected
 	}
 	if ce.ListeningLocked() {
-		e.Unlock()
+		e.NestedUnlock()
 		ce.Unlock()
 		return syserr.ErrInvalidEndpointState
 	}
 
 	// Check bound state.
 	if !e.ListeningLocked() {
-		e.Unlock()
+		e.NestedUnlock()
 		ce.Unlock()
 		return syserr.ErrConnectionRefused
 	}
@@ -363,7 +369,7 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 		}
 
 		// Notify can deadlock if we are holding these locks.
-		e.Unlock()
+		e.NestedUnlock()
 		ce.Unlock()
 
 		// Notify on both ends.
@@ -373,9 +379,9 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 		return nil
 	default:
 		// Busy; return EAGAIN per spec.
-		ne.Close(ctx)
-		e.Unlock()
+		e.NestedUnlock()
 		ce.Unlock()
+		ne.Close(ctx)
 		return syserr.ErrTryAgain
 	}
 }

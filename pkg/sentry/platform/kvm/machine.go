@@ -476,18 +476,6 @@ func (m *machine) Get() *vCPU {
 	}
 
 	for {
-		// Scan for an available vCPU.
-		for origTID, c := range m.vCPUsByTID {
-			if c.state.CompareAndSwap(vCPUReady, vCPUUser) {
-				delete(m.vCPUsByTID, origTID)
-				m.vCPUsByTID[tid] = c
-				m.mu.Unlock()
-				c.loadSegments(tid)
-				timer.Finish("unused")
-				return c
-			}
-		}
-
 		// Get vCPU from the m.vCPUsByID pool.
 		if m.usedVCPUs < m.maxVCPUs {
 			c := m.vCPUsByID[m.usedVCPUs]
@@ -498,6 +486,18 @@ func (m *machine) Get() *vCPU {
 			c.loadSegments(tid)
 			timer.Finish("unused")
 			return c
+		}
+
+		// Scan for an available vCPU.
+		for origTID, c := range m.vCPUsByTID {
+			if c.state.CompareAndSwap(vCPUReady, vCPUUser) {
+				delete(m.vCPUsByTID, origTID)
+				m.vCPUsByTID[tid] = c
+				m.mu.Unlock()
+				c.loadSegments(tid)
+				timer.Finish("unused")
+				return c
+			}
 		}
 
 		// Scan for something not in user mode.
