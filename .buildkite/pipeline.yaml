@@ -208,6 +208,7 @@ steps:
     command: make kvm-tests
     agents:
       arch: "amd64"
+      kvm: "true"
   - <<: *common
     label: ":weight_lifter: Fsstress test"
     command: make fsstress-test

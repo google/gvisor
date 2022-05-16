@@ -39,6 +39,9 @@ fi
 # Clear existing profiles.
 sudo rm -rf /tmp/profile
 
+# Allow to read dmesg for all users. It is required for the syslog test.
+sudo sysctl -w kernel.dmesg_restrict=0
+
 # Download credentials, if a release agent.
 if test "${BUILDKITE_AGENT_META_DATA_QUEUE}" = "release"; then
   # Pull down secrets.
