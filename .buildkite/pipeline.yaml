@@ -377,6 +377,7 @@ steps:
     if: build.branch != "master"
     agents:
       arch: "amd64"
+      kvm: "true"
 
   # Run all benchmarks.
   - <<: *benchmarks
