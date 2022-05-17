@@ -48,7 +48,12 @@ readonly module origpwd othersrc
 # Build a full gopath.
 declare -r go_output="${tmp_dir}/output"
 make build BAZEL_OPTIONS="" TARGETS="//:gopath"
-rsync --recursive --delete --copy-links bazel-bin/gopath/ "${go_output}"
+rsync -v --recursive --delete --copy-links bazel-bin/gopath/ "${go_output}" || {
+ps axf
+rsync -v --ignore-errors --recursive --delete --copy-links bazel-bin/gopath/ "${go_output}"
+find bazel-bin/gopath | xargs ls -ld
+exit 1
+}
 
 # We expect to have an existing go branch that we will use as the basis for this
 # commit. That branch may be empty, but it must exist. We search for this branch

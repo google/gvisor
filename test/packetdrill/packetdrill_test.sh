@@ -117,7 +117,7 @@ declare -r CTRL_PORT="40000"
 # Last bits of the test runner's IP address.
 declare -r TEST_RUNNER_NET_SUFFIX=".20"
 declare -r TIMEOUT="60"
-declare -r IMAGE_TAG="gcr.io/gvisor-presubmit/packetdrill"
+declare -r IMAGE_TAG="gvisor.dev/images/packetdrill"
 
 # Make sure that docker is installed.
 docker --version
@@ -162,7 +162,7 @@ done
 
 # Create the DUT container and connect to network.
 DUT=$(docker create ${RUNTIME_ARG} --privileged --rm \
-  --stop-timeout ${TIMEOUT} -it ${IMAGE_TAG})
+  --stop-timeout ${TIMEOUT} -it "${IMAGE_TAG}")
 docker network connect "${CTRL_NET}" \
   --ip "${CTRL_NET_PREFIX}${DUT_NET_SUFFIX}" "${DUT}" \
   || (docker kill ${DUT}; docker rm ${DUT}; false)
@@ -173,7 +173,7 @@ docker start "${DUT}"
 
 # Create the test runner container and connect to network.
 TEST_RUNNER=$(docker create --privileged --rm \
-  --stop-timeout ${TIMEOUT} -it ${IMAGE_TAG})
+  --stop-timeout ${TIMEOUT} -it "${IMAGE_TAG}")
 docker network connect "${CTRL_NET}" \
   --ip "${CTRL_NET_PREFIX}${TEST_RUNNER_NET_SUFFIX}" "${TEST_RUNNER}" \
   || (docker kill ${TEST_RUNNER}; docker rm ${REST_RUNNER}; false)
