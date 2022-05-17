@@ -141,8 +141,8 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 	// mm/memory.c:copy_page_range().)
 	mm2.activeMu.Lock()
 	defer mm2.activeMu.Unlock()
-	mm.activeMu.Lock()
-	defer mm.activeMu.Unlock()
+	mm.activeMu.NestedLock()
+	defer mm.activeMu.NestedUnlock()
 	if dontforks {
 		defer mm.pmas.MergeRange(mm.applicationAddrRange())
 	}

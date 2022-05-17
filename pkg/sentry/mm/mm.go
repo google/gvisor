@@ -47,7 +47,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
-	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // MemoryManager implements a virtual address space.
@@ -83,7 +82,7 @@ type MemoryManager struct {
 	users atomicbitops.Int32
 
 	// mappingMu is analogous to Linux's struct mm_struct::mmap_sem.
-	mappingMu sync.RWMutex `state:"nosave"`
+	mappingMu mappingRWMutex `state:"nosave"`
 
 	// vmas stores virtual memory areas. Since vmas are stored by value,
 	// clients should usually use vmaIterator.ValuePtr() instead of
@@ -126,7 +125,7 @@ type MemoryManager struct {
 
 	// activeMu is loosely analogous to Linux's struct
 	// mm_struct::page_table_lock.
-	activeMu sync.RWMutex `state:"nosave"`
+	activeMu activeRWMutex `state:"nosave"`
 
 	// pmas stores platform mapping areas used to implement vmas. Since pmas
 	// are stored by value, clients should usually use pmaIterator.ValuePtr()
@@ -198,7 +197,7 @@ type MemoryManager struct {
 	// by metadataMu.
 	dumpability atomicbitops.Int32
 
-	metadataMu sync.Mutex `state:"nosave"`
+	metadataMu metadataMutex `state:"nosave"`
 
 	// argv is the application argv. This is set up by the loader and may be
 	// modified by prctl(PR_SET_MM_ARG_START/PR_SET_MM_ARG_END). No
@@ -482,7 +481,7 @@ type pma struct {
 
 // +stateify savable
 type privateRefs struct {
-	mu sync.Mutex `state:"nosave"`
+	mu privateRefsMutex `state:"nosave"`
 
 	// refs maps offsets into MemoryManager.mfp.MemoryFile() to the number of
 	// pmas (or, equivalently, MemoryManagers) that share ownership of the
