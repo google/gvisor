@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -31,7 +30,7 @@ import (
 // +stateify savable
 type aioManager struct {
 	// mu protects below.
-	mu sync.Mutex `state:"nosave"`
+	mu aioManagerMutex `state:"nosave"`
 
 	// aioContexts is the set of asynchronous I/O contexts.
 	contexts map[uint64]*AIOContext
@@ -108,7 +107,7 @@ type AIOContext struct {
 	requestReady chan struct{} `state:"nosave"`
 
 	// mu protects below.
-	mu sync.Mutex `state:"nosave"`
+	mu aioContextMutex `state:"nosave"`
 
 	// results is the set of completed requests.
 	results ioList
