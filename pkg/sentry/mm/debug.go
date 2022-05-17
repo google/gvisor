@@ -40,10 +40,11 @@ func (mm *MemoryManager) String() string {
 
 // DebugString returns a string containing information about mm for debugging.
 func (mm *MemoryManager) DebugString(ctx context.Context) string {
-	mm.mappingMu.RLock()
-	defer mm.mappingMu.RUnlock()
-	mm.activeMu.RLock()
-	defer mm.activeMu.RUnlock()
+	// FIXME(b/207524689): replace RLockBypass with RLock.
+	mm.mappingMu.RLockBypass()
+	defer mm.mappingMu.RUnlockBypass()
+	mm.activeMu.RLockBypass()
+	defer mm.activeMu.RUnlockBypass()
 	return mm.debugStringLocked(ctx)
 }
 
