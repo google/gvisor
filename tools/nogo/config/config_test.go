@@ -54,7 +54,7 @@ func TestShouldReport(t *testing.T) {
 			// has no effect on configuration below.
 		},
 		Analyzers: map[string]AnalyzerConfig{
-			"analyzer-suppressions": AnalyzerConfig{
+			"analyzer-suppressions": {
 				// Suppress some.
 				"default-enabled": &ItemConfig{
 					Exclude:  []string{"limited-exclude.go"},
@@ -63,7 +63,7 @@ func TestShouldReport(t *testing.T) {
 				// Enable all.
 				"default-disabled": nil,
 			},
-			"enabled-for-default-disabled": AnalyzerConfig{
+			"enabled-for-default-disabled": {
 				"default-disabled":                     nil,
 				"default-disabled-omitted-from-global": nil,
 			},

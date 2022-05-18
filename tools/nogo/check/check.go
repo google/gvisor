@@ -520,7 +520,7 @@ func (i *importer) checkPackage(path string, srcs []string) (*types.Package, Fin
 					factsMu.RLock()
 					defer factsMu.RUnlock()
 					// Pull all local facts.
-					for obj, _ := range astFacts.Objects {
+					for obj := range astFacts.Objects {
 						for typ := range localFactTypes {
 							v := reflect.New(typ.Elem())
 							if astFacts.ImportFact(obj, v.Interface().(analysis.Fact)) {
@@ -746,7 +746,7 @@ func SplitPackages(srcs []string, srcRootPrefix string) map[string][]string {
 //
 // TODO(b/201686256): remove once tooling can handle type parameters.
 var usesTypeParams = map[string]struct{}{
-	"sync/atomic": struct{}{}, // https://go.dev/issue/50860
+	"sync/atomic": {}, // https://go.dev/issue/50860
 }
 
 // Bundle checks a bundle of files (typically the standard library).
@@ -758,7 +758,7 @@ func Bundle(sources map[string][]string) (FindingSet, facts.Serializer, error) {
 		cache:   make(map[string]*importerEntry),
 		imports: make(map[string]*types.Package),
 	}
-	for pkg, _ := range sources {
+	for pkg := range sources {
 		// Was there an error processing this package?
 		if _, err := i.importPackage(pkg); err != nil && err != ErrSkip {
 			return nil, nil, err

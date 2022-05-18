@@ -18,7 +18,7 @@ import "testing"
 
 func TestFeatureFromString(t *testing.T) {
 	// Check that known features do match.
-	for feature, _ := range allFeatures {
+	for feature := range allFeatures {
 		f, ok := FeatureFromString(feature.String())
 		if f != feature || !ok {
 			t.Errorf("got %v, %v want %v, true", f, ok, feature)

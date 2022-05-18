@@ -41,22 +41,22 @@ func TestChecksumer(t *testing.T) {
 		{
 			name: "OneOddView",
 			data: [][]byte{
-				[]byte{1, 9, 0, 5, 4},
+				{1, 9, 0, 5, 4},
 			},
 			want: 1294,
 		},
 		{
 			name: "TwoOddViews",
 			data: [][]byte{
-				[]byte{1, 9, 0, 5, 4},
-				[]byte{4, 3, 7, 1, 2, 123},
+				{1, 9, 0, 5, 4},
+				{4, 3, 7, 1, 2, 123},
 			},
 			want: 33819,
 		},
 		{
 			name: "OneEvenView",
 			data: [][]byte{
-				[]byte{1, 9, 0, 5},
+				{1, 9, 0, 5},
 			},
 			want: 270,
 		},
@@ -71,9 +71,9 @@ func TestChecksumer(t *testing.T) {
 		{
 			name: "ThreeViews",
 			data: [][]byte{
-				[]byte{77, 11, 33, 0, 55, 44},
-				[]byte{98, 1, 9, 0, 5, 4},
-				[]byte{4, 3, 7, 1, 2, 123, 99},
+				{77, 11, 33, 0, 55, 44},
+				{98, 1, 9, 0, 5, 4},
+				{4, 3, 7, 1, 2, 123, 99},
 			},
 			want: 34236,
 		},
