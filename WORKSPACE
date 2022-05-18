@@ -719,8 +719,8 @@ go_repository(
     name = "com_github_containerd_containerd",
     build_file_proto_mode = "disable",
     importpath = "github.com/containerd/containerd",
-    sum = "h1:K2U/F4jGAMBqeUssfgJRbFuomLcS2Fxo1vR3UM/Mbh8=",
-    version = "v1.3.9",
+    sum = "h1:V+SHzYmhng/iju6M5nFrpTTusrhidoxKTwdwLw+u4c4=",
+    version = "v1.4.12",
 )
 
 go_repository(
