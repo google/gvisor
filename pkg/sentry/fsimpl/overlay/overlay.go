@@ -97,35 +97,46 @@ type filesystem struct {
 	// used for accesses to the filesystem's layers. creds is immutable.
 	creds *auth.Credentials
 
-	// privateDevMinors maps device numbers from layer filesystems to device
-	// minor numbers assigned to files originating from that filesystem.
-	//
-	// For non-directory files, this remapping is necessary for lower layers
-	// because a file on a lower layer, and that same file on an overlay, are
-	// distinguishable because they will diverge after copy-up. (Once a
-	// non-directory file has been copied up, its contents on the upper layer
-	// completely determine its contents in the overlay, so this is no longer
-	// true; but we still do the mapping for consistency.)
-	//
-	// For directories, this remapping may be necessary even if the directory
-	// exists on the upper layer due to directory merging; rather than make the
-	// mapping conditional on whether the directory is opaque, we again
-	// unconditionally apply the mapping unconditionally.
-	//
-	// privateDevMinors is protected by devMu.
-	devMu            sync.Mutex `state:"nosave"`
-	privateDevMinors map[layerDevNumber]uint32
+	// dirDevMinor is the device minor number used for directories. dirDevMinor
+	// is immutable.
+	dirDevMinor uint32
+
+	// lowerDevMinors maps device numbers from lower layer filesystems to
+	// device minor numbers assigned to non-directory files originating from
+	// that filesystem. (This remapping is necessary for lower layers because a
+	// file on a lower layer, and that same file on an overlay, are
+	// distinguishable because they will diverge after copy-up; this isn't true
+	// for non-directory files already on the upper layer.) lowerDevMinors is
+	// protected by devMu.
+	devMu          sync.Mutex `state:"nosave"`
+	lowerDevMinors map[layerDevNumber]uint32
 
 	// renameMu synchronizes renaming with non-renaming operations in order to
 	// ensure consistent lock ordering between dentry.dirMu in different
 	// dentries.
 	renameMu sync.RWMutex `state:"nosave"`
+
+	// dirInoCache caches overlay-private directory inode numbers by mapped
+	// topmost device numbers and inode number. dirInoCache is protected by
+	// dirInoCacheMu.
+	dirInoCacheMu sync.Mutex `state:"nosave"`
+	dirInoCache   map[layerDevNoAndIno]uint64
+
+	// lastDirIno is the last inode number assigned to a directory. lastDirIno
+	// is protected by dirInoCacheMu.
+	lastDirIno uint64
 }
 
 // +stateify savable
 type layerDevNumber struct {
 	major uint32
 	minor uint32
+}
+
+// +stateify savable
+type layerDevNoAndIno struct {
+	layerDevNumber
+	ino uint64
 }
 
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
@@ -233,6 +244,12 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		return nil, nil, linuxerr.EINVAL
 	}
 
+	// Allocate dirDevMinor. lowerDevMinors are allocated dynamically.
+	dirDevMinor, err := vfsObj.GetAnonBlockDevMinor()
+	if err != nil {
+		return nil, nil, err
+	}
+
 	// Take extra references held by the filesystem.
 	if fsopts.UpperRoot.Ok() {
 		fsopts.UpperRoot.IncRef()
@@ -242,9 +259,11 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 
 	fs := &filesystem{
-		opts:             fsopts,
-		creds:            creds.Fork(),
-		privateDevMinors: make(map[layerDevNumber]uint32),
+		opts:           fsopts,
+		creds:          creds.Fork(),
+		dirDevMinor:    dirDevMinor,
+		lowerDevMinors: make(map[layerDevNumber]uint32),
+		dirInoCache:    make(map[layerDevNoAndIno]uint64),
 	}
 	fs.vfsfs.Init(vfsObj, &fstype, fs)
 
@@ -288,16 +307,26 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	root.mode = atomicbitops.FromUint32(uint32(rootStat.Mode))
 	root.uid = atomicbitops.FromUint32(rootStat.UID)
 	root.gid = atomicbitops.FromUint32(rootStat.GID)
-	root.devMajor = atomicbitops.FromUint32(linux.UNNAMED_MAJOR)
-	rootDevMinor, err := fs.getPrivateDevMinor(rootStat.DevMajor, rootStat.DevMinor)
-	if err != nil {
-		ctx.Infof("overlay.FilesystemType.GetFilesystem: failed to get device number for root: %v", err)
-		root.destroyLocked(ctx)
-		fs.vfsfs.DecRef(ctx)
-		return nil, nil, err
+	if rootStat.Mode&linux.S_IFMT == linux.S_IFDIR {
+		root.devMajor = atomicbitops.FromUint32(linux.UNNAMED_MAJOR)
+		root.devMinor = atomicbitops.FromUint32(fs.dirDevMinor)
+		root.ino.Store(fs.newDirIno(rootStat.DevMajor, rootStat.DevMinor, rootStat.Ino))
+	} else if !root.upperVD.Ok() {
+		root.devMajor = atomicbitops.FromUint32(linux.UNNAMED_MAJOR)
+		rootDevMinor, err := fs.getLowerDevMinor(rootStat.DevMajor, rootStat.DevMinor)
+		if err != nil {
+			ctx.Infof("overlay.FilesystemType.GetFilesystem: failed to get device number for root: %v", err)
+			root.destroyLocked(ctx)
+			fs.vfsfs.DecRef(ctx)
+			return nil, nil, err
+		}
+		root.devMinor = atomicbitops.FromUint32(rootDevMinor)
+		root.ino.Store(rootStat.Ino)
+	} else {
+		root.devMajor = atomicbitops.FromUint32(rootStat.DevMajor)
+		root.devMinor = atomicbitops.FromUint32(rootStat.DevMinor)
+		root.ino.Store(rootStat.Ino)
 	}
-	root.devMinor = atomicbitops.FromUint32(rootDevMinor)
-	root.ino.Store(rootStat.Ino)
 
 	return &fs.vfsfs, &root.vfsd, nil
 }
@@ -325,8 +354,9 @@ func clonePrivateMount(vfsObj *vfs.VirtualFilesystem, vd vfs.VirtualDentry, forc
 // Release implements vfs.FilesystemImpl.Release.
 func (fs *filesystem) Release(ctx context.Context) {
 	vfsObj := fs.vfsfs.VirtualFilesystem()
-	for _, devMinor := range fs.privateDevMinors {
-		vfsObj.PutAnonBlockDevMinor(devMinor)
+	vfsObj.PutAnonBlockDevMinor(fs.dirDevMinor)
+	for _, lowerDevMinor := range fs.lowerDevMinors {
+		vfsObj.PutAnonBlockDevMinor(lowerDevMinor)
 	}
 	if fs.opts.UpperRoot.Ok() {
 		fs.opts.UpperRoot.DecRef(ctx)
@@ -356,18 +386,34 @@ func (fs *filesystem) statFS(ctx context.Context) (linux.Statfs, error) {
 	return fsstat, nil
 }
 
-func (fs *filesystem) getPrivateDevMinor(layerMajor, layerMinor uint32) (uint32, error) {
+func (fs *filesystem) newDirIno(layerMajor, layerMinor uint32, layerIno uint64) uint64 {
+	fs.dirInoCacheMu.Lock()
+	defer fs.dirInoCacheMu.Unlock()
+	orig := layerDevNoAndIno{
+		layerDevNumber: layerDevNumber{layerMajor, layerMinor},
+		ino:            layerIno,
+	}
+	if ino, ok := fs.dirInoCache[orig]; ok {
+		return ino
+	}
+	fs.lastDirIno++
+	newIno := fs.lastDirIno
+	fs.dirInoCache[orig] = newIno
+	return newIno
+}
+
+func (fs *filesystem) getLowerDevMinor(layerMajor, layerMinor uint32) (uint32, error) {
 	fs.devMu.Lock()
 	defer fs.devMu.Unlock()
 	orig := layerDevNumber{layerMajor, layerMinor}
-	if minor, ok := fs.privateDevMinors[orig]; ok {
+	if minor, ok := fs.lowerDevMinors[orig]; ok {
 		return minor, nil
 	}
 	minor, err := fs.vfsfs.VirtualFilesystem().GetAnonBlockDevMinor()
 	if err != nil {
 		return 0, err
 	}
-	fs.privateDevMinors[orig] = minor
+	fs.lowerDevMinors[orig] = minor
 	return minor, nil
 }
 
