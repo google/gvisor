@@ -19,9 +19,12 @@ import (
 	"io"
 	"os"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -57,37 +60,37 @@ func (f *Fs) Cat(o *CatOpts, _ *struct{}) error {
 	return nil
 }
 
-// fileReader encapsulates a fs.File and provides an io.Reader interface.
-type fileReader struct {
-	ctx  context.Context
-	file *fs.File
+// fdReader provides an io.Reader interface for a vfs.FileDescription.
+type fdReader struct {
+	ctx context.Context
+	fd  *vfs.FileDescription
 }
 
 // Read implements io.Reader.Read.
-func (f *fileReader) Read(p []byte) (int, error) {
-	n, err := f.file.Readv(f.ctx, usermem.BytesIOSequence(p))
+func (f *fdReader) Read(p []byte) (int, error) {
+	n, err := f.fd.Read(f.ctx, usermem.BytesIOSequence(p), vfs.ReadOptions{})
 	return int(n), err
 }
 
 func cat(k *kernel.Kernel, path string, output *os.File) error {
 	ctx := k.SupervisorContext()
-	mns := k.GlobalInit().Leader().MountNamespace()
+	creds := auth.NewRootCredentials(k.RootUserNamespace())
+	mns := k.GlobalInit().Leader().MountNamespaceVFS2()
 	root := mns.Root()
 	defer root.DecRef(ctx)
 
-	remainingTraversals := uint(fs.DefaultTraversalLimit)
-	d, err := mns.FindInode(ctx, root, nil, path, &remainingTraversals)
+	fd, err := k.VFS().OpenAt(ctx, creds, &vfs.PathOperation{
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse(path),
+	}, &vfs.OpenOptions{
+		Flags: linux.O_RDONLY,
+	})
 	if err != nil {
-		return fmt.Errorf("cannot find file %s: %v", path, err)
+		return fmt.Errorf("failed to open file %s: %v", path, err)
 	}
-	defer d.DecRef(ctx)
+	defer fd.DecRef(ctx)
 
-	file, err := d.Inode.GetFile(ctx, d, fs.FileFlags{Read: true})
-	if err != nil {
-		return fmt.Errorf("cannot get file for path %s: %v", path, err)
-	}
-	defer file.DecRef(ctx)
-
-	_, err = io.Copy(output, &fileReader{ctx: ctx, file: file})
+	_, err = io.Copy(output, &fdReader{ctx: ctx, fd: fd})
 	return err
 }

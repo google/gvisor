@@ -2533,60 +2533,59 @@ func TestRlimitsExec(t *testing.T) {
 }
 
 // TestCat creates a file and checks that cat generates the expected output.
-// TODO(gvisor.dev/issue/6742): Add VFS2 support.
-// func TestCat(t *testing.T) {
-// 	f, err := ioutil.TempFile(testutil.TmpDir(), "test-case")
-// 	if err != nil {
-// 		t.Fatalf("ioutil.TempFile failed: %v", err)
-// 	}
-// 	defer os.RemoveAll(f.Name())
+func TestCat(t *testing.T) {
+	f, err := ioutil.TempFile(testutil.TmpDir(), "test-case")
+	if err != nil {
+		t.Fatalf("ioutil.TempFile failed: %v", err)
+	}
+	defer os.RemoveAll(f.Name())
 
-// 	content := "test-cat"
-// 	if _, err := f.WriteString(content); err != nil {
-// 		t.Fatalf("f.WriteString(): %v", err)
-// 	}
-// 	f.Close()
+	content := "test-cat"
+	if _, err := f.WriteString(content); err != nil {
+		t.Fatalf("f.WriteString(): %v", err)
+	}
+	f.Close()
 
-// 	spec, conf := sleepSpecConf(t)
-// 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
-// 	if err != nil {
-// 		t.Fatalf("error setting up container: %v", err)
-// 	}
-// 	defer cleanup()
+	spec, conf := sleepSpecConf(t)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
 
-// 	args := Args{
-// 		ID:        testutil.RandomContainerID(),
-// 		Spec:      spec,
-// 		BundleDir: bundleDir,
-// 	}
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
 
-// 	cont, err := New(conf, args)
-// 	if err != nil {
-// 		t.Fatalf("Creating container: %v", err)
-// 	}
-// 	defer cont.Destroy()
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("Creating container: %v", err)
+	}
+	defer cont.Destroy()
 
-// 	if err := cont.Start(conf); err != nil {
-// 		t.Fatalf("starting container: %v", err)
-// 	}
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("starting container: %v", err)
+	}
 
-// 	r, w, err := os.Pipe()
-// 	if err != nil {
-// 		t.Fatalf("os.Create(): %v", err)
-// 	}
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Create(): %v", err)
+	}
 
-// 	if err := cont.Cat([]string{f.Name()}, w); err != nil {
-// 		t.Fatalf("error cat from container: %v", err)
-// 	}
+	if err := cont.Cat([]string{f.Name()}, w); err != nil {
+		t.Fatalf("error cat from container: %v", err)
+	}
 
-// 	buf := make([]byte, 1024)
-// 	if _, err := r.Read(buf); err != nil {
-// 		t.Fatalf("Read out: %v", err)
-// 	}
-// 	if got, want := string(buf), content; !strings.Contains(got, want) {
-// 		t.Errorf("out got %s, want include %s", buf, want)
-// 	}
-// }
+	buf := make([]byte, 1024)
+	if _, err := r.Read(buf); err != nil {
+		t.Fatalf("Read out: %v", err)
+	}
+	if got, want := string(buf), content; !strings.Contains(got, want) {
+		t.Errorf("out got %s, want include %s", buf, want)
+	}
+}
 
 // TestUsage checks that usage generates the expected memory usage.
 func TestUsage(t *testing.T) {
