@@ -290,7 +290,6 @@ func (h *Harness) Finish() {
 //
 //	h, c := NewHarness(t)
 //	defer h.Finish()
-//
 func NewHarness(t *testing.T) (*Harness, *p9.Client) {
 	// Create the mock.
 	mockCtrl := gomock.NewController(t)

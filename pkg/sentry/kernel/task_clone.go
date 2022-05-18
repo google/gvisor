@@ -404,14 +404,14 @@ func (t *Task) Unshare(flags int32) error {
 	// an error." - unshare(2). This is incorrect (cf.
 	// kernel/fork.c:ksys_unshare()):
 	//
-	// - CLONE_THREAD does not imply CLONE_VM.
+	//	- CLONE_THREAD does not imply CLONE_VM.
 	//
-	// - CLONE_SIGHAND implies CLONE_THREAD.
+	//	- CLONE_SIGHAND implies CLONE_THREAD.
 	//
-	// - Only CLONE_VM requires that the caller is not sharing its address
-	// space with another thread. CLONE_SIGHAND requires that the caller is not
-	// sharing its signal handlers, and CLONE_THREAD requires that the caller
-	// is the only thread in its thread group.
+	//	- Only CLONE_VM requires that the caller is not sharing its address
+	//		space with another thread. CLONE_SIGHAND requires that the caller is not
+	//		sharing its signal handlers, and CLONE_THREAD requires that the caller
+	//		is the only thread in its thread group.
 	//
 	// Since we don't count the number of tasks using each address space or set
 	// of signal handlers, we reject CLONE_VM and CLONE_SIGHAND altogether.

@@ -112,13 +112,13 @@ type ThreadGroup struct {
 	//
 	// Analogues in Linux:
 	//
-	// - groupContNotify && groupContInterrupted is represented by
-	// SIGNAL_CLD_STOPPED.
+	//	- groupContNotify && groupContInterrupted is represented by
+	//		SIGNAL_CLD_STOPPED.
 	//
-	// - groupContNotify && !groupContInterrupted is represented by
-	// SIGNAL_CLD_CONTINUED.
+	//	- groupContNotify && !groupContInterrupted is represented by
+	//		SIGNAL_CLD_CONTINUED.
 	//
-	// - !groupContNotify is represented by neither flag being set.
+	//	- !groupContNotify is represented by neither flag being set.
 	//
 	// groupContNotify and groupContInterrupted are protected by the signal
 	// mutex.
@@ -208,11 +208,11 @@ type ThreadGroup struct {
 
 	// maxRSS is the historical maximum resident set size of the thread group, updated when:
 	//
-	// - A task in the thread group exits, since after all tasks have
-	// exited the MemoryManager is no longer reachable.
+	//	- A task in the thread group exits, since after all tasks have
+	//		exited the MemoryManager is no longer reachable.
 	//
-	// - The thread group completes an execve, since this changes
-	// MemoryManagers.
+	//	- The thread group completes an execve, since this changes
+	//		MemoryManagers.
 	//
 	// maxRSS is protected by the TaskSet mutex.
 	maxRSS uint64
@@ -375,11 +375,11 @@ func (tg *ThreadGroup) SetControllingTTY(tty *TTY, steal bool, isReadable bool) 
 		for othertg := range tg.pidns.owner.Root.tgids {
 			// This won't deadlock by locking tg.signalHandlers
 			// because at this point:
-			// - We only lock signalHandlers if it's in the same
-			//   session as the tty's controlling thread group.
-			// - We know that the calling thread group is not in
-			//   the same session as the tty's controlling thread
-			//   group.
+			//	- We only lock signalHandlers if it's in the same
+			//		session as the tty's controlling thread group.
+			//	- We know that the calling thread group is not in
+			//		the same session as the tty's controlling thread
+			//		group.
 			if othertg.processGroup.session == tty.tg.processGroup.session {
 				othertg.signalHandlers.mu.Lock()
 				othertg.tty = nil

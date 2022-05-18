@@ -35,9 +35,9 @@ func reflectValueRWAddr(obj reflect.Value) reflect.Value {
 // the use of unexported struct fields.
 //
 // Preconditions:
-// * arr.Kind() == reflect.Array.
-// * i, j, k >= 0.
-// * i <= j <= k <= arr.Len().
+//   - arr.Kind() == reflect.Array.
+//   - i, j, k >= 0.
+//   - i <= j <= k <= arr.Len().
 func reflectValueRWSlice3(arr reflect.Value, i, j, k int) reflect.Value {
 	if arr.Kind() != reflect.Array {
 		panic(fmt.Sprintf("arr has kind %v, wanted %v", arr.Kind(), reflect.Array))

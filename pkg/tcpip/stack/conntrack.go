@@ -217,11 +217,11 @@ func (cn *conn) update(pkt *PacketBuffer, reply bool) {
 //
 // ConnTrack keeps all connections in a slice of buckets, each of which holds a
 // linked list of tuples. This gives us some desirable properties:
-// - Each bucket has its own lock, lessening lock contention.
-// - The slice is large enough that lists stay short (<10 elements on average).
-//   Thus traversal is fast.
-// - During linked list traversal we reap expired connections. This amortizes
-//   the cost of reaping them and makes reapUnused faster.
+//   - Each bucket has its own lock, lessening lock contention.
+//   - The slice is large enough that lists stay short (<10 elements on average).
+//     Thus traversal is fast.
+//   - During linked list traversal we reap expired connections. This amortizes
+//     the cost of reaping them and makes reapUnused faster.
 //
 // Locks are ordered by their location in the buckets slice. That is, a
 // goroutine that locks buckets[i] can only lock buckets[j] s.t. i < j.
@@ -980,13 +980,13 @@ func (ct *ConnTrack) bucket(id tupleID) int {
 
 // reapUnused deletes timed out entries from the conntrack map. The rules for
 // reaping are:
-// - Each call to reapUnused traverses a fraction of the conntrack table.
-//   Specifically, it traverses len(ct.buckets)/fractionPerReaping.
-// - After reaping, reapUnused decides when it should next run based on the
-//   ratio of expired connections to examined connections. If the ratio is
-//   greater than maxExpiredPct, it schedules the next run quickly. Otherwise it
-//   slightly increases the interval between runs.
-// - maxFullTraversal caps the time it takes to traverse the entire table.
+//   - Each call to reapUnused traverses a fraction of the conntrack table.
+//     Specifically, it traverses len(ct.buckets)/fractionPerReaping.
+//   - After reaping, reapUnused decides when it should next run based on the
+//     ratio of expired connections to examined connections. If the ratio is
+//     greater than maxExpiredPct, it schedules the next run quickly. Otherwise it
+//     slightly increases the interval between runs.
+//   - maxFullTraversal caps the time it takes to traverse the entire table.
 //
 // reapUnused returns the next bucket that should be checked and the time after
 // which it should be called again.

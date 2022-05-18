@@ -81,9 +81,9 @@ func IPv6(pkt *stack.PacketBuffer) (proto tcpip.TransportProtocolNumber, fragID 
 
 	// Create a VV to parse the packet. We don't plan to modify anything here.
 	// dataVV consists of:
-	// - Any IPv6 header bytes after the first 40 (i.e. extensions).
-	// - The transport header, if present.
-	// - Any other payload data.
+	//	- Any IPv6 header bytes after the first 40 (i.e. extensions).
+	//	- The transport header, if present.
+	//	- Any other payload data.
 	views := [8]buffer.View{}
 	dataVV := buffer.NewVectorisedView(0, views[:0])
 	dataVV.AppendViews(pkt.Data().Views())

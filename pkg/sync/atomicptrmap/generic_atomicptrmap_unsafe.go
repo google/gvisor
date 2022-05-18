@@ -84,13 +84,13 @@ type AtomicPtrMap struct {
 	// AtomicPtrMap is implemented as a hash table with the following
 	// properties:
 	//
-	// * Collisions are resolved with quadratic probing. Of the two major
-	// alternatives, Robin Hood linear probing makes it difficult for writers
-	// to execute in parallel, and bucketing is less effective in Go due to
-	// lack of SIMD.
+	//	* Collisions are resolved with quadratic probing. Of the two major
+	//		alternatives, Robin Hood linear probing makes it difficult for writers
+	//		to execute in parallel, and bucketing is less effective in Go due to
+	//		lack of SIMD.
 	//
-	// * The table is optionally divided into shards indexed by hash to further
-	// reduce unnecessary synchronization.
+	//	* The table is optionally divided into shards indexed by hash to further
+	//		reduce unnecessary synchronization.
 
 	shards [1 << ShardOrder]apmShard
 }
@@ -150,18 +150,18 @@ const (
 type apmSlot struct {
 	// slot states are indicated by val:
 	//
-	// * Empty: val == nil; key is meaningless. May transition to full or
-	// evacuated with dirtyMu locked.
+	//	* Empty: val == nil; key is meaningless. May transition to full or
+	//		evacuated with dirtyMu locked.
 	//
-	// * Full: val != nil, tombstone(), or evacuated(); key is immutable. val
-	// is the Value mapped to key. May transition to deleted or evacuated.
+	//	* Full: val != nil, tombstone(), or evacuated(); key is immutable. val
+	//		is the Value mapped to key. May transition to deleted or evacuated.
 	//
-	// * Deleted: val == tombstone(); key is still immutable. key is mapped to
-	// no Value. May transition to full or evacuated.
+	//	* Deleted: val == tombstone(); key is still immutable. key is mapped to
+	//		no Value. May transition to full or evacuated.
 	//
-	// * Evacuated: val == evacuated(); key is immutable. Set by rehashing on
-	// slots that have already been moved, requiring readers to wait for
-	// rehashing to complete and use the new table. Terminal state.
+	//	* Evacuated: val == evacuated(); key is immutable. Set by rehashing on
+	//		slots that have already been moved, requiring readers to wait for
+	//		rehashing to complete and use the new table. Terminal state.
 	//
 	// Note that once val is non-nil, it cannot become nil again. That is, the
 	// transition from empty to non-empty is irreversible for a given slot;
@@ -339,6 +339,7 @@ retry:
 }
 
 // rehash is marked nosplit to avoid preemption during table copying.
+//
 //go:nosplit
 func (shard *apmShard) rehash(oldSlots unsafe.Pointer) {
 	shard.rehashMu.Lock()
@@ -351,14 +352,14 @@ func (shard *apmShard) rehash(oldSlots unsafe.Pointer) {
 
 	// Determine the size of the new table. Constraints:
 	//
-	// * The size of the table must be a power of two to ensure that every slot
-	// is visitable by every probe sequence under quadratic probing with
-	// triangular numbers.
+	//	* The size of the table must be a power of two to ensure that every slot
+	//		is visitable by every probe sequence under quadratic probing with
+	//		triangular numbers.
 	//
-	// * The size of the table cannot decrease because even if shard.count is
-	// currently smaller than shard.dirty, concurrent stores that reuse
-	// existing slots can drive shard.count back up to a maximum of
-	// shard.dirty.
+	//	* The size of the table cannot decrease because even if shard.count is
+	//		currently smaller than shard.dirty, concurrent stores that reuse
+	//		existing slots can drive shard.count back up to a maximum of
+	//		shard.dirty.
 	newSize := uintptr(8) // arbitrary initial size
 	if oldSlots != nil {
 		oldSize := shard.mask + 1
@@ -463,11 +464,11 @@ func (shard *apmShard) doRange(f func(key Key, val *Value) bool) bool {
 
 // RangeRepeatable is like Range, but:
 //
-// * RangeRepeatable may visit the same Key multiple times in the presence of
-// concurrent mutators, possibly passing different Values to f in different
-// calls.
+//   - RangeRepeatable may visit the same Key multiple times in the presence of
+//     concurrent mutators, possibly passing different Values to f in different
+//     calls.
 //
-// * It is safe for f to call other methods on m.
+//   - It is safe for f to call other methods on m.
 func (m *AtomicPtrMap) RangeRepeatable(f func(key Key, val *Value) bool) {
 	for si := 0; si < len(m.shards); si++ {
 		shard := &m.shards[si]

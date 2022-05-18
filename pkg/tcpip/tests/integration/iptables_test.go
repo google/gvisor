@@ -1600,17 +1600,17 @@ func TestNAT(t *testing.T) {
 		netProto tcpip.NetworkProtocolNumber
 		// Setups up the stacks in such a way that:
 		//
-		// - Host2 is the client for all tests.
-		// - When performing SNAT only:
+		//	- Host2 is the client for all tests.
+		//	- When performing SNAT only:
 		//   + Host1 is the server.
 		//   + NAT will transform client-originating packets' source addresses to
 		//     the router's NIC1's address before reaching Host1.
-		// - When performing DNAT only:
+		//	- When performing DNAT only:
 		//   + Router is the server.
 		//   + Client will send packets directed to Host1.
 		//   + NAT will transform client-originating packets' destination addresses
 		//     to the router's NIC2's address.
-		// - When performing Twice-NAT:
+		//	- When performing Twice-NAT:
 		//   + Host1 is the server.
 		//   + Client will send packets directed to router's NIC2.
 		//   + NAT will transform client originating packets' destination addresses

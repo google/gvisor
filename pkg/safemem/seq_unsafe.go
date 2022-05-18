@@ -93,9 +93,9 @@ func BlockSeqFromSlice(slice []Block) BlockSeq {
 }
 
 // Preconditions:
-// * The combined length of all Blocks in slice <= limit.
-// * If len(slice) != 0, the first Block in slice has non-zero length and
-//   limit > 0.
+//   - The combined length of all Blocks in slice <= limit.
+//   - If len(slice) != 0, the first Block in slice has non-zero length and
+//     limit > 0.
 func blockSeqFromSliceLimited(slice []Block, limit uint64) BlockSeq {
 	switch len(slice) {
 	case 0:

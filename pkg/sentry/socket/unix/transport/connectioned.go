@@ -477,8 +477,8 @@ func (e *connectionedEndpoint) Accept(ctx context.Context, peerAddr *tcpip.FullA
 }
 
 // Preconditions:
-// * e.Listening()
-// * e is locked.
+//   - e.Listening()
+//   - e is locked.
 func (e *connectionedEndpoint) getAcceptedEndpointLocked(ctx context.Context) (*connectionedEndpoint, *syserr.Error) {
 	// Accept connections from within the sentry first, since this avoids
 	// an RPC to the gofer on the common path.

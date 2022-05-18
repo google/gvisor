@@ -199,11 +199,11 @@ func (fs *filesystem) renameMuUnlockAndCheckCaching(ctx context.Context, ds **[]
 // to *ds.
 //
 // Preconditions:
-// * fs.renameMu must be locked.
-// * d.dirMu must be locked.
-// * !rp.Done().
-// * If !d.cachedMetadataAuthoritative(), then d and all children that are
-//   part of rp must have been revalidated.
+//   - fs.renameMu must be locked.
+//   - d.dirMu must be locked.
+//   - !rp.Done().
+//   - If !d.cachedMetadataAuthoritative(), then d and all children that are
+//     part of rp must have been revalidated.
 func (fs *filesystem) stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry, mayFollowSymlinks bool, ds **[]*dentry) (*dentry, bool, error) {
 	if !d.isDir() {
 		return nil, false, linuxerr.ENOTDIR
@@ -257,11 +257,11 @@ func (fs *filesystem) stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *
 }
 
 // Preconditions:
-// * fs.opts.lisaEnabled.
-// * fs.renameMu must be locked.
-// * parent.dirMu must be locked.
-// * parent.isDir().
-// * parent and the dentry at name have been revalidated.
+//   - fs.opts.lisaEnabled.
+//   - fs.renameMu must be locked.
+//   - parent.dirMu must be locked.
+//   - parent.isDir().
+//   - parent and the dentry at name have been revalidated.
 func (fs *filesystem) getChildAndWalkPathLocked(ctx context.Context, parent *dentry, rp *vfs.ResolvingPath, ds **[]*dentry) (*dentry, error) {
 	// Note that pit is a copy of the iterator that does not affect rp.
 	pit := rp.Pit()
@@ -353,11 +353,11 @@ func (fs *filesystem) getChildAndWalkPathLocked(ctx context.Context, parent *den
 // given name. Returns ENOENT if the child doesn't exist.
 //
 // Preconditions:
-// * fs.renameMu must be locked.
-// * parent.dirMu must be locked.
-// * parent.isDir().
-// * name is not "." or "..".
-// * parent and the dentry at name have been revalidated.
+//   - fs.renameMu must be locked.
+//   - parent.dirMu must be locked.
+//   - parent.isDir().
+//   - name is not "." or "..".
+//   - parent and the dentry at name have been revalidated.
 func (fs *filesystem) getChildLocked(ctx context.Context, parent *dentry, name string, ds **[]*dentry) (*dentry, error) {
 	if len(name) > MaxFilenameLen {
 		return nil, linuxerr.ENAMETOOLONG
@@ -410,10 +410,10 @@ func (fs *filesystem) getChildLocked(ctx context.Context, parent *dentry, name s
 // is searchable by the provider of rp.
 //
 // Preconditions:
-// * fs.renameMu must be locked.
-// * !rp.Done().
-// * If !d.cachedMetadataAuthoritative(), then d's cached metadata must be up
-//   to date.
+//   - fs.renameMu must be locked.
+//   - !rp.Done().
+//   - If !d.cachedMetadataAuthoritative(), then d's cached metadata must be up
+//     to date.
 func (fs *filesystem) walkParentDirLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry, ds **[]*dentry) (*dentry, error) {
 	if err := fs.revalidateParentDir(ctx, rp, d, ds); err != nil {
 		return nil, err
@@ -471,8 +471,8 @@ func (fs *filesystem) resolveLocked(ctx context.Context, rp *vfs.ResolvingPath, 
 // createInSyntheticDir (if the parent directory is synthetic) to do so.
 //
 // Preconditions:
-// * !rp.Done().
-// * For the final path component in rp, !rp.ShouldFollowSymlink().
+//   - !rp.Done().
+//   - For the final path component in rp, !rp.ShouldFollowSymlink().
 func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir bool, createInRemoteDir func(parent *dentry, name string, ds **[]*dentry) error, createInSyntheticDir func(parent *dentry, name string) error) error {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
@@ -1277,9 +1277,9 @@ retry:
 }
 
 // Preconditions:
-// * d.fs.renameMu must be locked.
-// * d.dirMu must be locked.
-// * !d.isSynthetic().
+//   - d.fs.renameMu must be locked.
+//   - d.dirMu must be locked.
+//   - !d.isSynthetic().
 func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions, ds **[]*dentry) (*vfs.FileDescription, error) {
 	if err := d.checkPermissions(rp.Credentials(), vfs.MayWrite); err != nil {
 		return nil, err

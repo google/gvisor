@@ -35,9 +35,9 @@ func OffsetPageEnd(offset int64) uint64 {
 // so that the read does not overflow an int64 nor size.
 //
 // Parameters:
-// - offset: the starting offset of the read.
-// - length: the number of bytes to read.
-// - size:   the size of the file.
+//   - offset: the starting offset of the read.
+//   - length: the number of bytes to read.
+//   - size:   the size of the file.
 //
 // Postconditions: The returned offset is >= offset.
 func ReadEndOffset(offset int64, length int64, size int64) int64 {
@@ -56,8 +56,8 @@ func ReadEndOffset(offset int64, length int64, size int64) int64 {
 // so that the write does not overflow an int64.
 //
 // Parameters:
-// - offset: the starting offset of the write.
-// - length: the number of bytes to write.
+//   - offset: the starting offset of the write.
+//   - length: the number of bytes to write.
 //
 // Postconditions: The returned offset is >= offset.
 func WriteEndOffset(offset int64, length int64) int64 {

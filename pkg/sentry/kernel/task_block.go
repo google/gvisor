@@ -29,11 +29,11 @@ import (
 // monotonic clock indicates that timeout has elapsed (only if haveTimeout is true),
 // or t is interrupted. It returns:
 //
-// - The remaining timeout, which is guaranteed to be 0 if the timeout expired,
-// and is unspecified if haveTimeout is false.
+//   - The remaining timeout, which is guaranteed to be 0 if the timeout expired,
+//     and is unspecified if haveTimeout is false.
 //
-// - An error which is nil if an event is received from C, ETIMEDOUT if the timeout
-// expired, and linuxerr.ErrInterrupted if t is interrupted.
+//   - An error which is nil if an event is received from C, ETIMEDOUT if the timeout
+//     expired, and linuxerr.ErrInterrupted if t is interrupted.
 //
 // Preconditions: The caller must be running on the task goroutine.
 func (t *Task) BlockWithTimeout(C chan struct{}, haveTimeout bool, timeout time.Duration) (time.Duration, error) {

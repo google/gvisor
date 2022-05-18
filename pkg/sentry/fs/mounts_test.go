@@ -25,9 +25,10 @@ import (
 )
 
 // Creates a new MountNamespace with filesystem:
-// /       (root dir)
-// |-foo   (dir)
-//   |-bar (file)
+//
+//	/         (root dir)
+//		|-foo   (dir)
+//			|-bar (file)
 func createMountNamespace(ctx context.Context) (*fs.MountNamespace, error) {
 	perms := fs.FilePermsFromMode(0777)
 	m := fs.NewPseudoMountSource(ctx)

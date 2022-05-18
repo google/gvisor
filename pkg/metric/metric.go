@@ -115,8 +115,8 @@ var (
 // Initialize sends a metric registration event over the event channel.
 //
 // Precondition:
-//  * All metrics are registered.
-//  * Initialize/Disable has not been called.
+//   - All metrics are registered.
+//   - Initialize/Disable has not been called.
 func Initialize() error {
 	if initialized {
 		return errors.New("metric.Initialize called after metric.Initialize or metric.Disable")
@@ -145,8 +145,8 @@ func Initialize() error {
 // disabling metric collection.
 //
 // Precondition:
-//  * All metrics are registered.
-//  * Initialize/Disable has not been called.
+//   - All metrics are registered.
+//   - Initialize/Disable has not been called.
 func Disable() error {
 	if initialized {
 		return errors.New("metric.Disable called after metric.Initialize or metric.Disable")
@@ -240,6 +240,7 @@ func newFieldMapper(fields ...Field) (fieldMapper, error) {
 // makeMap().
 // This *must* be called with the correct number of fields, or it will panic.
 // +checkescape:all
+//
 //go:nosplit
 func (m fieldMapper) lookupConcat(fields1, fields2 []string) int {
 	if (len(fields1) + len(fields2)) != len(m.fields) {
@@ -282,6 +283,7 @@ IdxLookup2:
 // makeMap().
 // This *must* be called with the correct number of fields, or it will panic.
 // +checkescape:all
+//
 //go:nosplit
 func (m fieldMapper) lookup(fields ...string) int {
 	return m.lookupConcat(fields, nil)
@@ -295,10 +297,10 @@ func (m fieldMapper) numKeys() int {
 }
 
 // makeDistributionSampleMap creates a two dimensional array, where:
-// - The first level corresponds to unique field value combinations and is
-//   accessed using index "keys" made by fieldMapper.
-// - The second level corresponds to buckets within a metric. The number of
-//   buckets is specified by numBuckets.
+//   - The first level corresponds to unique field value combinations and is
+//     accessed using index "keys" made by fieldMapper.
+//   - The second level corresponds to buckets within a metric. The number of
+//     buckets is specified by numBuckets.
 func (m fieldMapper) makeDistributionSampleMap(numBuckets int) [][]atomicbitops.Uint64 {
 	samples := make([][]atomicbitops.Uint64, m.numKeys())
 	for i := range samples {
@@ -331,9 +333,9 @@ func (m fieldMapper) keyToMultiField(key int) []string {
 // after Initialized.
 //
 // Preconditions:
-// * name must be globally unique.
-// * Initialize/Disable have not been called.
-// * value is expected to accept exactly len(fields) arguments.
+//   - name must be globally unique.
+//   - Initialize/Disable have not been called.
+//   - value is expected to accept exactly len(fields) arguments.
 func RegisterCustomUint64Metric(name string, cumulative, sync bool, units pb.MetricMetadata_Units, description string, value func(...string) uint64, fields ...Field) error {
 	if initialized {
 		return ErrInitializationDone
@@ -415,6 +417,7 @@ func MustCreateNewUint64NanosecondsMetric(name string, sync bool, description st
 
 // Value returns the current value of the metric for the given set of fields.
 // This must be called with the correct number of field values or it will panic.
+//
 //go:nosplit
 func (m *Uint64Metric) Value(fieldValues ...string) uint64 {
 	key := m.fieldMapper.lookupConcat(fieldValues, nil)
@@ -423,6 +426,7 @@ func (m *Uint64Metric) Value(fieldValues ...string) uint64 {
 
 // Increment increments the metric field by 1.
 // This must be called with the correct number of field values or it will panic.
+//
 //go:nosplit
 func (m *Uint64Metric) Increment(fieldValues ...string) {
 	key := m.fieldMapper.lookupConcat(fieldValues, nil)
@@ -431,6 +435,7 @@ func (m *Uint64Metric) Increment(fieldValues ...string) {
 
 // IncrementBy increments the metric by v.
 // This must be called with the correct number of field values or it will panic.
+//
 //go:nosplit
 func (m *Uint64Metric) IncrementBy(v uint64, fieldValues ...string) {
 	key := m.fieldMapper.lookupConcat(fieldValues, nil)
@@ -547,6 +552,7 @@ func (b *ExponentialBucketer) LowerBound(bucketIndex int) int64 {
 
 // BucketIndex implements Bucketer.BucketIndex.
 // +checkescape:all
+//
 //go:nosplit
 func (b *ExponentialBucketer) BucketIndex(sample int64) int {
 	if sample < 0 {
@@ -677,6 +683,7 @@ func MustRegisterDistributionMetric(name string, sync bool, bucketer Bucketer, u
 // AddSample adds a sample to the distribution.
 // This *must* be called with the correct number of fields, or it will panic.
 // +checkescape:all
+//
 //go:nosplit
 func (d *DistributionMetric) AddSample(sample int64, fields ...string) {
 	d.addSampleByKey(sample, d.fieldsToKey.lookup(fields...))
@@ -684,6 +691,7 @@ func (d *DistributionMetric) AddSample(sample int64, fields ...string) {
 
 // addSampleByKey works like AddSample, with the field key already known.
 // +checkescape:all
+//
 //go:nosplit
 func (d *DistributionMetric) addSampleByKey(sample int64, key int) {
 	bucket := d.exponentialBucketer.BucketIndex(sample)
@@ -717,9 +725,9 @@ type TimerMetric struct {
 
 // NewTimerMetric provides a convenient way to measure latencies.
 // The arguments are the same as `NewDistributionMetric`, except:
-// - `nanoBucketer`: Same as `NewDistribution`'s `bucketer`, expected to hold
-//                   durations in nanoseconds. Adjust parameters accordingly.
-//                   NewDurationBucketer may be helpful here.
+//   - `nanoBucketer`: Same as `NewDistribution`'s `bucketer`, expected to hold
+//     durations in nanoseconds. Adjust parameters accordingly.
+//     NewDurationBucketer may be helpful here.
 func NewTimerMetric(name string, nanoBucketer Bucketer, description string, fields ...Field) (*TimerMetric, error) {
 	distrib, err := NewDistributionMetric(name, false, nanoBucketer, pb.MetricMetadata_UNITS_NANOSECONDS, description, fields...)
 	if err != nil {
@@ -763,6 +771,7 @@ type TimedOperation struct {
 // where which path an operation took is only known after it happens. This
 // path can be part of the fields passed to Finish.
 // +checkescape:all
+//
 //go:nosplit
 func (t *TimerMetric) Start(fields ...string) TimedOperation {
 	return TimedOperation{
@@ -777,6 +786,7 @@ func (t *TimerMetric) Start(fields ...string) TimedOperation {
 // `TimerMetric.Start`. The concatenation of these two must be the exact
 // number of fields that the underlying metric has.
 // +checkescape:all
+//
 //go:nosplit
 func (o TimedOperation) Finish(extraFields ...string) {
 	ended := CheapNowNano()
@@ -924,7 +934,7 @@ var (
 // EmitMetricUpdate is thread-safe.
 //
 // Preconditions:
-// * Initialize has been called.
+//   - Initialize has been called.
 func EmitMetricUpdate() {
 	emitMu.Lock()
 	defer emitMu.Unlock()

@@ -76,10 +76,10 @@ type IGMPType byte
 const (
 	// IGMPMembershipQuery indicates that the message type is Membership Query.
 	// "There are two sub-types of Membership Query messages:
-	// - General Query, used to learn which groups have members on an
-	//   attached network.
-	// - Group-Specific Query, used to learn if a particular group
-	//   has any members on an attached network.
+	//	- General Query, used to learn which groups have members on an
+	//		attached network.
+	//	- Group-Specific Query, used to learn if a particular group
+	//		has any members on an attached network.
 	// These two messages are differentiated by the Group Address, as
 	// described in section 1.4 ."
 	IGMPMembershipQuery IGMPType = 0x11

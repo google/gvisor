@@ -124,6 +124,7 @@ func (c *CPU) SetAppAddr(value uintptr) {
 }
 
 // GetLazyVFP returns the value of cpacr_el1.
+//
 //go:nosplit
 func (c *CPU) GetLazyVFP() (value uintptr) {
 	return c.lazyVFP

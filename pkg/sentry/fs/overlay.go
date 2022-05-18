@@ -39,21 +39,21 @@ import (
 //
 // Known deficiencies:
 //
-// - The device number of two files under the same overlay mount point may be
+//	- The device number of two files under the same overlay mount point may be
 //   different. This can happen if a file is found in the lower filesystem (takes
 //   the lower filesystem device) and another file is created in the upper
 //   filesystem (takes the upper filesystem device). This may appear odd but
 //   should not break applications.
 //
-// - Registered events on files (i.e. for notification of read/write readiness)
+//	- Registered events on files (i.e. for notification of read/write readiness)
 //   are not copied across copy up. This is fine in the common case of files that
 //   do not block. For files that do block, like pipes and sockets, copy up is not
 //   supported.
 //
-// - Hardlinks in a lower filesystem are broken by copy up. For this reason, no
+//	- Hardlinks in a lower filesystem are broken by copy up. For this reason, no
 //   attempt is made to preserve link count across copy up.
 //
-// - The maximum length of an extended attribute name is the same as the maximum
+//	- The maximum length of an extended attribute name is the same as the maximum
 //   length of a file path in Linux (XATTR_NAME_MAX == NAME_MAX). This means that
 //   whiteout attributes, if set directly on the host, are limited additionally by
 //   the extra whiteout prefix length (file paths must be strictly shorter than
@@ -86,12 +86,12 @@ func isXattrOverlay(name string) bool {
 // NewOverlayRoot produces the root of an overlay.
 //
 // Preconditions:
-// * upper and lower must be non-nil.
-// * upper must not be an overlay.
-// * lower should not expose character devices, pipes, or sockets, because
-//   copying up these types of files is not supported.
-// * lower must not require that file objects be revalidated.
-// * lower must not have dynamic file/directory content.
+//   - upper and lower must be non-nil.
+//   - upper must not be an overlay.
+//   - lower should not expose character devices, pipes, or sockets, because
+//     copying up these types of files is not supported.
+//   - lower must not require that file objects be revalidated.
+//   - lower must not have dynamic file/directory content.
 func NewOverlayRoot(ctx context.Context, upper *Inode, lower *Inode, flags MountSourceFlags) (*Inode, error) {
 	if !IsDir(upper.StableAttr) {
 		return nil, fmt.Errorf("upper Inode is a %v, not a directory", upper.StableAttr.Type)
@@ -116,11 +116,11 @@ func NewOverlayRoot(ctx context.Context, upper *Inode, lower *Inode, flags Mount
 // NewOverlayRootFile produces the root of an overlay that points to a file.
 //
 // Preconditions:
-// * lower must be non-nil.
-// * lower should not expose character devices, pipes, or sockets, because
-//   copying up these types of files is not supported. Neither it can be a dir.
-// * lower must not require that file objects be revalidated.
-// * lower must not have dynamic file/directory content.
+//   - lower must be non-nil.
+//   - lower should not expose character devices, pipes, or sockets, because
+//     copying up these types of files is not supported. Neither it can be a dir.
+//   - lower must not require that file objects be revalidated.
+//   - lower must not have dynamic file/directory content.
 func NewOverlayRootFile(ctx context.Context, upperMS *MountSource, lower *Inode, flags MountSourceFlags) (*Inode, error) {
 	if !IsRegular(lower.StableAttr) {
 		return nil, fmt.Errorf("lower Inode is not a regular file")

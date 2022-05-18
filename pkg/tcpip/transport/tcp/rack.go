@@ -122,15 +122,15 @@ func (rc *rackControl) update(seg *segment, ackSeg *segment) {
 
 // detectReorder detects if packet reordering has been observed.
 // See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.2
-// * Step 3: Detect data segment reordering.
-//   To detect reordering, the sender looks for original data segments being
-//   delivered out of order. To detect such cases, the sender tracks the
-//   highest sequence selectively or cumulatively acknowledged in the RACK.fack
-//   variable. The name "fack" stands for the most "Forward ACK" (this term is
-//   adopted from [FACK]). If a never retransmitted segment that's below
-//   RACK.fack is (selectively or cumulatively) acknowledged, it has been
-//   delivered out of order. The sender sets RACK.reord to TRUE if such segment
-//   is identified.
+//   - Step 3: Detect data segment reordering.
+//     To detect reordering, the sender looks for original data segments being
+//     delivered out of order. To detect such cases, the sender tracks the
+//     highest sequence selectively or cumulatively acknowledged in the RACK.fack
+//     variable. The name "fack" stands for the most "Forward ACK" (this term is
+//     adopted from [FACK]). If a never retransmitted segment that's below
+//     RACK.fack is (selectively or cumulatively) acknowledged, it has been
+//     delivered out of order. The sender sets RACK.reord to TRUE if such segment
+//     is identified.
 func (rc *rackControl) detectReorder(seg *segment) {
 	endSeq := seg.sequenceNumber.Add(seqnum.Size(seg.data.Size()))
 	if rc.FACK.LessThan(endSeq) {
@@ -273,13 +273,13 @@ func (s *sender) detectTLPRecovery(ack seqnum.Value, rcvdSeg *segment) {
 
 // updateRACKReorderWindow updates the reorder window.
 // See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.2
-// * Step 4: Update RACK reordering window
-//   To handle the prevalent small degree of reordering, RACK.reo_wnd serves as
-//   an allowance for settling time before marking a packet lost. RACK starts
-//   initially with a conservative window of min_RTT/4. If no reordering has
-//   been observed RACK uses reo_wnd of zero during loss recovery, in order to
-//   retransmit quickly, or when the number of DUPACKs exceeds the classic
-//   DUPACKthreshold.
+//   - Step 4: Update RACK reordering window
+//     To handle the prevalent small degree of reordering, RACK.reo_wnd serves as
+//     an allowance for settling time before marking a packet lost. RACK starts
+//     initially with a conservative window of min_RTT/4. If no reordering has
+//     been observed RACK uses reo_wnd of zero during loss recovery, in order to
+//     retransmit quickly, or when the number of DUPACKs exceeds the classic
+//     DUPACKthreshold.
 func (rc *rackControl) updateRACKReorderWindow() {
 	dsackSeen := rc.DSACKSeen
 	snd := rc.snd

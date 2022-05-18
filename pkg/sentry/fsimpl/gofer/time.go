@@ -58,8 +58,8 @@ func (d *dentry) touchAtimeLocked(mnt *vfs.Mount) {
 }
 
 // Preconditions:
-// * d.cachedMetadataAuthoritative() == true.
-// * The caller has successfully called vfs.Mount.CheckBeginWrite().
+//   - d.cachedMetadataAuthoritative() == true.
+//   - The caller has successfully called vfs.Mount.CheckBeginWrite().
 func (d *dentry) touchCtime() {
 	now := d.fs.clock.Now().Nanoseconds()
 	d.metadataMu.Lock()
@@ -68,8 +68,8 @@ func (d *dentry) touchCtime() {
 }
 
 // Preconditions:
-// * d.cachedMetadataAuthoritative() == true.
-// * The caller has successfully called vfs.Mount.CheckBeginWrite().
+//   - d.cachedMetadataAuthoritative() == true.
+//   - The caller has successfully called vfs.Mount.CheckBeginWrite().
 func (d *dentry) touchCMtime() {
 	now := d.fs.clock.Now().Nanoseconds()
 	d.metadataMu.Lock()
@@ -80,8 +80,8 @@ func (d *dentry) touchCMtime() {
 }
 
 // Preconditions:
-// * d.cachedMetadataAuthoritative() == true.
-// * The caller has locked d.metadataMu.
+//   - d.cachedMetadataAuthoritative() == true.
+//   - The caller has locked d.metadataMu.
 func (d *dentry) touchCMtimeLocked() {
 	now := d.fs.clock.Now().Nanoseconds()
 	d.mtime.Store(now)

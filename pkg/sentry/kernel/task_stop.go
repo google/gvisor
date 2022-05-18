@@ -23,12 +23,12 @@ package kernel
 // There are multiple interfaces for interacting with stops because there are
 // multiple cases to consider:
 //
-// - A task goroutine can begin a stop on its associated task (e.g. a
-// vfork() syscall stopping the calling task until the child task releases its
-// MM). In this case, calling Task.interrupt is both unnecessary (the task
-// goroutine obviously cannot be blocked in Task.block or executing application
-// code) and undesirable (as it may spuriously interrupt a in-progress
-// syscall).
+//  - A task goroutine can begin a stop on its associated task (e.g. a
+//		vfork() syscall stopping the calling task until the child task releases its
+//		MM). In this case, calling Task.interrupt is both unnecessary (the task
+//		goroutine obviously cannot be blocked in Task.block or executing application
+//		code) and undesirable (as it may spuriously interrupt a in-progress
+//		syscall).
 //
 // Beginning internal stops in this case is implemented by
 // Task.beginInternalStop / Task.beginInternalStopLocked. As of this writing,
@@ -36,30 +36,30 @@ package kernel
 // autosave; however, autosave terminates the sentry without ending the
 // external stop, so the spurious interrupt is moot.
 //
-// - An arbitrary goroutine can begin a stop on an unrelated task (e.g. all
-// tasks being stopped in preparation for state checkpointing). If the task
-// goroutine may be in Task.block or executing application code, it must be
-// interrupted by Task.interrupt for it to actually enter the stop; since,
-// strictly speaking, we have no way of determining this, we call
-// Task.interrupt unconditionally.
+//	- An arbitrary goroutine can begin a stop on an unrelated task (e.g. all
+//		tasks being stopped in preparation for state checkpointing). If the task
+//		goroutine may be in Task.block or executing application code, it must be
+//		interrupted by Task.interrupt for it to actually enter the stop; since,
+//		strictly speaking, we have no way of determining this, we call
+//		Task.interrupt unconditionally.
 //
 // Beginning external stops in this case is implemented by
 // Task.BeginExternalStop. As of this writing, there are no instances of this
 // case that begin internal stops.
 //
-// - An arbitrary goroutine can end a stop on an unrelated task (e.g. an
-// exiting task resuming a sibling task that has been blocked in an execve()
-// syscall waiting for other tasks to exit). In this case, Task.endStopCond
-// must be notified to kick the task goroutine out of Task.doStop.
+//	- An arbitrary goroutine can end a stop on an unrelated task (e.g. an
+//		exiting task resuming a sibling task that has been blocked in an execve()
+//		syscall waiting for other tasks to exit). In this case, Task.endStopCond
+//		must be notified to kick the task goroutine out of Task.doStop.
 //
 // Ending internal stops in this case is implemented by
 // Task.endInternalStopLocked. Ending external stops in this case is
 // implemented by Task.EndExternalStop.
 //
-// - Hypothetically, a task goroutine can end an internal stop on its
-// associated task. As of this writing, there are no instances of this case.
-// However, any instances of this case could still use the above functions,
-// since notifying Task.endStopCond would be unnecessary but harmless.
+//	- Hypothetically, a task goroutine can end an internal stop on its
+//		associated task. As of this writing, there are no instances of this case.
+//		However, any instances of this case could still use the above functions,
+//		since notifying Task.endStopCond would be unnecessary but harmless.
 
 import (
 	"fmt"
@@ -72,10 +72,10 @@ import (
 // distinguished by their type. The obvious way to implement such a TaskStop
 // is:
 //
-//     type groupStop struct{}
-//     func (groupStop) Killable() bool { return true }
-//     ...
-//     t.beginInternalStop(groupStop{})
+//	type groupStop struct{}
+//	func (groupStop) Killable() bool { return true }
+//	...
+//	t.beginInternalStop(groupStop{})
 //
 // However, this doesn't work because the state package can't serialize values,
 // only pointers. Furthermore, the correctness of save/restore depends on the
@@ -84,10 +84,10 @@ import (
 // occurred between the two. As a result, the current idiom is to always use a
 // typecast nil for data-free TaskStops:
 //
-//     type groupStop struct{}
-//     func (*groupStop) Killable() bool { return true }
-//     ...
-//     t.beginInternalStop((*groupStop)(nil))
+//	type groupStop struct{}
+//	func (*groupStop) Killable() bool { return true }
+//	...
+//	t.beginInternalStop((*groupStop)(nil))
 //
 // This is pretty gross, but the alternatives seem grosser.
 type TaskStop interface {
@@ -99,8 +99,8 @@ type TaskStop interface {
 // beginInternalStop indicates the start of an internal stop that applies to t.
 //
 // Preconditions:
-// * The caller must be running on the task goroutine.
-// * The task must not already be in an internal stop (i.e. t.stop == nil).
+//   - The caller must be running on the task goroutine.
+//   - The task must not already be in an internal stop (i.e. t.stop == nil).
 func (t *Task) beginInternalStop(s TaskStop) {
 	t.tg.pidns.owner.mu.RLock()
 	defer t.tg.pidns.owner.mu.RUnlock()
@@ -110,7 +110,7 @@ func (t *Task) beginInternalStop(s TaskStop) {
 }
 
 // Preconditions: Same as beginInternalStop, plus:
-// * The signal mutex must be locked.
+//   - The signal mutex must be locked.
 func (t *Task) beginInternalStopLocked(s TaskStop) {
 	if t.stop != nil {
 		panic(fmt.Sprintf("Attempting to enter internal stop %#v when already in internal stop %#v", s, t.stop))
@@ -129,8 +129,8 @@ func (t *Task) beginInternalStopLocked(s TaskStop) {
 // for you.
 //
 // Preconditions:
-// * The signal mutex must be locked.
-// * The task must be in an internal stop (i.e. t.stop != nil).
+//   - The signal mutex must be locked.
+//   - The task must be in an internal stop (i.e. t.stop != nil).
 func (t *Task) endInternalStopLocked() {
 	if t.stop == nil {
 		panic("Attempting to leave non-existent internal stop")

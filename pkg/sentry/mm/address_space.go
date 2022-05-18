@@ -166,11 +166,11 @@ func (mm *MemoryManager) Deactivate() {
 // for all addresses in ar should be precommitted.
 //
 // Preconditions:
-// * mm.activeMu must be locked.
-// * mm.as != nil.
-// * ar.Length() != 0.
-// * ar must be page-aligned.
-// * pseg == mm.pmas.LowerBoundSegment(ar.Start).
+//   - mm.activeMu must be locked.
+//   - mm.as != nil.
+//   - ar.Length() != 0.
+//   - ar must be page-aligned.
+//   - pseg == mm.pmas.LowerBoundSegment(ar.Start).
 func (mm *MemoryManager) mapASLocked(pseg pmaIterator, ar hostarch.AddrRange, precommit bool) error {
 	// By default, map entire pmas at a time, under the assumption that there
 	// is no cost to mapping more of a pma than necessary.

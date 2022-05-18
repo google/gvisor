@@ -35,10 +35,11 @@ import (
 
 // Differences from stat_benchmark:
 //
-// - Syscall interception, CopyInPath, copyOutStat, and overlayfs overheads are
-// not included.
+//   - Syscall interception, CopyInPath, copyOutStat, and overlayfs overheads are
+//     not included.
 //
-// - *MountStat benchmarks use a tmpfs root mount and a tmpfs submount at /tmp.
+//   - *MountStat benchmarks use a tmpfs root mount and a tmpfs submount at /tmp.
+//
 // Non-MountStat benchmarks use a tmpfs root mount and no submounts.
 // stat_benchmark uses a varying root mount, a tmpfs submount at /tmp, and a
 // subdirectory /tmp/<top_dir> (assuming TEST_TMPDIR == "/tmp"). Thus

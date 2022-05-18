@@ -89,7 +89,7 @@ func InotifyAddWatch(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kern
 	resolve := mask&linux.IN_DONT_FOLLOW == 0
 
 	// "EINVAL: The given event mask contains no valid events."
-	// -- inotify_add_watch(2)
+	//	-- inotify_add_watch(2)
 	if validBits := mask & linux.ALL_INOTIFY_BITS; validBits == 0 {
 		return 0, nil, linuxerr.EINVAL
 	}

@@ -98,12 +98,12 @@ func Example_ioReadinessInterrputible() {
 		// Note that, in a concurrent context, the I/O object might become
 		// ready and then not ready again. To handle this:
 		//
-		// - evReady must be acknowledged before calling doIO() again (rather
-		// than after), so that if the I/O object becomes ready *again* after
-		// the call to doIO(), the readiness event is not lost.
+		//	- evReady must be acknowledged before calling doIO() again (rather
+		//		than after), so that if the I/O object becomes ready *again* after
+		//		the call to doIO(), the readiness event is not lost.
 		//
-		// - We must loop instead of just calling doIO() once after receiving
-		// evReady.
+		//	- We must loop instead of just calling doIO() once after receiving
+		//		evReady.
 		w.Ack(evReady)
 	}
 }

@@ -26,10 +26,10 @@ import (
 // A Block is a range of contiguous bytes, similar to []byte but with the
 // following differences:
 //
-// - The memory represented by a Block may require the use of safecopy to
-// access.
+//   - The memory represented by a Block may require the use of safecopy to
+//     access.
 //
-// - Block does not carry a capacity and cannot be expanded.
+//   - Block does not carry a capacity and cannot be expanded.
 //
 // Blocks are immutable and may be copied by value. The zero value of Block
 // represents an empty range, analogous to a nil []byte.

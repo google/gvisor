@@ -18,13 +18,13 @@
 //
 // Lock order (outermost locks must be taken first):
 //
-// Kernel.extMu
-//   ThreadGroup.timerMu
-//     ktime.Timer.mu (for kernelCPUClockTicker and IntervalTimer)
-//       TaskSet.mu
-//         SignalHandlers.mu
-//           Task.mu
-//       runningTasksMu
+//	Kernel.extMu
+//		ThreadGroup.timerMu
+//		  ktime.Timer.mu (for kernelCPUClockTicker and IntervalTimer)
+//		    TaskSet.mu
+//		      SignalHandlers.mu
+//		        Task.mu
+//		    runningTasksMu
 //
 // Locking SignalHandlers.mu in multiple SignalHandlers requires locking
 // TaskSet.mu exclusively first. Locking Task.mu in multiple Tasks at the same
@@ -1132,8 +1132,8 @@ func (k *Kernel) Start() error {
 // pauseTimeLocked pauses all Timers and Timekeeper updates.
 //
 // Preconditions:
-// * Any task goroutines running in k must be stopped.
-// * k.extMu must be locked.
+//   - Any task goroutines running in k must be stopped.
+//   - k.extMu must be locked.
 func (k *Kernel) pauseTimeLocked(ctx context.Context) {
 	// k.cpuClockTicker may be nil since Kernel.SaveTo() may be called before
 	// Kernel.Start().
@@ -1177,8 +1177,8 @@ func (k *Kernel) pauseTimeLocked(ctx context.Context) {
 // effect.
 //
 // Preconditions:
-// * Any task goroutines running in k must be stopped.
-// * k.extMu must be locked.
+//   - Any task goroutines running in k must be stopped.
+//   - k.extMu must be locked.
 func (k *Kernel) resumeTimeLocked(ctx context.Context) {
 	if k.cpuClockTicker != nil {
 		k.cpuClockTicker.Resume()

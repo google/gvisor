@@ -42,11 +42,11 @@ const (
 // It creates a 64-level deep directory tree in the lower filesystem and
 // populates the last subdirectory with 64 files containing random content:
 //
-//    /lower
-//      /sudir0/.../subdir63/
-//                     /file0
-//                     ...
-//                     /file63
+//	/lower
+//	  /sudir0/.../subdir63/
+//	                 /file0
+//	                 ...
+//	                 /file63
 //
 // The files are truncated concurrently by 4 goroutines per file.
 // These goroutines contend with copying up all parent 64 subdirectories

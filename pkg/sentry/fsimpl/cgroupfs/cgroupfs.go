@@ -48,12 +48,12 @@
 //
 // Lock order:
 //
-// kernel.CgroupRegistry.mu
-//   kernfs.filesystem.mu
-//   kernel.TaskSet.mu
-//     kernel.Task.mu
-//       cgroupfs.filesystem.tasksMu.
-//         cgroupfs.dir.OrderedChildren.mu
+//	kernel.CgroupRegistry.mu
+//		kernfs.filesystem.mu
+//		kernel.TaskSet.mu
+//	  	kernel.Task.mu
+//	    	cgroupfs.filesystem.tasksMu.
+//	      	cgroupfs.dir.OrderedChildren.mu
 package cgroupfs
 
 import (

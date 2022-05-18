@@ -246,8 +246,8 @@ func (p *Pipe) Open(ctx context.Context, d *fs.Dirent, flags fs.FileFlags) *fs.F
 // unlocked.)
 //
 // Preconditions:
-// * p.mu must be locked.
-// * This pipe must have readers.
+//   - p.mu must be locked.
+//   - This pipe must have readers.
 func (p *Pipe) peekLocked(count int64, f func(safemem.BlockSeq) (uint64, error)) (int64, error) {
 	// Don't block for a zero-length read even if the pipe is empty.
 	if count == 0 {
@@ -277,8 +277,8 @@ func (p *Pipe) peekLocked(count int64, f func(safemem.BlockSeq) (uint64, error))
 // longer be visible to future reads.
 //
 // Preconditions:
-// * p.mu must be locked.
-// * The pipe must contain at least n bytes.
+//   - p.mu must be locked.
+//   - The pipe must contain at least n bytes.
 func (p *Pipe) consumeLocked(n int64) {
 	p.off += n
 	if max := int64(len(p.buf)); p.off >= max {
@@ -300,7 +300,7 @@ func (p *Pipe) consumeLocked(n int64) {
 // p.queue.Notify(waiter.ReadableEvents) with p.mu unlocked.
 //
 // Preconditions:
-// * p.mu must be locked.
+//   - p.mu must be locked.
 func (p *Pipe) writeLocked(count int64, f func(safemem.BlockSeq) (uint64, error)) (int64, error) {
 	// Can't write to a pipe with no readers.
 	if !p.HasReaders() {

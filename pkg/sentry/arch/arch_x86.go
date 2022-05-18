@@ -373,11 +373,11 @@ func (s *State) PtraceSetRegSet(regset uintptr, src io.Reader, maxlen int, fs cp
 func (s *State) FullRestore() bool {
 	// A fast system call return is possible only if
 	//
-	// * RCX matches the instruction pointer.
-	// * R11 matches our flags value.
-	// * Usermode does not expect to set either the resume flag or the
+	//	* RCX matches the instruction pointer.
+	//	* R11 matches our flags value.
+	//	* Usermode does not expect to set either the resume flag or the
 	//   virtual mode flags (unlikely.)
-	// * CS and SS are set to the standard selectors.
+	//	* CS and SS are set to the standard selectors.
 	//
 	// That is, SYSRET results in the correct final state.
 	fastRestore := s.Regs.Rcx == s.Regs.Rip &&

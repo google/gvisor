@@ -129,7 +129,6 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 // malloc calls, and no new stack segments.  For the same reason compiler does
 // not race instrument it.
 //
-//
 //go:norace
 func forkStub(flags uintptr, instrs []linux.BPFInstruction) (*thread, error) {
 	// Declare all variables up front in order to ensure that there's no

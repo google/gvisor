@@ -159,8 +159,8 @@ func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (hostar
 // into mm.as if it is active.
 //
 // Preconditions:
-// * mm.mappingMu must be locked.
-// * vseg.Range().IsSupersetOf(ar).
+//   - mm.mappingMu must be locked.
+//   - vseg.Range().IsSupersetOf(ar).
 func (mm *MemoryManager) populateVMA(ctx context.Context, vseg vmaIterator, ar hostarch.AddrRange, precommit bool) {
 	if !vseg.ValuePtr().effectivePerms.Any() {
 		// Linux doesn't populate inaccessible pages. See
@@ -203,8 +203,8 @@ func (mm *MemoryManager) populateVMA(ctx context.Context, vseg vmaIterator, ar h
 // expensive operations that don't require it to be locked.
 //
 // Preconditions:
-// * mm.mappingMu must be locked for writing.
-// * vseg.Range().IsSupersetOf(ar).
+//   - mm.mappingMu must be locked for writing.
+//   - vseg.Range().IsSupersetOf(ar).
 //
 // Postconditions: mm.mappingMu will be unlocked.
 // +checklocksrelease:mm.mappingMu

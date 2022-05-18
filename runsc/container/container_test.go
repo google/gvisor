@@ -1458,10 +1458,10 @@ func TestPauseResumeStatus(t *testing.T) {
 }
 
 // TestCapabilities verifies that:
-// - Running exec as non-root UID and GID will result in an error (because the
-//   executable file can't be read).
-// - Running exec as non-root with CAP_DAC_OVERRIDE succeeds because it skips
-//   this check.
+//   - Running exec as non-root UID and GID will result in an error (because the
+//     executable file can't be read).
+//   - Running exec as non-root with CAP_DAC_OVERRIDE succeeds because it skips
+//     this check.
 func TestCapabilities(t *testing.T) {
 	// Pick uid/gid different than ours.
 	uid := auth.KUID(os.Getuid() + 1)

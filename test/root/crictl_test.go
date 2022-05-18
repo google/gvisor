@@ -306,9 +306,9 @@ disabled_plugins = ["io.containerd.internal.v1.restart"]
 `
 
 // setup sets up before a test. Specifically it:
-// * Creates directories and a socket for containerd to utilize.
-// * Runs containerd and waits for it to reach a "ready" state for testing.
-// * Returns a cleanup function that should be called at the end of the test.
+//   - Creates directories and a socket for containerd to utilize.
+//   - Runs containerd and waits for it to reach a "ready" state for testing.
+//   - Returns a cleanup function that should be called at the end of the test.
 func setup(t *testing.T) (*criutil.Crictl, func(), error) {
 	// Create temporary containerd root and state directories, and a socket
 	// via which crictl and containerd communicate.

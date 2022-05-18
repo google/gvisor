@@ -34,7 +34,7 @@ const numStaticChildren = 5
 // one Node for a given filesystem position.
 //
 // Reference Model:
-// * Each node holds a ref on its parent for its entire lifetime.
+//   - Each node holds a ref on its parent for its entire lifetime.
 type Node struct {
 	// node's ref count is protected by its parent's childrenMu.
 	nodeRefs
@@ -42,7 +42,7 @@ type Node struct {
 	// opMu synchronizes high level operations on this path.
 	//
 	// It is used to ensure the following which are important for security:
-	// * This node's data is protected by opMu. So all operations that change its
+	//	* This node's data is protected by opMu. So all operations that change its
 	//   data should hold opMu for writing. For example: write, setstat, setxattr,
 	//   etc. This entails that if this node represents a directory, creation and
 	//   deletion operations happening directly under this directory must lock
@@ -50,7 +50,7 @@ type Node struct {
 	//   reading. This is to avoid the can of worms that open when creation and
 	//   deletion are allowed to race. This prevents any walks from occurring
 	//   during creation or deletion.
-	// * When this node is being deleted, the deletion handler must hold opMu for
+	//	* When this node is being deleted, the deletion handler must hold opMu for
 	//   writing. This ensures that there are no concurrent operations going on
 	//   this node while it is being deleted and potentially being replaced with
 	//   something hazardous.
@@ -169,8 +169,8 @@ func (n *Node) WithChildrenMu(fn func()) {
 // because all internal (non-leaf) nodes are directories.
 //
 // Precondition:
-// * server's rename mutex must be at least read locked. Calling handlers must
-//   at least have read concurrency guarantee from the server.
+//   - server's rename mutex must be at least read locked. Calling handlers must
+//     at least have read concurrency guarantee from the server.
 func (n *Node) FilePath() string {
 	// Walk upwards and prepend name to res.
 	var res fspath.Builder

@@ -103,12 +103,12 @@ func (fs *Filesystem) DecRef(ctx context.Context) {
 //
 // All methods may return errors not specified, notably including:
 //
-// - ENOENT if a required path component does not exist.
+//   - ENOENT if a required path component does not exist.
 //
-// - ENOTDIR if an intermediate path component is not a directory.
+//   - ENOTDIR if an intermediate path component is not a directory.
 //
-// - Errors from vfs-package functions (ResolvingPath.Resolve*(),
-// Mount.CheckBeginWrite(), permission-checking functions, etc.)
+//   - Errors from vfs-package functions (ResolvingPath.Resolve*(),
+//     Mount.CheckBeginWrite(), permission-checking functions, etc.)
 //
 // For all methods that take or return linux.Statx, Statx.Uid and Statx.Gid
 // should be interpreted as IDs in the root UserNamespace (i.e. as auth.KUID
@@ -135,11 +135,11 @@ type FilesystemImpl interface {
 	// GetDentryAt does not correspond directly to a Linux syscall; it is used
 	// in the implementation of:
 	//
-	// - Syscalls that need to resolve two paths: link(), linkat().
+	//	- Syscalls that need to resolve two paths: link(), linkat().
 	//
-	// - Syscalls that need to refer to a filesystem position outside the
-	// context of a file description: chdir(), fchdir(), chroot(), mount(),
-	// umount().
+	//	- Syscalls that need to refer to a filesystem position outside the
+	//		context of a file description: chdir(), fchdir(), chroot(), mount(),
+	//		umount().
 	GetDentryAt(ctx context.Context, rp *ResolvingPath, opts GetDentryOptions) (*Dentry, error)
 
 	// GetParentDentryAt returns a Dentry representing the directory at the
@@ -164,28 +164,28 @@ type FilesystemImpl interface {
 	//
 	// Errors:
 	//
-	// - If the last path component in rp is "." or "..", LinkAt returns
-	// EEXIST.
+	//	- If the last path component in rp is "." or "..", LinkAt returns
+	//		EEXIST.
 	//
-	// - If a file already exists at rp, LinkAt returns EEXIST.
+	//	- If a file already exists at rp, LinkAt returns EEXIST.
 	//
-	// - If rp.MustBeDir(), LinkAt returns ENOENT.
+	//	- If rp.MustBeDir(), LinkAt returns ENOENT.
 	//
-	// - If the directory in which the link would be created has been removed
-	// by RmdirAt or RenameAt, LinkAt returns ENOENT.
+	//	- If the directory in which the link would be created has been removed
+	//		by RmdirAt or RenameAt, LinkAt returns ENOENT.
 	//
-	// - If rp.Mount != vd.Mount(), LinkAt returns EXDEV.
+	//	- If rp.Mount != vd.Mount(), LinkAt returns EXDEV.
 	//
-	// - If vd represents a directory, LinkAt returns EPERM.
+	//	- If vd represents a directory, LinkAt returns EPERM.
 	//
-	// - If vd represents a file for which all existing links have been
-	// removed, or a file created by open(O_TMPFILE|O_EXCL), LinkAt returns
-	// ENOENT. Equivalently, if vd represents a file with a link count of 0 not
-	// created by open(O_TMPFILE) without O_EXCL, LinkAt returns ENOENT.
+	//	- If vd represents a file for which all existing links have been
+	//		removed, or a file created by open(O_TMPFILE|O_EXCL), LinkAt returns
+	//		ENOENT. Equivalently, if vd represents a file with a link count of 0 not
+	//		created by open(O_TMPFILE) without O_EXCL, LinkAt returns ENOENT.
 	//
 	// Preconditions:
-	// * !rp.Done().
-	// * For the final path component in rp, !rp.ShouldFollowSymlink().
+	//	* !rp.Done().
+	//	* For the final path component in rp, !rp.ShouldFollowSymlink().
 	//
 	// Postconditions: If LinkAt returns an error returned by
 	// ResolvingPath.Resolve*(), then !rp.Done().
@@ -195,17 +195,17 @@ type FilesystemImpl interface {
 	//
 	// Errors:
 	//
-	// - If the last path component in rp is "." or "..", MkdirAt returns
-	// EEXIST.
+	//	- If the last path component in rp is "." or "..", MkdirAt returns
+	//		EEXIST.
 	//
-	// - If a file already exists at rp, MkdirAt returns EEXIST.
+	//	- If a file already exists at rp, MkdirAt returns EEXIST.
 	//
-	// - If the directory in which the new directory would be created has been
-	// removed by RmdirAt or RenameAt, MkdirAt returns ENOENT.
+	//	- If the directory in which the new directory would be created has been
+	//		removed by RmdirAt or RenameAt, MkdirAt returns ENOENT.
 	//
 	// Preconditions:
-	// * !rp.Done().
-	// * For the final path component in rp, !rp.ShouldFollowSymlink().
+	//	* !rp.Done().
+	//	* For the final path component in rp, !rp.ShouldFollowSymlink().
 	//
 	// Postconditions: If MkdirAt returns an error returned by
 	// ResolvingPath.Resolve*(), then !rp.Done().
@@ -216,19 +216,19 @@ type FilesystemImpl interface {
 	//
 	// Errors:
 	//
-	// - If the last path component in rp is "." or "..", MknodAt returns
-	// EEXIST.
+	//	- If the last path component in rp is "." or "..", MknodAt returns
+	//		EEXIST.
 	//
-	// - If a file already exists at rp, MknodAt returns EEXIST.
+	//	- If a file already exists at rp, MknodAt returns EEXIST.
 	//
-	// - If rp.MustBeDir(), MknodAt returns ENOENT.
+	//	- If rp.MustBeDir(), MknodAt returns ENOENT.
 	//
-	// - If the directory in which the file would be created has been removed
-	// by RmdirAt or RenameAt, MknodAt returns ENOENT.
+	//	- If the directory in which the file would be created has been removed
+	//		by RmdirAt or RenameAt, MknodAt returns ENOENT.
 	//
 	// Preconditions:
-	// * !rp.Done().
-	// * For the final path component in rp, !rp.ShouldFollowSymlink().
+	//	* !rp.Done().
+	//	* For the final path component in rp, !rp.ShouldFollowSymlink().
 	//
 	// Postconditions: If MknodAt returns an error returned by
 	// ResolvingPath.Resolve*(), then !rp.Done().
@@ -239,16 +239,16 @@ type FilesystemImpl interface {
 	//
 	// Errors:
 	//
-	// - If opts.Flags specifies O_TMPFILE and this feature is unsupported by
-	// the implementation, OpenAt returns EOPNOTSUPP. (All other unsupported
-	// features are silently ignored, consistently with Linux's open*(2).)
+	//	- If opts.Flags specifies O_TMPFILE and this feature is unsupported by
+	//		the implementation, OpenAt returns EOPNOTSUPP. (All other unsupported
+	//		features are silently ignored, consistently with Linux's open*(2).)
 	OpenAt(ctx context.Context, rp *ResolvingPath, opts OpenOptions) (*FileDescription, error)
 
 	// ReadlinkAt returns the target of the symbolic link at rp.
 	//
 	// Errors:
 	//
-	// - If the file at rp is not a symbolic link, ReadlinkAt returns EINVAL.
+	//	- If the file at rp is not a symbolic link, ReadlinkAt returns EINVAL.
 	ReadlinkAt(ctx context.Context, rp *ResolvingPath) (string, error)
 
 	// RenameAt renames the file named oldName in directory oldParentVD to rp.
@@ -256,75 +256,75 @@ type FilesystemImpl interface {
 	//
 	// Errors [1]:
 	//
-	// - If opts.Flags specifies unsupported options, RenameAt returns EINVAL.
+	//	- If opts.Flags specifies unsupported options, RenameAt returns EINVAL.
 	//
-	// - If the last path component in rp is "." or "..", and opts.Flags
-	// contains RENAME_NOREPLACE, RenameAt returns EEXIST.
+	//	- If the last path component in rp is "." or "..", and opts.Flags
+	//		contains RENAME_NOREPLACE, RenameAt returns EEXIST.
 	//
-	// - If the last path component in rp is "." or "..", and opts.Flags does
-	// not contain RENAME_NOREPLACE, RenameAt returns EBUSY.
+	//	- If the last path component in rp is "." or "..", and opts.Flags does
+	//		not contain RENAME_NOREPLACE, RenameAt returns EBUSY.
 	//
-	// - If rp.Mount != oldParentVD.Mount(), RenameAt returns EXDEV.
+	//	- If rp.Mount != oldParentVD.Mount(), RenameAt returns EXDEV.
 	//
-	// - If the renamed file is not a directory, and opts.MustBeDir is true,
-	// RenameAt returns ENOTDIR.
+	//	- If the renamed file is not a directory, and opts.MustBeDir is true,
+	//		RenameAt returns ENOTDIR.
 	//
-	// - If renaming would replace an existing file and opts.Flags contains
-	// RENAME_NOREPLACE, RenameAt returns EEXIST.
+	//	- If renaming would replace an existing file and opts.Flags contains
+	//		RENAME_NOREPLACE, RenameAt returns EEXIST.
 	//
-	// - If there is no existing file at rp and opts.Flags contains
-	// RENAME_EXCHANGE, RenameAt returns ENOENT.
+	//	- If there is no existing file at rp and opts.Flags contains
+	//		RENAME_EXCHANGE, RenameAt returns ENOENT.
 	//
-	// - If there is an existing non-directory file at rp, and rp.MustBeDir()
-	// is true, RenameAt returns ENOTDIR.
+	//	- If there is an existing non-directory file at rp, and rp.MustBeDir()
+	//		is true, RenameAt returns ENOTDIR.
 	//
-	// - If the renamed file is not a directory, opts.Flags does not contain
-	// RENAME_EXCHANGE, and rp.MustBeDir() is true, RenameAt returns ENOTDIR.
-	// (This check is not subsumed by the check for directory replacement below
-	// since it applies even if there is no file to replace.)
+	//	- If the renamed file is not a directory, opts.Flags does not contain
+	//		RENAME_EXCHANGE, and rp.MustBeDir() is true, RenameAt returns ENOTDIR.
+	//		(This check is not subsumed by the check for directory replacement below
+	//		since it applies even if there is no file to replace.)
 	//
-	// - If the renamed file is a directory, and the new parent directory of
-	// the renamed file is either the renamed directory or a descendant
-	// subdirectory of the renamed directory, RenameAt returns EINVAL.
+	//	- If the renamed file is a directory, and the new parent directory of
+	//		the renamed file is either the renamed directory or a descendant
+	//		subdirectory of the renamed directory, RenameAt returns EINVAL.
 	//
-	// - If renaming would exchange the renamed file with an ancestor directory
-	// of the renamed file, RenameAt returns EINVAL.
+	//	- If renaming would exchange the renamed file with an ancestor directory
+	//		of the renamed file, RenameAt returns EINVAL.
 	//
-	// - If renaming would replace an ancestor directory of the renamed file,
-	// RenameAt returns ENOTEMPTY. (This check would be subsumed by the
-	// non-empty directory check below; however, this check takes place before
-	// the self-rename check.)
+	//	- If renaming would replace an ancestor directory of the renamed file,
+	//		RenameAt returns ENOTEMPTY. (This check would be subsumed by the
+	//		non-empty directory check below; however, this check takes place before
+	//		the self-rename check.)
 	//
-	// - If the renamed file would replace or exchange with itself (i.e. the
-	// source and destination paths resolve to the same file), RenameAt returns
-	// nil, skipping the checks described below.
+	//	- If the renamed file would replace or exchange with itself (i.e. the
+	//		source and destination paths resolve to the same file), RenameAt returns
+	//		nil, skipping the checks described below.
 	//
-	// - If the source or destination directory is not writable by the provider
-	// of rp.Credentials(), RenameAt returns EACCES.
+	//	- If the source or destination directory is not writable by the provider
+	//		of rp.Credentials(), RenameAt returns EACCES.
 	//
-	// - If the renamed file is a directory, and renaming would replace a
-	// non-directory file, RenameAt returns ENOTDIR.
+	//	- If the renamed file is a directory, and renaming would replace a
+	//		non-directory file, RenameAt returns ENOTDIR.
 	//
-	// - If the renamed file is not a directory, and renaming would replace a
-	// directory, RenameAt returns EISDIR.
+	//	- If the renamed file is not a directory, and renaming would replace a
+	//		directory, RenameAt returns EISDIR.
 	//
-	// - If the new parent directory of the renamed file has been removed by
-	// RmdirAt or a preceding call to RenameAt, RenameAt returns ENOENT.
+	//	- If the new parent directory of the renamed file has been removed by
+	//		RmdirAt or a preceding call to RenameAt, RenameAt returns ENOENT.
 	//
-	// - If the renamed file is a directory, it is not writable by the
-	// provider of rp.Credentials(), and the source and destination parent
-	// directories are different, RenameAt returns EACCES. (This is nominally
-	// required to change the ".." entry in the renamed directory.)
+	//	- If the renamed file is a directory, it is not writable by the
+	//		provider of rp.Credentials(), and the source and destination parent
+	//		directories are different, RenameAt returns EACCES. (This is nominally
+	//		required to change the ".." entry in the renamed directory.)
 	//
-	// - If renaming would replace a non-empty directory, RenameAt returns
-	// ENOTEMPTY.
+	//	- If renaming would replace a non-empty directory, RenameAt returns
+	//		ENOTEMPTY.
 	//
 	// Preconditions:
-	// * !rp.Done().
-	// * For the final path component in rp, !rp.ShouldFollowSymlink().
-	// * oldParentVD.Dentry() was obtained from a previous call to
-	//   oldParentVD.Mount().Filesystem().Impl().GetParentDentryAt().
-	// * oldName is not "." or "..".
+	//	* !rp.Done().
+	//	* For the final path component in rp, !rp.ShouldFollowSymlink().
+	//	* oldParentVD.Dentry() was obtained from a previous call to
+	//		oldParentVD.Mount().Filesystem().Impl().GetParentDentryAt().
+	//	* oldName is not "." or "..".
 	//
 	// Postconditions: If RenameAt returns an error returned by
 	// ResolvingPath.Resolve*(), then !rp.Done().
@@ -338,18 +338,18 @@ type FilesystemImpl interface {
 	//
 	// Errors:
 	//
-	// - If the last path component in rp is ".", RmdirAt returns EINVAL.
+	//	- If the last path component in rp is ".", RmdirAt returns EINVAL.
 	//
-	// - If the last path component in rp is "..", RmdirAt returns ENOTEMPTY.
+	//	- If the last path component in rp is "..", RmdirAt returns ENOTEMPTY.
 	//
-	// - If no file exists at rp, RmdirAt returns ENOENT.
+	//	- If no file exists at rp, RmdirAt returns ENOENT.
 	//
-	// - If the file at rp exists but is not a directory, RmdirAt returns
-	// ENOTDIR.
+	//	- If the file at rp exists but is not a directory, RmdirAt returns
+	//		ENOTDIR.
 	//
 	// Preconditions:
-	// * !rp.Done().
-	// * For the final path component in rp, !rp.ShouldFollowSymlink().
+	//	* !rp.Done().
+	//	* For the final path component in rp, !rp.ShouldFollowSymlink().
 	//
 	// Postconditions: If RmdirAt returns an error returned by
 	// ResolvingPath.Resolve*(), then !rp.Done().
@@ -361,7 +361,7 @@ type FilesystemImpl interface {
 	//
 	// Errors:
 	//
-	// - If opts specifies unsupported options, SetStatAt returns EINVAL.
+	//	- If opts specifies unsupported options, SetStatAt returns EINVAL.
 	SetStatAt(ctx context.Context, rp *ResolvingPath, opts SetStatOptions) error
 
 	// StatAt returns metadata for the file at rp.
@@ -376,19 +376,19 @@ type FilesystemImpl interface {
 	//
 	// Errors:
 	//
-	// - If the last path component in rp is "." or "..", SymlinkAt returns
-	// EEXIST.
+	//	- If the last path component in rp is "." or "..", SymlinkAt returns
+	//		EEXIST.
 	//
-	// - If a file already exists at rp, SymlinkAt returns EEXIST.
+	//	- If a file already exists at rp, SymlinkAt returns EEXIST.
 	//
-	// - If rp.MustBeDir(), SymlinkAt returns ENOENT.
+	//	- If rp.MustBeDir(), SymlinkAt returns ENOENT.
 	//
-	// - If the directory in which the symbolic link would be created has been
-	// removed by RmdirAt or RenameAt, SymlinkAt returns ENOENT.
+	//	- If the directory in which the symbolic link would be created has been
+	//		removed by RmdirAt or RenameAt, SymlinkAt returns ENOENT.
 	//
 	// Preconditions:
-	// * !rp.Done().
-	// * For the final path component in rp, !rp.ShouldFollowSymlink().
+	//	* !rp.Done().
+	//	* For the final path component in rp, !rp.ShouldFollowSymlink().
 	//
 	// Postconditions: If SymlinkAt returns an error returned by
 	// ResolvingPath.Resolve*(), then !rp.Done().
@@ -398,19 +398,19 @@ type FilesystemImpl interface {
 	//
 	// Errors:
 	//
-	// - If the last path component in rp is "." or "..", UnlinkAt returns
-	// EISDIR.
+	//	- If the last path component in rp is "." or "..", UnlinkAt returns
+	//		EISDIR.
 	//
-	// - If no file exists at rp, UnlinkAt returns ENOENT.
+	//	- If no file exists at rp, UnlinkAt returns ENOENT.
 	//
-	// - If rp.MustBeDir(), and the file at rp exists and is not a directory,
-	// UnlinkAt returns ENOTDIR.
+	//	- If rp.MustBeDir(), and the file at rp exists and is not a directory,
+	//		UnlinkAt returns ENOTDIR.
 	//
-	// - If the file at rp exists but is a directory, UnlinkAt returns EISDIR.
+	//	- If the file at rp exists but is a directory, UnlinkAt returns EISDIR.
 	//
 	// Preconditions:
-	// * !rp.Done().
-	// * For the final path component in rp, !rp.ShouldFollowSymlink().
+	//	* !rp.Done().
+	//	* For the final path component in rp, !rp.ShouldFollowSymlink().
 	//
 	// Postconditions: If UnlinkAt returns an error returned by
 	// ResolvingPath.Resolve*(), then !rp.Done().
@@ -420,14 +420,14 @@ type FilesystemImpl interface {
 	//
 	// Errors:
 	//
-	// - If extended attributes are not supported by the filesystem,
-	// ListXattrAt returns ENOTSUP.
+	//	- If extended attributes are not supported by the filesystem,
+	//		ListXattrAt returns ENOTSUP.
 	//
-	// - If the size of the list (including a NUL terminating byte after every
-	// entry) would exceed size, ERANGE may be returned. Note that
-	// implementations are free to ignore size entirely and return without
-	// error). In all cases, if size is 0, the list should be returned without
-	// error, regardless of size.
+	//	- If the size of the list (including a NUL terminating byte after every
+	//		entry) would exceed size, ERANGE may be returned. Note that
+	//		implementations are free to ignore size entirely and return without
+	//		error). In all cases, if size is 0, the list should be returned without
+	//		error, regardless of size.
 	ListXattrAt(ctx context.Context, rp *ResolvingPath, size uint64) ([]string, error)
 
 	// GetXattrAt returns the value associated with the given extended
@@ -435,16 +435,16 @@ type FilesystemImpl interface {
 	//
 	// Errors:
 	//
-	// - If extended attributes are not supported by the filesystem, GetXattrAt
-	// returns ENOTSUP.
+	//	- If extended attributes are not supported by the filesystem, GetXattrAt
+	//		returns ENOTSUP.
 	//
-	// - If an extended attribute named opts.Name does not exist, ENODATA is
-	// returned.
+	//	- If an extended attribute named opts.Name does not exist, ENODATA is
+	//		returned.
 	//
-	// - If the size of the return value exceeds opts.Size, ERANGE may be
-	// returned (note that implementations are free to ignore opts.Size entirely
-	// and return without error). In all cases, if opts.Size is 0, the value
-	// should be returned without error, regardless of size.
+	//	- If the size of the return value exceeds opts.Size, ERANGE may be
+	//		returned (note that implementations are free to ignore opts.Size entirely
+	//		and return without error). In all cases, if opts.Size is 0, the value
+	//		should be returned without error, regardless of size.
 	GetXattrAt(ctx context.Context, rp *ResolvingPath, opts GetXattrOptions) (string, error)
 
 	// SetXattrAt changes the value associated with the given extended
@@ -452,33 +452,33 @@ type FilesystemImpl interface {
 	//
 	// Errors:
 	//
-	// - If extended attributes are not supported by the filesystem, SetXattrAt
-	// returns ENOTSUP.
+	//	- If extended attributes are not supported by the filesystem, SetXattrAt
+	//		returns ENOTSUP.
 	//
-	// - If XATTR_CREATE is set in opts.Flag and opts.Name already exists,
-	// EEXIST is returned. If XATTR_REPLACE is set and opts.Name does not exist,
-	// ENODATA is returned.
+	//	- If XATTR_CREATE is set in opts.Flag and opts.Name already exists,
+	//		EEXIST is returned. If XATTR_REPLACE is set and opts.Name does not exist,
+	//		ENODATA is returned.
 	SetXattrAt(ctx context.Context, rp *ResolvingPath, opts SetXattrOptions) error
 
 	// RemoveXattrAt removes the given extended attribute from the file at rp.
 	//
 	// Errors:
 	//
-	// - If extended attributes are not supported by the filesystem,
-	// RemoveXattrAt returns ENOTSUP.
+	//	- If extended attributes are not supported by the filesystem,
+	//		RemoveXattrAt returns ENOTSUP.
 	//
-	// - If name does not exist, ENODATA is returned.
+	//	- If name does not exist, ENODATA is returned.
 	RemoveXattrAt(ctx context.Context, rp *ResolvingPath, name string) error
 
 	// BoundEndpointAt returns the Unix socket endpoint bound at the path rp.
 	//
 	// Errors:
 	//
-	// - If the file does not have write permissions, then BoundEndpointAt
-	// returns EACCES.
+	//	- If the file does not have write permissions, then BoundEndpointAt
+	//		returns EACCES.
 	//
-	// - If a non-socket file exists at rp, then BoundEndpointAt returns
-	// ECONNREFUSED.
+	//	- If a non-socket file exists at rp, then BoundEndpointAt returns
+	//		ECONNREFUSED.
 	BoundEndpointAt(ctx context.Context, rp *ResolvingPath, opts BoundEndpointOptions) (transport.BoundEndpoint, error)
 
 	// PrependPath prepends a path from vd to vd.Mount().Root() to b.

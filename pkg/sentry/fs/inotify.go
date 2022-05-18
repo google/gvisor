@@ -34,7 +34,8 @@ import (
 // inotify_init1(2). Inotify implements the FileOperations interface.
 //
 // Lock ordering:
-//   Inotify.mu -> Inode.Watches.mu -> Watch.mu -> Inotify.evMu
+//
+//	Inotify.mu -> Inode.Watches.mu -> Watch.mu -> Inotify.evMu
 //
 // +stateify savable
 type Inotify struct {

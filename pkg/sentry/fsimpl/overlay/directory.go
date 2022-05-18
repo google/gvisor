@@ -28,8 +28,8 @@ func (d *dentry) isDir() bool {
 }
 
 // Preconditions:
-// * d.dirMu must be locked.
-// * d.isDir().
+//   - d.dirMu must be locked.
+//   - d.isDir().
 func (d *dentry) collectWhiteoutsForRmdirLocked(ctx context.Context) (map[string]bool, error) {
 	vfsObj := d.fs.vfsfs.VirtualFilesystem()
 	var readdirErr error
@@ -148,9 +148,9 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 }
 
 // Preconditions:
-// * filesystem.renameMu must be locked.
-// * d.dirMu must be locked.
-// * d.isDir().
+//   - filesystem.renameMu must be locked.
+//   - d.dirMu must be locked.
+//   - d.isDir().
 func (d *dentry) getDirentsLocked(ctx context.Context) ([]vfs.Dirent, error) {
 	if d.dirents != nil {
 		return d.dirents, nil

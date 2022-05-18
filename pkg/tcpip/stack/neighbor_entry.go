@@ -236,9 +236,9 @@ func (e *neighborEntry) removeLocked() {
 	// TODO(https://gvisor.dev/issues/5583): test the case where this function is
 	// called during resolution; that can happen in at least these scenarios:
 	//
-	// - manual address removal during resolution
+	//	- manual address removal during resolution
 	//
-	// - neighbor cache eviction during resolution
+	//	- neighbor cache eviction during resolution
 	e.notifyCompletionLocked(&tcpip.ErrAborted{})
 }
 

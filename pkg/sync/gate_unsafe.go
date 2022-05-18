@@ -30,12 +30,13 @@ import (
 //
 // Gate is similar to WaitGroup:
 //
-// - Gate.Enter() is analogous to WaitGroup.Add(1), but may be called even if
-// the Gate counter is 0 and fails if Gate.Close() has been called.
+//   - Gate.Enter() is analogous to WaitGroup.Add(1), but may be called even if
+//     the Gate counter is 0 and fails if Gate.Close() has been called.
 //
-// - Gate.Leave() is equivalent to WaitGroup.Done().
+//   - Gate.Leave() is equivalent to WaitGroup.Done().
 //
-// - Gate.Close() is analogous to WaitGroup.Wait(), but also causes future
+//   - Gate.Close() is analogous to WaitGroup.Wait(), but also causes future
+//
 // calls to Gate.Enter() to fail and may only be called once, from a single
 // goroutine.
 //
@@ -64,7 +65,6 @@ import (
 //
 //	// Clean up the object.
 //	[...]
-//
 type Gate struct {
 	userCount int32
 	closingG  uintptr
@@ -87,6 +87,7 @@ func (g *Gate) Enter() bool {
 // leaveAfterFailedEnter is identical to Leave, but is marked noinline to
 // prevent it from being inlined into Enter, since as of this writing inlining
 // Leave into Enter prevents Enter from being inlined into its callers.
+//
 //go:noinline
 func (g *Gate) leaveAfterFailedEnter() {
 	if atomic.AddInt32(&g.userCount, -1) == math.MinInt32 {

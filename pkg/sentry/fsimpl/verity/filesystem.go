@@ -93,9 +93,9 @@ func (fs *filesystem) renameMuRUnlockAndCheckCaching(ctx context.Context, ds **[
 // should be dropped once traversal is complete, are appended to ds.
 //
 // Preconditions:
-// * fs.renameMu must be locked.
-// * d.dirMu must be locked.
-// * !rp.Done().
+//   - fs.renameMu must be locked.
+//   - d.dirMu must be locked.
+//   - !rp.Done().
 func (fs *filesystem) stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry, mayFollowSymlinks bool, ds **[]*dentry) (*dentry, error) {
 	if !d.isDir() {
 		return nil, linuxerr.ENOTDIR
@@ -151,8 +151,8 @@ afterSymlink:
 // ErrorOnViolation mode it returns a linuxerr instead.
 //
 // Preconditions:
-// * fs.renameMu must be locked.
-// * d.dirMu must be locked.
+//   - fs.renameMu must be locked.
+//   - d.dirMu must be locked.
 func (fs *filesystem) verifyChildLocked(ctx context.Context, parent *dentry, child *dentry) (*dentry, error) {
 	vfsObj := fs.vfsfs.VirtualFilesystem()
 
@@ -435,8 +435,8 @@ func (fs *filesystem) verifyStatAndChildrenLocked(ctx context.Context, d *dentry
 }
 
 // Preconditions:
-// * fs.renameMu must be locked.
-// * parent.dirMu must be locked.
+//   - fs.renameMu must be locked.
+//   - parent.dirMu must be locked.
 func (fs *filesystem) getChildLocked(ctx context.Context, parent *dentry, name string, ds **[]*dentry) (*dentry, error) {
 	if child, ok := parent.children[name]; ok {
 		// If verity is enabled on child, we should check again whether
@@ -522,8 +522,8 @@ func (fs *filesystem) getChildLocked(ctx context.Context, parent *dentry, name s
 }
 
 // Preconditions:
-// * fs.renameMu must be locked.
-// * parent.dirMu must be locked.
+//   - fs.renameMu must be locked.
+//   - parent.dirMu must be locked.
 func (fs *filesystem) lookupAndVerifyLocked(ctx context.Context, parent *dentry, name string) (*dentry, error) {
 	vfsObj := fs.vfsfs.VirtualFilesystem()
 
@@ -637,8 +637,8 @@ func (fs *filesystem) lookupAndVerifyLocked(ctx context.Context, parent *dentry,
 // is searchable by the provider of rp.
 //
 // Preconditions:
-// * fs.renameMu must be locked.
-// * !rp.Done().
+//   - fs.renameMu must be locked.
+//   - !rp.Done().
 func (fs *filesystem) walkParentDirLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry, ds **[]*dentry) (*dentry, error) {
 	for !rp.Final() {
 		d.dirMu.Lock()

@@ -18,15 +18,15 @@
 //
 // Lock order:
 //
-// directoryFD.mu / regularFileFD.mu
-//   filesystem.renameMu
-//     dentry.dirMu
-//       dentry.copyMu
-//         filesystem.devMu
-//         *** "memmap.Mappable locks" below this point
-//         dentry.mapsMu
-//           *** "memmap.Mappable locks taken by Translate" below this point
-//           dentry.dataMu
+//	directoryFD.mu / regularFileFD.mu
+//		filesystem.renameMu
+//			dentry.dirMu
+//		    dentry.copyMu
+//		      filesystem.devMu
+//		      *** "memmap.Mappable locks" below this point
+//		      dentry.mapsMu
+//		        *** "memmap.Mappable locks taken by Translate" below this point
+//		        dentry.dataMu
 //
 // Locking dentry.dirMu in multiple dentries requires that parent dentries are
 // locked before child dentries, and that filesystem.renameMu is locked to
@@ -432,27 +432,27 @@ type dentry struct {
 
 	// If this dentry represents a regular file, then:
 	//
-	// - mapsMu is used to synchronize between copy-up and memmap.Mappable
-	// methods on dentry preceding mm.MemoryManager.activeMu in the lock order.
+	//	- mapsMu is used to synchronize between copy-up and memmap.Mappable
+	//		methods on dentry preceding mm.MemoryManager.activeMu in the lock order.
 	//
-	// - dataMu is used to synchronize between copy-up and
-	// dentry.(memmap.Mappable).Translate.
+	//	- dataMu is used to synchronize between copy-up and
+	//		dentry.(memmap.Mappable).Translate.
 	//
-	// - lowerMappings tracks memory mappings of the file. lowerMappings is
-	// used to invalidate mappings of the lower layer when the file is copied
-	// up to ensure that they remain coherent with subsequent writes to the
-	// file. (Note that, as of this writing, Linux overlayfs does not do this;
-	// this feature is a gVisor extension.) lowerMappings is protected by
-	// mapsMu.
+	//	- lowerMappings tracks memory mappings of the file. lowerMappings is
+	//		used to invalidate mappings of the lower layer when the file is copied
+	//		up to ensure that they remain coherent with subsequent writes to the
+	//		file. (Note that, as of this writing, Linux overlayfs does not do this;
+	//		this feature is a gVisor extension.) lowerMappings is protected by
+	//		mapsMu.
 	//
-	// - If this dentry is copied-up, then wrappedMappable is the Mappable
-	// obtained from a call to the current top layer's
-	// FileDescription.ConfigureMMap(). Once wrappedMappable becomes non-nil
-	// (from a call to regularFileFD.ensureMappable()), it cannot become nil.
-	// wrappedMappable is protected by mapsMu and dataMu.
+	//	- If this dentry is copied-up, then wrappedMappable is the Mappable
+	//		obtained from a call to the current top layer's
+	//		FileDescription.ConfigureMMap(). Once wrappedMappable becomes non-nil
+	//		(from a call to regularFileFD.ensureMappable()), it cannot become nil.
+	//		wrappedMappable is protected by mapsMu and dataMu.
 	//
-	// - isMappable is non-zero iff wrappedMappable is non-nil. isMappable is
-	// accessed using atomic memory operations.
+	//	- isMappable is non-zero iff wrappedMappable is non-nil. isMappable is
+	//		accessed using atomic memory operations.
 	mapsMu          sync.Mutex `state:"nosave"`
 	lowerMappings   memmap.MappingSet
 	dataMu          sync.RWMutex `state:"nosave"`
@@ -565,8 +565,8 @@ func (d *dentry) checkDropLocked(ctx context.Context) {
 // destroyLocked destroys the dentry.
 //
 // Preconditions:
-// * d.fs.renameMu must be locked for writing.
-// * d.refs == 0.
+//   - d.fs.renameMu must be locked for writing.
+//   - d.refs == 0.
 func (d *dentry) destroyLocked(ctx context.Context) {
 	switch d.refs.Load() {
 	case 0:

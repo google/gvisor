@@ -88,8 +88,8 @@ func NewHostFileMapper() *HostFileMapper {
 // IncRefOn increments the reference count on all offsets in mr.
 //
 // Preconditions:
-// * mr.Length() != 0.
-// * mr.Start and mr.End must be page-aligned.
+//   - mr.Length() != 0.
+//   - mr.Start and mr.End must be page-aligned.
 func (f *HostFileMapper) IncRefOn(mr memmap.MappableRange) {
 	f.refsMu.Lock()
 	defer f.refsMu.Unlock()
@@ -112,8 +112,8 @@ func (f *HostFileMapper) IncRefOn(mr memmap.MappableRange) {
 // DecRefOn decrements the reference count on all offsets in mr.
 //
 // Preconditions:
-// * mr.Length() != 0.
-// * mr.Start and mr.End must be page-aligned.
+//   - mr.Length() != 0.
+//   - mr.Start and mr.End must be page-aligned.
 func (f *HostFileMapper) DecRefOn(mr memmap.MappableRange) {
 	f.refsMu.Lock()
 	defer f.refsMu.Unlock()
@@ -231,8 +231,8 @@ func (f *HostFileMapper) UnmapAll() {
 }
 
 // Preconditions:
-// * f.mapsMu must be locked.
-// * f.mappings[chunkStart] == m.
+//   - f.mapsMu must be locked.
+//   - f.mappings[chunkStart] == m.
 func (f *HostFileMapper) unmapAndRemoveLocked(chunkStart uint64, m mapping) {
 	if _, _, errno := unix.Syscall(unix.SYS_MUNMAP, m.addr, chunkSize, 0); errno != 0 {
 		// This leaks address space and is unexpected, but is otherwise

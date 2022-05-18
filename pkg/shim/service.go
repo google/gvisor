@@ -136,11 +136,11 @@ func New(ctx context.Context, id string, publisher shim.Publisher, cancel func()
 
 // service is the shim implementation of a remote shim over GRPC. It runs in 2
 // different modes:
-//   1. Service: process runs for the life time of the container and receives
-//      calls described in shimapi.TaskService interface.
-//   2. Tool: process is short lived and runs only to perform the requested
-//      operations and then exits. It implements the direct functions in
-//      shim.Shim interface.
+//  1. Service: process runs for the life time of the container and receives
+//     calls described in shimapi.TaskService interface.
+//  2. Tool: process is short lived and runs only to perform the requested
+//     operations and then exits. It implements the direct functions in
+//     shim.Shim interface.
 //
 // When the service is running, it saves a json file with state information so
 // that commands sent to the tool can load the state and perform the operation.
@@ -1105,8 +1105,7 @@ func newInit(path, workDir, namespace string, platform stdio.Platform, r *proc.C
 // path. If found, it's set as an annotation in the spec. This is done so that
 // the sandbox joins the pod cgroup. Otherwise, the sandbox would join the pause
 // container cgroup. Returns true if the spec was modified. Ex.:
-//   /kubepods/burstable/pod123/container123 => kubepods/burstable/pod123
-//
+// /kubepods/burstable/pod123/container123 => kubepods/burstable/pod123
 func setPodCgroup(spec *specs.Spec) bool {
 	if !utils.IsSandbox(spec) {
 		return false

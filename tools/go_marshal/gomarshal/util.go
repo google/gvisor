@@ -167,11 +167,14 @@ func debugfAt(p token.Position, f string, a ...interface{}) {
 // buffer. emit can be invoked in one of two ways:
 //
 // (1) emit("some string")
-//     When emit is called with a single string argument, it is simply copied to
-//     the output buffer without any further formatting.
+//
+//	When emit is called with a single string argument, it is simply copied to
+//	the output buffer without any further formatting.
+//
 // (2) emit(fmtString, args...)
-//     emit can also be invoked in a similar fashion to *Printf() functions,
-//     where the first argument is a format string.
+//
+//	emit can also be invoked in a similar fashion to *Printf() functions,
+//	where the first argument is a format string.
 //
 // Calling emit with a single argument that is not a string will result in a
 // panic, as the caller's intent is ambiguous.
@@ -357,24 +360,24 @@ func (i *importStmt) equivalent(other *importStmt) bool {
 //
 // An importTable representing them would look like this:
 //
-// importTable {
-//     is: map[string][]*importStmt {
-//         "sync": []*importStmt{
-//             importStmt{name:"sync", path:"sync", aliased:false}
-//             importStmt{name:"sync", path:"pkg/sync", aliased:false}
-//         },
-//         "kernel": []*importStmt{importStmt{
-//            name: "kernel",
-//            path: "pkg/sentry/kernel",
-//            aliased: false
-//         }},
-//         "ktime": []*importStmt{importStmt{
-//             name: "ktime",
-//             path: "pkg/sentry/kernel/time",
-//             aliased: true,
-//         }},
-//     }
-// }
+//	 importTable {
+//		is: map[string][]*importStmt {
+//		    "sync": []*importStmt{
+//		        importStmt{name:"sync", path:"sync", aliased:false}
+//		        importStmt{name:"sync", path:"pkg/sync", aliased:false}
+//		    },
+//		    "kernel": []*importStmt{importStmt{
+//		       name: "kernel",
+//		       path: "pkg/sentry/kernel",
+//		       aliased: false
+//		    }},
+//		    "ktime": []*importStmt{importStmt{
+//		        name: "ktime",
+//		        path: "pkg/sentry/kernel/time",
+//		        aliased: true,
+//		    }},
+//		}
+//	 }
 //
 // Note that the local name "sync" is assigned to two different import
 // statements. This is possible if the import statements are from different

@@ -43,14 +43,14 @@ const pidLimitUnlimited = pidMaxLimit + 1
 //
 // A task can charge a PIDs cgroup in two ways:
 //
-// 1) A task created prior to the PIDs controller being enabled, or created
-//    through kernel.CreateProcess (i.e. not from userspace) directly add
-//    committed charges via the Enter method.
+//  1. A task created prior to the PIDs controller being enabled, or created
+//     through kernel.CreateProcess (i.e. not from userspace) directly add
+//     committed charges via the Enter method.
 //
-// 2) A task created through Task.Clone (i.e. userspace fork/clone) first add a
-//    pending charge through the Charge method. This is a temporary reservation
-//    which ensures the cgroup has enough space to allow the task to start. Once
-//    the task startup succeeds, it calls Enter and consumes the reservation.
+//  2. A task created through Task.Clone (i.e. userspace fork/clone) first add a
+//     pending charge through the Charge method. This is a temporary reservation
+//     which ensures the cgroup has enough space to allow the task to start. Once
+//     the task startup succeeds, it calls Enter and consumes the reservation.
 //
 // +stateify savable
 type pidsController struct {

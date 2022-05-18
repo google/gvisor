@@ -361,10 +361,10 @@ type icmpV6TestEnv struct {
 // icmpV6Test and icmpV4Test look substantially similar at first look, but have
 // enough subtle differences in setup and test expectations to discourage
 // refactoring:
-//  - Different IP layers
-//  - Different testbench.Connections
-//  - Different UNIX domain and proto arguments
-//  - Different expectPacket and wantErrno for send and receive
+//   - Different IP layers
+//   - Different testbench.Connections
+//   - Different UNIX domain and proto arguments
+//   - Different expectPacket and wantErrno for send and receive
 type icmpV6Test struct{}
 
 func (test *icmpV6Test) setup(t *testing.T, dut testbench.DUT, bindTo, sendTo net.IP, bindToDevice bool) icmpV6TestEnv {

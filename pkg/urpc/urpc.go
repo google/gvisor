@@ -152,7 +152,6 @@ type registeredMethod struct {
 // idle -> processing, closed
 // processing -> idle, closeRequested
 // closeRequested -> closed
-//
 type clientState int
 
 // See clientState.

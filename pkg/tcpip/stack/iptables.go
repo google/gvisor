@@ -279,6 +279,7 @@ type checkTable struct {
 //   - Stack splitting, which can allocate.
 //   - Calls to interfaces, which can allocate.
 //   - Calls to dynamic functions, which can allocate.
+//
 // +checkescape:hard
 func (it *IPTables) shouldSkipOrPopulateTables(tables []checkTable, pkt *PacketBuffer) bool {
 	switch pkt.NetworkProtocolNumber {
@@ -605,8 +606,8 @@ func (it *IPTables) startReaper(interval time.Duration) {
 }
 
 // Preconditions:
-// * pkt is a IPv4 packet of at least length header.IPv4MinimumSize.
-// * pkt.NetworkHeader is not nil.
+//   - pkt is a IPv4 packet of at least length header.IPv4MinimumSize.
+//   - pkt.NetworkHeader is not nil.
 func (it *IPTables) checkChain(hook Hook, pkt *PacketBuffer, table Table, ruleIdx int, r *Route, addressEP AddressableEndpoint, inNicName, outNicName string) chainVerdict {
 	// Start from ruleIdx and walk the list of rules until a rule gives us
 	// a verdict.
@@ -652,8 +653,8 @@ func (it *IPTables) checkChain(hook Hook, pkt *PacketBuffer, table Table, ruleId
 }
 
 // Preconditions:
-// * pkt is a IPv4 packet of at least length header.IPv4MinimumSize.
-// * pkt.NetworkHeader is not nil.
+//   - pkt is a IPv4 packet of at least length header.IPv4MinimumSize.
+//   - pkt.NetworkHeader is not nil.
 func (it *IPTables) checkRule(hook Hook, pkt *PacketBuffer, table Table, ruleIdx int, r *Route, addressEP AddressableEndpoint, inNicName, outNicName string) (RuleVerdict, int) {
 	rule := table.Rules[ruleIdx]
 

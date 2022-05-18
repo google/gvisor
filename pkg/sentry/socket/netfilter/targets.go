@@ -256,11 +256,11 @@ func (*errorTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (tar
 	errTgt.UnmarshalUnsafe(buf)
 
 	// Error targets are used in 2 cases:
-	// * An actual error case. These rules have an error named
-	//   ErrorTargetName. The last entry of the table is usually an error
-	//   case to catch any packets that somehow fall through every rule.
-	// * To mark the start of a user defined chain. These
-	//   rules have an error with the name of the chain.
+	//	* An actual error case. These rules have an error named
+	//		ErrorTargetName. The last entry of the table is usually an error
+	//		case to catch any packets that somehow fall through every rule.
+	//	* To mark the start of a user defined chain. These
+	//		rules have an error with the name of the chain.
 	switch name := errTgt.Name.String(); name {
 	case ErrorTargetName:
 		return &errorTarget{stack.ErrorTarget{

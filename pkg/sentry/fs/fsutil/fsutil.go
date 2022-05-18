@@ -15,10 +15,10 @@
 // Package fsutil provides utilities for implementing fs.InodeOperations
 // and fs.FileOperations:
 //
-// - For embeddable utilities, see inode.go and file.go.
+//   - For embeddable utilities, see inode.go and file.go.
 //
-// - For fs.Inodes that require a page cache to be memory mapped, see
-//   inode_cache.go.
+//   - For fs.Inodes that require a page cache to be memory mapped, see
+//     inode_cache.go.
 //
-// - For anon fs.Inodes, see anon.go.
+//   - For anon fs.Inodes, see anon.go.
 package fsutil

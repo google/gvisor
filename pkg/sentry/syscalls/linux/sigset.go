@@ -49,10 +49,10 @@ func copyOutSigSet(t *kernel.Task, sigSetAddr hostarch.Addr, mask linux.SignalSe
 
 // copyInSigSetWithSize copies in a structure as below
 //
-//   struct {
-//       sigset_t* sigset_addr;
-//       size_t sizeof_sigset;
-//   };
+//	struct {
+//	    sigset_t* sigset_addr;
+//	    size_t sizeof_sigset;
+//	};
 //
 // and returns sigset_addr and size.
 func copyInSigSetWithSize(t *kernel.Task, addr hostarch.Addr) (hostarch.Addr, uint, error) {

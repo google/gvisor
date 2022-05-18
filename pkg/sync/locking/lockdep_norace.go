@@ -32,9 +32,11 @@ func NewMutexClass(t reflect.Type) *MutexClass {
 }
 
 // AddGLock is no-op without the lockdep tag.
+//
 //go:inline
 func AddGLock(class *MutexClass, subclass uint32) {}
 
 // DelGLock is no-op without the lockdep tag.
+//
 //go:inline
 func DelGLock(class *MutexClass, subclass uint32) {}

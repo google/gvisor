@@ -16,7 +16,6 @@
 // functions created by by Bob Jenkins.
 //
 // See https://en.wikipedia.org/wiki/Jenkins_hash_function#cite_note-dobbsx-1
-//
 package jenkins
 
 import (

@@ -206,13 +206,13 @@ func findHomeInPasswd(uid uint32, passwd io.Reader, defaultHome string) (string,
 		// /etc/passwd contains one line for each user account, with seven
 		// fields delimited by colons (“:”). These fields are:
 		//
-		// - login name
-		// - optional encrypted password
-		// - numerical user ID
-		// - numerical group ID
-		// - user name or comment field
-		// - user home directory
-		// - optional user command interpreter
+		//	- login name
+		//	- optional encrypted password
+		//	- numerical user ID
+		//	- numerical group ID
+		//	- user name or comment field
+		//	- user home directory
+		//	- optional user command interpreter
 		parts := strings.Split(line, ":")
 
 		found := false

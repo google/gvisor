@@ -135,7 +135,7 @@ type MountSourceFlags struct {
 // GenericMountSourceOptions splits a string containing comma separated tokens of the
 // format 'key=value' or 'key' into a map of keys and values. For example:
 //
-// data = "key0=value0,key1,key2=value2" -> map{'key0':'value0','key1':'','key2':'value2'}
+// data = "key0=value0,key1,key2=value2" -> map{'key0':'value0','key1':”,'key2':'value2'}
 //
 // If data contains duplicate keys, then the last token wins.
 func GenericMountSourceOptions(data string) map[string]string {

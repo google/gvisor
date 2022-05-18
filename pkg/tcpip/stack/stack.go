@@ -436,13 +436,13 @@ func (s *Stack) SetNetworkProtocolOption(network tcpip.NetworkProtocolNumber, op
 
 // NetworkProtocolOption allows retrieving individual protocol level option
 // values. This method returns an error if the protocol is not supported or
-// option is not supported by the protocol implementation.
-// e.g.
-// var v ipv4.MyOption
-// err := s.NetworkProtocolOption(tcpip.IPv4ProtocolNumber, &v)
-// if err != nil {
-//   ...
-// }
+// option is not supported by the protocol implementation. E.g.:
+//
+//	var v ipv4.MyOption
+//	err := s.NetworkProtocolOption(tcpip.IPv4ProtocolNumber, &v)
+//	if err != nil {
+//		...
+//	}
 func (s *Stack) NetworkProtocolOption(network tcpip.NetworkProtocolNumber, option tcpip.GettableNetworkProtocolOption) tcpip.Error {
 	netProto, ok := s.networkProtocols[network]
 	if !ok {
@@ -466,10 +466,11 @@ func (s *Stack) SetTransportProtocolOption(transport tcpip.TransportProtocolNumb
 // TransportProtocolOption allows retrieving individual protocol level option
 // values. This method returns an error if the protocol is not supported or
 // option is not supported by the protocol implementation.
-// var v tcp.SACKEnabled
-// if err := s.TransportProtocolOption(tcpip.TCPProtocolNumber, &v); err != nil {
-//   ...
-// }
+//
+//	var v tcp.SACKEnabled
+//	if err := s.TransportProtocolOption(tcpip.TCPProtocolNumber, &v); err != nil {
+//		...
+//	}
 func (s *Stack) TransportProtocolOption(transport tcpip.TransportProtocolNumber, option tcpip.GettableTransportProtocolOption) tcpip.Error {
 	transProtoState, ok := s.transportProtocols[transport]
 	if !ok {

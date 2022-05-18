@@ -29,15 +29,15 @@ type Waiter struct {
 
 	// g is one of:
 	//
-	// - 0: No goroutine is blocking in Wait.
+	//	- 0: No goroutine is blocking in Wait.
 	//
-	// - preparingG: A goroutine is in Wait preparing to sleep, but hasn't yet
-	// completed waiterUnlock(). Thus the wait can only be interrupted by
-	// replacing the value of g with 0 (the G may not be in state Gwaiting yet,
-	// so we can't call goready.)
+	//	- preparingG: A goroutine is in Wait preparing to sleep, but hasn't yet
+	//		completed waiterUnlock(). Thus the wait can only be interrupted by
+	//		replacing the value of g with 0 (the G may not be in state Gwaiting yet,
+	//		so we can't call goready.)
 	//
-	// - Otherwise: g is a pointer to the runtime.g in state Gwaiting for the
-	// goroutine blocked in Wait, which can only be woken by calling goready.
+	//	- Otherwise: g is a pointer to the runtime.g in state Gwaiting for the
+	//		goroutine blocked in Wait, which can only be woken by calling goready.
 	g uintptr `state:"zerovalue"`
 }
 

@@ -53,7 +53,7 @@ type genericFD interface {
 // being performed.
 //
 // Reference Model:
-// * Each control FD holds a ref on its Node for its entire lifetime.
+//   - Each control FD holds a ref on its Node for its entire lifetime.
 type ControlFD struct {
 	controlFDRefs
 	controlFDEntry
@@ -120,8 +120,8 @@ func (fd *ControlFD) destroyLocked() {
 // filesystem tree.
 //
 // Preconditions:
-// * server's rename mutex must be at least read locked.
-// * The caller must take a ref on node which is transferred to fd.
+//   - server's rename mutex must be at least read locked.
+//   - The caller must take a ref on node which is transferred to fd.
 func (fd *ControlFD) Init(c *Connection, node *Node, mode linux.FileMode, impl ControlFDImpl) {
 	fd.conn = c
 	fd.node = node
@@ -172,9 +172,9 @@ func (fd *ControlFD) Node() *Node {
 // RemoveFromConn removes this control FD from its owning connection.
 //
 // Preconditions:
-// * fd should not have been returned to the client. Otherwise the client can
-//   still refer to it.
-// * server's rename mutex must at least be read locked.
+//   - fd should not have been returned to the client. Otherwise the client can
+//     still refer to it.
+//   - server's rename mutex must at least be read locked.
 func (fd *ControlFD) RemoveFromConn() {
 	fd.conn.removeControlFDLocked(fd.id)
 }
@@ -224,7 +224,7 @@ func (fd *ControlFD) forEachOpenFD(fn func(ofd *OpenFD)) {
 // tree. See OpenFDImpl for the supported operations.
 //
 // Reference Model:
-// * An OpenFD takes a reference on the control FD it was opened on.
+//   - An OpenFD takes a reference on the control FD it was opened on.
 type OpenFD struct {
 	openFDRefs
 	openFDEntry
@@ -286,7 +286,7 @@ func (fd *OpenFD) Init(cfd *ControlFD, flags uint32, impl OpenFDImpl) {
 // BoundSocketFD represents a bound socket on the server.
 //
 // Reference Model:
-// * A BoundSocketFD takes a reference on the control FD it is bound to.
+//   - A BoundSocketFD takes a reference on the control FD it is bound to.
 type BoundSocketFD struct {
 	boundSocketFDRefs
 

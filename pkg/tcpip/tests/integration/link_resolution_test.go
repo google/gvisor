@@ -1444,11 +1444,11 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 			// Incoming TCP segments are handled in
 			// tcp.(*endpoint).handleSegmentLocked:
 			//
-			// - tcp.(*endpoint).rcv.handleRcvdSegment puts the segment on the
-			// segment queue and notifies waiting readers (such as this channel)
+			//	- tcp.(*endpoint).rcv.handleRcvdSegment puts the segment on the
+			//		segment queue and notifies waiting readers (such as this channel)
 			//
-			// - tcp.(*endpoint).snd.handleRcvdSegment sends an ACK for the segment
-			// and notifies the NUD machinery that the peer is reachable
+			//	- tcp.(*endpoint).snd.handleRcvdSegment sends an ACK for the segment
+			//		and notifies the NUD machinery that the peer is reachable
 			//
 			// Thus we must permit a delay between the readable signal and the
 			// expected NUD event.

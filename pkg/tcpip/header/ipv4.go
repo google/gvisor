@@ -24,21 +24,22 @@ import (
 
 // RFC 971 defines the fields of the IPv4 header on page 11 using the following
 // diagram: ("Figure 4")
-//    0                   1                   2                   3
-//    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-//   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-//   |Version|  IHL  |Type of Service|          Total Length         |
-//   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-//   |         Identification        |Flags|      Fragment Offset    |
-//   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-//   |  Time to Live |    Protocol   |         Header Checksum       |
-//   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-//   |                       Source Address                          |
-//   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-//   |                    Destination Address                        |
-//   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-//   |                    Options                    |    Padding    |
-//   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//
+//	 0                   1                   2                   3
+//	 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+//	+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//	|Version|  IHL  |Type of Service|          Total Length         |
+//	+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//	|         Identification        |Flags|      Fragment Offset    |
+//	+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//	|  Time to Live |    Protocol   |         Header Checksum       |
+//	+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//	|                       Source Address                          |
+//	+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//	|                    Destination Address                        |
+//	+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//	|                    Options                    |    Padding    |
+//	+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 const (
 	versIHL = 0
 	tos     = 1
@@ -230,19 +231,19 @@ func IPVersion(b []byte) int {
 // RFC 791 page 11 shows the header length (IHL) is in the lower 4 bits
 // of the first byte, and is counted in multiples of 4 bytes.
 //
-//     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-//    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-//    |Version|  IHL  |Type of Service|          Total Length         |
-//    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-//      (...)
-//     Version:  4 bits
-//       The Version field indicates the format of the internet header.  This
-//       document describes version 4.
+//	 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+//	+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//	|Version|  IHL  |Type of Service|          Total Length         |
+//	+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//	  (...)
+//	 Version:  4 bits
+//	   The Version field indicates the format of the internet header.  This
+//	   document describes version 4.
 //
-//     IHL:  4 bits
-//       Internet Header Length is the length of the internet header in 32
-//       bit words, and thus points to the beginning of the data.  Note that
-//       the minimum value for a correct header is 5.
+//	 IHL:  4 bits
+//	   Internet Header Length is the length of the internet header in 32
+//	   bit words, and thus points to the beginning of the data.  Note that
+//	   the minimum value for a correct header is 5.
 const (
 	ipVersionShift = 4
 	ipIHLMask      = 0x0f
@@ -328,8 +329,9 @@ func (b IPv4) SetDestinationAddressWithChecksumUpdate(new tcpip.Address) {
 
 // padIPv4OptionsLength returns the total length for IPv4 options of length l
 // after applying padding according to RFC 791:
-//    The internet header padding is used to ensure that the internet
-//    header ends on a 32 bit boundary.
+//
+//	The internet header padding is used to ensure that the internet
+//	header ends on a 32 bit boundary.
 func padIPv4OptionsLength(length uint8) uint8 {
 	return (length + IPv4IHLStride - 1) & ^uint8(IPv4IHLStride-1)
 }
@@ -668,10 +670,10 @@ func (i *IPv4OptionIterator) Finalize() IPv4Options {
 
 // Next returns the next IP option in the buffer/list of IP options.
 // It returns
-// - A slice of bytes holding the next option or nil if there is error.
-// - A boolean which is true if parsing of all the options is complete.
-//   Undefined in the case of error.
-// - An error indication which is non-nil if an error condition was found.
+//   - A slice of bytes holding the next option or nil if there is error.
+//   - A boolean which is true if parsing of all the options is complete.
+//     Undefined in the case of error.
+//   - An error indication which is non-nil if an error condition was found.
 func (i *IPv4OptionIterator) Next() (IPv4Option, bool, *IPv4OptParameterProblem) {
 	// The opts slice gets shorter as we process the options. When we have no
 	// bytes left we are done.
@@ -805,7 +807,6 @@ func (i *IPv4OptionIterator) Next() (IPv4Option, bool, *IPv4OptParameterProblem)
 // option Flags field.
 type IPv4OptTSFlags uint8
 
-//
 // Timestamp option specific related constants.
 const (
 	// IPv4OptionTimestampHdrLength is the length of the timestamp option header.
@@ -918,23 +919,24 @@ func (ts *IPv4OptionTimestamp) UpdateTimestamp(addr tcpip.Address, clock tcpip.C
 // RecordRoute option specific related constants.
 //
 // from RFC 791 page 20:
-//   Record Route
 //
-//         +--------+--------+--------+---------//--------+
-//         |00000111| length | pointer|     route data    |
-//         +--------+--------+--------+---------//--------+
-//           Type=7
+//	Record Route
 //
-//         The record route option provides a means to record the route of
-//         an internet datagram.
+//	      +--------+--------+--------+---------//--------+
+//	      |00000111| length | pointer|     route data    |
+//	      +--------+--------+--------+---------//--------+
+//	        Type=7
 //
-//         The option begins with the option type code.  The second octet
-//         is the option length which includes the option type code and the
-//         length octet, the pointer octet, and length-3 octets of route
-//         data.  The third octet is the pointer into the route data
-//         indicating the octet which begins the next area to store a route
-//         address.  The pointer is relative to this option, and the
-//         smallest legal value for the pointer is 4.
+//	      The record route option provides a means to record the route of
+//	      an internet datagram.
+//
+//	      The option begins with the option type code.  The second octet
+//	      is the option length which includes the option type code and the
+//	      length octet, the pointer octet, and length-3 octets of route
+//	      data.  The third octet is the pointer into the route data
+//	      indicating the octet which begins the next area to store a route
+//	      address.  The pointer is relative to this option, and the
+//	      smallest legal value for the pointer is 4.
 const (
 	// IPv4OptionRecordRouteHdrLength is the length of the Record Route option
 	// header.
@@ -978,20 +980,20 @@ func (rr *IPv4OptionRecordRoute) Contents() []byte { return *rr }
 //
 // from RFC 2113 section 2.1:
 //
-//     +--------+--------+--------+--------+
-//     |10010100|00000100|  2 octet value  |
-//     +--------+--------+--------+--------+
+//	+--------+--------+--------+--------+
+//	|10010100|00000100|  2 octet value  |
+//	+--------+--------+--------+--------+
 //
-//     Type:
-//     Copied flag:  1 (all fragments must carry the option)
-//     Option class: 0 (control)
-//     Option number: 20 (decimal)
+//	Type:
+//	Copied flag:  1 (all fragments must carry the option)
+//	Option class: 0 (control)
+//	Option number: 20 (decimal)
 //
-//     Length: 4
+//	Length: 4
 //
-//     Value:  A two octet code with the following values:
-//     0 - Router shall examine packet
-//     1-65535 - Reserved
+//	Value:  A two octet code with the following values:
+//	0 - Router shall examine packet
+//	1-65535 - Reserved
 const (
 	// IPv4OptionRouterAlertLength is the length of a Router Alert option.
 	IPv4OptionRouterAlertLength = 4

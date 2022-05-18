@@ -15,10 +15,10 @@
 // Package locking implements lock primitives with the correctness validator.
 //
 // All mutexes are divided on classes and the validator check following conditions:
-// * Mutexes of the same class are not taken more than once except cases when
-//   that is expected.
-// * Mutexes are never locked in a reverse order. Lock dependencies are tracked
-//   on the class level.
+//   - Mutexes of the same class are not taken more than once except cases when
+//     that is expected.
+//   - Mutexes are never locked in a reverse order. Lock dependencies are tracked
+//     on the class level.
 //
 // The validator is implemented in a very straightforward way. For each mutex
 // class, we maintain the ancestors list of all classes that have ever been

@@ -58,11 +58,11 @@ type channel struct {
 	fds  fdchannel.Endpoint
 	buf  buffer
 
-	// -- client only --
+	//	-- client only --
 	connected bool
 	active    bool
 
-	// -- server only --
+	//	-- server only --
 	client *fd.FD
 	done   chan struct{}
 }

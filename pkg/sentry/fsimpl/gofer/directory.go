@@ -37,10 +37,10 @@ func (d *dentry) isDir() bool {
 }
 
 // Preconditions:
-// - filesystem.renameMu must be locked.
-// - d.dirMu must be locked.
-// - d.isDir().
-// - child must be a newly-created dentry that has never had a parent.
+//   - filesystem.renameMu must be locked.
+//   - d.dirMu must be locked.
+//   - d.isDir().
+//   - child must be a newly-created dentry that has never had a parent.
 func (d *dentry) insertCreatedChildLocked(ctx context.Context, childIno *lisafs.Inode, childName string, updateChild func(child *dentry), ds **[]*dentry) error {
 	child, err := d.fs.newDentryLisa(ctx, childIno)
 	if err != nil {
@@ -56,10 +56,10 @@ func (d *dentry) insertCreatedChildLocked(ctx context.Context, childIno *lisafs.
 }
 
 // Preconditions:
-// * filesystem.renameMu must be locked.
-// * d.dirMu must be locked.
-// * d.isDir().
-// * child must be a newly-created dentry that has never had a parent.
+//   - filesystem.renameMu must be locked.
+//   - d.dirMu must be locked.
+//   - d.isDir().
+//   - child must be a newly-created dentry that has never had a parent.
 func (d *dentry) cacheNewChildLocked(child *dentry, name string) {
 	d.IncRef() // reference held by child on its parent
 	child.parent = d
@@ -71,8 +71,8 @@ func (d *dentry) cacheNewChildLocked(child *dentry, name string) {
 }
 
 // Preconditions:
-// * d.dirMu must be locked.
-// * d.isDir().
+//   - d.dirMu must be locked.
+//   - d.isDir().
 func (d *dentry) cacheNegativeLookupLocked(name string) {
 	// Don't cache negative lookups if InteropModeShared is in effect (since
 	// this makes remote lookup unavoidable), or if d.isSynthetic() (in which
@@ -106,9 +106,9 @@ type createSyntheticOpts struct {
 // in d.
 //
 // Preconditions:
-// * d.dirMu must be locked.
-// * d.isDir().
-// * d does not already contain a child with the given name.
+//   - d.dirMu must be locked.
+//   - d.isDir().
+//   - d does not already contain a child with the given name.
 func (d *dentry) createSyntheticChildLocked(opts *createSyntheticOpts) {
 	now := d.fs.clock.Now().Nanoseconds()
 	child := &dentry{
@@ -189,8 +189,8 @@ func (fd *directoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallba
 }
 
 // Preconditions:
-// * d.isDir().
-// * There exists at least one directoryFD representing d.
+//   - d.isDir().
+//   - There exists at least one directoryFD representing d.
 func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 	// NOTE(b/135560623): 9P2000.L's readdir does not specify behavior in the
 	// presence of concurrent mutation of an iterated directory, so
