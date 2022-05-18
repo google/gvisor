@@ -29,6 +29,7 @@ go_library(
         "//pkg/context",
         "//pkg/eventchannel",
         "//pkg/fd",
+        "//pkg/fspath",
         "//pkg/log",
         "//pkg/sentry/fdimport",
         "//pkg/sentry/fs",
