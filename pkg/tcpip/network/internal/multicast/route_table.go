@@ -298,7 +298,7 @@ func (r *RouteTable) newPendingRoute() PendingRoute {
 	}
 }
 
-// NewInstalledRoute instatiates an installed route for the table.
+// NewInstalledRoute instantiates an installed route for the table.
 func (r *RouteTable) NewInstalledRoute(inputInterface tcpip.NICID, outgoingInterfaces []OutgoingInterface) *InstalledRoute {
 	return &InstalledRoute{
 		expectedInputInterface: inputInterface,
@@ -407,7 +407,7 @@ func (r *RouteTable) getOrCreatePendingRouteRLocked(key RouteKey) (PendingRoute,
 //
 // Packets that were queued while the route was in the pending state are
 // returned. The caller assumes ownership of these packets and is responsible
-// for forwarding and relasing them. If an installed route already exists for
+// for forwarding and releasing them. If an installed route already exists for
 // the provided key, then it is overwritten.
 func (r *RouteTable) AddInstalledRoute(key RouteKey, route *InstalledRoute) []*stack.PacketBuffer {
 	r.installedMu.Lock()
