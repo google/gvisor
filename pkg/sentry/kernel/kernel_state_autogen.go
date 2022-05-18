@@ -2336,6 +2336,7 @@ func (t *threadGroupNode) StateTypeName() string {
 func (t *threadGroupNode) StateFields() []string {
 	return []string{
 		"pidns",
+		"pidWithinNS",
 		"eventQueue",
 		"leader",
 		"execing",
@@ -2352,13 +2353,14 @@ func (t *threadGroupNode) beforeSave() {}
 func (t *threadGroupNode) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
 	stateSinkObject.Save(0, &t.pidns)
-	stateSinkObject.Save(1, &t.eventQueue)
-	stateSinkObject.Save(2, &t.leader)
-	stateSinkObject.Save(3, &t.execing)
-	stateSinkObject.Save(4, &t.tasks)
-	stateSinkObject.Save(5, &t.tasksCount)
-	stateSinkObject.Save(6, &t.liveTasks)
-	stateSinkObject.Save(7, &t.activeTasks)
+	stateSinkObject.Save(1, &t.pidWithinNS)
+	stateSinkObject.Save(2, &t.eventQueue)
+	stateSinkObject.Save(3, &t.leader)
+	stateSinkObject.Save(4, &t.execing)
+	stateSinkObject.Save(5, &t.tasks)
+	stateSinkObject.Save(6, &t.tasksCount)
+	stateSinkObject.Save(7, &t.liveTasks)
+	stateSinkObject.Save(8, &t.activeTasks)
 }
 
 func (t *threadGroupNode) afterLoad() {}
@@ -2366,13 +2368,14 @@ func (t *threadGroupNode) afterLoad() {}
 // +checklocksignore
 func (t *threadGroupNode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.pidns)
-	stateSourceObject.Load(1, &t.eventQueue)
-	stateSourceObject.Load(2, &t.leader)
-	stateSourceObject.Load(3, &t.execing)
-	stateSourceObject.Load(4, &t.tasks)
-	stateSourceObject.Load(5, &t.tasksCount)
-	stateSourceObject.Load(6, &t.liveTasks)
-	stateSourceObject.Load(7, &t.activeTasks)
+	stateSourceObject.Load(1, &t.pidWithinNS)
+	stateSourceObject.Load(2, &t.eventQueue)
+	stateSourceObject.Load(3, &t.leader)
+	stateSourceObject.Load(4, &t.execing)
+	stateSourceObject.Load(5, &t.tasks)
+	stateSourceObject.Load(6, &t.tasksCount)
+	stateSourceObject.Load(7, &t.liveTasks)
+	stateSourceObject.Load(8, &t.activeTasks)
 }
 
 func (t *taskNode) StateTypeName() string {
