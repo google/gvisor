@@ -78,14 +78,14 @@ func (t *Task) run() {
 	for {
 		// Explanation for this ordering:
 		//
-		// - A freshly-started task that is stopped should not do anything
-		// before it enters the stop.
+		//	- A freshly-started task that is stopped should not do anything
+		//		before it enters the stop.
 		//
-		// - If taskRunState.execute returns nil, the task goroutine should
-		// exit without checking for a stop.
+		//	- If taskRunState.execute returns nil, the task goroutine should
+		//		exit without checking for a stop.
 		//
-		// - Task.Start won't start Task.run if t.runState is nil, so this
-		// ordering is safe.
+		//	- Task.Start won't start Task.run if t.runState is nil, so this
+		//		ordering is safe.
 		t.doStop()
 		t.runState = t.runState.execute(t)
 		if t.runState == nil {

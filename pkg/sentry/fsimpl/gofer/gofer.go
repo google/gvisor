@@ -16,21 +16,22 @@
 // server, interchangably referred to as "gofers" throughout this package.
 //
 // Lock order:
-//   regularFileFD/directoryFD.mu
-//     filesystem.renameMu
-//       dentry.cachingMu
-//         filesystem.cacheMu
-//         dentry.dirMu
-//           filesystem.syncMu
-//           dentry.metadataMu
-//             *** "memmap.Mappable locks" below this point
-//             dentry.mapsMu
-//               *** "memmap.Mappable locks taken by Translate" below this point
-//               dentry.handleMu
-//                 dentry.dataMu
-//             filesystem.inoMu
-//   specialFileFD.mu
-//     specialFileFD.bufMu
+//
+//	regularFileFD/directoryFD.mu
+//	  filesystem.renameMu
+//	    dentry.cachingMu
+//	      filesystem.cacheMu
+//	      dentry.dirMu
+//	        filesystem.syncMu
+//	        dentry.metadataMu
+//	          *** "memmap.Mappable locks" below this point
+//	          dentry.mapsMu
+//	            *** "memmap.Mappable locks taken by Translate" below this point
+//	            dentry.handleMu
+//	              dentry.dataMu
+//	          filesystem.inoMu
+//	specialFileFD.mu
+//	  specialFileFD.bufMu
 //
 // Locking dentry.dirMu and dentry.metadataMu in multiple dentries requires that
 // either ancestor dentries are locked before descendant dentries, or that
@@ -136,14 +137,14 @@ type filesystem struct {
 
 	// renameMu serves two purposes:
 	//
-	// - It synchronizes path resolution with renaming initiated by this
-	// client.
+	//	- It synchronizes path resolution with renaming initiated by this
+	//		client.
 	//
-	// - It is held by path resolution to ensure that reachable dentries remain
-	// valid. A dentry is reachable by path resolution if it has a non-zero
-	// reference count (such that it is usable as vfs.ResolvingPath.Start() or
-	// is reachable from its children), or if it is a child dentry (such that
-	// it is reachable from its parent).
+	//	- It is held by path resolution to ensure that reachable dentries remain
+	//		valid. A dentry is reachable by path resolution if it has a non-zero
+	//		reference count (such that it is usable as vfs.ResolvingPath.Start() or
+	//		is reachable from its children), or if it is a child dentry (such that
+	//		it is reachable from its parent).
 	renameMu sync.RWMutex `state:"nosave"`
 
 	// cachedDentries contains all dentries with 0 references. (Due to race
@@ -242,47 +243,47 @@ const (
 	// InteropModeExclusive is appropriate when the filesystem client is the
 	// only user of the remote filesystem.
 	//
-	// - The client may cache arbitrary filesystem state (file data, metadata,
-	// filesystem structure, etc.).
+	//	- The client may cache arbitrary filesystem state (file data, metadata,
+	//		filesystem structure, etc.).
 	//
-	// - Client changes to filesystem state may be sent to the remote
-	// filesystem asynchronously, except when server permission checks are
-	// necessary.
+	//	- Client changes to filesystem state may be sent to the remote
+	//		filesystem asynchronously, except when server permission checks are
+	//		necessary.
 	//
-	// - File timestamps are based on client clocks. This ensures that users of
-	// the client observe timestamps that are coherent with their own clocks
-	// and consistent with Linux's semantics (in particular, it is not always
-	// possible for clients to set arbitrary atimes and mtimes depending on the
-	// remote filesystem implementation, and never possible for clients to set
-	// arbitrary ctimes.)
+	//	- File timestamps are based on client clocks. This ensures that users of
+	//		the client observe timestamps that are coherent with their own clocks
+	//		and consistent with Linux's semantics (in particular, it is not always
+	//		possible for clients to set arbitrary atimes and mtimes depending on the
+	//		remote filesystem implementation, and never possible for clients to set
+	//		arbitrary ctimes.)
 	InteropModeExclusive InteropMode = iota
 
 	// InteropModeWritethrough is appropriate when there are read-only users of
 	// the remote filesystem that expect to observe changes made by the
 	// filesystem client.
 	//
-	// - The client may cache arbitrary filesystem state.
+	//	- The client may cache arbitrary filesystem state.
 	//
-	// - Client changes to filesystem state must be sent to the remote
-	// filesystem synchronously.
+	//	- Client changes to filesystem state must be sent to the remote
+	//		filesystem synchronously.
 	//
-	// - File timestamps are based on client clocks. As a corollary, access
-	// timestamp changes from other remote filesystem users will not be visible
-	// to the client.
+	//	- File timestamps are based on client clocks. As a corollary, access
+	//		timestamp changes from other remote filesystem users will not be visible
+	//		to the client.
 	InteropModeWritethrough
 
 	// InteropModeShared is appropriate when there are users of the remote
 	// filesystem that may mutate its state other than the client.
 	//
-	// - The client must verify ("revalidate") cached filesystem state before
-	// using it.
+	//	- The client must verify ("revalidate") cached filesystem state before
+	//		using it.
 	//
-	// - Client changes to filesystem state must be sent to the remote
-	// filesystem synchronously.
+	//	- Client changes to filesystem state must be sent to the remote
+	//		filesystem synchronously.
 	//
-	// - File timestamps are based on server clocks. This is necessary to
-	// ensure that timestamp changes are synchronized between remote filesystem
-	// users.
+	//	- File timestamps are based on server clocks. This is necessary to
+	//		ensure that timestamp changes are synchronized between remote filesystem
+	//		users.
 	//
 	// Note that the correctness of InteropModeShared depends on the server
 	// correctly implementing 9P fids (i.e. each fid immutably represents a
@@ -830,11 +831,11 @@ type dentry struct {
 
 	// If this dentry represents a directory, children contains:
 	//
-	// - Mappings of child filenames to dentries representing those children.
+	//	- Mappings of child filenames to dentries representing those children.
 	//
-	// - Mappings of child filenames that are known not to exist to nil
-	// dentries (only if InteropModeShared is not in effect and the directory
-	// is not synthetic).
+	//	- Mappings of child filenames that are known not to exist to nil
+	//		dentries (only if InteropModeShared is not in effect and the directory
+	//		is not synthetic).
 	//
 	// children is protected by dirMu.
 	children map[string]*dentry
@@ -871,11 +872,11 @@ type dentry struct {
 	btime atomicbitops.Int64
 	// File size, which differs from other metadata in two ways:
 	//
-	// - We make a best-effort attempt to keep it up to date even if
-	// !dentry.cachedMetadataAuthoritative() for the sake of O_APPEND writes.
+	//	- We make a best-effort attempt to keep it up to date even if
+	//		!dentry.cachedMetadataAuthoritative() for the sake of O_APPEND writes.
 	//
-	// - size is protected by both metadataMu and dataMu (i.e. both must be
-	// locked to mutate it; locking either is sufficient to access it).
+	//	- size is protected by both metadataMu and dataMu (i.e. both must be
+	//		locked to mutate it; locking either is sufficient to access it).
 	size atomicbitops.Uint64
 	// If this dentry does not represent a synthetic file, deleted is 0, and
 	// atimeDirty/mtimeDirty are non-zero, atime/mtime may have diverged from the
@@ -895,19 +896,19 @@ type dentry struct {
 	// the file into memmap.MappingSpaces. mappings is protected by mapsMu.
 	mappings memmap.MappingSet
 
-	// - If this dentry represents a regular file or directory, readFile is the
-	// p9.File used for reads by all regularFileFDs/directoryFDs representing
-	// this dentry, and readFD (if not -1) is a host FD equivalent to readFile
-	// used as a faster alternative.
+	//	- If this dentry represents a regular file or directory, readFile is the
+	//		p9.File used for reads by all regularFileFDs/directoryFDs representing
+	//		this dentry, and readFD (if not -1) is a host FD equivalent to readFile
+	//		used as a faster alternative.
 	//
-	// - If this dentry represents a regular file, writeFile is the p9.File
-	// used for writes by all regularFileFDs representing this dentry, and
-	// writeFD (if not -1) is a host FD equivalent to writeFile used as a
-	// faster alternative.
+	//	- If this dentry represents a regular file, writeFile is the p9.File
+	//		used for writes by all regularFileFDs representing this dentry, and
+	//		writeFD (if not -1) is a host FD equivalent to writeFile used as a
+	//		faster alternative.
 	//
-	// - If this dentry represents a regular file, mmapFD is the host FD used
-	// for memory mappings. If mmapFD is -1, no such FD is available, and the
-	// internal page cache implementation is used for memory mappings instead.
+	//	- If this dentry represents a regular file, mmapFD is the host FD used
+	//		for memory mappings. If mmapFD is -1, no such FD is available, and the
+	//		internal page cache implementation is used for memory mappings instead.
 	//
 	// These fields are protected by handleMu. readFD, writeFD, and mmapFD are
 	// additionally written using atomic memory operations, allowing them to be
@@ -1276,8 +1277,9 @@ func (d *dentry) updateFromGetattr(ctx context.Context) error {
 }
 
 // Preconditions:
-// * !d.isSynthetic().
-// * d.metadataMu is locked.
+//   - !d.isSynthetic().
+//   - d.metadataMu is locked.
+//
 // +checklocks:d.metadataMu
 func (d *dentry) updateFromStatLisaLocked(ctx context.Context, fdLisa *lisafs.ClientFD) error {
 	handleMuRLocked := false
@@ -1315,8 +1317,9 @@ func (d *dentry) updateFromStatLisaLocked(ctx context.Context, fdLisa *lisafs.Cl
 }
 
 // Preconditions:
-// * !d.isSynthetic().
-// * d.metadataMu is locked.
+//   - !d.isSynthetic().
+//   - d.metadataMu is locked.
+//
 // +checklocks:d.metadataMu
 func (d *dentry) updateFromGetattrLocked(ctx context.Context, file p9file) error {
 	handleMuRLocked := false
@@ -1914,7 +1917,8 @@ func (fs *filesystem) evictAllCachedDentriesLocked(ctx context.Context) {
 }
 
 // Preconditions:
-// * fs.renameMu must be locked for writing; it may be temporarily unlocked.
+//   - fs.renameMu must be locked for writing; it may be temporarily unlocked.
+//
 // +checklocks:fs.renameMu
 func (fs *filesystem) evictCachedDentryLocked(ctx context.Context) {
 	fs.cacheMu.Lock()
@@ -1958,10 +1962,11 @@ func (fs *filesystem) evictCachedDentryLocked(ctx context.Context) {
 // destroyLocked destroys the dentry.
 //
 // Preconditions:
-// * d.fs.renameMu must be locked for writing; it may be temporarily unlocked.
-// * d.refs == 0.
-// * d.parent.children[d.name] != d, i.e. d is not reachable by path traversal
-//   from its former parent dentry.
+//   - d.fs.renameMu must be locked for writing; it may be temporarily unlocked.
+//   - d.refs == 0.
+//   - d.parent.children[d.name] != d, i.e. d is not reachable by path traversal
+//     from its former parent dentry.
+//
 // +checklocks:d.fs.renameMu
 func (d *dentry) destroyLocked(ctx context.Context) {
 	switch d.refs.Load() {
@@ -2142,8 +2147,8 @@ func (d *dentry) removeXattr(ctx context.Context, creds *auth.Credentials, name 
 }
 
 // Preconditions:
-// * !d.isSynthetic().
-// * d.isRegularFile() || d.isDir().
+//   - !d.isSynthetic().
+//   - d.isRegularFile() || d.isDir().
 func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool) error {
 	// O_TRUNC unconditionally requires us to obtain a new handle (opened with
 	// O_TRUNC).
@@ -2176,11 +2181,11 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 		// Get a new handle. If this file has been opened for both reading and
 		// writing, try to get a single handle that is usable for both:
 		//
-		// - Writable memory mappings of a host FD require that the host FD is
-		// opened for both reading and writing.
+		//	- Writable memory mappings of a host FD require that the host FD is
+		//		opened for both reading and writing.
 		//
-		// - NOTE(b/141991141): Some filesystems may not ensure coherence
-		// between multiple handles for the same file.
+		//	- NOTE(b/141991141): Some filesystems may not ensure coherence
+		//		between multiple handles for the same file.
 		var (
 			openReadable bool
 			openWritable bool

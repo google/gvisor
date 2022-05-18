@@ -39,11 +39,11 @@
 // In special cases, a read lock may be upgraded to a write lock and a write lock
 // can be downgraded to a read lock.  This can only happen if:
 //
-//  * read lock upgrade to write lock: There can be only one reader and the reader
-//    must be the same as the requested write lock holder.
+//   - read lock upgrade to write lock: There can be only one reader and the reader
+//     must be the same as the requested write lock holder.
 //
-//  * write lock downgrade to read lock: The writer must be the same as the requested
-//    read lock holder.
+//   - write lock downgrade to read lock: The writer must be the same as the requested
+//     read lock holder.
 //
 // UnlockRegion always succeeds.  If LockRegion fails the caller should normally
 // interpret this as "try again later".

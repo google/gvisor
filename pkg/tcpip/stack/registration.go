@@ -750,10 +750,10 @@ type NetworkProtocol interface {
 
 	// Parse sets pkt.NetworkHeader and trims pkt.Data appropriately. It
 	// returns:
-	// - The encapsulated protocol, if present.
-	// - Whether there is an encapsulated transport protocol payload (e.g. ARP
-	//   does not encapsulate anything).
-	// - Whether pkt.Data was large enough to parse and set pkt.NetworkHeader.
+	//	- The encapsulated protocol, if present.
+	//	- Whether there is an encapsulated transport protocol payload (e.g. ARP
+	//		does not encapsulate anything).
+	//	- Whether pkt.Data was large enough to parse and set pkt.NetworkHeader.
 	Parse(pkt *PacketBuffer) (proto tcpip.TransportProtocolNumber, hasTransportHdr bool, ok bool)
 }
 

@@ -384,19 +384,19 @@ func (s *NUDState) ReachableTime() time.Duration {
 // This SHOULD automatically be invoked during certain situations, as per
 // RFC 4861 section 6.3.4:
 //
-//    If the received Reachable Time value is non-zero, the host SHOULD set its
-//    BaseReachableTime variable to the received value.  If the new value
-//    differs from the previous value, the host SHOULD re-compute a new random
-//    ReachableTime value.  ReachableTime is computed as a uniformly
-//    distributed random value between MIN_RANDOM_FACTOR and MAX_RANDOM_FACTOR
-//    times the BaseReachableTime.  Using a random component eliminates the
-//    possibility that Neighbor Unreachability Detection messages will
-//    synchronize with each other.
+//	If the received Reachable Time value is non-zero, the host SHOULD set its
+//	BaseReachableTime variable to the received value.  If the new value
+//	differs from the previous value, the host SHOULD re-compute a new random
+//	ReachableTime value.  ReachableTime is computed as a uniformly
+//	distributed random value between MIN_RANDOM_FACTOR and MAX_RANDOM_FACTOR
+//	times the BaseReachableTime.  Using a random component eliminates the
+//	possibility that Neighbor Unreachability Detection messages will
+//	synchronize with each other.
 //
-//    In most cases, the advertised Reachable Time value will be the same in
-//    consecutive Router Advertisements, and a host's BaseReachableTime rarely
-//    changes.  In such cases, an implementation SHOULD ensure that a new
-//    random value gets re-computed at least once every few hours.
+//	In most cases, the advertised Reachable Time value will be the same in
+//	consecutive Router Advertisements, and a host's BaseReachableTime rarely
+//	changes.  In such cases, an implementation SHOULD ensure that a new
+//	random value gets re-computed at least once every few hours.
 //
 // s.mu MUST be locked for writing.
 func (s *NUDState) recomputeReachableTimeLocked() {

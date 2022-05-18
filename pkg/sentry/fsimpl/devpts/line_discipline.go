@@ -46,8 +46,8 @@ const (
 // modify control characters (e.g. Ctrl-C for SIGINT), etc. The following man
 // pages are good resources for how to affect the line discipline:
 //
-//   * termios(3)
-//   * tty_ioctl(4)
+//   - termios(3)
+//   - tty_ioctl(4)
 //
 // This file corresponds most closely to drivers/tty/n_tty.c.
 //
@@ -58,26 +58,29 @@ const (
 // discipline reads the bytes, modifies them or takes special action if
 // required, and enqueues them to be read by the other end of the pty:
 //
-//       input from terminal    +-------------+   input to process (e.g. bash)
-//    +------------------------>| input queue |---------------------------+
-//    |   (inputQueueWrite)     +-------------+     (inputQueueRead)      |
-//    |                                                                   |
-//    |                                                                   v
+//	   input from terminal    +-------------+   input to process (e.g. bash)
+//	+------------------------>| input queue |---------------------------+
+//	|   (inputQueueWrite)     +-------------+     (inputQueueRead)      |
+//	|                                                                   |
+//	|                                                                   v
+//
 // masterFD                                                           replicaFD
-//    ^                                                                   |
-//    |                                                                   |
-//    |   output to terminal   +--------------+    output from process    |
-//    +------------------------| output queue |<--------------------------+
-//        (outputQueueRead)    +--------------+    (outputQueueWrite)
+//
+//	^                                                                   |
+//	|                                                                   |
+//	|   output to terminal   +--------------+    output from process    |
+//	+------------------------| output queue |<--------------------------+
+//	    (outputQueueRead)    +--------------+    (outputQueueWrite)
 //
 // There is special handling for the ECHO option, where bytes written to the
 // input queue are also output back to the terminal by being written to
 // l.outQueue by the input queue transformer.
 //
 // Lock order:
-//  termiosMu
-//    inQueue.mu
-//      outQueue.mu
+//
+//	termiosMu
+//	  inQueue.mu
+//	    outQueue.mu
 //
 // +stateify savable
 type lineDiscipline struct {
@@ -277,8 +280,8 @@ type outputQueueTransformer struct{}
 // drivers/tty/n_tty.c:do_output_char for an analogous kernel function.
 //
 // Preconditions:
-// * l.termiosMu must be held for reading.
-// * q.mu must be held.
+//   - l.termiosMu must be held for reading.
+//   - q.mu must be held.
 func (*outputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte) (int, bool) {
 	// transformOutput is effectively always in noncanonical mode, as the
 	// master termios never has ICANON set.
@@ -356,8 +359,8 @@ type inputQueueTransformer struct{}
 // echoed, in which case we need to notify readers.
 //
 // Preconditions:
-// * l.termiosMu must be held for reading.
-// * q.mu must be held.
+//   - l.termiosMu must be held for reading.
+//   - q.mu must be held.
 func (*inputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte) (int, bool) {
 	// If there's a line waiting to be read in canonical mode, don't write
 	// anything else to the read buffer.
@@ -441,8 +444,8 @@ func (*inputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte)
 // we find a terminating character. Signal/echo processing still occurs.
 //
 // Precondition:
-// * l.termiosMu must be held for reading.
-// * q.mu must be held.
+//   - l.termiosMu must be held for reading.
+//   - q.mu must be held.
 func (l *lineDiscipline) shouldDiscard(q *queue, cBytes []byte) bool {
 	return l.termios.LEnabled(linux.ICANON) && len(q.readBuf)+len(cBytes) >= canonMaxBytes && !l.termios.IsTerminating(cBytes)
 }

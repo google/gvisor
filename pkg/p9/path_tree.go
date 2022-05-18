@@ -26,11 +26,12 @@ import (
 // These are shared by all fidRefs that point to the same path.
 //
 // Lock ordering:
-//   opMu
-//     childMu
 //
-//   Two different pathNodes may only be locked if Server.renameMu is held for
-//   write, in which case they can be acquired in any order.
+//	opMu
+//	  childMu
+//
+// Two different pathNodes may only be locked if Server.renameMu is held for
+// write, in which case they can be acquired in any order.
 type pathNode struct {
 	// opMu synchronizes high-level, sematic operations, such as the
 	// simultaneous creation and deletion of a file.

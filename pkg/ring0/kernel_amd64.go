@@ -273,11 +273,11 @@ func doSwitchToUser(
 // registers in c.registers will be restored (not segments).
 //
 // Note that any code written in Go should adhere to Go expected environment:
-// * Initialized floating point state (required for optimizations using
-//   floating point instructions).
-// * Go TLS in FS_BASE (this is required by splittable functions, calls into
-//   the runtime, calls to assembly functions (Go 1.17+ ABI wrappers access
-//   TLS)).
+//   - Initialized floating point state (required for optimizations using
+//     floating point instructions).
+//   - Go TLS in FS_BASE (this is required by splittable functions, calls into
+//     the runtime, calls to assembly functions (Go 1.17+ ABI wrappers access
+//     TLS)).
 //
 //go:nosplit
 func startGo(c *CPU) {

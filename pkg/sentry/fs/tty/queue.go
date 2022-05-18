@@ -200,8 +200,8 @@ func (q *queue) writeBytes(b []byte, l *lineDiscipline) {
 // buffer.
 //
 // Preconditions:
-// * l.termiosMu must be held for reading.
-// * q.mu must be locked.
+//   - l.termiosMu must be held for reading.
+//   - q.mu must be locked.
 func (q *queue) pushWaitBufLocked(l *lineDiscipline) int {
 	if q.waitBufLen == 0 {
 		return 0

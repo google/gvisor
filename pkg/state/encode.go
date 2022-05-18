@@ -112,13 +112,13 @@ type encodeState struct {
 //
 // isSameSizeParent deals with objects like this:
 //
-// struct child {
-//     // fields..
-// }
+//	struct child {
+//		// fields..
+//	}
 //
-// struct parent {
-//     c child
-// }
+//	struct parent {
+//		c child
+//	}
 //
 // var p parent
 // record(&p.c)
@@ -127,9 +127,9 @@ type encodeState struct {
 //
 // Or like this:
 //
-// struct child {
-//     // fields
-// }
+//	struct child {
+//		// fields
+//	}
 //
 // var arr [1]parent
 // record(&arr[0])

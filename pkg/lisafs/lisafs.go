@@ -17,20 +17,21 @@
 // filesystem server.
 //
 // Lock ordering:
-//   Server.renameMu
-//     Node.opMu
-//       Node.childrenMu
-//         Node.controlFDsMu
+//
+//	Server.renameMu
+//	  Node.opMu
+//	    Node.childrenMu
+//	      Node.controlFDsMu
 //
 // Locking rules:
-// * Node.childrenMu can be simultaneously held on multiple nodes, ancestors
-//   before descendants.
-// * Node.opMu can be simultaneously held on multiple nodes, ancestors before
-//   descendants.
-// * Node.opMu can be simultaneously held on two nodes that do not have an
-//   ancestor-descendant relationship. One node must be an internal (directory)
-//   node and the other a leaf (non-directory) node. Directory must be locked
-//   before non-directories.
-// * "Ancestors before descendants" requires that Server.renameMu is locked to
-//   ensure that this ordering remains satisfied.
+//   - Node.childrenMu can be simultaneously held on multiple nodes, ancestors
+//     before descendants.
+//   - Node.opMu can be simultaneously held on multiple nodes, ancestors before
+//     descendants.
+//   - Node.opMu can be simultaneously held on two nodes that do not have an
+//     ancestor-descendant relationship. One node must be an internal (directory)
+//     node and the other a leaf (non-directory) node. Directory must be locked
+//     before non-directories.
+//   - "Ancestors before descendants" requires that Server.renameMu is locked to
+//     ensure that this ordering remains satisfied.
 package lisafs

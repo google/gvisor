@@ -48,7 +48,8 @@ import (
 // loopback interface only.
 //
 // Run the following container to test it:
-//  docker run -di --runtime=runsc -p 8080:80 -v $PWD:/usr/local/apache2/htdocs/ httpd:2.4
+//
+//	docker run -di --runtime=runsc -p 8080:80 -v $PWD:/usr/local/apache2/htdocs/ httpd:2.4
 func setupNetwork(conn *urpc.Client, pid int, conf *config.Config) error {
 	log.Infof("Setting up network")
 
@@ -433,7 +434,8 @@ func routesForIface(iface net.Interface) ([]boot.Route, *boot.Route, *boot.Route
 }
 
 // removeAddress removes IP address from network device. It's equivalent to:
-//   ip addr del <ipAndMask> dev <name>
+//
+//	ip addr del <ipAndMask> dev <name>
 func removeAddress(source netlink.Link, ipAndMask string) error {
 	addr, err := netlink.ParseAddr(ipAndMask)
 	if err != nil {

@@ -53,6 +53,7 @@ func (i *Int64) ptr() *int64 {
 }
 
 // FromInt64 returns an Int64 initialized to value v.
+//
 //go:nosplit
 func FromInt64(v int64) Int64 {
 	var i Int64
@@ -61,6 +62,7 @@ func FromInt64(v int64) Int64 {
 }
 
 // Load is analogous to atomic.LoadInt64.
+//
 //go:nosplit
 func (i *Int64) Load() int64 {
 	return atomic.LoadInt64(i.ptr())
@@ -77,6 +79,7 @@ func (i *Int64) RacyLoad() int64 {
 }
 
 // Store is analogous to atomic.StoreInt64.
+//
 //go:nosplit
 func (i *Int64) Store(v int64) {
 	atomic.StoreInt64(i.ptr(), v)
@@ -93,6 +96,7 @@ func (i *Int64) RacyStore(v int64) {
 }
 
 // Add is analogous to atomic.AddInt64.
+//
 //go:nosplit
 func (i *Int64) Add(v int64) int64 {
 	return atomic.AddInt64(i.ptr(), v)
@@ -110,12 +114,14 @@ func (i *Int64) RacyAdd(v int64) int64 {
 }
 
 // Swap is analogous to atomic.SwapInt64.
+//
 //go:nosplit
 func (i *Int64) Swap(v int64) int64 {
 	return atomic.SwapInt64(i.ptr(), v)
 }
 
 // CompareAndSwap is analogous to atomic.CompareAndSwapInt64.
+//
 //go:nosplit
 func (i *Int64) CompareAndSwap(oldVal, newVal int64) bool {
 	return atomic.CompareAndSwapInt64(&i.value, oldVal, newVal)
@@ -150,6 +156,7 @@ func (u *Uint64) ptr() *uint64 {
 }
 
 // FromUint64 returns an Uint64 initialized to value v.
+//
 //go:nosplit
 func FromUint64(v uint64) Uint64 {
 	var u Uint64
@@ -158,6 +165,7 @@ func FromUint64(v uint64) Uint64 {
 }
 
 // Load is analogous to atomic.LoadUint64.
+//
 //go:nosplit
 func (u *Uint64) Load() uint64 {
 	return atomic.LoadUint64(u.ptr())
@@ -174,6 +182,7 @@ func (u *Uint64) RacyLoad() uint64 {
 }
 
 // Store is analogous to atomic.StoreUint64.
+//
 //go:nosplit
 func (u *Uint64) Store(v uint64) {
 	atomic.StoreUint64(u.ptr(), v)
@@ -190,6 +199,7 @@ func (u *Uint64) RacyStore(v uint64) {
 }
 
 // Add is analogous to atomic.AddUint64.
+//
 //go:nosplit
 func (u *Uint64) Add(v uint64) uint64 {
 	return atomic.AddUint64(u.ptr(), v)
@@ -207,12 +217,14 @@ func (u *Uint64) RacyAdd(v uint64) uint64 {
 }
 
 // Swap is analogous to atomic.SwapUint64.
+//
 //go:nosplit
 func (u *Uint64) Swap(v uint64) uint64 {
 	return atomic.SwapUint64(u.ptr(), v)
 }
 
 // CompareAndSwap is analogous to atomic.CompareAndSwapUint64.
+//
 //go:nosplit
 func (u *Uint64) CompareAndSwap(oldVal, newVal uint64) bool {
 	return atomic.CompareAndSwapUint64(u.ptr(), oldVal, newVal)

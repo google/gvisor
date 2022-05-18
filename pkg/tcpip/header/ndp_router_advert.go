@@ -27,22 +27,22 @@ var _ fmt.Stringer = NDPRoutePreference(0)
 //
 // As per RFC 4191 section 2.1,
 //
-//   Default router preferences and preferences for more-specific routes
-//   are encoded the same way.
+//	Default router preferences and preferences for more-specific routes
+//	are encoded the same way.
 //
-//   Preference values are encoded as a two-bit signed integer, as
-//   follows:
+//	Preference values are encoded as a two-bit signed integer, as
+//	follows:
 //
-//      01      High
-//      00      Medium (default)
-//      11      Low
-//      10      Reserved - MUST NOT be sent
+//	   01      High
+//	   00      Medium (default)
+//	   11      Low
+//	   10      Reserved - MUST NOT be sent
 //
-//   Note that implementations can treat the value as a two-bit signed
-//   integer.
+//	Note that implementations can treat the value as a two-bit signed
+//	integer.
 //
-//   Having just three values reinforces that they are not metrics and
-//   more values do not appear to be necessary for reasonable scenarios.
+//	Having just three values reinforces that they are not metrics and
+//	more values do not appear to be necessary for reasonable scenarios.
 type NDPRoutePreference uint8
 
 const (
@@ -91,19 +91,19 @@ type NDPRouterAdvert []byte
 
 // As per RFC 4191 section 2.2,
 //
-//       0                   1                   2                   3
-//       0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-//      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-//      |     Type      |     Code      |          Checksum             |
-//      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-//      | Cur Hop Limit |M|O|H|Prf|Resvd|       Router Lifetime         |
-//      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-//      |                         Reachable Time                        |
-//      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-//      |                          Retrans Timer                        |
-//      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-//      |   Options ...
-//      +-+-+-+-+-+-+-+-+-+-+-+-
+//	 0                   1                   2                   3
+//	 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+//	+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//	|     Type      |     Code      |          Checksum             |
+//	+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//	| Cur Hop Limit |M|O|H|Prf|Resvd|       Router Lifetime         |
+//	+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//	|                         Reachable Time                        |
+//	+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//	|                          Retrans Timer                        |
+//	+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//	|   Options ...
+//	+-+-+-+-+-+-+-+-+-+-+-+-
 const (
 	// NDPRAMinimumSize is the minimum size of a valid NDP Router
 	// Advertisement message (body of an ICMPv6 packet).

@@ -17,15 +17,15 @@
 //
 // Lock order:
 //
-// filesystem.mu
-//   inode.mu
-//     regularFileFD.offMu
-//       *** "memmap.Mappable locks" below this point
-//       regularFile.mapsMu
-//         *** "memmap.Mappable locks taken by Translate" below this point
-//         regularFile.dataMu
-//           fs.pagesUsedMu
-//     directory.iterMu
+//	filesystem.mu
+//		inode.mu
+//		  regularFileFD.offMu
+//		    *** "memmap.Mappable locks" below this point
+//		    regularFile.mapsMu
+//		      *** "memmap.Mappable locks taken by Translate" below this point
+//		      regularFile.dataMu
+//		        fs.pagesUsedMu
+//		  directory.iterMu
 package tmpfs
 
 import (
@@ -487,10 +487,10 @@ func (i *inode) init(impl interface{}, fs *filesystem, kuid auth.KUID, kgid auth
 // incLinksLocked increments i's link count.
 //
 // Preconditions:
-// * filesystem.mu must be locked for writing.
-// * i.mu must be lcoked.
-// * i.nlink != 0.
-// * i.nlink < maxLinks.
+//   - filesystem.mu must be locked for writing.
+//   - i.mu must be lcoked.
+//   - i.nlink != 0.
+//   - i.nlink < maxLinks.
 func (i *inode) incLinksLocked() {
 	if i.nlink.RacyLoad() == 0 {
 		panic("tmpfs.inode.incLinksLocked() called with no existing links")
@@ -505,9 +505,9 @@ func (i *inode) incLinksLocked() {
 // remove a reference on i as well.
 //
 // Preconditions:
-// * filesystem.mu must be locked for writing.
-// * i.mu must be lcoked.
-// * i.nlink != 0.
+//   - filesystem.mu must be locked for writing.
+//   - i.mu must be lcoked.
+//   - i.nlink != 0.
 func (i *inode) decLinksLocked(ctx context.Context) {
 	if i.nlink.RacyLoad() == 0 {
 		panic("tmpfs.inode.decLinksLocked() called with no existing links")
@@ -790,8 +790,8 @@ func (i *inode) touchCMtime() {
 }
 
 // Preconditions:
-// * The caller has called vfs.Mount.CheckBeginWrite().
-// * inode.mu must be locked.
+//   - The caller has called vfs.Mount.CheckBeginWrite().
+//   - inode.mu must be locked.
 func (i *inode) touchCMtimeLocked() {
 	now := i.fs.clock.Now().Nanoseconds()
 	i.mtime.Store(now)

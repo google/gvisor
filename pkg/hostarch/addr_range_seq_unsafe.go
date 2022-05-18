@@ -83,9 +83,9 @@ func AddrRangeSeqFromSlice(slice []AddrRange) AddrRangeSeq {
 }
 
 // Preconditions:
-// * The combined length of all AddrRanges in slice <= limit.
-// * limit >= 0.
-// * If len(slice) != 0, then limit > 0.
+//   - The combined length of all AddrRanges in slice <= limit.
+//   - limit >= 0.
+//   - If len(slice) != 0, then limit > 0.
 func addrRangeSeqFromSliceLimited(slice []AddrRange, limit int64) AddrRangeSeq {
 	switch len(slice) {
 	case 0:
@@ -179,13 +179,13 @@ func (ars AddrRangeSeq) externalTail() AddrRangeSeq {
 // at least ars.Head(), even if n == 0. This guarantees that the basic pattern
 // of:
 //
-//     for !ars.IsEmpty() {
-//       n, err = doIOWith(ars.Head())
-//       if err != nil {
-//         return err
-//       }
-//       ars = ars.DropFirst(n)
-//     }
+//	for !ars.IsEmpty() {
+//	  n, err = doIOWith(ars.Head())
+//	  if err != nil {
+//	    return err
+//	  }
+//	  ars = ars.DropFirst(n)
+//	}
 //
 // works even in the presence of zero-length AddrRanges.
 //

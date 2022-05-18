@@ -32,35 +32,35 @@ import (
 // upper filesytem so that the file can be modified in the upper
 // filesystem. Copying a file involves several steps:
 //
-// - All parent directories of the file are created in the upper
-//   filesystem if they don't exist there. For instance:
+//   - All parent directories of the file are created in the upper
+//     filesystem if they don't exist there. For instance:
 //
 //     upper /dir0
 //     lower /dir0/dir1/file
 //
-//   copyUp of /dir0/dir1/file creates /dir0/dir1 in order to create
-//   /dir0/dir1/file.
+//     copyUp of /dir0/dir1/file creates /dir0/dir1 in order to create
+//     /dir0/dir1/file.
 //
-// - The file content is copied from the lower file to the upper
-//   file. For symlinks this is the symlink target. For directories,
-//   upper directory entries are merged with lower directory entries
-//   so there is no need to copy any entries.
+//   - The file content is copied from the lower file to the upper
+//     file. For symlinks this is the symlink target. For directories,
+//     upper directory entries are merged with lower directory entries
+//     so there is no need to copy any entries.
 //
-// - A subset of file attributes of the lower file are set on the
-//   upper file. These are the file owner, the file timestamps,
-//   and all non-overlay extended attributes. copyUp will fail if
-//   the upper filesystem does not support the setting of these
-//   attributes.
+//   - A subset of file attributes of the lower file are set on the
+//     upper file. These are the file owner, the file timestamps,
+//     and all non-overlay extended attributes. copyUp will fail if
+//     the upper filesystem does not support the setting of these
+//     attributes.
 //
-//   The file's permissions are set when the file is created and its
-//   size will be brought up to date when its contents are copied.
-//   Notably no attempt is made to bring link count up to date because
-//   hard links are currently not preserved across overlay filesystems.
+//     The file's permissions are set when the file is created and its
+//     size will be brought up to date when its contents are copied.
+//     Notably no attempt is made to bring link count up to date because
+//     hard links are currently not preserved across overlay filesystems.
 //
-// - Memory mappings of the lower file are invalidated and memory
-//   references are transferred to the upper file. From this point on,
-//   memory mappings of the file will be backed by content in the upper
-//   filesystem.
+//   - Memory mappings of the lower file are invalidated and memory
+//     references are transferred to the upper file. From this point on,
+//     memory mappings of the file will be backed by content in the upper
+//     filesystem.
 //
 // Synchronization:
 //
@@ -71,13 +71,13 @@ import (
 //
 // The following operations synchronize with copyUp using copyMu:
 //
-// - InodeOperations, i.e. to ensure that looking up a directory takes
-//   into account new upper filesystem directories created by copy up,
-//   which subsequently can be modified.
+//   - InodeOperations, i.e. to ensure that looking up a directory takes
+//     into account new upper filesystem directories created by copy up,
+//     which subsequently can be modified.
 //
-// - FileOperations, i.e. to ensure that reading from a file does not
-//   continue using a stale, lower filesystem handle when the file is
-//   written to.
+//   - FileOperations, i.e. to ensure that reading from a file does not
+//     continue using a stale, lower filesystem handle when the file is
+//     written to.
 //
 // Lock ordering: Dirent.mu -> Inode.overlay.copyMu -> Inode.mu.
 //
@@ -183,12 +183,12 @@ func doCopyUp(ctx context.Context, d *Dirent) error {
 // Returns a generic error on failure.
 //
 // Preconditions:
-// * parent.Inode.overlay.upper must be non-nil.
-// * next.Inode.overlay.copyMu must be locked writable.
-// * next.Inode.overlay.lower must be non-nil.
-// * next.Inode.overlay.lower.StableAttr.Type must be RegularFile, Directory,
-//   or Symlink.
-// * upper filesystem must support setting file ownership and timestamps.
+//   - parent.Inode.overlay.upper must be non-nil.
+//   - next.Inode.overlay.copyMu must be locked writable.
+//   - next.Inode.overlay.lower must be non-nil.
+//   - next.Inode.overlay.lower.StableAttr.Type must be RegularFile, Directory,
+//     or Symlink.
+//   - upper filesystem must support setting file ownership and timestamps.
 func copyUpLocked(ctx context.Context, parent *Dirent, next *Dirent) error {
 	// Extract the attributes of the file we wish to copy.
 	attrs, err := next.Inode.overlay.lower.UnstableAttr(ctx)

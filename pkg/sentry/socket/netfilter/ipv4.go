@@ -235,12 +235,12 @@ func filterFromIPTIP(iptip linux.IPTIP) (stack.IPHeaderFilter, error) {
 
 func containsUnsupportedFields4(iptip linux.IPTIP) bool {
 	// The following features are supported:
-	// - Protocol
-	// - Dst and DstMask
-	// - Src and SrcMask
-	// - The inverse destination IP check flag
-	// - InputInterface, InputInterfaceMask and its inverse.
-	// - OutputInterface, OutputInterfaceMask and its inverse.
+	//	- Protocol
+	//	- Dst and DstMask
+	//	- Src and SrcMask
+	//	- The inverse destination IP check flag
+	//	- InputInterface, InputInterfaceMask and its inverse.
+	//	- OutputInterface, OutputInterfaceMask and its inverse.
 	const flagMask = 0
 	// Disable any supported inverse flags.
 	const inverseMask = linux.IPT_INV_DSTIP | linux.IPT_INV_SRCIP |

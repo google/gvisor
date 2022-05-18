@@ -43,11 +43,12 @@ const (
 // Memory allocated for the ring buffer: tpBlockSize * tpBlockNR = 2 MiB
 //
 // NOTE:
-//   Frames need to be aligned at 16 byte boundaries.
-//   BlockSize needs to be page aligned.
 //
-//   For details see PACKET_MMAP setting constraints in
-//   https://www.kernel.org/doc/Documentation/networking/packet_mmap.txt
+//	Frames need to be aligned at 16 byte boundaries.
+//	BlockSize needs to be page aligned.
+//
+//	For details see PACKET_MMAP setting constraints in
+//	https://www.kernel.org/doc/Documentation/networking/packet_mmap.txt
 const (
 	tpFrameSize = 65536 + 128
 	tpBlockSize = tpFrameSize * 32

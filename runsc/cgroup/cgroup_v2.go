@@ -96,8 +96,8 @@ func (c *cgroupV2) createCgroupPaths() (bool, error) {
 	// setup all known controllers for the current subtree
 	// For example, given path /foo/bar and mount /sys/fs/cgroup, we need to write
 	// the controllers to:
-	// * /sys/fs/cgroup/cgroup.subtree_control
-	// * /sys/fs/cgroup/foo/cgroup.subtree_control
+	//	* /sys/fs/cgroup/cgroup.subtree_control
+	//	* /sys/fs/cgroup/foo/cgroup.subtree_control
 	val := "+" + strings.Join(c.Controllers, " +")
 	elements := strings.Split(c.Path, "/")
 	current := c.Mountpoint
@@ -724,7 +724,7 @@ func convertMemorySwapToCgroupV2Value(memorySwap, memory int64) (int64, error) {
 		return -1, nil
 	}
 	if memorySwap == -1 || memorySwap == 0 {
-		// -1 is "max", 0 is "unset", so treat as is
+		// -1 is "max", 0 is "unset", so treat as is.
 		return memorySwap, nil
 	}
 	// sanity checks

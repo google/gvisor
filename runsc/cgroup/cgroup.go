@@ -170,7 +170,8 @@ func fillFromAncestor(path string) (string, error) {
 }
 
 // countCpuset returns the number of CPU in a string formatted like:
-// 		"0-2,7,12-14  # bits 0, 1, 2, 7, 12, 13, and 14 set" - man 7 cpuset
+//
+//	"0-2,7,12-14  # bits 0, 1, 2, 7, 12, 13, and 14 set" - man 7 cpuset
 func countCpuset(cpuset string) (int, error) {
 	var count int
 	for _, p := range strings.Split(cpuset, ",") {
@@ -321,13 +322,15 @@ type Cgroup interface {
 }
 
 // cgroupV1 represents a group inside all controllers. For example:
-//   Name='/foo/bar' maps to /sys/fs/cgroup/<controller>/foo/bar on
-//   all controllers.
+//
+//	Name='/foo/bar' maps to /sys/fs/cgroup/<controller>/foo/bar on
+//	all controllers.
 //
 // If Name is relative, it uses the parent cgroup path to determine the
 // location. For example:
-//   Name='foo/bar' and Parent[ctrl]="/user.slice", then it will map to
-//   /sys/fs/cgroup/<ctrl>/user.slice/foo/bar
+//
+//	Name='foo/bar' and Parent[ctrl]="/user.slice", then it will map to
+//	/sys/fs/cgroup/<ctrl>/user.slice/foo/bar
 type cgroupV1 struct {
 	Name    string            `json:"name"`
 	Parents map[string]string `json:"parents"`

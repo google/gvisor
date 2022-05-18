@@ -17,18 +17,18 @@
 //
 // Lock order:
 //
-// fs locks, except for memmap.Mappable locks
-//   mm.MemoryManager.metadataMu
-//     mm.MemoryManager.mappingMu
-//       Locks taken by memmap.Mappable methods other than Translate
-//         mm.MemoryManager.activeMu
-//           Locks taken by memmap.Mappable.Translate
-//             mm.privateRefs.mu
-//               platform.AddressSpace locks
-//                 memmap.File locks
-//         mm.aioManager.mu
-//           mm.AIOContext.mu
-//         kernel.TaskSet.mu
+//	 fs locks, except for memmap.Mappable locks
+//		mm.MemoryManager.metadataMu
+//		  mm.MemoryManager.mappingMu
+//		    Locks taken by memmap.Mappable methods other than Translate
+//		      mm.MemoryManager.activeMu
+//		        Locks taken by memmap.Mappable.Translate
+//		          mm.privateRefs.mu
+//		            platform.AddressSpace locks
+//		              memmap.File locks
+//		      mm.aioManager.mu
+//		        mm.AIOContext.mu
+//		      kernel.TaskSet.mu
 //
 // Only mm.MemoryManager.Fork is permitted to lock mm.MemoryManager.activeMu in
 // multiple mm.MemoryManagers, as it does so in a well-defined order (forked

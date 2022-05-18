@@ -16,13 +16,13 @@ package kernel
 
 // This file implements the task exit cycle:
 //
-// - Tasks are asynchronously requested to exit with Task.Kill.
+//	- Tasks are asynchronously requested to exit with Task.Kill.
 //
-// - When able, the task goroutine enters the exit path starting from state
-// runExit.
+//	- When able, the task goroutine enters the exit path starting from state
+//		runExit.
 //
-// - Other tasks observe completed exits with Task.Wait (which implements the
-// wait*() family of syscalls).
+//	- Other tasks observe completed exits with Task.Wait (which implements the
+//		wait*() family of syscalls).
 
 import (
 	"errors"
@@ -454,24 +454,24 @@ func (t *Task) reparentLocked(parent *Task) {
 //
 // There are a few ways for an exit notification to be resolved:
 //
-// - The exit notification may be acknowledged by a call to Task.Wait with
-// WaitOptions.ConsumeEvent set (e.g. due to a wait4() syscall).
+//	- The exit notification may be acknowledged by a call to Task.Wait with
+//   WaitOptions.ConsumeEvent set (e.g. due to a wait4() syscall).
 //
-// - If the notified party is the parent, and the parent thread group is not
-// also the tracer thread group, and the notification signal is SIGCHLD, the
-// parent may explicitly ignore the notification (see quote in exitNotify).
-// Note that it's possible for the notified party to ignore the signal in other
-// cases, but the notification is only resolved under the above conditions.
-// (Actually, there is one exception; see the last paragraph of the "leader,
-// has tracer, tracer thread group is parent thread group" case below.)
+//	- If the notified party is the parent, and the parent thread group is not
+//		also the tracer thread group, and the notification signal is SIGCHLD, the
+//		parent may explicitly ignore the notification (see quote in exitNotify).
+//		Note that it's possible for the notified party to ignore the signal in other
+//		cases, but the notification is only resolved under the above conditions.
+//		(Actually, there is one exception; see the last paragraph of the "leader,
+//		has tracer, tracer thread group is parent thread group" case below.)
 //
-// - If the notified party is the parent, and the parent does not exist, the
-// notification is resolved as if ignored. (This is only possible in the
-// sentry. In Linux, the only task / thread group without a parent is global
-// init, and killing global init causes a kernel panic.)
+//	- If the notified party is the parent, and the parent does not exist, the
+//		notification is resolved as if ignored. (This is only possible in the
+//		sentry. In Linux, the only task / thread group without a parent is global
+//		init, and killing global init causes a kernel panic.)
 //
-// - If the notified party is a tracer, the tracer may detach the traced task.
-// (Zombie tasks cannot be ptrace-attached, so the reverse is not possible.)
+//	- If the notified party is a tracer, the tracer may detach the traced task.
+//		(Zombie tasks cannot be ptrace-attached, so the reverse is not possible.)
 //
 // In addition, if the notified party is the parent, the parent may exit and
 // cause the notifying task to be reparented to another thread group. This does
@@ -482,23 +482,23 @@ func (t *Task) reparentLocked(parent *Task) {
 // whether it is a thread group leader; whether the task is ptraced; and, if
 // so, whether the tracer thread group is the same as the parent thread group.
 //
-// - Non-leader, no tracer: No notification is generated; the task is reaped
-// immediately.
+//	- Non-leader, no tracer: No notification is generated; the task is reaped
+//		immediately.
 //
-// - Non-leader, has tracer: SIGCHLD is sent to the tracer. When the tracer
-// notification is resolved (by waiting or detaching), the task is reaped. (For
-// non-leaders, whether the tracer and parent thread groups are the same is
-// irrelevant.)
+//	- Non-leader, has tracer: SIGCHLD is sent to the tracer. When the tracer
+//		notification is resolved (by waiting or detaching), the task is reaped. (For
+//		non-leaders, whether the tracer and parent thread groups are the same is
+//		irrelevant.)
 //
-// - Leader, no tracer: The task remains a zombie, with no notification sent,
-// until all other tasks in the thread group are dead. (In Linux terms, this
-// condition is indicated by include/linux/sched.h:thread_group_empty(); tasks
-// are removed from their thread_group list in kernel/exit.c:release_task() =>
-// __exit_signal() => __unhash_process().) Then the thread group's termination
-// signal is sent to the parent. When the parent notification is resolved (by
-// waiting or ignoring), the task is reaped.
+//	- Leader, no tracer: The task remains a zombie, with no notification sent,
+//		until all other tasks in the thread group are dead. (In Linux terms, this
+//		condition is indicated by include/linux/sched.h:thread_group_empty(); tasks
+//		are removed from their thread_group list in kernel/exit.c:release_task() =>
+// 		__exit_signal() => __unhash_process().) Then the thread group's termination
+//		signal is sent to the parent. When the parent notification is resolved (by
+//		waiting or ignoring), the task is reaped.
 //
-// - Leader, has tracer, tracer thread group is not parent thread group:
+//	- Leader, has tracer, tracer thread group is not parent thread group:
 // SIGCHLD is sent to the tracer. When the tracer notification is resolved (by
 // waiting or detaching), and all other tasks in the thread group are dead, the
 // thread group's termination signal is sent to the parent. (Note that the
@@ -506,7 +506,7 @@ func (t *Task) reparentLocked(parent *Task) {
 // group is empty.) When the parent notification is resolved, the task is
 // reaped.
 //
-// - Leader, has tracer, tracer thread group is parent thread group:
+//	- Leader, has tracer, tracer thread group is parent thread group:
 //
 // If all other tasks in the thread group are dead, the thread group's
 // termination signal is sent to the parent. At this point, the notification
@@ -634,11 +634,11 @@ func (t *Task) exitNotifyLocked(fromPtraceDetach bool) {
 				//
 				// Some undocumented Linux-specific details:
 				//
-				// - All of the above is ignored if the termination signal isn't
-				// SIGCHLD.
+				//	- All of the above is ignored if the termination signal isn't
+				//		SIGCHLD.
 				//
-				// - SA_NOCLDWAIT causes the leader to be immediately reaped, but
-				// does not suppress the SIGCHLD.
+				//	- SA_NOCLDWAIT causes the leader to be immediately reaped, but
+				//		does not suppress the SIGCHLD.
 				signalParent := t.tg.terminationSignal.IsValid()
 				t.parent.tg.signalHandlers.mu.Lock()
 				if t.tg.terminationSignal == linux.SIGCHLD || fromPtraceDetach {

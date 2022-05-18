@@ -17,8 +17,8 @@
 //
 // Lock order:
 //
-// pgalloc.MemoryFile.mu
-//   pgalloc.MemoryFile.mappingsMu
+//	 pgalloc.MemoryFile.mu
+//		pgalloc.MemoryFile.mappingsMu
 package pgalloc
 
 import (
@@ -219,11 +219,11 @@ const (
 	// As of this writing, the behavior of DelayedEvictionEnabled depends on
 	// whether or not MemoryFileOpts.UseHostMemcgPressure is enabled:
 	//
-	// - If UseHostMemcgPressure is true, evictions are delayed until memory
-	// pressure is indicated.
+	//	- If UseHostMemcgPressure is true, evictions are delayed until memory
+	//		pressure is indicated.
 	//
-	// - Otherwise, evictions are only delayed until the reclaimer goroutine
-	// is out of work (pages to reclaim).
+	//	- Otherwise, evictions are only delayed until the reclaimer goroutine
+	//		is out of work (pages to reclaim).
 	DelayedEvictionEnabled
 
 	// DelayedEvictionManual requires that evictable allocations are only
@@ -572,8 +572,8 @@ func findAvailableRangeBottomUp(usage *usageSet, length, alignment uint64) (memm
 // by r.ReadToBlocks(), it returns that error.
 //
 // Preconditions:
-// * length > 0.
-// * length must be page-aligned.
+//   - length > 0.
+//   - length must be page-aligned.
 func (f *MemoryFile) AllocateAndFill(length uint64, kind usage.MemoryKind, r safemem.Reader) (memmap.FileRange, error) {
 	fr, err := f.Allocate(length, AllocOpts{Kind: kind})
 	if err != nil {
@@ -1260,9 +1260,9 @@ func (f *MemoryFile) startEvictionsLocked() bool {
 }
 
 // Preconditions:
-// * info == f.evictable[user].
-// * !info.evicting.
-// * f.mu must be locked.
+//   - info == f.evictable[user].
+//   - !info.evicting.
+//   - f.mu must be locked.
 func (f *MemoryFile) startEvictionGoroutineLocked(user EvictableMemoryUser, info *evictableMemoryUserInfo) {
 	info.evicting = true
 	f.evictionWG.Add(1)

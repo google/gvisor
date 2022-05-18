@@ -40,8 +40,8 @@
 //
 // Lock order:
 //
-// subprocess.mu
-//   context.mu
+//	 subprocess.mu
+//		context.mu
 package ptrace
 
 import (

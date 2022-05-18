@@ -59,17 +59,17 @@ func SetFilter(instrs []linux.BPFInstruction) error {
 
 // SetFilterInChild is equivalent to SetFilter, but:
 //
-// - It is safe to call after runtime.syscall_runtime_AfterForkInChild.
+//   - It is safe to call after runtime.syscall_runtime_AfterForkInChild.
 //
-// - It requires that the calling goroutine cannot be moved to another thread,
-// which either requires that runtime.LockOSThread() is in effect or that the
-// caller is in fact in a fork()ed child process.
+//   - It requires that the calling goroutine cannot be moved to another thread,
+//     which either requires that runtime.LockOSThread() is in effect or that the
+//     caller is in fact in a fork()ed child process.
 //
-// - Since fork()ed child processes cannot perform heap allocation, it returns
-// a unix.Errno rather than an error.
+//   - Since fork()ed child processes cannot perform heap allocation, it returns
+//     a unix.Errno rather than an error.
 //
-// - The race instrumentation has to be disabled for all functions that are
-// called in a forked child.
+//   - The race instrumentation has to be disabled for all functions that are
+//     called in a forked child.
 //
 //go:norace
 //go:nosplit

@@ -92,7 +92,7 @@ type connState struct {
 	// reqGate counts requests that are still being handled.
 	reqGate sync.Gate
 
-	// -- below relates to the legacy handler --
+	//	-- below relates to the legacy handler --
 
 	// recvMu serializes receiving from conn.
 	recvMu sync.Mutex
@@ -113,7 +113,7 @@ type connState struct {
 	// conn is the connection used by the legacy transport.
 	conn *unet.Socket
 
-	// -- below relates to the flipcall handler --
+	//	-- below relates to the flipcall handler --
 
 	// channelMu protects below.
 	channelMu sync.Mutex

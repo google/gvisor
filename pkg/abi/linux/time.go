@@ -206,10 +206,11 @@ type Itimerspec struct {
 }
 
 // ItimerVal mimics the following struct in <sys/time.h>
-//   struct itimerval {
-//     struct timeval it_interval; /* next value */
-//     struct timeval it_value;    /* current value */
-//   };
+//
+//	struct itimerval {
+//	  struct timeval it_interval; /* next value */
+//	  struct timeval it_value;    /* current value */
+//	};
 //
 // +marshal
 type ItimerVal struct {

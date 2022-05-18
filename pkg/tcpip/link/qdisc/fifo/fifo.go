@@ -128,9 +128,9 @@ func (qd *queueDispatcher) dispatchLoop() {
 // WritePacket implements stack.QueueingDiscipline.WritePacket.
 //
 // The packet must have the following fields populated:
-//  - pkt.EgressRoute
-//  - pkt.GSOOptions
-//  - pkt.NetworkProtocolNumber
+//   - pkt.EgressRoute
+//   - pkt.GSOOptions
+//   - pkt.NetworkProtocolNumber
 func (d *discipline) WritePacket(pkt *stack.PacketBuffer) tcpip.Error {
 	if d.closed.Load() == qDiscClosed {
 		return &tcpip.ErrClosedForSend{}

@@ -72,16 +72,16 @@ const (
 //
 // A more human-readable version:
 //
-//  Prefix        Precedence Label
-//  ::1/128               50     0
-//  ::/0                  40     1
-//  ::ffff:0:0/96         35     4
-//  2002::/16             30     2
-//  2001::/32              5     5
-//  fc00::/7               3    13
-//  ::/96                  1     3
-//  fec0::/10              1    11
-//  3ffe::/16              1    12
+//	Prefix        Precedence Label
+//	::1/128               50     0
+//	::/0                  40     1
+//	::ffff:0:0/96         35     4
+//	2002::/16             30     2
+//	2001::/32              5     5
+//	fc00::/7               3    13
+//	::/96                  1     3
+//	fec0::/10              1    11
+//	3ffe::/16              1    12
 //
 // The table is sorted by prefix length so longest-prefix match can be easily
 // achieved.
@@ -91,27 +91,27 @@ const (
 //
 // As per RFC 4291 section 2.5.5.1 (for ::/96),
 //
-//   The "IPv4-Compatible IPv6 address" is now deprecated because the
-//   current IPv6 transition mechanisms no longer use these addresses.
-//   New or updated implementations are not required to support this
-//   address type.
+//	The "IPv4-Compatible IPv6 address" is now deprecated because the
+//	current IPv6 transition mechanisms no longer use these addresses.
+//	New or updated implementations are not required to support this
+//	address type.
 //
 // As per RFC 3879 section 4 (for fec0::/10),
 //
-//    This document formally deprecates the IPv6 site-local unicast prefix
-//    defined in [RFC3513], i.e., 1111111011 binary or FEC0::/10.
+//	This document formally deprecates the IPv6 site-local unicast prefix
+//	defined in [RFC3513], i.e., 1111111011 binary or FEC0::/10.
 //
 // As per RFC 3701 section 1 (for 3ffe::/16),
 //
-//   As clearly stated in [TEST-NEW], the addresses for the 6bone are
-//   temporary and will be reclaimed in the future. It further states
-//   that all users of these addresses (within the 3FFE::/16 prefix) will
-//   be required to renumber at some time in the future.
+//	As clearly stated in [TEST-NEW], the addresses for the 6bone are
+//	temporary and will be reclaimed in the future. It further states
+//	that all users of these addresses (within the 3FFE::/16 prefix) will
+//	be required to renumber at some time in the future.
 //
 // and section 2,
 //
-//   Thus after the pTLA allocation cutoff date January 1, 2004, it is
-//   REQUIRED that no new 6bone 3FFE pTLAs be allocated.
+//	Thus after the pTLA allocation cutoff date January 1, 2004, it is
+//	REQUIRED that no new 6bone 3FFE pTLAs be allocated.
 //
 // MUST NOT BE MODIFIED.
 var policyTable = [...]struct {
@@ -1148,9 +1148,9 @@ func (e *endpoint) processExtensionHeaders(h header.IPv6, pkt *stack.PacketBuffe
 
 	// Create a VV to parse the packet. We don't plan to modify anything here.
 	// vv consists of:
-	// - Any IPv6 header bytes after the first 40 (i.e. extensions).
-	// - The transport header, if present.
-	// - Any other payload data.
+	//	- Any IPv6 header bytes after the first 40 (i.e. extensions).
+	//	- The transport header, if present.
+	//	- Any other payload data.
 	vv := pkt.NetworkHeader().View()[header.IPv6MinimumSize:].ToVectorisedView()
 	vv.AppendView(pkt.TransportHeader().View())
 	vv.AppendViews(pkt.Data().Views())

@@ -64,16 +64,16 @@ type InodeOperations interface {
 	//
 	// Lookup may return one of:
 	//
-	// * A nil Dirent and a non-nil error. If the reason that Lookup failed
+	//	* A nil Dirent and a non-nil error. If the reason that Lookup failed
 	//   was because the name does not exist under Inode, then must return
 	//   linuxerr.ENOENT.
 	//
-	// * If name does not exist under dir and the file system wishes this
+	//	* If name does not exist under dir and the file system wishes this
 	//   fact to be cached, a non-nil Dirent containing a nil Inode and a
 	//   nil error. This is a negative Dirent and must have exactly one
 	//   reference (at-construction reference).
 	//
-	// * If name does exist under this dir, a non-nil Dirent containing a
+	//	* If name does exist under this dir, a non-nil Dirent containing a
 	//   non-nil Inode, and a nil error. File systems that take extra
 	//   references on this Dirent should implement DirentOperations.
 	Lookup(ctx context.Context, dir *Inode, name string) (*Dirent, error)
@@ -82,9 +82,9 @@ type InodeOperations interface {
 	// whose Dirent backs the new Inode. Implementations must ensure that
 	// name does not already exist. Create may return one of:
 	//
-	// * A nil File and a non-nil error.
+	//	* A nil File and a non-nil error.
 	//
-	// * A non-nil File and a nil error. File.Dirent will be a new Dirent,
+	//	* A non-nil File and a nil error. File.Dirent will be a new Dirent,
 	// with a single reference held by File. File systems that take extra
 	// references on this Dirent should implement DirentOperations.
 	//

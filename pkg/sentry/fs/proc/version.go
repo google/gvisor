@@ -57,12 +57,12 @@ func (v *versionData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) 
 	// (COMPILER_VERSION) VERSION"
 	//
 	// where:
-	// - SYSNAME, RELEASE, and VERSION are the same as returned by
+	//	- SYSNAME, RELEASE, and VERSION are the same as returned by
 	// sys_utsname
-	// - COMPILE_USER is the user that build the kernel
-	// - COMPILE_HOST is the hostname of the machine on which the kernel
+	//	- COMPILE_USER is the user that build the kernel
+	//	- COMPILE_HOST is the hostname of the machine on which the kernel
 	// was built
-	// - COMPILER_VERSION is the version reported by the building compiler
+	//	- COMPILER_VERSION is the version reported by the building compiler
 	//
 	// Since we don't really want to expose build information to
 	// applications, those fields are omitted.

@@ -51,6 +51,7 @@ func getrusage(t *kernel.Task, which int32) linux.Rusage {
 }
 
 // Getrusage implements linux syscall getrusage(2).
+//
 //	marked "y" are supported now
 //	marked "*" are not used on Linux
 //	marked "p" are pending for support

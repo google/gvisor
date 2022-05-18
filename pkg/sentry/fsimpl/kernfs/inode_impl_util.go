@@ -469,9 +469,9 @@ func (o *OrderedChildren) Destroy(ctx context.Context) {
 // may use to update the link count for the parent directory.
 //
 // Precondition:
-//   * d must represent a directory inode.
-//   * children must not contain any conflicting entries already in o.
-//   * Caller must hold a reference on all inodes passed.
+//   - d must represent a directory inode.
+//   - children must not contain any conflicting entries already in o.
+//   - Caller must hold a reference on all inodes passed.
 //
 // Postcondition: Caller's references on inodes are transferred to o.
 func (o *OrderedChildren) Populate(children map[string]Inode) uint32 {

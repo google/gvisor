@@ -133,16 +133,16 @@ func (ns *UserNamespace) SetUIDMap(ctx context.Context, entries []IDMapEntry) er
 	//
 	// 4. One of the following two cases applies:
 	//
-	// * Either the writing process has the CAP_SETUID (CAP_SETGID) capability
-	// in the parent user namespace.
+	//	* Either the writing process has the CAP_SETUID (CAP_SETGID) capability
+	//		in the parent user namespace.
 	// """
 	if !c.HasCapabilityIn(linux.CAP_SETUID, ns.parent) {
 		// """
-		// * Or otherwise all of the following restrictions apply:
+		//	* Or otherwise all of the following restrictions apply:
 		//
-		//   + The data written to uid_map (gid_map) must consist of a single line
-		//   that maps the writing process' effective user ID (group ID) in the
-		//   parent user namespace to a user ID (group ID) in the user namespace.
+		//		+ The data written to uid_map (gid_map) must consist of a single line
+		//			that maps the writing process' effective user ID (group ID) in the
+		//			parent user namespace to a user ID (group ID) in the user namespace.
 		// """
 		if len(entries) != 1 || ns.parent.MapToKUID(UID(entries[0].FirstParentID)) != c.EffectiveKUID || entries[0].Length != 1 {
 			return linuxerr.EPERM

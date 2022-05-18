@@ -25,8 +25,8 @@ import (
 //
 // The sysenter function is invoked in two situations:
 //
-//  (1) The guest kernel has executed a system call.
-//  (2) The guest application has executed a system call.
+//	(1) The guest kernel has executed a system call.
+//	(2) The guest application has executed a system call.
 //
 // The interrupt flag is examined to determine whether the system call was
 // executed from kernel mode or not and the appropriate stub is called.
@@ -54,7 +54,7 @@ func sysret(cpu *CPU, regs *arch.Registers, userCR3 uintptr) Vector
 
 // "iret is the cadillac of CPL switching."
 //
-//				-- Neel Natu
+//	-- Neel Natu
 //
 // iret is nearly identical to sysret, except an iret is used to fully restore
 // all user state. This must be called in cases where all registers need to be
@@ -80,13 +80,13 @@ func start()
 //
 // The following start conditions must be satisfied:
 //
-//  * AX should contain the CPU pointer.
-//  * c.GDT() should be loaded as the GDT.
-//  * c.IDT() should be loaded as the IDT.
-//  * c.CR0() should be the current CR0 value.
-//  * c.CR3() should be set to the kernel PageTables.
-//  * c.CR4() should be the current CR4 value.
-//  * c.EFER() should be the current EFER value.
+//   - AX should contain the CPU pointer.
+//   - c.GDT() should be loaded as the GDT.
+//   - c.IDT() should be loaded as the IDT.
+//   - c.CR0() should be the current CR0 value.
+//   - c.CR3() should be set to the kernel PageTables.
+//   - c.CR4() should be the current CR4 value.
+//   - c.EFER() should be the current EFER value.
 //
 // The CPU state will be set to c.Registers().
 //

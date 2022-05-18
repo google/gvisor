@@ -761,9 +761,9 @@ func (i *inode) getAttr(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOp
 	attributeVersion := i.fs.conn.attributeVersion.Load()
 
 	// TODO(gvisor.dev/issue/3679): send the request only if
-	// - invalid local cache for fields specified in the opts.Mask
-	// - forced update
-	// - i.attributeTime expired
+	//	- invalid local cache for fields specified in the opts.Mask
+	//	- forced update
+	//	- i.attributeTime expired
 	// If local cache is still valid, return local cache.
 	// Currently we always send a request,
 	// and we always set the metadata with the new result,

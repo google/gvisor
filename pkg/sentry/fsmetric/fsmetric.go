@@ -73,6 +73,7 @@ func StartReadWait() time.Time {
 // FinishReadWait is marked nosplit for performance since it's often called
 // from defer statements, which prevents it from being inlined
 // (https://github.com/golang/go/issues/38471).
+//
 //go:nosplit
 func FinishReadWait(m *metric.Uint64Metric, start time.Time) {
 	if !RecordWaitTime {

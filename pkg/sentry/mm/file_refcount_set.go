@@ -40,11 +40,11 @@ func (d *fileRefcountdynamicGap) Set(v uint64) {
 const (
 	// minDegree is the minimum degree of an internal node in a Set B-tree.
 	//
-	// - Any non-root node has at least minDegree-1 segments.
+	//	- Any non-root node has at least minDegree-1 segments.
 	//
-	// - Any non-root internal (non-leaf) node has at least minDegree children.
+	//	- Any non-root internal (non-leaf) node has at least minDegree children.
 	//
-	// - The root node may have fewer than minDegree-1 segments, but it may
+	//	- The root node may have fewer than minDegree-1 segments, but it may
 	// only have 0 segments if the tree is empty.
 	//
 	// Our implementation requires minDegree >= 3. Higher values of minDegree
@@ -348,8 +348,8 @@ func (s *fileRefcountSet) InsertWithoutMerging(gap fileRefcountGapIterator, r __
 // (including gap, but not including the returned iterator) are invalidated.
 //
 // Preconditions:
-// * r.Start >= gap.Start().
-// * r.End <= gap.End().
+//   - r.Start >= gap.Start().
+//   - r.End <= gap.End().
 func (s *fileRefcountSet) InsertWithoutMergingUnchecked(gap fileRefcountGapIterator, r __generics_imported0.FileRange, val int32) fileRefcountIterator {
 	gap = gap.node.rebalanceBeforeInsert(gap)
 	splitMaxGap := fileRefcounttrackGaps != 0 && (gap.node.nrSegments == 0 || gap.Range().Length() == gap.node.maxGap.Get())
@@ -1057,10 +1057,10 @@ func (n *fileRefcountnode) searchLastLargeEnoughGap(minSize uint64) fileRefcount
 
 // A Iterator is conceptually one of:
 //
-// - A pointer to a segment in a set; or
+//   - A pointer to a segment in a set; or
 //
-// - A terminal iterator, which is a sentinel indicating that the end of
-// iteration has been reached.
+//   - A terminal iterator, which is a sentinel indicating that the end of
+//     iteration has been reached.
 //
 // Iterators are copyable values and are meaningfully equality-comparable. The
 // zero value of Iterator is a terminal iterator.
@@ -1103,10 +1103,10 @@ func (seg fileRefcountIterator) End() uint64 {
 // does not invalidate any iterators.
 //
 // Preconditions:
-// * r.Length() > 0.
-// * The new range must not overlap an existing one:
-//   * If seg.NextSegment().Ok(), then r.end <= seg.NextSegment().Start().
-//   * If seg.PrevSegment().Ok(), then r.start >= seg.PrevSegment().End().
+// - r.Length() > 0.
+// - The new range must not overlap an existing one:
+//   - If seg.NextSegment().Ok(), then r.end <= seg.NextSegment().Start().
+//   - If seg.PrevSegment().Ok(), then r.start >= seg.PrevSegment().End().
 func (seg fileRefcountIterator) SetRangeUnchecked(r __generics_imported0.FileRange) {
 	seg.node.keys[seg.index] = r
 }
@@ -1132,8 +1132,8 @@ func (seg fileRefcountIterator) SetRange(r __generics_imported0.FileRange) {
 // not invalidate any iterators.
 //
 // Preconditions: The new start must be valid:
-// * start < seg.End()
-// * If seg.PrevSegment().Ok(), then start >= seg.PrevSegment().End().
+//   - start < seg.End()
+//   - If seg.PrevSegment().Ok(), then start >= seg.PrevSegment().End().
 func (seg fileRefcountIterator) SetStartUnchecked(start uint64) {
 	seg.node.keys[seg.index].Start = start
 }
@@ -1156,8 +1156,8 @@ func (seg fileRefcountIterator) SetStart(start uint64) {
 // invalidate any iterators.
 //
 // Preconditions: The new end must be valid:
-// * end > seg.Start().
-// * If seg.NextSegment().Ok(), then end <= seg.NextSegment().Start().
+//   - end > seg.Start().
+//   - If seg.NextSegment().Ok(), then end <= seg.NextSegment().Start().
 func (seg fileRefcountIterator) SetEndUnchecked(end uint64) {
 	seg.node.keys[seg.index].End = end
 }
@@ -1269,11 +1269,11 @@ func (seg fileRefcountIterator) NextNonEmpty() (fileRefcountIterator, fileRefcou
 
 // A GapIterator is conceptually one of:
 //
-// - A pointer to a position between two segments, before the first segment, or
-// after the last segment in a set, called a *gap*; or
+//   - A pointer to a position between two segments, before the first segment, or
+//     after the last segment in a set, called a *gap*; or
 //
-// - A terminal iterator, which is a sentinel indicating that the end of
-// iteration has been reached.
+//   - A terminal iterator, which is a sentinel indicating that the end of
+//     iteration has been reached.
 //
 // Note that the gap between two adjacent segments exists (iterators to it are
 // non-terminal), but has a length of zero. GapIterator.IsEmpty returns true
@@ -1578,10 +1578,10 @@ func (s *fileRefcountSet) ExportSortedSlices() *fileRefcountSegmentDataSlices {
 // ImportSortedSlices initializes the given set from the given slice.
 //
 // Preconditions:
-// * s must be empty.
-// * sds must represent a valid set (the segments in sds must have valid
-//   lengths that do not overlap).
-// * The segments in sds must be sorted in ascending key order.
+//   - s must be empty.
+//   - sds must represent a valid set (the segments in sds must have valid
+//     lengths that do not overlap).
+//   - The segments in sds must be sorted in ascending key order.
 func (s *fileRefcountSet) ImportSortedSlices(sds *fileRefcountSegmentDataSlices) error {
 	if !s.IsEmpty() {
 		return fmt.Errorf("cannot import into non-empty set %v", s)

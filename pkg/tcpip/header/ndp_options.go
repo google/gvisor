@@ -666,7 +666,8 @@ func (o NDPPrefixInformation) Subnet() tcpip.Subnet {
 // To make sure that the option meets its minimum length and does not end in the
 // middle of a DNS server's IPv6 address, the length of a valid
 // NDPRecursiveDNSServer must meet the following constraint:
-//   (Length - ndpRecursiveDNSServerAddressesOffset) % IPv6AddressSize == 0
+//
+//	(Length - ndpRecursiveDNSServerAddressesOffset) % IPv6AddressSize == 0
 type NDPRecursiveDNSServer []byte
 
 // Type returns the type of an NDP Recursive DNS Server option.
@@ -944,32 +945,32 @@ func isDigit(b byte) bool {
 
 // As per RFC 4191 section 2.3,
 //
-//  2.3.  Route Information Option
+//	2.3.  Route Information Option
 //
-//      0                   1                   2                   3
-//       0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-//      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-//      |     Type      |    Length     | Prefix Length |Resvd|Prf|Resvd|
-//      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-//      |                        Route Lifetime                         |
-//      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-//      |                   Prefix (Variable Length)                    |
-//      .                                                               .
-//      .                                                               .
-//      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//	    0                   1                   2                   3
+//	     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+//	    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//	    |     Type      |    Length     | Prefix Length |Resvd|Prf|Resvd|
+//	    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//	    |                        Route Lifetime                         |
+//	    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//	    |                   Prefix (Variable Length)                    |
+//	    .                                                               .
+//	    .                                                               .
+//	    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 //
-//   Fields:
+//	 Fields:
 //
-//   Type        24
+//	 Type        24
 //
 //
-//   Length      8-bit unsigned integer.  The length of the option
-//               (including the Type and Length fields) in units of 8
-//               octets.  The Length field is 1, 2, or 3 depending on the
-//               Prefix Length.  If Prefix Length is greater than 64, then
-//               Length must be 3.  If Prefix Length is greater than 0,
-//               then Length must be 2 or 3.  If Prefix Length is zero,
-//               then Length must be 1, 2, or 3.
+//	 Length      8-bit unsigned integer.  The length of the option
+//	             (including the Type and Length fields) in units of 8
+//	             octets.  The Length field is 1, 2, or 3 depending on the
+//	             Prefix Length.  If Prefix Length is greater than 64, then
+//	             Length must be 3.  If Prefix Length is greater than 0,
+//	             then Length must be 2 or 3.  If Prefix Length is zero,
+//	             then Length must be 1, 2, or 3.
 const (
 	ndpRouteInformationType      = ndpOptionIdentifier(24)
 	ndpRouteInformationMaxLength = 22

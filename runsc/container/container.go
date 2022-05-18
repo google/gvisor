@@ -740,9 +740,9 @@ func (c *Container) Destroy() error {
 	sb := c.Sandbox
 
 	// We must perform the following cleanup steps:
-	// * stop the container and gofer processes,
-	// * remove the container filesystem on the host, and
-	// * delete the container metadata directory.
+	//	* stop the container and gofer processes,
+	//	* remove the container filesystem on the host, and
+	//	* delete the container metadata directory.
 	//
 	// It's possible for one or more of these steps to fail, but we should
 	// do our best to perform all of the cleanups. Hence, we keep a slice

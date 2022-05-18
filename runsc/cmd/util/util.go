@@ -40,8 +40,8 @@ type jsonError struct {
 // Errorf logs error to containerd log (--log), to stderr, and debug logs. It
 // returns subcommands.ExitFailure for convenience with subcommand.Execute()
 // methods:
-//    return Errorf("Danger! Danger!")
 //
+//	return Errorf("Danger! Danger!")
 func Errorf(format string, args ...interface{}) subcommands.ExitStatus {
 	// If runsc is being invoked by docker or cri-o, then we might not have
 	// access to stderr, so we log a serious-looking warning in addition to

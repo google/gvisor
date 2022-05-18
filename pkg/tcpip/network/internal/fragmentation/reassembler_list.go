@@ -21,9 +21,10 @@ func (reassemblerElementMapper) linkerFor(elem *reassembler) *reassembler { retu
 // The zero value for List is an empty list ready to use.
 //
 // To iterate over a list (where l is a List):
-//      for e := l.Front(); e != nil; e = e.Next() {
-// 		// do something with e.
-//      }
+//
+//	for e := l.Front(); e != nil; e = e.Next() {
+//		// do something with e.
+//	}
 //
 // +stateify savable
 type reassemblerList struct {

@@ -60,11 +60,11 @@ type SpliceOpts struct {
 //
 // Operations that take a *File may use only the following interfaces:
 //
-// - File.UniqueID:	Operations may only read this value.
-// - File.Dirent:	Operations must not take or drop a reference.
-// - File.Offset(): 	This value is guaranteed to not change for the
-//			duration of the operation.
-// - File.Flags():	This value may change during the operation.
+//   - File.UniqueID:	Operations may only read this value.
+//   - File.Dirent:	Operations must not take or drop a reference.
+//   - File.Offset(): 	This value is guaranteed to not change for the
+//     duration of the operation.
+//   - File.Flags():	This value may change during the operation.
 type FileOperations interface {
 	// Release release resources held by FileOperations.
 	Release(ctx context.Context)
@@ -160,8 +160,8 @@ type FileOperations interface {
 	// refer.
 	//
 	// Preconditions:
-	// * The AddressSpace (if any) that io refers to is activated.
-	// * Must only be called from a task goroutine.
+	//	* The AddressSpace (if any) that io refers to is activated.
+	//	* Must only be called from a task goroutine.
 	Ioctl(ctx context.Context, file *File, io usermem.IO, args arch.SyscallArguments) (uintptr, error)
 }
 

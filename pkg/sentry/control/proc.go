@@ -375,9 +375,9 @@ func Processes(k *kernel.Kernel, containerID string, out *[]*Process) error {
 }
 
 // formatStartTime formats startTime depending on the current time:
-// - If startTime was today, HH:MM is used.
-// - If startTime was not today but was this year, MonDD is used (e.g. Jan02)
-// - If startTime was not this year, the year is used.
+//   - If startTime was today, HH:MM is used.
+//   - If startTime was not today but was this year, MonDD is used (e.g. Jan02)
+//   - If startTime was not this year, the year is used.
 func formatStartTime(now, startTime ktime.Time) string {
 	nowS, nowNs := now.Unix()
 	n := time.Unix(nowS, nowNs)

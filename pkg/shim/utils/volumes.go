@@ -33,12 +33,14 @@ const (
 var kubeletPodsDir = "/var/lib/kubelet/pods"
 
 // volumeName gets volume name from volume annotation key, example:
+//
 //	dev.gvisor.spec.mount.NAME.share
 func volumeName(k string) string {
 	return strings.SplitN(strings.TrimPrefix(k, volumeKeyPrefix), ".", 2)[0]
 }
 
 // volumeFieldName gets volume field name from volume annotation key, example:
+//
 //	`type` is the field of dev.gvisor.spec.mount.NAME.type
 func volumeFieldName(k string) string {
 	parts := strings.Split(strings.TrimPrefix(k, volumeKeyPrefix), ".")

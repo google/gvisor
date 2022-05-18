@@ -39,10 +39,10 @@ const (
 // RPCHandler defines a handler that is invoked when the associated message is
 // received. The handler is responsible for:
 //
-// * Unmarshalling the request from the passed payload and interpreting it.
-// * Marshalling the response into the communicator's payload buffer.
-// * Return the number of payload bytes written.
-// * Donate any FDs (if needed) to comm which will in turn donate it to client.
+//   - Unmarshalling the request from the passed payload and interpreting it.
+//   - Marshalling the response into the communicator's payload buffer.
+//   - Return the number of payload bytes written.
+//   - Donate any FDs (if needed) to comm which will in turn donate it to client.
 type RPCHandler func(c *Connection, comm Communicator, payloadLen uint32) (uint32, error)
 
 var handlers = [...]RPCHandler{

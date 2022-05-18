@@ -648,8 +648,8 @@ func parseVerityMountOptions(mopts []string) (string, verity.InternalFilesystemO
 // Technically we don't have to mount tmpfs at /tmp, as we could just rely on
 // the host /tmp, but this is a nice optimization, and fixes some apps that call
 // mknod in /tmp. It's unsafe to mount tmpfs if:
-//   1. /tmp is mounted explicitly: we should not override user's wish
-//   2. /tmp is not empty: mounting tmpfs would hide existing files in /tmp
+//  1. /tmp is mounted explicitly: we should not override user's wish
+//  2. /tmp is not empty: mounting tmpfs would hide existing files in /tmp
 //
 // Note that when there are submounts inside of '/tmp', directories for the
 // mount points must be present, making '/tmp' not empty anymore.

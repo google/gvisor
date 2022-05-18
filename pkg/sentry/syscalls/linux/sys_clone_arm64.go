@@ -25,7 +25,8 @@ import (
 // Clone implements linux syscall clone(2).
 // sys_clone has so many flavors, and we implement the default one in linux 3.11
 // arm64(kernel/fork.c with CONFIG_CLONE_BACKWARDS defined in the config file):
-//    sys_clone(clone_flags, newsp, parent_tidptr, tls_val, child_tidptr)
+//
+//	sys_clone(clone_flags, newsp, parent_tidptr, tls_val, child_tidptr)
 func Clone(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	flags := int(args[0].Int())
 	stack := args[1].Pointer()

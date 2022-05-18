@@ -121,18 +121,18 @@ const (
 type classapmSlot struct {
 	// slot states are indicated by val:
 	//
-	// * Empty: val == nil; key is meaningless. May transition to full or
-	// evacuated with dirtyMu locked.
+	//	* Empty: val == nil; key is meaningless. May transition to full or
+	//		evacuated with dirtyMu locked.
 	//
-	// * Full: val != nil, tombstone(), or evacuated(); key is immutable. val
-	// is the Value mapped to key. May transition to deleted or evacuated.
+	//	* Full: val != nil, tombstone(), or evacuated(); key is immutable. val
+	//		is the Value mapped to key. May transition to deleted or evacuated.
 	//
-	// * Deleted: val == tombstone(); key is still immutable. key is mapped to
-	// no Value. May transition to full or evacuated.
+	//	* Deleted: val == tombstone(); key is still immutable. key is mapped to
+	//		no Value. May transition to full or evacuated.
 	//
-	// * Evacuated: val == evacuated(); key is immutable. Set by rehashing on
-	// slots that have already been moved, requiring readers to wait for
-	// rehashing to complete and use the new table. Terminal state.
+	//	* Evacuated: val == evacuated(); key is immutable. Set by rehashing on
+	//		slots that have already been moved, requiring readers to wait for
+	//		rehashing to complete and use the new table. Terminal state.
 	//
 	// Note that once val is non-nil, it cannot become nil again. That is, the
 	// transition from empty to non-empty is irreversible for a given slot;
@@ -307,6 +307,7 @@ retry:
 }
 
 // rehash is marked nosplit to avoid preemption during table copying.
+//
 //go:nosplit
 func (shard *classapmShard) rehash(oldSlots unsafe.Pointer) {
 	shard.rehashMu.Lock()
@@ -412,11 +413,11 @@ func (shard *classapmShard) doRange(f func(key *MutexClass, val *__generics_impo
 
 // RangeRepeatable is like Range, but:
 //
-// * RangeRepeatable may visit the same Key multiple times in the presence of
-// concurrent mutators, possibly passing different Values to f in different
-// calls.
+//   - RangeRepeatable may visit the same Key multiple times in the presence of
+//     concurrent mutators, possibly passing different Values to f in different
+//     calls.
 //
-// * It is safe for f to call other methods on m.
+//   - It is safe for f to call other methods on m.
 func (m *classAtomicPtrMap) RangeRepeatable(f func(key *MutexClass, val *__generics_imported0.Type) bool) {
 	for si := 0; si < len(m.shards); si++ {
 		shard := &m.shards[si]

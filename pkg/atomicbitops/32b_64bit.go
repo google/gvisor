@@ -42,12 +42,14 @@ type Int32 struct {
 }
 
 // FromInt32 returns an Int32 initialized to value v.
+//
 //go:nosplit
 func FromInt32(v int32) Int32 {
 	return Int32{value: v}
 }
 
 // Load is analogous to atomic.LoadInt32.
+//
 //go:nosplit
 func (i *Int32) Load() int32 {
 	return atomic.LoadInt32(&i.value)
@@ -64,6 +66,7 @@ func (i *Int32) RacyLoad() int32 {
 }
 
 // Store is analogous to atomic.StoreInt32.
+//
 //go:nosplit
 func (i *Int32) Store(v int32) {
 	atomic.StoreInt32(&i.value, v)
@@ -83,6 +86,7 @@ func (i *Int32) RacyStore(v int32) {
 }
 
 // Add is analogous to atomic.AddInt32.
+//
 //go:nosplit
 func (i *Int32) Add(v int32) int32 {
 	return atomic.AddInt32(&i.value, v)
@@ -100,12 +104,14 @@ func (i *Int32) RacyAdd(v int32) int32 {
 }
 
 // Swap is analogous to atomic.SwapInt32.
+//
 //go:nosplit
 func (i *Int32) Swap(v int32) int32 {
 	return atomic.SwapInt32(&i.value, v)
 }
 
 // CompareAndSwap is analogous to atomic.CompareAndSwapInt32.
+//
 //go:nosplit
 func (i *Int32) CompareAndSwap(oldVal, newVal int32) bool {
 	return atomic.CompareAndSwapInt32(&i.value, oldVal, newVal)
@@ -127,12 +133,14 @@ type Uint32 struct {
 }
 
 // FromUint32 returns an Uint32 initialized to value v.
+//
 //go:nosplit
 func FromUint32(v uint32) Uint32 {
 	return Uint32{value: v}
 }
 
 // Load is analogous to atomic.LoadUint32.
+//
 //go:nosplit
 func (u *Uint32) Load() uint32 {
 	return atomic.LoadUint32(&u.value)
@@ -149,6 +157,7 @@ func (u *Uint32) RacyLoad() uint32 {
 }
 
 // Store is analogous to atomic.StoreUint32.
+//
 //go:nosplit
 func (u *Uint32) Store(v uint32) {
 	atomic.StoreUint32(&u.value, v)
@@ -165,6 +174,7 @@ func (u *Uint32) RacyStore(v uint32) {
 }
 
 // Add is analogous to atomic.AddUint32.
+//
 //go:nosplit
 func (u *Uint32) Add(v uint32) uint32 {
 	return atomic.AddUint32(&u.value, v)
@@ -182,12 +192,14 @@ func (u *Uint32) RacyAdd(v uint32) uint32 {
 }
 
 // Swap is analogous to atomic.SwapUint32.
+//
 //go:nosplit
 func (u *Uint32) Swap(v uint32) uint32 {
 	return atomic.SwapUint32(&u.value, v)
 }
 
 // CompareAndSwap is analogous to atomic.CompareAndSwapUint32.
+//
 //go:nosplit
 func (u *Uint32) CompareAndSwap(oldVal, newVal uint32) bool {
 	return atomic.CompareAndSwapUint32(&u.value, oldVal, newVal)

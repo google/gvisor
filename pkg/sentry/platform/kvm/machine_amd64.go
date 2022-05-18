@@ -187,7 +187,7 @@ var bitsForScaling = func() int64 {
 // strict inverse of this value. This simplifies this function considerably.
 //
 // Roughly, the returned value "scaledTSC" will have:
-// 	scaledTSC/hostTSC == 1/rawFreq
+// scaledTSC/hostTSC == 1/rawFreq
 //
 //go:nosplit
 func scaledTSC(rawFreq uintptr) int64 {

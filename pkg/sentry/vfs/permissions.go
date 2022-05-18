@@ -132,14 +132,14 @@ func MayLink(creds *auth.Credentials, mode linux.FileMode, kuid auth.KUID, kgid 
 // with the given OpenOptions.Flags. Note that this is NOT the same thing as
 // the set of accesses permitted for the opened file:
 //
-// - O_TRUNC causes MayWrite to be set in the returned AccessTypes (since it
-// mutates the file), but does not permit writing to the open file description
-// thereafter.
+//   - O_TRUNC causes MayWrite to be set in the returned AccessTypes (since it
+//     mutates the file), but does not permit writing to the open file description
+//     thereafter.
 //
-// - "Linux reserves the special, nonstandard access mode 3 (binary 11) in
-// flags to mean: check for read and write permission on the file and return a
-// file descriptor that can't be used for reading or writing." - open(2). Thus
-// AccessTypesForOpenFlags returns MayRead|MayWrite in this case.
+//   - "Linux reserves the special, nonstandard access mode 3 (binary 11) in
+//     flags to mean: check for read and write permission on the file and return a
+//     file descriptor that can't be used for reading or writing." - open(2). Thus
+//     AccessTypesForOpenFlags returns MayRead|MayWrite in this case.
 //
 // Use May{Read,Write}FileWithOpenFlags() for these checks instead.
 func AccessTypesForOpenFlags(opts *OpenOptions) AccessTypes {
@@ -292,11 +292,11 @@ func CheckLimit(ctx context.Context, offset, size int64) (int64, error) {
 
 // CheckXattrPermissions checks permissions for extended attribute access.
 // This is analogous to fs/xattr.c:xattr_permission(). Some key differences:
-// * Does not check for read-only filesystem property.
-// * Does not check inode immutability or append only mode. In both cases EPERM
-//   must be returned by filesystem implementations.
-// * Does not do inode permission checks. Filesystem implementations should
-//   handle inode permission checks as they may differ across implementations.
+//   - Does not check for read-only filesystem property.
+//   - Does not check inode immutability or append only mode. In both cases EPERM
+//     must be returned by filesystem implementations.
+//   - Does not do inode permission checks. Filesystem implementations should
+//     handle inode permission checks as they may differ across implementations.
 func CheckXattrPermissions(creds *auth.Credentials, ats AccessTypes, mode linux.FileMode, kuid auth.KUID, name string) error {
 	switch {
 	case strings.HasPrefix(name, linux.XATTR_TRUSTED_PREFIX):

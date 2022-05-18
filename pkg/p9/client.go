@@ -103,7 +103,7 @@ type Client struct {
 	// efficient, and does not require tags).
 	sendRecv func(message, message) error
 
-	// -- below corresponds to sendRecvChannel --
+	//	-- below corresponds to sendRecvChannel --
 
 	// channelsMu protects channels.
 	channelsMu sync.Mutex
@@ -118,7 +118,7 @@ type Client struct {
 	// availableChannels is a LIFO of inactive channels.
 	availableChannels []*channel
 
-	// -- below corresponds to sendRecvLegacy --
+	//	-- below corresponds to sendRecvLegacy --
 
 	// pending is the set of pending messages.
 	pending   map[Tag]*response

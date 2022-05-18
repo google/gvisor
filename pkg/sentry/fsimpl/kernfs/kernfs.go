@@ -15,17 +15,17 @@
 // Package kernfs provides the tools to implement inode-based filesystems.
 // Kernfs has two main features:
 //
-// 1. The Inode interface, which maps VFS2's path-based filesystem operations to
-//    specific filesystem nodes. Kernfs uses the Inode interface to provide a
-//    blanket implementation for the vfs.FilesystemImpl. Kernfs also serves as
-//    the synchronization mechanism for all filesystem operations by holding a
-//    filesystem-wide lock across all operations.
+//  1. The Inode interface, which maps VFS2's path-based filesystem operations to
+//     specific filesystem nodes. Kernfs uses the Inode interface to provide a
+//     blanket implementation for the vfs.FilesystemImpl. Kernfs also serves as
+//     the synchronization mechanism for all filesystem operations by holding a
+//     filesystem-wide lock across all operations.
 //
-// 2. Various utility types which provide generic implementations for various
-//    parts of the Inode and vfs.FileDescription interfaces. Client filesystems
-//    based on kernfs can embed the appropriate set of these to avoid having to
-//    reimplement common filesystem operations. See inode_impl_util.go and
-//    fd_impl_util.go.
+//  2. Various utility types which provide generic implementations for various
+//     parts of the Inode and vfs.FileDescription interfaces. Client filesystems
+//     based on kernfs can embed the appropriate set of these to avoid having to
+//     reimplement common filesystem operations. See inode_impl_util.go and
+//     fd_impl_util.go.
 //
 // Reference Model:
 //
@@ -47,13 +47,14 @@
 //
 // Lock ordering:
 //
-// kernfs.Filesystem.mu
-//   kernel.TaskSet.mu
-//     kernel.Task.mu
-//   kernfs.Dentry.dirMu
-//     vfs.VirtualFilesystem.mountMu
-//       vfs.Dentry.mu
-//   (inode implementation locks, if any)
+//	kernfs.Filesystem.mu
+//		kernel.TaskSet.mu
+//	  	kernel.Task.mu
+//		kernfs.Dentry.dirMu
+//	  	vfs.VirtualFilesystem.mountMu
+//	    	vfs.Dentry.mu
+//		(inode implementation locks, if any)
+//
 // kernfs.Filesystem.deferredDecRefsMu
 package kernfs
 
@@ -361,8 +362,8 @@ func (d *Dentry) cacheLocked(ctx context.Context) {
 }
 
 // Preconditions:
-// * fs.mu must be locked for writing.
-// * fs.cachedDentriesLen != 0.
+//   - fs.mu must be locked for writing.
+//   - fs.cachedDentriesLen != 0.
 func (fs *Filesystem) evictCachedDentryLocked(ctx context.Context) {
 	// Evict the least recently used dentry because cache size is greater than
 	// max cache size (configured on mount).
@@ -390,11 +391,11 @@ func (fs *Filesystem) evictCachedDentryLocked(ctx context.Context) {
 // destroyLocked destroys the dentry.
 //
 // Preconditions:
-// * d.fs.mu must be locked for writing.
-// * d.refs == 0.
-// * d should have been removed from d.parent.children, i.e. d is not reachable
-//   by path traversal.
-// * d.vfsd.IsDead() is true.
+//   - d.fs.mu must be locked for writing.
+//   - d.refs == 0.
+//   - d should have been removed from d.parent.children, i.e. d is not reachable
+//     by path traversal.
+//   - d.vfsd.IsDead() is true.
 func (d *Dentry) destroyLocked(ctx context.Context) {
 	refs := d.refs.Load()
 	switch refs {
@@ -503,8 +504,8 @@ func (d *Dentry) OnZeroWatches(context.Context) {}
 // own isn't sufficient to insert a child into a directory.
 //
 // Preconditions:
-// * d must represent a directory inode.
-// * d.fs.mu must be locked for at least reading.
+//   - d must represent a directory inode.
+//   - d.fs.mu must be locked for at least reading.
 func (d *Dentry) insertChild(name string, child *Dentry) {
 	d.dirMu.Lock()
 	d.insertChildLocked(name, child)
@@ -515,9 +516,9 @@ func (d *Dentry) insertChild(name string, child *Dentry) {
 // preconditions.
 //
 // Preconditions:
-// * d must represent a directory inode.
-// * d.dirMu must be locked.
-// * d.fs.mu must be locked for at least reading.
+//   - d must represent a directory inode.
+//   - d.dirMu must be locked.
+//   - d.fs.mu must be locked for at least reading.
 func (d *Dentry) insertChildLocked(name string, child *Dentry) {
 	if !d.isDir() {
 		panic(fmt.Sprintf("insertChildLocked called on non-directory Dentry: %+v.", d))
@@ -622,8 +623,8 @@ func (d *Dentry) Parent() *Dentry {
 // Generally, implementations are not responsible for tasks that are common to
 // all filesystems. These include:
 //
-// - Checking that dentries passed to methods are of the appropriate file type.
-// - Checking permissions.
+//   - Checking that dentries passed to methods are of the appropriate file type.
+//   - Checking permissions.
 //
 // Inode functions may be called holding filesystem wide locks and are not
 // allowed to call vfs functions that may reenter, unless otherwise noted.
@@ -785,14 +786,14 @@ type inodeSymlink interface {
 	// Getlink returns the target of a symbolic link, as used by path
 	// resolution:
 	//
-	// - If the inode is a "magic link" (a link whose target is most accurately
-	// represented as a VirtualDentry), Getlink returns (ok VirtualDentry, "",
-	// nil). A reference is taken on the returned VirtualDentry.
+	//	- If the inode is a "magic link" (a link whose target is most accurately
+	//		represented as a VirtualDentry), Getlink returns (ok VirtualDentry, "",
+	//		nil). A reference is taken on the returned VirtualDentry.
 	//
-	// - If the inode is an ordinary symlink, Getlink returns (zero-value
-	// VirtualDentry, symlink target, nil).
+	//	- If the inode is an ordinary symlink, Getlink returns (zero-value
+	//		VirtualDentry, symlink target, nil).
 	//
-	// - If the inode is not a symlink, Getlink returns (zero-value
-	// VirtualDentry, "", EINVAL).
+	//	- If the inode is not a symlink, Getlink returns (zero-value
+	//		VirtualDentry, "", EINVAL).
 	Getlink(ctx context.Context, mnt *vfs.Mount) (vfs.VirtualDentry, string, error)
 }

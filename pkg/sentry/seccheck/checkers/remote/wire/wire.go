@@ -23,9 +23,9 @@ const HeaderStructSize = 8
 
 // Header is used to describe the message being sent to the remote process.
 //
-//   0 --------- 16 ---------- 32 ----------- 64 -----------+
-//   | HeaderSize | MessageType | DroppedCount | Payload... |
-//   +---- 16 ----+---- 16 -----+----- 32 -----+------------+
+//	0 --------- 16 ---------- 32 ----------- 64 -----------+
+//	| HeaderSize | MessageType | DroppedCount | Payload... |
+//	+---- 16 ----+---- 16 -----+----- 32 -----+------------+
 //
 // +marshal
 type Header struct {

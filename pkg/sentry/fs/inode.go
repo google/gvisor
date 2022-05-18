@@ -293,8 +293,8 @@ func (i *Inode) RemoveXattr(ctx context.Context, d *Dirent, name string) error {
 // requested way for reading, writing, or executing.
 //
 // CheckPermission is like Linux's fs/namei.c:inode_permission. It
-// - checks file system mount flags,
-// - and utilizes InodeOperations.Check to check capabilities and modes.
+//   - checks file system mount flags,
+//   - and utilizes InodeOperations.Check to check capabilities and modes.
 func (i *Inode) CheckPermission(ctx context.Context, p PermMask) error {
 	// First check the outer-most mounted filesystem.
 	if p.Write && i.MountSource.Flags.ReadOnly {

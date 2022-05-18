@@ -29,8 +29,8 @@ type namedPipe struct {
 }
 
 // Preconditions:
-// * fs.mu must be locked.
-// * rp.Mount().CheckBeginWrite() has been called successfully.
+//   - fs.mu must be locked.
+//   - rp.Mount().CheckBeginWrite() has been called successfully.
 func (fs *filesystem) newNamedPipe(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, parentDir *directory) *inode {
 	file := &namedPipe{pipe: pipe.NewVFSPipe(true /* isNamed */, pipe.DefaultPipeSize)}
 	file.inode.init(file, fs, kuid, kgid, linux.S_IFIFO|mode, parentDir)
