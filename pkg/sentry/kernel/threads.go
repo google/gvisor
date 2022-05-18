@@ -17,6 +17,7 @@ package kernel
 import (
 	"fmt"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -325,6 +326,11 @@ type threadGroupNode struct {
 	// member tasks. The pidns pointer is immutable.
 	pidns *PIDNamespace
 
+	// pidWithinNS the thread ID of the leader of this thread group within pidns.
+	// Useful to avoid using locks when determining a thread group leader's own
+	// TID.
+	pidWithinNS atomicbitops.Int32
+
 	// eventQueue is notified whenever a event of interest to Task.Wait occurs
 	// in a child of this thread group, or a ptrace tracee of a task in this
 	// thread group. Events are defined in task_exit.go.
@@ -425,13 +431,10 @@ func (tg *ThreadGroup) MemberIDs(pidns *PIDNamespace) []ThreadID {
 	return tasks
 }
 
-// ID returns tg's leader's thread ID in its own PID namespace. If tg's leader
-// is dead, ID returns 0.
+// ID returns tg's leader's thread ID in its own PID namespace.
+// If tg's leader is dead, ID returns 0.
 func (tg *ThreadGroup) ID() ThreadID {
-	tg.pidns.owner.mu.RLock()
-	id := tg.pidns.tgids[tg]
-	tg.pidns.owner.mu.RUnlock()
-	return id
+	return ThreadID(tg.pidWithinNS.Load())
 }
 
 // A taskNode defines the relationship between a task and the rest of the

@@ -692,6 +692,7 @@ func (t *Task) exitNotifyLocked(fromPtraceDetach bool) {
 			// is via a call to release_task()).
 			t.tg.leader.exitNotifyLocked(false)
 		} else if tc == 0 {
+			t.tg.pidWithinNS.Store(0)
 			t.tg.processGroup.decRefWithParent(t.tg.parentPG())
 		}
 		if t.parent != nil {

@@ -296,6 +296,7 @@ func (ts *TaskSet) assignTIDsLocked(t *Task) error {
 		}
 		return err
 	}
+	t.tg.pidWithinNS.Store(int32(t.tg.pidns.tgids[t.tg]))
 	return nil
 }
 
