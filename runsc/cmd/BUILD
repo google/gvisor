@@ -82,6 +82,7 @@ go_test(
         "delete_test.go",
         "exec_test.go",
         "gofer_test.go",
+        "install_test.go",
         "mitigate_test.go",
     ],
     data = [
