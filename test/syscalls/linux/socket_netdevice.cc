@@ -184,6 +184,24 @@ TEST(NetdeviceTest, InterfaceMTU) {
   EXPECT_GT(ifr.ifr_mtu, 0);
 }
 
+TEST(NetdeviceTest, InterfaceQLEN) {
+  FileDescriptor sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, 0));
+
+  // Prepare the request.
+  struct ifreq ifr = {};
+  snprintf(ifr.ifr_name, IFNAMSIZ, "lo");
+
+  // Check that SIOCGIFTXQLEN returns without error.
+  ASSERT_THAT(ioctl(sock.get(), SIOCGIFTXQLEN, &ifr), SyscallSucceeds());
+
+  // Gvisor network doesn't implement queues and always returns 0.
+  // When exposing the host network, lo could have any queue length set.
+  if (IsRunningOnGvisor() && !IsRunningWithHostinet()) {
+    EXPECT_EQ(ifr.ifr_qlen, 0);
+  }
+}
+
 TEST(NetdeviceTest, EthtoolGetTSInfo) {
   SKIP_IF(IsRunningWithHostinet());
   FileDescriptor sock =
