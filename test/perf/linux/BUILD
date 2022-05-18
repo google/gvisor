@@ -5,6 +5,12 @@ package(
     licenses = ["notice"],
 )
 
+filegroup(
+    name = "all_benchmarks",
+    testonly = 1,
+    data = [":%s" % f[:-3] for f in glob(["*_benchmark.cc"])],
+)
+
 cc_binary(
     name = "getpid_benchmark",
     testonly = 1,
