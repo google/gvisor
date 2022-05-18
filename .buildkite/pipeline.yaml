@@ -111,6 +111,8 @@ steps:
       - make BAZEL_OPTIONS=--config=x86_64 artifacts/x86_64
       - make BAZEL_OPTIONS=--config=aarch64 artifacts/aarch64
       - make release
+    agents:
+      arch: "amd64"
 
   # Images tests.
   - <<: *common
@@ -224,6 +226,7 @@ steps:
     label: ":docker: Containerd 1.3.9 tests"
     command: make containerd-test-1.3.9
     agents:
+      cgroup: "v1"
       arch: "amd64"
       os: "ubuntu"
   - <<: *common
