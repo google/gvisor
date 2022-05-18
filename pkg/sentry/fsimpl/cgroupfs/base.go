@@ -342,7 +342,7 @@ func (d *cgroupProcsData) Generate(ctx context.Context, buf *bytes.Buffer) error
 	}
 
 	pgidList := make([]kernel.ThreadID, 0, len(pgids))
-	for pgid, _ := range pgids {
+	for pgid := range pgids {
 		pgidList = append(pgidList, pgid)
 	}
 	sortTIDs(pgidList)

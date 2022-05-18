@@ -84,11 +84,11 @@ func TestAscendingSearch(t *testing.T) {
 	tr.SetValue("abcde", "value abcde")
 
 	expected := []Entry{
-		Entry{Key: "a", Value: "value a"},
-		Entry{Key: "ab", Value: "value ab"},
-		Entry{Key: "abc", Value: "value abc"},
-		Entry{Key: "abcd", Value: "value abcd"},
-		Entry{Key: "abcde", Value: "value abcde"}}
+		{Key: "a", Value: "value a"},
+		{Key: "ab", Value: "value ab"},
+		{Key: "abc", Value: "value abc"},
+		{Key: "abcd", Value: "value abcd"},
+		{Key: "abcde", Value: "value abcde"}}
 	arr := collectPrefixes(tr, "abcdef")
 	if d := cmp.Diff(expected, arr); d != "" {
 		t.Errorf("collectPrefixes(tr, 'abcdef') returned diff (-want +got):\n%s", d)
@@ -124,7 +124,7 @@ func TestRoot(t *testing.T) {
 		t.Errorf("tr.Size() = %d; want 1", tr.Size())
 	}
 
-	expected := []Entry{Entry{Key: "", Value: "root value"}}
+	expected := []Entry{{Key: "", Value: "root value"}}
 	arr := collectPrefixes(tr, "foo")
 	if d := cmp.Diff(expected, arr); d != "" {
 		t.Errorf("collectPrefixes(tr, 'foo') returned diff (-want +got):\n%s", d)

@@ -100,7 +100,7 @@ func AddGLock(class *MutexClass, subclass uint32) {
 	}
 
 	// Check dependencies and add locked mutexes to the ancestors list.
-	for prevClass, _ := range *currentLocks {
+	for prevClass := range *currentLocks {
 		if prevClass == class {
 			panic(fmt.Sprintf("nested locking: %s:\n%s", *classMap.Load(class), log.Stacks(false)))
 		}

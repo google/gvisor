@@ -1440,10 +1440,10 @@ func NewProtocolWithOptions(opts Options) stack.NetworkProtocolFactory {
 		// Set ICMP rate limiting to Linux defaults.
 		// See https://man7.org/linux/man-pages/man7/icmp.7.html.
 		p.icmpRateLimitedTypes = map[header.ICMPv4Type]struct{}{
-			header.ICMPv4DstUnreachable: struct{}{},
-			header.ICMPv4SrcQuench:      struct{}{},
-			header.ICMPv4TimeExceeded:   struct{}{},
-			header.ICMPv4ParamProblem:   struct{}{},
+			header.ICMPv4DstUnreachable: {},
+			header.ICMPv4SrcQuench:      {},
+			header.ICMPv4TimeExceeded:   {},
+			header.ICMPv4ParamProblem:   {},
 		}
 		return p
 	}

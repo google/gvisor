@@ -41,53 +41,53 @@ package checklinkname
 //
 // TODO(b/165820485): Add option to specific per-version signatures.
 var knownLinknames = map[string]map[string]linknameSignatures{
-	"runtime": map[string]linknameSignatures{
-		"entersyscall": linknameSignatures{
+	"runtime": {
+		"entersyscall": {
 			local: "func()",
 		},
-		"entersyscallblock": linknameSignatures{
+		"entersyscallblock": {
 			local: "func()",
 		},
-		"exitsyscall": linknameSignatures{
+		"exitsyscall": {
 			local: "func()",
 		},
-		"fastrand": linknameSignatures{
+		"fastrand": {
 			local: "func() uint32",
 		},
-		"gopark": linknameSignatures{
+		"gopark": {
 			// TODO(b/165820485): add verification of waitReason
 			// size and reason and traceEv values.
 			local:  "func(unlockf func(uintptr, unsafe.Pointer) bool, lock unsafe.Pointer, reason uint8, traceEv byte, traceskip int)",
 			remote: "func(unlockf func(*runtime.g, unsafe.Pointer) bool, lock unsafe.Pointer, reason runtime.waitReason, traceEv byte, traceskip int)",
 		},
-		"goready": linknameSignatures{
+		"goready": {
 			local:  "func(gp uintptr, traceskip int)",
 			remote: "func(gp *runtime.g, traceskip int)",
 		},
-		"goyield": linknameSignatures{
+		"goyield": {
 			local: "func()",
 		},
-		"memmove": linknameSignatures{
+		"memmove": {
 			local: "func(to unsafe.Pointer, from unsafe.Pointer, n uintptr)",
 		},
-		"throw": linknameSignatures{
+		"throw": {
 			local: "func(s string)",
 		},
-		"wakep": linknameSignatures{
+		"wakep": {
 			local: "func()",
 		},
-		"nanotime": linknameSignatures{
+		"nanotime": {
 			local: "func() int64",
 		},
 	},
-	"sync": map[string]linknameSignatures{
-		"runtime_canSpin": linknameSignatures{
+	"sync": {
+		"runtime_canSpin": {
 			local: "func(i int) bool",
 		},
-		"runtime_doSpin": linknameSignatures{
+		"runtime_doSpin": {
 			local: "func()",
 		},
-		"runtime_Semacquire": linknameSignatures{
+		"runtime_Semacquire": {
 			// The only difference here is the parameter names. We
 			// can't just change our local use to match remote, as
 			// the stdlib runtime and sync packages also disagree
@@ -96,20 +96,20 @@ var knownLinknames = map[string]map[string]linknameSignatures{
 			local:  "func(addr *uint32)",
 			remote: "func(s *uint32)",
 		},
-		"runtime_Semrelease": linknameSignatures{
+		"runtime_Semrelease": {
 			// See above.
 			local:  "func(addr *uint32, handoff bool, skipframes int)",
 			remote: "func(s *uint32, handoff bool, skipframes int)",
 		},
 	},
-	"syscall": map[string]linknameSignatures{
-		"runtime_BeforeFork": linknameSignatures{
+	"syscall": {
+		"runtime_BeforeFork": {
 			local: "func()",
 		},
-		"runtime_AfterFork": linknameSignatures{
+		"runtime_AfterFork": {
 			local: "func()",
 		},
-		"runtime_AfterForkInChild": linknameSignatures{
+		"runtime_AfterForkInChild": {
 			local: "func()",
 		},
 	},
