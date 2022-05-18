@@ -81,8 +81,8 @@ func (fs *filesystem) PrepareSave(ctx context.Context) error {
 }
 
 // Preconditions:
-// * fd represents a pipe.
-// * fd is readable.
+//   - fd represents a pipe.
+//   - fd is readable.
 func (fd *specialFileFD) savePipeData(ctx context.Context) error {
 	fd.bufMu.Lock()
 	defer fd.bufMu.Unlock()
@@ -261,11 +261,11 @@ func (d *dentry) restoreFile(ctx context.Context, file p9file, qid p9.QID, attrM
 
 	// Gofers do not preserve QID across checkpoint/restore, so:
 	//
-	// - We must assume that the remote filesystem did not change in a way that
-	// would invalidate dentries, since we can't revalidate dentries by
-	// checking QIDs.
+	//	- We must assume that the remote filesystem did not change in a way that
+	//		would invalidate dentries, since we can't revalidate dentries by
+	//		checking QIDs.
 	//
-	// - We need to associate the new QID.Path with the existing d.ino.
+	//	- We need to associate the new QID.Path with the existing d.ino.
 	d.qidPath = qid.Path
 	d.fs.inoMu.Lock()
 	d.fs.inoByQIDPath[qid.Path] = d.ino
@@ -310,11 +310,11 @@ func (d *dentry) restoreFileLisa(ctx context.Context, inode *lisafs.Inode, opts 
 
 	// Gofers do not preserve inoKey across checkpoint/restore, so:
 	//
-	// - We must assume that the remote filesystem did not change in a way that
-	// would invalidate dentries, since we can't revalidate dentries by
-	// checking inoKey.
+	//	- We must assume that the remote filesystem did not change in a way that
+	//		would invalidate dentries, since we can't revalidate dentries by
+	//		checking inoKey.
 	//
-	// - We need to associate the new inoKey with the existing d.ino.
+	//	- We need to associate the new inoKey with the existing d.ino.
 	d.inoKey = inoKeyFromStat(&inode.Stat)
 	d.fs.inoMu.Lock()
 	d.fs.inoByKey[d.inoKey] = d.ino

@@ -65,9 +65,10 @@ func HighestVersionString() string {
 // predicate must be commented and should take the format:
 //
 // // VersionSupportsX returns true if version v supports X and must be checked when ...
-// func VersionSupportsX(v int32) bool {
-//	...
-// )
+//
+//	func VersionSupportsX(v int32) bool {
+//		...
+//	}
 func parseVersion(str string) (uint32, bool) {
 	// Special case the base version which lacks the ".Google.X" suffix.  This
 	// version always means version 0.

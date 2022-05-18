@@ -290,10 +290,10 @@ func newInodeOperations(ctx context.Context, s *session, file contextFile, qid p
 // Root returns the root of a 9p mount. This mount is bound to a 9p server
 // based on conn. Otherwise configuration parameters are:
 //
-// * dev:         connection id
-// * filesystem:  the filesystem backing the mount
-// * superBlockFlags:  the mount flags describing general mount options
-// * opts:        parsed 9p mount options
+//   - dev:         connection id
+//   - filesystem:  the filesystem backing the mount
+//   - superBlockFlags:  the mount flags describing general mount options
+//   - opts:        parsed 9p mount options
 func Root(ctx context.Context, dev string, filesystem fs.Filesystem, superBlockFlags fs.MountSourceFlags, o opts) (*fs.Inode, error) {
 	// The mounting EUID/EGID will be cached by this file system. This will
 	// be used to assign ownership to files that the Gofer owns.

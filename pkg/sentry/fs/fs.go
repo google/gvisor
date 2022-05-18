@@ -29,23 +29,26 @@
 // in the following order.
 //
 // Either:
-//   File.mu
-//     Locks in FileOperations implementations
-//       goto Dirent-Locks
+//
+//	File.mu
+//	  Locks in FileOperations implementations
+//	    goto Dirent-Locks
 //
 // Or:
-//   MountNamespace.mu
-//     goto Dirent-Locks
+//
+//	MountNamespace.mu
+//	  goto Dirent-Locks
 //
 // Dirent-Locks:
-//   renameMu
-//     Dirent.dirMu
-//       Dirent.mu
-//         DirentCache.mu
-//         Inode.Watches.mu (see `Inotify` for other lock ordering)
-//         MountSource.mu
-//         Inode.appendMu
-//           Locks in InodeOperations implementations or overlayEntry
+//
+//	renameMu
+//	  Dirent.dirMu
+//	    Dirent.mu
+//	      DirentCache.mu
+//	      Inode.Watches.mu (see `Inotify` for other lock ordering)
+//	      MountSource.mu
+//	      Inode.appendMu
+//	        Locks in InodeOperations implementations or overlayEntry
 //
 // If multiple Dirent or MountSource locks must be taken, locks in the parent must be
 // taken before locks in their children.

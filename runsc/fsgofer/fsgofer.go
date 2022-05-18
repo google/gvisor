@@ -16,8 +16,8 @@
 // a simple mapping from a path prefix that is added to the path requested
 // by the sandbox. Ex:
 //
-//   prefix: "/docker/imgs/alpine"
-//   app path: /bin/ls => /docker/imgs/alpine/bin/ls
+//	prefix: "/docker/imgs/alpine"
+//	app path: /bin/ls => /docker/imgs/alpine/bin/ls
 package fsgofer
 
 import (
@@ -202,10 +202,10 @@ func (a *attachPoint) makeQID(stat *unix.Stat_t) p9.QID {
 // multiple files are only being opened for read (esp. startup).
 //
 // File operations must use "at" functions whenever possible:
-//   * Local operations must use AT_EMPTY_PATH:
-//  	   fchownat(fd, "", AT_EMPTY_PATH, ...), instead of chown(fullpath, ...)
-//   * Creation operations must use (fd + name):
-//       mkdirat(fd, name, ...), instead of mkdir(fullpath, ...)
+//   - Local operations must use AT_EMPTY_PATH:
+//     fchownat(fd, "", AT_EMPTY_PATH, ...), instead of chown(fullpath, ...)
+//   - Creation operations must use (fd + name):
+//     mkdirat(fd, name, ...), instead of mkdir(fullpath, ...)
 //
 // Apart from being faster, it also adds another layer of defense against
 // symlink attacks (note that O_NOFOLLOW applies only to the last element in

@@ -189,16 +189,16 @@ type socketCreator func(path string, proto int) (cleanup func(), err error)
 
 // CreateSocketTree creates a local tree of unix domain sockets for use in
 // testing:
-//  * /stream/echo
-//  * /stream/nonlistening
-//  * /seqpacket/echo
-//  * /seqpacket/nonlistening
-//  * /dgram/null
+//   - /stream/echo
+//   - /stream/nonlistening
+//   - /seqpacket/echo
+//   - /seqpacket/nonlistening
+//   - /dgram/null
 //
 // Additionally, it will attempt to connect to sockets at the following
 // locations, and turn into an echo server once connected:
-//  * /stream/created-in-sandbox
-//  * /seqpacket/created-in-sandbox
+//   - /stream/created-in-sandbox
+//   - /seqpacket/created-in-sandbox
 func CreateSocketTree(baseDir string) (dir string, cleanup func(), err error) {
 	dir, err = ioutil.TempDir(baseDir, "sockets")
 	if err != nil {

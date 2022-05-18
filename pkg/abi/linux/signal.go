@@ -411,8 +411,8 @@ type SignalInfo struct {
 //
 // The si_code we get from Linux may contain the kernel-specific code in the
 // top 16 bits if it's positive (e.g., from ptrace). Linux's
-// copy_siginfo_to_user does
-//     err |= __put_user((short)from->si_code, &to->si_code);
+// copy_siginfo_to_user does:
+// err |= __put_user((short)from->si_code, &to->si_code);
 // to mask out those bits and we need to do the same.
 func (s *SignalInfo) FixSignalCodeForUser() {
 	if s.Code > 0 {

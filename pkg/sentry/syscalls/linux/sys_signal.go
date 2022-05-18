@@ -28,8 +28,9 @@ import (
 )
 
 // "For a process to have permission to send a signal it must
-// - either be privileged (CAP_KILL), or
-// - the real or effective user ID of the sending process must be equal to the
+//   - either be privileged (CAP_KILL), or
+//   - the real or effective user ID of the sending process must be equal to the
+//
 // real or saved set-user-ID of the target process.
 //
 // In the case of SIGCONT it suffices when the sending and receiving processes

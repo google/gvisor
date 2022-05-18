@@ -61,6 +61,7 @@ type PageTables struct {
 // Init initializes a set of PageTables.
 //
 // +checkescape:hard,stack
+//
 //go:nosplit
 func (p *PageTables) Init(allocator Allocator) {
 	p.Allocator = allocator
@@ -141,6 +142,7 @@ func (*mapVisitor) requiresSplit() bool { return true }
 // Precondition: addr & length must be page-aligned, their sum must not overflow.
 //
 // +checkescape:hard,stack
+//
 //go:nosplit
 func (p *PageTables) Map(addr hostarch.Addr, length uintptr, opts MapOpts, physical uintptr) bool {
 	if p.readOnlyShared {
@@ -197,6 +199,7 @@ func (v *unmapVisitor) visit(start uintptr, pte *PTE, align uintptr) bool {
 // Precondition: addr & length must be page-aligned, their sum must not overflow.
 //
 // +checkescape:hard,stack
+//
 //go:nosplit
 func (p *PageTables) Unmap(addr hostarch.Addr, length uintptr) bool {
 	if p.readOnlyShared {
@@ -248,6 +251,7 @@ func (v *emptyVisitor) visit(start uintptr, pte *PTE, align uintptr) bool {
 // Precondition: addr & length must be page-aligned.
 //
 // +checkescape:hard,stack
+//
 //go:nosplit
 func (p *PageTables) IsEmpty(addr hostarch.Addr, length uintptr) bool {
 	w := emptyWalker{
@@ -297,6 +301,7 @@ func (*lookupVisitor) requiresSplit() bool { return false }
 // Note that if size is zero, then no matching entry was found.
 //
 // +checkescape:hard,stack
+//
 //go:nosplit
 func (p *PageTables) Lookup(addr hostarch.Addr, findFirst bool) (virtual hostarch.Addr, physical, size uintptr, opts MapOpts) {
 	mask := uintptr(hostarch.PageSize - 1)

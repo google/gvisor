@@ -60,8 +60,8 @@ func FromContext(ctx context) FeatureSet {
 // On x86, features are numbered according to "blocks". Each block is 32 bits, and
 // feature bits from the same source (cpuid leaf/level) are in the same block.
 //
-// On arm64, features are numbered according to the ELF HWCAP definition, from:
-//   arch/arm64/include/uapi/asm/hwcap.h
+// On arm64, features are numbered according to the ELF HWCAP definition, from
+// arch/arm64/include/uapi/asm/hwcap.h.
 type Feature int
 
 // allFeatureInfo is the value for allFeatures.

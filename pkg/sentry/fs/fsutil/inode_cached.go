@@ -45,11 +45,11 @@ import (
 //
 // CachingInodeOperations implements Mappable for the CachedFileObject:
 //
-// - If CachedFileObject.FD returns a value >= 0 then the file descriptor
-//   will be memory mapped on the host.
+//   - If CachedFileObject.FD returns a value >= 0 then the file descriptor
+//     will be memory mapped on the host.
 //
-// - Otherwise, the contents of CachedFileObject are buffered into memory
-//   managed by the CachingInodeOperations.
+//   - Otherwise, the contents of CachedFileObject are buffered into memory
+//     managed by the CachingInodeOperations.
 //
 // Implementations of FileOperations for a CachedFileObject must read and
 // write through CachingInodeOperations using Read and Write respectively.
@@ -696,8 +696,8 @@ func (rw *inodeReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 // bytes were written.
 //
 // Preconditions:
-// * rw.c.attrMu must be locked.
-// * rw.c.dataMu must be locked.
+//   - rw.c.attrMu must be locked.
+//   - rw.c.dataMu must be locked.
 func (rw *inodeReadWriter) maybeUpdateAttrs(nwritten uint64) {
 	// If the write ends beyond the file's previous size, it causes the
 	// file to grow.

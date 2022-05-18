@@ -398,8 +398,8 @@ type umountRecursiveOptions struct {
 // umountRecursiveLocked is analogous to Linux's fs/namespace.c:umount_tree().
 //
 // Preconditions:
-// * vfs.mountMu must be locked.
-// * vfs.mounts.seq must be in a writer critical section.
+//   - vfs.mountMu must be locked.
+//   - vfs.mounts.seq must be in a writer critical section.
 func (vfs *VirtualFilesystem) umountRecursiveLocked(mnt *Mount, opts *umountRecursiveOptions, vdsToDecRef []VirtualDentry, mountsToDecRef []*Mount) ([]VirtualDentry, []*Mount) {
 	if !mnt.umounted {
 		mnt.umounted = true
@@ -429,10 +429,10 @@ func (vfs *VirtualFilesystem) umountRecursiveLocked(mnt *Mount, opts *umountRecu
 // references held by vd.
 //
 // Preconditions:
-// * vfs.mountMu must be locked.
-// * vfs.mounts.seq must be in a writer critical section.
-// * d.mu must be locked.
-// * mnt.parent() == nil, i.e. mnt must not already be connected.
+//   - vfs.mountMu must be locked.
+//   - vfs.mounts.seq must be in a writer critical section.
+//   - d.mu must be locked.
+//   - mnt.parent() == nil, i.e. mnt must not already be connected.
 func (vfs *VirtualFilesystem) connectLocked(mnt *Mount, vd VirtualDentry, mntns *MountNamespace) {
 	if checkInvariants {
 		if mnt.parent() != nil {
@@ -461,9 +461,9 @@ func (vfs *VirtualFilesystem) connectLocked(mnt *Mount, vd VirtualDentry, mntns 
 // mount parent/point with a reference held.
 //
 // Preconditions:
-// * vfs.mountMu must be locked.
-// * vfs.mounts.seq must be in a writer critical section.
-// * mnt.parent() != nil.
+//   - vfs.mountMu must be locked.
+//   - vfs.mounts.seq must be in a writer critical section.
+//   - mnt.parent() != nil.
 func (vfs *VirtualFilesystem) disconnectLocked(mnt *Mount) VirtualDentry {
 	vd := mnt.getKey()
 	if checkInvariants {
@@ -595,12 +595,12 @@ func (mntns *MountNamespace) DecRef(ctx context.Context) {
 func (vfs *VirtualFilesystem) getMountAt(ctx context.Context, mnt *Mount, d *Dentry) *Mount {
 	// The first mount is special-cased:
 	//
-	// - The caller is assumed to have checked d.isMounted() already. (This
-	// isn't a precondition because it doesn't matter for correctness.)
+	//	- The caller is assumed to have checked d.isMounted() already. (This
+	//		isn't a precondition because it doesn't matter for correctness.)
 	//
-	// - We return nil, instead of mnt, if there is no mount at (mnt, d).
+	//	- We return nil, instead of mnt, if there is no mount at (mnt, d).
 	//
-	// - We don't drop the caller's references on mnt and d.
+	//	- We don't drop the caller's references on mnt and d.
 retryFirst:
 	next := vfs.mounts.Lookup(mnt, d)
 	if next == nil {
@@ -635,16 +635,16 @@ retryFirst:
 // point exists (i.e. mnt is a root mount), getMountpointAt returns (nil, nil).
 //
 // Preconditions:
-// * References are held on mnt and root.
-// * vfsroot is not (mnt, mnt.root).
+//   - References are held on mnt and root.
+//   - vfsroot is not (mnt, mnt.root).
 func (vfs *VirtualFilesystem) getMountpointAt(ctx context.Context, mnt *Mount, vfsroot VirtualDentry) VirtualDentry {
 	// The first mount is special-cased:
 	//
-	// - The caller must have already checked mnt against vfsroot.
+	//	- The caller must have already checked mnt against vfsroot.
 	//
-	// - We return nil, instead of mnt, if there is no mount point for mnt.
+	//	- We return nil, instead of mnt, if there is no mount point for mnt.
 	//
-	// - We don't drop the caller's reference on mnt.
+	//	- We don't drop the caller's reference on mnt.
 retryFirst:
 	epoch := vfs.mounts.seq.BeginRead()
 	parent, point := mnt.parent(), mnt.point()

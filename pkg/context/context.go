@@ -140,12 +140,12 @@ func (*NoTask) UninterruptibleSleepFinish(bool) {}
 // context.Context, the standard type represents the state of an operation
 // rather than that of a goroutine. This is a critical distinction:
 //
-// - Unlike context.Context, which "may be passed to functions running in
-// different goroutines", it is *not safe* to use the same Context in multiple
-// concurrent goroutines.
+//   - Unlike context.Context, which "may be passed to functions running in
+//     different goroutines", it is *not safe* to use the same Context in multiple
+//     concurrent goroutines.
 //
-// - It is *not safe* to retain a Context passed to a function beyond the scope
-// of that function call.
+//   - It is *not safe* to retain a Context passed to a function beyond the scope
+//     of that function call.
 //
 // In both cases, values extracted from the Context should be used instead.
 type Context interface {

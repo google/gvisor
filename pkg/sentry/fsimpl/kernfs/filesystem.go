@@ -33,8 +33,8 @@ import (
 // stepExistingLocked is loosely analogous to fs/namei.c:walk_component().
 //
 // Preconditions:
-// * Filesystem.mu must be locked for at least reading.
-// * !rp.Done().
+//   - Filesystem.mu must be locked for at least reading.
+//   - !rp.Done().
 //
 // Postcondition: Caller must call fs.processDeferredDecRefs*.
 func (fs *Filesystem) stepExistingLocked(ctx context.Context, rp *vfs.ResolvingPath, d *Dentry, mayFollowSymlinks bool) (*Dentry, error) {
@@ -109,10 +109,10 @@ afterSymlink:
 // nil) to verify that the returned child (or lack thereof) is correct.
 //
 // Preconditions:
-// * Filesystem.mu must be locked for at least reading.
-// * parent.dirMu must be locked.
-// * parent.isDir().
-// * name is not "." or "..".
+//   - Filesystem.mu must be locked for at least reading.
+//   - parent.dirMu must be locked.
+//   - parent.isDir().
+//   - name is not "." or "..".
 //
 // Postconditions: Caller must call fs.processDeferredDecRefs*.
 func (fs *Filesystem) revalidateChildLocked(ctx context.Context, vfsObj *vfs.VirtualFilesystem, parent *Dentry, name string, child *Dentry) (*Dentry, error) {
@@ -182,8 +182,8 @@ func (fs *Filesystem) walkExistingLocked(ctx context.Context, rp *vfs.ResolvingP
 // fs/namei.c:path_parentat().
 //
 // Preconditions:
-// * Filesystem.mu must be locked for at least reading.
-// * !rp.Done().
+//   - Filesystem.mu must be locked for at least reading.
+//   - !rp.Done().
 //
 // Postconditions: Caller must call fs.processDeferredDecRefs*.
 func (fs *Filesystem) walkParentDirLocked(ctx context.Context, rp *vfs.ResolvingPath) (*Dentry, error) {
@@ -205,8 +205,8 @@ func (fs *Filesystem) walkParentDirLocked(ctx context.Context, rp *vfs.Resolving
 // directory parent, then returns rp.Component().
 //
 // Preconditions:
-// * Filesystem.mu must be locked for at least reading.
-// * isDir(parentInode) == true.
+//   - Filesystem.mu must be locked for at least reading.
+//   - isDir(parentInode) == true.
 func checkCreateLocked(ctx context.Context, creds *auth.Credentials, name string, parent *Dentry) error {
 	// Order of checks is important. First check if parent directory can be
 	// executed, then check for existence, and lastly check if mount is writable.

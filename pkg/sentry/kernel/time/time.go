@@ -609,9 +609,9 @@ func (t *Timer) Swap(s Setting) (Time, Setting) {
 // starts the timer, while setting s.Enabled to false stops it.
 //
 // Preconditions:
-// * The Timer must not be paused.
-// * f cannot call any Timer methods since it is called with the Timer mutex
-//   locked.
+//   - The Timer must not be paused.
+//   - f cannot call any Timer methods since it is called with the Timer mutex
+//     locked.
 func (t *Timer) SwapAnd(s Setting, f func()) (Time, Setting) {
 	now := t.clock.Now()
 	t.mu.Lock()

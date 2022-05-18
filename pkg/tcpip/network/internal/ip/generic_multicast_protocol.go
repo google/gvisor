@@ -30,19 +30,19 @@ type hostState int
 // (RFC 2710 section 5). Even though the states are generic across both IGMPv2
 // and MLDv1, IGMPv2 terminology will be used.
 //
-//                                  ______________receive query______________
-//                                 |                                         |
-//                                 |   _____send or receive report_____      |
-//                                 |  |                                |     |
-//                                 V  |                                V     |
-//  +-------+ +-----------+ +------------+ +-------------------+ +--------+  |
-//  | Non-M | | Pending-M | | Delaying-M | | Queued Delaying-M | | Idle-M | -
-//  +-------+ +-----------+ +------------+ +-------------------+ +--------+
-//    |          ^      |       ^      |          ^       |             ^
-//    |          |      |       |      |          |       |             |
-//     ----------        -------        ----------         -------------
-//   initialize new    send inital     fail to send       send or receive
-//  group membership     report       delayed report          report
+//	                                ______________receive query______________
+//	                               |                                         |
+//	                               |   _____send or receive report_____      |
+//	                               |  |                                |     |
+//	                               V  |                                V     |
+//	+-------+ +-----------+ +------------+ +-------------------+ +--------+  |
+//	| Non-M | | Pending-M | | Delaying-M | | Queued Delaying-M | | Idle-M | -
+//	+-------+ +-----------+ +------------+ +-------------------+ +--------+
+//	  |          ^      |       ^      |          ^       |             ^
+//	  |          |      |       |      |          |       |             |
+//	   ----------        -------        ----------         -------------
+//	 initialize new    send inital     fail to send       send or receive
+//	group membership     report       delayed report          report
 //
 // Not shown in the diagram above, but any state may transition into the non
 // member state when a group is left.

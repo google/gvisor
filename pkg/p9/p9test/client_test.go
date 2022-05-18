@@ -130,25 +130,27 @@ func newTypeMap(h *Harness) map[string]Generator {
 // This is set up in a deterministic way for testing most operations.
 //
 // The represented file system looks like:
-// - file
-// - symlink
-// - directory
+//   - file
+//   - symlink
+//   - directory
+//
 // ...
 // + one
 //   - file
 //   - symlink
 //   - directory
-//   ...
-//   + two
-//     - file
-//     - symlink
-//     - directory
 //     ...
+//   - two
+//   - file
+//   - symlink
+//   - directory
+//     ...
+//
 // + three
 //   - file
 //   - symlink
 //   - directory
-//   ...
+//     ...
 func newRoot(h *Harness, c *p9.Client) (*Mock, p9.File) {
 	root := newTypeMap(h)
 	one := newTypeMap(h)
@@ -257,9 +259,9 @@ func TestWalkInvalid(t *testing.T) {
 // fileGenerator is a function to generate files via walk or create.
 //
 // Examples are:
-//	- walkHelper
-//	- walkAndOpenHelper
-//	- createHelper
+//   - walkHelper
+//   - walkAndOpenHelper
+//   - createHelper
 type fileGenerator func(*Harness, string, p9.File) (*Mock, *Mock, p9.File)
 
 // walkHelper walks to the given file.
@@ -1151,8 +1153,8 @@ func TestOpen(t *testing.T) {
 	}
 
 	// Open(flags OpenFlags) (*fd.FD, QID, uint32, error)
-	// - only works on Regular, NamedPipe, BLockDevice, CharacterDevice
-	// - returning a file works as expected
+	//	- only works on Regular, NamedPipe, BLockDevice, CharacterDevice
+	//	- returning a file works as expected
 	for name := range newTypeMap(nil) {
 		for _, tc := range cases {
 			t.Run(fmt.Sprintf("%s-%s", tc.name, name), func(t *testing.T) {

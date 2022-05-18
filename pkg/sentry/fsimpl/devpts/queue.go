@@ -99,10 +99,10 @@ func (q *queue) readableSize(t *kernel.Task, io usermem.IO, args arch.SyscallArg
 }
 
 // read reads from q to userspace. It returns:
-// - The number of bytes read
-// - Whether the read caused more readable data to become available (whether
-// data was pushed from the wait buffer to the read buffer).
-// - Whether any data was echoed back (need to notify readers).
+//   - The number of bytes read
+//   - Whether the read caused more readable data to become available (whether
+//     data was pushed from the wait buffer to the read buffer).
+//   - Whether any data was echoed back (need to notify readers).
 //
 // Preconditions: l.termiosMu must be held for reading.
 func (q *queue) read(ctx context.Context, dst usermem.IOSequence, l *lineDiscipline) (int64, bool, bool, error) {
@@ -204,8 +204,8 @@ func (q *queue) writeBytes(b []byte, l *lineDiscipline) bool {
 // The returned boolean indicates whether any data was echoed back.
 //
 // Preconditions:
-// * l.termiosMu must be held for reading.
-// * q.mu must be locked.
+//   - l.termiosMu must be held for reading.
+//   - q.mu must be locked.
 func (q *queue) pushWaitBufLocked(l *lineDiscipline) (int, bool) {
 	if q.waitBufLen == 0 {
 		return 0, false

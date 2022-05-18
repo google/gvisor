@@ -86,10 +86,11 @@ func main() {
 }
 
 // runTest runs testfunc with the following directory structure:
-// tempdir/
-//   subdir/
-//   subdir2/
-//   symlink --> ./subdir2
+//
+//	 tempdir/
+//		subdir/
+//		subdir2/
+//		symlink --> ./subdir2
 func runTest(tempdir string, testfunc func() error) error {
 	// Create tempdir/subdir/.
 	dirPath := filepath.Join(tempdir, "subdir")

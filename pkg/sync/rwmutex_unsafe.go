@@ -6,10 +6,10 @@
 // This is mostly copied from the standard library's sync/rwmutex.go.
 //
 // Happens-before relationships indicated to the race detector:
-// - Unlock -> Lock (via writerSem)
-// - Unlock -> RLock (via readerSem)
-// - RUnlock -> Lock (via writerSem)
-// - DowngradeLock -> RLock (via readerSem)
+//	- Unlock -> Lock (via writerSem)
+//	- Unlock -> RLock (via readerSem)
+//	- RUnlock -> Lock (via writerSem)
+//	- DowngradeLock -> RLock (via readerSem)
 
 package sync
 
@@ -84,7 +84,8 @@ func (rw *CrossGoroutineRWMutex) RLock() {
 // RUnlock undoes a single RLock call.
 //
 // Preconditions:
-// * rw is locked for reading.
+//   - rw is locked for reading.
+//
 // +checklocksignore
 func (rw *CrossGoroutineRWMutex) RUnlock() {
 	if RaceEnabled {
@@ -159,7 +160,8 @@ func (rw *CrossGoroutineRWMutex) Lock() {
 // Unlock unlocks rw for writing.
 //
 // Preconditions:
-// * rw is locked for writing.
+//   - rw is locked for writing.
+//
 // +checklocksignore
 func (rw *CrossGoroutineRWMutex) Unlock() {
 	if RaceEnabled {
@@ -186,7 +188,8 @@ func (rw *CrossGoroutineRWMutex) Unlock() {
 // DowngradeLock atomically unlocks rw for writing and locks it for reading.
 //
 // Preconditions:
-// * rw is locked for writing.
+//   - rw is locked for writing.
+//
 // +checklocksignore
 func (rw *CrossGoroutineRWMutex) DowngradeLock() {
 	if RaceEnabled {
@@ -257,8 +260,9 @@ func (rw *RWMutex) RLock() {
 // RUnlock undoes a single RLock call.
 //
 // Preconditions:
-// * rw is locked for reading.
-// * rw was locked by this goroutine.
+//   - rw is locked for reading.
+//   - rw was locked by this goroutine.
+//
 // +checklocksignore
 func (rw *RWMutex) RUnlock() {
 	rw.m.RUnlock()
@@ -289,8 +293,9 @@ func (rw *RWMutex) Lock() {
 // Unlock unlocks rw for writing.
 //
 // Preconditions:
-// * rw is locked for writing.
-// * rw was locked by this goroutine.
+//   - rw is locked for writing.
+//   - rw was locked by this goroutine.
+//
 // +checklocksignore
 func (rw *RWMutex) Unlock() {
 	rw.m.Unlock()
@@ -300,7 +305,8 @@ func (rw *RWMutex) Unlock() {
 // DowngradeLock atomically unlocks rw for writing and locks it for reading.
 //
 // Preconditions:
-// * rw is locked for writing.
+//   - rw is locked for writing.
+//
 // +checklocksignore
 func (rw *RWMutex) DowngradeLock() {
 	// No note change for DowngradeLock.

@@ -62,13 +62,14 @@ var benchNumMounts = []int{1 << 2, 1 << 5, 1 << 8}
 
 // For all of the following:
 //
-// - BenchmarkMountTableFoo tests usage pattern "Foo" for mountTable.
+//   - BenchmarkMountTableFoo tests usage pattern "Foo" for mountTable.
 //
-// - BenchmarkMountMapFoo tests usage pattern "Foo" for a
+//   - BenchmarkMountMapFoo tests usage pattern "Foo" for a
+//
 // sync.RWMutex-protected map. (Mutator benchmarks do not use a RWMutex, since
 // mountTable also requires external synchronization between mutators.)
 //
-// - BenchmarkMountSyncMapFoo tests usage pattern "Foo" for a sync.Map.
+//   - BenchmarkMountSyncMapFoo tests usage pattern "Foo" for a sync.Map.
 //
 // ParallelLookup is by far the most common and performance-sensitive operation
 // for this application. NegativeLookup is also important, but less so (only

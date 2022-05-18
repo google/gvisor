@@ -153,10 +153,10 @@ const (
 // interpreter will be loaded.
 //
 // It returns:
-//  * loadedELF, description of the loaded binary
-//  * arch.Context matching the binary arch
-//  * fs.Dirent of the binary file
-//  * Possibly updated args.Argv
+//   - loadedELF, description of the loaded binary
+//   - arch.Context matching the binary arch
+//   - fs.Dirent of the binary file
+//   - Possibly updated args.Argv
 func loadExecutable(ctx context.Context, args LoadArgs) (loadedELF, arch.Context, fsbridge.File, []string, error) {
 	for i := 0; i < maxLoaderAttempts; i++ {
 		if args.File == nil {
@@ -228,8 +228,8 @@ func loadExecutable(ctx context.Context, args LoadArgs) (loadedELF, arch.Context
 // path and argv.
 //
 // Preconditions:
-// * The Task MemoryManager is empty.
-// * Load is called on the Task goroutine.
+//   - The Task MemoryManager is empty.
+//   - Load is called on the Task goroutine.
 func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *VDSO) (abi.OS, arch.Context, string, *syserr.Error) {
 	// Load the executable itself.
 	loaded, ac, file, newArgv, err := loadExecutable(ctx, args)

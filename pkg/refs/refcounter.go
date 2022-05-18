@@ -189,7 +189,7 @@ func (w *WeakRef) zap() {
 // favor of the refsvfs2 package.
 //
 // N.B. To allow the zero-object to be initialized, the count is offset by
-//      1, that is, when refCount is n, there are really n+1 references.
+// 1, that is, when refCount is n, there are really n+1 references.
 //
 // +stateify savable
 type AtomicRefCount struct {

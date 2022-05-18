@@ -27,9 +27,9 @@ var ErrReachedLimit = errors.New("reached limit")
 // SectionReader implements io.Reader on a section of an underlying io.ReaderAt.
 // It is similar to io.SectionReader, but:
 //
-// - Reading beyond the limit returns ErrReachedLimit, not io.EOF.
+//   - Reading beyond the limit returns ErrReachedLimit, not io.EOF.
 //
-// - Limit overflow is handled correctly.
+//   - Limit overflow is handled correctly.
 type SectionReader struct {
 	r     io.ReaderAt
 	off   int64

@@ -443,9 +443,9 @@ func (mm *MemoryManager) LoadUint32(ctx context.Context, addr hostarch.Addr, opt
 // operation spanning ioar.
 //
 // Preconditions:
-// * mm.as != nil.
-// * ioar.Length() != 0.
-// * ioar.Contains(addr).
+//   - mm.as != nil.
+//   - ioar.Length() != 0.
+//   - ioar.Contains(addr).
 func (mm *MemoryManager) handleASIOFault(ctx context.Context, addr hostarch.Addr, ioar hostarch.AddrRange, at hostarch.AccessType) error {
 	// Try to map all remaining pages in the I/O operation. This RoundUp can't
 	// overflow because otherwise it would have been caught by CheckIORange.
@@ -634,8 +634,8 @@ func (mm *MemoryManager) withVecInternalMappings(ctx context.Context, ars hostar
 // truncate hostarch.AddrRangeSeq when errors occur.
 //
 // Preconditions:
-// * !arsit.IsEmpty().
-// * end <= arsit.Head().End.
+//   - !arsit.IsEmpty().
+//   - end <= arsit.Head().End.
 func truncatedAddrRangeSeq(ars, arsit hostarch.AddrRangeSeq, end hostarch.Addr) hostarch.AddrRangeSeq {
 	ar := arsit.Head()
 	if end <= ar.Start {

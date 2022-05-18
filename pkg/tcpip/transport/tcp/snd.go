@@ -1251,15 +1251,15 @@ func checkDSACK(rcvdSeg *segment) bool {
 
 	// See: https://tools.ietf.org/html/rfc2883#section-5 DSACK is sent in
 	// at most one SACK block. DSACK is detected in the below two cases:
-	// * If the SACK sequence space is less than this cumulative ACK, it is
-	//   an indication that the segment identified by the SACK block has
-	//   been received more than once by the receiver.
-	// * If the sequence space in the first SACK block is greater than the
-	//   cumulative ACK, then the sender next compares the sequence space
-	//   in the first SACK block with the sequence space in the second SACK
-	//   block, if there is one. This comparison can determine if the first
-	//   SACK block is reporting duplicate data that lies above the
-	//   cumulative ACK.
+	//	* If the SACK sequence space is less than this cumulative ACK, it is
+	//		an indication that the segment identified by the SACK block has
+	//		been received more than once by the receiver.
+	//	* If the sequence space in the first SACK block is greater than the
+	//		cumulative ACK, then the sender next compares the sequence space
+	//		in the first SACK block with the sequence space in the second SACK
+	//		block, if there is one. This comparison can determine if the first
+	//		SACK block is reporting duplicate data that lies above the
+	//		cumulative ACK.
 	if sb.Start.LessThan(rcvdSeg.ackNumber) {
 		return true
 	}
@@ -1406,17 +1406,17 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 
 		// See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08
 		// section-7.2
-		// * Step 2: Update RACK stats.
-		//   If the ACK is not ignored as invalid, update the RACK.rtt
-		//   to be the RTT sample calculated using this ACK, and
-		//   continue.  If this ACK or SACK was for the most recently
-		//   sent packet, then record the RACK.xmit_ts timestamp and
-		//   RACK.end_seq sequence implied by this ACK.
-		// * Step 3: Detect packet reordering.
-		//   If the ACK selectively or cumulatively acknowledges an
-		//   unacknowledged and also never retransmitted sequence below
-		//   RACK.fack, then the corresponding packet has been
-		//   reordered and RACK.reord is set to TRUE.
+		//	* Step 2: Update RACK stats.
+		//		If the ACK is not ignored as invalid, update the RACK.rtt
+		//		to be the RTT sample calculated using this ACK, and
+		//		continue.  If this ACK or SACK was for the most recently
+		//		sent packet, then record the RACK.xmit_ts timestamp and
+		//		RACK.end_seq sequence implied by this ACK.
+		//	* Step 3: Detect packet reordering.
+		//		If the ACK selectively or cumulatively acknowledges an
+		//		unacknowledged and also never retransmitted sequence below
+		//		RACK.fack, then the corresponding packet has been
+		//		reordered and RACK.reord is set to TRUE.
 		if s.ep.tcpRecovery&tcpip.TCPRACKLossDetection != 0 {
 			hasDSACK = s.walkSACK(rcvdSeg)
 		}
@@ -1583,8 +1583,8 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 	if s.ep.SACKPermitted && s.ep.tcpRecovery&tcpip.TCPRACKLossDetection != 0 {
 		// Update RACK reorder window.
 		// See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.2
-		// * Upon receiving an ACK:
-		// * Step 4: Update RACK reordering window
+		//	* Upon receiving an ACK:
+		//	* Step 4: Update RACK reordering window
 		s.rc.updateRACKReorderWindow()
 
 		// After the reorder window is calculated, detect any loss by checking

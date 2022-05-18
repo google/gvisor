@@ -31,19 +31,20 @@ import (
 // earlyReturn signal (T1 creates, stops and resets a Cancellable timer under a
 // lock L; T2, T3, T4 and T5 are goroutines that handle the first (A), second
 // (B), third (C), and fourth (D) instance of the timer firing, respectively):
-//   T1: Obtain L
-//   T1: Create a new Job w/ lock L (create instance A)
-//   T2: instance A fires, blocked trying to obtain L.
-//   T1: Attempt to stop instance A (set earlyReturn = true)
-//   T1: Schedule timer (create instance B)
-//   T3: instance B fires, blocked trying to obtain L.
-//   T1: Attempt to stop instance B (set earlyReturn = true)
-//   T1: Schedule timer (create instance C)
-//   T4: instance C fires, blocked trying to obtain L.
-//   T1: Attempt to stop instance C (set earlyReturn = true)
-//   T1: Schedule timer (create instance D)
-//   T5: instance D fires, blocked trying to obtain L.
-//   T1: Release L
+//
+//	T1: Obtain L
+//	T1: Create a new Job w/ lock L (create instance A)
+//	T2: instance A fires, blocked trying to obtain L.
+//	T1: Attempt to stop instance A (set earlyReturn = true)
+//	T1: Schedule timer (create instance B)
+//	T3: instance B fires, blocked trying to obtain L.
+//	T1: Attempt to stop instance B (set earlyReturn = true)
+//	T1: Schedule timer (create instance C)
+//	T4: instance C fires, blocked trying to obtain L.
+//	T1: Attempt to stop instance C (set earlyReturn = true)
+//	T1: Schedule timer (create instance D)
+//	T5: instance D fires, blocked trying to obtain L.
+//	T1: Release L
 //
 // Now that T1 has released L, any of the 4 timer instances can take L and
 // check earlyReturn. If the timers simply check earlyReturn and then do
@@ -168,35 +169,35 @@ func (j *Job) Schedule(d time.Duration) {
 // NewJob returns a new Job that can be used to schedule f to run in its own
 // gorountine. l will be locked before calling f then unlocked after f returns.
 //
-//  var clock tcpip.StdClock
-//  var mu sync.Mutex
-//  message := "foo"
-//  job := tcpip.NewJob(&clock, &mu, func() {
-//    fmt.Println(message)
-//  })
-//  job.Schedule(time.Second)
+//	var clock tcpip.StdClock
+//	var mu sync.Mutex
+//	message := "foo"
+//	job := tcpip.NewJob(&clock, &mu, func() {
+//	  fmt.Println(message)
+//	})
+//	job.Schedule(time.Second)
 //
-//  mu.Lock()
-//  message = "bar"
-//  mu.Unlock()
+//	mu.Lock()
+//	message = "bar"
+//	mu.Unlock()
 //
-//  // Output: bar
+//	// Output: bar
 //
 // f MUST NOT attempt to lock l.
 //
 // l MUST be locked prior to calling the returned job's Cancel().
 //
-//  var clock tcpip.StdClock
-//  var mu sync.Mutex
-//  message := "foo"
-//  job := tcpip.NewJob(&clock, &mu, func() {
-//    fmt.Println(message)
-//  })
-//  job.Schedule(time.Second)
+//	var clock tcpip.StdClock
+//	var mu sync.Mutex
+//	message := "foo"
+//	job := tcpip.NewJob(&clock, &mu, func() {
+//	  fmt.Println(message)
+//	})
+//	job.Schedule(time.Second)
 //
-//  mu.Lock()
-//  job.Cancel()
-//  mu.Unlock()
+//	mu.Lock()
+//	job.Cancel()
+//	mu.Unlock()
 func NewJob(c Clock, l sync.Locker, f func()) *Job {
 	return &Job{
 		clock:  c,

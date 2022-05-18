@@ -582,10 +582,10 @@ func TestSACKRecovery(t *testing.T) {
 }
 
 // TestRecoveryEntry tests the following two properties of entering recovery:
-// - Fast SACK recovery is entered when SND.UNA is considered lost by the SACK
-//   scoreboard but dupack count is still below threshold.
-// - Only enter recovery when at least one more byte of data beyond the highest
-//   byte that was outstanding when fast retransmit was last entered is acked.
+//   - Fast SACK recovery is entered when SND.UNA is considered lost by the SACK
+//     scoreboard but dupack count is still below threshold.
+//   - Only enter recovery when at least one more byte of data beyond the highest
+//     byte that was outstanding when fast retransmit was last entered is acked.
 func TestRecoveryEntry(t *testing.T) {
 	c := context.New(t, uint32(mtu))
 	defer c.Cleanup()

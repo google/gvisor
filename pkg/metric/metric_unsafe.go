@@ -49,6 +49,7 @@ func snapshotDistribution(samples []atomicbitops.Uint64) []uint64 {
 }
 
 // CheapNowNano returns the current unix timestamp in nanoseconds.
+//
 //go:nosplit
 func CheapNowNano() int64 {
 	return gohacks.Nanotime()

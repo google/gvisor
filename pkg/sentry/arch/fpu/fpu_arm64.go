@@ -32,7 +32,6 @@ const (
 //
 // Currently, aarch64FPState is only a space of 0x210 length for fpstate.
 // The fp head is useless in sentry/ptrace/kvm.
-//
 func initAarch64FPState(data *State) {
 }
 

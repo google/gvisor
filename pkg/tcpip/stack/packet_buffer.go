@@ -83,14 +83,14 @@ type PacketBufferOptions struct {
 // exposes a logically-contiguous byte storage. The underlying storage structure
 // is abstracted out, and should not be a concern here for most of the time.
 //
-// |- reserved ->|
-//               |--->| consumed (incoming)
-// 0             V    V
-// +--------+----+----+--------------------+
-// |        |    |    | current data ...   | (buf)
-// +--------+----+----+--------------------+
-//          ^    |
-//          |<---| pushed (outgoing)
+//	|- reserved ->|
+//								|--->| consumed (incoming)
+//	0             V    V
+//	+--------+----+----+--------------------+
+//	|        |    |    | current data ...   | (buf)
+//	+--------+----+----+--------------------+
+//					 ^    |
+//					 |<---| pushed (outgoing)
 //
 // When a PacketBuffer is created, a `reserved` header region can be specified,
 // which stack pushes headers in this region for an outgoing packet. There could

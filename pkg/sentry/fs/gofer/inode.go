@@ -77,9 +77,9 @@ type inodeFileState struct {
 
 	// MultiDeviceKey consists of:
 	//
-	// * Device:          file system device from a specific gofer.
-	// * SecondaryDevice: unique identifier of the attach point.
-	// * Inode:           the inode of this resource, unique per Device.=
+	//	* Device:          file system device from a specific gofer.
+	//	* SecondaryDevice: unique identifier of the attach point.
+	//	* Inode:           the inode of this resource, unique per Device.=
 	//
 	// These fields combined enable consistent hashing of virtual inodes
 	// on goferDevice.
@@ -109,7 +109,7 @@ type inodeFileState struct {
 	// inodeFileState.FD() can't return a write-only FD, but can't be changed
 	// if writeHandlesRW is true for the same reason.
 	//
-	// * There is one notable exception in recreateReadHandles(), where it dup's
+	//	* There is one notable exception in recreateReadHandles(), where it dup's
 	// the FD and invalidates the page cache.
 	readHandles    *handles `state:"nosave"`
 	writeHandles   *handles `state:"nosave"`

@@ -358,9 +358,9 @@ func (c *HostConnectedEndpoint) SetReceiveBufferSize(v int64) (newSz int64) {
 // SCMConnectedEndpoint represents an endpoint backed by a host fd that was
 // passed through a gofer Unix socket. It resembles HostConnectedEndpoint, with the
 // following differences:
-// - SCMConnectedEndpoint is not saveable, because the host cannot guarantee
-// the same descriptor number across S/R.
-// - SCMConnectedEndpoint holds ownership of its fd and notification queue.
+//   - SCMConnectedEndpoint is not saveable, because the host cannot guarantee
+//     the same descriptor number across S/R.
+//   - SCMConnectedEndpoint holds ownership of its fd and notification queue.
 type SCMConnectedEndpoint struct {
 	HostConnectedEndpoint
 

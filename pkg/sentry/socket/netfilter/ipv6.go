@@ -238,12 +238,12 @@ func filterFromIP6TIP(iptip linux.IP6TIP) (stack.IPHeaderFilter, error) {
 
 func containsUnsupportedFields6(iptip linux.IP6TIP) bool {
 	// The following features are supported:
-	// - Protocol
-	// - Dst and DstMask
-	// - Src and SrcMask
-	// - The inverse destination IP check flag
-	// - InputInterface, InputInterfaceMask and its inverse.
-	// - OutputInterface, OutputInterfaceMask and its inverse.
+	//	- Protocol
+	//	- Dst and DstMask
+	//	- Src and SrcMask
+	//	- The inverse destination IP check flag
+	//	- InputInterface, InputInterfaceMask and its inverse.
+	//	- OutputInterface, OutputInterfaceMask and its inverse.
 	const flagMask = linux.IP6T_F_PROTO
 	// Disable any supported inverse flags.
 	const inverseMask = linux.IP6T_INV_DSTIP | linux.IP6T_INV_SRCIP |

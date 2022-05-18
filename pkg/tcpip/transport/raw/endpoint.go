@@ -15,9 +15,9 @@
 // Package raw provides the implementation of raw sockets (see raw(7)). Raw
 // sockets allow applications to:
 //
-//   * manually write and inspect transport layer headers and payloads
-//   * receive all traffic of a given transport protocol (e.g. ICMP or UDP)
-//   * optionally write and inspect network layer headers of packets
+//   - manually write and inspect transport layer headers and payloads
+//   - receive all traffic of a given transport protocol (e.g. ICMP or UDP)
+//   - optionally write and inspect network layer headers of packets
 //
 // Raw sockets don't have any notion of ports, and incoming packets are
 // demultiplexed solely by protocol number. Thus, a raw UDP endpoint will
@@ -62,8 +62,9 @@ type rawPacket struct {
 // have goroutines make concurrent calls into the endpoint.
 //
 // Lock order:
-//   endpoint.mu
-//     endpoint.rcvMu
+//
+//	endpoint.mu
+//	  endpoint.rcvMu
 //
 // +stateify savable
 type endpoint struct {

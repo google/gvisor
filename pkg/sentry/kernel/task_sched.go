@@ -133,9 +133,9 @@ func (t *Task) accountTaskGoroutineEnter(state TaskGoroutineState) {
 }
 
 // Preconditions:
-// * The caller must be running on the task goroutine
-// * The caller must be leaving a state indicated by a previous call to
-//   t.accountTaskGoroutineEnter(state).
+//   - The caller must be running on the task goroutine
+//   - The caller must be leaving a state indicated by a previous call to
+//     t.accountTaskGoroutineEnter(state).
 func (t *Task) accountTaskGoroutineLeave(state TaskGoroutineState) {
 	if state != TaskGoroutineRunningApp {
 		// Task is unblocking/continuing.
@@ -204,7 +204,7 @@ func (tg *ThreadGroup) CPUStats() usage.CPUStats {
 }
 
 // Preconditions: Same as TaskGoroutineSchedInfo.userTicksAt, plus:
-// * The TaskSet mutex must be locked.
+//   - The TaskSet mutex must be locked.
 func (tg *ThreadGroup) cpuStatsAtLocked(now uint64) usage.CPUStats {
 	stats := tg.exitedCPUStats
 	// Account for live tasks.

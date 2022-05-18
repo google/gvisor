@@ -22,13 +22,13 @@
 //
 // Lock order:
 //
-// filesystem.renameMu
-//   dentry.cachingMu
-//     filesystem.cacheMu
-//       dentry.dirMu
-//         fileDescription.mu
-//           filesystem.verityMu
-//             dentry.hashMu
+//	filesystem.renameMu
+//		dentry.cachingMu
+//		  filesystem.cacheMu
+//		    dentry.dirMu
+//		      fileDescription.mu
+//		        filesystem.verityMu
+//		          dentry.hashMu
 //
 // Locking dentry.dirMu in multiple dentries requires that parent dentries are
 // locked before child dentries, and that filesystem.renameMu is locked to
@@ -709,8 +709,8 @@ func (d *dentry) decRefNoCaching() int64 {
 // destroyLocked destroys the dentry.
 //
 // Preconditions:
-// * d.fs.renameMu must be locked for writing.
-// * d.refs == 0.
+//   - d.fs.renameMu must be locked for writing.
+//   - d.refs == 0.
 func (d *dentry) destroyLocked(ctx context.Context) {
 	switch d.refs.Load() {
 	case 0:
@@ -880,7 +880,8 @@ func (fs *filesystem) evictAllCachedDentriesLocked(ctx context.Context) {
 }
 
 // Preconditions:
-// * fs.renameMu must be locked for writing; it may be temporarily unlocked.
+//   - fs.renameMu must be locked for writing; it may be temporarily unlocked.
+//
 // +checklocks:fs.renameMu
 func (fs *filesystem) evictCachedDentryLocked(ctx context.Context) {
 	fs.cacheMu.Lock()
@@ -1216,8 +1217,8 @@ func (fd *fileDescription) generateMerkleLocked(ctx context.Context) ([]byte, ui
 // xattrs.
 //
 // Preconditions:
-// * fd.d.fs.verityMu must be locked.
-// * fd.d.isDir() == true.
+//   - fd.d.fs.verityMu must be locked.
+//   - fd.d.isDir() == true.
 func (fd *fileDescription) recordChildrenLocked(ctx context.Context) error {
 	// Record the children names in the Merkle tree file.
 	childrenNames, err := json.Marshal(fd.d.childrenNames)

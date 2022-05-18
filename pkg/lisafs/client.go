@@ -402,10 +402,10 @@ func debugf(action string, comm Communicator, debugMsg debugStringer) {
 // Postcondition: releaseCommunicator() must be called on the returned value.
 func (c *Client) acquireCommunicator() Communicator {
 	// Prefer using channel over socket because:
-	// - Channel uses a shared memory region for passing messages. IO from shared
-	//   memory is faster and does not involve making a syscall.
-	// - No intermediate buffer allocation needed. With a channel, the message
-	//   can be directly pasted into the shared memory region.
+	//	- Channel uses a shared memory region for passing messages. IO from shared
+	//		memory is faster and does not involve making a syscall.
+	//	- No intermediate buffer allocation needed. With a channel, the message
+	//		can be directly pasted into the shared memory region.
 	if ch := c.getChannel(); ch != nil {
 		return ch
 	}

@@ -16,10 +16,11 @@
 // facility. See epoll(7) for more details.
 //
 // Lock order:
-// EventPoll.mu
-//   fdnotifier.notifier.mu
-//     EventPoll.listsMu
-//       unix.baseEndpoint.Mutex
+//
+//	 EventPoll.mu
+//		fdnotifier.notifier.mu
+//		  EventPoll.listsMu
+//		    unix.baseEndpoint.Mutex
 package epoll
 
 import (

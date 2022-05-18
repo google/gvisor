@@ -87,8 +87,8 @@ func (t *Task) CopyInString(addr hostarch.Addr, maxlen int) (string, error) {
 // number of elements. For example, the following strings correspond to
 // the following set of sizes:
 //
-//     { "a", "b", "c" } => 6 (3 for lengths, 3 for elements)
-//     { "abc" }         => 4 (3 for length, 1 for elements)
+//	{ "a", "b", "c" } => 6 (3 for lengths, 3 for elements)
+//	{ "abc" }         => 4 (3 for length, 1 for elements)
 //
 // This Task's AddressSpace must be active.
 func (t *Task) CopyInVector(addr hostarch.Addr, maxElemSize, maxTotalSize int) ([]string, error) {
@@ -125,8 +125,8 @@ func (t *Task) CopyInVector(addr hostarch.Addr, maxElemSize, maxTotalSize int) (
 // memory mapped at addr.
 //
 // Preconditions: Same as usermem.IO.CopyOut, plus:
-// * The caller must be running on the task goroutine.
-// * t's AddressSpace must be active.
+//   - The caller must be running on the task goroutine.
+//   - t's AddressSpace must be active.
 func (t *Task) CopyOutIovecs(addr hostarch.Addr, src hostarch.AddrRangeSeq) error {
 	switch t.Arch().Width() {
 	case 8:
@@ -160,22 +160,22 @@ func (t *Task) CopyOutIovecs(addr hostarch.Addr, src hostarch.AddrRangeSeq) erro
 // CopyInIovecs shares the following properties with Linux's
 // lib/iov_iter.c:import_iovec() => fs/read_write.c:rw_copy_check_uvector():
 //
-// - If the length of any AddrRange would exceed the range of an ssize_t,
-// CopyInIovecs returns EINVAL.
+//   - If the length of any AddrRange would exceed the range of an ssize_t,
+//     CopyInIovecs returns EINVAL.
 //
-// - If the length of any AddrRange would cause its end to overflow,
-// CopyInIovecs returns EFAULT.
+//   - If the length of any AddrRange would cause its end to overflow,
+//     CopyInIovecs returns EFAULT.
 //
-// - If any AddrRange would include addresses outside the application address
-// range, CopyInIovecs returns EFAULT.
+//   - If any AddrRange would include addresses outside the application address
+//     range, CopyInIovecs returns EFAULT.
 //
-// - The combined length of all AddrRanges is limited to MAX_RW_COUNT. If the
-// combined length of all AddrRanges would otherwise exceed this amount, ranges
-// beyond MAX_RW_COUNT are silently truncated.
+//   - The combined length of all AddrRanges is limited to MAX_RW_COUNT. If the
+//     combined length of all AddrRanges would otherwise exceed this amount, ranges
+//     beyond MAX_RW_COUNT are silently truncated.
 //
 // Preconditions: Same as usermem.IO.CopyIn, plus:
-// * The caller must be running on the task goroutine.
-// * t's AddressSpace must be active.
+//   - The caller must be running on the task goroutine.
+//   - t's AddressSpace must be active.
 func (t *Task) CopyInIovecs(addr hostarch.Addr, numIovecs int) (hostarch.AddrRangeSeq, error) {
 	if numIovecs == 0 {
 		return hostarch.AddrRangeSeq{}, nil

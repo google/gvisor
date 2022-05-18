@@ -16,19 +16,19 @@
 //
 // Lock order:
 //
-// EpollInstance.interestMu
-//   FileDescription.epollMu
-//     Locks acquired by FilesystemImpl/FileDescriptionImpl methods
-//       VirtualFilesystem.mountMu
-//         Dentry.mu
-//           Locks acquired by FilesystemImpls between Prepare{Delete,Rename}Dentry and Commit{Delete,Rename*}Dentry
-//         VirtualFilesystem.filesystemsMu
-//       fdnotifier.notifier.mu
-//         EpollInstance.readyMu
-//       Inotify.mu
-//         Watches.mu
-//           Inotify.evMu
-// VirtualFilesystem.fsTypesMu
+//	EpollInstance.interestMu
+//		FileDescription.epollMu
+//		  Locks acquired by FilesystemImpl/FileDescriptionImpl methods
+//		    VirtualFilesystem.mountMu
+//		      Dentry.mu
+//		        Locks acquired by FilesystemImpls between Prepare{Delete,Rename}Dentry and Commit{Delete,Rename*}Dentry
+//		      VirtualFilesystem.filesystemsMu
+//		    fdnotifier.notifier.mu
+//		      EpollInstance.readyMu
+//		    Inotify.mu
+//		      Watches.mu
+//		        Inotify.evMu
+//	VirtualFilesystem.fsTypesMu
 //
 // Locking Dentry.mu in multiple Dentries requires holding
 // VirtualFilesystem.mountMu. Locking EpollInstance.interestMu in multiple
@@ -383,10 +383,10 @@ func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credential
 
 	// Remove:
 	//
-	// - O_CLOEXEC, which affects file descriptors and therefore must be
-	// handled outside of VFS.
+	//	- O_CLOEXEC, which affects file descriptors and therefore must be
+	//		handled outside of VFS.
 	//
-	// - Unknown flags.
+	//	- Unknown flags.
 	opts.Flags &= linux.O_ACCMODE | linux.O_CREAT | linux.O_EXCL | linux.O_NOCTTY | linux.O_TRUNC | linux.O_APPEND | linux.O_NONBLOCK | linux.O_DSYNC | linux.O_ASYNC | linux.O_DIRECT | linux.O_LARGEFILE | linux.O_DIRECTORY | linux.O_NOFOLLOW | linux.O_NOATIME | linux.O_SYNC | linux.O_PATH | linux.O_TMPFILE
 	// Linux's __O_SYNC (which we call linux.O_SYNC) implies O_DSYNC.
 	if opts.Flags&linux.O_SYNC != 0 {

@@ -27,11 +27,11 @@ import (
 // Common references:
 //
 // Intel:
-//   * Intel SDM Volume 2, Chapter 3.2 "CPUID" (more up-to-date)
-//   * Intel Application Note 485 (more detailed)
+//   - Intel SDM Volume 2, Chapter 3.2 "CPUID" (more up-to-date)
+//   - Intel Application Note 485 (more detailed)
 //
 // AMD:
-//   * AMD64 APM Volume 3, Appendix 3 "Obtaining Processor Information ..."
+//   - AMD64 APM Volume 3, Appendix 3 "Obtaining Processor Information ..."
 //
 // +stateify savable
 type FeatureSet struct {

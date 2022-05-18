@@ -319,17 +319,17 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 		// Switch to the new Mappable. We do this at the end of copy-up
 		// because:
 		//
-		// - We need to switch Mappables (by changing d.wrappedMappable) before
-		// invalidating Translations from the old Mappable (to pick up
-		// Translations from the new one).
+		//	- We need to switch Mappables (by changing d.wrappedMappable) before
+		//		invalidating Translations from the old Mappable (to pick up
+		//		Translations from the new one).
 		//
-		// - We need to lock d.dataMu while changing d.wrappedMappable, but
-		// must invalidate Translations with d.dataMu unlocked (due to lock
-		// ordering).
+		//	- We need to lock d.dataMu while changing d.wrappedMappable, but
+		//		must invalidate Translations with d.dataMu unlocked (due to lock
+		//		ordering).
 		//
-		// - Consequently, once we unlock d.dataMu, other threads may
-		// immediately observe the new (copied-up) Mappable, which we want to
-		// delay until copy-up is guaranteed to succeed.
+		//	- Consequently, once we unlock d.dataMu, other threads may
+		//		immediately observe the new (copied-up) Mappable, which we want to
+		//		delay until copy-up is guaranteed to succeed.
 		d.dataMu.Lock()
 		lowerMappable := d.wrappedMappable
 		d.wrappedMappable = upperMappable
@@ -391,9 +391,9 @@ func (d *dentry) copyXattrsLocked(ctx context.Context) error {
 // copyUpDescendantsLocked ensures that all descendants of d are copied up.
 //
 // Preconditions:
-// * filesystem.renameMu must be locked.
-// * d.dirMu must be locked.
-// * d.isDir().
+//   - filesystem.renameMu must be locked.
+//   - d.dirMu must be locked.
+//   - d.isDir().
 func (d *dentry) copyUpDescendantsLocked(ctx context.Context, ds **[]*dentry) error {
 	dirents, err := d.getDirentsLocked(ctx)
 	if err != nil {

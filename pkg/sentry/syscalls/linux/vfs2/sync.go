@@ -86,23 +86,23 @@ func SyncFileRange(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 	// TODO(gvisor.dev/issue/1897): Currently, the only file syncing we support
 	// is a full-file sync, i.e. fsync(2). As a result, there are severe
 	// limitations on how much we support sync_file_range:
-	// - In Linux, sync_file_range(2) doesn't write out the file's metadata, even
-	//   if the file size is changed. We do.
-	// - We always sync the entire file instead of [offset, offset+nbytes).
-	// - We do not support the use of WAIT_BEFORE without WAIT_AFTER. For
-	//   correctness, we would have to perform a write-out every time WAIT_BEFORE
-	//   was used, but this would be much more expensive than expected if there
-	//   were no write-out operations in progress.
-	// - Whenever WAIT_AFTER is used, we sync the file.
-	// - Ignore WRITE. If this flag is used with WAIT_AFTER, then the file will
-	//   be synced anyway. If this flag is used without WAIT_AFTER, then it is
-	//   safe (and less expensive) to do nothing, because the syscall will not
-	//   wait for the write-out to complete--we only need to make sure that the
-	//   next time WAIT_BEFORE or WAIT_AFTER are used, the write-out completes.
-	// - According to fs/sync.c, WAIT_BEFORE|WAIT_AFTER "will detect any I/O
-	//   errors or ENOSPC conditions and will return those to the caller, after
-	//   clearing the EIO and ENOSPC flags in the address_space." We don't do
-	//   this.
+	//	- In Linux, sync_file_range(2) doesn't write out the file's metadata, even
+	//		if the file size is changed. We do.
+	//	- We always sync the entire file instead of [offset, offset+nbytes).
+	//	- We do not support the use of WAIT_BEFORE without WAIT_AFTER. For
+	//		correctness, we would have to perform a write-out every time WAIT_BEFORE
+	//		was used, but this would be much more expensive than expected if there
+	//		were no write-out operations in progress.
+	//	- Whenever WAIT_AFTER is used, we sync the file.
+	//	- Ignore WRITE. If this flag is used with WAIT_AFTER, then the file will
+	//		be synced anyway. If this flag is used without WAIT_AFTER, then it is
+	//		safe (and less expensive) to do nothing, because the syscall will not
+	//		wait for the write-out to complete--we only need to make sure that the
+	//		next time WAIT_BEFORE or WAIT_AFTER are used, the write-out completes.
+	//	- According to fs/sync.c, WAIT_BEFORE|WAIT_AFTER "will detect any I/O
+	//		errors or ENOSPC conditions and will return those to the caller, after
+	//		clearing the EIO and ENOSPC flags in the address_space." We don't do
+	//		this.
 
 	if flags&linux.SYNC_FILE_RANGE_WAIT_BEFORE != 0 &&
 		flags&linux.SYNC_FILE_RANGE_WAIT_AFTER == 0 {

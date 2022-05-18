@@ -34,18 +34,19 @@ var pid = os.Getpid()
 // Emit emits the message, google-style.
 //
 // Log lines have this form:
-//   Lmmdd hh:mm:ss.uuuuuu threadid file:line] msg...
+//
+//	Lmmdd hh:mm:ss.uuuuuu threadid file:line] msg...
 //
 // where the fields are defined as follows:
-//   L                A single character, representing the log level (eg 'I' for INFO)
-//   mm               The month (zero padded; ie May is '05')
-//   dd               The day (zero padded)
-//   hh:mm:ss.uuuuuu  Time in hours, minutes and fractional seconds
-//   threadid         The space-padded thread ID as returned by GetTID()
-//   file             The file name
-//   line             The line number
-//   msg              The user-supplied message
 //
+//	L                A single character, representing the log level (eg 'I' for INFO)
+//	mm               The month (zero padded; ie May is '05')
+//	dd               The day (zero padded)
+//	hh:mm:ss.uuuuuu  Time in hours, minutes and fractional seconds
+//	threadid         The space-padded thread ID as returned by GetTID()
+//	file             The file name
+//	line             The line number
+//	msg              The user-supplied message
 func (g GoogleEmitter) Emit(depth int, level Level, timestamp time.Time, format string, args ...interface{}) {
 	// Log level.
 	prefix := byte('?')

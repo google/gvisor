@@ -50,6 +50,7 @@ func (t *dummyCopyContext) MarshalUnsafe(addr hostarch.Addr, marshallable marsha
 }
 
 // +checkescape:hard
+//
 //go:nosplit
 func doCopyIn(t *dummyCopyContext) {
 	var stat test.Stat
@@ -57,6 +58,7 @@ func doCopyIn(t *dummyCopyContext) {
 }
 
 // +checkescape:hard
+//
 //go:nosplit
 func doCopyOut(t *dummyCopyContext) {
 	var stat test.Stat
@@ -65,6 +67,7 @@ func doCopyOut(t *dummyCopyContext) {
 
 // +mustescape:builtin
 // +mustescape:stack
+//
 //go:nosplit
 func doMarshalBytesDirect(t *dummyCopyContext) {
 	var stat test.Stat
@@ -75,6 +78,7 @@ func doMarshalBytesDirect(t *dummyCopyContext) {
 
 // +mustescape:builtin
 // +mustescape:stack
+//
 //go:nosplit
 func doMarshalUnsafeDirect(t *dummyCopyContext) {
 	var stat test.Stat
@@ -85,6 +89,7 @@ func doMarshalUnsafeDirect(t *dummyCopyContext) {
 
 // +mustescape:local,heap
 // +mustescape:stack
+//
 //go:nosplit
 func doMarshalBytesViaMarshallable(t *dummyCopyContext) {
 	var stat test.Stat
@@ -93,6 +98,7 @@ func doMarshalBytesViaMarshallable(t *dummyCopyContext) {
 
 // +mustescape:local,heap
 // +mustescape:stack
+//
 //go:nosplit
 func doMarshalUnsafeViaMarshallable(t *dummyCopyContext) {
 	var stat test.Stat

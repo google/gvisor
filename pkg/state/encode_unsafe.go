@@ -25,7 +25,6 @@ import (
 //
 //	x := make([]Foo, l, c)
 //	a := ([l]Foo*)(unsafe.Pointer(x[0]))
-//
 func arrayFromSlice(obj reflect.Value) reflect.Value {
 	return reflect.NewAt(
 		reflect.ArrayOf(obj.Cap(), obj.Type().Elem()),

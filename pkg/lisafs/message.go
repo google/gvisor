@@ -31,10 +31,10 @@ import (
 // "dataLen" refers to the size of both combined.
 //
 // All messages must implement the following functions:
-// * marshal.Marshallable.SizeBytes
-// * marshal.Marshallable.Marshal{Unsafe/Bytes}
-// * marshal.CheckedMarshallable.CheckedUnmarshal
-// * fmt.Stringer.String
+//	* marshal.Marshallable.SizeBytes
+//	* marshal.Marshallable.Marshal{Unsafe/Bytes}
+//	* marshal.CheckedMarshallable.CheckedUnmarshal
+//	* fmt.Stringer.String
 //
 // There is no explicit interface definition for this because that definition
 // will not be used anywhere. If a concrete type is passed into a function

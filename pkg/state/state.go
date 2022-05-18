@@ -16,33 +16,33 @@
 // graphs.  For most types, it provides a set of default saving / loading logic
 // that will be invoked automatically if custom logic is not defined.
 //
-//     Kind             Support
-//     ----             -------
-//     Bool             default
-//     Int              default
-//     Int8             default
-//     Int16            default
-//     Int32            default
-//     Int64            default
-//     Uint             default
-//     Uint8            default
-//     Uint16           default
-//     Uint32           default
-//     Uint64           default
-//     Float32          default
-//     Float64          default
-//     Complex64        default
-//     Complex128       default
-//     Array            default
-//     Chan             custom
-//     Func             custom
-//     Interface        default
-//     Map              default
-//     Ptr              default
-//     Slice            default
-//     String           default
-//     Struct           custom (*) Unless zero-sized.
-//     UnsafePointer    custom
+//	Kind             Support
+//	----             -------
+//	Bool             default
+//	Int              default
+//	Int8             default
+//	Int16            default
+//	Int32            default
+//	Int64            default
+//	Uint             default
+//	Uint8            default
+//	Uint16           default
+//	Uint32           default
+//	Uint64           default
+//	Float32          default
+//	Float64          default
+//	Complex64        default
+//	Complex128       default
+//	Array            default
+//	Chan             custom
+//	Func             custom
+//	Interface        default
+//	Map              default
+//	Ptr              default
+//	Slice            default
+//	String           default
+//	Struct           custom (*) Unless zero-sized.
+//	UnsafePointer    custom
 //
 // See README.md for an overview of how encoding and decoding works.
 package state
@@ -131,30 +131,30 @@ type Sink struct {
 //
 // You should pass always pointers to the object you are saving. For example:
 //
-// type X struct {
-// 	A int
-// 	B *int
-// }
-//
-// func (x *X) StateTypeInfo(m Sink) state.TypeInfo {
-//	return state.TypeInfo{
-//		Name:   "pkg.X",
-//		Fields: []string{
-//			"A",
-//			"B",
-//		},
+//	type X struct {
+//		A int
+//		B *int
 //	}
-// }
 //
-// func (x *X) StateSave(m Sink) {
-// 	m.Save(0, &x.A) // Field is A.
-// 	m.Save(1, &x.B) // Field is B.
-// }
+//	func (x *X) StateTypeInfo(m Sink) state.TypeInfo {
+//		return state.TypeInfo{
+//			Name:   "pkg.X",
+//			Fields: []string{
+//				"A",
+//				"B",
+//			},
+//		}
+//	}
 //
-// func (x *X) StateLoad(m Source) {
-// 	m.Load(0, &x.A) // Field is A.
-// 	m.Load(1, &x.B) // Field is B.
-// }
+//	func (x *X) StateSave(m Sink) {
+//		m.Save(0, &x.A) // Field is A.
+//		m.Save(1, &x.B) // Field is B.
+//	}
+//
+//	func (x *X) StateLoad(m Source) {
+//		m.Load(0, &x.A) // Field is A.
+//		m.Load(1, &x.B) // Field is B.
+//	}
 func (s Sink) Save(slot int, objPtr interface{}) {
 	s.internal.save(slot, reflect.ValueOf(objPtr).Elem())
 }
@@ -166,15 +166,15 @@ func (s Sink) Save(slot int, objPtr interface{}) {
 //
 // For example, if we want to cast external package type P.Foo to int64:
 //
-// func (x *X) StateSave(m Sink) {
-//	m.SaveValue(0, "A", int64(x.A))
-// }
+//	func (x *X) StateSave(m Sink) {
+//		m.SaveValue(0, "A", int64(x.A))
+//	}
 //
-// func (x *X) StateLoad(m Source) {
-//	m.LoadValue(0, new(int64), func(x interface{}) {
-//		x.A = P.Foo(x.(int64))
-//	})
-// }
+//	func (x *X) StateLoad(m Source) {
+//		m.LoadValue(0, new(int64), func(x interface{}) {
+//			x.A = P.Foo(x.(int64))
+//		})
+//	}
 func (s Sink) SaveValue(slot int, obj interface{}) {
 	s.internal.save(slot, reflect.ValueOf(obj))
 }

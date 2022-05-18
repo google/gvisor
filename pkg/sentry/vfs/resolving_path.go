@@ -307,6 +307,7 @@ func (rp *ResolvingPath) CheckMount(ctx context.Context, d *Dentry) error {
 //
 // If path is terminated with '/', the '/' is considered the last element and
 // any symlink before that is followed:
+//
 //   - For most non-creating walks, the last path component is handled by
 //     fs/namei.c:lookup_last(), which sets LOOKUP_FOLLOW if the first byte
 //     after the path component is non-NULL (which is only possible if it's '/')

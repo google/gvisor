@@ -46,9 +46,9 @@ const (
 	// NoID is uint32(-1). -1 is consistently used as a special value, in Linux
 	// and by extension in the auth package, to mean "no ID":
 	//
-	// - ID mapping returns -1 if the ID is not mapped.
+	//	- ID mapping returns -1 if the ID is not mapped.
 	//
-	// - Most set*id() syscalls accept -1 to mean "do not change this ID".
+	//	- Most set*id() syscalls accept -1 to mean "do not change this ID".
 	NoID = math.MaxUint32
 
 	// OverflowUID is the default value of /proc/sys/kernel/overflowuid. The

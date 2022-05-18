@@ -390,11 +390,11 @@ type loadedELF struct {
 	phdrNum int
 
 	// auxv contains a subset of ELF-specific auxiliary vector entries:
-	// * AT_PHDR
-	// * AT_PHENT
-	// * AT_PHNUM
-	// * AT_BASE
-	// * AT_ENTRY
+	//	* AT_PHDR
+	//	* AT_PHENT
+	//	* AT_PHNUM
+	//	* AT_BASE
+	//	* AT_ENTRY
 	auxv arch.Auxv
 }
 
@@ -578,8 +578,8 @@ func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, in
 // It does not load the ELF interpreter, or return any auxv entries.
 //
 // Preconditions:
-// * f is an ELF file.
-// * f is the first ELF loaded into m.
+//   - f is an ELF file.
+//   - f is the first ELF loaded into m.
 func loadInitialELF(ctx context.Context, m *mm.MemoryManager, fs cpuid.FeatureSet, f fsbridge.File) (loadedELF, arch.Context, error) {
 	info, err := parseHeader(ctx, f)
 	if err != nil {

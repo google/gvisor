@@ -49,17 +49,18 @@ func ParseOutput(output string, name string, official bool) (*bigquery.Suite, er
 // Example: "BenchmarkRuby/server_threads.1-6 1	1397875880 ns/op 140 requests_per_second.QPS"
 //
 // This function will return the following benchmark:
-// *bigquery.Benchmark{
-//	Name: BenchmarkRuby
-//  []*bigquery.Condition{
-//		{Name: GOMAXPROCS, 6}
-//		{Name: server_threads, 1}
-//  }
-//  []*bigquery.Metric{
-//		{Name: ns/op, Unit: ns/op, Sample: 1397875880}
-//		{Name: requests_per_second, Unit: QPS, Sample: 140 }
-//  }
-//}
+//
+//		*bigquery.Benchmark{
+//			Name: BenchmarkRuby
+//		 []*bigquery.Condition{
+//				{Name: GOMAXPROCS, 6}
+//				{Name: server_threads, 1}
+//		 }
+//		 []*bigquery.Metric{
+//				{Name: ns/op, Unit: ns/op, Sample: 1397875880}
+//				{Name: requests_per_second, Unit: QPS, Sample: 140 }
+//		 }
+//	 }
 func parseLine(line string) (*bigquery.Benchmark, error) {
 	fields := strings.Fields(line)
 

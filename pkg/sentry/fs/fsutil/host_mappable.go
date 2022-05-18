@@ -30,10 +30,11 @@ import (
 // CachedFileObject.
 //
 // Lock order (compare the lock order model in mm/mm.go):
-//   truncateMu ("fs locks")
-//     mu ("memmap.Mappable locks not taken by Translate")
-//       ("memmap.File locks")
-//   	     backingFile ("CachedFileObject locks")
+//
+//	truncateMu ("fs locks")
+//	  mu ("memmap.Mappable locks not taken by Translate")
+//	    ("memmap.File locks")
+//		     backingFile ("CachedFileObject locks")
 //
 // +stateify savable
 type HostMappable struct {
@@ -151,10 +152,11 @@ func (h *HostMappable) DecRef(fr memmap.FileRange) {
 //
 // Truncation and writes are synchronized to prevent races where writes make the
 // file grow between truncation and invalidation below:
-//   T1: Calls SetMaskedAttributes and stalls
-//   T2: Appends to file causing it to grow
-//   T2: Writes to mapped pages and COW happens
-//   T1: Continues and wronly invalidates the page mapped in step above.
+//
+//	T1: Calls SetMaskedAttributes and stalls
+//	T2: Appends to file causing it to grow
+//	T2: Writes to mapped pages and COW happens
+//	T1: Continues and wronly invalidates the page mapped in step above.
 func (h *HostMappable) Truncate(ctx context.Context, newSize int64, uattr fs.UnstableAttr) error {
 	h.truncateMu.Lock()
 	defer h.truncateMu.Unlock()

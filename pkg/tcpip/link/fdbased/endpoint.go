@@ -665,9 +665,9 @@ func (e *endpoint) sendBatch(batchFDInfo fdInfo, pkts []*stack.PacketBuffer) (in
 //
 // Being a batch API, each packet in pkts should have the following
 // fields populated:
-//  - pkt.EgressRoute
-//  - pkt.GSOOptions
-//  - pkt.NetworkProtocolNumber
+//   - pkt.EgressRoute
+//   - pkt.GSOOptions
+//   - pkt.NetworkProtocolNumber
 func (e *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 	// Preallocate to avoid repeated reallocation as we append to batch.
 	// batchSz is 47 because when SWGSO is in use then a single 65KB TCP

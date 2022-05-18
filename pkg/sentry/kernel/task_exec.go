@@ -186,14 +186,14 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 	//
 	// Details:
 	//
-	// - If the thread group is sharing its signal handlers with another thread
-	// group via CLONE_SIGHAND, execve forces the signal handlers to be copied
-	// (see Linux's fs/exec.c:de_thread). We're not reference-counting signal
-	// handlers, so we always make a copy.
+	//	- If the thread group is sharing its signal handlers with another thread
+	//		group via CLONE_SIGHAND, execve forces the signal handlers to be copied
+	//		(see Linux's fs/exec.c:de_thread). We're not reference-counting signal
+	//		handlers, so we always make a copy.
 	//
-	// - "Disposition" only means sigaction::sa_handler/sa_sigaction; flags,
-	// restorer (if present), and mask are always reset. (See Linux's
-	// fs/exec.c:setup_new_exec => kernel/signal.c:flush_signal_handlers.)
+	//	- "Disposition" only means sigaction::sa_handler/sa_sigaction; flags,
+	//		restorer (if present), and mask are always reset. (See Linux's
+	//		fs/exec.c:setup_new_exec => kernel/signal.c:flush_signal_handlers.)
 	t.tg.signalHandlers = t.tg.signalHandlers.CopyForExec()
 	t.endStopCond.L = &t.tg.signalHandlers.mu
 	// "Any alternate signal stack is not preserved (sigaltstack(2))." - execve(2)
@@ -261,9 +261,9 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 // thread group leader, promoteLocked is a no-op.
 //
 // Preconditions:
-// * All other tasks in t's thread group, including the existing leader (if it
-//   is not t), have reached TaskExitZombie.
-// * The TaskSet mutex must be locked for writing.
+//   - All other tasks in t's thread group, including the existing leader (if it
+//     is not t), have reached TaskExitZombie.
+//   - The TaskSet mutex must be locked for writing.
 func (t *Task) promoteLocked() {
 	oldLeader := t.tg.leader
 	if t == oldLeader {

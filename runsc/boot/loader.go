@@ -228,7 +228,7 @@ type Args struct {
 	// /sys/devices/virtual/dmi/id/product_name.
 	ProductName string
 	// PodInitConfigFD is the file descriptor to a file passed in the
-	// --pod-init-config flag
+	//	--pod-init-config flag
 	PodInitConfigFD int
 	// SinkFDs is an ordered array of file descriptors to be used by seccheck
 	// sinks configured from the --pod-init-config file.

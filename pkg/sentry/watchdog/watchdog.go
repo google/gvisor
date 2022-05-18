@@ -22,11 +22,10 @@
 // without blocking are considered stuck and are reported.
 //
 // When a stuck task is detected, the watchdog can take one of the following actions:
-//		1. LogWarning: Logs a warning message followed by a stack dump of all goroutines.
-//			 If a tasks continues to be stuck, the message will repeat every minute, unless
-//			 a new stuck task is detected
-//		2. Panic: same as above, followed by panic()
-//
+//  1. LogWarning: Logs a warning message followed by a stack dump of all goroutines.
+//     If a tasks continues to be stuck, the message will repeat every minute, unless
+//     a new stuck task is detected
+//  2. Panic: same as above, followed by panic()
 package watchdog
 
 import (

@@ -83,8 +83,9 @@ func (m *Mutex) Lock() {
 // Unlock unlocks m.
 //
 // Preconditions:
-// * m is locked.
-// * m was locked by this goroutine.
+//   - m is locked.
+//   - m was locked by this goroutine.
+//
 // +checklocksignore
 func (m *Mutex) Unlock() {
 	noteUnlock(unsafe.Pointer(m))

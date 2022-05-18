@@ -20,6 +20,7 @@ import (
 )
 
 // +checkescape:all
+//
 //go:nosplit
 func interfaceFunctionCrossPkg() {
 	var i test1.Interface
@@ -27,6 +28,7 @@ func interfaceFunctionCrossPkg() {
 }
 
 // +checkesacape:all
+//
 //go:nosplit
 func typeFunctionCrossPkg() {
 	var t test1.Type
@@ -34,54 +36,63 @@ func typeFunctionCrossPkg() {
 }
 
 // +mustescape:builtin
+//
 //go:noinline
 func builtinMapCrossPkg(x int) map[string]bool {
 	return test1.BuiltinMap(x)
 }
 
 // +mustescape:builtin
+//
 //go:noinline
 func builtinClosureCrossPkg(x int) func() {
 	return test1.BuiltinClosure(x)
 }
 
 // +mustescape:builtin
+//
 //go:noinline
 func builtinMakeSliceCrossPkg(x int) []byte {
 	return test1.BuiltinMakeSlice(x)
 }
 
 // +mustescape:builtin
+//
 //go:noinline
 func builtinAppendCrossPkg() []byte {
 	return test1.BuiltinAppend(nil)
 }
 
 // +mustescape:builtin
+//
 //go:noinline
 func builtinChanCrossPkg() chan int {
 	return test1.BuiltinChan()
 }
 
 // +mustescape:heap
+//
 //go:noinline
 func heapCrossPkg() *test1.Type {
 	return test1.Heap()
 }
 
 // +mustescape:interface
+//
 //go:noinline
 func dispatchCrossPkg(i test1.Interface) {
 	test1.Dispatch(i)
 }
 
 // +mustescape:dynamic
+//
 //go:noinline
 func dynamicCrossPkg(f func()) {
 	test1.Dynamic(f)
 }
 
 // +mustescape:stack
+//
 //go:noinline
 //go:nosplit
 func splitCrosssPkt() {
