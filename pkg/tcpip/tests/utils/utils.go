@@ -16,7 +16,6 @@
 package utils
 
 import (
-	"net"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -29,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 )
 
@@ -59,14 +59,14 @@ const (
 // Common IP addresses used by tests.
 var (
 	Ipv4Addr = tcpip.AddressWithPrefix{
-		Address:   tcpip.Address(net.ParseIP("192.168.1.58").To4()),
+		Address:   testutil.MustParse4("192.168.1.58"),
 		PrefixLen: 24,
 	}
 	Ipv4Subnet      = Ipv4Addr.Subnet()
 	Ipv4SubnetBcast = Ipv4Subnet.Broadcast()
 
 	Ipv6Addr = tcpip.AddressWithPrefix{
-		Address:   tcpip.Address(net.ParseIP("200a::1").To16()),
+		Address:   testutil.MustParse6("200a::1"),
 		PrefixLen: 64,
 	}
 	Ipv6Subnet      = Ipv6Addr.Subnet()
@@ -75,49 +75,49 @@ var (
 	Ipv4Addr1 = tcpip.ProtocolAddress{
 		Protocol: ipv4.ProtocolNumber,
 		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(net.ParseIP("192.168.0.1").To4()),
+			Address:   testutil.MustParse4("192.168.0.1"),
 			PrefixLen: 24,
 		},
 	}
 	Ipv4Addr2 = tcpip.ProtocolAddress{
 		Protocol: ipv4.ProtocolNumber,
 		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(net.ParseIP("192.168.0.2").To4()),
+			Address:   testutil.MustParse4("192.168.0.2"),
 			PrefixLen: 8,
 		},
 	}
 	Ipv4Addr3 = tcpip.ProtocolAddress{
 		Protocol: ipv4.ProtocolNumber,
 		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(net.ParseIP("192.168.0.3").To4()),
+			Address:   testutil.MustParse4("192.168.0.3"),
 			PrefixLen: 8,
 		},
 	}
 	Ipv6Addr1 = tcpip.ProtocolAddress{
 		Protocol: ipv6.ProtocolNumber,
 		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(net.ParseIP("a::1").To16()),
+			Address:   testutil.MustParse6("a::1"),
 			PrefixLen: 64,
 		},
 	}
 	Ipv6Addr2 = tcpip.ProtocolAddress{
 		Protocol: ipv6.ProtocolNumber,
 		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(net.ParseIP("a::2").To16()),
+			Address:   testutil.MustParse6("a::2"),
 			PrefixLen: 64,
 		},
 	}
 	Ipv6Addr3 = tcpip.ProtocolAddress{
 		Protocol: ipv6.ProtocolNumber,
 		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(net.ParseIP("a::3").To16()),
+			Address:   testutil.MustParse6("a::3"),
 			PrefixLen: 64,
 		},
 	}
 
 	// Remote addrs.
-	RemoteIPv4Addr = tcpip.Address(net.ParseIP("10.0.0.1").To4())
-	RemoteIPv6Addr = tcpip.Address(net.ParseIP("200b::1").To16())
+	RemoteIPv4Addr = testutil.MustParse4("10.0.0.1")
+	RemoteIPv6Addr = testutil.MustParse6("200b::1")
 )
 
 // Common ports for testing.
@@ -131,56 +131,56 @@ var (
 	Host1IPv4Addr = tcpip.ProtocolAddress{
 		Protocol: ipv4.ProtocolNumber,
 		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(net.ParseIP("192.168.0.2").To4()),
+			Address:   testutil.MustParse4("192.168.0.2"),
 			PrefixLen: 24,
 		},
 	}
 	RouterNIC1IPv4Addr = tcpip.ProtocolAddress{
 		Protocol: ipv4.ProtocolNumber,
 		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(net.ParseIP("192.168.0.1").To4()),
+			Address:   testutil.MustParse4("192.168.0.1"),
 			PrefixLen: 24,
 		},
 	}
 	RouterNIC2IPv4Addr = tcpip.ProtocolAddress{
 		Protocol: ipv4.ProtocolNumber,
 		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(net.ParseIP("10.0.0.1").To4()),
+			Address:   testutil.MustParse4("10.0.0.3"),
 			PrefixLen: 8,
 		},
 	}
 	Host2IPv4Addr = tcpip.ProtocolAddress{
 		Protocol: ipv4.ProtocolNumber,
 		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(net.ParseIP("10.0.0.2").To4()),
+			Address:   testutil.MustParse4("10.0.0.2"),
 			PrefixLen: 8,
 		},
 	}
 	Host1IPv6Addr = tcpip.ProtocolAddress{
 		Protocol: ipv6.ProtocolNumber,
 		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(net.ParseIP("a::2").To16()),
+			Address:   testutil.MustParse6("a::2"),
 			PrefixLen: 64,
 		},
 	}
 	RouterNIC1IPv6Addr = tcpip.ProtocolAddress{
 		Protocol: ipv6.ProtocolNumber,
 		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(net.ParseIP("a::1").To16()),
+			Address:   testutil.MustParse6("a::1"),
 			PrefixLen: 64,
 		},
 	}
 	RouterNIC2IPv6Addr = tcpip.ProtocolAddress{
 		Protocol: ipv6.ProtocolNumber,
 		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(net.ParseIP("b::1").To16()),
+			Address:   testutil.MustParse6("b::1"),
 			PrefixLen: 64,
 		},
 	}
 	Host2IPv6Addr = tcpip.ProtocolAddress{
 		Protocol: ipv6.ProtocolNumber,
 		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(net.ParseIP("b::2").To16()),
+			Address:   testutil.MustParse6("b::2"),
 			PrefixLen: 64,
 		},
 	}
