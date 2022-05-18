@@ -316,17 +316,23 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 		return nil, topLookupLayer, linuxerr.ENOENT
 	}
 
-	// Device and inode numbers were copied from the topmost layer above. Remap
-	// the device number to an appropriate overlay-private one.
-	// We can use RacyLoad() because child is still being initialized.
-	childDevMinor, err := fs.getPrivateDevMinor(child.devMajor.RacyLoad(), child.devMinor.RacyLoad())
-	if err != nil {
-		ctx.Infof("overlay.filesystem.lookupLocked: failed to map layer device number (%d, %d) to an overlay-specific device number: %v", child.devMajor.RacyLoad(), child.devMinor.RacyLoad(), err)
-		child.destroyLocked(ctx)
-		return nil, topLookupLayer, err
+	// Device and inode numbers were copied from the topmost layer above;
+	// override them if necessary. We can use RacyLoad() because child is still
+	// being initialized.
+	if child.isDir() {
+		child.ino.Store(fs.newDirIno(child.devMajor.RacyLoad(), child.devMinor.RacyLoad(), child.ino.RacyLoad()))
+		child.devMajor = atomicbitops.FromUint32(linux.UNNAMED_MAJOR)
+		child.devMinor = atomicbitops.FromUint32(fs.dirDevMinor)
+	} else if !child.upperVD.Ok() {
+		childDevMinor, err := fs.getLowerDevMinor(child.devMajor.RacyLoad(), child.devMinor.RacyLoad())
+		if err != nil {
+			ctx.Infof("overlay.filesystem.lookupLocked: failed to map lower layer device number (%d, %d) to an overlay-specific device number: %v", child.devMajor.RacyLoad(), child.devMinor.RacyLoad(), err)
+			child.destroyLocked(ctx)
+			return nil, topLookupLayer, err
+		}
+		child.devMajor = atomicbitops.FromUint32(linux.UNNAMED_MAJOR)
+		child.devMinor = atomicbitops.FromUint32(childDevMinor)
 	}
-	child.devMajor = atomicbitops.FromUint32(linux.UNNAMED_MAJOR)
-	child.devMinor = atomicbitops.FromUint32(childDevMinor)
 
 	parent.IncRef()
 	child.parent = parent

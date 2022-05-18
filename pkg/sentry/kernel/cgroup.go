@@ -335,7 +335,7 @@ func (r *CgroupRegistry) Unregister(hid uint32) {
 // +checklocks:r.mu
 func (r *CgroupRegistry) unregisterLocked(hid uint32) {
 	if h, ok := r.hierarchies[hid]; ok {
-		for name, _ := range h.controllers {
+		for name := range h.controllers {
 			delete(r.controllers, name)
 		}
 		delete(r.hierarchies, hid)
@@ -352,7 +352,7 @@ func (r *CgroupRegistry) computeInitialGroups(inherit map[Cgroup]struct{}) map[C
 	cgset := make(map[Cgroup]struct{})
 
 	// Remember controllers from the inherited cgroups set...
-	for cg, _ := range inherit {
+	for cg := range inherit {
 		cg.IncRef() // Ref transferred to caller.
 		for _, ctl := range cg.Controllers() {
 			ctlSet[ctl.Type()] = ctl

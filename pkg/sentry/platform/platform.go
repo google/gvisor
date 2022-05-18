@@ -446,7 +446,7 @@ func Register(name string, platform Constructor) {
 
 // List lists available platforms.
 func List() (available []string) {
-	for name, _ := range platforms {
+	for name := range platforms {
 		available = append(available, name)
 	}
 	return

@@ -42,7 +42,7 @@ func (t *Task) EnterInitialCgroups(parent *Task) {
 	defer t.mu.Unlock()
 	// Transfer ownership of joinSet refs to the task's cgset.
 	t.cgroups = joinSet
-	for c, _ := range t.cgroups {
+	for c := range t.cgroups {
 		// Since t isn't in any cgroup yet, we can skip the check against
 		// existing cgroups.
 		c.Enter(t)
@@ -59,7 +59,7 @@ func (t *Task) EnterCgroup(c Cgroup) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	for oldCG, _ := range t.cgroups {
+	for oldCG := range t.cgroups {
 		if oldCG.HierarchyID() == c.HierarchyID() {
 			log.Warningf("Cannot enter new cgroup %v due to conflicting controllers. Try migrate instead?", c)
 			return linuxerr.EBUSY
@@ -103,7 +103,7 @@ func (t *Task) LeaveCgroups() {
 
 // +checklocks:t.mu
 func (t *Task) findCgroupWithMatchingHierarchyLocked(other Cgroup) (Cgroup, bool) {
-	for c, _ := range t.cgroups {
+	for c := range t.cgroups {
 		if c.HierarchyID() != other.HierarchyID() {
 			continue
 		}
@@ -191,7 +191,7 @@ func (t *Task) GenerateProcTaskCgroup(buf *bytes.Buffer) {
 	defer t.mu.Unlock()
 
 	cgEntries := make([]taskCgroupEntry, 0, len(t.cgroups))
-	for c, _ := range t.cgroups {
+	for c := range t.cgroups {
 		ctls := c.Controllers()
 		ctlNames := make([]string, 0, len(ctls))
 		for _, ctl := range ctls {
@@ -215,7 +215,7 @@ func (t *Task) GenerateProcTaskCgroup(buf *bytes.Buffer) {
 
 // +checklocks:t.mu
 func (t *Task) chargeLocked(target *Task, ctl CgroupControllerType, res CgroupResourceType, value int64) error {
-	for c, _ := range t.cgroups {
+	for c := range t.cgroups {
 		if err := c.Charge(target, c.Dentry, ctl, res, value); err != nil {
 			return err
 		}
