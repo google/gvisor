@@ -9,7 +9,7 @@ require (
 	github.com/cenkalti/backoff v1.1.1-0.20190506075156-2146c9339422
 	github.com/containerd/cgroups v1.0.1
 	github.com/containerd/console v1.0.1
-	github.com/containerd/containerd v1.3.9
+	github.com/containerd/containerd v1.4.12
 	github.com/containerd/fifo v1.0.0
 	github.com/containerd/go-runc v1.0.0
 	github.com/containerd/typeurl v1.0.2
