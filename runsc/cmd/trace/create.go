@@ -30,6 +30,7 @@ import (
 // create implements subcommands.Command for the "create" command.
 type create struct {
 	config string
+	force  bool
 }
 
 // Name implements subcommands.Command.
@@ -51,6 +52,7 @@ func (*create) Usage() string {
 // SetFlags implements subcommands.Command.
 func (l *create) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&l.config, "config", "", "path to the JSON file that describes the session being created")
+	f.BoolVar(&l.force, "force", false, "deletes a conflicting session, if one exists")
 }
 
 // Execute implements subcommands.Command.
@@ -87,7 +89,7 @@ func (l *create) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}
 		util.Fatalf("loading sandbox: %v", err)
 	}
 
-	if err := c.Sandbox.CreateTraceSession(sessionConfig); err != nil {
+	if err := c.Sandbox.CreateTraceSession(sessionConfig, l.force); err != nil {
 		util.Fatalf("creating session: %v", err)
 	}
 
