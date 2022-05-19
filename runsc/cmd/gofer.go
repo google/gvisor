@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 
 	"github.com/google/subcommands"
@@ -101,6 +102,9 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	}
 
 	conf := args[0].(*config.Config)
+
+	// Set traceback level
+	debug.SetTraceback(conf.Traceback)
 
 	specFile := os.NewFile(uintptr(g.specFD), "spec file")
 	defer specFile.Close()
