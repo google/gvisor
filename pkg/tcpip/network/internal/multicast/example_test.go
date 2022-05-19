@@ -32,6 +32,7 @@ import (
 
 const (
 	defaultMinTTL             = 10
+	defaultMTU                = 1500
 	inputNICID    tcpip.NICID = 1
 	outgoingNICID tcpip.NICID = 2
 )
@@ -39,8 +40,9 @@ const (
 // Example shows how to interact with a multicast RouteTable.
 func Example() {
 	address := testutil.MustParse4("192.168.1.1")
-	defaultOutgoingInterfaces := []multicast.OutgoingInterface{{ID: outgoingNICID, MinTTL: defaultMinTTL}}
-	routeKey := multicast.RouteKey{UnicastSource: address, MulticastDestination: address}
+	defaultOutgoingInterfaces := []stack.MulticastRouteOutgoingInterface{{ID: outgoingNICID, MinTTL: defaultMinTTL}}
+	routeKey := stack.UnicastSourceAndMulticastDestination{Source: address, Destination: address}
+	multicastRoute := stack.MulticastRoute{inputNICID, defaultOutgoingInterfaces}
 
 	pkt := newPacketBuffer("hello")
 	defer pkt.DecRef()
@@ -59,34 +61,30 @@ func Example() {
 
 	// Each entry in the table represents either an installed route or a pending
 	// route. To insert a pending route, call:
-	result, err := table.GetRouteOrInsertPending(routeKey, pkt)
+	result, hasBufferSpace := table.GetRouteOrInsertPending(routeKey, pkt)
 
 	// Callers should handle a no buffer space error (e.g. only deliver the
 	// packet locally).
-	if err == multicast.ErrNoBufferSpace {
+	if !hasBufferSpace {
 		deliverPktLocally(pkt)
-	}
-
-	if err != nil {
-		panic(err)
 	}
 
 	// Callers should handle the various pending route states.
-	switch result.PendingRouteState {
-	case multicast.PendingRouteStateNone:
+	switch result.GetRouteResultState {
+	case multicast.InstalledRouteFound:
 		// The packet can be forwarded using the installed route.
 		forwardPkt(pkt, result.InstalledRoute)
-	case multicast.PendingRouteStateInstalled:
+	case multicast.NoRouteFoundAndPendingInserted:
 		// The route has just entered the pending state.
 		emitMissingRouteEvent(routeKey)
 		deliverPktLocally(pkt)
-	case multicast.PendingRouteStateAppended:
+	case multicast.PacketQueuedInPendingRoute:
 		// The route was already in the pending state.
 		deliverPktLocally(pkt)
 	}
 
 	// To transition a pending route to the installed state, call:
-	route := table.NewInstalledRoute(inputNICID, defaultOutgoingInterfaces)
+	route := table.NewInstalledRoute(multicastRoute)
 	pendingPackets := table.AddInstalledRoute(routeKey, route)
 
 	// If there was a pending route, then the caller is responsible for
@@ -121,7 +119,7 @@ func forwardPkt(*stack.PacketBuffer, *multicast.InstalledRoute) {
 	fmt.Println("forwardPkt")
 }
 
-func emitMissingRouteEvent(multicast.RouteKey) {
+func emitMissingRouteEvent(stack.UnicastSourceAndMulticastDestination) {
 	fmt.Println("emitMissingRouteEvent")
 }
 

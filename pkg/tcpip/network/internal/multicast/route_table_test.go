@@ -32,6 +32,7 @@ import (
 
 const (
 	defaultMinTTL             = 10
+	defaultMTU                = 1500
 	inputNICID    tcpip.NICID = 1
 	outgoingNICID tcpip.NICID = 2
 	defaultNICID  tcpip.NICID = 3
@@ -39,8 +40,9 @@ const (
 
 var (
 	defaultAddress            = testutil.MustParse4("192.168.1.1")
-	defaultRouteKey           = RouteKey{UnicastSource: defaultAddress, MulticastDestination: defaultAddress}
-	defaultOutgoingInterfaces = []OutgoingInterface{{ID: outgoingNICID, MinTTL: defaultMinTTL}}
+	defaultRouteKey           = stack.UnicastSourceAndMulticastDestination{Source: defaultAddress, Destination: defaultAddress}
+	defaultOutgoingInterfaces = []stack.MulticastRouteOutgoingInterface{{ID: outgoingNICID, MinTTL: defaultMinTTL}}
+	defaultRoute              = stack.MulticastRoute{inputNICID, defaultOutgoingInterfaces}
 )
 
 func newPacketBuffer(body string) *stack.PacketBuffer {
@@ -77,11 +79,11 @@ func defaultConfig(opts ...configOption) Config {
 }
 
 func installedRouteComparer(a *InstalledRoute, b *InstalledRoute) bool {
-	if !cmp.Equal(a.OutgoingInterfaces(), b.OutgoingInterfaces()) {
+	if !cmp.Equal(a.OutgoingInterfaces, b.OutgoingInterfaces) {
 		return false
 	}
 
-	if a.ExpectedInputInterface() != b.ExpectedInputInterface() {
+	if a.ExpectedInputInterface != b.ExpectedInputInterface {
 		return false
 	}
 
@@ -143,15 +145,19 @@ func TestNewInstalledRoute(t *testing.T) {
 		t.Fatalf("table.Init(%#v): %s", config, err)
 	}
 
-	route := table.NewInstalledRoute(inputNICID, defaultOutgoingInterfaces)
-	expectedRoute := &InstalledRoute{expectedInputInterface: inputNICID, outgoingInterfaces: defaultOutgoingInterfaces, lastUsedTimestamp: clock.NowMonotonic()}
+	route := table.NewInstalledRoute(defaultRoute)
+
+	expectedRoute := &InstalledRoute{
+		MulticastRoute:    defaultRoute,
+		lastUsedTimestamp: clock.NowMonotonic(),
+	}
 
 	if diff := cmp.Diff(expectedRoute, route, cmp.Comparer(installedRouteComparer)); diff != "" {
 		t.Errorf("Installed route mismatch (-want +got):\n%s", diff)
 	}
 }
 
-func TestPendingRouteStates(t *testing.T) {
+func TestGetRouteResultStates(t *testing.T) {
 	table := RouteTable{}
 	defer table.Close()
 	config := defaultConfig(withMaxPendingQueueSize(2))
@@ -161,16 +167,17 @@ func TestPendingRouteStates(t *testing.T) {
 
 	pkt := newPacketBuffer("hello")
 	defer pkt.DecRef()
-	// Queue two pending packets for the same route. The PendingRouteState should
-	// transition from PendingRouteStateInstalled to PendingRouteStateAppended.
-	for _, wantPendingRouteState := range []PendingRouteState{PendingRouteStateInstalled, PendingRouteStateAppended} {
-		routeResult, err := table.GetRouteOrInsertPending(defaultRouteKey, pkt)
+	// Queue two pending packets for the same route. The GetRouteResultState
+	// should transition from NoRouteFoundAndPendingInserted to
+	// PacketQueuedInPendingRoute.
+	for _, wantPendingRouteState := range []GetRouteResultState{NoRouteFoundAndPendingInserted, PacketQueuedInPendingRoute} {
+		routeResult, hasBufferSpace := table.GetRouteOrInsertPending(defaultRouteKey, pkt)
 
-		if err != nil {
-			t.Errorf("table.GetRouteOrInsertPending(%#v, %#v) = (_, %v), want = (_, nil)", defaultRouteKey, pkt, err)
+		if !hasBufferSpace {
+			t.Errorf("table.GetRouteOrInsertPending(%#v, %#v) = (_, false), want = (_, true)", defaultRouteKey, pkt)
 		}
 
-		expectedResult := GetRouteResult{PendingRouteState: wantPendingRouteState}
+		expectedResult := GetRouteResult{GetRouteResultState: wantPendingRouteState}
 		if diff := cmp.Diff(expectedResult, routeResult); diff != "" {
 			t.Errorf("table.GetRouteOrInsertPending(%#v, %#v) GetRouteResult mismatch (-want +got):\n%s", defaultRouteKey, pkt, diff)
 		}
@@ -178,8 +185,8 @@ func TestPendingRouteStates(t *testing.T) {
 
 	// Queuing a third packet should yield an error since the pending queue is
 	// already at max capacity.
-	if _, err := table.GetRouteOrInsertPending(defaultRouteKey, pkt); err != ErrNoBufferSpace {
-		t.Errorf("table.GetRouteOrInsertPending(%#v, %#v) = (_, %v), want = (_, ErrNoBufferSpace)", defaultRouteKey, pkt, err)
+	if _, hasBufferSpace := table.GetRouteOrInsertPending(defaultRouteKey, pkt); hasBufferSpace {
+		t.Errorf("table.GetRouteOrInsertPending(%#v, %#v) = (_, true), want = (_, false)", defaultRouteKey, pkt)
 	}
 }
 
@@ -225,8 +232,8 @@ func TestPendingRouteExpiration(t *testing.T) {
 
 			clock.Advance(test.advanceBeforeInsert)
 
-			if _, err := table.GetRouteOrInsertPending(defaultRouteKey, pkt); err != nil {
-				t.Fatalf("table.GetRouteOrInsertPending(%#v, %#v): %v", defaultRouteKey, pkt, err)
+			if _, hasBufferSpace := table.GetRouteOrInsertPending(defaultRouteKey, pkt); !hasBufferSpace {
+				t.Fatalf("table.GetRouteOrInsertPending(%#v, %#v): false", defaultRouteKey, pkt)
 			}
 
 			clock.Advance(test.advanceAfterInsert)
@@ -288,8 +295,8 @@ func TestAddInstalledRouteWithPending(t *testing.T) {
 				t.Fatalf("table.Init(%#v): %s", config, err)
 			}
 
-			if _, err := table.GetRouteOrInsertPending(defaultRouteKey, pkt); err != nil {
-				t.Fatalf("table.GetRouteOrInsertPending(%#v, %#v): %v", defaultRouteKey, pkt, err)
+			if _, hasBufferSpace := table.GetRouteOrInsertPending(defaultRouteKey, pkt); !hasBufferSpace {
+				t.Fatalf("table.GetRouteOrInsertPending(%#v, %#v): false", defaultRouteKey, pkt)
 			}
 
 			// Disable the cleanup routine.
@@ -297,7 +304,7 @@ func TestAddInstalledRouteWithPending(t *testing.T) {
 
 			clock.Advance(test.advance)
 
-			route := table.NewInstalledRoute(inputNICID, defaultOutgoingInterfaces)
+			route := table.NewInstalledRoute(defaultRoute)
 			pendingPackets := table.AddInstalledRoute(defaultRouteKey, route)
 
 			if diff := cmp.Diff(test.want, pendingPackets, cmpOpts...); diff != "" {
@@ -326,27 +333,29 @@ func TestAddInstalledRouteWithNoPending(t *testing.T) {
 		t.Fatalf("table.Init(%#v): %s", config, err)
 	}
 
-	firstRoute := table.NewInstalledRoute(inputNICID, defaultOutgoingInterfaces)
-	secondRoute := table.NewInstalledRoute(defaultNICID, defaultOutgoingInterfaces)
+	firstRoute := table.NewInstalledRoute(defaultRoute)
+
+	secondMulticastRoute := stack.MulticastRoute{defaultNICID, defaultOutgoingInterfaces}
+	secondRoute := table.NewInstalledRoute(secondMulticastRoute)
 
 	pkt := newPacketBuffer("hello")
 	defer pkt.DecRef()
 	for _, route := range [...]*InstalledRoute{firstRoute, secondRoute} {
 		if pendingPackets := table.AddInstalledRoute(defaultRouteKey, route); pendingPackets != nil {
-			t.Errorf("got table.AddInstalledRoute(%#v, %#v) = %#v, want = false", defaultRouteKey, route, pendingPackets)
+			t.Errorf("table.AddInstalledRoute(%#v, %#v) = %#v, want = false", defaultRouteKey, route, pendingPackets)
 		}
 
 		// AddInstalledRoute is invoked for the same routeKey two times. Verify
 		// that the fetched InstalledRoute reflects the most recent invocation of
 		// AddInstalledRoute.
-		routeResult, err := table.GetRouteOrInsertPending(defaultRouteKey, pkt)
+		routeResult, hasBufferSpace := table.GetRouteOrInsertPending(defaultRouteKey, pkt)
 
-		if err != nil {
-			t.Fatalf("table.GetRouteOrInsertPending(%#v, %#v): %v", defaultRouteKey, pkt, err)
+		if !hasBufferSpace {
+			t.Fatalf("table.GetRouteOrInsertPending(%#v, %#v): false", defaultRouteKey, pkt)
 		}
 
-		if routeResult.PendingRouteState != PendingRouteStateNone {
-			t.Errorf("routeResult.PendingRouteState = %s, want = PendingRouteStateNone", routeResult.PendingRouteState)
+		if routeResult.GetRouteResultState != InstalledRouteFound {
+			t.Errorf("routeResult.GetRouteResultState = %s, want = InstalledRouteFound", routeResult.GetRouteResultState)
 		}
 
 		if diff := cmp.Diff(route, routeResult.InstalledRoute, cmp.Comparer(installedRouteComparer)); diff != "" {
@@ -363,7 +372,7 @@ func TestRemoveInstalledRoute(t *testing.T) {
 		t.Fatalf("table.Init(%#v): %s", config, err)
 	}
 
-	route := table.NewInstalledRoute(inputNICID, defaultOutgoingInterfaces)
+	route := table.NewInstalledRoute(defaultRoute)
 
 	table.AddInstalledRoute(defaultRouteKey, route)
 
@@ -374,10 +383,10 @@ func TestRemoveInstalledRoute(t *testing.T) {
 	pkt := newPacketBuffer("hello")
 	defer pkt.DecRef()
 
-	result, err := table.GetRouteOrInsertPending(defaultRouteKey, pkt)
+	result, hasBufferSpace := table.GetRouteOrInsertPending(defaultRouteKey, pkt)
 
-	if err != nil {
-		t.Fatalf("table.GetRouteOrInsertPending(%#v, %#v): %v", defaultRouteKey, pkt, err)
+	if !hasBufferSpace {
+		t.Fatalf("table.GetRouteOrInsertPending(%#v, %#v): false", defaultRouteKey, pkt)
 	}
 
 	if result.InstalledRoute != nil {
@@ -444,7 +453,7 @@ func TestSetLastUsedTimestamp(t *testing.T) {
 				t.Fatalf("table.Init(%#v): %s", config, err)
 			}
 
-			route := table.NewInstalledRoute(inputNICID, defaultOutgoingInterfaces)
+			route := table.NewInstalledRoute(defaultRoute)
 
 			table.AddInstalledRoute(defaultRouteKey, route)
 

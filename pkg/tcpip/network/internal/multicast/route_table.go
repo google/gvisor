@@ -47,11 +47,11 @@ type RouteTable struct {
 	// Maintaining pointers ensures that the installed routes are exclusively
 	// locked only when a route is being installed.
 	// +checklocks:installedMu
-	installedRoutes map[RouteKey]*InstalledRoute
+	installedRoutes map[stack.UnicastSourceAndMulticastDestination]*InstalledRoute
 
 	pendingMu sync.RWMutex
 	// +checklocks:pendingMu
-	pendingRoutes map[RouteKey]PendingRoute
+	pendingRoutes map[stack.UnicastSourceAndMulticastDestination]PendingRoute
 	// cleanupPendingRoutesTimer is a timer that triggers a routine to remove
 	// pending routes that are expired.
 	// +checklocks:pendingMu
@@ -75,33 +75,16 @@ var (
 	ErrAlreadyInitialized = errors.New("table is already initialized")
 )
 
-// RouteKey represents an entry key in the RouteTable.
-type RouteKey struct {
-	UnicastSource        tcpip.Address
-	MulticastDestination tcpip.Address
-}
-
 // InstalledRoute represents a route that is in the installed state.
 //
 // If a route is in the installed state, then it may be used to forward
 // multicast packets.
 type InstalledRoute struct {
-	expectedInputInterface tcpip.NICID
-	outgoingInterfaces     []OutgoingInterface
+	stack.MulticastRoute
 
 	lastUsedTimestampMu sync.RWMutex
 	// +checklocks:lastUsedTimestampMu
 	lastUsedTimestamp tcpip.MonotonicTime
-}
-
-// ExpectedInputInterface returns the expected input interface for the route.
-func (r *InstalledRoute) ExpectedInputInterface() tcpip.NICID {
-	return r.expectedInputInterface
-}
-
-// OutgoingInterfaces returns the outgoing interfaces for the route.
-func (r *InstalledRoute) OutgoingInterfaces() []OutgoingInterface {
-	return r.outgoingInterfaces
 }
 
 // LastUsedTimestamp returns a monotonic timestamp that corresponds to the last
@@ -125,17 +108,6 @@ func (r *InstalledRoute) SetLastUsedTimestamp(monotonicTime tcpip.MonotonicTime)
 	if monotonicTime.After(r.lastUsedTimestamp) {
 		r.lastUsedTimestamp = monotonicTime
 	}
-}
-
-// OutgoingInterface represents an interface that packets should be forwarded
-// out of.
-type OutgoingInterface struct {
-	// ID corresponds to the outgoing NIC.
-	ID tcpip.NICID
-
-	// MinTTL represents the minumum TTL/HopLimit a multicast packet must have to
-	// be sent through the outgoing interface.
-	MinTTL uint8
 }
 
 // PendingRoute represents a route that is in the "pending" state.
@@ -230,8 +202,8 @@ func (r *RouteTable) Init(config Config) error {
 	}
 
 	r.config = config
-	r.installedRoutes = make(map[RouteKey]*InstalledRoute)
-	r.pendingRoutes = make(map[RouteKey]PendingRoute)
+	r.installedRoutes = make(map[stack.UnicastSourceAndMulticastDestination]*InstalledRoute)
+	r.pendingRoutes = make(map[stack.UnicastSourceAndMulticastDestination]PendingRoute)
 
 	return nil
 }
@@ -299,53 +271,47 @@ func (r *RouteTable) newPendingRoute() PendingRoute {
 }
 
 // NewInstalledRoute instantiates an installed route for the table.
-func (r *RouteTable) NewInstalledRoute(inputInterface tcpip.NICID, outgoingInterfaces []OutgoingInterface) *InstalledRoute {
+func (r *RouteTable) NewInstalledRoute(route stack.MulticastRoute) *InstalledRoute {
 	return &InstalledRoute{
-		expectedInputInterface: inputInterface,
-		outgoingInterfaces:     outgoingInterfaces,
-		lastUsedTimestamp:      r.config.Clock.NowMonotonic(),
+		MulticastRoute:    route,
+		lastUsedTimestamp: r.config.Clock.NowMonotonic(),
 	}
 }
 
-// GetRouteResult represents the result of calling
-// RouteTable.GetRouteOrInsertPending.
+// GetRouteResult represents the result of calling GetRouteOrInsertPending.
 type GetRouteResult struct {
-	// PendingRouteState represents the observed state of any applicable
-	// PendingRoute.
-	PendingRouteState
+	// GetRouteResultState signals the result of calling GetRouteOrInsertPending.
+	GetRouteResultState GetRouteResultState
 
 	// InstalledRoute represents the existing installed route. This field will
-	// only be populated if the PendingRouteState is PendingRouteStateNone.
-	*InstalledRoute
+	// only be populated if the GetRouteResultState is InstalledRouteFound.
+	InstalledRoute *InstalledRoute
 }
 
-// PendingRouteState represents the state of a PendingRoute as observed by the
-// RouteTable.GetRouteOrInsertPending method.
-type PendingRouteState uint8
+// GetRouteResultState signals the result of calling GetRouteOrInsertPending.
+type GetRouteResultState uint8
 
 const (
-	// PendingRouteStateNone indicates that no pending route exists. In such a
-	// case, the GetRouteResult will contain an InstalledRoute.
-	PendingRouteStateNone PendingRouteState = iota
+	// InstalledRouteFound indicates that an InstalledRoute was found.
+	InstalledRouteFound GetRouteResultState = iota
 
-	// PendingRouteStateAppended indicates that the packet was queued in an
+	// PacketQueuedInPendingRoute indicates that the packet was queued in an
 	// existing pending route.
-	PendingRouteStateAppended
+	PacketQueuedInPendingRoute
 
-	// PendingRouteStateInstalled indicates that a pending route was newly
-	// inserted into the RouteTable. In such a case, callers should typically
-	// emit a missing route event.
-	PendingRouteStateInstalled
+	// NoRouteFoundAndPendingInserted indicates that no route was found and that
+	// a pending route was newly inserted into the RouteTable.
+	NoRouteFoundAndPendingInserted
 )
 
-func (e PendingRouteState) String() string {
+func (e GetRouteResultState) String() string {
 	switch e {
-	case PendingRouteStateNone:
-		return "PendingRouteStateNone"
-	case PendingRouteStateAppended:
-		return "PendingRouteStateAppended"
-	case PendingRouteStateInstalled:
-		return "PendingRouteStateInstalled"
+	case InstalledRouteFound:
+		return "InstalledRouteFound"
+	case PacketQueuedInPendingRoute:
+		return "PacketQueuedInPendingRoute"
+	case NoRouteFoundAndPendingInserted:
+		return "NoRouteFoundAndPendingInserted"
 	default:
 		return fmt.Sprintf("%d", uint8(e))
 	}
@@ -355,29 +321,28 @@ func (e PendingRouteState) String() string {
 // the provided key.
 //
 // If no matching installed route is found, then the pkt is cloned and queued
-// in a pending route. The GetRouteResult.PendingRouteState will indicate
+// in a pending route. The GetRouteResult.GetRouteResultState will indicate
 // whether the pkt was queued in a new pending route or an existing one.
 //
-// If the relevant pending route queue is at max capacity, then
-// ErrNoBufferSpace is returned. In such a case, callers are typically expected
-// to only deliver the pkt locally (if relevant).
-func (r *RouteTable) GetRouteOrInsertPending(key RouteKey, pkt *stack.PacketBuffer) (GetRouteResult, error) {
+// If the relevant pending route queue is at max capacity, then returns false.
+// Otherwise, returns true.
+func (r *RouteTable) GetRouteOrInsertPending(key stack.UnicastSourceAndMulticastDestination, pkt *stack.PacketBuffer) (GetRouteResult, bool) {
 	r.installedMu.RLock()
 	defer r.installedMu.RUnlock()
 
 	if route, ok := r.installedRoutes[key]; ok {
-		return GetRouteResult{PendingRouteState: PendingRouteStateNone, InstalledRoute: route}, nil
+		return GetRouteResult{GetRouteResultState: InstalledRouteFound, InstalledRoute: route}, true
 	}
 
 	r.pendingMu.Lock()
 	defer r.pendingMu.Unlock()
 
-	pendingRoute, pendingRouteState := r.getOrCreatePendingRouteRLocked(key)
+	pendingRoute, getRouteResultState := r.getOrCreatePendingRouteRLocked(key)
 	if len(pendingRoute.packets) >= int(r.config.MaxPendingQueueSize) {
 		// The incoming packet is rejected if the pending queue is already at max
 		// capacity. This behavior matches the Linux implementation:
 		// https://github.com/torvalds/linux/blob/ae085d7f936/net/ipv4/ipmr.c#L1147
-		return GetRouteResult{}, ErrNoBufferSpace
+		return GetRouteResult{}, false
 	}
 	pendingRoute.packets = append(pendingRoute.packets, pkt.Clone())
 	r.pendingRoutes[key] = pendingRoute
@@ -392,15 +357,15 @@ func (r *RouteTable) GetRouteOrInsertPending(key RouteKey, pkt *stack.PacketBuff
 		r.isCleanupRoutineRunning = true
 	}
 
-	return GetRouteResult{PendingRouteState: pendingRouteState, InstalledRoute: nil}, nil
+	return GetRouteResult{GetRouteResultState: getRouteResultState, InstalledRoute: nil}, true
 }
 
 // +checklocks:r.pendingMu
-func (r *RouteTable) getOrCreatePendingRouteRLocked(key RouteKey) (PendingRoute, PendingRouteState) {
+func (r *RouteTable) getOrCreatePendingRouteRLocked(key stack.UnicastSourceAndMulticastDestination) (PendingRoute, GetRouteResultState) {
 	if pendingRoute, ok := r.pendingRoutes[key]; ok {
-		return pendingRoute, PendingRouteStateAppended
+		return pendingRoute, PacketQueuedInPendingRoute
 	}
-	return r.newPendingRoute(), PendingRouteStateInstalled
+	return r.newPendingRoute(), NoRouteFoundAndPendingInserted
 }
 
 // AddInstalledRoute adds the provided route to the table.
@@ -409,7 +374,7 @@ func (r *RouteTable) getOrCreatePendingRouteRLocked(key RouteKey) (PendingRoute,
 // returned. The caller assumes ownership of these packets and is responsible
 // for forwarding and releasing them. If an installed route already exists for
 // the provided key, then it is overwritten.
-func (r *RouteTable) AddInstalledRoute(key RouteKey, route *InstalledRoute) []*stack.PacketBuffer {
+func (r *RouteTable) AddInstalledRoute(key stack.UnicastSourceAndMulticastDestination, route *InstalledRoute) []*stack.PacketBuffer {
 	r.installedMu.Lock()
 	defer r.installedMu.Unlock()
 	r.installedRoutes[key] = route
@@ -436,7 +401,7 @@ func (r *RouteTable) AddInstalledRoute(key RouteKey, route *InstalledRoute) []*s
 // key.
 //
 // Returns true if a route was removed. Otherwise returns false.
-func (r *RouteTable) RemoveInstalledRoute(key RouteKey) bool {
+func (r *RouteTable) RemoveInstalledRoute(key stack.UnicastSourceAndMulticastDestination) bool {
 	r.installedMu.Lock()
 	defer r.installedMu.Unlock()
 
@@ -452,7 +417,7 @@ func (r *RouteTable) RemoveInstalledRoute(key RouteKey) bool {
 // time the route that matches the provided key was used or updated.
 //
 // Returns true if a matching route was found. Otherwise returns false.
-func (r *RouteTable) GetLastUsedTimestamp(key RouteKey) (tcpip.MonotonicTime, bool) {
+func (r *RouteTable) GetLastUsedTimestamp(key stack.UnicastSourceAndMulticastDestination) (tcpip.MonotonicTime, bool) {
 	r.installedMu.RLock()
 	defer r.installedMu.RUnlock()
 
