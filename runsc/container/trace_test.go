@@ -297,3 +297,47 @@ func TestTraceForceCreate(t *testing.T) {
 		t.Errorf("wrong message type, want: %v, got: %v", want, pt.MsgType)
 	}
 }
+
+func TestProcfsDump(t *testing.T) {
+	spec, conf := sleepSpecConf(t)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	// Create and start the container.
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	procfsDump, err := cont.Sandbox.ProcfsDump()
+	if err != nil {
+		t.Fatalf("ProcfsDump() failed: %v", err)
+	}
+
+	// Sleep should be the only process running in the container.
+	if len(procfsDump) != 1 {
+		t.Fatalf("got incorrect number of proc results: %+v", procfsDump)
+	}
+
+	// Sleep should be PID 1.
+	if procfsDump[0].PID != 1 {
+		t.Errorf("expected sleep process to be pid 1, got %d", procfsDump[0].PID)
+	}
+
+	// Check that bin/sleep is part of the executable path.
+	if wantExeSubStr := "bin/sleep"; !strings.HasSuffix(procfsDump[0].Exe, wantExeSubStr) {
+		t.Errorf("expected %q to be part of execuable path %q", wantExeSubStr, procfsDump[0].Exe)
+	}
+}

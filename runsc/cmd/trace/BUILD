@@ -9,12 +9,14 @@ go_library(
         "delete.go",
         "list.go",
         "metadata.go",
+        "procfs.go",
         "trace.go",
     ],
     visibility = [
         "//runsc:__subpackages__",
     ],
     deps = [
+        "//pkg/log",
         "//pkg/sentry/seccheck",
         "//runsc/cmd/util",
         "//runsc/config",

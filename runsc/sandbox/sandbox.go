@@ -46,6 +46,7 @@ import (
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/boot/procfs"
 	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/console"
@@ -451,6 +452,22 @@ func (s *Sandbox) ListTraceSessions() ([]seccheck.SessionConfig, error) {
 		return nil, fmt.Errorf("listing trace session: %w", err)
 	}
 	return sessions, nil
+}
+
+// ProcfsDump collects and returns a procfs dump for the sandbox.
+func (s *Sandbox) ProcfsDump() ([]procfs.ProcessProcfsDump, error) {
+	log.Debugf("Procfs dump %q", s.ID)
+	conn, err := s.sandboxConnect()
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	var procfsDump []procfs.ProcessProcfsDump
+	if err := conn.Call(boot.ContMgrProcfsDump, nil, &procfsDump); err != nil {
+		return nil, fmt.Errorf("getting sandbox %q stacks: %v", s.ID, err)
+	}
+	return procfsDump, nil
 }
 
 // NewCGroup returns the sandbox's Cgroup, or an error if it does not have one.
