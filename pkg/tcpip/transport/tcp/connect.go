@@ -485,7 +485,7 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 		h.transitionToStateEstablishedLocked(s)
 
 		// Requeue the segment if the ACK completing the handshake has more info
-		// to be procesed by the newly established endpoint.
+		// to be processed by the newly established endpoint.
 		if (s.flags.Contains(header.TCPFlagFin) || s.data.Size() > 0) && h.ep.enqueueSegment(s) {
 			h.ep.protocol.dispatcher.selectProcessor(h.ep.ID).queueEndpoint(h.ep)
 

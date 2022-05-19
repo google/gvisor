@@ -573,6 +573,39 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 			return replyWithReset(e.stack, s, e.sendTOS, e.ipv4TTL, e.ipv6HopLimit)
 		}
 
+		// As an edge case when SYN-COOKIES are in use and we receive a
+		// segment that has data and is valid we should check if it
+		// already matches a created endpoint and redirect the segment
+		// rather than try and create a new endpoint. This can happen
+		// where the final ACK for the handshake and other data packets
+		// arrive at the same time and are queued to the listening
+		// endpoint before the listening endpoint has had time to
+		// process the first ACK and create the endpoint that matches
+		// the incoming packet's full 5 tuple.
+		netProtos := []tcpip.NetworkProtocolNumber{s.netProto}
+		// If the local address is an IPv4 Address then also look for IPv6
+		// dual stack endpoints.
+		if s.id.LocalAddress.To4() != "" {
+			netProtos = []tcpip.NetworkProtocolNumber{header.IPv4ProtocolNumber, header.IPv6ProtocolNumber}
+		}
+		for _, netProto := range netProtos {
+			if newEP := e.stack.FindTransportEndpoint(netProto, ProtocolNumber, s.id, s.nicID); newEP != nil && newEP != e {
+				tcpEP := newEP.(*endpoint)
+				if !tcpEP.EndpointState().connected() {
+					continue
+				}
+				if !tcpEP.enqueueSegment(s) {
+					// Just silently drop the segment as we failed
+					// to queue, we don't want to generate a RST
+					// further below or try and create a new
+					// endpoint etc.
+					return nil
+				}
+				tcpEP.notifyProcessor()
+				return nil
+			}
+		}
+
 		// Keep hold of acceptMu until the new endpoint is in the accept queue (or
 		// if there is an error), to guarantee that we will keep our spot in the
 		// queue even if another handshake from the syn queue completes.
@@ -668,7 +701,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		n.mu.Unlock()
 
 		// Requeue the segment if the ACK completing the handshake has more info
-		// to be procesed by the newly established endpoint.
+		// to be processed by the newly established endpoint.
 		if (s.flags.Contains(header.TCPFlagFin) || s.data.Size() > 0) && n.enqueueSegment(s) {
 			n.notifyProcessor()
 		}
