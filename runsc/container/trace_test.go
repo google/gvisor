@@ -17,6 +17,7 @@ package container
 import (
 	"encoding/json"
 	"io/ioutil"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,6 +28,15 @@ import (
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/boot"
 )
+
+func remoteSinkConfig(endpoint string) seccheck.SinkConfig {
+	return seccheck.SinkConfig{
+		Name: "remote",
+		Config: map[string]interface{}{
+			"endpoint": endpoint,
+		},
+	}
+}
 
 // Test that setting up a trace session configuration in PodInitConfig creates
 // a session before container creation.
@@ -56,14 +66,7 @@ func TestTraceStartup(t *testing.T) {
 							ContextFields: []string{"container_id"},
 						},
 					},
-					Sinks: []seccheck.SinkConfig{
-						{
-							Name: "remote",
-							Config: map[string]interface{}{
-								"endpoint": server.Path,
-							},
-						},
-					},
+					Sinks: []seccheck.SinkConfig{remoteSinkConfig(server.Path)},
 				},
 			}
 			encoder := json.NewEncoder(podInitConfig)
@@ -144,16 +147,9 @@ func TestTraceLifecycle(t *testing.T) {
 				ContextFields: []string{"container_id"},
 			},
 		},
-		Sinks: []seccheck.SinkConfig{
-			{
-				Name: "remote",
-				Config: map[string]interface{}{
-					"endpoint": server.Path,
-				},
-			},
-		},
+		Sinks: []seccheck.SinkConfig{remoteSinkConfig(server.Path)},
 	}
-	if err := cont.Sandbox.CreateTraceSession(&session); err != nil {
+	if err := cont.Sandbox.CreateTraceSession(&session, false); err != nil {
 		t.Fatalf("CreateTraceSession(): %v", err)
 	}
 
@@ -215,5 +211,89 @@ func TestTraceLifecycle(t *testing.T) {
 	time.Sleep(time.Second) // give some time to receive the point.
 	if server.Count() > 0 {
 		t.Errorf("point received after session was deleted: %+v", server.GetPoints())
+	}
+}
+
+func TestTraceForceCreate(t *testing.T) {
+	spec, conf := sleepSpecConf(t)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	// Create and start the container.
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	// Create a new trace session that will be overwritten.
+	server, err := test.NewServer()
+	if err != nil {
+		t.Fatalf("newServer(): %v", err)
+	}
+	defer server.Close()
+
+	session := seccheck.SessionConfig{
+		Name: "Default",
+		Points: []seccheck.PointConfig{
+			{Name: "sentry/exit_notify_parent"},
+		},
+		Sinks: []seccheck.SinkConfig{remoteSinkConfig(server.Path)},
+	}
+	if err := cont.Sandbox.CreateTraceSession(&session, false); err != nil {
+		t.Fatalf("CreateTraceSession(): %v", err)
+	}
+
+	// Trigger the configured point to check that trace session is enabled.
+	if ws, err := execute(conf, cont, "/bin/true"); err != nil || ws != 0 {
+		t.Fatalf("exec: true, ws: %v, err: %v", ws, err)
+	}
+	if err := server.WaitForCount(1); err != nil {
+		t.Fatalf("WaitForCount(1): %v", err)
+	}
+	pt := server.GetPoints()[0]
+	if want := pb.MessageType_MESSAGE_SENTRY_EXIT_NOTIFY_PARENT; pt.MsgType != want {
+		t.Errorf("wrong message type, want: %v, got: %v", want, pt.MsgType)
+	}
+	server.Reset()
+
+	// Check that creating the same session fails.
+	if err := cont.Sandbox.CreateTraceSession(&session, false); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("CreateTraceSession() again failed with wrong error: %v", err)
+	}
+
+	// Re-create the session with a different point using force=true and check
+	// that it overwrote the other trace session.
+	session = seccheck.SessionConfig{
+		Name: "Default",
+		Points: []seccheck.PointConfig{
+			{Name: "sentry/task_exit"},
+		},
+		Sinks: []seccheck.SinkConfig{remoteSinkConfig(server.Path)},
+	}
+	if err := cont.Sandbox.CreateTraceSession(&session, true); err != nil {
+		t.Fatalf("CreateTraceSession(force): %v", err)
+	}
+
+	if ws, err := execute(conf, cont, "/bin/true"); err != nil || ws != 0 {
+		t.Fatalf("exec: true, ws: %v, err: %v", ws, err)
+	}
+	if err := server.WaitForCount(1); err != nil {
+		t.Fatalf("WaitForCount(1): %v", err)
+	}
+	pt = server.GetPoints()[0]
+	if want := pb.MessageType_MESSAGE_SENTRY_TASK_EXIT; pt.MsgType != want {
+		t.Errorf("wrong message type, want: %v, got: %v", want, pt.MsgType)
 	}
 }

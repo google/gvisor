@@ -604,6 +604,7 @@ func (cm *containerManager) Signal(args *SignalArgs, _ *struct{}) error {
 // CreateTraceSessionArgs are arguments to the CreateTraceSession method.
 type CreateTraceSessionArgs struct {
 	Config seccheck.SessionConfig
+	Force  bool
 	urpc.FilePayload
 }
 
@@ -619,7 +620,7 @@ func (cm *containerManager) CreateTraceSession(args *CreateTraceSessionArgs, _ *
 			args.Config.Sinks[i].FD = fd
 		}
 	}
-	return seccheck.Create(&args.Config)
+	return seccheck.Create(&args.Config, args.Force)
 }
 
 // DeleteTraceSession deletes an existing trace session.
