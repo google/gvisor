@@ -757,6 +757,41 @@ type NetworkProtocol interface {
 	Parse(pkt *PacketBuffer) (proto tcpip.TransportProtocolNumber, hasTransportHdr bool, ok bool)
 }
 
+// UnicastSourceAndMulticastDestination is a tuple that represents a unicast
+// source address and a multicast destination address.
+type UnicastSourceAndMulticastDestination struct {
+	// Source represents a unicast source address.
+	Source tcpip.Address
+	// Destination represents a multicast destination address.
+	Destination tcpip.Address
+}
+
+// MulticastRouteOutgoingInterface represents an outgoing interface in a
+// multicast route.
+type MulticastRouteOutgoingInterface struct {
+	// ID corresponds to the outgoing NIC.
+	ID tcpip.NICID
+
+	// MinTTL represents the minumum TTL/HopLimit a multicast packet must have to
+	// be sent through the outgoing interface.
+	//
+	// Note: a value of 0 allows all packets to be forwarded.
+	MinTTL uint8
+}
+
+// MulticastRoute is a multicast route.
+type MulticastRoute struct {
+	// ExpectedInputInterface is the interface on which packets using this route
+	// are expected to ingress.
+	ExpectedInputInterface tcpip.NICID
+
+	// OutgoingInterfaces is the set of interfaces that a multicast packet should
+	// be forwarded out of.
+	//
+	// This field should not be empty.
+	OutgoingInterfaces []MulticastRouteOutgoingInterface
+}
+
 // NetworkDispatcher contains the methods used by the network stack to deliver
 // inbound/outbound packets to the appropriate network/packet(if any) endpoints.
 type NetworkDispatcher interface {
