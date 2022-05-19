@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/proc"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
 // ProcessProcfsDump contains the procfs dump for one process.
@@ -38,6 +39,8 @@ type ProcessProcfsDump struct {
 	Args []string `json:"args,omitempty"`
 	// Env is /proc/[pid]/environ split into an array.
 	Env []string `json:"env,omitempty"`
+	// CWD is the symlink target of /proc/[pid]/cwd.
+	CWD string `json:"cwd,omitempty"`
 }
 
 // getMM returns t's MemoryManager. On success, the MemoryManager's users count
@@ -77,6 +80,28 @@ func getMetadataArray(ctx context.Context, pid kernel.ThreadID, mm *mm.MemoryMan
 	return strings.Split(strings.TrimSuffix(buf.String(), "\000"), "\000")
 }
 
+func getCWD(ctx context.Context, t *kernel.Task, pid kernel.ThreadID) string {
+	cwdDentry := t.FSContext().WorkingDirectoryVFS2()
+	if !cwdDentry.Ok() {
+		log.Warningf("No CWD dentry found for PID %s", pid)
+		return ""
+	}
+
+	root := vfs.RootFromContext(ctx)
+	if !root.Ok() {
+		log.Warningf("no root could be found from context for PID %s", pid)
+		return ""
+	}
+	defer root.DecRef(ctx)
+
+	vfsObj := cwdDentry.Mount().Filesystem().VirtualFilesystem()
+	name, err := vfsObj.PathnameWithDeleted(ctx, root, cwdDentry)
+	if err != nil {
+		log.Warningf("PathnameWithDeleted failed to find CWD: %v", err)
+	}
+	return name
+}
+
 // Dump returns a procfs dump for process pid. t must be a task in process pid.
 func Dump(t *kernel.Task, pid kernel.ThreadID) (ProcessProcfsDump, error) {
 	ctx := t.AsyncContext()
@@ -92,5 +117,6 @@ func Dump(t *kernel.Task, pid kernel.ThreadID) (ProcessProcfsDump, error) {
 		Exe:  getExecutablePath(ctx, pid, mm),
 		Args: getMetadataArray(ctx, pid, mm, proc.Cmdline),
 		Env:  getMetadataArray(ctx, pid, mm, proc.Environ),
+		CWD:  getCWD(ctx, t, pid),
 	}, nil
 }
