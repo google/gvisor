@@ -139,7 +139,7 @@ type Loader struct {
 	// processes are keyed with container ID and pid=0, while exec invocations
 	// have the corresponding pid set.
 	//
-	// processes is guardded by mu.
+	// processes is guarded by mu.
 	processes map[execID]*execProcess
 
 	// mountHints provides extra information about mounts for containers that
