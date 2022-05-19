@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//pkg/context",
         "//pkg/log",
+        "//pkg/sentry/fsimpl/proc",
         "//pkg/sentry/kernel",
         "//pkg/sentry/mm",
     ],

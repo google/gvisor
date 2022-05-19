@@ -300,6 +300,8 @@ func TestTraceForceCreate(t *testing.T) {
 
 func TestProcfsDump(t *testing.T) {
 	spec, conf := sleepSpecConf(t)
+	testEnv := "GVISOR_IS_GREAT=true"
+	spec.Process.Env = append(spec.Process.Env, testEnv)
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
@@ -339,5 +341,23 @@ func TestProcfsDump(t *testing.T) {
 	// Check that bin/sleep is part of the executable path.
 	if wantExeSubStr := "bin/sleep"; !strings.HasSuffix(procfsDump[0].Exe, wantExeSubStr) {
 		t.Errorf("expected %q to be part of execuable path %q", wantExeSubStr, procfsDump[0].Exe)
+	}
+
+	if len(procfsDump[0].Args) != 2 {
+		t.Errorf("expected 2 args, but got %+v", procfsDump[0].Args)
+	} else {
+		if procfsDump[0].Args[0] != "sleep" || procfsDump[0].Args[1] != "1000" {
+			t.Errorf("expected args %q but got %+v", "sleep 1000", procfsDump[0].Args)
+		}
+	}
+
+	testEnvFound := false
+	for _, env := range procfsDump[0].Env {
+		if env == testEnv {
+			testEnvFound = true
+		}
+	}
+	if !testEnvFound {
+		t.Errorf("expected to find %q env but did not find it, got env %+v", testEnv, procfsDump[0].Env)
 	}
 }

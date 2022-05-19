@@ -133,56 +133,35 @@ func (d *auxvData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	return nil
 }
 
-// execArgType enumerates the types of exec arguments that are exposed through
-// proc.
-type execArgType int
+// MetadataType enumerates the types of metadata that is exposed through proc.
+type MetadataType int
 
 const (
-	cmdlineDataArg execArgType = iota
-	environDataArg
+	// Cmdline represents /proc/[pid]/cmdline.
+	Cmdline MetadataType = iota
+
+	// Environ represents /proc/[pid]/environ.
+	Environ
 )
 
-// cmdlineData implements vfs.DynamicBytesSource for /proc/[pid]/cmdline.
-//
-// +stateify savable
-type cmdlineData struct {
-	kernfs.DynamicBytesFile
-
-	task *kernel.Task
-
-	// arg is the type of exec argument this file contains.
-	arg execArgType
-}
-
-var _ dynamicInode = (*cmdlineData)(nil)
-
-// Generate implements vfs.DynamicBytesSource.Generate.
-func (d *cmdlineData) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	if d.task.ExitState() == kernel.TaskExitDead {
-		return linuxerr.ESRCH
-	}
-	m, err := getMMIncRef(d.task)
-	if err != nil {
-		// Return empty file.
-		return nil
-	}
-	defer m.DecUsers(ctx)
-
+// GetMetadata fetches the process's metadata of type t and writes it into
+// buf. The process is identified by mm.
+func GetMetadata(ctx context.Context, mm *mm.MemoryManager, buf *bytes.Buffer, t MetadataType) error {
 	// Figure out the bounds of the exec arg we are trying to read.
 	var ar hostarch.AddrRange
-	switch d.arg {
-	case cmdlineDataArg:
+	switch t {
+	case Cmdline:
 		ar = hostarch.AddrRange{
-			Start: m.ArgvStart(),
-			End:   m.ArgvEnd(),
+			Start: mm.ArgvStart(),
+			End:   mm.ArgvEnd(),
 		}
-	case environDataArg:
+	case Environ:
 		ar = hostarch.AddrRange{
-			Start: m.EnvvStart(),
-			End:   m.EnvvEnd(),
+			Start: mm.EnvvStart(),
+			End:   mm.EnvvEnd(),
 		}
 	default:
-		panic(fmt.Sprintf("unknown exec arg type %v", d.arg))
+		panic(fmt.Sprintf("unknown exec arg type %v", t))
 	}
 	if ar.Start == 0 || ar.End == 0 {
 		// Don't attempt to read before the start/end are set up.
@@ -193,7 +172,7 @@ func (d *cmdlineData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	// until Linux 4.9 (272ddc8b3735 "proc: don't use FOLL_FORCE for reading
 	// cmdline and environment").
 	writer := &bufferWriter{buf: buf}
-	if n, err := m.CopyInTo(ctx, hostarch.AddrRangeSeqOf(ar), writer, usermem.IOOpts{}); n == 0 || err != nil {
+	if n, err := mm.CopyInTo(ctx, hostarch.AddrRangeSeqOf(ar), writer, usermem.IOOpts{}); n == 0 || err != nil {
 		// Nothing to copy or something went wrong.
 		return err
 	}
@@ -201,7 +180,7 @@ func (d *cmdlineData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	// On Linux, if the NULL byte at the end of the argument vector has been
 	// overwritten, it continues reading the environment vector as part of
 	// the argument vector.
-	if d.arg == cmdlineDataArg && buf.Bytes()[buf.Len()-1] != 0 {
+	if t == Cmdline && buf.Bytes()[buf.Len()-1] != 0 {
 		if end := bytes.IndexByte(buf.Bytes(), 0); end != -1 {
 			// If we found a NULL character somewhere else in argv, truncate the
 			// return up to the NULL terminator (including it).
@@ -211,8 +190,8 @@ func (d *cmdlineData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 
 		// There is no NULL terminator in the string, return into envp.
 		arEnvv := hostarch.AddrRange{
-			Start: m.EnvvStart(),
-			End:   m.EnvvEnd(),
+			Start: mm.EnvvStart(),
+			End:   mm.EnvvEnd(),
 		}
 
 		// Upstream limits the returned amount to one page of slop.
@@ -231,7 +210,7 @@ func (d *cmdlineData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 			}
 			arEnvv.End = end
 		}
-		if _, err := m.CopyInTo(ctx, hostarch.AddrRangeSeqOf(arEnvv), writer, usermem.IOOpts{}); err != nil {
+		if _, err := mm.CopyInTo(ctx, hostarch.AddrRangeSeqOf(arEnvv), writer, usermem.IOOpts{}); err != nil {
 			return err
 		}
 
@@ -244,6 +223,36 @@ func (d *cmdlineData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	}
 
 	return nil
+}
+
+// metadataData implements vfs.DynamicBytesSource for proc metadata fields like:
+//	- /proc/[pid]/cmdline
+//	- /proc/[pid]/environ
+//
+// +stateify savable
+type metadataData struct {
+	kernfs.DynamicBytesFile
+
+	task *kernel.Task
+
+	// arg is the type of exec argument this file contains.
+	metaType MetadataType
+}
+
+var _ dynamicInode = (*metadataData)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (d *metadataData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	if d.task.ExitState() == kernel.TaskExitDead {
+		return linuxerr.ESRCH
+	}
+	m, err := getMMIncRef(d.task)
+	if err != nil {
+		// Return empty file.
+		return nil
+	}
+	defer m.DecUsers(ctx)
+	return GetMetadata(ctx, m, buf, d.metaType)
 }
 
 // +stateify savable

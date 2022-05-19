@@ -17,10 +17,13 @@
 package procfs
 
 import (
+	"bytes"
 	"fmt"
+	"strings"
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/proc"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 )
@@ -31,6 +34,10 @@ type ProcessProcfsDump struct {
 	PID int32 `json:"pid,omitempty"`
 	// Exe is the symlink target of /proc/[pid]/exe.
 	Exe string `json:"exe,omitempty"`
+	// Args is /proc/[pid]/cmdline split into an array.
+	Args []string `json:"args,omitempty"`
+	// Env is /proc/[pid]/environ split into an array.
+	Env []string `json:"env,omitempty"`
 }
 
 // getMM returns t's MemoryManager. On success, the MemoryManager's users count
@@ -58,6 +65,18 @@ func getExecutablePath(ctx context.Context, pid kernel.ThreadID, mm *mm.MemoryMa
 	return exec.PathnameWithDeleted(ctx)
 }
 
+func getMetadataArray(ctx context.Context, pid kernel.ThreadID, mm *mm.MemoryManager, metaType proc.MetadataType) []string {
+	buf := bytes.Buffer{}
+	if err := proc.GetMetadata(ctx, mm, &buf, metaType); err != nil {
+		log.Warningf("failed to get %v metadata for PID %s: %v", metaType, pid, err)
+		return nil
+	}
+	// As per proc(5), /proc/[pid]/cmdline may have "a further null byte after
+	// the last string". Similarly, for /proc/[pid]/environ "there may be a null
+	// byte at the end". So trim off the last null byte if it exists.
+	return strings.Split(strings.TrimSuffix(buf.String(), "\000"), "\000")
+}
+
 // Dump returns a procfs dump for process pid. t must be a task in process pid.
 func Dump(t *kernel.Task, pid kernel.ThreadID) (ProcessProcfsDump, error) {
 	ctx := t.AsyncContext()
@@ -69,7 +88,9 @@ func Dump(t *kernel.Task, pid kernel.ThreadID) (ProcessProcfsDump, error) {
 	defer mm.DecUsers(ctx)
 
 	return ProcessProcfsDump{
-		PID: int32(pid),
-		Exe: getExecutablePath(ctx, pid, mm),
+		PID:  int32(pid),
+		Exe:  getExecutablePath(ctx, pid, mm),
+		Args: getMetadataArray(ctx, pid, mm, proc.Cmdline),
+		Env:  getMetadataArray(ctx, pid, mm, proc.Environ),
 	}, nil
 }

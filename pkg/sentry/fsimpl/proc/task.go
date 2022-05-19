@@ -54,10 +54,10 @@ func (fs *filesystem) newTaskInode(ctx context.Context, task *kernel.Task, pidns
 
 	contents := map[string]kernfs.Inode{
 		"auxv":      fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &auxvData{task: task}),
-		"cmdline":   fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &cmdlineData{task: task, arg: cmdlineDataArg}),
+		"cmdline":   fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &metadataData{task: task, metaType: Cmdline}),
 		"comm":      fs.newComm(ctx, task, fs.NextIno(), 0444),
 		"cwd":       fs.newCwdSymlink(ctx, task, fs.NextIno()),
-		"environ":   fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &cmdlineData{task: task, arg: environDataArg}),
+		"environ":   fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &metadataData{task: task, metaType: Environ}),
 		"exe":       fs.newExeSymlink(ctx, task, fs.NextIno()),
 		"fd":        fs.newFDDirInode(ctx, task),
 		"fdinfo":    fs.newFDInfoDirInode(ctx, task),
