@@ -604,35 +604,35 @@ func (d *auxvData) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &d.task)
 }
 
-func (d *cmdlineData) StateTypeName() string {
-	return "pkg/sentry/fsimpl/proc.cmdlineData"
+func (d *metadataData) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.metadataData"
 }
 
-func (d *cmdlineData) StateFields() []string {
+func (d *metadataData) StateFields() []string {
 	return []string{
 		"DynamicBytesFile",
 		"task",
-		"arg",
+		"metaType",
 	}
 }
 
-func (d *cmdlineData) beforeSave() {}
+func (d *metadataData) beforeSave() {}
 
 // +checklocksignore
-func (d *cmdlineData) StateSave(stateSinkObject state.Sink) {
+func (d *metadataData) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
 	stateSinkObject.Save(0, &d.DynamicBytesFile)
 	stateSinkObject.Save(1, &d.task)
-	stateSinkObject.Save(2, &d.arg)
+	stateSinkObject.Save(2, &d.metaType)
 }
 
-func (d *cmdlineData) afterLoad() {}
+func (d *metadataData) afterLoad() {}
 
 // +checklocksignore
-func (d *cmdlineData) StateLoad(stateSourceObject state.Source) {
+func (d *metadataData) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.DynamicBytesFile)
 	stateSourceObject.Load(1, &d.task)
-	stateSourceObject.Load(2, &d.arg)
+	stateSourceObject.Load(2, &d.metaType)
 }
 
 func (i *commInode) StateTypeName() string {
@@ -2393,7 +2393,7 @@ func init() {
 	state.Register((*fdInfoDirInode)(nil))
 	state.Register((*fdInfoData)(nil))
 	state.Register((*auxvData)(nil))
-	state.Register((*cmdlineData)(nil))
+	state.Register((*metadataData)(nil))
 	state.Register((*commInode)(nil))
 	state.Register((*commData)(nil))
 	state.Register((*idMapData)(nil))
