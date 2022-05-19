@@ -650,13 +650,14 @@ func (c *Context) SendV6Packet(payload []byte, h *Headers) {
 // addresses.
 func (c *Context) SendV6PacketWithAddrs(payload []byte, h *Headers, src, dst tcpip.Address) {
 	// Allocate a buffer for data and headers.
-	buf := buffer.NewView(header.TCPMinimumSize + header.IPv6MinimumSize + len(payload))
+	buf := buffer.NewView(header.TCPMinimumSize + header.IPv6MinimumSize + len(h.TCPOpts) + len(payload))
 	copy(buf[len(buf)-len(payload):], payload)
+	copy(buf[len(buf)-len(payload)-len(h.TCPOpts):], h.TCPOpts)
 
 	// Initialize the IP header.
 	ip := header.IPv6(buf)
 	ip.Encode(&header.IPv6Fields{
-		PayloadLength:     uint16(header.TCPMinimumSize + len(payload)),
+		PayloadLength:     uint16(header.TCPMinimumSize + len(h.TCPOpts) + len(payload)),
 		TransportProtocol: tcp.ProtocolNumber,
 		HopLimit:          65,
 		SrcAddr:           src,
@@ -670,7 +671,7 @@ func (c *Context) SendV6PacketWithAddrs(payload []byte, h *Headers, src, dst tcp
 		DstPort:    h.DstPort,
 		SeqNum:     uint32(h.SeqNum),
 		AckNum:     uint32(h.AckNum),
-		DataOffset: header.TCPMinimumSize,
+		DataOffset: uint8(header.TCPMinimumSize + len(h.TCPOpts)),
 		Flags:      h.Flags,
 		WindowSize: uint16(h.RcvWnd),
 	})

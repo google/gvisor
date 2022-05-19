@@ -1175,12 +1175,11 @@ func TestSendRstOnListenerRxSynAckV6(t *testing.T) {
 		checker.TCPSeqNum(200)))
 }
 
-// TestTCPAckBeforeAcceptV4 tests that once the 3-way handshake is complete,
-// peers can send data and expect a response within a reasonable ammount of time
-// without calling Accept on the listening endpoint first.
-//
-// This test uses IPv4.
-func TestTCPAckBeforeAcceptV4(t *testing.T) {
+// TestNoSynCookieWithoutOverflow tests that SYN-COOKIEs are not issued when the
+// queue is not overflowing. That is as long as newly completed connections are being
+// accepted we do not see a SYN-COOKIE even > 2x listen backlog number of connections
+// are accepted.
+func TestNoSynCookieWithoutOverflow(t *testing.T) {
 	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
 
@@ -1190,27 +1189,160 @@ func TestTCPAckBeforeAcceptV4(t *testing.T) {
 		t.Fatal("Bind failed:", err)
 	}
 
-	if err := c.EP.Listen(10); err != nil {
+	const backlog = 10
+	if err := c.EP.Listen(backlog); err != nil {
 		t.Fatal("Listen failed:", err)
 	}
 
-	irs, iss := executeHandshake(t, c, context.TestPort, false /* synCookiesInUse */)
+	doOne := func(portIndex int) {
+		// Try to accept the connection.
+		we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+		c.WQ.EventRegister(&we)
+		defer c.WQ.EventUnregister(&we)
 
-	// Send data before accepting the connection.
-	c.SendPacket([]byte{1, 2, 3, 4}, &context.Headers{
-		SrcPort: context.TestPort,
-		DstPort: context.StackPort,
-		Flags:   header.TCPFlagAck,
-		SeqNum:  irs + 1,
-		AckNum:  iss + 1,
-	})
+		_, _ = executeHandshake(t, c, context.TestPort+uint16(portIndex), false /* synCookiesInUse */)
 
-	// Receive ACK for the data we sent.
-	checker.IPv4(t, c.GetPacket(), checker.TCP(
-		checker.DstPort(context.TestPort),
-		checker.TCPFlags(header.TCPFlagAck),
-		checker.TCPSeqNum(uint32(iss+1)),
-		checker.TCPAckNum(uint32(irs+5))))
+		_, _, err := c.EP.Accept(nil)
+		if err == nil {
+			return
+		}
+		switch {
+		case cmp.Equal(&tcpip.ErrWouldBlock{}, err):
+			{
+				select {
+				case <-ch:
+					_, _, err = c.EP.Accept(nil)
+					if err != nil {
+						t.Fatalf("Accept failed: %s", err)
+					}
+				case <-time.After(1 * time.Second):
+					t.Fatalf("Timed out waiting for accept")
+				}
+			}
+		default:
+			t.Fatalf("Accept failed: %s", err)
+		}
+	}
+
+	for i := 0; i < backlog*5; i++ {
+		doOne(i)
+	}
+}
+
+// TestNoSynCookieOnFailedHandshakes tests that failed handshakes clear
+// endpoints from the pending queue. This is tested by verifying that the
+// SYN-ACK from the stack carries a valid window scale despite > 2xbacklog
+// handshakes failing.
+//
+// If a failed handshake was not resulting in removal from pending endpoints
+// list for the accepting endpoint then it will eventually result in a
+// SYN-COOKIE which we can identify with a SYN-ACK w/ a WS of -1.
+func TestNoSynCookieOnFailedHandshakes(t *testing.T) {
+	c := context.New(t, e2e.DefaultMTU)
+	defer c.Cleanup()
+
+	c.Create(-1)
+
+	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+		t.Fatal("Bind failed:", err)
+	}
+
+	const backlog = 10
+	if err := c.EP.Listen(backlog); err != nil {
+		t.Fatal("Listen failed:", err)
+	}
+
+	doOne := func() {
+		// Send a SYN request.
+		options := []byte{header.TCPOptionWS, 3, 0, header.TCPOptionNOP}
+		irs := seqnum.Value(context.TestInitialSequenceNumber)
+		c.SendPacket(nil, &context.Headers{
+			SrcPort: context.TestPort,
+			DstPort: context.StackPort,
+			Flags:   header.TCPFlagSyn,
+			SeqNum:  irs,
+			RcvWnd:  30000,
+			TCPOpts: options,
+		})
+
+		// Receive the SYN-ACK reply.
+		b := c.GetPacket()
+		tcpHdr := header.TCP(header.IPv4(b).Payload())
+		iss := seqnum.Value(tcpHdr.SequenceNumber())
+		tcpCheckers := []checker.TransportChecker{
+			checker.SrcPort(context.StackPort),
+			checker.DstPort(context.TestPort),
+			checker.TCPFlags(header.TCPFlagAck | header.TCPFlagSyn),
+			checker.TCPAckNum(uint32(irs) + 1),
+			checker.TCPSynOptions(header.TCPSynOptions{
+				WS:  tcp.FindWndScale(tcp.DefaultReceiveBufferSize),
+				MSS: c.MSSWithoutOptions(),
+			}),
+		}
+
+		checker.IPv4(t, b, checker.TCP(tcpCheckers...))
+
+		// Send a RST to abort the handshake.
+		c.SendPacket(nil, &context.Headers{
+			SrcPort: context.TestPort,
+			DstPort: context.StackPort,
+			Flags:   header.TCPFlagRst,
+			SeqNum:  irs + 1,
+			AckNum:  iss + 1,
+			RcvWnd:  0,
+		})
+
+	}
+
+	for i := 0; i < backlog*5; i++ {
+		doOne()
+	}
+}
+
+// TestTCPAckBeforeAcceptV4 tests that once the 3-way handshake is complete,
+// peers can send data and expect a response within a reasonable ammount of time
+// without calling Accept on the listening endpoint first.
+//
+// This test uses IPv4.
+func TestTCPAckBeforeAcceptV4(t *testing.T) {
+	for _, cookieEnabled := range []tcpip.TCPAlwaysUseSynCookies{false, true} {
+		t.Run(fmt.Sprintf("syn-cookies enabled: %t", cookieEnabled), func(t *testing.T) {
+			c := context.New(t, e2e.DefaultMTU)
+			defer c.Cleanup()
+
+			if err := c.Stack().SetTransportProtocolOption(header.TCPProtocolNumber, &cookieEnabled); err != nil {
+				panic(fmt.Sprintf("SetTransportProtocolOption(%d, %T) = %s", header.TCPProtocolNumber, cookieEnabled, err))
+			}
+
+			c.Create(-1)
+
+			if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+				t.Fatal("Bind failed:", err)
+			}
+
+			if err := c.EP.Listen(10); err != nil {
+				t.Fatal("Listen failed:", err)
+			}
+
+			irs, iss := executeHandshake(t, c, context.TestPort, bool(cookieEnabled))
+
+			// Send data before accepting the connection.
+			c.SendPacket([]byte{1, 2, 3, 4}, &context.Headers{
+				SrcPort: context.TestPort,
+				DstPort: context.StackPort,
+				Flags:   header.TCPFlagAck,
+				SeqNum:  irs + 1,
+				AckNum:  iss + 1,
+			})
+
+			// Receive ACK for the data we sent.
+			checker.IPv4(t, c.GetPacket(), checker.TCP(
+				checker.DstPort(context.TestPort),
+				checker.TCPFlags(header.TCPFlagAck),
+				checker.TCPSeqNum(uint32(iss+1)),
+				checker.TCPAckNum(uint32(irs+5))))
+		})
+	}
 }
 
 // TestTCPAckBeforeAcceptV6 tests that once the 3-way handshake is complete,
@@ -1219,36 +1351,43 @@ func TestTCPAckBeforeAcceptV4(t *testing.T) {
 //
 // This test uses IPv6.
 func TestTCPAckBeforeAcceptV6(t *testing.T) {
-	c := context.New(t, e2e.DefaultMTU)
-	defer c.Cleanup()
+	for _, cookieEnabled := range []tcpip.TCPAlwaysUseSynCookies{false, true} {
+		t.Run(fmt.Sprintf("syn-cookies enabled: %t", cookieEnabled), func(t *testing.T) {
+			c := context.New(t, e2e.DefaultMTU)
+			defer c.Cleanup()
 
-	c.CreateV6Endpoint(true)
+			if err := c.Stack().SetTransportProtocolOption(header.TCPProtocolNumber, &cookieEnabled); err != nil {
+				panic(fmt.Sprintf("SetTransportProtocolOption(%d, %T) = %s", header.TCPProtocolNumber, cookieEnabled, err))
+			}
+			c.CreateV6Endpoint(true)
 
-	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
-		t.Fatal("Bind failed:", err)
+			if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+				t.Fatal("Bind failed:", err)
+			}
+
+			if err := c.EP.Listen(10); err != nil {
+				t.Fatal("Listen failed:", err)
+			}
+
+			irs, iss := executeV6Handshake(t, c, context.TestPort, bool(cookieEnabled))
+
+			// Send data before accepting the connection.
+			c.SendV6Packet([]byte{1, 2, 3, 4}, &context.Headers{
+				SrcPort: context.TestPort,
+				DstPort: context.StackPort,
+				Flags:   header.TCPFlagAck,
+				SeqNum:  irs + 1,
+				AckNum:  iss + 1,
+			})
+
+			// Receive ACK for the data we sent.
+			checker.IPv6(t, c.GetV6Packet(), checker.TCP(
+				checker.DstPort(context.TestPort),
+				checker.TCPFlags(header.TCPFlagAck),
+				checker.TCPSeqNum(uint32(iss+1)),
+				checker.TCPAckNum(uint32(irs+5))))
+		})
 	}
-
-	if err := c.EP.Listen(10); err != nil {
-		t.Fatal("Listen failed:", err)
-	}
-
-	irs, iss := executeV6Handshake(t, c, context.TestPort, false /* synCookiesInUse */)
-
-	// Send data before accepting the connection.
-	c.SendV6Packet([]byte{1, 2, 3, 4}, &context.Headers{
-		SrcPort: context.TestPort,
-		DstPort: context.StackPort,
-		Flags:   header.TCPFlagAck,
-		SeqNum:  irs + 1,
-		AckNum:  iss + 1,
-	})
-
-	// Receive ACK for the data we sent.
-	checker.IPv6(t, c.GetV6Packet(), checker.TCP(
-		checker.DstPort(context.TestPort),
-		checker.TCPFlags(header.TCPFlagAck),
-		checker.TCPSeqNum(uint32(iss+1)),
-		checker.TCPAckNum(uint32(irs+5))))
 }
 
 func TestSendRstOnListenerRxAckV4(t *testing.T) {
@@ -1452,7 +1591,7 @@ func TestListenCloseWhileConnect(t *testing.T) {
 	c.WQ.EventRegister(&waitEntry)
 	defer c.WQ.EventUnregister(&waitEntry)
 
-	executeHandshake(t, c, context.TestPort, false /* synCookiesInUse */)
+	executeHandshake(t, c, context.TestPort, true /* synCookiesInUse */)
 	// Wait for the new endpoint created because of handshake to be delivered
 	// to the listening endpoint's accept queue.
 	<-notifyCh
@@ -5624,7 +5763,9 @@ func TestKeepalive(t *testing.T) {
 
 func executeHandshake(t *testing.T, c *context.Context, srcPort uint16, synCookieInUse bool) (irs, iss seqnum.Value) {
 	t.Helper()
+
 	// Send a SYN request.
+	options := []byte{header.TCPOptionWS, 3, 0, header.TCPOptionNOP}
 	irs = seqnum.Value(context.TestInitialSequenceNumber)
 	c.SendPacket(nil, &context.Headers{
 		SrcPort: srcPort,
@@ -5632,12 +5773,13 @@ func executeHandshake(t *testing.T, c *context.Context, srcPort uint16, synCooki
 		Flags:   header.TCPFlagSyn,
 		SeqNum:  irs,
 		RcvWnd:  30000,
+		TCPOpts: options,
 	})
 
 	// Receive the SYN-ACK reply.
 	b := c.GetPacket()
-	tcp := header.TCP(header.IPv4(b).Payload())
-	iss = seqnum.Value(tcp.SequenceNumber())
+	tcpHdr := header.TCP(header.IPv4(b).Payload())
+	iss = seqnum.Value(tcpHdr.SequenceNumber())
 	tcpCheckers := []checker.TransportChecker{
 		checker.SrcPort(context.StackPort),
 		checker.DstPort(srcPort),
@@ -5649,6 +5791,11 @@ func executeHandshake(t *testing.T, c *context.Context, srcPort uint16, synCooki
 		// When cookies are in use window scaling is disabled.
 		tcpCheckers = append(tcpCheckers, checker.TCPSynOptions(header.TCPSynOptions{
 			WS:  -1,
+			MSS: c.MSSWithoutOptions(),
+		}))
+	} else {
+		tcpCheckers = append(tcpCheckers, checker.TCPSynOptions(header.TCPSynOptions{
+			WS:  tcp.FindWndScale(tcp.DefaultReceiveBufferSize),
 			MSS: c.MSSWithoutOptions(),
 		}))
 	}
@@ -5669,7 +5816,9 @@ func executeHandshake(t *testing.T, c *context.Context, srcPort uint16, synCooki
 
 func executeV6Handshake(t *testing.T, c *context.Context, srcPort uint16, synCookieInUse bool) (irs, iss seqnum.Value) {
 	t.Helper()
+
 	// Send a SYN request.
+	options := []byte{header.TCPOptionWS, 3, 0, header.TCPOptionNOP}
 	irs = seqnum.Value(context.TestInitialSequenceNumber)
 	c.SendV6Packet(nil, &context.Headers{
 		SrcPort: srcPort,
@@ -5677,12 +5826,13 @@ func executeV6Handshake(t *testing.T, c *context.Context, srcPort uint16, synCoo
 		Flags:   header.TCPFlagSyn,
 		SeqNum:  irs,
 		RcvWnd:  30000,
+		TCPOpts: options,
 	})
 
 	// Receive the SYN-ACK reply.
 	b := c.GetV6Packet()
-	tcp := header.TCP(header.IPv6(b).Payload())
-	iss = seqnum.Value(tcp.SequenceNumber())
+	tcpHdr := header.TCP(header.IPv6(b).Payload())
+	iss = seqnum.Value(tcpHdr.SequenceNumber())
 	tcpCheckers := []checker.TransportChecker{
 		checker.SrcPort(context.StackPort),
 		checker.DstPort(srcPort),
@@ -5694,6 +5844,11 @@ func executeV6Handshake(t *testing.T, c *context.Context, srcPort uint16, synCoo
 		// When cookies are in use window scaling is disabled.
 		tcpCheckers = append(tcpCheckers, checker.TCPSynOptions(header.TCPSynOptions{
 			WS:  -1,
+			MSS: c.MSSWithoutOptionsV6(),
+		}))
+	} else {
+		tcpCheckers = append(tcpCheckers, checker.TCPSynOptions(header.TCPSynOptions{
+			WS:  tcp.FindWndScale(tcp.DefaultReceiveBufferSize),
 			MSS: c.MSSWithoutOptionsV6(),
 		}))
 	}
@@ -6151,7 +6306,7 @@ func TestListenBacklogFullSynCookieInUse(t *testing.T) {
 		t.Fatalf("Listen failed: %s", err)
 	}
 
-	executeHandshake(t, c, context.TestPort, false)
+	executeHandshake(t, c, context.TestPort, true)
 
 	// Wait for this to be delivered to the accept queue.
 	time.Sleep(50 * time.Millisecond)
@@ -6375,7 +6530,7 @@ func TestPassiveConnectionAttemptIncrement(t *testing.T) {
 	want := stats.TCP.PassiveConnectionOpenings.Value() + 1
 
 	srcPort := uint16(context.TestPort)
-	executeHandshake(t, c, srcPort+1, false)
+	executeHandshake(t, c, srcPort+1, true /* synCookiesInUse */)
 
 	we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
 	c.WQ.EventRegister(&we)
@@ -6421,7 +6576,7 @@ func TestPassiveFailedConnectionAttemptIncrement(t *testing.T) {
 
 	srcPort := uint16(context.TestPort)
 	// Now attempt a handshakes it will fill up the accept backlog.
-	executeHandshake(t, c, srcPort, false)
+	executeHandshake(t, c, srcPort, true /* synCookesInUse */)
 
 	// Give time for the final ACK to be processed as otherwise the next handshake could
 	// get accepted before the previous one based on goroutine scheduling.
