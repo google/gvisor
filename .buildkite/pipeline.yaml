@@ -38,6 +38,9 @@ _templates:
         ./pkg/tcpip/transport/tcp
         ./pkg/tcpip/transport/udp
         ./pkg/waiter
+env:
+  # Force a clean checkout every time to avoid reuse of files between runs.
+  BUILDKITE_CLEAN_CHECKOUT: true
 
 steps:
   # Run basic smoke tests before preceding to other tests.

@@ -10,6 +10,10 @@ _templates:
         - exit_status: "*"
           limit: 2
 
+env:
+  # Force a clean checkout every time to avoid reuse of files between runs.
+  BUILDKITE_CLEAN_CHECKOUT: true
+
 steps:
   - <<: *common
     label: ":ship: Push all images (x86_64)"
