@@ -191,6 +191,7 @@ func TestMountOverSymlinks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("readlink failed: %v, out: %s", err, out)
 	}
+	t.Logf("================ %s %s", out, err)
 	if want := "/tmp/resolv.conf"; !strings.Contains(string(out), want) {
 		t.Fatalf("/etc/resolv.conf is not pointing to %q: %q", want, string(out))
 	}
@@ -199,10 +200,12 @@ func TestMountOverSymlinks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cat failed: %v, out: %s", err, etc)
 	}
+	t.Logf("================ %s %s", etc, err)
 	tmp, err := crictl.Exec(contID, "cat", "/tmp/resolv.conf")
 	if err != nil {
 		t.Fatalf("cat failed: %v, out: %s", err, out)
 	}
+	t.Logf("================ %s %s", tmp, err)
 	if tmp != etc {
 		t.Fatalf("file content doesn't match:\n\t/etc/resolv.conf: %s\n\t/tmp/resolv.conf: %s", string(etc), string(tmp))
 	}

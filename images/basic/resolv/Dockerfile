@@ -1,3 +1,1 @@
-FROM busybox:latest
-
-RUN unlink /etc/resolv.conf && ln -sf /tmp/resolv.conf /etc/resolv.conf
+FROM k8s.gcr.io/busybox:latest
