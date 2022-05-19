@@ -68,12 +68,19 @@ type SinkConfig struct {
 }
 
 // Create reads the session configuration and applies it to the system.
-func Create(conf *SessionConfig) error {
+func Create(conf *SessionConfig, force bool) error {
 	log.Debugf("Creating seccheck: %+v", conf)
 	sessionsMu.Lock()
 	defer sessionsMu.Unlock()
+
 	if _, ok := sessions[conf.Name]; ok {
-		return fmt.Errorf("session %q already exists", conf.Name)
+		if !force {
+			return fmt.Errorf("session %q already exists", conf.Name)
+		}
+		if err := deleteLocked(conf.Name); err != nil {
+			return err
+		}
+		log.Infof("Trace session %q was deleted to be replaced", conf.Name)
 	}
 	if conf.Name != DefaultSessionName {
 		return fmt.Errorf(`only a single "Default" session is supported`)
@@ -154,7 +161,11 @@ func setupSink(config SinkConfig) (*os.File, error) {
 func Delete(name string) error {
 	sessionsMu.Lock()
 	defer sessionsMu.Unlock()
+	return deleteLocked(name)
+}
 
+// +checklocks:sessionsMu
+func deleteLocked(name string) error {
 	session := sessions[name]
 	if session == nil {
 		return fmt.Errorf("session %q not found", name)

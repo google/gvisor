@@ -390,7 +390,7 @@ func (s *Sandbox) Processes(cid string) ([]*control.Process, error) {
 }
 
 // CreateTraceSession creates a new trace session.
-func (s *Sandbox) CreateTraceSession(config *seccheck.SessionConfig) error {
+func (s *Sandbox) CreateTraceSession(config *seccheck.SessionConfig, force bool) error {
 	log.Debugf("Creating trace session in sandbox %q", s.ID)
 
 	sinkFiles, err := seccheck.SetupSinks(config.Sinks)
@@ -411,6 +411,7 @@ func (s *Sandbox) CreateTraceSession(config *seccheck.SessionConfig) error {
 
 	arg := boot.CreateTraceSessionArgs{
 		Config: *config,
+		Force:  force,
 		FilePayload: urpc.FilePayload{
 			Files: sinkFiles,
 		},

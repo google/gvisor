@@ -74,5 +74,5 @@ func (c *InitConfig) create(sinkFDs []int) error {
 			c.TraceSession.Sinks[i].FD = fd.New(sinkFD)
 		}
 	}
-	return seccheck.Create(&c.TraceSession)
+	return seccheck.Create(&c.TraceSession, false)
 }
