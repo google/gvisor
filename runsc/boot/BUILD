@@ -121,6 +121,7 @@ go_library(
         "//runsc/boot/filter",
         "//runsc/boot/platforms",
         "//runsc/boot/pprof",
+        "//runsc/boot/procfs",
         "//runsc/config",
         "//runsc/specutils",
         "//runsc/specutils/seccomp",

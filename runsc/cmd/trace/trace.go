@@ -65,5 +65,6 @@ func createCommander(f *flag.FlagSet) *subcommands.Commander {
 	cdr.Register(new(delete), "")
 	cdr.Register(new(list), "")
 	cdr.Register(new(metadata), "")
+	cdr.Register(new(procfs), "")
 	return cdr
 }

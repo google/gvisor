@@ -38,6 +38,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot/pprof"
+	"gvisor.dev/gvisor/runsc/boot/procfs"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
@@ -90,6 +91,9 @@ const (
 
 	// ContMgrListTraceSessions lists a trace session.
 	ContMgrListTraceSessions = "containerManager.ListTraceSessions"
+
+	// ContMgrProcfsDump dumps sandbox procfs state.
+	ContMgrProcfsDump = "containerManager.ProcfsDump"
 )
 
 const (
@@ -633,5 +637,23 @@ func (cm *containerManager) DeleteTraceSession(name *string, _ *struct{}) error 
 func (cm *containerManager) ListTraceSessions(_ *struct{}, out *[]seccheck.SessionConfig) error {
 	log.Debugf("containerManager.ListTraceSessions")
 	seccheck.List(out)
+	return nil
+}
+
+// ProcfsDump dumps procfs state of the sandbox.
+func (cm *containerManager) ProcfsDump(_ *struct{}, out *[]procfs.ProcessProcfsDump) error {
+	log.Debugf("containerManager.ProcfsDump")
+	ts := cm.l.k.TaskSet()
+	pidns := ts.Root
+	*out = make([]procfs.ProcessProcfsDump, 0, len(cm.l.processes))
+	for _, tg := range pidns.ThreadGroups() {
+		pid := pidns.IDOfThreadGroup(tg)
+		procDump, err := procfs.Dump(tg.Leader(), pid)
+		if err != nil {
+			log.Warningf("skipping procfs dump for PID %s: %v", pid, err)
+			continue
+		}
+		*out = append(*out, procDump)
+	}
 	return nil
 }
