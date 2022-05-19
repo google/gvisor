@@ -12,5 +12,6 @@ go_library(
         "//pkg/sentry/fsimpl/proc",
         "//pkg/sentry/kernel",
         "//pkg/sentry/mm",
+        "//pkg/sentry/vfs",
     ],
 )

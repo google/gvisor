@@ -302,6 +302,7 @@ func TestProcfsDump(t *testing.T) {
 	spec, conf := sleepSpecConf(t)
 	testEnv := "GVISOR_IS_GREAT=true"
 	spec.Process.Env = append(spec.Process.Env, testEnv)
+	spec.Process.Cwd = "/"
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
@@ -359,5 +360,9 @@ func TestProcfsDump(t *testing.T) {
 	}
 	if !testEnvFound {
 		t.Errorf("expected to find %q env but did not find it, got env %+v", testEnv, procfsDump[0].Env)
+	}
+
+	if spec.Process.Cwd != procfsDump[0].CWD {
+		t.Errorf("expected CWD %q, got %q", spec.Process.Cwd, procfsDump[0].CWD)
 	}
 }
