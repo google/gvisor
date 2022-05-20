@@ -44,6 +44,12 @@ env:
 
 steps:
   - <<: *common
+    label: "resolv"
+    command: make resolv
+    agents:
+      arch: "arm64"
+      os: "ubuntu"
+  - <<: *common
     label: ":docker: Containerd 1.4.3 tests (amd)"
     command: make containerd-test-1.4.3
     agents:
