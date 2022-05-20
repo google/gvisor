@@ -972,7 +972,14 @@ func parseSize(s string) (uint64, error) {
 		count = count << 10
 		s = s[:len(s)-1]
 	}
-	bytes, err := strconv.ParseUint(s, 10, 64)
-	bytes = bytes * uint64(count)
+	byteTmp, err := strconv.ParseUint(s, 10, 64)
+	if err != nil {
+		return 0, linuxerr.EINVAL
+	}
+	// Check for overflow.
+	bytes := byteTmp * uint64(count)
+	if byteTmp != 0 && bytes/byteTmp != uint64(count) {
+		return 0, fmt.Errorf("size overflow")
+	}
 	return bytes, err
 }

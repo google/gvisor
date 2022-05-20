@@ -171,6 +171,8 @@ func TestParseSize(t *testing.T) {
 		{"5P", (5 * 1024 * 1024 * 1024 * 1024 * 1024), false},
 		{"5e", (5 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024), false},
 		{"5e3", 0, true},
+		{"", 0, true},
+		{"9999999999999999P", 0, true},
 	}
 	for _, tt := range tests {
 		testname := fmt.Sprintf("%s", tt.s)
