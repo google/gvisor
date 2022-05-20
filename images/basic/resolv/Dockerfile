@@ -1,3 +1,3 @@
-FROM busybox:latest
+FROM busybox
 
 ADD resolve.tar /

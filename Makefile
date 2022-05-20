@@ -317,7 +317,7 @@ resolv: rebuild-basic_resolv
 	docker run --rm gvisor.dev/images/basic/resolv:latest ls -l /etc
 
 # Specific containerd version tests.
-containerd-test-%: load-basic_alpine load-basic_python load-basic_busybox rebuild-basic_resolv load-basic_httpd load-basic_ubuntu $(RUNTIME_BIN)
+containerd-test-%: load-basic_alpine load-basic_python rebuild-basic_busybox rebuild-basic_resolv load-basic_httpd load-basic_ubuntu $(RUNTIME_BIN)
 	docker inspect gvisor.dev/images/basic/resolv:latest
 	@$(call install_runtime,$(RUNTIME),) # Clear flags.
 	@sudo tools/install_containerd.sh $*
