@@ -57,20 +57,20 @@ steps:
       os: "ubuntu"
   - <<: *common
     label: ":docker: Containerd 1.4.3 tests"
-    command: make containerd-test-1.4.3
+    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} containerd-test-1.4.3
     agents:
       arch: "arm64"
       os: "ubuntu"
   - <<: *common
     label: ":docker: Containerd 1.5.4 tests (cgroupv2)"
-    command: make containerd-test-1.5.4
+    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} containerd-test-1.5.4
     agents:
       cgroup: "v2"
       arch: "arm64"
       os: "ubuntu"
   - <<: *common
     label: ":docker: Containerd 1.6.0-rc.4 tests (cgroupv2)"
-    command: make containerd-test-1.6.0-rc.4
+    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} containerd-test-1.6.0-rc.4
     agents:
       cgroup: "v2"
       arch: "arm64"
