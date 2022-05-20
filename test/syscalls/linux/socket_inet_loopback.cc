@@ -2502,6 +2502,44 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, NoReusePortFollowingReusePort) {
   ASSERT_THAT(bind(fd, AsSockAddr(&addr), addrlen), SyscallSucceeds());
 }
 
+// Check that if REUSEPORT is set after binding, another socket with REUSEPORT
+// can bind after.
+TEST_P(SocketMultiProtocolInetLoopbackTest, ReusePortAfterBinding) {
+  ProtocolTestParam const& param = GetParam();
+  TestAddress const& test_addr = V4Loopback();
+  sockaddr_storage addr = test_addr.addr;
+
+  auto s1 =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(test_addr.family(), param.type, 0));
+  int fd = s1.get();
+  socklen_t addrlen = test_addr.addr_len;
+
+  // Bind before setting SO_REUSEPORT.
+  ASSERT_THAT(bind(fd, AsSockAddr(&addr), addrlen), SyscallSucceeds());
+  ASSERT_THAT(getsockname(fd, AsSockAddr(&addr), &addrlen), SyscallSucceeds());
+  ASSERT_EQ(addrlen, test_addr.addr_len);
+
+  // Setting SO_REUSEPORT succeeds, after which the next socket must have
+  // SO_REUSEPORT set.
+  int portreuse = 1;
+  ASSERT_THAT(
+      setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &portreuse, sizeof(portreuse)),
+      SyscallSucceeds());
+
+  auto s2 =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(test_addr.family(), param.type, 0));
+  fd = s2.get();
+  // Without SO_REUSEPORT set the bind fails.
+  ASSERT_THAT(bind(fd, AsSockAddr(&addr), addrlen),
+              SyscallFailsWithErrno(EADDRINUSE));
+
+  // With SO_REUSEPORT set on s2, the bind succeeds.
+  ASSERT_THAT(
+      setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &portreuse, sizeof(portreuse)),
+      SyscallSucceeds());
+  ASSERT_THAT(bind(fd, AsSockAddr(&addr), addrlen), SyscallSucceeds());
+}
+
 INSTANTIATE_TEST_SUITE_P(AllFamilies, SocketMultiProtocolInetLoopbackTest,
                          ProtocolTestValues(), DescribeProtocolTestParam);
 
