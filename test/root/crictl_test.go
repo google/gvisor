@@ -181,8 +181,8 @@ func TestMountOverSymlinks(t *testing.T) {
 	}
 	defer cleanup()
 
-	spec := SimpleSpec("busybox", "basic/resolv", []string{"sleep", "1000"}, nil)
-	podID, contID, err := crictl.StartPodAndContainer(containerdRuntime, "basic/resolv", Sandbox("default"), spec)
+	spec := SimpleSpec("symlink", "basic/symlink", []string{"sleep", "1000"}, nil)
+	podID, contID, err := crictl.StartPodAndContainer(containerdRuntime, "basic/symlink", Sandbox("default"), spec)
 	if err != nil {
 		t.Fatalf("start failed: %v", err)
 	}
@@ -230,8 +230,8 @@ func TestHomeDir(t *testing.T) {
 	// containers are sub-containers. The root container of the sandbox is the
 	// pause container.
 	t.Run("sub-container", func(t *testing.T) {
-		contSpec := SimpleSpec("subcontainer", "basic/busybox", []string{"sh", "-c", "echo $HOME"}, nil)
-		podID, contID, err := crictl.StartPodAndContainer(containerdRuntime, "basic/busybox", Sandbox("subcont-sandbox"), contSpec)
+		contSpec := SimpleSpec("subcontainer", "basic/symlink", []string{"sh", "-c", "echo $HOME"}, nil)
+		podID, contID, err := crictl.StartPodAndContainer(containerdRuntime, "basic/symlink", Sandbox("subcont-sandbox"), contSpec)
 		if err != nil {
 			t.Fatalf("start failed: %v", err)
 		}
@@ -250,8 +250,8 @@ func TestHomeDir(t *testing.T) {
 
 	// Tests that HOME is set for the exec process.
 	t.Run("exec", func(t *testing.T) {
-		contSpec := SimpleSpec("exec", "basic/busybox", []string{"sleep", "1000"}, nil)
-		podID, contID, err := crictl.StartPodAndContainer(containerdRuntime, "basic/busybox", Sandbox("exec-sandbox"), contSpec)
+		contSpec := SimpleSpec("exec", "basic/symlink", []string{"sleep", "1000"}, nil)
+		podID, contID, err := crictl.StartPodAndContainer(containerdRuntime, "basic/symlink", Sandbox("exec-sandbox"), contSpec)
 		if err != nil {
 			t.Fatalf("start failed: %v", err)
 		}

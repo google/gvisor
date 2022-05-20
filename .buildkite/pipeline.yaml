@@ -44,8 +44,8 @@ env:
 
 steps:
   - <<: *common
-    label: "resolv"
-    command: make resolv
+    label: "symlink"
+    command: make symlink
     agents:
       arch: "arm64"
       os: "ubuntu"

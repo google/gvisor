@@ -312,17 +312,17 @@ fsstress-test: load-basic $(RUNTIME_BIN)
 .PHONY: fsstress-test
 
 # Specific containerd version tests.
-resolv:
+symlink:
 	docker image ls
-	docker inspect gvisor.dev/images/basic/resolv:latest
-	docker run --rm gvisor.dev/images/basic/resolv:latest ls -l /etc
-	docker save gvisor.dev/images/basic/resolv | tar -t
+	docker inspect gvisor.dev/images/basic/symlink:latest
+	docker run --rm gvisor.dev/images/basic/symlink:latest ls -l /etc
+	docker save gvisor.dev/images/basic/symlink | tar -t
 
 # Specific containerd version tests.
-containerd-test-%: load-basic_alpine load-basic_python rebuild-basic_busybox rebuild-basic_resolv load-basic_httpd load-basic_ubuntu $(RUNTIME_BIN)
-	docker inspect gvisor.dev/images/basic/resolv:latest
-	docker run --rm gvisor.dev/images/basic/resolv:latest ls -l /etc
-	docker save gvisor.dev/images/basic/resolv | tar -t
+containerd-test-%: load-basic_alpine load-basic_python rebuild-basic_busybox rebuild-basic_symlink load-basic_httpd load-basic_ubuntu $(RUNTIME_BIN)
+	docker inspect gvisor.dev/images/basic/symlink:latest
+	docker run --rm gvisor.dev/images/basic/symlink:latest ls -l /etc
+	docker save gvisor.dev/images/basic/symlink | tar -t
 	@$(call install_runtime,$(RUNTIME),) # Clear flags.
 	@sudo tools/install_containerd.sh $*
 ifeq (,$(STAGED_BINARIES))
