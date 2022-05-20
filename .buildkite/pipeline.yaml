@@ -236,35 +236,30 @@ steps:
     label: ":docker: Containerd 1.4.3 tests"
     command: make containerd-test-1.4.3
     agents:
-      arch: "amd64"
       os: "ubuntu"
   - <<: *common
     label: ":docker: Containerd 1.5.4 tests (cgroupv1)"
     command: make containerd-test-1.5.4
     agents:
       cgroup: "v1"
-      arch: "amd64"
       os: "ubuntu"
   - <<: *common
     label: ":docker: Containerd 1.5.4 tests (cgroupv2)"
     command: make containerd-test-1.5.4
     agents:
       cgroup: "v2"
-      arch: "amd64"
       os: "ubuntu"
   - <<: *common
     label: ":docker: Containerd 1.6.0-rc.4 tests (cgroupv1)"
     command: make containerd-test-1.6.0-rc.4
     agents:
       cgroup: "v1"
-      arch: "amd64"
       os: "ubuntu"
   - <<: *common
     label: ":docker: Containerd 1.6.0-rc.4 tests (cgroupv2)"
     command: make containerd-test-1.6.0-rc.4
     agents:
       cgroup: "v2"
-      arch: "amd64"
       os: "ubuntu"
 
   # Check the website builds.
