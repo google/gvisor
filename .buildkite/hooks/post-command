@@ -1,7 +1,8 @@
 # Clear any downloaded credentials.
 rm -f repo.key
 
-        docker inspect gvisor.dev/images/basic/resolv || true
+docker inspect gvisor.dev/images/basic/resolv || true
+docker save gvisor.dev/images/basic/resolv | tar -t
 
 # Upload all relevant test failures.
 make -s testlogs 2>/dev/null | grep // | sort | uniq | (
