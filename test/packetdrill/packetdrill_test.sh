@@ -117,7 +117,7 @@ declare -r CTRL_PORT="40000"
 # Last bits of the test runner's IP address.
 declare -r TEST_RUNNER_NET_SUFFIX=".20"
 declare -r TIMEOUT="60"
-declare -r IMAGE_TAG="gcr.io/gvisor-presubmit/packetdrill"
+declare -r IMAGE_TAG="gvisor.dev/images/packetdrill"
 
 # Make sure that docker is installed.
 docker --version
