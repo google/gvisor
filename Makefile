@@ -315,6 +315,7 @@ fsstress-test: load-basic $(RUNTIME_BIN)
 resolv: rebuild-basic_resolv
 	docker inspect gvisor.dev/images/basic/resolv:latest
 	docker run --rm gvisor.dev/images/basic/resolv:latest ls -l /etc
+	docker save gvisor.dev/images/basic/resolv | tar -t
 
 # Specific containerd version tests.
 containerd-test-%: load-basic_alpine load-basic_python rebuild-basic_busybox rebuild-basic_resolv load-basic_httpd load-basic_ubuntu $(RUNTIME_BIN)
