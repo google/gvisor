@@ -4,6 +4,17 @@ load("//tools/go_generics:defs.bzl", "go_template_instance")
 package(licenses = ["notice"])
 
 go_template_instance(
+    name = "futex_mutex",
+    out = "futex_mutex.go",
+    package = "futex",
+    prefix = "futexBucket",
+    substrs = {
+        "genericMark": "futexBucket",
+    },
+    template = "//pkg/sync/locking:generic_mutex",
+)
+
+go_template_instance(
     name = "atomicptr_bucket",
     out = "atomicptr_bucket_unsafe.go",
     package = "futex",
@@ -31,6 +42,7 @@ go_library(
     srcs = [
         "atomicptr_bucket_unsafe.go",
         "futex.go",
+        "futex_mutex.go",
         "waiter_list.go",
     ],
     visibility = ["//pkg/sentry:internal"],
@@ -42,6 +54,7 @@ go_library(
         "//pkg/log",
         "//pkg/sentry/memmap",
         "//pkg/sync",
+        "//pkg/sync/locking",
         "//pkg/usermem",
     ],
 )

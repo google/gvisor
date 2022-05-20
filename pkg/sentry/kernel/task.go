@@ -255,7 +255,7 @@ type Task struct {
 	containerID string
 
 	// mu protects some of the following fields.
-	mu sync.Mutex `state:"nosave"`
+	mu taskMutex `state:"nosave"`
 
 	// image holds task data provided by the ELF loader.
 	//

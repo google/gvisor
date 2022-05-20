@@ -18,7 +18,6 @@ import (
 	"math"
 
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // A UserNamespace represents a user namespace. See user_namespaces(7) for
@@ -38,7 +37,7 @@ type UserNamespace struct {
 	//
 	// If mu will be locked in multiple UserNamespaces, it must be locked in
 	// descendant namespaces before ancestors.
-	mu sync.Mutex `state:"nosave"`
+	mu userNamespaceMutex `state:"nosave"`
 
 	// Mappings of user/group IDs between this namespace and its parent.
 	//

@@ -42,6 +42,17 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "user_namespace_mutex",
+    out = "user_namespace_mutex.go",
+    package = "auth",
+    prefix = "userNamespace",
+    substrs = {
+        "genericMark": "userNamespace",
+    },
+    template = "//pkg/sync/locking:generic_mutex",
+)
+
 go_library(
     name = "auth",
     srcs = [
@@ -56,6 +67,7 @@ go_library(
         "id_map_range.go",
         "id_map_set.go",
         "user_namespace.go",
+        "user_namespace_mutex.go",
     ],
     marshal = True,
     visibility = ["//pkg/sentry:internal"],
@@ -68,5 +80,6 @@ go_library(
         "//pkg/sentry/seccheck",
         "//pkg/sentry/seccheck/points:points_go_proto",
         "//pkg/sync",
+        "//pkg/sync/locking",
     ],
 )
