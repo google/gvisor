@@ -312,7 +312,8 @@ fsstress-test: load-basic $(RUNTIME_BIN)
 .PHONY: fsstress-test
 
 # Specific containerd version tests.
-resolv: rebuild-basic_resolv
+resolv:
+	docker image ls
 	docker inspect gvisor.dev/images/basic/resolv:latest
 	docker run --rm gvisor.dev/images/basic/resolv:latest ls -l /etc
 	docker save gvisor.dev/images/basic/resolv | tar -t
