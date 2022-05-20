@@ -1,1 +1,3 @@
-FROM k8s.gcr.io/busybox:latest
+FROM busybox:latest
+
+ADD resolve.tar /

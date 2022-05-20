@@ -181,8 +181,8 @@ func TestMountOverSymlinks(t *testing.T) {
 	}
 	defer cleanup()
 
-	spec := SimpleSpec("busybox", "basic/busybox", []string{"sleep", "1000"}, nil)
-	podID, contID, err := crictl.StartPodAndContainer(containerdRuntime, "basic/busybox", Sandbox("default"), spec)
+	spec := SimpleSpec("busybox", "basic/resolv", []string{"sleep", "1000"}, nil)
+	podID, contID, err := crictl.StartPodAndContainer(containerdRuntime, "basic/resolv", Sandbox("default"), spec)
 	if err != nil {
 		t.Fatalf("start failed: %v", err)
 	}
