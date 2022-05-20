@@ -159,7 +159,7 @@ type ThreadGroup struct {
 	// restarted by Task.Start.
 	liveGoroutines sync.WaitGroup `state:"nosave"`
 
-	timerMu sync.Mutex `state:"nosave"`
+	timerMu threadGroupTimerMutex `state:"nosave"`
 
 	// itimerRealTimer implements ITIMER_REAL for the thread group.
 	itimerRealTimer *ktime.Timer
@@ -381,9 +381,9 @@ func (tg *ThreadGroup) SetControllingTTY(tty *TTY, steal bool, isReadable bool) 
 			//		the same session as the tty's controlling thread
 			//		group.
 			if othertg.processGroup.session == tty.tg.processGroup.session {
-				othertg.signalHandlers.mu.Lock()
+				othertg.signalHandlers.mu.NestedLock()
 				othertg.tty = nil
-				othertg.signalHandlers.mu.Unlock()
+				othertg.signalHandlers.mu.NestedUnlock()
 			}
 		}
 	}

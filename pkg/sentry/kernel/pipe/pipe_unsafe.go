@@ -29,9 +29,9 @@ func lockTwoPipes(x, y *Pipe) {
 	// Lock the two pipes in order of increasing address.
 	if uintptr(unsafe.Pointer(x)) < uintptr(unsafe.Pointer(y)) {
 		x.mu.Lock()
-		y.mu.Lock()
+		y.mu.NestedLock()
 	} else {
 		y.mu.Lock()
-		x.mu.Lock()
+		x.mu.NestedLock()
 	}
 }

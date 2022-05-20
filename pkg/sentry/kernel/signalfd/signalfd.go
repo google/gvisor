@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs/anon"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -55,7 +54,7 @@ type SignalOperations struct {
 	queue waiter.Queue
 
 	// mu protects below.
-	mu sync.Mutex `state:"nosave"`
+	mu operationsMutex `state:"nosave"`
 
 	// entry is the entry reigstered with the target.
 	entry waiter.Entry

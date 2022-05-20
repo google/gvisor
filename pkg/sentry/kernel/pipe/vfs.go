@@ -415,7 +415,7 @@ func spliceOrTee(ctx context.Context, dst, src *VFSPipeFD, count int64, removeFr
 		return uint64(n), err
 	})
 	dst.pipe.mu.Unlock()
-	src.pipe.mu.Unlock()
+	src.pipe.mu.NestedUnlock()
 
 	if n > 0 {
 		dst.pipe.queue.Notify(waiter.ReadableEvents)
