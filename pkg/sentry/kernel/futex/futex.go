@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // KeyKind indicates the type of a Key.
@@ -252,7 +251,7 @@ func (w *Waiter) woken() bool {
 // +stateify savable
 type bucket struct {
 	// mu protects waiters and contained Waiter state. See comment in Waiter.
-	mu sync.Mutex `state:"nosave"`
+	mu futexBucketMutex `state:"nosave"`
 
 	waiters waiterList `state:"zerovalue"`
 }
@@ -426,10 +425,10 @@ func (m *Manager) lockBuckets(k1, k2 *Key) (b1 *bucket, b2 *bucket) {
 		switch {
 		case i1 < i2:
 			b1.mu.Lock()
-			b2.mu.Lock()
+			b2.mu.NestedLock()
 		case i2 < i1:
 			b2.mu.Lock()
-			b1.mu.Lock()
+			b1.mu.NestedLock()
 		default:
 			b1.mu.Lock()
 		}
@@ -452,7 +451,7 @@ func (m *Manager) lockBuckets(k1, k2 *Key) (b1 *bucket, b2 *bucket) {
 // +checklocksrelease:b1.mu
 // +checklocksrelease:b2.mu
 func (m *Manager) unlockBuckets(b1, b2 *bucket) {
-	b1.mu.Unlock()
+	b1.mu.NestedUnlock()
 	if b1 != b2 {
 		b2.mu.Unlock()
 	}

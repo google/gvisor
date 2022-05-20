@@ -28,7 +28,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // FDFlags define flags for an individual descriptor.
@@ -85,7 +84,7 @@ type FDTable struct {
 	k *Kernel
 
 	// mu protects below.
-	mu sync.Mutex `state:"nosave"`
+	mu fdTableMutex `state:"nosave"`
 
 	// fdBitmap shows which fds are already in use.
 	fdBitmap bitmap.Bitmap `state:"nosave"`

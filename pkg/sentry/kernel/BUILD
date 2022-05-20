@@ -1,7 +1,64 @@
 load("//tools:defs.bzl", "go_library", "go_test", "proto_library")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
+load("//pkg/sync/locking:locking.bzl", "declare_mutex", "declare_rwmutex")
 
 package(licenses = ["notice"])
+
+declare_mutex(
+    name = "user_counters_mutex",
+    out = "user_counters_mutex.go",
+    package = "kernel",
+    prefix = "userCounters",
+)
+
+declare_rwmutex(
+    name = "taskset_mutex",
+    out = "taskset_mutex.go",
+    package = "kernel",
+    prefix = "taskSet",
+)
+
+declare_mutex(
+    name = "task_mutex",
+    out = "task_mutex.go",
+    package = "kernel",
+    prefix = "task",
+)
+
+declare_mutex(
+    name = "cgroup_mutex",
+    out = "cgroup_mutex.go",
+    package = "kernel",
+    prefix = "cgroup",
+)
+
+declare_mutex(
+    name = "fd_table_mutex",
+    out = "fd_table_mutex.go",
+    package = "kernel",
+    prefix = "fdTable",
+)
+
+declare_mutex(
+    name = "running_tasks_mutex",
+    out = "running_tasks_mutex.go",
+    package = "kernel",
+    prefix = "runningTasks",
+)
+
+declare_mutex(
+    name = "signal_handlers_mutex",
+    out = "signal_handlers_mutex.go",
+    package = "kernel",
+    prefix = "signalHandlers",
+)
+
+declare_mutex(
+    name = "thread_group_timer_mutex",
+    out = "thread_group_timer_mutex.go",
+    package = "kernel",
+    prefix = "threadGroupTimer",
+)
 
 go_template_instance(
     name = "pending_signals_list",
@@ -142,8 +199,10 @@ go_library(
         "abstract_socket_namespace.go",
         "aio.go",
         "cgroup.go",
+        "cgroup_mutex.go",
         "context.go",
         "fd_table.go",
+        "fd_table_mutex.go",
         "fd_table_refs.go",
         "fd_table_unsafe.go",
         "fs_context.go",
@@ -165,6 +224,7 @@ go_library(
         "ptrace_amd64.go",
         "ptrace_arm64.go",
         "rseq.go",
+        "running_tasks_mutex.go",
         "seccheck.go",
         "seccomp.go",
         "seqatomic_taskgoroutineschedinfo_unsafe.go",
@@ -173,6 +233,7 @@ go_library(
         "sessions.go",
         "signal.go",
         "signal_handlers.go",
+        "signal_handlers_mutex.go",
         "socket_list.go",
         "syscalls.go",
         "syscalls_state.go",
@@ -190,6 +251,7 @@ go_library(
         "task_image.go",
         "task_list.go",
         "task_log.go",
+        "task_mutex.go",
         "task_net.go",
         "task_run.go",
         "task_sched.go",
@@ -199,12 +261,15 @@ go_library(
         "task_syscall.go",
         "task_usermem.go",
         "task_work.go",
+        "taskset_mutex.go",
         "thread_group.go",
+        "thread_group_timer_mutex.go",
         "threads.go",
         "threads_impl.go",
         "timekeeper.go",
         "timekeeper_state.go",
         "tty.go",
+        "user_counters_mutex.go",
         "uts_namespace.go",
         "vdso.go",
         "version.go",
@@ -286,6 +351,7 @@ go_library(
         "//pkg/state/statefile",
         "//pkg/state/wire",
         "//pkg/sync",
+        "//pkg/sync/locking",
         "//pkg/syserr",
         "//pkg/tcpip",
         "//pkg/tcpip/stack",

@@ -189,7 +189,7 @@ type Kernel struct {
 	// runningTasksMu is used to exclude critical sections when the timer
 	// disables itself and when the first active task enables the timer,
 	// ensuring that tasks always see a valid cpuClock value.
-	runningTasksMu sync.Mutex `state:"nosave"`
+	runningTasksMu runningTasksMutex `state:"nosave"`
 
 	// runningTasks is the total count of tasks currently in
 	// TaskGoroutineRunningSys or TaskGoroutineRunningApp. i.e., they are
@@ -330,9 +330,9 @@ type Kernel struct {
 	// the system.
 	cgroupRegistry *CgroupRegistry
 
-	// userCountersMa maps auth.KUID into a set of user counters.
+	// userCountersMap maps auth.KUID into a set of user counters.
 	userCountersMap   map[auth.KUID]*userCounters
-	userCountersMapMu sync.Mutex `state:"nosave"`
+	userCountersMapMu userCountersMutex `state:"nosave"`
 }
 
 // InitKernelArgs holds arguments to Init.
