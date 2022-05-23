@@ -10,11 +10,13 @@ syscall_test(
 )
 
 syscall_test(
+    container = True,
     test = "//test/syscalls/linux:accept_bind_stream_test",
 )
 
 syscall_test(
     size = "large",
+    container = True,
     shard_count = most_shards,
     test = "//test/syscalls/linux:accept_bind_test",
 )
@@ -50,6 +52,7 @@ syscall_test(
 syscall_test(
     size = "large",
     add_overlay = True,
+    container = True,
     test = "//test/syscalls/linux:bind_test",
 )
 
@@ -108,6 +111,7 @@ syscall_test(
 
 syscall_test(
     add_uds_tree = True,
+    container = True,
     test = "//test/syscalls/linux:connect_external_test",
     use_tmpfs = True,
 )
@@ -255,10 +259,12 @@ syscall_test(
 )
 
 syscall_test(
+    container = True,
     test = "//test/syscalls/linux:iptables_test",
 )
 
 syscall_test(
+    container = True,
     test = "//test/syscalls/linux:ip6tables_test",
 )
 
@@ -278,6 +284,7 @@ syscall_test(
 
 syscall_test(
     add_overlay = True,
+    container = True,
     test = "//test/syscalls/linux:link_test",
     use_tmpfs = True,  # gofer needs CAP_DAC_READ_SEARCH to use AT_EMPTY_PATH with linkat(2)
 )
@@ -379,14 +386,17 @@ syscall_test(
 )
 
 syscall_test(
+    container = True,
     test = "//test/syscalls/linux:packet_socket_dgram_test",
 )
 
 syscall_test(
+    container = True,
     test = "//test/syscalls/linux:packet_socket_raw_test",
 )
 
 syscall_test(
+    container = True,
     test = "//test/syscalls/linux:packet_socket_test",
 )
 
@@ -400,6 +410,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    container = True,
     # Takes too long under gotsan to run.
     tags = ["nogotsan"],
     test = "//test/syscalls/linux:ping_socket_test",
@@ -454,7 +465,7 @@ syscall_test(
 )
 
 syscall_test(
-    tags = ["container"],
+    container = True,
     test = "//test/syscalls/linux:proc_isolated_test",
 )
 
@@ -504,14 +515,17 @@ syscall_test(
 )
 
 syscall_test(
+    container = True,
     test = "//test/syscalls/linux:raw_socket_hdrincl_test",
 )
 
 syscall_test(
+    container = True,
     test = "//test/syscalls/linux:raw_socket_icmp_test",
 )
 
 syscall_test(
+    container = True,
     shard_count = more_shards,
     test = "//test/syscalls/linux:raw_socket_test",
 )
@@ -528,6 +542,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    container = True,
     shard_count = more_shards,
     test = "//test/syscalls/linux:readv_socket_test",
 )
@@ -635,26 +650,31 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    container = True,
     test = "//test/syscalls/linux:socket_abstract_non_blocking_test",
 )
 
 syscall_test(
     size = "large",
+    container = True,
     shard_count = most_shards,
     test = "//test/syscalls/linux:socket_abstract_test",
 )
 
 syscall_test(
+    container = True,
     test = "//test/syscalls/linux:socket_capability_test",
 )
 
 syscall_test(
     size = "medium",
+    container = True,
     test = "//test/syscalls/linux:socket_domain_non_blocking_test",
 )
 
 syscall_test(
     size = "large",
+    container = True,
     shard_count = most_shards,
     test = "//test/syscalls/linux:socket_domain_test",
 )
@@ -662,31 +682,35 @@ syscall_test(
 syscall_test(
     size = "medium",
     add_overlay = True,
+    container = True,
     test = "//test/syscalls/linux:socket_filesystem_non_blocking_test",
 )
 
 syscall_test(
     size = "large",
     add_overlay = True,
+    container = True,
     shard_count = most_shards,
     test = "//test/syscalls/linux:socket_filesystem_test",
 )
 
 syscall_test(
     size = "large",
+    container = True,
     shard_count = most_shards,
     test = "//test/syscalls/linux:socket_inet_loopback_test",
 )
 
 syscall_test(
     size = "large",
+    container = True,
     shard_count = most_shards,
-    tags = ["container"],
     test = "//test/syscalls/linux:socket_inet_loopback_isolated_test",
 )
 
 syscall_test(
     size = "large",
+    container = True,
     shard_count = most_shards,
     # Takes too long for TSAN. Creates a lot of TCP sockets.
     tags = ["nogotsan"],
@@ -694,11 +718,13 @@ syscall_test(
 )
 
 syscall_test(
+    container = True,
     test = "//test/syscalls/linux:socket_ipv4_udp_unbound_external_networking_test",
 )
 
 syscall_test(
     size = "large",
+    container = True,
     shard_count = most_shards,
     test = "//test/syscalls/linux:socket_ip_tcp_generic_loopback_test",
 )
@@ -706,11 +732,13 @@ syscall_test(
 syscall_test(
     size = "medium",
     add_hostinet = True,
+    container = True,
     test = "//test/syscalls/linux:socket_ip_tcp_loopback_non_blocking_test",
 )
 
 syscall_test(
     size = "large",
+    container = True,
     shard_count = most_shards,
     test = "//test/syscalls/linux:socket_ip_tcp_loopback_test",
 )
@@ -718,6 +746,7 @@ syscall_test(
 syscall_test(
     size = "medium",
     add_hostinet = True,
+    container = True,
     shard_count = most_shards,
     test = "//test/syscalls/linux:socket_ip_tcp_udp_generic_loopback_test",
 )
@@ -725,33 +754,39 @@ syscall_test(
 syscall_test(
     size = "medium",
     add_hostinet = True,
+    container = True,
     test = "//test/syscalls/linux:socket_ip_udp_loopback_non_blocking_test",
 )
 
 syscall_test(
     size = "large",
+    container = True,
     shard_count = most_shards,
     test = "//test/syscalls/linux:socket_ip_udp_loopback_test",
 )
 
 syscall_test(
     size = "medium",
+    container = True,
     test = "//test/syscalls/linux:socket_ipv4_datagram_based_socket_unbound_loopback_test",
 )
 
 syscall_test(
     size = "medium",
+    container = True,
     test = "//test/syscalls/linux:socket_ipv4_udp_unbound_loopback_test",
 )
 
 syscall_test(
     size = "medium",
+    container = True,
     test = "//test/syscalls/linux:socket_ipv6_udp_unbound_loopback_test",
 )
 
 syscall_test(
     size = "medium",
     add_hostinet = True,
+    container = True,
     shard_count = more_shards,
     # Takes too long under gotsan to run.
     tags = ["nogotsan"],
@@ -759,92 +794,112 @@ syscall_test(
 )
 
 syscall_test(
+    container = True,
     test = "//test/syscalls/linux:socket_ipv4_udp_unbound_loopback_netlink_test",
 )
 
 syscall_test(
+    container = True,
     test = "//test/syscalls/linux:socket_ipv6_udp_unbound_loopback_netlink_test",
 )
 
 syscall_test(
+    container = True,
     shard_count = more_shards,
     test = "//test/syscalls/linux:socket_ip_unbound_test",
 )
 
 syscall_test(
+    container = True,
     shard_count = more_shards,
     test = "//test/syscalls/linux:socket_ipv6_unbound_test",
 )
 
 syscall_test(
+    container = True,
     test = "//test/syscalls/linux:socket_ip_unbound_netlink_test",
 )
 
 syscall_test(
     add_hostinet = True,
+    container = True,
     test = "//test/syscalls/linux:socket_netdevice_test",
 )
 
 syscall_test(
+    container = True,
     test = "//test/syscalls/linux:socket_netlink_test",
 )
 
 syscall_test(
+    container = True,
     test = "//test/syscalls/linux:socket_netlink_route_test",
 )
 
 syscall_test(
+    container = True,
     test = "//test/syscalls/linux:socket_netlink_uevent_test",
 )
 
 syscall_test(
+    container = True,
     test = "//test/syscalls/linux:socket_blocking_local_test",
 )
 
 syscall_test(
+    container = True,
     test = "//test/syscalls/linux:socket_blocking_ip_test",
 )
 
 syscall_test(
     add_hostinet = True,
+    container = True,
     test = "//test/syscalls/linux:socket_non_stream_blocking_local_test",
 )
 
 syscall_test(
+    container = True,
     test = "//test/syscalls/linux:socket_non_stream_blocking_udp_test",
 )
 
 syscall_test(
     size = "large",
+    container = True,
     test = "//test/syscalls/linux:socket_stream_blocking_local_test",
 )
 
 syscall_test(
     size = "large",
+    container = True,
     test = "//test/syscalls/linux:socket_stream_blocking_tcp_test",
 )
 
 syscall_test(
     size = "medium",
+    container = True,
     test = "//test/syscalls/linux:socket_stream_local_test",
 )
 
 syscall_test(
     size = "medium",
+    container = True,
     test = "//test/syscalls/linux:socket_stream_nonblock_local_test",
 )
 
 syscall_test(
     size = "large",
+    container = True,
     shard_count = most_shards,
     test = "//test/syscalls/linux:socket_stress_test",
 )
 
 syscall_test(
+    container = True,
     test = "//test/syscalls/linux:socket_test",
 )
 
 syscall_test(
+    container = True,
     flaky = 1,  # NOTE(b/116636318): Large sendmsg may stall a long time.
     shard_count = more_shards,
     test = "//test/syscalls/linux:socket_unix_dgram_local_test",
@@ -852,17 +907,20 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    container = True,
     test = "//test/syscalls/linux:socket_unix_dgram_non_blocking_test",
 )
 
 syscall_test(
     size = "large",
     add_overlay = True,
+    container = True,
     shard_count = most_shards,
     test = "//test/syscalls/linux:socket_unix_pair_test",
 )
 
 syscall_test(
+    container = True,
     flaky = 1,  # NOTE(b/116636318): Large sendmsg may stall a long time.
     shard_count = more_shards,
     test = "//test/syscalls/linux:socket_unix_seqpacket_local_test",
@@ -870,32 +928,38 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    container = True,
     test = "//test/syscalls/linux:socket_unix_stream_test",
 )
 
 syscall_test(
     size = "medium",
+    container = True,
     test = "//test/syscalls/linux:socket_unix_unbound_abstract_test",
 )
 
 syscall_test(
     size = "medium",
+    container = True,
     test = "//test/syscalls/linux:socket_unix_unbound_dgram_test",
 )
 
 syscall_test(
     size = "medium",
+    container = True,
     test = "//test/syscalls/linux:socket_unix_unbound_filesystem_test",
 )
 
 syscall_test(
     size = "medium",
+    container = True,
     shard_count = more_shards,
     test = "//test/syscalls/linux:socket_unix_unbound_seqpacket_test",
 )
 
 syscall_test(
     size = "large",
+    container = True,
     shard_count = most_shards,
     test = "//test/syscalls/linux:socket_unix_unbound_stream_test",
 )
@@ -954,6 +1018,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    container = True,
     shard_count = more_shards,
     test = "//test/syscalls/linux:tcp_socket_test",
 )
@@ -990,17 +1055,20 @@ syscall_test(
 
 syscall_test(
     add_hostinet = True,
+    container = True,
     test = "//test/syscalls/linux:tuntap_hostinet_test",
 )
 
 syscall_test(
     add_hostinet = True,
+    container = True,
     test = "//test/syscalls/linux:udp_bind_test",
 )
 
 syscall_test(
     size = "medium",
     add_hostinet = True,
+    container = True,
     shard_count = more_shards,
     test = "//test/syscalls/linux:udp_socket_test",
 )
@@ -1060,6 +1128,7 @@ syscall_test(
 
 syscall_test(
     add_hostinet = True,
+    container = True,
     test = "//test/syscalls/linux:proc_net_tcp_test",
 )
 

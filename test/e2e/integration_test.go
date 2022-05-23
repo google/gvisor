@@ -51,6 +51,7 @@ const (
 
 func TestMain(m *testing.M) {
 	dockerutil.EnsureSupportedDockerVersion()
+	dockerutil.EnsureDockerExperimentalEnabled()
 	flag.Parse()
 	os.Exit(m.Run())
 }
@@ -195,7 +196,9 @@ func TestCheckpointRestore(t *testing.T) {
 
 	// Create a snapshot.
 	if err := d.Checkpoint(ctx, "test"); err != nil {
-		t.Fatalf("docker checkpoint failed: %v", err)
+		t.Errorf("docker checkpoint failed: %v", err)
+		dockerutil.EnsureDockerExperimentalEnabled()
+		t.Fatal("Stopping test.")
 	}
 	if err := d.WaitTimeout(ctx, defaultWait); err != nil {
 		t.Fatalf("wait failed: %v", err)
