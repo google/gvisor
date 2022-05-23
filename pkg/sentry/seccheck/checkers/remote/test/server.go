@@ -48,6 +48,7 @@ type Server struct {
 	// +checklocks:mu
 	points []Message
 
+	// +checklocks:mu
 	version uint32
 }
 
@@ -147,7 +148,10 @@ func (s *Server) handshake(client *unet.Socket) error {
 		return fmt.Errorf("wrong version number, want: %d, got, %d", wire.CurrentVersion, hsIn.Version)
 	}
 
-	hsOut := pb.Handshake{Version: s.version}
+	s.mu.Lock()
+	v := s.version
+	s.mu.Unlock()
+	hsOut := pb.Handshake{Version: v}
 	out, err := proto.Marshal(&hsOut)
 	if err != nil {
 		return fmt.Errorf("marshalling handshake message: %w", err)
@@ -248,5 +252,7 @@ func (s *Server) WaitForCount(count int) error {
 
 // SetVersion sets the version to be used in handshake.
 func (s *Server) SetVersion(newVersion uint32) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.version = newVersion
 }
