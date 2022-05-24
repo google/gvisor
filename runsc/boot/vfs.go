@@ -151,7 +151,7 @@ func registerFilesystems(k *kernel.Kernel) error {
 	return nil
 }
 
-func setupContainerVFS2(ctx context.Context, conf *config.Config, mntr *containerMounter, procArgs *kernel.CreateProcessArgs) error {
+func setupContainerVFS(ctx context.Context, conf *config.Config, mntr *containerMounter, procArgs *kernel.CreateProcessArgs) error {
 	mns, err := mntr.mountAll(conf, procArgs)
 	if err != nil {
 		return fmt.Errorf("failed to setupFS: %w", err)
@@ -213,7 +213,7 @@ func (c *containerMounter) mountAll(conf *config.Config, procArgs *kernel.Create
 // createMountNamespaceVFS2 creates the container's root mount and namespace.
 func (c *containerMounter) createMountNamespaceVFS2(ctx context.Context, conf *config.Config, creds *auth.Credentials) (*vfs.MountNamespace, error) {
 	fd := c.fds.remove()
-	data := goferMountData(fd, conf.FileAccess, true /* vfs2 */, conf.Lisafs)
+	data := goferMountData(fd, conf.FileAccess, conf.Lisafs)
 
 	// We can't check for overlayfs here because sandbox is chroot'ed and gofer
 	// can only send mount options for specs.Mounts (specs.Root is missing
@@ -525,7 +525,7 @@ func (c *containerMounter) getMountNameAndOptionsVFS2(conf *config.Config, m *mo
 			// but unlikely to be correct in this context.
 			return "", nil, false, fmt.Errorf("9P mount requires a connection FD")
 		}
-		data = goferMountData(m.fd, c.getMountAccessType(conf, m.mount), true /* vfs2 */, conf.Lisafs)
+		data = goferMountData(m.fd, c.getMountAccessType(conf, m.mount), conf.Lisafs)
 		internalData = gofer.InternalFilesystemOptions{
 			UniqueID: m.mount.Destination,
 		}
@@ -718,10 +718,10 @@ func (c *containerMounter) mountTmpVFS2(ctx context.Context, conf *config.Config
 	}
 }
 
-// processHintsVFS2 processes annotations that container hints about how volumes
+// processHints processes annotations that container hints about how volumes
 // should be mounted (e.g. a volume shared between containers). It must be
 // called for the root container only.
-func (c *containerMounter) processHintsVFS2(conf *config.Config, creds *auth.Credentials) error {
+func (c *containerMounter) processHints(conf *config.Config, creds *auth.Credentials) error {
 	ctx := c.k.SupervisorContext()
 	for _, hint := range c.hints.mounts {
 		// TODO(b/142076984): Only support tmpfs for now. Bind mounts require a

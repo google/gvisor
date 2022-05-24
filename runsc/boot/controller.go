@@ -27,7 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	controlpb "gvisor.dev/gvisor/pkg/sentry/control/control_go_proto"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
@@ -446,18 +445,10 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 
 	// Set up the restore environment.
 	ctx := k.SupervisorContext()
-	mntr := newContainerMounter(&cm.l.root, cm.l.k, cm.l.mountHints, kernel.VFS2Enabled, cm.l.productName)
-	if kernel.VFS2Enabled {
-		ctx, err = mntr.configureRestore(ctx)
-		if err != nil {
-			return fmt.Errorf("configuring filesystem restore: %v", err)
-		}
-	} else {
-		renv, err := mntr.createRestoreEnvironment(cm.l.root.conf)
-		if err != nil {
-			return fmt.Errorf("creating RestoreEnvironment: %v", err)
-		}
-		fs.SetRestoreEnvironment(*renv)
+	mntr := newContainerMounter(&cm.l.root, cm.l.k, cm.l.mountHints, cm.l.productName)
+	ctx, err = mntr.configureRestore(ctx)
+	if err != nil {
+		return fmt.Errorf("configuring filesystem restore: %v", err)
 	}
 
 	// Prepare to load from the state file.

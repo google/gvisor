@@ -335,9 +335,9 @@ func capsFromNames(names []string, skipSet map[linux.Capability]struct{}) (auth.
 
 // IsGoferMount returns true if the given mount can be mounted as an external
 // gofer.
-func IsGoferMount(m specs.Mount, vfs2Enabled bool) bool {
+func IsGoferMount(m specs.Mount) bool {
 	MaybeConvertToBindMount(&m)
-	return m.Type == "bind" && m.Source != "" && IsSupportedDevMount(m, vfs2Enabled)
+	return m.Type == "bind" && m.Source != ""
 }
 
 // MaybeConvertToBindMount converts mount type to "bind" in case any of the
@@ -355,29 +355,6 @@ func MaybeConvertToBindMount(m *specs.Mount) {
 			return
 		}
 	}
-}
-
-// IsSupportedDevMount returns true if m.Destination does not specify a
-// path that is hardcoded by VFS1's implementation of /dev.
-func IsSupportedDevMount(m specs.Mount, vfs2Enabled bool) bool {
-	// VFS2 has no hardcoded files under /dev, so everything is allowed.
-	if vfs2Enabled {
-		return true
-	}
-
-	// See pkg/sentry/fs/dev/dev.go.
-	var existingDevices = []string{
-		"/dev/fd", "/dev/stdin", "/dev/stdout", "/dev/stderr",
-		"/dev/null", "/dev/zero", "/dev/full", "/dev/random",
-		"/dev/urandom", "/dev/shm", "/dev/ptmx",
-	}
-	dst := filepath.Clean(m.Destination)
-	for _, dev := range existingDevices {
-		if dst == dev || strings.HasPrefix(dst, dev+"/") {
-			return false
-		}
-	}
-	return true
 }
 
 // WaitForReady waits for a process to become ready. The process is ready when
