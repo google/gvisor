@@ -126,9 +126,7 @@ func RunTest(t *testing.T, tester Tester, testName string, testFn TestFunc, moun
 }
 
 func closeFD(ctx context.Context, t testing.TB, fdLisa lisafs.ClientFD) {
-	if err := fdLisa.Close(ctx); err != nil {
-		t.Errorf("failed to close FD: %v", err)
-	}
+	fdLisa.Close(ctx, true /* flush */)
 }
 
 func statTo(ctx context.Context, t *testing.T, fdLisa lisafs.ClientFD, stat *linux.Statx) {
