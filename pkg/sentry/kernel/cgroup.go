@@ -21,6 +21,8 @@ import (
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
@@ -101,12 +103,6 @@ func (c *Cgroup) Path() string {
 	return c.FSLocalPath()
 }
 
-// HierarchyID returns the id of the hierarchy that contains this cgroup.
-func (c *Cgroup) HierarchyID() uint32 {
-	// Note: a cgroup is guaranteed to have at least one controller.
-	return c.Controllers()[0].HierarchyID()
-}
-
 // CgroupMigrationContext represents an in-flight cgroup migration for
 // a single task.
 type CgroupMigrationContext struct {
@@ -136,6 +132,13 @@ func (ctx *CgroupMigrationContext) Commit() {
 type CgroupImpl interface {
 	// Controllers lists the controller associated with this cgroup.
 	Controllers() []CgroupController
+
+	// HierarchyID returns the id of the hierarchy that contains this cgroup.
+	HierarchyID() uint32
+
+	// Name returns the name for this cgroup, if any. If no name was provided
+	// when the hierarchy was created, returns "".
+	Name() string
 
 	// Enter moves t into this cgroup.
 	Enter(t *Task)
@@ -174,7 +177,8 @@ type CgroupImpl interface {
 //
 // +stateify savable
 type hierarchy struct {
-	id uint32
+	id   uint32
+	name string
 	// These are a subset of the controllers in CgroupRegistry.controllers,
 	// grouped here by hierarchy for conveninent lookup.
 	controllers map[CgroupControllerType]CgroupController
@@ -220,21 +224,29 @@ type CgroupRegistry struct {
 	mu cgroupMutex `state:"nosave"`
 
 	// controllers is the set of currently known cgroup controllers on the
-	// system. Protected by mu.
+	// system.
 	//
 	// +checklocks:mu
 	controllers map[CgroupControllerType]CgroupController
 
-	// hierarchies is the active set of cgroup hierarchies. Protected by mu.
+	// hierarchies is the active set of cgroup hierarchies. This contains all
+	// hierarchies on the system.
 	//
 	// +checklocks:mu
 	hierarchies map[uint32]hierarchy
+
+	// hierarchiesByName is a map of named hierarchies. Only named hierarchies
+	// are tracked on this map.
+	//
+	// +checklocks:mu
+	hierarchiesByName map[string]hierarchy
 }
 
 func newCgroupRegistry() *CgroupRegistry {
 	return &CgroupRegistry{
-		controllers: make(map[CgroupControllerType]CgroupController),
-		hierarchies: make(map[uint32]hierarchy),
+		controllers:       make(map[CgroupControllerType]CgroupController),
+		hierarchies:       make(map[uint32]hierarchy),
+		hierarchiesByName: make(map[string]hierarchy),
 	}
 }
 
@@ -247,12 +259,35 @@ func (r *CgroupRegistry) nextHierarchyID() (uint32, error) {
 }
 
 // FindHierarchy returns a cgroup filesystem containing exactly the set of
-// controllers named in names. If no such FS is found, FindHierarchy return
-// nil. FindHierarchy takes a reference on the returned FS, which is transferred
-// to the caller.
-func (r *CgroupRegistry) FindHierarchy(ctypes []CgroupControllerType) *vfs.Filesystem {
+// controllers named in ctypes, and optionally the name specified in name if it
+// isn't empty. If no such FS is found, FindHierarchy return nil. FindHierarchy
+// takes a reference on the returned FS, which is transferred to the caller.
+func (r *CgroupRegistry) FindHierarchy(name string, ctypes []CgroupControllerType) (*vfs.Filesystem, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	// If we have a hierarchy name, lookup by name.
+	if name != "" {
+		h, ok := r.hierarchiesByName[name]
+		if !ok {
+			// Name not found.
+			return nil, nil
+		}
+
+		if h.match(ctypes) {
+			if !h.fs.TryIncRef() {
+				// May be racing with filesystem destruction, see below.
+				r.unregisterLocked(h.id)
+				return nil, nil
+			}
+			return h.fs, nil
+		}
+
+		// Name matched, but controllers didn't. Fail per linux
+		// kernel/cgroup.c:cgroup_mount().
+		log.Debugf("cgroupfs: Registry lookup for name=%s controllers=%v failed; named matched but controllers didn't (have controllers=%v)", name, ctypes, h.controllers)
+		return nil, linuxerr.EBUSY
+	}
 
 	for _, h := range r.hierarchies {
 		if h.match(ctypes) {
@@ -272,31 +307,35 @@ func (r *CgroupRegistry) FindHierarchy(ctypes []CgroupControllerType) *vfs.Files
 				// dying hierarchy now. The eventual unregister by the FS
 				// teardown will become a no-op.
 				r.unregisterLocked(h.id)
-				return nil
+				return nil, nil
 			}
-			return h.fs
+			return h.fs, nil
 		}
 	}
 
-	return nil
+	return nil, nil
 }
 
 // Register registers the provided set of controllers with the registry as a new
 // hierarchy. If any controller is already registered, the function returns an
 // error without modifying the registry. Register sets the hierarchy ID for the
 // filesystem on success.
-func (r *CgroupRegistry) Register(cs []CgroupController, fs cgroupFS) error {
+func (r *CgroupRegistry) Register(name string, cs []CgroupController, fs cgroupFS) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if len(cs) == 0 {
-		return fmt.Errorf("can't register hierarchy with no controllers")
+	if name == "" && len(cs) == 0 {
+		return fmt.Errorf("can't register hierarchy with both no controllers and no name")
 	}
 
 	for _, c := range cs {
 		if _, ok := r.controllers[c.Type()]; ok {
 			return fmt.Errorf("controllers may only be mounted on a single hierarchy")
 		}
+	}
+
+	if _, ok := r.hierarchiesByName[name]; name != "" && ok {
+		return fmt.Errorf("hierarchy named %q already exists", name)
 	}
 
 	hid, err := r.nextHierarchyID()
@@ -310,6 +349,7 @@ func (r *CgroupRegistry) Register(cs []CgroupController, fs cgroupFS) error {
 
 	h := hierarchy{
 		id:          hid,
+		name:        name,
 		controllers: make(map[CgroupControllerType]CgroupController),
 		fs:          fs.VFSFilesystem(),
 	}
@@ -319,6 +359,9 @@ func (r *CgroupRegistry) Register(cs []CgroupController, fs cgroupFS) error {
 		h.controllers[n] = c
 	}
 	r.hierarchies[hid] = h
+	if name != "" {
+		r.hierarchiesByName[name] = h
+	}
 	return nil
 }
 
