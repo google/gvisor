@@ -17,11 +17,13 @@ package tcp_zero_receive_window_test
 import (
 	"flag"
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
@@ -31,7 +33,15 @@ func init() {
 
 // TestZeroReceiveWindow tests if the DUT sends a zero receive window eventually.
 func TestZeroReceiveWindow(t *testing.T) {
-	for _, payloadLen := range []int{64, 512, 1024} {
+	// minPayloadLen is the smallest size we can use for a payload in this test.
+	// Any smaller than this and the receive buffer will fill up before the
+	// receive window can shrink to zero.
+
+	// To solve for minPayloadLen: minPayloadLen(DefaultReceiveBufferSize) =
+	// 	maxWndSize(minPayloadLen + segOverheadSize)
+	maxWndSize := math.MaxUint16
+	minPayloadLen := int(math.Ceil(float64(maxWndSize*tcp.SegOverheadSize) / float64(tcp.DefaultReceiveBufferSize-maxWndSize)))
+	for _, payloadLen := range []int{minPayloadLen, 512, 1024} {
 		t.Run(fmt.Sprintf("TestZeroReceiveWindow_with_%dbytes_payload", payloadLen), func(t *testing.T) {
 			dut := testbench.NewDUT(t)
 			listenFd, remotePort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)

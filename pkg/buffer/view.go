@@ -293,6 +293,16 @@ func (v *View) AppendOwned(data []byte) {
 	}
 }
 
+// PrependOwned takes ownership of data and prepends it to v.
+func (v *View) PrependOwned(data []byte) {
+	if len(data) > 0 {
+		buf := v.pool.getNoInit()
+		buf.initWithData(data)
+		v.data.PushFront(buf)
+		v.size += int64(len(data))
+	}
+}
+
 // PullUp makes the specified range contiguous and returns the backing memory.
 func (v *View) PullUp(offset, length int) ([]byte, bool) {
 	if length == 0 {
