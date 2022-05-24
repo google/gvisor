@@ -29,6 +29,14 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
+// FDInfo contains information about an application file descriptor.
+type FDInfo struct {
+	// Number is the FD number.
+	Number int32 `json:"number,omitempty"`
+	// Path is the path of the file that FD represents.
+	Path string `json:"path,omitempty"`
+}
+
 // ProcessProcfsDump contains the procfs dump for one process.
 type ProcessProcfsDump struct {
 	// PID is the process ID.
@@ -41,6 +49,9 @@ type ProcessProcfsDump struct {
 	Env []string `json:"env,omitempty"`
 	// CWD is the symlink target of /proc/[pid]/cwd.
 	CWD string `json:"cwd,omitempty"`
+	// FDs contains the directory entries of /proc/[pid]/fd and also contains the
+	// symlink target for each FD.
+	FDs []FDInfo `json:"fdlist,omitempty"`
 }
 
 // getMM returns t's MemoryManager. On success, the MemoryManager's users count
@@ -102,6 +113,46 @@ func getCWD(ctx context.Context, t *kernel.Task, pid kernel.ThreadID) string {
 	return name
 }
 
+func getFDs(ctx context.Context, t *kernel.Task, pid kernel.ThreadID) []FDInfo {
+	type fdInfo struct {
+		fd *vfs.FileDescription
+		no int32
+	}
+	var fds []fdInfo
+	defer func() {
+		for _, fd := range fds {
+			fd.fd.DecRef(ctx)
+		}
+	}()
+
+	t.WithMuLocked(func(t *kernel.Task) {
+		if fdTable := t.FDTable(); fdTable != nil {
+			fdNos := fdTable.GetFDs(ctx)
+			fds = make([]fdInfo, 0, len(fdNos))
+			for _, fd := range fdNos {
+				file, _ := fdTable.GetVFS2(fd)
+				if file != nil {
+					fds = append(fds, fdInfo{fd: file, no: fd})
+				}
+			}
+		}
+	})
+
+	root := vfs.RootFromContext(ctx)
+	defer root.DecRef(ctx)
+
+	res := make([]FDInfo, 0, len(fds))
+	for _, fd := range fds {
+		path, err := t.Kernel().VFS().PathnameWithDeleted(ctx, root, fd.fd.VirtualDentry())
+		if err != nil {
+			log.Warningf("PathnameWithDeleted failed to find path for fd %d in PID %s: %v", fd.no, pid, err)
+			path = ""
+		}
+		res = append(res, FDInfo{Number: fd.no, Path: path})
+	}
+	return res
+}
+
 // Dump returns a procfs dump for process pid. t must be a task in process pid.
 func Dump(t *kernel.Task, pid kernel.ThreadID) (ProcessProcfsDump, error) {
 	ctx := t.AsyncContext()
@@ -118,5 +169,6 @@ func Dump(t *kernel.Task, pid kernel.ThreadID) (ProcessProcfsDump, error) {
 		Args: getMetadataArray(ctx, pid, mm, proc.Cmdline),
 		Env:  getMetadataArray(ctx, pid, mm, proc.Environ),
 		CWD:  getCWD(ctx, t, pid),
+		FDs:  getFDs(ctx, t, pid),
 	}, nil
 }

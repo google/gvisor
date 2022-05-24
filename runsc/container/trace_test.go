@@ -365,4 +365,18 @@ func TestProcfsDump(t *testing.T) {
 	if spec.Process.Cwd != procfsDump[0].CWD {
 		t.Errorf("expected CWD %q, got %q", spec.Process.Cwd, procfsDump[0].CWD)
 	}
+
+	// Expect 3 host FDs for stdout, stdin and stderr.
+	if len(procfsDump[0].FDs) != 3 {
+		t.Errorf("expected 3 FDs for the sleep process, got %+v", procfsDump[0].FDs)
+	} else {
+		for i, fd := range procfsDump[0].FDs {
+			if want := int32(i); fd.Number != want {
+				t.Errorf("expected FD number %d, got %d", want, fd.Number)
+			}
+			if wantSubStr := "host"; !strings.Contains(fd.Path, wantSubStr) {
+				t.Errorf("expected FD path to contain %q, got %q", wantSubStr, fd.Path)
+			}
+		}
+	}
 }
