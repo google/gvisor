@@ -108,7 +108,7 @@ func (h *handle) isOpen() bool {
 
 func (h *handle) close(ctx context.Context) {
 	if h.fdLisa.Client() != nil {
-		h.fdLisa.Close(ctx)
+		h.fdLisa.Close(ctx, true /* flush */)
 	} else {
 		h.file.close(ctx)
 		h.file = p9file{}

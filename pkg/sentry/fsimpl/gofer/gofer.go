@@ -509,7 +509,7 @@ func (fs *filesystem) initClientAndRoot(ctx context.Context) error {
 		}
 		fs.root, err = fs.newDentryLisa(ctx, &rootInode)
 		if err != nil {
-			fs.clientLisa.CloseFDBatched(ctx, rootInode.ControlFD)
+			fs.clientLisa.CloseFD(ctx, rootInode.ControlFD, false /* flush */)
 		}
 	} else {
 		fs.root, err = fs.initClient(ctx)
@@ -544,7 +544,7 @@ func (fs *filesystem) initClientLisa(ctx context.Context) (lisafs.Inode, error) 
 	// Walk to the attach point from root inode. aname is always absolute.
 	rootFD := fs.clientLisa.NewFD(rootInode.ControlFD)
 	status, inodes, err := rootFD.WalkMultiple(ctx, strings.Split(fs.opts.aname, "/")[1:])
-	rootFD.CloseBatched(ctx)
+	rootFD.Close(ctx, false /* flush */)
 	if err != nil {
 		return lisafs.Inode{}, err
 	}
@@ -553,7 +553,7 @@ func (fs *filesystem) initClientLisa(ctx context.Context) (lisafs.Inode, error) 
 	numInodes := len(inodes)
 	for _, inode := range inodes[:numInodes-1] {
 		curFD := fs.clientLisa.NewFD(inode.ControlFD)
-		curFD.CloseBatched(ctx)
+		curFD.Close(ctx, false /* flush */)
 	}
 
 	switch status {
@@ -561,7 +561,7 @@ func (fs *filesystem) initClientLisa(ctx context.Context) (lisafs.Inode, error) 
 		return inodes[numInodes-1], nil
 	default:
 		last := fs.clientLisa.NewFD(inodes[numInodes-1].ControlFD)
-		last.CloseBatched(ctx)
+		last.Close(ctx, false /* flush */)
 		log.Warningf("initClientLisa failed because walk to attach point %q failed: lisafs.WalkStatus = %v", fs.opts.aname, status)
 		return lisafs.Inode{}, unix.ENOENT
 	}
@@ -2001,10 +2001,10 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 	d.dataMu.Unlock()
 	if d.fs.opts.lisaEnabled {
 		if d.readFDLisa.Ok() && d.readFDLisa.ID() != d.writeFDLisa.ID() {
-			d.readFDLisa.CloseBatched(ctx)
+			d.readFDLisa.Close(ctx, false /* flush */)
 		}
 		if d.writeFDLisa.Ok() {
-			d.writeFDLisa.CloseBatched(ctx)
+			d.writeFDLisa.Close(ctx, false /* flush */)
 		}
 	} else {
 		// Clunk open fids and close open host FDs.
@@ -2041,7 +2041,7 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 
 		// Close the control FD.
 		if d.fs.opts.lisaEnabled {
-			d.controlFDLisa.CloseBatched(ctx)
+			d.controlFDLisa.Close(ctx, false /* flush */)
 		} else {
 			if err := d.file.close(ctx); err != nil {
 				log.Warningf("gofer.dentry.destroyLocked: failed to close file: %v", err)
@@ -2327,10 +2327,10 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 			// NOTE(b/141991141): Close old FDs before making new fids visible (by
 			// unlocking d.handleMu).
 			if oldReadFD.Ok() {
-				d.fs.clientLisa.CloseFDBatched(ctx, oldReadFD)
+				d.fs.clientLisa.CloseFD(ctx, oldReadFD, false /* flush */)
 			}
 			if oldWriteFD.Ok() && oldReadFD != oldWriteFD {
-				d.fs.clientLisa.CloseFDBatched(ctx, oldWriteFD)
+				d.fs.clientLisa.CloseFD(ctx, oldWriteFD, false /* flush */)
 			}
 		} else {
 			var oldReadFile p9file

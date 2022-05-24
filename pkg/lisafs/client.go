@@ -266,12 +266,14 @@ func (c *Client) IsSupported(m MID) bool {
 	return int(m) < len(c.supported) && c.supported[m]
 }
 
-// CloseFDBatched either queues the passed FD to be closed or makes a batch
-// RPC to close all the accumulated FDs-to-close.
-func (c *Client) CloseFDBatched(ctx context.Context, fd FDID) {
+// CloseFD either queues the passed FD to be closed or makes a batch
+// RPC to close all the accumulated FDs-to-close. If flush is true, the RPC
+// is made immediately.
+func (c *Client) CloseFD(ctx context.Context, fd FDID, flush bool) {
 	c.fdsMu.Lock()
 	c.fdsToClose = append(c.fdsToClose, fd)
-	if len(c.fdsToClose) < fdsToCloseBatchSize {
+	if !flush && len(c.fdsToClose) < fdsToCloseBatchSize {
+		// We can continue batching.
 		c.fdsMu.Unlock()
 		return
 	}

@@ -313,13 +313,13 @@ func (fs *filesystem) getChildAndWalkPathLocked(ctx context.Context, parent *den
 	var dentryCreationErr error
 	for i := range inodes {
 		if dentryCreationErr != nil {
-			fs.clientLisa.CloseFDBatched(ctx, inodes[i].ControlFD)
+			fs.clientLisa.CloseFD(ctx, inodes[i].ControlFD, false /* flush */)
 			continue
 		}
 
 		child, err := fs.newDentryLisa(ctx, &inodes[i])
 		if err != nil {
-			fs.clientLisa.CloseFDBatched(ctx, inodes[i].ControlFD)
+			fs.clientLisa.CloseFD(ctx, inodes[i].ControlFD, false /* flush */)
 			dentryCreationErr = err
 			continue
 		}
@@ -381,7 +381,7 @@ func (fs *filesystem) getChildLocked(ctx context.Context, parent *dentry, name s
 		// Create a new dentry representing the file.
 		child, err = fs.newDentryLisa(ctx, &childInode)
 		if err != nil {
-			fs.clientLisa.CloseFDBatched(ctx, childInode.ControlFD)
+			fs.clientLisa.CloseFD(ctx, childInode.ControlFD, false /* flush */)
 			return nil, err
 		}
 	} else {
@@ -1316,8 +1316,8 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 
 		child, err = d.fs.newDentryLisa(ctx, &ino)
 		if err != nil {
-			d.fs.clientLisa.CloseFDBatched(ctx, ino.ControlFD)
-			d.fs.clientLisa.CloseFDBatched(ctx, openFD)
+			d.fs.clientLisa.CloseFD(ctx, ino.ControlFD, false /* flush */)
+			d.fs.clientLisa.CloseFD(ctx, openFD, false /* flush */)
 			if hostFD >= 0 {
 				unix.Close(hostFD)
 			}
