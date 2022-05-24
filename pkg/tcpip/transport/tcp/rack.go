@@ -113,7 +113,7 @@ func (rc *rackControl) update(seg *segment, ackSeg *segment) {
 	// Update rc.xmitTime and rc.endSequence to the transmit time and
 	// ending sequence number of the packet which has been acknowledged
 	// most recently.
-	endSeq := seg.sequenceNumber.Add(seqnum.Size(seg.data.Size()))
+	endSeq := seg.sequenceNumber.Add(seqnum.Size(seg.payloadSize()))
 	if rc.XmitTime.Before(seg.xmitTime) || (seg.xmitTime == rc.XmitTime && rc.EndSequence.LessThan(endSeq)) {
 		rc.XmitTime = seg.xmitTime
 		rc.EndSequence = endSeq
@@ -132,7 +132,7 @@ func (rc *rackControl) update(seg *segment, ackSeg *segment) {
 //     delivered out of order. The sender sets RACK.reord to TRUE if such segment
 //     is identified.
 func (rc *rackControl) detectReorder(seg *segment) {
-	endSeq := seg.sequenceNumber.Add(seqnum.Size(seg.data.Size()))
+	endSeq := seg.sequenceNumber.Add(seqnum.Size(seg.payloadSize()))
 	if rc.FACK.LessThan(endSeq) {
 		rc.FACK = endSeq
 		return
@@ -366,7 +366,7 @@ func (rc *rackControl) detectLoss(rcvTime tcpip.MonotonicTime) int {
 			continue
 		}
 
-		endSeq := seg.sequenceNumber.Add(seqnum.Size(seg.data.Size()))
+		endSeq := seg.sequenceNumber.Add(seqnum.Size(seg.payloadSize()))
 		if seg.xmitTime.Before(rc.XmitTime) || (seg.xmitTime == rc.XmitTime && rc.EndSequence.LessThan(endSeq)) {
 			timeRemaining := seg.xmitTime.Sub(rcvTime) + rc.RTT + rc.ReoWnd
 			if timeRemaining <= 0 {

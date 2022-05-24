@@ -157,10 +157,12 @@ func (p *protocol) QueuePacket(ep stack.TransportEndpoint, id stack.TransportEnd
 // particular, SYNs addressed to a non-existent connection are rejected by this
 // means."
 func (p *protocol) HandleUnknownDestinationPacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) stack.UnknownDestinationPacketDisposition {
-	s := newIncomingSegment(id, p.stack.Clock(), pkt)
+	s, err := newIncomingSegment(id, p.stack.Clock(), pkt)
+	if err != nil {
+		return stack.UnknownDestinationPacketMalformed
+	}
 	defer s.DecRef()
-
-	if !s.parse(pkt.RXTransportChecksumValidated) || !s.csumValid {
+	if !s.csumValid {
 		return stack.UnknownDestinationPacketMalformed
 	}
 
@@ -194,7 +196,8 @@ func (p *protocol) tsOffset(src, dst tcpip.Address) tcp.TSOffset {
 // If the relevant TTL has its reset value (0 for ipv4TTL, -1 for ipv6HopLimit),
 // then the route's default TTL will be used.
 func replyWithReset(st *stack.Stack, s *segment, tos, ipv4TTL uint8, ipv6HopLimit int16) tcpip.Error {
-	route, err := st.FindRoute(s.nicID, s.dstAddr, s.srcAddr, s.netProto, false /* multicastLoop */)
+	net := s.pkt.Network()
+	route, err := st.FindRoute(s.pkt.NICID, net.DestinationAddress(), net.SourceAddress(), s.pkt.NetworkProtocolNumber, false /* multicastLoop */)
 	if err != nil {
 		return err
 	}
@@ -224,6 +227,8 @@ func replyWithReset(st *stack.Stack, s *segment, tos, ipv4TTL uint8, ipv6HopLimi
 		ack = s.sequenceNumber.Add(s.logicalLen())
 	}
 
+	p := stack.NewPacketBuffer(stack.PacketBufferOptions{ReserveHeaderBytes: header.TCPMinimumSize + int(route.MaxHeaderLength())})
+	defer p.DecRef()
 	return sendTCP(route, tcpFields{
 		id:     s.id,
 		ttl:    ttl,
@@ -232,7 +237,7 @@ func replyWithReset(st *stack.Stack, s *segment, tos, ipv4TTL uint8, ipv6HopLimi
 		seq:    seq,
 		ack:    ack,
 		rcvWnd: 0,
-	}, buffer.VectorisedView{}, stack.GSO{}, nil /* PacketOwner */)
+	}, p, stack.GSO{}, nil /* PacketOwner */)
 }
 
 // SetOption implements stack.TransportProtocol.SetOption.

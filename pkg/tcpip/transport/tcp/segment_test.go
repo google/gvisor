@@ -23,6 +23,8 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
+const trueSegSize = stack.PacketBufferStructSize + segSize
+
 type segmentSizeWants struct {
 	DataSize   int
 	SegMemSize int
@@ -31,7 +33,7 @@ type segmentSizeWants struct {
 func checkSegmentSize(t *testing.T, name string, seg *segment, want segmentSizeWants) {
 	t.Helper()
 	got := segmentSizeWants{
-		DataSize:   seg.data.Size(),
+		DataSize:   seg.payloadSize(),
 		SegMemSize: seg.segMemSize(),
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
@@ -49,21 +51,21 @@ func TestSegmentMerge(t *testing.T) {
 
 	checkSegmentSize(t, "seg1", seg1, segmentSizeWants{
 		DataSize:   10,
-		SegMemSize: SegSize + 10,
+		SegMemSize: trueSegSize + 10,
 	})
 	checkSegmentSize(t, "seg2", seg2, segmentSizeWants{
 		DataSize:   20,
-		SegMemSize: SegSize + 20,
+		SegMemSize: trueSegSize + 20,
 	})
 
 	seg1.merge(seg2)
 
 	checkSegmentSize(t, "seg1", seg1, segmentSizeWants{
 		DataSize:   30,
-		SegMemSize: SegSize + 30,
+		SegMemSize: trueSegSize + 30,
 	})
 	checkSegmentSize(t, "seg2", seg2, segmentSizeWants{
 		DataSize:   0,
-		SegMemSize: SegSize,
+		SegMemSize: trueSegSize,
 	})
 }
