@@ -216,6 +216,7 @@ func (fs *filesystem) StateFields() []string {
 		"Filesystem",
 		"devMinor",
 		"hierarchyID",
+		"hierarchyName",
 		"controllers",
 		"kcontrollers",
 		"numCgroups",
@@ -232,11 +233,12 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &fs.Filesystem)
 	stateSinkObject.Save(1, &fs.devMinor)
 	stateSinkObject.Save(2, &fs.hierarchyID)
-	stateSinkObject.Save(3, &fs.controllers)
-	stateSinkObject.Save(4, &fs.kcontrollers)
-	stateSinkObject.Save(5, &fs.numCgroups)
-	stateSinkObject.Save(6, &fs.root)
-	stateSinkObject.Save(7, &fs.effectiveRoot)
+	stateSinkObject.Save(3, &fs.hierarchyName)
+	stateSinkObject.Save(4, &fs.controllers)
+	stateSinkObject.Save(5, &fs.kcontrollers)
+	stateSinkObject.Save(6, &fs.numCgroups)
+	stateSinkObject.Save(7, &fs.root)
+	stateSinkObject.Save(8, &fs.effectiveRoot)
 }
 
 func (fs *filesystem) afterLoad() {}
@@ -246,11 +248,12 @@ func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.Filesystem)
 	stateSourceObject.Load(1, &fs.devMinor)
 	stateSourceObject.Load(2, &fs.hierarchyID)
-	stateSourceObject.Load(3, &fs.controllers)
-	stateSourceObject.Load(4, &fs.kcontrollers)
-	stateSourceObject.Load(5, &fs.numCgroups)
-	stateSourceObject.Load(6, &fs.root)
-	stateSourceObject.Load(7, &fs.effectiveRoot)
+	stateSourceObject.Load(3, &fs.hierarchyName)
+	stateSourceObject.Load(4, &fs.controllers)
+	stateSourceObject.Load(5, &fs.kcontrollers)
+	stateSourceObject.Load(6, &fs.numCgroups)
+	stateSourceObject.Load(7, &fs.root)
+	stateSourceObject.Load(8, &fs.effectiveRoot)
 }
 
 func (i *implStatFS) StateTypeName() string {

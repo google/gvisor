@@ -203,8 +203,14 @@ func (fs *filesystem) newCgroupInode(ctx context.Context, creds *auth.Credential
 	return c
 }
 
+// HierarchyID implements kernel.CgroupImpl.HierarchyID.
 func (c *cgroupInode) HierarchyID() uint32 {
 	return c.fs.hierarchyID
+}
+
+// Name implements kernel.CgroupImpl.Name.
+func (c *cgroupInode) Name() string {
+	return c.fs.hierarchyName
 }
 
 // Controllers implements kernel.CgroupImpl.Controllers.

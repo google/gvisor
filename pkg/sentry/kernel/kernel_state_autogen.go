@@ -103,6 +103,7 @@ func (h *hierarchy) StateTypeName() string {
 func (h *hierarchy) StateFields() []string {
 	return []string{
 		"id",
+		"name",
 		"controllers",
 		"fs",
 	}
@@ -114,8 +115,9 @@ func (h *hierarchy) beforeSave() {}
 func (h *hierarchy) StateSave(stateSinkObject state.Sink) {
 	h.beforeSave()
 	stateSinkObject.Save(0, &h.id)
-	stateSinkObject.Save(1, &h.controllers)
-	stateSinkObject.Save(2, &h.fs)
+	stateSinkObject.Save(1, &h.name)
+	stateSinkObject.Save(2, &h.controllers)
+	stateSinkObject.Save(3, &h.fs)
 }
 
 func (h *hierarchy) afterLoad() {}
@@ -123,8 +125,9 @@ func (h *hierarchy) afterLoad() {}
 // +checklocksignore
 func (h *hierarchy) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &h.id)
-	stateSourceObject.Load(1, &h.controllers)
-	stateSourceObject.Load(2, &h.fs)
+	stateSourceObject.Load(1, &h.name)
+	stateSourceObject.Load(2, &h.controllers)
+	stateSourceObject.Load(3, &h.fs)
 }
 
 func (r *CgroupRegistry) StateTypeName() string {
@@ -136,6 +139,7 @@ func (r *CgroupRegistry) StateFields() []string {
 		"lastHierarchyID",
 		"controllers",
 		"hierarchies",
+		"hierarchiesByName",
 	}
 }
 
@@ -147,6 +151,7 @@ func (r *CgroupRegistry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.lastHierarchyID)
 	stateSinkObject.Save(1, &r.controllers)
 	stateSinkObject.Save(2, &r.hierarchies)
+	stateSinkObject.Save(3, &r.hierarchiesByName)
 }
 
 func (r *CgroupRegistry) afterLoad() {}
@@ -156,6 +161,7 @@ func (r *CgroupRegistry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.lastHierarchyID)
 	stateSourceObject.Load(1, &r.controllers)
 	stateSourceObject.Load(2, &r.hierarchies)
+	stateSourceObject.Load(3, &r.hierarchiesByName)
 }
 
 func (f *FDFlags) StateTypeName() string {

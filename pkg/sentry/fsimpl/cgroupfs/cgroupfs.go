@@ -149,6 +149,12 @@ type filesystem struct {
 	// hierarchyID is immutable after initialization.
 	hierarchyID uint32
 
+	// hierarchyName is the name for a named hierarchy. May be empty if the
+	// 'name=' mount option was not used when the hierarchy was created.
+	//
+	// Immutable after initialization.
+	hierarchyName string
+
 	// controllers and kcontrollers are both the list of controllers attached to
 	// this cgroupfs. Both lists are the same set of controllers, but typecast
 	// to different interfaces for convenience. Both must stay in sync, and are
@@ -236,9 +242,37 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		wantControllers = allControllers
 	}
 
-	if len(wantControllers) == 0 {
-		// Specifying no controllers implies all controllers.
+	var name string
+	var ok bool
+	if name, ok = mopts["name"]; ok {
+		delete(mopts, "name")
+	}
+
+	var none bool
+	if _, ok = mopts["none"]; ok {
+		none = true
+		delete(mopts, "none")
+	}
+
+	if !none && len(wantControllers) == 0 {
+		// Specifying no controllers implies all controllers, unless "none" was
+		// explicitly requested.
 		wantControllers = allControllers
+	}
+
+	// Some combinations of "none", "all", "name=" and explicit controllers are
+	// not allowed. See Linux, kernel/cgroup.c:parse_cgroupfs_options().
+
+	// All empty hierarchies must have a name.
+	if len(wantControllers) == 0 && name == "" {
+		ctx.Debugf("cgroupfs.FilesystemType.GetFilesystem: empty hierarchy with no name")
+		return nil, nil, linuxerr.EINVAL
+	}
+
+	// Can't have "none" and some controllers.
+	if none && len(wantControllers) != 0 {
+		ctx.Debugf("cgroupfs.FilesystemType.GetFilesystem: 'none' specified with controllers: %v", wantControllers)
+		return nil, nil, linuxerr.EINVAL
 	}
 
 	if len(mopts) != 0 {
@@ -259,7 +293,11 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	//
 	// Note: we're guaranteed to have at least one requested controller, since
 	// no explicit controller name implies all controllers.
-	if vfsfs := r.FindHierarchy(wantControllers); vfsfs != nil {
+	vfsfs, err := r.FindHierarchy(name, wantControllers)
+	if err != nil {
+		return nil, nil, err
+	}
+	if vfsfs != nil {
 		fs := vfsfs.Impl().(*filesystem)
 		ctx.Debugf("cgroupfs.FilesystemType.GetFilesystem: mounting new view to hierarchy %v", fs.hierarchyID)
 		fs.root.IncRef()
@@ -275,7 +313,8 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	// hierarchies. We'll find out about such collisions when we try to register
 	// the new hierarchy later.
 	fs := &filesystem{
-		devMinor: devMinor,
+		devMinor:      devMinor,
+		hierarchyName: name,
 	}
 	fs.MaxCachedDentries = maxCachedDentries
 	fs.VFSFilesystem().Init(vfsObj, &fsType, fs)
@@ -337,7 +376,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	// Register controllers. The registry may be modified concurrently, so if we
 	// get an error, we raced with someone else who registered the same
 	// controllers first.
-	if err := r.Register(fs.kcontrollers, fs); err != nil {
+	if err := r.Register(name, fs.kcontrollers, fs); err != nil {
 		ctx.Infof("cgroupfs.FilesystemType.GetFilesystem: failed to register new hierarchy with controllers %v: %v", wantControllers, err)
 		rootD.DecRef(ctx)
 		fs.VFSFilesystem().DecRef(ctx)
