@@ -26,6 +26,11 @@ import (
 	yaml "gopkg.in/yaml.v2"
 )
 
+var (
+	schema = flag.String("schema", "", "path to JSON schema file.")
+	strict = flag.Bool("strict", true, "Whether to enable strict mode for YAML decoding")
+)
+
 func fixup(v interface{}) (interface{}, error) {
 	switch x := v.(type) {
 	case map[interface{}]interface{}:
@@ -65,7 +70,7 @@ func loadFile(filename string) (gojsonschema.JSONLoader, error) {
 	}
 	defer f.Close()
 	dec := yaml.NewDecoder(f)
-	dec.SetStrict(true)
+	dec.SetStrict(*strict)
 	var object interface{}
 	if err := dec.Decode(&object); err != nil {
 		return nil, err
@@ -80,8 +85,6 @@ func loadFile(filename string) (gojsonschema.JSONLoader, error) {
 	}
 	return gojsonschema.NewStringLoader(string(bytes)), nil
 }
-
-var schema = flag.String("schema", "", "path to JSON schema file.")
 
 func main() {
 	flag.Parse()
