@@ -814,7 +814,7 @@ type dentry struct {
 	controlFDLisa lisafs.ClientFD `state:"nosave"`
 
 	// If deleted is non-zero, the file represented by this dentry has been
-	//  deleted is accessed using atomic memory operations.
+	// deleted is accessed using atomic memory operations.
 	deleted atomicbitops.Uint32
 
 	// cachingMu is used to synchronize concurrent dentry caching attempts on
@@ -2029,7 +2029,7 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 	d.mmapFD = atomicbitops.FromInt32(-1)
 	d.handleMu.Unlock()
 
-	if d.isControlFileOk() {
+	if !d.isSynthetic() {
 		// Note that it's possible that d.atimeDirty or d.mtimeDirty are true,
 		// i.e. client and server timestamps may differ (because e.g. a client
 		// write was serviced by the page cache, and only written back to the
@@ -2041,7 +2041,11 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 
 		// Close the control FD.
 		if d.fs.opts.lisaEnabled {
-			d.controlFDLisa.Close(ctx, false /* flush */)
+			// Propagate the Close RPCs immediately to the server if the dentry being
+			// destroyed is a deleted regular file. This is to release the disk space
+			// on remote immediately.
+			flushClose := d.isDeleted() && d.isRegularFile()
+			d.controlFDLisa.Close(ctx, flushClose)
 		} else {
 			if err := d.file.close(ctx); err != nil {
 				log.Warningf("gofer.dentry.destroyLocked: failed to close file: %v", err)
