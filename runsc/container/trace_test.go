@@ -324,6 +324,7 @@ func TestProcfsDump(t *testing.T) {
 		t.Fatalf("error starting container: %v", err)
 	}
 
+	startTime := time.Now().UnixNano()
 	procfsDump, err := cont.Sandbox.ProcfsDump()
 	if err != nil {
 		t.Fatalf("ProcfsDump() failed: %v", err)
@@ -378,5 +379,12 @@ func TestProcfsDump(t *testing.T) {
 				t.Errorf("expected FD path to contain %q, got %q", wantSubStr, fd.Path)
 			}
 		}
+	}
+
+	// Start time should be at most 3 second away from our locally calculated
+	// start time. Local startTime was calculated after container started, so
+	// process start time must be earlier than local startTime.
+	if startTime-procfsDump[0].StartTime > 3*time.Second.Nanoseconds() {
+		t.Errorf("wanted start time to be around %s, but got %s", time.Unix(0, startTime), time.Unix(0, procfsDump[0].StartTime))
 	}
 }

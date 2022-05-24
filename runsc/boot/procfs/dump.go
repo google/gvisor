@@ -52,6 +52,8 @@ type ProcessProcfsDump struct {
 	// FDs contains the directory entries of /proc/[pid]/fd and also contains the
 	// symlink target for each FD.
 	FDs []FDInfo `json:"fdlist,omitempty"`
+	// StartTime is the process start time in nanoseconds since Unix epoch.
+	StartTime int64 `json:"clone_ts,omitempty"`
 }
 
 // getMM returns t's MemoryManager. On success, the MemoryManager's users count
@@ -164,11 +166,12 @@ func Dump(t *kernel.Task, pid kernel.ThreadID) (ProcessProcfsDump, error) {
 	defer mm.DecUsers(ctx)
 
 	return ProcessProcfsDump{
-		PID:  int32(pid),
-		Exe:  getExecutablePath(ctx, pid, mm),
-		Args: getMetadataArray(ctx, pid, mm, proc.Cmdline),
-		Env:  getMetadataArray(ctx, pid, mm, proc.Environ),
-		CWD:  getCWD(ctx, t, pid),
-		FDs:  getFDs(ctx, t, pid),
+		PID:       int32(pid),
+		Exe:       getExecutablePath(ctx, pid, mm),
+		Args:      getMetadataArray(ctx, pid, mm, proc.Cmdline),
+		Env:       getMetadataArray(ctx, pid, mm, proc.Environ),
+		CWD:       getCWD(ctx, t, pid),
+		FDs:       getFDs(ctx, t, pid),
+		StartTime: t.StartTime().Nanoseconds(),
 	}, nil
 }
