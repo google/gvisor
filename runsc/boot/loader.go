@@ -253,13 +253,10 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("setting up memory usage: %w", err)
 	}
 
-	// Is this a VFSv2 kernel?
-	if args.Conf.VFS2 {
-		kernel.VFS2Enabled = true
-		kernel.FUSEEnabled = args.Conf.FUSE
-		kernel.LISAFSEnabled = args.Conf.Lisafs
-		vfs2.Override()
-	}
+	kernel.VFS2Enabled = true
+	kernel.FUSEEnabled = args.Conf.FUSE
+	kernel.LISAFSEnabled = args.Conf.Lisafs
+	vfs2.Override()
 
 	// Make host FDs stable between invocations. Host FDs must map to the exact
 	// same number when the sandbox is restored. Otherwise the wrong FD will be
@@ -377,14 +374,8 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("initializing kernel: %w", err)
 	}
 
-	if kernel.VFS2Enabled {
-		if err := registerFilesystems(k); err != nil {
-			return nil, fmt.Errorf("registering filesystems: %w", err)
-		}
-	}
-
-	if err := adjustDirentCache(k); err != nil {
-		return nil, err
+	if err := registerFilesystems(k); err != nil {
+		return nil, fmt.Errorf("registering filesystems: %w", err)
 	}
 
 	// Turn on packet logging if enabled.
@@ -419,15 +410,13 @@ func New(args Args) (*Loader, error) {
 	info.conf = args.Conf
 	info.spec = args.Spec
 
-	if kernel.VFS2Enabled {
-		// Set up host mount that will be used for imported fds.
-		hostFilesystem, err := hostvfs2.NewFilesystem(k.VFS())
-		if err != nil {
-			return nil, fmt.Errorf("failed to create hostfs filesystem: %w", err)
-		}
-		defer hostFilesystem.DecRef(k.SupervisorContext())
-		k.SetHostMount(k.VFS().NewDisconnectedMount(hostFilesystem, nil, &vfs.MountOptions{}))
+	// Set up host mount that will be used for imported fds.
+	hostFilesystem, err := hostvfs2.NewFilesystem(k.VFS())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create hostfs filesystem: %w", err)
 	}
+	defer hostFilesystem.DecRef(k.SupervisorContext())
+	k.SetHostMount(k.VFS().NewDisconnectedMount(hostFilesystem, nil, &vfs.MountOptions{}))
 
 	if args.PodInitConfigFD >= 0 {
 		if err := setupSeccheck(args.PodInitConfigFD, args.SinkFDs); err != nil {
@@ -837,30 +826,22 @@ func (l *Loader) createContainerProcess(root bool, cid string, info *containerIn
 	}
 	l.startGoferMonitor(cid, int32(info.goferFDs[0].FD()))
 
-	mntr := newContainerMounter(info, l.k, l.mountHints, kernel.VFS2Enabled, l.productName)
+	mntr := newContainerMounter(info, l.k, l.mountHints, l.productName)
 	if root {
 		if err := mntr.processHints(info.conf, info.procArgs.Credentials); err != nil {
 			return nil, nil, nil, err
 		}
 	}
-	if err := setupContainerFS(ctx, info.conf, mntr, &info.procArgs); err != nil {
+	if err := setupContainerVFS(ctx, info.conf, mntr, &info.procArgs); err != nil {
 		return nil, nil, nil, err
 	}
 
 	// Add the HOME environment variable if it is not already set.
-	var envv []string
-	if kernel.VFS2Enabled {
-		envv, err = user.MaybeAddExecUserHomeVFS2(ctx, info.procArgs.MountNamespaceVFS2,
-			info.procArgs.Credentials.RealKUID, info.procArgs.Envv)
-
-	} else {
-		envv, err = user.MaybeAddExecUserHome(ctx, info.procArgs.MountNamespace,
-			info.procArgs.Credentials.RealKUID, info.procArgs.Envv)
-	}
+	info.procArgs.Envv, err = user.MaybeAddExecUserHomeVFS2(ctx, info.procArgs.MountNamespaceVFS2,
+		info.procArgs.Credentials.RealKUID, info.procArgs.Envv)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	info.procArgs.Envv = envv
 
 	// Create and start the new process.
 	tg, _, err := l.k.CreateProcess(info.procArgs)
@@ -1012,22 +993,10 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 
 	// Get the container MountNamespace from the Task. Try to acquire ref may fail
 	// in case it raced with task exit.
-	if kernel.VFS2Enabled {
-		// task.MountNamespaceVFS2() does not take a ref, so we must do so ourselves.
-		args.MountNamespaceVFS2 = tg.Leader().MountNamespaceVFS2()
-		if args.MountNamespaceVFS2 == nil || !args.MountNamespaceVFS2.TryIncRef() {
-			return 0, fmt.Errorf("container %q has stopped", args.ContainerID)
-		}
-	} else {
-		var reffed bool
-		tg.Leader().WithMuLocked(func(t *kernel.Task) {
-			// task.MountNamespace() does not take a ref, so we must do so ourselves.
-			args.MountNamespace = t.MountNamespace()
-			reffed = args.MountNamespace.TryIncRef()
-		})
-		if !reffed {
-			return 0, fmt.Errorf("container %q has stopped", args.ContainerID)
-		}
+	// task.MountNamespaceVFS2() does not take a ref, so we must do so ourselves.
+	args.MountNamespaceVFS2 = tg.Leader().MountNamespaceVFS2()
+	if args.MountNamespaceVFS2 == nil || !args.MountNamespaceVFS2.TryIncRef() {
+		return 0, fmt.Errorf("container %q has stopped", args.ContainerID)
 	}
 
 	args.Envv, err = specutils.ResolveEnvs(args.Envv)
@@ -1036,25 +1005,11 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 	}
 
 	// Add the HOME environment variable if it is not already set.
-	if kernel.VFS2Enabled {
-		root := args.MountNamespaceVFS2.Root()
-		ctx := vfs.WithRoot(l.k.SupervisorContext(), root)
-		defer args.MountNamespaceVFS2.DecRef(ctx)
-		envv, err := user.MaybeAddExecUserHomeVFS2(ctx, args.MountNamespaceVFS2, args.KUID, args.Envv)
-		if err != nil {
-			return 0, err
-		}
-		args.Envv = envv
-	} else {
-		root := args.MountNamespace.Root()
-		ctx := fs.WithRoot(l.k.SupervisorContext(), root)
-		defer args.MountNamespace.DecRef(ctx)
-		defer root.DecRef(ctx)
-		envv, err := user.MaybeAddExecUserHome(ctx, args.MountNamespace, args.KUID, args.Envv)
-		if err != nil {
-			return 0, err
-		}
-		args.Envv = envv
+	ctx := vfs.WithRoot(l.k.SupervisorContext(), args.MountNamespaceVFS2.Root())
+	defer args.MountNamespaceVFS2.DecRef(ctx)
+	args.Envv, err = user.MaybeAddExecUserHomeVFS2(ctx, args.MountNamespaceVFS2, args.KUID, args.Envv)
+	if err != nil {
+		return 0, err
 	}
 	args.PIDNamespace = tg.PIDNamespace()
 
