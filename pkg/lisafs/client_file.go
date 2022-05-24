@@ -54,24 +54,13 @@ func (f *ClientFD) Ok() bool {
 	return f.fd.Ok()
 }
 
-// CloseBatched queues this FD to be closed on the server and resets f.fd.
-// This maybe invoke the Close RPC if the queue is full.
-func (f *ClientFD) CloseBatched(ctx context.Context) {
-	f.client.CloseFDBatched(ctx, f.fd)
+// Close queues this FD to be closed on the server and resets f.fd.
+// This maybe invoke the Close RPC if the queue is full. If flush is true, then
+// the Close RPC is made immediately. Consider setting flush to false if
+// closing this FD on remote right away is not critical.
+func (f *ClientFD) Close(ctx context.Context, flush bool) {
+	f.client.CloseFD(ctx, f.fd, flush)
 	f.fd = InvalidFDID
-}
-
-// Close closes this FD immediately (invoking a Close RPC). Consider using
-// CloseBatched if closing this FD on remote right away is not critical.
-func (f *ClientFD) Close(ctx context.Context) error {
-	fdArr := [1]FDID{f.fd}
-	req := CloseReq{FDs: fdArr[:]}
-	var resp CloseResp
-
-	ctx.UninterruptibleSleepStart(false)
-	err := f.client.SndRcvMessage(Close, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, nil, req.String, resp.String)
-	ctx.UninterruptibleSleepFinish(false)
-	return err
 }
 
 // OpenAt makes the OpenAt RPC.
@@ -345,7 +334,7 @@ func (f *ClientFD) Walk(ctx context.Context, name string) (Inode, error) {
 
 	if n := len(resp.Inodes); n > 1 {
 		for i := range resp.Inodes {
-			f.client.CloseFDBatched(ctx, resp.Inodes[i].ControlFD)
+			f.client.CloseFD(ctx, resp.Inodes[i].ControlFD, false /* flush */)
 		}
 		log.Warningf("requested to walk one component, but got %d results", n)
 		return Inode{}, unix.EIO
@@ -436,10 +425,10 @@ func (f *ClientFD) BindAt(ctx context.Context, sockType linux.SockType, name str
 		// No host socket fd? We can't proceed.
 		// Clean up any resources the gofer sent to us.
 		if resp.Child.ControlFD.Ok() {
-			f.client.CloseFDBatched(ctx, resp.Child.ControlFD)
+			f.client.CloseFD(ctx, resp.Child.ControlFD, false /* flush */)
 		}
 		if resp.BoundSocketFD.Ok() {
-			f.client.CloseFDBatched(ctx, resp.BoundSocketFD)
+			f.client.CloseFD(ctx, resp.BoundSocketFD, false /* flush */)
 		}
 		err = unix.EBADF
 	}
@@ -588,7 +577,7 @@ type ClientBoundSocketFD struct {
 // Close closes the host and gofer-backed FDs associated to this bound socket.
 func (f *ClientBoundSocketFD) Close(ctx context.Context) {
 	_ = unix.Close(int(f.notificationFD))
-	f.client.CloseFDBatched(ctx, f.fd)
+	f.client.CloseFD(ctx, f.fd, true /* flush */)
 }
 
 // NotificationFD is a host FD that can be used to notify when new clients
