@@ -585,6 +585,48 @@ TEST(Cgroup, TIDZeroMovesSelf) {
   EXPECT_FALSE(tasks.contains(syscall(SYS_gettid)));
 }
 
+TEST(Cgroup, NamedHierarchies) {
+  SKIP_IF(!CgroupsAvailable());
+
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c1 = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("none,name=h1"));
+  Cgroup c2 = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("name=h2,cpu"));
+
+  // Check that /proc/<pid>/cgroup contains an entry for this task.
+  absl::flat_hash_map<std::string, PIDCgroupEntry> entries =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcPIDCgroupEntries(getpid()));
+  EXPECT_TRUE(entries.contains("name=h1"));
+  EXPECT_TRUE(entries.contains("name=h2,cpu"));
+  EXPECT_NO_ERRNO(c1.ContainsCallingProcess());
+  EXPECT_NO_ERRNO(c2.ContainsCallingProcess());
+}
+
+TEST(Cgroup, NoneExclusiveWithAnyController) {
+  SKIP_IF(!CgroupsAvailable());
+
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  EXPECT_THAT(m.MountCgroupfs("none,cpu"), PosixErrorIs(EINVAL, _));
+}
+
+TEST(Cgroup, EmptyHierarchyMustHaveName) {
+  SKIP_IF(!CgroupsAvailable());
+
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  // This will fail since it is an empty hierarchy with no name.
+  EXPECT_THAT(m.MountCgroupfs("none"), PosixErrorIs(EINVAL, _));
+}
+
+TEST(Cgroup, NameMatchButControllersDont) {
+  SKIP_IF(!CgroupsAvailable());
+
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c1 = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("none,name=h1"));
+  Cgroup c2 = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("name=h2,memory"));
+
+  EXPECT_THAT(m.MountCgroupfs("name=h1,memory"), PosixErrorIs(EBUSY, _));
+  EXPECT_THAT(m.MountCgroupfs("name=h2,cpu"), PosixErrorIs(EBUSY, _));
+}
+
 TEST(MemoryCgroup, MemoryUsageInBytes) {
   SKIP_IF(!CgroupsAvailable());
 

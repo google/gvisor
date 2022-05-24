@@ -194,14 +194,22 @@ func (t *Task) GenerateProcTaskCgroup(buf *bytes.Buffer) {
 	for c := range t.cgroups {
 		ctls := c.Controllers()
 		ctlNames := make([]string, 0, len(ctls))
+
+		// We're guaranteed to have a valid name, a non-empty controller list,
+		// or both.
+
+		// Explicit hierachy name, if any.
+		if name := c.Name(); name != "" {
+			ctlNames = append(ctlNames, fmt.Sprintf("name=%s", name))
+		}
+
+		// Controllers attached to this hierarchy, if any.
 		for _, ctl := range ctls {
 			ctlNames = append(ctlNames, string(ctl.Type()))
 		}
 
 		cgEntries = append(cgEntries, taskCgroupEntry{
-			// Note: We're guaranteed to have at least one controller, and all
-			// controllers are guaranteed to be on the same hierarchy.
-			hierarchyID: ctls[0].HierarchyID(),
+			hierarchyID: c.HierarchyID(),
 			controllers: strings.Join(ctlNames, ","),
 			path:        c.Path(),
 		})
