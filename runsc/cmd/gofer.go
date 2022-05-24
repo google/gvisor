@@ -218,7 +218,7 @@ func (g *Gofer) serveLisafs(spec *specs.Spec, conf *config.Config, root string) 
 
 	mountIdx := 1 // first one is the root
 	for _, m := range spec.Mounts {
-		if !specutils.IsGoferMount(m, conf.VFS2) {
+		if !specutils.IsGoferMount(m) {
 			continue
 		}
 
@@ -273,7 +273,7 @@ func (g *Gofer) serve9P(spec *specs.Spec, conf *config.Config, root string) subc
 
 	mountIdx := 1 // first one is the root
 	for _, m := range spec.Mounts {
-		if specutils.IsGoferMount(m, conf.VFS2) {
+		if specutils.IsGoferMount(m) {
 			cfg := fsgofer.Config{
 				ROMount:           isReadonlyMount(m.Options) || conf.Overlay,
 				HostUDS:           conf.FSGoferHostUDS,
@@ -445,7 +445,7 @@ func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 // creates directories as needed.
 func setupMounts(conf *config.Config, mounts []specs.Mount, root, procPath string) error {
 	for _, m := range mounts {
-		if !specutils.IsGoferMount(m, conf.VFS2) {
+		if !specutils.IsGoferMount(m) {
 			continue
 		}
 
@@ -485,7 +485,7 @@ func setupMounts(conf *config.Config, mounts []specs.Mount, root, procPath strin
 func resolveMounts(conf *config.Config, mounts []specs.Mount, root string) ([]specs.Mount, error) {
 	cleanMounts := make([]specs.Mount, 0, len(mounts))
 	for _, m := range mounts {
-		if !specutils.IsGoferMount(m, conf.VFS2) {
+		if !specutils.IsGoferMount(m) {
 			cleanMounts = append(cleanMounts, m)
 			continue
 		}

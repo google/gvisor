@@ -131,7 +131,7 @@ func checkOciSeccomp(name string, value string) error {
 
 // NewFromFlags creates a new Config with values coming from command line flags.
 func NewFromFlags(flagSet *flag.FlagSet) (*Config, error) {
-	conf := &Config{VFS2: true}
+	conf := &Config{}
 
 	obj := reflect.ValueOf(conf).Elem()
 	st := obj.Type()
