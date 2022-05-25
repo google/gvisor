@@ -387,4 +387,8 @@ func TestProcfsDump(t *testing.T) {
 	if startTime-procfsDump[0].StartTime > 3*time.Second.Nanoseconds() {
 		t.Errorf("wanted start time to be around %s, but got %s", time.Unix(0, startTime), time.Unix(0, procfsDump[0].StartTime))
 	}
+
+	if want := "/"; procfsDump[0].Root != "/" {
+		t.Errorf("expected root to be %q, but got %q", want, procfsDump[0].Root)
+	}
 }
