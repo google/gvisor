@@ -175,8 +175,8 @@ func (fs *filesystem) newCgroupInode(ctx context.Context, creds *auth.Credential
 	c.dir.cgi = c
 
 	contents := make(map[string]kernfs.Inode)
-	contents["cgroup.procs"] = fs.newControllerFile(ctx, creds, &cgroupProcsData{c})
-	contents["tasks"] = fs.newControllerFile(ctx, creds, &tasksData{c})
+	contents["cgroup.procs"] = fs.newControllerWritableFile(ctx, creds, &cgroupProcsData{c})
+	contents["tasks"] = fs.newControllerWritableFile(ctx, creds, &tasksData{c})
 
 	if parent != nil {
 		for ty, ctl := range parent.controllers {
