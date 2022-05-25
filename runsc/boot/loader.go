@@ -39,9 +39,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
-	"gvisor.dev/gvisor/pkg/sentry/fs/host"
 	"gvisor.dev/gvisor/pkg/sentry/fs/user"
-	hostvfs2 "gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -163,10 +162,7 @@ type execProcess struct {
 	tg *kernel.ThreadGroup
 
 	// tty will be nil if the process is not attached to a terminal.
-	tty *host.TTYFileOperations
-
-	// tty will be nil if the process is not attached to a terminal.
-	ttyVFS2 *hostvfs2.TTYFileDescription
+	tty *host.TTYFileDescription
 
 	// pidnsPath is the pid namespace path in spec
 	pidnsPath string
@@ -411,7 +407,7 @@ func New(args Args) (*Loader, error) {
 	info.spec = args.Spec
 
 	// Set up host mount that will be used for imported fds.
-	hostFilesystem, err := hostvfs2.NewFilesystem(k.VFS())
+	hostFilesystem, err := host.NewFilesystem(k.VFS())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create hostfs filesystem: %w", err)
 	}
@@ -632,7 +628,7 @@ func (l *Loader) run() error {
 			tg  *kernel.ThreadGroup
 			err error
 		)
-		tg, ep.tty, ep.ttyVFS2, err = l.createContainerProcess(true, l.sandboxID, &l.root)
+		tg, ep.tty, err = l.createContainerProcess(true, l.sandboxID, &l.root)
 		if err != nil {
 			return err
 		}
@@ -780,7 +776,7 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 		info.stdioFDs = stdioFDs
 	}
 
-	ep.tg, ep.tty, ep.ttyVFS2, err = l.createContainerProcess(false, cid, info)
+	ep.tg, ep.tty, err = l.createContainerProcess(false, cid, info)
 	if err != nil {
 		return err
 	}
@@ -809,12 +805,12 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 	return nil
 }
 
-func (l *Loader) createContainerProcess(root bool, cid string, info *containerInfo) (*kernel.ThreadGroup, *host.TTYFileOperations, *hostvfs2.TTYFileDescription, error) {
+func (l *Loader) createContainerProcess(root bool, cid string, info *containerInfo) (*kernel.ThreadGroup, *host.TTYFileDescription, error) {
 	// Create the FD map, which will set stdin, stdout, and stderr.
 	ctx := info.procArgs.NewContext(l.k)
-	fdTable, ttyFile, ttyFileVFS2, err := createFDTable(ctx, info.spec.Process.Terminal, info.stdioFDs, info.spec.Process.User)
+	fdTable, ttyFile, err := createFDTable(ctx, info.spec.Process.Terminal, info.stdioFDs, info.spec.Process.User)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("importing fds: %w", err)
+		return nil, nil, fmt.Errorf("importing fds: %w", err)
 	}
 	// CreateProcess takes a reference on fdTable if successful. We won't need
 	// ours either way.
@@ -822,41 +818,38 @@ func (l *Loader) createContainerProcess(root bool, cid string, info *containerIn
 
 	// Gofer FDs must be ordered and the first FD is always the rootfs.
 	if len(info.goferFDs) < 1 {
-		return nil, nil, nil, fmt.Errorf("rootfs gofer FD not found")
+		return nil, nil, fmt.Errorf("rootfs gofer FD not found")
 	}
 	l.startGoferMonitor(cid, int32(info.goferFDs[0].FD()))
 
 	mntr := newContainerMounter(info, l.k, l.mountHints, l.productName)
 	if root {
 		if err := mntr.processHints(info.conf, info.procArgs.Credentials); err != nil {
-			return nil, nil, nil, err
+			return nil, nil, err
 		}
 	}
 	if err := setupContainerVFS(ctx, info.conf, mntr, &info.procArgs); err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	// Add the HOME environment variable if it is not already set.
 	info.procArgs.Envv, err = user.MaybeAddExecUserHomeVFS2(ctx, info.procArgs.MountNamespaceVFS2,
 		info.procArgs.Credentials.RealKUID, info.procArgs.Envv)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	// Create and start the new process.
 	tg, _, err := l.k.CreateProcess(info.procArgs)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("creating process: %w", err)
+		return nil, nil, fmt.Errorf("creating process: %w", err)
 	}
 	// CreateProcess takes a reference on FDTable if successful.
 	info.procArgs.FDTable.DecRef(ctx)
 
 	// Set the foreground process group on the TTY to the global init process
 	// group, since that is what we are about to start running.
-	switch {
-	case ttyFileVFS2 != nil:
-		ttyFileVFS2.InitForegroundProcessGroup(tg.ProcessGroup())
-	case ttyFile != nil:
+	if ttyFile != nil {
 		ttyFile.InitForegroundProcessGroup(tg.ProcessGroup())
 	}
 
@@ -865,7 +858,7 @@ func (l *Loader) createContainerProcess(root bool, cid string, info *containerIn
 		if info.spec.Linux != nil && info.spec.Linux.Seccomp != nil {
 			program, err := seccomp.BuildProgram(info.spec.Linux.Seccomp)
 			if err != nil {
-				return nil, nil, nil, fmt.Errorf("building seccomp program: %w", err)
+				return nil, nil, fmt.Errorf("building seccomp program: %w", err)
 			}
 
 			if log.IsLogging(log.Debug) {
@@ -876,7 +869,7 @@ func (l *Loader) createContainerProcess(root bool, cid string, info *containerIn
 			task := tg.Leader()
 			// NOTE: It seems Flags are ignored by runc so we ignore them too.
 			if err := task.AppendSyscallFilter(program, true); err != nil {
-				return nil, nil, nil, fmt.Errorf("appending seccomp filters: %w", err)
+				return nil, nil, fmt.Errorf("appending seccomp filters: %w", err)
 			}
 		}
 	} else {
@@ -885,7 +878,7 @@ func (l *Loader) createContainerProcess(root bool, cid string, info *containerIn
 		}
 	}
 
-	return tg, ttyFile, ttyFileVFS2, nil
+	return tg, ttyFile, nil
 }
 
 // startGoferMonitor runs a goroutine to monitor gofer's health. It polls on
@@ -1020,16 +1013,15 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 
 	// Start the process.
 	proc := control.Proc{Kernel: l.k}
-	newTG, tgid, ttyFile, ttyFileVFS2, err := control.ExecAsync(&proc, args)
+	newTG, tgid, _, ttyFile, err := control.ExecAsync(&proc, args)
 	if err != nil {
 		return 0, err
 	}
 
 	eid := execID{cid: args.ContainerID, pid: tgid}
 	l.processes[eid] = &execProcess{
-		tg:      newTG,
-		tty:     ttyFile,
-		ttyVFS2: ttyFileVFS2,
+		tg:  newTG,
+		tty: ttyFile,
 	}
 	log.Debugf("updated processes: %v", l.processes)
 
@@ -1308,21 +1300,15 @@ func (l *Loader) signalForegrondProcessGroup(cid string, tgid kernel.ThreadID, s
 		return fmt.Errorf("container %q not started", cid)
 	}
 
-	tty, ttyVFS2, err := l.ttyFromIDLocked(execID{cid: cid, pid: tgid})
+	tty, err := l.ttyFromIDLocked(execID{cid: cid, pid: tgid})
 	l.mu.Unlock()
 	if err != nil {
 		return fmt.Errorf("no thread group found: %w", err)
 	}
-
-	var pg *kernel.ProcessGroup
-	switch {
-	case ttyVFS2 != nil:
-		pg = ttyVFS2.ForegroundProcessGroup()
-	case tty != nil:
-		pg = tty.ForegroundProcessGroup()
-	default:
+	if tty == nil {
 		return fmt.Errorf("no TTY attached")
 	}
+	pg := tty.ForegroundProcessGroup()
 	if pg == nil {
 		// No foreground process group has been set. Signal the
 		// original thread group.
@@ -1385,25 +1371,25 @@ func (l *Loader) tryThreadGroupFromIDLocked(key execID) (*kernel.ThreadGroup, er
 // return nil in case the container has not started yet. Returns error if
 // execution ID is invalid or if the container cannot be found (maybe it has
 // been deleted). Caller must hold 'mu'.
-func (l *Loader) ttyFromIDLocked(key execID) (*host.TTYFileOperations, *hostvfs2.TTYFileDescription, error) {
+func (l *Loader) ttyFromIDLocked(key execID) (*host.TTYFileDescription, error) {
 	ep := l.processes[key]
 	if ep == nil {
-		return nil, nil, fmt.Errorf("container %q not found", key.cid)
+		return nil, fmt.Errorf("container %q not found", key.cid)
 	}
-	return ep.tty, ep.ttyVFS2, nil
+	return ep.tty, nil
 }
 
-func createFDTable(ctx context.Context, console bool, stdioFDs []*fd.FD, user specs.User) (*kernel.FDTable, *host.TTYFileOperations, *hostvfs2.TTYFileDescription, error) {
+func createFDTable(ctx context.Context, console bool, stdioFDs []*fd.FD, user specs.User) (*kernel.FDTable, *host.TTYFileDescription, error) {
 	if len(stdioFDs) != 3 {
-		return nil, nil, nil, fmt.Errorf("stdioFDs should contain exactly 3 FDs (stdin, stdout, and stderr), but %d FDs received", len(stdioFDs))
+		return nil, nil, fmt.Errorf("stdioFDs should contain exactly 3 FDs (stdin, stdout, and stderr), but %d FDs received", len(stdioFDs))
 	}
 
 	k := kernel.KernelFromContext(ctx)
 	fdTable := k.NewFDTable()
-	ttyFile, ttyFileVFS2, err := fdimport.Import(ctx, fdTable, console, auth.KUID(user.UID), auth.KGID(user.GID), stdioFDs)
+	_, ttyFile, err := fdimport.Import(ctx, fdTable, console, auth.KUID(user.UID), auth.KGID(user.GID), stdioFDs)
 	if err != nil {
 		fdTable.DecRef(ctx)
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
-	return fdTable, ttyFile, ttyFileVFS2, nil
+	return fdTable, ttyFile, nil
 }
