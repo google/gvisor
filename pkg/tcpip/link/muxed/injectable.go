@@ -89,16 +89,14 @@ func (m *InjectableEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber,
 // pkt.EgressRoute.RemoteAddress has a route registered in this endpoint.
 func (m *InjectableEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 	i := 0
-	for pkt := pkts.Front(); pkt != nil; {
-		nextPkt := pkt.Next()
-
+	for _, pkt := range pkts.AsSlice() {
 		endpoint, ok := m.routes[pkt.EgressRoute.RemoteAddress]
 		if !ok {
 			return i, &tcpip.ErrNoRoute{}
 		}
 
 		var tmpPkts stack.PacketBufferList
-		tmpPkts.PushFront(pkt)
+		tmpPkts.PushBack(pkt)
 
 		n, err := endpoint.WritePackets(tmpPkts)
 		if err != nil {
@@ -106,7 +104,6 @@ func (m *InjectableEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcp
 		}
 
 		i += n
-		pkt = nextPkt
 	}
 
 	return i, nil

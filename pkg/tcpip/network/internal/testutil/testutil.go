@@ -64,7 +64,7 @@ func (*MockLinkEndpoint) LinkAddress() tcpip.LinkAddress { return "" }
 // WritePackets implements LinkEndpoint.WritePackets.
 func (ep *MockLinkEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 	var n int
-	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
+	for _, pkt := range pkts.AsSlice() {
 		if ep.allowPackets == 0 {
 			return n, ep.err
 		}

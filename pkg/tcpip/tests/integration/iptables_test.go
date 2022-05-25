@@ -409,7 +409,7 @@ func TestIPTableWritePackets(t *testing.T) {
 				})
 				hdr := pkt.TransportHeader().Push(header.UDPMinimumSize)
 				udpHdr(hdr, r.LocalAddress(), r.RemoteAddress(), utils.LocalPort, utils.RemotePort)
-				pkts.PushFront(pkt)
+				pkts.PushBack(pkt)
 
 				return pkts
 			},
@@ -469,7 +469,7 @@ func TestIPTableWritePackets(t *testing.T) {
 					})
 					hdr := pkt.TransportHeader().Push(header.UDPMinimumSize)
 					udpHdr(hdr, r.LocalAddress(), r.RemoteAddress(), utils.LocalPort, utils.RemotePort)
-					pkts.PushFront(pkt)
+					pkts.PushBack(pkt)
 				}
 				for i := 0; i < dropPackets; i++ {
 					pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -477,7 +477,7 @@ func TestIPTableWritePackets(t *testing.T) {
 					})
 					hdr := pkt.TransportHeader().Push(header.UDPMinimumSize)
 					udpHdr(hdr, r.LocalAddress(), r.RemoteAddress(), dropLocalPort, utils.RemotePort)
-					pkts.PushFront(pkt)
+					pkts.PushBack(pkt)
 				}
 
 				return pkts
@@ -498,7 +498,7 @@ func TestIPTableWritePackets(t *testing.T) {
 				})
 				hdr := pkt.TransportHeader().Push(header.UDPMinimumSize)
 				udpHdr(hdr, r.LocalAddress(), r.RemoteAddress(), utils.LocalPort, utils.RemotePort)
-				pkts.PushFront(pkt)
+				pkts.PushBack(pkt)
 
 				return pkts
 			},
@@ -558,7 +558,7 @@ func TestIPTableWritePackets(t *testing.T) {
 					})
 					hdr := pkt.TransportHeader().Push(header.UDPMinimumSize)
 					udpHdr(hdr, r.LocalAddress(), r.RemoteAddress(), utils.LocalPort, utils.RemotePort)
-					pkts.PushFront(pkt)
+					pkts.PushBack(pkt)
 				}
 				for i := 0; i < dropPackets; i++ {
 					pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -566,7 +566,7 @@ func TestIPTableWritePackets(t *testing.T) {
 					})
 					hdr := pkt.TransportHeader().Push(header.UDPMinimumSize)
 					udpHdr(hdr, r.LocalAddress(), r.RemoteAddress(), dropLocalPort, utils.RemotePort)
-					pkts.PushFront(pkt)
+					pkts.PushBack(pkt)
 				}
 
 				return pkts
@@ -626,10 +626,7 @@ func TestIPTableWritePackets(t *testing.T) {
 			defer r.Release()
 
 			pkts := test.genPacket(r)
-			pktsLen := pkts.Len()
-			for i := 0; i < pktsLen; i++ {
-				pkt := pkts.Front()
-				pkts.Remove(pkt)
+			for _, pkt := range pkts.AsSlice() {
 				if err := r.WritePacket(stack.NetworkHeaderParams{
 					Protocol: header.UDPProtocolNumber,
 					TTL:      64,
