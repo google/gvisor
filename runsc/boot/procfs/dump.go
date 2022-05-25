@@ -37,7 +37,8 @@ type FDInfo struct {
 	Path string `json:"path,omitempty"`
 }
 
-// ProcessProcfsDump contains the procfs dump for one process.
+// ProcessProcfsDump contains the procfs dump for one process. For more details
+// on fields that directly correspond to /proc fields, see proc(5).
 type ProcessProcfsDump struct {
 	// PID is the process ID.
 	PID int32 `json:"pid,omitempty"`
@@ -54,6 +55,8 @@ type ProcessProcfsDump struct {
 	FDs []FDInfo `json:"fdlist,omitempty"`
 	// StartTime is the process start time in nanoseconds since Unix epoch.
 	StartTime int64 `json:"clone_ts,omitempty"`
+	// Root is /proc/[pid]/root.
+	Root string `json:"root,omitempty"`
 }
 
 // getMM returns t's MemoryManager. On success, the MemoryManager's users count
@@ -155,6 +158,18 @@ func getFDs(ctx context.Context, t *kernel.Task, pid kernel.ThreadID) []FDInfo {
 	return res
 }
 
+func getRoot(t *kernel.Task, pid kernel.ThreadID) string {
+	realRoot := t.MountNamespaceVFS2().Root()
+	root := t.FSContext().RootDirectoryVFS2()
+	defer root.DecRef(t)
+	path, err := t.Kernel().VFS().PathnameWithDeleted(t, realRoot, root)
+	if err != nil {
+		log.Warningf("PathnameWithDeleted failed to find root path for PID %s: %v", pid, err)
+		return ""
+	}
+	return path
+}
+
 // Dump returns a procfs dump for process pid. t must be a task in process pid.
 func Dump(t *kernel.Task, pid kernel.ThreadID) (ProcessProcfsDump, error) {
 	ctx := t.AsyncContext()
@@ -173,5 +188,6 @@ func Dump(t *kernel.Task, pid kernel.ThreadID) (ProcessProcfsDump, error) {
 		CWD:       getCWD(ctx, t, pid),
 		FDs:       getFDs(ctx, t, pid),
 		StartTime: t.StartTime().Nanoseconds(),
+		Root:      getRoot(t, pid),
 	}, nil
 }
