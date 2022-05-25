@@ -51,9 +51,9 @@ const Infinity = ^uint64(0)
 // +stateify savable
 type Limit struct {
 	// Cur specifies the current limit.
-	Cur uint64
+	Cur uint64 `json:"cur,omitempty"`
 	// Max specifies the maximum settable limit.
-	Max uint64
+	Max uint64 `json:"max,omitempty"`
 }
 
 // LimitSet represents the Limits that correspond to each LimitType.
