@@ -297,6 +297,45 @@ INSTANTIATE_TEST_SUITE_P(All, SocketInetLoopbackIsolatedTest,
 using SocketMultiProtocolInetLoopbackIsolatedTest =
     ::testing::TestWithParam<ProtocolTestParam>;
 
+TEST_P(SocketMultiProtocolInetLoopbackIsolatedTest, BindToDeviceReusePort) {
+  ProtocolTestParam const& param = GetParam();
+  TestAddress const& test_addr = V4Loopback();
+
+  auto socket1 =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(test_addr.family(), param.type, 0));
+  auto socket2 =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(test_addr.family(), param.type, 0));
+
+  const char kLoopbackDeviceName[] = "lo";
+
+  // Bind socket1 with REUSEPORT and BINDTODEVICE.
+  ASSERT_THAT(setsockopt(socket1.get(), SOL_SOCKET, SO_REUSEPORT, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  ASSERT_THAT(setsockopt(socket1.get(), SOL_SOCKET, SO_BINDTODEVICE,
+                         kLoopbackDeviceName, strlen(kLoopbackDeviceName)),
+              SyscallSucceeds());
+
+  // Bind the first socket to the loopback and take note of the selected port.
+  auto addr = V4Loopback();
+  ASSERT_THAT(bind(socket1.get(), AsSockAddr(&addr.addr), addr.addr_len),
+              SyscallSucceeds());
+  socklen_t addr_len = addr.addr_len;
+  ASSERT_THAT(getsockname(socket1.get(), AsSockAddr(&addr.addr), &addr_len),
+              SyscallSucceeds());
+  EXPECT_EQ(addr_len, addr.addr_len);
+
+  // Bind socket2 to the same device and address as socket1.
+  ASSERT_THAT(setsockopt(socket2.get(), SOL_SOCKET, SO_BINDTODEVICE,
+                         kLoopbackDeviceName, strlen(kLoopbackDeviceName)),
+              SyscallSucceeds());
+  ASSERT_THAT(setsockopt(socket2.get(), SOL_SOCKET, SO_REUSEPORT, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  ASSERT_THAT(bind(socket2.get(), AsSockAddr(&addr.addr), addr.addr_len),
+              SyscallSucceeds());
+}
+
 TEST_P(SocketMultiProtocolInetLoopbackIsolatedTest,
        V4EphemeralPortReservedReuseAddr) {
   ProtocolTestParam const& param = GetParam();
