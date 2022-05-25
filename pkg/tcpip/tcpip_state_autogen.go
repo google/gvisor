@@ -825,6 +825,48 @@ func (e *ErrWouldBlock) afterLoad() {}
 func (e *ErrWouldBlock) StateLoad(stateSourceObject state.Source) {
 }
 
+func (e *ErrMissingRequiredFields) StateTypeName() string {
+	return "pkg/tcpip.ErrMissingRequiredFields"
+}
+
+func (e *ErrMissingRequiredFields) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrMissingRequiredFields) beforeSave() {}
+
+// +checklocksignore
+func (e *ErrMissingRequiredFields) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrMissingRequiredFields) afterLoad() {}
+
+// +checklocksignore
+func (e *ErrMissingRequiredFields) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrMulticastInputCannotBeOutput) StateTypeName() string {
+	return "pkg/tcpip.ErrMulticastInputCannotBeOutput"
+}
+
+func (e *ErrMulticastInputCannotBeOutput) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrMulticastInputCannotBeOutput) beforeSave() {}
+
+// +checklocksignore
+func (e *ErrMulticastInputCannotBeOutput) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrMulticastInputCannotBeOutput) afterLoad() {}
+
+// +checklocksignore
+func (e *ErrMulticastInputCannotBeOutput) StateLoad(stateSourceObject state.Source) {
+}
+
 func (l *sockErrorList) StateTypeName() string {
 	return "pkg/tcpip.sockErrorList"
 }
@@ -1619,6 +1661,8 @@ func init() {
 	state.Register((*ErrUnknownProtocol)(nil))
 	state.Register((*ErrUnknownProtocolOption)(nil))
 	state.Register((*ErrWouldBlock)(nil))
+	state.Register((*ErrMissingRequiredFields)(nil))
+	state.Register((*ErrMulticastInputCannotBeOutput)(nil))
 	state.Register((*sockErrorList)(nil))
 	state.Register((*sockErrorEntry)(nil))
 	state.Register((*SocketOptions)(nil))

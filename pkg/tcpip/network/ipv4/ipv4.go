@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/hash"
 	"gvisor.dev/gvisor/pkg/tcpip/network/internal/fragmentation"
 	"gvisor.dev/gvisor/pkg/tcpip/network/internal/ip"
+	"gvisor.dev/gvisor/pkg/tcpip/network/internal/multicast"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -603,26 +604,88 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBu
 	return e.writePacketPostRouting(r, pkt, true /* headerIncluded */)
 }
 
-// forwardPacket attempts to forward a packet to its final destination.
-func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
+// forwardPacketWithRoute emits the pkt using the provided route.
+//
+// If updateOptions is true, then the IP options will be updated in the copied
+// pkt using the outgoing endpoint. Otherwise, the caller is responsible for
+// updating the options.
+//
+// This method should be invoked by the endpoint that received the pkt.
+func (e *endpoint) forwardPacketWithRoute(route *stack.Route, pkt *stack.PacketBuffer, updateOptions bool) ip.ForwardingError {
+	h := header.IPv4(pkt.NetworkHeader().View())
+	stk := e.protocol.stack
+
+	inNicName := stk.FindNICNameFromID(e.nic.ID())
+	outNicName := stk.FindNICNameFromID(route.NICID())
+	if ok := stk.IPTables().CheckForward(pkt, inNicName, outNicName); !ok {
+		// iptables is telling us to drop the packet.
+		e.stats.ip.IPTablesForwardDropped.Increment()
+		return nil
+	}
+
+	// We need to do a deep copy of the IP packet because
+	// WriteHeaderIncludedPacket may modify the packet buffer, but we do
+	// not own it.
+	//
+	// TODO(https://gvisor.dev/issue/7473): For multicast, only create one deep
+	// copy and then clone.
+	newPkt := pkt.DeepCopyForForwarding(int(route.MaxHeaderLength()))
+	newHdr := header.IPv4(newPkt.NetworkHeader().View())
+	defer newPkt.DecRef()
+
+	forwardToEp, ok := e.protocol.getEndpointForNIC(route.NICID())
+	if !ok {
+		return &ip.ErrUnknownOutputEndpoint{}
+	}
+
+	if updateOptions {
+		if err := forwardToEp.updateOptionsForForwarding(newPkt); err != nil {
+			return err
+		}
+	}
+
+	ttl := h.TTL()
+	// As per RFC 791 page 30, Time to Live,
+	//
+	//   This field must be decreased at each point that the internet header
+	//   is processed to reflect the time spent processing the datagram.
+	//   Even if no local information is available on the time actually
+	//   spent, the field must be decremented by 1.
+	newHdr.SetTTL(ttl - 1)
+	// We perform a full checksum as we may have updated options above. The IP
+	// header is relatively small so this is not expected to be an expensive
+	// operation.
+	newHdr.SetChecksum(0)
+	newHdr.SetChecksum(^newHdr.CalculateChecksum())
+
+	switch err := forwardToEp.writePacketPostRouting(route, newPkt, true /* headerIncluded */); err.(type) {
+	case nil:
+		return nil
+	case *tcpip.ErrMessageTooLong:
+		// As per RFC 792, page 4, Destination Unreachable:
+		//
+		//   Another case is when a datagram must be fragmented to be forwarded by a
+		//   gateway yet the Don't Fragment flag is on. In this case the gateway must
+		//   discard the datagram and may return a destination unreachable message.
+		//
+		// WriteHeaderIncludedPacket checks for the presence of the Don't Fragment bit
+		// while sending the packet and returns this error iff fragmentation is
+		// necessary and the bit is also set.
+		_ = e.protocol.returnError(&icmpReasonFragmentationNeeded{}, pkt, false /* deliveredLocally */)
+		return &ip.ErrMessageTooLong{}
+	default:
+		return &ip.ErrOther{Err: err}
+	}
+}
+
+// forwardUnicastPacket attempts to forward a packet to its final destination.
+func (e *endpoint) forwardUnicastPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 	h := header.IPv4(pkt.NetworkHeader().View())
 
 	dstAddr := h.DestinationAddress()
-	// As per RFC 3927 section 7,
-	//
-	//   A router MUST NOT forward a packet with an IPv4 Link-Local source or
-	//   destination address, irrespective of the router's default route
-	//   configuration or routes obtained from dynamic routing protocols.
-	//
-	//   A router which receives a packet with an IPv4 Link-Local source or
-	//   destination address MUST NOT forward the packet.  This prevents
-	//   forwarding of packets back onto the network segment from which they
-	//   originated, or to any other segment.
-	if header.IsV4LinkLocalUnicastAddress(h.SourceAddress()) {
-		return &ip.ErrLinkLocalSourceAddress{}
-	}
-	if header.IsV4LinkLocalUnicastAddress(dstAddr) || header.IsV4LinkLocalMulticastAddress(dstAddr) {
-		return &ip.ErrLinkLocalDestinationAddress{}
+
+	if err := validateAddressesForForwarding(h); err != nil {
+		return err
 	}
 
 	ttl := h.TTL()
@@ -640,29 +703,8 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 		return &ip.ErrTTLExceeded{}
 	}
 
-	if opts := h.Options(); len(opts) != 0 {
-		newOpts, _, optProblem := e.processIPOptions(pkt, opts, &optionUsageForward{})
-		if optProblem != nil {
-			if optProblem.NeedICMP {
-				_ = e.protocol.returnError(&icmpReasonParamProblem{
-					pointer: optProblem.Pointer,
-				}, pkt, false /* deliveredLocally */)
-			}
-			return &ip.ErrParameterProblem{}
-		}
-		copied := copy(opts, newOpts)
-		if copied != len(newOpts) {
-			panic(fmt.Sprintf("copied %d bytes of new options, expected %d bytes", copied, len(newOpts)))
-		}
-		// Since in forwarding we handle all options, including copying those we
-		// do not recognise, the options region should remain the same size which
-		// simplifies processing. As we MAY receive a packet with a lot of padded
-		// bytes after the "end of options list" byte, make sure we copy
-		// them as the legal padding value (0).
-		for i := copied; i < len(opts); i++ {
-			// Pad with 0 (EOL). RFC 791 page 23 says "The padding is zero".
-			opts[i] = byte(header.IPv4OptionListEndType)
-		}
+	if err := e.updateOptionsForForwarding(pkt); err != nil {
+		return err
 	}
 
 	stk := e.protocol.stack
@@ -696,58 +738,17 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 	}
 	defer r.Release()
 
-	inNicName := stk.FindNICNameFromID(e.nic.ID())
-	outNicName := stk.FindNICNameFromID(r.NICID())
-	if ok := stk.IPTables().CheckForward(pkt, inNicName, outNicName); !ok {
-		// iptables is telling us to drop the packet.
-		e.stats.ip.IPTablesForwardDropped.Increment()
-		return nil
-	}
-
-	// We need to do a deep copy of the IP packet because
-	// WriteHeaderIncludedPacket may modify the packet buffer, but we do
-	// not own it.
-	newPkt := pkt.DeepCopyForForwarding(int(r.MaxHeaderLength()))
-	newHdr := header.IPv4(newPkt.NetworkHeader().View())
-	defer newPkt.DecRef()
-
-	// As per RFC 791 page 30, Time to Live,
+	// TODO(https://gvisor.dev/issue/7472): Unicast IP options should be updated
+	// using the output endpoint (instead of the input endpoint). In particular,
+	// RFC 1812 section 5.2.1 states the following:
 	//
-	//   This field must be decreased at each point that the internet header
-	//   is processed to reflect the time spent processing the datagram.
-	//   Even if no local information is available on the time actually
-	//   spent, the field must be decremented by 1.
-	newHdr.SetTTL(ttl - 1)
-	// We perform a full checksum as we may have updated options above. The IP
-	// header is relatively small so this is not expected to be an expensive
-	// operation.
-	newHdr.SetChecksum(0)
-	newHdr.SetChecksum(^newHdr.CalculateChecksum())
-
-	forwardToEp, ok := e.protocol.getEndpointForNIC(r.NICID())
-	if !ok {
-		// The interface was removed after we obtained the route.
-		return &ip.ErrOther{Err: &tcpip.ErrUnknownDevice{}}
-	}
-
-	switch err := forwardToEp.writePacketPostRouting(r, newPkt, true /* headerIncluded */); err.(type) {
-	case nil:
-		return nil
-	case *tcpip.ErrMessageTooLong:
-		// As per RFC 792, page 4, Destination Unreachable:
-		//
-		//   Another case is when a datagram must be fragmented to be forwarded by a
-		//   gateway yet the Don't Fragment flag is on. In this case the gateway must
-		//   discard the datagram and may return a destination unreachable message.
-		//
-		// WriteHeaderIncludedPacket checks for the presence of the Don't Fragment bit
-		// while sending the packet and returns this error iff fragmentation is
-		// necessary and the bit is also set.
-		_ = e.protocol.returnError(&icmpReasonFragmentationNeeded{}, pkt, false /* deliveredLocally */)
-		return &ip.ErrMessageTooLong{}
-	default:
-		return &ip.ErrOther{Err: err}
-	}
+	//	 Processing of certain IP options requires that the router insert its IP
+	//	 address into the option. As noted in Section [5.2.4], the address
+	//	 inserted MUST be the address of the logical interface on which the
+	//	 packet is sent or the router's router-id if the packet is sent over an
+	//	 unnumbered interface. Thus, processing of these options cannot be
+	//	 completed until after the output interface is chosen.
+	return e.forwardPacketWithRoute(r, pkt, false /* updateOptions */)
 }
 
 // HandlePacket is called by the link layer when new ipv4 packets arrive for
@@ -826,6 +827,163 @@ func (e *endpoint) handleLocalPacket(pkt *stack.PacketBuffer, canSkipRXChecksum 
 	e.handleValidatedPacket(h, pkt, e.nic.Name() /* inNICName */)
 }
 
+func validateAddressesForForwarding(h header.IPv4) ip.ForwardingError {
+	// As per RFC 3927 section 7,
+	//
+	//   A router MUST NOT forward a packet with an IPv4 Link-Local source or
+	//   destination address, irrespective of the router's default route
+	//   configuration or routes obtained from dynamic routing protocols.
+	//
+	//   A router which receives a packet with an IPv4 Link-Local source or
+	//   destination address MUST NOT forward the packet.  This prevents
+	//   forwarding of packets back onto the network segment from which they
+	//   originated, or to any other segment.
+	if header.IsV4LinkLocalUnicastAddress(h.SourceAddress()) {
+		return &ip.ErrLinkLocalSourceAddress{}
+	}
+	if header.IsV4LinkLocalUnicastAddress(h.DestinationAddress()) || header.IsV4LinkLocalMulticastAddress(h.DestinationAddress()) {
+		return &ip.ErrLinkLocalDestinationAddress{}
+	}
+	return nil
+}
+
+// forwardMulticastPacket validates a multicast pkt and attempts to forward it.
+//
+// This method should be invoked for incoming multicast packets using the
+// endpoint that received the packet.
+func (e *endpoint) forwardMulticastPacket(h header.IPv4, pkt *stack.PacketBuffer) ip.ForwardingError {
+	if err := validateAddressesForForwarding(h); err != nil {
+		return err
+	}
+
+	if opts := h.Options(); len(opts) != 0 {
+		// Check if the options are valid, but don't mutate them. This corresponds
+		// to step 3 of RFC 1812 section 5.2.1.1.
+		if _, _, optProblem := e.processIPOptions(pkt, opts, &optionUsageVerify{}); optProblem != nil {
+			// Per RFC 1812 section 4.3.2.7, an ICMP error message should not be
+			// sent for:
+			//
+			//	 A packet destined to an IP broadcast or IP multicast address.
+			//
+			// Note that protocol.returnError also enforces this requirement.
+			// However, we intentionally omit it here since this path is multicast
+			// only.
+			return &ip.ErrParameterProblem{}
+		}
+	}
+
+	routeKey := stack.UnicastSourceAndMulticastDestination{
+		Source:      h.SourceAddress(),
+		Destination: h.DestinationAddress(),
+	}
+
+	// The pkt has been validated. Consequently, if a route is not found, then
+	// the pkt can safely be queued.
+	result, hasBufferSpace := e.protocol.multicastRouteTable.GetRouteOrInsertPending(routeKey, pkt)
+
+	if !hasBufferSpace {
+		// Unable to queue the pkt. Silently drop it.
+		return &ip.ErrNoMulticastPendingQueueBufferSpace{}
+	}
+
+	// TODO(https://gvisor.dev/issue/7338): Emit an event for a missing route.
+	if result.GetRouteResultState == multicast.InstalledRouteFound {
+		// Attempt to forward the pkt using an existing route.
+		return e.forwardValidatedMulticastPacket(pkt, result.InstalledRoute)
+	}
+	return &ip.ErrNoRoute{}
+}
+
+func (e *endpoint) updateOptionsForForwarding(pkt *stack.PacketBuffer) ip.ForwardingError {
+	h := header.IPv4(pkt.NetworkHeader().View())
+	if opts := h.Options(); len(opts) != 0 {
+		newOpts, _, optProblem := e.processIPOptions(pkt, opts, &optionUsageForward{})
+		if optProblem != nil {
+			if optProblem.NeedICMP {
+				// Note that this will not emit an ICMP error if the destination is
+				// multicast.
+				_ = e.protocol.returnError(&icmpReasonParamProblem{
+					pointer: optProblem.Pointer,
+				}, pkt, false /* deliveredLocally */)
+			}
+			return &ip.ErrParameterProblem{}
+		}
+		copied := copy(opts, newOpts)
+		if copied != len(newOpts) {
+			panic(fmt.Sprintf("copied %d bytes of new options, expected %d bytes", copied, len(newOpts)))
+		}
+		// Since in forwarding we handle all options, including copying those we
+		// do not recognise, the options region should remain the same size which
+		// simplifies processing. As we MAY receive a packet with a lot of padded
+		// bytes after the "end of options list" byte, make sure we copy
+		// them as the legal padding value (0).
+		for i := copied; i < len(opts); i++ {
+			// Pad with 0 (EOL). RFC 791 page 23 says "The padding is zero".
+			opts[i] = byte(header.IPv4OptionListEndType)
+		}
+	}
+	return nil
+}
+
+// forwardValidatedMulticastPacket attempts to forward the pkt using the
+// provided installedRoute.
+//
+// This method should be invoked by the endpoint that received the pkt.
+func (e *endpoint) forwardValidatedMulticastPacket(pkt *stack.PacketBuffer, installedRoute *multicast.InstalledRoute) ip.ForwardingError {
+	// Per RFC 1812 section 5.2.1.3,
+	//
+	//	 Based on the IP source and destination addresses found in the datagram
+	//	 header, the router determines whether the datagram has been received
+	//	 on the proper interface for forwarding.  If not, the datagram is
+	//	 dropped silently.
+	if e.nic.ID() != installedRoute.ExpectedInputInterface {
+		// TODO(https://gvisor.dev/issue/7338): Emit an event for an unexpected
+		// input interface.
+		return &ip.ErrUnexpectedMulticastInputInterface{}
+	}
+
+	for _, outgoingInterface := range installedRoute.OutgoingInterfaces {
+		if err := e.forwardMulticastPacketForOutgoingInterface(pkt, outgoingInterface); err != nil {
+			e.handleForwardingError(err)
+			continue
+		}
+		// The pkt was successfully forwarded. Mark the route as used.
+		installedRoute.SetLastUsedTimestamp(e.protocol.stack.Clock().NowMonotonic())
+	}
+	return nil
+}
+
+// forwardMulticastPacketForOutgoingInterface attempts to forward the pkt out
+// of the provided outgoingInterface.
+//
+// This method should be invoked by the endpoint that received the pkt.
+func (e *endpoint) forwardMulticastPacketForOutgoingInterface(pkt *stack.PacketBuffer, outgoingInterface stack.MulticastRouteOutgoingInterface) ip.ForwardingError {
+	h := header.IPv4(pkt.NetworkHeader().View())
+
+	// Per RFC 1812 section 5.2.1.3,
+	//
+	//	 A copy of the multicast datagram is forwarded out each outgoing
+	//	 interface whose minimum TTL value is less than or equal to the TTL
+	//	 value in the datagram header.
+	//
+	// Copying of the packet is deferred to forwardPacketWithRoute since unicast
+	// and multicast both require a copy.
+	if outgoingInterface.MinTTL > h.TTL() {
+		return &ip.ErrTTLExceeded{}
+	}
+
+	route := e.protocol.stack.NewRouteForMulticast(outgoingInterface.ID, h.DestinationAddress(), e.NetworkProtocolNumber())
+
+	if route == nil {
+		// Failed to convert to a stack.Route. This likely means that the outgoing
+		// endpoint no longer exists.
+		return &ip.ErrNoRoute{}
+	}
+	defer route.Release()
+
+	return e.forwardPacketWithRoute(route, pkt, true /* updateOptions */)
+}
+
 func (e *endpoint) handleValidatedPacket(h header.IPv4, pkt *stack.PacketBuffer, inNICName string) {
 	pkt.NICID = e.nic.ID()
 
@@ -860,40 +1018,81 @@ func (e *endpoint) handleValidatedPacket(h header.IPv4, pkt *stack.PacketBuffer,
 		}
 	}
 
-	// Before we do any processing, note if the packet was received as some
-	// sort of broadcast. The destination address should be an address we own
-	// or a group we joined.
+	if header.IsV4MulticastAddress(dstAddr) {
+		// Handle all packets destined to a multicast address separately. Unlike
+		// unicast, these packets can be both delivered locally and forwarded. See
+		// RFC 1812 section 5.2.3 for details regarding the forwarding/local
+		// delivery decision.
+
+		multicastForwarding := e.MulticastForwarding()
+
+		if multicastForwarding {
+			e.handleForwardingError(e.forwardMulticastPacket(h, pkt))
+		}
+
+		if e.IsInGroup(dstAddr) {
+			e.deliverPacketLocally(h, pkt, inNICName)
+			return
+		}
+
+		if !multicastForwarding {
+			// Only consider the destination address invalid if we didn't attempt to
+			// forward the pkt and it was not delivered locally.
+			stats.ip.InvalidDestinationAddressesReceived.Increment()
+		}
+		return
+	}
+
+	// Before we do any processing, check if the packet was received as some
+	// sort of broadcast.
+	//
+	// If the packet is destined for this device, then it should be delivered
+	// locally. Otherwise, if forwarding is enabled, it should be forwarded.
 	if addressEndpoint := e.AcquireAssignedAddress(dstAddr, e.nic.Promiscuous(), stack.CanBePrimaryEndpoint); addressEndpoint != nil {
 		subnet := addressEndpoint.AddressWithPrefix().Subnet()
 		addressEndpoint.DecRef()
 		pkt.NetworkPacketInfo.LocalAddressBroadcast = subnet.IsBroadcast(dstAddr) || dstAddr == header.IPv4Broadcast
-	} else if !e.IsInGroup(dstAddr) {
-		if !e.Forwarding() {
-			stats.ip.InvalidDestinationAddressesReceived.Increment()
-			return
-		}
-		switch err := e.forwardPacket(pkt); err.(type) {
-		case nil:
-			return
-		case *ip.ErrLinkLocalSourceAddress:
-			stats.ip.Forwarding.LinkLocalSource.Increment()
-		case *ip.ErrLinkLocalDestinationAddress:
-			stats.ip.Forwarding.LinkLocalDestination.Increment()
-		case *ip.ErrTTLExceeded:
-			stats.ip.Forwarding.ExhaustedTTL.Increment()
-		case *ip.ErrNoRoute:
-			stats.ip.Forwarding.Unrouteable.Increment()
-		case *ip.ErrParameterProblem:
-			stats.ip.MalformedPacketsReceived.Increment()
-		case *ip.ErrMessageTooLong:
-			stats.ip.Forwarding.PacketTooBig.Increment()
-		default:
-			panic(fmt.Sprintf("unexpected error %s while trying to forward packet: %#v", err, pkt))
-		}
-		stats.ip.Forwarding.Errors.Increment()
-		return
+		e.deliverPacketLocally(h, pkt, inNICName)
+	} else if e.Forwarding() {
+		e.handleForwardingError(e.forwardUnicastPacket(pkt))
+	} else {
+		stats.ip.InvalidDestinationAddressesReceived.Increment()
 	}
+}
 
+// handleForwardingError processes the provided err and increments any relevant
+// counters.
+func (e *endpoint) handleForwardingError(err ip.ForwardingError) {
+	stats := e.stats.ip
+	switch err.(type) {
+	case nil:
+		return
+	case *ip.ErrLinkLocalSourceAddress:
+		stats.Forwarding.LinkLocalSource.Increment()
+	case *ip.ErrLinkLocalDestinationAddress:
+		stats.Forwarding.LinkLocalDestination.Increment()
+	case *ip.ErrTTLExceeded:
+		stats.Forwarding.ExhaustedTTL.Increment()
+	case *ip.ErrNoRoute:
+		stats.Forwarding.Unrouteable.Increment()
+	case *ip.ErrParameterProblem:
+		stats.MalformedPacketsReceived.Increment()
+	case *ip.ErrMessageTooLong:
+		stats.Forwarding.PacketTooBig.Increment()
+	case *ip.ErrNoMulticastPendingQueueBufferSpace:
+		stats.Forwarding.NoMulticastPendingQueueBufferSpace.Increment()
+	case *ip.ErrUnexpectedMulticastInputInterface:
+		stats.Forwarding.UnexpectedMulticastInputInterface.Increment()
+	case *ip.ErrUnknownOutputEndpoint:
+		stats.Forwarding.UnknownOutputEndpoint.Increment()
+	default:
+		panic(fmt.Sprintf("unrecognized forwarding error: %s", err))
+	}
+	stats.Forwarding.Errors.Increment()
+}
+
+func (e *endpoint) deliverPacketLocally(h header.IPv4, pkt *stack.PacketBuffer, inNICName string) {
+	stats := e.stats
 	// iptables filtering. All packets that reach here are intended for
 	// this machine and will not be forwarded.
 	if ok := e.protocol.stack.IPTables().CheckInput(pkt, inNICName); !ok {
@@ -1180,6 +1379,7 @@ func (e *endpoint) Stats() stack.NetworkEndpointStats {
 }
 
 var _ stack.NetworkProtocol = (*protocol)(nil)
+var _ stack.MulticastForwardingNetworkProtocol = (*protocol)(nil)
 var _ stack.RejectIPv4WithHandler = (*protocol)(nil)
 var _ fragmentation.TimeoutHandler = (*protocol)(nil)
 
@@ -1208,6 +1408,8 @@ type protocol struct {
 	fragmentation *fragmentation.Fragmentation
 
 	options Options
+
+	multicastRouteTable multicast.RouteTable
 }
 
 // Number returns the ipv4 protocol number.
@@ -1261,10 +1463,111 @@ func (p *protocol) DefaultTTL() uint8 {
 // Close implements stack.TransportProtocol.
 func (p *protocol) Close() {
 	p.fragmentation.Release()
+	p.multicastRouteTable.Close()
 }
 
 // Wait implements stack.TransportProtocol.
 func (*protocol) Wait() {}
+
+func (p *protocol) validateUnicastSourceAndMulticastDestination(addresses stack.UnicastSourceAndMulticastDestination) tcpip.Error {
+	if !p.isUnicastAddress(addresses.Source) || header.IsV4LinkLocalUnicastAddress(addresses.Source) {
+		return &tcpip.ErrBadAddress{}
+	}
+
+	if !header.IsV4MulticastAddress(addresses.Destination) || header.IsV4LinkLocalMulticastAddress(addresses.Destination) {
+		return &tcpip.ErrBadAddress{}
+	}
+
+	return nil
+}
+
+func (p *protocol) newInstalledRoute(route stack.MulticastRoute) (*multicast.InstalledRoute, tcpip.Error) {
+	if len(route.OutgoingInterfaces) == 0 {
+		return nil, &tcpip.ErrMissingRequiredFields{}
+	}
+
+	if !p.stack.HasNIC(route.ExpectedInputInterface) {
+		return nil, &tcpip.ErrUnknownNICID{}
+	}
+
+	for _, outgoingInterface := range route.OutgoingInterfaces {
+		if route.ExpectedInputInterface == outgoingInterface.ID {
+			return nil, &tcpip.ErrMulticastInputCannotBeOutput{}
+		}
+
+		if !p.stack.HasNIC(outgoingInterface.ID) {
+			return nil, &tcpip.ErrUnknownNICID{}
+		}
+	}
+	return p.multicastRouteTable.NewInstalledRoute(route), nil
+}
+
+// AddMulticastRoute implements stack.MulticastForwardingNetworkProtocol.
+func (p *protocol) AddMulticastRoute(addresses stack.UnicastSourceAndMulticastDestination, route stack.MulticastRoute) tcpip.Error {
+	if err := p.validateUnicastSourceAndMulticastDestination(addresses); err != nil {
+		return err
+	}
+
+	installedRoute, err := p.newInstalledRoute(route)
+	if err != nil {
+		return err
+	}
+
+	pendingPackets := p.multicastRouteTable.AddInstalledRoute(addresses, installedRoute)
+
+	for _, pkt := range pendingPackets {
+		p.forwardPendingMulticastPacket(pkt, installedRoute)
+	}
+	return nil
+}
+
+func (p *protocol) forwardPendingMulticastPacket(pkt *stack.PacketBuffer, installedRoute *multicast.InstalledRoute) {
+	defer pkt.DecRef()
+
+	// Attempt to forward the packet using the endpoint that it originally
+	// arrived on. This ensures that the packet is only forwarded if it
+	// matches the route's expected input interface (see 5a of RFC 1812 section
+	// 5.2.1.3).
+	ep, ok := p.getEndpointForNIC(pkt.NICID)
+
+	if !ok {
+		// The endpoint that the packet arrived on no longer exists. Silently
+		// drop the pkt.
+		return
+	}
+	ep.handleForwardingError(ep.forwardValidatedMulticastPacket(pkt, installedRoute))
+}
+
+func (p *protocol) isUnicastAddress(addr tcpip.Address) bool {
+	if len(addr) != header.IPv4AddressSize {
+		return false
+	}
+
+	if addr == header.IPv4Any || addr == header.IPv4Broadcast {
+		return false
+	}
+
+	if p.isSubnetLocalBroadcastAddress(addr) {
+		return false
+	}
+	return !header.IsV4MulticastAddress(addr)
+}
+
+func (p *protocol) isSubnetLocalBroadcastAddress(addr tcpip.Address) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	for _, e := range p.eps {
+		if addressEndpoint := e.AcquireAssignedAddress(addr, false /* createTemp */, stack.NeverPrimaryEndpoint); addressEndpoint != nil {
+			subnet := addressEndpoint.Subnet()
+			addressEndpoint.DecRef()
+			if subnet.IsBroadcast(addr) {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 // parseAndValidate parses the packet (including its transport layer header) and
 // returns the parsed IP header.
@@ -1444,6 +1747,9 @@ func NewProtocolWithOptions(opts Options) stack.NetworkProtocolFactory {
 			header.ICMPv4SrcQuench:      {},
 			header.ICMPv4TimeExceeded:   {},
 			header.ICMPv4ParamProblem:   {},
+		}
+		if err := p.multicastRouteTable.Init(multicast.DefaultConfig(s.Clock())); err != nil {
+			panic(fmt.Sprintf("p.multicastRouteTable.Init(_): %s", err))
 		}
 		return p
 	}

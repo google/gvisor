@@ -51,6 +51,19 @@ type MultiCounterIPForwardingStats struct {
 	// header.
 	ExtensionHeaderProblem tcpip.MultiCounterStat
 
+	// UnexpectedMulticastInputInterface is the number of multicast packets that
+	// were received on an interface that did not match the corresponding route's
+	// expected input interface.
+	UnexpectedMulticastInputInterface tcpip.MultiCounterStat
+
+	// UnknownOutputEndpoint is the number of packets that could not be forwarded
+	// because the output endpoint could not be found.
+	UnknownOutputEndpoint tcpip.MultiCounterStat
+
+	// NoMulticastPendingQueueBufferSpace is the number of multicast packets that
+	// were dropped due to insufficent buffer space in the pending packet queue.
+	NoMulticastPendingQueueBufferSpace tcpip.MultiCounterStat
+
 	// Errors is the number of IP packets received which could not be
 	// successfully forwarded.
 	Errors tcpip.MultiCounterStat
@@ -66,6 +79,9 @@ func (m *MultiCounterIPForwardingStats) Init(a, b *tcpip.IPForwardingStats) {
 	m.PacketTooBig.Init(a.PacketTooBig, b.PacketTooBig)
 	m.ExhaustedTTL.Init(a.ExhaustedTTL, b.ExhaustedTTL)
 	m.HostUnreachable.Init(a.HostUnreachable, b.HostUnreachable)
+	m.UnexpectedMulticastInputInterface.Init(a.UnexpectedMulticastInputInterface, b.UnexpectedMulticastInputInterface)
+	m.UnknownOutputEndpoint.Init(a.UnknownOutputEndpoint, b.UnknownOutputEndpoint)
+	m.NoMulticastPendingQueueBufferSpace.Init(a.NoMulticastPendingQueueBufferSpace, b.NoMulticastPendingQueueBufferSpace)
 }
 
 // LINT.ThenChange(:MultiCounterIPForwardingStats, ../../../tcpip.go:IPForwardingStats)
