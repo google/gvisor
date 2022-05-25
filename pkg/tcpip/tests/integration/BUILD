@@ -167,3 +167,24 @@ go_test(
         "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )
+
+go_test(
+    name = "multicast_forward_test",
+    size = "small",
+    srcs = ["multicast_forward_test.go"],
+    deps = [
+        "//pkg/refs",
+        "//pkg/refsvfs2",
+        "//pkg/tcpip",
+        "//pkg/tcpip/checker",
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/link/channel",
+        "//pkg/tcpip/network/ipv4",
+        "//pkg/tcpip/stack",
+        "//pkg/tcpip/tests/utils",
+        "//pkg/tcpip/testutil",
+        "//pkg/tcpip/transport/udp",
+        "@com_github_google_go_cmp//cmp:go_default_library",
+        "@com_github_google_go_cmp//cmp/cmpopts:go_default_library",
+    ],
+)

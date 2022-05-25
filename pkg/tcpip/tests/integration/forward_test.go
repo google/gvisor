@@ -350,15 +350,14 @@ func TestForwarding(t *testing.T) {
 	}
 }
 
-func TestMulticastForwarding(t *testing.T) {
+func TestUnicastForwarding(t *testing.T) {
 	const (
 		nicID1 = 1
 		nicID2 = 2
 	)
 
 	var (
-		ipv4LinkLocalUnicastAddr   = testutil.MustParse4("169.254.0.10")
-		ipv4LinkLocalMulticastAddr = testutil.MustParse4("224.0.0.10")
+		ipv4LinkLocalUnicastAddr = testutil.MustParse4("169.254.0.10")
 
 		ipv6LinkLocalUnicastAddr   = testutil.MustParse6("fe80::a")
 		ipv6LinkLocalMulticastAddr = testutil.MustParse6("ff02::a")
@@ -371,13 +370,6 @@ func TestMulticastForwarding(t *testing.T) {
 		expectForward    bool
 		checker          func(*testing.T, []byte)
 	}{
-		{
-			name:          "IPv4 link-local multicast destination",
-			srcAddr:       utils.RemoteIPv4Addr,
-			dstAddr:       ipv4LinkLocalMulticastAddr,
-			rx:            rxICMPv4EchoRequest,
-			expectForward: false,
-		},
 		{
 			name:          "IPv4 link-local source",
 			srcAddr:       ipv4LinkLocalUnicastAddr,
@@ -402,23 +394,25 @@ func TestMulticastForwarding(t *testing.T) {
 				forwardedICMPv4EchoRequestChecker(t, b, utils.RemoteIPv4Addr, utils.Ipv4Addr2.AddressWithPrefix.Address)
 			},
 		},
-		{
-			name:          "IPv4 non-link-local multicast",
-			srcAddr:       utils.RemoteIPv4Addr,
-			dstAddr:       ipv4GlobalMulticastAddr,
-			rx:            rxICMPv4EchoRequest,
-			expectForward: true,
-			checker: func(t *testing.T, b []byte) {
-				forwardedICMPv4EchoRequestChecker(t, b, utils.RemoteIPv4Addr, ipv4GlobalMulticastAddr)
-			},
-		},
-
+		// TODO(https://gvisor.dev/issue/7338): Move the IPv6 multicast forwarding
+		// tests to TestMulticastForwarding. Currently, they rely on the unicast
+		// routing table.
 		{
 			name:          "IPv6 link-local multicast destination",
 			srcAddr:       utils.RemoteIPv6Addr,
 			dstAddr:       ipv6LinkLocalMulticastAddr,
 			rx:            rxICMPv6EchoRequest,
 			expectForward: false,
+		},
+		{
+			name:          "IPv6 non-link-local multicast",
+			srcAddr:       utils.RemoteIPv6Addr,
+			dstAddr:       ipv6GlobalMulticastAddr,
+			rx:            rxICMPv6EchoRequest,
+			expectForward: true,
+			checker: func(t *testing.T, b []byte) {
+				forwardedICMPv6EchoRequestChecker(t, b, utils.RemoteIPv6Addr, ipv6GlobalMulticastAddr)
+			},
 		},
 		{
 			name:          "IPv6 link-local source",
@@ -442,16 +436,6 @@ func TestMulticastForwarding(t *testing.T) {
 			expectForward: true,
 			checker: func(t *testing.T, b []byte) {
 				forwardedICMPv6EchoRequestChecker(t, b, utils.RemoteIPv6Addr, utils.Ipv6Addr2.AddressWithPrefix.Address)
-			},
-		},
-		{
-			name:          "IPv6 non-link-local multicast",
-			srcAddr:       utils.RemoteIPv6Addr,
-			dstAddr:       ipv6GlobalMulticastAddr,
-			rx:            rxICMPv6EchoRequest,
-			expectForward: true,
-			checker: func(t *testing.T, b []byte) {
-				forwardedICMPv6EchoRequestChecker(t, b, utils.RemoteIPv6Addr, ipv6GlobalMulticastAddr)
 			},
 		},
 	}
@@ -545,16 +529,6 @@ func TestPerInterfaceForwarding(t *testing.T) {
 			},
 		},
 		{
-			name:    "IPv4 multicast",
-			srcAddr: utils.RemoteIPv4Addr,
-			dstAddr: ipv4GlobalMulticastAddr,
-			rx:      rxICMPv4EchoRequest,
-			checker: func(t *testing.T, b []byte) {
-				forwardedICMPv4EchoRequestChecker(t, b, utils.RemoteIPv4Addr, ipv4GlobalMulticastAddr)
-			},
-		},
-
-		{
 			name:    "IPv6 unicast",
 			srcAddr: utils.RemoteIPv6Addr,
 			dstAddr: utils.Ipv6Addr2.AddressWithPrefix.Address,
@@ -563,6 +537,9 @@ func TestPerInterfaceForwarding(t *testing.T) {
 				forwardedICMPv6EchoRequestChecker(t, b, utils.RemoteIPv6Addr, utils.Ipv6Addr2.AddressWithPrefix.Address)
 			},
 		},
+		// TODO(https://gvisor.dev/issue/7338): Move the IPv6 multicast forwarding
+		// tests to TestMulticastForwarding. Currently, they rely on the unicast
+		// routing table.
 		{
 			name:    "IPv6 multicast",
 			srcAddr: utils.RemoteIPv6Addr,
@@ -656,7 +633,7 @@ func TestPerInterfaceForwarding(t *testing.T) {
 				{
 					nicID:            nicID2,
 					nicEP:            e2,
-					otherNICID:       nicID2,
+					otherNICID:       nicID1,
 					otherNICEP:       e1,
 					expectForwarding: false,
 				},

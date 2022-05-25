@@ -792,6 +792,18 @@ type MulticastRoute struct {
 	OutgoingInterfaces []MulticastRouteOutgoingInterface
 }
 
+// MulticastForwardingNetworkProtocol is the interface that needs to be
+// implemented by the network protocols that support multicast forwarding.
+type MulticastForwardingNetworkProtocol interface {
+	NetworkProtocol
+
+	// AddMulticastRoute adds a route to the multicast routing table such that
+	// packets matching the addresses will be forwarded using the provided route.
+	//
+	// Returns an error if the addresses or route is invalid.
+	AddMulticastRoute(UnicastSourceAndMulticastDestination, MulticastRoute) tcpip.Error
+}
+
 // NetworkDispatcher contains the methods used by the network stack to deliver
 // inbound/outbound packets to the appropriate network/packet(if any) endpoints.
 type NetworkDispatcher interface {
