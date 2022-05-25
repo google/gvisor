@@ -81,9 +81,7 @@ func TestTraceStartup(t *testing.T) {
 			}
 
 			// Wait for the point to be received and then check that fields match.
-			if err := server.WaitForCount(1); err != nil {
-				t.Fatalf("WaitForCount(1): %v", err)
-			}
+			server.WaitForCount(1)
 			pt := server.GetPoints()[0]
 			if want := pb.MessageType_MESSAGE_CONTAINER_START; pt.MsgType != want {
 				t.Errorf("wrong message type, want: %v, got: %v", want, pt.MsgType)
@@ -157,9 +155,7 @@ func TestTraceLifecycle(t *testing.T) {
 	if ws, err := execute(conf, cont, "/bin/true"); err != nil || ws != 0 {
 		t.Fatalf("exec: true, ws: %v, err: %v", ws, err)
 	}
-	if err := server.WaitForCount(1); err != nil {
-		t.Fatalf("WaitForCount(1): %v", err)
-	}
+	server.WaitForCount(1)
 	pt := server.GetPoints()[0]
 	if want := pb.MessageType_MESSAGE_SENTRY_TASK_EXIT; pt.MsgType != want {
 		t.Errorf("wrong message type, want: %v, got: %v", want, pt.MsgType)
@@ -259,9 +255,7 @@ func TestTraceForceCreate(t *testing.T) {
 	if ws, err := execute(conf, cont, "/bin/true"); err != nil || ws != 0 {
 		t.Fatalf("exec: true, ws: %v, err: %v", ws, err)
 	}
-	if err := server.WaitForCount(1); err != nil {
-		t.Fatalf("WaitForCount(1): %v", err)
-	}
+	server.WaitForCount(1)
 	pt := server.GetPoints()[0]
 	if want := pb.MessageType_MESSAGE_SENTRY_EXIT_NOTIFY_PARENT; pt.MsgType != want {
 		t.Errorf("wrong message type, want: %v, got: %v", want, pt.MsgType)
@@ -289,9 +283,7 @@ func TestTraceForceCreate(t *testing.T) {
 	if ws, err := execute(conf, cont, "/bin/true"); err != nil || ws != 0 {
 		t.Fatalf("exec: true, ws: %v, err: %v", ws, err)
 	}
-	if err := server.WaitForCount(1); err != nil {
-		t.Fatalf("WaitForCount(1): %v", err)
-	}
+	server.WaitForCount(1)
 	pt = server.GetPoints()[0]
 	if want := pb.MessageType_MESSAGE_SENTRY_TASK_EXIT; pt.MsgType != want {
 		t.Errorf("wrong message type, want: %v, got: %v", want, pt.MsgType)
