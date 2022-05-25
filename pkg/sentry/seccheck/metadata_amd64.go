@@ -66,6 +66,19 @@ func init() {
 			Name: "envv",
 		},
 	})
+	addSyscallPoint(80, "chdir", nil)
+	addSyscallPoint(81, "fchdir", []FieldDesc{
+		{
+			ID:   FieldSyscallPath,
+			Name: "fd_path",
+		},
+	})
+
+	addSyscallPoint(105, "setuid", nil)
+	addSyscallPoint(106, "setgid", nil)
+	addSyscallPoint(112, "setsid", nil)
+	addSyscallPoint(117, "setresuid", nil)
+	addSyscallPoint(119, "setresgid", nil)
 
 	const lastSyscallInTable = 441
 	for i := 0; i <= lastSyscallInTable; i++ {

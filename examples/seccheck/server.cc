@@ -92,6 +92,9 @@ std::vector<Callback> dispatchers = {
     unpackSyscall<::gvisor::syscall::Connect>,
     unpackSyscall<::gvisor::syscall::Execve>,
     unpackSyscall<::gvisor::syscall::Socket>,
+    unpackSyscall<::gvisor::syscall::Chdir>,
+    unpackSyscall<::gvisor::syscall::Setid>,
+    unpackSyscall<::gvisor::syscall::Setresid>,
 };
 
 void unpack(absl::string_view buf) {
