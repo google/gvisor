@@ -97,13 +97,13 @@ func Create(conf *SessionConfig, force bool) error {
 
 		mask, err := setFields(ptConfig.OptionalFields, desc.OptionalFields)
 		if err != nil {
-			return err
+			return fmt.Errorf("configuring point %q: %w", ptConfig.Name, err)
 		}
 		req.Fields.Local = mask
 
 		mask, err = setFields(ptConfig.ContextFields, desc.ContextFields)
 		if err != nil {
-			return err
+			return fmt.Errorf("configuring point %q: %w", ptConfig.Name, err)
 		}
 		req.Fields.Context = mask
 

@@ -21,7 +21,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"time"
 
 	"golang.org/x/sys/unix"
 	"google.golang.org/protobuf/proto"
@@ -30,7 +29,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/seccheck/checkers/remote/wire"
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/pkg/unet"
 )
 
@@ -40,13 +38,15 @@ type Server struct {
 	Path   string
 	socket *unet.ServerSocket
 
-	mu sync.Mutex
+	cond sync.Cond
 
-	// +checklocks:mu
+	// +checklocks:cond.L
 	clients []*unet.Socket
 
-	// +checklocks:mu
+	// +checklocks:cond.L
 	points []Message
+
+	mu sync.Mutex
 
 	// +checklocks:mu
 	version uint32
@@ -104,6 +104,7 @@ func newServerPath(path string) (*Server, error) {
 		Path:    path,
 		socket:  ss,
 		version: wire.CurrentVersion,
+		cond:    sync.Cond{L: &sync.Mutex{}},
 	}
 	go server.run()
 	cu.Release()
@@ -125,9 +126,10 @@ func (s *Server) run() {
 			_ = client.Close()
 			continue
 		}
-		s.mu.Lock()
+		s.cond.L.Lock()
 		s.clients = append(s.clients, client)
-		s.mu.Unlock()
+		s.cond.Broadcast()
+		s.cond.L.Unlock()
 		go s.handleClient(client)
 	}
 }
@@ -164,14 +166,15 @@ func (s *Server) handshake(client *unet.Socket) error {
 
 func (s *Server) handleClient(client *unet.Socket) {
 	defer func() {
-		s.mu.Lock()
+		s.cond.L.Lock()
 		for i, c := range s.clients {
 			if c == client {
 				s.clients = append(s.clients[:i], s.clients[i+1:]...)
 				break
 			}
 		}
-		s.mu.Unlock()
+		s.cond.Broadcast()
+		s.cond.L.Unlock()
 		_ = client.Close()
 	}()
 
@@ -192,28 +195,33 @@ func (s *Server) handleClient(client *unet.Socket) {
 		if read < int(hdr.HeaderSize) {
 			panic(fmt.Sprintf("message truncated, header size: %d, readL %d", hdr.HeaderSize, read))
 		}
+
+		msgSize := read - int(hdr.HeaderSize)
 		msg := Message{
 			MsgType: pb.MessageType(hdr.MessageType),
-			Msg:     buf[hdr.HeaderSize:read],
+			Msg:     make([]byte, msgSize),
 		}
-		s.mu.Lock()
+		copy(msg.Msg, buf[hdr.HeaderSize:read])
+
+		s.cond.L.Lock()
 		s.points = append(s.points, msg)
-		s.mu.Unlock()
+		s.cond.Broadcast()
+		s.cond.L.Unlock()
 	}
 }
 
 // Count return the number of points it has received.
 func (s *Server) Count() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.cond.L.Lock()
+	defer s.cond.L.Unlock()
 	return len(s.points)
 }
 
 // Reset throws aways all points received so far and returns the number of
 // points discarded.
 func (s *Server) Reset() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.cond.L.Lock()
+	defer s.cond.L.Unlock()
 	count := len(s.points)
 	s.points = nil
 	return count
@@ -221,8 +229,8 @@ func (s *Server) Reset() int {
 
 // GetPoints returns all points that it has received.
 func (s *Server) GetPoints() []Message {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.cond.L.Lock()
+	defer s.cond.L.Unlock()
 	cpy := make([]Message, len(s.points))
 	copy(cpy, s.points)
 	return cpy
@@ -231,23 +239,33 @@ func (s *Server) GetPoints() []Message {
 // Close stops listenning and closes all connections.
 func (s *Server) Close() {
 	_ = s.socket.Close()
-	s.mu.Lock()
+	s.cond.L.Lock()
 	for _, client := range s.clients {
 		_ = client.Close()
 	}
-	s.mu.Unlock()
+	s.clients = nil
+	s.cond.Broadcast()
+	s.cond.L.Unlock()
 	_ = os.Remove(s.Path)
 }
 
-// WaitForCount waits for the number of points to reach the desired number for
-// 5 seconds. It fails if not received in time.
-func (s *Server) WaitForCount(count int) error {
-	return testutil.Poll(func() error {
-		if got := s.Count(); got < count {
-			return fmt.Errorf("waiting for points %d to arrive, received %d", count, got)
-		}
-		return nil
-	}, 5*time.Second)
+// WaitForCount waits for the number of points to reach the desired number.
+func (s *Server) WaitForCount(count int) {
+	s.cond.L.Lock()
+	defer s.cond.L.Unlock()
+	for len(s.points) < count {
+		s.cond.Wait()
+	}
+	return
+}
+
+// WaitForNoClients waits until the number of clients connected reaches 0.
+func (s *Server) WaitForNoClients() {
+	s.cond.L.Lock()
+	defer s.cond.L.Unlock()
+	for len(s.clients) > 0 {
+		s.cond.Wait()
+	}
 }
 
 // SetVersion sets the version to be used in handshake.
