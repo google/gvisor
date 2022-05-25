@@ -38,7 +38,6 @@ import (
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/user"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
@@ -945,17 +944,6 @@ func (l *Loader) destroySubcontainer(cid string) error {
 				t.ThreadGroup().WaitExited()
 			}
 		}
-
-		// At this point, all processes inside of the container have exited,
-		// releasing all references to the container's MountNamespace and
-		// causing all submounts and overlays to be unmounted.
-		//
-		// Since the container's MountNamespace has been released,
-		// MountNamespace.destroy() will have executed, but that function may
-		// trigger async close operations. We must wait for those to complete
-		// before returning, otherwise the caller may kill the gofer before
-		// they complete, causing a cascade of failing RPCs.
-		fs.AsyncBarrier()
 	}
 
 	// No more failure from this point on. Remove all container thread groups
