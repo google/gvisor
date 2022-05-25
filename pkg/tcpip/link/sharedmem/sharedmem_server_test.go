@@ -297,8 +297,6 @@ func TestServerBulkTransfer(t *testing.T) {
 		512 << 20,  // 512 MiB
 		1024 << 20, // 1 GiB
 		2048 << 20, // 2 GiB
-		4096 << 20, // 4 GiB
-		8192 << 20, // 8 GiB
 	}
 
 	for _, payloadSize := range payloadSizes {
@@ -353,8 +351,6 @@ func TestClientBulkTransfer(t *testing.T) {
 		512 << 20,  // 512 MiB
 		1024 << 20, // 1 GiB
 		2048 << 20, // 2 GiB
-		4096 << 20, // 4 GiB
-		8192 << 20, // 8 GiB
 	}
 
 	for _, payloadSize := range payloadSizes {
