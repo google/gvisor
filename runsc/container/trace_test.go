@@ -21,7 +21,9 @@ import (
 	"testing"
 	"time"
 
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"google.golang.org/protobuf/proto"
+	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck/checkers/remote/test"
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
@@ -295,6 +297,13 @@ func TestProcfsDump(t *testing.T) {
 	testEnv := "GVISOR_IS_GREAT=true"
 	spec.Process.Env = append(spec.Process.Env, testEnv)
 	spec.Process.Cwd = "/"
+	fdLimit := limits.Limit{
+		Cur: 10_000,
+		Max: 100_000,
+	}
+	spec.Process.Rlimits = []specs.POSIXRlimit{
+		{Type: "RLIMIT_NOFILE", Hard: fdLimit.Max, Soft: fdLimit.Cur},
+	}
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
@@ -382,5 +391,9 @@ func TestProcfsDump(t *testing.T) {
 
 	if want := "/"; procfsDump[0].Root != "/" {
 		t.Errorf("expected root to be %q, but got %q", want, procfsDump[0].Root)
+	}
+
+	if got := procfsDump[0].Limits["RLIMIT_NOFILE"]; got != fdLimit {
+		t.Errorf("expected FD limit to be %+v, but got %+v", fdLimit, got)
 	}
 }

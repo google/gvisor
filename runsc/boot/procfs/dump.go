@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/proc"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
@@ -57,6 +58,9 @@ type ProcessProcfsDump struct {
 	StartTime int64 `json:"clone_ts,omitempty"`
 	// Root is /proc/[pid]/root.
 	Root string `json:"root,omitempty"`
+	// Limits constains resource limits for this process. Currently only
+	// RLIMIT_NOFILE is supported.
+	Limits map[string]limits.Limit `json:"limits,omitempty"`
 }
 
 // getMM returns t's MemoryManager. On success, the MemoryManager's users count
@@ -170,6 +174,13 @@ func getRoot(t *kernel.Task, pid kernel.ThreadID) string {
 	return path
 }
 
+func getFDLimit(ctx context.Context, pid kernel.ThreadID) (limits.Limit, error) {
+	if limitSet := limits.FromContext(ctx); limitSet != nil {
+		return limitSet.Get(limits.NumberOfFiles), nil
+	}
+	return limits.Limit{}, fmt.Errorf("could not find limit set for pid %s", pid)
+}
+
 // Dump returns a procfs dump for process pid. t must be a task in process pid.
 func Dump(t *kernel.Task, pid kernel.ThreadID) (ProcessProcfsDump, error) {
 	ctx := t.AsyncContext()
@@ -180,6 +191,11 @@ func Dump(t *kernel.Task, pid kernel.ThreadID) (ProcessProcfsDump, error) {
 	}
 	defer mm.DecUsers(ctx)
 
+	fdLimit, err := getFDLimit(ctx, pid)
+	if err != nil {
+		return ProcessProcfsDump{}, err
+	}
+
 	return ProcessProcfsDump{
 		PID:       int32(pid),
 		Exe:       getExecutablePath(ctx, pid, mm),
@@ -189,5 +205,8 @@ func Dump(t *kernel.Task, pid kernel.ThreadID) (ProcessProcfsDump, error) {
 		FDs:       getFDs(ctx, t, pid),
 		StartTime: t.StartTime().Nanoseconds(),
 		Root:      getRoot(t, pid),
+		Limits: map[string]limits.Limit{
+			"RLIMIT_NOFILE": fdLimit,
+		},
 	}, nil
 }
