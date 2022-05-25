@@ -157,8 +157,7 @@ func (e *mockEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Err
 
 	len := pkts.Len()
 	for _, pkt := range pkts.AsSlice() {
-		pkt.IncRef()
-		e.pkts.PushBack(pkt)
+		e.pkts.PushBack(pkt.IncRef())
 	}
 
 	return len, nil

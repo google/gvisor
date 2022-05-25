@@ -133,9 +133,8 @@ func (r *reassembler) process(first, last uint16, more bool, proto uint8, pkt *s
 			last:   last,
 			filled: true,
 			final:  currentHole.final,
-			pkt:    pkt,
+			pkt:    pkt.IncRef(),
 		}
-		pkt.IncRef()
 		r.filled++
 		// For IPv6, it is possible to have different Protocol values between
 		// fragments of a packet (because, unlike IPv4, the Protocol is not used to
@@ -149,8 +148,7 @@ func (r *reassembler) process(first, last uint16, more bool, proto uint8, pkt *s
 			if r.pkt != nil {
 				r.pkt.DecRef()
 			}
-			r.pkt = pkt
-			pkt.IncRef()
+			r.pkt = pkt.IncRef()
 			r.proto = proto
 		}
 		break
@@ -169,8 +167,7 @@ func (r *reassembler) process(first, last uint16, more bool, proto uint8, pkt *s
 		return r.holes[i].first < r.holes[j].first
 	})
 
-	resPkt := r.holes[0].pkt
-	resPkt.IncRef()
+	resPkt := r.holes[0].pkt.IncRef()
 	for i := 1; i < len(r.holes); i++ {
 		stack.MergeFragment(resPkt, r.holes[i].pkt)
 	}

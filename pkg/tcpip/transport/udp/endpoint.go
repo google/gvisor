@@ -966,9 +966,8 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 			Addr: id.LocalAddress,
 			Port: hdr.DestinationPort(),
 		},
-		pkt: pkt,
+		pkt: pkt.IncRef(),
 	}
-	pkt.IncRef()
 	e.rcvList.PushBack(packet)
 	e.rcvBufSize += pkt.Data().Size()
 
