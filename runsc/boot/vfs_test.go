@@ -15,67 +15,66 @@
 package boot
 
 import (
-	"strings"
 	"testing"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/runsc/config"
 )
 
-func TestHintsCheckCompatible(t *testing.T) {
-	for _, tc := range []struct {
+func TestGetMountAccessType(t *testing.T) {
+	const source = "foo"
+	for _, tst := range []struct {
 		name        string
-		masterOpts  []string
-		replicaOpts []string
-		err         string
+		annotations map[string]string
+		want        config.FileAccessType
 	}{
 		{
-			name: "empty",
+			name: "container=exclusive",
+			annotations: map[string]string{
+				MountPrefix + "mount1.source": source,
+				MountPrefix + "mount1.type":   "bind",
+				MountPrefix + "mount1.share":  "container",
+			},
+			want: config.FileAccessExclusive,
 		},
 		{
-			name:        "same",
-			masterOpts:  []string{"ro", "noatime", "noexec"},
-			replicaOpts: []string{"ro", "noatime", "noexec"},
+			name: "pod=shared",
+			annotations: map[string]string{
+				MountPrefix + "mount1.source": source,
+				MountPrefix + "mount1.type":   "bind",
+				MountPrefix + "mount1.share":  "pod",
+			},
+			want: config.FileAccessShared,
 		},
 		{
-			name:        "compatible",
-			masterOpts:  []string{"rw", "atime", "exec"},
-			replicaOpts: []string{"ro", "noatime", "noexec"},
+			name: "shared=shared",
+			annotations: map[string]string{
+				MountPrefix + "mount1.source": source,
+				MountPrefix + "mount1.type":   "bind",
+				MountPrefix + "mount1.share":  "shared",
+			},
+			want: config.FileAccessShared,
 		},
 		{
-			name:        "unsupported",
-			masterOpts:  []string{"nofoo", "nodev"},
-			replicaOpts: []string{"foo", "dev"},
-		},
-		{
-			name:        "incompatible-ro",
-			masterOpts:  []string{"ro"},
-			replicaOpts: []string{"rw"},
-			err:         "read-write",
-		},
-		{
-			name:        "incompatible-atime",
-			masterOpts:  []string{"noatime"},
-			replicaOpts: []string{"atime"},
-			err:         "noatime",
-		},
-		{
-			name:        "incompatible-exec",
-			masterOpts:  []string{"noexec"},
-			replicaOpts: []string{"exec"},
-			err:         "noexec",
+			name: "default=shared",
+			annotations: map[string]string{
+				MountPrefix + "mount1.source": source + "mismatch",
+				MountPrefix + "mount1.type":   "bind",
+				MountPrefix + "mount1.share":  "container",
+			},
+			want: config.FileAccessShared,
 		},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			master := mountHint{mount: specs.Mount{Options: tc.masterOpts}}
-			replica := specs.Mount{Options: tc.replicaOpts}
-			if err := master.checkCompatibleVFS2(&replica); err != nil {
-				if !strings.Contains(err.Error(), tc.err) {
-					t.Fatalf("wrong error, want: %q, got: %q", tc.err, err)
-				}
-			} else {
-				if len(tc.err) > 0 {
-					t.Fatalf("error %q expected", tc.err)
-				}
+		t.Run(tst.name, func(t *testing.T) {
+			spec := &specs.Spec{Annotations: tst.annotations}
+			podHints, err := newPodMountHints(spec)
+			if err != nil {
+				t.Fatalf("newPodMountHints failed: %v", err)
+			}
+			mounter := containerMounter{hints: podHints}
+			conf := &config.Config{FileAccessMounts: config.FileAccessShared}
+			if got := mounter.getMountAccessType(conf, &specs.Mount{Source: source}); got != tst.want {
+				t.Errorf("getMountAccessType(), want: %v, got: %v", tst.want, got)
 			}
 		})
 	}
