@@ -74,6 +74,33 @@ func (*ErrMessageTooLong) isForwardingError() {}
 
 func (*ErrMessageTooLong) String() string { return "message too long" }
 
+// ErrNoMulticastPendingQueueBufferSpace indicates that a multicast packet
+// could not be added to the pending packet queue due to insufficient buffer
+// space.
+//
+// +stateify savable
+type ErrNoMulticastPendingQueueBufferSpace struct{}
+
+func (*ErrNoMulticastPendingQueueBufferSpace) isForwardingError() {}
+
+func (*ErrNoMulticastPendingQueueBufferSpace) String() string { return "no buffer space" }
+
+// ErrUnexpectedMulticastInputInterface indicates that the interface that the
+// packet arrived on did not match the routes expected input interface.
+type ErrUnexpectedMulticastInputInterface struct{}
+
+func (*ErrUnexpectedMulticastInputInterface) isForwardingError() {}
+
+func (*ErrUnexpectedMulticastInputInterface) String() string { return "unexpected input interface" }
+
+// ErrUnknownOutputEndpoint indicates that the output endpoint associated with
+// a route could not be found.
+type ErrUnknownOutputEndpoint struct{}
+
+func (*ErrUnknownOutputEndpoint) isForwardingError() {}
+
+func (*ErrUnknownOutputEndpoint) String() string { return "unknown endpoint" }
+
 // ErrOther indicates the packet coould not be forwarded for a reason
 // captured by the contained error.
 type ErrOther struct {

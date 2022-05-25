@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -225,6 +226,11 @@ type fakeNetworkEndpointStats struct{}
 // IsNetworkEndpointStats implements stack.NetworkEndpointStats.
 func (*fakeNetworkEndpointStats) IsNetworkEndpointStats() {}
 
+type addMulticastRouteData struct {
+	addresses stack.UnicastSourceAndMulticastDestination
+	route     stack.MulticastRoute
+}
+
 // fakeNetworkProtocol is a network-layer protocol descriptor. It aggregates the
 // number of packets sent and received via endpoints of this protocol. The index
 // where packets are added is given by the packet's destination address MOD 10.
@@ -234,6 +240,8 @@ type fakeNetworkProtocol struct {
 	packetCount     [10]int
 	sendPacketCount [10]int
 	defaultTTL      uint8
+
+	addMulticastRouteData addMulticastRouteData
 }
 
 func (*fakeNetworkProtocol) Number() tcpip.NetworkProtocolNumber {
@@ -296,6 +304,13 @@ func (*fakeNetworkProtocol) Parse(pkt *stack.PacketBuffer) (tcpip.TransportProto
 	}
 	pkt.NetworkProtocolNumber = fakeNetNumber
 	return tcpip.TransportProtocolNumber(hdr[protocolNumberOffset]), true, true
+}
+
+// AddMulticastRoute implements
+// MulticastForwardingNetworkProtocol.AddMulticastRoute.
+func (f *fakeNetworkProtocol) AddMulticastRoute(addresses stack.UnicastSourceAndMulticastDestination, route stack.MulticastRoute) tcpip.Error {
+	f.addMulticastRouteData = addMulticastRouteData{addresses, route}
+	return nil
 }
 
 // Forwarding implements stack.ForwardingNetworkEndpoint.
@@ -4657,6 +4672,69 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			}
 			if n := ep2.Drain(); n != 0 {
 				t.Errorf("got %d unexpected packets from ep2", n)
+			}
+		})
+	}
+}
+
+func TestAddMulticastRoute(t *testing.T) {
+	const (
+		incomingNICID = 1
+		outgoingNICID = 2
+	)
+	address := testutil.MustParse4("192.168.1.1")
+	outgoingInterfaces := []stack.MulticastRouteOutgoingInterface{{ID: outgoingNICID, MinTTL: 3}}
+	addresses := stack.UnicastSourceAndMulticastDestination{Source: address, Destination: address}
+
+	tests := []struct {
+		name     string
+		netProto tcpip.NetworkProtocolNumber
+		factory  stack.NetworkProtocolFactory
+		wantErr  tcpip.Error
+	}{
+		{
+			name:     "valid",
+			netProto: fakeNetNumber,
+			factory:  fakeNetFactory,
+			wantErr:  nil,
+		},
+		{
+			name:     "unknown protocol",
+			factory:  fakeNetFactory,
+			netProto: arp.ProtocolNumber,
+			wantErr:  &tcpip.ErrUnknownProtocol{},
+		},
+		{
+			name:     "not supported",
+			factory:  arp.NewProtocol,
+			netProto: arp.ProtocolNumber,
+			wantErr:  &tcpip.ErrNotSupported{},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocolFactory{test.factory},
+			})
+
+			route := stack.MulticastRoute{
+				ExpectedInputInterface: incomingNICID,
+				OutgoingInterfaces:     outgoingInterfaces,
+			}
+
+			err := s.AddMulticastRoute(test.netProto, addresses, route)
+
+			if !cmp.Equal(err, test.wantErr, cmpopts.EquateErrors()) {
+				t.Errorf("s.AddMulticastRoute(%d, %#v, %#v) = %s, want %s", test.netProto, addresses, route, err, test.wantErr)
+			}
+
+			if test.wantErr == nil {
+				fakeNet := s.NetworkProtocolInstance(fakeNetNumber).(*fakeNetworkProtocol)
+
+				expectedAddMulticastRouteData := addMulticastRouteData{addresses, route}
+				if !cmp.Equal(fakeNet.addMulticastRouteData, expectedAddMulticastRouteData, cmp.AllowUnexported(addMulticastRouteData{}, stack.MulticastRoute{})) {
+					t.Errorf("fakeNet.addMulticastRouteData = %#v, want = %#v", fakeNet.addMulticastRouteData, expectedAddMulticastRouteData)
+				}
 			}
 		})
 	}
