@@ -35,13 +35,16 @@ func newExitMaybe(info kernel.SyscallInfo) *pb.Exit {
 }
 
 func getFilePath(t *kernel.Task, fd int32) string {
+	if fd < 0 {
+		return ""
+	}
 	fdt := t.FDTable()
 	if fdt == nil {
 		return "[err: no FD table]"
 	}
 	file, _ := fdt.GetVFS2(fd)
 	if file == nil {
-		return "[err: requires VFS2]"
+		return "[err: FD not found]"
 	}
 	defer file.DecRef(t)
 
