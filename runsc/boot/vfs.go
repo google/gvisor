@@ -17,7 +17,9 @@ package boot
 import (
 	"fmt"
 	"path"
+	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -25,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/devices/memdev"
@@ -49,6 +52,15 @@ import (
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
+
+const (
+	// Supported filesystems that map to different internal filesystems.
+	bind   = "bind"
+	nonefs = "none"
+)
+
+// tmpfs has some extra supported options that we must pass through.
+var tmpfsAllowedData = []string{"mode", "size", "uid", "gid"}
 
 func registerFilesystems(k *kernel.Kernel) error {
 	ctx := k.SupervisorContext()
@@ -167,6 +179,189 @@ func setupContainerVFS(ctx context.Context, conf *config.Config, mntr *container
 	return nil
 }
 
+// compileMounts returns the supported mounts from the mount spec, adding any
+// mandatory mounts that are required by the OCI specification.
+func compileMounts(spec *specs.Spec, conf *config.Config) []specs.Mount {
+	// Keep track of whether proc and sys were mounted.
+	var procMounted, sysMounted, devMounted, devptsMounted bool
+	var mounts []specs.Mount
+
+	// Mount all submounts from the spec.
+	for _, m := range spec.Mounts {
+		// Unconditionally drop any cgroupfs mounts. If requested, we'll add our
+		// own below.
+		if m.Type == cgroupfs.Name {
+			continue
+		}
+		switch filepath.Clean(m.Destination) {
+		case "/proc":
+			procMounted = true
+		case "/sys":
+			sysMounted = true
+		case "/dev":
+			m.Type = devtmpfs.Name
+			devMounted = true
+		case "/dev/pts":
+			m.Type = devpts.Name
+			devptsMounted = true
+		}
+		mounts = append(mounts, m)
+	}
+
+	// Mount proc and sys even if the user did not ask for it, as the spec
+	// says we SHOULD.
+	var mandatoryMounts []specs.Mount
+
+	if conf.Cgroupfs {
+		mandatoryMounts = append(mandatoryMounts, specs.Mount{
+			Type:        tmpfs.Name,
+			Destination: "/sys/fs/cgroup",
+		})
+		mandatoryMounts = append(mandatoryMounts, specs.Mount{
+			Type:        cgroupfs.Name,
+			Destination: "/sys/fs/cgroup/memory",
+			Options:     []string{"memory"},
+		})
+		mandatoryMounts = append(mandatoryMounts, specs.Mount{
+			Type:        cgroupfs.Name,
+			Destination: "/sys/fs/cgroup/cpu",
+			Options:     []string{"cpu"},
+		})
+	}
+
+	if !procMounted {
+		mandatoryMounts = append(mandatoryMounts, specs.Mount{
+			Type:        proc.Name,
+			Destination: "/proc",
+		})
+	}
+	if !sysMounted {
+		mandatoryMounts = append(mandatoryMounts, specs.Mount{
+			Type:        sys.Name,
+			Destination: "/sys",
+		})
+	}
+	if !devMounted {
+		mandatoryMounts = append(mandatoryMounts, specs.Mount{
+			Type:        devtmpfs.Name,
+			Destination: "/dev",
+		})
+	}
+	if !devptsMounted {
+		mandatoryMounts = append(mandatoryMounts, specs.Mount{
+			Type:        devpts.Name,
+			Destination: "/dev/pts",
+		})
+	}
+
+	// The mandatory mounts should be ordered right after the root, in case
+	// there are submounts of these mandatory mounts already in the spec.
+	mounts = append(mounts[:0], append(mandatoryMounts, mounts[0:]...)...)
+
+	return mounts
+}
+
+// goferMountData creates a slice of gofer mount data.
+func goferMountData(fd int, fa config.FileAccessType, lisafs bool) []string {
+	opts := []string{
+		"trans=fd",
+		"rfdno=" + strconv.Itoa(fd),
+		"wfdno=" + strconv.Itoa(fd),
+	}
+	if fa == config.FileAccessShared {
+		opts = append(opts, "cache=remote_revalidating")
+	}
+	if lisafs {
+		opts = append(opts, "lisafs=true")
+	}
+	return opts
+}
+
+// parseAndFilterOptions parses a MountOptions slice and filters by the allowed
+// keys.
+func parseAndFilterOptions(opts []string, allowedKeys ...string) ([]string, error) {
+	var out []string
+	for _, o := range opts {
+		ok, err := parseMountOption(o, allowedKeys...)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			out = append(out, o)
+		}
+	}
+	return out, nil
+}
+
+func parseMountOption(opt string, allowedKeys ...string) (bool, error) {
+	kv := strings.SplitN(opt, "=", 3)
+	if len(kv) > 2 {
+		return false, fmt.Errorf("invalid option %q", opt)
+	}
+	return specutils.ContainsStr(allowedKeys, kv[0]), nil
+}
+
+type fdDispenser struct {
+	fds []*fd.FD
+}
+
+func (f *fdDispenser) remove() int {
+	if f.empty() {
+		panic("fdDispenser out of fds")
+	}
+	rv := f.fds[0].Release()
+	f.fds = f.fds[1:]
+	return rv
+}
+
+func (f *fdDispenser) empty() bool {
+	return len(f.fds) == 0
+}
+
+type containerMounter struct {
+	root *specs.Root
+
+	// mounts is the set of submounts for the container. It's a copy from the spec
+	// that may be freely modified without affecting the original spec.
+	mounts []specs.Mount
+
+	// fds is the list of FDs to be dispensed for mounts that require it.
+	fds fdDispenser
+
+	k *kernel.Kernel
+
+	hints *podMountHints
+
+	// productName is the value to show in
+	// /sys/devices/virtual/dmi/id/product_name.
+	productName string
+}
+
+func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *podMountHints, productName string) *containerMounter {
+	return &containerMounter{
+		root:        info.spec.Root,
+		mounts:      compileMounts(info.spec, info.conf),
+		fds:         fdDispenser{fds: info.goferFDs},
+		k:           k,
+		hints:       hints,
+		productName: productName,
+	}
+}
+
+func (c *containerMounter) checkDispenser() error {
+	if !c.fds.empty() {
+		return fmt.Errorf("not all gofer FDs were consumed, remaining: %v", c.fds)
+	}
+	return nil
+}
+
+func (c *containerMounter) getMountAccessType(conf *config.Config, mount *specs.Mount) config.FileAccessType {
+	if hint := c.hints.findMount(mount); hint != nil {
+		return hint.fileAccessType()
+	}
+	return conf.FileAccessMounts
+}
+
 func (c *containerMounter) mountAll(conf *config.Config, procArgs *kernel.CreateProcessArgs) (*vfs.MountNamespace, error) {
 	log.Infof("Configuring container's file system with VFS2")
 
@@ -180,7 +375,7 @@ func (c *containerMounter) mountAll(conf *config.Config, procArgs *kernel.Create
 	rootProcArgs.MaxSymlinkTraversals = linux.MaxSymlinkTraversals
 	rootCtx := rootProcArgs.NewContext(c.k)
 
-	mns, err := c.createMountNamespaceVFS2(rootCtx, conf, rootCreds)
+	mns, err := c.createMountNamespace(rootCtx, conf, rootCreds)
 	if err != nil {
 		return nil, fmt.Errorf("creating mount namespace: %w", err)
 	}
@@ -203,15 +398,15 @@ func (c *containerMounter) mountAll(conf *config.Config, procArgs *kernel.Create
 	}
 
 	// Mount submounts.
-	if err := c.mountSubmountsVFS2(rootCtx, conf, mns, rootCreds); err != nil {
-		return nil, fmt.Errorf("mounting submounts vfs2: %w", err)
+	if err := c.mountSubmounts(rootCtx, conf, mns, rootCreds); err != nil {
+		return nil, fmt.Errorf("mounting submounts: %w", err)
 	}
 
 	return mns, nil
 }
 
-// createMountNamespaceVFS2 creates the container's root mount and namespace.
-func (c *containerMounter) createMountNamespaceVFS2(ctx context.Context, conf *config.Config, creds *auth.Credentials) (*vfs.MountNamespace, error) {
+// createMountNamespace creates the container's root mount and namespace.
+func (c *containerMounter) createMountNamespace(ctx context.Context, conf *config.Config, creds *auth.Credentials) (*vfs.MountNamespace, error) {
 	fd := c.fds.remove()
 	data := goferMountData(fd, conf.FileAccess, conf.Lisafs)
 
@@ -358,8 +553,8 @@ func (c *containerMounter) configureOverlay(ctx context.Context, creds *auth.Cre
 	return &overlayOpts, cu.Release(), nil
 }
 
-func (c *containerMounter) mountSubmountsVFS2(ctx context.Context, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials) error {
-	mounts, err := c.prepareMountsVFS2()
+func (c *containerMounter) mountSubmounts(ctx context.Context, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials) error {
+	mounts, err := c.prepareMounts()
 	if err != nil {
 		return err
 	}
@@ -373,12 +568,12 @@ func (c *containerMounter) mountSubmountsVFS2(ctx context.Context, conf *config.
 		)
 
 		if hint := c.hints.findMount(submount.mount); hint != nil && hint.isSupported() {
-			mnt, err = c.mountSharedSubmountVFS2(ctx, conf, mns, creds, submount.mount, hint)
+			mnt, err = c.mountSharedSubmount(ctx, conf, mns, creds, submount.mount, hint)
 			if err != nil {
 				return fmt.Errorf("mount shared mount %q to %q: %v", hint.name, submount.mount.Destination, err)
 			}
 		} else {
-			mnt, err = c.mountSubmountVFS2(ctx, conf, mns, creds, submount)
+			mnt, err = c.mountSubmount(ctx, conf, mns, creds, submount)
 			if err != nil {
 				return fmt.Errorf("mount submount %q: %w", submount.mount.Destination, err)
 			}
@@ -398,7 +593,7 @@ func (c *containerMounter) mountSubmountsVFS2(ctx context.Context, conf *config.
 		}
 	}
 
-	if err := c.mountTmpVFS2(ctx, conf, creds, mns); err != nil {
+	if err := c.mountTmp(ctx, conf, creds, mns); err != nil {
 		return fmt.Errorf(`mount submount "\tmp": %w`, err)
 	}
 	return nil
@@ -409,7 +604,7 @@ type mountAndFD struct {
 	fd    int
 }
 
-func (c *containerMounter) prepareMountsVFS2() ([]mountAndFD, error) {
+func (c *containerMounter) prepareMounts() ([]mountAndFD, error) {
 	// Associate bind mounts with their FDs before sorting since there is an
 	// undocumented assumption that FDs are dispensed in the order in which
 	// they are required by mounts.
@@ -419,7 +614,7 @@ func (c *containerMounter) prepareMountsVFS2() ([]mountAndFD, error) {
 		specutils.MaybeConvertToBindMount(m)
 
 		// Only bind mounts use host FDs; see
-		// containerMounter.getMountNameAndOptionsVFS2.
+		// containerMounter.getMountNameAndOptions.
 		fd := -1
 		if m.Type == bind {
 			fd = c.fds.remove()
@@ -441,8 +636,8 @@ func (c *containerMounter) prepareMountsVFS2() ([]mountAndFD, error) {
 	return mounts, nil
 }
 
-func (c *containerMounter) mountSubmountVFS2(ctx context.Context, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, submount *mountAndFD) (*vfs.Mount, error) {
-	fsName, opts, useOverlay, err := c.getMountNameAndOptionsVFS2(conf, submount)
+func (c *containerMounter) mountSubmount(ctx context.Context, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, submount *mountAndFD) (*vfs.Mount, error) {
+	fsName, opts, useOverlay, err := c.getMountNameAndOptions(conf, submount)
 	if err != nil {
 		return nil, fmt.Errorf("mountOptions failed: %w", err)
 	}
@@ -482,9 +677,9 @@ func (c *containerMounter) mountSubmountVFS2(ctx context.Context, conf *config.C
 	return mnt, nil
 }
 
-// getMountNameAndOptionsVFS2 retrieves the fsName, opts, and useOverlay values
+// getMountNameAndOptions retrieves the fsName, opts, and useOverlay values
 // used for mounts.
-func (c *containerMounter) getMountNameAndOptionsVFS2(conf *config.Config, m *mountAndFD) (string, *vfs.MountOptions, bool, error) {
+func (c *containerMounter) getMountNameAndOptions(conf *config.Config, m *mountAndFD) (string, *vfs.MountOptions, bool, error) {
 	fsName := m.mount.Type
 	useOverlay := false
 	var (
@@ -531,7 +726,7 @@ func (c *containerMounter) getMountNameAndOptionsVFS2(conf *config.Config, m *mo
 		}
 
 		// If configured, add overlay to all writable mounts.
-		useOverlay = conf.Overlay && !mountFlags(m.mount.Options).ReadOnly
+		useOverlay = conf.Overlay && !parseMountOptions(m.mount.Options).ReadOnly
 
 	case cgroupfs.Name:
 		var err error
@@ -545,7 +740,7 @@ func (c *containerMounter) getMountNameAndOptionsVFS2(conf *config.Config, m *mo
 		return "", nil, false, nil
 	}
 
-	opts := parseMountOptionsVFS2(m.mount.Options)
+	opts := parseMountOptions(m.mount.Options)
 	opts.GetFilesystemOptions = vfs.GetFilesystemOptions{
 		Data:         strings.Join(data, ","),
 		InternalData: internalData,
@@ -568,11 +763,11 @@ func (c *containerMounter) getMountNameAndOptionsVFS2(conf *config.Config, m *mo
 	return fsName, opts, useOverlay, nil
 }
 
-func parseMountOptionsVFS2(opts []string) *vfs.MountOptions {
+func parseMountOptions(opts []string) *vfs.MountOptions {
 	mountOpts := &vfs.MountOptions{
 		InternalMount: true,
 	}
-	// Note: update mountHint.CheckCompatibleVFS2 when more options are added.
+	// Note: update mountHint.CheckCompatible when more options are added.
 	for _, o := range opts {
 		switch o {
 		case "ro":
@@ -644,7 +839,7 @@ func parseVerityMountOptions(mopts []string) (string, verity.InternalFilesystemO
 	return verityData, verityOpts, found, nonVerity, nil
 }
 
-// mountTmpVFS2 mounts an internal tmpfs at '/tmp' if it's safe to do so.
+// mountTmp mounts an internal tmpfs at '/tmp' if it's safe to do so.
 // Technically we don't have to mount tmpfs at /tmp, as we could just rely on
 // the host /tmp, but this is a nice optimization, and fixes some apps that call
 // mknod in /tmp. It's unsafe to mount tmpfs if:
@@ -653,7 +848,7 @@ func parseVerityMountOptions(mopts []string) (string, verity.InternalFilesystemO
 //
 // Note that when there are submounts inside of '/tmp', directories for the
 // mount points must be present, making '/tmp' not empty anymore.
-func (c *containerMounter) mountTmpVFS2(ctx context.Context, conf *config.Config, creds *auth.Credentials, mns *vfs.MountNamespace) error {
+func (c *containerMounter) mountTmp(ctx context.Context, conf *config.Config, creds *auth.Credentials, mns *vfs.MountNamespace) error {
 	for _, m := range c.mounts {
 		// m.Destination has been cleaned, so it's to use equality here.
 		if m.Destination == "/tmp" {
@@ -704,8 +899,8 @@ func (c *containerMounter) mountTmpVFS2(ctx context.Context, conf *config.Config
 			// another user. This is normally done for /tmp.
 			Options: []string{"mode=01777"},
 		}
-		if _, err := c.mountSubmountVFS2(ctx, conf, mns, creds, &mountAndFD{mount: &tmpMount}); err != nil {
-			return fmt.Errorf("mountSubmountVFS2 failed: %v", err)
+		if _, err := c.mountSubmount(ctx, conf, mns, creds, &mountAndFD{mount: &tmpMount}); err != nil {
+			return fmt.Errorf("mountSubmount failed: %v", err)
 		}
 		return nil
 
@@ -731,7 +926,7 @@ func (c *containerMounter) processHints(conf *config.Config, creds *auth.Credent
 		}
 
 		log.Infof("Mounting master of shared mount %q from %q type %q", hint.name, hint.mount.Source, hint.mount.Type)
-		mnt, err := c.mountSharedMasterVFS2(ctx, conf, hint, creds)
+		mnt, err := c.mountSharedMaster(ctx, conf, hint, creds)
 		if err != nil {
 			return fmt.Errorf("mounting shared master %q: %v", hint.name, err)
 		}
@@ -740,13 +935,13 @@ func (c *containerMounter) processHints(conf *config.Config, creds *auth.Credent
 	return nil
 }
 
-// mountSharedMasterVFS2 mounts the master of a volume that is shared among
+// mountSharedMaster mounts the master of a volume that is shared among
 // containers in a pod.
-func (c *containerMounter) mountSharedMasterVFS2(ctx context.Context, conf *config.Config, hint *mountHint, creds *auth.Credentials) (*vfs.Mount, error) {
+func (c *containerMounter) mountSharedMaster(ctx context.Context, conf *config.Config, hint *mountHint, creds *auth.Credentials) (*vfs.Mount, error) {
 	// Map mount type to filesystem name, and parse out the options that we are
 	// capable of dealing with.
 	mntFD := &mountAndFD{mount: &hint.mount}
-	fsName, opts, useOverlay, err := c.getMountNameAndOptionsVFS2(conf, mntFD)
+	fsName, opts, useOverlay, err := c.getMountNameAndOptions(conf, mntFD)
 	if err != nil {
 		return nil, err
 	}
@@ -770,14 +965,14 @@ func (c *containerMounter) mountSharedMasterVFS2(ctx context.Context, conf *conf
 
 // mountSharedSubmount binds mount to a previously mounted volume that is shared
 // among containers in the same pod.
-func (c *containerMounter) mountSharedSubmountVFS2(ctx context.Context, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, mount *specs.Mount, source *mountHint) (*vfs.Mount, error) {
-	if err := source.checkCompatibleVFS2(mount); err != nil {
+func (c *containerMounter) mountSharedSubmount(ctx context.Context, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, mount *specs.Mount, source *mountHint) (*vfs.Mount, error) {
+	if err := source.checkCompatible(mount); err != nil {
 		return nil, err
 	}
 
 	// Ignore data and useOverlay because these were already applied to
 	// the master mount.
-	_, opts, _, err := c.getMountNameAndOptionsVFS2(conf, &mountAndFD{mount: mount})
+	_, opts, _, err := c.getMountNameAndOptions(conf, &mountAndFD{mount: mount})
 	if err != nil {
 		return nil, err
 	}
@@ -830,7 +1025,7 @@ func (c *containerMounter) makeMountPoint(ctx context.Context, creds *auth.Crede
 func (c *containerMounter) configureRestore(ctx context.Context) (context.Context, error) {
 	fdmap := make(map[string]int)
 	fdmap["/"] = c.fds.remove()
-	mounts, err := c.prepareMountsVFS2()
+	mounts, err := c.prepareMounts()
 	if err != nil {
 		return ctx, err
 	}

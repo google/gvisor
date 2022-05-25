@@ -1,4 +1,4 @@
-// Copyright 2019 The gVisor Authors.
+// Copyright 2022 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import (
 	"testing"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"gvisor.dev/gvisor/runsc/config"
 )
 
 func TestPodMountHintsHappy(t *testing.T) {
@@ -72,7 +71,7 @@ func TestPodMountHintsHappy(t *testing.T) {
 	if want := container; want != mount2.share {
 		t.Errorf("mount2 type, want: %q, got: %q", want, mount2.share)
 	}
-	if want := []string{"private", "rw"}; !reflect.DeepEqual(want, mount2.mount.Options) {
+	if want := []string{"rw", "private"}; !reflect.DeepEqual(want, mount2.mount.Options) {
 		t.Errorf("mount2 type, want: %q, got: %q", want, mount2.mount.Options)
 	}
 }
@@ -192,60 +191,61 @@ func TestPodMountHintsErrors(t *testing.T) {
 	}
 }
 
-func TestGetMountAccessType(t *testing.T) {
-	const source = "foo"
-	for _, tst := range []struct {
+func TestHintsCheckCompatible(t *testing.T) {
+	for _, tc := range []struct {
 		name        string
-		annotations map[string]string
-		want        config.FileAccessType
+		masterOpts  []string
+		replicaOpts []string
+		err         string
 	}{
 		{
-			name: "container=exclusive",
-			annotations: map[string]string{
-				MountPrefix + "mount1.source": source,
-				MountPrefix + "mount1.type":   "bind",
-				MountPrefix + "mount1.share":  "container",
-			},
-			want: config.FileAccessExclusive,
+			name: "empty",
 		},
 		{
-			name: "pod=shared",
-			annotations: map[string]string{
-				MountPrefix + "mount1.source": source,
-				MountPrefix + "mount1.type":   "bind",
-				MountPrefix + "mount1.share":  "pod",
-			},
-			want: config.FileAccessShared,
+			name:        "same",
+			masterOpts:  []string{"ro", "noatime", "noexec"},
+			replicaOpts: []string{"ro", "noatime", "noexec"},
 		},
 		{
-			name: "shared=shared",
-			annotations: map[string]string{
-				MountPrefix + "mount1.source": source,
-				MountPrefix + "mount1.type":   "bind",
-				MountPrefix + "mount1.share":  "shared",
-			},
-			want: config.FileAccessShared,
+			name:        "compatible",
+			masterOpts:  []string{"rw", "atime", "exec"},
+			replicaOpts: []string{"ro", "noatime", "noexec"},
 		},
 		{
-			name: "default=shared",
-			annotations: map[string]string{
-				MountPrefix + "mount1.source": source + "mismatch",
-				MountPrefix + "mount1.type":   "bind",
-				MountPrefix + "mount1.share":  "container",
-			},
-			want: config.FileAccessShared,
+			name:        "unsupported",
+			masterOpts:  []string{"nofoo", "nodev"},
+			replicaOpts: []string{"foo", "dev"},
+		},
+		{
+			name:        "incompatible-ro",
+			masterOpts:  []string{"ro"},
+			replicaOpts: []string{"rw"},
+			err:         "read-write",
+		},
+		{
+			name:        "incompatible-atime",
+			masterOpts:  []string{"noatime"},
+			replicaOpts: []string{"atime"},
+			err:         "noatime",
+		},
+		{
+			name:        "incompatible-exec",
+			masterOpts:  []string{"noexec"},
+			replicaOpts: []string{"exec"},
+			err:         "noexec",
 		},
 	} {
-		t.Run(tst.name, func(t *testing.T) {
-			spec := &specs.Spec{Annotations: tst.annotations}
-			podHints, err := newPodMountHints(spec)
-			if err != nil {
-				t.Fatalf("newPodMountHints failed: %v", err)
-			}
-			mounter := containerMounter{hints: podHints}
-			conf := &config.Config{FileAccessMounts: config.FileAccessShared}
-			if got := mounter.getMountAccessType(conf, &specs.Mount{Source: source}); got != tst.want {
-				t.Errorf("getMountAccessType(), want: %v, got: %v", tst.want, got)
+		t.Run(tc.name, func(t *testing.T) {
+			master := mountHint{mount: specs.Mount{Options: tc.masterOpts}}
+			replica := specs.Mount{Options: tc.replicaOpts}
+			if err := master.checkCompatible(&replica); err != nil {
+				if !strings.Contains(err.Error(), tc.err) {
+					t.Fatalf("wrong error, want: %q, got: %q", tc.err, err)
+				}
+			} else {
+				if len(tc.err) > 0 {
+					t.Fatalf("error %q expected", tc.err)
+				}
 			}
 		})
 	}
