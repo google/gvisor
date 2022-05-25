@@ -61,7 +61,6 @@ message Read {
   int64 fd = 4;
   string fd_path = 5;
   uint64 count = 6;
-  bytes data = 7;
 }
 
 message Connect {
