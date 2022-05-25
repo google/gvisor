@@ -19,6 +19,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
@@ -263,4 +264,96 @@ func PointExecveat(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.Context
 	p.Exit = newExitMaybe(info)
 
 	return p, pb.MessageType_MESSAGE_SYSCALL_EXECVE
+}
+
+// pointChdirHelper converts chdir(2) and fchdir(2) syscall to proto.
+func pointChdirHelper(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo, fd int64, path hostarch.Addr) (proto.Message, pb.MessageType) {
+	p := &pb.Chdir{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Fd:          fd,
+	}
+
+	if path > 0 {
+		pathname, err := t.CopyInString(path, linux.PATH_MAX)
+		if err == nil {
+			p.Pathname = pathname
+		}
+	}
+
+	if fields.Local.Contains(seccheck.FieldSyscallPath) {
+		p.FdPath = getFilePath(t, int32(p.Fd))
+	}
+
+	p.Exit = newExitMaybe(info)
+
+	return p, pb.MessageType_MESSAGE_SYSCALL_CHDIR
+}
+
+// PointChdir calls pointChdirHelper to convert chdir(2) syscall to proto.
+func PointChdir(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	path := info.Args[0].Pointer()
+	return pointChdirHelper(t, fields, cxtData, info, linux.AT_FDCWD, path)
+}
+
+// PointFchdir calls pointChdirHelper to convert fchdir(2) syscall to proto.
+func PointFchdir(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	fd := int64(info.Args[0].Int())
+	path := info.Args[1].Pointer()
+	return pointChdirHelper(t, fields, cxtData, info, fd, path)
+}
+
+// pointSetidHelper converts setuid(2) and setgid(2) syscall to proto.
+func pointSetidHelper(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo, id uint32) (proto.Message, pb.MessageType) {
+	p := &pb.Setid{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Id:          id,
+	}
+
+	p.Exit = newExitMaybe(info)
+
+	return p, pb.MessageType_MESSAGE_SYSCALL_SETID
+}
+
+// PointSetuid calls pointSetidHelper to convert setuid(2) syscall to proto.
+func PointSetuid(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	id := uint32(info.Args[0].Uint())
+	return pointSetidHelper(t, fields, cxtData, info, id)
+}
+
+// PointSetgid calls pointSetidHelper to convert setgid(2) syscall to proto.
+func PointSetgid(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	id := uint32(info.Args[0].Uint())
+	return pointSetidHelper(t, fields, cxtData, info, id)
+}
+
+// PointSetsid calls pointSetidHelper to convert setsid(2) syscall to proto.
+func PointSetsid(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	return pointSetidHelper(t, fields, cxtData, info, 0)
+}
+
+// pointSetresidHelper converts setresuid(2) and setresgid(2) syscall to proto.
+func pointSetresidHelper(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	p := &pb.Setresid{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Rgid:        uint32(info.Args[0].Uint()),
+		Egid:        uint32(info.Args[1].Uint()),
+		Sgid:        uint32(info.Args[2].Uint()),
+	}
+
+	p.Exit = newExitMaybe(info)
+
+	return p, pb.MessageType_MESSAGE_SYSCALL_SETRESID
+}
+
+// PointSetresuid calls pointSetresidHelper to convert setresuid(2) syscall to proto.
+func PointSetresuid(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	return pointSetresidHelper(t, fields, cxtData, info)
+}
+
+// PointSetresgid calls pointSetresidHelper to convert setresgid(2) syscall to proto.
+func PointSetresgid(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	return pointSetresidHelper(t, fields, cxtData, info)
 }
