@@ -84,10 +84,9 @@ func (q *queue) Write(pkt *stack.PacketBuffer) tcpip.Error {
 		return &tcpip.ErrClosedForSend{}
 	}
 
-	pkt.IncRef()
 	wrote := false
 	select {
-	case q.c <- pkt:
+	case q.c <- pkt.IncRef():
 		wrote = true
 	default:
 		pkt.DecRef()

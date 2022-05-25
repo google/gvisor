@@ -133,8 +133,7 @@ func (d *discipline) WritePacket(pkt *stack.PacketBuffer) tcpip.Error {
 	qd.mu.Lock()
 	haveSpace := qd.queue.hasSpace()
 	if haveSpace {
-		pkt.IncRef()
-		qd.queue.pushBack(pkt)
+		qd.queue.pushBack(pkt.IncRef())
 	}
 	qd.mu.Unlock()
 	if !haveSpace {

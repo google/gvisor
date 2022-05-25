@@ -199,6 +199,12 @@ func NewPacketBuffer(opts PacketBufferOptions) *PacketBuffer {
 	return pk
 }
 
+// IncRef increments the PacketBuffer's refcount.
+func (pk *PacketBuffer) IncRef() *PacketBuffer {
+	pk.packetBufferRefs.IncRef()
+	return pk
+}
+
 // DecRef decrements the PacketBuffer's refcount. If the refcount is
 // decremented to zero, the PacketBuffer is returned to the PacketBuffer
 // pool.

@@ -89,7 +89,7 @@ func (t *testNetworkDispatcher) reset() {
 
 func (t *testNetworkDispatcher) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	networkPacket := networkPacketInfo{
-		pkt:      pkt,
+		pkt:      pkt.IncRef(),
 		protocol: protocol,
 	}
 
@@ -97,14 +97,12 @@ func (t *testNetworkDispatcher) DeliverNetworkPacket(protocol tcpip.NetworkProto
 		t.t.Fatalf("already delivered network packet = %#v; new = %#v", t.networkPacket, networkPacket)
 	}
 
-	pkt.IncRef()
-
 	t.networkPacket = networkPacket
 }
 
 func (t *testNetworkDispatcher) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer, incoming bool) {
 	linkPacket := linkPacketInfo{
-		pkt:      pkt,
+		pkt:      pkt.IncRef(),
 		protocol: protocol,
 		incoming: incoming,
 	}
@@ -112,8 +110,6 @@ func (t *testNetworkDispatcher) DeliverLinkPacket(protocol tcpip.NetworkProtocol
 	if t.linkPacket != (linkPacketInfo{}) {
 		t.t.Fatalf("already delivered link packet = %#v; new = %#v", t.linkPacket, linkPacket)
 	}
-
-	pkt.IncRef()
 
 	t.linkPacket = linkPacket
 }

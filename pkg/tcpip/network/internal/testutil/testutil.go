@@ -69,8 +69,7 @@ func (ep *MockLinkEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpi
 			return n, ep.err
 		}
 		ep.allowPackets--
-		pkt.IncRef()
-		ep.WrittenPackets = append(ep.WrittenPackets, pkt)
+		ep.WrittenPackets = append(ep.WrittenPackets, pkt.IncRef())
 		n++
 	}
 	return n, nil
