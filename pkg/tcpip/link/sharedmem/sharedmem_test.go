@@ -307,7 +307,7 @@ func TestPreserveSrcAddressInSend(t *testing.T) {
 	c.ep.AddHeader(pkt)
 
 	var pkts stack.PacketBufferList
-	defer pkts.DecRef()
+	defer func() { pkts.DecRef() }()
 	pkts.PushBack(pkt)
 	if _, err := c.ep.WritePackets(pkts); err != nil {
 		t.Fatalf("WritePackets failed: %s", err)

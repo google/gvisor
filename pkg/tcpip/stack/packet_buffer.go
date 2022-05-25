@@ -113,10 +113,6 @@ type PacketBuffer struct {
 
 	packetBufferRefs
 
-	// PacketBufferEntry is used to build an intrusive list of
-	// PacketBuffers.
-	PacketBufferEntry
-
 	// buf is the underlying buffer for the packet. See struct level docs for
 	// details.
 	buf      buffer.Buffer `state:".([]byte)"`
@@ -370,7 +366,6 @@ func (pk *PacketBuffer) headerView(typ headerType) tcpipbuffer.View {
 func (pk *PacketBuffer) Clone() *PacketBuffer {
 	newPk := pkPool.Get().(*PacketBuffer)
 	newPk.reset()
-	newPk.PacketBufferEntry = pk.PacketBufferEntry
 	newPk.buf = pk.buf.Clone()
 	newPk.reserved = pk.reserved
 	newPk.pushed = pk.pushed
@@ -463,28 +458,6 @@ func (pk *PacketBuffer) DeepCopyForForwarding(reservedHeaderBytes int) *PacketBu
 	newPk.tuple = pk.tuple
 
 	return newPk
-}
-
-// IncRef increases the reference count on each PacketBuffer
-// stored in the PacketBufferList.
-func (pk *PacketBufferList) IncRef() {
-	for pb := pk.Front(); pb != nil; pb = pb.Next() {
-		pb.IncRef()
-	}
-}
-
-// DecRef decreases the reference count on each PacketBuffer
-// stored in the PacketBufferList.
-func (pk *PacketBufferList) DecRef() {
-	// Using a while-loop here (instead of for-loop) because DecRef() can cause
-	// the pb to be recycled. If it is recycled during execution of this loop,
-	// there is a possibility of a data race during a call to pb.Next().
-	pb := pk.Front()
-	for pb != nil {
-		next := pb.Next()
-		pb.DecRef()
-		pb = next
-	}
 }
 
 // headerInfo stores metadata about a header in a packet.
