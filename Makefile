@@ -197,7 +197,7 @@ smoke-race-tests: ## Runs a smoke test after build building runsc in race config
 .PHONY: smoke-race-tests
 
 nogo-tests:
-	@$(call test,--build_tag_filters=nogo --test_tag_filters=nogo --//tools/nogo:full  //:all pkg/... tools/...)
+	@$(call test,--test_output=all --build_tag_filters=nogo --test_tag_filters=nogo --//tools/nogo:full  pkg/tcpip/stack:stack_test_nogo)
 .PHONY: nogo-tests
 
 # For unit tests, we take everything in the root, pkg/... and tools/..., and

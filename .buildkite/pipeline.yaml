@@ -133,6 +133,8 @@ steps:
   - <<: *common
     label: ":golang: Nogo tests"
     command: make nogo-tests
+    agents:
+      arch: "arm64"
   - <<: *common
     label: ":test_tube: Unit tests (cgroupv1)"
     command: make unit-tests

@@ -70,6 +70,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -436,9 +437,12 @@ func loadObjdump(binary io.Reader) (finalResults map[string][]string, finalErr e
 		}
 	}()
 
-	// Identify calls by address or name. Note that this is also
-	// constructed dynamically below, as we encounted the addresses.
-	// This is because some of the functions (duffzero) may have
+	// Identify calls by address or name. These calls are incorrectly marked as
+	// allocations, so we'll remove them from the set of called functions.
+	//
+	// Note that the list of allowed addresses -- not the list of allowed
+	// function names -- is also constructed dynamically below, as we encounter
+	// the addresses. This is because some of the functions (duffzero) may have
 	// jump targets in the middle of the function itself.
 	funcsAllowed := map[string]struct{}{
 		"runtime.duffzero":       {},
@@ -463,6 +467,8 @@ func loadObjdump(binary io.Reader) (finalResults map[string][]string, finalErr e
 		"runtime.stackcheck":     {},
 		"runtime.settls":         {},
 	}
+	// addrsAllowed lists every address that can be jumped to within the
+	// funcsAllowed functions.
 	addrsAllowed := make(map[string]struct{})
 
 	// Build the map.
@@ -476,8 +482,10 @@ NextLine:
 			return nil, err
 		}
 		fields := strings.Fields(line)
+		fmt.Printf("line: %s", line)
 
-		// Is this an "allowed" function definition?
+		// Is this an "allowed" function definition? If so, record every address of
+		// the function body.
 		if len(fields) >= 2 && fields[0] == "TEXT" {
 			nextFunc = strings.TrimSuffix(fields[1], "(SB)")
 			if _, ok := funcsAllowed[nextFunc]; !ok {
@@ -485,8 +493,12 @@ NextLine:
 			}
 		}
 		if nextFunc != "" && len(fields) > 2 {
-			// Save the given address (in hex form, as it appears).
+			// We're inside an allowed function. Save the given address (in hex form,
+			// as it appears).
 			addrsAllowed[fields[1]] = struct{}{}
+			if nextFunc == "runtime.duffzero" {
+				fmt.Printf("runtime.duffzero: %s\n", fields[1])
+			}
 		}
 
 		// We recognize lines corresponding to actual code (not the
@@ -503,6 +515,23 @@ NextLine:
 			}
 			site := fields[0]
 			target := strings.TrimSuffix(fields[4], "(SB)")
+
+			// The target may be a relative address, e.g. "-413548(PC)". Do a little
+			// math to get the absolute address.
+			if trimmed := strings.TrimSuffix(target, "(PC)"); trimmed != target {
+				// Parse the offset.
+				offset, err := strconv.Atoi(trimmed)
+				if err != nil {
+					return nil, err
+				}
+				// Parse the PC, removing the leading "0x".
+				pc, err := strconv.ParseUint(fields[1][len("0x"):], 16, 64)
+				if err != nil {
+					return nil, err
+				}
+				fmt.Printf("PC: %s, offset: %s, absolute: 0x%x\n", fields[1], trimmed, pc+uint64(offset))
+				target = fmt.Sprintf("0x%x", pc+uint64(offset))
+			}
 
 			// Ignore strings containing allowed functions.
 			if _, ok := funcsAllowed[target]; ok {
