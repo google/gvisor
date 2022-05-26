@@ -2941,125 +2941,137 @@ func TestFragmentationErrors(t *testing.T) {
 	}
 }
 
-func TestForwarding(t *testing.T) {
-	const (
-		incomingNICID  = 1
-		outgoingNICID  = 2
-		randomSequence = 123
-		randomIdent    = 42
-	)
+type icmpError struct {
+	icmpType header.ICMPv6Type
+	icmpCode header.ICMPv6Code
+}
 
-	incomingIPv6Addr := tcpip.AddressWithPrefix{
+const (
+	incomingNICID  = 1
+	outgoingNICID  = 2
+	randomSequence = 123
+	randomIdent    = 42
+)
+
+var (
+	incomingIPv6Addr = tcpip.AddressWithPrefix{
 		Address:   tcpip.Address(net.ParseIP("10::1").To16()),
 		PrefixLen: 64,
 	}
-	outgoingIPv6Addr := tcpip.AddressWithPrefix{
+	outgoingIPv6Addr = tcpip.AddressWithPrefix{
 		Address:   tcpip.Address(net.ParseIP("11::1").To16()),
 		PrefixLen: 64,
 	}
-	multicastIPv6Addr := tcpip.AddressWithPrefix{
+	multicastIPv6Addr = tcpip.AddressWithPrefix{
 		Address:   tcpip.Address(net.ParseIP("ff00::").To16()),
 		PrefixLen: 64,
 	}
+	remoteIPv6Addr1        = tcpip.Address(net.ParseIP("10::2").To16())
+	remoteIPv6Addr2        = tcpip.Address(net.ParseIP("11::2").To16())
+	unreachableIPv6Addr    = tcpip.Address(net.ParseIP("12::2").To16())
+	linkLocalIPv6Addr      = tcpip.Address(net.ParseIP("fe80::").To16())
+	defaultEndpointConfigs = map[tcpip.NICID]tcpip.AddressWithPrefix{
+		incomingNICID: incomingIPv6Addr,
+		outgoingNICID: outgoingIPv6Addr,
+	}
+)
 
-	remoteIPv6Addr1 := tcpip.Address(net.ParseIP("10::2").To16())
-	remoteIPv6Addr2 := tcpip.Address(net.ParseIP("11::2").To16())
-	unreachableIPv6Addr := tcpip.Address(net.ParseIP("12::2").To16())
-	linkLocalIPv6Addr := tcpip.Address(net.ParseIP("fe80::").To16())
-
+func TestForwarding(t *testing.T) {
 	tests := []struct {
-		name                         string
-		extHdr                       func(nextHdr uint8) ([]byte, uint8, checker.NetworkChecker)
-		TTL                          uint8
-		expectErrorICMP              bool
-		expectPacketForwarded        bool
-		payloadLength                int
-		countUnrouteablePackets      uint64
-		sourceAddr                   tcpip.Address
-		destAddr                     tcpip.Address
-		icmpType                     header.ICMPv6Type
-		icmpCode                     header.ICMPv6Code
-		expectPacketUnrouteableError bool
-		expectLinkLocalSourceError   bool
-		expectLinkLocalDestError     bool
-		expectExtensionHeaderError   bool
+		name                            string
+		extHdr                          func(nextHdr uint8) ([]byte, uint8, checker.NetworkChecker)
+		TTL                             uint8
+		payloadLength                   int
+		srcAddr                         tcpip.Address
+		dstAddr                         tcpip.Address
+		expectedPacketUnrouteableErrors uint64
+		expectedLinkLocalSourceErrors   uint64
+		expectedLinkLocalDestErrors     uint64
+		expectedExtensionHeaderErrors   uint64
+		expectedPacketTooBigErrors      uint64
+		expectedExhaustedTTLErrors      uint64
+		expectPacketForwarded           bool
+		expectedFragmentsForwarded      []fragmentInfo
+		expectedICMPError               *icmpError
 	}{
 		{
-			name:            "TTL of zero",
-			TTL:             0,
-			expectErrorICMP: true,
-			sourceAddr:      remoteIPv6Addr1,
-			destAddr:        remoteIPv6Addr2,
-			icmpType:        header.ICMPv6TimeExceeded,
-			icmpCode:        header.ICMPv6HopLimitExceeded,
+			name:    "TTL of zero",
+			TTL:     0,
+			srcAddr: remoteIPv6Addr1,
+			dstAddr: remoteIPv6Addr2,
+			expectedICMPError: &icmpError{
+				icmpType: header.ICMPv6TimeExceeded,
+				icmpCode: header.ICMPv6HopLimitExceeded,
+			},
+			expectedExhaustedTTLErrors: 1,
+			expectPacketForwarded:      false,
 		},
 		{
-			name:            "TTL of one",
-			TTL:             1,
-			expectErrorICMP: true,
-			sourceAddr:      remoteIPv6Addr1,
-			destAddr:        remoteIPv6Addr2,
-			icmpType:        header.ICMPv6TimeExceeded,
-			icmpCode:        header.ICMPv6HopLimitExceeded,
+			name:    "TTL of one",
+			TTL:     1,
+			srcAddr: remoteIPv6Addr1,
+			dstAddr: remoteIPv6Addr2,
+			expectedICMPError: &icmpError{
+				icmpType: header.ICMPv6TimeExceeded,
+				icmpCode: header.ICMPv6HopLimitExceeded,
+			},
+			expectedExhaustedTTLErrors: 1,
+			expectPacketForwarded:      false,
 		},
 		{
 			name:                  "TTL of two",
 			TTL:                   2,
+			srcAddr:               remoteIPv6Addr1,
+			dstAddr:               remoteIPv6Addr2,
 			expectPacketForwarded: true,
-			sourceAddr:            remoteIPv6Addr1,
-			destAddr:              remoteIPv6Addr2,
 		},
 		{
 			name:                  "TTL of three",
 			TTL:                   3,
+			srcAddr:               remoteIPv6Addr1,
+			dstAddr:               remoteIPv6Addr2,
 			expectPacketForwarded: true,
-			sourceAddr:            remoteIPv6Addr1,
-			destAddr:              remoteIPv6Addr2,
 		},
 		{
 			name:                  "Max TTL",
 			TTL:                   math.MaxUint8,
+			srcAddr:               remoteIPv6Addr1,
+			dstAddr:               remoteIPv6Addr2,
 			expectPacketForwarded: true,
-			sourceAddr:            remoteIPv6Addr1,
-			destAddr:              remoteIPv6Addr2,
 		},
 		{
-			name:                         "Network unreachable",
-			TTL:                          2,
-			expectErrorICMP:              true,
-			sourceAddr:                   remoteIPv6Addr1,
-			destAddr:                     unreachableIPv6Addr,
-			icmpType:                     header.ICMPv6DstUnreachable,
-			icmpCode:                     header.ICMPv6NetworkUnreachable,
-			expectPacketUnrouteableError: true,
+			name:    "Network unreachable",
+			TTL:     2,
+			srcAddr: remoteIPv6Addr1,
+			dstAddr: unreachableIPv6Addr,
+			expectedICMPError: &icmpError{
+				icmpType: header.ICMPv6DstUnreachable,
+				icmpCode: header.ICMPv6NetworkUnreachable,
+			},
+			expectedPacketUnrouteableErrors: 1,
+			expectPacketForwarded:           false,
 		},
 		{
-			name:                    "Multicast destination",
-			TTL:                     2,
-			countUnrouteablePackets: 1,
-			sourceAddr:              remoteIPv6Addr1,
-			destAddr:                multicastIPv6Addr.Address,
-			expectPacketForwarded:   true,
+			name:                        "Link local destination",
+			TTL:                         2,
+			srcAddr:                     remoteIPv6Addr1,
+			dstAddr:                     linkLocalIPv6Addr,
+			expectedLinkLocalDestErrors: 1,
+			expectPacketForwarded:       false,
 		},
 		{
-			name:                     "Link local destination",
-			TTL:                      2,
-			sourceAddr:               remoteIPv6Addr1,
-			destAddr:                 linkLocalIPv6Addr,
-			expectLinkLocalDestError: true,
+			name:                          "Link local source",
+			TTL:                           2,
+			srcAddr:                       linkLocalIPv6Addr,
+			dstAddr:                       remoteIPv6Addr2,
+			expectedLinkLocalSourceErrors: 1,
+			expectPacketForwarded:         false,
 		},
 		{
-			name:                       "Link local source",
-			TTL:                        2,
-			sourceAddr:                 linkLocalIPv6Addr,
-			destAddr:                   remoteIPv6Addr2,
-			expectLinkLocalSourceError: true,
-		},
-		{
-			name:       "Hopbyhop with unknown option skippable action",
-			TTL:        2,
-			sourceAddr: remoteIPv6Addr1,
-			destAddr:   remoteIPv6Addr2,
+			name:    "Hopbyhop with unknown option skippable action",
+			TTL:     2,
+			srcAddr: remoteIPv6Addr1,
+			dstAddr: remoteIPv6Addr2,
 			extHdr: func(nextHdr uint8) ([]byte, uint8, checker.NetworkChecker) {
 				return []byte{
 					nextHdr, 1,
@@ -3074,10 +3086,10 @@ func TestForwarding(t *testing.T) {
 			expectPacketForwarded: true,
 		},
 		{
-			name:       "Hopbyhop with unknown option discard action",
-			TTL:        2,
-			sourceAddr: remoteIPv6Addr1,
-			destAddr:   remoteIPv6Addr2,
+			name:    "Hopbyhop with unknown option discard action",
+			TTL:     2,
+			srcAddr: remoteIPv6Addr1,
+			dstAddr: remoteIPv6Addr2,
 			extHdr: func(nextHdr uint8) ([]byte, uint8, checker.NetworkChecker) {
 				return []byte{
 					nextHdr, 1,
@@ -3089,13 +3101,14 @@ func TestForwarding(t *testing.T) {
 					127, 6, 1, 2, 3, 4, 5, 6,
 				}, hopByHopExtHdrID, nil
 			},
-			expectExtensionHeaderError: true,
+			expectedExtensionHeaderErrors: 1,
+			expectPacketForwarded:         false,
 		},
 		{
-			name:       "Hopbyhop with unknown option discard and send icmp action (unicast)",
-			TTL:        2,
-			sourceAddr: remoteIPv6Addr1,
-			destAddr:   remoteIPv6Addr2,
+			name:    "Hopbyhop with unknown option discard and send icmp action",
+			TTL:     2,
+			srcAddr: remoteIPv6Addr1,
+			dstAddr: remoteIPv6Addr2,
 			extHdr: func(nextHdr uint8) ([]byte, uint8, checker.NetworkChecker) {
 				return []byte{
 					nextHdr, 1,
@@ -3107,37 +3120,18 @@ func TestForwarding(t *testing.T) {
 					191, 6, 1, 2, 3, 4, 5, 6,
 				}, hopByHopExtHdrID, nil
 			},
-			expectErrorICMP:            true,
-			icmpType:                   header.ICMPv6ParamProblem,
-			icmpCode:                   header.ICMPv6UnknownOption,
-			expectExtensionHeaderError: true,
-		},
-		{
-			name:       "Hopbyhop with unknown option discard and send icmp action (multicast)",
-			TTL:        2,
-			sourceAddr: remoteIPv6Addr1,
-			destAddr:   multicastIPv6Addr.Address,
-			extHdr: func(nextHdr uint8) ([]byte, uint8, checker.NetworkChecker) {
-				return []byte{
-					nextHdr, 1,
-
-					// Skippable unknown.
-					63, 4, 1, 2, 3, 4,
-
-					// Discard & send ICMP if option is unknown.
-					191, 6, 1, 2, 3, 4, 5, 6,
-				}, hopByHopExtHdrID, nil
+			expectedICMPError: &icmpError{
+				icmpType: header.ICMPv6ParamProblem,
+				icmpCode: header.ICMPv6UnknownOption,
 			},
-			expectErrorICMP:            true,
-			icmpType:                   header.ICMPv6ParamProblem,
-			icmpCode:                   header.ICMPv6UnknownOption,
-			expectExtensionHeaderError: true,
+			expectedExtensionHeaderErrors: 1,
+			expectPacketForwarded:         false,
 		},
 		{
-			name:       "Hopbyhop with unknown option discard and send icmp action unless multicast dest (unicast)",
-			TTL:        2,
-			sourceAddr: remoteIPv6Addr1,
-			destAddr:   remoteIPv6Addr2,
+			name:    "Hopbyhop with unknown option discard and send icmp action",
+			TTL:     2,
+			srcAddr: remoteIPv6Addr1,
+			dstAddr: remoteIPv6Addr2,
 			extHdr: func(nextHdr uint8) ([]byte, uint8, checker.NetworkChecker) {
 				return []byte{
 					nextHdr, 1,
@@ -3150,35 +3144,18 @@ func TestForwarding(t *testing.T) {
 					255, 6, 1, 2, 3, 4, 5, 6,
 				}, hopByHopExtHdrID, nil
 			},
-			expectErrorICMP:            true,
-			icmpType:                   header.ICMPv6ParamProblem,
-			icmpCode:                   header.ICMPv6UnknownOption,
-			expectExtensionHeaderError: true,
-		},
-		{
-			name:       "Hopbyhop with unknown option discard and send icmp action unless multicast dest (multicast)",
-			TTL:        2,
-			sourceAddr: remoteIPv6Addr1,
-			destAddr:   multicastIPv6Addr.Address,
-			extHdr: func(nextHdr uint8) ([]byte, uint8, checker.NetworkChecker) {
-				return []byte{
-					nextHdr, 1,
-
-					// Skippable unknown.
-					63, 4, 1, 2, 3, 4,
-
-					// Discard & send ICMP unless packet is for multicast destination if
-					// option is unknown.
-					255, 6, 1, 2, 3, 4, 5, 6,
-				}, hopByHopExtHdrID, nil
+			expectedICMPError: &icmpError{
+				icmpType: header.ICMPv6ParamProblem,
+				icmpCode: header.ICMPv6UnknownOption,
 			},
-			expectExtensionHeaderError: true,
+			expectedExtensionHeaderErrors: 1,
+			expectPacketForwarded:         false,
 		},
 		{
-			name:       "Hopbyhop with router alert option",
-			TTL:        2,
-			sourceAddr: remoteIPv6Addr1,
-			destAddr:   remoteIPv6Addr2,
+			name:    "Hopbyhop with router alert option",
+			TTL:     2,
+			srcAddr: remoteIPv6Addr1,
+			dstAddr: remoteIPv6Addr2,
 			extHdr: func(nextHdr uint8) ([]byte, uint8, checker.NetworkChecker) {
 				return []byte{
 					nextHdr, 0,
@@ -3190,10 +3167,10 @@ func TestForwarding(t *testing.T) {
 			expectPacketForwarded: true,
 		},
 		{
-			name:       "Hopbyhop with two router alert options",
-			TTL:        2,
-			sourceAddr: remoteIPv6Addr1,
-			destAddr:   remoteIPv6Addr2,
+			name:    "Hopbyhop with two router alert options",
+			TTL:     2,
+			srcAddr: remoteIPv6Addr1,
+			dstAddr: remoteIPv6Addr2,
 			extHdr: func(nextHdr uint8) ([]byte, uint8, checker.NetworkChecker) {
 				return []byte{
 					nextHdr, 1,
@@ -3205,27 +3182,21 @@ func TestForwarding(t *testing.T) {
 					5, 2, 0, 0, 0, 0,
 				}, hopByHopExtHdrID, nil
 			},
-			expectExtensionHeaderError: true,
+			expectedExtensionHeaderErrors: 1,
+			expectPacketForwarded:         false,
 		},
 		{
-			name:            "Can't fragment",
-			TTL:             2,
-			payloadLength:   header.IPv6MinimumMTU + 1,
-			expectErrorICMP: true,
-			sourceAddr:      remoteIPv6Addr1,
-			destAddr:        remoteIPv6Addr2,
-			icmpType:        header.ICMPv6PacketTooBig,
-			icmpCode:        header.ICMPv6UnusedCode,
-		},
-		{
-			name:            "Can't fragment multicast",
-			TTL:             2,
-			payloadLength:   header.IPv6MinimumMTU + 1,
-			sourceAddr:      remoteIPv6Addr1,
-			destAddr:        multicastIPv6Addr.Address,
-			expectErrorICMP: true,
-			icmpType:        header.ICMPv6PacketTooBig,
-			icmpCode:        header.ICMPv6UnusedCode,
+			name:          "Can't fragment",
+			TTL:           2,
+			payloadLength: header.IPv6MinimumMTU + 1,
+			srcAddr:       remoteIPv6Addr1,
+			dstAddr:       remoteIPv6Addr2,
+			expectedICMPError: &icmpError{
+				icmpType: header.ICMPv6PacketTooBig,
+				icmpCode: header.ICMPv6UnusedCode,
+			},
+			expectedPacketTooBigErrors: 1,
+			expectPacketForwarded:      false,
 		},
 	}
 
@@ -3235,25 +3206,20 @@ func TestForwarding(t *testing.T) {
 			defer c.cleanup()
 			s := c.s
 
-			// We expect at most a single packet in response to our ICMP Echo Request.
-			incomingEndpoint := channel.New(1, header.IPv6MinimumMTU, "")
-			defer incomingEndpoint.Close()
-			if err := s.CreateNIC(incomingNICID, incomingEndpoint); err != nil {
-				t.Fatalf("CreateNIC(%d, _): %s", incomingNICID, err)
-			}
-			incomingIPv6ProtoAddr := tcpip.ProtocolAddress{Protocol: ProtocolNumber, AddressWithPrefix: incomingIPv6Addr}
-			if err := s.AddProtocolAddress(incomingNICID, incomingIPv6ProtoAddr, stack.AddressProperties{}); err != nil {
-				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", incomingNICID, incomingIPv6ProtoAddr, err)
-			}
+			endpoints := make(map[tcpip.NICID]*channel.Endpoint)
+			for nicID, addr := range defaultEndpointConfigs {
+				ep := channel.New(1, header.IPv6MinimumMTU, "")
+				defer ep.Close()
 
-			outgoingEndpoint := channel.New(1, header.IPv6MinimumMTU, "")
-			defer outgoingEndpoint.Close()
-			if err := s.CreateNIC(outgoingNICID, outgoingEndpoint); err != nil {
-				t.Fatalf("CreateNIC(%d, _): %s", outgoingNICID, err)
-			}
-			outgoingIPv6ProtoAddr := tcpip.ProtocolAddress{Protocol: ProtocolNumber, AddressWithPrefix: outgoingIPv6Addr}
-			if err := s.AddProtocolAddress(outgoingNICID, outgoingIPv6ProtoAddr, stack.AddressProperties{}); err != nil {
-				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", outgoingNICID, outgoingIPv6ProtoAddr, err)
+				if err := s.CreateNIC(nicID, ep); err != nil {
+					t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+				}
+				addr := tcpip.ProtocolAddress{Protocol: ProtocolNumber, AddressWithPrefix: addr}
+				if err := s.AddProtocolAddress(nicID, addr, stack.AddressProperties{}); err != nil {
+					t.Fatalf("s.AddProtocolAddress(%d, %+v, {}): %s", nicID, addr, err)
+				}
+				s.SetNICMulticastForwarding(nicID, ProtocolNumber, true /* enabled */)
+				endpoints[nicID] = ep
 			}
 
 			s.SetRouteTable([]tcpip.Route{
@@ -3272,7 +3238,7 @@ func TestForwarding(t *testing.T) {
 			})
 
 			if err := s.SetForwardingDefaultAndAllNICs(ProtocolNumber, true); err != nil {
-				t.Fatalf("SetForwardingDefaultAndAllNICs(%d, true): %s", ProtocolNumber, err)
+				t.Fatalf("s.SetForwardingDefaultAndAllNICs(%d, true): %s", ProtocolNumber, err)
 			}
 
 			transportProtocol := header.ICMPv6ProtocolNumber
@@ -3300,8 +3266,8 @@ func TestForwarding(t *testing.T) {
 			icmpH.SetChecksum(0)
 			icmpH.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
 				Header: icmpH,
-				Src:    test.sourceAddr,
-				Dst:    test.destAddr,
+				Src:    test.srcAddr,
+				Dst:    test.dstAddr,
 			}))
 			copy(hdr.Prepend(extHdrLen), extHdrBytes)
 			ip := header.IPv6(hdr.Prepend(ipHeaderLength))
@@ -3309,20 +3275,31 @@ func TestForwarding(t *testing.T) {
 				PayloadLength:     uint16(payloadLength),
 				TransportProtocol: transportProtocol,
 				HopLimit:          test.TTL,
-				SrcAddr:           test.sourceAddr,
-				DstAddr:           test.destAddr,
+				SrcAddr:           test.srcAddr,
+				DstAddr:           test.dstAddr,
 			})
 			request := stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Data: hdr.View().ToVectorisedView(),
 			})
+
+			incomingEndpoint, ok := endpoints[incomingNICID]
+			if !ok {
+				t.Fatalf("endpoints[%d] = (_, false), want (_, true)", incomingNICID)
+			}
+
 			incomingEndpoint.InjectInbound(ProtocolNumber, request)
 			request.DecRef()
 
 			reply := incomingEndpoint.Read()
 
-			if test.expectErrorICMP {
+			outgoingEndpoint, ok := endpoints[outgoingNICID]
+			if !ok {
+				t.Fatalf("endpoints[%d] = (_, false), want (_, true)", outgoingNICID)
+			}
+
+			if test.expectedICMPError != nil {
 				if reply == nil {
-					t.Fatalf("expected ICMP packet type %d through incoming NIC", test.icmpType)
+					t.Fatalf("Expected ICMP packet type %d through incoming NIC", test.expectedICMPError.icmpType)
 				}
 
 				// As per RFC 4443, page 9:
@@ -3340,32 +3317,32 @@ func TestForwarding(t *testing.T) {
 
 				checker.IPv6(t, stack.PayloadSince(reply.NetworkHeader()),
 					checker.SrcAddr(incomingIPv6Addr.Address),
-					checker.DstAddr(test.sourceAddr),
+					checker.DstAddr(test.srcAddr),
 					checker.TTL(DefaultTTL),
 					checker.ICMPv6(
-						checker.ICMPv6Type(test.icmpType),
-						checker.ICMPv6Code(test.icmpCode),
+						checker.ICMPv6Type(test.expectedICMPError.icmpType),
+						checker.ICMPv6Code(test.expectedICMPError.icmpCode),
 						checker.ICMPv6Payload(hdr.View()[:expectedICMPPayloadLength()]),
 					),
 				)
 				reply.DecRef()
 
 				if n := outgoingEndpoint.Drain(); n != 0 {
-					t.Fatalf("got e2.Drain() = %d, want = 0", n)
+					t.Fatalf("e2.Drain() = %d, want = 0", n)
 				}
 			} else if reply != nil {
-				t.Fatalf("expected no ICMP packet through incoming NIC, instead found: %#v", reply)
+				t.Fatalf("Expected no ICMP packet through incoming NIC, instead found: %#v", reply)
 			}
 
 			reply = outgoingEndpoint.Read()
 			if test.expectPacketForwarded {
 				if reply == nil {
-					t.Fatal("expected ICMP Echo Request packet through outgoing NIC")
+					t.Fatal("Expected ICMP Echo Request packet through outgoing NIC")
 				}
 
 				checker.IPv6WithExtHdr(t, stack.PayloadSince(reply.NetworkHeader()),
-					checker.SrcAddr(test.sourceAddr),
-					checker.DstAddr(test.destAddr),
+					checker.SrcAddr(test.srcAddr),
+					checker.DstAddr(test.dstAddr),
 					checker.TTL(test.TTL-1),
 					extHdrChecker,
 					checker.ICMPv6(
@@ -3377,45 +3354,346 @@ func TestForwarding(t *testing.T) {
 				reply.DecRef()
 
 				if n := incomingEndpoint.Drain(); n != 0 {
-					t.Fatalf("got e1.Drain() = %d, want = 0", n)
+					t.Fatalf("e1.Drain() = %d, want = 0", n)
 				}
 			} else if reply != nil {
-				t.Fatalf("expected no ICMP Echo packet through outgoing NIC, instead found: %#v", reply)
+				t.Fatalf("Expected no ICMP Echo packet through outgoing NIC, instead found: %#v", reply)
 			}
 
-			boolToInt := func(val bool) uint64 {
-				if val {
-					return 1
+			if got, want := s.Stats().IP.Forwarding.LinkLocalSource.Value(), test.expectedLinkLocalSourceErrors; got != want {
+				t.Errorf("s.Stats().IP.Forwarding.LinkLocalSource.Value() = %d, want = %d", got, want)
+			}
+
+			if got, want := s.Stats().IP.Forwarding.LinkLocalDestination.Value(), test.expectedLinkLocalDestErrors; got != want {
+				t.Errorf("s.Stats().IP.Forwarding.LinkLocalDestination.Value() = %d, want = %d", got, want)
+			}
+
+			if got, want := s.Stats().IP.Forwarding.ExhaustedTTL.Value(), test.expectedExhaustedTTLErrors; got != want {
+				t.Errorf("s.Stats().IP.Forwarding.ExhaustedTTL.Value() = %d, want = %d", got, want)
+			}
+
+			if got, want := s.Stats().IP.Forwarding.Unrouteable.Value(), test.expectedPacketUnrouteableErrors; got != want {
+				t.Errorf("s.Stats().IP.Forwarding.Unrouteable.Value() = %d, want = %d", got, want)
+			}
+
+			if got, want := s.Stats().IP.Forwarding.ExtensionHeaderProblem.Value(), test.expectedExtensionHeaderErrors; got != want {
+				t.Errorf("s.Stats().IP.Forwarding.ExtensionHeaderProblem.Value() = %d, want = %d", got, want)
+			}
+
+			if got, want := s.Stats().IP.Forwarding.PacketTooBig.Value(), test.expectedPacketTooBigErrors; got != want {
+				t.Errorf("s.Stats().IP.Forwarding.PacketTooBig.Value() = %d, want = %d", got, want)
+			}
+
+			totalExpectedErrors := test.expectedPacketUnrouteableErrors + test.expectedPacketTooBigErrors + test.expectedExtensionHeaderErrors + test.expectedLinkLocalSourceErrors + test.expectedLinkLocalDestErrors + test.expectedExhaustedTTLErrors
+			if got, want := s.Stats().IP.Forwarding.Errors.Value(), totalExpectedErrors; got != want {
+				t.Errorf("s.Stats().IP.Forwarding.Errors.Value() = %d, want = %d", got, want)
+			}
+		})
+	}
+}
+
+func TestMulticastForwarding(t *testing.T) {
+	const (
+		multicastRouteMinTTL = 2
+		packetTTL            = 2
+	)
+
+	tests := []struct {
+		name                          string
+		extHdr                        func(nextHdr uint8) ([]byte, uint8, checker.NetworkChecker)
+		payloadLength                 int
+		expectedExtensionHeaderErrors uint64
+		expectedPacketTooBigErrors    uint64
+		expectPacketForwarded         bool
+		expectedICMPError             *icmpError
+	}{
+		{
+			name: "Hopbyhop with unknown option skippable action",
+			extHdr: func(nextHdr uint8) ([]byte, uint8, checker.NetworkChecker) {
+				return []byte{
+					nextHdr, 1,
+
+					// Skippable unknown.
+					63, 4, 1, 2, 3, 4,
+
+					// Skippable unknown.
+					62, 6, 1, 2, 3, 4, 5, 6,
+				}, hopByHopExtHdrID, checker.IPv6ExtHdr(checker.IPv6HopByHopExtensionHeader(checker.IPv6UnknownOption(), checker.IPv6UnknownOption()))
+			},
+			expectPacketForwarded: true,
+		},
+		{
+			name: "Hopbyhop with unknown option discard action",
+			extHdr: func(nextHdr uint8) ([]byte, uint8, checker.NetworkChecker) {
+				return []byte{
+					nextHdr, 1,
+
+					// Skippable unknown.
+					63, 4, 1, 2, 3, 4,
+
+					// Discard unknown.
+					127, 6, 1, 2, 3, 4, 5, 6,
+				}, hopByHopExtHdrID, nil
+			},
+			expectedExtensionHeaderErrors: 1,
+			expectPacketForwarded:         false,
+		},
+		{
+			name: "Hopbyhop with unknown option discard and send icmp action",
+			extHdr: func(nextHdr uint8) ([]byte, uint8, checker.NetworkChecker) {
+				return []byte{
+					nextHdr, 1,
+
+					// Skippable unknown.
+					63, 4, 1, 2, 3, 4,
+
+					// Discard & send ICMP if option is unknown.
+					191, 6, 1, 2, 3, 4, 5, 6,
+				}, hopByHopExtHdrID, nil
+			},
+			expectedICMPError: &icmpError{
+				icmpType: header.ICMPv6ParamProblem,
+				icmpCode: header.ICMPv6UnknownOption,
+			},
+			expectedExtensionHeaderErrors: 1,
+			expectPacketForwarded:         false,
+		},
+		{
+			name: "Hopbyhop with unknown option discard and don't send icmp action for multicast",
+			extHdr: func(nextHdr uint8) ([]byte, uint8, checker.NetworkChecker) {
+				return []byte{
+					nextHdr, 1,
+
+					// Skippable unknown.
+					63, 4, 1, 2, 3, 4,
+
+					// Discard & send ICMP unless packet is for multicast destination if
+					// option is unknown.
+					255, 6, 1, 2, 3, 4, 5, 6,
+				}, hopByHopExtHdrID, nil
+			},
+			expectedExtensionHeaderErrors: 1,
+			expectPacketForwarded:         false,
+		},
+		{
+			name: "Hopbyhop with router alert option",
+			extHdr: func(nextHdr uint8) ([]byte, uint8, checker.NetworkChecker) {
+				return []byte{
+					nextHdr, 0,
+
+					// Router Alert option.
+					5, 2, 0, 0, 0, 0,
+				}, hopByHopExtHdrID, checker.IPv6ExtHdr(checker.IPv6HopByHopExtensionHeader(checker.IPv6RouterAlert(header.IPv6RouterAlertMLD)))
+			},
+			expectPacketForwarded: true,
+		},
+		{
+			name: "Hopbyhop with two router alert options",
+			extHdr: func(nextHdr uint8) ([]byte, uint8, checker.NetworkChecker) {
+				return []byte{
+					nextHdr, 1,
+
+					// Router Alert option.
+					5, 2, 0, 0, 0, 0,
+
+					// Router Alert option.
+					5, 2, 0, 0, 0, 0,
+				}, hopByHopExtHdrID, nil
+			},
+			expectedExtensionHeaderErrors: 1,
+			expectPacketForwarded:         false,
+		},
+		{
+			name:          "Can't fragment",
+			payloadLength: header.IPv6MinimumMTU + 1,
+			expectedICMPError: &icmpError{
+				icmpType: header.ICMPv6PacketTooBig,
+				icmpCode: header.ICMPv6UnusedCode,
+			},
+			expectedPacketTooBigErrors: 1,
+			expectPacketForwarded:      false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := newTestContext()
+			defer c.cleanup()
+			s := c.s
+
+			endpoints := make(map[tcpip.NICID]*channel.Endpoint)
+			for nicID, addr := range defaultEndpointConfigs {
+				ep := channel.New(1, header.IPv6MinimumMTU, "")
+				defer ep.Close()
+
+				if err := s.CreateNIC(nicID, ep); err != nil {
+					t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
 				}
-				return 0
+				addr := tcpip.ProtocolAddress{Protocol: ProtocolNumber, AddressWithPrefix: addr}
+				if err := s.AddProtocolAddress(nicID, addr, stack.AddressProperties{}); err != nil {
+					t.Fatalf("s.AddProtocolAddress(%d, %+v, {}): %s", nicID, addr, err)
+				}
+				s.SetNICMulticastForwarding(nicID, ProtocolNumber, true /* enabled */)
+				endpoints[nicID] = ep
 			}
 
-			if got, want := s.Stats().IP.Forwarding.LinkLocalSource.Value(), boolToInt(test.expectLinkLocalSourceError); got != want {
-				t.Errorf("got s.Stats().IP.Forwarding.LinkLocalSource.Value() = %d, want = %d", got, want)
+			s.SetRouteTable([]tcpip.Route{
+				{
+					Destination: header.IPv6EmptySubnet,
+					NIC:         incomingNICID,
+				},
+			})
+
+			srcAddr := remoteIPv6Addr1
+			dstAddr := multicastIPv6Addr.Address
+
+			outgoingInterfaces := []stack.MulticastRouteOutgoingInterface{
+				{ID: outgoingNICID, MinTTL: multicastRouteMinTTL},
+			}
+			addresses := stack.UnicastSourceAndMulticastDestination{
+				Source:      srcAddr,
+				Destination: multicastIPv6Addr.Address,
 			}
 
-			if got, want := s.Stats().IP.Forwarding.LinkLocalDestination.Value(), boolToInt(test.expectLinkLocalDestError); got != want {
-				t.Errorf("got s.Stats().IP.Forwarding.LinkLocalDestination.Value() = %d, want = %d", got, want)
+			route := stack.MulticastRoute{
+				ExpectedInputInterface: incomingNICID,
+				OutgoingInterfaces:     outgoingInterfaces,
 			}
 
-			if got, want := s.Stats().IP.Forwarding.ExhaustedTTL.Value(), boolToInt(test.TTL <= 1); got != want {
-				t.Errorf("got rt.Stats().IP.Forwarding.ExhaustedTTL.Value() = %d, want = %d", got, want)
+			if err := s.AddMulticastRoute(ProtocolNumber, addresses, route); err != nil {
+				t.Fatalf("s.AddMulticastRoute(%d, %#v, %#v): = %s", ProtocolNumber, addresses, route, err)
 			}
 
-			if got, want := s.Stats().IP.Forwarding.Unrouteable.Value(), boolToInt(test.expectPacketUnrouteableError); got != want {
-				t.Errorf("got s.Stats().IP.Forwarding.Unrouteable.Value() = %d, want = %d", got, want)
+			transportProtocol := header.ICMPv6ProtocolNumber
+			var extHdrBytes []byte
+			extHdrChecker := checker.IPv6ExtHdr()
+			if test.extHdr != nil {
+				nextHdrID := hopByHopExtHdrID
+				extHdrBytes, nextHdrID, extHdrChecker = test.extHdr(uint8(header.ICMPv6ProtocolNumber))
+				transportProtocol = tcpip.TransportProtocolNumber(nextHdrID)
+			}
+			extHdrLen := len(extHdrBytes)
+
+			ipHeaderLength := header.IPv6MinimumSize
+			icmpHeaderLength := header.ICMPv6MinimumSize
+			payloadLength := icmpHeaderLength + test.payloadLength + extHdrLen
+			totalLength := ipHeaderLength + payloadLength
+			hdr := buffer.NewPrependable(totalLength)
+			hdr.Prepend(test.payloadLength)
+			icmpH := header.ICMPv6(hdr.Prepend(icmpHeaderLength))
+
+			icmpH.SetIdent(randomIdent)
+			icmpH.SetSequence(randomSequence)
+			icmpH.SetType(header.ICMPv6EchoRequest)
+			icmpH.SetCode(header.ICMPv6UnusedCode)
+			icmpH.SetChecksum(0)
+			icmpH.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+				Header: icmpH,
+				Src:    srcAddr,
+				Dst:    dstAddr,
+			}))
+			copy(hdr.Prepend(extHdrLen), extHdrBytes)
+			ip := header.IPv6(hdr.Prepend(ipHeaderLength))
+			ip.Encode(&header.IPv6Fields{
+				PayloadLength:     uint16(payloadLength),
+				TransportProtocol: transportProtocol,
+				HopLimit:          packetTTL,
+				SrcAddr:           srcAddr,
+				DstAddr:           dstAddr,
+			})
+			request := stack.NewPacketBuffer(stack.PacketBufferOptions{
+				Data: hdr.View().ToVectorisedView(),
+			})
+
+			incomingEndpoint, ok := endpoints[incomingNICID]
+			if !ok {
+				t.Fatalf("endpoints[%d] = (_, false), want (_, true)", incomingNICID)
 			}
 
-			if got, want := s.Stats().IP.Forwarding.Errors.Value(), boolToInt(!test.expectPacketForwarded); got != want {
-				t.Errorf("got s.Stats().IP.Forwarding.Errors.Value() = %d, want = %d", got, want)
+			incomingEndpoint.InjectInbound(ProtocolNumber, request)
+			request.DecRef()
+
+			reply := incomingEndpoint.Read()
+
+			outgoingEndpoint, ok := endpoints[outgoingNICID]
+			if !ok {
+				t.Fatalf("endpoints[%d] = (_, false), want (_, true)", outgoingNICID)
 			}
 
-			if got, want := s.Stats().IP.Forwarding.ExtensionHeaderProblem.Value(), boolToInt(test.expectExtensionHeaderError); got != want {
-				t.Errorf("got s.Stats().IP.Forwarding.ExtensionHeaderProblem.Value() = %d, want = %d", got, want)
+			if test.expectedICMPError != nil {
+				if reply == nil {
+					t.Fatalf("Expected ICMP packet type %d through incoming NIC", test.expectedICMPError.icmpType)
+				}
+
+				// As per RFC 4443, page 9:
+				//
+				//   The returned ICMP packet will contain as much of invoking packet
+				//   as possible without the ICMPv6 packet exceeding the minimum IPv6
+				//   MTU.
+				expectedICMPPayloadLength := func() int {
+					maxICMPPayloadLength := header.IPv6MinimumMTU - ipHeaderLength - icmpHeaderLength
+					if len(hdr.View()) > maxICMPPayloadLength {
+						return maxICMPPayloadLength
+					}
+					return len(hdr.View())
+				}
+
+				checker.IPv6(t, stack.PayloadSince(reply.NetworkHeader()),
+					checker.SrcAddr(incomingIPv6Addr.Address),
+					checker.DstAddr(srcAddr),
+					checker.TTL(DefaultTTL),
+					checker.ICMPv6(
+						checker.ICMPv6Type(test.expectedICMPError.icmpType),
+						checker.ICMPv6Code(test.expectedICMPError.icmpCode),
+						checker.ICMPv6Payload(hdr.View()[:expectedICMPPayloadLength()]),
+					),
+				)
+				reply.DecRef()
+
+				if n := outgoingEndpoint.Drain(); n != 0 {
+					t.Fatalf("e2.Drain() = %d, want = 0", n)
+				}
+			} else if reply != nil {
+				t.Fatalf("Expected no ICMP packet through incoming NIC, instead found: %#v", reply)
 			}
 
-			if got, want := s.Stats().IP.Forwarding.PacketTooBig.Value(), boolToInt(test.icmpType == header.ICMPv6PacketTooBig); got != want {
-				t.Errorf("got s.Stats().IP.Forwarding.PacketTooBig.Value() = %d, want = %d", got, want)
+			reply = outgoingEndpoint.Read()
+			if test.expectPacketForwarded {
+				if reply == nil {
+					t.Fatal("Expected ICMP Echo Request packet through outgoing NIC")
+				}
+
+				checker.IPv6WithExtHdr(t, stack.PayloadSince(reply.NetworkHeader()),
+					checker.SrcAddr(srcAddr),
+					checker.DstAddr(dstAddr),
+					checker.TTL(packetTTL-1),
+					extHdrChecker,
+					checker.ICMPv6(
+						checker.ICMPv6Type(header.ICMPv6EchoRequest),
+						checker.ICMPv6Code(header.ICMPv6UnusedCode),
+						checker.ICMPv6Payload(nil),
+					),
+				)
+				reply.DecRef()
+
+				if n := incomingEndpoint.Drain(); n != 0 {
+					t.Fatalf("e1.Drain() = %d, want = 0", n)
+				}
+			} else if reply != nil {
+				t.Fatalf("Expected no ICMP Echo packet through outgoing NIC, instead found: %#v", reply)
+			}
+
+			if got, want := s.Stats().IP.Forwarding.ExtensionHeaderProblem.Value(), test.expectedExtensionHeaderErrors; got != want {
+				t.Errorf("s.Stats().IP.Forwarding.ExtensionHeaderProblem.Value() = %d, want = %d", got, want)
+			}
+
+			if got, want := s.Stats().IP.Forwarding.PacketTooBig.Value(), test.expectedPacketTooBigErrors; got != want {
+				t.Errorf("s.Stats().IP.Forwarding.PacketTooBig.Value() = %d, want = %d", got, want)
+			}
+
+			totalExpectedErrors := test.expectedPacketTooBigErrors + test.expectedExtensionHeaderErrors
+			if got, want := s.Stats().IP.Forwarding.Errors.Value(), totalExpectedErrors; got != want {
+				t.Errorf("s.Stats().IP.Forwarding.Errors.Value() = %d, want = %d", got, want)
 			}
 		})
 	}

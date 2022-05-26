@@ -37,11 +37,6 @@ import (
 
 const ttl = 64
 
-var (
-	ipv4GlobalMulticastAddr = testutil.MustParse4("224.0.1.10")
-	ipv6GlobalMulticastAddr = testutil.MustParse6("ff0e::a")
-)
-
 func rxICMPv4EchoRequest(e *channel.Endpoint, src, dst tcpip.Address) {
 	utils.RxICMPv4EchoRequest(e, src, dst, ttl)
 }
@@ -358,9 +353,7 @@ func TestUnicastForwarding(t *testing.T) {
 
 	var (
 		ipv4LinkLocalUnicastAddr = testutil.MustParse4("169.254.0.10")
-
-		ipv6LinkLocalUnicastAddr   = testutil.MustParse6("fe80::a")
-		ipv6LinkLocalMulticastAddr = testutil.MustParse6("ff02::a")
+		ipv6LinkLocalUnicastAddr = testutil.MustParse6("fe80::a")
 	)
 
 	tests := []struct {
@@ -392,26 +385,6 @@ func TestUnicastForwarding(t *testing.T) {
 			expectForward: true,
 			checker: func(t *testing.T, b []byte) {
 				forwardedICMPv4EchoRequestChecker(t, b, utils.RemoteIPv4Addr, utils.Ipv4Addr2.AddressWithPrefix.Address)
-			},
-		},
-		// TODO(https://gvisor.dev/issue/7338): Move the IPv6 multicast forwarding
-		// tests to TestMulticastForwarding. Currently, they rely on the unicast
-		// routing table.
-		{
-			name:          "IPv6 link-local multicast destination",
-			srcAddr:       utils.RemoteIPv6Addr,
-			dstAddr:       ipv6LinkLocalMulticastAddr,
-			rx:            rxICMPv6EchoRequest,
-			expectForward: false,
-		},
-		{
-			name:          "IPv6 non-link-local multicast",
-			srcAddr:       utils.RemoteIPv6Addr,
-			dstAddr:       ipv6GlobalMulticastAddr,
-			rx:            rxICMPv6EchoRequest,
-			expectForward: true,
-			checker: func(t *testing.T, b []byte) {
-				forwardedICMPv6EchoRequestChecker(t, b, utils.RemoteIPv6Addr, ipv6GlobalMulticastAddr)
 			},
 		},
 		{
@@ -535,18 +508,6 @@ func TestPerInterfaceForwarding(t *testing.T) {
 			rx:      rxICMPv6EchoRequest,
 			checker: func(t *testing.T, b []byte) {
 				forwardedICMPv6EchoRequestChecker(t, b, utils.RemoteIPv6Addr, utils.Ipv6Addr2.AddressWithPrefix.Address)
-			},
-		},
-		// TODO(https://gvisor.dev/issue/7338): Move the IPv6 multicast forwarding
-		// tests to TestMulticastForwarding. Currently, they rely on the unicast
-		// routing table.
-		{
-			name:    "IPv6 multicast",
-			srcAddr: utils.RemoteIPv6Addr,
-			dstAddr: ipv6GlobalMulticastAddr,
-			rx:      rxICMPv6EchoRequest,
-			checker: func(t *testing.T, b []byte) {
-				forwardedICMPv6EchoRequestChecker(t, b, utils.RemoteIPv6Addr, ipv6GlobalMulticastAddr)
 			},
 		},
 	}
