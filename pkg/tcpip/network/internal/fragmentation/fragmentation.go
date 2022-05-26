@@ -21,10 +21,10 @@ import (
 	"fmt"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -286,8 +286,8 @@ func (f *Fragmentation) releaseReassemblersLocked() {
 
 // PacketFragmenter is the book-keeping struct for packet fragmentation.
 type PacketFragmenter struct {
-	transportHeader    buffer.View
-	data               buffer.VectorisedView
+	transportHeader    []byte
+	data               buffer.Buffer
 	reserve            int
 	fragmentPayloadLen int
 	fragmentCount      int
@@ -312,9 +312,9 @@ func MakePacketFragmenter(pkt *stack.PacketBuffer, fragmentPayloadLen uint32, re
 	// TODO(gvisor.dev/issue/3912): Once Authentication or ESP Headers are
 	// supported for outbound packets, the fragmentable data should not include
 	// these headers.
-	var fragmentableData buffer.VectorisedView
-	fragmentableData.AppendView(pkt.TransportHeader().View())
-	fragmentableData.Append(pkt.Data().ExtractVV())
+	fragmentableData := buffer.NewWithData(pkt.TransportHeader().View())
+	pktBuf := pkt.Data().AsBuffer()
+	fragmentableData.Merge(&pktBuf)
 	fragmentCount := (uint32(fragmentableData.Size()) + fragmentPayloadLen - 1) / fragmentPayloadLen
 
 	return PacketFragmenter{
@@ -344,7 +344,7 @@ func (pf *PacketFragmenter) BuildNextFragment() (*stack.PacketBuffer, int, int, 
 	})
 
 	// Copy data for the fragment.
-	copied := fragPkt.Data().ReadFromVV(&pf.data, pf.fragmentPayloadLen)
+	copied := fragPkt.Data().ReadFromBuffer(&pf.data, pf.fragmentPayloadLen)
 
 	offset := pf.fragmentOffset
 	pf.fragmentOffset += copied
