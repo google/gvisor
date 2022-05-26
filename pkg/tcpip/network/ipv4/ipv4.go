@@ -1535,6 +1535,22 @@ func (p *protocol) RemoveMulticastRoute(addresses stack.UnicastSourceAndMulticas
 	return nil
 }
 
+// MulticastRouteLastUsedTime implements
+// stack.MulticastForwardingNetworkProtocol.
+func (p *protocol) MulticastRouteLastUsedTime(addresses stack.UnicastSourceAndMulticastDestination) (tcpip.MonotonicTime, tcpip.Error) {
+	if err := p.validateUnicastSourceAndMulticastDestination(addresses); err != nil {
+		return tcpip.MonotonicTime{}, err
+	}
+
+	timestamp, found := p.multicastRouteTable.GetLastUsedTimestamp(addresses)
+
+	if !found {
+		return tcpip.MonotonicTime{}, &tcpip.ErrNoRoute{}
+	}
+
+	return timestamp, nil
+}
+
 func (p *protocol) forwardPendingMulticastPacket(pkt *stack.PacketBuffer, installedRoute *multicast.InstalledRoute) {
 	defer pkt.DecRef()
 

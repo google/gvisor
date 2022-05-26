@@ -809,6 +809,14 @@ type MulticastForwardingNetworkProtocol interface {
 	// Returns an error if the addresses are invalid or a matching route is not
 	// found.
 	RemoveMulticastRoute(UnicastSourceAndMulticastDestination) tcpip.Error
+
+	// MulticastRouteLastUsedTime returns a monotonic timestamp that
+	// represents the last time that the route matching the provided addresses
+	// was used or updated.
+	//
+	// Returns an error if the addresses are invalid or a matching route was not
+	// found.
+	MulticastRouteLastUsedTime(UnicastSourceAndMulticastDestination) (tcpip.MonotonicTime, tcpip.Error)
 }
 
 // NetworkDispatcher contains the methods used by the network stack to deliver

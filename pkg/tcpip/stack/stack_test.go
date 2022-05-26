@@ -241,8 +241,9 @@ type fakeNetworkProtocol struct {
 	sendPacketCount [10]int
 	defaultTTL      uint8
 
-	addMulticastRouteData    addMulticastRouteData
-	removeMulticastRouteData stack.UnicastSourceAndMulticastDestination
+	addMulticastRouteData          addMulticastRouteData
+	multicastRouteLastUsedTimeData stack.UnicastSourceAndMulticastDestination
+	removeMulticastRouteData       stack.UnicastSourceAndMulticastDestination
 }
 
 func (*fakeNetworkProtocol) Number() tcpip.NetworkProtocolNumber {
@@ -319,6 +320,13 @@ func (f *fakeNetworkProtocol) AddMulticastRoute(addresses stack.UnicastSourceAnd
 func (f *fakeNetworkProtocol) RemoveMulticastRoute(addresses stack.UnicastSourceAndMulticastDestination) tcpip.Error {
 	f.removeMulticastRouteData = addresses
 	return nil
+}
+
+// MulticastRouteLastUsedTime implements
+// MulticastForwardingNetworkProtocol.MulticastRouteLastUsedTime.
+func (f *fakeNetworkProtocol) MulticastRouteLastUsedTime(addresses stack.UnicastSourceAndMulticastDestination) (tcpip.MonotonicTime, tcpip.Error) {
+	f.multicastRouteLastUsedTimeData = addresses
+	return tcpip.MonotonicTime{}, nil
 }
 
 // Forwarding implements stack.ForwardingNetworkEndpoint.
@@ -4794,6 +4802,58 @@ func TestRemoveMulticastRoute(t *testing.T) {
 				fakeNet := s.NetworkProtocolInstance(fakeNetNumber).(*fakeNetworkProtocol)
 				if !cmp.Equal(fakeNet.removeMulticastRouteData, addresses) {
 					t.Errorf("fakeNet.removeMulticastRouteData = %#v, want = %#v", fakeNet.removeMulticastRouteData, addresses)
+				}
+			}
+		})
+	}
+}
+
+func TestMulticastRouteLastUsedTime(t *testing.T) {
+	address := testutil.MustParse4("192.168.1.1")
+	addresses := stack.UnicastSourceAndMulticastDestination{Source: address, Destination: address}
+
+	tests := []struct {
+		name     string
+		netProto tcpip.NetworkProtocolNumber
+		factory  stack.NetworkProtocolFactory
+		wantErr  tcpip.Error
+	}{
+		{
+			name:     "valid",
+			netProto: fakeNetNumber,
+			factory:  fakeNetFactory,
+			wantErr:  nil,
+		},
+		{
+			name:     "unknown protocol",
+			factory:  fakeNetFactory,
+			netProto: arp.ProtocolNumber,
+			wantErr:  &tcpip.ErrUnknownProtocol{},
+		},
+		{
+			name:     "not supported",
+			factory:  arp.NewProtocol,
+			netProto: arp.ProtocolNumber,
+			wantErr:  &tcpip.ErrNotSupported{},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocolFactory{test.factory},
+			})
+
+			_, err := s.MulticastRouteLastUsedTime(test.netProto, addresses)
+
+			if !cmp.Equal(err, test.wantErr, cmpopts.EquateErrors()) {
+				t.Errorf("s.MulticastRouteLastUsedTime(%d, %#v) = %v, want %v", test.netProto, addresses, err, test.wantErr)
+			}
+
+			if test.wantErr == nil {
+				fakeNet := s.NetworkProtocolInstance(fakeNetNumber).(*fakeNetworkProtocol)
+
+				if !cmp.Equal(fakeNet.multicastRouteLastUsedTimeData, addresses) {
+					t.Errorf("fakeNet.multicastRouteLastUsedTimeData = %#v, want = %#v", fakeNet.multicastRouteLastUsedTimeData, addresses)
 				}
 			}
 		})
