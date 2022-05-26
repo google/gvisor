@@ -131,6 +131,7 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProt
 		ipv6ChecksumOffset: ipv6ChecksumOffset,
 	}
 	e.ops.InitHandler(e, e.stack, tcpip.GetStackSendBufferLimits, tcpip.GetStackReceiveBufferLimits)
+	e.ops.SetMulticastLoop(true)
 	e.ops.SetHeaderIncluded(!associated)
 	e.ops.SetSendBufferSize(32*1024, false /* notify */)
 	e.ops.SetReceiveBufferSize(32*1024, false /* notify */)
