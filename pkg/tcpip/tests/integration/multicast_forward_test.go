@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/tests/utils"
 	"gvisor.dev/gvisor/pkg/tcpip/testutil"
@@ -65,39 +66,132 @@ const (
 	otherOutgoingEndpointAddr
 )
 
-func getAddr(addrType addrType) tcpip.Address {
-	switch addrType {
-	case anyAddr:
-		return header.IPv4Any
-	case emptyAddr:
-		return ""
-	case linkLocalMulticastAddr:
-		return testutil.MustParse4("224.0.0.1")
-	case linkLocalUnicastAddr:
-		return testutil.MustParse4("169.254.0.10")
-	case multicastAddr:
-		return testutil.MustParse4("225.0.0.0")
-	case otherMulticastAddr:
-		return testutil.MustParse4("225.0.0.1")
-	case remoteUnicastAddr:
-		return utils.RemoteIPv4Addr
-	default:
+var (
+	v4Addrs = map[addrType]tcpip.Address{
+		anyAddr:                header.IPv4Any,
+		emptyAddr:              "",
+		linkLocalMulticastAddr: testutil.MustParse4("224.0.0.1"),
+		linkLocalUnicastAddr:   testutil.MustParse4("169.254.0.10"),
+		multicastAddr:          testutil.MustParse4("225.0.0.0"),
+		otherMulticastAddr:     testutil.MustParse4("225.0.0.1"),
+		remoteUnicastAddr:      utils.RemoteIPv4Addr,
+	}
+
+	v6Addrs = map[addrType]tcpip.Address{
+		anyAddr:                header.IPv6Any,
+		emptyAddr:              "",
+		linkLocalMulticastAddr: testutil.MustParse6("ff02::a"),
+		linkLocalUnicastAddr:   testutil.MustParse6("fe80::a"),
+		multicastAddr:          testutil.MustParse6("ff0e::a"),
+		otherMulticastAddr:     testutil.MustParse6("ff0e::b"),
+		remoteUnicastAddr:      utils.RemoteIPv6Addr,
+	}
+
+	v4EndpointAddrs = map[endpointAddrType]tcpip.AddressWithPrefix{
+		incomingEndpointAddr: utils.RouterNIC1IPv4Addr.AddressWithPrefix,
+		otherEndpointAddr:    utils.Host1IPv4Addr.AddressWithPrefix,
+		outgoingEndpointAddr: utils.RouterNIC2IPv4Addr.AddressWithPrefix,
+		otherOutgoingNICID:   utils.Host2IPv4Addr.AddressWithPrefix,
+	}
+
+	v6EndpointAddrs = map[endpointAddrType]tcpip.AddressWithPrefix{
+		incomingEndpointAddr: utils.RouterNIC1IPv6Addr.AddressWithPrefix,
+		otherEndpointAddr:    utils.Host1IPv6Addr.AddressWithPrefix,
+		outgoingEndpointAddr: utils.RouterNIC2IPv6Addr.AddressWithPrefix,
+		otherOutgoingNICID:   utils.Host2IPv6Addr.AddressWithPrefix,
+	}
+)
+
+func getAddr(protocol tcpip.NetworkProtocolNumber, addrType addrType) tcpip.Address {
+	switch protocol {
+	case ipv4.ProtocolNumber:
+		if addr, ok := v4Addrs[addrType]; ok {
+			return addr
+		}
 		panic(fmt.Sprintf("unsupported addrType: %d", addrType))
+	case ipv6.ProtocolNumber:
+		if addr, ok := v6Addrs[addrType]; ok {
+			return addr
+		}
+		panic(fmt.Sprintf("unsupported addrType: %d", addrType))
+	default:
+		panic(fmt.Sprintf("unsupported protocol: %d", protocol))
 	}
 }
 
-func getEndpointAddr(addrType endpointAddrType) tcpip.AddressWithPrefix {
-	switch addrType {
-	case incomingEndpointAddr:
-		return utils.RouterNIC1IPv4Addr.AddressWithPrefix
-	case otherEndpointAddr:
-		return utils.Host1IPv4Addr.AddressWithPrefix
-	case outgoingEndpointAddr:
-		return utils.RouterNIC2IPv4Addr.AddressWithPrefix
-	case otherOutgoingEndpointAddr:
-		return utils.Host2IPv4Addr.AddressWithPrefix
-	default:
+func getEndpointAddr(protocol tcpip.NetworkProtocolNumber, addrType endpointAddrType) tcpip.AddressWithPrefix {
+	switch protocol {
+	case ipv4.ProtocolNumber:
+		if addr, ok := v4EndpointAddrs[addrType]; ok {
+			return addr
+		}
 		panic(fmt.Sprintf("unsupported endpointAddrType: %d", addrType))
+	case ipv6.ProtocolNumber:
+		if addr, ok := v6EndpointAddrs[addrType]; ok {
+			return addr
+		}
+		panic(fmt.Sprintf("unsupported endpointAddrType: %d", addrType))
+	default:
+		panic(fmt.Sprintf("unsupported protocol: %d", protocol))
+	}
+}
+
+func checkEchoRequest(t *testing.T, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer, srcAddr, dstAddr tcpip.Address, ttl uint8) {
+	switch protocol {
+	case ipv4.ProtocolNumber:
+		checker.IPv4(t, stack.PayloadSince(pkt.NetworkHeader()),
+			checker.SrcAddr(srcAddr),
+			checker.DstAddr(dstAddr),
+			checker.TTL(ttl),
+			checker.ICMPv4(
+				checker.ICMPv4Type(header.ICMPv4Echo),
+			),
+		)
+	case ipv6.ProtocolNumber:
+		checker.IPv6(t, stack.PayloadSince(pkt.NetworkHeader()),
+			checker.SrcAddr(srcAddr),
+			checker.DstAddr(dstAddr),
+			checker.TTL(ttl),
+			checker.ICMPv6(
+				checker.ICMPv6Type(header.ICMPv6EchoRequest),
+			),
+		)
+	default:
+		panic(fmt.Sprintf("unsupported protocol: %d", protocol))
+	}
+}
+
+func checkEchoReply(t *testing.T, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer, srcAddr, dstAddr tcpip.Address) {
+	switch protocol {
+	case ipv4.ProtocolNumber:
+		checker.IPv4(t, stack.PayloadSince(pkt.NetworkHeader()),
+			checker.SrcAddr(srcAddr),
+			checker.DstAddr(dstAddr),
+			checker.ICMPv4(
+				checker.ICMPv4Type(header.ICMPv4EchoReply),
+			),
+		)
+	case ipv6.ProtocolNumber:
+		checker.IPv6(t, stack.PayloadSince(pkt.NetworkHeader()),
+			checker.SrcAddr(srcAddr),
+			checker.DstAddr(dstAddr),
+			checker.ICMPv6(
+				checker.ICMPv6Type(header.ICMPv6EchoReply),
+			),
+		)
+	default:
+		panic(fmt.Sprintf("unsupported protocol: %d", protocol))
+	}
+}
+
+func injectPacket(ep *channel.Endpoint, protocol tcpip.NetworkProtocolNumber, srcAddr, dstAddr tcpip.Address, ttl uint8) {
+	switch protocol {
+	case ipv4.ProtocolNumber:
+		utils.RxICMPv4EchoRequest(ep, srcAddr, dstAddr, ttl)
+	case ipv6.ProtocolNumber:
+		utils.RxICMPv6EchoRequest(ep, srcAddr, dstAddr, ttl)
+	default:
+		panic(fmt.Sprintf("unsupported protocol: %d", protocol))
 	}
 }
 
@@ -237,96 +331,91 @@ func TestAddMulticastRoute(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			s := stack.New(stack.Options{
-				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
-				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
-			})
-			defer s.Close()
+		for _, protocol := range []tcpip.NetworkProtocolNumber{ipv4.ProtocolNumber, ipv6.ProtocolNumber} {
+			t.Run(fmt.Sprintf("%s %d", test.name, protocol), func(t *testing.T) {
+				s := stack.New(stack.Options{
+					NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+					TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
+				})
+				defer s.Close()
 
-			endpoints := make(map[tcpip.NICID]*channel.Endpoint)
-			for nicID, addrType := range endpointConfigs {
-				ep := channel.New(1, ipv4.MaxTotalSize, "")
-				defer ep.Close()
+				endpoints := make(map[tcpip.NICID]*channel.Endpoint)
+				for nicID, addrType := range endpointConfigs {
+					ep := channel.New(1, ipv4.MaxTotalSize, "")
+					defer ep.Close()
 
-				if err := s.CreateNIC(nicID, ep); err != nil {
-					t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+					if err := s.CreateNIC(nicID, ep); err != nil {
+						t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+					}
+					addr := tcpip.ProtocolAddress{
+						Protocol:          protocol,
+						AddressWithPrefix: getEndpointAddr(protocol, addrType),
+					}
+					if err := s.AddProtocolAddress(nicID, addr, stack.AddressProperties{}); err != nil {
+						t.Fatalf("s.AddProtocolAddress(%d, %#v, {}): %s", nicID, addr, err)
+					}
+					s.SetNICMulticastForwarding(nicID, protocol, true /* enabled */)
+					endpoints[nicID] = ep
 				}
-				addr := tcpip.ProtocolAddress{
-					Protocol:          header.IPv4ProtocolNumber,
-					AddressWithPrefix: getEndpointAddr(addrType),
-				}
-				if err := s.AddProtocolAddress(nicID, addr, stack.AddressProperties{}); err != nil {
-					t.Fatalf("s.AddProtocolAddress(%d, %#v, {}): %s", nicID, addr, err)
-				}
-				s.SetNICMulticastForwarding(nicID, ipv4.ProtocolNumber, true /* enabled */)
-				endpoints[nicID] = ep
-			}
 
-			srcAddr := getAddr(test.srcAddr)
-			dstAddr := getAddr(test.dstAddr)
+				srcAddr := getAddr(protocol, test.srcAddr)
+				dstAddr := getAddr(protocol, test.dstAddr)
 
-			if test.injectPendingPacket {
-				incomingEp, ok := endpoints[incomingNICID]
+				if test.injectPendingPacket {
+					incomingEp, ok := endpoints[incomingNICID]
+					if !ok {
+						t.Fatalf("got endpoints[%d] = (_, false), want (_, true)", incomingNICID)
+					}
+
+					injectPacket(incomingEp, protocol, srcAddr, dstAddr, packetTTL)
+					p := incomingEp.Read()
+
+					if p != nil {
+						// An ICMP error should never be sent in response to a multicast packet.
+						t.Fatalf("got incomingEp.Read() = %#v, want = nil", p)
+					}
+				}
+
+				outgoingInterfaces := []stack.MulticastRouteOutgoingInterface{
+					{ID: test.routeOutgoingNICID, MinTTL: routeMinTTL},
+				}
+				if test.omitOutgoingInterfaces {
+					outgoingInterfaces = nil
+				}
+
+				addresses := stack.UnicastSourceAndMulticastDestination{
+					Source:      srcAddr,
+					Destination: dstAddr,
+				}
+
+				route := stack.MulticastRoute{
+					ExpectedInputInterface: test.routeIncomingNICID,
+					OutgoingInterfaces:     outgoingInterfaces,
+				}
+
+				err := s.AddMulticastRoute(protocol, addresses, route)
+
+				if !cmp.Equal(err, test.wantErr, cmpopts.EquateErrors()) {
+					t.Errorf("got s.AddMulticastRoute(%d, %#v, %#v) = %s, want %s", protocol, addresses, route, err, test.wantErr)
+				}
+
+				outgoingEp, ok := endpoints[outgoingNICID]
 				if !ok {
-					t.Fatalf("got endpoints[%d] = (_, false), want (_, true)", incomingNICID)
+					t.Fatalf("got endpoints[%d] = (_, false), want (_, true)", outgoingNICID)
 				}
 
-				utils.RxICMPv4EchoRequest(incomingEp, srcAddr, dstAddr, packetTTL)
-				p := incomingEp.Read()
+				p := outgoingEp.Read()
 
-				if p != nil {
-					// An ICMP error should never be sent in response to a multicast packet.
-					t.Fatalf("got incomingEp.Read() = %#v, want = nil", p)
+				if (p != nil) != test.expectForward {
+					t.Fatalf("got outgoingEp.Read() = %#v, want = (_ == nil) = %t", p, test.expectForward)
 				}
-			}
 
-			outgoingInterfaces := []stack.MulticastRouteOutgoingInterface{
-				{ID: test.routeOutgoingNICID, MinTTL: routeMinTTL},
-			}
-			if test.omitOutgoingInterfaces {
-				outgoingInterfaces = nil
-			}
-
-			addresses := stack.UnicastSourceAndMulticastDestination{
-				Source:      srcAddr,
-				Destination: dstAddr,
-			}
-
-			route := stack.MulticastRoute{
-				ExpectedInputInterface: test.routeIncomingNICID,
-				OutgoingInterfaces:     outgoingInterfaces,
-			}
-
-			err := s.AddMulticastRoute(ipv4.ProtocolNumber, addresses, route)
-
-			if !cmp.Equal(err, test.wantErr, cmpopts.EquateErrors()) {
-				t.Errorf("got s.AddMulticastRoute(%d, %#v, %#v) = %s, want %s", ipv4.ProtocolNumber, addresses, route, err, test.wantErr)
-			}
-
-			outgoingEp, ok := endpoints[outgoingNICID]
-			if !ok {
-				t.Fatalf("got endpoints[%d] = (_, false), want (_, true)", outgoingNICID)
-			}
-
-			p := outgoingEp.Read()
-
-			if (p != nil) != test.expectForward {
-				t.Fatalf("got outgoingEp.Read() = %#v, want = (_ == nil) = %t", p, test.expectForward)
-			}
-
-			if test.expectForward {
-				checker.IPv4(t, stack.PayloadSince(p.NetworkHeader()),
-					checker.SrcAddr(srcAddr),
-					checker.DstAddr(dstAddr),
-					checker.TTL(packetTTL-1),
-					checker.ICMPv4(
-						checker.ICMPv4Type(header.ICMPv4Echo),
-					),
-				)
-				p.DecRef()
-			}
-		})
+				if test.expectForward {
+					checkEchoRequest(t, protocol, p, srcAddr, dstAddr, packetTTL-1)
+					p.DecRef()
+				}
+			})
+		}
 	}
 }
 
@@ -434,146 +523,139 @@ func TestMulticastForwarding(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			s := stack.New(stack.Options{
-				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
-				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
-			})
-			defer s.Close()
+		for _, protocol := range []tcpip.NetworkProtocolNumber{ipv4.ProtocolNumber, ipv6.ProtocolNumber} {
+			t.Run(fmt.Sprintf("%s %d", test.name, protocol), func(t *testing.T) {
+				s := stack.New(stack.Options{
+					NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+					TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
+				})
+				defer s.Close()
 
-			endpoints := make(map[tcpip.NICID]*channel.Endpoint)
-			for nicID, addrType := range endpointConfigs {
-				ep := channel.New(1, ipv4.MaxTotalSize, "")
-				defer ep.Close()
+				endpoints := make(map[tcpip.NICID]*channel.Endpoint)
+				for nicID, addrType := range endpointConfigs {
+					ep := channel.New(1, ipv4.MaxTotalSize, "")
+					defer ep.Close()
 
-				if err := s.CreateNIC(nicID, ep); err != nil {
-					t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+					if err := s.CreateNIC(nicID, ep); err != nil {
+						t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+					}
+					addr := tcpip.ProtocolAddress{
+						Protocol:          protocol,
+						AddressWithPrefix: getEndpointAddr(protocol, addrType),
+					}
+					if err := s.AddProtocolAddress(nicID, addr, stack.AddressProperties{}); err != nil {
+						t.Fatalf("s.AddProtocolAddress(%d, %+v, {}): %s", nicID, addr, err)
+					}
+
+					s.SetNICMulticastForwarding(nicID, protocol, !test.disableMulticastForwarding)
+					endpoints[nicID] = ep
 				}
-				addr := tcpip.ProtocolAddress{
-					Protocol:          ipv4.ProtocolNumber,
-					AddressWithPrefix: getEndpointAddr(addrType),
-				}
-				if err := s.AddProtocolAddress(nicID, addr, stack.AddressProperties{}); err != nil {
-					t.Fatalf("s.AddProtocolAddress(%d, %+v, {}): %s", nicID, addr, err)
+
+				if err := s.SetForwardingDefaultAndAllNICs(protocol, true /* enabled */); err != nil {
+					t.Fatalf("SetForwardingDefaultAndAllNICs(%d, true): %s", protocol, err)
 				}
 
-				s.SetNICMulticastForwarding(nicID, ipv4.ProtocolNumber, !test.disableMulticastForwarding)
-				endpoints[nicID] = ep
-			}
+				srcAddr := getAddr(protocol, remoteUnicastAddr)
+				dstAddr := getAddr(protocol, test.dstAddr)
 
-			if err := s.SetForwardingDefaultAndAllNICs(ipv4.ProtocolNumber, true /* enabled */); err != nil {
-				t.Fatalf("SetForwardingDefaultAndAllNICs(%d, true): %s", ipv4.ProtocolNumber, err)
-			}
-
-			srcAddr := getAddr(remoteUnicastAddr)
-			dstAddr := getAddr(test.dstAddr)
-
-			outgoingInterfaces := []stack.MulticastRouteOutgoingInterface{
-				{ID: outgoingNICID, MinTTL: routeMinTTL},
-				{ID: otherOutgoingNICID, MinTTL: routeMinTTL + 1},
-			}
-			addresses := stack.UnicastSourceAndMulticastDestination{
-				Source:      srcAddr,
-				Destination: getAddr(multicastAddr),
-			}
-
-			route := stack.MulticastRoute{
-				ExpectedInputInterface: test.routeInputInterface,
-				OutgoingInterfaces:     outgoingInterfaces,
-			}
-
-			if err := s.AddMulticastRoute(ipv4.ProtocolNumber, addresses, route); err != nil {
-				t.Fatalf("AddMulticastRoute(%d, %#v, %#v): %s", ipv4.ProtocolNumber, addresses, route, err)
-			}
-
-			if test.removeOutputInterface != 0 {
-				if err := s.RemoveNIC(test.removeOutputInterface); err != nil {
-					t.Fatalf("RemoveNIC(%d): %s", test.removeOutputInterface, err)
+				outgoingInterfaces := []stack.MulticastRouteOutgoingInterface{
+					{ID: outgoingNICID, MinTTL: routeMinTTL},
+					{ID: otherOutgoingNICID, MinTTL: routeMinTTL + 1},
 				}
-			}
-
-			// Add a route that can be used to send an ICMP echo reply (if the packet
-			// is delivered locally).
-			s.SetRouteTable([]tcpip.Route{
-				{
-					Destination: header.IPv4EmptySubnet,
-					NIC:         otherNICID,
-				},
-			})
-
-			if test.joinMulticastGroup {
-				if err := s.JoinGroup(ipv4.ProtocolNumber, incomingNICID, dstAddr); err != nil {
-					t.Fatalf("JoinGroup(%d, %d, %s): %s", ipv4.ProtocolNumber, incomingNICID, dstAddr, err)
+				addresses := stack.UnicastSourceAndMulticastDestination{
+					Source:      srcAddr,
+					Destination: getAddr(protocol, multicastAddr),
 				}
-			}
 
-			incomingEp, ok := endpoints[incomingNICID]
-			if !ok {
-				t.Fatalf("got endpoints[%d] = (_, false), want (_, true)", incomingNICID)
-			}
+				route := stack.MulticastRoute{
+					ExpectedInputInterface: test.routeInputInterface,
+					OutgoingInterfaces:     outgoingInterfaces,
+				}
 
-			utils.RxICMPv4EchoRequest(incomingEp, srcAddr, dstAddr, test.ttl)
-			p := incomingEp.Read()
+				if err := s.AddMulticastRoute(protocol, addresses, route); err != nil {
+					t.Fatalf("AddMulticastRoute(%d, %#v, %#v): %s", protocol, addresses, route, err)
+				}
 
-			if p != nil {
-				// An ICMP error should never be sent in response to a multicast packet.
-				t.Fatalf("expected no ICMP packet through incoming NIC, instead found: %#v", p)
-			}
+				if test.removeOutputInterface != 0 {
+					if err := s.RemoveNIC(test.removeOutputInterface); err != nil {
+						t.Fatalf("RemoveNIC(%d): %s", test.removeOutputInterface, err)
+					}
+				}
 
-			for _, nicID := range []tcpip.NICID{outgoingNICID, otherOutgoingNICID} {
-				outgoingEp, ok := endpoints[nicID]
+				// Add a route that can be used to send an ICMP echo reply (if the packet
+				// is delivered locally).
+				s.SetRouteTable([]tcpip.Route{
+					{
+						Destination: header.IPv4EmptySubnet,
+						NIC:         otherNICID,
+					},
+					{
+						Destination: header.IPv6EmptySubnet,
+						NIC:         otherNICID,
+					},
+				})
+
+				if test.joinMulticastGroup {
+					if err := s.JoinGroup(protocol, incomingNICID, dstAddr); err != nil {
+						t.Fatalf("JoinGroup(%d, %d, %s): %s", protocol, incomingNICID, dstAddr, err)
+					}
+				}
+
+				incomingEp, ok := endpoints[incomingNICID]
 				if !ok {
-					t.Fatalf("got endpoints[%d] = (_, false), want (_, true)", nicID)
+					t.Fatalf("got endpoints[%d] = (_, false), want (_, true)", incomingNICID)
 				}
 
-				p := outgoingEp.Read()
+				injectPacket(incomingEp, protocol, srcAddr, dstAddr, test.ttl)
+				p := incomingEp.Read()
 
-				expectForward := contains(nicID, test.expectedForwardingInterfaces)
-
-				if (p != nil) != expectForward {
-					t.Fatalf("got outgoingEp.Read() = %#v, want = (_ == nil) = %t", p, expectForward)
+				if p != nil {
+					// An ICMP error should never be sent in response to a multicast packet.
+					t.Fatalf("expected no ICMP packet through incoming NIC, instead found: %#v", p)
 				}
 
-				if expectForward {
-					checker.IPv4(t, stack.PayloadSince(p.NetworkHeader()),
-						checker.SrcAddr(srcAddr),
-						checker.DstAddr(dstAddr),
-						checker.TTL(test.ttl-1),
-						checker.ICMPv4(
-							checker.ICMPv4Type(header.ICMPv4Echo),
-						),
-					)
+				for _, nicID := range []tcpip.NICID{outgoingNICID, otherOutgoingNICID} {
+					outgoingEp, ok := endpoints[nicID]
+					if !ok {
+						t.Fatalf("got endpoints[%d] = (_, false), want (_, true)", nicID)
+					}
+
+					p := outgoingEp.Read()
+
+					expectForward := contains(nicID, test.expectedForwardingInterfaces)
+
+					if (p != nil) != expectForward {
+						t.Fatalf("got outgoingEp.Read() = %#v, want = (_ == nil) = %t", p, expectForward)
+					}
+
+					if expectForward {
+						checkEchoRequest(t, protocol, p, srcAddr, dstAddr, test.ttl-1)
+						p.DecRef()
+					}
+				}
+
+				otherEp, ok := endpoints[otherNICID]
+				if !ok {
+					t.Fatalf("got endpoints[%d] = (_, false), want (_, true)", otherNICID)
+				}
+
+				p = otherEp.Read()
+
+				if (p != nil) != test.joinMulticastGroup {
+					t.Fatalf("got otherEp.Read() = %#v, want = (_ == nil) = %t", p, test.joinMulticastGroup)
+				}
+
+				incomingEpAddrType, ok := endpointConfigs[incomingNICID]
+				if !ok {
+					t.Fatalf("got endpointConfigs[%d] = (_, false), want (_, true)", incomingNICID)
+				}
+
+				if test.joinMulticastGroup {
+					checkEchoReply(t, protocol, p, getEndpointAddr(protocol, incomingEpAddrType).Address, srcAddr)
 					p.DecRef()
 				}
-			}
-
-			otherEp, ok := endpoints[otherNICID]
-			if !ok {
-				t.Fatalf("got endpoints[%d] = (_, false), want (_, true)", otherNICID)
-			}
-
-			p = otherEp.Read()
-
-			if (p != nil) != test.joinMulticastGroup {
-				t.Fatalf("got otherEp.Read() = %#v, want = (_ == nil) = %t", p, test.joinMulticastGroup)
-			}
-
-			incomingEpAddrType, ok := endpointConfigs[incomingNICID]
-			if !ok {
-				t.Fatalf("got endpointConfigs[%d] = (_, false), want (_, true)", incomingNICID)
-			}
-
-			if test.joinMulticastGroup {
-				checker.IPv4(t, stack.PayloadSince(p.NetworkHeader()),
-					checker.SrcAddr(getEndpointAddr(incomingEpAddrType).Address),
-					checker.DstAddr(srcAddr),
-					checker.ICMPv4(
-						checker.ICMPv4Type(header.ICMPv4EchoReply),
-					),
-				)
-				p.DecRef()
-			}
-		})
+			})
+		}
 	}
 }
 
