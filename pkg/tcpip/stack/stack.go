@@ -564,6 +564,22 @@ func (s *Stack) SetForwardingDefaultAndAllNICs(protocol tcpip.NetworkProtocolNum
 	return nil
 }
 
+// AddMulticastRoute adds a multicast route to be used for the specified
+// addresses and protocol.
+func (s *Stack) AddMulticastRoute(protocol tcpip.NetworkProtocolNumber, addresses UnicastSourceAndMulticastDestination, route MulticastRoute) tcpip.Error {
+	netProto, ok := s.networkProtocols[protocol]
+	if !ok {
+		return &tcpip.ErrUnknownProtocol{}
+	}
+
+	forwardingNetProto, ok := netProto.(MulticastForwardingNetworkProtocol)
+	if !ok {
+		return &tcpip.ErrNotSupported{}
+	}
+
+	return forwardingNetProto.AddMulticastRoute(addresses, route)
+}
+
 // RemoveMulticastRoute removes a multicast route that matches the specified
 // addresses and protocol.
 func (s *Stack) RemoveMulticastRoute(protocol tcpip.NetworkProtocolNumber, addresses UnicastSourceAndMulticastDestination) tcpip.Error {
@@ -580,20 +596,21 @@ func (s *Stack) RemoveMulticastRoute(protocol tcpip.NetworkProtocolNumber, addre
 	return forwardingNetProto.RemoveMulticastRoute(addresses)
 }
 
-// AddMulticastRoute adds a multicast route to be used for the specified
-// addresses and protocol.
-func (s *Stack) AddMulticastRoute(protocol tcpip.NetworkProtocolNumber, addresses UnicastSourceAndMulticastDestination, route MulticastRoute) tcpip.Error {
+// MulticastRouteLastUsedTime returns a monotonic timestamp that represents the
+// last time that the route that matches the provided addresses and protocol
+// was used or updated.
+func (s *Stack) MulticastRouteLastUsedTime(protocol tcpip.NetworkProtocolNumber, addresses UnicastSourceAndMulticastDestination) (tcpip.MonotonicTime, tcpip.Error) {
 	netProto, ok := s.networkProtocols[protocol]
 	if !ok {
-		return &tcpip.ErrUnknownProtocol{}
+		return tcpip.MonotonicTime{}, &tcpip.ErrUnknownProtocol{}
 	}
 
 	forwardingNetProto, ok := netProto.(MulticastForwardingNetworkProtocol)
 	if !ok {
-		return &tcpip.ErrNotSupported{}
+		return tcpip.MonotonicTime{}, &tcpip.ErrNotSupported{}
 	}
 
-	return forwardingNetProto.AddMulticastRoute(addresses, route)
+	return forwardingNetProto.MulticastRouteLastUsedTime(addresses)
 }
 
 // SetNICMulticastForwarding enables or disables multicast packet forwarding on

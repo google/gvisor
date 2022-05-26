@@ -177,6 +177,7 @@ go_test(
         "//pkg/refsvfs2",
         "//pkg/tcpip",
         "//pkg/tcpip/checker",
+        "//pkg/tcpip/faketime",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/channel",
         "//pkg/tcpip/network/ipv4",
