@@ -18,9 +18,9 @@ import (
 	"fmt"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/network/internal/ip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -1793,7 +1793,7 @@ func (ndp *ndpState) startSolicitingRouters() {
 				}
 			}
 			payloadSize := header.ICMPv6HeaderSize + header.NDPRSMinimumSize + optsSerializer.Length()
-			icmpData := header.ICMPv6(buffer.NewView(payloadSize))
+			icmpData := header.ICMPv6(make([]byte, payloadSize))
 			icmpData.SetType(header.ICMPv6RouterSolicit)
 			rs := header.NDPRouterSolicit(icmpData.MessageBody())
 			rs.Options().Serialize(optsSerializer)
@@ -1805,7 +1805,7 @@ func (ndp *ndpState) startSolicitingRouters() {
 
 			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 				ReserveHeaderBytes: int(ndp.ep.MaxHeaderLength()),
-				Data:               buffer.View(icmpData).ToVectorisedView(),
+				Payload:            buffer.NewWithData(icmpData),
 			})
 			defer pkt.DecRef()
 
@@ -1910,7 +1910,7 @@ func (ndp *ndpState) SendDADMessage(addr tcpip.Address, nonce []byte) tcpip.Erro
 }
 
 func (e *endpoint) sendNDPNS(srcAddr, dstAddr, targetAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress, opts header.NDPOptionsSerializer) tcpip.Error {
-	icmp := header.ICMPv6(buffer.NewView(header.ICMPv6NeighborSolicitMinimumSize + opts.Length()))
+	icmp := header.ICMPv6(make([]byte, header.ICMPv6NeighborSolicitMinimumSize+opts.Length()))
 	icmp.SetType(header.ICMPv6NeighborSolicit)
 	ns := header.NDPNeighborSolicit(icmp.MessageBody())
 	ns.SetTargetAddress(targetAddr)
@@ -1923,7 +1923,7 @@ func (e *endpoint) sendNDPNS(srcAddr, dstAddr, targetAddr tcpip.Address, remoteL
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(e.MaxHeaderLength()),
-		Data:               buffer.View(icmp).ToVectorisedView(),
+		Payload:            buffer.NewWithData(icmp),
 	})
 	defer pkt.DecRef()
 

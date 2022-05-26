@@ -21,10 +21,10 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
@@ -182,9 +182,8 @@ func TestMalformedPacket(t *testing.T) {
 	c := makeTestContext(t, 0, 0)
 	defer c.cleanup()
 
-	v := make(buffer.View, header.ARPSize)
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: v.ToVectorisedView(),
+		Payload: buffer.NewWithData(make([]byte, header.ARPSize)),
 	})
 
 	c.linkEP.InjectInbound(arp.ProtocolNumber, pkt)
@@ -208,9 +207,8 @@ func TestDisabledEndpoint(t *testing.T) {
 	}
 	ep.Disable()
 
-	v := make(buffer.View, header.ARPSize)
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: v.ToVectorisedView(),
+		Payload: buffer.NewWithData(make([]byte, header.ARPSize)),
 	})
 
 	c.linkEP.InjectInbound(arp.ProtocolNumber, pkt)
@@ -231,7 +229,7 @@ func TestDirectReply(t *testing.T) {
 	const senderMAC = "\x01\x02\x03\x04\x05\x06"
 	const senderIPv4 = "\x0a\x00\x00\x02"
 
-	v := make(buffer.View, header.ARPSize)
+	v := make([]byte, header.ARPSize)
 	h := header.ARP(v)
 	h.SetIPv4OverEthernet()
 	h.SetOp(header.ARPReply)
@@ -242,7 +240,7 @@ func TestDirectReply(t *testing.T) {
 	copy(h.ProtocolAddressTarget(), stackAddr)
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: v.ToVectorisedView(),
+		Payload: buffer.NewWithData(v),
 	})
 
 	c.linkEP.InjectInbound(arp.ProtocolNumber, pkt)
@@ -298,7 +296,7 @@ func TestDirectRequest(t *testing.T) {
 			outgoingReplies := c.s.Stats().ARP.OutgoingRepliesSent.Value()
 
 			// Inject an incoming ARP request.
-			v := make(buffer.View, header.ARPSize)
+			v := make([]byte, header.ARPSize)
 			h := header.ARP(v)
 			h.SetIPv4OverEthernet()
 			h.SetOp(header.ARPRequest)
@@ -306,7 +304,7 @@ func TestDirectRequest(t *testing.T) {
 			copy(h.ProtocolAddressSender(), test.senderAddr)
 			copy(h.ProtocolAddressTarget(), test.targetAddr)
 			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Data: v.ToVectorisedView(),
+				Payload: buffer.NewWithData(v),
 			})
 			c.linkEP.InjectInbound(arp.ProtocolNumber, pkt)
 			pkt.DecRef()

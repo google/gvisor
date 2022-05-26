@@ -17,6 +17,7 @@ package ipv6
 import (
 	"fmt"
 
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -674,7 +675,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 
 		replyPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			ReserveHeaderBytes: int(r.MaxHeaderLength()) + header.ICMPv6EchoMinimumSize,
-			Data:               pkt.Data().ExtractVV(),
+			Payload:            pkt.Data().AsBuffer(),
 		})
 		defer replyPkt.DecRef()
 		icmp := header.ICMPv6(replyPkt.TransportHeader().Push(header.ICMPv6EchoMinimumSize))
@@ -1164,14 +1165,15 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, deliv
 	if payloadLen > available {
 		payloadLen = available
 	}
-	payload := network.ToVectorisedView()
-	payload.AppendView(transport)
-	payload.Append(pkt.Data().ExtractVV())
-	payload.CapLength(payloadLen)
+	payload := buffer.NewWithData(network)
+	payload.AppendOwned(transport)
+	dataBuf := pkt.Data().AsBuffer()
+	payload.Merge(&dataBuf)
+	payload.Truncate(int64(payloadLen))
 
 	newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(route.MaxHeaderLength()) + header.ICMPv6ErrorHeaderSize,
-		Data:               payload,
+		Payload:            payload,
 	})
 	defer newPkt.DecRef()
 	newPkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber

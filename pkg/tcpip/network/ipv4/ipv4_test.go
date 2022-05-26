@@ -26,10 +26,11 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	tcpipbuffer "gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -246,7 +247,7 @@ func newICMPEchoPacket(t *testing.T, srcAddr, dstAddr tcpip.Address, ttl uint8, 
 		t.Fatalf("ipHeaderLength = %d, want <= %d ", ipHeaderLength, header.IPv4MaximumHeaderSize)
 	}
 	totalLength := ipHeaderLength + header.ICMPv4MinimumSize + options.payloadLength
-	hdr := buffer.NewPrependable(totalLength)
+	hdr := tcpipbuffer.NewPrependable(totalLength)
 	hdr.Prepend(options.payloadLength)
 	icmpH := header.ICMPv4(hdr.Prepend(header.ICMPv4MinimumSize))
 	icmpH.SetIdent(randomIdent)
@@ -1739,7 +1740,9 @@ func TestIPv4Sanity(t *testing.T) {
 				t.Fatalf("IP header length too large: got = %d, want <= %d ", ipHeaderLength, header.IPv4MaximumHeaderSize)
 			}
 			totalLen := uint16(ipHeaderLength + header.ICMPv4MinimumSize)
-			hdr := buffer.NewPrependable(int(totalLen))
+			// TODO(b/230896518): tcpipbuffer is only needed for Prependable. Move
+			// Prependable to outside pkg/tcpip/buffer.
+			hdr := tcpipbuffer.NewPrependable(int(totalLen))
 			icmpH := header.ICMPv4(hdr.Prepend(header.ICMPv4MinimumSize))
 
 			// Specify ident/seq to make sure we get the same in the response.
@@ -1780,7 +1783,7 @@ func TestIPv4Sanity(t *testing.T) {
 			}
 			ip.SetChecksum(^ipHeaderChecksum)
 			requestPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Data: hdr.View().ToVectorisedView(),
+				Payload: buffer.NewWithData(hdr.View()),
 			})
 			defer requestPkt.DecRef()
 			e.InjectInbound(header.IPv4ProtocolNumber, requestPkt)
@@ -1908,29 +1911,29 @@ func TestIPv4Sanity(t *testing.T) {
 func compareFragments(packets []*stack.PacketBuffer, sourcePacket *stack.PacketBuffer, mtu uint32, wantFragments []fragmentInfo, proto tcpip.TransportProtocolNumber, withIPHeader bool, expectedAvailableHeaderBytes int) error {
 	// Make a complete array of the sourcePacket packet.
 	var source header.IPv4
-	vv := buffer.NewVectorisedView(sourcePacket.Size(), sourcePacket.Views())
+	buf := sourcePacket.Buffer()
 
 	// If the packet to be fragmented contains an IPv4 header, use that header for
 	// validating fragment headers. Else, use the header of the first fragment.
 	if withIPHeader {
-		source = header.IPv4(vv.ToView())
+		source = header.IPv4(buf.Flatten())
 	} else {
 		source = header.IPv4(packets[0].NetworkHeader().View())
-		source = append(source, vv.ToView()...)
+		source = append(source, buf.Flatten()...)
 	}
 
 	// Make a copy of the IP header, which will be modified in some fields to make
 	// an expected header.
-	sourceCopy := header.IPv4(append(buffer.View(nil), source[:source.HeaderLength()]...))
+	sourceCopy := header.IPv4(append([]byte{}, source[:source.HeaderLength()]...))
 	sourceCopy.SetChecksum(0)
 	sourceCopy.SetFlagsFragmentOffset(0, 0)
 	sourceCopy.SetTotalLength(0)
 	// Build up an array of the bytes sent.
-	var reassembledPayload buffer.VectorisedView
+	var reassembledPayload buffer.Buffer
 	for i, packet := range packets {
 		// Confirm that the packet is valid.
-		allBytes := buffer.NewVectorisedView(packet.Size(), packet.Views())
-		fragmentIPHeader := header.IPv4(allBytes.ToView())
+		allBytes := packet.Buffer()
+		fragmentIPHeader := header.IPv4(allBytes.Flatten())
 		if !fragmentIPHeader.IsValid(len(fragmentIPHeader)) {
 			return fmt.Errorf("fragment #%d: IP packet is invalid:\n%s", i, hex.Dump(fragmentIPHeader))
 		}
@@ -1954,8 +1957,8 @@ func compareFragments(packets []*stack.PacketBuffer, sourcePacket *stack.PacketB
 		} else {
 			sourceCopy.SetFlagsFragmentOffset(sourceCopy.Flags()&^header.IPv4FlagMoreFragments, wantFragments[i].offset)
 		}
-		reassembledPayload.AppendView(packet.TransportHeader().View())
-		reassembledPayload.AppendView(packet.Data().AsRange().ToOwnedView())
+		reassembledPayload.Append(packet.TransportHeader().View())
+		reassembledPayload.Append(packet.Data().AsRange().ToOwnedView())
 		// Clear out the checksum and length from the ip because we can't compare
 		// it.
 		sourceCopy.SetTotalLength(wantFragments[i].payloadSize + header.IPv4MinimumSize)
@@ -1974,8 +1977,8 @@ func compareFragments(packets []*stack.PacketBuffer, sourcePacket *stack.PacketB
 		}
 	}
 
-	expected := buffer.View(source[source.HeaderLength():])
-	if diff := cmp.Diff(expected, reassembledPayload.ToView()); diff != "" {
+	expected := []byte(source[source.HeaderLength():])
+	if diff := cmp.Diff(expected, reassembledPayload.Flatten()); diff != "" {
 		return fmt.Errorf("reassembledPayload mismatch (-want +got):\n%s", diff)
 	}
 
@@ -2486,7 +2489,7 @@ func TestInvalidFragments(t *testing.T) {
 
 			for _, f := range test.fragments {
 				pktSize := header.IPv4MinimumSize + len(f.payload)
-				hdr := buffer.NewPrependable(pktSize)
+				hdr := tcpipbuffer.NewPrependable(pktSize)
 
 				ip := header.IPv4(hdr.Prepend(pktSize))
 				ip.Encode(&f.ipv4fields)
@@ -2509,9 +2512,8 @@ func TestInvalidFragments(t *testing.T) {
 					ip.SetChecksum(^ip.CalculateChecksum())
 				}
 
-				vv := hdr.View().ToVectorisedView()
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Data: vv,
+					Payload: buffer.NewWithData(hdr.View()),
 				})
 				e.InjectInbound(header.IPv4ProtocolNumber, pkt)
 				pkt.DecRef()
@@ -2718,10 +2720,10 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 				NIC:         nicID,
 			}})
 
-			var firstFragmentSent buffer.View
+			var firstFragmentSent buffer.Buffer
 			for _, f := range test.fragments {
 				pktSize := header.IPv4MinimumSize
-				hdr := buffer.NewPrependable(pktSize)
+				hdr := tcpipbuffer.NewPrependable(pktSize)
 
 				ip := header.IPv4(hdr.Prepend(pktSize))
 				ip.Encode(&f.ipv4fields)
@@ -2729,15 +2731,15 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 				ip.SetChecksum(0)
 				ip.SetChecksum(^ip.CalculateChecksum())
 
-				vv := hdr.View().ToVectorisedView()
-				vv.AppendView(f.payload)
+				buf := buffer.NewWithData(hdr.View())
+				buf.Append(f.payload)
 
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Data: vv,
+					Payload: buf,
 				})
 
-				if firstFragmentSent == nil && ip.FragmentOffset() == 0 {
-					firstFragmentSent = stack.PayloadSince(pkt.NetworkHeader())
+				if firstFragmentSent.Size() == 0 && ip.FragmentOffset() == 0 {
+					firstFragmentSent = buffer.NewWithData(stack.PayloadSince(pkt.NetworkHeader()))
 				}
 
 				e.InjectInbound(header.IPv4ProtocolNumber, pkt)
@@ -2756,7 +2758,7 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 			if reply == nil {
 				t.Fatal("expected ICMP error message missing")
 			}
-			if firstFragmentSent == nil {
+			if firstFragmentSent.Size() == 0 {
 				t.Fatalf("unexpected ICMP error message received: %#v", reply)
 			}
 
@@ -2769,7 +2771,7 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 					checker.ICMPv4Type(header.ICMPv4TimeExceeded),
 					checker.ICMPv4Code(header.ICMPv4ReassemblyTimeout),
 					checker.ICMPv4Checksum(),
-					checker.ICMPv4Payload(firstFragmentSent),
+					checker.ICMPv4Payload(firstFragmentSent.Flatten()),
 				),
 			)
 			reply.DecRef()
@@ -2789,15 +2791,15 @@ func TestReceiveFragments(t *testing.T) {
 	)
 
 	// Build and return a UDP header containing payload.
-	udpGen := func(payloadLen int, multiplier uint8, src, dst tcpip.Address) buffer.View {
-		payload := buffer.NewView(payloadLen)
+	udpGen := func(payloadLen int, multiplier uint8, src, dst tcpip.Address) []byte {
+		payload := make([]byte, payloadLen)
 		for i := 0; i < len(payload); i++ {
 			payload[i] = uint8(i) * multiplier
 		}
 
 		udpLength := header.UDPMinimumSize + len(payload)
 
-		hdr := buffer.NewPrependable(udpLength)
+		hdr := tcpipbuffer.NewPrependable(udpLength)
 		u := header.UDP(hdr.Prepend(udpLength))
 		u.Encode(&header.UDPFields{
 			SrcPort: 5555,
@@ -2834,7 +2836,7 @@ func TestReceiveFragments(t *testing.T) {
 		id             uint16
 		flags          uint8
 		fragmentOffset uint16
-		payload        buffer.View
+		payload        []byte
 	}
 
 	tests := []struct {
@@ -3210,7 +3212,7 @@ func TestReceiveFragments(t *testing.T) {
 
 			// Prepare and send the fragments.
 			for _, frag := range test.fragments {
-				hdr := buffer.NewPrependable(header.IPv4MinimumSize)
+				hdr := tcpipbuffer.NewPrependable(header.IPv4MinimumSize)
 
 				// Serialize IPv4 fixed header.
 				ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
@@ -3226,10 +3228,10 @@ func TestReceiveFragments(t *testing.T) {
 				})
 				ip.SetChecksum(^ip.CalculateChecksum())
 
-				vv := hdr.View().ToVectorisedView()
-				vv.AppendView(frag.payload)
+				buf := buffer.NewWithData(hdr.View())
+				buf.Append(frag.payload)
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Data: vv,
+					Payload: buf,
 				})
 				e.InjectInbound(header.IPv4ProtocolNumber, pkt)
 				pkt.DecRef()
@@ -3398,7 +3400,7 @@ func TestWriteStats(t *testing.T) {
 			for i := 0; i < nPackets; i++ {
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					ReserveHeaderBytes: header.UDPMinimumSize + int(rt.MaxHeaderLength()),
-					Data:               buffer.NewView(0).ToVectorisedView(),
+					Payload:            buffer.Buffer{},
 				})
 				defer pkt.DecRef()
 				pkt.TransportHeader().Push(header.UDPMinimumSize)
@@ -3509,7 +3511,7 @@ func TestPacketQueuing(t *testing.T) {
 		{
 			name: "ICMP Error",
 			rxPkt: func(e *channel.Endpoint) {
-				hdr := buffer.NewPrependable(header.IPv4MinimumSize + header.UDPMinimumSize)
+				hdr := tcpipbuffer.NewPrependable(header.IPv4MinimumSize + header.UDPMinimumSize)
 				u := header.UDP(hdr.Prepend(header.UDPMinimumSize))
 				u.Encode(&header.UDPFields{
 					SrcPort: 5555,
@@ -3529,7 +3531,7 @@ func TestPacketQueuing(t *testing.T) {
 				})
 				ip.SetChecksum(^ip.CalculateChecksum())
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Data: hdr.View().ToVectorisedView(),
+					Payload: buffer.NewWithData(hdr.View()),
 				})
 				defer pkt.DecRef()
 				e.InjectInbound(ipv4.ProtocolNumber, pkt)
@@ -3559,7 +3561,7 @@ func TestPacketQueuing(t *testing.T) {
 			name: "Ping",
 			rxPkt: func(e *channel.Endpoint) {
 				totalLen := header.IPv4MinimumSize + header.ICMPv4MinimumSize
-				hdr := buffer.NewPrependable(totalLen)
+				hdr := tcpipbuffer.NewPrependable(totalLen)
 				pkt := header.ICMPv4(hdr.Prepend(header.ICMPv4MinimumSize))
 				pkt.SetType(header.ICMPv4Echo)
 				pkt.SetCode(0)
@@ -3575,7 +3577,7 @@ func TestPacketQueuing(t *testing.T) {
 				})
 				ip.SetChecksum(^ip.CalculateChecksum())
 				echoPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Data: hdr.View().ToVectorisedView(),
+					Payload: buffer.NewWithData(hdr.View()),
 				})
 				defer echoPkt.DecRef()
 				e.InjectInbound(header.IPv4ProtocolNumber, echoPkt)
@@ -3661,7 +3663,7 @@ func TestPacketQueuing(t *testing.T) {
 
 			// Send an ARP reply to complete link address resolution.
 			{
-				hdr := buffer.View(make([]byte, header.ARPSize))
+				hdr := make([]byte, header.ARPSize)
 				packet := header.ARP(hdr)
 				packet.SetIPv4OverEthernet()
 				packet.SetOp(header.ARPReply)
@@ -3670,7 +3672,7 @@ func TestPacketQueuing(t *testing.T) {
 				copy(packet.HardwareAddressTarget(), host1NICLinkAddr)
 				copy(packet.ProtocolAddressTarget(), host1IPv4Addr.AddressWithPrefix.Address)
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Data: hdr.ToVectorisedView(),
+					Payload: buffer.NewWithData(hdr),
 				})
 				e.InjectInbound(arp.ProtocolNumber, pkt)
 				pkt.DecRef()
@@ -3851,14 +3853,14 @@ func TestIcmpRateLimit(t *testing.T) {
 	})
 	tests := []struct {
 		name         string
-		createPacket func() buffer.View
+		createPacket func() []byte
 		check        func(*testing.T, *channel.Endpoint, int)
 	}{
 		{
 			name: "echo",
-			createPacket: func() buffer.View {
+			createPacket: func() []byte {
 				totalLength := header.IPv4MinimumSize + header.ICMPv4MinimumSize
-				hdr := buffer.NewPrependable(totalLength)
+				hdr := tcpipbuffer.NewPrependable(totalLength)
 				icmpH := header.ICMPv4(hdr.Prepend(header.ICMPv4MinimumSize))
 				icmpH.SetIdent(1)
 				icmpH.SetSequence(1)
@@ -3896,9 +3898,9 @@ func TestIcmpRateLimit(t *testing.T) {
 		},
 		{
 			name: "dst unreachable",
-			createPacket: func() buffer.View {
+			createPacket: func() []byte {
 				totalLength := header.IPv4MinimumSize + header.UDPMinimumSize
-				hdr := buffer.NewPrependable(totalLength)
+				hdr := tcpipbuffer.NewPrependable(totalLength)
 				udpH := header.UDP(hdr.Prepend(header.UDPMinimumSize))
 				udpH.Encode(&header.UDPFields{
 					SrcPort: 100,
@@ -3942,7 +3944,7 @@ func TestIcmpRateLimit(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			for round := 0; round < icmpBurst+1; round++ {
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Data: testCase.createPacket().ToVectorisedView(),
+					Payload: buffer.NewWithData(testCase.createPacket()),
 				})
 				e.InjectInbound(header.IPv4ProtocolNumber, pkt)
 				pkt.DecRef()

@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/network/internal/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -30,19 +30,19 @@ import (
 // advances.
 const reassembleTimeout = 1
 
-// vv is a helper to build VectorisedView from different strings.
-func vv(size int, pieces ...string) buffer.VectorisedView {
-	views := make([]buffer.View, len(pieces))
-	for i, p := range pieces {
-		views[i] = []byte(p)
+// buf is a helper to build a Buffer from different strings.
+func buf(size int, pieces ...string) buffer.Buffer {
+	buf := buffer.Buffer{}
+	for _, p := range pieces {
+		buf.Append([]byte(p))
 	}
 
-	return buffer.NewVectorisedView(size, views)
+	return buf
 }
 
 func pkt(size int, pieces ...string) *stack.PacketBuffer {
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: vv(size, pieces...),
+		Payload: buf(size, pieces...),
 	})
 }
 
@@ -56,7 +56,7 @@ type processInput struct {
 }
 
 type processOutput struct {
-	vv    buffer.VectorisedView
+	buf   buffer.Buffer
 	proto uint8
 	done  bool
 }
@@ -74,8 +74,8 @@ func TestFragmentationProcess(t *testing.T) {
 				{id: FragmentID{ID: 0}, first: 2, last: 3, more: false, pkt: pkt(2, "23")},
 			},
 			out: []processOutput{
-				{vv: buffer.VectorisedView{}, done: false},
-				{vv: vv(4, "01", "23"), done: true},
+				{buf: buffer.Buffer{}, done: false},
+				{buf: buf(4, "01", "23"), done: true},
 			},
 		},
 		{
@@ -85,8 +85,8 @@ func TestFragmentationProcess(t *testing.T) {
 				{id: FragmentID{ID: 0}, first: 2, last: 3, more: false, proto: 17, pkt: pkt(2, "23")},
 			},
 			out: []processOutput{
-				{vv: buffer.VectorisedView{}, done: false},
-				{vv: vv(4, "01", "23"), proto: 6, done: true},
+				{buf: buffer.Buffer{}, done: false},
+				{buf: buf(4, "01", "23"), proto: 6, done: true},
 			},
 		},
 		{
@@ -98,10 +98,10 @@ func TestFragmentationProcess(t *testing.T) {
 				{id: FragmentID{ID: 0}, first: 2, last: 3, more: false, pkt: pkt(2, "23")},
 			},
 			out: []processOutput{
-				{vv: buffer.VectorisedView{}, done: false},
-				{vv: buffer.VectorisedView{}, done: false},
-				{vv: vv(4, "ab", "cd"), done: true},
-				{vv: vv(4, "01", "23"), done: true},
+				{buf: buffer.Buffer{}, done: false},
+				{buf: buffer.Buffer{}, done: false},
+				{buf: buf(4, "ab", "cd"), done: true},
+				{buf: buf(4, "01", "23"), done: true},
 			},
 		},
 	}
@@ -124,7 +124,7 @@ func TestFragmentationProcess(t *testing.T) {
 						in.id, in.first, in.last, in.more, in.proto, done, c.out[i].done)
 				}
 				if c.out[i].done {
-					if diff := cmp.Diff(c.out[i].vv.ToOwnedView(), resPkt.Data().AsRange().ToOwnedView()); diff != "" {
+					if diff := cmp.Diff(c.out[i].buf.Flatten(), resPkt.Data().AsRange().ToOwnedView()); diff != "" {
 						t.Errorf("got Process(%+v, %d, %d, %t, %d, %#v) result mismatch (-want, +got):\n%s",
 							in.id, in.first, in.last, in.more, in.proto, in.pkt, diff)
 					}
@@ -525,8 +525,8 @@ func TestPacketFragmenter(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			pkt := testutil.MakeRandPkt(test.transportHeaderLen, reserve, []int{test.payloadSize}, proto)
 			defer pkt.DecRef()
-			originalPayload := stack.PayloadSince(pkt.TransportHeader())
-			var reassembledPayload buffer.VectorisedView
+			originalPayload := []byte(stack.PayloadSince(pkt.TransportHeader()))
+			var reassembledPayload buffer.Buffer
 			pf := MakePacketFragmenter(pkt, test.fragmentPayloadLen, reserve)
 			for i := 0; ; i++ {
 				fragPkt, offset, copied, more := pf.BuildNextFragment()
@@ -553,7 +553,8 @@ func TestPacketFragmenter(t *testing.T) {
 				if got := fragPkt.TransportHeader().View().Size(); got != 0 {
 					t.Errorf("(fragment #%d) got fragPkt.TransportHeader().View().Size() = %d, want = 0", i, got)
 				}
-				reassembledPayload.AppendViews(fragPkt.Data().Views())
+				fragBuf := fragPkt.Data().AsBuffer()
+				reassembledPayload.Merge(&fragBuf)
 				if !more {
 					if i != len(test.wantFragments)-1 {
 						t.Errorf("got fragment count = %d, want = %d", i, len(test.wantFragments)-1)
@@ -561,7 +562,7 @@ func TestPacketFragmenter(t *testing.T) {
 					break
 				}
 			}
-			if diff := cmp.Diff(reassembledPayload.ToView(), originalPayload); diff != "" {
+			if diff := cmp.Diff(reassembledPayload.Flatten(), originalPayload); diff != "" {
 				t.Errorf("reassembledPayload mismatch (-want +got):\n%s", diff)
 			}
 		})

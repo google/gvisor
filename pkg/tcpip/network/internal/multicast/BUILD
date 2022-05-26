@@ -20,10 +20,10 @@ go_test(
     srcs = ["route_table_test.go"],
     library = ":multicast",
     deps = [
+        "//pkg/buffer",
         "//pkg/refs",
         "//pkg/refsvfs2",
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
         "//pkg/tcpip/faketime",
         "//pkg/tcpip/stack",
         "//pkg/tcpip/testutil",
@@ -38,10 +38,10 @@ go_test(
     srcs = ["example_test.go"],
     deps = [
         ":multicast",
+        "//pkg/buffer",
         "//pkg/refs",
         "//pkg/refsvfs2",
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
         "//pkg/tcpip/faketime",
         "//pkg/tcpip/stack",
         "//pkg/tcpip/testutil",

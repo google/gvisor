@@ -18,9 +18,9 @@ import (
 	"testing"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -110,7 +110,7 @@ func createAndInjectIGMPPacket(e *channel.Endpoint, igmpType header.IGMPType, ma
 			&header.IPv4SerializableRouterAlertOption{},
 		}
 	}
-	buf := buffer.NewView(header.IPv4MinimumSize + int(options.Length()) + header.IGMPQueryMinimumSize)
+	buf := make([]byte, header.IPv4MinimumSize+int(options.Length())+header.IGMPQueryMinimumSize)
 
 	ip := header.IPv4(buf)
 	ip.Encode(&header.IPv4Fields{
@@ -129,7 +129,7 @@ func createAndInjectIGMPPacket(e *channel.Endpoint, igmpType header.IGMPType, ma
 	igmp.SetGroupAddress(groupAddress)
 	igmp.SetChecksum(header.IGMPCalculateChecksum(igmp))
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buf.ToVectorisedView(),
+		Payload: buffer.NewWithData(buf),
 	})
 	e.InjectInbound(ipv4.ProtocolNumber, pkt)
 	pkt.DecRef()

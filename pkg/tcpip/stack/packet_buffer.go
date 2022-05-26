@@ -614,6 +614,20 @@ func (d PacketData) ReadFromVV(srcVV *tcpipbuffer.VectorisedView, count int) int
 	return done
 }
 
+// ReadFromBuffer moves at most count bytes from the beginning of src to the end
+// of d and returns the number of bytes moved.
+func (d PacketData) ReadFromBuffer(src *buffer.Buffer, count int) int {
+	toRead := int64(count)
+	if toRead > src.Size() {
+		toRead = src.Size()
+	}
+	clone := src.Clone()
+	clone.Truncate(toRead)
+	d.pk.buf.Merge(&clone)
+	src.TrimFront(toRead)
+	return int(toRead)
+}
+
 // AppendRange appends and takes ownership of the data in r.
 func (d PacketData) AppendRange(r Range) {
 	r.iterate(func(b []byte) {
@@ -749,7 +763,7 @@ func (r Range) AsView() tcpipbuffer.View {
 }
 
 // ToOwnedView returns a owned copy of data in r.
-func (r Range) ToOwnedView() tcpipbuffer.View {
+func (r Range) ToOwnedView() []byte {
 	if r.length == 0 {
 		return nil
 	}

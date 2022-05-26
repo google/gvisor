@@ -20,9 +20,10 @@ import (
 	"testing"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	tcpipbuffer "gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -243,7 +244,7 @@ func createAndInjectIGMPPacket(e *channel.Endpoint, igmpType byte, maxRespTime b
 	options := header.IPv4OptionsSerializer{
 		&header.IPv4SerializableRouterAlertOption{},
 	}
-	buf := buffer.NewView(header.IPv4MinimumSize + int(options.Length()) + header.IGMPQueryMinimumSize)
+	buf := make([]byte, header.IPv4MinimumSize+int(options.Length())+header.IGMPQueryMinimumSize)
 	ip := header.IPv4(buf)
 	ip.Encode(&header.IPv4Fields{
 		TotalLength: uint16(len(buf)),
@@ -262,7 +263,7 @@ func createAndInjectIGMPPacket(e *channel.Endpoint, igmpType byte, maxRespTime b
 	igmp.SetChecksum(header.IGMPCalculateChecksum(igmp))
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buf.ToVectorisedView(),
+		Payload: buffer.NewWithData(buf),
 	})
 	e.InjectInbound(ipv4.ProtocolNumber, pkt)
 	pkt.DecRef()
@@ -279,7 +280,7 @@ func createAndInjectMLDPacket(e *channel.Endpoint, mldType uint8, maxRespDelay b
 
 	extensionHeadersLength := extensionHeaders.Length()
 	payloadLength := extensionHeadersLength + header.ICMPv6HeaderSize + header.MLDMinimumSize
-	buf := buffer.NewView(header.IPv6MinimumSize + payloadLength)
+	buf := make([]byte, header.IPv6MinimumSize+payloadLength)
 
 	ip := header.IPv6(buf)
 	ip.Encode(&header.IPv6Fields{
@@ -303,7 +304,7 @@ func createAndInjectMLDPacket(e *channel.Endpoint, mldType uint8, maxRespDelay b
 	}))
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buf.ToVectorisedView(),
+		Payload: buffer.NewWithData(buf),
 	})
 	e.InjectInbound(ipv6.ProtocolNumber, pkt)
 	pkt.DecRef()
@@ -1078,7 +1079,7 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 
 				ipv6HeaderIter := header.MakeIPv6PayloadIterator(
 					header.IPv6ExtensionHeaderIdentifier(ipv6.NextHeader()),
-					buffer.View(ipv6.Payload()).ToVectorisedView(),
+					tcpipbuffer.View(ipv6.Payload()).ToVectorisedView(),
 				)
 
 				var transport header.IPv6RawPayloadHeader

@@ -299,7 +299,7 @@ func (e *endpoint) HandleLinkResolutionFailure(pkt *stack.PacketBuffer) {
 	// handleControl expects the entire offending packet to be in the packet
 	// buffer's data field.
 	pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buffer.NewVectorisedView(pkt.Size(), pkt.Views()),
+		Payload: pkt.Buffer(),
 	})
 	defer pkt.DecRef()
 	pkt.NICID = e.nic.ID()
@@ -1594,6 +1594,8 @@ func (e *endpoint) processExtensionHeaders(h header.IPv6, pkt *stack.PacketBuffe
 				// 8200 section 4.5. We also use the NextHeader value from the first
 				// fragment.
 				data := pkt.Data()
+				// TODO(b/230896518): Create a pkg/buffer once MakeIPv6PayloadIterator
+				// API has been changed.
 				dataVV := buffer.NewVectorisedView(data.Size(), data.Views())
 				it = header.MakeIPv6PayloadIterator(header.IPv6ExtensionHeaderIdentifier(proto), dataVV)
 			}

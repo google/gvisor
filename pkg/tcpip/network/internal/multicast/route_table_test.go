@@ -21,10 +21,10 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/testutil"
@@ -47,7 +47,7 @@ var (
 
 func newPacketBuffer(body string) *stack.PacketBuffer {
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buffer.View(body).ToVectorisedView(),
+		Payload: buffer.NewWithData([]byte(body)),
 	})
 }
 
@@ -258,10 +258,10 @@ func TestAddInstalledRouteWithPending(t *testing.T) {
 	defer pkt.DecRef()
 
 	cmpOpts := []cmp.Option{
-		cmp.Transformer("AsViews", func(pkt *stack.PacketBuffer) []buffer.View {
-			return pkt.Views()
+		cmp.Transformer("AsSlices", func(pkt *stack.PacketBuffer) [][]byte {
+			return pkt.Slices()
 		}),
-		cmp.Comparer(func(a []buffer.View, b []buffer.View) bool {
+		cmp.Comparer(func(a [][]byte, b [][]byte) bool {
 			return cmp.Equal(a, b)
 		}),
 	}

@@ -5038,7 +5038,7 @@ func TestWritePacketToRemote(t *testing.T) {
 			if pkt.EgressRoute.RemoteLinkAddress != linkAddr2 {
 				t.Fatalf("pkt.EgressRoute.RemoteAddress = %s, want %s", pkt.EgressRoute.RemoteLinkAddress, linkAddr2)
 			}
-			if diff := cmp.Diff(pkt.Data().AsRange().ToOwnedView(), buffer.View(test.payload)); diff != "" {
+			if diff := cmp.Diff(pkt.Data().AsRange().ToOwnedView(), test.payload); diff != "" {
 				t.Errorf("pkt.Data mismatch (-want +got):\n%s", diff)
 			}
 		})

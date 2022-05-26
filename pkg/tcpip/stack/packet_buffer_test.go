@@ -18,7 +18,8 @@ import (
 	"fmt"
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/buffer"
+	tcpipbuffer "gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -77,7 +78,7 @@ func TestPacketHeaderPush(t *testing.T) {
 				ReserveHeaderBytes: test.reserved,
 				// Make a copy of data to make sure our truth data won't be taint by
 				// PacketBuffer.
-				Data: buffer.NewViewFromBytes(test.data).ToVectorisedView(),
+				Data: tcpipbuffer.NewViewFromBytes(test.data).ToVectorisedView(),
 			})
 
 			allHdrSize := len(test.link) + len(test.network) + len(test.transport)
@@ -85,7 +86,7 @@ func TestPacketHeaderPush(t *testing.T) {
 			// Check the initial values for packet.
 			checkInitialPacketBuffer(t, pk, PacketBufferOptions{
 				ReserveHeaderBytes: test.reserved,
-				Data:               buffer.View(test.data).ToVectorisedView(),
+				Data:               tcpipbuffer.View(test.data).ToVectorisedView(),
 			})
 
 			// Push headers.
@@ -149,12 +150,12 @@ func TestPacketHeaderConsume(t *testing.T) {
 			pk := NewPacketBuffer(PacketBufferOptions{
 				// Make a copy of data to make sure our truth data won't be taint by
 				// PacketBuffer.
-				Data: buffer.NewViewFromBytes(test.data).ToVectorisedView(),
+				Data: tcpipbuffer.NewViewFromBytes(test.data).ToVectorisedView(),
 			})
 
 			// Check the initial values for packet.
 			checkInitialPacketBuffer(t, pk, PacketBufferOptions{
-				Data: buffer.View(test.data).ToVectorisedView(),
+				Data: tcpipbuffer.View(test.data).ToVectorisedView(),
 			})
 
 			// Consume headers.
@@ -206,7 +207,7 @@ func TestPacketHeaderConsumeDataTooShort(t *testing.T) {
 	pk := NewPacketBuffer(PacketBufferOptions{
 		// Make a copy of data to make sure our truth data won't be taint by
 		// PacketBuffer.
-		Data: buffer.NewViewFromBytes(data).ToVectorisedView(),
+		Data: tcpipbuffer.NewViewFromBytes(data).ToVectorisedView(),
 	})
 
 	// Consume should fail if pkt.Data is too short.
@@ -222,7 +223,7 @@ func TestPacketHeaderConsumeDataTooShort(t *testing.T) {
 
 	// Check packet should look the same as initial packet.
 	checkInitialPacketBuffer(t, pk, PacketBufferOptions{
-		Data: buffer.View(data).ToVectorisedView(),
+		Data: tcpipbuffer.View(data).ToVectorisedView(),
 	})
 }
 
@@ -239,7 +240,7 @@ func TestPacketHeaderPushConsumeMixed(t *testing.T) {
 	initData = append(initData, data...)
 	pk := NewPacketBuffer(PacketBufferOptions{
 		ReserveHeaderBytes: len(link),
-		Data:               buffer.NewViewFromBytes(initData).ToVectorisedView(),
+		Data:               tcpipbuffer.NewViewFromBytes(initData).ToVectorisedView(),
 	})
 
 	// 1. Consume network header
@@ -267,7 +268,7 @@ func TestPacketHeaderPushConsumeMixedTooLong(t *testing.T) {
 	initData := concatViews(network, data)
 	pk := NewPacketBuffer(PacketBufferOptions{
 		ReserveHeaderBytes: len(link),
-		Data:               buffer.NewViewFromBytes(initData).ToVectorisedView(),
+		Data:               tcpipbuffer.NewViewFromBytes(initData).ToVectorisedView(),
 	})
 
 	// 1. Push link header
@@ -494,7 +495,7 @@ func TestPacketBufferData(t *testing.T) {
 				s := "APPEND"
 
 				pkt := tc.makePkt(t)
-				pkt.Data().AppendView(buffer.View(s))
+				pkt.Data().AppendView(tcpipbuffer.View(s))
 
 				checkData(t, pkt, []byte(tc.data+s))
 			})
@@ -582,15 +583,32 @@ func TestPacketBufferData(t *testing.T) {
 					})
 				}
 			})
+
+			// ReadFromBuffer
+			for _, n := range []int{0, 1, 2, 7, 10, 14, 20} {
+				t.Run(fmt.Sprintf("ReadFromBuffer%d", n), func(t *testing.T) {
+					s := "TO READ"
+					s += s
+					srcBuf := buffer.NewWithData([]byte(s))
+
+					pkt := tc.makePkt(t)
+					pkt.Data().ReadFromBuffer(&srcBuf, n)
+
+					if n < len(s) {
+						s = s[:n]
+					}
+					checkData(t, pkt, []byte(tc.data+s))
+				})
+			}
 		})
 	}
 }
 
 type packetContents struct {
-	link      buffer.View
-	network   buffer.View
-	transport buffer.View
-	data      buffer.View
+	link      tcpipbuffer.View
+	network   tcpipbuffer.View
+	transport tcpipbuffer.View
+	data      tcpipbuffer.View
 }
 
 func checkPacketContents(t *testing.T, prefix string, pk *PacketBuffer, want packetContents) {
@@ -643,7 +661,7 @@ func checkPacketHeader(t *testing.T, name string, h PacketHeader, want []byte) {
 	checkViewEqual(t, name+".View()", h.View(), want)
 }
 
-func checkViewEqual(t *testing.T, what string, got, want buffer.View) {
+func checkViewEqual(t *testing.T, what string, got, want tcpipbuffer.View) {
 	t.Helper()
 	if !bytes.Equal(got, want) {
 		t.Errorf("%s = %x, want %x", what, got, want)
@@ -703,24 +721,24 @@ func checkRange(t *testing.T, r Range, data []byte) {
 	}
 }
 
-func vv(pieces ...string) buffer.VectorisedView {
-	var views []buffer.View
+func vv(pieces ...string) tcpipbuffer.VectorisedView {
+	var views []tcpipbuffer.View
 	var size int
 	for _, p := range pieces {
-		v := buffer.View([]byte(p))
+		v := tcpipbuffer.View([]byte(p))
 		size += len(v)
 		views = append(views, v)
 	}
-	return buffer.NewVectorisedView(size, views)
+	return tcpipbuffer.NewVectorisedView(size, views)
 }
 
-func makeView(size int) buffer.View {
+func makeView(size int) tcpipbuffer.View {
 	b := byte(size)
 	return bytes.Repeat([]byte{b}, size)
 }
 
-func concatViews(views ...buffer.View) buffer.View {
-	var all buffer.View
+func concatViews(views ...tcpipbuffer.View) tcpipbuffer.View {
+	var all tcpipbuffer.View
 	for _, v := range views {
 		all = append(all, v...)
 	}

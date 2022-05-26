@@ -17,8 +17,8 @@ package ipv4
 import (
 	"fmt"
 
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/header/parse"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -324,11 +324,11 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 		replyICMPHdr.SetChecksum(0)
 		replyICMPHdr.SetChecksum(^header.Checksum(replyData, 0))
 
-		replyVV := buffer.View(replyIPHdr).ToVectorisedView()
-		replyVV.AppendView(replyData)
+		replyBuf := buffer.NewWithData(replyIPHdr)
+		replyBuf.AppendOwned(replyData)
 		replyPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			ReserveHeaderBytes: int(r.MaxHeaderLength()),
-			Data:               replyVV,
+			Payload:            replyBuf,
 		})
 		defer replyPkt.DecRef()
 		// Populate the network/transport headers in the packet buffer so the
@@ -641,18 +641,20 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, deliv
 	// view with the entire incoming IP packet reassembled and truncated as
 	// required. This is now the payload of the new ICMP packet and no longer
 	// considered a packet in its own right.
-	newHeader := append(buffer.View(nil), origIPHdr...)
+
+	var newHeader []byte
+	newHeader = append(newHeader, origIPHdr...)
 	newHeader = append(newHeader, transportHeader...)
-	payload := newHeader.ToVectorisedView()
-	if dataCap := payloadLen - payload.Size(); dataCap > 0 {
-		payload.AppendView(pkt.Data().AsRange().Capped(dataCap).ToOwnedView())
+	payload := buffer.NewWithData(newHeader)
+	if dataCap := payloadLen - int(payload.Size()); dataCap > 0 {
+		payload.AppendOwned(pkt.Data().AsRange().Capped(dataCap).ToOwnedView())
 	} else {
-		payload.CapLength(payloadLen)
+		payload.Truncate(int64(payloadLen))
 	}
 
 	icmpPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(route.MaxHeaderLength()) + header.ICMPv4MinimumSize,
-		Data:               payload,
+		Payload:            payload,
 	})
 	defer icmpPkt.DecRef()
 
