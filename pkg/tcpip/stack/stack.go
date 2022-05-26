@@ -564,6 +564,22 @@ func (s *Stack) SetForwardingDefaultAndAllNICs(protocol tcpip.NetworkProtocolNum
 	return nil
 }
 
+// RemoveMulticastRoute removes a multicast route that matches the specified
+// addresses and protocol.
+func (s *Stack) RemoveMulticastRoute(protocol tcpip.NetworkProtocolNumber, addresses UnicastSourceAndMulticastDestination) tcpip.Error {
+	netProto, ok := s.networkProtocols[protocol]
+	if !ok {
+		return &tcpip.ErrUnknownProtocol{}
+	}
+
+	forwardingNetProto, ok := netProto.(MulticastForwardingNetworkProtocol)
+	if !ok {
+		return &tcpip.ErrNotSupported{}
+	}
+
+	return forwardingNetProto.RemoveMulticastRoute(addresses)
+}
+
 // AddMulticastRoute adds a multicast route to be used for the specified
 // addresses and protocol.
 func (s *Stack) AddMulticastRoute(protocol tcpip.NetworkProtocolNumber, addresses UnicastSourceAndMulticastDestination, route MulticastRoute) tcpip.Error {
