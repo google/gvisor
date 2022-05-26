@@ -1521,6 +1521,20 @@ func (p *protocol) AddMulticastRoute(addresses stack.UnicastSourceAndMulticastDe
 	return nil
 }
 
+// RemoveMulticastRoute implements
+// stack.MulticastForwardingNetworkProtocol.RemoveMulticastRoute.
+func (p *protocol) RemoveMulticastRoute(addresses stack.UnicastSourceAndMulticastDestination) tcpip.Error {
+	if err := p.validateUnicastSourceAndMulticastDestination(addresses); err != nil {
+		return err
+	}
+
+	if removed := p.multicastRouteTable.RemoveInstalledRoute(addresses); !removed {
+		return &tcpip.ErrNoRoute{}
+	}
+
+	return nil
+}
+
 func (p *protocol) forwardPendingMulticastPacket(pkt *stack.PacketBuffer, installedRoute *multicast.InstalledRoute) {
 	defer pkt.DecRef()
 
