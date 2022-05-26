@@ -23,9 +23,10 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/time/rate"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	tcpipbuffer "gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -179,7 +180,7 @@ func handleICMPInIPv6(ep stack.NetworkEndpoint, src, dst tcpip.Address, icmp hea
 			},
 		}
 	}
-	ip := buffer.NewView(header.IPv6MinimumSize + extensionHeaders.Length())
+	ip := make([]byte, header.IPv6MinimumSize+extensionHeaders.Length())
 	header.IPv6(ip).Encode(&header.IPv6Fields{
 		PayloadLength:     uint16(len(icmp)),
 		TransportProtocol: header.ICMPv6ProtocolNumber,
@@ -189,10 +190,10 @@ func handleICMPInIPv6(ep stack.NetworkEndpoint, src, dst tcpip.Address, icmp hea
 		ExtensionHeaders:  extensionHeaders,
 	})
 
-	vv := ip.ToVectorisedView()
-	vv.AppendView(buffer.View(icmp))
+	buf := buffer.NewWithData(ip)
+	buf.Append(icmp)
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: vv,
+		Payload: buf,
 	})
 	ep.HandlePacket(pkt)
 	pkt.DecRef()
@@ -359,7 +360,7 @@ func TestICMPCounts(t *testing.T) {
 	}
 
 	for _, typ := range types {
-		icmp := header.ICMPv6(buffer.NewView(typ.size + len(typ.extraData)))
+		icmp := header.ICMPv6(make([]byte, typ.size+len(typ.extraData)))
 		copy(icmp[typ.size:], typ.extraData)
 		icmp.SetType(typ.typ)
 		icmp.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
@@ -374,7 +375,7 @@ func TestICMPCounts(t *testing.T) {
 
 	// Construct an empty ICMP packet so that
 	// Stats().ICMP.ICMPv6ReceivedPacketStats.Invalid is incremented.
-	handleICMPInIPv6(ep, lladdr1, lladdr0, header.ICMPv6(buffer.NewView(header.IPv6MinimumSize)), arbitraryHopLimit, false)
+	handleICMPInIPv6(ep, lladdr1, lladdr0, header.ICMPv6(make([]byte, header.IPv6MinimumSize)), arbitraryHopLimit, false)
 
 	icmpv6Stats := s.Stats().ICMP.V6.PacketsReceived
 	visitStats(reflect.ValueOf(&icmpv6Stats).Elem(), func(name string, s *tcpip.StatCounter) {
@@ -526,7 +527,7 @@ func routeICMPv6Packet(t *testing.T, clock *faketime.ManualClock, args routeArgs
 
 	{
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Data: buffer.NewVectorisedView(pi.Size(), pi.Views()),
+			Payload: pi.Buffer(),
 		})
 		args.dst.InjectInbound(pi.NetworkProtocolNumber, pkt)
 		pkt.DecRef()
@@ -568,7 +569,7 @@ func TestLinkResolution(t *testing.T) {
 	}
 	defer r.Release()
 
-	hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + header.IPv6MinimumSize + header.ICMPv6EchoMinimumSize)
+	hdr := tcpipbuffer.NewPrependable(int(r.MaxHeaderLength()) + header.IPv6MinimumSize + header.ICMPv6EchoMinimumSize)
 	pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6EchoMinimumSize))
 	pkt.SetType(header.ICMPv6EchoRequest)
 	pkt.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
@@ -765,7 +766,7 @@ func TestICMPChecksumValidationSimple(t *testing.T) {
 				}
 
 				handleIPv6Payload := func(checksum bool) {
-					icmp := header.ICMPv6(buffer.NewView(typ.size + len(typ.extraData)))
+					icmp := header.ICMPv6(make([]byte, typ.size+len(typ.extraData)))
 					copy(icmp[typ.size:], typ.extraData)
 					icmp.SetType(typ.typ)
 					if checksum {
@@ -775,7 +776,7 @@ func TestICMPChecksumValidationSimple(t *testing.T) {
 							Dst:    lladdr0,
 						}))
 					}
-					ip := header.IPv6(buffer.NewView(header.IPv6MinimumSize))
+					ip := header.IPv6(make([]byte, header.IPv6MinimumSize))
 					ip.Encode(&header.IPv6Fields{
 						PayloadLength:     uint16(len(icmp)),
 						TransportProtocol: header.ICMPv6ProtocolNumber,
@@ -783,8 +784,9 @@ func TestICMPChecksumValidationSimple(t *testing.T) {
 						SrcAddr:           lladdr1,
 						DstAddr:           lladdr0,
 					})
+					buf := buffer.NewWithData(append(ip, icmp...))
 					pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-						Data: buffer.NewVectorisedView(len(ip)+len(icmp), []buffer.View{buffer.View(ip), buffer.View(icmp)}),
+						Payload: buf,
 					})
 					e.InjectInbound(ProtocolNumber, pkt)
 					pkt.DecRef()
@@ -843,14 +845,14 @@ func TestICMPChecksumValidationSimple(t *testing.T) {
 
 func TestICMPChecksumValidationWithPayload(t *testing.T) {
 	const simpleBodySize = 64
-	simpleBody := func(view buffer.View) {
+	simpleBody := func(view []byte) {
 		for i := 0; i < simpleBodySize; i++ {
 			view[i] = uint8(i)
 		}
 	}
 
 	const errorICMPBodySize = header.IPv6MinimumSize + simpleBodySize
-	errorICMPBody := func(view buffer.View) {
+	errorICMPBody := func(view []byte) {
 		ip := header.IPv6(view)
 		ip.Encode(&header.IPv6Fields{
 			PayloadLength:     simpleBodySize,
@@ -868,7 +870,7 @@ func TestICMPChecksumValidationWithPayload(t *testing.T) {
 		size        int
 		statCounter func(tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter
 		payloadSize int
-		payload     func(buffer.View)
+		payload     func([]byte)
 	}{
 		{
 			"DstUnreachable",
@@ -964,9 +966,9 @@ func TestICMPChecksumValidationWithPayload(t *testing.T) {
 				)
 			}
 
-			handleIPv6Payload := func(typ header.ICMPv6Type, size, payloadSize int, payloadFn func(buffer.View), checksum bool) {
+			handleIPv6Payload := func(typ header.ICMPv6Type, size, payloadSize int, payloadFn func([]byte), checksum bool) {
 				icmpSize := size + payloadSize
-				hdr := buffer.NewPrependable(header.IPv6MinimumSize + icmpSize)
+				hdr := tcpipbuffer.NewPrependable(header.IPv6MinimumSize + icmpSize)
 				icmpHdr := header.ICMPv6(hdr.Prepend(icmpSize))
 				icmpHdr.SetType(typ)
 				payloadFn(icmpHdr.Payload())
@@ -988,7 +990,7 @@ func TestICMPChecksumValidationWithPayload(t *testing.T) {
 					DstAddr:           lladdr0,
 				})
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Data: hdr.View().ToVectorisedView(),
+					Payload: buffer.NewWithData(hdr.View()),
 				})
 				e.InjectInbound(ProtocolNumber, pkt)
 				pkt.DecRef()
@@ -1032,14 +1034,14 @@ func TestICMPChecksumValidationWithPayload(t *testing.T) {
 
 func TestICMPChecksumValidationWithPayloadMultipleViews(t *testing.T) {
 	const simpleBodySize = 64
-	simpleBody := func(view buffer.View) {
+	simpleBody := func(view []byte) {
 		for i := 0; i < simpleBodySize; i++ {
 			view[i] = uint8(i)
 		}
 	}
 
 	const errorICMPBodySize = header.IPv6MinimumSize + simpleBodySize
-	errorICMPBody := func(view buffer.View) {
+	errorICMPBody := func(view []byte) {
 		ip := header.IPv6(view)
 		ip.Encode(&header.IPv6Fields{
 			PayloadLength:     simpleBodySize,
@@ -1057,7 +1059,7 @@ func TestICMPChecksumValidationWithPayloadMultipleViews(t *testing.T) {
 		size        int
 		statCounter func(tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter
 		payloadSize int
-		payload     func(buffer.View)
+		payload     func([]byte)
 	}{
 		{
 			"DstUnreachable",
@@ -1153,12 +1155,12 @@ func TestICMPChecksumValidationWithPayloadMultipleViews(t *testing.T) {
 				)
 			}
 
-			handleIPv6Payload := func(typ header.ICMPv6Type, size, payloadSize int, payloadFn func(buffer.View), checksum bool) {
-				hdr := buffer.NewPrependable(header.IPv6MinimumSize + size)
+			handleIPv6Payload := func(typ header.ICMPv6Type, size, payloadSize int, payloadFn func([]byte), checksum bool) {
+				hdr := tcpipbuffer.NewPrependable(header.IPv6MinimumSize + size)
 				icmpHdr := header.ICMPv6(hdr.Prepend(size))
 				icmpHdr.SetType(typ)
 
-				payload := buffer.NewView(payloadSize)
+				payload := make([]byte, payloadSize)
 				payloadFn(payload)
 
 				if checksum {
@@ -1179,8 +1181,9 @@ func TestICMPChecksumValidationWithPayloadMultipleViews(t *testing.T) {
 					SrcAddr:           lladdr1,
 					DstAddr:           lladdr0,
 				})
+				buf := buffer.NewWithData(append(hdr.View(), payload...))
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Data: buffer.NewVectorisedView(header.IPv6MinimumSize+size+payloadSize, []buffer.View{hdr.View(), payload}),
+					Payload: buf,
 				})
 				e.InjectInbound(ProtocolNumber, pkt)
 				pkt.DecRef()
@@ -1389,7 +1392,7 @@ func TestPacketQueing(t *testing.T) {
 		{
 			name: "ICMP Error",
 			rxPkt: func(e *channel.Endpoint) {
-				hdr := buffer.NewPrependable(header.IPv6MinimumSize + header.UDPMinimumSize)
+				hdr := tcpipbuffer.NewPrependable(header.IPv6MinimumSize + header.UDPMinimumSize)
 				u := header.UDP(hdr.Prepend(header.UDPMinimumSize))
 				u.Encode(&header.UDPFields{
 					SrcPort: 5555,
@@ -1409,7 +1412,7 @@ func TestPacketQueing(t *testing.T) {
 					DstAddr:           host1IPv6Addr.AddressWithPrefix.Address,
 				})
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Data: hdr.View().ToVectorisedView(),
+					Payload: buffer.NewWithData(hdr.View()),
 				})
 				e.InjectInbound(ProtocolNumber, pkt)
 				pkt.DecRef()
@@ -1439,7 +1442,7 @@ func TestPacketQueing(t *testing.T) {
 			name: "Ping",
 			rxPkt: func(e *channel.Endpoint) {
 				totalLen := header.IPv6MinimumSize + header.ICMPv6MinimumSize
-				hdr := buffer.NewPrependable(totalLen)
+				hdr := tcpipbuffer.NewPrependable(totalLen)
 				pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6MinimumSize))
 				pkt.SetType(header.ICMPv6EchoRequest)
 				pkt.SetCode(0)
@@ -1458,7 +1461,7 @@ func TestPacketQueing(t *testing.T) {
 					DstAddr:           host1IPv6Addr.AddressWithPrefix.Address,
 				})
 				pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Data: hdr.View().ToVectorisedView(),
+					Payload: buffer.NewWithData(hdr.View()),
 				})
 				e.InjectInbound(header.IPv6ProtocolNumber, pktBuf)
 				pktBuf.DecRef()
@@ -1542,7 +1545,7 @@ func TestPacketQueing(t *testing.T) {
 			// Send a neighbor advertisement to complete link address resolution.
 			{
 				naSize := header.ICMPv6NeighborAdvertMinimumSize + header.NDPLinkLayerAddressSize
-				hdr := buffer.NewPrependable(header.IPv6MinimumSize + naSize)
+				hdr := tcpipbuffer.NewPrependable(header.IPv6MinimumSize + naSize)
 				pkt := header.ICMPv6(hdr.Prepend(naSize))
 				pkt.SetType(header.ICMPv6NeighborAdvert)
 				na := header.NDPNeighborAdvert(pkt.MessageBody())
@@ -1567,7 +1570,7 @@ func TestPacketQueing(t *testing.T) {
 					DstAddr:           host1IPv6Addr.AddressWithPrefix.Address,
 				})
 				pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Data: hdr.View().ToVectorisedView(),
+					Payload: buffer.NewWithData(hdr.View()),
 				})
 				e.InjectInbound(ProtocolNumber, pktBuf)
 				pktBuf.DecRef()
@@ -1599,7 +1602,7 @@ func TestCallsToNeighborCache(t *testing.T) {
 			name: "Unicast Neighbor Solicitation without source link-layer address option",
 			createPacket: func() header.ICMPv6 {
 				nsSize := header.ICMPv6NeighborSolicitMinimumSize + header.NDPLinkLayerAddressSize
-				icmp := header.ICMPv6(buffer.NewView(nsSize))
+				icmp := header.ICMPv6(make([]byte, nsSize))
 				icmp.SetType(header.ICMPv6NeighborSolicit)
 				ns := header.NDPNeighborSolicit(icmp.MessageBody())
 				ns.SetTargetAddress(lladdr0)
@@ -1619,7 +1622,7 @@ func TestCallsToNeighborCache(t *testing.T) {
 			name: "Unicast Neighbor Solicitation with source link-layer address option",
 			createPacket: func() header.ICMPv6 {
 				nsSize := header.ICMPv6NeighborSolicitMinimumSize + header.NDPLinkLayerAddressSize
-				icmp := header.ICMPv6(buffer.NewView(nsSize))
+				icmp := header.ICMPv6(make([]byte, nsSize))
 				icmp.SetType(header.ICMPv6NeighborSolicit)
 				ns := header.NDPNeighborSolicit(icmp.MessageBody())
 				ns.SetTargetAddress(lladdr0)
@@ -1636,7 +1639,7 @@ func TestCallsToNeighborCache(t *testing.T) {
 			name: "Multicast Neighbor Solicitation without source link-layer address option",
 			createPacket: func() header.ICMPv6 {
 				nsSize := header.ICMPv6NeighborSolicitMinimumSize + header.NDPLinkLayerAddressSize
-				icmp := header.ICMPv6(buffer.NewView(nsSize))
+				icmp := header.ICMPv6(make([]byte, nsSize))
 				icmp.SetType(header.ICMPv6NeighborSolicit)
 				ns := header.NDPNeighborSolicit(icmp.MessageBody())
 				ns.SetTargetAddress(lladdr0)
@@ -1652,7 +1655,7 @@ func TestCallsToNeighborCache(t *testing.T) {
 			name: "Multicast Neighbor Solicitation with source link-layer address option",
 			createPacket: func() header.ICMPv6 {
 				nsSize := header.ICMPv6NeighborSolicitMinimumSize + header.NDPLinkLayerAddressSize
-				icmp := header.ICMPv6(buffer.NewView(nsSize))
+				icmp := header.ICMPv6(make([]byte, nsSize))
 				icmp.SetType(header.ICMPv6NeighborSolicit)
 				ns := header.NDPNeighborSolicit(icmp.MessageBody())
 				ns.SetTargetAddress(lladdr0)
@@ -1669,7 +1672,7 @@ func TestCallsToNeighborCache(t *testing.T) {
 			name: "Unicast Neighbor Advertisement without target link-layer address option",
 			createPacket: func() header.ICMPv6 {
 				naSize := header.ICMPv6NeighborAdvertMinimumSize
-				icmp := header.ICMPv6(buffer.NewView(naSize))
+				icmp := header.ICMPv6(make([]byte, naSize))
 				icmp.SetType(header.ICMPv6NeighborAdvert)
 				na := header.NDPNeighborAdvert(icmp.MessageBody())
 				na.SetSolicitedFlag(true)
@@ -1690,7 +1693,7 @@ func TestCallsToNeighborCache(t *testing.T) {
 			name: "Unicast Neighbor Advertisement with target link-layer address option",
 			createPacket: func() header.ICMPv6 {
 				naSize := header.ICMPv6NeighborAdvertMinimumSize + header.NDPLinkLayerAddressSize
-				icmp := header.ICMPv6(buffer.NewView(naSize))
+				icmp := header.ICMPv6(make([]byte, naSize))
 				icmp.SetType(header.ICMPv6NeighborAdvert)
 				na := header.NDPNeighborAdvert(icmp.MessageBody())
 				na.SetSolicitedFlag(true)
@@ -1709,7 +1712,7 @@ func TestCallsToNeighborCache(t *testing.T) {
 			name: "Multicast Neighbor Advertisement without target link-layer address option",
 			createPacket: func() header.ICMPv6 {
 				naSize := header.ICMPv6NeighborAdvertMinimumSize + header.NDPLinkLayerAddressSize
-				icmp := header.ICMPv6(buffer.NewView(naSize))
+				icmp := header.ICMPv6(make([]byte, naSize))
 				icmp.SetType(header.ICMPv6NeighborAdvert)
 				na := header.NDPNeighborAdvert(icmp.MessageBody())
 				na.SetSolicitedFlag(false)
@@ -1729,7 +1732,7 @@ func TestCallsToNeighborCache(t *testing.T) {
 			name: "Multicast Neighbor Advertisement with target link-layer address option",
 			createPacket: func() header.ICMPv6 {
 				naSize := header.ICMPv6NeighborAdvertMinimumSize + header.NDPLinkLayerAddressSize
-				icmp := header.ICMPv6(buffer.NewView(naSize))
+				icmp := header.ICMPv6(make([]byte, naSize))
 				icmp.SetType(header.ICMPv6NeighborAdvert)
 				na := header.NDPNeighborAdvert(icmp.MessageBody())
 				na.SetSolicitedFlag(false)

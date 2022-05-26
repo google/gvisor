@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"math/rand"
 
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -104,19 +104,19 @@ func (ep *MockLinkEndpoint) Close() {
 // the other headers. The payload is made from Views of the sizes listed in
 // viewSizes.
 func MakeRandPkt(transportHeaderLength int, extraHeaderReserveLength int, viewSizes []int, proto tcpip.NetworkProtocolNumber) *stack.PacketBuffer {
-	var views buffer.VectorisedView
+	var buffer buffer.Buffer
 
 	for _, s := range viewSizes {
-		newView := buffer.NewView(s)
+		newView := make([]byte, s)
 		if _, err := rand.Read(newView); err != nil {
 			panic(fmt.Sprintf("rand.Read: %s", err))
 		}
-		views.AppendView(newView)
+		buffer.Append(newView)
 	}
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: transportHeaderLength + extraHeaderReserveLength,
-		Data:               views,
+		Payload:            buffer,
 	})
 	pkt.NetworkProtocolNumber = proto
 	if _, err := rand.Read(pkt.TransportHeader().Push(transportHeaderLength)); err != nil {

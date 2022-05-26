@@ -13,8 +13,8 @@ go_library(
         "//pkg/tcpip/tests/integration:__pkg__",
     ],
     deps = [
+        "//pkg/buffer",
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
     ],
