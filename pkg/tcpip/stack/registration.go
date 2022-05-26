@@ -802,6 +802,13 @@ type MulticastForwardingNetworkProtocol interface {
 	//
 	// Returns an error if the addresses or route is invalid.
 	AddMulticastRoute(UnicastSourceAndMulticastDestination, MulticastRoute) tcpip.Error
+
+	// RemoveMulticastRoute removes the route matching the provided addresses
+	// from the multicast routing table.
+	//
+	// Returns an error if the addresses are invalid or a matching route is not
+	// found.
+	RemoveMulticastRoute(UnicastSourceAndMulticastDestination) tcpip.Error
 }
 
 // NetworkDispatcher contains the methods used by the network stack to deliver
