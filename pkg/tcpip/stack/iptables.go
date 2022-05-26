@@ -317,7 +317,7 @@ func (it *IPTables) shouldSkipOrPopulateTables(tables []checkTable, pkt *PacketB
 // getConnAndUpdate) can allocate.
 // +checkescape
 func (it *IPTables) CheckPrerouting(pkt *PacketBuffer, addressEP AddressableEndpoint, inNicName string) bool {
-	tables := [...]checkTable{
+	tables := [2]checkTable{
 		{
 			fn:      check,
 			tableID: MangleID,
@@ -355,7 +355,7 @@ func (it *IPTables) CheckPrerouting(pkt *PacketBuffer, addressEP AddressableEndp
 // getConnAndUpdate) can allocate.
 // +checkescape
 func (it *IPTables) CheckInput(pkt *PacketBuffer, inNicName string) bool {
-	tables := [...]checkTable{
+	tables := [2]checkTable{
 		{
 			fn:      checkNAT,
 			tableID: NATID,
@@ -395,7 +395,7 @@ func (it *IPTables) CheckInput(pkt *PacketBuffer, inNicName string) bool {
 // getConnAndUpdate) can allocate.
 // +checkescape
 func (it *IPTables) CheckForward(pkt *PacketBuffer, inNicName, outNicName string) bool {
-	tables := [...]checkTable{
+	tables := [1]checkTable{
 		{
 			fn:      check,
 			tableID: FilterID,
@@ -427,7 +427,7 @@ func (it *IPTables) CheckForward(pkt *PacketBuffer, inNicName, outNicName string
 // getConnAndUpdate) can allocate.
 // +checkescape
 func (it *IPTables) CheckOutput(pkt *PacketBuffer, r *Route, outNicName string) bool {
-	tables := [...]checkTable{
+	tables := [3]checkTable{
 		{
 			fn:      check,
 			tableID: MangleID,
@@ -469,7 +469,7 @@ func (it *IPTables) CheckOutput(pkt *PacketBuffer, r *Route, outNicName string) 
 // getConnAndUpdate) can allocate.
 // +checkescape
 func (it *IPTables) CheckPostrouting(pkt *PacketBuffer, r *Route, addressEP AddressableEndpoint, outNicName string) bool {
-	tables := [...]checkTable{
+	tables := [2]checkTable{
 		{
 			fn:      check,
 			tableID: MangleID,
