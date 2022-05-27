@@ -38,11 +38,26 @@ type FDInfo struct {
 	Path string `json:"path,omitempty"`
 }
 
+// UIDGID contains information for /proc/[pid]/status/{uid,gid}.
+type UIDGID struct {
+	Real      uint32 `json:"real,omitempty"`
+	Effective uint32 `json:"effective,omitempty"`
+	Saved     uint32 `json:"saved,omitempty"`
+}
+
+// Status contains information for /proc/[pid]/status.
+type Status struct {
+	Comm   string `json:"comm,omitempty"`
+	PID    int32  `json:"pid,omitempty"`
+	UID    UIDGID `json:"uid,omitempty"`
+	GID    UIDGID `json:"gid,omitempty"`
+	VMSize uint64 `json:"vm_size,omitempty"`
+	VMRSS  uint64 `json:"vm_rss,omitempty"`
+}
+
 // ProcessProcfsDump contains the procfs dump for one process. For more details
 // on fields that directly correspond to /proc fields, see proc(5).
 type ProcessProcfsDump struct {
-	// PID is the process ID.
-	PID int32 `json:"pid,omitempty"`
 	// Exe is the symlink target of /proc/[pid]/exe.
 	Exe string `json:"exe,omitempty"`
 	// Args is /proc/[pid]/cmdline split into an array.
@@ -63,6 +78,8 @@ type ProcessProcfsDump struct {
 	Limits map[string]limits.Limit `json:"limits,omitempty"`
 	// Cgroup is /proc/[pid]/cgroup split into an array.
 	Cgroup []kernel.TaskCgroupEntry `json:"cgroup,omitempty"`
+	// Status is /proc/[pid]/status.
+	Status Status `json:"status,omitempty"`
 }
 
 // getMM returns t's MemoryManager. On success, the MemoryManager's users count
@@ -183,6 +200,27 @@ func getFDLimit(ctx context.Context, pid kernel.ThreadID) (limits.Limit, error) 
 	return limits.Limit{}, fmt.Errorf("could not find limit set for pid %s", pid)
 }
 
+func getStatus(t *kernel.Task, mm *mm.MemoryManager, pid kernel.ThreadID) Status {
+	creds := t.Credentials()
+	uns := creds.UserNamespace
+	return Status{
+		Comm: t.Name(),
+		PID:  int32(pid),
+		UID: UIDGID{
+			Real:      uint32(creds.RealKUID.In(uns).OrOverflow()),
+			Effective: uint32(creds.EffectiveKUID.In(uns).OrOverflow()),
+			Saved:     uint32(creds.SavedKUID.In(uns).OrOverflow()),
+		},
+		GID: UIDGID{
+			Real:      uint32(creds.RealKGID.In(uns).OrOverflow()),
+			Effective: uint32(creds.EffectiveKGID.In(uns).OrOverflow()),
+			Saved:     uint32(creds.SavedKGID.In(uns).OrOverflow()),
+		},
+		VMSize: mm.VirtualMemorySize() >> 10,
+		VMRSS:  mm.ResidentSetSize() >> 10,
+	}
+}
+
 // Dump returns a procfs dump for process pid. t must be a task in process pid.
 func Dump(t *kernel.Task, pid kernel.ThreadID) (ProcessProcfsDump, error) {
 	ctx := t.AsyncContext()
@@ -199,7 +237,6 @@ func Dump(t *kernel.Task, pid kernel.ThreadID) (ProcessProcfsDump, error) {
 	}
 
 	return ProcessProcfsDump{
-		PID:       int32(pid),
 		Exe:       getExecutablePath(ctx, pid, mm),
 		Args:      getMetadataArray(ctx, pid, mm, proc.Cmdline),
 		Env:       getMetadataArray(ctx, pid, mm, proc.Environ),
@@ -213,5 +250,6 @@ func Dump(t *kernel.Task, pid kernel.ThreadID) (ProcessProcfsDump, error) {
 		// We don't need to worry about fake cgroup controllers as that is not
 		// supported in runsc.
 		Cgroup: t.GetCgroupEntries(),
+		Status: getStatus(t, mm, pid),
 	}, nil
 }
