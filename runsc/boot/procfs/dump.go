@@ -55,6 +55,12 @@ type Status struct {
 	VMRSS  uint64 `json:"vm_rss,omitempty"`
 }
 
+// Stat contains information for /proc/[pid]/stat.
+type Stat struct {
+	PGID int32 `json:"pgid,omitempty"`
+	SID  int32 `json:"sid,omitempty"`
+}
+
 // ProcessProcfsDump contains the procfs dump for one process. For more details
 // on fields that directly correspond to /proc fields, see proc(5).
 type ProcessProcfsDump struct {
@@ -80,6 +86,8 @@ type ProcessProcfsDump struct {
 	Cgroup []kernel.TaskCgroupEntry `json:"cgroup,omitempty"`
 	// Status is /proc/[pid]/status.
 	Status Status `json:"status,omitempty"`
+	// Stat is /proc/[pid]/stat.
+	Stat Stat `json:"stat,omitempty"`
 }
 
 // getMM returns t's MemoryManager. On success, the MemoryManager's users count
@@ -221,8 +229,15 @@ func getStatus(t *kernel.Task, mm *mm.MemoryManager, pid kernel.ThreadID) Status
 	}
 }
 
+func getStat(t *kernel.Task, pid kernel.ThreadID, pidns *kernel.PIDNamespace) Stat {
+	return Stat{
+		PGID: int32(pidns.IDOfProcessGroup(t.ThreadGroup().ProcessGroup())),
+		SID:  int32(pidns.IDOfSession(t.ThreadGroup().Session())),
+	}
+}
+
 // Dump returns a procfs dump for process pid. t must be a task in process pid.
-func Dump(t *kernel.Task, pid kernel.ThreadID) (ProcessProcfsDump, error) {
+func Dump(t *kernel.Task, pid kernel.ThreadID, pidns *kernel.PIDNamespace) (ProcessProcfsDump, error) {
 	ctx := t.AsyncContext()
 
 	mm := getMM(t)
@@ -251,5 +266,6 @@ func Dump(t *kernel.Task, pid kernel.ThreadID) (ProcessProcfsDump, error) {
 		// supported in runsc.
 		Cgroup: t.GetCgroupEntries(),
 		Status: getStatus(t, mm, pid),
+		Stat:   getStat(t, pid, pidns),
 	}, nil
 }
