@@ -339,8 +339,8 @@ func TestProcfsDump(t *testing.T) {
 	}
 
 	// Sleep should be PID 1.
-	if procfsDump[0].PID != 1 {
-		t.Errorf("expected sleep process to be pid 1, got %d", procfsDump[0].PID)
+	if procfsDump[0].Status.PID != 1 {
+		t.Errorf("expected sleep process to be pid 1, got %d", procfsDump[0].Status.PID)
 	}
 
 	// Check that bin/sleep is part of the executable path.
@@ -411,5 +411,23 @@ func TestProcfsDump(t *testing.T) {
 				t.Errorf("expected %+v, got %+v", wantCgroup[i], cgroup)
 			}
 		}
+	}
+
+	if wantName := "sleep"; procfsDump[0].Status.Comm != wantName {
+		t.Errorf("expected Comm to be %q, but got %q", wantName, procfsDump[0].Status.Comm)
+	}
+
+	if uid := procfsDump[0].Status.UID; uid.Real != 0 || uid.Effective != 0 || uid.Saved != 0 {
+		t.Errorf("expected UIDs to be 0 (root), got %+v", uid)
+	}
+	if gid := procfsDump[0].Status.GID; gid.Real != 0 || gid.Effective != 0 || gid.Saved != 0 {
+		t.Errorf("expected GIDs to be 0 (root), got %+v", gid)
+	}
+
+	if procfsDump[0].Status.VMSize == 0 {
+		t.Errorf("expected VMSize to be set")
+	}
+	if procfsDump[0].Status.VMRSS == 0 {
+		t.Errorf("expected VMSize to be set")
 	}
 }
