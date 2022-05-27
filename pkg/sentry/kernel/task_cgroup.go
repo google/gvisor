@@ -177,20 +177,21 @@ func (t *Task) MigrateCgroup(dst Cgroup) error {
 	return nil
 }
 
-// taskCgroupEntry represents a line in /proc/<pid>/cgroup, and is used to
+// TaskCgroupEntry represents a line in /proc/<pid>/cgroup, and is used to
 // format a cgroup for display.
-type taskCgroupEntry struct {
-	hierarchyID uint32
-	controllers string
-	path        string
+type TaskCgroupEntry struct {
+	HierarchyID uint32 `json:"hierarchy_id,omitempty"`
+	Controllers string `json:"controllers,omitempty"`
+	Path        string `json:"path,omitempty"`
 }
 
-// GenerateProcTaskCgroup writes the contents of /proc/<pid>/cgroup for t to buf.
-func (t *Task) GenerateProcTaskCgroup(buf *bytes.Buffer) {
+// GetCgroupEntries generates the contents of /proc/<pid>/cgroup as
+// a TaskCgroupEntry array.
+func (t *Task) GetCgroupEntries() []TaskCgroupEntry {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	cgEntries := make([]taskCgroupEntry, 0, len(t.cgroups))
+	cgEntries := make([]TaskCgroupEntry, 0, len(t.cgroups))
 	for c := range t.cgroups {
 		ctls := c.Controllers()
 		ctlNames := make([]string, 0, len(ctls))
@@ -208,16 +209,22 @@ func (t *Task) GenerateProcTaskCgroup(buf *bytes.Buffer) {
 			ctlNames = append(ctlNames, string(ctl.Type()))
 		}
 
-		cgEntries = append(cgEntries, taskCgroupEntry{
-			hierarchyID: c.HierarchyID(),
-			controllers: strings.Join(ctlNames, ","),
-			path:        c.Path(),
+		cgEntries = append(cgEntries, TaskCgroupEntry{
+			HierarchyID: c.HierarchyID(),
+			Controllers: strings.Join(ctlNames, ","),
+			Path:        c.Path(),
 		})
 	}
 
-	sort.Slice(cgEntries, func(i, j int) bool { return cgEntries[i].hierarchyID > cgEntries[j].hierarchyID })
+	sort.Slice(cgEntries, func(i, j int) bool { return cgEntries[i].HierarchyID > cgEntries[j].HierarchyID })
+	return cgEntries
+}
+
+// GenerateProcTaskCgroup writes the contents of /proc/<pid>/cgroup for t to buf.
+func (t *Task) GenerateProcTaskCgroup(buf *bytes.Buffer) {
+	cgEntries := t.GetCgroupEntries()
 	for _, cgE := range cgEntries {
-		fmt.Fprintf(buf, "%d:%s:%s\n", cgE.hierarchyID, cgE.controllers, cgE.path)
+		fmt.Fprintf(buf, "%d:%s:%s\n", cgE.HierarchyID, cgE.Controllers, cgE.Path)
 	}
 }
 
