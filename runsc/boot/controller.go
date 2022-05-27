@@ -639,7 +639,7 @@ func (cm *containerManager) ProcfsDump(_ *struct{}, out *[]procfs.ProcessProcfsD
 	*out = make([]procfs.ProcessProcfsDump, 0, len(cm.l.processes))
 	for _, tg := range pidns.ThreadGroups() {
 		pid := pidns.IDOfThreadGroup(tg)
-		procDump, err := procfs.Dump(tg.Leader(), pid)
+		procDump, err := procfs.Dump(tg.Leader(), pid, pidns)
 		if err != nil {
 			log.Warningf("skipping procfs dump for PID %s: %v", pid, err)
 			continue
