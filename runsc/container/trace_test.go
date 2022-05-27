@@ -23,6 +23,7 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"google.golang.org/protobuf/proto"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck/checkers/remote/test"
@@ -304,6 +305,7 @@ func TestProcfsDump(t *testing.T) {
 	spec.Process.Rlimits = []specs.POSIXRlimit{
 		{Type: "RLIMIT_NOFILE", Hard: fdLimit.Max, Soft: fdLimit.Cur},
 	}
+	conf.Cgroupfs = true
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
@@ -395,5 +397,19 @@ func TestProcfsDump(t *testing.T) {
 
 	if got := procfsDump[0].Limits["RLIMIT_NOFILE"]; got != fdLimit {
 		t.Errorf("expected FD limit to be %+v, but got %+v", fdLimit, got)
+	}
+
+	wantCgroup := []kernel.TaskCgroupEntry{
+		kernel.TaskCgroupEntry{HierarchyID: 2, Controllers: "memory", Path: "/"},
+		kernel.TaskCgroupEntry{HierarchyID: 1, Controllers: "cpu", Path: "/"},
+	}
+	if len(procfsDump[0].Cgroup) != len(wantCgroup) {
+		t.Errorf("expected 2 cgroup controllers, got %+v", procfsDump[0].Cgroup)
+	} else {
+		for i, cgroup := range procfsDump[0].Cgroup {
+			if cgroup != wantCgroup[i] {
+				t.Errorf("expected %+v, got %+v", wantCgroup[i], cgroup)
+			}
+		}
 	}
 }

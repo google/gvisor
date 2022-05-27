@@ -61,6 +61,8 @@ type ProcessProcfsDump struct {
 	// Limits constains resource limits for this process. Currently only
 	// RLIMIT_NOFILE is supported.
 	Limits map[string]limits.Limit `json:"limits,omitempty"`
+	// Cgroup is /proc/[pid]/cgroup split into an array.
+	Cgroup []kernel.TaskCgroupEntry `json:"cgroup,omitempty"`
 }
 
 // getMM returns t's MemoryManager. On success, the MemoryManager's users count
@@ -208,5 +210,8 @@ func Dump(t *kernel.Task, pid kernel.ThreadID) (ProcessProcfsDump, error) {
 		Limits: map[string]limits.Limit{
 			"RLIMIT_NOFILE": fdLimit,
 		},
+		// We don't need to worry about fake cgroup controllers as that is not
+		// supported in runsc.
+		Cgroup: t.GetCgroupEntries(),
 	}, nil
 }
