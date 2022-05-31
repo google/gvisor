@@ -48,6 +48,10 @@ var LogMaximumSize uint = DefaultLogMaximumSize
 // do anything useful with binary text dump of byte array arguments.
 var EventMaximumSize uint
 
+// LogAppDataAllowed is set to true when printing application data in strace
+// logs is allowed.
+var LogAppDataAllowed = true
+
 // ItimerTypes are the possible itimer types.
 var ItimerTypes = abi.ValueSet{
 	linux.ITIMER_REAL:    "ITIMER_REAL",
@@ -108,7 +112,10 @@ func iovecs(t *kernel.Task, addr hostarch.Addr, iovcnt int, printContent bool, m
 	return fmt.Sprintf("%#x %s", addr, strings.Join(iovs, ", "))
 }
 
-func dump(t *kernel.Task, addr hostarch.Addr, size uint, maximumBlobSize uint) string {
+func dump(t *kernel.Task, addr hostarch.Addr, size uint, maximumBlobSize uint, printContent bool) string {
+	if !printContent {
+		return fmt.Sprintf("{base=%#x, len=%d}", addr, size)
+	}
 	origSize := size
 	if size > maximumBlobSize {
 		size = maximumBlobSize
@@ -415,13 +422,13 @@ func (i *SyscallInfo) pre(t *kernel.Task, args arch.SyscallArguments, maximumBlo
 		case FD:
 			output = append(output, fd(t, args[arg].Int()))
 		case WriteBuffer:
-			output = append(output, dump(t, args[arg].Pointer(), args[arg+1].SizeT(), maximumBlobSize))
+			output = append(output, dump(t, args[arg].Pointer(), args[arg+1].SizeT(), maximumBlobSize, LogAppDataAllowed /* content */))
 		case WriteIOVec:
-			output = append(output, iovecs(t, args[arg].Pointer(), int(args[arg+1].Int()), true /* content */, uint64(maximumBlobSize)))
+			output = append(output, iovecs(t, args[arg].Pointer(), int(args[arg+1].Int()), LogAppDataAllowed /* content */, uint64(maximumBlobSize)))
 		case IOVec:
 			output = append(output, iovecs(t, args[arg].Pointer(), int(args[arg+1].Int()), false /* content */, uint64(maximumBlobSize)))
 		case SendMsgHdr:
-			output = append(output, msghdr(t, args[arg].Pointer(), true /* content */, uint64(maximumBlobSize)))
+			output = append(output, msghdr(t, args[arg].Pointer(), LogAppDataAllowed /* content */, uint64(maximumBlobSize)))
 		case RecvMsgHdr:
 			output = append(output, msghdr(t, args[arg].Pointer(), false /* content */, uint64(maximumBlobSize)))
 		case Path:
@@ -520,20 +527,20 @@ func (i *SyscallInfo) post(t *kernel.Task, args arch.SyscallArguments, rval uint
 		}
 		switch i.format[arg] {
 		case ReadBuffer:
-			output[arg] = dump(t, args[arg].Pointer(), uint(rval), maximumBlobSize)
+			output[arg] = dump(t, args[arg].Pointer(), uint(rval), maximumBlobSize, LogAppDataAllowed /* content */)
 		case ReadIOVec:
 			printLength := uint64(rval)
 			if printLength > uint64(maximumBlobSize) {
 				printLength = uint64(maximumBlobSize)
 			}
-			output[arg] = iovecs(t, args[arg].Pointer(), int(args[arg+1].Int()), true /* content */, printLength)
+			output[arg] = iovecs(t, args[arg].Pointer(), int(args[arg+1].Int()), LogAppDataAllowed /* content */, printLength)
 		case WriteIOVec, IOVec, WriteBuffer:
 			// We already have a big blast from write.
 			output[arg] = "..."
 		case SendMsgHdr:
 			output[arg] = msghdr(t, args[arg].Pointer(), false /* content */, uint64(maximumBlobSize))
 		case RecvMsgHdr:
-			output[arg] = msghdr(t, args[arg].Pointer(), true /* content */, uint64(maximumBlobSize))
+			output[arg] = msghdr(t, args[arg].Pointer(), LogAppDataAllowed /* content */, uint64(maximumBlobSize))
 		case PostPath:
 			output[arg] = path(t, args[arg].Pointer())
 		case PipeFDs:
