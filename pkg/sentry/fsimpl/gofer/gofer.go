@@ -551,8 +551,8 @@ func (fs *filesystem) initClientLisa(ctx context.Context) (lisafs.Inode, error) 
 
 	// Close all intermediate FDs to the attach point.
 	numInodes := len(inodes)
-	for _, inode := range inodes[:numInodes-1] {
-		curFD := fs.clientLisa.NewFD(inode.ControlFD)
+	for i := 0; i < numInodes-1; i++ {
+		curFD := fs.clientLisa.NewFD(inodes[i].ControlFD)
 		curFD.Close(ctx, false /* flush */)
 	}
 
@@ -560,8 +560,10 @@ func (fs *filesystem) initClientLisa(ctx context.Context) (lisafs.Inode, error) 
 	case lisafs.WalkSuccess:
 		return inodes[numInodes-1], nil
 	default:
-		last := fs.clientLisa.NewFD(inodes[numInodes-1].ControlFD)
-		last.Close(ctx, false /* flush */)
+		if numInodes > 0 {
+			last := fs.clientLisa.NewFD(inodes[numInodes-1].ControlFD)
+			last.Close(ctx, false /* flush */)
+		}
 		log.Warningf("initClientLisa failed because walk to attach point %q failed: lisafs.WalkStatus = %v", fs.opts.aname, status)
 		return lisafs.Inode{}, unix.ENOENT
 	}
