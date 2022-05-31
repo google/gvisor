@@ -202,7 +202,7 @@ func New(conf *config.Config, args *Args) (*Sandbox, error) {
 		}
 		args.SinkFiles, err = initConf.Setup()
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("cannot init config: %w", err)
 		}
 	}
 
@@ -219,7 +219,7 @@ func New(conf *config.Config, args *Args) (*Sandbox, error) {
 	// process exits unexpectedly.
 	sandboxSyncFile.Close()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("cannot create sandbox process: %w", err)
 	}
 
 	// Wait until the sandbox has booted.
@@ -237,7 +237,7 @@ func New(conf *config.Config, args *Args) (*Sandbox, error) {
 				return nil, fmt.Errorf("%v: %v", err, permsErr)
 			}
 		}
-		return nil, err
+		return nil, fmt.Errorf("cannot read client sync file: %w", err)
 	}
 
 	c.Release()
@@ -623,7 +623,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 
 	specFile, err := specutils.OpenSpec(args.BundleDir)
 	if err != nil {
-		return err
+		return fmt.Errorf("cannot open spec file in bundle dir %v: %w", args.BundleDir, err)
 	}
 	donations.DonateAndClose("spec-fd", specFile)
 
@@ -634,7 +634,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 
 	gPlatform, err := platform.Lookup(conf.Platform)
 	if err != nil {
-		return err
+		return fmt.Errorf("cannot look up platform: %w", err)
 	}
 	if deviceFile, err := gPlatform.OpenDevice(conf.PlatformDevicePath); err != nil {
 		return fmt.Errorf("opening device file for platform %q: %v", conf.Platform, err)
