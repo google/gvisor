@@ -49,6 +49,7 @@ type UIDGID struct {
 type Status struct {
 	Comm   string `json:"comm,omitempty"`
 	PID    int32  `json:"pid,omitempty"`
+	PPID   int32  `json:"ppid,omitempty"`
 	UID    UIDGID `json:"uid,omitempty"`
 	GID    UIDGID `json:"gid,omitempty"`
 	VMSize uint64 `json:"vm_size,omitempty"`
@@ -208,12 +209,17 @@ func getFDLimit(ctx context.Context, pid kernel.ThreadID) (limits.Limit, error) 
 	return limits.Limit{}, fmt.Errorf("could not find limit set for pid %s", pid)
 }
 
-func getStatus(t *kernel.Task, mm *mm.MemoryManager, pid kernel.ThreadID) Status {
+func getStatus(t *kernel.Task, mm *mm.MemoryManager, pid kernel.ThreadID, pidns *kernel.PIDNamespace) Status {
 	creds := t.Credentials()
 	uns := creds.UserNamespace
+	ppid := kernel.ThreadID(0)
+	if parent := t.Parent(); parent != nil {
+		ppid = pidns.IDOfThreadGroup(parent.ThreadGroup())
+	}
 	return Status{
 		Comm: t.Name(),
 		PID:  int32(pid),
+		PPID: int32(ppid),
 		UID: UIDGID{
 			Real:      uint32(creds.RealKUID.In(uns).OrOverflow()),
 			Effective: uint32(creds.EffectiveKUID.In(uns).OrOverflow()),
@@ -265,7 +271,7 @@ func Dump(t *kernel.Task, pid kernel.ThreadID, pidns *kernel.PIDNamespace) (Proc
 		// We don't need to worry about fake cgroup controllers as that is not
 		// supported in runsc.
 		Cgroup: t.GetCgroupEntries(),
-		Status: getStatus(t, mm, pid),
+		Status: getStatus(t, mm, pid, pidns),
 		Stat:   getStat(t, pid, pidns),
 	}, nil
 }

@@ -413,6 +413,10 @@ func TestProcfsDump(t *testing.T) {
 		}
 	}
 
+	if wantPPID := int32(0); procfsDump[0].Status.PPID != wantPPID {
+		t.Errorf("expected PPID to be %d, but got %d", wantPPID, procfsDump[0].Status.PPID)
+	}
+
 	if wantName := "sleep"; procfsDump[0].Status.Comm != wantName {
 		t.Errorf("expected Comm to be %q, but got %q", wantName, procfsDump[0].Status.Comm)
 	}
