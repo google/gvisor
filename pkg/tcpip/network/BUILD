@@ -24,6 +24,7 @@ go_test(
         "//pkg/tcpip/link/loopback",
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/network/ipv6",
+        "//pkg/tcpip/prependable",
         "//pkg/tcpip/stack",
         "//pkg/tcpip/testutil",
         "//pkg/tcpip/transport/icmp",

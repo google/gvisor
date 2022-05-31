@@ -122,6 +122,7 @@ go_test(
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/network/ipv6",
         "//pkg/tcpip/ports",
+        "//pkg/tcpip/prependable",
         "//pkg/tcpip/testutil",
         "//pkg/tcpip/transport/icmp",
         "//pkg/tcpip/transport/udp",

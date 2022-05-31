@@ -27,11 +27,11 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	tcpipbuffer "gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	iptestutil "gvisor.dev/gvisor/pkg/tcpip/network/internal/testutil"
+	"gvisor.dev/gvisor/pkg/tcpip/prependable"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
@@ -65,7 +65,7 @@ func testReceiveICMP(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst
 	t.Helper()
 
 	// Receive ICMP packet.
-	hdr := tcpipbuffer.NewPrependable(header.IPv6MinimumSize + header.ICMPv6NeighborAdvertMinimumSize)
+	hdr := prependable.New(header.IPv6MinimumSize + header.ICMPv6NeighborAdvertMinimumSize)
 	pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6NeighborAdvertMinimumSize))
 	pkt.SetType(header.ICMPv6NeighborAdvert)
 	pkt.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
@@ -118,7 +118,7 @@ func testReceiveUDP(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst 
 	}
 
 	// Receive UDP Packet.
-	hdr := tcpipbuffer.NewPrependable(header.IPv6MinimumSize + header.UDPMinimumSize)
+	hdr := prependable.New(header.IPv6MinimumSize + header.UDPMinimumSize)
 	u := header.UDP(hdr.Prepend(header.UDPMinimumSize))
 	u.Encode(&header.UDPFields{
 		SrcPort: 5555,
@@ -951,7 +951,7 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 			udpLength := header.UDPMinimumSize + len(udpPayload)
 			extHdrBytes, ipv6NextHdr := test.extHdr(uint8(header.UDPProtocolNumber))
 			extHdrLen := len(extHdrBytes)
-			hdr := tcpipbuffer.NewPrependable(header.IPv6MinimumSize + extHdrLen + udpLength)
+			hdr := prependable.New(header.IPv6MinimumSize + extHdrLen + udpLength)
 
 			// Serialize UDP message.
 			u := header.UDP(hdr.Prepend(udpLength))
@@ -1119,7 +1119,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 
 		udpLength := header.UDPMinimumSize + payloadLen
 
-		hdr := tcpipbuffer.NewPrependable(udpLength)
+		hdr := prependable.New(udpLength)
 		u := header.UDP(hdr.Prepend(udpLength))
 		u.Encode(&header.UDPFields{
 			SrcPort: 5555,
@@ -1959,7 +1959,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 			}
 
 			for _, f := range test.fragments {
-				hdr := tcpipbuffer.NewPrependable(header.IPv6MinimumSize)
+				hdr := prependable.New(header.IPv6MinimumSize)
 
 				// Serialize IPv6 fixed header.
 				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
@@ -2111,7 +2111,7 @@ func TestInvalidIPv6Fragments(t *testing.T) {
 
 			var expectICMPPayload []byte
 			for _, f := range test.fragments {
-				hdr := tcpipbuffer.NewPrependable(header.IPv6MinimumSize + header.IPv6FragmentHeaderSize)
+				hdr := prependable.New(header.IPv6MinimumSize + header.IPv6FragmentHeaderSize)
 
 				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize + header.IPv6FragmentHeaderSize))
 				encodeArgs := f.ipv6Fields
@@ -2366,7 +2366,7 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 
 			var firstFragmentSent []byte
 			for _, f := range test.fragments {
-				hdr := tcpipbuffer.NewPrependable(header.IPv6MinimumSize + header.IPv6FragmentHeaderSize)
+				hdr := prependable.New(header.IPv6MinimumSize + header.IPv6FragmentHeaderSize)
 
 				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize + header.IPv6FragmentHeaderSize))
 				encodeArgs := f.ipv6Fields
@@ -3174,7 +3174,7 @@ func TestForwarding(t *testing.T) {
 			icmpHeaderLength := header.ICMPv6MinimumSize
 			payloadLength := icmpHeaderLength + test.payloadLength + extHdrLen
 			totalLength := ipHeaderLength + payloadLength
-			hdr := tcpipbuffer.NewPrependable(totalLength)
+			hdr := prependable.New(totalLength)
 			hdr.Prepend(test.payloadLength)
 			icmpH := header.ICMPv6(hdr.Prepend(icmpHeaderLength))
 
@@ -3497,7 +3497,7 @@ func TestMulticastForwarding(t *testing.T) {
 			icmpHeaderLength := header.ICMPv6MinimumSize
 			payloadLength := icmpHeaderLength + test.payloadLength + extHdrLen
 			totalLength := ipHeaderLength + payloadLength
-			hdr := tcpipbuffer.NewPrependable(totalLength)
+			hdr := prependable.New(totalLength)
 			hdr.Prepend(test.payloadLength)
 			icmpH := header.ICMPv6(hdr.Prepend(icmpHeaderLength))
 
@@ -3521,7 +3521,7 @@ func TestMulticastForwarding(t *testing.T) {
 				DstAddr:           dstAddr,
 			})
 			request := stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Data: hdr.View().ToVectorisedView(),
+				Payload: buffer.NewWithData(hdr.View()),
 			})
 
 			incomingEndpoint, ok := endpoints[incomingNICID]
@@ -3692,7 +3692,7 @@ func TestIcmpRateLimit(t *testing.T) {
 			name: "echo",
 			createPacket: func() []byte {
 				totalLength := header.IPv6MinimumSize + header.ICMPv6MinimumSize
-				hdr := tcpipbuffer.NewPrependable(totalLength)
+				hdr := prependable.New(totalLength)
 				icmpH := header.ICMPv6(hdr.Prepend(header.ICMPv6MinimumSize))
 				icmpH.SetIdent(1)
 				icmpH.SetSequence(1)
@@ -3736,7 +3736,7 @@ func TestIcmpRateLimit(t *testing.T) {
 			name: "dst unreachable",
 			createPacket: func() []byte {
 				totalLength := header.IPv6MinimumSize + header.UDPMinimumSize
-				hdr := tcpipbuffer.NewPrependable(totalLength)
+				hdr := prependable.New(totalLength)
 				udpH := header.UDP(hdr.Prepend(header.UDPMinimumSize))
 				udpH.Encode(&header.UDPFields{
 					SrcPort: 100,

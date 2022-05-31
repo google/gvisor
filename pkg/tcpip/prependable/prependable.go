@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2022 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package buffer
+// Package prependable defines a buffer that grows backwards.
+package prependable
 
 // Prependable is a buffer that grows backwards, that is, more data can be
 // prepended to it. It is useful when building networking packets, where each
@@ -21,34 +22,34 @@ package buffer
 // then IP would prepend its own, then ethernet.
 type Prependable struct {
 	// Buf is the buffer backing the prependable buffer.
-	buf View
+	buf []byte
 
 	// usedIdx is the index where the used part of the buffer begins.
 	usedIdx int
 }
 
-// NewPrependable allocates a new prependable buffer with the given size.
-func NewPrependable(size int) Prependable {
-	return Prependable{buf: NewView(size), usedIdx: size}
+// New allocates a new prependable buffer with the given size.
+func New(size int) Prependable {
+	return Prependable{buf: make([]byte, size), usedIdx: size}
 }
 
-// NewPrependableFromView creates an entirely-used Prependable from a View.
+// NewFromSlice creates an entirely-used Prependable from a slice.
 //
-// NewPrependableFromView takes ownership of v. Note that since the entire
+// NewFromSlice takes ownership of v. Note that since the entire
 // prependable is used, further attempts to call Prepend will note that size >
 // p.usedIdx and return nil.
-func NewPrependableFromView(v View) Prependable {
+func NewFromSlice(v []byte) Prependable {
 	return Prependable{buf: v, usedIdx: 0}
 }
 
-// NewEmptyPrependableFromView creates a new prependable buffer from a View.
-func NewEmptyPrependableFromView(v View) Prependable {
+// NewEmptyFromSlice creates a new prependable buffer from a slice.
+func NewEmptyFromSlice(v []byte) Prependable {
 	return Prependable{buf: v, usedIdx: len(v)}
 }
 
-// View returns a View of the backing buffer that contains all prepended
+// View returns a slice of the backing buffer that contains all prepended
 // data so far.
-func (p Prependable) View() View {
+func (p Prependable) View() []byte {
 	return p.buf[p.usedIdx:]
 }
 
@@ -80,6 +81,6 @@ func (p *Prependable) Prepend(size int) []byte {
 
 // DeepCopy copies p and the bytes backing it.
 func (p Prependable) DeepCopy() Prependable {
-	p.buf = append(View(nil), p.buf...)
+	p.buf = append([]byte{}, p.buf...)
 	return p
 }
