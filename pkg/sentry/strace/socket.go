@@ -462,7 +462,7 @@ func sockOptVal(t *kernel.Task, level, optname uint64, optVal hostarch.Addr, opt
 		}
 		return fmt.Sprintf("%#x {value=%v}", optVal, v)
 	default:
-		return dump(t, optVal, uint(optLen), maximumBlobSize)
+		return dump(t, optVal, uint(optLen), maximumBlobSize, true /* content */)
 	}
 }
 

@@ -29,6 +29,9 @@ func enableStrace(conf *config.Config) error {
 		return nil
 	}
 
+	// For now runsc always allows logging application buffers in strace logs.
+	strace.LogAppDataAllowed = true
+
 	max := conf.StraceLogSize
 	if max == 0 {
 		max = 1024
