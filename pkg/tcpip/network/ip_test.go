@@ -25,13 +25,13 @@ import (
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	tcpipbuffer "gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
+	"gvisor.dev/gvisor/pkg/tcpip/prependable"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
@@ -372,7 +372,7 @@ func (*testInterface) CheckLocalAddress(tcpip.NetworkProtocolNumber, tcpip.Addre
 func TestSourceAddressValidation(t *testing.T) {
 	rxIPv4ICMP := func(e *channel.Endpoint, src tcpip.Address) {
 		totalLen := header.IPv4MinimumSize + header.ICMPv4MinimumSize
-		hdr := tcpipbuffer.NewPrependable(totalLen)
+		hdr := prependable.New(totalLen)
 		pkt := header.ICMPv4(hdr.Prepend(header.ICMPv4MinimumSize))
 		pkt.SetType(header.ICMPv4Echo)
 		pkt.SetCode(0)
@@ -397,7 +397,7 @@ func TestSourceAddressValidation(t *testing.T) {
 
 	rxIPv6ICMP := func(e *channel.Endpoint, src tcpip.Address) {
 		totalLen := header.IPv6MinimumSize + header.ICMPv6MinimumSize
-		hdr := tcpipbuffer.NewPrependable(totalLen)
+		hdr := prependable.New(totalLen)
 		pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6MinimumSize))
 		pkt.SetType(header.ICMPv6EchoRequest)
 		pkt.SetCode(0)
@@ -1373,7 +1373,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			remoteAddr:   remoteIPv4Addr,
 			pktGen: func(t *testing.T, src tcpip.Address) buffer.Buffer {
 				totalLen := header.IPv4MinimumSize + len(data)
-				hdr := tcpipbuffer.NewPrependable(totalLen)
+				hdr := prependable.New(totalLen)
 				if n := copy(hdr.Prepend(len(data)), data); n != len(data) {
 					t.Fatalf("copied %d bytes, expected %d bytes", n, len(data))
 				}
@@ -1414,7 +1414,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			remoteAddr:   remoteIPv4Addr,
 			pktGen: func(t *testing.T, src tcpip.Address) buffer.Buffer {
 				totalLen := header.IPv4MinimumSize + len(data)
-				hdr := tcpipbuffer.NewPrependable(totalLen)
+				hdr := prependable.New(totalLen)
 				if n := copy(hdr.Prepend(len(data)), data); n != len(data) {
 					t.Fatalf("copied %d bytes, expected %d bytes", n, len(data))
 				}
@@ -1493,7 +1493,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			pktGen: func(t *testing.T, src tcpip.Address) buffer.Buffer {
 				ipHdrLen := int(header.IPv4MinimumSize + ipv4Options.Length())
 				totalLen := ipHdrLen + len(data)
-				hdr := tcpipbuffer.NewPrependable(totalLen)
+				hdr := prependable.New(totalLen)
 				if n := copy(hdr.Prepend(len(data)), data); n != len(data) {
 					t.Fatalf("copied %d bytes, expected %d bytes", n, len(data))
 				}
@@ -1578,7 +1578,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			remoteAddr:   remoteIPv6Addr,
 			pktGen: func(t *testing.T, src tcpip.Address) buffer.Buffer {
 				totalLen := header.IPv6MinimumSize + len(data)
-				hdr := tcpipbuffer.NewPrependable(totalLen)
+				hdr := prependable.New(totalLen)
 				if n := copy(hdr.Prepend(len(data)), data); n != len(data) {
 					t.Fatalf("copied %d bytes, expected %d bytes", n, len(data))
 				}
@@ -1618,7 +1618,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			remoteAddr:   remoteIPv6Addr,
 			pktGen: func(t *testing.T, src tcpip.Address) buffer.Buffer {
 				totalLen := header.IPv6MinimumSize + len(ipv6FragmentExtHdr) + len(data)
-				hdr := tcpipbuffer.NewPrependable(totalLen)
+				hdr := prependable.New(totalLen)
 				if n := copy(hdr.Prepend(len(data)), data); n != len(data) {
 					t.Fatalf("copied %d bytes, expected %d bytes", n, len(data))
 				}
@@ -1801,7 +1801,7 @@ func TestICMPInclusionSize(t *testing.T) {
 	// unknown transport protocol (254).
 	rxIPv4Bad := func(e *channel.Endpoint, src tcpip.Address, payload []byte) []byte {
 		totalLen := header.IPv4MinimumSize + len(payload)
-		hdr := tcpipbuffer.NewPrependable(header.IPv4MinimumSize)
+		hdr := prependable.New(header.IPv4MinimumSize)
 		ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
 		ip.Encode(&header.IPv4Fields{
 			TotalLength: uint16(totalLen),
@@ -1830,7 +1830,7 @@ func TestICMPInclusionSize(t *testing.T) {
 	// inclusion of the errant packet. Use `unknown next header' to generate
 	// the error.
 	rxIPv6Bad := func(e *channel.Endpoint, src tcpip.Address, payload []byte) []byte {
-		hdr := tcpipbuffer.NewPrependable(header.IPv6MinimumSize)
+		hdr := prependable.New(header.IPv6MinimumSize)
 		ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 		ip.Encode(&header.IPv6Fields{
 			PayloadLength:     uint16(len(payload)),

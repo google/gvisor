@@ -19,14 +19,15 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
+	"gvisor.dev/gvisor/pkg/tcpip/prependable"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/tests/utils"
 	"gvisor.dev/gvisor/pkg/tcpip/testutil"
@@ -174,7 +175,7 @@ func TestPingMulticastBroadcast(t *testing.T) {
 func rxIPv4UDP(e *channel.Endpoint, src, dst tcpip.Address, data []byte) {
 	payloadLen := header.UDPMinimumSize + len(data)
 	totalLen := header.IPv4MinimumSize + payloadLen
-	hdr := buffer.NewPrependable(totalLen)
+	hdr := prependable.New(totalLen)
 	u := header.UDP(hdr.Prepend(payloadLen))
 	u.Encode(&header.UDPFields{
 		SrcPort: utils.RemotePort,
@@ -197,13 +198,13 @@ func rxIPv4UDP(e *channel.Endpoint, src, dst tcpip.Address, data []byte) {
 	ip.SetChecksum(^ip.CalculateChecksum())
 
 	e.InjectInbound(header.IPv4ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: hdr.View().ToVectorisedView(),
+		Payload: buffer.NewWithData(hdr.View()),
 	}))
 }
 
 func rxIPv6UDP(e *channel.Endpoint, src, dst tcpip.Address, data []byte) {
 	payloadLen := header.UDPMinimumSize + len(data)
-	hdr := buffer.NewPrependable(header.IPv6MinimumSize + payloadLen)
+	hdr := prependable.New(header.IPv6MinimumSize + payloadLen)
 	u := header.UDP(hdr.Prepend(payloadLen))
 	u.Encode(&header.UDPFields{
 		SrcPort: utils.RemotePort,
@@ -225,7 +226,7 @@ func rxIPv6UDP(e *channel.Endpoint, src, dst tcpip.Address, data []byte) {
 	})
 
 	e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: hdr.View().ToVectorisedView(),
+		Payload: buffer.NewWithData(hdr.View()),
 	}))
 }
 

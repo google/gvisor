@@ -26,12 +26,12 @@ import (
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	tcpipbuffer "gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
+	"gvisor.dev/gvisor/pkg/tcpip/prependable"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
@@ -578,7 +578,7 @@ func TestLinkResolution(t *testing.T) {
 	}
 	defer r.Release()
 
-	hdr := tcpipbuffer.NewPrependable(int(r.MaxHeaderLength()) + header.IPv6MinimumSize + header.ICMPv6EchoMinimumSize)
+	hdr := prependable.New(int(r.MaxHeaderLength()) + header.IPv6MinimumSize + header.ICMPv6EchoMinimumSize)
 	pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6EchoMinimumSize))
 	pkt.SetType(header.ICMPv6EchoRequest)
 	pkt.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
@@ -977,7 +977,7 @@ func TestICMPChecksumValidationWithPayload(t *testing.T) {
 
 			handleIPv6Payload := func(typ header.ICMPv6Type, size, payloadSize int, payloadFn func([]byte), checksum bool) {
 				icmpSize := size + payloadSize
-				hdr := tcpipbuffer.NewPrependable(header.IPv6MinimumSize + icmpSize)
+				hdr := prependable.New(header.IPv6MinimumSize + icmpSize)
 				icmpHdr := header.ICMPv6(hdr.Prepend(icmpSize))
 				icmpHdr.SetType(typ)
 				payloadFn(icmpHdr.Payload())
@@ -1165,7 +1165,7 @@ func TestICMPChecksumValidationWithPayloadMultipleViews(t *testing.T) {
 			}
 
 			handleIPv6Payload := func(typ header.ICMPv6Type, size, payloadSize int, payloadFn func([]byte), checksum bool) {
-				hdr := tcpipbuffer.NewPrependable(header.IPv6MinimumSize + size)
+				hdr := prependable.New(header.IPv6MinimumSize + size)
 				icmpHdr := header.ICMPv6(hdr.Prepend(size))
 				icmpHdr.SetType(typ)
 
@@ -1401,7 +1401,7 @@ func TestPacketQueing(t *testing.T) {
 		{
 			name: "ICMP Error",
 			rxPkt: func(e *channel.Endpoint) {
-				hdr := tcpipbuffer.NewPrependable(header.IPv6MinimumSize + header.UDPMinimumSize)
+				hdr := prependable.New(header.IPv6MinimumSize + header.UDPMinimumSize)
 				u := header.UDP(hdr.Prepend(header.UDPMinimumSize))
 				u.Encode(&header.UDPFields{
 					SrcPort: 5555,
@@ -1451,7 +1451,7 @@ func TestPacketQueing(t *testing.T) {
 			name: "Ping",
 			rxPkt: func(e *channel.Endpoint) {
 				totalLen := header.IPv6MinimumSize + header.ICMPv6MinimumSize
-				hdr := tcpipbuffer.NewPrependable(totalLen)
+				hdr := prependable.New(totalLen)
 				pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6MinimumSize))
 				pkt.SetType(header.ICMPv6EchoRequest)
 				pkt.SetCode(0)
@@ -1554,7 +1554,7 @@ func TestPacketQueing(t *testing.T) {
 			// Send a neighbor advertisement to complete link address resolution.
 			{
 				naSize := header.ICMPv6NeighborAdvertMinimumSize + header.NDPLinkLayerAddressSize
-				hdr := tcpipbuffer.NewPrependable(header.IPv6MinimumSize + naSize)
+				hdr := prependable.New(header.IPv6MinimumSize + naSize)
 				pkt := header.ICMPv6(hdr.Prepend(naSize))
 				pkt.SetType(header.ICMPv6NeighborAdvert)
 				na := header.NDPNeighborAdvert(pkt.MessageBody())

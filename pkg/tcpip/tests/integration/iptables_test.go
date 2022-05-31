@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
+	"gvisor.dev/gvisor/pkg/tcpip/prependable"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/tests/utils"
 	"gvisor.dev/gvisor/pkg/tcpip/testutil"
@@ -107,7 +108,7 @@ func genStackV4(t *testing.T) (*stack.Stack, *channel.Endpoint) {
 
 func genPacketV6() *stack.PacketBuffer {
 	pktSize := header.IPv6MinimumSize + payloadSize
-	hdr := buffer.NewPrependable(pktSize)
+	hdr := prependable.New(pktSize)
 	ip := header.IPv6(hdr.Prepend(pktSize))
 	ip.Encode(&header.IPv6Fields{
 		PayloadLength:     payloadSize,
@@ -116,13 +117,13 @@ func genPacketV6() *stack.PacketBuffer {
 		SrcAddr:           srcAddrV6,
 		DstAddr:           dstAddrV6,
 	})
-	vv := hdr.View().ToVectorisedView()
+	vv := buffer.NewViewFromBytes(hdr.View()).ToVectorisedView()
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{Data: vv})
 }
 
 func genPacketV4() *stack.PacketBuffer {
 	pktSize := header.IPv4MinimumSize + payloadSize
-	hdr := buffer.NewPrependable(pktSize)
+	hdr := prependable.New(pktSize)
 	ip := header.IPv4(hdr.Prepend(pktSize))
 	ip.Encode(&header.IPv4Fields{
 		TOS:            0,
@@ -137,7 +138,7 @@ func genPacketV4() *stack.PacketBuffer {
 	})
 	ip.SetChecksum(0)
 	ip.SetChecksum(^ip.CalculateChecksum())
-	vv := hdr.View().ToVectorisedView()
+	vv := buffer.NewViewFromBytes(hdr.View()).ToVectorisedView()
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{Data: vv})
 }
 
@@ -2031,7 +2032,7 @@ func encodeIPv6Header(v buffer.View, payloadLen int, transProto tcpip.TransportP
 
 func udpv4Packet(srcAddr, dstAddr tcpip.Address, srcPort, dstPort uint16, dataSize int) buffer.View {
 	udpSize := header.UDPMinimumSize + dataSize
-	hdr := buffer.NewPrependable(header.IPv4MinimumSize + udpSize)
+	hdr := prependable.New(header.IPv4MinimumSize + udpSize)
 	udp := header.UDP(hdr.Prepend(udpSize))
 	udp.SetSourcePort(srcPort)
 	udp.SetDestinationPort(dstPort)
@@ -2054,7 +2055,7 @@ func udpv4Packet(srcAddr, dstAddr tcpip.Address, srcPort, dstPort uint16, dataSi
 
 func tcpv4Packet(srcAddr, dstAddr tcpip.Address, srcPort, dstPort uint16, dataSize int) buffer.View {
 	tcpSize := header.TCPMinimumSize + dataSize
-	hdr := buffer.NewPrependable(header.IPv4MinimumSize + tcpSize)
+	hdr := prependable.New(header.IPv4MinimumSize + tcpSize)
 	tcp := header.TCP(hdr.Prepend(tcpSize))
 	tcp.SetSourcePort(srcPort)
 	tcp.SetDestinationPort(dstPort)
@@ -2077,7 +2078,7 @@ func tcpv4Packet(srcAddr, dstAddr tcpip.Address, srcPort, dstPort uint16, dataSi
 }
 
 func icmpv4Packet(srcAddr, dstAddr tcpip.Address, icmpType header.ICMPv4Type, ident uint16) buffer.View {
-	hdr := buffer.NewPrependable(header.IPv4MinimumSize + header.ICMPv4MinimumSize)
+	hdr := prependable.New(header.IPv4MinimumSize + header.ICMPv4MinimumSize)
 	icmp := header.ICMPv4(hdr.Prepend(header.ICMPv4MinimumSize))
 	icmp.SetType(icmpType)
 	icmp.SetIdent(ident)
@@ -2095,7 +2096,7 @@ func icmpv4Packet(srcAddr, dstAddr tcpip.Address, icmpType header.ICMPv4Type, id
 
 func udpv6Packet(srcAddr, dstAddr tcpip.Address, srcPort, dstPort uint16, dataSize int) buffer.View {
 	udpSize := header.UDPMinimumSize + dataSize
-	hdr := buffer.NewPrependable(header.IPv6MinimumSize + udpSize)
+	hdr := prependable.New(header.IPv6MinimumSize + udpSize)
 	udp := header.UDP(hdr.Prepend(udpSize))
 	udp.SetSourcePort(srcPort)
 	udp.SetDestinationPort(dstPort)
@@ -2118,7 +2119,7 @@ func udpv6Packet(srcAddr, dstAddr tcpip.Address, srcPort, dstPort uint16, dataSi
 
 func tcpv6Packet(srcAddr, dstAddr tcpip.Address, srcPort, dstPort uint16, dataSize int) buffer.View {
 	tcpSize := header.TCPMinimumSize + dataSize
-	hdr := buffer.NewPrependable(header.IPv6MinimumSize + tcpSize)
+	hdr := prependable.New(header.IPv6MinimumSize + tcpSize)
 	tcp := header.TCP(hdr.Prepend(tcpSize))
 	tcp.SetSourcePort(srcPort)
 	tcp.SetDestinationPort(dstPort)
@@ -2141,7 +2142,7 @@ func tcpv6Packet(srcAddr, dstAddr tcpip.Address, srcPort, dstPort uint16, dataSi
 }
 
 func icmpv6Packet(srcAddr, dstAddr tcpip.Address, icmpType header.ICMPv6Type, ident uint16) buffer.View {
-	hdr := buffer.NewPrependable(header.IPv6MinimumSize + header.ICMPv6MinimumSize)
+	hdr := prependable.New(header.IPv6MinimumSize + header.ICMPv6MinimumSize)
 	icmp := header.ICMPv6(hdr.Prepend(header.ICMPv6MinimumSize))
 	icmp.SetType(icmpType)
 	icmp.SetIdent(ident)
@@ -2197,7 +2198,7 @@ func TestNATICMPError(t *testing.T) {
 			netProto:  ipv4.ProtocolNumber,
 			host1Addr: utils.Host1IPv4Addr.AddressWithPrefix.Address,
 			icmpError: func(t *testing.T, original buffer.View, icmpType uint8) buffer.View {
-				hdr := buffer.NewPrependable(header.IPv4MinimumSize + header.ICMPv4MinimumSize + len(original))
+				hdr := prependable.New(header.IPv4MinimumSize + header.ICMPv4MinimumSize + len(original))
 				if n := copy(hdr.Prepend(len(original)), original); n != len(original) {
 					t.Fatalf("got copy(...) = %d, want = %d", n, len(original))
 				}
@@ -2301,7 +2302,7 @@ func TestNATICMPError(t *testing.T) {
 			host1Addr: utils.Host1IPv6Addr.AddressWithPrefix.Address,
 			icmpError: func(t *testing.T, original buffer.View, icmpType uint8) buffer.View {
 				payloadLen := header.ICMPv6MinimumSize + len(original)
-				hdr := buffer.NewPrependable(header.IPv6MinimumSize + payloadLen)
+				hdr := prependable.New(header.IPv6MinimumSize + payloadLen)
 				icmp := header.ICMPv6(hdr.Prepend(payloadLen))
 				icmp.SetType(header.ICMPv6Type(icmpType))
 				if n := copy(icmp.Payload(), original); n != len(original) {

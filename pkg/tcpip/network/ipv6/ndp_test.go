@@ -24,11 +24,11 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	tcpipbuffer "gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
+	"gvisor.dev/gvisor/pkg/tcpip/prependable"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 )
@@ -157,7 +157,7 @@ func TestNeighborSolicitationWithSourceLinkLayerOption(t *testing.T) {
 			}
 
 			ndpNSSize := header.ICMPv6NeighborSolicitMinimumSize + len(test.optsBuf)
-			hdr := tcpipbuffer.NewPrependable(header.IPv6MinimumSize + ndpNSSize)
+			hdr := prependable.New(header.IPv6MinimumSize + ndpNSSize)
 			pkt := header.ICMPv6(hdr.Prepend(ndpNSSize))
 			pkt.SetType(header.ICMPv6NeighborSolicit)
 			ns := header.NDPNeighborSolicit(pkt.MessageBody())
@@ -419,7 +419,7 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 			})
 
 			ndpNSSize := header.ICMPv6NeighborSolicitMinimumSize + test.nsOpts.Length()
-			hdr := tcpipbuffer.NewPrependable(header.IPv6MinimumSize + ndpNSSize)
+			hdr := prependable.New(header.IPv6MinimumSize + ndpNSSize)
 			pkt := header.ICMPv6(hdr.Prepend(ndpNSSize))
 			pkt.SetType(header.ICMPv6NeighborSolicit)
 			ns := header.NDPNeighborSolicit(pkt.MessageBody())
@@ -503,7 +503,7 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 					header.NDPTargetLinkLayerAddressOption(linkAddr1),
 				}
 				ndpNASize := header.ICMPv6NeighborAdvertMinimumSize + ser.Length()
-				hdr := tcpipbuffer.NewPrependable(header.IPv6MinimumSize + ndpNASize)
+				hdr := prependable.New(header.IPv6MinimumSize + ndpNASize)
 				pkt := header.ICMPv6(hdr.Prepend(ndpNASize))
 				pkt.SetType(header.ICMPv6NeighborAdvert)
 				na := header.NDPNeighborAdvert(pkt.MessageBody())
@@ -621,7 +621,7 @@ func TestNeighborAdvertisementWithTargetLinkLayerOption(t *testing.T) {
 			}
 
 			ndpNASize := header.ICMPv6NeighborAdvertMinimumSize + len(test.optsBuf)
-			hdr := tcpipbuffer.NewPrependable(header.IPv6MinimumSize + ndpNASize)
+			hdr := prependable.New(header.IPv6MinimumSize + ndpNASize)
 			pkt := header.ICMPv6(hdr.Prepend(ndpNASize))
 			pkt.SetType(header.ICMPv6NeighborAdvert)
 			ns := header.NDPNeighborAdvert(pkt.MessageBody())
@@ -993,7 +993,7 @@ func TestNeighborAdvertisementValidation(t *testing.T) {
 			}
 
 			ndpNASize := header.ICMPv6NeighborAdvertMinimumSize
-			hdr := tcpipbuffer.NewPrependable(header.IPv6MinimumSize + ndpNASize)
+			hdr := prependable.New(header.IPv6MinimumSize + ndpNASize)
 			pkt := header.ICMPv6(hdr.Prepend(ndpNASize))
 			pkt.SetType(header.ICMPv6NeighborAdvert)
 			na := header.NDPNeighborAdvert(pkt.MessageBody())
@@ -1195,7 +1195,7 @@ func TestRouterAdvertValidation(t *testing.T) {
 			}
 
 			icmpSize := header.ICMPv6HeaderSize + len(test.ndpPayload)
-			hdr := tcpipbuffer.NewPrependable(header.IPv6MinimumSize + icmpSize)
+			hdr := prependable.New(header.IPv6MinimumSize + icmpSize)
 			pkt := header.ICMPv6(hdr.Prepend(icmpSize))
 			pkt.SetType(header.ICMPv6RouterAdvert)
 			pkt.SetCode(test.code)

@@ -25,13 +25,14 @@ import (
 	"github.com/google/go-cmp/cmp"
 	cryptorand "gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	tcpipbuffer "gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
+	"gvisor.dev/gvisor/pkg/tcpip/prependable"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
@@ -650,7 +651,7 @@ func TestDADResolve(t *testing.T) {
 }
 
 func rxNDPSolicit(e *channel.Endpoint, tgt tcpip.Address) {
-	hdr := buffer.NewPrependable(header.IPv6MinimumSize + header.ICMPv6NeighborSolicitMinimumSize)
+	hdr := prependable.New(header.IPv6MinimumSize + header.ICMPv6NeighborSolicitMinimumSize)
 	pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6NeighborSolicitMinimumSize))
 	pkt.SetType(header.ICMPv6NeighborSolicit)
 	ns := header.NDPNeighborSolicit(pkt.MessageBody())
@@ -670,7 +671,7 @@ func rxNDPSolicit(e *channel.Endpoint, tgt tcpip.Address) {
 		SrcAddr:           header.IPv6Any,
 		DstAddr:           snmc,
 	})
-	e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{Data: hdr.View().ToVectorisedView()}))
+	e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{Data: tcpipbuffer.NewViewFromBytes(hdr.View()).ToVectorisedView()}))
 }
 
 // TestDADFail tests to make sure that the DAD process fails if another node is
@@ -698,7 +699,7 @@ func TestDADFail(t *testing.T) {
 			name: "RxAdvert",
 			rxPkt: func(e *channel.Endpoint, tgt tcpip.Address) {
 				naSize := header.ICMPv6NeighborAdvertMinimumSize + header.NDPLinkLayerAddressSize
-				hdr := buffer.NewPrependable(header.IPv6MinimumSize + naSize)
+				hdr := prependable.New(header.IPv6MinimumSize + naSize)
 				pkt := header.ICMPv6(hdr.Prepend(naSize))
 				pkt.SetType(header.ICMPv6NeighborAdvert)
 				na := header.NDPNeighborAdvert(pkt.MessageBody())
@@ -722,7 +723,7 @@ func TestDADFail(t *testing.T) {
 					SrcAddr:           tgt,
 					DstAddr:           header.IPv6AllNodesMulticastAddress,
 				})
-				e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{Data: hdr.View().ToVectorisedView()}))
+				e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{Data: tcpipbuffer.NewViewFromBytes(hdr.View()).ToVectorisedView()}))
 			},
 			getStat: func(s tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
 				return s.NeighborAdvert
@@ -1071,7 +1072,7 @@ func raBuf(ip tcpip.Address, rl uint16, managedAddress, otherConfigurations bool
 	const routerLifetimeOffset = 2
 
 	icmpSize := header.ICMPv6HeaderSize + header.NDPRAMinimumSize + optSer.Length()
-	hdr := buffer.NewPrependable(header.IPv6MinimumSize + icmpSize)
+	hdr := prependable.New(header.IPv6MinimumSize + icmpSize)
 	pkt := header.ICMPv6(hdr.Prepend(icmpSize))
 	pkt.SetType(header.ICMPv6RouterAdvert)
 	pkt.SetCode(0)
@@ -1109,7 +1110,7 @@ func raBuf(ip tcpip.Address, rl uint16, managedAddress, otherConfigurations bool
 	})
 
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: hdr.View().ToVectorisedView(),
+		Data: tcpipbuffer.NewViewFromBytes(hdr.View()).ToVectorisedView(),
 	})
 }
 
