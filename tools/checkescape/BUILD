@@ -4,7 +4,11 @@ package(licenses = ["notice"])
 
 go_library(
     name = "checkescape",
-    srcs = ["checkescape.go"],
+    srcs = [
+        "checkescape.go",
+        "checkescape_amd64.go",
+        "checkescape_arm64.go",
+    ],
     nogo = False,
     visibility = ["//tools/nogo:__subpackages__"],
     deps = [

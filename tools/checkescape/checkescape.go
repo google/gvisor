@@ -436,10 +436,11 @@ func loadObjdump(binary io.Reader) (finalResults map[string][]string, finalErr e
 		}
 	}()
 
-	// Identify calls by address or name. Note that this is also
-	// constructed dynamically below, as we encounted the addresses.
-	// This is because some of the functions (duffzero) may have
-	// jump targets in the middle of the function itself.
+	// Identify calls by address or name. Note that the list of allowed addresses
+	// -- not the list of allowed function names -- is also constructed
+	// dynamically below, as we encounter the addresses. This is because some of
+	// the functions (duffzero) may have jump targets in the middle of the
+	// function itself.
 	funcsAllowed := map[string]struct{}{
 		"runtime.duffzero":       {},
 		"runtime.duffcopy":       {},
@@ -463,6 +464,8 @@ func loadObjdump(binary io.Reader) (finalResults map[string][]string, finalErr e
 		"runtime.stackcheck":     {},
 		"runtime.settls":         {},
 	}
+	// addrsAllowed lists every address that can be jumped to within the
+	// funcsAllowed functions.
 	addrsAllowed := make(map[string]struct{})
 
 	// Build the map.
@@ -477,7 +480,8 @@ NextLine:
 		}
 		fields := strings.Fields(line)
 
-		// Is this an "allowed" function definition?
+		// Is this an "allowed" function definition? If so, record every address of
+		// the function body.
 		if len(fields) >= 2 && fields[0] == "TEXT" {
 			nextFunc = strings.TrimSuffix(fields[1], "(SB)")
 			if _, ok := funcsAllowed[nextFunc]; !ok {
@@ -485,7 +489,8 @@ NextLine:
 			}
 		}
 		if nextFunc != "" && len(fields) > 2 {
-			// Save the given address (in hex form, as it appears).
+			// We're inside an allowed function. Save the given address (in hex form,
+			// as it appears).
 			addrsAllowed[fields[1]] = struct{}{}
 		}
 
@@ -503,6 +508,10 @@ NextLine:
 			}
 			site := fields[0]
 			target := strings.TrimSuffix(fields[4], "(SB)")
+			target, err := fixOffset(fields, target)
+			if err != nil {
+				return nil, err
+			}
 
 			// Ignore strings containing allowed functions.
 			if _, ok := funcsAllowed[target]; ok {
