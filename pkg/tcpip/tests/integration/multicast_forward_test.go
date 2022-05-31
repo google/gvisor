@@ -68,6 +68,33 @@ const (
 	otherOutgoingEndpointAddr
 )
 
+type onMissingRouteData struct {
+	context stack.MulticastPacketContext
+}
+
+type onUnexpectedInputInterfaceData struct {
+	context                stack.MulticastPacketContext
+	expectedInputInterface tcpip.NICID
+}
+
+var _ stack.MulticastForwardingEventDispatcher = (*fakeMulticastEventDispatcher)(nil)
+
+type fakeMulticastEventDispatcher struct {
+	onMissingRouteData             *onMissingRouteData
+	onUnexpectedInputInterfaceData *onUnexpectedInputInterfaceData
+}
+
+func (m *fakeMulticastEventDispatcher) OnMissingRoute(context stack.MulticastPacketContext) {
+	m.onMissingRouteData = &onMissingRouteData{context}
+}
+
+func (m *fakeMulticastEventDispatcher) OnUnexpectedInputInterface(context stack.MulticastPacketContext, expectedInputInterface tcpip.NICID) {
+	m.onUnexpectedInputInterfaceData = &onUnexpectedInputInterfaceData{
+		context,
+		expectedInputInterface,
+	}
+}
+
 var (
 	v4Addrs = map[addrType]tcpip.Address{
 		anyAddr:                header.IPv4Any,
@@ -335,9 +362,12 @@ func TestAddMulticastRoute(t *testing.T) {
 	for _, test := range tests {
 		for _, protocol := range []tcpip.NetworkProtocolNumber{ipv4.ProtocolNumber, ipv6.ProtocolNumber} {
 			t.Run(fmt.Sprintf("%s %d", test.name, protocol), func(t *testing.T) {
+				eventDispatcher := &fakeMulticastEventDispatcher{}
 				s := stack.New(stack.Options{
-					NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
-					TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
+					NetworkProtocols: []stack.NetworkProtocolFactory{
+						ipv4.NewProtocolWithOptions(ipv4.Options{MulticastForwardingDisp: eventDispatcher}),
+						ipv6.NewProtocolWithOptions(ipv6.Options{MulticastForwardingDisp: eventDispatcher}),
+					},
 				})
 				defer s.Close()
 
@@ -646,8 +676,12 @@ func TestRemoveMulticastRoute(t *testing.T) {
 	for _, test := range tests {
 		for _, protocol := range []tcpip.NetworkProtocolNumber{ipv4.ProtocolNumber, ipv6.ProtocolNumber} {
 			t.Run(fmt.Sprintf("%s %d", test.name, protocol), func(t *testing.T) {
+				eventDispatcher := &fakeMulticastEventDispatcher{}
 				s := stack.New(stack.Options{
-					NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+					NetworkProtocols: []stack.NetworkProtocolFactory{
+						ipv4.NewProtocolWithOptions(ipv4.Options{MulticastForwardingDisp: eventDispatcher}),
+						ipv6.NewProtocolWithOptions(ipv6.Options{MulticastForwardingDisp: eventDispatcher}),
+					},
 					TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 				})
 				defer s.Close()
@@ -757,14 +791,16 @@ func TestMulticastForwarding(t *testing.T) {
 	}
 
 	tests := []struct {
-		name                         string
-		dstAddr                      addrType
-		ttl                          uint8
-		routeInputInterface          tcpip.NICID
-		disableMulticastForwarding   bool
-		removeOutputInterface        tcpip.NICID
-		joinMulticastGroup           bool
-		expectedForwardingInterfaces []tcpip.NICID
+		name                                string
+		dstAddr                             addrType
+		ttl                                 uint8
+		routeInputInterface                 tcpip.NICID
+		disableMulticastForwarding          bool
+		removeOutputInterface               tcpip.NICID
+		expectMissingRouteEvent             bool
+		expectUnexpectedInputInterfaceEvent bool
+		joinMulticastGroup                  bool
+		expectedForwardingInterfaces        []tcpip.NICID
 	}{
 		{
 			name:                         "forward only",
@@ -798,11 +834,12 @@ func TestMulticastForwarding(t *testing.T) {
 			expectedForwardingInterfaces: []tcpip.NICID{},
 		},
 		{
-			name:                         "unexpected input interface",
-			dstAddr:                      multicastAddr,
-			ttl:                          packetTTL,
-			routeInputInterface:          otherNICID,
-			expectedForwardingInterfaces: []tcpip.NICID{},
+			name:                                "unexpected input interface",
+			dstAddr:                             multicastAddr,
+			ttl:                                 packetTTL,
+			routeInputInterface:                 otherNICID,
+			expectUnexpectedInputInterfaceEvent: true,
+			expectedForwardingInterfaces:        []tcpip.NICID{},
 		},
 		{
 			name:                         "output interface removed",
@@ -838,15 +875,27 @@ func TestMulticastForwarding(t *testing.T) {
 			dstAddr:                      otherMulticastAddr,
 			ttl:                          packetTTL,
 			routeInputInterface:          incomingNICID,
+			expectMissingRouteEvent:      true,
 			expectedForwardingInterfaces: []tcpip.NICID{},
 		},
 	}
 
 	for _, test := range tests {
 		for _, protocol := range []tcpip.NetworkProtocolNumber{ipv4.ProtocolNumber, ipv6.ProtocolNumber} {
+			ipv4EventDispatcher := &fakeMulticastEventDispatcher{}
+			ipv6EventDispatcher := &fakeMulticastEventDispatcher{}
+
+			eventDispatchers := map[tcpip.NetworkProtocolNumber]*fakeMulticastEventDispatcher{
+				ipv4.ProtocolNumber: ipv4EventDispatcher,
+				ipv6.ProtocolNumber: ipv6EventDispatcher,
+			}
+
 			t.Run(fmt.Sprintf("%s %d", test.name, protocol), func(t *testing.T) {
 				s := stack.New(stack.Options{
-					NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+					NetworkProtocols: []stack.NetworkProtocolFactory{
+						ipv4.NewProtocolWithOptions(ipv4.Options{MulticastForwardingDisp: ipv4EventDispatcher}),
+						ipv6.NewProtocolWithOptions(ipv6.Options{MulticastForwardingDisp: ipv6EventDispatcher}),
+					},
 					TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 				})
 				defer s.Close()
@@ -973,6 +1022,33 @@ func TestMulticastForwarding(t *testing.T) {
 				if test.joinMulticastGroup {
 					checkEchoReply(t, protocol, p, getEndpointAddr(protocol, incomingEpAddrType).Address, srcAddr)
 					p.DecRef()
+				}
+
+				eventDispatcher, ok := eventDispatchers[protocol]
+				if !ok {
+					t.Fatalf("eventDispatchers[%d] = (_, false), want (_, true)", protocol)
+				}
+
+				wantUnexpectedInputInterfaceEvent := func() *onUnexpectedInputInterfaceData {
+					if test.expectUnexpectedInputInterfaceEvent {
+						return &onUnexpectedInputInterfaceData{stack.MulticastPacketContext{stack.UnicastSourceAndMulticastDestination{srcAddr, dstAddr}, incomingNICID}, test.routeInputInterface}
+					}
+					return nil
+				}()
+
+				if diff := cmp.Diff(wantUnexpectedInputInterfaceEvent, eventDispatcher.onUnexpectedInputInterfaceData, cmp.AllowUnexported(onUnexpectedInputInterfaceData{})); diff != "" {
+					t.Errorf("onUnexpectedInputInterfaceData mismatch (-want +got):\n%s", diff)
+				}
+
+				wantMissingRouteEvent := func() *onMissingRouteData {
+					if test.expectMissingRouteEvent {
+						return &onMissingRouteData{stack.MulticastPacketContext{stack.UnicastSourceAndMulticastDestination{srcAddr, dstAddr}, incomingNICID}}
+					}
+					return nil
+				}()
+
+				if diff := cmp.Diff(wantMissingRouteEvent, eventDispatcher.onMissingRouteData, cmp.AllowUnexported(onMissingRouteData{})); diff != "" {
+					t.Errorf("onMissingRouteData mismatch (-want +got):\n%s", diff)
 				}
 			})
 		}

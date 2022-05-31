@@ -199,6 +199,15 @@ func handleICMPInIPv6(ep stack.NetworkEndpoint, src, dst tcpip.Address, icmp hea
 	pkt.DecRef()
 }
 
+var _ stack.MulticastForwardingEventDispatcher = (*fakeMulticastEventDispatcher)(nil)
+
+type fakeMulticastEventDispatcher struct{}
+
+func (m *fakeMulticastEventDispatcher) OnMissingRoute(context stack.MulticastPacketContext) {}
+
+func (m *fakeMulticastEventDispatcher) OnUnexpectedInputInterface(context stack.MulticastPacketContext, expectedInputInterface tcpip.NICID) {
+}
+
 type testContext struct {
 	s     *stack.Stack
 	clock *faketime.ManualClock
@@ -207,7 +216,7 @@ type testContext struct {
 func newTestContext() testContext {
 	clock := faketime.NewManualClock()
 	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocolWithOptions(Options{MulticastForwardingDisp: &fakeMulticastEventDispatcher{}})},
 		TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6, udp.NewProtocol},
 		Clock:              clock,
 	})
