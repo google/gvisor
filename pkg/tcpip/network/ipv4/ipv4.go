@@ -367,6 +367,18 @@ func (e *endpoint) disableLocked() {
 	}
 }
 
+// multicastEventDispatcher returns the multicast forwarding event dispatcher.
+//
+// Panics if a multicast forwarding event dispatcher does not exist. This
+// indicates that multicast forwarding is enabled, but no dispatcher was
+// provided.
+func (e *endpoint) multicastEventDispatcher() stack.MulticastForwardingEventDispatcher {
+	if mcastDisp := e.protocol.options.MulticastForwardingDisp; mcastDisp != nil {
+		return mcastDisp
+	}
+	panic("e.procotol.options.MulticastForwardingDisp unexpectedly nil")
+}
+
 // DefaultTTL is the default time-to-live value for this endpoint.
 func (e *endpoint) DefaultTTL() uint8 {
 	return e.protocol.DefaultTTL()
@@ -886,10 +898,18 @@ func (e *endpoint) forwardMulticastPacket(h header.IPv4, pkt *stack.PacketBuffer
 		return &ip.ErrNoMulticastPendingQueueBufferSpace{}
 	}
 
-	// TODO(https://gvisor.dev/issue/7338): Emit an event for a missing route.
-	if result.GetRouteResultState == multicast.InstalledRouteFound {
+	switch result.GetRouteResultState {
+	case multicast.InstalledRouteFound:
 		// Attempt to forward the pkt using an existing route.
 		return e.forwardValidatedMulticastPacket(pkt, result.InstalledRoute)
+	case multicast.NoRouteFoundAndPendingInserted:
+		e.multicastEventDispatcher().OnMissingRoute(stack.MulticastPacketContext{
+			stack.UnicastSourceAndMulticastDestination{h.SourceAddress(), h.DestinationAddress()},
+			e.nic.ID(),
+		})
+	case multicast.PacketQueuedInPendingRoute:
+	default:
+		panic(fmt.Sprintf("unexpected GetRouteResultState: %s", result.GetRouteResultState))
 	}
 	return &ip.ErrNoRoute{}
 }
@@ -937,8 +957,11 @@ func (e *endpoint) forwardValidatedMulticastPacket(pkt *stack.PacketBuffer, inst
 	//	 on the proper interface for forwarding.  If not, the datagram is
 	//	 dropped silently.
 	if e.nic.ID() != installedRoute.ExpectedInputInterface {
-		// TODO(https://gvisor.dev/issue/7338): Emit an event for an unexpected
-		// input interface.
+		h := header.IPv4(pkt.NetworkHeader().View())
+		e.multicastEventDispatcher().OnUnexpectedInputInterface(stack.MulticastPacketContext{
+			stack.UnicastSourceAndMulticastDestination{h.SourceAddress(), h.DestinationAddress()},
+			e.nic.ID(),
+		}, installedRoute.ExpectedInputInterface)
 		return &ip.ErrUnexpectedMulticastInputInterface{}
 	}
 
@@ -1749,6 +1772,10 @@ type Options struct {
 	// AllowExternalLoopbackTraffic indicates that inbound loopback packets (i.e.
 	// martian loopback packets) should be accepted.
 	AllowExternalLoopbackTraffic bool
+
+	// MulticastForwardingDisp is the multicast forwarding event dispatcher that
+	// an integrator can provide to receive multicast forwarding events.
+	MulticastForwardingDisp stack.MulticastForwardingEventDispatcher
 }
 
 // NewProtocolWithOptions returns an IPv4 network protocol.

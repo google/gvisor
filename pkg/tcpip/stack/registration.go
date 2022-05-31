@@ -819,6 +819,37 @@ type MulticastForwardingNetworkProtocol interface {
 	MulticastRouteLastUsedTime(UnicastSourceAndMulticastDestination) (tcpip.MonotonicTime, tcpip.Error)
 }
 
+// MulticastPacketContext is the context in which a multicast packet triggered
+// a multicast forwarding event.
+type MulticastPacketContext struct {
+	// SourceAndDestination contains the unicast source address and the multicast
+	// destination address found in the relevant multicast packet.
+	SourceAndDestination UnicastSourceAndMulticastDestination
+	// InputInterface is the interface on which the relevant multicast packet
+	// arrived.
+	InputInterface tcpip.NICID
+}
+
+// MulticastForwardingEventDispatcher is the interface that integrators should
+// implement to handle multicast routing events.
+type MulticastForwardingEventDispatcher interface {
+	// OnMissingRoute is called when an incoming multicast packet does not match
+	// any installed route.
+	//
+	// The packet that triggered this event may be queued so that it can be
+	// transmitted once a route is installed. Even then, it may still be dropped
+	// as per the routing table's GC/eviction policy.
+	OnMissingRoute(MulticastPacketContext)
+
+	// OnUnexpectedInputInterface is called when a multicast packet arrives at an
+	// interface that does not match the installed route's expected input
+	// interface.
+	//
+	// This may be an indication of a routing loop. The packet that triggered
+	// this event is dropped without being forwarded.
+	OnUnexpectedInputInterface(context MulticastPacketContext, expectedInputInterface tcpip.NICID)
+}
+
 // NetworkDispatcher contains the methods used by the network stack to deliver
 // inbound/outbound packets to the appropriate network/packet(if any) endpoints.
 type NetworkDispatcher interface {
