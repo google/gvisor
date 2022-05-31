@@ -28,6 +28,8 @@
 ##     BAZEL_CACHE        - The bazel cache directory (default: detected).
 ##     GCLOUD_CONFIG      - The gcloud config directory (detect: detected).
 ##     DOCKER_SOCKET      - The Docker socket (default: detected).
+##     DEVICE_FILE        - An optional device file to expose in the container
+##                          (default: no device file is exposed).
 ##
 ##   To opt out of these wrappers, set DOCKER_BUILD=false.
 DOCKER_BUILD := true
@@ -44,7 +46,7 @@ RACE_FLAGS := --@io_bazel_rules_go//go/config:race
 
 # Bazel container configuration (see below).
 USER := $(shell whoami)
-HASH := $(shell readlink -m $(CURDIR) | md5sum | cut -c1-8)
+HASH := $(shell realpath -m $(CURDIR) | md5sum | cut -c1-8)
 BUILDER_NAME := gvisor-builder-$(HASH)-$(ARCH)
 DOCKER_NAME := gvisor-bazel-$(HASH)-$(ARCH)
 DOCKER_PRIVILEGED := --privileged
@@ -52,6 +54,7 @@ BAZEL_CACHE := $(HOME)/.cache/bazel/
 GCLOUD_CONFIG := $(HOME)/.config/gcloud/
 DOCKER_SOCKET := /var/run/docker.sock
 DOCKER_CONFIG := /etc/docker
+DEVICE_FILE ?=
 
 ##
 ## Bazel helpers.
@@ -80,13 +83,26 @@ DOCKER_RUN_OPTIONS += --rm
 DOCKER_RUN_OPTIONS += --user $(UID):$(GID)
 DOCKER_RUN_OPTIONS += --entrypoint ""
 DOCKER_RUN_OPTIONS += --init
-DOCKER_RUN_OPTIONS += -v "$(shell readlink -m $(BAZEL_CACHE)):$(BAZEL_CACHE)"
-DOCKER_RUN_OPTIONS += -v "$(shell readlink -m $(GCLOUD_CONFIG)):$(GCLOUD_CONFIG)"
-DOCKER_RUN_OPTIONS += -v "/tmp:/tmp"
+DOCKER_RUN_OPTIONS += -v "$(shell realpath -m $(BAZEL_CACHE)):$(BAZEL_CACHE):shared"
+DOCKER_RUN_OPTIONS += -v "$(shell realpath -m $(GCLOUD_CONFIG)):$(GCLOUD_CONFIG)"
+DOCKER_RUN_OPTIONS += -v "/tmp:/tmp:shared"
 DOCKER_EXEC_OPTIONS := --user $(UID):$(GID)
 DOCKER_EXEC_OPTIONS += --interactive
 ifeq (true,$(shell test -t 1 && echo true))
 DOCKER_EXEC_OPTIONS += --tty
+endif
+
+# If kernel headers are available, mount them too.
+ifneq (,$(wildcard /lib/modules))
+DOCKER_RUN_OPTIONS += -v "/lib/modules:/lib/modules"
+endif
+KERNEL_HEADERS_DIR := $(shell realpath -m /lib/modules/$(shell uname -r)/build)
+ifneq (,$(wildcard $(KERNEL_HEADERS_DIR)))
+DOCKER_RUN_OPTIONS += -v "$(KERNEL_HEADERS_DIR):$(KERNEL_HEADERS_DIR)"
+ifneq ($(shell realpath -m $(KERNEL_HEADERS_DIR)/Makefile),$(KERNEL_HEADERS_DIR)/Makefile)
+KERNEL_HEADERS_DIR_LINKED := $(dir $(shell realpath -m $(KERNEL_HEADERS_DIR)/Makefile))
+DOCKER_RUN_OPTIONS += -v "$(KERNEL_HEADERS_DIR_LINKED):$(KERNEL_HEADERS_DIR_LINKED)"
+endif
 endif
 
 # Add basic UID/GID options.
@@ -113,6 +129,7 @@ ifneq ($(DOCKER_PRIVILEGED),)
 DOCKER_RUN_OPTIONS += -v "$(DOCKER_SOCKET):$(DOCKER_SOCKET)"
 DOCKER_RUN_OPTIONS += -v "$(DOCKER_CONFIG):$(DOCKER_CONFIG)"
 DOCKER_RUN_OPTIONS += $(DOCKER_PRIVILEGED)
+DOCKER_RUN_OPTIONS += --cap-add SYS_MODULE
 DOCKER_EXEC_OPTIONS += $(DOCKER_PRIVILEGED)
 DOCKER_GROUP := $(shell stat -c '%g' $(DOCKER_SOCKET))
 ifneq ($(GID),$(DOCKER_GROUP))
@@ -130,6 +147,13 @@ ifneq ($(GID),$(KVM_GROUP))
 USERADD_OPTIONS += --groups $(KVM_GROUP)
 GROUPADD_DOCKER += groupadd --gid $(KVM_GROUP) --non-unique kvm-$(HASH) &&
 DOCKER_RUN_OPTIONS += --group-add $(KVM_GROUP)
+endif
+endif
+
+# Add other device file, if specified.
+ifneq ($(DEVICE_FILE),)
+ifneq (,$(wildcard $(DEVICE_FILE)))
+DOCKER_RUN_OPTIONS += --device "$(DEVICE_FILE):$(DEVICE_FILE)"
 endif
 endif
 
@@ -187,7 +211,7 @@ build_paths = \
   (set -euo pipefail; \
   $(call wrapper,$(BAZEL) build $(BASE_OPTIONS) $(BAZEL_OPTIONS) $(1)) && \
   $(call wrapper,$(BAZEL) cquery $(BASE_OPTIONS) $(BAZEL_OPTIONS) $(1) --output=starlark --starlark:file=tools/show_paths.bzl) \
-  | xargs -r -I {} bash -c 'test -e "{}" || exit 0; readlink -f "{}"' \
+  | xargs -r -I {} bash -c 'test -e "{}" || exit 0; realpath -m "{}"' \
   | xargs -r -I {} bash -c 'set -euo pipefail; $(2)')
 
 clean    = $(call header,CLEAN) && $(call wrapper,$(BAZEL) clean)
