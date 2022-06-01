@@ -44,7 +44,7 @@ func TestReap(t *testing.T) {
 	// the connection won't be considered established. Thus the timeout for
 	// reaping is unestablishedTimeout.
 	pkt1 := genTCPPacket(genTCPOpts{})
-	pkt1.tuple = ct.getConnAndUpdate(pkt1)
+	pkt1.tuple = ct.getConnAndUpdate(pkt1, true /* skipChecksumValidation */)
 	if pkt1.tuple.conn.handlePacket(pkt1, Output, &rt) {
 		t.Fatal("handlePacket() shouldn't perform any NAT")
 	}
@@ -54,7 +54,7 @@ func TestReap(t *testing.T) {
 	// lastUsed, but per #6748 didn't.
 	clock.Advance(unestablishedTimeout / 2)
 	pkt2 := genTCPPacket(genTCPOpts{})
-	pkt2.tuple = ct.getConnAndUpdate(pkt2)
+	pkt2.tuple = ct.getConnAndUpdate(pkt2, true /* skipChecksumValidation */)
 	if pkt2.tuple.conn.handlePacket(pkt2, Output, &rt) {
 		t.Fatal("handlePacket() shouldn't perform any NAT")
 	}
@@ -173,7 +173,7 @@ func testWindowScaling(t *testing.T, windowSize uint16, synScale, synAckScale ui
 		srcPort:     &originatorPort,
 		dstPort:     &responderPort,
 	})
-	synPkt.tuple = ct.getConnAndUpdate(synPkt)
+	synPkt.tuple = ct.getConnAndUpdate(synPkt, true /* skipChecksumValidation */)
 	if synPkt.tuple.conn.handlePacket(synPkt, Output, &rt) {
 		t.Fatal("handlePacket() shouldn't perform any NAT")
 	}
@@ -205,7 +205,7 @@ func testWindowScaling(t *testing.T, windowSize uint16, synScale, synAckScale ui
 		srcPort:     &responderPort,
 		dstPort:     &originatorPort,
 	})
-	synAckPkt.tuple = ct.getConnAndUpdate(synAckPkt)
+	synAckPkt.tuple = ct.getConnAndUpdate(synAckPkt, true /* skipChecksumValidation */)
 	if synAckPkt.tuple.conn.handlePacket(synAckPkt, Prerouting, &rt) {
 		t.Fatal("handlePacket() shouldn't perform any NAT")
 	}
@@ -236,7 +236,7 @@ func testWindowScaling(t *testing.T, windowSize uint16, synScale, synAckScale ui
 		srcPort:    &originatorPort,
 		dstPort:    &responderPort,
 	})
-	ackPkt.tuple = ct.getConnAndUpdate(ackPkt)
+	ackPkt.tuple = ct.getConnAndUpdate(ackPkt, true /* skipChecksumValidation */)
 	if ackPkt.tuple.conn.handlePacket(ackPkt, Output, &rt) {
 		t.Fatal("handlePacket() shouldn't perform any NAT")
 	}

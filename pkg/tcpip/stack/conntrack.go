@@ -511,7 +511,7 @@ func (ct *ConnTrack) init() {
 //
 // If the packet's protocol is trackable, the connection's state is updated to
 // match the contents of the packet.
-func (ct *ConnTrack) getConnAndUpdate(pkt *PacketBuffer) *tuple {
+func (ct *ConnTrack) getConnAndUpdate(pkt *PacketBuffer, skipChecksumValidation bool) *tuple {
 	// Get or (maybe) create a connection.
 	t := func() *tuple {
 		var allowNewConn bool
@@ -525,6 +525,34 @@ func (ct *ConnTrack) getConnAndUpdate(pkt *PacketBuffer) *tuple {
 			allowNewConn = false
 		default:
 			panic(fmt.Sprintf("unhandled %[1]T = %[1]d", res))
+		}
+
+		// Just skip bad packets. They'll be rejected later by the appropriate
+		// protocol package.
+		switch pkt.TransportProtocolNumber {
+		case header.TCPProtocolNumber:
+			_, csumValid, ok := header.TCPValid(
+				header.TCP(pkt.TransportHeader().View()),
+				func() uint16 { return pkt.Data().AsRange().Checksum() },
+				uint16(pkt.Data().Size()),
+				tid.srcAddr,
+				tid.dstAddr,
+				pkt.RXTransportChecksumValidated || skipChecksumValidation)
+			if !csumValid || !ok {
+				return nil
+			}
+		case header.UDPProtocolNumber:
+			lengthValid, csumValid := header.UDPValid(
+				header.UDP(pkt.TransportHeader().View()),
+				func() uint16 { return pkt.Data().AsRange().Checksum() },
+				uint16(pkt.Data().Size()),
+				pkt.NetworkProtocolNumber,
+				tid.srcAddr,
+				tid.dstAddr,
+				pkt.RXTransportChecksumValidated || skipChecksumValidation)
+			if !lengthValid || !csumValid {
+				return nil
+			}
 		}
 
 		bktID := ct.bucket(tid)
