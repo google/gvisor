@@ -586,6 +586,11 @@ func (d PacketData) AppendView(v tcpipbuffer.View) {
 	d.pk.buf.AppendOwned(v)
 }
 
+// MergeBuffer merges b into d and clears b.
+func (d PacketData) MergeBuffer(b buffer.Buffer) {
+	d.pk.buf.Merge(&b)
+}
+
 // MergeFragment appends the data portion of frag to dst. It modifies
 // frag and frag should not be used again.
 func MergeFragment(dst, frag *PacketBuffer) {

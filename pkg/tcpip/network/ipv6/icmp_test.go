@@ -591,6 +591,7 @@ func TestLinkResolution(t *testing.T) {
 	// doesn't provoke NDP discovery.
 	var wq waiter.Queue
 	ep, err := c.s0.NewEndpoint(header.ICMPv6ProtocolNumber, ProtocolNumber, &wq)
+	defer ep.Close()
 	if err != nil {
 		t.Fatalf("NewEndpoint(_) = (_, %s), want = (_, nil)", err)
 	}

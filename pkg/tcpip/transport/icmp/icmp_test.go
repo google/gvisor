@@ -15,13 +15,13 @@
 package icmp_test
 
 import (
+	"bytes"
 	"os"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
@@ -111,8 +111,8 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 
 	echoPayloadSize := defaultEP.MTU() - header.IPv4MinimumSize - header.ICMPv4MinimumSize
 
-	newICMPv4EchoRequest := func() buffer.View {
-		buf := buffer.NewView(header.ICMPv4MinimumSize + int(echoPayloadSize))
+	newICMPv4EchoRequest := func() []byte {
+		buf := make([]byte, header.ICMPv4MinimumSize+int(echoPayloadSize))
 		writePayload(buf[header.ICMPv4MinimumSize:])
 
 		icmp := header.ICMPv4(buf)
@@ -127,7 +127,8 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 	// to be added is the default NIC to send packets when not explicitly bound.
 	{
 		buf := newICMPv4EchoRequest()
-		r := buf.Reader()
+		var r bytes.Reader
+		r.Reset(buf)
 		n, err := socket.Write(&r, tcpip.WriteOptions{
 			To: &tcpip.FullAddress{Addr: remoteV4Addr},
 		})
@@ -144,9 +145,9 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 			t.Fatalf("got defaultEP.Read(_) = _, false; want = _, true (packet wasn't written out)")
 		}
 
-		vv := buffer.NewVectorisedView(p.Size(), p.Views())
+		pkbuf := p.Buffer()
+		b := pkbuf.Flatten()
 		p.DecRef()
-		b := vv.ToView()
 
 		checker.IPv4(t, b, []checker.NetworkChecker{
 			checker.SrcAddr(localV4Addr1),
@@ -170,7 +171,8 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 		socket.SocketOptions().SetBindToDevice(2)
 
 		buf := newICMPv4EchoRequest()
-		r := buf.Reader()
+		var r bytes.Reader
+		r.Reset(buf)
 		n, err := socket.Write(&r, tcpip.WriteOptions{
 			To: &tcpip.FullAddress{Addr: remoteV4Addr},
 		})
@@ -192,9 +194,9 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 			t.Fatalf("got alternateEP.Read(_) = _, false; want = _, true (packet wasn't written out)")
 		}
 
-		vv := buffer.NewVectorisedView(p.Size(), p.Views())
+		pkbuf := p.Buffer()
+		b := pkbuf.Flatten()
 		p.DecRef()
-		b := vv.ToView()
 
 		checker.IPv4(t, b, []checker.NetworkChecker{
 			checker.SrcAddr(localV4Addr2),
@@ -213,7 +215,8 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 		socket.SocketOptions().SetBindToDevice(0)
 
 		buf := newICMPv4EchoRequest()
-		r := buf.Reader()
+		var r bytes.Reader
+		r.Reset(buf)
 		n, err := socket.Write(&r, tcpip.WriteOptions{
 			To: &tcpip.FullAddress{Addr: remoteV4Addr},
 		})
@@ -230,9 +233,9 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 			t.Fatalf("got defaultEP.Read(_) = _, false; want = _, true (packet wasn't written out)")
 		}
 
-		vv := buffer.NewVectorisedView(p.Size(), p.Views())
+		pkbuf := p.Buffer()
+		b := pkbuf.Flatten()
 		p.DecRef()
-		b := vv.ToView()
 
 		checker.IPv4(t, b, []checker.NetworkChecker{
 			checker.SrcAddr(localV4Addr1),
@@ -250,9 +253,9 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 	}
 }
 
-func buildV4EchoReplyPacket(payload []byte, h context.Header4Tuple) (buffer.View, buffer.View) {
+func buildV4EchoReplyPacket(payload []byte, h context.Header4Tuple) ([]byte, []byte) {
 	// Allocate a buffer for data and headers.
-	buf := buffer.NewView(header.IPv4MinimumSize + header.ICMPv4MinimumSize + len(payload))
+	buf := make([]byte, header.IPv4MinimumSize+header.ICMPv4MinimumSize+len(payload))
 	payloadStart := len(buf) - len(payload)
 	copy(buf[payloadStart:], payload)
 
@@ -275,12 +278,12 @@ func buildV4EchoReplyPacket(payload []byte, h context.Header4Tuple) (buffer.View
 	icmp.SetIdent(h.Dst.Port)
 	icmp.SetChecksum(^header.Checksum(icmp, 0))
 
-	return buf, buffer.View(icmp)
+	return buf, icmp
 }
 
-func buildV6EchoReplyPacket(payload []byte, h context.Header4Tuple) (buffer.View, buffer.View) {
+func buildV6EchoReplyPacket(payload []byte, h context.Header4Tuple) ([]byte, []byte) {
 	// Allocate a buffer for data and headers.
-	buf := buffer.NewView(header.IPv6MinimumSize + header.ICMPv6EchoMinimumSize + len(payload))
+	buf := make([]byte, header.IPv6MinimumSize+header.ICMPv6EchoMinimumSize+len(payload))
 	payloadStart := len(buf) - len(payload)
 	copy(buf[payloadStart:], payload)
 
@@ -308,12 +311,12 @@ func buildV6EchoReplyPacket(payload []byte, h context.Header4Tuple) (buffer.View
 		PayloadLen:  len(payload),
 	}))
 
-	return buf, buffer.View(icmpv6)
+	return buf, icmpv6
 }
 
 // buildEchoReplyPacket builds an ICMPv4 or ICMPv6 echo reply packet, and
 // returns the full packet and the ICMP portion of the packet.
-func buildEchoReplyPacket(payload []byte, flow context.TestFlow) (buffer.View, buffer.View) {
+func buildEchoReplyPacket(payload []byte, flow context.TestFlow) ([]byte, []byte) {
 	h := flow.MakeHeader4Tuple(context.Incoming)
 	if flow.IsV4() {
 		return buildV4EchoReplyPacket(payload, h)

@@ -19,7 +19,6 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
@@ -342,9 +341,9 @@ func (flow TestFlow) isReverseMulticast() bool {
 }
 
 // BuildV4UDPPacket builds an IPv4 UDP packet.
-func BuildV4UDPPacket(payload []byte, h Header4Tuple, tos, ttl uint8, badChecksum bool) buffer.View {
+func BuildV4UDPPacket(payload []byte, h Header4Tuple, tos, ttl uint8, badChecksum bool) []byte {
 	// Allocate a buffer for data and headers.
-	buf := buffer.NewView(header.UDPMinimumSize + header.IPv4MinimumSize + len(payload))
+	buf := make([]byte, header.UDPMinimumSize+header.IPv4MinimumSize+len(payload))
 	payloadStart := len(buf) - len(payload)
 	copy(buf[payloadStart:], payload)
 
@@ -390,9 +389,9 @@ func BuildV4UDPPacket(payload []byte, h Header4Tuple, tos, ttl uint8, badChecksu
 }
 
 // BuildV6UDPPacket builds an IPv6 UDP packet.
-func BuildV6UDPPacket(payload []byte, h Header4Tuple, tclass, hoplimit uint8, badChecksum bool) buffer.View {
+func BuildV6UDPPacket(payload []byte, h Header4Tuple, tclass, hoplimit uint8, badChecksum bool) []byte {
 	// Allocate a buffer for data and headers.
-	buf := buffer.NewView(header.UDPMinimumSize + header.IPv6MinimumSize + len(payload))
+	buf := make([]byte, header.UDPMinimumSize+header.IPv6MinimumSize+len(payload))
 	payloadStart := len(buf) - len(payload)
 	copy(buf[payloadStart:], payload)
 
@@ -434,7 +433,7 @@ func BuildV6UDPPacket(payload []byte, h Header4Tuple, tclass, hoplimit uint8, ba
 
 // BuildUDPPacket builds an IPv4 or IPv6 UDP packet, depending on the specified
 // TestFlow.
-func BuildUDPPacket(payload []byte, flow TestFlow, direction PacketDirection, tosOrTclass, ttlOrHopLimit uint8, badChecksum bool) buffer.View {
+func BuildUDPPacket(payload []byte, flow TestFlow, direction PacketDirection, tosOrTclass, ttlOrHopLimit uint8, badChecksum bool) []byte {
 	h := flow.MakeHeader4Tuple(direction)
 	if flow.IsV4() {
 		return BuildV4UDPPacket(payload, h, tosOrTclass, ttlOrHopLimit, badChecksum)

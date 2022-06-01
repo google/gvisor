@@ -23,7 +23,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
@@ -184,7 +183,7 @@ func (e *mockEndpoint) pktsSize() int {
 func TestSndBuf(t *testing.T) {
 	const nicID = 1
 
-	buf := buffer.NewView(header.ICMPv4MinimumSize)
+	buf := make([]byte, header.ICMPv4MinimumSize)
 	header.ICMPv4(buf).SetType(header.ICMPv4Echo)
 
 	for _, test := range []struct {
@@ -363,15 +362,15 @@ func TestDeviceReturnErrNoBufferSpace(t *testing.T) {
 		netProto   tcpip.NetworkProtocolNumber
 		localAddr  tcpip.Address
 		remoteAddr tcpip.Address
-		buf        buffer.View
+		buf        []byte
 	}{
 		{
 			name:       "IPv4",
 			netProto:   ipv4.ProtocolNumber,
 			localAddr:  testutil.MustParse4("1.2.3.4"),
 			remoteAddr: testutil.MustParse4("1.0.0.1"),
-			buf: func() buffer.View {
-				buf := buffer.NewView(header.ICMPv4MinimumSize)
+			buf: func() []byte {
+				buf := make([]byte, header.ICMPv4MinimumSize)
 				header.ICMPv4(buf).SetType(header.ICMPv4Echo)
 				return buf
 			}(),
@@ -381,8 +380,8 @@ func TestDeviceReturnErrNoBufferSpace(t *testing.T) {
 			netProto:   ipv6.ProtocolNumber,
 			localAddr:  testutil.MustParse6("a::1"),
 			remoteAddr: testutil.MustParse6("a::2"),
-			buf: func() buffer.View {
-				buf := buffer.NewView(header.ICMPv6MinimumSize)
+			buf: func() []byte {
+				buf := make([]byte, header.ICMPv6MinimumSize)
 				header.ICMPv6(buf).SetType(header.ICMPv6EchoRequest)
 				return buf
 			}(),

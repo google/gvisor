@@ -39,10 +39,9 @@ import (
 // +stateify savable
 type packet struct {
 	packetEntry
-	// data holds the actual packet data, including any headers and
-	// payload.
-	data       buffer.VectorisedView `state:".(buffer.VectorisedView)"`
-	receivedAt time.Time             `state:".(int64)"`
+	// data holds the actual packet data, including any headers and payload.
+	data       *stack.PacketBuffer
+	receivedAt time.Time `state:".(int64)"`
 	// senderAddr is the network address of the sender.
 	senderAddr tcpip.FullAddress
 	// packetInfo holds additional information like the protocol
@@ -145,7 +144,9 @@ func (ep *endpoint) Close() {
 	ep.rcvClosed = true
 	ep.rcvBufSize = 0
 	for !ep.rcvList.Empty() {
-		ep.rcvList.Remove(ep.rcvList.Front())
+		p := ep.rcvList.Front()
+		ep.rcvList.Remove(p)
+		p.data.DecRef()
 	}
 
 	ep.closed = true
@@ -174,6 +175,7 @@ func (ep *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResul
 	packet := ep.rcvList.Front()
 	if !opts.Peek {
 		ep.rcvList.Remove(packet)
+		defer packet.data.DecRef()
 		ep.rcvBufSize -= packet.data.Size()
 	}
 
@@ -193,7 +195,7 @@ func (ep *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResul
 		res.LinkPacketInfo = packet.packetInfo
 	}
 
-	n, err := packet.data.ReadTo(dst, opts.Peek)
+	n, err := packet.data.Data().ReadTo(dst, opts.Peek)
 	if n == 0 && err != nil {
 		return res, &tcpip.ErrBadBuffer{}
 	}
@@ -447,20 +449,14 @@ func (ep *endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtoc
 		rcvdPkt.senderAddr.Addr = tcpip.Address(hdr.SourceAddress())
 	}
 
+	// Raw packet endpoints include link-headers in received packets.
+	pktBuf := pkt.Buffer()
 	if ep.cooked {
 		// Cooked packet endpoints don't include the link-headers in received
 		// packets.
-		if v := pkt.NetworkHeader().View(); !v.IsEmpty() {
-			rcvdPkt.data.AppendView(v)
-		}
-		if v := pkt.TransportHeader().View(); !v.IsEmpty() {
-			rcvdPkt.data.AppendView(v)
-		}
-		rcvdPkt.data.Append(pkt.Data().ExtractVV())
-	} else {
-		// Raw packet endpoints include link-headers in received packets.
-		rcvdPkt.data = buffer.NewVectorisedView(pkt.Size(), pkt.Views())
+		pktBuf.TrimFront(int64(len(pkt.LinkHeader().View()) + len(pkt.VirtioNetHeader().View())))
 	}
+	rcvdPkt.data = stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: pktBuf})
 
 	ep.rcvList.PushBack(&rcvdPkt)
 	ep.rcvBufSize += rcvdPkt.data.Size()

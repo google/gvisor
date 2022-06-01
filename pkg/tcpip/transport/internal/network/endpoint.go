@@ -20,9 +20,9 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport"
@@ -265,7 +265,7 @@ func (c *WriteContext) PacketInfo() WritePacketInfo {
 //
 // If this method returns nil, the caller should wait for the endpoint to become
 // writable.
-func (c *WriteContext) TryNewPacketBuffer(reserveHdrBytes int, data buffer.VectorisedView) *stack.PacketBuffer {
+func (c *WriteContext) TryNewPacketBuffer(reserveHdrBytes int, data buffer.Buffer) *stack.PacketBuffer {
 	e := c.e
 
 	e.sendBufferSizeInUseMu.Lock()
@@ -288,7 +288,7 @@ func (c *WriteContext) TryNewPacketBuffer(reserveHdrBytes int, data buffer.Vecto
 
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: reserveHdrBytes,
-		Data:               data,
+		Payload:            data,
 		OnRelease: func() {
 			e.sendBufferSizeInUseMu.Lock()
 			if got := e.sendBufferSizeInUse; got < pktSize {

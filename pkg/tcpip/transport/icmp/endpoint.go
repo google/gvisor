@@ -19,10 +19,10 @@ import (
 	"io"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/ports"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -36,8 +36,8 @@ type icmpPacket struct {
 	icmpPacketEntry
 	senderAddress tcpip.FullAddress
 	packetInfo    tcpip.IPPacketInfo
-	data          buffer.VectorisedView `state:".(buffer.VectorisedView)"`
-	receivedAt    time.Time             `state:".(int64)"`
+	data          *stack.PacketBuffer
+	receivedAt    time.Time `state:".(int64)"`
 
 	// tosOrTClass stores either the Type of Service for IPv4 or the Traffic Class
 	// for IPv6.
@@ -149,6 +149,7 @@ func (e *endpoint) Close() {
 		for !e.rcvList.Empty() {
 			p := e.rcvList.Front()
 			e.rcvList.Remove(p)
+			p.data.DecRef()
 		}
 
 		return true
@@ -184,7 +185,8 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 	p := e.rcvList.Front()
 	if !opts.Peek {
 		e.rcvList.Remove(p)
-		e.rcvBufSize -= p.data.Size()
+		defer p.data.DecRef()
+		e.rcvBufSize -= p.data.Data().Size()
 	}
 
 	e.rcvMu.Unlock()
@@ -232,14 +234,14 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 	}
 
 	res := tcpip.ReadResult{
-		Total:           p.data.Size(),
+		Total:           p.data.Data().Size(),
 		ControlMessages: cm,
 	}
 	if opts.NeedRemoteAddr {
 		res.RemoteAddr = p.senderAddress
 	}
 
-	n, err := p.data.ReadTo(dst, opts.Peek)
+	n, err := p.data.Data().ReadTo(dst, opts.Peek)
 	if n == 0 && err != nil {
 		return res, &tcpip.ErrBadBuffer{}
 	}
@@ -383,7 +385,7 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 		e.rcvMu.Lock()
 		if !e.rcvList.Empty() {
 			p := e.rcvList.Front()
-			v = p.data.Size()
+			v = p.data.Data().Size()
 		}
 		e.rcvMu.Unlock()
 		return v, nil
@@ -398,13 +400,13 @@ func (e *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
 	return e.net.GetSockOpt(opt)
 }
 
-func send4(s *stack.Stack, ctx *network.WriteContext, ident uint16, data buffer.View, maxHeaderLength uint16) tcpip.Error {
+func send4(s *stack.Stack, ctx *network.WriteContext, ident uint16, data []byte, maxHeaderLength uint16) tcpip.Error {
 	if len(data) < header.ICMPv4MinimumSize {
 		log.Infof("len(data) is smaller than min size")
 		return &tcpip.ErrInvalidEndpointState{}
 	}
 
-	pkt := ctx.TryNewPacketBuffer(header.ICMPv4MinimumSize+int(maxHeaderLength), buffer.VectorisedView{})
+	pkt := ctx.TryNewPacketBuffer(header.ICMPv4MinimumSize+int(maxHeaderLength), buffer.Buffer{})
 	if pkt == nil {
 		return &tcpip.ErrWouldBlock{}
 	}
@@ -441,12 +443,12 @@ func send4(s *stack.Stack, ctx *network.WriteContext, ident uint16, data buffer.
 	return nil
 }
 
-func send6(s *stack.Stack, ctx *network.WriteContext, ident uint16, data buffer.View, src, dst tcpip.Address, maxHeaderLength uint16) tcpip.Error {
+func send6(s *stack.Stack, ctx *network.WriteContext, ident uint16, data []byte, src, dst tcpip.Address, maxHeaderLength uint16) tcpip.Error {
 	if len(data) < header.ICMPv6EchoMinimumSize {
 		return &tcpip.ErrInvalidEndpointState{}
 	}
 
-	pkt := ctx.TryNewPacketBuffer(header.ICMPv6MinimumSize+int(maxHeaderLength), buffer.VectorisedView{})
+	pkt := ctx.TryNewPacketBuffer(header.ICMPv6MinimumSize+int(maxHeaderLength), buffer.Buffer{})
 	if pkt == nil {
 		return &tcpip.ErrWouldBlock{}
 	}
@@ -757,12 +759,14 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 		packet.ttlOrHopLimit = header.IPv6(pkt.NetworkHeader().View()).HopLimit()
 	}
 
-	// ICMP socket's data includes ICMP header.
-	packet.data = pkt.TransportHeader().View().ToVectorisedView()
-	packet.data.Append(pkt.Data().ExtractVV())
+	// ICMP socket's data includes ICMP header but no others. Trim all other
+	// headers from the front of the packet.
+	pktBuf := pkt.Buffer()
+	pktBuf.TrimFront(int64(pkt.HeaderSize() - len(pkt.TransportHeader().View())))
+	packet.data = stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: pktBuf})
 
 	e.rcvList.PushBack(packet)
-	e.rcvBufSize += packet.data.Size()
+	e.rcvBufSize += packet.data.Data().Size()
 
 	packet.receivedAt = e.stack.Clock().Now()
 
