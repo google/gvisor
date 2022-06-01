@@ -886,45 +886,28 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 	return result
 }
 
-// verifyChecksum verifies the checksum unless RX checksum offload is enabled.
-func verifyChecksum(hdr header.UDP, pkt *stack.PacketBuffer) bool {
-	if pkt.RXTransportChecksumValidated {
-		return true
-	}
-
-	// On IPv4, UDP checksum is optional, and a zero value means the transmitter
-	// omitted the checksum generation, as per RFC 768:
-	//
-	//   An all zero transmitted checksum value means that the transmitter
-	//   generated  no checksum  (for debugging or for higher level protocols that
-	//   don't care).
-	//
-	// On IPv6, UDP checksum is not optional, as per RFC 2460 Section 8.1:
-	//
-	//   Unlike IPv4, when UDP packets are originated by an IPv6 node, the UDP
-	//   checksum is not optional.
-	if pkt.NetworkProtocolNumber == header.IPv4ProtocolNumber && hdr.Checksum() == 0 {
-		return true
-	}
-
-	netHdr := pkt.Network()
-	payloadChecksum := pkt.Data().AsRange().Checksum()
-	return hdr.IsChecksumValid(netHdr.SourceAddress(), netHdr.DestinationAddress(), payloadChecksum)
-}
-
 // HandlePacket is called by the stack when new packets arrive to this transport
 // endpoint.
 func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
 	// Get the header then trim it from the view.
 	hdr := header.UDP(pkt.TransportHeader().View())
-	if int(hdr.Length()) > pkt.Data().Size()+header.UDPMinimumSize {
+	netHdr := pkt.Network()
+	lengthValid, csumValid := header.UDPValid(
+		hdr,
+		func() uint16 { return pkt.Data().AsRange().Checksum() },
+		uint16(pkt.Data().Size()),
+		pkt.NetworkProtocolNumber,
+		netHdr.SourceAddress(),
+		netHdr.DestinationAddress(),
+		pkt.RXTransportChecksumValidated)
+	if !lengthValid {
 		// Malformed packet.
 		e.stack.Stats().UDP.MalformedPacketsReceived.Increment()
 		e.stats.ReceiveErrors.MalformedPacketsReceived.Increment()
 		return
 	}
 
-	if !verifyChecksum(hdr, pkt) {
+	if !csumValid {
 		e.stack.Stats().UDP.ChecksumErrors.Increment()
 		e.stats.ReceiveErrors.ChecksumErrors.Increment()
 		return

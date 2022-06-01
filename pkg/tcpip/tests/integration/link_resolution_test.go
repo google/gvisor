@@ -956,7 +956,7 @@ func TestWritePacketsLinkResolution(t *testing.T) {
 					Data:               buffer.View([]byte{d}).ToVectorisedView(),
 				})
 				pkt.TransportProtocolNumber = udp.ProtocolNumber
-				length := uint16(pkt.Size())
+				length := uint16(pkt.Data().Size() + header.UDPMinimumSize)
 				udpHdr := header.UDP(pkt.TransportHeader().Push(header.UDPMinimumSize))
 				udpHdr.Encode(&header.UDPFields{
 					SrcPort: 5555,

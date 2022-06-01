@@ -69,7 +69,8 @@ const (
 func genStackV6(t *testing.T) (*stack.Stack, *channel.Endpoint) {
 	t.Helper()
 	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocol},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv6.NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol},
 	})
 	e := channel.New(0, header.IPv6MinimumMTU, linkAddr)
 	nicOpts := stack.NICOptions{Name: nicName}
@@ -89,7 +90,8 @@ func genStackV6(t *testing.T) (*stack.Stack, *channel.Endpoint) {
 func genStackV4(t *testing.T) (*stack.Stack, *channel.Endpoint) {
 	t.Helper()
 	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol},
 	})
 	e := channel.New(0, header.IPv4MinimumMTU, linkAddr)
 	nicOpts := stack.NICOptions{Name: nicName}
@@ -2036,6 +2038,7 @@ func udpv4Packet(srcAddr, dstAddr tcpip.Address, srcPort, dstPort uint16, dataSi
 	udp := header.UDP(hdr.Prepend(udpSize))
 	udp.SetSourcePort(srcPort)
 	udp.SetDestinationPort(dstPort)
+	udp.SetLength(uint16(udpSize))
 	udp.SetChecksum(0)
 	udp.SetChecksum(^udp.CalculateChecksum(header.PseudoHeaderChecksum(
 		header.UDPProtocolNumber,
@@ -2100,6 +2103,7 @@ func udpv6Packet(srcAddr, dstAddr tcpip.Address, srcPort, dstPort uint16, dataSi
 	udp := header.UDP(hdr.Prepend(udpSize))
 	udp.SetSourcePort(srcPort)
 	udp.SetDestinationPort(dstPort)
+	udp.SetLength(uint16(udpSize))
 	udp.SetChecksum(0)
 	udp.SetChecksum(^udp.CalculateChecksum(header.PseudoHeaderChecksum(
 		header.UDPProtocolNumber,
@@ -3303,4 +3307,192 @@ func TestRejectWith(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestInvalidTransportHeader tests that bad transport headers (with a bad
+// length/offset field) don't panic.
+func TestInvalidTransportHeader(t *testing.T) {
+	tests := []struct {
+		name       string
+		setupStack func(*testing.T) (*stack.Stack, *channel.Endpoint)
+		genPacket  func(int8) *stack.PacketBuffer
+		offset     int8
+	}{
+		{
+			name:       "TCP4 offset small",
+			setupStack: genStackV4,
+			genPacket:  genTCP4,
+			offset:     -1,
+		},
+		{
+			name:       "TCP4 offset large",
+			setupStack: genStackV4,
+			genPacket:  genTCP4,
+			offset:     1,
+		},
+		{
+			name:       "UDP4 offset small",
+			setupStack: genStackV4,
+			genPacket:  genUDP4,
+			offset:     -1,
+		},
+		{
+			name:       "UDP4 offset large",
+			setupStack: genStackV4,
+			genPacket:  genUDP4,
+			offset:     1,
+		},
+		{
+			name:       "TCP6 offset small",
+			setupStack: genStackV6,
+			genPacket:  genTCP6,
+			offset:     -1,
+		},
+		{
+			name:       "TCP6 offset large",
+			setupStack: genStackV6,
+			genPacket:  genTCP6,
+			offset:     1,
+		},
+		{
+			name:       "UDP6 offset small",
+			setupStack: genStackV6,
+			genPacket:  genUDP6,
+			offset:     -1,
+		},
+		{
+			name:       "UDP6 offset large",
+			setupStack: genStackV6,
+			genPacket:  genUDP6,
+			offset:     1,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s, e := test.setupStack(t)
+
+			// Enable iptables and conntrack.
+			ipt := s.IPTables()
+			filter := ipt.GetTable(stack.FilterID, false /* ipv6 */)
+			ipt.ReplaceTable(stack.FilterID, filter, false /* ipv6 */)
+
+			// This can panic if conntrack isn't checking lengths.
+			e.InjectInbound(header.IPv4ProtocolNumber, test.genPacket(test.offset))
+		})
+	}
+}
+
+func genTCP4(offset int8) *stack.PacketBuffer {
+	pktSize := header.IPv4MinimumSize + header.TCPMinimumSize
+	hdr := prependable.New(pktSize)
+
+	tcp := header.TCP(hdr.Prepend(header.TCPMinimumSize))
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     0,
+		AckNum:     0,
+		DataOffset: header.TCPMinimumSize + uint8(offset)*4, // DataOffset must be a multiple of 4.
+		Flags:      header.TCPFlagSyn,
+		Checksum:   0,
+	})
+
+	ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
+	ip.Encode(&header.IPv4Fields{
+		TOS:            0,
+		TotalLength:    uint16(pktSize),
+		ID:             1,
+		Flags:          0,
+		FragmentOffset: 0,
+		TTL:            48,
+		Protocol:       uint8(header.TCPProtocolNumber),
+		SrcAddr:        srcAddrV4,
+		DstAddr:        dstAddrV4,
+	})
+	ip.SetChecksum(0)
+	ip.SetChecksum(^ip.CalculateChecksum())
+
+	vv := buffer.NewViewFromBytes(hdr.View()).ToVectorisedView()
+	return stack.NewPacketBuffer(stack.PacketBufferOptions{Data: vv})
+}
+
+func genTCP6(offset int8) *stack.PacketBuffer {
+	pktSize := header.IPv6MinimumSize + header.TCPMinimumSize
+	hdr := prependable.New(pktSize)
+
+	tcp := header.TCP(hdr.Prepend(header.TCPMinimumSize))
+	tcp.Encode(&header.TCPFields{
+		SeqNum:     0,
+		AckNum:     0,
+		DataOffset: header.TCPMinimumSize + uint8(offset)*4, // DataOffset must be a multiple of 4.
+		Flags:      header.TCPFlagSyn,
+		Checksum:   0,
+	})
+
+	ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+	ip.Encode(&header.IPv6Fields{
+		PayloadLength:     header.TCPMinimumSize,
+		TransportProtocol: header.TCPProtocolNumber,
+		HopLimit:          255,
+		SrcAddr:           srcAddrV6,
+		DstAddr:           dstAddrV6,
+	})
+
+	vv := buffer.NewViewFromBytes(hdr.View()).ToVectorisedView()
+	return stack.NewPacketBuffer(stack.PacketBufferOptions{Data: vv})
+}
+
+func genUDP4(offset int8) *stack.PacketBuffer {
+	pktSize := header.IPv4MinimumSize + header.UDPMinimumSize
+	hdr := prependable.New(pktSize)
+
+	udp := header.UDP(hdr.Prepend(header.UDPMinimumSize))
+	udp.Encode(&header.UDPFields{
+		SrcPort:  343,
+		DstPort:  2401,
+		Length:   header.UDPMinimumSize + uint16(offset),
+		Checksum: 0,
+	})
+
+	ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
+	ip.Encode(&header.IPv4Fields{
+		TOS:            0,
+		TotalLength:    uint16(pktSize),
+		ID:             1,
+		Flags:          0,
+		FragmentOffset: 0,
+		TTL:            48,
+		Protocol:       uint8(header.UDPProtocolNumber),
+		SrcAddr:        srcAddrV4,
+		DstAddr:        dstAddrV4,
+	})
+	ip.SetChecksum(0)
+	ip.SetChecksum(^ip.CalculateChecksum())
+
+	vv := buffer.NewViewFromBytes(hdr.View()).ToVectorisedView()
+	return stack.NewPacketBuffer(stack.PacketBufferOptions{Data: vv})
+}
+
+func genUDP6(offset int8) *stack.PacketBuffer {
+	pktSize := header.IPv6MinimumSize + header.UDPMinimumSize
+	hdr := prependable.New(pktSize)
+
+	udp := header.UDP(hdr.Prepend(header.UDPMinimumSize))
+	udp.Encode(&header.UDPFields{
+		SrcPort:  343,
+		DstPort:  2401,
+		Length:   header.UDPMinimumSize + uint16(offset),
+		Checksum: 0,
+	})
+
+	ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+	ip.Encode(&header.IPv6Fields{
+		PayloadLength:     header.UDPMinimumSize,
+		TransportProtocol: header.UDPProtocolNumber,
+		HopLimit:          255,
+		SrcAddr:           srcAddrV6,
+		DstAddr:           dstAddrV6,
+	})
+
+	vv := buffer.NewViewFromBytes(hdr.View()).ToVectorisedView()
+	return stack.NewPacketBuffer(stack.PacketBufferOptions{Data: vv})
 }

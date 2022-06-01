@@ -48,6 +48,7 @@ func v6PacketBufferWithSrcAddr(srcAddr tcpip.Address) *PacketBuffer {
 	udp := header.UDP(pkt.TransportHeader().Push(header.UDPMinimumSize))
 	udp.SetSourcePort(srcPort)
 	udp.SetDestinationPort(dstPort)
+	udp.SetLength(uint16(len(udp)))
 	udp.SetChecksum(0)
 	udp.SetChecksum(^udp.CalculateChecksum(header.PseudoHeaderChecksum(
 		header.UDPProtocolNumber,
