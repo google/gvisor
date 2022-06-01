@@ -27,7 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -466,7 +465,7 @@ func testWriteWithoutDestination(c *context.Context, flow context.TestFlow, chec
 
 // TODO(https://gvisor.dev/issue/5623): Extract the test write methods in the
 // testing context.
-func testWriteNoVerify(c *context.Context, flow context.TestFlow, setDest bool) buffer.View {
+func testWriteNoVerify(c *context.Context, flow context.TestFlow, setDest bool) []byte {
 	c.T.Helper()
 	// Take a snapshot of the stats to validate them at the end of the test.
 	var epstats tcpip.TransportEndpointStats
@@ -515,8 +514,8 @@ func testWriteAndVerifyInternal(c *context.Context, flow context.TestFlow, setDe
 		c.T.Errorf("got p.TransportProtocolNumber = %d, want = %d", got, want)
 	}
 
-	vv := buffer.NewVectorisedView(p.Size(), p.Views())
-	b := vv.ToView()
+	buf := p.Buffer()
+	b := buf.Flatten()
 
 	h := flow.MakeHeader4Tuple(context.Outgoing)
 	checkers = append(
@@ -1376,9 +1375,9 @@ func TestV4UnknownDestination(t *testing.T) {
 				t.Fatalf("packet wasn't written out")
 			}
 
-			vv := buffer.NewVectorisedView(p.Size(), p.Views())
+			buf := p.Buffer()
 			p.DecRef()
-			pkt := vv.ToView()
+			pkt := buf.Flatten()
 			if got, want := len(pkt), header.IPv4MinimumProcessableDatagramSize; got > want {
 				t.Fatalf("got an ICMP packet of size: %d, want: sz <= %d", got, want)
 			}
@@ -1471,9 +1470,9 @@ func TestV6UnknownDestination(t *testing.T) {
 				t.Fatalf("packet wasn't written out")
 			}
 
-			vv := buffer.NewVectorisedView(p.Size(), p.Views())
+			buf := p.Buffer()
 			p.DecRef()
-			pkt := vv.ToView()
+			pkt := buf.Flatten()
 			if got, want := len(pkt), header.IPv6MinimumMTU; got > want {
 				t.Fatalf("got an ICMP packet of size: %d, want: sz <= %d", got, want)
 			}
@@ -1550,7 +1549,7 @@ func TestShortHeader(t *testing.T) {
 
 	// Allocate a buffer for an IPv6 and too-short UDP header.
 	const udpSize = header.UDPMinimumSize - 1
-	buf := buffer.NewView(header.IPv6MinimumSize + udpSize)
+	buf := make([]byte, header.IPv6MinimumSize+udpSize)
 	// Initialize the IP header.
 	ip := header.IPv6(buf)
 	ip.Encode(&header.IPv6Fields{
@@ -1563,7 +1562,7 @@ func TestShortHeader(t *testing.T) {
 	})
 
 	// Initialize the UDP header.
-	udpHdr := header.UDP(buffer.NewView(header.UDPMinimumSize))
+	udpHdr := header.UDP(make([]byte, header.UDPMinimumSize))
 	udpHdr.Encode(&header.UDPFields{
 		SrcPort: h.Src.Port,
 		DstPort: h.Dst.Port,

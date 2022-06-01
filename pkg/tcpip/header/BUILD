@@ -30,6 +30,7 @@ go_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/buffer",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/seqnum",

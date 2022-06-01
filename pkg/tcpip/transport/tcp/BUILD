@@ -72,6 +72,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/atomicbitops",
+        "//pkg/buffer",
         "//pkg/log",
         "//pkg/rand",
         "//pkg/refsvfs2",
@@ -105,7 +106,6 @@ go_test(
         "//pkg/refs",
         "//pkg/refsvfs2",
         "//pkg/sleep",
-        "//pkg/tcpip/buffer",
         "//pkg/tcpip/faketime",
         "//pkg/tcpip/stack",
         "@com_github_google_go_cmp//cmp:go_default_library",

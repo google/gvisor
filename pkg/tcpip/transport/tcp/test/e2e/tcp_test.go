@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
@@ -4688,7 +4689,7 @@ func TestReceivedInvalidSegmentCountIncrement(t *testing.T) {
 	stats := c.Stack().Stats()
 	want := stats.TCP.InvalidSegmentsReceived.Value() + 1
 	iss := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
-	vv := c.BuildSegment(nil, &context.Headers{
+	buf := c.BuildSegment(nil, &context.Headers{
 		SrcPort: context.TestPort,
 		DstPort: c.Port,
 		Flags:   header.TCPFlagAck,
@@ -4696,10 +4697,10 @@ func TestReceivedInvalidSegmentCountIncrement(t *testing.T) {
 		AckNum:  c.IRS.Add(1),
 		RcvWnd:  30000,
 	})
-	tcpbuf := vv.ToView()[header.IPv4MinimumSize:]
-	tcpbuf[header.TCPDataOffset] = ((header.TCPMinimumSize - 1) / 4) << 4
+	tcpbuf := buf.Flatten()
+	tcpbuf[header.IPv4MinimumSize+header.TCPDataOffset] = ((header.TCPMinimumSize - 1) / 4) << 4
 
-	c.SendSegment(vv)
+	c.SendSegment(buffer.NewWithData(tcpbuf))
 
 	if got := stats.TCP.InvalidSegmentsReceived.Value(); got != want {
 		t.Errorf("got stats.TCP.InvalidSegmentsReceived.Value() = %d, want = %d", got, want)
@@ -4716,7 +4717,7 @@ func TestReceivedIncorrectChecksumIncrement(t *testing.T) {
 	stats := c.Stack().Stats()
 	want := stats.TCP.ChecksumErrors.Value() + 1
 	iss := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
-	vv := c.BuildSegment([]byte{0x1, 0x2, 0x3}, &context.Headers{
+	buf := c.BuildSegment([]byte{0x1, 0x2, 0x3}, &context.Headers{
 		SrcPort: context.TestPort,
 		DstPort: c.Port,
 		Flags:   header.TCPFlagAck,
@@ -4724,12 +4725,12 @@ func TestReceivedIncorrectChecksumIncrement(t *testing.T) {
 		AckNum:  c.IRS.Add(1),
 		RcvWnd:  30000,
 	})
-	tcpbuf := vv.ToView()[header.IPv4MinimumSize:]
+	tcpbuf := buf.Flatten()
 	// Overwrite a byte in the payload which should cause checksum
 	// verification to fail.
-	tcpbuf[(tcpbuf[header.TCPDataOffset]>>4)*4] = 0x4
+	tcpbuf[header.IPv4MinimumSize+((tcpbuf[header.IPv4MinimumSize+header.TCPDataOffset]>>4)*4)] = 0x4
 
-	c.SendSegment(vv)
+	c.SendSegment(buffer.NewWithData(tcpbuf))
 
 	if got := stats.TCP.ChecksumErrors.Value(); got != want {
 		t.Errorf("got stats.TCP.ChecksumErrors.Value() = %d, want = %d", got, want)

@@ -52,7 +52,6 @@ go_test(
         "//pkg/refs",
         "//pkg/refsvfs2",
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
         "//pkg/tcpip/checker",
         "//pkg/tcpip/faketime",
         "//pkg/tcpip/header",

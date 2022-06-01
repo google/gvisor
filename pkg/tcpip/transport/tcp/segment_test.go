@@ -18,7 +18,6 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -44,9 +43,9 @@ func checkSegmentSize(t *testing.T, name string, seg *segment, want segmentSizeW
 func TestSegmentMerge(t *testing.T) {
 	var clock faketime.NullClock
 	id := stack.TransportEndpointID{}
-	seg1 := newOutgoingSegment(id, &clock, buffer.NewView(10))
+	seg1 := newOutgoingSegment(id, &clock, make([]byte, 10))
 	defer seg1.DecRef()
-	seg2 := newOutgoingSegment(id, &clock, buffer.NewView(20))
+	seg2 := newOutgoingSegment(id, &clock, make([]byte, 20))
 	defer seg2.DecRef()
 
 	checkSegmentSize(t, "seg1", seg1, segmentSizeWants{

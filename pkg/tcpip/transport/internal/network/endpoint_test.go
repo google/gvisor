@@ -20,10 +20,10 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -49,8 +49,8 @@ var (
 func TestEndpointStateTransitions(t *testing.T) {
 	const nicID = 1
 
-	data := buffer.View([]byte{1, 2, 4, 5})
-	v4Checker := func(t *testing.T, b buffer.View) {
+	data := []byte{1, 2, 4, 5}
+	v4Checker := func(t *testing.T, b []byte) {
 		checker.IPv4(t, b,
 			checker.SrcAddr(ipv4NICAddr),
 			checker.DstAddr(ipv4RemoteAddr),
@@ -58,7 +58,7 @@ func TestEndpointStateTransitions(t *testing.T) {
 		)
 	}
 
-	v6Checker := func(t *testing.T, b buffer.View) {
+	v6Checker := func(t *testing.T, b []byte) {
 		checker.IPv6(t, b,
 			checker.SrcAddr(ipv6NICAddr),
 			checker.DstAddr(ipv6RemoteAddr),
@@ -76,7 +76,7 @@ func TestEndpointStateTransitions(t *testing.T) {
 		expectedBoundAddr       tcpip.Address
 		remoteAddr              tcpip.Address
 		expectedRemoteAddr      tcpip.Address
-		checker                 func(*testing.T, buffer.View)
+		checker                 func(*testing.T, []byte)
 	}{
 		{
 			name:                    "IPv4",
@@ -205,7 +205,7 @@ func TestEndpointStateTransitions(t *testing.T) {
 			}
 			injectPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 				ReserveHeaderBytes: int(info.MaxHeaderLength),
-				Data:               data.ToVectorisedView(),
+				Payload:            buffer.NewWithData(data),
 			})
 			defer injectPkt.DecRef()
 			if err := ctx.WritePacket(injectPkt, false /* headerIncluded */); err != nil {

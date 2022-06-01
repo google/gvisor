@@ -9,6 +9,7 @@ go_test(
     shard_count = more_shards,
     deps = [
         ":e2e",
+        "//pkg/buffer",
         "//pkg/rand",
         "//pkg/refs",
         "//pkg/refsvfs2",

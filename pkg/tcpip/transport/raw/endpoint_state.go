@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -31,22 +30,6 @@ func (p *rawPacket) saveReceivedAt() int64 {
 // loadReceivedAt is invoked by stateify.
 func (p *rawPacket) loadReceivedAt(nsec int64) {
 	p.receivedAt = time.Unix(0, nsec)
-}
-
-// saveData saves rawPacket.data field.
-func (p *rawPacket) saveData() buffer.VectorisedView {
-	// We cannot save p.data directly as p.data.views may alias to p.views,
-	// which is not allowed by state framework (in-struct pointer).
-	return p.data.Clone(nil)
-}
-
-// loadData loads rawPacket.data field.
-func (p *rawPacket) loadData(data buffer.VectorisedView) {
-	// NOTE: We cannot do the p.data = data.Clone(p.views[:]) optimization
-	// here because data.views is not guaranteed to be loaded by now. Plus,
-	// data.views will be allocated anyway so there really is little point
-	// of utilizing p.views for data.views.
-	p.data = data
 }
 
 // afterLoad is invoked by stateify.

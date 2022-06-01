@@ -23,9 +23,9 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/time/rate"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -251,9 +251,9 @@ func (c *Context) CheckEndpointReadStats(incr uint64, want *tcpip.TransportEndpo
 }
 
 // InjectPacket injects a packet into the context's link endpoint.
-func (c *Context) InjectPacket(netProto tcpip.NetworkProtocolNumber, buf buffer.View) {
+func (c *Context) InjectPacket(netProto tcpip.NetworkProtocolNumber, buf []byte) {
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buf.ToVectorisedView(),
+		Payload: buffer.NewWithData(buf),
 	})
 	defer pkt.DecRef()
 	c.LinkEP.InjectInbound(netProto, pkt)

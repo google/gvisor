@@ -26,6 +26,7 @@ go_library(
     imports = ["gvisor.dev/gvisor/pkg/tcpip/buffer"],
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/buffer",
         "//pkg/log",
         "//pkg/sleep",
         "//pkg/sync",
@@ -51,7 +52,6 @@ go_test(
         "//pkg/refs",
         "//pkg/refsvfs2",
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
         "//pkg/tcpip/checker",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/channel",
