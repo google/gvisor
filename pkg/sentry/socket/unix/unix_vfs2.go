@@ -287,6 +287,9 @@ func (s *SocketVFS2) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.
 		From:      nil,
 	}
 	n, err := dst.CopyOutFrom(ctx, r)
+	if r.Notify != nil {
+		r.Notify()
+	}
 	// Drop control messages.
 	r.Control.Release(ctx)
 	return n, err
@@ -309,16 +312,26 @@ func (s *SocketVFS2) Write(ctx context.Context, src usermem.IOSequence, opts vfs
 	ctrl := control.New(t, s.ep, nil)
 
 	if src.NumBytes() == 0 {
-		nInt, err := s.ep.SendMsg(ctx, [][]byte{}, ctrl, nil)
+		nInt, notify, err := s.ep.SendMsg(ctx, [][]byte{}, ctrl, nil)
+		if notify != nil {
+			notify()
+		}
 		return int64(nInt), err.ToError()
 	}
 
-	return src.CopyInTo(ctx, &EndpointWriter{
+	w := &EndpointWriter{
 		Ctx:      ctx,
 		Endpoint: s.ep,
 		Control:  ctrl,
 		To:       nil,
-	})
+	}
+
+	n, err := src.CopyInTo(ctx, w)
+	if w.Notify != nil {
+		w.Notify()
+	}
+	return n, err
+
 }
 
 // Readiness implements waiter.Waitable.Readiness.

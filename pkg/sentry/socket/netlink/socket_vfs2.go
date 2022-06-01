@@ -132,9 +132,14 @@ func (s *SocketVFS2) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.
 	if dst.NumBytes() == 0 {
 		return 0, nil
 	}
-	return dst.CopyOutFrom(ctx, &unix.EndpointReader{
+	r := unix.EndpointReader{
 		Endpoint: s.ep,
-	})
+	}
+	n, err := dst.CopyOutFrom(ctx, &r)
+	if r.Notify != nil {
+		r.Notify()
+	}
+	return n, err
 }
 
 // PWrite implements vfs.FileDescriptionImpl.

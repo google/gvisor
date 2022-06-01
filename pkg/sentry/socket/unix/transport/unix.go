@@ -130,13 +130,19 @@ type Endpoint interface {
 	// CMTruncated indicates that the numRights hint was used to receive fewer
 	// than the total available SCM_RIGHTS FDs. Additional truncation may be
 	// required by the caller.
-	RecvMsg(ctx context.Context, data [][]byte, creds bool, numRights int, peek bool, addr *tcpip.FullAddress) (recvLen, msgLen int64, cm ControlMessages, CMTruncated bool, err *syserr.Error)
+	//
+	// If set, notify is a callback that should be called after RecvMesg
+	// completes without mm.activeMu held.
+	RecvMsg(ctx context.Context, data [][]byte, creds bool, numRights int, peek bool, addr *tcpip.FullAddress) (recvLen, msgLen int64, cm ControlMessages, CMTruncated bool, notify func(), err *syserr.Error)
 
 	// SendMsg writes data and a control message to the endpoint's peer.
 	// This method does not block if the data cannot be written.
 	//
 	// SendMsg does not take ownership of any of its arguments on error.
-	SendMsg(context.Context, [][]byte, ControlMessages, BoundEndpoint) (int64, *syserr.Error)
+	//
+	// If set, notify is a callback that should be called after RecvMesg
+	// completes without mm.activeMu held.
+	SendMsg(context.Context, [][]byte, ControlMessages, BoundEndpoint) (int64, func(), *syserr.Error)
 
 	// Connect connects this endpoint directly to another.
 	//
@@ -826,53 +832,55 @@ func (e *baseEndpoint) Connected() bool {
 }
 
 // RecvMsg reads data and a control message from the endpoint.
-func (e *baseEndpoint) RecvMsg(ctx context.Context, data [][]byte, creds bool, numRights int, peek bool, addr *tcpip.FullAddress) (int64, int64, ControlMessages, bool, *syserr.Error) {
+func (e *baseEndpoint) RecvMsg(ctx context.Context, data [][]byte, creds bool, numRights int, peek bool, addr *tcpip.FullAddress) (int64, int64, ControlMessages, bool, func(), *syserr.Error) {
 	e.Lock()
 
 	receiver := e.receiver
 	if receiver == nil {
 		e.Unlock()
-		return 0, 0, ControlMessages{}, false, syserr.ErrNotConnected
+		return 0, 0, ControlMessages{}, false, nil, syserr.ErrNotConnected
 	}
 
 	recvLen, msgLen, cms, cmt, a, notify, err := receiver.Recv(ctx, data, creds, numRights, peek)
 	e.Unlock()
 	if err != nil {
-		return 0, 0, ControlMessages{}, false, err
+		return 0, 0, ControlMessages{}, false, nil, err
 	}
 
+	var notifyFn func()
 	if notify {
-		receiver.RecvNotify()
+		notifyFn = receiver.RecvNotify
 	}
 
 	if addr != nil {
 		*addr = a
 	}
-	return recvLen, msgLen, cms, cmt, nil
+	return recvLen, msgLen, cms, cmt, notifyFn, nil
 }
 
 // SendMsg writes data and a control message to the endpoint's peer.
 // This method does not block if the data cannot be written.
-func (e *baseEndpoint) SendMsg(ctx context.Context, data [][]byte, c ControlMessages, to BoundEndpoint) (int64, *syserr.Error) {
+func (e *baseEndpoint) SendMsg(ctx context.Context, data [][]byte, c ControlMessages, to BoundEndpoint) (int64, func(), *syserr.Error) {
 	e.Lock()
 	if !e.Connected() {
 		e.Unlock()
-		return 0, syserr.ErrNotConnected
+		return 0, nil, syserr.ErrNotConnected
 	}
 	if to != nil {
 		e.Unlock()
-		return 0, syserr.ErrAlreadyConnected
+		return 0, nil, syserr.ErrAlreadyConnected
 	}
 
 	connected := e.connected
 	n, notify, err := connected.Send(ctx, data, c, tcpip.FullAddress{Addr: tcpip.Address(e.path)})
 	e.Unlock()
 
+	var notifyFn func()
 	if notify {
-		connected.SendNotify()
+		notifyFn = connected.SendNotify
 	}
 
-	return n, err
+	return n, notifyFn, err
 }
 
 // SetSockOpt sets a socket option.

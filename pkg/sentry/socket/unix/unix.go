@@ -460,16 +460,25 @@ func (s *SocketOperations) Write(ctx context.Context, _ *fs.File, src usermem.IO
 	ctrl := control.New(t, s.ep, nil)
 
 	if src.NumBytes() == 0 {
-		nInt, err := s.ep.SendMsg(ctx, [][]byte{}, ctrl, nil)
+		nInt, notify, err := s.ep.SendMsg(ctx, [][]byte{}, ctrl, nil)
+		if notify != nil {
+			notify()
+		}
 		return int64(nInt), err.ToError()
 	}
 
-	return src.CopyInTo(ctx, &EndpointWriter{
+	w := &EndpointWriter{
 		Ctx:      ctx,
 		Endpoint: s.ep,
 		Control:  ctrl,
 		To:       nil,
-	})
+	}
+
+	n, err := src.CopyInTo(ctx, w)
+	if w.Notify != nil {
+		w.Notify()
+	}
+	return n, err
 }
 
 // SendMsg implements the linux syscall sendmsg(2) for unix sockets backed by
@@ -505,6 +514,9 @@ func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []b
 	}
 
 	n, err := src.CopyInTo(t, &w)
+	if w.Notify != nil {
+		w.Notify()
+	}
 	if err != linuxerr.ErrWouldBlock || flags&linux.MSG_DONTWAIT != 0 {
 		return int(n), syserr.FromError(err)
 	}
@@ -524,6 +536,9 @@ func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []b
 		src = src.DropFirst64(n)
 
 		n, err = src.CopyInTo(t, &w)
+		if w.Notify != nil {
+			w.Notify()
+		}
 		total += n
 		if err != linuxerr.ErrWouldBlock {
 			break
@@ -596,6 +611,9 @@ func (s *SocketOperations) Read(ctx context.Context, _ *fs.File, dst usermem.IOS
 		From:      nil,
 	}
 	n, err := dst.CopyOutFrom(ctx, r)
+	if r.Notify != nil {
+		r.Notify()
+	}
 	// Drop control messages.
 	r.Control.Release(ctx)
 	return n, err
@@ -641,7 +659,11 @@ func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags 
 	}
 
 	doRead := func() (int64, error) {
-		return dst.CopyOutFrom(t, &r)
+		n, err := dst.CopyOutFrom(t, &r)
+		if r.Notify != nil {
+			r.Notify()
+		}
+		return n, err
 	}
 
 	// If MSG_TRUNC is set with a zero byte destination then we still need
