@@ -654,13 +654,13 @@ func (h *handshake) transitionToStateEstablishedLocked(s *segment) {
 		h.ep.snd.updateRTO(rtt)
 	}
 
-	h.ep.rcvQueueInfo.rcvQueueMu.Lock()
+	h.ep.rcvQueueMu.Lock()
 	h.ep.rcv = newReceiver(h.ep, h.ackNum-1, h.rcvWnd, h.effectiveRcvWndScale())
 	// Bootstrap the auto tuning algorithm. Starting at zero will
 	// result in a really large receive window after the first auto
 	// tuning adjustment.
-	h.ep.rcvQueueInfo.RcvAutoParams.PrevCopiedBytes = int(h.rcvWnd)
-	h.ep.rcvQueueInfo.rcvQueueMu.Unlock()
+	h.ep.RcvAutoParams.PrevCopiedBytes = int(h.rcvWnd)
+	h.ep.rcvQueueMu.Unlock()
 
 	h.ep.setEndpointState(StateEstablished)
 
