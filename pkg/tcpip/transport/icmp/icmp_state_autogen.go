@@ -4,7 +4,6 @@ package icmp
 
 import (
 	"gvisor.dev/gvisor/pkg/state"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 )
 
 func (p *icmpPacket) StateTypeName() string {
@@ -28,15 +27,13 @@ func (p *icmpPacket) beforeSave() {}
 // +checklocksignore
 func (p *icmpPacket) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
-	var dataValue buffer.VectorisedView
-	dataValue = p.saveData()
-	stateSinkObject.SaveValue(3, dataValue)
 	var receivedAtValue int64
 	receivedAtValue = p.saveReceivedAt()
 	stateSinkObject.SaveValue(4, receivedAtValue)
 	stateSinkObject.Save(0, &p.icmpPacketEntry)
 	stateSinkObject.Save(1, &p.senderAddress)
 	stateSinkObject.Save(2, &p.packetInfo)
+	stateSinkObject.Save(3, &p.data)
 	stateSinkObject.Save(5, &p.tosOrTClass)
 	stateSinkObject.Save(6, &p.ttlOrHopLimit)
 }
@@ -48,9 +45,9 @@ func (p *icmpPacket) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.icmpPacketEntry)
 	stateSourceObject.Load(1, &p.senderAddress)
 	stateSourceObject.Load(2, &p.packetInfo)
+	stateSourceObject.Load(3, &p.data)
 	stateSourceObject.Load(5, &p.tosOrTClass)
 	stateSourceObject.Load(6, &p.ttlOrHopLimit)
-	stateSourceObject.LoadValue(3, new(buffer.VectorisedView), func(y interface{}) { p.loadData(y.(buffer.VectorisedView)) })
 	stateSourceObject.LoadValue(4, new(int64), func(y interface{}) { p.loadReceivedAt(y.(int64)) })
 }
 

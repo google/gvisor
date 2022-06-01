@@ -20,9 +20,9 @@ import (
 	"math"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/ports"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -458,7 +458,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 	defer udpInfo.ctx.Release()
 
 	pktInfo := udpInfo.ctx.PacketInfo()
-	pkt := udpInfo.ctx.TryNewPacketBuffer(header.UDPMinimumSize+int(pktInfo.MaxHeaderLength), udpInfo.data.ToVectorisedView())
+	pkt := udpInfo.ctx.TryNewPacketBuffer(header.UDPMinimumSize+int(pktInfo.MaxHeaderLength), buffer.NewWithData(udpInfo.data))
 	if pkt == nil {
 		return 0, &tcpip.ErrWouldBlock{}
 	}
@@ -576,7 +576,7 @@ func (e *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
 // udpPacketInfo holds information needed to send a UDP packet.
 type udpPacketInfo struct {
 	ctx        network.WriteContext
-	data       buffer.View
+	data       []byte
 	localPort  uint16
 	remotePort uint16
 }
