@@ -49,13 +49,12 @@ steps:
     command: make smoke-tests
     agents:
       arch: "amd64"
+  - wait
   - <<: *common
     label: ":fire: Smoke tests (ARM64)"
     command: make smoke-tests
     agents:
       arch: "arm64"
-
-  - wait
   - <<: *common
     label: ":fire: Smoke race tests"
     command: make smoke-race-tests
