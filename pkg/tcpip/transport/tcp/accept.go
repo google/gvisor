@@ -214,7 +214,10 @@ func (l *listenContext) createConnectingEndpoint(s *segment, rcvdSynOpts header.
 	// Bootstrap the auto tuning algorithm. Starting at zero will result in
 	// a large step function on the first window adjustment causing the
 	// window to grow to a really large value.
-	n.rcvQueueInfo.RcvAutoParams.PrevCopiedBytes = n.initialReceiveWindow()
+	initWnd := n.initialReceiveWindow()
+	n.rcvQueueMu.Lock()
+	n.RcvAutoParams.PrevCopiedBytes = initWnd
+	n.rcvQueueMu.Unlock()
 
 	return n, nil
 }
@@ -432,9 +435,9 @@ func (a *acceptQueue) isFull() bool {
 //
 // +checklocks:e.mu
 func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Error {
-	e.rcvQueueInfo.rcvQueueMu.Lock()
-	rcvClosed := e.rcvQueueInfo.RcvClosed
-	e.rcvQueueInfo.rcvQueueMu.Unlock()
+	e.rcvQueueMu.Lock()
+	rcvClosed := e.RcvClosed
+	e.rcvQueueMu.Unlock()
 	if rcvClosed || s.flags.Contains(header.TCPFlagSyn|header.TCPFlagAck) {
 		// If the endpoint is shutdown, reply with reset.
 		//

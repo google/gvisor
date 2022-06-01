@@ -293,18 +293,6 @@ func (sq *sndQueueInfo) CloneState(other *stack.TCPSndBufState) {
 	other.AutoTuneSndBufDisabled = atomicbitops.FromUint32(sq.AutoTuneSndBufDisabled.RacyLoad())
 }
 
-// rcvQueueInfo contains the endpoint's rcvQueue and associated metadata.
-//
-// +stateify savable
-type rcvQueueInfo struct {
-	rcvQueueMu sync.Mutex `state:"nosave"`
-	stack.TCPRcvBufState
-
-	// rcvQueue is the queue for ready-for-delivery segments. This struct's
-	// mutex must be held in order append segments to list.
-	rcvQueue segmentList `state:"wait"`
-}
-
 // endpoint represents a TCP endpoint. This struct serves as the interface
 // between users of the endpoint and the protocol implementation; it is legal to
 // have concurrent goroutines make calls into the endpoint, they are properly
@@ -321,7 +309,8 @@ type rcvQueueInfo struct {
 // acquired with e.mu then e.mu must be acquired first.
 //
 // e.acceptMu -> Protects e.acceptQueue.
-// e.rcvQueueMu -> Protects e.rcvQueue and associated fields.
+// e.rcvQueueMu -> Protects e.rcvQueue's associated fields but not e.rcvQueue
+// itself.
 // e.sndQueueMu -> Protects the e.sndQueue and associated fields.
 // e.lastErrorMu -> Protects the lastError field.
 //
@@ -380,22 +369,10 @@ type endpoint struct {
 	lastErrorMu sync.Mutex `state:"nosave"`
 	lastError   tcpip.Error
 
-	// rcvReadMu synchronizes calls to Read.
-	//
-	// mu and rcvQueueMu are temporarily released during data copying. rcvReadMu
-	// must be held during each read to ensure atomicity, so that multiple reads
-	// do not interleave.
-	//
-	// rcvReadMu should be held before holding mu.
-	rcvReadMu sync.Mutex `state:"nosave"`
+	rcvQueueMu sync.Mutex `state:"nosave"`
 
-	// rcvQueueInfo holds the implementation of the endpoint's receive buffer.
-	// The data within rcvQueueInfo should only be accessed while rcvReadMu, mu,
-	// and rcvQueueMu are held, in that stated order. While processing the segment
-	// range, you can determine a range and then temporarily release mu and
-	// rcvQueueMu, which allows new segments to be appended to the queue while
-	// processing.
-	rcvQueueInfo rcvQueueInfo
+	// +checklocks:rcvQueueMu
+	stack.TCPRcvBufState
 
 	// rcvMemUsed tracks the total amount of memory in use by received segments
 	// held in rcvQueue, pendingRcvdSegments and the segment queue. This is used to
@@ -411,6 +388,11 @@ type endpoint struct {
 	// released by the handshake completion goroutine.
 	mu          sync.CrossGoroutineMutex `state:"nosave"`
 	ownedByUser atomicbitops.Uint32
+
+	// rcvQueue is the queue for ready-for-delivery segments.
+	//
+	// +checklocks:mu
+	rcvQueue segmentList `state:"wait"`
 
 	// state must be read/set using the EndpointState()/setEndpointState()
 	// methods.
@@ -856,7 +838,7 @@ func newEndpoint(s *stack.Stack, protocol *protocol, netProto tcpip.NetworkProto
 
 	var mrb tcpip.TCPModerateReceiveBufferOption
 	if err := s.TransportProtocolOption(ProtocolNumber, &mrb); err == nil {
-		e.rcvQueueInfo.RcvAutoParams.Disabled = !bool(mrb)
+		e.RcvAutoParams.Disabled = !bool(mrb)
 	}
 
 	var de tcpip.TCPDelayEnabled
@@ -928,11 +910,11 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 
 		// Determine if the endpoint is readable if requested.
 		if (mask & waiter.ReadableEvents) != 0 {
-			e.rcvQueueInfo.rcvQueueMu.Lock()
-			if e.rcvQueueInfo.RcvBufUsed > 0 || e.rcvQueueInfo.RcvClosed {
+			e.rcvQueueMu.Lock()
+			if e.RcvBufUsed > 0 || e.RcvClosed {
 				result |= waiter.ReadableEvents
 			}
-			e.rcvQueueInfo.rcvQueueMu.Unlock()
+			e.rcvQueueMu.Unlock()
 		}
 	}
 
@@ -952,17 +934,17 @@ func (e *endpoint) purgePendingRcvQueue() {
 // +checklocks:e.mu
 func (e *endpoint) purgeReadQueue() {
 	if e.rcv != nil {
-		e.rcvQueueInfo.rcvQueueMu.Lock()
-		defer e.rcvQueueInfo.rcvQueueMu.Unlock()
+		e.rcvQueueMu.Lock()
+		defer e.rcvQueueMu.Unlock()
 		for {
-			s := e.rcvQueueInfo.rcvQueue.Front()
+			s := e.rcvQueue.Front()
 			if s == nil {
 				break
 			}
-			e.rcvQueueInfo.rcvQueue.Remove(s)
+			e.rcvQueue.Remove(s)
 			s.DecRef()
 		}
-		e.rcvQueueInfo.RcvBufUsed = 0
+		e.RcvBufUsed = 0
 	}
 }
 
@@ -1236,19 +1218,19 @@ func (e *endpoint) ModerateRecvBuf(copied int) {
 
 	sendNonZeroWindowUpdate := false
 
-	e.rcvQueueInfo.rcvQueueMu.Lock()
-	if e.rcvQueueInfo.RcvAutoParams.Disabled {
-		e.rcvQueueInfo.rcvQueueMu.Unlock()
+	e.rcvQueueMu.Lock()
+	if e.RcvAutoParams.Disabled {
+		e.rcvQueueMu.Unlock()
 		return
 	}
 	now := e.stack.Clock().NowMonotonic()
-	if rtt := e.rcvQueueInfo.RcvAutoParams.RTT; rtt == 0 || now.Sub(e.rcvQueueInfo.RcvAutoParams.MeasureTime) < rtt {
-		e.rcvQueueInfo.RcvAutoParams.CopiedBytes += copied
-		e.rcvQueueInfo.rcvQueueMu.Unlock()
+	if rtt := e.RcvAutoParams.RTT; rtt == 0 || now.Sub(e.RcvAutoParams.MeasureTime) < rtt {
+		e.RcvAutoParams.CopiedBytes += copied
+		e.rcvQueueMu.Unlock()
 		return
 	}
-	prevRTTCopied := e.rcvQueueInfo.RcvAutoParams.CopiedBytes + copied
-	prevCopied := e.rcvQueueInfo.RcvAutoParams.PrevCopiedBytes
+	prevRTTCopied := e.RcvAutoParams.CopiedBytes + copied
+	prevCopied := e.RcvAutoParams.PrevCopiedBytes
 	rcvWnd := 0
 	if prevRTTCopied > prevCopied {
 		// The minimal receive window based on what was copied by the app
@@ -1294,14 +1276,14 @@ func (e *endpoint) ModerateRecvBuf(copied int) {
 		// where PrevCopiedBytes > prevRTTCopied the existing buffer is already big
 		// enough to handle the current rate and we don't need to do any
 		// adjustments.
-		e.rcvQueueInfo.RcvAutoParams.PrevCopiedBytes = prevRTTCopied
+		e.RcvAutoParams.PrevCopiedBytes = prevRTTCopied
 	}
-	e.rcvQueueInfo.RcvAutoParams.MeasureTime = now
-	e.rcvQueueInfo.RcvAutoParams.CopiedBytes = 0
-	e.rcvQueueInfo.rcvQueueMu.Unlock()
+	e.RcvAutoParams.MeasureTime = now
+	e.RcvAutoParams.CopiedBytes = 0
+	e.rcvQueueMu.Unlock()
 
-	// Send the update after unlocking rcvQueueInfo as sending a segment acquires
-	// e.rcvQueueInfo.rcvQueueMu to calculate the window to be sent.
+	// Send the update after unlocking rcvQueueMu as sending a segment acquires
+	// the lock to calculate the window to be sent.
 	if e.EndpointState().connected() && sendNonZeroWindowUpdate {
 		e.rcv.nonZeroWindow() // +checklocksforce:e.rcv.ep.mu
 	}
@@ -1356,45 +1338,63 @@ func (e *endpoint) UpdateLastError(err tcpip.Error) {
 
 // Read implements tcpip.Endpoint.Read.
 func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult, tcpip.Error) {
-	e.rcvReadMu.Lock()
-	defer e.rcvReadMu.Unlock()
+	e.LockUser()
+	defer e.UnlockUser()
 
-	// N.B. Here we get a range of segments to be processed. It is safe to not
-	// hold rcvQueueMu when processing, since we hold rcvReadMu to ensure only we
-	// can remove segments from the list through commitRead().
-	first, last, serr := e.startRead()
-	if serr != nil {
-		if _, ok := serr.(*tcpip.ErrClosedForReceive); ok {
+	if err := e.checkReadLocked(); err != nil {
+		if _, ok := err.(*tcpip.ErrClosedForReceive); ok {
 			e.stats.ReadErrors.ReadClosed.Increment()
 		}
-		return tcpip.ReadResult{}, serr
+		return tcpip.ReadResult{}, err
 	}
 
 	var err error
 	done := 0
-	s := first
+	// N.B. Here we get the first segment to be processed. It is safe to not
+	// hold rcvQueueMu when processing, since we hold e.mu to ensure we only
+	// remove segments from the list through Read() and that new segments
+	// cannot be appended.
+	s := e.rcvQueue.Front()
 	for s != nil {
 		var n int
 		n, err = s.ReadTo(dst, opts.Peek)
 		// Book keeping first then error handling.
-
 		done += n
 
 		if opts.Peek {
-			// For peek, we use the (first, last) range of segment returned from
-			// startRead. We don't consume the receive buffer, so commitRead should
-			// not be called.
-			//
-			// N.B. It is important to use `last` to determine the last segment, since
-			// appending can happen while we process, and will lead to data race.
-			if s == last {
-				break
-			}
 			s = s.Next()
 		} else {
-			// N.B. commitRead() conveniently returns the next segment to read, after
-			// removing the data/segment that is read.
-			s = e.commitRead(n)
+			sendNonZeroWindowUpdate := false
+			memDelta := 0
+			for {
+				seg := e.rcvQueue.Front()
+				if seg == nil || seg.payloadSize() != 0 {
+					break
+				}
+				e.rcvQueue.Remove(seg)
+				// Memory is only considered released when the whole segment has been
+				// read.
+				memDelta += seg.segMemSize()
+				seg.DecRef()
+			}
+			e.rcvQueueMu.Lock()
+			e.RcvBufUsed -= n
+			s = e.rcvQueue.Front()
+
+			if memDelta > 0 {
+				// If the window was small before this read and if the read freed up
+				// enough buffer space, to either fit an aMSS or half a receive buffer
+				// (whichever smaller), then notify the protocol goroutine to send a
+				// window update.
+				if crossed, above := e.windowCrossedACKThresholdLocked(memDelta, int(e.ops.GetReceiveBufferSize())); crossed && above {
+					sendNonZeroWindowUpdate = true
+				}
+			}
+			e.rcvQueueMu.Unlock()
+
+			if e.EndpointState().connected() && sendNonZeroWindowUpdate {
+				e.rcv.nonZeroWindow() // +checklocksforce:e.rcv.ep.mu
+			}
 		}
 
 		if err != nil {
@@ -1412,101 +1412,44 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 	}, nil
 }
 
-// startRead checks that endpoint is in a readable state, and return the
-// inclusive range of segments that can be read.
+// checkRead checks that endpoint is in a readable state.
 //
-// +checklocks:e.rcvReadMu
-func (e *endpoint) startRead() (first, last *segment, err tcpip.Error) {
-	e.LockUser()
-	defer e.UnlockUser()
-
+// +checklocks:e.mu
+func (e *endpoint) checkReadLocked() tcpip.Error {
+	e.rcvQueueMu.Lock()
+	defer e.rcvQueueMu.Unlock()
 	// When in SYN-SENT state, let the caller block on the receive.
 	// An application can initiate a non-blocking connect and then block
 	// on a receive. It can expect to read any data after the handshake
 	// is complete. RFC793, section 3.9, p58.
 	if e.EndpointState() == StateSynSent {
-		return nil, nil, &tcpip.ErrWouldBlock{}
+		return &tcpip.ErrWouldBlock{}
 	}
 
 	// The endpoint can be read if it's connected, or if it's already closed
 	// but has some pending unread data. Also note that a RST being received
 	// would cause the state to become StateError so we should allow the
 	// reads to proceed before returning a ECONNRESET.
-	e.rcvQueueInfo.rcvQueueMu.Lock()
-	defer e.rcvQueueInfo.rcvQueueMu.Unlock()
-
-	bufUsed := e.rcvQueueInfo.RcvBufUsed
+	bufUsed := e.RcvBufUsed
 	if s := e.EndpointState(); !s.connected() && s != StateClose && bufUsed == 0 {
 		if s == StateError {
 			if err := e.hardErrorLocked(); err != nil {
-				return nil, nil, err
+				return err
 			}
-			return nil, nil, &tcpip.ErrClosedForReceive{}
+			return &tcpip.ErrClosedForReceive{}
 		}
 		e.stats.ReadErrors.NotConnected.Increment()
-		return nil, nil, &tcpip.ErrNotConnected{}
+		return &tcpip.ErrNotConnected{}
 	}
 
-	if e.rcvQueueInfo.RcvBufUsed == 0 {
-		if e.rcvQueueInfo.RcvClosed || !e.EndpointState().connected() {
-			return nil, nil, &tcpip.ErrClosedForReceive{}
+	if e.RcvBufUsed == 0 {
+		if e.RcvClosed || !e.EndpointState().connected() {
+			return &tcpip.ErrClosedForReceive{}
 		}
-		return nil, nil, &tcpip.ErrWouldBlock{}
+		return &tcpip.ErrWouldBlock{}
 	}
 
-	return e.rcvQueueInfo.rcvQueue.Front(), e.rcvQueueInfo.rcvQueue.Back(), nil
-}
-
-// commitRead commits a read of done bytes and returns the next non-empty
-// segment to read. Data read from the segment must have also been removed from
-// the segment in order for this method to work correctly.
-//
-// It is performance critical to call commitRead frequently when servicing a big
-// Read request, so TCP can make progress timely. Right now, it is designed to
-// do this per segment read, hence this method conveniently returns the next
-// segment to read while holding the lock.
-//
-// +checklocks:e.rcvReadMu
-func (e *endpoint) commitRead(done int) *segment {
-	e.LockUser()
-	defer e.UnlockUser()
-
-	sendNonZeroWindowUpdate := false
-	e.rcvQueueInfo.rcvQueueMu.Lock()
-	memDelta := 0
-	s := e.rcvQueueInfo.rcvQueue.Front()
-	for s != nil && s.payloadSize() == 0 {
-		e.rcvQueueInfo.rcvQueue.Remove(s)
-		// Memory is only considered released when the whole segment has been
-		// read.
-		memDelta += s.segMemSize()
-		s.DecRef()
-		s = e.rcvQueueInfo.rcvQueue.Front()
-	}
-	// Concurrent calls to Close() and Read() could cause RcvBufUsed to be
-	// negative because Read() unlocks between startRead() and commitRead(). In
-	// this case the read is allowed, but we refrain from subtracting from
-	// RcvBufUsed since it should already be zero.
-	if e.rcvQueueInfo.RcvBufUsed != 0 {
-		e.rcvQueueInfo.RcvBufUsed -= done
-	}
-
-	if memDelta > 0 {
-		// If the window was small before this read and if the read freed up
-		// enough buffer space, to either fit an aMSS or half a receive buffer
-		// (whichever smaller), then notify the protocol goroutine to send a
-		// window update.
-		if crossed, above := e.windowCrossedACKThresholdLocked(memDelta, int(e.ops.GetReceiveBufferSize())); crossed && above {
-			sendNonZeroWindowUpdate = true
-		}
-	}
-	nextSeg := e.rcvQueueInfo.rcvQueue.Front()
-	e.rcvQueueInfo.rcvQueueMu.Unlock()
-
-	if e.EndpointState().connected() && sendNonZeroWindowUpdate {
-		e.rcv.nonZeroWindow() // +checklocksforce:e.rcv.ep.mu
-	}
-	return nextSeg
+	return nil
 }
 
 // isEndpointWritableLocked checks if a given endpoint is writable
@@ -1652,11 +1595,11 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 // selectWindowLocked returns the new window without checking for shrinking or scaling
 // applied.
 // +checklocks:e.mu
-// +checklocks:e.rcvQueueInfo.rcvQueueMu
+// +checklocks:e.rcvQueueMu
 func (e *endpoint) selectWindowLocked(rcvBufSize int) (wnd seqnum.Size) {
 	wndFromAvailable := wndFromSpace(e.receiveBufferAvailableLocked(rcvBufSize))
 	maxWindow := wndFromSpace(rcvBufSize)
-	wndFromUsedBytes := maxWindow - e.rcvQueueInfo.RcvBufUsed
+	wndFromUsedBytes := maxWindow - e.RcvBufUsed
 
 	// We take the lesser of the wndFromAvailable and wndFromUsedBytes because in
 	// cases where we receive a lot of small segments the segment overhead is a
@@ -1677,9 +1620,9 @@ func (e *endpoint) selectWindowLocked(rcvBufSize int) (wnd seqnum.Size) {
 // selectWindow invokes selectWindowLocked after acquiring e.rcvQueueMu.
 // +checklocks:e.mu
 func (e *endpoint) selectWindow() (wnd seqnum.Size) {
-	e.rcvQueueInfo.rcvQueueMu.Lock()
+	e.rcvQueueMu.Lock()
 	wnd = e.selectWindowLocked(int(e.ops.GetReceiveBufferSize()))
-	e.rcvQueueInfo.rcvQueueMu.Unlock()
+	e.rcvQueueMu.Unlock()
 	return wnd
 }
 
@@ -1698,7 +1641,7 @@ func (e *endpoint) selectWindow() (wnd seqnum.Size) {
 // otherwise.
 //
 // +checklocks:e.mu
-// +checklocks:e.rcvQueueInfo.rcvQueueMu
+// +checklocks:e.rcvQueueMu
 func (e *endpoint) windowCrossedACKThresholdLocked(deltaBefore int, rcvBufSize int) (crossed bool, above bool) {
 	newAvail := int(e.selectWindowLocked(rcvBufSize))
 	oldAvail := newAvail - deltaBefore
@@ -1776,7 +1719,7 @@ func (e *endpoint) OnSetReceiveBufferSize(rcvBufSz, oldSz int64) (newSz int64, p
 	e.LockUser()
 
 	sendNonZeroWindowUpdate := false
-	e.rcvQueueInfo.rcvQueueMu.Lock()
+	e.rcvQueueMu.Lock()
 
 	// Make sure the receive buffer size allows us to send a
 	// non-zero window size.
@@ -1790,7 +1733,7 @@ func (e *endpoint) OnSetReceiveBufferSize(rcvBufSz, oldSz int64) (newSz int64, p
 
 	availBefore := wndFromSpace(e.receiveBufferAvailableLocked(int(oldSz)))
 	availAfter := wndFromSpace(e.receiveBufferAvailableLocked(int(rcvBufSz)))
-	e.rcvQueueInfo.RcvAutoParams.Disabled = true
+	e.RcvAutoParams.Disabled = true
 
 	// Immediately send an ACK to uncork the sender silly window
 	// syndrome prevetion, when our available space grows above aMSS
@@ -1799,7 +1742,7 @@ func (e *endpoint) OnSetReceiveBufferSize(rcvBufSz, oldSz int64) (newSz int64, p
 		sendNonZeroWindowUpdate = true
 	}
 
-	e.rcvQueueInfo.rcvQueueMu.Unlock()
+	e.rcvQueueMu.Unlock()
 
 	postSet = func() {
 		e.LockUser()
@@ -2029,10 +1972,10 @@ func (e *endpoint) readyReceiveSize() (int, tcpip.Error) {
 		return 0, &tcpip.ErrInvalidEndpointState{}
 	}
 
-	e.rcvQueueInfo.rcvQueueMu.Lock()
-	defer e.rcvQueueInfo.rcvQueueMu.Unlock()
+	e.rcvQueueMu.Lock()
+	defer e.rcvQueueMu.Unlock()
 
-	return e.rcvQueueInfo.RcvBufUsed, nil
+	return e.RcvBufUsed, nil
 }
 
 // GetSockOptInt implements tcpip.Endpoint.GetSockOptInt.
@@ -2506,10 +2449,10 @@ func (e *endpoint) shutdownLocked(flags tcpip.ShutdownFlags) tcpip.Error {
 		// Close for read.
 		if e.shutdownFlags&tcpip.ShutdownRead != 0 {
 			// Mark read side as closed.
-			e.rcvQueueInfo.rcvQueueMu.Lock()
-			e.rcvQueueInfo.RcvClosed = true
-			rcvBufUsed := e.rcvQueueInfo.RcvBufUsed
-			e.rcvQueueInfo.rcvQueueMu.Unlock()
+			e.rcvQueueMu.Lock()
+			e.RcvClosed = true
+			rcvBufUsed := e.RcvBufUsed
+			e.rcvQueueMu.Unlock()
 			// If we're fully closed and we have unread data we need to abort
 			// the connection with a RST.
 			if e.shutdownFlags&tcpip.ShutdownWrite != 0 && rcvBufUsed > 0 {
@@ -2560,9 +2503,9 @@ func (e *endpoint) shutdownLocked(flags tcpip.ShutdownFlags) tcpip.Error {
 			//
 			// By not removing this endpoint from the demuxer mapping, we
 			// ensure that any other bind to the same port fails, as on Linux.
-			e.rcvQueueInfo.rcvQueueMu.Lock()
-			e.rcvQueueInfo.RcvClosed = true
-			e.rcvQueueInfo.rcvQueueMu.Unlock()
+			e.rcvQueueMu.Lock()
+			e.RcvClosed = true
+			e.rcvQueueMu.Unlock()
 			e.closePendingAcceptableConnectionsLocked()
 			// Notify waiters that the endpoint is shutdown.
 			e.waiterQueue.Notify(waiter.ReadableEvents | waiter.WritableEvents | waiter.EventHUp | waiter.EventErr)
@@ -2606,9 +2549,9 @@ func (e *endpoint) listen(backlog int) tcpip.Error {
 		}
 
 		e.shutdownFlags = 0
-		e.rcvQueueInfo.rcvQueueMu.Lock()
-		e.rcvQueueInfo.RcvClosed = false
-		e.rcvQueueInfo.rcvQueueMu.Unlock()
+		e.rcvQueueMu.Lock()
+		e.RcvClosed = false
+		e.rcvQueueMu.Unlock()
 
 		return nil
 	}
@@ -2668,9 +2611,9 @@ func (e *endpoint) Accept(peerAddr *tcpip.FullAddress) (tcpip.Endpoint, *waiter.
 	e.LockUser()
 	defer e.UnlockUser()
 
-	e.rcvQueueInfo.rcvQueueMu.Lock()
-	rcvClosed := e.rcvQueueInfo.RcvClosed
-	e.rcvQueueInfo.rcvQueueMu.Unlock()
+	e.rcvQueueMu.Lock()
+	rcvClosed := e.RcvClosed
+	e.rcvQueueMu.Unlock()
 	// Endpoint must be in listen state before it can accept connections.
 	if rcvClosed || e.EndpointState() != StateListen {
 		return nil, nil, &tcpip.ErrInvalidEndpointState{}
@@ -2949,22 +2892,24 @@ func (e *endpoint) updateSndBufferUsage(v int) {
 // readyToRead is called by the protocol goroutine when a new segment is ready
 // to be read, or when the connection is closed for receiving (in which case
 // s will be nil).
+//
+// +checklocks:e.mu
 func (e *endpoint) readyToRead(s *segment) {
-	e.rcvQueueInfo.rcvQueueMu.Lock()
+	e.rcvQueueMu.Lock()
 	if s != nil {
-		e.rcvQueueInfo.RcvBufUsed += s.payloadSize()
+		e.RcvBufUsed += s.payloadSize()
 		s.IncRef()
-		e.rcvQueueInfo.rcvQueue.PushBack(s)
+		e.rcvQueue.PushBack(s)
 	} else {
-		e.rcvQueueInfo.RcvClosed = true
+		e.RcvClosed = true
 	}
-	e.rcvQueueInfo.rcvQueueMu.Unlock()
+	e.rcvQueueMu.Unlock()
 	e.waiterQueue.Notify(waiter.ReadableEvents)
 }
 
 // receiveBufferAvailableLocked calculates how many bytes are still available
 // in the receive buffer.
-// +checklocks:e.rcvQueueInfo.rcvQueueMu
+// +checklocks:e.rcvQueueMu
 func (e *endpoint) receiveBufferAvailableLocked(rcvBufSize int) int {
 	// We may use more bytes than the buffer size when the receive buffer
 	// shrinks.
@@ -2980,17 +2925,17 @@ func (e *endpoint) receiveBufferAvailableLocked(rcvBufSize int) int {
 // receive buffer based on the actual memory used by all segments held in
 // receive buffer/pending and segment queue.
 func (e *endpoint) receiveBufferAvailable() int {
-	e.rcvQueueInfo.rcvQueueMu.Lock()
+	e.rcvQueueMu.Lock()
 	available := e.receiveBufferAvailableLocked(int(e.ops.GetReceiveBufferSize()))
-	e.rcvQueueInfo.rcvQueueMu.Unlock()
+	e.rcvQueueMu.Unlock()
 	return available
 }
 
 // receiveBufferUsed returns the amount of in-use receive buffer.
 func (e *endpoint) receiveBufferUsed() int {
-	e.rcvQueueInfo.rcvQueueMu.Lock()
-	used := e.rcvQueueInfo.RcvBufUsed
-	e.rcvQueueInfo.rcvQueueMu.Unlock()
+	e.rcvQueueMu.Lock()
+	used := e.RcvBufUsed
+	e.rcvQueueMu.Unlock()
 	return used
 }
 
@@ -3024,9 +2969,9 @@ func (e *endpoint) maxReceiveBufferSize() int {
 func (e *endpoint) rcvWndScaleForHandshake() int {
 	bufSizeForScale := e.ops.GetReceiveBufferSize()
 
-	e.rcvQueueInfo.rcvQueueMu.Lock()
-	autoTuningDisabled := e.rcvQueueInfo.RcvAutoParams.Disabled
-	e.rcvQueueInfo.rcvQueueMu.Unlock()
+	e.rcvQueueMu.Lock()
+	autoTuningDisabled := e.RcvAutoParams.Disabled
+	e.rcvQueueMu.Unlock()
 	if autoTuningDisabled {
 		return FindWndScale(seqnum.Size(bufSizeForScale))
 	}
@@ -3108,9 +3053,9 @@ func (e *endpoint) completeStateLocked(s *stack.TCPEndpointState) {
 	e.sndQueueInfo.sndQueueMu.Unlock()
 
 	// Copy the receive buffer atomically.
-	e.rcvQueueInfo.rcvQueueMu.Lock()
-	s.RcvBufState = e.rcvQueueInfo.TCPRcvBufState
-	e.rcvQueueInfo.rcvQueueMu.Unlock()
+	e.rcvQueueMu.Lock()
+	s.RcvBufState = e.TCPRcvBufState
+	e.rcvQueueMu.Unlock()
 
 	// Copy the endpoint TCP Option state.
 	s.SACK.Blocks = make([]header.SACKBlock, e.sack.NumBlocks)

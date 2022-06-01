@@ -153,11 +153,11 @@ func (r *receiver) getSendParams() (RcvNxt seqnum.Value, rcvWnd seqnum.Size) {
 	// Keep advertising zero receive window up until the new window reaches a
 	// threshold.
 	if r.rcvWnd == 0 && newWnd != 0 {
-		r.ep.rcvQueueInfo.rcvQueueMu.Lock()
+		r.ep.rcvQueueMu.Lock()
 		if crossed, above := r.ep.windowCrossedACKThresholdLocked(int(newWnd), int(r.ep.ops.GetReceiveBufferSize())); !crossed && !above {
 			newWnd = 0
 		}
-		r.ep.rcvQueueInfo.rcvQueueMu.Unlock()
+		r.ep.rcvQueueMu.Unlock()
 	}
 
 	// Stash away the non-scaled receive window as we use it for measuring
@@ -328,36 +328,36 @@ func (r *receiver) updateRTT() {
 	// estimate the round-trip time by observing the time between when a byte
 	// is first acknowledged and the receipt of data that is at least one
 	// window beyond the sequence number that was acknowledged.
-	r.ep.rcvQueueInfo.rcvQueueMu.Lock()
-	if r.ep.rcvQueueInfo.RcvAutoParams.RTTMeasureTime == (tcpip.MonotonicTime{}) {
+	r.ep.rcvQueueMu.Lock()
+	if r.ep.RcvAutoParams.RTTMeasureTime == (tcpip.MonotonicTime{}) {
 		// New measurement.
-		r.ep.rcvQueueInfo.RcvAutoParams.RTTMeasureTime = r.ep.stack.Clock().NowMonotonic()
-		r.ep.rcvQueueInfo.RcvAutoParams.RTTMeasureSeqNumber = r.RcvNxt.Add(r.rcvWnd)
-		r.ep.rcvQueueInfo.rcvQueueMu.Unlock()
+		r.ep.RcvAutoParams.RTTMeasureTime = r.ep.stack.Clock().NowMonotonic()
+		r.ep.RcvAutoParams.RTTMeasureSeqNumber = r.RcvNxt.Add(r.rcvWnd)
+		r.ep.rcvQueueMu.Unlock()
 		return
 	}
-	if r.RcvNxt.LessThan(r.ep.rcvQueueInfo.RcvAutoParams.RTTMeasureSeqNumber) {
-		r.ep.rcvQueueInfo.rcvQueueMu.Unlock()
+	if r.RcvNxt.LessThan(r.ep.RcvAutoParams.RTTMeasureSeqNumber) {
+		r.ep.rcvQueueMu.Unlock()
 		return
 	}
-	rtt := r.ep.stack.Clock().NowMonotonic().Sub(r.ep.rcvQueueInfo.RcvAutoParams.RTTMeasureTime)
+	rtt := r.ep.stack.Clock().NowMonotonic().Sub(r.ep.RcvAutoParams.RTTMeasureTime)
 	// We only store the minimum observed RTT here as this is only used in
 	// absence of a SRTT available from either timestamps or a sender
 	// measurement of RTT.
-	if r.ep.rcvQueueInfo.RcvAutoParams.RTT == 0 || rtt < r.ep.rcvQueueInfo.RcvAutoParams.RTT {
-		r.ep.rcvQueueInfo.RcvAutoParams.RTT = rtt
+	if r.ep.RcvAutoParams.RTT == 0 || rtt < r.ep.RcvAutoParams.RTT {
+		r.ep.RcvAutoParams.RTT = rtt
 	}
-	r.ep.rcvQueueInfo.RcvAutoParams.RTTMeasureTime = r.ep.stack.Clock().NowMonotonic()
-	r.ep.rcvQueueInfo.RcvAutoParams.RTTMeasureSeqNumber = r.RcvNxt.Add(r.rcvWnd)
-	r.ep.rcvQueueInfo.rcvQueueMu.Unlock()
+	r.ep.RcvAutoParams.RTTMeasureTime = r.ep.stack.Clock().NowMonotonic()
+	r.ep.RcvAutoParams.RTTMeasureSeqNumber = r.RcvNxt.Add(r.rcvWnd)
+	r.ep.rcvQueueMu.Unlock()
 }
 
 // +checklocks:r.ep.mu
 // +checklocksalias:r.ep.snd.ep.mu=r.ep.mu
 func (r *receiver) handleRcvdSegmentClosing(s *segment, state EndpointState, closed bool) (drop bool, err tcpip.Error) {
-	r.ep.rcvQueueInfo.rcvQueueMu.Lock()
-	rcvClosed := r.ep.rcvQueueInfo.RcvClosed || r.closed
-	r.ep.rcvQueueInfo.rcvQueueMu.Unlock()
+	r.ep.rcvQueueMu.Lock()
+	rcvClosed := r.ep.RcvClosed || r.closed
+	r.ep.rcvQueueMu.Unlock()
 
 	// If we are in one of the shutdown states then we need to do
 	// additional checks before we try and process the segment.
@@ -487,9 +487,9 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err tcpip.Error) {
 			// segments to arrive allowing pending segments to be processed and
 			// delivered to the user.
 			if rcvBufSize := r.ep.ops.GetReceiveBufferSize(); rcvBufSize > 0 && (r.PendingBufUsed+int(segLen)) < int(rcvBufSize)>>2 {
-				r.ep.rcvQueueInfo.rcvQueueMu.Lock()
+				r.ep.rcvQueueMu.Lock()
 				r.PendingBufUsed += s.segMemSize()
-				r.ep.rcvQueueInfo.rcvQueueMu.Unlock()
+				r.ep.rcvQueueMu.Unlock()
 				s.IncRef()
 				heap.Push(&r.pendingRcvdSegments, s)
 				UpdateSACKBlocks(&r.ep.sack, segSeq, segSeq.Add(segLen), r.RcvNxt)
@@ -523,9 +523,9 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err tcpip.Error) {
 		}
 
 		heap.Pop(&r.pendingRcvdSegments)
-		r.ep.rcvQueueInfo.rcvQueueMu.Lock()
+		r.ep.rcvQueueMu.Lock()
 		r.PendingBufUsed -= s.segMemSize()
-		r.ep.rcvQueueInfo.rcvQueueMu.Unlock()
+		r.ep.rcvQueueMu.Unlock()
 		s.DecRef()
 	}
 	return false, nil
