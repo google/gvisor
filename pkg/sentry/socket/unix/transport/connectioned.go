@@ -538,11 +538,11 @@ func (e *connectionedEndpoint) Bind(addr tcpip.FullAddress) *syserr.Error {
 
 // SendMsg writes data and a control message to the endpoint's peer.
 // This method does not block if the data cannot be written.
-func (e *connectionedEndpoint) SendMsg(ctx context.Context, data [][]byte, c ControlMessages, to BoundEndpoint) (int64, *syserr.Error) {
+func (e *connectionedEndpoint) SendMsg(ctx context.Context, data [][]byte, c ControlMessages, to BoundEndpoint) (int64, func(), *syserr.Error) {
 	// Stream sockets do not support specifying the endpoint. Seqpacket
 	// sockets ignore the passed endpoint.
 	if e.stype == linux.SOCK_STREAM && to != nil {
-		return 0, syserr.ErrNotSupported
+		return 0, nil, syserr.ErrNotSupported
 	}
 	return e.baseEndpoint.SendMsg(ctx, data, c, to)
 }
