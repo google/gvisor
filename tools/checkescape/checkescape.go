@@ -747,10 +747,13 @@ func run(pass *analysis.Pass, binary io.Reader) (interface{}, error) {
 				// Recursively collect information.
 				var funcEscapes Escapes
 				if !pass.ImportObjectFact(x.Object(), &funcEscapes) {
-					// If this is the unix package, and the
-					// function is RawSyscall, we can also
-					// ignore this case.
-					if x.Pkg != nil && x.Pkg.Pkg.Name() == "unix" && (x.Name() == "RawSyscall" || x.Name() == "RawSyscall6") {
+					// If this is the unix or syscall
+					// package, and the function is
+					// RawSyscall, we can also ignore this
+					// case.
+					pkgIsUnixOrSyscall := x.Pkg != nil && (x.Pkg.Pkg.Name() == "unix" || x.Pkg.Pkg.Name() == "syscall")
+					methodIsRawSyscall := x.Name() == "RawSyscall" || x.Name() == "RawSyscall6"
+					if pkgIsUnixOrSyscall && methodIsRawSyscall {
 						return
 					}
 
