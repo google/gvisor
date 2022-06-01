@@ -965,44 +965,49 @@ func TestRandom(t *testing.T) {
 // that it doesn't die when the filter is not triggered.
 func TestRealDeal(t *testing.T) {
 	for _, test := range []struct {
+		name string
 		die  bool
 		want string
 	}{
-		{die: true, want: "bad system call"},
-		{die: false, want: "Syscall was allowed!!!"},
+		{name: "bad syscall", die: true, want: "bad system call"},
+		{name: "allowed syscall", die: false, want: "Syscall was allowed!!!"},
 	} {
-		victim, err := newVictim()
-		if err != nil {
-			t.Fatalf("unable to get victim: %v", err)
-		}
-		defer os.Remove(victim)
-		dieFlag := fmt.Sprintf("-die=%v", test.die)
-		cmd := exec.Command(victim, dieFlag)
-
-		out, err := cmd.CombinedOutput()
-		if test.die {
-			if err == nil {
-				t.Errorf("victim was not killed as expected, output: %s", out)
-				continue
-			}
-			// Depending on kernel version, either RET_TRAP or RET_KILL_PROCESS is
-			// used. RET_TRAP dumps reason for exit in output, while RET_KILL_PROCESS
-			// returns SIGSYS as exit status.
-			if !strings.Contains(string(out), test.want) &&
-				!strings.Contains(err.Error(), test.want) {
-				t.Errorf("Victim error is wrong, got: %v, err: %v, want: %v", string(out), err, test.want)
-				continue
-			}
-		} else {
+		t.Run(test.name, func(t *testing.T) {
+			victim, err := newVictim()
 			if err != nil {
-				t.Errorf("victim failed to execute, err: %v", err)
-				continue
+				t.Fatalf("unable to get victim: %v", err)
+			}
+			defer func() {
+				if err := os.Remove(victim); err != nil {
+					t.Fatalf("Unable to remove victim: %v", err)
+				}
+			}()
+
+			dieFlag := fmt.Sprintf("-die=%v", test.die)
+			cmd := exec.Command(victim, dieFlag)
+			out, err := cmd.CombinedOutput()
+			if test.die {
+				if err == nil {
+					t.Fatalf("Victim was not killed as expected, output: %s", out)
+				}
+				// Depending on kernel version, either RET_TRAP or RET_KILL_PROCESS is
+				// used. RET_TRAP dumps reason for exit in output, while RET_KILL_PROCESS
+				// returns SIGSYS as exit status.
+				if !strings.Contains(string(out), test.want) &&
+					!strings.Contains(err.Error(), test.want) {
+					t.Fatalf("Victim error is wrong, got: %v, err: %v, want: %v", string(out), err, test.want)
+				}
+				return
+			}
+			// test.die is false
+			if err != nil {
+				t.Logf("out: %s", string(out))
+				t.Fatalf("Victim failed to execute, err: %v", err)
 			}
 			if !strings.Contains(string(out), test.want) {
-				t.Errorf("Victim output is wrong, got: %v, want: %v", string(out), test.want)
-				continue
+				t.Fatalf("Victim output is wrong, got: %v, want: %v", string(out), test.want)
 			}
-		}
+		})
 	}
 }
 

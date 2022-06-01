@@ -96,11 +96,11 @@ func main() {
 	}
 
 	arch_syscalls(syscalls)
-
 	// We choose a syscall that is unlikely to be called by Go runtime,
 	// even with race or other instrumentation enabled.
 	syscall := uintptr(unix.SYS_AFS_SYSCALL)
-	syscallArg := uintptr(10)
+	// This test goes up to 11.
+	syscallArg := uintptr(11)
 
 	die := *dieFlag
 	if !die {
@@ -112,11 +112,14 @@ func main() {
 	}
 
 	if err := seccomp.Install(syscalls, nil); err != nil {
-		fmt.Printf("Failed to install seccomp: %v", err)
+		fmt.Printf("Failed to install seccomp: %v\n", err)
 		os.Exit(1)
 	}
 	fmt.Printf("Filters installed\n")
 
-	unix.RawSyscall(syscall, syscallArg, 0, 0)
+	if _, _, err := unix.RawSyscall(syscall, syscallArg, 0, 0); err != unix.Errno(0) {
+		fmt.Printf("syscall error: %v\n", err)
+	}
+
 	fmt.Printf("Syscall was allowed!!!\n")
 }
