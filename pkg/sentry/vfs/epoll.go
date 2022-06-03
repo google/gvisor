@@ -50,7 +50,7 @@ type EpollInstance struct {
 	// readyMu protects ready, readySeq, epollInterest.ready, and
 	// epollInterest.epollInterestEntry. ready is analogous to Linux's struct
 	// eventpoll::lock.
-	readyMu sync.Mutex `state:"nosave"`
+	readyMu epollReadyInstanceMutex `state:"nosave"`
 
 	// ready is the set of file descriptors that may be "ready" for I/O. Note
 	// that this must be an ordered list, not a map: "If more than maxevents

@@ -72,7 +72,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -173,7 +172,7 @@ type filesystem struct {
 
 	// tasksMu serializes task membership changes across all cgroups within a
 	// filesystem.
-	tasksMu sync.RWMutex `state:"nosave"`
+	tasksMu taskRWMutex `state:"nosave"`
 }
 
 // InitializeHierarchyID implements kernel.cgroupFS.InitializeHierarchyID.

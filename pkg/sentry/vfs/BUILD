@@ -1,7 +1,43 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
+load("//pkg/sync/locking:locking.bzl", "declare_mutex")
 
 licenses(["notice"])
+
+declare_mutex(
+    name = "virtual_filesystem_mutex",
+    out = "virtual_filesystem_mutex.go",
+    package = "vfs",
+    prefix = "virtualFilesystem",
+)
+
+declare_mutex(
+    name = "inotify_event_mutex",
+    out = "inotify_event_mutex.go",
+    package = "vfs",
+    prefix = "inotifyEvent",
+)
+
+declare_mutex(
+    name = "inotify_mutex",
+    out = "inotify_mutex.go",
+    package = "vfs",
+    prefix = "inotify",
+)
+
+declare_mutex(
+    name = "epoll_instance_mutex",
+    out = "epoll_instance_mutex.go",
+    package = "vfs",
+    prefix = "epollReadyInstance",
+)
+
+declare_mutex(
+    name = "epoll_mutex",
+    out = "epoll_mutex.go",
+    package = "vfs",
+    prefix = "epoll",
+)
 
 go_template_instance(
     name = "epoll_interest_list",
@@ -69,7 +105,9 @@ go_library(
         "dentry.go",
         "device.go",
         "epoll.go",
+        "epoll_instance_mutex.go",
         "epoll_interest_list.go",
+        "epoll_mutex.go",
         "event_list.go",
         "file_description.go",
         "file_description_impl_util.go",
@@ -79,6 +117,8 @@ go_library(
         "filesystem_refs.go",
         "filesystem_type.go",
         "inotify.go",
+        "inotify_event_mutex.go",
+        "inotify_mutex.go",
         "lock.go",
         "mount.go",
         "mount_namespace_refs.go",
@@ -90,6 +130,7 @@ go_library(
         "resolving_path.go",
         "save_restore.go",
         "vfs.go",
+        "virtual_filesystem_mutex.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
@@ -117,6 +158,7 @@ go_library(
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/uniqueid",
         "//pkg/sync",
+        "//pkg/sync/locking",
         "//pkg/usermem",
         "//pkg/waiter",
         "@org_golang_x_sys//unix:go_default_library",
