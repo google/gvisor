@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -50,7 +49,7 @@ type Inotify struct {
 	// while queuing events, a watch needs to lock the event queue, and using mu
 	// for that would violate lock ordering since at that point the calling
 	// goroutine already holds Watch.target.Watches.mu.
-	evMu sync.Mutex `state:"nosave"`
+	evMu inotifyEventMutex `state:"nosave"`
 
 	// A list of pending events for this inotify instance. Protected by evMu.
 	events eventList
@@ -60,7 +59,7 @@ type Inotify struct {
 	scratch []byte
 
 	// mu protects the fields below.
-	mu sync.Mutex `state:"nosave"`
+	mu inotifyMutex `state:"nosave"`
 
 	// The next watch descriptor number to use for this inotify instance. Note
 	// that Linux starts numbering watch descriptors from 1.

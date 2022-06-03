@@ -80,7 +80,7 @@ import (
 type Filesystem struct {
 	vfsfs vfs.Filesystem
 
-	deferredDecRefsMu sync.Mutex `state:"nosave"`
+	deferredDecRefsMu deferredDecRefsMutex `state:"nosave"`
 
 	// deferredDecRefs is a list of dentries waiting to be DecRef()ed. This is
 	// used to defer dentry destruction until mu can be acquired for
@@ -108,7 +108,7 @@ type Filesystem struct {
 	//   defer fs.mu.RUnlock()
 	//   ...
 	//   fs.deferDecRef(dentry)
-	mu sync.RWMutex `state:"nosave"`
+	mu filesystemRWMutex `state:"nosave"`
 
 	// nextInoMinusOne is used to to allocate inode numbers on this
 	// filesystem. Must be accessed by atomic operations.
