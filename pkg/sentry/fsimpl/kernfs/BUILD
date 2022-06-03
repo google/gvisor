@@ -1,5 +1,6 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
+load("//pkg/sync/locking:locking.bzl", "declare_mutex", "declare_rwmutex")
 
 licenses(["notice"])
 
@@ -82,13 +83,29 @@ go_template_instance(
     },
 )
 
+declare_rwmutex(
+    name = "filesystem_mutex",
+    out = "filesystem_mutex.go",
+    package = "kernfs",
+    prefix = "filesystem",
+)
+
+declare_mutex(
+    name = "deferred_dec_refs_mutex",
+    out = "deferred_dec_refs_mutex.go",
+    package = "kernfs",
+    prefix = "deferredDecRefs",
+)
+
 go_library(
     name = "kernfs",
     srcs = [
+        "deferred_dec_refs_mutex.go",
         "dentry_list.go",
         "dynamic_bytes_file.go",
         "fd_impl_util.go",
         "filesystem.go",
+        "filesystem_mutex.go",
         "fstree.go",
         "inode_impl_util.go",
         "kernfs.go",
@@ -120,6 +137,7 @@ go_library(
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/vfs",
         "//pkg/sync",
+        "//pkg/sync/locking",
         "//pkg/usermem",
     ],
 )
