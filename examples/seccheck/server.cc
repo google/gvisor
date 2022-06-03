@@ -123,6 +123,19 @@ void unpack(absl::string_view buf) {
   cb(proto);
 }
 
+bool readAndUnpack(int client) {
+  std::array<char, maxEventSize> buf;
+  int bytes = read(client, buf.data(), buf.size());
+  if (bytes < 0) {
+    err(1, "read");
+  }
+  if (bytes == 0) {
+    return false;
+  }
+  unpack(absl::string_view(buf.data(), bytes));
+  return true;
+}
+
 void* pollLoop(void* ptr) {
   const int poll_fd = *reinterpret_cast<int*>(&ptr);
   for (;;) {
@@ -138,16 +151,13 @@ void* pollLoop(void* ptr) {
     for (int i = 0; i < nfds; ++i) {
       if (evts[i].events & EPOLLIN) {
         int client = evts[i].data.fd;
-        std::array<char, maxEventSize> buf;
-        int bytes = read(client, buf.data(), buf.size());
-        if (bytes < 0) {
-          err(1, "read");
-        } else if (bytes > 0) {
-          unpack(absl::string_view(buf.data(), bytes));
-        }
+        readAndUnpack(client);
       }
       if ((evts[i].events & (EPOLLRDHUP | EPOLLHUP)) != 0) {
         int client = evts[i].data.fd;
+        // Drain any remaining messages before closing the socket.
+        while (readAndUnpack(client)) {
+        }
         close(client);
         printf("Connection closed\n");
       }
