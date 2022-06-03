@@ -1120,7 +1120,7 @@ TEST_F(PtyTest, TermiosICANONEOF) {
   ExpectReadable(replica_, sizeof(input), buf);
   EXPECT_STREQ(buf, "abc");
 
-  ExpectFinished(replica_);
+  EXPECT_THAT(ReadFd(replica_.get(), buf, 1), SyscallSucceedsWithValue(0));
 }
 
 // ICANON limits us to 4096 bytes including a terminating character. Anything
