@@ -394,8 +394,6 @@ func run(spec *specs.Spec, conf *config.Config) error {
 var platforms = flag.String("test_platforms", os.Getenv("TEST_PLATFORMS"), "Platforms to test with.")
 
 // configs generates different configurations to run tests.
-//
-// TODO(gvisor.dev/issue/1624): Remove VFS1 dimension.
 func configs(t *testing.T, noOverlay bool) map[string]*config.Config {
 	var ps []string
 	if *platforms == "" {
@@ -612,7 +610,13 @@ func TestExePath(t *testing.T) {
 		t.Fatalf("error making directory: %v", err)
 	}
 
-	for name, conf := range configs(t, false /* noOverlay */) {
+	configs := map[string]*config.Config{
+		"default": testutil.TestConfig(t),
+		"overlay": testutil.TestConfig(t),
+	}
+	configs["overlay"].Overlay = true
+
+	for name, conf := range configs {
 		t.Run(name, func(t *testing.T) {
 			for _, test := range []struct {
 				path    string
@@ -637,37 +641,20 @@ func TestExePath(t *testing.T) {
 				{path: filepath.Join(firstPath, "masked2"), success: false},
 				{path: filepath.Join(secondPath, "masked2"), success: true},
 			} {
-				t.Run(fmt.Sprintf("path=%s,success=%t", test.path, test.success), func(t *testing.T) {
+				name := fmt.Sprintf("path=%s,success=%t", test.path, test.success)
+				t.Run(name, func(t *testing.T) {
 					spec := testutil.NewSpecWithArgs(test.path)
 					spec.Process.Env = []string{
 						fmt.Sprintf("PATH=%s:%s:%s", firstPath, secondPath, os.Getenv("PATH")),
 					}
 
-					_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
-					if err != nil {
-						t.Fatalf("exec: error setting up container: %v", err)
-					}
-					defer cleanup()
-
-					args := Args{
-						ID:        testutil.RandomContainerID(),
-						Spec:      spec,
-						BundleDir: bundleDir,
-						Attached:  true,
-					}
-					ws, err := Run(conf, args)
-
+					err := run(spec, conf)
 					if test.success {
 						if err != nil {
 							t.Errorf("exec: error running container: %v", err)
 						}
-						if ws.ExitStatus() != 0 {
-							t.Errorf("exec: got exit status %v want %v", ws.ExitStatus(), 0)
-						}
-					} else {
-						if err == nil {
-							t.Errorf("exec: got: no error, want: error")
-						}
+					} else if err == nil {
+						t.Errorf("exec: got: no error, want: error")
 					}
 				})
 			}
@@ -932,16 +919,6 @@ func TestExecProcList(t *testing.T) {
 			}
 			if err := waitForProcessList(cont, expectedPL); err != nil {
 				t.Fatalf("error waiting for processes: %v", err)
-			}
-
-			// Ensure that exec finished without error.
-			select {
-			case <-time.After(10 * time.Second):
-				t.Fatalf("container timed out waiting for exec to finish.")
-			case err := <-ch:
-				if err != nil {
-					t.Errorf("container failed to exec %v: %v", args, err)
-				}
 			}
 		})
 	}
