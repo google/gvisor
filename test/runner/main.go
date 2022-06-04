@@ -43,6 +43,7 @@ var (
 	debug              = flag.Bool("debug", false, "enable debug logs")
 	strace             = flag.Bool("strace", false, "enable strace logs")
 	platform           = flag.String("platform", "ptrace", "platform to run on")
+	platformSupport    = flag.String("platform-support", "", "String passed to the test as GVISOR_PLATFORM_SUPPORT environment variable. Used to determine which syscall tests are expected to work with the current platform.")
 	network            = flag.String("network", "none", "network stack to run on (sandbox, host, none)")
 	useTmpfs           = flag.Bool("use-tmpfs", false, "mounts tmpfs for /tmp")
 	fileAccess         = flag.String("file-access", "exclusive", "mounts root in exclusive or shared mode")
@@ -56,6 +57,11 @@ var (
 	// TODO(gvisor.dev/issue/4572): properly support leak checking for runsc, and
 	// set to true as the default for the test runner.
 	leakCheck = flag.Bool("leak-check", false, "check for reference leaks")
+)
+
+const (
+	// Environment variable used by platform_util.cc to determine platform capabilities.
+	platformSupportEnvVar = "GVISOR_PLATFORM_SUPPORT"
 )
 
 // runTestCaseNative runs the test case directly on the host machine.
@@ -98,6 +104,10 @@ func runTestCaseNative(testBin string, tc gtest.TestCase, t *testing.T) {
 		// On Linux, the concept of "attach" location doesn't exist.
 		// Just pass the same path to make these test identical.
 		env = append(env, "TEST_UDS_ATTACH_TREE="+socketDir)
+	}
+
+	if *platformSupport != "" {
+		env = append(env, fmt.Sprintf("%s=%s", platformSupportEnvVar, *platformSupport))
 	}
 
 	cmd := exec.Command(testBin, tc.Args()...)
@@ -399,6 +409,9 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 		lisafsVar   = "LISAFS_ENABLED"
 	)
 	env := append(os.Environ(), platformVar+"="+*platform, networkVar+"="+*network)
+	if *platformSupport != "" {
+		env = append(env, fmt.Sprintf("%s=%s", platformSupportEnvVar, *platformSupport))
+	}
 	if *fuse {
 		env = append(env, fuseVar+"=TRUE")
 	} else {
