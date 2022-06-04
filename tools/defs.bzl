@@ -12,7 +12,7 @@ load("//tools/bazeldefs:defs.bzl", _BuildSettingInfo = "BuildSettingInfo", _amd6
 load("//tools/bazeldefs:cc.bzl", _cc_binary = "cc_binary", _cc_flags_supplier = "cc_flags_supplier", _cc_grpc_library = "cc_grpc_library", _cc_library = "cc_library", _cc_proto_library = "cc_proto_library", _cc_test = "cc_test", _cc_toolchain = "cc_toolchain", _gbenchmark = "gbenchmark", _gbenchmark_internal = "gbenchmark_internal", _grpcpp = "grpcpp", _gtest = "gtest", _vdso_linker_option = "vdso_linker_option")
 load("//tools/bazeldefs:go.bzl", _gazelle = "gazelle", _go_binary = "go_binary", _go_embed_data = "go_embed_data", _go_grpc_and_proto_libraries = "go_grpc_and_proto_libraries", _go_library = "go_library", _go_path = "go_path", _go_proto_library = "go_proto_library", _go_rule = "go_rule", _go_test = "go_test", _gotsan_flag_values = "gotsan_flag_values", _gotsan_values = "gotsan_values", _select_goarch = "select_goarch", _select_goos = "select_goos")
 load("//tools/bazeldefs:pkg.bzl", _pkg_deb = "pkg_deb", _pkg_tar = "pkg_tar")
-load("//tools/bazeldefs:platforms.bzl", _default_platform = "default_platform", _platforms = "platforms")
+load("//tools/bazeldefs:platforms.bzl", _default_platform = "default_platform", _platform_capabilities = "platform_capabilities", _platforms = "platforms")
 load("//tools/bazeldefs:tags.bzl", "go_suffixes")
 
 # Core rules.
@@ -59,6 +59,7 @@ pkg_tar = _pkg_tar
 # Platform options.
 default_platform = _default_platform
 platforms = _platforms
+platform_capabilities = _platform_capabilities
 
 def _go_add_tags(ctx):
     """ Adds tags to the given source file. """

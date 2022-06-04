@@ -1,6 +1,15 @@
 """Defines a rule for syscall test targets."""
 
-load("//tools:defs.bzl", "default_platform", "platforms")
+load("//tools:defs.bzl", "default_platform", "platform_capabilities", "platforms")
+
+# Maps platform names to a GVISOR_PLATFORM_SUPPORT environment variable consumed by platform_util.cc
+_platform_support_env_vars = {
+    platform: ",".join(sorted([
+        ("%s:%s" % (capability, "TRUE" if supported else "FALSE"))
+        for capability, supported in support.items()
+    ]))
+    for platform, support in platform_capabilities.items()
+}
 
 def _runner_test_impl(ctx):
     # Generate a runner binary.
@@ -105,9 +114,19 @@ def _syscall_test(
 
     container = "container" in tags
 
+    if platform == "native":
+        # The "native" platform supports everything.
+        platform_support = ",".join(sorted([
+            ("%s:TRUE" % key)
+            for key in platform_capabilities[default_platform].keys()
+        ]))
+    else:
+        platform_support = _platform_support_env_vars.get(platform, "")
+
     runner_args = [
         # Arguments are passed directly to runner binary.
         "--platform=" + platform,
+        "--platform-support=" + platform_support,
         "--network=" + network,
         "--use-tmpfs=" + str(use_tmpfs),
         "--file-access=" + file_access,
