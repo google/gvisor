@@ -1285,9 +1285,8 @@ func (mm *MemoryManager) ResidentSetSize() uint64 {
 
 // MaxResidentSetSize returns the value advertised as mm's max RSS in bytes.
 func (mm *MemoryManager) MaxResidentSetSize() uint64 {
-	// FIXME(b/229424837): Repalce RLockBypass with RLock.
-	mm.activeMu.RLockBypass()
-	defer mm.activeMu.RUnlockBypass()
+	mm.activeMu.RLock()
+	defer mm.activeMu.RUnlock()
 	return mm.maxRSS
 }
 
