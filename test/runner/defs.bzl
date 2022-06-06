@@ -71,6 +71,7 @@ def _syscall_test(
         add_uds_tree = False,
         lisafs = False,
         fuse = False,
+        container = None,
         **kwargs):
     # Prepend "runsc" to non-native platform names.
     full_platform = platform if platform == "native" else "runsc_" + platform
@@ -93,7 +94,7 @@ def _syscall_test(
         tags = []
 
     # Add the full_platform and file access in a tag to make it easier to run
-    # all the tests on a specific flavor. Use --test_tag_filters=ptrace,file_shared.
+    # all the tests on a specific flavor. Use --test_tag_filters=runsc_ptrace,file_shared.
     tags = list(tags)
     tags += [full_platform, "file_" + file_access]
 
@@ -112,7 +113,12 @@ def _syscall_test(
     if platform == "native":
         tags.append("nogotsan")
 
-    container = "container" in tags
+    if container == None:
+        # Containerize in the following cases:
+        #  - "container" is explicitly specified as a tag
+        #  - Running tests natively
+        #  - Running tests with host networking
+        container = "container" in tags or network == "host"
 
     if platform == "native":
         # The "native" platform supports everything.
@@ -144,9 +150,17 @@ def _syscall_test(
         name = name,
         test = test,
         runner_args = runner_args,
-        tags = tags,
+        # Tests may require accessing device files in order to
+        # run, which are not provided by the sandbox.
+        tags = tags + ["no-sandbox"],
         **kwargs
     )
+
+def all_platforms():
+    """All platforms returns a list of all platforms."""
+    available = dict(platforms.items())
+    available[default_platform] = platforms.get(default_platform, [])
+    return available.items()
 
 def syscall_test(
         test,
@@ -158,6 +172,7 @@ def syscall_test(
         fuse = False,
         allow_native = True,
         debug = True,
+        container = None,
         tags = None,
         **kwargs):
     """syscall_test is a macro that will create targets for all platforms.
@@ -172,6 +187,7 @@ def syscall_test(
       fuse: enable FUSE support.
       allow_native: generate a native test variant.
       debug: enable debug output.
+      container: Run the test in a container. If None, determined from other information.
       tags: starting test tags.
       **kwargs: additional test arguments.
     """
@@ -187,10 +203,11 @@ def syscall_test(
             add_uds_tree = add_uds_tree,
             tags = tags,
             debug = debug,
+            container = container,
             **kwargs
         )
 
-    for (platform, platform_tags) in platforms.items():
+    for platform, platform_tags in all_platforms():
         _syscall_test(
             test = test,
             platform = platform,
@@ -199,6 +216,7 @@ def syscall_test(
             tags = platform_tags + tags,
             fuse = fuse,
             debug = debug,
+            container = container,
             **kwargs
         )
 
@@ -212,6 +230,7 @@ def syscall_test(
             tags = platforms[default_platform] + tags + ["lisafs"],
             debug = debug,
             fuse = fuse,
+            container = container,
             lisafs = True,
             **kwargs
         )
@@ -221,9 +240,10 @@ def syscall_test(
             platform = default_platform,
             use_tmpfs = use_tmpfs,
             add_uds_tree = add_uds_tree,
-            tags = platforms[default_platform] + tags,
+            tags = platforms.get(default_platform, []) + tags,
             debug = debug,
             fuse = fuse,
+            container = container,
             overlay = True,
             **kwargs
         )
@@ -234,9 +254,10 @@ def syscall_test(
             use_tmpfs = use_tmpfs,
             network = "host",
             add_uds_tree = add_uds_tree,
-            tags = platforms[default_platform] + tags,
+            tags = platforms.get(default_platform, []) + tags,
             debug = debug,
             fuse = fuse,
+            container = container,
             **kwargs
         )
     if not use_tmpfs:
@@ -246,8 +267,9 @@ def syscall_test(
             platform = default_platform,
             use_tmpfs = use_tmpfs,
             add_uds_tree = add_uds_tree,
-            tags = platforms[default_platform] + tags,
+            tags = platforms.get(default_platform, []) + tags,
             debug = debug,
+            container = container,
             file_access = "shared",
             fuse = fuse,
             **kwargs

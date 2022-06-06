@@ -8,7 +8,7 @@ package(
 bzl_library(
     name = "platforms_bzl",
     srcs = ["platforms.bzl"],
-    visibility = ["//visibility:private"],
+    visibility = ["//:sandbox"],
 )
 
 bzl_library(
