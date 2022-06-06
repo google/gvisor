@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Getdents implements Linux syscall getdents(2).
@@ -46,21 +47,38 @@ func getdents(t *kernel.Task, args arch.SyscallArguments, isGetdents64 bool) (ui
 	}
 	defer file.DecRef(t)
 
-	cb := getGetdentsCallback(t, addr, size, isGetdents64)
-	err := file.IterDirents(t, cb)
-	n := size - cb.remaining
+	// We want to be sure of the allowed buffer size before calling IterDirents,
+	// because this function depends on IterDirents saving state of which dirent
+	// was the last one that was successfully operated on.
+	allowedSize, err := t.MemoryManager().EnsurePMAsExist(t, addr, int64(size), usermem.IOOpts{
+		AddressSpaceActive: true,
+	})
+	if allowedSize == 0 {
+		return 0, nil, err
+	}
+
+	cb := getGetdentsCallback(t, int(allowedSize), size, isGetdents64)
+	err = file.IterDirents(t, cb)
+	n, _ := t.CopyOutBytes(addr, cb.buf[:cb.copied])
+
 	putGetdentsCallback(cb)
+
+	// Only report an error in case we didn't copy anything.
+	// If we did manage to give _something_ to the caller then the correct
+	// behaviour is to return success.
 	if n == 0 {
 		return 0, nil, err
 	}
+
 	return uintptr(n), nil, nil
 }
 
 type getdentsCallback struct {
-	t            *kernel.Task
-	addr         hostarch.Addr
-	remaining    int
-	isGetdents64 bool
+	t                *kernel.Task
+	buf              []byte
+	copied           int
+	userReportedSize int
+	isGetdents64     bool
 }
 
 var getdentsCallbackPool = sync.Pool{
@@ -69,25 +87,34 @@ var getdentsCallbackPool = sync.Pool{
 	},
 }
 
-func getGetdentsCallback(t *kernel.Task, addr hostarch.Addr, size int, isGetdents64 bool) *getdentsCallback {
+func getGetdentsCallback(t *kernel.Task, size int, userReportedSize int, isGetdents64 bool) *getdentsCallback {
 	cb := getdentsCallbackPool.Get().(*getdentsCallback)
+	buf := cb.buf
+	if cap(buf) < size {
+		buf = make([]byte, size)
+	} else {
+		buf = buf[:size]
+	}
+
 	*cb = getdentsCallback{
-		t:            t,
-		addr:         addr,
-		remaining:    size,
-		isGetdents64: isGetdents64,
+		t:                t,
+		buf:              buf,
+		copied:           0,
+		userReportedSize: userReportedSize,
+		isGetdents64:     isGetdents64,
 	}
 	return cb
 }
 
 func putGetdentsCallback(cb *getdentsCallback) {
 	cb.t = nil
+	cb.buf = cb.buf[:0]
 	getdentsCallbackPool.Put(cb)
 }
 
 // Handle implements vfs.IterDirentsCallback.Handle.
 func (cb *getdentsCallback) Handle(dirent vfs.Dirent) error {
-	var buf []byte
+	remaining := len(cb.buf) - cb.copied
 	if cb.isGetdents64 {
 		// struct linux_dirent64 {
 		//     ino64_t        d_ino;    /* 64-bit inode number */
@@ -98,10 +125,16 @@ func (cb *getdentsCallback) Handle(dirent vfs.Dirent) error {
 		// };
 		size := 8 + 8 + 2 + 1 + 1 + len(dirent.Name)
 		size = (size + 7) &^ 7 // round up to multiple of 8
-		if size > cb.remaining {
+		if size > remaining {
+			// This is only needed to imitate Linux, since it writes out to the user
+			// as it's iterating over dirs. We don't do that because we can't take
+			// the mm.mappingMu while holding the filesystem mutex.
+			if cb.copied == 0 && cb.userReportedSize >= size {
+				return linuxerr.EFAULT
+			}
 			return linuxerr.EINVAL
 		}
-		buf = cb.t.CopyScratchBuffer(size)
+		buf := cb.buf[cb.copied : cb.copied+size]
 		hostarch.ByteOrder.PutUint64(buf[0:8], dirent.Ino)
 		hostarch.ByteOrder.PutUint64(buf[8:16], uint64(dirent.NextOff))
 		hostarch.ByteOrder.PutUint16(buf[16:18], uint16(size))
@@ -113,6 +146,7 @@ func (cb *getdentsCallback) Handle(dirent vfs.Dirent) error {
 		for i := range bufTail {
 			bufTail[i] = 0
 		}
+		cb.copied += size
 	} else {
 		// struct linux_dirent {
 		//     unsigned long  d_ino;     /* Inode number */
@@ -132,10 +166,13 @@ func (cb *getdentsCallback) Handle(dirent vfs.Dirent) error {
 		}
 		size := 8 + 8 + 2 + 1 + 1 + len(dirent.Name)
 		size = (size + 7) &^ 7 // round up to multiple of sizeof(long)
-		if size > cb.remaining {
+		if size > remaining {
+			if cb.copied == 0 && cb.userReportedSize >= size {
+				return linuxerr.EFAULT
+			}
 			return linuxerr.EINVAL
 		}
-		buf = cb.t.CopyScratchBuffer(size)
+		buf := cb.buf[cb.copied : cb.copied+size]
 		hostarch.ByteOrder.PutUint64(buf[0:8], dirent.Ino)
 		hostarch.ByteOrder.PutUint64(buf[8:16], uint64(dirent.NextOff))
 		hostarch.ByteOrder.PutUint16(buf[16:18], uint16(size))
@@ -148,14 +185,8 @@ func (cb *getdentsCallback) Handle(dirent vfs.Dirent) error {
 			bufTail[i] = 0
 		}
 		buf[size-1] = dirent.Type
+		cb.copied += size
 	}
-	n, err := cb.t.CopyOutBytes(cb.addr, buf)
-	if err != nil {
-		// Don't report partially-written dirents by advancing cb.addr or
-		// cb.remaining.
-		return err
-	}
-	cb.addr += hostarch.Addr(n)
-	cb.remaining -= n
+
 	return nil
 }
