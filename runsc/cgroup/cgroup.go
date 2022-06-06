@@ -402,7 +402,7 @@ func new(pid, cgroupsPath string, useSystemd bool) (Cgroup, error) {
 			Own:     make(map[string]bool),
 		}
 	}
-	log.Debugf("New cgroup for pid: %s, %+v", pid, cg)
+	log.Debugf("New cgroup for pid: %s, %T: %+v", pid, cg, cg)
 	return cg, nil
 }
 

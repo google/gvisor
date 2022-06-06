@@ -23,6 +23,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	systemdDbus "github.com/coreos/go-systemd/v22/dbus"
@@ -40,8 +41,6 @@ var (
 	// ErrInvalidSlice indicates that the slice name passed via cgroup.Path is
 	// invalid.
 	ErrInvalidSlice = errors.New("invalid slice name")
-
-	isRunningSystemd = runningSystemd()
 )
 
 // cgroupSystemd represents a cgroupv2 managed by systemd.
@@ -59,7 +58,7 @@ type cgroupSystemd struct {
 }
 
 func newCgroupV2Systemd(cgv2 *cgroupV2) (*cgroupSystemd, error) {
-	if !isRunningSystemd {
+	if !isRunningSystemd() {
 		return nil, fmt.Errorf("systemd not running on host")
 	}
 	ctx := context.Background()
@@ -236,9 +235,17 @@ func validSlice(slice string) error {
 	return nil
 }
 
-func runningSystemd() bool {
-	fi, err := os.Lstat("/run/systemd/system")
-	return err == nil && fi.IsDir()
+var systemdCheck struct {
+	once  sync.Once
+	cache bool
+}
+
+func isRunningSystemd() bool {
+	systemdCheck.once.Do(func() {
+		fi, err := os.Lstat("/run/systemd/system")
+		systemdCheck.cache = err == nil && fi.IsDir()
+	})
+	return systemdCheck.cache
 }
 
 func systemdVersion(conn *systemdDbus.Conn) (int, error) {
