@@ -20,6 +20,8 @@
 #define CPU_FPU_STATE    {{ .CPU.floatingPointState.Offset }}
 #define CPU_ERROR_CODE   ({{ .CPU.CPUArchState.Offset }}+{{ .CPUArchState.errorCode.Offset }})
 #define CPU_ERROR_TYPE   ({{ .CPU.CPUArchState.Offset }}+{{ .CPUArchState.errorType.Offset }})
+#define CPU_VECTOR       ({{ .CPU.CPUArchState.Offset }}+{{ .CPUArchState.vector.Offset }})
+#define CPU_FAULT_ADDR   ({{ .CPU.CPUArchState.Offset }}+{{ .CPUArchState.faultAddr.Offset }})
 #define CPU_ENTRY        ({{ .CPU.CPUArchState.Offset }}+{{ .CPUArchState.kernelEntry.Offset }})
 #define CPU_HAS_XSAVE    ({{ .CPU.CPUArchState.Offset }}+{{ .CPUArchState.hasXSAVE.Offset }})
 #define CPU_HAS_XSAVEOPT ({{ .CPU.CPUArchState.Offset }}+{{ .CPUArchState.hasXSAVEOPT.Offset }})
@@ -488,6 +490,7 @@ kernel:
 	MOVQ BX,  CPU_REGISTERS+PTRACE_RAX(AX)
 	MOVQ $0,  CPU_ERROR_CODE(AX)                // Clear error code.
 	MOVQ $0,  CPU_ERROR_TYPE(AX)                // Set error type to kernel.
+	MOVQ $0xffffffffffffffff,  CPU_VECTOR(AX)                // Set error type to kernel.
 
 	// Save floating point state. CPU.floatingPointState is a slice, so the
 	// first word of CPU.floatingPointState is a pointer to the destination
@@ -608,6 +611,10 @@ kernel:
 	// Set the error code and adjust the stack.
 	MOVQ 8(SP), BX              // Load the error code.
 	MOVQ BX, CPU_ERROR_CODE(AX) // Copy out to the CPU.
+	MOVQ 0(SP), BX              // Load the error code.
+	MOVQ BX, CPU_VECTOR(AX) // Copy out to the CPU.
+	BYTE $0x0f; BYTE $0x20; BYTE $0xd3; // MOV CR2, RBX
+	MOVQ BX, CPU_FAULT_ADDR(AX)
 	MOVQ $0, CPU_ERROR_TYPE(AX) // Set error type to kernel.
 
 	// Save floating point state. CPU.floatingPointState is a slice, so the
