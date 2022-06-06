@@ -2162,73 +2162,11 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) tcpip.Error {
 	return err
 }
 
-// connect connects the endpoint to its peer.
+// registerEndpoint registers the endpoint with the provided address.
+//
 // +checklocks:e.mu
-func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool) tcpip.Error {
-	connectingAddr := addr.Addr
-
-	addr, netProto, err := e.checkV4MappedLocked(addr)
-	if err != nil {
-		return err
-	}
-
-	if e.EndpointState().connected() {
-		// The endpoint is already connected. If caller hasn't been
-		// notified yet, return success.
-		if !e.isConnectNotified {
-			e.isConnectNotified = true
-			return nil
-		}
-		// Otherwise return that it's already connected.
-		return &tcpip.ErrAlreadyConnected{}
-	}
-
-	nicID := addr.NIC
-	switch e.EndpointState() {
-	case StateBound:
-		// If we're already bound to a NIC but the caller is requesting
-		// that we use a different one now, we cannot proceed.
-		if e.boundNICID == 0 {
-			break
-		}
-
-		if nicID != 0 && nicID != e.boundNICID {
-			return &tcpip.ErrNoRoute{}
-		}
-
-		nicID = e.boundNICID
-
-	case StateInitial:
-		// Nothing to do. We'll eventually fill-in the gaps in the ID (if any)
-		// when we find a route.
-
-	case StateConnecting, StateSynSent, StateSynRecv:
-		// A connection request has already been issued but hasn't completed
-		// yet.
-		return &tcpip.ErrAlreadyConnecting{}
-
-	case StateError:
-		if err := e.hardErrorLocked(); err != nil {
-			return err
-		}
-		return &tcpip.ErrConnectionAborted{}
-
-	default:
-		return &tcpip.ErrInvalidEndpointState{}
-	}
-
-	// Find a route to the desired destination.
-	r, err := e.stack.FindRoute(nicID, e.TransportEndpointInfo.ID.LocalAddress, addr.Addr, netProto, false /* multicastLoop */)
-	if err != nil {
-		return err
-	}
-	defer r.Release()
-
+func (e *endpoint) registerEndpoint(addr tcpip.FullAddress, netProto tcpip.NetworkProtocolNumber, nicID tcpip.NICID) tcpip.Error {
 	netProtos := []tcpip.NetworkProtocolNumber{netProto}
-	e.TransportEndpointInfo.ID.LocalAddress = r.LocalAddress()
-	e.TransportEndpointInfo.ID.RemoteAddress = r.RemoteAddress()
-	e.TransportEndpointInfo.ID.RemotePort = addr.Port
-
 	if e.TransportEndpointInfo.ID.LocalPort != 0 {
 		// The endpoint is bound to a port, attempt to register it.
 		err := e.stack.RegisterTransportEndpoint(netProtos, ProtocolNumber, e.TransportEndpointInfo.ID, e, e.boundPortFlags, e.boundBindToDevice)
@@ -2306,7 +2244,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool) tcpip.Error {
 				// done yet) or the reservation was freed between the check above and
 				// the FindTransportEndpoint below. But rather than retry the same port
 				// we just skip it and move on.
-				transEP := e.stack.FindTransportEndpoint(netProto, ProtocolNumber, transEPID, r.NICID())
+				transEP := e.stack.FindTransportEndpoint(netProto, ProtocolNumber, transEPID, nicID)
 				if transEP == nil {
 					// ReservePort failed but there is no registered endpoint with
 					// demuxer. Which indicates there is at least some endpoint that has
@@ -2377,13 +2315,87 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool) tcpip.Error {
 			return err
 		}
 	}
+	return nil
+}
+
+// connect connects the endpoint to its peer.
+// +checklocks:e.mu
+func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool) tcpip.Error {
+	connectingAddr := addr.Addr
+
+	addr, netProto, err := e.checkV4MappedLocked(addr)
+	if err != nil {
+		return err
+	}
+
+	if e.EndpointState().connected() {
+		// The endpoint is already connected. If caller hasn't been
+		// notified yet, return success.
+		if !e.isConnectNotified {
+			e.isConnectNotified = true
+			return nil
+		}
+		// Otherwise return that it's already connected.
+		return &tcpip.ErrAlreadyConnected{}
+	}
+
+	nicID := addr.NIC
+	switch e.EndpointState() {
+	case StateBound:
+		// If we're already bound to a NIC but the caller is requesting
+		// that we use a different one now, we cannot proceed.
+		if e.boundNICID == 0 {
+			break
+		}
+
+		if nicID != 0 && nicID != e.boundNICID {
+			return &tcpip.ErrNoRoute{}
+		}
+
+		nicID = e.boundNICID
+
+	case StateInitial:
+		// Nothing to do. We'll eventually fill-in the gaps in the ID (if any)
+		// when we find a route.
+
+	case StateConnecting, StateSynSent, StateSynRecv:
+		// A connection request has already been issued but hasn't completed
+		// yet.
+		return &tcpip.ErrAlreadyConnecting{}
+
+	case StateError:
+		if err := e.hardErrorLocked(); err != nil {
+			return err
+		}
+		return &tcpip.ErrConnectionAborted{}
+
+	default:
+		return &tcpip.ErrInvalidEndpointState{}
+	}
+
+	// Find a route to the desired destination.
+	r, err := e.stack.FindRoute(nicID, e.TransportEndpointInfo.ID.LocalAddress, addr.Addr, netProto, false /* multicastLoop */)
+	if err != nil {
+		return err
+	}
+	defer r.Release()
+
+	e.TransportEndpointInfo.ID.LocalAddress = r.LocalAddress()
+	e.TransportEndpointInfo.ID.RemoteAddress = r.RemoteAddress()
+	e.TransportEndpointInfo.ID.RemotePort = addr.Port
+
+	oldState := e.EndpointState()
+	e.setEndpointState(StateConnecting)
+	if err := e.registerEndpoint(addr, netProto, r.NICID()); err != nil {
+		e.setEndpointState(oldState)
+		return err
+	}
 
 	e.isRegistered = true
-	e.setEndpointState(StateConnecting)
 	r.Acquire()
 	e.route = r
 	e.boundNICID = nicID
-	e.effectiveNetProtos = netProtos
+	e.effectiveNetProtos = []tcpip.NetworkProtocolNumber{netProto}
 	e.connectingAddress = connectingAddr
 
 	e.initGSO()

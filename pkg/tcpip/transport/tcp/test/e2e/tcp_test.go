@@ -4982,6 +4982,105 @@ func TestReusePort(t *testing.T) {
 	}
 }
 
+func TestTimeWaitAssassination(t *testing.T) {
+	var wg sync.WaitGroup
+	defer wg.Wait()
+	// We need to run this test lots of times because it triggers a very rare race
+	// condition in segment processing.
+	initalTestPort := 1024
+	testRuns := 25
+	for port := initalTestPort; port < initalTestPort+testRuns; port++ {
+		wg.Add(1)
+		go func(port uint16) {
+			defer wg.Done()
+			c := context.New(t, e2e.DefaultMTU)
+			defer c.Cleanup()
+
+			twReuse := tcpip.TCPTimeWaitReuseOption(tcpip.TCPTimeWaitReuseGlobal)
+			if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &twReuse); err != nil {
+				t.Errorf("s.TransportProtocolOption(%v, %v) = %v", tcp.ProtocolNumber, &twReuse, err)
+			}
+
+			if err := c.Stack().SetPortRange(port, port); err != nil {
+				t.Errorf("got s.SetPortRange(%d, %d) = %s, want = nil", port, port, err)
+			}
+
+			iss := seqnum.Value(context.TestInitialSequenceNumber)
+			c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1)
+			c.EP.Close()
+
+			checker.IPv4(t, c.GetPacket(), checker.TCP(
+				checker.SrcPort(port),
+				checker.DstPort(context.TestPort),
+				checker.TCPSeqNum(uint32(c.IRS+1)),
+				checker.TCPAckNum(uint32(iss)+1),
+				checker.TCPFlags(header.TCPFlagFin|header.TCPFlagAck)))
+
+			finHeaders := &context.Headers{
+				SrcPort: context.TestPort,
+				DstPort: port,
+				Flags:   header.TCPFlagAck | header.TCPFlagFin,
+				SeqNum:  iss + 1,
+				AckNum:  c.IRS + 2,
+			}
+
+			c.SendPacket(nil, finHeaders)
+
+			// c.EP is in TIME_WAIT. We must allow for a second to pass before the
+			// new endpoint is allowed to take over the old endpoint's binding.
+			time.Sleep(time.Second)
+
+			seq := iss + 1
+			ack := c.IRS + 2
+
+			var wg sync.WaitGroup
+			defer wg.Wait()
+
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				// The new endpoint will take over the binding.
+				c.Create(-1)
+				timeout := time.After(5 * time.Second)
+			connect:
+				for {
+					select {
+					case <-timeout:
+						break connect
+					default:
+						err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort})
+						// It can take some extra time for the port to be available.
+						if _, ok := err.(*tcpip.ErrNoPortAvailable); ok {
+							continue connect
+						}
+						if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
+							t.Errorf("Unexpected return value from Connect: %v", err)
+						}
+						break connect
+					}
+				}
+			}()
+
+			// If the new endpoint does not properly transition to connecting before
+			// taking over the port reservation, sending acks will cause the processor
+			// to panic 1-5% of the time.
+			for i := 0; i < 5; i++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					c.SendPacket(nil, &context.Headers{
+						SrcPort: context.TestPort,
+						DstPort: port,
+						Flags:   header.TCPFlagAck,
+						SeqNum:  seq,
+						AckNum:  ack,
+					})
+				}()
+			}
+		}(uint16(port))
+	}
+}
+
 func checkRecvBufferSize(t *testing.T, ep tcpip.Endpoint, v int) {
 	t.Helper()
 
