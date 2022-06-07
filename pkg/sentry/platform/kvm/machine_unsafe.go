@@ -240,3 +240,23 @@ func seccompMmapHandler(context unsafe.Pointer) {
 	}
 	seccompMmapHandlerCnt.Add(-1)
 }
+
+// disableAsyncPreemption disables asynchronous preemption of go-routines.
+func disableAsyncPreemption() {
+	set := linux.MakeSignalSet(linux.SIGURG)
+	_, _, errno := unix.RawSyscall6(unix.SYS_RT_SIGPROCMASK, linux.SIG_BLOCK,
+		uintptr(unsafe.Pointer(&set)), 0, linux.SignalSetSize, 0, 0)
+	if errno != 0 {
+		panic(fmt.Sprintf("sigprocmask failed: %d", errno))
+	}
+}
+
+// enableAsyncPreemption enables asynchronous preemption of go-routines.
+func enableAsyncPreemption() {
+	set := linux.MakeSignalSet(linux.SIGURG)
+	_, _, errno := unix.RawSyscall6(unix.SYS_RT_SIGPROCMASK, linux.SIG_UNBLOCK,
+		uintptr(unsafe.Pointer(&set)), 0, linux.SignalSetSize, 0, 0)
+	if errno != 0 {
+		panic(fmt.Sprintf("sigprocmask failed: %d", errno))
+	}
+}
