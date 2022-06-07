@@ -28,10 +28,10 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
@@ -258,7 +258,7 @@ func (f *fakeNetworkProtocol) PacketCount(intfAddr byte) int {
 	return f.packetCount[int(intfAddr)%len(f.packetCount)]
 }
 
-func (*fakeNetworkProtocol) ParseAddresses(v buffer.View) (src, dst tcpip.Address) {
+func (*fakeNetworkProtocol) ParseAddresses(v []byte) (src, dst tcpip.Address) {
 	return tcpip.Address(v[srcAddrOffset : srcAddrOffset+1]), tcpip.Address(v[dstAddrOffset : dstAddrOffset+1])
 }
 
@@ -428,12 +428,12 @@ func TestNetworkReceive(t *testing.T) {
 
 	fakeNet := s.NetworkProtocolInstance(fakeNetNumber).(*fakeNetworkProtocol)
 
-	buf := buffer.NewView(30)
+	buf := make([]byte, 30)
 
 	// Make sure packet with wrong address is not delivered.
 	buf[dstAddrOffset] = 3
 	ep.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buf.ToVectorisedView(),
+		Payload: buffer.NewWithData(buf),
 	}))
 	if fakeNet.packetCount[1] != 0 {
 		t.Errorf("packetCount[1] = %d, want %d", fakeNet.packetCount[1], 0)
@@ -445,7 +445,7 @@ func TestNetworkReceive(t *testing.T) {
 	// Make sure packet is delivered to first endpoint.
 	buf[dstAddrOffset] = 1
 	ep.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buf.ToVectorisedView(),
+		Payload: buffer.NewWithData(buf),
 	}))
 	if fakeNet.packetCount[1] != 1 {
 		t.Errorf("packetCount[1] = %d, want %d", fakeNet.packetCount[1], 1)
@@ -457,7 +457,7 @@ func TestNetworkReceive(t *testing.T) {
 	// Make sure packet is delivered to second endpoint.
 	buf[dstAddrOffset] = 2
 	ep.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buf.ToVectorisedView(),
+		Payload: buffer.NewWithData(buf),
 	}))
 	if fakeNet.packetCount[1] != 1 {
 		t.Errorf("packetCount[1] = %d, want %d", fakeNet.packetCount[1], 1)
@@ -468,7 +468,7 @@ func TestNetworkReceive(t *testing.T) {
 
 	// Make sure packet is not delivered if protocol number is wrong.
 	ep.InjectInbound(fakeNetNumber-1, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buf.ToVectorisedView(),
+		Payload: buffer.NewWithData(buf),
 	}))
 	if fakeNet.packetCount[1] != 1 {
 		t.Errorf("packetCount[1] = %d, want %d", fakeNet.packetCount[1], 1)
@@ -478,9 +478,9 @@ func TestNetworkReceive(t *testing.T) {
 	}
 
 	// Make sure packet that is too small is dropped.
-	buf.CapLength(2)
+	buf = buf[:2]
 	ep.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buf.ToVectorisedView(),
+		Payload: buffer.NewWithData(buf),
 	}))
 	if fakeNet.packetCount[1] != 1 {
 		t.Errorf("packetCount[1] = %d, want %d", fakeNet.packetCount[1], 1)
@@ -490,7 +490,7 @@ func TestNetworkReceive(t *testing.T) {
 	}
 }
 
-func sendTo(s *stack.Stack, addr tcpip.Address, payload buffer.View) tcpip.Error {
+func sendTo(s *stack.Stack, addr tcpip.Address, payload []byte) tcpip.Error {
 	r, err := s.FindRoute(0, "", addr, fakeNetNumber, false /* multicastLoop */)
 	if err != nil {
 		return err
@@ -499,14 +499,14 @@ func sendTo(s *stack.Stack, addr tcpip.Address, payload buffer.View) tcpip.Error
 	return send(r, payload)
 }
 
-func send(r *stack.Route, payload buffer.View) tcpip.Error {
+func send(r *stack.Route, payload []byte) tcpip.Error {
 	return r.WritePacket(stack.NetworkHeaderParams{Protocol: fakeTransNumber, TTL: 123, TOS: stack.DefaultTOS}, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(r.MaxHeaderLength()),
-		Data:               payload.ToVectorisedView(),
+		Payload:            buffer.NewWithData(payload),
 	}))
 }
 
-func testSendTo(t *testing.T, s *stack.Stack, addr tcpip.Address, ep *channel.Endpoint, payload buffer.View) {
+func testSendTo(t *testing.T, s *stack.Stack, addr tcpip.Address, ep *channel.Endpoint, payload []byte) {
 	t.Helper()
 	ep.Drain()
 	if err := sendTo(s, addr, payload); err != nil {
@@ -517,7 +517,7 @@ func testSendTo(t *testing.T, s *stack.Stack, addr tcpip.Address, ep *channel.En
 	}
 }
 
-func testSend(t *testing.T, r *stack.Route, ep *channel.Endpoint, payload buffer.View) {
+func testSend(t *testing.T, r *stack.Route, ep *channel.Endpoint, payload []byte) {
 	t.Helper()
 	ep.Drain()
 	if err := send(r, payload); err != nil {
@@ -528,38 +528,38 @@ func testSend(t *testing.T, r *stack.Route, ep *channel.Endpoint, payload buffer
 	}
 }
 
-func testFailingSend(t *testing.T, r *stack.Route, payload buffer.View, wantErr tcpip.Error) {
+func testFailingSend(t *testing.T, r *stack.Route, payload []byte, wantErr tcpip.Error) {
 	t.Helper()
 	if gotErr := send(r, payload); gotErr != wantErr {
 		t.Errorf("send failed: got = %s, want = %s ", gotErr, wantErr)
 	}
 }
 
-func testFailingSendTo(t *testing.T, s *stack.Stack, addr tcpip.Address, payload buffer.View, wantErr tcpip.Error) {
+func testFailingSendTo(t *testing.T, s *stack.Stack, addr tcpip.Address, payload []byte, wantErr tcpip.Error) {
 	t.Helper()
 	if gotErr := sendTo(s, addr, payload); gotErr != wantErr {
 		t.Errorf("sendto failed: got = %s, want = %s ", gotErr, wantErr)
 	}
 }
 
-func testRecv(t *testing.T, fakeNet *fakeNetworkProtocol, localAddrByte byte, ep *channel.Endpoint, buf buffer.View) {
+func testRecv(t *testing.T, fakeNet *fakeNetworkProtocol, localAddrByte byte, ep *channel.Endpoint, buf []byte) {
 	t.Helper()
 	// testRecvInternal injects one packet, and we expect to receive it.
 	want := fakeNet.PacketCount(localAddrByte) + 1
 	testRecvInternal(t, fakeNet, localAddrByte, ep, buf, want)
 }
 
-func testFailingRecv(t *testing.T, fakeNet *fakeNetworkProtocol, localAddrByte byte, ep *channel.Endpoint, buf buffer.View) {
+func testFailingRecv(t *testing.T, fakeNet *fakeNetworkProtocol, localAddrByte byte, ep *channel.Endpoint, buf []byte) {
 	t.Helper()
 	// testRecvInternal injects one packet, and we do NOT expect to receive it.
 	want := fakeNet.PacketCount(localAddrByte)
 	testRecvInternal(t, fakeNet, localAddrByte, ep, buf, want)
 }
 
-func testRecvInternal(t *testing.T, fakeNet *fakeNetworkProtocol, localAddrByte byte, ep *channel.Endpoint, buf buffer.View, want int) {
+func testRecvInternal(t *testing.T, fakeNet *fakeNetworkProtocol, localAddrByte byte, ep *channel.Endpoint, buf []byte, want int) {
 	t.Helper()
 	ep.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buf.ToVectorisedView(),
+		Payload: buffer.NewWithData(buf),
 	}))
 	if got := fakeNet.PacketCount(localAddrByte); got != want {
 		t.Errorf("receive packet count: got = %d, want %d", got, want)
@@ -1047,7 +1047,7 @@ func TestRouteWithDownNIC(t *testing.T) {
 					t.FailNow()
 				}
 
-				buf := buffer.View([]byte{1})
+				buf := []byte{1}
 				testSend(t, r1, ep1, buf)
 				testSend(t, r2, ep2, buf)
 
@@ -1224,7 +1224,7 @@ func TestAddressRemoval(t *testing.T) {
 
 	fakeNet := s.NetworkProtocolInstance(fakeNetNumber).(*fakeNetworkProtocol)
 
-	buf := buffer.NewView(30)
+	buf := make([]byte, 30)
 
 	// Send and receive packets, and verify they are received.
 	buf[dstAddrOffset] = localAddrByte
@@ -1259,7 +1259,7 @@ func TestAddressRemovalWithRouteHeld(t *testing.T) {
 		t.Fatalf("CreateNIC failed: %v", err)
 	}
 	fakeNet := s.NetworkProtocolInstance(fakeNetNumber).(*fakeNetworkProtocol)
-	buf := buffer.NewView(30)
+	buf := make([]byte, 30)
 
 	protocolAddr := tcpip.ProtocolAddress{
 		Protocol: fakeNetNumber,
@@ -1369,7 +1369,7 @@ func TestEndpointExpiration(t *testing.T) {
 				}
 
 				fakeNet := s.NetworkProtocolInstance(fakeNetNumber).(*fakeNetworkProtocol)
-				buf := buffer.NewView(30)
+				buf := make([]byte, 30)
 				buf[dstAddrOffset] = localAddrByte
 
 				if promiscuous {
@@ -1535,7 +1535,7 @@ func TestPromiscuousMode(t *testing.T) {
 
 	fakeNet := s.NetworkProtocolInstance(fakeNetNumber).(*fakeNetworkProtocol)
 
-	buf := buffer.NewView(30)
+	buf := make([]byte, 30)
 
 	// Write a packet, and check that it doesn't get delivered as we don't
 	// have a matching endpoint.
@@ -1657,7 +1657,7 @@ func TestExternalSendWithHandleLocal(t *testing.T) {
 						TOS:      stack.DefaultTOS,
 					}, stack.NewPacketBuffer(stack.PacketBufferOptions{
 						ReserveHeaderBytes: int(r.MaxHeaderLength()),
-						Data:               buffer.NewView(10).ToVectorisedView(),
+						Payload:            buffer.NewWithData(make([]byte, 10)),
 					})); err != nil {
 						t.Fatalf("r.WritePacket(nil, _, _): %s", err)
 					}
@@ -2429,9 +2429,9 @@ func TestNICStats(t *testing.T) {
 		nicStats := s.NICInfo()[nicid].Stats
 
 		// Inbound packet.
-		rxBuffer := buffer.NewView(nic.rxByteCount)
+		rxBuffer := make([]byte, nic.rxByteCount)
 		ep.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Data: rxBuffer.ToVectorisedView(),
+			Payload: buffer.NewWithData(rxBuffer),
 		}))
 		if got, want := nicStats.Rx.Packets.Value(), uint64(1); got != want {
 			t.Errorf("got Rx.Packets.Value() = %d, want = %d", got, want)
@@ -2443,7 +2443,7 @@ func TestNICStats(t *testing.T) {
 		rxBytesTotal += nic.rxByteCount
 
 		// Outbound packet.
-		txBuffer := buffer.NewView(nic.txByteCount)
+		txBuffer := make([]byte, nic.txByteCount)
 		actualTxLength := nic.txByteCount + fakeNetHeaderLen
 		if err := sendTo(s, nic.addr, txBuffer); err != nil {
 			t.Fatal("sendTo failed: ", err)
@@ -4649,7 +4649,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 
 			// Sending a packet should always go through NIC2 since we only install a
 			// route to test.netCfg.remoteAddr through NIC2.
-			data := buffer.View([]byte{1, 2, 3, 4})
+			data := []byte{1, 2, 3, 4}
 			if err := send(r, data); err != nil {
 				t.Fatalf("send(_, _): %s", err)
 			}
@@ -5023,7 +5023,7 @@ func TestWritePacketToRemote(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if err := s.WritePacketToRemote(nicID, linkAddr2, test.protocol, buffer.View(test.payload).ToVectorisedView()); err != nil {
+			if err := s.WritePacketToRemote(nicID, linkAddr2, test.protocol, buffer.NewWithData(test.payload)); err != nil {
 				t.Fatalf("s.WritePacketToRemote(_, _, _, _) = %s", err)
 			}
 
@@ -5045,7 +5045,7 @@ func TestWritePacketToRemote(t *testing.T) {
 	}
 
 	t.Run("InvalidNICID", func(t *testing.T) {
-		err := s.WritePacketToRemote(234, linkAddr2, header.IPv4ProtocolNumber, buffer.View([]byte{1}).ToVectorisedView())
+		err := s.WritePacketToRemote(234, linkAddr2, header.IPv4ProtocolNumber, buffer.NewWithData([]byte{1}))
 		if _, ok := err.(*tcpip.ErrUnknownDevice); !ok {
 			t.Fatalf("s.WritePacketToRemote(_, _, _, _) = %s, want = %s", err, &tcpip.ErrUnknownDevice{})
 		}

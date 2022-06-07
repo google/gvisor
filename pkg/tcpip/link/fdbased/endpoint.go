@@ -530,7 +530,7 @@ func (e *endpoint) writePacket(pkt *stack.PacketBuffer) tcpip.Error {
 		vnetHdrBuf = vnetHdr.marshal()
 	}
 
-	views := pkt.Views()
+	views := pkt.Slices()
 	numIovecs := len(views)
 	if len(vnetHdrBuf) != 0 {
 		numIovecs++
@@ -601,7 +601,7 @@ func (e *endpoint) sendBatch(batchFDInfo fdInfo, pkts []*stack.PacketBuffer) (in
 				vnetHdrBuf = vnetHdr.marshal()
 			}
 
-			views := pkt.Views()
+			views := pkt.Slices()
 			numIovecs := len(views)
 			if len(vnetHdrBuf) != 0 {
 				numIovecs++

@@ -29,8 +29,8 @@ go_test(
     size = "small",
     srcs = ["iptables_test.go"],
     deps = [
+        "//pkg/buffer",
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
         "//pkg/tcpip/checker",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/channel",
@@ -55,8 +55,8 @@ go_test(
     size = "small",
     srcs = ["link_resolution_test.go"],
     deps = [
+        "//pkg/buffer",
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
         "//pkg/tcpip/checker",
         "//pkg/tcpip/faketime",
         "//pkg/tcpip/header",
@@ -82,8 +82,8 @@ go_test(
     size = "small",
     srcs = ["loopback_test.go"],
     deps = [
+        "//pkg/buffer",
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
         "//pkg/tcpip/checker",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/channel",
@@ -131,7 +131,6 @@ go_test(
     srcs = ["route_test.go"],
     deps = [
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
         "//pkg/tcpip/checker",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/channel",

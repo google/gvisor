@@ -8,8 +8,8 @@ go_library(
     srcs = ["checker.go"],
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/buffer",
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
         "//pkg/tcpip/seqnum",
         "@com_github_google_go_cmp//cmp:go_default_library",

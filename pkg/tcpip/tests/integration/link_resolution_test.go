@@ -24,8 +24,8 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -953,7 +953,7 @@ func TestWritePacketsLinkResolution(t *testing.T) {
 			for _, d := range data {
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					ReserveHeaderBytes: header.UDPMinimumSize + int(r.MaxHeaderLength()),
-					Data:               buffer.View([]byte{d}).ToVectorisedView(),
+					Payload:            buffer.NewWithData([]byte{d}),
 				})
 				pkt.TransportProtocolNumber = udp.ProtocolNumber
 				length := uint16(pkt.Data().Size() + header.UDPMinimumSize)

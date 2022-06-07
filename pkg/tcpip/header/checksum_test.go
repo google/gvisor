@@ -23,8 +23,8 @@ import (
 	"sync"
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -63,8 +63,8 @@ func TestChecksumer(t *testing.T) {
 		{
 			name: "TwoEvenViews",
 			data: [][]byte{
-				buffer.NewViewFromBytes([]byte{98, 1, 9, 0}),
-				buffer.NewViewFromBytes([]byte{9, 0, 5, 4}),
+				[]byte{98, 1, 9, 0},
+				[]byte{9, 0, 5, 4},
 			},
 			want: 30981,
 		},
@@ -206,18 +206,16 @@ func TestICMPv4Checksum(t *testing.T) {
 	if _, err := rnd.Read(buf); err != nil {
 		t.Fatalf("rnd.Read failed: %v", err)
 	}
-	vv := buffer.NewVectorisedView(len(buf), []buffer.View{
-		buffer.NewViewFromBytes(buf[:5]),
-		buffer.NewViewFromBytes(buf[5:]),
-	})
+	b := buffer.NewWithData(buf[:5])
+	b.AppendOwned(buf[5:])
 
-	want := header.Checksum(vv.ToView(), 0)
+	want := header.Checksum(b.Flatten(), 0)
 	want = ^header.Checksum(h, want)
 	h.SetChecksum(want)
 
 	testICMPChecksum(t, h.Checksum, func() uint16 {
-		return header.ICMPv4Checksum(h, header.ChecksumVV(vv, 0))
-	}, want, fmt.Sprintf("header: {% x} data {% x}", h, vv.ToView()))
+		return header.ICMPv4Checksum(h, header.ChecksumBuffer(b, 0))
+	}, want, fmt.Sprintf("header: {% x} data {% x}", h, b.Flatten()))
 }
 
 func TestICMPv6Checksum(t *testing.T) {
@@ -233,17 +231,15 @@ func TestICMPv6Checksum(t *testing.T) {
 	if _, err := rnd.Read(buf); err != nil {
 		t.Fatalf("rnd.Read failed: %v", err)
 	}
-	vv := buffer.NewVectorisedView(len(buf), []buffer.View{
-		buffer.NewViewFromBytes(buf[:7]),
-		buffer.NewViewFromBytes(buf[7:10]),
-		buffer.NewViewFromBytes(buf[10:]),
-	})
+	b := buffer.NewWithData(buf[:7])
+	b.AppendOwned(buf[7:10])
+	b.AppendOwned(buf[10:])
 
 	dst := header.IPv6Loopback
 	src := header.IPv6Loopback
 
-	want := header.PseudoHeaderChecksum(header.ICMPv6ProtocolNumber, src, dst, uint16(len(h)+vv.Size()))
-	want = header.Checksum(vv.ToView(), want)
+	want := header.PseudoHeaderChecksum(header.ICMPv6ProtocolNumber, src, dst, uint16(len(h)+int(b.Size())))
+	want = header.Checksum(b.Flatten(), want)
 	want = ^header.Checksum(h, want)
 	h.SetChecksum(want)
 
@@ -252,10 +248,10 @@ func TestICMPv6Checksum(t *testing.T) {
 			Header:      h,
 			Src:         src,
 			Dst:         dst,
-			PayloadCsum: header.ChecksumVV(vv, 0),
-			PayloadLen:  vv.Size(),
+			PayloadCsum: header.ChecksumBuffer(b, 0),
+			PayloadLen:  int(b.Size()),
 		})
-	}, want, fmt.Sprintf("header: {% x} data {% x}", h, vv.ToView()))
+	}, want, fmt.Sprintf("header: {% x} data {% x}", h, b.Flatten()))
 }
 
 func randomAddress(size int) tcpip.Address {

@@ -25,9 +25,9 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/header/parse"
 	"gvisor.dev/gvisor/pkg/tcpip/network/hash"
@@ -717,7 +717,7 @@ func addIPHeader(srcAddr, dstAddr tcpip.Address, pkt *stack.PacketBuffer, params
 }
 
 func packetMustBeFragmented(pkt *stack.PacketBuffer, networkMTU uint32) bool {
-	payload := pkt.TransportHeader().View().Size() + pkt.Data().Size()
+	payload := len(pkt.TransportHeader().View()) + pkt.Data().Size()
 	return pkt.GSOOptions.Type == stack.GSONone && uint32(payload) > networkMTU
 }
 
@@ -742,7 +742,7 @@ func (e *endpoint) handleFragments(r *stack.Route, networkMTU uint32, pkt *stack
 		return 0, 1, &tcpip.ErrMessageTooLong{}
 	}
 
-	if fragmentPayloadLen < uint32(pkt.TransportHeader().View().Size()) {
+	if fragmentPayloadLen < uint32(len(pkt.TransportHeader().View())) {
 		// As per RFC 8200 Section 4.5, the Transport Header is expected to be small
 		// enough to fit in the first fragment.
 		return 0, 1, &tcpip.ErrMessageTooLong{}
@@ -822,7 +822,7 @@ func (e *endpoint) writePacket(r *stack.Route, pkt *stack.PacketBuffer, protocol
 	}
 
 	stats := e.stats.ip
-	networkMTU, err := calculateNetworkMTU(e.nic.MTU(), uint32(pkt.NetworkHeader().View().Size()))
+	networkMTU, err := calculateNetworkMTU(e.nic.MTU(), uint32(len(pkt.NetworkHeader().View())))
 	if err != nil {
 		stats.OutgoingPacketErrors.Increment()
 		return err
@@ -1319,10 +1319,11 @@ func (e *endpoint) processExtensionHeaders(h header.IPv6, pkt *stack.PacketBuffe
 	//	- Any IPv6 header bytes after the first 40 (i.e. extensions).
 	//	- The transport header, if present.
 	//	- Any other payload data.
-	vv := pkt.NetworkHeader().View()[header.IPv6MinimumSize:].ToVectorisedView()
-	vv.AppendView(pkt.TransportHeader().View())
-	vv.AppendViews(pkt.Data().Views())
-	it := header.MakeIPv6PayloadIterator(header.IPv6ExtensionHeaderIdentifier(h.NextHeader()), vv)
+	buf := buffer.NewWithData(pkt.NetworkHeader().View()[header.IPv6MinimumSize:])
+	buf.AppendOwned(pkt.TransportHeader().View())
+	dataBuf := pkt.Data().AsBuffer()
+	buf.Merge(&dataBuf)
+	it := header.MakeIPv6PayloadIterator(header.IPv6ExtensionHeaderIdentifier(h.NextHeader()), buf)
 
 	var (
 		hasFragmentHeader bool
@@ -1558,7 +1559,7 @@ func (e *endpoint) processExtensionHeaders(h header.IPv6, pkt *stack.PacketBuffe
 			//    Parameter Problem, Code 0, message should be sent to the source of
 			//    the fragment, pointing to the Fragment Offset field of the fragment
 			//    packet.
-			lengthAfterReassembly := int(start) + fragmentPayloadLen
+			lengthAfterReassembly := int(start) + int(fragmentPayloadLen)
 			if lengthAfterReassembly > header.IPv6MaximumPayloadSize {
 				stats.MalformedPacketsReceived.Increment()
 				stats.MalformedFragmentsReceived.Increment()
@@ -1599,11 +1600,7 @@ func (e *endpoint) processExtensionHeaders(h header.IPv6, pkt *stack.PacketBuffe
 				// have more extension headers in the reassembled payload, as per RFC
 				// 8200 section 4.5. We also use the NextHeader value from the first
 				// fragment.
-				data := pkt.Data()
-				// TODO(b/230896518): Create a pkg/buffer once MakeIPv6PayloadIterator
-				// API has been changed.
-				dataVV := buffer.NewVectorisedView(data.Size(), data.Views())
-				it = header.MakeIPv6PayloadIterator(header.IPv6ExtensionHeaderIdentifier(proto), dataVV)
+				it = header.MakeIPv6PayloadIterator(header.IPv6ExtensionHeaderIdentifier(proto), pkt.Data().AsBuffer())
 			}
 
 		case header.IPv6DestinationOptionsExtHdr:
@@ -1657,14 +1654,14 @@ func (e *endpoint) processExtensionHeaders(h header.IPv6, pkt *stack.PacketBuffe
 			// Calculate the number of octets parsed from data. We want to consume all
 			// the data except the unparsed portion located at the end, whose size is
 			// extHdr.Buf.Size().
-			trim := pkt.Data().Size() - extHdr.Buf.Size()
+			trim := pkt.Data().Size() - int(extHdr.Buf.Size())
 
 			// For unfragmented packets, extHdr still contains the transport header.
 			// Consume that too.
 			//
 			// For reassembled fragments, pkt.TransportHeader is unset, so this is a
 			// no-op and pkt.Data begins with the transport header.
-			trim += pkt.TransportHeader().View().Size()
+			trim += len(pkt.TransportHeader().View())
 
 			if _, ok := pkt.Data().Consume(trim); !ok {
 				stats.MalformedPacketsReceived.Increment()
@@ -1674,7 +1671,7 @@ func (e *endpoint) processExtensionHeaders(h header.IPv6, pkt *stack.PacketBuffe
 			proto := tcpip.TransportProtocolNumber(extHdr.Identifier)
 			// If the packet was reassembled from a fragment, it will not have a
 			// transport header set yet.
-			if pkt.TransportHeader().View().IsEmpty() {
+			if len(pkt.TransportHeader().View()) == 0 {
 				e.protocol.parseTransport(pkt, proto)
 			}
 
@@ -2155,7 +2152,7 @@ func (p *protocol) MinimumPacketSize() int {
 }
 
 // ParseAddresses implements stack.NetworkProtocol.
-func (*protocol) ParseAddresses(v buffer.View) (src, dst tcpip.Address) {
+func (*protocol) ParseAddresses(v []byte) (src, dst tcpip.Address) {
 	h := header.IPv6(v)
 	return h.SourceAddress(), h.DestinationAddress()
 }
@@ -2404,7 +2401,7 @@ func (p *protocol) parseAndValidate(pkt *stack.PacketBuffer) (header.IPv6, bool)
 	h := header.IPv6(pkt.NetworkHeader().View())
 	// Do not include the link header's size when calculating the size of the IP
 	// packet.
-	if !h.IsValid(pkt.Size() - pkt.LinkHeader().View().Size()) {
+	if !h.IsValid(pkt.Size() - len(pkt.LinkHeader().View())) {
 		return nil, false
 	}
 
@@ -2604,7 +2601,7 @@ func NewProtocol(s *stack.Stack) stack.NetworkProtocol {
 }
 
 func calculateFragmentReserve(pkt *stack.PacketBuffer) int {
-	return pkt.AvailableHeaderBytes() + pkt.NetworkHeader().View().Size() + header.IPv6FragmentHeaderSize
+	return pkt.AvailableHeaderBytes() + len(pkt.NetworkHeader().View()) + header.IPv6FragmentHeaderSize
 }
 
 // hashRoute calculates a hash value for the given route. It uses the source &

@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -282,7 +281,7 @@ type message struct {
 	messageEntry
 
 	// Data is the Message payload.
-	Data buffer.View
+	Data []byte
 
 	// Control is auxiliary control message data that goes along with the
 	// data.
@@ -314,7 +313,7 @@ func (m *message) Peek() *message {
 //
 // Preconditions: n <= m.Length().
 func (m *message) Truncate(n int64) {
-	m.Data.CapLength(int(n))
+	m.Data = m.Data[:n]
 }
 
 // A Receiver can be used to receive Messages.

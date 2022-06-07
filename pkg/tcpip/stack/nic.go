@@ -19,6 +19,7 @@ import (
 	"reflect"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -765,12 +766,12 @@ func (n *nic) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt *Packe
 			// overlapping slices (e.g. by passing a shallow copy of pkt to the packet
 			// endpoint).
 			packetEPPkt = NewPacketBuffer(PacketBufferOptions{
-				Data: PayloadSince(pkt.LinkHeader()).ToVectorisedView(),
+				Payload: buffer.NewWithData(PayloadSince(pkt.LinkHeader())),
 			})
 			// If a link header was populated in the original packet buffer, then
 			// populate it in the packet buffer we provide to packet endpoints as
 			// packet endpoints inspect link headers.
-			packetEPPkt.LinkHeader().Consume(pkt.LinkHeader().View().Size())
+			packetEPPkt.LinkHeader().Consume(len(pkt.LinkHeader().View()))
 
 			if incoming {
 				packetEPPkt.PktType = tcpip.PacketHost
@@ -811,7 +812,7 @@ func (n *nic) DeliverTransportPacket(protocol tcpip.TransportProtocolNumber, pkt
 
 	transProto := state.proto
 
-	if pkt.TransportHeader().View().IsEmpty() {
+	if len(pkt.TransportHeader().View()) == 0 {
 		n.stats.malformedL4RcvdPackets.Increment()
 		return TransportPacketHandled
 	}
@@ -894,7 +895,7 @@ func (n *nic) DeliverRawPacket(protocol tcpip.TransportProtocolNumber, pkt *Pack
 	// For ICMPv4 only we validate the header length for compatibility with
 	// raw(7) ICMP_FILTER. The same check is made in Linux here:
 	// https://github.com/torvalds/linux/blob/70585216/net/ipv4/raw.c#L189.
-	if protocol == header.ICMPv4ProtocolNumber && pkt.TransportHeader().View().Size()+pkt.Data().Size() < header.ICMPv4MinimumSize {
+	if protocol == header.ICMPv4ProtocolNumber && len(pkt.TransportHeader().View())+pkt.Data().Size() < header.ICMPv4MinimumSize {
 		return
 	}
 	n.stack.demux.deliverRawPacket(protocol, pkt)

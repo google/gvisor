@@ -550,7 +550,7 @@ func TestPacketFragmenter(t *testing.T) {
 				if got := fragPkt.AvailableHeaderBytes(); got != reserve {
 					t.Errorf("(fragment #%d) got fragPkt.AvailableHeaderBytes() = %d, want = %d", i, got, reserve)
 				}
-				if got := fragPkt.TransportHeader().View().Size(); got != 0 {
+				if got := len(fragPkt.TransportHeader().View()); got != 0 {
 					t.Errorf("(fragment #%d) got fragPkt.TransportHeader().View().Size() = %d, want = 0", i, got)
 				}
 				fragBuf := fragPkt.Data().AsBuffer()

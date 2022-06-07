@@ -23,7 +23,6 @@ go_library(
         "icmp_packet_list.go",
         "protocol.go",
     ],
-    imports = ["gvisor.dev/gvisor/pkg/tcpip/buffer"],
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/buffer",
@@ -31,7 +30,6 @@ go_library(
         "//pkg/sleep",
         "//pkg/sync",
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
         "//pkg/tcpip/ports",
         "//pkg/tcpip/stack",

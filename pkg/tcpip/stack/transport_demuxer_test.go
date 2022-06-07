@@ -21,8 +21,8 @@ import (
 	"strconv"
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
@@ -106,7 +106,7 @@ func newPayload() []byte {
 }
 
 func (c *testContext) sendV4Packet(payload []byte, h *headers, linkEpID tcpip.NICID) {
-	buf := buffer.NewView(header.UDPMinimumSize + header.IPv4MinimumSize + len(payload))
+	buf := make([]byte, header.UDPMinimumSize+header.IPv4MinimumSize+len(payload))
 	payloadStart := len(buf) - len(payload)
 	copy(buf[payloadStart:], payload)
 
@@ -139,14 +139,14 @@ func (c *testContext) sendV4Packet(payload []byte, h *headers, linkEpID tcpip.NI
 
 	// Inject packet.
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buf.ToVectorisedView(),
+		Payload: buffer.NewWithData(buf),
 	})
 	c.linkEps[linkEpID].InjectInbound(ipv4.ProtocolNumber, pkt)
 }
 
 func (c *testContext) sendV6Packet(payload []byte, h *headers, linkEpID tcpip.NICID) {
 	// Allocate a buffer for data and headers.
-	buf := buffer.NewView(header.UDPMinimumSize + header.IPv6MinimumSize + len(payload))
+	buf := make([]byte, header.UDPMinimumSize+header.IPv6MinimumSize+len(payload))
 	copy(buf[len(buf)-len(payload):], payload)
 
 	// Initialize the IP header.
@@ -176,7 +176,7 @@ func (c *testContext) sendV6Packet(payload []byte, h *headers, linkEpID tcpip.NI
 
 	// Inject packet.
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buf.ToVectorisedView(),
+		Payload: buffer.NewWithData(buf),
 	})
 	c.linkEps[linkEpID].InjectInbound(ipv6.ProtocolNumber, pkt)
 }

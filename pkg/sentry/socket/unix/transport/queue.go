@@ -18,7 +18,6 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -167,7 +166,7 @@ func (q *queue) Enqueue(ctx context.Context, data [][]byte, c ControlMessages, f
 	notify = q.dataList.Front() == nil
 	q.used += l
 	q.dataList.PushBack(&message{
-		Data:    buffer.View(v),
+		Data:    v,
 		Control: c,
 		Address: from,
 	})

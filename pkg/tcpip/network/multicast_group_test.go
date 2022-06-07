@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	tcpipbuffer "gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -1079,7 +1078,7 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 
 				ipv6HeaderIter := header.MakeIPv6PayloadIterator(
 					header.IPv6ExtensionHeaderIdentifier(ipv6.NextHeader()),
-					tcpipbuffer.View(ipv6.Payload()).ToVectorisedView(),
+					buffer.NewWithData(ipv6.Payload()),
 				)
 
 				var transport header.IPv6RawPayloadHeader
@@ -1100,7 +1099,7 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 				if got := tcpip.TransportProtocolNumber(transport.Identifier); got != header.ICMPv6ProtocolNumber {
 					t.Fatalf("got ipv6.NextHeader() = %d, want = %d", got, header.ICMPv6ProtocolNumber)
 				}
-				icmpv6 := header.ICMPv6(transport.Buf.ToView())
+				icmpv6 := header.ICMPv6(transport.Buf.Flatten())
 				if got := icmpv6.Type(); got != header.ICMPv6MulticastListenerReport && got != header.ICMPv6MulticastListenerDone {
 					t.Fatalf("got icmpv6.Type() = %d, want = %d or %d", got, header.ICMPv6MulticastListenerReport, header.ICMPv6MulticastListenerDone)
 				}

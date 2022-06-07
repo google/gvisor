@@ -629,7 +629,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, deliv
 		return nil
 	}
 
-	payloadLen := len(origIPHdr) + transportHeader.Size() + pkt.Data().Size()
+	payloadLen := len(origIPHdr) + len(transportHeader) + pkt.Data().Size()
 	if payloadLen > available {
 		payloadLen = available
 	}

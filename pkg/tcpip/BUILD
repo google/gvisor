@@ -32,7 +32,6 @@ go_library(
     deps = [
         "//pkg/atomicbitops",
         "//pkg/sync",
-        "//pkg/tcpip/buffer",
         "//pkg/waiter",
     ],
 )

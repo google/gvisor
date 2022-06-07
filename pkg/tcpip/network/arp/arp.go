@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/header/parse"
 	"gvisor.dev/gvisor/pkg/tcpip/network/internal/ip"
@@ -267,7 +266,7 @@ type protocol struct {
 func (p *protocol) Number() tcpip.NetworkProtocolNumber { return ProtocolNumber }
 func (p *protocol) MinimumPacketSize() int              { return header.ARPSize }
 
-func (*protocol) ParseAddresses(buffer.View) (src, dst tcpip.Address) {
+func (*protocol) ParseAddresses([]byte) (src, dst tcpip.Address) {
 	return "", ""
 }
 

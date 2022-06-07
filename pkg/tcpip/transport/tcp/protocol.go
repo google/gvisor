@@ -22,7 +22,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/hash/jenkins"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/header/parse"
@@ -136,7 +135,7 @@ func (*protocol) MinimumPacketSize() int {
 
 // ParsePorts returns the source and destination ports stored in the given tcp
 // packet.
-func (*protocol) ParsePorts(v buffer.View) (src, dst uint16, err tcpip.Error) {
+func (*protocol) ParsePorts(v []byte) (src, dst uint16, err tcpip.Error) {
 	h := header.TCP(v)
 	return h.SourcePort(), h.DestinationPort(), nil
 }

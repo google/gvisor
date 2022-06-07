@@ -20,8 +20,8 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
@@ -311,10 +311,10 @@ func TestLoopbackSubnetLifetimeBoundToAddr(t *testing.T) {
 		TTL:      64,
 		TOS:      stack.DefaultTOS,
 	}
-	data := buffer.View([]byte{1, 2, 3, 4})
+	data := []byte{1, 2, 3, 4}
 	if err := r.WritePacket(params, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(r.MaxHeaderLength()),
-		Data:               data.ToVectorisedView(),
+		Payload:            buffer.NewWithData(data),
 	})); err != nil {
 		t.Fatalf("r.WritePacket(%#v, _): %s", params, err)
 	}
@@ -326,7 +326,7 @@ func TestLoopbackSubnetLifetimeBoundToAddr(t *testing.T) {
 	{
 		err := r.WritePacket(params, stack.NewPacketBuffer(stack.PacketBufferOptions{
 			ReserveHeaderBytes: int(r.MaxHeaderLength()),
-			Data:               data.ToVectorisedView(),
+			Payload:            buffer.NewWithData(data),
 		}))
 		if _, ok := err.(*tcpip.ErrInvalidEndpointState); !ok {
 			t.Fatalf("got r.WritePacket(%#v, _) = %s, want = %s", params, err, &tcpip.ErrInvalidEndpointState{})

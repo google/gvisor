@@ -18,6 +18,8 @@
 // well as the ability to grow via either prepend or append, as well as shrink.
 package buffer
 
+import "bytes"
+
 // buffer encapsulates a queueable byte buffer.
 //
 // +stateify savable
@@ -102,4 +104,11 @@ func (b *buffer) WriteMove(n int) {
 // WriteSlice returns the write slice for this buffer.
 func (b *buffer) WriteSlice() []byte {
 	return b.data[b.write:]
+}
+
+// Reader returns a bytes.Reader for v.
+func (b *buffer) Reader() bytes.Reader {
+	var r bytes.Reader
+	r.Reset(b.ReadSlice())
+	return r
 }

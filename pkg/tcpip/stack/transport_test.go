@@ -19,8 +19,8 @@ import (
 	"io"
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/ports"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -105,7 +105,7 @@ func (f *fakeTransportEndpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(f.route.MaxHeaderLength()) + fakeTransHeaderLen,
-		Data:               buffer.View(v).ToVectorisedView(),
+		Payload:            buffer.NewWithData(v),
 	})
 	_ = pkt.TransportHeader().Push(fakeTransHeaderLen)
 	if err := f.route.WritePacket(stack.NetworkHeaderParams{Protocol: fakeTransNumber, TTL: 123, TOS: stack.DefaultTOS}, pkt); err != nil {
@@ -294,7 +294,7 @@ func (*fakeTransportProtocol) MinimumPacketSize() int {
 	return fakeTransHeaderLen
 }
 
-func (*fakeTransportProtocol) ParsePorts(buffer.View) (src, dst uint16, err tcpip.Error) {
+func (*fakeTransportProtocol) ParsePorts([]byte) (src, dst uint16, err tcpip.Error) {
 	return 0, 0, nil
 }
 
@@ -393,13 +393,13 @@ func TestTransportReceive(t *testing.T) {
 	fakeTrans := s.TransportProtocolInstance(fakeTransNumber).(*fakeTransportProtocol)
 
 	// Create buffer that will hold the packet.
-	buf := buffer.NewView(30)
+	buf := make([]byte, 30)
 
 	// Make sure packet with wrong protocol is not delivered.
 	buf[0] = 1
 	buf[2] = 0
 	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buf.ToVectorisedView(),
+		Payload: buffer.NewWithData(buf),
 	}))
 	if fakeTrans.packetCount != 0 {
 		t.Errorf("packetCount = %d, want %d", fakeTrans.packetCount, 0)
@@ -410,7 +410,7 @@ func TestTransportReceive(t *testing.T) {
 	buf[1] = 3
 	buf[2] = byte(fakeTransNumber)
 	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buf.ToVectorisedView(),
+		Payload: buffer.NewWithData(buf),
 	}))
 	if fakeTrans.packetCount != 0 {
 		t.Errorf("packetCount = %d, want %d", fakeTrans.packetCount, 0)
@@ -421,7 +421,7 @@ func TestTransportReceive(t *testing.T) {
 	buf[1] = 2
 	buf[2] = byte(fakeTransNumber)
 	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buf.ToVectorisedView(),
+		Payload: buffer.NewWithData(buf),
 	}))
 	if fakeTrans.packetCount != 1 {
 		t.Errorf("packetCount = %d, want %d", fakeTrans.packetCount, 1)
@@ -471,7 +471,7 @@ func TestTransportControlReceive(t *testing.T) {
 	fakeTrans := s.TransportProtocolInstance(fakeTransNumber).(*fakeTransportProtocol)
 
 	// Create buffer that will hold the control packet.
-	buf := buffer.NewView(2*fakeNetHeaderLen + 30)
+	buf := make([]byte, 2*fakeNetHeaderLen+30)
 
 	// Outer packet contains the control protocol number.
 	buf[0] = 1
@@ -483,7 +483,7 @@ func TestTransportControlReceive(t *testing.T) {
 	buf[fakeNetHeaderLen+1] = 1
 	buf[fakeNetHeaderLen+2] = 0
 	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buf.ToVectorisedView(),
+		Payload: buffer.NewWithData(buf),
 	}))
 	if fakeTrans.controlCount != 0 {
 		t.Errorf("controlCount = %d, want %d", fakeTrans.controlCount, 0)
@@ -494,7 +494,7 @@ func TestTransportControlReceive(t *testing.T) {
 	buf[fakeNetHeaderLen+1] = 1
 	buf[fakeNetHeaderLen+2] = byte(fakeTransNumber)
 	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buf.ToVectorisedView(),
+		Payload: buffer.NewWithData(buf),
 	}))
 	if fakeTrans.controlCount != 0 {
 		t.Errorf("controlCount = %d, want %d", fakeTrans.controlCount, 0)
@@ -505,7 +505,7 @@ func TestTransportControlReceive(t *testing.T) {
 	buf[fakeNetHeaderLen+1] = 1
 	buf[fakeNetHeaderLen+2] = byte(fakeTransNumber)
 	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buf.ToVectorisedView(),
+		Payload: buffer.NewWithData(buf),
 	}))
 	if fakeTrans.controlCount != 1 {
 		t.Errorf("controlCount = %d, want %d", fakeTrans.controlCount, 1)
