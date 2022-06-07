@@ -148,6 +148,12 @@ def _syscall_test(
         **kwargs
     )
 
+def all_platforms():
+    """All platforms returns a list of all platforms."""
+    available = dict(platforms.items())
+    available[default_platform] = platforms.get(default_platform, [])
+    return available.items()
+
 def syscall_test(
         test,
         use_tmpfs = False,
@@ -190,7 +196,7 @@ def syscall_test(
             **kwargs
         )
 
-    for (platform, platform_tags) in platforms.items():
+    for platform, platform_tags in all_platforms():
         _syscall_test(
             test = test,
             platform = platform,
@@ -221,7 +227,7 @@ def syscall_test(
             platform = default_platform,
             use_tmpfs = use_tmpfs,
             add_uds_tree = add_uds_tree,
-            tags = platforms[default_platform] + tags,
+            tags = platforms.get(default_platform, []) + tags,
             debug = debug,
             fuse = fuse,
             overlay = True,
@@ -234,7 +240,7 @@ def syscall_test(
             use_tmpfs = use_tmpfs,
             network = "host",
             add_uds_tree = add_uds_tree,
-            tags = platforms[default_platform] + tags,
+            tags = platforms.get(default_platform, []) + tags,
             debug = debug,
             fuse = fuse,
             **kwargs
@@ -246,7 +252,7 @@ def syscall_test(
             platform = default_platform,
             use_tmpfs = use_tmpfs,
             add_uds_tree = add_uds_tree,
-            tags = platforms[default_platform] + tags,
+            tags = platforms.get(default_platform, []) + tags,
             debug = debug,
             file_access = "shared",
             fuse = fuse,
