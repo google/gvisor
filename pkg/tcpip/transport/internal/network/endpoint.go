@@ -235,6 +235,10 @@ type WriteContext struct {
 	tos   uint8
 }
 
+func (c *WriteContext) MTU() uint32 {
+	return c.route.MTU()
+}
+
 // Release releases held resources.
 func (c *WriteContext) Release() {
 	c.route.Release()
