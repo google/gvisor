@@ -275,7 +275,7 @@ func isMLDValid(pkt *stack.PacketBuffer, iph header.IPv6, routerAlert *header.IP
 	if routerAlert == nil || routerAlert.Value != header.IPv6RouterAlertMLD {
 		return false
 	}
-	if pkt.TransportHeader().View().Size() < header.ICMPv6HeaderSize+header.MLDMinimumSize {
+	if len(pkt.TransportHeader().View()) < header.ICMPv6HeaderSize+header.MLDMinimumSize {
 		return false
 	}
 	if iph.HopLimit() != header.MLDHopLimit {
@@ -1161,7 +1161,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, deliv
 	if available < header.IPv6MinimumSize {
 		return nil
 	}
-	payloadLen := network.Size() + transport.Size() + pkt.Data().Size()
+	payloadLen := len(network) + len(transport) + pkt.Data().Size()
 	if payloadLen > available {
 		payloadLen = available
 	}

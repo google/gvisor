@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -198,7 +197,7 @@ type TransportProtocol interface {
 
 	// ParsePorts returns the source and destination ports stored in a
 	// packet of this protocol.
-	ParsePorts(v buffer.View) (src, dst uint16, err tcpip.Error)
+	ParsePorts(v []byte) (src, dst uint16, err tcpip.Error)
 
 	// HandleUnknownDestinationPacket handles packets targeted at this
 	// protocol that don't match any existing endpoint. For example,
@@ -726,7 +725,7 @@ type NetworkProtocol interface {
 
 	// ParseAddresses returns the source and destination addresses stored in a
 	// packet of this protocol.
-	ParseAddresses(v buffer.View) (src, dst tcpip.Address)
+	ParseAddresses(v []byte) (src, dst tcpip.Address)
 
 	// NewEndpoint creates a new endpoint of this protocol.
 	NewEndpoint(nic NetworkInterface, dispatcher TransportDispatcher) NetworkEndpoint

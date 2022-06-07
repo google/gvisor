@@ -28,9 +28,9 @@ import (
 	"io"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -235,16 +235,16 @@ func (ep *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tc
 	}
 
 	// TODO(https://gvisor.dev/issue/6538): Avoid this allocation.
-	payloadBytes := make(buffer.View, p.Len())
+	payloadBytes := make([]byte, p.Len())
 	if _, err := io.ReadFull(p, payloadBytes); err != nil {
 		return 0, &tcpip.ErrBadBuffer{}
 	}
 
 	if err := func() tcpip.Error {
 		if ep.cooked {
-			return ep.stack.WritePacketToRemote(nicID, remote, proto, payloadBytes.ToVectorisedView())
+			return ep.stack.WritePacketToRemote(nicID, remote, proto, buffer.NewWithData(payloadBytes))
 		}
-		return ep.stack.WriteRawPacket(nicID, proto, payloadBytes.ToVectorisedView())
+		return ep.stack.WriteRawPacket(nicID, proto, buffer.NewWithData(payloadBytes))
 	}(); err != nil {
 		return 0, err
 	}
@@ -444,7 +444,7 @@ func (ep *endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtoc
 		receivedAt: ep.stack.Clock().Now(),
 	}
 
-	if !pkt.LinkHeader().View().IsEmpty() {
+	if len(pkt.LinkHeader().View()) != 0 {
 		hdr := header.Ethernet(pkt.LinkHeader().View())
 		rcvdPkt.senderAddr.Addr = tcpip.Address(hdr.SourceAddress())
 	}

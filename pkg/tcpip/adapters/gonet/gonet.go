@@ -26,7 +26,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
@@ -240,7 +239,7 @@ type TCPConn struct {
 
 	// read contains bytes that have been read from the endpoint,
 	// but haven't yet been returned.
-	read buffer.View
+	read []byte
 }
 
 // NewTCPConn creates a new TCPConn.

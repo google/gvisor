@@ -15,6 +15,7 @@
 package buffer
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 )
@@ -610,4 +611,13 @@ func (x Range) Len() int {
 		l = 0
 	}
 	return l
+}
+
+// Readers returns a bytes.Reader for each of bufs's underlying buffers.
+func (v *View) Readers() []bytes.Reader {
+	readers := make([]bytes.Reader, 0, v.data.Len())
+	for buf := v.data.Front(); buf != nil; buf = buf.Next() {
+		readers = append(readers, buf.Reader())
+	}
+	return readers
 }

@@ -19,7 +19,6 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -84,15 +83,13 @@ func IPv6(pkt *stack.PacketBuffer) (proto tcpip.TransportProtocolNumber, fragID 
 	//	- Any IPv6 header bytes after the first 40 (i.e. extensions).
 	//	- The transport header, if present.
 	//	- Any other payload data.
-	views := [8]buffer.View{}
-	dataVV := buffer.NewVectorisedView(0, views[:0])
-	dataVV.AppendViews(pkt.Data().Views())
-	dataVV.TrimFront(header.IPv6MinimumSize)
-	it := header.MakeIPv6PayloadIterator(header.IPv6ExtensionHeaderIdentifier(ipHdr.NextHeader()), dataVV)
+	dataBuf := pkt.Data().AsBuffer()
+	dataBuf.TrimFront(header.IPv6MinimumSize)
+	it := header.MakeIPv6PayloadIterator(header.IPv6ExtensionHeaderIdentifier(ipHdr.NextHeader()), dataBuf)
 
 	// Iterate over the IPv6 extensions to find their length.
 	var nextHdr tcpip.TransportProtocolNumber
-	var extensionsSize int
+	var extensionsSize int64
 
 traverseExtensions:
 	for {
@@ -104,7 +101,7 @@ traverseExtensions:
 		// If we exhaust the extension list, the entire packet is the IPv6 header
 		// and (possibly) extensions.
 		if done {
-			extensionsSize = dataVV.Size()
+			extensionsSize = dataBuf.Size()
 			break
 		}
 
@@ -126,12 +123,12 @@ traverseExtensions:
 				fragMore = extHdr.More()
 			}
 			rawPayload := it.AsRawHeader(true /* consume */)
-			extensionsSize = dataVV.Size() - rawPayload.Buf.Size()
+			extensionsSize = dataBuf.Size() - rawPayload.Buf.Size()
 			break traverseExtensions
 
 		case header.IPv6RawPayloadHeader:
 			// We've found the payload after any extensions.
-			extensionsSize = dataVV.Size() - extHdr.Buf.Size()
+			extensionsSize = dataBuf.Size() - extHdr.Buf.Size()
 			nextHdr = tcpip.TransportProtocolNumber(extHdr.Identifier)
 			break traverseExtensions
 
@@ -141,7 +138,7 @@ traverseExtensions:
 	}
 
 	// Put the IPv6 header with extensions in pkt.NetworkHeader().
-	hdr, ok = pkt.NetworkHeader().Consume(header.IPv6MinimumSize + extensionsSize)
+	hdr, ok = pkt.NetworkHeader().Consume(header.IPv6MinimumSize + int(extensionsSize))
 	if !ok {
 		panic(fmt.Sprintf("pkt.Data should have at least %d bytes, but only has %d.", header.IPv6MinimumSize+extensionsSize, pkt.Data().Size()))
 	}
