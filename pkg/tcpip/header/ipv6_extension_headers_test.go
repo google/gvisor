@@ -21,8 +21,8 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 )
 
 // Equal returns true of a and b are equivalent.
@@ -34,7 +34,7 @@ import (
 // Needed to use cmp.Equal on IPv6RawPayloadHeader as it contains unexported
 // fields.
 func (a IPv6RawPayloadHeader) Equal(b IPv6RawPayloadHeader) bool {
-	return a.Identifier == b.Identifier && bytes.Equal(a.Buf.ToView(), b.Buf.ToView())
+	return a.Identifier == b.Identifier && bytes.Equal(a.Buf.Flatten(), b.Buf.Flatten())
 }
 
 // Equal returns true of a and b are equivalent.
@@ -490,23 +490,19 @@ func TestIPv6FragmentExtHdr(t *testing.T) {
 	}
 }
 
-func makeVectorisedViewFromByteBuffers(bs ...[]byte) buffer.VectorisedView {
-	size := 0
-	var vs []buffer.View
-
+func makeBufferFromByteBuffers(bs ...[]byte) buffer.Buffer {
+	buf := buffer.Buffer{}
 	for _, b := range bs {
-		vs = append(vs, buffer.View(b))
-		size += len(b)
+		buf.AppendOwned(b)
 	}
-
-	return buffer.NewVectorisedView(size, vs)
+	return buf
 }
 
 func TestIPv6ExtHdrIterErr(t *testing.T) {
 	tests := []struct {
 		name         string
 		firstNextHdr IPv6ExtensionHeaderIdentifier
-		payload      buffer.VectorisedView
+		payload      buffer.Buffer
 		err          error
 	}{
 		{
@@ -516,7 +512,7 @@ func TestIPv6ExtHdrIterErr(t *testing.T) {
 		{
 			name:         "Upper layer only with data",
 			firstNextHdr: 255,
-			payload:      makeVectorisedViewFromByteBuffers([]byte{1, 2, 3, 4}),
+			payload:      buffer.NewWithData([]byte{1, 2, 3, 4}),
 		},
 		{
 			name:         "No next header",
@@ -525,83 +521,83 @@ func TestIPv6ExtHdrIterErr(t *testing.T) {
 		{
 			name:         "No next header with data",
 			firstNextHdr: IPv6NoNextHeaderIdentifier,
-			payload:      makeVectorisedViewFromByteBuffers([]byte{1, 2, 3, 4}),
+			payload:      buffer.NewWithData([]byte{1, 2, 3, 4}),
 		},
 		{
 			name:         "Valid single hop by hop",
 			firstNextHdr: IPv6HopByHopOptionsExtHdrIdentifier,
-			payload:      makeVectorisedViewFromByteBuffers([]byte{255, 0, 1, 4, 1, 2, 3, 4}),
+			payload:      buffer.NewWithData([]byte{255, 0, 1, 4, 1, 2, 3, 4}),
 		},
 		{
 			name:         "Hop by hop too small",
 			firstNextHdr: IPv6HopByHopOptionsExtHdrIdentifier,
-			payload:      makeVectorisedViewFromByteBuffers([]byte{255, 0, 1, 4, 1, 2, 3}),
+			payload:      buffer.NewWithData([]byte{255, 0, 1, 4, 1, 2, 3}),
 			err:          io.ErrUnexpectedEOF,
 		},
 		{
 			name:         "Valid single fragment",
 			firstNextHdr: IPv6FragmentExtHdrIdentifier,
-			payload:      makeVectorisedViewFromByteBuffers([]byte{255, 0, 68, 9, 128, 4, 2, 1}),
+			payload:      buffer.NewWithData([]byte{255, 0, 68, 9, 128, 4, 2, 1}),
 		},
 		{
 			name:         "Fragment too small",
 			firstNextHdr: IPv6FragmentExtHdrIdentifier,
-			payload:      makeVectorisedViewFromByteBuffers([]byte{255, 0, 68, 9, 128, 4, 2}),
+			payload:      buffer.NewWithData([]byte{255, 0, 68, 9, 128, 4, 2}),
 			err:          io.ErrUnexpectedEOF,
 		},
 		{
 			name:         "Valid single destination",
 			firstNextHdr: IPv6DestinationOptionsExtHdrIdentifier,
-			payload:      makeVectorisedViewFromByteBuffers([]byte{255, 0, 1, 4, 1, 2, 3, 4}),
+			payload:      buffer.NewWithData([]byte{255, 0, 1, 4, 1, 2, 3, 4}),
 		},
 		{
 			name:         "Destination too small",
 			firstNextHdr: IPv6DestinationOptionsExtHdrIdentifier,
-			payload:      makeVectorisedViewFromByteBuffers([]byte{255, 0, 1, 4, 1, 2, 3}),
+			payload:      buffer.NewWithData([]byte{255, 0, 1, 4, 1, 2, 3}),
 			err:          io.ErrUnexpectedEOF,
 		},
 		{
 			name:         "Valid single routing",
 			firstNextHdr: IPv6RoutingExtHdrIdentifier,
-			payload:      makeVectorisedViewFromByteBuffers([]byte{255, 0, 1, 2, 3, 4, 5, 6}),
+			payload:      buffer.NewWithData([]byte{255, 0, 1, 2, 3, 4, 5, 6}),
 		},
 		{
 			name:         "Valid single routing across views",
 			firstNextHdr: IPv6RoutingExtHdrIdentifier,
-			payload:      makeVectorisedViewFromByteBuffers([]byte{255, 0, 1, 2}, []byte{3, 4, 5, 6}),
+			payload:      makeBufferFromByteBuffers([]byte{255, 0, 1, 2}, []byte{3, 4, 5, 6}),
 		},
 		{
 			name:         "Routing too small with zero length field",
 			firstNextHdr: IPv6RoutingExtHdrIdentifier,
-			payload:      makeVectorisedViewFromByteBuffers([]byte{255, 0, 1, 2, 3, 4, 5}),
+			payload:      buffer.NewWithData([]byte{255, 0, 1, 2, 3, 4, 5}),
 			err:          io.ErrUnexpectedEOF,
 		},
 		{
 			name:         "Valid routing with non-zero length field",
 			firstNextHdr: IPv6RoutingExtHdrIdentifier,
-			payload:      makeVectorisedViewFromByteBuffers([]byte{255, 1, 1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 5, 6, 7, 8}),
+			payload:      buffer.NewWithData([]byte{255, 1, 1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 5, 6, 7, 8}),
 		},
 		{
 			name:         "Valid routing with non-zero length field across views",
 			firstNextHdr: IPv6RoutingExtHdrIdentifier,
-			payload:      makeVectorisedViewFromByteBuffers([]byte{255, 1, 1, 2, 3, 4, 5, 6}, []byte{1, 2, 3, 4, 5, 6, 7, 8}),
+			payload:      makeBufferFromByteBuffers([]byte{255, 1, 1, 2, 3, 4, 5, 6}, []byte{1, 2, 3, 4, 5, 6, 7, 8}),
 		},
 		{
 			name:         "Routing too small with non-zero length field",
 			firstNextHdr: IPv6RoutingExtHdrIdentifier,
-			payload:      makeVectorisedViewFromByteBuffers([]byte{255, 1, 1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 5, 6, 7}),
+			payload:      buffer.NewWithData([]byte{255, 1, 1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 5, 6, 7}),
 			err:          io.ErrUnexpectedEOF,
 		},
 		{
 			name:         "Routing too small with non-zero length field across views",
 			firstNextHdr: IPv6RoutingExtHdrIdentifier,
-			payload:      makeVectorisedViewFromByteBuffers([]byte{255, 1, 1, 2, 3, 4, 5, 6}, []byte{1, 2, 3, 4, 5, 6, 7}),
+			payload:      makeBufferFromByteBuffers([]byte{255, 1, 1, 2, 3, 4, 5, 6}, []byte{1, 2, 3, 4, 5, 6, 7}),
 			err:          io.ErrUnexpectedEOF,
 		},
 		{
 			name:         "Mixed",
 			firstNextHdr: IPv6HopByHopOptionsExtHdrIdentifier,
-			payload: makeVectorisedViewFromByteBuffers([]byte{
+			payload: buffer.NewWithData([]byte{
 				// Hop By Hop Options extension header.
 				uint8(IPv6FragmentExtHdrIdentifier), 0, 1, 4, 1, 2, 3, 4,
 
@@ -623,7 +619,7 @@ func TestIPv6ExtHdrIterErr(t *testing.T) {
 		{
 			name:         "Mixed without upper layer data",
 			firstNextHdr: IPv6HopByHopOptionsExtHdrIdentifier,
-			payload: makeVectorisedViewFromByteBuffers([]byte{
+			payload: buffer.NewWithData([]byte{
 				// Hop By Hop Options extension header.
 				uint8(IPv6FragmentExtHdrIdentifier), 0, 1, 4, 1, 2, 3, 4,
 
@@ -642,7 +638,7 @@ func TestIPv6ExtHdrIterErr(t *testing.T) {
 		{
 			name:         "Mixed without upper layer data but last ext hdr too small",
 			firstNextHdr: IPv6HopByHopOptionsExtHdrIdentifier,
-			payload: makeVectorisedViewFromByteBuffers([]byte{
+			payload: buffer.NewWithData([]byte{
 				// Hop By Hop Options extension header.
 				uint8(IPv6FragmentExtHdrIdentifier), 0, 1, 4, 1, 2, 3, 4,
 
@@ -691,12 +687,12 @@ func TestIPv6ExtHdrIterErr(t *testing.T) {
 }
 
 func TestIPv6ExtHdrIter(t *testing.T) {
-	routingExtHdrWithUpperLayerData := buffer.View([]byte{255, 0, 1, 2, 3, 4, 5, 6, 1, 2, 3, 4})
-	upperLayerData := buffer.View([]byte{1, 2, 3, 4})
+	routingExtHdrWithUpperLayerData := []byte{255, 0, 1, 2, 3, 4, 5, 6, 1, 2, 3, 4}
+	upperLayerData := []byte{1, 2, 3, 4}
 	tests := []struct {
 		name         string
 		firstNextHdr IPv6ExtensionHeaderIdentifier
-		payload      buffer.VectorisedView
+		payload      buffer.Buffer
 		expected     []IPv6PayloadHeader
 	}{
 		// With a non-atomic fragment that is not the first fragment, the payload
@@ -705,7 +701,7 @@ func TestIPv6ExtHdrIter(t *testing.T) {
 		{
 			name:         "hopbyhop - fragment (not first) - routing - upper",
 			firstNextHdr: IPv6HopByHopOptionsExtHdrIdentifier,
-			payload: makeVectorisedViewFromByteBuffers([]byte{
+			payload: buffer.NewWithData([]byte{
 				// Hop By Hop extension header.
 				uint8(IPv6FragmentExtHdrIdentifier), 0, 1, 4, 1, 2, 3, 4,
 
@@ -729,14 +725,14 @@ func TestIPv6ExtHdrIter(t *testing.T) {
 				IPv6FragmentExtHdr([6]byte{68, 9, 128, 4, 2, 1}),
 				IPv6RawPayloadHeader{
 					Identifier: IPv6RoutingExtHdrIdentifier,
-					Buf:        routingExtHdrWithUpperLayerData.ToVectorisedView(),
+					Buf:        buffer.NewWithData(routingExtHdrWithUpperLayerData),
 				},
 			},
 		},
 		{
 			name:         "hopbyhop - fragment (first) - routing - upper",
 			firstNextHdr: IPv6HopByHopOptionsExtHdrIdentifier,
-			payload: makeVectorisedViewFromByteBuffers([]byte{
+			payload: buffer.NewWithData([]byte{
 				// Hop By Hop extension header.
 				uint8(IPv6FragmentExtHdrIdentifier), 0, 1, 4, 1, 2, 3, 4,
 
@@ -757,14 +753,14 @@ func TestIPv6ExtHdrIter(t *testing.T) {
 				IPv6RoutingExtHdr([]byte{1, 2, 3, 4, 5, 6}),
 				IPv6RawPayloadHeader{
 					Identifier: 255,
-					Buf:        upperLayerData.ToVectorisedView(),
+					Buf:        buffer.NewWithData(upperLayerData),
 				},
 			},
 		},
 		{
 			name:         "fragment - routing - upper (across views)",
 			firstNextHdr: IPv6FragmentExtHdrIdentifier,
-			payload: makeVectorisedViewFromByteBuffers([]byte{
+			payload: makeBufferFromByteBuffers([]byte{
 				// Fragment extension header.
 				uint8(IPv6RoutingExtHdrIdentifier), 0, 68, 9, 128, 4, 2, 1,
 
@@ -778,7 +774,7 @@ func TestIPv6ExtHdrIter(t *testing.T) {
 				IPv6FragmentExtHdr([6]byte{68, 9, 128, 4, 2, 1}),
 				IPv6RawPayloadHeader{
 					Identifier: IPv6RoutingExtHdrIdentifier,
-					Buf:        routingExtHdrWithUpperLayerData.ToVectorisedView(),
+					Buf:        buffer.NewWithData(routingExtHdrWithUpperLayerData),
 				},
 			},
 		},
@@ -788,7 +784,7 @@ func TestIPv6ExtHdrIter(t *testing.T) {
 		{
 			name:         "atomic fragment - routing - destination - upper",
 			firstNextHdr: IPv6FragmentExtHdrIdentifier,
-			payload: makeVectorisedViewFromByteBuffers([]byte{
+			payload: buffer.NewWithData([]byte{
 				// Fragment extension header.
 				//
 				// Reserved bits are 1 which should not affect anything.
@@ -809,14 +805,14 @@ func TestIPv6ExtHdrIter(t *testing.T) {
 				IPv6DestinationOptionsExtHdr{ipv6OptionsExtHdr: []byte{1, 4, 1, 2, 3, 4}},
 				IPv6RawPayloadHeader{
 					Identifier: 255,
-					Buf:        upperLayerData.ToVectorisedView(),
+					Buf:        buffer.NewWithData(upperLayerData),
 				},
 			},
 		},
 		{
 			name:         "atomic fragment - routing - upper (across views)",
 			firstNextHdr: IPv6FragmentExtHdrIdentifier,
-			payload: makeVectorisedViewFromByteBuffers([]byte{
+			payload: makeBufferFromByteBuffers([]byte{
 				// Fragment extension header.
 				//
 				// Reserved bits are 1 which should not affect anything.
@@ -832,14 +828,14 @@ func TestIPv6ExtHdrIter(t *testing.T) {
 				IPv6RoutingExtHdr([]byte{1, 2, 3, 4, 5, 6}),
 				IPv6RawPayloadHeader{
 					Identifier: 255,
-					Buf:        makeVectorisedViewFromByteBuffers(upperLayerData[:2], upperLayerData[2:]),
+					Buf:        makeBufferFromByteBuffers(upperLayerData[:2], upperLayerData[2:]),
 				},
 			},
 		},
 		{
 			name:         "atomic fragment - destination - no next header",
 			firstNextHdr: IPv6FragmentExtHdrIdentifier,
-			payload: makeVectorisedViewFromByteBuffers([]byte{
+			payload: buffer.NewWithData([]byte{
 				// Fragment extension header.
 				//
 				// Res (Reserved) bits are 1 which should not affect anything.
@@ -859,7 +855,7 @@ func TestIPv6ExtHdrIter(t *testing.T) {
 		{
 			name:         "routing - atomic fragment - no next header",
 			firstNextHdr: IPv6RoutingExtHdrIdentifier,
-			payload: makeVectorisedViewFromByteBuffers([]byte{
+			payload: buffer.NewWithData([]byte{
 				// Routing extension header.
 				uint8(IPv6FragmentExtHdrIdentifier), 0, 1, 2, 3, 4, 5, 6,
 
@@ -879,7 +875,7 @@ func TestIPv6ExtHdrIter(t *testing.T) {
 		{
 			name:         "routing - atomic fragment - no next header (across views)",
 			firstNextHdr: IPv6RoutingExtHdrIdentifier,
-			payload: makeVectorisedViewFromByteBuffers([]byte{
+			payload: makeBufferFromByteBuffers([]byte{
 				// Routing extension header.
 				uint8(IPv6FragmentExtHdrIdentifier), 0, 1, 2, 3, 4, 5, 6,
 
@@ -899,7 +895,7 @@ func TestIPv6ExtHdrIter(t *testing.T) {
 		{
 			name:         "hopbyhop - routing - fragment - no next header",
 			firstNextHdr: IPv6HopByHopOptionsExtHdrIdentifier,
-			payload: makeVectorisedViewFromByteBuffers([]byte{
+			payload: buffer.NewWithData([]byte{
 				// Hop By Hop Options extension header.
 				uint8(IPv6RoutingExtHdrIdentifier), 0, 1, 4, 1, 2, 3, 4,
 
@@ -920,7 +916,7 @@ func TestIPv6ExtHdrIter(t *testing.T) {
 				IPv6FragmentExtHdr([6]byte{1, 6, 128, 4, 2, 1}),
 				IPv6RawPayloadHeader{
 					Identifier: IPv6NoNextHeaderIdentifier,
-					Buf:        upperLayerData.ToVectorisedView(),
+					Buf:        buffer.NewWithData(upperLayerData),
 				},
 			},
 		},
@@ -929,55 +925,55 @@ func TestIPv6ExtHdrIter(t *testing.T) {
 		{
 			name:         "TCP raw payload",
 			firstNextHdr: IPv6ExtensionHeaderIdentifier(TCPProtocolNumber),
-			payload:      makeVectorisedViewFromByteBuffers(upperLayerData),
+			payload:      buffer.NewWithData(upperLayerData),
 			expected: []IPv6PayloadHeader{IPv6RawPayloadHeader{
 				Identifier: IPv6ExtensionHeaderIdentifier(TCPProtocolNumber),
-				Buf:        upperLayerData.ToVectorisedView(),
+				Buf:        buffer.NewWithData(upperLayerData),
 			}},
 		},
 		{
 			name:         "UDP raw payload",
 			firstNextHdr: IPv6ExtensionHeaderIdentifier(UDPProtocolNumber),
-			payload:      makeVectorisedViewFromByteBuffers(upperLayerData),
+			payload:      buffer.NewWithData(upperLayerData),
 			expected: []IPv6PayloadHeader{IPv6RawPayloadHeader{
 				Identifier: IPv6ExtensionHeaderIdentifier(UDPProtocolNumber),
-				Buf:        upperLayerData.ToVectorisedView(),
+				Buf:        buffer.NewWithData(upperLayerData),
 			}},
 		},
 		{
 			name:         "ICMPv4 raw payload",
 			firstNextHdr: IPv6ExtensionHeaderIdentifier(ICMPv4ProtocolNumber),
-			payload:      makeVectorisedViewFromByteBuffers(upperLayerData),
+			payload:      buffer.NewWithData(upperLayerData),
 			expected: []IPv6PayloadHeader{IPv6RawPayloadHeader{
 				Identifier: IPv6ExtensionHeaderIdentifier(ICMPv4ProtocolNumber),
-				Buf:        upperLayerData.ToVectorisedView(),
+				Buf:        buffer.NewWithData(upperLayerData),
 			}},
 		},
 		{
 			name:         "ICMPv6 raw payload",
 			firstNextHdr: IPv6ExtensionHeaderIdentifier(ICMPv6ProtocolNumber),
-			payload:      makeVectorisedViewFromByteBuffers(upperLayerData),
+			payload:      buffer.NewWithData(upperLayerData),
 			expected: []IPv6PayloadHeader{IPv6RawPayloadHeader{
 				Identifier: IPv6ExtensionHeaderIdentifier(ICMPv6ProtocolNumber),
-				Buf:        upperLayerData.ToVectorisedView(),
+				Buf:        buffer.NewWithData(upperLayerData),
 			}},
 		},
 		{
 			name:         "Unknwon next header raw payload",
 			firstNextHdr: 255,
-			payload:      makeVectorisedViewFromByteBuffers(upperLayerData),
+			payload:      buffer.NewWithData(upperLayerData),
 			expected: []IPv6PayloadHeader{IPv6RawPayloadHeader{
 				Identifier: 255,
-				Buf:        upperLayerData.ToVectorisedView(),
+				Buf:        buffer.NewWithData(upperLayerData),
 			}},
 		},
 		{
 			name:         "Unknwon next header raw payload (across views)",
 			firstNextHdr: 255,
-			payload:      makeVectorisedViewFromByteBuffers(upperLayerData[:2], upperLayerData[2:]),
+			payload:      makeBufferFromByteBuffers(upperLayerData[:2], upperLayerData[2:]),
 			expected: []IPv6PayloadHeader{IPv6RawPayloadHeader{
 				Identifier: 255,
-				Buf:        makeVectorisedViewFromByteBuffers(upperLayerData[:2], upperLayerData[2:]),
+				Buf:        makeBufferFromByteBuffers(upperLayerData[:2], upperLayerData[2:]),
 			}},
 		},
 	}

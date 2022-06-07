@@ -627,7 +627,7 @@ func TestDispatchPacketFormat(t *testing.T) {
 				t.Fatalf("len(sink.pkts) = %d, want %d", got, want)
 			}
 			pkt := sink.pkts[0]
-			if got, want := pkt.LinkHeader().View().Size(), header.EthernetMinimumSize; got != want {
+			if got, want := len(pkt.LinkHeader().View()), header.EthernetMinimumSize; got != want {
 				t.Errorf("pkt.LinkHeader().View().Size() = %d, want %d", got, want)
 			}
 			if got, want := pkt.Data().Size(), 4; got != want {

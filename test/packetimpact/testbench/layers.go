@@ -24,8 +24,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"go.uber.org/multierr"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -1114,14 +1114,14 @@ func totalLength(l Layer) int {
 }
 
 // payload returns a buffer.VectorisedView of l's payload.
-func payload(l Layer) (buffer.VectorisedView, error) {
-	var payloadBytes buffer.VectorisedView
+func payload(l Layer) (buffer.Buffer, error) {
+	var payloadBytes buffer.Buffer
 	for current := l.next(); current != nil; current = current.next() {
 		payload, err := current.ToBytes()
 		if err != nil {
-			return buffer.VectorisedView{}, fmt.Errorf("can't get bytes for next header: %s", payload)
+			return buffer.Buffer{}, fmt.Errorf("can't get bytes for next header: %s", payload)
 		}
-		payloadBytes.AppendView(payload)
+		payloadBytes.AppendOwned(payload)
 	}
 	return payloadBytes, nil
 }
@@ -1144,7 +1144,7 @@ func layerChecksum(l Layer, protoNumber tcpip.TransportProtocolNumber) (uint16, 
 	if err != nil {
 		return 0, err
 	}
-	xsum = header.ChecksumVV(payloadBytes, xsum)
+	xsum = header.ChecksumBuffer(payloadBytes, xsum)
 	return xsum, nil
 }
 

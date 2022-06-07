@@ -22,7 +22,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	tcpipbuffer "gvisor.dev/gvisor/pkg/tcpip/buffer"
 )
 
 // ChecksumSize is the size of a checksum.
@@ -191,18 +190,6 @@ func ChecksumOld(buf []byte, initial uint16) uint16 {
 func Checksum(buf []byte, initial uint16) uint16 {
 	s, _ := unrolledCalculateChecksum(buf, false, uint32(initial))
 	return s
-}
-
-// ChecksumVV calculates the checksum (as defined in RFC 1071) of the bytes in
-// the given VectorizedView.
-//
-// The initial checksum must have been computed on an even number of bytes.
-func ChecksumVV(vv tcpipbuffer.VectorisedView, initial uint16) uint16 {
-	var c Checksumer
-	for _, v := range vv.Views() {
-		c.Add([]byte(v))
-	}
-	return ChecksumCombine(initial, c.Checksum())
 }
 
 // ChecksumBuffer calculates the checksum (as defined in RFC 1071) of the

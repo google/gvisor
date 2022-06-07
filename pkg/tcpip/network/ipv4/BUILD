@@ -16,7 +16,6 @@ go_library(
         "//pkg/buffer",
         "//pkg/sync",
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
         "//pkg/tcpip/header/parse",
         "//pkg/tcpip/network/hash",

@@ -28,7 +28,6 @@ _templates:
       PACKAGES: >
         ./pkg/tcpip
         ./pkg/tcpip/adapters/gonet
-        ./pkg/tcpip/buffer
         ./pkg/tcpip/header
         ./pkg/tcpip/link/channel
         ./pkg/tcpip/network/ipv4
@@ -37,6 +36,7 @@ _templates:
         ./pkg/tcpip/transport/icmp
         ./pkg/tcpip/transport/tcp
         ./pkg/tcpip/transport/udp
+        ./pkg/buffer
         ./pkg/waiter
 env:
   # Force a clean checkout every time to avoid reuse of files between runs.

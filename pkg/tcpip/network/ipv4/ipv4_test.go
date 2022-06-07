@@ -3920,7 +3920,7 @@ func TestIcmpRateLimit(t *testing.T) {
 				p := e.Read()
 				if round >= icmpBurst {
 					if p != nil {
-						t.Errorf("got packet %x in round %d, expected ICMP rate limit to stop it", p.Data().Views(), round)
+						t.Errorf("got packet %x in round %d, expected ICMP rate limit to stop it", p.Data().Slices(), round)
 						p.DecRef()
 					}
 					return

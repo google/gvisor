@@ -94,6 +94,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
+        "//pkg/buffer",
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/fdnotifier",
@@ -109,7 +110,6 @@ go_library(
         "//pkg/sync/locking",
         "//pkg/syserr",
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
         "//pkg/unet",
         "//pkg/waiter",
         "@org_golang_x_sys//unix:go_default_library",

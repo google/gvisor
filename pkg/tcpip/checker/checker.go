@@ -23,8 +23,8 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 )
@@ -1546,7 +1546,7 @@ func IPv6WithExtHdr(t *testing.T, b []byte, checkers ...NetworkChecker) {
 
 	payloadIterator := header.MakeIPv6PayloadIterator(
 		header.IPv6ExtensionHeaderIdentifier(ipv6.NextHeader()),
-		buffer.View(ipv6.Payload()).ToVectorisedView(),
+		buffer.NewWithData(ipv6.Payload()),
 	)
 
 	var rawPayloadHeader header.IPv6RawPayloadHeader
@@ -1570,7 +1570,7 @@ func IPv6WithExtHdr(t *testing.T, b []byte, checkers ...NetworkChecker) {
 	networkHeader := ipv6HeaderWithExtHdr{
 		IPv6:      ipv6,
 		transport: tcpip.TransportProtocolNumber(rawPayloadHeader.Identifier),
-		payload:   rawPayloadHeader.Buf.ToView(),
+		payload:   rawPayloadHeader.Buf.Flatten(),
 	}
 
 	for _, checker := range checkers {
@@ -1594,7 +1594,7 @@ func IPv6ExtHdr(headers ...IPv6ExtHdrChecker) NetworkChecker {
 
 		payloadIterator := header.MakeIPv6PayloadIterator(
 			header.IPv6ExtensionHeaderIdentifier(extHdrs.IPv6.NextHeader()),
-			buffer.View(extHdrs.IPv6.Payload()).ToVectorisedView(),
+			buffer.NewWithData(extHdrs.IPv6.Payload()),
 		)
 
 		for _, check := range headers {

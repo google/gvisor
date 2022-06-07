@@ -173,7 +173,7 @@ func compareFragments(packets []*stack.PacketBuffer, sourcePacket *stack.PacketB
 			return fmt.Errorf("fragment #%d: IP packet is invalid:\n%s", i, hex.Dump(fragmentIPHeaders))
 		}
 
-		fragmentIPHeadersLength := fragment.NetworkHeader().View().Size()
+		fragmentIPHeadersLength := len(fragment.NetworkHeader().View())
 		if fragmentIPHeadersLength != sourceIPHeadersLen {
 			return fmt.Errorf("fragment #%d: got fragmentIPHeadersLength = %d, want = %d", i, fragmentIPHeadersLength, sourceIPHeadersLen)
 		}
@@ -3764,7 +3764,7 @@ func TestIcmpRateLimit(t *testing.T) {
 				p := e.Read()
 				if round >= icmpBurst {
 					if p != nil {
-						t.Errorf("got packet %x in round %d, expected ICMP rate limit to stop it", p.Data().Views(), round)
+						t.Errorf("got packet %x in round %d, expected ICMP rate limit to stop it", p.Data().Slices(), round)
 						p.DecRef()
 					}
 					return

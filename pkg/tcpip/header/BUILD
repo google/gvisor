@@ -32,7 +32,6 @@ go_library(
     deps = [
         "//pkg/buffer",
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
         "//pkg/tcpip/seqnum",
         "@com_github_google_btree//:go_default_library",
     ],
@@ -51,9 +50,9 @@ go_test(
     ],
     deps = [
         ":header",
+        "//pkg/buffer",
         "//pkg/rand",
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
         "//pkg/tcpip/prependable",
         "//pkg/tcpip/testutil",
         "@com_github_google_go_cmp//cmp:go_default_library",
@@ -71,8 +70,8 @@ go_test(
     ],
     library = ":header",
     deps = [
+        "//pkg/buffer",
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
         "//pkg/tcpip/testutil",
         "@com_github_google_go_cmp//cmp:go_default_library",
     ],

@@ -303,7 +303,7 @@ func snatAction(pkt *PacketBuffer, hook Hook, r *Route, port uint16, address tcp
 
 func natAction(pkt *PacketBuffer, hook Hook, r *Route, portsOrIdents portOrIdentRange, address tcpip.Address, dnat bool) (RuleVerdict, int) {
 	// Drop the packet if network and transport header are not set.
-	if pkt.NetworkHeader().View().IsEmpty() || pkt.TransportHeader().View().IsEmpty() {
+	if len(pkt.NetworkHeader().View()) == 0 || len(pkt.TransportHeader().View()) == 0 {
 		return RuleDrop, 0
 	}
 

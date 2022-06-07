@@ -66,7 +66,7 @@ func (p *pcapPacket) MarshalBinary() ([]byte, error) {
 	binary.BigEndian.PutUint32(b[8:12], uint32(captureLen))
 	binary.BigEndian.PutUint32(b[12:16], uint32(packetSize))
 	w := tcpip.SliceWriter(b[16:])
-	for _, v := range p.packet.Views() {
+	for _, v := range p.packet.Slices() {
 		if captureLen == 0 {
 			break
 		}

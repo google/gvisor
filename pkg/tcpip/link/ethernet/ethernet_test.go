@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	tcpipbuffer "gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/ethernet"
@@ -143,7 +142,7 @@ func TestWritePacketToRemoteAddHeader(t *testing.T) {
 
 	// TODO(b/230896518): Remove tcpipbuffer once WritePacketToRemote API is
 	// changed.
-	if err := s.WritePacketToRemote(nicID, remoteLinkAddr, netProto, tcpipbuffer.VectorisedView{}); err != nil {
+	if err := s.WritePacketToRemote(nicID, remoteLinkAddr, netProto, buffer.Buffer{}); err != nil {
 		t.Fatalf("s.WritePacketToRemote(%d, %s, _): %s", nicID, remoteLinkAddr, err)
 	}
 

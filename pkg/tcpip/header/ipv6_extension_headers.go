@@ -23,8 +23,8 @@ import (
 	"io"
 	"math"
 
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 )
 
 // IPv6ExtensionHeaderIdentifier is an IPv6 extension header identifier.
@@ -161,7 +161,7 @@ type IPv6PayloadHeader interface {
 // header.
 type IPv6RawPayloadHeader struct {
 	Identifier IPv6ExtensionHeaderIdentifier
-	Buf        buffer.VectorisedView
+	Buf        buffer.Buffer
 }
 
 // isIPv6PayloadHeader implements IPv6PayloadHeader.isIPv6PayloadHeader.
@@ -469,7 +469,7 @@ type IPv6PayloadIterator struct {
 
 	// reader is an io.Reader over payload.
 	reader  bufio.Reader
-	payload buffer.VectorisedView
+	payload buffer.Buffer
 
 	// Indicates to the iterator that it should return the remaining payload as a
 	// raw payload on the next call to Next.
@@ -501,7 +501,7 @@ func (i IPv6PayloadIterator) ParseOffset() uint32 {
 
 // MakeIPv6PayloadIterator returns an iterator over the IPv6 payload containing
 // extension headers, or a raw payload if the payload cannot be parsed.
-func MakeIPv6PayloadIterator(nextHdrIdentifier IPv6ExtensionHeaderIdentifier, payload buffer.VectorisedView) IPv6PayloadIterator {
+func MakeIPv6PayloadIterator(nextHdrIdentifier IPv6ExtensionHeaderIdentifier, payload buffer.Buffer) IPv6PayloadIterator {
 	readers := payload.Readers()
 	readerPs := make([]io.Reader, 0, len(readers))
 	for i := range readers {
@@ -510,7 +510,7 @@ func MakeIPv6PayloadIterator(nextHdrIdentifier IPv6ExtensionHeaderIdentifier, pa
 
 	return IPv6PayloadIterator{
 		nextHdrIdentifier: nextHdrIdentifier,
-		payload:           payload.Clone(nil),
+		payload:           payload.Clone(),
 		// We need a buffer of size 1 for calls to bufio.Reader.ReadByte.
 		reader:     *bufio.NewReaderSize(io.MultiReader(readerPs...), 1),
 		nextOffset: IPv6FixedHeaderSize,
@@ -525,7 +525,7 @@ func MakeIPv6PayloadIterator(nextHdrIdentifier IPv6ExtensionHeaderIdentifier, pa
 func (i *IPv6PayloadIterator) AsRawHeader(consume bool) IPv6RawPayloadHeader {
 	identifier := i.nextHdrIdentifier
 
-	var buf buffer.VectorisedView
+	var buf buffer.Buffer
 	if consume {
 		// Since we consume the iterator, we return the payload as is.
 		buf = i.payload
@@ -537,7 +537,7 @@ func (i *IPv6PayloadIterator) AsRawHeader(consume bool) IPv6RawPayloadHeader {
 			nextOffset:        i.nextOffset,
 		}
 	} else {
-		buf = i.payload.Clone(nil)
+		buf = i.payload.Clone()
 	}
 
 	return IPv6RawPayloadHeader{Identifier: identifier, Buf: buf}
@@ -675,7 +675,7 @@ func (i *IPv6PayloadIterator) nextHeaderData(fragmentHdr bool, bytes []byte) (IP
 	}
 
 	n, err := io.ReadFull(&i.reader, bytes)
-	i.payload.TrimFront(n)
+	i.payload.TrimFront(int64(n))
 	if err != nil {
 		return 0, nil, fmt.Errorf("read %d out of %d extension header data bytes (length = %d) for header with id = %d: %w", n, bytesLen, length, i.nextHdrIdentifier, err)
 	}
