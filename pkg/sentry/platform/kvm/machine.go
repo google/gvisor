@@ -318,6 +318,10 @@ func newMachine(vm int) (*machine, error) {
 		}
 	}
 
+	// handleBluepillFault takes the slot spinlock and it is called from
+	// seccompMmapHandler, so here we have to guarantee that mmap is not
+	// called while we hold the slot spinlock.
+	disableAsyncPreemption()
 	applyVirtualRegions(func(vr virtualRegion) {
 		if excludeVirtualRegion(vr) {
 			return // skip region.
@@ -331,6 +335,7 @@ func newMachine(vm int) (*machine, error) {
 		mapRegion(vr, 0)
 
 	})
+	enableAsyncPreemption()
 
 	// Initialize architecture state.
 	if err := m.initArchState(); err != nil {
