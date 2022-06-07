@@ -265,6 +265,8 @@ steps:
   - <<: *common
     label: ":earth_americas: Website tests"
     command: make website-build
+    agents:
+      arch: "amd64"
 
   # Networking tests.
   - <<: *common
