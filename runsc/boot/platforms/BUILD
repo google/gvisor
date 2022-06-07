@@ -22,6 +22,7 @@ exempt_go_library(
         linux = [
             "//pkg/sentry/platform/%s" % platform
             for platform in platforms
+            if "internal" not in platforms[platform]
         ],
     ),
 )
