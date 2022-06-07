@@ -36,10 +36,17 @@ func Getdents64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	return getdents(t, args, true /* isGetdents64 */)
 }
 
+// DirentStructBytesWithoutName is enough to fit (struct linux_dirent) and
+// (struct linux_dirent64) without accounting for the name parameter.
+const DirentStructBytesWithoutName = 8 + 8 + 2 + 1 + 1
+
 func getdents(t *kernel.Task, args arch.SyscallArguments, isGetdents64 bool) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	addr := args[1].Pointer()
 	size := int(args[2].Uint())
+	if size < DirentStructBytesWithoutName {
+		return 0, nil, linuxerr.EINVAL
+	}
 
 	file := t.GetFileVFS2(fd)
 	if file == nil {
@@ -123,7 +130,7 @@ func (cb *getdentsCallback) Handle(dirent vfs.Dirent) error {
 		//     unsigned char  d_type;   /* File type */
 		//     char           d_name[]; /* Filename (null-terminated) */
 		// };
-		size := 8 + 8 + 2 + 1 + 1 + len(dirent.Name)
+		size := DirentStructBytesWithoutName + len(dirent.Name)
 		size = (size + 7) &^ 7 // round up to multiple of 8
 		if size > remaining {
 			// This is only needed to imitate Linux, since it writes out to the user
@@ -164,7 +171,7 @@ func (cb *getdentsCallback) Handle(dirent vfs.Dirent) error {
 		if cb.t.Arch().Width() != 8 {
 			panic(fmt.Sprintf("unsupported sizeof(unsigned long): %d", cb.t.Arch().Width()))
 		}
-		size := 8 + 8 + 2 + 1 + 1 + len(dirent.Name)
+		size := DirentStructBytesWithoutName + len(dirent.Name)
 		size = (size + 7) &^ 7 // round up to multiple of sizeof(long)
 		if size > remaining {
 			if cb.copied == 0 && cb.userReportedSize >= size {
