@@ -639,7 +639,7 @@ func (ds *decodeState) Load(obj reflect.Value) {
 				ods = nil
 				encoded = nil
 			default:
-				Failf("wanted type or object ID, got %#v", encoded)
+				Failf("wanted type or object ID, got %T", encoded)
 			}
 		}
 	}); err != nil {
