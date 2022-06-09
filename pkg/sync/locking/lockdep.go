@@ -70,7 +70,7 @@ func checkLock(class *MutexClass, prevClass *MutexClass, chain []*MutexClass) {
 		}
 		panic(b.String())
 	}
-	prevClass.ancestors.Range(func(parentClass *MutexClass, stacks *string) bool {
+	prevClass.ancestors.RangeRepeatable(func(parentClass *MutexClass, stacks *string) bool {
 		// The recursion is fine here. If it fails, you need to reduce
 		// a number of nested locks.
 		checkLock(class, parentClass, chain)
