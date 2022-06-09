@@ -98,15 +98,13 @@ func main() {
 	arch_syscalls(syscalls)
 	// We choose a syscall that is unlikely to be called by Go runtime,
 	// even with race or other instrumentation enabled.
-	syscall := uintptr(unix.SYS_AFS_SYSCALL)
-	// This test goes up to 11.
-	syscallArg := uintptr(11)
+	syscall := uintptr(unix.SYS_UMASK)
 
 	die := *dieFlag
 	if !die {
 		syscalls[syscall] = []seccomp.Rule{
 			{
-				seccomp.EqualTo(syscallArg),
+				seccomp.EqualTo(0),
 			},
 		}
 	}
@@ -117,9 +115,6 @@ func main() {
 	}
 	fmt.Printf("Filters installed\n")
 
-	if _, _, err := unix.RawSyscall(syscall, syscallArg, 0, 0); err != unix.Errno(0) {
-		fmt.Printf("syscall error: %v\n", err)
-	}
-
+	unix.RawSyscall(syscall, 0, 0, 0)
 	fmt.Printf("Syscall was allowed!!!\n")
 }
