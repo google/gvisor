@@ -63,6 +63,12 @@ yaml_test(
     schema = "@github_workflow_schema//file",
 )
 
+filegroup(
+    name = "buildkite_pipelines",
+    srcs = glob([".buildkite/*.yaml"]),
+    visibility = ["//:sandbox"],
+)
+
 yaml_test(
     name = "buildkite_pipelines_test",
     srcs = glob([".buildkite/*.yaml"]),
