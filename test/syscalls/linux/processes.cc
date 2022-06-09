@@ -13,12 +13,17 @@
 // limitations under the License.
 
 #include <stdint.h>
+#include <sys/mman.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+
+#include <algorithm>
+#include <cstring>
 
 #include "gtest/gtest.h"
 #include "absl/flags/flag.h"
 #include "absl/strings/str_format.h"
+#include "absl/strings/string_view.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/capability_util.h"
@@ -93,7 +98,7 @@ TEST(Processes, SetPGIDOfZombie) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
   // Fork a test process in a new PID namespace, because it needs to manipulate
-  // with reparanted processes.
+  // with reparented processes.
   struct clone_arg {
     // Reserve some space for clone() to locate arguments and retcode in this
     // place.
@@ -134,6 +139,7 @@ TEST(Processes, TheadSharesSamePID) {
       clone(WritePIDToPipe, ca.stack_ptr,
             CLONE_THREAD | CLONE_SIGHAND | CLONE_VM | CLONE_FS, pipe_fds),
       SyscallSucceeds());
+  ASSERT_THAT(close(pipe_fds[1]), SyscallSucceeds());
   pid_t pid_from_child;
   TEST_PCHECK(read(pipe_fds[0], &pid_from_child, sizeof(pid_from_child)) ==
               sizeof(pid_from_child));
@@ -141,7 +147,6 @@ TEST(Processes, TheadSharesSamePID) {
   TEST_PCHECK(read(pipe_fds[0], &buf, sizeof(buf)) ==
               0);  // Wait for cloned thread to exit
   ASSERT_THAT(close(pipe_fds[0]), SyscallSucceeds());
-  ASSERT_THAT(close(pipe_fds[1]), SyscallSucceeds());
   EXPECT_EQ(test_pid, pid_from_child);
 }
 
@@ -160,6 +165,27 @@ struct ExecSwapResult {
   // PID and TID after the execv().
   pid_t post_exec_pid;
   pid_t post_exec_tid;
+};
+
+// The number of elements in ExecSwapArg.execve_array.
+constexpr int kExecveArraySize = 7;
+
+// The size of the preallocated elements of execve_array that are populated
+// in ExecSwapPreExec. Should be large enough to hold any flag string.
+constexpr int kExecveArrayComponentsSize = 256;
+
+// ExecSwapArg is passed as argument to ExecSwapPreExec.
+struct ExecSwapArg {
+  // The pipe FD to write results to.
+  int pipe_fd;
+
+  // Data from prior to cloning.
+  pid_t pre_clone_pid;
+  pid_t pre_clone_tid;
+
+  // Pre-allocated array to use in execve, so that we can use it without doing
+  // allocations in ExecSwapPreExec.
+  char* execve_array[kExecveArraySize];
 };
 
 // ExecSwapPostExec is the third part of the ExecSwapThreadGroupLeader test.
@@ -196,32 +222,42 @@ int ExecSwapPostExec() {
 // It is called after the test has fork()'d and clone()'d.
 // It calls exec() with flags that cause the test binary to run
 // ExecSwapPostExec.
-int ExecSwapPreExec(void* arg) {
-  ExecSwapResult* result = reinterpret_cast<ExecSwapResult*>(arg);
+int ExecSwapPreExec(void* void_arg) {
+  ExecSwapArg* arg = reinterpret_cast<ExecSwapArg*>(void_arg);
   pid_t pid;
   TEST_PCHECK(pid = getpid());
   pid_t tid;
   TEST_PCHECK(tid = gettid());
 
-  ExecveArray const execve_argv = {
-      "/proc/self/exe",
-      "--processes_test_exec_swap",
-      absl::StrFormat("--processes_test_exec_swap_pre_clone_pid=%d",
-                      result->pre_clone_pid),
-      absl::StrFormat("--processes_test_exec_swap_pre_clone_tid=%d",
-                      result->pre_clone_tid),
-      absl::StrFormat("--processes_test_exec_swap_pre_exec_pid=%d", pid),
-      absl::StrFormat("--processes_test_exec_swap_pre_exec_tid=%d", tid),
-      absl::StrFormat("--processes_test_exec_swap_pipe_fd=%d", result->pipe_fd),
-  };
-  TEST_PCHECK(execv("/proc/self/exe", execve_argv.get()));
+  strncpy(arg->execve_array[0], "/proc/self/exe", kExecveArrayComponentsSize);
+  strncpy(arg->execve_array[1], "--processes_test_exec_swap",
+          kExecveArrayComponentsSize);
+  absl::SNPrintF(arg->execve_array[2], kExecveArrayComponentsSize,
+                 "--processes_test_exec_swap_pre_clone_pid=%d",
+                 arg->pre_clone_pid);
+  absl::SNPrintF(arg->execve_array[3], kExecveArrayComponentsSize,
+                 "--processes_test_exec_swap_pre_clone_tid=%d",
+                 arg->pre_clone_tid);
+  absl::SNPrintF(arg->execve_array[4], kExecveArrayComponentsSize,
+                 "--processes_test_exec_swap_pre_exec_pid=%d", pid);
+  absl::SNPrintF(arg->execve_array[5], kExecveArrayComponentsSize,
+                 "--processes_test_exec_swap_pre_exec_tid=%d", tid);
+  absl::SNPrintF(arg->execve_array[6], kExecveArrayComponentsSize,
+                 "--processes_test_exec_swap_pipe_fd=%d", arg->pipe_fd);
+  std::cerr << "Test exec'ing:" << std::endl;
+  for (int i = 0; i < kExecveArraySize; ++i) {
+    std::cerr << "  execve_array[" << i << "] = " << arg->execve_array[i]
+              << std::endl;
+  }
+  TEST_PCHECK(execv("/proc/self/exe", arg->execve_array));
+  std::cerr << "execve: " << errno << std::endl;
   _exit(1);  // Should be unreachable.
 }
 
 // ExecSwapPreClone is the first part of the ExecSwapThreadGroupLeader test.
 // It is called after the test has fork()'d.
 // It calls clone() to run ExecSwapPreExec.
-void ExecSwapPreClone(int* pipe_fds) {
+void ExecSwapPreClone(ExecSwapArg* exec_swap_arg) {
   pid_t pid;
   ASSERT_THAT(pid = getpid(), SyscallSucceeds());
   pid_t tid;
@@ -230,14 +266,12 @@ void ExecSwapPreClone(int* pipe_fds) {
     char stack[4096] __attribute__((aligned(16)));
     char stack_ptr[0];
   } ca;
-  ExecSwapResult result;
-  result.pipe_fd = pipe_fds[1];
-  result.pre_clone_pid = pid;
-  result.pre_clone_tid = tid;
+  exec_swap_arg->pre_clone_pid = pid;
+  exec_swap_arg->pre_clone_tid = tid;
   std::cerr << "Test cloning." << std::endl;
   ASSERT_THAT(
       clone(ExecSwapPreExec, ca.stack_ptr,
-            CLONE_THREAD | CLONE_SIGHAND | CLONE_VM | CLONE_FS, &result),
+            CLONE_THREAD | CLONE_SIGHAND | CLONE_VM | CLONE_FS, exec_swap_arg),
       SyscallSucceeds());
   // The clone thread will call exec, so just sit around here until it does.
   absl::SleepFor(absl::Milliseconds(500));
@@ -255,12 +289,30 @@ TEST(Processes, ExecSwapThreadGroupLeader) {
   ASSERT_THAT(test_pid = getpid(), SyscallSucceeds());
   pid_t test_tid;
   ASSERT_THAT(test_tid = gettid(), SyscallSucceeds());
+
+  // Preallocate ExecSwapArg ahead of fork().
+  // This uses shared memory because we use it after fork()+clone().
+  ExecSwapArg* exec_swap_arg =
+      (ExecSwapArg*)mmap(NULL, sizeof(ExecSwapArg), PROT_READ | PROT_WRITE,
+                         MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+  ASSERT_NE(exec_swap_arg, MAP_FAILED);
+  exec_swap_arg->pipe_fd = pipe_fds[1];
+  char* execve_array_component;
+  for (int i = 0; i < kExecveArraySize; ++i) {
+    execve_array_component =
+        (char*)mmap(NULL, kExecveArrayComponentsSize * sizeof(char),
+                    PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    ASSERT_NE(execve_array_component, MAP_FAILED);
+    exec_swap_arg->execve_array[i] = execve_array_component;
+  }
+
   std::cerr << "Test forking." << std::endl;
   pid_t fork_pid = fork();
   if (fork_pid == 0) {
-    ExecSwapPreClone(pipe_fds);
+    ExecSwapPreClone(exec_swap_arg);
     ASSERT_TRUE(false) << "Did not get replaced by execed child";
   }
+  ASSERT_THAT(close(pipe_fds[1]), SyscallSucceeds());
 
   std::cerr << "Waiting for test results." << std::endl;
   ExecSwapResult result;
@@ -279,7 +331,6 @@ TEST(Processes, ExecSwapThreadGroupLeader) {
             << result.post_exec_tid << std::endl;
 
   ASSERT_THAT(close(pipe_fds[0]), SyscallSucceeds());
-  ASSERT_THAT(close(pipe_fds[1]), SyscallSucceeds());
 
   // Test starts out as the thread group leader of itself.
   EXPECT_EQ(test_pid, test_tid);
