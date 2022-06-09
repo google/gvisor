@@ -116,13 +116,12 @@ TEST(Processes, SetPGIDOfZombie) {
   EXPECT_EQ(status, 0);
 }
 
-int WritePIDToPipe(void* arg) {
-  int* pipe_fds = reinterpret_cast<int*>(arg);
+void WritePIDToPipe(int* pipe_fds) {
   pid_t child_pid;
   TEST_PCHECK(child_pid = getpid());
+  TEST_PCHECK(child_pid != gettid());
   TEST_PCHECK(write(pipe_fds[1], &child_pid, sizeof(child_pid)) ==
               sizeof(child_pid));
-  _exit(0);
 }
 
 TEST(Processes, TheadSharesSamePID) {
@@ -131,14 +130,7 @@ TEST(Processes, TheadSharesSamePID) {
   pid_t test_pid;
   ASSERT_THAT(test_pid = getpid(), SyscallSucceeds());
   EXPECT_NE(test_pid, 0);
-  struct clone_arg {
-    char stack[256] __attribute__((aligned(16)));
-    char stack_ptr[0];
-  } ca;
-  ASSERT_THAT(
-      clone(WritePIDToPipe, ca.stack_ptr,
-            CLONE_THREAD | CLONE_SIGHAND | CLONE_VM | CLONE_FS, pipe_fds),
-      SyscallSucceeds());
+  ScopedThread([&pipe_fds]() { WritePIDToPipe(pipe_fds); }).Join();
   ASSERT_THAT(close(pipe_fds[1]), SyscallSucceeds());
   pid_t pid_from_child;
   TEST_PCHECK(read(pipe_fds[0], &pid_from_child, sizeof(pid_from_child)) ==
