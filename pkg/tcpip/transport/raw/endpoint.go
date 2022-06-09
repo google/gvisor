@@ -345,6 +345,10 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 		return 0, err
 	}
 
+	if p.Len() > int(ctx.MTU()) {
+		return 0, &tcpip.ErrMessageTooLong{}
+	}
+
 	// TODO(https://gvisor.dev/issue/6538): Avoid this allocation.
 	payloadBytes := make([]byte, p.Len())
 	if _, err := io.ReadFull(p, payloadBytes); err != nil {
