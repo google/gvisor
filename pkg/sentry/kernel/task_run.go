@@ -51,7 +51,11 @@ type taskRunState interface {
 }
 
 // run runs the task goroutine.
-func (t *Task) run() {
+//
+// threadID a dummy value set to the task's TID in the root PID namespace to
+// make it visible in stack dumps. A goroutine for a given task can be identified
+// searching for Task.run()'s argument value.
+func (t *Task) run(threadID uintptr) {
 	t.goid.Store(goid.Get())
 
 	// Construct t.blockingTimer here. We do this here because we can't
@@ -99,6 +103,8 @@ func (t *Task) run() {
 			// Deferring this store triggers a false positive in the race
 			// detector (https://github.com/golang/go/issues/42599).
 			t.goid.Store(0)
+			// Keep argument alive because stack trace for dead variables may not be correct.
+			runtime.KeepAlive(threadID)
 			return
 		}
 	}
