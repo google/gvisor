@@ -1096,7 +1096,9 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 
 // StartProcess starts running a process that was created with CreateProcess.
 func (k *Kernel) StartProcess(tg *ThreadGroup) {
-	tg.Leader().Start()
+	t := tg.Leader()
+	tid := k.tasks.Root.IDOfTask(t)
+	t.Start(tid)
 }
 
 // Start starts execution of all tasks in k.
@@ -1123,8 +1125,8 @@ func (k *Kernel) Start() error {
 	// Start task goroutines.
 	k.tasks.mu.RLock()
 	defer k.tasks.mu.RUnlock()
-	for t := range k.tasks.Root.tids {
-		t.Start()
+	for t, tid := range k.tasks.Root.tids {
+		t.Start(tid)
 	}
 	return nil
 }
