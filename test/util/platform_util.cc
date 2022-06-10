@@ -97,5 +97,23 @@ PlatformSupport PlatformSupportInt3() {
   TEST_CHECK(false);
 }
 
+PlatformSupport PlatformSupportVsyscall() {
+  const char* support = std::getenv("GVISOR_PLATFORM_SUPPORT");
+  if (support != nullptr) {
+    if (std::string(support).find("VSYSCALL:TRUE") != std::string::npos) {
+      return PlatformSupport::Allowed;
+    }
+    if (std::string(support).find("VSYSCALL:FALSE") != std::string::npos) {
+      return PlatformSupport::NotSupported;
+    }
+    std::cerr << "GVISOR_PLATFORM_SUPPORT variable does not contain VSYSCALL "
+                 "support information: "
+              << support << std::endl;
+    TEST_CHECK(false);
+  }
+  std::cerr << "GVISOR_PLATFORM_SUPPORT variable undefined" << std::endl;
+  TEST_CHECK(false);
+}
+
 }  // namespace testing
 }  // namespace gvisor
