@@ -126,7 +126,7 @@ func DelGLock(class *MutexClass, subclass uint32) {
 		panic("the current goroutine doesn't have locks")
 	}
 	if _, ok := (*currentLocks)[class]; !ok {
-		panic("unlock of an unknow lock")
+		panic("unlock of an unknown lock")
 	}
 
 	delete(*currentLocks, class)
