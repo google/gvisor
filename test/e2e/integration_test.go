@@ -179,6 +179,7 @@ func TestCheckpointRestore(t *testing.T) {
 	if !testutil.IsCheckpointSupported() {
 		t.Skip("Pause/resume is not supported.")
 	}
+	dockerutil.EnsureDockerExperimentalEnabled()
 
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)

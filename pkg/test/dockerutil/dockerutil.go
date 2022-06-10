@@ -26,6 +26,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/test/testutil"
@@ -62,6 +63,15 @@ var (
 	useSystemdRgx = regexp.MustCompile("\\s*(native\\.cgroupdriver)\\s*=\\s*(systemd)\\s*")
 )
 
+// PrintDockerConfig prints the whole Docker configuration file to the log.
+func PrintDockerConfig() {
+	configBytes, err := ioutil.ReadFile(*config)
+	if err != nil {
+		log.Fatalf("Cannot read Docker config at %v: %v", *config, err)
+	}
+	log.Printf("Docker config (from %v):\n--------\n%v\n--------\n", *config, string(configBytes))
+}
+
 // EnsureSupportedDockerVersion checks if correct docker is installed.
 //
 // This logs directly to stderr, as it is typically called from a Main wrapper.
@@ -80,6 +90,19 @@ func EnsureSupportedDockerVersion() {
 	minor, _ := strconv.Atoi(matches[2])
 	if major < 17 || (major == 17 && minor < 9) {
 		log.Fatalf("Docker version 17.09.0 or greater is required, found: %02d.%02d", major, minor)
+	}
+}
+
+// EnsureDockerExperimentalEnabled ensures that Docker has experimental features enabled.
+func EnsureDockerExperimentalEnabled() {
+	cmd := exec.Command("docker", "version", "--format={{.Server.Experimental}}")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Fatalf("error running %s: %v", "docker version --format='{{.Server.Experimental}}'", err)
+	}
+	if strings.TrimSpace(string(out)) != "true" {
+		PrintDockerConfig()
+		log.Fatalf("Docker is running without experimental features enabled.")
 	}
 }
 
