@@ -49,8 +49,9 @@ PlatformSupport PlatformSupport32Bit();
 PlatformSupport PlatformSupportAlignmentCheck();
 PlatformSupport PlatformSupportMultiProcess();
 PlatformSupport PlatformSupportInt3();
+PlatformSupport PlatformSupportVsyscall();
 
 }  // namespace testing
 }  // namespace gvisor
 
-#endif  // GVISOR_TEST_UTIL_PLATFORM_UTL_H_
+#endif  // GVISOR_TEST_UTIL_PLATFORM_UTIL_H_
