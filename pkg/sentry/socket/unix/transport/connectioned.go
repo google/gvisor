@@ -296,30 +296,38 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 	}
 
 	// Do a dance to safely acquire locks on both endpoints.
+	// We need unlock func because even though order of unlock does not matter,
+	// nestedness matters.
+	var unlock func()
 	if e.id < ce.ID() {
 		e.Lock()
 		ce.NestedLock()
+		unlock = func() {
+			ce.NestedUnlock()
+			e.Unlock()
+		}
 	} else {
 		ce.Lock()
 		e.NestedLock()
+		unlock = func() {
+			e.NestedUnlock()
+			ce.Unlock()
+		}
 	}
 
 	// Check connecting state.
 	if ce.Connected() {
-		e.NestedUnlock()
-		ce.Unlock()
+		unlock()
 		return syserr.ErrAlreadyConnected
 	}
 	if ce.ListeningLocked() {
-		e.NestedUnlock()
-		ce.Unlock()
+		unlock()
 		return syserr.ErrInvalidEndpointState
 	}
 
 	// Check bound state.
 	if !e.ListeningLocked() {
-		e.NestedUnlock()
-		ce.Unlock()
+		unlock()
 		return syserr.ErrConnectionRefused
 	}
 
@@ -369,8 +377,7 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 		}
 
 		// Notify can deadlock if we are holding these locks.
-		e.NestedUnlock()
-		ce.Unlock()
+		unlock()
 
 		// Notify on both ends.
 		e.Notify(waiter.ReadableEvents)
@@ -379,8 +386,7 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 		return nil
 	default:
 		// Busy; return EAGAIN per spec.
-		e.NestedUnlock()
-		ce.Unlock()
+		unlock()
 		ne.Close(ctx)
 		return syserr.ErrTryAgain
 	}
