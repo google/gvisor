@@ -55,6 +55,7 @@ func LoadInitConfig(path string) (*InitConfig, error) {
 
 func loadInitConfig(reader io.Reader) (*InitConfig, error) {
 	decoder := json.NewDecoder(reader)
+	decoder.DisallowUnknownFields()
 	init := &InitConfig{}
 	if err := decoder.Decode(init); err != nil {
 		return nil, err

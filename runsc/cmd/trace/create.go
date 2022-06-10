@@ -17,10 +17,13 @@ package trace
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 
 	"github.com/google/subcommands"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
+	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
@@ -66,15 +69,9 @@ func (l *create) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}
 		return util.Errorf("missing path to configuration file, please set --config=[path]")
 	}
 
-	file, err := os.Open(l.config)
+	sessionConfig, err := decodeTraceConfig(l.config)
 	if err != nil {
-		return util.Errorf(err.Error())
-	}
-	defer file.Close()
-	decoder := json.NewDecoder(file)
-	sessionConfig := &seccheck.SessionConfig{}
-	if err := decoder.Decode(sessionConfig); err != nil {
-		return util.Errorf("invalid configuration file: %v", err)
+		return util.Errorf("loading config file: %v", err)
 	}
 
 	id := f.Arg(0)
@@ -94,4 +91,34 @@ func (l *create) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}
 	}
 
 	return subcommands.ExitSuccess
+}
+
+func decodeTraceConfig(path string) (*seccheck.SessionConfig, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	decoder := json.NewDecoder(file)
+	decoder.DisallowUnknownFields()
+	sessionConfig := &seccheck.SessionConfig{}
+	err = decoder.Decode(sessionConfig)
+	if err == nil {
+		// Success, we're done.
+		return sessionConfig, nil
+	}
+
+	// If file cannot be decoded as a SessionConfig, try with InitConfig as
+	// convenience in case the caller wants to reuse a trace session from
+	// InitConfig file.
+	log.Debugf("Config file is not a seccheck.SessionConfig, try with boot.InitConfig instead: %v", err)
+	if _, err := file.Seek(0, 0); err != nil {
+		return nil, err
+	}
+	initConfig := &boot.InitConfig{}
+	if err := decoder.Decode(initConfig); err != nil {
+		return nil, fmt.Errorf("invalid configuration file: %w", err)
+	}
+	return &initConfig.TraceSession, nil
 }
