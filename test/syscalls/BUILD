@@ -454,7 +454,7 @@ syscall_test(
 )
 
 syscall_test(
-    tags = ["container"],
+    container = True,
     test = "//test/syscalls/linux:proc_isolated_test",
 )
 
@@ -680,8 +680,8 @@ syscall_test(
 
 syscall_test(
     size = "large",
+    container = True,
     shard_count = most_shards,
-    tags = ["container"],
     test = "//test/syscalls/linux:socket_inet_loopback_isolated_test",
 )
 
