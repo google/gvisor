@@ -34,6 +34,7 @@
 #include "test/util/logging.h"
 #include "test/util/memory_util.h"
 #include "test/util/multiprocess_util.h"
+#include "test/util/platform_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/proc_util.h"
 #include "test/util/test_util.h"
@@ -216,6 +217,7 @@ time_t vsyscall_time(time_t* t) {
 
 TEST(SeccompTest, SeccompAppliesToVsyscall) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(IsVsyscallEnabled()));
+  SKIP_IF(PlatformSupportVsyscall() == PlatformSupport::NotSupported);
 
   pid_t const pid = fork();
   if (pid == 0) {
@@ -246,6 +248,7 @@ TEST(SeccompTest, SeccompAppliesToVsyscall) {
 
 TEST(SeccompTest, RetKillVsyscallCausesDeathBySIGSYS) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(IsVsyscallEnabled()));
+  SKIP_IF(PlatformSupportVsyscall() == PlatformSupport::NotSupported);
 
   pid_t const pid = fork();
   if (pid == 0) {
