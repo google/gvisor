@@ -25,6 +25,8 @@
 ##     DOCKER_RUN_OPTIONS - Options for the container (default: --privileged, required for tests).
 ##     DOCKER_NAME        - The container name (default: gvisor-bazel-HASH).
 ##     DOCKER_PRIVILEGED  - Docker privileged flags (default: --privileged).
+##     PRE_BAZEL_INIT     - If set, run this command with bash outside the Bazel
+##                          server container.
 ##     BAZEL_CACHE        - The bazel cache directory (default: detected).
 ##     GCLOUD_CONFIG      - The gcloud config directory (detect: detected).
 ##     DOCKER_SOCKET      - The Docker socket (default: detected).
@@ -55,6 +57,7 @@ GCLOUD_CONFIG := $(HOME)/.config/gcloud/
 DOCKER_SOCKET := /var/run/docker.sock
 DOCKER_CONFIG := /etc/docker
 DEVICE_FILE ?=
+PRE_BAZEL_INIT ?=
 
 ##
 ## Bazel helpers.
@@ -152,9 +155,7 @@ endif
 
 # Add other device file, if specified.
 ifneq ($(DEVICE_FILE),)
-ifneq (,$(wildcard $(DEVICE_FILE)))
 DOCKER_RUN_OPTIONS += --device "$(DEVICE_FILE):$(DEVICE_FILE)"
-endif
 endif
 
 # Top-level functions.
@@ -188,6 +189,10 @@ bazel-image: load-default ## Ensures that the local builder exists.
 
 ifneq (true,$(shell $(wrapper echo true)))
 bazel-server: bazel-image ## Ensures that the server exists.
+ifneq (,$(PRE_BAZEL_INIT))
+	@$(call header,PRE_BAZEL_INIT)
+	@bash -euxo pipefail -c "$(PRE_BAZEL_INIT)"
+endif
 	@$(call header,DOCKER RUN)
 	@docker rm -f $(DOCKER_NAME) 2>/dev/null || true
 	@mkdir -p $(BAZEL_CACHE)
