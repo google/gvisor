@@ -33,6 +33,8 @@
 ##     DOCKER_SOCKET      - The Docker socket (default: detected).
 ##     DEVICE_FILE        - An optional device file to expose in the container
 ##                          (default: no device file is exposed).
+##     HOST_PROCFS_MOUNTPOINT   - If set, expose this directory to the container.
+##     HOST_CGROUPFS_MOUNTPOINT - If set, expose this directory to the container.
 ##
 ##   To opt out of these wrappers, set DOCKER_BUILD=false.
 DOCKER_BUILD := true
@@ -61,6 +63,8 @@ DOCKER_SOCKET := /var/run/docker.sock
 DOCKER_CONFIG := /etc/docker
 DEVICE_FILE ?=
 PRE_BAZEL_INIT ?=
+HOST_PROCFS_MOUNTPOINT ?=
+HOST_CGROUPFS_MOUNTPOINT ?=
 
 ##
 ## Bazel helpers.
@@ -111,14 +115,14 @@ DOCKER_RUN_OPTIONS += -v "$(KERNEL_HEADERS_DIR_LINKED):$(KERNEL_HEADERS_DIR_LINK
 endif
 endif
 
-# Same for systemd-related files and directories. This allows control of systemd
-# from within the container, which is useful for tests that need to e.g. restart
-# docker.
-ifneq (,$(wildcard /run/systemd/system))
-DOCKER_RUN_OPTIONS += -v "/run/systemd/system:/run/systemd/system"
+# Same for relevant host directories. This is used by some tests.
+ifneq (,$(HOST_PROCFS_MOUNTPOINT))
+DOCKER_RUN_OPTIONS += -v "/proc:$(HOST_PROCFS_MOUNTPOINT)"
+DOCKER_RUN_OPTIONS += -e "HOST_PROCFS_MOUNTPOINT=$(HOST_PROCFS_MOUNTPOINT)"
 endif
-ifneq (,$(wildcard /var/run/dbus/system_bus_socket))
-DOCKER_RUN_OPTIONS += -v "/var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket"
+ifneq (,$(HOST_CGROUPFS_MOUNTPOINT))
+DOCKER_RUN_OPTIONS += -v "/sys/fs/cgroup:$(HOST_CGROUPFS_MOUNTPOINT)"
+DOCKER_RUN_OPTIONS += -e "HOST_CGROUPFS_MOUNTPOINT=$(HOST_CGROUPFS_MOUNTPOINT)"
 endif
 
 # Add basic UID/GID options.
@@ -215,6 +219,7 @@ endif
 	@docker run -d --name $(DOCKER_NAME) --hostname $(DOCKER_HOSTNAME) \
 	  -v "$(CURDIR):$(CURDIR)" \
 	  --workdir "$(CURDIR)" \
+	  --pid=host --cgroupns=host \
 	  $(DOCKER_RUN_OPTIONS) \
 	  gvisor.dev/images/builder \
 	  bash -c "set -x; tail -f --pid=\$$($(BAZEL) info server_pid) /dev/null"

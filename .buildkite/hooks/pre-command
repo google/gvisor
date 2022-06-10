@@ -1,3 +1,5 @@
+set -euo pipefail
+
 # Download any build-specific configuration that has been uploaded.
 # This allows top-level steps to override all subsequent steps.
 buildkite-agent artifact download 'tools/bazeldefs/*' . || true
@@ -36,22 +38,47 @@ export TOTAL_PARTITIONS=${BUILDKITE_PARALLEL_JOB_COUNT:-1}
 export RUNTIME="buildkite_runtime_${BUILDKITE_BRANCH}-${BUILDKITE_BUILD_ID}"
 export RUNTIME="$(echo "$RUNTIME" | sed -r 's~[^-_a-z0-9]+~_~g')"
 
-# Ensure Docker has experimental enabled.
+# If running in a container, set the reload command appropriately.
+if [[ -x /tmp/buildkite-reload-host-docker/reload ]]; then
+  export DOCKER_RELOAD_COMMAND='/tmp/buildkite-reload-host-docker/reload'
+else
+  export DOCKER_RELOAD_COMMAND='sudo systemctl reload docker'
+fi
+
+# Ensure Docker has experimental enabled, install runtimes.
+HAD_EXPERIMENTAL="$(docker version --format='{{.Server.Experimental}}')"
 if [[ -n "${STAGED_BINARIES:-}" ]]; then
   # Used `runsc` from STAGED_BINARIES instead of building it from scratch.
-  tmpdir="$(mktemp -d)"
-  gsutil cat "$(STAGED_BINARIES)" | tar -C "$tmpdir" -zxvf - runsc
-  chmod +x "$tmpdir/runsc"
-  "$tmpdir/runsc" install --experimental=true --runtime="${RUNTIME}" \
+  export BUILDKITE_STAGED_BINARIES_DIRECTORY="$(mktemp -d)"
+  gsutil cat "$STAGED_BINARIES" \
+    | tar -C "$BUILDKITE_STAGED_BINARIES_DIRECTORY" -zxvf - runsc
+  chmod +x "$BUILDKITE_STAGED_BINARIES_DIRECTORY/runsc"
+  sudo "$BUILDKITE_STAGED_BINARIES_DIRECTORY/runsc" install \
+    --experimental=true --runtime="${RUNTIME}" \
     -- "${RUNTIME_ARGS:-}"
-  rm -rf "$tmpdir"
 else
   make sudo TARGETS=//runsc:runsc \
     ARGS="install --experimental=true --runtime=${RUNTIME} -- ${RUNTIME_ARGS:-}"
 fi
-# WARNING: We may be running in a container when this command executes.
-# This only makes sense if Docker's `live-restore` feature is enabled.
-sudo systemctl restart docker
+if [[ "$HAD_EXPERIMENTAL" == false ]]; then
+  # WARNING: We may be running in a container when this command executes.
+  # This only makes sense if Docker's `live-restore` feature is enabled.
+  sudo systemctl restart docker
+else
+  # If experimental-ness was already enabled, we don't need to restart, as the
+  # only thing we modified is the list of runtimes, which can be reloaded with
+  # just a SIGHUP.
+  bash -c "$DOCKER_RELOAD_COMMAND"
+fi
+
+# Override directories that may be mounted at a different mountpoint when
+# running in a container.
+if [[ -d /buildkite-host-proc ]]; then
+  export HOST_PROCFS_MOUNTPOINT=/buildkite-host-proc
+fi
+if [[ -d /buildkite-host-cgroupfs ]]; then
+  export HOST_CGROUPFS_MOUNTPOINT=/buildkite-host-cgroupfs
+fi
 
 # Helper for benchmarks, based on the branch.
 if test "${BUILDKITE_BRANCH}" = "master"; then

@@ -21,6 +21,7 @@ import (
 
 	"github.com/syndtr/gocapability/capability"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
+	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -48,6 +49,13 @@ func TestMain(m *testing.M) {
 		panic(err.Error())
 	}
 	specutils.ExePath = path
+
+	if procRoot := os.Getenv("HOST_PROCFS_MOUNTPOINT"); procRoot != "" {
+		cgroup.TestOnlySetProcRoot(procRoot)
+	}
+	if cgroupRoot := os.Getenv("HOST_CGROUPFS_MOUNTPOINT"); cgroupRoot != "" {
+		cgroup.TestOnlySetCgroupRoot(cgroupRoot)
+	}
 
 	os.Exit(m.Run())
 }

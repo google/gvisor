@@ -7,6 +7,11 @@ _templates:
           limit: 10
         - exit_status: "*"
           limit: 2
+  source_test: &source_test
+    if: build.env("STAGED_BINARIES") == null
+  platform_specific_agents: &platform_specific_agents {}
+  kvm_agents: &kvm_agents {kvm: "true"}
+  ubuntu_agents: &ubuntu_agents {os: "ubuntu"}
   benchmarks: &benchmarks
     timeout_in_minutes: 120
     retry:
@@ -21,8 +26,9 @@ _templates:
       BENCHMARKS_TABLE: benchmarks
       BENCHMARKS_UPLOAD: true
     agents:
+      <<: *kvm_agents
+      <<: *platform_specific_agents
       arch: "amd64"
-      kvm: "true"
   netstack_test: &netstack_test
     env:
       PACKAGES: >
@@ -42,25 +48,33 @@ env:
   # Force a clean checkout every time to avoid reuse of files between runs.
   BUILDKITE_CLEAN_CHECKOUT: true
 
+  # Optional filter for syscall tests.
+  SYSCALL_TEST_FILTERS: ''
+
 steps:
   # Run basic smoke tests before preceding to other tests.
   - <<: *common
+    <<: *source_test
     label: ":fire: Smoke tests (AMD64)"
     command: make smoke-tests
     agents:
       arch: "amd64"
   - wait
   - <<: *common
+    <<: *source_test
     label: ":fire: Smoke tests (ARM64)"
     command: make smoke-tests
     agents:
       arch: "arm64"
   - <<: *common
+    <<: *source_test
     label: ":fire: Smoke race tests"
     command: make smoke-race-tests
+  - wait
 
   # Build everything.
   - <<: *common
+    <<: *source_test
     label: ":world_map: Build everything"
     command: "make build OPTIONS=--build_tag_filters=-nogo TARGETS=//..."
     agents:
@@ -70,6 +84,7 @@ steps:
   # as a GitHub action in order to preserve this maintaince across forks. However, providing the
   # action here may provide easier debuggability and diagnosis on failure.
   - <<: *common
+    <<: *source_test
     label: ":golang: Go branch"
     commands:
       - tools/go_branch.sh
@@ -78,6 +93,7 @@ steps:
 
   # Check that commonly used netstack packages build on various platforms.
   - <<: *common
+    <<: *source_test
     <<: *netstack_test
     label: ":mac: Netstack on Mac"
     commands:
@@ -85,6 +101,7 @@ steps:
       - git checkout go && git clean -xf .
       - GOOS=darwin GOARCH=arm64 go build $$PACKAGES
   - <<: *common
+    <<: *source_test
     <<: *netstack_test
     label: ":windows: Netstack on Windows"
     commands:
@@ -92,6 +109,7 @@ steps:
       - git checkout go && git clean -xf .
       - GOOS=windows GOARCH=amd64 go build $$PACKAGES
   - <<: *common
+    <<: *source_test
     <<: *netstack_test
     label: ":freebsd: Netstack on FreeBSD"
     commands:
@@ -99,6 +117,7 @@ steps:
       - git checkout go && git clean -xf .
       - GOOS=freebsd GOARCH=amd64 go build $$PACKAGES
   - <<: *common
+    <<: *source_test
     <<: *netstack_test
     label: ":openbsd: Netstack on OpenBSD"
     commands:
@@ -106,6 +125,7 @@ steps:
       - git checkout go && git clean -xf .
       - GOOS=openbsd GOARCH=amd64 go build $$PACKAGES
   - <<: *common
+    <<: *source_test
     <<: *netstack_test
     label: ":older_man: Netstack on 32-bit Linux"
     commands:
@@ -115,6 +135,7 @@ steps:
 
   # Release workflow.
   - <<: *common
+    <<: *source_test
     label: ":ship: Release tests"
     commands:
       - make BAZEL_OPTIONS=--config=x86_64 artifacts/x86_64
@@ -125,11 +146,13 @@ steps:
 
   # Images tests.
   - <<: *common
+    <<: *source_test
     label: ":docker: Images (x86_64)"
     command: make ARCH=x86_64 load-all-images
     agents:
       arch: "amd64"
   - <<: *common
+    <<: *source_test
     label: ":docker: Images (aarch64)"
     command: make ARCH=aarch64 load-all-images
     agents:
@@ -137,44 +160,46 @@ steps:
 
   # Basic unit tests.
   - <<: *common
+    <<: *source_test
     label: ":golang: Nogo tests"
     command: make nogo-tests
   - <<: *common
+    <<: *source_test
     label: ":test_tube: Unit tests (cgroupv1)"
     command: make unit-tests
     agents:
       cgroup: "v1"
       arch: "amd64"
   - <<: *common
+    <<: *source_test
     label: ":test_tube: Unit tests (cgroupv2)"
     command: make unit-tests
     agents:
       cgroup: "v2"
       arch: "amd64"
   - <<: *common
+    <<: *source_test
     label: ":test_tube: Container tests (cgroupv1)"
     command: make container-tests
     agents:
+      <<: *kvm_agents
       cgroup: "v1"
-      kvm: "true"
       arch: "amd64"
   - <<: *common
+    # This variant is not really a source test, but we annotate it as such to
+    # avoid running binary-only tests for all variants of cgroups. It is
+    # sufficient to run cgroupv2 variants only for source changes.
+    <<: *source_test
     label: ":test_tube: Container tests (cgroupv2)"
     command: make container-tests
     agents:
+      <<: *kvm_agents
       cgroup: "v2"
-      kvm: "true"
       arch: "amd64"
 
   # All system call tests.
   - <<: *common
-    label: ":toolbox: System call tests (AMD64)"
-    command: make syscall-tests
-    parallelism: 20
-    agents:
-      arch: "amd64"
-      kvm: "true"
-  - <<: *common
+    <<: *source_test
     label: ":muscle: System call tests (ARM64)"
     command: make BAZEL_OPTIONS=--test_tag_filters=runsc_ptrace syscall-tests
     parallelism: 10
@@ -183,93 +208,110 @@ steps:
 
   # Integration tests.
   - <<: *common
+    <<: *source_test
     label: ":docker: Docker tests (cgroupv1)"
     command: make docker-tests
     agents:
+      <<: *ubuntu_agents
       arch: "amd64"
       cgroup: "v1"
-      os: "ubuntu"
   - <<: *common
+    # See above: not truly a source test.
+    <<: *source_test
     label: ":docker: Docker tests (cgroupv2)"
     command: make docker-tests
     agents:
+      <<: *ubuntu_agents
       arch: "amd64"
       cgroup: "v2"
-      os: "ubuntu"
   - <<: *common
     label: ":goggles: Overlay tests"
     command: make overlay-tests
     agents:
+      <<: *platform_specific_agents
+      <<: *ubuntu_agents
       arch: "amd64"
-      os: "ubuntu"
   - <<: *common
     label: ":safety_pin: Host network tests"
     command: make hostnet-tests
     agents:
+      <<: *platform_specific_agents
+      <<: *ubuntu_agents
       arch: "amd64"
-      os: "ubuntu"
   - <<: *common
     label: ":satellite: SWGSO tests"
     command: make swgso-tests
     agents:
+      <<: *platform_specific_agents
+      <<: *ubuntu_agents
       arch: "amd64"
-      os: "ubuntu"
   - <<: *common
+    <<: *source_test
     label: ":coffee: Do tests"
     command: make do-tests
     agents:
       arch: "amd64"
   - <<: *common
+    <<: *source_test
     label: ":person_in_lotus_position: KVM tests"
     command: make kvm-tests
     agents:
+      <<: *kvm_agents
       arch: "amd64"
-      kvm: "true"
   - <<: *common
     label: ":weight_lifter: Fsstress test"
     command: make fsstress-test
     agents:
+      <<: *platform_specific_agents
+      <<: *ubuntu_agents
       arch: "amd64"
-      os: "ubuntu"
   - <<: *common
     label: ":docker: Containerd 1.3.9 tests"
     command: make containerd-test-1.3.9
     agents:
+      <<: *platform_specific_agents
+      <<: *ubuntu_agents
       cgroup: "v1"
       arch: "amd64"
-      os: "ubuntu"
   - <<: *common
     label: ":docker: Containerd 1.4.3 tests"
     command: make containerd-test-1.4.3
     agents:
-      os: "ubuntu"
+      <<: *platform_specific_agents
+      <<: *ubuntu_agents
   - <<: *common
     label: ":docker: Containerd 1.5.4 tests (cgroupv1)"
     command: make containerd-test-1.5.4
     agents:
+      <<: *platform_specific_agents
+      <<: *ubuntu_agents
       cgroup: "v1"
-      os: "ubuntu"
   - <<: *common
+    # See above: not truly a source test.
+    <<: *source_test
     label: ":docker: Containerd 1.5.4 tests (cgroupv2)"
     command: make containerd-test-1.5.4
     agents:
+      <<: *ubuntu_agents
       cgroup: "v2"
-      os: "ubuntu"
   - <<: *common
     label: ":docker: Containerd 1.6.0-rc.4 tests (cgroupv1)"
     command: make containerd-test-1.6.0-rc.4
     agents:
+      <<: *platform_specific_agents
+      <<: *ubuntu_agents
       cgroup: "v1"
-      os: "ubuntu"
   - <<: *common
+    <<: *source_test
     label: ":docker: Containerd 1.6.0-rc.4 tests (cgroupv2)"
     command: make containerd-test-1.6.0-rc.4
     agents:
+      <<: *ubuntu_agents
       cgroup: "v2"
-      os: "ubuntu"
 
   # Check the website builds.
   - <<: *common
+    <<: *source_test
     label: ":earth_americas: Website tests"
     command: make website-build
     agents:
@@ -277,99 +319,27 @@ steps:
 
   # Networking tests.
   - <<: *common
+    <<: *source_test
     label: ":table_tennis_paddle_and_ball: IPTables tests"
     command: make iptables-tests
     agents:
-      os: "ubuntu"
+      <<: *ubuntu_agents
   - <<: *common
+    <<: *source_test
     label: ":construction_worker: Packetdrill tests"
     command: make packetdrill-tests
     agents:
-      os: "ubuntu"
+      <<: *ubuntu_agents
   - <<: *common
+    <<: *source_test
     label: ":hammer: Packetimpact tests"
     command: make packetimpact-tests
     agents:
-      os: "ubuntu"
+      <<: *ubuntu_agents
 
   # Runtime tests.
-  - <<: *common
-    label: ":php: PHP runtime tests"
-    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} php8.1.1-runtime-tests
-    parallelism: 10
-    agents:
-      arch: "amd64"
-      os: "ubuntu"
-  - <<: *common
-    label: ":java: Java runtime tests"
-    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} java17-runtime-tests
-    parallelism: 40
-    agents:
-      arch: "amd64"
-      os: "ubuntu"
-  - <<: *common
-    label: ":golang: Go runtime tests"
-    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} go1.16-runtime-tests
-    parallelism: 10
-    agents:
-      arch: "amd64"
-      os: "ubuntu"
-  - <<: *common
-    label: ":node: NodeJS runtime tests"
-    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} nodejs16.13.2-runtime-tests
-    parallelism: 10
-    agents:
-      arch: "amd64"
-      os: "ubuntu"
-  - <<: *common
-    label: ":python: Python runtime tests"
-    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} python3.10.2-runtime-tests
-    parallelism: 10
-    agents:
-      arch: "amd64"
-      os: "ubuntu"
 
   # Runtime tests (LISAFS).
-  - <<: *common
-    label: ":php: PHP runtime tests (LISAFS)"
-    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} php8.1.1-runtime-tests_lisafs
-    parallelism: 10
-    if: build.message =~ /lisafs/ || build.branch == "master"
-    agents:
-      arch: "amd64"
-      os: "ubuntu"
-  - <<: *common
-    label: ":java: Java runtime tests (LISAFS)"
-    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} java17-runtime-tests_lisafs
-    parallelism: 40
-    if: build.message =~ /lisafs/ || build.branch == "master"
-    agents:
-      arch: "amd64"
-      os: "ubuntu"
-  - <<: *common
-    label: ":golang: Go runtime tests (LISAFS)"
-    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} go1.16-runtime-tests_lisafs
-    parallelism: 10
-    if: build.message =~ /lisafs/ || build.branch == "master"
-    agents:
-      arch: "amd64"
-      os: "ubuntu"
-  - <<: *common
-    label: ":node: NodeJS runtime tests (LISAFS)"
-    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} nodejs16.13.2-runtime-tests_lisafs
-    parallelism: 10
-    if: build.message =~ /lisafs/ || build.branch == "master"
-    agents:
-      arch: "amd64"
-      os: "ubuntu"
-  - <<: *common
-    label: ":python: Python runtime tests (LISAFS)"
-    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} python3.10.2-runtime-tests_lisafs
-    parallelism: 10
-    if: build.message =~ /lisafs/ || build.branch == "master"
-    agents:
-      arch: "amd64"
-      os: "ubuntu"
 
   # Run basic benchmarks smoke tests (no upload).
   - <<: *common
@@ -378,8 +348,9 @@ steps:
     # Use the opposite of the benchmarks filter.
     if: build.branch != "master"
     agents:
+      <<: *platform_specific_agents
+      <<: *kvm_agents
       arch: "amd64"
-      kvm: "true"
 
   # Run all benchmarks.
   - <<: *benchmarks
@@ -394,7 +365,7 @@ steps:
   # For fio, running with --test.benchtime=Xs scales the written/read
   # bytes to several GB. This is not a problem for root/bind/volume mounts,
   # but for tmpfs mounts, the size can grow to more memory than the machine
-  # has availabe. Fix the runs to 1GB written/read for the benchmark.
+  # has available. Fix the runs to 1GB written/read for the benchmark.
   - <<: *benchmarks
     label: ":floppy_disk: FIO benchmarks (read/write)"
     command: make -i benchmark-platforms BENCHMARKS_SUITE=fio BENCHMARKS_TARGETS=test/benchmarks/fs:fio_test BENCHMARKS_FILTER=Fio/operation\.[rw][er] BENCHMARKS_OPTIONS=--test.benchtime=1000x

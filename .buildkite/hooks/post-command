@@ -1,3 +1,5 @@
+set -x
+
 # Clear any downloaded credentials.
 rm -f repo.key
 
@@ -71,3 +73,18 @@ for container in $(docker ps -q); do
     docker container kill "${container}"
   fi
 done
+
+set -euo pipefail
+
+# Remove all Docker runtimes that may be installed.
+if grep -qE runtimes /etc/docker/daemon.json; then
+  cat /etc/docker/daemon.json | jq 'del(.runtimes) + {runtimes: {}}' \
+    | sudo tee /etc/docker/daemon.json.tmp
+  sudo mv /etc/docker/daemon.json.tmp /etc/docker/daemon.json
+  bash -c "$DOCKER_RELOAD_COMMAND"
+fi
+
+# Cleanup temporary directory where STAGED_BINARIES may have been extracted.
+if [[ -n "${BUILDKITE_STAGED_BINARIES_DIRECTORY:-}" ]]; then
+  rm -rf "$BUILDKITE_STAGED_BINARIES_DIRECTORY" || true
+fi
