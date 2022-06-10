@@ -264,6 +264,13 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, hardwareG
 
 			// Steal IP address from NIC.
 			if err := removeAddress(ifaceLink, addr.String()); err != nil {
+				// If we encounter an error while deleting the ip,
+				// verify the ip is still present on the interface.
+				if present, err := isAddressOnInterface(iface.Name, addr); err != nil {
+					return fmt.Errorf("checking if address %v is on interface %q: %w", addr, iface.Name, err)
+				} else if !present {
+					continue
+				}
 				return fmt.Errorf("removing address %v from device %q: %w", addr, iface.Name, err)
 			}
 		}
@@ -276,6 +283,29 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, hardwareG
 		return fmt.Errorf("creating links and routes: %w", err)
 	}
 	return nil
+}
+
+// isAddressOnInterface checks if an address is on an interface
+func isAddressOnInterface(ifaceName string, addr *net.IPNet) (bool, error) {
+	iface, err := net.InterfaceByName(ifaceName)
+	if err != nil {
+		return false, fmt.Errorf("getting interface by name %q: %w", ifaceName, err)
+	}
+	ifaceAddrs, err := iface.Addrs()
+	if err != nil {
+		return false, fmt.Errorf("fetching interface addresses for %q: %w", iface.Name, err)
+	}
+	for _, ifaceAddr := range ifaceAddrs {
+		ipNet, ok := ifaceAddr.(*net.IPNet)
+		if !ok {
+			log.Warningf("Can't cast address to *net.IPNet, skipping: %+v", ifaceAddr)
+			continue
+		}
+		if ipNet.String() == addr.String() {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 type socketEntry struct {
