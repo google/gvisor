@@ -243,7 +243,8 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 
 	// This has to happen last, because e.g. ptraceClone may send a SIGSTOP to
 	// nt that it must receive before its task goroutine starts running.
-	defer nt.Start()
+	tid := nt.k.tasks.Root.IDOfTask(nt)
+	defer nt.Start(tid)
 
 	if seccheck.Global.Enabled(seccheck.PointClone) {
 		mask, info := getCloneSeccheckInfo(t, nt, args.Flags)
@@ -287,7 +288,7 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 		ntid.CopyOut(t, hostarch.Addr(args.ParentTID))
 	}
 
-	t.traceCloneEvent(nt.k.tasks.Root.IDOfTask(nt))
+	t.traceCloneEvent(tid)
 	kind := ptraceCloneKindClone
 	if args.Flags&linux.CLONE_VFORK != 0 {
 		kind = ptraceCloneKindVfork
