@@ -81,7 +81,6 @@ func Main(version string) {
 	subcommands.Register(new(cmd.Spec), "")
 	subcommands.Register(new(cmd.Start), "")
 	subcommands.Register(new(cmd.State), "")
-	subcommands.Register(new(cmd.VerityPrepare), "")
 	subcommands.Register(new(cmd.Wait), "")
 
 	// Helpers.

@@ -736,32 +736,12 @@ func (fd *controlFDLisa) Renamed() {
 
 // GetXattr implements lisafs.ControlFDImpl.GetXattr.
 func (fd *controlFDLisa) GetXattr(name string, size uint32, getValueBuf func(uint32) []byte) (uint16, error) {
-	if !fd.Conn().ServerImpl().(*LisafsServer).config.EnableVerityXattr {
-		return 0, unix.EOPNOTSUPP
-	}
-	if _, ok := verityXattrs[name]; !ok {
-		return 0, unix.EOPNOTSUPP
-	}
-	if size == 0 {
-		n, err := unix.Fgetxattr(fd.hostFD, name, nil)
-		if err != nil {
-			return 0, err
-		}
-		size = uint32(n)
-	}
-	n, err := unix.Fgetxattr(fd.hostFD, name, getValueBuf(size))
-	return uint16(n), err
+	return 0, unix.EOPNOTSUPP
 }
 
 // SetXattr implements lisafs.ControlFDImpl.SetXattr.
 func (fd *controlFDLisa) SetXattr(name string, value string, flags uint32) error {
-	if !fd.Conn().ServerImpl().(*LisafsServer).config.EnableVerityXattr {
-		return unix.EOPNOTSUPP
-	}
-	if _, ok := verityXattrs[name]; !ok {
-		return unix.EOPNOTSUPP
-	}
-	return unix.Fsetxattr(fd.hostFD, name, []byte(value) /* sigh */, int(flags))
+	return unix.EOPNOTSUPP
 }
 
 // ListXattr implements lisafs.ControlFDImpl.ListXattr.

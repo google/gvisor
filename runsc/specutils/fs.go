@@ -65,12 +65,6 @@ var optionsMap = map[string]mapping{
 	"sync":          {set: true, val: unix.MS_SYNCHRONOUS},
 }
 
-// verityMountOptions is the set of valid verity mount option keys.
-var verityMountOptions = map[string]struct{}{
-	"verity.roothash": {},
-	"verity.action":   {},
-}
-
 // propOptionsMap is similar to optionsMap, but it lists propagation options
 // that cannot be used together with other flags.
 var propOptionsMap = map[string]mapping{
@@ -140,8 +134,7 @@ func ValidateMountOptions(opts []string) error {
 		}
 		_, ok1 := optionsMap[o]
 		_, ok2 := propOptionsMap[o]
-		_, ok3 := verityMountOptions[moptKey(o)]
-		if !ok1 && !ok2 && !ok3 {
+		if !ok1 && !ok2 {
 			return fmt.Errorf("unknown mount option %q", o)
 		}
 		if err := validatePropagation(o); err != nil {

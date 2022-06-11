@@ -73,9 +73,6 @@ type Config struct {
 	// Overlay is whether to wrap the root filesystem in an overlay.
 	Overlay bool `flag:"overlay"`
 
-	// Verity is whether there's one or more verity file system to mount.
-	Verity bool `flag:"verity"`
-
 	// FSGoferHostUDS enables the gofer to create and connect to host unix
 	// domain sockets.
 	FSGoferHostUDS bool `flag:"fsgofer-host-uds"`
