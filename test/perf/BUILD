@@ -146,38 +146,3 @@ syscall_test(
     debug = False,
     test = "//test/perf/linux:write_benchmark",
 )
-
-syscall_test(
-    size = "large",
-    allow_native = False,
-    debug = False,
-    test = "//test/perf/linux:verity_open_benchmark",
-)
-
-syscall_test(
-    size = "large",
-    allow_native = False,
-    debug = False,
-    test = "//test/perf/linux:verity_read_benchmark",
-)
-
-syscall_test(
-    size = "large",
-    allow_native = False,
-    debug = False,
-    test = "//test/perf/linux:verity_randread_benchmark",
-)
-
-syscall_test(
-    size = "large",
-    allow_native = False,
-    debug = False,
-    test = "//test/perf/linux:verity_open_read_close_benchmark",
-)
-
-syscall_test(
-    size = "large",
-    allow_native = False,
-    debug = False,
-    test = "//test/perf/linux:verity_stat_benchmark",
-)

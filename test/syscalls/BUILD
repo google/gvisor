@@ -226,10 +226,6 @@ syscall_test(
 )
 
 syscall_test(
-    test = "//test/syscalls/linux:verity_getdents_test",
-)
-
-syscall_test(
     test = "//test/syscalls/linux:getrandom_test",
 )
 
@@ -248,10 +244,6 @@ syscall_test(
     add_hostinet = True,
     add_overlay = True,
     test = "//test/syscalls/linux:ioctl_test",
-)
-
-syscall_test(
-    test = "//test/syscalls/linux:verity_ioctl_test",
 )
 
 syscall_test(
@@ -330,10 +322,6 @@ syscall_test(
     size = "medium",
     shard_count = more_shards,
     test = "//test/syscalls/linux:mmap_test",
-)
-
-syscall_test(
-    test = "//test/syscalls/linux:verity_mmap_test",
 )
 
 syscall_test(
@@ -927,10 +915,6 @@ syscall_test(
 )
 
 syscall_test(
-    test = "//test/syscalls/linux:verity_symlink_test",
-)
-
-syscall_test(
     add_overlay = True,
     test = "//test/syscalls/linux:sync_test",
 )
@@ -1069,10 +1053,6 @@ syscall_test(
 
 syscall_test(
     test = "//test/syscalls/linux:processes_test",
-)
-
-syscall_test(
-    test = "//test/syscalls/linux:verity_mount_test",
 )
 
 syscall_test(

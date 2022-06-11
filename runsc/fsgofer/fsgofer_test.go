@@ -581,17 +581,6 @@ func TestSetGetDisabledXattr(t *testing.T) {
 	})
 }
 
-func TestSetGetXattr(t *testing.T) {
-	runCustom(t, []uint32{unix.S_IFREG}, []Config{{ROMount: false, EnableVerityXattr: true}}, func(t *testing.T, s fileState) {
-		name := "user.merkle.offset"
-		value := "tmp"
-		err := SetGetXattr(s.file, name, value)
-		if err != nil {
-			t.Fatalf("%v: SetGetXattr failed, err: %v", s, err)
-		}
-	})
-}
-
 func TestLink(t *testing.T) {
 	if !specutils.HasCapabilities(capability.CAP_DAC_READ_SEARCH) {
 		t.Skipf("Link test requires CAP_DAC_READ_SEARCH, running as %d", os.Getuid())

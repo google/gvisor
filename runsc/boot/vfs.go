@@ -16,7 +16,6 @@ package boot
 
 import (
 	"fmt"
-	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -44,7 +43,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/proc"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sys"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
-	"gvisor.dev/gvisor/pkg/sentry/fsimpl/verity"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -103,10 +101,6 @@ func registerFilesystems(k *kernel.Kernel) error {
 	vfsObj.MustRegisterFilesystemType(tmpfs.Name, &tmpfs.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
 		AllowUserMount: true,
 		AllowUserList:  true,
-	})
-	vfsObj.MustRegisterFilesystemType(verity.Name, &verity.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
-		AllowUserList:  true,
-		AllowUserMount: true,
 	})
 	vfsObj.MustRegisterFilesystemType(mqfs.Name, &mqfs.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
 		AllowUserMount: true,
@@ -687,12 +681,6 @@ func (c *containerMounter) getMountNameAndOptions(conf *config.Config, m *mountA
 		internalData interface{}
 	)
 
-	verityData, verityOpts, verityRequested, remainingMOpts, err := parseVerityMountOptions(m.mount.Options)
-	if err != nil {
-		return "", nil, false, err
-	}
-	m.mount.Options = remainingMOpts
-
 	// Find filesystem name and FS specific data field.
 	switch m.mount.Type {
 	case devpts.Name, devtmpfs.Name, proc.Name:
@@ -746,20 +734,6 @@ func (c *containerMounter) getMountNameAndOptions(conf *config.Config, m *mountA
 		InternalData: internalData,
 	}
 
-	if verityRequested {
-		verityData = verityData + "root_name=" + path.Base(m.mount.Destination)
-		verityOpts.LowerName = fsName
-		verityOpts.LowerGetFSOptions = opts.GetFilesystemOptions
-		fsName = verity.Name
-		opts = &vfs.MountOptions{
-			GetFilesystemOptions: vfs.GetFilesystemOptions{
-				Data:         verityData,
-				InternalData: verityOpts,
-			},
-			InternalMount: true,
-		}
-	}
-
 	return fsName, opts, useOverlay, nil
 }
 
@@ -793,50 +767,6 @@ func parseKeyValue(s string) (string, string, bool) {
 		return "", "", false
 	}
 	return strings.TrimSpace(tokens[0]), strings.TrimSpace(tokens[1]), true
-}
-
-// parseAndFilterOptions scans the provided mount options for verity-related
-// mount options. It returns the parsed set of verity mount options, as well as
-// the filtered set of mount options unrelated to verity.
-func parseVerityMountOptions(mopts []string) (string, verity.InternalFilesystemOptions, bool, []string, error) {
-	nonVerity := []string{}
-	found := false
-	var rootHash string
-	verityOpts := verity.InternalFilesystemOptions{
-		Action: verity.PanicOnViolation,
-	}
-	for _, o := range mopts {
-		if !strings.HasPrefix(o, "verity.") {
-			nonVerity = append(nonVerity, o)
-			continue
-		}
-
-		k, v, ok := parseKeyValue(o)
-		if !ok {
-			return "", verityOpts, found, nonVerity, fmt.Errorf("invalid verity mount option with no value: %q", o)
-		}
-
-		found = true
-		switch k {
-		case "verity.roothash":
-			rootHash = v
-		case "verity.action":
-			switch v {
-			case "error":
-				verityOpts.Action = verity.ErrorOnViolation
-			case "panic":
-				verityOpts.Action = verity.PanicOnViolation
-			default:
-				log.Warningf("Invalid verity action %q", v)
-				verityOpts.Action = verity.PanicOnViolation
-			}
-		default:
-			return "", verityOpts, found, nonVerity, fmt.Errorf("unknown verity mount option: %q", k)
-		}
-	}
-	verityOpts.AllowRuntimeEnable = len(rootHash) == 0
-	verityData := "root_hash=" + rootHash + ","
-	return verityData, verityOpts, found, nonVerity, nil
 }
 
 // mountTmp mounts an internal tmpfs at '/tmp' if it's safe to do so.
