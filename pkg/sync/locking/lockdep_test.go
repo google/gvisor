@@ -104,3 +104,17 @@ func TestReverseNested(t *testing.T) {
 
 	t.Error("The reverse lock order hasn't been detected")
 }
+
+func TestUnknownLock(t *testing.T) {
+	m1 := testMutex{}
+	m2 := test2RWMutex{}
+	m1.Lock()
+	m2.Lock()
+	defer func() {
+		if r := recover(); r != nil {
+			t.Logf("Got expected panic: %s", r)
+		}
+	}()
+	m2.NestedUnlock()
+	t.Error("An unknown lock has not been detected.")
+}

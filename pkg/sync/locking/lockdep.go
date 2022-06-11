@@ -117,6 +117,7 @@ func AddGLock(class *MutexClass, subclass uint32) {
 
 // DelGLock deletes a lock from the current goroutine.
 func DelGLock(class *MutexClass, subclass uint32) {
+	origClass := class
 	if subclass != 0 {
 		class = class.subclasses.Load(subclass)
 	}
@@ -126,7 +127,13 @@ func DelGLock(class *MutexClass, subclass uint32) {
 		panic("the current goroutine doesn't have locks")
 	}
 	if _, ok := (*currentLocks)[class]; !ok {
-		panic("unlock of an unknown lock")
+		var b strings.Builder
+		fmt.Fprintf(&b, "unbalance unlock: %s:%d:\n", *classMap.Load(origClass), subclass)
+		fmt.Fprintf(&b, "Current locks:\n")
+		for c := range *currentLocks {
+			fmt.Fprintf(&b, "\t%s\n", *classMap.Load(c))
+		}
+		panic(b.String())
 	}
 
 	delete(*currentLocks, class)
