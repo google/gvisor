@@ -7,7 +7,7 @@ buildkite-agent artifact download 'tools/bazeldefs/*' . || true
 function install_pkgs() {
   export DEBIAN_FRONTEND=noninteractive
   while true; do
-    if sudo -E apt-get update && sudo -E apt-get install -y "$@"; then
+    if sudo -E apt-get update -q && sudo -E apt-get install -qy "$@"; then
       break
     fi
   done
@@ -22,6 +22,8 @@ if test -n "$(apt-cache search --names-only "^linux-headers-$(uname -r)$")"; the
 elif test -n "$(apt-cache search --names-only "^linux-gcp-headers-$(uname -r | cut -d- -f1-2)$")"; then
   install_pkgs "linux-gcp-headers-$(uname -r | cut -d- -f1-2)"
 fi
+
+set -x
 
 # Setup for parallelization with PARTITION and TOTAL_PARTITIONS.
 export PARTITION=${BUILDKITE_PARALLEL_JOB:-0}
