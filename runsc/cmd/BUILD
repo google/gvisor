@@ -37,7 +37,6 @@ go_library(
         "symbolize.go",
         "syscalls.go",
         "usage.go",
-        "verity_prepare.go",
         "wait.go",
     ],
     visibility = [

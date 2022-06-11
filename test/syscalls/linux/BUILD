@@ -994,22 +994,6 @@ cc_binary(
 )
 
 cc_binary(
-    name = "verity_getdents_test",
-    testonly = 1,
-    srcs = ["verity_getdents.cc"],
-    linkstatic = 1,
-    deps = [
-        "//test/util:capability_util",
-        gtest,
-        "//test/util:fs_util",
-        "//test/util:temp_path",
-        "//test/util:test_main",
-        "//test/util:test_util",
-        "//test/util:verity_util",
-    ],
-)
-
-cc_binary(
     name = "getrandom_test",
     testonly = 1,
     srcs = ["getrandom.cc"],
@@ -1057,23 +1041,6 @@ cc_binary(
         "//test/util:signal_util",
         "//test/util:test_main",
         "//test/util:test_util",
-    ],
-)
-
-cc_binary(
-    name = "verity_ioctl_test",
-    testonly = 1,
-    srcs = ["verity_ioctl.cc"],
-    linkstatic = 1,
-    deps = [
-        "//test/util:capability_util",
-        gtest,
-        "//test/util:fs_util",
-        "//test/util:mount_util",
-        "//test/util:temp_path",
-        "//test/util:test_main",
-        "//test/util:test_util",
-        "//test/util:verity_util",
     ],
 )
 
@@ -1361,23 +1328,6 @@ cc_binary(
 )
 
 cc_binary(
-    name = "verity_mmap_test",
-    testonly = 1,
-    srcs = ["verity_mmap.cc"],
-    linkstatic = 1,
-    deps = [
-        "//test/util:capability_util",
-        gtest,
-        "//test/util:fs_util",
-        "//test/util:memory_util",
-        "//test/util:temp_path",
-        "//test/util:test_main",
-        "//test/util:test_util",
-        "//test/util:verity_util",
-    ],
-)
-
-cc_binary(
     name = "mount_test",
     testonly = 1,
     srcs = ["mount.cc"],
@@ -1397,21 +1347,6 @@ cc_binary(
         "//test/util:test_main",
         "//test/util:test_util",
         "//test/util:thread_util",
-    ],
-)
-
-cc_binary(
-    name = "verity_mount_test",
-    testonly = 1,
-    srcs = ["verity_mount.cc"],
-    linkstatic = 1,
-    deps = [
-        gtest,
-        "//test/util:capability_util",
-        "//test/util:temp_path",
-        "//test/util:test_main",
-        "//test/util:test_util",
-        "//test/util:verity_util",
     ],
 )
 
@@ -3849,23 +3784,6 @@ cc_binary(
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",
-    ],
-)
-
-cc_binary(
-    name = "verity_symlink_test",
-    testonly = 1,
-    srcs = ["verity_symlink.cc"],
-    linkstatic = 1,
-    deps = [
-        "//test/util:capability_util",
-        gtest,
-        "//test/util:fs_util",
-        "//test/util:mount_util",
-        "//test/util:temp_path",
-        "//test/util:test_main",
-        "//test/util:test_util",
-        "//test/util:verity_util",
     ],
 )
 

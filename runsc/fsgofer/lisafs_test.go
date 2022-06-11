@@ -38,7 +38,7 @@ type tester struct{}
 
 // NewServer implements testsuite.Tester.NewServer.
 func (tester) NewServer(t *testing.T) *lisafs.Server {
-	return &fsgofer.NewLisafsServer(fsgofer.Config{HostUDS: true, EnableVerityXattr: true}).Server
+	return &fsgofer.NewLisafsServer(fsgofer.Config{HostUDS: true}).Server
 }
 
 // LinkSupported implements testsuite.Tester.LinkSupported.
