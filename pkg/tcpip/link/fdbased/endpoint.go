@@ -563,6 +563,7 @@ func (e *endpoint) sendBatch(batchFDInfo fdInfo, pkts []*stack.PacketBuffer) (in
 				}
 				return 0, err
 			}
+			written = i
 		}
 		return written, nil
 	}
