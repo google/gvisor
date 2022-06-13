@@ -1122,11 +1122,18 @@ func (k *Kernel) Start() error {
 	// Kernel.SaveTo and need to be resumed. If k was created by NewKernel,
 	// this is a no-op.
 	k.resumeTimeLocked(k.SupervisorContext())
-	// Start task goroutines.
 	k.tasks.mu.RLock()
-	defer k.tasks.mu.RUnlock()
-	for t, tid := range k.tasks.Root.tids {
-		t.Start(tid)
+	ts := make([]*Task, 0, len(k.tasks.Root.tids))
+	for t := range k.tasks.Root.tids {
+		ts = append(ts, t)
+	}
+	k.tasks.mu.RUnlock()
+	// Start task goroutines.
+	// NOTE(b/235349091): We don't actually need the TaskSet mutex, we just
+	// need to make sure we only call t.Start() once for each task. Holding the
+	// mutex for each task start may cause a nested locking error.
+	for _, t := range ts {
+		t.Start(t.ThreadID())
 	}
 	return nil
 }
