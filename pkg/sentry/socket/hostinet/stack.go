@@ -65,6 +65,10 @@ type Stack struct {
 	netSNMPFile    *os.File
 }
 
+// Destroy implements inet.Stack.Destroy.
+func (*Stack) Destroy() {
+}
+
 // NewStack returns an empty Stack containing no configuration.
 func NewStack() *Stack {
 	return &Stack{
