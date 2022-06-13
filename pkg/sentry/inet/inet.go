@@ -85,6 +85,9 @@ type Stack interface {
 	// Resume restarts the network stack after restore.
 	Resume()
 
+	// Destroy the network stack.
+	Destroy()
+
 	// RegisteredEndpoints returns all endpoints which are currently registered.
 	RegisteredEndpoints() []stack.TransportEndpoint
 
