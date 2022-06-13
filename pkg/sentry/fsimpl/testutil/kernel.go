@@ -147,6 +147,7 @@ func CreateTask(ctx context.Context, name string, tc *kernel.ThreadGroup, mntns 
 		FDTable:                 k.NewFDTable(),
 		UserCounters:            k.GetUserCounters(creds.RealKUID),
 	}
+	config.NetworkNamespace.IncRef()
 	t, err := k.TaskSet().NewTask(ctx, config)
 	if err != nil {
 		config.ThreadGroup.Release(ctx)
