@@ -115,7 +115,7 @@ func TestBasic(t *testing.T) {
 	}
 	defer server.Close()
 
-	endpoint, err := setup(server.Path)
+	endpoint, err := setup(server.Endpoint)
 	if err != nil {
 		t.Fatalf("setup(): %v", err)
 	}
@@ -163,7 +163,7 @@ func TestVersionUnsupported(t *testing.T) {
 
 	server.SetVersion(0)
 
-	_, err = setup(server.Path)
+	_, err = setup(server.Endpoint)
 	if err == nil || !strings.Contains(err.Error(), "remote version") {
 		t.Fatalf("Wrong error: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestVersionNewer(t *testing.T) {
 
 	server.SetVersion(wire.CurrentVersion + 10)
 
-	endpoint, err := setup(server.Path)
+	endpoint, err := setup(server.Endpoint)
 	if err != nil {
 		t.Fatalf("setup(): %v", err)
 	}
