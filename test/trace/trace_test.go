@@ -48,7 +48,7 @@ func TestAll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := buildPodConfig(runsc, server.Path)
+	cfg, err := buildPodConfig(runsc, server.Endpoint)
 	if err != nil {
 		t.Fatal(err)
 	}

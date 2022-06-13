@@ -69,7 +69,7 @@ func TestTraceStartup(t *testing.T) {
 							ContextFields: []string{"container_id"},
 						},
 					},
-					Sinks: []seccheck.SinkConfig{remoteSinkConfig(server.Path)},
+					Sinks: []seccheck.SinkConfig{remoteSinkConfig(server.Endpoint)},
 				},
 			}
 			encoder := json.NewEncoder(podInitConfig)
@@ -148,7 +148,7 @@ func TestTraceLifecycle(t *testing.T) {
 				ContextFields: []string{"container_id"},
 			},
 		},
-		Sinks: []seccheck.SinkConfig{remoteSinkConfig(server.Path)},
+		Sinks: []seccheck.SinkConfig{remoteSinkConfig(server.Endpoint)},
 	}
 	if err := cont.Sandbox.CreateTraceSession(&session, false); err != nil {
 		t.Fatalf("CreateTraceSession(): %v", err)
@@ -248,7 +248,7 @@ func TestTraceForceCreate(t *testing.T) {
 		Points: []seccheck.PointConfig{
 			{Name: "sentry/exit_notify_parent"},
 		},
-		Sinks: []seccheck.SinkConfig{remoteSinkConfig(server.Path)},
+		Sinks: []seccheck.SinkConfig{remoteSinkConfig(server.Endpoint)},
 	}
 	if err := cont.Sandbox.CreateTraceSession(&session, false); err != nil {
 		t.Fatalf("CreateTraceSession(): %v", err)
@@ -277,7 +277,7 @@ func TestTraceForceCreate(t *testing.T) {
 		Points: []seccheck.PointConfig{
 			{Name: "sentry/task_exit"},
 		},
-		Sinks: []seccheck.SinkConfig{remoteSinkConfig(server.Path)},
+		Sinks: []seccheck.SinkConfig{remoteSinkConfig(server.Endpoint)},
 	}
 	if err := cont.Sandbox.CreateTraceSession(&session, true); err != nil {
 		t.Fatalf("CreateTraceSession(force): %v", err)
