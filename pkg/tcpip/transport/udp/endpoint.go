@@ -653,7 +653,7 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) tcpip.Error {
 		// packets on a different network protocol, so we register both even if
 		// v6only is set to false and this is an ipv6 endpoint.
 		netProtos := []tcpip.NetworkProtocolNumber{netProto}
-		if netProto == header.IPv6ProtocolNumber && !e.ops.GetV6Only() {
+		if netProto == header.IPv6ProtocolNumber && !e.ops.GetV6Only() && e.stack.CheckNetworkProtocol(header.IPv4ProtocolNumber) {
 			netProtos = []tcpip.NetworkProtocolNumber{
 				header.IPv4ProtocolNumber,
 				header.IPv6ProtocolNumber,
@@ -790,7 +790,7 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) tcpip.Error {
 		// wildcard (empty) address, and this is an IPv6 endpoint with v6only
 		// set to false.
 		netProtos := []tcpip.NetworkProtocolNumber{boundNetProto}
-		if boundNetProto == header.IPv6ProtocolNumber && !e.ops.GetV6Only() && boundAddr == "" {
+		if boundNetProto == header.IPv6ProtocolNumber && !e.ops.GetV6Only() && boundAddr == "" && e.stack.CheckNetworkProtocol(header.IPv4ProtocolNumber) {
 			netProtos = []tcpip.NetworkProtocolNumber{
 				header.IPv6ProtocolNumber,
 				header.IPv4ProtocolNumber,

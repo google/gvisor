@@ -1016,7 +1016,7 @@ func TestIPv6PacketInfo(t *testing.T) {
 			for _, test := range tests {
 				t.Run(test.name, func(t *testing.T) {
 					s := stack.New(stack.Options{
-						NetworkProtocols:   []stack.NetworkProtocolFactory{ipv6.NewProtocol, ipv4.NewProtocol},
+						NetworkProtocols:   []stack.NetworkProtocolFactory{ipv6.NewProtocol},
 						TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 						RawFactory:         &raw.EndpointFactory{},
 					})
