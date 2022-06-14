@@ -19,7 +19,9 @@ go_test(
     deps = [
         ":transport",
         "//pkg/tcpip",
+        "//pkg/tcpip/checker",
         "//pkg/tcpip/header",
+        "//pkg/tcpip/link/channel",
         "//pkg/tcpip/link/loopback",
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/network/ipv6",
