@@ -193,9 +193,6 @@ INSTANTIATE_TEST_SUITE_P(
 using DataTransferStressTest = SocketPairTest;
 
 TEST_P(DataTransferStressTest, BigDataTransfer) {
-  // TODO(b/165912341): These are too slow on KVM platform with nested virt.
-  SKIP_IF(GvisorPlatform() == Platform::kKVM);
-
   const std::unique_ptr<SocketPair> sockets =
       ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
   int client_fd = sockets->first_fd();
@@ -218,9 +215,12 @@ TEST_P(DataTransferStressTest, BigDataTransfer) {
     ASSERT_THAT(shutdown(server_fd, SHUT_WR), SyscallSucceeds());
   });
 
+  // Tests can be prohibitively slow on the KVM platform with nested virt.
+  const int kShift = GvisorPlatform() == Platform::kKVM ? 10 : 20;
+
   const std::string chunk = "Though this upload be but little, it is fierce.";
   std::string big_string;
-  while (big_string.size() < 31 << 20) {
+  while (big_string.size() < 31 << kShift) {
     big_string += chunk;
   }
   absl::string_view data = big_string;
@@ -236,7 +236,7 @@ TEST_P(DataTransferStressTest, BigDataTransfer) {
   });
 
   std::string buf;
-  buf.resize(1 << 20);
+  buf.resize(1 << kShift);
   while (!data.empty()) {
     ssize_t n = read(client_fd, buf.data(), buf.size());
     ASSERT_GE(n, 0);
