@@ -1187,6 +1187,8 @@ func (s *SendableControlMessages) StateFields() []string {
 		"TTL",
 		"HasHopLimit",
 		"HopLimit",
+		"HasIPv6PacketInfo",
+		"IPv6PacketInfo",
 	}
 }
 
@@ -1199,6 +1201,8 @@ func (s *SendableControlMessages) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &s.TTL)
 	stateSinkObject.Save(2, &s.HasHopLimit)
 	stateSinkObject.Save(3, &s.HopLimit)
+	stateSinkObject.Save(4, &s.HasIPv6PacketInfo)
+	stateSinkObject.Save(5, &s.IPv6PacketInfo)
 }
 
 func (s *SendableControlMessages) afterLoad() {}
@@ -1209,6 +1213,8 @@ func (s *SendableControlMessages) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &s.TTL)
 	stateSourceObject.Load(2, &s.HasHopLimit)
 	stateSourceObject.Load(3, &s.HopLimit)
+	stateSourceObject.Load(4, &s.HasIPv6PacketInfo)
+	stateSourceObject.Load(5, &s.IPv6PacketInfo)
 }
 
 func (c *ReceivableControlMessages) StateTypeName() string {
