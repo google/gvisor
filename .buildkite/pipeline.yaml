@@ -59,6 +59,13 @@ steps:
     label: ":fire: Smoke race tests"
     command: make smoke-race-tests
 
+  # Build everything.
+  - <<: *common
+    label: ":world_map: Build everything"
+    command: "make build OPTIONS=--build_tag_filters=-nogo TARGETS=//..."
+    agents:
+      arch: "amd64"
+
   # Check that the Go branch builds. This is not technically required, as this build is maintained
   # as a GitHub action in order to preserve this maintaince across forks. However, providing the
   # action here may provide easier debuggability and diagnosis on failure.
@@ -363,13 +370,6 @@ steps:
     agents:
       arch: "amd64"
       os: "ubuntu"
-
-  # Build everything.
-  - <<: *common
-    label: ":world_map: Build everything"
-    command: "make build OPTIONS=--build_tag_filters=-nogo TARGETS=//..."
-    agents:
-      arch: "amd64"
 
   # Run basic benchmarks smoke tests (no upload).
   - <<: *common
