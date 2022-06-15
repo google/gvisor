@@ -16,6 +16,8 @@ package test
 
 import (
 	"sync"
+
+	"gvisor.dev/gvisor/tools/checklocks/test/crosspkg"
 )
 
 var (
@@ -82,4 +84,14 @@ func testGlobalInvalid() {
 	otherStruct.guardedField1 = 1 // +checklocksfail
 	otherStruct.guardedField2 = 1 // +checklocksfail
 	otherStruct.guardedField3 = 1 // +checklocksfail
+}
+
+func testCrosspkgGlobalValid() {
+	crosspkg.FooMu.Lock()
+	crosspkg.Foo = 1
+	crosspkg.FooMu.Unlock()
+}
+
+func testCrosspkgGlobalInvalid() {
+	crosspkg.Foo = 1 // +checklocksfail
 }
