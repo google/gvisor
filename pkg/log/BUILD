@@ -9,6 +9,7 @@ go_library(
         "json.go",
         "json_k8s.go",
         "log.go",
+        "rate_limited.go",
     ],
     marshal = False,
     stateify = False,
@@ -18,6 +19,7 @@ go_library(
     deps = [
         "//pkg/linewriter",
         "//pkg/sync",
+        "@org_golang_x_time//rate:go_default_library",
     ],
 )
 
