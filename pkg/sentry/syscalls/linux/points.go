@@ -191,10 +191,7 @@ func PointConnect(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextD
 
 	addr := info.Args[1].Pointer()
 	addrlen := info.Args[2].Uint()
-	if addr > 0 {
-		p.Address = make([]byte, addrlen)
-		_, _ = t.CopyInBytes(addr, p.Address)
-	}
+	p.Address, _ = CaptureAddress(t, addr, addrlen)
 
 	if fields.Local.Contains(seccheck.FieldSyscallPath) {
 		p.FdPath = getFilePath(t, int32(p.Fd))
