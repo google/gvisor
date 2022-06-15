@@ -49,12 +49,14 @@ func LoadSeccheckDataLocked(t *Task, mask seccheck.FieldMask, info *pb.ContextDa
 		info.ContainerId = t.tg.leader.ContainerID()
 	}
 	if mask.Contains(seccheck.FieldCtxtCwd) {
-		root := t.FSContext().RootDirectoryVFS2()
-		defer root.DecRef(t)
-		wd := t.FSContext().WorkingDirectoryVFS2()
-		defer wd.DecRef(t)
-		vfsObj := root.Mount().Filesystem().VirtualFilesystem()
-		info.Cwd, _ = vfsObj.PathnameWithDeleted(t, root, wd)
+		if root := t.FSContext().RootDirectoryVFS2(); root.Ok() {
+			defer root.DecRef(t)
+			if wd := t.FSContext().WorkingDirectoryVFS2(); wd.Ok() {
+				defer wd.DecRef(t)
+				vfsObj := root.Mount().Filesystem().VirtualFilesystem()
+				info.Cwd, _ = vfsObj.PathnameWithDeleted(t, root, wd)
+			}
+		}
 	}
 	if mask.Contains(seccheck.FieldCtxtProcessName) {
 		info.ProcessName = t.Name()
