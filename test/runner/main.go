@@ -33,9 +33,11 @@ import (
 	"github.com/syndtr/gocapability/capability"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/specutils"
 	"gvisor.dev/gvisor/test/runner/gtest"
+	"gvisor.dev/gvisor/test/trace/config"
 	"gvisor.dev/gvisor/test/uds"
 )
 
@@ -52,6 +54,7 @@ var (
 	lisafs             = flag.Bool("lisafs", false, "enable lisafs protocol if vfs2 is also enabled")
 	container          = flag.Bool("container", false, "run tests in their own namespaces (user ns, network ns, etc), pretending to be root. Implicitly enabled if network=host, or if using network namespaces")
 	setupContainerPath = flag.String("setup-container", "", "path to setup_container binary (for use with --container)")
+	trace              = flag.Bool("trace", false, "enables all trace points")
 
 	addUDSTree = flag.Bool("add-uds-tree", false, "expose a tree of UDS utilities for use in tests")
 	// TODO(gvisor.dev/issue/4572): properly support leak checking for runsc, and
@@ -216,6 +219,14 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 	}
 	if *leakCheck {
 		args = append(args, "-ref-leak-mode=log-names")
+	}
+	if *trace {
+		flag, err := enableAllTraces(rootDir)
+		if err != nil {
+			return fmt.Errorf("enabling all traces: %w", err)
+		}
+		log.Infof("Enabling all trace points: %s", flag)
+		args = append(args, flag)
 	}
 
 	testLogDir := ""
@@ -561,4 +572,25 @@ func main() {
 	}
 
 	testing.Main(matchString, tests, nil, nil)
+}
+
+func enableAllTraces(dir string) (string, error) {
+	builder := config.Builder{}
+	if err := builder.LoadAllPoints(specutils.ExePath); err != nil {
+		return "", err
+	}
+	builder.AddSink(seccheck.SinkConfig{
+		Name: "null",
+	})
+	path := filepath.Join(dir, "pod_init.json")
+	cfgFile, err := os.Create(path)
+	if err != nil {
+		return "", err
+	}
+	defer cfgFile.Close()
+
+	if err := builder.WriteInitConfig(cfgFile); err != nil {
+		return "", fmt.Errorf("writing config file: %w", err)
+	}
+	return "--pod-init-config=" + path, nil
 }

@@ -16,11 +16,7 @@
 package trace
 
 import (
-	"bufio"
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"strings"
@@ -32,7 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/seccheck/checkers/remote/test"
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 	"gvisor.dev/gvisor/pkg/test/testutil"
-	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/test/trace/config"
 )
 
 // TestAll enabled all trace points in the system with all optional and context
@@ -48,19 +44,24 @@ func TestAll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := buildPodConfig(runsc, server.Endpoint)
-	if err != nil {
+	builder := config.Builder{}
+	if err := builder.LoadAllPoints(runsc); err != nil {
 		t.Fatal(err)
 	}
+	builder.AddSink(seccheck.SinkConfig{
+		Name: "remote",
+		Config: map[string]interface{}{
+			"endpoint": server.Endpoint,
+		},
+	})
 
-	cfgFile, err := ioutil.TempFile(testutil.TmpDir(), "config")
+	cfgFile, err := os.CreateTemp(testutil.TmpDir(), "config")
 	if err != nil {
 		t.Fatalf("error creating tmp file: %v", err)
 	}
 	defer cfgFile.Close()
-	encoder := json.NewEncoder(cfgFile)
-	if err := encoder.Encode(&cfg); err != nil {
-		t.Fatalf("JSON encode: %v", err)
+	if err := builder.WriteInitConfig(cfgFile); err != nil {
+		t.Fatalf("writing config file: %v", err)
 	}
 
 	workload, err := testutil.FindFile("test/trace/workload/workload")
@@ -82,84 +83,6 @@ func TestAll(t *testing.T) {
 	// Wait until the sandbox disconnects to ensure all points were gathered.
 	server.WaitForNoClients()
 	matchPoints(t, server.GetPoints())
-}
-
-func buildPodConfig(runscPath, endpoint string) (*boot.InitConfig, error) {
-	pts, err := allPoints(runscPath)
-	if err != nil {
-		return nil, err
-	}
-	return &boot.InitConfig{
-		TraceSession: seccheck.SessionConfig{
-			Name:   seccheck.DefaultSessionName,
-			Points: pts,
-			Sinks: []seccheck.SinkConfig{
-				{
-					Name: "remote",
-					Config: map[string]interface{}{
-						"endpoint": endpoint,
-					},
-				},
-			},
-		},
-	}, nil
-}
-
-func allPoints(runscPath string) ([]seccheck.PointConfig, error) {
-	cmd := exec.Command(runscPath, "trace", "metadata")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil, err
-	}
-
-	// The command above produces an output like the following:
-	//   POINTS (907)
-	//   Name: container/start, optional fields: [], context fields: [time|thread_id]
-	scanner := bufio.NewScanner(bytes.NewReader(out))
-	if !scanner.Scan() {
-		return nil, fmt.Errorf("%q returned empty", cmd)
-	}
-	if !scanner.Scan() {
-		return nil, fmt.Errorf("%q returned empty", cmd)
-	}
-	var points []seccheck.PointConfig
-	for line := scanner.Text(); scanner.Scan(); line = scanner.Text() {
-		elems := strings.Split(line, ",")
-		if len(elems) != 3 {
-			return nil, fmt.Errorf("invalid line: %q", line)
-		}
-		name := strings.TrimPrefix(elems[0], "Name: ")
-		optFields, err := parseFields(elems[1], "optional fields: ")
-		if err != nil {
-			return nil, err
-		}
-		ctxFields, err := parseFields(elems[2], "context fields: ")
-		if err != nil {
-			return nil, err
-		}
-		points = append(points, seccheck.PointConfig{
-			Name:           name,
-			OptionalFields: optFields,
-			ContextFields:  ctxFields,
-		})
-	}
-	if scanner.Err() != nil {
-		return nil, scanner.Err()
-	}
-	return points, nil
-}
-
-func parseFields(elem, prefix string) ([]string, error) {
-	stripped := strings.TrimPrefix(strings.TrimSpace(elem), prefix)
-	switch {
-	case len(stripped) < 2:
-		return nil, fmt.Errorf("invalid %s format: %q", prefix, elem)
-	case len(stripped) == 2:
-		return nil, nil
-	}
-	// Remove [] from `stripped`.
-	clean := stripped[1 : len(stripped)-1]
-	return strings.Split(clean, "|"), nil
 }
 
 func matchPoints(t *testing.T, msgs []test.Message) {
