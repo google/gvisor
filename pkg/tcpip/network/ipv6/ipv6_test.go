@@ -59,6 +59,15 @@ const (
 	extraHeaderReserve = 50
 )
 
+var _ stack.MulticastForwardingEventDispatcher = (*fakeMulticastEventDispatcher)(nil)
+
+type fakeMulticastEventDispatcher struct{}
+
+func (m *fakeMulticastEventDispatcher) OnMissingRoute(context stack.MulticastPacketContext) {}
+
+func (m *fakeMulticastEventDispatcher) OnUnexpectedInputInterface(context stack.MulticastPacketContext, expectedInputInterface tcpip.NICID) {
+}
+
 // testReceiveICMP tests receiving an ICMP packet from src to dst. want is the
 // expected Neighbor Advertisement received count after receiving the packet.
 func testReceiveICMP(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst tcpip.Address, want uint64) {
@@ -3439,6 +3448,10 @@ func TestMulticastForwarding(t *testing.T) {
 			c := newTestContext()
 			defer c.cleanup()
 			s := c.s
+
+			if _, err := s.EnableMulticastForwardingForProtocol(ProtocolNumber, &fakeMulticastEventDispatcher{}); err != nil {
+				t.Fatalf("s.EnableMulticastForwardingForProtocol(%d, _): (_, %s)", ProtocolNumber, err)
+			}
 
 			endpoints := make(map[tcpip.NICID]*channel.Endpoint)
 			for nicID, addr := range defaultEndpointConfigs {
