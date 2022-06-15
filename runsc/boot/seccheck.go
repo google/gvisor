@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 
 	// Register supported of checkers.
+	_ "gvisor.dev/gvisor/pkg/sentry/seccheck/checkers/null"
 	_ "gvisor.dev/gvisor/pkg/sentry/seccheck/checkers/remote"
 )
 

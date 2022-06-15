@@ -63,5 +63,9 @@ func GetPointForSyscall(typ SyscallType, sysno uintptr) Point {
 
 // SyscallEnabled checks if the corresponding point for the syscall is enabled.
 func (s *State) SyscallEnabled(typ SyscallType, sysno uintptr) bool {
+	// Prevent overflow.
+	if sysno >= syscallsMax {
+		return false
+	}
 	return s.Enabled(GetPointForSyscall(typ, sysno))
 }
