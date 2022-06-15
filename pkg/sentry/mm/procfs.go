@@ -85,8 +85,10 @@ func (mm *MemoryManager) ReadMapsDataInto(ctx context.Context, buf *bytes.Buffer
 // ReadMapsSeqFileData is called by fs/proc.mapsData.ReadSeqFileData to
 // implement /proc/[pid]/maps.
 func (mm *MemoryManager) ReadMapsSeqFileData(ctx context.Context, handle seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
-	mm.mappingMu.RLock()
-	defer mm.mappingMu.RUnlock()
+	// FIXME(b/235153601): Need to replace RLockBypass with RLockBypass
+	// after fixing b/235153601.
+	mm.mappingMu.RLockBypass()
+	defer mm.mappingMu.RUnlockBypass()
 	var data []seqfile.SeqData
 	var start hostarch.Addr
 	if handle != nil {
