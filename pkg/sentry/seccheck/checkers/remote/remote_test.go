@@ -126,7 +126,7 @@ func TestBasic(t *testing.T) {
 	}
 	_ = endpoint.Close()
 
-	r, err := New(nil, endpointFD)
+	r, err := new(nil, endpointFD)
 	if err != nil {
 		t.Fatalf("New(): %v", err)
 	}
@@ -205,7 +205,7 @@ func TestExample(t *testing.T) {
 	}
 	_ = endpoint.Close()
 
-	r, err := New(nil, endpointFD)
+	r, err := new(nil, endpointFD)
 	if err != nil {
 		t.Fatalf("New(): %v", err)
 	}
@@ -247,7 +247,7 @@ func BenchmarkSmall(t *testing.B) {
 	}
 	_ = endpoint.Close()
 
-	r, err := New(nil, endpointFD)
+	r, err := new(nil, endpointFD)
 	if err != nil {
 		t.Fatalf("New(): %v", err)
 	}
