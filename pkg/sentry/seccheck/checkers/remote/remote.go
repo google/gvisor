@@ -36,26 +36,26 @@ import (
 func init() {
 	seccheck.RegisterSink(seccheck.SinkDesc{
 		Name:  "remote",
-		Setup: Setup,
-		New:   New,
+		Setup: setupSink,
+		New:   new,
 	})
 }
 
-// Remote sends a serialized point to a remote process asynchronously over a
+// remote sends a serialized point to a remote process asynchronously over a
 // SOCK_SEQPACKET Unix-domain socket. Each message corresponds to a single
 // serialized point proto, preceded by a standard header. If the point cannot
 // be sent, e.g. buffer full, the point is dropped on the floor to avoid
 // delaying/hanging indefinitely the application.
-type Remote struct {
+type remote struct {
 	endpoint *fd.FD
 }
 
-var _ seccheck.Checker = (*Remote)(nil)
+var _ seccheck.Checker = (*remote)(nil)
 
-// Setup starts the connection to the remote process and returns a file that
+// setupSink starts the connection to the remote process and returns a file that
 // can be used to communicate with it. The caller is responsible to close to
 // file.
-func Setup(config map[string]interface{}) (*os.File, error) {
+func setupSink(config map[string]interface{}) (*os.File, error) {
 	addrOpaque, ok := config["endpoint"]
 	if !ok {
 		return nil, fmt.Errorf("endpoint not present in configuration")
@@ -119,16 +119,16 @@ func setup(path string) (*os.File, error) {
 	return f, nil
 }
 
-// New creates a new Remote checker.
-func New(_ map[string]interface{}, endpoint *fd.FD) (seccheck.Checker, error) {
+// new creates a new Remote checker.
+func new(_ map[string]interface{}, endpoint *fd.FD) (seccheck.Checker, error) {
 	if endpoint == nil {
 		return nil, fmt.Errorf("remote sink requires an endpoint")
 	}
-	return &Remote{endpoint: endpoint}, nil
+	return &remote{endpoint: endpoint}, nil
 }
 
 // Stop implements seccheck.Checker.
-func (r *Remote) Stop() {
+func (r *remote) Stop() {
 	if r.endpoint != nil {
 		// It's possible to race with Point firing, but in the worst case they will
 		// simply fail to be delivered.
@@ -136,7 +136,7 @@ func (r *Remote) Stop() {
 	}
 }
 
-func (r *Remote) write(msg proto.Message, msgType pb.MessageType) {
+func (r *remote) write(msg proto.Message, msgType pb.MessageType) {
 	out, err := proto.Marshal(msg)
 	if err != nil {
 		log.Debugf("Marshal(%+v): %v", msg, err)
@@ -158,43 +158,43 @@ func (r *Remote) write(msg proto.Message, msgType pb.MessageType) {
 }
 
 // Clone implements seccheck.Checker.
-func (r *Remote) Clone(_ context.Context, _ seccheck.FieldSet, info *pb.CloneInfo) error {
+func (r *remote) Clone(_ context.Context, _ seccheck.FieldSet, info *pb.CloneInfo) error {
 	r.write(info, pb.MessageType_MESSAGE_SENTRY_CLONE)
 	return nil
 }
 
 // Execve implements seccheck.Checker.
-func (r *Remote) Execve(_ context.Context, _ seccheck.FieldSet, info *pb.ExecveInfo) error {
+func (r *remote) Execve(_ context.Context, _ seccheck.FieldSet, info *pb.ExecveInfo) error {
 	r.write(info, pb.MessageType_MESSAGE_SENTRY_EXEC)
 	return nil
 }
 
 // ExitNotifyParent implements seccheck.Checker.
-func (r *Remote) ExitNotifyParent(_ context.Context, _ seccheck.FieldSet, info *pb.ExitNotifyParentInfo) error {
+func (r *remote) ExitNotifyParent(_ context.Context, _ seccheck.FieldSet, info *pb.ExitNotifyParentInfo) error {
 	r.write(info, pb.MessageType_MESSAGE_SENTRY_EXIT_NOTIFY_PARENT)
 	return nil
 }
 
 // TaskExit implements seccheck.Checker.
-func (r *Remote) TaskExit(_ context.Context, _ seccheck.FieldSet, info *pb.TaskExit) error {
+func (r *remote) TaskExit(_ context.Context, _ seccheck.FieldSet, info *pb.TaskExit) error {
 	r.write(info, pb.MessageType_MESSAGE_SENTRY_TASK_EXIT)
 	return nil
 }
 
 // ContainerStart implements seccheck.Checker.
-func (r *Remote) ContainerStart(_ context.Context, _ seccheck.FieldSet, info *pb.Start) error {
+func (r *remote) ContainerStart(_ context.Context, _ seccheck.FieldSet, info *pb.Start) error {
 	r.write(info, pb.MessageType_MESSAGE_CONTAINER_START)
 	return nil
 }
 
 // RawSyscall implements seccheck.Checker.
-func (r *Remote) RawSyscall(_ context.Context, _ seccheck.FieldSet, info *pb.Syscall) error {
+func (r *remote) RawSyscall(_ context.Context, _ seccheck.FieldSet, info *pb.Syscall) error {
 	r.write(info, pb.MessageType_MESSAGE_SYSCALL_RAW)
 	return nil
 }
 
 // Syscall implements seccheck.Checker.
-func (r *Remote) Syscall(ctx context.Context, fields seccheck.FieldSet, ctxData *pb.ContextData, msgType pb.MessageType, msg proto.Message) error {
+func (r *remote) Syscall(ctx context.Context, fields seccheck.FieldSet, ctxData *pb.ContextData, msgType pb.MessageType, msg proto.Message) error {
 	r.write(msg, msgType)
 	return nil
 }
