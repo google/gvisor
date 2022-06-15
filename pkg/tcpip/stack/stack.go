@@ -30,6 +30,7 @@ import (
 	"golang.org/x/time/rate"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/log"
 	cryptorand "gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -63,6 +64,8 @@ type uniqueIDGenerator atomicbitops.Uint64
 func (u *uniqueIDGenerator) UniqueID() uint64 {
 	return ((*atomicbitops.Uint64)(u)).Add(1)
 }
+
+var netRawMissingLogger = log.BasicRateLimitedLogger(time.Minute)
 
 // Stack is a networking stack, with all supported protocols, NICs, and route
 // table.
@@ -712,6 +715,7 @@ func (s *Stack) NewEndpoint(transport tcpip.TransportProtocolNumber, network tcp
 // of address.
 func (s *Stack) NewRawEndpoint(transport tcpip.TransportProtocolNumber, network tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue, associated bool) (tcpip.Endpoint, tcpip.Error) {
 	if s.rawFactory == nil {
+		netRawMissingLogger.Infof("A process tried to create a raw socket, but --net-raw was not specified. Should runsc be run with --net-raw?")
 		return nil, &tcpip.ErrNotPermitted{}
 	}
 

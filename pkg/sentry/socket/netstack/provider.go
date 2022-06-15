@@ -15,9 +15,12 @@
 package netstack
 
 import (
+	"time"
+
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -39,6 +42,8 @@ type provider struct {
 	family   int
 	netProto tcpip.NetworkProtocolNumber
 }
+
+var rawMissingLogger = log.BasicRateLimitedLogger(time.Minute)
 
 // getTransportProtocol figures out transport protocol. Currently only TCP,
 // UDP, and ICMP are supported. The bool return value is true when this socket
@@ -66,6 +71,7 @@ func getTransportProtocol(ctx context.Context, stype linux.SockType, protocol in
 		// Raw sockets require CAP_NET_RAW.
 		creds := auth.CredentialsFromContext(ctx)
 		if !creds.HasCapability(linux.CAP_NET_RAW) {
+			rawMissingLogger.Infof("A process tried to create a raw socket without CAP_NET_RAW. Should the container config enable CAP_NET_RAW?")
 			return 0, true, syserr.ErrNotPermitted
 		}
 
