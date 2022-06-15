@@ -231,6 +231,11 @@ type addMulticastRouteData struct {
 	route     stack.MulticastRoute
 }
 
+type enableMulticastForwardingForProtocolResult struct {
+	AlreadyEnabled bool
+	Err            tcpip.Error
+}
+
 // fakeNetworkProtocol is a network-layer protocol descriptor. It aggregates the
 // number of packets sent and received via endpoints of this protocol. The index
 // where packets are added is given by the packet's destination address MOD 10.
@@ -244,6 +249,9 @@ type fakeNetworkProtocol struct {
 	addMulticastRouteData          addMulticastRouteData
 	multicastRouteLastUsedTimeData stack.UnicastSourceAndMulticastDestination
 	removeMulticastRouteData       stack.UnicastSourceAndMulticastDestination
+
+	enableMulticastForwardingForProtocolResult  enableMulticastForwardingForProtocolResult
+	disableMulticastForwardingForProtocolCalled bool
 }
 
 func (*fakeNetworkProtocol) Number() tcpip.NetworkProtocolNumber {
@@ -329,6 +337,18 @@ func (f *fakeNetworkProtocol) MulticastRouteLastUsedTime(addresses stack.Unicast
 	return tcpip.MonotonicTime{}, nil
 }
 
+// EnableMulticastForwarding implements
+// MulticastForwardingNetworkProtocol.EnableMulticastForwarding.
+func (f *fakeNetworkProtocol) EnableMulticastForwarding(stack.MulticastForwardingEventDispatcher) (bool, tcpip.Error) {
+	return f.enableMulticastForwardingForProtocolResult.AlreadyEnabled, f.enableMulticastForwardingForProtocolResult.Err
+}
+
+// DisableMulticastForwarding implements
+// MulticastForwardingNetworkProtocol.DisableMulticastForwarding.
+func (f *fakeNetworkProtocol) DisableMulticastForwarding() {
+	f.disableMulticastForwardingForProtocolCalled = true
+}
+
 // Forwarding implements stack.ForwardingNetworkEndpoint.
 func (f *fakeNetworkEndpoint) Forwarding() bool {
 	f.mu.RLock()
@@ -380,6 +400,17 @@ func (l *linkEPWithMockedAttach) Attach(d stack.NetworkDispatcher) {
 
 func (l *linkEPWithMockedAttach) isAttached() bool {
 	return l.attached
+}
+
+var _ stack.MulticastForwardingEventDispatcher = (*fakeMulticastEventDispatcher)(nil)
+
+type fakeMulticastEventDispatcher struct {
+}
+
+func (m *fakeMulticastEventDispatcher) OnMissingRoute(context stack.MulticastPacketContext) {
+}
+
+func (m *fakeMulticastEventDispatcher) OnUnexpectedInputInterface(context stack.MulticastPacketContext, expectedInputInterface tcpip.NICID) {
 }
 
 // Checks to see if list contains an address.
@@ -4854,6 +4885,116 @@ func TestMulticastRouteLastUsedTime(t *testing.T) {
 
 				if !cmp.Equal(fakeNet.multicastRouteLastUsedTimeData, addresses) {
 					t.Errorf("fakeNet.multicastRouteLastUsedTimeData = %#v, want = %#v", fakeNet.multicastRouteLastUsedTimeData, addresses)
+				}
+			}
+		})
+	}
+}
+
+func TestEnableMulticastForwardingForProtocol(t *testing.T) {
+	tests := []struct {
+		name           string
+		netProto       tcpip.NetworkProtocolNumber
+		factory        stack.NetworkProtocolFactory
+		delegateOutput enableMulticastForwardingForProtocolResult
+		wantResult     enableMulticastForwardingForProtocolResult
+	}{
+		{
+			name:           "impl returns previously enabled",
+			netProto:       fakeNetNumber,
+			factory:        fakeNetFactory,
+			delegateOutput: enableMulticastForwardingForProtocolResult{true, nil},
+			wantResult:     enableMulticastForwardingForProtocolResult{true, nil},
+		},
+		{
+			name:           "impl returns previously disabled",
+			netProto:       fakeNetNumber,
+			factory:        fakeNetFactory,
+			delegateOutput: enableMulticastForwardingForProtocolResult{false, nil},
+			wantResult:     enableMulticastForwardingForProtocolResult{false, nil},
+		},
+		{
+			name:           "impl returns error",
+			netProto:       fakeNetNumber,
+			factory:        fakeNetFactory,
+			delegateOutput: enableMulticastForwardingForProtocolResult{false, &tcpip.ErrUnknownDevice{}},
+			wantResult:     enableMulticastForwardingForProtocolResult{false, &tcpip.ErrUnknownDevice{}},
+		},
+		{
+			name:       "unknown protocol",
+			factory:    fakeNetFactory,
+			netProto:   arp.ProtocolNumber,
+			wantResult: enableMulticastForwardingForProtocolResult{false, &tcpip.ErrUnknownProtocol{}},
+		},
+		{
+			name:       "not supported",
+			factory:    arp.NewProtocol,
+			netProto:   arp.ProtocolNumber,
+			wantResult: enableMulticastForwardingForProtocolResult{false, &tcpip.ErrNotSupported{}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocolFactory{test.factory},
+			})
+
+			if test.netProto == fakeNetNumber {
+				fakeNet := s.NetworkProtocolInstance(fakeNetNumber).(*fakeNetworkProtocol)
+				fakeNet.enableMulticastForwardingForProtocolResult = test.delegateOutput
+			}
+
+			alreadyEnabled, err := s.EnableMulticastForwardingForProtocol(test.netProto, &fakeMulticastEventDispatcher{})
+
+			if !cmp.Equal(enableMulticastForwardingForProtocolResult{alreadyEnabled, err}, test.wantResult, cmpopts.EquateErrors()) {
+				t.Errorf("s.EnableMulticastForwardingForProtocol(%d, _) = (%t, %s), want = (%t, %s)", test.netProto, alreadyEnabled, err, test.wantResult.AlreadyEnabled, test.wantResult.Err)
+			}
+		})
+	}
+}
+
+func TestDisableMulticastForwardingForProtocol(t *testing.T) {
+	tests := []struct {
+		name     string
+		netProto tcpip.NetworkProtocolNumber
+		factory  stack.NetworkProtocolFactory
+		wantErr  tcpip.Error
+	}{
+		{
+			name:     "valid",
+			netProto: fakeNetNumber,
+			factory:  fakeNetFactory,
+			wantErr:  nil,
+		},
+		{
+			name:     "unknown protocol",
+			factory:  fakeNetFactory,
+			netProto: arp.ProtocolNumber,
+			wantErr:  &tcpip.ErrUnknownProtocol{},
+		},
+		{
+			name:     "not supported",
+			factory:  arp.NewProtocol,
+			netProto: arp.ProtocolNumber,
+			wantErr:  &tcpip.ErrNotSupported{},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocolFactory{test.factory},
+			})
+
+			err := s.DisableMulticastForwardingForProtocol(test.netProto)
+
+			if !cmp.Equal(err, test.wantErr, cmpopts.EquateErrors()) {
+				t.Errorf("s.DisableMulticastForwardingForProtocol(%d) = %s, want = %s", test.netProto, err, test.wantErr)
+			}
+
+			if err == nil {
+				fakeNet := s.NetworkProtocolInstance(fakeNetNumber).(*fakeNetworkProtocol)
+				if !fakeNet.disableMulticastForwardingForProtocolCalled {
+					t.Errorf("fakeNet.disableMulticastForwardingForProtocolCalled = false, want = true")
 				}
 			}
 		})
