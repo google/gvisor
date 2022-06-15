@@ -322,9 +322,17 @@ func (pc *passContext) checkFieldAccess(inst almostInst, structObj ssa.Value, fi
 	pc.checkGuards(inst, structObj, fieldObj, ls, isWrite)
 }
 
+// noReferrers wraps an instruction as an almostInst.
+type noReferrers struct {
+	ssa.Instruction
+}
+
+// Referrers implements almostInst.Referrers.
+func (noReferrers) Referrers() *[]ssa.Instruction { return nil }
+
 // checkGlobalAccess checks the validity of a global access.
-func (pc *passContext) checkGlobalAccess(g *ssa.Global, ls *lockState, isWrite bool) {
-	pc.checkGuards(g, g, g.Object(), ls, isWrite)
+func (pc *passContext) checkGlobalAccess(inst ssa.Instruction, g *ssa.Global, ls *lockState, isWrite bool) {
+	pc.checkGuards(noReferrers{inst}, g, g.Object(), ls, isWrite)
 }
 
 func (pc *passContext) checkCall(call callCommon, lff *lockFunctionFacts, ls *lockState) {
@@ -592,7 +600,7 @@ func (pc *passContext) checkInstruction(inst ssa.Instruction, lff *lockFunctionF
 			continue
 		}
 		_, isWrite := inst.(*ssa.Store)
-		pc.checkGlobalAccess(g, ls, isWrite)
+		pc.checkGlobalAccess(inst, g, ls, isWrite)
 	}
 
 	// Process the instruction.
