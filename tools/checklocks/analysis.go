@@ -268,6 +268,10 @@ func (pc *passContext) checkGuards(inst almostInst, from ssa.Value, accessObj ty
 			pc.maybeFail(inst.Pos(), "non-atomic write of field %s, writes must still be atomic with locks held (locks: %s)", accessObj.Name(), ls.String())
 		}
 	case atomicDisallow:
+		// If atomic analysis is not enabled, skip.
+		if !enableAtomic {
+			break
+		}
 		// Check that this is *not* used atomically.
 		if refs := inst.Referrers(); refs != nil {
 			for _, otherInst := range *refs {
