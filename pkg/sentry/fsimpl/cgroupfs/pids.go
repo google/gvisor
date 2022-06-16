@@ -268,9 +268,6 @@ func (d *pidsMaxData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
 func (d *pidsMaxData) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
-	d.c.mu.Lock()
-	defer d.c.mu.Unlock()
-
 	t := kernel.TaskFromContext(ctx)
 	buf := t.CopyScratchBuffer(hostarch.PageSize)
 	ncpy, err := src.CopyIn(ctx, buf)
@@ -278,6 +275,8 @@ func (d *pidsMaxData) Write(ctx context.Context, _ *vfs.FileDescription, src use
 		return 0, err
 	}
 	if strings.TrimSpace(string(buf)) == "max" {
+		d.c.mu.Lock()
+		defer d.c.mu.Unlock()
 		d.c.max = pidLimitUnlimited
 		return int64(ncpy), nil
 	}
@@ -290,6 +289,8 @@ func (d *pidsMaxData) Write(ctx context.Context, _ *vfs.FileDescription, src use
 		return 0, linuxerr.EINVAL
 	}
 
+	d.c.mu.Lock()
+	defer d.c.mu.Unlock()
 	d.c.max = val
 	return int64(n), nil
 }
