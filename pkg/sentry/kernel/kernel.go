@@ -971,10 +971,15 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 				Path:               fspath.Parse(args.WorkingDirectory),
 				FollowFinalSymlink: true,
 			}
+			// NOTE(b/236028361): Do not set CheckSearchable flag to true.
+			// Application is allowed to start with a working directory that it can
+			// not access/search. This is consistent with Docker and VFS1. Runc
+			// explicitly allows for this in 6ce2d63a5db6 ("libct/init_linux: retry
+			// chdir to fix EPERM"). As described in the commit, runc unintentionally
+			// allowed this behavior in a couple of releases and applications started
+			// relying on it. So they decided to allow it for backward compatibility.
 			var err error
-			wd, err = k.VFS().GetDentryAt(ctx, args.Credentials, &pop, &vfs.GetDentryOptions{
-				CheckSearchable: true,
-			})
+			wd, err = k.VFS().GetDentryAt(ctx, args.Credentials, &pop, &vfs.GetDentryOptions{})
 			if err != nil {
 				return nil, 0, fmt.Errorf("failed to find initial working directory %q: %v", args.WorkingDirectory, err)
 			}

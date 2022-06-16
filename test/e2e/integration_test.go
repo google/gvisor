@@ -951,3 +951,49 @@ func TestTmpMountWithSize(t *testing.T) {
 		t.Errorf("unexpected echo error:Expected: %v, Got: %v", wantErr, echoOutput)
 	}
 }
+
+// NOTE(b/236028361): Regression test. Check we can handle a working directory
+// without execute permissions. See comment in
+// pkg/sentry/kernel/kernel.go:CreateProcess() for more context.
+func TestNonSearchableWorkingDirectory(t *testing.T) {
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "tmp-mount")
+	if err != nil {
+		t.Fatalf("MkdirTemp() failed: %v", err)
+	}
+	defer os.RemoveAll(dir)
+
+	// The container will run as a non-root user. Make dir not searchable by
+	// others by removing execute bit for others.
+	if err := os.Chmod(dir, 0766); err != nil {
+		t.Fatalf("Chmod() failed: %v", err)
+	}
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	targetMount := "/foo"
+	opts := dockerutil.RunOpts{
+		Image: "basic/alpine",
+		Mounts: []mount.Mount{
+			{
+				Type:   mount.TypeBind,
+				Source: dir,
+				Target: targetMount,
+			},
+		},
+		WorkDir: targetMount,
+		User:    "nobody",
+	}
+
+	echoPhrase := "All izz well"
+	got, err := d.Run(ctx, opts, "sh", "-c", "echo "+echoPhrase+" && (ls || true)")
+	if err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	if !strings.Contains(got, echoPhrase) {
+		t.Errorf("echo output not found, want: %q, got: %q", echoPhrase, got)
+	}
+	if wantErrorMsg := "Permission denied"; !strings.Contains(got, wantErrorMsg) {
+		t.Errorf("ls error message not found, want: %q, got: %q", wantErrorMsg, got)
+	}
+}
