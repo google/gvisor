@@ -24,6 +24,7 @@
 ##     USER               - The in-container user.
 ##     DOCKER_RUN_OPTIONS - Options for the container (default: --privileged, required for tests).
 ##     DOCKER_NAME        - The container name (default: gvisor-bazel-HASH).
+##     DOCKER_HOSTNAME    - The container name (default: same as DOCKER_NAME).
 ##     DOCKER_PRIVILEGED  - Docker privileged flags (default: --privileged).
 ##     PRE_BAZEL_INIT     - If set, run this command with bash outside the Bazel
 ##                          server container.
@@ -50,7 +51,9 @@ RACE_FLAGS := --@io_bazel_rules_go//go/config:race
 USER := $(shell whoami)
 HASH := $(shell realpath -m $(CURDIR) | md5sum | cut -c1-8)
 BUILDER_NAME := gvisor-builder-$(HASH)-$(ARCH)
+BUILDER_HOSTNAME := $(BUILDER_NAME)
 DOCKER_NAME := gvisor-bazel-$(HASH)-$(ARCH)
+DOCKER_HOSTNAME := $(DOCKER_NAME)
 DOCKER_PRIVILEGED := --privileged
 BAZEL_CACHE := $(HOME)/.cache/bazel/
 GCLOUD_CONFIG := $(HOME)/.config/gcloud/
@@ -182,7 +185,9 @@ bazel-alias: ## Emits an alias that can be used within the shell.
 bazel-image: load-default ## Ensures that the local builder exists.
 	@$(call header,DOCKER BUILD)
 	@docker rm -f $(BUILDER_NAME) 2>/dev/null || true
-	@docker run --user 0:0 --entrypoint "" --name $(BUILDER_NAME) gvisor.dev/images/default \
+	@docker run --user 0:0 --entrypoint "" \
+    --name $(BUILDER_NAME) --hostname $(BUILDER_HOSTNAME) \
+    gvisor.dev/images/default \
 	  bash -c "$(GROUPADD_DOCKER) $(USERADD_DOCKER) if test -e /dev/kvm; then chmod a+rw /dev/kvm; fi" >&2
 	@docker commit $(BUILDER_NAME) gvisor.dev/images/builder >&2
 .PHONY: bazel-image
@@ -197,7 +202,7 @@ endif
 	@docker rm -f $(DOCKER_NAME) 2>/dev/null || true
 	@mkdir -p $(BAZEL_CACHE)
 	@mkdir -p $(GCLOUD_CONFIG)
-	@docker run -d --name $(DOCKER_NAME) \
+	@docker run -d --name $(DOCKER_NAME) --hostname $(DOCKER_HOSTNAME) \
 	  -v "$(CURDIR):$(CURDIR)" \
 	  --workdir "$(CURDIR)" \
 	  $(DOCKER_RUN_OPTIONS) \
