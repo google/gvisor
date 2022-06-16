@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sys/unix"
 	"google.golang.org/protobuf/proto"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck/checkers/remote/test"
@@ -30,6 +31,8 @@ import (
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/test/trace/config"
 )
+
+var cutoffTime time.Time
 
 // TestAll enabled all trace points in the system with all optional and context
 // fields enabled. Then it runs a workload that will trigger those points and
@@ -68,6 +71,8 @@ func TestAll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// No trace point should have a time lesser than this.
+	cutoffTime = time.Now()
 	cmd := exec.Command(
 		runsc,
 		"--debug", "--alsologtostderr", // Debug logging for troubleshooting
@@ -75,10 +80,10 @@ func TestAll(t *testing.T) {
 		"--pod-init-config", cfgFile.Name(),
 		"do", workload)
 	out, err := cmd.CombinedOutput()
+	t.Log(string(out))
 	if err != nil {
 		t.Fatalf("runsc do: %v", err)
 	}
-	t.Log(string(out))
 
 	// Wait until the sandbox disconnects to ensure all points were gathered.
 	server.WaitForNoClients()
@@ -91,12 +96,18 @@ func matchPoints(t *testing.T, msgs []test.Message) {
 		checker func(test.Message) error
 		count   int
 	}{
-		pb.MessageType_MESSAGE_CONTAINER_START:  {checker: checkContainerStart},
-		pb.MessageType_MESSAGE_SENTRY_TASK_EXIT: {checker: checkSentryTaskExit},
-		pb.MessageType_MESSAGE_SYSCALL_RAW:      {checker: checkSyscallRaw},
-		pb.MessageType_MESSAGE_SYSCALL_OPEN:     {checker: checkSyscallOpen},
-		pb.MessageType_MESSAGE_SYSCALL_CLOSE:    {checker: checkSyscallClose},
-		pb.MessageType_MESSAGE_SYSCALL_READ:     {checker: checkSyscallRead},
+		pb.MessageType_MESSAGE_CONTAINER_START:           {checker: checkContainerStart},
+		pb.MessageType_MESSAGE_SENTRY_CLONE:              {checker: checkSentryClone},
+		pb.MessageType_MESSAGE_SENTRY_EXEC:               {checker: checkSentryExec},
+		pb.MessageType_MESSAGE_SENTRY_EXIT_NOTIFY_PARENT: {checker: checkSentryExitNotifyParent},
+		pb.MessageType_MESSAGE_SENTRY_TASK_EXIT:          {checker: checkSentryTaskExit},
+		pb.MessageType_MESSAGE_SYSCALL_CLOSE:             {checker: checkSyscallClose},
+		pb.MessageType_MESSAGE_SYSCALL_CONNECT:           {checker: checkSyscallConnect},
+		pb.MessageType_MESSAGE_SYSCALL_EXECVE:            {checker: checkSyscallExecve},
+		pb.MessageType_MESSAGE_SYSCALL_OPEN:              {checker: checkSyscallOpen},
+		pb.MessageType_MESSAGE_SYSCALL_RAW:               {checker: checkSyscallRaw},
+		pb.MessageType_MESSAGE_SYSCALL_READ:              {checker: checkSyscallRead},
+		pb.MessageType_MESSAGE_SYSCALL_SOCKET:            {checker: checkSyscallSocket},
 	}
 	for _, msg := range msgs {
 		t.Logf("Processing message type %v", msg.MsgType)
@@ -120,7 +131,22 @@ func matchPoints(t *testing.T, msgs []test.Message) {
 	}
 }
 
+func checkTimeNs(ns int64) error {
+	if ns <= int64(cutoffTime.Nanosecond()) {
+		return fmt.Errorf("time should not be less than %d (%v), got: %d (%v)", cutoffTime.Nanosecond(), cutoffTime, ns, time.Unix(0, ns))
+	}
+	return nil
+}
+
+type contextDataOpts struct {
+	skipCwd bool
+}
+
 func checkContextData(data *pb.ContextData) error {
+	return checkContextDataOpts(data, contextDataOpts{})
+}
+
+func checkContextDataOpts(data *pb.ContextData, opts contextDataOpts) error {
 	if data == nil {
 		return fmt.Errorf("ContextData should not be nil")
 	}
@@ -128,18 +154,17 @@ func checkContextData(data *pb.ContextData) error {
 		return fmt.Errorf("invalid container ID %q", data.ContainerId)
 	}
 
-	cutoff := time.Now().Add(-time.Minute)
-	if data.TimeNs <= int64(cutoff.Nanosecond()) {
-		return fmt.Errorf("time should not be less than %d (%v), got: %d (%v)", cutoff.Nanosecond(), cutoff, data.TimeNs, time.Unix(0, data.TimeNs))
+	if err := checkTimeNs(data.TimeNs); err != nil {
+		return err
 	}
-	if data.ThreadStartTimeNs <= int64(cutoff.Nanosecond()) {
-		return fmt.Errorf("thread_start_time should not be less than %d (%v), got: %d (%v)", cutoff.Nanosecond(), cutoff, data.ThreadStartTimeNs, time.Unix(0, data.ThreadStartTimeNs))
+	if err := checkTimeNs(data.ThreadStartTimeNs); err != nil {
+		return err
 	}
 	if data.ThreadStartTimeNs > data.TimeNs {
 		return fmt.Errorf("thread_start_time should not be greater than point time: %d (%v), got: %d (%v)", data.TimeNs, time.Unix(0, data.TimeNs), data.ThreadStartTimeNs, time.Unix(0, data.ThreadStartTimeNs))
 	}
-	if data.ThreadGroupStartTimeNs <= int64(cutoff.Nanosecond()) {
-		return fmt.Errorf("thread_group_start_time should not be less than %d (%v), got: %d (%v)", cutoff.Nanosecond(), cutoff, data.ThreadGroupStartTimeNs, time.Unix(0, data.ThreadGroupStartTimeNs))
+	if err := checkTimeNs(data.ThreadGroupStartTimeNs); err != nil {
+		return err
 	}
 	if data.ThreadGroupStartTimeNs > data.TimeNs {
 		return fmt.Errorf("thread_group_start_time should not be greater than point time: %d (%v), got: %d (%v)", data.TimeNs, time.Unix(0, data.TimeNs), data.ThreadGroupStartTimeNs, time.Unix(0, data.ThreadGroupStartTimeNs))
@@ -151,7 +176,7 @@ func checkContextData(data *pb.ContextData) error {
 	if data.ThreadGroupId <= 0 {
 		return fmt.Errorf("invalid thread_group_id: %v", data.ThreadGroupId)
 	}
-	if len(data.Cwd) == 0 {
+	if !opts.skipCwd && len(data.Cwd) == 0 {
 		return fmt.Errorf("invalid cwd: %v", data.Cwd)
 	}
 	if len(data.ProcessName) == 0 {
@@ -259,6 +284,152 @@ func checkSyscallRead(msg test.Message) error {
 	if p.Fd < 0 {
 		// Although negative FD is possible, it doesn't happen in the test.
 		return fmt.Errorf("reading negative FD: %d", p.Fd)
+	}
+	return nil
+}
+
+func checkSentryClone(msg test.Message) error {
+	p := pb.CloneInfo{}
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	if err := checkContextData(p.ContextData); err != nil {
+		return err
+	}
+	if p.CreatedThreadId < 0 {
+		return fmt.Errorf("invalid TID: %d", p.CreatedThreadId)
+	}
+	if p.CreatedThreadGroupId < 0 {
+		return fmt.Errorf("invalid TGID: %d", p.CreatedThreadGroupId)
+	}
+	if p.CreatedThreadStartTimeNs < 0 {
+		return fmt.Errorf("invalid TID: %d", p.CreatedThreadId)
+	}
+	return checkTimeNs(p.CreatedThreadStartTimeNs)
+}
+
+func checkSentryExec(msg test.Message) error {
+	p := pb.ExecveInfo{}
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	if err := checkContextData(p.ContextData); err != nil {
+		return err
+	}
+	if want := "/bin/true"; want != p.BinaryPath {
+		return fmt.Errorf("wrong BinaryPath, want: %q, got: %q", want, p.BinaryPath)
+	}
+	if len(p.Argv) == 0 {
+		return fmt.Errorf("empty Argv")
+	}
+	if p.Argv[0] != p.BinaryPath {
+		return fmt.Errorf("wrong Argv[0], want: %q, got: %q", p.BinaryPath, p.Argv[0])
+	}
+	if len(p.Env) == 0 {
+		return fmt.Errorf("empty Env")
+	}
+	if want := "TEST=123"; want != p.Env[0] {
+		return fmt.Errorf("wrong Env[0], want: %q, got: %q", want, p.Env[0])
+	}
+	if (p.BinaryMode & 0111) == 0 {
+		return fmt.Errorf("executing non-executable file, mode: %#o (%#x)", p.BinaryMode, p.BinaryMode)
+	}
+	const nobody = 65534
+	if p.BinaryUid != nobody {
+		return fmt.Errorf("BinaryUid, want: %d, got: %d", nobody, p.BinaryUid)
+	}
+	if p.BinaryGid != nobody {
+		return fmt.Errorf("BinaryGid, want: %d, got: %d", nobody, p.BinaryGid)
+	}
+	return nil
+}
+
+func checkSyscallExecve(msg test.Message) error {
+	p := pb.Execve{}
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	if err := checkContextData(p.ContextData); err != nil {
+		return err
+	}
+	if p.Fd < 3 {
+		return fmt.Errorf("execve invalid FD: %d", p.Fd)
+	}
+	if want := "/"; want != p.FdPath {
+		return fmt.Errorf("wrong FdPath, want: %q, got: %q", want, p.FdPath)
+	}
+	if want := "/bin/true"; want != p.Pathname {
+		return fmt.Errorf("wrong Pathname, want: %q, got: %q", want, p.Pathname)
+	}
+	if len(p.Argv) == 0 {
+		return fmt.Errorf("empty Argv")
+	}
+	if p.Argv[0] != p.Pathname {
+		return fmt.Errorf("wrong Argv[0], want: %q, got: %q", p.Pathname, p.Argv[0])
+	}
+	if len(p.Envv) == 0 {
+		return fmt.Errorf("empty Envv")
+	}
+	if want := "TEST=123"; want != p.Envv[0] {
+		return fmt.Errorf("wrong Envv[0], want: %q, got: %q", want, p.Envv[0])
+	}
+	return nil
+}
+
+func checkSentryExitNotifyParent(msg test.Message) error {
+	p := pb.ExitNotifyParentInfo{}
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	// cwd is empty because the task has already been destroyed when the point
+	// fires.
+	opts := contextDataOpts{skipCwd: true}
+	if err := checkContextDataOpts(p.ContextData, opts); err != nil {
+		return err
+	}
+	if p.ExitStatus != 0 {
+		return fmt.Errorf("wrong ExitStatus, want: 0, got: %d", p.ExitStatus)
+	}
+	return nil
+}
+
+func checkSyscallConnect(msg test.Message) error {
+	p := pb.Connect{}
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	if err := checkContextData(p.ContextData); err != nil {
+		return err
+	}
+	if p.Fd < 3 {
+		return fmt.Errorf("invalid FD: %d", p.Fd)
+	}
+	if want := "socket:"; !strings.HasPrefix(p.FdPath, want) {
+		return fmt.Errorf("FdPath should start with %q, got: %q", want, p.FdPath)
+	}
+	if len(p.Address) == 0 {
+		return fmt.Errorf("empty address: %q", string(p.Address))
+	}
+
+	return nil
+}
+
+func checkSyscallSocket(msg test.Message) error {
+	p := pb.Socket{}
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	if err := checkContextData(p.ContextData); err != nil {
+		return err
+	}
+	if want := unix.AF_UNIX; int32(want) != p.Domain {
+		return fmt.Errorf("wrong Domain, want: %v, got: %v", want, p.Domain)
+	}
+	if want := unix.SOCK_STREAM; int32(want) != p.Type {
+		return fmt.Errorf("wrong Type, want: %v, got: %v", want, p.Type)
+	}
+	if want := int32(0); want != p.Protocol {
+		return fmt.Errorf("wrong Protocol, want: %v, got: %v", want, p.Protocol)
 	}
 	return nil
 }
