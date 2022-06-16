@@ -146,6 +146,13 @@ func (d *dentry) createSyntheticChildLocked(opts *createSyntheticOpts) {
 	d.syntheticChildren++
 }
 
+// Preconditions:
+//   - d.dirMu must be locked.
+func (d *dentry) clearDirentsLocked() {
+	d.dirents = nil
+	d.childrenSet = nil
+}
+
 // +stateify savable
 type directoryFD struct {
 	fileDescription
@@ -346,6 +353,10 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 	// Cache dirents for future directoryFDs if permitted.
 	if d.cachedMetadataAuthoritative() {
 		d.dirents = dirents
+		d.childrenSet = make(map[string]struct{}, len(dirents))
+		for _, dirent := range d.dirents {
+			d.childrenSet[dirent.Name] = struct{}{}
+		}
 	}
 	return dirents, nil
 }
