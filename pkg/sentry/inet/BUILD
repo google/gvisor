@@ -7,6 +7,17 @@ package(
 )
 
 go_template_instance(
+    name = "namespace_refs",
+    out = "namespace_refs.go",
+    package = "inet",
+    prefix = "namespace",
+    template = "//pkg/refsvfs2:refs_template",
+    types = {
+        "T": "Namespace",
+    },
+)
+
+go_template_instance(
     name = "atomicptr_netns",
     out = "atomicptr_netns_unsafe.go",
     package = "inet",
@@ -24,11 +35,14 @@ go_library(
         "context.go",
         "inet.go",
         "namespace.go",
+        "namespace_refs.go",
         "test_stack.go",
     ],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/atomicbitops",
         "//pkg/context",
+        "//pkg/refsvfs2",
         "//pkg/tcpip",
         "//pkg/tcpip/stack",
     ],

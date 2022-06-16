@@ -392,40 +392,113 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 		return WriteContext{}, &tcpip.ErrClosedForSend{}
 	}
 
+	ipv6PktInfoValid := e.effectiveNetProto == header.IPv6ProtocolNumber && opts.ControlMessages.HasIPv6PacketInfo
+
 	route := e.connectedRoute
-	if opts.To == nil {
+	to := opts.To
+	info := e.Info()
+	switch {
+	case to == nil:
 		// If the user doesn't specify a destination, they should have
 		// connected to another address.
 		if e.State() != transport.DatagramEndpointStateConnected {
 			return WriteContext{}, &tcpip.ErrDestinationRequired{}
 		}
 
-		route.Acquire()
-	} else {
+		if !ipv6PktInfoValid {
+			route.Acquire()
+			break
+		}
+
+		// We are connected and the caller did not specify the destination but
+		// we have an IPv6 packet info structure which may change our local
+		// interface/address used to send the packet so we need to construct
+		// a new route instead of using the connected route.
+		//
+		// Contruct a destination matching the remote the endpoint is connected
+		// to.
+		to = &tcpip.FullAddress{
+			// RegisterNICID is set when the endpoint is connected. It is usually
+			// only set for link-local addresses or multicast addresses if the
+			// multicast interface was specified (see e.multicastNICID,
+			// e.connectRouteRLocked and e.ConnectAndThen).
+			NIC:  info.RegisterNICID,
+			Addr: info.ID.RemoteAddress,
+		}
+		fallthrough
+	default:
 		// Reject destination address if it goes through a different
 		// NIC than the endpoint was bound to.
-		nicID := opts.To.NIC
+		nicID := to.NIC
 		if nicID == 0 {
 			nicID = tcpip.NICID(e.ops.GetBindToDevice())
 		}
-		info := e.Info()
-		if info.BindNICID != 0 {
-			if nicID != 0 && nicID != info.BindNICID {
-				return WriteContext{}, &tcpip.ErrNoRoute{}
+
+		var localAddr tcpip.Address
+		if ipv6PktInfoValid {
+			// Uphold strong-host semantics since (as of writing) the stack follows
+			// the strong host model.
+
+			pktInfoNICID := opts.ControlMessages.IPv6PacketInfo.NIC
+			pktInfoAddr := opts.ControlMessages.IPv6PacketInfo.Addr
+
+			if pktInfoNICID != 0 {
+				// If we are bound to an interface or specified the destination
+				// interface (usually when using link-local addresses), make sure the
+				// interface matches the specified local interface.
+				if nicID != 0 && nicID != pktInfoNICID {
+					return WriteContext{}, &tcpip.ErrNoRoute{}
+				}
+
+				// If a local address is not specified, then we need to make sure the
+				// bound address belongs to the specified local interface.
+				if len(pktInfoAddr) == 0 {
+					// If the bound interface is different from the specified local
+					// interface, the bound address obviously does not belong to the
+					// specified local interface.
+					//
+					// The bound interface is usually only set for link-local addresses.
+					if info.BindNICID != 0 && info.BindNICID != pktInfoNICID {
+						return WriteContext{}, &tcpip.ErrNoRoute{}
+					}
+					if len(info.ID.LocalAddress) != 0 && e.stack.CheckLocalAddress(pktInfoNICID, header.IPv6ProtocolNumber, info.ID.LocalAddress) == 0 {
+						return WriteContext{}, &tcpip.ErrBadLocalAddress{}
+					}
+				}
+
+				nicID = pktInfoNICID
 			}
 
-			nicID = info.BindNICID
-		}
-		if nicID == 0 {
-			nicID = info.RegisterNICID
+			if len(pktInfoAddr) != 0 {
+				// The local address must belong to the stack. If an outgoing interface
+				// is specified as a result of binding the endpoint to a device, or
+				// specifying the outgoing interface in the destination address/pkt info
+				// structure, the address must belong to that interface.
+				if e.stack.CheckLocalAddress(nicID, header.IPv6ProtocolNumber, pktInfoAddr) == 0 {
+					return WriteContext{}, &tcpip.ErrBadLocalAddress{}
+				}
+
+				localAddr = pktInfoAddr
+			}
+		} else {
+			if info.BindNICID != 0 {
+				if nicID != 0 && nicID != info.BindNICID {
+					return WriteContext{}, &tcpip.ErrNoRoute{}
+				}
+
+				nicID = info.BindNICID
+			}
+			if nicID == 0 {
+				nicID = info.RegisterNICID
+			}
 		}
 
-		dst, netProto, err := e.checkV4Mapped(*opts.To)
+		dst, netProto, err := e.checkV4Mapped(*to)
 		if err != nil {
 			return WriteContext{}, err
 		}
 
-		route, _, err = e.connectRouteRLocked(nicID, dst, netProto)
+		route, _, err = e.connectRouteRLocked(nicID, localAddr, dst, netProto)
 		if err != nil {
 			return WriteContext{}, err
 		}
@@ -496,19 +569,21 @@ func (e *Endpoint) Disconnect() {
 // specified address is a multicast address.
 //
 // +checklocksread:e.mu
-func (e *Endpoint) connectRouteRLocked(nicID tcpip.NICID, addr tcpip.FullAddress, netProto tcpip.NetworkProtocolNumber) (*stack.Route, tcpip.NICID, tcpip.Error) {
-	localAddr := e.Info().ID.LocalAddress
-	if e.isBroadcastOrMulticast(nicID, netProto, localAddr) {
-		// A packet can only originate from a unicast address (i.e., an interface).
-		localAddr = ""
-	}
-
-	if header.IsV4MulticastAddress(addr.Addr) || header.IsV6MulticastAddress(addr.Addr) {
-		if nicID == 0 {
-			nicID = e.multicastNICID
+func (e *Endpoint) connectRouteRLocked(nicID tcpip.NICID, localAddr tcpip.Address, addr tcpip.FullAddress, netProto tcpip.NetworkProtocolNumber) (*stack.Route, tcpip.NICID, tcpip.Error) {
+	if len(localAddr) == 0 {
+		localAddr = e.Info().ID.LocalAddress
+		if e.isBroadcastOrMulticast(nicID, netProto, localAddr) {
+			// A packet can only originate from a unicast address (i.e., an interface).
+			localAddr = ""
 		}
-		if localAddr == "" && nicID == 0 {
-			localAddr = e.multicastAddr
+
+		if header.IsV4MulticastAddress(addr.Addr) || header.IsV6MulticastAddress(addr.Addr) {
+			if nicID == 0 {
+				nicID = e.multicastNICID
+			}
+			if localAddr == "" && nicID == 0 {
+				localAddr = e.multicastAddr
+			}
 		}
 	}
 
@@ -563,7 +638,7 @@ func (e *Endpoint) ConnectAndThen(addr tcpip.FullAddress, f func(netProto tcpip.
 		return err
 	}
 
-	r, nicID, err := e.connectRouteRLocked(nicID, addr, netProto)
+	r, nicID, err := e.connectRouteRLocked(nicID, "", addr, netProto)
 	if err != nil {
 		return err
 	}

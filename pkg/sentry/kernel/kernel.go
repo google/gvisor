@@ -971,10 +971,15 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 				Path:               fspath.Parse(args.WorkingDirectory),
 				FollowFinalSymlink: true,
 			}
+			// NOTE(b/236028361): Do not set CheckSearchable flag to true.
+			// Application is allowed to start with a working directory that it can
+			// not access/search. This is consistent with Docker and VFS1. Runc
+			// explicitly allows for this in 6ce2d63a5db6 ("libct/init_linux: retry
+			// chdir to fix EPERM"). As described in the commit, runc unintentionally
+			// allowed this behavior in a couple of releases and applications started
+			// relying on it. So they decided to allow it for backward compatibility.
 			var err error
-			wd, err = k.VFS().GetDentryAt(ctx, args.Credentials, &pop, &vfs.GetDentryOptions{
-				CheckSearchable: true,
-			})
+			wd, err = k.VFS().GetDentryAt(ctx, args.Credentials, &pop, &vfs.GetDentryOptions{})
 			if err != nil {
 				return nil, 0, fmt.Errorf("failed to find initial working directory %q: %v", args.WorkingDirectory, err)
 			}
@@ -1079,6 +1084,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		ContainerID:             args.ContainerID,
 		UserCounters:            k.GetUserCounters(args.Credentials.RealKUID),
 	}
+	config.NetworkNamespace.IncRef()
 	t, err := k.tasks.NewTask(ctx, config)
 	if err != nil {
 		return nil, 0, err
@@ -1122,11 +1128,18 @@ func (k *Kernel) Start() error {
 	// Kernel.SaveTo and need to be resumed. If k was created by NewKernel,
 	// this is a no-op.
 	k.resumeTimeLocked(k.SupervisorContext())
-	// Start task goroutines.
 	k.tasks.mu.RLock()
-	defer k.tasks.mu.RUnlock()
-	for t, tid := range k.tasks.Root.tids {
-		t.Start(tid)
+	ts := make([]*Task, 0, len(k.tasks.Root.tids))
+	for t := range k.tasks.Root.tids {
+		ts = append(ts, t)
+	}
+	k.tasks.mu.RUnlock()
+	// Start task goroutines.
+	// NOTE(b/235349091): We don't actually need the TaskSet mutex, we just
+	// need to make sure we only call t.Start() once for each task. Holding the
+	// mutex for each task start may cause a nested locking error.
+	for _, t := range ts {
+		t.Start(t.ThreadID())
 	}
 	return nil
 }
@@ -1846,6 +1859,7 @@ func (k *Kernel) Release() {
 	}
 	k.timekeeper.Destroy()
 	k.vdso.Release(ctx)
+	k.RootNetworkNamespace().DecRef()
 }
 
 // PopulateNewCgroupHierarchy moves all tasks into a newly created cgroup

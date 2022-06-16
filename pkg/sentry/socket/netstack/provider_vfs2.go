@@ -86,6 +86,7 @@ func packetSocketVFS2(t *kernel.Task, epStack *Stack, stype linux.SockType, prot
 	// Packet sockets require CAP_NET_RAW.
 	creds := auth.CredentialsFromContext(t)
 	if !creds.HasCapability(linux.CAP_NET_RAW) {
+		rawMissingLogger.Infof("A process tried to create a raw socket without CAP_NET_RAW. Should the container config enable CAP_NET_RAW?")
 		return nil, syserr.ErrNotPermitted
 	}
 

@@ -697,7 +697,10 @@ TEST(MsgqueueTest, InterruptSend) {
 
 // Test msgctl with IPC_STAT option.
 TEST(MsgqueueTest, MsgCtlIpcStat) {
+  // The timestamps only have a resolution of seconds; slow down so we actually
+  // see the timestamps change.
   auto start = absl::Now();
+  absl::SleepFor(absl::Milliseconds(1010));
 
   Queue queue(msgget(IPC_PRIVATE, 0600));
   ASSERT_THAT(queue.get(), SyscallSucceeds());
@@ -726,10 +729,8 @@ TEST(MsgqueueTest, MsgCtlIpcStat) {
   EXPECT_EQ(ds.msg_lspid, 0);
   EXPECT_EQ(ds.msg_lrpid, 0);
 
-  // The timestamps only have a resolution of seconds; slow down so we actually
-  // see the timestamps change.
-  absl::SleepFor(absl::Seconds(1));
   auto pre_send = absl::Now();
+  absl::SleepFor(absl::Milliseconds(1010));
 
   msgbuf buf{1, "A message."};
   ASSERT_THAT(msgsnd(queue.get(), &buf, sizeof(buf.mtext), 0),
@@ -747,8 +748,8 @@ TEST(MsgqueueTest, MsgCtlIpcStat) {
   EXPECT_EQ(ds.msg_lspid, pid);
   EXPECT_EQ(ds.msg_lrpid, 0);
 
-  absl::SleepFor(absl::Seconds(1));
   auto pre_receive = absl::Now();
+  absl::SleepFor(absl::Milliseconds(1010));
 
   ASSERT_THAT(msgrcv(queue.get(), &buf, sizeof(buf.mtext), 0, 0),
               SyscallSucceedsWithValue(msgSize));

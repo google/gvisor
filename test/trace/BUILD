@@ -20,8 +20,9 @@ go_test(
         "//pkg/sentry/seccheck/checkers/remote/test",
         "//pkg/sentry/seccheck/points:points_go_proto",
         "//pkg/test/testutil",
-        "//runsc/boot",
+        "//test/trace/config",
         "@org_golang_google_protobuf//proto:go_default_library",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 

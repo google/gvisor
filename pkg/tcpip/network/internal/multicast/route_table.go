@@ -413,6 +413,16 @@ func (r *RouteTable) RemoveInstalledRoute(key stack.UnicastSourceAndMulticastDes
 	return false
 }
 
+// RemoveAllInstalledRoutes removes all installed routes from the table.
+func (r *RouteTable) RemoveAllInstalledRoutes() {
+	r.installedMu.Lock()
+	defer r.installedMu.Unlock()
+
+	for key := range r.installedRoutes {
+		delete(r.installedRoutes, key)
+	}
+}
+
 // GetLastUsedTimestamp returns a monotonic timestamp that represents the last
 // time the route that matches the provided key was used or updated.
 //

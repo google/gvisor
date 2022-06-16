@@ -41,6 +41,18 @@ var Analyzer = &analysis.Analyzer{
 	},
 }
 
+var (
+	enableInferred = true
+	enableAtomic   = true
+	enableWrappers = true
+)
+
+func init() {
+	Analyzer.Flags.BoolVar(&enableInferred, "inferred", true, "enable inferred locks")
+	Analyzer.Flags.BoolVar(&enableAtomic, "atomic", true, "enable atomic checks")
+	Analyzer.Flags.BoolVar(&enableWrappers, "wrappers", true, "enable analysis of wrappers")
+}
+
 // objectObservations tracks lock correlations.
 type objectObservations struct {
 	counts map[types.Object]int
@@ -187,7 +199,9 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	}
 
 	// Check for inferred checklocks annotations.
-	pc.checkInferred()
+	if enableInferred {
+		pc.checkInferred()
+	}
 
 	// Check for expected failures.
 	pc.checkFailures()

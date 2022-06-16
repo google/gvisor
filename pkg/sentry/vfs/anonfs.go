@@ -100,7 +100,7 @@ func (fs *anonFilesystem) Sync(ctx context.Context) error {
 
 // AccessAt implements vfs.Filesystem.Impl.AccessAt.
 func (fs *anonFilesystem) AccessAt(ctx context.Context, rp *ResolvingPath, creds *auth.Credentials, ats AccessTypes) error {
-	if !rp.Done() {
+	if !rp.Done() || rp.MustBeDir() {
 		return linuxerr.ENOTDIR
 	}
 	return GenericCheckPermissions(creds, ats, anonFileMode, anonFileUID, anonFileGID)
@@ -108,7 +108,7 @@ func (fs *anonFilesystem) AccessAt(ctx context.Context, rp *ResolvingPath, creds
 
 // GetDentryAt implements FilesystemImpl.GetDentryAt.
 func (fs *anonFilesystem) GetDentryAt(ctx context.Context, rp *ResolvingPath, opts GetDentryOptions) (*Dentry, error) {
-	if !rp.Done() {
+	if !rp.Done() || rp.MustBeDir() {
 		return nil, linuxerr.ENOTDIR
 	}
 	if opts.CheckSearchable {
@@ -153,7 +153,7 @@ func (fs *anonFilesystem) MknodAt(ctx context.Context, rp *ResolvingPath, opts M
 
 // OpenAt implements FilesystemImpl.OpenAt.
 func (fs *anonFilesystem) OpenAt(ctx context.Context, rp *ResolvingPath, opts OpenOptions) (*FileDescription, error) {
-	if !rp.Done() {
+	if !rp.Done() || rp.MustBeDir() {
 		return nil, linuxerr.ENOTDIR
 	}
 	return nil, linuxerr.ENODEV
@@ -161,7 +161,7 @@ func (fs *anonFilesystem) OpenAt(ctx context.Context, rp *ResolvingPath, opts Op
 
 // ReadlinkAt implements FilesystemImpl.ReadlinkAt.
 func (fs *anonFilesystem) ReadlinkAt(ctx context.Context, rp *ResolvingPath) (string, error) {
-	if !rp.Done() {
+	if !rp.Done() || rp.MustBeDir() {
 		return "", linuxerr.ENOTDIR
 	}
 	return "", linuxerr.EINVAL
@@ -185,7 +185,7 @@ func (fs *anonFilesystem) RmdirAt(ctx context.Context, rp *ResolvingPath) error 
 
 // SetStatAt implements FilesystemImpl.SetStatAt.
 func (fs *anonFilesystem) SetStatAt(ctx context.Context, rp *ResolvingPath, opts SetStatOptions) error {
-	if !rp.Done() {
+	if !rp.Done() || rp.MustBeDir() {
 		return linuxerr.ENOTDIR
 	}
 	// Linux actually permits anon_inode_inode's metadata to be set, which is
@@ -196,7 +196,7 @@ func (fs *anonFilesystem) SetStatAt(ctx context.Context, rp *ResolvingPath, opts
 
 // StatAt implements FilesystemImpl.StatAt.
 func (fs *anonFilesystem) StatAt(ctx context.Context, rp *ResolvingPath, opts StatOptions) (linux.Statx, error) {
-	if !rp.Done() {
+	if !rp.Done() || rp.MustBeDir() {
 		return linux.Statx{}, linuxerr.ENOTDIR
 	}
 	// See fs/anon_inodes.c:anon_inode_init() => fs/libfs.c:alloc_anon_inode().
@@ -217,7 +217,7 @@ func (fs *anonFilesystem) StatAt(ctx context.Context, rp *ResolvingPath, opts St
 
 // StatFSAt implements FilesystemImpl.StatFSAt.
 func (fs *anonFilesystem) StatFSAt(ctx context.Context, rp *ResolvingPath) (linux.Statfs, error) {
-	if !rp.Done() {
+	if !rp.Done() || rp.MustBeDir() {
 		return linux.Statfs{}, linuxerr.ENOTDIR
 	}
 	return linux.Statfs{
@@ -255,7 +255,7 @@ func (fs *anonFilesystem) BoundEndpointAt(ctx context.Context, rp *ResolvingPath
 
 // ListXattrAt implements FilesystemImpl.ListXattrAt.
 func (fs *anonFilesystem) ListXattrAt(ctx context.Context, rp *ResolvingPath, size uint64) ([]string, error) {
-	if !rp.Done() {
+	if !rp.Done() || rp.MustBeDir() {
 		return nil, linuxerr.ENOTDIR
 	}
 	return nil, nil
@@ -263,7 +263,7 @@ func (fs *anonFilesystem) ListXattrAt(ctx context.Context, rp *ResolvingPath, si
 
 // GetXattrAt implements FilesystemImpl.GetXattrAt.
 func (fs *anonFilesystem) GetXattrAt(ctx context.Context, rp *ResolvingPath, opts GetXattrOptions) (string, error) {
-	if !rp.Done() {
+	if !rp.Done() || rp.MustBeDir() {
 		return "", linuxerr.ENOTDIR
 	}
 	return "", linuxerr.ENOTSUP
@@ -271,7 +271,7 @@ func (fs *anonFilesystem) GetXattrAt(ctx context.Context, rp *ResolvingPath, opt
 
 // SetXattrAt implements FilesystemImpl.SetXattrAt.
 func (fs *anonFilesystem) SetXattrAt(ctx context.Context, rp *ResolvingPath, opts SetXattrOptions) error {
-	if !rp.Done() {
+	if !rp.Done() || rp.MustBeDir() {
 		return linuxerr.ENOTDIR
 	}
 	return linuxerr.EPERM
@@ -279,7 +279,7 @@ func (fs *anonFilesystem) SetXattrAt(ctx context.Context, rp *ResolvingPath, opt
 
 // RemoveXattrAt implements FilesystemImpl.RemoveXattrAt.
 func (fs *anonFilesystem) RemoveXattrAt(ctx context.Context, rp *ResolvingPath, name string) error {
-	if !rp.Done() {
+	if !rp.Done() || rp.MustBeDir() {
 		return linuxerr.ENOTDIR
 	}
 	return linuxerr.EPERM

@@ -407,6 +407,44 @@ func TestRemoveInstalledRouteWithNoMatchingRoute(t *testing.T) {
 	}
 }
 
+func TestRemoveAllInstalledRoutes(t *testing.T) {
+	otherAddress := testutil.MustParse4("192.168.2.1")
+
+	table := RouteTable{}
+	defer table.Close()
+	config := defaultConfig()
+	if err := table.Init(config); err != nil {
+		t.Fatalf("table.Init(%#v): %s", config, err)
+	}
+
+	routes := map[stack.UnicastSourceAndMulticastDestination]stack.MulticastRoute{
+		defaultRouteKey: defaultRoute,
+		stack.UnicastSourceAndMulticastDestination{otherAddress, otherAddress}: defaultRoute,
+	}
+
+	for key, route := range routes {
+		installedRoute := table.NewInstalledRoute(route)
+		table.AddInstalledRoute(key, installedRoute)
+	}
+
+	table.RemoveAllInstalledRoutes()
+
+	for key := range routes {
+		pkt := newPacketBuffer("hello")
+		defer pkt.DecRef()
+
+		result, hasBufferSpace := table.GetRouteOrInsertPending(key, pkt)
+
+		if !hasBufferSpace {
+			t.Fatalf("table.GetRouteOrInsertPending(%#v, %#v): false", key, pkt)
+		}
+
+		if result.InstalledRoute != nil {
+			t.Errorf("result.InstalledRoute = %v, want = nil", result.InstalledRoute)
+		}
+	}
+}
+
 func TestGetLastUsedTimestampWithNoMatchingRoute(t *testing.T) {
 	table := RouteTable{}
 	defer table.Close()

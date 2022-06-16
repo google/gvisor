@@ -60,8 +60,10 @@ func (mm *MemoryManager) NeedsUpdate(generation int64) bool {
 // ReadMapsDataInto is called by fsimpl/proc.mapsData.Generate to
 // implement /proc/[pid]/maps.
 func (mm *MemoryManager) ReadMapsDataInto(ctx context.Context, buf *bytes.Buffer) {
-	mm.mappingMu.RLock()
-	defer mm.mappingMu.RUnlock()
+	// FIXME(b/235153601): Need to replace RLockBypass with RLockBypass
+	// after fixing b/235153601.
+	mm.mappingMu.RLockBypass()
+	defer mm.mappingMu.RUnlockBypass()
 	var start hostarch.Addr
 
 	for vseg := mm.vmas.LowerBoundSegment(start); vseg.Ok(); vseg = vseg.NextSegment() {
@@ -85,8 +87,10 @@ func (mm *MemoryManager) ReadMapsDataInto(ctx context.Context, buf *bytes.Buffer
 // ReadMapsSeqFileData is called by fs/proc.mapsData.ReadSeqFileData to
 // implement /proc/[pid]/maps.
 func (mm *MemoryManager) ReadMapsSeqFileData(ctx context.Context, handle seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
-	mm.mappingMu.RLock()
-	defer mm.mappingMu.RUnlock()
+	// FIXME(b/235153601): Need to replace RLockBypass with RLockBypass
+	// after fixing b/235153601.
+	mm.mappingMu.RLockBypass()
+	defer mm.mappingMu.RUnlockBypass()
 	var data []seqfile.SeqData
 	var start hostarch.Addr
 	if handle != nil {
@@ -175,8 +179,10 @@ func (mm *MemoryManager) appendVMAMapsEntryLocked(ctx context.Context, vseg vmaI
 // ReadSmapsDataInto is called by fsimpl/proc.smapsData.Generate to
 // implement /proc/[pid]/maps.
 func (mm *MemoryManager) ReadSmapsDataInto(ctx context.Context, buf *bytes.Buffer) {
-	mm.mappingMu.RLock()
-	defer mm.mappingMu.RUnlock()
+	// FIXME(b/235153601): Need to replace RLockBypass with RLockBypass
+	// after fixing b/235153601.
+	mm.mappingMu.RLockBypass()
+	defer mm.mappingMu.RUnlockBypass()
 	var start hostarch.Addr
 
 	for vseg := mm.vmas.LowerBoundSegment(start); vseg.Ok(); vseg = vseg.NextSegment() {
@@ -193,8 +199,10 @@ func (mm *MemoryManager) ReadSmapsDataInto(ctx context.Context, buf *bytes.Buffe
 // ReadSmapsSeqFileData is called by fs/proc.smapsData.ReadSeqFileData to
 // implement /proc/[pid]/smaps.
 func (mm *MemoryManager) ReadSmapsSeqFileData(ctx context.Context, handle seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
-	mm.mappingMu.RLock()
-	defer mm.mappingMu.RUnlock()
+	// FIXME(b/235153601): Need to replace RLockBypass with RLockBypass
+	// after fixing b/235153601.
+	mm.mappingMu.RLockBypass()
+	defer mm.mappingMu.RUnlockBypass()
 	var data []seqfile.SeqData
 	var start hostarch.Addr
 	if handle != nil {

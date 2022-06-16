@@ -58,6 +58,15 @@ type testContext struct {
 	clock *faketime.ManualClock
 }
 
+var _ stack.MulticastForwardingEventDispatcher = (*fakeMulticastEventDispatcher)(nil)
+
+type fakeMulticastEventDispatcher struct{}
+
+func (m *fakeMulticastEventDispatcher) OnMissingRoute(context stack.MulticastPacketContext) {}
+
+func (m *fakeMulticastEventDispatcher) OnUnexpectedInputInterface(context stack.MulticastPacketContext, expectedInputInterface tcpip.NICID) {
+}
+
 func newTestContext() testContext {
 	clock := faketime.NewManualClock()
 	s := stack.New(stack.Options{
@@ -201,6 +210,10 @@ func TestAddMulticastRouteIPv4Errors(t *testing.T) {
 				if err := s.AddProtocolAddress(nicID, addr, stack.AddressProperties{}); err != nil {
 					t.Fatalf("s.AddProtocolAddress(%d, %+v, {}): %s", nicID, addr, err)
 				}
+			}
+
+			if _, err := s.EnableMulticastForwardingForProtocol(ipv4.ProtocolNumber, &fakeMulticastEventDispatcher{}); err != nil {
+				t.Fatalf("s.EnableMulticastForwardingForProtocol(%d, _): (_, %s)", ipv4.ProtocolNumber, err)
 			}
 
 			outgoingInterfaces := []stack.MulticastRouteOutgoingInterface{{ID: outgoingNICID, MinTTL: 1}}
@@ -814,6 +827,10 @@ func TestMulticastFragmentForwarding(t *testing.T) {
 			defer ctx.cleanup()
 			s := ctx.s
 
+			if _, err := s.EnableMulticastForwardingForProtocol(ipv4.ProtocolNumber, &fakeMulticastEventDispatcher{}); err != nil {
+				t.Fatalf("s.EnableMulticastForwardingForProtocol(%d, _): (_, %s)", ipv4.ProtocolNumber, err)
+			}
+
 			endpoints := make(map[tcpip.NICID]*channel.Endpoint)
 			for nicID, addr := range defaultEndpointConfigs {
 				// For the input interface, we expect at most a single packet in
@@ -982,6 +999,10 @@ func TestMulticastForwardingOptions(t *testing.T) {
 			// Advance the clock by some unimportant amount to make
 			// it give a more recognisable signature than 00,00,00,00.
 			clock.Advance(time.Millisecond * randomTimeOffset)
+
+			if _, err := s.EnableMulticastForwardingForProtocol(ipv4.ProtocolNumber, &fakeMulticastEventDispatcher{}); err != nil {
+				t.Fatalf("s.EnableMulticastForwardingForProtocol(%d, _): (_, %s)", ipv4.ProtocolNumber, err)
+			}
 
 			endpoints := make(map[tcpip.NICID]*channel.Endpoint)
 			for nicID, addr := range defaultEndpointConfigs {
