@@ -27,4 +27,5 @@ go_library(
     # control expected failures for analysis.
     marshal = False,
     stateify = False,
+    deps = ["//tools/checklocks/test/crosspkg"],
 )

@@ -117,7 +117,12 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	netns := t.NetworkNamespace()
 	if args.Flags&linux.CLONE_NEWNET != 0 {
 		netns = inet.NewNamespace(netns)
+	} else {
+		netns.IncRef()
 	}
+	cu.Add(func() {
+		netns.DecRef()
+	})
 
 	// TODO(b/63601033): Implement CLONE_NEWNS.
 	mntnsVFS2 := t.mountNamespaceVFS2
@@ -454,11 +459,13 @@ func (t *Task) Unshare(flags int32) error {
 	}
 	t.mu.Lock()
 	// Can't defer unlock: DecRefs must occur without holding t.mu.
+	var oldNETNS *inet.Namespace
 	if flags&linux.CLONE_NEWNET != 0 {
 		if !haveCapSysAdmin {
 			t.mu.Unlock()
 			return linuxerr.EPERM
 		}
+		oldNETNS = t.netns.Load()
 		t.netns.Store(inet.NewNamespace(t.netns.Load()))
 	}
 	if flags&linux.CLONE_NEWUTS != 0 {
@@ -497,6 +504,9 @@ func (t *Task) Unshare(flags int32) error {
 	t.mu.Unlock()
 	if oldIPCNS != nil {
 		oldIPCNS.DecRef(t)
+	}
+	if oldNETNS != nil {
+		oldNETNS.DecRef()
 	}
 	if oldFDTable != nil {
 		oldFDTable.DecRef(t)

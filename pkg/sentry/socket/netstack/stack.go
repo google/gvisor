@@ -37,6 +37,11 @@ type Stack struct {
 	Stack *stack.Stack `state:"manual"`
 }
 
+// Destroy implements inet.Stack.Destroy.
+func (s *Stack) Destroy() {
+	s.Stack.Close()
+}
+
 // SupportsIPv6 implements Stack.SupportsIPv6.
 func (s *Stack) SupportsIPv6() bool {
 	return s.Stack.CheckNetworkProtocol(ipv6.ProtocolNumber)

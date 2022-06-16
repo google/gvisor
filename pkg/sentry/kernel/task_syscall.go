@@ -182,7 +182,6 @@ func (t *Task) executeSyscall(sysno uintptr, args arch.SyscallArguments) (rval u
 		})
 	}
 	if seccheck.Global.SyscallEnabled(seccheck.SyscallExit, sysno) {
-		cb := t.SyscallTable().LookupSyscallToProto(sysno)
 		fields := seccheck.Global.GetFieldSet(seccheck.GetPointForSyscall(seccheck.SyscallExit, sysno))
 		var ctxData *pb.ContextData
 		if !fields.Context.Empty() {
@@ -196,6 +195,7 @@ func (t *Task) executeSyscall(sysno uintptr, args arch.SyscallArguments) (rval u
 			Rval:  rval,
 			Errno: ExtractErrno(err, int(sysno)),
 		}
+		cb := t.SyscallTable().LookupSyscallToProto(sysno)
 		msg, msgType := cb(t, fields, ctxData, info)
 		seccheck.Global.SendToCheckers(func(c seccheck.Checker) error {
 			return c.Syscall(t, fields, ctxData, msgType, msg)

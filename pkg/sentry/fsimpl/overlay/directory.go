@@ -20,7 +20,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sync"
 )
 
 func (d *dentry) isDir() bool {
@@ -104,7 +103,7 @@ type directoryFD struct {
 	vfs.DirectoryFileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
 
-	mu      sync.Mutex `state:"nosave"`
+	mu      directoryFDMutex `state:"nosave"`
 	off     int64
 	dirents []vfs.Dirent
 }

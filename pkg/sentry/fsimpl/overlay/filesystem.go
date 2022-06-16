@@ -1117,8 +1117,8 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		if err := newParent.checkPermissions(creds, vfs.MayWrite|vfs.MayExec); err != nil {
 			return err
 		}
-		newParent.dirMu.Lock()
-		defer newParent.dirMu.Unlock()
+		newParent.dirMu.NestedLock()
+		defer newParent.dirMu.NestedUnlock()
 	}
 	if newParent.vfsd.IsDead() {
 		return linuxerr.ENOENT
@@ -1145,8 +1145,8 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			if genericIsAncestorDentry(replaced, renamed) {
 				return linuxerr.ENOTEMPTY
 			}
-			replaced.dirMu.Lock()
-			defer replaced.dirMu.Unlock()
+			replaced.dirMu.NestedLock()
+			defer replaced.dirMu.NestedUnlock()
 			whiteouts, err = replaced.collectWhiteoutsForRmdirLocked(ctx)
 			if err != nil {
 				return err
@@ -1350,8 +1350,8 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	if err := parent.mayDelete(rp.Credentials(), child); err != nil {
 		return err
 	}
-	child.dirMu.Lock()
-	defer child.dirMu.Unlock()
+	child.dirMu.NestedLock()
+	defer child.dirMu.NestedUnlock()
 	whiteouts, err := child.collectWhiteoutsForRmdirLocked(ctx)
 	if err != nil {
 		return err

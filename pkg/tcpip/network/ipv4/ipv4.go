@@ -366,16 +366,15 @@ func (e *endpoint) disableLocked() {
 	}
 }
 
-// multicastEventDispatcher returns the multicast forwarding event dispatcher.
-//
-// Panics if a multicast forwarding event dispatcher does not exist. This
-// indicates that multicast forwarding is enabled, but no dispatcher was
-// provided.
-func (e *endpoint) multicastEventDispatcher() stack.MulticastForwardingEventDispatcher {
-	if mcastDisp := e.protocol.options.MulticastForwardingDisp; mcastDisp != nil {
-		return mcastDisp
+// emitMulticastEvent emits a multicast forwarding event using the provided
+// generator if a valid event dispatcher exists.
+func (e *endpoint) emitMulticastEvent(eventGenerator func(stack.MulticastForwardingEventDispatcher)) {
+	e.protocol.mu.RLock()
+	defer e.protocol.mu.RUnlock()
+
+	if mcastDisp := e.protocol.multicastForwardingDisp; mcastDisp != nil {
+		eventGenerator(mcastDisp)
 	}
-	panic("e.procotol.options.MulticastForwardingDisp unexpectedly nil")
 }
 
 // DefaultTTL is the default time-to-live value for this endpoint.
@@ -902,9 +901,11 @@ func (e *endpoint) forwardMulticastPacket(h header.IPv4, pkt *stack.PacketBuffer
 		// Attempt to forward the pkt using an existing route.
 		return e.forwardValidatedMulticastPacket(pkt, result.InstalledRoute)
 	case multicast.NoRouteFoundAndPendingInserted:
-		e.multicastEventDispatcher().OnMissingRoute(stack.MulticastPacketContext{
-			stack.UnicastSourceAndMulticastDestination{h.SourceAddress(), h.DestinationAddress()},
-			e.nic.ID(),
+		e.emitMulticastEvent(func(disp stack.MulticastForwardingEventDispatcher) {
+			disp.OnMissingRoute(stack.MulticastPacketContext{
+				stack.UnicastSourceAndMulticastDestination{h.SourceAddress(), h.DestinationAddress()},
+				e.nic.ID(),
+			})
 		})
 	case multicast.PacketQueuedInPendingRoute:
 	default:
@@ -957,10 +958,12 @@ func (e *endpoint) forwardValidatedMulticastPacket(pkt *stack.PacketBuffer, inst
 	//	 dropped silently.
 	if e.nic.ID() != installedRoute.ExpectedInputInterface {
 		h := header.IPv4(pkt.NetworkHeader().View())
-		e.multicastEventDispatcher().OnUnexpectedInputInterface(stack.MulticastPacketContext{
-			stack.UnicastSourceAndMulticastDestination{h.SourceAddress(), h.DestinationAddress()},
-			e.nic.ID(),
-		}, installedRoute.ExpectedInputInterface)
+		e.emitMulticastEvent(func(disp stack.MulticastForwardingEventDispatcher) {
+			disp.OnUnexpectedInputInterface(stack.MulticastPacketContext{
+				stack.UnicastSourceAndMulticastDestination{h.SourceAddress(), h.DestinationAddress()},
+				e.nic.ID(),
+			}, installedRoute.ExpectedInputInterface)
+		})
 		return &ip.ErrUnexpectedMulticastInputInterface{}
 	}
 
@@ -1046,7 +1049,7 @@ func (e *endpoint) handleValidatedPacket(h header.IPv4, pkt *stack.PacketBuffer,
 		// RFC 1812 section 5.2.3 for details regarding the forwarding/local
 		// delivery decision.
 
-		multicastForwarding := e.MulticastForwarding()
+		multicastForwarding := e.MulticastForwarding() && e.protocol.multicastForwarding()
 
 		if multicastForwarding {
 			e.handleForwardingError(e.forwardMulticastPacket(h, pkt))
@@ -1432,6 +1435,11 @@ type protocol struct {
 	options Options
 
 	multicastRouteTable multicast.RouteTable
+	// multicastForwardingDisp is the multicast forwarding event dispatcher that
+	// an integrator can provide to receive multicast forwarding events. Note
+	// that multicast packets will only be forwarded if this is non-nil.
+	// +checklocks:mu
+	multicastForwardingDisp stack.MulticastForwardingEventDispatcher
 }
 
 // Number returns the ipv4 protocol number.
@@ -1505,6 +1513,12 @@ func (p *protocol) validateUnicastSourceAndMulticastDestination(addresses stack.
 	return nil
 }
 
+func (p *protocol) multicastForwarding() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.multicastForwardingDisp != nil
+}
+
 func (p *protocol) newInstalledRoute(route stack.MulticastRoute) (*multicast.InstalledRoute, tcpip.Error) {
 	if len(route.OutgoingInterfaces) == 0 {
 		return nil, &tcpip.ErrMissingRequiredFields{}
@@ -1528,6 +1542,10 @@ func (p *protocol) newInstalledRoute(route stack.MulticastRoute) (*multicast.Ins
 
 // AddMulticastRoute implements stack.MulticastForwardingNetworkProtocol.
 func (p *protocol) AddMulticastRoute(addresses stack.UnicastSourceAndMulticastDestination, route stack.MulticastRoute) tcpip.Error {
+	if !p.multicastForwarding() {
+		return &tcpip.ErrNotPermitted{}
+	}
+
 	if err := p.validateUnicastSourceAndMulticastDestination(addresses); err != nil {
 		return err
 	}
@@ -1557,6 +1575,34 @@ func (p *protocol) RemoveMulticastRoute(addresses stack.UnicastSourceAndMulticas
 	}
 
 	return nil
+}
+
+// EnableMulticastForwarding implements
+// stack.MulticastForwardingNetworkProtocol.EnableMulticastForwarding.
+func (p *protocol) EnableMulticastForwarding(disp stack.MulticastForwardingEventDispatcher) (bool, tcpip.Error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.multicastForwardingDisp != nil {
+		return true, nil
+	}
+
+	if disp == nil {
+		return false, &tcpip.ErrInvalidOptionValue{}
+	}
+
+	p.multicastForwardingDisp = disp
+	return false, nil
+}
+
+// DisableMulticastForwarding implements
+// stack.MulticastForwardingNetworkProtocol.DisableMulticastForwarding.
+func (p *protocol) DisableMulticastForwarding() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.multicastForwardingDisp = nil
+	p.multicastRouteTable.RemoveAllInstalledRoutes()
 }
 
 // MulticastRouteLastUsedTime implements
@@ -1589,6 +1635,11 @@ func (p *protocol) forwardPendingMulticastPacket(pkt *stack.PacketBuffer, instal
 		// drop the pkt.
 		return
 	}
+
+	if !ep.MulticastForwarding() {
+		return
+	}
+
 	ep.handleForwardingError(ep.forwardValidatedMulticastPacket(pkt, installedRoute))
 }
 
@@ -1771,10 +1822,6 @@ type Options struct {
 	// AllowExternalLoopbackTraffic indicates that inbound loopback packets (i.e.
 	// martian loopback packets) should be accepted.
 	AllowExternalLoopbackTraffic bool
-
-	// MulticastForwardingDisp is the multicast forwarding event dispatcher that
-	// an integrator can provide to receive multicast forwarding events.
-	MulticastForwardingDisp stack.MulticastForwardingEventDispatcher
 }
 
 // NewProtocolWithOptions returns an IPv4 network protocol.

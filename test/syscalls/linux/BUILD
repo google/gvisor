@@ -1777,6 +1777,7 @@ cc_binary(
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",
         gtest,
+        "//test/util:eventfd_util",
         "//test/util:memory_util",
         "//test/util:multiprocess_util",
         "//test/util:posix_error",

@@ -63,6 +63,7 @@
 #include "absl/time/time.h"
 #include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
+#include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/memory_util.h"
@@ -1662,32 +1663,30 @@ TEST(ProcPidStatusTest, HasBasicFields) {
                             Pair("PPid", absl::StrCat(getppid())),
                         }));
 
-      uid_t ruid, euid, suid;
-      ASSERT_THAT(getresuid(&ruid, &euid, &suid), SyscallSucceeds());
-      gid_t rgid, egid, sgid;
-      ASSERT_THAT(getresgid(&rgid, &egid, &sgid), SyscallSucceeds());
-      std::vector<gid_t> supplementary_gids;
-      int ngids = getgroups(0, nullptr);
-      supplementary_gids.resize(ngids);
-      ASSERT_THAT(getgroups(ngids, supplementary_gids.data()),
-                  SyscallSucceeds());
+    uid_t ruid, euid, suid;
+    ASSERT_THAT(getresuid(&ruid, &euid, &suid), SyscallSucceeds());
+    gid_t rgid, egid, sgid;
+    ASSERT_THAT(getresgid(&rgid, &egid, &sgid), SyscallSucceeds());
+    std::vector<gid_t> supplementary_gids;
+    int ngids = getgroups(0, nullptr);
+    supplementary_gids.resize(ngids);
+    ASSERT_THAT(getgroups(ngids, supplementary_gids.data()), SyscallSucceeds());
 
-      EXPECT_THAT(
-          status,
-          IsSupersetOf(std::vector<
-                       ::testing::Matcher<std::pair<std::string, std::string>>>{
-              // gVisor doesn't support fsuid/gid, and even if it did there is
-              // no getfsuid/getfsgid().
-              Pair("Uid", StartsWith(absl::StrFormat("%d\t%d\t%d\t", ruid, euid,
-                                                     suid))),
-              Pair("Gid", StartsWith(absl::StrFormat("%d\t%d\t%d\t", rgid, egid,
-                                                     sgid))),
-              // ParseProcStatus strips leading whitespace for each value,
-              // so if the Groups line is empty then the trailing space is
-              // stripped.
-              Pair("Groups",
-                   StartsWith(absl::StrJoin(supplementary_gids, " "))),
-          }));
+    EXPECT_THAT(
+        status,
+        IsSupersetOf(std::vector<
+                     ::testing::Matcher<std::pair<std::string, std::string>>>{
+            // gVisor doesn't support fsuid/gid, and even if it did there is
+            // no getfsuid/getfsgid().
+            Pair("Uid",
+                 StartsWith(absl::StrFormat("%d\t%d\t%d\t", ruid, euid, suid))),
+            Pair("Gid",
+                 StartsWith(absl::StrFormat("%d\t%d\t%d\t", rgid, egid, sgid))),
+            // ParseProcStatus strips leading whitespace for each value,
+            // so if the Groups line is empty then the trailing space is
+            // stripped.
+            Pair("Groups", StartsWith(absl::StrJoin(supplementary_gids, " "))),
+        }));
   });
 }
 
@@ -2732,6 +2731,16 @@ TEST(Proc, ResolveSymlinkToProc) {
   const auto path = JoinPath("/proc/self/fd/", absl::StrCat(proc.get()));
   const auto target = ASSERT_NO_ERRNO_AND_VALUE(ReadLink(path));
   EXPECT_EQ(target, JoinPath("/proc/", absl::StrCat(getpid()), "/cmdline"));
+}
+
+// NOTE(b/236035339): Tests that opening /proc/[pid]/fd/[eventFDNum] with
+// O_DIRECTORY leads to ENOTDIR.
+TEST(Proc, RegressionTestB236035339) {
+  FileDescriptor efd =
+      ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, EFD_NONBLOCK | EFD_CLOEXEC));
+  const auto path = JoinPath("/proc/self/fd/", absl::StrCat(efd.get()));
+  EXPECT_THAT(open(path.c_str(), O_RDONLY | O_CLOEXEC | O_DIRECTORY),
+              SyscallFailsWithErrno(ENOTDIR));
 }
 
 }  // namespace

@@ -318,7 +318,7 @@ func (fs *filesystem) revalidateHelper(ctx context.Context, vfsObj *vfs.VirtualF
 				*ds = appendDentry(*ds, d)
 
 				d.parent.syntheticChildren--
-				d.parent.dirents = nil
+				d.parent.clearDirentsLocked()
 			}
 
 			// Since the dirMu was released and reacquired, re-check that the

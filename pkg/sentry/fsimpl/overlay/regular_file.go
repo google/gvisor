@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -54,7 +53,7 @@ type regularFileFD struct {
 	// fileDescription.dentry().upperVD. cachedFlags is the last known value of
 	// cachedFD.StatusFlags(). copiedUp, cachedFD, and cachedFlags are
 	// protected by mu.
-	mu          sync.Mutex `state:"nosave"`
+	mu          regularFileFDMutex `state:"nosave"`
 	copiedUp    bool
 	cachedFD    *vfs.FileDescription
 	cachedFlags uint32

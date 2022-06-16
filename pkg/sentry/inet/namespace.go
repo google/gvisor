@@ -18,6 +18,8 @@ package inet
 //
 // +stateify savable
 type Namespace struct {
+	namespaceRefs
+
 	// stack is the network stack implementation of this network namespace.
 	stack Stack `state:"nosave"`
 
@@ -36,11 +38,13 @@ type Namespace struct {
 // allowing new network namespaces to be created. If creator is nil, no
 // networking will function if the network is namespaced.
 func NewRootNamespace(stack Stack, creator NetworkStackCreator) *Namespace {
-	return &Namespace{
+	n := &Namespace{
 		stack:   stack,
 		creator: creator,
 		isRoot:  true,
 	}
+	n.InitRefs()
+	return n
 }
 
 // NewNamespace creates a new network namespace from the root.
@@ -49,7 +53,17 @@ func NewNamespace(root *Namespace) *Namespace {
 		creator: root.creator,
 	}
 	n.init()
+	n.InitRefs()
 	return n
+}
+
+// DecRef decrements the Namespace's refcount.
+func (n *Namespace) DecRef() {
+	n.namespaceRefs.DecRef(func() {
+		if s := n.Stack(); s != nil {
+			s.Destroy()
+		}
+	})
 }
 
 // Stack returns the network stack of n. Stack may return nil if no network

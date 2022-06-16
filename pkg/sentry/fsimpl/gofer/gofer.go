@@ -850,8 +850,11 @@ type dentry struct {
 	// If this dentry represents a directory,
 	// dentry.cachedMetadataAuthoritative() == true, and dirents is not nil, it
 	// is a cache of all entries in the directory, in the order they were
-	// returned by the server. dirents is protected by dirMu.
-	dirents []vfs.Dirent
+	// returned by the server. childrenSet just stores the `Name` field of all
+	// dirents in a set for fast query. dirents and childrenSet are protected by
+	// dirMu and share the same lifecycle.
+	dirents     []vfs.Dirent
+	childrenSet map[string]struct{}
 
 	// Cached metadata; protected by metadataMu.
 	// To access:

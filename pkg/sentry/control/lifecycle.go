@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/urpc"
 )
 
@@ -34,13 +35,19 @@ type Lifecycle struct {
 	// Kernel is the kernel where the tasks belong to.
 	Kernel *kernel.Kernel
 
-	// Sends a message to the sentry that the task has been started.
+	// StartedCh is the channel used to send a message to the sentry that
+	// all the containers in the sandbox have been started.
 	StartedCh chan struct{}
 
-	// TODO(b/202052732): Root mount namespace. When running multiple
-	// containers, create the mount namespace using the mount spec in
-	// the StartContainerArgs.
-	MountNamespaceVFS2 *vfs.MountNamespace
+	// mu protects the fields below.
+	mu sync.RWMutex
+
+	// containersStarted is the number of containers started in the sandbox.
+	containersStarted int32
+
+	// MountNamespacesMap is a map of container id/names and the mount
+	// namespaces.
+	MountNamespacesMap map[string]*vfs.MountNamespace
 }
 
 // StartContainerArgs is the set of arguments to start a container.
@@ -127,11 +134,21 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 		AbstractSocketNamespace: l.Kernel.RootAbstractSocketNamespace(),
 		ContainerID:             args.ContainerID,
 		PIDNamespace:            l.Kernel.RootPIDNamespace(),
-		MountNamespaceVFS2:      l.MountNamespaceVFS2,
 	}
 
 	ctx := initArgs.NewContext(l.Kernel)
 	defer fdTable.DecRef(ctx)
+
+	// VFS2 is supported in multi-container mode by default.
+	l.mu.RLock()
+	mntns, ok := l.MountNamespacesMap[initArgs.ContainerID]
+	if !ok {
+		l.mu.RUnlock()
+		return fmt.Errorf("mount namespace is nil for %s", initArgs.ContainerID)
+	}
+	initArgs.MountNamespaceVFS2 = mntns
+	l.mu.RUnlock()
+	initArgs.MountNamespaceVFS2.IncRef()
 
 	resolved, err := user.ResolveExecutablePath(ctx, &initArgs)
 	if err != nil {
@@ -154,12 +171,17 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 		return err
 	}
 
+	l.mu.Lock()
+	numContainers := int32(len(l.MountNamespacesMap))
+
 	// Start the newly created process.
 	l.Kernel.StartProcess(tg)
-
-	log.Infof("Started the new container")
-
-	l.StartedCh <- struct{}{}
+	log.Infof("Started the new container %v ", l.containersStarted)
+	l.containersStarted++
+	if numContainers == l.containersStarted {
+		l.StartedCh <- struct{}{}
+	}
+	l.mu.Unlock()
 	return nil
 }
 

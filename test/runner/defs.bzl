@@ -145,6 +145,10 @@ def _syscall_test(
         "--container=" + str(container),
     ]
 
+    # Trace points are platform agnostic, so enable them for ptrace only.
+    if platform == "ptrace":
+        runner_args.append("--trace")
+
     # Call the rule above.
     _runner_test(
         name = name,
