@@ -108,18 +108,18 @@ type filesystem struct {
 	// distinguishable because they will diverge after copy-up; this isn't true
 	// for non-directory files already on the upper layer.) lowerDevMinors is
 	// protected by devMu.
-	devMu          sync.Mutex `state:"nosave"`
+	devMu          devMutex `state:"nosave"`
 	lowerDevMinors map[layerDevNumber]uint32
 
 	// renameMu synchronizes renaming with non-renaming operations in order to
 	// ensure consistent lock ordering between dentry.dirMu in different
 	// dentries.
-	renameMu sync.RWMutex `state:"nosave"`
+	renameMu renameRWMutex `state:"nosave"`
 
 	// dirInoCache caches overlay-private directory inode numbers by mapped
 	// topmost device numbers and inode number. dirInoCache is protected by
 	// dirInoCacheMu.
-	dirInoCacheMu sync.Mutex `state:"nosave"`
+	dirInoCacheMu dirInoCacheMutex `state:"nosave"`
 	dirInoCache   map[layerDevNoAndIno]uint64
 
 	// lastDirIno is the last inode number assigned to a directory. lastDirIno
@@ -452,7 +452,7 @@ type dentry struct {
 	// and dirents (if not nil) is a cache of dirents as returned by
 	// directoryFDs representing this directory. children is protected by
 	// dirMu.
-	dirMu    sync.Mutex `state:"nosave"`
+	dirMu    dirMutex `state:"nosave"`
 	children map[string]*dentry
 	dirents  []vfs.Dirent
 
@@ -499,9 +499,9 @@ type dentry struct {
 	//
 	//	- isMappable is non-zero iff wrappedMappable is non-nil. isMappable is
 	//		accessed using atomic memory operations.
-	mapsMu          sync.Mutex `state:"nosave"`
+	mapsMu          mapsMutex `state:"nosave"`
 	lowerMappings   memmap.MappingSet
-	dataMu          sync.RWMutex `state:"nosave"`
+	dataMu          dataRWMutex `state:"nosave"`
 	wrappedMappable memmap.Mappable
 	isMappable      atomicbitops.Uint32
 
