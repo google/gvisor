@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strings"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/proc"
@@ -36,6 +37,8 @@ type FDInfo struct {
 	Number int32 `json:"number,omitempty"`
 	// Path is the path of the file that FD represents.
 	Path string `json:"path,omitempty"`
+	// Mode is the file mode.
+	Mode uint16 `json:"mode,omitempty"`
 }
 
 // UIDGID contains information for /proc/[pid]/status/{uid,gid}.
@@ -185,7 +188,13 @@ func getFDs(ctx context.Context, t *kernel.Task, pid kernel.ThreadID) []FDInfo {
 			log.Warningf("PathnameWithDeleted failed to find path for fd %d in PID %s: %v", fd.no, pid, err)
 			path = ""
 		}
-		res = append(res, FDInfo{Number: fd.no, Path: path})
+		mode := uint16(0)
+		if statx, err := fd.fd.Stat(ctx, vfs.StatOptions{Mask: linux.STATX_MODE}); err != nil {
+			log.Warningf("Stat(STATX_MODE) failed for fd %d in PID %s: %v", fd.no, pid, err)
+		} else {
+			mode = statx.Mode
+		}
+		res = append(res, FDInfo{Number: fd.no, Path: path, Mode: mode})
 	}
 	return res
 }

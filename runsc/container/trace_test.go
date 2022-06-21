@@ -22,6 +22,7 @@ import (
 	"time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"google.golang.org/protobuf/proto"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
@@ -374,12 +375,16 @@ func TestProcfsDump(t *testing.T) {
 	if len(procfsDump[0].FDs) < 3 {
 		t.Errorf("expected at least 3 FDs for the sleep process, got %+v", procfsDump[0].FDs)
 	} else {
+		modes := []uint16{unix.S_IFCHR, unix.S_IFIFO, unix.S_IFREG}
 		for i, fd := range procfsDump[0].FDs[:3] {
 			if want := int32(i); fd.Number != want {
 				t.Errorf("expected FD number %d, got %d", want, fd.Number)
 			}
 			if wantSubStr := "host"; !strings.Contains(fd.Path, wantSubStr) {
-				t.Errorf("expected FD path to contain %q, got %q", wantSubStr, fd.Path)
+				t.Errorf("expected FD %d path to contain %q, got %q", fd.Number, wantSubStr, fd.Path)
+			}
+			if want, got := modes[i], fd.Mode&unix.S_IFMT; uint16(want) != got {
+				t.Errorf("wrong mode FD %d, want: %#o, got: %#o", fd.Number, want, got)
 			}
 		}
 	}
