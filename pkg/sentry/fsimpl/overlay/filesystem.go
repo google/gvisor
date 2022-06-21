@@ -295,6 +295,13 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 			return false
 		}
 
+		// Directories use the lowest layer inode and device numbers to generate a
+		// filesystem local inode number. This way the inode number does not change
+		// after copy ups.
+		child.devMajor = atomicbitops.FromUint32(stat.DevMajor)
+		child.devMinor = atomicbitops.FromUint32(stat.DevMinor)
+		child.ino = atomicbitops.FromUint64(stat.Ino)
+
 		// Directories are merged with directories from lower layers if they
 		// are not explicitly opaque.
 		opaqueVal, err := vfsObj.GetXattrAt(ctx, fs.creds, &vfs.PathOperation{
@@ -316,9 +323,10 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 		return nil, topLookupLayer, linuxerr.ENOENT
 	}
 
-	// Device and inode numbers were copied from the topmost layer above;
-	// override them if necessary. We can use RacyLoad() because child is still
-	// being initialized.
+	// Device and inode numbers were copied from the topmost layer above for
+	// non-directories. They were copied from the bottommost layer for
+	// directories. Override them if necessary. We can use RacyLoad() because
+	// child is still being initialized.
 	if child.isDir() {
 		child.ino.Store(fs.newDirIno(child.devMajor.RacyLoad(), child.devMinor.RacyLoad(), child.ino.RacyLoad()))
 		child.devMajor = atomicbitops.FromUint32(linux.UNNAMED_MAJOR)
