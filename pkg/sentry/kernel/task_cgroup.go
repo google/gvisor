@@ -180,7 +180,7 @@ func (t *Task) MigrateCgroup(dst Cgroup) error {
 // TaskCgroupEntry represents a line in /proc/<pid>/cgroup, and is used to
 // format a cgroup for display.
 type TaskCgroupEntry struct {
-	HierarchyID uint32 `json:"hierarchy_id,omitempty"`
+	HierarchyID uint32 `json:"hierarchy_id"`
 	Controllers string `json:"controllers,omitempty"`
 	Path        string `json:"path,omitempty"`
 }

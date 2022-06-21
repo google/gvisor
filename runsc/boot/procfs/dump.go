@@ -34,25 +34,25 @@ import (
 // FDInfo contains information about an application file descriptor.
 type FDInfo struct {
 	// Number is the FD number.
-	Number int32 `json:"number,omitempty"`
+	Number int32 `json:"number"`
 	// Path is the path of the file that FD represents.
 	Path string `json:"path,omitempty"`
 	// Mode is the file mode.
-	Mode uint16 `json:"mode,omitempty"`
+	Mode uint16 `json:"mode"`
 }
 
 // UIDGID contains information for /proc/[pid]/status/{uid,gid}.
 type UIDGID struct {
-	Real      uint32 `json:"real,omitempty"`
-	Effective uint32 `json:"effective,omitempty"`
-	Saved     uint32 `json:"saved,omitempty"`
+	Real      uint32 `json:"real"`
+	Effective uint32 `json:"effective"`
+	Saved     uint32 `json:"saved"`
 }
 
 // Status contains information for /proc/[pid]/status.
 type Status struct {
 	Comm   string `json:"comm,omitempty"`
-	PID    int32  `json:"pid,omitempty"`
-	PPID   int32  `json:"ppid,omitempty"`
+	PID    int32  `json:"pid"`
+	PPID   int32  `json:"ppid"`
 	UID    UIDGID `json:"uid,omitempty"`
 	GID    UIDGID `json:"gid,omitempty"`
 	VMSize uint64 `json:"vm_size,omitempty"`
@@ -61,8 +61,8 @@ type Status struct {
 
 // Stat contains information for /proc/[pid]/stat.
 type Stat struct {
-	PGID int32 `json:"pgid,omitempty"`
-	SID  int32 `json:"sid,omitempty"`
+	PGID int32 `json:"pgid"`
+	SID  int32 `json:"sid"`
 }
 
 // ProcessProcfsDump contains the procfs dump for one process. For more details
