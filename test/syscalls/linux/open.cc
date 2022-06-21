@@ -523,6 +523,14 @@ TEST_F(OpenTest, OpenWithOpath) {
   ASSERT_NO_ERRNO(Open(path, O_PATH));
 }
 
+// NOTE(b/236445327): Regression test. Opening a non-directory with O_PATH and
+// O_DIRECTORY should fail with ENOTDIR.
+TEST_F(OpenTest, OPathWithODirectory) {
+  auto newFile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  EXPECT_THAT(open(newFile.path().c_str(), O_RDONLY | O_DIRECTORY | O_PATH),
+              SyscallFailsWithErrno(ENOTDIR));
+}
+
 }  // namespace
 
 }  // namespace testing

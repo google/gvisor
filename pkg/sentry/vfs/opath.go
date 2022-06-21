@@ -137,3 +137,32 @@ func (fd *opathFD) StatFS(ctx context.Context) (linux.Statfs, error) {
 	rp.Release(ctx)
 	return statfs, err
 }
+
+func (vfs *VirtualFilesystem) openOPathFD(ctx context.Context, creds *auth.Credentials, pop *PathOperation, flags uint32) (*FileDescription, error) {
+	vd, err := vfs.GetDentryAt(ctx, creds, pop, &GetDentryOptions{})
+	if err != nil {
+		return nil, err
+	}
+	defer vd.DecRef(ctx)
+
+	if flags&linux.O_DIRECTORY != 0 {
+		stat, err := vfs.StatAt(ctx, creds, &PathOperation{
+			Root:  vd,
+			Start: vd,
+		}, &StatOptions{
+			Mask: linux.STATX_MODE,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if stat.Mode&linux.S_IFDIR == 0 {
+			return nil, linuxerr.ENOTDIR
+		}
+	}
+
+	fd := &opathFD{}
+	if err := fd.vfsfd.Init(fd, flags, vd.Mount(), vd.Dentry(), &FileDescriptionOptions{}); err != nil {
+		return nil, err
+	}
+	return &fd.vfsfd, err
+}
