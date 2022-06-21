@@ -7,6 +7,7 @@ go_library(
     srcs = ["dump.go"],
     visibility = ["//runsc:__subpackages__"],
     deps = [
+        "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/log",
         "//pkg/sentry/fsimpl/proc",
