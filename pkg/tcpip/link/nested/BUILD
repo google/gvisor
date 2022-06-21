@@ -5,6 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "nested",
     srcs = [
+        "capture.go",
         "nested.go",
     ],
     visibility = ["//visibility:public"],
@@ -18,16 +19,17 @@ go_library(
 
 go_test(
     name = "nested_test",
-    size = "small",
     srcs = [
+        "capture_test.go",
         "nested_test.go",
     ],
     deps = [
+        ":nested",
+        "//pkg/buffer",
         "//pkg/refs",
         "//pkg/refsvfs2",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
-        "//pkg/tcpip/link/nested",
         "//pkg/tcpip/stack",
     ],
 )
