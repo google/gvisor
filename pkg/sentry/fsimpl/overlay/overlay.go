@@ -117,7 +117,7 @@ type filesystem struct {
 	renameMu renameRWMutex `state:"nosave"`
 
 	// dirInoCache caches overlay-private directory inode numbers by mapped
-	// topmost device numbers and inode number. dirInoCache is protected by
+	// bottommost device numbers and inode number. dirInoCache is protected by
 	// dirInoCacheMu.
 	dirInoCacheMu dirInoCacheMutex `state:"nosave"`
 	dirInoCache   map[layerDevNoAndIno]uint64
@@ -310,6 +310,8 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	if rootStat.Mode&linux.S_IFMT == linux.S_IFDIR {
 		root.devMajor = atomicbitops.FromUint32(linux.UNNAMED_MAJOR)
 		root.devMinor = atomicbitops.FromUint32(fs.dirDevMinor)
+		// For root dir, it is okay to use top most level's stat to compute inode
+		// number because we don't allow copy ups on root dentries.
 		root.ino.Store(fs.newDirIno(rootStat.DevMajor, rootStat.DevMinor, rootStat.Ino))
 	} else if !root.upperVD.Ok() {
 		root.devMajor = atomicbitops.FromUint32(linux.UNNAMED_MAJOR)
