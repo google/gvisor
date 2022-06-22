@@ -226,8 +226,9 @@ func GetMetadata(ctx context.Context, mm *mm.MemoryManager, buf *bytes.Buffer, t
 }
 
 // metadataData implements vfs.DynamicBytesSource for proc metadata fields like:
-//	- /proc/[pid]/cmdline
-//	- /proc/[pid]/environ
+//
+//   - /proc/[pid]/cmdline
+//   - /proc/[pid]/environ
 //
 // +stateify savable
 type metadataData struct {

@@ -58,8 +58,7 @@ func (s *Save) Start() error {
 // of messages. Both JSON and messages are prefixed by an uint64 with their
 // size.
 //
-// Ex:
-//   signature <size>Config JSON [<size>message]*
+// Ex: signature <size>Config JSON [<size>message]*
 func (s *Save) NewClient() (server.MessageHandler, error) {
 	seq := s.clientCount.Add(1)
 	filename := filepath.Join(s.dir, fmt.Sprintf("%s%04d", s.prefix, seq))
