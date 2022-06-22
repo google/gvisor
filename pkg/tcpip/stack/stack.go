@@ -622,9 +622,9 @@ func (s *Stack) MulticastRouteLastUsedTime(protocol tcpip.NetworkProtocolNumber,
 // Returns true if forwarding was already enabled on the protocol.
 // Additionally, returns an error if:
 //
-//  - The protocol is not found.
-//  - The protocol doesn't support multicast forwarding.
-//  - The multicast forwarding event dispatcher is nil.
+//   - The protocol is not found.
+//   - The protocol doesn't support multicast forwarding.
+//   - The multicast forwarding event dispatcher is nil.
 //
 // If successful, future multicast forwarding events will be sent to the
 // provided event dispatcher.
