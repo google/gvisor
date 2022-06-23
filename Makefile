@@ -139,6 +139,7 @@ configure_noreload = \
   $(call header,CONFIGURE $(1) → $(RUNTIME_BIN) $(2)); \
   sudo $(RUNTIME_BIN) install --experimental=true --runtime="$(1)" -- $(RUNTIME_ARGS) --debug-log "$(RUNTIME_LOGS)" $(2) && \
   sudo rm -rf "$(RUNTIME_LOG_DIR)" && mkdir -p "$(RUNTIME_LOG_DIR)"
+
 reload_docker = \
   $(call header,DOCKER RELOAD); \
   bash -xc "$(DOCKER_RELOAD_COMMAND)" && \
@@ -351,6 +352,8 @@ containerd-tests: containerd-test-1.6.0
 ##     BENCHMARKS_SUITE     - name of the benchmark suite. See //tools/bigquery/bigquery.go.
 ##     BENCHMARKS_UPLOAD    - if true, upload benchmark data from the run.
 ##     BENCHMARKS_OFFICIAL  - marks the data as official.
+##     BENCHMARKS_PLATFORMS - if set, only run the benchmarks for this
+##                            space-separated list of platform names.
 ##     BENCHMARKS_FILTER    - filter to be applied to the test suite.
 ##     BENCHMARKS_OPTIONS   - options to be passed to the test.
 ##     BENCHMARKS_PROFILE   - profile options to be passed to the test.
@@ -362,6 +365,7 @@ BENCHMARKS_SUITE     ?= ffmpeg
 BENCHMARKS_UPLOAD    ?= false
 BENCHMARKS_OFFICIAL  ?= false
 BENCHMARKS_TARGETS   := //test/benchmarks/media:ffmpeg_test
+BENCHMARKS_PLATFORMS ?=
 BENCHMARKS_FILTER    := .
 BENCHMARKS_OPTIONS   := -test.benchtime=30s
 BENCHMARKS_ARGS      := -test.v -test.bench=$(BENCHMARKS_FILTER) $(BENCHMARKS_OPTIONS)
@@ -373,22 +377,30 @@ init-benchmark-table: ## Initializes a BigQuery table with the benchmark schema.
 
 # $(1) is the runtime name.
 run_benchmark = \
-  ($(call header,BENCHMARK $(1)); \
-  set -euo pipefail; \
-  export T=$$(mktemp --tmpdir logs.$(1).XXXXXX); \
-  if test "$(1)" = "runc"; then $(call sudo,$(BENCHMARKS_TARGETS),-runtime=$(1) $(BENCHMARKS_ARGS)) | tee $$T; fi; \
-  if test "$(1)" != "runc"; then $(call sudo,$(BENCHMARKS_TARGETS),-runtime=$(1) $(BENCHMARKS_ARGS) $(BENCHMARKS_PROFILE)) | tee $$T; fi; \
-  if test "$(BENCHMARKS_UPLOAD)" = "true"; then \
-    $(call run,tools/parsers:parser,parse --debug --file=$$T --runtime=$(1) --suite_name=$(BENCHMARKS_SUITE) --project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE) --official=$(BENCHMARKS_OFFICIAL)); \
-  fi; \
-  rm -rf $$T)
+	($(call header,BENCHMARK $(1)); \
+	set -euo pipefail; \
+	export T=$$(mktemp --tmpdir logs.$(1).XXXXXX); \
+	if test "$(1)" = "runc"; then $(call sudo,$(BENCHMARKS_TARGETS),-runtime=$(1) $(BENCHMARKS_ARGS)) | tee $$T; fi; \
+	if test "$(1)" != "runc"; then $(call sudo,$(BENCHMARKS_TARGETS),-runtime=$(1) $(BENCHMARKS_ARGS) $(BENCHMARKS_PROFILE)) | tee $$T; fi; \
+	if test "$(BENCHMARKS_UPLOAD)" = "true"; then \
+	  $(call run,tools/parsers:parser,parse --debug --file=$$T --runtime=$(1) --suite_name=$(BENCHMARKS_SUITE) --project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE) --official=$(BENCHMARKS_OFFICIAL)); \
+	fi; \
+	rm -rf $$T)
 
-benchmark-platforms: load-benchmarks $(RUNTIME_BIN) ## Runs benchmarks for runc and all platforms.
-	@set -xe; for PLATFORM in $$($(RUNTIME_BIN) help platforms); do \
-	  export PLATFORM; \
-	  $(call install_runtime,$${PLATFORM},--platform $${PLATFORM} --profile); \
-	  $(call run_benchmark,$${PLATFORM}); \
-	done
+benchmark-platforms: load-benchmarks $(RUNTIME_BIN) ## Runs benchmarks for runc and all (selected) platforms.
+	@set -xe; if test -z "$(BENCHMARKS_PLATFORMS)"; then \
+	  for PLATFORM in $$($(RUNTIME_BIN) help platforms); do \
+	    export PLATFORM; \
+	    $(call install_runtime,$${PLATFORM},--platform $${PLATFORM} --profile); \
+	    $(call run_benchmark,$${PLATFORM}); \
+	  done; \
+	else \
+	  for PLATFORM in $(BENCHMARKS_PLATFORMS); do \
+	    export PLATFORM; \
+	    $(call install_runtime,$${PLATFORM},--platform $${PLATFORM} --profile); \
+	    $(call run_benchmark,$${PLATFORM}); \
+	  done; \
+	fi
 	@$(call run_benchmark,runc)
 .PHONY: benchmark-platforms
 
