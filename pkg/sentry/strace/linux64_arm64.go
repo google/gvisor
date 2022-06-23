@@ -61,7 +61,7 @@ var linuxARM64 = SyscallMap{
 	33:  makeSyscallInfo("mknodat", FD, Path, Mode, Hex),
 	34:  makeSyscallInfo("mkdirat", FD, Path, Hex),
 	35:  makeSyscallInfo("unlinkat", FD, Path, Hex),
-	36:  makeSyscallInfo("symlinkat", Path, Hex, Path),
+	36:  makeSyscallInfo("symlinkat", Path, FD, Path),
 	37:  makeSyscallInfo("linkat", FD, Path, Hex, Path, Hex),
 	38:  makeSyscallInfo("renameat", FD, Path, Hex, Path),
 	39:  makeSyscallInfo("umount2", Path, Hex),
