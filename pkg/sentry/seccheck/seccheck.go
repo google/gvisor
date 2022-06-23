@@ -96,6 +96,10 @@ func (fm *FieldMask) Empty() bool {
 // may be missing requested fields in some cases (e.g. if the Checker is
 // registered concurrently with invocations of checkpoints).
 type Checker interface {
+	// Name return the checker name.
+	Name() string
+	// Status returns the checker runtime status.
+	Status() CheckerStatus
 	// Stop requests the checker to stop.
 	Stop()
 
@@ -110,11 +114,31 @@ type Checker interface {
 	RawSyscall(context.Context, FieldSet, *pb.Syscall) error
 }
 
+// CheckerStatus represents stats about each checker instance.
+type CheckerStatus struct {
+	// DroppedCount is the number of trace points dropped.
+	DroppedCount uint64
+}
+
 // CheckerDefaults may be embedded by implementations of Checker to obtain
 // no-op implementations of Checker methods that may be explicitly overridden.
 type CheckerDefaults struct{}
 
-var _ Checker = (*CheckerDefaults)(nil)
+// Add functions missing in CheckerDefaults to make it possible to check for the
+// implementation below to catch missing functions more easily.
+type checkerDefaultsImpl struct {
+	CheckerDefaults
+}
+
+// Name implements Checker.Name.
+func (checkerDefaultsImpl) Name() string { return "" }
+
+var _ Checker = (*checkerDefaultsImpl)(nil)
+
+// Status implements Checker.Status.
+func (CheckerDefaults) Status() CheckerStatus {
+	return CheckerStatus{}
+}
 
 // Stop implements Checker.Stop.
 func (CheckerDefaults) Stop() {}
