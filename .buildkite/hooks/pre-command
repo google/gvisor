@@ -31,7 +31,10 @@ PARTITION=$((${PARTITION}+1)) # 1-indexed, but PARALLEL_JOB is 0-indexed.
 export TOTAL_PARTITIONS=${BUILDKITE_PARALLEL_JOB_COUNT:-1}
 
 # Set the system-wide Docker runtime name after the BuildKite branch name.
-export RUNTIME="${BUILDKITE_BRANCH}-${BUILDKITE_BUILD_ID}"
+# Remove any slashes and other characters that are not supported in Docker
+# runtime names. The runtime name must be a single valid path component.
+export RUNTIME="buildkite_runtime_${BUILDKITE_BRANCH}-${BUILDKITE_BUILD_ID}"
+export RUNTIME="$(echo "$RUNTIME" | sed -r 's~[^-_a-z0-9]+~_~g')"
 
 # Ensure Docker has experimental enabled.
 if [[ -n "${STAGED_BINARIES:-}" ]]; then
