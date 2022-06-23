@@ -15,6 +15,7 @@
 package udp
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"math"
@@ -342,6 +343,17 @@ func (e *endpoint) prepareForWriteInner(to *tcpip.FullAddress) (retry bool, err 
 	}
 
 	return true, nil
+}
+
+var _ tcpip.EndpointWithPreflight = (*endpoint)(nil)
+
+// Validates the passed WriteOptions and prepares the endpoint for writes
+// using those options. If the endpoint is unbound and the `To` address
+// is specified, binds the endpoint to that address.
+func (e *endpoint) Preflight(opts tcpip.WriteOptions) tcpip.Error {
+	var r bytes.Reader
+	_, err := e.prepareForWrite(&r, opts)
+	return err
 }
 
 // Write writes data to the endpoint's peer. This method does not block
