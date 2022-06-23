@@ -1360,5 +1360,59 @@ TEST_P(TCPSocketPairTest, CloseWithLingerOption) {
   ASSERT_THAT(RetryEINTR(write)(dupFd.get(), buf, sizeof(buf)),
               SyscallFailsWithErrno(EBADF));
 }
+
+TEST_P(TCPSocketPairTest, ResetWithSoLingerZeroTimeoutOption) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  // Check getsockopt before SO_LINGER option is set.
+  struct linger got_linger = {-1, -1};
+  socklen_t got_len = sizeof(got_linger);
+
+  ASSERT_THAT(getsockopt(sockets->first_fd(), SOL_SOCKET, SO_LINGER,
+                         &got_linger, &got_len),
+              SyscallSucceeds());
+  ASSERT_THAT(got_len, sizeof(got_linger));
+  struct linger want_linger = {};
+  EXPECT_EQ(0, memcmp(&want_linger, &got_linger, got_len));
+
+  char buf[10] = {};
+  ASSERT_THAT(RetryEINTR(write)(sockets->first_fd(), buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
+  // Set and get SO_LINGER with zero timeout.
+  struct linger sl;
+  sl.l_onoff = 1;
+  sl.l_linger = 0;
+  ASSERT_THAT(
+      setsockopt(sockets->first_fd(), SOL_SOCKET, SO_LINGER, &sl, sizeof(sl)),
+      SyscallSucceeds());
+  ASSERT_THAT(getsockopt(sockets->first_fd(), SOL_SOCKET, SO_LINGER,
+                         &got_linger, &got_len),
+              SyscallSucceeds());
+  ASSERT_EQ(got_len, sizeof(got_linger));
+  EXPECT_EQ(sl.l_onoff, got_linger.l_onoff);
+  EXPECT_EQ(sl.l_linger, got_linger.l_linger);
+
+  // Wait until the socket sees the data on its side but don't read it.
+  struct pollfd poll_fd = {sockets->second_fd(), POLLIN | POLLHUP, 0};
+  constexpr int kPollTimeoutMs = 20000;  // Wait up to 20 seconds for the data.
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPollTimeoutMs),
+              SyscallSucceedsWithValue(1));
+
+  ASSERT_THAT(close(sockets->release_first_fd()), SyscallSucceeds());
+
+  // Attempt to write, but not possible because of connection reset.
+  poll_fd = {sockets->second_fd(), POLLHUP, 0};
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPollTimeoutMs),
+              SyscallSucceedsWithValue(1));
+
+  char buffer[10] = {};
+  ASSERT_THAT(RetryEINTR(write)(sockets->second_fd(), buffer, sizeof(buffer)),
+              SyscallFailsWithErrno(ECONNRESET));
+
+  ASSERT_THAT(RetryEINTR(read)(sockets->second_fd(), buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
+}
+
 }  // namespace testing
 }  // namespace gvisor
