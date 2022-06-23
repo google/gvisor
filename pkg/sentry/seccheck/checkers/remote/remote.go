@@ -21,9 +21,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"golang.org/x/sys/unix"
 	"google.golang.org/protobuf/proto"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fd"
@@ -33,9 +35,11 @@ import (
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 )
 
+const name = "remote"
+
 func init() {
 	seccheck.RegisterSink(seccheck.SinkDesc{
-		Name:  "remote",
+		Name:  name,
 		Setup: setupSink,
 		New:   new,
 	})
@@ -48,6 +52,12 @@ func init() {
 // delaying/hanging indefinitely the application.
 type remote struct {
 	endpoint *fd.FD
+
+	droppedCount atomicbitops.Uint32
+
+	retries        int
+	initialBackoff time.Duration
+	maxBackoff     time.Duration
 }
 
 var _ seccheck.Checker = (*remote)(nil)
@@ -115,16 +125,76 @@ func setup(path string) (*os.File, error) {
 		return nil, fmt.Errorf("remote version (%d) is smaller than minimum supported (%d)", hsIn.Version, minSupportedVersion)
 	}
 
+	if err := unix.SetNonblock(int(f.Fd()), true); err != nil {
+		return nil, err
+	}
+
 	cu.Release()
 	return f, nil
 }
 
+func parseDuration(config map[string]interface{}, name string) (bool, time.Duration, error) {
+	opaque, ok := config[name]
+	if !ok {
+		return false, 0, nil
+	}
+	duration, ok := opaque.(string)
+	if !ok {
+		return false, 0, fmt.Errorf("%s %v is not an string", name, opaque)
+	}
+	rv, err := time.ParseDuration(duration)
+	if err != nil {
+		return false, 0, err
+	}
+	return true, rv, nil
+}
+
 // new creates a new Remote checker.
-func new(_ map[string]interface{}, endpoint *fd.FD) (seccheck.Checker, error) {
+func new(config map[string]interface{}, endpoint *fd.FD) (seccheck.Checker, error) {
 	if endpoint == nil {
 		return nil, fmt.Errorf("remote sink requires an endpoint")
 	}
-	return &remote{endpoint: endpoint}, nil
+	r := &remote{
+		endpoint:       endpoint,
+		initialBackoff: 25 * time.Microsecond,
+		maxBackoff:     10 * time.Millisecond,
+	}
+	if retriesOpaque, ok := config["retries"]; ok {
+		retries, ok := retriesOpaque.(float64)
+		if !ok {
+			return nil, fmt.Errorf("retries %q is not an int", retriesOpaque)
+		}
+		r.retries = int(retries)
+		if float64(r.retries) != retries {
+			return nil, fmt.Errorf("retries %q is not an int", retriesOpaque)
+		}
+	}
+	if ok, backoff, err := parseDuration(config, "backoff"); err != nil {
+		return nil, err
+	} else if ok {
+		r.initialBackoff = backoff
+	}
+	if ok, backoff, err := parseDuration(config, "backoff_max"); err != nil {
+		return nil, err
+	} else if ok {
+		r.maxBackoff = backoff
+	}
+	if r.initialBackoff > r.maxBackoff {
+		return nil, fmt.Errorf("initial backoff (%v) cannot be larger than max backoff (%v)", r.initialBackoff, r.maxBackoff)
+	}
+
+	log.Debugf("Remote sink created, endpoint FD: %d, %+v", r.endpoint.FD(), r)
+	return r, nil
+}
+
+func (*remote) Name() string {
+	return name
+}
+
+func (r *remote) Status() seccheck.CheckerStatus {
+	return seccheck.CheckerStatus{
+		DroppedCount: uint64(r.droppedCount.Load()),
+	}
 }
 
 // Stop implements seccheck.Checker.
@@ -143,17 +213,31 @@ func (r *remote) write(msg proto.Message, msgType pb.MessageType) {
 		return
 	}
 	hdr := wire.Header{
-		HeaderSize:  uint16(wire.HeaderStructSize),
-		MessageType: uint16(msgType),
+		HeaderSize:   uint16(wire.HeaderStructSize),
+		DroppedCount: r.droppedCount.Load(),
+		MessageType:  uint16(msgType),
 	}
 	var hdrOut [wire.HeaderStructSize]byte
 	hdr.MarshalUnsafe(hdrOut[:])
 
-	// TODO(gvisor.dev/issue/4805): Change to non-blocking write. Count as dropped
-	// if write fails.
-	if _, err := unix.Writev(r.endpoint.FD(), [][]byte{hdrOut[:], out}); err != nil {
-		log.Debugf("write(%+v, %v): %v", msg, msgType, err)
-		return
+	backoff := r.initialBackoff
+	for i := 0; ; i++ {
+		_, err := unix.Writev(r.endpoint.FD(), [][]byte{hdrOut[:], out})
+		if err == nil {
+			// Write succeeded, we're done!
+			return
+		}
+		if !errors.Is(err, unix.EAGAIN) || i >= r.retries {
+			log.Debugf("Write failed, dropping point: %v", err)
+			r.droppedCount.Add(1)
+			return
+		}
+		log.Debugf("Write failed, retrying (%d/%d) in %v: %v", i+1, r.retries, backoff, err)
+		time.Sleep(backoff)
+		backoff *= 2
+		if r.maxBackoff > 0 && backoff > r.maxBackoff {
+			backoff = r.maxBackoff
+		}
 	}
 }
 

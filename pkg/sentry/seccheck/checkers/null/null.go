@@ -21,9 +21,11 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 )
 
+const name = "null"
+
 func init() {
 	seccheck.RegisterSink(seccheck.SinkDesc{
-		Name: "null",
+		Name: name,
 		New:  new,
 	})
 }
@@ -37,4 +39,8 @@ var _ seccheck.Checker = (*null)(nil)
 
 func new(_ map[string]interface{}, _ *fd.FD) (seccheck.Checker, error) {
 	return &null{}, nil
+}
+
+func (*null) Name() string {
+	return name
 }

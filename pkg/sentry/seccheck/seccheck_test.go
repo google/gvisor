@@ -28,6 +28,11 @@ type testChecker struct {
 	onClone func(ctx context.Context, fields FieldSet, info *pb.CloneInfo) error
 }
 
+// Name implements Checker.Name.
+func (c *testChecker) Name() string {
+	return "test-checker"
+}
+
 // Clone implements Checker.Clone.
 func (c *testChecker) Clone(ctx context.Context, fields FieldSet, info *pb.CloneInfo) error {
 	if c.onClone == nil {
