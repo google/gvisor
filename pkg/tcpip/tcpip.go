@@ -687,6 +687,16 @@ type Endpoint interface {
 	SocketOptions() *SocketOptions
 }
 
+// EndpointWithPreflight is the interface implemented by endpoints that need
+// to expose the `Preflight` method for preparing the endpoint prior to
+// calling `Write`.
+type EndpointWithPreflight interface {
+	// Prepares the endpoint for writes using the provided WriteOptions,
+	// returning an error if the options were incompatible with the endpoint's
+	// current state.
+	Preflight(WriteOptions) Error
+}
+
 // LinkPacketInfo holds Link layer information for a received packet.
 //
 // +stateify savable
