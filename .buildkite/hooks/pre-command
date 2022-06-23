@@ -1,3 +1,5 @@
+set -euo pipefail
+
 # Download any build-specific configuration that has been uploaded.
 # This allows top-level steps to override all subsequent steps.
 buildkite-agent artifact download 'tools/bazeldefs/*' . || true
@@ -47,12 +49,13 @@ fi
 HAD_EXPERIMENTAL="$(docker version --format='{{.Server.Experimental}}')"
 if [[ -n "${STAGED_BINARIES:-}" ]]; then
   # Used `runsc` from STAGED_BINARIES instead of building it from scratch.
-  tmpdir="$(mktemp -d)"
-  gsutil cat "$(STAGED_BINARIES)" | tar -C "$tmpdir" -zxvf - runsc
-  chmod +x "$tmpdir/runsc"
-  "$tmpdir/runsc" install --experimental=true --runtime="${RUNTIME}" \
+  export BUILDKITE_STAGED_BINARIES_DIRECTORY="$(mktemp -d)"
+  gsutil cat "$STAGED_BINARIES" \
+    | tar -C "$BUILDKITE_STAGED_BINARIES_DIRECTORY" -zxvf - runsc
+  chmod +x "$BUILDKITE_STAGED_BINARIES_DIRECTORY/runsc"
+  sudo "$BUILDKITE_STAGED_BINARIES_DIRECTORY/runsc" install \
+    --experimental=true --runtime="${RUNTIME}" \
     -- "${RUNTIME_ARGS:-}"
-  rm -rf "$tmpdir"
 else
   make sudo TARGETS=//runsc:runsc \
     ARGS="install --experimental=true --runtime=${RUNTIME} -- ${RUNTIME_ARGS:-}"
