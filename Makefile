@@ -102,7 +102,8 @@ endif
 ##     RUNTIME_ARGS    - Arguments passed to the runtime when installed.
 ##     STAGED_BINARIES - A tarball of staged binaries. If this is set, then binaries
 ##                       will be installed from this staged bundle instead of built.
-##
+##     DOCKER_RELOAD_COMMAND - The command to run to reload Docker. (default: sudo systemctl reload docker).
+
 ifeq (,$(BRANCH_NAME))
 RUNTIME     := runsc
 RUNTIME_DIR := $(shell dirname $(shell mktemp -u))/$(RUNTIME)
@@ -114,6 +115,7 @@ RUNTIME_BIN     := $(RUNTIME_DIR)/runsc
 RUNTIME_LOG_DIR := $(RUNTIME_DIR)/logs
 RUNTIME_LOGS    := $(RUNTIME_LOG_DIR)/runsc.log.%TEST%.%TIMESTAMP%.%COMMAND%
 RUNTIME_ARGS    ?=
+DOCKER_RELOAD_COMMAND ?= sudo systemctl reload docker
 
 ifeq ($(shell stat -f -c "%T" /sys/fs/cgroup 2>/dev/null),cgroup2fs)
 CGROUPV2 := true
@@ -138,7 +140,8 @@ configure_noreload = \
   sudo $(RUNTIME_BIN) install --experimental=true --runtime="$(1)" -- $(RUNTIME_ARGS) --debug-log "$(RUNTIME_LOGS)" $(2) && \
   sudo rm -rf "$(RUNTIME_LOG_DIR)" && mkdir -p "$(RUNTIME_LOG_DIR)"
 reload_docker = \
-  sudo systemctl reload docker && \
+  $(call header,DOCKER RELOAD); \
+  bash -xc "$(DOCKER_RELOAD_COMMAND)" && \
   if test -f /etc/docker/daemon.json; then \
     sudo chmod 0755 /etc/docker && \
     sudo chmod 0644 /etc/docker/daemon.json; \
