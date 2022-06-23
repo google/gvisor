@@ -73,6 +73,9 @@ func (l *list) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	fmt.Printf("SESSIONS (%d)\n", len(sessions))
 	for _, session := range sessions {
 		fmt.Printf("%q\n", session.Name)
+		for _, sink := range session.Sinks {
+			fmt.Printf("\tSink: %q, dropped: %d\n", sink.Name, sink.Status.DroppedCount)
+		}
 	}
 	return subcommands.ExitSuccess
 }

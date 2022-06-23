@@ -228,6 +228,85 @@ func TestExample(t *testing.T) {
 	}
 }
 
+func TestConfig(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		config map[string]interface{}
+		want   *remote
+		err    string
+	}{
+		{
+			name:   "default",
+			config: map[string]interface{}{},
+			want: &remote{
+				retries:        0,
+				initialBackoff: 25 * time.Microsecond,
+				maxBackoff:     10 * time.Millisecond,
+			},
+		},
+		{
+			name: "all",
+			config: map[string]interface{}{
+				"retries":     float64(10),
+				"backoff":     "1s",
+				"backoff_max": "10s",
+			},
+			want: &remote{
+				retries:        10,
+				initialBackoff: time.Second,
+				maxBackoff:     10 * time.Second,
+			},
+		},
+		{
+			name: "bad-retries",
+			config: map[string]interface{}{
+				"retries": "10",
+			},
+			err: "retries",
+		},
+		{
+			name: "bad-backoff",
+			config: map[string]interface{}{
+				"backoff": "wrong",
+			},
+			err: "invalid duration",
+		},
+		{
+			name: "bad-backoff-max",
+			config: map[string]interface{}{
+				"backoff_max": 10,
+			},
+			err: "is not an string",
+		},
+		{
+			name: "bad-invalid-backoffs",
+			config: map[string]interface{}{
+				"retries":     float64(10),
+				"backoff":     "10s",
+				"backoff_max": "1s",
+			},
+			err: "cannot be larger than max",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var endpoint fd.FD
+			checker, err := new(tc.config, &endpoint)
+			if len(tc.err) == 0 {
+				if err != nil {
+					t.Fatalf("new(%q): %v", tc.config, err)
+				}
+				got := checker.(*remote)
+				got.endpoint = nil
+				if *got != *tc.want {
+					t.Errorf("wrong remote: want: %+v, got: %+v", tc.want, got)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), tc.err) {
+				t.Errorf("wrong error: want: %v, got: %v", tc.err, err)
+			}
+		})
+	}
+}
+
 func BenchmarkSmall(t *testing.B) {
 	// Run server in a separate process just to isolate it as much as possible.
 	server, err := newExampleServer(false)

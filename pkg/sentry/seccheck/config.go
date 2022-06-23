@@ -63,6 +63,8 @@ type SinkConfig struct {
 	// IgnoreSetupError makes errors during sink setup to be ignored. Otherwise,
 	// failures will prevent the container from starting.
 	IgnoreSetupError bool `json:"ignore_setup_error,omitempty"`
+	// Status is the runtime status for the sink.
+	Status CheckerStatus `json:"status,omitempty"`
 	// FD is the endpoint returned from Setup. It may be nil.
 	FD *fd.FD `json:"-"`
 }
@@ -181,9 +183,16 @@ func List(out *[]SessionConfig) {
 	sessionsMu.Lock()
 	defer sessionsMu.Unlock()
 
-	for name := range sessions {
+	for name, state := range sessions {
 		// Only report session name. Consider adding rest of the fields as needed.
-		*out = append(*out, SessionConfig{Name: name})
+		session := SessionConfig{Name: name}
+		for _, checker := range state.getCheckers() {
+			session.Sinks = append(session.Sinks, SinkConfig{
+				Name:   checker.Name(),
+				Status: checker.Status(),
+			})
+		}
+		*out = append(*out, session)
 	}
 }
 
