@@ -39,9 +39,16 @@ import (
 )
 
 const (
-	cgroupRoot     = "/sys/fs/cgroup"
 	cgroupv1FsName = "cgroup"
 	cgroupv2FsName = "cgroup2"
+)
+
+const (
+	// procRoot is the procfs root this module uses.
+	procRoot = "/proc"
+
+	// cgroupRoot is the cgroupfs root this module uses.
+	cgroupRoot = "/sys/fs/cgroup"
 )
 
 var controllers = map[string]controller{
@@ -206,7 +213,7 @@ func countCpuset(cpuset string) (int, error) {
 
 // loadPaths loads cgroup paths for given 'pid', may be set to 'self'.
 func loadPaths(pid string) (map[string]string, error) {
-	procCgroup, err := os.Open(filepath.Join("/proc", pid, "cgroup"))
+	procCgroup, err := os.Open(filepath.Join(procRoot, pid, "cgroup"))
 	if err != nil {
 		return nil, err
 	}
@@ -214,7 +221,7 @@ func loadPaths(pid string) (map[string]string, error) {
 
 	// Load mountinfo for the current process, because it's where cgroups is
 	// being accessed from.
-	mountinfo, err := os.Open(filepath.Join("/proc/self/mountinfo"))
+	mountinfo, err := os.Open(filepath.Join(procRoot, "self/mountinfo"))
 	if err != nil {
 		return nil, err
 	}
