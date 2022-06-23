@@ -291,7 +291,7 @@ var linuxAMD64 = SyscallMap{
 	263: makeSyscallInfo("unlinkat", FD, Path, Hex),
 	264: makeSyscallInfo("renameat", FD, Path, Hex, Path),
 	265: makeSyscallInfo("linkat", FD, Path, Hex, Path, Hex),
-	266: makeSyscallInfo("symlinkat", Path, Hex, Path),
+	266: makeSyscallInfo("symlinkat", Path, FD, Path),
 	267: makeSyscallInfo("readlinkat", FD, Path, ReadBuffer, Hex),
 	268: makeSyscallInfo("fchmodat", FD, Path, Mode),
 	269: makeSyscallInfo("faccessat", FD, Path, Oct, Hex),
