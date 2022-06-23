@@ -944,7 +944,7 @@ func TestTmpMountWithSize(t *testing.T) {
 	}
 	echoOutput, err := d.Exec(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", "echo world > /tmp/foo/test2.txt")
 	if err == nil {
-		t.Fatalf("docker exec size check failed: %v", err)
+		t.Fatalf("docker exec size check unexpectedly succeeded (output: %v)", echoOutput)
 	}
 	wantErr := "No space left on device"
 	if !strings.Contains(echoOutput, wantErr) {
