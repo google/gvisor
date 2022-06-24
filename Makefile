@@ -94,7 +94,7 @@ endif
 ##   These targets faciliate local development by automatically
 ##   installing and configuring a runtime. Several variables may
 ##   be used here to tweak the installation:
-##     RUNTIME         - The name of the installed runtime (default: branch).
+##     RUNTIME         - The name of the installed runtime (default: $BRANCH_NAME).
 ##     RUNTIME_DIR     - Where the runtime will be installed (default: temporary directory with the $RUNTIME).
 ##     RUNTIME_BIN     - The runtime binary (default: $RUNTIME_DIR/runsc).
 ##     RUNTIME_LOG_DIR - The logs directory (default: $RUNTIME_DIR/logs).
@@ -106,11 +106,10 @@ endif
 
 ifeq (,$(BRANCH_NAME))
 RUNTIME     := runsc
-RUNTIME_DIR := $(shell dirname $(shell mktemp -u))/$(RUNTIME)
 else
 RUNTIME     := $(BRANCH_NAME)
-RUNTIME_DIR := $(shell dirname $(shell mktemp -u))/$(RUNTIME)
 endif
+RUNTIME_DIR     ?= $(shell dirname $(shell mktemp -u))/$(RUNTIME)
 RUNTIME_BIN     := $(RUNTIME_DIR)/runsc
 RUNTIME_LOG_DIR := $(RUNTIME_DIR)/logs
 RUNTIME_LOGS    := $(RUNTIME_LOG_DIR)/runsc.log.%TEST%.%TIMESTAMP%.%COMMAND%
