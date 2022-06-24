@@ -15,6 +15,7 @@
 package buffer
 
 import (
+	"bytes"
 	"math/rand"
 	"testing"
 
@@ -80,7 +81,7 @@ func TestWrite(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		view      *View
-		initData  []byte
+		initSize  int
 		writeSize int
 	}{
 		{
@@ -91,45 +92,41 @@ func TestWrite(t *testing.T) {
 		{
 			name:      "full view",
 			view:      NewView(100),
-			initData:  make([]byte, 100),
+			initSize:  100,
 			writeSize: 50,
 		},
 		{
 			name:      "full write to partially full view",
 			view:      NewView(100),
-			initData:  make([]byte, 20),
+			initSize:  20,
 			writeSize: 50,
 		},
 		{
 			name:      "partial write to partially full view",
 			view:      NewView(100),
-			initData:  make([]byte, 80),
+			initSize:  80,
 			writeSize: 50,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tc.view.Write(tc.initData)
+			tc.view.Grow(tc.initSize)
 			defer tc.view.Release()
-			origWriteSize := tc.view.AvailableSize()
-
-			var orig []byte
-			orig = append(orig, tc.view.AsSlice()...)
+			orig := append([]byte(nil), tc.view.AsSlice()...)
 			toWrite := make([]byte, tc.writeSize)
 			rand.Read(toWrite)
 
-			n, _ := tc.view.Write(toWrite)
-
-			if n > origWriteSize {
-				t.Errorf("got tc.view.Write() = %d, want <=%d", n, origWriteSize)
+			n, err := tc.view.Write(toWrite)
+			if err != nil {
+				t.Errorf("Write failed: %s", err)
 			}
-			if tc.writeSize > origWriteSize {
-				toWrite = toWrite[:origWriteSize]
+			if n != tc.writeSize {
+				t.Errorf("got n=%d, want %d", n, tc.writeSize)
 			}
-			if tc.view.AvailableSize() != tc.view.Capacity()-(len(toWrite)+len(orig)) {
-				t.Errorf("got tc.view.WriteSize() = %d, want %d", tc.view.AvailableSize(), tc.view.Capacity()-(len(toWrite)+len(orig)))
+			if tc.view.Size() != len(orig)+tc.writeSize {
+				t.Errorf("got Size()=%d, want %d", tc.view.Size(), len(orig)+tc.writeSize)
 			}
 			if !cmp.Equal(tc.view.AsSlice(), append(orig, toWrite...)) {
-				t.Errorf("got tc.view.ReadSlice() = %d, want %d", tc.view.AsSlice(), toWrite)
+				t.Errorf("got tc.view.AsSlice() = %d, want %d", tc.view.AsSlice(), toWrite)
 			}
 		})
 	}
@@ -170,5 +167,63 @@ func TestWriteAt(t *testing.T) {
 	}
 	if !cmp.Equal(v.AsSlice()[:off], orig.AsSlice()[:off]) {
 		t.Errorf("got v.AsSlice()[:off] = %v, want %v", v.AsSlice()[:off], orig.AsSlice()[:off])
+	}
+}
+
+func TestWriteTo(t *testing.T) {
+	writeToSize := 100
+	v := NewViewSize(writeToSize)
+	defer v.Release()
+
+	w := bytes.NewBuffer(make([]byte, 100))
+
+	n, err := v.WriteTo(w)
+	if err != nil {
+		t.Errorf("WriteTo failed: %s", err)
+	}
+	if n != int64(writeToSize) {
+		t.Errorf("got n=%d, want 100", n)
+	}
+	if v.Size() != 0 {
+		t.Errorf("got v.Size()=%d, want 0", v.Size())
+	}
+}
+
+func TestReadFrom(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		data []byte
+		view *View
+	}{
+		{
+			name: "basic",
+			data: []byte{1, 2, 3},
+			view: NewView(10),
+		},
+		{
+			name: "requires grow",
+			data: []byte{4, 5, 6},
+			view: NewViewSize(63),
+		},
+	} {
+		defer tc.view.Release()
+		clone := tc.view.Clone()
+		defer clone.Release()
+		r := bytes.NewReader(tc.data)
+
+		n, err := tc.view.ReadFrom(r)
+
+		if err != nil {
+			t.Errorf("v.ReadFrom failed: %s", err)
+		}
+		if int(n) != len(tc.data) {
+			t.Errorf("v.ReadFrom failed: want n=%d, got %d", len(tc.data), n)
+		}
+		if tc.view.Size() == clone.Size() {
+			t.Errorf("expected clone.Size() != v.Size(), got match")
+		}
+		if !bytes.Equal(tc.view.AsSlice(), append(clone.AsSlice(), tc.data...)) {
+			t.Errorf("v.ReadFrom failed: want %v, got %v", tc.data, tc.view.AsSlice())
+		}
 	}
 }

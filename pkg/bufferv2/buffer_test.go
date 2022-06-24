@@ -612,7 +612,7 @@ func TestBufferPullUp(t *testing.T) {
 
 			got, gotOk := b.PullUp(tc.offset, tc.length)
 			want, wantOk := []byte(tc.output), !tc.failed
-			if gotOk == wantOk && got == nil && len(want) == 0 {
+			if gotOk == wantOk && got.Size() == 0 && len(want) == 0 {
 				return
 			}
 			if gotOk != wantOk || !bytes.Equal(got.AsSlice(), want) {
@@ -627,6 +627,25 @@ func TestBufferPullUp(t *testing.T) {
 				t.Errorf("lengths = %v; want %v", gotLengths, tc.lengths)
 			}
 		})
+	}
+}
+
+func TestPullUpModifiedViews(t *testing.T) {
+	var b Buffer
+	defer b.Release()
+	for _, s := range []string{"abcdef", "123456", "ghijkl"} {
+		v := NewViewWithData([]byte(s))
+		v.TrimFront(3)
+		b.appendOwned(v)
+	}
+
+	v, ok := b.PullUp(3, 3)
+	if !ok {
+		t.Errorf("PullUp failed: want ok=true, got ok=false")
+	}
+	want := []byte("456")
+	if !bytes.Equal(v.AsSlice(), want) {
+		t.Errorf("PullUp failed: want %v, got %v", want, v.AsSlice())
 	}
 }
 

@@ -294,13 +294,13 @@ func (b *Buffer) prependOwned(v *View) {
 }
 
 // PullUp makes the specified range contiguous and returns the backing memory.
-func (b *Buffer) PullUp(offset, length int) (*View, bool) {
+func (b *Buffer) PullUp(offset, length int) (View, bool) {
 	if length == 0 {
-		return nil, true
+		return View{}, true
 	}
 	tgt := Range{begin: offset, end: offset + length}
 	if tgt.Intersect(Range{end: int(b.size)}).Len() != length {
-		return nil, false
+		return View{}, false
 	}
 
 	curr := Range{}
@@ -312,12 +312,13 @@ func (b *Buffer) PullUp(offset, length int) (*View, bool) {
 		if x := curr.Intersect(tgt); x.Len() == tgt.Len() {
 			// buf covers the whole requested target range.
 			sub := x.Offset(-curr.begin)
-			new := viewPool.Get().(*View)
-			new.read = sub.begin
-			new.write = sub.end
 			// Don't increment the reference count of the underlying chunk. Views
 			// returned by PullUp are explicitly unowned and read only
-			new.chunk = v.chunk
+			new := View{
+				read:  v.read + sub.begin,
+				write: v.read + sub.end,
+				chunk: v.chunk,
+			}
 			return new, true
 		} else if x.Len() > 0 {
 			// buf is pointing at the starting buffer we want to merge.
@@ -357,10 +358,11 @@ func (b *Buffer) PullUp(offset, length int) (*View, bool) {
 	b.removeView(v)
 
 	r := tgt.Offset(-curr.begin)
-	pulled := viewPool.Get().(*View)
-	pulled.read = r.begin
-	pulled.write = r.end
-	pulled.chunk = merged.chunk
+	pulled := View{
+		read:  r.begin,
+		write: r.end,
+		chunk: merged.chunk,
+	}
 	return pulled, true
 }
 
@@ -418,11 +420,11 @@ func (b *Buffer) Apply(fn func(*View)) {
 // outside of b is ignored.
 func (b *Buffer) SubApply(offset, length int, fn func(*View)) {
 	for v := b.data.Front(); length > 0 && v != nil; v = v.Next() {
-		d := v.Clone()
-		if offset >= d.Size() {
-			offset -= d.Size()
+		if offset >= v.Size() {
+			offset -= v.Size()
 			continue
 		}
+		d := v.Clone()
 		if offset > 0 {
 			d.TrimFront(offset)
 			offset = 0
