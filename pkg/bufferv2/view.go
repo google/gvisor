@@ -21,6 +21,10 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
+// ReadSize is the default amount that a View's size is increased by when an
+// io.Reader has more data than a View can hold during calls to ReadFrom.
+const ReadSize = 512
+
 var viewPool = sync.Pool{
 	New: func() interface{} {
 		return &View{}
@@ -42,8 +46,6 @@ var viewPool = sync.Pool{
 // must use Write/WriteAt/CopyIn to modify the underlying View. This preserves
 // the safety guarantees of copy-on-write.
 type View struct {
-	sync.NoCopy
-
 	viewEntry
 	read  int
 	write int
@@ -84,6 +86,9 @@ func NewViewWithData(data []byte) *View {
 // The caller must own the View to call Clone. It is not safe to call Clone
 // on a borrowed or shared View because it can race with other View methods.
 func (v *View) Clone() *View {
+	if v == nil {
+		panic("cannot clone a nil view")
+	}
 	v.chunk.IncRef()
 	newV := viewPool.Get().(*View)
 	newV.chunk = v.chunk
@@ -94,6 +99,9 @@ func (v *View) Clone() *View {
 
 // Release releases the chunk held by v and returns v to the pool.
 func (v *View) Release() {
+	if v == nil {
+		panic("cannot release a nil view")
+	}
 	v.chunk.DecRef()
 	*v = View{}
 	viewPool.Put(v)
@@ -112,16 +120,25 @@ func (v *View) Full() bool {
 
 // Capacity returns the total size of this view's chunk.
 func (v *View) Capacity() int {
+	if v == nil {
+		return 0
+	}
 	return len(v.chunk.data)
 }
 
 // Size returns the size of data written to the view.
 func (v *View) Size() int {
+	if v == nil {
+		return 0
+	}
 	return v.write - v.read
 }
 
 // TrimFront advances the read index by the given amount.
 func (v *View) TrimFront(n int) {
+	if v.read+n > v.write {
+		panic("cannot trim past the end of a view")
+	}
 	v.read += n
 }
 
@@ -135,6 +152,9 @@ func (v *View) AsSlice() []byte {
 
 // AvailableSize returns the number of bytes available for writing.
 func (v *View) AvailableSize() int {
+	if v == nil {
+		return 0
+	}
 	return len(v.chunk.data) - v.write
 }
 
@@ -150,6 +170,26 @@ func (v *View) Read(p []byte) (int, error) {
 	}
 	n := copy(p, v.AsSlice())
 	v.TrimFront(n)
+	return n, nil
+}
+
+// WriteTo writes data to w until the view is empty or an error occurs. The
+// return value n is the number of bytes written.
+//
+// WriteTo implements the io.WriterTo interface.
+func (v *View) WriteTo(w io.Writer) (n int64, err error) {
+	if v.Size() > 0 {
+		sz := v.Size()
+		m, e := w.Write(v.AsSlice())
+		v.TrimFront(m)
+		n = int64(m)
+		if e != nil {
+			return n, e
+		}
+		if m != sz {
+			return n, io.ErrShortWrite
+		}
+	}
 	return n, nil
 }
 
@@ -170,16 +210,51 @@ func (v *View) ReadAt(p []byte, off int) (int, error) {
 //
 // Implements the io.Writer interface.
 func (v *View) Write(p []byte) (int, error) {
-	if v.sharesChunk() {
+	if v == nil {
+		panic("cannot write to a nil view")
+	}
+	if v.AvailableSize() < len(p) {
+		v.growCap(len(p) - v.AvailableSize())
+	} else if v.sharesChunk() {
 		defer v.chunk.DecRef()
 		v.chunk = v.chunk.Clone()
 	}
 	n := copy(v.chunk.data[v.write:], p)
 	v.write += n
 	if n < len(p) {
-		return n, fmt.Errorf("could not finish write: want len(p) <= v.AvailableSize(), got len(p)=%d, v.AvailableSize()=%d", len(p), v.AvailableSize())
+		return n, io.ErrShortWrite
 	}
 	return n, nil
+}
+
+// ReadFrom reads data from r until EOF and appends it to the buffer, growing
+// the buffer as needed. The return value n is the number of bytes read. Any
+// error except io.EOF encountered during the read is also returned.
+//
+// ReadFrom implements the io.ReaderFrom interface.
+func (v *View) ReadFrom(r io.Reader) (n int64, err error) {
+	if v == nil {
+		panic("cannot write to a nil view")
+	}
+	if v.sharesChunk() {
+		defer v.chunk.DecRef()
+		v.chunk = v.chunk.Clone()
+	}
+	for {
+		if v.AvailableSize() == 0 {
+			v.growCap(ReadSize)
+		}
+		m, e := r.Read(v.availableSlice())
+		v.write += m
+		n += int64(m)
+
+		if e == io.EOF {
+			return n, nil
+		}
+		if e != nil {
+			return n, e
+		}
+	}
 }
 
 // WriteAt writes data to the views's chunk starting at start. If the
@@ -188,6 +263,9 @@ func (v *View) Write(p []byte) (int, error) {
 //
 // Implements the io.WriterAt interface.
 func (v *View) WriteAt(p []byte, off int) (int, error) {
+	if v == nil {
+		panic("cannot write to a nil view")
+	}
 	if off < 0 || off > v.Size() {
 		return 0, fmt.Errorf("write offset out of bounds: want 0 < off < %d, got off=%d", v.Size(), off)
 	}
@@ -197,22 +275,43 @@ func (v *View) WriteAt(p []byte, off int) (int, error) {
 	}
 	n := copy(v.AsSlice()[off:], p)
 	if n < len(p) {
-		return n, fmt.Errorf("could not finish write: want off + len(p) < v.Capacity(), got off=%d, len(p)=%d ,v.Size() = %d", off, len(p), v.Size())
+		return n, io.ErrShortWrite
 	}
 	return n, nil
 }
 
-// Grow advances the write index by the given amount.
+// Grow increases the size of the view. If the new size is greater than the
+// view's current capacity, Grow will reallocate the view with an increased
+// capacity.
 func (v *View) Grow(n int) {
-	if n+v.write > v.Capacity() {
-		panic("cannot grow view past capacity")
+	if v == nil {
+		panic("cannot grow a nil view")
+	}
+	if v.write+n > v.Capacity() {
+		v.growCap(n)
 	}
 	v.write += n
+}
+
+// growCap increases the capacity of the view by at least n.
+func (v *View) growCap(n int) {
+	if v == nil {
+		panic("cannot grow a nil view")
+	}
+	defer v.chunk.DecRef()
+	old := v.AsSlice()
+	v.chunk = newChunk(v.Capacity() + n)
+	copy(v.chunk.data, old)
+	v.read = 0
+	v.write = len(old)
 }
 
 // CapLength caps the length of the view's read slice to n. If n > v.Size(),
 // the function is a no-op.
 func (v *View) CapLength(n int) {
+	if v == nil {
+		panic("cannot resize a nil view")
+	}
 	if n < 0 {
 		panic("n must be >= 0")
 	}
