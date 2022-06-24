@@ -116,7 +116,8 @@ RUNTIME_LOGS    := $(RUNTIME_LOG_DIR)/runsc.log.%TEST%.%TIMESTAMP%.%COMMAND%
 RUNTIME_ARGS    ?=
 DOCKER_RELOAD_COMMAND ?= sudo systemctl reload docker
 
-ifeq ($(shell stat -f -c "%T" /sys/fs/cgroup 2>/dev/null),cgroup2fs)
+SYSFS_GROUP_PATH := /sys/fs/cgroup
+ifeq ($(shell stat -f -c "%T" "$(SYSFS_GROUP_PATH)" 2>/dev/null),cgroup2fs)
 CGROUPV2 := true
 else
 CGROUPV2 := false
