@@ -111,16 +111,6 @@ DOCKER_RUN_OPTIONS += -v "$(KERNEL_HEADERS_DIR_LINKED):$(KERNEL_HEADERS_DIR_LINK
 endif
 endif
 
-# Same for systemd-related files and directories. This allows control of systemd
-# from within the container, which is useful for tests that need to e.g. restart
-# docker.
-ifneq (,$(wildcard /run/systemd/system))
-DOCKER_RUN_OPTIONS += -v "/run/systemd/system:/run/systemd/system"
-endif
-ifneq (,$(wildcard /var/run/dbus/system_bus_socket))
-DOCKER_RUN_OPTIONS += -v "/var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket"
-endif
-
 # Add basic UID/GID options.
 #
 # Note that USERADD_DOCKER and GROUPADD_DOCKER are both defined as "deferred"
@@ -215,6 +205,7 @@ endif
 	@docker run -d --name $(DOCKER_NAME) --hostname $(DOCKER_HOSTNAME) \
 	  -v "$(CURDIR):$(CURDIR)" \
 	  --workdir "$(CURDIR)" \
+	  --pid=host --cgroupns=host \
 	  $(DOCKER_RUN_OPTIONS) \
 	  gvisor.dev/images/builder \
 	  bash -c "set -x; tail -f --pid=\$$($(BAZEL) info server_pid) /dev/null"
