@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -31,6 +30,18 @@ import (
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/cgroup"
 )
+
+// procPath returns a path in procfs. This is usually just `/proc + path components`, but may be
+// different if HOST_PROCFS_MOUNTPOINT is set.
+func procPath(components ...string) string {
+	return filepath.Join(append([]string{"/proc"}, components...)...)
+}
+
+// cgroupPath returns a path in cgroupfs. This is usually just `/sys/fs/cgroup + path components`,
+// but may be different if HOST_CGROUPFS_MOUNTPOINT is set.
+func cgroupPath(components ...string) string {
+	return filepath.Join(append([]string{"/sys/fs/cgroup"}, components...)...)
+}
 
 func verifyPid(pid int, path string) error {
 	f, err := os.Open(path)
@@ -54,7 +65,11 @@ func verifyPid(pid int, path string) error {
 	if scanner.Err() != nil {
 		return scanner.Err()
 	}
-	return fmt.Errorf("got: %v, want: %d", gots, pid)
+	wholeContents, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("got: %v, want: %d (and cannot read %s: %v)", gots, pid, path, err)
+	}
+	return fmt.Errorf("got: %v, want: %d; contents of %s:\n\n%s", gots, pid, path, string(wholeContents))
 }
 
 func TestMemCgroup(t *testing.T) {
@@ -91,11 +106,11 @@ func TestMemCgroup(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 
 		// Read the cgroup memory limit.
-		path := filepath.Join("/sys/fs/cgroup/memory/docker", gid, "memory.limit_in_bytes")
+		path := cgroupPath("memory/docker", gid, "memory.limit_in_bytes")
 		if cgroup.IsOnlyV2() {
-			path = filepath.Join("/sys/fs/cgroup/docker", gid, "memory.max")
+			path = cgroupPath("docker", gid, "memory.max")
 			if useSystemd {
-				path = filepath.Join("/sys/fs/cgroup/system.slice/docker-"+gid+".scope", "memory.max")
+				path = cgroupPath("system.slice/docker-"+gid+".scope", "memory.max")
 			}
 		}
 		// Read the cgroup memory limit.
@@ -114,13 +129,13 @@ func TestMemCgroup(t *testing.T) {
 			continue
 		}
 
-		path = filepath.Join("/sys/fs/cgroup/memory/docker", gid, "memory.max_usage_in_bytes")
+		path = cgroupPath("memory/docker", gid, "memory.max_usage_in_bytes")
 		if cgroup.IsOnlyV2() {
 			// v2 does not have max_usage_in_bytes equivalent, so memory.current is the
 			// next best thing that we can use
-			path = filepath.Join("/sys/fs/cgroup/docker", gid, "memory.current")
+			path = cgroupPath("docker", gid, "memory.current")
 			if useSystemd {
-				path = filepath.Join("/sys/fs/cgroup/system.slice/docker-"+gid+".scope", "memory.current")
+				path = cgroupPath("system.slice/docker-"+gid+".scope", "memory.current")
 			}
 		}
 		// Read the cgroup memory usage.
@@ -290,7 +305,7 @@ func TestCgroupV1(t *testing.T) {
 
 	// Check list of attributes defined above.
 	for _, attr := range attrs {
-		path := filepath.Join("/sys/fs/cgroup", attr.ctrl, "docker", gid, attr.file)
+		path := cgroupPath(attr.ctrl, "docker", gid, attr.file)
 		out, err := ioutil.ReadFile(path)
 		if err != nil {
 			if os.IsNotExist(err) && attr.skipIfNotFound {
@@ -323,9 +338,9 @@ func TestCgroupV1(t *testing.T) {
 		t.Fatalf("SandboxPid: %v", err)
 	}
 	for _, ctrl := range controllers {
-		path := filepath.Join("/sys/fs/cgroup", ctrl, "docker", gid, "cgroup.procs")
+		path := cgroupPath(ctrl, "docker", gid, "cgroup.procs")
 		if err := verifyPid(pid, path); err != nil {
-			t.Errorf("cgroup control %q processes: %v", ctrl, err)
+			t.Errorf("cgroup control %q processes (%s): %v", ctrl, path, err)
 		}
 	}
 }
@@ -405,9 +420,9 @@ func TestCgroupV2(t *testing.T) {
 	if err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
-	baseCgroupPath := "/sys/fs/cgroup/docker"
+	baseCgroupPath := cgroupPath("docker")
 	if useSystemd {
-		baseCgroupPath = fmt.Sprintf("/sys/fs/cgroup/system.slice")
+		baseCgroupPath = cgroupPath("system.slice")
 	}
 	// Make configs.
 	conf, hostconf, _ := d.ConfigsFrom(dockerutil.RunOpts{
@@ -464,7 +479,7 @@ func TestCgroupV2(t *testing.T) {
 
 	// Check list of attributes defined above.
 	for _, attr := range attrs {
-		path := filepath.Join("/sys/fs/cgroup/docker", gid, attr.file)
+		path := cgroupPath("docker", gid, attr.file)
 		if useSystemd {
 			path = filepath.Join(baseCgroupPath, "docker-"+gid+".scope", attr.file)
 		}
@@ -486,12 +501,12 @@ func TestCgroupV2(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SandboxPid: %v", err)
 	}
-	path := filepath.Join("/sys/fs/cgroup/docker", gid, "cgroup.procs")
+	path := cgroupPath("docker", gid, "cgroup.procs")
 	if useSystemd {
 		path = filepath.Join(baseCgroupPath, "docker-"+gid+".scope", "cgroup.procs")
 	}
 	if err := verifyPid(pid, path); err != nil {
-		t.Errorf("cgroup control processes: %v", err)
+		t.Errorf("cgroup control processes (%s): %v", path, err)
 	}
 }
 
@@ -536,14 +551,9 @@ func TestCgroupParent(t *testing.T) {
 
 	// Finds cgroup for the sandbox's parent process to check that cgroup is
 	// created in the right location relative to the parent.
-	cmd := fmt.Sprintf("grep PPid: /proc/%d/status | sed 's/PPid:\\s//'", pid)
-	ppidStr, err := exec.Command("bash", "-c", cmd).CombinedOutput()
+	ppid, err := getParentPID(pid)
 	if err != nil {
-		t.Fatalf("Executing %q: %v", cmd, err)
-	}
-	ppid, err := strconv.Atoi(strings.TrimSpace(string(ppidStr)))
-	if err != nil {
-		t.Fatalf("invalid PID (%s): %v", ppidStr, err)
+		t.Fatalf("cannot get parent of %d: %v", pid, err)
 	}
 	cgroups, err := cgroup.NewFromPid(ppid, false /* useSystemd */)
 	if err != nil {
@@ -554,6 +564,6 @@ func TestCgroupParent(t *testing.T) {
 		path = filepath.Join(cgroups.MakePath("cpuacct"), parent, "docker-"+gid+".scope", "cgroup.procs")
 	}
 	if err := verifyPid(pid, path); err != nil {
-		t.Errorf("cgroup control %q processes: %v", "memory", err)
+		t.Errorf("cgroup control %q processes (%s): %v", "cpuacct", path, err)
 	}
 }
