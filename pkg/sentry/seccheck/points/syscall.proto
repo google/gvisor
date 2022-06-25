@@ -117,3 +117,100 @@ message Setid {
   uint64 sysno = 3;
   uint32 id = 4;
 }
+
+message StructRlimit {
+  uint64 cur = 1;
+  uint64 max = 2;
+}
+
+message Prlimit {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 pid = 4;
+  int64 resource = 5;
+  StructRlimit new_limit = 6;
+  StructRlimit old_limit = 7;
+}
+
+message Pipe {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  uint32 flags = 4;
+  int32 reader = 5;
+  int32 writer = 6;
+}
+
+message Fcntl {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 fd = 4;
+  string fd_path = 5;
+  int32 cmd = 6;
+  int64 args = 7;
+}
+
+message Dup {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 old_fd = 4;
+  int32 new_fd = 5;
+  string fd_path = 6;
+  uint32 flags = 7;
+}
+
+message Signalfd {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 fd = 4;
+  string fd_path = 5;
+  uint64 sigset = 6;
+  int32 flags = 7;
+}
+
+message Chroot {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  string pathname = 4;
+}
+message Eventfd {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 val = 4;
+  uint32 flags = 5;
+}
+
+message Clone {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  uint64 flags = 4;
+  uint64 stack = 5;
+  uint64 new_tid = 6;
+  uint64 tls = 7;
+}
+
+message Bind {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 fd = 4;
+  string fd_path = 5;
+  bytes address = 6;
+}
+
+message Accept {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 fd = 4;
+  string fd_path = 5;
+  bytes address = 6;
+  int32 flags = 7;
+}
