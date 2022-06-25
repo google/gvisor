@@ -20,6 +20,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
@@ -69,7 +70,7 @@ func PointOpen(t *kernel.Task, _ seccheck.FieldSet, cxtData *pb.ContextData, inf
 	addr := info.Args[0].Pointer()
 	if addr > 0 {
 		path, err := t.CopyInString(addr, linux.PATH_MAX)
-		if err == nil {
+		if err == nil { // if NO error
 			p.Pathname = path
 		}
 	}
@@ -89,7 +90,7 @@ func PointOpenat(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextDa
 	addr := info.Args[1].Pointer()
 	if addr > 0 {
 		path, err := t.CopyInString(addr, linux.PATH_MAX)
-		if err == nil {
+		if err == nil { // if NO error
 			p.Pathname = path
 		}
 	}
@@ -119,7 +120,7 @@ func PointCreat(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextDat
 	addr := info.Args[0].Pointer()
 	if addr > 0 {
 		path, err := t.CopyInString(addr, linux.PATH_MAX)
-		if err == nil {
+		if err == nil { // if NO error
 			p.Pathname = path
 		}
 	}
@@ -208,18 +209,18 @@ func PointExecve(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextDa
 		ContextData: cxtData,
 		Sysno:       uint64(info.Sysno),
 	}
-	if pathname, err := t.CopyInString(info.Args[0].Pointer(), linux.PATH_MAX); err == nil {
+	if pathname, err := t.CopyInString(info.Args[0].Pointer(), linux.PATH_MAX); err == nil { // if NO error
 		p.Pathname = pathname
 	}
 	if argvAddr := info.Args[1].Pointer(); argvAddr != 0 {
-		if argv, err := t.CopyInVector(argvAddr, ExecMaxElemSize, ExecMaxTotalSize); err == nil {
+		if argv, err := t.CopyInVector(argvAddr, ExecMaxElemSize, ExecMaxTotalSize); err == nil { // if NO error
 			p.Argv = argv
 		}
 	}
 
 	if fields.Local.Contains(seccheck.FieldSyscallExecveEnvv) {
 		if envvAddr := info.Args[2].Pointer(); envvAddr != 0 {
-			if envv, err := t.CopyInVector(envvAddr, ExecMaxElemSize, ExecMaxTotalSize); err == nil {
+			if envv, err := t.CopyInVector(envvAddr, ExecMaxElemSize, ExecMaxTotalSize); err == nil { // if NO error
 				p.Envv = envv
 			}
 		}
@@ -238,18 +239,18 @@ func PointExecveat(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.Context
 		Fd:          int64(info.Args[0].Int()),
 		Flags:       info.Args[4].Uint(),
 	}
-	if pathname, err := t.CopyInString(info.Args[1].Pointer(), linux.PATH_MAX); err == nil {
+	if pathname, err := t.CopyInString(info.Args[1].Pointer(), linux.PATH_MAX); err == nil { // if NO error
 		p.Pathname = pathname
 	}
 	if argvAddr := info.Args[2].Pointer(); argvAddr != 0 {
-		if argv, err := t.CopyInVector(argvAddr, ExecMaxElemSize, ExecMaxTotalSize); err == nil {
+		if argv, err := t.CopyInVector(argvAddr, ExecMaxElemSize, ExecMaxTotalSize); err == nil { // if NO error
 			p.Argv = argv
 		}
 	}
 
 	if fields.Local.Contains(seccheck.FieldSyscallExecveEnvv) {
 		if envvAddr := info.Args[3].Pointer(); envvAddr != 0 {
-			if envv, err := t.CopyInVector(envvAddr, ExecMaxElemSize, ExecMaxTotalSize); err == nil {
+			if envv, err := t.CopyInVector(envvAddr, ExecMaxElemSize, ExecMaxTotalSize); err == nil { // if NO error
 				p.Envv = envv
 			}
 		}
@@ -273,7 +274,7 @@ func pointChdirHelper(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.Cont
 
 	if path > 0 {
 		pathname, err := t.CopyInString(path, linux.PATH_MAX)
-		if err == nil {
+		if err == nil { // if NO error
 			p.Pathname = pathname
 		}
 	}
@@ -315,13 +316,13 @@ func pointSetidHelper(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.Cont
 
 // PointSetuid calls pointSetidHelper to convert setuid(2) syscall to proto.
 func PointSetuid(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
-	id := uint32(info.Args[0].Uint())
+	id := info.Args[0].Uint()
 	return pointSetidHelper(t, fields, cxtData, info, id)
 }
 
 // PointSetgid calls pointSetidHelper to convert setgid(2) syscall to proto.
 func PointSetgid(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
-	id := uint32(info.Args[0].Uint())
+	id := info.Args[0].Uint()
 	return pointSetidHelper(t, fields, cxtData, info, id)
 }
 
@@ -335,9 +336,9 @@ func pointSetresidHelper(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.C
 	p := &pb.Setresid{
 		ContextData: cxtData,
 		Sysno:       uint64(info.Sysno),
-		Rgid:        uint32(info.Args[0].Uint()),
-		Egid:        uint32(info.Args[1].Uint()),
-		Sgid:        uint32(info.Args[2].Uint()),
+		Rgid:        info.Args[0].Uint(),
+		Egid:        info.Args[1].Uint(),
+		Sgid:        info.Args[2].Uint(),
 	}
 
 	p.Exit = newExitMaybe(info)
@@ -353,4 +354,274 @@ func PointSetresuid(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.Contex
 // PointSetresgid calls pointSetresidHelper to convert setresgid(2) syscall to proto.
 func PointSetresgid(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
 	return pointSetresidHelper(t, fields, cxtData, info)
+}
+
+func rlimits(rlimit rlimit64) *pb.StructRlimit {
+	limit := rlimit.toLimit()
+	return &pb.StructRlimit{
+		Cur: limit.Cur,
+		Max: limit.Max,
+	}
+}
+
+// PointPrlimit64 call converts prlimit64(2) syscall to proto.
+func PointPrlimit64(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	p := &pb.Prlimit{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Pid:         int32(info.Args[0].Int()),
+		Resource:    info.Args[1].Int64(),
+	}
+
+	if newRlimitAddr := info.Args[2].Pointer(); newRlimitAddr != 0 {
+		var nrl rlimit64
+		if err := nrl.copyIn(t, newRlimitAddr); err == nil { // if NO error
+			p.NewLimit = rlimits(nrl)
+		}
+	}
+
+	if oldRlimitAddr := info.Args[3].Pointer(); oldRlimitAddr != 0 {
+		var orl rlimit64
+		if err := orl.copyIn(t, oldRlimitAddr); err == nil { // if NO error
+			p.OldLimit = rlimits(orl)
+		}
+	}
+
+	p.Exit = newExitMaybe(info)
+
+	return p, pb.MessageType_MESSAGE_SYSCALL_PRLIMIT64
+}
+
+// pipeHelper converts pipe(2) and pipe2(2) syscall to proto.
+func pipeHelper(t *kernel.Task, cxtData *pb.ContextData, info kernel.SyscallInfo, flags uint32) (proto.Message, pb.MessageType) {
+	p := &pb.Pipe{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Flags:       flags,
+	}
+	if info.Exit {
+		if pipeFDAddr := info.Args[0].Pointer(); pipeFDAddr != 0 {
+			var pipeFDs [2]int32
+			if _, err := primitive.CopyInt32SliceOut(t, pipeFDAddr, pipeFDs[2:2]); err == nil { // if NO error
+				p.Reader = pipeFDs[0]
+				p.Writer = pipeFDs[1]
+			}
+		}
+	}
+
+	p.Exit = newExitMaybe(info)
+	return p, pb.MessageType_MESSAGE_SYSCALL_PIPE
+}
+
+// PointPipe calls pipeHelper to convert pipe(2) syscall to proto.
+func PointPipe(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	return pipeHelper(t, cxtData, info, 0)
+}
+
+// PointPipe2 calls pipeHelper to convert pipe2(2) syscall to proto.
+func PointPipe2(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	flags := info.Args[1].Uint()
+	return pipeHelper(t, cxtData, info, flags)
+}
+
+// eventfdHelper converts eventfd(2) and eventfd2(2) syscall to proto.
+func eventfdHelper(cxtData *pb.ContextData, info kernel.SyscallInfo, flags uint32) (proto.Message, pb.MessageType) {
+	p := &pb.Eventfd{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Val:         int32(info.Args[0].Int()),
+		Flags:       flags,
+	}
+
+	p.Exit = newExitMaybe(info)
+	return p, pb.MessageType_MESSAGE_SYSCALL_EVENTFD
+}
+
+// PointEventfd calls pipeHelper to convert eventfd(2) syscall to proto.
+func PointEventfd(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	return eventfdHelper(cxtData, info, 0)
+}
+
+// PointEventfd2 calls pipeHelper to convert eventfd2(2) syscall to proto.
+func PointEventfd2(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	flags := info.Args[1].Uint()
+	return eventfdHelper(cxtData, info, flags)
+}
+
+// PointFcntl converts fcntl(2) syscall to proto.
+func PointFcntl(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	p := &pb.Fcntl{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Fd:          info.Args[0].Int(),
+		Cmd:         info.Args[1].Int(),
+		Args:        info.Args[2].Int64(),
+	}
+
+	if fields.Local.Contains(seccheck.FieldSyscallPath) {
+		p.FdPath = getFilePath(t, int32(p.Fd))
+	}
+
+	p.Exit = newExitMaybe(info)
+	return p, pb.MessageType_MESSAGE_SYSCALL_FCNTL
+}
+
+// pointDupHelper converts dup(2), dup2(2), and dup3(2) syscall to proto.
+func pointDupHelper(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo, oldFD, newFD int32, flags uint32) (proto.Message, pb.MessageType) {
+	p := &pb.Dup{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		OldFd:       oldFD,
+		NewFd:       newFD,
+		Flags:       flags,
+	}
+
+	if fields.Local.Contains(seccheck.FieldSyscallPath) {
+		p.FdPath = getFilePath(t, int32(p.OldFd))
+	}
+
+	p.Exit = newExitMaybe(info)
+	return p, pb.MessageType_MESSAGE_SYSCALL_DUP
+}
+
+// PointDup calls pointDupHelper to convert dup(2) syscall to proto.
+func PointDup(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	oldFD := info.Args[0].Int()
+	return pointDupHelper(t, fields, cxtData, info, oldFD, 0, 0)
+}
+
+// PointDup2 calls pointDupHelper to convert dup2(2) syscall to proto.
+func PointDup2(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	oldFD := info.Args[0].Int()
+	newFD := info.Args[1].Int()
+	return pointDupHelper(t, fields, cxtData, info, oldFD, newFD, 0)
+}
+
+// PointDup3 calls pointDupHelper to convert dup3(2) syscall to proto.
+func PointDup3(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	oldFD := info.Args[0].Int()
+	newFD := info.Args[1].Int()
+	flags := info.Args[2].Uint()
+	return pointDupHelper(t, fields, cxtData, info, oldFD, newFD, flags)
+}
+
+// signalfdHelper converts signalfd(2) and signalfd4(2) syscall to proto.
+func signalfdHelper(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo, flags int32) (proto.Message, pb.MessageType) {
+	p := &pb.Signalfd{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Fd:          info.Args[0].Int(),
+		Flags:       flags,
+	}
+	sigset := info.Args[1].Pointer()
+	sigsetsize := info.Args[2].SizeT()
+	mask, err := CopyInSigSet(t, sigset, sigsetsize)
+	if err == nil { // if NO error
+		p.Sigset = uint64(mask)
+		p.Sigset = uint64(mask)
+	}
+
+	if fields.Local.Contains(seccheck.FieldSyscallPath) {
+		p.FdPath = getFilePath(t, int32(p.Fd))
+	}
+
+	p.Exit = newExitMaybe(info)
+	return p, pb.MessageType_MESSAGE_SYSCALL_SIGNALFD
+}
+
+// PointSignalfd calls signalfdHelper to convert signalfd(2) syscall to proto.
+func PointSignalfd(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	return signalfdHelper(t, fields, cxtData, info, 0)
+}
+
+// PointSignalfd4 calls signalfdHelper to convert signalfd4(2) syscall to proto.
+func PointSignalfd4(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	flags := info.Args[3].Int()
+	return signalfdHelper(t, fields, cxtData, info, flags)
+}
+
+// PointChroot converts chroot(2) syscall to proto.
+func PointChroot(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	p := &pb.Chroot{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+	}
+	if pathname, err := t.CopyInString(info.Args[0].Pointer(), linux.PATH_MAX); err == nil { // if NO error
+		p.Pathname = pathname
+	}
+	p.Exit = newExitMaybe(info)
+	return p, pb.MessageType_MESSAGE_SYSCALL_CHROOT
+}
+
+// PointClone converts clone(2) syscall to proto.
+func PointClone(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	p := &pb.Clone{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Flags:       info.Args[0].Uint64(),
+		Stack:       uint64(info.Args[1].Pointer()),
+		Tls:         uint64(info.Args[4].Pointer()),
+	}
+	var parTid kernel.ThreadID
+
+	parentTidAddr := info.Args[2].Pointer()
+	if _, err := parTid.CopyIn(t, parentTidAddr); err == nil { // if NO error
+		p.NewTid = uint64(parTid)
+	}
+
+	p.Exit = newExitMaybe(info)
+	return p, pb.MessageType_MESSAGE_SYSCALL_CLONE
+}
+
+// PointBind converts bind(2) syscall to proto.
+func PointBind(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	p := &pb.Bind{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Fd:          info.Args[0].Int(),
+	}
+	addr := info.Args[1].Pointer()
+	addrLen := info.Args[2].Uint()
+	if address, err := CaptureAddress(t, addr, addrLen); err == nil { // if NO error
+		p.Address = address
+	}
+
+	if fields.Local.Contains(seccheck.FieldSyscallPath) {
+		p.FdPath = getFilePath(t, int32(p.Fd))
+	}
+
+	p.Exit = newExitMaybe(info)
+	return p, pb.MessageType_MESSAGE_SYSCALL_BIND
+}
+
+func acceptHelper(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo, flags int32) (proto.Message, pb.MessageType) {
+	p := &pb.Accept{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Fd:          info.Args[0].Int(),
+		Flags:       flags,
+	}
+	addr := info.Args[1].Pointer()
+	addrLen := info.Args[2].Uint()
+	if address, err := CaptureAddress(t, addr, addrLen); err == nil { // if NO error
+		p.Address = address
+	}
+
+	if fields.Local.Contains(seccheck.FieldSyscallPath) {
+		p.FdPath = getFilePath(t, int32(p.Fd))
+	}
+
+	p.Exit = newExitMaybe(info)
+	return p, pb.MessageType_MESSAGE_SYSCALL_ACCEPT
+}
+
+// PointAccept converts accept(2) syscall to proto.
+func PointAccept(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	return acceptHelper(t, fields, cxtData, info, 0)
+}
+
+// PointAccept4 converts accept4(2) syscall to proto.
+func PointAccept4(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	flags := info.Args[3].Int()
+	return acceptHelper(t, fields, cxtData, info, flags)
 }
