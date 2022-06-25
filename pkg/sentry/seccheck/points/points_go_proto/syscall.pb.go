@@ -985,6 +985,955 @@ func (x *Setid) GetId() uint32 {
 	return 0
 }
 
+type StructRlimit struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Cur uint64 `protobuf:"varint,1,opt,name=cur,proto3" json:"cur,omitempty"`
+	Max uint64 `protobuf:"varint,2,opt,name=max,proto3" json:"max,omitempty"`
+}
+
+func (x *StructRlimit) Reset() {
+	*x = StructRlimit{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[11]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *StructRlimit) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StructRlimit) ProtoMessage() {}
+
+func (x *StructRlimit) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[11]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StructRlimit.ProtoReflect.Descriptor instead.
+func (*StructRlimit) Descriptor() ([]byte, []int) {
+	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *StructRlimit) GetCur() uint64 {
+	if x != nil {
+		return x.Cur
+	}
+	return 0
+}
+
+func (x *StructRlimit) GetMax() uint64 {
+	if x != nil {
+		return x.Max
+	}
+	return 0
+}
+
+type Prlimit struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	ContextData *ContextData  `protobuf:"bytes,1,opt,name=context_data,json=contextData,proto3" json:"context_data,omitempty"`
+	Exit        *Exit         `protobuf:"bytes,2,opt,name=exit,proto3" json:"exit,omitempty"`
+	Sysno       uint64        `protobuf:"varint,3,opt,name=sysno,proto3" json:"sysno,omitempty"`
+	Pid         int32         `protobuf:"varint,4,opt,name=pid,proto3" json:"pid,omitempty"`
+	Resource    int64         `protobuf:"varint,5,opt,name=resource,proto3" json:"resource,omitempty"`
+	NewLimit    *StructRlimit `protobuf:"bytes,6,opt,name=new_limit,json=newLimit,proto3" json:"new_limit,omitempty"`
+	OldLimit    *StructRlimit `protobuf:"bytes,7,opt,name=old_limit,json=oldLimit,proto3" json:"old_limit,omitempty"`
+}
+
+func (x *Prlimit) Reset() {
+	*x = Prlimit{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[12]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Prlimit) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Prlimit) ProtoMessage() {}
+
+func (x *Prlimit) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[12]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Prlimit.ProtoReflect.Descriptor instead.
+func (*Prlimit) Descriptor() ([]byte, []int) {
+	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *Prlimit) GetContextData() *ContextData {
+	if x != nil {
+		return x.ContextData
+	}
+	return nil
+}
+
+func (x *Prlimit) GetExit() *Exit {
+	if x != nil {
+		return x.Exit
+	}
+	return nil
+}
+
+func (x *Prlimit) GetSysno() uint64 {
+	if x != nil {
+		return x.Sysno
+	}
+	return 0
+}
+
+func (x *Prlimit) GetPid() int32 {
+	if x != nil {
+		return x.Pid
+	}
+	return 0
+}
+
+func (x *Prlimit) GetResource() int64 {
+	if x != nil {
+		return x.Resource
+	}
+	return 0
+}
+
+func (x *Prlimit) GetNewLimit() *StructRlimit {
+	if x != nil {
+		return x.NewLimit
+	}
+	return nil
+}
+
+func (x *Prlimit) GetOldLimit() *StructRlimit {
+	if x != nil {
+		return x.OldLimit
+	}
+	return nil
+}
+
+type Pipe struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	ContextData *ContextData `protobuf:"bytes,1,opt,name=context_data,json=contextData,proto3" json:"context_data,omitempty"`
+	Exit        *Exit        `protobuf:"bytes,2,opt,name=exit,proto3" json:"exit,omitempty"`
+	Sysno       uint64       `protobuf:"varint,3,opt,name=sysno,proto3" json:"sysno,omitempty"`
+	Flags       uint32       `protobuf:"varint,4,opt,name=flags,proto3" json:"flags,omitempty"`
+	Reader      int32        `protobuf:"varint,5,opt,name=reader,proto3" json:"reader,omitempty"`
+	Writer      int32        `protobuf:"varint,6,opt,name=writer,proto3" json:"writer,omitempty"`
+}
+
+func (x *Pipe) Reset() {
+	*x = Pipe{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[13]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Pipe) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Pipe) ProtoMessage() {}
+
+func (x *Pipe) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[13]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Pipe.ProtoReflect.Descriptor instead.
+func (*Pipe) Descriptor() ([]byte, []int) {
+	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *Pipe) GetContextData() *ContextData {
+	if x != nil {
+		return x.ContextData
+	}
+	return nil
+}
+
+func (x *Pipe) GetExit() *Exit {
+	if x != nil {
+		return x.Exit
+	}
+	return nil
+}
+
+func (x *Pipe) GetSysno() uint64 {
+	if x != nil {
+		return x.Sysno
+	}
+	return 0
+}
+
+func (x *Pipe) GetFlags() uint32 {
+	if x != nil {
+		return x.Flags
+	}
+	return 0
+}
+
+func (x *Pipe) GetReader() int32 {
+	if x != nil {
+		return x.Reader
+	}
+	return 0
+}
+
+func (x *Pipe) GetWriter() int32 {
+	if x != nil {
+		return x.Writer
+	}
+	return 0
+}
+
+type Fcntl struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	ContextData *ContextData `protobuf:"bytes,1,opt,name=context_data,json=contextData,proto3" json:"context_data,omitempty"`
+	Exit        *Exit        `protobuf:"bytes,2,opt,name=exit,proto3" json:"exit,omitempty"`
+	Sysno       uint64       `protobuf:"varint,3,opt,name=sysno,proto3" json:"sysno,omitempty"`
+	Fd          int32        `protobuf:"varint,4,opt,name=fd,proto3" json:"fd,omitempty"`
+	FdPath      string       `protobuf:"bytes,5,opt,name=fd_path,json=fdPath,proto3" json:"fd_path,omitempty"`
+	Cmd         int32        `protobuf:"varint,6,opt,name=cmd,proto3" json:"cmd,omitempty"`
+	Args        int64        `protobuf:"varint,7,opt,name=args,proto3" json:"args,omitempty"`
+}
+
+func (x *Fcntl) Reset() {
+	*x = Fcntl{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[14]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Fcntl) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Fcntl) ProtoMessage() {}
+
+func (x *Fcntl) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[14]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Fcntl.ProtoReflect.Descriptor instead.
+func (*Fcntl) Descriptor() ([]byte, []int) {
+	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *Fcntl) GetContextData() *ContextData {
+	if x != nil {
+		return x.ContextData
+	}
+	return nil
+}
+
+func (x *Fcntl) GetExit() *Exit {
+	if x != nil {
+		return x.Exit
+	}
+	return nil
+}
+
+func (x *Fcntl) GetSysno() uint64 {
+	if x != nil {
+		return x.Sysno
+	}
+	return 0
+}
+
+func (x *Fcntl) GetFd() int32 {
+	if x != nil {
+		return x.Fd
+	}
+	return 0
+}
+
+func (x *Fcntl) GetFdPath() string {
+	if x != nil {
+		return x.FdPath
+	}
+	return ""
+}
+
+func (x *Fcntl) GetCmd() int32 {
+	if x != nil {
+		return x.Cmd
+	}
+	return 0
+}
+
+func (x *Fcntl) GetArgs() int64 {
+	if x != nil {
+		return x.Args
+	}
+	return 0
+}
+
+type Dup struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	ContextData *ContextData `protobuf:"bytes,1,opt,name=context_data,json=contextData,proto3" json:"context_data,omitempty"`
+	Exit        *Exit        `protobuf:"bytes,2,opt,name=exit,proto3" json:"exit,omitempty"`
+	Sysno       uint64       `protobuf:"varint,3,opt,name=sysno,proto3" json:"sysno,omitempty"`
+	OldFd       int32        `protobuf:"varint,4,opt,name=old_fd,json=oldFd,proto3" json:"old_fd,omitempty"`
+	NewFd       int32        `protobuf:"varint,5,opt,name=new_fd,json=newFd,proto3" json:"new_fd,omitempty"`
+	FdPath      string       `protobuf:"bytes,6,opt,name=fd_path,json=fdPath,proto3" json:"fd_path,omitempty"`
+	Flags       uint32       `protobuf:"varint,7,opt,name=flags,proto3" json:"flags,omitempty"`
+}
+
+func (x *Dup) Reset() {
+	*x = Dup{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[15]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Dup) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Dup) ProtoMessage() {}
+
+func (x *Dup) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[15]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Dup.ProtoReflect.Descriptor instead.
+func (*Dup) Descriptor() ([]byte, []int) {
+	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *Dup) GetContextData() *ContextData {
+	if x != nil {
+		return x.ContextData
+	}
+	return nil
+}
+
+func (x *Dup) GetExit() *Exit {
+	if x != nil {
+		return x.Exit
+	}
+	return nil
+}
+
+func (x *Dup) GetSysno() uint64 {
+	if x != nil {
+		return x.Sysno
+	}
+	return 0
+}
+
+func (x *Dup) GetOldFd() int32 {
+	if x != nil {
+		return x.OldFd
+	}
+	return 0
+}
+
+func (x *Dup) GetNewFd() int32 {
+	if x != nil {
+		return x.NewFd
+	}
+	return 0
+}
+
+func (x *Dup) GetFdPath() string {
+	if x != nil {
+		return x.FdPath
+	}
+	return ""
+}
+
+func (x *Dup) GetFlags() uint32 {
+	if x != nil {
+		return x.Flags
+	}
+	return 0
+}
+
+type Signalfd struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	ContextData *ContextData `protobuf:"bytes,1,opt,name=context_data,json=contextData,proto3" json:"context_data,omitempty"`
+	Exit        *Exit        `protobuf:"bytes,2,opt,name=exit,proto3" json:"exit,omitempty"`
+	Sysno       uint64       `protobuf:"varint,3,opt,name=sysno,proto3" json:"sysno,omitempty"`
+	Fd          int32        `protobuf:"varint,4,opt,name=fd,proto3" json:"fd,omitempty"`
+	FdPath      string       `protobuf:"bytes,5,opt,name=fd_path,json=fdPath,proto3" json:"fd_path,omitempty"`
+	Sigset      uint64       `protobuf:"varint,6,opt,name=sigset,proto3" json:"sigset,omitempty"`
+	Flags       int32        `protobuf:"varint,7,opt,name=flags,proto3" json:"flags,omitempty"`
+}
+
+func (x *Signalfd) Reset() {
+	*x = Signalfd{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[16]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Signalfd) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Signalfd) ProtoMessage() {}
+
+func (x *Signalfd) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[16]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Signalfd.ProtoReflect.Descriptor instead.
+func (*Signalfd) Descriptor() ([]byte, []int) {
+	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *Signalfd) GetContextData() *ContextData {
+	if x != nil {
+		return x.ContextData
+	}
+	return nil
+}
+
+func (x *Signalfd) GetExit() *Exit {
+	if x != nil {
+		return x.Exit
+	}
+	return nil
+}
+
+func (x *Signalfd) GetSysno() uint64 {
+	if x != nil {
+		return x.Sysno
+	}
+	return 0
+}
+
+func (x *Signalfd) GetFd() int32 {
+	if x != nil {
+		return x.Fd
+	}
+	return 0
+}
+
+func (x *Signalfd) GetFdPath() string {
+	if x != nil {
+		return x.FdPath
+	}
+	return ""
+}
+
+func (x *Signalfd) GetSigset() uint64 {
+	if x != nil {
+		return x.Sigset
+	}
+	return 0
+}
+
+func (x *Signalfd) GetFlags() int32 {
+	if x != nil {
+		return x.Flags
+	}
+	return 0
+}
+
+type Chroot struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	ContextData *ContextData `protobuf:"bytes,1,opt,name=context_data,json=contextData,proto3" json:"context_data,omitempty"`
+	Exit        *Exit        `protobuf:"bytes,2,opt,name=exit,proto3" json:"exit,omitempty"`
+	Sysno       uint64       `protobuf:"varint,3,opt,name=sysno,proto3" json:"sysno,omitempty"`
+	Pathname    string       `protobuf:"bytes,4,opt,name=pathname,proto3" json:"pathname,omitempty"`
+}
+
+func (x *Chroot) Reset() {
+	*x = Chroot{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[17]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Chroot) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Chroot) ProtoMessage() {}
+
+func (x *Chroot) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[17]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Chroot.ProtoReflect.Descriptor instead.
+func (*Chroot) Descriptor() ([]byte, []int) {
+	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *Chroot) GetContextData() *ContextData {
+	if x != nil {
+		return x.ContextData
+	}
+	return nil
+}
+
+func (x *Chroot) GetExit() *Exit {
+	if x != nil {
+		return x.Exit
+	}
+	return nil
+}
+
+func (x *Chroot) GetSysno() uint64 {
+	if x != nil {
+		return x.Sysno
+	}
+	return 0
+}
+
+func (x *Chroot) GetPathname() string {
+	if x != nil {
+		return x.Pathname
+	}
+	return ""
+}
+
+type Eventfd struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	ContextData *ContextData `protobuf:"bytes,1,opt,name=context_data,json=contextData,proto3" json:"context_data,omitempty"`
+	Exit        *Exit        `protobuf:"bytes,2,opt,name=exit,proto3" json:"exit,omitempty"`
+	Sysno       uint64       `protobuf:"varint,3,opt,name=sysno,proto3" json:"sysno,omitempty"`
+	Val         int32        `protobuf:"varint,4,opt,name=val,proto3" json:"val,omitempty"`
+	Flags       uint32       `protobuf:"varint,5,opt,name=flags,proto3" json:"flags,omitempty"`
+}
+
+func (x *Eventfd) Reset() {
+	*x = Eventfd{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[18]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Eventfd) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Eventfd) ProtoMessage() {}
+
+func (x *Eventfd) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[18]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Eventfd.ProtoReflect.Descriptor instead.
+func (*Eventfd) Descriptor() ([]byte, []int) {
+	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *Eventfd) GetContextData() *ContextData {
+	if x != nil {
+		return x.ContextData
+	}
+	return nil
+}
+
+func (x *Eventfd) GetExit() *Exit {
+	if x != nil {
+		return x.Exit
+	}
+	return nil
+}
+
+func (x *Eventfd) GetSysno() uint64 {
+	if x != nil {
+		return x.Sysno
+	}
+	return 0
+}
+
+func (x *Eventfd) GetVal() int32 {
+	if x != nil {
+		return x.Val
+	}
+	return 0
+}
+
+func (x *Eventfd) GetFlags() uint32 {
+	if x != nil {
+		return x.Flags
+	}
+	return 0
+}
+
+type Clone struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	ContextData *ContextData `protobuf:"bytes,1,opt,name=context_data,json=contextData,proto3" json:"context_data,omitempty"`
+	Exit        *Exit        `protobuf:"bytes,2,opt,name=exit,proto3" json:"exit,omitempty"`
+	Sysno       uint64       `protobuf:"varint,3,opt,name=sysno,proto3" json:"sysno,omitempty"`
+	Flags       uint64       `protobuf:"varint,4,opt,name=flags,proto3" json:"flags,omitempty"`
+	Stack       uint64       `protobuf:"varint,5,opt,name=stack,proto3" json:"stack,omitempty"`
+	NewTid      uint64       `protobuf:"varint,6,opt,name=new_tid,json=newTid,proto3" json:"new_tid,omitempty"`
+	Tls         uint64       `protobuf:"varint,7,opt,name=tls,proto3" json:"tls,omitempty"`
+}
+
+func (x *Clone) Reset() {
+	*x = Clone{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[19]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Clone) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Clone) ProtoMessage() {}
+
+func (x *Clone) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[19]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Clone.ProtoReflect.Descriptor instead.
+func (*Clone) Descriptor() ([]byte, []int) {
+	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *Clone) GetContextData() *ContextData {
+	if x != nil {
+		return x.ContextData
+	}
+	return nil
+}
+
+func (x *Clone) GetExit() *Exit {
+	if x != nil {
+		return x.Exit
+	}
+	return nil
+}
+
+func (x *Clone) GetSysno() uint64 {
+	if x != nil {
+		return x.Sysno
+	}
+	return 0
+}
+
+func (x *Clone) GetFlags() uint64 {
+	if x != nil {
+		return x.Flags
+	}
+	return 0
+}
+
+func (x *Clone) GetStack() uint64 {
+	if x != nil {
+		return x.Stack
+	}
+	return 0
+}
+
+func (x *Clone) GetNewTid() uint64 {
+	if x != nil {
+		return x.NewTid
+	}
+	return 0
+}
+
+func (x *Clone) GetTls() uint64 {
+	if x != nil {
+		return x.Tls
+	}
+	return 0
+}
+
+type Bind struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	ContextData *ContextData `protobuf:"bytes,1,opt,name=context_data,json=contextData,proto3" json:"context_data,omitempty"`
+	Exit        *Exit        `protobuf:"bytes,2,opt,name=exit,proto3" json:"exit,omitempty"`
+	Sysno       uint64       `protobuf:"varint,3,opt,name=sysno,proto3" json:"sysno,omitempty"`
+	Fd          int32        `protobuf:"varint,4,opt,name=fd,proto3" json:"fd,omitempty"`
+	FdPath      string       `protobuf:"bytes,5,opt,name=fd_path,json=fdPath,proto3" json:"fd_path,omitempty"`
+	Address     []byte       `protobuf:"bytes,6,opt,name=address,proto3" json:"address,omitempty"`
+}
+
+func (x *Bind) Reset() {
+	*x = Bind{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[20]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Bind) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Bind) ProtoMessage() {}
+
+func (x *Bind) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[20]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Bind.ProtoReflect.Descriptor instead.
+func (*Bind) Descriptor() ([]byte, []int) {
+	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *Bind) GetContextData() *ContextData {
+	if x != nil {
+		return x.ContextData
+	}
+	return nil
+}
+
+func (x *Bind) GetExit() *Exit {
+	if x != nil {
+		return x.Exit
+	}
+	return nil
+}
+
+func (x *Bind) GetSysno() uint64 {
+	if x != nil {
+		return x.Sysno
+	}
+	return 0
+}
+
+func (x *Bind) GetFd() int32 {
+	if x != nil {
+		return x.Fd
+	}
+	return 0
+}
+
+func (x *Bind) GetFdPath() string {
+	if x != nil {
+		return x.FdPath
+	}
+	return ""
+}
+
+func (x *Bind) GetAddress() []byte {
+	if x != nil {
+		return x.Address
+	}
+	return nil
+}
+
+type Accept struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	ContextData *ContextData `protobuf:"bytes,1,opt,name=context_data,json=contextData,proto3" json:"context_data,omitempty"`
+	Exit        *Exit        `protobuf:"bytes,2,opt,name=exit,proto3" json:"exit,omitempty"`
+	Sysno       uint64       `protobuf:"varint,3,opt,name=sysno,proto3" json:"sysno,omitempty"`
+	Fd          int32        `protobuf:"varint,4,opt,name=fd,proto3" json:"fd,omitempty"`
+	FdPath      string       `protobuf:"bytes,5,opt,name=fd_path,json=fdPath,proto3" json:"fd_path,omitempty"`
+	Address     []byte       `protobuf:"bytes,6,opt,name=address,proto3" json:"address,omitempty"`
+	Flags       int32        `protobuf:"varint,7,opt,name=flags,proto3" json:"flags,omitempty"`
+}
+
+func (x *Accept) Reset() {
+	*x = Accept{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[21]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Accept) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Accept) ProtoMessage() {}
+
+func (x *Accept) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[21]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Accept.ProtoReflect.Descriptor instead.
+func (*Accept) Descriptor() ([]byte, []int) {
+	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *Accept) GetContextData() *ContextData {
+	if x != nil {
+		return x.ContextData
+	}
+	return nil
+}
+
+func (x *Accept) GetExit() *Exit {
+	if x != nil {
+		return x.Exit
+	}
+	return nil
+}
+
+func (x *Accept) GetSysno() uint64 {
+	if x != nil {
+		return x.Sysno
+	}
+	return 0
+}
+
+func (x *Accept) GetFd() int32 {
+	if x != nil {
+		return x.Fd
+	}
+	return 0
+}
+
+func (x *Accept) GetFdPath() string {
+	if x != nil {
+		return x.FdPath
+	}
+	return ""
+}
+
+func (x *Accept) GetAddress() []byte {
+	if x != nil {
+		return x.Address
+	}
+	return nil
+}
+
+func (x *Accept) GetFlags() int32 {
+	if x != nil {
+		return x.Flags
+	}
+	return 0
+}
+
 var File_pkg_sentry_seccheck_points_syscall_proto protoreflect.FileDescriptor
 
 var file_pkg_sentry_seccheck_points_syscall_proto_rawDesc = []byte{
@@ -1130,8 +2079,147 @@ var file_pkg_sentry_seccheck_points_syscall_proto_rawDesc = []byte{
 	0x73, 0x6f, 0x72, 0x2e, 0x73, 0x79, 0x73, 0x63, 0x61, 0x6c, 0x6c, 0x2e, 0x45, 0x78, 0x69, 0x74,
 	0x52, 0x04, 0x65, 0x78, 0x69, 0x74, 0x12, 0x14, 0x0a, 0x05, 0x73, 0x79, 0x73, 0x6e, 0x6f, 0x18,
 	0x03, 0x20, 0x01, 0x28, 0x04, 0x52, 0x05, 0x73, 0x79, 0x73, 0x6e, 0x6f, 0x12, 0x0e, 0x0a, 0x02,
-	0x69, 0x64, 0x18, 0x04, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x02, 0x69, 0x64, 0x62, 0x06, 0x70, 0x72,
-	0x6f, 0x74, 0x6f, 0x33,
+	0x69, 0x64, 0x18, 0x04, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x02, 0x69, 0x64, 0x22, 0x32, 0x0a, 0x0c,
+	0x53, 0x74, 0x72, 0x75, 0x63, 0x74, 0x52, 0x6c, 0x69, 0x6d, 0x69, 0x74, 0x12, 0x10, 0x0a, 0x03,
+	0x63, 0x75, 0x72, 0x18, 0x01, 0x20, 0x01, 0x28, 0x04, 0x52, 0x03, 0x63, 0x75, 0x72, 0x12, 0x10,
+	0x0a, 0x03, 0x6d, 0x61, 0x78, 0x18, 0x02, 0x20, 0x01, 0x28, 0x04, 0x52, 0x03, 0x6d, 0x61, 0x78,
+	0x22, 0xac, 0x02, 0x0a, 0x07, 0x50, 0x72, 0x6c, 0x69, 0x6d, 0x69, 0x74, 0x12, 0x3d, 0x0a, 0x0c,
+	0x63, 0x6f, 0x6e, 0x74, 0x65, 0x78, 0x74, 0x5f, 0x64, 0x61, 0x74, 0x61, 0x18, 0x01, 0x20, 0x01,
+	0x28, 0x0b, 0x32, 0x1a, 0x2e, 0x67, 0x76, 0x69, 0x73, 0x6f, 0x72, 0x2e, 0x63, 0x6f, 0x6d, 0x6d,
+	0x6f, 0x6e, 0x2e, 0x43, 0x6f, 0x6e, 0x74, 0x65, 0x78, 0x74, 0x44, 0x61, 0x74, 0x61, 0x52, 0x0b,
+	0x63, 0x6f, 0x6e, 0x74, 0x65, 0x78, 0x74, 0x44, 0x61, 0x74, 0x61, 0x12, 0x28, 0x0a, 0x04, 0x65,
+	0x78, 0x69, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x14, 0x2e, 0x67, 0x76, 0x69, 0x73,
+	0x6f, 0x72, 0x2e, 0x73, 0x79, 0x73, 0x63, 0x61, 0x6c, 0x6c, 0x2e, 0x45, 0x78, 0x69, 0x74, 0x52,
+	0x04, 0x65, 0x78, 0x69, 0x74, 0x12, 0x14, 0x0a, 0x05, 0x73, 0x79, 0x73, 0x6e, 0x6f, 0x18, 0x03,
+	0x20, 0x01, 0x28, 0x04, 0x52, 0x05, 0x73, 0x79, 0x73, 0x6e, 0x6f, 0x12, 0x10, 0x0a, 0x03, 0x70,
+	0x69, 0x64, 0x18, 0x04, 0x20, 0x01, 0x28, 0x05, 0x52, 0x03, 0x70, 0x69, 0x64, 0x12, 0x1a, 0x0a,
+	0x08, 0x72, 0x65, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65, 0x18, 0x05, 0x20, 0x01, 0x28, 0x03, 0x52,
+	0x08, 0x72, 0x65, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65, 0x12, 0x39, 0x0a, 0x09, 0x6e, 0x65, 0x77,
+	0x5f, 0x6c, 0x69, 0x6d, 0x69, 0x74, 0x18, 0x06, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1c, 0x2e, 0x67,
+	0x76, 0x69, 0x73, 0x6f, 0x72, 0x2e, 0x73, 0x79, 0x73, 0x63, 0x61, 0x6c, 0x6c, 0x2e, 0x53, 0x74,
+	0x72, 0x75, 0x63, 0x74, 0x52, 0x6c, 0x69, 0x6d, 0x69, 0x74, 0x52, 0x08, 0x6e, 0x65, 0x77, 0x4c,
+	0x69, 0x6d, 0x69, 0x74, 0x12, 0x39, 0x0a, 0x09, 0x6f, 0x6c, 0x64, 0x5f, 0x6c, 0x69, 0x6d, 0x69,
+	0x74, 0x18, 0x07, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1c, 0x2e, 0x67, 0x76, 0x69, 0x73, 0x6f, 0x72,
+	0x2e, 0x73, 0x79, 0x73, 0x63, 0x61, 0x6c, 0x6c, 0x2e, 0x53, 0x74, 0x72, 0x75, 0x63, 0x74, 0x52,
+	0x6c, 0x69, 0x6d, 0x69, 0x74, 0x52, 0x08, 0x6f, 0x6c, 0x64, 0x4c, 0x69, 0x6d, 0x69, 0x74, 0x22,
+	0xcb, 0x01, 0x0a, 0x04, 0x50, 0x69, 0x70, 0x65, 0x12, 0x3d, 0x0a, 0x0c, 0x63, 0x6f, 0x6e, 0x74,
+	0x65, 0x78, 0x74, 0x5f, 0x64, 0x61, 0x74, 0x61, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1a,
+	0x2e, 0x67, 0x76, 0x69, 0x73, 0x6f, 0x72, 0x2e, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x43,
+	0x6f, 0x6e, 0x74, 0x65, 0x78, 0x74, 0x44, 0x61, 0x74, 0x61, 0x52, 0x0b, 0x63, 0x6f, 0x6e, 0x74,
+	0x65, 0x78, 0x74, 0x44, 0x61, 0x74, 0x61, 0x12, 0x28, 0x0a, 0x04, 0x65, 0x78, 0x69, 0x74, 0x18,
+	0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x14, 0x2e, 0x67, 0x76, 0x69, 0x73, 0x6f, 0x72, 0x2e, 0x73,
+	0x79, 0x73, 0x63, 0x61, 0x6c, 0x6c, 0x2e, 0x45, 0x78, 0x69, 0x74, 0x52, 0x04, 0x65, 0x78, 0x69,
+	0x74, 0x12, 0x14, 0x0a, 0x05, 0x73, 0x79, 0x73, 0x6e, 0x6f, 0x18, 0x03, 0x20, 0x01, 0x28, 0x04,
+	0x52, 0x05, 0x73, 0x79, 0x73, 0x6e, 0x6f, 0x12, 0x14, 0x0a, 0x05, 0x66, 0x6c, 0x61, 0x67, 0x73,
+	0x18, 0x04, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x05, 0x66, 0x6c, 0x61, 0x67, 0x73, 0x12, 0x16, 0x0a,
+	0x06, 0x72, 0x65, 0x61, 0x64, 0x65, 0x72, 0x18, 0x05, 0x20, 0x01, 0x28, 0x05, 0x52, 0x06, 0x72,
+	0x65, 0x61, 0x64, 0x65, 0x72, 0x12, 0x16, 0x0a, 0x06, 0x77, 0x72, 0x69, 0x74, 0x65, 0x72, 0x18,
+	0x06, 0x20, 0x01, 0x28, 0x05, 0x52, 0x06, 0x77, 0x72, 0x69, 0x74, 0x65, 0x72, 0x22, 0xd5, 0x01,
+	0x0a, 0x05, 0x46, 0x63, 0x6e, 0x74, 0x6c, 0x12, 0x3d, 0x0a, 0x0c, 0x63, 0x6f, 0x6e, 0x74, 0x65,
+	0x78, 0x74, 0x5f, 0x64, 0x61, 0x74, 0x61, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1a, 0x2e,
+	0x67, 0x76, 0x69, 0x73, 0x6f, 0x72, 0x2e, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x43, 0x6f,
+	0x6e, 0x74, 0x65, 0x78, 0x74, 0x44, 0x61, 0x74, 0x61, 0x52, 0x0b, 0x63, 0x6f, 0x6e, 0x74, 0x65,
+	0x78, 0x74, 0x44, 0x61, 0x74, 0x61, 0x12, 0x28, 0x0a, 0x04, 0x65, 0x78, 0x69, 0x74, 0x18, 0x02,
+	0x20, 0x01, 0x28, 0x0b, 0x32, 0x14, 0x2e, 0x67, 0x76, 0x69, 0x73, 0x6f, 0x72, 0x2e, 0x73, 0x79,
+	0x73, 0x63, 0x61, 0x6c, 0x6c, 0x2e, 0x45, 0x78, 0x69, 0x74, 0x52, 0x04, 0x65, 0x78, 0x69, 0x74,
+	0x12, 0x14, 0x0a, 0x05, 0x73, 0x79, 0x73, 0x6e, 0x6f, 0x18, 0x03, 0x20, 0x01, 0x28, 0x04, 0x52,
+	0x05, 0x73, 0x79, 0x73, 0x6e, 0x6f, 0x12, 0x0e, 0x0a, 0x02, 0x66, 0x64, 0x18, 0x04, 0x20, 0x01,
+	0x28, 0x05, 0x52, 0x02, 0x66, 0x64, 0x12, 0x17, 0x0a, 0x07, 0x66, 0x64, 0x5f, 0x70, 0x61, 0x74,
+	0x68, 0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x66, 0x64, 0x50, 0x61, 0x74, 0x68, 0x12,
+	0x10, 0x0a, 0x03, 0x63, 0x6d, 0x64, 0x18, 0x06, 0x20, 0x01, 0x28, 0x05, 0x52, 0x03, 0x63, 0x6d,
+	0x64, 0x12, 0x12, 0x0a, 0x04, 0x61, 0x72, 0x67, 0x73, 0x18, 0x07, 0x20, 0x01, 0x28, 0x03, 0x52,
+	0x04, 0x61, 0x72, 0x67, 0x73, 0x22, 0xe1, 0x01, 0x0a, 0x03, 0x44, 0x75, 0x70, 0x12, 0x3d, 0x0a,
+	0x0c, 0x63, 0x6f, 0x6e, 0x74, 0x65, 0x78, 0x74, 0x5f, 0x64, 0x61, 0x74, 0x61, 0x18, 0x01, 0x20,
+	0x01, 0x28, 0x0b, 0x32, 0x1a, 0x2e, 0x67, 0x76, 0x69, 0x73, 0x6f, 0x72, 0x2e, 0x63, 0x6f, 0x6d,
+	0x6d, 0x6f, 0x6e, 0x2e, 0x43, 0x6f, 0x6e, 0x74, 0x65, 0x78, 0x74, 0x44, 0x61, 0x74, 0x61, 0x52,
+	0x0b, 0x63, 0x6f, 0x6e, 0x74, 0x65, 0x78, 0x74, 0x44, 0x61, 0x74, 0x61, 0x12, 0x28, 0x0a, 0x04,
+	0x65, 0x78, 0x69, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x14, 0x2e, 0x67, 0x76, 0x69,
+	0x73, 0x6f, 0x72, 0x2e, 0x73, 0x79, 0x73, 0x63, 0x61, 0x6c, 0x6c, 0x2e, 0x45, 0x78, 0x69, 0x74,
+	0x52, 0x04, 0x65, 0x78, 0x69, 0x74, 0x12, 0x14, 0x0a, 0x05, 0x73, 0x79, 0x73, 0x6e, 0x6f, 0x18,
+	0x03, 0x20, 0x01, 0x28, 0x04, 0x52, 0x05, 0x73, 0x79, 0x73, 0x6e, 0x6f, 0x12, 0x15, 0x0a, 0x06,
+	0x6f, 0x6c, 0x64, 0x5f, 0x66, 0x64, 0x18, 0x04, 0x20, 0x01, 0x28, 0x05, 0x52, 0x05, 0x6f, 0x6c,
+	0x64, 0x46, 0x64, 0x12, 0x15, 0x0a, 0x06, 0x6e, 0x65, 0x77, 0x5f, 0x66, 0x64, 0x18, 0x05, 0x20,
+	0x01, 0x28, 0x05, 0x52, 0x05, 0x6e, 0x65, 0x77, 0x46, 0x64, 0x12, 0x17, 0x0a, 0x07, 0x66, 0x64,
+	0x5f, 0x70, 0x61, 0x74, 0x68, 0x18, 0x06, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x66, 0x64, 0x50,
+	0x61, 0x74, 0x68, 0x12, 0x14, 0x0a, 0x05, 0x66, 0x6c, 0x61, 0x67, 0x73, 0x18, 0x07, 0x20, 0x01,
+	0x28, 0x0d, 0x52, 0x05, 0x66, 0x6c, 0x61, 0x67, 0x73, 0x22, 0xe0, 0x01, 0x0a, 0x08, 0x53, 0x69,
+	0x67, 0x6e, 0x61, 0x6c, 0x66, 0x64, 0x12, 0x3d, 0x0a, 0x0c, 0x63, 0x6f, 0x6e, 0x74, 0x65, 0x78,
+	0x74, 0x5f, 0x64, 0x61, 0x74, 0x61, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1a, 0x2e, 0x67,
+	0x76, 0x69, 0x73, 0x6f, 0x72, 0x2e, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x43, 0x6f, 0x6e,
+	0x74, 0x65, 0x78, 0x74, 0x44, 0x61, 0x74, 0x61, 0x52, 0x0b, 0x63, 0x6f, 0x6e, 0x74, 0x65, 0x78,
+	0x74, 0x44, 0x61, 0x74, 0x61, 0x12, 0x28, 0x0a, 0x04, 0x65, 0x78, 0x69, 0x74, 0x18, 0x02, 0x20,
+	0x01, 0x28, 0x0b, 0x32, 0x14, 0x2e, 0x67, 0x76, 0x69, 0x73, 0x6f, 0x72, 0x2e, 0x73, 0x79, 0x73,
+	0x63, 0x61, 0x6c, 0x6c, 0x2e, 0x45, 0x78, 0x69, 0x74, 0x52, 0x04, 0x65, 0x78, 0x69, 0x74, 0x12,
+	0x14, 0x0a, 0x05, 0x73, 0x79, 0x73, 0x6e, 0x6f, 0x18, 0x03, 0x20, 0x01, 0x28, 0x04, 0x52, 0x05,
+	0x73, 0x79, 0x73, 0x6e, 0x6f, 0x12, 0x0e, 0x0a, 0x02, 0x66, 0x64, 0x18, 0x04, 0x20, 0x01, 0x28,
+	0x05, 0x52, 0x02, 0x66, 0x64, 0x12, 0x17, 0x0a, 0x07, 0x66, 0x64, 0x5f, 0x70, 0x61, 0x74, 0x68,
+	0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x66, 0x64, 0x50, 0x61, 0x74, 0x68, 0x12, 0x16,
+	0x0a, 0x06, 0x73, 0x69, 0x67, 0x73, 0x65, 0x74, 0x18, 0x06, 0x20, 0x01, 0x28, 0x04, 0x52, 0x06,
+	0x73, 0x69, 0x67, 0x73, 0x65, 0x74, 0x12, 0x14, 0x0a, 0x05, 0x66, 0x6c, 0x61, 0x67, 0x73, 0x18,
+	0x07, 0x20, 0x01, 0x28, 0x05, 0x52, 0x05, 0x66, 0x6c, 0x61, 0x67, 0x73, 0x22, 0xa3, 0x01, 0x0a,
+	0x06, 0x43, 0x68, 0x72, 0x6f, 0x6f, 0x74, 0x12, 0x3d, 0x0a, 0x0c, 0x63, 0x6f, 0x6e, 0x74, 0x65,
+	0x78, 0x74, 0x5f, 0x64, 0x61, 0x74, 0x61, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1a, 0x2e,
+	0x67, 0x76, 0x69, 0x73, 0x6f, 0x72, 0x2e, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x43, 0x6f,
+	0x6e, 0x74, 0x65, 0x78, 0x74, 0x44, 0x61, 0x74, 0x61, 0x52, 0x0b, 0x63, 0x6f, 0x6e, 0x74, 0x65,
+	0x78, 0x74, 0x44, 0x61, 0x74, 0x61, 0x12, 0x28, 0x0a, 0x04, 0x65, 0x78, 0x69, 0x74, 0x18, 0x02,
+	0x20, 0x01, 0x28, 0x0b, 0x32, 0x14, 0x2e, 0x67, 0x76, 0x69, 0x73, 0x6f, 0x72, 0x2e, 0x73, 0x79,
+	0x73, 0x63, 0x61, 0x6c, 0x6c, 0x2e, 0x45, 0x78, 0x69, 0x74, 0x52, 0x04, 0x65, 0x78, 0x69, 0x74,
+	0x12, 0x14, 0x0a, 0x05, 0x73, 0x79, 0x73, 0x6e, 0x6f, 0x18, 0x03, 0x20, 0x01, 0x28, 0x04, 0x52,
+	0x05, 0x73, 0x79, 0x73, 0x6e, 0x6f, 0x12, 0x1a, 0x0a, 0x08, 0x70, 0x61, 0x74, 0x68, 0x6e, 0x61,
+	0x6d, 0x65, 0x18, 0x04, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08, 0x70, 0x61, 0x74, 0x68, 0x6e, 0x61,
+	0x6d, 0x65, 0x22, 0xb0, 0x01, 0x0a, 0x07, 0x45, 0x76, 0x65, 0x6e, 0x74, 0x66, 0x64, 0x12, 0x3d,
+	0x0a, 0x0c, 0x63, 0x6f, 0x6e, 0x74, 0x65, 0x78, 0x74, 0x5f, 0x64, 0x61, 0x74, 0x61, 0x18, 0x01,
+	0x20, 0x01, 0x28, 0x0b, 0x32, 0x1a, 0x2e, 0x67, 0x76, 0x69, 0x73, 0x6f, 0x72, 0x2e, 0x63, 0x6f,
+	0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x43, 0x6f, 0x6e, 0x74, 0x65, 0x78, 0x74, 0x44, 0x61, 0x74, 0x61,
+	0x52, 0x0b, 0x63, 0x6f, 0x6e, 0x74, 0x65, 0x78, 0x74, 0x44, 0x61, 0x74, 0x61, 0x12, 0x28, 0x0a,
+	0x04, 0x65, 0x78, 0x69, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x14, 0x2e, 0x67, 0x76,
+	0x69, 0x73, 0x6f, 0x72, 0x2e, 0x73, 0x79, 0x73, 0x63, 0x61, 0x6c, 0x6c, 0x2e, 0x45, 0x78, 0x69,
+	0x74, 0x52, 0x04, 0x65, 0x78, 0x69, 0x74, 0x12, 0x14, 0x0a, 0x05, 0x73, 0x79, 0x73, 0x6e, 0x6f,
+	0x18, 0x03, 0x20, 0x01, 0x28, 0x04, 0x52, 0x05, 0x73, 0x79, 0x73, 0x6e, 0x6f, 0x12, 0x10, 0x0a,
+	0x03, 0x76, 0x61, 0x6c, 0x18, 0x04, 0x20, 0x01, 0x28, 0x05, 0x52, 0x03, 0x76, 0x61, 0x6c, 0x12,
+	0x14, 0x0a, 0x05, 0x66, 0x6c, 0x61, 0x67, 0x73, 0x18, 0x05, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x05,
+	0x66, 0x6c, 0x61, 0x67, 0x73, 0x22, 0xdd, 0x01, 0x0a, 0x05, 0x43, 0x6c, 0x6f, 0x6e, 0x65, 0x12,
+	0x3d, 0x0a, 0x0c, 0x63, 0x6f, 0x6e, 0x74, 0x65, 0x78, 0x74, 0x5f, 0x64, 0x61, 0x74, 0x61, 0x18,
+	0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1a, 0x2e, 0x67, 0x76, 0x69, 0x73, 0x6f, 0x72, 0x2e, 0x63,
+	0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x43, 0x6f, 0x6e, 0x74, 0x65, 0x78, 0x74, 0x44, 0x61, 0x74,
+	0x61, 0x52, 0x0b, 0x63, 0x6f, 0x6e, 0x74, 0x65, 0x78, 0x74, 0x44, 0x61, 0x74, 0x61, 0x12, 0x28,
+	0x0a, 0x04, 0x65, 0x78, 0x69, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x14, 0x2e, 0x67,
+	0x76, 0x69, 0x73, 0x6f, 0x72, 0x2e, 0x73, 0x79, 0x73, 0x63, 0x61, 0x6c, 0x6c, 0x2e, 0x45, 0x78,
+	0x69, 0x74, 0x52, 0x04, 0x65, 0x78, 0x69, 0x74, 0x12, 0x14, 0x0a, 0x05, 0x73, 0x79, 0x73, 0x6e,
+	0x6f, 0x18, 0x03, 0x20, 0x01, 0x28, 0x04, 0x52, 0x05, 0x73, 0x79, 0x73, 0x6e, 0x6f, 0x12, 0x14,
+	0x0a, 0x05, 0x66, 0x6c, 0x61, 0x67, 0x73, 0x18, 0x04, 0x20, 0x01, 0x28, 0x04, 0x52, 0x05, 0x66,
+	0x6c, 0x61, 0x67, 0x73, 0x12, 0x14, 0x0a, 0x05, 0x73, 0x74, 0x61, 0x63, 0x6b, 0x18, 0x05, 0x20,
+	0x01, 0x28, 0x04, 0x52, 0x05, 0x73, 0x74, 0x61, 0x63, 0x6b, 0x12, 0x17, 0x0a, 0x07, 0x6e, 0x65,
+	0x77, 0x5f, 0x74, 0x69, 0x64, 0x18, 0x06, 0x20, 0x01, 0x28, 0x04, 0x52, 0x06, 0x6e, 0x65, 0x77,
+	0x54, 0x69, 0x64, 0x12, 0x10, 0x0a, 0x03, 0x74, 0x6c, 0x73, 0x18, 0x07, 0x20, 0x01, 0x28, 0x04,
+	0x52, 0x03, 0x74, 0x6c, 0x73, 0x22, 0xc8, 0x01, 0x0a, 0x04, 0x42, 0x69, 0x6e, 0x64, 0x12, 0x3d,
+	0x0a, 0x0c, 0x63, 0x6f, 0x6e, 0x74, 0x65, 0x78, 0x74, 0x5f, 0x64, 0x61, 0x74, 0x61, 0x18, 0x01,
+	0x20, 0x01, 0x28, 0x0b, 0x32, 0x1a, 0x2e, 0x67, 0x76, 0x69, 0x73, 0x6f, 0x72, 0x2e, 0x63, 0x6f,
+	0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x43, 0x6f, 0x6e, 0x74, 0x65, 0x78, 0x74, 0x44, 0x61, 0x74, 0x61,
+	0x52, 0x0b, 0x63, 0x6f, 0x6e, 0x74, 0x65, 0x78, 0x74, 0x44, 0x61, 0x74, 0x61, 0x12, 0x28, 0x0a,
+	0x04, 0x65, 0x78, 0x69, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x14, 0x2e, 0x67, 0x76,
+	0x69, 0x73, 0x6f, 0x72, 0x2e, 0x73, 0x79, 0x73, 0x63, 0x61, 0x6c, 0x6c, 0x2e, 0x45, 0x78, 0x69,
+	0x74, 0x52, 0x04, 0x65, 0x78, 0x69, 0x74, 0x12, 0x14, 0x0a, 0x05, 0x73, 0x79, 0x73, 0x6e, 0x6f,
+	0x18, 0x03, 0x20, 0x01, 0x28, 0x04, 0x52, 0x05, 0x73, 0x79, 0x73, 0x6e, 0x6f, 0x12, 0x0e, 0x0a,
+	0x02, 0x66, 0x64, 0x18, 0x04, 0x20, 0x01, 0x28, 0x05, 0x52, 0x02, 0x66, 0x64, 0x12, 0x17, 0x0a,
+	0x07, 0x66, 0x64, 0x5f, 0x70, 0x61, 0x74, 0x68, 0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06,
+	0x66, 0x64, 0x50, 0x61, 0x74, 0x68, 0x12, 0x18, 0x0a, 0x07, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73,
+	0x73, 0x18, 0x06, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x07, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73,
+	0x22, 0xe0, 0x01, 0x0a, 0x06, 0x41, 0x63, 0x63, 0x65, 0x70, 0x74, 0x12, 0x3d, 0x0a, 0x0c, 0x63,
+	0x6f, 0x6e, 0x74, 0x65, 0x78, 0x74, 0x5f, 0x64, 0x61, 0x74, 0x61, 0x18, 0x01, 0x20, 0x01, 0x28,
+	0x0b, 0x32, 0x1a, 0x2e, 0x67, 0x76, 0x69, 0x73, 0x6f, 0x72, 0x2e, 0x63, 0x6f, 0x6d, 0x6d, 0x6f,
+	0x6e, 0x2e, 0x43, 0x6f, 0x6e, 0x74, 0x65, 0x78, 0x74, 0x44, 0x61, 0x74, 0x61, 0x52, 0x0b, 0x63,
+	0x6f, 0x6e, 0x74, 0x65, 0x78, 0x74, 0x44, 0x61, 0x74, 0x61, 0x12, 0x28, 0x0a, 0x04, 0x65, 0x78,
+	0x69, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x14, 0x2e, 0x67, 0x76, 0x69, 0x73, 0x6f,
+	0x72, 0x2e, 0x73, 0x79, 0x73, 0x63, 0x61, 0x6c, 0x6c, 0x2e, 0x45, 0x78, 0x69, 0x74, 0x52, 0x04,
+	0x65, 0x78, 0x69, 0x74, 0x12, 0x14, 0x0a, 0x05, 0x73, 0x79, 0x73, 0x6e, 0x6f, 0x18, 0x03, 0x20,
+	0x01, 0x28, 0x04, 0x52, 0x05, 0x73, 0x79, 0x73, 0x6e, 0x6f, 0x12, 0x0e, 0x0a, 0x02, 0x66, 0x64,
+	0x18, 0x04, 0x20, 0x01, 0x28, 0x05, 0x52, 0x02, 0x66, 0x64, 0x12, 0x17, 0x0a, 0x07, 0x66, 0x64,
+	0x5f, 0x70, 0x61, 0x74, 0x68, 0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x66, 0x64, 0x50,
+	0x61, 0x74, 0x68, 0x12, 0x18, 0x0a, 0x07, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x18, 0x06,
+	0x20, 0x01, 0x28, 0x0c, 0x52, 0x07, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x12, 0x14, 0x0a,
+	0x05, 0x66, 0x6c, 0x61, 0x67, 0x73, 0x18, 0x07, 0x20, 0x01, 0x28, 0x05, 0x52, 0x05, 0x66, 0x6c,
+	0x61, 0x67, 0x73, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -1146,47 +2234,80 @@ func file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP() []byte {
 	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescData
 }
 
-var file_pkg_sentry_seccheck_points_syscall_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_pkg_sentry_seccheck_points_syscall_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_pkg_sentry_seccheck_points_syscall_proto_goTypes = []interface{}{
-	(*Exit)(nil),        // 0: gvisor.syscall.Exit
-	(*Syscall)(nil),     // 1: gvisor.syscall.Syscall
-	(*Open)(nil),        // 2: gvisor.syscall.Open
-	(*Close)(nil),       // 3: gvisor.syscall.Close
-	(*Read)(nil),        // 4: gvisor.syscall.Read
-	(*Connect)(nil),     // 5: gvisor.syscall.Connect
-	(*Execve)(nil),      // 6: gvisor.syscall.Execve
-	(*Socket)(nil),      // 7: gvisor.syscall.Socket
-	(*Chdir)(nil),       // 8: gvisor.syscall.Chdir
-	(*Setresid)(nil),    // 9: gvisor.syscall.Setresid
-	(*Setid)(nil),       // 10: gvisor.syscall.Setid
-	(*ContextData)(nil), // 11: gvisor.common.ContextData
+	(*Exit)(nil),         // 0: gvisor.syscall.Exit
+	(*Syscall)(nil),      // 1: gvisor.syscall.Syscall
+	(*Open)(nil),         // 2: gvisor.syscall.Open
+	(*Close)(nil),        // 3: gvisor.syscall.Close
+	(*Read)(nil),         // 4: gvisor.syscall.Read
+	(*Connect)(nil),      // 5: gvisor.syscall.Connect
+	(*Execve)(nil),       // 6: gvisor.syscall.Execve
+	(*Socket)(nil),       // 7: gvisor.syscall.Socket
+	(*Chdir)(nil),        // 8: gvisor.syscall.Chdir
+	(*Setresid)(nil),     // 9: gvisor.syscall.Setresid
+	(*Setid)(nil),        // 10: gvisor.syscall.Setid
+	(*StructRlimit)(nil), // 11: gvisor.syscall.StructRlimit
+	(*Prlimit)(nil),      // 12: gvisor.syscall.Prlimit
+	(*Pipe)(nil),         // 13: gvisor.syscall.Pipe
+	(*Fcntl)(nil),        // 14: gvisor.syscall.Fcntl
+	(*Dup)(nil),          // 15: gvisor.syscall.Dup
+	(*Signalfd)(nil),     // 16: gvisor.syscall.Signalfd
+	(*Chroot)(nil),       // 17: gvisor.syscall.Chroot
+	(*Eventfd)(nil),      // 18: gvisor.syscall.Eventfd
+	(*Clone)(nil),        // 19: gvisor.syscall.Clone
+	(*Bind)(nil),         // 20: gvisor.syscall.Bind
+	(*Accept)(nil),       // 21: gvisor.syscall.Accept
+	(*ContextData)(nil),  // 22: gvisor.common.ContextData
 }
 var file_pkg_sentry_seccheck_points_syscall_proto_depIdxs = []int32{
-	11, // 0: gvisor.syscall.Syscall.context_data:type_name -> gvisor.common.ContextData
+	22, // 0: gvisor.syscall.Syscall.context_data:type_name -> gvisor.common.ContextData
 	0,  // 1: gvisor.syscall.Syscall.exit:type_name -> gvisor.syscall.Exit
-	11, // 2: gvisor.syscall.Open.context_data:type_name -> gvisor.common.ContextData
+	22, // 2: gvisor.syscall.Open.context_data:type_name -> gvisor.common.ContextData
 	0,  // 3: gvisor.syscall.Open.exit:type_name -> gvisor.syscall.Exit
-	11, // 4: gvisor.syscall.Close.context_data:type_name -> gvisor.common.ContextData
+	22, // 4: gvisor.syscall.Close.context_data:type_name -> gvisor.common.ContextData
 	0,  // 5: gvisor.syscall.Close.exit:type_name -> gvisor.syscall.Exit
-	11, // 6: gvisor.syscall.Read.context_data:type_name -> gvisor.common.ContextData
+	22, // 6: gvisor.syscall.Read.context_data:type_name -> gvisor.common.ContextData
 	0,  // 7: gvisor.syscall.Read.exit:type_name -> gvisor.syscall.Exit
-	11, // 8: gvisor.syscall.Connect.context_data:type_name -> gvisor.common.ContextData
+	22, // 8: gvisor.syscall.Connect.context_data:type_name -> gvisor.common.ContextData
 	0,  // 9: gvisor.syscall.Connect.exit:type_name -> gvisor.syscall.Exit
-	11, // 10: gvisor.syscall.Execve.context_data:type_name -> gvisor.common.ContextData
+	22, // 10: gvisor.syscall.Execve.context_data:type_name -> gvisor.common.ContextData
 	0,  // 11: gvisor.syscall.Execve.exit:type_name -> gvisor.syscall.Exit
-	11, // 12: gvisor.syscall.Socket.context_data:type_name -> gvisor.common.ContextData
+	22, // 12: gvisor.syscall.Socket.context_data:type_name -> gvisor.common.ContextData
 	0,  // 13: gvisor.syscall.Socket.exit:type_name -> gvisor.syscall.Exit
-	11, // 14: gvisor.syscall.Chdir.context_data:type_name -> gvisor.common.ContextData
+	22, // 14: gvisor.syscall.Chdir.context_data:type_name -> gvisor.common.ContextData
 	0,  // 15: gvisor.syscall.Chdir.exit:type_name -> gvisor.syscall.Exit
-	11, // 16: gvisor.syscall.Setresid.context_data:type_name -> gvisor.common.ContextData
+	22, // 16: gvisor.syscall.Setresid.context_data:type_name -> gvisor.common.ContextData
 	0,  // 17: gvisor.syscall.Setresid.exit:type_name -> gvisor.syscall.Exit
-	11, // 18: gvisor.syscall.Setid.context_data:type_name -> gvisor.common.ContextData
+	22, // 18: gvisor.syscall.Setid.context_data:type_name -> gvisor.common.ContextData
 	0,  // 19: gvisor.syscall.Setid.exit:type_name -> gvisor.syscall.Exit
-	20, // [20:20] is the sub-list for method output_type
-	20, // [20:20] is the sub-list for method input_type
-	20, // [20:20] is the sub-list for extension type_name
-	20, // [20:20] is the sub-list for extension extendee
-	0,  // [0:20] is the sub-list for field type_name
+	22, // 20: gvisor.syscall.Prlimit.context_data:type_name -> gvisor.common.ContextData
+	0,  // 21: gvisor.syscall.Prlimit.exit:type_name -> gvisor.syscall.Exit
+	11, // 22: gvisor.syscall.Prlimit.new_limit:type_name -> gvisor.syscall.StructRlimit
+	11, // 23: gvisor.syscall.Prlimit.old_limit:type_name -> gvisor.syscall.StructRlimit
+	22, // 24: gvisor.syscall.Pipe.context_data:type_name -> gvisor.common.ContextData
+	0,  // 25: gvisor.syscall.Pipe.exit:type_name -> gvisor.syscall.Exit
+	22, // 26: gvisor.syscall.Fcntl.context_data:type_name -> gvisor.common.ContextData
+	0,  // 27: gvisor.syscall.Fcntl.exit:type_name -> gvisor.syscall.Exit
+	22, // 28: gvisor.syscall.Dup.context_data:type_name -> gvisor.common.ContextData
+	0,  // 29: gvisor.syscall.Dup.exit:type_name -> gvisor.syscall.Exit
+	22, // 30: gvisor.syscall.Signalfd.context_data:type_name -> gvisor.common.ContextData
+	0,  // 31: gvisor.syscall.Signalfd.exit:type_name -> gvisor.syscall.Exit
+	22, // 32: gvisor.syscall.Chroot.context_data:type_name -> gvisor.common.ContextData
+	0,  // 33: gvisor.syscall.Chroot.exit:type_name -> gvisor.syscall.Exit
+	22, // 34: gvisor.syscall.Eventfd.context_data:type_name -> gvisor.common.ContextData
+	0,  // 35: gvisor.syscall.Eventfd.exit:type_name -> gvisor.syscall.Exit
+	22, // 36: gvisor.syscall.Clone.context_data:type_name -> gvisor.common.ContextData
+	0,  // 37: gvisor.syscall.Clone.exit:type_name -> gvisor.syscall.Exit
+	22, // 38: gvisor.syscall.Bind.context_data:type_name -> gvisor.common.ContextData
+	0,  // 39: gvisor.syscall.Bind.exit:type_name -> gvisor.syscall.Exit
+	22, // 40: gvisor.syscall.Accept.context_data:type_name -> gvisor.common.ContextData
+	0,  // 41: gvisor.syscall.Accept.exit:type_name -> gvisor.syscall.Exit
+	42, // [42:42] is the sub-list for method output_type
+	42, // [42:42] is the sub-list for method input_type
+	42, // [42:42] is the sub-list for extension type_name
+	42, // [42:42] is the sub-list for extension extendee
+	0,  // [0:42] is the sub-list for field type_name
 }
 
 func init() { file_pkg_sentry_seccheck_points_syscall_proto_init() }
@@ -1328,6 +2449,138 @@ func file_pkg_sentry_seccheck_points_syscall_proto_init() {
 				return nil
 			}
 		}
+		file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[11].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*StructRlimit); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[12].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Prlimit); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[13].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Pipe); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[14].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Fcntl); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[15].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Dup); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[16].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Signalfd); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[17].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Chroot); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[18].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Eventfd); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[19].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Clone); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[20].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Bind); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[21].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Accept); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1335,7 +2588,7 @@ func file_pkg_sentry_seccheck_points_syscall_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_pkg_sentry_seccheck_points_syscall_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   11,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
