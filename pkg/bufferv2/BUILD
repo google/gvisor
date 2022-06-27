@@ -6,7 +6,7 @@ package(licenses = ["notice"])
 go_template_instance(
     name = "chunk_refs",
     out = "chunk_refs.go",
-    package = "buffer",
+    package = "bufferv2",
     prefix = "chunk",
     template = "//pkg/refsvfs2:refs_template",
     types = {
@@ -17,7 +17,7 @@ go_template_instance(
 go_template_instance(
     name = "view_list",
     out = "view_list.go",
-    package = "buffer",
+    package = "bufferv2",
     prefix = "view",
     template = "//pkg/ilist:generic_list",
     types = {
@@ -27,7 +27,7 @@ go_template_instance(
 )
 
 go_library(
-    name = "buffer",
+    name = "bufferv2",
     srcs = [
         "buffer.go",
         "buffer_state.go",
@@ -51,13 +51,12 @@ go_library(
 )
 
 go_test(
-    name = "buffer_test",
-    size = "small",
+    name = "bufferv2_test",
     srcs = [
         "buffer_test.go",
         "view_test.go",
     ],
-    library = ":buffer",
+    library = ":bufferv2",
     deps = [
         "//pkg/state",
         "@com_github_google_go_cmp//cmp:go_default_library",
