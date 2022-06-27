@@ -128,6 +128,12 @@ func MakeContainer(ctx context.Context, logger testutil.Logger) *Container {
 	return makeContainer(ctx, logger, *runtime)
 }
 
+// MakeContainerWithRuntime is like MakeContainer, but allows for a runtime
+// to be specified by suffix.
+func MakeContainerWithRuntime(ctx context.Context, logger testutil.Logger, suffix string) *Container {
+	return makeContainer(ctx, logger, *runtime+suffix)
+}
+
 // MakeNativeContainer constructs a suitable Container object.
 //
 // The runtime used will be the system default.

@@ -127,6 +127,23 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		panic("unreachable")
 	}
 
+	// At this point we won't re-execute, so it's safe to limit via rlimits. Any
+	// limit >= 0 works. If the limit is lower than the current number of open
+	// files, then Setrlimit will succeed, and the next open will fail.
+	if conf.FDLimit > -1 {
+		rlimit := unix.Rlimit{
+			Cur: uint64(conf.FDLimit),
+			Max: uint64(conf.FDLimit),
+		}
+		switch err := unix.Setrlimit(unix.RLIMIT_NOFILE, &rlimit); err {
+		case nil:
+		case unix.EPERM:
+			log.Warningf("FD limit %d is higher than the current hard limit or system-wide maximum", conf.FDLimit)
+		default:
+			util.Fatalf("Failed to set RLIMIT_NOFILE: %v", err)
+		}
+	}
+
 	// Find what path is going to be served by this gofer.
 	root := spec.Root.Path
 	if !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
