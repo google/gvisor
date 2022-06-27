@@ -84,6 +84,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("lisafs", false, "Enables lisafs protocol instead of 9P.")
 	flagSet.Bool("cgroupfs", false, "Automatically mount cgroupfs.")
 	flagSet.Bool("ignore-cgroups", false, "don't configure cgroups.")
+	flagSet.Int("fdlimit", -1, "Specifies a limit on the number of host file descriptors that can be open. Applies separately to the sentry and gofer. Note: each file in the sandbox holds more than one host FD open.")
 
 	// Flags that control sandbox runtime behavior: network related.
 	flagSet.Var(networkTypePtr(NetworkSandbox), "network", "specifies which network to use: sandbox (default), host, none. Using network inside the sandbox is more secure because it's isolated from the host network.")

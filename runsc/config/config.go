@@ -229,6 +229,11 @@ type Config struct {
 	// Use pools to manage buffer memory instead of heap.
 	BufferPooling bool `flag:"buffer-pooling"`
 
+	// FDLimit specifies a limit on the number of host file descriptors that can
+	// be open simultaneously by the sentry and gofer. It applies separately to
+	// each.
+	FDLimit int `flag:"fdlimit"`
+
 	// TestOnlyAllowRunAsCurrentUserWithoutChroot should only be used in
 	// tests. It allows runsc to start the sandbox process as the current
 	// user, and without chrooting the sandbox process. This can be

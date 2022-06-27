@@ -266,8 +266,11 @@ INTEGRATION_TARGETS := //test/image:image_test //test/e2e:integration_test
 
 docker-tests: load-basic $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),) # Clear flags.
+	# Used by TestRlimitNoFile.
+	@$(call install_runtime,$(RUNTIME)-fdlimit,--fdlimit=2000)
 	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS))
 	@$(call install_runtime,$(RUNTIME), --lisafs) # Run again with lisafs.
+	@$(call install_runtime,$(RUNTIME)-fdlimit,--lisafs --fdlimit=2000)
 	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS))
 .PHONY: docker-tests
 

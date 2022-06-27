@@ -997,3 +997,36 @@ func TestNonSearchableWorkingDirectory(t *testing.T) {
 		t.Errorf("ls error message not found, want: %q, got: %q", wantErrorMsg, got)
 	}
 }
+
+func TestRlimitNoFile(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainerWithRuntime(ctx, t, "-fdlimit")
+	defer d.CleanUp(ctx)
+
+	// We have to create a directory with a bunch of files.
+	const nfiles = 5000
+	tmpDir := testutil.TmpDir()
+	for i := 0; i < nfiles; i++ {
+		if _, err := ioutil.TempFile(tmpDir, "tmp"); err != nil {
+			t.Fatalf("TempFile(): %v", err)
+		}
+	}
+
+	// Run the container. Open a bunch of files simutaneously and sleep a bit
+	// to give time for everything to start. We should hit the FD limit and
+	// fail rather than waiting the full sleep duration.
+	cmd := `for file in /tmp/foo/*; do (cat > "${file}") & done && sleep 60`
+	got, err := d.Run(ctx, dockerutil.RunOpts{
+		Image: "basic/ubuntu",
+		Mounts: []mount.Mount{
+			{
+				Type:   mount.TypeBind,
+				Source: tmpDir,
+				Target: "/tmp/foo",
+			},
+		},
+	}, "bash", "-c", cmd)
+	if err == nil {
+		t.Fatalf("docker run didn't fail: %s", got)
+	}
+}
