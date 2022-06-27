@@ -19,12 +19,6 @@ import (
 	"unsafe"
 )
 
-// minBatch is the smallest Read or Write operation that the
-// WriteFromReader and ReadToWriter functions will use.
-//
-// This is defined as the size of a native pointer.
-const minBatch = int(unsafe.Sizeof(uintptr(0)))
-
 // BasePtr returns a pointer to the view's chunk.
 func (v *View) BasePtr() *byte {
 	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&v.chunk.data))

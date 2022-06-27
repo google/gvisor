@@ -452,124 +452,117 @@ func (b *Buffer) Merge(other *Buffer) {
 	other.size = 0
 }
 
-// WriteFromReader writes to the buffer from an io.Reader.
-//
-// A minimum read size equal to unsafe.Sizeof(unintptr) is enforced,
-// provided that count is greater than or equal to unsafe.Sizeof(uintptr).
+// WriteFromReader writes to the buffer from an io.Reader. A maximum read size
+// of MaxChunkSize is enforced to prevent allocating views from the heap.
 func (b *Buffer) WriteFromReader(r io.Reader, count int64) (int64, error) {
-	var (
-		done int64
-		n    int
-		err  error
-	)
+	var done int64
 	for done < count {
-		view := b.data.Back()
-
-		// Ensure we have an empty buffer.
-		if view.Full() {
-			view = NewView(int(count - done))
-			b.data.PushBack(view)
+		vsize := count - done
+		if vsize > MaxChunkSize {
+			vsize = MaxChunkSize
 		}
-
-		// Is this less than the minimum batch?
-		if view.AvailableSize() < minBatch && (count-done) >= int64(minBatch) {
-			tmp := NewView(minBatch)
-			n, err = r.Read(tmp.availableSlice())
-			tmp.Grow(n)
-			b.Append(tmp)
-			done += int64(n)
-			if err != nil {
-				break
-			}
-			continue
-		}
-
-		// Limit the read, if necessary.
-		sz := view.AvailableSize()
-		if left := count - done; int64(sz) > left {
-			sz = int(left)
-		}
-
-		// Pass the relevant portion of the buffer.
-		n, err = r.Read(view.availableSlice()[:sz])
-		view.Grow(n)
-		done += int64(n)
-		b.size += int64(n)
+		v := NewView(int(vsize))
+		lr := io.LimitedReader{R: r, N: vsize}
+		n, err := io.Copy(v, &lr)
+		b.Append(v)
+		done += n
 		if err == io.EOF {
-			err = nil // Short write allowed.
 			break
-		} else if err != nil {
-			break
+		}
+		if err != nil {
+			return done, err
 		}
 	}
-	return done, err
+	return done, nil
 }
 
 // ReadToWriter reads from the buffer into an io.Writer.
 //
 // N.B. This does not consume the bytes read. TrimFront should
 // be called appropriately after this call in order to do so.
-//
-// A minimum write size equal to unsafe.Sizeof(unintptr) is enforced,
-// provided that count is greater than or equal to unsafe.Sizeof(uintptr).
 func (b *Buffer) ReadToWriter(w io.Writer, count int64) (int64, error) {
-	var (
-		done int64
-		n    int
-		err  error
-	)
-	offset := 0 // Spill-over for batching.
-	for view := b.data.Front(); view != nil && done < count; view = view.Next() {
-		// Has this been consumed? Skip it.
-		sz := view.Size()
-		if sz <= offset {
-			offset -= sz
-			continue
+	bytesLeft := int(count)
+	for v := b.data.Front(); v != nil && bytesLeft > 0; v = v.Next() {
+		view := v.Clone()
+		if view.Size() > bytesLeft {
+			view.CapLength(bytesLeft)
 		}
-		sz -= offset
-
-		// Is this less than the minimum batch?
-		left := count - done
-		if sz < minBatch && left >= int64(minBatch) && (b.size-done) >= int64(minBatch) {
-			tmp := NewView(minBatch)
-			n, err = b.ReadAt(tmp.availableSlice()[:minBatch], done)
-			tmp.Grow(n)
-			w.Write(tmp.AsSlice())
-			tmp.Release()
-			done += int64(n)
-			offset = n - sz // Reset below.
-			if err != nil {
-				break
-			}
-			continue
-		}
-
-		// Limit the write if necessary.
-		if int64(sz) >= left {
-			sz = int(left)
-		}
-
-		// Perform the actual write.
-		n, err = w.Write(view.AsSlice()[offset : offset+sz])
-		done += int64(n)
+		n, err := io.Copy(w, view)
+		bytesLeft -= int(n)
+		view.Release()
 		if err != nil {
-			break
+			return count - int64(bytesLeft), err
 		}
-
-		// Reset spill-over.
-		offset = 0
 	}
-	return done, err
+	return count - int64(bytesLeft), nil
 }
 
-// AsSlices returns a list of each of Buffer's underlying Views as Slices.
-// The slices returned should not be modifed.
-func (b *Buffer) AsSlices() [][]byte {
-	slices := make([][]byte, 0, b.data.Len())
-	for v := b.data.Front(); v != nil; v = v.Next() {
-		slices = append(slices, v.AsSlice())
+// read implements the io.Reader interface. This method is used by BufferReader
+// to consume its underlying buffer. To perform io operations on buffers
+// directly, use ReadToWriter or WriteToReader.
+func (b *Buffer) read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
 	}
-	return slices
+	if b.Size() == 0 {
+		return 0, io.EOF
+	}
+	done := 0
+	v := b.data.Front()
+	for v != nil && done < len(p) {
+		n, err := v.Read(p[done:])
+		done += n
+		next := v.Next()
+		if v.Size() == 0 {
+			b.removeView(v)
+		}
+		b.size -= int64(n)
+		if err != nil && err != io.EOF {
+			return done, err
+		}
+		v = next
+	}
+	return done, nil
+}
+
+// readByte implements the io.ByteReader interface. This method is used by
+// BufferReader to consume its underlying buffer. To perform io operations on
+// buffers directly, use ReadToWriter or WriteToReader.
+func (b *Buffer) readByte() (byte, error) {
+	if b.Size() == 0 {
+		return 0, io.EOF
+	}
+	v := b.data.Front()
+	bt := v.AsSlice()[0]
+	b.TrimFront(1)
+	return bt, nil
+}
+
+// AsBufferReader returns the Buffer as a BufferReader capabable of io methods.
+// The new BufferReader takes ownership of b.
+func (b *Buffer) AsBufferReader() BufferReader {
+	return BufferReader{b}
+}
+
+// BufferReader implements io methods on Buffer. Users must call Close()
+// when finished with the buffer to free the underlying memory.
+type BufferReader struct {
+	b *Buffer
+}
+
+// Read implements the io.Reader interface.
+func (br *BufferReader) Read(p []byte) (int, error) {
+	return br.b.read(p)
+}
+
+// ReadByte implements the io.ByteReader interface.
+func (br *BufferReader) ReadByte() (byte, error) {
+	return br.b.readByte()
+}
+
+// Close implements the io.Closer interface.
+func (br *BufferReader) Close() {
+	br.b.Release()
 }
 
 // Range specifies a range of buffer.

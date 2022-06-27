@@ -23,7 +23,7 @@ import (
 )
 
 func TestNewView(t *testing.T) {
-	for sz := baseChunkSize; sz < maxChunkSize; sz <<= 1 {
+	for sz := baseChunkSize; sz < MaxChunkSize; sz <<= 1 {
 		v := NewView(sz - 1)
 		defer v.Release()
 
@@ -53,7 +53,7 @@ func TestNewView(t *testing.T) {
 
 	// Allocating from heap should produce a chunk with the exact size requested
 	// instead of a chunk where the size is contingent on the pool it came from.
-	viewSize := maxChunkSize + 1
+	viewSize := MaxChunkSize + 1
 	v := NewView(viewSize)
 	defer v.Release()
 	if v.Capacity() != viewSize {
