@@ -29,6 +29,7 @@ go_library(
         "//pkg/abi",
         "//pkg/abi/linux",
         "//pkg/bpf",
+        "//pkg/bufferv2",
         "//pkg/cleanup",
         "//pkg/context",
         "//pkg/control/server",

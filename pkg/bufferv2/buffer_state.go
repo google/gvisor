@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package buffer
+package bufferv2
 
 // saveBuf is invoked by stateify.
 func (b *Buffer) saveData() []byte {

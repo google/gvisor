@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package buffer
+package bufferv2
 
 import (
 	"fmt"
@@ -20,6 +20,12 @@ import (
 	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/sync"
 )
+
+// PoolingEnabled is set to true when pooling is enabled. Added as a
+// global to allow easy access.
+//
+// TODO(b/236996271): Remove once buffer pooling experiment complete.
+var PoolingEnabled = true
 
 const (
 	// This is log2(baseChunkSize). This number is used to calculate which pool
@@ -78,7 +84,7 @@ type chunk struct {
 
 func newChunk(size int) *chunk {
 	var c *chunk
-	if size > maxChunkSize {
+	if !PoolingEnabled || size > maxChunkSize {
 		c = &chunk{
 			data: make([]byte, size),
 		}
@@ -94,7 +100,7 @@ func newChunk(size int) *chunk {
 }
 
 func (c *chunk) destroy() {
-	if len(c.data) > maxChunkSize {
+	if !PoolingEnabled || len(c.data) > maxChunkSize {
 		c.data = nil
 		return
 	}

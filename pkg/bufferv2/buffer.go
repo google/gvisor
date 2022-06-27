@@ -12,11 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package buffer provides the implementation of a non-contiguous buffer.
-//
-// A buffer is an flexible buffer, supporting the safecopy operations natively
-// as well as the ability to grow via either prepend or append, as well as shrink.
-package buffer
+// Package bufferv2 provides the implementation of a non-contiguous buffer that
+// is reference counted, pooled, and copy-on-write. It allows O(1) append,
+// and prepend operations.
+package bufferv2
 
 import (
 	"fmt"
