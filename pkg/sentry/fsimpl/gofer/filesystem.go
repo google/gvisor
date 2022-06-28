@@ -1918,7 +1918,6 @@ func (fs *filesystem) MountOptions() string {
 		{moptDfltGID, fs.opts.dfltgid},
 		{moptMsize, fs.opts.msize},
 		{moptVersion, fs.opts.version},
-		{moptDentryCacheLimit, fs.opts.maxCachedDentries},
 	}
 
 	switch fs.opts.interop {

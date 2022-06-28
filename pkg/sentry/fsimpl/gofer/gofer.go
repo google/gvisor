@@ -20,7 +20,7 @@
 //	regularFileFD/directoryFD.mu
 //	  filesystem.renameMu
 //	    dentry.cachingMu
-//	      filesystem.cacheMu
+//	      dentryCache.mu
 //	      dentry.dirMu
 //	        filesystem.syncMu
 //	        dentry.metadataMu
@@ -81,7 +81,6 @@ const (
 	moptDfltGID                = "dfltgid"
 	moptMsize                  = "msize"
 	moptVersion                = "version"
-	moptDentryCacheLimit       = "dentry_cache_limit"
 	moptCache                  = "cache"
 	moptForcePageCache         = "force_page_cache"
 	moptLimitHostFDTranslation = "limit_host_fd_translation"
@@ -96,6 +95,21 @@ const (
 	cacheFSCacheWritethrough = "fscache_writethrough"
 	cacheRemoteRevalidating  = "remote_revalidating"
 )
+
+const defaultMaxCachedDentries = 1000
+
+// +stateify savable
+type dentryCache struct {
+	// mu protects the below fields.
+	mu sync.Mutex `state:"nosave"`
+	// dentries contains all dentries with 0 references. Due to race conditions,
+	// it may also contain dentries with non-zero references.
+	dentries dentryList
+	// dentriesLen is the number of dentries in dentries.
+	dentriesLen uint64
+	// maxCachedDentries is the maximum number of cachable dentries.
+	maxCachedDentries uint64
+}
 
 // Valid values for "trans" mount option.
 const transportModeFD = "fd"
@@ -147,13 +161,7 @@ type filesystem struct {
 	//		it is reachable from its parent).
 	renameMu sync.RWMutex `state:"nosave"`
 
-	// cachedDentries contains all dentries with 0 references. (Due to race
-	// conditions, it may also contain dentries with non-zero references.)
-	// cachedDentriesLen is the number of dentries in cachedDentries. These fields
-	// are protected by cacheMu.
-	cacheMu           sync.Mutex `state:"nosave"`
-	cachedDentries    dentryList
-	cachedDentriesLen uint64
+	dentryCache *dentryCache
 
 	// syncableDentries contains all non-synthetic dentries. specialFileFDs
 	// contains all open specialFileFDs. These fields are protected by syncMu.
@@ -196,9 +204,6 @@ type filesystemOptions struct {
 	dfltgid auth.KGID
 	msize   uint32
 	version string
-
-	// maxCachedDentries is the maximum size of filesystem.cachedDentries.
-	maxCachedDentries uint64
 
 	// If forcePageCache is true, host FDs may not be used for application
 	// memory mappings even if available; instead, the client must perform its
@@ -423,18 +428,6 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		fsopts.version = version
 	}
 
-	// Parse the dentry cache limit.
-	fsopts.maxCachedDentries = 1000
-	if str, ok := mopts[moptDentryCacheLimit]; ok {
-		delete(mopts, moptDentryCacheLimit)
-		maxCachedDentries, err := strconv.ParseUint(str, 10, 64)
-		if err != nil {
-			ctx.Warningf("gofer.FilesystemType.GetFilesystem: invalid dentry cache limit: %s=%s", moptDentryCacheLimit, str)
-			return nil, nil, linuxerr.EINVAL
-		}
-		fsopts.maxCachedDentries = maxCachedDentries
-	}
-
 	// Handle simple flags.
 	if _, ok := mopts[moptForcePageCache]; ok {
 		delete(mopts, moptForcePageCache)
@@ -488,6 +481,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		specialFileFDs:   make(map[*specialFileFD]struct{}),
 		inoByQIDPath:     make(map[uint64]uint64),
 		inoByKey:         make(map[inoKey]uint64),
+		dentryCache:      &dentryCache{maxCachedDentries: defaultMaxCachedDentries},
 	}
 	fs.vfsfs.Init(vfsObj, &fstype, fs)
 
@@ -824,7 +818,7 @@ type dentry struct {
 	cachingMu sync.Mutex `state:"nosave"`
 
 	// If cached is true, dentryEntry links dentry into
-	// filesystem.cachedDentries. cached and dentryEntry are protected by
+	// filesystem.dentryCache.dentries. cached and dentryEntry are protected by
 	// cachingMu.
 	cached bool
 	dentryEntry
@@ -1811,11 +1805,12 @@ func (d *dentry) checkCachingLocked(ctx context.Context, renameMuWriteLocked boo
 		return
 	}
 	if refs > 0 {
-		// fs.cachedDentries is permitted to contain dentries with non-zero refs,
-		// which are skipped by fs.evictCachedDentryLocked() upon reaching the end
-		// of the LRU. But it is still beneficial to remove d from the cache as we
-		// are already holding d.cachingMu. Keeping a cleaner cache also reduces
-		// the number of evictions (which is expensive as it acquires fs.renameMu).
+		// fs.dentryCache.dentries is permitted to contain dentries with non-zero
+		// refs, which are skipped by fs.evictCachedDentryLocked() upon reaching
+		// the end of the LRU. But it is still beneficial to remove d from the
+		// cache as we are already holding d.cachingMu. Keeping a cleaner cache
+		// also reduces the number of evictions (which is expensive as it acquires
+		// fs.renameMu).
 		d.removeFromCacheLocked()
 		d.cachingMu.Unlock()
 		return
@@ -1872,22 +1867,22 @@ func (d *dentry) checkCachingLocked(ctx context.Context, renameMuWriteLocked boo
 		return
 	}
 
-	d.fs.cacheMu.Lock()
+	d.fs.dentryCache.mu.Lock()
 	// If d is already cached, just move it to the front of the LRU.
 	if d.cached {
-		d.fs.cachedDentries.Remove(d)
-		d.fs.cachedDentries.PushFront(d)
-		d.fs.cacheMu.Unlock()
+		d.fs.dentryCache.dentries.Remove(d)
+		d.fs.dentryCache.dentries.PushFront(d)
+		d.fs.dentryCache.mu.Unlock()
 		d.cachingMu.Unlock()
 		return
 	}
 	// Cache the dentry, then evict the least recently used cached dentry if
 	// the cache becomes over-full.
-	d.fs.cachedDentries.PushFront(d)
-	d.fs.cachedDentriesLen++
+	d.fs.dentryCache.dentries.PushFront(d)
+	d.fs.dentryCache.dentriesLen++
 	d.cached = true
-	shouldEvict := d.fs.cachedDentriesLen > d.fs.opts.maxCachedDentries
-	d.fs.cacheMu.Unlock()
+	shouldEvict := d.fs.dentryCache.dentriesLen > d.fs.dentryCache.maxCachedDentries
+	d.fs.dentryCache.mu.Unlock()
 	d.cachingMu.Unlock()
 
 	if shouldEvict {
@@ -1904,10 +1899,10 @@ func (d *dentry) checkCachingLocked(ctx context.Context, renameMuWriteLocked boo
 // Preconditions: d.cachingMu must be locked.
 func (d *dentry) removeFromCacheLocked() {
 	if d.cached {
-		d.fs.cacheMu.Lock()
-		d.fs.cachedDentries.Remove(d)
-		d.fs.cachedDentriesLen--
-		d.fs.cacheMu.Unlock()
+		d.fs.dentryCache.mu.Lock()
+		d.fs.dentryCache.dentries.Remove(d)
+		d.fs.dentryCache.dentriesLen--
+		d.fs.dentryCache.mu.Unlock()
 		d.cached = false
 	}
 }
@@ -1916,7 +1911,7 @@ func (d *dentry) removeFromCacheLocked() {
 // unlocked.
 // +checklocks:fs.renameMu
 func (fs *filesystem) evictAllCachedDentriesLocked(ctx context.Context) {
-	for fs.cachedDentriesLen != 0 {
+	for fs.dentryCache.dentriesLen != 0 {
 		fs.evictCachedDentryLocked(ctx)
 	}
 }
@@ -1926,42 +1921,69 @@ func (fs *filesystem) evictAllCachedDentriesLocked(ctx context.Context) {
 //
 // +checklocks:fs.renameMu
 func (fs *filesystem) evictCachedDentryLocked(ctx context.Context) {
-	fs.cacheMu.Lock()
-	victim := fs.cachedDentries.Back()
-	fs.cacheMu.Unlock()
+	fs.dentryCache.mu.Lock()
+	victim := fs.dentryCache.dentries.Back()
+	fs.dentryCache.mu.Unlock()
 	if victim == nil {
-		// fs.cachedDentries may have become empty between when it was checked and
-		// when we locked fs.cacheMu.
+		// fs.dentryCache.dentries may have become empty between when it was
+		// checked and when we locked fs.dentryCache.mu.
 		return
 	}
 
-	victim.cachingMu.Lock()
-	victim.removeFromCacheLocked()
-	// victim.refs or victim.watches.Size() may have become non-zero from an
-	// earlier path resolution since it was inserted into fs.cachedDentries.
-	if victim.refs.Load() != 0 || victim.watches.Size() != 0 {
-		victim.cachingMu.Unlock()
+	if victim.fs == fs {
+		victim.evictLocked(ctx) // +checklocksforce: owned as precondition, victim.fs == fs
 		return
 	}
-	if victim.parent != nil {
-		victim.parent.dirMu.Lock()
-		if !victim.vfsd.IsDead() {
-			// Note that victim can't be a mount point (in any mount
-			// namespace), since VFS holds references on mount points.
-			fs.vfsfs.VirtualFilesystem().InvalidateDentry(ctx, &victim.vfsd)
-			delete(victim.parent.children, victim.name)
+
+	// The dentry cache is shared between all gofer filesystems and the victim is
+	// from another filesystem. Have that filesystem do the work. We unlock
+	// fs.renameMu to prevent deadlock: two filesystems could otherwise wait on
+	// each others' renameMu.
+	fs.renameMu.Unlock()
+	defer fs.renameMu.Lock()
+	victim.evict(ctx)
+}
+
+// Preconditions:
+//   - d.fs.renameMu must not be locked for writing.
+func (d *dentry) evict(ctx context.Context) {
+	d.fs.renameMu.Lock()
+	defer d.fs.renameMu.Unlock()
+	d.evictLocked(ctx)
+}
+
+// Preconditions:
+//   - d.fs.renameMu must be locked for writing; it may be temporarily unlocked.
+//
+// +checklocks:d.fs.renameMu
+func (d *dentry) evictLocked(ctx context.Context) {
+	d.cachingMu.Lock()
+	d.removeFromCacheLocked()
+	// d.refs or d.watches.Size() may have become non-zero from an earlier path
+	// resolution since it was inserted into fs.dentryCache.dentries.
+	if d.refs.Load() != 0 || d.watches.Size() != 0 {
+		d.cachingMu.Unlock()
+		return
+	}
+	if d.parent != nil {
+		d.parent.dirMu.Lock()
+		if !d.vfsd.IsDead() {
+			// Note that d can't be a mount point (in any mount namespace), since VFS
+			// holds references on mount points.
+			d.fs.vfsfs.VirtualFilesystem().InvalidateDentry(ctx, &d.vfsd)
+			delete(d.parent.children, d.name)
 			// We're only deleting the dentry, not the file it
 			// represents, so we don't need to update
-			// victimParent.dirents etc.
+			// victim parent.dirents etc.
 		}
-		victim.parent.dirMu.Unlock()
+		d.parent.dirMu.Unlock()
 	}
-	// Safe to unlock cachingMu now that victim.vfsd.IsDead(). Henceforth any
-	// concurrent caching attempts on victim will attempt to destroy it and so
-	// will try to acquire fs.renameMu (which we have already acquired). Hence,
+	// Safe to unlock cachingMu now that d.vfsd.IsDead(). Henceforth any
+	// concurrent caching attempts on d will attempt to destroy it and so will
+	// try to acquire fs.renameMu (which we have already acquiredd). Hence,
 	// fs.renameMu will synchronize the destroy attempts.
-	victim.cachingMu.Unlock()
-	victim.destroyLocked(ctx) // +checklocksforce: owned as precondition, victim.fs == fs.
+	d.cachingMu.Unlock()
+	d.destroyLocked(ctx) // +checklocksforce: owned as precondition.
 }
 
 // destroyLocked destroys the dentry.
