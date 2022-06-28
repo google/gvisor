@@ -1003,7 +1003,7 @@ func TestRlimitNoFile(t *testing.T) {
 	d := dockerutil.MakeContainerWithRuntime(ctx, t, "-fdlimit")
 	defer d.CleanUp(ctx)
 
-	// We have to create a directory with a bunch of files.
+	// Create a directory with a bunch of files.
 	const nfiles = 5000
 	tmpDir := testutil.TmpDir()
 	for i := 0; i < nfiles; i++ {
