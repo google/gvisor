@@ -161,6 +161,21 @@ ifneq ($(DEVICE_FILE),)
 DOCKER_RUN_OPTIONS += --device "$(DEVICE_FILE):$(DEVICE_FILE)"
 endif
 
+# Check if Docker API version supports cgroupns (supported in >=1.41).
+# If not, don't include it in options.
+ifeq ($(DOCKER_BUILD),true)
+DOCKER_API_VERSION := $(shell docker version --format='{{.Server.APIVersion}}')
+ifeq ($(shell echo $(DOCKER_API_VERSION) | tr '.' '\n' | wc -l),2)
+ifeq ($(shell test $(shell echo $(DOCKER_API_VERSION) | cut -d. -f1) -gt 1 && echo true),true)
+DOCKER_RUN_OPTIONS += --cgroupns=host
+else  # If API version 1, check second version component.
+ifeq ($(shell test $(shell echo $(DOCKER_API_VERSION) | cut -d. -f2) -ge 41 && echo true),true)
+DOCKER_RUN_OPTIONS += --cgroupns=host
+endif
+endif
+endif
+endif
+
 # Top-level functions.
 #
 # This command runs a bazel server, and the container sticks around
@@ -205,7 +220,7 @@ endif
 	@docker run -d --name $(DOCKER_NAME) --hostname $(DOCKER_HOSTNAME) \
 	  -v "$(CURDIR):$(CURDIR)" \
 	  --workdir "$(CURDIR)" \
-	  --pid=host --cgroupns=host \
+	  --pid=host \
 	  $(DOCKER_RUN_OPTIONS) \
 	  gvisor.dev/images/builder \
 	  bash -c "set -x; tail -f --pid=\$$($(BAZEL) info server_pid) /dev/null"
