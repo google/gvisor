@@ -234,6 +234,10 @@ type Config struct {
 	// each.
 	FDLimit int `flag:"fdlimit"`
 
+	// DCache sets the global dirent cache size. If zero, per-mount caches are
+	// used.
+	DCache int `flag:"dcache"`
+
 	// TestOnlyAllowRunAsCurrentUserWithoutChroot should only be used in
 	// tests. It allows runsc to start the sandbox process as the current
 	// user, and without chrooting the sandbox process. This can be

@@ -268,10 +268,12 @@ docker-tests: load-basic $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),) # Clear flags.
 	# Used by TestRlimitNoFile.
 	@$(call install_runtime,$(RUNTIME)-fdlimit,--fdlimit=2000)
-	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS))
+	@$(call install_runtime,$(RUNTIME)-dcache,--fdlimit=2000 --dcache=100)
+	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS) //test/e2e:integration_runtime_test)
 	@$(call install_runtime,$(RUNTIME), --lisafs) # Run again with lisafs.
 	@$(call install_runtime,$(RUNTIME)-fdlimit,--lisafs --fdlimit=2000)
-	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS))
+	@$(call install_runtime,$(RUNTIME)-dcache,--lisafs --fdlimit=2000 --dcache=100)
+	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS) //test/e2e:integration_runtime_test)
 .PHONY: docker-tests
 
 overlay-tests: load-basic $(RUNTIME_BIN)

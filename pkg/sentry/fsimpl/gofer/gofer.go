@@ -111,6 +111,16 @@ type dentryCache struct {
 	maxCachedDentries uint64
 }
 
+// SetDentryCacheSize sets the size of the global gofer dentry cache.
+func SetDentryCacheSize(size int) {
+	globalDentryCache.mu.Lock()
+	defer globalDentryCache.mu.Unlock()
+	globalDentryCache.maxCachedDentries = uint64(size)
+}
+
+// globalDentryCache is a global cache of dentries across all gofers.
+var globalDentryCache dentryCache
+
 // Valid values for "trans" mount option.
 const transportModeFD = "fd"
 
@@ -481,8 +491,17 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		specialFileFDs:   make(map[*specialFileFD]struct{}),
 		inoByQIDPath:     make(map[uint64]uint64),
 		inoByKey:         make(map[inoKey]uint64),
-		dentryCache:      &dentryCache{maxCachedDentries: defaultMaxCachedDentries},
 	}
+
+	// Did the user configure a global dentry cache?
+	globalDentryCache.mu.Lock()
+	if globalDentryCache.maxCachedDentries >= 1 {
+		fs.dentryCache = &globalDentryCache
+	} else {
+		fs.dentryCache = &dentryCache{maxCachedDentries: defaultMaxCachedDentries}
+	}
+	globalDentryCache.mu.Unlock()
+
 	fs.vfsfs.Init(vfsObj, &fstype, fs)
 
 	if err := fs.initClientAndRoot(ctx); err != nil {
