@@ -34,6 +34,14 @@ func (k *KVM) SyscallFilters() seccomp.SyscallRules {
 				seccomp.MatchAny{},
 				seccomp.EqualTo(_KVM_SET_USER_MEMORY_REGION),
 			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(_KVM_GET_REGS),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(_KVM_SET_REGS),
+			},
 		},
 		unix.SYS_MEMBARRIER: []seccomp.Rule{
 			{
