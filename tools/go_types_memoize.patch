@@ -1,20 +1,26 @@
-diff '--color=auto' -r -u2 a/go/src/go/types/scope.go b/go/src/go/types/scope.go
---- a/go/src/go/types/scope.go	2022-01-06 19:14:25.000000000 +0000
-+++ b/go/src/go/types/scope.go	2022-02-03 18:50:35.526563967 +0000
-@@ -24,4 +24,5 @@
+diff --git a/go/src/go/types/scope.go b/src/go/types/scope.go
+index 010727eb72..0f134b872e 100644
+--- a/go/src/go/types/scope.go
++++ b/go/src/go/types/scope.go
+@@ -25,6 +25,7 @@ type Scope struct {
  	children []*Scope
+ 	number   int               // parent.children[number-1] is this scope; 0 if there is no parent
  	elems    map[string]Object // lazily allocated
 +	sorted   []string          // lazily allocated
  	pos, end token.Pos         // scope extent; may be invalid
  	comment  string            // for debugging only
-@@ -32,5 +33,5 @@
+ 	isFunc   bool              // set if this is a function scope (internal use only)
+@@ -33,7 +34,7 @@ type Scope struct {
+ // NewScope returns a new, empty scope contained in the given parent
  // scope, if any. The comment is for debugging only.
  func NewScope(parent *Scope, pos, end token.Pos, comment string) *Scope {
--	s := &Scope{parent, nil, nil, pos, end, comment, false}
-+	s := &Scope{parent, nil, nil, nil, pos, end, comment, false}
+-	s := &Scope{parent, nil, 0, nil, pos, end, comment, false}
++	s := &Scope{parent, nil, 0, nil, nil, pos, end, comment, false}
  	// don't add children to Universe scope!
  	if parent != nil && parent != Universe {
-@@ -48,12 +49,14 @@
+ 		parent.children = append(parent.children, s)
+@@ -50,14 +51,16 @@ func (s *Scope) Len() int { return len(s.elems) }
+ 
  // Names returns the scope's element names in sorted order.
  func (s *Scope) Names() []string {
 -	names := make([]string, len(s.elems))
@@ -36,4 +42,4 @@ diff '--color=auto' -r -u2 a/go/src/go/types/scope.go b/go/src/go/types/scope.go
 +	return s.sorted
  }
  
-Only in b/go/src/go/types: scope.go.orig
+ // NumChildren returns the number of scopes nested in s.
