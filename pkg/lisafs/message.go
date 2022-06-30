@@ -880,7 +880,8 @@ func (r *PReadResp) CheckedUnmarshal(src []byte) ([]byte, bool) {
 
 	// We expect the client to have already allocated r.Buf. r.Buf probably
 	// (optimally) points to usermem. Directly copy into that.
-	return srcRemain[copy(r.Buf[:r.NumBytes], srcRemain[:r.NumBytes]):], true
+	r.Buf = r.Buf[:r.NumBytes]
+	return srcRemain[copy(r.Buf, srcRemain[:r.NumBytes]):], true
 }
 
 // PWriteReq is used to pwrite(2) on an FD.
