@@ -16,6 +16,7 @@ package lisafs
 
 import (
 	"fmt"
+	"io"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -174,7 +175,19 @@ func (f *ClientFD) Read(ctx context.Context, dst []byte, offset uint64) (uint64,
 		ctx.UninterruptibleSleepStart(false)
 		err := f.client.SndRcvMessage(PRead, uint32(req.SizeBytes()), req.MarshalUnsafe, resp.CheckedUnmarshal, nil, req.String, resp.String)
 		ctx.UninterruptibleSleepFinish(false)
-		return uint64(resp.NumBytes), err
+		if err != nil {
+			return 0, err
+		}
+
+		// io.EOF is not an error that a lisafs server can return. Use POSIX
+		// semantics to return io.EOF manually: zero bytes were returned and a
+		// non-zero buffer was used.
+		// NOTE(b/237442794): Some callers like splice really depend on a non-nil
+		// error being returned in such a case. This is consistent with P9.
+		if resp.NumBytes == 0 && len(buf) > 0 {
+			return 0, io.EOF
+		}
+		return uint64(resp.NumBytes), nil
 	})
 }
 
