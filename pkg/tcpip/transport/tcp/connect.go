@@ -900,7 +900,7 @@ func sendTCP(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso stack.GS
 		tf.rcvWnd = math.MaxUint16
 	}
 
-	if r.Loop()&stack.PacketLoop == 0 && gso.Type == stack.GSOSW && int(gso.MSS) < pkt.Data().Size() {
+	if r.Loop()&stack.PacketLoop == 0 && gso.Type == stack.GSOGvisor && int(gso.MSS) < pkt.Data().Size() {
 		return sendTCPBatch(r, tf, pkt, gso, owner)
 	}
 

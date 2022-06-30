@@ -88,11 +88,12 @@ type Config struct {
 	// AllowPacketEndpointWrite enables write operations on packet endpoints.
 	AllowPacketEndpointWrite bool `flag:"TESTONLY-allow-packet-endpoint-write"`
 
-	// HardwareGSO indicates that hardware segmentation offload is enabled.
-	HardwareGSO bool `flag:"gso"`
+	// HostGSO indicates that host segmentation offload is enabled.
+	HostGSO bool `flag:"gso"`
 
-	// SoftwareGSO indicates that software segmentation offload is enabled.
-	SoftwareGSO bool `flag:"software-gso"`
+	// GvisorGSO indicates that gVisor segmentation offload is enabled. The flag
+	// retains its old name of "software" GSO for API consistency.
+	GvisorGSO bool `flag:"software-gso"`
 
 	// TXChecksumOffload indicates that TX Checksum Offload is enabled.
 	TXChecksumOffload bool `flag:"tx-checksum-offload"`

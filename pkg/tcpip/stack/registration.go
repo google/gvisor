@@ -1168,9 +1168,9 @@ const (
 	GSOTCPv4
 	GSOTCPv6
 
-	// GSOSW is used for software GSO segments which have to be sent by
+	// GSOGvisor is used for gVisor GSO segments which have to be sent by
 	// endpoint.WritePackets.
-	GSOSW
+	GSOGvisor
 )
 
 // GSO contains generic segmentation offload properties.
@@ -1193,20 +1193,22 @@ type GSO struct {
 	MaxSize uint32
 }
 
-// SupportedGSO returns the type of segmentation offloading supported.
+// SupportedGSO is the type of segmentation offloading supported.
 type SupportedGSO int
 
 const (
 	// GSONotSupported indicates that segmentation offloading is not supported.
 	GSONotSupported SupportedGSO = iota
 
-	// HWGSOSupported indicates that segmentation offloading may be performed by
-	// the hardware.
-	HWGSOSupported
+	// HostGSOSupported indicates that segmentation offloading may be performed
+	// by the host. This is typically true when netstack is attached to a host
+	// AF_PACKET socket, and not true when attached to a unix socket or other
+	// non-networking data layer.
+	HostGSOSupported
 
-	// SWGSOSupported indicates that segmentation offloading may be performed in
-	// software.
-	SWGSOSupported
+	// GvisorGSOSupported indicates that segmentation offloading may be performed
+	// in gVisor.
+	GvisorGSOSupported
 )
 
 // GSOEndpoint provides access to GSO properties.
@@ -1218,6 +1220,6 @@ type GSOEndpoint interface {
 	SupportedGSO() SupportedGSO
 }
 
-// SoftwareGSOMaxSize is a maximum allowed size of a software GSO segment.
+// GvisorGSOMaxSize is a maximum allowed size of a software GSO segment.
 // This isn't a hard limit, because it is never set into packet headers.
-const SoftwareGSOMaxSize = 1 << 16
+const GvisorGSOMaxSize = 1 << 16

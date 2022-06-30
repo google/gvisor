@@ -3088,7 +3088,7 @@ func (e *endpoint) completeStateLocked(s *stack.TCPEndpointState) {
 	s.Sender.SpuriousRecovery = e.snd.spuriousRecovery
 }
 
-func (e *endpoint) initHardwareGSO() {
+func (e *endpoint) initHostGSO() {
 	switch e.route.NetProto() {
 	case header.IPv4ProtocolNumber:
 		e.gso.Type = stack.GSOTCPv4
@@ -3105,12 +3105,12 @@ func (e *endpoint) initHardwareGSO() {
 }
 
 func (e *endpoint) initGSO() {
-	if e.route.HasHardwareGSOCapability() {
-		e.initHardwareGSO()
-	} else if e.route.HasSoftwareGSOCapability() {
+	if e.route.HasHostGSOCapability() {
+		e.initHostGSO()
+	} else if e.route.HasGvisorGSOCapability() {
 		e.gso = stack.GSO{
 			MaxSize:   e.route.GSOMaxSize(),
-			Type:      stack.GSOSW,
+			Type:      stack.GSOGvisor,
 			NeedsCsum: false,
 		}
 	}
