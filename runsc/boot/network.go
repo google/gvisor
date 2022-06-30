@@ -86,17 +86,17 @@ type Neighbor struct {
 
 // FDBasedLink configures an fd-based link.
 type FDBasedLink struct {
-	Name               string
-	MTU                int
-	Addresses          []IPWithPrefix
-	Routes             []Route
-	GSOMaxSize         uint32
-	SoftwareGSOEnabled bool
-	TXChecksumOffload  bool
-	RXChecksumOffload  bool
-	LinkAddress        net.HardwareAddr
-	QDisc              config.QueueingDiscipline
-	Neighbors          []Neighbor
+	Name              string
+	MTU               int
+	Addresses         []IPWithPrefix
+	Routes            []Route
+	GSOMaxSize        uint32
+	GvisorGSOEnabled  bool
+	TXChecksumOffload bool
+	RXChecksumOffload bool
+	LinkAddress       net.HardwareAddr
+	QDisc             config.QueueingDiscipline
+	Neighbors         []Neighbor
 
 	// NumChannels controls how many underlying FD's are to be used to
 	// create this endpoint.
@@ -221,7 +221,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			Address:            mac,
 			PacketDispatchMode: fdbased.RecvMMsg,
 			GSOMaxSize:         link.GSOMaxSize,
-			SoftwareGSOEnabled: link.SoftwareGSOEnabled,
+			GvisorGSOEnabled:   link.GvisorGSOEnabled,
 			TXChecksumOffload:  link.TXChecksumOffload,
 			RXChecksumOffload:  link.RXChecksumOffload,
 		})

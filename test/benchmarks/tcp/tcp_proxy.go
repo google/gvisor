@@ -59,7 +59,7 @@ var (
 	moderateRecvBuf    = flag.Bool("moderate_recv_buf", false, "enable TCP Receive Buffer Auto-tuning")
 	cubic              = flag.Bool("cubic", false, "enable use of CUBIC congestion control for netstack")
 	gso                = flag.Int("gso", 0, "GSO maximum size")
-	swgso              = flag.Bool("swgso", false, "software-level GSO")
+	swgso              = flag.Bool("swgso", false, "gVisor-level GSO")
 	clientTCPProbeFile = flag.String("client_tcp_probe_file", "", "if specified, installs a tcp probe to dump endpoint state to the specified file.")
 	serverTCPProbeFile = flag.String("server_tcp_probe_file", "", "if specified, installs a tcp probe to dump endpoint state to the specified file.")
 	cpuprofile         = flag.String("cpuprofile", "", "write cpu profile to the specified file.")
@@ -200,7 +200,7 @@ func newNetstackImpl(mode string) (impl, error) {
 		RXChecksumOffload:  true,
 		PacketDispatchMode: fdbased.RecvMMsg,
 		GSOMaxSize:         uint32(*gso),
-		SoftwareGSOEnabled: *swgso,
+		GvisorGSOEnabled:   *swgso,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create FD endpoint: %v", err)

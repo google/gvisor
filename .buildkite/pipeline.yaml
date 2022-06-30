@@ -209,7 +209,7 @@ steps:
       arch: "amd64"
       os: "ubuntu"
   - <<: *common
-    label: ":satellite: SWGSO tests"
+    label: ":satellite: gVisor GSO tests"
     command: make swgso-tests
     agents:
       arch: "amd64"
