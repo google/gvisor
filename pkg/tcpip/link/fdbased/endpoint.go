@@ -556,7 +556,7 @@ func (e *endpoint) sendBatch(batchFDInfo fdInfo, pkts []*stack.PacketBuffer) (in
 	// Degrade to writePacket if underlying fd is not a socket.
 	if !batchFDInfo.isSocket {
 		var written int
-		var err error
+		var err tcpip.Error
 		for written < len(pkts) {
 			if err = e.writePacket(pkts[written]); err != nil {
 				break
