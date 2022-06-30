@@ -184,7 +184,7 @@ func newReadVDispatcher(fd int, e *endpoint) (linkDispatcher, error) {
 		fd:     fd,
 		e:      e,
 	}
-	skipsVnetHdr := d.e.gsoKind == stack.HWGSOSupported
+	skipsVnetHdr := d.e.gsoKind == stack.HostGSOSupported
 	d.buf = newIovecBuffer(BufConfig, skipsVnetHdr)
 	return d, nil
 }
@@ -269,7 +269,7 @@ func newRecvMMsgDispatcher(fd int, e *endpoint) (linkDispatcher, error) {
 		bufs:    make([]*iovecBuffer, MaxMsgsPerRecv),
 		msgHdrs: make([]rawfile.MMsgHdr, MaxMsgsPerRecv),
 	}
-	skipsVnetHdr := d.e.gsoKind == stack.HWGSOSupported
+	skipsVnetHdr := d.e.gsoKind == stack.HostGSOSupported
 	for i := range d.bufs {
 		d.bufs[i] = newIovecBuffer(BufConfig, skipsVnetHdr)
 	}

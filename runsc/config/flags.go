@@ -90,8 +90,8 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	// Flags that control sandbox runtime behavior: network related.
 	flagSet.Var(networkTypePtr(NetworkSandbox), "network", "specifies which network to use: sandbox (default), host, none. Using network inside the sandbox is more secure because it's isolated from the host network.")
 	flagSet.Bool("net-raw", false, "enable raw sockets. When false, raw sockets are disabled by removing CAP_NET_RAW from containers (`runsc exec` will still be able to utilize raw sockets). Raw sockets allow malicious containers to craft packets and potentially attack the network.")
-	flagSet.Bool("gso", true, "enable hardware segmentation offload if it is supported by a network device.")
-	flagSet.Bool("software-gso", true, "enable software segmentation offload when hardware offload can't be enabled.")
+	flagSet.Bool("gso", true, "enable host segmentation offload if it is supported by a network device.")
+	flagSet.Bool("software-gso", true, "enable gVisor segmentation offload when host offload can't be enabled.")
 	flagSet.Bool("tx-checksum-offload", false, "enable TX checksum offload.")
 	flagSet.Bool("rx-checksum-offload", true, "enable RX checksum offload.")
 	flagSet.Var(queueingDisciplinePtr(QDiscFIFO), "qdisc", "specifies which queueing discipline to apply by default to the non loopback nics used by the sandbox.")

@@ -302,18 +302,18 @@ func (r *Route) RequiresTXTransportChecksum() bool {
 	return r.outgoingNIC.NetworkLinkEndpoint.Capabilities()&CapabilityTXChecksumOffload == 0
 }
 
-// HasSoftwareGSOCapability returns true if the route supports software GSO.
-func (r *Route) HasSoftwareGSOCapability() bool {
+// HasGvisorGSOCapability returns true if the route supports gVisor GSO.
+func (r *Route) HasGvisorGSOCapability() bool {
 	if gso, ok := r.outgoingNIC.NetworkLinkEndpoint.(GSOEndpoint); ok {
-		return gso.SupportedGSO() == SWGSOSupported
+		return gso.SupportedGSO() == GvisorGSOSupported
 	}
 	return false
 }
 
-// HasHardwareGSOCapability returns true if the route supports hardware GSO.
-func (r *Route) HasHardwareGSOCapability() bool {
+// HasHostGSOCapability returns true if the route supports host GSO.
+func (r *Route) HasHostGSOCapability() bool {
 	if gso, ok := r.outgoingNIC.NetworkLinkEndpoint.(GSOEndpoint); ok {
-		return gso.SupportedGSO() == HWGSOSupported
+		return gso.SupportedGSO() == HostGSOSupported
 	}
 	return false
 }
