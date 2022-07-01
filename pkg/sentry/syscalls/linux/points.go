@@ -402,7 +402,7 @@ func pipeHelper(t *kernel.Task, cxtData *pb.ContextData, info kernel.SyscallInfo
 	if info.Exit {
 		if pipeFDAddr := info.Args[0].Pointer(); pipeFDAddr != 0 {
 			var pipeFDs [2]int32
-			if _, err := primitive.CopyInt32SliceOut(t, pipeFDAddr, pipeFDs[2:2]); err == nil { // if NO error
+			if _, err := primitive.CopyInt32SliceIn(t, pipeFDAddr, pipeFDs[:]); err == nil { // if NO error
 				p.Reader = pipeFDs[0]
 				p.Writer = pipeFDs[1]
 			}
@@ -602,9 +602,13 @@ func acceptHelper(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextD
 		Flags:       flags,
 	}
 	addr := info.Args[1].Pointer()
-	addrLen := info.Args[2].Uint()
-	if address, err := CaptureAddress(t, addr, addrLen); err == nil { // if NO error
-		p.Address = address
+	if addrLenPointer := info.Args[2].Pointer(); addrLenPointer != 0 {
+		var addrLen uint32
+		if _, err := primitive.CopyUint32In(t, addrLenPointer, &addrLen); err == nil { // if NO error
+			if address, err := CaptureAddress(t, addr, addrLen); err == nil { // if NO error
+				p.Address = address
+			}
+		}
 	}
 
 	if fields.Local.Contains(seccheck.FieldSyscallPath) {
