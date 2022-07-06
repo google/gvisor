@@ -45,6 +45,10 @@ type Lifecycle struct {
 	// MountNamespacesMap is a map of container id/names and the mount
 	// namespaces.
 	MountNamespacesMap map[string]*vfs.MountNamespace
+
+	// containerInitProcessMap is a map of container ID and the init(PID 1)
+	// threadgroup of the container.
+	containerInitProcessMap map[string]*kernel.ThreadGroup
 }
 
 // StartContainerArgs is the set of arguments to start a container.
@@ -116,6 +120,11 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 	if limitSet == nil {
 		limitSet = limits.NewLimitSet()
 	}
+
+	// Create a new pid namespace for the container. Each container must run
+	// in its own pid namespace.
+	pidNs := l.Kernel.RootPIDNamespace().NewChild(l.Kernel.RootUserNamespace())
+
 	initArgs := kernel.CreateProcessArgs{
 		Filename:                args.Filename,
 		Argv:                    args.Argv,
@@ -130,7 +139,7 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 		IPCNamespace:            l.Kernel.RootIPCNamespace(),
 		AbstractSocketNamespace: l.Kernel.RootAbstractSocketNamespace(),
 		ContainerID:             args.ContainerID,
-		PIDNamespace:            l.Kernel.RootPIDNamespace(),
+		PIDNamespace:            pidNs,
 	}
 
 	ctx := initArgs.NewContext(l.Kernel)
@@ -171,6 +180,13 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 	// Start the newly created process.
 	l.Kernel.StartProcess(tg)
 	log.Infof("Started the new container %v ", initArgs.ContainerID)
+
+	l.mu.Lock()
+	if l.containerInitProcessMap == nil {
+		l.containerInitProcessMap = make(map[string]*kernel.ThreadGroup)
+	}
+	l.containerInitProcessMap[initArgs.ContainerID] = tg
+	l.mu.Unlock()
 	return nil
 }
 
@@ -189,5 +205,35 @@ func (l *Lifecycle) Resume(_, _ *struct{}) error {
 // Shutdown sends signal to destroy the sentry/sandbox.
 func (l *Lifecycle) Shutdown(_, _ *struct{}) error {
 	close(l.ShutdownCh)
+	return nil
+}
+
+func (l *Lifecycle) getInitContainerProcess(containerID string) (*kernel.ThreadGroup, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	tg, ok := l.containerInitProcessMap[containerID]
+	if !ok {
+		return nil, fmt.Errorf("container %v not started", containerID)
+	}
+	return tg, nil
+}
+
+// ContainerArgs is the set of arguments for container related APIs after
+// starting the container.
+type ContainerArgs struct {
+	// ContainerID.
+	ContainerID string `json:"containerID"`
+}
+
+// WaitContainer waits for the container to exit and returns the exit status.
+func (l *Lifecycle) WaitContainer(args *ContainerArgs, waitStatus *uint32) error {
+	tg, err := l.getInitContainerProcess(args.ContainerID)
+	if err != nil {
+		return err
+	}
+
+	tg.WaitExited()
+	*waitStatus = uint32(tg.ExitStatus())
 	return nil
 }
