@@ -35,15 +35,12 @@ type Lifecycle struct {
 	// Kernel is the kernel where the tasks belong to.
 	Kernel *kernel.Kernel
 
-	// StartedCh is the channel used to send a message to the sentry that
-	// all the containers in the sandbox have been started.
-	StartedCh chan struct{}
+	// ShutdownCh is the channel used to signal the sentry to shutdown
+	// the sentry/sandbox.
+	ShutdownCh chan struct{}
 
 	// mu protects the fields below.
 	mu sync.RWMutex
-
-	// containersStarted is the number of containers started in the sandbox.
-	containersStarted int32
 
 	// MountNamespacesMap is a map of container id/names and the mount
 	// namespaces.
@@ -171,17 +168,9 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 		return err
 	}
 
-	l.mu.Lock()
-	numContainers := int32(len(l.MountNamespacesMap))
-
 	// Start the newly created process.
 	l.Kernel.StartProcess(tg)
-	log.Infof("Started the new container %v ", l.containersStarted)
-	l.containersStarted++
-	if numContainers == l.containersStarted {
-		l.StartedCh <- struct{}{}
-	}
-	l.mu.Unlock()
+	log.Infof("Started the new container %v ", initArgs.ContainerID)
 	return nil
 }
 
@@ -194,5 +183,11 @@ func (l *Lifecycle) Pause(_, _ *struct{}) error {
 // Resume resumes all tasks.
 func (l *Lifecycle) Resume(_, _ *struct{}) error {
 	l.Kernel.Unpause()
+	return nil
+}
+
+// Shutdown sends signal to destroy the sentry/sandbox.
+func (l *Lifecycle) Shutdown(_, _ *struct{}) error {
+	close(l.ShutdownCh)
 	return nil
 }
