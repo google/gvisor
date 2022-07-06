@@ -105,14 +105,14 @@ endif
 ##     DOCKER_RELOAD_COMMAND - The command to run to reload Docker. (default: sudo systemctl reload docker).
 
 ifeq (,$(BRANCH_NAME))
-RUNTIME     := runsc
+RUNTIME     ?= runsc
 else
-RUNTIME     := $(BRANCH_NAME)
+RUNTIME     ?= $(BRANCH_NAME)
 endif
 RUNTIME_DIR     ?= $(shell dirname $(shell mktemp -u))/$(RUNTIME)
-RUNTIME_BIN     := $(RUNTIME_DIR)/runsc
-RUNTIME_LOG_DIR := $(RUNTIME_DIR)/logs
-RUNTIME_LOGS    := $(RUNTIME_LOG_DIR)/runsc.log.%TEST%.%TIMESTAMP%.%COMMAND%
+RUNTIME_BIN     ?= $(RUNTIME_DIR)/runsc
+RUNTIME_LOG_DIR ?= $(RUNTIME_DIR)/logs
+RUNTIME_LOGS    ?= $(RUNTIME_LOG_DIR)/runsc.log.%TEST%.%TIMESTAMP%.%COMMAND%
 RUNTIME_ARGS    ?=
 DOCKER_RELOAD_COMMAND ?= sudo systemctl reload docker
 
