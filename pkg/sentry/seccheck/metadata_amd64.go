@@ -139,6 +139,36 @@ func init() {
 			Name: "fd_path",
 		},
 	})
+	addSyscallPoint(57, "fork", nil)
+	addSyscallPoint(58, "vfork", nil)
+	addSyscallPoint(253, "inotify_init", nil)
+	addSyscallPoint(294, "inotify_init1", nil)
+	addSyscallPoint(254, "inotify_add_watch", []FieldDesc{
+		{
+			ID:   FieldSyscallPath,
+			Name: "fd_path",
+		},
+	})
+	addSyscallPoint(255, "inotify_rm_watch", []FieldDesc{
+		{
+			ID:   FieldSyscallPath,
+			Name: "fd_path",
+		},
+	})
+	addSyscallPoint(283, "timerfd_create", nil)
+	addSyscallPoint(286, "timerfd_settime", []FieldDesc{
+		{
+			ID:   FieldSyscallPath,
+			Name: "fd_path",
+		},
+	})
+	addSyscallPoint(287, "timerfd_gettime", []FieldDesc{
+		{
+			ID:   FieldSyscallPath,
+			Name: "fd_path",
+		},
+	})
+	addSyscallPoint(53, "socketpair", nil)
 
 	const lastSyscallInTable = 441
 	for i := 0; i <= lastSyscallInTable; i++ {
