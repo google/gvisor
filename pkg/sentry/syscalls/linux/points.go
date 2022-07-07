@@ -629,3 +629,189 @@ func PointAccept4(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextD
 	flags := info.Args[3].Int()
 	return acceptHelper(t, fields, cxtData, info, flags)
 }
+
+// PointTimerfdCreate converts timerfd_create(2) syscall to proto.
+func PointTimerfdCreate(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	p := &pb.TimerfdCreate{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		ClockId:     info.Args[0].Int(),
+		Flags:       info.Args[1].Int(),
+	}
+
+	p.Exit = newExitMaybe(info)
+	return p, pb.MessageType_MESSAGE_SYSCALL_TIMERFD_CREATE
+}
+
+func getValues(values linux.Timespec) *pb.Timespec {
+	return &pb.Timespec{
+		Sec:  values.Sec,
+		Nsec: values.Nsec,
+	}
+}
+
+// PointTimerfdSettime converts timerfd_settime(2) syscall to proto.
+func PointTimerfdSettime(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	p := &pb.TimerfdSetTime{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Fd:          info.Args[0].Int(),
+		Flags:       info.Args[1].Int(),
+	}
+
+	if fields.Local.Contains(seccheck.FieldSyscallPath) {
+		p.FdPath = getFilePath(t, int32(p.Fd))
+	}
+
+	var newVal linux.Itimerspec
+	if newValAddr := info.Args[2].Pointer(); newValAddr != 0 {
+		if _, err := newVal.CopyIn(t, newValAddr); err == nil {
+			p.NewValue = &pb.ItimerSpec{
+				Interval: getValues(newVal.Interval),
+				Value:    getValues(newVal.Value),
+			}
+		}
+	}
+	if info.Exit {
+		var oldVal linux.Itimerspec
+		if oldValAddr := info.Args[3].Pointer(); oldValAddr != 0 {
+			if _, err := oldVal.CopyIn(t, oldValAddr); err == nil {
+				p.OldValue = &pb.ItimerSpec{
+					Interval: getValues(oldVal.Interval),
+					Value:    getValues(oldVal.Value),
+				}
+			}
+		}
+	}
+
+	p.Exit = newExitMaybe(info)
+	return p, pb.MessageType_MESSAGE_SYSCALL_TIMERFD_SETTIME
+}
+
+// PointTimerfdGettime converts timerfd_gettime(2) syscall to proto.
+func PointTimerfdGettime(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	p := &pb.TimerfdGetTime{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Fd:          info.Args[0].Int(),
+	}
+
+	if fields.Local.Contains(seccheck.FieldSyscallPath) {
+		p.FdPath = getFilePath(t, int32(p.Fd))
+	}
+
+	if curValAddr := info.Args[1].Pointer(); curValAddr != 0 {
+		var curVal linux.Itimerspec
+		if _, err := curVal.CopyIn(t, curValAddr); err == nil {
+			p.CurValue = &pb.ItimerSpec{
+				Interval: getValues(curVal.Interval),
+				Value:    getValues(curVal.Value),
+			}
+		}
+	}
+
+	p.Exit = newExitMaybe(info)
+	return p, pb.MessageType_MESSAGE_SYSCALL_TIMERFD_GETTIME
+}
+
+// pointForkHelper converts fork(2) and vfork(2) syscall to proto.
+func pointForkHelper(cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	p := &pb.Fork{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+	}
+
+	p.Exit = newExitMaybe(info)
+	return p, pb.MessageType_MESSAGE_SYSCALL_FORK
+}
+
+// PointFork converts fork(2) syscall to proto.
+func PointFork(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	return pointForkHelper(cxtData, info)
+}
+
+// PointVfork converts vfork(2) syscall to proto.
+func PointVfork(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	return pointForkHelper(cxtData, info)
+}
+
+// pointInotifyInitHelper converts inotify_init(2) and inotify_init1(2) syscall to proto.
+func pointInotifyInitHelper(cxtData *pb.ContextData, info kernel.SyscallInfo, flags int32) (proto.Message, pb.MessageType) {
+	p := &pb.InotifyInit{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Flags:       flags,
+	}
+
+	p.Exit = newExitMaybe(info)
+	return p, pb.MessageType_MESSAGE_SYSCALL_INOTIFY_INIT
+}
+
+// PointInotifyInit converts inotify_init(2) syscall to proto.
+func PointInotifyInit(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	return pointInotifyInitHelper(cxtData, info, 0)
+}
+
+// PointInotifyInit1 converts inotify_init1(2) syscall to proto.
+func PointInotifyInit1(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	flags := info.Args[0].Int()
+	return pointInotifyInitHelper(cxtData, info, flags)
+}
+
+// PointInotifyAddWatch converts inotify_add_watch(2) syscall to proto.
+func PointInotifyAddWatch(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	p := &pb.InotifyAddWatch{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Fd:          info.Args[0].Int(),
+		Mask:        info.Args[2].Uint(),
+	}
+	if pathAddr := info.Args[1].Pointer(); pathAddr > 0 {
+		p.Pathname, _ = t.CopyInString(pathAddr, linux.PATH_MAX)
+	}
+
+	if fields.Local.Contains(seccheck.FieldSyscallPath) {
+		p.FdPath = getFilePath(t, int32(p.Fd))
+	}
+
+	p.Exit = newExitMaybe(info)
+	return p, pb.MessageType_MESSAGE_SYSCALL_INOTIFY_ADD_WATCH
+}
+
+// PointInotifyRmWatch converts inotify_add_watch(2) syscall to proto.
+func PointInotifyRmWatch(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	p := &pb.InotifyRmWatch{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Fd:          info.Args[0].Int(),
+		Wd:          info.Args[2].Int(),
+	}
+
+	if fields.Local.Contains(seccheck.FieldSyscallPath) {
+		p.FdPath = getFilePath(t, int32(p.Fd))
+	}
+
+	p.Exit = newExitMaybe(info)
+	return p, pb.MessageType_MESSAGE_SYSCALL_INOTIFY_RM_WATCH
+}
+
+// PointSocketpair converts socketpair(2) syscall to proto.
+func PointSocketpair(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	p := &pb.SocketPair{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Domain:      info.Args[0].Int(),
+		Type:        info.Args[1].Int(),
+		Protocol:    info.Args[2].Int(),
+	}
+	if info.Exit {
+		sockets := info.Args[3].Pointer()
+		var fds [2]int32
+		if _, err := primitive.CopyInt32SliceIn(t, sockets, fds[:]); err == nil { // if NO error
+			p.Socket1 = fds[0]
+			p.Socket2 = fds[1]
+		}
+	}
+	p.Exit = newExitMaybe(info)
+	return p, pb.MessageType_MESSAGE_SYSCALL_SOCKETPAIR
+}
