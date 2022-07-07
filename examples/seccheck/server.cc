@@ -105,6 +105,14 @@ std::vector<Callback> dispatchers = {
     unpackSyscall<::gvisor::syscall::Clone>,
     unpackSyscall<::gvisor::syscall::Bind>,
     unpackSyscall<::gvisor::syscall::Accept>,
+    unpackSyscall<::gvisor::syscall::TimerfdCreate>,
+    unpackSyscall<::gvisor::syscall::TimerfdSetTime>,
+    unpackSyscall<::gvisor::syscall::TimerfdGetTime>,
+    unpackSyscall<::gvisor::syscall::Fork>,
+    unpackSyscall<::gvisor::syscall::InotifyInit>,
+    unpackSyscall<::gvisor::syscall::InotifyAddWatch>,
+    unpackSyscall<::gvisor::syscall::InotifyRmWatch>,
+    unpackSyscall<::gvisor::syscall::SocketPair>,
 };
 
 void unpack(absl::string_view buf) {

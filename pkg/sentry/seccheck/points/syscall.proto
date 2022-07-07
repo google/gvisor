@@ -178,6 +178,7 @@ message Chroot {
   uint64 sysno = 3;
   string pathname = 4;
 }
+
 message Eventfd {
   gvisor.common.ContextData context_data = 1;
   Exit exit = 2;
@@ -213,4 +214,85 @@ message Accept {
   string fd_path = 5;
   bytes address = 6;
   int32 flags = 7;
+}
+
+message TimerfdCreate {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 clock_id = 4;
+  int32 flags = 5;
+}
+
+message Timespec {
+  int64 sec = 1;
+  int64 nsec = 2;
+}
+
+message ItimerSpec {
+  Timespec interval = 1;
+  Timespec value = 2;
+}
+
+message TimerfdSetTime {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 fd = 4;
+  string fd_path = 5;
+  int32 flags = 6;
+  ItimerSpec new_value = 7;
+  ItimerSpec old_value = 8;
+}
+
+message TimerfdGetTime {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 fd = 4;
+  string fd_path = 5;
+  ItimerSpec cur_value = 6;
+}
+
+message Fork {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+}
+
+message InotifyInit {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 flags = 4;
+}
+
+message InotifyAddWatch{
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 fd = 4;
+  string fd_path = 5;
+  string pathname = 6;
+  uint32 mask = 7;
+}
+
+message InotifyRmWatch {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 fd = 4;
+  string fd_path = 5;
+  int32 wd = 6;
+}
+
+message SocketPair {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 domain = 4;
+  int32 type = 5;
+  int32 protocol = 6;
+  int32 socket1 = 7;
+  int32 socket2 = 8;
 }
