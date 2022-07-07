@@ -120,6 +120,11 @@ func (c *pidsController) AddControlFiles(ctx context.Context, creds *auth.Creden
 	}
 }
 
+// +checklocks:c.mu
+func (c *pidsController) debug() string {
+	return fmt.Sprintf("pending=%v, committed=%v, pool=%v", c.pendingTotal, c.committed, c.pendingPool)
+}
+
 // Enter implements controller.Enter.
 //
 // Enter attempts to commit a charge from the pending pool. If at least one
@@ -129,6 +134,8 @@ func (c *pidsController) AddControlFiles(ctx context.Context, creds *auth.Creden
 func (c *pidsController) Enter(t *kernel.Task) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	log.Debugf("cgroupfs.pids: Enter for Task %p => before, %s", t, c.debug())
 
 	if pending, ok := c.pendingPool[t]; ok {
 		if pending == 1 {
@@ -146,6 +153,7 @@ func (c *pidsController) Enter(t *kernel.Task) {
 	// committed charge directly here. Either way, we don't enforce the limit on
 	// Enter.
 	c.committed++
+	log.Debugf("cgroupfs.pids: Enter for Task %p => after, %s", t, c.debug())
 }
 
 // Leave implements controller.Leave.
@@ -153,10 +161,12 @@ func (c *pidsController) Leave(t *kernel.Task) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	log.Debugf("cgroupfs.pids: Leave for Task %p => before, %s", t, c.debug())
 	if c.committed <= 0 {
 		panic(fmt.Sprintf("cgroupfs: pids controller committed charge underflow on Leave for task %+v", t))
 	}
 	c.committed--
+	log.Debugf("cgroupfs.pids: Leave for Task %p => after, %s", t, c.debug())
 }
 
 // PrepareMigrate implements controller.PrepareMigrate.
@@ -174,15 +184,19 @@ func (c *pidsController) CommitMigrate(t *kernel.Task, src controller) {
 	// not exceed max when incurred due to a fork/clone, which will call
 	// pidsController.Charge().
 	c.mu.Lock()
+	log.Debugf("cgroupfs.pids: CommitMigrate for Task %p => before, dst is %s", t, c.debug())
 	c.committed++
+	log.Debugf("cgroupfs.pids: CommitMigrate for Task %p => after, dst is %s", t, c.debug())
 	c.mu.Unlock()
 
 	srcC := src.(*pidsController)
 	srcC.mu.Lock()
+	log.Debugf("cgroupfs.pids: CommitMigrate for Task %p => before, src is %s", t, srcC.debug())
 	if srcC.committed <= 0 {
 		panic(fmt.Sprintf("cgroupfs: pids controller committed charge underflow on CommitMigrate for task %+v on the source cgroup", t))
 	}
 	srcC.committed--
+	log.Debugf("cgroupfs.pids: CommitMigrate for Task %p => after, src is %s", t, srcC.debug())
 	srcC.mu.Unlock()
 }
 
@@ -200,6 +214,9 @@ func (c *pidsController) Charge(t *kernel.Task, d *kernfs.Dentry, res kernel.Cgr
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	log.Debugf("cgroupfs.pids: Charge for Task %p => before, %s", t, c.debug())
+	defer log.Debugf("cgroupfs.pids: Charge for Task %p => after, %s", t, c.debug())
 
 	// Negative charge.
 	if value < 0 {
