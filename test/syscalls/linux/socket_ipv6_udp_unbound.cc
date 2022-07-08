@@ -91,9 +91,8 @@ TEST_P(IPv6UDPUnboundSocketTest, IPv6PacketInfo) {
       .msg_control = recv_cmsg_buf,
       .msg_controllen = sizeof(recv_cmsg_buf),
   };
-  ASSERT_THAT(
-      RetryEINTR(recvmsg)(receiver_socket->get(), &recv_msg, 0 /* flags */),
-      SyscallSucceedsWithValue(sizeof(send_buf)));
+  ASSERT_THAT(RecvMsgTimeout(receiver_socket->get(), &recv_msg, 1 /*timeout*/),
+              IsPosixErrorOkAndHolds(sizeof(send_buf)));
   EXPECT_EQ(memcmp(send_buf, recv_buf, sizeof(send_buf)), 0);
 
   cmsghdr* cmsg = CMSG_FIRSTHDR(&recv_msg);
