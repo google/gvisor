@@ -142,7 +142,7 @@ func (p *protocol) NewEndpoint(nic stack.NetworkInterface, dispatcher stack.Tran
 		protocol:   p,
 	}
 	e.mu.Lock()
-	e.addressableEndpointState.Init(e)
+	e.addressableEndpointState.Init(e, stack.AddressableEndpointStateOptions{HiddenWhileDisabled: false})
 	e.igmp.init(e)
 	e.mu.Unlock()
 
@@ -276,6 +276,9 @@ func (e *endpoint) enableLocked() tcpip.Error {
 		return nil
 	}
 
+	// Must be called after Enabled has already been set.
+	e.addressableEndpointState.OnNetworkEndpointEnabledChanged()
+
 	// Create an endpoint to receive broadcast packets on this interface.
 	ep, err := e.addressableEndpointState.AddAndAcquirePermanentAddress(ipv4BroadcastAddr, stack.AddressProperties{PEB: stack.NeverPrimaryEndpoint})
 	if err != nil {
@@ -364,6 +367,9 @@ func (e *endpoint) disableLocked() {
 	if !e.setEnabled(false) {
 		panic("should have only done work to disable the endpoint if it was enabled")
 	}
+
+	// Must be called after Enabled has been set.
+	e.addressableEndpointState.OnNetworkEndpointEnabledChanged()
 }
 
 // emitMulticastEvent emits a multicast forwarding event using the provided
@@ -1277,7 +1283,7 @@ func (e *endpoint) AddAndAcquirePermanentAddress(addr tcpip.AddressWithPrefix, p
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
-	ep, err := e.addressableEndpointState.AddAndAcquirePermanentAddress(addr, properties)
+	ep, err := e.addressableEndpointState.AddAndAcquireAddress(addr, properties, stack.Permanent)
 	if err == nil {
 		e.sendQueuedReports()
 	}
@@ -1304,6 +1310,13 @@ func (e *endpoint) SetDeprecated(addr tcpip.Address, deprecated bool) tcpip.Erro
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	return e.addressableEndpointState.SetDeprecated(addr, deprecated)
+}
+
+// SetLifetimes implements stack.AddressableEndpoint.
+func (e *endpoint) SetLifetimes(addr tcpip.Address, lifetimes stack.AddressLifetimes) tcpip.Error {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.addressableEndpointState.SetLifetimes(addr, lifetimes)
 }
 
 // MainAddress implements stack.AddressableEndpoint.
