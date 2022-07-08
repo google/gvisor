@@ -98,6 +98,18 @@ class UdpSocketTest : public ::testing::TestWithParam<int> {
   socklen_t GetAddrLength();
 };
 
+// Blocks until POLLIN is signaled on fd.
+void BlockUntilPollin(int fd) {
+  constexpr int kInfiniteTimeout = -1;
+  pollfd pfd = {
+      .fd = fd,
+      .events = POLLIN,
+  };
+  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, kInfiniteTimeout),
+              SyscallSucceedsWithValue(1));
+  ASSERT_EQ(pfd.revents, POLLIN);
+}
+
 // Gets a pointer to the port component of the given address.
 uint16_t* Port(struct sockaddr_storage* addr) {
   switch (addr->ss_family) {
@@ -1098,6 +1110,9 @@ TEST_P(UdpSocketTest, ReceiveBeforeConnect) {
   ASSERT_THAT(sendto(sock_.get(), buf, sizeof(buf), 0, bind_addr_, addrlen_),
               SyscallSucceedsWithValue(sizeof(buf)));
 
+  // Wait for the data to arrive.
+  ASSERT_NO_FATAL_FAILURE(BlockUntilPollin(bind_.get()));
+
   // Connect to loopback:bind_addr_port+1.
   struct sockaddr_storage addr_storage = InetLoopbackAddr();
   struct sockaddr* addr = AsSockAddr(&addr_storage);
@@ -1190,11 +1205,10 @@ TEST_P(UdpSocketTest, ReadShutdownNonblockPendingData) {
   ASSERT_THAT(opts = fcntl(bind_.get(), F_GETFL), SyscallSucceeds());
   ASSERT_NE(opts & O_NONBLOCK, 0);
 
-  EXPECT_THAT(shutdown(bind_.get(), SHUT_RD), SyscallSucceeds());
+  // Wait for the data to arrive.
+  ASSERT_NO_FATAL_FAILURE(BlockUntilPollin(bind_.get()));
 
-  struct pollfd pfd = {bind_.get(), POLLIN, 0};
-  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, /*timeout=*/1000),
-              SyscallSucceedsWithValue(1));
+  EXPECT_THAT(shutdown(bind_.get(), SHUT_RD), SyscallSucceeds());
 
   // We should get the data even though read has been shutdown.
   EXPECT_THAT(RecvTimeout(bind_.get(), received, 2 /*buf_size*/, 1 /*timeout*/),

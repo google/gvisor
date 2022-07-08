@@ -177,6 +177,13 @@ TEST_P(PacketSocketTest, RebindProtocol) {
                0 /* flags */, reinterpret_cast<const sockaddr*>(&udp_bind_addr),
                sizeof(udp_bind_addr)),
         SyscallSucceeds());
+
+    // Make sure the payload has been delivered (in case of asynchronous
+    // delivery).
+    char buf[sizeof(v)];
+    EXPECT_THAT(RecvTimeout(udp_sock.get(), buf, sizeof(v), 1 /*timeout*/),
+                IsPosixErrorOkAndHolds(sizeof(v)));
+    ASSERT_EQ(*reinterpret_cast<uint64_t*>(buf), v);
   };
 
   auto bind_to_network_protocol = [&](uint16_t protocol) {
@@ -193,14 +200,6 @@ TEST_P(PacketSocketTest, RebindProtocol) {
   };
 
   auto test_recv = [&, this](const uint64_t v) {
-    constexpr int kInfiniteTimeout = -1;
-    pollfd pfd = {
-        .fd = socket_.get(),
-        .events = POLLIN,
-    };
-    ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, kInfiniteTimeout),
-                SyscallSucceedsWithValue(1));
-
     struct {
       ethhdr eth;
       iphdr ip;
@@ -220,14 +219,25 @@ TEST_P(PacketSocketTest, RebindProtocol) {
       expected_read_len -= sizeof(read_pkt.eth);
     }
 
-    ASSERT_THAT(recvfrom(socket_.get(), buf, buflen, 0,
-                         reinterpret_cast<sockaddr*>(&src), &src_len),
-                SyscallSucceedsWithValue(expected_read_len));
+    iovec received_iov = {
+        .iov_base = buf,
+        .iov_len = buflen,
+    };
+    msghdr received_msg = {
+        .msg_name = &src,
+        .msg_namelen = src_len,
+        .msg_iov = &received_iov,
+        .msg_iovlen = 1,
+    };
+
+    ASSERT_THAT(RecvMsgTimeout(socket_.get(), &received_msg, 1 /*timeout*/),
+                IsPosixErrorOkAndHolds(expected_read_len));
+
     // sockaddr_ll ends with an 8 byte physical address field, but ethernet
     // addresses only use 6 bytes. Linux used to return sizeof(sockaddr_ll)-2
     // here, but returns sizeof(sockaddr_ll) since
     // https://github.com/torvalds/linux/commit/b2cf86e1563e33a14a1c69b3e508d15dc12f804c.
-    ASSERT_THAT(src_len,
+    ASSERT_THAT(received_msg.msg_namelen,
                 AnyOf(Eq(sizeof(src)),
                       Eq(sizeof(src) - sizeof(src.sll_addr) + ETH_ALEN)));
     EXPECT_EQ(src.sll_family, AF_PACKET);
