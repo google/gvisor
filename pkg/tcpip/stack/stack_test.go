@@ -276,7 +276,7 @@ func (f *fakeNetworkProtocol) NewEndpoint(nic stack.NetworkInterface, dispatcher
 		proto:      f,
 		dispatcher: dispatcher,
 	}
-	e.AddressableEndpointState.Init(e)
+	e.AddressableEndpointState.Init(e, stack.AddressableEndpointStateOptions{HiddenWhileDisabled: false})
 	return e
 }
 
@@ -422,6 +422,117 @@ func containsAddr(list []tcpip.ProtocolAddress, item tcpip.ProtocolAddress) bool
 	}
 
 	return false
+}
+
+type addressChangedEvent struct {
+	lifetimes stack.AddressLifetimes
+	state     stack.AddressAssignmentState
+}
+
+// An implementation of AddressDispatcher which forwards data from callbacks
+// to channels to be asserted against in tests.
+type addressDispatcher struct {
+	changedCh chan addressChangedEvent
+	removedCh chan stack.AddressRemovalReason
+	nicid     tcpip.NICID
+	addr      tcpip.AddressWithPrefix
+	lifetimes stack.AddressLifetimes
+	state     stack.AddressAssignmentState
+}
+
+var _ stack.AddressDispatcher = (*addressDispatcher)(nil)
+
+// OnChanged implements stack.AddressDispatcher.
+func (ad *addressDispatcher) OnChanged(lifetimes stack.AddressLifetimes, state stack.AddressAssignmentState) {
+	if ad.changedCh != nil {
+		ad.changedCh <- addressChangedEvent{
+			lifetimes: lifetimes,
+			state:     state,
+		}
+	}
+}
+
+// OnRemoved implements stack.AddressDispatcher.
+func (ad *addressDispatcher) OnRemoved(reason stack.AddressRemovalReason) {
+	if ad.removedCh != nil {
+		ad.removedCh <- reason
+	}
+}
+
+func (ad *addressDispatcher) disable() {
+	ad.changedCh = nil
+	ad.removedCh = nil
+}
+
+func (ad *addressDispatcher) expectNoEvent() error {
+	select {
+	case e := <-ad.changedCh:
+		return fmt.Errorf("dispatcher for nic=%d addr=%s unexpectedly received changed event: %#v", ad.nicid, ad.addr, e)
+	case e := <-ad.removedCh:
+		return fmt.Errorf("dispatcher for nic=%d addr=%s unexpectedly received removed event: %#v", ad.nicid, ad.addr, e)
+	default:
+		return nil
+	}
+}
+
+func (ad *addressDispatcher) expectChanged(lifetimes stack.AddressLifetimes, state stack.AddressAssignmentState) error {
+	select {
+	case e := <-ad.changedCh:
+		ad.lifetimes = e.lifetimes
+		ad.state = e.state
+		if diff := cmp.Diff(e, addressChangedEvent{
+			lifetimes: lifetimes,
+			state:     state,
+		}, cmp.AllowUnexported(e, tcpip.MonotonicTime{})); diff != "" {
+			return fmt.Errorf("dispatcher for nic=%d addr=%s address changed event mismatch (-got +want):\n%s", ad.nicid, ad.addr, diff)
+		}
+	default:
+		return fmt.Errorf("dispatcher for nic=%d addr=%s address changed event not immediately ready", ad.nicid, ad.addr)
+	}
+	return nil
+}
+
+func (ad *addressDispatcher) expectDeprecated() error {
+	return ad.expectChanged(stack.AddressLifetimes{
+		Deprecated: true,
+		ValidUntil: ad.lifetimes.ValidUntil,
+	}, ad.state)
+}
+
+func (ad *addressDispatcher) expectValidUntilChanged(validUntil tcpip.MonotonicTime) error {
+	return ad.expectChanged(stack.AddressLifetimes{
+		Deprecated:     ad.lifetimes.Deprecated,
+		PreferredUntil: ad.lifetimes.PreferredUntil,
+		ValidUntil:     validUntil,
+	}, ad.state)
+}
+
+func (ad *addressDispatcher) expectLifetimesChanged(lifetimes stack.AddressLifetimes) error {
+	return ad.expectChanged(lifetimes, ad.state)
+}
+
+func (ad *addressDispatcher) expectStateChanged(state stack.AddressAssignmentState) error {
+	return ad.expectChanged(ad.lifetimes, state)
+}
+
+func (ad *addressDispatcher) expectRemoved(want stack.AddressRemovalReason) error {
+	select {
+	case got := <-ad.removedCh:
+		if want != got {
+			return fmt.Errorf("dispatcher for nic=%d addr=%s got removal reason = %s, want = %s", ad.nicid, ad.addr, got, want)
+		}
+	default:
+		return fmt.Errorf("dispatcher for nic=%d addr=%s address removed event not immediately ready", ad.nicid, ad.addr)
+	}
+	return nil
+}
+
+func infiniteLifetimes() stack.AddressLifetimes {
+	return stack.AddressLifetimes{
+		Deprecated:     false,
+		ValidUntil:     tcpip.MonotonicTimeInfinite(),
+		PreferredUntil: tcpip.MonotonicTimeInfinite(),
+	}
 }
 
 func TestNetworkReceive(t *testing.T) {
@@ -2297,7 +2408,7 @@ func TestAddProtocolAddress(t *testing.T) {
 						properties := stack.AddressProperties{
 							PEB:        behavior,
 							ConfigType: configType,
-							Deprecated: deprecated,
+							Lifetimes:  stack.AddressLifetimes{Deprecated: deprecated},
 							Temporary:  temporary,
 						}
 						protocolAddr := tcpip.ProtocolAddress{
@@ -2687,8 +2798,10 @@ func TestNICAutoGenLinkLocalAddr(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			const autoGenAddrCount = 1
 			ndpDisp := ndpDispatcher{
-				autoGenAddrC: make(chan ndpAutoGenAddrEvent, 1),
+				autoGenAddrC:    make(chan ndpAutoGenAddrEvent, autoGenAddrCount),
+				autoGenAddrNewC: make(chan ndpAutoGenAddrNewEvent, autoGenAddrCount),
 			}
 			opts := stack.Options{
 				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
@@ -2731,13 +2844,8 @@ func TestNICAutoGenLinkLocalAddr(t *testing.T) {
 
 				// Should have auto-generated an address and resolved immediately (DAD
 				// is disabled).
-				select {
-				case e := <-ndpDisp.autoGenAddrC:
-					if diff := checkAutoGenAddrEvent(e, expectedMainAddr, newAddr); diff != "" {
-						t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
-					}
-				default:
-					t.Fatal("expected addr auto gen event")
+				if _, err := expectAutoGenAddrNewEvent(&ndpDisp, expectedMainAddr); err != nil {
+					t.Fatalf("error expecting link-local auto-gen address generated event: %s", err)
 				}
 			} else {
 				// Should not have auto-generated an address.
@@ -3190,7 +3298,7 @@ func TestIPv6SourceAddressSelectionScopeAndSameAddress(t *testing.T) {
 				{
 					addr: globalAddr2,
 					properties: stack.AddressProperties{
-						Deprecated: true,
+						Lifetimes: stack.AddressLifetimes{Deprecated: true},
 					},
 				},
 			},
@@ -3203,7 +3311,7 @@ func TestIPv6SourceAddressSelectionScopeAndSameAddress(t *testing.T) {
 				{
 					addr: globalAddr2,
 					properties: stack.AddressProperties{
-						Deprecated: true,
+						Lifetimes: stack.AddressLifetimes{Deprecated: true},
 					},
 				},
 				{addr: globalAddr1},

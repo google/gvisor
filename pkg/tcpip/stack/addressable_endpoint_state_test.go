@@ -30,7 +30,7 @@ func TestAddressableEndpointStateCleanup(t *testing.T) {
 	}
 
 	var s stack.AddressableEndpointState
-	s.Init(&ep)
+	s.Init(&ep, stack.AddressableEndpointStateOptions{HiddenWhileDisabled: false})
 
 	addr := tcpip.AddressWithPrefix{
 		Address:   "\x01",

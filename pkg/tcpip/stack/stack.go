@@ -1096,13 +1096,14 @@ func (s *Stack) RemoveAddress(id tcpip.NICID, addr tcpip.Address) tcpip.Error {
 	return &tcpip.ErrUnknownNICID{}
 }
 
-// SetAddressDeprecated sets an address to be deprecated or preferred.
-func (s *Stack) SetAddressDeprecated(id tcpip.NICID, addr tcpip.Address, deprecated bool) tcpip.Error {
+// SetAddressLifetimes sets informational preferred and valid lifetimes, and
+// whether the address should be preferred or deprecated.
+func (s *Stack) SetAddressLifetimes(id tcpip.NICID, addr tcpip.Address, lifetimes AddressLifetimes) tcpip.Error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	if nic, ok := s.nics[id]; ok {
-		return nic.setAddressDeprecated(addr, deprecated)
+		return nic.setAddressLifetimes(addr, lifetimes)
 	}
 
 	return &tcpip.ErrUnknownNICID{}
