@@ -21,11 +21,18 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
+func (lifetimes *AddressLifetimes) sanitize() {
+	if lifetimes.Deprecated {
+		lifetimes.PreferredUntil = tcpip.MonotonicTime{}
+	}
+}
+
 var _ AddressableEndpoint = (*AddressableEndpointState)(nil)
 
 // AddressableEndpointState is an implementation of an AddressableEndpoint.
 type AddressableEndpointState struct {
 	networkEndpoint NetworkEndpoint
+	options         AddressableEndpointStateOptions
 
 	// Lock ordering (from outer to inner lock ordering):
 	//
@@ -38,15 +45,40 @@ type AddressableEndpointState struct {
 	primary []*addressState
 }
 
+// AddressableEndpointStateOptions contains options used to configure an
+// AddressableEndpointState.
+type AddressableEndpointStateOptions struct {
+	// HiddenWhileDisabled determines whether addresses should be returned to
+	// callers while the NetworkEndpoint this AddressableEndpointState belongs
+	// to is disabled.
+	HiddenWhileDisabled bool
+}
+
 // Init initializes the AddressableEndpointState with networkEndpoint.
 //
 // Must be called before calling any other function on m.
-func (a *AddressableEndpointState) Init(networkEndpoint NetworkEndpoint) {
+func (a *AddressableEndpointState) Init(networkEndpoint NetworkEndpoint, options AddressableEndpointStateOptions) {
 	a.networkEndpoint = networkEndpoint
+	a.options = options
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.endpoints = make(map[tcpip.Address]*addressState)
+}
+
+// OnNetworkEndpointEnabledChanged must be called every time the
+// NetworkEndpoint this AddressableEndpointState belongs to is enabled or
+// disabled so that any AddressDispatchers can be notified of the NIC enabled
+// change.
+func (a *AddressableEndpointState) OnNetworkEndpointEnabledChanged() {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	for _, ep := range a.endpoints {
+		ep.mu.Lock()
+		ep.notifyChangedLocked()
+		ep.mu.Unlock()
+	}
 }
 
 // GetAddress returns the AddressEndpoint for the passed address.
@@ -118,27 +150,7 @@ func (a *AddressableEndpointState) releaseAddressStateLocked(addrState *addressS
 
 // AddAndAcquirePermanentAddress implements AddressableEndpoint.
 func (a *AddressableEndpointState) AddAndAcquirePermanentAddress(addr tcpip.AddressWithPrefix, properties AddressProperties) (AddressEndpoint, tcpip.Error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	ep, err := a.addAndAcquireAddressLocked(addr, properties, true /* permanent */)
-	// From https://golang.org/doc/faq#nil_error:
-	//
-	// Under the covers, interfaces are implemented as two elements, a type T and
-	// a value V.
-	//
-	// An interface value is nil only if the V and T are both unset, (T=nil, V is
-	// not set), In particular, a nil interface will always hold a nil type. If we
-	// store a nil pointer of type *int inside an interface value, the inner type
-	// will be *int regardless of the value of the pointer: (T=*int, V=nil). Such
-	// an interface value will therefore be non-nil even when the pointer value V
-	// inside is nil.
-	//
-	// Since addAndAcquireAddressLocked returns a nil value with a non-nil type,
-	// we need to explicitly return nil below if ep is (a typed) nil.
-	if ep == nil {
-		return nil, err
-	}
-	return ep, err
+	return a.AddAndAcquireAddress(addr, properties, Permanent)
 }
 
 // AddAndAcquireTemporaryAddress adds a temporary address.
@@ -147,9 +159,16 @@ func (a *AddressableEndpointState) AddAndAcquirePermanentAddress(addr tcpip.Addr
 //
 // The temporary address's endpoint is acquired and returned.
 func (a *AddressableEndpointState) AddAndAcquireTemporaryAddress(addr tcpip.AddressWithPrefix, peb PrimaryEndpointBehavior) (AddressEndpoint, tcpip.Error) {
+	return a.AddAndAcquireAddress(addr, AddressProperties{PEB: peb}, Temporary)
+}
+
+// AddAndAcquireAddress adds an address with the specified kind.
+//
+// Returns *tcpip.ErrDuplicateAddress if the address exists.
+func (a *AddressableEndpointState) AddAndAcquireAddress(addr tcpip.AddressWithPrefix, properties AddressProperties, kind AddressKind) (AddressEndpoint, tcpip.Error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	ep, err := a.addAndAcquireAddressLocked(addr, AddressProperties{PEB: peb}, false /* permanent */)
+	ep, err := a.addAndAcquireAddressLocked(addr, properties, kind)
 	// From https://golang.org/doc/faq#nil_error:
 	//
 	// Under the covers, interfaces are implemented as two elements, a type T and
@@ -180,7 +199,17 @@ func (a *AddressableEndpointState) AddAndAcquireTemporaryAddress(addr tcpip.Addr
 // returned, regardless the kind of address that is being added.
 //
 // +checklocks:a.mu
-func (a *AddressableEndpointState) addAndAcquireAddressLocked(addr tcpip.AddressWithPrefix, properties AddressProperties, permanent bool) (*addressState, tcpip.Error) {
+func (a *AddressableEndpointState) addAndAcquireAddressLocked(addr tcpip.AddressWithPrefix, properties AddressProperties, kind AddressKind) (*addressState, tcpip.Error) {
+	var permanent bool
+	switch kind {
+	case PermanentExpired:
+		panic(fmt.Sprintf("cannot add address %s in PermanentExpired state", addr))
+	case Permanent, PermanentTentative:
+		permanent = true
+	case Temporary:
+	default:
+		panic(fmt.Sprintf("unknown address kind: %d", kind))
+	}
 	// attemptAddToPrimary is false when the address is already in the primary
 	// address list.
 	attemptAddToPrimary := true
@@ -241,6 +270,7 @@ func (a *AddressableEndpointState) addAndAcquireAddressLocked(addr tcpip.Address
 		// We never promote an address to temporary - it can only be added as such.
 		// If we are actually adding a permanent address, it is promoted below.
 		addrState.kind = Temporary
+		addrState.disp = properties.Disp
 	}
 
 	// At this point we have an address we are either promoting from an expired or
@@ -258,12 +288,14 @@ func (a *AddressableEndpointState) addAndAcquireAddressLocked(addr tcpip.Address
 
 		// Primary addresses are biased by 1.
 		addrState.refs++
-		addrState.kind = Permanent
+		addrState.kind = kind
 	}
 	// Acquire the address before returning it.
 	addrState.refs++
-	addrState.deprecated = properties.Deprecated
 	addrState.configType = properties.ConfigType
+	lifetimes := properties.Lifetimes
+	lifetimes.sanitize()
+	addrState.lifetimes = lifetimes
 
 	if attemptAddToPrimary {
 		switch properties.PEB {
@@ -289,6 +321,7 @@ func (a *AddressableEndpointState) addAndAcquireAddressLocked(addr tcpip.Address
 		}
 	}
 
+	addrState.notifyChangedLocked()
 	return addrState, nil
 }
 
@@ -309,12 +342,12 @@ func (a *AddressableEndpointState) removePermanentAddressLocked(addr tcpip.Addre
 		return &tcpip.ErrBadLocalAddress{}
 	}
 
-	return a.removePermanentEndpointLocked(addrState)
+	return a.removePermanentEndpointLocked(addrState, AddressRemovalManualAction)
 }
 
 // RemovePermanentEndpoint removes the passed endpoint if it is associated with
 // a and permanent.
-func (a *AddressableEndpointState) RemovePermanentEndpoint(ep AddressEndpoint) tcpip.Error {
+func (a *AddressableEndpointState) RemovePermanentEndpoint(ep AddressEndpoint, reason AddressRemovalReason) tcpip.Error {
 	addrState, ok := ep.(*addressState)
 	if !ok || addrState.addressableEndpointState != a {
 		return &tcpip.ErrInvalidEndpointState{}
@@ -322,19 +355,19 @@ func (a *AddressableEndpointState) RemovePermanentEndpoint(ep AddressEndpoint) t
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return a.removePermanentEndpointLocked(addrState)
+	return a.removePermanentEndpointLocked(addrState, reason)
 }
 
 // removePermanentAddressLocked is like RemovePermanentAddress but with locking
 // requirements.
 //
 // +checklocks:a.mu
-func (a *AddressableEndpointState) removePermanentEndpointLocked(addrState *addressState) tcpip.Error {
+func (a *AddressableEndpointState) removePermanentEndpointLocked(addrState *addressState, reason AddressRemovalReason) tcpip.Error {
 	if !addrState.GetKind().IsPermanent() {
 		return &tcpip.ErrBadLocalAddress{}
 	}
 
-	addrState.SetKind(PermanentExpired)
+	addrState.remove(reason)
 	a.decAddressRefLocked(addrState)
 	return nil
 }
@@ -386,6 +419,19 @@ func (a *AddressableEndpointState) SetDeprecated(addr tcpip.Address, deprecated 
 	return nil
 }
 
+// SetLifetimes implements stack.AddressableEndpoint.
+func (a *AddressableEndpointState) SetLifetimes(addr tcpip.Address, lifetimes AddressLifetimes) tcpip.Error {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	addrState, ok := a.endpoints[addr]
+	if !ok {
+		return &tcpip.ErrBadLocalAddress{}
+	}
+	addrState.SetLifetimes(lifetimes)
+	return nil
+}
+
 // MainAddress implements AddressableEndpoint.
 func (a *AddressableEndpointState) MainAddress() tcpip.AddressWithPrefix {
 	a.mu.RLock()
@@ -394,7 +440,7 @@ func (a *AddressableEndpointState) MainAddress() tcpip.AddressWithPrefix {
 	ep := a.acquirePrimaryAddressRLocked(func(ep *addressState) bool {
 		switch kind := ep.GetKind(); kind {
 		case Permanent:
-			return true
+			return a.networkEndpoint.Enabled() || !a.options.HiddenWhileDisabled
 		case PermanentTentative, PermanentExpired, Temporary:
 			return false
 		default:
@@ -519,7 +565,7 @@ func (a *AddressableEndpointState) AcquireAssignedAddressOrMatching(localAddr tc
 
 	// Proceed to add a new temporary endpoint.
 	addr := localAddr.WithPrefix()
-	ep, err := a.addAndAcquireAddressLocked(addr, AddressProperties{PEB: tempPEB}, false /* permanent */)
+	ep, err := a.addAndAcquireAddressLocked(addr, AddressProperties{PEB: tempPEB}, Temporary)
 	if err != nil {
 		// addAndAcquireAddressLocked only returns an error if the address is
 		// already assigned but we just checked above if the address exists so we
@@ -588,6 +634,9 @@ func (a *AddressableEndpointState) PrimaryAddresses() []tcpip.AddressWithPrefix 
 	defer a.mu.RUnlock()
 
 	var addrs []tcpip.AddressWithPrefix
+	if a.options.HiddenWhileDisabled && !a.networkEndpoint.Enabled() {
+		return addrs
+	}
 	for _, ep := range a.primary {
 		switch kind := ep.GetKind(); kind {
 		// Don't include tentative, expired or temporary endpoints
@@ -631,7 +680,7 @@ func (a *AddressableEndpointState) Cleanup() {
 	for _, ep := range a.endpoints {
 		// removePermanentEndpointLocked returns *tcpip.ErrBadLocalAddress if ep is
 		// not a permanent address.
-		switch err := a.removePermanentEndpointLocked(ep); err.(type) {
+		switch err := a.removePermanentEndpointLocked(ep, AddressRemovalInterfaceRemoved); err.(type) {
 		case nil, *tcpip.ErrBadLocalAddress:
 		default:
 			panic(fmt.Sprintf("unexpected error from removePermanentEndpointLocked(%s): %s", ep.addr, err))
@@ -659,8 +708,19 @@ type addressState struct {
 	kind AddressKind
 	// checklocks:mu
 	configType AddressConfigType
+	// lifetimes holds this address' lifetimes.
+	//
+	// Invariant: if lifetimes.deprecated is true, then lifetimes.PreferredUntil
+	// must be the zero value. Note that the converse does not need to be
+	// upheld!
+	//
 	// checklocks:mu
-	deprecated bool
+	lifetimes AddressLifetimes
+	// The enclosing mutex must be write-locked before calling methods on the
+	// dispatcher.
+	//
+	// checklocks:mu
+	disp AddressDispatcher
 }
 
 // AddressWithPrefix implements AddressEndpoint.
@@ -684,22 +744,45 @@ func (a *addressState) GetKind() AddressKind {
 func (a *addressState) SetKind(kind AddressKind) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+
+	prevKind := a.kind
 	a.kind = kind
+	if kind == PermanentExpired {
+		a.notifyRemovedLocked(AddressRemovalManualAction)
+	} else if prevKind != kind && a.addressableEndpointState.networkEndpoint.Enabled() {
+		a.notifyChangedLocked()
+	}
+}
+
+// notifyRemovedLocked notifies integrators of address removal.
+//
+// +checklocks:a.mu
+func (a *addressState) notifyRemovedLocked(reason AddressRemovalReason) {
+	if disp := a.disp; disp != nil {
+		a.disp.OnRemoved(reason)
+		a.disp = nil
+	}
+}
+
+func (a *addressState) remove(reason AddressRemovalReason) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.kind = PermanentExpired
+	a.notifyRemovedLocked(reason)
 }
 
 // IsAssigned implements AddressEndpoint.
 func (a *addressState) IsAssigned(allowExpired bool) bool {
-	if !a.addressableEndpointState.networkEndpoint.Enabled() {
-		return false
-	}
-
-	switch a.GetKind() {
+	switch kind := a.GetKind(); kind {
 	case PermanentTentative:
 		return false
 	case PermanentExpired:
 		return allowExpired
-	default:
+	case Permanent, Temporary:
 		return true
+	default:
+		panic(fmt.Sprintf("address %s has unknown kind %d", a.AddressWithPrefix(), kind))
 	}
 }
 
@@ -742,21 +825,91 @@ func (a *addressState) ConfigType() AddressConfigType {
 	return a.configType
 }
 
+// notifyChangedLocked notifies integrators of address property changes.
+//
+// +checklocks:a.mu
+func (a *addressState) notifyChangedLocked() {
+	if a.disp == nil {
+		return
+	}
+
+	state := AddressDisabled
+	if a.addressableEndpointState.networkEndpoint.Enabled() {
+		switch a.kind {
+		case Permanent:
+			state = AddressAssigned
+		case PermanentTentative:
+			state = AddressTentative
+		case Temporary, PermanentExpired:
+			return
+		default:
+			panic(fmt.Sprintf("unrecognized address kind = %d", a.kind))
+		}
+	}
+
+	a.disp.OnChanged(a.lifetimes, state)
+}
+
 // SetDeprecated implements AddressEndpoint.
 func (a *addressState) SetDeprecated(d bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.deprecated = d
+
+	var changed bool
+	if a.lifetimes.Deprecated != d {
+		a.lifetimes.Deprecated = d
+		changed = true
+	}
+	if d {
+		a.lifetimes.PreferredUntil = tcpip.MonotonicTime{}
+	}
+	if changed {
+		a.notifyChangedLocked()
+	}
 }
 
 // Deprecated implements AddressEndpoint.
 func (a *addressState) Deprecated() bool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	return a.deprecated
+	return a.lifetimes.Deprecated
+}
+
+// SetLifetimes implements AddressEndpoint.
+func (a *addressState) SetLifetimes(lifetimes AddressLifetimes) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	lifetimes.sanitize()
+
+	var changed bool
+	if a.lifetimes != lifetimes {
+		changed = true
+	}
+	a.lifetimes = lifetimes
+	if changed {
+		a.notifyChangedLocked()
+	}
+}
+
+// Lifetimes implements AddressEndpoint.
+func (a *addressState) Lifetimes() AddressLifetimes {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.lifetimes
 }
 
 // Temporary implements AddressEndpoint.
 func (a *addressState) Temporary() bool {
 	return a.temporary
+}
+
+// RegisterDispatcher implements AddressEndpoint.
+func (a *addressState) RegisterDispatcher(disp AddressDispatcher) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if disp != nil {
+		a.disp = disp
+		a.notifyChangedLocked()
+	}
 }

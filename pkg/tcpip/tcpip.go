@@ -33,6 +33,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"math/bits"
 	"reflect"
 	"strconv"
@@ -74,6 +75,12 @@ type MonotonicTime struct {
 // String implements Stringer.
 func (mt MonotonicTime) String() string {
 	return strconv.FormatInt(mt.nanoseconds, 10)
+}
+
+// MonotonicTimeInfinite returns the monotonic timestamp as far away in the
+// future as possible.
+func MonotonicTimeInfinite() MonotonicTime {
+	return MonotonicTime{nanoseconds: math.MaxInt64}
 }
 
 // Before reports whether the monotonic clock reading mt is before u.

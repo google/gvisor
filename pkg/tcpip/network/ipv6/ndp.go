@@ -235,12 +235,15 @@ type NDPDispatcher interface {
 	//
 	// This function is not permitted to block indefinitely. It must not
 	// call functions on the stack itself.
-	OnAutoGenAddress(tcpip.NICID, tcpip.AddressWithPrefix)
+	//
+	// If a non-nil AddressDispatcher is returned, events related to the address
+	// will be sent to the dispatcher.
+	OnAutoGenAddress(tcpip.NICID, tcpip.AddressWithPrefix) stack.AddressDispatcher
 
 	// OnAutoGenAddressDeprecated is called when an auto-generated address (SLAAC)
 	// is deprecated, but is still considered valid. Note, if an address is
-	// invalidated at the same ime it is deprecated, the deprecation event may not
-	// be received.
+	// invalidated at the same time it is deprecated, the deprecation event may
+	// not be received.
 	//
 	// This function is not permitted to block indefinitely. It must not
 	// call functions on the stack itself.
@@ -1089,6 +1092,12 @@ func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 		t := now.Add(pl)
 		state.preferredUntil = &t
 	}
+	// The time at which an address is invalidated is exposed as a property of the
+	// address.
+	if vl < header.NDPInfiniteLifetime {
+		t := now.Add(vl)
+		state.validUntil = &t
+	}
 
 	if !ndp.generateSLAACAddr(prefix, &state) {
 		// We were unable to generate an address for the prefix, we do not nothing
@@ -1105,8 +1114,6 @@ func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 
 	if vl < header.NDPInfiniteLifetime {
 		state.invalidationJob.Schedule(vl)
-		t := now.Add(vl)
-		state.validUntil = &t
 	}
 
 	// If the address is assigned (DAD resolved), generate a temporary address.
@@ -1122,7 +1129,7 @@ func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 // addAndAcquireSLAACAddr adds a SLAAC address to the IPv6 endpoint.
 //
 // The IPv6 endpoint that ndp belongs to MUST be locked.
-func (ndp *ndpState) addAndAcquireSLAACAddr(addr tcpip.AddressWithPrefix, temporary bool, deprecated bool) stack.AddressEndpoint {
+func (ndp *ndpState) addAndAcquireSLAACAddr(addr tcpip.AddressWithPrefix, temporary bool, lifetimes stack.AddressLifetimes) stack.AddressEndpoint {
 	// Inform the integrator that we have a new SLAAC address.
 	ndpDisp := ndp.ep.protocol.options.NDPDisp
 	if ndpDisp == nil {
@@ -1132,14 +1139,16 @@ func (ndp *ndpState) addAndAcquireSLAACAddr(addr tcpip.AddressWithPrefix, tempor
 	addressEndpoint, err := ndp.ep.addAndAcquirePermanentAddressLocked(addr, stack.AddressProperties{
 		PEB:        stack.FirstPrimaryEndpoint,
 		ConfigType: stack.AddressConfigSlaac,
-		Deprecated: deprecated,
+		Lifetimes:  lifetimes,
 		Temporary:  temporary,
 	})
 	if err != nil {
 		panic(fmt.Sprintf("ndp: error when adding SLAAC address %+v: %s", addr, err))
 	}
 
-	ndpDisp.OnAutoGenAddress(ndp.ep.nic.ID(), addr)
+	if disp := ndpDisp.OnAutoGenAddress(ndp.ep.nic.ID(), addr); disp != nil {
+		addressEndpoint.RegisterDispatcher(disp)
+	}
 
 	return addressEndpoint
 }
@@ -1217,7 +1226,23 @@ func (ndp *ndpState) generateSLAACAddr(prefix tcpip.Subnet, state *slaacPrefixSt
 	}
 
 	deprecated := state.preferredUntil != nil && !state.preferredUntil.After(ndp.ep.protocol.stack.Clock().NowMonotonic())
-	if addressEndpoint := ndp.addAndAcquireSLAACAddr(generatedAddr, false /* temporary */, deprecated); addressEndpoint != nil {
+	var preferredUntil tcpip.MonotonicTime
+	if !deprecated {
+		if state.preferredUntil != nil {
+			preferredUntil = *state.preferredUntil
+		} else {
+			preferredUntil = tcpip.MonotonicTimeInfinite()
+		}
+	}
+	validUntil := tcpip.MonotonicTimeInfinite()
+	if state.validUntil != nil {
+		validUntil = *state.validUntil
+	}
+	if addressEndpoint := ndp.addAndAcquireSLAACAddr(generatedAddr, false /* temporary */, stack.AddressLifetimes{
+		Deprecated:     deprecated,
+		PreferredUntil: preferredUntil,
+		ValidUntil:     validUntil,
+	}); addressEndpoint != nil {
 		state.stableAddr.addressEndpoint = addressEndpoint
 		state.generationAttempts++
 		return true
@@ -1329,7 +1354,11 @@ func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *sla
 	// As per RFC RFC 4941 section 3.3 step 5, we MUST NOT create a temporary
 	// address with a zero preferred lifetime. The checks above ensure this
 	// so we know the address is not deprecated.
-	addressEndpoint := ndp.addAndAcquireSLAACAddr(generatedAddr, true /* temporary */, false /* deprecated */)
+	addressEndpoint := ndp.addAndAcquireSLAACAddr(generatedAddr, true /* temporary */, stack.AddressLifetimes{
+		Deprecated:     false,
+		PreferredUntil: now.Add(pl),
+		ValidUntil:     now.Add(vl),
+	})
 	if addressEndpoint == nil {
 		return false
 	}
@@ -1417,14 +1446,6 @@ func (ndp *ndpState) regenerateTempSLAACAddr(prefix tcpip.Subnet, resetGenAttemp
 //
 // The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) refreshSLAACPrefixLifetimes(prefix tcpip.Subnet, prefixState *slaacPrefixState, pl, vl time.Duration) {
-	// If the preferred lifetime is zero, then the prefix should be deprecated.
-	deprecated := pl == 0
-	if deprecated {
-		ndp.deprecateSLAACAddress(prefixState.stableAddr.addressEndpoint)
-	} else {
-		prefixState.stableAddr.addressEndpoint.SetDeprecated(false)
-	}
-
 	// If prefix was preferred for some finite lifetime before, cancel the
 	// deprecation job so it can be reset.
 	prefixState.deprecationJob.Cancel()
@@ -1432,6 +1453,7 @@ func (ndp *ndpState) refreshSLAACPrefixLifetimes(prefix tcpip.Subnet, prefixStat
 	now := ndp.ep.protocol.stack.Clock().NowMonotonic()
 
 	// Schedule the deprecation job if prefix has a finite preferred lifetime.
+	deprecated := pl == 0
 	if pl < header.NDPInfiniteLifetime {
 		if !deprecated {
 			prefixState.deprecationJob.Schedule(pl)
@@ -1484,6 +1506,32 @@ func (ndp *ndpState) refreshSLAACPrefixLifetimes(prefix tcpip.Subnet, prefixStat
 		}
 	}
 
+	// If the preferred lifetime is zero, then the prefix should be deprecated.
+	{
+		var preferredUntil tcpip.MonotonicTime
+		if !deprecated {
+			if prefixState.preferredUntil == nil {
+				preferredUntil = tcpip.MonotonicTimeInfinite()
+			} else {
+				preferredUntil = *prefixState.preferredUntil
+			}
+		}
+		validUntil := tcpip.MonotonicTimeInfinite()
+		if prefixState.validUntil != nil {
+			validUntil = *prefixState.validUntil
+		}
+		if addressEndpoint := prefixState.stableAddr.addressEndpoint; !addressEndpoint.Deprecated() && deprecated {
+			if ndpDisp := ndp.ep.protocol.options.NDPDisp; ndpDisp != nil {
+				ndpDisp.OnAutoGenAddressDeprecated(ndp.ep.nic.ID(), addressEndpoint.AddressWithPrefix())
+			}
+		}
+		prefixState.stableAddr.addressEndpoint.SetLifetimes(stack.AddressLifetimes{
+			Deprecated:     deprecated,
+			PreferredUntil: preferredUntil,
+			ValidUntil:     validUntil,
+		})
+	}
+
 	// If DAD is not yet complete on the stable address, there is no need to do
 	// work with temporary addresses.
 	if prefixState.stableAddr.addressEndpoint.GetKind() != stack.Permanent {
@@ -1528,13 +1576,21 @@ func (ndp *ndpState) refreshSLAACPrefixLifetimes(prefix tcpip.Subnet, prefixStat
 		// Otherwise, schedule the deprecation job again.
 		newPreferredLifetime := preferredUntil.Sub(now)
 		tempAddrState.deprecationJob.Cancel()
-
-		if newPreferredLifetime <= 0 {
-			ndp.deprecateSLAACAddress(tempAddrState.addressEndpoint)
-		} else {
-			tempAddrState.addressEndpoint.SetDeprecated(false)
+		deprecated := newPreferredLifetime <= 0
+		if !deprecated {
 			tempAddrState.deprecationJob.Schedule(newPreferredLifetime)
 		}
+
+		if addressEndpoint := tempAddrState.addressEndpoint; !addressEndpoint.Deprecated() && deprecated {
+			if ndpDisp := ndp.ep.protocol.options.NDPDisp; ndpDisp != nil {
+				ndpDisp.OnAutoGenAddressDeprecated(ndp.ep.nic.ID(), addressEndpoint.AddressWithPrefix())
+			}
+		}
+		tempAddrState.addressEndpoint.SetLifetimes(stack.AddressLifetimes{
+			Deprecated:     deprecated,
+			ValidUntil:     validUntil,
+			PreferredUntil: preferredUntil,
+		})
 
 		tempAddrState.regenJob.Cancel()
 		if tempAddrState.regenerated {
@@ -1597,7 +1653,7 @@ func (ndp *ndpState) invalidateSLAACPrefix(prefix tcpip.Subnet, state slaacPrefi
 			ndpDisp.OnAutoGenAddressInvalidated(ndp.ep.nic.ID(), addressEndpoint.AddressWithPrefix())
 		}
 
-		if err := ndp.ep.removePermanentEndpointInnerLocked(addressEndpoint, &stack.DADAborted{}); err != nil {
+		if err := ndp.ep.removePermanentEndpointInnerLocked(addressEndpoint, stack.AddressRemovalInvalidated, &stack.DADAborted{}); err != nil {
 			panic(fmt.Sprintf("ndp: error removing stable SLAAC address %s: %s", addressEndpoint.AddressWithPrefix(), err))
 		}
 	}
@@ -1656,7 +1712,7 @@ func (ndp *ndpState) cleanupSLAACPrefixResources(prefix tcpip.Subnet, state slaa
 func (ndp *ndpState) invalidateTempSLAACAddr(tempAddrs map[tcpip.Address]tempSLAACAddrState, tempAddr tcpip.Address, tempAddrState tempSLAACAddrState) {
 	ndp.cleanupTempSLAACAddrResourcesAndNotifyInner(tempAddrs, tempAddr, tempAddrState)
 
-	if err := ndp.ep.removePermanentEndpointInnerLocked(tempAddrState.addressEndpoint, &stack.DADAborted{}); err != nil {
+	if err := ndp.ep.removePermanentEndpointInnerLocked(tempAddrState.addressEndpoint, stack.AddressRemovalInvalidated, &stack.DADAborted{}); err != nil {
 		panic(fmt.Sprintf("error removing temporary SLAAC address %s: %s", tempAddrState.addressEndpoint.AddressWithPrefix(), err))
 	}
 }

@@ -366,17 +366,143 @@ const (
 	AddressConfigSlaac
 )
 
+// AddressLifetimes encodes an address' preferred and valid lifetimes, as well
+// as if the address is deprecated.
+type AddressLifetimes struct {
+	// Deprecated is whether the address is deprecated.
+	Deprecated bool
+
+	// PreferredUntil is the time at which the address will be deprecated.
+	//
+	// Note that for certain addresses, deprecating the address at the
+	// PreferredUntil time is not handled as a scheduled job by the stack, but
+	// is information provided by the owner as an indication of when it will
+	// deprecate the address.
+	//
+	// PreferredUntil should be ignored if Deprecated is true. If Deprecated
+	// is false, and PreferredUntil is the zero value, no information about
+	// the preferred lifetime can be inferred.
+	PreferredUntil tcpip.MonotonicTime
+
+	// ValidUntil is the time at which the address will be invalidated.
+	//
+	// Note that for certain addresses, invalidating the address at the
+	// ValidUntil time is not handled as a scheduled job by the stack, but
+	// is information provided by the owner as an indication of when it will
+	// invalidate the address.
+	//
+	// If ValidUntil is the zero value, no information about the valid lifetime
+	// can be inferred.
+	ValidUntil tcpip.MonotonicTime
+}
+
 // AddressProperties contains additional properties that can be configured when
 // adding an address.
 type AddressProperties struct {
 	PEB        PrimaryEndpointBehavior
 	ConfigType AddressConfigType
-	Deprecated bool
+	// Lifetimes encodes the address' lifetimes.
+	//
+	// Lifetimes.PreferredUntil and Lifetimes.ValidUntil are informational, i.e.
+	// the stack will not deprecated nor invalidate the address upon reaching
+	// these timestamps.
+	//
+	// If Lifetimes.Deprecated is true, the address will be added as deprecated.
+	Lifetimes AddressLifetimes
 	// Temporary is as defined in RFC 4941, but applies not only to addresses
 	// added via SLAAC, e.g. DHCPv6 can also add temporary addresses. Temporary
 	// addresses are short-lived and are not to be valid (or preferred)
 	// forever; hence the term temporary.
 	Temporary bool
+	Disp      AddressDispatcher
+}
+
+// AddressAssignmentState is an address' assignment state.
+type AddressAssignmentState int
+
+const (
+	_ AddressAssignmentState = iota
+
+	// AddressDisabled indicates the NIC the address is assigned to is disabled.
+	AddressDisabled
+
+	// AddressTentative indicates an address is yet to pass DAD (IPv4 addresses
+	// are never tentative).
+	AddressTentative
+
+	// AddressAssigned indicates an address is assigned.
+	AddressAssigned
+)
+
+func (state AddressAssignmentState) String() string {
+	switch state {
+	case AddressDisabled:
+		return "Disabled"
+	case AddressTentative:
+		return "Tentative"
+	case AddressAssigned:
+		return "Assigned"
+	default:
+		panic(fmt.Sprintf("unknown address assignment state: %d", state))
+	}
+}
+
+// AddressRemovalReason is the reason an address was removed.
+type AddressRemovalReason int
+
+const (
+	_ AddressRemovalReason = iota
+
+	// AddressRemovalManualAction indicates the address was removed explicitly
+	// using the stack API.
+	AddressRemovalManualAction
+
+	// AddressRemovalInterfaceRemoved indicates the address was removed because
+	// the NIC it is assigned to was removed.
+	AddressRemovalInterfaceRemoved
+
+	// AddressRemovalDADFailed indicates the address was removed because DAD
+	// failed.
+	AddressRemovalDADFailed
+
+	// AddressRemovalInvalidated indicates the address was removed because it
+	// was invalidated.
+	AddressRemovalInvalidated
+)
+
+func (reason AddressRemovalReason) String() string {
+	switch reason {
+	case AddressRemovalManualAction:
+		return "ManualAction"
+	case AddressRemovalInterfaceRemoved:
+		return "InterfaceRemoved"
+	case AddressRemovalDADFailed:
+		return "DADFailed"
+	case AddressRemovalInvalidated:
+		return "Invalidated"
+	default:
+		panic(fmt.Sprintf("unknown address removal reason: %d", reason))
+	}
+}
+
+// AddressDispatcher is the interface integrators can implement to receive
+// address-related events.
+type AddressDispatcher interface {
+	// OnChanged is called with an address' properties when they change.
+	//
+	// OnChanged is called once when the address is added with the initial state,
+	// and every time a property changes.
+	//
+	// The PreferredUntil and ValidUntil fields in AddressLifetimes must be
+	// considered informational, i.e. one must not consider an address to be
+	// deprecated/invalid even if the monotonic clock timestamp is past these
+	// deadlines. The Deprecated field indicates whether an address is
+	// preferred or not; and OnRemoved will be called when an address is
+	// removed due to invalidation.
+	OnChanged(AddressLifetimes, AddressAssignmentState)
+
+	// OnRemoved is called when an address is removed with the removal reason.
+	OnRemoved(AddressRemovalReason)
 }
 
 // AssignableAddressEndpoint is a reference counted address endpoint that may be
@@ -422,8 +548,23 @@ type AddressEndpoint interface {
 	// SetDeprecated sets this endpoint's deprecated status.
 	SetDeprecated(bool)
 
+	// Lifetimes returns this endpoint's lifetimes.
+	Lifetimes() AddressLifetimes
+
+	// SetLifetimes sets this endpoint's lifetimes.
+	//
+	// Note that setting preferred-until and valid-until times do not result in
+	// deprecation/invalidation jobs to be scheduled by the stack.
+	SetLifetimes(AddressLifetimes)
+
 	// Temporary returns whether or not this endpoint is temporary.
 	Temporary() bool
+
+	// RegisterDispatcher registers an address dispatcher.
+	//
+	// OnChanged will be called immediately on the provided address dispatcher
+	// with this endpoint's current state.
+	RegisterDispatcher(AddressDispatcher)
 }
 
 // AddressKind is the kind of an address.
@@ -497,11 +638,12 @@ type AddressableEndpoint interface {
 	// permanent address.
 	RemovePermanentAddress(addr tcpip.Address) tcpip.Error
 
-	// SetDeprecated sets whether the address should be deprecated or not.
+	// SetLifetimes sets an address' lifetimes (strictly informational) and
+	// whether it should be deprecated or preferred.
 	//
 	// Returns *tcpip.ErrBadLocalAddress if the endpoint does not have the passed
 	// address.
-	SetDeprecated(addr tcpip.Address, deprecated bool) tcpip.Error
+	SetLifetimes(addr tcpip.Address, lifetimes AddressLifetimes) tcpip.Error
 
 	// MainAddress returns the endpoint's primary permanent address.
 	MainAddress() tcpip.AddressWithPrefix

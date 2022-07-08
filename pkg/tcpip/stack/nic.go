@@ -597,14 +597,14 @@ func (n *nic) removeAddress(addr tcpip.Address) tcpip.Error {
 	return &tcpip.ErrBadLocalAddress{}
 }
 
-func (n *nic) setAddressDeprecated(addr tcpip.Address, deprecated bool) tcpip.Error {
+func (n *nic) setAddressLifetimes(addr tcpip.Address, lifetimes AddressLifetimes) tcpip.Error {
 	for _, ep := range n.networkEndpoints {
 		ep, ok := ep.(AddressableEndpoint)
 		if !ok {
 			continue
 		}
 
-		switch err := ep.SetDeprecated(addr, deprecated); err.(type) {
+		switch err := ep.SetLifetimes(addr, lifetimes); err.(type) {
 		case *tcpip.ErrBadLocalAddress:
 			continue
 		default:
