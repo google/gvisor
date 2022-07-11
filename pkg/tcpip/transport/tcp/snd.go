@@ -861,11 +861,6 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 		if seg.payloadSize() > available {
 			// A negative value causes splitSeg to panic anyways, so just panic
 			// earlier to get more information about the cause.
-			// TOOD(b/236090764): Remove this panic once the cause of negative values
-			// of "available" is understood.
-			if available < 0 {
-				panic(fmt.Sprintf("got available=%d, want available>=0. limit %d, s.MaxPayloadSize %d, seg.payloadSize() %d, gso.MaxSize %d, gso.MSS %d", available, limit, s.MaxPayloadSize, seg.payloadSize(), s.ep.gso.MaxSize, s.ep.gso.MSS))
-			}
 			s.splitSeg(seg, available)
 		}
 
