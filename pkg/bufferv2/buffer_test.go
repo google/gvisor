@@ -630,6 +630,73 @@ func TestBufferPullUp(t *testing.T) {
 	}
 }
 
+func TestReadFromLargeWriter(t *testing.T) {
+	writeSize := int64(1 << 20)
+	largeWriter := bytes.NewBuffer(make([]byte, writeSize))
+	b := Buffer{}
+	// Expect this write to be buffered into several MaxChunkSize sized views.
+	n, err := b.WriteFromReader(largeWriter, writeSize)
+	if err != nil {
+		t.Fatalf("b.WriteFromReader() failed: want err=nil, got %v", err)
+	}
+	if n != writeSize {
+		t.Errorf("got b.WriteFromReader()=%d, want %d", n, writeSize)
+	}
+	nChunks := int(writeSize / MaxChunkSize)
+	if b.data.Len() != nChunks {
+		t.Errorf("b.WriteFromReader() failed, got b.data.Len()=%d, want %d", b.data.Len(), nChunks)
+	}
+}
+
+func TestRead(t *testing.T) {
+	readStrings := []string{"abcdef", "123456", "ghijkl"}
+	totalSize := len(readStrings) * len(readStrings[0])
+	for readSz := 0; readSz < totalSize+1; readSz++ {
+		b := Buffer{}
+		for _, s := range readStrings {
+			v := NewViewWithData([]byte(s))
+			b.appendOwned(v)
+		}
+		orig := b.Clone()
+		orig.Truncate(int64(readSz))
+		p := make([]byte, readSz)
+		_, err := b.read(p)
+		if err != nil {
+			t.Fatalf("Read([]byte(%d)) failed: %v", readSz, err)
+		}
+		if !bytes.Equal(p, orig.Flatten()) {
+			t.Errorf("Read([]byte(%d)) failed, want p=%v, got %v", readSz, orig.Flatten(), p)
+		}
+		if int(b.Size()) != totalSize-readSz {
+			t.Errorf("Read([]byte(%d)) failed, want b.Size()=%v, got %v", readSz, totalSize-readSz, b.Size())
+		}
+	}
+}
+
+func TestReadByte(t *testing.T) {
+	readString := "abcdef123456ghijkl"
+	b := Buffer{}
+	nViews := 3
+	for i := 0; i < nViews; i++ {
+		vLen := len(readString) / nViews
+		v := NewViewWithData([]byte(readString[i*vLen : (i+1)*vLen]))
+		b.appendOwned(v)
+	}
+	for i := 0; i < len(readString); i++ {
+		orig := readString[i]
+		bt, err := b.readByte()
+		if err != nil {
+			t.Fatalf("readByte() failed: %v", err)
+		}
+		if bt != orig {
+			t.Errorf("readByte() failed, want %v, got %v", orig, bt)
+		}
+		if int(b.Size()) != len(readString[i+1:]) {
+			t.Errorf("readByte() failed, want b.Size()=%v, got %v", len(readString[i+1:]), b.Size())
+		}
+	}
+}
+
 func TestPullUpModifiedViews(t *testing.T) {
 	var b Buffer
 	defer b.Release()
