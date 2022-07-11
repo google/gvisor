@@ -3573,6 +3573,28 @@ func TestSetTTL(t *testing.T) {
 	}
 }
 
+func TestSendMSSLessThanOptionsSize(t *testing.T) {
+	const mss = 10
+	const writeSize = 300
+	c := context.New(t, 65535)
+	defer c.Cleanup()
+
+	// The sizes of these options add up to 12.
+	c.CreateConnectedWithRawOptions(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */, []byte{
+		header.TCPOptionMSS, 4, byte(mss / 256), byte(mss % 256),
+		header.TCPOptionTS, header.TCPOptionTSLength, 1, 2, 3, 4, 5, 6, 7, 8,
+		header.TCPOptionSACKPermitted, header.TCPOptionSackPermittedLength,
+	})
+	e2e.CheckBrokenUpWrite(t, c, writeSize)
+
+	var r bytes.Reader
+	r.Reset(make([]byte, writeSize))
+	_, err := c.EP.Write(&r, tcpip.WriteOptions{})
+	if err != nil {
+		t.Fatalf("Write failed: %s", err)
+	}
+}
+
 func TestActiveSendMSSLessThanMTU(t *testing.T) {
 	const maxPayload = 100
 	c := context.New(t, 65535)
