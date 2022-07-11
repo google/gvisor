@@ -222,6 +222,10 @@ const (
 	// same as the value TCP_MIN_MSS defined net/tcp.h.
 	TCPMinimumMSS = IPv4MaximumHeaderSize + TCPHeaderMaximumSize + MinIPFragmentPayloadSize - IPv4MinimumSize - TCPMinimumSize
 
+	// TCPMinimumSendMSS is the minimum value for MSS in a sender. This is the
+	// same as the value TCP_MIN_SND_MSS in net/tcp.h.
+	TCPMinimumSendMSS = TCPOptionsMaximumSize + MinIPFragmentPayloadSize
+
 	// TCPMaximumMSS is the maximum acceptable value for MSS.
 	TCPMaximumMSS = 0xffff
 
@@ -458,6 +462,9 @@ func ParseSynOptions(opts []byte, isAck bool) TCPSynOptions {
 				return synOpts
 			}
 			synOpts.MSS = mss
+			if mss < TCPMinimumSendMSS {
+				synOpts.MSS = TCPMinimumSendMSS
+			}
 			i += 4
 
 		case TCPOptionWS:
