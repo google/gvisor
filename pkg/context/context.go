@@ -24,6 +24,7 @@ package context
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/log"
@@ -162,10 +163,8 @@ type logContext struct {
 }
 
 // bgContext is the context returned by context.Background.
-var bgContext Context = &logContext{
-	Context: context.Background(),
-	Logger:  log.Log(),
-}
+var bgContext Context
+var bgOnce sync.Once
 
 // Background returns an empty context using the default logger.
 // Generally, one should use the Task as their context when available, or avoid
@@ -173,7 +172,15 @@ var bgContext Context = &logContext{
 //
 // Using a Background context for tests is fine, as long as no values are
 // needed from the context in the tested code paths.
+//
+// The global log.SetTarget() must be called before context.Background()
 func Background() Context {
+	bgOnce.Do(func() {
+		bgContext = &logContext{
+			Context: context.Background(),
+			Logger:  log.Log(),
+		}
+	})
 	return bgContext
 }
 
