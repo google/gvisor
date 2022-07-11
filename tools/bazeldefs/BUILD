@@ -1,9 +1,6 @@
 load("//tools:defs.bzl", "bzl_library")
 
-package(
-    default_visibility = ["//:sandbox"],
-    licenses = ["notice"],
-)
+package(licenses = ["notice"])
 
 bzl_library(
     name = "platforms_bzl",
@@ -51,5 +48,5 @@ genrule(
         "nobuilder",
         "notap",
     ],
-    visibility = ["//:sandbox"],
+    visibility = ["//visibility:private"],
 )
