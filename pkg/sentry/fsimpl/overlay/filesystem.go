@@ -1276,6 +1276,12 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	vfsObj.CommitRenameReplaceDentry(ctx, &renamed.vfsd, replacedVFSD)
 	delete(oldParent.children, oldName)
 	if replaced != nil {
+		// Lower dentries of replaced are not reachable from the overlay anymore.
+		// NOTE(b/237573779): Ask lower filesystem to release resources for this
+		// dentry whenever possible to reduce resource usage.
+		for _, replaceLower := range replaced.lowerVDs {
+			replaceLower.Dentry().MarkEvictable()
+		}
 		ds = appendDentry(ds, replaced)
 	}
 	if oldParent != newParent {
@@ -1639,6 +1645,14 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 
 	vfsObj.CommitDeleteDentry(ctx, &child.vfsd)
 	delete(parent.children, name)
+	if !child.isDir() {
+		// Once a whiteout is created, non-directory dentries on the lower layers
+		// are no longer reachable from the overlayfs. Ask filesystems to release
+		// their resources whenever possible.
+		for _, lowerDentry := range child.lowerVDs {
+			lowerDentry.Dentry().MarkEvictable()
+		}
+	}
 	ds = appendDentry(ds, child)
 	vfs.InotifyRemoveChild(ctx, &child.watches, &parent.watches, name)
 	parent.dirents = nil
