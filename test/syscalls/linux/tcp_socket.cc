@@ -1050,7 +1050,7 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnectNoListener) {
   socklen_t optlen = sizeof(err);
   ASSERT_THAT(getsockopt(s.get(), SOL_SOCKET, SO_ERROR, &err, &optlen),
               SyscallSucceeds());
-  ASSERT_THAT(optlen, sizeof(err));
+  ASSERT_EQ(optlen, sizeof(err));
   EXPECT_EQ(err, ECONNREFUSED);
 
   unsigned char c;
@@ -1324,6 +1324,7 @@ void NonBlockingConnect(int family, int16_t pollMask) {
   socklen_t optlen = sizeof(err);
   ASSERT_THAT(getsockopt(s.get(), SOL_SOCKET, SO_ERROR, &err, &optlen),
               SyscallSucceeds());
+  ASSERT_EQ(optlen, sizeof(err));
 
   EXPECT_EQ(err, 0);
 
@@ -1664,6 +1665,7 @@ TEST_P(SimpleTcpSocketTest, SetMaxSeg) {
   socklen_t optlen = sizeof(optval);
   ASSERT_THAT(getsockopt(s.get(), IPPROTO_TCP, TCP_MAXSEG, &optval, &optlen),
               SyscallSucceedsWithValue(0));
+  ASSERT_EQ(optlen, sizeof(optval));
 
   EXPECT_EQ(kDefaultMSS, optval);
   EXPECT_EQ(sizeof(optval), optlen);
@@ -2253,6 +2255,103 @@ TEST_P(SimpleTcpSocketTest, OnlyAcknowledgeBacklogConnections) {
       EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, 10),
                   SyscallSucceedsWithValue(0));
     });
+  }
+}
+
+TEST_P(SimpleTcpSocketTest, SynRcvdOnListenerShutdown) {
+  FileDescriptor bound_s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+
+  sockaddr_storage bound_addr =
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+  socklen_t bound_addrlen = sizeof(bound_addr);
+
+  ASSERT_THAT(bind(bound_s.get(), AsSockAddr(&bound_addr), bound_addrlen),
+              SyscallSucceeds());
+
+  // Get the addresses the socket is bound to because the port is chosen by the
+  // stack.
+  ASSERT_THAT(
+      getsockname(bound_s.get(), AsSockAddr(&bound_addr), &bound_addrlen),
+      SyscallSucceeds());
+
+  // kBacklog connections are permitted to be in the SYNRCVD state. Select the
+  // largest reasonable value; we want to create a situation where at least some
+  // of the connections are still in SYNRCVD when we shut down the listener.
+  constexpr int kBacklog = 256;
+  ASSERT_THAT(listen(bound_s.get(), kBacklog), SyscallSucceeds());
+
+  std::array<std::thread, kBacklog + 1> threads;
+  for (auto& thread : threads) {
+    FileDescriptor connecting_s = ASSERT_NO_ERRNO_AND_VALUE(
+        Socket(GetParam(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
+    ASSERT_THAT(connect(connecting_s.get(),
+                        reinterpret_cast<const struct sockaddr*>(&bound_addr),
+                        bound_addrlen),
+                SyscallFailsWithErrno(EINPROGRESS));
+    thread = std::thread([connecting_s = std::move(connecting_s)]() {
+      struct pollfd poll_fd = {
+          .fd = connecting_s.get(),
+      };
+      poll_fd.events = std::numeric_limits<decltype(poll_fd.events)>::max();
+      ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, 1000),
+                  SyscallSucceedsWithValue(1));
+
+      int err;
+      socklen_t optlen = sizeof(err);
+      ASSERT_THAT(
+          getsockopt(connecting_s.get(), SOL_SOCKET, SO_ERROR, &err, &optlen),
+          SyscallSucceeds());
+      ASSERT_EQ(optlen, sizeof(err));
+
+      if (err == 0) {
+        EXPECT_EQ(poll_fd.revents, POLLOUT | POLLWRNORM);
+      } else {
+        EXPECT_THAT(err, ::testing::AnyOf(::testing::Eq(ECONNRESET),
+                                          ::testing::Eq(ECONNREFUSED)))
+            << strerror(err);
+
+        const int revents = poll_fd.revents;
+
+        // It's possible the error arrived *after* poll returned. Fetch the
+        // signals again - this time with a zero timeout.
+        EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, 0),
+                    SyscallSucceedsWithValue(1));
+
+        EXPECT_EQ(poll_fd.revents, []() {
+          const int expected_revents =
+              POLLIN | POLLOUT | POLLHUP | POLLRDNORM | POLLWRNORM;
+          // TODO(gvisor.dev/issue/6666): POLLERR is still present after
+          // getsockopt(..., SO_ERROR, ...) call.
+          if (IsRunningOnGvisor()) {
+            return expected_revents | POLLPRI | POLLERR;
+          } else {
+            return expected_revents | POLLRDHUP;
+          }
+        }());
+
+        EXPECT_THAT(
+            revents,
+            ::testing::AnyOf(
+                // If the error arrived after poll returned.
+                ::testing::Eq(POLLOUT | POLLWRNORM),
+                ::testing::Eq([expected_revents = poll_fd.revents]() -> int {
+                  // TODO(gvisor.dev/issue/6666): on Linux, POLLERR goes away
+                  // after the getsockopt(..., SO_ERROR, ...) call, but not on
+                  // gVisor.
+                  if (IsRunningOnGvisor()) {
+                    return expected_revents;
+                  }
+                  return expected_revents | POLLERR;
+                }())));
+      }
+    });
+  }
+
+  EXPECT_THAT(shutdown(bound_s.get(), SHUT_RD), SyscallSucceeds());
+
+  for (auto& thread : threads) {
+    thread.join();
   }
 }
 
