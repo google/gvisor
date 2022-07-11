@@ -90,6 +90,7 @@ func (d *Dentry) StateTypeName() string {
 func (d *Dentry) StateFields() []string {
 	return []string{
 		"dead",
+		"evictable",
 		"mounts",
 		"impl",
 	}
@@ -101,8 +102,9 @@ func (d *Dentry) beforeSave() {}
 func (d *Dentry) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
 	stateSinkObject.Save(0, &d.dead)
-	stateSinkObject.Save(1, &d.mounts)
-	stateSinkObject.Save(2, &d.impl)
+	stateSinkObject.Save(1, &d.evictable)
+	stateSinkObject.Save(2, &d.mounts)
+	stateSinkObject.Save(3, &d.impl)
 }
 
 func (d *Dentry) afterLoad() {}
@@ -110,8 +112,9 @@ func (d *Dentry) afterLoad() {}
 // +checklocksignore
 func (d *Dentry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.dead)
-	stateSourceObject.Load(1, &d.mounts)
-	stateSourceObject.Load(2, &d.impl)
+	stateSourceObject.Load(1, &d.evictable)
+	stateSourceObject.Load(2, &d.mounts)
+	stateSourceObject.Load(3, &d.impl)
 }
 
 func (kind *DeviceKind) StateTypeName() string {

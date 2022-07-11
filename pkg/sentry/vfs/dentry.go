@@ -66,6 +66,12 @@ type Dentry struct {
 	// InvalidateDentry). dead is protected by mu.
 	dead bool
 
+	// evictable is set by the VFS layer or filesystems like overlayfs as a hint
+	// that this dentry will not be accessed hence forth. So filesystems that
+	// cache dentries locally can use this hint to release the dentry when all
+	// references are dropped. evictable is protected by mu.
+	evictable bool
+
 	// mounts is the number of Mounts for which this Dentry is Mount.point.
 	mounts atomicbitops.Uint32
 
@@ -161,6 +167,20 @@ func (d *Dentry) IsDead() bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.dead
+}
+
+// IsEvictable returns true if d is evictable from filesystem dentry cache.
+func (d *Dentry) IsEvictable() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.evictable
+}
+
+// MarkEvictable marks d as evictable.
+func (d *Dentry) MarkEvictable() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.evictable = true
 }
 
 func (d *Dentry) isMounted() bool {

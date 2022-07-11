@@ -1857,6 +1857,16 @@ func (d *dentry) checkCachingLocked(ctx context.Context, renameMuWriteLocked boo
 		d.destroyLocked(ctx) // +checklocksforce: renameMu must be acquired at this point.
 		return
 	}
+	if d.vfsd.IsEvictable() {
+		d.cachingMu.Unlock()
+		// Attempt to evict.
+		if renameMuWriteLocked {
+			d.evictLocked(ctx) // +checklocksforce: renameMu is locked in this case.
+			return
+		}
+		d.evict(ctx)
+		return
+	}
 	// If d still has inotify watches and it is not deleted or invalidated, it
 	// can't be evicted. Otherwise, we will lose its watches, even if a new
 	// dentry is created for the same file in the future. Note that the size of

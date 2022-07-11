@@ -287,6 +287,13 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 		d.devMajor.Store(upperStat.DevMajor)
 		d.devMinor.Store(upperStat.DevMinor)
 		d.ino.Store(upperStat.Ino)
+
+		// Lower level dentries for non-directories are no longer accessible from
+		// the overlayfs anymore after copyup. Ask filesystems to release their
+		// resources whenever possible.
+		for _, lowerDentry := range d.lowerVDs {
+			lowerDentry.Dentry().MarkEvictable()
+		}
 	}
 
 	if mmapOpts != nil && mmapOpts.Mappable != nil {
