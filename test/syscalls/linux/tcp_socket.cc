@@ -2305,7 +2305,13 @@ TEST_P(SimpleTcpSocketTest, SynRcvdOnListenerShutdown) {
       ASSERT_EQ(optlen, sizeof(err));
 
       if (err == 0) {
-        EXPECT_EQ(poll_fd.revents, POLLOUT | POLLWRNORM);
+        EXPECT_EQ(poll_fd.revents, POLLOUT
+        // TODO(https://fxbug.dev/73258): Remove when POLLWRNORM is correctly
+        // asserted in Fuchsia.
+#if !defined(__Fuchsia__)
+                                       | POLLWRNORM
+#endif
+        );
       } else {
         EXPECT_THAT(err, ::testing::AnyOf(::testing::Eq(ECONNRESET),
                                           ::testing::Eq(ECONNREFUSED)))
@@ -2318,17 +2324,25 @@ TEST_P(SimpleTcpSocketTest, SynRcvdOnListenerShutdown) {
         EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, 0),
                     SyscallSucceedsWithValue(1));
 
-        EXPECT_EQ(poll_fd.revents, []() {
-          const int expected_revents =
-              POLLIN | POLLOUT | POLLHUP | POLLRDNORM | POLLWRNORM;
-          // TODO(gvisor.dev/issue/6666): POLLERR is still present after
-          // getsockopt(..., SO_ERROR, ...) call.
-          if (IsRunningOnGvisor()) {
-            return expected_revents | POLLPRI | POLLERR;
-          } else {
-            return expected_revents | POLLRDHUP;
-          }
-        }());
+        EXPECT_EQ(poll_fd.revents,
+        // TODO(https://fxbug.dev/76353): Remove when other signals are asserted
+        // together with POLLERR in Fuchsia.
+#if defined(__Fuchsia__)
+                  POLLOUT
+#else
+                  []() {
+                    const int expected_revents =
+                        POLLIN | POLLOUT | POLLHUP | POLLRDNORM | POLLWRNORM;
+                    // TODO(gvisor.dev/issue/6666): POLLERR is still present
+                    // after getsockopt(..., SO_ERROR, ...) call.
+                    if (IsRunningOnGvisor()) {
+                      return expected_revents | POLLPRI | POLLERR;
+                    } else {
+                      return expected_revents | POLLRDHUP;
+                    }
+                  }()
+#endif
+        );
 
         EXPECT_THAT(
             revents,
