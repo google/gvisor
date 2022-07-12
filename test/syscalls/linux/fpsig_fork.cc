@@ -68,6 +68,8 @@ void sigusr1(int s, siginfo_t* siginfo, void* _uc) {
 }
 
 TEST(FPSigTest, Fork) {
+  // NOTE(b/238773725): This test fails on ptrace platform due to a kernel bug.
+  SKIP_IF(GvisorPlatform() == Platform::kPtrace);
   parent = getpid();
   pid_t parent_tid = gettid();
 
@@ -135,6 +137,8 @@ TEST(FPSigTest, Fork) {
 
 #ifdef __x86_64__
 TEST(FPSigTest, ForkWithZeroMxcsr) {
+  // NOTE(b/238773725): This test fails on ptrace platform due to a kernel bug.
+  SKIP_IF(GvisorPlatform() == Platform::kPtrace);
   parent = getpid();
   pid_t parent_tid = gettid();
 
