@@ -294,16 +294,20 @@ func copyInMempolicyNodemask(t *kernel.Task, modeWithFlags linux.NumaPolicy, nod
 		}
 	case linux.MPOL_PREFERRED:
 		// This permits an empty nodemask, as long as no flags are set.
-		if nodemaskVal == 0 && flags != 0 {
-			return 0, 0, linuxerr.EINVAL
+		if nodemaskVal == 0 {
+			if flags != 0 {
+				return 0, 0, linuxerr.EINVAL
+			}
+			// On newer Linux versions, MPOL_PREFERRED is implemented as MPOL_LOCAL
+			// when node set is empty. See 7858d7bca7fb ("mm/mempolicy: don't handle
+			// MPOL_LOCAL like a fake MPOL_PREFERRED policy").
+			mode = linux.MPOL_LOCAL
 		}
 	case linux.MPOL_LOCAL:
-		// This requires an empty nodemask and no flags set ...
+		// This requires an empty nodemask and no flags set.
 		if nodemaskVal != 0 || flags != 0 {
 			return 0, 0, linuxerr.EINVAL
 		}
-		// ... and is implemented as MPOL_PREFERRED.
-		mode = linux.MPOL_PREFERRED
 	default:
 		// Unknown mode, which we should have rejected above.
 		panic(fmt.Sprintf("unknown mode: %v", mode))
