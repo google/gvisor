@@ -693,11 +693,5 @@ func testGetdents(ctx context.Context, t *testing.T, tester Tester, root lisafs.
 		if uint64(dirent.Ino) != stat.Ino {
 			t.Errorf("dirent ino of %s is incorrect: want %d, got %d", dirent.Name, stat.Ino, dirent.Ino)
 		}
-		if uint32(dirent.DevMinor) != stat.DevMinor {
-			t.Errorf("dirent dev minor of %s is incorrect: want %d, got %d", dirent.Name, stat.DevMinor, dirent.DevMinor)
-		}
-		if uint32(dirent.DevMajor) != stat.DevMajor {
-			t.Errorf("dirent dev major of %s is incorrect: want %d, got %d", dirent.Name, stat.DevMajor, dirent.DevMajor)
-		}
 	}
 }

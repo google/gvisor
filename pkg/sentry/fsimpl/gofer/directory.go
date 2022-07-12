@@ -128,7 +128,8 @@ func (fs *filesystem) newSyntheticDentry(opts *createSyntheticOpts) *dentry {
 	child := &dentry{
 		refs:      atomicbitops.FromInt64(1), // held by parent.
 		fs:        fs,
-		ino:       fs.nextIno(),
+		ino:       fs.nextSyntheticIno(),
+		devMinor:  fs.syntheticDevMinor,
 		mode:      atomicbitops.FromUint32(uint32(opts.mode)),
 		uid:       atomicbitops.FromUint32(uint32(opts.kuid)),
 		gid:       atomicbitops.FromUint32(uint32(opts.kgid)),
@@ -272,10 +273,10 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 			// have been opened when the calling directoryFD was opened.
 			panic("gofer.dentry.getDirents called without a readable handle")
 		}
-		err := d.getDirentsLocked(ctx, func(name string, key inoKey, dType uint8) {
+		err := d.getDirentsLocked(ctx, func(name string, ino uint64, dType uint8) {
 			dirent := vfs.Dirent{
 				Name:    name,
-				Ino:     d.fs.inoFromKey(key),
+				Ino:     ino,
 				NextOff: int64(len(dirents) + 1),
 				Type:    dType,
 			}

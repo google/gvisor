@@ -75,7 +75,12 @@ func (fs *filesystem) PrepareSave(ctx context.Context) error {
 	}
 
 	fs.savedDentryRW = make(map[*dentry]savedDentryRW)
-	return fs.root.prepareSaveRecursive(ctx)
+	if err := fs.root.prepareSaveRecursive(ctx); err != nil {
+		return err
+	}
+
+	fs.releaseRemoteDevs()
+	return nil
 }
 
 // Preconditions:
@@ -181,7 +186,7 @@ func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRest
 		return fmt.Errorf("no server FD available for filesystem with unique ID %q", fs.iopts.UniqueID)
 	}
 	fs.opts.fd = fd
-	fs.inoByKey = make(map[inoKey]uint64)
+	fs.remoteToSentryDev = make(map[uint64]uint32)
 
 	if err := fs.restoreRoot(ctx, &opts); err != nil {
 		return err

@@ -379,7 +379,7 @@ func (d *dentry) openCreate(ctx context.Context, name string, accessFlags uint32
 //   - d.isDir().
 //   - d.handleMu must be locked.
 //   - !d.isSynthetic().
-func (d *dentry) getDirentsLocked(ctx context.Context, recordDirent func(name string, key inoKey, dType uint8)) error {
+func (d *dentry) getDirentsLocked(ctx context.Context, recordDirent func(name string, key uint64, dType uint8)) error {
 	switch dt := d.impl.(type) {
 	case *lisafsDentry:
 		return dt.getDirentsLocked(ctx, recordDirent)

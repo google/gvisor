@@ -109,13 +109,15 @@ func (fs *filesystem) newLisafsDentry(ctx context.Context, ino *lisafs.Inode) (*
 		fs.client.CloseFD(ctx, ino.ControlFD, false /* flush */)
 		return nil, linuxerr.EIO
 	}
-
-	inoKey := inoKeyFromStatx(&ino.Stat)
+	devMinor, err := fs.getOrCreateDevMinorLisa(ino.Stat.DevMinor, ino.Stat.DevMajor)
+	if err != nil {
+		return nil, err
+	}
 	d := &lisafsDentry{
 		dentry: dentry{
 			fs:        fs,
-			inoKey:    inoKey,
-			ino:       fs.inoFromKey(inoKey),
+			ino:       ino.Stat.Ino,
+			devMinor:  devMinor,
 			mode:      atomicbitops.FromUint32(uint32(ino.Stat.Mode)),
 			uid:       atomicbitops.FromUint32(uint32(fs.opts.dfltuid)),
 			gid:       atomicbitops.FromUint32(uint32(fs.opts.dfltgid)),
@@ -468,7 +470,7 @@ const lisafsGetdentsCount = int32(64 * 1024)
 
 // Preconditions:
 //   - getDirents may not be called concurrently with another getDirents call.
-func (d *lisafsDentry) getDirentsLocked(ctx context.Context, recordDirent func(name string, key inoKey, dType uint8)) error {
+func (d *lisafsDentry) getDirentsLocked(ctx context.Context, recordDirent func(name string, key uint64, dType uint8)) error {
 	// shouldSeek0 indicates whether the server should SEEK to 0 before reading
 	// directory entries.
 	shouldSeek0 := true
@@ -491,11 +493,7 @@ func (d *lisafsDentry) getDirentsLocked(ctx context.Context, recordDirent func(n
 			if name == "." || name == ".." {
 				continue
 			}
-			recordDirent(name, inoKey{
-				ino:      uint64(dirents[i].Ino),
-				devMinor: uint32(dirents[i].DevMinor),
-				devMajor: uint32(dirents[i].DevMajor),
-			}, uint8(dirents[i].Type))
+			recordDirent(name, uint64(dirents[i].Ino), uint8(dirents[i].Type))
 		}
 	}
 }
@@ -526,18 +524,12 @@ func (d *lisafsDentry) statfs(ctx context.Context) (linux.Statfs, error) {
 
 func (d *lisafsDentry) restoreFile(ctx context.Context, inode *lisafs.Inode, opts *vfs.CompleteRestoreOptions) error {
 	d.controlFD = d.fs.client.NewFD(inode.ControlFD)
-
-	// Gofers do not preserve inoKey across checkpoint/restore, so:
-	//
-	//	- We must assume that the remote filesystem did not change in a way that
-	//		would invalidate dentries, since we can't revalidate dentries by
-	//		checking inoKey.
-	//
-	//	- We need to associate the new inoKey with the existing d.ino.
-	d.inoKey = inoKeyFromStatx(&inode.Stat)
-	d.fs.inoMu.Lock()
-	d.fs.inoByKey[d.inoKey] = d.ino
-	d.fs.inoMu.Unlock()
+	d.ino = inode.Stat.Ino
+	devMinor, err := d.fs.getOrCreateDevMinorLisa(inode.Stat.DevMinor, inode.Stat.DevMajor)
+	if err != nil {
+		return vfs.ErrCorruption{fmt.Errorf("gofer.dentry(%q).restoreFile: getOrCreateDevMinorLisa() failed: %v", genericDebugPathname(&d.dentry), err)}
+	}
+	d.devMinor = devMinor
 
 	// Check metadata stability before updating metadata.
 	d.metadataMu.Lock()
@@ -634,7 +626,7 @@ func doRevalidationLisafs(ctx context.Context, vfsObj *vfs.VirtualFilesystem, st
 		lastUnlockedDentry = i
 
 		// Note that synthetic dentries will always fail this comparison check.
-		if !found || d.inoKey != inoKeyFromStatx(&stats[i]) {
+		if !found || d.ino != stats[i].Ino || d.devMinor != d.fs.getDeviceMinorLisa(stats[i].DevMinor, stats[i].DevMajor) {
 			d.metadataMu.Unlock()
 			if !found && d.isSynthetic() {
 				// We have a synthetic file, and no remote file has arisen to replace

@@ -27,9 +27,9 @@ import (
 func TestDestroyIdempotent(t *testing.T) {
 	ctx := contexttest.Context(t)
 	fs := filesystem{
-		mfp:      pgalloc.MemoryFileProviderFromContext(ctx),
-		inoByKey: make(map[inoKey]uint64),
-		clock:    time.RealtimeClockFromContext(ctx),
+		mfp:               pgalloc.MemoryFileProviderFromContext(ctx),
+		remoteToSentryDev: make(map[uint64]uint32),
+		clock:             time.RealtimeClockFromContext(ctx),
 		// Test relies on no dentry being held in the cache.
 		dentryCache: &dentryCache{maxCachedDentries: 0},
 		client:      &lisafs.Client{},

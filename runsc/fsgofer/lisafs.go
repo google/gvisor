@@ -1017,17 +1017,6 @@ func (fd *openFDLisa) Getdent64(count uint32, seek0 bool, recordDirent func(lisa
 				Type: primitive.Uint8(ftype),
 				Name: lisafs.SizedString(name),
 			}
-
-			// The client also wants the device ID, which annoyingly incurs an
-			// additional syscall per dirent.
-			// TODO(gvisor.dev/issue/6665): Get rid of per-dirent stat.
-			stat, err := fsutil.StatAt(fd.hostFD, name)
-			if err != nil {
-				log.Warningf("Getdent64: skipping file %q with failed stat, err: %v", path.Join(fd.ControlFD().FD().Node().FilePath(), name), err)
-				return true
-			}
-			dirent.DevMinor = primitive.Uint32(unix.Minor(stat.Dev))
-			dirent.DevMajor = primitive.Uint32(unix.Major(stat.Dev))
 			recordDirent(dirent)
 			bytesRead += int(reclen)
 			return true

@@ -17,7 +17,6 @@ package gofer
 import (
 	"fmt"
 	"math"
-	"path"
 	"path/filepath"
 
 	"golang.org/x/sys/unix"
@@ -118,12 +117,15 @@ func (fs *filesystem) newDirectfsDentry(controlFD int) (*dentry, error) {
 		_ = unix.Close(controlFD)
 		return nil, err
 	}
-	inoKey := inoKeyFromStat(&stat)
+	devMinor, err := fs.getOrCreateDevMinor(stat.Dev)
+	if err != nil {
+		return nil, err
+	}
 	d := &directfsDentry{
 		dentry: dentry{
 			fs:        fs,
-			inoKey:    inoKey,
-			ino:       fs.inoFromKey(inoKey),
+			ino:       stat.Ino,
+			devMinor:  devMinor,
 			mode:      atomicbitops.FromUint32(stat.Mode),
 			uid:       atomicbitops.FromUint32(stat.Uid),
 			gid:       atomicbitops.FromUint32(stat.Gid),
@@ -558,7 +560,7 @@ func (d *directfsDentry) openCreate(name string, accessFlags uint32, mode linux.
 	return child, handle{fd: int32(childHandleFD)}, nil
 }
 
-func (d *directfsDentry) getDirentsLocked(recordDirent func(name string, key inoKey, dType uint8)) error {
+func (d *directfsDentry) getDirentsLocked(recordDirent func(name string, key uint64, dType uint8)) error {
 	readFD := int(d.readFD.RacyLoad())
 	if _, err := unix.Seek(readFD, 0, 0); err != nil {
 		return err
@@ -575,15 +577,7 @@ func (d *directfsDentry) getDirentsLocked(recordDirent func(name string, key ino
 		}
 
 		fsutil.ParseDirents(direntsBuf[:n], func(ino uint64, off int64, ftype uint8, name string, reclen uint16) bool {
-			// We also want the device ID, which annoyingly incurs an additional
-			// syscall per dirent.
-			// TODO(gvisor.dev/issue/6665): Get rid of per-dirent stat.
-			stat, err := fsutil.StatAt(d.controlFD, name)
-			if err != nil {
-				log.Warningf("Getdent64: skipping file %q with failed stat, err: %v", path.Join(genericDebugPathname(&d.dentry), name), err)
-				return true
-			}
-			recordDirent(name, inoKeyFromStat(&stat), ftype)
+			recordDirent(name, ino, ftype)
 			return true
 		})
 	}
@@ -644,17 +638,12 @@ func (d *directfsDentry) restoreFile(ctx context.Context, controlFD int, opts *v
 	}
 
 	d.controlFD = controlFD
-	// We do not preserve inoKey across checkpoint/restore, so:
-	//
-	//	- We must assume that the host filesystem did not change in a way that
-	//		would invalidate dentries, since we can't revalidate dentries by
-	//		checking inoKey.
-	//
-	//	- We need to associate the new inoKey with the existing d.ino.
-	d.inoKey = inoKeyFromStat(&stat)
-	d.fs.inoMu.Lock()
-	d.fs.inoByKey[d.inoKey] = d.ino
-	d.fs.inoMu.Unlock()
+	d.ino = stat.Ino
+	devMinor, err := d.fs.getOrCreateDevMinor(stat.Dev)
+	if err != nil {
+		return vfs.ErrCorruption{fmt.Errorf("gofer.dentry(%q).restoreFile: getOrCreateDevMinor() failed: %v", genericDebugPathname(&d.dentry), err)}
+	}
+	d.devMinor = devMinor
 
 	// Check metadata stability before updating metadata.
 	d.metadataMu.Lock()
@@ -721,7 +710,7 @@ func doRevalidationDirectfs(ctx context.Context, vfsObj *vfs.VirtualFilesystem, 
 		}
 
 		// Note that synthetic dentries will always fail this comparison check.
-		if !found || d.inoKey != inoKeyFromStat(&stat) {
+		if !found || d.ino != stat.Ino || d.devMinor != d.fs.getDeviceMinor(stat.Dev) {
 			d.metadataMu.Unlock()
 			if !found && d.isSynthetic() {
 				// We have a synthetic file, and no remote file has arisen to replace
