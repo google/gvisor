@@ -555,16 +555,15 @@ func (e *endpoint) writePacket(pkt *stack.PacketBuffer) tcpip.Error {
 func (e *endpoint) sendBatch(batchFDInfo fdInfo, pkts []*stack.PacketBuffer) (int, tcpip.Error) {
 	// Degrade to writePacket if underlying fd is not a socket.
 	if !batchFDInfo.isSocket {
-		written := 0
-		for i := 0; i < len(pkts); i++ {
-			if err := e.writePacket(pkts[i]); err != nil {
-				if written > 0 {
-					return written, nil
-				}
-				return 0, err
+		var written int
+		var err tcpip.Error
+		for written < len(pkts) {
+			if err = e.writePacket(pkts[written]); err != nil {
+				break
 			}
+			written++
 		}
-		return written, nil
+		return written, err
 	}
 
 	// Send a batch of packets through batchFD.
