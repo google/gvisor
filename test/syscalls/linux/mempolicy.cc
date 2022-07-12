@@ -260,9 +260,11 @@ TEST(MempolicyTest, GetMempolicyNextInterleaveNode) {
 }
 
 TEST(MempolicyTest, Mbind) {
+  uint64_t nodemask = 0x1;
   // Temporarily set the thread policy to MPOL_PREFERRED.
   const auto cleanup_thread_policy =
-      ASSERT_NO_ERRNO_AND_VALUE(ScopedSetMempolicy(MPOL_PREFERRED, nullptr, 0));
+      ASSERT_NO_ERRNO_AND_VALUE(ScopedSetMempolicy(
+          MPOL_PREFERRED, &nodemask, sizeof(nodemask) * BITS_PER_BYTE));
 
   const auto mapping = ASSERT_NO_ERRNO_AND_VALUE(
       MmapAnon(kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS));
@@ -274,10 +276,12 @@ TEST(MempolicyTest, Mbind) {
               SyscallSucceeds());
   EXPECT_EQ(mode, MPOL_DEFAULT);
 
-  // Set MPOL_PREFERRED for the vma and read it back.
-  ASSERT_THAT(
-      mbind(mapping.ptr(), mapping.len(), MPOL_PREFERRED, nullptr, 0, 0),
-      SyscallSucceeds());
+  // Set MPOL_PREFERRED for the vma and read it back. Note that setting
+  // MPOL_PREFERRED with an empty node set will set mode to MPOL_LOCAL on newer
+  // Linux releases.
+  ASSERT_THAT(mbind(mapping.ptr(), mapping.len(), MPOL_PREFERRED, &nodemask,
+                    sizeof(nodemask) * BITS_PER_BYTE, 0),
+              SyscallSucceeds());
   ASSERT_THAT(get_mempolicy(&mode, nullptr, 0, mapping.ptr(), MPOL_F_ADDR),
               SyscallSucceeds());
   EXPECT_EQ(mode, MPOL_PREFERRED);
