@@ -523,9 +523,8 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 			// We hold i.virtualOwner.mu.
 			i.virtualOwner.mode = atomicbitops.FromUint32(uint32(opts.Stat.Mode))
 		} else {
-			if err := unix.Fchmod(i.hostFD, uint32(s.Mode)); err != nil {
-				return err
-			}
+			log.Warningf("sentry seccomp filters don't allow making fchmod(2) syscall")
+			return unix.EPERM
 		}
 	}
 	if m&linux.STATX_SIZE != 0 {
