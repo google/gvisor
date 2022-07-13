@@ -248,7 +248,7 @@ const (
 	// provides 1 byte padding, as outlined in RFC 8200 section 4.2.
 	ipv6Pad1ExtHdrOptionIdentifier IPv6ExtHdrOptionIdentifier = 0
 
-	// ipv6PadBExtHdrOptionIdentifier is the identifier for a padding option that
+	// ipv6PadNExtHdrOptionIdentifier is the identifier for a padding option that
 	// provides variable length byte padding, as outlined in RFC 8200 section 4.2.
 	ipv6PadNExtHdrOptionIdentifier IPv6ExtHdrOptionIdentifier = 1
 
