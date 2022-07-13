@@ -17,9 +17,11 @@ package boot
 import (
 	"fmt"
 	"net"
+	"regexp"
 	"runtime"
 	"strings"
 
+	"golang.org/x/mod/semver"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -194,6 +196,22 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		}
 	}
 
+	// Choose a dispatch mode.
+	// Get the Linux kernel version. Uname will return something like
+	// "5.17.7-1distro-amd64", from which we'd want "5.17.7".
+	var uname unix.Utsname
+	if err := unix.Uname(&uname); err != nil {
+		return err
+	}
+	re := regexp.MustCompile(`[0-9]+\.[0-9]+(\.[0-9]+)?`)
+	version := "v" + string(re.Find(uname.Release[:]))
+	dispatchMode := fdbased.RecvMMsg
+	if semver.IsValid(version) && semver.Compare(version, "v5.6") >= 0 {
+		dispatchMode = fdbased.PacketMMap
+	} else {
+		log.Infof("Host kernel version < 5.6, falling back to RecvMMsg dispatch")
+	}
+
 	fdOffset := 0
 	for _, link := range args.FDBasedLinks {
 		nicID++
@@ -219,7 +237,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			MTU:                uint32(link.MTU),
 			EthernetHeader:     mac != "",
 			Address:            mac,
-			PacketDispatchMode: fdbased.RecvMMsg,
+			PacketDispatchMode: dispatchMode,
 			GSOMaxSize:         link.GSOMaxSize,
 			GvisorGSOEnabled:   link.GvisorGSOEnabled,
 			TXChecksumOffload:  link.TXChecksumOffload,
