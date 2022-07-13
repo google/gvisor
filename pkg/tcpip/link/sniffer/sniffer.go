@@ -244,7 +244,7 @@ func logPacket(prefix string, dir direction, protocol tcpip.NetworkProtocolNumbe
 		)
 		return
 	default:
-		log.Infof("%s%s unknown network protocol", prefix, directionPrefix)
+		log.Infof("%s%s unknown network protocol: %d", prefix, directionPrefix, protocol)
 		return
 	}
 
