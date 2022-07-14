@@ -22,14 +22,14 @@ import (
 )
 
 func TestEnable(t *testing.T) {
-	major, minor, err := hostos.KernelVersion()
+	version, err := hostos.KernelVersion()
 	if err != nil {
 		t.Fatalf("Unable to parse kernel version: %v", err)
 	}
 	// Skip running test when running on Linux kernel < 5.14 because core tagging
 	// is not available.
-	if major < 5 && minor < 14 {
-		t.Skipf("Running on Linux kernel: %d.%d < 5.14. Core tagging not available. Skipping test.", major, minor)
+	if version.LessThan(5, 14) {
+		t.Skipf("Running on Linux kernel: %s < 5.14. Core tagging not available. Skipping test.", version)
 		return
 	}
 	if err := Enable(); err != nil {

@@ -31,7 +31,7 @@ import (
 // analog in the actual CPUID feature set.
 func TestHostFeatureFlags(t *testing.T) {
 	// Extract the kernel version.
-	major, minor, err := hostos.KernelVersion()
+	version, err := hostos.KernelVersion()
 	if err != nil {
 		t.Fatalf("Unable to parse kernel version: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestHostFeatureFlags(t *testing.T) {
 	for feature, info := range allFeatures {
 		// Special cases not consistently visible. We don't mind if
 		// they are exposed in earlier versions.
-		if archSkipFeature(feature, major, minor) {
+		if archSkipFeature(feature, version) {
 			continue
 		}
 

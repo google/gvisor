@@ -17,12 +17,11 @@ package boot
 import (
 	"fmt"
 	"net"
-	"regexp"
 	"runtime"
 	"strings"
 
-	"golang.org/x/mod/semver"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/hostos"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/link/ethernet"
@@ -197,16 +196,12 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 	}
 
 	// Choose a dispatch mode.
-	// Get the Linux kernel version. Uname will return something like
-	// "5.17.7-1distro-amd64", from which we'd want "5.17.7".
-	var uname unix.Utsname
-	if err := unix.Uname(&uname); err != nil {
+	dispatchMode := fdbased.RecvMMsg
+	version, err := hostos.KernelVersion()
+	if err != nil {
 		return err
 	}
-	re := regexp.MustCompile(`[0-9]+\.[0-9]+(\.[0-9]+)?`)
-	version := "v" + string(re.Find(uname.Release[:]))
-	dispatchMode := fdbased.RecvMMsg
-	if semver.IsValid(version) && semver.Compare(version, "v5.6") >= 0 {
+	if version.AtLeast(5, 6) {
 		dispatchMode = fdbased.PacketMMap
 	} else {
 		log.Infof("Host kernel version < 5.6, falling back to RecvMMsg dispatch")

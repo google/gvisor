@@ -17,41 +17,71 @@ package hostos
 
 import (
 	"fmt"
-	"strconv"
+	"regexp"
 	"strings"
+	"sync"
 
+	"golang.org/x/mod/semver"
 	"golang.org/x/sys/unix"
 )
 
-// KernelVersion returns the major and minor release version of the kernel using uname().
-func KernelVersion() (int, int, error) {
-	var u unix.Utsname
-	if err := unix.Uname(&u); err != nil {
-		return 0, 0, err
-	}
+// Version represents a semantic version of the form "%d.%d[.%d]".
+type Version struct {
+	version string
+}
 
-	var sb strings.Builder
-	for _, b := range u.Release {
-		if b == 0 {
-			break
+// AtLeast returns whether vr is at least version major.minor.
+func (vr Version) AtLeast(major, minor int) bool {
+	return semver.Compare(vr.version, fmt.Sprintf("v%d.%d", major, minor)) >= 0
+}
+
+// LessThan returns whether vr is less than version major.minor.
+func (vr Version) LessThan(major, minor int) bool {
+	return !vr.AtLeast(major, minor)
+}
+
+// String implements fmt.Stringer.
+func (vr Version) String() string {
+	if vr.version == "" {
+		return "unknown"
+	}
+	// Omit the "v" prefix required by semver.
+	return vr.version[1:]
+}
+
+// These values are effectively local to KernelVersion, but kept here so as to
+// work with sync.Once.
+var (
+	semVersion Version
+	unameErr   error
+	once       sync.Once
+)
+
+// KernelVersion returns the version of the kernel using uname().
+func KernelVersion() (Version, error) {
+	once.Do(func() {
+		var utsname unix.Utsname
+		if err := unix.Uname(&utsname); err != nil {
+			unameErr = err
+			return
 		}
-		sb.WriteByte(byte(b))
-	}
 
-	s := strings.Split(sb.String(), ".")
-	if len(s) < 2 {
-		return 0, 0, fmt.Errorf("kernel release missing major and minor component: %s", sb.String())
-	}
+		var sb strings.Builder
+		for _, b := range utsname.Release {
+			if b == 0 {
+				break
+			}
+			sb.WriteByte(byte(b))
+		}
 
-	major, err := strconv.Atoi(s[0])
-	if err != nil {
-		return 0, 0, fmt.Errorf("error parsing major version %q in %q: %w", s[0], sb.String(), err)
-	}
+		versionRegexp := regexp.MustCompile(`[0-9]+\.[0-9]+(\.[0-9]+)?`)
+		version := "v" + string(versionRegexp.Find([]byte(sb.String())))
+		if !semver.IsValid(version) {
+			unameErr = fmt.Errorf("invalid version found in release %q", sb.String())
+			return
+		}
+		semVersion.version = version
+	})
 
-	minor, err := strconv.Atoi(s[1])
-	if err != nil {
-		return 0, 0, fmt.Errorf("error parsing minor version %q in %q: %w", s[1], sb.String(), err)
-	}
-
-	return major, minor, nil
+	return semVersion, unameErr
 }
