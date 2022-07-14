@@ -17,6 +17,6 @@
 
 package cpuid
 
-func archSkipFeature(feature Feature, major, minor int) bool {
+func archSkipFeature(feature Feature, version hostos.Version) bool {
 	return false
 }

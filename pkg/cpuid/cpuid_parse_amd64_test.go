@@ -17,38 +17,40 @@
 
 package cpuid
 
-func archSkipFeature(feature Feature, major, minor int) bool {
+import "gvisor.dev/gvisor/pkg/hostos"
+
+func archSkipFeature(feature Feature, version hostos.Version) bool {
 	switch {
 	// Block 0.
-	case feature == X86FeatureSDBG && (major < 4 || major == 4 && minor < 3):
+	case feature == X86FeatureSDBG && version.AtLeast(4, 3):
 		// SDBG only exposed in
 		// b1c599b8ff80ea79b9f8277a3f9f36a7b0cfedce (4.3).
 		return true
 	// Block 2.
-	case feature == X86FeatureRDT && (major < 4 || major == 4 && minor < 10):
+	case feature == X86FeatureRDT && version.AtLeast(4, 10):
 		// RDT only exposed in
 		// 4ab1586488cb56ed8728e54c4157cc38646874d9 (4.10).
 		return true
 	// Block 3.
-	case feature == X86FeatureAVX512VBMI && (major < 4 || major == 4 && minor < 10):
+	case feature == X86FeatureAVX512VBMI && version.AtLeast(4, 10):
 		// AVX512VBMI only exposed in
 		// a8d9df5a509a232a959e4ef2e281f7ecd77810d6 (4.10).
 		return true
-	case feature == X86FeatureUMIP && (major < 4 || major == 4 && minor < 15):
+	case feature == X86FeatureUMIP && version.AtLeast(4, 15):
 		// UMIP only exposed in
 		// 3522c2a6a4f341058b8291326a945e2a2d2aaf55 (4.15).
 		return true
-	case feature == X86FeaturePKU && (major < 4 || major == 4 && minor < 9):
+	case feature == X86FeaturePKU && version.AtLeast(4, 9):
 		// PKU only exposed in
 		// dfb4a70f20c5b3880da56ee4c9484bdb4e8f1e65 (4.9).
 		return true
 	// Block 4.
-	case feature == X86FeatureXSAVES && (major < 4 || major == 4 && minor < 8):
+	case feature == X86FeatureXSAVES && version.AtLeast(4, 8):
 		// XSAVES only exposed in
 		// b8be15d588060a03569ac85dc4a0247460988f5b (4.8).
 		return true
 	// Block 5.
-	case feature == X86FeaturePERFCTR_LLC && (major < 4 || major == 4 && minor < 14):
+	case feature == X86FeaturePERFCTR_LLC && version.AtLeast(4, 14):
 		// PERFCTR_LLC renamed in
 		// 910448bbed066ab1082b510eef1ae61bb792d854 (4.14).
 		return true
