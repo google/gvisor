@@ -43,7 +43,7 @@ type emulationContext struct {
 }
 
 // TryCPUIDEmulate checks for a CPUID instruction and performs emulation.
-func TryCPUIDEmulate(ctx context.Context, mm MemoryManager, ac arch.Context) bool {
+func TryCPUIDEmulate(ctx context.Context, mm MemoryManager, ac *arch.Context64) bool {
 	s := ac.StateData()
 	inst := make([]byte, len(arch.CPUIDInstruction))
 	tasklessCtx := emulationContext{

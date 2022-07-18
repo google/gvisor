@@ -573,14 +573,14 @@ func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, in
 
 // loadInitialELF loads f into mm.
 //
-// It creates an arch.Context for the ELF and prepares the mm for this arch.
+// It creates an arch.Context64 for the ELF and prepares the mm for this arch.
 //
 // It does not load the ELF interpreter, or return any auxv entries.
 //
 // Preconditions:
 //   - f is an ELF file.
 //   - f is the first ELF loaded into m.
-func loadInitialELF(ctx context.Context, m *mm.MemoryManager, fs cpuid.FeatureSet, f fsbridge.File) (loadedELF, arch.Context, error) {
+func loadInitialELF(ctx context.Context, m *mm.MemoryManager, fs cpuid.FeatureSet, f fsbridge.File) (loadedELF, *arch.Context64, error) {
 	info, err := parseHeader(ctx, f)
 	if err != nil {
 		ctx.Infof("Failed to parse initial ELF: %v", err)
@@ -593,7 +593,7 @@ func loadInitialELF(ctx context.Context, m *mm.MemoryManager, fs cpuid.FeatureSe
 		return loadedELF{}, nil, linuxerr.ENOEXEC
 	}
 
-	// Create the arch.Context now so we can prepare the mmap layout before
+	// Create the arch.Context64 now so we can prepare the mmap layout before
 	// mapping anything.
 	ac := arch.New(info.arch)
 
@@ -647,7 +647,7 @@ func loadInterpreterELF(ctx context.Context, m *mm.MemoryManager, f fsbridge.Fil
 // path and argv.
 //
 // Preconditions: args.File is an ELF file.
-func loadELF(ctx context.Context, args LoadArgs) (loadedELF, arch.Context, error) {
+func loadELF(ctx context.Context, args LoadArgs) (loadedELF, *arch.Context64, error) {
 	bin, ac, err := loadInitialELF(ctx, args.MemoryManager, args.Features, args.File)
 	if err != nil {
 		ctx.Infof("Error loading binary: %v", err)

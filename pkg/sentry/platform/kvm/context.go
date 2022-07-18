@@ -45,7 +45,7 @@ type tryCPUIDError struct{}
 func (tryCPUIDError) Error() string { return "cpuid emulation failed" }
 
 // Switch runs the provided context in the given address space.
-func (c *context) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac arch.Context, _ int32) (*linux.SignalInfo, hostarch.AccessType, error) {
+func (c *context) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac *arch.Context64, _ int32) (*linux.SignalInfo, hostarch.AccessType, error) {
 	as := mm.AddressSpace()
 	localAS := as.(*addressSpace)
 
@@ -125,4 +125,4 @@ func (c *context) Release() {}
 func (c *context) FullStateChanged() {}
 
 // PullFullState implements platform.Context.PullFullState.
-func (c *context) PullFullState(as platform.AddressSpace, ac arch.Context) {}
+func (c *context) PullFullState(as platform.AddressSpace, ac *arch.Context64) {}

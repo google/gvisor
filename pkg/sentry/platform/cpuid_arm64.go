@@ -23,6 +23,6 @@ import (
 )
 
 // TryCPUIDEmulate always returns false: there is no cpuid.
-func TryCPUIDEmulate(ctx context.Context, mm MemoryManager, ac arch.Context) bool {
+func TryCPUIDEmulate(ctx context.Context, mm MemoryManager, ac *arch.Context64) bool {
 	return false
 }

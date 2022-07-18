@@ -136,14 +136,14 @@ func newDirent(width uint, name string, attr fs.DentAttr, offset uint64) *dirent
 
 // smallestDirent returns the size of the smallest possible dirent using
 // the old linux dirent format.
-func smallestDirent(a arch.Context) uint {
+func smallestDirent(a *arch.Context64) uint {
 	d := dirent{}
 	return uint(d.Hdr.OldHdr.SizeBytes()) + a.Width() + 1
 }
 
 // smallestDirent64 returns the size of the smallest possible dirent using
 // the new linux dirent format.
-func smallestDirent64(a arch.Context) uint {
+func smallestDirent64(a *arch.Context64) uint {
 	d := dirent{}
 	return uint(d.Hdr.SizeBytes()) + a.Width()
 }
@@ -206,7 +206,7 @@ type direntSerializer struct {
 	size int
 }
 
-func newDirentSerializer(f func(d *dirent, w io.Writer) (int, error), w io.Writer, ac arch.Context, size int) *direntSerializer {
+func newDirentSerializer(f func(d *dirent, w io.Writer) (int, error), w io.Writer, ac *arch.Context64, size int) *direntSerializer {
 	return &direntSerializer{
 		serialize: f,
 		w:         w,

@@ -501,7 +501,7 @@ func (t *thread) NotifyInterrupt() {
 // switchToApp is called from the main SwitchToApp entrypoint.
 //
 // This function returns true on a system call, false on a signal.
-func (s *subprocess) switchToApp(c *context, ac arch.Context) bool {
+func (s *subprocess) switchToApp(c *context, ac *arch.Context64) bool {
 	// Lock the thread for ptrace operations.
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()

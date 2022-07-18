@@ -130,7 +130,7 @@ func checkIsRegularFile(ctx context.Context, file fsbridge.File, filename string
 }
 
 // allocStack allocates and maps a stack in to any available part of the address space.
-func allocStack(ctx context.Context, m *mm.MemoryManager, a arch.Context) (*arch.Stack, error) {
+func allocStack(ctx context.Context, m *mm.MemoryManager, a *arch.Context64) (*arch.Stack, error) {
 	ar, err := m.MapStack(ctx)
 	if err != nil {
 		return nil, err
@@ -154,10 +154,10 @@ const (
 //
 // It returns:
 //   - loadedELF, description of the loaded binary
-//   - arch.Context matching the binary arch
+//   - arch.Context64 matching the binary arch
 //   - fs.Dirent of the binary file
 //   - Possibly updated args.Argv
-func loadExecutable(ctx context.Context, args LoadArgs) (loadedELF, arch.Context, fsbridge.File, []string, error) {
+func loadExecutable(ctx context.Context, args LoadArgs) (loadedELF, *arch.Context64, fsbridge.File, []string, error) {
 	for i := 0; i < maxLoaderAttempts; i++ {
 		if args.File == nil {
 			var err error
@@ -230,7 +230,7 @@ func loadExecutable(ctx context.Context, args LoadArgs) (loadedELF, arch.Context
 // Preconditions:
 //   - The Task MemoryManager is empty.
 //   - Load is called on the Task goroutine.
-func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *VDSO) (abi.OS, arch.Context, string, *syserr.Error) {
+func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *VDSO) (abi.OS, *arch.Context64, string, *syserr.Error) {
 	// Load the executable itself.
 	loaded, ac, file, newArgv, err := loadExecutable(ctx, args)
 	if err != nil {

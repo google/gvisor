@@ -105,7 +105,7 @@ func (*PTrace) NewContext(ctx pkgcontext.Context) platform.Context {
 }
 
 // Switch runs the provided context in the given address space.
-func (c *context) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac arch.Context, cpu int32) (*linux.SignalInfo, hostarch.AccessType, error) {
+func (c *context) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac *arch.Context64, cpu int32) (*linux.SignalInfo, hostarch.AccessType, error) {
 	as := mm.AddressSpace()
 	s := as.(*subprocess)
 restart:
@@ -197,7 +197,7 @@ func (c *context) Release() {}
 func (c *context) FullStateChanged() {}
 
 // PullFullState implements platform.Context.PullFullState.
-func (c *context) PullFullState(as platform.AddressSpace, ac arch.Context) {}
+func (c *context) PullFullState(as platform.AddressSpace, ac *arch.Context64) {}
 
 // PTrace represents a collection of ptrace subprocesses.
 type PTrace struct {
