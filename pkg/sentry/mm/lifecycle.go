@@ -42,10 +42,10 @@ func NewMemoryManager(p platform.Platform, mfp pgalloc.MemoryFileProvider, sleep
 	}
 }
 
-// SetMmapLayout initializes mm's layout from the given arch.Context.
+// SetMmapLayout initializes mm's layout from the given arch.Context64.
 //
 // Preconditions: mm contains no mappings and is not used concurrently.
-func (mm *MemoryManager) SetMmapLayout(ac arch.Context, r *limits.LimitSet) (arch.MmapLayout, error) {
+func (mm *MemoryManager) SetMmapLayout(ac *arch.Context64, r *limits.LimitSet) (arch.MmapLayout, error) {
 	layout, err := ac.NewMmapLayout(mm.p.MinUserAddress(), mm.p.MaxUserAddress(), r)
 	if err != nil {
 		return arch.MmapLayout{}, err

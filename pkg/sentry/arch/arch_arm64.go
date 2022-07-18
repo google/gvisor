@@ -75,20 +75,20 @@ const (
 	minMmapRand64 = (1 << 18) * hostarch.PageSize
 )
 
-// context64 represents an ARM64 context.
+// Context64 represents an ARM64 context.
 //
 // +stateify savable
-type context64 struct {
+type Context64 struct {
 	State
 	sigFPState []fpu.State // fpstate to be restored on sigreturn.
 }
 
 // Arch implements Context.Arch.
-func (c *context64) Arch() Arch {
+func (c *Context64) Arch() Arch {
 	return ARM64
 }
 
-func (c *context64) copySigFPState() []fpu.State {
+func (c *Context64) copySigFPState() []fpu.State {
 	var sigfps []fpu.State
 	for _, s := range c.sigFPState {
 		sigfps = append(sigfps, s.Fork())
@@ -97,8 +97,8 @@ func (c *context64) copySigFPState() []fpu.State {
 }
 
 // Fork returns an exact copy of this context.
-func (c *context64) Fork() Context {
-	return &context64{
+func (c *Context64) Fork() *Context64 {
+	return &Context64{
 		State:      c.State.Fork(),
 		sigFPState: c.copySigFPState(),
 	}
@@ -116,42 +116,42 @@ func (c *context64) Fork() Context {
 // R30: the link register.
 
 // Return returns the current syscall return value.
-func (c *context64) Return() uintptr {
+func (c *Context64) Return() uintptr {
 	return uintptr(c.Regs.Regs[0])
 }
 
 // SetReturn sets the syscall return value.
-func (c *context64) SetReturn(value uintptr) {
+func (c *Context64) SetReturn(value uintptr) {
 	c.Regs.Regs[0] = uint64(value)
 }
 
 // IP returns the current instruction pointer.
-func (c *context64) IP() uintptr {
+func (c *Context64) IP() uintptr {
 	return uintptr(c.Regs.Pc)
 }
 
 // SetIP sets the current instruction pointer.
-func (c *context64) SetIP(value uintptr) {
+func (c *Context64) SetIP(value uintptr) {
 	c.Regs.Pc = uint64(value)
 }
 
 // Stack returns the current stack pointer.
-func (c *context64) Stack() uintptr {
+func (c *Context64) Stack() uintptr {
 	return uintptr(c.Regs.Sp)
 }
 
 // SetStack sets the current stack pointer.
-func (c *context64) SetStack(value uintptr) {
+func (c *Context64) SetStack(value uintptr) {
 	c.Regs.Sp = uint64(value)
 }
 
 // TLS returns the current TLS pointer.
-func (c *context64) TLS() uintptr {
+func (c *Context64) TLS() uintptr {
 	return uintptr(c.Regs.TPIDR_EL0)
 }
 
 // SetTLS sets the current TLS pointer. Returns false if value is invalid.
-func (c *context64) SetTLS(value uintptr) bool {
+func (c *Context64) SetTLS(value uintptr) bool {
 	if value >= uintptr(maxAddr64) {
 		return false
 	}
@@ -161,23 +161,23 @@ func (c *context64) SetTLS(value uintptr) bool {
 }
 
 // SetOldRSeqInterruptedIP implements Context.SetOldRSeqInterruptedIP.
-func (c *context64) SetOldRSeqInterruptedIP(value uintptr) {
+func (c *Context64) SetOldRSeqInterruptedIP(value uintptr) {
 	c.Regs.Regs[3] = uint64(value)
 }
 
 // Native returns the native type for the given val.
-func (c *context64) Native(val uintptr) marshal.Marshallable {
+func (c *Context64) Native(val uintptr) marshal.Marshallable {
 	v := primitive.Uint64(val)
 	return &v
 }
 
 // Value returns the generic val for the given native type.
-func (c *context64) Value(val marshal.Marshallable) uintptr {
+func (c *Context64) Value(val marshal.Marshallable) uintptr {
 	return uintptr(*val.(*primitive.Uint64))
 }
 
 // Width returns the byte width of this architecture.
-func (c *context64) Width() uint {
+func (c *Context64) Width() uint {
 	return 8
 }
 
@@ -187,7 +187,7 @@ func mmapRand(max uint64) hostarch.Addr {
 }
 
 // NewMmapLayout implements Context.NewMmapLayout consistently with Linux.
-func (c *context64) NewMmapLayout(min, max hostarch.Addr, r *limits.LimitSet) (MmapLayout, error) {
+func (c *Context64) NewMmapLayout(min, max hostarch.Addr, r *limits.LimitSet) (MmapLayout, error) {
 	min, ok := min.RoundUp()
 	if !ok {
 		return MmapLayout{}, unix.EINVAL
@@ -253,7 +253,7 @@ func (c *context64) NewMmapLayout(min, max hostarch.Addr, r *limits.LimitSet) (M
 }
 
 // PIELoadAddress implements Context.PIELoadAddress.
-func (c *context64) PIELoadAddress(l MmapLayout) hostarch.Addr {
+func (c *Context64) PIELoadAddress(l MmapLayout) hostarch.Addr {
 	base := preferredPIELoadAddr
 	max, ok := base.AddLength(maxMmapRand64)
 	if !ok {
@@ -272,17 +272,18 @@ func (c *context64) PIELoadAddress(l MmapLayout) hostarch.Addr {
 }
 
 // PtracePeekUser implements Context.PtracePeekUser.
-func (c *context64) PtracePeekUser(addr uintptr) (marshal.Marshallable, error) {
+func (c *Context64) PtracePeekUser(addr uintptr) (marshal.Marshallable, error) {
 	// TODO(gvisor.dev/issue/1239): Full ptrace supporting for Arm64.
 	return c.Native(0), nil
 }
 
 // PtracePokeUser implements Context.PtracePokeUser.
-func (c *context64) PtracePokeUser(addr, data uintptr) error {
+func (c *Context64) PtracePokeUser(addr, data uintptr) error {
 	// TODO(gvisor.dev/issue/1239): Full ptrace supporting for Arm64.
 	return nil
 }
 
-func (c *context64) FloatingPointData() *fpu.State {
+// FloatingPointData returns the state of the floating-point unit.
+func (c *Context64) FloatingPointData() *fpu.State {
 	return &c.State.fpState
 }

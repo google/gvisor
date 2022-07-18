@@ -23,11 +23,11 @@ const restartSyscallNr = uintptr(219)
 // syscall handler(doSyscall()).
 //
 // Noop on x86.
-func (c *context64) SyscallSaveOrig() {
+func (c *Context64) SyscallSaveOrig() {
 }
 
 // SyscallNo returns the syscall number according to the 64-bit convention.
-func (c *context64) SyscallNo() uintptr {
+func (c *Context64) SyscallNo() uintptr {
 	return uintptr(c.Regs.Orig_rax)
 }
 
@@ -36,7 +36,7 @@ func (c *context64) SyscallNo() uintptr {
 // Due to the way addresses are mapped for the sentry this binary *must* be
 // built in 64-bit mode. So we can just assume the syscall numbers that come
 // back match the expected host system call numbers.
-func (c *context64) SyscallArgs() SyscallArguments {
+func (c *Context64) SyscallArgs() SyscallArguments {
 	return SyscallArguments{
 		SyscallArgument{Value: uintptr(c.Regs.Rdi)},
 		SyscallArgument{Value: uintptr(c.Regs.Rsi)},
@@ -48,13 +48,13 @@ func (c *context64) SyscallArgs() SyscallArguments {
 }
 
 // RestartSyscall implements Context.RestartSyscall.
-func (c *context64) RestartSyscall() {
+func (c *Context64) RestartSyscall() {
 	c.Regs.Rip -= SyscallWidth
 	c.Regs.Rax = c.Regs.Orig_rax
 }
 
 // RestartSyscallWithRestartBlock implements Context.RestartSyscallWithRestartBlock.
-func (c *context64) RestartSyscallWithRestartBlock() {
+func (c *Context64) RestartSyscallWithRestartBlock() {
 	c.Regs.Rip -= SyscallWidth
 	c.Regs.Rax = uint64(restartSyscallNr)
 }

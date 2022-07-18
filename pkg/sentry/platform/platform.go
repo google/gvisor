@@ -180,7 +180,7 @@ type MemoryManager interface {
 
 // Context represents the execution context for a single thread.
 type Context interface {
-	// Switch resumes execution of the thread specified by the arch.Context
+	// Switch resumes execution of the thread specified by the arch.Context64
 	// in the provided address space. This call will block while the thread
 	// is executing.
 	//
@@ -207,7 +207,7 @@ type Context interface {
 	//		concurrent call to Switch().
 	//
 	//	- ErrContextCPUPreempted: See the definition of that error for details.
-	Switch(ctx context.Context, mm MemoryManager, ac arch.Context, cpu int32) (*linux.SignalInfo, hostarch.AccessType, error)
+	Switch(ctx context.Context, mm MemoryManager, ac *arch.Context64, cpu int32) (*linux.SignalInfo, hostarch.AccessType, error)
 
 	// PullFullState() pulls a full state of the application thread.
 	//
@@ -221,7 +221,7 @@ type Context interface {
 	// PullFullState() to load all registers and FPU state.
 	//
 	// Preconditions: The caller must be running on the task goroutine.
-	PullFullState(as AddressSpace, ac arch.Context)
+	PullFullState(as AddressSpace, ac *arch.Context64)
 
 	// FullStateChanged() indicates that a thread state has been changed by
 	// the Sentry. This happens in case of the rt_sigreturn, execve, etc.

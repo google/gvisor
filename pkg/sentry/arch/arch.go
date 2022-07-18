@@ -50,14 +50,22 @@ func (a Arch) String() string {
 	}
 }
 
-// Context provides architecture-dependent information for a specific thread.
+// contextInterface provides architecture-dependent information for a thread.
+// This is currently not referenced, because there exists only one concrete
+// implementation of this interface (*Context64), which we reference directly
+// wherever this interface could otherwise be used in order to avoid the
+// overhead involved in calling functions on interfaces in Go.
+// This interface is still useful in order to see the entire
+// architecture-dependent call surface it must support, as this is difficult
+// to follow across the rest of this module due to the conditional compilation
+// of the files that make it up.
 //
 // NOTE(b/34169503): Currently we use uintptr here to refer to a generic native
 // register value. While this will work for the foreseeable future, it isn't
 // strictly correct. We may want to create some abstraction that makes this
 // more clear or enables us to store values of arbitrary widths. This is
 // particularly true for RegisterMap().
-type Context interface {
+type contextInterface interface {
 	// Arch returns the architecture for this Context.
 	Arch() Arch
 
@@ -78,7 +86,7 @@ type Context interface {
 	Width() uint
 
 	// Fork creates a clone of the context.
-	Fork() Context
+	Fork() *Context64
 
 	// SyscallNo returns the syscall number.
 	SyscallNo() uintptr
@@ -227,6 +235,9 @@ type Context interface {
 	// must be disabled and all registers restored.
 	FullRestore() bool
 }
+
+// Compile-time assertion that Context64 implements contextInterface.
+var _ = (contextInterface)((*Context64)(nil))
 
 // MmapDirection is a search direction for mmaps.
 type MmapDirection int
