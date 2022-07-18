@@ -31,7 +31,7 @@ type Stack struct {
 	// Our arch info.
 	// We use this for automatic Native conversion of hostarch.Addrs during
 	// Push() and Pop().
-	Arch Context
+	Arch *Context64
 
 	// The interface used to actually copy user memory.
 	IO usermem.IO

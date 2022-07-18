@@ -26,12 +26,12 @@ const restartSyscallNr = uintptr(128)
 // is saved to the pt_regs.orig_x0 in kernel code. But currently, the orig_x0
 // was not accessible to the userspace application, so we have to do the same
 // operation in the sentry code to save the R0 value into the App context.
-func (c *context64) SyscallSaveOrig() {
+func (c *Context64) SyscallSaveOrig() {
 	c.OrigR0 = c.Regs.Regs[0]
 }
 
 // SyscallNo returns the syscall number according to the 64-bit convention.
-func (c *context64) SyscallNo() uintptr {
+func (c *Context64) SyscallNo() uintptr {
 	return uintptr(c.Regs.Regs[8])
 }
 
@@ -50,7 +50,7 @@ func (c *context64) SyscallNo() uintptr {
 // R19...R28: callee-saved registers.
 // R29: the frame pointer.
 // R30: the link register.
-func (c *context64) SyscallArgs() SyscallArguments {
+func (c *Context64) SyscallArgs() SyscallArguments {
 	return SyscallArguments{
 		SyscallArgument{Value: uintptr(c.OrigR0)},
 		SyscallArgument{Value: uintptr(c.Regs.Regs[1])},
@@ -65,7 +65,7 @@ func (c *context64) SyscallArgs() SyscallArguments {
 // Prepare for system call restart, OrigR0 will be restored to R0.
 // Please see the linux code as reference:
 // arch/arm64/kernel/signal.c:do_signal()
-func (c *context64) RestartSyscall() {
+func (c *Context64) RestartSyscall() {
 	c.Regs.Pc -= SyscallWidth
 	// R0 will be backed up into OrigR0 when entering doSyscall().
 	// Please see the linux code as reference:
@@ -75,7 +75,7 @@ func (c *context64) RestartSyscall() {
 }
 
 // RestartSyscallWithRestartBlock implements Context.RestartSyscallWithRestartBlock.
-func (c *context64) RestartSyscallWithRestartBlock() {
+func (c *Context64) RestartSyscallWithRestartBlock() {
 	c.Regs.Pc -= SyscallWidth
 	c.Regs.Regs[0] = uint64(c.OrigR0)
 	c.Regs.Regs[8] = uint64(restartSyscallNr)

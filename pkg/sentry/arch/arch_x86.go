@@ -390,10 +390,10 @@ func (s *State) FullRestore() bool {
 }
 
 // New returns a new architecture context.
-func New(arch Arch) Context {
+func New(arch Arch) *Context64 {
 	switch arch {
 	case AMD64:
-		return &context64{
+		return &Context64{
 			State{
 				fpState: fpu.NewState(),
 			},

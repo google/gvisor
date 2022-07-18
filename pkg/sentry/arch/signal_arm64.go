@@ -74,7 +74,7 @@ type UContext64 struct {
 }
 
 // SignalSetup implements Context.SignalSetup.
-func (c *context64) SignalSetup(st *Stack, act *linux.SigAction, info *linux.SignalInfo, alt *linux.SignalStack, sigset linux.SignalSet, featureSet cpuid.FeatureSet) error {
+func (c *Context64) SignalSetup(st *Stack, act *linux.SigAction, info *linux.SignalInfo, alt *linux.SignalStack, sigset linux.SignalSet, featureSet cpuid.FeatureSet) error {
 	sp := st.Bottom
 
 	// Construct the UContext64 now since we need its size.
@@ -139,7 +139,7 @@ func (c *context64) SignalSetup(st *Stack, act *linux.SigAction, info *linux.Sig
 }
 
 // SignalRestore implements Context.SignalRestore.
-func (c *context64) SignalRestore(st *Stack, rt bool, featureSet cpuid.FeatureSet) (linux.SignalSet, linux.SignalStack, error) {
+func (c *Context64) SignalRestore(st *Stack, rt bool, featureSet cpuid.FeatureSet) (linux.SignalSet, linux.SignalStack, error) {
 	// Copy out the stack frame.
 	var uc UContext64
 	if _, err := uc.CopyIn(st, StackBottomMagic); err != nil {
