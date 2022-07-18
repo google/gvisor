@@ -403,6 +403,9 @@ steps:
     label: ":cd: FIO benchmarks (randread/randwrite)"
     command: make -i benchmark-platforms BENCHMARKS_SUITE=fio BENCHMARKS_TARGETS=test/benchmarks/fs:fio_test BENCHMARKS_FILTER=Fio/operation\.rand BENCHMARKS_OPTIONS=--test.benchtime=15s
   - <<: *benchmarks
+    label: ":cd: Ruby CI/CD benchmarks"
+    command: make -i benchmark-platforms BENCHMARKS_SUITE=fio BENCHMARKS_TARGETS=test/benchmarks/fs:rubydev_test BENCHMARKS_OPTIONS=-test.benchtime=1ns
+  - <<: *benchmarks
     label: ":globe_with_meridians: HTTPD benchmarks"
     command: make -i benchmark-platforms BENCHMARKS_FILTER="Continuous" BENCHMARKS_SUITE=httpd BENCHMARKS_TARGETS=test/benchmarks/network:httpd_test
   - <<: *benchmarks
