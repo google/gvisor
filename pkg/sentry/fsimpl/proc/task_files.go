@@ -529,6 +529,43 @@ func (fd *memFD) SetStat(context.Context, vfs.SetStatOptions) error {
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *memFD) Release(context.Context) {}
 
+// limitsData implements vfs.DynamicBytesSource for /proc/[pid]/limits.
+//
+// +stateify savable
+type limitsData struct {
+	kernfs.DynamicBytesFile
+
+	task *kernel.Task
+}
+
+func (d *limitsData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	// formatting matches the kernel output from linux/fs/proc/base.c:proc_pid_limits()
+	fmt.Fprintf(buf, "Limit                     Soft Limit           Hard Limit           Units     \n")
+	for _, lt := range limits.AllLimitTypes {
+		fmt.Fprintf(buf, "%-25s ", lt.Name())
+
+		l := d.task.Limits().Get(lt)
+		if l.Cur == limits.Infinity {
+			fmt.Fprintf(buf, "%-20s ", "unlimited")
+		} else {
+			fmt.Fprintf(buf, "%-20d ", l.Cur)
+		}
+
+		if l.Max == limits.Infinity {
+			fmt.Fprintf(buf, "%-20s ", "unlimited")
+		} else {
+			fmt.Fprintf(buf, "%-20d ", l.Max)
+		}
+
+		if u := lt.Unit(); u != "" {
+			fmt.Fprintf(buf, "%-10s", u)
+		}
+
+		buf.WriteByte('\n')
+	}
+	return nil
+}
+
 // mapsData implements vfs.DynamicBytesSource for /proc/[pid]/maps.
 //
 // +stateify savable
