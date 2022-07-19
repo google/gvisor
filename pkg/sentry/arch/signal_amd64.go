@@ -304,12 +304,10 @@ func (c *Context64) SignalRestore(st *Stack, rt bool, featureSet cpuid.FeatureSe
 	if uc.MContext.Fpstate == 0 {
 		c.fpState.Reset()
 	} else {
-		fpSize, _ := featureSet.ExtendedStateSize()
-		f := make([]byte, fpSize)
-		if _, err := st.IO.CopyIn(context.Background(), hostarch.Addr(uc.MContext.Fpstate), f, usermem.IOOpts{}); err != nil {
+		if _, err := st.IO.CopyIn(context.Background(), hostarch.Addr(uc.MContext.Fpstate), c.fpState, usermem.IOOpts{}); err != nil {
+			c.fpState.Reset()
 			return 0, linux.SignalStack{}, err
 		}
-		copy(c.fpState, f)
 		c.fpState.SanitizeUser(featureSet)
 	}
 

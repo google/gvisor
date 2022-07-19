@@ -305,6 +305,10 @@ func (t *Task) SignalReturn(rt bool) (*SyscallControl, error) {
 	st := t.Stack()
 	sigset, alt, err := t.Arch().SignalRestore(st, rt, t.k.featureSet)
 	if err != nil {
+		// sigreturn syscalls never return errors.
+		t.Debugf("failed to restore from a signal frame: %v", err)
+		t.forceSignal(linux.SIGSEGV, false /* unconditional */)
+		t.SendSignal(SignalInfoPriv(linux.SIGSEGV))
 		return nil, err
 	}
 
