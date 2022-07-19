@@ -845,31 +845,15 @@ func (fd *fileDescription) GetXattr(ctx context.Context, opts vfs.GetXattrOption
 // SetXattr implements vfs.FileDescriptionImpl.SetXattr.
 func (fd *fileDescription) SetXattr(ctx context.Context, opts vfs.SetXattrOptions) error {
 	fs := fd.filesystem()
-	d := fd.dentry()
-
 	fs.renameMu.RLock()
-	err := fs.setXattrLocked(ctx, d, fd.vfsfd.Mount(), auth.CredentialsFromContext(ctx), &opts)
-	fs.renameMu.RUnlock()
-	if err != nil {
-		return err
-	}
-
-	d.InotifyWithParent(ctx, linux.IN_ATTRIB, 0, vfs.InodeEvent)
-	return nil
+	defer fs.renameMu.RUnlock()
+	return fs.setXattrLocked(ctx, fd.dentry(), fd.vfsfd.Mount(), auth.CredentialsFromContext(ctx), &opts)
 }
 
 // RemoveXattr implements vfs.FileDescriptionImpl.RemoveXattr.
 func (fd *fileDescription) RemoveXattr(ctx context.Context, name string) error {
 	fs := fd.filesystem()
-	d := fd.dentry()
-
 	fs.renameMu.RLock()
-	err := fs.removeXattrLocked(ctx, d, fd.vfsfd.Mount(), auth.CredentialsFromContext(ctx), name)
-	fs.renameMu.RUnlock()
-	if err != nil {
-		return err
-	}
-
-	d.InotifyWithParent(ctx, linux.IN_ATTRIB, 0, vfs.InodeEvent)
-	return nil
+	defer fs.renameMu.RUnlock()
+	return fs.removeXattrLocked(ctx, fd.dentry(), fd.vfsfd.Mount(), auth.CredentialsFromContext(ctx), name)
 }

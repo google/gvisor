@@ -548,7 +548,13 @@ func (fd *FileDescription) SetStat(ctx context.Context, opts SetStatOptions) err
 		rp.Release(ctx)
 		return err
 	}
-	return fd.impl.SetStat(ctx, opts)
+	if err := fd.impl.SetStat(ctx, opts); err != nil {
+		return err
+	}
+	if ev := InotifyEventFromStatMask(opts.Stat.Mask); ev != 0 {
+		fd.Dentry().InotifyWithParent(ctx, ev, 0, InodeEvent)
+	}
+	return nil
 }
 
 // StatFS returns metadata for the filesystem containing the file represented
@@ -673,6 +679,7 @@ func (fd *FileDescription) Write(ctx context.Context, src usermem.IOSequence, op
 // IterDirents has been called since the last call to Seek, it continues
 // iteration from the end of the last call.
 func (fd *FileDescription) IterDirents(ctx context.Context, cb IterDirentsCallback) error {
+	defer fd.Dentry().InotifyWithParent(ctx, linux.IN_ACCESS, 0, PathEvent)
 	return fd.impl.IterDirents(ctx, cb)
 }
 
@@ -760,7 +767,11 @@ func (fd *FileDescription) SetXattr(ctx context.Context, opts *SetXattrOptions) 
 		rp.Release(ctx)
 		return err
 	}
-	return fd.impl.SetXattr(ctx, *opts)
+	if err := fd.impl.SetXattr(ctx, *opts); err != nil {
+		return err
+	}
+	fd.Dentry().InotifyWithParent(ctx, linux.IN_ATTRIB, 0, InodeEvent)
+	return nil
 }
 
 // RemoveXattr removes the given extended attribute from the file represented
@@ -776,7 +787,11 @@ func (fd *FileDescription) RemoveXattr(ctx context.Context, name string) error {
 		rp.Release(ctx)
 		return err
 	}
-	return fd.impl.RemoveXattr(ctx, name)
+	if err := fd.impl.RemoveXattr(ctx, name); err != nil {
+		return err
+	}
+	fd.Dentry().InotifyWithParent(ctx, linux.IN_ATTRIB, 0, InodeEvent)
+	return nil
 }
 
 // SyncFS instructs the filesystem containing fd to execute the semantics of
