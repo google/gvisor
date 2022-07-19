@@ -115,8 +115,6 @@ func (fd *directoryFD) Release(ctx context.Context) {
 // IterDirents implements vfs.FileDescriptionImpl.IterDirents.
 func (fd *directoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback) error {
 	d := fd.dentry()
-	defer d.InotifyWithParent(ctx, linux.IN_ACCESS, 0, vfs.PathEvent)
-
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
 

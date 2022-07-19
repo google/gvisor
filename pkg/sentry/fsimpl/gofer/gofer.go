@@ -2592,13 +2592,7 @@ func (fd *fileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linu
 
 // SetStat implements vfs.FileDescriptionImpl.SetStat.
 func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
-	if err := fd.dentry().setStat(ctx, auth.CredentialsFromContext(ctx), &opts, fd.vfsfd.Mount()); err != nil {
-		return err
-	}
-	if ev := vfs.InotifyEventFromStatMask(opts.Stat.Mask); ev != 0 {
-		fd.dentry().InotifyWithParent(ctx, ev, 0, vfs.InodeEvent)
-	}
-	return nil
+	return fd.dentry().setStat(ctx, auth.CredentialsFromContext(ctx), &opts, fd.vfsfd.Mount())
 }
 
 // ListXattr implements vfs.FileDescriptionImpl.ListXattr.
@@ -2613,22 +2607,12 @@ func (fd *fileDescription) GetXattr(ctx context.Context, opts vfs.GetXattrOption
 
 // SetXattr implements vfs.FileDescriptionImpl.SetXattr.
 func (fd *fileDescription) SetXattr(ctx context.Context, opts vfs.SetXattrOptions) error {
-	d := fd.dentry()
-	if err := d.setXattr(ctx, auth.CredentialsFromContext(ctx), &opts); err != nil {
-		return err
-	}
-	d.InotifyWithParent(ctx, linux.IN_ATTRIB, 0, vfs.InodeEvent)
-	return nil
+	return fd.dentry().setXattr(ctx, auth.CredentialsFromContext(ctx), &opts)
 }
 
 // RemoveXattr implements vfs.FileDescriptionImpl.RemoveXattr.
 func (fd *fileDescription) RemoveXattr(ctx context.Context, name string) error {
-	d := fd.dentry()
-	if err := d.removeXattr(ctx, auth.CredentialsFromContext(ctx), name); err != nil {
-		return err
-	}
-	d.InotifyWithParent(ctx, linux.IN_ATTRIB, 0, vfs.InodeEvent)
-	return nil
+	return fd.dentry().removeXattr(ctx, auth.CredentialsFromContext(ctx), name)
 }
 
 // LockBSD implements vfs.FileDescriptionImpl.LockBSD.

@@ -117,8 +117,6 @@ func (fd *directoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallba
 	fs := fd.filesystem()
 	dir := fd.inode().impl.(*directory)
 
-	defer fd.dentry().InotifyWithParent(ctx, linux.IN_ACCESS, 0, vfs.PathEvent)
-
 	// fs.mu is required to read d.parent and dentry.name.
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
