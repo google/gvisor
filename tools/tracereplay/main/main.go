@@ -86,7 +86,7 @@ func (c *saveCmd) Execute(_ context.Context, f *flag.FlagSet, args ...interface{
 		return subcommands.ExitFailure
 	}
 
-	ch := make(chan os.Signal)
+	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, os.Interrupt)
 
 	done := make(chan struct{})
