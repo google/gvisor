@@ -88,7 +88,7 @@ func InotifyAddWatch(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kern
 	// "IN_DONT_FOLLOW: Don't dereference pathname if it is a symbolic link."
 	//  -- inotify(7)
 	follow := followFinalSymlink
-	if mask&linux.IN_DONT_FOLLOW == 0 {
+	if mask&linux.IN_DONT_FOLLOW != 0 {
 		follow = nofollowFinalSymlink
 	}
 
