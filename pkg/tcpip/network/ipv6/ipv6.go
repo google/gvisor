@@ -1322,84 +1322,14 @@ func (e *endpoint) deliverPacketLocally(h header.IPv6, pkt *stack.PacketBuffer, 
 	_ = e.processExtensionHeaders(h, pkt, false /* forwarding */)
 }
 
-func (e *endpoint) processExtensionHeader(it *header.IPv6PayloadIterator, pkt **stack.PacketBuffer, h header.IPv6, routerAlert **header.IPv6RouterAlertOption, hasFragmentHeader *bool, forwarding bool) (bool, error) {
-	stats := e.stats.ip
-	dstAddr := h.DestinationAddress()
-	// Keep track of the start of the previous header so we can report the
-	// special case of a Hop by Hop at a location other than at the start.
-	previousHeaderStart := it.HeaderOffset()
-	extHdr, done, err := it.Next()
-	if err != nil {
-		stats.MalformedPacketsReceived.Increment()
-		return true, err
-	}
-	if done {
-		return true, nil
-	}
-
-	// As per RFC 8200, section 4:
-	//
-	//   Extension headers (except for the Hop-by-Hop Options header) are
-	//   not processed, inserted, or deleted by any node along a packet's
-	//   delivery path until the packet reaches the node identified in the
-	//   Destination Address field of the IPv6 header.
-	//
-	// Furthermore, as per RFC 8200 section 4.1, the Hop By Hop extension
-	// header is restricted to appear first in the list of extension headers.
-	//
-	// Therefore, we can immediately return once we hit any header other
-	// than the Hop-by-Hop header while forwarding a packet.
-	if forwarding {
-		if _, ok := extHdr.(header.IPv6HopByHopOptionsExtHdr); !ok {
-			return true, nil
-		}
-	}
-
-	switch extHdr := extHdr.(type) {
-	case header.IPv6HopByHopOptionsExtHdr:
-		if err := e.processIPv6HopByHopOptionsExtHdr(&extHdr, it, *pkt, dstAddr, routerAlert, previousHeaderStart, forwarding); err != nil {
-			return true, err
-		}
-	case header.IPv6RoutingExtHdr:
-		if err := e.processIPv6RoutingExtHeader(&extHdr, it, *pkt); err != nil {
-			return true, err
-		}
-	case header.IPv6FragmentExtHdr:
-		*hasFragmentHeader = true
-		if extHdr.IsAtomic() {
-			// This fragment extension header indicates that this packet is an
-			// atomic fragment. An atomic fragment is a fragment that contains
-			// all the data required to reassemble a full packet. As per RFC 6946,
-			// atomic fragments must not interfere with "normal" fragmented traffic
-			// so we skip processing the fragment instead of feeding it through the
-			// reassembly process below.
-			return false, nil
-		}
-
-		if err := e.processFragmentExtHdr(&extHdr, it, pkt, h); err != nil {
-			return true, err
-		}
-	case header.IPv6DestinationOptionsExtHdr:
-		if err := e.processIPv6DestinationOptionsExtHdr(&extHdr, it, *pkt, dstAddr); err != nil {
-			return true, err
-		}
-	case header.IPv6RawPayloadHeader:
-		if err := e.processIPv6RawPayloadHeader(&extHdr, it, *pkt, *routerAlert, previousHeaderStart, *hasFragmentHeader); err != nil {
-			return true, err
-		}
-	default:
-		// Since the iterator returns IPv6RawPayloadHeader for unknown Extension
-		// Header IDs this should never happen unless we missed a supported type
-		// here.
-		panic(fmt.Sprintf("unrecognized type from it.Next() = %T", extHdr))
-	}
-	return false, nil
-}
-
 // processExtensionHeaders processes the extension headers in the given packet.
 // Returns an error if the processing of a header failed or if the packet should
 // be discarded.
 func (e *endpoint) processExtensionHeaders(h header.IPv6, pkt *stack.PacketBuffer, forwarding bool) error {
+	stats := e.stats.ip
+	srcAddr := h.SourceAddress()
+	dstAddr := h.DestinationAddress()
+
 	// Create a VV to parse the packet. We don't plan to modify anything here.
 	// vv consists of:
 	//	- Any IPv6 header bytes after the first 40 (i.e. extensions).
@@ -1411,378 +1341,415 @@ func (e *endpoint) processExtensionHeaders(h header.IPv6, pkt *stack.PacketBuffe
 	buf.Merge(&dataBuf)
 	it := header.MakeIPv6PayloadIterator(header.IPv6ExtensionHeaderIdentifier(h.NextHeader()), buf)
 
-	// Add a reference to pkt because fragment header processing can replace this
-	// packet with a new one that has an extra reference. Adding a reference here
-	// keeps the two in parity so they can both be DecRef'd the same way.
-	pkt.IncRef()
-	defer func() {
-		pkt.DecRef()
-	}()
-
 	var (
 		hasFragmentHeader bool
 		routerAlert       *header.IPv6RouterAlertOption
+		// Create an extra packet buffer reference to keep track of the packet to
+		// DecRef so that we do not incur a memory allocation for deferring a DecRef
+		// within the loop.
+		resPktToDecRef *stack.PacketBuffer
 	)
+	defer func() {
+		if resPktToDecRef != nil {
+			resPktToDecRef.DecRef()
+		}
+	}()
+
 	for {
-		if done, err := e.processExtensionHeader(&it, &pkt, h, &routerAlert, &hasFragmentHeader, forwarding); err != nil || done {
+		// Keep track of the start of the previous header so we can report the
+		// special case of a Hop by Hop at a location other than at the start.
+		previousHeaderStart := it.HeaderOffset()
+		extHdr, done, err := it.Next()
+		if err != nil {
+			stats.MalformedPacketsReceived.Increment()
 			return err
 		}
-	}
-}
+		if done {
+			break
+		}
 
-func (e *endpoint) processIPv6RawPayloadHeader(extHdr *header.IPv6RawPayloadHeader, it *header.IPv6PayloadIterator, pkt *stack.PacketBuffer, routerAlert *header.IPv6RouterAlertOption, previousHeaderStart uint32, hasFragmentHeader bool) error {
-	stats := e.stats.ip
-	// If the last header in the payload isn't a known IPv6 extension header,
-	// handle it as if it is transport layer data.å
-
-	// Calculate the number of octets parsed from data. We want to consume all
-	// the data except the unparsed portion located at the end, whose size is
-	// extHdr.Buf.Size().
-	trim := pkt.Data().Size() - int(extHdr.Buf.Size())
-
-	// For unfragmented packets, extHdr still contains the transport header.
-	// Consume that too.
-	//
-	// For reassembled fragments, pkt.TransportHeader is unset, so this is a
-	// no-op and pkt.Data begins with the transport header.
-	trim += len(pkt.TransportHeader().View())
-
-	if _, ok := pkt.Data().Consume(trim); !ok {
-		stats.MalformedPacketsReceived.Increment()
-		return fmt.Errorf("could not consume %d bytes", trim)
-	}
-
-	proto := tcpip.TransportProtocolNumber(extHdr.Identifier)
-	// If the packet was reassembled from a fragment, it will not have a
-	// transport header set yet.
-	if len(pkt.TransportHeader().View()) == 0 {
-		e.protocol.parseTransport(pkt, proto)
-	}
-
-	stats.PacketsDelivered.Increment()
-	if proto == header.ICMPv6ProtocolNumber {
-		e.handleICMP(pkt, hasFragmentHeader, routerAlert)
-		return nil
-	}
-	stats.PacketsDelivered.Increment()
-	switch res := e.dispatcher.DeliverTransportPacket(proto, pkt); res {
-	case stack.TransportPacketHandled:
-		return nil
-	case stack.TransportPacketDestinationPortUnreachable:
-		// As per RFC 4443 section 3.1:
-		//   A destination node SHOULD originate a Destination Unreachable
-		//   message with Code 4 in response to a packet for which the
-		//   transport protocol (e.g., UDP) has no listener, if that transport
-		//   protocol has no alternative means to inform the sender.
-		_ = e.protocol.returnError(&icmpReasonPortUnreachable{}, pkt, true /* deliveredLocally */)
-		return fmt.Errorf("destination port unreachable")
-	case stack.TransportPacketProtocolUnreachable:
-		// As per RFC 8200 section 4. (page 7):
-		//   Extension headers are numbered from IANA IP Protocol Numbers
-		//   [IANA-PN], the same values used for IPv4 and IPv6.  When
-		//   processing a sequence of Next Header values in a packet, the
-		//   first one that is not an extension header [IANA-EH] indicates
-		//   that the next item in the packet is the corresponding upper-layer
-		//   header.
-		// With more related information on page 8:
-		//   If, as a result of processing a header, the destination node is
-		//   required to proceed to the next header but the Next Header value
-		//   in the current header is unrecognized by the node, it should
-		//   discard the packet and send an ICMP Parameter Problem message to
-		//   the source of the packet, with an ICMP Code value of 1
-		//   ("unrecognized Next Header type encountered") and the ICMP
-		//   Pointer field containing the offset of the unrecognized value
-		//   within the original packet.
+		// As per RFC 8200, section 4:
 		//
-		// Which when taken together indicate that an unknown protocol should
-		// be treated as an unrecognized next header value.
-		// The location of the Next Header field is in a different place in
-		// the initial IPv6 header than it is in the extension headers so
-		// treat it specially.
-		prevHdrIDOffset := uint32(header.IPv6NextHeaderOffset)
-		if previousHeaderStart != 0 {
-			prevHdrIDOffset = previousHeaderStart
-		}
-		_ = e.protocol.returnError(&icmpReasonParameterProblem{
-			code:    header.ICMPv6UnknownHeader,
-			pointer: prevHdrIDOffset,
-		}, pkt, true /* deliveredLocally */)
-		return fmt.Errorf("transport protocol unreachable")
-	default:
-		panic(fmt.Sprintf("unrecognized result from DeliverTransportPacket = %d", res))
-	}
-}
-
-func (e *endpoint) processIPv6RoutingExtHeader(extHdr *header.IPv6RoutingExtHdr, it *header.IPv6PayloadIterator, pkt *stack.PacketBuffer) error {
-	// As per RFC 8200 section 4.4, if a node encounters a routing header with
-	// an unrecognized routing type value, with a non-zero Segments Left
-	// value, the node must discard the packet and send an ICMP Parameter
-	// Problem, Code 0 to the packet's Source Address, pointing to the
-	// unrecognized Routing Type.
-	//
-	// If the Segments Left is 0, the node must ignore the Routing extension
-	// header and process the next header in the packet.
-	//
-	// Note, the stack does not yet handle any type of routing extension
-	// header, so we just make sure Segments Left is zero before processing
-	// the next extension header.
-	if extHdr.SegmentsLeft() == 0 {
-		return nil
-	}
-	_ = e.protocol.returnError(&icmpReasonParameterProblem{
-		code:    header.ICMPv6ErroneousHeader,
-		pointer: it.ParseOffset(),
-	}, pkt, true /* deliveredLocally */)
-	return fmt.Errorf("found unrecognized routing type with non-zero segments left in header = %#v", extHdr)
-}
-
-func (e *endpoint) processIPv6DestinationOptionsExtHdr(extHdr *header.IPv6DestinationOptionsExtHdr, it *header.IPv6PayloadIterator, pkt *stack.PacketBuffer, dstAddr tcpip.Address) error {
-	stats := e.stats.ip
-	optsIt := extHdr.Iter()
-
-	for {
-		opt, done, err := optsIt.Next()
-		if err != nil {
-			stats.MalformedPacketsReceived.Increment()
-			return err
-		}
-		if done {
-			break
-		}
-
-		// We currently do not support any IPv6 Destination extension header
-		// options.
-		switch opt.UnknownAction() {
-		case header.IPv6OptionUnknownActionSkip:
-		case header.IPv6OptionUnknownActionDiscard:
-			return fmt.Errorf("found unknown destination header option = %#v with discard action", opt)
-		case header.IPv6OptionUnknownActionDiscardSendICMPNoMulticastDest:
-			if header.IsV6MulticastAddress(dstAddr) {
-				return fmt.Errorf("found unknown destination header option %#v with discard action", opt)
+		//   Extension headers (except for the Hop-by-Hop Options header) are
+		//   not processed, inserted, or deleted by any node along a packet's
+		//   delivery path until the packet reaches the node identified in the
+		//   Destination Address field of the IPv6 header.
+		//
+		// Furthermore, as per RFC 8200 section 4.1, the Hop By Hop extension
+		// header is restricted to appear first in the list of extension headers.
+		//
+		// Therefore, we can immediately return once we hit any header other
+		// than the Hop-by-Hop header while forwarding a packet.
+		if forwarding {
+			if _, ok := extHdr.(header.IPv6HopByHopOptionsExtHdr); !ok {
+				return nil
 			}
-			fallthrough
-		case header.IPv6OptionUnknownActionDiscardSendICMP:
-			// This case satisfies a requirement of RFC 8200 section 4.2
-			// which states that an unknown option starting with bits [10] should:
-			//
-			//    discard the packet and, regardless of whether or not the
-			//    packet's Destination Address was a multicast address, send an
-			//    ICMP Parameter Problem, Code 2, message to the packet's
-			//    Source Address, pointing to the unrecognized Option Type.
-			//
-			_ = e.protocol.returnError(&icmpReasonParameterProblem{
-				code:               header.ICMPv6UnknownOption,
-				pointer:            it.ParseOffset() + optsIt.OptionOffset(),
-				respondToMulticast: true,
-			}, pkt, true /* deliveredLocally */)
-			return fmt.Errorf("found unknown destination header option %#v with discard action", opt)
-		default:
-			panic(fmt.Sprintf("unrecognized action for an unrecognized Destination extension header option = %#v", opt))
-		}
-	}
-	return nil
-}
-
-func (e *endpoint) processIPv6HopByHopOptionsExtHdr(extHdr *header.IPv6HopByHopOptionsExtHdr, it *header.IPv6PayloadIterator, pkt *stack.PacketBuffer, dstAddr tcpip.Address, routerAlert **header.IPv6RouterAlertOption, previousHeaderStart uint32, forwarding bool) error {
-	stats := e.stats.ip
-	// As per RFC 8200 section 4.1, the Hop By Hop extension header is
-	// restricted to appear immediately after an IPv6 fixed header.
-	if previousHeaderStart != 0 {
-		_ = e.protocol.returnError(&icmpReasonParameterProblem{
-			code:    header.ICMPv6UnknownHeader,
-			pointer: previousHeaderStart,
-		}, pkt, !forwarding /* deliveredLocally */)
-		return fmt.Errorf("found Hop-by-Hop header = %#v with non-zero previous header offset = %d", extHdr, previousHeaderStart)
-	}
-
-	optsIt := extHdr.Iter()
-
-	for {
-		opt, done, err := optsIt.Next()
-		if err != nil {
-			stats.MalformedPacketsReceived.Increment()
-			return err
-		}
-		if done {
-			break
 		}
 
-		switch opt := opt.(type) {
-		case *header.IPv6RouterAlertOption:
-			if *routerAlert != nil {
-				// As per RFC 2711 section 3, there should be at most one Router
-				// Alert option per packet.
-				//
-				//    There MUST only be one option of this type, regardless of
-				//    value, per Hop-by-Hop header.
-				stats.MalformedPacketsReceived.Increment()
-				return fmt.Errorf("found multiple Router Alert options (%#v, %#v)", opt, *routerAlert)
-			}
-			*routerAlert = opt
-			stats.OptionRouterAlertReceived.Increment()
-		default:
-			switch opt.UnknownAction() {
-			case header.IPv6OptionUnknownActionSkip:
-			case header.IPv6OptionUnknownActionDiscard:
-				return fmt.Errorf("found unknown Hop-by-Hop header option = %#v with discard action", opt)
-			case header.IPv6OptionUnknownActionDiscardSendICMPNoMulticastDest:
-				if header.IsV6MulticastAddress(dstAddr) {
-					return fmt.Errorf("found unknown hop-by-hop header option = %#v with discard action", opt)
-				}
-				fallthrough
-			case header.IPv6OptionUnknownActionDiscardSendICMP:
-				// This case satisfies a requirement of RFC 8200 section 4.2 which
-				// states that an unknown option starting with bits [10] should:
-				//
-				//    discard the packet and, regardless of whether or not the
-				//    packet's Destination Address was a multicast address, send an
-				//    ICMP Parameter Problem, Code 2, message to the packet's
-				//    Source Address, pointing to the unrecognized Option Type.
+		switch extHdr := extHdr.(type) {
+		case header.IPv6HopByHopOptionsExtHdr:
+			// As per RFC 8200 section 4.1, the Hop By Hop extension header is
+			// restricted to appear immediately after an IPv6 fixed header.
+			if previousHeaderStart != 0 {
 				_ = e.protocol.returnError(&icmpReasonParameterProblem{
-					code:               header.ICMPv6UnknownOption,
-					pointer:            it.ParseOffset() + optsIt.OptionOffset(),
-					respondToMulticast: true,
+					code:    header.ICMPv6UnknownHeader,
+					pointer: previousHeaderStart,
 				}, pkt, !forwarding /* deliveredLocally */)
-				return fmt.Errorf("found unknown hop-by-hop header option = %#v with discard action", opt)
-			default:
-				panic(fmt.Sprintf("unrecognized action for an unrecognized Hop By Hop extension header option = %#v", opt))
+				return fmt.Errorf("found Hop-by-Hop header = %#v with non-zero previous header offset = %d", extHdr, previousHeaderStart)
 			}
-		}
-	}
-	return nil
-}
 
-func (e *endpoint) processFragmentExtHdr(extHdr *header.IPv6FragmentExtHdr, it *header.IPv6PayloadIterator, pkt **stack.PacketBuffer, h header.IPv6) error {
-	stats := e.stats.ip
-	fragmentFieldOffset := it.ParseOffset()
+			optsIt := extHdr.Iter()
 
-	// Don't consume the iterator if we have the first fragment because we
-	// will use it to validate that the first fragment holds the upper layer
-	// header.
-	rawPayload := it.AsRawHeader(extHdr.FragmentOffset() != 0 /* consume */)
+			for {
+				opt, done, err := optsIt.Next()
+				if err != nil {
+					stats.MalformedPacketsReceived.Increment()
+					return err
+				}
+				if done {
+					break
+				}
 
-	if extHdr.FragmentOffset() == 0 {
-		// Check that the iterator ends with a raw payload as the first fragment
-		// should include all headers up to and including any upper layer
-		// headers, as per RFC 8200 section 4.5; only upper layer data
-		// (non-headers) should follow the fragment extension header.
-		var lastHdr header.IPv6PayloadHeader
+				switch opt := opt.(type) {
+				case *header.IPv6RouterAlertOption:
+					if routerAlert != nil {
+						// As per RFC 2711 section 3, there should be at most one Router
+						// Alert option per packet.
+						//
+						//    There MUST only be one option of this type, regardless of
+						//    value, per Hop-by-Hop header.
+						stats.MalformedPacketsReceived.Increment()
+						return fmt.Errorf("found multiple Router Alert options (%#v, %#v)", opt, routerAlert)
+					}
+					routerAlert = opt
+					stats.OptionRouterAlertReceived.Increment()
+				default:
+					switch opt.UnknownAction() {
+					case header.IPv6OptionUnknownActionSkip:
+					case header.IPv6OptionUnknownActionDiscard:
+						return fmt.Errorf("found unknown Hop-by-Hop header option = %#v with discard action", opt)
+					case header.IPv6OptionUnknownActionDiscardSendICMPNoMulticastDest:
+						if header.IsV6MulticastAddress(dstAddr) {
+							return fmt.Errorf("found unknown hop-by-hop header option = %#v with discard action", opt)
+						}
+						fallthrough
+					case header.IPv6OptionUnknownActionDiscardSendICMP:
+						// This case satisfies a requirement of RFC 8200 section 4.2 which
+						// states that an unknown option starting with bits [10] should:
+						//
+						//    discard the packet and, regardless of whether or not the
+						//    packet's Destination Address was a multicast address, send an
+						//    ICMP Parameter Problem, Code 2, message to the packet's
+						//    Source Address, pointing to the unrecognized Option Type.
+						_ = e.protocol.returnError(&icmpReasonParameterProblem{
+							code:               header.ICMPv6UnknownOption,
+							pointer:            it.ParseOffset() + optsIt.OptionOffset(),
+							respondToMulticast: true,
+						}, pkt, !forwarding /* deliveredLocally */)
+						return fmt.Errorf("found unknown hop-by-hop header option = %#v with discard action", opt)
+					default:
+						panic(fmt.Sprintf("unrecognized action for an unrecognized Hop By Hop extension header option = %#v", opt))
+					}
+				}
+			}
 
-		for {
-			it, done, err := it.Next()
+		case header.IPv6RoutingExtHdr:
+			// As per RFC 8200 section 4.4, if a node encounters a routing header with
+			// an unrecognized routing type value, with a non-zero Segments Left
+			// value, the node must discard the packet and send an ICMP Parameter
+			// Problem, Code 0 to the packet's Source Address, pointing to the
+			// unrecognized Routing Type.
+			//
+			// If the Segments Left is 0, the node must ignore the Routing extension
+			// header and process the next header in the packet.
+			//
+			// Note, the stack does not yet handle any type of routing extension
+			// header, so we just make sure Segments Left is zero before processing
+			// the next extension header.
+			if extHdr.SegmentsLeft() != 0 {
+				_ = e.protocol.returnError(&icmpReasonParameterProblem{
+					code:    header.ICMPv6ErroneousHeader,
+					pointer: it.ParseOffset(),
+				}, pkt, true /* deliveredLocally */)
+				return fmt.Errorf("found unrecognized routing type with non-zero segments left in header = %#v", extHdr)
+			}
+
+		case header.IPv6FragmentExtHdr:
+			hasFragmentHeader = true
+
+			if extHdr.IsAtomic() {
+				// This fragment extension header indicates that this packet is an
+				// atomic fragment. An atomic fragment is a fragment that contains
+				// all the data required to reassemble a full packet. As per RFC 6946,
+				// atomic fragments must not interfere with "normal" fragmented traffic
+				// so we skip processing the fragment instead of feeding it through the
+				// reassembly process below.
+				continue
+			}
+
+			fragmentFieldOffset := it.ParseOffset()
+
+			// Don't consume the iterator if we have the first fragment because we
+			// will use it to validate that the first fragment holds the upper layer
+			// header.
+			rawPayload := it.AsRawHeader(extHdr.FragmentOffset() != 0 /* consume */)
+
+			if extHdr.FragmentOffset() == 0 {
+				// Check that the iterator ends with a raw payload as the first fragment
+				// should include all headers up to and including any upper layer
+				// headers, as per RFC 8200 section 4.5; only upper layer data
+				// (non-headers) should follow the fragment extension header.
+				var lastHdr header.IPv6PayloadHeader
+
+				for {
+					it, done, err := it.Next()
+					if err != nil {
+						stats.MalformedPacketsReceived.Increment()
+						stats.MalformedFragmentsReceived.Increment()
+						return err
+					}
+					if done {
+						break
+					}
+
+					lastHdr = it
+				}
+
+				// If the last header is a raw header, then the last portion of the IPv6
+				// payload is not a known IPv6 extension header. Note, this does not
+				// mean that the last portion is an upper layer header or not an
+				// extension header because:
+				//  1) we do not yet support all extension headers
+				//  2) we do not validate the upper layer header before reassembling.
+				//
+				// This check makes sure that a known IPv6 extension header is not
+				// present after the Fragment extension header in a non-initial
+				// fragment.
+				//
+				// TODO(#2196): Support IPv6 Authentication and Encapsulated
+				// Security Payload extension headers.
+				// TODO(#2333): Validate that the upper layer header is valid.
+				switch lastHdr.(type) {
+				case header.IPv6RawPayloadHeader:
+				default:
+					stats.MalformedPacketsReceived.Increment()
+					stats.MalformedFragmentsReceived.Increment()
+					return fmt.Errorf("known extension header = %#v present after fragment header in a non-initial fragment", lastHdr)
+				}
+			}
+
+			fragmentPayloadLen := rawPayload.Buf.Size()
+			if fragmentPayloadLen == 0 {
+				// Drop the packet as it's marked as a fragment but has no payload.
+				stats.MalformedPacketsReceived.Increment()
+				stats.MalformedFragmentsReceived.Increment()
+				return fmt.Errorf("fragment has no payload")
+			}
+
+			// As per RFC 2460 Section 4.5:
+			//
+			//    If the length of a fragment, as derived from the fragment packet's
+			//    Payload Length field, is not a multiple of 8 octets and the M flag
+			//    of that fragment is 1, then that fragment must be discarded and an
+			//    ICMP Parameter Problem, Code 0, message should be sent to the source
+			//    of the fragment, pointing to the Payload Length field of the
+			//    fragment packet.
+			if extHdr.More() && fragmentPayloadLen%header.IPv6FragmentExtHdrFragmentOffsetBytesPerUnit != 0 {
+				stats.MalformedPacketsReceived.Increment()
+				stats.MalformedFragmentsReceived.Increment()
+				_ = e.protocol.returnError(&icmpReasonParameterProblem{
+					code:    header.ICMPv6ErroneousHeader,
+					pointer: header.IPv6PayloadLenOffset,
+				}, pkt, true /* deliveredLocally */)
+				return fmt.Errorf("found fragment length = %d that is not a multiple of 8 octets", fragmentPayloadLen)
+			}
+
+			// The packet is a fragment, let's try to reassemble it.
+			start := extHdr.FragmentOffset() * header.IPv6FragmentExtHdrFragmentOffsetBytesPerUnit
+
+			// As per RFC 2460 Section 4.5:
+			//
+			//    If the length and offset of a fragment are such that the Payload
+			//    Length of the packet reassembled from that fragment would exceed
+			//    65,535 octets, then that fragment must be discarded and an ICMP
+			//    Parameter Problem, Code 0, message should be sent to the source of
+			//    the fragment, pointing to the Fragment Offset field of the fragment
+			//    packet.
+			lengthAfterReassembly := int(start) + int(fragmentPayloadLen)
+			if lengthAfterReassembly > header.IPv6MaximumPayloadSize {
+				stats.MalformedPacketsReceived.Increment()
+				stats.MalformedFragmentsReceived.Increment()
+				_ = e.protocol.returnError(&icmpReasonParameterProblem{
+					code:    header.ICMPv6ErroneousHeader,
+					pointer: fragmentFieldOffset,
+				}, pkt, true /* deliveredLocally */)
+				return fmt.Errorf("determined that reassembled packet length = %d would exceed allowed length = %d", lengthAfterReassembly, header.IPv6MaximumPayloadSize)
+			}
+
+			// Note that pkt doesn't have its transport header set after reassembly,
+			// and won't until DeliverNetworkPacket sets it.
+			resPkt, proto, ready, err := e.protocol.fragmentation.Process(
+				// IPv6 ignores the Protocol field since the ID only needs to be unique
+				// across source-destination pairs, as per RFC 8200 section 4.5.
+				fragmentation.FragmentID{
+					Source:      srcAddr,
+					Destination: dstAddr,
+					ID:          extHdr.ID(),
+				},
+				start,
+				start+uint16(fragmentPayloadLen)-1,
+				extHdr.More(),
+				uint8(rawPayload.Identifier),
+				pkt,
+			)
 			if err != nil {
 				stats.MalformedPacketsReceived.Increment()
 				stats.MalformedFragmentsReceived.Increment()
 				return err
 			}
-			if done {
-				break
+
+			if ready {
+				resPktToDecRef = resPkt
+				pkt = resPkt
+
+				// We create a new iterator with the reassembled packet because we could
+				// have more extension headers in the reassembled payload, as per RFC
+				// 8200 section 4.5. We also use the NextHeader value from the first
+				// fragment.
+				it = header.MakeIPv6PayloadIterator(header.IPv6ExtensionHeaderIdentifier(proto), pkt.Data().AsBuffer())
 			}
 
-			lastHdr = it
-		}
+		case header.IPv6DestinationOptionsExtHdr:
+			optsIt := extHdr.Iter()
 
-		// If the last header is a raw header, then the last portion of the IPv6
-		// payload is not a known IPv6 extension header. Note, this does not
-		// mean that the last portion is an upper layer header or not an
-		// extension header because:
-		//  1) we do not yet support all extension headers
-		//  2) we do not validate the upper layer header before reassembling.
-		//
-		// This check makes sure that a known IPv6 extension header is not
-		// present after the Fragment extension header in a non-initial
-		// fragment.
-		//
-		// TODO(#2196): Support IPv6 Authentication and Encapsulated
-		// Security Payload extension headers.
-		// TODO(#2333): Validate that the upper layer header is valid.
-		switch lastHdr.(type) {
+			for {
+				opt, done, err := optsIt.Next()
+				if err != nil {
+					stats.MalformedPacketsReceived.Increment()
+					return err
+				}
+				if done {
+					break
+				}
+
+				// We currently do not support any IPv6 Destination extension header
+				// options.
+				switch opt.UnknownAction() {
+				case header.IPv6OptionUnknownActionSkip:
+				case header.IPv6OptionUnknownActionDiscard:
+					return fmt.Errorf("found unknown destination header option = %#v with discard action", opt)
+				case header.IPv6OptionUnknownActionDiscardSendICMPNoMulticastDest:
+					if header.IsV6MulticastAddress(dstAddr) {
+						return fmt.Errorf("found unknown destination header option %#v with discard action", opt)
+					}
+					fallthrough
+				case header.IPv6OptionUnknownActionDiscardSendICMP:
+					// This case satisfies a requirement of RFC 8200 section 4.2
+					// which states that an unknown option starting with bits [10] should:
+					//
+					//    discard the packet and, regardless of whether or not the
+					//    packet's Destination Address was a multicast address, send an
+					//    ICMP Parameter Problem, Code 2, message to the packet's
+					//    Source Address, pointing to the unrecognized Option Type.
+					//
+					_ = e.protocol.returnError(&icmpReasonParameterProblem{
+						code:               header.ICMPv6UnknownOption,
+						pointer:            it.ParseOffset() + optsIt.OptionOffset(),
+						respondToMulticast: true,
+					}, pkt, true /* deliveredLocally */)
+					return fmt.Errorf("found unknown destination header option %#v with discard action", opt)
+				default:
+					panic(fmt.Sprintf("unrecognized action for an unrecognized Destination extension header option = %#v", opt))
+				}
+			}
+
 		case header.IPv6RawPayloadHeader:
+			// If the last header in the payload isn't a known IPv6 extension header,
+			// handle it as if it is transport layer data.
+
+			// Calculate the number of octets parsed from data. We want to consume all
+			// the data except the unparsed portion located at the end, whose size is
+			// extHdr.Buf.Size().
+			trim := pkt.Data().Size() - int(extHdr.Buf.Size())
+
+			// For unfragmented packets, extHdr still contains the transport header.
+			// Consume that too.
+			//
+			// For reassembled fragments, pkt.TransportHeader is unset, so this is a
+			// no-op and pkt.Data begins with the transport header.
+			trim += len(pkt.TransportHeader().View())
+
+			if _, ok := pkt.Data().Consume(trim); !ok {
+				stats.MalformedPacketsReceived.Increment()
+				return fmt.Errorf("could not consume %d bytes", trim)
+			}
+
+			proto := tcpip.TransportProtocolNumber(extHdr.Identifier)
+			// If the packet was reassembled from a fragment, it will not have a
+			// transport header set yet.
+			if len(pkt.TransportHeader().View()) == 0 {
+				e.protocol.parseTransport(pkt, proto)
+			}
+
+			stats.PacketsDelivered.Increment()
+			if proto == header.ICMPv6ProtocolNumber {
+				e.handleICMP(pkt, hasFragmentHeader, routerAlert)
+			} else {
+				stats.PacketsDelivered.Increment()
+				switch res := e.dispatcher.DeliverTransportPacket(proto, pkt); res {
+				case stack.TransportPacketHandled:
+				case stack.TransportPacketDestinationPortUnreachable:
+					// As per RFC 4443 section 3.1:
+					//   A destination node SHOULD originate a Destination Unreachable
+					//   message with Code 4 in response to a packet for which the
+					//   transport protocol (e.g., UDP) has no listener, if that transport
+					//   protocol has no alternative means to inform the sender.
+					_ = e.protocol.returnError(&icmpReasonPortUnreachable{}, pkt, true /* deliveredLocally */)
+					return fmt.Errorf("destination port unreachable")
+				case stack.TransportPacketProtocolUnreachable:
+					// As per RFC 8200 section 4. (page 7):
+					//   Extension headers are numbered from IANA IP Protocol Numbers
+					//   [IANA-PN], the same values used for IPv4 and IPv6.  When
+					//   processing a sequence of Next Header values in a packet, the
+					//   first one that is not an extension header [IANA-EH] indicates
+					//   that the next item in the packet is the corresponding upper-layer
+					//   header.
+					// With more related information on page 8:
+					//   If, as a result of processing a header, the destination node is
+					//   required to proceed to the next header but the Next Header value
+					//   in the current header is unrecognized by the node, it should
+					//   discard the packet and send an ICMP Parameter Problem message to
+					//   the source of the packet, with an ICMP Code value of 1
+					//   ("unrecognized Next Header type encountered") and the ICMP
+					//   Pointer field containing the offset of the unrecognized value
+					//   within the original packet.
+					//
+					// Which when taken together indicate that an unknown protocol should
+					// be treated as an unrecognized next header value.
+					// The location of the Next Header field is in a different place in
+					// the initial IPv6 header than it is in the extension headers so
+					// treat it specially.
+					prevHdrIDOffset := uint32(header.IPv6NextHeaderOffset)
+					if previousHeaderStart != 0 {
+						prevHdrIDOffset = previousHeaderStart
+					}
+					_ = e.protocol.returnError(&icmpReasonParameterProblem{
+						code:    header.ICMPv6UnknownHeader,
+						pointer: prevHdrIDOffset,
+					}, pkt, true /* deliveredLocally */)
+					return fmt.Errorf("transport protocol unreachable")
+				default:
+					panic(fmt.Sprintf("unrecognized result from DeliverTransportPacket = %d", res))
+				}
+			}
+
 		default:
-			stats.MalformedPacketsReceived.Increment()
-			stats.MalformedFragmentsReceived.Increment()
-			return fmt.Errorf("known extension header = %#v present after fragment header in a non-initial fragment", lastHdr)
+			// Since the iterator returns IPv6RawPayloadHeader for unknown Extension
+			// Header IDs this should never happen unless we missed a supported type
+			// here.
+			panic(fmt.Sprintf("unrecognized type from it.Next() = %T", extHdr))
+
 		}
-	}
-
-	fragmentPayloadLen := rawPayload.Buf.Size()
-	if fragmentPayloadLen == 0 {
-		// Drop the packet as it's marked as a fragment but has no payload.
-		stats.MalformedPacketsReceived.Increment()
-		stats.MalformedFragmentsReceived.Increment()
-		return fmt.Errorf("fragment has no payload")
-	}
-
-	// As per RFC 2460 Section 4.5:
-	//
-	//    If the length of a fragment, as derived from the fragment packet's
-	//    Payload Length field, is not a multiple of 8 octets and the M flag
-	//    of that fragment is 1, then that fragment must be discarded and an
-	//    ICMP Parameter Problem, Code 0, message should be sent to the source
-	//    of the fragment, pointing to the Payload Length field of the
-	//    fragment packet.
-	if extHdr.More() && fragmentPayloadLen%header.IPv6FragmentExtHdrFragmentOffsetBytesPerUnit != 0 {
-		stats.MalformedPacketsReceived.Increment()
-		stats.MalformedFragmentsReceived.Increment()
-		_ = e.protocol.returnError(&icmpReasonParameterProblem{
-			code:    header.ICMPv6ErroneousHeader,
-			pointer: header.IPv6PayloadLenOffset,
-		}, *pkt, true /* deliveredLocally */)
-		return fmt.Errorf("found fragment length = %d that is not a multiple of 8 octets", fragmentPayloadLen)
-	}
-
-	// The packet is a fragment, let's try to reassemble it.
-	start := extHdr.FragmentOffset() * header.IPv6FragmentExtHdrFragmentOffsetBytesPerUnit
-
-	// As per RFC 2460 Section 4.5:
-	//
-	//    If the length and offset of a fragment are such that the Payload
-	//    Length of the packet reassembled from that fragment would exceed
-	//    65,535 octets, then that fragment must be discarded and an ICMP
-	//    Parameter Problem, Code 0, message should be sent to the source of
-	//    the fragment, pointing to the Fragment Offset field of the fragment
-	//    packet.
-	lengthAfterReassembly := int(start) + int(fragmentPayloadLen)
-	if lengthAfterReassembly > header.IPv6MaximumPayloadSize {
-		stats.MalformedPacketsReceived.Increment()
-		stats.MalformedFragmentsReceived.Increment()
-		_ = e.protocol.returnError(&icmpReasonParameterProblem{
-			code:    header.ICMPv6ErroneousHeader,
-			pointer: fragmentFieldOffset,
-		}, *pkt, true /* deliveredLocally */)
-		return fmt.Errorf("determined that reassembled packet length = %d would exceed allowed length = %d", lengthAfterReassembly, header.IPv6MaximumPayloadSize)
-	}
-
-	// Note that pkt doesn't have its transport header set after reassembly,
-	// and won't until DeliverNetworkPacket sets it.
-	resPkt, proto, ready, err := e.protocol.fragmentation.Process(
-		// IPv6 ignores the Protocol field since the ID only needs to be unique
-		// across source-destination pairs, as per RFC 8200 section 4.5.
-		fragmentation.FragmentID{
-			Source:      h.SourceAddress(),
-			Destination: h.DestinationAddress(),
-			ID:          extHdr.ID(),
-		},
-		start,
-		start+uint16(fragmentPayloadLen)-1,
-		extHdr.More(),
-		uint8(rawPayload.Identifier),
-		*pkt,
-	)
-	if err != nil {
-		stats.MalformedPacketsReceived.Increment()
-		stats.MalformedFragmentsReceived.Increment()
-		return err
-	}
-
-	if ready {
-		// We create a new iterator with the reassembled packet because we could
-		// have more extension headers in the reassembled payload, as per RFC
-		// 8200 section 4.5. We also use the NextHeader value from the first
-		// fragment.
-		*it = header.MakeIPv6PayloadIterator(header.IPv6ExtensionHeaderIdentifier(proto), resPkt.Data().AsBuffer())
-		(*pkt).DecRef()
-		*pkt = resPkt
 	}
 	return nil
 }
@@ -2220,8 +2187,8 @@ func (p *protocol) MinimumPacketSize() int {
 }
 
 // ParseAddresses implements stack.NetworkProtocol.
-func (*protocol) ParseAddresses(b []byte) (src, dst tcpip.Address) {
-	h := header.IPv6(b)
+func (*protocol) ParseAddresses(v []byte) (src, dst tcpip.Address) {
+	h := header.IPv6(v)
 	return h.SourceAddress(), h.DestinationAddress()
 }
 
