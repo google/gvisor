@@ -99,7 +99,9 @@ func nestedVirtIsOn(c *vCPU, fs *cpuid.FeatureSet) bool {
 
 func TestKernelCPUID(t *testing.T) {
 	bluepillTest(t, func(c *vCPU) {
-		fs := cpuid.HostFeatureSet()
+		fs := cpuid.FeatureSet{
+			Function: &cpuid.Native{},
+		}
 		if nestedVirtIsOn(c, &fs) {
 			t.Fatalf("Nested virtualization is enabled")
 		}
