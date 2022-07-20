@@ -1303,8 +1303,7 @@ TEST(Inotify, SymlinkGeneratesCreateEvent) {
 
   const int root_wd = ASSERT_NO_ERRNO_AND_VALUE(
       InotifyAddWatch(fd.get(), root.path(), IN_ALL_EVENTS));
-  ASSERT_NO_ERRNO_AND_VALUE(
-      InotifyAddWatch(fd.get(), file1.path(), IN_ALL_EVENTS));
+  ASSERT_NO_ERRNO(InotifyAddWatch(fd.get(), file1.path(), IN_ALL_EVENTS));
 
   ASSERT_THAT(symlink(file1.path().c_str(), link1.path().c_str()),
               SyscallSucceeds());
@@ -1313,6 +1312,32 @@ TEST(Inotify, SymlinkGeneratesCreateEvent) {
       ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
 
   ASSERT_THAT(events, Are({Event(IN_CREATE, root_wd, Basename(link1.path()))}));
+}
+
+TEST(Inotify, SymlinkFollow) {
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const TempPath link(NewTempAbsPath());
+  ASSERT_THAT(symlink(file.path().c_str(), link.path().c_str()),
+              SyscallSucceeds());
+
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const int file_wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(fd.get(), link.path(), IN_ALL_EVENTS));
+  const int link_wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(fd.get(), link.path(), IN_ALL_EVENTS | IN_DONT_FOLLOW));
+
+  ASSERT_NO_ERRNO(Unlink(file.path()));
+  ASSERT_NO_ERRNO(Unlink(link.path()));
+
+  const std::vector<Event> events =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
+
+  ASSERT_THAT(
+      events,
+      Are({Event(IN_ATTRIB, file_wd), Event(IN_DELETE_SELF, file_wd),
+           Event(IN_IGNORED, file_wd), Event(IN_ATTRIB, link_wd),
+           Event(IN_DELETE_SELF, link_wd), Event(IN_IGNORED, link_wd)}));
 }
 
 TEST(Inotify, LinkGeneratesAttribAndCreateEvents) {
