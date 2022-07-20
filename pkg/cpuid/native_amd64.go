@@ -162,13 +162,13 @@ func (fs FeatureSet) query(fn cpuidFunction) (uint32, uint32, uint32, uint32) {
 	return out.Eax, out.Ebx, out.Ecx, out.Edx
 }
 
+var hostFeatureSet FeatureSet
+
 // HostFeatureSet returns a host CPUID.
 //
 //go:nosplit
 func HostFeatureSet() FeatureSet {
-	return FeatureSet{
-		Function: &Native{},
-	}
+	return hostFeatureSet
 }
 
 var (
@@ -179,7 +179,7 @@ var (
 // Reads max cpu frequency from host /proc/cpuinfo. Must run before syscall
 // filter installation. This value is used to create the fake /proc/cpuinfo
 // from a FeatureSet.
-func init() {
+func readMaxCPUFreq() {
 	cpuinfob, err := ioutil.ReadFile("/proc/cpuinfo")
 	if err != nil {
 		// Leave it as 0... the VDSO bails out in the same way.
@@ -212,4 +212,13 @@ func init() {
 		}
 	}
 	log.Warningf("Could not parse /proc/cpuinfo, it is empty or does not contain cpu MHz")
+
+}
+
+func init() {
+	hostFeatureSet = FeatureSet{
+		Function: &Native{},
+	}.Fixed()
+
+	readMaxCPUFreq()
 }
