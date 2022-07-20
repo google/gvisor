@@ -25,6 +25,8 @@ namespace testing {
 
 namespace {
 
+#ifdef __x86_64__
+
 void FixupHandler(int sig, siginfo_t* si, void* void_ctx) {
   static unsigned int dataval = 0;
 
@@ -54,6 +56,8 @@ void BM_FaultSignalFixup(benchmark::State& state) {
 }
 
 BENCHMARK(BM_FaultSignalFixup)->UseRealTime();
+
+#endif  // __x86_64__
 
 }  // namespace
 

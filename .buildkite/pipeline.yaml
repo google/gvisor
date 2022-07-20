@@ -61,10 +61,18 @@ steps:
 
   # Build everything.
   - <<: *common
-    label: ":world_map: Build everything"
+    label: ":world_map: Build everything (AMD64)"
     command: "make build OPTIONS=--build_tag_filters=-nogo TARGETS=//..."
     agents:
       arch: "amd64"
+
+  - <<: *common
+    label: ":world_map: Build everything (ARM64)"
+    commands:
+      - "make build OPTIONS=--build_tag_filters=-nogo TARGETS=//pkg/..."
+      - "make build OPTIONS=--build_tag_filters=-nogo TARGETS=//runsc/..."
+    agents:
+      arch: "arm64"
 
   # Check that the Go branch builds. This is not technically required, as this build is maintained
   # as a GitHub action in order to preserve this maintaince across forks. However, providing the
@@ -151,6 +159,11 @@ steps:
     agents:
       cgroup: "v2"
       arch: "amd64"
+  - <<: *common
+    label: ":test_tube: Unit tests (ARM64)"
+    command: make unit-tests
+    agents:
+      arch: "arm64"
   - <<: *common
     label: ":test_tube: Container tests (cgroupv1)"
     command: make container-tests
