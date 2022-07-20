@@ -260,6 +260,8 @@ func Log() *BasicLogger {
 //
 // This is not thread safe and shouldn't be called concurrently with any
 // logging calls.
+//
+// SetTarget should be called before any instances of log.Log() to avoid race conditions
 func SetTarget(target Emitter) {
 	logMu.Lock()
 	defer logMu.Unlock()
