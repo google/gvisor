@@ -160,7 +160,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		return
 	}
 
-	h := header.ARP(pkt.NetworkHeader().View())
+	h := header.ARP(pkt.NetworkHeader().Slice())
 	if !h.IsValid() {
 		stats.malformedPacketsReceived.Increment()
 		return

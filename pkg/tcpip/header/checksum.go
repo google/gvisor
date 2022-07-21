@@ -20,7 +20,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
@@ -196,10 +196,10 @@ func Checksum(buf []byte, initial uint16) uint16 {
 // bytes in the given Buffer.
 //
 // The initial checksum must have been computed on an even number of bytes.
-func ChecksumBuffer(buf buffer.Buffer, initial uint16) uint16 {
+func ChecksumBuffer(buf bufferv2.Buffer, initial uint16) uint16 {
 	var c Checksumer
-	buf.Apply(func(b []byte) {
-		c.Add(b)
+	buf.Apply(func(v *bufferv2.View) {
+		c.Add(v.AsSlice())
 	})
 	return ChecksumCombine(initial, c.Checksum())
 }

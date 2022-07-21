@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	cryptorand "gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -717,7 +717,9 @@ func TestDADResolve(t *testing.T) {
 				// As per RFC 4861 section 4.3, a possible option is the Source Link
 				// Layer option, but this option MUST NOT be included when the source
 				// address of the packet is the unspecified address.
-				checker.IPv6(t, stack.PayloadSince(p.NetworkHeader()),
+				payload := stack.PayloadSince(p.NetworkHeader())
+				defer payload.Release()
+				checker.IPv6(t, payload,
 					checker.SrcAddr(header.IPv6Any),
 					checker.DstAddr(snmc),
 					checker.TTL(header.NDPHopLimit),
@@ -756,7 +758,7 @@ func rxNDPSolicit(e *channel.Endpoint, tgt tcpip.Address) {
 		SrcAddr:           header.IPv6Any,
 		DstAddr:           snmc,
 	})
-	e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.NewWithData(hdr.View())}))
+	e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: bufferv2.MakeWithData(hdr.View())}))
 }
 
 // TestDADFail tests to make sure that the DAD process fails if another node is
@@ -808,7 +810,7 @@ func TestDADFail(t *testing.T) {
 					SrcAddr:           tgt,
 					DstAddr:           header.IPv6AllNodesMulticastAddress,
 				})
-				e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.NewWithData(hdr.View())}))
+				e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: bufferv2.MakeWithData(hdr.View())}))
 			},
 			getStat: func(s tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
 				return s.NeighborAdvert
@@ -1271,7 +1273,7 @@ func raBuf(ip tcpip.Address, rl uint16, managedAddress, otherConfigurations bool
 	})
 
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: buffer.NewWithData(hdr.View()),
+		Payload: bufferv2.MakeWithData(hdr.View()),
 	})
 }
 

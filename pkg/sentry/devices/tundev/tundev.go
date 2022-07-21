@@ -16,8 +16,11 @@
 package tundev
 
 import (
+	"io"
+
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -125,8 +128,11 @@ func (fd *tunFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.Read
 	if err != nil {
 		return 0, err
 	}
-	n, err := dst.CopyOut(ctx, data)
-	if n > 0 && n < len(data) {
+	defer data.Release()
+
+	size := data.Size()
+	n, err := io.CopyN(dst.Writer(ctx), data, dst.NumBytes())
+	if n > 0 && n < int64(size) {
 		// Not an error for partial copying. Packet truncated.
 		err = nil
 	}
@@ -150,8 +156,8 @@ func (fd *tunFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.Wri
 	if int64(mtu) < src.NumBytes() {
 		return 0, unix.EMSGSIZE
 	}
-	data := make([]byte, src.NumBytes())
-	if _, err := src.CopyIn(ctx, data); err != nil {
+	data := bufferv2.NewView(int(src.NumBytes()))
+	if _, err := io.CopyN(data, src.Reader(ctx), src.NumBytes()); err != nil {
 		return 0, err
 	}
 	return fd.device.Write(data)

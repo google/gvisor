@@ -19,7 +19,7 @@ go_library(
     ],
     deps = [
         "//pkg/atomicbitops",
-        "//pkg/buffer",
+        "//pkg/bufferv2",
         "//pkg/cleanup",
         "//pkg/eventfd",
         "//pkg/log",
@@ -40,7 +40,7 @@ go_test(
     srcs = ["sharedmem_test.go"],
     library = ":sharedmem",
     deps = [
-        "//pkg/buffer",
+        "//pkg/bufferv2",
         "//pkg/refs",
         "//pkg/refsvfs2",
         "//pkg/sync",

@@ -16,6 +16,7 @@
 package muxed
 
 import (
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -111,7 +112,7 @@ func (m *InjectableEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcp
 
 // InjectOutbound writes outbound packets to the appropriate
 // LinkInjectableEndpoint based on the dest address.
-func (m *InjectableEndpoint) InjectOutbound(dest tcpip.Address, packet []byte) tcpip.Error {
+func (m *InjectableEndpoint) InjectOutbound(dest tcpip.Address, packet *bufferv2.View) tcpip.Error {
 	endpoint, ok := m.routes[dest]
 	if !ok {
 		return &tcpip.ErrNoRoute{}

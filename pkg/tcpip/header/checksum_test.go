@@ -23,7 +23,7 @@ import (
 	"sync"
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -193,6 +193,8 @@ func testICMPChecksum(t *testing.T, headerChecksum func() uint16, icmpChecksum f
 	close(start)
 }
 
+// TODO(b/239732156): Replace magic constants with names corresponding to what
+// they represent ICMP.
 func TestICMPv4Checksum(t *testing.T) {
 	rnd := rand.New(rand.NewSource(42))
 
@@ -206,8 +208,8 @@ func TestICMPv4Checksum(t *testing.T) {
 	if _, err := rnd.Read(buf); err != nil {
 		t.Fatalf("rnd.Read failed: %v", err)
 	}
-	b := buffer.NewWithData(buf[:5])
-	b.AppendOwned(buf[5:])
+	b := bufferv2.MakeWithData(buf[:5])
+	b.Append(bufferv2.NewViewWithData(buf[5:]))
 
 	want := header.Checksum(b.Flatten(), 0)
 	want = ^header.Checksum(h, want)
@@ -231,9 +233,9 @@ func TestICMPv6Checksum(t *testing.T) {
 	if _, err := rnd.Read(buf); err != nil {
 		t.Fatalf("rnd.Read failed: %v", err)
 	}
-	b := buffer.NewWithData(buf[:7])
-	b.AppendOwned(buf[7:10])
-	b.AppendOwned(buf[10:])
+	b := bufferv2.MakeWithData(buf[:7])
+	b.Append(bufferv2.NewViewWithData(buf[7:10]))
+	b.Append(bufferv2.NewViewWithData(buf[10:]))
 
 	dst := header.IPv6Loopback
 	src := header.IPv6Loopback

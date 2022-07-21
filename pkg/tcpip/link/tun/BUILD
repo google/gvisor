@@ -26,7 +26,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
-        "//pkg/buffer",
+        "//pkg/bufferv2",
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/log",

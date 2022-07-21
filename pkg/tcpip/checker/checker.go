@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
@@ -43,13 +43,13 @@ type ControlMessagesChecker func(*testing.T, tcpip.ReceivableControlMessages)
 // properties. For example, to check the source and destination address, one
 // would call:
 //
-// checker.IPv4(t, b, checker.SrcAddr(x), checker.DstAddr(y))
-func IPv4(t *testing.T, b []byte, checkers ...NetworkChecker) {
+// checker.IPv4(t, v, checker.SrcAddr(x), checker.DstAddr(y))
+func IPv4(t *testing.T, v *bufferv2.View, checkers ...NetworkChecker) {
 	t.Helper()
 
-	ipv4 := header.IPv4(b)
+	ipv4 := header.IPv4(v.AsSlice())
 
-	if !ipv4.IsValid(len(b)) {
+	if !ipv4.IsValid(len(v.AsSlice())) {
 		t.Fatalf("Not a valid IPv4 packet: %x", ipv4)
 	}
 
@@ -67,11 +67,11 @@ func IPv4(t *testing.T, b []byte, checkers ...NetworkChecker) {
 
 // IPv6 checks the validity and properties of the given IPv6 packet. The usage
 // is similar to IPv4.
-func IPv6(t *testing.T, b []byte, checkers ...NetworkChecker) {
+func IPv6(t *testing.T, v *bufferv2.View, checkers ...NetworkChecker) {
 	t.Helper()
 
-	ipv6 := header.IPv6(b)
-	if !ipv6.IsValid(len(b)) {
+	ipv6 := header.IPv6(v.AsSlice())
+	if !ipv6.IsValid(len(v.AsSlice())) {
 		t.Fatalf("Not a valid IPv6 packet: %x", ipv6)
 	}
 
@@ -1535,19 +1535,20 @@ func IGMPGroupAddress(want tcpip.Address) TransportChecker {
 type IPv6ExtHdrChecker func(*testing.T, header.IPv6PayloadHeader)
 
 // IPv6WithExtHdr is like IPv6 but allows IPv6 packets with extension headers.
-func IPv6WithExtHdr(t *testing.T, b []byte, checkers ...NetworkChecker) {
+func IPv6WithExtHdr(t *testing.T, v *bufferv2.View, checkers ...NetworkChecker) {
 	t.Helper()
 
-	ipv6 := header.IPv6(b)
-	if !ipv6.IsValid(len(b)) {
+	ipv6 := header.IPv6(v.AsSlice())
+	if !ipv6.IsValid(len(v.AsSlice())) {
 		t.Error("not a valid IPv6 packet")
 		return
 	}
 
 	payloadIterator := header.MakeIPv6PayloadIterator(
 		header.IPv6ExtensionHeaderIdentifier(ipv6.NextHeader()),
-		buffer.NewWithData(ipv6.Payload()),
+		bufferv2.MakeWithData(ipv6.Payload()),
 	)
+	defer payloadIterator.Release()
 
 	var rawPayloadHeader header.IPv6RawPayloadHeader
 	for {
@@ -1560,6 +1561,7 @@ func IPv6WithExtHdr(t *testing.T, b []byte, checkers ...NetworkChecker) {
 			t.Errorf("got payloadIterator.Next() = (%T, %t, _), want = (_, true, _)", h, done)
 			return
 		}
+		defer h.Release()
 		r, ok := h.(header.IPv6RawPayloadHeader)
 		if ok {
 			rawPayloadHeader = r
@@ -1594,8 +1596,9 @@ func IPv6ExtHdr(headers ...IPv6ExtHdrChecker) NetworkChecker {
 
 		payloadIterator := header.MakeIPv6PayloadIterator(
 			header.IPv6ExtensionHeaderIdentifier(extHdrs.IPv6.NextHeader()),
-			buffer.NewWithData(extHdrs.IPv6.Payload()),
+			bufferv2.MakeWithData(extHdrs.IPv6.Payload()),
 		)
+		defer payloadIterator.Release()
 
 		for _, check := range headers {
 			h, done, err := payloadIterator.Next()
@@ -1608,6 +1611,7 @@ func IPv6ExtHdr(headers ...IPv6ExtHdrChecker) NetworkChecker {
 				return
 			}
 			check(t, h)
+			h.Release()
 		}
 		// Validate we consumed all headers.
 		//
@@ -1630,6 +1634,8 @@ func IPv6ExtHdr(headers ...IPv6ExtHdrChecker) NetworkChecker {
 			if _, ok := h.(header.IPv6RawPayloadHeader); !ok {
 				t.Errorf("got payloadIterator.Next() = (%T, _, _), want = (header.IPv6RawPayloadHeader, _, _)", h)
 				continue
+			} else {
+				h.Release()
 			}
 			wantDone = true
 		}
@@ -1684,6 +1690,9 @@ func IPv6HopByHopExtensionHeader(checkers ...IPv6ExtHdrOptionChecker) IPv6ExtHdr
 				t.Errorf("got optionsIterator.Next() = (%T, %t, _), want = (_, false, _)", opt, done)
 			}
 			f(t, opt)
+			if uo, ok := opt.(*header.IPv6UnknownExtHdrOption); ok {
+				uo.Data.Release()
+			}
 		}
 		// Validate all options were consumed.
 		for {
@@ -1697,6 +1706,9 @@ func IPv6HopByHopExtensionHeader(checkers ...IPv6ExtHdrOptionChecker) IPv6ExtHdr
 			}
 			if done {
 				break
+			}
+			if uo, ok := opt.(*header.IPv6UnknownExtHdrOption); ok {
+				uo.Data.Release()
 			}
 		}
 	}

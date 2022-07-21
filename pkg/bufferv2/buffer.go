@@ -206,6 +206,10 @@ func (b *Buffer) Prepend(src *View) error {
 	if src == nil {
 		return nil
 	}
+	if src.Size() == 0 {
+		src.Release()
+		return nil
+	}
 	// If the first buffer does not have room just prepend the view.
 	v := b.data.Front()
 	if v == nil || v.read == 0 {
@@ -249,6 +253,10 @@ func (b *Buffer) Prepend(src *View) error {
 // Append appends the given data. Append takes ownership of src.
 func (b *Buffer) Append(src *View) error {
 	if src == nil {
+		return nil
+	}
+	if src.Size() == 0 {
+		src.Release()
 		return nil
 	}
 	// If the last buffer is full, just append the view.
@@ -377,8 +385,6 @@ func (b *Buffer) PullUp(offset, length int) (View, bool) {
 func (b *Buffer) Flatten() []byte {
 	if v := b.data.Front(); v == nil {
 		return nil // No data at all.
-	} else if v.Next() == nil {
-		return v.AsSlice() // Only one buffer.
 	}
 	data := make([]byte, 0, b.size) // Need to flatten.
 	for v := b.data.Front(); v != nil; v = v.Next() {

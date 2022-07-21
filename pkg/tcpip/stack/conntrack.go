@@ -195,7 +195,7 @@ func (cn *conn) update(pkt *PacketBuffer, reply bool) {
 		return
 	}
 
-	tcpHeader := header.TCP(pkt.TransportHeader().View())
+	tcpHeader := header.TCP(pkt.TransportHeader().Slice())
 
 	// Update the state of tcb. tcb assumes it's always initialized on the
 	// client. However, we only need to know whether the connection is
@@ -295,17 +295,17 @@ func getEmbeddedNetAndTransHeaders(pkt *PacketBuffer, netHdrLength int, getNetAn
 func getHeaders(pkt *PacketBuffer) (netHdr header.Network, transHdr header.Transport, isICMPError bool, ok bool) {
 	switch pkt.TransportProtocolNumber {
 	case header.TCPProtocolNumber:
-		if tcpHeader := header.TCP(pkt.TransportHeader().View()); len(tcpHeader) >= header.TCPMinimumSize {
+		if tcpHeader := header.TCP(pkt.TransportHeader().Slice()); len(tcpHeader) >= header.TCPMinimumSize {
 			return pkt.Network(), tcpHeader, false, true
 		}
 		return nil, nil, false, false
 	case header.UDPProtocolNumber:
-		if udpHeader := header.UDP(pkt.TransportHeader().View()); len(udpHeader) >= header.UDPMinimumSize {
+		if udpHeader := header.UDP(pkt.TransportHeader().Slice()); len(udpHeader) >= header.UDPMinimumSize {
 			return pkt.Network(), udpHeader, false, true
 		}
 		return nil, nil, false, false
 	case header.ICMPv4ProtocolNumber:
-		icmpHeader := header.ICMPv4(pkt.TransportHeader().View())
+		icmpHeader := header.ICMPv4(pkt.TransportHeader().Slice())
 		if len(icmpHeader) < header.ICMPv4MinimumSize {
 			return nil, nil, false, false
 		}
@@ -333,7 +333,7 @@ func getHeaders(pkt *PacketBuffer) (netHdr header.Network, transHdr header.Trans
 		}
 		return nil, nil, false, false
 	case header.ICMPv6ProtocolNumber:
-		icmpHeader := header.ICMPv6(pkt.TransportHeader().View())
+		icmpHeader := header.ICMPv6(pkt.TransportHeader().Slice())
 		if len(icmpHeader) < header.ICMPv6MinimumSize {
 			return nil, nil, false, false
 		}
@@ -424,15 +424,15 @@ func getTupleIDForEchoPacket(pkt *PacketBuffer, ident uint16, request bool) tupl
 func getTupleID(pkt *PacketBuffer) (tupleID, getTupleIDDisposition) {
 	switch pkt.TransportProtocolNumber {
 	case header.TCPProtocolNumber:
-		if transHeader := header.TCP(pkt.TransportHeader().View()); len(transHeader) >= header.TCPMinimumSize {
+		if transHeader := header.TCP(pkt.TransportHeader().Slice()); len(transHeader) >= header.TCPMinimumSize {
 			return getTupleIDForRegularPacket(pkt.Network(), pkt.NetworkProtocolNumber, transHeader, pkt.TransportProtocolNumber), getTupleIDOKAndAllowNewConn
 		}
 	case header.UDPProtocolNumber:
-		if transHeader := header.UDP(pkt.TransportHeader().View()); len(transHeader) >= header.UDPMinimumSize {
+		if transHeader := header.UDP(pkt.TransportHeader().Slice()); len(transHeader) >= header.UDPMinimumSize {
 			return getTupleIDForRegularPacket(pkt.Network(), pkt.NetworkProtocolNumber, transHeader, pkt.TransportProtocolNumber), getTupleIDOKAndAllowNewConn
 		}
 	case header.ICMPv4ProtocolNumber:
-		icmp := header.ICMPv4(pkt.TransportHeader().View())
+		icmp := header.ICMPv4(pkt.TransportHeader().Slice())
 		if len(icmp) < header.ICMPv4MinimumSize {
 			return tupleID{}, getTupleIDNotOK
 		}
@@ -467,7 +467,7 @@ func getTupleID(pkt *PacketBuffer) (tupleID, getTupleIDDisposition) {
 			return tid, getTupleIDOKAndDontAllowNewConn
 		}
 	case header.ICMPv6ProtocolNumber:
-		icmp := header.ICMPv6(pkt.TransportHeader().View())
+		icmp := header.ICMPv6(pkt.TransportHeader().Slice())
 		if len(icmp) < header.ICMPv6MinimumSize {
 			return tupleID{}, getTupleIDNotOK
 		}
@@ -532,7 +532,7 @@ func (ct *ConnTrack) getConnAndUpdate(pkt *PacketBuffer, skipChecksumValidation 
 		switch pkt.TransportProtocolNumber {
 		case header.TCPProtocolNumber:
 			_, csumValid, ok := header.TCPValid(
-				header.TCP(pkt.TransportHeader().View()),
+				header.TCP(pkt.TransportHeader().Slice()),
 				func() uint16 { return pkt.Data().AsRange().Checksum() },
 				uint16(pkt.Data().Size()),
 				tid.srcAddr,
@@ -543,7 +543,7 @@ func (ct *ConnTrack) getConnAndUpdate(pkt *PacketBuffer, skipChecksumValidation 
 			}
 		case header.UDPProtocolNumber:
 			lengthValid, csumValid := header.UDPValid(
-				header.UDP(pkt.TransportHeader().View()),
+				header.UDP(pkt.TransportHeader().Slice()),
 				func() uint16 { return pkt.Data().AsRange().Checksum() },
 				uint16(pkt.Data().Size()),
 				pkt.NetworkProtocolNumber,
@@ -944,19 +944,19 @@ func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, rt *Route) bool {
 	// not the ICMP packet itself.
 	switch pkt.TransportProtocolNumber {
 	case header.ICMPv4ProtocolNumber:
-		icmp := header.ICMPv4(pkt.TransportHeader().View())
+		icmp := header.ICMPv4(pkt.TransportHeader().Slice())
 		// TODO(https://gvisor.dev/issue/6788): Incrementally update ICMP checksum.
 		icmp.SetChecksum(0)
 		icmp.SetChecksum(header.ICMPv4Checksum(icmp, pkt.Data().AsRange().Checksum()))
 
-		network := header.IPv4(pkt.NetworkHeader().View())
+		network := header.IPv4(pkt.NetworkHeader().Slice())
 		if dnat {
 			network.SetDestinationAddressWithChecksumUpdate(tid.srcAddr)
 		} else {
 			network.SetSourceAddressWithChecksumUpdate(tid.dstAddr)
 		}
 	case header.ICMPv6ProtocolNumber:
-		network := header.IPv6(pkt.NetworkHeader().View())
+		network := header.IPv6(pkt.NetworkHeader().Slice())
 		srcAddr := network.SourceAddress()
 		dstAddr := network.DestinationAddress()
 		if dnat {
@@ -965,7 +965,7 @@ func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, rt *Route) bool {
 			srcAddr = tid.dstAddr
 		}
 
-		icmp := header.ICMPv6(pkt.TransportHeader().View())
+		icmp := header.ICMPv6(pkt.TransportHeader().Slice())
 		// TODO(https://gvisor.dev/issue/6788): Incrementally update ICMP checksum.
 		icmp.SetChecksum(0)
 		payload := pkt.Data()

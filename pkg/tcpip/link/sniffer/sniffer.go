@@ -193,9 +193,9 @@ func logPacket(prefix string, dir direction, protocol tcpip.NetworkProtocolNumbe
 	//
 	// We trim the link headers from the cloned buffer as the sniffer doesn't
 	// handle link headers.
-	buf := pkt.Buffer()
-	buf.TrimFront(int64(len(pkt.VirtioNetHeader().View())))
-	buf.TrimFront(int64(len(pkt.LinkHeader().View())))
+	buf := pkt.ToBuffer()
+	buf.TrimFront(int64(len(pkt.VirtioNetHeader().Slice())))
+	buf.TrimFront(int64(len(pkt.LinkHeader().Slice())))
 	pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buf})
 	defer pkt.DecRef()
 	switch protocol {
@@ -204,7 +204,7 @@ func logPacket(prefix string, dir direction, protocol tcpip.NetworkProtocolNumbe
 			return
 		}
 
-		ipv4 := header.IPv4(pkt.NetworkHeader().View())
+		ipv4 := header.IPv4(pkt.NetworkHeader().Slice())
 		fragmentOffset = ipv4.FragmentOffset()
 		moreFragments = ipv4.Flags()&header.IPv4FlagMoreFragments == header.IPv4FlagMoreFragments
 		src = ipv4.SourceAddress()
@@ -219,7 +219,7 @@ func logPacket(prefix string, dir direction, protocol tcpip.NetworkProtocolNumbe
 			return
 		}
 
-		ipv6 := header.IPv6(pkt.NetworkHeader().View())
+		ipv6 := header.IPv6(pkt.NetworkHeader().Slice())
 		src = ipv6.SourceAddress()
 		dst = ipv6.DestinationAddress()
 		transProto = uint8(proto)
@@ -233,7 +233,7 @@ func logPacket(prefix string, dir direction, protocol tcpip.NetworkProtocolNumbe
 			return
 		}
 
-		arp := header.ARP(pkt.NetworkHeader().View())
+		arp := header.ARP(pkt.NetworkHeader().Slice())
 		log.Infof(
 			"%s%s arp %s (%s) -> %s (%s) valid:%t",
 			prefix,
@@ -332,7 +332,7 @@ func logPacket(prefix string, dir direction, protocol tcpip.NetworkProtocolNumbe
 			break
 		}
 
-		udp := header.UDP(pkt.TransportHeader().View())
+		udp := header.UDP(pkt.TransportHeader().Slice())
 		if fragmentOffset == 0 {
 			srcPort = udp.SourcePort()
 			dstPort = udp.DestinationPort()
@@ -346,7 +346,7 @@ func logPacket(prefix string, dir direction, protocol tcpip.NetworkProtocolNumbe
 			break
 		}
 
-		tcp := header.TCP(pkt.TransportHeader().View())
+		tcp := header.TCP(pkt.TransportHeader().Slice())
 		if fragmentOffset == 0 {
 			offset := int(tcp.DataOffset())
 			if offset < header.TCPMinimumSize {

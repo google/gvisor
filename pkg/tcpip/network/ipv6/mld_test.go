@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -43,10 +43,11 @@ var (
 	globalAddrSNMC    = header.SolicitedNodeAddr(globalAddr)
 )
 
-func validateMLDPacket(t *testing.T, p []byte, localAddress, remoteAddress tcpip.Address, mldType header.ICMPv6Type, groupAddress tcpip.Address) {
+func validateMLDPacket(t *testing.T, v *bufferv2.View, localAddress, remoteAddress tcpip.Address, mldType header.ICMPv6Type, groupAddress tcpip.Address) {
 	t.Helper()
 
-	checker.IPv6WithExtHdr(t, p,
+	defer v.Release()
+	checker.IPv6WithExtHdr(t, v,
 		checker.IPv6ExtHdr(
 			checker.IPv6HopByHopExtensionHeader(checker.IPv6RouterAlert(header.IPv6RouterAlertMLD)),
 		),
@@ -198,7 +199,9 @@ func TestSendQueuedMLDReports(t *testing.T) {
 				if p := e.Read(); p == nil {
 					t.Fatal("expected DAD packet")
 				} else {
-					checker.IPv6(t, stack.PayloadSince(p.NetworkHeader()),
+					payload := stack.PayloadSince(p.NetworkHeader())
+					defer payload.Release()
+					checker.IPv6(t, payload,
 						checker.SrcAddr(header.IPv6Any),
 						checker.DstAddr(snmc),
 						checker.TTL(header.NDPHopLimit),
@@ -337,7 +340,9 @@ func TestSendQueuedMLDReports(t *testing.T) {
 						t.Fatalf("expected MLD report for %s and %s; addrs = %#v", globalMulticastAddr, linkLocalAddrSNMC, addrs)
 					}
 
-					addr := header.IPv6(stack.PayloadSince(p.NetworkHeader())).DestinationAddress()
+					v := stack.PayloadSince(p.NetworkHeader())
+					defer v.Release()
+					addr := header.IPv6(v.AsSlice()).DestinationAddress()
 					if seen, ok := addrs[addr]; !ok {
 						t.Fatalf("got unexpected packet destined to %s", addr)
 					} else if seen {
@@ -345,7 +350,7 @@ func TestSendQueuedMLDReports(t *testing.T) {
 					}
 
 					addrs[addr] = true
-					validateMLDPacket(t, stack.PayloadSince(p.NetworkHeader()), linkLocalAddr, addr, header.ICMPv6MulticastListenerReport, addr)
+					validateMLDPacket(t, v.Clone(), linkLocalAddr, addr, header.ICMPv6MulticastListenerReport, addr)
 					p.DecRef()
 
 					clock.Advance(ipv6.UnsolicitedReportIntervalMax)
@@ -400,7 +405,7 @@ func createAndInjectMLDPacket(e *channel.Endpoint, mldType header.ICMPv6Type, ho
 	}))
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: buffer.NewWithData(buf),
+		Payload: bufferv2.MakeWithData(buf),
 	})
 	e.InjectInbound(ipv6.ProtocolNumber, pkt)
 	pkt.DecRef()

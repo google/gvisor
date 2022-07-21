@@ -7,6 +7,7 @@ go_library(
     srcs = ["injectable.go"],
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/bufferv2",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
@@ -19,7 +20,7 @@ go_test(
     srcs = ["injectable_test.go"],
     library = ":muxed",
     deps = [
-        "//pkg/buffer",
+        "//pkg/bufferv2",
         "//pkg/refs",
         "//pkg/refsvfs2",
         "//pkg/tcpip",

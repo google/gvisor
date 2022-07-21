@@ -31,6 +31,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/atomicbitops",
+        "//pkg/bufferv2",
         "//pkg/sync",
         "//pkg/waiter",
     ],
@@ -47,14 +48,16 @@ deps_test(
     allowed = [
         # gVisor deps.
         "//pkg/atomicbitops",
+        "//pkg/bits",
         "//pkg/context",
-        "//pkg/buffer",
+        "//pkg/bufferv2",
         "//pkg/cpuid",
         "//pkg/gohacks",
         "//pkg/goid",
         "//pkg/ilist",
         "//pkg/linewriter",
         "//pkg/log",
+        "//pkg/pool",
         "//pkg/rand",
         "//pkg/refs",
         "//pkg/refsvfs2",

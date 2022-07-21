@@ -19,7 +19,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -158,7 +158,9 @@ func TestPingMulticastBroadcast(t *testing.T) {
 				t.Errorf("got pkt.EgressRoute.RemoteAddress = %s, want = %s", pkt.EgressRoute.RemoteAddress, test.srcAddr)
 			}
 
-			src, dst := s.NetworkProtocolInstance(test.protoNum).ParseAddresses(stack.PayloadSince(pkt.NetworkHeader()))
+			v := stack.PayloadSince(pkt.NetworkHeader())
+			defer v.Release()
+			src, dst := s.NetworkProtocolInstance(test.protoNum).ParseAddresses(v.AsSlice())
 			if src != test.expectedSrc {
 				t.Errorf("got pkt source = %s, want = %s", src, test.expectedSrc)
 			}
@@ -198,7 +200,7 @@ func rxIPv4UDP(e *channel.Endpoint, src, dst tcpip.Address, data []byte) {
 	ip.SetChecksum(^ip.CalculateChecksum())
 
 	e.InjectInbound(header.IPv4ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: buffer.NewWithData(hdr.View()),
+		Payload: bufferv2.MakeWithData(hdr.View()),
 	}))
 }
 
@@ -226,7 +228,7 @@ func rxIPv6UDP(e *channel.Endpoint, src, dst tcpip.Address, data []byte) {
 	})
 
 	e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: buffer.NewWithData(hdr.View()),
+		Payload: bufferv2.MakeWithData(hdr.View()),
 	}))
 }
 

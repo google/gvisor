@@ -20,7 +20,7 @@ go_test(
     srcs = ["ethernet_test.go"],
     deps = [
         ":ethernet",
-        "//pkg/buffer",
+        "//pkg/bufferv2",
         "//pkg/refs",
         "//pkg/refsvfs2",
         "//pkg/tcpip",

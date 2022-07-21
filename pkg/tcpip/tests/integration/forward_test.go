@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -45,8 +46,8 @@ func rxICMPv6EchoRequest(e *channel.Endpoint, src, dst tcpip.Address) {
 	utils.RxICMPv6EchoRequest(e, src, dst, ttl)
 }
 
-func forwardedICMPv4EchoRequestChecker(t *testing.T, b []byte, src, dst tcpip.Address) {
-	checker.IPv4(t, b,
+func forwardedICMPv4EchoRequestChecker(t *testing.T, v *bufferv2.View, src, dst tcpip.Address) {
+	checker.IPv4(t, v,
 		checker.SrcAddr(src),
 		checker.DstAddr(dst),
 		checker.TTL(ttl-1),
@@ -54,8 +55,8 @@ func forwardedICMPv4EchoRequestChecker(t *testing.T, b []byte, src, dst tcpip.Ad
 			checker.ICMPv4Type(header.ICMPv4Echo)))
 }
 
-func forwardedICMPv6EchoRequestChecker(t *testing.T, b []byte, src, dst tcpip.Address) {
-	checker.IPv6(t, b,
+func forwardedICMPv6EchoRequestChecker(t *testing.T, v *bufferv2.View, src, dst tcpip.Address) {
+	checker.IPv6(t, v,
 		checker.SrcAddr(src),
 		checker.DstAddr(dst),
 		checker.TTL(ttl-1),
@@ -361,7 +362,7 @@ func TestUnicastForwarding(t *testing.T) {
 		srcAddr, dstAddr tcpip.Address
 		rx               func(*channel.Endpoint, tcpip.Address, tcpip.Address)
 		expectForward    bool
-		checker          func(*testing.T, []byte)
+		checker          func(*testing.T, *bufferv2.View)
 	}{
 		{
 			name:          "IPv4 link-local source",
@@ -383,8 +384,8 @@ func TestUnicastForwarding(t *testing.T) {
 			dstAddr:       utils.Ipv4Addr2.AddressWithPrefix.Address,
 			rx:            rxICMPv4EchoRequest,
 			expectForward: true,
-			checker: func(t *testing.T, b []byte) {
-				forwardedICMPv4EchoRequestChecker(t, b, utils.RemoteIPv4Addr, utils.Ipv4Addr2.AddressWithPrefix.Address)
+			checker: func(t *testing.T, v *bufferv2.View) {
+				forwardedICMPv4EchoRequestChecker(t, v, utils.RemoteIPv4Addr, utils.Ipv4Addr2.AddressWithPrefix.Address)
 			},
 		},
 		{
@@ -407,8 +408,8 @@ func TestUnicastForwarding(t *testing.T) {
 			dstAddr:       utils.Ipv6Addr2.AddressWithPrefix.Address,
 			rx:            rxICMPv6EchoRequest,
 			expectForward: true,
-			checker: func(t *testing.T, b []byte) {
-				forwardedICMPv6EchoRequestChecker(t, b, utils.RemoteIPv6Addr, utils.Ipv6Addr2.AddressWithPrefix.Address)
+			checker: func(t *testing.T, v *bufferv2.View) {
+				forwardedICMPv6EchoRequestChecker(t, v, utils.RemoteIPv6Addr, utils.Ipv6Addr2.AddressWithPrefix.Address)
 			},
 		},
 	}
@@ -473,7 +474,9 @@ func TestUnicastForwarding(t *testing.T) {
 			}
 
 			if test.expectForward {
-				test.checker(t, stack.PayloadSince(p.NetworkHeader()))
+				payload := stack.PayloadSince(p.NetworkHeader())
+				defer payload.Release()
+				test.checker(t, payload)
 				p.DecRef()
 			}
 		})
@@ -490,15 +493,15 @@ func TestPerInterfaceForwarding(t *testing.T) {
 		name             string
 		srcAddr, dstAddr tcpip.Address
 		rx               func(*channel.Endpoint, tcpip.Address, tcpip.Address)
-		checker          func(*testing.T, []byte)
+		checker          func(*testing.T, *bufferv2.View)
 	}{
 		{
 			name:    "IPv4 unicast",
 			srcAddr: utils.RemoteIPv4Addr,
 			dstAddr: utils.Ipv4Addr2.AddressWithPrefix.Address,
 			rx:      rxICMPv4EchoRequest,
-			checker: func(t *testing.T, b []byte) {
-				forwardedICMPv4EchoRequestChecker(t, b, utils.RemoteIPv4Addr, utils.Ipv4Addr2.AddressWithPrefix.Address)
+			checker: func(t *testing.T, v *bufferv2.View) {
+				forwardedICMPv4EchoRequestChecker(t, v, utils.RemoteIPv4Addr, utils.Ipv4Addr2.AddressWithPrefix.Address)
 			},
 		},
 		{
@@ -506,8 +509,8 @@ func TestPerInterfaceForwarding(t *testing.T) {
 			srcAddr: utils.RemoteIPv6Addr,
 			dstAddr: utils.Ipv6Addr2.AddressWithPrefix.Address,
 			rx:      rxICMPv6EchoRequest,
-			checker: func(t *testing.T, b []byte) {
-				forwardedICMPv6EchoRequestChecker(t, b, utils.RemoteIPv6Addr, utils.Ipv6Addr2.AddressWithPrefix.Address)
+			checker: func(t *testing.T, v *bufferv2.View) {
+				forwardedICMPv6EchoRequestChecker(t, v, utils.RemoteIPv6Addr, utils.Ipv6Addr2.AddressWithPrefix.Address)
 			},
 		},
 	}
@@ -635,7 +638,9 @@ func TestPerInterfaceForwarding(t *testing.T) {
 						t.Errorf("got otherNICEP.Read() = (%#v, %t), want = (_, %t)", p, ok, subTest.expectForwarding)
 					}
 					if p != nil {
-						test.checker(t, stack.PayloadSince(p.NetworkHeader()))
+						payload := stack.PayloadSince(p.NetworkHeader())
+						defer payload.Release()
+						test.checker(t, payload)
 						p.DecRef()
 					}
 				})

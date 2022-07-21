@@ -284,11 +284,11 @@ func snatAction(pkt *PacketBuffer, hook Hook, r *Route, port uint16, address tcp
 	switch pkt.TransportProtocolNumber {
 	case header.UDPProtocolNumber:
 		if port == 0 {
-			portsOrIdents = targetPortRangeForTCPAndUDP(header.UDP(pkt.TransportHeader().View()).SourcePort())
+			portsOrIdents = targetPortRangeForTCPAndUDP(header.UDP(pkt.TransportHeader().Slice()).SourcePort())
 		}
 	case header.TCPProtocolNumber:
 		if port == 0 {
-			portsOrIdents = targetPortRangeForTCPAndUDP(header.TCP(pkt.TransportHeader().View()).SourcePort())
+			portsOrIdents = targetPortRangeForTCPAndUDP(header.TCP(pkt.TransportHeader().Slice()).SourcePort())
 		}
 	case header.ICMPv4ProtocolNumber, header.ICMPv6ProtocolNumber:
 		// Allow NAT-ing to any 16-bit value for ICMP's Ident field to match Linux
@@ -303,7 +303,7 @@ func snatAction(pkt *PacketBuffer, hook Hook, r *Route, port uint16, address tcp
 
 func natAction(pkt *PacketBuffer, hook Hook, r *Route, portsOrIdents portOrIdentRange, address tcpip.Address, dnat bool) (RuleVerdict, int) {
 	// Drop the packet if network and transport header are not set.
-	if len(pkt.NetworkHeader().View()) == 0 || len(pkt.TransportHeader().View()) == 0 {
+	if len(pkt.NetworkHeader().Slice()) == 0 || len(pkt.TransportHeader().Slice()) == 0 {
 		return RuleDrop, 0
 	}
 

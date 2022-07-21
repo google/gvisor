@@ -27,7 +27,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/eventfd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -343,9 +343,9 @@ func (e *endpoint) writePacketLocked(r stack.RouteInfo, protocol tcpip.NetworkPr
 		e.AddVirtioNetHeader(pkt)
 	}
 
-	views := pkt.Slices()
+	views := pkt.AsSlices()
 	// Transmit the packet.
-	// TODO(b/231582970): Change transmit() to take a buffer.Buffer instead of a
+	// TODO(b/231582970): Change transmit() to take a bufferv2.Buffer instead of a
 	// collection of slices.
 	ok := e.tx.transmit(views...)
 	if !ok {
@@ -403,17 +403,18 @@ func (e *endpoint) dispatchLoop(d stack.NetworkDispatcher) {
 
 		// Copy data from the shared area to its own buffer, then
 		// prepare to repost the buffer.
-		b := make([]byte, n)
+		v := bufferv2.NewView(int(n))
+		v.Grow(int(n))
 		offset := uint32(0)
 		for i := range rxb {
-			copy(b[offset:], e.rx.data[rxb[i].Offset:][:rxb[i].Size])
+			v.WriteAt(e.rx.data[rxb[i].Offset:][:rxb[i].Size], int(offset))
 			offset += rxb[i].Size
 
 			rxb[i].Size = e.bufferSize
 		}
 
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Payload: buffer.NewWithData(b),
+			Payload: bufferv2.MakeWithView(v),
 		})
 
 		if e.virtioNetHeaderRequired {

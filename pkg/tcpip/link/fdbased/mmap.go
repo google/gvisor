@@ -22,7 +22,7 @@ import (
 	"fmt"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/rawfile"
@@ -131,7 +131,9 @@ type packetMMapDispatcher struct {
 	ringOffset int
 }
 
-func (d *packetMMapDispatcher) readMMappedPacket() ([]byte, bool, tcpip.Error) {
+func (*packetMMapDispatcher) release() {}
+
+func (d *packetMMapDispatcher) readMMappedPacket() (*bufferv2.View, bool, tcpip.Error) {
 	hdr := tPacketHdr(d.ringBuffer[d.ringOffset*tpFrameSize:])
 	for hdr.tpStatus()&tpStatusUser == 0 {
 		stopped, errno := rawfile.BlockingPollUntilStopped(d.efd, d.fd, unix.POLLIN|unix.POLLERR)
@@ -155,8 +157,8 @@ func (d *packetMMapDispatcher) readMMappedPacket() ([]byte, bool, tcpip.Error) {
 	}
 
 	// Copy out the packet from the mmapped frame to a locally owned buffer.
-	pkt := make([]byte, hdr.tpSnapLen())
-	copy(pkt, hdr.Payload())
+	pkt := bufferv2.NewView(int(hdr.tpSnapLen()))
+	pkt.Write(hdr.Payload())
 	// Release packet to kernel.
 	hdr.setTPStatus(tpStatusKernel)
 	d.ringOffset = (d.ringOffset + 1) % tpFrameNR
@@ -172,11 +174,11 @@ func (d *packetMMapDispatcher) dispatch() (bool, tcpip.Error) {
 	}
 	var p tcpip.NetworkProtocolNumber
 	if d.e.hdrSize > 0 {
-		p = header.Ethernet(pkt).Type()
+		p = header.Ethernet(pkt.AsSlice()).Type()
 	} else {
 		// We don't get any indication of what the packet is, so try to guess
 		// if it's an IPv4 or IPv6 packet.
-		switch header.IPVersion(pkt) {
+		switch header.IPVersion(pkt.AsSlice()) {
 		case header.IPv4Version:
 			p = header.IPv4ProtocolNumber
 		case header.IPv6Version:
@@ -187,7 +189,7 @@ func (d *packetMMapDispatcher) dispatch() (bool, tcpip.Error) {
 	}
 
 	pbuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: buffer.NewWithData(pkt),
+		Payload: bufferv2.MakeWithView(pkt),
 	})
 	defer pbuf.DecRef()
 	if d.e.hdrSize > 0 {

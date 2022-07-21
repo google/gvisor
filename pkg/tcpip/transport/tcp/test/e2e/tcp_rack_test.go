@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -332,8 +333,10 @@ func TestNoTLPRecoveryOnDSACK(t *testing.T) {
 	if err := c.EP.GetSockOpt(&info); err != nil {
 		t.Fatalf("GetSockOpt failed: %v", err)
 	}
-	if p := c.GetPacketWithTimeout(info.RTO); p != nil {
+	var p *bufferv2.View
+	if p = c.GetPacketWithTimeout(info.RTO); p != nil {
 		t.Errorf("received an unexpected packet: %v", p)
+		p.Release()
 	}
 
 	metricPollFn := func() error {

@@ -9,7 +9,7 @@ go_test(
     shard_count = more_shards,
     deps = [
         ":e2e",
-        "//pkg/buffer",
+        "//pkg/bufferv2",
         "//pkg/rand",
         "//pkg/refs",
         "//pkg/refsvfs2",
@@ -133,6 +133,7 @@ go_test(
     srcs = ["tcp_rack_test.go"],
     deps = [
         ":e2e",
+        "//pkg/bufferv2",
         "//pkg/refs",
         "//pkg/refsvfs2",
         "//pkg/tcpip",
@@ -150,6 +151,7 @@ go_test(
     srcs = ["tcp_sack_test.go"],
     deps = [
         ":e2e",
+        "//pkg/bufferv2",
         "//pkg/refs",
         "//pkg/refsvfs2",
         "//pkg/tcpip",

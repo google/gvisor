@@ -59,7 +59,6 @@ go_library(
         "packet_buffer.go",
         "packet_buffer_list.go",
         "packet_buffer_refs.go",
-        "packet_buffer_state.go",
         "packet_buffer_unsafe.go",
         "pending_packets.go",
         "rand.go",
@@ -75,7 +74,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/atomicbitops",
-        "//pkg/buffer",
+        "//pkg/bufferv2",
         "//pkg/ilist",
         "//pkg/log",
         "//pkg/rand",
@@ -108,7 +107,7 @@ go_test(
     shard_count = most_shards,
     deps = [
         ":stack",
-        "//pkg/buffer",
+        "//pkg/bufferv2",
         "//pkg/rand",
         "//pkg/sync",
         "//pkg/tcpip",
@@ -146,7 +145,7 @@ go_test(
     library = ":stack",
     deps = [
         "//pkg/atomicbitops",
-        "//pkg/buffer",
+        "//pkg/bufferv2",
         "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/faketime",

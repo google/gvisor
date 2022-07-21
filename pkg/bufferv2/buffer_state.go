@@ -14,13 +14,12 @@
 
 package bufferv2
 
-// saveBuf is invoked by stateify.
+// saveData is invoked by stateify.
 func (b *Buffer) saveData() []byte {
 	return b.Flatten()
 }
 
-// loadBuf is invoked by stateify.
+// loadData is invoked by stateify.
 func (b *Buffer) loadData(data []byte) {
-	v := NewViewWithData(data)
-	b.Append(v)
+	*b = MakeWithData(data)
 }

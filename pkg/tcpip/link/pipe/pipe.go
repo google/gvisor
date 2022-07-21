@@ -57,7 +57,7 @@ func (e *Endpoint) deliverPackets(pkts stack.PacketBufferList) {
 		// or headers set so the next link protocol can properly set the link
 		// header.
 		newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Payload: pkt.Buffer(),
+			Payload: pkt.ToBuffer(),
 		})
 		e.linked.dispatcher.DeliverNetworkPacket(pkt.NetworkProtocolNumber, newPkt)
 		newPkt.DecRef()

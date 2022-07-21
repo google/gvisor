@@ -21,7 +21,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -119,7 +119,7 @@ func genPacketV6() *stack.PacketBuffer {
 		SrcAddr:           srcAddrV6,
 		DstAddr:           dstAddrV6,
 	})
-	buf := buffer.NewWithData(hdr.View())
+	buf := bufferv2.MakeWithData(hdr.View())
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buf})
 }
 
@@ -140,7 +140,7 @@ func genPacketV4() *stack.PacketBuffer {
 	})
 	ip.SetChecksum(0)
 	ip.SetChecksum(^ip.CalculateChecksum())
-	buf := buffer.NewWithData(hdr.View())
+	buf := bufferv2.MakeWithData(hdr.View())
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buf})
 }
 
@@ -362,7 +362,7 @@ func (*udpSourcePortMatcher) Name() string {
 }
 
 func (m *udpSourcePortMatcher) Match(_ stack.Hook, pkt *stack.PacketBuffer, _, _ string) (matches, hotdrop bool) {
-	udp := header.UDP(pkt.TransportHeader().View())
+	udp := header.UDP(pkt.TransportHeader().Slice())
 	if len(udp) < header.UDPMinimumSize {
 		// Drop immediately as the packet is invalid.
 		return false, true
@@ -664,8 +664,8 @@ func rxICMPv6EchoReply(e *channel.Endpoint, src, dst tcpip.Address) {
 	utils.RxICMPv6EchoReply(e, src, dst, ttl)
 }
 
-func forwardedICMPv4EchoReplyChecker(t *testing.T, b []byte, src, dst tcpip.Address) {
-	checker.IPv4(t, b,
+func forwardedICMPv4EchoReplyChecker(t *testing.T, v *bufferv2.View, src, dst tcpip.Address) {
+	checker.IPv4(t, v,
 		checker.SrcAddr(src),
 		checker.DstAddr(dst),
 		checker.TTL(ttl-1),
@@ -673,8 +673,8 @@ func forwardedICMPv4EchoReplyChecker(t *testing.T, b []byte, src, dst tcpip.Addr
 			checker.ICMPv4Type(header.ICMPv4EchoReply)))
 }
 
-func forwardedICMPv6EchoReplyChecker(t *testing.T, b []byte, src, dst tcpip.Address) {
-	checker.IPv6(t, b,
+func forwardedICMPv6EchoReplyChecker(t *testing.T, v *bufferv2.View, src, dst tcpip.Address) {
+	checker.IPv6(t, v,
 		checker.SrcAddr(src),
 		checker.DstAddr(dst),
 		checker.TTL(ttl-1),
@@ -723,7 +723,7 @@ func TestForwardingHook(t *testing.T) {
 		local            bool
 		srcAddr, dstAddr tcpip.Address
 		rx               func(*channel.Endpoint, tcpip.Address, tcpip.Address)
-		checker          func(*testing.T, []byte)
+		checker          func(*testing.T, *bufferv2.View)
 	}{
 		{
 			name:     "IPv4 remote",
@@ -732,8 +732,8 @@ func TestForwardingHook(t *testing.T) {
 			srcAddr:  utils.RemoteIPv4Addr,
 			dstAddr:  utils.Ipv4Addr2.AddressWithPrefix.Address,
 			rx:       rxICMPv4EchoReply,
-			checker: func(t *testing.T, b []byte) {
-				forwardedICMPv4EchoReplyChecker(t, b, utils.RemoteIPv4Addr, utils.Ipv4Addr2.AddressWithPrefix.Address)
+			checker: func(t *testing.T, v *bufferv2.View) {
+				forwardedICMPv4EchoReplyChecker(t, v, utils.RemoteIPv4Addr, utils.Ipv4Addr2.AddressWithPrefix.Address)
 			},
 		},
 		{
@@ -751,8 +751,8 @@ func TestForwardingHook(t *testing.T) {
 			srcAddr:  utils.RemoteIPv6Addr,
 			dstAddr:  utils.Ipv6Addr2.AddressWithPrefix.Address,
 			rx:       rxICMPv6EchoReply,
-			checker: func(t *testing.T, b []byte) {
-				forwardedICMPv6EchoReplyChecker(t, b, utils.RemoteIPv6Addr, utils.Ipv6Addr2.AddressWithPrefix.Address)
+			checker: func(t *testing.T, v *bufferv2.View) {
+				forwardedICMPv6EchoReplyChecker(t, v, utils.RemoteIPv6Addr, utils.Ipv6Addr2.AddressWithPrefix.Address)
 			},
 		},
 		{
@@ -941,7 +941,9 @@ func TestForwardingHook(t *testing.T) {
 						t.Fatalf("got e2.Read() = %#v, want = (_ == nil) = %t", p, expectTransmitPacket)
 					}
 					if expectTransmitPacket {
-						test.checker(t, stack.PayloadSince(p.NetworkHeader()))
+						payload := stack.PayloadSince(p.NetworkHeader())
+						defer payload.Release()
+						test.checker(t, payload)
 						p.DecRef()
 					}
 				})
@@ -965,7 +967,7 @@ func TestFilteringEchoPacketsWithLocalForwarding(t *testing.T) {
 		name     string
 		netProto tcpip.NetworkProtocolNumber
 		rx       func(*channel.Endpoint)
-		checker  func(*testing.T, []byte)
+		checker  func(*testing.T, *bufferv2.View)
 	}{
 		{
 			name:     "IPv4",
@@ -973,8 +975,8 @@ func TestFilteringEchoPacketsWithLocalForwarding(t *testing.T) {
 			rx: func(e *channel.Endpoint) {
 				utils.RxICMPv4EchoRequest(e, utils.RemoteIPv4Addr, utils.Ipv4Addr2.AddressWithPrefix.Address, ttl)
 			},
-			checker: func(t *testing.T, b []byte) {
-				checker.IPv4(t, b,
+			checker: func(t *testing.T, v *bufferv2.View) {
+				checker.IPv4(t, v,
 					checker.SrcAddr(utils.Ipv4Addr2.AddressWithPrefix.Address),
 					checker.DstAddr(utils.RemoteIPv4Addr),
 					checker.ICMPv4(
@@ -987,8 +989,8 @@ func TestFilteringEchoPacketsWithLocalForwarding(t *testing.T) {
 			rx: func(e *channel.Endpoint) {
 				utils.RxICMPv6EchoRequest(e, utils.RemoteIPv6Addr, utils.Ipv6Addr2.AddressWithPrefix.Address, ttl)
 			},
-			checker: func(t *testing.T, b []byte) {
-				checker.IPv6(t, b,
+			checker: func(t *testing.T, v *bufferv2.View) {
+				checker.IPv6(t, v,
 					checker.SrcAddr(utils.Ipv6Addr2.AddressWithPrefix.Address),
 					checker.DstAddr(utils.RemoteIPv6Addr),
 					checker.ICMPv6(
@@ -1180,7 +1182,9 @@ func TestFilteringEchoPacketsWithLocalForwarding(t *testing.T) {
 						t.Errorf("got e1.Read() = %#v, want = (_ == nil) = %t", p, expectPacket)
 					}
 					if p != nil {
-						test.checker(t, stack.PayloadSince(p.NetworkHeader()))
+						payload := stack.PayloadSince(p.NetworkHeader())
+						defer payload.Release()
+						test.checker(t, payload)
 						p.DecRef()
 					}
 					if p := e2.Read(); p != nil {
@@ -1378,7 +1382,7 @@ func TestNATEcho(t *testing.T) {
 		return icmpv4Packet(srcAddr, dstAddr, icmpType, ident)
 	}
 
-	checkV4EchoPkt := func(t *testing.T, v []byte, srcAddr, dstAddr tcpip.Address, reply bool) {
+	checkV4EchoPkt := func(t *testing.T, v *bufferv2.View, srcAddr, dstAddr tcpip.Address, reply bool) {
 		t.Helper()
 
 		icmpType := header.ICMPv4Echo
@@ -1405,7 +1409,7 @@ func TestNATEcho(t *testing.T) {
 		return icmpv6Packet(srcAddr, dstAddr, icmpType, ident)
 	}
 
-	checkV6EchoPkt := func(t *testing.T, v []byte, srcAddr, dstAddr tcpip.Address, reply bool) {
+	checkV6EchoPkt := func(t *testing.T, v *bufferv2.View, srcAddr, dstAddr tcpip.Address, reply bool) {
 		t.Helper()
 
 		icmpType := header.ICMPv6EchoRequest
@@ -1434,7 +1438,7 @@ func TestNATEcho(t *testing.T) {
 		netProto     tcpip.NetworkProtocolNumber
 		transProto   tcpip.TransportProtocolNumber
 		echoPkt      func(srcAddr, dstAddr tcpip.Address, reply bool) []byte
-		checkEchoPkt func(t *testing.T, v []byte, srcAddr, dstAddr tcpip.Address, reply bool)
+		checkEchoPkt func(t *testing.T, v *bufferv2.View, srcAddr, dstAddr tcpip.Address, reply bool)
 
 		natTypes []natTypeTest
 	}{
@@ -1528,13 +1532,15 @@ func TestNATEcho(t *testing.T) {
 							// Send and check the Echo Request.
 							{
 								ep2.InjectInbound(test.netProto, stack.NewPacketBuffer(stack.PacketBufferOptions{
-									Payload: buffer.NewWithData(test.echoPkt(natTypeTest.requestSrc, natTypeTest.requestDst, false /* reply */)),
+									Payload: bufferv2.MakeWithData(test.echoPkt(natTypeTest.requestSrc, natTypeTest.requestDst, false /* reply */)),
 								}))
 								pkt := ep1.Read()
 								if pkt == nil {
 									t.Fatal("expected to read a packet on ep1")
 								}
-								test.checkEchoPkt(t, stack.PayloadSince(pkt.NetworkHeader()), natTypeTest.expectedRequestSrc, natTypeTest.expectedRequestDst, false /* reply */)
+								payload := stack.PayloadSince(pkt.NetworkHeader())
+								defer payload.Release()
+								test.checkEchoPkt(t, payload, natTypeTest.expectedRequestSrc, natTypeTest.expectedRequestDst, false /* reply */)
 								pkt.DecRef()
 							}
 
@@ -1545,13 +1551,15 @@ func TestNATEcho(t *testing.T) {
 							// Send and check the Echo Reply.
 							{
 								ep1.InjectInbound(test.netProto, stack.NewPacketBuffer(stack.PacketBufferOptions{
-									Payload: buffer.NewWithData(test.echoPkt(natTypeTest.expectedRequestDst, natTypeTest.expectedRequestSrc, true /* reply */)),
+									Payload: bufferv2.MakeWithData(test.echoPkt(natTypeTest.expectedRequestDst, natTypeTest.expectedRequestSrc, true /* reply */)),
 								}))
 								pkt := ep2.Read()
 								if pkt == nil {
 									t.Fatal("expected to read a packet on ep2")
 								}
-								test.checkEchoPkt(t, stack.PayloadSince(pkt.NetworkHeader()), natTypeTest.requestDst, natTypeTest.requestSrc, true /* reply */)
+								payload := stack.PayloadSince(pkt.NetworkHeader())
+								defer payload.Release()
+								test.checkEchoPkt(t, payload, natTypeTest.requestDst, natTypeTest.requestSrc, true /* reply */)
 								pkt.DecRef()
 							}
 						})
@@ -2183,7 +2191,7 @@ func TestNATICMPError(t *testing.T) {
 		name       string
 		proto      tcpip.TransportProtocolNumber
 		buf        []byte
-		checkNATed func(*testing.T, []byte)
+		checkNATed func(*testing.T, *bufferv2.View)
 	}
 
 	tests := []struct {
@@ -2192,7 +2200,7 @@ func TestNATICMPError(t *testing.T) {
 		host1Addr       tcpip.Address
 		icmpError       func(*testing.T, []byte, uint8) []byte
 		decrementTTL    func([]byte)
-		checkNATedError func(*testing.T, []byte, []byte, uint8)
+		checkNATedError func(*testing.T, *bufferv2.View, []byte, uint8)
 
 		transportTypes []transportTypeTest
 		icmpTypes      []icmpTypeTest
@@ -2225,7 +2233,7 @@ func TestNATICMPError(t *testing.T) {
 				ip.SetChecksum(0)
 				ip.SetChecksum(^ip.CalculateChecksum())
 			},
-			checkNATedError: func(t *testing.T, v []byte, original []byte, icmpType uint8) {
+			checkNATedError: func(t *testing.T, v *bufferv2.View, original []byte, icmpType uint8) {
 				checker.IPv4(t, v,
 					checker.SrcAddr(utils.RouterNIC2IPv4Addr.AddressWithPrefix.Address),
 					checker.DstAddr(utils.Host2IPv4Addr.AddressWithPrefix.Address),
@@ -2243,7 +2251,7 @@ func TestNATICMPError(t *testing.T) {
 					buf: func() []byte {
 						return udpv4Packet(utils.Host2IPv4Addr.AddressWithPrefix.Address, utils.RouterNIC2IPv4Addr.AddressWithPrefix.Address, srcPort, dstPort, dataSize)
 					}(),
-					checkNATed: func(t *testing.T, v []byte) {
+					checkNATed: func(t *testing.T, v *bufferv2.View) {
 						checker.IPv4(t, v,
 							checker.SrcAddr(utils.RouterNIC1IPv4Addr.AddressWithPrefix.Address),
 							checker.DstAddr(utils.Host1IPv4Addr.AddressWithPrefix.Address),
@@ -2260,7 +2268,7 @@ func TestNATICMPError(t *testing.T) {
 					buf: func() []byte {
 						return tcpv4Packet(utils.Host2IPv4Addr.AddressWithPrefix.Address, utils.RouterNIC2IPv4Addr.AddressWithPrefix.Address, srcPort, dstPort, dataSize)
 					}(),
-					checkNATed: func(t *testing.T, v []byte) {
+					checkNATed: func(t *testing.T, v *bufferv2.View) {
 						checker.IPv4(t, v,
 							checker.SrcAddr(utils.RouterNIC1IPv4Addr.AddressWithPrefix.Address),
 							checker.DstAddr(utils.Host1IPv4Addr.AddressWithPrefix.Address),
@@ -2331,7 +2339,7 @@ func TestNATICMPError(t *testing.T) {
 				ip := header.IPv6(v)
 				ip.SetHopLimit(ip.HopLimit() - 1)
 			},
-			checkNATedError: func(t *testing.T, v []byte, original []byte, icmpType uint8) {
+			checkNATedError: func(t *testing.T, v *bufferv2.View, original []byte, icmpType uint8) {
 				checker.IPv6(t, v,
 					checker.SrcAddr(utils.RouterNIC2IPv6Addr.AddressWithPrefix.Address),
 					checker.DstAddr(utils.Host2IPv6Addr.AddressWithPrefix.Address),
@@ -2348,7 +2356,7 @@ func TestNATICMPError(t *testing.T) {
 					buf: func() []byte {
 						return udpv6Packet(utils.Host2IPv6Addr.AddressWithPrefix.Address, utils.RouterNIC2IPv6Addr.AddressWithPrefix.Address, srcPort, dstPort, dataSize)
 					}(),
-					checkNATed: func(t *testing.T, v []byte) {
+					checkNATed: func(t *testing.T, v *bufferv2.View) {
 						checker.IPv6(t, v,
 							checker.SrcAddr(utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address),
 							checker.DstAddr(utils.Host1IPv6Addr.AddressWithPrefix.Address),
@@ -2365,7 +2373,7 @@ func TestNATICMPError(t *testing.T) {
 					buf: func() []byte {
 						return tcpv6Packet(utils.Host2IPv6Addr.AddressWithPrefix.Address, utils.RouterNIC2IPv6Addr.AddressWithPrefix.Address, srcPort, dstPort, dataSize)
 					}(),
-					checkNATed: func(t *testing.T, v []byte) {
+					checkNATed: func(t *testing.T, v *bufferv2.View) {
 						checker.IPv6(t, v,
 							checker.SrcAddr(utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address),
 							checker.DstAddr(utils.Host1IPv6Addr.AddressWithPrefix.Address),
@@ -2511,7 +2519,7 @@ func TestNATICMPError(t *testing.T) {
 									buf := transportType.buf
 
 									ep2.InjectInbound(test.netProto, stack.NewPacketBuffer(stack.PacketBufferOptions{
-										Payload: buffer.NewWithData(append([]byte{}, buf...)),
+										Payload: bufferv2.MakeWithData(append([]byte{}, buf...)),
 									}))
 
 									{
@@ -2520,17 +2528,18 @@ func TestNATICMPError(t *testing.T) {
 											t.Fatal("expected to read a packet on ep1")
 										}
 										pktView := stack.PayloadSince(pkt.NetworkHeader())
+										defer pktView.Release()
 										pkt.DecRef()
 										transportType.checkNATed(t, pktView)
 										if t.Failed() {
 											t.FailNow()
 										}
 
-										pktView = pktView[:len(pktView)-trimTest.trimLen]
+										pktSlice := pktView.AsSlice()[:pktView.Size()-trimTest.trimLen]
 										buf = buf[:len(buf)-trimTest.trimLen]
 
 										ep1.InjectInbound(test.netProto, stack.NewPacketBuffer(stack.PacketBufferOptions{
-											Payload: buffer.NewWithData(test.icmpError(t, pktView, icmpType.val)),
+											Payload: bufferv2.MakeWithData(test.icmpError(t, pktSlice, icmpType.val)),
 										}))
 									}
 
@@ -2543,7 +2552,9 @@ func TestNATICMPError(t *testing.T) {
 										return
 									}
 									test.decrementTTL(buf)
-									test.checkNATedError(t, stack.PayloadSince(pkt.NetworkHeader()), buf, icmpType.val)
+									payload := stack.PayloadSince(pkt.NetworkHeader())
+									defer payload.Release()
+									test.checkNATedError(t, payload, buf, icmpType.val)
 									pkt.DecRef()
 								})
 							}
@@ -2610,7 +2621,7 @@ func TestSNATHandlePortOrIdentConflicts(t *testing.T) {
 		name                 string
 		proto                tcpip.TransportProtocolNumber
 		buf                  func(tcpip.Address, uint16) []byte
-		checkNATed           func(*testing.T, []byte, uint16, bool, portOrIdentRange)
+		checkNATed           func(*testing.T, *bufferv2.View, uint16, bool, portOrIdentRange)
 		srcPortOrIdentRanges []srcPortOrIdentRangeTest
 	}
 
@@ -2652,7 +2663,7 @@ func TestSNATHandlePortOrIdentConflicts(t *testing.T) {
 					buf: func(srcAddr tcpip.Address, srcPort uint16) []byte {
 						return udpv4Packet(srcAddr, utils.Host1IPv4Addr.AddressWithPrefix.Address, srcPort, dstPort, 0 /* dataSize */)
 					},
-					checkNATed: func(t *testing.T, v []byte, originalSrcPort uint16, firstPacket bool, expectedRange portOrIdentRange) {
+					checkNATed: func(t *testing.T, v *bufferv2.View, originalSrcPort uint16, firstPacket bool, expectedRange portOrIdentRange) {
 						checker.IPv4(t, v,
 							checker.SrcAddr(utils.RouterNIC1IPv4Addr.AddressWithPrefix.Address),
 							checker.DstAddr(utils.Host1IPv4Addr.AddressWithPrefix.Address),
@@ -2662,7 +2673,7 @@ func TestSNATHandlePortOrIdentConflicts(t *testing.T) {
 						)
 
 						if !t.Failed() {
-							compareSrcPortOrIdent(t, header.UDP(header.IPv4(v).Payload()).SourcePort(), originalSrcPort, firstPacket, expectedRange)
+							compareSrcPortOrIdent(t, header.UDP(header.IPv4(v.AsSlice()).Payload()).SourcePort(), originalSrcPort, firstPacket, expectedRange)
 						}
 					},
 					srcPortOrIdentRanges: srcPortRanges,
@@ -2673,7 +2684,7 @@ func TestSNATHandlePortOrIdentConflicts(t *testing.T) {
 					buf: func(srcAddr tcpip.Address, srcPort uint16) []byte {
 						return tcpv4Packet(srcAddr, utils.Host1IPv4Addr.AddressWithPrefix.Address, srcPort, dstPort, 0 /* dataSize */)
 					},
-					checkNATed: func(t *testing.T, v []byte, originalSrcPort uint16, firstPacket bool, expectedRange portOrIdentRange) {
+					checkNATed: func(t *testing.T, v *bufferv2.View, originalSrcPort uint16, firstPacket bool, expectedRange portOrIdentRange) {
 						checker.IPv4(t, v,
 							checker.SrcAddr(utils.RouterNIC1IPv4Addr.AddressWithPrefix.Address),
 							checker.DstAddr(utils.Host1IPv4Addr.AddressWithPrefix.Address),
@@ -2683,7 +2694,7 @@ func TestSNATHandlePortOrIdentConflicts(t *testing.T) {
 						)
 
 						if !t.Failed() {
-							compareSrcPortOrIdent(t, header.TCP(header.IPv4(v).Payload()).SourcePort(), originalSrcPort, firstPacket, expectedRange)
+							compareSrcPortOrIdent(t, header.TCP(header.IPv4(v.AsSlice()).Payload()).SourcePort(), originalSrcPort, firstPacket, expectedRange)
 						}
 					},
 					srcPortOrIdentRanges: srcPortRanges,
@@ -2694,7 +2705,7 @@ func TestSNATHandlePortOrIdentConflicts(t *testing.T) {
 					buf: func(srcAddr tcpip.Address, ident uint16) []byte {
 						return icmpv4Packet(srcAddr, utils.Host1IPv4Addr.AddressWithPrefix.Address, header.ICMPv4Echo, ident)
 					},
-					checkNATed: func(t *testing.T, v []byte, originalIdent uint16, firstPacket bool, expectedRange portOrIdentRange) {
+					checkNATed: func(t *testing.T, v *bufferv2.View, originalIdent uint16, firstPacket bool, expectedRange portOrIdentRange) {
 						checker.IPv4(t, v,
 							checker.SrcAddr(utils.RouterNIC1IPv4Addr.AddressWithPrefix.Address),
 							checker.DstAddr(utils.Host1IPv4Addr.AddressWithPrefix.Address),
@@ -2705,7 +2716,7 @@ func TestSNATHandlePortOrIdentConflicts(t *testing.T) {
 						)
 
 						if !t.Failed() {
-							compareSrcPortOrIdent(t, header.ICMPv4(header.IPv4(v).Payload()).Ident(), originalIdent, firstPacket, expectedRange)
+							compareSrcPortOrIdent(t, header.ICMPv4(header.IPv4(v.AsSlice()).Payload()).Ident(), originalIdent, firstPacket, expectedRange)
 						}
 					},
 					srcPortOrIdentRanges: identRanges,
@@ -2728,7 +2739,7 @@ func TestSNATHandlePortOrIdentConflicts(t *testing.T) {
 					buf: func(srcAddr tcpip.Address, srcPort uint16) []byte {
 						return udpv6Packet(srcAddr, utils.Host1IPv6Addr.AddressWithPrefix.Address, srcPort, dstPort, 0 /* dataSize */)
 					},
-					checkNATed: func(t *testing.T, v []byte, originalSrcPort uint16, firstPacket bool, expectedRange portOrIdentRange) {
+					checkNATed: func(t *testing.T, v *bufferv2.View, originalSrcPort uint16, firstPacket bool, expectedRange portOrIdentRange) {
 						checker.IPv6(t, v,
 							checker.SrcAddr(utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address),
 							checker.DstAddr(utils.Host1IPv6Addr.AddressWithPrefix.Address),
@@ -2738,7 +2749,7 @@ func TestSNATHandlePortOrIdentConflicts(t *testing.T) {
 						)
 
 						if !t.Failed() {
-							compareSrcPortOrIdent(t, header.UDP(header.IPv6(v).Payload()).SourcePort(), originalSrcPort, firstPacket, expectedRange)
+							compareSrcPortOrIdent(t, header.UDP(header.IPv6(v.AsSlice()).Payload()).SourcePort(), originalSrcPort, firstPacket, expectedRange)
 						}
 					},
 					srcPortOrIdentRanges: srcPortRanges,
@@ -2749,7 +2760,7 @@ func TestSNATHandlePortOrIdentConflicts(t *testing.T) {
 					buf: func(srcAddr tcpip.Address, srcPort uint16) []byte {
 						return tcpv6Packet(srcAddr, utils.Host1IPv6Addr.AddressWithPrefix.Address, srcPort, dstPort, 0 /* dataSize */)
 					},
-					checkNATed: func(t *testing.T, v []byte, originalSrcPort uint16, firstPacket bool, expectedRange portOrIdentRange) {
+					checkNATed: func(t *testing.T, v *bufferv2.View, originalSrcPort uint16, firstPacket bool, expectedRange portOrIdentRange) {
 						checker.IPv6(t, v,
 							checker.SrcAddr(utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address),
 							checker.DstAddr(utils.Host1IPv6Addr.AddressWithPrefix.Address),
@@ -2759,7 +2770,7 @@ func TestSNATHandlePortOrIdentConflicts(t *testing.T) {
 						)
 
 						if !t.Failed() {
-							compareSrcPortOrIdent(t, header.TCP(header.IPv6(v).Payload()).SourcePort(), originalSrcPort, firstPacket, expectedRange)
+							compareSrcPortOrIdent(t, header.TCP(header.IPv6(v.AsSlice()).Payload()).SourcePort(), originalSrcPort, firstPacket, expectedRange)
 						}
 					},
 					srcPortOrIdentRanges: srcPortRanges,
@@ -2770,7 +2781,7 @@ func TestSNATHandlePortOrIdentConflicts(t *testing.T) {
 					buf: func(srcAddr tcpip.Address, ident uint16) []byte {
 						return icmpv6Packet(srcAddr, utils.Host1IPv6Addr.AddressWithPrefix.Address, header.ICMPv6EchoRequest, ident)
 					},
-					checkNATed: func(t *testing.T, v []byte, originalIdent uint16, firstPacket bool, expectedRange portOrIdentRange) {
+					checkNATed: func(t *testing.T, v *bufferv2.View, originalIdent uint16, firstPacket bool, expectedRange portOrIdentRange) {
 						checker.IPv6(t, v,
 							checker.SrcAddr(utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address),
 							checker.DstAddr(utils.Host1IPv6Addr.AddressWithPrefix.Address),
@@ -2780,7 +2791,7 @@ func TestSNATHandlePortOrIdentConflicts(t *testing.T) {
 						)
 
 						if !t.Failed() {
-							compareSrcPortOrIdent(t, header.ICMPv6(header.IPv6(v).Payload()).Ident(), originalIdent, firstPacket, expectedRange)
+							compareSrcPortOrIdent(t, header.ICMPv6(header.IPv6(v.AsSlice()).Payload()).Ident(), originalIdent, firstPacket, expectedRange)
 						}
 					},
 					srcPortOrIdentRanges: identRanges,
@@ -2878,7 +2889,7 @@ func TestSNATHandlePortOrIdentConflicts(t *testing.T) {
 											for i, srcAddr := range test.srcAddrs {
 												t.Run(fmt.Sprintf("Packet#%d", i), func(t *testing.T) {
 													ep2.InjectInbound(test.netProto, stack.NewPacketBuffer(stack.PacketBufferOptions{
-														Payload: buffer.NewWithData(transportType.buf(srcAddr, srcPortOrIdent)),
+														Payload: bufferv2.MakeWithData(transportType.buf(srcAddr, srcPortOrIdent)),
 													}))
 
 													pkt := ep1.Read()
@@ -2886,6 +2897,7 @@ func TestSNATHandlePortOrIdentConflicts(t *testing.T) {
 														t.Fatal("expected to read a packet on ep1")
 													}
 													pktView := stack.PayloadSince(pkt.NetworkHeader())
+													defer pktView.Release()
 													pkt.DecRef()
 													transportType.checkNATed(t, pktView, srcPortOrIdent, i == 0, srcPortOrIdentRange.targetRange)
 												})
@@ -3031,7 +3043,7 @@ func (m *icmpv4Matcher) Match(_ stack.Hook, pkt *stack.PacketBuffer, _, _ string
 		return false, false
 	}
 
-	return header.ICMPv4(pkt.TransportHeader().View()).Type() == m.icmpType, false
+	return header.ICMPv4(pkt.TransportHeader().Slice()).Type() == m.icmpType, false
 }
 
 type icmpv6Matcher struct {
@@ -3047,7 +3059,7 @@ func (m *icmpv6Matcher) Match(_ stack.Hook, pkt *stack.PacketBuffer, _, _ string
 		return false, false
 	}
 
-	return header.ICMPv6(pkt.TransportHeader().View()).Type() == m.icmpType, false
+	return header.ICMPv6(pkt.TransportHeader().Slice()).Type() == m.icmpType, false
 }
 
 func TestRejectWith(t *testing.T) {
@@ -3078,7 +3090,7 @@ func TestRejectWith(t *testing.T) {
 		name              string
 		netProto          tcpip.NetworkProtocolNumber
 		rxICMPEchoRequest func(tcpip.Address) []byte
-		icmpChecker       func(*testing.T, []byte, tcpip.Address, uint8, uint8, []byte)
+		icmpChecker       func(*testing.T, *bufferv2.View, tcpip.Address, uint8, uint8, []byte)
 
 		natHooks []natHook
 
@@ -3091,7 +3103,7 @@ func TestRejectWith(t *testing.T) {
 			netProto:          header.IPv4ProtocolNumber,
 			rxICMPEchoRequest: rxICMPv4EchoRequest,
 
-			icmpChecker: func(t *testing.T, v []byte, dstAddr tcpip.Address, icmpType, icmpCode uint8, origPayload []byte) {
+			icmpChecker: func(t *testing.T, v *bufferv2.View, dstAddr tcpip.Address, icmpType, icmpCode uint8, origPayload []byte) {
 				t.Helper()
 
 				checker.IPv4(t, v,
@@ -3178,7 +3190,7 @@ func TestRejectWith(t *testing.T) {
 			netProto:          header.IPv6ProtocolNumber,
 			rxICMPEchoRequest: rxICMPv6EchoRequest,
 
-			icmpChecker: func(t *testing.T, v []byte, dstAddr tcpip.Address, icmpType, icmpCode uint8, origPayload []byte) {
+			icmpChecker: func(t *testing.T, v *bufferv2.View, dstAddr tcpip.Address, icmpType, icmpCode uint8, origPayload []byte) {
 				t.Helper()
 
 				checker.IPv6(t, v,
@@ -3280,7 +3292,7 @@ func TestRejectWith(t *testing.T) {
 
 							func() {
 								pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-									Payload: buffer.NewWithData(test.rxICMPEchoRequest(natHook.dstAddr)),
+									Payload: bufferv2.MakeWithData(test.rxICMPEchoRequest(natHook.dstAddr)),
 								})
 								defer pkt.DecRef()
 								ep1.InjectInbound(test.netProto, pkt)
@@ -3291,9 +3303,11 @@ func TestRejectWith(t *testing.T) {
 								if pkt == nil {
 									t.Fatal("expected to read a packet on ep1")
 								}
+								payload := stack.PayloadSince(pkt.NetworkHeader())
+								defer payload.Release()
 								test.icmpChecker(
 									t,
-									stack.PayloadSince(pkt.NetworkHeader()),
+									payload,
 									natHook.errorICMPDstAddr,
 									test.errorICMPType,
 									rejectWith.errorICMPCode,
@@ -3411,7 +3425,7 @@ func genTCP4(offset int8) *stack.PacketBuffer {
 	ip.SetChecksum(0)
 	ip.SetChecksum(^ip.CalculateChecksum())
 
-	buf := buffer.NewWithData(append([]byte{}, hdr.View()...))
+	buf := bufferv2.MakeWithData(append([]byte{}, hdr.View()...))
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buf})
 }
 
@@ -3437,7 +3451,7 @@ func genTCP6(offset int8) *stack.PacketBuffer {
 		DstAddr:           dstAddrV6,
 	})
 
-	buf := buffer.NewWithData(append([]byte{}, hdr.View()...))
+	buf := bufferv2.MakeWithData(append([]byte{}, hdr.View()...))
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buf})
 }
 
@@ -3468,7 +3482,7 @@ func genUDP4(offset int8) *stack.PacketBuffer {
 	ip.SetChecksum(0)
 	ip.SetChecksum(^ip.CalculateChecksum())
 
-	buf := buffer.NewWithData(append([]byte{}, hdr.View()...))
+	buf := bufferv2.MakeWithData(append([]byte{}, hdr.View()...))
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buf})
 }
 
@@ -3493,6 +3507,6 @@ func genUDP6(offset int8) *stack.PacketBuffer {
 		DstAddr:           dstAddrV6,
 	})
 
-	buf := buffer.NewWithData(append([]byte{}, hdr.View()...))
+	buf := bufferv2.MakeWithData(append([]byte{}, hdr.View()...))
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buf})
 }

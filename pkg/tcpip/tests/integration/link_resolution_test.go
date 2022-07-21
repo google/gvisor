@@ -24,7 +24,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
@@ -367,6 +367,7 @@ func TestTCPLinkResolutionFailure(t *testing.T) {
 			if sockErr == nil {
 				t.Fatalf("got sockOpts.DequeueErr() = nil, want = non-nil")
 			}
+			defer sockErr.Payload.Release()
 
 			sockErrCmpOpts := []cmp.Option{
 				cmpopts.IgnoreUnexported(tcpip.SockError{}),
@@ -438,7 +439,7 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 		if request.EgressRoute.RemoteLinkAddress != header.EthernetBroadcastAddress {
 			t.Errorf("got request.EgressRoute.RemoteLinkAddress = %s, want = %s", request.EgressRoute.RemoteLinkAddress, header.EthernetBroadcastAddress)
 		}
-		rep := header.ARP(request.NetworkHeader().View())
+		rep := header.ARP(request.NetworkHeader().Slice())
 		if got := rep.Op(); got != header.ARPRequest {
 			t.Errorf("got Op() = %d, want = %d", got, header.ARPRequest)
 		}
@@ -463,7 +464,9 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 			t.Errorf("got remote link address = %s, want = %s", request.EgressRoute.RemoteLinkAddress, want)
 		}
 
-		checker.IPv6(t, stack.PayloadSince(request.NetworkHeader()),
+		payload := stack.PayloadSince(request.NetworkHeader())
+		defer payload.Release()
+		checker.IPv6(t, payload,
 			checker.SrcAddr(src),
 			checker.DstAddr(snmc),
 			checker.TTL(header.NDPHopLimit),
@@ -472,8 +475,8 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 			))
 	}
 
-	icmpv4Checker := func(t *testing.T, b []byte, src, dst tcpip.Address) {
-		checker.IPv4(t, b,
+	icmpv4Checker := func(t *testing.T, v *bufferv2.View, src, dst tcpip.Address) {
+		checker.IPv4(t, v,
 			checker.SrcAddr(src),
 			checker.DstAddr(dst),
 			checker.TTL(ipv4.DefaultTTL),
@@ -485,8 +488,8 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 		)
 	}
 
-	icmpv6Checker := func(t *testing.T, b []byte, src, dst tcpip.Address) {
-		checker.IPv6(t, b,
+	icmpv6Checker := func(t *testing.T, v *bufferv2.View, src, dst tcpip.Address) {
+		checker.IPv6(t, v,
 			checker.SrcAddr(src),
 			checker.DstAddr(dst),
 			checker.TTL(ipv6.DefaultTTL),
@@ -508,7 +511,7 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 		transportProtocol            func(*stack.Stack) stack.TransportProtocol
 		rx                           func(*channel.Endpoint, tcpip.Address, tcpip.Address)
 		linkResolutionRequestChecker func(*testing.T, *stack.PacketBuffer, tcpip.Address, tcpip.Address)
-		icmpReplyChecker             func(*testing.T, []byte, tcpip.Address, tcpip.Address)
+		icmpReplyChecker             func(*testing.T, *bufferv2.View, tcpip.Address, tcpip.Address)
 		mtu                          uint32
 	}{
 		{
@@ -635,7 +638,9 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 				t.Fatal("expected ICMP packet through incoming NIC")
 			}
 
-			test.icmpReplyChecker(t, stack.PayloadSince(reply.NetworkHeader()), test.incomingAddr.Address, test.sourceAddr)
+			payload := stack.PayloadSince(reply.NetworkHeader())
+			defer payload.Release()
+			test.icmpReplyChecker(t, payload, test.incomingAddr.Address, test.sourceAddr)
 			reply.DecRef()
 
 			// Since link resolution failed, we don't expect the packet to be
@@ -953,7 +958,7 @@ func TestWritePacketsLinkResolution(t *testing.T) {
 			for _, d := range data {
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					ReserveHeaderBytes: header.UDPMinimumSize + int(r.MaxHeaderLength()),
-					Payload:            buffer.NewWithData([]byte{d}),
+					Payload:            bufferv2.MakeWithData([]byte{d}),
 				})
 				pkt.TransportProtocolNumber = udp.ProtocolNumber
 				length := uint16(pkt.Data().Size() + header.UDPMinimumSize)

@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
@@ -188,7 +188,7 @@ func TestNeighborSolicitationWithSourceLinkLayerOption(t *testing.T) {
 			}
 
 			pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Payload: buffer.NewWithData(hdr.View()),
+				Payload: bufferv2.MakeWithData(hdr.View()),
 			})
 			e.InjectInbound(ProtocolNumber, pktBuf)
 			pktBuf.DecRef()
@@ -450,7 +450,7 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 			}
 
 			pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Payload: buffer.NewWithData(hdr.View()),
+				Payload: bufferv2.MakeWithData(hdr.View()),
 			})
 			e.InjectInbound(ProtocolNumber, pktBuf)
 			pktBuf.DecRef()
@@ -488,7 +488,9 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 					t.Errorf("route info mismatch (-want +got):\n%s", diff)
 				}
 
-				checker.IPv6(t, stack.PayloadSince(p.NetworkHeader()),
+				payload := stack.PayloadSince(p.NetworkHeader())
+				defer payload.Release()
+				checker.IPv6(t, payload,
 					checker.SrcAddr(nicAddr),
 					checker.DstAddr(respNSDst),
 					checker.TTL(header.NDPHopLimit),
@@ -527,7 +529,7 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 					DstAddr:           nicAddr,
 				})
 				pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Payload: buffer.NewWithData(hdr.View()),
+					Payload: bufferv2.MakeWithData(hdr.View()),
 				})
 				e.InjectInbound(ProtocolNumber, pktBuf)
 				pktBuf.DecRef()
@@ -553,7 +555,9 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 				t.Errorf("got p.EgressRoute.RemoteLinkAddress = %s, want = %s", p.EgressRoute.RemoteLinkAddress, test.naDstLinkAddr)
 			}
 
-			checker.IPv6(t, stack.PayloadSince(p.NetworkHeader()),
+			payload := stack.PayloadSince(p.NetworkHeader())
+			defer payload.Release()
+			checker.IPv6(t, payload,
 				checker.SrcAddr(test.naSrc),
 				checker.DstAddr(test.naDst),
 				checker.TTL(header.NDPHopLimit),
@@ -651,7 +655,7 @@ func TestNeighborAdvertisementWithTargetLinkLayerOption(t *testing.T) {
 				t.Fatalf("got invalid = %d, want = 0", got)
 			}
 			pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Payload: buffer.NewWithData(hdr.View()),
+				Payload: bufferv2.MakeWithData(hdr.View()),
 			})
 			e.InjectInbound(ProtocolNumber, pktBuf)
 			pktBuf.DecRef()
@@ -710,8 +714,8 @@ func TestNDPValidation(t *testing.T) {
 			DstAddr:           lladdr0,
 			ExtensionHeaders:  extHdrs,
 		})
-		buf := buffer.NewWithData(ip)
-		buf.Append(payload)
+		buf := bufferv2.MakeWithData(ip)
+		buf.Append(bufferv2.NewViewWithData(payload))
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Payload: buf,
 		})
@@ -1027,7 +1031,7 @@ func TestNeighborAdvertisementValidation(t *testing.T) {
 			}
 
 			pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Payload: buffer.NewWithData(hdr.View()),
+				Payload: bufferv2.MakeWithData(hdr.View()),
 			})
 			e.InjectInbound(header.IPv6ProtocolNumber, pktBuf)
 			pktBuf.DecRef()
@@ -1228,7 +1232,7 @@ func TestRouterAdvertValidation(t *testing.T) {
 			}
 
 			pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Payload: buffer.NewWithData(hdr.View()),
+				Payload: bufferv2.MakeWithData(hdr.View()),
 			})
 			e.InjectInbound(header.IPv6ProtocolNumber, pktBuf)
 			pktBuf.DecRef()
@@ -1313,7 +1317,9 @@ func TestCheckDuplicateAddress(t *testing.T) {
 			t.Errorf("(i=%d) got p.EgressRoute.RemoteLinkAddress = %s, want = %s", dadPacketsSent, p.EgressRoute.RemoteLinkAddress, remoteLinkAddr)
 		}
 
-		checker.IPv6(t, stack.PayloadSince(p.NetworkHeader()),
+		payload := stack.PayloadSince(p.NetworkHeader())
+		defer payload.Release()
+		checker.IPv6(t, payload,
 			checker.SrcAddr(header.IPv6Any),
 			checker.DstAddr(snmc),
 			checker.TTL(header.NDPHopLimit),

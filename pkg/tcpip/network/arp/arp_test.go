@@ -21,7 +21,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -183,7 +183,7 @@ func TestMalformedPacket(t *testing.T) {
 	defer c.cleanup()
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: buffer.NewWithData(make([]byte, header.ARPSize)),
+		Payload: bufferv2.MakeWithData(make([]byte, header.ARPSize)),
 	})
 
 	c.linkEP.InjectInbound(arp.ProtocolNumber, pkt)
@@ -208,7 +208,7 @@ func TestDisabledEndpoint(t *testing.T) {
 	ep.Disable()
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: buffer.NewWithData(make([]byte, header.ARPSize)),
+		Payload: bufferv2.MakeWithData(make([]byte, header.ARPSize)),
 	})
 
 	c.linkEP.InjectInbound(arp.ProtocolNumber, pkt)
@@ -240,7 +240,7 @@ func TestDirectReply(t *testing.T) {
 	copy(h.ProtocolAddressTarget(), stackAddr)
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: buffer.NewWithData(v),
+		Payload: bufferv2.MakeWithData(v),
 	})
 
 	c.linkEP.InjectInbound(arp.ProtocolNumber, pkt)
@@ -304,7 +304,7 @@ func TestDirectRequest(t *testing.T) {
 			copy(h.ProtocolAddressSender(), test.senderAddr)
 			copy(h.ProtocolAddressTarget(), test.targetAddr)
 			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Payload: buffer.NewWithData(v),
+				Payload: bufferv2.MakeWithData(v),
 			})
 			c.linkEP.InjectInbound(arp.ProtocolNumber, pkt)
 			pkt.DecRef()
@@ -346,7 +346,7 @@ func TestDirectRequest(t *testing.T) {
 			if got, want := pi.NetworkProtocolNumber, arp.ProtocolNumber; got != want {
 				t.Fatalf("expected %d, got network protocol number %d", want, got)
 			}
-			rep := header.ARP(pi.NetworkHeader().View())
+			rep := header.ARP(pi.NetworkHeader().Slice())
 			pi.DecRef()
 			if !rep.IsValid() {
 				t.Fatalf("invalid ARP response: len = %d; response = %x", len(rep), rep)
@@ -629,7 +629,9 @@ func TestLinkAddressRequest(t *testing.T) {
 				t.Errorf("got pkt.EgressRoute.RemoteLinkAddress = %s, want = %s", pkt.EgressRoute.RemoteLinkAddress, test.expectedRemoteLinkAddr)
 			}
 
-			rep := header.ARP(stack.PayloadSince(pkt.NetworkHeader()))
+			payload := stack.PayloadSince(pkt.NetworkHeader())
+			defer payload.Release()
+			rep := header.ARP(payload.AsSlice())
 			pkt.DecRef()
 			if got := rep.Op(); got != header.ARPRequest {
 				t.Errorf("got Op = %d, want = %d", got, header.ARPRequest)
@@ -685,8 +687,9 @@ func TestDADARPRequestPacket(t *testing.T) {
 	if pkt.EgressRoute.RemoteLinkAddress != header.EthernetBroadcastAddress {
 		t.Errorf("got pkt.EgressRoute.RemoteLinkAddress = %s, want = %s", pkt.EgressRoute.RemoteLinkAddress, header.EthernetBroadcastAddress)
 	}
-
-	req := header.ARP(stack.PayloadSince(pkt.NetworkHeader()))
+	payload := stack.PayloadSince(pkt.NetworkHeader())
+	defer payload.Release()
+	req := header.ARP(payload.AsSlice())
 	pkt.DecRef()
 	if !req.IsValid() {
 		t.Errorf("got req.IsValid() = false, want = true")

@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -77,7 +77,7 @@ func TestPacketHeaderPush(t *testing.T) {
 				ReserveHeaderBytes: test.reserved,
 				// Make a copy of data to make sure our truth data won't be taint by
 				// PacketBuffer.
-				Payload: buffer.NewWithData(test.data),
+				Payload: bufferv2.MakeWithData(test.data),
 			})
 
 			allHdrSize := len(test.link) + len(test.network) + len(test.transport)
@@ -85,7 +85,7 @@ func TestPacketHeaderPush(t *testing.T) {
 			// Check the initial values for packet.
 			checkInitialPacketBuffer(t, pk, PacketBufferOptions{
 				ReserveHeaderBytes: test.reserved,
-				Payload:            buffer.NewWithData(test.data),
+				Payload:            bufferv2.MakeWithData(test.data),
 			})
 
 			// Push headers.
@@ -149,12 +149,12 @@ func TestPacketHeaderConsume(t *testing.T) {
 			pk := NewPacketBuffer(PacketBufferOptions{
 				// Make a copy of data to make sure our truth data won't be taint by
 				// PacketBuffer.
-				Payload: buffer.NewWithData(test.data),
+				Payload: bufferv2.MakeWithData(test.data),
 			})
 
 			// Check the initial values for packet.
 			checkInitialPacketBuffer(t, pk, PacketBufferOptions{
-				Payload: buffer.NewWithData(test.data),
+				Payload: bufferv2.MakeWithData(test.data),
 			})
 
 			// Consume headers.
@@ -206,7 +206,7 @@ func TestPacketHeaderConsumeDataTooShort(t *testing.T) {
 	pk := NewPacketBuffer(PacketBufferOptions{
 		// Make a copy of data to make sure our truth data won't be taint by
 		// PacketBuffer.
-		Payload: buffer.NewWithData(data),
+		Payload: bufferv2.MakeWithData(data),
 	})
 
 	// Consume should fail if pkt.Data is too short.
@@ -222,7 +222,7 @@ func TestPacketHeaderConsumeDataTooShort(t *testing.T) {
 
 	// Check packet should look the same as initial packet.
 	checkInitialPacketBuffer(t, pk, PacketBufferOptions{
-		Payload: buffer.NewWithData(data),
+		Payload: bufferv2.MakeWithData(data),
 	})
 }
 
@@ -239,7 +239,7 @@ func TestPacketHeaderPushConsumeMixed(t *testing.T) {
 	initData = append(initData, data...)
 	pk := NewPacketBuffer(PacketBufferOptions{
 		ReserveHeaderBytes: len(link),
-		Payload:            buffer.NewWithData(initData),
+		Payload:            bufferv2.MakeWithData(initData),
 	})
 
 	// 1. Consume network header
@@ -267,7 +267,7 @@ func TestPacketHeaderPushConsumeMixedTooLong(t *testing.T) {
 	initData := concatViews(network, data)
 	pk := NewPacketBuffer(PacketBufferOptions{
 		ReserveHeaderBytes: len(link),
-		Payload:            buffer.NewWithData(initData),
+		Payload:            bufferv2.MakeWithData(initData),
 	})
 
 	// 1. Push link header
@@ -316,7 +316,7 @@ func TestPacketHeaderConsumeCalledAtMostOnce(t *testing.T) {
 	const headerSize = 10
 
 	pk := NewPacketBuffer(PacketBufferOptions{
-		Payload: buffer.NewWithData(make([]byte, headerSize*int(numHeaderType))),
+		Payload: bufferv2.MakeWithData(make([]byte, headerSize*int(numHeaderType))),
 	})
 
 	for _, h := range []PacketHeader{
@@ -373,7 +373,7 @@ func TestPacketHeaderConsumeThenPushPanics(t *testing.T) {
 	const headerSize = 10
 
 	pk := NewPacketBuffer(PacketBufferOptions{
-		Payload: buffer.NewWithData(make([]byte, headerSize*int(numHeaderType))),
+		Payload: bufferv2.MakeWithData(make([]byte, headerSize*int(numHeaderType))),
 	})
 
 	for _, h := range []PacketHeader{
@@ -494,17 +494,9 @@ func TestPacketBufferData(t *testing.T) {
 				s := "APPEND"
 
 				pkt := tc.makePkt(t)
-				pkt.Data().AppendView([]byte(s))
+				pkt.Data().AppendView(bufferv2.NewViewWithData([]byte(s)))
 
 				checkData(t, pkt, []byte(tc.data+s))
-			})
-
-			t.Run("AppendRange", func(t *testing.T) {
-				pkt1 := tc.makePkt(t)
-				pkt2 := tc.makePkt(t)
-				subRangeStart := 2
-				pkt1.Data().AppendRange(pkt2.Data().AsRange().SubRange(subRangeStart))
-				checkData(t, pkt1, []byte(tc.data+tc.data[subRangeStart:]))
 			})
 
 			t.Run("Merge", func(t *testing.T) {
@@ -515,25 +507,6 @@ func TestPacketBufferData(t *testing.T) {
 				checkData(t, pkt1, []byte(tc.data+tc.data))
 				if pkt2.buf.Size() != 0 {
 					t.Errorf("pkt.buf.Size() = %v, want %v", 0, pkt2.buf.Size())
-				}
-			})
-
-			t.Run("ReadFrom", func(t *testing.T) {
-				for _, n := range []int{0, 1, 2, 7, 10, 14, 20} {
-					t.Run(fmt.Sprintf("%dbytes", n), func(t *testing.T) {
-						pkt1 := tc.makePkt(t)
-						pkt2 := tc.makePkt(t)
-						pkt1.Data().ReadFrom(pkt2.Data(), n)
-
-						want1 := tc.data
-						want2 := ""
-						if n < len(tc.data) {
-							want1 = tc.data[:n]
-							want2 = tc.data[n:]
-						}
-						checkData(t, pkt1, []byte(tc.data+want1))
-						checkData(t, pkt2, []byte(want2))
-					})
 				}
 			})
 
@@ -554,13 +527,13 @@ func TestPacketBufferData(t *testing.T) {
 
 			// ReadFromBuffer
 			for _, n := range []int{0, 1, 2, 7, 10, 14, 20} {
-				t.Run(fmt.Sprintf("ReadFromBuffer%d", n), func(t *testing.T) {
+				t.Run(fmt.Sprintf("ReadFrom%d", n), func(t *testing.T) {
 					s := "TO READ"
 					s += s
-					srcBuf := buffer.NewWithData([]byte(s))
+					srcBuf := bufferv2.MakeWithData([]byte(s))
 
 					pkt := tc.makePkt(t)
-					pkt.Data().ReadFromBuffer(&srcBuf, n)
+					pkt.Data().ReadFrom(&srcBuf, n)
 
 					if n < len(s) {
 						s = s[:n]
@@ -588,18 +561,34 @@ func checkPacketContents(t *testing.T, prefix string, pk *PacketBuffer, want pac
 	// Data.
 	checkData(t, pk, want.data)
 	// Whole packet.
-	checkViewEqual(t, prefix+"pk.Slices()",
-		concatViews(pk.Slices()...),
+	checkViewEqual(t, prefix+"pk.AsSlices()",
+		concatViews(pk.AsSlices()...),
 		concatViews(want.link, want.network, want.transport, want.data))
 	// PayloadSince.
+	link := PayloadSince(pk.LinkHeader())
 	checkViewEqual(t, prefix+"PayloadSince(LinkHeader)",
-		PayloadSince(pk.LinkHeader()),
+		link.AsSlice(),
 		concatViews(want.link, want.network, want.transport, want.data))
+	net := PayloadSince(pk.NetworkHeader())
 	checkViewEqual(t, prefix+"PayloadSince(NetworkHeader)",
-		PayloadSince(pk.NetworkHeader()),
+		net.AsSlice(),
 		concatViews(want.network, want.transport, want.data))
+	trans := PayloadSince(pk.TransportHeader())
 	checkViewEqual(t, prefix+"PayloadSince(TransportHeader)",
-		PayloadSince(pk.TransportHeader()),
+		trans.AsSlice(),
+		concatViews(want.transport, want.data))
+	// BufferSince.
+	linkBuf := BufferSince(pk.LinkHeader())
+	checkViewEqual(t, prefix+"PayloadSince(LinkHeader)",
+		linkBuf.Flatten(),
+		concatViews(want.link, want.network, want.transport, want.data))
+	netBuf := BufferSince(pk.NetworkHeader())
+	checkViewEqual(t, prefix+"PayloadSince(NetworkHeader)",
+		netBuf.Flatten(),
+		concatViews(want.network, want.transport, want.data))
+	transBuf := BufferSince(pk.TransportHeader())
+	checkViewEqual(t, prefix+"PayloadSince(TransportHeader)",
+		transBuf.Flatten(),
 		concatViews(want.transport, want.data))
 }
 
@@ -626,7 +615,7 @@ func checkInitialPacketBuffer(t *testing.T, pk *PacketBuffer, opts PacketBufferO
 
 func checkPacketHeader(t *testing.T, name string, h PacketHeader, want []byte) {
 	t.Helper()
-	checkViewEqual(t, name+".View()", h.View(), want)
+	checkViewEqual(t, name+".Slice()", h.Slice(), want)
 }
 
 func checkViewEqual(t *testing.T, what string, got, want []byte) {
@@ -638,8 +627,8 @@ func checkViewEqual(t *testing.T, what string, got, want []byte) {
 
 func checkData(t *testing.T, pkt *PacketBuffer, want []byte) {
 	t.Helper()
-	if got := concatViews(pkt.Data().Slices()...); !bytes.Equal(got, want) {
-		t.Errorf("pkt.Data().Views() = 0x%x, want 0x%x", got, want)
+	if got := pkt.Data().AsRange().ToSlice(); !bytes.Equal(got, want) {
+		t.Errorf("pkt.Data().Slices() = 0x%x, want 0x%x", got, want)
 	}
 	if got := pkt.Data().Size(); got != len(want) {
 		t.Errorf("pkt.Data().Size() = %d, want %d", got, len(want))
@@ -678,21 +667,18 @@ func checkRange(t *testing.T, r Range, data []byte) {
 	if got, want := r.Size(), len(data); got != want {
 		t.Errorf("r.Size() = %d, want %d", got, want)
 	}
-	if got := r.AsView(); !bytes.Equal(got, data) {
-		t.Errorf("r.AsView() = %x, want %x", got, data)
-	}
-	if got := r.ToOwnedView(); !bytes.Equal(got, data) {
-		t.Errorf("r.ToOwnedView() = %x, want %x", got, data)
+	if got := r.ToSlice(); !bytes.Equal(got, data) {
+		t.Errorf("r.AsSlice() = %x, want %x", got, data)
 	}
 	if got, want := r.Checksum(), header.Checksum(data, 0 /* initial */); got != want {
 		t.Errorf("r.Checksum() = %x, want %x", got, want)
 	}
 }
 
-func buf(pieces ...string) buffer.Buffer {
-	b := buffer.Buffer{}
+func buf(pieces ...string) bufferv2.Buffer {
+	b := bufferv2.Buffer{}
 	for _, p := range pieces {
-		b.AppendOwned([]byte(p))
+		b.Append(bufferv2.NewViewWithData([]byte(p)))
 	}
 	return b
 }
