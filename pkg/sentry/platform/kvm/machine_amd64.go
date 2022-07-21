@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"math/big"
 	"reflect"
+	"runtime"
 	"runtime/debug"
 
 	"golang.org/x/sys/unix"
@@ -477,6 +478,16 @@ func (m *machine) getMaxVCPU() {
 		m.maxVCPUs = _KVM_NR_VCPUS
 	} else {
 		m.maxVCPUs = int(maxVCPUs)
+	}
+
+	// The goal here is to avoid vCPU contentions for reasonable workloads.
+	// But "reasonable" isn't defined well in this case. Let's say that CPU
+	// overcommit with factor 2 is still acceptable. We allocate a set of
+	// vCPU for each goruntime processor (P) and two sets of vCPUs to run
+	// user code.
+	rCPUs := runtime.GOMAXPROCS(0)
+	if 3*rCPUs < m.maxVCPUs {
+		m.maxVCPUs = 3 * rCPUs
 	}
 }
 
