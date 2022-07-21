@@ -11,9 +11,9 @@ import (
 // with any writer critical sections in seq.
 //
 //go:nosplit
-func SeqAtomicLoadCheckerSlice(seq *sync.SeqCount, ptr *[]Checker) []Checker {
+func SeqAtomicLoadSinkSlice(seq *sync.SeqCount, ptr *[]Sink) []Sink {
 	for {
-		if val, ok := SeqAtomicTryLoadCheckerSlice(seq, seq.BeginRead(), ptr); ok {
+		if val, ok := SeqAtomicTryLoadSinkSlice(seq, seq.BeginRead(), ptr); ok {
 			return val
 		}
 	}
@@ -25,7 +25,7 @@ func SeqAtomicLoadCheckerSlice(seq *sync.SeqCount, ptr *[]Checker) []Checker {
 // (unspecified, false).
 //
 //go:nosplit
-func SeqAtomicTryLoadCheckerSlice(seq *sync.SeqCount, epoch sync.SeqCountEpoch, ptr *[]Checker) (val []Checker, ok bool) {
+func SeqAtomicTryLoadSinkSlice(seq *sync.SeqCount, epoch sync.SeqCountEpoch, ptr *[]Sink) (val []Sink, ok bool) {
 	if sync.RaceEnabled {
 
 		gohacks.Memmove(unsafe.Pointer(&val), unsafe.Pointer(ptr), unsafe.Sizeof(val))

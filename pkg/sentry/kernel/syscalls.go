@@ -83,7 +83,7 @@ type Syscall struct {
 	// URLs is set of URLs to any relevant bugs or issues.
 	URLs []string
 	// PointCallback is an optional callback that converts syscall arguments
-	// to a proto that can be used with seccheck.Checker.
+	// to a proto that can be used with seccheck.Sink.
 	// Callback functions must follow this naming convention:
 	//   PointSyscallNameInCamelCase, e.g. PointReadat, PointRtSigaction.
 	PointCallback SyscallToProto
