@@ -26,7 +26,7 @@ go_test(
     srcs = ["arp_test.go"],
     deps = [
         ":arp",
-        "//pkg/buffer",
+        "//pkg/bufferv2",
         "//pkg/refs",
         "//pkg/refsvfs2",
         "//pkg/tcpip",

@@ -24,7 +24,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"go.uber.org/multierr"
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -1113,15 +1113,15 @@ func totalLength(l Layer) int {
 	return totalLength
 }
 
-// payload returns a buffer.VectorisedView of l's payload.
-func payload(l Layer) (buffer.Buffer, error) {
-	var payloadBytes buffer.Buffer
+// payload returns a bufferv2.Buffer of l's payload.
+func payload(l Layer) (bufferv2.Buffer, error) {
+	var payloadBytes bufferv2.Buffer
 	for current := l.next(); current != nil; current = current.next() {
 		payload, err := current.ToBytes()
 		if err != nil {
-			return buffer.Buffer{}, fmt.Errorf("can't get bytes for next header: %s", payload)
+			return bufferv2.Buffer{}, fmt.Errorf("can't get bytes for next header: %s", payload)
 		}
-		payloadBytes.AppendOwned(payload)
+		payloadBytes.Append(bufferv2.NewViewWithData(payload))
 	}
 	return payloadBytes, nil
 }

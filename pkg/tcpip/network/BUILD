@@ -11,7 +11,7 @@ go_test(
         "multicast_group_test.go",
     ],
     deps = [
-        "//pkg/buffer",
+        "//pkg/bufferv2",
         "//pkg/refs",
         "//pkg/refsvfs2",
         "//pkg/sync",

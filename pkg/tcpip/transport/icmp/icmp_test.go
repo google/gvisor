@@ -144,12 +144,11 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 		if p == nil {
 			t.Fatalf("got defaultEP.Read(_) = _, false; want = _, true (packet wasn't written out)")
 		}
+		defer p.DecRef()
+		v := p.ToView()
+		defer v.Release()
 
-		pkbuf := p.Buffer()
-		b := pkbuf.Flatten()
-		p.DecRef()
-
-		checker.IPv4(t, b, []checker.NetworkChecker{
+		checker.IPv4(t, v, []checker.NetworkChecker{
 			checker.SrcAddr(localV4Addr1),
 			checker.DstAddr(remoteV4Addr),
 			checker.ICMPv4(
@@ -193,12 +192,11 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 		if p == nil {
 			t.Fatalf("got alternateEP.Read(_) = _, false; want = _, true (packet wasn't written out)")
 		}
+		defer p.DecRef()
+		v := p.ToView()
+		defer v.Release()
 
-		pkbuf := p.Buffer()
-		b := pkbuf.Flatten()
-		p.DecRef()
-
-		checker.IPv4(t, b, []checker.NetworkChecker{
+		checker.IPv4(t, v, []checker.NetworkChecker{
 			checker.SrcAddr(localV4Addr2),
 			checker.DstAddr(remoteV4Addr),
 			checker.ICMPv4(
@@ -232,12 +230,11 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 		if p == nil {
 			t.Fatalf("got defaultEP.Read(_) = _, false; want = _, true (packet wasn't written out)")
 		}
+		defer p.DecRef()
+		v := p.ToView()
+		defer v.Release()
 
-		pkbuf := p.Buffer()
-		b := pkbuf.Flatten()
-		p.DecRef()
-
-		checker.IPv4(t, b, []checker.NetworkChecker{
+		checker.IPv4(t, v, []checker.NetworkChecker{
 			checker.SrcAddr(localV4Addr1),
 			checker.DstAddr(remoteV4Addr),
 			checker.ICMPv4(

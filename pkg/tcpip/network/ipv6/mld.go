@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/network/internal/ip"
@@ -196,7 +196,9 @@ func (mld *mldState) writePacket(destAddress, groupAddress tcpip.Address, mldTyp
 		panic(fmt.Sprintf("unrecognized mld type = %d", mldType))
 	}
 
-	icmp := header.ICMPv6(make([]byte, header.ICMPv6HeaderSize+header.MLDMinimumSize))
+	icmpView := bufferv2.NewViewSize(header.ICMPv6HeaderSize + header.MLDMinimumSize)
+
+	icmp := header.ICMPv6(icmpView.AsSlice())
 	icmp.SetType(mldType)
 	header.MLD(icmp.MessageBody()).SetMulticastAddress(groupAddress)
 	// As per RFC 2710 section 3,
@@ -268,7 +270,7 @@ func (mld *mldState) writePacket(destAddress, groupAddress tcpip.Address, mldTyp
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(mld.ep.MaxHeaderLength()) + extensionHeaders.Length(),
-		Payload:            buffer.NewWithData(icmp),
+		Payload:            bufferv2.MakeWithView(icmpView),
 	})
 	defer pkt.DecRef()
 

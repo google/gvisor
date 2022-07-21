@@ -3001,14 +3001,17 @@ func (s *socketOpsCommon) recvErr(t *kernel.Task, dst usermem.IOSequence) (int, 
 	if sockErr == nil {
 		return 0, 0, nil, 0, socket.ControlMessages{}, syserr.ErrTryAgain
 	}
+	if sockErr.Payload != nil {
+		defer sockErr.Payload.Release()
+	}
 
 	// The payload of the original packet that caused the error is passed as
 	// normal data via msg_iovec.  -- recvmsg(2)
 	msgFlags := linux.MSG_ERRQUEUE
-	if int(dst.NumBytes()) < len(sockErr.Payload) {
+	if int(dst.NumBytes()) < sockErr.Payload.Size() {
 		msgFlags |= linux.MSG_TRUNC
 	}
-	n, err := dst.CopyOut(t, sockErr.Payload)
+	n, err := dst.CopyOut(t, sockErr.Payload.AsSlice())
 
 	// The original destination address of the datagram that caused the error is
 	// supplied via msg_name.  -- recvmsg(2)

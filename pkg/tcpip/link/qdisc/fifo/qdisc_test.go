@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -68,7 +68,7 @@ func TestFastSimultaneousWrites(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < nWrites; j++ {
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Payload: buffer.NewWithData(v),
+					Payload: bufferv2.MakeWithData(v),
 				})
 				pkt.Hash = rand.Uint32()
 				linkEP.WritePacket(pkt)
@@ -101,7 +101,7 @@ func TestWriteMorePacketsThanBatchSize(t *testing.T) {
 		linkEp := fifo.New(lower, 1, 1000)
 		for i := 0; i < want; i++ {
 			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Payload: buffer.NewWithData(v),
+				Payload: bufferv2.MakeWithData(v),
 			})
 			linkEp.WritePacket(pkt)
 			pkt.DecRef()

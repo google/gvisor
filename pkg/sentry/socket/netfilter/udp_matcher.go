@@ -95,7 +95,7 @@ func (*UDPMatcher) name() string {
 func (um *UDPMatcher) Match(hook stack.Hook, pkt *stack.PacketBuffer, _, _ string) (bool, bool) {
 	switch pkt.NetworkProtocolNumber {
 	case header.IPv4ProtocolNumber:
-		netHeader := header.IPv4(pkt.NetworkHeader().View())
+		netHeader := header.IPv4(pkt.NetworkHeader().Slice())
 		if netHeader.TransportProtocol() != header.UDPProtocolNumber {
 			return false, false
 		}
@@ -112,7 +112,7 @@ func (um *UDPMatcher) Match(hook stack.Hook, pkt *stack.PacketBuffer, _, _ strin
 		// As in Linux, we do not perform an IPv6 fragment check. See
 		// xt_action_param.fragoff in
 		// include/linux/netfilter/x_tables.h.
-		if header.IPv6(pkt.NetworkHeader().View()).TransportProtocol() != header.UDPProtocolNumber {
+		if header.IPv6(pkt.NetworkHeader().Slice()).TransportProtocol() != header.UDPProtocolNumber {
 			return false, false
 		}
 
@@ -121,7 +121,7 @@ func (um *UDPMatcher) Match(hook stack.Hook, pkt *stack.PacketBuffer, _, _ strin
 		return false, false
 	}
 
-	udpHeader := header.UDP(pkt.TransportHeader().View())
+	udpHeader := header.UDP(pkt.TransportHeader().Slice())
 	if len(udpHeader) < header.UDPMinimumSize {
 		// There's no valid UDP header here, so we drop the packet immediately.
 		return false, true

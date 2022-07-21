@@ -165,6 +165,7 @@ func timeStampEnabledAccept(t *testing.T, cookieEnabled bool, wndScale int, wndS
 	// Check that data is received and that the timestamp option TSEcr field
 	// matches the expected value.
 	b := c.GetPacket()
+	defer b.Release()
 	checker.IPv4(t, b,
 		// Add 12 bytes for the timestamp option + 2 NOPs to align at 4
 		// byte boundary.
@@ -228,6 +229,7 @@ func timeStampDisabledAccept(t *testing.T, cookieEnabled bool, wndScale int, wnd
 	// Check that data is received and that the timestamp option is disabled
 	// when SYN cookies are enabled/disabled.
 	b := c.GetPacket()
+	defer b.Release()
 	checker.IPv4(t, b,
 		checker.PayloadLen(len(data)+header.TCPMinimumSize),
 		checker.TCP(

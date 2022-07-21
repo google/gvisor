@@ -19,7 +19,7 @@ import (
 	"os"
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -67,7 +67,7 @@ func TestDeliverNetworkPacket(t *testing.T) {
 		DstAddr: otherLinkAddr2,
 		Type:    header.IPv4ProtocolNumber,
 	})
-	p := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.NewWithData(eth)})
+	p := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: bufferv2.MakeWithData(eth)})
 	defer p.DecRef()
 	e.DeliverNetworkPacket(0, p)
 	if networkDispatcher.networkPackets != 1 {
@@ -140,9 +140,7 @@ func TestWritePacketToRemoteAddHeader(t *testing.T) {
 		t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
 	}
 
-	// TODO(b/230896518): Remove tcpipbuffer once WritePacketToRemote API is
-	// changed.
-	if err := s.WritePacketToRemote(nicID, remoteLinkAddr, netProto, buffer.Buffer{}); err != nil {
+	if err := s.WritePacketToRemote(nicID, remoteLinkAddr, netProto, bufferv2.Buffer{}); err != nil {
 		t.Fatalf("s.WritePacketToRemote(%d, %s, _): %s", nicID, remoteLinkAddr, err)
 	}
 
@@ -152,7 +150,7 @@ func TestWritePacketToRemoteAddHeader(t *testing.T) {
 			t.Fatal("expected to read a packet")
 		}
 
-		eth := header.Ethernet(pkt.LinkHeader().View())
+		eth := header.Ethernet(pkt.LinkHeader().Slice())
 		pkt.DecRef()
 		if got := eth.SourceAddress(); got != localLinkAddr {
 			t.Errorf("got eth.SourceAddress() = %s, want = %s", got, localLinkAddr)

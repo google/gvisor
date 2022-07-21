@@ -24,6 +24,7 @@ import (
 	"os"
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -602,8 +603,8 @@ func testWriteAndVerifyInternal(c *context.Context, flow context.TestFlow, setDe
 		c.T.Errorf("got p.TransportProtocolNumber = %d, want = %d", got, want)
 	}
 
-	buf := p.Buffer()
-	b := buf.Flatten()
+	v := p.ToView()
+	defer v.Release()
 
 	h := flow.MakeHeader4Tuple(context.Outgoing)
 	checkers = append(
@@ -612,13 +613,13 @@ func testWriteAndVerifyInternal(c *context.Context, flow context.TestFlow, setDe
 		checker.DstAddr(h.Dst.Addr),
 		checker.UDP(checker.DstPort(h.Dst.Port)),
 	)
-	flow.CheckerFn()(c.T, b, checkers...)
+	flow.CheckerFn()(c.T, v, checkers...)
 
 	var udpH header.UDP
 	if flow.IsV4() {
-		udpH = header.IPv4(b).Payload()
+		udpH = header.IPv4(v.AsSlice()).Payload()
 	} else {
-		udpH = header.IPv6(b).Payload()
+		udpH = header.IPv6(v.AsSlice()).Payload()
 	}
 	if !bytes.Equal(payload, udpH.Payload()) {
 		c.T.Fatalf("Bad payload: got %x, want %x", udpH.Payload(), payload)
@@ -1536,21 +1537,23 @@ func TestV4UnknownDestination(t *testing.T) {
 				t.Fatalf("packet wasn't written out")
 			}
 
-			buf := p.Buffer()
+			buf := p.ToBuffer()
+			defer buf.Release()
 			p.DecRef()
 			pkt := buf.Flatten()
 			if got, want := len(pkt), header.IPv4MinimumProcessableDatagramSize; got > want {
 				t.Fatalf("got an ICMP packet of size: %d, want: sz <= %d", got, want)
 			}
 
-			hdr := header.IPv4(pkt)
+			hdr := bufferv2.NewViewWithData(pkt)
+			defer hdr.Release()
 			checker.IPv4(t, hdr, checker.ICMPv4(
 				checker.ICMPv4Type(header.ICMPv4DstUnreachable),
 				checker.ICMPv4Code(header.ICMPv4PortUnreachable)))
 
 			// We need to compare the included data part of the UDP packet that is in
 			// the ICMP packet with the matching original data.
-			icmpPkt := header.ICMPv4(hdr.Payload())
+			icmpPkt := header.ICMPv4(header.IPv4(hdr.AsSlice()).Payload())
 			payloadIPHeader := header.IPv4(icmpPkt.Payload())
 			incomingHeaderLength := header.IPv4MinimumSize + header.UDPMinimumSize
 			wantLen := len(payload)
@@ -1631,19 +1634,21 @@ func TestV6UnknownDestination(t *testing.T) {
 				t.Fatalf("packet wasn't written out")
 			}
 
-			buf := p.Buffer()
+			buf := p.ToBuffer()
+			defer buf.Release()
 			p.DecRef()
 			pkt := buf.Flatten()
 			if got, want := len(pkt), header.IPv6MinimumMTU; got > want {
 				t.Fatalf("got an ICMP packet of size: %d, want: sz <= %d", got, want)
 			}
 
-			hdr := header.IPv6(pkt)
+			hdr := bufferv2.NewViewWithData(pkt)
+			defer hdr.Release()
 			checker.IPv6(t, hdr, checker.ICMPv6(
 				checker.ICMPv6Type(header.ICMPv6DstUnreachable),
 				checker.ICMPv6Code(header.ICMPv6PortUnreachable)))
 
-			icmpPkt := header.ICMPv6(hdr.Payload())
+			icmpPkt := header.ICMPv6(header.IPv6(hdr.AsSlice()).Payload())
 			payloadIPHeader := header.IPv6(icmpPkt.Payload())
 			wantLen := len(payload)
 			if tc.largePayload {
@@ -2183,6 +2188,7 @@ func TestChecksumWithZeroValueOnesComplementSum(t *testing.T) {
 		}
 
 		v := stack.PayloadSince(pkt.NetworkHeader())
+		defer v.Release()
 		pkt.DecRef()
 		checker.IPv6(t, v, checker.UDP())
 
@@ -2197,7 +2203,7 @@ func TestChecksumWithZeroValueOnesComplementSum(t *testing.T) {
 		// The resulting ones complement will be  C' = C - C so we know C' will be
 		// zero. The stack should never send a zero value though so we expect all
 		// ones below.
-		binary.BigEndian.PutUint16(payload[:], header.UDP(header.IPv6(v).Payload()).Checksum())
+		binary.BigEndian.PutUint16(payload[:], header.UDP(header.IPv6(v.AsSlice()).Payload()).Checksum())
 	}
 
 	{
@@ -2220,10 +2226,11 @@ func TestChecksumWithZeroValueOnesComplementSum(t *testing.T) {
 		defer pkt.DecRef()
 
 		v := stack.PayloadSince(pkt.NetworkHeader())
-		checker.IPv6(t, stack.PayloadSince(pkt.NetworkHeader()), checker.UDP(checker.TransportChecksum(math.MaxUint16)))
+		defer v.Release()
+		checker.IPv6(t, v, checker.UDP(checker.TransportChecksum(math.MaxUint16)))
 
 		// Make sure the all ones checksum is valid.
-		hdr := header.IPv6(v)
+		hdr := header.IPv6(v.AsSlice())
 		udp := header.UDP(hdr.Payload())
 		if src, dst, payloadXsum := hdr.SourceAddress(), hdr.DestinationAddress(), header.Checksum(udp.Payload(), 0); !udp.IsChecksumValid(src, dst, payloadXsum) {
 			t.Errorf("got udp.IsChecksumValid(%s, %s, %d) = false, want = true", src, dst, payloadXsum)

@@ -18,7 +18,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/binary",
-        "//pkg/buffer",
+        "//pkg/bufferv2",
         "//pkg/hostarch",
         "//pkg/tcpip",
         "//pkg/tcpip/header",

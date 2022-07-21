@@ -28,7 +28,7 @@ import (
 	"io"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -234,21 +234,21 @@ func (ep *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tc
 		return 0, &tcpip.ErrInvalidOptionValue{}
 	}
 
-	// TODO(https://gvisor.dev/issue/6538): Avoid this allocation.
-	payloadBytes := make([]byte, p.Len())
-	if _, err := io.ReadFull(p, payloadBytes); err != nil {
+	var payload bufferv2.Buffer
+	if _, err := payload.WriteFromReader(p, int64(p.Len())); err != nil {
 		return 0, &tcpip.ErrBadBuffer{}
 	}
+	payloadSz := payload.Size()
 
 	if err := func() tcpip.Error {
 		if ep.cooked {
-			return ep.stack.WritePacketToRemote(nicID, remote, proto, buffer.NewWithData(payloadBytes))
+			return ep.stack.WritePacketToRemote(nicID, remote, proto, payload)
 		}
-		return ep.stack.WriteRawPacket(nicID, proto, buffer.NewWithData(payloadBytes))
+		return ep.stack.WriteRawPacket(nicID, proto, payload)
 	}(); err != nil {
 		return 0, err
 	}
-	return int64(len(payloadBytes)), nil
+	return payloadSz, nil
 }
 
 // Disconnect implements tcpip.Endpoint.Disconnect. Packet sockets cannot be
@@ -444,17 +444,17 @@ func (ep *endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtoc
 		receivedAt: ep.stack.Clock().Now(),
 	}
 
-	if len(pkt.LinkHeader().View()) != 0 {
-		hdr := header.Ethernet(pkt.LinkHeader().View())
+	if len(pkt.LinkHeader().Slice()) != 0 {
+		hdr := header.Ethernet(pkt.LinkHeader().Slice())
 		rcvdPkt.senderAddr.Addr = tcpip.Address(hdr.SourceAddress())
 	}
 
 	// Raw packet endpoints include link-headers in received packets.
-	pktBuf := pkt.Buffer()
+	pktBuf := pkt.ToBuffer()
 	if ep.cooked {
 		// Cooked packet endpoints don't include the link-headers in received
 		// packets.
-		pktBuf.TrimFront(int64(len(pkt.LinkHeader().View()) + len(pkt.VirtioNetHeader().View())))
+		pktBuf.TrimFront(int64(len(pkt.LinkHeader().Slice()) + len(pkt.VirtioNetHeader().Slice())))
 	}
 	rcvdPkt.data = stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: pktBuf})
 

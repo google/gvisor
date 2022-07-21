@@ -20,7 +20,7 @@ go_test(
     srcs = ["route_table_test.go"],
     library = ":multicast",
     deps = [
-        "//pkg/buffer",
+        "//pkg/bufferv2",
         "//pkg/refs",
         "//pkg/refsvfs2",
         "//pkg/tcpip",
@@ -38,7 +38,7 @@ go_test(
     srcs = ["example_test.go"],
     deps = [
         ":multicast",
-        "//pkg/buffer",
+        "//pkg/bufferv2",
         "//pkg/refs",
         "//pkg/refsvfs2",
         "//pkg/tcpip",

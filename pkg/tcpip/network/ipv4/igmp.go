@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/network/internal/ip"
@@ -188,7 +188,7 @@ func (igmp *igmpState) isSourceIPValidLocked(src tcpip.Address, messageType head
 // +checklocks:igmp.ep.mu
 func (igmp *igmpState) isPacketValidLocked(pkt *stack.PacketBuffer, messageType header.IGMPType, hasRouterAlertOption bool) bool {
 	// We can safely assume that the IP header is valid if we got this far.
-	iph := header.IPv4(pkt.NetworkHeader().View())
+	iph := header.IPv4(pkt.NetworkHeader().Slice())
 
 	// As per RFC 2236 section 2,
 	//
@@ -206,12 +206,12 @@ func (igmp *igmpState) isPacketValidLocked(pkt *stack.PacketBuffer, messageType 
 // +checklocks:igmp.ep.mu
 func (igmp *igmpState) handleIGMP(pkt *stack.PacketBuffer, hasRouterAlertOption bool) {
 	received := igmp.ep.stats.igmp.packetsReceived
-	headerView, ok := pkt.Data().PullUp(header.IGMPMinimumSize)
+	hdr, ok := pkt.Data().PullUp(header.IGMPMinimumSize)
 	if !ok {
 		received.invalid.Increment()
 		return
 	}
-	h := header.IGMP(headerView)
+	h := header.IGMP(hdr)
 
 	// As per RFC 1071 section 1.3,
 	//
@@ -225,7 +225,7 @@ func (igmp *igmpState) handleIGMP(pkt *stack.PacketBuffer, hasRouterAlertOption 
 	}
 
 	isValid := func(minimumSize int) bool {
-		return len(headerView) >= minimumSize && igmp.isPacketValidLocked(pkt, h.Type(), hasRouterAlertOption)
+		return len(hdr) >= minimumSize && igmp.isPacketValidLocked(pkt, h.Type(), hasRouterAlertOption)
 	}
 
 	switch h.Type() {
@@ -312,14 +312,15 @@ func (igmp *igmpState) handleMembershipReport(groupAddress tcpip.Address) {
 //
 // +checklocksread:igmp.ep.mu
 func (igmp *igmpState) writePacket(destAddress tcpip.Address, groupAddress tcpip.Address, igmpType header.IGMPType) (bool, tcpip.Error) {
-	igmpData := header.IGMP(make([]byte, header.IGMPReportMinimumSize))
+	igmpView := bufferv2.NewViewSize(header.IGMPReportMinimumSize)
+	igmpData := header.IGMP(igmpView.AsSlice())
 	igmpData.SetType(igmpType)
 	igmpData.SetGroupAddress(groupAddress)
 	igmpData.SetChecksum(header.IGMPCalculateChecksum(igmpData))
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(igmp.ep.MaxHeaderLength()),
-		Payload:            buffer.NewWithData(igmpData),
+		Payload:            bufferv2.MakeWithView(igmpView),
 	})
 	defer pkt.DecRef()
 

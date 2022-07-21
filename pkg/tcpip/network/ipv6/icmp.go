@@ -17,7 +17,7 @@ package ipv6
 import (
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -275,7 +275,7 @@ func isMLDValid(pkt *stack.PacketBuffer, iph header.IPv6, routerAlert *header.IP
 	if routerAlert == nil || routerAlert.Value != header.IPv6RouterAlertMLD {
 		return false
 	}
-	if len(pkt.TransportHeader().View()) < header.ICMPv6HeaderSize+header.MLDMinimumSize {
+	if len(pkt.TransportHeader().Slice()) < header.ICMPv6HeaderSize+header.MLDMinimumSize {
 		return false
 	}
 	if iph.HopLimit() != header.MLDHopLimit {
@@ -290,12 +290,12 @@ func isMLDValid(pkt *stack.PacketBuffer, iph header.IPv6, routerAlert *header.IP
 func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, routerAlert *header.IPv6RouterAlertOption) {
 	sent := e.stats.icmp.packetsSent
 	received := e.stats.icmp.packetsReceived
-	h := header.ICMPv6(pkt.TransportHeader().View())
+	h := header.ICMPv6(pkt.TransportHeader().Slice())
 	if len(h) < header.ICMPv6MinimumSize {
 		received.invalid.Increment()
 		return
 	}
-	iph := header.IPv6(pkt.NetworkHeader().View())
+	iph := header.IPv6(pkt.NetworkHeader().Slice())
 	srcAddr := iph.SourceAddress()
 	dstAddr := iph.DestinationAddress()
 
@@ -675,7 +675,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 
 		replyPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			ReserveHeaderBytes: int(r.MaxHeaderLength()) + header.ICMPv6EchoMinimumSize,
-			Payload:            pkt.Data().AsBuffer(),
+			Payload:            pkt.Data().ToBuffer(),
 		})
 		defer replyPkt.DecRef()
 		icmp := header.ICMPv6(replyPkt.TransportHeader().Push(header.ICMPv6EchoMinimumSize))
@@ -1043,7 +1043,7 @@ func (*icmpReasonReassemblyTimeout) respondsToMulticast() bool {
 // returnError takes an error descriptor and generates the appropriate ICMP
 // error packet for IPv6 and sends it.
 func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, deliveredLocally bool) tcpip.Error {
-	origIPHdr := header.IPv6(pkt.NetworkHeader().View())
+	origIPHdr := header.IPv6(pkt.NetworkHeader().Slice())
 	origIPHdrSrc := origIPHdr.SourceAddress()
 	origIPHdrDst := origIPHdr.DestinationAddress()
 
@@ -1109,7 +1109,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, deliv
 	}
 
 	if pkt.TransportProtocolNumber == header.ICMPv6ProtocolNumber {
-		if typ := header.ICMPv6(pkt.TransportHeader().View()).Type(); typ.IsErrorType() || typ == header.ICMPv6RedirectMsg {
+		if typ := header.ICMPv6(pkt.TransportHeader().Slice()).Type(); typ.IsErrorType() || typ == header.ICMPv6RedirectMsg {
 			return nil
 		}
 	}
@@ -1161,13 +1161,13 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, deliv
 	if available < header.IPv6MinimumSize {
 		return nil
 	}
-	payloadLen := len(network) + len(transport) + pkt.Data().Size()
+	payloadLen := network.Size() + transport.Size() + pkt.Data().Size()
 	if payloadLen > available {
 		payloadLen = available
 	}
-	payload := buffer.NewWithData(network)
-	payload.AppendOwned(transport)
-	dataBuf := pkt.Data().AsBuffer()
+	payload := bufferv2.MakeWithView(network)
+	payload.Append(transport)
+	dataBuf := pkt.Data().ToBuffer()
 	payload.Merge(&dataBuf)
 	payload.Truncate(int64(payloadLen))
 

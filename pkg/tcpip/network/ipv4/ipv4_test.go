@@ -26,7 +26,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -299,7 +299,7 @@ func newICMPEchoPacket(t *testing.T, srcAddr, dstAddr tcpip.Address, ttl uint8, 
 	}
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: buffer.NewWithData(hdr.View()),
+		Payload: bufferv2.MakeWithData(hdr.View()),
 	})
 	pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
 
@@ -325,7 +325,7 @@ func checkFragements(t *testing.T, ep *channel.Endpoint, expectedFragments []fra
 	}
 
 	// The forwarded packet's TTL will have been decremented.
-	ipHeader := header.IPv4(requestPkt.NetworkHeader().View())
+	ipHeader := header.IPv4(requestPkt.NetworkHeader().Slice())
 	ipHeader.SetTTL(ipHeader.TTL() - 1)
 
 	// Forwarded packets have available header bytes equalling the sum of the
@@ -549,7 +549,9 @@ func TestForwarding(t *testing.T) {
 					t.Fatalf("Expected ICMP packet type %d through incoming NIC", test.icmpError.icmpType)
 				}
 
-				checker.IPv4(t, stack.PayloadSince(reply.NetworkHeader()),
+				payload := stack.PayloadSince(reply.NetworkHeader())
+				defer payload.Release()
+				checker.IPv4(t, payload,
 					checker.SrcAddr(incomingIPv4Addr.Address),
 					checker.DstAddr(test.srcAddr),
 					checker.TTL(ipv4.DefaultTTL),
@@ -576,7 +578,9 @@ func TestForwarding(t *testing.T) {
 					t.Fatal("Expected ICMP Echo packet through outgoing NIC")
 				}
 
-				checker.IPv4(t, stack.PayloadSince(reply.NetworkHeader()),
+				payload := stack.PayloadSince(reply.NetworkHeader())
+				defer payload.Release()
+				checker.IPv4(t, payload,
 					checker.SrcAddr(test.srcAddr),
 					checker.DstAddr(test.dstAddr),
 					checker.TTL(test.TTL-1),
@@ -731,7 +735,9 @@ func TestFragmentForwarding(t *testing.T) {
 					t.Fatalf("Expected ICMP packet type %d through incoming NIC", test.icmpError.icmpType)
 				}
 
-				checker.IPv4(t, stack.PayloadSince(reply.NetworkHeader()),
+				payload := stack.PayloadSince(reply.NetworkHeader())
+				defer payload.Release()
+				checker.IPv4(t, payload,
 					checker.SrcAddr(incomingIPv4Addr.Address),
 					checker.DstAddr(remoteIPv4Addr1),
 					checker.TTL(ipv4.DefaultTTL),
@@ -1072,7 +1078,9 @@ func TestMulticastForwardingOptions(t *testing.T) {
 					t.Fatal("Expected ICMP Echo packet through outgoing NIC")
 				}
 
-				checker.IPv4(t, stack.PayloadSince(reply.NetworkHeader()),
+				payload := stack.PayloadSince(reply.NetworkHeader())
+				defer payload.Release()
+				checker.IPv4(t, payload,
 					checker.SrcAddr(remoteIPv4Addr1),
 					checker.DstAddr(multicastIPv4Addr),
 					checker.TTL(packetTTL-1),
@@ -1802,7 +1810,7 @@ func TestIPv4Sanity(t *testing.T) {
 			}
 			ip.SetChecksum(^ipHeaderChecksum)
 			requestPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Payload: buffer.NewWithData(hdr.View()),
+				Payload: bufferv2.MakeWithData(hdr.View()),
 			})
 			defer requestPkt.DecRef()
 			e.InjectInbound(header.IPv4ProtocolNumber, requestPkt)
@@ -1833,7 +1841,8 @@ func TestIPv4Sanity(t *testing.T) {
 			}
 
 			// Make sure it's all in one buffer for checker.
-			replyIPHeader := header.IPv4(stack.PayloadSince(reply.NetworkHeader()))
+			replyIPHeader := stack.PayloadSince(reply.NetworkHeader())
+			defer replyIPHeader.Release()
 
 			// At this stage we only know it's probably an IP+ICMP header so verify
 			// that much.
@@ -1851,7 +1860,7 @@ func TestIPv4Sanity(t *testing.T) {
 			}
 
 			// OK it's ICMP. We can safely look at the type now.
-			replyICMPHeader := header.ICMPv4(replyIPHeader.Payload())
+			replyICMPHeader := header.ICMPv4(header.IPv4(replyIPHeader.AsSlice()).Payload())
 			switch replyICMPHeader.Type() {
 			case header.ICMPv4ParamProblem:
 				if !test.shouldFail {
@@ -1930,14 +1939,15 @@ func TestIPv4Sanity(t *testing.T) {
 func compareFragments(packets []*stack.PacketBuffer, sourcePacket *stack.PacketBuffer, mtu uint32, wantFragments []fragmentInfo, proto tcpip.TransportProtocolNumber, withIPHeader bool, expectedAvailableHeaderBytes int) error {
 	// Make a complete array of the sourcePacket packet.
 	var source header.IPv4
-	buf := sourcePacket.Buffer()
+	buf := sourcePacket.ToBuffer()
+	defer buf.Release()
 
 	// If the packet to be fragmented contains an IPv4 header, use that header for
 	// validating fragment headers. Else, use the header of the first fragment.
 	if withIPHeader {
 		source = header.IPv4(buf.Flatten())
 	} else {
-		source = header.IPv4(packets[0].NetworkHeader().View())
+		source = header.IPv4(packets[0].NetworkHeader().Slice())
 		source = append(source, buf.Flatten()...)
 	}
 
@@ -1948,10 +1958,12 @@ func compareFragments(packets []*stack.PacketBuffer, sourcePacket *stack.PacketB
 	sourceCopy.SetFlagsFragmentOffset(0, 0)
 	sourceCopy.SetTotalLength(0)
 	// Build up an array of the bytes sent.
-	var reassembledPayload buffer.Buffer
+	var reassembledPayload bufferv2.Buffer
+	defer reassembledPayload.Release()
 	for i, packet := range packets {
 		// Confirm that the packet is valid.
-		allBytes := packet.Buffer()
+		allBytes := packet.ToBuffer()
+		defer allBytes.Release()
 		fragmentIPHeader := header.IPv4(allBytes.Flatten())
 		if !fragmentIPHeader.IsValid(len(fragmentIPHeader)) {
 			return fmt.Errorf("fragment #%d: IP packet is invalid:\n%s", i, hex.Dump(fragmentIPHeader))
@@ -1977,7 +1989,7 @@ func compareFragments(packets []*stack.PacketBuffer, sourcePacket *stack.PacketB
 			sourceCopy.SetFlagsFragmentOffset(sourceCopy.Flags()&^header.IPv4FlagMoreFragments, wantFragments[i].offset)
 		}
 		reassembledPayload.Append(packet.TransportHeader().View())
-		reassembledPayload.Append(packet.Data().AsRange().ToOwnedView())
+		reassembledPayload.Append(packet.Data().AsRange().ToView())
 		// Clear out the checksum and length from the ip because we can't compare
 		// it.
 		sourceCopy.SetTotalLength(wantFragments[i].payloadSize + header.IPv4MinimumSize)
@@ -2532,7 +2544,7 @@ func TestInvalidFragments(t *testing.T) {
 				}
 
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Payload: buffer.NewWithData(hdr.View()),
+					Payload: bufferv2.MakeWithData(hdr.View()),
 				})
 				e.InjectInbound(header.IPv4ProtocolNumber, pkt)
 				pkt.DecRef()
@@ -2739,7 +2751,7 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 				NIC:         nicID,
 			}})
 
-			var firstFragmentSent buffer.Buffer
+			var firstFragmentSent bufferv2.Buffer
 			for _, f := range test.fragments {
 				pktSize := header.IPv4MinimumSize
 				hdr := prependable.New(pktSize)
@@ -2750,15 +2762,16 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 				ip.SetChecksum(0)
 				ip.SetChecksum(^ip.CalculateChecksum())
 
-				buf := buffer.NewWithData(hdr.View())
-				buf.Append(f.payload)
+				buf := bufferv2.MakeWithData(hdr.View())
+				buf.Append(bufferv2.NewViewWithData(f.payload))
 
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Payload: buf,
 				})
 
 				if firstFragmentSent.Size() == 0 && ip.FragmentOffset() == 0 {
-					firstFragmentSent = buffer.NewWithData(stack.PayloadSince(pkt.NetworkHeader()))
+					firstFragmentSent = bufferv2.MakeWithView(stack.PayloadSince(pkt.NetworkHeader()))
+					defer firstFragmentSent.Release()
 				}
 
 				e.InjectInbound(header.IPv4ProtocolNumber, pkt)
@@ -2781,7 +2794,9 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 				t.Fatalf("unexpected ICMP error message received: %#v", reply)
 			}
 
-			checker.IPv4(t, stack.PayloadSince(reply.NetworkHeader()),
+			payload := stack.PayloadSince(reply.NetworkHeader())
+			defer payload.Release()
+			checker.IPv4(t, payload,
 				checker.SrcAddr(addr2),
 				checker.DstAddr(addr1),
 				checker.IPFullLength(uint16(header.IPv4MinimumSize+header.ICMPv4MinimumSize+firstFragmentSent.Size())),
@@ -3247,8 +3262,8 @@ func TestReceiveFragments(t *testing.T) {
 				})
 				ip.SetChecksum(^ip.CalculateChecksum())
 
-				buf := buffer.NewWithData(hdr.View())
-				buf.Append(frag.payload)
+				buf := bufferv2.MakeWithData(hdr.View())
+				buf.Append(bufferv2.NewViewWithData(frag.payload))
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Payload: buf,
 				})
@@ -3419,7 +3434,7 @@ func TestWriteStats(t *testing.T) {
 			for i := 0; i < nPackets; i++ {
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					ReserveHeaderBytes: header.UDPMinimumSize + int(rt.MaxHeaderLength()),
-					Payload:            buffer.Buffer{},
+					Payload:            bufferv2.Buffer{},
 				})
 				defer pkt.DecRef()
 				pkt.TransportHeader().Push(header.UDPMinimumSize)
@@ -3550,7 +3565,7 @@ func TestPacketQueuing(t *testing.T) {
 				})
 				ip.SetChecksum(^ip.CalculateChecksum())
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Payload: buffer.NewWithData(hdr.View()),
+					Payload: bufferv2.MakeWithData(hdr.View()),
 				})
 				defer pkt.DecRef()
 				e.InjectInbound(ipv4.ProtocolNumber, pkt)
@@ -3567,7 +3582,9 @@ func TestPacketQueuing(t *testing.T) {
 				if p.EgressRoute.RemoteLinkAddress != host2NICLinkAddr {
 					t.Errorf("got p.EgressRoute.RemoteLinkAddress = %s, want = %s", p.EgressRoute.RemoteLinkAddress, host2NICLinkAddr)
 				}
-				checker.IPv4(t, stack.PayloadSince(p.NetworkHeader()),
+				payload := stack.PayloadSince(p.NetworkHeader())
+				defer payload.Release()
+				checker.IPv4(t, payload,
 					checker.SrcAddr(host1IPv4Addr.AddressWithPrefix.Address),
 					checker.DstAddr(host2IPv4Addr.AddressWithPrefix.Address),
 					checker.ICMPv4(
@@ -3596,7 +3613,7 @@ func TestPacketQueuing(t *testing.T) {
 				})
 				ip.SetChecksum(^ip.CalculateChecksum())
 				echoPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Payload: buffer.NewWithData(hdr.View()),
+					Payload: bufferv2.MakeWithData(hdr.View()),
 				})
 				defer echoPkt.DecRef()
 				e.InjectInbound(header.IPv4ProtocolNumber, echoPkt)
@@ -3613,7 +3630,9 @@ func TestPacketQueuing(t *testing.T) {
 				if p.EgressRoute.RemoteLinkAddress != host2NICLinkAddr {
 					t.Errorf("got p.EgressRoute.RemoteLinkAddress = %s, want = %s", p.EgressRoute.RemoteLinkAddress, host2NICLinkAddr)
 				}
-				checker.IPv4(t, stack.PayloadSince(p.NetworkHeader()),
+				payload := stack.PayloadSince(p.NetworkHeader())
+				defer payload.Release()
+				checker.IPv4(t, payload,
 					checker.SrcAddr(host1IPv4Addr.AddressWithPrefix.Address),
 					checker.DstAddr(host2IPv4Addr.AddressWithPrefix.Address),
 					checker.ICMPv4(
@@ -3664,7 +3683,7 @@ func TestPacketQueuing(t *testing.T) {
 				if p.EgressRoute.RemoteLinkAddress != header.EthernetBroadcastAddress {
 					t.Errorf("got p.EgressRoute.RemoteLinkAddress = %s, want = %s", p.EgressRoute.RemoteLinkAddress, header.EthernetBroadcastAddress)
 				}
-				rep := header.ARP(p.NetworkHeader().View())
+				rep := header.ARP(p.NetworkHeader().Slice())
 				p.DecRef()
 				if got := rep.Op(); got != header.ARPRequest {
 					t.Errorf("got Op() = %d, want = %d", got, header.ARPRequest)
@@ -3691,7 +3710,7 @@ func TestPacketQueuing(t *testing.T) {
 				copy(packet.HardwareAddressTarget(), host1NICLinkAddr)
 				copy(packet.ProtocolAddressTarget(), host1IPv4Addr.AddressWithPrefix.Address)
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Payload: buffer.NewWithData(hdr),
+					Payload: bufferv2.MakeWithData(hdr),
 				})
 				e.InjectInbound(arp.ProtocolNumber, pkt)
 				pkt.DecRef()
@@ -3907,7 +3926,9 @@ func TestIcmpRateLimit(t *testing.T) {
 				if got, want := p.NetworkProtocolNumber, header.IPv4ProtocolNumber; got != want {
 					t.Errorf("got p.NetworkProtocolNumber = %d, want = %d", got, want)
 				}
-				checker.IPv4(t, stack.PayloadSince(p.NetworkHeader()),
+				payload := stack.PayloadSince(p.NetworkHeader())
+				defer payload.Release()
+				checker.IPv4(t, payload,
 					checker.SrcAddr(host1IPv4Addr.AddressWithPrefix.Address),
 					checker.DstAddr(host2IPv4Addr.AddressWithPrefix.Address),
 					checker.ICMPv4(
@@ -3941,7 +3962,7 @@ func TestIcmpRateLimit(t *testing.T) {
 				p := e.Read()
 				if round >= icmpBurst {
 					if p != nil {
-						t.Errorf("got packet %x in round %d, expected ICMP rate limit to stop it", p.Data().Slices(), round)
+						t.Errorf("got packet %x in round %d, expected ICMP rate limit to stop it", p.Data().AsRange().ToSlice(), round)
 						p.DecRef()
 					}
 					return
@@ -3950,7 +3971,9 @@ func TestIcmpRateLimit(t *testing.T) {
 					t.Fatalf("expected unreachable in round %d, no packet read in endpoint", round)
 				}
 				defer p.DecRef()
-				checker.IPv4(t, stack.PayloadSince(p.NetworkHeader()),
+				payload := stack.PayloadSince(p.NetworkHeader())
+				defer payload.Release()
+				checker.IPv4(t, payload,
 					checker.SrcAddr(host1IPv4Addr.AddressWithPrefix.Address),
 					checker.DstAddr(host2IPv4Addr.AddressWithPrefix.Address),
 					checker.ICMPv4(
@@ -3963,7 +3986,7 @@ func TestIcmpRateLimit(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			for round := 0; round < icmpBurst+1; round++ {
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Payload: buffer.NewWithData(testCase.createPacket()),
+					Payload: bufferv2.MakeWithData(testCase.createPacket()),
 				})
 				e.InjectInbound(header.IPv4ProtocolNumber, pkt)
 				pkt.DecRef()

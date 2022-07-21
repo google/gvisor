@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
@@ -85,7 +86,7 @@ type segment struct {
 }
 
 func newIncomingSegment(id stack.TransportEndpointID, clock tcpip.Clock, pkt *stack.PacketBuffer) (*segment, error) {
-	hdr := header.TCP(pkt.TransportHeader().View())
+	hdr := header.TCP(pkt.TransportHeader().Slice())
 	netHdr := pkt.Network()
 	csum, csumValid, ok := header.TCPValid(
 		hdr,
@@ -120,19 +121,17 @@ func newIncomingSegment(id stack.TransportEndpointID, clock tcpip.Clock, pkt *st
 	return s, nil
 }
 
-func newOutgoingSegment(id stack.TransportEndpointID, clock tcpip.Clock, v []byte) *segment {
+func newOutgoingSegment(id stack.TransportEndpointID, clock tcpip.Clock, buf bufferv2.Buffer) *segment {
 	s := &segment{
 		id: id,
 	}
 	s.InitRefs()
 	s.rcvdTime = clock.NowMonotonic()
-	s.pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{})
-	s.pkt.Data().AppendView(v)
+	s.pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buf})
 	s.dataMemSize = s.pkt.MemSize()
 	return s
 }
 
-// clone creates a shallow clone of s not including its pkt.
 func (s *segment) clone() *segment {
 	t := &segment{
 		id:             s.id,
@@ -148,7 +147,7 @@ func (s *segment) clone() *segment {
 		dataMemSize:    s.dataMemSize,
 	}
 	t.InitRefs()
-	t.pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{})
+	t.pkt = s.pkt.Clone()
 	return t
 }
 

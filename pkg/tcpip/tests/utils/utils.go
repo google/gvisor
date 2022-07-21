@@ -18,7 +18,7 @@ package utils
 import (
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
@@ -209,7 +209,7 @@ var _ stack.LinkEndpoint = (*EndpointWithDestinationCheck)(nil)
 
 // DeliverNetworkPacket implements stack.NetworkDispatcher.
 func (e *EndpointWithDestinationCheck) DeliverNetworkPacket(proto tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
-	if dst := header.Ethernet(pkt.LinkHeader().View()).DestinationAddress(); dst == e.Endpoint.LinkAddress() || dst == header.EthernetBroadcastAddress || header.IsMulticastEthernetAddress(dst) {
+	if dst := header.Ethernet(pkt.LinkHeader().Slice()).DestinationAddress(); dst == e.Endpoint.LinkAddress() || dst == header.EthernetBroadcastAddress || header.IsMulticastEthernetAddress(dst) {
 		e.Endpoint.DeliverNetworkPacket(proto, pkt)
 	}
 }
@@ -379,7 +379,7 @@ func ICMPv4Echo(src, dst tcpip.Address, ttl uint8, ty header.ICMPv4Type) []byte 
 // the provided endpoint.
 func RxICMPv4EchoRequest(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8) {
 	newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: buffer.NewWithData(ICMPv4Echo(src, dst, ttl, header.ICMPv4Echo)),
+		Payload: bufferv2.MakeWithData(ICMPv4Echo(src, dst, ttl, header.ICMPv4Echo)),
 	})
 	defer newPkt.DecRef()
 	e.InjectInbound(header.IPv4ProtocolNumber, newPkt)
@@ -389,7 +389,7 @@ func RxICMPv4EchoRequest(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8)
 // the provided endpoint.
 func RxICMPv4EchoReply(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8) {
 	newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: buffer.NewWithData(ICMPv4Echo(src, dst, ttl, header.ICMPv4EchoReply)),
+		Payload: bufferv2.MakeWithData(ICMPv4Echo(src, dst, ttl, header.ICMPv4EchoReply)),
 	})
 	defer newPkt.DecRef()
 	e.InjectInbound(header.IPv4ProtocolNumber, newPkt)
@@ -423,7 +423,7 @@ func ICMPv6Echo(src, dst tcpip.Address, ttl uint8, ty header.ICMPv6Type) []byte 
 // the provided endpoint.
 func RxICMPv6EchoRequest(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8) {
 	newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: buffer.NewWithData(ICMPv6Echo(src, dst, ttl, header.ICMPv6EchoRequest)),
+		Payload: bufferv2.MakeWithData(ICMPv6Echo(src, dst, ttl, header.ICMPv6EchoRequest)),
 	})
 	defer newPkt.DecRef()
 	e.InjectInbound(header.IPv6ProtocolNumber, newPkt)
@@ -433,7 +433,7 @@ func RxICMPv6EchoRequest(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8)
 // the provided endpoint.
 func RxICMPv6EchoReply(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8) {
 	newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: buffer.NewWithData(ICMPv6Echo(src, dst, ttl, header.ICMPv6EchoReply)),
+		Payload: bufferv2.MakeWithData(ICMPv6Echo(src, dst, ttl, header.ICMPv6EchoReply)),
 	})
 	defer newPkt.DecRef()
 	e.InjectInbound(header.IPv6ProtocolNumber, newPkt)

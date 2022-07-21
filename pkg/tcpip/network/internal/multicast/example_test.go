@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -129,7 +129,7 @@ func deliverPktLocally(*stack.PacketBuffer) {
 
 func newPacketBuffer(body string) *stack.PacketBuffer {
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: buffer.NewWithData([]byte(body)),
+		Payload: bufferv2.MakeWithData([]byte(body)),
 	})
 }
 

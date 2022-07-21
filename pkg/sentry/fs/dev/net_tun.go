@@ -15,8 +15,11 @@
 package dev
 
 import (
+	"io"
+
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -135,8 +138,8 @@ func (n *netTunFileOperations) Write(ctx context.Context, file *fs.File, src use
 	if src.NumBytes() == 0 {
 		return 0, unix.EINVAL
 	}
-	data := make([]byte, src.NumBytes())
-	if _, err := src.CopyIn(ctx, data); err != nil {
+	data := bufferv2.NewView(int(src.NumBytes()))
+	if _, err := io.CopyN(data, src.Reader(ctx), src.NumBytes()); err != nil {
 		return 0, err
 	}
 	return n.device.Write(data)
@@ -148,8 +151,10 @@ func (n *netTunFileOperations) Read(ctx context.Context, file *fs.File, dst user
 	if err != nil {
 		return 0, err
 	}
-	bytesCopied, err := dst.CopyOut(ctx, data)
-	if bytesCopied > 0 && bytesCopied < len(data) {
+	defer data.Release()
+	dataSize := data.Size()
+	bytesCopied, err := io.CopyN(dst.Writer(ctx), data, dst.NumBytes())
+	if bytesCopied > 0 && bytesCopied < int64(dataSize) {
 		// Not an error for partial copying. Packet truncated.
 		err = nil
 	}

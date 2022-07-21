@@ -21,7 +21,7 @@ import (
 	"testing"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -33,7 +33,9 @@ import (
 func TestInjectableEndpointRawDispatch(t *testing.T) {
 	endpoint, sock, dstIP := makeTestInjectableEndpoint(t)
 
-	endpoint.InjectOutbound(dstIP, []byte{0xFA})
+	v := bufferv2.NewViewWithData([]byte{0xFA})
+	defer v.Release()
+	endpoint.InjectOutbound(dstIP, v)
 
 	buf := make([]byte, ipv4.MaxTotalSize)
 	bytesRead, err := sock.Read(buf)
@@ -50,7 +52,7 @@ func TestInjectableEndpointDispatch(t *testing.T) {
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: 1,
-		Payload:            buffer.NewWithData([]byte{0xFB}),
+		Payload:            bufferv2.MakeWithData([]byte{0xFB}),
 	})
 	defer pkt.DecRef()
 	pkt.TransportHeader().Push(1)[0] = 0xFA

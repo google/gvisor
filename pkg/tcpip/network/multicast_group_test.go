@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -83,7 +83,8 @@ var (
 func validateMLDPacket(t *testing.T, p *stack.PacketBuffer, remoteAddress tcpip.Address, mldType uint8, maxRespTime byte, groupAddress tcpip.Address) {
 	t.Helper()
 
-	payload := header.IPv6(stack.PayloadSince(p.NetworkHeader()))
+	payload := stack.PayloadSince(p.NetworkHeader())
+	defer payload.Release()
 	checker.IPv6WithExtHdr(t, payload,
 		checker.IPv6ExtHdr(
 			checker.IPv6HopByHopExtensionHeader(checker.IPv6RouterAlert(header.IPv6RouterAlertMLD)),
@@ -104,7 +105,8 @@ func validateMLDPacket(t *testing.T, p *stack.PacketBuffer, remoteAddress tcpip.
 func validateIGMPPacket(t *testing.T, p *stack.PacketBuffer, remoteAddress tcpip.Address, igmpType uint8, maxRespTime byte, groupAddress tcpip.Address) {
 	t.Helper()
 
-	payload := header.IPv4(stack.PayloadSince(p.NetworkHeader()))
+	payload := stack.PayloadSince(p.NetworkHeader())
+	defer payload.Release()
 	checker.IPv4(t, payload,
 		checker.SrcAddr(stackIPv4Addr),
 		checker.DstAddr(remoteAddress),
@@ -262,7 +264,7 @@ func createAndInjectIGMPPacket(e *channel.Endpoint, igmpType byte, maxRespTime b
 	igmp.SetChecksum(header.IGMPCalculateChecksum(igmp))
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: buffer.NewWithData(buf),
+		Payload: bufferv2.MakeWithData(buf),
 	})
 	e.InjectInbound(ipv4.ProtocolNumber, pkt)
 	pkt.DecRef()
@@ -303,7 +305,7 @@ func createAndInjectMLDPacket(e *channel.Endpoint, mldType uint8, maxRespDelay b
 	}))
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: buffer.NewWithData(buf),
+		Payload: bufferv2.MakeWithData(buf),
 	})
 	e.InjectInbound(ipv6.ProtocolNumber, pkt)
 	pkt.DecRef()
@@ -1033,7 +1035,9 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 			getAndCheckGroupAddress: func(t *testing.T, seen map[tcpip.Address]bool, p *stack.PacketBuffer) tcpip.Address {
 				t.Helper()
 
-				ipv4 := header.IPv4(stack.PayloadSince(p.NetworkHeader()))
+				payload := stack.PayloadSince(p.NetworkHeader())
+				defer payload.Release()
+				ipv4 := header.IPv4(payload.AsSlice())
 				if got := tcpip.TransportProtocolNumber(ipv4.Protocol()); got != header.IGMPProtocolNumber {
 					t.Fatalf("got ipv4.Protocol() = %d, want = %d", got, header.IGMPProtocolNumber)
 				}
@@ -1073,12 +1077,13 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 			},
 			getAndCheckGroupAddress: func(t *testing.T, seen map[tcpip.Address]bool, p *stack.PacketBuffer) tcpip.Address {
 				t.Helper()
-
-				ipv6 := header.IPv6(stack.PayloadSince(p.NetworkHeader()))
+				payload := stack.PayloadSince(p.NetworkHeader())
+				defer payload.Release()
+				ipv6 := header.IPv6(payload.AsSlice())
 
 				ipv6HeaderIter := header.MakeIPv6PayloadIterator(
 					header.IPv6ExtensionHeaderIdentifier(ipv6.NextHeader()),
-					buffer.NewWithData(ipv6.Payload()),
+					bufferv2.MakeWithData(ipv6.Payload()),
 				)
 
 				var transport header.IPv6RawPayloadHeader
@@ -1090,6 +1095,7 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 					if done {
 						t.Fatalf("ipv6HeaderIter.Next() = (%T, %t, _), want = (_, false, _)", h, done)
 					}
+					defer h.Release()
 					if t, ok := h.(header.IPv6RawPayloadHeader); ok {
 						transport = t
 						break

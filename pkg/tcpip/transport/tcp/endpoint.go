@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -1492,7 +1493,7 @@ func (e *endpoint) isEndpointWritableLocked() (int, tcpip.Error) {
 // readFromPayloader reads a slice from the Payloader.
 // +checklocks:e.mu
 // +checklocks:e.sndQueueInfo.sndQueueMu
-func (e *endpoint) readFromPayloader(p tcpip.Payloader, opts tcpip.WriteOptions, avail int) ([]byte, tcpip.Error) {
+func (e *endpoint) readFromPayloader(p tcpip.Payloader, opts tcpip.WriteOptions, avail int) (bufferv2.Buffer, tcpip.Error) {
 	// We can release locks while copying data.
 	//
 	// This is not possible if atomic is set, because we can't allow the
@@ -1507,18 +1508,18 @@ func (e *endpoint) readFromPayloader(p tcpip.Payloader, opts tcpip.WriteOptions,
 	}
 
 	// Fetch data.
+	var payload bufferv2.Buffer
 	if l := p.Len(); l < avail {
 		avail = l
 	}
 	if avail == 0 {
-		return nil, nil
+		return payload, nil
 	}
-	v := make([]byte, avail)
-	n, err := p.Read(v)
-	if err != nil && err != io.EOF {
-		return nil, &tcpip.ErrBadBuffer{}
+	if _, err := payload.WriteFromReader(p, int64(avail)); err != nil {
+		payload.Release()
+		return bufferv2.Buffer{}, &tcpip.ErrBadBuffer{}
 	}
-	return v[:n], nil
+	return payload, nil
 }
 
 // queueSegment reads data from the payloader and returns a segment to be sent.
@@ -1533,13 +1534,13 @@ func (e *endpoint) queueSegment(p tcpip.Payloader, opts tcpip.WriteOptions) (*se
 		return nil, 0, err
 	}
 
-	v, err := e.readFromPayloader(p, opts, avail)
+	buf, err := e.readFromPayloader(p, opts, avail)
 	if err != nil {
 		return nil, 0, err
 	}
 
 	// Do not queue zero length segments.
-	if len(v) == 0 {
+	if buf.Size() == 0 {
 		return nil, 0, nil
 	}
 
@@ -1550,23 +1551,25 @@ func (e *endpoint) queueSegment(p tcpip.Payloader, opts tcpip.WriteOptions) (*se
 		avail, err := e.isEndpointWritableLocked()
 		if err != nil {
 			e.stats.WriteErrors.WriteClosed.Increment()
+			buf.Release()
 			return nil, 0, err
 		}
 
-		// Discard any excess data copied in due to avail being reduced due
-		// to a simultaneous write call to the socket.
-		if avail < len(v) {
-			v = v[:avail]
+		// A simultaneous call to write on the socket can reduce avail. Discard
+		// excess data copied if this is the case.
+		if int64(avail) < buf.Size() {
+			buf.Truncate(int64(avail))
 		}
 	}
 
 	// Add data to the send queue.
-	s := newOutgoingSegment(e.TransportEndpointInfo.ID, e.stack.Clock(), v)
-	e.sndQueueInfo.SndBufUsed += len(v)
+	size := int(buf.Size())
+	s := newOutgoingSegment(e.TransportEndpointInfo.ID, e.stack.Clock(), buf)
+	e.sndQueueInfo.SndBufUsed += size
 	s.IncRef()
 	e.snd.writeList.PushBack(s)
 
-	return s, len(v), nil
+	return s, size, nil
 }
 
 // Write writes data to the endpoint's peer.
@@ -2489,7 +2492,7 @@ func (e *endpoint) shutdownLocked(flags tcpip.ShutdownFlags) tcpip.Error {
 			}
 
 			// Queue fin segment.
-			s := newOutgoingSegment(e.TransportEndpointInfo.ID, e.stack.Clock(), nil)
+			s := newOutgoingSegment(e.TransportEndpointInfo.ID, e.stack.Clock(), bufferv2.Buffer{})
 			e.snd.writeList.PushBack(s)
 			// Mark endpoint as closed.
 			e.sndQueueInfo.SndClosed = true
@@ -2811,7 +2814,7 @@ func (e *endpoint) onICMPError(err tcpip.Error, transErr stack.TransportError, p
 			Cause: transErr,
 			// Linux passes the payload with the TCP header. We don't know if the TCP
 			// header even exists, it may not for fragmented packets.
-			Payload: pkt.Data().AsRange().ToOwnedView(),
+			Payload: pkt.Data().AsRange().ToView(),
 			Dst: tcpip.FullAddress{
 				NIC:  pkt.NICID,
 				Addr: e.TransportEndpointInfo.ID.RemoteAddress,

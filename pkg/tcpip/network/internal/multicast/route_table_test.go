@@ -21,7 +21,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -47,7 +47,7 @@ var (
 
 func newPacketBuffer(body string) *stack.PacketBuffer {
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: buffer.NewWithData([]byte(body)),
+		Payload: bufferv2.MakeWithData([]byte(body)),
 	})
 }
 
@@ -259,7 +259,7 @@ func TestAddInstalledRouteWithPending(t *testing.T) {
 
 	cmpOpts := []cmp.Option{
 		cmp.Transformer("AsSlices", func(pkt *stack.PacketBuffer) [][]byte {
-			return pkt.Slices()
+			return pkt.AsSlices()
 		}),
 		cmp.Comparer(func(a [][]byte, b [][]byte) bool {
 			return cmp.Equal(a, b)

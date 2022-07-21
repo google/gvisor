@@ -166,9 +166,11 @@ func getEndpointAddr(protocol tcpip.NetworkProtocolNumber, addrType endpointAddr
 }
 
 func checkEchoRequest(t *testing.T, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer, srcAddr, dstAddr tcpip.Address, ttl uint8) {
+	payload := stack.PayloadSince(pkt.NetworkHeader())
+	defer payload.Release()
 	switch protocol {
 	case ipv4.ProtocolNumber:
-		checker.IPv4(t, stack.PayloadSince(pkt.NetworkHeader()),
+		checker.IPv4(t, payload,
 			checker.SrcAddr(srcAddr),
 			checker.DstAddr(dstAddr),
 			checker.TTL(ttl),
@@ -177,7 +179,7 @@ func checkEchoRequest(t *testing.T, protocol tcpip.NetworkProtocolNumber, pkt *s
 			),
 		)
 	case ipv6.ProtocolNumber:
-		checker.IPv6(t, stack.PayloadSince(pkt.NetworkHeader()),
+		checker.IPv6(t, payload,
 			checker.SrcAddr(srcAddr),
 			checker.DstAddr(dstAddr),
 			checker.TTL(ttl),
@@ -191,9 +193,11 @@ func checkEchoRequest(t *testing.T, protocol tcpip.NetworkProtocolNumber, pkt *s
 }
 
 func checkEchoReply(t *testing.T, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer, srcAddr, dstAddr tcpip.Address) {
+	payload := stack.PayloadSince(pkt.NetworkHeader())
+	defer payload.Release()
 	switch protocol {
 	case ipv4.ProtocolNumber:
-		checker.IPv4(t, stack.PayloadSince(pkt.NetworkHeader()),
+		checker.IPv4(t, payload,
 			checker.SrcAddr(srcAddr),
 			checker.DstAddr(dstAddr),
 			checker.ICMPv4(
@@ -201,7 +205,7 @@ func checkEchoReply(t *testing.T, protocol tcpip.NetworkProtocolNumber, pkt *sta
 			),
 		)
 	case ipv6.ProtocolNumber:
-		checker.IPv6(t, stack.PayloadSince(pkt.NetworkHeader()),
+		checker.IPv6(t, payload,
 			checker.SrcAddr(srcAddr),
 			checker.DstAddr(dstAddr),
 			checker.ICMPv6(

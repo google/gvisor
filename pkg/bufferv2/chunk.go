@@ -77,6 +77,8 @@ func getChunkPool(size int) *sync.Pool {
 }
 
 // Chunk represents a slice of pooled memory.
+//
+// +stateify savable
 type chunk struct {
 	chunkRefs
 	data []byte

@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -1849,7 +1849,9 @@ func (ndp *ndpState) startSolicitingRouters() {
 				}
 			}
 			payloadSize := header.ICMPv6HeaderSize + header.NDPRSMinimumSize + optsSerializer.Length()
-			icmpData := header.ICMPv6(make([]byte, payloadSize))
+			icmpView := bufferv2.NewView(payloadSize)
+			icmpView.Grow(payloadSize)
+			icmpData := header.ICMPv6(icmpView.AsSlice())
 			icmpData.SetType(header.ICMPv6RouterSolicit)
 			rs := header.NDPRouterSolicit(icmpData.MessageBody())
 			rs.Options().Serialize(optsSerializer)
@@ -1861,7 +1863,7 @@ func (ndp *ndpState) startSolicitingRouters() {
 
 			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 				ReserveHeaderBytes: int(ndp.ep.MaxHeaderLength()),
-				Payload:            buffer.NewWithData(icmpData),
+				Payload:            bufferv2.MakeWithView(icmpView),
 			})
 			defer pkt.DecRef()
 
@@ -1966,7 +1968,9 @@ func (ndp *ndpState) SendDADMessage(addr tcpip.Address, nonce []byte) tcpip.Erro
 }
 
 func (e *endpoint) sendNDPNS(srcAddr, dstAddr, targetAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress, opts header.NDPOptionsSerializer) tcpip.Error {
-	icmp := header.ICMPv6(make([]byte, header.ICMPv6NeighborSolicitMinimumSize+opts.Length()))
+	icmpView := bufferv2.NewView(header.ICMPv6NeighborSolicitMinimumSize + opts.Length())
+	icmpView.Grow(header.ICMPv6NeighborSolicitMinimumSize + opts.Length())
+	icmp := header.ICMPv6(icmpView.AsSlice())
 	icmp.SetType(header.ICMPv6NeighborSolicit)
 	ns := header.NDPNeighborSolicit(icmp.MessageBody())
 	ns.SetTargetAddress(targetAddr)
@@ -1979,7 +1983,7 @@ func (e *endpoint) sendNDPNS(srcAddr, dstAddr, targetAddr tcpip.Address, remoteL
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(e.MaxHeaderLength()),
-		Payload:            buffer.NewWithData(icmp),
+		Payload:            bufferv2.MakeWithView(icmpView),
 	})
 	defer pkt.DecRef()
 

@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -49,7 +49,8 @@ var (
 func validateIgmpPacket(t *testing.T, pkt *stack.PacketBuffer, igmpType header.IGMPType, maxRespTime byte, srcAddr, dstAddr, groupAddress tcpip.Address) {
 	t.Helper()
 
-	payload := header.IPv4(stack.PayloadSince(pkt.NetworkHeader()))
+	payload := stack.PayloadSince(pkt.NetworkHeader())
+	defer payload.Release()
 	checker.IPv4(t, payload,
 		checker.SrcAddr(srcAddr),
 		checker.DstAddr(dstAddr),
@@ -129,7 +130,7 @@ func createAndInjectIGMPPacket(e *channel.Endpoint, igmpType header.IGMPType, ma
 	igmp.SetGroupAddress(groupAddress)
 	igmp.SetChecksum(header.IGMPCalculateChecksum(igmp))
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: buffer.NewWithData(buf),
+		Payload: bufferv2.MakeWithData(buf),
 	})
 	e.InjectInbound(ipv4.ProtocolNumber, pkt)
 	pkt.DecRef()

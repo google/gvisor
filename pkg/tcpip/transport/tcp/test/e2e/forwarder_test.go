@@ -137,8 +137,9 @@ func TestForwarderFailedConnect(t *testing.T) {
 
 	// Receive the SYN-ACK reply. Make sure MSS and other expected options
 	// are present.
-	b := c.GetPacket()
-	tcp := header.TCP(header.IPv4(b).Payload())
+	v := c.GetPacket()
+	defer v.Release()
+	tcp := header.TCP(header.IPv4(v.AsSlice()).Payload())
 	c.IRS = seqnum.Value(tcp.SequenceNumber())
 
 	tcpCheckers := []checker.TransportChecker{
@@ -147,7 +148,7 @@ func TestForwarderFailedConnect(t *testing.T) {
 		checker.TCPFlags(header.TCPFlagAck | header.TCPFlagSyn),
 		checker.TCPAckNum(uint32(iss) + 1),
 	}
-	checker.IPv4(t, b, checker.TCP(tcpCheckers...))
+	checker.IPv4(t, v, checker.TCP(tcpCheckers...))
 
 	// Now send an active RST to abort the handshake.
 	c.SendPacket(nil, &context.Headers{

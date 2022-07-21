@@ -98,7 +98,7 @@ func (*TCPMatcher) name() string {
 func (tm *TCPMatcher) Match(hook stack.Hook, pkt *stack.PacketBuffer, _, _ string) (bool, bool) {
 	switch pkt.NetworkProtocolNumber {
 	case header.IPv4ProtocolNumber:
-		netHeader := header.IPv4(pkt.NetworkHeader().View())
+		netHeader := header.IPv4(pkt.NetworkHeader().Slice())
 		if netHeader.TransportProtocol() != header.TCPProtocolNumber {
 			return false, false
 		}
@@ -115,7 +115,7 @@ func (tm *TCPMatcher) Match(hook stack.Hook, pkt *stack.PacketBuffer, _, _ strin
 		// As in Linux, we do not perform an IPv6 fragment check. See
 		// xt_action_param.fragoff in
 		// include/linux/netfilter/x_tables.h.
-		if header.IPv6(pkt.NetworkHeader().View()).TransportProtocol() != header.TCPProtocolNumber {
+		if header.IPv6(pkt.NetworkHeader().Slice()).TransportProtocol() != header.TCPProtocolNumber {
 			return false, false
 		}
 
@@ -124,7 +124,7 @@ func (tm *TCPMatcher) Match(hook stack.Hook, pkt *stack.PacketBuffer, _, _ strin
 		return false, false
 	}
 
-	tcpHeader := header.TCP(pkt.TransportHeader().View())
+	tcpHeader := header.TCP(pkt.TransportHeader().Slice())
 	if len(tcpHeader) < header.TCPMinimumSize {
 		// There's no valid TCP header here, so we drop the packet immediately.
 		return false, true

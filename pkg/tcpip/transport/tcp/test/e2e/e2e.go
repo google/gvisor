@@ -69,11 +69,12 @@ func CheckBrokenUpWrite(t *testing.T, c *context.Context, maxPayload int) {
 	numPackets := 0
 	iss := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
 	for bytesReceived != dataLen {
-		b := c.GetPacket()
+		v := c.GetPacket()
+		defer v.Release()
 		numPackets++
-		tcpHdr := header.TCP(header.IPv4(b).Payload())
+		tcpHdr := header.TCP(header.IPv4(v.AsSlice()).Payload())
 		payloadLen := len(tcpHdr.Payload())
-		checker.IPv4(t, b,
+		checker.IPv4(t, v,
 			checker.TCP(
 				checker.DstPort(context.TestPort),
 				checker.TCPSeqNum(uint32(c.IRS)+1+uint32(bytesReceived)),
@@ -202,14 +203,15 @@ func TestV4Connect(t *testing.T, c *context.Context, checkers ...checker.Network
 	}
 
 	// Receive SYN packet.
-	b := c.GetPacket()
+	v := c.GetPacket()
+	defer v.Release()
 	synCheckers := append(checkers, checker.TCP(
 		checker.DstPort(context.TestPort),
 		checker.TCPFlags(header.TCPFlagSyn),
 	))
-	checker.IPv4(t, b, synCheckers...)
+	checker.IPv4(t, v, synCheckers...)
 
-	tcp := header.TCP(header.IPv4(b).Payload())
+	tcp := header.TCP(header.IPv4(v.AsSlice()).Payload())
 	c.IRS = seqnum.Value(tcp.SequenceNumber())
 
 	iss := seqnum.Value(789)
@@ -229,7 +231,10 @@ func TestV4Connect(t *testing.T, c *context.Context, checkers ...checker.Network
 		checker.TCPSeqNum(uint32(c.IRS)+1),
 		checker.TCPAckNum(uint32(iss)+1),
 	))
-	checker.IPv4(t, c.GetPacket(), ackCheckers...)
+
+	v = c.GetPacket()
+	defer v.Release()
+	checker.IPv4(t, v, ackCheckers...)
 
 	// Wait for connection to be established.
 	select {
@@ -255,14 +260,15 @@ func TestV6Connect(t *testing.T, c *context.Context, checkers ...checker.Network
 	}
 
 	// Receive SYN packet.
-	b := c.GetV6Packet()
+	v := c.GetV6Packet()
+	defer v.Release()
 	synCheckers := append(checkers, checker.TCP(
 		checker.DstPort(context.TestPort),
 		checker.TCPFlags(header.TCPFlagSyn),
 	))
-	checker.IPv6(t, b, synCheckers...)
+	checker.IPv6(t, v, synCheckers...)
 
-	tcp := header.TCP(header.IPv6(b).Payload())
+	tcp := header.TCP(header.IPv6(v.AsSlice()).Payload())
 	c.IRS = seqnum.Value(tcp.SequenceNumber())
 
 	iss := seqnum.Value(789)
@@ -282,7 +288,9 @@ func TestV6Connect(t *testing.T, c *context.Context, checkers ...checker.Network
 		checker.TCPSeqNum(uint32(c.IRS)+1),
 		checker.TCPAckNum(uint32(iss)+1),
 	))
-	checker.IPv6(t, c.GetV6Packet(), ackCheckers...)
+	v = c.GetV6Packet()
+	defer v.Release()
+	checker.IPv6(t, v, ackCheckers...)
 
 	// Wait for connection to be established.
 	select {
