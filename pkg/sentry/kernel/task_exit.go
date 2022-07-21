@@ -214,7 +214,7 @@ func (*runExitMain) execute(t *Task) taskRunState {
 			info.ContextData = &pb.ContextData{}
 			LoadSeccheckData(t, fields.Context, info.ContextData)
 		}
-		seccheck.Global.SendToCheckers(func(c seccheck.Checker) error {
+		seccheck.Global.SentToSinks(func(c seccheck.Sink) error {
 			return c.TaskExit(t, fields, info)
 		})
 	}
@@ -668,7 +668,7 @@ func (t *Task) exitNotifyLocked(fromPtraceDetach bool) {
 			// Clone or Exec events for the initial process.
 			if t.tg != t.k.globalInit && seccheck.Global.Enabled(seccheck.PointExitNotifyParent) {
 				mask, info := getExitNotifyParentSeccheckInfo(t)
-				if err := seccheck.Global.SendToCheckers(func(c seccheck.Checker) error {
+				if err := seccheck.Global.SentToSinks(func(c seccheck.Sink) error {
 					return c.ExitNotifyParent(t, mask, info)
 				}); err != nil {
 					log.Infof("Ignoring error from ExitNotifyParent point: %v", err)

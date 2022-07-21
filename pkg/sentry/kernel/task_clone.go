@@ -253,7 +253,7 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 
 	if seccheck.Global.Enabled(seccheck.PointClone) {
 		mask, info := getCloneSeccheckInfo(t, nt, args.Flags)
-		if err := seccheck.Global.SendToCheckers(func(c seccheck.Checker) error {
+		if err := seccheck.Global.SentToSinks(func(c seccheck.Sink) error {
 			return c.Clone(t, mask, info)
 		}); err != nil {
 			// nt has been visible to the rest of the system since NewTask, so

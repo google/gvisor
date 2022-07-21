@@ -21,8 +21,8 @@ import (
 	"path/filepath"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
-	"gvisor.dev/gvisor/pkg/sentry/seccheck/checkers/remote/server"
-	"gvisor.dev/gvisor/pkg/sentry/seccheck/checkers/remote/wire"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck/sinks/remote/server"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck/sinks/remote/wire"
 )
 
 // Save implements the functionality required for the "save" command.

@@ -8,9 +8,9 @@ go_library(
     srcs = ["server.go"],
     visibility = ["//:sandbox"],
     deps = [
-        "//pkg/sentry/seccheck/checkers/remote/server",
-        "//pkg/sentry/seccheck/checkers/remote/wire",
         "//pkg/sentry/seccheck/points:points_go_proto",
+        "//pkg/sentry/seccheck/sinks/remote/server",
+        "//pkg/sentry/seccheck/sinks/remote/wire",
         "//pkg/sync",
     ],
 )

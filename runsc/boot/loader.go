@@ -649,7 +649,7 @@ func (l *Loader) run() error {
 				evt.ContextData = &pb.ContextData{}
 				kernel.LoadSeccheckData(tg.Leader(), fields.Context, evt.ContextData)
 			}
-			_ = seccheck.Global.SendToCheckers(func(c seccheck.Checker) error {
+			_ = seccheck.Global.SentToSinks(func(c seccheck.Sink) error {
 				return c.ContainerStart(context.Background(), fields, &evt)
 			})
 		}
@@ -797,7 +797,7 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 			evt.ContextData = &pb.ContextData{}
 			kernel.LoadSeccheckData(ep.tg.Leader(), fields.Context, evt.ContextData)
 		}
-		_ = seccheck.Global.SendToCheckers(func(c seccheck.Checker) error {
+		_ = seccheck.Global.SentToSinks(func(c seccheck.Sink) error {
 			return c.ContainerStart(context.Background(), fields, &evt)
 		})
 	}

@@ -30,9 +30,9 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
-	"gvisor.dev/gvisor/pkg/sentry/seccheck/checkers/remote/test"
-	"gvisor.dev/gvisor/pkg/sentry/seccheck/checkers/remote/wire"
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck/sinks/remote/test"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck/sinks/remote/wire"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
@@ -290,12 +290,12 @@ func TestConfig(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var endpoint fd.FD
-			checker, err := new(tc.config, &endpoint)
+			sink, err := new(tc.config, &endpoint)
 			if len(tc.err) == 0 {
 				if err != nil {
 					t.Fatalf("new(%q): %v", tc.config, err)
 				}
-				got := checker.(*remote)
+				got := sink.(*remote)
 				got.endpoint = nil
 				if *got != *tc.want {
 					t.Errorf("wrong remote: want: %+v, got: %+v", tc.want, got)
