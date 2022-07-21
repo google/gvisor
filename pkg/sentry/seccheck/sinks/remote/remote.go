@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package remote defines a seccheck.Checker that serializes points to a remote
+// Package remote defines a seccheck.Sink that serializes points to a remote
 // process. Points are serialized using the protobuf format, asynchronously.
 package remote
 
@@ -31,8 +31,8 @@ import (
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
-	"gvisor.dev/gvisor/pkg/sentry/seccheck/checkers/remote/wire"
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck/sinks/remote/wire"
 )
 
 const name = "remote"
@@ -60,7 +60,7 @@ type remote struct {
 	maxBackoff     time.Duration
 }
 
-var _ seccheck.Checker = (*remote)(nil)
+var _ seccheck.Sink = (*remote)(nil)
 
 // setupSink starts the connection to the remote process and returns a file that
 // can be used to communicate with it. The caller is responsible to close to
@@ -149,8 +149,8 @@ func parseDuration(config map[string]interface{}, name string) (bool, time.Durat
 	return true, rv, nil
 }
 
-// new creates a new Remote checker.
-func new(config map[string]interface{}, endpoint *fd.FD) (seccheck.Checker, error) {
+// new creates a new Remote sink.
+func new(config map[string]interface{}, endpoint *fd.FD) (seccheck.Sink, error) {
 	if endpoint == nil {
 		return nil, fmt.Errorf("remote sink requires an endpoint")
 	}
@@ -191,13 +191,13 @@ func (*remote) Name() string {
 	return name
 }
 
-func (r *remote) Status() seccheck.CheckerStatus {
-	return seccheck.CheckerStatus{
+func (r *remote) Status() seccheck.SinkStatus {
+	return seccheck.SinkStatus{
 		DroppedCount: uint64(r.droppedCount.Load()),
 	}
 }
 
-// Stop implements seccheck.Checker.
+// Stop implements seccheck.Sink.
 func (r *remote) Stop() {
 	if r.endpoint != nil {
 		// It's possible to race with Point firing, but in the worst case they will
@@ -241,43 +241,43 @@ func (r *remote) write(msg proto.Message, msgType pb.MessageType) {
 	}
 }
 
-// Clone implements seccheck.Checker.
+// Clone implements seccheck.Sink.
 func (r *remote) Clone(_ context.Context, _ seccheck.FieldSet, info *pb.CloneInfo) error {
 	r.write(info, pb.MessageType_MESSAGE_SENTRY_CLONE)
 	return nil
 }
 
-// Execve implements seccheck.Checker.
+// Execve implements seccheck.Sink.
 func (r *remote) Execve(_ context.Context, _ seccheck.FieldSet, info *pb.ExecveInfo) error {
 	r.write(info, pb.MessageType_MESSAGE_SENTRY_EXEC)
 	return nil
 }
 
-// ExitNotifyParent implements seccheck.Checker.
+// ExitNotifyParent implements seccheck.Sink.
 func (r *remote) ExitNotifyParent(_ context.Context, _ seccheck.FieldSet, info *pb.ExitNotifyParentInfo) error {
 	r.write(info, pb.MessageType_MESSAGE_SENTRY_EXIT_NOTIFY_PARENT)
 	return nil
 }
 
-// TaskExit implements seccheck.Checker.
+// TaskExit implements seccheck.Sink.
 func (r *remote) TaskExit(_ context.Context, _ seccheck.FieldSet, info *pb.TaskExit) error {
 	r.write(info, pb.MessageType_MESSAGE_SENTRY_TASK_EXIT)
 	return nil
 }
 
-// ContainerStart implements seccheck.Checker.
+// ContainerStart implements seccheck.Sink.
 func (r *remote) ContainerStart(_ context.Context, _ seccheck.FieldSet, info *pb.Start) error {
 	r.write(info, pb.MessageType_MESSAGE_CONTAINER_START)
 	return nil
 }
 
-// RawSyscall implements seccheck.Checker.
+// RawSyscall implements seccheck.Sink.
 func (r *remote) RawSyscall(_ context.Context, _ seccheck.FieldSet, info *pb.Syscall) error {
 	r.write(info, pb.MessageType_MESSAGE_SYSCALL_RAW)
 	return nil
 }
 
-// Syscall implements seccheck.Checker.
+// Syscall implements seccheck.Sink.
 func (r *remote) Syscall(ctx context.Context, fields seccheck.FieldSet, ctxData *pb.ContextData, msgType pb.MessageType, msg proto.Message) error {
 	r.write(msg, msgType)
 	return nil

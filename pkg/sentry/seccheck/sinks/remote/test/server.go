@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package test provides functionality used to test the remote checker.
+// Package test provides functionality used to test the remote sink.
 package test
 
 import (
@@ -20,14 +20,14 @@ import (
 	"os"
 	"path/filepath"
 
-	"gvisor.dev/gvisor/pkg/sentry/seccheck/checkers/remote/server"
-	"gvisor.dev/gvisor/pkg/sentry/seccheck/checkers/remote/wire"
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck/sinks/remote/server"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck/sinks/remote/wire"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
-// Server is the counterpart to the checkers.Remote. It receives connections
-// remote checkers and stores all points that it receives.
+// Server is the counterpart to the sinks.Remote. It receives connections
+// remote sink and stores all points that it receives.
 type Server struct {
 	server.CommonServer
 
@@ -42,7 +42,7 @@ type Server struct {
 	version uint32
 }
 
-// Message corresponds to a single message sent from checkers.Remote.
+// Message corresponds to a single message sent from sinks.Remote.
 type Message struct {
 	// MsgType indicates what is the type of Msg.
 	MsgType pb.MessageType

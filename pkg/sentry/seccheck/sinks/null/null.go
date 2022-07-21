@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package null defines a seccheck.Checker that does nothing with the trace
+// Package null defines a seccheck.Sink that does nothing with the trace
 // points, akin to /dev/null.
 package null
 
@@ -32,12 +32,12 @@ func init() {
 
 // null is a checker that does nothing with the trace points.
 type null struct {
-	seccheck.CheckerDefaults
+	seccheck.SinkDefaults
 }
 
-var _ seccheck.Checker = (*null)(nil)
+var _ seccheck.Sink = (*null)(nil)
 
-func new(_ map[string]interface{}, _ *fd.FD) (seccheck.Checker, error) {
+func new(_ map[string]interface{}, _ *fd.FD) (seccheck.Sink, error) {
 	return &null{}, nil
 }
 

@@ -97,7 +97,7 @@ func (t *Task) Execve(newImage *TaskImage, argv, env []string, executable fsbrid
 	// We can't clearly hold kernel package locks while stat'ing executable.
 	if seccheck.Global.Enabled(seccheck.PointExecve) {
 		mask, info := getExecveSeccheckInfo(t, argv, env, executable, pathname)
-		if err := seccheck.Global.SendToCheckers(func(c seccheck.Checker) error {
+		if err := seccheck.Global.SentToSinks(func(c seccheck.Sink) error {
 			return c.Execve(t, mask, info)
 		}); err != nil {
 			newImage.release()

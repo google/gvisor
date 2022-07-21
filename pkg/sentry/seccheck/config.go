@@ -64,7 +64,7 @@ type SinkConfig struct {
 	// failures will prevent the container from starting.
 	IgnoreSetupError bool `json:"ignore_setup_error,omitempty"`
 	// Status is the runtime status for the sink.
-	Status CheckerStatus `json:"status,omitempty"`
+	Status SinkStatus `json:"status,omitempty"`
 	// FD is the endpoint returned from Setup. It may be nil.
 	FD *fd.FD `json:"-"`
 }
@@ -113,15 +113,15 @@ func Create(conf *SessionConfig, force bool) error {
 	}
 
 	for _, sinkConfig := range conf.Sinks {
-		sink, err := findSinkDesc(sinkConfig.Name)
+		desc, err := findSinkDesc(sinkConfig.Name)
 		if err != nil {
 			return err
 		}
-		checker, err := sink.New(sinkConfig.Config, sinkConfig.FD)
+		sink, err := desc.New(sinkConfig.Config, sinkConfig.FD)
 		if err != nil {
 			return fmt.Errorf("creating event sink: %w", err)
 		}
-		state.AppendChecker(checker, reqs)
+		state.AppendSink(sink, reqs)
 	}
 
 	sessions[conf.Name] = state
@@ -173,7 +173,7 @@ func deleteLocked(name string) error {
 		return fmt.Errorf("session %q not found", name)
 	}
 
-	session.clearCheckers()
+	session.clearSink()
 	delete(sessions, name)
 	return nil
 }
@@ -186,10 +186,10 @@ func List(out *[]SessionConfig) {
 	for name, state := range sessions {
 		// Only report session name. Consider adding rest of the fields as needed.
 		session := SessionConfig{Name: name}
-		for _, checker := range state.getCheckers() {
+		for _, sink := range state.getSinks() {
 			session.Sinks = append(session.Sinks, SinkConfig{
-				Name:   checker.Name(),
-				Status: checker.Status(),
+				Name:   sink.Name(),
+				Status: sink.Status(),
 			})
 		}
 		*out = append(*out, session)

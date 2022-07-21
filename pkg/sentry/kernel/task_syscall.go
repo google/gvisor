@@ -105,7 +105,7 @@ func (t *Task) executeSyscall(sysno uintptr, args arch.SyscallArguments) (rval u
 			info.ContextData = &pb.ContextData{}
 			LoadSeccheckData(t, fields.Context, info.ContextData)
 		}
-		seccheck.Global.SendToCheckers(func(c seccheck.Checker) error {
+		seccheck.Global.SentToSinks(func(c seccheck.Sink) error {
 			return c.RawSyscall(t, fields, &info)
 		})
 	}
@@ -122,7 +122,7 @@ func (t *Task) executeSyscall(sysno uintptr, args arch.SyscallArguments) (rval u
 		}
 		cb := t.SyscallTable().LookupSyscallToProto(sysno)
 		msg, msgType := cb(t, fields, ctxData, info)
-		seccheck.Global.SendToCheckers(func(c seccheck.Checker) error {
+		seccheck.Global.SentToSinks(func(c seccheck.Sink) error {
 			return c.Syscall(t, fields, ctxData, msgType, msg)
 		})
 	}
@@ -177,7 +177,7 @@ func (t *Task) executeSyscall(sysno uintptr, args arch.SyscallArguments) (rval u
 			info.ContextData = &pb.ContextData{}
 			LoadSeccheckData(t, fields.Context, info.ContextData)
 		}
-		seccheck.Global.SendToCheckers(func(c seccheck.Checker) error {
+		seccheck.Global.SentToSinks(func(c seccheck.Sink) error {
 			return c.RawSyscall(t, fields, &info)
 		})
 	}
@@ -197,7 +197,7 @@ func (t *Task) executeSyscall(sysno uintptr, args arch.SyscallArguments) (rval u
 		}
 		cb := t.SyscallTable().LookupSyscallToProto(sysno)
 		msg, msgType := cb(t, fields, ctxData, info)
-		seccheck.Global.SendToCheckers(func(c seccheck.Checker) error {
+		seccheck.Global.SentToSinks(func(c seccheck.Sink) error {
 			return c.Syscall(t, fields, ctxData, msgType, msg)
 		})
 	}

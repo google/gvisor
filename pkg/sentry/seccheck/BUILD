@@ -4,13 +4,13 @@ load("//tools/go_generics:defs.bzl", "go_template_instance")
 licenses(["notice"])
 
 go_template_instance(
-    name = "seqatomic_checkerslice",
-    out = "seqatomic_checkerslice_unsafe.go",
+    name = "seqatomic_sinkslice",
+    out = "seqatomic_sinkslice_unsafe.go",
     package = "seccheck",
-    suffix = "CheckerSlice",
+    suffix = "SinkSlice",
     template = "//pkg/sync/seqatomic:generic_seqatomic",
     types = {
-        "Value": "[]Checker",
+        "Value": "[]Sink",
     },
 )
 
@@ -22,7 +22,7 @@ go_library(
         "metadata_amd64.go",
         "metadata_arm64.go",
         "seccheck.go",
-        "seqatomic_checkerslice_unsafe.go",
+        "seqatomic_sinkslice_unsafe.go",
         "syscall.go",
     ],
     visibility = ["//:sandbox"],

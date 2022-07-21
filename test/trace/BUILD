@@ -17,8 +17,8 @@ go_test(
     ],
     deps = [
         "//pkg/sentry/seccheck",
-        "//pkg/sentry/seccheck/checkers/remote/test",
         "//pkg/sentry/seccheck/points:points_go_proto",
+        "//pkg/sentry/seccheck/sinks/remote/test",
         "//pkg/test/testutil",
         "//test/trace/config",
         "@org_golang_google_protobuf//proto:go_default_library",

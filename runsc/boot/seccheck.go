@@ -22,13 +22,13 @@ import (
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 
-	// Register supported of checkers.
-	_ "gvisor.dev/gvisor/pkg/sentry/seccheck/checkers/null"
-	_ "gvisor.dev/gvisor/pkg/sentry/seccheck/checkers/remote"
+	// Register supported of sinks.
+	_ "gvisor.dev/gvisor/pkg/sentry/seccheck/sinks/null"
+	_ "gvisor.dev/gvisor/pkg/sentry/seccheck/sinks/remote"
 )
 
 // InitConfig represents the configuration to apply during pod creation. For
-// now, it supports setting up an seccheck session.
+// now, it supports setting up a seccheck session.
 type InitConfig struct {
 	TraceSession seccheck.SessionConfig `json:"trace_session"`
 }

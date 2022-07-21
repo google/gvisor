@@ -9,8 +9,8 @@ go_library(
     deps = [
         "//pkg/cleanup",
         "//pkg/log",
-        "//pkg/sentry/seccheck/checkers/remote/wire",
         "//pkg/sentry/seccheck/points:points_go_proto",
+        "//pkg/sentry/seccheck/sinks/remote/wire",
         "//pkg/sync",
         "//pkg/unet",
         "@org_golang_google_protobuf//proto:go_default_library",
