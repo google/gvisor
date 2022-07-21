@@ -21,7 +21,7 @@ import (
 	"fmt"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/rawfile"
@@ -35,7 +35,7 @@ type iovecBuffer struct {
 	// buffer is the actual buffer that holds the packet contents. Some contents
 	// are reused across calls to pullBuffer if number of requested bytes is
 	// smaller than the number of bytes allocated in the buffer.
-	buffer buffer.Buffer
+	views []*bufferv2.View
 
 	// iovecs are initialized with base pointers/len of the corresponding
 	// entries in the views defined above, except when GSO is enabled
@@ -59,13 +59,11 @@ type iovecBuffer struct {
 
 func newIovecBuffer(sizes []int, skipsVnetHdr bool) *iovecBuffer {
 	b := &iovecBuffer{
+		views:        make([]*bufferv2.View, len(sizes)),
 		sizes:        sizes,
 		skipsVnetHdr: skipsVnetHdr,
-		// Setting pulledIndex to the length of sizes will allocate all
-		// the buffers.
-		pulledIndex: len(sizes),
 	}
-	niov := len(sizes)
+	niov := len(b.views)
 	if b.skipsVnetHdr {
 		niov++
 	}
@@ -78,26 +76,22 @@ func (b *iovecBuffer) nextIovecs() []unix.Iovec {
 	if b.skipsVnetHdr {
 		var vnetHdr [virtioNetHdrSize]byte
 		// The kernel adds virtioNetHdr before each packet, but
-		// we don't use it, so so we allocate a buffer for it,
+		// we don't use it, so we allocate a buffer for it,
 		// add it in iovecs but don't add it in a view.
 		b.iovecs[0] = unix.Iovec{Base: &vnetHdr[0]}
 		b.iovecs[0].SetLen(virtioNetHdrSize)
 		vnetHdrOff++
 	}
 
-	var buf buffer.Buffer
-	for i, size := range b.sizes {
-		if i > b.pulledIndex {
+	for i := range b.views {
+		if b.views[i] != nil {
 			break
 		}
-		v := make([]byte, size)
-		buf.AppendOwned(v)
-		b.iovecs[i+vnetHdrOff] = unix.Iovec{Base: &v[0]}
-		b.iovecs[i+vnetHdrOff].SetLen(len(v))
+		v := bufferv2.NewViewSize(b.sizes[i])
+		b.views[i] = v
+		b.iovecs[i+vnetHdrOff] = unix.Iovec{Base: v.BasePtr()}
+		b.iovecs[i+vnetHdrOff].SetLen(v.Size())
 	}
-	buf.Merge(&b.buffer)
-	b.buffer = buf
-	b.pulledIndex = -1
 	return b.iovecs
 }
 
@@ -106,32 +100,47 @@ func (b *iovecBuffer) nextIovecs() []unix.Iovec {
 // that holds the storage, and updates pulledIndex to indicate which part
 // of b.buffer's storage must be reallocated during the next call to
 // nextIovecs.
-func (b *iovecBuffer) pullBuffer(n int) buffer.Buffer {
-	var pulled buffer.Buffer
+func (b *iovecBuffer) pullBuffer(n int) bufferv2.Buffer {
+	var views []*bufferv2.View
 	c := 0
 	if b.skipsVnetHdr {
-		c = virtioNetHdrSize
+		c += virtioNetHdrSize
 		if c >= n {
 			// Nothing in the packet.
-			return pulled
+			return bufferv2.Buffer{}
 		}
 	}
 	// Remove the used views from the buffer.
-	pulled = b.buffer.Clone()
-	for _, size := range b.sizes {
-		b.pulledIndex++
-		c += size
-		b.buffer.TrimFront(int64(size))
+	for i, v := range b.views {
+		c += v.Size()
 		if c >= n {
+			b.views[i].CapLength(v.Size() - (c - n))
+			views = append(views, b.views[:i+1]...)
 			break
 		}
+	}
+	for i := range views {
+		b.views[i] = nil
 	}
 	if b.skipsVnetHdr {
 		// Exclude the size of the vnet header.
 		n -= virtioNetHdrSize
 	}
+	pulled := bufferv2.Buffer{}
+	for _, v := range views {
+		pulled.Append(v)
+	}
 	pulled.Truncate(int64(n))
 	return pulled
+}
+
+func (b *iovecBuffer) release() {
+	for _, v := range b.views {
+		if v != nil {
+			v.Release()
+			v = nil
+		}
+	}
 }
 
 // stopFd is an eventfd used to signal the stop of a dispatcher.
@@ -187,6 +196,10 @@ func newReadVDispatcher(fd int, e *endpoint) (linkDispatcher, error) {
 	skipsVnetHdr := d.e.gsoKind == stack.HostGSOSupported
 	d.buf = newIovecBuffer(BufConfig, skipsVnetHdr)
 	return d, nil
+}
+
+func (d *readVDispatcher) release() {
+	d.buf.release()
 }
 
 // dispatch reads one packet from the file descriptor and dispatches it.
@@ -274,6 +287,12 @@ func newRecvMMsgDispatcher(fd int, e *endpoint) (linkDispatcher, error) {
 		d.bufs[i] = newIovecBuffer(BufConfig, skipsVnetHdr)
 	}
 	return d, nil
+}
+
+func (d *recvMMsgDispatcher) release() {
+	for _, iov := range d.bufs {
+		iov.release()
+	}
 }
 
 // recvMMsgDispatch reads more than one packet at a time from the file

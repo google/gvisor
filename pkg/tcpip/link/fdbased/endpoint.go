@@ -45,7 +45,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -58,6 +58,7 @@ import (
 type linkDispatcher interface {
 	stop()
 	dispatch() (bool, tcpip.Error)
+	release()
 }
 
 // PacketDispatchMode are the various supported methods of receiving and
@@ -530,7 +531,7 @@ func (e *endpoint) writePacket(pkt *stack.PacketBuffer) tcpip.Error {
 		vnetHdrBuf = vnetHdr.marshal()
 	}
 
-	views := pkt.Slices()
+	views := pkt.AsSlices()
 	numIovecs := len(views)
 	if len(vnetHdrBuf) != 0 {
 		numIovecs++
@@ -600,7 +601,7 @@ func (e *endpoint) sendBatch(batchFDInfo fdInfo, pkts []*stack.PacketBuffer) (in
 				vnetHdrBuf = vnetHdr.marshal()
 			}
 
-			views := pkt.Slices()
+			views := pkt.AsSlices()
 			numIovecs := len(views)
 			if len(vnetHdrBuf) != 0 {
 				numIovecs++
@@ -706,13 +707,13 @@ func (e *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) 
 }
 
 // viewsEqual tests whether v1 and v2 refer to the same backing bytes.
-func viewsEqual(vs1, vs2 []buffer.View) bool {
+func viewsEqual(vs1, vs2 []bufferv2.View) bool {
 	return len(vs1) == len(vs2) && (len(vs1) == 0 || &vs1[0] == &vs2[0])
 }
 
 // InjectOutobund implements stack.InjectableEndpoint.InjectOutbound.
-func (e *endpoint) InjectOutbound(dest tcpip.Address, packet []byte) tcpip.Error {
-	return rawfile.NonBlockingWrite(e.fds[0].fd, packet)
+func (e *endpoint) InjectOutbound(dest tcpip.Address, packet *bufferv2.View) tcpip.Error {
+	return rawfile.NonBlockingWrite(e.fds[0].fd, packet.AsSlice())
 }
 
 // dispatchLoop reads packets from the file descriptor in a loop and dispatches
@@ -724,6 +725,7 @@ func (e *endpoint) dispatchLoop(inboundDispatcher linkDispatcher) tcpip.Error {
 			if e.closed != nil {
 				e.closed(err)
 			}
+			inboundDispatcher.release()
 			return err
 		}
 	}

@@ -123,7 +123,7 @@ func (e *endpoint) HandleLinkResolutionFailure(pkt *stack.PacketBuffer) {
 	// handleControl expects the entire offending packet to be in the packet
 	// buffer's data field.
 	pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: pkt.Buffer(),
+		Payload: pkt.ToBuffer(),
 	})
 	defer pkt.DecRef()
 	pkt.NICID = e.nic.ID()
@@ -450,8 +450,9 @@ func (e *endpoint) addIPHeader(srcAddr, dstAddr tcpip.Address, pkt *stack.Packet
 func (e *endpoint) handleFragments(_ *stack.Route, networkMTU uint32, pkt *stack.PacketBuffer, handler func(*stack.PacketBuffer) tcpip.Error) (int, int, tcpip.Error) {
 	// Round the MTU down to align to 8 bytes.
 	fragmentPayloadSize := networkMTU &^ 7
-	networkHeader := header.IPv4(pkt.NetworkHeader().View())
+	networkHeader := header.IPv4(pkt.NetworkHeader().Slice())
 	pf := fragmentation.MakePacketFragmenter(pkt, fragmentPayloadSize, pkt.AvailableHeaderBytes()+len(networkHeader))
+	defer pf.Release()
 
 	var n int
 	for {
@@ -478,7 +479,7 @@ func (e *endpoint) WritePacket(r *stack.Route, params stack.NetworkHeaderParams,
 }
 
 func (e *endpoint) writePacket(r *stack.Route, pkt *stack.PacketBuffer) tcpip.Error {
-	netHeader := header.IPv4(pkt.NetworkHeader().View())
+	netHeader := header.IPv4(pkt.NetworkHeader().Slice())
 	dstAddr := netHeader.DestinationAddress()
 
 	// iptables filtering. All packets that reach here are locally
@@ -531,14 +532,14 @@ func (e *endpoint) writePacketPostRouting(r *stack.Route, pkt *stack.PacketBuffe
 
 	stats := e.stats.ip
 
-	networkMTU, err := calculateNetworkMTU(e.nic.MTU(), uint32(len(pkt.NetworkHeader().View())))
+	networkMTU, err := calculateNetworkMTU(e.nic.MTU(), uint32(len(pkt.NetworkHeader().Slice())))
 	if err != nil {
 		stats.OutgoingPacketErrors.Increment()
 		return err
 	}
 
 	if packetMustBeFragmented(pkt, networkMTU) {
-		h := header.IPv4(pkt.NetworkHeader().View())
+		h := header.IPv4(pkt.NetworkHeader().Slice())
 		if h.Flags()&header.IPv4FlagDontFragment != 0 && pkt.NetworkPacketInfo.IsForwardedPacket {
 			// TODO(gvisor.dev/issue/5919): Handle error condition in which DontFragment
 			// is set but the packet must be fragmented for the non-forwarding case.
@@ -613,7 +614,7 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBu
 	// Note that parsing only makes sure that the packet is well formed as per the
 	// wire format. We also want to check if the header's fields are valid before
 	// sending the packet.
-	if !parse.IPv4(pkt) || !header.IPv4(pkt.NetworkHeader().View()).IsValid(pktSize) {
+	if !parse.IPv4(pkt) || !header.IPv4(pkt.NetworkHeader().Slice()).IsValid(pktSize) {
 		return &tcpip.ErrMalformedHeader{}
 	}
 
@@ -628,7 +629,7 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBu
 //
 // This method should be invoked by the endpoint that received the pkt.
 func (e *endpoint) forwardPacketWithRoute(route *stack.Route, pkt *stack.PacketBuffer, updateOptions bool) ip.ForwardingError {
-	h := header.IPv4(pkt.NetworkHeader().View())
+	h := header.IPv4(pkt.NetworkHeader().Slice())
 	stk := e.protocol.stack
 
 	inNicName := stk.FindNICNameFromID(e.nic.ID())
@@ -646,7 +647,7 @@ func (e *endpoint) forwardPacketWithRoute(route *stack.Route, pkt *stack.PacketB
 	// TODO(https://gvisor.dev/issue/7473): For multicast, only create one deep
 	// copy and then clone.
 	newPkt := pkt.DeepCopyForForwarding(int(route.MaxHeaderLength()))
-	newHdr := header.IPv4(newPkt.NetworkHeader().View())
+	newHdr := header.IPv4(newPkt.NetworkHeader().Slice())
 	defer newPkt.DecRef()
 
 	forwardToEp, ok := e.protocol.getEndpointForNIC(route.NICID())
@@ -696,7 +697,7 @@ func (e *endpoint) forwardPacketWithRoute(route *stack.Route, pkt *stack.PacketB
 
 // forwardUnicastPacket attempts to forward a packet to its final destination.
 func (e *endpoint) forwardUnicastPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
-	h := header.IPv4(pkt.NetworkHeader().View())
+	h := header.IPv4(pkt.NetworkHeader().Slice())
 
 	dstAddr := h.DestinationAddress()
 
@@ -799,7 +800,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		}
 
 		if e.protocol.stack.HandleLocal() {
-			addressEndpoint := e.AcquireAssignedAddress(header.IPv4(pkt.NetworkHeader().View()).SourceAddress(), e.nic.Promiscuous(), stack.CanBePrimaryEndpoint)
+			addressEndpoint := e.AcquireAssignedAddress(header.IPv4(pkt.NetworkHeader().Slice()).SourceAddress(), e.nic.Promiscuous(), stack.CanBePrimaryEndpoint)
 			if addressEndpoint != nil {
 				addressEndpoint.DecRef()
 
@@ -921,7 +922,7 @@ func (e *endpoint) forwardMulticastPacket(h header.IPv4, pkt *stack.PacketBuffer
 }
 
 func (e *endpoint) updateOptionsForForwarding(pkt *stack.PacketBuffer) ip.ForwardingError {
-	h := header.IPv4(pkt.NetworkHeader().View())
+	h := header.IPv4(pkt.NetworkHeader().Slice())
 	if opts := h.Options(); len(opts) != 0 {
 		newOpts, _, optProblem := e.processIPOptions(pkt, opts, &optionUsageForward{})
 		if optProblem != nil {
@@ -963,7 +964,7 @@ func (e *endpoint) forwardValidatedMulticastPacket(pkt *stack.PacketBuffer, inst
 	//	 on the proper interface for forwarding.  If not, the datagram is
 	//	 dropped silently.
 	if e.nic.ID() != installedRoute.ExpectedInputInterface {
-		h := header.IPv4(pkt.NetworkHeader().View())
+		h := header.IPv4(pkt.NetworkHeader().Slice())
 		e.emitMulticastEvent(func(disp stack.MulticastForwardingEventDispatcher) {
 			disp.OnUnexpectedInputInterface(stack.MulticastPacketContext{
 				stack.UnicastSourceAndMulticastDestination{h.SourceAddress(), h.DestinationAddress()},
@@ -989,7 +990,7 @@ func (e *endpoint) forwardValidatedMulticastPacket(pkt *stack.PacketBuffer, inst
 //
 // This method should be invoked by the endpoint that received the pkt.
 func (e *endpoint) forwardMulticastPacketForOutgoingInterface(pkt *stack.PacketBuffer, outgoingInterface stack.MulticastRouteOutgoingInterface) ip.ForwardingError {
-	h := header.IPv4(pkt.NetworkHeader().View())
+	h := header.IPv4(pkt.NetworkHeader().Slice())
 
 	// Per RFC 1812 section 5.2.1.3,
 	//
@@ -1133,7 +1134,7 @@ func (e *endpoint) deliverPacketLocally(h header.IPv4, pkt *stack.PacketBuffer, 
 	}
 
 	if h.More() || h.FragmentOffset() != 0 {
-		if pkt.Data().Size()+len(pkt.TransportHeader().View()) == 0 {
+		if pkt.Data().Size()+len(pkt.TransportHeader().Slice()) == 0 {
 			// Drop the packet as it's marked as a fragment but has
 			// no payload.
 			stats.ip.MalformedPacketsReceived.Increment()
@@ -1195,7 +1196,7 @@ func (e *endpoint) deliverPacketLocally(h header.IPv4, pkt *stack.PacketBuffer, 
 		}
 		defer resPkt.DecRef()
 		pkt = resPkt
-		h = header.IPv4(pkt.NetworkHeader().View())
+		h = header.IPv4(pkt.NetworkHeader().Slice())
 
 		// The reassembler doesn't take care of fixing up the header, so we need
 		// to do it here.
@@ -1466,8 +1467,6 @@ func (p *protocol) MinimumPacketSize() int {
 }
 
 // ParseAddresses implements stack.NetworkProtocol.
-// TODO(b/230896518): Remove buffer.View once stack.NetworkProtocol is changed
-// to use pkg/buffer.Buffer.
 func (*protocol) ParseAddresses(v []byte) (src, dst tcpip.Address) {
 	h := header.IPv4(v)
 	return h.SourceAddress(), h.DestinationAddress()
@@ -1697,10 +1696,10 @@ func (p *protocol) parseAndValidate(pkt *stack.PacketBuffer) (header.IPv4, bool)
 		return nil, false
 	}
 
-	h := header.IPv4(pkt.NetworkHeader().View())
+	h := header.IPv4(pkt.NetworkHeader().Slice())
 	// Do not include the link header's size when calculating the size of the IP
 	// packet.
-	if !h.IsValid(pkt.Size() - len(pkt.LinkHeader().View())) {
+	if !h.IsValid(pkt.Size() - len(pkt.LinkHeader().Slice())) {
 		return nil, false
 	}
 
@@ -1738,7 +1737,7 @@ func (*protocol) Parse(pkt *stack.PacketBuffer) (proto tcpip.TransportProtocolNu
 		return 0, false, false
 	}
 
-	ipHdr := header.IPv4(pkt.NetworkHeader().View())
+	ipHdr := header.IPv4(pkt.NetworkHeader().Slice())
 	return ipHdr.TransportProtocol(), !ipHdr.More() && ipHdr.FragmentOffset() == 0, true
 }
 
@@ -1803,7 +1802,7 @@ func calculateNetworkMTU(linkMTU, networkHeaderSize uint32) (uint32, tcpip.Error
 }
 
 func packetMustBeFragmented(pkt *stack.PacketBuffer, networkMTU uint32) bool {
-	payload := len(pkt.TransportHeader().View()) + pkt.Data().Size()
+	payload := len(pkt.TransportHeader().Slice()) + pkt.Data().Size()
 	return pkt.GSOOptions.Type == stack.GSONone && uint32(payload) > networkMTU
 }
 
@@ -2233,7 +2232,7 @@ func (e *endpoint) processIPOptions(pkt *stack.PacketBuffer, opts header.IPv4Opt
 	// tx interfaces. We will also have to take usage into account.
 	localAddress := e.MainAddress().Address
 	if len(localAddress) == 0 {
-		h := header.IPv4(pkt.NetworkHeader().View())
+		h := header.IPv4(pkt.NetworkHeader().Slice())
 		dstAddr := h.DestinationAddress()
 		if pkt.NetworkPacketInfo.LocalAddressBroadcast || header.IsV4MulticastAddress(dstAddr) {
 			return nil, optionTracker{}, &header.IPv4OptParameterProblem{

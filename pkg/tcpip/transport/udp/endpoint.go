@@ -21,7 +21,7 @@ import (
 	"math"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -432,16 +432,16 @@ func (e *endpoint) prepareForWrite(p tcpip.Payloader, opts tcpip.WriteOptions) (
 		return udpPacketInfo{}, &tcpip.ErrMessageTooLong{}
 	}
 
-	// TODO(https://gvisor.dev/issue/6538): Avoid this allocation.
-	v := make([]byte, p.Len())
-	if _, err := io.ReadFull(p, v); err != nil {
+	var buf bufferv2.Buffer
+	if _, err := buf.WriteFromReader(p, int64(p.Len())); err != nil {
+		buf.Release()
 		ctx.Release()
 		return udpPacketInfo{}, &tcpip.ErrBadBuffer{}
 	}
 
 	return udpPacketInfo{
 		ctx:        ctx,
-		data:       v,
+		data:       buf,
 		localPort:  e.localPort,
 		remotePort: dst.Port,
 	}, nil
@@ -469,8 +469,9 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 	}
 	defer udpInfo.ctx.Release()
 
+	dataSz := udpInfo.data.Size()
 	pktInfo := udpInfo.ctx.PacketInfo()
-	pkt := udpInfo.ctx.TryNewPacketBuffer(header.UDPMinimumSize+int(pktInfo.MaxHeaderLength), buffer.NewWithData(udpInfo.data))
+	pkt := udpInfo.ctx.TryNewPacketBuffer(header.UDPMinimumSize+int(pktInfo.MaxHeaderLength), udpInfo.data)
 	if pkt == nil {
 		return 0, &tcpip.ErrWouldBlock{}
 	}
@@ -528,7 +529,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 
 	// Track count of packets sent.
 	e.stack.Stats().UDP.PacketsSent.Increment()
-	return int64(len(udpInfo.data)), nil
+	return int64(dataSz), nil
 }
 
 // OnReuseAddressSet implements tcpip.SocketOptionsHandler.
@@ -588,7 +589,7 @@ func (e *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
 // udpPacketInfo holds information needed to send a UDP packet.
 type udpPacketInfo struct {
 	ctx        network.WriteContext
-	data       []byte
+	data       bufferv2.Buffer
 	localPort  uint16
 	remotePort uint16
 }
@@ -902,7 +903,7 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 // endpoint.
 func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
 	// Get the header then trim it from the view.
-	hdr := header.UDP(pkt.TransportHeader().View())
+	hdr := header.UDP(pkt.TransportHeader().Slice())
 	netHdr := pkt.Network()
 	lengthValid, csumValid := header.UDPValid(
 		hdr,
@@ -970,9 +971,9 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 	packet.tosOrTClass, _ = pkt.Network().TOS()
 	switch pkt.NetworkProtocolNumber {
 	case header.IPv4ProtocolNumber:
-		packet.ttlOrHopLimit = header.IPv4(pkt.NetworkHeader().View()).TTL()
+		packet.ttlOrHopLimit = header.IPv4(pkt.NetworkHeader().Slice()).TTL()
 	case header.IPv6ProtocolNumber:
-		packet.ttlOrHopLimit = header.IPv6(pkt.NetworkHeader().View()).HopLimit()
+		packet.ttlOrHopLimit = header.IPv6(pkt.NetworkHeader().Slice()).HopLimit()
 	}
 
 	// TODO(gvisor.dev/issue/3556): r.LocalAddress may be a multicast or broadcast
@@ -1010,10 +1011,10 @@ func (e *endpoint) onICMPError(err tcpip.Error, transErr stack.TransportError, p
 
 	if recvErr {
 		// Linux passes the payload without the UDP header.
-		var payload []byte
-		udp := header.UDP(pkt.Data().AsRange().ToOwnedView())
+		payload := pkt.Data().AsRange().ToView()
+		udp := header.UDP(payload.AsSlice())
 		if len(udp) >= header.UDPMinimumSize {
-			payload = udp.Payload()
+			payload.TrimFront(header.UDPMinimumSize)
 		}
 
 		id := e.net.Info().ID

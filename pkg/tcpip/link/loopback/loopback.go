@@ -80,7 +80,7 @@ func (e *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) 
 		// fresh packet that only contains the underlying payload with no headers
 		// or struct fields set.
 		newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Payload: pkt.Buffer(),
+			Payload: pkt.ToBuffer(),
 		})
 		e.dispatcher.DeliverNetworkPacket(pkt.NetworkProtocolNumber, newPkt)
 		newPkt.DecRef()

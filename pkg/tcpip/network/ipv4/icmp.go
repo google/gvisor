@@ -17,7 +17,7 @@ package ipv4
 import (
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/header/parse"
@@ -176,7 +176,7 @@ func (e *endpoint) handleControl(errInfo stack.TransportError, pkt *stack.Packet
 
 func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 	received := e.stats.icmp.packetsReceived
-	h := header.ICMPv4(pkt.TransportHeader().View())
+	h := header.ICMPv4(pkt.TransportHeader().Slice())
 	if len(h) < header.ICMPv4MinimumSize {
 		received.invalid.Increment()
 		return
@@ -196,7 +196,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 		return
 	}
 
-	iph := header.IPv4(pkt.NetworkHeader().View())
+	iph := header.IPv4(pkt.NetworkHeader().Slice())
 	var newOptions header.IPv4Options
 	if opts := iph.Options(); len(opts) != 0 {
 		// RFC 1122 section 3.2.2.6 (page 43) (and similar for other round trip
@@ -249,7 +249,8 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 		// waiting endpoints. Consider moving responsibility for doing the copy to
 		// DeliverTransportPacket so that is is only done when needed.
 		replyData := stack.PayloadSince(pkt.TransportHeader())
-		ipHdr := header.IPv4(pkt.NetworkHeader().View())
+		defer replyData.Release()
+		ipHdr := header.IPv4(pkt.NetworkHeader().Slice())
 		localAddressBroadcast := pkt.NetworkPacketInfo.LocalAddressBroadcast
 
 		// It's possible that a raw socket expects to receive this.
@@ -307,25 +308,25 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 		//
 		// Take the base of the incoming request IP header but replace the options.
 		replyHeaderLength := uint8(header.IPv4MinimumSize + len(newOptions))
-		replyIPHdrBytes := make([]byte, 0, replyHeaderLength)
-		replyIPHdrBytes = append(replyIPHdrBytes, iph[:header.IPv4MinimumSize]...)
-		replyIPHdrBytes = append(replyIPHdrBytes, newOptions...)
-		replyIPHdr := header.IPv4(replyIPHdrBytes)
+		replyIPHdrView := bufferv2.NewView(int(replyHeaderLength))
+		replyIPHdrView.Write(iph[:header.IPv4MinimumSize])
+		replyIPHdrView.Write(newOptions)
+		replyIPHdr := header.IPv4(replyIPHdrView.AsSlice())
 		replyIPHdr.SetHeaderLength(replyHeaderLength)
 		replyIPHdr.SetSourceAddress(r.LocalAddress())
 		replyIPHdr.SetDestinationAddress(r.RemoteAddress())
 		replyIPHdr.SetTTL(r.DefaultTTL())
-		replyIPHdr.SetTotalLength(uint16(len(replyIPHdr) + len(replyData)))
+		replyIPHdr.SetTotalLength(uint16(len(replyIPHdr) + len(replyData.AsSlice())))
 		replyIPHdr.SetChecksum(0)
 		replyIPHdr.SetChecksum(^replyIPHdr.CalculateChecksum())
 
-		replyICMPHdr := header.ICMPv4(replyData)
+		replyICMPHdr := header.ICMPv4(replyData.AsSlice())
 		replyICMPHdr.SetType(header.ICMPv4EchoReply)
 		replyICMPHdr.SetChecksum(0)
-		replyICMPHdr.SetChecksum(^header.Checksum(replyData, 0))
+		replyICMPHdr.SetChecksum(^header.Checksum(replyData.AsSlice(), 0))
 
-		replyBuf := buffer.NewWithData(replyIPHdr)
-		replyBuf.AppendOwned(replyData)
+		replyBuf := bufferv2.MakeWithView(replyIPHdrView)
+		replyBuf.Append(replyData.Clone())
 		replyPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			ReserveHeaderBytes: int(r.MaxHeaderLength()),
 			Payload:            replyBuf,
@@ -483,7 +484,7 @@ func (*icmpReasonHostUnreachable) isICMPReason() {}
 // possible as well as any error metadata as is available. returnError
 // expects pkt to hold a valid IPv4 packet as per the wire format.
 func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, deliveredLocally bool) tcpip.Error {
-	origIPHdr := header.IPv4(pkt.NetworkHeader().View())
+	origIPHdr := header.IPv4(pkt.NetworkHeader().Slice())
 	origIPHdrSrc := origIPHdr.SourceAddress()
 	origIPHdrDst := origIPHdr.DestinationAddress()
 
@@ -544,7 +545,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, deliv
 		return &tcpip.ErrNotConnected{}
 	}
 
-	transportHeader := pkt.TransportHeader().View()
+	transportHeader := pkt.TransportHeader().Slice()
 
 	// Don't respond to icmp error packets.
 	if origIPHdr.Protocol() == uint8(header.ICMPv4ProtocolNumber) {
@@ -642,12 +643,12 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, deliv
 	// required. This is now the payload of the new ICMP packet and no longer
 	// considered a packet in its own right.
 
-	var newHeader []byte
-	newHeader = append(newHeader, origIPHdr...)
-	newHeader = append(newHeader, transportHeader...)
-	payload := buffer.NewWithData(newHeader)
+	payload := bufferv2.MakeWithView(pkt.NetworkHeader().View())
+	payload.Append(pkt.TransportHeader().View())
 	if dataCap := payloadLen - int(payload.Size()); dataCap > 0 {
-		payload.AppendOwned(pkt.Data().AsRange().Capped(dataCap).ToOwnedView())
+		buf := pkt.Data().ToBuffer()
+		buf.Truncate(int64(dataCap))
+		payload.Merge(&buf)
 	} else {
 		payload.Truncate(int64(payloadLen))
 	}

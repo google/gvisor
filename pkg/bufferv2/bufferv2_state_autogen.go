@@ -36,6 +36,34 @@ func (b *Buffer) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.LoadValue(0, new([]byte), func(y interface{}) { b.loadData(y.([]byte)) })
 }
 
+func (c *chunk) StateTypeName() string {
+	return "pkg/bufferv2.chunk"
+}
+
+func (c *chunk) StateFields() []string {
+	return []string{
+		"chunkRefs",
+		"data",
+	}
+}
+
+func (c *chunk) beforeSave() {}
+
+// +checklocksignore
+func (c *chunk) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	stateSinkObject.Save(0, &c.chunkRefs)
+	stateSinkObject.Save(1, &c.data)
+}
+
+func (c *chunk) afterLoad() {}
+
+// +checklocksignore
+func (c *chunk) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.chunkRefs)
+	stateSourceObject.Load(1, &c.data)
+}
+
 func (r *chunkRefs) StateTypeName() string {
 	return "pkg/bufferv2.chunkRefs"
 }
@@ -58,6 +86,37 @@ func (r *chunkRefs) StateSave(stateSinkObject state.Sink) {
 func (r *chunkRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
 	stateSourceObject.AfterLoad(r.afterLoad)
+}
+
+func (v *View) StateTypeName() string {
+	return "pkg/bufferv2.View"
+}
+
+func (v *View) StateFields() []string {
+	return []string{
+		"read",
+		"write",
+		"chunk",
+	}
+}
+
+func (v *View) beforeSave() {}
+
+// +checklocksignore
+func (v *View) StateSave(stateSinkObject state.Sink) {
+	v.beforeSave()
+	stateSinkObject.Save(0, &v.read)
+	stateSinkObject.Save(1, &v.write)
+	stateSinkObject.Save(2, &v.chunk)
+}
+
+func (v *View) afterLoad() {}
+
+// +checklocksignore
+func (v *View) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &v.read)
+	stateSourceObject.Load(1, &v.write)
+	stateSourceObject.Load(2, &v.chunk)
 }
 
 func (l *viewList) StateTypeName() string {
@@ -118,7 +177,9 @@ func (e *viewEntry) StateLoad(stateSourceObject state.Source) {
 
 func init() {
 	state.Register((*Buffer)(nil))
+	state.Register((*chunk)(nil))
 	state.Register((*chunkRefs)(nil))
+	state.Register((*View)(nil))
 	state.Register((*viewList)(nil))
 	state.Register((*viewEntry)(nil))
 }

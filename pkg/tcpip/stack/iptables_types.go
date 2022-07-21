@@ -249,13 +249,13 @@ func (fl IPHeaderFilter) match(pkt *PacketBuffer, hook Hook, inNicName, outNicNa
 	)
 	switch proto := pkt.NetworkProtocolNumber; proto {
 	case header.IPv4ProtocolNumber:
-		hdr := header.IPv4(pkt.NetworkHeader().View())
+		hdr := header.IPv4(pkt.NetworkHeader().Slice())
 		transProto = hdr.TransportProtocol()
 		dstAddr = hdr.DestinationAddress()
 		srcAddr = hdr.SourceAddress()
 
 	case header.IPv6ProtocolNumber:
-		hdr := header.IPv6(pkt.NetworkHeader().View())
+		hdr := header.IPv6(pkt.NetworkHeader().Slice())
 		transProto = hdr.TransportProtocol()
 		dstAddr = hdr.DestinationAddress()
 		srcAddr = hdr.SourceAddress()

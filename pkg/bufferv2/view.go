@@ -45,11 +45,13 @@ var viewPool = sync.Pool{
 // Users must not write directly to slices returned by AsSlice. Instead, they
 // must use Write/WriteAt/CopyIn to modify the underlying View. This preserves
 // the safety guarantees of copy-on-write.
+//
+// +stateify savable
 type View struct {
-	viewEntry
-	read  int
-	write int
-	chunk *chunk
+	viewEntry `state:"nosave"`
+	read      int
+	write     int
+	chunk     *chunk
 }
 
 // NewView creates a new view with capacity at least as big as cap. It is
@@ -107,6 +109,15 @@ func (v *View) Release() {
 	viewPool.Put(v)
 }
 
+// Reset sets the view's read and write indices back to zero.
+func (v *View) Reset() {
+	if v == nil {
+		panic("cannot reset a nil view")
+	}
+	v.read = 0
+	v.write = 0
+}
+
 func (v *View) sharesChunk() bool {
 	return v.chunk.refCount.Load() > 1
 }
@@ -144,7 +155,7 @@ func (v *View) TrimFront(n int) {
 
 // AsSlice returns a slice of the data written to this view.
 func (v *View) AsSlice() []byte {
-	if v == nil {
+	if v.Size() == 0 {
 		return nil
 	}
 	return v.chunk.data[v.read:v.write]
@@ -171,6 +182,16 @@ func (v *View) Read(p []byte) (int, error) {
 	n := copy(p, v.AsSlice())
 	v.TrimFront(n)
 	return n, nil
+}
+
+// ReadByte implements the io.ByteReader interface.
+func (v *View) ReadByte() (byte, error) {
+	if v.Size() == 0 {
+		return 0, io.EOF
+	}
+	b := v.AsSlice()[0]
+	v.read++
+	return b, nil
 }
 
 // WriteTo writes data to w until the view is empty or an error occurs. The
