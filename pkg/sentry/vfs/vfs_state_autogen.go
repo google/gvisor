@@ -63,6 +63,7 @@ func (d *anonDentry) StateFields() []string {
 	return []string{
 		"vfsd",
 		"name",
+		"watches",
 	}
 }
 
@@ -73,6 +74,7 @@ func (d *anonDentry) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
 	stateSinkObject.Save(0, &d.vfsd)
 	stateSinkObject.Save(1, &d.name)
+	stateSinkObject.Save(2, &d.watches)
 }
 
 func (d *anonDentry) afterLoad() {}
@@ -81,6 +83,7 @@ func (d *anonDentry) afterLoad() {}
 func (d *anonDentry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.vfsd)
 	stateSourceObject.Load(1, &d.name)
+	stateSourceObject.Load(2, &d.watches)
 }
 
 func (d *Dentry) StateTypeName() string {

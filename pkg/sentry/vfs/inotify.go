@@ -326,7 +326,7 @@ func (i *Inotify) nextWatchIDLocked() int32 {
 // returns the watch descriptor returned by inotify_add_watch(2).
 //
 // The caller must hold a reference on target.
-func (i *Inotify) AddWatch(target *Dentry, mask uint32) (int32, error) {
+func (i *Inotify) AddWatch(target *Dentry, mask uint32) int32 {
 	// Note: Locking this inotify instance protects the result returned by
 	// Lookup() below. With the lock held, we know for sure the lookup result
 	// won't become stale because it's impossible for *this* instance to
@@ -335,11 +335,6 @@ func (i *Inotify) AddWatch(target *Dentry, mask uint32) (int32, error) {
 	defer i.mu.Unlock()
 
 	ws := target.Watches()
-	if ws == nil {
-		// While Linux supports inotify watches on all filesystem types, watches on
-		// filesystems like kernfs are not generally useful, so we do not.
-		return 0, linuxerr.EPERM
-	}
 	// Does the target already have a watch from this inotify instance?
 	if existing := ws.Lookup(i.id); existing != nil {
 		newmask := mask
@@ -349,12 +344,12 @@ func (i *Inotify) AddWatch(target *Dentry, mask uint32) (int32, error) {
 			newmask |= existing.mask.Load()
 		}
 		existing.mask.Store(newmask)
-		return existing.wd, nil
+		return existing.wd
 	}
 
 	// No existing watch, create a new watch.
 	w := i.newWatchLocked(target, ws, mask)
-	return w.wd, nil
+	return w.wd
 }
 
 // RmWatch looks up an inotify watch for the given 'wd' and configures the

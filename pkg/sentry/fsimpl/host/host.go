@@ -99,6 +99,7 @@ type inode struct {
 	kernfs.InodeNotSymlink
 	kernfs.CachedMappable
 	kernfs.InodeTemporary // This holds no meaning as this inode can't be Looked up and is always valid.
+	kernfs.InodeWatches
 
 	locks vfs.FileLocks
 

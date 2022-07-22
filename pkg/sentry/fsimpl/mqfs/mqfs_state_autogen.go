@@ -166,6 +166,7 @@ func (i *rootInode) StateFields() []string {
 		"InodeDirectoryNoNewChildren",
 		"InodeNotSymlink",
 		"InodeTemporary",
+		"InodeWatches",
 		"OrderedChildren",
 		"locks",
 	}
@@ -182,8 +183,9 @@ func (i *rootInode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &i.InodeDirectoryNoNewChildren)
 	stateSinkObject.Save(4, &i.InodeNotSymlink)
 	stateSinkObject.Save(5, &i.InodeTemporary)
-	stateSinkObject.Save(6, &i.OrderedChildren)
-	stateSinkObject.Save(7, &i.locks)
+	stateSinkObject.Save(6, &i.InodeWatches)
+	stateSinkObject.Save(7, &i.OrderedChildren)
+	stateSinkObject.Save(8, &i.locks)
 }
 
 func (i *rootInode) afterLoad() {}
@@ -196,8 +198,9 @@ func (i *rootInode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(3, &i.InodeDirectoryNoNewChildren)
 	stateSourceObject.Load(4, &i.InodeNotSymlink)
 	stateSourceObject.Load(5, &i.InodeTemporary)
-	stateSourceObject.Load(6, &i.OrderedChildren)
-	stateSourceObject.Load(7, &i.locks)
+	stateSourceObject.Load(6, &i.InodeWatches)
+	stateSourceObject.Load(7, &i.OrderedChildren)
+	stateSourceObject.Load(8, &i.locks)
 }
 
 func (r *rootInodeRefs) StateTypeName() string {

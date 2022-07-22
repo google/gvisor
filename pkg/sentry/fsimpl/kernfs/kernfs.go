@@ -244,6 +244,10 @@ type Dentry struct {
 	children map[string]*Dentry
 
 	inode Inode
+
+	// If deleted is non-zero, the file represented by this dentry has been
+	// deleted. deleted is accessed using atomic memory operations.
+	deleted atomicbitops.Uint32
 }
 
 // IncRef implements vfs.DentryImpl.IncRef.
@@ -339,6 +343,9 @@ func (d *Dentry) cacheLocked(ctx context.Context) {
 			d.fs.cachedDentriesLen--
 			d.cached = false
 		}
+		if d.isDeleted() {
+			d.inode.Watches().HandleDeletion(ctx)
+		}
 		d.destroyLocked(ctx)
 		return
 	}
@@ -420,7 +427,6 @@ func (d *Dentry) destroyLocked(ctx context.Context) {
 	}
 
 	d.inode.DecRef(ctx) // IncRef from Init.
-	d.inode = nil
 
 	if d.parent != nil {
 		d.parent.decRefLocked(ctx)
@@ -485,6 +491,14 @@ func (d *Dentry) VFSDentry() *vfs.Dentry {
 	return &d.vfsd
 }
 
+func (d *Dentry) isDeleted() bool {
+	return d.deleted.Load() != 0
+}
+
+func (d *Dentry) setDeleted() {
+	d.deleted.Store(1)
+}
+
 // isDir checks whether the dentry points to a directory inode.
 func (d *Dentry) isDir() bool {
 	return d.flags.Load()&dflagsIsDir != 0
@@ -496,15 +510,23 @@ func (d *Dentry) isSymlink() bool {
 }
 
 // InotifyWithParent implements vfs.DentryImpl.InotifyWithParent.
-//
-// Although Linux technically supports inotify on pseudo filesystems (inotify
-// is implemented at the vfs layer), it is not particularly useful. It is left
-// unimplemented until someone actually needs it.
-func (d *Dentry) InotifyWithParent(ctx context.Context, events, cookie uint32, et vfs.EventType) {}
+func (d *Dentry) InotifyWithParent(ctx context.Context, events, cookie uint32, et vfs.EventType) {
+	if d.isDir() {
+		events |= linux.IN_ISDIR
+	}
+
+	d.fs.mu.RLock()
+	defer d.fs.mu.RUnlock()
+	// The ordering below is important, Linux always notifies the parent first.
+	if d.parent != nil {
+		d.parent.inode.Watches().Notify(ctx, d.name, events, cookie, et, d.isDeleted())
+	}
+	d.inode.Watches().Notify(ctx, "", events, cookie, et, d.isDeleted())
+}
 
 // Watches implements vfs.DentryImpl.Watches.
 func (d *Dentry) Watches() *vfs.Watches {
-	return nil
+	return d.inode.Watches()
 }
 
 // OnZeroWatches implements vfs.Dentry.OnZeroWatches.
@@ -680,6 +702,9 @@ type Inode interface {
 	// Valid should return true if this inode is still valid, or needs to
 	// be resolved again by a call to Lookup.
 	Valid(ctx context.Context) bool
+
+	// Watches returns the set of inotify watches associated with this inode.
+	Watches() *vfs.Watches
 }
 
 type inodeRefs interface {

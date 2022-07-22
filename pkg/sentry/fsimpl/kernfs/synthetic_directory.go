@@ -33,6 +33,7 @@ type syntheticDirectory struct {
 	InodeAttrs
 	InodeNoStatFS
 	InodeNotSymlink
+	InodeWatches
 	OrderedChildren
 	syntheticDirectoryRefs
 

@@ -200,6 +200,7 @@ type dir struct {
 	kernfs.InodeNotSymlink
 	kernfs.InodeDirectoryNoNewChildren
 	kernfs.InodeTemporary
+	kernfs.InodeWatches
 	kernfs.OrderedChildren
 
 	locks vfs.FileLocks

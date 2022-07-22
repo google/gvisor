@@ -305,6 +305,7 @@ type inode struct {
 	kernfs.InodeAttrs
 	kernfs.InodeDirectoryNoNewChildren
 	kernfs.InodeNotSymlink
+	kernfs.InodeWatches
 	kernfs.OrderedChildren
 
 	// the owning filesystem. fs is immutable.

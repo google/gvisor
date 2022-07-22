@@ -65,6 +65,7 @@ func (i *inode) StateFields() []string {
 		"InodeNoopRefCount",
 		"InodeNotDirectory",
 		"InodeNotSymlink",
+		"InodeWatches",
 	}
 }
 
@@ -77,6 +78,7 @@ func (i *inode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &i.InodeNoopRefCount)
 	stateSinkObject.Save(2, &i.InodeNotDirectory)
 	stateSinkObject.Save(3, &i.InodeNotSymlink)
+	stateSinkObject.Save(4, &i.InodeWatches)
 }
 
 func (i *inode) afterLoad() {}
@@ -87,6 +89,7 @@ func (i *inode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &i.InodeNoopRefCount)
 	stateSourceObject.Load(2, &i.InodeNotDirectory)
 	stateSourceObject.Load(3, &i.InodeNotSymlink)
+	stateSourceObject.Load(4, &i.InodeWatches)
 }
 
 func init() {

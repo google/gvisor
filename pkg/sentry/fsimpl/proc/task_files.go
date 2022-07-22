@@ -394,6 +394,7 @@ type memInode struct {
 	kernfs.InodeNoopRefCount
 	kernfs.InodeNotDirectory
 	kernfs.InodeNotSymlink
+	kernfs.InodeWatches
 
 	task  *kernel.Task
 	locks vfs.FileLocks
@@ -675,6 +676,7 @@ type statusInode struct {
 	kernfs.InodeNoopRefCount
 	kernfs.InodeNotDirectory
 	kernfs.InodeNotSymlink
+	kernfs.InodeWatches
 
 	task  *kernel.Task
 	pidns *kernel.PIDNamespace
@@ -906,6 +908,7 @@ type exeSymlink struct {
 	kernfs.InodeAttrs
 	kernfs.InodeNoopRefCount
 	kernfs.InodeSymlink
+	kernfs.InodeWatches
 
 	fs   *filesystem
 	task *kernel.Task
@@ -978,6 +981,7 @@ type cwdSymlink struct {
 	kernfs.InodeAttrs
 	kernfs.InodeNoopRefCount
 	kernfs.InodeSymlink
+	kernfs.InodeWatches
 
 	fs   *filesystem
 	task *kernel.Task
@@ -1152,6 +1156,7 @@ type namespaceInode struct {
 	kernfs.InodeNoopRefCount
 	kernfs.InodeNotDirectory
 	kernfs.InodeNotSymlink
+	kernfs.InodeWatches
 
 	locks vfs.FileLocks
 }
