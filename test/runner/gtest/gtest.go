@@ -141,7 +141,7 @@ func ParseTestCases(testBin string, benchmarks bool, extraArgs ...string) ([]Tes
 	return t, nil
 }
 
-// ParseBenchmarks returns each benchmark in a third_party/benchmark binary's list as a single test case.
+// ParseBenchmarks returns each benchmark in the binary's list as a single test case.
 func ParseBenchmarks(binary string, extraArgs ...string) ([]TestCase, error) {
 	var t []TestCase
 	args := append([]string{listBenchmarkFlag}, extraArgs...)

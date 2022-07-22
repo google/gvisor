@@ -68,7 +68,7 @@ To bump the version of an existing runtime test:
     This will likely look similar to the older version, so start by copying the
     older one. Update any packages or downloaded urls to point to the new
     version. Test building the image with `docker build
-    third_party/gvisor/images/runtime/<new_runtime>`
+    images/runtime/<new_runtime>`
 
 2.  Create a new [`runtime_test`](BUILD) target. The `name` field must be the
     dirctory name for the Docker image you created in Step 1.
