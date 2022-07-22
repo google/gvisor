@@ -42,6 +42,7 @@ duration=30             # 30s is enough time to consistent results (experimental
 helper_dir=$(dirname $0)
 netstack_opts=
 disable_linux_gso=
+disable_linux_gro=
 num_client_threads=1
 
 # Check for netem support.
@@ -136,6 +137,9 @@ while [ $# -gt 0 ]; do
     --disable-linux-gso)
       disable_linux_gso=1
       ;;
+    --disable-linux-gro)
+      disable_linux_gro=1
+      ;;
     --num-client-threads)
       shift
       num_client_threads=$1
@@ -165,7 +169,8 @@ while [ $# -gt 0 ]; do
       echo " --duplicate           set the duplicate probability (%)"
       echo " --helpers             set the helper directory"
       echo " --num-client-threads  number of parallel client threads to run"
-      echo " --disable-linux-gso   disable segmentation offload in the Linux network stack"
+      echo " --disable-linux-gso   disable segmentation offload (TSO, GSO, GRO) in the Linux network stack"
+      echo " --disable-linux-gro   disable GRO in the Linux network stack"
       echo ""
       echo "The output will of the script will be:"
       echo "  <throughput> <client-cpu-usage> <server-cpu-usage>"
@@ -322,10 +327,14 @@ ${nsjoin_binary} /tmp/client.netns ip addr add ${client_addr}/${mask} dev client
 ${nsjoin_binary} /tmp/server.netns ip addr add ${server_addr}/${mask} dev server.0
 if [ "${disable_linux_gso}" == "1" ]; then
   ${nsjoin_binary} /tmp/client.netns ethtool -K client.0 tso off
-  ${nsjoin_binary} /tmp/client.netns ethtool -K client.0 gro off
   ${nsjoin_binary} /tmp/client.netns ethtool -K client.0 gso off
+  ${nsjoin_binary} /tmp/client.netns ethtool -K client.0 gro off
   ${nsjoin_binary} /tmp/server.netns ethtool -K server.0 tso off
   ${nsjoin_binary} /tmp/server.netns ethtool -K server.0 gso off
+  ${nsjoin_binary} /tmp/server.netns ethtool -K server.0 gro off
+fi
+if [ "${disable_linux_gro}" == "1" ]; then
+  ${nsjoin_binary} /tmp/client.netns ethtool -K client.0 gro off
   ${nsjoin_binary} /tmp/server.netns ethtool -K server.0 gro off
 fi
 ${nsjoin_binary} /tmp/client.netns ip link set client.0 up
