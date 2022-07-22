@@ -37,6 +37,7 @@ type taskInode struct {
 	kernfs.InodeDirectoryNoNewChildren
 	kernfs.InodeNotSymlink
 	kernfs.InodeTemporary
+	kernfs.InodeWatches
 	kernfs.OrderedChildren
 	taskInodeRefs
 

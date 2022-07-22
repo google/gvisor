@@ -37,6 +37,7 @@ type subtasksInode struct {
 	kernfs.InodeDirectoryNoNewChildren
 	kernfs.InodeNotSymlink
 	kernfs.InodeTemporary
+	kernfs.InodeWatches
 	kernfs.OrderedChildren
 	subtasksInodeRefs
 
