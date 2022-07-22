@@ -185,12 +185,24 @@ endif
 # container in order to perform work via the bazel client.
 ifeq ($(DOCKER_BUILD),true)
 wrapper = docker exec $(DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) $(1)
+wrapper_timeout = timeout $(1) docker exec $(DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) $(2)
 else
 wrapper = $(1)
+wrapper_timeout = timeout $(1) $(2)
 endif
 
 bazel-shutdown: ## Shuts down a running bazel server.
-	@$(call wrapper,$(BAZEL) shutdown)
+	@$(call wrapper_timeout,--signal=KILL 30s,$(BAZEL) shutdown) || true
+ifeq ($(DOCKER_BUILD),true)
+# Docker can bug out and get stuck in `docker exec` despite the container
+# already having been terminated. So this uses multiple ways to try to get the
+# container to exit, and ignores which ones work and which ones don't.
+# Instead, it just checks that the container no longer exists by the end of it.
+	@timeout --signal=KILL 10s docker wait $(DOCKER_NAME) 2>/dev/null || true
+	@docker stop --time=10 $(DOCKER_NAME) 2>/dev/null || true
+# Double check that the container isn't running.
+	@bash -c "! docker inspect $(DOCKER_NAME) &>/dev/null"
+endif
 .PHONY: bazel-shutdown
 
 bazel-alias: ## Emits an alias that can be used within the shell.
