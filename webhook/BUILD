@@ -21,7 +21,7 @@ pkg_tar(
     name = "files",
     srcs = [":webhook"],
     extension = "tgz",
-    strip_prefix = "/third_party/gvisor/webhook",
+    strip_prefix = "/webhook",
 )
 
 go_binary(
