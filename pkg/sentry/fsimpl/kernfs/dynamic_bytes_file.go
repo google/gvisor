@@ -40,6 +40,7 @@ type DynamicBytesFile struct {
 	InodeNoopRefCount
 	InodeNotDirectory
 	InodeNotSymlink
+	InodeWatches
 
 	locks vfs.FileLocks
 	// data can additionally implement vfs.WritableDynamicBytesSource to support

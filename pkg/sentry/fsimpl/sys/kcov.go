@@ -41,6 +41,7 @@ type kcovInode struct {
 	kernfs.InodeNoopRefCount
 	kernfs.InodeNotDirectory
 	kernfs.InodeNotSymlink
+	kernfs.InodeWatches
 	implStatFS
 }
 

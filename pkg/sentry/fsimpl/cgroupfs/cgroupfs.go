@@ -493,6 +493,7 @@ type dir struct {
 	kernfs.InodeAttrs
 	kernfs.InodeNotSymlink
 	kernfs.InodeDirectoryNoNewChildren
+	kernfs.InodeWatches
 	kernfs.OrderedChildren
 	implStatFS
 

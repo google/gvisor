@@ -37,6 +37,7 @@ type selfSymlink struct {
 	kernfs.InodeAttrs
 	kernfs.InodeNoopRefCount
 	kernfs.InodeSymlink
+	kernfs.InodeWatches
 
 	pidns *kernel.PIDNamespace
 }
@@ -78,6 +79,7 @@ type threadSelfSymlink struct {
 	kernfs.InodeAttrs
 	kernfs.InodeNoopRefCount
 	kernfs.InodeSymlink
+	kernfs.InodeWatches
 
 	pidns *kernel.PIDNamespace
 }

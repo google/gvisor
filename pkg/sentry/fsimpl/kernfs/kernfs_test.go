@@ -106,6 +106,7 @@ type readonlyDir struct {
 	kernfs.InodeNoStatFS
 	kernfs.InodeNotSymlink
 	kernfs.InodeTemporary
+	kernfs.InodeWatches
 	kernfs.OrderedChildren
 
 	locks vfs.FileLocks
@@ -141,6 +142,7 @@ type dir struct {
 	kernfs.InodeNotSymlink
 	kernfs.InodeNoStatFS
 	kernfs.InodeTemporary
+	kernfs.InodeWatches
 	kernfs.OrderedChildren
 
 	locks vfs.FileLocks

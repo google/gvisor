@@ -2501,6 +2501,25 @@ TEST(InotifyTest, NotifyNoDeadlock) {
   }
 }
 
+// NOTE(b/239215242): Regression test.
+TEST(Inotify, KernfsBasic) {
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const std::string procFile = "/proc/filesystems";
+
+  const int wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(fd.get(), procFile, IN_ALL_EVENTS));
+  const FileDescriptor file1_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(procFile, O_RDONLY));
+
+  char buf;
+  EXPECT_THAT(read(file1_fd.get(), &buf, 1), SyscallSucceeds());
+
+  const std::vector<Event> events =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
+  ASSERT_THAT(events, Are({Event(IN_OPEN, wd), Event(IN_ACCESS, wd)}));
+}
+
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor

@@ -395,6 +395,8 @@ func (fs *Filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 	if err != nil {
 		return err
 	}
+	parent.inode.Watches().Notify(ctx, pc, linux.IN_CREATE, 0, vfs.InodeEvent, false /* unlinked */)
+	d.inode.Watches().Notify(ctx, "", linux.IN_ATTRIB, 0, vfs.InodeEvent, false /* unlinked */)
 	var child Dentry
 	child.Init(fs, childI)
 	parent.insertChildLocked(pc, &child)
@@ -433,6 +435,7 @@ func (fs *Filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 	}
 	var child Dentry
 	child.Init(fs, childI)
+	parent.inode.Watches().Notify(ctx, pc, linux.IN_CREATE|linux.IN_ISDIR, 0, vfs.InodeEvent, false /* unlinked */)
 	parent.insertChildLocked(pc, &child)
 	return nil
 }
@@ -467,6 +470,7 @@ func (fs *Filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 	if err != nil {
 		return err
 	}
+	parent.inode.Watches().Notify(ctx, pc, linux.IN_CREATE, 0, vfs.InodeEvent, false /* unlinked */)
 	var newD Dentry
 	newD.Init(fs, newI)
 	parent.insertChildLocked(pc, &newD)
@@ -559,6 +563,9 @@ afterTrailingSymlink:
 	if len(pc) > linux.NAME_MAX {
 		return nil, linuxerr.ENAMETOOLONG
 	}
+	if parent.VFSDentry().IsDead() {
+		return nil, linuxerr.ENOENT
+	}
 	// Determine whether or not we need to create a file.
 	child, err := fs.stepExistingLocked(ctx, rp, parent, false /* mayFollowSymlinks */)
 	if linuxerr.Equals(linuxerr.ENOENT, err) {
@@ -582,6 +589,7 @@ afterTrailingSymlink:
 		// its destruction while fs.mu is unlocked.
 		child.IncRef()
 		unlock()
+		parent.inode.Watches().Notify(ctx, pc, linux.IN_CREATE, 0, vfs.PathEvent, false /* unlinked */)
 		fd, err := child.inode.Open(ctx, rp, &child, opts)
 		child.DecRef(ctx)
 		return fd, err
@@ -765,7 +773,9 @@ func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		// deferDecRef so that fs.mu and dstDir.mu are unlocked by then.
 		fs.deferDecRef(replaced)
 		replaceVFSD = replaced.VFSDentry()
+		replaced.setDeleted()
 	}
+	vfs.InotifyRename(ctx, src.inode.Watches(), srcDir.inode.Watches(), dstDir.inode.Watches(), oldName, newName, src.isDir())
 	virtfs.CommitRenameReplaceDentry(ctx, srcVFSD, replaceVFSD) // +checklocksforce: to may be nil, that's okay.
 	return nil
 }
@@ -810,9 +820,11 @@ func (fs *Filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 		return err
 	}
 	delete(parentDentry.children, d.name)
+	parentDentry.inode.Watches().Notify(ctx, d.name, linux.IN_DELETE|linux.IN_ISDIR, 0, vfs.InodeEvent, true /* unlinked */)
 	// Defer decref so that fs.mu and parentDentry.dirMu are unlocked by then.
 	fs.deferDecRef(d)
 	virtfs.CommitDeleteDentry(ctx, vfsd)
+	d.setDeleted()
 	return nil
 }
 
@@ -820,15 +832,24 @@ func (fs *Filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 func (fs *Filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetStatOptions) error {
 	fs.mu.RLock()
 	defer fs.processDeferredDecRefs(ctx)
-	defer fs.mu.RUnlock()
 	d, err := fs.walkExistingLocked(ctx, rp)
 	if err != nil {
+		fs.mu.RUnlock()
 		return err
 	}
 	if opts.Stat.Mask == 0 {
+		fs.mu.RUnlock()
 		return nil
 	}
-	return d.inode.SetStat(ctx, fs.VFSFilesystem(), rp.Credentials(), opts)
+	err = d.inode.SetStat(ctx, fs.VFSFilesystem(), rp.Credentials(), opts)
+	fs.mu.RUnlock()
+	if err != nil {
+		return err
+	}
+	if ev := vfs.InotifyEventFromStatMask(opts.Stat.Mask); ev != 0 {
+		d.InotifyWithParent(ctx, ev, 0, vfs.InodeEvent)
+	}
+	return nil
 }
 
 // StatAt implements vfs.FilesystemImpl.StatAt.
@@ -885,6 +906,7 @@ func (fs *Filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, targ
 	if err != nil {
 		return err
 	}
+	parent.inode.Watches().Notify(ctx, pc, linux.IN_CREATE, 0, vfs.InodeEvent, false /* unlinked */)
 	var child Dentry
 	child.Init(fs, childI)
 	parent.insertChildLocked(pc, &child)
@@ -926,9 +948,11 @@ func (fs *Filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 		return err
 	}
 	delete(parentDentry.children, d.name)
+	vfs.InotifyRemoveChild(ctx, d.inode.Watches(), parentDentry.inode.Watches(), d.name)
 	// Defer decref so that fs.mu and parentDentry.dirMu are unlocked by then.
 	fs.deferDecRef(d)
 	virtfs.CommitDeleteDentry(ctx, vfsd)
+	d.setDeleted()
 	return nil
 }
 

@@ -126,12 +126,6 @@ type DentryImpl interface {
 	// the Dentry. Dentries that are hard links to the same underlying file
 	// share the same watches.
 	//
-	// Watches may return nil if the dentry belongs to a FilesystemImpl that
-	// does not support inotify. If an implementation returns a non-nil watch
-	// set, it must always return a non-nil watch set. Likewise, if an
-	// implementation returns a nil watch set, it must always return a nil watch
-	// set.
-	//
 	// The caller does not need to hold a reference on the dentry.
 	Watches() *Watches
 
@@ -194,9 +188,6 @@ func (d *Dentry) InotifyWithParent(ctx context.Context, events, cookie uint32, e
 }
 
 // Watches returns the set of inotify watches associated with d.
-//
-// Watches will return nil if d belongs to a FilesystemImpl that does not
-// support inotify.
 func (d *Dentry) Watches() *Watches {
 	return d.impl.Watches()
 }

@@ -98,6 +98,7 @@ type inode struct {
 	kernfs.InodeNoopRefCount
 	kernfs.InodeNotDirectory
 	kernfs.InodeNotSymlink
+	kernfs.InodeWatches
 }
 
 // Open implements kernfs.Inode.Open.

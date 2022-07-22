@@ -716,6 +716,7 @@ type StaticDirectory struct {
 	InodeNoStatFS
 	InodeNotSymlink
 	InodeTemporary
+	InodeWatches
 	OrderedChildren
 	StaticDirectoryRefs
 
@@ -795,4 +796,16 @@ type InodeNoStatFS struct{}
 // StatFS implements Inode.StatFS.
 func (*InodeNoStatFS) StatFS(context.Context, *vfs.Filesystem) (linux.Statfs, error) {
 	return linux.Statfs{}, linuxerr.ENOSYS
+}
+
+// InodeWatches partially implements Inode.
+//
+// +stateify savable
+type InodeWatches struct {
+	watches vfs.Watches
+}
+
+// Watches implements Inode.Watches.
+func (i *InodeWatches) Watches() *vfs.Watches {
+	return &i.watches
 }
