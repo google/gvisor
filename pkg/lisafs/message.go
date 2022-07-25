@@ -857,7 +857,7 @@ type PReadResp struct {
 
 // String implements fmt.Stringer.String.
 func (r *PReadResp) String() string {
-	return fmt.Sprintf("PReadResp{NumBytes: %d, Buf: %v}", r.NumBytes, r.Buf)
+	return fmt.Sprintf("PReadResp{NumBytes: %d, Buf: [...%d bytes...]}", r.NumBytes, len(r.Buf))
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -894,7 +894,7 @@ type PWriteReq struct {
 
 // String implements fmt.Stringer.String.
 func (w *PWriteReq) String() string {
-	return fmt.Sprintf("PWriteReq{Offset: %d, FD: %d, NumBytes: %d, Buf: %v}", w.Offset, w.FD, w.NumBytes, w.Buf)
+	return fmt.Sprintf("PWriteReq{Offset: %d, FD: %d, NumBytes: %d, Buf: [...%d bytes...]}", w.Offset, w.FD, w.NumBytes, len(w.Buf))
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
