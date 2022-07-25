@@ -113,6 +113,18 @@ const (
 
 	// ExternalAfterEnable enables the external hook after syscall execution.
 	ExternalAfterEnable
+
+	// SecCheckEnter represents a schematized/enter syscall seccheck event.
+	SecCheckEnter
+
+	// SecCheckExit represents a schematized/exit syscall seccheck event.
+	SecCheckExit
+
+	// SecCheckRawEnter represents raw/enter syscall seccheck event.
+	SecCheckRawEnter
+
+	// SecCheckRawExit represents raw/exit syscall seccheck event.
+	SecCheckRawExit
 )
 
 // StraceEnableBits combines both strace log and event flags.
@@ -142,7 +154,48 @@ type SyscallFlagsTable struct {
 // max is the largest syscall number in table.
 func (e *SyscallFlagsTable) init(table map[uintptr]Syscall) {
 	for num := range table {
-		e.enable[num] = atomicbitops.FromUint32(syscallPresent)
+		enableFlags := uint32(syscallPresent)
+		e.enable[num] = atomicbitops.FromUint32(enableFlags)
+	}
+	seccheck.Global.AddSyscallFlagListener(e)
+	e.UpdateSecCheck(&seccheck.Global)
+}
+
+// UpdateSecCheck implements seccheck.SyscallFlagListener.
+//
+// It is called when per-syscall seccheck event enablement changes.
+func (e *SyscallFlagsTable) UpdateSecCheck(state *seccheck.State) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for sysno := uintptr(0); sysno < maxSyscallNum; sysno++ {
+		oldFlags := e.enable[sysno].Load()
+		if !bits.IsOn32(oldFlags, syscallPresent) {
+			continue
+		}
+		flags := oldFlags
+		if state.SyscallEnabled(seccheck.SyscallEnter, sysno) {
+			flags |= SecCheckEnter
+		} else {
+			flags &^= SecCheckEnter
+		}
+		if state.SyscallEnabled(seccheck.SyscallExit, sysno) {
+			flags |= SecCheckExit
+		} else {
+			flags &^= SecCheckExit
+		}
+		if state.SyscallEnabled(seccheck.SyscallRawEnter, sysno) {
+			flags |= SecCheckRawEnter
+		} else {
+			flags &^= SecCheckRawEnter
+		}
+		if state.SyscallEnabled(seccheck.SyscallRawExit, sysno) {
+			flags |= SecCheckRawExit
+		} else {
+			flags &^= SecCheckRawExit
+		}
+		if flags != oldFlags {
+			e.enable[sysno].Store(flags)
+		}
 	}
 }
 
@@ -151,13 +204,12 @@ func (e *SyscallFlagsTable) Word(sysno uintptr) uint32 {
 	if sysno <= maxSyscallNum {
 		return e.enable[sysno].Load()
 	}
-
 	return e.missingEnable.Load()
 }
 
-// Enable sets enable bit bit for all syscalls based on s.
+// Enable sets enable bit `bit` for all syscalls based on s.
 //
-// Syscalls missing from s are disabled.
+// Syscalls missing from `s` are disabled.
 //
 // Syscalls missing from the initial table passed to Init cannot be added as
 // individual syscalls. If present in s they will be ignored.
