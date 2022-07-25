@@ -35,6 +35,17 @@ const (
 	syscallTypesCount
 )
 
+// SyscallFlagListener is an interface that is notified when syscall point enablement changes.
+//
+// It is used to notify the kernel's syscall table about syscall points, without introducing a
+// direct dependency on it.
+type SyscallFlagListener interface {
+	// UpdateSecCheck is called each time the system call point enablement may have changed.
+	// This is called with seccheck.State.mu held, so it is expected to be fast and not re-entrant
+	// with seccheck.State functions that attempt to re-lock it.
+	UpdateSecCheck(state *State)
+}
+
 const (
 	// Copied from kernel.maxSyscallNum to avoid reverse dependency.
 	syscallsMax   = 2000

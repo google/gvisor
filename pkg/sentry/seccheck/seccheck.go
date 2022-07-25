@@ -30,7 +30,8 @@ type Point uint
 // PointX represents the checkpoint X.
 const (
 	totalPoints            = int(pointLengthBeforeSyscalls) + syscallPoints
-	numPointBitmaskUint32s = (totalPoints-1)/32 + 1
+	numPointsPerUint32     = 32
+	numPointBitmaskUint32s = (totalPoints-1)/numPointsPerUint32 + 1
 )
 
 // FieldSet contains all optional fields to be collected by a given Point.
@@ -209,6 +210,12 @@ type State struct {
 	// Mutation of sinks is serialized by registrationMu.
 	sinks []Sink
 
+	// syscallFlagListeners is the set of registered SyscallFlagListeners.
+	//
+	// They are notified when the enablement of a syscall point changes.
+	// Mutation of syscallFlagListeners is serialized by registrationMu.
+	syscallFlagListeners []SyscallFlagListener
+
 	pointFields map[Point]FieldSet
 }
 
@@ -223,11 +230,19 @@ func (s *State) AppendSink(c Sink, reqs []PointReq) {
 	if s.pointFields == nil {
 		s.pointFields = make(map[Point]FieldSet)
 	}
+	updateSyscalls := false
 	for _, req := range reqs {
-		word, bit := req.Pt/32, req.Pt%32
+		word, bit := req.Pt/numPointsPerUint32, req.Pt%numPointsPerUint32
 		s.enabledPoints[word].Store(s.enabledPoints[word].RacyLoad() | (uint32(1) << bit))
-
+		if req.Pt >= pointLengthBeforeSyscalls {
+			updateSyscalls = true
+		}
 		s.pointFields[req.Pt] = req.Fields
+	}
+	if updateSyscalls {
+		for _, listener := range s.syscallFlagListeners {
+			listener.UpdateSecCheck(s)
+		}
 	}
 }
 
@@ -235,8 +250,18 @@ func (s *State) clearSink() {
 	s.registrationMu.Lock()
 	defer s.registrationMu.Unlock()
 
+	updateSyscalls := false
 	for i := range s.enabledPoints {
 		s.enabledPoints[i].Store(0)
+		// We use i+1 here because we want to check the last bit that may have been changed within i.
+		if Point((i+1)*numPointsPerUint32) >= pointLengthBeforeSyscalls {
+			updateSyscalls = true
+		}
+	}
+	if updateSyscalls {
+		for _, listener := range s.syscallFlagListeners {
+			listener.UpdateSecCheck(s)
+		}
 	}
 	s.pointFields = nil
 
@@ -249,9 +274,18 @@ func (s *State) clearSink() {
 	}
 }
 
+// AddSyscallFlagListener adds a listener to the State.
+//
+// The listener will be notified whenever syscall point enablement changes.
+func (s *State) AddSyscallFlagListener(listener SyscallFlagListener) {
+	s.registrationMu.Lock()
+	defer s.registrationMu.Unlock()
+	s.syscallFlagListeners = append(s.syscallFlagListeners, listener)
+}
+
 // Enabled returns true if any Sink is registered for the given checkpoint.
 func (s *State) Enabled(p Point) bool {
-	word, bit := p/32, p%32
+	word, bit := p/numPointsPerUint32, p%numPointsPerUint32
 	if int(word) >= len(s.enabledPoints) {
 		return false
 	}
