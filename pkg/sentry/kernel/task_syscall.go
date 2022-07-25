@@ -90,7 +90,7 @@ func (t *Task) executeSyscall(sysno uintptr, args arch.SyscallArguments) (rval u
 		straceContext = s.Stracer.SyscallEnter(t, sysno, args, fe)
 	}
 
-	if seccheck.Global.SyscallEnabled(seccheck.SyscallRawEnter, sysno) {
+	if bits.IsAnyOn32(fe, SecCheckRawEnter) {
 		info := pb.Syscall{
 			Sysno: uint64(sysno),
 			Arg1:  args[0].Uint64(),
@@ -109,7 +109,7 @@ func (t *Task) executeSyscall(sysno uintptr, args arch.SyscallArguments) (rval u
 			return c.RawSyscall(t, fields, &info)
 		})
 	}
-	if seccheck.Global.SyscallEnabled(seccheck.SyscallEnter, sysno) {
+	if bits.IsAnyOn32(fe, SecCheckEnter) {
 		fields := seccheck.Global.GetFieldSet(seccheck.GetPointForSyscall(seccheck.SyscallEnter, sysno))
 		var ctxData *pb.ContextData
 		if !fields.Context.Empty() {
@@ -120,7 +120,7 @@ func (t *Task) executeSyscall(sysno uintptr, args arch.SyscallArguments) (rval u
 			Sysno: sysno,
 			Args:  args,
 		}
-		cb := t.SyscallTable().LookupSyscallToProto(sysno)
+		cb := s.LookupSyscallToProto(sysno)
 		msg, msgType := cb(t, fields, ctxData, info)
 		seccheck.Global.SentToSinks(func(c seccheck.Sink) error {
 			return c.Syscall(t, fields, ctxData, msgType, msg)
@@ -158,7 +158,7 @@ func (t *Task) executeSyscall(sysno uintptr, args arch.SyscallArguments) (rval u
 		s.Stracer.SyscallExit(straceContext, t, sysno, rval, err)
 	}
 
-	if seccheck.Global.SyscallEnabled(seccheck.SyscallRawExit, sysno) {
+	if bits.IsAnyOn32(fe, SecCheckRawExit) {
 		info := pb.Syscall{
 			Sysno: uint64(sysno),
 			Arg1:  args[0].Uint64(),
@@ -181,7 +181,7 @@ func (t *Task) executeSyscall(sysno uintptr, args arch.SyscallArguments) (rval u
 			return c.RawSyscall(t, fields, &info)
 		})
 	}
-	if seccheck.Global.SyscallEnabled(seccheck.SyscallExit, sysno) {
+	if bits.IsAnyOn32(fe, SecCheckExit) {
 		fields := seccheck.Global.GetFieldSet(seccheck.GetPointForSyscall(seccheck.SyscallExit, sysno))
 		var ctxData *pb.ContextData
 		if !fields.Context.Empty() {
@@ -195,7 +195,7 @@ func (t *Task) executeSyscall(sysno uintptr, args arch.SyscallArguments) (rval u
 			Rval:  rval,
 			Errno: ExtractErrno(err, int(sysno)),
 		}
-		cb := t.SyscallTable().LookupSyscallToProto(sysno)
+		cb := s.LookupSyscallToProto(sysno)
 		msg, msgType := cb(t, fields, ctxData, info)
 		seccheck.Global.SentToSinks(func(c seccheck.Sink) error {
 			return c.Syscall(t, fields, ctxData, msgType, msg)
