@@ -28,9 +28,11 @@ import (
 var _ stack.QueueingDiscipline = (*discipline)(nil)
 
 const (
-	// BatchSize represents the number of packets written to the
-	// lower link endpoint during calls to WritePackets.
-	BatchSize   = 32
+	// BatchSize is the number of packets to write in each syscall. It is 47
+	// because when GvisorGSO is in use then a single 65KB TCP segment can get
+	// split into 46 segments of 1420 bytes and a single 216 byte segment.
+	BatchSize = 47
+
 	qDiscClosed = 1
 )
 
