@@ -9,19 +9,19 @@ This guide described how to change the
 
 If you intend to run the KVM platform, you will also to have KVM installed on
 your system. If you are running a Debian based system like Debian or Ubuntu you
-can usually do this by ensuring the module is loaded, and permissions are
-appropriately set on the `/dev/kvm` device.
+can usually do this by ensuring the module is loaded, and your user has
+permissions to access the `/dev/kvm` device. Usually, it means that the user is
+in the kvm group.
 
-If you have an Intel CPU:
-
-```bash
-sudo modprobe kvm-intel && sudo chmod a+rw /dev/kvm
-```
-
-If you have an AMD CPU:
 
 ```bash
-sudo modprobe kvm-amd && sudo chmod a+rw /dev/kvm
+# Check that /dev/kvm is owned by the kvm group
+$ ls -l /dev/kvm
+crw-rw----+ 1 root kvm 10, 232 Jul 26 00:04 /dev/kvm
+
+# Make sure that the current user is part of the kvm group
+$ $ groups | grep -q kvm | echo ok
+ok
 ```
 
 If you are using a virtual machine you will need to make sure that nested
