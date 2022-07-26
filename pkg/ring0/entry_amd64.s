@@ -169,6 +169,11 @@ TEXT ·Halt(SB),NOSPLIT,$0
 	HLT
 	RET
 
+// See kernel.go.
+TEXT ·Bug(SB),NOSPLIT,$0
+	INT $3
+	RET
+
 // See kernel_amd64.go.
 TEXT ·HaltAndWriteFSBase(SB),NOSPLIT,$8-8
 	HLT

@@ -28,6 +28,9 @@ func (k *Kernel) Init(maxCPUs int) {
 // Halt halts execution.
 func Halt()
 
+// Bug triggers a fault.
+func Bug()
+
 // defaultHooks implements hooks.
 type defaultHooks struct{}
 

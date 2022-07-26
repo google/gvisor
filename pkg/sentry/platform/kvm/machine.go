@@ -74,6 +74,9 @@ type machine struct {
 	// vCPUsByID pool.
 	usedVCPUs int
 
+	// vCPUsInSyscalls is the number of vCPUs that are in the syscall fast path.
+	vCPUsInSyscalls atomicbitops.Int32
+
 	// maxVCPUs is the maximum number of vCPUs supported by the machine.
 	maxVCPUs int
 
@@ -191,6 +194,13 @@ type dieState struct {
 	// guestRegs is used to store register state during vCPU.die() to prevent
 	// allocation inside nosplit function.
 	guestRegs userRegs
+}
+
+type kvmEnableCap struct {
+	cap   uint32
+	flags uint32
+	args  [4]uint64
+	pad   [64]uint8
 }
 
 // createVCPU creates and returns a new vCPU.

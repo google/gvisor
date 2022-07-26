@@ -172,3 +172,23 @@ func seccompMmapSyscall(context unsafe.Pointer) (uintptr, uintptr, unix.Errno) {
 
 	return addr, uintptr(ctx.Rsi), e
 }
+
+func (c *vCPU) enablePVSyscalls() {
+	vcpuCap := kvmEnableCap{
+		cap:  _KVM_CAP_ENFORCE_PV_FEATURE_CPUID,
+		args: [4]uint64{1, 0, 0, 0},
+	}
+
+	_, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(c.fd), _KVM_ENABLE_CAP, uintptr(unsafe.Pointer(&vcpuCap)))
+	if errno != 0 {
+		panic(fmt.Sprintf("error setting _GOOGLE_KVM_CAP_PV_HOST_SYSCALL: %v", errno))
+	}
+	vcpuCap.args[0] = 1
+	vcpuCap.cap = _KVM_CAP_PV_HOST_SYSCALL
+	_, _, errno = unix.RawSyscall(unix.SYS_IOCTL, uintptr(c.fd), _KVM_ENABLE_CAP, uintptr(unsafe.Pointer(&vcpuCap)))
+	// FIXME: need to fall-back to non-pv syscalls if _KVM_CAP_PV_HOST_SYSCALL isn't supported.
+	if errno != 0 {
+		panic(fmt.Sprintf("error setting _GOOGLE_KVM_CAP_PV_HOST_SYSCALL: %v", errno))
+	}
+
+}

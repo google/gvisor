@@ -502,11 +502,30 @@ func BenchmarkApplicationSyscall(b *testing.B) {
 	}
 }
 
+func BenchmarkHostSyscall(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		testutil.Getpid()
+	}
+}
+
 func BenchmarkKernelSyscall(b *testing.B) {
 	// Note that the target passed here is irrelevant, we never execute SwitchToUser.
 	applicationTest(b, true, testutil.AddrOfGetpid(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		// iteration does not include machine.Get() / machine.Put().
 		for i := 0; i < b.N; i++ {
+			bluepill(c)
+			unix.RawSyscall(unix.SYS_ARCH_PRCTL, 999, 0, 0)
+		}
+		return false
+	})
+}
+
+func BenchmarkKernelGR0Syscall(b *testing.B) {
+	// Note that the target passed here is irrelevant, we never execute SwitchToUser.
+	applicationTest(b, true, testutil.AddrOfGetpid(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
+		// iteration does not include machine.Get() / machine.Put().
+		for i := 0; i < b.N; i++ {
+			bluepill(c)
 			testutil.Getpid()
 		}
 		return false

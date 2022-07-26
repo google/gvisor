@@ -19,6 +19,7 @@ package kvm
 
 import (
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
@@ -61,6 +62,15 @@ func bluepillArchEnter(context *arch.SignalContext64) *vCPU {
 	return c
 }
 
+func amdSyscallFastPath(regs *arch.Registers) uintptr
+func intelSyscallFastPath(regs *arch.Registers) uintptr
+
+var vmcallIsSupported = cpuid.HostFeatureSet().Intel()
+
+func errnoToRead(val int64) uint64 {
+	return -uint64(val)
+}
+
 // KernelSyscall handles kernel syscalls.
 //
 // +checkescape:all
@@ -68,9 +78,43 @@ func bluepillArchEnter(context *arch.SignalContext64) *vCPU {
 //go:nosplit
 func (c *vCPU) KernelSyscall() {
 	regs := c.Registers()
+
+	if c.runData.requestInterruptWindow == 0 {
+		switch regs.Rax {
+		case unix.SYS_CLONE, unix.SYS_EXIT, unix.SYS_EXIT_GROUP,
+			unix.SYS_IOCTL, unix.SYS_RT_SIGRETURN, unix.SYS_MMAP,
+			unix.SYS_ARCH_PRCTL, unix.SYS_RT_SIGPROCMASK,
+			uint64(_SYS_KVM_RETURN_TO_HOST):
+		default:
+			rax := regs.Rax
+			vCPUsInSyscalls := &c.machine.vCPUsInSyscalls
+			if vCPUsInSyscalls.Add(1) < int32(c.machine.maxVCPUs/2) {
+				var ret uintptr
+				if vmcallIsSupported {
+					ret = intelSyscallFastPath(regs)
+				} else {
+					ret = amdSyscallFastPath(regs)
+				}
+				if ret != 0 {
+					ring0.Bug()
+					throw("vmcall")
+				}
+				switch -int64(regs.Rax) {
+				case int64(unix.EINTR), 512, 514, 516:
+				default:
+					vCPUsInSyscalls.Add(-1)
+					return
+				}
+				regs.Rax = rax
+			}
+			vCPUsInSyscalls.Add(-1)
+		}
+	}
+
 	if regs.Rax != ^uint64(0) {
 		regs.Rip -= 2 // Rewind.
 	}
+
 	// N.B. Since KernelSyscall is called when the kernel makes a syscall,
 	// FS_BASE is already set for correct execution of this function.
 	//

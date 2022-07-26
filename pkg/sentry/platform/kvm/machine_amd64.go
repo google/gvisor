@@ -137,6 +137,8 @@ func (c *vCPU) initArchState() error {
 		return err
 	}
 
+	c.enablePVSyscalls()
+
 	// Set the entrypoint for the kernel.
 	kernelUserRegs.RIP = uint64(ring0.AddrOfStart())
 	kernelUserRegs.RAX = uint64(reflect.ValueOf(&c.CPU).Pointer())

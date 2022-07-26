@@ -41,6 +41,7 @@ const (
 	_KVM_SET_SIGNAL_MASK        = 0x4004ae8b
 	_KVM_GET_VCPU_EVENTS        = 0x8040ae9f
 	_KVM_SET_VCPU_EVENTS        = 0x4040aea0
+	_KVM_ENABLE_CAP             = 0x4068aea3
 )
 
 // KVM exit reasons.
@@ -95,4 +96,10 @@ const (
 	// _KVM_HYPERCALL_VMEXIT is only used on arm64 for now.
 	_KVM_HYPERCALL_VMEXIT int = iota
 	_KVM_HYPERCALL_MAX
+)
+
+// KVM capabilites.
+const (
+	_KVM_CAP_ENFORCE_PV_FEATURE_CPUID = 190
+	_KVM_CAP_PV_HOST_SYSCALL          = 217
 )

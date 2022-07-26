@@ -139,3 +139,19 @@ TEXT ·addrOfDieTrampoline(SB), $0-8
 	MOVQ $·dieTrampoline(SB), AX
 	MOVQ AX, ret+0(FP)
 	RET
+
+#define KVM_HC_HOST_SYSCALL 13
+TEXT ·intelSyscallFastPath(SB),NOSPLIT,$0-16
+       MOVQ $KVM_HC_HOST_SYSCALL, AX
+       MOVQ regs+0(FP), BX
+       BYTE $0x0F; BYTE $0x01; BYTE $0xC1; // vmcall
+       MOVQ AX, ret+8(FP)
+       RET
+
+TEXT ·amdSyscallFastPath(SB),NOSPLIT,$0-16
+       MOVQ $KVM_HC_HOST_SYSCALL, AX
+       MOVQ regs+0(FP), BX
+       BYTE $0x0F; BYTE $0x01; BYTE $0xD9; // vmmcall
+       MOVQ AX, ret+8(FP)
+       RET
+
