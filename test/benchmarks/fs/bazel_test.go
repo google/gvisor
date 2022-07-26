@@ -30,12 +30,6 @@ func BenchmarkBuildABSL(b *testing.B) {
 }
 
 // Note: CleanCache versions of this test require running with root permissions.
-// Note: This test takes on the order of 10m per permutation for runsc on kvm.
-func BenchmarkBuildRunsc(b *testing.B) {
-	runBuildBenchmark(b, "benchmarks/runsc", "/gvisor", "runsc:runsc")
-}
-
-// Note: CleanCache versions of this test require running with root permissions.
 // Note: This test takes on the order of 6m per permutation for runsc on kvm.
 func BenchmarkBuildGRPC(b *testing.B) {
 	runBuildBenchmark(b, "benchmarks/build-grpc", "/grpc", ":grpc")
