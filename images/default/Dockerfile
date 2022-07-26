@@ -7,7 +7,11 @@ RUN apt-get update && apt-get install -y curl gnupg2 git \
         openjdk-11-jdk-headless zip unzip \
         apt-transport-https ca-certificates gnupg-agent \
         software-properties-common \
-        pkg-config libffi-dev patch diffutils libssl-dev iptables kmod
+        pkg-config libffi-dev patch diffutils libssl-dev iptables kmod \
+        clang
+
+# For compiling BPF with clang.
+RUN ln -s /usr/include/$(uname -m)-linux-gnu/asm /usr/include/asm
 
 # Install Docker client for the website build.
 RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
