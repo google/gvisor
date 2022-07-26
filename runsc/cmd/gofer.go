@@ -18,8 +18,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"strings"
 
@@ -63,8 +65,9 @@ type Gofer struct {
 	applyCaps bool
 	setUpRoot bool
 
-	specFD   int
-	mountsFD int
+	specFD       int
+	mountsFD     int
+	syncUsernsFD int
 }
 
 // Name implements subcommands.Command.
@@ -92,6 +95,7 @@ func (g *Gofer) SetFlags(f *flag.FlagSet) {
 	f.Var(&g.ioFDs, "io-fds", "list of FDs to connect gofer servers. They must follow this order: root first, then mounts as defined in the spec")
 	f.IntVar(&g.specFD, "spec-fd", -1, "required fd with the container spec")
 	f.IntVar(&g.mountsFD, "mounts-fd", -1, "mountsFD is the file descriptor to write list of mounts after they have been resolved (direct paths, no symlinks).")
+	f.IntVar(&g.syncUsernsFD, "sync-userns-fd", -1, "file descriptor used to synchronize rootless user namespace initialization.")
 }
 
 // Execute implements subcommands.Command.
@@ -113,6 +117,26 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		util.Fatalf("reading spec: %v", err)
 	}
 
+	if g.syncUsernsFD >= 0 {
+		f := os.NewFile(uintptr(g.syncUsernsFD), "sync FD")
+		defer f.Close()
+		var b [1]byte
+		if n, err := f.Read(b[:]); n != 0 || err != io.EOF {
+			util.Fatalf("failed to sync: %v: %v", n, err)
+		}
+
+		f.Close()
+		// SETUID changes UID on the current system thread, so we have
+		// to re-execute current binary.
+		runtime.LockOSThread()
+		if _, _, errno := unix.RawSyscall(unix.SYS_SETUID, 0, 0, 0); errno != 0 {
+			util.Fatalf("failed to set UID: %v", errno)
+		}
+		if _, _, errno := unix.RawSyscall(unix.SYS_SETGID, 0, 0, 0); errno != 0 {
+			util.Fatalf("failed to set GID: %v", errno)
+		}
+	}
+
 	if g.setUpRoot {
 		if err := setupRootFS(spec, conf); err != nil {
 			util.Fatalf("Error setting up root FS: %v", err)
@@ -122,11 +146,16 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		// Disable caps when calling myself again.
 		// Note: minimal argument handling for the default case to keep it simple.
 		args := os.Args
-		args = append(args, "--apply-caps=false", "--setup-root=false")
+		args = append(args, "--apply-caps=false", "--setup-root=false", "--sync-userns-fd=-1")
 		util.Fatalf("setCapsAndCallSelf(%v, %v): %v", args, goferCaps, setCapsAndCallSelf(args, goferCaps))
 		panic("unreachable")
 	}
 
+	if g.syncUsernsFD >= 0 {
+		// syncUsernsFD is set, but runsc hasn't been re-exeuted with a new UID and GID.
+		// We expcec that setCapsAndCallSelfsetCapsAndCallSelf has to be called in this case.
+		panic("unreachable")
+	}
 	// At this point we won't re-execute, so it's safe to limit via rlimits. Any
 	// limit >= 0 works. If the limit is lower than the current number of open
 	// files, then Setrlimit will succeed, and the next open will fail.

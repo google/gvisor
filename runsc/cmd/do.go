@@ -48,6 +48,8 @@ type Do struct {
 	ip      string
 	quiet   bool
 	overlay bool
+	uidMap  idMapSlice
+	gidMap  idMapSlice
 }
 
 // Name implements subcommands.Command.Name.
@@ -72,6 +74,44 @@ used for testing only.
 `
 }
 
+type idMapSlice []specs.LinuxIDMapping
+
+// String implements flag.Value.String.
+func (is *idMapSlice) String() string {
+	return fmt.Sprintf("%#v", is)
+}
+
+// Get implements flag.Value.Get.
+func (is *idMapSlice) Get() interface{} {
+	return is
+}
+
+// Set implements flag.Value.Set.
+func (is *idMapSlice) Set(s string) error {
+	fs := strings.Fields(s)
+	if len(fs) != 3 {
+		return fmt.Errorf("invalid mapping: %s", s)
+	}
+	var cid, hid, size int
+	var err error
+	if cid, err = strconv.Atoi(fs[0]); err != nil {
+		return fmt.Errorf("invalid mapping: %s", s)
+	}
+	if hid, err = strconv.Atoi(fs[1]); err != nil {
+		return fmt.Errorf("invalid mapping: %s", s)
+	}
+	if size, err = strconv.Atoi(fs[2]); err != nil {
+		return fmt.Errorf("invalid mapping: %s", s)
+	}
+	m := specs.LinuxIDMapping{
+		ContainerID: uint32(cid),
+		HostID:      uint32(hid),
+		Size:        uint32(size),
+	}
+	*is = append(*is, m)
+	return nil
+}
+
 // SetFlags implements subcommands.Command.SetFlags.
 func (c *Do) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.root, "root", "/", `path to the root directory, defaults to "/"`)
@@ -79,6 +119,8 @@ func (c *Do) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.ip, "ip", "192.168.10.2", "IPv4 address for the sandbox")
 	f.BoolVar(&c.quiet, "quiet", false, "suppress runsc messages to stdout. Application output is still sent to stdout and stderr")
 	f.BoolVar(&c.overlay, "force-overlay", true, "use an overlay. WARNING: disabling gives the command write access to the host")
+	f.Var(&c.uidMap, "uid-map", "Add a user id mapping [ContainerID, HostID, Size]")
+	f.Var(&c.gidMap, "gid-map", "Add a group id mapping [ContainerID, HostID, Size]")
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -128,6 +170,12 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) su
 	}
 
 	cid := fmt.Sprintf("runsc-%06d", rand.Int31n(1000000))
+
+	if c.uidMap != nil || c.gidMap != nil {
+		addNamespace(spec, specs.LinuxNamespace{Type: specs.UserNamespace})
+		spec.Linux.UIDMappings = c.uidMap
+		spec.Linux.GIDMappings = c.gidMap
+	}
 
 	if conf.Network == config.NetworkNone {
 		addNamespace(spec, specs.LinuxNamespace{Type: specs.NetworkNamespace})
