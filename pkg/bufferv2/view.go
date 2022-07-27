@@ -161,6 +161,16 @@ func (v *View) AsSlice() []byte {
 	return v.chunk.data[v.read:v.write]
 }
 
+// ToSlice returns an owned copy of the data in this view.
+func (v *View) ToSlice() []byte {
+	if v.Size() == 0 {
+		return nil
+	}
+	s := make([]byte, v.Size())
+	copy(s, v.AsSlice())
+	return s
+}
+
 // AvailableSize returns the number of bytes available for writing.
 func (v *View) AvailableSize() int {
 	if v == nil {
