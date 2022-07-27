@@ -1846,6 +1846,68 @@ TEST_P(UdpSocketTest, RecvBufLimitsEmptyRcvBuf) {
   }
 }
 
+// Test that decreasing SO_RCVBUF does not drop messages.
+TEST_P(UdpSocketTest, RecvBufUpdateDoesNotDrop) {
+  // Bind s_ to loopback.
+  ASSERT_NO_ERRNO(BindLoopback());
+
+  int min = 0;
+  {
+    // Discover minimum buffer size by trying to set it to zero.
+    constexpr int kRcvBufSz = 0;
+    ASSERT_THAT(setsockopt(bind_.get(), SOL_SOCKET, SO_RCVBUF, &kRcvBufSz,
+                           sizeof(kRcvBufSz)),
+                SyscallSucceeds());
+
+    socklen_t min_len = sizeof(min);
+    ASSERT_THAT(getsockopt(bind_.get(), SOL_SOCKET, SO_RCVBUF, &min, &min_len),
+                SyscallSucceeds());
+  }
+
+  // Now set the limit to min * 4.
+  int new_rcv_buf_sz = min * 4;
+  ASSERT_THAT(setsockopt(bind_.get(), SOL_SOCKET, SO_RCVBUF, &new_rcv_buf_sz,
+                         sizeof(new_rcv_buf_sz)),
+              SyscallSucceeds());
+  int rcv_buf_sz = 0;
+  {
+    socklen_t rcv_buf_len = sizeof(rcv_buf_sz);
+    ASSERT_THAT(getsockopt(bind_.get(), SOL_SOCKET, SO_RCVBUF, &rcv_buf_sz,
+                           &rcv_buf_len),
+                SyscallSucceeds());
+  }
+
+  std::vector<char> buf(min);
+  RandomizeBuffer(buf.data(), buf.size());
+
+  int sent = 4;
+  for (int i = 0; i < sent; ++i) {
+    ASSERT_THAT(
+        sendto(sock_.get(), buf.data(), buf.size(), 0, bind_addr_, addrlen_),
+        SyscallSucceedsWithValue(buf.size()));
+  }
+
+  absl::SleepFor(absl::Milliseconds(200));
+  // Set the receive buffer size back to the minimum.
+  {
+    constexpr int kRcvBufSz = 0;
+    ASSERT_THAT(setsockopt(bind_.get(), SOL_SOCKET, SO_RCVBUF, &kRcvBufSz,
+                           sizeof(kRcvBufSz)),
+                SyscallSucceeds());
+  }
+
+  // All receives should succeed since the changing the buffer size didn't
+  // drop the existing messages.
+  for (int i = 0; i < sent; ++i) {
+    SCOPED_TRACE(absl::StrCat("message ", i));
+    std::vector<char> received(buf.size());
+    EXPECT_THAT(RecvTimeout(bind_.get(), received.data(), received.size(),
+                            1 /*timeout*/),
+                IsPosixErrorOkAndHolds(received.size()));
+    EXPECT_EQ(memcmp(buf.data(), received.data(), buf.size()), 0);
+  }
+}
+
 // Test that receive buffer limits are enforced.
 TEST_P(UdpSocketTest, RecvBufLimits) {
   // Bind s_ to loopback.
