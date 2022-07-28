@@ -35,8 +35,9 @@ import (
 	"gvisor.dev/gvisor/pkg/unet"
 )
 
-// maxFiles determines the maximum file payload.
-const maxFiles = 32
+// maxFiles determines the maximum file payload. This limit is arbitrary. Linux
+// allows SCM_MAX_FD = 253 FDs to be donated in one sendmsg(2) call.
+const maxFiles = 128
 
 // ErrTooManyFiles is returned when too many file descriptors are mapped.
 var ErrTooManyFiles = errors.New("too many files")
