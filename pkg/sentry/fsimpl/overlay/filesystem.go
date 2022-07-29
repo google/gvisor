@@ -1081,6 +1081,9 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		}
 		return linuxerr.EBUSY
 	}
+	// Do not check for newName length, since different filesystem
+	// implementations impose different name limits. upperfs.RenameAt() will fail
+	// appropriately if it has to.
 	mnt := rp.Mount()
 	if mnt != oldParentVD.Mount() {
 		return linuxerr.EXDEV
