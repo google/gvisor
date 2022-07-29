@@ -135,6 +135,7 @@ rebuild = \
   docker build $(DOCKER_PLATFORM_ARGS) \
     -f "$$T/$(call dockerfile,$(1))" \
     -t "$(call remote_image,$(1)):$(call tag,$(1))" \
+    -t "$(call remote_image,$(1))":latest \
     $$T >&2 && \
   rm -rf $$T) && \
   $(call local_tag,$(1)) && \
@@ -152,7 +153,8 @@ load-%: register-cross ## Pull or build an image locally.
 # already exists) or building manually. Note that this generic rule will match
 # the fully-expanded remote image tag.
 push-%: load-% ## Push a given image.
-	@docker push $(call remote_image,$*):$(call tag,$*) >&2
+	@docker image push $(call remote_image,$*):$(call tag,$*) >&2
+	@docker image push $(call remote_image,$*):latest >&2
 
 # register-cross registers the necessary qemu binaries for cross-compilation.
 # This may be used by any target that may execute containers that are not the
