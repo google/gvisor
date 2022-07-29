@@ -707,6 +707,9 @@ func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		}
 		return linuxerr.EBUSY
 	}
+	if len(newName) > linux.NAME_MAX {
+		return linuxerr.ENAMETOOLONG
+	}
 
 	err = checkCreateLocked(ctx, rp.Credentials(), newName, dstDir)
 	switch {
