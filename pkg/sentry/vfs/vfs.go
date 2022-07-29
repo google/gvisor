@@ -494,6 +494,10 @@ func (vfs *VirtualFilesystem) RenameAt(ctx context.Context, creds *auth.Credenti
 		oldParentVD.DecRef(ctx)
 		return linuxerr.EBUSY
 	}
+	if len(oldName) > linux.NAME_MAX {
+		oldParentVD.DecRef(ctx)
+		return linuxerr.ENAMETOOLONG
+	}
 
 	if !newpop.Path.Begin.Ok() {
 		oldParentVD.DecRef(ctx)

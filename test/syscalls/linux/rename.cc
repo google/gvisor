@@ -88,6 +88,16 @@ TEST(RenameTest, FileToSameDirectory) {
   EXPECT_THAT(Exists(newpath), IsPosixErrorOkAndHolds(true));
 }
 
+TEST(RenameTest, FileNameTooLong) {
+  auto old_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  auto new_base = NextTempBasename();
+  int padding = (NAME_MAX + 1) - new_base.size();
+  new_base.append(padding, 'x');
+  auto new_path = JoinPath(Dirname(old_file.path()), new_base);
+  ASSERT_THAT(rename(old_file.path().c_str(), new_path.c_str()),
+              SyscallFailsWithErrno(ENAMETOOLONG));
+}
+
 TEST(RenameTest, RenameAfterWritableFDAndChmod) {
   // Restore will require re-opening the writable FD which will fail.
   const DisableSave ds;

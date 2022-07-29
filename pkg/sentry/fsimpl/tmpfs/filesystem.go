@@ -532,6 +532,9 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		}
 		return linuxerr.EBUSY
 	}
+	if len(newName) > fs.maxFilenameLen {
+		return linuxerr.ENAMETOOLONG
+	}
 	mnt := rp.Mount()
 	if mnt != oldParentVD.Mount() {
 		return linuxerr.EXDEV
