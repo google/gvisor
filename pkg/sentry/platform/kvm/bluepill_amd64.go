@@ -68,9 +68,46 @@ func bluepillArchEnter(context *arch.SignalContext64) *vCPU {
 //go:nosplit
 func (c *vCPU) KernelSyscall() {
 	regs := c.Registers()
+	if c.runData.requestInterruptWindow == 0 && c.sidecar != nil {
+		switch regs.Rax {
+		case unix.SYS_CLONE, unix.SYS_EXIT, unix.SYS_EXIT_GROUP,
+			unix.SYS_IOCTL, unix.SYS_RT_SIGRETURN, unix.SYS_MMAP,
+			unix.SYS_ARCH_PRCTL, unix.SYS_RT_SIGPROCMASK,
+			uint64(_SYS_KVM_RETURN_TO_HOST):
+		default:
+			regs = c.CPU.Registers()
+			c.sidecar.sysno = uintptr(regs.Rax)
+			c.sidecar.args[0] = uintptr(regs.Rdi)
+			c.sidecar.args[1] = uintptr(regs.Rsi)
+			c.sidecar.args[2] = uintptr(regs.Rdx)
+			c.sidecar.args[3] = uintptr(regs.R10)
+			c.sidecar.args[4] = uintptr(regs.R8)
+			c.sidecar.args[5] = uintptr(regs.R9)
+			start := cputicks()
+
+			// Ask the sidecar to run the system call.
+			if !c.sidecar.syscallThreadState.CompareAndSwap(sidecarIdle, sidecarBusy) {
+				break
+			}
+			c.sidecar.locked.Store(1)
+
+			for c.sidecar.syscallThreadState.Load() == sidecarBusy {
+				spinloop()
+				if cputicks()-start > deepSleepTimeout || c.runData.requestInterruptWindow != 0 {
+					goto out
+				}
+			}
+
+			regs.Rax = uint64(c.sidecar.ret)
+			c.sidecar.locked.Store(0)
+			return
+		}
+	}
+
 	if regs.Rax != ^uint64(0) {
 		regs.Rip -= 2 // Rewind.
 	}
+out:
 	// N.B. Since KernelSyscall is called when the kernel makes a syscall,
 	// FS_BASE is already set for correct execution of this function.
 	//

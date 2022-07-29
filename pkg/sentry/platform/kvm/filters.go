@@ -49,10 +49,16 @@ func (k *KVM) SyscallFilters() seccomp.SyscallRules {
 				seccomp.EqualTo(0),
 			},
 		},
+		unix.SYS_PRCTL: []seccomp.Rule{
+			{
+				seccomp.EqualTo(unix.PR_SCHED_CORE),
+			},
+		},
 		unix.SYS_MMAP:            {},
 		unix.SYS_RT_SIGSUSPEND:   {},
 		unix.SYS_RT_SIGTIMEDWAIT: {},
 		_SYS_KVM_RETURN_TO_HOST:  {},
+		999:                      {},
 	})
 	return r
 }

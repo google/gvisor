@@ -15,14 +15,18 @@
 package kvm
 
 import (
+	"fmt"
 	"math/rand"
 	"reflect"
+	"runtime"
 	"testing"
 	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/procid"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -464,7 +468,6 @@ func TestRdtsc(t *testing.T) {
 func TestKernelVDSO(t *testing.T) {
 	// Note that the target passed here is irrelevant, we never execute SwitchToUser.
 	applicationTest(t, true, testutil.AddrOfGetpid(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
-		// iteration does not include machine.Get() / machine.Put().
 		const n = 100
 		for i := 0; i < n; i++ {
 			bluepill(c)
@@ -505,12 +508,21 @@ func BenchmarkApplicationSyscall(b *testing.B) {
 func BenchmarkKernelSyscall(b *testing.B) {
 	// Note that the target passed here is irrelevant, we never execute SwitchToUser.
 	applicationTest(b, true, testutil.AddrOfGetpid(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
-		// iteration does not include machine.Get() / machine.Put().
+		runtime.LockOSThread()
 		for i := 0; i < b.N; i++ {
-			testutil.Getpid()
+			bluepill(c)
+			unix.RawSyscall(999, 0, 0, 0)
 		}
 		return false
 	})
+}
+
+func BenchmarkKernelSyscallHost(b *testing.B) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	for i := 0; i < b.N; i++ {
+		unix.RawSyscall(999, 0, 0, 0)
+	}
 }
 
 func BenchmarkKernelVDSO(b *testing.B) {
@@ -552,5 +564,38 @@ func BenchmarkWorldSwitchToUserRoundtrip(b *testing.B) {
 	})
 	if a != 0 {
 		b.Logf("ErrContextInterrupt occurred %d times (in %d iterations).", a, a+i)
+	}
+}
+
+func BenchmarkSchedCore(b *testing.B) {
+	var stop atomicbitops.Uint32
+
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	if _, _, errno := unix.RawSyscall6(
+		unix.SYS_PRCTL, unix.PR_SCHED_CORE,
+		unix.PR_SCHED_CORE_CREATE,
+		0, 0, 0, 0); errno != 0 {
+		panic(fmt.Sprintf("error creating core scheduling cookie: %v", errno))
+	}
+	tid := procid.Current()
+
+	go func() {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+		if _, _, errno := unix.RawSyscall6(
+			unix.SYS_PRCTL, unix.PR_SCHED_CORE,
+			unix.PR_SCHED_CORE_SHARE_FROM,
+			uintptr(tid), 0, 0, 0); errno != 0 {
+			panic(fmt.Sprintf("error creating core scheduling cookie: %v", errno))
+		}
+		for stop.Load() == 0 {
+			spinloop()
+		}
+	}()
+	defer stop.Store(1)
+
+	for i := 0; i < b.N; i++ {
+		unix.RawSyscall(999, 0, 0, 0)
 	}
 }

@@ -136,6 +136,13 @@ var (
 		"Duration of calling addressSpace.invalidate().")
 )
 
+const (
+	sidecarStopped uint32 = iota
+	sidecarIdle
+	sidecarBusy
+	sidecarReleased
+)
+
 // vCPU is a single KVM vCPU.
 type vCPU struct {
 	// CPU is the kernel CPU data.
@@ -182,6 +189,9 @@ type vCPU struct {
 
 	// dieState holds state related to vCPU death.
 	dieState dieState
+
+	// sidecar is a neighbour thread that is used to execute system calls.
+	sidecar *sidecar
 }
 
 type dieState struct {
@@ -445,6 +455,17 @@ func (m *machine) Destroy() {
 // the corrent context in guest, the vCPU of it must be the same as what
 // Get() returns.
 func (m *machine) Get() *vCPU {
+	c := m.get()
+	if c.sidecar == nil || c.sidecar.locked.Load() != 0 {
+		if c.sidecar != nil {
+			c.sidecar.fini()
+		}
+		c.sidecar = newSidecar()
+	}
+	return c
+}
+
+func (m *machine) get() *vCPU {
 	m.mu.RLock()
 	runtime.LockOSThread()
 	tid := procid.Current()

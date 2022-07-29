@@ -63,6 +63,16 @@ func bluepillArchContext(context unsafe.Pointer) *arch.SignalContext64 {
 //
 //go:nosplit
 func bluepillGuestExit(c *vCPU, context unsafe.Pointer) {
+	var sidecar *sidecar
+
+	if c.sidecar != nil {
+		if c.sidecar.locked.Load() != 0 {
+			sidecar = c.sidecar
+		} else {
+			c.sidecar.stop()
+		}
+	}
+
 	// Increment our counter.
 	c.guestExits.Add(1)
 
@@ -77,6 +87,15 @@ func bluepillGuestExit(c *vCPU, context unsafe.Pointer) {
 		c.notify()
 	default:
 		throw("invalid state")
+	}
+	if sidecar != nil {
+		sidecar.syscallSlowPath.Store(1)
+		futexWaitWhileUint32(&sidecar.syscallThreadState, sidecarBusy)
+		sidecar.syscallSlowPath.Store(0)
+
+		bluepillArchContext(context).Rax = uint64(sidecar.ret)
+		sidecar.stop()
+		sidecar.locked.Store(0)
 	}
 }
 
@@ -107,6 +126,9 @@ func bluepillHandler(context unsafe.Pointer) {
 		c.notify()
 	default:
 		throw("invalid state")
+	}
+	if c.sidecar != nil {
+		c.sidecar.kick()
 	}
 
 	for {

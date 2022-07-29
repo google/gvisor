@@ -139,3 +139,22 @@ TEXT ·addrOfDieTrampoline(SB), $0-8
 	MOVQ $·dieTrampoline(SB), AX
 	MOVQ AX, ret+0(FP)
 	RET
+
+TEXT ·spinloop(SB), $0
+	PAUSE
+	PAUSE
+	PAUSE
+	PAUSE
+	PAUSE
+	PAUSE
+	PAUSE
+	PAUSE
+	PAUSE
+	PAUSE
+	PAUSE
+	PAUSE
+	PAUSE
+	PAUSE
+	PAUSE
+	PAUSE
+	RET

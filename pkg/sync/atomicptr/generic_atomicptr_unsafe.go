@@ -44,6 +44,8 @@ func (p *AtomicPtr) Load() *Value {
 }
 
 // Store sets the value returned by Load to x.
+//
+//go:nosplit
 func (p *AtomicPtr) Store(x *Value) {
 	atomic.StorePointer(&p.ptr, (unsafe.Pointer)(x))
 }

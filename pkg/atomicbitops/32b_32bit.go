@@ -205,8 +205,10 @@ func (u *Uint32) CompareAndSwap(oldVal, newVal uint32) bool {
 	return atomic.CompareAndSwapUint32(&u.value, oldVal, newVal)
 }
 
+// Ptr returns a pointer to the atomic value.
+//
 //go:nosplit
-func (u *Uint32) ptr() *uint32 {
+func (u *Uint32) Ptr() *uint32 {
 	return &u.value
 }
 
