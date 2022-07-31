@@ -19,6 +19,7 @@ go_library(
     deps = [
         "//pkg/cpuid",
         "//pkg/sync",
+	"@org_golang_x_sys//cpu:go_default_library",
     ],
 )
 
