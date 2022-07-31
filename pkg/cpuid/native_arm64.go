@@ -20,6 +20,7 @@ package cpuid
 import (
 	"encoding/binary"
 	"io/ioutil"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -46,6 +47,11 @@ func (fs FeatureSet) Fixed() FeatureSet {
 // Must run before syscall filter installation. This value is used to create
 // the fake /proc/cpuinfo from a FeatureSet.
 func initCPUInfo() {
+	if runtime.GOOS != "linux" {
+		// Don't try to read Linux-specific /proc files or
+		// warn about them not existing.
+		return
+	}
 	cpuinfob, err := ioutil.ReadFile("/proc/cpuinfo")
 	if err != nil {
 		// Leave everything at 0, nothing can be done.
@@ -172,6 +178,11 @@ func initCPUInfo() {
 //	0000440                   15      140734614619529
 //	0000460                    0                    0
 func initHwCap() {
+	if runtime.GOOS != "linux" {
+		// Don't try to read Linux-specific /proc files or
+		// warn about them not existing.
+		return
+	}
 	auxv, err := ioutil.ReadFile("/proc/self/auxv")
 	if err != nil {
 		log.Warningf("Could not read /proc/self/auxv: %v", err)
