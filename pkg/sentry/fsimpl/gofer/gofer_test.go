@@ -19,6 +19,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 )
 
@@ -29,6 +30,7 @@ func TestDestroyIdempotent(t *testing.T) {
 		syncableDentries: make(map[*dentry]struct{}),
 		inoByQIDPath:     make(map[uint64]uint64),
 		inoByKey:         make(map[inoKey]uint64),
+		clock:            time.RealtimeClockFromContext(ctx),
 		// Test relies on no dentry being held in the cache.
 		dentryCache: &dentryCache{maxCachedDentries: 0},
 	}
