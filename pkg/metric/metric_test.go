@@ -22,48 +22,9 @@ import (
 	"time"
 
 	"google.golang.org/protobuf/proto"
-	"gvisor.dev/gvisor/pkg/eventchannel"
 	pb "gvisor.dev/gvisor/pkg/metric/metric_go_proto"
 	"gvisor.dev/gvisor/pkg/sync"
 )
-
-// sliceEmitter implements eventchannel.Emitter by appending all messages to a
-// slice.
-type sliceEmitter []proto.Message
-
-// Emit implements eventchannel.Emitter.Emit.
-func (s *sliceEmitter) Emit(msg proto.Message) (bool, error) {
-	*s = append(*s, msg)
-	return false, nil
-}
-
-// Emit implements eventchannel.Emitter.Close.
-func (s *sliceEmitter) Close() error {
-	return nil
-}
-
-// Reset clears all events in s.
-func (s *sliceEmitter) Reset() {
-	*s = nil
-}
-
-// emitter is the eventchannel.Emitter used for all tests. Package eventchannel
-// doesn't allow removing Emitters, so we must use one global emitter for all
-// test cases.
-var emitter sliceEmitter
-
-func init() {
-	reset()
-
-	eventchannel.AddEmitter(&emitter)
-}
-
-// reset clears all global state in the metric package.
-func reset() {
-	initialized = false
-	allMetrics = makeMetricSet()
-	emitter.Reset()
-}
 
 const (
 	fooDescription     = "Foo!"
@@ -73,7 +34,7 @@ const (
 )
 
 func TestInitialize(t *testing.T) {
-	defer reset()
+	defer resetTest()
 
 	_, err := NewUint64Metric("/foo", false, pb.MetricMetadata_UNITS_NONE, fooDescription)
 	if err != nil {
@@ -181,7 +142,7 @@ func TestInitialize(t *testing.T) {
 }
 
 func TestDisable(t *testing.T) {
-	defer reset()
+	defer resetTest()
 
 	_, err := NewUint64Metric("/foo", false, pb.MetricMetadata_UNITS_NONE, fooDescription)
 	if err != nil {
@@ -217,7 +178,7 @@ func TestDisable(t *testing.T) {
 }
 
 func TestEmitMetricUpdate(t *testing.T) {
-	defer reset()
+	defer resetTest()
 
 	foo, err := NewUint64Metric("/foo", false, pb.MetricMetadata_UNITS_NONE, fooDescription)
 	if err != nil {
@@ -411,7 +372,7 @@ func TestEmitMetricUpdate(t *testing.T) {
 }
 
 func TestEmitMetricUpdateWithFields(t *testing.T) {
-	defer reset()
+	defer resetTest()
 
 	field := Field{
 		name:          "weirdness_type",
@@ -498,7 +459,7 @@ func TestEmitMetricUpdateWithFields(t *testing.T) {
 }
 
 func TestMetricUpdateStageTiming(t *testing.T) {
-	defer reset()
+	defer resetTest()
 
 	expectedTimings := map[InitStage]struct{ min, max time.Duration }{}
 	measureStage := func(stage InitStage, body func()) {
@@ -642,7 +603,7 @@ func TestMetricUpdateStageTiming(t *testing.T) {
 }
 
 func TestTimerMetric(t *testing.T) {
-	defer reset()
+	defer resetTest()
 	// This bucketer just has 2 finite buckets: [0, 500ms) and [500ms, 1s).
 	bucketer := NewExponentialBucketer(2, uint64((500 * time.Millisecond).Nanoseconds()), 0, 1)
 	field1 := NewField("field1", []string{"foo", "bar"})
