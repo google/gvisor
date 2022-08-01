@@ -395,8 +395,8 @@ func NewUint64Metric(name string, sync bool, units pb.MetricMetadata_Units, desc
 	return &m, RegisterCustomUint64Metric(name, true /* cumulative */, sync, units, description, m.Value, fields...)
 }
 
-// MustCreateNewUint64Metric calls NewUint64Metric and panics if it returns an
-// error.
+// MustCreateNewUint64Metric calls RegisterUint64Metric and panics if it returns
+// an error.
 func MustCreateNewUint64Metric(name string, sync bool, description string, fields ...Field) *Uint64Metric {
 	m, err := NewUint64Metric(name, sync, pb.MetricMetadata_UNITS_NONE, description, fields...)
 	if err != nil {
@@ -670,9 +670,9 @@ func NewDistributionMetric(name string, sync bool, bucketer Bucketer, unit pb.Me
 	return allMetrics.distributionMetrics[name], nil
 }
 
-// MustRegisterDistributionMetric creates and registers a distribution metric.
+// MustCreateNewDistributionMetric creates and registers a distribution metric.
 // If an error occurs, it panics.
-func MustRegisterDistributionMetric(name string, sync bool, bucketer Bucketer, unit pb.MetricMetadata_Units, description string, fields ...Field) *DistributionMetric {
+func MustCreateNewDistributionMetric(name string, sync bool, bucketer Bucketer, unit pb.MetricMetadata_Units, description string, fields ...Field) *DistributionMetric {
 	distrib, err := NewDistributionMetric(name, sync, bucketer, unit, description, fields...)
 	if err != nil {
 		panic(err)
@@ -738,9 +738,9 @@ func NewTimerMetric(name string, nanoBucketer Bucketer, description string, fiel
 	}, nil
 }
 
-// MustRegisterTimerMetric creates and registers a timer metric.
+// MustCreateNewTimerMetric creates and registers a timer metric.
 // If an error occurs, it panics.
-func MustRegisterTimerMetric(name string, nanoBucketer Bucketer, description string, fields ...Field) *TimerMetric {
+func MustCreateNewTimerMetric(name string, nanoBucketer Bucketer, description string, fields ...Field) *TimerMetric {
 	timer, err := NewTimerMetric(name, nanoBucketer, description, fields...)
 	if err != nil {
 		panic(err)
