@@ -329,8 +329,6 @@ func getExecveSeccheckInfo(t *Task, argv, env []string, executable fsbridge.File
 					}
 				}
 			}
-			// TODO(b/202293325): Decide if we actually want to offer binary
-			// SHA256, which is very expensive.
 		}
 	}
 
