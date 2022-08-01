@@ -1051,18 +1051,31 @@ func (fs *filesystem) newDentry(ctx context.Context, file p9file, qid p9.QID, ma
 	}
 	if mask.ATime {
 		d.atime = atomicbitops.FromInt64(dentryTimestampFromP9(attr.ATimeSeconds, attr.ATimeNanoSeconds))
+	} else {
+		d.atime = atomicbitops.FromInt64(fs.clock.Now().Nanoseconds())
 	}
 	if mask.MTime {
 		d.mtime = atomicbitops.FromInt64(dentryTimestampFromP9(attr.MTimeSeconds, attr.MTimeNanoSeconds))
+	} else {
+		d.mtime = atomicbitops.FromInt64(fs.clock.Now().Nanoseconds())
 	}
 	if mask.CTime {
 		d.ctime = atomicbitops.FromInt64(dentryTimestampFromP9(attr.CTimeSeconds, attr.CTimeNanoSeconds))
+	} else {
+		// Approximate ctime with mtime if ctime isn't available.
+		d.ctime = atomicbitops.FromInt64(d.mtime.Load())
 	}
 	if mask.BTime {
 		d.btime = atomicbitops.FromInt64(dentryTimestampFromP9(attr.BTimeSeconds, attr.BTimeNanoSeconds))
 	}
 	if mask.NLink {
 		d.nlink = atomicbitops.FromUint32(uint32(attr.NLink))
+	} else {
+		if attr.Mode.FileType() == p9.ModeDirectory {
+			d.nlink = atomicbitops.FromUint32(2)
+		} else {
+			d.nlink = atomicbitops.FromUint32(1)
+		}
 	}
 	d.vfsd.Init(d)
 	refsvfs2.Register(d)
@@ -1112,18 +1125,31 @@ func (fs *filesystem) newDentryLisa(ctx context.Context, ino *lisafs.Inode) (*de
 	}
 	if ino.Stat.Mask&linux.STATX_ATIME != 0 {
 		d.atime = atomicbitops.FromInt64(dentryTimestampFromLisa(ino.Stat.Atime))
+	} else {
+		d.atime = atomicbitops.FromInt64(fs.clock.Now().Nanoseconds())
 	}
 	if ino.Stat.Mask&linux.STATX_MTIME != 0 {
 		d.mtime = atomicbitops.FromInt64(dentryTimestampFromLisa(ino.Stat.Mtime))
+	} else {
+		d.mtime = atomicbitops.FromInt64(fs.clock.Now().Nanoseconds())
 	}
 	if ino.Stat.Mask&linux.STATX_CTIME != 0 {
 		d.ctime = atomicbitops.FromInt64(dentryTimestampFromLisa(ino.Stat.Ctime))
+	} else {
+		// Approximate ctime with mtime if ctime isn't available.
+		d.ctime = atomicbitops.FromInt64(d.mtime.Load())
 	}
 	if ino.Stat.Mask&linux.STATX_BTIME != 0 {
 		d.btime = atomicbitops.FromInt64(dentryTimestampFromLisa(ino.Stat.Btime))
 	}
 	if ino.Stat.Mask&linux.STATX_NLINK != 0 {
 		d.nlink = atomicbitops.FromUint32(ino.Stat.Nlink)
+	} else {
+		if ino.Stat.Mode&linux.FileTypeMask == linux.ModeDirectory {
+			d.nlink = atomicbitops.FromUint32(2)
+		} else {
+			d.nlink = atomicbitops.FromUint32(1)
+		}
 	}
 	d.vfsd.Init(d)
 	refsvfs2.Register(d)
