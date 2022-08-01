@@ -131,7 +131,7 @@ var (
 		metric.NewField("acquisition_type", []string{"fast_reused", "reused", "unused", "stolen"}))
 
 	// asInvalidateDuration are durations of calling addressSpace.invalidate().
-	asInvalidateDuration = metric.MustRegisterTimerMetric("/kvm/address_space_invalidate",
+	asInvalidateDuration = metric.MustCreateNewTimerMetric("/kvm/address_space_invalidate",
 		metric.NewExponentialBucketer(15, uint64(time.Nanosecond*100), 1, 2),
 		"Duration of calling addressSpace.invalidate().")
 )
