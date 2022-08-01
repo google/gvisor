@@ -827,8 +827,8 @@ type metricSet struct {
 }
 
 // makeMetricSet returns a new metricSet.
-func makeMetricSet() metricSet {
-	return metricSet{
+func makeMetricSet() *metricSet {
+	return &metricSet{
 		uint64Metrics:       make(map[string]customUint64Metric),
 		distributionMetrics: make(map[string]*DistributionMetric),
 		finished:            make([]stageTiming, 0, len(allStages)),
