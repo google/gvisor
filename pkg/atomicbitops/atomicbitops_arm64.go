@@ -17,6 +17,24 @@
 
 package atomicbitops
 
-import "gvisor.dev/gvisor/pkg/cpuid"
+import (
+	"runtime"
 
-var arm64HasATOMICS = cpuid.HostFeatureSet().HasFeature(cpuid.ARM64FeatureATOMICS)
+	"golang.org/x/sys/cpu"
+	"gvisor.dev/gvisor/pkg/cpuid"
+)
+
+var arm64HasATOMICS bool
+
+func init() {
+	// The gvisor cpuid package only works on Linux.
+	// For all other operating systems, use Go's x/sys/cpu package
+	// to get the one bit we care about here.
+	//
+	// See https://github.com/google/gvisor/issues/7849.
+	if runtime.GOOS == "linux" {
+		arm64HasATOMICS = cpuid.HostFeatureSet().HasFeature(cpuid.ARM64FeatureATOMICS)
+	} else {
+		arm64HasATOMICS = cpu.ARM64.HasATOMICS
+	}
+}
