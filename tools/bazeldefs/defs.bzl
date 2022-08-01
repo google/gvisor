@@ -72,3 +72,24 @@ def default_net_util():
 
 def coreutil():
     return []  # Nothing needed.
+
+def bpf_program(name, src, bpf_object, visibility, hdrs):
+    """Generates BPF object files from .c source code.
+
+    Args:
+      name: target name for BPF program.
+      src: BPF program souce code in C.
+      bpf_object: name of generated bpf object code.
+      visibility: target visibility.
+      hdrs: header files, but currently unsupported.
+    """
+    if hdrs != []:
+        fail("hdrs attribute is unsupported")
+
+    native.genrule(
+        name = name,
+        srcs = [src],
+        visibility = visibility,
+        outs = [bpf_object],
+        cmd = "clang -O2 -Wall -Werror -target bpf -c $< -o $@",
+    )
