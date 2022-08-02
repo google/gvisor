@@ -38,6 +38,7 @@ for arg in "$@"; do
   fi
 done
 
+export DEBIAN_FRONTEND=noninteractive
 # install_raw installs raw artifacts.
 install_raw() {
   for binary in "${binaries[@]}"; do
