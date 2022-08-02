@@ -102,7 +102,7 @@ const (
 
 // IsKernelFlags returns true if rflags coresponds to the kernel mode.
 //
-// go:nosplit
+//go:nosplit
 func IsKernelFlags(rflags uint64) bool {
 	return rflags&_RFLAGS_IOPL0 == 0
 }
