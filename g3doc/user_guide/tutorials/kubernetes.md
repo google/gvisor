@@ -16,8 +16,8 @@ Take the following steps to enable the Kubernetes Engine API:
 Create a node pool inside your cluster with option `--sandbox type=gvisor` added
 to the command, like below:
 
-```bash
-gcloud beta container node-pools create sandbox-pool --cluster=${CLUSTER_NAME} --image-type=cos_containerd --sandbox type=gvisor
+```shell
+gcloud container node-pools create gvisor --cluster=${CLUSTER_NAME?} --sandbox type=gvisor --machine-type=e2-standard-2
 ```
 
 If you prefer to use the console, select your cluster and select the **ADD NODE
@@ -25,8 +25,8 @@ POOL** button:
 
 ![+ ADD NODE POOL](node-pool-button.png)
 
-Then select the **Image type** with **Containerd** and select **Enable sandbox
-with gVisor** option. Select other options as you like:
+Then click on the **Security** tab on the left and select **Enable sandbox with
+gVisor** option. Select other options as you like:
 
 ![+ NODE POOL](add-node-pool.png)
 
@@ -35,8 +35,10 @@ with gVisor** option. Select other options as you like:
 The gvisor RuntimeClass is instantiated during node creation. You can check for
 the existence of the gvisor RuntimeClass using the following command:
 
-```bash
-kubectl get runtimeclasses
+```shell
+$ kubectl get runtimeclass/gvisor
+NAME     HANDLER   AGE
+gvisor   gvisor    1h
 ```
 
 ### Wordpress deployment
@@ -49,7 +51,7 @@ they use secret store to share MySQL password between them.
 First, let's download the deployment configuration files to add the runtime
 class annotation to them:
 
-```bash
+```shell
 curl -LO https://k8s.io/examples/application/wordpress/wordpress-deployment.yaml
 curl -LO https://k8s.io/examples/application/wordpress/mysql-deployment.yaml
 ```
@@ -207,7 +209,7 @@ Deployment has is changed.
 You are now ready to deploy the entire application. Just create a secret to
 store MySQL's password and *apply* both deployments:
 
-```bash
+```shell
 kubectl create secret generic mysql-pass --from-literal=password=${YOUR_SECRET_PASSWORD_HERE?}
 kubectl apply -f mysql-deployment.yaml
 kubectl apply -f wordpress-deployment.yaml
@@ -216,12 +218,14 @@ kubectl apply -f wordpress-deployment.yaml
 Wait for the deployments to be ready and an external IP to be assigned to the
 Wordpress service:
 
-```bash
-watch kubectl get service wordpress
+```shell
+$ watch kubectl get service wordpress
+NAME        TYPE           CLUSTER-IP     EXTERNAL-IP      PORT(S)        AGE
+wordpress   LoadBalancer   10.120.16.63   35.203.179.216   80:31025/TCP   1m
 ```
 
-Now, copy the service `EXTERNAL-IP` from above to your favorite browser to view
-and configure your new WordPress site.
+Now, copy the service's `EXTERNAL-IP` from above to your favorite browser to
+view and configure your new WordPress site.
 
 Congratulations! You have just deployed a WordPress site using GKE Sandbox.
 
