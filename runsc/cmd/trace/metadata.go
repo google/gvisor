@@ -64,6 +64,11 @@ func (l *metadata) Execute(context.Context, *flag.FlagSet, ...interface{}) subco
 		ctxFields := fieldNames(pt.ContextFields)
 		fmt.Printf("Name: %s, optional fields: [%s], context fields: [%s]\n", pt.Name, strings.Join(optFields, "|"), strings.Join(ctxFields, "|"))
 	}
+	fmt.Printf("\nSINKS (%d)\n", len(seccheck.Sinks))
+	for _, sink := range seccheck.Sinks {
+		fmt.Printf("Name: %s\n", sink.Name)
+	}
+
 	return subcommands.ExitSuccess
 }
 
