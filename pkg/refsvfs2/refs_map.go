@@ -50,7 +50,8 @@ func init() {
 // LeakCheckEnabled returns whether leak checking is enabled. The following
 // functions should only be called if it returns true.
 func LeakCheckEnabled() bool {
-	return refs_vfs1.GetLeakMode() != refs_vfs1.NoLeakChecking
+	mode := refs_vfs1.GetLeakMode()
+	return mode != refs_vfs1.NoLeakChecking && mode != refs_vfs1.UninitializedLeakChecking
 }
 
 // leakCheckPanicEnabled returns whether DoLeakCheck() should panic when leaks
