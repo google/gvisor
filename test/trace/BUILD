@@ -13,7 +13,6 @@ go_test(
     library = ":trace",
     tags = [
         "local",
-        "manual",
     ],
     deps = [
         "//pkg/sentry/seccheck",
