@@ -108,6 +108,14 @@ func matchPoints(t *testing.T, msgs []test.Message) {
 		pb.MessageType_MESSAGE_SYSCALL_RAW:               {checker: checkSyscallRaw},
 		pb.MessageType_MESSAGE_SYSCALL_READ:              {checker: checkSyscallRead},
 		pb.MessageType_MESSAGE_SYSCALL_SOCKET:            {checker: checkSyscallSocket},
+
+		// TODO(gvisor.dev/issue/4805): Add validation for these messages.
+		pb.MessageType_MESSAGE_SYSCALL_ACCEPT:    {checker: checkTODO},
+		pb.MessageType_MESSAGE_SYSCALL_BIND:      {checker: checkTODO},
+		pb.MessageType_MESSAGE_SYSCALL_CLONE:     {checker: checkTODO},
+		pb.MessageType_MESSAGE_SYSCALL_DUP:       {checker: checkTODO},
+		pb.MessageType_MESSAGE_SYSCALL_PIPE:      {checker: checkTODO},
+		pb.MessageType_MESSAGE_SYSCALL_PRLIMIT64: {checker: checkTODO},
 	}
 	for _, msg := range msgs {
 		t.Logf("Processing message type %v", msg.MsgType)
@@ -431,5 +439,9 @@ func checkSyscallSocket(msg test.Message) error {
 	if want := int32(0); want != p.Protocol {
 		return fmt.Errorf("wrong Protocol, want: %v, got: %v", want, p.Protocol)
 	}
+	return nil
+}
+
+func checkTODO(_ test.Message) error {
 	return nil
 }
