@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build amd64 && go1.14 && !go1.20 && !goexperiment.staticlockranking
-// +build amd64,go1.14,!go1.20,!goexperiment.staticlockranking
+//go:build amd64 && go1.14 && !go1.21 && !goexperiment.staticlockranking
+// +build amd64,go1.14,!go1.21,!goexperiment.staticlockranking
 
 #include "textflag.h"
 
