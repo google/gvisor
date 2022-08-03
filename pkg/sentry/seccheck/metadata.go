@@ -61,11 +61,13 @@ const (
 	FieldSentryExecveBinaryInfo Field = iota
 )
 
-// Points is a map with all the Points registered in the system.
+// Points is a map with all the trace points registered in the system.
 var Points = map[string]PointDesc{}
-var sinks = map[string]SinkDesc{}
 
-// defaultContextFields are the fields present in most Points.
+// Sinks is a map with all the sinks registered in the system.
+var Sinks = map[string]SinkDesc{}
+
+// defaultContextFields are the fields present in most trace points.
 var defaultContextFields = []FieldDesc{
 	{
 		ID:   FieldCtxtTime,
@@ -122,10 +124,10 @@ type SinkDesc struct {
 
 // RegisterSink registers a new sink to make it discoverable.
 func RegisterSink(sink SinkDesc) {
-	if _, ok := sinks[sink.Name]; ok {
+	if _, ok := Sinks[sink.Name]; ok {
 		panic(fmt.Sprintf("Sink %q already registered", sink.Name))
 	}
-	sinks[sink.Name] = sink
+	Sinks[sink.Name] = sink
 }
 
 // PointDesc describes a Point that is available to be configured.
