@@ -61,14 +61,24 @@ func (b *Builder) LoadAllPoints(runscPath string) error {
 	// The command above produces an output like the following:
 	//   POINTS (907)
 	//   Name: container/start, optional fields: [], context fields: [time|thread_id]
+	//
+	//   SINKS (2)
+	//   Name: remote
 	scanner := bufio.NewScanner(bytes.NewReader(out))
 	if !scanner.Scan() {
 		return fmt.Errorf("%q returned empty", cmd)
 	}
-	if !scanner.Scan() {
-		return fmt.Errorf("%q returned empty", cmd)
+	if line := scanner.Text(); !strings.HasPrefix(line, "POINTS (") {
+		return fmt.Errorf("%q missing POINTS header: %q", cmd, line)
 	}
-	for line := scanner.Text(); scanner.Scan(); line = scanner.Text() {
+	for scanner.Scan() {
+		line := scanner.Text()
+		if len(line) == 0 {
+			continue // Skip empty lines.
+		}
+		if strings.HasPrefix(line, "SINKS (") {
+			break // Starting SINKS section, POINTS section is over.
+		}
 		elems := strings.Split(line, ",")
 		if len(elems) != 3 {
 			return fmt.Errorf("invalid line: %q", line)
@@ -87,6 +97,9 @@ func (b *Builder) LoadAllPoints(runscPath string) error {
 			OptionalFields: optFields,
 			ContextFields:  ctxFields,
 		})
+	}
+	if len(b.points) == 0 {
+		return fmt.Errorf("%q returned no points", cmd)
 	}
 	return scanner.Err()
 }

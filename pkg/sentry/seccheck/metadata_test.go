@@ -21,7 +21,7 @@ import (
 func TestSinkRegistration(t *testing.T) {
 	sink := SinkDesc{Name: "test"}
 	RegisterSink(sink)
-	if _, ok := sinks["test"]; !ok {
+	if _, ok := Sinks["test"]; !ok {
 		t.Errorf("sink registration failed")
 	}
 

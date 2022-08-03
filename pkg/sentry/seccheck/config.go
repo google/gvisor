@@ -225,7 +225,7 @@ func setFields(names []string, fields []FieldDesc) (FieldMask, error) {
 }
 
 func findSinkDesc(name string) (SinkDesc, error) {
-	if desc, ok := sinks[name]; ok {
+	if desc, ok := Sinks[name]; ok {
 		return desc, nil
 	}
 	return SinkDesc{}, fmt.Errorf("sink %q not found", name)
