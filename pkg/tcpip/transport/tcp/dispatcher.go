@@ -196,7 +196,6 @@ func (p *processor) handleConnected(ep *endpoint) {
 		fallthrough
 	case ep.EndpointState() == StateClose:
 		ep.mu.Unlock()
-		ep.stack.Stats().TCP.CurrentConnected.Decrement()
 		ep.drainClosingSegmentQueue()
 		ep.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
 		return

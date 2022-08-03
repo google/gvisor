@@ -731,6 +731,9 @@ func (e *endpoint) setEndpointState(state EndpointState) {
 		if oldstate == StateCloseWait || oldstate == StateEstablished {
 			e.stack.Stats().TCP.EstablishedResets.Increment()
 		}
+		if oldstate.connected() {
+			e.stack.Stats().TCP.CurrentConnected.Decrement()
+		}
 		fallthrough
 	default:
 		if oldstate == StateEstablished {
@@ -977,7 +980,6 @@ func (e *endpoint) Abort() {
 	// Reset all connected endpoints.
 	switch state := e.EndpointState(); {
 	case state.connected():
-		e.stack.Stats().TCP.CurrentConnected.Decrement()
 		e.resetConnectionLocked(&tcpip.ErrAborted{})
 		return
 	}

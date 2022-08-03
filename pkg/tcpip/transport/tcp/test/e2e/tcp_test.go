@@ -292,6 +292,37 @@ func TestCloseWithoutConnect(t *testing.T) {
 	}
 }
 
+func TestHandshakeTimeoutConnectedCount(t *testing.T) {
+	c := context.New(t, e2e.DefaultMTU)
+	defer c.Cleanup()
+
+	ep, err := c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
+	if err != nil {
+		t.Fatalf("NewEndpoint failed: %s", err)
+	}
+	c.EP = ep
+
+	we, ch := waiter.NewChannelEntry(waiter.WritableEvents)
+	c.WQ.EventRegister(&we)
+	defer c.WQ.EventUnregister(&we)
+
+	switch err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort}).(type) {
+	case *tcpip.ErrConnectStarted:
+	default:
+		t.Fatalf("Connect did not start: %v", err)
+	}
+
+	<-ch
+	switch err := c.EP.LastError().(type) {
+	case *tcpip.ErrTimeout:
+	default:
+		t.Fatalf("Connect didn't timeout: %v", err)
+	}
+	if got, want := c.Stack().Stats().TCP.CurrentConnected.Value(), uint64(0); got != want {
+		t.Fatalf("got stats.TCP.CurrentConnected.Value() = %d, want = %d", got, want)
+	}
+}
+
 func TestTCPSegmentsSentIncrement(t *testing.T) {
 	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
