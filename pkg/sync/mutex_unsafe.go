@@ -3,8 +3,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.13 && !go1.20
-// +build go1.13,!go1.20
+//go:build go1.13 && !go1.21
+// +build go1.13,!go1.21
 
 // When updating the build constraint (above), check that syncMutex matches the
 // standard library sync.Mutex definition.
