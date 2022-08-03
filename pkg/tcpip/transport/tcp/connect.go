@@ -130,7 +130,6 @@ func maybeFailTimerHandler(e *endpoint, f func() tcpip.Error) func() {
 			e.lastError = err
 			e.lastErrorMu.Unlock()
 			e.hardError = err
-			e.stack.Stats().TCP.CurrentConnected.Decrement()
 			e.cleanupLocked()
 			e.setEndpointState(StateError)
 			e.mu.Unlock()
@@ -1050,7 +1049,6 @@ func (e *endpoint) transitionToStateCloseLocked() {
 	}
 
 	if s.connected() {
-		e.stack.Stats().TCP.CurrentConnected.Decrement()
 		e.stack.Stats().TCP.EstablishedClosed.Increment()
 	}
 
