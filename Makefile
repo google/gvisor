@@ -274,8 +274,9 @@ docker-tests: load-basic $(RUNTIME_BIN)
 	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS) //test/e2e:integration_runtime_test)
 .PHONY: docker-tests
 
+# TODO(b/241832602): Run overlay tests with host filestore option after S/R support is added.
 overlay-tests: load-basic $(RUNTIME_BIN)
-	@$(call install_runtime,$(RUNTIME),--overlay)
+	@$(call install_runtime,$(RUNTIME),--overlay2=all:memory)
 	@$(call test_runtime,$(RUNTIME),--test_env=TEST_OVERLAY=true $(INTEGRATION_TARGETS))
 .PHONY: overlay-tests
 

@@ -27,12 +27,29 @@ configuration (`/etc/docker/daemon.json`) and restart the Docker daemon:
         "runsc": {
             "path": "/usr/local/bin/runsc",
             "runtimeArgs": [
-                "--overlay"
+                "--overlay2=all:memory"
             ]
        }
     }
 }
 ```
+
+### Root Filesystem Overlay
+
+Any modifications to the root filesystem is destroyed with the container. So it
+almost always makes sense to apply an overlay on top of the root filesystem.
+This can drastically boost performance, as runsc will handle root filesystem
+changes completely in memory instead of making costly round trips to the gofer
+and make syscalls to modify the host.
+
+However, holding so much file data in memory for the root filesystem can bloat
+up container memory usage. To circumvent this, you can have root mount's upper
+layer (tmpfs) be backed by a host file, so all file data is stored on disk.
+
+The newer `--overlay2` flag allows you to achieve these. You can specify
+`--overlay2=root:/dir/path` in `runtimeArgs`. `/dir/path` can be any existing
+directory inside which the tmpfs filestore file will be created. When the
+container exits, this filestore file will be destroyed.
 
 ## Shared root filesystem
 
