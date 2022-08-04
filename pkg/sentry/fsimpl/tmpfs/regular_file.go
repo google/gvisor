@@ -176,6 +176,23 @@ func (rf *regularFile) truncate(newSize uint64) (bool, error) {
 	return rf.truncateLocked(newSize)
 }
 
+// Preconditions:
+//   - rf.inode.mu must be held.
+//   - rf.dataMu must be locked for writing.
+//   - newSize > rf.size.
+func (rf *regularFile) growLocked(newSize uint64) error {
+	// Can we grow the file?
+	if rf.seals&linux.F_SEAL_GROW != 0 {
+		return linuxerr.EPERM
+	}
+	// We only need to update the file size.
+	if err := rf.inode.fs.updatePagesUsed(rf.size.Load(), newSize); err != nil {
+		return err
+	}
+	rf.size.Store(newSize)
+	return nil
+}
+
 // Preconditions: rf.inode.mu must be held.
 func (rf *regularFile) truncateLocked(newSize uint64) (bool, error) {
 	oldSize := rf.size.RacyLoad()
@@ -187,19 +204,9 @@ func (rf *regularFile) truncateLocked(newSize uint64) (bool, error) {
 	// Need to hold inode.mu and dataMu while modifying size.
 	rf.dataMu.Lock()
 	if newSize > oldSize {
-		// Can we grow the file?
-		if rf.seals&linux.F_SEAL_GROW != 0 {
-			rf.dataMu.Unlock()
-			return false, linuxerr.EPERM
-		}
-		// We only need to update the file size.
-		if err := rf.inode.fs.updatePagesUsed(rf.size.Load(), newSize); err != nil {
-			rf.dataMu.Unlock()
-			return false, err
-		}
-		rf.size.Store(newSize)
+		err := rf.growLocked(newSize)
 		rf.dataMu.Unlock()
-		return true, nil
+		return err == nil, err
 	}
 
 	// We are shrinking the file. First check if this is allowed.
@@ -363,13 +370,34 @@ func (fd *regularFileFD) Allocate(ctx context.Context, mode, offset, length uint
 
 	f.inode.mu.Lock()
 	defer f.inode.mu.Unlock()
-	oldSize := f.size.RacyLoad()
-	size := offset + length
-	if oldSize >= size {
+	f.dataMu.Lock()
+	defer f.dataMu.Unlock()
+
+	// We must allocate pages in the range specified by offset and length.
+	// Even if newSize <= oldSize, there might not be actual memory backing this
+	// range, so any gaps must be filled by calling f.data.Fill().
+	// "After a successful call, subsequent writes into the range
+	// specified by offset and len are guaranteed not to fail because of
+	// lack of disk space."  - fallocate(2)
+	newSize := offset + length
+	pgstartaddr := hostarch.Addr(offset).RoundDown()
+	pgendaddr, ok := hostarch.Addr(newSize).RoundUp()
+	if !ok {
+		return linuxerr.EFBIG
+	}
+	required := memmap.MappableRange{Start: uint64(pgstartaddr), End: uint64(pgendaddr)}
+	if err := f.data.Fill(ctx, required, required, newSize, f.memFile, f.memoryUsageKind, func(_ context.Context, dsts safemem.BlockSeq, _ uint64) (uint64, error) {
+		// Newly-allocated pages are zeroed, so we don't need to do anything.
+		return dsts.NumBytes(), nil
+	}); err != nil && err != io.EOF {
+		return err
+	}
+
+	oldSize := f.size.Load()
+	if oldSize >= newSize {
 		return nil
 	}
-	_, err := f.truncateLocked(size)
-	return err
+	return f.growLocked(newSize)
 }
 
 // PRead implements vfs.FileDescriptionImpl.PRead.
