@@ -163,13 +163,17 @@ var _ NetworkProtocol = (*fwdTestNetworkProtocol)(nil)
 type fwdTestNetworkProtocol struct {
 	stack *Stack
 
+	number                 tcpip.NetworkProtocolNumber // Default: fwdTestNetNumber
 	neigh                  *neighborCache
 	addrResolveDelay       time.Duration
 	onLinkAddressResolved  func(*neighborCache, tcpip.Address, tcpip.LinkAddress)
 	onResolveStaticAddress func(tcpip.Address) (tcpip.LinkAddress, bool)
 }
 
-func (*fwdTestNetworkProtocol) Number() tcpip.NetworkProtocolNumber {
+func (f *fwdTestNetworkProtocol) Number() tcpip.NetworkProtocolNumber {
+	if f.number != 0 {
+		return f.number
+	}
 	return fwdTestNetNumber
 }
 
@@ -781,5 +785,125 @@ func TestForwardingWithFakeResolverManyResolutions(t *testing.T) {
 		if p.EgressRoute.LocalLinkAddress != "b" {
 			t.Fatalf("got p.EgressRoute.LocalLinkAddress = %s, want = b", p.EgressRoute.LocalLinkAddress)
 		}
+	}
+}
+
+func TestFindRouteProtocolNumberMismatch(t *testing.T) {
+	clock := faketime.NewManualClock()
+	proto4 := &fwdTestNetworkProtocol{
+		number: header.IPv4ProtocolNumber,
+	}
+	proto6 := &fwdTestNetworkProtocol{
+		number: header.IPv6ProtocolNumber,
+	}
+	s := New(Options{
+		NetworkProtocols: []NetworkProtocolFactory{
+			func(s *Stack) NetworkProtocol {
+				proto4.stack = s
+				return proto4
+			},
+			func(s *Stack) NetworkProtocol {
+				proto6.stack = s
+				return proto6
+			},
+		},
+		Clock: clock,
+	})
+
+	for _, test := range []struct {
+		name                  string
+		localAddr, remoteAddr tcpip.Address
+		netProto              tcpip.NetworkProtocolNumber
+		wantFamilyErr         bool
+	}{
+		{
+			name:          "ipv4 with empty addresses",
+			localAddr:     "",
+			remoteAddr:    "",
+			netProto:      header.IPv4ProtocolNumber,
+			wantFamilyErr: false,
+		},
+		{
+			name:          "ipv6 with empty addresses",
+			localAddr:     "",
+			remoteAddr:    "",
+			netProto:      header.IPv6ProtocolNumber,
+			wantFamilyErr: false,
+		},
+		{
+			name:          "test protocol number with empty addresses",
+			localAddr:     "",
+			remoteAddr:    "",
+			netProto:      fwdTestNetNumber,
+			wantFamilyErr: false,
+		},
+		{
+			name:          "ipv4 with unspecified addresses",
+			localAddr:     tcpip.Address([]byte{0, 0, 0, 0}),
+			remoteAddr:    tcpip.Address([]byte{0, 0, 0, 0}),
+			netProto:      header.IPv4ProtocolNumber,
+			wantFamilyErr: false,
+		},
+		{
+			name:          "ipv4 matching addresses",
+			localAddr:     tcpip.Address([]byte{1, 2, 3, 4}),
+			remoteAddr:    tcpip.Address([]byte{5, 6, 7, 8}),
+			netProto:      header.IPv4ProtocolNumber,
+			wantFamilyErr: false,
+		},
+		{
+			name:          "ipv6 matching addresses",
+			localAddr:     tcpip.Address([]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}),
+			remoteAddr:    tcpip.Address([]byte{10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160}),
+			netProto:      header.IPv6ProtocolNumber,
+			wantFamilyErr: false,
+		},
+		{
+			name:          "ipv4 with mismatching addresses family",
+			localAddr:     tcpip.Address([]byte{1, 2, 3, 4}),
+			remoteAddr:    tcpip.Address([]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}),
+			netProto:      header.IPv4ProtocolNumber,
+			wantFamilyErr: true,
+		},
+		{
+			name:          "ipv4 matching addresses but wrong protocol number",
+			localAddr:     tcpip.Address([]byte{1, 2, 3, 4}),
+			remoteAddr:    tcpip.Address([]byte{5, 6, 7, 8}),
+			netProto:      header.IPv6ProtocolNumber,
+			wantFamilyErr: true,
+		},
+		{
+			name:          "ipv6 with mismatching addresses family",
+			localAddr:     tcpip.Address([]byte{1, 2, 3, 4}),
+			remoteAddr:    tcpip.Address([]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}),
+			netProto:      header.IPv6ProtocolNumber,
+			wantFamilyErr: true,
+		},
+		{
+			name:          "ipv6 matching addresses but wrong protocol number",
+			localAddr:     tcpip.Address([]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}),
+			remoteAddr:    tcpip.Address([]byte{10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160}),
+			netProto:      header.IPv4ProtocolNumber,
+			wantFamilyErr: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			route, err := s.FindRoute(0, test.localAddr, test.remoteAddr, test.netProto, false)
+			isFamilyErr := false
+			if err != nil {
+				if _, ok := err.(*tcpip.ErrAddressFamilyNotSupported); ok {
+					isFamilyErr = true
+				}
+			}
+			if test.wantFamilyErr && !isFamilyErr {
+				if err == nil {
+					t.Errorf("expected error, got route %v", route)
+				} else {
+					t.Errorf("expected family error, got non-family error: %v", err)
+				}
+			} else if !test.wantFamilyErr && isFamilyErr {
+				t.Errorf("unexpected family error: %v", err)
+			}
+		})
 	}
 }

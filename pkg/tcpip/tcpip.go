@@ -45,8 +45,13 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// Using header.IPv4AddressSize would cause an import cycle.
-const ipv4AddressSize = 4
+// Using the header package here would cause an import cycle.
+const (
+	ipv4AddressSize    = 4
+	ipv4ProtocolNumber = 0x0800
+	ipv6AddressSize    = 16
+	ipv6ProtocolNumber = 0x86dd
+)
 
 // Errors related to Subnet
 var (
@@ -202,6 +207,23 @@ func (a Address) MatchingPrefix(b Address) uint8 {
 	}
 
 	return prefix
+}
+
+// MatchesNetworkProtocol returns whether this address is of the correct size for the given protocol
+// number. Returns true if unspecified or if the netProto isn't a well-known protocol number.
+func (a Address) MatchesNetworkProtocol(netProto NetworkProtocolNumber) bool {
+	if a.Unspecified() {
+		return true
+	}
+	switch netProto {
+	case ipv4ProtocolNumber:
+		return len(a) == ipv4AddressSize
+	case ipv6ProtocolNumber:
+		return len(a) == ipv6AddressSize
+	default:
+		// For other network protocol numbers, assume it matches.
+		return true
+	}
 }
 
 // AddressMask is a bitmask for an address.

@@ -323,3 +323,67 @@ func TestAddressMatchingPrefix(t *testing.T) {
 		}
 	}
 }
+
+func TestMatchesNetworkProtocol(t *testing.T) {
+	tests := []struct {
+		addr     Address
+		netProto NetworkProtocolNumber
+		want     bool
+	}{
+		{
+			addr:     "",
+			netProto: ipv4ProtocolNumber,
+			want:     true,
+		},
+		{
+			addr:     "\x00\x00",
+			netProto: ipv4ProtocolNumber,
+			want:     true,
+		},
+		{
+			addr:     "\x00\x01",
+			netProto: ipv4ProtocolNumber,
+			want:     false,
+		},
+		{
+			addr:     "\x01\x02\x03\x04",
+			netProto: ipv4ProtocolNumber,
+			want:     true,
+		},
+		{
+			addr:     "\x01\x02\x03\x04\x05\x06\x07\x08\x09\x01\x0b\x0c\x0d\x0e\x0f\x10",
+			netProto: ipv4ProtocolNumber,
+			want:     false,
+		},
+		{
+			addr:     "",
+			netProto: ipv6ProtocolNumber,
+			want:     true,
+		},
+		{
+			addr:     "\x00\x00",
+			netProto: ipv6ProtocolNumber,
+			want:     true,
+		},
+		{
+			addr:     "\x00\x01",
+			netProto: ipv6ProtocolNumber,
+			want:     false,
+		},
+		{
+			addr:     "\x01\x02\x03\x04",
+			netProto: ipv6ProtocolNumber,
+			want:     false,
+		},
+		{
+			addr:     "\x01\x02\x03\x04\x05\x06\x07\x08\x09\x01\x0b\x0c\x0d\x0e\x0f\x10",
+			netProto: ipv6ProtocolNumber,
+			want:     true,
+		},
+	}
+	for _, test := range tests {
+		if got := test.addr.MatchesNetworkProtocol(test.netProto); got != test.want {
+			t.Errorf("got (%s).MatchesNetworkProtocol(%d) = %v, want = %v", test.addr, test.netProto, got, test.want)
+		}
+	}
+}

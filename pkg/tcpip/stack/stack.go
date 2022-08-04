@@ -1271,6 +1271,10 @@ func isNICForwarding(nic *nic, proto tcpip.NetworkProtocolNumber) bool {
 // remote address is provided, the stack wil use a remote address equal to the
 // local address.
 func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber, multicastLoop bool) (*Route, tcpip.Error) {
+	if !localAddr.MatchesNetworkProtocol(netProto) || !remoteAddr.MatchesNetworkProtocol(netProto) {
+		return nil, &tcpip.ErrAddressFamilyNotSupported{}
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
