@@ -38,7 +38,9 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/link/qdisc/fifo"
 	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 )
@@ -64,6 +66,7 @@ var (
 	serverTCPProbeFile = flag.String("server_tcp_probe_file", "", "if specified, installs a tcp probe to dump endpoint state to the specified file.")
 	cpuprofile         = flag.String("cpuprofile", "", "write cpu profile to the specified file.")
 	memprofile         = flag.String("memprofile", "", "write memory profile to the specified file.")
+	useIpv6            = flag.Bool("ipv6", false, "use ipv6 instead of ipv4.")
 )
 
 type impl interface {
@@ -156,26 +159,37 @@ func newNetstackImpl(mode string) (impl, error) {
 
 	// Parse details.
 	parsedAddr := tcpip.Address(net.ParseIP(*addr).To4())
-	parsedDest := tcpip.Address("")     // Filled in below.
-	parsedMask := tcpip.AddressMask("") // Filled in below.
+	if *useIpv6 {
+		parsedAddr = tcpip.Address(net.ParseIP(*addr).To16())
+	}
+	parsedDest := tcpip.Address("")      // Filled in below.
+	parsedMask := tcpip.AddressMask("")  // Filled in below.
+	parsedDest6 := tcpip.Address("")     // Filled in below.
+	parsedMask6 := tcpip.AddressMask("") // Filled in below.
 	switch *mask {
 	case 8:
 		parsedDest = tcpip.Address([]byte{parsedAddr[0], 0, 0, 0})
 		parsedMask = tcpip.AddressMask([]byte{0xff, 0, 0, 0})
+		parsedDest6 = tcpip.Address(append([]byte{parsedAddr[0]}, make([]byte, 15)...))
+		parsedMask6 = tcpip.AddressMask(append([]byte{0xff}, make([]byte, 15)...))
 	case 16:
 		parsedDest = tcpip.Address([]byte{parsedAddr[0], parsedAddr[1], 0, 0})
 		parsedMask = tcpip.AddressMask([]byte{0xff, 0xff, 0, 0})
+		parsedDest6 = tcpip.Address(append([]byte{parsedAddr[0], parsedAddr[1]}, make([]byte, 14)...))
+		parsedMask6 = tcpip.AddressMask(append([]byte{0xff, 0xff}, make([]byte, 14)...))
 	case 24:
 		parsedDest = tcpip.Address([]byte{parsedAddr[0], parsedAddr[1], parsedAddr[2], 0})
 		parsedMask = tcpip.AddressMask([]byte{0xff, 0xff, 0xff, 0})
+		parsedDest6 = tcpip.Address(append([]byte{parsedAddr[0], parsedAddr[1], parsedAddr[2]}, make([]byte, 13)...))
+		parsedMask6 = tcpip.AddressMask(append([]byte{0xff, 0xff, 0xff}, make([]byte, 13)...))
 	default:
 		// This is just laziness; we don't expect a different mask.
 		return nil, fmt.Errorf("mask %d not supported", mask)
 	}
 
 	// Create a new network stack.
-	netProtos := []stack.NetworkProtocolFactory{ipv4.NewProtocol, arp.NewProtocol}
-	transProtos := []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol}
+	netProtos := []stack.NetworkProtocolFactory{ipv6.NewProtocol, ipv4.NewProtocol, arp.NewProtocol}
+	transProtos := []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol, icmp.NewProtocol4, icmp.NewProtocol6}
 	s := stack.New(stack.Options{
 		NetworkProtocols:   netProtos,
 		TransportProtocols: transProtos,
@@ -210,22 +224,35 @@ func newNetstackImpl(mode string) (impl, error) {
 	if err := s.CreateNICWithOptions(nicID, ep, opts); err != nil {
 		return nil, fmt.Errorf("error creating NIC %q: %v", *iface, err)
 	}
+	proto := ipv4.ProtocolNumber
+	if *useIpv6 {
+		proto = ipv6.ProtocolNumber
+	}
 	protocolAddr := tcpip.ProtocolAddress{
-		Protocol:          ipv4.ProtocolNumber,
+		Protocol:          proto,
 		AddressWithPrefix: parsedAddr.WithPrefix(),
 	}
 	if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
 		return nil, fmt.Errorf("error adding IP address %+v to %q: %s", protocolAddr, *iface, err)
 	}
 
-	subnet, err := tcpip.NewSubnet(parsedDest, parsedMask)
+	subnet4, err := tcpip.NewSubnet(parsedDest, parsedMask)
 	if err != nil {
 		return nil, fmt.Errorf("tcpip.Subnet(%s, %s): %s", parsedDest, parsedMask, err)
 	}
+	subnet6, err := tcpip.NewSubnet(parsedDest6, parsedMask6)
+	if err != nil {
+		return nil, fmt.Errorf("tcpip.Subnet(%s, %s): %s", parsedDest, parsedMask, err)
+	}
+
 	// Add default route; we only support
 	s.SetRouteTable([]tcpip.Route{
 		{
-			Destination: subnet,
+			Destination: subnet4,
+			NIC:         nicID,
+		},
+		{
+			Destination: subnet6,
 			NIC:         nicID,
 		},
 	})
@@ -281,12 +308,20 @@ func (n netstackImpl) dial(address string) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
+	hostAddr := net.ParseIP(host).To4()
+	if *useIpv6 {
+		hostAddr = net.ParseIP(host).To16()
+	}
 	addr := tcpip.FullAddress{
 		NIC:  nicID,
-		Addr: tcpip.Address(net.ParseIP(host).To4()),
+		Addr: tcpip.Address(hostAddr),
 		Port: uint16(portNumber),
 	}
-	conn, err := gonet.DialTCP(n.s, addr, ipv4.ProtocolNumber)
+	proto := ipv4.ProtocolNumber
+	if *useIpv6 {
+		proto = ipv6.ProtocolNumber
+	}
+	conn, err := gonet.DialTCP(n.s, addr, proto)
 	if err != nil {
 		return nil, err
 	}
@@ -298,7 +333,11 @@ func (n netstackImpl) listen(port int) (net.Listener, error) {
 		NIC:  nicID,
 		Port: uint16(port),
 	}
-	listener, err := gonet.ListenTCP(n.s, addr, ipv4.ProtocolNumber)
+	proto := ipv4.ProtocolNumber
+	if *useIpv6 {
+		proto = ipv6.ProtocolNumber
+	}
+	listener, err := gonet.ListenTCP(n.s, addr, proto)
 	if err != nil {
 		return nil, err
 	}
