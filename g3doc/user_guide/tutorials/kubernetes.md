@@ -48,6 +48,13 @@ two pods: web server in the frontend, MySQL database in the backend. Both
 applications use PersistentVolumes to store the site data data. In addition,
 they use secret store to share MySQL password between them.
 
+> **Note**: This example uses gVisor to sandbox the frontend web server, but not
+> the MySQL database backend. In a production setup, due to
+> [the I/O overhead](../../architecture_guide/performance) imposed by gVisor,
+> **it is not recommended to run your database in a sandbox**. The frontend is
+> the critical component with the largest outside attack surface, where gVisor's
+> security/performance trade-off makes the most sense.
+
 First, let's download the deployment configuration files to add the runtime
 class annotation to them:
 
@@ -181,7 +188,7 @@ spec:
         app: wordpress
         tier: mysql
     spec:
-      runtimeClassName: gvisor   # ADD THIS LINE
+      #runtimeClassName: gvisor  # Uncomment this line if you want to sandbox the database.
       containers:
       - image: mysql:5.6
         name: mysql

@@ -16,7 +16,14 @@ We will specify two services, a `wordpress` service for the Wordpress Apache
 server, and a `db` service for MySQL. We will configure Wordpress to connect to
 MySQL via the `db` service host name.
 
-> **Note:** Docker Compose uses it's own network by default and allows services
+> **Note**: This example uses gVisor to sandbox the frontend web server, but not
+> the MySQL database backend. In a production setup, due to
+> [the I/O overhead](../../architecture_guide/performance) imposed by gVisor,
+> **it is not recommended to run your database in a sandbox**. The frontend is
+> the critical component with the largest outside attack surface, where gVisor's
+> security/performance trade-off makes the most sense.
+
+> **Note**: Docker Compose uses it's own network by default and allows services
 > to communicate using their service name. Docker Compose does this by setting
 > up a DNS server at IP address 127.0.0.11 and configuring containers to use it
 > via [resolv.conf][resolv.conf]. This IP is not addressable inside a gVisor
@@ -24,7 +31,7 @@ MySQL via the `db` service host name.
 > `8.8.8.8` and use a network that allows routing to it. See
 > [Networking in Compose][compose-networking] for more details.
 
-> **Note:** The `runtime` field was removed from services in the 3.x version of
+> **Note**: The `runtime` field was removed from services in the 3.x version of
 > the API in versions of docker-compose < 1.27.0. You will need to write your
 > `docker-compose.yaml` file using the 2.x format or use docker-compose >=
 > 1.27.0. See this [issue](https://github.com/docker/compose/issues/6239) for
@@ -46,6 +53,8 @@ services:
        MYSQL_PASSWORD: wordpress
      # All services must be on the same network to communicate.
      network_mode: "bridge"
+     # Uncomment the following line if you want to sandbox the database.
+     #runtime: "runsc"
 
    wordpress:
      depends_on:
