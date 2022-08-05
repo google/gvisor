@@ -11,21 +11,24 @@ If you intend to run the KVM platform, you will also to have KVM installed on
 your system. If you are running a Debian based system like Debian or Ubuntu you
 can usually do this by ensuring the module is loaded, and your user has
 permissions to access the `/dev/kvm` device. Usually, it means that the user is
-in the kvm group.
+in the `kvm` group.
 
-```bash
+```shell
 # Check that /dev/kvm is owned by the kvm group
 $ ls -l /dev/kvm
 crw-rw----+ 1 root kvm 10, 232 Jul 26 00:04 /dev/kvm
 
 # Make sure that the current user is part of the kvm group
-$ $ groups | grep -q kvm | echo ok
+$ groups | grep -qw kvm && echo ok
 ok
 ```
 
-If you are using a virtual machine you will need to make sure that nested
-virtualization is configured. Here are links to documents on how to set up
-nested virtualization in several popular environments:
+**For best performance, use the KVM platform on bare-metal machines only**. If
+you have to run gVisor within a virtual machine, the `ptrace` platform will
+often yield better performance than KVM. If you still want to use KVM within a
+virtual machine, you will need to make sure that nested virtualization is
+configured. Here are links to documents on how to set up nested virtualization
+in several popular environments:
 
 *   Google Cloud: [Enabling Nested Virtualization for VM Instances][nested-gcp]
 *   Microsoft Azure:
