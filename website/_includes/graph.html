@@ -1,6 +1,6 @@
 {::nomarkdown}
 {% assign fn = include.id | remove: " " | remove: "-" | downcase %}
-<figure><a href="{{ include.url }}"><svg id="{{ include.id }}" width=500 height=200 onload="render_{{ fn }}()"><title>{{ include.title }}</title></svg></a></figure>
+<figure><a href="{{ include.url }}"><svg id="{{ include.id }}" width=500 height=200><title>{{ include.title }}</title></svg></a></figure>
 <script>
 function render_{{ fn }}() {
 d3.csv("{{ include.url }}", function(d, i, columns) {
@@ -201,5 +201,6 @@ d3.csv("{{ include.url }}", function(d, i, columns) {
         .text(function(d) { return d; });
 });
 }
+$(render_{{ fn }});
 </script>
 {:/}
