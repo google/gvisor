@@ -892,18 +892,7 @@ func (d *dentry) ensureOpenableLocked(ctx context.Context, rp *vfs.ResolvingPath
 	if err := d.checkPermissions(rp.Credentials(), ats); err != nil {
 		return err
 	}
-	switch d.mode.Load() & linux.S_IFMT {
-	case linux.S_IFREG:
-		if ats.MayWrite() {
-			if err := rp.Mount().CheckBeginWrite(); err != nil {
-				return err
-			}
-			defer rp.Mount().EndWrite()
-			if err := d.copyUpLocked(ctx); err != nil {
-				return err
-			}
-		}
-	case linux.S_IFDIR:
+	if d.isDir() {
 		if ats.MayWrite() {
 			return linuxerr.EISDIR
 		}
@@ -913,8 +902,19 @@ func (d *dentry) ensureOpenableLocked(ctx context.Context, rp *vfs.ResolvingPath
 		if opts.Flags&linux.O_DIRECT != 0 {
 			return linuxerr.EINVAL
 		}
+		return nil
 	}
-	return nil
+
+	if !ats.MayWrite() {
+		return nil
+	}
+
+	// Copy up!
+	if err := rp.Mount().CheckBeginWrite(); err != nil {
+		return err
+	}
+	defer rp.Mount().EndWrite()
+	return d.copyUpLocked(ctx)
 }
 
 // Preconditions: If vfs.AccessTypesForOpenFlags(opts).MayWrite(), then d has
