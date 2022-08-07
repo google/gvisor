@@ -31,6 +31,18 @@ func (d *dentry) isCopiedUp() bool {
 	return d.copiedUp.Load() != 0
 }
 
+func (d *dentry) canBeCopiedUp() bool {
+	ftype := d.mode.Load() & linux.S_IFMT
+	switch ftype {
+	case linux.S_IFREG, linux.S_IFDIR, linux.S_IFLNK, linux.S_IFBLK, linux.S_IFCHR:
+		// Can be copied-up.
+		return true
+	default:
+		// Can't be copied-up.
+		return false
+	}
+}
+
 // copyUpLocked ensures that d exists on the upper layer, i.e. d.upperVD.Ok().
 //
 // Preconditions: filesystem.renameMu must be locked.
@@ -48,12 +60,7 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 	// credentials from context rather an take an explicit creds parameter.
 	ctx = auth.ContextWithCredentials(ctx, d.fs.creds)
 
-	ftype := d.mode.Load() & linux.S_IFMT
-	switch ftype {
-	case linux.S_IFREG, linux.S_IFDIR, linux.S_IFLNK, linux.S_IFBLK, linux.S_IFCHR:
-		// Can be copied-up.
-	default:
-		// Can't be copied-up.
+	if !d.canBeCopiedUp() {
 		return linuxerr.EPERM
 	}
 
@@ -92,6 +99,7 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 	}
 
 	// Perform copy-up.
+	ftype := d.mode.Load() & linux.S_IFMT
 	newpop := vfs.PathOperation{
 		Root:  d.parent.upperVD,
 		Start: d.parent.upperVD,
