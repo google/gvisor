@@ -156,6 +156,8 @@ func Override() {
 	s.Table[299] = syscalls.Supported("recvmmsg", RecvMMsg)
 	s.Table[306] = syscalls.Supported("syncfs", Syncfs)
 	s.Table[307] = syscalls.Supported("sendmmsg", SendMMsg)
+	s.Table[310] = syscalls.Supported("process_vm_readv", ProcessVMReadv)
+	s.Table[311] = syscalls.Supported("process_vm_writev", ProcessVMWritev)
 	s.Table[316] = syscalls.Supported("renameat2", Renameat2)
 	s.Table[319] = syscalls.Supported("memfd_create", MemfdCreate)
 	s.Table[322] = syscalls.SupportedPoint("execveat", Execveat, linux.PointExecveat)
