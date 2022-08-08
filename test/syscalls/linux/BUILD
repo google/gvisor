@@ -4474,3 +4474,20 @@ cc_binary(
         "//test/util:thread_util",
     ],
 )
+
+cc_binary(
+    name = "process_vm_read_write",
+    testonly = 1,
+    srcs = ["process_vm_read_write.cc"],
+    linkstatic = 1,
+    deps = [
+        gtest,
+        "//test/util:capability_util",
+        "//test/util:logging",
+        "//test/util:multiprocess_util",
+        "//test/util:posix_error",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "@com_google_absl//absl/strings",
+    ],
+)
