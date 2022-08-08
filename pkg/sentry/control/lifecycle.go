@@ -290,6 +290,8 @@ func (l *Lifecycle) getInitContainerProcess(containerID string) (*kernel.ThreadG
 type ContainerArgs struct {
 	// ContainerID.
 	ContainerID string `json:"containerID"`
+	Signo       int32  `json:"signo"`
+	SignalAll   bool   `json:"signalAll"`
 }
 
 // WaitContainer waits for the container to exit and returns the exit status.
@@ -327,4 +329,33 @@ func (l *Lifecycle) IsContainerRunning(args *ContainerArgs, isRunning *bool) err
 	}
 	*isRunning = true
 	return nil
+}
+
+// SignalContainer signals the container in multi-container mode. It returns error if the
+// container hasn't started or has exited.
+func (l *Lifecycle) SignalContainer(args *ContainerArgs, _ *struct{}) error {
+	tg, err := l.getInitContainerProcess(args.ContainerID)
+	if err != nil {
+		return err
+	}
+
+	l.mu.Lock()
+	c, ok := l.containerMap[args.ContainerID]
+	if !ok || c.state != stateRunning {
+		l.mu.Unlock()
+		return fmt.Errorf("%v container not running", args.ContainerID)
+	}
+	l.mu.Unlock()
+
+	// Signalling a single process is supported only for the init process.
+	if !args.SignalAll {
+		if tg == nil {
+			return fmt.Errorf("no process exists in %v", tg)
+		}
+		return l.Kernel.SendExternalSignalThreadGroup(tg, &linux.SignalInfo{Signo: args.Signo})
+	}
+
+	l.Kernel.Pause()
+	defer l.Kernel.Unpause()
+	return l.Kernel.SendContainerSignal(args.ContainerID, &linux.SignalInfo{Signo: args.Signo})
 }
