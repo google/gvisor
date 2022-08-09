@@ -21,7 +21,8 @@ MySQL via the `db` service host name.
 > [the I/O overhead](../../architecture_guide/performance) imposed by gVisor,
 > **it is not recommended to run your database in a sandbox**. The frontend is
 > the critical component with the largest outside attack surface, where gVisor's
-> security/performance trade-off makes the most sense.
+> security/performance trade-off makes the most sense. See the
+> [Production guide] for more details.
 
 > **Note**: Docker Compose uses it's own network by default and allows services
 > to communicate using their service name. Docker Compose does this by setting
@@ -101,9 +102,13 @@ Compose.
 
 Learn how to deploy [WordPress with Kubernetes][wordpress-k8s].
 
+Before deploying this to production, see the [Production guide] for how to take
+full advantage of gVisor.
+
 [docker-compose]: https://docs.docker.com/compose/
 [docker-install]: ../quick_start/docker.md
 [wordpress]: https://wordpress.com/
 [resolv.conf]: https://man7.org/linux/man-pages/man5/resolv.conf.5.html
 [wordpress-k8s]: kubernetes.md
 [compose-networking]: https://docs.docker.com/compose/networking/
+[Production guide]: /docs/user_guide/production/

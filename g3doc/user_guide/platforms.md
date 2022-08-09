@@ -5,6 +5,10 @@
 This guide described how to change the
 [platform](../architecture_guide/platforms.md) used by `runsc`.
 
+Configuring the platform provides significant performance benefits, but isn't
+the only step to optimizing gVisor performance. See the [Production guide] for
+more.
+
 ## Prerequisites
 
 If you intend to run the KVM platform, you will also to have KVM installed on
@@ -64,8 +68,8 @@ pass the `--platform` argument:
 You must restart the Docker daemon after making changes to this file, typically
 this is done via `systemd`:
 
-```bash
-sudo systemctl restart docker
+```shell
+$ sudo systemctl restart docker
 ```
 
 Note that you may configure multiple runtimes using different platforms. For
@@ -91,6 +95,7 @@ for the KVM platform:
 }
 ```
 
+[Production guide]: ../production/
 [nested-azure]: https://docs.microsoft.com/en-us/azure/virtual-machines/windows/nested-virtualization
 [nested-gcp]: https://cloud.google.com/compute/docs/instances/enable-nested-virtualization-vm-instances
 [nested-virtualbox]: https://www.virtualbox.org/manual/UserManual.html#nested-virt

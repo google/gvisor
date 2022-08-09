@@ -32,8 +32,8 @@ gVisor** option. Select other options as you like:
 
 ### Check that gVisor is enabled
 
-The gvisor RuntimeClass is instantiated during node creation. You can check for
-the existence of the gvisor RuntimeClass using the following command:
+The gvisor `RuntimeClass` is instantiated during node creation. You can check
+for the existence of the gvisor `RuntimeClass` using the following command:
 
 ```shell
 $ kubectl get runtimeclass/gvisor
@@ -45,15 +45,16 @@ gvisor   gvisor    1h
 
 Now, let's deploy a WordPress site using GKE Sandbox. WordPress site requires
 two pods: web server in the frontend, MySQL database in the backend. Both
-applications use PersistentVolumes to store the site data data. In addition,
-they use secret store to share MySQL password between them.
+applications use `PersistentVolumes` to store the site data. In addition, they
+use secret store to share MySQL password between them.
 
 > **Note**: This example uses gVisor to sandbox the frontend web server, but not
 > the MySQL database backend. In a production setup, due to
 > [the I/O overhead](../../architecture_guide/performance) imposed by gVisor,
 > **it is not recommended to run your database in a sandbox**. The frontend is
 > the critical component with the largest outside attack surface, where gVisor's
-> security/performance trade-off makes the most sense.
+> security/performance trade-off makes the most sense. See the
+> [Production guide] for more details.
 
 First, let's download the deployment configuration files to add the runtime
 class annotation to them:
@@ -217,9 +218,9 @@ You are now ready to deploy the entire application. Just create a secret to
 store MySQL's password and *apply* both deployments:
 
 ```shell
-kubectl create secret generic mysql-pass --from-literal=password=${YOUR_SECRET_PASSWORD_HERE?}
-kubectl apply -f mysql-deployment.yaml
-kubectl apply -f wordpress-deployment.yaml
+$ kubectl create secret generic mysql-pass --from-literal=password=${YOUR_SECRET_PASSWORD_HERE?}
+$ kubectl apply -f mysql-deployment.yaml
+$ kubectl apply -f wordpress-deployment.yaml
 ```
 
 Wait for the deployments to be ready and an external IP to be assigned to the
@@ -241,7 +242,10 @@ Congratulations! You have just deployed a WordPress site using GKE Sandbox.
 To learn more about GKE Sandbox and how to run your deployment securely, take a
 look at the [documentation][gke-sandbox-docs].
 
+Before taking this deployment to production, review the [Production guide].
+
 [gke-sandbox-docs]: https://cloud.google.com/kubernetes-engine/docs/how-to/sandbox-pods
 [gke-sandbox]: https://cloud.google.com/kubernetes-engine/sandbox/
 [project-selector]: https://console.cloud.google.com/projectselector/kubernetes
 [wordpress]: https://wordpress.com/
+[Production guide]: /docs/user_guide/production/
