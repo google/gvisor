@@ -1,10 +1,13 @@
 # Containerd Quick Start
 
 This document describes how to use `containerd-shim-runsc-v1` with the
-containerd runtime handler support on `containerd`.
+containerd runtime handler support on `containerd`. This is a similar setup as
+[GKE Sandbox], other than the
+[platform configuration](/docs/architecture_guide/platforms/).
 
-> ⚠️ NOTE: If you are using Kubernetes and set up your cluster using kubeadm you
-> may run into issues. See the [FAQ](../FAQ.md#runtime-handler) for details.
+> ⚠️ **Note**: If you are using Kubernetes and set up your cluster using
+> `kubeadm` you may run into issues. See the [FAQ](../FAQ.md#runtime-handler)
+> for details.
 
 ## Requirements
 
@@ -180,3 +183,13 @@ Verify that the Pod is running:
 ```shell
 kubectl get pod nginx-gvisor -o wide
 ```
+
+## What's next
+
+This setup is already done for you on [GKE Sandbox]. It is an easy way to get
+started with gVisor.
+
+Before taking this deployment to production, review the
+[Production guide](/docs/user_guide/production/).
+
+[GKE Sandbox]: https://cloud.google.com/kubernetes-engine/docs/concepts/sandbox-pods

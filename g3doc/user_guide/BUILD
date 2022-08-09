@@ -68,3 +68,14 @@ doc(
     permalink = "/docs/user_guide/platforms/",
     weight = "30",
 )
+
+doc(
+    name = "production",
+    src = "production.md",
+    category = "User Guide",
+    data = [
+        "sandboxing-tradeoffs.png",
+    ],
+    permalink = "/docs/user_guide/production/",
+    weight = "20",
+)

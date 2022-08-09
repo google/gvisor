@@ -34,6 +34,10 @@ Yes. Please see the [Docker Quick Start][docker].
 
 Yes. Please see the [Kubernetes Quick Start][k8s].
 
+### How do I integrate gVisor in my existing production stack? {#productionize}
+
+See the [Production guide].
+
 ### What's the security model? {#security-model}
 
 See the [Security Model][security-model].
@@ -149,4 +153,5 @@ update containerd to 1.3.9 or 1.4.3 (or newer versions respectively).
 [filesystem]: /docs/user_guide/filesystem/
 [docker]: /docs/user_guide/quick_start/docker/
 [k8s]: /docs/user_guide/quick_start/kubernetes/
+[Production guide]: /docs/user_guide/production/
 [CVE-2020-15257]: https://github.com/containerd/containerd/security/advisories/GHSA-36xw-fx78-c5r4

@@ -18,7 +18,8 @@ containers: web server in the frontend, MySQL database in the backend.
 > [the I/O overhead](../../architecture_guide/performance) imposed by gVisor,
 > **it is not recommended to run your database in a sandbox**. The frontend is
 > the critical component with the largest outside attack surface, where gVisor's
-> security/performance trade-off makes the most sense.
+> security/performance trade-off makes the most sense. See the
+> [Production guide] for more details.
 
 First, let's define a few environment variables that are shared between both
 containers:
@@ -72,8 +73,12 @@ gVisor.
 Learn how to deploy WordPress with [Kubernetes][wordpress-k8s] or
 [Docker Compose][wordpress-compose].
 
+Before deploying this to production, see the [Production guide] for how to take
+full advantage of gVisor.
+
 [docker]: https://www.docker.com/
 [docker-install]: ../quick_start/docker.md
 [wordpress]: https://wordpress.com/
 [wordpress-k8s]: kubernetes.md
 [wordpress-compose]: docker-compose.md
+[Production guide]: /docs/user_guide/production/

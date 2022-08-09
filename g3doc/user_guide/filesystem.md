@@ -4,8 +4,10 @@
 
 gVisor accesses the filesystem through a file proxy, called the Gofer. The gofer
 runs as a separate process, that is isolated from the sandbox. Gofer instances
-communicate with their respective sentry using the 9P protocol. For another
-explanation see [What is gVisor?](../README.md).
+communicate with their respective sentry using the 9P protocol.
+
+Configuring the filesystem provides performance benefits, but isn't the only
+step to optimizing gVisor performance. See the [Production guide] for more.
 
 ## Sandbox overlay
 
@@ -13,7 +15,8 @@ To isolate the host filesystem from the sandbox, you can set a writable tmpfs
 overlay on top of the entire filesystem. All modifications are made to the
 overlay, keeping the host filesystem unmodified.
 
-> Note: All created and modified files are stored in memory inside the sandbox.
+> **Note**: All created and modified files are stored in memory inside the
+> sandbox.
 
 To use the tmpfs overlay, add the following `runtimeArgs` to your Docker
 configuration (`/etc/docker/daemon.json`) and restart the Docker daemon:
@@ -58,3 +61,5 @@ Docker configuration (`/etc/docker/daemon.json`) and restart the Docker daemon:
     }
 }
 ```
+
+[Production guide]: ../production/
