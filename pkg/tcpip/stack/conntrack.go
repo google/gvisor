@@ -60,15 +60,8 @@ type tuple struct {
 	// packet seen on the connection.
 	reply bool
 
-	mu sync.RWMutex `state:"nosave"`
-	// +checklocks:mu
+	// tupleID is set at initialization and is immutable.
 	tupleID tupleID
-}
-
-func (t *tuple) id() tupleID {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	return t.tupleID
 }
 
 // tupleID uniquely identifies a trackable connection in one direction.
@@ -328,7 +321,7 @@ func getHeaders(pkt *PacketBuffer) (netHdr header.Network, transHdr header.Trans
 			panic("should have dropped packets with IPv4 options")
 		}
 
-		if netHdr, transHdr, ok := getEmbeddedNetAndTransHeaders(pkt, header.IPv4MinimumSize, v4NetAndTransHdr, pkt.tuple.id().transProto); ok {
+		if netHdr, transHdr, ok := getEmbeddedNetAndTransHeaders(pkt, header.IPv4MinimumSize, v4NetAndTransHdr, pkt.tuple.tupleID.transProto); ok {
 			return netHdr, transHdr, true, true
 		}
 		return nil, nil, false, false
@@ -355,7 +348,7 @@ func getHeaders(pkt *PacketBuffer) (netHdr header.Network, transHdr header.Trans
 		// in the IPv6 packet should be a tracked protocol if we reach this point.
 		//
 		// TODO(https://gvisor.dev/issue/6789): Support extension headers.
-		transProto := pkt.tuple.id().transProto
+		transProto := pkt.tuple.tupleID.transProto
 		if got := header.IPv6(h).TransportProtocol(); got != transProto {
 			panic(fmt.Sprintf("got TransportProtocol() = %d, want = %d", got, transProto))
 		}
@@ -628,7 +621,7 @@ func (bkt *bucket) connForTID(tid tupleID, now tcpip.MonotonicTime) *tuple {
 // +checklocksread:bkt.mu
 func (bkt *bucket) connForTIDRLocked(tid tupleID, now tcpip.MonotonicTime) *tuple {
 	for other := bkt.tuples.Front(); other != nil; other = other.Next() {
-		if tid == other.id() && !other.conn.timedOut(now) {
+		if tid == other.tupleID && !other.conn.timedOut(now) {
 			return other
 		}
 	}
@@ -641,7 +634,7 @@ func (ct *ConnTrack) finalize(cn *conn) finalizeResult {
 	ct.mu.RUnlock()
 
 	{
-		tid := cn.reply.id()
+		tid := cn.reply.tupleID
 		id := ct.bucket(tid)
 
 		bkt := &buckets[id]
@@ -669,7 +662,7 @@ func (ct *ConnTrack) finalize(cn *conn) finalizeResult {
 	// TODO(https://gvisor.dev/issue/6850): Investigate handling this clash
 	// better.
 
-	tid := cn.original.id()
+	tid := cn.original.tupleID
 	id := ct.bucket(tid)
 	bkt := &buckets[id]
 	bkt.mu.Lock()
@@ -755,9 +748,6 @@ func (cn *conn) performNAT(pkt *PacketBuffer, hook Hook, r *Route, portsOrIdents
 
 	cn.mu.Lock()
 	defer cn.mu.Unlock()
-
-	cn.reply.mu.Lock()
-	defer cn.reply.mu.Unlock()
 
 	var manip *manipType
 	var address *tcpip.Address
@@ -892,7 +882,7 @@ func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, rt *Route) bool {
 		defer cn.mu.RUnlock()
 
 		if reply {
-			tid := cn.original.id()
+			tid := cn.original.tupleID
 
 			if dnat {
 				return tid, cn.sourceManip
@@ -900,7 +890,7 @@ func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, rt *Route) bool {
 			return tid, cn.destinationManip
 		}
 
-		tid := cn.reply.id()
+		tid := cn.reply.tupleID
 		if dnat {
 			return tid, cn.destinationManip
 		}
@@ -1086,7 +1076,7 @@ func (ct *ConnTrack) reapTupleLocked(reapingTuple *tuple, bktID int, bkt *bucket
 		otherTuple = &reapingTuple.conn.reply
 	}
 
-	otherTupleBktID := ct.bucket(otherTuple.id())
+	otherTupleBktID := ct.bucket(otherTuple.tupleID)
 	replyTupleInserted := reapingTuple.conn.getFinalizeResult() == finalizeResultSuccess
 
 	// To maintain lock order, we can only reap both tuples if the tuple for the
@@ -1140,6 +1130,6 @@ func (ct *ConnTrack) originalDst(epID TransportEndpointID, netProto tcpip.Networ
 		return "", 0, &tcpip.ErrInvalidOptionValue{}
 	}
 
-	id := t.conn.original.id()
+	id := t.conn.original.tupleID
 	return id.dstAddr, id.dstPortOrEchoReplyIdent, nil
 }
