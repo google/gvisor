@@ -175,6 +175,10 @@ func (f *Fragmentation) Process(
 	}
 
 	f.mu.Lock()
+	if f.reassemblers == nil {
+		return nil, 0, false, fmt.Errorf("Release() called before fragmentation processing could finish")
+	}
+
 	r, ok := f.reassemblers[id]
 	if !ok {
 		r = newReassembler(id, f.clock)
