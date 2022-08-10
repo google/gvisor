@@ -131,6 +131,20 @@ TEST(Syscall32Bit, Sysenter) {
   }
 }
 
+class KilledByOneOfSignals {
+ public:
+  KilledByOneOfSignals(int signum1, int signum2)
+      : signum1_(signum1), signum2_(signum2) {}
+  bool operator()(int exit_status) const {
+    if (!WIFSIGNALED(exit_status)) return false;
+    int sig = WTERMSIG(exit_status);
+    return sig == signum1_ || sig == signum2_;
+  }
+
+ private:
+  const int signum1_, signum2_;
+};
+
 TEST(Syscall32Bit, Syscall) {
   if ((PlatformSupport32Bit() == PlatformSupport::Allowed ||
        PlatformSupport32Bit() == PlatformSupport::Ignored) &&
@@ -151,9 +165,11 @@ TEST(Syscall32Bit, Syscall) {
       break;
 
     case PlatformSupport::Ignored:
-      // See above.
+      // FIXME(b/241819530): SIGSEGV was returned due to a kernel bug that has
+      // been fixed recently. Let's continue accept SIGSEGV while bad kernels
+      // are running in prod.
       EXPECT_EXIT(ExitGroup32(kSyscall, kExitCode),
-                  ::testing::KilledBySignal(SIGSEGV), "");
+                  KilledByOneOfSignals(SIGTRAP, SIGSEGV), "");
       break;
 
     case PlatformSupport::Allowed:
