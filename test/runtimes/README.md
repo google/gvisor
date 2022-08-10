@@ -34,16 +34,32 @@ NodeJS   | 16.13.2 | `make nodejs16.13.2-runtime-tests`
 Php      | 8.1.1   | `make php8.1.1-runtime-tests`
 Python   | 3.10.2  | `make python3.10.2-runtime-tests`
 
-To run runtime tests individually from a given runtime, you must build or
-download the language image and call Docker directly with the test arguments.
+You can modify the runtime test behaviors by passing in the following `make`
+variables:
 
-Language | Version | Download Image                     | Run Test(s)
--------- | ------- | ---------------------------------- | -----------
-Go       | 1.16    | `make load-runtimes_go1.16`        | If the test name ends with `.go`, it is an on-disk test: <br> `docker run --runtime=runsc -it gvisor.dev/images/runtimes/go1.16 ( cd /usr/local/go/test ; go run run.go -v -- <TEST_NAME>... )` <br> Otherwise it is a tool test: <br> `docker run --runtime=runsc -it gvisor.dev/images/runtimes/go1.16 go tool dist test -v -no-rebuild ^TEST1$\|^TEST2$...`
-Java     | 17      | `make load-runtimes_java17`        | `docker run --runtime=runsc -it gvisor.dev/images/runtimes/java17 jtreg -agentvm -dir:/root/test/jdk -noreport -timeoutFactor:5 -verbose:all -tl:200 <TEST_NAME>...`
-NodeJS   | 16.13.2 | `make load-runtimes_nodejs16.13.2` | `docker run --runtime=runsc -it gvisor.dev/images/runtimes/nodejs16.13.2 python tools/test.py --timeout=180 <TEST_NAME>...`
-Php      | 8.1.1   | `make load-runtimes_php8.1.1`      | `docker run --runtime=runsc -it gvisor.dev/images/runtimes/php8.1.1 make test "TESTS=<TEST_NAME>..."`
-Python   | 3.10.2  | `make load-runtimes_python3.10.2`  | `docker run --runtime=runsc -it gvisor.dev/images/runtimes/python3.10.2 ./python -m test <TEST_NAME>...`
+*   `RUNTIME_TESTS_FILTER`: Comma-separated list of tests to run, even if
+    otherwise excluded. Useful to debug single failing test cases.
+*   `RUNTIME_TESTS_PER_TEST_TIMEOUT`: Modify per-test timeout. Useful when
+    debugging a test that has a tendency to get stuck, in order to make it fail
+    faster.
+*   `RUNTIME_TESTS_RUNS_PER_TEST`: Number of times to run each test. Useful to
+    find flaky tests.
+*   `RUNTIME_TESTS_FLAKY_IS_ERROR`: Boolean indicating whether tests found flaky
+    (i.e. running them multiple times has sometimes succeeded, sometimes failed)
+    should be considered a test suite failure (`true`) or success (`false`).
+*   `RUNTIME_TESTS_FLAKY_SHORT_CIRCUIT`: If true, when running tests multiple
+    times, and a test has been found flaky (i.e. running it multiple times has
+    succeeded at least once and failed at least once), exit immediately, rather
+    than running all `RUNTIME_TESTS_RUNS_PER_TEST` attempts.
+
+Example invocation:
+
+```shell
+$ make php8.1.1-runtime-tests \
+    RUNTIME_TESTS_FILTER=ext/standard/tests/file/bug60120.phpt \
+    RUNTIME_TESTS_PER_TEST_TIMEOUT=10s \
+    RUNTIME_TESTS_RUNS_PER_TEST=100
+```
 
 ### Clean Up
 

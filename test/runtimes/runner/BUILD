@@ -7,5 +7,8 @@ go_binary(
     testonly = 1,
     srcs = ["main.go"],
     visibility = ["//test/runtimes:__pkg__"],
-    deps = ["//test/runtimes/runner/lib"],
+    deps = [
+        "//pkg/test/testutil",
+        "//test/runtimes/runner/lib",
+    ],
 )
