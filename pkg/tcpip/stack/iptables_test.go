@@ -225,7 +225,7 @@ func TestNATedConnectionReap(t *testing.T) {
 		bkt.mu.RLock()
 		defer bkt.mu.RUnlock()
 		for tuple := bkt.tuples.Front(); tuple != nil; tuple = tuple.Next() {
-			if tuple.id() == tid {
+			if tuple.tupleID == tid {
 				t.Errorf("unexpectedly found tuple with ID = %#v; reply = %t", tid, reply)
 			}
 		}
