@@ -166,7 +166,7 @@ func (ep *Endpoint) exitFutexWait() {
 		return
 	case epsShutdown:
 		// ep.ctrlShutdown() was called while we were blocked, so we are
-		// repsonsible for indicating connection shutdown.
+		// responsible for indicating connection shutdown.
 		ep.shutdownConn()
 	default:
 		panic(fmt.Sprintf("invalid flipcall.Endpoint.ctrl.state after flipcall.Endpoint.exitFutexWait(): %v", eps+epsBlocked))
