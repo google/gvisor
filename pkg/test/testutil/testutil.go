@@ -49,14 +49,26 @@ import (
 )
 
 var (
-	checkpoint           = flag.Bool("checkpoint", boolFromEnv("CHECKPOINT", true), "control checkpoint/restore support")
-	partition            = flag.Int("partition", intFromEnv("PARTITION", 1), "partition number, this is 1-indexed")
-	totalPartitions      = flag.Int("total_partitions", intFromEnv("TOTAL_PARTITIONS", 1), "total number of partitions")
-	isRunningWithHostNet = flag.Bool("hostnet", boolFromEnv("HOSTNET", false), "whether test is running with hostnet")
+	checkpoint           = flag.Bool("checkpoint", BoolFromEnv("CHECKPOINT", true), "control checkpoint/restore support")
+	partition            = flag.Int("partition", IntFromEnv("PARTITION", 1), "partition number, this is 1-indexed")
+	totalPartitions      = flag.Int("total_partitions", IntFromEnv("TOTAL_PARTITIONS", 1), "total number of partitions")
+	isRunningWithHostNet = flag.Bool("hostnet", BoolFromEnv("HOSTNET", false), "whether test is running with hostnet")
 	runscPath            = flag.String("runsc", os.Getenv("RUNTIME"), "path to runsc binary")
 )
 
-func intFromEnv(name string, def int) int {
+// StringFromEnv returns the value of the named environment variable, or `def` if unset/empty.
+// It is useful for defining flags where the default value can be specified through the environment.
+func StringFromEnv(name, def string) string {
+	str := os.Getenv(name)
+	if str == "" {
+		return def
+	}
+	return str
+}
+
+// IntFromEnv returns the integer value of the named environment variable, or `def` if unset/empty.
+// It is useful for defining flags where the default value can be specified through the environment.
+func IntFromEnv(name string, def int) int {
 	str := os.Getenv(name)
 	if str == "" {
 		return def
@@ -69,7 +81,9 @@ func intFromEnv(name string, def int) int {
 	return int(v)
 }
 
-func boolFromEnv(name string, def bool) bool {
+// BoolFromEnv returns the boolean value of the named environment variable, or `def` if unset/empty.
+// It is useful for defining flags where the default value can be specified through the environment.
+func BoolFromEnv(name string, def bool) bool {
 	str := strings.ToLower(os.Getenv(name))
 	if str == "" {
 		return def
@@ -79,6 +93,20 @@ func boolFromEnv(name string, def bool) bool {
 		panic(fmt.Errorf("invalid environment variable %q; got %q expected bool: %w", name, str, err))
 	}
 	return v
+}
+
+// DurationFromEnv returns the duration of the named environment variable, or `def` if unset/empty.
+// It is useful for defining flags where the default value can be specified through the environment.
+func DurationFromEnv(name string, def time.Duration) time.Duration {
+	str := strings.ToLower(os.Getenv(name))
+	if str == "" {
+		return def
+	}
+	d, err := time.ParseDuration(str)
+	if err != nil {
+		panic(fmt.Errorf("invalid environment variable %q; got %q expected duration: %w", name, str, err))
+	}
+	return d
 }
 
 // IsCheckpointSupported returns the relevant command line flag.
