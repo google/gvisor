@@ -47,6 +47,7 @@ ext/opcache/tests/preload_trait_static.phpt,,Broken test
 ext/opcache/tests/preload_unresolved_prop_type.phpt,,Broken test
 ext/openssl/tests/openssl_dh_compute_key.phpt,,Broken test
 ext/standard/tests/file/bug69442.phpt,,
+ext/standard/tests/file/bug60120.phpt,b/241944760,Flakily times out
 ext/standard/tests/file/fopen_variation19.phpt,b/162894964,
 ext/standard/tests/file/symlink_link_linkinfo_is_link_variation4.phpt,b/162895341,
 sapi/cli/tests/upload_2G.phpt,,
