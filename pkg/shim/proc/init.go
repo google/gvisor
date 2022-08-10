@@ -73,6 +73,7 @@ type Init struct {
 	IoGID    int
 	Sandbox  bool
 	UserLog  string
+	PanicLog string
 	Monitor  ProcessMonitor
 }
 
