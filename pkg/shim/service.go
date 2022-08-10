@@ -1097,6 +1097,7 @@ func newInit(path, workDir, namespace string, platform stdio.Platform, r *proc.C
 	p.IoGID = int(options.IoGID)
 	p.Sandbox = specutils.SpecContainerType(spec) == specutils.ContainerTypeSandbox
 	p.UserLog = utils.UserLogPath(spec)
+	p.PanicLog = utils.PanicLogPath(spec)
 	p.Monitor = reaper.Default
 	return p, nil
 }
