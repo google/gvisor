@@ -37,6 +37,15 @@ doc(
 )
 
 doc(
+    name = "falco",
+    src = "falco.md",
+    category = "User Guide",
+    permalink = "/docs/tutorials/falco/",
+    subcategory = "Tutorials",
+    weight = "35",
+)
+
+doc(
     name = "knative",
     src = "knative.md",
     category = "User Guide",
