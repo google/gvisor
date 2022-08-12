@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <asm-generic/errno-base.h>
+#include <bits/types/siginfo_t.h>
 #include <bits/types/struct_iovec.h>
 #include <errno.h>
 #include <string.h>
@@ -36,7 +37,6 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
 #include "test/util/linux_capability_util.h"
-#include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/test_util.h"
@@ -140,8 +140,8 @@ TEST_P(ProcessVMTest, TestReadvSameProcess) {
 
 // TestReadvSubProcess repeats the previous test in a forked process.
 TEST_P(ProcessVMTest, TestReadvSubProcess) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE((HaveCapability(CAP_SYS_PTRACE))));
   SKIP_IF(ProcessVMCallsNotSupported());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE((HaveCapability(CAP_SYS_PTRACE))));
   auto local_data = GetParam().local_data;
   auto remote_data = GetParam().remote_data;
 
@@ -190,8 +190,8 @@ TEST_P(ProcessVMTest, TestWritevSameProcess) {
 
 // TestWritevSubProcess repeats the previous test in a forked process.
 TEST_P(ProcessVMTest, TestWritevSubProcess) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE((HaveCapability(CAP_SYS_PTRACE))));
   SKIP_IF(ProcessVMCallsNotSupported());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE((HaveCapability(CAP_SYS_PTRACE))));
   auto local_data = GetParam().local_data;
   auto remote_data = GetParam().remote_data;
   TestIovecs remote_iovecs(remote_data);
@@ -282,10 +282,12 @@ TEST(ProcessVMInvalidTest, NULLRemoteIovec) {
     pid_t parent = getppid();
     int ret =
         process_vm_readv(parent, &child_iov, contents.length(), nullptr, 1, 0);
+    TEST_CHECK(ret == -1);
     TEST_CHECK(errno == EFAULT || errno == EINVAL);
 
     ret =
         process_vm_writev(parent, &child_iov, contents.length(), nullptr, 1, 0);
+    TEST_CHECK(ret == -1);
     TEST_CHECK(errno == EFAULT || errno == EINVAL);
   };
   ASSERT_THAT(InForkedProcess(fn), IsPosixErrorOkAndHolds(0));
@@ -377,6 +379,24 @@ TEST(ProcessVMInvalidTest, PartialReadWrite) {
       SyscallSucceedsWithValue(iov_content_1.size()));
 }
 
+TEST(ProcessVMTest, WriteToZombie) {
+  SKIP_IF(ProcessVMCallsNotSupported());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE((HaveCapability(CAP_SYS_PTRACE))));
+  char* data = {0};
+  pid_t child;
+  ASSERT_THAT(child = fork(), SyscallSucceeds());
+  if (child == 0) {
+    _exit(0);
+  }
+  siginfo_t siginfo = {};
+  ASSERT_THAT(RetryEINTR(waitid)(P_PID, child, &siginfo, WEXITED | WNOWAIT),
+              SyscallSucceeds());
+  struct iovec iov;
+  iov.iov_base = data;
+  iov.iov_len = sizeof(data);
+  ASSERT_THAT(process_vm_writev(child, &iov, 1, &iov, 1, 0),
+              SyscallFailsWithErrno(ESRCH));
+}
 }  // namespace
 
 }  // namespace testing
