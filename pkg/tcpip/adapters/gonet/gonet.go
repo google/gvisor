@@ -47,10 +47,11 @@ func (e *timeoutError) Temporary() bool { return true }
 // A TCPListener is a wrapper around a TCP tcpip.Endpoint that implements
 // net.Listener.
 type TCPListener struct {
-	stack  *stack.Stack
-	ep     tcpip.Endpoint
-	wq     *waiter.Queue
-	cancel chan struct{}
+	stack      *stack.Stack
+	ep         tcpip.Endpoint
+	wq         *waiter.Queue
+	cancelOnce sync.Once
+	cancel     chan struct{}
 }
 
 // NewTCPListener creates a new TCPListener from a listening tcpip.Endpoint.
@@ -112,7 +113,9 @@ func (l *TCPListener) Close() error {
 // Shutdown stops the HTTP server.
 func (l *TCPListener) Shutdown() {
 	l.ep.Shutdown(tcpip.ShutdownWrite | tcpip.ShutdownRead)
-	close(l.cancel) // broadcast cancellation
+	l.cancelOnce.Do(func() {
+		close(l.cancel) // broadcast cancellation
+	})
 }
 
 // Addr implements net.Listener.Addr.
