@@ -1437,17 +1437,21 @@ func (s *Stack) CheckLocalAddress(nicID tcpip.NICID, protocol tcpip.NetworkProto
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// If a NIC is specified, we try to find the address there only.
+	// If a NIC is specified, use its NIC id.
 	if nicID != 0 {
 		nic, ok := s.nics[nicID]
 		if !ok {
 			return 0
 		}
-
+		// In IPv4, linux only checks the interface. If it matches, then it does
+		// not bother with the address.
+		// https://github.com/torvalds/linux/blob/15205c2829ca2cbb5ece5ceaafe1171a8470e62b/net/ipv4/igmp.c#L1829-L1837
+		if protocol == header.IPv4ProtocolNumber {
+			return nic.id
+		}
 		if nic.CheckLocalAddress(protocol, addr) {
 			return nic.id
 		}
-
 		return 0
 	}
 
