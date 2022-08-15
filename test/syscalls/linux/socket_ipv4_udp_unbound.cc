@@ -257,6 +257,62 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackNic) {
   EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
 
+// Check that multicast works when an interface identifier and address are
+// provided for multicast registration. The interface should take priority.
+TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfaceIndexAndAddr) {
+  auto socket1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  auto socket2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  // Bind the first FD to the loopback. This is an alternative to
+  // IP_MULTICAST_IF for setting the default send interface.
+  auto sender_addr = V4Loopback();
+  ASSERT_THAT(
+      bind(socket1->get(), AsSockAddr(&sender_addr.addr), sender_addr.addr_len),
+      SyscallSucceeds());
+
+  // Bind the second FD to the v4 any address to ensure that we can receive the
+  // multicast packet.
+  auto receiver_addr = V4Any();
+  ASSERT_THAT(bind(socket2->get(), AsSockAddr(&receiver_addr.addr),
+                   receiver_addr.addr_len),
+              SyscallSucceeds());
+  socklen_t receiver_addr_len = receiver_addr.addr_len;
+  ASSERT_THAT(getsockname(socket2->get(), AsSockAddr(&receiver_addr.addr),
+                          &receiver_addr_len),
+              SyscallSucceeds());
+  EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
+
+  // Register to receive multicast packets.
+  ip_mreqn group = {};
+  group.imr_multiaddr.s_addr = inet_addr(kMulticastAddress);
+  group.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(GetLoopbackIndex());
+  // Intentionally use an address that isn't assigned to the loopback device.
+  // The index should take precedence.
+  group.imr_address.s_addr = htonl(0x08080808);
+  ASSERT_THAT(setsockopt(socket2->get(), IPPROTO_IP, IP_ADD_MEMBERSHIP, &group,
+                         sizeof(group)),
+              SyscallSucceeds());
+
+  // Send a multicast packet.
+  auto send_addr = V4Multicast();
+  reinterpret_cast<sockaddr_in*>(&send_addr.addr)->sin_port =
+      reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port;
+  char send_buf[200];
+  RandomizeBuffer(send_buf, sizeof(send_buf));
+  ASSERT_THAT(
+      RetryEINTR(sendto)(socket1->get(), send_buf, sizeof(send_buf), 0,
+                         AsSockAddr(&send_addr.addr), send_addr.addr_len),
+      SyscallSucceedsWithValue(sizeof(send_buf)));
+
+  // Check that we received the multicast packet.
+  char recv_buf[sizeof(send_buf)] = {};
+  ASSERT_THAT(
+      RecvTimeout(socket2->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(sizeof(recv_buf)));
+
+  EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
+}
+
 // Check that multicast works when the default send interface is configured by
 // IP_MULTICAST_IF, the send address is specified in sendto, and the group
 // membership is configured by address.

@@ -728,3 +728,52 @@ func TestUDPAddRemoveMembershipSocketOption(t *testing.T) {
 		})
 	}
 }
+
+func TestAddMembershipInterfacePrecedence(t *testing.T) {
+	const nicID = 1
+	multicastAddr := tcpip.Address("\xe0\x01\x02\x03")
+	proto := header.IPv4ProtocolNumber
+	// This address is nonsensical. If the precedence is correct, this should not
+	// matter, because ADD_IP_MEMBERSHIP should consider the interface index
+	// and use that before checking the address.
+	localAddr := tcpip.AddressWithPrefix{
+		Address:   testutil.MustParse4("8.0.8.0"),
+		PrefixLen: 24,
+	}
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
+	})
+	e := channel.New(0, defaultMTU, "")
+	defer e.Close()
+	if err := s.CreateNIC(nicID, e); err != nil {
+		t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
+	}
+	protoAddr := tcpip.ProtocolAddress{Protocol: proto, AddressWithPrefix: localAddr}
+	if err := s.AddProtocolAddress(nicID, protoAddr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protoAddr, err)
+	}
+
+	var wq waiter.Queue
+	ep, err := s.NewEndpoint(udp.ProtocolNumber, proto, &wq)
+	if err != nil {
+		t.Fatalf("NewEndpoint(%d, %d, _): %s", udp.ProtocolNumber, proto, err)
+	}
+	defer ep.Close()
+
+	bindAddr := tcpip.FullAddress{Port: utils.LocalPort}
+	if err := ep.Bind(bindAddr); err != nil {
+		t.Fatalf("ep.Bind(%#v): %s", bindAddr, err)
+	}
+
+	memOpt := tcpip.MembershipOption{MulticastAddr: multicastAddr}
+	memOpt.NIC = nicID
+	memOpt.InterfaceAddr = localAddr.Address
+
+	// Add membership should succeed when the interface index is specified,
+	// even if a bad interface address is specified.
+	addOpt := tcpip.AddMembershipOption(memOpt)
+	if err := ep.SetSockOpt(&addOpt); err != nil {
+		t.Fatalf("ep.SetSockOpt(&%#v): %s", addOpt, err)
+	}
+}
