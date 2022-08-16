@@ -45,8 +45,13 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// Using header.IPv4AddressSize would cause an import cycle.
-const ipv4AddressSize = 4
+// Using the header package here would cause an import cycle.
+const (
+	ipv4AddressSize    = 4
+	ipv4ProtocolNumber = 0x0800
+	ipv6AddressSize    = 16
+	ipv6ProtocolNumber = 0x86dd
+)
 
 // Errors related to Subnet
 var (
