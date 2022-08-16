@@ -16,6 +16,7 @@ package trace
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/runsc/cmd/util"
@@ -26,7 +27,7 @@ import (
 
 // delete implements subcommands.Command for the "delete" command.
 type delete struct {
-	name string
+	sessionName string
 }
 
 // Name implements subcommands.Command.
@@ -47,7 +48,7 @@ func (*delete) Usage() string {
 
 // SetFlags implements subcommands.Command.
 func (l *delete) SetFlags(f *flag.FlagSet) {
-	f.StringVar(&l.name, "name", "", "name of session to be deleted")
+	f.StringVar(&l.sessionName, "name", "", "name of session to be deleted")
 }
 
 // Execute implements subcommands.Command.
@@ -56,7 +57,7 @@ func (l *delete) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}
 		f.Usage()
 		return subcommands.ExitUsageError
 	}
-	if len(l.name) == 0 {
+	if len(l.sessionName) == 0 {
 		f.Usage()
 		return util.Errorf("missing session name, please set --name")
 	}
@@ -73,8 +74,10 @@ func (l *delete) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}
 		util.Fatalf("loading sandbox: %v", err)
 	}
 
-	if err := c.Sandbox.DeleteTraceSession(l.name); err != nil {
+	if err := c.Sandbox.DeleteTraceSession(l.sessionName); err != nil {
 		util.Fatalf("deleting session: %v", err)
 	}
+
+	fmt.Printf("Trace session %q deleted.\n", l.sessionName)
 	return subcommands.ExitSuccess
 }
