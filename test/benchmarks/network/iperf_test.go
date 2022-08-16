@@ -15,8 +15,10 @@ package network
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
@@ -80,20 +82,8 @@ func BenchmarkIperf(b *testing.B) {
 			}, "iperf", "-s"); err != nil {
 				b.Fatalf("failed to start server with: %v", err)
 			}
-
-			ip, err := serverMachine.IPAddress()
-			if err != nil {
-				b.Fatalf("failed to find server ip: %v", err)
-			}
-
-			servingPort, err := server.FindPort(ctx, port)
-			if err != nil {
-				b.Fatalf("failed to find port %d: %v", port, err)
-			}
-
-			// Make sure the server is up and serving before we run.
-			if err := harness.WaitUntilServing(ctx, clientMachine, ip, servingPort); err != nil {
-				b.Fatalf("failed to wait for server: %v", err)
+			if out, err := server.WaitForOutput(ctx, fmt.Sprintf("Server listening on TCP port %d", port), 10*time.Second); err != nil {
+				b.Fatalf("failed to wait for iperf server: %v %s", err, out)
 			}
 
 			iperf := tools.Iperf{
@@ -104,7 +94,8 @@ func BenchmarkIperf(b *testing.B) {
 			b.ResetTimer()
 			out, err := client.Run(ctx, dockerutil.RunOpts{
 				Image: "benchmarks/iperf",
-			}, iperf.MakeCmd(ip, servingPort)...)
+				Links: []string{server.MakeLink("iperfsrv")},
+			}, iperf.MakeCmd("iperfsrv", port)...)
 			if err != nil {
 				b.Fatalf("failed to run client: %v", err)
 			}
