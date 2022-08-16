@@ -90,6 +90,7 @@ func (l *create) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}
 		util.Fatalf("creating session: %v", err)
 	}
 
+	fmt.Printf("Trace session %q created.\n", sessionConfig.Name)
 	return subcommands.ExitSuccess
 }
 
