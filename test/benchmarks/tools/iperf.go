@@ -16,7 +16,6 @@ package tools
 
 import (
 	"fmt"
-	"net"
 	"regexp"
 	"strconv"
 	"testing"
@@ -30,14 +29,14 @@ type Iperf struct {
 }
 
 // MakeCmd returns a iperf client command.
-func (i *Iperf) MakeCmd(ip net.IP, port int) []string {
+func (i *Iperf) MakeCmd(host string, port int) []string {
 	return []string{
 		"iperf",
 		"--format", "K", // Output in KBytes.
 		"--realtime",                       // Measured in realtime.
 		"--num", fmt.Sprintf("%dK", i.Num), // Number of bytes to send in KB.
 		"--length", fmt.Sprintf("%d", length),
-		"--client", ip.String(),
+		"--client", host,
 		"--port", fmt.Sprintf("%d", port),
 	}
 }
