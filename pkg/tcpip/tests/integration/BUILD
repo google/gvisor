@@ -120,6 +120,7 @@ go_test(
         "//pkg/tcpip/tests/utils",
         "//pkg/tcpip/testutil",
         "//pkg/tcpip/transport/icmp",
+        "//pkg/tcpip/transport/raw",
         "//pkg/tcpip/transport/udp",
         "//pkg/waiter",
         "@com_github_google_go_cmp//cmp:go_default_library",
