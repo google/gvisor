@@ -366,6 +366,7 @@ containerd-tests: containerd-test-1.6.0
 ##     BENCHMARKS_OFFICIAL  - marks the data as official.
 ##     BENCHMARKS_PLATFORMS - if set, only run the benchmarks for this
 ##                            space-separated list of platform names.
+##     BENCHMARKS_RUNC      - if true, also benchmark runc performance.
 ##     BENCHMARKS_FILTER    - filter to be applied to the test suite.
 ##     BENCHMARKS_OPTIONS   - options to be passed to the test.
 ##     BENCHMARKS_PROFILE   - profile options to be passed to the test.
@@ -376,12 +377,13 @@ BENCHMARKS_TABLE     ?= benchmarks
 BENCHMARKS_SUITE     ?= ffmpeg
 BENCHMARKS_UPLOAD    ?= false
 BENCHMARKS_OFFICIAL  ?= false
-BENCHMARKS_TARGETS   := //test/benchmarks/media:ffmpeg_test
+BENCHMARKS_TARGETS   ?= //test/benchmarks/media:ffmpeg_test
 BENCHMARKS_PLATFORMS ?=
-BENCHMARKS_FILTER    := .
-BENCHMARKS_OPTIONS   := -test.benchtime=30s
-BENCHMARKS_ARGS      := -test.v -test.bench=$(BENCHMARKS_FILTER) $(BENCHMARKS_OPTIONS)
-BENCHMARKS_PROFILE   := -pprof-dir=/tmp/profile -pprof-cpu -pprof-heap -pprof-block -pprof-mutex
+BENCHMARKS_RUNC      ?= true
+BENCHMARKS_FILTER    ?= .
+BENCHMARKS_OPTIONS   ?= -test.benchtime=30s
+BENCHMARKS_ARGS      ?= -test.v -test.bench=$(BENCHMARKS_FILTER) $(BENCHMARKS_OPTIONS)
+BENCHMARKS_PROFILE   ?= -pprof-dir=/tmp/profile -pprof-cpu -pprof-heap -pprof-block -pprof-mutex
 
 init-benchmark-table: ## Initializes a BigQuery table with the benchmark schema.
 	@$(call run,//tools/parsers:parser,init --project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE))
@@ -413,7 +415,9 @@ benchmark-platforms: load-benchmarks $(RUNTIME_BIN) ## Runs benchmarks for runc 
 	    $(call run_benchmark,$${PLATFORM}); \
 	  done; \
 	fi
-	@$(call run_benchmark,runc)
+	@set -xe; if test "$(BENCHMARKS_RUNC)" == true; then \
+	  $(call run_benchmark,runc); \
+	fi
 .PHONY: benchmark-platforms
 
 run-benchmark: load-benchmarks ## Runs single benchmark and optionally sends data to BigQuery.
