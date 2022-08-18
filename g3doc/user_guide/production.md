@@ -32,7 +32,7 @@ used to sandbox **every** application.
 
 ## Attack surface reduction {#attack-surface}
 
-Because sandboxing comes woth some performance overhead, you should first
+Because sandboxing comes with some performance overhead, you should first
 investigate ways to **reduce your outside attack surface** (without such
 overhead) as much as possible, prior to introducing sandboxing into your
 production stack at all.
