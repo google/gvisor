@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
@@ -159,6 +160,8 @@ func ExtractHostInterfaces(links []syscall.NetlinkMessage, addrs []syscall.Netli
 				inetIF.Addr = attr.Value
 			case unix.IFLA_IFNAME:
 				inetIF.Name = string(attr.Value[:len(attr.Value)-1])
+			case unix.IFLA_MTU:
+				inetIF.MTU = hostarch.ByteOrder.Uint32(attr.Value)
 			}
 		}
 		interfaces[ifinfo.Index] = &inetIF

@@ -3371,8 +3371,9 @@ func interfaceIoctl(ctx context.Context, _ usermem.IO, arg int, ifr *linux.IFReq
 				continue
 			}
 			copy(ifr.Data[4:8], addr.Addr)
-			break
+			return nil
 		}
+		return syserr.ErrAddressNotAvailable
 
 	case linux.SIOCGIFMETRIC:
 		// Gets the metric of the device. As per netdevice(7), this
@@ -3413,8 +3414,9 @@ func interfaceIoctl(ctx context.Context, _ usermem.IO, arg int, ifr *linux.IFReq
 			// Netmask is expected to be returned as a big endian
 			// value.
 			binary.BigEndian.PutUint32(ifr.Data[4:8], mask)
-			break
+			return nil
 		}
+		return syserr.ErrAddressNotAvailable
 
 	case linux.SIOCETHTOOL:
 		// Stubbed out for now, Ideally we should implement the required

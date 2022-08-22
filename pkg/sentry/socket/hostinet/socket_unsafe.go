@@ -15,6 +15,7 @@
 package hostinet
 
 import (
+	"encoding/binary"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -55,8 +56,118 @@ func writev(fd int, srcs []unix.Iovec) (uint64, error) {
 	return uint64(n), nil
 }
 
+// interfaceIoctl implements interface requests.
+func interfaceIoctl(ctx context.Context, _ usermem.IO, arg uintptr, ifr *linux.IFReq) error {
+	var (
+		iface inet.Interface
+		index int32
+		found bool
+	)
+
+	// Find the relevant device.
+	stk := inet.StackFromContext(ctx)
+	if stk == nil {
+		return linuxerr.ENODEV
+	}
+
+	// Find the relevant device.
+	for index, iface = range stk.Interfaces() {
+		if iface.Name == ifr.Name() {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return linuxerr.ENODEV
+	}
+
+	switch arg {
+	case linux.SIOCGIFINDEX:
+		// Copy out the index to the data.
+		hostarch.ByteOrder.PutUint32(ifr.Data[:], uint32(index))
+
+	case linux.SIOCGIFADDR:
+		// Copy the IPv4 address out.
+		for _, addr := range stk.InterfaceAddrs()[index] {
+			// This ioctl is only compatible with AF_INET addresses.
+			if addr.Family != linux.AF_INET {
+				continue
+			}
+			copy(ifr.Data[4:8], addr.Addr)
+			return nil
+		}
+		return linuxerr.EADDRNOTAVAIL
+
+	case linux.SIOCGIFHWADDR:
+		// Copy the hardware address out.
+		//
+		// Refer: https://linux.die.net/man/7/netdevice
+		// SIOCGIFHWADDR, SIOCSIFHWADDR
+		//
+		// Get or set the hardware address of a device using
+		// ifr_hwaddr. The hardware address is specified in a struct
+		// sockaddr. sa_family contains the ARPHRD_* device type,
+		// sa_data the L2 hardware address starting from byte 0. Setting
+		// the hardware address is a privileged operation.
+		hostarch.ByteOrder.PutUint16(ifr.Data[:], iface.DeviceType)
+		n := copy(ifr.Data[2:], iface.Addr)
+		for i := 2 + n; i < len(ifr.Data); i++ {
+			ifr.Data[i] = 0 // Clear padding.
+		}
+
+	case linux.SIOCGIFMTU:
+		// Gets the MTU of the device.
+		hostarch.ByteOrder.PutUint32(ifr.Data[:4], iface.MTU)
+
+	case linux.SIOCGIFNETMASK:
+		// Gets the network mask of a device.
+		for _, addr := range stk.InterfaceAddrs()[index] {
+			// This ioctl is only compatible with AF_INET addresses.
+			if addr.Family != linux.AF_INET {
+				continue
+			}
+			// Populate ifr.ifr_netmask (type sockaddr).
+			hostarch.ByteOrder.PutUint16(ifr.Data[0:], uint16(linux.AF_INET))
+			hostarch.ByteOrder.PutUint16(ifr.Data[2:], 0)
+			var mask uint32 = 0xffffffff << (32 - addr.PrefixLen)
+			// Netmask is expected to be returned as a big endian
+			// value.
+			binary.BigEndian.PutUint32(ifr.Data[4:8], mask)
+			return nil
+		}
+		return linuxerr.EADDRNOTAVAIL
+	default:
+		// Not a valid call.
+		return linuxerr.EINVAL
+	}
+
+	return nil
+}
+
 func ioctl(ctx context.Context, fd int, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	switch cmd := uintptr(args[1].Int()); cmd {
+	case linux.SIOCGIFADDR,
+		linux.SIOCGIFHWADDR,
+		linux.SIOCGIFMTU,
+		linux.SIOCGIFNETMASK,
+		linux.SIOCGIFINDEX:
+		cc := &usermem.IOCopyContext{
+			Ctx: ctx,
+			IO:  io,
+			Opts: usermem.IOOpts{
+				AddressSpaceActive: true,
+			},
+		}
+
+		var ifr linux.IFReq
+		if _, err := ifr.CopyIn(cc, args[2].Pointer()); err != nil {
+			return 0, err
+		}
+		if err := interfaceIoctl(ctx, io, cmd, &ifr); err != nil {
+			return 0, err
+		}
+		_, err := ifr.CopyOut(cc, args[2].Pointer())
+		return 0, err
 	case unix.TIOCINQ, unix.TIOCOUTQ:
 		var val int32
 		if _, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), cmd, uintptr(unsafe.Pointer(&val))); errno != 0 {
