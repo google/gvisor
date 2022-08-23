@@ -164,7 +164,6 @@ dev: $(RUNTIME_BIN) ## Installs a set of local runtimes. Requires sudo.
 	@$(call configure_noreload,$(RUNTIME)-p,--net-raw --profile)
 	@$(call configure_noreload,$(RUNTIME)-fuse-d,--net-raw --debug --strace --log-packets --fuse)
 	@$(call configure_noreload,$(RUNTIME)-cgroup-d,--net-raw --debug --strace --log-packets --cgroupfs)
-	@$(call configure_noreload,$(RUNTIME)-lisafs-d,--net-raw --debug --strace --log-packets --lisafs)
 	@$(call configure_noreload,$(RUNTIME)-systemd-d,--net-raw --debug --strace --log-packets --systemd-cgroup)
 	@$(call reload_docker)
 .PHONY: dev
@@ -247,10 +246,6 @@ RUNTIME_TESTS_FLAKY_SHORT_CIRCUIT ?= true
 	@$(call install_runtime,$(RUNTIME),--watchdog-action=panic)
 	@$(call test_runtime,$(RUNTIME),--test_timeout=1800 --test_env=RUNTIME_TESTS_FILTER=$(RUNTIME_TESTS_FILTER) --test_env=RUNTIME_TESTS_PER_TEST_TIMEOUT=$(RUNTIME_TESTS_PER_TEST_TIMEOUT) --test_env=RUNTIME_TESTS_RUNS_PER_TEST=$(RUNTIME_TESTS_RUNS_PER_TEST) --test_env=RUNTIME_TESTS_FLAKY_IS_ERROR=$(RUNTIME_TESTS_FLAKY_IS_ERROR) --test_env=RUNTIME_TESTS_FLAKY_SHORT_CIRCUIT=$(RUNTIME_TESTS_FLAKY_SHORT_CIRCUIT) //test/runtimes:$*)
 
-%-runtime-tests_lisafs: load-runtimes_% $(RUNTIME_BIN)
-	@$(call install_runtime,$(RUNTIME), --lisafs --watchdog-action=panic)
-	@$(call test_runtime,$(RUNTIME),--test_timeout=1800 --test_env=RUNTIME_TESTS_FILTER=$(RUNTIME_TESTS_FILTER) --test_env=RUNTIME_TESTS_PER_TEST_TIMEOUT=$(RUNTIME_TESTS_PER_TEST_TIMEOUT) --test_env=RUNTIME_TESTS_RUNS_PER_TEST=$(RUNTIME_TESTS_RUNS_PER_TEST) --test_env=RUNTIME_TESTS_FLAKY_IS_ERROR=$(RUNTIME_TESTS_FLAKY_IS_ERROR) --test_env=RUNTIME_TESTS_FLAKY_SHORT_CIRCUIT=$(RUNTIME_TESTS_FLAKY_SHORT_CIRCUIT) //test/runtimes:$*)
-
 do-tests: $(RUNTIME_BIN)
 	@$(RUNTIME_BIN) --rootless do true
 	@$(RUNTIME_BIN) --rootless -network=none do true
@@ -276,10 +271,6 @@ docker-tests: load-basic $(RUNTIME_BIN)
 	# Used by TestRlimitNoFile.
 	@$(call install_runtime,$(RUNTIME)-fdlimit,--fdlimit=2000)
 	@$(call install_runtime,$(RUNTIME)-dcache,--fdlimit=2000 --dcache=100)
-	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS) //test/e2e:integration_runtime_test)
-	@$(call install_runtime,$(RUNTIME), --lisafs) # Run again with lisafs.
-	@$(call install_runtime,$(RUNTIME)-fdlimit,--lisafs --fdlimit=2000)
-	@$(call install_runtime,$(RUNTIME)-dcache,--lisafs --fdlimit=2000 --dcache=100)
 	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS) //test/e2e:integration_runtime_test)
 .PHONY: docker-tests
 
