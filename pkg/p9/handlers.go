@@ -1093,7 +1093,7 @@ func (t *Treaddir) handle(cs *connState) message {
 		}
 
 		// Read the entries.
-		entries, err = ref.file.Readdir(t.Offset, t.Count)
+		entries, err = ref.file.Readdir(t.DirentOffset, t.Count)
 		if err != nil && err != io.EOF {
 			return err
 		}

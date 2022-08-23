@@ -763,13 +763,13 @@ func (c *clientFile) UnlinkAt(name string, flags uint32) error {
 }
 
 // Readdir implements File.Readdir.
-func (c *clientFile) Readdir(offset uint64, count uint32) ([]Dirent, error) {
+func (c *clientFile) Readdir(direntOffset uint64, count uint32) ([]Dirent, error) {
 	if c.closed.Load() != 0 {
 		return nil, unix.EBADF
 	}
 
 	rreaddir := Rreaddir{}
-	if err := c.client.sendRecv(&Treaddir{Directory: c.fid, Offset: offset, Count: count}, &rreaddir); err != nil {
+	if err := c.client.sendRecv(&Treaddir{Directory: c.fid, DirentOffset: direntOffset, Count: count}, &rreaddir); err != nil {
 		return nil, err
 	}
 
