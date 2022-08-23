@@ -275,10 +275,19 @@ type File interface {
 
 	// Readdir reads directory entries.
 	//
-	// This may return io.EOF in addition to unix.Errno values.
+	// This may return io.EOF in addition to unix.Errno values. count is the
+	// number of bytes to read.
+	//
+	// direntOffset is the directory offset at which the read should happen.
+	// direntOffset can be set to 0 to start reading the directory from start.
+	// direntOffset is used more like a cookie. The unit of direntOffset is
+	// unspecified. Gofers can choose their own unit. The client must set it
+	// to one of the values returned in Dirent.Offset, preferably the last offset
+	// returned, which should cause the readdir to continue from where it was
+	// left off.
 	//
 	// On the server, Readdir has a read concurrency guarantee.
-	Readdir(offset uint64, count uint32) ([]Dirent, error)
+	Readdir(direntOffset uint64, count uint32) ([]Dirent, error)
 
 	// Readlink reads the link target.
 	//

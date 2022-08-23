@@ -1084,6 +1084,10 @@ func (a *Attr) Apply(mask SetAttrMask, attr SetAttr) {
 	}
 }
 
+// DirentSizeStatic is the number of bytes required to encode a p9.Dirent
+// with an empty name. In other words, it is the static part of its size.
+const DirentSizeStatic = 24
+
 // Dirent is used for readdir.
 type Dirent struct {
 	// QID is the entry QID.

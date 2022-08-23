@@ -738,7 +738,7 @@ func TestReaddir(t *testing.T) {
 			t.Fatalf("%v: Open(ReadOnly) failed, err: %v", s, err)
 		}
 
-		dirents, err := s.file.Readdir(0, 10)
+		dirents, err := s.file.Readdir(0, 4096)
 		if err != nil {
 			t.Fatalf("%v: Readdir(0, 10) failed, err: %v", s, err)
 		}
