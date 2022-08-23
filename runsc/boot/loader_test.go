@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/control/server"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
@@ -87,21 +86,19 @@ func startGofer(root string) (int, func(), error) {
 		unix.Close(goferEnd)
 		return 0, nil, fmt.Errorf("error creating server on FD %d: %v", goferEnd, err)
 	}
-	at, err := fsgofer.NewAttachPoint(root, fsgofer.Config{ROMount: true})
+	server := fsgofer.NewLisafsServer(fsgofer.Config{})
+	c, err := server.CreateConnection(socket, root, true /* readonly */)
 	if err != nil {
 		return 0, nil, err
 	}
-	go func() {
-		s := p9.NewServer(at)
-		if err := s.Handle(socket); err != nil {
-			log.Infof("Gofer is stopping. FD: %d, err: %v\n", goferEnd, err)
-		}
-	}()
+	server.StartConnection(c)
 	// Closing the gofer socket will stop the gofer and exit goroutine above.
 	cleanup := func() {
 		if err := socket.Close(); err != nil {
 			log.Warningf("Error closing gofer socket: %v", err)
 		}
+		server.Wait()
+		server.Destroy()
 	}
 	return sandboxEnd, cleanup, nil
 }
