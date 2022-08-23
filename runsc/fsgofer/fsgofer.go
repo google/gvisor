@@ -989,7 +989,7 @@ func (l *localFile) UnlinkAt(name string, flags uint32) error {
 }
 
 // Readdir implements p9.File.
-func (l *localFile) Readdir(offset uint64, count uint32) ([]p9.Dirent, error) {
+func (l *localFile) Readdir(direntOffset uint64, count uint32) ([]p9.Dirent, error) {
 	if l.mode != p9.ReadOnly && l.mode != p9.ReadWrite {
 		return nil, unix.EBADF
 	}
@@ -1010,18 +1010,18 @@ func (l *localFile) Readdir(offset uint64, count uint32) ([]p9.Dirent, error) {
 	// offset is 0, since this is side-effectual (equivalent to rewinddir(3),
 	// which causes the directory stream to resynchronize with the directory's
 	// current contents).
-	if l.lastDirentOffset != offset || offset == 0 {
+	if l.lastDirentOffset != direntOffset || direntOffset == 0 {
 		if _, err := unix.Seek(l.file.FD(), 0, 0); err != nil {
 			return nil, extractErrno(err)
 		}
-		skip = offset
+		skip = direntOffset
 	}
 
-	dirents, err := l.readDirent(l.file.FD(), offset, count, skip)
+	dirents, err := l.readDirent(l.file.FD(), direntOffset, count, skip)
 	if err == nil {
 		// On success, remember the offset that was returned at the current
 		// position.
-		l.lastDirentOffset = offset + uint64(len(dirents))
+		l.lastDirentOffset = direntOffset + uint64(len(dirents))
 	} else {
 		// On failure, the state is unknown, force call to seek() next time.
 		l.lastDirentOffset = math.MaxUint64
@@ -1029,57 +1029,62 @@ func (l *localFile) Readdir(offset uint64, count uint32) ([]p9.Dirent, error) {
 	return dirents, err
 }
 
-func (l *localFile) readDirent(f int, offset uint64, count uint32, skip uint64) ([]p9.Dirent, error) {
+func (l *localFile) readDirent(f int, direntOffset uint64, count uint32, skip uint64) ([]p9.Dirent, error) {
 	var dirents []p9.Dirent
 
-	// Limit 'count' to cap the slice size that is returned.
-	const maxCount = 100000
+	// p9.Dirent takes 5 extra bytes to be encoded than a unix.Dirent.
+	// count will be used to count against the number of bytes read from the
+	// host. So scale it down, so that when encoding the same dirents in p9, we
+	// don't hit count limit. Scale down to 80%.
+	count = (count * 8) / 10
+	// Limit 'count' to cap the amount of data that is returned.
+	const maxCount = 102_400
 	if count > maxCount {
 		count = maxCount
 	}
 
 	// Pre-allocate buffers that will be reused to get partial results.
 	direntsBuf := make([]byte, 8192)
-	names := make([]string, 0, 100)
-
-	end := offset + uint64(count)
-	for offset < end {
-		dirSize, err := unix.ReadDirent(f, direntsBuf)
+	for bytesRead := 0; bytesRead < int(count); {
+		bufEnd := len(direntsBuf)
+		if remaining := int(count) - bytesRead; remaining < bufEnd {
+			bufEnd = remaining
+		}
+		n, err := unix.Getdents(f, direntsBuf[:bufEnd])
 		if err != nil {
+			if err == unix.EINVAL && bufEnd < unixDirentMaxSize {
+				// getdents64(2) returns EINVAL when the result buffer is too small. If
+				// bufEnd is smaller than the max size of unix.Dirent, then just break
+				// here to return all dirents collected till now.
+				return dirents, nil
+			}
 			return dirents, err
 		}
-		if dirSize <= 0 {
+		if n <= 0 {
 			return dirents, nil
 		}
 
-		names := names[:0]
-		_, _, names = unix.ParseDirent(direntsBuf[:dirSize], -1, names)
-
-		// Skip over entries that the caller is not interested in.
-		if skip > 0 {
-			if skip > uint64(len(names)) {
-				skip -= uint64(len(names))
-				names = names[:0]
-			} else {
-				names = names[skip:]
-				skip = 0
-			}
-		}
-		for _, name := range names {
+		parseDirents(direntsBuf[:n], func(ino uint64, off int64, ftype uint8, name string, reclen uint16) bool {
 			stat, err := statAt(l.file.FD(), name)
 			if err != nil {
 				log.Warningf("Readdir is skipping file %q with failed stat, err: %v", path.Join(l.hostPath, name), err)
-				continue
+				return true
+			}
+			if skip > 0 {
+				skip--
+				return true
 			}
 			qid := l.attachPoint.makeQID(&stat)
-			offset++
+			direntOffset++
 			dirents = append(dirents, p9.Dirent{
 				QID:    qid,
 				Type:   qid.Type,
 				Name:   name,
-				Offset: offset,
+				Offset: direntOffset,
 			})
-		}
+			bytesRead += int(reclen)
+			return true
+		})
 	}
 	return dirents, nil
 }

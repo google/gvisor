@@ -221,9 +221,9 @@ func TestEncodeDecode(t *testing.T) {
 		},
 		&Rsetxattr{},
 		&Treaddir{
-			Directory: 1,
-			Offset:    2,
-			Count:     3,
+			Directory:    1,
+			DirentOffset: 2,
+			Count:        3,
 		},
 		&Rreaddir{
 			// Count must be sufficient to encode a dirent.
