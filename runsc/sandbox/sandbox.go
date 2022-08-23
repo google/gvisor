@@ -1140,7 +1140,7 @@ func (s *Sandbox) Cat(cid string, files []string, out *os.File) error {
 }
 
 // Usage sends the collect call for a container in the sandbox.
-func (s *Sandbox) Usage(cid string, Full bool) (control.MemoryUsage, error) {
+func (s *Sandbox) Usage(Full bool) (control.MemoryUsage, error) {
 	log.Debugf("Usage sandbox %q", s.ID)
 	conn, err := s.sandboxConnect()
 	if err != nil {
@@ -1156,7 +1156,7 @@ func (s *Sandbox) Usage(cid string, Full bool) (control.MemoryUsage, error) {
 }
 
 // UsageFD sends the usagefd call for a container in the sandbox.
-func (s *Sandbox) UsageFD(cid string) (*control.MemoryUsageRecord, error) {
+func (s *Sandbox) UsageFD() (*control.MemoryUsageRecord, error) {
 	log.Debugf("Usage sandbox %q", s.ID)
 	conn, err := s.sandboxConnect()
 	if err != nil {
@@ -1179,7 +1179,7 @@ func (s *Sandbox) UsageFD(cid string) (*control.MemoryUsageRecord, error) {
 }
 
 // Reduce sends the reduce call for a container in the sandbox.
-func (s *Sandbox) Reduce(cid string, wait bool) error {
+func (s *Sandbox) Reduce(wait bool) error {
 	log.Debugf("Reduce sandbox %q", s.ID)
 	conn, err := s.sandboxConnect()
 	if err != nil {

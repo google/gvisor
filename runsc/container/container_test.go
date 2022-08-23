@@ -2590,7 +2590,7 @@ func TestUsage(t *testing.T) {
 	}
 
 	for _, full := range []bool{false, true} {
-		m, err := cont.Usage(full)
+		m, err := cont.Sandbox.Usage(full)
 		if err != nil {
 			t.Fatalf("error usage from container: %v", err)
 		}
@@ -2637,7 +2637,7 @@ func TestUsageFD(t *testing.T) {
 		t.Fatalf("starting container: %v", err)
 	}
 
-	m, err := cont.UsageFD()
+	m, err := cont.Sandbox.UsageFD()
 	if err != nil {
 		t.Fatalf("error usageFD from container: %v", err)
 	}
@@ -2683,7 +2683,7 @@ func TestReduce(t *testing.T) {
 		t.Fatalf("starting container: %v", err)
 	}
 
-	if err := cont.Reduce(false); err != nil {
+	if err := cont.Sandbox.Reduce(false); err != nil {
 		t.Fatalf("error reduce from container: %v", err)
 	}
 }

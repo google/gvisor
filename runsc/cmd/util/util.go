@@ -37,6 +37,21 @@ type jsonError struct {
 	Time  time.Time `json:"time"`
 }
 
+// Writer writes to log and stdout.
+type Writer struct{}
+
+// Write implements io.Writer.
+func (i *Writer) Write(data []byte) (n int, err error) {
+	log.Infof("%s", data)
+	return os.Stdout.Write(data)
+}
+
+// Infof writes message to log and stdout.
+func Infof(format string, args ...interface{}) {
+	log.Infof(format, args)
+	fmt.Printf(format+"\n", args)
+}
+
 // Errorf logs error to containerd log (--log), to stderr, and debug logs. It
 // returns subcommands.ExitFailure for convenience with subcommand.Execute()
 // methods:
