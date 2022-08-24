@@ -84,8 +84,8 @@ def _syscall_test(
         name += "_overlay"
     if fuse:
         name += "_fuse"
-    if lisafs:
-        name += "_lisafs"
+    if not lisafs:
+        name += "_p9"
     if network != "none":
         name += "_" + network + "net"
 
