@@ -18,21 +18,38 @@
 package filter
 
 import (
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/seccomp"
 )
 
-// Install installs seccomp filters.
-func Install() error {
-	// Set of additional filters used by -race and -msan. Returns empty
-	// when not enabled.
-	allowedSyscalls.Merge(instrumentationFilters())
-
-	return seccomp.Install(allowedSyscalls, seccomp.DenyNewExecMappings)
+// Options are seccomp filter related options.
+type Options struct {
+	UDSEnabled     bool
+	ProfileEnabled bool
 }
 
-// InstallUDSFilters extends the allowed syscalls to include those necessary for
-// creating and connecting to host UDS.
-func InstallUDSFilters() {
-	// Add additional filters required for connecting to the host's sockets.
-	allowedSyscalls.Merge(udsSyscalls)
+// Install installs seccomp filters.
+func Install(opt Options) error {
+	s := allowedSyscalls
+
+	if opt.ProfileEnabled {
+		report("profile enabled: syscall filters less restrictive!")
+		s.Merge(profileFilters)
+	}
+
+	if opt.UDSEnabled {
+		report("host UDS enabled: syscall filters less restrictive!")
+		s.Merge(udsSyscalls)
+	}
+
+	// Set of additional filters used by -race and -msan. Returns empty
+	// when not enabled.
+	s.Merge(instrumentationFilters())
+
+	return seccomp.Install(s, seccomp.DenyNewExecMappings)
+}
+
+// report writes a warning message to the log.
+func report(msg string) {
+	log.Warningf("*** SECCOMP WARNING: %s", msg)
 }
