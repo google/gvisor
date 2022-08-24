@@ -927,6 +927,11 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 	}
 	donations.DonateAndClose("spec-fd", specFile)
 
+	// Donate any profile FDs to the gofer.
+	if err := c.donateGoferProfileFDs(conf, &donations); err != nil {
+		return nil, nil, fmt.Errorf("donating gofer profile fds: %w", err)
+	}
+
 	// Create pipe that allows gofer to send mount list to sandbox after all paths
 	// have been resolved.
 	mountsSand, mountsGofer, err := os.Pipe()
@@ -1339,6 +1344,45 @@ func (c *Container) setupCgroupForSubcontainer(conf *config.Config, spec *specs.
 	}
 	// Use empty resources, just want the directory structure created.
 	return cgroupInstall(conf, cg, &specs.LinuxResources{})
+}
+
+// donateGoferProfileFDs will open profile files and donate their FDs to the
+// gofer.
+func (c *Container) donateGoferProfileFDs(conf *config.Config, donations *donation.Agency) error {
+	// The gofer profile files are named based on the provided flag, but
+	// suffixed with "gofer" and the container ID to avoid collisions with
+	// sentry profile files or profile files from other gofers.
+	//
+	// TODO(b/243183772): Merge gofer profile data with sentry profile data
+	// into a single file.
+	profSuffix := ".gofer." + c.ID
+	const profFlags = os.O_CREATE | os.O_WRONLY | os.O_TRUNC
+	if conf.ProfileBlock != "" {
+		if err := donations.OpenAndDonate("profile-block-fd", conf.ProfileBlock+profSuffix, profFlags); err != nil {
+			return err
+		}
+	}
+	if conf.ProfileCPU != "" {
+		if err := donations.OpenAndDonate("profile-cpu-fd", conf.ProfileCPU+profSuffix, profFlags); err != nil {
+			return err
+		}
+	}
+	if conf.ProfileHeap != "" {
+		if err := donations.OpenAndDonate("profile-heap-fd", conf.ProfileHeap+profSuffix, profFlags); err != nil {
+			return err
+		}
+	}
+	if conf.ProfileMutex != "" {
+		if err := donations.OpenAndDonate("profile-mutex-fd", conf.ProfileMutex+profSuffix, profFlags); err != nil {
+			return err
+		}
+	}
+	if conf.TraceFile != "" {
+		if err := donations.OpenAndDonate("trace-fd", conf.TraceFile+profSuffix, profFlags); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // cgroupInstall creates cgroups dir structure and sets their respective
