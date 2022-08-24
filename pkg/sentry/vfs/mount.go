@@ -174,6 +174,22 @@ func (vfs *VirtualFilesystem) NewMountNamespace(ctx context.Context, creds *auth
 	return mntns, nil
 }
 
+// NewFilesystem creates a new filesystem object not yet associated with any
+// mounts. It can be installed into the filesystem tree with ConnectMountAt.
+// Note that only the filesystem-specific mount options from opts are used by
+// this function, mount flags are ignored. To set mount flags, pass them to a
+// corresponding ConnectMountAt.
+func (vfs *VirtualFilesystem) NewFilesystem(ctx context.Context, creds *auth.Credentials, source, fsTypeName string, opts *MountOptions) (*Filesystem, *Dentry, error) {
+	rft := vfs.getFilesystemType(fsTypeName)
+	if rft == nil {
+		return nil, nil, linuxerr.ENODEV
+	}
+	if !opts.InternalMount && !rft.opts.AllowUserMount {
+		return nil, nil, linuxerr.ENODEV
+	}
+	return rft.fsType.GetFilesystem(ctx, vfs, creds, source, opts.GetFilesystemOptions)
+}
+
 // NewDisconnectedMount returns a Mount representing fs with the given root
 // (which may be nil). The new Mount is not associated with any MountNamespace
 // and is not connected to any other Mounts. References are taken on fs and
@@ -190,14 +206,7 @@ func (vfs *VirtualFilesystem) NewDisconnectedMount(fs *Filesystem, root *Dentry,
 // then returns a Mount representing it. The new Mount is not associated with
 // any MountNamespace and is not connected to any other Mounts.
 func (vfs *VirtualFilesystem) MountDisconnected(ctx context.Context, creds *auth.Credentials, source string, fsTypeName string, opts *MountOptions) (*Mount, error) {
-	rft := vfs.getFilesystemType(fsTypeName)
-	if rft == nil {
-		return nil, linuxerr.ENODEV
-	}
-	if !opts.InternalMount && !rft.opts.AllowUserMount {
-		return nil, linuxerr.ENODEV
-	}
-	fs, root, err := rft.fsType.GetFilesystem(ctx, vfs, creds, source, opts.GetFilesystemOptions)
+	fs, root, err := vfs.NewFilesystem(ctx, creds, source, fsTypeName, opts)
 	if err != nil {
 		return nil, err
 	}
