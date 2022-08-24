@@ -37,6 +37,7 @@ import (
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/fsgofer"
 	"gvisor.dev/gvisor/runsc/fsgofer/filter"
+	"gvisor.dev/gvisor/runsc/profile"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -68,6 +69,9 @@ type Gofer struct {
 	specFD       int
 	mountsFD     int
 	syncUsernsFD int
+
+	profileFDs    profile.FDArgs
+	stopProfiling func()
 }
 
 // Name implements subcommands.Command.
@@ -96,6 +100,9 @@ func (g *Gofer) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&g.specFD, "spec-fd", -1, "required fd with the container spec")
 	f.IntVar(&g.mountsFD, "mounts-fd", -1, "mountsFD is the file descriptor to write list of mounts after they have been resolved (direct paths, no symlinks).")
 	f.IntVar(&g.syncUsernsFD, "sync-userns-fd", -1, "file descriptor used to synchronize rootless user namespace initialization.")
+
+	// Profiling flags.
+	g.profileFDs.SetFromFlags(f)
 }
 
 // Execute implements subcommands.Command.
@@ -156,6 +163,11 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		// We expcec that setCapsAndCallSelfsetCapsAndCallSelf has to be called in this case.
 		panic("unreachable")
 	}
+
+	// Start profiling. This will be a noop if no profiling arguments were passed.
+	profileOpts := g.profileFDs.ToOpts()
+	g.stopProfiling = profile.Start(profileOpts)
+
 	// At this point we won't re-execute, so it's safe to limit via rlimits. Any
 	// limit >= 0 works. If the limit is lower than the current number of open
 	// files, then Setrlimit will succeed, and the next open will fail.
@@ -214,11 +226,11 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	log.Infof("Process chroot'd to %q", root)
 
 	// Initialize filters.
-	if conf.FSGoferHostUDS {
-		filter.InstallUDSFilters()
+	opts := filter.Options{
+		UDSEnabled:     conf.FSGoferHostUDS,
+		ProfileEnabled: len(profileOpts) > 0,
 	}
-
-	if err := filter.Install(); err != nil {
+	if err := filter.Install(opts); err != nil {
 		util.Fatalf("installing seccomp filters: %v", err)
 	}
 
@@ -295,6 +307,9 @@ func (g *Gofer) serveLisafs(spec *specs.Spec, conf *config.Config, root string) 
 	server.Wait()
 	server.Destroy()
 	log.Infof("All lisafs servers exited.")
+	if g.stopProfiling != nil {
+		g.stopProfiling()
+	}
 	return subcommands.ExitSuccess
 }
 
@@ -353,6 +368,9 @@ func (g *Gofer) serve9P(spec *specs.Spec, conf *config.Config, root string) subc
 	}
 	wg.Wait()
 	log.Infof("All 9P servers exited.")
+	if g.stopProfiling != nil {
+		g.stopProfiling()
+	}
 	return subcommands.ExitSuccess
 }
 

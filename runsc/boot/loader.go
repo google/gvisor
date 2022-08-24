@@ -74,6 +74,7 @@ import (
 	_ "gvisor.dev/gvisor/runsc/boot/platforms" // register all platforms.
 	"gvisor.dev/gvisor/runsc/boot/pprof"
 	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/profile"
 	"gvisor.dev/gvisor/runsc/specutils"
 	"gvisor.dev/gvisor/runsc/specutils/seccomp"
 
@@ -205,21 +206,6 @@ type Args struct {
 	TotalMem uint64
 	// UserLogFD is the file descriptor to write user logs to.
 	UserLogFD int
-	// ProfileBlockFD is the file descriptor to write a block profile to.
-	// Valid if >=0.
-	ProfileBlockFD int
-	// ProfileCPUFD is the file descriptor to write a CPU profile to.
-	// Valid if >=0.
-	ProfileCPUFD int
-	// ProfileHeapFD is the file descriptor to write a heap profile to.
-	// Valid if >=0.
-	ProfileHeapFD int
-	// ProfileMutexFD is the file descriptor to write a mutex profile to.
-	// Valid if >=0.
-	ProfileMutexFD int
-	// TraceFD is the file descriptor to write a Go execution trace to.
-	// Valid if >=0.
-	TraceFD int
 	// ProductName is the value to show in
 	// /sys/devices/virtual/dmi/id/product_name.
 	ProductName string
@@ -229,6 +215,9 @@ type Args struct {
 	// SinkFDs is an ordered array of file descriptors to be used by seccheck
 	// sinks configured from the --pod-init-config file.
 	SinkFDs []int
+	// ProfileOpts contains the set of profiles to enable and the
+	// corresponding FDs where profile data will be written.
+	ProfileOpts profile.Opts
 }
 
 // make sure stdioFDs are always the same on initial start and on restore
@@ -237,7 +226,7 @@ const startingStdioFD = 256
 // New initializes a new kernel loader configured by spec.
 // New also handles setting up a kernel for restoring a container.
 func New(args Args) (*Loader, error) {
-	stopProfiling := startProfiling(args)
+	stopProfiling := profile.Start(args.ProfileOpts)
 
 	// We initialize the rand package now to make sure /dev/urandom is pre-opened
 	// on kernels that do not support getrandom(2).
