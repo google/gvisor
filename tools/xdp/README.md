@@ -31,8 +31,11 @@ must also look at [libbpf itself][libbpf] to understand what's really going on.
 
 ## TODO
 
-Kernel version < 5.4 has some weird offsets behavior. Just don't run on those
-machines.
+-   Kernel version < 5.4 has some weird offsets behavior. Just don't run on
+    those machines.
+-   Implement SHARED, although it looks like we usually run with only 1
+    dispatcher.
+-   Add a -redirect $fromdev $todev option in order to test fast path.
 
 [af_xdp_tutorial]: https://github.com/xdp-project/xdp-tutorial/tree/master/advanced03-AF_XDP
 [libbpf]: https://github.com/torvalds/linux/tree/master/tools/testing/selftests/bpf/xsk.c

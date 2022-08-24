@@ -25,3 +25,19 @@ bpf_program(
     bpf_object = "tcpdump_ebpf.o",
     visibility = ["//:sandbox"],
 )
+
+bpf_program(
+    name = "tunnel_ingress_ebpf",
+    src = "tunnel_ingress.ebpf.c",
+    hdrs = [],
+    bpf_object = "tunnel_ingress_ebpf.o",
+    visibility = ["//:sandbox"],
+)
+
+bpf_program(
+    name = "tunnel_egress_ebpf",
+    src = "tunnel_egress.ebpf.c",
+    hdrs = [],
+    bpf_object = "tunnel_egress_ebpf.o",
+    visibility = ["//:sandbox"],
+)

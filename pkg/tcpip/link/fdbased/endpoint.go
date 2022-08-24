@@ -41,7 +41,6 @@
 package fdbased
 
 import (
-	"errors"
 	"fmt"
 
 	"golang.org/x/sys/unix"
@@ -66,12 +65,12 @@ type linkDispatcher interface {
 // dispatching packets from the underlying FD.
 type PacketDispatchMode int
 
-const (
-	// BatchSize is the number of packets to write in each syscall. It is 47
-	// because when GvisorGSO is in use then a single 65KB TCP segment can get
-	// split into 46 segments of 1420 bytes and a single 216 byte segment.
-	BatchSize = 47
+// BatchSize is the number of packets to write in each syscall. It is 47
+// because when GvisorGSO is in use then a single 65KB TCP segment can get
+// split into 46 segments of 1420 bytes and a single 216 byte segment.
+const BatchSize = 47
 
+const (
 	// Readv is the default dispatch mode and is the least performant of the
 	// dispatch options but the one that is supported by all underlying FD
 	// types.
@@ -227,7 +226,10 @@ type Options struct {
 	// AFXDPFD is used with the experimental AF_XDP mode.
 	// TODO(b/240191988): Use multiple sockets.
 	// TODO(b/240191988): How do we handle the MTU issue?
-	AFXDPFD int
+	AFXDPFD *int
+
+	// InterfaceIndex is the interface index of the underlying device.
+	InterfaceIndex int
 }
 
 // fanoutID is used for AF_PACKET based endpoints to enable PACKET_FANOUT
@@ -295,8 +297,8 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 		}
 	}
 
-	// Increment fanoutID to ensure that we don't re-use the same fanoutID for
-	// the next endpoint.
+	// Increment fanoutID to ensure that we don't re-use the same fanoutID
+	// for the next endpoint.
 	fid := fanoutID.Add(1)
 
 	// Create per channel dispatchers.
@@ -320,9 +322,25 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 				e.gsoMaxSize = opts.GSOMaxSize
 			}
 		}
+
+		// TODO(b/240191988): Remove this check once we support
+		// multiple AF_XDP sockets.
+		if opts.AFXDPFD != nil {
+			continue
+		}
+
 		inboundDispatcher, err := createInboundDispatcher(e, fd, isSocket, fid)
 		if err != nil {
 			return nil, fmt.Errorf("createInboundDispatcher(...) = %v", err)
+		}
+		e.inboundDispatchers = append(e.inboundDispatchers, inboundDispatcher)
+	}
+
+	if opts.AFXDPFD != nil {
+		fd := *opts.AFXDPFD
+		inboundDispatcher, err := newAFXDPDispatcher(fd, e, opts.InterfaceIndex)
+		if err != nil {
+			return nil, fmt.Errorf("newAFXDPDispatcher(%d, %+v) = %v", fd, e, err)
 		}
 		e.inboundDispatchers = append(e.inboundDispatchers, inboundDispatcher)
 	}
@@ -385,8 +403,9 @@ func createInboundDispatcher(e *endpoint, fd int, isSocket bool, fID int32) (lin
 			if err != nil {
 				return nil, fmt.Errorf("newRecvMMsgDispatcher(%d, %+v) = %v", fd, e, err)
 			}
-		case AFXDP:
-			return nil, errors.New("AFXDP not yet implemented")
+		case Readv:
+		default:
+			return nil, fmt.Errorf("unknown dispatch mode %d", e.packetDispatchMode)
 		}
 	}
 	return inboundDispatcher, nil

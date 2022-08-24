@@ -205,8 +205,12 @@ func ReadOnlyFromSocket(sockfd int, ifaceIdx, queueID uint32, opts ReadOnlySocke
 		// By not setting either XDP_COPY or XDP_ZEROCOPY, we instruct
 		// the kernel to use zerocopy if available and then fallback to
 		// copy mode.
-		// TODO(b/240191988): Look into whether to use XDP_USE_NEED_WAKEUP.
-		Flags:   0,
+		//
+		// XDP_USE_NEED_WAKEUP lets the driver sleep if there is no
+		// work to do. It will need to be woken by poll. It is expected
+		// that this improves performance by preventing the driver from
+		// burning cycles.
+		Flags:   unix.XDP_USE_NEED_WAKEUP,
 		Ifindex: ifaceIdx,
 		// AF_XDP sockets are per device RX queue, although multiple
 		// sockets on multiple queues (or devices) can share a single
