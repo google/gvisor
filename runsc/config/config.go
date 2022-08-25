@@ -225,6 +225,10 @@ type Config struct {
 	// Use pools to manage buffer memory instead of heap.
 	BufferPooling bool `flag:"buffer-pooling"`
 
+	// AFXDP defines whether to use an AF_XDP socket to receive packets
+	// (rather than AF_PACKET). Enabling it disables RX checksum offload.
+	AFXDP bool `flag:"EXPERIMENTAL-afxdp"`
+
 	// FDLimit specifies a limit on the number of host file descriptors that can
 	// be open simultaneously by the sentry and gofer. It applies separately to
 	// each.
