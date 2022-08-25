@@ -49,7 +49,6 @@ type Debug struct {
 	delay        time.Duration
 	duration     time.Duration
 	ps           bool
-	cat          stringSlice
 }
 
 // Name implements subcommands.Command.
@@ -83,7 +82,6 @@ func (d *Debug) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&d.logLevel, "log-level", "", "The log level to set: warning (0), info (1), or debug (2).")
 	f.StringVar(&d.logPackets, "log-packets", "", "A boolean value to enable or disable packet logging: true or false.")
 	f.BoolVar(&d.ps, "ps", false, "lists processes")
-	f.Var(&d.cat, "cat", "reads files and print to standard output")
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -377,12 +375,6 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 
 	if errorCount > 0 {
 		return subcommands.ExitFailure
-	}
-
-	if d.cat != nil {
-		if err := c.Cat(d.cat, os.Stdout); err != nil {
-			return util.Errorf("Cat failed: %v", err)
-		}
 	}
 
 	return subcommands.ExitSuccess

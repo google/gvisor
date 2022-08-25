@@ -38,13 +38,11 @@ import (
 	"gvisor.dev/gvisor/pkg/control/client"
 	"gvisor.dev/gvisor/pkg/control/server"
 	"gvisor.dev/gvisor/pkg/coverage"
-	"gvisor.dev/gvisor/pkg/eventchannel"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/boot/procfs"
@@ -1121,24 +1119,6 @@ func (s *Sandbox) Resume(cid string) error {
 	return nil
 }
 
-// Cat sends the cat call for a container in the sandbox.
-func (s *Sandbox) Cat(cid string, files []string, out *os.File) error {
-	log.Debugf("Cat sandbox %q", s.ID)
-	conn, err := s.sandboxConnect()
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	if err := conn.Call(boot.FsCat, &control.CatOpts{
-		Files:       files,
-		FilePayload: urpc.FilePayload{Files: []*os.File{out}},
-	}, nil); err != nil {
-		return fmt.Errorf("Cat container %q: %v", cid, err)
-	}
-	return nil
-}
-
 // Usage sends the collect call for a container in the sandbox.
 func (s *Sandbox) Usage(Full bool) (control.MemoryUsage, error) {
 	log.Debugf("Usage sandbox %q", s.ID)
@@ -1190,37 +1170,6 @@ func (s *Sandbox) Reduce(wait bool) error {
 	return conn.Call(boot.UsageReduce, &control.UsageReduceOpts{
 		Wait: wait,
 	}, nil)
-}
-
-// Stream sends the AttachDebugEmitter call for a container in the sandbox, and
-// dumps filtered events to out.
-func (s *Sandbox) Stream(cid string, filters []string, out *os.File) error {
-	log.Debugf("Stream sandbox %q", s.ID)
-	conn, err := s.sandboxConnect()
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	r, w, err := unet.SocketPair(false)
-	if err != nil {
-		return err
-	}
-
-	wfd, err := w.Release()
-	if err != nil {
-		return fmt.Errorf("failed to release write socket FD: %v", err)
-	}
-
-	if err := conn.Call(boot.EventsAttachDebugEmitter, &control.EventsOpts{
-		FilePayload: urpc.FilePayload{Files: []*os.File{
-			os.NewFile(uintptr(wfd), "event sink"),
-		}},
-	}, nil); err != nil {
-		return fmt.Errorf("AttachDebugEmitter failed: %v", err)
-	}
-
-	return eventchannel.ProcessAll(r, filters, out)
 }
 
 // IsRunning returns true if the sandbox or gofer process is running.
