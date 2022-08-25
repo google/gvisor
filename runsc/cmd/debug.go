@@ -140,23 +140,23 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	if !c.IsSandboxRunning() {
 		return util.Errorf("container sandbox is not running")
 	}
-	log.Infof("Found sandbox %q, PID: %d", c.Sandbox.ID, c.Sandbox.Getpid())
+	util.Infof("Found sandbox %q, PID: %d", c.Sandbox.ID, c.Sandbox.Getpid())
 
 	// Perform synchronous actions.
 	if d.signal > 0 {
 		pid := c.Sandbox.Getpid()
-		log.Infof("Sending signal %d to process: %d", d.signal, pid)
+		util.Infof("Sending signal %d to process: %d", d.signal, pid)
 		if err := unix.Kill(pid, unix.Signal(d.signal)); err != nil {
 			return util.Errorf("failed to send signal %d to processs %d", d.signal, pid)
 		}
 	}
 	if d.stacks {
-		log.Infof("Retrieving sandbox stacks")
+		util.Infof("Retrieving sandbox stacks")
 		stacks, err := c.Sandbox.Stacks()
 		if err != nil {
 			return util.Errorf("retrieving stacks: %v", err)
 		}
-		log.Infof("     *** Stack dump ***\n%s", stacks)
+		util.Infof("     *** Stack dump ***\n%s", stacks)
 	}
 	if d.strace != "" || len(d.logLevel) != 0 || len(d.logPackets) != 0 {
 		args := control.LoggingArgs{}
@@ -165,16 +165,16 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 			// strace not set, nothing to do here.
 
 		case "off":
-			log.Infof("Disabling strace")
+			util.Infof("Disabling strace")
 			args.SetStrace = true
 
 		case "all":
-			log.Infof("Enabling all straces")
+			util.Infof("Enabling all straces")
 			args.SetStrace = true
 			args.EnableStrace = true
 
 		default:
-			log.Infof("Enabling strace for syscalls: %s", d.strace)
+			util.Infof("Enabling strace for syscalls: %s", d.strace)
 			args.SetStrace = true
 			args.EnableStrace = true
 			args.StraceAllowlist = strings.Split(d.strace, ",")
@@ -192,7 +192,7 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 			default:
 				return util.Errorf("invalid log level %q", d.logLevel)
 			}
-			log.Infof("Setting log level %v", args.Level)
+			util.Infof("Setting log level %v", args.Level)
 		}
 
 		if len(d.logPackets) != 0 {
@@ -203,18 +203,19 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 			}
 			args.LogPackets = lp
 			if args.LogPackets {
-				log.Infof("Enabling packet logging")
+				util.Infof("Enabling packet logging")
 			} else {
-				log.Infof("Disabling packet logging")
+				util.Infof("Disabling packet logging")
 			}
 		}
 
 		if err := c.Sandbox.ChangeLogging(args); err != nil {
 			return util.Errorf(err.Error())
 		}
-		log.Infof("Logging options changed")
+		util.Infof("Logging options changed")
 	}
 	if d.ps {
+		util.Infof("Retrieving process list")
 		pList, err := c.Processes()
 		if err != nil {
 			util.Fatalf("getting processes for container: %v", err)
@@ -223,7 +224,7 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		if err != nil {
 			util.Fatalf("generating JSON: %v", err)
 		}
-		log.Infof(o)
+		util.Infof("%s", o)
 	}
 
 	// Open profiling files.
@@ -333,13 +334,13 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	case <-readyChan:
 		break // Safe to proceed.
 	case <-signals:
-		log.Infof("caught signal, waiting at most one more second.")
+		util.Infof("caught signal, waiting at most one more second.")
 		select {
 		case <-signals:
-			log.Infof("caught second signal, exiting immediately.")
+			util.Infof("caught second signal, exiting immediately.")
 			os.Exit(1) // Not finished.
 		case <-time.After(time.Second):
-			log.Infof("timeout, exiting.")
+			util.Infof("timeout, exiting.")
 			os.Exit(1) // Not finished.
 		case <-readyChan:
 			break // Safe to proceed.
@@ -350,27 +351,27 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	errorCount := 0
 	if blockErr != nil {
 		errorCount++
-		log.Infof("error collecting block profile: %v", blockErr)
+		util.Infof("error collecting block profile: %v", blockErr)
 		os.Remove(blockFile.Name())
 	}
 	if cpuErr != nil {
 		errorCount++
-		log.Infof("error collecting cpu profile: %v", cpuErr)
+		util.Infof("error collecting cpu profile: %v", cpuErr)
 		os.Remove(cpuFile.Name())
 	}
 	if heapErr != nil {
 		errorCount++
-		log.Infof("error collecting heap profile: %v", heapErr)
+		util.Infof("error collecting heap profile: %v", heapErr)
 		os.Remove(heapFile.Name())
 	}
 	if mutexErr != nil {
 		errorCount++
-		log.Infof("error collecting mutex profile: %v", mutexErr)
+		util.Infof("error collecting mutex profile: %v", mutexErr)
 		os.Remove(mutexFile.Name())
 	}
 	if traceErr != nil {
 		errorCount++
-		log.Infof("error collecting trace profile: %v", traceErr)
+		util.Infof("error collecting trace profile: %v", traceErr)
 		os.Remove(traceFile.Name())
 	}
 
