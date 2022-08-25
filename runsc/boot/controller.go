@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
-	controlpb "gvisor.dev/gvisor/pkg/sentry/control/control_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
@@ -123,21 +122,11 @@ const (
 	LifecycleResume = "Lifecycle.Resume"
 )
 
-// Filesystem related commands (see fs.go for more details).
-const (
-	FsCat = "Fs.Cat"
-)
-
 // Usage related commands (see usage.go for more details).
 const (
 	UsageCollect = "Usage.Collect"
 	UsageUsageFD = "Usage.UsageFD"
 	UsageReduce  = "Usage.Reduce"
-)
-
-// Events related commands (see events.go for more details).
-const (
-	EventsAttachDebugEmitter = "Events.AttachDebugEmitter"
 )
 
 // ControlSocketAddr generates an abstract unix socket name for the given ID.
@@ -158,54 +147,33 @@ type controller struct {
 // newController creates a new controller. The caller must call
 // controller.srv.StartServing() to start the controller.
 func newController(fd int, l *Loader) (*controller, error) {
-	ctrl := &controller{}
-	var err error
-	ctrl.srv, err = server.CreateFromFD(fd)
+	srv, err := server.CreateFromFD(fd)
 	if err != nil {
 		return nil, err
 	}
 
-	ctrl.manager = &containerManager{
-		startChan:       make(chan struct{}),
-		startResultChan: make(chan error),
-		l:               l,
+	ctrl := &controller{
+		manager: &containerManager{
+			startChan:       make(chan struct{}),
+			startResultChan: make(chan error),
+			l:               l,
+		},
+		srv: srv,
 	}
 	ctrl.srv.Register(ctrl.manager)
+	ctrl.srv.Register(&control.Lifecycle{Kernel: l.k})
+	ctrl.srv.Register(&control.Logging{})
+	ctrl.srv.Register(&control.Proc{Kernel: l.k})
+	ctrl.srv.Register(&control.State{Kernel: l.k})
+	ctrl.srv.Register(&control.Usage{Kernel: l.k})
+	ctrl.srv.Register(&debug{})
 
 	if eps, ok := l.k.RootNetworkNamespace().Stack().(*netstack.Stack); ok {
-		net := &Network{
-			Stack: eps.Stack,
-		}
-		ctrl.srv.Register(net)
+		ctrl.srv.Register(&Network{Stack: eps.Stack})
 	}
-
-	if l.root.conf.Controls.Controls != nil {
-		for _, c := range l.root.conf.Controls.Controls.AllowedControls {
-			switch c {
-			case controlpb.ControlConfig_EVENTS:
-				ctrl.srv.Register(&control.Events{})
-			case controlpb.ControlConfig_FS:
-				ctrl.srv.Register(&control.Fs{Kernel: l.k})
-			case controlpb.ControlConfig_LIFECYCLE:
-				ctrl.srv.Register(&control.Lifecycle{Kernel: l.k})
-			case controlpb.ControlConfig_LOGGING:
-				ctrl.srv.Register(&control.Logging{})
-			case controlpb.ControlConfig_PROFILE:
-				if l.root.conf.ProfileEnable {
-					ctrl.srv.Register(control.NewProfile(l.k))
-				}
-			case controlpb.ControlConfig_USAGE:
-				ctrl.srv.Register(&control.Usage{Kernel: l.k})
-			case controlpb.ControlConfig_PROC:
-				ctrl.srv.Register(&control.Proc{Kernel: l.k})
-			case controlpb.ControlConfig_STATE:
-				ctrl.srv.Register(&control.State{Kernel: l.k})
-			case controlpb.ControlConfig_DEBUG:
-				ctrl.srv.Register(&debug{})
-			}
-		}
+	if l.root.conf.ProfileEnable {
+		ctrl.srv.Register(control.NewProfile(l.k))
 	}
-
 	return ctrl, nil
 }
 
