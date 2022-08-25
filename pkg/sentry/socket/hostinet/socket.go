@@ -406,10 +406,12 @@ func (s *socketOpsCommon) GetSockOpt(t *kernel.Task, level int, name int, optVal
 		}
 	case linux.SOL_TCP:
 		switch name {
-		case linux.TCP_NODELAY:
+		case linux.TCP_NODELAY, linux.TCP_MAXSEG:
 			optlen = sizeofInt32
 		case linux.TCP_INFO:
 			optlen = linux.SizeOfTCPInfo
+		case linux.TCP_CONGESTION:
+			optlen = outLen
 		}
 	}
 
@@ -461,8 +463,10 @@ func (s *socketOpsCommon) SetSockOpt(t *kernel.Task, level int, name int, opt []
 		}
 	case linux.SOL_TCP:
 		switch name {
-		case linux.TCP_NODELAY, linux.TCP_INQ:
+		case linux.TCP_NODELAY, linux.TCP_INQ, linux.TCP_MAXSEG:
 			optlen = sizeofInt32
+		case linux.TCP_CONGESTION:
+			optlen = len(opt)
 		}
 	}
 
