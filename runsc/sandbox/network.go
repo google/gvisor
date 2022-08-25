@@ -63,7 +63,7 @@ func setupNetwork(conn *urpc.Client, pid int, conf *config.Config) error {
 		// Build the path to the net namespace of the sandbox process.
 		// This is what we will copy.
 		nsPath := filepath.Join("/proc", strconv.Itoa(pid), "ns/net")
-		if err := createInterfacesAndRoutesFromNS(conn, nsPath, conf.HostGSO, conf.GvisorGSO, conf.TXChecksumOffload, conf.RXChecksumOffload, conf.NumNetworkChannels, conf.QDisc); err != nil {
+		if err := createInterfacesAndRoutesFromNS(conn, nsPath, conf); err != nil {
 			return fmt.Errorf("creating interfaces from net namespace %q: %v", nsPath, err)
 		}
 	case config.NetworkHost:
@@ -116,7 +116,7 @@ func isRootNS() (bool, error) {
 // createInterfacesAndRoutesFromNS scrapes the interface and routes from the
 // net namespace with the given path, creates them in the sandbox, and removes
 // them from the host.
-func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, hostGSO bool, gvisorGSO bool, txChecksumOffload bool, rxChecksumOffload bool, numNetworkChannels int, qDisc config.QueueingDiscipline) error {
+func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *config.Config) error {
 	// Join the network namespace that we will be copying.
 	restore, err := joinNetNS(nsPath)
 	if err != nil {
@@ -213,14 +213,16 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, hostGSO b
 			args.Defaultv6Gateway.Name = iface.Name
 		}
 
+		args.AFXDP = conf.AFXDP
+
 		link := boot.FDBasedLink{
 			Name:              iface.Name,
 			MTU:               iface.MTU,
 			Routes:            routes,
-			TXChecksumOffload: txChecksumOffload,
-			RXChecksumOffload: rxChecksumOffload,
-			NumChannels:       numNetworkChannels,
-			QDisc:             qDisc,
+			TXChecksumOffload: conf.TXChecksumOffload,
+			RXChecksumOffload: conf.RXChecksumOffload,
+			NumChannels:       conf.NumNetworkChannels,
+			QDisc:             conf.QDisc,
 			Neighbors:         neighbors,
 		}
 
@@ -235,7 +237,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, hostGSO b
 		// Create the socket for the device.
 		for i := 0; i < link.NumChannels; i++ {
 			log.Debugf("Creating Channel %d", i)
-			socketEntry, err := createSocket(iface, ifaceLink, hostGSO)
+			socketEntry, err := createSocket(iface, ifaceLink, conf.HostGSO, conf.AFXDP)
 			if err != nil {
 				return fmt.Errorf("failed to createSocket for %s : %w", iface.Name, err)
 			}
@@ -250,7 +252,16 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, hostGSO b
 			args.FilePayload.Files = append(args.FilePayload.Files, socketEntry.deviceFile)
 		}
 
-		if link.GSOMaxSize == 0 && gvisorGSO {
+		// If enabled, create an RX socket for AF_XDP.
+		if conf.AFXDP {
+			xdpSock, err := createSocketXDP(iface)
+			if err != nil {
+				return fmt.Errorf("failed to create XDP socket: %v", err)
+			}
+			args.FilePayload.Files = append(args.FilePayload.Files, xdpSock)
+		}
+
+		if link.GSOMaxSize == 0 && conf.GvisorGSO {
 			// Host GSO is disabled. Let's enable gVisor GSO.
 			link.GSOMaxSize = stack.GvisorGSOMaxSize
 			link.GvisorGSOEnabled = true
@@ -313,9 +324,10 @@ type socketEntry struct {
 	gsoMaxSize uint32
 }
 
-// createSocket creates an underlying AF_PACKET socket and configures it for use by
-// the sentry and returns an *os.File that wraps the underlying socket fd.
-func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool) (*socketEntry, error) {
+// createSocket creates an underlying AF_PACKET socket and configures it for
+// use by the sentry and returns an *os.File that wraps the underlying socket
+// fd.
+func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool, AFXDP bool) (*socketEntry, error) {
 	// Create the socket.
 	const protocol = 0x0300 // htons(ETH_P_ALL)
 	fd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW, protocol)
@@ -373,6 +385,17 @@ func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool) (
 	}
 
 	return &socketEntry{deviceFile, gsoMaxSize}, nil
+}
+
+func createSocketXDP(iface net.Interface) (*os.File, error) {
+	// Create an XDP socket. The sentry will mmap memory for the various
+	// rings and bind to the device.
+	fd, err := unix.Socket(unix.AF_XDP, unix.SOCK_RAW, 0)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create AF_XDP socket: %v", err)
+	}
+	deviceFile := os.NewFile(uintptr(fd), "xdp-fd")
+	return deviceFile, nil
 }
 
 // loopbackLink returns the link with addresses and routes for a loopback
