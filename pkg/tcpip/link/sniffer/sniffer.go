@@ -55,11 +55,14 @@ var _ stack.GSOEndpoint = (*endpoint)(nil)
 var _ stack.LinkEndpoint = (*endpoint)(nil)
 var _ stack.NetworkDispatcher = (*endpoint)(nil)
 
-type direction int
+// A Direction indicates whether the packing is being sent or received.
+type Direction int
 
 const (
-	directionSend = iota
-	directionRecv
+	// DirectionSend indicates a sent packet.
+	DirectionSend = iota
+	// DirectionRecv indicates a received packet.
+	DirectionRecv
 )
 
 // New creates a new sniffer link-layer endpoint. It wraps around another
@@ -131,14 +134,14 @@ func NewWithWriter(lower stack.LinkEndpoint, writer io.Writer, snapLen uint32) (
 // called by the link-layer endpoint being wrapped when a packet arrives, and
 // logs the packet before forwarding to the actual dispatcher.
 func (e *endpoint) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
-	e.dumpPacket(directionRecv, protocol, pkt)
+	e.dumpPacket(DirectionRecv, protocol, pkt)
 	e.Endpoint.DeliverNetworkPacket(protocol, pkt)
 }
 
-func (e *endpoint) dumpPacket(dir direction, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func (e *endpoint) dumpPacket(dir Direction, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	writer := e.writer
 	if writer == nil && LogPackets.Load() == 1 {
-		logPacket(e.logPrefix, dir, protocol, pkt)
+		LogPacket(e.logPrefix, dir, protocol, pkt)
 	}
 	if writer != nil && LogPacketsToPCAP.Load() == 1 {
 		packet := pcapPacket{
@@ -161,12 +164,13 @@ func (e *endpoint) dumpPacket(dir direction, protocol tcpip.NetworkProtocolNumbe
 // forwards the request to the lower endpoint.
 func (e *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 	for _, pkt := range pkts.AsSlice() {
-		e.dumpPacket(directionSend, pkt.NetworkProtocolNumber, pkt)
+		e.dumpPacket(DirectionSend, pkt.NetworkProtocolNumber, pkt)
 	}
 	return e.Endpoint.WritePackets(pkts)
 }
 
-func logPacket(prefix string, dir direction, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+// LogPacket logs a packet to stdout.
+func LogPacket(prefix string, dir Direction, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	// Figure out the network layer info.
 	var transProto uint8
 	src := tcpip.Address("unknown")
@@ -178,9 +182,9 @@ func logPacket(prefix string, dir direction, protocol tcpip.NetworkProtocolNumbe
 
 	var directionPrefix string
 	switch dir {
-	case directionSend:
+	case DirectionSend:
 		directionPrefix = "send"
-	case directionRecv:
+	case DirectionRecv:
 		directionPrefix = "recv"
 	default:
 		panic(fmt.Sprintf("unrecognized direction: %d", dir))
