@@ -17,6 +17,7 @@ package proc
 import (
 	"bytes"
 	"fmt"
+	"runtime"
 	"strconv"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -419,4 +420,30 @@ func kernelVersion(ctx context.Context) kernel.Version {
 		panic("Attempted to read version before initial Task is available")
 	}
 	return init.Leader().SyscallTable().Version
+}
+
+// sentryMeminfoData implements vfs.DynamicBytesSource for /proc/sentry-meminfo.
+//
+// +stateify savable
+type sentryMeminfoData struct {
+	dynamicBytesFileSetAttr
+}
+
+var _ dynamicInode = (*sentryMeminfoData)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (*sentryMeminfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	var sentryMeminfo runtime.MemStats
+	runtime.ReadMemStats(&sentryMeminfo)
+
+	fmt.Fprintf(buf, "Alloc:          %8d kB\n", sentryMeminfo.Alloc/1024)
+	fmt.Fprintf(buf, "TotalAlloc:     %8d kB\n", sentryMeminfo.TotalAlloc/1024)
+	fmt.Fprintf(buf, "Sys:            %8d kB\n", sentryMeminfo.Sys/1024)
+	fmt.Fprintf(buf, "Mallocs:        %8d\n", sentryMeminfo.Mallocs)
+	fmt.Fprintf(buf, "Frees:          %8d\n", sentryMeminfo.Frees)
+	fmt.Fprintf(buf, "Live Objects:   %8d\n", sentryMeminfo.Mallocs-sentryMeminfo.Frees)
+	fmt.Fprintf(buf, "HeapAlloc:      %8d kB\n", sentryMeminfo.HeapAlloc/1024)
+	fmt.Fprintf(buf, "HeapSys:        %8d kB\n", sentryMeminfo.HeapSys/1024)
+	fmt.Fprintf(buf, "HeapObjects:    %8d\n", sentryMeminfo.HeapObjects)
+	return nil
 }

@@ -1337,6 +1337,28 @@ TEST(ProcMeminfo, ContainsBasicFields) {
                                   ContainsRegex(R"(MemFree:\s+[0-9]+ kB)")));
 }
 
+TEST(ProcSentryMeminfo, ContainsFieldsAndEndsWithNewline) {
+  SKIP_IF(!IsRunningOnGvisor());
+
+  std::string proc_sentry_meminfo =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sentry-meminfo"));
+
+  // Assert that all expected fields are present.
+  EXPECT_THAT(proc_sentry_meminfo,
+              AllOf(ContainsRegex(R"(Alloc:\s+[0-9]+ kB)"),
+                    ContainsRegex(R"(TotalAlloc:\s+[0-9]+ kB)"),
+                    ContainsRegex(R"(Sys:\s+[0-9]+ kB)"),
+                    ContainsRegex(R"(Mallocs:\s+[0-9]+)"),
+                    ContainsRegex(R"(Frees:\s+[0-9]+)"),
+                    ContainsRegex(R"(Live Objects:\s+[0-9]+)"),
+                    ContainsRegex(R"(HeapAlloc:\s+[0-9]+ kB)"),
+                    ContainsRegex(R"(HeapSys:\s+[0-9]+ kB)"),
+                    ContainsRegex(R"(HeapObjects:\s+[0-9]+)")));
+
+  // Assert that /proc/sentry-meminfo ends with a new line.
+  EXPECT_EQ(proc_sentry_meminfo.back(), '\n');
+}
+
 TEST(ProcStat, ContainsBasicFields) {
   std::string proc_stat = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/stat"));
 
