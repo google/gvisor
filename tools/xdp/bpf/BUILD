@@ -17,3 +17,11 @@ bpf_program(
     bpf_object = "drop_ebpf.o",
     visibility = ["//:sandbox"],
 )
+
+bpf_program(
+    name = "tcpdump_ebpf",
+    src = "tcpdump.ebpf.c",
+    hdrs = [],
+    bpf_object = "tcpdump_ebpf.o",
+    visibility = ["//:sandbox"],
+)
