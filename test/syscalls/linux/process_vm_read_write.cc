@@ -314,36 +314,31 @@ TEST(ProcessVMInvalidTest, InvalidLength) {
     child_iov.iov_base = contents.data();
     child_iov.iov_len = contents.size();
 
+    errno = 0;
     pid_t parent = getppid();
-    TEST_CHECK_ERRNO(process_vm_readv(parent, &child_iov, contents.length(),
-                                      iov_addr, -1, 0),
+    TEST_CHECK_ERRNO(process_vm_readv(parent, &child_iov, 2, iov_addr, 1, 0),
                      EFAULT);
-    TEST_CHECK_ERRNO(process_vm_writev(parent, &child_iov, contents.length(),
-                                       iov_addr, -1, 0),
+    TEST_CHECK_ERRNO(process_vm_writev(parent, &child_iov, 2, iov_addr, 1, 0),
                      EFAULT);
 
-    TEST_CHECK_ERRNO(process_vm_readv(parent, &child_iov, -1, iov_addr,
-                                      contents.length(), 0),
-                     EINVAL);
-
-    TEST_CHECK_ERRNO(process_vm_writev(parent, &child_iov, -1, iov_addr,
-                                       contents.length(), 0),
-                     EINVAL);
-    TEST_CHECK_ERRNO(process_vm_readv(parent, &child_iov, contents.length(),
-                                      iov_addr, IOV_MAX + 1, 0),
+    TEST_CHECK_ERRNO(process_vm_readv(parent, &child_iov, 2, iov_addr, 1, 0),
                      EFAULT);
-
-    TEST_CHECK_ERRNO(process_vm_writev(parent, &child_iov, contents.length(),
-                                       iov_addr, IOV_MAX + 1, 0),
+    TEST_CHECK_ERRNO(process_vm_writev(parent, &child_iov, 2, iov_addr, 1, 0),
                      EFAULT);
+    TEST_CHECK_ERRNO(
+        process_vm_readv(parent, &child_iov, 1, iov_addr, IOV_MAX + 1, 0),
+        EINVAL);
+    TEST_CHECK_ERRNO(
+        process_vm_writev(parent, &child_iov, 1, iov_addr, IOV_MAX + 1, 0),
+        EINVAL);
 
-    TEST_CHECK_ERRNO(process_vm_readv(parent, &child_iov, IOV_MAX + 2, iov_addr,
-                                      contents.length(), 0),
-                     EINVAL);
+    TEST_CHECK_ERRNO(
+        process_vm_readv(parent, &child_iov, IOV_MAX + 2, iov_addr, 1, 0),
+        EINVAL);
 
-    TEST_CHECK_ERRNO(process_vm_writev(parent, &child_iov, IOV_MAX + 8,
-                                       iov_addr, contents.length(), 0),
-                     EINVAL);
+    TEST_CHECK_ERRNO(
+        process_vm_writev(parent, &child_iov, IOV_MAX + 8, iov_addr, 1, 0),
+        EINVAL);
   };
   EXPECT_THAT(InForkedProcess(fn), IsPosixErrorOkAndHolds(0));
 }
