@@ -41,6 +41,7 @@
 package fdbased
 
 import (
+	"errors"
 	"fmt"
 
 	"golang.org/x/sys/unix"
@@ -88,6 +89,9 @@ const (
 	// primary use-case for this is runsc which uses an AF_PACKET FD to
 	// receive packets from the veth device.
 	PacketMMap
+	// AFXDP utilizes an AF_XDP socket to receive packets. AFXDP requires that
+	// the underlying FD be an AF_XDP socket.
+	AFXDP
 )
 
 func (p PacketDispatchMode) String() string {
@@ -98,6 +102,8 @@ func (p PacketDispatchMode) String() string {
 		return "RecvMMsg"
 	case PacketMMap:
 		return "PacketMMap"
+	case AFXDP:
+		return "AFXDP"
 	default:
 		return fmt.Sprintf("unknown packet dispatch mode '%d'", p)
 	}
@@ -217,6 +223,11 @@ type Options struct {
 	// of struct iovec, msghdr, and mmsghdr that may be passed by each host
 	// system call.
 	MaxSyscallHeaderBytes int
+
+	// AFXDPFD is used with the experimental AF_XDP mode.
+	// TODO(b/240191988): Use multiple sockets.
+	// TODO(b/240191988): How do we handle the MTU issue?
+	AFXDPFD int
 }
 
 // fanoutID is used for AF_PACKET based endpoints to enable PACKET_FANOUT
@@ -374,6 +385,8 @@ func createInboundDispatcher(e *endpoint, fd int, isSocket bool, fID int32) (lin
 			if err != nil {
 				return nil, fmt.Errorf("newRecvMMsgDispatcher(%d, %+v) = %v", fd, e, err)
 			}
+		case AFXDP:
+			return nil, errors.New("AFXDP not yet implemented")
 		}
 	}
 	return inboundDispatcher, nil

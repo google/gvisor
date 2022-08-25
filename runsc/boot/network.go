@@ -99,7 +99,7 @@ type FDBasedLink struct {
 	QDisc             config.QueueingDiscipline
 	Neighbors         []Neighbor
 
-	// NumChannels controls how many underlying FD's are to be used to
+	// NumChannels controls how many underlying FDs are to be used to
 	// create this endpoint.
 	NumChannels int
 }
@@ -123,6 +123,8 @@ type CreateLinksAndRoutesArgs struct {
 
 	Defaultv4Gateway DefaultRoute
 	Defaultv6Gateway DefaultRoute
+
+	AFXDP bool
 }
 
 // IPWithPrefix is an address with its subnet prefix length.
@@ -162,8 +164,11 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 	for _, l := range args.FDBasedLinks {
 		wantFDs += l.NumChannels
 	}
+	if args.AFXDP {
+		wantFDs++
+	}
 	if got := len(args.FilePayload.Files); got != wantFDs {
-		return fmt.Errorf("args.FilePayload.Files has %d FD's but we need %d entries based on FDBasedLinks", got, wantFDs)
+		return fmt.Errorf("args.FilePayload.Files has %d FDs but we need %d entries based on FDBasedLinks. AFXDP is %t", got, wantFDs, args.AFXDP)
 	}
 
 	var nicID tcpip.NICID
@@ -206,13 +211,16 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 	} else {
 		log.Infof("Host kernel version < 5.6, falling back to RecvMMsg dispatch")
 	}
+	if args.AFXDP {
+		dispatchMode = fdbased.AFXDP
+	}
 
 	fdOffset := 0
 	for _, link := range args.FDBasedLinks {
 		nicID++
 		nicids[link.Name] = nicID
 
-		FDs := []int{}
+		FDs := make([]int, 0, link.NumChannels)
 		for j := 0; j < link.NumChannels; j++ {
 			// Copy the underlying FD.
 			oldFD := args.FilePayload.Files[fdOffset].Fd()
@@ -224,11 +232,25 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			fdOffset++
 		}
 
+		// If AFXDP is enabled, we perform RX via AF_XDP and TX via
+		// AF_PACKET.
+		AFXDPFD := -1
+		if args.AFXDP {
+			oldFD := args.FilePayload.Files[fdOffset].Fd()
+			newFD, err := unix.Dup(int(oldFD))
+			if err != nil {
+				return fmt.Errorf("failed to dup AF_XDP fd %v: %v", oldFD, err)
+			}
+			AFXDPFD = newFD
+			fdOffset++
+		}
+
 		mac := tcpip.LinkAddress(link.LinkAddress)
 		log.Infof("gso max size is: %d", link.GSOMaxSize)
 
 		linkEP, err := fdbased.New(&fdbased.Options{
 			FDs:                FDs,
+			AFXDPFD:            AFXDPFD,
 			MTU:                uint32(link.MTU),
 			EthernetHeader:     mac != "",
 			Address:            mac,
