@@ -47,19 +47,20 @@ var (
 
 var (
 	tasksStaticFiles = map[string]testutil.DirentType{
-		"cmdline":     linux.DT_REG,
-		"cpuinfo":     linux.DT_REG,
-		"filesystems": linux.DT_REG,
-		"loadavg":     linux.DT_REG,
-		"meminfo":     linux.DT_REG,
-		"mounts":      linux.DT_LNK,
-		"net":         linux.DT_LNK,
-		"self":        linux.DT_LNK,
-		"stat":        linux.DT_REG,
-		"sys":         linux.DT_DIR,
-		"thread-self": linux.DT_LNK,
-		"uptime":      linux.DT_REG,
-		"version":     linux.DT_REG,
+		"cmdline":        linux.DT_REG,
+		"cpuinfo":        linux.DT_REG,
+		"filesystems":    linux.DT_REG,
+		"loadavg":        linux.DT_REG,
+		"meminfo":        linux.DT_REG,
+		"mounts":         linux.DT_LNK,
+		"net":            linux.DT_LNK,
+		"self":           linux.DT_LNK,
+		"sentry-meminfo": linux.DT_REG,
+		"stat":           linux.DT_REG,
+		"sys":            linux.DT_DIR,
+		"thread-self":    linux.DT_LNK,
+		"uptime":         linux.DT_REG,
+		"version":        linux.DT_REG,
 	}
 	tasksStaticFilesNextOffs = map[string]int64{
 		"self":        selfLink.NextOff,
