@@ -34,10 +34,6 @@ type Events struct {
 	intervalSec int
 	// If true, events will print a single group of stats and exit.
 	stats bool
-	// If true, events will dump all filtered events to stdout.
-	stream bool
-	// filters for streamed events.
-	filters stringSlice
 }
 
 // Name implements subcommands.Command.Name.
@@ -67,8 +63,6 @@ OPTIONS:
 func (evs *Events) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&evs.intervalSec, "interval", 5, "set the stats collection interval, in seconds")
 	f.BoolVar(&evs.stats, "stats", false, "display the container's stats then exit")
-	f.BoolVar(&evs.stream, "stream", false, "dump all filtered events to stdout")
-	f.Var(&evs.filters, "filters", "only display matching events")
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -86,15 +80,9 @@ func (evs *Events) Execute(_ context.Context, f *flag.FlagSet, args ...interface
 		util.Fatalf("loading sandbox: %v", err)
 	}
 
-	if evs.stream {
-		if err := c.Stream(evs.filters, os.Stdout); err != nil {
-			util.Fatalf("Stream failed: %v", err)
-		}
-		return subcommands.ExitSuccess
-	}
-
-	// Repeatedly get stats from the container.
-	for {
+	// Repeatedly get stats from the container. Sleep a bit after every loop
+	// except the first one.
+	for dur := time.Duration(evs.intervalSec) * time.Second; true; time.Sleep(dur) {
 		// Get the event and print it as JSON.
 		ev, err := c.Event()
 		if err != nil {
@@ -102,29 +90,22 @@ func (evs *Events) Execute(_ context.Context, f *flag.FlagSet, args ...interface
 			if evs.stats {
 				return subcommands.ExitFailure
 			}
+			continue
 		}
 		log.Debugf("Events: %+v", ev)
 
-		// err must be preserved because it is used below when breaking
-		// out of the loop.
-		b, err := json.Marshal(ev.Event)
-		if err != nil {
-			log.Warningf("Error while marshalling event %v: %v", ev.Event, err)
-		} else {
-			if _, err := os.Stdout.Write(b); err != nil {
-				util.Fatalf("Error writing to stdout: %v", err)
-			}
-		}
-
-		// If we're only running once, break. If we're only running
-		// once and there was an error, the command failed.
-		if evs.stats {
-			if err != nil {
+		if err := json.NewEncoder(os.Stdout).Encode(ev.Event); err != nil {
+			log.Warningf("Error encoding event %+v: %v", ev.Event, err)
+			if evs.stats {
 				return subcommands.ExitFailure
 			}
-			return subcommands.ExitSuccess
+			continue
 		}
 
-		time.Sleep(time.Duration(evs.intervalSec) * time.Second)
+		// Break if we're only running once. If we got this far it was a success.
+		if evs.stats {
+			return subcommands.ExitSuccess
+		}
 	}
+	panic("should never get here")
 }

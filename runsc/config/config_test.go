@@ -18,7 +18,6 @@ import (
 	"strings"
 	"testing"
 
-	controlpb "gvisor.dev/gvisor/pkg/sentry/control/control_go_proto"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
@@ -55,9 +54,6 @@ func TestFromFlags(t *testing.T) {
 	if err := testFlags.Lookup("network").Value.Set("none"); err != nil {
 		t.Errorf("Flag set: %v", err)
 	}
-	if err := testFlags.Lookup("controls").Value.Set("EVENTS,FS"); err != nil {
-		t.Errorf("Flag set: %v", err)
-	}
 
 	c, err := NewFromFlags(testFlags)
 	if err != nil {
@@ -75,12 +71,6 @@ func TestFromFlags(t *testing.T) {
 	if want := NetworkNone; c.Network != want {
 		t.Errorf("Network=%v, want: %v", c.Network, want)
 	}
-	wants := []controlpb.ControlConfig_Endpoint{controlpb.ControlConfig_EVENTS, controlpb.ControlConfig_FS}
-	for i, want := range wants {
-		if c.Controls.Controls.AllowedControls[i] != want {
-			t.Errorf("Controls.Controls.AllowedControls[%d]=%v, want: %v", i, c.Controls.Controls.AllowedControls[i], want)
-		}
-	}
 }
 
 func TestToFlags(t *testing.T) {
@@ -94,14 +84,9 @@ func TestToFlags(t *testing.T) {
 	c.Debug = true
 	c.NumNetworkChannels = 123
 	c.Network = NetworkNone
-	c.Controls = controlConfig{
-		Controls: &controlpb.ControlConfig{
-			AllowedControls: []controlpb.ControlConfig_Endpoint{controlpb.ControlConfig_EVENTS, controlpb.ControlConfig_FS},
-		},
-	}
 
 	flags := c.ToFlags()
-	if len(flags) != 5 {
+	if len(flags) != 4 {
 		t.Errorf("wrong number of flags set, want: 5, got: %d: %s", len(flags), flags)
 	}
 	t.Logf("Flags: %s", flags)
@@ -115,7 +100,6 @@ func TestToFlags(t *testing.T) {
 		"--debug":                "true",
 		"--num-network-channels": "123",
 		"--network":              "none",
-		"--controls":             "EVENTS,FS",
 	} {
 		if got, ok := fm[name]; ok {
 			if got != want {
