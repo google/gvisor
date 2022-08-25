@@ -17,8 +17,6 @@ package cmd
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"os"
 
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/runsc/cmd/util"
@@ -69,16 +67,8 @@ func (u *Usage) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		util.Fatalf("loading container: %v", err)
 	}
 
-	if !u.fd {
-		m, err := cont.Usage(u.full)
-		if err != nil {
-			util.Fatalf("usage failed: %v", err)
-		}
-		if err := json.NewEncoder(os.Stdout).Encode(m); err != nil {
-			util.Fatalf("Encode MemoryUsage failed: %v", err)
-		}
-	} else {
-		m, err := cont.UsageFD()
+	if u.fd {
+		m, err := cont.Sandbox.UsageFD()
 		if err != nil {
 			util.Fatalf("usagefd failed: %v", err)
 		}
@@ -88,7 +78,17 @@ func (u *Usage) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 			util.Fatalf("Fetch memory usage failed: %v", err)
 		}
 
-		fmt.Printf("Mapped %v, Unknown %v, Total %v\n", mapped, unknown, total)
+		util.Infof("Mapped %v, Unknown %v, Total %v\n", mapped, unknown, total)
+	} else {
+		m, err := cont.Sandbox.Usage(u.full)
+		if err != nil {
+			util.Fatalf("usage failed: %v", err)
+		}
+		encoder := json.NewEncoder(&util.Writer{})
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(m); err != nil {
+			util.Fatalf("Encode MemoryUsage failed: %v", err)
+		}
 	}
 	return subcommands.ExitSuccess
 }

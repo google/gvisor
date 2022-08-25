@@ -678,24 +678,6 @@ func (c *Container) Cat(files []string, out *os.File) error {
 	return c.Sandbox.Cat(c.ID, files, out)
 }
 
-// Usage displays memory used by the application.
-func (c *Container) Usage(full bool) (control.MemoryUsage, error) {
-	log.Debugf("Usage in container, cid: %s, full: %v", c.ID, full)
-	return c.Sandbox.Usage(c.ID, full)
-}
-
-// UsageFD shows application memory usage using two donated FDs.
-func (c *Container) UsageFD() (*control.MemoryUsageRecord, error) {
-	log.Debugf("UsageFD in container, cid: %s", c.ID)
-	return c.Sandbox.UsageFD(c.ID)
-}
-
-// Reduce requests that the sentry attempt to reduce its memory usage.
-func (c *Container) Reduce(wait bool) error {
-	log.Debugf("Reduce in container, cid: %s", c.ID)
-	return c.Sandbox.Reduce(c.ID, wait)
-}
-
 // Stream dumps all events to out.
 func (c *Container) Stream(filters []string, out *os.File) error {
 	log.Debugf("Stream in container, cid: %s", c.ID)
