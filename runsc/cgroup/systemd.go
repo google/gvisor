@@ -291,3 +291,17 @@ func newProp(name string, units interface{}) systemdDbus.Property {
 		Value: dbus.MakeVariant(units),
 	}
 }
+
+// CreateMockSystemdCgroup returns a mock Cgroup configured for systemd. This
+// is useful for testing.
+func CreateMockSystemdCgroup() Cgroup {
+	return &cgroupSystemd{
+		Name:        "test",
+		ScopePrefix: "runsc",
+		Parent:      "system.slice",
+		cgroupV2: cgroupV2{
+			Mountpoint: "/sys/fs/cgroup",
+			Path:       "/a/random/path",
+		},
+	}
+}
