@@ -1249,7 +1249,7 @@ TEST(FcntlTest, SetOwnExInvalidType) {
       Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
 
   f_owner_ex owner = {};
-  owner.type = __pid_type(-1);
+  owner.type = static_cast<decltype(owner.type)>(-1);
   EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN_EX, &owner),
               SyscallFailsWithErrno(EINVAL));
 }
