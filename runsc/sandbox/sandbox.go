@@ -179,8 +179,7 @@ func New(conf *config.Config, args *Args) (*Sandbox, error) {
 	s := &Sandbox{
 		ID: args.ID,
 		CgroupJSON: cgroup.CgroupJSON{
-			Cgroup:     args.Cgroup,
-			UseSystemd: conf.SystemdCgroup,
+			Cgroup: args.Cgroup,
 		},
 		UID: -1, // prevent usage before it's set.
 		GID: -1, // prevent usage before it's set.
