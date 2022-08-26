@@ -80,6 +80,7 @@ go_test(
         "//pkg/unet",
         "//pkg/urpc",
         "//runsc/boot",
+        "//runsc/cgroup",
         "//runsc/config",
         "//runsc/flag",
         "//runsc/specutils",

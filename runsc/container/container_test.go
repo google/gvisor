@@ -42,6 +42,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/pkg/urpc"
+	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -2673,5 +2674,42 @@ func TestProfile(t *testing.T) {
 		if fi.Size() == 0 {
 			t.Errorf("Profile file %s is empty: %+v", name, fi)
 		}
+	}
+}
+
+// TestSaveSystemdCgroup emulates a sandbox saving while configured with the
+// systemd cgroup driver.
+func TestSaveSystemdCgroup(t *testing.T) {
+	spec, conf := sleepSpecConf(t)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	// Create and start the container.
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+
+	cont.CompatCgroup = cgroup.CgroupJSON{Cgroup: cgroup.CreateMockSystemdCgroup()}
+	if err := cont.Saver.lock(); err != nil {
+		t.Fatalf("cannot lock container metadata file: %v", err)
+	}
+	if err := cont.saveLocked(); err != nil {
+		t.Fatalf("error saving cgroup: %v", err)
+	}
+	cont.Saver.unlock()
+	loadCont := Container{}
+	cont.Saver.load(&loadCont)
+	if !reflect.DeepEqual(cont.CompatCgroup, loadCont.CompatCgroup) {
+		t.Errorf("CompatCgroup not properly saved: want %v, got %v", cont.CompatCgroup, loadCont.CompatCgroup)
 	}
 }

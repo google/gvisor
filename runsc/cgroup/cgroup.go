@@ -41,9 +41,7 @@ import (
 const (
 	cgroupv1FsName = "cgroup"
 	cgroupv2FsName = "cgroup2"
-)
 
-const (
 	// procRoot is the procfs root this module uses.
 	procRoot = "/proc"
 
@@ -415,67 +413,67 @@ func new(pid, cgroupsPath string, useSystemd bool) (Cgroup, error) {
 
 // CgroupJSON is a wrapper for Cgroup that can be encoded to JSON.
 type CgroupJSON struct {
-	Cgroup     Cgroup `json:"cgroup"`
-	UseSystemd bool   `json:"useSystemd"`
+	Cgroup Cgroup
 }
 
 type cgroupJSONv1 struct {
-	Cgroup *cgroupV1 `json:"cgroup"`
+	Cgroup *cgroupV1 `json:"cgroupv1"`
 }
 
 type cgroupJSONv2 struct {
-	Cgroup *cgroupV2 `json:"cgroup"`
+	Cgroup *cgroupV2 `json:"cgroupv2"`
 }
 
 type cgroupJSONSystemd struct {
-	Cgroup *cgroupSystemd `json:"cgroup"`
+	Cgroup *cgroupSystemd `json:"cgroupsystemd"`
+}
+
+type cgroupJSONUnknown struct {
+	Cgroup interface{} `json:"cgroupunknown"`
 }
 
 // UnmarshalJSON implements json.Unmarshaler.UnmarshalJSON
 func (c *CgroupJSON) UnmarshalJSON(data []byte) error {
-	if c.UseSystemd {
-		systemd := cgroupJSONSystemd{}
-		if err := json.Unmarshal(data, &systemd); err != nil {
-			return err
-		}
-		if systemd.Cgroup != nil {
-			c.Cgroup = systemd.Cgroup
-		}
-		return nil
-	}
-
-	if IsOnlyV2() {
-		v2 := cgroupJSONv2{}
-		err := json.Unmarshal(data, &v2)
-		if v2.Cgroup != nil {
-			c.Cgroup = v2.Cgroup
-		}
+	m := map[string]json.RawMessage{}
+	if err := json.Unmarshal(data, &m); err != nil {
 		return err
 	}
-	v1 := cgroupJSONv1{}
-	err := json.Unmarshal(data, &v1)
-	if v1.Cgroup != nil {
-		c.Cgroup = v1.Cgroup
+
+	var cg Cgroup
+	if rm, ok := m["cgroupv1"]; ok {
+		cg = &cgroupV1{}
+		if err := json.Unmarshal(rm, cg); err != nil {
+			return err
+		}
+	} else if rm, ok := m["cgroupv2"]; ok {
+		cg = &cgroupV2{}
+		if err := json.Unmarshal(rm, cg); err != nil {
+			return err
+		}
+	} else if rm, ok := m["cgroupsystemd"]; ok {
+		cg = &cgroupSystemd{}
+		if err := json.Unmarshal(rm, cg); err != nil {
+			return err
+		}
 	}
-	return err
+	c.Cgroup = cg
+	return nil
 }
 
 // MarshalJSON implements json.Marshaler.MarshalJSON
 func (c *CgroupJSON) MarshalJSON() ([]byte, error) {
 	if c.Cgroup == nil {
-		v1 := cgroupJSONv1{}
-		return json.Marshal(&v1)
+		return json.Marshal(cgroupJSONUnknown{})
 	}
-	if IsOnlyV2() {
-		if c.UseSystemd {
-			systemd := cgroupJSONSystemd{Cgroup: c.Cgroup.(*cgroupSystemd)}
-			return json.Marshal(&systemd)
-		}
-		v2 := cgroupJSONv2{Cgroup: c.Cgroup.(*cgroupV2)}
-		return json.Marshal(&v2)
+	switch c.Cgroup.(type) {
+	case *cgroupV1:
+		return json.Marshal(cgroupJSONv1{Cgroup: c.Cgroup.(*cgroupV1)})
+	case *cgroupV2:
+		return json.Marshal(cgroupJSONv2{Cgroup: c.Cgroup.(*cgroupV2)})
+	case *cgroupSystemd:
+		return json.Marshal(cgroupJSONSystemd{Cgroup: c.Cgroup.(*cgroupSystemd)})
 	}
-	v1 := cgroupJSONv1{Cgroup: c.Cgroup.(*cgroupV1)}
-	return json.Marshal(&v1)
+	return nil, nil
 }
 
 // Install creates and configures cgroups according to 'res'. If cgroup path
