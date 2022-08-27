@@ -16,6 +16,7 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <sys/eventfd.h>
+#include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/resource.h>
 #include <sys/signalfd.h>
@@ -469,7 +470,7 @@ TEST(MountTest, TmpfsSizeRoundUpSinglePageSize) {
   EXPECT_EQ(buf.st_size, kPageSize);
 }
 
-TEST(MountTest, TmpfsSizeRoundUpMultiplePages) {
+TEST(MountTest, TmpfsSizeAllocationMultiplePages) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto page_multiple = 2;
@@ -482,6 +483,12 @@ TEST(MountTest, TmpfsSizeRoundUpMultiplePages) {
 
   // Check that it starts at size zero.
   struct stat buf;
+  ASSERT_THAT(fstat(fd.get(), &buf), SyscallSucceeds());
+  EXPECT_EQ(buf.st_size, 0);
+
+  // Ensure fallocate does not allow partial allocations.
+  ASSERT_THAT(fallocate(fd.get(), 0, 0, size + 1),
+              SyscallFailsWithErrno(ENOSPC));
   ASSERT_THAT(fstat(fd.get(), &buf), SyscallSucceeds());
   EXPECT_EQ(buf.st_size, 0);
 
@@ -521,6 +528,32 @@ TEST(MountTest, TmpfsSizeMoreThanSinglePgSZMultipleFiles) {
   // Grow to beyond tmpfs size bytes after exhausting the size.
   ASSERT_THAT(fallocate(fd.get(), 0, 0, kPageSize),
               SyscallFailsWithErrno(ENOSPC));
+}
+
+TEST(MountTest, TmpfsSizeFtruncate) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto tmpfs_size_opt = absl::StrCat("size=", kPageSize);
+  auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir.path(), "tmpfs", 0, tmpfs_size_opt, 0));
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(JoinPath(dir.path(), "foo"), O_CREAT | O_RDWR, 0777));
+  ASSERT_THAT(fallocate(fd.get(), 0, 0, kPageSize), SyscallSucceeds());
+  struct stat status;
+  ASSERT_THAT(fstat(fd.get(), &status), SyscallSucceeds());
+  EXPECT_EQ(status.st_size, kPageSize);
+
+  ASSERT_THAT(ftruncate(fd.get(), kPageSize + 1), SyscallSucceeds());
+  ASSERT_THAT(fstat(fd.get(), &status), SyscallSucceeds());
+  EXPECT_EQ(status.st_size, kPageSize + 1);
+
+  ASSERT_THAT(ftruncate(fd.get(), 0), SyscallSucceeds());
+  ASSERT_THAT(fstat(fd.get(), &status), SyscallSucceeds());
+  EXPECT_EQ(status.st_size, 0);
+
+  ASSERT_THAT(fallocate(fd.get(), 0, 0, kPageSize), SyscallSucceeds());
+  ASSERT_THAT(fstat(fd.get(), &status), SyscallSucceeds());
+  EXPECT_EQ(status.st_size, kPageSize);
 }
 
 // Test shows directory does not take up any pages.
@@ -580,6 +613,28 @@ TEST(MountTest, TmpfsSymlinkAllocCheck) {
   target = std::string(target_size - 1, 'a');
   pathname = absl::StrCat(dir_parent.path(), "/foo4");
   EXPECT_THAT(symlink(target.c_str(), pathname.c_str()), SyscallSucceeds());
+  EXPECT_THAT(unlink(pathname.c_str()), SyscallSucceeds());
+}
+
+// Tests memory unallocation for symlinks.
+TEST(MountTest, TmpfsSymlinkUnallocCheck) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  auto const dir_parent = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  auto tmpfs_size_opt = absl::StrCat("size=", kPageSize);
+  auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir_parent.path(), "tmpfs", 0, tmpfs_size_opt, 0));
+
+  const int target_size = 128;
+  auto pathname = JoinPath(dir_parent.path(), "foo1");
+  auto target = std::string(target_size, 'a');
+  EXPECT_THAT(symlink(target.c_str(), pathname.c_str()), SyscallSucceeds());
+  auto const fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(pathname, O_CREAT | O_RDWR, 0777));
+  ASSERT_THAT(fallocate(fd.get(), 0, 0, kPageSize),
+              SyscallFailsWithErrno(ENOSPC));
+  EXPECT_THAT(unlink(pathname.c_str()), SyscallSucceeds());
+  ASSERT_THAT(fallocate(fd.get(), 0, 0, kPageSize), SyscallSucceeds());
 }
 
 // Tests memory allocation for Hard Links is not double allocated.
@@ -622,6 +677,88 @@ TEST(MountTest, TmpfsEmptySizeAllocCheck) {
               SyscallFailsWithErrno(EINVAL));
 }
 
+TEST(MountTest, TmpfsUnlinkRegularFileAllocCheck) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto tmpfs_size_opt = absl::StrCat("size=", kPageSize);
+  const int kTruncateSize = 2 * kPageSize;
+  auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir.path(), "tmpfs", 0, tmpfs_size_opt, 0));
+  const std::string fileOne = JoinPath(dir.path(), "foo1");
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(fileOne, O_CREAT | O_RDWR, 0777));
+  EXPECT_THAT(unlink(fileOne.c_str()), SyscallSucceeds());
+  EXPECT_THAT(ftruncate(fd.get(), kTruncateSize), SyscallSucceeds());
+}
+
+TEST(MountTest, TmpfsSizePartialWriteSinglePage) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto tmpfs_size_opt = absl::StrCat("size=", kPageSize);
+  auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir.path(), "tmpfs", 0, tmpfs_size_opt, 0));
+
+  const std::string fileOne = JoinPath(dir.path(), "foo1");
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(fileOne, O_CREAT | O_RDWR, 0777));
+  lseek(fd.get(), kPageSize - 2, SEEK_SET);
+  char buf[4];
+  EXPECT_THAT(write(fd.get(), buf, 4), SyscallSucceedsWithValue(2));
+  EXPECT_THAT(write(fd.get(), buf, 4), SyscallFailsWithErrno(ENOSPC));
+}
+
+TEST(MountTest, TmpfsSizePartialWriteMultiplePages) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto tmpfs_size_opt = absl::StrCat("size=", 3 * kPageSize);
+  auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir.path(), "tmpfs", 0, tmpfs_size_opt, 0));
+
+  const std::string fileOne = JoinPath(dir.path(), "foo1");
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(fileOne, O_CREAT | O_RDWR, 0777));
+  lseek(fd.get(), kPageSize, SEEK_SET);
+  std::vector<char> buf(kPageSize + 2);
+  EXPECT_THAT(write(fd.get(), buf.data(), 4), SyscallSucceedsWithValue(4));
+  struct stat status;
+  ASSERT_THAT(fstat(fd.get(), &status), SyscallSucceeds());
+  EXPECT_EQ(status.st_size, kPageSize + 4);
+  EXPECT_THAT(write(fd.get(), buf.data(), 1), SyscallSucceedsWithValue(1));
+
+  // Writing with size exactly until the end of page boundary.
+  EXPECT_THAT(write(fd.get(), buf.data(), kPageSize - 5),
+              SyscallSucceedsWithValue(kPageSize - 5));
+
+  EXPECT_THAT(write(fd.get(), buf.data(), 1), SyscallSucceedsWithValue(1));
+  // Writing with size more than page end & having extra page available as well.
+  EXPECT_THAT(write(fd.get(), buf.data(), kPageSize + 1),
+              SyscallSucceedsWithValue(kPageSize + 1));
+
+  // Writing with size more than page end & having no page available.
+  EXPECT_THAT(write(fd.get(), buf.data(), kPageSize + 1),
+              SyscallSucceedsWithValue(kPageSize - 2));
+  EXPECT_THAT(write(fd.get(), buf.data(), 1), SyscallFailsWithErrno(ENOSPC));
+}
+
+TEST(MountTest, TmpfsSizeMmap) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto tmpfs_size_opt = absl::StrCat("size=", kPageSize);
+  auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir.path(), "tmpfs", 0, tmpfs_size_opt, 0));
+  const std::string fileOne = JoinPath(dir.path(), "foo");
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(fileOne, O_CREAT | O_RDWR, 0777));
+  EXPECT_THAT(ftruncate(fd.get(), 2 * kPageSize), SyscallSucceeds());
+  void* addr = mmap(NULL, 2 * kPageSize, PROT_READ, MAP_PRIVATE, fd.get(), 0);
+  EXPECT_NE(addr, MAP_FAILED);
+  // Access memory so that the first page to page fault occurs and is allocated.
+  char data = ((char*)addr)[kPageSize - 2];
+  EXPECT_EQ(data, 0);
+  std::vector<char> in(kPageSize + 2);
+  // Access memory such that it causes the second page to page fault. The page
+  // fault should fail due to hitting tmpfs size limit which should cause
+  // SIGBUS signal.
+  EXPECT_EXIT(memcpy(in.data(), reinterpret_cast<char*>(addr), kPageSize + 2),
+              ::testing::KilledBySignal(SIGBUS), "");
+  EXPECT_THAT(munmap(addr, 2 * kPageSize), SyscallSucceeds());
+}
 }  // namespace
 
 }  // namespace testing
