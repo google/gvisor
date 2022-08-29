@@ -329,7 +329,7 @@ type NUDState struct {
 		// the algorithm defined in RFC 4861 section 6.3.2.
 		reachableTime time.Duration
 
-		expiration            time.Time
+		expiration            tcpip.MonotonicTime
 		prevBaseReachableTime time.Duration
 		prevMinRandomFactor   float32
 		prevMaxRandomFactor   float32
@@ -369,7 +369,7 @@ func (s *NUDState) ReachableTime() time.Duration {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.clock.Now().After(s.mu.expiration) ||
+	if s.clock.NowMonotonic().After(s.mu.expiration) ||
 		s.mu.config.BaseReachableTime != s.mu.prevBaseReachableTime ||
 		s.mu.config.MinRandomFactor != s.mu.prevMinRandomFactor ||
 		s.mu.config.MaxRandomFactor != s.mu.prevMaxRandomFactor {
@@ -418,5 +418,5 @@ func (s *NUDState) recomputeReachableTimeLocked() {
 		s.mu.reachableTime = time.Duration(reachableTime)
 	}
 
-	s.mu.expiration = s.clock.Now().Add(2 * time.Hour)
+	s.mu.expiration = s.clock.NowMonotonic().Add(2 * time.Hour)
 }
