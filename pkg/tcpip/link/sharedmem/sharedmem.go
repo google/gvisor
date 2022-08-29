@@ -343,11 +343,10 @@ func (e *endpoint) writePacketLocked(r stack.RouteInfo, protocol tcpip.NetworkPr
 		e.AddVirtioNetHeader(pkt)
 	}
 
-	views := pkt.AsSlices()
 	// Transmit the packet.
-	// TODO(b/231582970): Change transmit() to take a bufferv2.Buffer instead of a
-	// collection of slices.
-	ok := e.tx.transmit(views...)
+	b := pkt.ToBuffer()
+	defer b.Release()
+	ok := e.tx.transmit(b)
 	if !ok {
 		return &tcpip.ErrWouldBlock{}
 	}

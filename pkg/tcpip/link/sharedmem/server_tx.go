@@ -20,10 +20,12 @@ package sharedmem
 import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/eventfd"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/pipe"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/queue"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 // serverTx represents the server end of the sharedmem queue and is used to send
@@ -113,12 +115,9 @@ func (s *serverTx) cleanup() {
 
 // acquireBuffers acquires enough buffers to hold all the data in views or
 // returns nil if not enough buffers are currently available.
-func (s *serverTx) acquireBuffers(views [][]byte, buffers []queue.RxBuffer) (acquiredBuffers []queue.RxBuffer) {
+func (s *serverTx) acquireBuffers(pktBuffer bufferv2.Buffer, buffers []queue.RxBuffer) (acquiredBuffers []queue.RxBuffer) {
 	acquiredBuffers = buffers[:0]
-	wantBytes := 0
-	for i := range views {
-		wantBytes += len(views[i])
-	}
+	wantBytes := int(pktBuffer.Size())
 	for wantBytes > 0 {
 		var b []byte
 		if b = s.fillPipe.Pull(); b == nil {
@@ -137,45 +136,32 @@ func (s *serverTx) acquireBuffers(views [][]byte, buffers []queue.RxBuffer) (acq
 // well as the total number of bytes copied.
 //
 // To avoid allocations the filledBuffers are appended to the buffers slice
-// which will be grown as required.
-func (s *serverTx) fillPacket(views [][]byte, buffers []queue.RxBuffer) (filledBuffers []queue.RxBuffer, totalCopied uint32) {
-	// fillBuffer copies as much of the views as possible into the provided buffer
-	// and returns any left over views (if any).
-	fillBuffer := func(buffer *queue.RxBuffer, views [][]byte) (left [][]byte) {
-		if len(views) == 0 {
-			return nil
-		}
-		copied := uint64(0)
-		availBytes := buffer.Size
-		for availBytes > 0 && len(views) > 0 {
-			n := copy(s.data[buffer.Offset+copied:][:uint64(buffer.Size)-copied], views[0])
-			copied += uint64(n)
-			availBytes -= uint32(n)
-			views[0] = views[0][n:]
-			if len(views[0]) != 0 {
-				break
-			}
-			views = views[1:]
-		}
-		buffer.Size = uint32(copied)
-		return views
-	}
-	bufs := s.acquireBuffers(views, buffers)
+// which will be grown as required. This method takes ownership of pktBuffer.
+func (s *serverTx) fillPacket(pktBuffer bufferv2.Buffer, buffers []queue.RxBuffer) (filledBuffers []queue.RxBuffer, totalCopied uint32) {
+	bufs := s.acquireBuffers(pktBuffer, buffers)
 	if bufs == nil {
+		pktBuffer.Release()
 		return nil, 0
 	}
-	for i := 0; len(views) > 0 && i < len(bufs); i++ {
-		// Copy the packet into the posted buffer.
-		views = fillBuffer(&bufs[i], views)
-		totalCopied += bufs[i].Size
-	}
+	br := pktBuffer.AsBufferReader()
+	defer br.Close()
 
+	for i := 0; br.Len() > 0 && i < len(bufs); i++ {
+		buf := bufs[i]
+		copied, err := br.Read(s.data[buf.Offset:][:buf.Size])
+		buf.Size = uint32(copied)
+		// Copy the packet into the posted buffer.
+		totalCopied += bufs[i].Size
+		if err != nil {
+			return bufs, totalCopied
+		}
+	}
 	return bufs, totalCopied
 }
 
-func (s *serverTx) transmit(views [][]byte) bool {
+func (s *serverTx) transmit(pkt *stack.PacketBuffer) bool {
 	buffers := make([]queue.RxBuffer, 8)
-	buffers, totalCopied := s.fillPacket(views, buffers)
+	buffers, totalCopied := s.fillPacket(pkt.ToBuffer(), buffers)
 	if totalCopied == 0 {
 		// drop the packet as not enough buffers were probably available
 		// to send.
