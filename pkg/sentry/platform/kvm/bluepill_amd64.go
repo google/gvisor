@@ -61,6 +61,32 @@ func bluepillArchEnter(context *arch.SignalContext64) *vCPU {
 	return c
 }
 
+// hltSanityCheck verifies the current state to detect obvious corruption.
+//
+//go:nosplit
+func (c *vCPU) hltSanityCheck() {
+	vector := c.CPU.Vector()
+	switch ring0.Vector(vector) {
+	case ring0.PageFault:
+		if c.CPU.FaultAddr() < ring0.KernelStartAddress {
+			return
+		}
+	case ring0.DoubleFault:
+	case ring0.GeneralProtectionFault:
+	case ring0.InvalidOpcode:
+	case ring0.MachineCheck:
+	case ring0.VirtualizationException:
+	default:
+		return
+	}
+
+	printHex([]byte("Vector    = "), uint64(c.CPU.Vector()))
+	printHex([]byte("FaultAddr = "), uint64(c.CPU.FaultAddr()))
+	printHex([]byte("rip       = "), uint64(c.CPU.Registers().Rip))
+	printHex([]byte("rsp       = "), uint64(c.CPU.Registers().Rsp))
+	throw("fault")
+}
+
 // KernelSyscall handles kernel syscalls.
 //
 // +checkescape:all
