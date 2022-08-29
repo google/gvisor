@@ -43,7 +43,8 @@ Creator<SocketPair> SyscallSocketPairCreator(int domain, int type,
     int pair[2];
     RETURN_ERROR_IF_SYSCALL_FAIL(socketpair(domain, type, protocol, pair));
     MaybeSave();  // Save on successful creation.
-    return absl::make_unique<FDSocketPair>(pair[0], pair[1]);
+    return absl::make_unique<FDSocketPair>(FileDescriptor(pair[0]),
+                                           FileDescriptor(pair[1]));
   };
 }
 
@@ -94,31 +95,28 @@ Creator<SocketPair> AcceptBindSocketPairCreator(bool abstract, int domain,
     ASSIGN_OR_RETURN_ERRNO(struct sockaddr_un extra_addr,
                            UniqueUnixAddr(abstract, domain));
 
-    int bound;
-    RETURN_ERROR_IF_SYSCALL_FAIL(bound = socket(domain, type, protocol));
+    ASSIGN_OR_RETURN_ERRNO(auto bound, Socket(domain, type, protocol));
     MaybeSave();  // Successful socket creation.
     RETURN_ERROR_IF_SYSCALL_FAIL(
-        bind(bound, AsSockAddr(&bind_addr), sizeof(bind_addr)));
+        bind(bound.get(), AsSockAddr(&bind_addr), sizeof(bind_addr)));
     MaybeSave();  // Successful bind.
-    RETURN_ERROR_IF_SYSCALL_FAIL(
-        listen(bound, /* backlog = */ 5));  // NOLINT(bugprone-argument-comment)
-    MaybeSave();  // Successful listen.
+    RETURN_ERROR_IF_SYSCALL_FAIL(listen(
+        bound.get(), /* backlog = */ 5));  // NOLINT(bugprone-argument-comment)
+    MaybeSave();                           // Successful listen.
 
-    int connected;
-    RETURN_ERROR_IF_SYSCALL_FAIL(connected = socket(domain, type, protocol));
+    ASSIGN_OR_RETURN_ERRNO(auto connected, Socket(domain, type, protocol));
     MaybeSave();  // Successful socket creation.
     RETURN_ERROR_IF_SYSCALL_FAIL(
-        connect(connected, AsSockAddr(&bind_addr), sizeof(bind_addr)));
+        connect(connected.get(), AsSockAddr(&bind_addr), sizeof(bind_addr)));
     MaybeSave();  // Successful connect.
 
-    int accepted;
-    RETURN_ERROR_IF_SYSCALL_FAIL(
-        accepted = accept4(bound, nullptr, nullptr,
-                           type & (SOCK_NONBLOCK | SOCK_CLOEXEC)));
+    ASSIGN_OR_RETURN_ERRNO(auto accepted,
+                           Accept4(bound.get(), nullptr, nullptr,
+                                   type & (SOCK_NONBLOCK | SOCK_CLOEXEC)));
     MaybeSave();  // Successful connect.
 
     // Cleanup no longer needed resources.
-    RETURN_ERROR_IF_SYSCALL_FAIL(close(bound));
+    RETURN_ERROR_IF_SYSCALL_FAIL(close(bound.release()));
     MaybeSave();  // Dropped original socket.
 
     // Only unlink if path is not in abstract namespace.
@@ -130,8 +128,8 @@ Creator<SocketPair> AcceptBindSocketPairCreator(bool abstract, int domain,
     // accepted is before connected to destruct connected before accepted.
     // Destructors for nonstatic member objects are called in the reverse order
     // in which they appear in the class declaration.
-    return absl::make_unique<AddrFDSocketPair>(accepted, connected, bind_addr,
-                                               extra_addr);
+    return absl::make_unique<AddrFDSocketPair>(
+        std::move(accepted), std::move(connected), bind_addr, extra_addr);
   };
 }
 
@@ -156,26 +154,24 @@ Creator<SocketPair> BidirectionalBindSocketPairCreator(bool abstract,
     ASSIGN_OR_RETURN_ERRNO(struct sockaddr_un addr2,
                            UniqueUnixAddr(abstract, domain));
 
-    int sock1;
-    RETURN_ERROR_IF_SYSCALL_FAIL(sock1 = socket(domain, type, protocol));
+    ASSIGN_OR_RETURN_ERRNO(auto sock1, Socket(domain, type, protocol));
     MaybeSave();  // Successful socket creation.
     RETURN_ERROR_IF_SYSCALL_FAIL(
-        bind(sock1, AsSockAddr(&addr1), sizeof(addr1)));
+        bind(sock1.get(), AsSockAddr(&addr1), sizeof(addr1)));
     MaybeSave();  // Successful bind.
 
-    int sock2;
-    RETURN_ERROR_IF_SYSCALL_FAIL(sock2 = socket(domain, type, protocol));
+    ASSIGN_OR_RETURN_ERRNO(auto sock2, Socket(domain, type, protocol));
     MaybeSave();  // Successful socket creation.
     RETURN_ERROR_IF_SYSCALL_FAIL(
-        bind(sock2, AsSockAddr(&addr2), sizeof(addr2)));
+        bind(sock2.get(), AsSockAddr(&addr2), sizeof(addr2)));
     MaybeSave();  // Successful bind.
 
     RETURN_ERROR_IF_SYSCALL_FAIL(
-        connect(sock1, AsSockAddr(&addr2), sizeof(addr2)));
+        connect(sock1.get(), AsSockAddr(&addr2), sizeof(addr2)));
     MaybeSave();  // Successful connect.
 
     RETURN_ERROR_IF_SYSCALL_FAIL(
-        connect(sock2, AsSockAddr(&addr1), sizeof(addr1)));
+        connect(sock2.get(), AsSockAddr(&addr1), sizeof(addr1)));
     MaybeSave();  // Successful connect.
 
     // Cleanup no longer needed resources.
@@ -192,7 +188,7 @@ Creator<SocketPair> BidirectionalBindSocketPairCreator(bool abstract,
       MaybeSave();  // Successful unlink.
     }
 
-    return absl::make_unique<FDSocketPair>(sock1, sock2);
+    return absl::make_unique<FDSocketPair>(std::move(sock1), std::move(sock2));
   };
 }
 
@@ -218,18 +214,16 @@ Creator<SocketPair> SocketpairGoferSocketPairCreator(int domain, int type,
     memcpy(addr.sun_path, kSocketGoferPath, sizeof(kSocketGoferPath));
     addr.sun_family = domain;
 
-    int sock1;
-    RETURN_ERROR_IF_SYSCALL_FAIL(sock1 = socket(domain, type, protocol));
+    ASSIGN_OR_RETURN_ERRNO(auto sock1, Socket(domain, type, protocol));
     MaybeSave();  // Successful socket creation.
     RETURN_ERROR_IF_SYSCALL_FAIL(
-        connect(sock1, AsSockAddr(&addr), sizeof(addr)));
+        connect(sock1.get(), AsSockAddr(&addr), sizeof(addr)));
     MaybeSave();  // Successful connect.
 
-    int sock2;
-    RETURN_ERROR_IF_SYSCALL_FAIL(sock2 = socket(domain, type, protocol));
+    ASSIGN_OR_RETURN_ERRNO(auto sock2, Socket(domain, type, protocol));
     MaybeSave();  // Successful socket creation.
     RETURN_ERROR_IF_SYSCALL_FAIL(
-        connect(sock2, AsSockAddr(&addr), sizeof(addr)));
+        connect(sock2.get(), AsSockAddr(&addr), sizeof(addr)));
     MaybeSave();  // Successful connect.
 
     // Make and close another socketpair to ensure that the duped ends of the
@@ -248,7 +242,7 @@ Creator<SocketPair> SocketpairGoferSocketPairCreator(int domain, int type,
       RETURN_ERROR_IF_SYSCALL_FAIL(close(sock));
     }
 
-    return absl::make_unique<FDSocketPair>(sock1, sock2);
+    return absl::make_unique<FDSocketPair>(std::move(sock1), std::move(sock2));
   };
 }
 
@@ -256,17 +250,25 @@ Creator<SocketPair> SocketpairGoferFileSocketPairCreator(int flags) {
   return [=]() -> PosixErrorOr<std::unique_ptr<FDSocketPair>> {
     constexpr char kSocketGoferPath[] = "/socket";
 
-    int sock1;
-    RETURN_ERROR_IF_SYSCALL_FAIL(sock1 =
-                                     open(kSocketGoferPath, O_RDWR | flags));
-    MaybeSave();  // Successful socket creation.
+    FileDescriptor sock1;
+    {
+      int sock1_fd;
+      RETURN_ERROR_IF_SYSCALL_FAIL(sock1_fd =
+                                       open(kSocketGoferPath, O_RDWR | flags));
+      MaybeSave();  // Successful socket creation.
+      sock1.reset(sock1_fd);
+    }
 
-    int sock2;
-    RETURN_ERROR_IF_SYSCALL_FAIL(sock2 =
-                                     open(kSocketGoferPath, O_RDWR | flags));
-    MaybeSave();  // Successful socket creation.
+    FileDescriptor sock2;
+    {
+      int sock2_fd;
+      RETURN_ERROR_IF_SYSCALL_FAIL(sock2_fd =
+                                       open(kSocketGoferPath, O_RDWR | flags));
+      MaybeSave();  // Successful socket creation.
+      sock2.reset(sock2_fd);
+    }
 
-    return absl::make_unique<FDSocketPair>(sock1, sock2);
+    return absl::make_unique<FDSocketPair>(std::move(sock1), std::move(sock2));
   };
 }
 
@@ -278,13 +280,12 @@ Creator<SocketPair> UnboundSocketPairCreator(bool abstract, int domain,
     ASSIGN_OR_RETURN_ERRNO(struct sockaddr_un addr2,
                            UniqueUnixAddr(abstract, domain));
 
-    int sock1;
-    RETURN_ERROR_IF_SYSCALL_FAIL(sock1 = socket(domain, type, protocol));
+    ASSIGN_OR_RETURN_ERRNO(auto sock1, Socket(domain, type, protocol));
     MaybeSave();  // Successful socket creation.
-    int sock2;
-    RETURN_ERROR_IF_SYSCALL_FAIL(sock2 = socket(domain, type, protocol));
+    ASSIGN_OR_RETURN_ERRNO(auto sock2, Socket(domain, type, protocol));
     MaybeSave();  // Successful socket creation.
-    return absl::make_unique<AddrFDSocketPair>(sock1, sock2, addr1, addr2);
+    return absl::make_unique<AddrFDSocketPair>(std::move(sock1),
+                                               std::move(sock2), addr1, addr2);
   };
 }
 
@@ -339,60 +340,63 @@ PosixErrorOr<T> TCPBindAndListen(int fd, bool dual_stack) {
 
 template <typename T>
 PosixErrorOr<std::unique_ptr<AddrFDSocketPair>>
-CreateTCPConnectAcceptSocketPair(int bound, int connected, int type,
+CreateTCPConnectAcceptSocketPair(int bound, FileDescriptor connected, int type,
                                  bool dual_stack, T bind_addr) {
   int connect_result = 0;
   RETURN_ERROR_IF_SYSCALL_FAIL(
-      (connect_result = RetryEINTR(connect)(connected, AsSockAddr(&bind_addr),
-                                            sizeof(bind_addr))) == -1 &&
+      (connect_result = RetryEINTR(connect)(
+           connected.get(), AsSockAddr(&bind_addr), sizeof(bind_addr))) == -1 &&
               errno == EINPROGRESS
           ? 0
           : connect_result);
   MaybeSave();  // Successful connect.
 
   if (connect_result == -1) {
-    struct pollfd connect_poll = {connected, POLLOUT | POLLERR | POLLHUP, 0};
+    struct pollfd connect_poll = {connected.get(), POLLOUT | POLLERR | POLLHUP,
+                                  0};
     RETURN_ERROR_IF_SYSCALL_FAIL(RetryEINTR(poll)(&connect_poll, 1, 0));
     int error = 0;
     socklen_t errorlen = sizeof(error);
     RETURN_ERROR_IF_SYSCALL_FAIL(
-        getsockopt(connected, SOL_SOCKET, SO_ERROR, &error, &errorlen));
+        getsockopt(connected.get(), SOL_SOCKET, SO_ERROR, &error, &errorlen));
     errno = error;
     RETURN_ERROR_IF_SYSCALL_FAIL(
         /* connect */ error == 0 ? 0 : -1);
   }
 
-  int accepted = -1;
+  int accepted_fd = -1;
   struct pollfd accept_poll = {bound, POLLIN, 0};
-  while (accepted == -1) {
+  while (accepted_fd == -1) {
     RETURN_ERROR_IF_SYSCALL_FAIL(RetryEINTR(poll)(&accept_poll, 1, 0));
 
     RETURN_ERROR_IF_SYSCALL_FAIL(
-        (accepted = RetryEINTR(accept4)(
+        (accepted_fd = RetryEINTR(accept4)(
              bound, nullptr, nullptr, type & (SOCK_NONBLOCK | SOCK_CLOEXEC))) ==
                     -1 &&
                 errno == EAGAIN
             ? 0
-            : accepted);
+            : accepted_fd);
   }
+  FileDescriptor accepted(accepted_fd);
   MaybeSave();  // Successful accept.
 
   T extra_addr = {};
   LocalhostAddr(&extra_addr, dual_stack);
-  return absl::make_unique<AddrFDSocketPair>(connected, accepted, bind_addr,
-                                             extra_addr);
+  return absl::make_unique<AddrFDSocketPair>(
+      std::move(connected), std::move(accepted), bind_addr, extra_addr);
 }
 
 template <typename T>
 PosixErrorOr<std::unique_ptr<AddrFDSocketPair>> CreateTCPAcceptBindSocketPair(
-    int bound, int connected, int type, bool dual_stack) {
-  ASSIGN_OR_RETURN_ERRNO(T bind_addr, TCPBindAndListen<T>(bound, dual_stack));
+    FileDescriptor bound, FileDescriptor connected, int type, bool dual_stack) {
+  ASSIGN_OR_RETURN_ERRNO(T bind_addr,
+                         TCPBindAndListen<T>(bound.get(), dual_stack));
 
-  auto result = CreateTCPConnectAcceptSocketPair(bound, connected, type,
-                                                 dual_stack, bind_addr);
+  auto result = CreateTCPConnectAcceptSocketPair(
+      bound.get(), std::move(connected), type, dual_stack, bind_addr);
 
   // Cleanup no longer needed resources.
-  RETURN_ERROR_IF_SYSCALL_FAIL(close(bound));
+  RETURN_ERROR_IF_SYSCALL_FAIL(close(bound.release()));
   MaybeSave();  // Successful close.
 
   return result;
@@ -402,20 +406,18 @@ Creator<SocketPair> TCPAcceptBindSocketPairCreator(int domain, int type,
                                                    int protocol,
                                                    bool dual_stack) {
   return [=]() -> PosixErrorOr<std::unique_ptr<AddrFDSocketPair>> {
-    int bound;
-    RETURN_ERROR_IF_SYSCALL_FAIL(bound = socket(domain, type, protocol));
+    ASSIGN_OR_RETURN_ERRNO(auto bound, Socket(domain, type, protocol));
     MaybeSave();  // Successful socket creation.
 
-    int connected;
-    RETURN_ERROR_IF_SYSCALL_FAIL(connected = socket(domain, type, protocol));
+    ASSIGN_OR_RETURN_ERRNO(auto connected, Socket(domain, type, protocol));
     MaybeSave();  // Successful socket creation.
 
     if (domain == AF_INET) {
-      return CreateTCPAcceptBindSocketPair<sockaddr_in>(bound, connected, type,
-                                                        dual_stack);
+      return CreateTCPAcceptBindSocketPair<sockaddr_in>(
+          std::move(bound), std::move(connected), type, dual_stack);
     }
-    return CreateTCPAcceptBindSocketPair<sockaddr_in6>(bound, connected, type,
-                                                       dual_stack);
+    return CreateTCPAcceptBindSocketPair<sockaddr_in6>(
+        std::move(bound), std::move(connected), type, dual_stack);
   };
 }
 
@@ -440,8 +442,7 @@ Creator<SocketPair> TCPAcceptBindPersistentListenerSocketPairCreator(
       absl::optional<sockaddr_in6>());
 
   return [=]() -> PosixErrorOr<std::unique_ptr<AddrFDSocketPair>> {
-    int connected;
-    RETURN_ERROR_IF_SYSCALL_FAIL(connected = socket(domain, type, protocol));
+    ASSIGN_OR_RETURN_ERRNO(auto connected, Socket(domain, type, protocol));
     MaybeSave();  // Successful socket creation.
 
     // Share the listener across invocations.
@@ -463,34 +464,38 @@ Creator<SocketPair> TCPAcceptBindPersistentListenerSocketPairCreator(
             TCPBindAndListen<sockaddr_in>(listener->value(), dual_stack)
                 .ValueOrDie());
       }
-      return CreateTCPConnectAcceptSocketPair(listener->value(), connected,
-                                              type, dual_stack, addr4->value());
+      return CreateTCPConnectAcceptSocketPair(listener->value(),
+                                              std::move(connected), type,
+                                              dual_stack, addr4->value());
     }
     if (!addr6->has_value()) {
       addr6->emplace(
           TCPBindAndListen<sockaddr_in6>(listener->value(), dual_stack)
               .ValueOrDie());
     }
-    return CreateTCPConnectAcceptSocketPair(listener->value(), connected, type,
+    return CreateTCPConnectAcceptSocketPair(listener->value(),
+                                            std::move(connected), type,
                                             dual_stack, addr6->value());
   };
 }
 
 template <typename T>
 PosixErrorOr<std::unique_ptr<AddrFDSocketPair>> CreateUDPBoundSocketPair(
-    int sock1, int sock2, int type, bool dual_stack) {
-  ASSIGN_OR_RETURN_ERRNO(T addr1, BindIP<T>(sock1, dual_stack));
-  ASSIGN_OR_RETURN_ERRNO(T addr2, BindIP<T>(sock2, dual_stack));
+    FileDescriptor sock1, FileDescriptor sock2, int type, bool dual_stack) {
+  ASSIGN_OR_RETURN_ERRNO(T addr1, BindIP<T>(sock1.get(), dual_stack));
+  ASSIGN_OR_RETURN_ERRNO(T addr2, BindIP<T>(sock2.get(), dual_stack));
 
-  return absl::make_unique<AddrFDSocketPair>(sock1, sock2, addr1, addr2);
+  return absl::make_unique<AddrFDSocketPair>(std::move(sock1), std::move(sock2),
+                                             addr1, addr2);
 }
 
 template <typename T>
 PosixErrorOr<std::unique_ptr<AddrFDSocketPair>>
-CreateUDPBidirectionalBindSocketPair(int sock1, int sock2, int type,
-                                     bool dual_stack) {
+CreateUDPBidirectionalBindSocketPair(FileDescriptor sock1, FileDescriptor sock2,
+                                     int type, bool dual_stack) {
   ASSIGN_OR_RETURN_ERRNO(
-      auto socks, CreateUDPBoundSocketPair<T>(sock1, sock2, type, dual_stack));
+      auto socks, CreateUDPBoundSocketPair<T>(
+                      std::move(sock1), std::move(sock2), type, dual_stack));
 
   // Connect sock1 to sock2.
   RETURN_ERROR_IF_SYSCALL_FAIL(connect(socks->first_fd(), socks->second_addr(),
@@ -509,35 +514,31 @@ Creator<SocketPair> UDPBidirectionalBindSocketPairCreator(int domain, int type,
                                                           int protocol,
                                                           bool dual_stack) {
   return [=]() -> PosixErrorOr<std::unique_ptr<AddrFDSocketPair>> {
-    int sock1;
-    RETURN_ERROR_IF_SYSCALL_FAIL(sock1 = socket(domain, type, protocol));
+    ASSIGN_OR_RETURN_ERRNO(auto sock1, Socket(domain, type, protocol));
     MaybeSave();  // Successful socket creation.
 
-    int sock2;
-    RETURN_ERROR_IF_SYSCALL_FAIL(sock2 = socket(domain, type, protocol));
+    ASSIGN_OR_RETURN_ERRNO(auto sock2, Socket(domain, type, protocol));
     MaybeSave();  // Successful socket creation.
 
     if (domain == AF_INET) {
       return CreateUDPBidirectionalBindSocketPair<sockaddr_in>(
-          sock1, sock2, type, dual_stack);
+          std::move(sock1), std::move(sock2), type, dual_stack);
     }
-    return CreateUDPBidirectionalBindSocketPair<sockaddr_in6>(sock1, sock2,
-                                                              type, dual_stack);
+    return CreateUDPBidirectionalBindSocketPair<sockaddr_in6>(
+        std::move(sock1), std::move(sock2), type, dual_stack);
   };
 }
 
 Creator<SocketPair> UDPUnboundSocketPairCreator(int domain, int type,
                                                 int protocol, bool dual_stack) {
   return [=]() -> PosixErrorOr<std::unique_ptr<FDSocketPair>> {
-    int sock1;
-    RETURN_ERROR_IF_SYSCALL_FAIL(sock1 = socket(domain, type, protocol));
+    ASSIGN_OR_RETURN_ERRNO(auto sock1, Socket(domain, type, protocol));
     MaybeSave();  // Successful socket creation.
 
-    int sock2;
-    RETURN_ERROR_IF_SYSCALL_FAIL(sock2 = socket(domain, type, protocol));
+    ASSIGN_OR_RETURN_ERRNO(auto sock2, Socket(domain, type, protocol));
     MaybeSave();  // Successful socket creation.
 
-    return absl::make_unique<FDSocketPair>(sock1, sock2);
+    return absl::make_unique<FDSocketPair>(std::move(sock1), std::move(sock2));
   };
 }
 
