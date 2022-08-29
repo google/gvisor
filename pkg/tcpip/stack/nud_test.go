@@ -170,8 +170,9 @@ func TestNUDFunctions(t *testing.T) {
 					t.Errorf("s.Neigbors(%d, %d) error mismatch (-want +got):\n%s", test.nicID, ipv6.ProtocolNumber, diff)
 				} else if test.expectedErr == nil {
 					if diff := cmp.Diff(
-						[]stack.NeighborEntry{{Addr: llAddr2, LinkAddr: linkAddr1, State: stack.Static, UpdatedAt: clock.Now()}},
+						[]stack.NeighborEntry{{Addr: llAddr2, LinkAddr: linkAddr1, State: stack.Static, UpdatedAt: clock.NowMonotonic()}},
 						neighbors,
+						cmp.AllowUnexported(tcpip.MonotonicTime{}),
 					); diff != "" {
 						t.Errorf("neighbors mismatch (-want +got):\n%s", diff)
 					}
