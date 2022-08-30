@@ -117,8 +117,17 @@ func (t *Task) killedLocked() bool {
 //
 // Preconditions: The caller must be running on the task goroutine.
 func (t *Task) PrepareExit(ws linux.WaitStatus) {
+	t.tg.pidns.owner.mu.RLock()
+	defer t.tg.pidns.owner.mu.RUnlock()
 	t.tg.signalHandlers.mu.Lock()
 	defer t.tg.signalHandlers.mu.Unlock()
+
+	last := t.tg.activeTasks == 1
+	if last {
+		t.prepareGroupExitLocked(ws)
+		return
+	}
+
 	t.exitStatus = ws
 }
 
@@ -133,6 +142,13 @@ func (t *Task) PrepareExit(ws linux.WaitStatus) {
 func (t *Task) PrepareGroupExit(ws linux.WaitStatus) {
 	t.tg.signalHandlers.mu.Lock()
 	defer t.tg.signalHandlers.mu.Unlock()
+	t.prepareGroupExitLocked(ws)
+}
+
+// Preconditions:
+//   - The caller must be running on the task goroutine.
+//   - The signal mutex must be locked.
+func (t *Task) prepareGroupExitLocked(ws linux.WaitStatus) {
 	if t.tg.exiting || t.tg.execing != nil {
 		// Note that if t.tg.exiting is false but t.tg.execing is not nil, i.e.
 		// this "group exit" is being executed by the killed sibling of an
