@@ -1366,6 +1366,49 @@ TEST(PIDsCgroup, LimitEnforced) {
               IsPosixErrorOkAndHolds(baseline + 2));
 }
 
+// Regression test for b/231312320.
+TEST(PIDsCgroup, RaceFSDestructionChargeUncharge) {
+  SKIP_IF(!CgroupsAvailable());
+
+  const TempPath mountpoint = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  // The goal of this test is to recreate the hierarchy containing the pids
+  // controller between when a pending charge is added for a new thread, and
+  // when the pending charge is removed due to a clone failure.
+
+  // Attempt to change the hierachy mid charge/uncharge by repeatedly creating
+  // new cgroupfs filesystems.
+  ScopedThread mounter_unmounter([&mountpoint] {
+    const DisableSave ds;  // Too many syscalls.
+
+    for (int i = 0; i < 1000; ++i) {
+      mount("none", mountpoint.path().c_str(), "cgroup", 0, 0);
+      umount(mountpoint.path().c_str());
+    }
+  });
+
+  // Trigger thread creation failure by having the parent of a clone syscall
+  // segfault intentionally.
+  ScopedThread cloner_root([] {
+    const DisableSave ds;  // Too many syscalls.
+
+    for (int i = 0; i < 50; ++i) {
+      ScopedThread cloner([] {
+        // Asynchronously spawn threads.
+        ScopedThread noop_threads([] {
+          for (int i = 0; i < 100; ++i) {
+            ScopedThread([] { getpid(); });
+          }
+        });
+
+        // Intentionally bad syscall that will cause the calling thread to be
+        // aborted with a SIGSEGV.
+        rename(0, 0);
+      });
+    }
+  });
+}
+
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor

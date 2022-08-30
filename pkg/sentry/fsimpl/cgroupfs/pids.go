@@ -204,15 +204,15 @@ func (c *pidsController) Charge(t *kernel.Task, d *kernfs.Dentry, res kernel.Cgr
 	// Negative charge.
 	if value < 0 {
 		if c.pendingTotal+value < 0 {
-			panic(fmt.Sprintf("cgroupfs: pids controller pending pool would be negative if charge was allowed: current pool: %d, proposed charge: %d", c.pendingTotal, value))
+			panic(fmt.Sprintf("cgroupfs: pids controller pending pool would be negative if charge was allowed: current pool: %d, proposed charge: %d, path: %q, task: %p", c.pendingTotal, value, d.FSLocalPath(), t))
 		}
 
 		pending, ok := c.pendingPool[t]
 		if !ok {
-			panic(fmt.Sprintf("cgroupfs: pids controller attempted to remove pending charge for task %+v, but task didn't have pending charges", t))
+			panic(fmt.Sprintf("cgroupfs: pids controller attempted to remove pending charge for Task %p, but task didn't have pending charges, path: %q", t, d.FSLocalPath()))
 		}
 		if pending+value < 0 {
-			panic(fmt.Sprintf("cgroupfs: pids controller attempted to remove pending charge for task %+v, but task didn't have enough pending charges; current charges: %d, proposed charge: %d", t, pending, value))
+			panic(fmt.Sprintf("cgroupfs: pids controller attempted to remove pending charge for Task %p, but task didn't have enough pending charges; current charges: %d, proposed charge: %d, path: %q", t, pending, value, d.FSLocalPath()))
 
 		}
 

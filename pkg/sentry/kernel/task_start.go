@@ -187,14 +187,24 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 	// we skip charging the pids controller, as non-userspace task creation
 	// bypasses pid limits.
 	if srcT != nil {
-		if err := srcT.ChargeFor(t, CgroupControllerPIDs, CgroupResourcePID, 1); err != nil {
+		var (
+			charged bool
+			err     error
+			hid     uint32
+		)
+		if charged, hid, err = srcT.ChargeFor(t, CgroupControllerPIDs, CgroupResourcePID, 1); err != nil {
 			return nil, err
 		}
-		cu.Add(func() {
-			if err := srcT.ChargeFor(t, CgroupControllerPIDs, CgroupResourcePID, -1); err != nil {
-				panic(fmt.Sprintf("Failed to clean up PIDs charge on task creation failure: %v", err))
-			}
-		})
+		if charged {
+			cu.Add(func() {
+				// Since ts.mu was dropped after the corresponding charge, the
+				// hierarchy referenced by hid may no longer exist. If so, this
+				// uncharge will be a no-op.
+				if _, _, err := srcT.ChargeForOnHierarchy(t, hid, CgroupControllerPIDs, CgroupResourcePID, -1); err != nil {
+					panic(fmt.Sprintf("Failed to clean up PIDs charge on task creation failure: %v", err))
+				}
+			})
+		}
 	}
 
 	// Make the new task (and possibly thread group) visible to the rest of
