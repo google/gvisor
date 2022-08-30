@@ -1,10 +1,13 @@
 # Introduction
 
-The remote sink implements a protocol that allows a remote process to receive a
-stream of trace points being triggered inside the sandbox. The remote sink uses
-Unix-domain socket (UDS) to connect to the remote process. The remote process is
-expected to have already created the UDS and be listening to new connections.
-This allows for a single process to monitor all sandboxes in the machine and
+The remote sink implements a protocol that allows remote processes to monitor
+actions being taken inside the sandbox. This document provides information
+required to implement a monitoring process that consumes trace points. The
+remote sink uses a Unix-domain socket (UDS) for communication. It opens a new
+connection and sends a stream of trace points being triggered inside the sandbox
+to the monitoring process. The monitoring process is expected to have already
+created the UDS and be listening for new connections. This allows for a single
+process to monitor all sandboxes in the machine, for better resource usage, and
 simplifies lifecycle management. When a new sandbox starts, it creates a new
 connection. And when a sandbox exits, the connection is terminated.
 
