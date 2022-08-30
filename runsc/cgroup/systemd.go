@@ -181,6 +181,8 @@ func (c *cgroupSystemd) Join() (func(), error) {
 			c.dbusConn.ResetFailedUnitContext(ctx, unitName)
 			return nil, fmt.Errorf("unknown job completion status %q", s)
 		}
+	} else if unitAlreadyExists(err) {
+		return clean.Release(), nil
 	} else {
 		return nil, fmt.Errorf("systemd error: %v", err)
 	}
@@ -188,6 +190,18 @@ func (c *cgroupSystemd) Join() (func(), error) {
 		return nil, err
 	}
 	return clean.Release(), nil
+}
+
+// unitAlreadyExists returns true if the error is that a systemd unit already
+// exists.
+func unitAlreadyExists(err error) bool {
+	if err != nil {
+		var derr dbus.Error
+		if errors.As(err, &derr) {
+			return strings.Contains(derr.Name, "org.freedesktop.systemd1.UnitExists")
+		}
+	}
+	return false
 }
 
 // systemd represents slice hierarchy using `-`, so we need to follow suit when

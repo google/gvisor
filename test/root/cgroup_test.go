@@ -567,3 +567,44 @@ func TestCgroupParent(t *testing.T) {
 		t.Errorf("cgroup control %q processes (%s): %v", "cpuacct", path, err)
 	}
 }
+
+func TestSystemdCgroupJoinTwice(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+	useSystemd, err := dockerutil.UsingSystemdCgroup()
+	if err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	if !useSystemd {
+		t.Skip()
+	}
+
+	// Construct a known cgroup name.
+	parent := "system-runsc.slice"
+	conf, hostconf, _ := d.ConfigsFrom(dockerutil.RunOpts{
+		Image: "basic/alpine",
+	}, "sleep", "10000")
+	hostconf.Resources.CgroupParent = parent
+
+	if err := d.CreateFrom(ctx, "basic/alpine", conf, hostconf, nil); err != nil {
+		t.Fatalf("create failed with: %v", err)
+	}
+
+	if err := d.Start(ctx); err != nil {
+		t.Fatalf("start failed with: %v", err)
+	}
+
+	// Extract the ID to look up the cgroup.
+	gid := d.ID()
+	t.Logf("cgroup ID: %s", gid)
+
+	cgroups, err := cgroup.NewFromPath(parent+":docker:"+gid, true /* useSystemd */)
+	if err != nil {
+		t.Fatalf("cgroup.NewFromPath: %v", err)
+	}
+	// Joining a cgroup twice should not produce an error.
+	if _, err := cgroups.Join(); err != nil {
+		t.Fatalf("Join(): got error rejoining cgroup: %v", err)
+	}
+}
