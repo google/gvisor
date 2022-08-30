@@ -99,6 +99,68 @@ void RunChild() {
   abort();
 }
 
+// SIGKILL of zombied thread group does not change exit status.
+TEST(ExitTest, SigkillZombieGroup) {
+  int pipe_fds[2];
+  ASSERT_THAT(pipe(pipe_fds), SyscallSucceeds());
+
+  FileDescriptor read_fd(pipe_fds[0]);
+  FileDescriptor write_fd(pipe_fds[1]);
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    read_fd.reset();
+
+    _exit(0);
+  }
+
+  EXPECT_THAT(pid, SyscallSucceeds());
+  write_fd.reset();
+
+  // Wait for pipe to automatically close to indicate that the child is zombied.
+  char buf[10];
+  EXPECT_THAT(ReadFd(read_fd.get(), buf, sizeof(buf)),
+              SyscallSucceedsWithValue(0));
+
+  EXPECT_THAT(kill(pid, SIGKILL), SyscallSucceeds());
+
+  // SIGKILL did not change exit status.
+  int status;
+  EXPECT_THAT(RetryEINTR(waitpid)(pid, &status, 0), SyscallSucceeds());
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0) << status;
+}
+
+// Variant of SigkillZombieGroup using exit(2) instead of exit_group(2).
+TEST(ExitTest, SigkillZombieThread) {
+  int pipe_fds[2];
+  ASSERT_THAT(pipe(pipe_fds), SyscallSucceeds());
+
+  FileDescriptor read_fd(pipe_fds[0]);
+  FileDescriptor write_fd(pipe_fds[1]);
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    read_fd.reset();
+
+    syscall(SYS_exit, 0);
+  }
+
+  EXPECT_THAT(pid, SyscallSucceeds());
+  write_fd.reset();
+
+  // Wait for pipe to automatically close to indicate that the child is zombied.
+  char buf[10];
+  EXPECT_THAT(ReadFd(read_fd.get(), buf, sizeof(buf)),
+              SyscallSucceedsWithValue(0));
+
+  EXPECT_THAT(kill(pid, SIGKILL), SyscallSucceeds());
+
+  // SIGKILL did not change exit status.
+  int status;
+  EXPECT_THAT(RetryEINTR(waitpid)(pid, &status, 0), SyscallSucceeds());
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0) << status;
+}
+
 }  // namespace
 
 }  // namespace testing
