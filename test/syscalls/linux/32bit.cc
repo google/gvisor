@@ -165,7 +165,7 @@ TEST(Syscall32Bit, Syscall) {
       break;
 
     case PlatformSupport::Ignored:
-      // FIXME(b/241819530): SIGSEGV was returned due to a kernel bug that has
+      // NOTE(b/241819530): SIGSEGV was returned due to a kernel bug that has
       // been fixed recently. Let's continue accept SIGSEGV while bad kernels
       // are running in prod.
       EXPECT_EXIT(ExitGroup32(kSyscall, kExitCode),
