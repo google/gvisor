@@ -14,6 +14,57 @@ doc(
 )
 
 doc(
+    name = "install",
+    src = "install.md",
+    category = "User Guide",
+    permalink = "/docs/user_guide/install/",
+    weight = "10",
+)
+
+doc(
+    name = "production",
+    src = "production.md",
+    category = "User Guide",
+    data = [
+        "sandboxing-tradeoffs.png",
+    ],
+    permalink = "/docs/user_guide/production/",
+    weight = "20",
+)
+
+doc(
+    name = "platforms",
+    src = "platforms.md",
+    category = "User Guide",
+    permalink = "/docs/user_guide/platforms/",
+    weight = "30",
+)
+
+doc(
+    name = "filesystem",
+    src = "filesystem.md",
+    category = "User Guide",
+    permalink = "/docs/user_guide/filesystem/",
+    weight = "40",
+)
+
+doc(
+    name = "networking",
+    src = "networking.md",
+    category = "User Guide",
+    permalink = "/docs/user_guide/networking/",
+    weight = "50",
+)
+
+doc(
+    name = "runtime_monitoring",
+    src = "runtime_monitoring.md",
+    category = "User Guide",
+    permalink = "/docs/user_guide/runtimemonitor/",
+    weight = "55",
+)
+
+doc(
     name = "checkpoint_restore",
     src = "checkpoint_restore.md",
     category = "User Guide",
@@ -35,47 +86,4 @@ doc(
     category = "User Guide",
     permalink = "/docs/user_guide/faq/",
     weight = "90",
-)
-
-doc(
-    name = "filesystem",
-    src = "filesystem.md",
-    category = "User Guide",
-    permalink = "/docs/user_guide/filesystem/",
-    weight = "40",
-)
-
-doc(
-    name = "networking",
-    src = "networking.md",
-    category = "User Guide",
-    permalink = "/docs/user_guide/networking/",
-    weight = "50",
-)
-
-doc(
-    name = "install",
-    src = "install.md",
-    category = "User Guide",
-    permalink = "/docs/user_guide/install/",
-    weight = "10",
-)
-
-doc(
-    name = "platforms",
-    src = "platforms.md",
-    category = "User Guide",
-    permalink = "/docs/user_guide/platforms/",
-    weight = "30",
-)
-
-doc(
-    name = "production",
-    src = "production.md",
-    category = "User Guide",
-    data = [
-        "sandboxing-tradeoffs.png",
-    ],
-    permalink = "/docs/user_guide/production/",
-    weight = "20",
 )
