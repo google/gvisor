@@ -18,6 +18,7 @@ import (
 	"math"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/eventfd"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/queue"
 )
@@ -92,7 +93,7 @@ func (t *tx) cleanup() {
 
 // transmit sends a packet made of bufs. Returns a boolean that specifies
 // whether the packet was successfully transmitted.
-func (t *tx) transmit(bufs ...[]byte) bool {
+func (t *tx) transmit(buffer bufferv2.Buffer) bool {
 	// Pull completions from the tx queue and add their buffers back to the
 	// pool so that we can reuse them.
 	for {
@@ -107,10 +108,7 @@ func (t *tx) transmit(bufs ...[]byte) bool {
 	}
 
 	bSize := t.bufs.entrySize
-	total := uint32(0)
-	for _, data := range bufs {
-		total += uint32(len(data))
-	}
+	total := uint32(buffer.Size())
 	bufCount := (total + bSize - 1) / bSize
 
 	// Allocate enough buffers to hold all the data.
@@ -132,17 +130,17 @@ func (t *tx) transmit(bufs ...[]byte) bool {
 	// Copy data into allocated buffers.
 	nBuf := buf
 	var dBuf []byte
-	for _, data := range bufs {
-		for len(data) > 0 {
+	buffer.Apply(func(v *bufferv2.View) {
+		for v.Size() > 0 {
 			if len(dBuf) == 0 {
 				dBuf = t.data[nBuf.Offset:][:nBuf.Size]
 				nBuf = nBuf.Next
 			}
-			n := copy(dBuf, data)
-			data = data[n:]
+			n := copy(dBuf, v.AsSlice())
+			v.TrimFront(n)
 			dBuf = dBuf[n:]
 		}
-	}
+	})
 
 	// Get an id for this packet and send it out.
 	id := t.ids.add(buf)
