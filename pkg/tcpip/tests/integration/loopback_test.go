@@ -452,7 +452,7 @@ func TestLoopbackAcceptAllInSubnetTCP(t *testing.T) {
 			defer wq.EventUnregister(&we)
 			listeningEndpoint, err := s.NewEndpoint(tcp.ProtocolNumber, test.addAddress.Protocol, &wq)
 			if err != nil {
-				t.Fatalf("NewEndpoint(%d, %d, _): %s", udp.ProtocolNumber, test.addAddress.Protocol, err)
+				t.Fatalf("NewEndpoint(%d, %d, _): %s", tcp.ProtocolNumber, test.addAddress.Protocol, err)
 			}
 			defer listeningEndpoint.Close()
 
@@ -467,7 +467,7 @@ func TestLoopbackAcceptAllInSubnetTCP(t *testing.T) {
 
 			connectingEndpoint, err := s.NewEndpoint(tcp.ProtocolNumber, test.addAddress.Protocol, &wq)
 			if err != nil {
-				t.Fatalf("s.NewEndpoint(%d, %d, _): %s", udp.ProtocolNumber, test.addAddress.Protocol, err)
+				t.Fatalf("s.NewEndpoint(%d, %d, _): %s", tcp.ProtocolNumber, test.addAddress.Protocol, err)
 			}
 			defer connectingEndpoint.Close()
 
