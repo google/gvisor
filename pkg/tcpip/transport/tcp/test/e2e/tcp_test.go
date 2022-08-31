@@ -293,7 +293,13 @@ func TestCloseWithoutConnect(t *testing.T) {
 }
 
 func TestHandshakeTimeoutConnectedCount(t *testing.T) {
-	c := context.New(t, e2e.DefaultMTU)
+	clock := faketime.NewManualClock()
+	c := context.NewWithOpts(t, context.Options{
+		EnableV4: true,
+		EnableV6: true,
+		MTU:      e2e.DefaultMTU,
+		Clock:    clock,
+	})
 	defer c.Cleanup()
 
 	ep, err := c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
@@ -312,6 +318,8 @@ func TestHandshakeTimeoutConnectedCount(t *testing.T) {
 		t.Fatalf("Connect did not start: %v", err)
 	}
 
+	clock.Advance(tcp.DefaultKeepaliveInterval)
+	clock.Advance(tcp.DefaultKeepaliveInterval)
 	<-ch
 	switch err := c.EP.LastError().(type) {
 	case *tcpip.ErrTimeout:
