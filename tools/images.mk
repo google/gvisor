@@ -154,6 +154,7 @@ load-%: register-cross ## Pull or build an image locally.
 # the fully-expanded remote image tag.
 push-%: load-% ## Push a given image.
 	@docker image push $(call remote_image,$*):$(call tag,$*) >&2
+	@docker image tag $(call remote_image,$*) $(call remote_image,$*):latest >&2
 	@docker image push $(call remote_image,$*):latest >&2
 
 # register-cross registers the necessary qemu binaries for cross-compilation.
