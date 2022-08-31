@@ -228,8 +228,7 @@ func (e *serverEndpoint) writePacketLocked(r stack.RouteInfo, protocol tcpip.Net
 		e.AddVirtioNetHeader(pkt)
 	}
 
-	views := pkt.AsSlices()
-	ok := e.tx.transmit(views)
+	ok := e.tx.transmit(pkt)
 	if !ok {
 		return &tcpip.ErrWouldBlock{}
 	}

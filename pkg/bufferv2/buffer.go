@@ -571,6 +571,11 @@ func (br *BufferReader) Close() {
 	br.b.Release()
 }
 
+// Len returns the number of bytes in the unread portion of the buffer.
+func (br *BufferReader) Len() int {
+	return int(br.b.Size())
+}
+
 // Range specifies a range of buffer.
 type Range struct {
 	begin int
