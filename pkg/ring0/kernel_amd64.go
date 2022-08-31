@@ -215,7 +215,7 @@ func (c *CPU) EFER() uint64 {
 //
 //go:nosplit
 func IsCanonical(addr uint64) bool {
-	return addr <= 0x00007fffffffffff || addr > 0xffff800000000000
+	return addr <= 0x00007fffffffffff || addr >= 0xffff800000000000
 }
 
 // SwitchToUser performs either a sysret or an iret.
