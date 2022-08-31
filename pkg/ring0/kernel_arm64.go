@@ -54,7 +54,7 @@ func (c *CPU) StackTop() uint64 {
 //
 //go:nosplit
 func IsCanonical(addr uint64) bool {
-	return addr <= 0x0000ffffffffffff || addr > 0xffff000000000000
+	return addr <= 0x0000ffffffffffff || addr >= 0xffff000000000000
 }
 
 // SwitchToUser performs an eret.
