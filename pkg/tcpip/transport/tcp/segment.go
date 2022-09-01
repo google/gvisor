@@ -19,6 +19,7 @@ import (
 	"io"
 
 	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
@@ -38,6 +39,12 @@ const (
 	recvQ queueFlags = 1 << iota
 	sendQ
 )
+
+var segmentPool = sync.Pool{
+	New: func() interface{} {
+		return &segment{}
+	},
+}
 
 // segment represents a TCP segment. It holds the payload and parsed TCP segment
 // information, and can be added to intrusive lists.
@@ -99,21 +106,19 @@ func newIncomingSegment(id stack.TransportEndpointID, clock tcpip.Clock, pkt *st
 		return nil, fmt.Errorf("header data offset does not respect size constraints: %d < offset < %d, got offset=%d", header.TCPMinimumSize, len(hdr), hdr.DataOffset())
 	}
 
-	s := &segment{
-		id:             id,
-		options:        hdr[header.TCPMinimumSize:],
-		parsedOptions:  header.ParseTCPOptions(hdr[header.TCPMinimumSize:]),
-		sequenceNumber: seqnum.Value(hdr.SequenceNumber()),
-		ackNumber:      seqnum.Value(hdr.AckNumber()),
-		flags:          hdr.Flags(),
-		window:         seqnum.Size(hdr.WindowSize()),
-		rcvdTime:       clock.NowMonotonic(),
-		dataMemSize:    pkt.MemSize(),
-		pkt:            pkt,
-		csumValid:      csumValid,
-	}
+	s := newSegment()
+	s.id = id
+	s.options = hdr[header.TCPMinimumSize:]
+	s.parsedOptions = header.ParseTCPOptions(hdr[header.TCPMinimumSize:])
+	s.sequenceNumber = seqnum.Value(hdr.SequenceNumber())
+	s.ackNumber = seqnum.Value(hdr.AckNumber())
+	s.flags = hdr.Flags()
+	s.window = seqnum.Size(hdr.WindowSize())
+	s.rcvdTime = clock.NowMonotonic()
+	s.dataMemSize = pkt.MemSize()
+	s.pkt = pkt
 	pkt.IncRef()
-	s.InitRefs()
+	s.csumValid = csumValid
 
 	if !s.pkt.RXTransportChecksumValidated {
 		s.csum = csum
@@ -122,10 +127,8 @@ func newIncomingSegment(id stack.TransportEndpointID, clock tcpip.Clock, pkt *st
 }
 
 func newOutgoingSegment(id stack.TransportEndpointID, clock tcpip.Clock, buf bufferv2.Buffer) *segment {
-	s := &segment{
-		id: id,
-	}
-	s.InitRefs()
+	s := newSegment()
+	s.id = id
 	s.rcvdTime = clock.NowMonotonic()
 	s.pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buf})
 	s.dataMemSize = s.pkt.MemSize()
@@ -133,22 +136,27 @@ func newOutgoingSegment(id stack.TransportEndpointID, clock tcpip.Clock, buf buf
 }
 
 func (s *segment) clone() *segment {
-	t := &segment{
-		id:             s.id,
-		sequenceNumber: s.sequenceNumber,
-		ackNumber:      s.ackNumber,
-		flags:          s.flags,
-		window:         s.window,
-		rcvdTime:       s.rcvdTime,
-		xmitTime:       s.xmitTime,
-		xmitCount:      s.xmitCount,
-		ep:             s.ep,
-		qFlags:         s.qFlags,
-		dataMemSize:    s.dataMemSize,
-	}
-	t.InitRefs()
+	t := newSegment()
+	t.id = s.id
+	t.sequenceNumber = s.sequenceNumber
+	t.ackNumber = s.ackNumber
+	t.flags = s.flags
+	t.window = s.window
+	t.rcvdTime = s.rcvdTime
+	t.xmitTime = s.xmitTime
+	t.xmitCount = s.xmitCount
+	t.ep = s.ep
+	t.qFlags = s.qFlags
+	t.dataMemSize = s.dataMemSize
 	t.pkt = s.pkt.Clone()
 	return t
+}
+
+func newSegment() *segment {
+	s := segmentPool.Get().(*segment)
+	*s = segment{}
+	s.InitRefs()
+	return s
 }
 
 // merge merges data in oth and clears oth.
@@ -176,8 +184,6 @@ func (s *segment) setOwner(ep *endpoint, qFlags queueFlags) {
 
 func (s *segment) DecRef() {
 	s.segmentRefs.DecRef(func() {
-		defer s.pkt.DecRef()
-		s.pkt = nil
 		if s.ep != nil {
 			switch s.qFlags {
 			case recvQ:
@@ -188,6 +194,9 @@ func (s *segment) DecRef() {
 				panic(fmt.Sprintf("unexpected queue flag %b set for segment", s.qFlags))
 			}
 		}
+		s.pkt.DecRef()
+		s.pkt = nil
+		segmentPool.Put(s)
 	})
 }
 
