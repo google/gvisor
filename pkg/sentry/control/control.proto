@@ -38,3 +38,10 @@ message ControlConfig {
   // server.
   repeated Endpoint allowed_controls = 1;
 }
+
+// ContainerStartEvent indicates the init task for a container has started in
+// response to GvisorContainer::Start().
+message ContainerStartEvent {
+  // The container id for the container starting up.
+  string container_id = 1;
+}

@@ -19,8 +19,10 @@ import (
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/eventchannel"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
+	pb "gvisor.dev/gvisor/pkg/sentry/control/control_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/fs/user"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -253,6 +255,11 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 	log.Infof("Started the new container %v ", initArgs.ContainerID)
 
 	l.updateContainerState(initArgs.ContainerID, stateRunning)
+
+	if err := eventchannel.Emit(&pb.ContainerStartEvent{ContainerId: initArgs.ContainerID}); err != nil {
+		log.Warningf("unable to emit ContainerStartEvent for %q: %v", initArgs.ContainerID, err)
+	}
+
 	return nil
 }
 
