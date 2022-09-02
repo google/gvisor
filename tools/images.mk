@@ -76,7 +76,7 @@ dockerfile = $$(if [ -f "$(call path,$(1))/Dockerfile.$(ARCH)" ]; then echo Dock
 # The tag construct is used to memoize the image generated (see README.md).
 # This scheme is used to enable aggressive caching in a central repository, but
 # ensuring that images will always be sourced using the local files.
-tag = $(shell cd images && find $(subst _,/,$(1)) -type f | sort | xargs -n 1 sha256sum | sha256sum - | cut -c 1-16)
+tag = $(shell cd images && find $(subst _,/,$(1)) -type f | sort -f -d | xargs -n 1 sha256sum | sha256sum - | cut -c 1-16)
 remote_image = $(REMOTE_IMAGE_PREFIX)/$(subst _,/,$(1))_$(ARCH)
 local_image = $(LOCAL_IMAGE_PREFIX)/$(subst _,/,$(1))
 
