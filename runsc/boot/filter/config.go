@@ -504,6 +504,16 @@ func hostInetFilters() seccomp.SyscallRules {
 				seccomp.EqualTo(unix.SOL_TCP),
 				seccomp.EqualTo(linux.TCP_INQ),
 			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SOL_TCP),
+				seccomp.EqualTo(linux.TCP_MAXSEG),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SOL_TCP),
+				seccomp.EqualTo(linux.TCP_CONGESTION),
+			},
 		},
 		unix.SYS_IOCTL: []seccomp.Rule{
 			{
@@ -571,6 +581,18 @@ func hostInetFilters() seccomp.SyscallRules {
 				seccomp.EqualTo(linux.TCP_INQ),
 				seccomp.MatchAny{},
 				seccomp.EqualTo(4),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SOL_TCP),
+				seccomp.EqualTo(linux.TCP_MAXSEG),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(4),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SOL_TCP),
+				seccomp.EqualTo(linux.TCP_CONGESTION),
 			},
 			{
 				seccomp.MatchAny{},
