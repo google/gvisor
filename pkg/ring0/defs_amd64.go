@@ -129,6 +129,12 @@ type CPUArchState struct {
 	// exception.
 	errorType uintptr
 
+	// vector is the vector of the last exception.
+	vector uintptr
+
+	// faultAddr is the value of the cr2 register.
+	faultAddr uintptr
+
 	*kernelEntry
 
 	// Copies of global variables, stored in CPU so that they can be used by
@@ -155,6 +161,20 @@ func (c *CPU) ErrorCode() (value uintptr, user bool) {
 func (c *CPU) ClearErrorCode() {
 	c.errorCode = 0 // No code.
 	c.errorType = 1 // User mode.
+}
+
+// Vector returns the vector of the last exception.
+//
+//go:nosplit
+func (c *CPU) Vector() uintptr {
+	return c.vector
+}
+
+// FaultAddr returns the last fault address.
+//
+//go:nosplit
+func (c *CPU) FaultAddr() uintptr {
+	return c.faultAddr
 }
 
 // SwitchArchOpts are embedded in SwitchOpts.
