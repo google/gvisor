@@ -514,9 +514,10 @@ func (tg *ThreadGroup) SetForegroundProcessGroup(tty *TTY, pgid ProcessGroupID) 
 	// signal is sent to all members of this background process group.
 	// We need also need to check whether it is ignoring or blocking SIGTTOU.
 	ignored := signalAction.Handler == linux.SIG_IGN
-	blocked := linux.SignalSet(tg.leader.signalMask.RacyLoad()) == linux.SignalSetOf(linux.SIGTTOU)
+	blocked := (linux.SignalSet(tg.leader.signalMask.RacyLoad()) & linux.SignalSetOf(linux.SIGTTOU)) != 0
 	if tg.processGroup.id != tg.processGroup.session.foreground.id && !ignored && !blocked {
 		tg.leader.sendSignalLocked(SignalInfoPriv(linux.SIGTTOU), true)
+		return -1, linuxerr.ERESTARTSYS
 	}
 
 	tg.processGroup.session.foreground.id = pgid
