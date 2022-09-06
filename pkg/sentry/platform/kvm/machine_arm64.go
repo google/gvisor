@@ -168,7 +168,7 @@ func isWriteFault(code uint64) bool {
 //go:nosplit
 func (c *vCPU) fault(signal int32, info *linux.SignalInfo) (hostarch.AccessType, error) {
 	bluepill(c) // Probably no-op, but may not be.
-	faultAddr := c.GetFaultAddr()
+	faultAddr := c.FaultAddr()
 	code, user := c.ErrorCode()
 	if !user {
 		// The last fault serviced by this CPU was not a user
