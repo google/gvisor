@@ -10,6 +10,9 @@ go_library(
         "network_unsafe.go",
         "sandbox.go",
     ],
+    embedsrcs = [
+        "//runsc/sandbox/bpf:af_xdp_ebpf.o",  # keep
+    ],
     visibility = [
         "//runsc:__subpackages__",
     ],
@@ -35,6 +38,8 @@ go_library(
         "//runsc/donation",
         "//runsc/specutils",
         "@com_github_cenkalti_backoff//:go_default_library",
+        "@com_github_cilium_ebpf//:go_default_library",
+        "@com_github_cilium_ebpf//link:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
         "@com_github_syndtr_gocapability//capability:go_default_library",
         "@com_github_vishvananda_netlink//:go_default_library",
