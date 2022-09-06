@@ -1656,6 +1656,10 @@ TEST_F(JobControlTest, SetForegroundProcessGroupSIGTTOUBackground) {
     int wstatus;
     TEST_PCHECK(waitpid(grandchild, &wstatus, WSTOPPED) == grandchild);
     TEST_PCHECK(WSTOPSIG(wstatus) == SIGTTOU);
+
+    // The child's `tcsetpgrp` got signalled and so should not have
+    // taken effect. Verify that.
+    TEST_PCHECK(tcgetpgrp(replica_.get()) == getpid());
     EXPECT_THAT(kill(grandchild, SIGKILL), SyscallSucceeds());
   });
   ASSERT_NO_ERRNO(res);
@@ -1703,11 +1707,20 @@ TEST_F(JobControlTest, SetForegroundProcessGroupSIGTTOUBlocked) {
       sigset_t signal_set;
       sigemptyset(&signal_set);
       sigaddset(&signal_set, SIGTTOU);
+      // Block SIGTTIN as well, to make sure that the kernel isn't
+      // checking for "blocked == [SIGTTOU]" (see issue 7941 for
+      // context).
+      sigaddset(&signal_set, SIGTTIN);
       sigprocmask(SIG_BLOCK, &signal_set, NULL);
       // Assign a different pgid to the child so it will result as
       // a background process.
       TEST_PCHECK(!setpgid(grandchild, getpid()));
       TEST_PCHECK(!tcsetpgrp(replica_.get(), getpgid(0)));
+      // Unmask the signals to make sure we still don't get
+      // signaled. That would happen if `tcsetpgrp` enqueued the
+      // signal through the mask -- we would not yet have received it,
+      // because of the mask.
+      sigprocmask(SIG_UNBLOCK, &signal_set, NULL);
       _exit(0);
     }
     int wstatus;
