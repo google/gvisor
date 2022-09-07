@@ -10,11 +10,13 @@ syscall_test(
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:accept_bind_stream_test",
 )
 
 syscall_test(
     size = "large",
+    add_hostinet = True,
     shard_count = most_shards,
     test = "//test/syscalls/linux:accept_bind_test",
 )
@@ -49,6 +51,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
+    add_hostinet = True,
     add_overlay = True,
     test = "//test/syscalls/linux:bind_test",
 )
@@ -107,6 +110,7 @@ syscall_test(
 )
 
 syscall_test(
+    add_hostinet = True,
     add_uds_tree = True,
     test = "//test/syscalls/linux:connect_external_test",
     use_tmpfs = True,
@@ -247,10 +251,12 @@ syscall_test(
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:iptables_test",
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:ip6tables_test",
 )
 
@@ -352,6 +358,7 @@ syscall_test(
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:network_namespace_test",
 )
 
@@ -367,18 +374,22 @@ syscall_test(
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:packet_socket_dgram_test",
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:packet_socket_raw_test",
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:packet_socket_test",
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:partial_bad_buffer_test",
 )
 
@@ -388,6 +399,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    add_hostinet = True,
     # Takes too long under gotsan to run.
     tags = ["nogotsan"],
     test = "//test/syscalls/linux:ping_socket_test",
@@ -492,14 +504,17 @@ syscall_test(
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:raw_socket_hdrincl_test",
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:raw_socket_icmp_test",
 )
 
 syscall_test(
+    add_hostinet = True,
     shard_count = more_shards,
     test = "//test/syscalls/linux:raw_socket_test",
 )
@@ -516,6 +531,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    add_hostinet = True,
     shard_count = more_shards,
     test = "//test/syscalls/linux:readv_socket_test",
 )
@@ -570,6 +586,7 @@ syscall_test(
 )
 
 syscall_test(
+    add_hostinet = True,
     add_overlay = True,
     test = "//test/syscalls/linux:sendfile_socket_test",
 )
@@ -649,12 +666,14 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    add_hostinet = True,
     add_overlay = True,
     test = "//test/syscalls/linux:socket_filesystem_non_blocking_test",
 )
 
 syscall_test(
     size = "large",
+    add_hostinet = True,
     add_overlay = True,
     shard_count = most_shards,
     test = "//test/syscalls/linux:socket_filesystem_test",
@@ -662,12 +681,14 @@ syscall_test(
 
 syscall_test(
     size = "large",
+    add_hostinet = True,
     shard_count = most_shards,
     test = "//test/syscalls/linux:socket_inet_loopback_test",
 )
 
 syscall_test(
     size = "large",
+    add_hostinet = True,
     container = True,
     shard_count = most_shards,
     test = "//test/syscalls/linux:socket_inet_loopback_isolated_test",
@@ -675,6 +696,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
+    add_hostinet = True,
     shard_count = most_shards,
     # Takes too long for TSAN. Creates a lot of TCP sockets.
     tags = ["nogotsan"],
@@ -682,11 +704,13 @@ syscall_test(
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_ipv4_udp_unbound_external_networking_test",
 )
 
 syscall_test(
     size = "large",
+    add_hostinet = True,
     shard_count = most_shards,
     test = "//test/syscalls/linux:socket_ip_tcp_generic_loopback_test",
 )
@@ -699,6 +723,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
+    add_hostinet = True,
     shard_count = most_shards,
     test = "//test/syscalls/linux:socket_ip_tcp_loopback_test",
 )
@@ -718,22 +743,26 @@ syscall_test(
 
 syscall_test(
     size = "large",
+    add_hostinet = True,
     shard_count = most_shards,
     test = "//test/syscalls/linux:socket_ip_udp_loopback_test",
 )
 
 syscall_test(
     size = "medium",
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_ipv4_datagram_based_socket_unbound_loopback_test",
 )
 
 syscall_test(
     size = "medium",
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_ipv4_udp_unbound_loopback_test",
 )
 
 syscall_test(
     size = "medium",
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_ipv6_udp_unbound_loopback_test",
 )
 
@@ -747,63 +776,77 @@ syscall_test(
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_ipv4_udp_unbound_loopback_netlink_test",
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_ipv6_udp_unbound_loopback_netlink_test",
 )
 
 syscall_test(
+    add_hostinet = True,
     shard_count = more_shards,
     test = "//test/syscalls/linux:socket_ip_unbound_test",
 )
 
 syscall_test(
+    add_hostinet = True,
     shard_count = more_shards,
     test = "//test/syscalls/linux:socket_ipv6_unbound_test",
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_ip_unbound_netlink_test",
 )
 
 syscall_test(
     add_hostinet = True,
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_netdevice_test",
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_netlink_test",
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_netlink_route_test",
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_netlink_uevent_test",
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_blocking_local_test",
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_blocking_ip_test",
 )
 
 syscall_test(
     add_hostinet = True,
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_non_stream_blocking_local_test",
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_non_stream_blocking_udp_test",
 )
 
 syscall_test(
     size = "large",
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_stream_blocking_local_test",
 )
 
@@ -814,21 +857,25 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_stream_local_test",
 )
 
 syscall_test(
     size = "medium",
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_stream_nonblock_local_test",
 )
 
 syscall_test(
     size = "large",
+    add_hostinet = True,
     shard_count = most_shards,
     test = "//test/syscalls/linux:socket_stress_test",
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_test",
 )
 
@@ -938,6 +985,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    add_hostinet = True,
     shard_count = more_shards,
     test = "//test/syscalls/linux:tcp_socket_test",
 )
