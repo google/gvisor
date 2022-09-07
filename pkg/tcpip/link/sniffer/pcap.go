@@ -55,18 +55,20 @@ type pcapPacket struct {
 }
 
 func (p *pcapPacket) MarshalBinary() ([]byte, error) {
-	packetSize := p.packet.Size()
+	pkt := trimmedClone(p.packet)
+	defer pkt.DecRef()
+	packetSize := pkt.Size()
 	captureLen := p.maxCaptureLen
 	if packetSize < captureLen {
 		captureLen = packetSize
 	}
 	b := make([]byte, 16+captureLen)
-	binary.BigEndian.PutUint32(b[0:4], uint32(p.timestamp.Unix()))
-	binary.BigEndian.PutUint32(b[4:8], uint32(p.timestamp.Nanosecond()/1000))
-	binary.BigEndian.PutUint32(b[8:12], uint32(captureLen))
-	binary.BigEndian.PutUint32(b[12:16], uint32(packetSize))
+	binary.LittleEndian.PutUint32(b[0:4], uint32(p.timestamp.Unix()))
+	binary.LittleEndian.PutUint32(b[4:8], uint32(p.timestamp.Nanosecond()/1000))
+	binary.LittleEndian.PutUint32(b[8:12], uint32(captureLen))
+	binary.LittleEndian.PutUint32(b[12:16], uint32(packetSize))
 	w := tcpip.SliceWriter(b[16:])
-	for _, v := range p.packet.AsSlices() {
+	for _, v := range pkt.AsSlices() {
 		if captureLen == 0 {
 			break
 		}

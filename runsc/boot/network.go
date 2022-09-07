@@ -17,6 +17,7 @@ package boot
 import (
 	"fmt"
 	"net"
+	"os"
 	"runtime"
 	"strings"
 
@@ -126,6 +127,9 @@ type CreateLinksAndRoutesArgs struct {
 	Defaultv6Gateway DefaultRoute
 
 	AFXDP bool
+
+	// PCAP indicates that FilePayload also contains a PCAP log file.
+	PCAP bool
 }
 
 // IPWithPrefix is an address with its subnet prefix length.
@@ -168,8 +172,11 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 	if args.AFXDP {
 		wantFDs += 4
 	}
+	if args.PCAP {
+		wantFDs++
+	}
 	if got := len(args.FilePayload.Files); got != wantFDs {
-		return fmt.Errorf("args.FilePayload.Files has %d FDs but we need %d entries based on FDBasedLinks. AFXDP is %t", got, wantFDs, args.AFXDP)
+		return fmt.Errorf("args.FilePayload.Files has %d FDs but we need %d entries based on FDBasedLinks. AFXDP is %t, PCAP is %t", got, wantFDs, args.AFXDP, args.PCAP)
 	}
 
 	var nicID tcpip.NICID
@@ -280,7 +287,21 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		}
 
 		// Wrap linkEP in a sniffer to enable packet logging.
-		sniffEP := sniffer.New(packetsocket.New(linkEP))
+		var sniffEP stack.LinkEndpoint
+		if args.PCAP {
+			newFD, err := unix.Dup(int(args.FilePayload.Files[fdOffset].Fd()))
+			if err != nil {
+				return fmt.Errorf("failed to dup pcap FD: %v", err)
+			}
+			const packetTruncateSize = 4096
+			sniffEP, err = sniffer.NewWithWriter(packetsocket.New(linkEP), os.NewFile(uintptr(newFD), "pcap-file"), packetTruncateSize)
+			if err != nil {
+				return fmt.Errorf("failed to create PCAP logger: %v", err)
+			}
+			fdOffset++
+		} else {
+			sniffEP = sniffer.New(packetsocket.New(linkEP))
+		}
 
 		var qDisc stack.QueueingDiscipline
 		switch link.QDisc {

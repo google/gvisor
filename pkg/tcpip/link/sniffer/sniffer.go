@@ -95,7 +95,7 @@ func writePCAPHeader(w io.Writer, maxLen uint32) error {
 	if err != nil {
 		return err
 	}
-	return binary.Write(w, binary.BigEndian, pcapHeader{
+	return binary.Write(w, binary.LittleEndian, pcapHeader{
 		// From https://wiki.wireshark.org/Development/LibpcapFileFormat
 		MagicNumber: 0xa1b2c3d4,
 
@@ -190,17 +190,7 @@ func LogPacket(prefix string, dir Direction, protocol tcpip.NetworkProtocolNumbe
 		panic(fmt.Sprintf("unrecognized direction: %d", dir))
 	}
 
-	// Clone the packet buffer to not modify the original.
-	//
-	// We don't clone the original packet buffer so that the new packet buffer
-	// does not have any of its headers set.
-	//
-	// We trim the link headers from the cloned buffer as the sniffer doesn't
-	// handle link headers.
-	buf := pkt.ToBuffer()
-	buf.TrimFront(int64(len(pkt.VirtioNetHeader().Slice())))
-	buf.TrimFront(int64(len(pkt.LinkHeader().Slice())))
-	pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buf})
+	pkt = trimmedClone(pkt)
 	defer pkt.DecRef()
 	switch protocol {
 	case header.IPv4ProtocolNumber:
@@ -386,4 +376,18 @@ func LogPacket(prefix string, dir Direction, protocol tcpip.NetworkProtocolNumbe
 	}
 
 	log.Infof("%s%s %s %s:%d -> %s:%d len:%d id:%04x %s", prefix, directionPrefix, transName, src, srcPort, dst, dstPort, size, id, details)
+}
+
+// trimmedClone clones the packet buffer to not modify the original. It trims
+// anything before the network header.
+func trimmedClone(pkt *stack.PacketBuffer) *stack.PacketBuffer {
+	// We don't clone the original packet buffer so that the new packet buffer
+	// does not have any of its headers set.
+	//
+	// We trim the link headers from the cloned buffer as the sniffer doesn't
+	// handle link headers.
+	buf := pkt.ToBuffer()
+	buf.TrimFront(int64(len(pkt.VirtioNetHeader().Slice())))
+	buf.TrimFront(int64(len(pkt.LinkHeader().Slice())))
+	return stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buf})
 }
