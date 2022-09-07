@@ -106,6 +106,9 @@ type Config struct {
 	// LogPackets indicates that all network packets should be logged.
 	LogPackets bool `flag:"log-packets"`
 
+	// PCAP is a file to which network packets should be logged in PCAP format.
+	PCAP string `flag:"pcap-log"`
+
 	// Platform is the platform to run on.
 	Platform string `flag:"platform"`
 

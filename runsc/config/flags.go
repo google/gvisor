@@ -44,6 +44,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.String("panic-log", "", "file path where panic reports and other Go's runtime messages are written.")
 	flagSet.String("coverage-report", "", "file path where Go coverage reports are written. Reports will only be generated if runsc is built with --collect_code_coverage and --instrumentation_filter Bazel flags.")
 	flagSet.Bool("log-packets", false, "enable network packet logging.")
+	flagSet.String("pcap-log", "", "location of PCAP log file.")
 	flagSet.String("debug-log-format", "text", "log format: text (default), json, or json-k8s.")
 	flagSet.Bool("alsologtostderr", false, "send log messages to stderr.")
 	flagSet.Bool("allow-flag-override", false, "allow OCI annotations (dev.gvisor.flag.<name>) to override flags for debugging.")
