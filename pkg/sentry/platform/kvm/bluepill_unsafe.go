@@ -221,7 +221,6 @@ func bluepillHandler(context unsafe.Pointer) {
 			c.die(bluepillArchContext(context), "entry failed")
 			return
 		default:
-			printHex([]byte("exitReason="), uint64(c.runData.exitReason))
 			bluepillArchHandleExit(c, context)
 			return
 		}

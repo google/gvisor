@@ -128,10 +128,11 @@ func (c *vCPU) KernelSyscall() {
 func (c *vCPU) KernelException(vector ring0.Vector) {
 	regs := c.Registers()
 	if vector == ring0.Vector(bounce) {
-		// These should not interrupt kernel execution; point the Rip
-		// to zero to ensure that we get a reasonable panic when we
-		// attempt to return and a full stack trace.
-		regs.Rip = 0
+		// This go-routine was saved in hr3 and resumed in gr0 with the
+		// userspace flags. Let's adjust flags and skip the interrupt.
+		regs.Eflags &^= uint64(ring0.KernelFlagsClear)
+		regs.Eflags |= ring0.KernelFlagsSet
+		return
 	}
 	// See above.
 	ring0.HaltAndWriteFSBase(regs) // escapes: no, reload host segment.
