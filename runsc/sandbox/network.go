@@ -294,6 +294,16 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 		args.FDBasedLinks = append(args.FDBasedLinks, link)
 	}
 
+	// Pass PCAP log file if present.
+	if conf.PCAP != "" {
+		args.PCAP = true
+		pcap, err := os.OpenFile(conf.PCAP, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0664)
+		if err != nil {
+			return fmt.Errorf("failed to open PCAP file %s: %v", conf.PCAP, err)
+		}
+		args.FilePayload.Files = append(args.FilePayload.Files, pcap)
+	}
+
 	log.Debugf("Setting up network, config: %+v", args)
 	if err := conn.Call(boot.NetworkCreateLinksAndRoutes, &args, nil); err != nil {
 		return fmt.Errorf("creating links and routes: %w", err)
