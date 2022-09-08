@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
@@ -273,7 +274,7 @@ func buildV4EchoReplyPacket(payload []byte, h context.Header4Tuple) ([]byte, []b
 	icmp.SetType(header.ICMPv4EchoReply)
 	icmp.SetCode(header.ICMPv4UnusedCode)
 	icmp.SetIdent(h.Dst.Port)
-	icmp.SetChecksum(^header.Checksum(icmp, 0))
+	icmp.SetChecksum(^checksum.Checksum(icmp, 0))
 
 	return buf, icmp
 }
@@ -304,7 +305,7 @@ func buildV6EchoReplyPacket(payload []byte, h context.Header4Tuple) ([]byte, []b
 		Header:      icmpv6[:header.ICMPv6EchoMinimumSize],
 		Src:         h.Src.Addr,
 		Dst:         h.Dst.Addr,
-		PayloadCsum: header.Checksum(payload, 0),
+		PayloadCsum: checksum.Checksum(payload, 0),
 		PayloadLen:  len(payload),
 	}))
 

@@ -23,6 +23,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
@@ -134,7 +135,7 @@ func (c *testContext) sendV4Packet(payload []byte, h *headers, linkEpID tcpip.NI
 	xsum := header.PseudoHeaderChecksum(udp.ProtocolNumber, testSrcAddrV4, testDstAddrV4, uint16(len(u)))
 
 	// Calculate the UDP checksum and set it.
-	xsum = header.Checksum(payload, xsum)
+	xsum = checksum.Checksum(payload, xsum)
 	u.SetChecksum(^u.CalculateChecksum(xsum))
 
 	// Inject packet.
@@ -171,7 +172,7 @@ func (c *testContext) sendV6Packet(payload []byte, h *headers, linkEpID tcpip.NI
 	xsum := header.PseudoHeaderChecksum(udp.ProtocolNumber, testSrcAddrV6, testDstAddrV6, uint16(len(u)))
 
 	// Calculate the UDP checksum and set it.
-	xsum = header.Checksum(payload, xsum)
+	xsum = checksum.Checksum(payload, xsum)
 	u.SetChecksum(^u.CalculateChecksum(xsum))
 
 	// Inject packet.

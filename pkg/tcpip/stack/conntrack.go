@@ -526,7 +526,7 @@ func (ct *ConnTrack) getConnAndUpdate(pkt *PacketBuffer, skipChecksumValidation 
 		case header.TCPProtocolNumber:
 			_, csumValid, ok := header.TCPValid(
 				header.TCP(pkt.TransportHeader().Slice()),
-				func() uint16 { return pkt.Data().AsRange().Checksum() },
+				func() uint16 { return pkt.Data().Checksum() },
 				uint16(pkt.Data().Size()),
 				tid.srcAddr,
 				tid.dstAddr,
@@ -537,7 +537,7 @@ func (ct *ConnTrack) getConnAndUpdate(pkt *PacketBuffer, skipChecksumValidation 
 		case header.UDPProtocolNumber:
 			lengthValid, csumValid := header.UDPValid(
 				header.UDP(pkt.TransportHeader().Slice()),
-				func() uint16 { return pkt.Data().AsRange().Checksum() },
+				func() uint16 { return pkt.Data().Checksum() },
 				uint16(pkt.Data().Size()),
 				pkt.NetworkProtocolNumber,
 				tid.srcAddr,
@@ -937,7 +937,7 @@ func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, rt *Route) bool {
 		icmp := header.ICMPv4(pkt.TransportHeader().Slice())
 		// TODO(https://gvisor.dev/issue/6788): Incrementally update ICMP checksum.
 		icmp.SetChecksum(0)
-		icmp.SetChecksum(header.ICMPv4Checksum(icmp, pkt.Data().AsRange().Checksum()))
+		icmp.SetChecksum(header.ICMPv4Checksum(icmp, pkt.Data().Checksum()))
 
 		network := header.IPv4(pkt.NetworkHeader().Slice())
 		if dnat {
@@ -963,7 +963,7 @@ func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, rt *Route) bool {
 			Header:      icmp,
 			Src:         srcAddr,
 			Dst:         dstAddr,
-			PayloadCsum: payload.AsRange().Checksum(),
+			PayloadCsum: payload.Checksum(),
 			PayloadLen:  payload.Size(),
 		}))
 

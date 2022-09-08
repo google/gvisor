@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
@@ -883,7 +884,7 @@ func TestNDPValidation(t *testing.T) {
 							Header:      icmpH[:typ.size],
 							Src:         lladdr0,
 							Dst:         lladdr1,
-							PayloadCsum: header.Checksum(typ.extraData /* initial */, 0),
+							PayloadCsum: checksum.Checksum(typ.extraData /* initial */, 0),
 							PayloadLen:  len(typ.extraData),
 						}))
 

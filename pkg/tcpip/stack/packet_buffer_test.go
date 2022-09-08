@@ -19,7 +19,6 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/bufferv2"
-	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 func TestPacketHeaderPush(t *testing.T) {
@@ -669,9 +668,6 @@ func checkRange(t *testing.T, r Range, data []byte) {
 	}
 	if got := r.ToSlice(); !bytes.Equal(got, data) {
 		t.Errorf("r.AsSlice() = %x, want %x", got, data)
-	}
-	if got, want := r.Checksum(), header.Checksum(data, 0 /* initial */); got != want {
-		t.Errorf("r.Checksum() = %x, want %x", got, want)
 	}
 }
 

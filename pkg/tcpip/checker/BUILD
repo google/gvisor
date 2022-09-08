@@ -10,6 +10,7 @@ go_library(
     deps = [
         "//pkg/bufferv2",
         "//pkg/tcpip",
+        "//pkg/tcpip/checksum",
         "//pkg/tcpip/header",
         "//pkg/tcpip/seqnum",
         "@com_github_google_go_cmp//cmp:go_default_library",

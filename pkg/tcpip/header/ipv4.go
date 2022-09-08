@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 )
 
 // RFC 971 defines the fields of the IPv4 header on page 11 using the following
@@ -50,7 +51,7 @@ const (
 	flagsFO            = 6
 	ttl                = 8
 	protocol           = 9
-	checksum           = 10
+	xsum               = 10
 	srcAddr            = 12
 	dstAddr            = 16
 	options            = 20
@@ -301,7 +302,7 @@ func (b IPv4) TotalLength() uint16 {
 
 // Checksum returns the checksum field of the IPv4 header.
 func (b IPv4) Checksum() uint16 {
-	return binary.BigEndian.Uint16(b[checksum:])
+	return binary.BigEndian.Uint16(b[xsum:])
 }
 
 // SourceAddress returns the "source address" field of the IPv4 header.
@@ -382,7 +383,7 @@ func (b IPv4) SetTotalLength(totalLength uint16) {
 
 // SetChecksum sets the checksum field of the IPv4 header.
 func (b IPv4) SetChecksum(v uint16) {
-	PutChecksum(b[checksum:], v)
+	checksum.Put(b[xsum:], v)
 }
 
 // SetFlagsFragmentOffset sets the "flags" and "fragment offset" fields of the
@@ -410,7 +411,7 @@ func (b IPv4) SetDestinationAddress(addr tcpip.Address) {
 
 // CalculateChecksum calculates the checksum of the IPv4 header.
 func (b IPv4) CalculateChecksum() uint16 {
-	return Checksum(b[:b.HeaderLength()], 0)
+	return checksum.Checksum(b[:b.HeaderLength()], 0)
 }
 
 // Encode encodes all the fields of the IPv4 header.
@@ -444,8 +445,8 @@ func (b IPv4) Encode(i *IPv4Fields) {
 // packets are produced.
 func (b IPv4) EncodePartial(partialChecksum, totalLength uint16) {
 	b.SetTotalLength(totalLength)
-	checksum := Checksum(b[IPv4TotalLenOffset:IPv4TotalLenOffset+2], partialChecksum)
-	b.SetChecksum(^checksum)
+	xsum := checksum.Checksum(b[IPv4TotalLenOffset:IPv4TotalLenOffset+2], partialChecksum)
+	b.SetChecksum(^xsum)
 }
 
 // IsValid performs basic validation on the packet.

@@ -21,6 +21,7 @@ go_library(
         "//pkg/bufferv2",
         "//pkg/hostarch",
         "//pkg/tcpip",
+        "//pkg/tcpip/checksum",
         "//pkg/tcpip/header",
         "//pkg/tcpip/seqnum",
         "//test/packetimpact/proto:posix_server_go_proto",

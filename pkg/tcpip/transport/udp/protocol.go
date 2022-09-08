@@ -82,7 +82,7 @@ func (p *protocol) HandleUnknownDestinationPacket(id stack.TransportEndpointID, 
 	netHdr := pkt.Network()
 	lengthValid, csumValid := header.UDPValid(
 		hdr,
-		func() uint16 { return pkt.Data().AsRange().Checksum() },
+		func() uint16 { return pkt.Data().Checksum() },
 		uint16(pkt.Data().Size()),
 		pkt.NetworkProtocolNumber,
 		netHdr.SourceAddress(),

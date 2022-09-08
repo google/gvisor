@@ -19,11 +19,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"reflect"
 	"strings"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/state"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 )
 
 func BenchmarkReadAt(b *testing.B) {
@@ -873,6 +875,26 @@ func TestRangeLen(t *testing.T) {
 	} {
 		if got := tc.r.Len(); got != tc.want {
 			t.Errorf("(%#v).Len() = %d, want %d", tc.r, got, tc.want)
+		}
+	}
+}
+
+func TestChecksum(t *testing.T) {
+	data := make([]byte, 100)
+	rand.Read(data)
+
+	b := MakeWithData(data[:30])
+	b.appendOwned(NewViewWithData(data[30:70]))
+	b.appendOwned(NewViewWithData(data[70:]))
+
+	for offset := 0; offset < 100; offset++ {
+		var cs checksum.Checksumer
+		cs.Add(data[offset:])
+		dataChecksum := cs.Checksum()
+		bufChecksum := b.Checksum(offset)
+
+		if dataChecksum != bufChecksum {
+			t.Errorf("(%#v).Checksum(%d) = %d, want %d", b, offset, bufChecksum, dataChecksum)
 		}
 	}
 }

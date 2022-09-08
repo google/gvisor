@@ -47,6 +47,7 @@ go_library(
         "//pkg/pool",
         "//pkg/refsvfs2",
         "//pkg/sync",
+        "//pkg/tcpip/checksum",
     ],
 )
 
@@ -59,6 +60,7 @@ go_test(
     library = ":bufferv2",
     deps = [
         "//pkg/state",
+        "//pkg/tcpip/checksum",
         "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )

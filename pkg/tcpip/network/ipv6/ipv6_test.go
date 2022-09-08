@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	iptestutil "gvisor.dev/gvisor/pkg/tcpip/network/internal/testutil"
@@ -139,7 +140,7 @@ func testReceiveUDP(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst 
 	sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, src, dst, header.UDPMinimumSize)
 
 	// UDP checksum
-	sum = header.Checksum(nil, sum)
+	sum = checksum.Checksum(nil, sum)
 	u.SetChecksum(^u.CalculateChecksum(sum))
 
 	payloadLength := hdr.UsedLength()
@@ -980,7 +981,7 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 			}
 
 			sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, addr1, dstAddr, uint16(udpLength))
-			sum = header.Checksum(udpPayload, sum)
+			sum = checksum.Checksum(udpPayload, sum)
 			u.SetChecksum(^u.CalculateChecksum(sum))
 
 			// Copy extension header bytes between the UDP message and the IPv6
@@ -1140,7 +1141,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 		})
 		copy(u.Payload(), payload)
 		sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, src, dst, uint16(udpLength))
-		sum = header.Checksum(payload, sum)
+		sum = checksum.Checksum(payload, sum)
 		u.SetChecksum(^u.CalculateChecksum(sum))
 		return hdr.View()
 	}
@@ -3694,7 +3695,7 @@ func TestIcmpRateLimit(t *testing.T) {
 
 				// Calculate the UDP checksum and set it.
 				sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, host2IPv6Addr.AddressWithPrefix.Address, host1IPv6Addr.AddressWithPrefix.Address, header.UDPMinimumSize)
-				sum = header.Checksum(nil, sum)
+				sum = checksum.Checksum(nil, sum)
 				udpH.SetChecksum(^udpH.CalculateChecksum(sum))
 
 				payloadLength := hdr.UsedLength()

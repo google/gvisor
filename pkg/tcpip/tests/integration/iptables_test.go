@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
@@ -388,7 +389,7 @@ func TestIPTableWritePackets(t *testing.T) {
 			Length:  header.UDPMinimumSize,
 		})
 		sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, srcAddr, dstAddr, header.UDPMinimumSize)
-		sum = header.Checksum(hdr, sum)
+		sum = checksum.Checksum(hdr, sum)
 		u.SetChecksum(^u.CalculateChecksum(sum))
 	}
 
@@ -2094,7 +2095,7 @@ func icmpv4Packet(srcAddr, dstAddr tcpip.Address, icmpType header.ICMPv4Type, id
 	icmp.SetType(icmpType)
 	icmp.SetIdent(ident)
 	icmp.SetChecksum(0)
-	icmp.SetChecksum(^header.Checksum(icmp, 0))
+	icmp.SetChecksum(^checksum.Checksum(icmp, 0))
 	encodeIPv4Header(
 		hdr.Prepend(header.IPv4MinimumSize),
 		hdr.UsedLength(),

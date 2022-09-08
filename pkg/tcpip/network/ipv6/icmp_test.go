@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
@@ -367,7 +368,7 @@ func TestICMPCounts(t *testing.T) {
 			Header:      icmp[:typ.size],
 			Src:         lladdr0,
 			Dst:         lladdr1,
-			PayloadCsum: header.Checksum(typ.extraData, 0 /* initial */),
+			PayloadCsum: checksum.Checksum(typ.extraData, 0 /* initial */),
 			PayloadLen:  len(typ.extraData),
 		}))
 		handleICMPInIPv6(ep, lladdr1, lladdr0, icmp, typ.hopLimit, typ.includeRouterAlert)
@@ -1158,7 +1159,7 @@ func TestICMPChecksumValidationWithPayloadMultipleViews(t *testing.T) {
 				)
 			}
 
-			handleIPv6Payload := func(typ header.ICMPv6Type, size, payloadSize int, payloadFn func([]byte), checksum bool) {
+			handleIPv6Payload := func(typ header.ICMPv6Type, size, payloadSize int, payloadFn func([]byte), xsum bool) {
 				hdr := prependable.New(header.IPv6MinimumSize + size)
 				icmpHdr := header.ICMPv6(hdr.Prepend(size))
 				icmpHdr.SetType(typ)
@@ -1166,12 +1167,12 @@ func TestICMPChecksumValidationWithPayloadMultipleViews(t *testing.T) {
 				payload := make([]byte, payloadSize)
 				payloadFn(payload)
 
-				if checksum {
+				if xsum {
 					icmpHdr.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
 						Header:      icmpHdr,
 						Src:         lladdr1,
 						Dst:         lladdr0,
-						PayloadCsum: header.Checksum(payload, 0 /* initial */),
+						PayloadCsum: checksum.Checksum(payload, 0 /* initial */),
 						PayloadLen:  len(payload),
 					}))
 				}
@@ -1405,7 +1406,7 @@ func TestPacketQueing(t *testing.T) {
 					Length:  header.UDPMinimumSize,
 				})
 				sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, host2IPv6Addr.AddressWithPrefix.Address, host1IPv6Addr.AddressWithPrefix.Address, header.UDPMinimumSize)
-				sum = header.Checksum(nil, sum)
+				sum = checksum.Checksum(nil, sum)
 				u.SetChecksum(^u.CalculateChecksum(sum))
 				payloadLength := hdr.UsedLength()
 				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))

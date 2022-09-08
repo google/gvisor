@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
@@ -381,7 +382,7 @@ func TestSourceAddressValidation(t *testing.T) {
 		pkt.SetType(header.ICMPv4Echo)
 		pkt.SetCode(0)
 		pkt.SetChecksum(0)
-		pkt.SetChecksum(^header.Checksum(pkt, 0))
+		pkt.SetChecksum(^checksum.Checksum(pkt, 0))
 		ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
 		ip.Encode(&header.IPv4Fields{
 			TotalLength: uint16(totalLen),
@@ -916,8 +917,8 @@ func TestIPv4ReceiveControl(t *testing.T) {
 			}
 
 			icmp.SetChecksum(0)
-			checksum := ^header.Checksum(icmp, 0 /* initial */)
-			icmp.SetChecksum(checksum)
+			xsum := ^checksum.Checksum(icmp, 0 /* initial */)
+			icmp.SetChecksum(xsum)
 
 			// Give packet to IPv4 endpoint, dispatcher will validate that
 			// it's ok.

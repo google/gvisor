@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 )
 
 // IGMP represents an IGMP header stored in a byte array.
@@ -169,7 +170,7 @@ func IGMPCalculateChecksum(h IGMP) uint16 {
 	// the checksum and replace it afterwards.
 	existingXsum := h.Checksum()
 	h.SetChecksum(0)
-	xsum := ^Checksum(h, 0)
+	xsum := ^checksum.Checksum(h, 0)
 	h.SetChecksum(existingXsum)
 	return xsum
 }

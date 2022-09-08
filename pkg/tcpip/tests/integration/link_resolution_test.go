@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
@@ -969,7 +970,7 @@ func TestWritePacketsLinkResolution(t *testing.T) {
 					Length:  length,
 				})
 				xsum := r.PseudoHeaderChecksum(udp.ProtocolNumber, length)
-				xsum = header.ChecksumCombine(xsum, pkt.Data().AsRange().Checksum())
+				xsum = checksum.Combine(xsum, pkt.Data().Checksum())
 				udpHdr.SetChecksum(^udpHdr.CalculateChecksum(xsum))
 
 				if err := r.WritePacket(params, pkt); err != nil {

@@ -300,7 +300,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 	dstAddr := iph.DestinationAddress()
 
 	// Validate ICMPv6 checksum before processing the packet.
-	payload := pkt.Data().AsRange()
+	payload := pkt.Data()
 	if got, want := h.Checksum(), header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
 		Header:      h,
 		Src:         srcAddr,
@@ -682,13 +682,13 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 		replyPkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
 		copy(icmp, h)
 		icmp.SetType(header.ICMPv6EchoReply)
-		dataRange := replyPkt.Data().AsRange()
+		replyData := replyPkt.Data()
 		icmp.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
 			Header:      icmp,
 			Src:         r.LocalAddress(),
 			Dst:         r.RemoteAddress(),
-			PayloadCsum: dataRange.Checksum(),
-			PayloadLen:  dataRange.Size(),
+			PayloadCsum: replyData.Checksum(),
+			PayloadLen:  replyData.Size(),
 		}))
 		replyTClass, _ := iph.TOS()
 		if err := r.WritePacket(stack.NetworkHeaderParams{
@@ -1183,13 +1183,13 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, deliv
 	icmpHdr.SetCode(icmpCode)
 	icmpHdr.SetTypeSpecific(typeSpecific)
 
-	dataRange := newPkt.Data().AsRange()
+	pktData := newPkt.Data()
 	icmpHdr.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
 		Header:      icmpHdr,
 		Src:         route.LocalAddress(),
 		Dst:         route.RemoteAddress(),
-		PayloadCsum: dataRange.Checksum(),
-		PayloadLen:  dataRange.Size(),
+		PayloadCsum: pktData.Checksum(),
+		PayloadLen:  pktData.Size(),
 	}))
 	if err := route.WritePacket(
 		stack.NetworkHeaderParams{

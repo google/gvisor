@@ -219,7 +219,7 @@ func (igmp *igmpState) handleIGMP(pkt *stack.PacketBuffer, hasRouterAlertOption 
 	//   same set of octets, including the checksum field. If the result
 	//   is all 1 bits (-0 in 1's complement arithmetic), the check
 	//   succeeds.
-	if pkt.Data().AsRange().Checksum() != 0xFFFF {
+	if pkt.Data().Checksum() != 0xFFFF {
 		received.checksumErrors.Increment()
 		return
 	}

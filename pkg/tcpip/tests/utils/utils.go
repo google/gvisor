@@ -20,6 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/ethernet"
@@ -362,7 +363,7 @@ func ICMPv4Echo(src, dst tcpip.Address, ttl uint8, ty header.ICMPv4Type) []byte 
 	pkt.SetType(ty)
 	pkt.SetCode(header.ICMPv4UnusedCode)
 	pkt.SetChecksum(0)
-	pkt.SetChecksum(^header.Checksum(pkt, 0))
+	pkt.SetChecksum(^checksum.Checksum(pkt, 0))
 	ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
 	ip.Encode(&header.IPv4Fields{
 		TotalLength: uint16(totalLen),

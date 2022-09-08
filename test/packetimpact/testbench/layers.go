@@ -26,6 +26,7 @@ import (
 	"go.uber.org/multierr"
 	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -882,7 +883,7 @@ func (l *ICMPv6) ToBytes() ([]byte, error) {
 					Header:      h[:header.ICMPv6PayloadOffset],
 					Src:         *ipv6.SrcAddr,
 					Dst:         *ipv6.DstAddr,
-					PayloadCsum: header.Checksum(l.Payload, 0 /* initial */),
+					PayloadCsum: checksum.Checksum(l.Payload, 0 /* initial */),
 					PayloadLen:  len(l.Payload),
 				}))
 				break
@@ -998,7 +999,7 @@ func (l *ICMPv4) ToBytes() ([]byte, error) {
 	if l.Checksum != nil {
 		h.SetChecksum(*l.Checksum)
 	} else {
-		h.SetChecksum(^header.Checksum(h, 0))
+		h.SetChecksum(^checksum.Checksum(h, 0))
 	}
 
 	return h, nil
@@ -1144,7 +1145,7 @@ func layerChecksum(l Layer, protoNumber tcpip.TransportProtocolNumber) (uint16, 
 	if err != nil {
 		return 0, err
 	}
-	xsum = header.ChecksumBuffer(payloadBytes, xsum)
+	xsum = checksum.Checksum(payloadBytes.Flatten(), xsum)
 	return xsum, nil
 }
 

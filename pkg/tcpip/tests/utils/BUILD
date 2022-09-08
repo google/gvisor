@@ -10,6 +10,7 @@ go_library(
     deps = [
         "//pkg/bufferv2",
         "//pkg/tcpip",
+        "//pkg/tcpip/checksum",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/channel",
         "//pkg/tcpip/link/ethernet",
