@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
@@ -424,8 +425,8 @@ func (c *Context) SendICMPPacket(typ header.ICMPv4Type, code header.ICMPv4Code, 
 	copy(icmp[icmpv4VariableHeaderOffset:], p1.AsSlice())
 	copy(icmp[header.ICMPv4PayloadOffset:], p2.AsSlice())
 	icmp.SetChecksum(0)
-	checksum := ^header.Checksum(icmp, 0 /* initial */)
-	icmp.SetChecksum(checksum)
+	xsum := ^checksum.Checksum(icmp, 0 /* initial */)
+	icmp.SetChecksum(xsum)
 
 	// Inject packet.
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -475,7 +476,7 @@ func (c *Context) BuildSegmentWithAddrs(payload []byte, h *Headers, src, dst tcp
 	xsum := header.PseudoHeaderChecksum(tcp.ProtocolNumber, src, dst, uint16(len(t)))
 
 	// Calculate the TCP checksum and set it.
-	xsum = header.Checksum(payload, xsum)
+	xsum = checksum.Checksum(payload, xsum)
 	t.SetChecksum(^t.CalculateChecksum(xsum))
 
 	// Inject packet.
@@ -679,7 +680,7 @@ func (c *Context) SendV6PacketWithAddrs(payload []byte, h *Headers, src, dst tcp
 	xsum := header.PseudoHeaderChecksum(tcp.ProtocolNumber, src, dst, uint16(len(t)))
 
 	// Calculate the TCP checksum and set it.
-	xsum = header.Checksum(payload, xsum)
+	xsum = checksum.Checksum(payload, xsum)
 	t.SetChecksum(^t.CalculateChecksum(xsum))
 
 	// Inject packet.

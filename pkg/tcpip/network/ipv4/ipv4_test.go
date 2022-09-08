@@ -31,6 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
@@ -268,7 +269,7 @@ func newICMPEchoPacket(t *testing.T, srcAddr, dstAddr tcpip.Address, ttl uint8, 
 	icmpH.SetType(header.ICMPv4Echo)
 	icmpH.SetCode(header.ICMPv4UnusedCode)
 	icmpH.SetChecksum(0)
-	icmpH.SetChecksum(^header.Checksum(icmpH, 0))
+	icmpH.SetChecksum(^checksum.Checksum(icmpH, 0))
 	ip := header.IPv4(hdr.Prepend(ipHeaderLength))
 	ip.Encode(&header.IPv4Fields{
 		TotalLength: uint16(totalLength),
@@ -1778,7 +1779,7 @@ func TestIPv4Sanity(t *testing.T) {
 			icmpH.SetType(header.ICMPv4Echo)
 			icmpH.SetCode(header.ICMPv4UnusedCode)
 			icmpH.SetChecksum(0)
-			icmpH.SetChecksum(^header.Checksum(icmpH, 0))
+			icmpH.SetChecksum(^checksum.Checksum(icmpH, 0))
 			ip := header.IPv4(hdr.Prepend(ipHeaderLength))
 			if test.maxTotalLength < totalLen {
 				totalLen = test.maxTotalLength
@@ -2842,7 +2843,7 @@ func TestReceiveFragments(t *testing.T) {
 		})
 		copy(u.Payload(), payload)
 		sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, src, dst, uint16(udpLength))
-		sum = header.Checksum(payload, sum)
+		sum = checksum.Checksum(payload, sum)
 		u.SetChecksum(^u.CalculateChecksum(sum))
 		return hdr.View()
 	}
@@ -3553,7 +3554,7 @@ func TestPacketQueuing(t *testing.T) {
 					Length:  header.UDPMinimumSize,
 				})
 				sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, host2IPv4Addr.AddressWithPrefix.Address, host1IPv4Addr.AddressWithPrefix.Address, header.UDPMinimumSize)
-				sum = header.Checksum(nil, sum)
+				sum = checksum.Checksum(nil, sum)
 				u.SetChecksum(^u.CalculateChecksum(sum))
 				ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
 				ip.Encode(&header.IPv4Fields{
@@ -3602,7 +3603,7 @@ func TestPacketQueuing(t *testing.T) {
 				pkt.SetType(header.ICMPv4Echo)
 				pkt.SetCode(0)
 				pkt.SetChecksum(0)
-				pkt.SetChecksum(^header.Checksum(pkt, 0))
+				pkt.SetChecksum(^checksum.Checksum(pkt, 0))
 				ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
 				ip.Encode(&header.IPv4Fields{
 					TotalLength: uint16(totalLen),
@@ -3905,7 +3906,7 @@ func TestIcmpRateLimit(t *testing.T) {
 				icmpH.SetType(header.ICMPv4Echo)
 				icmpH.SetCode(header.ICMPv4UnusedCode)
 				icmpH.SetChecksum(0)
-				icmpH.SetChecksum(^header.Checksum(icmpH, 0))
+				icmpH.SetChecksum(^checksum.Checksum(icmpH, 0))
 				ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
 				ip.Encode(&header.IPv4Fields{
 					TotalLength: uint16(totalLength),

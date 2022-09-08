@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
@@ -2232,7 +2233,7 @@ func TestChecksumWithZeroValueOnesComplementSum(t *testing.T) {
 		// Make sure the all ones checksum is valid.
 		hdr := header.IPv6(v.AsSlice())
 		udp := header.UDP(hdr.Payload())
-		if src, dst, payloadXsum := hdr.SourceAddress(), hdr.DestinationAddress(), header.Checksum(udp.Payload(), 0); !udp.IsChecksumValid(src, dst, payloadXsum) {
+		if src, dst, payloadXsum := hdr.SourceAddress(), hdr.DestinationAddress(), checksum.Checksum(udp.Payload(), 0); !udp.IsChecksumValid(src, dst, payloadXsum) {
 			t.Errorf("got udp.IsChecksumValid(%s, %s, %d) = false, want = true", src, dst, payloadXsum)
 		}
 	}

@@ -78,6 +78,7 @@ go_library(
         "//pkg/sleep",
         "//pkg/sync",
         "//pkg/tcpip",
+        "//pkg/tcpip/checksum",
         "//pkg/tcpip/hash/jenkins",
         "//pkg/tcpip/header",
         "//pkg/tcpip/header/parse",

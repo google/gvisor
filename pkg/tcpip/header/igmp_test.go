@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 )
@@ -94,11 +95,11 @@ func TestIGMPChecksum(t *testing.T) {
 	// to avoid checksumming the checksum.
 	initialChecksum := igmpHeader.Checksum()
 	igmpHeader.SetChecksum(0)
-	checksum := ^header.Checksum(b, 0)
+	xsum := ^checksum.Checksum(b, 0)
 	igmpHeader.SetChecksum(initialChecksum)
 
-	if got := header.IGMPCalculateChecksum(igmpHeader); got != checksum {
-		t.Errorf("got IGMPCalculateChecksum = %x, want %x", got, checksum)
+	if got := header.IGMPCalculateChecksum(igmpHeader); got != xsum {
+		t.Errorf("got IGMPCalculateChecksum = %x, want %x", got, xsum)
 	}
 }
 

@@ -30,6 +30,7 @@ go_library(
         "//pkg/sleep",
         "//pkg/sync",
         "//pkg/tcpip",
+        "//pkg/tcpip/checksum",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
         "//pkg/tcpip/transport",

@@ -20,6 +20,8 @@ package bufferv2
 import (
 	"fmt"
 	"io"
+
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 )
 
 // Buffer is a non-linear buffer.
@@ -441,6 +443,24 @@ func (b *Buffer) SubApply(offset, length int, fn func(*View)) {
 		length -= d.Size()
 		d.Release()
 	}
+}
+
+// Checksum calculates a checksum over the buffer's payload starting at offset.
+func (b *Buffer) Checksum(offset int) uint16 {
+	if offset >= int(b.size) {
+		return 0
+	}
+	var v *View
+	for v = b.data.Front(); v != nil && offset >= v.Size(); v = v.Next() {
+		offset -= v.Size()
+	}
+
+	var cs checksum.Checksumer
+	cs.Add(v.AsSlice()[offset:])
+	for v = v.Next(); v != nil; v = v.Next() {
+		cs.Add(v.AsSlice())
+	}
+	return cs.Checksum()
 }
 
 // Merge merges the provided Buffer with this one.

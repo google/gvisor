@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/ports"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -425,7 +426,7 @@ func send4(s *stack.Stack, ctx *network.WriteContext, ident uint16, data *buffer
 	}
 
 	icmpv4.SetChecksum(0)
-	icmpv4.SetChecksum(^header.Checksum(icmpv4, header.Checksum(data.AsSlice(), 0)))
+	icmpv4.SetChecksum(^checksum.Checksum(icmpv4, checksum.Checksum(data.AsSlice(), 0)))
 	pkt.Data().AppendView(data.Clone())
 
 	// Because this icmp endpoint is implemented in the transport layer, we can
@@ -465,13 +466,13 @@ func send6(s *stack.Stack, ctx *network.WriteContext, ident uint16, data *buffer
 	}
 
 	pkt.Data().AppendView(data.Clone())
-	dataRange := pkt.Data().AsRange()
+	pktData := pkt.Data()
 	icmpv6.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
 		Header:      icmpv6,
 		Src:         src,
 		Dst:         dst,
-		PayloadCsum: dataRange.Checksum(),
-		PayloadLen:  dataRange.Size(),
+		PayloadCsum: pktData.Checksum(),
+		PayloadLen:  pktData.Size(),
 	}))
 
 	// Because this icmp endpoint is implemented in the transport layer, we can

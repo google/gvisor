@@ -25,6 +25,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 )
@@ -506,7 +507,7 @@ func TCP(checkers ...TransportChecker) NetworkChecker {
 
 		tcp := header.TCP(last.Payload())
 		payload := tcp.Payload()
-		payloadChecksum := header.Checksum(payload, 0)
+		payloadChecksum := checksum.Checksum(payload, 0)
 		if !tcp.IsChecksumValid(first.SourceAddress(), first.DestinationAddress(), payloadChecksum, uint16(len(payload))) {
 			t.Errorf("Bad checksum, got = %d", tcp.Checksum())
 		}
@@ -1042,7 +1043,7 @@ func ICMPv4Checksum() TransportChecker {
 		}
 		heldChecksum := icmpv4.Checksum()
 		icmpv4.SetChecksum(0)
-		newChecksum := ^header.Checksum(icmpv4, 0)
+		newChecksum := ^checksum.Checksum(icmpv4, 0)
 		icmpv4.SetChecksum(heldChecksum)
 		if heldChecksum != newChecksum {
 			t.Errorf("unexpected ICMP checksum, got = %d, want = %d", heldChecksum, newChecksum)

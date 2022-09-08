@@ -97,7 +97,7 @@ func newIncomingSegment(id stack.TransportEndpointID, clock tcpip.Clock, pkt *st
 	netHdr := pkt.Network()
 	csum, csumValid, ok := header.TCPValid(
 		hdr,
-		func() uint16 { return pkt.Data().AsRange().Checksum() },
+		func() uint16 { return pkt.Data().Checksum() },
 		uint16(pkt.Data().Size()),
 		netHdr.SourceAddress(),
 		netHdr.DestinationAddress(),

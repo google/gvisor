@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
@@ -187,7 +188,7 @@ func rxIPv4UDP(e *channel.Endpoint, src, dst tcpip.Address, data []byte) {
 	})
 	copy(u.Payload(), data)
 	sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, src, dst, uint16(payloadLen))
-	sum = header.Checksum(data, sum)
+	sum = checksum.Checksum(data, sum)
 	u.SetChecksum(^u.CalculateChecksum(sum))
 
 	ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
@@ -216,7 +217,7 @@ func rxIPv6UDP(e *channel.Endpoint, src, dst tcpip.Address, data []byte) {
 	})
 	copy(u.Payload(), data)
 	sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, src, dst, uint16(payloadLen))
-	sum = header.Checksum(data, sum)
+	sum = checksum.Checksum(data, sum)
 	u.SetChecksum(^u.CalculateChecksum(sum))
 
 	ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))

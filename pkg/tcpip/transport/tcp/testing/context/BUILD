@@ -13,6 +13,7 @@ go_library(
         "//pkg/bufferv2",
         "//pkg/tcpip",
         "//pkg/tcpip/checker",
+        "//pkg/tcpip/checksum",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/channel",
         "//pkg/tcpip/link/sniffer",

@@ -651,6 +651,11 @@ func (d PacketData) AsRange() Range {
 	}
 }
 
+// Checksum returns a checksum over the data payload of the packet.
+func (d PacketData) Checksum() uint16 {
+	return d.pk.buf.Checksum(d.pk.dataOffset())
+}
+
 // Range represents a contiguous subportion of a PacketBuffer.
 type Range struct {
 	pk     *PacketBuffer
@@ -711,15 +716,6 @@ func (r Range) ToView() *bufferv2.View {
 		newV.Write(v.AsSlice())
 	})
 	return newV
-}
-
-// Checksum calculates the RFC 1071 checksum for the underlying bytes of r.
-func (r Range) Checksum() uint16 {
-	var c header.Checksumer
-	r.iterate(func(v *bufferv2.View) {
-		c.Add(v.AsSlice())
-	})
-	return c.Checksum()
 }
 
 // iterate calls fn for each piece in r. fn is always called with a non-empty

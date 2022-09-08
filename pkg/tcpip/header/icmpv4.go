@@ -18,6 +18,7 @@ import (
 	"encoding/binary"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 )
 
 // ICMPv4 represents an ICMPv4 header stored in a byte array.
@@ -142,8 +143,8 @@ func (b ICMPv4) Checksum() uint16 {
 }
 
 // SetChecksum sets the ICMP checksum field.
-func (b ICMPv4) SetChecksum(checksum uint16) {
-	PutChecksum(b[icmpv4ChecksumOffset:], checksum)
+func (b ICMPv4) SetChecksum(cs uint16) {
+	checksum.Put(b[icmpv4ChecksumOffset:], cs)
 }
 
 // SourcePort implements Transport.SourcePort.
@@ -212,8 +213,8 @@ func ICMPv4Checksum(h ICMPv4, payloadCsum uint16) uint16 {
 	xsum := payloadCsum
 
 	// h[2:4] is the checksum itself, skip it to avoid checksumming the checksum.
-	xsum = Checksum(h[:2], xsum)
-	xsum = Checksum(h[4:], xsum)
+	xsum = checksum.Checksum(h[:2], xsum)
+	xsum = checksum.Checksum(h[4:], xsum)
 
 	return ^xsum
 }

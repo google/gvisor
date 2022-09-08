@@ -22,6 +22,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/hash/jenkins"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
@@ -838,7 +839,7 @@ func buildTCPHdr(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso stac
 		// header and data and get the right sum of the TCP packet.
 		tcp.SetChecksum(xsum)
 	} else if r.RequiresTXTransportChecksum() {
-		xsum = header.ChecksumCombine(xsum, pkt.Data().AsRange().Checksum())
+		xsum = checksum.Combine(xsum, pkt.Data().Checksum())
 		tcp.SetChecksum(^tcp.CalculateChecksum(xsum))
 	}
 }
