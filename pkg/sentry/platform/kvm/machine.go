@@ -380,13 +380,13 @@ func (m *machine) mapPhysical(physical, length uintptr, phyRegions []physicalReg
 		_, physicalStart, length, pr := calculateBluepillFault(physical, phyRegions)
 		if pr == nil {
 			// Should never happen.
-			panic("mapPhysical on unknown physical address")
+			throw("mapPhysical on unknown physical address")
 		}
 
 		// Is this already mapped? Check the usedSlots.
 		if !m.hasSlot(physicalStart) {
 			if _, ok := handleBluepillFault(m, physical, phyRegions); !ok {
-				panic("handleBluepillFault failed")
+				throw("handleBluepillFault failed")
 			}
 		}
 
