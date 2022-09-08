@@ -19,6 +19,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/header/parse"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -183,7 +184,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 	}
 
 	// Only do in-stack processing if the checksum is correct.
-	if header.Checksum(h, pkt.Data().AsRange().Checksum()) != 0xffff {
+	if checksum.Checksum(h, pkt.Data().Checksum()) != 0xffff {
 		received.invalid.Increment()
 		// It's possible that a raw socket expects to receive this regardless
 		// of checksum errors. If it's an echo request we know it's safe because
@@ -323,7 +324,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 		replyICMPHdr := header.ICMPv4(replyData.AsSlice())
 		replyICMPHdr.SetType(header.ICMPv4EchoReply)
 		replyICMPHdr.SetChecksum(0)
-		replyICMPHdr.SetChecksum(^header.Checksum(replyData.AsSlice(), 0))
+		replyICMPHdr.SetChecksum(^checksum.Checksum(replyData.AsSlice(), 0))
 
 		replyBuf := bufferv2.MakeWithView(replyIPHdrView)
 		replyBuf.Append(replyData.Clone())
@@ -665,7 +666,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, deliv
 	icmpHdr.SetCode(icmpCode)
 	icmpHdr.SetType(icmpType)
 	icmpHdr.SetPointer(pointer)
-	icmpHdr.SetChecksum(header.ICMPv4Checksum(icmpHdr, icmpPkt.Data().AsRange().Checksum()))
+	icmpHdr.SetChecksum(header.ICMPv4Checksum(icmpHdr, icmpPkt.Data().Checksum()))
 
 	if err := route.WritePacket(
 		stack.NetworkHeaderParams{

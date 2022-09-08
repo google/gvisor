@@ -33,6 +33,7 @@ import (
 	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport"
@@ -358,15 +359,15 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 
 	if packetInfo := ctx.PacketInfo(); packetInfo.NetProto == header.IPv6ProtocolNumber && ipv6ChecksumOffset >= 0 {
 		// Make sure we can fit the checksum.
-		if payload.Size() < int64(ipv6ChecksumOffset+header.ChecksumSize) {
+		if payload.Size() < int64(ipv6ChecksumOffset+checksum.Size) {
 			return 0, &tcpip.ErrInvalidOptionValue{}
 		}
 
 		payloadView, _ := payload.PullUp(ipv6ChecksumOffset, int(payload.Size())-ipv6ChecksumOffset)
 		xsum := header.PseudoHeaderChecksum(e.transProto, packetInfo.LocalAddress, packetInfo.RemoteAddress, uint16(payload.Size()))
-		header.PutChecksum(payloadView.AsSlice(), 0)
-		xsum = header.ChecksumBuffer(payload, xsum)
-		header.PutChecksum(payloadView.AsSlice(), ^xsum)
+		checksum.Put(payloadView.AsSlice(), 0)
+		xsum = checksum.Combine(payload.Checksum(0), xsum)
+		checksum.Put(payloadView.AsSlice(), ^xsum)
 	}
 
 	pkt := ctx.TryNewPacketBuffer(int(ctx.PacketInfo().MaxHeaderLength), payload.Clone())
@@ -516,7 +517,7 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 		}
 
 		// Make sure the offset is aligned properly if checksum is requested.
-		if v > 0 && v%header.ChecksumSize != 0 {
+		if v > 0 && v%checksum.Size != 0 {
 			return &tcpip.ErrInvalidOptionValue{}
 		}
 
@@ -701,13 +702,13 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 
 			if checksumOffset := e.ipv6ChecksumOffset; checksumOffset >= 0 {
 				bufSize := int(combinedBuf.Size())
-				if bufSize < checksumOffset+header.ChecksumSize {
+				if bufSize < checksumOffset+checksum.Size {
 					// Message too small to fit checksum.
 					return false
 				}
 
 				xsum := header.PseudoHeaderChecksum(e.transProto, srcAddr, dstAddr, uint16(bufSize))
-				xsum = header.ChecksumBuffer(combinedBuf, xsum)
+				xsum = checksum.Combine(combinedBuf.Checksum(0), xsum)
 				if xsum != 0xFFFF {
 					// Invalid checksum.
 					return false

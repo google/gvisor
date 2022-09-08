@@ -19,6 +19,7 @@ import (
 
 	"github.com/google/btree"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 )
 
@@ -300,8 +301,8 @@ func (b TCP) SetDestinationPort(port uint16) {
 }
 
 // SetChecksum sets the checksum field of the TCP header.
-func (b TCP) SetChecksum(checksum uint16) {
-	PutChecksum(b[TCPChecksumOffset:], checksum)
+func (b TCP) SetChecksum(xsum uint16) {
+	checksum.Put(b[TCPChecksumOffset:], xsum)
 }
 
 // SetDataOffset sets the data offset field of the TCP header. headerLen should
@@ -340,13 +341,13 @@ func (b TCP) SetUrgentPointer(urgentPointer uint16) {
 // and the checksum of the segment data.
 func (b TCP) CalculateChecksum(partialChecksum uint16) uint16 {
 	// Calculate the rest of the checksum.
-	return Checksum(b[:b.DataOffset()], partialChecksum)
+	return checksum.Checksum(b[:b.DataOffset()], partialChecksum)
 }
 
 // IsChecksumValid returns true iff the TCP header's checksum is valid.
 func (b TCP) IsChecksumValid(src, dst tcpip.Address, payloadChecksum, payloadLength uint16) bool {
 	xsum := PseudoHeaderChecksum(TCPProtocolNumber, src, dst, uint16(b.DataOffset())+payloadLength)
-	xsum = ChecksumCombine(xsum, payloadChecksum)
+	xsum = checksum.Combine(xsum, payloadChecksum)
 	return b.CalculateChecksum(xsum) == 0xffff
 }
 
@@ -389,17 +390,17 @@ func (b TCP) EncodePartial(partialChecksum, length uint16, seqnum, acknum uint32
 	tmp := make([]byte, 4)
 	binary.BigEndian.PutUint16(tmp, length)
 	binary.BigEndian.PutUint16(tmp[2:], uint16(flags))
-	checksum := Checksum(tmp, partialChecksum)
+	xsum := checksum.Checksum(tmp, partialChecksum)
 
 	// Encode the passed-in fields.
 	b.encodeSubset(seqnum, acknum, flags, rcvwnd)
 
 	// Add the contributions of the passed-in fields to the checksum.
-	checksum = Checksum(b[TCPSeqNumOffset:TCPSeqNumOffset+8], checksum)
-	checksum = Checksum(b[TCPWinSizeOffset:TCPWinSizeOffset+2], checksum)
+	xsum = checksum.Checksum(b[TCPSeqNumOffset:TCPSeqNumOffset+8], xsum)
+	xsum = checksum.Checksum(b[TCPWinSizeOffset:TCPWinSizeOffset+2], xsum)
 
 	// Encode the checksum.
-	b.SetChecksum(^checksum)
+	b.SetChecksum(^xsum)
 }
 
 // SetSourcePortWithChecksumUpdate implements ChecksummableTransport.
