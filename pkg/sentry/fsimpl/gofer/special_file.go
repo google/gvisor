@@ -341,6 +341,16 @@ func (fd *specialFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 	rw := getHandleReadWriter(ctx, &fd.handle, offset)
 	n, err := src.CopyInTo(ctx, rw)
 	putHandleReadWriter(rw)
+	if n > 0 && fd.vfsfd.StatusFlags()&(linux.O_DSYNC|linux.O_SYNC) != 0 {
+		// Note that if syncing the remote file fails, then we can't guarantee that
+		// any data was actually written with the semantics of O_DSYNC or
+		// O_SYNC, so we return zero bytes written. Compare Linux's
+		// mm/filemap.c:generic_file_write_iter() =>
+		// include/linux/fs.h:generic_write_sync().
+		if err := fd.sync(ctx, false /* forFilesystemSync */); err != nil {
+			return 0, offset, err
+		}
+	}
 	if linuxerr.Equals(linuxerr.EAGAIN, err) {
 		err = linuxerr.ErrWouldBlock
 	}
