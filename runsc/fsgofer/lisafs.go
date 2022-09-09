@@ -690,12 +690,14 @@ func (fd *controlFDLisa) BindAt(name string, sockType uint32) (*lisafs.ControlFD
 		return nil, linux.Statx{}, nil, -1, err
 	}
 	if err := unix.Bind(sockFD, &unix.SockaddrUnix{Name: socketPath}); err != nil {
+		_ = unix.Close(sockFD)
 		return nil, linux.Statx{}, nil, -1, err
 	}
 
 	// Stat the socket.
 	sockStat, err := fstatTo(sockFD)
 	if err != nil {
+		_ = unix.Close(sockFD)
 		_ = unix.Unlink(socketPath)
 		return nil, linux.Statx{}, nil, -1, err
 	}
