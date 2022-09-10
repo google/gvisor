@@ -1044,6 +1044,25 @@ cc_binary(
     ],
 )
 
+cc_binary(
+    name = "iouring_test",
+    testonly = 1,
+    srcs = ["io_uring.cc"],
+    linkstatic = 1,
+    deps = [
+        "//test/util:capability_util",
+        "//test/util:file_descriptor",
+        "//test/util:fs_util",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/time",
+        gtest,
+        "//test/util:io_uring_util",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
 cc_library(
     name = "iptables_types",
     testonly = 1,
