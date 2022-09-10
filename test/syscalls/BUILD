@@ -247,6 +247,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:iouring_test",
+)
+
+syscall_test(
     test = "//test/syscalls/linux:iptables_test",
 )
 

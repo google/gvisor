@@ -35,6 +35,7 @@ go_library(
         "inotify.go",
         "ioctl.go",
         "ioctl_tun.go",
+        "iouring.go",
         "ip.go",
         "ipc.go",
         "limits.go",

@@ -60,6 +60,17 @@ cc_library(
 )
 
 cc_library(
+    name = "io_uring_util",
+    testonly = 1,
+    hdrs = ["io_uring_util.h"],
+    deps = [
+        ":file_descriptor",
+        ":posix_error",
+        ":save_util",
+    ],
+)
+
+cc_library(
     name = "proc_util",
     testonly = 1,
     srcs = ["proc_util.cc"],
