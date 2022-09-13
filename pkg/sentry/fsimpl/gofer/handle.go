@@ -129,28 +129,9 @@ func (h *handle) readToBlocksAt(ctx context.Context, dsts safemem.BlockSeq, offs
 		ctx.UninterruptibleSleepFinish(false)
 		return n, err
 	}
-	if dsts.NumBlocks() == 1 && !dsts.Head().NeedSafecopy() {
-		if h.fdLisa.Client() != nil {
-			return h.fdLisa.Read(ctx, dsts.Head().ToSlice(), offset)
-		}
-		return h.file.readAt(ctx, dsts.Head().ToSlice(), offset)
-	}
-	// Buffer the read since p9.File.ReadAt() takes []byte.
-	buf := make([]byte, dsts.NumBytes())
-	var n uint64
-	var err error
-	if h.fdLisa.Client() != nil {
-		n, err = h.fdLisa.Read(ctx, buf, offset)
-	} else {
-		n, err = h.file.readAt(ctx, buf, offset)
-	}
-	if n == 0 {
-		return 0, err
-	}
-	if cp, cperr := safemem.CopySeq(dsts, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf[:n]))); cperr != nil {
-		return cp, cperr
-	}
-	return n, err
+	rw := getHandleReadWriter(ctx, h, int64(offset))
+	defer putHandleReadWriter(rw)
+	return safemem.FromIOReader{rw}.ReadToBlocks(dsts)
 }
 
 func (h *handle) writeFromBlocksAt(ctx context.Context, srcs safemem.BlockSeq, offset uint64) (uint64, error) {
@@ -163,30 +144,9 @@ func (h *handle) writeFromBlocksAt(ctx context.Context, srcs safemem.BlockSeq, o
 		ctx.UninterruptibleSleepFinish(false)
 		return n, err
 	}
-	if srcs.NumBlocks() == 1 && !srcs.Head().NeedSafecopy() {
-		if h.fdLisa.Client() != nil {
-			return h.fdLisa.Write(ctx, srcs.Head().ToSlice(), offset)
-		}
-		return h.file.writeAt(ctx, srcs.Head().ToSlice(), offset)
-	}
-	// Buffer the write since p9.File.WriteAt() takes []byte.
-	buf := make([]byte, srcs.NumBytes())
-	cp, cperr := safemem.CopySeq(safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf)), srcs)
-	if cp == 0 {
-		return 0, cperr
-	}
-	var n uint64
-	var err error
-	if h.fdLisa.Client() != nil {
-		n, err = h.fdLisa.Write(ctx, buf[:cp], offset)
-	} else {
-		n, err = h.file.writeAt(ctx, buf[:cp], offset)
-	}
-	// err takes precedence over cperr.
-	if err != nil {
-		return n, err
-	}
-	return n, cperr
+	rw := getHandleReadWriter(ctx, h, int64(offset))
+	defer putHandleReadWriter(rw)
+	return safemem.FromIOWriter{rw}.WriteFromBlocks(srcs)
 }
 
 type handleReadWriter struct {
@@ -213,6 +173,36 @@ func putHandleReadWriter(rw *handleReadWriter) {
 	rw.ctx = nil
 	rw.h = nil
 	handleReadWriterPool.Put(rw)
+}
+
+// Read implements io.Reader.Read.
+func (rw *handleReadWriter) Read(dst []byte) (int, error) {
+	var (
+		n   uint64
+		err error
+	)
+	if rw.h.fdLisa.Client() != nil {
+		n, err = rw.h.fdLisa.Read(rw.ctx, dst, rw.off)
+	} else {
+		n, err = rw.h.file.readAt(rw.ctx, dst, rw.off)
+	}
+	rw.off += n
+	return int(n), err
+}
+
+// Write implements io.Writer.Write.
+func (rw *handleReadWriter) Write(src []byte) (int, error) {
+	var (
+		n   uint64
+		err error
+	)
+	if rw.h.fdLisa.Client() != nil {
+		n, err = rw.h.fdLisa.Write(rw.ctx, src, rw.off)
+	} else {
+		n, err = rw.h.file.writeAt(rw.ctx, src, rw.off)
+	}
+	rw.off += n
+	return int(n), err
 }
 
 // ReadToBlocks implements safemem.Reader.ReadToBlocks.
