@@ -5,7 +5,6 @@ go 1.17
 require (
 	github.com/BurntSushi/toml v0.3.1
 	github.com/bazelbuild/rules_go v0.30.0
-	github.com/bits-and-blooms/bitset v1.2.0
 	github.com/cenkalti/backoff v1.1.1-0.20190506075156-2146c9339422
 	github.com/containerd/cgroups v1.0.1
 	github.com/containerd/console v1.0.1

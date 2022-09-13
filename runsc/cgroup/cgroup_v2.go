@@ -20,18 +20,17 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"math"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/bits-and-blooms/bitset"
 	"github.com/cenkalti/backoff"
 	"github.com/coreos/go-systemd/v22/dbus"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -834,7 +833,8 @@ func parseUint(s string, base, bitSize int) (uint64, error) {
 // AllowedCPUs/AllowedMemoryNodes unit property value).
 // Copied from runc.
 func RangeToBits(str string) ([]byte, error) {
-	bits := &bitset.BitSet{}
+	bits := &big.Int{}
+
 	for _, r := range strings.Split(str, ",") {
 		// allow extra spaces around
 		r = strings.TrimSpace(r)
@@ -855,31 +855,22 @@ func RangeToBits(str string) ([]byte, error) {
 			if start > end {
 				return nil, errors.New("invalid range: " + r)
 			}
-			for i := uint(start); i <= uint(end); i++ {
-				bits.Set(i)
+			for i := start; i <= end; i++ {
+				bits.SetBit(bits, int(i), 1)
 			}
 		} else {
 			val, err := strconv.ParseUint(ranges[0], 10, 32)
 			if err != nil {
 				return nil, err
 			}
-			bits.Set(uint(val))
+			bits.SetBit(bits, int(val), 1)
 		}
 	}
 
-	val := bits.Bytes()
-	if len(val) == 0 {
+	ret := bits.Bytes()
+	if len(ret) == 0 {
 		// do not allow empty values
 		return nil, errors.New("empty value")
-	}
-	ret := make([]byte, len(val)*8)
-	for i := range val {
-		// bitset uses BigEndian internally
-		binary.BigEndian.PutUint64(ret[i*8:], val[len(val)-1-i])
-	}
-	// remove upper all-zero bytes
-	for ret[0] == 0 {
-		ret = ret[1:]
 	}
 	return ret, nil
 }
