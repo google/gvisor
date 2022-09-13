@@ -1896,10 +1896,3 @@ go_repository(
     sum = "h1:LhYJRs+L4fBtjZUfuSZIKGeVu0QRy8e5Xi7D17UxZ74=",
     version = "v1.2.0",
 )
-
-go_repository(
-    name = "com_github_bits_and_blooms_bitset",
-    importpath = "github.com/bits-and-blooms/bitset",
-    sum = "h1:M+/hrU9xlMp7t4TyTDQW97d3tRPVuKFC6zBEK16QnXY=",
-    version = "v1.2.1",
-)
