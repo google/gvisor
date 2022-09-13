@@ -48,3 +48,14 @@ benchmark_test(
         "//test/benchmarks/tools",
     ],
 )
+
+benchmark_test(
+    name = "syscallbench_test",
+    srcs = ["syscallbench_test.go"],
+    visibility = ["//:sandbox"],
+    deps = [
+        "//pkg/test/dockerutil",
+        "//test/benchmarks/harness",
+        "//test/benchmarks/tools",
+    ],
+)
