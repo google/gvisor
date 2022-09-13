@@ -14,6 +14,7 @@ go_library(
         "parser_util.go",
         "redis.go",
         "sysbench.go",
+        "syscallbench.go",
         "tools.go",
     ],
     visibility = ["//:sandbox"],
