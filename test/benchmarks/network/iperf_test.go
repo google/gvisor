@@ -41,6 +41,8 @@ func BenchmarkIperf(b *testing.B) {
 	ctx := context.Background()
 	for _, bm := range []struct {
 		name       string
+		length     int
+		parallel   int
 		clientFunc func(context.Context, testutil.Logger) *dockerutil.Container
 		serverFunc func(context.Context, testutil.Logger) *dockerutil.Container
 	}{
@@ -49,11 +51,85 @@ func BenchmarkIperf(b *testing.B) {
 		// server.
 		{
 			name:       "Upload",
+			length:     4,
+			parallel:   1,
+			clientFunc: clientMachine.GetContainer,
+			serverFunc: serverMachine.GetNativeContainer,
+		},
+		{
+			name:       "Upload",
+			length:     64,
+			parallel:   1,
+			clientFunc: clientMachine.GetContainer,
+			serverFunc: serverMachine.GetNativeContainer,
+		},
+		{
+			name:       "Upload",
+			length:     1024,
+			parallel:   1,
+			clientFunc: clientMachine.GetContainer,
+			serverFunc: serverMachine.GetNativeContainer,
+		},
+		{
+			name:       "Upload",
+			length:     4,
+			parallel:   16,
+			clientFunc: clientMachine.GetContainer,
+			serverFunc: serverMachine.GetNativeContainer,
+		},
+		{
+			name:       "Upload",
+			length:     64,
+			parallel:   16,
+			clientFunc: clientMachine.GetContainer,
+			serverFunc: serverMachine.GetNativeContainer,
+		},
+		{
+			name:       "Upload",
+			length:     1024,
+			parallel:   16,
 			clientFunc: clientMachine.GetContainer,
 			serverFunc: serverMachine.GetNativeContainer,
 		},
 		{
 			name:       "Download",
+			length:     4,
+			parallel:   1,
+			clientFunc: clientMachine.GetNativeContainer,
+			serverFunc: serverMachine.GetContainer,
+		},
+		{
+			name:       "Download",
+			length:     64,
+			parallel:   1,
+			clientFunc: clientMachine.GetNativeContainer,
+			serverFunc: serverMachine.GetContainer,
+		},
+		{
+			name:       "Download",
+			length:     1024,
+			parallel:   1,
+			clientFunc: clientMachine.GetNativeContainer,
+			serverFunc: serverMachine.GetContainer,
+		},
+		{
+			name:       "Download",
+			length:     4,
+			parallel:   16,
+			clientFunc: clientMachine.GetNativeContainer,
+			serverFunc: serverMachine.GetContainer,
+		},
+		{
+			name:       "Download",
+			length:     64,
+			parallel:   16,
+			clientFunc: clientMachine.GetNativeContainer,
+			serverFunc: serverMachine.GetContainer,
+		},
+		{
+			name:       "Download",
+			length:     1024,
+			parallel:   16,
 			clientFunc: clientMachine.GetNativeContainer,
 			serverFunc: serverMachine.GetContainer,
 		},
@@ -61,6 +137,12 @@ func BenchmarkIperf(b *testing.B) {
 		name, err := tools.ParametersToName(tools.Parameter{
 			Name:  "operation",
 			Value: bm.name,
+		}, tools.Parameter{
+			Name:  "length",
+			Value: fmt.Sprintf("%dK", bm.length),
+		}, tools.Parameter{
+			Name:  "parallel",
+			Value: fmt.Sprintf("%d", bm.parallel),
 		})
 		if err != nil {
 			b.Fatalf("Failed to parse parameters: %v", err)
@@ -87,7 +169,9 @@ func BenchmarkIperf(b *testing.B) {
 			}
 
 			iperf := tools.Iperf{
-				Num: b.N, // KB for the client to send.
+				Num:      b.N,       // KB for the client to send.
+				Length:   bm.length, // KB for length.
+				Parallel: bm.parallel,
 			}
 
 			// Run the client.
