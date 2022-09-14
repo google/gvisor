@@ -15,6 +15,7 @@ go_library(
         "redis.go",
         "sysbench.go",
         "syscallbench.go",
+        "hackbench.go",
         "tools.go",
     ],
     visibility = ["//:sandbox"],
