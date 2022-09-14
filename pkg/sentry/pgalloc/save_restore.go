@@ -98,7 +98,7 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w wire.Writer) error {
 		}
 		// Write out data.
 		var ioErr error
-		err := f.forEachMappingSlice(seg.Range(), func(s []byte) {
+		err := f.forEachMappingSlice(seg.Range(), false, func(s []byte) {
 			if ioErr != nil {
 				return
 			}
@@ -144,7 +144,7 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r wire.Reader) error {
 				return
 			}
 			if seg.Value().knownCommitted {
-				f.forEachMappingSlice(seg.Range(), func(s []byte) {})
+				f.forEachMappingSlice(seg.Range(), false, func(s []byte) {})
 			}
 		}
 	}()
@@ -173,7 +173,7 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r wire.Reader) error {
 		}
 		// Read data.
 		var ioErr error
-		err = f.forEachMappingSlice(seg.Range(), func(s []byte) {
+		err = f.forEachMappingSlice(seg.Range(), false, func(s []byte) {
 			if ioErr != nil {
 				return
 			}

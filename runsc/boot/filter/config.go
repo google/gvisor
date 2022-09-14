@@ -205,6 +205,12 @@ var allowedSyscalls = seccomp.SyscallRules{
 			seccomp.MatchAny{},
 			seccomp.MatchAny{},
 			seccomp.MatchAny{},
+			seccomp.EqualTo(unix.MAP_SHARED | unix.MAP_POPULATE),
+		},
+		{
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
 			seccomp.EqualTo(unix.MAP_PRIVATE),
 		},
 		{

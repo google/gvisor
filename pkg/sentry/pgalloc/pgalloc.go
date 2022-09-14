@@ -579,7 +579,7 @@ func (f *MemoryFile) AllocateAndFill(length uint64, kind usage.MemoryKind, r saf
 	if err != nil {
 		return memmap.FileRange{}, err
 	}
-	dsts, err := f.MapInternal(fr, hostarch.Write)
+	dsts, err := f.mapInternal(fr, hostarch.Write, kind == usage.Tmpfs)
 	if err != nil {
 		f.DecRef(fr)
 		return memmap.FileRange{}, err
@@ -628,7 +628,7 @@ func (f *MemoryFile) Decommit(fr memmap.FileRange) error {
 }
 
 func (f *MemoryFile) manuallyZero(fr memmap.FileRange) error {
-	return f.forEachMappingSlice(fr, func(bs []byte) {
+	return f.forEachMappingSlice(fr, false, func(bs []byte) {
 		for i := range bs {
 			bs[i] = 0
 		}
@@ -725,6 +725,10 @@ func (f *MemoryFile) DecRef(fr memmap.FileRange) {
 
 // MapInternal implements memmap.File.MapInternal.
 func (f *MemoryFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (safemem.BlockSeq, error) {
+	return f.mapInternal(fr, at, false)
+}
+
+func (f *MemoryFile) mapInternal(fr memmap.FileRange, at hostarch.AccessType, populate bool) (safemem.BlockSeq, error) {
 	if !fr.WellFormed() || fr.Length() == 0 {
 		panic(fmt.Sprintf("invalid range: %v", fr))
 	}
@@ -736,13 +740,13 @@ func (f *MemoryFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (s
 	if chunks == 1 {
 		// Avoid an unnecessary slice allocation.
 		var seq safemem.BlockSeq
-		err := f.forEachMappingSlice(fr, func(bs []byte) {
+		err := f.forEachMappingSlice(fr, populate, func(bs []byte) {
 			seq = safemem.BlockSeqOf(safemem.BlockFromSafeSlice(bs))
 		})
 		return seq, err
 	}
 	blocks := make([]safemem.Block, 0, chunks)
-	err := f.forEachMappingSlice(fr, func(bs []byte) {
+	err := f.forEachMappingSlice(fr, populate, func(bs []byte) {
 		blocks = append(blocks, safemem.BlockFromSafeSlice(bs))
 	})
 	return safemem.BlockSeqFromSlice(blocks), err
@@ -750,14 +754,16 @@ func (f *MemoryFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (s
 
 // forEachMappingSlice invokes fn on a sequence of byte slices that
 // collectively map all bytes in fr.
-func (f *MemoryFile) forEachMappingSlice(fr memmap.FileRange, fn func([]byte)) error {
+func (f *MemoryFile) forEachMappingSlice(fr memmap.FileRange, populate bool, fn func([]byte)) error {
 	mappings := f.mappings.Load().([]uintptr)
 	for chunkStart := fr.Start &^ chunkMask; chunkStart < fr.End; chunkStart += chunkSize {
 		chunk := int(chunkStart >> chunkShift)
 		m := atomic.LoadUintptr(&mappings[chunk])
 		if m == 0 {
 			var err error
-			mappings, m, err = f.getChunkMapping(chunk)
+			// Populate when the whole new chunk can be wrapped by file range,
+			// so that we will not populate unusable memory.
+			mappings, m, err = f.getChunkMapping(chunk, populate && (chunkStart+chunkSize < fr.End))
 			if err != nil {
 				return err
 			}
@@ -775,7 +781,12 @@ func (f *MemoryFile) forEachMappingSlice(fr memmap.FileRange, fn func([]byte)) e
 	return nil
 }
 
-func (f *MemoryFile) getChunkMapping(chunk int) ([]uintptr, uintptr, error) {
+func (f *MemoryFile) getChunkMapping(chunk int, populate bool) ([]uintptr, uintptr, error) {
+	flags := uintptr(unix.MAP_SHARED)
+	if populate {
+		flags |= uintptr(unix.MAP_POPULATE)
+	}
+
 	f.mappingsMu.Lock()
 	defer f.mappingsMu.Unlock()
 	// Another thread may have replaced f.mappings altogether due to file
@@ -790,7 +801,7 @@ func (f *MemoryFile) getChunkMapping(chunk int) ([]uintptr, uintptr, error) {
 		0,
 		chunkSize,
 		unix.PROT_READ|unix.PROT_WRITE,
-		unix.MAP_SHARED,
+		flags,
 		f.file.Fd(),
 		uintptr(chunk<<chunkShift))
 	if errno != 0 {
@@ -981,7 +992,7 @@ func (f *MemoryFile) updateUsageLocked(currentUsage uint64, checkCommitted func(
 		r := seg.Range()
 
 		var checkErr error
-		err := f.forEachMappingSlice(r,
+		err := f.forEachMappingSlice(r, false,
 			func(s []byte) {
 				if checkErr != nil {
 					return
