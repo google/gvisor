@@ -39,12 +39,22 @@ func BenchmarkFio(b *testing.B) {
 		},
 		{
 			Test:      "write",
+			BlockSize: 64,
+			IODepth:   4,
+		},
+		{
+			Test:      "write",
 			BlockSize: 1024,
 			IODepth:   4,
 		},
 		{
 			Test:      "read",
 			BlockSize: 4,
+			IODepth:   4,
+		},
+		{
+			Test:      "read",
+			BlockSize: 64,
 			IODepth:   4,
 		},
 		{
