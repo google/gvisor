@@ -72,7 +72,7 @@ message Open {
 }
 ```
 
-As you can see, come fields are in both raw and schemitized points, like `fd`
+As you can see, some fields are in both raw and schematized points, like `fd`
 which is also `arg1` in the raw syscall, but here it has a name and correct
 type. It also has fields like `pathname` that are not available in the raw
 syscall event. In addition, `fd_path` is an optional field that can take the
@@ -132,21 +132,21 @@ The remote sink serializes the trace point into protobuf and sends it to a
 separate process. For threat detection, external monitoring processes can
 receive connections from remote sinks and be sent a stream of trace points that
 are occurring in the system. This sink connects to a remote process via
-Unix-domain socket and expect the remote process to be listening for new
-connections. If you're interested about creating a monitoring process that
+Unix domain socket and expects the remote process to be listening for new
+connections. If you're interested in creating a monitoring process that
 communicates with the remote sink, [this document](sinks/remote/README.md) has
 more details.
 
-The remote sink has many properties that can be configured when its created
+The remote sink has many properties that can be configured when it's created
 (more on how to configure sinks below):
 
-*   endpoint (mandatory): Unix-domain socket address to connect.
-*   retries: number of attempts to write the trace point before dropping it in
+*   `endpoint` (mandatory): Unix domain socket address to connect.
+*   `retries`: number of attempts to write the trace point before dropping it in
     case the remote process is not responding. Note that a high number of
     retries can significantly delay application execution.
-*   backoff: initial backoff time after the first failed attempt. This value
-    doubles every failed attempts up to the max.
-*   backoff_max: max duration to wait between retries.
+*   `backoff`: initial backoff time after the first failed attempt. This value
+    doubles with every failed attempt, up to the max.
+*   `backoff_max`: max duration to wait between retries.
 
 ## Null
 
@@ -164,8 +164,8 @@ points to it.
 
 # Sessions
 
-Trace sessions scope a set of trace point with their corresponding configuration
-and a set of sinks that receives the points. Sessions can be created at sandbox
+Trace sessions scope a set of trace points with their corresponding configuration
+and a set of sinks that receive the points. Sessions can be created at sandbox
 initialization time or during runtime. Creating sessions at init time guarantees
 that no trace points are missed, which is important for threat detection. It is
 configured using the `--pod-init-config` flag (more on it below). To manage
@@ -192,7 +192,7 @@ SESSIONS (0)
 ## Config
 
 The event session can be defined using JSON for the `runsc trace create`
-command. The session definition has 3 mains parts:
+command. The session definition has 3 main parts:
 
 1.  `name`: name of the session being created. Only `Default` for now.
 1.  `points`: array of points being enabled in the session. Each point has:
@@ -306,7 +306,7 @@ $ sudo runsc --root /var/run/docker/runtime-runc/moby trace create --config sess
 Trace session "Default" created.
 ```
 
-In the terminal that you are running the monitoring process, you'll start seeing
+In the terminal where you are running the monitoring process, you'll start seeing
 messages like this:
 
 ```
@@ -331,11 +331,11 @@ the parent. The child continues and executes `execve(2)` to call `sleep` as can
 be seen from the `pathname` and `argv` fields. Note that at this moment, the PID
 is 110 (child) but the process name is still `bash` because it hasn't executed
 `sleep` yet. After `execve(2)` is called the process name changes to `sleep` as
-expected. Next, it shows the `nanosleep(2)` raw syscalls which has `sysno`=35
-(it's referred as `syscall/sysno/35` in the configuration file. One for enter
+expected. Next, it shows the `nanosleep(2)` raw syscalls, which have `sysno`=35
+(referred to as `syscall/sysno/35` in the configuration file), one for enter
 with the exit trace happening 5 seconds later.
 
-Let's list all trace session that are active in the sandbox:
+Let's list all trace sessions that are active in the sandbox:
 
 ```shell
 $ sudo runsc --root /var/run/docker/runtime-runc/moby trace list ${CID?}
