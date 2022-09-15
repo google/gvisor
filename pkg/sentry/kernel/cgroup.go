@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -42,6 +43,26 @@ const (
 	CgroupControllerMemory  = CgroupControllerType("memory")
 	CgroupControllerPIDs    = CgroupControllerType("pids")
 )
+
+// ParseCgroupController parses a string as a CgroupControllerType.
+func ParseCgroupController(val string) (CgroupControllerType, error) {
+	switch val {
+	case "cpu":
+		return CgroupControllerCPU, nil
+	case "cpuacct":
+		return CgroupControllerCPUAcct, nil
+	case "cpuset":
+		return CgroupControllerCPUSet, nil
+	case "job":
+		return CgroupControllerJob, nil
+	case "memory":
+		return CgroupControllerMemory, nil
+	case "pids":
+		return CgroupControllerPIDs, nil
+	default:
+		return "", fmt.Errorf("no such cgroup controller")
+	}
+}
 
 // CgroupResourceType represents a resource type tracked by a particular
 // controller.
@@ -69,9 +90,11 @@ type CgroupController interface {
 	// attached to. Returned value is valid for the lifetime of the controller.
 	HierarchyID() uint32
 
-	// RootCgroup returns the root cgroup for this controller. Returned value is
-	// valid for the lifetime of the controller.
-	RootCgroup() Cgroup
+	// EffectiveRootCgroup returns the effective root cgroup for this
+	// controller. This is either the actual root of the underlying cgroupfs
+	// filesystem, or the override root configured at sandbox startup. Returned
+	// value is valid for the lifetime of the controller.
+	EffectiveRootCgroup() Cgroup
 
 	// NumCgroups returns the number of cgroups managed by this controller.
 	// Returned value is a snapshot in time.
@@ -101,6 +124,18 @@ func (c *Cgroup) decRef() {
 // Path returns the absolute path of c, relative to its hierarchy root.
 func (c *Cgroup) Path() string {
 	return c.FSLocalPath()
+}
+
+// Walk returns the cgroup at p, starting from c.
+func (c *Cgroup) Walk(ctx context.Context, vfsObj *vfs.VirtualFilesystem, p fspath.Path) (Cgroup, error) {
+	d, err := c.Dentry.WalkDentryTree(ctx, vfsObj, p)
+	if err != nil {
+		return Cgroup{}, err
+	}
+	return Cgroup{
+		Dentry:     d,
+		CgroupImpl: d.Inode().(CgroupImpl),
+	}, nil
 }
 
 // CgroupMigrationContext represents an in-flight cgroup migration for
@@ -169,6 +204,14 @@ type CgroupImpl interface {
 	//
 	// See cgroupfs.controller.Charge.
 	Charge(t *Task, d *kernfs.Dentry, ctl CgroupControllerType, res CgroupResourceType, value int64) error
+
+	// ReadControlFromBackground allows a background context to read a cgroup's
+	// control values.
+	ReadControl(ctx context.Context, name string) (string, error)
+
+	// WriteControl allows a background context to write a cgroup's control
+	// values.
+	WriteControl(ctx context.Context, name string, val string) error
 }
 
 // hierarchy represents a cgroupfs filesystem instance, with a unique set of
@@ -210,6 +253,10 @@ type cgroupFS interface {
 	// filesystem creation. May only be called before the filesystem is visible
 	// to the vfs layer.
 	InitializeHierarchyID(hid uint32)
+
+	// RootCgroup returns the root cgroup of this instance. This returns the
+	// actual root, and ignores any overrides setting an effective root.
+	RootCgroup() Cgroup
 }
 
 // CgroupRegistry tracks the active set of cgroup controllers on the system.
@@ -316,6 +363,34 @@ func (r *CgroupRegistry) FindHierarchy(name string, ctypes []CgroupControllerTyp
 	return nil, nil
 }
 
+// FindCgroup locates a cgroup with the given parameters.
+//
+// A cgroup is considered a match even if it contains other controllers on the
+// same hierarchy.
+func (r *CgroupRegistry) FindCgroup(ctx context.Context, ctype CgroupControllerType, path string) (Cgroup, error) {
+	p := fspath.Parse(path)
+	if !p.Absolute {
+		return Cgroup{}, fmt.Errorf("path must be absolute")
+	}
+	k := KernelFromContext(ctx)
+	vfsfs, err := r.FindHierarchy("", []CgroupControllerType{ctype})
+	if err != nil {
+		return Cgroup{}, err
+	}
+	if vfsfs == nil {
+		return Cgroup{}, fmt.Errorf("controller not active")
+	}
+
+	rootCG := vfsfs.Impl().(cgroupFS).RootCgroup()
+
+	if !p.HasComponents() {
+		// Explicit root '/'.
+		return rootCG, nil
+	}
+
+	return rootCG.Walk(ctx, k.VFS(), p)
+}
+
 // Register registers the provided set of controllers with the registry as a new
 // hierarchy. If any controller is already registered, the function returns an
 // error without modifying the registry. Register sets the hierarchy ID for the
@@ -405,7 +480,7 @@ func (r *CgroupRegistry) computeInitialGroups(inherit map[Cgroup]struct{}) map[C
 	// ... and add the root cgroups of all the missing controllers.
 	for name, ctl := range r.controllers {
 		if _, ok := ctlSet[name]; !ok {
-			cg := ctl.RootCgroup()
+			cg := ctl.EffectiveRootCgroup()
 			// Multiple controllers may share the same hierarchy, so may have
 			// the same root cgroup. Grab a single ref per hierarchy root.
 			if _, ok := cgset[cg]; ok {

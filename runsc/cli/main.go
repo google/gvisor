@@ -95,6 +95,8 @@ func Main(version string) {
 	subcommands.Register(new(cmd.Statefile), debugGroup)
 	subcommands.Register(new(cmd.Symbolize), debugGroup)
 	subcommands.Register(new(cmd.Usage), debugGroup)
+	subcommands.Register(new(cmd.ReadControl), debugGroup)
+	subcommands.Register(new(cmd.WriteControl), debugGroup)
 
 	// Internal commands.
 	const internalGroup = "internal use only"

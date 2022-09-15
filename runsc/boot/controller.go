@@ -129,6 +129,12 @@ const (
 	UsageReduce  = "Usage.Reduce"
 )
 
+// Commands for interacting with cgroupfs within the sandbox.
+const (
+	CgroupsReadControlFiles  = "Cgroups.ReadControlFiles"
+	CgroupsWriteControlFiles = "Cgroups.WriteControlFiles"
+)
+
 // ControlSocketAddr generates an abstract unix socket name for the given ID.
 func ControlSocketAddr(id string) string {
 	return fmt.Sprintf("\x00runsc-sandbox.%s", id)
@@ -161,6 +167,7 @@ func newController(fd int, l *Loader) (*controller, error) {
 		srv: srv,
 	}
 	ctrl.srv.Register(ctrl.manager)
+	ctrl.srv.Register(&control.Cgroups{Kernel: l.k})
 	ctrl.srv.Register(&control.Lifecycle{Kernel: l.k})
 	ctrl.srv.Register(&control.Logging{})
 	ctrl.srv.Register(&control.Proc{Kernel: l.k})

@@ -605,6 +605,12 @@ func calculateAdvertisedMSS(userMSS uint16, r *stack.Route) uint16 {
 	return maxMSS
 }
 
+// isOwnedByUser() returns true if the endpoint lock is currently
+// held by a user(syscall) goroutine.
+func (e *endpoint) isOwnedByUser() bool {
+	return e.ownedByUser.Load() == 1
+}
+
 // LockUser tries to lock e.mu and if it fails it will check if the lock is held
 // by another syscall goroutine. If yes, then it will goto sleep waiting for the
 // lock to be released, if not then it will spin till it acquires the lock or
