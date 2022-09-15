@@ -326,9 +326,10 @@ func (p *processor) start(wg *sync.WaitGroup) {
 				default:
 					panic(fmt.Sprintf("unexpected tcp state in processor: %v", state))
 				}
-				// If there are more segments to process then
+				// If there are more segments to process and the
+				// endpoint lock is not held by user then
 				// requeue this endpoint for processing.
-				if !ep.segmentQueue.empty() {
+				if !ep.segmentQueue.empty() && !ep.isOwnedByUser() {
 					p.epQ.enqueue(ep)
 				}
 			}
@@ -443,7 +444,12 @@ func (d *dispatcher) queuePacket(stackEP stack.TransportEndpoint, id stack.Trans
 		return
 	}
 
-	d.selectProcessor(id).queueEndpoint(ep)
+	// Only wakeup the processor if endpoint lock is not held by a user
+	// goroutine as endpoint.UnlockUser will wake up the processor if the
+	// segment queue is not empty.
+	if !ep.isOwnedByUser() {
+		d.selectProcessor(id).queueEndpoint(ep)
+	}
 }
 
 // selectProcessor uses a hash of the transport endpoint ID to queue the
