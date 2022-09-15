@@ -49,5 +49,5 @@ func (c *jobController) Clone() controller {
 }
 
 func (c *jobController) AddControlFiles(ctx context.Context, creds *auth.Credentials, _ *cgroupInode, contents map[string]kernfs.Inode) {
-	contents["job.id"] = c.fs.newStubControllerFile(ctx, creds, &c.id)
+	contents["job.id"] = c.fs.newStubControllerFile(ctx, creds, &c.id, true)
 }

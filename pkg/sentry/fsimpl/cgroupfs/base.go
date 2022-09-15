@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -84,9 +85,9 @@ func (c *controllerCommon) Enabled() bool {
 	return true
 }
 
-// RootCgroup implements kernel.CgroupController.RootCgroup.
-func (c *controllerCommon) RootCgroup() kernel.Cgroup {
-	return c.fs.rootCgroup()
+// EffectiveRootCgroup implements kernel.CgroupController.EffectiveRootCgroup.
+func (c *controllerCommon) EffectiveRootCgroup() kernel.Cgroup {
+	return c.fs.effectiveRootCgroup()
 }
 
 // controller is an interface for common functionality related to all cgroups.
@@ -175,8 +176,8 @@ func (fs *filesystem) newCgroupInode(ctx context.Context, creds *auth.Credential
 	c.dir.cgi = c
 
 	contents := make(map[string]kernfs.Inode)
-	contents["cgroup.procs"] = fs.newControllerWritableFile(ctx, creds, &cgroupProcsData{c})
-	contents["tasks"] = fs.newControllerWritableFile(ctx, creds, &tasksData{c})
+	contents["cgroup.procs"] = fs.newControllerWritableFile(ctx, creds, &cgroupProcsData{c}, false)
+	contents["tasks"] = fs.newControllerWritableFile(ctx, creds, &tasksData{c}, false)
 
 	if parent != nil {
 		for ty, ctl := range parent.controllers {
@@ -323,6 +324,64 @@ func (c *cgroupInode) Charge(t *kernel.Task, d *kernfs.Dentry, ctlType kernel.Cg
 	return nil
 }
 
+// ReadControl implements kernel.CgroupImpl.ReadControl.
+func (c *cgroupInode) ReadControl(ctx context.Context, name string) (string, error) {
+	c.fs.tasksMu.RLock()
+	defer c.fs.tasksMu.RUnlock()
+
+	cfi, err := c.Lookup(ctx, name)
+	if err != nil {
+		return "", fmt.Errorf("no such control file")
+	}
+	cbf, ok := cfi.(controllerFileImpl)
+	if !ok {
+		return "", fmt.Errorf("no such control file")
+	}
+	if !cbf.AllowBackgroundAccess() {
+		return "", fmt.Errorf("this control may not be accessed from a background context")
+	}
+
+	var buf bytes.Buffer
+	err = cbf.Source().Data().Generate(ctx, &buf)
+	return buf.String(), err
+}
+
+// WriteControl implements kernel.CgroupImpl.WriteControl.
+func (c *cgroupInode) WriteControl(ctx context.Context, name string, value string) error {
+	c.fs.tasksMu.RLock()
+	defer c.fs.tasksMu.RUnlock()
+
+	cfi, err := c.Lookup(ctx, name)
+	if err != nil {
+		return fmt.Errorf("no such control file")
+	}
+	// Do the more general cast first so we can give a meaningful error message when
+	// the control file exists, but isn't accessible (either due to being
+	// unwritable, or not being available from a background context).
+	cbf, ok := cfi.(controllerFileImpl)
+	if !ok {
+		return fmt.Errorf("no such control file")
+	}
+	if !cbf.AllowBackgroundAccess() {
+		return fmt.Errorf("this control may not be accessed from a background context")
+	}
+	wcbf, ok := cfi.(writableControllerFileImpl)
+	if !ok {
+		return fmt.Errorf("control file not writable")
+	}
+
+	ioSeq := usermem.BytesIOSequence([]byte(value))
+	n, err := wcbf.WriteBackground(ctx, ioSeq)
+	if err != nil {
+		return err
+	}
+	if n != int64(len(value)) {
+		return fmt.Errorf("short write")
+	}
+
+	return nil
+}
+
 func sortTIDs(tids []kernel.ThreadID) {
 	sort.Slice(tids, func(i, j int) bool { return tids[i] < tids[j] })
 }
@@ -434,9 +493,7 @@ func (d *tasksData) Write(ctx context.Context, fd *vfs.FileDescription, src user
 func parseInt64FromString(ctx context.Context, src usermem.IOSequence) (val, len int64, err error) {
 	const maxInt64StrLen = 20 // i.e. len(fmt.Sprintf("%d", math.MinInt64)) == 20
 
-	t := kernel.TaskFromContext(ctx)
-
-	buf := t.CopyScratchBuffer(maxInt64StrLen)
+	buf := copyScratchBufferFromContext(ctx, maxInt64StrLen)
 	n, err := src.CopyIn(ctx, buf)
 	if err != nil {
 		return 0, int64(n), err
@@ -452,6 +509,18 @@ func parseInt64FromString(ctx context.Context, src usermem.IOSequence) (val, len
 	}
 
 	return val, int64(n), nil
+}
+
+// copyScratchBufferFromContext returns a scratch buffer of the given size. It
+// tries to use the task's copy scratch buffer if we're on a task context,
+// otherwise it allocates a new buffer.
+func copyScratchBufferFromContext(ctx context.Context, size int) []byte {
+	t := kernel.TaskFromContext(ctx)
+	if t != nil {
+		return t.CopyScratchBuffer(hostarch.PageSize)
+	}
+	// Not on task context.
+	return make([]byte, hostarch.PageSize)
 }
 
 // controllerStateless partially implements controller. It stubs the migration

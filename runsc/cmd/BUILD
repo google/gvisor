@@ -27,6 +27,7 @@ go_library(
         "pause.go",
         "platforms.go",
         "ps.go",
+        "read_control.go",
         "restore.go",
         "resume.go",
         "run.go",
@@ -38,6 +39,7 @@ go_library(
         "syscalls.go",
         "usage.go",
         "wait.go",
+        "write_control.go",
     ],
     visibility = [
         "//runsc:__subpackages__",

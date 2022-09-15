@@ -112,11 +112,11 @@ func (c *pidsController) Clone() controller {
 
 // AddControlFiles implements controller.AddControlFiles.
 func (c *pidsController) AddControlFiles(ctx context.Context, creds *auth.Credentials, _ *cgroupInode, contents map[string]kernfs.Inode) {
-	contents["pids.current"] = c.fs.newControllerFile(ctx, creds, &pidsCurrentData{c: c})
+	contents["pids.current"] = c.fs.newControllerFile(ctx, creds, &pidsCurrentData{c: c}, true)
 	if !c.isRoot {
 		// "This is not available in the root cgroup for obvious reasons" --
 		// Linux, Documentation/cgroup-v1/pids.txt.
-		contents["pids.max"] = c.fs.newControllerWritableFile(ctx, creds, &pidsMaxData{c: c})
+		contents["pids.max"] = c.fs.newControllerWritableFile(ctx, creds, &pidsMaxData{c: c}, true)
 	}
 }
 
@@ -268,8 +268,12 @@ func (d *pidsMaxData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
 func (d *pidsMaxData) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
-	t := kernel.TaskFromContext(ctx)
-	buf := t.CopyScratchBuffer(hostarch.PageSize)
+	return d.WriteBackground(ctx, src)
+}
+
+// WriteBackground implements writableControllerFileImpl.WriteBackground.
+func (d *pidsMaxData) WriteBackground(ctx context.Context, src usermem.IOSequence) (int64, error) {
+	buf := copyScratchBufferFromContext(ctx, hostarch.PageSize)
 	ncpy, err := src.CopyIn(ctx, buf)
 	if err != nil {
 		return 0, err

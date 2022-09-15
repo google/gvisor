@@ -11,6 +11,7 @@ proto_library(
 go_library(
     name = "control",
     srcs = [
+        "cgroups.go",
         "control.go",
         "events.go",
         "fs.go",

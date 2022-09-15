@@ -1422,3 +1422,58 @@ func checkBinaryPermissions(conf *config.Config) error {
 	}
 	return nil
 }
+
+// CgroupsReadControlFile reads a single cgroupfs control file in the sandbox.
+func (s *Sandbox) CgroupsReadControlFile(file control.CgroupControlFile) (string, error) {
+	log.Debugf("CgroupsReadControlFiles sandbox %q", s.ID)
+	conn, err := s.sandboxConnect()
+	if err != nil {
+		return "", err
+	}
+	defer conn.Close()
+
+	args := control.CgroupsReadArgs{
+		Args: []control.CgroupsReadArg{
+			{
+				File: file,
+			},
+		},
+	}
+	var out control.CgroupsResults
+	err = conn.Call(boot.CgroupsReadControlFiles, &args, &out)
+	if err != nil {
+		return "", err
+	}
+	if len(out.Results) != 1 {
+		return "", fmt.Errorf("expected 1 result, got %d, raw: %+v", len(out.Results), out)
+	}
+	return out.Results[0].Unpack()
+}
+
+// CgroupsWriteControlFile writes a single cgroupfs control file in the sandbox.
+func (s *Sandbox) CgroupsWriteControlFile(file control.CgroupControlFile, value string) error {
+	log.Debugf("CgroupsReadControlFiles sandbox %q", s.ID)
+	conn, err := s.sandboxConnect()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	args := control.CgroupsWriteArgs{
+		Args: []control.CgroupsWriteArg{
+			{
+				File:  file,
+				Value: value,
+			},
+		},
+	}
+	var out control.CgroupsResults
+	err = conn.Call(boot.CgroupsWriteControlFiles, &args, &out)
+	if err != nil {
+		return err
+	}
+	if len(out.Results) != 1 {
+		return fmt.Errorf("expected 1 result, got %d, raw: %+v", len(out.Results), out)
+	}
+	return out.Results[0].AsError()
+}
