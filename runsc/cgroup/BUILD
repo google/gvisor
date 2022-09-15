@@ -13,7 +13,6 @@ go_library(
     deps = [
         "//pkg/cleanup",
         "//pkg/log",
-        "@com_github_bits_and_blooms_bitset//:go_default_library",
         "@com_github_cenkalti_backoff//:go_default_library",
         "@com_github_coreos_go_systemd_v22//dbus:go_default_library",
         "@com_github_godbus_dbus_v5//:go_default_library",
