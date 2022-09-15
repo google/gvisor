@@ -82,8 +82,8 @@ func (c *cpusetController) Clone() controller {
 
 // AddControlFiles implements controller.AddControlFiles.
 func (c *cpusetController) AddControlFiles(ctx context.Context, creds *auth.Credentials, _ *cgroupInode, contents map[string]kernfs.Inode) {
-	contents["cpuset.cpus"] = c.fs.newControllerWritableFile(ctx, creds, &cpusData{c: c})
-	contents["cpuset.mems"] = c.fs.newControllerWritableFile(ctx, creds, &memsData{c: c})
+	contents["cpuset.cpus"] = c.fs.newControllerWritableFile(ctx, creds, &cpusData{c: c}, true)
+	contents["cpuset.mems"] = c.fs.newControllerWritableFile(ctx, creds, &memsData{c: c}, true)
 }
 
 // +stateify savable
@@ -101,12 +101,16 @@ func (d *cpusData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
 func (d *cpusData) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
+	return d.WriteBackground(ctx, src)
+}
+
+// WriteBackground implements writableControllerFileImpl.WriteBackground.
+func (d *cpusData) WriteBackground(ctx context.Context, src usermem.IOSequence) (int64, error) {
 	if src.NumBytes() > hostarch.PageSize {
 		return 0, linuxerr.EINVAL
 	}
 
-	t := kernel.TaskFromContext(ctx)
-	buf := t.CopyScratchBuffer(hostarch.PageSize)
+	buf := copyScratchBufferFromContext(ctx, hostarch.PageSize)
 	n, err := src.CopyIn(ctx, buf)
 	if err != nil {
 		return 0, err
@@ -145,12 +149,16 @@ func (d *memsData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
 func (d *memsData) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
+	return d.WriteBackground(ctx, src)
+}
+
+// WriteBackground implements writableControllerFileImpl.WriteBackground.
+func (d *memsData) WriteBackground(ctx context.Context, src usermem.IOSequence) (int64, error) {
 	if src.NumBytes() > hostarch.PageSize {
 		return 0, linuxerr.EINVAL
 	}
 
-	t := kernel.TaskFromContext(ctx)
-	buf := t.CopyScratchBuffer(hostarch.PageSize)
+	buf := copyScratchBufferFromContext(ctx, hostarch.PageSize)
 	n, err := src.CopyIn(ctx, buf)
 	if err != nil {
 		return 0, err

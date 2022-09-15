@@ -32,6 +32,7 @@ message ControlConfig {
     PROC = 7;
     STATE = 8;
     DEBUG = 9;
+    CGROUPS = 10;
   }
 
   // allowed_controls represents which endpoints may be registered to the
