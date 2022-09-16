@@ -28,6 +28,7 @@ import (
 	"regexp"
 	"runtime"
 	"runtime/pprof"
+	"runtime/trace"
 	"strconv"
 	"time"
 
@@ -66,6 +67,9 @@ var (
 	serverTCPProbeFile = flag.String("server_tcp_probe_file", "", "if specified, installs a tcp probe to dump endpoint state to the specified file.")
 	cpuprofile         = flag.String("cpuprofile", "", "write cpu profile to the specified file.")
 	memprofile         = flag.String("memprofile", "", "write memory profile to the specified file.")
+	blockprofile       = flag.String("blockprofile", "", "write a goroutine blocking profile to the specified file.")
+	mutexprofile       = flag.String("mutexprofile", "", "write a mutex profile to the specified file.")
+	traceprofile       = flag.String("traceprofile", "", "write a 5s trace of the benchmark to the specified file.")
 	useIpv6            = flag.Bool("ipv6", false, "use ipv6 instead of ipv4.")
 )
 
@@ -210,9 +214,10 @@ func newNetstackImpl(mode string) (impl, error) {
 		// peer. But we do want to disable checksum verification as veth
 		// devices do perform GRO and the linux host kernel may not
 		// regenerate valid checksums after GRO.
-		TXChecksumOffload:  false,
-		RXChecksumOffload:  true,
-		PacketDispatchMode: fdbased.RecvMMsg,
+		TXChecksumOffload: false,
+		RXChecksumOffload: true,
+		//PacketDispatchMode: fdbased.RecvMMsg,
+		PacketDispatchMode: fdbased.PacketMMap,
 		GSOMaxSize:         uint32(*gso),
 		GvisorGSOEnabled:   *swgso,
 	})
@@ -397,6 +402,35 @@ func main() {
 		defer pprof.StopCPUProfile()
 	}
 
+	if *traceprofile != "" {
+		f, err := os.Create(*traceprofile)
+		if err != nil {
+			log.Fatal("could not create trace profile: ", err)
+		}
+		defer func() {
+			if err := f.Close(); err != nil {
+				log.Print("error closing trace profile: ", err)
+			}
+		}()
+		go func() {
+			// Delay tracing to give workload sometime to start.
+			time.Sleep(2 * time.Second)
+			if err := trace.Start(f); err != nil {
+				log.Fatal("could not start Go trace:", err)
+			}
+			defer trace.Stop()
+			<-time.After(5 * time.Second)
+		}()
+	}
+
+	if *mutexprofile != "" {
+		runtime.SetMutexProfileFraction(100)
+	}
+
+	if *blockprofile != "" {
+		runtime.SetBlockProfileRate(1000)
+	}
+
 	var (
 		in  impl
 		out impl
@@ -466,6 +500,34 @@ func main() {
 			runtime.GC() // get up-to-date statistics
 			if err := pprof.WriteHeapProfile(f); err != nil {
 				log.Fatalf("Unable to write heap profile: %v", err)
+			}
+		}
+		if *blockprofile != "" {
+			f, err := os.Create(*blockprofile)
+			if err != nil {
+				log.Fatal("could not create block profile: ", err)
+			}
+			defer func() {
+				if err := f.Close(); err != nil {
+					log.Print("error closing block profile: ", err)
+				}
+			}()
+			if err := pprof.Lookup("block").WriteTo(f, 0); err != nil {
+				log.Fatalf("Unable to write block profile: %v", err)
+			}
+		}
+		if *mutexprofile != "" {
+			f, err := os.Create(*mutexprofile)
+			if err != nil {
+				log.Fatal("could not create mutex profile: ", err)
+			}
+			defer func() {
+				if err := f.Close(); err != nil {
+					log.Print("error closing mutex profile: ", err)
+				}
+			}()
+			if err := pprof.Lookup("mutex").WriteTo(f, 0); err != nil {
+				log.Fatalf("Unable to write mutex profile: %v", err)
 			}
 		}
 		os.Exit(0)
