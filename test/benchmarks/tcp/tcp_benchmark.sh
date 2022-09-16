@@ -138,6 +138,18 @@ while [ $# -gt 0 ]; do
       shift
       netstack_opts="${netstack_opts} -memprofile=$1"
       ;;
+    --blockprofile)
+      shift
+      netstack_opts="${netstack_opts} -blockprofile=$1"
+      ;;
+    --mutexprofile)
+      shift
+      netstack_opts="${netstack_opts} -mutexprofile=$1"
+      ;;
+    --traceprofile)
+      shift
+      netstack_opts="${netstack_opts} -traceprofile=$1"
+      ;;
     --disable-linux-gso)
       disable_linux_gso=1
       ;;
