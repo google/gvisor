@@ -935,8 +935,7 @@ func (s *exeSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error)
 
 	root := vfs.RootFromContext(ctx)
 	if !root.Ok() {
-		// It could have raced with process deletion.
-		return "", linuxerr.ESRCH
+		panic("procfs Readlink requires context with root value")
 	}
 	defer s.fs.SafeDecRef(ctx, root)
 
@@ -1008,8 +1007,7 @@ func (s *cwdSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error)
 
 	root := vfs.RootFromContext(ctx)
 	if !root.Ok() {
-		// It could have raced with process deletion.
-		return "", linuxerr.ESRCH
+		panic("procfs Readlink requires context with root value")
 	}
 	defer s.fs.SafeDecRef(ctx, root)
 
@@ -1070,8 +1068,7 @@ func (s *rootSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error
 
 	vfsRoot := vfs.RootFromContext(ctx)
 	if !vfsRoot.Ok() {
-		// It could have raced with process deletion.
-		return "", linuxerr.ESRCH
+		panic("procfs Readlink requires context with root value")
 	}
 	defer s.fs.SafeDecRef(ctx, vfsRoot)
 
