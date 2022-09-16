@@ -1223,6 +1223,11 @@ TEST(ProcSelfCwd, Absolute) {
   EXPECT_EQ(exe[0], '/');
 }
 
+TEST(ProcSelfRoot, IsRoot) {
+  auto exe = ASSERT_NO_ERRNO_AND_VALUE(ReadLink("/proc/self/root"));
+  EXPECT_EQ(exe, "/");
+}
+
 // Sanity check that /proc/cmdline is present.
 TEST(ProcCmdline, IsPresent) {
   std::string proc_cmdline =
@@ -2016,6 +2021,14 @@ TEST(ProcPidCwd, Subprocess) {
   ASSERT_THAT(ReadlinkWhileRunning("cwd", got, sizeof(got)),
               SyscallSucceedsWithValue(Gt(0)));
   EXPECT_EQ(got, want);
+}
+
+// /proc/PID/root points to the correct directory.
+TEST(ProcPidRoot, Subprocess) {
+  char got[PATH_MAX + 1] = {};
+  ASSERT_THAT(ReadlinkWhileRunning("root", got, sizeof(got)),
+              SyscallSucceedsWithValue(Gt(0)));
+  EXPECT_STREQ(got, "/");
 }
 
 // Test whether /proc/PID/ files can be read for a running process.

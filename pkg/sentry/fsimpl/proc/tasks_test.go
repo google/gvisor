@@ -86,6 +86,7 @@ var (
 		"ns":            linux.DT_DIR,
 		"oom_score":     linux.DT_REG,
 		"oom_score_adj": linux.DT_REG,
+		"root":          linux.DT_LNK,
 		"smaps":         linux.DT_REG,
 		"stat":          linux.DT_REG,
 		"statm":         linux.DT_REG,
