@@ -1200,6 +1200,49 @@ func (s *cwdSymlink) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(6, &s.task)
 }
 
+func (s *rootSymlink) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.rootSymlink"
+}
+
+func (s *rootSymlink) StateFields() []string {
+	return []string{
+		"implStatFS",
+		"InodeAttrs",
+		"InodeNoopRefCount",
+		"InodeSymlink",
+		"InodeWatches",
+		"fs",
+		"task",
+	}
+}
+
+func (s *rootSymlink) beforeSave() {}
+
+// +checklocksignore
+func (s *rootSymlink) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.implStatFS)
+	stateSinkObject.Save(1, &s.InodeAttrs)
+	stateSinkObject.Save(2, &s.InodeNoopRefCount)
+	stateSinkObject.Save(3, &s.InodeSymlink)
+	stateSinkObject.Save(4, &s.InodeWatches)
+	stateSinkObject.Save(5, &s.fs)
+	stateSinkObject.Save(6, &s.task)
+}
+
+func (s *rootSymlink) afterLoad() {}
+
+// +checklocksignore
+func (s *rootSymlink) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.implStatFS)
+	stateSourceObject.Load(1, &s.InodeAttrs)
+	stateSourceObject.Load(2, &s.InodeNoopRefCount)
+	stateSourceObject.Load(3, &s.InodeSymlink)
+	stateSourceObject.Load(4, &s.InodeWatches)
+	stateSourceObject.Load(5, &s.fs)
+	stateSourceObject.Load(6, &s.task)
+}
+
 func (i *mountInfoData) StateTypeName() string {
 	return "pkg/sentry/fsimpl/proc.mountInfoData"
 }
@@ -2474,6 +2517,7 @@ func init() {
 	state.Register((*oomScoreAdj)(nil))
 	state.Register((*exeSymlink)(nil))
 	state.Register((*cwdSymlink)(nil))
+	state.Register((*rootSymlink)(nil))
 	state.Register((*mountInfoData)(nil))
 	state.Register((*mountsData)(nil))
 	state.Register((*namespaceSymlink)(nil))

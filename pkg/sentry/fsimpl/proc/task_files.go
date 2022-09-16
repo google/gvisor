@@ -1035,6 +1035,68 @@ func (s *cwdSymlink) Getlink(ctx context.Context, _ *vfs.Mount) (vfs.VirtualDent
 	return cwd, "", nil
 }
 
+// rootSymlink is an symlink for the /proc/[pid]/root file.
+//
+// +stateify savable
+type rootSymlink struct {
+	implStatFS
+	kernfs.InodeAttrs
+	kernfs.InodeNoopRefCount
+	kernfs.InodeSymlink
+	kernfs.InodeWatches
+
+	fs   *filesystem
+	task *kernel.Task
+}
+
+var _ kernfs.Inode = (*rootSymlink)(nil)
+
+func (fs *filesystem) newRootSymlink(ctx context.Context, task *kernel.Task, ino uint64) kernfs.Inode {
+	inode := &rootSymlink{
+		fs:   fs,
+		task: task,
+	}
+	inode.Init(ctx, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, linux.ModeSymlink|0777)
+	return inode
+}
+
+// Readlink implements kernfs.Inode.Readlink.
+func (s *rootSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error) {
+	root, _, err := s.Getlink(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	defer s.fs.SafeDecRef(ctx, root)
+
+	vfsRoot := vfs.RootFromContext(ctx)
+	if !vfsRoot.Ok() {
+		// It could have raced with process deletion.
+		return "", linuxerr.ESRCH
+	}
+	defer s.fs.SafeDecRef(ctx, vfsRoot)
+
+	vfsObj := root.Mount().Filesystem().VirtualFilesystem()
+	name, _ := vfsObj.PathnameWithDeleted(ctx, vfsRoot, root)
+	return name, nil
+}
+
+// Getlink implements kernfs.Inode.Getlink.
+func (s *rootSymlink) Getlink(ctx context.Context, _ *vfs.Mount) (vfs.VirtualDentry, string, error) {
+	if !kernel.ContextCanTrace(ctx, s.task, false) {
+		return vfs.VirtualDentry{}, "", linuxerr.EACCES
+	}
+	if err := checkTaskState(s.task); err != nil {
+		return vfs.VirtualDentry{}, "", err
+	}
+	root := s.task.FSContext().RootDirectoryVFS2()
+	if !root.Ok() {
+		// It could have raced with process deletion.
+		return vfs.VirtualDentry{}, "", linuxerr.ESRCH
+	}
+	// The reference is transferred to the caller.
+	return root, "", nil
+}
+
 // mountInfoData is used to implement /proc/[pid]/mountinfo.
 //
 // +stateify savable
