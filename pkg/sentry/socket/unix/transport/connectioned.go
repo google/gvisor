@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
-	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -120,7 +119,7 @@ type connectionedEndpoint struct {
 	// that may listen and accept incoming connections.
 	//
 	// boundSocketFD is protected by baseEndpoint.mu.
-	boundSocketFD *lisafs.ClientBoundSocketFD
+	boundSocketFD BoundSocketFD
 }
 
 var (
@@ -604,7 +603,7 @@ func (e *connectionedEndpoint) OnSetSendBufferSize(v int64) (newSz int64) {
 func (e *connectionedEndpoint) WakeupWriters() {}
 
 // SetBoundSocketFD implement HostBountEndpoint.SetBoundSocketFD.
-func (e *connectionedEndpoint) SetBoundSocketFD(bsFD *lisafs.ClientBoundSocketFD) {
+func (e *connectionedEndpoint) SetBoundSocketFD(bsFD BoundSocketFD) {
 	e.Lock()
 	defer e.Unlock()
 	if e.boundSocketFD != nil {

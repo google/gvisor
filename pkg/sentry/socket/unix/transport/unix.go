@@ -18,7 +18,6 @@ package transport
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -269,9 +268,26 @@ type BoundEndpoint interface {
 // on the host.
 type HostBoundEndpoint interface {
 	// SetBoundSocketFD will be called on supporting endpoints after
-	// binding a socket on the host filesystem. Implementations should use
-	// delegate Listen and Accept calls to the ClientBoundSocketFD.
-	SetBoundSocketFD(*lisafs.ClientBoundSocketFD)
+	// binding a socket on the host filesystem. Implementations should
+	// delegate Listen and Accept calls to the BoundSocketFD.
+	SetBoundSocketFD(bsFD BoundSocketFD)
+}
+
+// BoundSocketFD is an interface that wraps a socket FD that was bind(2)-ed.
+// It allows to listen and accept on that socket.
+type BoundSocketFD interface {
+	// Close closes the socket FD.
+	Close(ctx context.Context)
+
+	// NotificationFD is a host FD that can be used to notify when new clients
+	// connect to the socket.
+	NotificationFD() int32
+
+	// Listen is analogous to listen(2).
+	Listen(ctx context.Context, backlog int32) error
+
+	// Accept is analogous to accept(2).
+	Accept(ctx context.Context) (int, error)
 }
 
 // message represents a message passed over a Unix domain socket.

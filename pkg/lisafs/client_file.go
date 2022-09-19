@@ -573,7 +573,8 @@ func (f *ClientFD) RemoveXattr(ctx context.Context, name string) error {
 	return err
 }
 
-// ClientBoundSocketFD corresponds to a bound socket on the server.
+// ClientBoundSocketFD corresponds to a bound socket on the server. It
+// implements transport.BoundSocketFD.
 //
 // All fields are immutable.
 type ClientBoundSocketFD struct {
@@ -587,19 +588,18 @@ type ClientBoundSocketFD struct {
 	client *Client
 }
 
-// Close closes the host and gofer-backed FDs associated to this bound socket.
+// Close implements transport.BoundSocketFD.Close.
 func (f *ClientBoundSocketFD) Close(ctx context.Context) {
 	_ = unix.Close(int(f.notificationFD))
 	f.client.CloseFD(ctx, f.fd, true /* flush */)
 }
 
-// NotificationFD is a host FD that can be used to notify when new clients
-// connect to the socket.
+// NotificationFD implements transport.BoundSocketFD.NotificationFD.
 func (f *ClientBoundSocketFD) NotificationFD() int32 {
 	return f.notificationFD
 }
 
-// Listen makes a Listen RPC.
+// Listen implements transport.BoundSocketFD.Listen.
 func (f *ClientBoundSocketFD) Listen(ctx context.Context, backlog int32) error {
 	req := ListenReq{
 		FD:      f.fd,
@@ -612,7 +612,7 @@ func (f *ClientBoundSocketFD) Listen(ctx context.Context, backlog int32) error {
 	return err
 }
 
-// Accept makes an Accept RPC.
+// Accept implements transport.BoundSocketFD.Accept.
 func (f *ClientBoundSocketFD) Accept(ctx context.Context) (int, error) {
 	req := AcceptReq{
 		FD: f.fd,
