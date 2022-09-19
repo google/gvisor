@@ -21,7 +21,7 @@ import (
 	"testing"
 )
 
-const length = 64 * 1024
+const length = 128 * 1024
 
 // Iperf is for the client side of `iperf`.
 type Iperf struct {
@@ -35,7 +35,7 @@ func (i *Iperf) MakeCmd(host string, port int) []string {
 		"--format", "K", // Output in KBytes.
 		"--realtime",                       // Measured in realtime.
 		"--num", fmt.Sprintf("%dK", i.Num), // Number of bytes to send in KB.
-		"--length", fmt.Sprintf("%d", length),
+		"--len", fmt.Sprintf("%d", length),
 		"--client", host,
 		"--port", fmt.Sprintf("%d", port),
 	}
