@@ -7,6 +7,7 @@ go_library(
     srcs = ["loopback.go"],
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",

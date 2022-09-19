@@ -21,12 +21,15 @@
 package loopback
 
 import (
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 type endpoint struct {
+	// mu protects dispatcher.
+	mu         sync.RWMutex
 	dispatcher stack.NetworkDispatcher
 }
 
@@ -39,11 +42,15 @@ func New() stack.LinkEndpoint {
 // Attach implements stack.LinkEndpoint.Attach. It just saves the stack network-
 // layer dispatcher for later use when packets need to be dispatched.
 func (e *endpoint) Attach(dispatcher stack.NetworkDispatcher) {
+	e.mu.Lock()
 	e.dispatcher = dispatcher
+	e.mu.Unlock()
 }
 
 // IsAttached implements stack.LinkEndpoint.IsAttached.
 func (e *endpoint) IsAttached() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	return e.dispatcher != nil
 }
 
@@ -75,6 +82,8 @@ func (*endpoint) Wait() {}
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.
 func (e *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	for _, pkt := range pkts.AsSlice() {
 		// In order to properly loop back to the inbound side we must create a
 		// fresh packet that only contains the underlying payload with no headers
