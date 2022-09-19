@@ -234,6 +234,11 @@ func (ep *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tc
 		return 0, &tcpip.ErrInvalidOptionValue{}
 	}
 
+	// Prevents giant buffer allocations.
+	if p.Len() > header.DatagramMaximumSize {
+		return 0, &tcpip.ErrMessageTooLong{}
+	}
+
 	var payload bufferv2.Buffer
 	if _, err := payload.WriteFromReader(p, int64(p.Len())); err != nil {
 		return 0, &tcpip.ErrBadBuffer{}

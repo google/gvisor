@@ -81,6 +81,29 @@ TEST(PingSocket, ICMPPortExhaustion) {
   }
 }
 
+TEST(PingSocket, PayloadTooLarge) {
+  PosixErrorOr<FileDescriptor> result =
+      Socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
+  if (!result.ok()) {
+    int errno_value = result.error().errno_value();
+    ASSERT_EQ(errno_value, EACCES) << strerror(errno_value);
+    GTEST_SKIP() << "ping socket not supported";
+  }
+  FileDescriptor& ping = result.ValueOrDie();
+
+  constexpr icmphdr kSendIcmp = {
+      .type = ICMP_ECHO,
+  };
+  constexpr size_t kGiantSize = 1 << 21;  // 2MB.
+  const sockaddr_in kAddr = {
+      .sin_family = AF_INET,
+      .sin_addr = {.s_addr = htonl(INADDR_LOOPBACK)},
+  };
+  ASSERT_THAT(sendto(ping.get(), &kSendIcmp, kGiantSize, 0,
+                     reinterpret_cast<const sockaddr*>(&kAddr), sizeof(kAddr)),
+              SyscallFailsWithErrno(EMSGSIZE));
+}
+
 TEST(PingSocket, ReceiveTOS) {
   PosixErrorOr<FileDescriptor> result =
       Socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);

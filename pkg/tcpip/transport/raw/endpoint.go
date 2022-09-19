@@ -350,6 +350,11 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 		return 0, &tcpip.ErrMessageTooLong{}
 	}
 
+	// Prevents giant buffer allocations.
+	if p.Len() > header.DatagramMaximumSize {
+		return 0, &tcpip.ErrMessageTooLong{}
+	}
+
 	var payload bufferv2.Buffer
 	defer payload.Release()
 	if _, err := payload.WriteFromReader(p, int64(p.Len())); err != nil {
