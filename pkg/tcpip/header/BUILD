@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "arp.go",
         "checksum.go",
+        "datagram.go",
         "eth.go",
         "gue.go",
         "icmpv4.go",
