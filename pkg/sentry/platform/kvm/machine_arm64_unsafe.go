@@ -122,7 +122,7 @@ func (c *vCPU) initArchState() error {
 
 	// pc
 	reg.id = _KVM_ARM64_REGS_PC
-	data = uint64(reflect.ValueOf(ring0.Start).Pointer())
+	data = uint64(ring0.AddrOfStart())
 	if err := c.setOneRegister(&reg); err != nil {
 		return err
 	}
@@ -136,7 +136,7 @@ func (c *vCPU) initArchState() error {
 
 	// vbar_el1
 	reg.id = _KVM_ARM64_REGS_VBAR_EL1
-	vectorLocation := reflect.ValueOf(ring0.Vectors).Pointer()
+	vectorLocation := ring0.AddrOfVectors()
 	data = uint64(ring0.KernelStartAddress | vectorLocation)
 	if err := c.setOneRegister(&reg); err != nil {
 		return err
