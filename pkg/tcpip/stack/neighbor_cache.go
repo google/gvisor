@@ -72,17 +72,34 @@ type neighborCache struct {
 // cache is not full, a new entry with state incomplete is allocated and
 // returned.
 func (n *neighborCache) getOrCreateEntry(remoteAddr tcpip.Address) *neighborEntry {
+	lookup := func() *neighborEntry {
+		if entry, ok := n.mu.cache[remoteAddr]; ok {
+			entry.mu.RLock()
+			if entry.mu.neigh.State != Static {
+				n.mu.dynamic.lru.Remove(entry)
+				n.mu.dynamic.lru.PushFront(entry)
+			}
+			entry.mu.RUnlock()
+			return entry
+		}
+		return nil
+	}
+	n.mu.RLock()
+	if e := lookup(); e != nil {
+		n.mu.RUnlock()
+		return e
+	}
+	n.mu.RUnlock()
+
+	// Now acquire in exclusive mode to actually create a neighbour entry.
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
-	if entry, ok := n.mu.cache[remoteAddr]; ok {
-		entry.mu.RLock()
-		if entry.mu.neigh.State != Static {
-			n.mu.dynamic.lru.Remove(entry)
-			n.mu.dynamic.lru.PushFront(entry)
-		}
-		entry.mu.RUnlock()
-		return entry
+	// We should perform the lookup again in case an entry was created in
+	// the interim where we dropped the read lock and acquired the exclusive
+	// lock.
+	if e := lookup(); e != nil {
+		return e
 	}
 
 	// The entry that needs to be created must be dynamic since all static
