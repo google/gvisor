@@ -611,8 +611,8 @@ TEXT ·kernelExitToEl1(SB),NOSPLIT,$0
 
 	ERET()
 
-// Start is the CPU entrypoint.
-TEXT ·Start(SB),NOSPLIT,$0
+// start is the CPU entrypoint.
+TEXT ·start(SB),NOSPLIT,$0
 	// Init.
 	WORD $0xd508871f    // __tlbi(vmalle1)
 	DSB $7          // dsb(nsh)
@@ -645,6 +645,12 @@ TEXT ·Start(SB),NOSPLIT,$0
 	ISB $15
 
 	B ·kernelExitToEl1(SB)
+
+// func AddrOfStart() uintptr
+TEXT ·AddrOfStart(SB), $0-8
+	MOVD	$·start(SB), R0
+	MOVD	R0, ret+0(FP)
+	RET
 
 // El1_sync_invalid is the handler for an invalid EL1_sync.
 TEXT ·El1_sync_invalid(SB),NOSPLIT,$0
@@ -839,12 +845,12 @@ TEXT ·El0_fiq_invalid(SB),NOSPLIT,$0
 TEXT ·El0_error_invalid(SB),NOSPLIT,$0
 	B ·Shutdown(SB)
 
-// Vectors implements exception vector table.
+// vectors implements exception vector table.
 // The start address of exception vector table should be 11-bits aligned.
 // For detail, please refer to arm developer document:
 // https://developer.arm.com/documentation/100933/0100/AArch64-exception-vector-table
 // Also can refer to the code in linux kernel: arch/arm64/kernel/entry.S
-TEXT ·Vectors(SB),NOSPLIT,$0
+TEXT ·vectors(SB),NOSPLIT,$0
 	PCALIGN $2048
 	B ·El1_sync_invalid(SB)
 	PCALIGN $128
@@ -880,3 +886,9 @@ TEXT ·Vectors(SB),NOSPLIT,$0
 	B ·El0_fiq_invalid(SB)
 	PCALIGN $128
 	B ·El0_error_invalid(SB)
+
+// func AddrOfVectors() uintptr
+TEXT ·AddrOfVectors(SB), $0-8
+       MOVD    $·vectors(SB), R0
+       MOVD    R0, ret+0(FP)
+       RET
