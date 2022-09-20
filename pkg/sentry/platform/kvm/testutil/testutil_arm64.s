@@ -33,7 +33,7 @@ TEXT ·AddrOfGetpid(SB),NOSPLIT,$0-8
 	MOVD R0, ret+0(FP)
 	RET
 
-TEXT ·Touch(SB),NOSPLIT,$0
+TEXT ·touch(SB),NOSPLIT,$0
 start:
 	MOVD 0(R8), R1
 	MOVD $SYS_GETPID, R8   // getpid
@@ -41,37 +41,37 @@ start:
 	B start
 
 TEXT ·AddrOfTouch(SB),NOSPLIT,$0-8
-	MOVD $·Touch(SB), R0
+	MOVD $·touch(SB), R0
 	MOVD R0, ret+0(FP)
 	RET
 
-TEXT ·HaltLoop(SB),NOSPLIT,$0
+TEXT ·haltLoop(SB),NOSPLIT,$0
 start:
 	HLT
 	B start
 
 TEXT ·AddOfHaltLoop(SB),NOSPLIT,$0-8
-	MOVD $·HaltLoop(SB), R0
+	MOVD $·haltLoop(SB), R0
 	MOVD R0, ret+0(FP)
 	RET
 
 // This function simulates a loop of syscall.
-TEXT ·SyscallLoop(SB),NOSPLIT,$0
+TEXT ·syscallLoop(SB),NOSPLIT,$0
 start:
 	SVC
 	B start
 
 TEXT ·AddrOfSyscallLoop(SB),NOSPLIT,$0-8
-	MOVD $·SyscallLoop(SB), R0
+	MOVD $·syscallLoop(SB), R0
 	MOVD R0, ret+0(FP)
 	RET
 
-TEXT ·SpinLoop(SB),NOSPLIT,$0
+TEXT ·spinLoop(SB),NOSPLIT,$0
 start:
 	B start
 
 TEXT ·AddrOfSpinLoop(SB),NOSPLIT,$0-8
-	MOVD $·SpinLoop(SB), R0
+	MOVD $·spinLoop(SB), R0
 	MOVD R0, ret+0(FP)
 	RET
 
@@ -143,7 +143,7 @@ isNaN:
         MVN R29, R29; \
         MVN R30, R30;
 
-TEXT ·TwiddleRegsSyscall(SB),NOSPLIT,$0
+TEXT ·twiddleRegsSyscall(SB),NOSPLIT,$0
 	TWIDDLE_REGS()
 	MSR R10, TPIDR_EL0
 	// Trapped in el0_svc.
@@ -151,11 +151,11 @@ TEXT ·TwiddleRegsSyscall(SB),NOSPLIT,$0
 	RET // never reached
 
 TEXT ·AddrOfTwiddleRegsSyscall(SB),NOSPLIT,$0-8
-	MOVD $·TwiddleRegsSyscall(SB), R0
+	MOVD $·twiddleRegsSyscall(SB), R0
 	MOVD R0, ret+0(FP)
 	RET
 
-TEXT ·TwiddleRegsFault(SB),NOSPLIT,$0
+TEXT ·twiddleRegsFault(SB),NOSPLIT,$0
 	TWIDDLE_REGS()
 	MSR R10, TPIDR_EL0
 	// Trapped in el0_ia.
@@ -164,6 +164,6 @@ TEXT ·TwiddleRegsFault(SB),NOSPLIT,$0
 	RET // never reached
 
 TEXT ·AddrOfTwiddleRegsFault(SB),NOSPLIT,$0-8
-	MOVD $·TwiddleRegsFault(SB), R0
+	MOVD $·twiddleRegsFault(SB), R0
 	MOVD R0, ret+0(FP)
 	RET
