@@ -140,6 +140,8 @@ func (d *dentry) createSyntheticChildLocked(opts *createSyntheticOpts) {
 		panic(fmt.Sprintf("failed to create synthetic file of unrecognized type: %v", opts.mode.FileType()))
 	}
 	child.pf.dentry = child
+	child.cacheEntry.d = child
+	child.syncableListEntry.d = child
 	child.vfsd.Init(child)
 
 	d.cacheNewChildLocked(child, opts.name)

@@ -839,11 +839,6 @@ func WriteHeader(w wire.Writer, length uint64, object bool) error {
 	})
 }
 
-// deferredMapper is for the deferred list.
-type deferredMapper struct{}
-
-func (deferredMapper) linkerFor(oes *objectEncodeState) *deferredEntry { return &oes.deferredEntry }
-
 // addrSetFunctions is used by addrSet.
 type addrSetFunctions struct{}
 

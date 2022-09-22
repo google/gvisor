@@ -61,7 +61,7 @@ func (fs *filesystem) PrepareSave(ctx context.Context) error {
 	// Buffer pipe data so that it's available for reading after restore. (This
 	// is a legacy VFS1 feature.)
 	fs.syncMu.Lock()
-	for sffd := range fs.specialFileFDs {
+	for sffd := fs.specialFileFDs.Front(); sffd != nil; sffd = sffd.Next() {
 		if sffd.dentry().fileType() == linux.S_IFIFO && sffd.vfsfd.IsReadable() {
 			if err := sffd.savePipeData(ctx); err != nil {
 				fs.syncMu.Unlock()
@@ -231,7 +231,7 @@ func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRest
 	// ENXIO if another specialFileFD represents the read end of the same pipe.
 	// This is consistent with VFS1.
 	haveWriteOnlyPipes := false
-	for fd := range fs.specialFileFDs {
+	for fd := fs.specialFileFDs.Front(); fd != nil; fd = fd.Next() {
 		if fd.dentry().fileType() == linux.S_IFIFO && !fd.vfsfd.IsReadable() {
 			haveWriteOnlyPipes = true
 			continue
@@ -241,7 +241,7 @@ func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRest
 		}
 	}
 	if haveWriteOnlyPipes {
-		for fd := range fs.specialFileFDs {
+		for fd := fs.specialFileFDs.Front(); fd != nil; fd = fd.Next() {
 			if fd.dentry().fileType() == linux.S_IFIFO && !fd.vfsfd.IsReadable() {
 				if err := fd.completeRestore(ctx); err != nil {
 					return err
@@ -360,8 +360,8 @@ func (d *dentry) restoreDescendantsRecursive(ctx context.Context, opts *vfs.Comp
 		if child == nil {
 			continue
 		}
-		if _, ok := d.fs.syncableDentries[child]; !ok {
-			// child is synthetic.
+		// child is synthetic if it does not exist in fs.syncableDentries.
+		if child.syncableListEntry.Next() == nil && child.syncableListEntry.Prev() == nil && d.fs.syncableDentries.Front() != &child.syncableListEntry {
 			continue
 		}
 		if err := child.restoreRecursive(ctx, opts); err != nil {
