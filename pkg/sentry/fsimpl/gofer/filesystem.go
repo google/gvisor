@@ -41,12 +41,12 @@ import (
 func (fs *filesystem) Sync(ctx context.Context) error {
 	// Snapshot current syncable dentries and special file FDs.
 	fs.syncMu.Lock()
-	ds := make([]*dentry, 0, len(fs.syncableDentries))
-	for d := range fs.syncableDentries {
-		ds = append(ds, d)
+	ds := make([]*dentry, 0, fs.syncableDentries.Len())
+	for elem := fs.syncableDentries.Front(); elem != nil; elem = elem.Next() {
+		ds = append(ds, elem.d)
 	}
-	sffds := make([]*specialFileFD, 0, len(fs.specialFileFDs))
-	for sffd := range fs.specialFileFDs {
+	sffds := make([]*specialFileFD, 0, fs.specialFileFDs.Len())
+	for sffd := fs.specialFileFDs.Front(); sffd != nil; sffd = sffd.Next() {
 		sffds = append(sffds, sffd)
 	}
 	fs.syncMu.Unlock()

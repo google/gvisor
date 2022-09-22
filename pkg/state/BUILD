@@ -11,8 +11,7 @@ go_template_instance(
     template = "//pkg/ilist:generic_list",
     types = {
         "Element": "*objectEncodeState",
-        "ElementMapper": "deferredMapper",
-        "Linker": "*deferredEntry",
+        "Linker": "*objectEncodeState",
     },
 )
 

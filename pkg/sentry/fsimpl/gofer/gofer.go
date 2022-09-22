@@ -181,8 +181,8 @@ type filesystem struct {
 	// syncableDentries contains all non-synthetic dentries. specialFileFDs
 	// contains all open specialFileFDs. These fields are protected by syncMu.
 	syncMu           sync.Mutex `state:"nosave"`
-	syncableDentries map[*dentry]struct{}
-	specialFileFDs   map[*specialFileFD]struct{}
+	syncableDentries dentryList
+	specialFileFDs   specialFDList
 
 	// inoByQIDPath maps previously-observed QID.Paths to inode numbers
 	// assigned to those paths. inoByQIDPath is not preserved across
@@ -487,15 +487,13 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		return nil, nil, err
 	}
 	fs := &filesystem{
-		mfp:              mfp,
-		opts:             fsopts,
-		iopts:            iopts,
-		clock:            ktime.RealtimeClockFromContext(ctx),
-		devMinor:         devMinor,
-		syncableDentries: make(map[*dentry]struct{}),
-		specialFileFDs:   make(map[*specialFileFD]struct{}),
-		inoByQIDPath:     make(map[uint64]uint64),
-		inoByKey:         make(map[inoKey]uint64),
+		mfp:          mfp,
+		opts:         fsopts,
+		iopts:        iopts,
+		clock:        ktime.RealtimeClockFromContext(ctx),
+		devMinor:     devMinor,
+		inoByQIDPath: make(map[uint64]uint64),
+		inoByKey:     make(map[inoKey]uint64),
 	}
 
 	// Did the user configure a global dentry cache?
@@ -681,7 +679,8 @@ func (fs *filesystem) Release(ctx context.Context) {
 
 	mf := fs.mfp.MemoryFile()
 	fs.syncMu.Lock()
-	for d := range fs.syncableDentries {
+	for elem := fs.syncableDentries.Front(); elem != nil; elem = elem.Next() {
+		d := elem.d
 		d.handleMu.Lock()
 		d.dataMu.Lock()
 		if h := d.writeHandleLocked(); h.isOpen() {
@@ -839,11 +838,17 @@ type dentry struct {
 	// this dentry.
 	cachingMu sync.Mutex `state:"nosave"`
 
-	// If cached is true, dentryEntry links dentry into
-	// filesystem.dentryCache.dentries. cached and dentryEntry are protected by
-	// cachingMu.
+	// If cached is true, this dentry is part of filesystem.dentryCache. cached
+	// is protected by cachingMu.
 	cached bool
-	dentryEntry
+
+	// cacheEntry links dentry into filesystem.dentryCache.dentries. It is
+	// protected by filesystem.dentryCache.mu.
+	cacheEntry dentryListElem
+
+	// syncableListEntry links dentry into filesystem.syncableDentries. It is
+	// protected by filesystem.syncMu.
+	syncableListEntry dentryListElem
 
 	dirMu sync.Mutex `state:"nosave"`
 
@@ -995,6 +1000,13 @@ type dentry struct {
 	watches vfs.Watches
 }
 
+// +stateify savable
+type dentryListElem struct {
+	// d is the dentry that this elem represents.
+	d *dentry
+	dentryEntry
+}
+
 // dentryAttrMask returns a p9.AttrMask enabling all attributes used by the
 // gofer client.
 func dentryAttrMask() p9.AttrMask {
@@ -1040,6 +1052,8 @@ func (fs *filesystem) newDentry(ctx context.Context, file p9file, qid p9.QID, ma
 		mmapFD:    atomicbitops.FromInt32(-1),
 	}
 	d.pf.dentry = d
+	d.cacheEntry.d = d
+	d.syncableListEntry.d = d
 	if mask.UID {
 		d.uid = atomicbitops.FromUint32(dentryUIDFromP9UID(attr.UID))
 	}
@@ -1083,7 +1097,7 @@ func (fs *filesystem) newDentry(ctx context.Context, file p9file, qid p9.QID, ma
 	d.vfsd.Init(d)
 	refsvfs2.Register(d)
 	fs.syncMu.Lock()
-	fs.syncableDentries[d] = struct{}{}
+	fs.syncableDentries.PushBack(&d.syncableListEntry)
 	fs.syncMu.Unlock()
 	return d, nil
 }
@@ -1112,8 +1126,9 @@ func (fs *filesystem) newDentryLisa(ctx context.Context, ino *lisafs.Inode) (*de
 		mmapFD:        atomicbitops.FromInt32(-1),
 		controlFDLisa: fs.clientLisa.NewFD(ino.ControlFD),
 	}
-
 	d.pf.dentry = d
+	d.cacheEntry.d = d
+	d.syncableListEntry.d = d
 	if ino.Stat.Mask&linux.STATX_UID != 0 {
 		d.uid = atomicbitops.FromUint32(dentryUIDFromLisaUID(lisafs.UID(ino.Stat.UID)))
 	}
@@ -1157,7 +1172,7 @@ func (fs *filesystem) newDentryLisa(ctx context.Context, ino *lisafs.Inode) (*de
 	d.vfsd.Init(d)
 	refsvfs2.Register(d)
 	fs.syncMu.Lock()
-	fs.syncableDentries[d] = struct{}{}
+	fs.syncableDentries.PushBack(&d.syncableListEntry)
 	fs.syncMu.Unlock()
 	return d, nil
 }
@@ -1928,15 +1943,15 @@ func (d *dentry) checkCachingLocked(ctx context.Context, renameMuWriteLocked boo
 	d.fs.dentryCache.mu.Lock()
 	// If d is already cached, just move it to the front of the LRU.
 	if d.cached {
-		d.fs.dentryCache.dentries.Remove(d)
-		d.fs.dentryCache.dentries.PushFront(d)
+		d.fs.dentryCache.dentries.Remove(&d.cacheEntry)
+		d.fs.dentryCache.dentries.PushFront(&d.cacheEntry)
 		d.fs.dentryCache.mu.Unlock()
 		d.cachingMu.Unlock()
 		return
 	}
 	// Cache the dentry, then evict the least recently used cached dentry if
 	// the cache becomes over-full.
-	d.fs.dentryCache.dentries.PushFront(d)
+	d.fs.dentryCache.dentries.PushFront(&d.cacheEntry)
 	d.fs.dentryCache.dentriesLen++
 	d.cached = true
 	shouldEvict := d.fs.dentryCache.dentriesLen > d.fs.dentryCache.maxCachedDentries
@@ -1958,7 +1973,7 @@ func (d *dentry) checkCachingLocked(ctx context.Context, renameMuWriteLocked boo
 func (d *dentry) removeFromCacheLocked() {
 	if d.cached {
 		d.fs.dentryCache.mu.Lock()
-		d.fs.dentryCache.dentries.Remove(d)
+		d.fs.dentryCache.dentries.Remove(&d.cacheEntry)
 		d.fs.dentryCache.dentriesLen--
 		d.fs.dentryCache.mu.Unlock()
 		d.cached = false
@@ -1988,8 +2003,8 @@ func (fs *filesystem) evictCachedDentryLocked(ctx context.Context) {
 		return
 	}
 
-	if victim.fs == fs {
-		victim.evictLocked(ctx) // +checklocksforce: owned as precondition, victim.fs == fs
+	if victim.d.fs == fs {
+		victim.d.evictLocked(ctx) // +checklocksforce: owned as precondition, victim.fs == fs
 		return
 	}
 
@@ -1999,7 +2014,7 @@ func (fs *filesystem) evictCachedDentryLocked(ctx context.Context) {
 	// each others' renameMu.
 	fs.renameMu.Unlock()
 	defer fs.renameMu.Lock()
-	victim.evict(ctx)
+	victim.d.evict(ctx)
 }
 
 // Preconditions:
@@ -2140,7 +2155,7 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 
 		// Remove d from the set of syncable dentries.
 		d.fs.syncMu.Lock()
-		delete(d.fs.syncableDentries, d)
+		d.fs.syncableDentries.Remove(&d.syncableListEntry)
 		d.fs.syncMu.Unlock()
 	}
 

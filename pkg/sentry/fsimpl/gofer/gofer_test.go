@@ -26,11 +26,10 @@ import (
 func TestDestroyIdempotent(t *testing.T) {
 	ctx := contexttest.Context(t)
 	fs := filesystem{
-		mfp:              pgalloc.MemoryFileProviderFromContext(ctx),
-		syncableDentries: make(map[*dentry]struct{}),
-		inoByQIDPath:     make(map[uint64]uint64),
-		inoByKey:         make(map[inoKey]uint64),
-		clock:            time.RealtimeClockFromContext(ctx),
+		mfp:          pgalloc.MemoryFileProviderFromContext(ctx),
+		inoByQIDPath: make(map[uint64]uint64),
+		inoByKey:     make(map[inoKey]uint64),
+		clock:        time.RealtimeClockFromContext(ctx),
 		// Test relies on no dentry being held in the cache.
 		dentryCache: &dentryCache{maxCachedDentries: 0},
 	}
