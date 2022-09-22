@@ -122,6 +122,10 @@ TEST_F(MkdirTest, MkdirAtEmptyPath) {
   EXPECT_THAT(mkdirat(fd.get(), "", 0777), SyscallFailsWithErrno(ENOENT));
 }
 
+TEST_F(MkdirTest, TrailingSlash) {
+  ASSERT_THAT(mkdir((dirname_ + "/").c_str(), 0777), SyscallSucceeds());
+}
+
 }  // namespace
 
 }  // namespace testing
