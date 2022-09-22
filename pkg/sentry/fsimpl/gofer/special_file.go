@@ -44,6 +44,7 @@ import (
 // +stateify savable
 type specialFileFD struct {
 	fileDescription
+	specialFDEntry
 
 	// releaseMu synchronizes the closing of fd.handle with fd.sync(). It's safe
 	// to access fd.handle without locking for operations that require a ref to
@@ -116,7 +117,7 @@ func newSpecialFileFD(h handle, mnt *vfs.Mount, d *dentry, flags uint32) (*speci
 		return nil, err
 	}
 	d.fs.syncMu.Lock()
-	d.fs.specialFileFDs[fd] = struct{}{}
+	d.fs.specialFileFDs.PushBack(fd)
 	d.fs.syncMu.Unlock()
 	if fd.vfsfd.IsWritable() && (d.mode.Load()&0111 != 0) {
 		metric.SuspiciousOperationsMetric.Increment("opened_write_execute_file")
@@ -140,7 +141,7 @@ func (fd *specialFileFD) Release(ctx context.Context) {
 
 	fs := fd.vfsfd.Mount().Filesystem().Impl().(*filesystem)
 	fs.syncMu.Lock()
-	delete(fs.specialFileFDs, fd)
+	fs.specialFileFDs.Remove(fd)
 	fs.syncMu.Unlock()
 }
 

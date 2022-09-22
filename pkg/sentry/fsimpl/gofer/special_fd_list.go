@@ -6,14 +6,14 @@ package gofer
 // objects, if they are not the same. An ElementMapper is not typically
 // required if: Linker is left as is, Element is left as is, or Linker and
 // Element are the same type.
-type dentryElementMapper struct{}
+type specialFDElementMapper struct{}
 
 // linkerFor maps an Element to a Linker.
 //
 // This default implementation should be inlined.
 //
 //go:nosplit
-func (dentryElementMapper) linkerFor(elem *dentryListElem) *dentryListElem { return elem }
+func (specialFDElementMapper) linkerFor(elem *specialFileFD) *specialFileFD { return elem }
 
 // List is an intrusive list. Entries can be added to or removed from the list
 // in O(1) time and with no additional memory allocations.
@@ -27,13 +27,13 @@ func (dentryElementMapper) linkerFor(elem *dentryListElem) *dentryListElem { ret
 //	}
 //
 // +stateify savable
-type dentryList struct {
-	head *dentryListElem
-	tail *dentryListElem
+type specialFDList struct {
+	head *specialFileFD
+	tail *specialFileFD
 }
 
 // Reset resets list l to the empty state.
-func (l *dentryList) Reset() {
+func (l *specialFDList) Reset() {
 	l.head = nil
 	l.tail = nil
 }
@@ -41,21 +41,21 @@ func (l *dentryList) Reset() {
 // Empty returns true iff the list is empty.
 //
 //go:nosplit
-func (l *dentryList) Empty() bool {
+func (l *specialFDList) Empty() bool {
 	return l.head == nil
 }
 
 // Front returns the first element of list l or nil.
 //
 //go:nosplit
-func (l *dentryList) Front() *dentryListElem {
+func (l *specialFDList) Front() *specialFileFD {
 	return l.head
 }
 
 // Back returns the last element of list l or nil.
 //
 //go:nosplit
-func (l *dentryList) Back() *dentryListElem {
+func (l *specialFDList) Back() *specialFileFD {
 	return l.tail
 }
 
@@ -64,8 +64,8 @@ func (l *dentryList) Back() *dentryListElem {
 // NOTE: This is an O(n) operation.
 //
 //go:nosplit
-func (l *dentryList) Len() (count int) {
-	for e := l.Front(); e != nil; e = (dentryElementMapper{}.linkerFor(e)).Next() {
+func (l *specialFDList) Len() (count int) {
+	for e := l.Front(); e != nil; e = (specialFDElementMapper{}.linkerFor(e)).Next() {
 		count++
 	}
 	return count
@@ -74,12 +74,12 @@ func (l *dentryList) Len() (count int) {
 // PushFront inserts the element e at the front of list l.
 //
 //go:nosplit
-func (l *dentryList) PushFront(e *dentryListElem) {
-	linker := dentryElementMapper{}.linkerFor(e)
+func (l *specialFDList) PushFront(e *specialFileFD) {
+	linker := specialFDElementMapper{}.linkerFor(e)
 	linker.SetNext(l.head)
 	linker.SetPrev(nil)
 	if l.head != nil {
-		dentryElementMapper{}.linkerFor(l.head).SetPrev(e)
+		specialFDElementMapper{}.linkerFor(l.head).SetPrev(e)
 	} else {
 		l.tail = e
 	}
@@ -90,13 +90,13 @@ func (l *dentryList) PushFront(e *dentryListElem) {
 // PushFrontList inserts list m at the start of list l, emptying m.
 //
 //go:nosplit
-func (l *dentryList) PushFrontList(m *dentryList) {
+func (l *specialFDList) PushFrontList(m *specialFDList) {
 	if l.head == nil {
 		l.head = m.head
 		l.tail = m.tail
 	} else if m.head != nil {
-		dentryElementMapper{}.linkerFor(l.head).SetPrev(m.tail)
-		dentryElementMapper{}.linkerFor(m.tail).SetNext(l.head)
+		specialFDElementMapper{}.linkerFor(l.head).SetPrev(m.tail)
+		specialFDElementMapper{}.linkerFor(m.tail).SetNext(l.head)
 
 		l.head = m.head
 	}
@@ -107,12 +107,12 @@ func (l *dentryList) PushFrontList(m *dentryList) {
 // PushBack inserts the element e at the back of list l.
 //
 //go:nosplit
-func (l *dentryList) PushBack(e *dentryListElem) {
-	linker := dentryElementMapper{}.linkerFor(e)
+func (l *specialFDList) PushBack(e *specialFileFD) {
+	linker := specialFDElementMapper{}.linkerFor(e)
 	linker.SetNext(nil)
 	linker.SetPrev(l.tail)
 	if l.tail != nil {
-		dentryElementMapper{}.linkerFor(l.tail).SetNext(e)
+		specialFDElementMapper{}.linkerFor(l.tail).SetNext(e)
 	} else {
 		l.head = e
 	}
@@ -123,13 +123,13 @@ func (l *dentryList) PushBack(e *dentryListElem) {
 // PushBackList inserts list m at the end of list l, emptying m.
 //
 //go:nosplit
-func (l *dentryList) PushBackList(m *dentryList) {
+func (l *specialFDList) PushBackList(m *specialFDList) {
 	if l.head == nil {
 		l.head = m.head
 		l.tail = m.tail
 	} else if m.head != nil {
-		dentryElementMapper{}.linkerFor(l.tail).SetNext(m.head)
-		dentryElementMapper{}.linkerFor(m.head).SetPrev(l.tail)
+		specialFDElementMapper{}.linkerFor(l.tail).SetNext(m.head)
+		specialFDElementMapper{}.linkerFor(m.head).SetPrev(l.tail)
 
 		l.tail = m.tail
 	}
@@ -140,9 +140,9 @@ func (l *dentryList) PushBackList(m *dentryList) {
 // InsertAfter inserts e after b.
 //
 //go:nosplit
-func (l *dentryList) InsertAfter(b, e *dentryListElem) {
-	bLinker := dentryElementMapper{}.linkerFor(b)
-	eLinker := dentryElementMapper{}.linkerFor(e)
+func (l *specialFDList) InsertAfter(b, e *specialFileFD) {
+	bLinker := specialFDElementMapper{}.linkerFor(b)
+	eLinker := specialFDElementMapper{}.linkerFor(e)
 
 	a := bLinker.Next()
 
@@ -151,7 +151,7 @@ func (l *dentryList) InsertAfter(b, e *dentryListElem) {
 	bLinker.SetNext(e)
 
 	if a != nil {
-		dentryElementMapper{}.linkerFor(a).SetPrev(e)
+		specialFDElementMapper{}.linkerFor(a).SetPrev(e)
 	} else {
 		l.tail = e
 	}
@@ -160,9 +160,9 @@ func (l *dentryList) InsertAfter(b, e *dentryListElem) {
 // InsertBefore inserts e before a.
 //
 //go:nosplit
-func (l *dentryList) InsertBefore(a, e *dentryListElem) {
-	aLinker := dentryElementMapper{}.linkerFor(a)
-	eLinker := dentryElementMapper{}.linkerFor(e)
+func (l *specialFDList) InsertBefore(a, e *specialFileFD) {
+	aLinker := specialFDElementMapper{}.linkerFor(a)
+	eLinker := specialFDElementMapper{}.linkerFor(e)
 
 	b := aLinker.Prev()
 	eLinker.SetNext(a)
@@ -170,7 +170,7 @@ func (l *dentryList) InsertBefore(a, e *dentryListElem) {
 	aLinker.SetPrev(e)
 
 	if b != nil {
-		dentryElementMapper{}.linkerFor(b).SetNext(e)
+		specialFDElementMapper{}.linkerFor(b).SetNext(e)
 	} else {
 		l.head = e
 	}
@@ -179,19 +179,19 @@ func (l *dentryList) InsertBefore(a, e *dentryListElem) {
 // Remove removes e from l.
 //
 //go:nosplit
-func (l *dentryList) Remove(e *dentryListElem) {
-	linker := dentryElementMapper{}.linkerFor(e)
+func (l *specialFDList) Remove(e *specialFileFD) {
+	linker := specialFDElementMapper{}.linkerFor(e)
 	prev := linker.Prev()
 	next := linker.Next()
 
 	if prev != nil {
-		dentryElementMapper{}.linkerFor(prev).SetNext(next)
+		specialFDElementMapper{}.linkerFor(prev).SetNext(next)
 	} else if l.head == e {
 		l.head = next
 	}
 
 	if next != nil {
-		dentryElementMapper{}.linkerFor(next).SetPrev(prev)
+		specialFDElementMapper{}.linkerFor(next).SetPrev(prev)
 	} else if l.tail == e {
 		l.tail = prev
 	}
@@ -205,35 +205,35 @@ func (l *dentryList) Remove(e *dentryListElem) {
 // methods needed by List.
 //
 // +stateify savable
-type dentryEntry struct {
-	next *dentryListElem
-	prev *dentryListElem
+type specialFDEntry struct {
+	next *specialFileFD
+	prev *specialFileFD
 }
 
 // Next returns the entry that follows e in the list.
 //
 //go:nosplit
-func (e *dentryEntry) Next() *dentryListElem {
+func (e *specialFDEntry) Next() *specialFileFD {
 	return e.next
 }
 
 // Prev returns the entry that precedes e in the list.
 //
 //go:nosplit
-func (e *dentryEntry) Prev() *dentryListElem {
+func (e *specialFDEntry) Prev() *specialFileFD {
 	return e.prev
 }
 
 // SetNext assigns 'entry' as the entry that follows e in the list.
 //
 //go:nosplit
-func (e *dentryEntry) SetNext(elem *dentryListElem) {
+func (e *specialFDEntry) SetNext(elem *specialFileFD) {
 	e.next = elem
 }
 
 // SetPrev assigns 'entry' as the entry that precedes e in the list.
 //
 //go:nosplit
-func (e *dentryEntry) SetPrev(elem *dentryListElem) {
+func (e *specialFDEntry) SetPrev(elem *specialFileFD) {
 	e.prev = elem
 }
