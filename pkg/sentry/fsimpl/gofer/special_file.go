@@ -108,8 +108,9 @@ func newSpecialFileFD(h handle, mnt *vfs.Mount, d *dentry, flags uint32) (*speci
 		}
 	}
 	if err := fd.vfsfd.Init(fd, flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{
-		DenyPRead:  !seekable,
-		DenyPWrite: !seekable,
+		AllowDirectIO: true,
+		DenyPRead:     !seekable,
+		DenyPWrite:    !seekable,
 	}); err != nil {
 		if haveQueue {
 			fdnotifier.RemoveFD(h.fd)

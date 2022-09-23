@@ -1255,7 +1255,7 @@ func (d *dentry) openSocketByConnecting(ctx context.Context, opts *vfs.OpenOptio
 
 func (d *dentry) openSpecialFile(ctx context.Context, mnt *vfs.Mount, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
 	ats := vfs.AccessTypesForOpenFlags(opts)
-	if opts.Flags&linux.O_DIRECT != 0 {
+	if opts.Flags&linux.O_DIRECT != 0 && !d.isRegularFile() {
 		return nil, linuxerr.EINVAL
 	}
 	// We assume that the server silently inserts O_NONBLOCK in the open flags
