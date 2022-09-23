@@ -689,32 +689,44 @@ func (fd *controlFDLisa) BindAt(name string, sockType uint32) (*lisafs.ControlFD
 	if err != nil {
 		return nil, linux.Statx{}, nil, -1, err
 	}
-	if err := unix.Bind(sockFD, &unix.SockaddrUnix{Name: socketPath}); err != nil {
+	cu := cleanup.Make(func() {
 		_ = unix.Close(sockFD)
+	})
+	defer cu.Clean()
+
+	if err := unix.Bind(sockFD, &unix.SockaddrUnix{Name: socketPath}); err != nil {
 		return nil, linux.Statx{}, nil, -1, err
 	}
+	cu.Add(func() {
+		_ = unix.Unlink(socketPath)
+	})
+
+	sockFileFD, err := tryOpen(func(flags int) (int, error) {
+		return unix.Openat(fd.hostFD, name, flags, 0)
+	})
+	if err != nil {
+		return nil, linux.Statx{}, nil, -1, err
+	}
+	cu.Add(func() {
+		_ = unix.Close(sockFileFD)
+	})
 
 	// Stat the socket.
-	sockStat, err := fstatTo(sockFD)
+	sockStat, err := fstatTo(sockFileFD)
 	if err != nil {
-		_ = unix.Close(sockFD)
-		_ = unix.Unlink(socketPath)
 		return nil, linux.Statx{}, nil, -1, err
 	}
-
-	// Get an os.File that will back future socket calls.
-	sockFile := os.NewFile(uintptr(sockFD), socketPath)
 
 	// Create an FD that will be donated to the sandbox.
-	sockFDToDonate, err := unix.Dup(int(sockFile.Fd()))
+	sockFDToDonate, err := unix.Dup(sockFD)
 	if err != nil {
-		_ = unix.Unlink(socketPath)
 		return nil, linux.Statx{}, nil, -1, err
 	}
+	cu.Release()
 
 	socketControlFD := newControlFDLisa(sockFD, fd, socketPath, linux.ModeSocket)
 	boundSocketFD := &boundSocketFDLisa{
-		sock: sockFile,
+		sock: os.NewFile(uintptr(sockFD), socketPath),
 	}
 	boundSocketFD.Init(socketControlFD.FD(), boundSocketFD)
 

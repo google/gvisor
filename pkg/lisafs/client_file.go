@@ -591,6 +591,8 @@ type ClientBoundSocketFD struct {
 // Close implements transport.BoundSocketFD.Close.
 func (f *ClientBoundSocketFD) Close(ctx context.Context) {
 	_ = unix.Close(int(f.notificationFD))
+	// flush is true because the socket FD must be closed immediately on the
+	// server. close(2) on socket FD impacts application behavior.
 	f.client.CloseFD(ctx, f.fd, true /* flush */)
 }
 
