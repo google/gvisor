@@ -759,6 +759,68 @@ TEST(MountTest, TmpfsSizeMmap) {
               ::testing::KilledBySignal(SIGBUS), "");
   EXPECT_THAT(munmap(addr, 2 * kPageSize), SyscallSucceeds());
 }
+
+TEST(MountTest, SimpleBind) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const dir2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir1.path(), "tmpfs", 0, "mode=0123", 0));
+  auto const child1 =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir1.path()));
+  auto const child2 =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir1.path()));
+  auto const bind_mount = Mount(dir1.path(), dir2.path(), "", MS_BIND, "", 0);
+
+  // Write to child1 in dir1.
+  const std::string filename = "foo.txt";
+  const std::string contents = "barbaz";
+  ASSERT_NO_ERRNO(CreateWithContents(JoinPath(child1.path(), filename),
+                                     contents, O_WRONLY));
+  // Verify both directories have the same nodes.
+  std::vector<std::string> child_names = {std::string(Basename(child1.path())),
+                                          std::string(Basename(child2.path()))};
+  ASSERT_NO_ERRNO(DirContains(dir1.path(), child_names, {}));
+  ASSERT_NO_ERRNO(DirContains(dir2.path(), child_names, {}));
+
+  const std::string dir1_filepath =
+      JoinPath(dir1.path(), Basename(child1.path()), filename);
+  const std::string dir2_filepath =
+      JoinPath(dir2.path(), Basename(child1.path()), filename);
+
+  std::string output;
+  ASSERT_NO_ERRNO(GetContents(dir1_filepath, &output));
+  ASSERT_TRUE(output == contents);
+  ASSERT_NO_ERRNO(GetContents(dir2_filepath, &output));
+  ASSERT_TRUE(output == contents);
+}
+
+TEST(MountTest, BindToSelf) {
+  // Test that we can turn a normal directory into a mount with MS_BIND.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  const std::vector<ProcMountsEntry> mounts_before =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountsEntries());
+  for (const auto& e : mounts_before) {
+    ASSERT_TRUE(e.mount_point != dir.path());
+  }
+
+  auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(dir.path(), dir.path(), "", MS_BIND, "", 0));
+
+  const std::vector<ProcMountsEntry> mounts_after =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountsEntries());
+  bool found = false;
+  for (const auto& e : mounts_after) {
+    if (e.mount_point == dir.path()) {
+      found = true;
+    }
+  }
+  ASSERT_TRUE(found);
+}
+
 }  // namespace
 
 }  // namespace testing

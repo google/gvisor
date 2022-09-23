@@ -17,6 +17,7 @@ package vfs2
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -71,9 +72,8 @@ func Mount(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		return 0, nil, linuxerr.EPERM
 	}
 
-	const unsupportedOps = linux.MS_REMOUNT | linux.MS_BIND |
-		linux.MS_SHARED | linux.MS_PRIVATE | linux.MS_SLAVE |
-		linux.MS_UNBINDABLE | linux.MS_MOVE
+	const unsupportedOps = linux.MS_REMOUNT | linux.MS_SHARED | linux.MS_PRIVATE |
+		linux.MS_SLAVE | linux.MS_UNBINDABLE | linux.MS_MOVE
 
 	// Silently allow MS_NOSUID, since we don't implement set-id bits
 	// anyway.
@@ -109,7 +109,23 @@ func Mount(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		return 0, nil, err
 	}
 	defer target.Release(t)
-	_, err = t.Kernel().VFS().MountAt(t, creds, source, &target.pop, fsType, &opts)
+
+	if flags&linux.MS_BIND == linux.MS_BIND {
+		var sourcePath fspath.Path
+		sourcePath, err = copyInPath(t, sourceAddr)
+		if err != nil {
+			return 0, nil, err
+		}
+		var sourceTpop taskPathOperation
+		sourceTpop, err = getTaskPathOperation(t, linux.AT_FDCWD, sourcePath, disallowEmptyPath, nofollowFinalSymlink)
+		if err != nil {
+			return 0, nil, err
+		}
+		defer sourceTpop.Release(t)
+		_, err = t.Kernel().VFS().BindAt(t, creds, &sourceTpop.pop, &target.pop)
+	} else {
+		_, err = t.Kernel().VFS().MountAt(t, creds, source, &target.pop, fsType, &opts)
+	}
 	return 0, nil, err
 }
 

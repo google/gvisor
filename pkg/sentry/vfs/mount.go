@@ -271,6 +271,26 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 	return nil
 }
 
+// BindAt creates a clone of the source path's parent mount and mounts it at
+// the target path. The new mount's root dentry is one pointed to by the source
+// path.
+//
+// TODO(b/249121230): Support recursive bind mounting.
+func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credentials, source, target *PathOperation) (*Mount, error) {
+	vd, err := vfs.GetDentryAt(ctx, creds, source, &GetDentryOptions{})
+	if err != nil {
+		return nil, err
+	}
+	defer vd.DecRef(ctx)
+	opts := vd.mount.Options()
+	mnt := vfs.NewDisconnectedMount(vd.mount.fs, vd.dentry, &opts)
+	defer mnt.DecRef(ctx)
+	if err := vfs.ConnectMountAt(ctx, creds, mnt, target); err != nil {
+		return nil, err
+	}
+	return mnt, nil
+}
+
 // MountAt creates and mounts a Filesystem configured by the given arguments.
 // The VirtualFilesystem will hold a reference to the Mount until it is
 // unmounted.
