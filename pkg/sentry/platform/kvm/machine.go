@@ -372,7 +372,7 @@ func (m *machine) hasSlot(physical uintptr) bool {
 // mapPhysical checks for the mapping of a physical range, and installs one if
 // not available. This attempts to be efficient for calls in the hot path.
 //
-// This panics on error.
+// This throws on error.
 //
 //go:nosplit
 func (m *machine) mapPhysical(physical, length uintptr, phyRegions []physicalRegion) {
