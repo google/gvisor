@@ -622,6 +622,16 @@ func (fd *controlFDLisa) Readlink(getLinkBuf func(uint32) []byte) (uint16, error
 	return 0, unix.ENOMEM
 }
 
+func isSockTypeSupported(sockType uint32) bool {
+	switch sockType {
+	case unix.SOCK_STREAM, unix.SOCK_DGRAM, unix.SOCK_SEQPACKET:
+		return true
+	default:
+		log.Debugf("socket type %d is not supported", sockType)
+		return false
+	}
+}
+
 // Connect implements lisafs.ControlFDImpl.Connect.
 func (fd *controlFDLisa) Connect(sockType uint32) (int, error) {
 	if !fd.Conn().ServerImpl().(*LisafsServer).config.HostUDS {
@@ -637,10 +647,7 @@ func (fd *controlFDLisa) Connect(sockType uint32) (int, error) {
 		return -1, unix.EINVAL
 	}
 
-	// Only the following types are supported.
-	switch sockType {
-	case unix.SOCK_STREAM, unix.SOCK_DGRAM, unix.SOCK_SEQPACKET:
-	default:
+	if !isSockTypeSupported(sockType) {
 		return -1, unix.ENXIO
 	}
 
@@ -677,9 +684,7 @@ func (fd *controlFDLisa) BindAt(name string, sockType uint32) (*lisafs.ControlFD
 	}
 
 	// Only the following types are supported.
-	switch sockType {
-	case unix.SOCK_STREAM, unix.SOCK_SEQPACKET:
-	default:
+	if !isSockTypeSupported(sockType) {
 		return nil, linux.Statx{}, nil, -1, unix.ENXIO
 	}
 
