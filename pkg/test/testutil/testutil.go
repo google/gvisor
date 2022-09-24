@@ -235,7 +235,7 @@ func TestConfig(t *testing.T) *config.Config {
 	}
 	// Change test defaults.
 	conf.Debug = true
-	conf.DebugLog = path.Join(logDir, "runsc.log."+t.Name()+".%TIMESTAMP%.%COMMAND%")
+	conf.DebugLog = path.Join(logDir, "runsc.log."+t.Name()+".%TIMESTAMP%.%COMMAND%.txt")
 	conf.LogPackets = true
 	conf.Network = config.NetworkNone
 	conf.Strace = true
