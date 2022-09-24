@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <asm-generic/errno-base.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <sys/socket.h>
@@ -137,7 +138,19 @@ TEST_P(GoferStreamSeqpacketTest, BindListenAccept) {
       bind(sock.get(), reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)),
       SyscallSucceeds());
 
+  // Bind again on that socket with a diff address should fail.
+  std::string socket_path2 = socket_path + "-fail";
+  struct sockaddr_un addr2 = {};
+  addr2.sun_family = AF_UNIX;
+  memcpy(addr2.sun_path, socket_path2.c_str(), socket_path2.length());
+  ASSERT_THAT(bind(sock.get(), reinterpret_cast<struct sockaddr*>(&addr2),
+                   sizeof(addr2)),
+              SyscallFailsWithErrno(EINVAL));
+
   ASSERT_THAT(listen(sock.get(), 1), SyscallSucceeds());
+  ASSERT_THAT(bind(sock.get(), reinterpret_cast<struct sockaddr*>(&addr2),
+                   sizeof(addr2)),
+              SyscallFailsWithErrno(EINVAL));
 
   FileDescriptor accSock =
       ASSERT_NO_ERRNO_AND_VALUE(Accept(sock.get(), NULL, NULL));

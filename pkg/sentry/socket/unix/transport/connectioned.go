@@ -15,8 +15,6 @@
 package transport
 
 import (
-	"fmt"
-
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -238,7 +236,6 @@ func (e *connectionedEndpoint) Close(ctx context.Context) {
 		c ConnectedEndpoint
 		r Receiver
 	)
-	bsFD := e.boundSocketFD
 	switch {
 	case e.Connected():
 		e.connected.CloseSend()
@@ -270,13 +267,7 @@ func (e *connectionedEndpoint) Close(ctx context.Context) {
 		c.CloseNotify()
 		c.Release(ctx)
 	}
-
-	// Clean up any associated host bound socket.
-	if bsFD != nil {
-		fdnotifier.RemoveFD(bsFD.NotificationFD())
-		bsFD.Close(ctx)
-	}
-
+	e.ResetBoundSocketFD(ctx)
 	if r != nil {
 		r.CloseNotify()
 		r.Release(ctx)
@@ -603,14 +594,27 @@ func (e *connectionedEndpoint) OnSetSendBufferSize(v int64) (newSz int64) {
 func (e *connectionedEndpoint) WakeupWriters() {}
 
 // SetBoundSocketFD implement HostBountEndpoint.SetBoundSocketFD.
-func (e *connectionedEndpoint) SetBoundSocketFD(bsFD BoundSocketFD) {
+func (e *connectionedEndpoint) SetBoundSocketFD(bsFD BoundSocketFD) error {
 	e.Lock()
 	defer e.Unlock()
-	if e.boundSocketFD != nil {
-		panic(fmt.Sprintf("SetBoundSocketFD called twice\nold: %v\nnew: %v", e.boundSocketFD, bsFD))
+	if e.path != "" || e.boundSocketFD != nil {
+		return syserr.ErrAlreadyBound.ToError()
 	}
 	e.boundSocketFD = bsFD
 	fdnotifier.AddFD(bsFD.NotificationFD(), e.Queue)
+	return nil
+}
+
+// SetBoundSocketFD implement HostBountEndpoint.ResetBoundSocketFD.
+func (e *connectionedEndpoint) ResetBoundSocketFD(ctx context.Context) {
+	e.Lock()
+	defer e.Unlock()
+	if e.boundSocketFD == nil {
+		return
+	}
+	fdnotifier.RemoveFD(e.boundSocketFD.NotificationFD())
+	e.boundSocketFD.Close(ctx)
+	e.boundSocketFD = nil
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.

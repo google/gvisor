@@ -1622,6 +1622,45 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs
 	return nil
 }
 
+// Preconditions:
+// - filesystem.renameMu must be locked.
+// - d.dirMu must be locked.
+// - d.isDir().
+// - fs.opts.lisaEnabled.
+func (d *dentry) mknodLisaLocked(ctx context.Context, name string, creds *auth.Credentials, opts vfs.MknodOptions, ds **[]*dentry) error {
+	if opts.Endpoint == nil {
+		childInode, err := d.controlFDLisa.MknodAt(ctx, name, opts.Mode, lisafs.UID(creds.EffectiveKUID), lisafs.GID(creds.EffectiveKGID), opts.DevMinor, opts.DevMajor)
+		if err != nil {
+			return err
+		}
+		return d.insertCreatedChildLocked(ctx, &childInode, name, nil, ds)
+	}
+
+	// This mknod(2) is coming from unix bind(2), as opts.Endpoint is set.
+	sockType := opts.Endpoint.(transport.Endpoint).Type()
+	childInode, boundSocketFD, err := d.controlFDLisa.BindAt(ctx, sockType, name)
+	if err != nil {
+		return err
+	}
+	hbep := opts.Endpoint.(transport.HostBoundEndpoint)
+	if err := hbep.SetBoundSocketFD(boundSocketFD); err != nil {
+		boundSocketFD.Close(ctx)
+		if err := d.controlFDLisa.UnlinkAt(ctx, name, 0 /* flags */); err != nil {
+			log.Warningf("failed to clean up socket which was created by BindAt RPC: %v", err)
+		}
+		d.fs.clientLisa.CloseFD(ctx, childInode.ControlFD, false /* flush */)
+		return err
+	}
+	if err := d.insertCreatedChildLocked(ctx, &childInode, name, func(child *dentry) {
+		// Set the endpoint on the newly created child dentry.
+		child.endpoint = opts.Endpoint
+	}, ds); err != nil {
+		hbep.ResetBoundSocketFD(ctx)
+		return err
+	}
+	return nil
+}
+
 // doAllocate performs an allocate operation on d. Note that d.metadataMu will
 // be held when allocate is called.
 func (d *dentry) doAllocate(ctx context.Context, offset, length uint64, allocate func() error) error {

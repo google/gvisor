@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/lisafs"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -44,6 +45,9 @@ func (d *dentry) isDir() bool {
 func (d *dentry) insertCreatedChildLocked(ctx context.Context, childIno *lisafs.Inode, childName string, updateChild func(child *dentry), ds **[]*dentry) error {
 	child, err := d.fs.newDentryLisa(ctx, childIno)
 	if err != nil {
+		if err := d.controlFDLisa.UnlinkAt(ctx, childName, 0 /* flags */); err != nil {
+			log.Warningf("failed to clean up created child %s after newDentryLisa() failed: %v", childName, err)
+		}
 		d.fs.clientLisa.CloseFD(ctx, childIno.ControlFD, false /* flush */)
 		return err
 	}
