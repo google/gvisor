@@ -1130,9 +1130,7 @@ func (l *localFile) Bind(sockType uint32, sockName string, uid p9.UID, gid p9.GI
 	}
 
 	// Create socket only for supported types.
-	switch sockType {
-	case unix.SOCK_STREAM, unix.SOCK_DGRAM, unix.SOCK_SEQPACKET:
-	default:
+	if !isSockTypeSupported(sockType) {
 		return nil, p9.QID{}, p9.AttrMask{}, p9.Attr{}, unix.ENXIO
 	}
 	sock, err := unix.Socket(unix.AF_UNIX, int(sockType), 0)
