@@ -208,10 +208,27 @@ func (fd *controlFDLisa) Stat() (linux.Statx, error) {
 // SetStat implements lisafs.ControlFDImpl.SetStat.
 func (fd *controlFDLisa) SetStat(stat lisafs.SetStatReq) (failureMask uint32, failureErr error) {
 	if stat.Mask&unix.STATX_MODE != 0 {
-		if err := unix.Fchmod(fd.hostFD, stat.Mode&^unix.S_IFMT); err != nil {
-			log.Warningf("SetStat fchmod failed %q, err: %v", fd.Node().FilePath(), err)
-			failureMask |= unix.STATX_MODE
-			failureErr = err
+		if fd.IsSocket() {
+			// fchmod(2) on socket files created via bind(2) fails. We need to
+			// fchmodat(2) it from its parent.
+			sockPath := fd.Node().FilePath()
+			parent, err := unix.Open(path.Dir(sockPath), openFlags|unix.O_PATH, 0)
+			if err == nil {
+				// Note that AT_SYMLINK_NOFOLLOW flag is not currently supported.
+				err = unix.Fchmodat(parent, path.Base(sockPath), stat.Mode&^unix.S_IFMT, 0 /* flags */)
+				unix.Close(parent)
+			}
+			if err != nil {
+				log.Warningf("SetStat fchmod failed on socket %q, err: %v", sockPath, err)
+				failureMask |= unix.STATX_MODE
+				failureErr = err
+			}
+		} else {
+			if err := unix.Fchmod(fd.hostFD, stat.Mode&^unix.S_IFMT); err != nil {
+				log.Warningf("SetStat fchmod failed %q, err: %v", fd.Node().FilePath(), err)
+				failureMask |= unix.STATX_MODE
+				failureErr = err
+			}
 		}
 	}
 

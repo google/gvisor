@@ -53,6 +53,7 @@ var allowedSyscalls = seccomp.SyscallRules{
 		},
 	},
 	unix.SYS_FCHMOD:   {},
+	unix.SYS_FCHMODAT: {},
 	unix.SYS_FCHOWNAT: {},
 	unix.SYS_FCNTL: []seccomp.Rule{
 		{
