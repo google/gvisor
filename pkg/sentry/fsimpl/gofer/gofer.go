@@ -1638,7 +1638,7 @@ func (d *dentry) mknodLisaLocked(ctx context.Context, name string, creds *auth.C
 
 	// This mknod(2) is coming from unix bind(2), as opts.Endpoint is set.
 	sockType := opts.Endpoint.(transport.Endpoint).Type()
-	childInode, boundSocketFD, err := d.controlFDLisa.BindAt(ctx, sockType, name)
+	childInode, boundSocketFD, err := d.controlFDLisa.BindAt(ctx, sockType, name, opts.Mode, lisafs.UID(creds.EffectiveKUID), lisafs.GID(creds.EffectiveKGID))
 	if err != nil {
 		return err
 	}
