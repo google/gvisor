@@ -1290,19 +1290,19 @@ func (*ConnectResp) String() string {
 
 // BindAtReq is used to make BindAt requests.
 type BindAtReq struct {
-	DirFD    FDID
+	createCommon
 	SockType primitive.Uint32
 	Name     SizedString
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (b *BindAtReq) SizeBytes() int {
-	return b.DirFD.SizeBytes() + b.SockType.SizeBytes() + b.Name.SizeBytes()
+	return b.createCommon.SizeBytes() + b.SockType.SizeBytes() + b.Name.SizeBytes()
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (b *BindAtReq) MarshalBytes(dst []byte) []byte {
-	dst = b.DirFD.MarshalUnsafe(dst)
+	dst = b.createCommon.MarshalUnsafe(dst)
 	dst = b.SockType.MarshalUnsafe(dst)
 	return b.Name.MarshalBytes(dst)
 }
@@ -1313,7 +1313,7 @@ func (b *BindAtReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
 	if b.SizeBytes() > len(src) {
 		return src, false
 	}
-	srcRemain := b.DirFD.UnmarshalUnsafe(src)
+	srcRemain := b.createCommon.UnmarshalUnsafe(src)
 	srcRemain = b.SockType.UnmarshalUnsafe(srcRemain)
 	if srcRemain, ok := b.Name.CheckedUnmarshal(srcRemain); ok {
 		return srcRemain, ok
@@ -1323,7 +1323,7 @@ func (b *BindAtReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
 
 // String implements fmt.Stringer.String.
 func (b *BindAtReq) String() string {
-	return fmt.Sprintf("BindAtReq{DirFD: %d, SockType: %d, Name: %q}", b.DirFD, b.SockType, b.Name)
+	return fmt.Sprintf("BindAtReq{DirFD: %d, Mode: %s, UID: %d, GID: %d, SockType: %d, Name: %q}", b.DirFD, b.Mode, b.UID, b.GID, b.SockType, b.Name)
 }
 
 // BindAtResp is used to communicate BindAt response.

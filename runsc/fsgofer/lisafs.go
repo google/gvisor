@@ -682,7 +682,7 @@ func (fd *controlFDLisa) Connect(sockType uint32) (int, error) {
 }
 
 // BindAt implements lisafs.ControlFDImpl.BindAt.
-func (fd *controlFDLisa) BindAt(name string, sockType uint32) (*lisafs.ControlFD, linux.Statx, *lisafs.BoundSocketFD, int, error) {
+func (fd *controlFDLisa) BindAt(name string, sockType uint32, mode linux.FileMode, uid lisafs.UID, gid lisafs.GID) (*lisafs.ControlFD, linux.Statx, *lisafs.BoundSocketFD, int, error) {
 	if !fd.Conn().ServerImpl().(*LisafsServer).config.HostUDS {
 		return nil, linux.Statx{}, nil, -1, unix.EPERM
 	}
@@ -716,6 +716,12 @@ func (fd *controlFDLisa) BindAt(name string, sockType uint32) (*lisafs.ControlFD
 	})
 	defer cu.Clean()
 
+	// fchmod(2) has to happen *before* the bind(2). sockFD's file mode will
+	// be used in creating the filesystem-object in bind(2).
+	if err := unix.Fchmod(sockFD, uint32(mode&^linux.FileTypeMask)); err != nil {
+		return nil, linux.Statx{}, nil, -1, err
+	}
+
 	if err := unix.Bind(sockFD, &unix.SockaddrUnix{Name: socketPath}); err != nil {
 		return nil, linux.Statx{}, nil, -1, err
 	}
@@ -732,6 +738,10 @@ func (fd *controlFDLisa) BindAt(name string, sockType uint32) (*lisafs.ControlFD
 	cu.Add(func() {
 		_ = unix.Close(sockFileFD)
 	})
+
+	if err := unix.Fchownat(sockFileFD, "", int(uid), int(gid), unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		return nil, linux.Statx{}, nil, -1, err
+	}
 
 	// Stat the socket.
 	sockStat, err := fstatTo(sockFileFD)
