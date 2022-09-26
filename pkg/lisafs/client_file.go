@@ -421,16 +421,18 @@ func (f *ClientFD) Flush(ctx context.Context) error {
 }
 
 // BindAt makes the BindAt RPC.
-func (f *ClientFD) BindAt(ctx context.Context, sockType linux.SockType, name string) (Inode, *ClientBoundSocketFD, error) {
-	req := BindAtReq{
-		DirFD:    f.fd,
-		SockType: primitive.Uint32(sockType),
-		Name:     SizedString(name),
-	}
+func (f *ClientFD) BindAt(ctx context.Context, sockType linux.SockType, name string, mode linux.FileMode, uid UID, gid GID) (Inode, *ClientBoundSocketFD, error) {
 	var (
+		req          BindAtReq
 		resp         BindAtResp
 		hostSocketFD [1]int
 	)
+	req.DirFD = f.fd
+	req.SockType = primitive.Uint32(sockType)
+	req.Name = SizedString(name)
+	req.Mode = mode
+	req.UID = uid
+	req.GID = gid
 	ctx.UninterruptibleSleepStart(false)
 	err := f.client.SndRcvMessage(BindAt, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, hostSocketFD[:], req.String, resp.String)
 	ctx.UninterruptibleSleepFinish(false)

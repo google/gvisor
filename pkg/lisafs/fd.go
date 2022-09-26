@@ -492,7 +492,7 @@ type ControlFDImpl interface {
 	// connections).
 	//
 	// On the server, BindAt has a write concurrency guarantee.
-	BindAt(name string, sockType uint32) (*ControlFD, linux.Statx, *BoundSocketFD, int, error)
+	BindAt(name string, sockType uint32, mode linux.FileMode, uid UID, gid GID) (*ControlFD, linux.Statx, *BoundSocketFD, int, error)
 
 	// UnlinkAt the file identified by name in this directory.
 	//

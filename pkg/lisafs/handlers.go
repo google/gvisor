@@ -1103,7 +1103,7 @@ func BindAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32,
 		if dir.node.isDeleted() {
 			return unix.EINVAL
 		}
-		childFD, childStat, boundSocketFD, hostSocketFD, err = dir.impl.BindAt(name, uint32(req.SockType))
+		childFD, childStat, boundSocketFD, hostSocketFD, err = dir.impl.BindAt(name, uint32(req.SockType), req.Mode, req.UID, req.GID)
 		return err
 	}); err != nil {
 		return 0, err
