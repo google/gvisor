@@ -30,8 +30,13 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
+// ExecutableResolveError represents a failure to resolve the executable
+// in ResolveExecutablePath.
+type ExecutableResolveError error
+
 // ResolveExecutablePath resolves the given executable name given the working
 // dir and environment.
+// Returns ExecutableResolveError when the executable cannot be resolved.
 func ResolveExecutablePath(ctx context.Context, args *kernel.CreateProcessArgs) (string, error) {
 	name := args.Filename
 	if len(name) == 0 {
@@ -64,14 +69,14 @@ func ResolveExecutablePath(ctx context.Context, args *kernel.CreateProcessArgs) 
 	if kernel.VFS2Enabled {
 		f, err := resolveVFS2(ctx, args.Credentials, args.MountNamespaceVFS2, paths, name)
 		if err != nil {
-			return "", fmt.Errorf("error finding executable %q in PATH %v: %v", name, paths, err)
+			return "", ExecutableResolveError(fmt.Errorf("error finding executable %q in PATH %v: %v", name, paths, err))
 		}
 		return f, nil
 	}
 
 	f, err := resolve(ctx, args.MountNamespace, paths, name)
 	if err != nil {
-		return "", fmt.Errorf("error finding executable %q in PATH %v: %v", name, paths, err)
+		return "", ExecutableResolveError(fmt.Errorf("error finding executable %q in PATH %v: %v", name, paths, err))
 	}
 	return f, nil
 }
