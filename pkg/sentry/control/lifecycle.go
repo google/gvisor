@@ -344,10 +344,7 @@ func (l *Lifecycle) getInitContainerProcess(containerID string) (*kernel.ThreadG
 // ContainerArgs is the set of arguments for container related APIs after
 // starting the container.
 type ContainerArgs struct {
-	// ContainerID.
 	ContainerID string `json:"container_id"`
-	Signo       int32  `json:"signo"`
-	SignalAll   bool   `json:"signalAll"`
 }
 
 // WaitContainer waits for the container to exit and returns the exit status.
@@ -387,9 +384,16 @@ func (l *Lifecycle) IsContainerRunning(args *ContainerArgs, isRunning *bool) err
 	return nil
 }
 
+// SignalContainerArgs is the set of arguments for signalling a container.
+type SignalContainerArgs struct {
+	ContainerID string `json:"container_id"`
+	Signo       int32  `json:"signo"`
+	SignalAll   bool   `json:"signalAll"`
+}
+
 // SignalContainer signals the container in multi-container mode. It returns error if the
 // container hasn't started or has exited.
-func (l *Lifecycle) SignalContainer(args *ContainerArgs, _ *struct{}) error {
+func (l *Lifecycle) SignalContainer(args *SignalContainerArgs, _ *struct{}) error {
 	tg, err := l.getInitContainerProcess(args.ContainerID)
 	if err != nil {
 		return err
