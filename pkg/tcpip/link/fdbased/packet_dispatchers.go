@@ -18,13 +18,12 @@
 package fdbased
 
 import (
-	"fmt"
-
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/rawfile"
+	"gvisor.dev/gvisor/pkg/tcpip/link/stopfd"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -143,36 +142,10 @@ func (b *iovecBuffer) release() {
 	}
 }
 
-// stopFd is an eventfd used to signal the stop of a dispatcher.
-type stopFd struct {
-	efd int
-}
-
-func newStopFd() (stopFd, error) {
-	efd, err := unix.Eventfd(0, unix.EFD_NONBLOCK)
-	if err != nil {
-		return stopFd{efd: -1}, fmt.Errorf("failed to create eventfd: %w", err)
-	}
-	return stopFd{efd: efd}, nil
-}
-
-// stop writes to the eventfd and notifies the dispatcher to stop. It does not
-// block.
-func (s *stopFd) stop() {
-	increment := []byte{1, 0, 0, 0, 0, 0, 0, 0}
-	if n, err := unix.Write(s.efd, increment); n != len(increment) || err != nil {
-		// There are two possible errors documented in eventfd(2) for writing:
-		// 1. We are writing 8 bytes and not 0xffffffffffffff, thus no EINVAL.
-		// 2. stop is only supposed to be called once, it can't reach the limit,
-		// thus no EAGAIN.
-		panic(fmt.Sprintf("write(efd) = (%d, %s), want (%d, nil)", n, err, len(increment)))
-	}
-}
-
 // readVDispatcher uses readv() system call to read inbound packets and
 // dispatches them.
 type readVDispatcher struct {
-	stopFd
+	stopfd.StopFD
 	// fd is the file descriptor used to send and receive packets.
 	fd int
 
@@ -184,12 +157,12 @@ type readVDispatcher struct {
 }
 
 func newReadVDispatcher(fd int, e *endpoint) (linkDispatcher, error) {
-	stopFd, err := newStopFd()
+	stopFD, err := stopfd.New()
 	if err != nil {
 		return nil, err
 	}
 	d := &readVDispatcher{
-		stopFd: stopFd,
+		StopFD: stopFD,
 		fd:     fd,
 		e:      e,
 	}
@@ -204,7 +177,7 @@ func (d *readVDispatcher) release() {
 
 // dispatch reads one packet from the file descriptor and dispatches it.
 func (d *readVDispatcher) dispatch() (bool, tcpip.Error) {
-	n, err := rawfile.BlockingReadvUntilStopped(d.efd, d.fd, d.buf.nextIovecs())
+	n, err := rawfile.BlockingReadvUntilStopped(d.EFD, d.fd, d.buf.nextIovecs())
 	if n <= 0 || err != nil {
 		return false, err
 	}
@@ -247,7 +220,7 @@ func (d *readVDispatcher) dispatch() (bool, tcpip.Error) {
 // recvMMsgDispatcher uses the recvmmsg system call to read inbound packets and
 // dispatches them.
 type recvMMsgDispatcher struct {
-	stopFd
+	stopfd.StopFD
 	// fd is the file descriptor used to send and receive packets.
 	fd int
 
@@ -271,12 +244,12 @@ const (
 )
 
 func newRecvMMsgDispatcher(fd int, e *endpoint) (linkDispatcher, error) {
-	stopFd, err := newStopFd()
+	stopFD, err := stopfd.New()
 	if err != nil {
 		return nil, err
 	}
 	d := &recvMMsgDispatcher{
-		stopFd:  stopFd,
+		StopFD:  stopFD,
 		fd:      fd,
 		e:       e,
 		bufs:    make([]*iovecBuffer, MaxMsgsPerRecv),
@@ -310,7 +283,7 @@ func (d *recvMMsgDispatcher) dispatch() (bool, tcpip.Error) {
 		d.msgHdrs[k].Msg.SetIovlen(iovLen)
 	}
 
-	nMsgs, err := rawfile.BlockingRecvMMsgUntilStopped(d.efd, d.fd, d.msgHdrs)
+	nMsgs, err := rawfile.BlockingRecvMMsgUntilStopped(d.EFD, d.fd, d.msgHdrs)
 	if nMsgs == -1 || err != nil {
 		return false, err
 	}

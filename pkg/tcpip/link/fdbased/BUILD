@@ -11,7 +11,6 @@ go_library(
         "mmap_stub.go",
         "mmap_unsafe.go",
         "packet_dispatchers.go",
-        "xdp.go",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -21,8 +20,8 @@ go_library(
         "//pkg/tcpip",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/rawfile",
+        "//pkg/tcpip/link/stopfd",
         "//pkg/tcpip/stack",
-        "//pkg/xdp",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
