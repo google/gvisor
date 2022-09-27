@@ -1628,7 +1628,7 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs
 // - d.isDir().
 // - fs.opts.lisaEnabled.
 func (d *dentry) mknodLisaLocked(ctx context.Context, name string, creds *auth.Credentials, opts vfs.MknodOptions, ds **[]*dentry) error {
-	if opts.Endpoint == nil {
+	if _, ok := opts.Endpoint.(transport.HostBoundEndpoint); !ok {
 		childInode, err := d.controlFDLisa.MknodAt(ctx, name, opts.Mode, lisafs.UID(creds.EffectiveKUID), lisafs.GID(creds.EffectiveKGID), opts.DevMinor, opts.DevMajor)
 		if err != nil {
 			return err
