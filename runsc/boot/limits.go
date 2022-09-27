@@ -24,28 +24,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
-// Mapping from linux resource names to limits.LimitType.
-var fromLinuxResource = map[string]limits.LimitType{
-	"RLIMIT_AS":         limits.AS,
-	"RLIMIT_CORE":       limits.Core,
-	"RLIMIT_CPU":        limits.CPU,
-	"RLIMIT_DATA":       limits.Data,
-	"RLIMIT_FSIZE":      limits.FileSize,
-	"RLIMIT_LOCKS":      limits.Locks,
-	"RLIMIT_MEMLOCK":    limits.MemoryLocked,
-	"RLIMIT_MSGQUEUE":   limits.MessageQueueBytes,
-	"RLIMIT_NICE":       limits.Nice,
-	"RLIMIT_NOFILE":     limits.NumberOfFiles,
-	"RLIMIT_NPROC":      limits.ProcessCount,
-	"RLIMIT_RSS":        limits.Rss,
-	"RLIMIT_RTPRIO":     limits.RealTimePriority,
-	"RLIMIT_RTTIME":     limits.Rttime,
-	"RLIMIT_SIGPENDING": limits.SignalsPending,
-	"RLIMIT_STACK":      limits.Stack,
-}
-
 func findName(lt limits.LimitType) string {
-	for k, v := range fromLinuxResource {
+	for k, v := range limits.FromLinuxResourceName {
 		if v == lt {
 			return k
 		}
@@ -141,7 +121,7 @@ func createLimitSet(spec *specs.Spec) (*limits.LimitSet, error) {
 
 	// Then apply overwrites on top of defaults.
 	for _, rl := range spec.Process.Rlimits {
-		lt, ok := fromLinuxResource[rl.Type]
+		lt, ok := limits.FromLinuxResourceName[rl.Type]
 		if !ok {
 			return nil, fmt.Errorf("unknown resource %q", rl.Type)
 		}
