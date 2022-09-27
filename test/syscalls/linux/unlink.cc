@@ -152,14 +152,13 @@ TEST(UnlinkTest, BadNamePtr) {
 }
 
 TEST(UnlinkTest, AtFile) {
-  int dirfd;
-  EXPECT_THAT(dirfd = open(GetAbsoluteTestTmpdir().c_str(), O_DIRECTORY, 0666),
-              SyscallSucceeds());
+  const FileDescriptor dirfd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(GetAbsoluteTestTmpdir(), O_DIRECTORY, 0666));
   int fd;
-  EXPECT_THAT(fd = openat(dirfd, "UnlinkAtFile", O_RDWR | O_CREAT, 0666),
+  EXPECT_THAT(fd = openat(dirfd.get(), "UnlinkAtFile", O_RDWR | O_CREAT, 0666),
               SyscallSucceeds());
   EXPECT_THAT(close(fd), SyscallSucceeds());
-  EXPECT_THAT(unlinkat(dirfd, "UnlinkAtFile", 0), SyscallSucceeds());
+  EXPECT_THAT(unlinkat(dirfd.get(), "UnlinkAtFile", 0), SyscallSucceeds());
 }
 
 TEST(UnlinkTest, OpenFile) {
