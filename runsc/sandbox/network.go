@@ -217,66 +217,19 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 			args.Defaultv6Gateway.Name = iface.Name
 		}
 
-		args.AFXDP = conf.AFXDP
-
-		link := boot.FDBasedLink{
-			Name:              iface.Name,
-			InterfaceIndex:    iface.Index,
-			MTU:               iface.MTU,
-			Routes:            routes,
-			TXChecksumOffload: conf.TXChecksumOffload,
-			RXChecksumOffload: conf.RXChecksumOffload,
-			NumChannels:       conf.NumNetworkChannels,
-			QDisc:             conf.QDisc,
-			Neighbors:         neighbors,
-		}
-
 		// Get the link for the interface.
 		ifaceLink, err := netlink.LinkByName(iface.Name)
 		if err != nil {
 			return fmt.Errorf("getting link for interface %q: %w", iface.Name, err)
 		}
-		link.LinkAddress = ifaceLink.Attrs().HardwareAddr
-
-		log.Debugf("Setting up network channels")
-		// Create the socket for the device.
-		for i := 0; i < link.NumChannels; i++ {
-			log.Debugf("Creating Channel %d", i)
-			socketEntry, err := createSocket(iface, ifaceLink, conf.HostGSO, conf.AFXDP)
-			if err != nil {
-				return fmt.Errorf("failed to createSocket for %s : %w", iface.Name, err)
-			}
-			if i == 0 {
-				link.GSOMaxSize = socketEntry.gsoMaxSize
-			} else {
-				if link.GSOMaxSize != socketEntry.gsoMaxSize {
-					return fmt.Errorf("inconsistent gsoMaxSize %d and %d when creating multiple channels for same interface: %s",
-						link.GSOMaxSize, socketEntry.gsoMaxSize, iface.Name)
-				}
-			}
-			args.FilePayload.Files = append(args.FilePayload.Files, socketEntry.deviceFile)
-		}
-
-		// If enabled, create an RX socket for AF_XDP.
-		if conf.AFXDP {
-			xdpSockFDs, err := createSocketXDP(iface)
-			if err != nil {
-				return fmt.Errorf("failed to create XDP socket: %v", err)
-			}
-			args.FilePayload.Files = append(args.FilePayload.Files, xdpSockFDs...)
-		}
-
-		if link.GSOMaxSize == 0 && conf.GvisorGSO {
-			// Host GSO is disabled. Let's enable gVisor GSO.
-			link.GSOMaxSize = stack.GvisorGSOMaxSize
-			link.GvisorGSOEnabled = true
-		}
+		linkAddress := ifaceLink.Attrs().HardwareAddr
 
 		// Collect the addresses for the interface, enable forwarding,
 		// and remove them from the host.
+		var addresses []boot.IPWithPrefix
 		for _, addr := range ipAddrs {
 			prefix, _ := addr.Mask.Size()
-			link.Addresses = append(link.Addresses, boot.IPWithPrefix{Address: addr.IP, PrefixLen: prefix})
+			addresses = append(addresses, boot.IPWithPrefix{Address: addr.IP, PrefixLen: prefix})
 
 			// Steal IP address from NIC.
 			if err := removeAddress(ifaceLink, addr.String()); err != nil {
@@ -291,7 +244,66 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 			}
 		}
 
-		args.FDBasedLinks = append(args.FDBasedLinks, link)
+		if conf.AFXDP {
+			xdpSockFDs, err := createSocketXDP(iface)
+			if err != nil {
+				return fmt.Errorf("failed to create XDP socket: %v", err)
+			}
+			args.FilePayload.Files = append(args.FilePayload.Files, xdpSockFDs...)
+			args.XDPLinks = append(args.XDPLinks, boot.XDPLink{
+				Name:              iface.Name,
+				InterfaceIndex:    iface.Index,
+				MTU:               iface.MTU,
+				Routes:            routes,
+				TXChecksumOffload: conf.TXChecksumOffload,
+				RXChecksumOffload: conf.RXChecksumOffload,
+				NumChannels:       conf.NumNetworkChannels,
+				QDisc:             conf.QDisc,
+				Neighbors:         neighbors,
+				LinkAddress:       linkAddress,
+				Addresses:         addresses,
+			})
+		} else {
+			link := boot.FDBasedLink{
+				Name:              iface.Name,
+				MTU:               iface.MTU,
+				Routes:            routes,
+				TXChecksumOffload: conf.TXChecksumOffload,
+				RXChecksumOffload: conf.RXChecksumOffload,
+				NumChannels:       conf.NumNetworkChannels,
+				QDisc:             conf.QDisc,
+				Neighbors:         neighbors,
+				LinkAddress:       linkAddress,
+				Addresses:         addresses,
+			}
+
+			log.Debugf("Setting up network channels")
+			// Create the socket for the device.
+			for i := 0; i < link.NumChannels; i++ {
+				log.Debugf("Creating Channel %d", i)
+				socketEntry, err := createSocket(iface, ifaceLink, conf.HostGSO)
+				if err != nil {
+					return fmt.Errorf("failed to createSocket for %s : %w", iface.Name, err)
+				}
+				if i == 0 {
+					link.GSOMaxSize = socketEntry.gsoMaxSize
+				} else {
+					if link.GSOMaxSize != socketEntry.gsoMaxSize {
+						return fmt.Errorf("inconsistent gsoMaxSize %d and %d when creating multiple channels for same interface: %s",
+							link.GSOMaxSize, socketEntry.gsoMaxSize, iface.Name)
+					}
+				}
+				args.FilePayload.Files = append(args.FilePayload.Files, socketEntry.deviceFile)
+			}
+
+			if link.GSOMaxSize == 0 && conf.GvisorGSO {
+				// Host GSO is disabled. Let's enable gVisor GSO.
+				link.GSOMaxSize = stack.GvisorGSOMaxSize
+				link.GvisorGSOEnabled = true
+			}
+
+			args.FDBasedLinks = append(args.FDBasedLinks, link)
+		}
 	}
 
 	// Pass PCAP log file if present.
@@ -342,7 +354,7 @@ type socketEntry struct {
 // createSocket creates an underlying AF_PACKET socket and configures it for
 // use by the sentry and returns an *os.File that wraps the underlying socket
 // fd.
-func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool, AFXDP bool) (*socketEntry, error) {
+func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool) (*socketEntry, error) {
 	// Create the socket.
 	const protocol = 0x0300 // htons(ETH_P_ALL)
 	fd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW, protocol)

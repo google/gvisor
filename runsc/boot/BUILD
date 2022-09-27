@@ -100,6 +100,7 @@ go_library(
         "//pkg/tcpip/link/packetsocket",
         "//pkg/tcpip/link/qdisc/fifo",
         "//pkg/tcpip/link/sniffer",
+        "//pkg/tcpip/link/xdp",
         "//pkg/tcpip/network/arp",
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/network/ipv6",
