@@ -249,6 +249,17 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 	}
 	initArgs.FDTable = fdTable
 
+	// VFS2 is supported in multi-container mode by default.
+	l.mu.RLock()
+	mntns, ok := l.MountNamespacesMap[initArgs.ContainerID]
+	if !ok {
+		l.mu.RUnlock()
+		return fmt.Errorf("mount namespace is nil for %s", initArgs.ContainerID)
+	}
+	initArgs.MountNamespaceVFS2 = mntns
+	l.mu.RUnlock()
+	initArgs.MountNamespaceVFS2.IncRef()
+
 	if args.ResolveBinaryPath {
 		resolved, err := user.ResolveExecutablePath(ctx, &initArgs)
 		if err != nil {
@@ -264,17 +275,6 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 		}
 		initArgs.Envv = envVars
 	}
-
-	// VFS2 is supported in multi-container mode by default.
-	l.mu.RLock()
-	mntns, ok := l.MountNamespacesMap[initArgs.ContainerID]
-	if !ok {
-		l.mu.RUnlock()
-		return fmt.Errorf("mount namespace is nil for %s", initArgs.ContainerID)
-	}
-	initArgs.MountNamespaceVFS2 = mntns
-	l.mu.RUnlock()
-	initArgs.MountNamespaceVFS2.IncRef()
 
 	fds, err := fd.NewFromFiles(args.Files)
 	if err != nil {
