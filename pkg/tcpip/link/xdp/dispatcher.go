@@ -15,7 +15,7 @@
 //go:build (linux && amd64) || (linux && arm64)
 // +build linux,amd64 linux,arm64
 
-package fdbased
+package xdp
 
 import (
 	"fmt"
@@ -25,16 +25,16 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/rawfile"
+	"gvisor.dev/gvisor/pkg/tcpip/link/stopfd"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/xdp"
 )
 
-// xdpDispatcher utilizes AF_XDP to dispatch incoming packets.
-//
-// xdpDispatcher is experimental and should not be used in production.
-type xdpDispatcher struct {
-	// stopFd enables the dispatched to be stopped via stop().
-	stopFd
+// TODO(b/240191988): Handle the XDP-limited MTU.
+
+// dispatcher utilizes AF_XDP to dispatch incoming packets.
+type dispatcher struct {
+	stopfd.StopFD
 
 	// ep is the endpoint this dispatcher is attached to.
 	ep *endpoint
@@ -48,13 +48,13 @@ type xdpDispatcher struct {
 	rxQueue   *xdp.RXQueue
 }
 
-func newAFXDPDispatcher(fd int, ep *endpoint, index int) (linkDispatcher, error) {
-	stopFd, err := newStopFd()
+func (xd *dispatcher) init(fd int, ep *endpoint, index int) error {
+	stopFD, err := stopfd.New()
 	if err != nil {
-		return nil, err
+		return err
 	}
-	dispatcher := xdpDispatcher{
-		stopFd: stopFd,
+	disp := dispatcher{
+		StopFD: stopFD,
 		fd:     fd,
 		ep:     ep,
 	}
@@ -62,17 +62,17 @@ func newAFXDPDispatcher(fd int, ep *endpoint, index int) (linkDispatcher, error)
 	// Use a 2MB UMEM to match the PACKET_MMAP dispatcher.
 	opts := xdp.DefaultReadOnlyOpts()
 	opts.NFrames = (1 << 21) / opts.FrameSize
-	dispatcher.umem, dispatcher.fillQueue, dispatcher.rxQueue, err = xdp.ReadOnlyFromSocket(fd, uint32(index), 0 /* queueID */, opts)
+	disp.umem, disp.fillQueue, disp.rxQueue, err = xdp.ReadOnlyFromSocket(fd, uint32(index), 0 /* queueID */, opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create AF_XDP dispatcher: %v", err)
+		return fmt.Errorf("failed to create AF_XDP dispatcher: %v", err)
 	}
-	dispatcher.fillQueue.FillAll()
-	return &dispatcher, nil
+	disp.fillQueue.FillAll()
+	return nil
 }
 
-func (xd *xdpDispatcher) dispatch() (bool, tcpip.Error) {
+func (xd *dispatcher) dispatch() (bool, tcpip.Error) {
 	for {
-		stopped, errno := rawfile.BlockingPollUntilStopped(xd.efd, xd.fd, unix.POLLIN|unix.POLLERR)
+		stopped, errno := rawfile.BlockingPollUntilStopped(xd.EFD, xd.fd, unix.POLLIN|unix.POLLERR)
 		if errno != 0 {
 			if errno == unix.EINTR {
 				continue
@@ -104,33 +104,16 @@ func (xd *xdpDispatcher) dispatch() (bool, tcpip.Error) {
 				view.Write(data)
 				xd.umem.FreeFrame(descriptor.Addr)
 
-				// Determine the network protocol.
-				var netProto tcpip.NetworkProtocolNumber
-				if xd.ep.hdrSize > 0 {
-					netProto = header.Ethernet(data).Type()
-				} else {
-					// We don't get any indication of what the packet is, so try to guess
-					// if it's an IPv4 or IPv6 packet.
-					switch header.IPVersion(data) {
-					case header.IPv4Version:
-						netProto = header.IPv4ProtocolNumber
-					case header.IPv6Version:
-						netProto = header.IPv6ProtocolNumber
-					default:
-						return true, nil
-					}
-				}
+				netProto := header.Ethernet(data).Type()
 
 				// Wrap the packet in a PacketBuffer and send it up the stack.
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Payload: bufferv2.MakeWithView(view),
 				})
-				if xd.ep.hdrSize > 0 {
-					if _, ok := pkt.LinkHeader().Consume(xd.ep.hdrSize); !ok {
-						panic(fmt.Sprintf("LinkHeader().Consume(%d) must succeed", xd.ep.hdrSize))
-					}
+				if _, ok := pkt.LinkHeader().Consume(header.EthernetMinimumSize); !ok {
+					panic(fmt.Sprintf("LinkHeader().Consume(%d) must succeed", header.EthernetMinimumSize))
 				}
-				xd.ep.dispatcher.DeliverNetworkPacket(netProto, pkt)
+				xd.ep.networkDispatcher.DeliverNetworkPacket(netProto, pkt)
 				pkt.DecRef()
 			}
 			// Tell the kernel that we're done with these packets.
@@ -139,8 +122,4 @@ func (xd *xdpDispatcher) dispatch() (bool, tcpip.Error) {
 
 		return true, nil
 	}
-}
-
-func (*xdpDispatcher) release() {
-	// Noop: let the kernel clean up.
 }

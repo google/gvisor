@@ -56,7 +56,7 @@ import (
 // linkDispatcher reads packets from the link FD and dispatches them to the
 // NetworkDispatcher.
 type linkDispatcher interface {
-	stop()
+	Stop()
 	dispatch() (bool, tcpip.Error)
 	release()
 }
@@ -88,9 +88,6 @@ const (
 	// primary use-case for this is runsc which uses an AF_PACKET FD to
 	// receive packets from the veth device.
 	PacketMMap
-	// AFXDP utilizes an AF_XDP socket to receive packets. AFXDP requires that
-	// the underlying FD be an AF_XDP socket.
-	AFXDP
 )
 
 func (p PacketDispatchMode) String() string {
@@ -101,8 +98,6 @@ func (p PacketDispatchMode) String() string {
 		return "RecvMMsg"
 	case PacketMMap:
 		return "PacketMMap"
-	case AFXDP:
-		return "AFXDP"
 	default:
 		return fmt.Sprintf("unknown packet dispatch mode '%d'", p)
 	}
@@ -323,24 +318,9 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 			}
 		}
 
-		// TODO(b/240191988): Remove this check once we support
-		// multiple AF_XDP sockets.
-		if opts.AFXDPFD != nil {
-			continue
-		}
-
 		inboundDispatcher, err := createInboundDispatcher(e, fd, isSocket, fid)
 		if err != nil {
 			return nil, fmt.Errorf("createInboundDispatcher(...) = %v", err)
-		}
-		e.inboundDispatchers = append(e.inboundDispatchers, inboundDispatcher)
-	}
-
-	if opts.AFXDPFD != nil {
-		fd := *opts.AFXDPFD
-		inboundDispatcher, err := newAFXDPDispatcher(fd, e, opts.InterfaceIndex)
-		if err != nil {
-			return nil, fmt.Errorf("newAFXDPDispatcher(%d, %+v) = %v", fd, e, err)
 		}
 		e.inboundDispatchers = append(e.inboundDispatchers, inboundDispatcher)
 	}
@@ -420,12 +400,15 @@ func isSocketFD(fd int) (bool, error) {
 }
 
 // Attach launches the goroutine that reads packets from the file descriptor and
-// dispatches them via the provided dispatcher.
+// dispatches them via the provided dispatcher. If one is already attached,
+// then nothing happens.
+//
+// Attach implements stack.LinkEndpoint.Attach.
 func (e *endpoint) Attach(dispatcher stack.NetworkDispatcher) {
 	// nil means the NIC is being removed.
 	if dispatcher == nil && e.dispatcher != nil {
 		for _, dispatcher := range e.inboundDispatchers {
-			dispatcher.stop()
+			dispatcher.Stop()
 		}
 		e.Wait()
 		e.dispatcher = nil
@@ -739,12 +722,7 @@ func (e *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) 
 	return sentPackets, nil
 }
 
-// viewsEqual tests whether v1 and v2 refer to the same backing bytes.
-func viewsEqual(vs1, vs2 []bufferv2.View) bool {
-	return len(vs1) == len(vs2) && (len(vs1) == 0 || &vs1[0] == &vs2[0])
-}
-
-// InjectOutobund implements stack.InjectableEndpoint.InjectOutbound.
+// InjectOutbound implements stack.InjectableEndpoint.InjectOutbound.
 func (e *endpoint) InjectOutbound(dest tcpip.Address, packet *bufferv2.View) tcpip.Error {
 	return rawfile.NonBlockingWrite(e.fds[0].fd, packet.AsSlice())
 }

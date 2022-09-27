@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/rawfile"
+	"gvisor.dev/gvisor/pkg/tcpip/link/stopfd"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -115,7 +116,7 @@ func (t tPacketHdr) Payload() []byte {
 // packetMMapDispatcher uses PACKET_RX_RING's to read/dispatch inbound packets.
 // See: mmap_amd64_unsafe.go for implementation details.
 type packetMMapDispatcher struct {
-	stopFd
+	stopfd.StopFD
 	// fd is the file descriptor used to send and receive packets.
 	fd int
 
@@ -136,7 +137,7 @@ func (*packetMMapDispatcher) release() {}
 func (d *packetMMapDispatcher) readMMappedPacket() (*bufferv2.View, bool, tcpip.Error) {
 	hdr := tPacketHdr(d.ringBuffer[d.ringOffset*tpFrameSize:])
 	for hdr.tpStatus()&tpStatusUser == 0 {
-		stopped, errno := rawfile.BlockingPollUntilStopped(d.efd, d.fd, unix.POLLIN|unix.POLLERR)
+		stopped, errno := rawfile.BlockingPollUntilStopped(d.EFD, d.fd, unix.POLLIN|unix.POLLERR)
 		if errno != 0 {
 			if errno == unix.EINTR {
 				continue
