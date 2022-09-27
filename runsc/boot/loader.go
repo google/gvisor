@@ -1362,10 +1362,15 @@ func createFDTable(ctx context.Context, console bool, stdioFDs []*fd.FD, user sp
 	if len(stdioFDs) != 3 {
 		return nil, nil, fmt.Errorf("stdioFDs should contain exactly 3 FDs (stdin, stdout, and stderr), but %d FDs received", len(stdioFDs))
 	}
+	fdMap := map[int]*fd.FD{
+		0: stdioFDs[0],
+		1: stdioFDs[1],
+		2: stdioFDs[2],
+	}
 
 	k := kernel.KernelFromContext(ctx)
 	fdTable := k.NewFDTable()
-	_, ttyFile, err := fdimport.Import(ctx, fdTable, console, auth.KUID(user.UID), auth.KGID(user.GID), stdioFDs)
+	_, ttyFile, err := fdimport.Import(ctx, fdTable, console, auth.KUID(user.UID), auth.KGID(user.GID), fdMap)
 	if err != nil {
 		fdTable.DecRef(ctx)
 		return nil, nil, err

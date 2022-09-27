@@ -28,11 +28,11 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
-// Import imports a slice of FDs into the given FDTable. If console is true,
-// sets up TTY for the first 3 FDs in the slice representing stdin, stdout,
-// stderr. Used FDs are either closed or released. It's safe for the caller to
-// close any remaining files upon return.
-func Import(ctx context.Context, fdTable *kernel.FDTable, console bool, uid auth.KUID, gid auth.KGID, fds []*fd.FD) (*host.TTYFileOperations, *hostvfs2.TTYFileDescription, error) {
+// Import imports a map of FDs into the given FDTable. If console is true,
+// sets up TTY for sentry stdin, stdout, and stderr FDs. Used FDs are either
+// closed or released. It's safe for the caller to close any remaining files
+// upon return.
+func Import(ctx context.Context, fdTable *kernel.FDTable, console bool, uid auth.KUID, gid auth.KGID, fds map[int]*fd.FD) (*host.TTYFileOperations, *hostvfs2.TTYFileDescription, error) {
 	if kernel.VFS2Enabled {
 		ttyFile, err := importVFS2(ctx, fdTable, console, uid, gid, fds)
 		return nil, ttyFile, err
@@ -41,7 +41,7 @@ func Import(ctx context.Context, fdTable *kernel.FDTable, console bool, uid auth
 	return ttyFile, nil, err
 }
 
-func importFS(ctx context.Context, fdTable *kernel.FDTable, console bool, fds []*fd.FD) (*host.TTYFileOperations, error) {
+func importFS(ctx context.Context, fdTable *kernel.FDTable, console bool, fds map[int]*fd.FD) (*host.TTYFileOperations, error) {
 	var ttyFile *fs.File
 	for appFD, hostFD := range fds {
 		var appFile *fs.File
@@ -90,7 +90,7 @@ func importFS(ctx context.Context, fdTable *kernel.FDTable, console bool, fds []
 	return ttyFile.FileOperations.(*host.TTYFileOperations), nil
 }
 
-func importVFS2(ctx context.Context, fdTable *kernel.FDTable, console bool, uid auth.KUID, gid auth.KGID, stdioFDs []*fd.FD) (*hostvfs2.TTYFileDescription, error) {
+func importVFS2(ctx context.Context, fdTable *kernel.FDTable, console bool, uid auth.KUID, gid auth.KGID, stdioFDs map[int]*fd.FD) (*hostvfs2.TTYFileDescription, error) {
 	k := kernel.KernelFromContext(ctx)
 	if k == nil {
 		return nil, fmt.Errorf("cannot find kernel from context")
