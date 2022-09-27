@@ -172,6 +172,35 @@ void TcpSocketTest::TearDown() {
   }
 }
 
+TEST_P(TcpSocketTest, ConnectedAcceptedPeerAndLocalAreReciprocals) {
+  struct FdAndAddrs {
+    int fd;
+    sockaddr_storage peer;
+    socklen_t peer_len = sizeof(peer);
+    sockaddr_storage name;
+    socklen_t name_len = sizeof(name);
+  };
+
+  FdAndAddrs connected{.fd = first_fd}, accepted{.fd = second_fd};
+
+  for (FdAndAddrs* fd_and_addrs : {&connected, &accepted}) {
+    ASSERT_THAT(getpeername(fd_and_addrs->fd, AsSockAddr(&fd_and_addrs->peer),
+                            &fd_and_addrs->peer_len),
+                SyscallSucceeds());
+    ASSERT_NE(fd_and_addrs->peer_len, 0);
+    ASSERT_THAT(getsockname(fd_and_addrs->fd, AsSockAddr(&fd_and_addrs->name),
+                            &fd_and_addrs->name_len),
+                SyscallSucceeds());
+    ASSERT_NE(fd_and_addrs->name_len, 0);
+  }
+
+  ASSERT_EQ(connected.peer_len, accepted.name_len);
+  EXPECT_EQ(memcmp(&connected.peer, &accepted.name, connected.peer_len), 0);
+
+  ASSERT_EQ(connected.name_len, accepted.peer_len);
+  EXPECT_EQ(memcmp(&connected.name, &accepted.peer, connected.name_len), 0);
+}
+
 TEST_P(TcpSocketTest, ConnectOnEstablishedConnection) {
   sockaddr_storage addr =
       ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
