@@ -223,7 +223,11 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 			_ = fd.Close()
 		}
 	}()
-	ttyFile, ttyFileVFS2, err := fdimport.Import(ctx, fdTable, args.StdioIsPty, args.KUID, args.KGID, fds)
+	fdMap := make(map[int]*fd.FD, len(fds))
+	for appFD, hostFD := range fds {
+		fdMap[appFD] = hostFD
+	}
+	ttyFile, ttyFileVFS2, err := fdimport.Import(ctx, fdTable, args.StdioIsPty, args.KUID, args.KGID, fdMap)
 	if err != nil {
 		return nil, 0, nil, nil, err
 	}

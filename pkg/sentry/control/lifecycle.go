@@ -15,12 +15,13 @@
 package control
 
 import (
+	"encoding/json"
 	"fmt"
-	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/fdimport"
 	"gvisor.dev/gvisor/pkg/sentry/fs/user"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -90,6 +91,11 @@ type StartContainerArgs struct {
 	// Envv is a list of environment variables.
 	Envv []string `json:"envv"`
 
+	// Secret_envv is a list of secret environment variables.
+	//
+	// NOTE: This field must never be logged!
+	SecretEnvv []string `json:"secret_envv"`
+
 	// WorkingDirectory defines the working directory for the new process.
 	WorkingDirectory string `json:"wd"`
 
@@ -101,33 +107,44 @@ type StartContainerArgs struct {
 	// the root group if not set explicitly.
 	KGID auth.KGID `json:"KGID"`
 
-	// ExtraKGIDs is the list of additional groups to which the user belongs.
-	ExtraKGIDs []auth.KGID `json:"extraKGID"`
+	// ContainerID is the container for the process being executed.
+	ContainerID string `json:"container_id"`
 
-	// Capabilities is the list of capabilities to give to the process.
-	Capabilities *auth.TaskCapabilities `json:"capabilities"`
+	// Limits is the limit set for the process being executed.
+	Limits map[string]limits.Limit `json:"limits"`
+
+	// If HOME environment variable is not provided, and this flag is set,
+	// then the HOME environment variable will be set inside the container
+	// based on the user's home directory in /etc/passwd.
+	ResolveHome bool `json:"resolve_home"`
+
+	// If set, attempt to resolve the binary_path via the following procedure:
+	// 1) If binary_path is absolute, it is used directly.
+	// 2) If binary_path contains a slash, then it is resolved relative to the
+	//    working_directory (or the root it working_directory is not set).
+	// 3) Otherwise, search the PATH environment variable for the first directory
+	//    that contains an executable file with name in binary_path.
+	ResolveBinaryPath bool `json:"resolve_binary_path"`
+
+	// DonatedFDs is the list of sentry-intrenal file descriptors that will
+	// donated. They correspond to the donated files in FilePayload.
+	DonatedFDs []int `json:"donated_fds"`
 
 	// FilePayload determines the files to give to the new process.
 	urpc.FilePayload
-
-	// ContainerID is the container for the process being executed.
-	ContainerID string `json:"containerID"`
-
-	// Limits is the limit set for the process being executed.
-	Limits *limits.LimitSet `json:"limits"`
 }
 
-// String prints the StartContainerArgs.argv as a string.
-func (args StartContainerArgs) String() string {
-	if len(args.Argv) == 0 {
-		return args.Filename
+// String formats the StartContainerArgs without the SecretEnvv field.
+func (sca StartContainerArgs) String() string {
+	sca.SecretEnvv = make([]string, len(sca.SecretEnvv))
+	for i := range sca.SecretEnvv {
+		sca.SecretEnvv[i] = "(hidden)"
 	}
-	a := make([]string, len(args.Argv))
-	copy(a, args.Argv)
-	if args.Filename != "" {
-		a[0] = args.Filename
+	b, err := json.Marshal(sca)
+	if err != nil {
+		return fmt.Sprintf("error marshaling: %s", err)
 	}
-	return strings.Join(a, " ")
+	return string(b)
 }
 
 func (l *Lifecycle) updateContainerState(containerID string, newState containerState) error {
@@ -164,19 +181,28 @@ func (l *Lifecycle) updateContainerState(containerID string, newState containerS
 
 // StartContainer will start a new container in the sandbox.
 func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
-	// Import file descriptors.
-	fdTable := l.Kernel.NewFDTable()
+	log.Infof("StartContainer: %v", args)
+	if len(args.Files) != len(args.DonatedFDs) {
+		return fmt.Errorf("FilePayload.Files and DonatedFDs must have same number of elements (%d != %d)", len(args.Files), len(args.DonatedFDs))
+	}
 
 	creds := auth.NewUserCredentials(
 		args.KUID,
 		args.KGID,
-		args.ExtraKGIDs,
-		args.Capabilities,
+		nil, /* extraKGIDs */
+		nil, /* capabilities */
 		l.Kernel.RootUserNamespace())
 
-	limitSet := args.Limits
-	if limitSet == nil {
-		limitSet = limits.NewLimitSet()
+	ls, err := limits.NewLinuxDistroLimitSet()
+	if err != nil {
+		return fmt.Errorf("error creating default limit set: %w", err)
+	}
+	for name, limit := range args.Limits {
+		lt, ok := limits.FromLinuxResourceName[name]
+		if !ok {
+			return fmt.Errorf("unknown limit %q", name)
+		}
+		ls.SetUnchecked(lt, limit)
 	}
 
 	// Create a new pid namespace for the container. Each container must run
@@ -184,14 +210,14 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 	pidNs := l.Kernel.RootPIDNamespace().NewChild(l.Kernel.RootUserNamespace())
 
 	initArgs := kernel.CreateProcessArgs{
-		Filename:                args.Filename,
-		Argv:                    args.Argv,
-		Envv:                    args.Envv,
+		Filename: args.Filename,
+		Argv:     args.Argv,
+		// Order Envv before SecretEnvv.
+		Envv:                    append(args.Envv, args.SecretEnvv...),
 		WorkingDirectory:        args.WorkingDirectory,
 		Credentials:             creds,
-		FDTable:                 fdTable,
 		Umask:                   0022,
-		Limits:                  limitSet,
+		Limits:                  ls,
 		MaxSymlinkTraversals:    linux.MaxSymlinkTraversals,
 		UTSNamespace:            l.Kernel.RootUTSNamespace(),
 		IPCNamespace:            l.Kernel.RootIPCNamespace(),
@@ -201,7 +227,43 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 	}
 
 	ctx := initArgs.NewContext(l.Kernel)
+
+	// Import file descriptors.
+	fdTable := l.Kernel.NewFDTable()
 	defer fdTable.DecRef(ctx)
+	hostFDs, err := fd.NewFromFiles(args.Files)
+	if err != nil {
+		return fmt.Errorf("error donating host files: %w", err)
+	}
+	defer func() {
+		for _, hfd := range hostFDs {
+			_ = hfd.Close()
+		}
+	}()
+	fdMap := make(map[int]*fd.FD, len(args.DonatedFDs))
+	for i, appFD := range args.DonatedFDs {
+		fdMap[appFD] = hostFDs[i]
+	}
+	if _, _, err := fdimport.Import(ctx, fdTable, false, args.KUID, args.KGID, fdMap); err != nil {
+		return fmt.Errorf("error importing host files: %w", err)
+	}
+	initArgs.FDTable = fdTable
+
+	if args.ResolveBinaryPath {
+		resolved, err := user.ResolveExecutablePath(ctx, &initArgs)
+		if err != nil {
+			return fmt.Errorf("failed to resolve binary path: %w", err)
+		}
+		initArgs.Filename = resolved
+	}
+
+	if args.ResolveHome {
+		envVars, err := user.MaybeAddExecUserHomeVFS2(ctx, initArgs.MountNamespaceVFS2, creds.RealKUID, initArgs.Envv)
+		if err != nil {
+			return fmt.Errorf("failed to get user home dir: %w", err)
+		}
+		initArgs.Envv = envVars
+	}
 
 	// VFS2 is supported in multi-container mode by default.
 	l.mu.RLock()
@@ -213,12 +275,6 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 	initArgs.MountNamespaceVFS2 = mntns
 	l.mu.RUnlock()
 	initArgs.MountNamespaceVFS2.IncRef()
-
-	resolved, err := user.ResolveExecutablePath(ctx, &initArgs)
-	if err != nil {
-		return err
-	}
-	initArgs.Filename = resolved
 
 	fds, err := fd.NewFromFiles(args.Files)
 	if err != nil {
@@ -289,7 +345,7 @@ func (l *Lifecycle) getInitContainerProcess(containerID string) (*kernel.ThreadG
 // starting the container.
 type ContainerArgs struct {
 	// ContainerID.
-	ContainerID string `json:"containerID"`
+	ContainerID string `json:"container_id"`
 	Signo       int32  `json:"signo"`
 	SignalAll   bool   `json:"signalAll"`
 }
