@@ -50,6 +50,7 @@ PlatformSupport PlatformSupportAlignmentCheck();
 PlatformSupport PlatformSupportMultiProcess();
 PlatformSupport PlatformSupportInt3();
 PlatformSupport PlatformSupportVsyscall();
+PlatformSupport PlatformSupportSIGPROFFairness();
 
 }  // namespace testing
 }  // namespace gvisor

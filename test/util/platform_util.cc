@@ -115,5 +115,24 @@ PlatformSupport PlatformSupportVsyscall() {
   TEST_CHECK(false);
 }
 
+PlatformSupport PlatformSupportSIGPROFFairness() {
+  const char* support = std::getenv("GVISOR_PLATFORM_SUPPORT");
+  if (support != nullptr) {
+    if (std::string(support).find("SIGPROF_FAIR:TRUE") != std::string::npos) {
+      return PlatformSupport::Allowed;
+    }
+    if (std::string(support).find("SIGPROF_FAIR:FALSE") != std::string::npos) {
+      return PlatformSupport::NotSupported;
+    }
+    std::cerr
+        << "GVISOR_PLATFORM_SUPPORT variable does not contain SIGPROF_FAIR "
+           "support information: "
+        << support << std::endl;
+    TEST_CHECK(false);
+  }
+  std::cerr << "GVISOR_PLATFORM_SUPPORT variable undefined" << std::endl;
+  TEST_CHECK(false);
+}
+
 }  // namespace testing
 }  // namespace gvisor

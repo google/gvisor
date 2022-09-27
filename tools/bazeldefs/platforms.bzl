@@ -13,6 +13,7 @@ _CAPABILITY_ALIGNMENT_CHECK = "ALIGNMENT_CHECK"
 _CAPABILITY_MULTIPROCESS = "MULTIPROCESS"
 _CAPABILITY_INT3 = "INT3"
 _CAPABILITY_VSYSCALL = "VSYSCALL"
+_CAPABILITY_SIGPROF_FAIR = "SIGPROF_FAIR"
 
 # platform_capabilities maps platform names to a dictionary of capabilities mapped to
 # True (supported) or False (unsupported).
@@ -23,6 +24,7 @@ platform_capabilities = {
         _CAPABILITY_MULTIPROCESS: True,
         _CAPABILITY_INT3: True,
         _CAPABILITY_VSYSCALL: True,
+        _CAPABILITY_SIGPROF_FAIR: False,
     },
     "kvm": {
         _CAPABILITY_32BIT: False,
@@ -30,6 +32,7 @@ platform_capabilities = {
         _CAPABILITY_MULTIPROCESS: True,
         _CAPABILITY_INT3: False,
         _CAPABILITY_VSYSCALL: True,
+        _CAPABILITY_SIGPROF_FAIR: False,
     },
 }
 
