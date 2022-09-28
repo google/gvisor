@@ -6,40 +6,46 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (iouringfd *FileDescription) StateTypeName() string {
-	return "pkg/sentry/fsimpl/iouringfs.FileDescription"
+func (fd *fileDescription) StateTypeName() string {
+	return "pkg/sentry/fsimpl/iouringfs.fileDescription"
 }
 
-func (iouringfd *FileDescription) StateFields() []string {
+func (fd *fileDescription) StateFields() []string {
 	return []string{
 		"vfsfd",
 		"FileDescriptionDefaultImpl",
 		"DentryMetadataFileDescriptionImpl",
 		"NoLockFD",
+		"rbmf",
+		"sqemf",
 	}
 }
 
-func (iouringfd *FileDescription) beforeSave() {}
+func (fd *fileDescription) beforeSave() {}
 
 // +checklocksignore
-func (iouringfd *FileDescription) StateSave(stateSinkObject state.Sink) {
-	iouringfd.beforeSave()
-	stateSinkObject.Save(0, &iouringfd.vfsfd)
-	stateSinkObject.Save(1, &iouringfd.FileDescriptionDefaultImpl)
-	stateSinkObject.Save(2, &iouringfd.DentryMetadataFileDescriptionImpl)
-	stateSinkObject.Save(3, &iouringfd.NoLockFD)
+func (fd *fileDescription) StateSave(stateSinkObject state.Sink) {
+	fd.beforeSave()
+	stateSinkObject.Save(0, &fd.vfsfd)
+	stateSinkObject.Save(1, &fd.FileDescriptionDefaultImpl)
+	stateSinkObject.Save(2, &fd.DentryMetadataFileDescriptionImpl)
+	stateSinkObject.Save(3, &fd.NoLockFD)
+	stateSinkObject.Save(4, &fd.rbmf)
+	stateSinkObject.Save(5, &fd.sqemf)
 }
 
-func (iouringfd *FileDescription) afterLoad() {}
+func (fd *fileDescription) afterLoad() {}
 
 // +checklocksignore
-func (iouringfd *FileDescription) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &iouringfd.vfsfd)
-	stateSourceObject.Load(1, &iouringfd.FileDescriptionDefaultImpl)
-	stateSourceObject.Load(2, &iouringfd.DentryMetadataFileDescriptionImpl)
-	stateSourceObject.Load(3, &iouringfd.NoLockFD)
+func (fd *fileDescription) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &fd.vfsfd)
+	stateSourceObject.Load(1, &fd.FileDescriptionDefaultImpl)
+	stateSourceObject.Load(2, &fd.DentryMetadataFileDescriptionImpl)
+	stateSourceObject.Load(3, &fd.NoLockFD)
+	stateSourceObject.Load(4, &fd.rbmf)
+	stateSourceObject.Load(5, &fd.sqemf)
 }
 
 func init() {
-	state.Register((*FileDescription)(nil))
+	state.Register((*fileDescription)(nil))
 }

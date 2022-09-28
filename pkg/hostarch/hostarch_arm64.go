@@ -33,6 +33,9 @@ const (
 	// HugePageSize is the system huge page size.
 	HugePageSize = 1 << HugePageShift
 
+	// CacheLineSize is the size of the cache line.
+	CacheLineSize = 1 << CacheLineShift
+
 	// PageShift is the binary log of the system page size.
 	PageShift = 12
 
@@ -40,6 +43,9 @@ const (
 	// Should be calculated by "PageShift + (PageShift - 3)"
 	// when multiple page size support is ready.
 	HugePageShift = 21
+
+	// CacheLineShift is the binary log of the cache line size.
+	CacheLineShift = 6
 )
 
 var (

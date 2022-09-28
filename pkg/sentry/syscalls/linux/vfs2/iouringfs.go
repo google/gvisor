@@ -22,11 +22,15 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 )
 
-// IoUringSetup implements linux syscall io_uring_setup(2).
-func IoUringSetup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+// IOUringSetup implements linux syscall io_uring_setup(2).
+func IOUringSetup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	entries := uint32(args[0].Uint())
 	paramsAddr := args[1].Pointer()
-	var params linux.IoUringParams
+	var params linux.IOUringParams
+
+	if entries == 0 {
+		return 0, nil, linuxerr.EINVAL
+	}
 	if _, err := params.CopyIn(t, paramsAddr); err != nil {
 		return 0, nil, err
 	}
@@ -37,8 +41,16 @@ func IoUringSetup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 		}
 	}
 
+	// List of currently supported flags in our IO_URING implementation.
+	const supportedFlags = linux.IORING_SETUP_IOPOLL
+
+	// Since we don't implement everything, we fail explicitly on flags that are unimplemented.
+	if params.Flags|supportedFlags != supportedFlags {
+		return 0, nil, linuxerr.EINVAL
+	}
+
 	vfsObj := t.Kernel().VFS()
-	iouringfd, err := iouringfs.New(t, vfsObj, entries, &params, paramsAddr)
+	iouringfd, err := iouringfs.New(t, vfsObj, entries, &params)
 
 	if err != nil {
 		return 0, nil, err
@@ -51,6 +63,10 @@ func IoUringSetup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 	})
 
 	if err != nil {
+		return 0, nil, err
+	}
+
+	if _, err := params.CopyOut(t, paramsAddr); err != nil {
 		return 0, nil, err
 	}
 
