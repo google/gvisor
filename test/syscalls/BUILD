@@ -247,6 +247,8 @@ syscall_test(
 )
 
 syscall_test(
+    # Temporarily added due to intermittent ENOMEM failures. See b/216213621.
+    tags = ["notap"],
     test = "//test/syscalls/linux:iouring_test",
 )
 
