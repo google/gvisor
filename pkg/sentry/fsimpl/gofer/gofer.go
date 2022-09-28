@@ -245,7 +245,9 @@ type filesystemOptions struct {
 	// If regularFilesUseSpecialFileFD is true, application FDs representing
 	// regular files will use distinct file handles for each FD, in the same
 	// way that application FDs representing "special files" such as sockets
-	// do. Note that this disables client caching and mmap for regular files.
+	// do. Note that this disables client caching for regular files. This option
+	// may regress performance due to excessive Open RPCs. This option is not
+	// supported with overlayfsStaleRead for now.
 	regularFilesUseSpecialFileFD bool
 
 	// lisaEnabled indicates whether the client will use lisafs protocol to
@@ -470,6 +472,16 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	// Check for unparsed options.
 	if len(mopts) != 0 {
 		ctx.Warningf("gofer.FilesystemType.GetFilesystem: unknown options: %v", mopts)
+		return nil, nil, linuxerr.EINVAL
+	}
+
+	// Validation.
+	if fsopts.regularFilesUseSpecialFileFD && fsopts.overlayfsStaleRead {
+		// These options are not supported together. To support this, when a dentry
+		// is opened writably for the first time, we need to iterate over all the
+		// specialFileFDs of that dentry that represent a regular file and call
+		// fd.hostFileMapper.RegenerateMappings(writable_fd).
+		ctx.Warningf("gofer.FilesystemType.GetFilesystem: regularFilesUseSpecialFileFD and overlayfsStaleRead options are not supported together.")
 		return nil, nil, linuxerr.EINVAL
 	}
 

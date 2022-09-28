@@ -340,6 +340,19 @@ func (fd *specialFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 		}
 	}
 
+	// handleReadWriter always writes to the remote file. So O_DIRECT is
+	// effectively always set. Invalidate pages in d.mappings that have been
+	// written to.
+	pgstart := hostarch.PageRoundDown(uint64(offset))
+	pgend, ok := hostarch.PageRoundUp(uint64(offset + src.NumBytes()))
+	if !ok {
+		return 0, offset, linuxerr.EINVAL
+	}
+	mr := memmap.MappableRange{pgstart, pgend}
+	d.mapsMu.Lock()
+	d.mappings.Invalidate(mr, memmap.InvalidateOpts{})
+	d.mapsMu.Unlock()
+
 	rw := getHandleReadWriter(ctx, &fd.handle, offset)
 	n, err := src.CopyInTo(ctx, rw)
 	putHandleReadWriter(rw)
@@ -453,12 +466,20 @@ func (fd *specialFileFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpt
 
 // AddMapping implements memmap.Mappable.AddMapping.
 func (fd *specialFileFD) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
+	d := fd.dentry()
+	d.mapsMu.Lock()
+	defer d.mapsMu.Unlock()
+	d.mappings.AddMapping(ms, ar, offset, writable)
 	fd.hostFileMapper.IncRefOn(memmap.MappableRange{offset, offset + uint64(ar.Length())})
 	return nil
 }
 
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
 func (fd *specialFileFD) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
+	d := fd.dentry()
+	d.mapsMu.Lock()
+	defer d.mapsMu.Unlock()
+	d.mappings.RemoveMapping(ms, ar, offset, writable)
 	fd.hostFileMapper.DecRefOn(memmap.MappableRange{offset, offset + uint64(ar.Length())})
 }
 
