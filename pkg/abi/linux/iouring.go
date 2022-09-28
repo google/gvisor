@@ -14,6 +14,11 @@
 
 package linux
 
+import (
+	"fmt"
+	"reflect"
+)
+
 // Constants for io_uring_setup(2). See include/uapi/linux/io_uring.h.
 const (
 	IORING_SETUP_IOPOLL     = (1 << 0)
@@ -26,6 +31,11 @@ const (
 	IORING_SETUP_SUBMIT_ALL = (1 << 7)
 )
 
+// Constants for IoUringParams.Features. See include/uapi/linux/io_uring.h.
+const (
+	IORING_FEAT_SINGLE_MMAP = (1 << 0)
+)
+
 // Constants for IO_URING. See include/uapi/linux/io_uring.h.
 const (
 	IORING_SETUP_COOP_TASKRUN = (1 << 8)
@@ -36,46 +46,62 @@ const (
 
 // Constants for IO_URING. See io_uring/io_uring.c.
 const (
-	IORING_MAX_ENTRIES = (1 << 15) // 32768
+	IORING_MAX_ENTRIES    = (1 << 15) // 32768
+	IORING_MAX_CQ_ENTRIES = (2 * IORING_MAX_ENTRIES)
 )
 
-// IoSqringOffsets implements io_sqring_offsets struct.
+// Constants for the offsets for the application to mmap the data it needs.
 // See include/uapi/linux/io_uring.h.
+const (
+	IORING_OFF_SQ_RING = 0
+	IORING_OFF_CQ_RING = 0x8000000
+	IORING_OFF_SQES    = 0x10000000
+)
+
+// IORingIndex represents SQE array indexes.
 //
 // +marshal
-type IoSqringOffsets struct {
-	Head        uint32
-	Tail        uint32
-	RingMask    uint32
-	RingEntries uint32
-	Flags       uint32
-	Dropped     uint32
-	Array       uint32
-	Resv1       uint32
-	Resv2       uint64
+type IORingIndex uint32
+
+// IOSqRingOffsets implements io_sqring_offsets struct.
+// IOSqRingOffsets represents offsets into IORings.
+// See struct io_sqring_offsets in include/uapi/linux/io_uring.h.
+//
+// +marshal
+type IOSqRingOffsets struct {
+	Head        uint32 // Offset to io_rings.sq.head
+	Tail        uint32 // Offset to io_rings.sq.tail
+	RingMask    uint32 // Offset to io_rings.sq_ring_mask
+	RingEntries uint32 // Offset to io_rings.sq_ring_entries
+	Flags       uint32 // Offset to io_rings.sq_flags
+	Dropped     uint32 // Offset to io_rings.sq_dropped
+	Array       uint32 // Offset to an array of SQE indices
+	Resv1       uint32 // Currently reserved and expected to be zero
+	Resv2       uint64 // Currently reserved and expected to be zero
 }
 
-// IoCqringOffsets implements io_cqring_offsets struct.
-// See include/uapi/linux/io_uring.h.
+// IOCqRingOffsets implements io_cqring_offsets struct.
+// IOCqRingOffsets represents offsets into IORings.
+// See struct io_cqring_offsets in include/uapi/linux/io_uring.h.
 //
 // +marshal
-type IoCqringOffsets struct {
-	Head        uint32
-	Tail        uint32
-	RingMask    uint32
-	RingEntries uint32
-	Overflow    uint32
-	Cqes        uint32
-	Flags       uint32
-	Resv1       uint32
-	Resv2       uint64
+type IOCqRingOffsets struct {
+	Head        uint32 // Offset to io_rings.cq.head
+	Tail        uint32 // Offset to io_rings.cq.tail
+	RingMask    uint32 // Offset to io_rings.cq_ring_mask
+	RingEntries uint32 // Offset to io_rings.cq_ring_entries
+	Overflow    uint32 // Offset to io_rings.cq_overflow
+	Cqes        uint32 // Offset to io_rings.cqes
+	Flags       uint32 // Offset to io_rings.cq_flags
+	Resv1       uint32 // Currently reserved and expected to be zero
+	Resv2       uint64 // Currently reserved and expected to be zero
 }
 
-// IoUringParams implements io_uring_params struct.
-// See include/uapi/linux/io_uring.h.
+// IOUringParams implements io_uring_params struct.
+// See struct io_uring_params in include/uapi/linux/io_uring.h.
 //
 // +marshal
-type IoUringParams struct {
+type IOUringParams struct {
 	SqEntries    uint32
 	CqEntries    uint32
 	Flags        uint32
@@ -84,6 +110,82 @@ type IoUringParams struct {
 	Features     uint32
 	WqFd         uint32
 	Resv         [3]uint32
-	SqOff        IoSqringOffsets
-	CqOff        IoCqringOffsets
+	SqOff        IOSqRingOffsets
+	CqOff        IOCqRingOffsets
+}
+
+// IOUringCqe implements IO completion data structure (Completion Queue Entry)
+// io_uring_cqe struct. As we don't currently support IORING_SETUP_CQE32 flag
+// its size is 16 bytes.
+// See struct io_uring_cqe in include/uapi/linux/io_uring.h.
+//
+// +marshal
+type IOUringCqe struct {
+	userData uint64
+	res      int32
+	flags    uint32
+}
+
+// IOUring implements io_uring struct.
+// See struct io_uring in io_uring/io_uring.c.
+//
+// +marshal
+type IOUring struct {
+	// Both head and tail should be cacheline aligned. And we assume that
+	// cacheline size is 64 bytes.
+	head uint32
+	_    [60]byte
+	tail uint32
+	_    [60]byte
+}
+
+// IORings implements io_rings struct.
+// This struct describes layout of the mapped region backed by the ringBuffersFile.
+// See struct io_rings in io_uring/io_uring.c.
+//
+// +marshal
+type IORings struct {
+	sq, cq                       IOUring
+	sqRingMask, cqRingMask       uint32
+	sqRingEntries, cqRingEntries uint32
+	sqDropped                    uint32
+	sqFlags                      int32
+	cqFlags                      uint32
+	cqOverflow                   uint32
+	_                            [32]byte // Padding so cqes is cacheline aligned
+	// Linux has an additional field struct io_uring_cqe cqes[], which represents
+	// a dynamic array. We don't include it here in order to enable marshalling.
+}
+
+// PreComputedIOSqRingOffsets stores precomputed values for IOSqRingOffsets.
+var PreComputedIOSqRingOffsets IOSqRingOffsets
+
+// PreComputedIOCqRingOffsets stores precomputed values for IOCqRingOffsets.
+var PreComputedIOCqRingOffsets IOCqRingOffsets
+
+func init() {
+	ioRingsType := reflect.TypeOf((*IORings)(nil)).Elem()
+	ioUringType := reflect.TypeOf((*IOUring)(nil)).Elem()
+
+	offsetof := func(ty reflect.Type, name string) uint32 {
+		if f, ok := ty.FieldByName(name); ok {
+			return uint32(f.Offset)
+		}
+		panic(fmt.Sprintf("In type %q, no field named %q", ty.Name(), name))
+	}
+
+	PreComputedIOSqRingOffsets.Head = offsetof(ioRingsType, "sq") + offsetof(ioUringType, "head")
+	PreComputedIOSqRingOffsets.Tail = offsetof(ioRingsType, "sq") + offsetof(ioUringType, "tail")
+	PreComputedIOSqRingOffsets.RingMask = offsetof(ioRingsType, "sqRingMask")
+	PreComputedIOSqRingOffsets.RingEntries = offsetof(ioRingsType, "sqRingEntries")
+	PreComputedIOSqRingOffsets.Flags = offsetof(ioRingsType, "sqFlags")
+	PreComputedIOSqRingOffsets.Dropped = offsetof(ioRingsType, "sqDropped")
+
+	PreComputedIOCqRingOffsets.Head = offsetof(ioRingsType, "cq") + offsetof(ioUringType, "head")
+	PreComputedIOCqRingOffsets.Tail = offsetof(ioRingsType, "cq") + offsetof(ioUringType, "tail")
+	PreComputedIOCqRingOffsets.RingMask = offsetof(ioRingsType, "cqRingMask")
+	PreComputedIOCqRingOffsets.RingEntries = offsetof(ioRingsType, "cqRingEntries")
+	PreComputedIOCqRingOffsets.Overflow = offsetof(ioRingsType, "cqOverflow")
+	PreComputedIOCqRingOffsets.Flags = offsetof(ioRingsType, "cqFlags")
+
 }

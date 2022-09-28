@@ -27,6 +27,15 @@ namespace testing {
 
 #define __NR_io_uring_setup 425
 
+// io_uring_setup(2) flags.
+#define IORING_SETUP_SQPOLL (1U << 1)
+
+#define IORING_FEAT_SINGLE_MMAP (1U << 0)
+
+#define IORING_OFF_SQ_RING 0ULL
+#define IORING_OFF_CQ_RING 0x8000000ULL
+#define IORING_OFF_SQES 0x10000000ULL
+
 struct io_sqring_offsets {
   uint32_t head;
   uint32_t tail;
@@ -36,7 +45,7 @@ struct io_sqring_offsets {
   uint32_t dropped;
   uint32_t array;
   uint32_t resv1;
-  uint32_t resv2;
+  uint64_t resv2;
 };
 
 struct io_cqring_offsets {
@@ -46,7 +55,9 @@ struct io_cqring_offsets {
   uint32_t ring_entries;
   uint32_t overflow;
   uint32_t cqes;
-  uint64_t resv[2];
+  uint32_t flags;
+  uint32_t resv1;
+  uint64_t resv2;
 };
 
 struct io_uring_params {
@@ -56,21 +67,22 @@ struct io_uring_params {
   uint32_t sq_thread_cpu;
   uint32_t sq_thread_idle;
   uint32_t features;
-  uint32_t resv[4];
+  uint32_t wq_fd;
+  uint32_t resv[3];
   struct io_sqring_offsets sq_off;
   struct io_cqring_offsets cq_off;
 };
 
 // This is a wrapper for the io_uring_setup(2) system call.
-inline uint32_t IoUringSetup(uint32_t entries, struct io_uring_params* params) {
+inline int IOUringSetup(uint32_t entries, struct io_uring_params* params) {
   return syscall(__NR_io_uring_setup, entries, params);
 }
 
 // Returns a new iouringfd with the given number of entries.
-inline PosixErrorOr<FileDescriptor> NewIoUringFD(uint32_t entries) {
-  struct io_uring_params params;
+inline PosixErrorOr<FileDescriptor> NewIOUringFD(
+    uint32_t entries, struct io_uring_params& params) {
   memset(&params, 0, sizeof(params));
-  uint32_t fd = IoUringSetup(entries, &params);
+  int fd = IOUringSetup(entries, &params);
   MaybeSave();
   if (fd < 0) {
     return PosixError(errno, "io_uring_setup");
