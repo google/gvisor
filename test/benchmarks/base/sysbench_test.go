@@ -16,6 +16,7 @@ package sysbench_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
@@ -24,8 +25,9 @@ import (
 )
 
 type testCase struct {
-	name string
-	test tools.Sysbench
+	name    string
+	threads int
+	test    tools.Sysbench
 }
 
 // BenchmarSysbench runs sysbench on the runtime.
@@ -40,10 +42,28 @@ func BenchmarkSysbench(b *testing.B) {
 			},
 		},
 		{
+			name:    "CPU",
+			threads: 16,
+			test: &tools.SysbenchCPU{
+				SysbenchBase: tools.SysbenchBase{
+					Threads: 16,
+				},
+			},
+		},
+		{
 			name: "Memory",
 			test: &tools.SysbenchMemory{
 				SysbenchBase: tools.SysbenchBase{
 					Threads: 1,
+				},
+			},
+		},
+		{
+			name:    "Memory",
+			threads: 16,
+			test: &tools.SysbenchMemory{
+				SysbenchBase: tools.SysbenchBase{
+					Threads: 16,
 				},
 			},
 		},
@@ -68,9 +88,21 @@ func BenchmarkSysbench(b *testing.B) {
 			Name:  "testname",
 			Value: tc.name,
 		}
-		name, err := tools.ParametersToName(param)
-		if err != nil {
-			b.Fatalf("Failed to parse params: %v", err)
+		var name string
+		if tc.threads != 0 {
+			threads := tools.Parameter{
+				Name:  "threads",
+				Value: fmt.Sprintf("%d", tc.threads),
+			}
+			name, err = tools.ParametersToName(param, threads)
+			if err != nil {
+				b.Fatalf("Failed to parse params: %v", err)
+			}
+		} else {
+			name, err = tools.ParametersToName(param)
+			if err != nil {
+				b.Fatalf("Failed to parse params: %v", err)
+			}
 		}
 		b.Run(name, func(b *testing.B) {
 			ctx := context.Background()
