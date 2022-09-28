@@ -8,6 +8,7 @@ go_library(
     srcs = [
         "ab.go",
         "fio.go",
+        "hackbench.go",
         "hey.go",
         "iperf.go",
         "meminfo.go",
