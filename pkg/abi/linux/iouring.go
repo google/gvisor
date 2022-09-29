@@ -14,11 +14,6 @@
 
 package linux
 
-import (
-	"fmt"
-	"reflect"
-)
-
 // Constants for io_uring_setup(2). See include/uapi/linux/io_uring.h.
 const (
 	IORING_SETUP_IOPOLL     = (1 << 0)
@@ -155,37 +150,4 @@ type IORings struct {
 	_                            [32]byte // Padding so cqes is cacheline aligned
 	// Linux has an additional field struct io_uring_cqe cqes[], which represents
 	// a dynamic array. We don't include it here in order to enable marshalling.
-}
-
-// PreComputedIOSqRingOffsets stores precomputed values for IOSqRingOffsets.
-var PreComputedIOSqRingOffsets IOSqRingOffsets
-
-// PreComputedIOCqRingOffsets stores precomputed values for IOCqRingOffsets.
-var PreComputedIOCqRingOffsets IOCqRingOffsets
-
-func init() {
-	ioRingsType := reflect.TypeOf((*IORings)(nil)).Elem()
-	ioUringType := reflect.TypeOf((*IOUring)(nil)).Elem()
-
-	offsetof := func(ty reflect.Type, name string) uint32 {
-		if f, ok := ty.FieldByName(name); ok {
-			return uint32(f.Offset)
-		}
-		panic(fmt.Sprintf("In type %q, no field named %q", ty.Name(), name))
-	}
-
-	PreComputedIOSqRingOffsets.Head = offsetof(ioRingsType, "sq") + offsetof(ioUringType, "head")
-	PreComputedIOSqRingOffsets.Tail = offsetof(ioRingsType, "sq") + offsetof(ioUringType, "tail")
-	PreComputedIOSqRingOffsets.RingMask = offsetof(ioRingsType, "sqRingMask")
-	PreComputedIOSqRingOffsets.RingEntries = offsetof(ioRingsType, "sqRingEntries")
-	PreComputedIOSqRingOffsets.Flags = offsetof(ioRingsType, "sqFlags")
-	PreComputedIOSqRingOffsets.Dropped = offsetof(ioRingsType, "sqDropped")
-
-	PreComputedIOCqRingOffsets.Head = offsetof(ioRingsType, "cq") + offsetof(ioUringType, "head")
-	PreComputedIOCqRingOffsets.Tail = offsetof(ioRingsType, "cq") + offsetof(ioUringType, "tail")
-	PreComputedIOCqRingOffsets.RingMask = offsetof(ioRingsType, "cqRingMask")
-	PreComputedIOCqRingOffsets.RingEntries = offsetof(ioRingsType, "cqRingEntries")
-	PreComputedIOCqRingOffsets.Overflow = offsetof(ioRingsType, "cqOverflow")
-	PreComputedIOCqRingOffsets.Flags = offsetof(ioRingsType, "cqFlags")
-
 }

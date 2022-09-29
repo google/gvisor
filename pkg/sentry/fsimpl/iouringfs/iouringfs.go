@@ -137,7 +137,7 @@ func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, entries uint32, par
 		return nil, linuxerr.EOVERFLOW
 	}
 
-	params.SqOff = linux.PreComputedIOSqRingOffsets
+	params.SqOff = linux.PreComputedIOSqRingOffsets()
 	params.SqOff.Array = uint32(arrayOffset)
 
 	cqesOffset := uint64(hostarch.Addr((*linux.IORings)(nil).SizeBytes()))
@@ -146,7 +146,7 @@ func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, entries uint32, par
 		return nil, linuxerr.EOVERFLOW
 	}
 
-	params.CqOff = linux.PreComputedIOCqRingOffsets
+	params.CqOff = linux.PreComputedIOCqRingOffsets()
 	params.CqOff.Cqes = uint32(cqesOffset)
 
 	// Set features supported by the current IO_URING implementation.
