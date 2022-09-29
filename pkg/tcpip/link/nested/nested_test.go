@@ -54,11 +54,11 @@ type counterDispatcher struct {
 
 var _ stack.NetworkDispatcher = (*counterDispatcher)(nil)
 
-func (d *counterDispatcher) DeliverNetworkPacket(tcpip.NetworkProtocolNumber, *stack.PacketBuffer) {
+func (d *counterDispatcher) DeliverNetworkPacket(tcpip.NetworkProtocolNumber, stack.PacketBufferPtr) {
 	d.count++
 }
 
-func (*counterDispatcher) DeliverLinkPacket(tcpip.NetworkProtocolNumber, *stack.PacketBuffer, bool) {
+func (*counterDispatcher) DeliverLinkPacket(tcpip.NetworkProtocolNumber, stack.PacketBufferPtr, bool) {
 	panic("not implemented")
 }
 

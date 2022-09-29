@@ -27,17 +27,6 @@ go_template_instance(
     },
 )
 
-go_template_instance(
-    name = "packet_buffer_refs",
-    out = "packet_buffer_refs.go",
-    package = "stack",
-    prefix = "packetBuffer",
-    template = "//pkg/refsvfs2:refs_template",
-    types = {
-        "T": "PacketBuffer",
-    },
-)
-
 go_library(
     name = "stack",
     srcs = [
@@ -142,6 +131,7 @@ go_test(
         "neighbor_cache_test.go",
         "neighbor_entry_test.go",
         "nic_test.go",
+        "packet_buffer_refs_test.go",
         "packet_buffer_test.go",
     ],
     library = ":stack",

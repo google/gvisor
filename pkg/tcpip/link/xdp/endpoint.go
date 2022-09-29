@@ -193,7 +193,7 @@ func (ep *endpoint) Wait() {
 }
 
 // AddHeader implements stack.LinkEndpoint.AddHeader.
-func (ep *endpoint) AddHeader(pkt *stack.PacketBuffer) {
+func (ep *endpoint) AddHeader(pkt stack.PacketBufferPtr) {
 	// Add ethernet header if needed.
 	eth := header.Ethernet(pkt.LinkHeader().Push(header.EthernetMinimumSize))
 	eth.Encode(&header.EthernetFields{

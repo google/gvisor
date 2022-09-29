@@ -59,7 +59,7 @@ type segment struct {
 	qFlags queueFlags
 	id     stack.TransportEndpointID `state:"manual"`
 
-	pkt *stack.PacketBuffer
+	pkt stack.PacketBufferPtr
 
 	sequenceNumber seqnum.Value
 	ackNumber      seqnum.Value
@@ -92,7 +92,7 @@ type segment struct {
 	lost bool
 }
 
-func newIncomingSegment(id stack.TransportEndpointID, clock tcpip.Clock, pkt *stack.PacketBuffer) (*segment, error) {
+func newIncomingSegment(id stack.TransportEndpointID, clock tcpip.Clock, pkt stack.PacketBufferPtr) (*segment, error) {
 	hdr := header.TCP(pkt.TransportHeader().Slice())
 	netHdr := pkt.Network()
 	csum, csumValid, ok := header.TCPValid(
@@ -116,8 +116,7 @@ func newIncomingSegment(id stack.TransportEndpointID, clock tcpip.Clock, pkt *st
 	s.window = seqnum.Size(hdr.WindowSize())
 	s.rcvdTime = clock.NowMonotonic()
 	s.dataMemSize = pkt.MemSize()
-	s.pkt = pkt
-	pkt.IncRef()
+	s.pkt = pkt.IncRef()
 	s.csumValid = csumValid
 
 	if !s.pkt.RXTransportChecksumValidated {
@@ -195,7 +194,7 @@ func (s *segment) DecRef() {
 			}
 		}
 		s.pkt.DecRef()
-		s.pkt = nil
+		s.pkt = stack.PacketBufferPtr{}
 		segmentPool.Put(s)
 	})
 }

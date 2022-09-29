@@ -45,7 +45,7 @@ var (
 	defaultRoute              = stack.MulticastRoute{inputNICID, defaultOutgoingInterfaces}
 )
 
-func newPacketBuffer(body string) *stack.PacketBuffer {
+func newPacketBuffer(body string) stack.PacketBufferPtr {
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Payload: bufferv2.MakeWithData([]byte(body)),
 	})
@@ -258,7 +258,7 @@ func TestAddInstalledRouteWithPending(t *testing.T) {
 	defer pkt.DecRef()
 
 	cmpOpts := []cmp.Option{
-		cmp.Transformer("AsSlices", func(pkt *stack.PacketBuffer) [][]byte {
+		cmp.Transformer("AsSlices", func(pkt stack.PacketBufferPtr) [][]byte {
 			return pkt.AsSlices()
 		}),
 		cmp.Comparer(func(a [][]byte, b [][]byte) bool {
@@ -269,12 +269,12 @@ func TestAddInstalledRouteWithPending(t *testing.T) {
 	testCases := []struct {
 		name    string
 		advance time.Duration
-		want    []*stack.PacketBuffer
+		want    []stack.PacketBufferPtr
 	}{
 		{
 			name:    "not expired",
 			advance: DefaultPendingRouteExpiration,
-			want:    []*stack.PacketBuffer{pkt},
+			want:    []stack.PacketBufferPtr{pkt},
 		},
 		{
 			name:    "expired",

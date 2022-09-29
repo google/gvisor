@@ -1660,7 +1660,7 @@ func (s *sender) sendSegment(seg *segment) tcpip.Error {
 // flags and sequence number.
 // +checklocks:s.ep.mu
 // +checklocksalias:s.ep.rcv.ep.mu=s.ep.mu
-func (s *sender) sendSegmentFromPacketBuffer(pkt *stack.PacketBuffer, flags header.TCPFlags, seq seqnum.Value) tcpip.Error {
+func (s *sender) sendSegmentFromPacketBuffer(pkt stack.PacketBufferPtr, flags header.TCPFlags, seq seqnum.Value) tcpip.Error {
 	s.LastSendTime = s.ep.stack.Clock().NowMonotonic()
 	if seq == s.RTTMeasureSeqNum {
 		s.RTTMeasureTime = s.LastSendTime

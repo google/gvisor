@@ -21,13 +21,13 @@ package stack
 //
 // +stateify savable
 type PacketBufferList struct {
-	pbs []*PacketBuffer
+	pbs []PacketBufferPtr
 }
 
 // AsSlice returns a slice containing the packets in the list.
 //
 //go:nosplit
-func (pl *PacketBufferList) AsSlice() []*PacketBuffer {
+func (pl *PacketBufferList) AsSlice() []PacketBufferPtr {
 	return pl.pbs
 }
 
@@ -37,7 +37,7 @@ func (pl *PacketBufferList) AsSlice() []*PacketBuffer {
 func (pl *PacketBufferList) Reset() {
 	for i, pb := range pl.pbs {
 		pb.DecRef()
-		pl.pbs[i] = nil
+		pl.pbs[i] = PacketBufferPtr{}
 	}
 	pl.pbs = pl.pbs[:0]
 }
@@ -52,7 +52,7 @@ func (pl *PacketBufferList) Len() int {
 // PushBack inserts the PacketBuffer at the back of the list.
 //
 //go:nosplit
-func (pl *PacketBufferList) PushBack(pb *PacketBuffer) {
+func (pl *PacketBufferList) PushBack(pb PacketBufferPtr) {
 	pl.pbs = append(pl.pbs, pb)
 }
 

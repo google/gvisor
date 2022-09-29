@@ -30,7 +30,7 @@ type hole struct {
 	final  bool
 	// pkt is the fragment packet if hole is filled. We keep the whole pkt rather
 	// than the fragmented payload to prevent binding to specific buffer types.
-	pkt *stack.PacketBuffer
+	pkt stack.PacketBufferPtr
 }
 
 type reassembler struct {
@@ -43,7 +43,7 @@ type reassembler struct {
 	filled    int
 	done      bool
 	createdAt tcpip.MonotonicTime
-	pkt       *stack.PacketBuffer
+	pkt       stack.PacketBufferPtr
 }
 
 func newReassembler(id FragmentID, clock tcpip.Clock) *reassembler {
@@ -60,14 +60,14 @@ func newReassembler(id FragmentID, clock tcpip.Clock) *reassembler {
 	return r
 }
 
-func (r *reassembler) process(first, last uint16, more bool, proto uint8, pkt *stack.PacketBuffer) (*stack.PacketBuffer, uint8, bool, int, error) {
+func (r *reassembler) process(first, last uint16, more bool, proto uint8, pkt stack.PacketBufferPtr) (stack.PacketBufferPtr, uint8, bool, int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.done {
 		// A concurrent goroutine might have already reassembled
 		// the packet and emptied the heap while this goroutine
 		// was waiting on the mutex. We don't have to do anything in this case.
-		return nil, 0, false, 0, nil
+		return stack.PacketBufferPtr{}, 0, false, 0, nil
 	}
 
 	var holeFound bool
@@ -91,12 +91,12 @@ func (r *reassembler) process(first, last uint16, more bool, proto uint8, pkt *s
 		// https://github.com/torvalds/linux/blob/38525c6/net/ipv4/inet_fragment.c#L349
 		if first < currentHole.first || currentHole.last < last {
 			// Incoming fragment only partially fits in the free hole.
-			return nil, 0, false, 0, ErrFragmentOverlap
+			return stack.PacketBufferPtr{}, 0, false, 0, ErrFragmentOverlap
 		}
 		if !more {
 			if !currentHole.final || currentHole.filled && currentHole.last != last {
 				// We have another final fragment, which does not perfectly overlap.
-				return nil, 0, false, 0, ErrFragmentConflict
+				return stack.PacketBufferPtr{}, 0, false, 0, ErrFragmentConflict
 			}
 		}
 
@@ -145,7 +145,7 @@ func (r *reassembler) process(first, last uint16, more bool, proto uint8, pkt *s
 		// options received in the first fragment should be used - and they should
 		// override options from following fragments.
 		if first == 0 {
-			if r.pkt != nil {
+			if !r.pkt.IsNil() {
 				r.pkt.DecRef()
 			}
 			r.pkt = pkt.IncRef()
@@ -155,12 +155,12 @@ func (r *reassembler) process(first, last uint16, more bool, proto uint8, pkt *s
 	}
 	if !holeFound {
 		// Incoming fragment is beyond end.
-		return nil, 0, false, 0, ErrFragmentConflict
+		return stack.PacketBufferPtr{}, 0, false, 0, ErrFragmentConflict
 	}
 
 	// Check if all the holes have been filled and we are ready to reassemble.
 	if r.filled < len(r.holes) {
-		return nil, 0, false, memConsumed, nil
+		return stack.PacketBufferPtr{}, 0, false, memConsumed, nil
 	}
 
 	sort.Slice(r.holes, func(i, j int) bool {

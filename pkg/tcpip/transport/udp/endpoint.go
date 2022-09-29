@@ -40,7 +40,7 @@ type udpPacket struct {
 	senderAddress      tcpip.FullAddress
 	destinationAddress tcpip.FullAddress
 	packetInfo         tcpip.IPPacketInfo
-	pkt                *stack.PacketBuffer
+	pkt                stack.PacketBufferPtr
 	receivedAt         time.Time `state:".(int64)"`
 	// tosOrTClass stores either the Type of Service for IPv4 or the Traffic Class
 	// for IPv6.
@@ -473,7 +473,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 	dataSz := udpInfo.data.Size()
 	pktInfo := udpInfo.ctx.PacketInfo()
 	pkt := udpInfo.ctx.TryNewPacketBuffer(header.UDPMinimumSize+int(pktInfo.MaxHeaderLength), udpInfo.data)
-	if pkt == nil {
+	if pkt.IsNil() {
 		return 0, &tcpip.ErrWouldBlock{}
 	}
 	defer pkt.DecRef()
@@ -902,7 +902,7 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 
 // HandlePacket is called by the stack when new packets arrive to this transport
 // endpoint.
-func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
+func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt stack.PacketBufferPtr) {
 	// Get the header then trim it from the view.
 	hdr := header.UDP(pkt.TransportHeader().Slice())
 	netHdr := pkt.Network()
@@ -994,7 +994,7 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 	}
 }
 
-func (e *endpoint) onICMPError(err tcpip.Error, transErr stack.TransportError, pkt *stack.PacketBuffer) {
+func (e *endpoint) onICMPError(err tcpip.Error, transErr stack.TransportError, pkt stack.PacketBufferPtr) {
 	// Update last error first.
 	e.lastErrorMu.Lock()
 	e.lastError = err
@@ -1042,7 +1042,7 @@ func (e *endpoint) onICMPError(err tcpip.Error, transErr stack.TransportError, p
 }
 
 // HandleError implements stack.TransportEndpoint.
-func (e *endpoint) HandleError(transErr stack.TransportError, pkt *stack.PacketBuffer) {
+func (e *endpoint) HandleError(transErr stack.TransportError, pkt stack.PacketBufferPtr) {
 	// TODO(gvisor.dev/issues/5270): Handle all transport errors.
 	switch transErr.Kind() {
 	case stack.DestinationPortUnreachableTransportError:

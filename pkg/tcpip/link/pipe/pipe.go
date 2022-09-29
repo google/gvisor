@@ -110,4 +110,4 @@ func (*Endpoint) ARPHardwareType() header.ARPHardwareType {
 }
 
 // AddHeader implements stack.LinkEndpoint.
-func (*Endpoint) AddHeader(*stack.PacketBuffer) {}
+func (*Endpoint) AddHeader(stack.PacketBufferPtr) {}
