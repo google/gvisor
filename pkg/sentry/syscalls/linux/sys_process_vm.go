@@ -94,14 +94,14 @@ func processVMOp(t *kernel.Task, args arch.SyscallArguments, op processVMOpType)
 			readCtx:         remoteTask.CopyContext(t, usermem.IOOpts{}),
 			readAddr:        rvec,
 			readIovecCount:  riovcnt,
-			writeCtx:        t.CopyContext(t, usermem.IOOpts{AddressSpaceActive: true}),
+			writeCtx:        t.CopyContext(t, usermem.IOOpts{}),
 			writeAddr:       lvec,
 			writeIovecCount: liovcnt,
 		}
 	case processVMOpWrite:
 		// Read from local process and write into remote.
 		opArgs = processVMOpArgs{
-			readCtx:         t.CopyContext(t, usermem.IOOpts{AddressSpaceActive: true}),
+			readCtx:         t.CopyContext(t, usermem.IOOpts{}),
 			readAddr:        lvec,
 			readIovecCount:  liovcnt,
 			writeCtx:        remoteTask.CopyContext(t, usermem.IOOpts{}),

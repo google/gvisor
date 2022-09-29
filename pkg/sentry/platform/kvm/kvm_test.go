@@ -132,7 +132,7 @@ func applicationTest(t testHarness, useHostMappings bool, targetFn uintptr, fn f
 
 	kvmTest(t, func(k *KVM) {
 		// Create new page tables.
-		as, _, err := k.NewAddressSpace(nil /* invalidator */)
+		as, err := k.NewAddressSpace()
 		if err != nil {
 			t.Fatalf("can't create new address space: %v", err)
 		}

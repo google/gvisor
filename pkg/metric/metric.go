@@ -1473,6 +1473,21 @@ func EmitMetricUpdate() {
 	}
 }
 
+// EmitMetricUpdateWithTimeout is equivalent to EmitMetricUpdate, but only
+// waits for timeout before returning. Metrics may be emitted after
+// EmitMetricUpdateWithTimeout returns.
+func EmitMetricUpdateWithTimeout(timeout time.Duration) {
+	ch := make(chan struct{})
+	go func() {
+		EmitMetricUpdate()
+		close(ch)
+	}()
+	select {
+	case <-ch:
+	case <-time.After(timeout):
+	}
+}
+
 // SnapshotOptions controls how snapshots are exported in GetSnapshot.
 type SnapshotOptions struct {
 	// Filter, if set, should return true for metrics that should be written to

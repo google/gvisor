@@ -17,149 +17,15 @@ package mm
 import (
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 )
 
 // AddressSpace returns the platform.AddressSpace bound to mm.
 //
-// Preconditions: The caller must have called mm.Activate().
+// Preconditions: mm.users != 0.
 func (mm *MemoryManager) AddressSpace() platform.AddressSpace {
-	if mm.active.Load() == 0 {
-		panic("trying to use inactive address space?")
-	}
 	return mm.as
-}
-
-// Activate ensures this MemoryManager has a platform.AddressSpace.
-//
-// The caller must not hold any locks when calling Activate.
-//
-// When this MemoryManager is no longer needed by a task, it should call
-// Deactivate to release the reference.
-func (mm *MemoryManager) Activate(ctx context.Context) error {
-	// Fast path: the MemoryManager already has an active
-	// platform.AddressSpace, and we just need to indicate that we need it too.
-	for {
-		active := mm.active.Load()
-		if active == 0 {
-			// Fall back to the slow path.
-			break
-		}
-		if mm.active.CompareAndSwap(active, active+1) {
-			return nil
-		}
-	}
-
-	for {
-		// Slow path: may need to synchronize with other goroutines changing
-		// mm.active to or from zero.
-		mm.activeMu.Lock()
-		// Inline Unlock instead of using a defer for performance since this
-		// method is commonly in the hot-path.
-
-		// Check if we raced with another goroutine performing activation.
-		if mm.active.Load() > 0 {
-			// This can't race; Deactivate can't decrease mm.active from 1 to 0
-			// without holding activeMu.
-			mm.active.Add(1)
-			mm.activeMu.Unlock()
-			return nil
-		}
-
-		// Do we have a context? If so, then we never unmapped it. This can
-		// only be the case if !mm.p.CooperativelySchedulesAddressSpace().
-		if mm.as != nil {
-			mm.active.Store(1)
-			mm.activeMu.Unlock()
-			return nil
-		}
-
-		// Get a new address space. We must force unmapping by passing nil to
-		// NewAddressSpace if requested. (As in the nil interface object, not a
-		// typed nil.)
-		mappingsID := (any)(mm)
-		if mm.unmapAllOnActivate {
-			mappingsID = nil
-		}
-		as, c, err := mm.p.NewAddressSpace(mappingsID)
-		if err != nil {
-			mm.activeMu.Unlock()
-			return err
-		}
-		if as == nil {
-			// AddressSpace is unavailable, we must wait.
-			//
-			// activeMu must not be held while waiting, as the user of the address
-			// space we are waiting on may attempt to take activeMu.
-			mm.activeMu.Unlock()
-
-			sleep := mm.p.CooperativelySchedulesAddressSpace() && mm.sleepForActivation
-			if sleep {
-				// Mark this task sleeping while waiting for the address space to
-				// prevent the watchdog from reporting it as a stuck task.
-				ctx.UninterruptibleSleepStart(false)
-			}
-			<-c
-			if sleep {
-				ctx.UninterruptibleSleepFinish(false)
-			}
-			continue
-		}
-
-		// Okay, we could restore all mappings at this point.
-		// But forget that. Let's just let them fault in.
-		mm.as = as
-
-		// Unmapping is done, if necessary.
-		mm.unmapAllOnActivate = false
-
-		// Now that m.as has been assigned, we can set m.active to a non-zero value
-		// to enable the fast path.
-		mm.active.Store(1)
-
-		mm.activeMu.Unlock()
-		return nil
-	}
-}
-
-// Deactivate releases a reference to the MemoryManager.
-func (mm *MemoryManager) Deactivate() {
-	// Fast path: this is not the last goroutine to deactivate the
-	// MemoryManager.
-	for {
-		active := mm.active.Load()
-		if active == 1 {
-			// Fall back to the slow path.
-			break
-		}
-		if mm.active.CompareAndSwap(active, active-1) {
-			return
-		}
-	}
-
-	mm.activeMu.Lock()
-	// Same as Activate.
-
-	// Still active?
-	if mm.active.Add(-1) > 0 {
-		mm.activeMu.Unlock()
-		return
-	}
-
-	// Can we hold on to the address space?
-	if !mm.p.CooperativelySchedulesAddressSpace() {
-		mm.activeMu.Unlock()
-		return
-	}
-
-	// Release the address space.
-	mm.as.Release()
-
-	// Lost it.
-	mm.as = nil
-	mm.activeMu.Unlock()
 }
 
 // mapASLocked maps addresses in ar into mm.as. If precommit is true, mappings
@@ -167,7 +33,6 @@ func (mm *MemoryManager) Deactivate() {
 //
 // Preconditions:
 //   - mm.activeMu must be locked.
-//   - mm.as != nil.
 //   - ar.Length() != 0.
 //   - ar must be page-aligned.
 //   - pseg == mm.pmas.LowerBoundSegment(ar.Start).
@@ -219,21 +84,12 @@ func (mm *MemoryManager) mapASLocked(pseg pmaIterator, ar hostarch.AddrRange, pr
 // Preconditions: mm.activeMu must be locked.
 func (mm *MemoryManager) unmapASLocked(ar hostarch.AddrRange) {
 	if mm.as == nil {
-		// No AddressSpace? Force all mappings to be unmapped on the next
-		// Activate.
-		mm.unmapAllOnActivate = true
+		// Being called from mm.DecUsers() after AddressSpace release.
 		return
 	}
-
 	// unmapASLocked doesn't require vmas or pmas to exist for ar, so it can be
 	// passed ranges that include addresses that can't be mapped by the
 	// application.
 	ar = ar.Intersect(mm.applicationAddrRange())
-
-	// Note that this AddressSpace may or may not be active. If the
-	// platform does not require cooperative sharing of AddressSpaces, they
-	// are retained between Deactivate/Activate calls. Despite not being
-	// active, it is still valid to perform operations on these address
-	// spaces.
 	mm.as.Unmap(ar.Start, uint64(ar.Length()))
 }

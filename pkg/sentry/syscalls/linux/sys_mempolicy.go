@@ -92,9 +92,7 @@ func copyOutNodemask(t *kernel.Task, addr hostarch.Addr, maxnode uint32, val uin
 			return linuxerr.EFAULT
 		}
 		remUint64 := (bits - 1) / 64
-		if _, err := t.MemoryManager().ZeroOut(t, remAddr, int64(remUint64)*8, usermem.IOOpts{
-			AddressSpaceActive: true,
-		}); err != nil {
+		if _, err := t.MemoryManager().ZeroOut(t, remAddr, int64(remUint64)*8, usermem.IOOpts{}); err != nil {
 			return err
 		}
 	}

@@ -366,16 +366,8 @@ func (w *Watchdog) doAction(action Action, forceStack bool, msg *bytes.Buffer) {
 		log.TracebackAll(msg.String())
 
 		// Attempt to flush metrics, timeout and move on in case metrics are stuck as well.
-		metricsEmitted := make(chan struct{}, 1)
-		go func() { // S/R-SAFE: watchdog is stopped during save and restarted after restore.
-			// Flush metrics before killing process.
-			metric.EmitMetricUpdate()
-			metricsEmitted <- struct{}{}
-		}()
-		select {
-		case <-metricsEmitted:
-		case <-time.After(1 * time.Second):
-		}
+		metric.EmitMetricUpdateWithTimeout(time.Second)
+
 		panic(fmt.Sprintf("%s\nStack for running G's are skipped while panicking.", msg.String()))
 
 	default:

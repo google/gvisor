@@ -52,9 +52,7 @@ func Read(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *
 	}
 
 	// Get the destination of the read.
-	dst, err := t.SingleIOSequence(addr, si, usermem.IOOpts{
-		AddressSpaceActive: true,
-	})
+	dst, err := t.SingleIOSequence(addr, si, usermem.IOOpts{})
 	if err != nil {
 		return 0, nil, err
 	}
@@ -77,9 +75,7 @@ func Readv(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 	defer file.DecRef(t)
 
 	// Get the destination of the read.
-	dst, err := t.IovecsIOSequence(addr, iovcnt, usermem.IOOpts{
-		AddressSpaceActive: true,
-	})
+	dst, err := t.IovecsIOSequence(addr, iovcnt, usermem.IOOpts{})
 	if err != nil {
 		return 0, nil, err
 	}
@@ -157,9 +153,7 @@ func Pread64(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr
 	}
 
 	// Get the destination of the read.
-	dst, err := t.SingleIOSequence(addr, si, usermem.IOOpts{
-		AddressSpaceActive: true,
-	})
+	dst, err := t.SingleIOSequence(addr, si, usermem.IOOpts{})
 	if err != nil {
 		return 0, nil, err
 	}
@@ -188,9 +182,7 @@ func Preadv(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr,
 	}
 
 	// Get the destination of the read.
-	dst, err := t.IovecsIOSequence(addr, iovcnt, usermem.IOOpts{
-		AddressSpaceActive: true,
-	})
+	dst, err := t.IovecsIOSequence(addr, iovcnt, usermem.IOOpts{})
 	if err != nil {
 		return 0, nil, err
 	}
@@ -226,9 +218,7 @@ func Preadv2(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr
 	}
 
 	// Get the destination of the read.
-	dst, err := t.IovecsIOSequence(addr, iovcnt, usermem.IOOpts{
-		AddressSpaceActive: true,
-	})
+	dst, err := t.IovecsIOSequence(addr, iovcnt, usermem.IOOpts{})
 	if err != nil {
 		return 0, nil, err
 	}
@@ -306,9 +296,7 @@ func Write(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 	}
 
 	// Get the source of the write.
-	src, err := t.SingleIOSequence(addr, si, usermem.IOOpts{
-		AddressSpaceActive: true,
-	})
+	src, err := t.SingleIOSequence(addr, si, usermem.IOOpts{})
 	if err != nil {
 		return 0, nil, err
 	}
@@ -331,9 +319,7 @@ func Writev(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr,
 	defer file.DecRef(t)
 
 	// Get the source of the write.
-	src, err := t.IovecsIOSequence(addr, iovcnt, usermem.IOOpts{
-		AddressSpaceActive: true,
-	})
+	src, err := t.IovecsIOSequence(addr, iovcnt, usermem.IOOpts{})
 	if err != nil {
 		return 0, nil, err
 	}
@@ -410,9 +396,7 @@ func Pwrite64(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintpt
 	}
 
 	// Get the source of the write.
-	src, err := t.SingleIOSequence(addr, si, usermem.IOOpts{
-		AddressSpaceActive: true,
-	})
+	src, err := t.SingleIOSequence(addr, si, usermem.IOOpts{})
 	if err != nil {
 		return 0, nil, err
 	}
@@ -441,9 +425,7 @@ func Pwritev(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr
 	}
 
 	// Get the source of the write.
-	src, err := t.IovecsIOSequence(addr, iovcnt, usermem.IOOpts{
-		AddressSpaceActive: true,
-	})
+	src, err := t.IovecsIOSequence(addr, iovcnt, usermem.IOOpts{})
 	if err != nil {
 		return 0, nil, err
 	}
@@ -479,9 +461,7 @@ func Pwritev2(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintpt
 	}
 
 	// Get the source of the write.
-	src, err := t.IovecsIOSequence(addr, iovcnt, usermem.IOOpts{
-		AddressSpaceActive: true,
-	})
+	src, err := t.IovecsIOSequence(addr, iovcnt, usermem.IOOpts{})
 	if err != nil {
 		return 0, nil, err
 	}

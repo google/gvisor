@@ -147,9 +147,6 @@ func (p *Pipe) Ioctl(ctx context.Context, io usermem.IO, sysno uintptr, args arc
 		iocc := usermem.IOCopyContext{
 			IO:  io,
 			Ctx: ctx,
-			Opts: usermem.IOOpts{
-				AddressSpaceActive: true,
-			},
 		}
 		_, err := primitive.CopyInt32Out(&iocc, args[2].Pointer(), int32(v))
 		return 0, err

@@ -57,9 +57,7 @@ func getdents(t *kernel.Task, args arch.SyscallArguments, isGetdents64 bool) (ui
 	// We want to be sure of the allowed buffer size before calling IterDirents,
 	// because this function depends on IterDirents saving state of which dirent
 	// was the last one that was successfully operated on.
-	allowedSize, err := t.MemoryManager().EnsurePMAsExist(t, addr, int64(size), usermem.IOOpts{
-		AddressSpaceActive: true,
-	})
+	allowedSize, err := t.MemoryManager().EnsurePMAsExist(t, addr, int64(size), usermem.IOOpts{})
 	if allowedSize == 0 {
 		return 0, nil, err
 	}

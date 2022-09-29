@@ -236,7 +236,7 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 	r.image.MemoryManager.SetDumpability(mm.UserDumpable)
 
 	// Switch to the new process.
-	t.MemoryManager().Deactivate()
+	t.p.PrepareExecve()
 	t.mu.Lock()
 	// Update credentials to reflect the execve. This should precede switching
 	// MMs to ensure that dumpability has been reset first, if needed.
@@ -252,8 +252,6 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 
 	t.unstopVforkParent()
 	t.p.FullStateChanged()
-	// NOTE(b/30316266): All locks must be dropped prior to calling Activate.
-	t.MemoryManager().Activate(t)
 
 	t.ptraceExec(oldTID)
 	return (*runSyscallExit)(nil)
