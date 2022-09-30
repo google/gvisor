@@ -60,5 +60,11 @@ func BenchmarkSyscallbench(b *testing.B) {
 		if err != nil {
 			b.Fatalf("failed to run syscallbench: %v, logs:%s", err, out)
 		}
+		b.StopTimer()
+		cpuUtilization, err := container.TotalCpuUtilization()
+		if err != nil {
+			b.Fatalf("parsing total cpu utilization failed: %v", err)
+		}
+		tools.ReportCustomMetric(b, cpuUtilization, "total_cpu_utilization" /*metric name*/, "percentage" /*unit*/)
 	})
 }

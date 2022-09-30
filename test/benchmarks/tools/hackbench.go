@@ -19,6 +19,8 @@ import (
 	"regexp"
 	"strconv"
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/test/dockerutil"
 )
 
 // Hackbench makes 'hackbench' commands and parses their output.
@@ -48,13 +50,19 @@ func (s *Hackbench) MakeCmd(b *testing.B) []string {
 }
 
 // Report reports the relevant metrics for Hackbench.
-func (s *Hackbench) Report(b *testing.B, output string) {
+func (s *Hackbench) Report(b *testing.B, output string, container *dockerutil.Container) {
 	b.Helper()
 	result, err := s.parseResult(output)
 	if err != nil {
 		b.Fatalf("parsing result from %s failed: %v", output, err)
 	}
 	ReportCustomMetric(b, result, "execution_time" /*metric name*/, "s" /*unit*/)
+
+	cpuUtilization, err := container.TotalCpuUtilization()
+	if err != nil {
+		b.Fatalf("parsing total cpu utilization failed: %v", err)
+	}
+	ReportCustomMetric(b, cpuUtilization, "total_cpu_utilization" /*metric name*/, "percentage" /*unit*/)
 }
 
 var hackbenchRegexp = regexp.MustCompile(`Time:\s*(\d*.?\d*)\n`)

@@ -76,7 +76,7 @@ func BenchmarkHackbench(b *testing.B) {
 			if err != nil {
 				b.Fatalf("failed to run hackbench: %v, logs:%s", err, out)
 			}
-			tc.Report(b, out)
+			tc.Report(b, out, container)
 		})
 	}
 }

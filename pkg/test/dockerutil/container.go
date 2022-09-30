@@ -25,6 +25,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -57,6 +58,9 @@ type Container struct {
 
 	// profile is the profiling hook associated with this container.
 	profile *profile
+
+	// container start time stamp
+	startTimestampNs uint64
 }
 
 // RunOpts are options for running a container.
@@ -148,7 +152,16 @@ func (c *Container) Spawn(ctx context.Context, r RunOpts, args ...string) error 
 	if err := c.create(ctx, r.Image, c.config(r, args), c.hostConfig(r), nil); err != nil {
 		return err
 	}
-	return c.Start(ctx)
+	if err := c.Start(ctx); err != nil {
+		return err
+	}
+
+	startTimestampNs, err := systemStatTime()
+	if err != nil {
+		return err
+	}
+	c.startTimestampNs = startTimestampNs
+	return nil
 }
 
 // SpawnProcess is analogous to 'docker run -it'. It returns a process
@@ -551,4 +564,19 @@ func (c *Container) CleanUp(ctx context.Context) {
 
 	// Forget all mounts.
 	c.mounts = nil
+}
+
+func (c *Container) TotalCpuUtilization() (float64, error) {
+	cpuUsageNs, err := containerCpuUsage(c.id)
+	if err != nil {
+		return 0, fmt.Errorf("get container cpu usage failed: %v", err)
+	}
+
+	endTimestampNs, err := systemStatTime()
+	if err != nil {
+		return 0, fmt.Errorf("get system stat time failed: %v", err)
+	}
+
+	cpuUtilization := float64(cpuUsageNs) / float64(endTimestampNs-c.startTimestampNs) * float64(goruntime.NumCPU()) * 100.0
+	return cpuUtilization, nil
 }

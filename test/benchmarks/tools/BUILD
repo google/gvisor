@@ -18,6 +18,9 @@ go_library(
         "tools.go",
     ],
     visibility = ["//:sandbox"],
+    deps = [
+        "//pkg/test/dockerutil",
+    ],
 )
 
 go_test(

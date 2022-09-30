@@ -109,16 +109,23 @@ func BenchmarkSysbench(b *testing.B) {
 			sysbench := machine.GetContainer(ctx, b)
 			defer sysbench.CleanUp(ctx)
 
+			if err := sysbench.Spawn(
+				ctx, dockerutil.RunOpts{
+					Image: "benchmarks/sysbench",
+				},
+				"sleep", "24h",
+			); err != nil {
+				b.Fatalf("run failed with: %v", err)
+			}
+
 			cmd := tc.test.MakeCmd(b)
 			b.ResetTimer()
-			out, err := sysbench.Run(ctx, dockerutil.RunOpts{
-				Image: "benchmarks/sysbench",
-			}, cmd...)
+			out, err := sysbench.Exec(ctx, dockerutil.ExecOpts{}, cmd...)
 			if err != nil {
 				b.Fatalf("failed to run sysbench: %v: logs:%s", err, out)
 			}
 			b.StopTimer()
-			tc.test.Report(b, out)
+			tc.test.Report(b, out, sysbench)
 		})
 	}
 }

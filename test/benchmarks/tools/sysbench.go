@@ -19,6 +19,8 @@ import (
 	"regexp"
 	"strconv"
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/test/dockerutil"
 )
 
 // Sysbench represents a 'sysbench' command.
@@ -27,7 +29,7 @@ type Sysbench interface {
 	MakeCmd(*testing.B) []string
 
 	// Report reports relevant custom metrics.
-	Report(*testing.B, string)
+	Report(*testing.B, string, *dockerutil.Container)
 }
 
 // SysbenchBase is the top level struct for sysbench and holds top-level arguments
@@ -64,13 +66,19 @@ func (s *SysbenchCPU) MakeCmd(b *testing.B) []string {
 }
 
 // Report reports the relevant metrics for SysbenchCPU.
-func (s *SysbenchCPU) Report(b *testing.B, output string) {
+func (s *SysbenchCPU) Report(b *testing.B, output string, container *dockerutil.Container) {
 	b.Helper()
 	result, err := s.parseEvents(output)
 	if err != nil {
 		b.Fatalf("parsing CPU events from %s failed: %v", output, err)
 	}
 	ReportCustomMetric(b, result, "cpu_events" /*metric name*/, "events_per_second" /*unit*/)
+
+	cpuUtilization, err := container.TotalCpuUtilization()
+	if err != nil {
+		b.Fatalf("parsing total cpu utilization failed: %v", err)
+	}
+	ReportCustomMetric(b, cpuUtilization, "total_cpu_utilization" /*metric name*/, "percentage" /*unit*/)
 }
 
 var cpuEventsPerSecondRE = regexp.MustCompile(`events per second:\s*(\d*.?\d*)\n`)
@@ -128,13 +136,19 @@ func (s *SysbenchMemory) flags(b *testing.B) []string {
 }
 
 // Report reports the relevant metrics for SysbenchMemory.
-func (s *SysbenchMemory) Report(b *testing.B, output string) {
+func (s *SysbenchMemory) Report(b *testing.B, output string, container *dockerutil.Container) {
 	b.Helper()
 	result, err := s.parseOperations(output)
 	if err != nil {
 		b.Fatalf("parsing result %s failed with err: %v", output, err)
 	}
 	ReportCustomMetric(b, result, "memory_operations" /*metric name*/, "ops_per_second" /*unit*/)
+
+	cpuUtilization, err := container.TotalCpuUtilization()
+	if err != nil {
+		b.Fatalf("parsing total cpu utilization failed: %v", err)
+	}
+	ReportCustomMetric(b, cpuUtilization, "total_cpu_utilization" /*metric name*/, "percentage" /*unit*/)
 }
 
 var memoryOperationsRE = regexp.MustCompile(`Total\s+operations:\s+\d+\s+\((\s*\d+\.\d+\s*)\s+per\s+second\)`)
@@ -182,7 +196,7 @@ func (s *SysbenchMutex) flags(b *testing.B) []string {
 }
 
 // Report parses and reports relevant sysbench mutex metrics.
-func (s *SysbenchMutex) Report(b *testing.B, output string) {
+func (s *SysbenchMutex) Report(b *testing.B, output string, container *dockerutil.Container) {
 	b.Helper()
 
 	result, err := s.parseExecutionTime(output)
@@ -202,6 +216,12 @@ func (s *SysbenchMutex) Report(b *testing.B, output string) {
 		b.Fatalf("parsing result %s failed with err: %v", output, err)
 	}
 	ReportCustomMetric(b, result/1000, "average_latency" /*metric name*/, "s" /*unit*/)
+
+	cpuUtilization, err := container.TotalCpuUtilization()
+	if err != nil {
+		b.Fatalf("parsing total cpu utilization failed: %v", err)
+	}
+	ReportCustomMetric(b, cpuUtilization, "total_cpu_utilization" /*metric name*/, "percentage" /*unit*/)
 }
 
 var executionTimeRE = regexp.MustCompile(`execution time \(avg/stddev\):\s*(\d*.?\d*)/(\d*.?\d*)`)

@@ -11,6 +11,7 @@ go_library(
         "exec.go",
         "network.go",
         "profile.go",
+        "stats.go",
     ],
     visibility = ["//:sandbox"],
     deps = [
