@@ -203,6 +203,7 @@ func (pk *PacketBuffer) DecRef() {
 
 		pk.buf.Release()
 		pkPool.Put(pk)
+		pk = nil
 	})
 }
 

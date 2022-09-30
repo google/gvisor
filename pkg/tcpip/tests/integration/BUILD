@@ -64,6 +64,7 @@ go_test(
         "//pkg/tcpip/faketime",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/channel",
+        "//pkg/tcpip/link/ethernet",
         "//pkg/tcpip/link/pipe",
         "//pkg/tcpip/network/arp",
         "//pkg/tcpip/network/ipv4",

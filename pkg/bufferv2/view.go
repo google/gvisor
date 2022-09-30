@@ -107,6 +107,7 @@ func (v *View) Release() {
 	v.chunk.DecRef()
 	*v = View{}
 	viewPool.Put(v)
+	v = nil
 }
 
 // Reset sets the view's read and write indices back to zero.

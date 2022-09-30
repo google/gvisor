@@ -50,6 +50,10 @@ type Route struct {
 	// linkRes is set if link address resolution is enabled for this protocol on
 	// the route's NIC.
 	linkRes *linkResolver
+
+	// neighborEntry is the cached result of fetching a neighbor entry from the
+	// neighbor cache.
+	neighborEntry *neighborEntry
 }
 
 // +stateify savable
@@ -390,20 +394,46 @@ func (r *Route) resolvedFields(afterResolve func(ResolvedFieldsResult)) (RouteIn
 		linkAddressResolutionRequestLocalAddr = r.LocalAddress()
 	}
 
+	nEntry := r.getCachedNeighborEntry()
+	if nEntry != nil {
+		if addr, ok := nEntry.getRemoteLinkAddress(); ok {
+			fields.RemoteLinkAddress = addr
+			if afterResolve != nil {
+				afterResolve(ResolvedFieldsResult{RouteInfo: fields, Err: nil})
+			}
+			return fields, nil, nil
+		}
+	}
 	afterResolveFields := fields
-	linkAddr, ch, err := r.linkRes.getNeighborLinkAddress(r.nextHop(), linkAddressResolutionRequestLocalAddr, func(r LinkResolutionResult) {
+	entry, ch, err := r.linkRes.neigh.entry(r.nextHop(), linkAddressResolutionRequestLocalAddr, func(lrr LinkResolutionResult) {
+		if lrr.Err != nil {
+			r.setCachedNeighborEntry(nil)
+		}
 		if afterResolve != nil {
-			if r.Err == nil {
-				afterResolveFields.RemoteLinkAddress = r.LinkAddress
+			if lrr.Err == nil {
+				afterResolveFields.RemoteLinkAddress = lrr.LinkAddress
 			}
 
-			afterResolve(ResolvedFieldsResult{RouteInfo: afterResolveFields, Err: r.Err})
+			afterResolve(ResolvedFieldsResult{RouteInfo: afterResolveFields, Err: lrr.Err})
 		}
 	})
 	if err == nil {
-		fields.RemoteLinkAddress = linkAddr
+		fields.RemoteLinkAddress, _ = entry.getRemoteLinkAddress()
 	}
+	r.setCachedNeighborEntry(entry)
 	return fields, ch, err
+}
+
+func (r *Route) getCachedNeighborEntry() *neighborEntry {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.neighborEntry
+}
+
+func (r *Route) setCachedNeighborEntry(entry *neighborEntry) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.neighborEntry = entry
 }
 
 func (r *Route) nextHop() tcpip.Address {

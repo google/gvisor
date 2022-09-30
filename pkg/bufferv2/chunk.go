@@ -108,6 +108,7 @@ func (c *chunk) destroy() {
 	}
 	pool := getChunkPool(len(c.data))
 	pool.Put(c)
+	c = nil
 }
 
 func (c *chunk) DecRef() {
