@@ -42,6 +42,9 @@ package checklinkname
 // TODO(b/165820485): Add option to specific per-version signatures.
 var knownLinknames = map[string]map[string]linknameSignatures{
 	"runtime": {
+		"cputicks": {
+			local: "func() int64",
+		},
 		"entersyscall": {
 			local: "func()",
 		},
