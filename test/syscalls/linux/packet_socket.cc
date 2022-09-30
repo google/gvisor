@@ -200,23 +200,31 @@ TEST_P(PacketSocketTest, RebindProtocol) {
   };
 
   auto test_recv = [&, this](const uint64_t v) {
-    struct {
-      ethhdr eth;
-      iphdr ip;
-      udphdr udp;
-      uint64_t payload;
-      char unused;
-    } ABSL_ATTRIBUTE_PACKED read_pkt;
+    // Declare each section of the packet as a separate stack variable in order
+    // to ensure all sections are 8-byte aligned.
+    ethhdr eth;
+    iphdr ip;
+    udphdr udp;
+    uint64_t payload;
+    char unused;
+
+    constexpr size_t kStorageLen = sizeof(eth) + sizeof(ip) + sizeof(udp) +
+                                   sizeof(payload) + sizeof(unused);
+    char storage[kStorageLen];
+
     sockaddr_ll src;
     socklen_t src_len = sizeof(src);
 
-    char* buf = reinterpret_cast<char*>(&read_pkt);
-    size_t buflen = sizeof(read_pkt);
-    size_t expected_read_len = sizeof(read_pkt) - sizeof(read_pkt.unused);
+    char* buf = storage;
+    size_t buflen = kStorageLen;
+    auto advance_buf = [&buf, &buflen](size_t amount) {
+      buf += amount;
+      buflen -= amount;
+    };
+    size_t expected_read_len = buflen - sizeof(unused);
     if (!kEthHdrIncluded) {
-      buf += sizeof(read_pkt.eth);
-      buflen -= sizeof(read_pkt.eth);
-      expected_read_len -= sizeof(read_pkt.eth);
+      advance_buf(sizeof(eth));
+      expected_read_len -= sizeof(eth);
     }
 
     iovec received_iov = {
@@ -247,26 +255,34 @@ TEST_P(PacketSocketTest, RebindProtocol) {
     // This came from the loopback device, so the address is all 0s.
     constexpr uint8_t allZeroesMAC[ETH_ALEN] = {};
     EXPECT_EQ(memcmp(src.sll_addr, allZeroesMAC, sizeof(allZeroesMAC)), 0);
+
     if (kEthHdrIncluded) {
-      EXPECT_EQ(memcmp(read_pkt.eth.h_dest, allZeroesMAC, sizeof(allZeroesMAC)),
-                0);
-      EXPECT_EQ(
-          memcmp(read_pkt.eth.h_source, allZeroesMAC, sizeof(allZeroesMAC)), 0);
-      EXPECT_EQ(ntohs(read_pkt.eth.h_proto), ETH_P_IP);
+      memcpy(&eth, buf, sizeof(eth));
+      EXPECT_EQ(memcmp(eth.h_dest, allZeroesMAC, sizeof(allZeroesMAC)), 0);
+      EXPECT_EQ(memcmp(eth.h_source, allZeroesMAC, sizeof(allZeroesMAC)), 0);
+      EXPECT_EQ(ntohs(eth.h_proto), ETH_P_IP);
+      advance_buf(sizeof(eth));
     }
+
     // IHL hold the size of the header in 4 byte units.
-    EXPECT_EQ(read_pkt.ip.ihl, sizeof(iphdr) / 4);
-    EXPECT_EQ(read_pkt.ip.version, IPVERSION);
-    const uint16_t ip_pkt_size =
-        sizeof(read_pkt) - sizeof(read_pkt.eth) - sizeof(read_pkt.unused);
-    EXPECT_EQ(ntohs(read_pkt.ip.tot_len), ip_pkt_size);
-    EXPECT_EQ(read_pkt.ip.protocol, IPPROTO_UDP);
-    EXPECT_EQ(ntohl(read_pkt.ip.daddr), INADDR_LOOPBACK);
-    EXPECT_EQ(ntohl(read_pkt.ip.saddr), INADDR_LOOPBACK);
-    EXPECT_EQ(read_pkt.udp.source, udp_bind_addr.sin_port);
-    EXPECT_EQ(read_pkt.udp.dest, udp_bind_addr.sin_port);
-    EXPECT_EQ(ntohs(read_pkt.udp.len), ip_pkt_size - sizeof(read_pkt.ip));
-    EXPECT_EQ(read_pkt.payload, v);
+    memcpy(&ip, buf, sizeof(ip));
+    EXPECT_EQ(ip.ihl, sizeof(iphdr) / 4);
+    EXPECT_EQ(ip.version, IPVERSION);
+    const uint16_t ip_pkt_size = sizeof(ip) + sizeof(udp) + sizeof(payload);
+    EXPECT_EQ(ntohs(ip.tot_len), ip_pkt_size);
+    EXPECT_EQ(ip.protocol, IPPROTO_UDP);
+    EXPECT_EQ(ntohl(ip.daddr), INADDR_LOOPBACK);
+    EXPECT_EQ(ntohl(ip.saddr), INADDR_LOOPBACK);
+    advance_buf(sizeof(ip));
+
+    memcpy(&udp, buf, sizeof(udp));
+    EXPECT_EQ(udp.source, udp_bind_addr.sin_port);
+    EXPECT_EQ(udp.dest, udp_bind_addr.sin_port);
+    EXPECT_EQ(ntohs(udp.len), ip_pkt_size - sizeof(ip));
+    advance_buf(sizeof(udp));
+
+    memcpy(&payload, buf, sizeof(payload));
+    EXPECT_EQ(payload, v);
   };
 
   // The packet socket is not bound to IPv4 so we should not receive the sent
