@@ -192,6 +192,10 @@ analyzers:
         - "linkname to unknown symbol"
       exclude:
         - ".*/containerd/sys/subprocess_unsafe_linux.go"
+  SA1017: # Channels used with os/signal.Notify should be buffered.
+    internal:
+      exclude:
+        - pkg/sentry/kernel/signal.go # Intentional.
   SA1019: # Use of deprecated identifier.
     # disable for now due to misattribution from golang.org/issue/44195.
     generated:

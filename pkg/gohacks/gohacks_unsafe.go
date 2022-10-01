@@ -85,6 +85,30 @@ func StringFromImmutableBytes(bs []byte) string {
 // Note that go:linkname silently doesn't work if the local name is exported,
 // necessitating an indirection for exported functions.
 
+// EnterSyscall is runtime.entersyscall.
+//
+// WARNING: It is unsafe to call any functions between runtime.entersyscall
+// and runtime.exitsyscall unless they are defined in the runtime package or in
+// assembly, for reasons explained by a comment in syscall.Syscall.
+//
+//go:nosplit
+func EnterSyscall() {
+	entersyscall()
+}
+
+//go:linkname entersyscall runtime.entersyscall
+func entersyscall()
+
+// ExitSyscall is runtime.exitsyscall.
+//
+//go:nosplit
+func ExitSyscall() {
+	exitsyscall()
+}
+
+//go:linkname exitsyscall runtime.exitsyscall
+func exitsyscall()
+
 // Memmove is runtime.memmove, exported for SeqAtomicLoad/SeqAtomicTryLoad<T>.
 //
 //go:nosplit

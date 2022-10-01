@@ -15,15 +15,21 @@
 package kernel
 
 import (
+	"os"
 	"runtime"
 	"runtime/trace"
 	"time"
 
+	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/log"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
+
+var globalTGID = int32(os.Getpid())
 
 // BlockWithTimeout blocks t until an event is received from C, the application
 // monotonic clock indicates that timeout has elapsed (only if haveTimeout is true),
@@ -199,6 +205,60 @@ func (t *Task) completeSleep() {
 	t.Activate()
 }
 
+// BlockFD blocks until the given host FD is ready for at least one of the
+// given I/O events or t is interrupted. It returns the set of ready events for
+// fd.
+func (t *Task) BlockFD(fd int32, mask waiter.EventMask) (waiter.EventMask, error) {
+	pfds := []linux.PollFD{
+		{
+			FD:     fd,
+			Events: int16(mask.ToLinux()),
+		},
+	}
+	_, err := t.blockPoll(pfds, nil)
+	if err != nil {
+		return 0, err
+	}
+	return waiter.EventMaskFromLinux(uint32(pfds[0].REvents)), nil
+}
+
+// BlockFDWithDeadline is equivalent to BlockFD, but if haveDeadline is true,
+// it returns ETIMEDOUT if the deadline expires before fd becomes ready.
+func (t *Task) BlockFDWithDeadline(fd int32, mask waiter.EventMask, haveDeadline bool, deadline ktime.Time) (waiter.EventMask, error) {
+	if !haveDeadline {
+		return t.BlockFD(fd, mask)
+	}
+
+	pfds := []linux.PollFD{
+		{
+			FD:     fd,
+			Events: int16(mask.ToLinux()),
+		},
+	}
+	var timeout linux.Timespec
+	if now := t.Kernel().MonotonicClock().Now(); now.Before(deadline) {
+		timeout = linux.DurationToTimespec(deadline.Sub(now))
+	}
+	_, err := t.blockPoll(pfds, &timeout)
+	if err != nil {
+		return 0, err
+	}
+	return waiter.EventMaskFromLinux(uint32(pfds[0].REvents)), nil
+}
+
+func (t *Task) blockPoll(pfds []linux.PollFD, timeout *linux.Timespec) (int, error) {
+	if sync.RaceEnabled {
+		t.assertTaskGoroutine()
+	}
+
+	t.prepareSleep()
+	defer t.completeSleep()
+	region := trace.StartRegion(t.traceContext, blockRegion)
+	defer region.End()
+
+	return t.blockPollUnsafe(pfds, timeout)
+}
+
 // Interrupted implements context.Context.Interrupted.
 func (t *Task) Interrupted() bool {
 	if t.interrupted() {
@@ -246,6 +306,11 @@ func (t *Task) unsetInterrupted() {
 // userspace.
 func (t *Task) interrupt() {
 	t.interruptSelf()
+	if tid := t.syscallTID.Load(); tid != 0 {
+		if err := unix.Tgkill(int(globalTGID), int(tid), unix.Signal(SignalInterruptSyscall)); err != nil && err != unix.ESRCH {
+			log.Warningf("failed to tgkill blocked task goroutine thread %d: %v", tid, err)
+		}
+	}
 	t.p.Interrupt()
 }
 
@@ -256,9 +321,9 @@ func (t *Task) interruptSelf() {
 	case t.interruptChan <- struct{}{}:
 	default:
 	}
-	// platform.Context.Interrupt() is unnecessary since a task goroutine
-	// calling interruptSelf() cannot also be blocked in
-	// platform.Context.Switch().
+	// Checking syscallTID and calling platform.Context.Interrupt() are
+	// unnecessary since a task goroutine calling interruptSelf() cannot also be
+	// blocked in a host syscall or platform.Context.Switch().
 }
 
 // Interrupt implements context.Blocker.Interrupt.

@@ -255,14 +255,8 @@ func (s *socketOpsCommon) Connect(t *kernel.Task, sockaddr []byte, blocking bool
 	// level SOL-SOCKET to determine whether connect() completed successfully
 	// (SO_ERROR is zero) or unsuccessfully (SO_ERROR is one of the usual error
 	// codes listed here, explaining the reason for the failure)." - connect(2)
-	writableMask := waiter.WritableEvents
-	e, ch := waiter.NewChannelEntry(writableMask)
-	s.EventRegister(&e)
-	defer s.EventUnregister(&e)
-	if s.Readiness(writableMask)&writableMask == 0 {
-		if err := t.Block(ch); err != nil {
-			return syserr.FromError(err)
-		}
+	if _, err := t.BlockFD(int32(s.fd), waiter.WritableEvents); err != nil {
+		return syserr.FromError(err)
 	}
 	val, err := unix.GetsockoptInt(s.fd, unix.SOL_SOCKET, unix.SO_ERROR)
 	if err != nil {
@@ -292,17 +286,9 @@ func (s *socketOpsCommon) Accept(t *kernel.Task, peerRequested bool, flags int, 
 	// SOCK_NONBLOCK since socketOpsCommon requires it.
 	fd, syscallErr := accept4(s.fd, peerAddrPtr, peerAddrlenPtr, unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC)
 	if blocking {
-		var ch chan struct{}
 		for syscallErr == linuxerr.ErrWouldBlock {
-			if ch != nil {
-				if syscallErr = t.Block(ch); syscallErr != nil {
-					break
-				}
-			} else {
-				var e waiter.Entry
-				e, ch = waiter.NewChannelEntry(waiter.ReadableEvents)
-				s.EventRegister(&e)
-				defer s.EventUnregister(&e)
+			if _, syscallErr = t.BlockFD(int32(s.fd), waiter.ReadableEvents); syscallErr != nil {
+				break
 			}
 			fd, syscallErr = accept4(s.fd, peerAddrPtr, peerAddrlenPtr, unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC)
 		}
@@ -557,7 +543,6 @@ func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags 
 		return dst.CopyOutFrom(t, recvmsgToBlocks)
 	}
 
-	var ch chan struct{}
 	n, err := copyToDst()
 	// recv*(MSG_ERRQUEUE) never blocks, even without MSG_DONTWAIT.
 	if flags&(unix.MSG_DONTWAIT|unix.MSG_ERRQUEUE) == 0 {
@@ -567,15 +552,8 @@ func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags 
 			if n != 0 {
 				panic(fmt.Sprintf("CopyOutFrom: got (%d, %v), wanted (0, %v)", n, err, err))
 			}
-			if ch != nil {
-				if err = t.BlockWithDeadline(ch, haveDeadline, deadline); err != nil {
-					break
-				}
-			} else {
-				var e waiter.Entry
-				e, ch = waiter.NewChannelEntry(waiter.ReadableEvents)
-				s.EventRegister(&e)
-				defer s.EventUnregister(&e)
+			if _, err = t.BlockFDWithDeadline(int32(s.fd), waiter.ReadableEvents, haveDeadline, deadline); err != nil {
+				break
 			}
 			n, err = copyToDst()
 		}
@@ -748,7 +726,6 @@ func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []b
 		return sendmsg(s.fd, &msg, sysflags)
 	})
 
-	var ch chan struct{}
 	n, err := src.CopyInTo(t, sendmsgFromBlocks)
 	if flags&unix.MSG_DONTWAIT == 0 {
 		for err == linuxerr.ErrWouldBlock {
@@ -757,18 +734,11 @@ func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []b
 			if n != 0 {
 				panic(fmt.Sprintf("CopyInTo: got (%d, %v), wanted (0, %v)", n, err, err))
 			}
-			if ch != nil {
-				if err = t.BlockWithDeadline(ch, haveDeadline, deadline); err != nil {
-					if linuxerr.Equals(linuxerr.ETIMEDOUT, err) {
-						err = linuxerr.ErrWouldBlock
-					}
-					break
+			if _, err = t.BlockFDWithDeadline(int32(s.fd), waiter.WritableEvents, haveDeadline, deadline); err != nil {
+				if linuxerr.Equals(linuxerr.ETIMEDOUT, err) {
+					err = linuxerr.ErrWouldBlock
 				}
-			} else {
-				var e waiter.Entry
-				e, ch = waiter.NewChannelEntry(waiter.WritableEvents)
-				s.EventRegister(&e)
-				defer s.EventUnregister(&e)
+				break
 			}
 			n, err = src.CopyInTo(t, sendmsgFromBlocks)
 		}

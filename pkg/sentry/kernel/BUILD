@@ -132,6 +132,19 @@ go_template_instance(
 )
 
 go_template_instance(
+    name = "tidset_atomicptrmap",
+    out = "tidset_atomicptrmap_unsafe.go",
+    package = "kernel",
+    prefix = "tidset",
+    template = "//pkg/sync/atomicptrmap:generic_atomicptrmap",
+    types = {
+        "Key": "int32",
+        "Value": "tidsetValue",
+        "Hasher": "tidsetHasher",
+    },
+)
+
+go_template_instance(
     name = "fd_table_refs",
     out = "fd_table_refs.go",
     package = "kernel",
@@ -234,6 +247,7 @@ go_library(
         "signal.go",
         "signal_handlers.go",
         "signal_handlers_mutex.go",
+        "signal_unsafe.go",
         "socket_list.go",
         "syscalls.go",
         "syscalls_state.go",
@@ -241,6 +255,7 @@ go_library(
         "task.go",
         "task_acct.go",
         "task_block.go",
+        "task_block_unsafe.go",
         "task_cgroup.go",
         "task_clone.go",
         "task_context.go",
@@ -266,6 +281,7 @@ go_library(
         "thread_group_timer_mutex.go",
         "threads.go",
         "threads_impl.go",
+        "tidset_atomicptrmap_unsafe.go",
         "timekeeper.go",
         "timekeeper_state.go",
         "tty.go",
@@ -298,12 +314,14 @@ go_library(
         "//pkg/errors/linuxerr",
         "//pkg/eventchannel",
         "//pkg/fspath",
+        "//pkg/gohacks",
         "//pkg/goid",
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/marshal",
         "//pkg/marshal/primitive",
         "//pkg/metric",
+        "//pkg/procid",
         "//pkg/refs",
         "//pkg/refsvfs2",
         "//pkg/safemem",

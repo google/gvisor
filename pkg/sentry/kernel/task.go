@@ -97,6 +97,13 @@ type Task struct {
 	// interruptChan is always notified after restore (see Task.run).
 	interruptChan chan struct{} `state:"nosave"`
 
+	// If syscallTID is non-zero, it is the task goroutine's current thread ID,
+	// and the task goroutine is blocked in ppoll(2) or epoll_pwait(2) with
+	// SignalInterruptSyscall unmasked.
+	//
+	// syscallTID is owned by the task goroutine.
+	syscallTID atomicbitops.Int32
+
 	// gosched contains the current scheduling state of the task goroutine.
 	//
 	// gosched is protected by goschedSeq. gosched is owned by the task
