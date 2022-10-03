@@ -356,11 +356,7 @@ func (s *socketOpsCommon) GetSockOpt(t *kernel.Task, level int, name int, outPtr
 				passcred = 1
 			}
 			return &passcred, nil
-
-		default:
-			socket.GetSockOptEmitUnimplementedEvent(t, name)
 		}
-
 	case linux.SOL_NETLINK:
 		switch name {
 		case linux.NETLINK_BROADCAST_ERROR,
@@ -370,8 +366,7 @@ func (s *socketOpsCommon) GetSockOpt(t *kernel.Task, level int, name int, outPtr
 			linux.NETLINK_LIST_MEMBERSHIPS,
 			linux.NETLINK_NO_ENOBUFS,
 			linux.NETLINK_PKTINFO:
-
-			t.Kernel().EmitUnimplementedEvent(t)
+			// Not supported.
 		}
 	}
 	// TODO(b/68878065): other sockopts are not supported.
@@ -422,7 +417,6 @@ func (s *socketOpsCommon) SetSockOpt(t *kernel.Task, level int, name int, opt []
 			// advertise support. Otherwise, be conservative and
 			// return an error.
 			if s.protocol.CanSend() {
-				socket.SetSockOptEmitUnimplementedEvent(t, name)
 				return syserr.ErrProtocolNotAvailable
 			}
 
@@ -434,7 +428,6 @@ func (s *socketOpsCommon) SetSockOpt(t *kernel.Task, level int, name int, opt []
 		case linux.SO_DETACH_FILTER:
 			// TODO(gvisor.dev/issue/1119): See above.
 			if s.protocol.CanSend() {
-				socket.SetSockOptEmitUnimplementedEvent(t, name)
 				return syserr.ErrProtocolNotAvailable
 			}
 
@@ -448,11 +441,7 @@ func (s *socketOpsCommon) SetSockOpt(t *kernel.Task, level int, name int, opt []
 			}
 
 			return nil
-
-		default:
-			socket.SetSockOptEmitUnimplementedEvent(t, name)
 		}
-
 	case linux.SOL_NETLINK:
 		switch name {
 		case linux.NETLINK_ADD_MEMBERSHIP,
@@ -464,11 +453,10 @@ func (s *socketOpsCommon) SetSockOpt(t *kernel.Task, level int, name int, opt []
 			linux.NETLINK_LISTEN_ALL_NSID,
 			linux.NETLINK_NO_ENOBUFS,
 			linux.NETLINK_PKTINFO:
-
-			t.Kernel().EmitUnimplementedEvent(t)
+			// Not supported.
 		}
-
 	}
+
 	// TODO(b/68878065): other sockopts are not supported.
 	return syserr.ErrProtocolNotAvailable
 }
