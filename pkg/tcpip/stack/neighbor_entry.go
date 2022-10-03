@@ -232,6 +232,8 @@ func (e *neighborEntry) cancelTimerLocked() {
 func (e *neighborEntry) removeLocked() {
 	e.mu.neigh.UpdatedAt = e.cache.nic.stack.clock.NowMonotonic()
 	e.dispatchRemoveEventLocked()
+	// Set state to unknown to invalidate this entry if it's cached in a Route.
+	e.setStateLocked(Unknown)
 	e.cancelTimerLocked()
 	// TODO(https://gvisor.dev/issues/5583): test the case where this function is
 	// called during resolution; that can happen in at least these scenarios:
@@ -605,5 +607,20 @@ func (e *neighborEntry) handleUpperLevelConfirmationLocked() {
 
 	default:
 		panic(fmt.Sprintf("Invalid cache entry state: %s", e.mu.neigh.State))
+	}
+}
+
+// getRemoteLinkAddress returns the entry's link address and whether that link
+// address is valid.
+func (e *neighborEntry) getRemoteLinkAddress() (tcpip.LinkAddress, bool) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	switch e.mu.neigh.State {
+	case Reachable, Static, Delay, Probe:
+		return e.mu.neigh.LinkAddr, true
+	case Unknown, Incomplete, Unreachable, Stale:
+		return "", false
+	default:
+		panic(fmt.Sprintf("invalid state for neighbor entry %v: %v", e.mu.neigh, e.mu.neigh.State))
 	}
 }

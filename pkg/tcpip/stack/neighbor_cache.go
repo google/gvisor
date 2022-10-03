@@ -122,9 +122,7 @@ func (n *neighborCache) getOrCreateEntry(remoteAddr tcpip.Address) *neighborEntr
 // If specified, the local address must be an address local to the interface the
 // neighbor cache belongs to. The local address is the source address of a
 // packet prompting NUD/link address resolution.
-//
-// TODO(gvisor.dev/issue/5151): Don't return the neighbor entry.
-func (n *neighborCache) entry(remoteAddr, localAddr tcpip.Address, onResolve func(LinkResolutionResult)) (NeighborEntry, <-chan struct{}, tcpip.Error) {
+func (n *neighborCache) entry(remoteAddr, localAddr tcpip.Address, onResolve func(LinkResolutionResult)) (*neighborEntry, <-chan struct{}, tcpip.Error) {
 	entry := n.getOrCreateEntry(remoteAddr)
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
@@ -142,7 +140,7 @@ func (n *neighborCache) entry(remoteAddr, localAddr tcpip.Address, onResolve fun
 		if onResolve != nil {
 			onResolve(LinkResolutionResult{LinkAddress: entry.mu.neigh.LinkAddr, Err: nil})
 		}
-		return entry.mu.neigh, nil, nil
+		return entry, nil, nil
 	case Unknown, Incomplete, Unreachable:
 		if onResolve != nil {
 			entry.mu.onResolve = append(entry.mu.onResolve, onResolve)
@@ -152,7 +150,7 @@ func (n *neighborCache) entry(remoteAddr, localAddr tcpip.Address, onResolve fun
 			entry.mu.done = make(chan struct{})
 		}
 		entry.handlePacketQueuedLocked(localAddr)
-		return entry.mu.neigh, entry.mu.done, &tcpip.ErrWouldBlock{}
+		return entry, entry.mu.done, &tcpip.ErrWouldBlock{}
 	default:
 		panic(fmt.Sprintf("Invalid cache entry state: %s", s))
 	}
