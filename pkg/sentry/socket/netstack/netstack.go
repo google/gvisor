@@ -53,7 +53,6 @@ import (
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netfilter"
-	"gvisor.dev/gvisor/pkg/sentry/unimpl"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -867,8 +866,7 @@ func GetSockOpt(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, family in
 	case linux.SOL_UDP,
 		linux.SOL_RAW,
 		linux.SOL_PACKET:
-
-		t.Kernel().EmitUnimplementedEvent(t)
+		// Not supported.
 	}
 
 	return nil, syserr.ErrProtocolNotAvailable
@@ -1072,9 +1070,6 @@ func getSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, fam
 
 		v := primitive.Int32(ep.SocketOptions().GetRcvlowat())
 		return &v, nil
-
-	default:
-		socket.GetSockOptEmitUnimplementedEvent(t, name)
 	}
 	return nil, syserr.ErrProtocolNotAvailable
 }
@@ -1219,7 +1214,7 @@ func getSockOptTCP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name, 
 		linux.TCP_NOTSENT_LOWAT,
 		linux.TCP_ZEROCOPY_RECEIVE:
 
-		t.Kernel().EmitUnimplementedEvent(t)
+		// Not supported.
 
 	case linux.TCP_CONGESTION:
 		if outLen <= 0 {
@@ -1300,8 +1295,6 @@ func getSockOptTCP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name, 
 		}
 		vP := primitive.Int32(v)
 		return &vP, nil
-	default:
-		emitUnimplementedEventTCP(t, name)
 	}
 	return nil, syserr.ErrProtocolNotAvailable
 }
@@ -1333,8 +1326,6 @@ func getSockOptICMPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 		}
 		bufP := primitive.ByteSlice(buf)
 		return &bufP, nil
-	default:
-		t.Kernel().EmitUnimplementedEvent(t)
 	}
 	return nil, syserr.ErrProtocolNotAvailable
 }
@@ -1412,7 +1403,7 @@ func getSockOptIPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name 
 		return &v, nil
 
 	case linux.IPV6_PATHMTU:
-		t.Kernel().EmitUnimplementedEvent(t)
+		// Not supported.
 
 	case linux.IPV6_TCLASS:
 		// Length handling for parity with Linux.
@@ -1539,9 +1530,6 @@ func getSockOptIPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name 
 			return nil, err
 		}
 		return &ret, nil
-
-	default:
-		emitUnimplementedEventIPv6(t, name)
 	}
 	return nil, syserr.ErrProtocolNotAvailable
 }
@@ -1747,9 +1735,6 @@ func getSockOptIP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name in
 			return nil, err
 		}
 		return &ret, nil
-
-	default:
-		emitUnimplementedEventIP(t, name)
 	}
 	return nil, syserr.ErrProtocolNotAvailable
 }
@@ -1807,13 +1792,11 @@ func SetSockOpt(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, level int
 		// gVisor doesn't support any SOL_PACKET options just return not
 		// supported. Returning nil here will result in tcpdump thinking AF_PACKET
 		// features are supported and proceed to use them and break.
-		t.Kernel().EmitUnimplementedEvent(t)
 		return syserr.ErrProtocolNotAvailable
 
 	case linux.SOL_UDP,
 		linux.SOL_RAW:
-
-		t.Kernel().EmitUnimplementedEvent(t)
+		// Not supported.
 	}
 
 	return nil
@@ -1996,10 +1979,6 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 		var v linux.Linger
 		v.UnmarshalBytes(optVal)
 
-		if v != (linux.Linger{}) {
-			socket.SetSockOptEmitUnimplementedEvent(t, name)
-		}
-
 		ep.SocketOptions().SetLinger(tcpip.LingerOption{
 			Enabled: v.OnOff != 0,
 			Timeout: time.Second * time.Duration(v.Linger),
@@ -2021,9 +2000,6 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 		v := hostarch.ByteOrder.Uint32(optVal)
 		ep.SocketOptions().SetRcvlowat(int32(v))
 		return nil
-
-	default:
-		socket.SetSockOptEmitUnimplementedEvent(t, name)
 	}
 
 	return nil
@@ -2163,10 +2139,7 @@ func setSockOptTCP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name i
 		return syserr.TranslateNetstackError(ep.SetSockOptInt(tcpip.TCPWindowClampOption, int(v)))
 
 	case linux.TCP_REPAIR_OPTIONS:
-		t.Kernel().EmitUnimplementedEvent(t)
-
-	default:
-		emitUnimplementedEventTCP(t, name)
+		// Not supported.
 	}
 
 	return nil
@@ -2191,8 +2164,6 @@ func setSockOptICMPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 
 		req.UnmarshalUnsafe(optVal)
 		return syserr.TranslateNetstackError(ep.SetSockOpt(&tcpip.ICMPv6Filter{DenyType: req.Filter}))
-	default:
-		t.Kernel().EmitUnimplementedEvent(t)
 	}
 
 	return nil
@@ -2270,8 +2241,7 @@ func setSockOptIPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name 
 		linux.MCAST_LEAVE_GROUP,
 		linux.MCAST_LEAVE_SOURCE_GROUP,
 		linux.MCAST_UNBLOCK_SOURCE:
-
-		t.Kernel().EmitUnimplementedEvent(t)
+		// Not supported.
 
 	case linux.IPV6_RECVORIGDSTADDR:
 		if len(optVal) < sizeOfInt32 {
@@ -2362,9 +2332,6 @@ func setSockOptIPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name 
 	case linux.IP6T_SO_SET_ADD_COUNTERS:
 		log.Infof("IP6T_SO_SET_ADD_COUNTERS is not supported")
 		return nil
-
-	default:
-		emitUnimplementedEventIPv6(t, name)
 	}
 
 	return nil
@@ -2505,7 +2472,6 @@ func setSockOptIP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name in
 
 	case linux.MCAST_JOIN_GROUP:
 		// FIXME(b/124219304): Implement MCAST_JOIN_GROUP.
-		t.Kernel().EmitUnimplementedEvent(t)
 		return syserr.ErrInvalidArgument
 
 	case linux.IP_TTL:
@@ -2641,135 +2607,10 @@ func setSockOptIP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name in
 		linux.MCAST_LEAVE_SOURCE_GROUP,
 		linux.MCAST_MSFILTER,
 		linux.MCAST_UNBLOCK_SOURCE:
-
-		t.Kernel().EmitUnimplementedEvent(t)
+		// Not supported.
 	}
 
 	return nil
-}
-
-// emitUnimplementedEventTCP emits unimplemented event if name is valid. This
-// function contains names that are common between Get and SetSockOpt when
-// level is SOL_TCP.
-func emitUnimplementedEventTCP(t *kernel.Task, name int) {
-	switch name {
-	case linux.TCP_CONGESTION,
-		linux.TCP_CORK,
-		linux.TCP_FASTOPEN,
-		linux.TCP_FASTOPEN_CONNECT,
-		linux.TCP_FASTOPEN_KEY,
-		linux.TCP_FASTOPEN_NO_COOKIE,
-		linux.TCP_QUEUE_SEQ,
-		linux.TCP_REPAIR,
-		linux.TCP_REPAIR_QUEUE,
-		linux.TCP_REPAIR_WINDOW,
-		linux.TCP_SAVED_SYN,
-		linux.TCP_SAVE_SYN,
-		linux.TCP_THIN_DUPACK,
-		linux.TCP_THIN_LINEAR_TIMEOUTS,
-		linux.TCP_TIMESTAMP,
-		linux.TCP_ULP:
-
-		t.Kernel().EmitUnimplementedEvent(t)
-	}
-}
-
-// emitUnimplementedEventIPv6 emits unimplemented event if name is valid. It
-// contains names that are common between Get and SetSockOpt when level is
-// SOL_IPV6.
-func emitUnimplementedEventIPv6(t *kernel.Task, name int) {
-	switch name {
-	case linux.IPV6_2292DSTOPTS,
-		linux.IPV6_2292HOPLIMIT,
-		linux.IPV6_2292HOPOPTS,
-		linux.IPV6_2292PKTINFO,
-		linux.IPV6_2292PKTOPTIONS,
-		linux.IPV6_2292RTHDR,
-		linux.IPV6_ADDR_PREFERENCES,
-		linux.IPV6_AUTOFLOWLABEL,
-		linux.IPV6_DONTFRAG,
-		linux.IPV6_DSTOPTS,
-		linux.IPV6_FLOWINFO,
-		linux.IPV6_FLOWINFO_SEND,
-		linux.IPV6_FLOWLABEL_MGR,
-		linux.IPV6_FREEBIND,
-		linux.IPV6_HOPOPTS,
-		linux.IPV6_MINHOPCOUNT,
-		linux.IPV6_MTU,
-		linux.IPV6_MTU_DISCOVER,
-		linux.IPV6_MULTICAST_ALL,
-		linux.IPV6_MULTICAST_HOPS,
-		linux.IPV6_MULTICAST_IF,
-		linux.IPV6_MULTICAST_LOOP,
-		linux.IPV6_RECVDSTOPTS,
-		linux.IPV6_RECVFRAGSIZE,
-		linux.IPV6_RECVHOPLIMIT,
-		linux.IPV6_RECVHOPOPTS,
-		linux.IPV6_RECVPATHMTU,
-		linux.IPV6_RECVRTHDR,
-		linux.IPV6_RTHDR,
-		linux.IPV6_RTHDRDSTOPTS,
-		linux.IPV6_TCLASS,
-		linux.IPV6_TRANSPARENT,
-		linux.IPV6_UNICAST_HOPS,
-		linux.IPV6_UNICAST_IF,
-		linux.MCAST_MSFILTER,
-		linux.IPV6_ADDRFORM:
-
-		t.Kernel().EmitUnimplementedEvent(t)
-	}
-}
-
-// emitUnimplementedEventIP emits unimplemented event if name is valid. It
-// contains names that are common between Get and SetSockOpt when level is
-// SOL_IP.
-func emitUnimplementedEventIP(t *kernel.Task, name int) {
-	switch name {
-	case linux.IP_TOS,
-		linux.IP_TTL,
-		linux.IP_OPTIONS,
-		linux.IP_ROUTER_ALERT,
-		linux.IP_RECVOPTS,
-		linux.IP_RETOPTS,
-		linux.IP_PKTINFO,
-		linux.IP_PKTOPTIONS,
-		linux.IP_MTU_DISCOVER,
-		linux.IP_RECVTTL,
-		linux.IP_RECVTOS,
-		linux.IP_MTU,
-		linux.IP_FREEBIND,
-		linux.IP_IPSEC_POLICY,
-		linux.IP_XFRM_POLICY,
-		linux.IP_PASSSEC,
-		linux.IP_TRANSPARENT,
-		linux.IP_ORIGDSTADDR,
-		linux.IP_MINTTL,
-		linux.IP_NODEFRAG,
-		linux.IP_CHECKSUM,
-		linux.IP_BIND_ADDRESS_NO_PORT,
-		linux.IP_RECVFRAGSIZE,
-		linux.IP_MULTICAST_IF,
-		linux.IP_MULTICAST_TTL,
-		linux.IP_MULTICAST_LOOP,
-		linux.IP_ADD_MEMBERSHIP,
-		linux.IP_DROP_MEMBERSHIP,
-		linux.IP_UNBLOCK_SOURCE,
-		linux.IP_BLOCK_SOURCE,
-		linux.IP_ADD_SOURCE_MEMBERSHIP,
-		linux.IP_DROP_SOURCE_MEMBERSHIP,
-		linux.IP_MSFILTER,
-		linux.MCAST_JOIN_GROUP,
-		linux.MCAST_BLOCK_SOURCE,
-		linux.MCAST_UNBLOCK_SOURCE,
-		linux.MCAST_LEAVE_GROUP,
-		linux.MCAST_JOIN_SOURCE_GROUP,
-		linux.MCAST_LEAVE_SOURCE_GROUP,
-		linux.MCAST_MSFILTER,
-		linux.IP_MULTICAST_ALL,
-		linux.IP_UNICAST_IF:
-
-		t.Kernel().EmitUnimplementedEvent(t)
-	}
 }
 
 // GetSockName implements the linux syscall getsockname(2) for sockets backed by
@@ -3288,7 +3129,7 @@ func Ioctl(ctx context.Context, ep commonEndpoint, io usermem.IO, args arch.Sysc
 		return 0, err
 
 	case linux.SIOCGIFMEM, linux.SIOCGIFPFLAGS, linux.SIOCGMIIPHY, linux.SIOCGMIIREG:
-		unimpl.EmitUnimplementedEvent(ctx)
+		// Not supported.
 	}
 
 	return 0, linuxerr.ENOTTY
