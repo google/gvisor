@@ -25,12 +25,14 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
+	"gvisor.dev/gvisor/pkg/tcpip/link/ethernet"
 	"gvisor.dev/gvisor/pkg/tcpip/link/pipe"
 	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
@@ -45,10 +47,14 @@ import (
 )
 
 func setupStack(t *testing.T, stackOpts stack.Options, host1NICID, host2NICID tcpip.NICID) (*stack.Stack, *stack.Stack) {
+	return setupStackWithSeparateOpts(t, stackOpts, stackOpts, host1NICID, host2NICID)
+}
+
+func setupStackWithSeparateOpts(t *testing.T, stack1Opts stack.Options, stack2Opts stack.Options, host1NICID, host2NICID tcpip.NICID) (*stack.Stack, *stack.Stack) {
 	const maxFrameSize = header.IPv6MinimumMTU + header.EthernetMinimumSize
 
-	host1Stack := stack.New(stackOpts)
-	host2Stack := stack.New(stackOpts)
+	host1Stack := stack.New(stack1Opts)
+	host2Stack := stack.New(stack2Opts)
 
 	host1NIC, host2NIC := pipe.New(utils.LinkAddr1, utils.LinkAddr2, maxFrameSize)
 
@@ -1642,5 +1648,167 @@ func TestDAD(t *testing.T) {
 			default:
 			}
 		})
+	}
+}
+
+type settableLinkEndpoint struct {
+	stack.LinkEndpoint
+	mu   sync.Mutex
+	addr tcpip.LinkAddress
+}
+
+func newSettableLinkEndpoint(e stack.LinkEndpoint) *settableLinkEndpoint {
+	return &settableLinkEndpoint{
+		LinkEndpoint: e,
+		addr:         e.LinkAddress(),
+	}
+}
+
+func (e *settableLinkEndpoint) setLinkAddress(addr tcpip.LinkAddress) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.addr = addr
+}
+
+func (e *settableLinkEndpoint) LinkAddress() tcpip.LinkAddress {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.addr
+}
+
+type monitorableLinkEndpoint struct {
+	stack.LinkEndpoint
+	ch chan tcpip.LinkAddress
+}
+
+func newMonitorableLinkEndpoint(e stack.LinkEndpoint) *monitorableLinkEndpoint {
+	return &monitorableLinkEndpoint{e, make(chan tcpip.LinkAddress, 1)}
+}
+
+func (e *monitorableLinkEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
+	for _, pkt := range pkts.AsSlice() {
+		dstAddr := header.Ethernet(pkt.LinkHeader().Slice()).DestinationAddress()
+		e.ch <- dstAddr
+	}
+	e.LinkEndpoint.WritePackets(pkts)
+
+	return 0, nil
+}
+
+func (e *monitorableLinkEndpoint) waitForLinkAddress(addr tcpip.LinkAddress, wait time.Duration) error {
+	c := time.After(wait)
+	for {
+		select {
+		case sentAddr := <-e.ch:
+			if addr == sentAddr {
+				return nil
+			}
+		case <-c:
+			return fmt.Errorf("timed out waiting for endpoint to send packet with destination address: %v", addr)
+		}
+	}
+}
+
+func TestUpdateCachedNeighborEntry(t *testing.T) {
+	d := []byte{1, 2}
+	params := stack.NetworkHeaderParams{
+		Protocol: udp.ProtocolNumber,
+		TTL:      64,
+		TOS:      stack.DefaultTOS,
+	}
+
+	writePacket := func(t *testing.T, r *stack.Route) {
+		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+			ReserveHeaderBytes: header.UDPMinimumSize + int(r.MaxHeaderLength()),
+			Payload:            bufferv2.MakeWithData(d),
+		})
+		if err := r.WritePacket(params, pkt); err != nil {
+			t.Fatalf("WritePacket(...): %s", err)
+		}
+		pkt.DecRef()
+	}
+
+	const (
+		host1NICID = 1
+		host2NICID = 4
+	)
+	stackOpts := stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol, ipv6.NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
+	}
+
+	const maxFrameSize = header.IPv6MinimumMTU + header.EthernetMinimumSize
+
+	host1Stack := stack.New(stackOpts)
+	host2Stack := stack.New(stackOpts)
+
+	host1Pipe, host2Pipe := pipe.New(utils.LinkAddr1, utils.LinkAddr2, maxFrameSize)
+
+	host1NICMonitorable := newMonitorableLinkEndpoint(ethernet.New(host1Pipe))
+	host2NICSettable := newSettableLinkEndpoint(host2Pipe)
+
+	if err := host1Stack.CreateNIC(host1NICID, host1NICMonitorable); err != nil {
+		t.Fatalf("host1Stack.CreateNIC(%d, _): %s", host1NICID, err)
+	}
+	if err := host2Stack.CreateNIC(host2NICID, ethernet.New(host2NICSettable)); err != nil {
+		t.Fatalf("host2Stack.CreateNIC(%d, _): %s", host2NICID, err)
+	}
+
+	if err := host1Stack.AddProtocolAddress(host1NICID, utils.Ipv4Addr1, stack.AddressProperties{}); err != nil {
+		t.Fatalf("host1Stack.AddProtocolAddress(%d, %+v, {}): %s", host1NICID, utils.Ipv4Addr1, err)
+	}
+	if err := host2Stack.AddProtocolAddress(host2NICID, utils.Ipv4Addr2, stack.AddressProperties{}); err != nil {
+		t.Fatalf("host2Stack.AddProtocolAddress(%d, %+v, {}): %s", host2NICID, utils.Ipv4Addr2, err)
+	}
+
+	host1Stack.SetRouteTable([]tcpip.Route{
+		{
+			Destination: utils.Ipv4Addr1.AddressWithPrefix.Subnet(),
+			NIC:         host1NICID,
+		},
+	})
+	host2Stack.SetRouteTable([]tcpip.Route{
+		{
+			Destination: utils.Ipv4Addr2.AddressWithPrefix.Subnet(),
+			NIC:         host2NICID,
+		},
+	})
+
+	localAddr := utils.Ipv4Addr1.AddressWithPrefix.Address
+	neighborAddr := utils.Ipv4Addr2.AddressWithPrefix.Address
+
+	// Obtain a route to a neighbor.
+	r, err := host1Stack.FindRoute(host1NICID, localAddr, neighborAddr, header.IPv4ProtocolNumber, false)
+	if err != nil {
+		t.Fatalf("host1Stack.FindRoute(...): %s", err)
+	}
+
+	// Send packet to neighbor (start link resolution & resolve, then send
+	// packet). Send twice to use cached address the second time.
+	for i := 0; i < 2; i++ {
+		writePacket(t, r)
+		if err := host1NICMonitorable.waitForLinkAddress(utils.LinkAddr2, time.Second); err != nil {
+			t.Fatalf("host1NIC.waitForLinkAddress(%s): %s", utils.LinkAddr2, err)
+		}
+	}
+
+	// Neighbor no longer reachable, deleted from the neighbor cache.
+	host1Stack.RemoveNeighbor(host1NICID, header.IPv4ProtocolNumber, neighborAddr)
+	host2Stack.DisableNIC(host2NICID)
+
+	// Send packet to neighbor that's no longer reachable (should fail).
+	writePacket(t, r)
+	if err := host1NICMonitorable.waitForLinkAddress(utils.LinkAddr2, time.Second); err == nil {
+		t.Fatalf("got host1NIC.waitForLinkAddress(%s) = nil, want err", utils.LinkAddr2)
+	}
+
+	// Neighbor reachable again with new MAC address.
+	host2Stack.EnableNIC(host2NICID)
+	host2NICSettable.setLinkAddress(utils.LinkAddr3)
+
+	// Send packet to neighbor (start link resolution and then send packet).
+	writePacket(t, r)
+	if err := host1NICMonitorable.waitForLinkAddress(utils.LinkAddr3, 5*time.Second); err != nil {
+		t.Fatalf("host1NIC.waitForLinkAddress(%s): %s", utils.LinkAddr3, err)
 	}
 }
