@@ -30,11 +30,6 @@ type linkResolver struct {
 	neigh neighborCache
 }
 
-func (l *linkResolver) getNeighborLinkAddress(addr, localAddr tcpip.Address, onResolve func(LinkResolutionResult)) (tcpip.LinkAddress, <-chan struct{}, tcpip.Error) {
-	entry, ch, err := l.neigh.entry(addr, localAddr, onResolve)
-	return entry.LinkAddr, ch, err
-}
-
 func (l *linkResolver) confirmReachable(addr tcpip.Address) {
 	l.neigh.handleUpperLevelConfirmation(addr)
 }
@@ -625,7 +620,7 @@ func (n *nic) getLinkAddress(addr, localAddr tcpip.Address, protocol tcpip.Netwo
 		return nil
 	}
 
-	_, _, err := linkRes.getNeighborLinkAddress(addr, localAddr, onResolve)
+	_, _, err := linkRes.neigh.entry(addr, localAddr, onResolve)
 	return err
 }
 

@@ -1957,6 +1957,47 @@ func TestEntryProbeToReachableWhenSolicitedOverrideConfirmation(t *testing.T) {
 	}
 }
 
+func TestGetRemoteLinkAddressFailsWhenResolutionRequired(t *testing.T) {
+	c := DefaultNUDConfigurations()
+	c.MinRandomFactor = 1
+	c.MaxRandomFactor = 1
+	e, nudDisp, linkRes, clock := entryTestSetup(c)
+
+	if _, ok := e.getRemoteLinkAddress(); ok {
+		t.Errorf("getRemoteLinkAddress() = _, true, want false")
+	}
+	if err := unknownToStale(e, nudDisp, linkRes, clock); err != nil {
+		t.Fatalf("unknownToStale(...) = %s", err)
+	}
+	if _, ok := e.getRemoteLinkAddress(); ok {
+		t.Errorf("getRemoteLinkAddress() = _, true, want false")
+	}
+	if err := staleToDelay(e, nudDisp, linkRes, clock); err != nil {
+		t.Fatalf("staleToDelay(...) = %s", err)
+	}
+	if _, ok := e.getRemoteLinkAddress(); !ok {
+		t.Errorf("getRemoteLinkAddress() = _, false, want true")
+	}
+	if err := delayToProbe(c, e, nudDisp, linkRes, clock); err != nil {
+		t.Fatalf("delayToProbe(...) = %s", err)
+	}
+	if _, ok := e.getRemoteLinkAddress(); !ok {
+		t.Errorf("getRemoteLinkAddress() = _, false, want true")
+	}
+	if err := probeToReachable(e, nudDisp, linkRes, clock); err != nil {
+		t.Fatalf("probeToReachable(...) = %s", err)
+	}
+	if _, ok := e.getRemoteLinkAddress(); !ok {
+		t.Errorf("getRemoteLinkAddress() = _, false, want true")
+	}
+	if err := reachableToStale(c, e, nudDisp, linkRes, clock); err != nil {
+		t.Fatalf("reachableToStale(...) = %s", err)
+	}
+	if _, ok := e.getRemoteLinkAddress(); ok {
+		t.Errorf("getRemoteLinkAddress() = _, true, want false")
+	}
+}
+
 func probeToReachableWithFlags(e *neighborEntry, nudDisp *testNUDDispatcher, linkRes *entryTestLinkResolver, clock *faketime.ManualClock, linkAddr tcpip.LinkAddress, flags ReachabilityConfirmationFlags) error {
 	if err := func() error {
 		e.mu.Lock()
