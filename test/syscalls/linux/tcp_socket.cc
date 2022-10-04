@@ -40,6 +40,8 @@ namespace testing {
 
 namespace {
 
+constexpr int kTimeoutMillis = 10000;
+
 PosixErrorOr<sockaddr_storage> InetLoopbackAddr(int family) {
   struct sockaddr_storage addr;
   memset(&addr, 0, sizeof(addr));
@@ -827,25 +829,23 @@ TEST_P(TcpSocketTest, TcpSCMPriority) {
 TEST_P(TcpSocketTest, TimeWaitPollHUP) {
   shutdown(connected_.get(), SHUT_RDWR);
   ScopedThread t([&]() {
-    constexpr int kTimeout = 10000;
     constexpr int16_t want_events = POLLHUP;
     struct pollfd pfd = {
         .fd = connected_.get(),
         .events = want_events,
     };
-    ASSERT_THAT(poll(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
+    ASSERT_THAT(poll(&pfd, 1, kTimeoutMillis), SyscallSucceedsWithValue(1));
   });
   shutdown(accepted_.get(), SHUT_RDWR);
   t.Join();
   // At this point first_fd should be in TIME-WAIT and polling for POLLHUP
   // should return with 1 FD.
-  constexpr int kTimeout = 10000;
   constexpr int16_t want_events = POLLHUP;
   struct pollfd pfd = {
       .fd = connected_.get(),
       .events = want_events,
   };
-  ASSERT_THAT(poll(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
+  ASSERT_THAT(poll(&pfd, 1, kTimeoutMillis), SyscallSucceedsWithValue(1));
 }
 
 INSTANTIATE_TEST_SUITE_P(AllInetTests, TcpSocketTest,
@@ -971,13 +971,13 @@ TEST_P(TcpSocketTest, PollAfterShutdown) {
     EXPECT_THAT(shutdown(connected_.get(), SHUT_WR),
                 SyscallSucceedsWithValue(0));
     struct pollfd poll_fd = {connected_.get(), POLLIN | POLLERR | POLLHUP, 0};
-    EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, 10000),
+    EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, kTimeoutMillis),
                 SyscallSucceedsWithValue(1));
   });
 
   EXPECT_THAT(shutdown(accepted_.get(), SHUT_WR), SyscallSucceedsWithValue(0));
   struct pollfd poll_fd = {accepted_.get(), POLLIN | POLLERR | POLLHUP, 0};
-  EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, 10000),
+  EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, kTimeoutMillis),
               SyscallSucceedsWithValue(1));
 }
 
@@ -1342,7 +1342,7 @@ void NonBlockingConnect(int family, int16_t pollMask) {
               SyscallSucceeds());
 
   struct pollfd poll_fd = {s.get(), pollMask, 0};
-  EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, 10000),
+  EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, kTimeoutMillis),
               SyscallSucceedsWithValue(1));
 
   int err;
@@ -1401,7 +1401,7 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnectRemoteClose) {
   // Now polling on the FD with a timeout should return 0 corresponding to no
   // FDs ready.
   struct pollfd poll_fd = {s.get(), POLLOUT, 0};
-  EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, 10000),
+  EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, kTimeoutMillis),
               SyscallSucceedsWithValue(1));
 
   ASSERT_THAT(RetryEINTR(connect)(s.get(), AsSockAddr(&addr), addrlen),
