@@ -544,7 +544,7 @@ var _ dynamicInode = (*mapsData)(nil)
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (d *mapsData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	if mm := getMM(d.task); mm != nil {
-		mm.ReadMapsDataInto(ctx, buf)
+		mm.ReadMapsDataInto(ctx, mm.MapsCallbackFuncForBuffer(buf))
 	}
 	return nil
 }

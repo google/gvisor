@@ -117,10 +117,11 @@ func (a AccessType) Effective() AccessType {
 
 // Convenient access types.
 var (
-	NoAccess  = AccessType{}
-	Read      = AccessType{Read: true}
-	Write     = AccessType{Write: true}
-	Execute   = AccessType{Execute: true}
-	ReadWrite = AccessType{Read: true, Write: true}
-	AnyAccess = AccessType{Read: true, Write: true, Execute: true}
+	NoAccess    = AccessType{}
+	Read        = AccessType{Read: true}
+	Write       = AccessType{Write: true}
+	Execute     = AccessType{Execute: true}
+	ReadWrite   = AccessType{Read: true, Write: true}
+	ReadExecute = AccessType{Read: true, Execute: true}
+	AnyAccess   = AccessType{Read: true, Write: true, Execute: true}
 )
