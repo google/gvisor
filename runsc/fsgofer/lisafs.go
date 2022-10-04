@@ -60,11 +60,21 @@ func (s *LisafsServer) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*lis
 	if err != nil {
 		return nil, linux.Statx{}, err
 	}
+	cu := cleanup.Make(func() {
+		_ = unix.Close(rootHostFD)
+	})
+	defer cu.Clean()
 
 	stat, err := fstatTo(rootHostFD)
 	if err != nil {
 		return nil, linux.Statx{}, err
 	}
+
+	if err := checkSupportedFileType(uint32(stat.Mode), s.config.HostUDS); err != nil {
+		log.Warningf("Mount: checkSupportedFileType() failed for file %q with mode %o: %v", mountPath, stat.Mode, err)
+		return nil, linux.Statx{}, err
+	}
+	cu.Release()
 
 	rootFD := &controlFDLisa{
 		hostFD:         rootHostFD,
@@ -327,6 +337,13 @@ func (fd *controlFDLisa) Walk(name string) (*lisafs.ControlFD, linux.Statx, erro
 
 	stat, err := fstatTo(childHostFD)
 	if err != nil {
+		_ = unix.Close(childHostFD)
+		return nil, linux.Statx{}, err
+	}
+
+	if err := checkSupportedFileType(uint32(stat.Mode), fd.Conn().ServerImpl().(*LisafsServer).config.HostUDS); err != nil {
+		_ = unix.Close(childHostFD)
+		log.Warningf("Walk: checkSupportedFileType() failed for %q with mode %o: %v", name, stat.Mode, err)
 		return nil, linux.Statx{}, err
 	}
 
@@ -361,6 +378,7 @@ func (fd *controlFDLisa) WalkStat(path lisafs.StringArray, recordStat func(linux
 	if fd.IsSymlink() {
 		return nil
 	}
+	server := fd.Conn().ServerImpl().(*LisafsServer)
 	for _, name := range path {
 		curFD, err := unix.Openat(curDirFD, name, unix.O_PATH|openFlags, 0)
 		if err == unix.ENOENT {
@@ -376,6 +394,10 @@ func (fd *controlFDLisa) WalkStat(path lisafs.StringArray, recordStat func(linux
 
 		stat, err := fstatTo(curFD)
 		if err != nil {
+			return err
+		}
+		if err := checkSupportedFileType(uint32(stat.Mode), server.config.HostUDS); err != nil {
+			log.Warningf("WalkStat: checkSupportedFileType() failed for file %q with mode %o while walking path %+v: %v", name, stat.Mode, path, err)
 			return err
 		}
 		recordStat(stat)
