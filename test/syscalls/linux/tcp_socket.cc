@@ -1111,9 +1111,11 @@ TEST_P(SimpleTcpSocketTest, ListenConnectParallel) {
   });
 
   // Initiate connects in a separate thread.
-  std::vector<ScopedThread*> threads;
+  std::vector<std::unique_ptr<ScopedThread>> threads;
+  threads.reserve(num_threads);
   for (int i = 0; i < num_threads; i++) {
-    ScopedThread t([&addr, &addrlen, family]() {
+    threads.push_back(std::make_unique<ScopedThread>([&addr, &addrlen,
+                                                      family]() {
       const FileDescriptor c = ASSERT_NO_ERRNO_AND_VALUE(
           Socket(family, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
 
@@ -1126,11 +1128,7 @@ TEST_P(SimpleTcpSocketTest, ListenConnectParallel) {
       struct pollfd poll_fd = {c.get(), POLLERR | POLLOUT, 0};
       EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, 1000),
                   SyscallSucceedsWithValue(1));
-    });
-    threads.push_back(&t);
-  }
-  for (auto t : threads) {
-    t->Join();
+    }));
   }
 }
 
