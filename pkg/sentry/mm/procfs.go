@@ -20,6 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fs/proc/seqfile"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 )
@@ -57,9 +58,32 @@ func (mm *MemoryManager) NeedsUpdate(generation int64) bool {
 	return true
 }
 
+// MapsCallbackFuncForBuffer creates a /proc/[pid]/maps entry including the trailing newline.
+func (mm *MemoryManager) MapsCallbackFuncForBuffer(buf *bytes.Buffer) MapsCallbackFunc {
+	return func(start, end hostarch.Addr, permissions hostarch.AccessType, private string, offset uint64, devMajor, devMinor uint32, inode uint64, path string) {
+		// Do not include the guard page: fs/proc/task_mmu.c:show_map_vma() =>
+		// stack_guard_page_start().
+		lineLen, err := fmt.Fprintf(buf, "%08x-%08x %s%s %08x %02x:%02x %d ",
+			start, end, permissions, private, offset, devMajor, devMinor, inode)
+		if err != nil {
+			log.Warningf("Failed to write to buffer with error: %v", err)
+			return
+		}
+
+		if path != "" {
+			// Per linux, we pad until the 74th character.
+			for pad := 73 - lineLen; pad > 0; pad-- {
+				buf.WriteByte(' ') // never returns a non-nil error
+			}
+			buf.WriteString(path) // never returns a non-nil error
+		}
+		buf.WriteByte('\n') // never returns a non-nil error
+	}
+}
+
 // ReadMapsDataInto is called by fsimpl/proc.mapsData.Generate to
 // implement /proc/[pid]/maps.
-func (mm *MemoryManager) ReadMapsDataInto(ctx context.Context, buf *bytes.Buffer) {
+func (mm *MemoryManager) ReadMapsDataInto(ctx context.Context, fn MapsCallbackFunc) {
 	// FIXME(b/235153601): Need to replace RLockBypass with RLockBypass
 	// after fixing b/235153601.
 	mm.mappingMu.RLockBypass()
@@ -67,7 +91,7 @@ func (mm *MemoryManager) ReadMapsDataInto(ctx context.Context, buf *bytes.Buffer
 	var start hostarch.Addr
 
 	for vseg := mm.vmas.LowerBoundSegment(start); vseg.Ok(); vseg = vseg.NextSegment() {
-		mm.appendVMAMapsEntryLocked(ctx, vseg, buf)
+		mm.appendVMAMapsEntryLocked(ctx, vseg, fn)
 	}
 
 	// We always emulate vsyscall, so advertise it here. Everything about a
@@ -80,7 +104,7 @@ func (mm *MemoryManager) ReadMapsDataInto(ctx context.Context, buf *bytes.Buffer
 	//
 	// Artifically adjust the seqfile handle so we only output vsyscall entry once.
 	if start != vsyscallEnd {
-		buf.WriteString(vsyscallMapsEntry)
+		fn(hostarch.Addr(0xffffffffff600000), hostarch.Addr(0xffffffffff601000), hostarch.ReadExecute, "p", 0, 0, 0, 0, "[vsyscall]")
 	}
 }
 
@@ -129,12 +153,12 @@ func (mm *MemoryManager) ReadMapsSeqFileData(ctx context.Context, handle seqfile
 // Preconditions: mm.mappingMu must be locked.
 func (mm *MemoryManager) vmaMapsEntryLocked(ctx context.Context, vseg vmaIterator) []byte {
 	var b bytes.Buffer
-	mm.appendVMAMapsEntryLocked(ctx, vseg, &b)
+	mm.appendVMAMapsEntryLocked(ctx, vseg, mm.MapsCallbackFuncForBuffer(&b))
 	return b.Bytes()
 }
 
 // Preconditions: mm.mappingMu must be locked.
-func (mm *MemoryManager) appendVMAMapsEntryLocked(ctx context.Context, vseg vmaIterator, b *bytes.Buffer) {
+func (mm *MemoryManager) appendVMAMapsEntryLocked(ctx context.Context, vseg vmaIterator, fn MapsCallbackFunc) {
 	vma := vseg.ValuePtr()
 	private := "p"
 	if !vma.private {
@@ -149,31 +173,19 @@ func (mm *MemoryManager) appendVMAMapsEntryLocked(ctx context.Context, vseg vmaI
 	devMajor := uint32(dev >> devMinorBits)
 	devMinor := uint32(dev & ((1 << devMinorBits) - 1))
 
-	// Do not include the guard page: fs/proc/task_mmu.c:show_map_vma() =>
-	// stack_guard_page_start().
-	lineLen, _ := fmt.Fprintf(b, "%08x-%08x %s%s %08x %02x:%02x %d ",
-		vseg.Start(), vseg.End(), vma.realPerms, private, vma.off, devMajor, devMinor, ino)
-
 	// Figure out our filename or hint.
-	var s string
+	var path string
 	if vma.hint != "" {
-		s = vma.hint
+		path = vma.hint
 	} else if vma.id != nil {
 		// FIXME(jamieliu): We are holding mm.mappingMu here, which is
 		// consistent with Linux's holding mmap_sem in
 		// fs/proc/task_mmu.c:show_map_vma() => fs/seq_file.c:seq_file_path().
 		// However, it's not clear that fs.File.MappedName() is actually
 		// consistent with this lock order.
-		s = vma.id.MappedName(ctx)
+		path = vma.id.MappedName(ctx)
 	}
-	if s != "" {
-		// Per linux, we pad until the 74th character.
-		for pad := 73 - lineLen; pad > 0; pad-- {
-			b.WriteByte(' ')
-		}
-		b.WriteString(s)
-	}
-	b.WriteByte('\n')
+	fn(vseg.Start(), vseg.End(), vma.realPerms, private, vma.off, devMajor, devMinor, ino, path)
 }
 
 // ReadSmapsDataInto is called by fsimpl/proc.smapsData.Generate to
@@ -239,7 +251,7 @@ func (mm *MemoryManager) vmaSmapsEntryLocked(ctx context.Context, vseg vmaIterat
 }
 
 func (mm *MemoryManager) vmaSmapsEntryIntoLocked(ctx context.Context, vseg vmaIterator, b *bytes.Buffer) {
-	mm.appendVMAMapsEntryLocked(ctx, vseg, b)
+	mm.appendVMAMapsEntryLocked(ctx, vseg, mm.MapsCallbackFuncForBuffer(b))
 	vma := vseg.ValuePtr()
 
 	// We take mm.activeMu here in each call to vmaSmapsEntryLocked, instead of

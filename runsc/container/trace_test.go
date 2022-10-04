@@ -439,4 +439,14 @@ func TestProcfsDump(t *testing.T) {
 	if procfsDump[0].Status.VMRSS == 0 {
 		t.Errorf("expected VMSize to be set")
 	}
+	if len(procfsDump[0].Maps) <= 0 {
+		t.Errorf("no region mapped for pid:%v", procfsDump[0].Status.PID)
+	}
+
+	maps := procfsDump[0].Maps
+	for i := 0; i < len(procfsDump[0].Maps)-1; i++ {
+		if maps[i].Address.Overlaps(maps[i+1].Address) {
+			t.Errorf("overlapped addresses for pid:%v", procfsDump[0].Status.PID)
+		}
+	}
 }
