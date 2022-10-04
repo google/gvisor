@@ -50,6 +50,9 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 )
 
+// MapsCallbackFunc has all the parameters required for populating an entry of /proc/[pid]/maps.
+type MapsCallbackFunc func(start, end hostarch.Addr, permissions hostarch.AccessType, private string, offset uint64, devMajor, devMinor uint32, inode uint64, path string)
+
 // MemoryManager implements a virtual address space.
 //
 // +stateify savable
