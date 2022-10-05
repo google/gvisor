@@ -19,6 +19,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -72,12 +73,18 @@ func Mount(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		return 0, nil, linuxerr.EPERM
 	}
 
+	// Do nothing for MS_REMOUNT and hope for the best.
+	if flags&(linux.MS_REMOUNT) != 0 {
+		log.Warningf("NLAC: Ingoring MS_REMOUNT!")
+		return 0, nil, nil
+	}
+
 	const unsupportedOps = linux.MS_REMOUNT | linux.MS_SHARED | linux.MS_PRIVATE |
 		linux.MS_SLAVE | linux.MS_UNBINDABLE | linux.MS_MOVE
 
 	// Silently allow MS_NOSUID, since we don't implement set-id bits
 	// anyway.
-	const unsupportedFlags = linux.MS_NODIRATIME | linux.MS_STRICTATIME
+	const unsupportedFlags = linux.MS_NODIRATIME // | linux.MS_STRICTATIME
 
 	// Linux just allows passing any flags to mount(2) - it won't fail when
 	// unknown or unsupported flags are passed. Since we don't implement
@@ -104,7 +111,7 @@ func Mount(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	}
 	opts.GetFilesystemOptions.Data = data
 
-	target, err := getTaskPathOperation(t, linux.AT_FDCWD, targetPath, disallowEmptyPath, nofollowFinalSymlink)
+	target, err := getTaskPathOperation(t, linux.AT_FDCWD, targetPath, disallowEmptyPath, followFinalSymlink)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -117,7 +124,7 @@ func Mount(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			return 0, nil, err
 		}
 		var sourceTpop taskPathOperation
-		sourceTpop, err = getTaskPathOperation(t, linux.AT_FDCWD, sourcePath, disallowEmptyPath, nofollowFinalSymlink)
+		sourceTpop, err = getTaskPathOperation(t, linux.AT_FDCWD, sourcePath, disallowEmptyPath, followFinalSymlink)
 		if err != nil {
 			return 0, nil, err
 		}

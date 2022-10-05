@@ -17,6 +17,7 @@ package vfs2
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/timerfd"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -72,7 +73,8 @@ func TimerfdSettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 	oldValAddr := args[3].Pointer()
 
 	if flags&^(linux.TFD_TIMER_ABSTIME) != 0 {
-		return 0, nil, linuxerr.EINVAL
+		log.Warningf("NLAC: UNKNOWN TIMER FLAG: %v", flags)
+		//return 0, nil, linuxerr.EINVAL
 	}
 
 	file := t.GetFileVFS2(fd)

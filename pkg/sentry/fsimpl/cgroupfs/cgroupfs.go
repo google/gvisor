@@ -284,7 +284,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 	if len(mopts) != 0 {
 		ctx.Debugf("cgroupfs.FilesystemType.GetFilesystem: unknown options: %v", mopts)
-		return nil, nil, linuxerr.EINVAL
+		//return nil, nil, linuxerr.EINVAL
 	}
 
 	k := kernel.KernelFromContext(ctx)

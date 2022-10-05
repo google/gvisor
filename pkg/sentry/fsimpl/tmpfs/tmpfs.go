@@ -217,7 +217,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 	if len(mopts) != 0 {
 		ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: unknown options: %v", mopts)
-		return nil, nil, linuxerr.EINVAL
+		//return nil, nil, linuxerr.EINVAL
 	}
 
 	devMinor, err := vfsObj.GetAnonBlockDevMinor()

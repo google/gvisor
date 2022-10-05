@@ -81,7 +81,7 @@ func Mount(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	// Linux just allows passing any flags to mount(2) - it won't fail when
 	// unknown or unsupported flags are passed. Since we don't implement
 	// everything, we fail explicitly on flags that are unimplemented.
-	if flags&(unsupportedOps|unsupportedFlags) != 0 {
+	if f := flags & (unsupportedOps | unsupportedFlags); f != 0 {
 		return 0, nil, linuxerr.EINVAL
 	}
 
