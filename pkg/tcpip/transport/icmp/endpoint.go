@@ -36,7 +36,7 @@ type icmpPacket struct {
 	icmpPacketEntry
 	senderAddress tcpip.FullAddress
 	packetInfo    tcpip.IPPacketInfo
-	data          *stack.PacketBuffer
+	data          stack.PacketBufferPtr
 	receivedAt    time.Time `state:".(int64)"`
 
 	// tosOrTClass stores either the Type of Service for IPv4 or the Traffic Class
@@ -412,7 +412,7 @@ func send4(s *stack.Stack, ctx *network.WriteContext, ident uint16, data *buffer
 	}
 
 	pkt := ctx.TryNewPacketBuffer(header.ICMPv4MinimumSize+int(maxHeaderLength), bufferv2.Buffer{})
-	if pkt == nil {
+	if pkt.IsNil() {
 		return &tcpip.ErrWouldBlock{}
 	}
 	defer pkt.DecRef()
@@ -454,7 +454,7 @@ func send6(s *stack.Stack, ctx *network.WriteContext, ident uint16, data *buffer
 	}
 
 	pkt := ctx.TryNewPacketBuffer(header.ICMPv6MinimumSize+int(maxHeaderLength), bufferv2.Buffer{})
-	if pkt == nil {
+	if pkt.IsNil() {
 		return &tcpip.ErrWouldBlock{}
 	}
 	defer pkt.DecRef()
@@ -696,7 +696,7 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 
 // HandlePacket is called by the stack when new packets arrive to this transport
 // endpoint.
-func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
+func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt stack.PacketBufferPtr) {
 	// Only accept echo replies.
 	switch e.net.NetProto() {
 	case header.IPv4ProtocolNumber:
@@ -784,7 +784,7 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 }
 
 // HandleError implements stack.TransportEndpoint.
-func (*endpoint) HandleError(stack.TransportError, *stack.PacketBuffer) {}
+func (*endpoint) HandleError(stack.TransportError, stack.PacketBufferPtr) {}
 
 // State implements tcpip.Endpoint.State. The ICMP endpoint currently doesn't
 // expose internal socket state.

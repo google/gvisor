@@ -168,7 +168,7 @@ func (e *mockEndpoint) Attach(d stack.NetworkDispatcher)      { e.disp = d }
 func (e *mockEndpoint) IsAttached() bool                      { return e.disp != nil }
 func (*mockEndpoint) Wait()                                   {}
 func (*mockEndpoint) ARPHardwareType() header.ARPHardwareType { return header.ARPHardwareNone }
-func (*mockEndpoint) AddHeader(*stack.PacketBuffer)           {}
+func (*mockEndpoint) AddHeader(stack.PacketBufferPtr)         {}
 func (e *mockEndpoint) releasePackets() {
 	e.pkts.DecRef()
 	e.pkts = stack.PacketBufferList{}
@@ -1096,7 +1096,7 @@ func TestIPv6PacketInfo(t *testing.T) {
 
 					{
 						p := e1.Read()
-						if p == nil {
+						if p.IsNil() {
 							t.Fatal("packet didn't arrive at ep1")
 						}
 
@@ -1106,7 +1106,7 @@ func TestIPv6PacketInfo(t *testing.T) {
 						)
 					}
 
-					if p := e2.Read(); p != nil {
+					if p := e2.Read(); !p.IsNil() {
 						t.Errorf("unexpected packet from ep2 = %#v", p)
 					}
 				})

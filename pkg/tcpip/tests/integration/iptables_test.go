@@ -51,7 +51,7 @@ func (*inputIfNameMatcher) Name() string {
 	return "inputIfNameMatcher"
 }
 
-func (im *inputIfNameMatcher) Match(hook stack.Hook, _ *stack.PacketBuffer, inNicName, _ string) (bool, bool) {
+func (im *inputIfNameMatcher) Match(hook stack.Hook, _ stack.PacketBufferPtr, inNicName, _ string) (bool, bool) {
 	return (hook == stack.Input && im.name != "" && im.name == inNicName), false
 }
 
@@ -109,7 +109,7 @@ func genStackV4(t *testing.T) (*stack.Stack, *channel.Endpoint) {
 	return s, e
 }
 
-func genPacketV6() *stack.PacketBuffer {
+func genPacketV6() stack.PacketBufferPtr {
 	pktSize := header.IPv6MinimumSize + payloadSize
 	hdr := prependable.New(pktSize)
 	ip := header.IPv6(hdr.Prepend(pktSize))
@@ -124,7 +124,7 @@ func genPacketV6() *stack.PacketBuffer {
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buf})
 }
 
-func genPacketV4() *stack.PacketBuffer {
+func genPacketV4() stack.PacketBufferPtr {
 	pktSize := header.IPv4MinimumSize + payloadSize
 	hdr := prependable.New(pktSize)
 	ip := header.IPv4(hdr.Prepend(pktSize))
@@ -150,7 +150,7 @@ func TestIPTablesStatsForInput(t *testing.T) {
 		name               string
 		setupStack         func(*testing.T) (*stack.Stack, *channel.Endpoint)
 		setupFilter        func(*testing.T, *stack.Stack)
-		genPacket          func() *stack.PacketBuffer
+		genPacket          func() stack.PacketBufferPtr
 		proto              tcpip.NetworkProtocolNumber
 		expectReceived     int
 		expectInputDropped int
@@ -362,7 +362,7 @@ func (*udpSourcePortMatcher) Name() string {
 	return "udpSourcePortMatcher"
 }
 
-func (m *udpSourcePortMatcher) Match(_ stack.Hook, pkt *stack.PacketBuffer, _, _ string) (matches, hotdrop bool) {
+func (m *udpSourcePortMatcher) Match(_ stack.Hook, pkt stack.PacketBufferPtr, _, _ string) (matches, hotdrop bool) {
 	udp := header.UDP(pkt.TransportHeader().Slice())
 	if len(udp) < header.UDPMinimumSize {
 		// Drop immediately as the packet is invalid.
@@ -938,7 +938,7 @@ func TestForwardingHook(t *testing.T) {
 					}
 
 					p := e2.Read()
-					if (p != nil) != expectTransmitPacket {
+					if (!p.IsNil()) != expectTransmitPacket {
 						t.Fatalf("got e2.Read() = %#v, want = (_ == nil) = %t", p, expectTransmitPacket)
 					}
 					if expectTransmitPacket {
@@ -1179,16 +1179,16 @@ func TestFilteringEchoPacketsWithLocalForwarding(t *testing.T) {
 
 					expectPacket := subTest.expectResult == noneDropped
 					p := e1.Read()
-					if (p != nil) != expectPacket {
+					if (!p.IsNil()) != expectPacket {
 						t.Errorf("got e1.Read() = %#v, want = (_ == nil) = %t", p, expectPacket)
 					}
-					if p != nil {
+					if !p.IsNil() {
 						payload := stack.PayloadSince(p.NetworkHeader())
 						defer payload.Release()
 						test.checker(t, payload)
 						p.DecRef()
 					}
-					if p := e2.Read(); p != nil {
+					if p := e2.Read(); !p.IsNil() {
 						t.Errorf("got e1.Read() = %#v, want = nil)", p)
 						p.DecRef()
 					}
@@ -1536,7 +1536,7 @@ func TestNATEcho(t *testing.T) {
 									Payload: bufferv2.MakeWithData(test.echoPkt(natTypeTest.requestSrc, natTypeTest.requestDst, false /* reply */)),
 								}))
 								pkt := ep1.Read()
-								if pkt == nil {
+								if pkt.IsNil() {
 									t.Fatal("expected to read a packet on ep1")
 								}
 								payload := stack.PayloadSince(pkt.NetworkHeader())
@@ -1555,7 +1555,7 @@ func TestNATEcho(t *testing.T) {
 									Payload: bufferv2.MakeWithData(test.echoPkt(natTypeTest.expectedRequestDst, natTypeTest.expectedRequestSrc, true /* reply */)),
 								}))
 								pkt := ep2.Read()
-								if pkt == nil {
+								if pkt.IsNil() {
 									t.Fatal("expected to read a packet on ep2")
 								}
 								payload := stack.PayloadSince(pkt.NetworkHeader())
@@ -2525,7 +2525,7 @@ func TestNATICMPError(t *testing.T) {
 
 									{
 										pkt := ep1.Read()
-										if pkt == nil {
+										if pkt.IsNil() {
 											t.Fatal("expected to read a packet on ep1")
 										}
 										pktView := stack.PayloadSince(pkt.NetworkHeader())
@@ -2546,7 +2546,7 @@ func TestNATICMPError(t *testing.T) {
 
 									pkt := ep2.Read()
 									expectResponse := icmpType.expectResponse && trimTest.expectNATedICMP
-									if (pkt != nil) != expectResponse {
+									if (!pkt.IsNil()) != expectResponse {
 										t.Fatalf("got ep2.Read() = %#v, want = (_ == nil) = %t", pkt, expectResponse)
 									}
 									if !expectResponse {
@@ -2894,7 +2894,7 @@ func TestSNATHandlePortOrIdentConflicts(t *testing.T) {
 													}))
 
 													pkt := ep1.Read()
-													if pkt == nil {
+													if pkt.IsNil() {
 														t.Fatal("expected to read a packet on ep1")
 													}
 													pktView := stack.PayloadSince(pkt.NetworkHeader())
@@ -3035,7 +3035,7 @@ type icmpv4Matcher struct {
 	icmpType header.ICMPv4Type
 }
 
-func (m *icmpv4Matcher) Match(_ stack.Hook, pkt *stack.PacketBuffer, _, _ string) (matches bool, hotdrop bool) {
+func (m *icmpv4Matcher) Match(_ stack.Hook, pkt stack.PacketBufferPtr, _, _ string) (matches bool, hotdrop bool) {
 	if pkt.NetworkProtocolNumber != header.IPv4ProtocolNumber {
 		return false, false
 	}
@@ -3051,7 +3051,7 @@ type icmpv6Matcher struct {
 	icmpType header.ICMPv6Type
 }
 
-func (m *icmpv6Matcher) Match(_ stack.Hook, pkt *stack.PacketBuffer, _, _ string) (matches bool, hotdrop bool) {
+func (m *icmpv6Matcher) Match(_ stack.Hook, pkt stack.PacketBufferPtr, _, _ string) (matches bool, hotdrop bool) {
 	if pkt.NetworkProtocolNumber != header.IPv6ProtocolNumber {
 		return false, false
 	}
@@ -3301,7 +3301,7 @@ func TestRejectWith(t *testing.T) {
 
 							{
 								pkt := ep1.Read()
-								if pkt == nil {
+								if pkt.IsNil() {
 									t.Fatal("expected to read a packet on ep1")
 								}
 								payload := stack.PayloadSince(pkt.NetworkHeader())
@@ -3330,7 +3330,7 @@ func TestInvalidTransportHeader(t *testing.T) {
 	tests := []struct {
 		name       string
 		setupStack func(*testing.T) (*stack.Stack, *channel.Endpoint)
-		genPacket  func(int8) *stack.PacketBuffer
+		genPacket  func(int8) stack.PacketBufferPtr
 		offset     int8
 	}{
 		{
@@ -3398,7 +3398,7 @@ func TestInvalidTransportHeader(t *testing.T) {
 	}
 }
 
-func genTCP4(offset int8) *stack.PacketBuffer {
+func genTCP4(offset int8) stack.PacketBufferPtr {
 	pktSize := header.IPv4MinimumSize + header.TCPMinimumSize
 	hdr := prependable.New(pktSize)
 
@@ -3430,7 +3430,7 @@ func genTCP4(offset int8) *stack.PacketBuffer {
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buf})
 }
 
-func genTCP6(offset int8) *stack.PacketBuffer {
+func genTCP6(offset int8) stack.PacketBufferPtr {
 	pktSize := header.IPv6MinimumSize + header.TCPMinimumSize
 	hdr := prependable.New(pktSize)
 
@@ -3456,7 +3456,7 @@ func genTCP6(offset int8) *stack.PacketBuffer {
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buf})
 }
 
-func genUDP4(offset int8) *stack.PacketBuffer {
+func genUDP4(offset int8) stack.PacketBufferPtr {
 	pktSize := header.IPv4MinimumSize + header.UDPMinimumSize
 	hdr := prependable.New(pktSize)
 
@@ -3487,7 +3487,7 @@ func genUDP4(offset int8) *stack.PacketBuffer {
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buf})
 }
 
-func genUDP6(offset int8) *stack.PacketBuffer {
+func genUDP6(offset int8) stack.PacketBufferPtr {
 	pktSize := header.IPv6MinimumSize + header.UDPMinimumSize
 	hdr := prependable.New(pktSize)
 

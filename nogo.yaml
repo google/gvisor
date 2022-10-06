@@ -218,3 +218,7 @@ analyzers:
       suppress:
         - "comment on exported type Translation" # Intentional.
         - "comment on exported type PinnedRange" # Intentional.
+  ST1016: # CheckReceiverNamesIdentical
+    internal:
+      exclude:
+        - pkg/tcpip/stack/packet_buffer.go # TODO(b/233086175): Remove.

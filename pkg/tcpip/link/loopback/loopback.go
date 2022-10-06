@@ -93,4 +93,4 @@ func (*endpoint) ARPHardwareType() header.ARPHardwareType {
 	return header.ARPHardwareLoopback
 }
 
-func (*endpoint) AddHeader(*stack.PacketBuffer) {}
+func (*endpoint) AddHeader(stack.PacketBufferPtr) {}
