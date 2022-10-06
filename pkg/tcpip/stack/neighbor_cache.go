@@ -286,10 +286,12 @@ func (n *neighborCache) handleConfirmation(addr tcpip.Address, linkAddr tcpip.Li
 		entry.mu.Lock()
 		entry.handleConfirmationLocked(linkAddr, flags)
 		entry.mu.Unlock()
+	} else {
+		// The confirmation SHOULD be silently discarded if the recipient did not
+		// initiate any communication with the target. This is indicated if there is
+		// no matching entry for the remote address.
+		n.nic.stats.neighbor.droppedConfirmationForNoninitiatedNeighbor.Increment()
 	}
-	// The confirmation SHOULD be silently discarded if the recipient did not
-	// initiate any communication with the target. This is indicated if there is
-	// no matching entry for the remote address.
 }
 
 // handleUpperLevelConfirmation processes a confirmation of reachablity from
