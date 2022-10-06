@@ -80,7 +80,7 @@ func (*fwdTestNetworkEndpoint) DefaultTTL() uint8 {
 	return 123
 }
 
-func (f *fwdTestNetworkEndpoint) HandlePacket(pkt *PacketBuffer) {
+func (f *fwdTestNetworkEndpoint) HandlePacket(pkt PacketBufferPtr) {
 	if _, _, ok := f.proto.Parse(pkt); !ok {
 		return
 	}
@@ -118,7 +118,7 @@ func (f *fwdTestNetworkEndpoint) NetworkProtocolNumber() tcpip.NetworkProtocolNu
 	return f.proto.Number()
 }
 
-func (f *fwdTestNetworkEndpoint) WritePacket(r *Route, params NetworkHeaderParams, pkt *PacketBuffer) tcpip.Error {
+func (f *fwdTestNetworkEndpoint) WritePacket(r *Route, params NetworkHeaderParams, pkt PacketBufferPtr) tcpip.Error {
 	// Add the protocol's header to the packet and send it to the link
 	// endpoint.
 	b := pkt.NetworkHeader().Push(fwdTestNetHeaderLen)
@@ -130,7 +130,7 @@ func (f *fwdTestNetworkEndpoint) WritePacket(r *Route, params NetworkHeaderParam
 	return f.nic.WritePacket(r, pkt)
 }
 
-func (f *fwdTestNetworkEndpoint) WriteHeaderIncludedPacket(r *Route, pkt *PacketBuffer) tcpip.Error {
+func (f *fwdTestNetworkEndpoint) WriteHeaderIncludedPacket(r *Route, pkt PacketBufferPtr) tcpip.Error {
 	// The network header should not already be populated.
 	if _, ok := pkt.NetworkHeader().Consume(fwdTestNetHeaderLen); !ok {
 		return &tcpip.ErrMalformedHeader{}
@@ -181,7 +181,7 @@ func (*fwdTestNetworkProtocol) ParseAddresses(v []byte) (src, dst tcpip.Address)
 	return tcpip.Address(v[srcAddrOffset : srcAddrOffset+1]), tcpip.Address(v[dstAddrOffset : dstAddrOffset+1])
 }
 
-func (*fwdTestNetworkProtocol) Parse(pkt *PacketBuffer) (tcpip.TransportProtocolNumber, bool, bool) {
+func (*fwdTestNetworkProtocol) Parse(pkt PacketBufferPtr) (tcpip.TransportProtocolNumber, bool, bool) {
 	netHeader, ok := pkt.NetworkHeader().Consume(fwdTestNetHeaderLen)
 	if !ok {
 		return 0, false, false
@@ -256,16 +256,16 @@ type fwdTestLinkEndpoint struct {
 	linkAddr   tcpip.LinkAddress
 
 	// C is where outbound packets are queued.
-	C chan *PacketBuffer
+	C chan PacketBufferPtr
 }
 
 // InjectInbound injects an inbound packet.
-func (e *fwdTestLinkEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
+func (e *fwdTestLinkEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt PacketBufferPtr) {
 	e.InjectLinkAddr(protocol, "", pkt)
 }
 
 // InjectLinkAddr injects an inbound packet with a remote link address.
-func (e *fwdTestLinkEndpoint) InjectLinkAddr(protocol tcpip.NetworkProtocolNumber, remote tcpip.LinkAddress, pkt *PacketBuffer) {
+func (e *fwdTestLinkEndpoint) InjectLinkAddr(protocol tcpip.NetworkProtocolNumber, remote tcpip.LinkAddress, pkt PacketBufferPtr) {
 	e.dispatcher.DeliverNetworkPacket(protocol, pkt)
 }
 
@@ -327,7 +327,7 @@ func (*fwdTestLinkEndpoint) ARPHardwareType() header.ARPHardwareType {
 }
 
 // AddHeader implements stack.LinkEndpoint.AddHeader.
-func (*fwdTestLinkEndpoint) AddHeader(*PacketBuffer) {}
+func (*fwdTestLinkEndpoint) AddHeader(PacketBufferPtr) {}
 
 func fwdTestNetFactory(t *testing.T, proto *fwdTestNetworkProtocol) (*faketime.ManualClock, *fwdTestLinkEndpoint, *fwdTestLinkEndpoint) {
 	clock := faketime.NewManualClock()
@@ -347,7 +347,7 @@ func fwdTestNetFactory(t *testing.T, proto *fwdTestNetworkProtocol) (*faketime.M
 
 	// NIC 1 has the link address "a", and added the network address 1.
 	ep1 := &fwdTestLinkEndpoint{
-		C:        make(chan *PacketBuffer, 300),
+		C:        make(chan PacketBufferPtr, 300),
 		mtu:      fwdTestNetDefaultMTU,
 		linkAddr: "a",
 	}
@@ -367,7 +367,7 @@ func fwdTestNetFactory(t *testing.T, proto *fwdTestNetworkProtocol) (*faketime.M
 
 	// NIC 2 has the link address "b", and added the network address 2.
 	ep2 := &fwdTestLinkEndpoint{
-		C:        make(chan *PacketBuffer, 300),
+		C:        make(chan PacketBufferPtr, 300),
 		mtu:      fwdTestNetDefaultMTU,
 		linkAddr: "b",
 	}
@@ -429,7 +429,7 @@ func TestForwardingWithStaticResolver(t *testing.T) {
 		Payload: bufferv2.MakeWithData(buf),
 	}))
 
-	var p *PacketBuffer
+	var p PacketBufferPtr
 
 	clock.Advance(proto.addrResolveDelay)
 	select {
@@ -473,7 +473,7 @@ func TestForwardingWithFakeResolver(t *testing.T) {
 		Payload: bufferv2.MakeWithData(buf),
 	}))
 
-	var p *PacketBuffer
+	var p PacketBufferPtr
 
 	clock.Advance(proto.addrResolveDelay)
 	select {
@@ -584,7 +584,7 @@ func TestForwardingWithFakeResolverPartialTimeout(t *testing.T) {
 		Payload: bufferv2.MakeWithData(buf),
 	}))
 
-	var p *PacketBuffer
+	var p PacketBufferPtr
 
 	clock.Advance(proto.addrResolveDelay)
 	select {
@@ -636,7 +636,7 @@ func TestForwardingWithFakeResolverTwoPackets(t *testing.T) {
 	}
 
 	for i := 0; i < 2; i++ {
-		var p *PacketBuffer
+		var p PacketBufferPtr
 
 		clock.Advance(proto.addrResolveDelay)
 		select {
@@ -691,7 +691,7 @@ func TestForwardingWithFakeResolverManyPackets(t *testing.T) {
 	}
 
 	for i := 0; i < maxPendingPacketsPerResolution; i++ {
-		var p *PacketBuffer
+		var p PacketBufferPtr
 
 		clock.Advance(proto.addrResolveDelay)
 		select {
@@ -757,7 +757,7 @@ func TestForwardingWithFakeResolverManyResolutions(t *testing.T) {
 	}
 
 	for i := 0; i < maxPendingResolutions; i++ {
-		var p *PacketBuffer
+		var p PacketBufferPtr
 
 		clock.Advance(proto.addrResolveDelay)
 		select {

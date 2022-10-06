@@ -122,7 +122,7 @@ func (*fakeNetworkEndpoint) DefaultTTL() uint8 {
 	return 123
 }
 
-func (f *fakeNetworkEndpoint) HandlePacket(pkt *stack.PacketBuffer) {
+func (f *fakeNetworkEndpoint) HandlePacket(pkt stack.PacketBufferPtr) {
 	if _, _, ok := f.proto.Parse(pkt); !ok {
 		return
 	}
@@ -179,7 +179,7 @@ func (f *fakeNetworkEndpoint) NetworkProtocolNumber() tcpip.NetworkProtocolNumbe
 	return f.proto.Number()
 }
 
-func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, params stack.NetworkHeaderParams, pkt *stack.PacketBuffer) tcpip.Error {
+func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, params stack.NetworkHeaderParams, pkt stack.PacketBufferPtr) tcpip.Error {
 	// Increment the sent packet count in the protocol descriptor.
 	f.proto.sendPacketCount[int(r.RemoteAddress()[0])%len(f.proto.sendPacketCount)]++
 
@@ -206,7 +206,7 @@ func (*fakeNetworkEndpoint) WritePackets(*stack.Route, stack.PacketBufferList, s
 	panic("not implemented")
 }
 
-func (*fakeNetworkEndpoint) WriteHeaderIncludedPacket(*stack.Route, *stack.PacketBuffer) tcpip.Error {
+func (*fakeNetworkEndpoint) WriteHeaderIncludedPacket(*stack.Route, stack.PacketBufferPtr) tcpip.Error {
 	return &tcpip.ErrNotSupported{}
 }
 
@@ -307,7 +307,7 @@ func (*fakeNetworkProtocol) Close() {}
 func (*fakeNetworkProtocol) Wait() {}
 
 // Parse implements NetworkProtocol.Parse.
-func (*fakeNetworkProtocol) Parse(pkt *stack.PacketBuffer) (tcpip.TransportProtocolNumber, bool, bool) {
+func (*fakeNetworkProtocol) Parse(pkt stack.PacketBufferPtr) (tcpip.TransportProtocolNumber, bool, bool) {
 	hdr, ok := pkt.NetworkHeader().Consume(fakeNetHeaderLen)
 	if !ok {
 		return 0, false, false
@@ -4796,7 +4796,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 				t.Errorf("got %d unexpected packets from ep1", n)
 			}
 			pkt := ep2.Read()
-			if pkt == nil {
+			if pkt.IsNil() {
 				t.Fatal("packet not sent through ep2")
 			}
 			defer pkt.DecRef()
@@ -5277,7 +5277,7 @@ func TestWritePacketToRemote(t *testing.T) {
 			}
 
 			pkt := e.Read()
-			if got, want := pkt != nil, true; got != want {
+			if got, want := !pkt.IsNil(), true; got != want {
 				t.Fatalf("e.Read() = %t, want %t", got, want)
 			}
 			defer pkt.DecRef()
@@ -5299,7 +5299,7 @@ func TestWritePacketToRemote(t *testing.T) {
 			t.Fatalf("s.WritePacketToRemote(_, _, _, _) = %s, want = %s", err, &tcpip.ErrUnknownDevice{})
 		}
 		pkt := e.Read()
-		if got, want := pkt != nil, false; got != want {
+		if got, want := !pkt.IsNil(), false; got != want {
 			t.Fatalf("e.Read() = %t, %v; want %t", got, pkt, want)
 		}
 	})

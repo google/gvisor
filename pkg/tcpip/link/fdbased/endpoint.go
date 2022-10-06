@@ -509,7 +509,7 @@ const (
 )
 
 // AddHeader implements stack.LinkEndpoint.AddHeader.
-func (e *endpoint) AddHeader(pkt *stack.PacketBuffer) {
+func (e *endpoint) AddHeader(pkt stack.PacketBufferPtr) {
 	if e.hdrSize > 0 {
 		// Add ethernet header if needed.
 		eth := header.Ethernet(pkt.LinkHeader().Push(header.EthernetMinimumSize))
@@ -523,7 +523,7 @@ func (e *endpoint) AddHeader(pkt *stack.PacketBuffer) {
 
 // writePacket writes outbound packets to the file descriptor. If it is not
 // currently writable, the packet is dropped.
-func (e *endpoint) writePacket(pkt *stack.PacketBuffer) tcpip.Error {
+func (e *endpoint) writePacket(pkt stack.PacketBufferPtr) tcpip.Error {
 	fdInfo := e.fds[pkt.Hash%uint32(len(e.fds))]
 	fd := fdInfo.fd
 	var vnetHdrBuf []byte
@@ -573,7 +573,7 @@ func (e *endpoint) writePacket(pkt *stack.PacketBuffer) tcpip.Error {
 	return rawfile.NonBlockingWriteIovec(fd, iovecs)
 }
 
-func (e *endpoint) sendBatch(batchFDInfo fdInfo, pkts []*stack.PacketBuffer) (int, tcpip.Error) {
+func (e *endpoint) sendBatch(batchFDInfo fdInfo, pkts []stack.PacketBufferPtr) (int, tcpip.Error) {
 	// Degrade to writePacket if underlying fd is not a socket.
 	if !batchFDInfo.isSocket {
 		var written int
@@ -690,7 +690,7 @@ func (e *endpoint) sendBatch(batchFDInfo fdInfo, pkts []*stack.PacketBuffer) (in
 //   - pkt.NetworkProtocolNumber
 func (e *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 	// Preallocate to avoid repeated reallocation as we append to batch.
-	batch := make([]*stack.PacketBuffer, 0, BatchSize)
+	batch := make([]stack.PacketBufferPtr, 0, BatchSize)
 	batchFDInfo := fdInfo{fd: -1, isSocket: false}
 	sentPackets := 0
 	for _, pkt := range pkts.AsSlice() {
@@ -775,7 +775,7 @@ func (e *InjectableEndpoint) Attach(dispatcher stack.NetworkDispatcher) {
 }
 
 // InjectInbound injects an inbound packet.
-func (e *InjectableEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func (e *InjectableEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
 	e.dispatcher.DeliverNetworkPacket(protocol, pkt)
 }
 

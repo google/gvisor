@@ -81,7 +81,7 @@ func (m *InjectableEndpoint) IsAttached() bool {
 }
 
 // InjectInbound implements stack.InjectableLinkEndpoint.
-func (m *InjectableEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func (m *InjectableEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
 	m.dispatcher.DeliverNetworkPacket(protocol, pkt)
 }
 
@@ -133,7 +133,7 @@ func (*InjectableEndpoint) ARPHardwareType() header.ARPHardwareType {
 }
 
 // AddHeader implements stack.LinkEndpoint.AddHeader.
-func (*InjectableEndpoint) AddHeader(*stack.PacketBuffer) {}
+func (*InjectableEndpoint) AddHeader(stack.PacketBufferPtr) {}
 
 // NewInjectableEndpoint creates a new multi-endpoint injectable endpoint.
 func NewInjectableEndpoint(routes map[tcpip.Address]stack.InjectableLinkEndpoint) *InjectableEndpoint {
