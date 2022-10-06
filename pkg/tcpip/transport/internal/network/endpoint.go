@@ -269,7 +269,7 @@ func (c *WriteContext) PacketInfo() WritePacketInfo {
 //
 // If this method returns nil, the caller should wait for the endpoint to become
 // writable.
-func (c *WriteContext) TryNewPacketBuffer(reserveHdrBytes int, data bufferv2.Buffer) *stack.PacketBuffer {
+func (c *WriteContext) TryNewPacketBuffer(reserveHdrBytes int, data bufferv2.Buffer) stack.PacketBufferPtr {
 	e := c.e
 
 	e.sendBufferSizeInUseMu.Lock()
@@ -312,7 +312,7 @@ func (c *WriteContext) TryNewPacketBuffer(reserveHdrBytes int, data bufferv2.Buf
 }
 
 // WritePacket attempts to write the packet.
-func (c *WriteContext) WritePacket(pkt *stack.PacketBuffer, headerIncluded bool) tcpip.Error {
+func (c *WriteContext) WritePacket(pkt stack.PacketBufferPtr, headerIncluded bool) tcpip.Error {
 	c.e.mu.RLock()
 	pkt.Owner = c.e.owner
 	c.e.mu.RUnlock()

@@ -46,7 +46,7 @@ type rawPacket struct {
 	rawPacketEntry
 	// data holds the actual packet data, including any headers and
 	// payload.
-	data       *stack.PacketBuffer
+	data       stack.PacketBufferPtr
 	receivedAt time.Time `state:".(int64)"`
 	// senderAddr is the network address of the sender.
 	senderAddr tcpip.FullAddress
@@ -376,7 +376,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 	}
 
 	pkt := ctx.TryNewPacketBuffer(int(ctx.PacketInfo().MaxHeaderLength), payload.Clone())
-	if pkt == nil {
+	if pkt.IsNil() {
 		return 0, &tcpip.ErrWouldBlock{}
 	}
 	defer pkt.DecRef()
@@ -585,7 +585,7 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 }
 
 // HandlePacket implements stack.RawTransportEndpoint.HandlePacket.
-func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
+func (e *endpoint) HandlePacket(pkt stack.PacketBufferPtr) {
 	notifyReadableEvents := func() bool {
 		e.mu.RLock()
 		defer e.mu.RUnlock()
