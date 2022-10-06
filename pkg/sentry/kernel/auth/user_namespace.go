@@ -52,7 +52,10 @@ type UserNamespace struct {
 }
 
 // NewRootUserNamespace returns a UserNamespace that is appropriate for a
-// system's root user namespace.
+// system's root user namespace. Note that namespaces returned by separate calls
+// to this function are *distinct* namespaces. Once a root namespace is created
+// by this function, the returned value must be reused to refer to the same
+// namespace.
 func NewRootUserNamespace() *UserNamespace {
 	var ns UserNamespace
 	// """
