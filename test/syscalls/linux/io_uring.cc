@@ -25,6 +25,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <cerrno>
 #include <cstddef>
 #include <cstdint>
 
@@ -232,6 +233,9 @@ TEST(IOUringTest, SingleNOPTest) {
   IOUringParams params;
   std::unique_ptr<IOUring> io_uring =
       ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(1, params));
+
+  ASSERT_EQ(params.sq_entries, 1);
+  ASSERT_EQ(params.cq_entries, 2);
 
   uint32_t sq_head = io_uring->load_sq_head();
   ASSERT_EQ(sq_head, 0);

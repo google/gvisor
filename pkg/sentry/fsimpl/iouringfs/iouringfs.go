@@ -56,9 +56,10 @@ type FileDescription struct {
 	// mu protects the fields below.
 	mu sync.Mutex `state:"nosave"`
 
-	ioRings *safemem.BlockSeq
-	sqes    *safemem.BlockSeq
-	cqes    *safemem.BlockSeq
+	// These mappings are cached for performance and may be remapped on restore.
+	ioRings *safemem.BlockSeq `state:"nosave"`
+	sqes    *safemem.BlockSeq `state:"nosave"`
+	cqes    *safemem.BlockSeq `state:"nosave"`
 }
 
 var _ vfs.FileDescriptionImpl = (*FileDescription)(nil)
@@ -111,7 +112,9 @@ func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, entries uint32, par
 		numSqEntries*uint32((*linux.IORingIndex)(nil).SizeBytes()))
 	ringsBufferSize = uint64(hostarch.Addr(ringsBufferSize).MustRoundUp())
 
-	rbfr, err := mfp.MemoryFile().Allocate(ringsBufferSize, pgalloc.AllocOpts{Kind: usage.Anonymous})
+	mf := mfp.MemoryFile()
+
+	rbfr, err := mf.Allocate(ringsBufferSize, pgalloc.AllocOpts{Kind: usage.Anonymous})
 	if err != nil {
 		return nil, linuxerr.ENOMEM
 	}
@@ -119,18 +122,16 @@ func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, entries uint32, par
 	// Allocate enough space to store the given number of submission queue entries.
 	sqEntriesSize := uint64(numSqEntries * uint32((*linux.IOUringSqe)(nil).SizeBytes()))
 	sqEntriesSize = uint64(hostarch.Addr(sqEntriesSize).MustRoundUp())
-	sqefr, err := mfp.MemoryFile().Allocate(sqEntriesSize, pgalloc.AllocOpts{Kind: usage.Anonymous})
+	sqefr, err := mf.Allocate(sqEntriesSize, pgalloc.AllocOpts{Kind: usage.Anonymous})
 	if err != nil {
 		return nil, linuxerr.ENOMEM
 	}
 
 	iouringfd := &FileDescription{
 		rbmf: ringsBufferFile{
-			mf: mfp.MemoryFile(),
 			fr: rbfr,
 		},
 		sqemf: sqEntriesFile{
-			mf: mfp.MemoryFile(),
 			fr: sqefr,
 		},
 	}
@@ -170,14 +171,11 @@ func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, entries uint32, par
 	// Set features supported by the current IO_URING implementation.
 	params.Features = linux.IORING_FEAT_SINGLE_MMAP
 
-	if err := iouringfd.populateIORings(params); err != nil {
+	if err := iouringfd.populateIORings(mf, params); err != nil {
 		return nil, err
 	}
 
-	if err := iouringfd.cacheSqesMapping(); err != nil {
-		return nil, err
-	}
-	if err := iouringfd.cacheCqesMapping(); err != nil {
+	if err := iouringfd.cacheQueueEntriesMappings(mf); err != nil {
 		return nil, err
 	}
 
@@ -185,9 +183,10 @@ func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, entries uint32, par
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *FileDescription) Release(context.Context) {
-	fd.rbmf.mf.DecRef(fd.rbmf.fr)
-	fd.sqemf.mf.DecRef(fd.sqemf.fr)
+func (fd *FileDescription) Release(ctx context.Context) {
+	mf := pgalloc.MemoryFileProviderFromContext(ctx).MemoryFile()
+	mf.DecRef(fd.rbmf.fr)
+	mf.DecRef(fd.sqemf.fr)
 }
 
 // unmarshalIORings handles unmarshalling IORings struct considering that there could be more than
@@ -247,8 +246,8 @@ func unmarshalSqe(sqe *linux.IOUringSqe, sqes *safemem.BlockSeq, sqHead uint32) 
 }
 
 // populateIORings populates IORings struct backed by the allocated memory.
-func (fd *FileDescription) populateIORings(params *linux.IOUringParams) error {
-	bs, err := fd.rbmf.mf.MapInternal(fd.rbmf.fr, hostarch.ReadWrite)
+func (fd *FileDescription) populateIORings(mf *pgalloc.MemoryFile, params *linux.IOUringParams) error {
+	bs, err := mf.MapInternal(fd.rbmf.fr, hostarch.ReadWrite)
 	if err != nil {
 		return err
 	}
@@ -272,27 +271,26 @@ func (fd *FileDescription) populateIORings(params *linux.IOUringParams) error {
 	return nil
 }
 
-// cacheSqesMapping caches the beginning of an area for the SQEs backed by the allocated memory.
-func (fd *FileDescription) cacheSqesMapping() error {
-	bs, err := fd.sqemf.mf.MapInternal(fd.sqemf.fr, hostarch.ReadWrite)
+// cacheQueueEntriesMappings caches the beginning of an area for the SQEs backed by the allocated
+// memory and the beginning of an area for the CQEs backed by the allocated memory.
+func (fd *FileDescription) cacheQueueEntriesMappings(mf *pgalloc.MemoryFile) error {
+	sqes, err := mf.MapInternal(fd.sqemf.fr, hostarch.ReadWrite)
 	if err != nil {
 		return err
 	}
-	fd.sqes = &bs
+	fd.sqes = &sqes
 
-	return nil
-}
-
-// cacheCqesMapping caches the beginning of an area for the CQEs backed by the allocated memory.
-func (fd *FileDescription) cacheCqesMapping() error {
-	bs := *fd.ioRings
+	cqes, err := mf.MapInternal(fd.rbmf.fr, hostarch.ReadWrite)
+	if err != nil {
+		return err
+	}
 	cqesOffset := uint64(hostarch.Addr((*linux.IORings)(nil).SizeBytes()))
 	cqesOffset, ok := hostarch.CacheLineRoundUp(cqesOffset)
 	if !ok {
 		return linuxerr.EOVERFLOW
 	}
-	bs = bs.DropFirst(int(cqesOffset))
-	fd.cqes = &bs
+	cqes = cqes.DropFirst(int(cqesOffset))
+	fd.cqes = &cqes
 
 	return nil
 }
@@ -320,11 +318,16 @@ func (fd *FileDescription) ProcessSubmissions(t *kernel.Task, toSubmit uint32, m
 	defer fd.mu.Unlock()
 
 	var ioRings linux.IORings
-	err := fd.getIORings(&ioRings)
+	err := fd.getIORings(t, &ioRings)
 	if err != nil {
 		return -1, err
 	}
 
+	if fd.sqes == nil || fd.cqes == nil {
+		if err := fd.cacheQueueEntriesMappings(pgalloc.MemoryFileProviderFromContext(t).MemoryFile()); err != nil {
+			return -1, err
+		}
+	}
 	sqes := fd.sqes
 	cqes := fd.cqes
 
@@ -461,7 +464,16 @@ func (fd *FileDescription) updateCq(cqes *safemem.BlockSeq, cqe *linux.IOUringCq
 }
 
 // getIORings unmarshalls IORings struct backed by the allocated memory.
-func (fd *FileDescription) getIORings(ioRings *linux.IORings) error {
+func (fd *FileDescription) getIORings(ctx context.Context, ioRings *linux.IORings) error {
+	if fd.ioRings == nil {
+		mf := pgalloc.MemoryFileProviderFromContext(ctx).MemoryFile()
+		bs, err := mf.MapInternal(fd.rbmf.fr, hostarch.ReadWrite)
+		if err != nil {
+			return err
+		}
+
+		fd.ioRings = &bs
+	}
 	if err := unmarshalIORings(ioRings, fd.ioRings); err != nil {
 		return err
 	}
@@ -470,8 +482,9 @@ func (fd *FileDescription) getIORings(ioRings *linux.IORings) error {
 }
 
 // sqEntriesFile implements memmap.Mappable for SQ entries.
+//
+// +stateify savable
 type sqEntriesFile struct {
-	mf *pgalloc.MemoryFile
 	fr memmap.FileRange
 }
 
@@ -499,7 +512,7 @@ func (sqemf *sqEntriesFile) Translate(ctx context.Context, required, optional me
 		return []memmap.Translation{
 			{
 				Source: source,
-				File:   sqemf.mf,
+				File:   pgalloc.MemoryFileProviderFromContext(ctx).MemoryFile(),
 				Offset: sqemf.fr.Start + source.Start,
 				Perms:  at,
 			},
@@ -515,8 +528,9 @@ func (sqemf *sqEntriesFile) InvalidateUnsavable(ctx context.Context) error {
 }
 
 // ringBuffersFile implements memmap.Mappable for SQ and CQ ring buffers.
+//
+// +stateify savable
 type ringsBufferFile struct {
-	mf *pgalloc.MemoryFile
 	fr memmap.FileRange
 }
 
@@ -544,7 +558,7 @@ func (rbmf *ringsBufferFile) Translate(ctx context.Context, required, optional m
 		return []memmap.Translation{
 			{
 				Source: source,
-				File:   rbmf.mf,
+				File:   pgalloc.MemoryFileProviderFromContext(ctx).MemoryFile(),
 				Offset: rbmf.fr.Start + source.Start,
 				Perms:  at,
 			},

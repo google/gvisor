@@ -226,6 +226,7 @@ const std::string GvisorPlatform();
 bool IsRunningWithHostinet();
 bool IsFUSEEnabled();
 bool IsLisafsEnabled();
+bool IsIOUringEnabled();
 
 #ifdef __linux__
 void SetupGvisorDeathTest();

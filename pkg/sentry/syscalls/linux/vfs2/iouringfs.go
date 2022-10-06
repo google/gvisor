@@ -25,6 +25,10 @@ import (
 
 // IOUringSetup implements linux syscall io_uring_setup(2).
 func IOUringSetup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	if !kernel.IOUringEnabled {
+		return 0, nil, linuxerr.ENOSYS
+	}
+
 	entries := uint32(args[0].Uint())
 	paramsAddr := args[1].Pointer()
 	var params linux.IOUringParams
@@ -77,6 +81,10 @@ func IOUringSetup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 
 // IOUringEnter implements linux syscall io_uring_enter(2).
 func IOUringEnter(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	if !kernel.IOUringEnabled {
+		return 0, nil, linuxerr.ENOSYS
+	}
+
 	fd := int32(args[0].Int())
 	toSubmit := uint32(args[1].Uint())
 	minComplete := uint32(args[2].Uint())

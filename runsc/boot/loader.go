@@ -239,6 +239,7 @@ func New(args Args) (*Loader, error) {
 
 	kernel.FUSEEnabled = args.Conf.FUSE
 	kernel.LISAFSEnabled = args.Conf.Lisafs
+	kernel.IOUringEnabled = args.Conf.IOUring
 	vfs2.Override()
 
 	// Make host FDs stable between invocations. Host FDs must map to the exact

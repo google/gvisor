@@ -84,6 +84,10 @@ import (
 // TODO(gvisor.dev/issue/7911): Remove when 9P is deleted.
 var LISAFSEnabled = false
 
+// IOUringEnabled is set to true when IO_URING is enabled. Added as a global to
+// allow easy access everywhere.
+var IOUringEnabled = false
+
 // FUSEEnabled is set to true when FUSE is enabled. Added as a global to allow
 // easy access everywhere. To be removed once FUSE is completed.
 var FUSEEnabled = false
