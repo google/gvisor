@@ -97,7 +97,9 @@ var Metrics = tcpip.Stats{
 			Bytes:   mustCreateMetric("/netstack/nic/disabled_rx/bytes", "Number of bytes received on disabled NICs."),
 		},
 		Neighbor: tcpip.NICNeighborStats{
-			UnreachableEntryLookups: mustCreateMetric("/netstack/nic/neighbor/unreachable_entry_loopups", "Number of lookups performed on a neighbor entry in Unreachable state."),
+			UnreachableEntryLookups:                    mustCreateMetric("/netstack/nic/neighbor/unreachable_entry_loopups", "Number of lookups performed on a neighbor entry in Unreachable state."),
+			DroppedConfirmationForNoninitiatedNeighbor: mustCreateMetric("/netstack/nic/neighbor/dropped_confirmation_for_noninitiated_neighbor", "Number of advertisements received that don't match an entry in the neighbor cache."),
+			DroppedInvalidLinkAddressConfirmations:     mustCreateMetric("/netstack/nic/neighbor/dropped_invalid_link_address_confirmations", "Number of advertisements dropped because they have empty source link-layer addresses"),
 		},
 	},
 	ICMP: tcpip.ICMPStats{
