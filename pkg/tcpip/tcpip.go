@@ -2036,6 +2036,16 @@ type NICNeighborStats struct {
 	// entry in Unreachable state.
 	UnreachableEntryLookups *StatCounter
 
+	// DroppedConfirmationForNoninitiatedNeighbor counts the number of neighbor
+	// responses that were dropped because they didn't match an entry in the
+	// cache.
+	DroppedConfirmationForNoninitiatedNeighbor *StatCounter
+
+	// DroppedInvalidLinkAddressConfirmations counts the number of neighbor
+	// responses that were ignored because they had an invalid source link-layer
+	// address.
+	DroppedInvalidLinkAddressConfirmations *StatCounter
+
 	// LINT.ThenChange(stack/nic_stats.go:multiCounterNICNeighborStats)
 }
 

@@ -506,6 +506,7 @@ func (e *neighborEntry) handleConfirmationLocked(linkAddr tcpip.LinkAddress, fla
 			// "If the link layer has addresses and no Target Link-Layer Address
 			// option is included, the receiving node SHOULD silently discard the
 			// received advertisement." - RFC 4861 section 7.2.5
+			e.cache.nic.stats.neighbor.droppedInvalidLinkAddressConfirmations.Increment()
 			break
 		}
 

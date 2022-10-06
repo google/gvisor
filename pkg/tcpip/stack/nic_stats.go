@@ -40,11 +40,15 @@ func (m *multiCounterNICPacketStats) init(a, b *tcpip.NICPacketStats) {
 // LINT.IfChange(multiCounterNICNeighborStats)
 
 type multiCounterNICNeighborStats struct {
-	unreachableEntryLookups tcpip.MultiCounterStat
+	unreachableEntryLookups                    tcpip.MultiCounterStat
+	droppedConfirmationForNoninitiatedNeighbor tcpip.MultiCounterStat
+	droppedInvalidLinkAddressConfirmations     tcpip.MultiCounterStat
 }
 
 func (m *multiCounterNICNeighborStats) init(a, b *tcpip.NICNeighborStats) {
 	m.unreachableEntryLookups.Init(a.UnreachableEntryLookups, b.UnreachableEntryLookups)
+	m.droppedConfirmationForNoninitiatedNeighbor.Init(a.DroppedConfirmationForNoninitiatedNeighbor, b.DroppedConfirmationForNoninitiatedNeighbor)
+	m.droppedInvalidLinkAddressConfirmations.Init(a.DroppedInvalidLinkAddressConfirmations, b.DroppedInvalidLinkAddressConfirmations)
 }
 
 // LINT.ThenChange(../tcpip.go:NICNeighborStats)

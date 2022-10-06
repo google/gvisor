@@ -84,15 +84,18 @@ func newTestNeighborResolver(nudDisp NUDDispatcher, config NUDConfigurations, cl
 		entries: newTestEntryStore(),
 		delay:   typicalLatency,
 	}
+	stack := &Stack{
+		clock:           clock,
+		nudDisp:         nudDisp,
+		nudConfigs:      config,
+		randomGenerator: rng,
+		stats:           tcpip.Stats{}.FillIn(),
+	}
+
 	linkRes.neigh.init(&nic{
-		stack: &Stack{
-			clock:           clock,
-			nudDisp:         nudDisp,
-			nudConfigs:      config,
-			randomGenerator: rng,
-		},
+		stack: stack,
 		id:    1,
-		stats: makeNICStats(tcpip.NICStats{}.FillIn()),
+		stats: makeNICStats(stack.stats.NICs),
 	}, linkRes)
 	return linkRes
 }
@@ -1544,6 +1547,63 @@ func TestNeighborCacheRetryResolution(t *testing.T) {
 				t.Fatalf("neighbor entry mismatch (-got, +want):\n%s", diff)
 			}
 		}
+	}
+}
+
+func TestNeighborCacheIgnoreUnexpectedAdvertisement(t *testing.T) {
+	config := DefaultNUDConfigurations()
+
+	nudDisp := testNUDDispatcher{}
+	clock := faketime.NewManualClock()
+	linkRes := newTestNeighborResolver(&nudDisp, config, clock)
+
+	addr := toAddress(1)
+	linkAddr := toLinkAddress(1)
+
+	// Receiving confirmation for a neighbor that isn't in the cache should
+	// increment the counter.
+	linkRes.neigh.handleConfirmation(addr, linkAddr, ReachabilityConfirmationFlags{
+		Solicited: true,
+		Override:  false,
+		IsRouter:  false,
+	})
+
+	if got, want := linkRes.neigh.nic.stack.Stats().NICs.Neighbor.DroppedConfirmationForNoninitiatedNeighbor.Value(), uint64(1); got != want {
+		t.Errorf("got DroppedConfirmationForNoninitiatedNeighbor.Value() = %d, want = %d", got, want)
+	}
+}
+
+func TestNeighborCacheIgnoreInvalidLinkAddress(t *testing.T) {
+	config := DefaultNUDConfigurations()
+
+	nudDisp := testNUDDispatcher{}
+	clock := faketime.NewManualClock()
+	linkRes := newTestNeighborResolver(&nudDisp, config, clock)
+
+	entry, ok := linkRes.entries.entry(0)
+	if !ok {
+		t.Fatal("got linkRes.entries.entry(0) = _, false, want = true ")
+	}
+
+	_, _, err := linkRes.neigh.entry(entry.Addr, "", nil)
+	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
+		t.Fatalf("linkRes.neigh.entry(%s, \"\", nil): %s", entry.Addr, err)
+	}
+
+	// Receiving confirmation with an empty link address should increment the
+	// counter.
+	linkRes.neigh.handleConfirmation(entry.Addr, "" /* linkAddr */, ReachabilityConfirmationFlags{
+		Solicited: true,
+		Override:  false,
+		IsRouter:  false,
+	})
+
+	stats := linkRes.neigh.nic.stack.Stats()
+	if got, want := stats.NICs.Neighbor.DroppedInvalidLinkAddressConfirmations.Value(), uint64(1); got != want {
+		t.Errorf("got DroppedInvalidLinkAddressConfirmations.Value() = %d, want = %d", got, want)
+	}
+	if got, want := stats.NICs.Neighbor.DroppedConfirmationForNoninitiatedNeighbor.Value(), uint64(0); got != want {
+		t.Errorf("got DroppedConfirmationForNoninitiatedNeighbor.Value() = %d, want = %d", got, want)
 	}
 }
 
