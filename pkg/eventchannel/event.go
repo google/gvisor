@@ -59,6 +59,15 @@ func AddEmitter(e Emitter) {
 	DefaultEmitter.AddEmitter(e)
 }
 
+// HaveEmitters indicates if any emitters have been registered to the
+// default emitter.
+func HaveEmitters() bool {
+	DefaultEmitter.mu.Lock()
+	defer DefaultEmitter.mu.Unlock()
+
+	return len(DefaultEmitter.emitters) > 0
+}
+
 // multiEmitter is an Emitter that forwards messages to multiple Emitters.
 type multiEmitter struct {
 	// mu protects emitters.

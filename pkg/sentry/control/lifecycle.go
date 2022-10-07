@@ -19,8 +19,10 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/eventchannel"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
+	pb "gvisor.dev/gvisor/pkg/sentry/control/control_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
 	"gvisor.dev/gvisor/pkg/sentry/fs/user"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -308,8 +310,28 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 	l.Kernel.StartProcess(tg)
 	log.Infof("Started the new container %v ", initArgs.ContainerID)
 
-	l.updateContainerState(initArgs.ContainerID, stateRunning)
+	if err := l.updateContainerState(initArgs.ContainerID, stateRunning); err != nil {
+		// Sanity check: shouldn't fail to update the state at this point.
+		panic(fmt.Sprintf("Failed to set running state: %v", err))
+
+	}
+
+	// TODO(b/251490950): reap thread needs to synchronize with Save, so the
+	// container state update doesn't race with state serialization.
+	go l.reap(initArgs.ContainerID, tg) // S/R-SAFE: see above.
+
 	return nil
+}
+
+func (l *Lifecycle) reap(containerID string, tg *kernel.ThreadGroup) {
+	tg.WaitExited()
+	if err := l.updateContainerState(containerID, stateStopped); err != nil {
+		panic(err)
+	}
+	eventchannel.Emit(&pb.ContainerExitEvent{
+		ContainerId: containerID,
+		ExitStatus:  uint32(tg.ExitStatus()),
+	})
 }
 
 // Pause pauses all tasks, blocking until they are stopped.
@@ -347,18 +369,59 @@ type ContainerArgs struct {
 	ContainerID string `json:"container_id"`
 }
 
-// WaitContainer waits for the container to exit and returns the exit status.
-func (l *Lifecycle) WaitContainer(args *ContainerArgs, waitStatus *uint32) error {
-	tg, err := l.getInitContainerProcess(args.ContainerID)
-	if err != nil {
-		return err
+// GetExitStatus returns the container exit status if it has stopped.
+func (l *Lifecycle) GetExitStatus(args *ContainerArgs, status *uint32) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	c, ok := l.containerMap[args.ContainerID]
+	if !ok {
+		return fmt.Errorf("container %q doesn't exist, or has not been started", args.ContainerID)
 	}
 
-	tg.WaitExited()
-	*waitStatus = uint32(tg.ExitStatus())
-	if err := l.updateContainerState(args.ContainerID, stateStopped); err != nil {
-		return err
+	if c.state != stateStopped {
+		return fmt.Errorf("container %q hasn't exited yet", args.ContainerID)
 	}
+
+	*status = uint32(c.tg.ExitStatus())
+	return nil
+}
+
+// Reap notifies the sandbox that the caller is interested in the exit status via
+// an exit event. The caller is responsible for handling any corresponding exit
+// events, especially if they're interested in waiting for the exit.
+func (l *Lifecycle) Reap(args *ContainerArgs, _ *struct{}) error {
+	// Check if there are any real emitters registered. If there are no
+	// emitters, the caller will never be notified, so fail immediately.
+	if !eventchannel.HaveEmitters() {
+		return fmt.Errorf("no event emitters configured")
+	}
+
+	l.mu.Lock()
+
+	c, ok := l.containerMap[args.ContainerID]
+	if !ok {
+		l.mu.Unlock()
+		return fmt.Errorf("no container with id %q", args.ContainerID)
+	}
+
+	// Once a container enters the stop state, the state never changes. It's
+	// safe to cache a stopped state outside a l.mu critical section.
+	isStopped := c.state == stateStopped
+	l.mu.Unlock()
+
+	if isStopped {
+		// Already stopped, emit stop to ensure any callbacks registered after
+		// the actual stop is called. This may be a duplicate event, but is
+		// necessary in case the reap goroutine transitions the container to the
+		// stop state before the caller starts observing the event channel.
+		eventchannel.Emit(&pb.ContainerExitEvent{
+			ContainerId: args.ContainerID,
+			ExitStatus:  uint32(c.tg.ExitStatus()),
+		})
+	}
+
+	// Caller now responsible for blocking on the exit event.
 	return nil
 }
 
@@ -368,18 +431,12 @@ func (l *Lifecycle) IsContainerRunning(args *ContainerArgs, isRunning *bool) err
 	defer l.mu.Unlock()
 
 	c, ok := l.containerMap[args.ContainerID]
-	if !ok || c.state != stateRunning {
+	// We may be racing with the reaper goroutine updating c.state, so also
+	// check the number non-exited tasks.
+	if !ok || c.state != stateRunning || c.tg.Count() == 0 {
 		return nil
 	}
 
-	// The state will not be updated to "stopped" if the
-	// WaitContainer(...) method is not called. In this case, check
-	// whether the number of non-exited tasks in tg is zero to get
-	// the correct state of the container.
-	if c.tg.Count() == 0 {
-		c.state = stateStopped
-		return nil
-	}
 	*isRunning = true
 	return nil
 }
