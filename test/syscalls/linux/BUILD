@@ -1057,6 +1057,8 @@ cc_binary(
         "@com_google_absl//absl/time",
         gtest,
         "//test/util:io_uring_util",
+        "//test/util:memory_util",
+        "//test/util:multiprocess_util",
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",

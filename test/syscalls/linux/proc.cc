@@ -563,13 +563,20 @@ TEST(ProcPidMem, Unmapped) {
               SyscallSucceedsWithValue(sizeof(output)));
   ASSERT_EQ(expected, output);
 
-  // Unmap region again
-  ASSERT_THAT(munmap(mapping.ptr(), mapping.len()), SyscallSucceeds());
+  const auto rest = [&] {
+    // This is a new process, so we need to re-open /proc/self/mem.
+    int memfd = open("/proc/self/mem", O_RDONLY);
+    TEST_PCHECK_MSG(memfd >= 0, "open failed");
+    // Unmap region again
+    TEST_PCHECK_MSG(MunmapSafe(mapping.ptr(), mapping.len()) == 0,
+                    "munmap failed");
+    // Now we want EIO error
+    TEST_CHECK(pread(memfd, &output, sizeof(output),
+                     reinterpret_cast<off_t>(mapping.ptr())) == -1);
+    TEST_PCHECK_MSG(errno == EIO, "pread failed with unexpected errno");
+  };
 
-  // Now we want EIO error
-  ASSERT_THAT(pread(memfd.get(), &output, sizeof(output),
-                    reinterpret_cast<off_t>(mapping.ptr())),
-              SyscallFailsWithErrno(EIO));
+  EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
 }
 
 // Perform read repeatedly to verify offset change.
@@ -623,29 +630,32 @@ TEST(ProcPidMem, RepeatedSeek) {
 
 // Perform read past an allocated memory region.
 TEST(ProcPidMem, PartialRead) {
-  // Strategy: map large region, then do unmap and remap smaller region
-  auto memfd = ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/self/mem", O_RDONLY));
-
+  // Reserve 2 pages.
   Mapping mapping = ASSERT_NO_ERRNO_AND_VALUE(
       MmapAnon(2 * kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));
-  ASSERT_THAT(munmap(mapping.ptr(), mapping.len()), SyscallSucceeds());
-  Mapping smaller_mapping = ASSERT_NO_ERRNO_AND_VALUE(
-      Mmap(mapping.ptr(), kPageSize, PROT_READ | PROT_WRITE,
-           MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
 
-  // Fill it with things
-  memset(smaller_mapping.ptr(), 'x', smaller_mapping.len());
+  // Fill the first page with data.
+  memset(mapping.ptr(), 'x', kPageSize);
 
-  // Now we want no error
   char expected[] = {'x'};
   std::unique_ptr<char[]> output(new char[kPageSize]);
-  off_t read_offset =
-      reinterpret_cast<off_t>(smaller_mapping.ptr()) + kPageSize - 1;
-  ASSERT_THAT(
-      pread(memfd.get(), output.get(), sizeof(output.get()), read_offset),
-      SyscallSucceedsWithValue(sizeof(expected)));
-  // Since output is larger, than expected we have to do manual compare
-  ASSERT_EQ(expected[0], (output).get()[0]);
+  off_t read_offset = reinterpret_cast<off_t>(mapping.ptr()) + kPageSize - 1;
+  const auto rest = [&] {
+    int memfd = open("/proc/self/mem", O_RDONLY);
+    TEST_PCHECK_MSG(memfd >= 0, "open failed");
+    // Unmap the second page.
+    TEST_PCHECK_MSG(
+        MunmapSafe(reinterpret_cast<void*>(mapping.addr() + kPageSize),
+                   kPageSize) == 0,
+        "munmap failed");
+    // Expect to read up to the end of the first page without getting EIO.
+    TEST_PCHECK_MSG(
+        pread(memfd, output.get(), kPageSize, read_offset) == sizeof(expected),
+        "pread failed");
+    TEST_CHECK(expected[0] == output.get()[0]);
+  };
+
+  EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
 }
 
 // Perform read on /proc/[pid]/mem after exit.

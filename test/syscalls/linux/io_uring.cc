@@ -27,6 +27,8 @@
 
 #include "gtest/gtest.h"
 #include "test/util/io_uring_util.h"
+#include "test/util/memory_util.h"
+#include "test/util/multiprocess_util.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
@@ -72,10 +74,18 @@ TEST(IOUringTest, MMapMUnMapWork) {
 
   EXPECT_NE(ptr, MAP_FAILED);
 
-  ASSERT_THAT(munmap(ptr, sring_sz), SyscallSucceeds());
+  const auto rest = [&] {
+    // N.B. we must be in a single-threaded subprocess to ensure that another
+    // thread doesn't racily remap at ptr.
+    TEST_PCHECK_MSG(MunmapSafe(ptr, sring_sz) == 0, "munmap failed");
+    // This should SIGSEGV.
+    *reinterpret_cast<volatile int *>(ptr) = 42;
+  };
 
-  EXPECT_EXIT(*reinterpret_cast<volatile int *>(ptr) = 42,
-              ::testing::KilledBySignal(SIGSEGV), "");
+  int child_exit_status = ASSERT_NO_ERRNO_AND_VALUE(InForkedProcess(rest));
+  EXPECT_TRUE(WIFSIGNALED(child_exit_status) &&
+              WTERMSIG(child_exit_status) == SIGSEGV)
+      << "exit status: " << child_exit_status;
 }
 
 // Testing that both mmap fails with EINVAL when an invalid offset is passed.
