@@ -39,3 +39,10 @@ message ControlConfig {
   // server.
   repeated Endpoint allowed_controls = 1;
 }
+
+// ContainerExitEvent is emitted when a container's init task exits. Duplicate
+// exit events may be emitted for the same container.
+message ContainerExitEvent {
+  string container_id = 1;
+  uint32 exit_status = 2;
+}

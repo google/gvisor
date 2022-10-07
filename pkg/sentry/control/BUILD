@@ -26,6 +26,7 @@ go_library(
         "//:sandbox",
     ],
     deps = [
+        ":control_go_proto",
         "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/eventchannel",
