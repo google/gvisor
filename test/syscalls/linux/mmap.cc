@@ -92,7 +92,7 @@ class MMapTest : public ::testing::Test {
       return -1;
     }
 
-    int ret = munmap(addr_, length_);
+    int ret = MunmapSafe(addr_, length_);
 
     addr_ = nullptr;
     length_ = 0;
@@ -298,9 +298,10 @@ TEST_F(MMapTest, MapDevZeroSegfaultAfterUnmap) {
     *reinterpret_cast<volatile int*>(addr_saved) = 0xFF;
   };
 
-  EXPECT_THAT(InForkedProcess(rest),
-              IsPosixErrorOkAndHolds(AnyOf(Eq(W_EXITCODE(0, SIGSEGV)),
-                                           Eq(W_EXITCODE(0, 128 + SIGSEGV)))));
+  int child_exit_status = ASSERT_NO_ERRNO_AND_VALUE(InForkedProcess(rest));
+  EXPECT_TRUE(WIFSIGNALED(child_exit_status) &&
+              WTERMSIG(child_exit_status) == SIGSEGV)
+      << "exit status: " << child_exit_status;
 }
 
 TEST_F(MMapTest, MapDevZeroUnaligned) {
