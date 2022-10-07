@@ -59,7 +59,6 @@ steps:
     command: make smoke-tests
     agents:
       arch: "amd64"
-  - wait
   - <<: *common
     <<: *source_test
     label: ":fire: Smoke tests (ARM64)"
@@ -70,7 +69,6 @@ steps:
     <<: *source_test
     label: ":fire: Smoke race tests"
     command: make smoke-race-tests
-  - wait
 
   # Build everything.
   - <<: *common
@@ -215,7 +213,7 @@ steps:
   # All system call tests.
   - <<: *common
     label: ":toolbox: System call tests (AMD64)"
-    command: "make BAZEL_OPTIONS=--test_tag_filters=$SYSCALL_TEST_FILTERS syscall-tests"
+    command: "make syscall-tests"
     parallelism: 20
     agents:
       <<: *platform_specific_agents

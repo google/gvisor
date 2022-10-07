@@ -103,6 +103,9 @@ def _syscall_test(
     hash15 = hash(native.package_name() + name) % 15
     tags.append("hash15:" + str(hash15))
     tags.append("hash15")
+    hash20 = hash(native.package_name() + name) % 20
+    tags.append("hash20:" + str(hash20))
+    tags.append("hash20")
 
     # Disable off-host networking.
     tags.append("requires-net:loopback")

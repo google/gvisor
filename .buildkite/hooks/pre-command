@@ -27,11 +27,6 @@ fi
 
 set -x
 
-# Setup for parallelization with PARTITION and TOTAL_PARTITIONS.
-export PARTITION=${BUILDKITE_PARALLEL_JOB:-0}
-PARTITION=$((${PARTITION}+1)) # 1-indexed, but PARALLEL_JOB is 0-indexed.
-export TOTAL_PARTITIONS=${BUILDKITE_PARALLEL_JOB_COUNT:-1}
-
 # Set the system-wide Docker runtime name after the BuildKite branch name.
 # Remove any slashes and other characters that are not supported in Docker
 # runtime names. The runtime name must be a single valid path component.
