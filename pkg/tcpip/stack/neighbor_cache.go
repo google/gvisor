@@ -294,19 +294,6 @@ func (n *neighborCache) handleConfirmation(addr tcpip.Address, linkAddr tcpip.Li
 	}
 }
 
-// handleUpperLevelConfirmation processes a confirmation of reachablity from
-// some protocol that operates at a layer above the IP/link layer.
-func (n *neighborCache) handleUpperLevelConfirmation(addr tcpip.Address) {
-	n.mu.RLock()
-	entry, ok := n.mu.cache[addr]
-	n.mu.RUnlock()
-	if ok {
-		entry.mu.Lock()
-		entry.handleUpperLevelConfirmationLocked()
-		entry.mu.Unlock()
-	}
-}
-
 func (n *neighborCache) init(nic *nic, r LinkAddressResolver) {
 	*n = neighborCache{
 		nic:     nic,

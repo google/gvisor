@@ -581,7 +581,7 @@ func (r *Route) IsOutboundBroadcast() bool {
 // "Reachable" is defined as having full-duplex communication between the
 // local and remote ends of the route.
 func (r *Route) ConfirmReachable() {
-	if r.linkRes != nil {
-		r.linkRes.confirmReachable(r.nextHop())
+	if entry := r.getCachedNeighborEntry(); entry != nil {
+		entry.handleUpperLevelConfirmation()
 	}
 }
