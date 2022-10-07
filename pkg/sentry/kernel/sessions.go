@@ -440,6 +440,11 @@ func (tg *ThreadGroup) JoinProcessGroup(pidns *PIDNamespace, pgid ProcessGroupID
 	pidns.owner.mu.Lock()
 	defer pidns.owner.mu.Unlock()
 
+	// Check whether the process still exists or not.
+	if _, ok := pidns.tgids[tg]; !ok {
+		return linuxerr.ESRCH
+	}
+
 	// Lookup the ProcessGroup.
 	pg := pidns.processGroups[pgid]
 	if pg == nil {
