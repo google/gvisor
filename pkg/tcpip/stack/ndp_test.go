@@ -2098,6 +2098,87 @@ func expectAutoGenAddrNewEvent(ndpDisp *ndpDispatcher, addr tcpip.AddressWithPre
 	}
 }
 
+func TestMaxSlaacPrefixes(t *testing.T) {
+	const (
+		nicID = 1
+		// Each SLAAC prefix gets a stable and temporary address.
+		slaacAddrsPerPrefix = 2
+		// Send an extra prefix than what we will discover to make sure we do not
+		// discover the extra prefix.
+		slaacPrefixesInRA = ipv6.MaxDiscoveredSLAACPrefixes + 1
+	)
+
+	ndpDisp := ndpDispatcher{
+		autoGenAddrNewC: make(chan ndpAutoGenAddrNewEvent, slaacPrefixesInRA*slaacAddrsPerPrefix),
+	}
+	e := channel.New(0, 1280, linkAddr1)
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
+			NDPConfigs: ipv6.NDPConfigurations{
+				HandleRAs:                  ipv6.HandlingRAsEnabledWhenForwardingDisabled,
+				AutoGenGlobalAddresses:     true,
+				AutoGenTempGlobalAddresses: true,
+			},
+			NDPDisp: &ndpDisp,
+		})},
+	})
+
+	if err := s.CreateNIC(nicID, e); err != nil {
+		t.Fatalf("CreateNIC(%d) = %s", nicID, err)
+	}
+
+	optSer := make(header.NDPOptionsSerializer, 0, slaacPrefixesInRA)
+	prefixes := [slaacPrefixesInRA]tcpip.Subnet{}
+	for i := 0; i < slaacPrefixesInRA; i++ {
+		prefixAddr := [16]byte{1, 2, 3, 4, 5, 6, 7, byte(i), 0, 0, 0, 0, 0, 0, 0, 0}
+		prefix := tcpip.AddressWithPrefix{
+			Address:   tcpip.Address(prefixAddr[:]),
+			PrefixLen: 64,
+		}
+		prefixes[i] = prefix.Subnet()
+		// Serialize a perfix information option.
+		buf := [30]byte{}
+		buf[0] = uint8(prefix.PrefixLen)
+		// Set the autonomous configuration flag.
+		buf[1] = 64
+		// Set the preferred and valid lifetimes to the maxiumum possible value.
+		binary.BigEndian.PutUint32(buf[2:], math.MaxUint32)
+		binary.BigEndian.PutUint32(buf[6:], math.MaxUint32)
+		if n := copy(buf[14:], prefix.Address); n != len(prefix.Address) {
+			t.Fatalf("got copy(...) = %d, want = %d", n, len(prefix.Address))
+		}
+		optSer = append(optSer, header.NDPPrefixInformation(buf[:]))
+	}
+
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithOpts(llAddr1, 0, optSer))
+	for i := 0; i < slaacPrefixesInRA; i++ {
+		for j := 0; j < slaacAddrsPerPrefix; j++ {
+			if i < ipv6.MaxDiscoveredSLAACPrefixes {
+				select {
+				case e := <-ndpDisp.autoGenAddrNewC:
+					if e.nicID != nicID {
+						t.Errorf("got e.nicID = %d, want = %d", e.nicID, nicID)
+					}
+					if !prefixes[i].Contains(e.addr.Address) {
+						t.Errorf("got prefixes[%d].Contains(%s) = false, want = true", i, e.addr)
+					}
+					if e.addrDisp != nil {
+						t.Error("auto-gen new addr event unexpectedly contains address dispatcher")
+					}
+				default:
+					t.Fatalf("expected auto-gen new addr event; i=%d, j=%d", i, j)
+				}
+			} else {
+				select {
+				case <-ndpDisp.autoGenAddrNewC:
+					t.Fatal("should not have discovered a new auto-gen addr after we already discovered the max number of prefixes")
+				default:
+				}
+			}
+		}
+	}
+}
+
 // TestAutoGenAddr tests that an address is properly generated and invalidated
 // when configured to do so.
 func TestAutoGenAddr(t *testing.T) {

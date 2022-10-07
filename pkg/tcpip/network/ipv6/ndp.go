@@ -97,6 +97,11 @@ const (
 	// prefixes.
 	MaxDiscoveredOnLinkPrefixes = 10
 
+	// MaxDiscoveredSLAACPrefixes is the maximum number of discovered
+	// SLAAC prefixes. The stack will stop discovering new SLAAC
+	// prefixes after discovering MaxDiscoveredSLAACPrefixes SLAAC prefixes.
+	MaxDiscoveredSLAACPrefixes = 10
+
 	// validPrefixLenForAutoGen is the expected prefix length that an
 	// address can be generated for. Must be 64 bits as the interface
 	// identifier (IID) is 64 bits and an IPv6 address is 128 bits, so
@@ -1036,6 +1041,11 @@ func (ndp *ndpState) handleAutonomousPrefixInformation(pi header.NDPPrefixInform
 	// prefix is a new SLAAC prefix. Do the work as outlined by RFC 4862 section
 	// 5.5.3.d if ndp is configured to auto-generate new addresses via SLAAC.
 	if !ndp.configs.AutoGenGlobalAddresses {
+		return
+	}
+
+	// Limit the number of discovered SLAAC prefixes.
+	if len(ndp.slaacPrefixes) == MaxDiscoveredSLAACPrefixes {
 		return
 	}
 
