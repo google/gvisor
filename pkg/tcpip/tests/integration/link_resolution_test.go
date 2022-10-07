@@ -1391,8 +1391,20 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 			if err := listenerEP.Bind(listenerAddr); err != nil {
 				t.Fatalf("listenerEP.Bind(%#v): %s", listenerAddr, err)
 			}
-			if err := listenerEP.Listen(1); err != nil {
-				t.Fatalf("listenerEP.Listen(1): %s", err)
+			// A backlog of 1 results in SYN cookies being used for all passive
+			// connections to make sure the only spot in the accept queue is not
+			// taken by a connection that never completes the handshake. We use
+			// a backlog of 2 to make sure SYN cookies are not used.
+			//
+			// We avoid SYN cookies to make sure that an accepted endpoint is able
+			// to confirm the neighbor's reachability through the cached neighbor
+			// entry in the endpoint's route. When SYN cookies are used, the
+			// accepted endpoint is constructed when the handshake has already been
+			// established and such an endpoint's route will not have a cached
+			// neighbor entry as it was not used to send any of packets for the
+			// handshake.
+			if err := listenerEP.Listen(2); err != nil {
+				t.Fatalf("listenerEP.Listen(2): %s", err)
 			}
 			{
 				err := clientEP.Connect(listenerAddr)

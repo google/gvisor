@@ -30,10 +30,6 @@ type linkResolver struct {
 	neigh neighborCache
 }
 
-func (l *linkResolver) confirmReachable(addr tcpip.Address) {
-	l.neigh.handleUpperLevelConfirmation(addr)
-}
-
 var _ NetworkInterface = (*nic)(nil)
 var _ NetworkDispatcher = (*nic)(nil)
 
