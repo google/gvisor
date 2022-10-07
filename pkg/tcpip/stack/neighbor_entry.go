@@ -592,23 +592,42 @@ func (e *neighborEntry) handleConfirmationLocked(linkAddr tcpip.LinkAddress, fla
 // handleUpperLevelConfirmation processes an incoming upper-level protocol
 // (e.g. TCP acknowledgements) reachability confirmation.
 func (e *neighborEntry) handleUpperLevelConfirmation() {
+	tryHandleConfirmation := func() bool {
+		switch e.mu.neigh.State {
+		case Stale, Delay, Probe:
+			return true
+		case Reachable:
+			// Avoid setStateLocked; Timer.Reset is cheaper.
+			//
+			// Note that setting the timer does not need to be protected by the
+			// entry's write lock since we do not modify the timer pointer, but the
+			// time the timer should fire. The timer should have internal locks to
+			// synchronize timer resets changes with the clock.
+			e.mu.timer.timer.Reset(e.nudState.ReachableTime())
+			return false
+		case Unknown, Incomplete, Unreachable, Static:
+			// Do nothing
+			return false
+		default:
+			panic(fmt.Sprintf("Invalid cache entry state: %s", e.mu.neigh.State))
+		}
+	}
+
+	e.mu.RLock()
+	needsTransition := tryHandleConfirmation()
+	e.mu.RUnlock()
+	if !needsTransition {
+		return
+	}
+
+	// We need to transition the neighbor to Reachable so take the write lock and
+	// perform the transition, but only if we still need the transition since the
+	// state could have changed since we dropped the read lock above.
 	e.mu.Lock()
 	defer e.mu.Unlock()
-
-	switch e.mu.neigh.State {
-	case Stale, Delay, Probe:
+	if needsTransition := tryHandleConfirmation(); needsTransition {
 		e.setStateLocked(Reachable)
 		e.dispatchChangeEventLocked()
-
-	case Reachable:
-		// Avoid setStateLocked; Timer.Reset is cheaper.
-		e.mu.timer.timer.Reset(e.nudState.ReachableTime())
-
-	case Unknown, Incomplete, Unreachable, Static:
-		// Do nothing
-
-	default:
-		panic(fmt.Sprintf("Invalid cache entry state: %s", e.mu.neigh.State))
 	}
 }
 
