@@ -53,6 +53,7 @@ type Route struct {
 
 	// neighborEntry is the cached result of fetching a neighbor entry from the
 	// neighbor cache.
+	// +checklocks:mu
 	neighborEntry *neighborEntry
 }
 
