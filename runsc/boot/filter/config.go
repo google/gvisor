@@ -188,6 +188,7 @@ var allowedSyscalls = seccomp.SyscallRules{
 		},
 	},
 	unix.SYS_MINCORE: {},
+	unix.SYS_MLOCK:   {},
 	unix.SYS_MMAP: []seccomp.Rule{
 		{
 			seccomp.MatchAny{},
@@ -233,6 +234,7 @@ var allowedSyscalls = seccomp.SyscallRules{
 		},
 	},
 	unix.SYS_MPROTECT:  {},
+	unix.SYS_MUNLOCK:   {},
 	unix.SYS_MUNMAP:    {},
 	unix.SYS_NANOSLEEP: {},
 	unix.SYS_PPOLL:     {},

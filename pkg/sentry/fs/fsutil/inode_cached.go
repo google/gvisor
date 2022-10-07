@@ -658,7 +658,7 @@ func (rw *inodeReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 					End:   fs.OffsetPageEnd(int64(gapMR.End)),
 				}
 				optMR := gap.Range()
-				_, err := rw.c.cache.Fill(rw.ctx, reqMR, maxFillRange(reqMR, optMR), uint64(rw.c.attr.Size), mem, usage.PageCache, rw.c.backingFile.ReadToBlocksAt)
+				_, err := rw.c.cache.Fill(rw.ctx, reqMR, maxFillRange(reqMR, optMR), uint64(rw.c.attr.Size), mem, usage.PageCache, false /* populate */, rw.c.backingFile.ReadToBlocksAt)
 				mem.MarkEvictable(rw.c, pgalloc.EvictableRange{optMR.Start, optMR.End})
 				seg, gap = rw.c.cache.Find(uint64(rw.offset))
 				if !seg.Ok() {
@@ -891,7 +891,7 @@ func (c *CachingInodeOperations) Translate(ctx context.Context, required, option
 	}
 
 	mf := c.mfp.MemoryFile()
-	_, cerr := c.cache.Fill(ctx, required, maxFillRange(required, optional), uint64(c.attr.Size), mf, usage.PageCache, c.backingFile.ReadToBlocksAt)
+	_, cerr := c.cache.Fill(ctx, required, maxFillRange(required, optional), uint64(c.attr.Size), mf, usage.PageCache, false /* populate */, c.backingFile.ReadToBlocksAt)
 
 	var ts []memmap.Translation
 	var translatedEnd uint64

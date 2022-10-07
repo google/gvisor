@@ -467,7 +467,7 @@ func (rw *dentryReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) 
 					End:   gapEnd,
 				}
 				optMR := gap.Range()
-				_, err := rw.d.cache.Fill(rw.ctx, reqMR, maxFillRange(reqMR, optMR), rw.d.size.Load(), mf, usage.PageCache, h.readToBlocksAt)
+				_, err := rw.d.cache.Fill(rw.ctx, reqMR, maxFillRange(reqMR, optMR), rw.d.size.Load(), mf, usage.PageCache, true /* populate */, h.readToBlocksAt)
 				mf.MarkEvictable(rw.d, pgalloc.EvictableRange{optMR.Start, optMR.End})
 				seg, gap = rw.d.cache.Find(rw.off)
 				if !seg.Ok() {
@@ -826,7 +826,7 @@ func (d *dentry) Translate(ctx context.Context, required, optional memmap.Mappab
 
 	mf := d.fs.mfp.MemoryFile()
 	h := d.readHandleLocked()
-	_, cerr := d.cache.Fill(ctx, required, maxFillRange(required, optional), d.size.Load(), mf, usage.PageCache, h.readToBlocksAt)
+	_, cerr := d.cache.Fill(ctx, required, maxFillRange(required, optional), d.size.Load(), mf, usage.PageCache, true /* populate */, h.readToBlocksAt)
 
 	var ts []memmap.Translation
 	var translatedEnd uint64
