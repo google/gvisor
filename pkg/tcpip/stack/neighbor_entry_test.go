@@ -1415,12 +1415,12 @@ func TestEntryDelayToReachableWhenUpperLevelConfirmation(t *testing.T) {
 		t.Fatalf("staleToDelay(...) = %s", err)
 	}
 
-	e.mu.Lock()
-	e.handleUpperLevelConfirmationLocked()
+	e.handleUpperLevelConfirmation()
+	e.mu.RLock()
 	if e.mu.neigh.State != Reachable {
 		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Reachable)
 	}
-	e.mu.Unlock()
+	e.mu.RUnlock()
 
 	// No probes should have been sent.
 	runImmediatelyScheduledJobs(clock)

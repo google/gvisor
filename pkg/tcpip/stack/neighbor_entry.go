@@ -589,11 +589,12 @@ func (e *neighborEntry) handleConfirmationLocked(linkAddr tcpip.LinkAddress, fla
 	}
 }
 
-// handleUpperLevelConfirmationLocked processes an incoming upper-level protocol
+// handleUpperLevelConfirmation processes an incoming upper-level protocol
 // (e.g. TCP acknowledgements) reachability confirmation.
-//
-// Precondition: e.mu MUST be locked.
-func (e *neighborEntry) handleUpperLevelConfirmationLocked() {
+func (e *neighborEntry) handleUpperLevelConfirmation() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	switch e.mu.neigh.State {
 	case Stale, Delay, Probe:
 		e.setStateLocked(Reachable)
