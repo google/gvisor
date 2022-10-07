@@ -315,7 +315,7 @@ func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.
 			optional = required
 		}
 	}
-	pagesAlloced, cerr := rf.data.Fill(ctx, required, optional, rf.size.RacyLoad(), rf.memFile, rf.memoryUsageKind, func(_ context.Context, dsts safemem.BlockSeq, _ uint64) (uint64, error) {
+	pagesAlloced, cerr := rf.data.Fill(ctx, required, optional, rf.size.RacyLoad(), rf.memFile, rf.memoryUsageKind, false /* populate */, func(_ context.Context, dsts safemem.BlockSeq, _ uint64) (uint64, error) {
 		// Newly-allocated pages are zeroed, so we don't need to do anything.
 		return dsts.NumBytes(), nil
 	})
@@ -397,7 +397,10 @@ func (fd *regularFileFD) Allocate(ctx context.Context, mode, offset, length uint
 			return linuxerr.ENOSPC
 		}
 	}
-	pagesAlloced, err := f.data.Fill(ctx, required, required, newSize, f.memFile, f.memoryUsageKind, func(_ context.Context, dsts safemem.BlockSeq, _ uint64) (uint64, error) {
+	// Pass populate = true here despite the fact that we don't touch these pages
+	// both for consistency with the expected behavior of fallocate(2) and in
+	// expectation of a future write to them.
+	pagesAlloced, err := f.data.Fill(ctx, required, required, newSize, f.memFile, f.memoryUsageKind, true /* populate */, func(_ context.Context, dsts safemem.BlockSeq, _ uint64) (uint64, error) {
 		// Newly-allocated pages are zeroed, so we don't need to do anything.
 		return dsts.NumBytes(), nil
 	})
