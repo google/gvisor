@@ -30,6 +30,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -571,10 +572,16 @@ func findAvailableRangeBottomUp(usage *usageSet, length, alignment uint64) (memm
 // nearest page. If this is shorter than length bytes due to an error returned
 // by r.ReadToBlocks(), it returns that error.
 //
+// If populate is true, AllocateAndFill will attempt to pre-fault pages in bulk
+// in the safemem.BlockSeq passed to r. Callers that will fill the allocated
+// memory by writing to it in the sentry should pass populate = true to avoid
+// faulting page-by-page. Callers that will fill the allocated memory by
+// invoking host system calls should pass populate = false.
+//
 // Preconditions:
 //   - length > 0.
 //   - length must be page-aligned.
-func (f *MemoryFile) AllocateAndFill(length uint64, kind usage.MemoryKind, r safemem.Reader) (memmap.FileRange, error) {
+func (f *MemoryFile) AllocateAndFill(length uint64, kind usage.MemoryKind, populate bool, r safemem.Reader) (memmap.FileRange, error) {
 	fr, err := f.Allocate(length, AllocOpts{Kind: kind})
 	if err != nil {
 		return memmap.FileRange{}, err
@@ -583,6 +590,18 @@ func (f *MemoryFile) AllocateAndFill(length uint64, kind usage.MemoryKind, r saf
 	if err != nil {
 		f.DecRef(fr)
 		return memmap.FileRange{}, err
+	}
+	if populate && canPopulate() {
+		rem := dsts
+		for {
+			if !tryPopulate(rem.Head()) {
+				break
+			}
+			rem = rem.Tail()
+			if rem.IsEmpty() {
+				break
+			}
+		}
 	}
 	n, err := safemem.ReadFullToBlocks(r, dsts)
 	un := uint64(hostarch.Addr(n).RoundDown())
@@ -593,6 +612,43 @@ func (f *MemoryFile) AllocateAndFill(length uint64, kind usage.MemoryKind, r saf
 		fr.End = fr.Start + un
 	}
 	return fr, err
+}
+
+var mlockDisabled atomicbitops.Uint32
+
+func canPopulate() bool {
+	return mlockDisabled.Load() == 0
+}
+
+func tryPopulate(b safemem.Block) bool {
+	// Call mlock to populate pages, then munlock to cancel the mlock (but keep
+	// the pages populated). Only do so for hugepage-aligned address ranges to
+	// ensure that splitting the VMA in mlock doesn't split any existing
+	// hugepages. This assumes that two host syscalls, plus the MM overhead of
+	// mlock + munlock, is faster on average than trapping for
+	// HugePageSize/PageSize small page faults.
+	start, ok := hostarch.Addr(b.Addr()).HugeRoundUp()
+	if !ok {
+		return true
+	}
+	end := hostarch.Addr(b.Addr() + uintptr(b.Len())).HugeRoundDown()
+	if start >= end {
+		return true
+	}
+	_, _, errno := unix.Syscall(unix.SYS_MLOCK, uintptr(start), uintptr(end-start), 0)
+	unix.RawSyscall(unix.SYS_MUNLOCK, uintptr(start), uintptr(end-start), 0)
+	if errno != 0 {
+		if errno == unix.ENOMEM || errno == unix.EPERM {
+			// These errors are expected from hitting non-zero RLIMIT_MEMLOCK, or
+			// hitting zero RLIMIT_MEMLOCK without CAP_IPC_LOCK, respectively.
+			log.Infof("Disabling pgalloc.MemoryFile.AllocateAndFill pre-population: mlock failed: %s", errno)
+		} else {
+			log.Warningf("Disabling pgalloc.MemoryFile.AllocateAndFill pre-population: mlock failed: %s", errno)
+		}
+		mlockDisabled.Store(1)
+		return false
+	}
+	return true
 }
 
 // fallocate(2) modes, defined in Linux's include/uapi/linux/falloc.h.
