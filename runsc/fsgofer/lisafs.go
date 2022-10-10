@@ -677,15 +677,6 @@ func (fd *controlFDLisa) Connect(sockType uint32) (int, error) {
 		return -1, unix.EPERM
 	}
 
-	// TODO(gvisor.dev/issue/1003): Due to different app vs replacement
-	// mappings, the app path may have fit in the sockaddr, but we can't fit
-	// hostPath in our sockaddr. We'd need to redirect through a shorter path
-	// in order to actually connect to this socket.
-	hostPath := fd.Node().FilePath()
-	if len(hostPath) >= unixPathMax {
-		return -1, unix.EINVAL
-	}
-
 	if !isSockTypeSupported(sockType) {
 		return -1, unix.ENXIO
 	}
@@ -695,7 +686,10 @@ func (fd *controlFDLisa) Connect(sockType uint32) (int, error) {
 		return -1, err
 	}
 
-	sa := unix.SockaddrUnix{Name: hostPath}
+	// Use /proc/self/fd to refer to the socket file. This is faster and more
+	// secure because it avoids the host path walk. It also helps avoid the
+	// UNIX_PATH_MAX bytes limit on the path, in case path is too long.
+	sa := unix.SockaddrUnix{Name: filepath.Join("/proc/self/fd", strconv.Itoa(fd.hostFD))}
 	if err := unix.Connect(sock, &sa); err != nil {
 		unix.Close(sock)
 		return -1, err
@@ -707,19 +701,6 @@ func (fd *controlFDLisa) Connect(sockType uint32) (int, error) {
 func (fd *controlFDLisa) BindAt(name string, sockType uint32, mode linux.FileMode, uid lisafs.UID, gid lisafs.GID) (*lisafs.ControlFD, linux.Statx, *lisafs.BoundSocketFD, int, error) {
 	if !fd.Conn().ServerImpl().(*LisafsServer).config.HostUDS {
 		return nil, linux.Statx{}, nil, -1, unix.EPERM
-	}
-
-	// Because there is no "bindat" syscall in Linux, we must create an
-	// absolute path to the socket we are creating,
-	socketPath := filepath.Join(fd.Node().FilePath(), name)
-
-	// TODO(gvisor.dev/issue/1003): Due to different app vs replacement
-	// mappings, the app path may have fit in the sockaddr, but we can't fit
-	// hostPath in our sockaddr. We'd need to redirect through a shorter path
-	// in order to actually connect to this socket.
-	if len(socketPath) >= unixPathMax {
-		log.Warningf("BindAt called with name too long: %q (len=%d)", socketPath, len(socketPath))
-		return nil, linux.Statx{}, nil, -1, unix.EINVAL
 	}
 
 	// Only the following types are supported.
@@ -744,6 +725,11 @@ func (fd *controlFDLisa) BindAt(name string, sockType uint32, mode linux.FileMod
 		return nil, linux.Statx{}, nil, -1, err
 	}
 
+	// Because there is no "bindat" syscall in Linux, we must create an
+	// absolute path to the socket we are creating. But go through /proc/self/fd
+	// to avoid host path walk of the entire host path. It also helps avoid the
+	// UNIX_PATH_MAX bytes limit on the path, in case path is too long.
+	socketPath := filepath.Join("/proc/self/fd", strconv.Itoa(fd.hostFD), name)
 	if err := unix.Bind(sockFD, &unix.SockaddrUnix{Name: socketPath}); err != nil {
 		return nil, linux.Statx{}, nil, -1, err
 	}
