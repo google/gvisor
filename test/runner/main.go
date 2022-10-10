@@ -43,6 +43,7 @@ import (
 
 var (
 	debug              = flag.Bool("debug", false, "enable debug logs")
+	oneSandbox         = flag.Bool("one-sandbox", false, "run all test cases in one sandbox")
 	strace             = flag.Bool("strace", false, "enable strace logs")
 	platform           = flag.String("platform", "ptrace", "platform to run on")
 	platformSupport    = flag.String("platform-support", "", "String passed to the test as GVISOR_PLATFORM_SUPPORT environment variable. Used to determine which syscall tests are expected to work with the current platform.")
@@ -80,7 +81,7 @@ func getSetupContainerPath() string {
 }
 
 // runTestCaseNative runs the test case directly on the host machine.
-func runTestCaseNative(testBin string, tc gtest.TestCase, t *testing.T) {
+func runTestCaseNative(testBin string, tc *gtest.TestCase, args []string, t *testing.T) {
 	// These tests might be running in parallel, so make sure they have a
 	// unique test temp dir.
 	tmpDir, err := ioutil.TempDir(testutil.TmpDir(), "")
@@ -125,7 +126,11 @@ func runTestCaseNative(testBin string, tc gtest.TestCase, t *testing.T) {
 		env = append(env, fmt.Sprintf("%s=%s", platformSupportEnvVar, *platformSupport))
 	}
 
-	cmd := exec.Command(testBin, tc.Args()...)
+	if args == nil {
+		args = tc.Args()
+	}
+
+	cmd := exec.Command(testBin, args...)
 	cmd.Env = env
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -169,7 +174,7 @@ func runTestCaseNative(testBin string, tc gtest.TestCase, t *testing.T) {
 // runsc logs will be saved to a path in TEST_UNDECLARED_OUTPUTS_DIR.
 //
 // Returns an error if the sandboxed application exits non-zero.
-func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
+func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 	bundleDir, cleanup, err := testutil.SetupBundleDir(spec)
 	if err != nil {
 		return fmt.Errorf("SetupBundleDir failed: %v", err)
@@ -372,10 +377,13 @@ func setupUDSTree(spec *specs.Spec) (cleanup func(), err error) {
 }
 
 // runsTestCaseRunsc runs the test case in runsc.
-func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
+func runTestCaseRunsc(testBin string, tc *gtest.TestCase, args []string, t *testing.T) {
 	// Run a new container with the test executable and filter for the
 	// given test suite and name.
-	spec := testutil.NewSpecWithArgs(append([]string{testBin}, tc.Args()...)...)
+	if args == nil {
+		args = tc.Args()
+	}
+	spec := testutil.NewSpecWithArgs(append([]string{testBin}, args...)...)
 
 	// Mark the root as writeable, as some tests attempt to
 	// write to the rootfs, and expect EACCES, not EROFS.
@@ -550,23 +558,44 @@ func main() {
 		fatalf("Abs() failed: %v", err)
 	}
 
-	// Run the tests.
 	var tests []testing.InternalTest
-	for _, tci := range indices {
-		// Capture tc.
-		tc := testCases[tci]
+	if *oneSandbox {
+		tc := gtest.TestCase{
+			Suite: "main",
+			Name:  "test",
+		}
+
 		tests = append(tests, testing.InternalTest{
 			Name: fmt.Sprintf("%s_%s", tc.Suite, tc.Name),
 			F: func(t *testing.T) {
+				args := gtest.BuildTestArgs(indices, testCases)
 				if *platform == "native" {
 					// Run the test case on host.
-					runTestCaseNative(testBin, tc, t)
+					runTestCaseNative(testBin, &tc, args, t)
 				} else {
 					// Run the test case in runsc.
-					runTestCaseRunsc(testBin, tc, t)
+					runTestCaseRunsc(testBin, &tc, args, t)
 				}
 			},
 		})
+	} else {
+		// Run the tests.
+		for _, tci := range indices {
+			// Capture tc.
+			tc := testCases[tci]
+			tests = append(tests, testing.InternalTest{
+				Name: fmt.Sprintf("%s_%s", tc.Suite, tc.Name),
+				F: func(t *testing.T) {
+					if *platform == "native" {
+						// Run the test case on host.
+						runTestCaseNative(testBin, &tc, nil, t)
+					} else {
+						// Run the test case in runsc.
+						runTestCaseRunsc(testBin, &tc, nil, t)
+					}
+				},
+			})
+		}
 	}
 
 	testing.Main(matchString, tests, nil, nil)

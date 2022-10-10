@@ -72,6 +72,7 @@ def _syscall_test(
         lisafs = True,
         fuse = False,
         container = None,
+        one_sandbox = True,
         **kwargs):
     # Prepend "runsc" to non-native platform names.
     full_platform = platform if platform == "native" else "runsc_" + platform
@@ -143,6 +144,7 @@ def _syscall_test(
         "--strace=" + str(debug),
         "--debug=" + str(debug),
         "--container=" + str(container),
+        "--one-sandbox=" + str(one_sandbox),
     ]
 
     # Trace points are platform agnostic, so enable them for ptrace only.
@@ -170,6 +172,7 @@ def syscall_test(
         add_overlay = False,
         add_uds_tree = False,
         add_hostinet = False,
+        one_sandbox = True,
         fuse = False,
         allow_native = True,
         debug = True,
@@ -204,6 +207,7 @@ def syscall_test(
             tags = tags,
             debug = debug,
             container = container,
+            one_sandbox = one_sandbox,
             **kwargs
         )
 
@@ -217,6 +221,7 @@ def syscall_test(
             fuse = fuse,
             debug = debug,
             container = container,
+            one_sandbox = one_sandbox,
             **kwargs
         )
 
@@ -230,6 +235,7 @@ def syscall_test(
         debug = debug,
         fuse = fuse,
         container = container,
+        one_sandbox = one_sandbox,
         lisafs = False,
         **kwargs
     )
@@ -243,6 +249,7 @@ def syscall_test(
             debug = debug,
             fuse = fuse,
             container = container,
+            one_sandbox = one_sandbox,
             overlay = True,
             **kwargs
         )
@@ -257,6 +264,7 @@ def syscall_test(
             debug = debug,
             fuse = fuse,
             container = container,
+            one_sandbox = one_sandbox,
             **kwargs
         )
     if not use_tmpfs:
@@ -269,6 +277,7 @@ def syscall_test(
             tags = platforms.get(default_platform, []) + tags,
             debug = debug,
             container = container,
+            one_sandbox = one_sandbox,
             file_access = "shared",
             fuse = fuse,
             **kwargs

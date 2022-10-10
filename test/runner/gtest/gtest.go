@@ -179,3 +179,36 @@ func ParseBenchmarks(binary string, extraArgs ...string) ([]TestCase, error) {
 	}
 	return t, nil
 }
+
+// BuildTestArgs builds arguments to be passed to the test binary to execute
+// only the test cases in `indices`.
+func BuildTestArgs(indices []int, testCases []TestCase) []string {
+	var testFilter, benchFilter string
+	for _, tci := range indices {
+		tc := testCases[tci]
+		if tc.all {
+			// No argument will make all tests run.
+			return nil
+		}
+		if tc.benchmark {
+			if len(benchFilter) > 0 {
+				benchFilter += "|"
+			}
+			benchFilter += "^" + tc.Name + "$"
+		} else {
+			if len(testFilter) > 0 {
+				testFilter += ":"
+			}
+			testFilter += tc.FullName()
+		}
+	}
+
+	var args []string
+	if len(testFilter) > 0 {
+		args = append(args, fmt.Sprintf("%s=%s", filterTestFlag, testFilter))
+	}
+	if len(benchFilter) > 0 {
+		args = append(args, fmt.Sprintf("%s=%s", filterBenchmarkFlag, benchFilter))
+	}
+	return args
+}
