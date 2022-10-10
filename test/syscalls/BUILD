@@ -58,6 +58,7 @@ syscall_test(
 )
 
 syscall_test(
+    one_sandbox = False,
     test = "//test/syscalls/linux:cgroup_test",
 )
 
@@ -108,6 +109,7 @@ syscall_test(
 
 syscall_test(
     add_uds_tree = True,
+    one_sandbox = False,
     test = "//test/syscalls/linux:connect_external_test",
     use_tmpfs = True,
 )
@@ -449,6 +451,7 @@ syscall_test(
 
 syscall_test(
     container = True,
+    one_sandbox = False,
     test = "//test/syscalls/linux:proc_isolated_test",
 )
 
@@ -675,6 +678,7 @@ syscall_test(
 syscall_test(
     size = "large",
     container = True,
+    one_sandbox = False,
     shard_count = most_shards,
     test = "//test/syscalls/linux:socket_inet_loopback_isolated_test",
 )
