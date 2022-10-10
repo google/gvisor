@@ -47,9 +47,6 @@ const (
 	openFlags = unix.O_NOFOLLOW | unix.O_CLOEXEC
 
 	allowedOpenFlags = unix.O_TRUNC
-
-	// UNIX_PATH_MAX as defined in include/uapi/linux/un.h.
-	unixPathMax = 108
 )
 
 // join is equivalent to path.Join() but skips path.Clean() which is expensive.
@@ -1120,15 +1117,6 @@ func (l *localFile) Bind(sockType uint32, sockName string, uid p9.UID, gid p9.GI
 		return nil, p9.QID{}, p9.AttrMask{}, p9.Attr{}, unix.EPERM
 	}
 
-	// TODO(gvisor.dev/issue/1003): Due to different app vs replacement
-	// mappings, the app path may have fit in the sockaddr, but we can't
-	// fit f.path in our sockaddr. We'd need to redirect through a shorter
-	// path in order to actually connect to this socket.
-	sockPath := path.Join(l.hostPath, sockName)
-	if len(sockPath) >= unixPathMax {
-		return nil, p9.QID{}, p9.AttrMask{}, p9.Attr{}, unix.EINVAL
-	}
-
 	// Create socket only for supported types.
 	if !isSockTypeSupported(sockType) {
 		return nil, p9.QID{}, p9.AttrMask{}, p9.Attr{}, unix.ENXIO
@@ -1137,6 +1125,12 @@ func (l *localFile) Bind(sockType uint32, sockName string, uid p9.UID, gid p9.GI
 	if err != nil {
 		return nil, p9.QID{}, p9.AttrMask{}, p9.Attr{}, extractErrno(err)
 	}
+
+	// Because there is no "bindat" syscall in Linux, we must create an
+	// absolute path to the socket we are creating. But go through /proc/self/fd
+	// to avoid host path walk of the entire host path. It also helps avoid the
+	// UNIX_PATH_MAX bytes limit on the path, in case path is too long.
+	sockPath := filepath.Join("/proc/self/fd", strconv.Itoa(l.file.FD()), sockName)
 
 	// Revert operations on error paths.
 	didBind := false
@@ -1189,14 +1183,6 @@ func (l *localFile) Connect(socketType p9.SocketType) (*fd.FD, error) {
 		return nil, unix.ECONNREFUSED
 	}
 
-	// TODO(gvisor.dev/issue/1003): Due to different app vs replacement
-	// mappings, the app path may have fit in the sockaddr, but we can't
-	// fit f.path in our sockaddr. We'd need to redirect through a shorter
-	// path in order to actually connect to this socket.
-	if len(l.hostPath) >= unixPathMax {
-		return nil, unix.ECONNREFUSED
-	}
-
 	stype, ok := socketType.ToLinux()
 	if !ok {
 		return nil, unix.ENXIO
@@ -1212,7 +1198,10 @@ func (l *localFile) Connect(socketType p9.SocketType) (*fd.FD, error) {
 		return nil, err
 	}
 
-	sa := unix.SockaddrUnix{Name: l.hostPath}
+	// Use /proc/self/fd to refer to the socket file. This is faster and more
+	// secure because it avoids the host path walk. It also helps avoid the
+	// UNIX_PATH_MAX bytes limit on the path, in case path is too long.
+	sa := unix.SockaddrUnix{Name: filepath.Join("/proc/self/fd", strconv.Itoa(l.file.FD()))}
 	if err := unix.Connect(f, &sa); err != nil {
 		_ = unix.Close(f)
 		return nil, err
