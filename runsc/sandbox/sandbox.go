@@ -550,8 +550,10 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 			test = t
 		}
 	}
-	if err := donations.DonateDebugLogFile("debug-log-fd", conf.DebugLog, "boot", test); err != nil {
-		return err
+	if specutils.IsDebugCommand(conf, "boot") {
+		if err := donations.DonateDebugLogFile("debug-log-fd", conf.DebugLog, "boot", test); err != nil {
+			return err
+		}
 	}
 	if err := donations.DonateDebugLogFile("panic-log-fd", conf.PanicLog, "panic", test); err != nil {
 		return err
