@@ -20,7 +20,7 @@
 //
 //	Kernel.extMu
 //		ThreadGroup.timerMu
-//		  ktime.Timer.mu (for kernelCPUClockTicker and IntervalTimer)
+//		  ktime.Timer.mu (for IntervalTimer) and Kernel.cpuClockMu
 //		    TaskSet.mu
 //		      SignalHandlers.mu
 //		        Task.mu
@@ -183,12 +183,6 @@ type Kernel struct {
 	// syslog is the kernel log.
 	syslog syslog
 
-	// runningTasksMu synchronizes disable/enable of cpuClockTicker when
-	// the kernel is idle (runningTasks == 0).
-	//
-	// runningTasksMu is used to exclude critical sections when the timer
-	// disables itself and when the first active task enables the timer,
-	// ensuring that tasks always see a valid cpuClock value.
 	runningTasksMu runningTasksMutex `state:"nosave"`
 
 	// runningTasks is the total count of tasks currently in
@@ -199,36 +193,46 @@ type Kernel struct {
 	// further protected by runningTasksMu (see incRunningTasks).
 	runningTasks atomicbitops.Int64
 
-	// cpuClock is incremented every linux.ClockTick. cpuClock is used to
-	// measure task CPU usage, since sampling monotonicClock twice on every
-	// syscall turns out to be unreasonably expensive. This is similar to how
-	// Linux does task CPU accounting on x86 (CONFIG_IRQ_TIME_ACCOUNTING),
-	// although Linux also uses scheduler timing information to improve
-	// resolution (kernel/sched/cputime.c:cputime_adjust()), which we can't do
-	// since "preeemptive" scheduling is managed by the Go runtime, which
-	// doesn't provide this information.
+	// runningTasksCond is signaled when runningTasks is incremented from 0 to 1.
+	//
+	// Invariant: runningTasksCond.L == &runningTasksMu.
+	runningTasksCond sync.Cond `state:"nosave"`
+
+	// cpuClock is incremented every linux.ClockTick by a goroutine running
+	// kernel.runCPUClockTicker() while runningTasks != 0.
+	//
+	// cpuClock is used to measure task CPU usage, since sampling monotonicClock
+	// twice on every syscall turns out to be unreasonably expensive. This is
+	// similar to how Linux does task CPU accounting on x86
+	// (CONFIG_IRQ_TIME_ACCOUNTING), although Linux also uses scheduler timing
+	// information to improve resolution
+	// (kernel/sched/cputime.c:cputime_adjust()), which we can't do since
+	// "preeemptive" scheduling is managed by the Go runtime, which doesn't
+	// provide this information.
 	//
 	// cpuClock is mutable, and is accessed using atomic memory operations.
 	cpuClock atomicbitops.Uint64
 
-	// cpuClockTicker increments cpuClock.
-	cpuClockTicker *ktime.Timer `state:"nosave"`
+	// cpuClockMu is used to make increments of cpuClock, and updates of timers
+	// based on cpuClock, atomic.
+	cpuClockMu cpuClockMutex `state:"nosave"`
 
-	// cpuClockTickerDisabled indicates that cpuClockTicker has been
-	// disabled because no tasks are running.
+	// cpuClockTickerRunning is true if the goroutine that increments cpuClock is
+	// running and false if it is blocked in runningTasksCond.Wait() or if it
+	// never started.
 	//
-	// cpuClockTickerDisabled is protected by runningTasksMu.
-	cpuClockTickerDisabled bool
+	// cpuClockTickerRunning is protected by runningTasksMu.
+	cpuClockTickerRunning bool
 
-	// cpuClockTickerSetting is the ktime.Setting of cpuClockTicker at the
-	// point it was disabled. It is cached here to avoid a lock ordering
-	// violation with cpuClockTicker.mu when runningTaskMu is held.
+	// cpuClockTickerWakeCh is sent to to wake the goroutine that increments
+	// cpuClock if it's sleeping between ticks.
+	cpuClockTickerWakeCh chan struct{} `state:"nosave"`
+
+	// cpuClockTickerStopCond is broadcast when cpuClockTickerRunning transitions
+	// from true to false.
 	//
-	// cpuClockTickerSetting is only valid when cpuClockTickerDisabled is
-	// true.
-	//
-	// cpuClockTickerSetting is protected by runningTasksMu.
-	cpuClockTickerSetting ktime.Setting
+	// Invariant: cpuClockTickerStopCond.L == &runningTasksMu.
+	cpuClockTickerStopCond sync.Cond `state:"nosave"`
 
 	// uniqueID is used to generate unique identifiers.
 	//
@@ -411,6 +415,9 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	if k.rootNetworkNamespace == nil {
 		k.rootNetworkNamespace = inet.NewRootNamespace(nil, nil)
 	}
+	k.runningTasksCond.L = &k.runningTasksMu
+	k.cpuClockTickerWakeCh = make(chan struct{}, 1)
+	k.cpuClockTickerStopCond.L = &k.runningTasksMu
 	k.applicationCores = args.ApplicationCores
 	if args.UseHostCores {
 		k.useHostCores = true
@@ -679,6 +686,10 @@ func (k *Kernel) invalidateUnsavableMappings(ctx context.Context) error {
 // LoadFrom returns a new Kernel loaded from args.
 func (k *Kernel) LoadFrom(ctx context.Context, r wire.Reader, timeReady chan struct{}, net inet.Stack, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions) error {
 	loadStart := time.Now()
+
+	k.runningTasksCond.L = &k.runningTasksMu
+	k.cpuClockTickerWakeCh = make(chan struct{}, 1)
+	k.cpuClockTickerStopCond.L = &k.runningTasksMu
 
 	initAppCores := k.applicationCores
 
@@ -1119,11 +1130,10 @@ func (k *Kernel) Start() error {
 	}
 
 	k.started = true
-	k.cpuClockTicker = ktime.NewTimer(k.timekeeper.monotonicClock, newKernelCPUClockTicker(k))
-	k.cpuClockTicker.Swap(ktime.Setting{
-		Enabled: true,
-		Period:  linux.ClockTick,
-	})
+	k.runningTasksMu.Lock()
+	k.cpuClockTickerRunning = true
+	k.runningTasksMu.Unlock()
+	go k.runCPUClockTicker()
 	// If k was created by LoadKernelFrom, timers were stopped during
 	// Kernel.SaveTo and need to be resumed. If k was created by NewKernel,
 	// this is a no-op.
@@ -1150,11 +1160,18 @@ func (k *Kernel) Start() error {
 //   - Any task goroutines running in k must be stopped.
 //   - k.extMu must be locked.
 func (k *Kernel) pauseTimeLocked(ctx context.Context) {
-	// k.cpuClockTicker may be nil since Kernel.SaveTo() may be called before
-	// Kernel.Start().
-	if k.cpuClockTicker != nil {
-		k.cpuClockTicker.Pause()
+	// Since all task goroutines have been stopped by precondition, the CPU clock
+	// ticker should stop on its own; wait for it to do so, waking it up from
+	// sleeping betwen ticks if necessary.
+	k.runningTasksMu.Lock()
+	for k.cpuClockTickerRunning {
+		select {
+		case k.cpuClockTickerWakeCh <- struct{}{}:
+		default:
+		}
+		k.cpuClockTickerStopCond.Wait()
 	}
+	k.runningTasksMu.Unlock()
 
 	// By precondition, nothing else can be interacting with PIDNamespace.tids
 	// or FDTable.files, so we can iterate them without synchronization. (We
@@ -1195,9 +1212,8 @@ func (k *Kernel) pauseTimeLocked(ctx context.Context) {
 //   - Any task goroutines running in k must be stopped.
 //   - k.extMu must be locked.
 func (k *Kernel) resumeTimeLocked(ctx context.Context) {
-	if k.cpuClockTicker != nil {
-		k.cpuClockTicker.Resume()
-	}
+	// The CPU clock ticker will automatically resume as task goroutines resume
+	// execution.
 
 	k.timekeeper.ResumeUpdates()
 	for t := range k.tasks.Root.tids {
@@ -1236,73 +1252,10 @@ func (k *Kernel) incRunningTasks() {
 
 		// Transition from 0 -> 1. Synchronize with other transitions and timer.
 		k.runningTasksMu.Lock()
-		tasks = k.runningTasks.Load()
-		if tasks != 0 {
-			// We're no longer the first task, no need to
-			// re-enable.
-			k.runningTasks.Add(1)
-			k.runningTasksMu.Unlock()
-			return
+		if k.runningTasks.Add(1) == 1 {
+			k.runningTasksCond.Signal()
 		}
-
-		if !k.cpuClockTickerDisabled {
-			// Timer was never disabled.
-			k.runningTasks.Store(1)
-			k.runningTasksMu.Unlock()
-			return
-		}
-
-		// We need to update cpuClock for all of the ticks missed while we
-		// slept, and then re-enable the timer.
-		//
-		// The Notify in Swap isn't sufficient. kernelCPUClockTicker.Notify
-		// always increments cpuClock by 1 regardless of the number of
-		// expirations as a heuristic to avoid over-accounting in cases of CPU
-		// throttling.
-		//
-		// We want to cover the normal case, when all time should be accounted,
-		// so we increment for all expirations. Throttling is less concerning
-		// here because the ticker is only disabled from Notify. This means
-		// that Notify must schedule and compensate for the throttled period
-		// before the timer is disabled. Throttling while the timer is disabled
-		// doesn't matter, as nothing is running or reading cpuClock anyways.
-		//
-		// S/R also adds complication, as there are two cases. Recall that
-		// monotonicClock will jump forward on restore.
-		//
-		// 1. If the ticker is enabled during save, then on Restore Notify is
-		// called with many expirations, covering the time jump, but cpuClock
-		// is only incremented by 1.
-		//
-		// 2. If the ticker is disabled during save, then after Restore the
-		// first wakeup will call this function and cpuClock will be
-		// incremented by the number of expirations across the S/R.
-		//
-		// These cause very different value of cpuClock. But again, since
-		// nothing was running while the ticker was disabled, those differences
-		// don't matter.
-		setting, exp := k.cpuClockTickerSetting.At(k.timekeeper.monotonicClock.Now())
-		if exp > 0 {
-			k.cpuClock.Add(exp)
-		}
-
-		// Now that cpuClock is updated it is safe to allow other tasks to
-		// transition to running.
-		k.runningTasks.Store(1)
-
-		// N.B. we must unlock before calling Swap to maintain lock ordering.
-		//
-		// cpuClockTickerDisabled need not wait until after Swap to become
-		// true. It is sufficient that the timer *will* be enabled.
-		k.cpuClockTickerDisabled = false
 		k.runningTasksMu.Unlock()
-
-		// This won't call Notify (unless it's been ClockTick since setting.At
-		// above). This means we skip the thread group work in Notify. However,
-		// since nothing was running while we were disabled, none of the timers
-		// could have expired.
-		k.cpuClockTicker.Swap(setting)
-
 		return
 	}
 }

@@ -68,42 +68,32 @@ func (t *Task) Setitimer(id int32, newitv linux.ItimerVal) (linux.ItimerVal, err
 		tm, olds = t.tg.itimerRealTimer.Swap(news)
 	case linux.ITIMER_VIRTUAL:
 		c := t.tg.UserCPUClock()
-		var err error
-		t.k.cpuClockTicker.Atomically(func() {
-			tm = c.Now()
-			var news ktime.Setting
-			news, err = ktime.SettingFromSpecAt(newitv.Value.ToDuration(), newitv.Interval.ToDuration(), tm)
-			if err != nil {
-				return
-			}
-			t.tg.signalHandlers.mu.Lock()
-			olds = t.tg.itimerVirtSetting
-			t.tg.itimerVirtSetting = news
-			t.tg.updateCPUTimersEnabledLocked()
-			t.tg.signalHandlers.mu.Unlock()
-		})
+		t.k.cpuClockMu.Lock()
+		defer t.k.cpuClockMu.Unlock()
+		tm = c.Now()
+		news, err := ktime.SettingFromSpecAt(newitv.Value.ToDuration(), newitv.Interval.ToDuration(), tm)
 		if err != nil {
 			return linux.ItimerVal{}, err
 		}
+		t.tg.signalHandlers.mu.Lock()
+		olds = t.tg.itimerVirtSetting
+		t.tg.itimerVirtSetting = news
+		t.tg.updateCPUTimersEnabledLocked()
+		t.tg.signalHandlers.mu.Unlock()
 	case linux.ITIMER_PROF:
 		c := t.tg.CPUClock()
-		var err error
-		t.k.cpuClockTicker.Atomically(func() {
-			tm = c.Now()
-			var news ktime.Setting
-			news, err = ktime.SettingFromSpecAt(newitv.Value.ToDuration(), newitv.Interval.ToDuration(), tm)
-			if err != nil {
-				return
-			}
-			t.tg.signalHandlers.mu.Lock()
-			olds = t.tg.itimerProfSetting
-			t.tg.itimerProfSetting = news
-			t.tg.updateCPUTimersEnabledLocked()
-			t.tg.signalHandlers.mu.Unlock()
-		})
+		t.k.cpuClockMu.Lock()
+		defer t.k.cpuClockMu.Unlock()
+		tm = c.Now()
+		news, err := ktime.SettingFromSpecAt(newitv.Value.ToDuration(), newitv.Interval.ToDuration(), tm)
 		if err != nil {
 			return linux.ItimerVal{}, err
 		}
+		t.tg.signalHandlers.mu.Lock()
+		olds = t.tg.itimerProfSetting
+		t.tg.itimerProfSetting = news
+		t.tg.updateCPUTimersEnabledLocked()
+		t.tg.signalHandlers.mu.Unlock()
 	default:
 		return linux.ItimerVal{}, linuxerr.EINVAL
 	}
