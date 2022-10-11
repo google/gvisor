@@ -29,6 +29,8 @@ type FlagSet = flag.FlagSet
 var (
 	Bool        = flag.Bool
 	CommandLine = flag.CommandLine
+	Duration    = flag.Duration
+	Float64     = flag.Float64
 	Int         = flag.Int
 	Int64       = flag.Int64
 	NewFlagSet  = flag.NewFlagSet
@@ -36,6 +38,7 @@ var (
 	String      = flag.String
 	StringVar   = flag.StringVar
 	Uint        = flag.Uint
+	Uint64      = flag.Uint64
 	Var         = flag.Var
 )
 
