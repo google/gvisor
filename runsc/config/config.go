@@ -53,6 +53,11 @@ type Config struct {
 	// DebugLog is the path to log debug information to, if not empty.
 	DebugLog string `flag:"debug-log"`
 
+	// DebugCommand is a comma-separated list of commands to be debugged if
+	// --debug-log is also set. Empty means debug all. "!" negates the expression.
+	// E.g. "create,start" or "!boot,events".
+	DebugCommand string `flag:"debug-command"`
+
 	// PanicLog is the path to log GO's runtime messages, if not empty.
 	PanicLog string `flag:"panic-log"`
 
