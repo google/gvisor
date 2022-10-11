@@ -871,8 +871,10 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 				test = t
 			}
 		}
-		if err := donations.DonateDebugLogFile("debug-log-fd", conf.DebugLog, "gofer", test); err != nil {
-			return nil, nil, err
+		if specutils.IsDebugCommand(conf, "gofer") {
+			if err := donations.DonateDebugLogFile("debug-log-fd", conf.DebugLog, "gofer", test); err != nil {
+				return nil, nil, err
+			}
 		}
 	}
 

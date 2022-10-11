@@ -412,6 +412,28 @@ func DebugLogFile(logPattern, command, test string) (*os.File, error) {
 	return os.OpenFile(logPattern, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0664)
 }
 
+// IsDebugCommand returns true if the command should be debugged or not, based
+// on the current configuration.
+func IsDebugCommand(conf *config.Config, command string) bool {
+	if len(conf.DebugCommand) == 0 {
+		// Debug everything by default.
+		return true
+	}
+	filter := conf.DebugCommand
+	rv := true
+	if filter[0] == '!' {
+		// Negate the match, e.g. !boot should log all, but "boot".
+		filter = filter[1:]
+		rv = false
+	}
+	for _, cmd := range strings.Split(filter, ",") {
+		if cmd == command {
+			return rv
+		}
+	}
+	return !rv
+}
+
 // SafeSetupAndMount creates the mount point and calls Mount with the given
 // flags. procPath is the path to procfs. If it is "", procfs is assumed to be
 // mounted at /proc.

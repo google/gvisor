@@ -147,8 +147,10 @@ func Main(version string) {
 	// propagate it to child processes.
 	refs.SetLeakMode(conf.ReferenceLeak)
 
+	subcommand := flag.CommandLine.Arg(0)
+
 	// Set up logging.
-	if conf.Debug {
+	if conf.Debug && specutils.IsDebugCommand(conf, subcommand) {
 		log.SetLevel(log.Debug)
 	}
 
@@ -164,15 +166,13 @@ func Main(version string) {
 	// case that does not occur.
 	_ = time.Local.String()
 
-	subcommand := flag.CommandLine.Arg(0)
-
 	var e log.Emitter
 	if *debugLogFD > -1 {
 		f := os.NewFile(uintptr(*debugLogFD), "debug log file")
 
 		e = newEmitter(conf.DebugLogFormat, f)
 
-	} else if conf.DebugLog != "" {
+	} else if len(conf.DebugLog) > 0 && specutils.IsDebugCommand(conf, subcommand) {
 		f, err := specutils.DebugLogFile(conf.DebugLog, subcommand, "" /* name */)
 		if err != nil {
 			util.Fatalf("error opening debug log file in %q: %v", conf.DebugLog, err)
