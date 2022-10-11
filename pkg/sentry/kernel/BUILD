@@ -5,6 +5,13 @@ load("//pkg/sync/locking:locking.bzl", "declare_mutex", "declare_rwmutex")
 package(licenses = ["notice"])
 
 declare_mutex(
+    name = "cpu_clock_mutex",
+    out = "cpu_clock_mutex.go",
+    package = "kernel",
+    prefix = "cpuClock",
+)
+
+declare_mutex(
     name = "user_counters_mutex",
     out = "user_counters_mutex.go",
     package = "kernel",
@@ -201,6 +208,7 @@ go_library(
         "cgroup.go",
         "cgroup_mutex.go",
         "context.go",
+        "cpu_clock_mutex.go",
         "fd_table.go",
         "fd_table_mutex.go",
         "fd_table_refs.go",
