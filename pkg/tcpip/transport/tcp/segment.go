@@ -116,8 +116,7 @@ func newIncomingSegment(id stack.TransportEndpointID, clock tcpip.Clock, pkt sta
 	s.window = seqnum.Size(hdr.WindowSize())
 	s.rcvdTime = clock.NowMonotonic()
 	s.dataMemSize = pkt.MemSize()
-	s.pkt = pkt
-	pkt.IncRef()
+	s.pkt = pkt.IncRef()
 	s.csumValid = csumValid
 
 	if !s.pkt.RXTransportChecksumValidated {
@@ -195,7 +194,6 @@ func (s *segment) DecRef() {
 			}
 		}
 		s.pkt.DecRef()
-		s.pkt = nil
 		segmentPool.Put(s)
 	})
 }

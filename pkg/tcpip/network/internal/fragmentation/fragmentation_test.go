@@ -113,6 +113,7 @@ func TestFragmentationProcess(t *testing.T) {
 			f := NewFragmentation(minBlockSize, 2048, 512, reassembleTimeout, &faketime.NullClock{}, nil)
 			firstFragmentProto := c.in[0].proto
 			for i, in := range c.in {
+				in := in
 				defer in.pkt.DecRef()
 				defer c.out[i].buf.Release()
 				resPkt, proto, done, err := f.Process(in.id, in.first, in.last, in.more, in.proto, in.pkt)
@@ -631,7 +632,7 @@ func TestTimeoutHandler(t *testing.T) {
 				},
 			},
 			wantError: false,
-			wantPkt:   nil,
+			wantPkt:   stack.PacketBufferPtr{},
 		},
 		{
 			name: "second pkt is ignored",
@@ -663,7 +664,7 @@ func TestTimeoutHandler(t *testing.T) {
 				},
 			},
 			wantError: true,
-			wantPkt:   nil,
+			wantPkt:   stack.PacketBufferPtr{},
 		},
 	}
 
@@ -671,7 +672,7 @@ func TestTimeoutHandler(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			handler := &testTimeoutHandler{pkt: nil}
+			handler := &testTimeoutHandler{pkt: stack.PacketBufferPtr{}}
 
 			f := NewFragmentation(minBlockSize, HighFragThreshold, LowFragThreshold, reassembleTimeout, &faketime.NullClock{}, handler)
 
@@ -702,7 +703,7 @@ func TestTimeoutHandler(t *testing.T) {
 }
 
 func TestFragmentSurvivesReleaseJob(t *testing.T) {
-	handler := &testTimeoutHandler{pkt: nil}
+	handler := &testTimeoutHandler{pkt: stack.PacketBufferPtr{}}
 	c := faketime.NewManualClock()
 	f := NewFragmentation(minBlockSize, HighFragThreshold, LowFragThreshold, reassembleTimeout, c, handler)
 	pkt := pkt(2, "01")
