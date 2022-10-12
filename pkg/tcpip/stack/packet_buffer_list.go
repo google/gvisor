@@ -37,7 +37,7 @@ func (pl *PacketBufferList) AsSlice() []PacketBufferPtr {
 func (pl *PacketBufferList) Reset() {
 	for i, pb := range pl.pbs {
 		pb.DecRef()
-		pl.pbs[i] = nil
+		pl.pbs[i] = PacketBufferPtr{}
 	}
 	pl.pbs = pl.pbs[:0]
 }

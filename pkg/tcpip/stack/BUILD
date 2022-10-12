@@ -34,7 +34,7 @@ go_template_instance(
     prefix = "packetBuffer",
     template = "//pkg/refsvfs2:refs_template",
     types = {
-        "T": "PacketBuffer",
+        "T": "packetBuffer",
     },
 )
 

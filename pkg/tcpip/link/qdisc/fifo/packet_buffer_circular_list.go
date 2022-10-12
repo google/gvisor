@@ -71,10 +71,10 @@ func (pl *packetBufferCircularList) pushBack(pb stack.PacketBufferPtr) {
 //go:nosplit
 func (pl *packetBufferCircularList) removeFront() stack.PacketBufferPtr {
 	if pl.isEmpty() {
-		return nil
+		return stack.PacketBufferPtr{}
 	}
 	ret := pl.pbs[pl.head]
-	pl.pbs[pl.head] = nil
+	pl.pbs[pl.head] = stack.PacketBufferPtr{}
 	pl.head = (pl.head + 1) % len(pl.pbs)
 	pl.size--
 	return ret
