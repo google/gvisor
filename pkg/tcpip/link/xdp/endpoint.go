@@ -22,19 +22,27 @@ import (
 	"fmt"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/link/qdisc/fifo"
+	"gvisor.dev/gvisor/pkg/tcpip/link/rawfile"
+	"gvisor.dev/gvisor/pkg/tcpip/link/stopfd"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/xdp"
 )
+
+// TODO(b/240191988): Turn off GSO, GRO, and LRO. Limit veth MTU to 1500.
+
+// MTU is sized to ensure packets fit inside a 2048 byte XDP frame.
+const MTU = 1500
 
 var _ stack.LinkEndpoint = (*endpoint)(nil)
 
 type endpoint struct {
+	// fd is the underlying AF_XDP socket.
 	fd int
-
-	// mtu (maximum transmission unit) is the maximum size of a packet.
-	mtu uint32
 
 	// addr is the address of the endpoint.
 	addr tcpip.LinkAddress
@@ -46,20 +54,22 @@ type endpoint struct {
 	// its end of the communication pipe.
 	closed func(tcpip.Error)
 
-	inboundDispatcher dispatcher
 	networkDispatcher stack.NetworkDispatcher
 
 	// wg keeps track of running goroutines.
 	wg sync.WaitGroup
+
+	// control is used to control the AF_XDP socket.
+	control *xdp.ControlBlock
+
+	// stopFD is used to stop the dispatch loop.
+	stopFD stopfd.StopFD
 }
 
 // Options specify the details about the fd-based endpoint to be created.
 type Options struct {
 	// FD is used to read/write packets.
 	FD int
-
-	// MTU is the mtu to use for this endpoint.
-	MTU uint32
 
 	// ClosedFunc is a function to be called when an endpoint's peer (if
 	// any) closes its end of the communication pipe.
@@ -113,15 +123,42 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 
 	ep := &endpoint{
 		fd:     opts.FD,
-		mtu:    opts.MTU,
 		caps:   caps,
 		closed: opts.ClosedFunc,
 		addr:   opts.Address,
 	}
 
-	if err := ep.inboundDispatcher.init(opts.FD, ep, opts.InterfaceIndex); err != nil {
-		return nil, fmt.Errorf("ep.inboundDispatcher.init(%d, %+v) = %v", opts.FD, ep, err)
+	stopFD, err := stopfd.New()
+	if err != nil {
+		return nil, err
 	}
+	ep.stopFD = stopFD
+
+	// Use a 2MB UMEM to match the PACKET_MMAP dispatcher. There will be
+	// 1024 UMEM frames, and each queue will have 512 descriptors. Having
+	// fewer descriptors than frames prevents RX and TX from starving each
+	// other.
+	// TODO(b/240191988): Consider different numbers of descriptors for
+	// different queues.
+	const (
+		frameSize = 2048
+		umemSize  = 1 << 21
+		nFrames   = umemSize / frameSize
+	)
+	xdpOpts := xdp.ReadOnlySocketOpts{
+		NFrames:      nFrames,
+		FrameSize:    frameSize,
+		NDescriptors: nFrames / 2,
+	}
+	ep.control, err = xdp.ReadOnlyFromSocket(opts.FD, uint32(opts.InterfaceIndex), 0 /* queueID */, xdpOpts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create AF_XDP dispatcher: %v", err)
+	}
+
+	ep.control.UMEM.Lock()
+	defer ep.control.UMEM.Unlock()
+
+	ep.control.Fill.FillAll(&ep.control.UMEM)
 
 	return ep, nil
 }
@@ -134,7 +171,7 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 func (ep *endpoint) Attach(networkDispatcher stack.NetworkDispatcher) {
 	// nil means the NIC is being removed.
 	if networkDispatcher == nil && ep.IsAttached() {
-		ep.inboundDispatcher.Stop()
+		ep.stopFD.Stop()
 		ep.Wait()
 		ep.networkDispatcher = nil
 		return
@@ -148,7 +185,7 @@ func (ep *endpoint) Attach(networkDispatcher stack.NetworkDispatcher) {
 		go func() { // S/R-SAFE: See above.
 			defer ep.wg.Done()
 			for {
-				cont, err := ep.inboundDispatcher.dispatch()
+				cont, err := ep.dispatch()
 				if err != nil || !cont {
 					if ep.closed != nil {
 						ep.closed(err)
@@ -168,7 +205,7 @@ func (ep *endpoint) IsAttached() bool {
 // MTU implements stack.LinkEndpoint.MTU. It returns the value initialized
 // during construction.
 func (ep *endpoint) MTU() uint32 {
-	return ep.mtu
+	return MTU
 }
 
 // Capabilities implements stack.LinkEndpoint.Capabilities.
@@ -218,5 +255,114 @@ func (ep *endpoint) ARPHardwareType() header.ARPHardwareType {
 // The following should not be populated, as GSO is not supported with XDP.
 //   - pkt.GSOOptions
 func (ep *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
-	return 0, &tcpip.ErrNotSupported{}
+	// We expect to be called via fifo, which imposes a limit of
+	// fifo.BatchSize.
+	var preallocatedBatch [fifo.BatchSize]unix.XDPDesc
+	batch := preallocatedBatch[:0]
+
+	ep.control.UMEM.Lock()
+
+	ep.control.Completion.FreeAll(&ep.control.UMEM)
+
+	// Reserve TX queue descriptors and umem buffers
+	nReserved, index := ep.control.TX.Reserve(&ep.control.UMEM, uint32(pkts.Len()))
+	if nReserved == 0 {
+		ep.control.UMEM.Unlock()
+		return 0, &tcpip.ErrNoBufferSpace{}
+	}
+
+	// Allocate UMEM space. In order to release the UMEM lock as soon as
+	// possible, we allocate up-front and copy data in after releasing.
+	for _, pkt := range pkts.AsSlice() {
+		batch = append(batch, unix.XDPDesc{
+			Addr: ep.control.UMEM.AllocFrame(),
+			Len:  uint32(pkt.Size()),
+		})
+	}
+	ep.control.UMEM.Unlock()
+
+	for i, pkt := range pkts.AsSlice() {
+		// Copy packets into UMEM frame.
+		frame := ep.control.UMEM.Get(batch[i])
+		offset := 0
+		for _, buf := range pkt.AsSlices() {
+			offset += copy(frame[offset:], buf)
+		}
+		ep.control.TX.Set(index+uint32(i), batch[i])
+	}
+
+	// Notify the kernel that there're packets to write.
+	ep.control.TX.Notify()
+
+	return pkts.Len(), nil
+}
+
+func (ep *endpoint) dispatch() (bool, tcpip.Error) {
+	var views []*bufferv2.View
+
+	for {
+		stopped, errno := rawfile.BlockingPollUntilStopped(ep.stopFD.EFD, ep.fd, unix.POLLIN|unix.POLLERR)
+		if errno != 0 {
+			if errno == unix.EINTR {
+				continue
+			}
+			return !stopped, rawfile.TranslateErrno(errno)
+		}
+		if stopped {
+			return true, nil
+		}
+
+		// Avoid the cost of the poll syscall if possible by peeking
+		// until there are no packets left.
+		for {
+			// We can receive multiple packets at once.
+			nReceived, rxIndex := ep.control.RX.Peek()
+
+			if nReceived == 0 {
+				break
+			}
+
+			// Reuse views to avoid allocating.
+			views = views[:0]
+
+			// Populate views quickly so that we can release frames
+			// back to the kernel.
+			ep.control.UMEM.Lock()
+			for i := uint32(0); i < nReceived; i++ {
+				// Copy packet bytes into a view and free up the
+				// buffer.
+				descriptor := ep.control.RX.Get(rxIndex + i)
+				data := ep.control.UMEM.Get(descriptor)
+				view := bufferv2.NewViewWithData(data)
+				views = append(views, view)
+				ep.control.UMEM.FreeFrame(descriptor.Addr)
+			}
+			ep.control.Fill.FillAll(&ep.control.UMEM)
+			ep.control.UMEM.Unlock()
+
+			// Process each packet.
+			for i := uint32(0); i < nReceived; i++ {
+				view := views[i]
+				data := view.AsSlice()
+
+				netProto := header.Ethernet(data).Type()
+
+				// Wrap the packet in a PacketBuffer and send it up the stack.
+				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+					Payload: bufferv2.MakeWithView(view),
+				})
+				// AF_XDP packets always have a link header.
+				if _, ok := pkt.LinkHeader().Consume(header.EthernetMinimumSize); !ok {
+					panic(fmt.Sprintf("LinkHeader().Consume(%d) must succeed", header.EthernetMinimumSize))
+				}
+				ep.networkDispatcher.DeliverNetworkPacket(netProto, pkt)
+				pkt.DecRef()
+			}
+			// Tell the kernel that we're done with these
+			// descriptors in the RX queue.
+			ep.control.RX.Release(nReceived)
+		}
+
+		return true, nil
+	}
 }

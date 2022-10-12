@@ -106,7 +106,7 @@ func (pc *TcpdumpCommand) execute() error {
 	}
 	defer cleanup()
 
-	umem, fillQueue, rxQueue, err := xdp.ReadOnlySocket(
+	controlBlock, err := xdp.ReadOnlySocket(
 		uint32(iface.Index), 0 /* queueID */, xdp.DefaultReadOnlyOpts())
 	if err != nil {
 		return fmt.Errorf("failed to create socket: %v", err)
@@ -115,18 +115,22 @@ func (pc *TcpdumpCommand) execute() error {
 	// Insert our AF_XDP socket into the BPF map that dictates where
 	// packets are redirected to.
 	key := uint32(0)
-	val := umem.SockFD()
+	val := controlBlock.UMEM.SockFD()
 	if err := objects.SockMap.Update(&key, &val, 0 /* flags */); err != nil {
 		return fmt.Errorf("failed to insert socket into BPF map: %v", err)
 	}
 	log.Printf("updated key %d to value %d", key, val)
 
 	// Put as many UMEM buffers into the fill queue as possible.
-	fillQueue.FillAll()
+	controlBlock.UMEM.Lock()
+	controlBlock.Fill.FillAll(&controlBlock.UMEM)
+	controlBlock.UMEM.Unlock()
 
 	go func() {
+		controlBlock.UMEM.Lock()
+		defer controlBlock.UMEM.Unlock()
 		for {
-			pfds := []unix.PollFd{{Fd: int32(umem.SockFD()), Events: unix.POLLIN}}
+			pfds := []unix.PollFd{{Fd: int32(controlBlock.UMEM.SockFD()), Events: unix.POLLIN}}
 			_, err := unix.Poll(pfds, -1)
 			if err != nil {
 				if errors.Is(err, unix.EINTR) {
@@ -136,19 +140,19 @@ func (pc *TcpdumpCommand) execute() error {
 			}
 
 			// How many packets did we get?
-			nReceived, rxIndex := rxQueue.Peek()
+			nReceived, rxIndex := controlBlock.RX.Peek()
 			if nReceived == 0 {
 				continue
 			}
 
 			// Keep the fill queue full.
-			fillQueue.FillAll()
+			controlBlock.Fill.FillAll(&controlBlock.UMEM)
 
 			// Read packets one-by-one and log them.
 			for i := uint32(0); i < nReceived; i++ {
 				// Wrap the packet in a PacketBuffer.
-				descriptor := rxQueue.Get(rxIndex + i)
-				data := umem.Get(descriptor)
+				descriptor := controlBlock.RX.Get(rxIndex + i)
+				data := controlBlock.UMEM.Get(descriptor)
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Payload: bufferv2.MakeWithData(data[header.EthernetMinimumSize:]),
 				})
@@ -164,9 +168,9 @@ func (pc *TcpdumpCommand) execute() error {
 				// problem.
 				//
 				// Note that this limits MTU to 4096-256 bytes.
-				umem.FreeFrame(descriptor.Addr)
+				controlBlock.UMEM.FreeFrame(descriptor.Addr)
 			}
-			rxQueue.Release(nReceived)
+			controlBlock.RX.Release(nReceived)
 		}
 	}()
 

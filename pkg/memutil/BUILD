@@ -6,7 +6,7 @@ go_library(
     name = "memutil",
     srcs = [
         "memfd_linux_unsafe.go",
-        "memutil.go",
+        "memutil_unsafe.go",
         "mmap.go",
     ],
     visibility = ["//visibility:public"],

@@ -42,10 +42,26 @@ package xdp
 
 import (
 	"fmt"
+	"math/bits"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/memutil"
 )
+
+// A ControlBlock contains all the control structures necessary to use an
+// AF_XDP socket.
+//
+// The ControlBlock and the structures it contains are meant to be used with a
+// single RX goroutine and a single TX goroutine.
+type ControlBlock struct {
+	UMEM       UMEM
+	Fill       FillQueue
+	RX         RXQueue
+	TX         TXQueue
+	Completion CompletionQueue
+}
 
 // ReadOnlySocketOpts configure a read-only AF_XDP socket.
 type ReadOnlySocketOpts struct {
@@ -69,51 +85,69 @@ func DefaultReadOnlyOpts() ReadOnlySocketOpts {
 
 // ReadOnlySocket returns an initialized read-only AF_XDP socket bound to a
 // particular interface and queue.
-func ReadOnlySocket(ifaceIdx, queueID uint32, opts ReadOnlySocketOpts) (*UMEM, *FillQueue, *RXQueue, error) {
+func ReadOnlySocket(ifaceIdx, queueID uint32, opts ReadOnlySocketOpts) (*ControlBlock, error) {
 	sockfd, err := unix.Socket(unix.AF_XDP, unix.SOCK_RAW, 0)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to create AF_XDP socket: %v", err)
+		return nil, fmt.Errorf("failed to create AF_XDP socket: %v", err)
 	}
 	return ReadOnlyFromSocket(sockfd, ifaceIdx, queueID, opts)
 }
 
 // ReadOnlyFromSocket takes an AF_XDP socket, initializes it, and binds it to a
 // particular interface and queue.
-func ReadOnlyFromSocket(sockfd int, ifaceIdx, queueID uint32, opts ReadOnlySocketOpts) (*UMEM, *FillQueue, *RXQueue, error) {
+func ReadOnlyFromSocket(sockfd int, ifaceIdx, queueID uint32, opts ReadOnlySocketOpts) (*ControlBlock, error) {
+	if opts.FrameSize != 2048 && opts.FrameSize != 4096 {
+		return nil, fmt.Errorf("invalid frame size %d: must be either 2048 or 4096", opts.FrameSize)
+	}
+	if bits.OnesCount32(opts.NDescriptors) != 1 {
+		return nil, fmt.Errorf("invalid number of descriptors %d: must be a power of 2", opts.NDescriptors)
+	}
+
+	var cb ControlBlock
+
 	// Create the UMEM area. Use mmap instead of make([[]byte) to ensure
 	// that the UMEM is page-aligned. Aligning the UMEM keeps individual
 	// packets from spilling over between pages.
-	umemMemory, err := unix.Mmap(-1,
+	var zerofd uintptr
+	umemMemory, err := memutil.MapSlice(
 		0,
-		int(opts.NFrames*opts.FrameSize),
+		uintptr(opts.NFrames*opts.FrameSize),
 		unix.PROT_READ|unix.PROT_WRITE,
-		unix.MAP_PRIVATE|unix.MAP_ANONYMOUS)
+		unix.MAP_PRIVATE|unix.MAP_ANONYMOUS,
+		zerofd-1,
+		0,
+	)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to mmap umem: %v", err)
+		return nil, fmt.Errorf("failed to mmap umem: %v", err)
 	}
+	cleanup := cleanup.Make(func() {
+		memutil.UnmapSlice(umemMemory)
+	})
+
 	if sliceBackingPointer(umemMemory)%uintptr(unix.Getpagesize()) != 0 {
-		return nil, nil, nil, fmt.Errorf("UMEM is not page aligned (address 0x%x)", sliceBackingPointer(umemMemory))
+		return nil, fmt.Errorf("UMEM is not page aligned (address 0x%x)", sliceBackingPointer(umemMemory))
 	}
 
-	umem := UMEM{
+	cb.UMEM = UMEM{
 		mem:            umemMemory,
 		sockfd:         uint32(sockfd),
 		frameAddresses: make([]uint64, opts.NFrames),
 		nFreeFrames:    opts.NFrames,
+		frameMask:      ^(uint64(opts.FrameSize) - 1),
 	}
 
 	// Fill in each frame address.
-	for i := range umem.frameAddresses {
-		umem.frameAddresses[i] = uint64(i) * uint64(opts.FrameSize)
+	for i := range cb.UMEM.frameAddresses {
+		cb.UMEM.frameAddresses[i] = uint64(i) * uint64(opts.FrameSize)
 	}
 
 	// Check whether we're likely to fail due to RLIMIT_MEMLOCK.
 	var rlimit unix.Rlimit
 	if err := unix.Getrlimit(unix.RLIMIT_MEMLOCK, &rlimit); err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get rlimit for memlock: %v", err)
+		return nil, fmt.Errorf("failed to get rlimit for memlock: %v", err)
 	}
-	if rlimit.Cur < uint64(len(umem.mem)) {
-		log.Infof("UMEM size (%d) may exceed RLIMIT_MEMLOCK (%+v) and cause registration to fail", len(umem.mem), rlimit)
+	if rlimit.Cur < uint64(len(cb.UMEM.mem)) {
+		log.Infof("UMEM size (%d) may exceed RLIMIT_MEMLOCK (%+v) and cause registration to fail", len(cb.UMEM.mem), rlimit)
 	}
 
 	reg := unix.XDPUmemReg{
@@ -126,19 +160,24 @@ func ReadOnlyFromSocket(sockfd int, ifaceIdx, queueID uint32, opts ReadOnlySocke
 		Flags: 0,
 	}
 	if err := registerUMEM(sockfd, reg); err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to register UMEM: %v", err)
+		return nil, fmt.Errorf("failed to register UMEM: %v", err)
 	}
 
 	// Set the number of descriptors in the fill queue.
 	if err := unix.SetsockoptInt(sockfd, unix.SOL_XDP, unix.XDP_UMEM_FILL_RING, int(opts.NDescriptors)); err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to register fill ring: %v", err)
+		return nil, fmt.Errorf("failed to register fill ring: %v", err)
 	}
-
-	// Set the number of descriptors in the completion queue. Note: we
-	// don't actually use this (the completion queue is TX-specific), but
-	// bind() will fail if this is left unset.
+	// Set the number of descriptors in the completion queue.
 	if err := unix.SetsockoptInt(sockfd, unix.SOL_XDP, unix.XDP_UMEM_COMPLETION_RING, int(opts.NDescriptors)); err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to register fill ring: %v", err)
+		return nil, fmt.Errorf("failed to register completion ring: %v", err)
+	}
+	// Set the number of descriptors in the RX queue.
+	if err := unix.SetsockoptInt(sockfd, unix.SOL_XDP, unix.XDP_RX_RING, int(opts.NDescriptors)); err != nil {
+		return nil, fmt.Errorf("failed to register RX queue: %v", err)
+	}
+	// Set the number of descriptors in the TX queue.
+	if err := unix.SetsockoptInt(sockfd, unix.SOL_XDP, unix.XDP_TX_RING, int(opts.NDescriptors)); err != nil {
+		return nil, fmt.Errorf("failed to register TX queue: %v", err)
 	}
 
 	// Get offset information for the queues. Offsets indicate where, once
@@ -147,59 +186,99 @@ func ReadOnlyFromSocket(sockfd int, ifaceIdx, queueID uint32, opts ReadOnlySocke
 	// beginning of the ring of descriptors.
 	off, err := getOffsets(sockfd)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get offsets: %v", err)
+		return nil, fmt.Errorf("failed to get offsets: %v", err)
 	}
 
 	// Allocate space for the fill queue.
-	fillQueueMem, err := unix.Mmap(sockfd,
-		unix.XDP_UMEM_PGOFF_FILL_RING,
-		int(off.Fr.Desc+uint64(opts.NDescriptors)*sizeOfFillQueueDesc()),
+	fillQueueMem, err := memutil.MapSlice(
+		0,
+		uintptr(off.Fr.Desc+uint64(opts.NDescriptors)*sizeOfFillQueueDesc()),
 		unix.PROT_READ|unix.PROT_WRITE,
-		unix.MAP_SHARED|unix.MAP_POPULATE)
+		unix.MAP_SHARED|unix.MAP_POPULATE,
+		uintptr(sockfd),
+		unix.XDP_UMEM_PGOFF_FILL_RING,
+	)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to mmap fill queue: %v", err)
+		return nil, fmt.Errorf("failed to mmap fill queue: %v", err)
 	}
-
+	cleanup.Add(func() {
+		memutil.UnmapSlice(fillQueueMem)
+	})
 	// Setup the fillQueue with offsets into allocated memory.
-	fillQueue := FillQueue{
+	cb.Fill = FillQueue{
 		mem:            fillQueueMem,
 		mask:           opts.NDescriptors - 1,
-		umem:           &umem,
 		cachedConsumer: opts.NDescriptors,
 	}
-	fillQueue.init(off, opts)
+	cb.Fill.init(off, opts)
 
-	// Allocate space for the (unused) completion queue.
-	_, err = unix.Mmap(sockfd,
-		unix.XDP_UMEM_PGOFF_COMPLETION_RING,
-		int(off.Cr.Desc+uint64(opts.NDescriptors)*sizeOfFillQueueDesc()),
+	// Allocate space for the completion queue.
+	completionQueueMem, err := memutil.MapSlice(
+		0,
+		uintptr(off.Cr.Desc+uint64(opts.NDescriptors)*sizeOfCompletionQueueDesc()),
 		unix.PROT_READ|unix.PROT_WRITE,
-		unix.MAP_SHARED|unix.MAP_POPULATE)
+		unix.MAP_SHARED|unix.MAP_POPULATE,
+		uintptr(sockfd),
+		unix.XDP_UMEM_PGOFF_COMPLETION_RING,
+	)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to mmap completion queue: %v", err)
+		return nil, fmt.Errorf("failed to mmap completion queue: %v", err)
 	}
-
-	// Set the number of descriptors in the RX queue.
-	if err := unix.SetsockoptInt(sockfd, unix.SOL_XDP, unix.XDP_RX_RING, int(opts.NDescriptors)); err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to register RX queue: %v", err)
+	cleanup.Add(func() {
+		memutil.UnmapSlice(completionQueueMem)
+	})
+	// Setup the completionQueue with offsets into allocated memory.
+	cb.Completion = CompletionQueue{
+		mem:  completionQueueMem,
+		mask: opts.NDescriptors - 1,
 	}
+	cb.Completion.init(off, opts)
 
 	// Allocate space for the RX queue.
-	rxQueueMem, err := unix.Mmap(sockfd,
-		unix.XDP_PGOFF_RX_RING,
-		int(off.Rx.Desc+uint64(opts.NDescriptors)*sizeOfRXQueueDesc()),
+	rxQueueMem, err := memutil.MapSlice(
+		0,
+		uintptr(off.Rx.Desc+uint64(opts.NDescriptors)*sizeOfRXQueueDesc()),
 		unix.PROT_READ|unix.PROT_WRITE,
-		unix.MAP_SHARED|unix.MAP_POPULATE)
+		unix.MAP_SHARED|unix.MAP_POPULATE,
+		uintptr(sockfd),
+		unix.XDP_PGOFF_RX_RING,
+	)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to mmap fill queue: %v", err)
+		return nil, fmt.Errorf("failed to mmap RX queue: %v", err)
 	}
-
+	cleanup.Add(func() {
+		memutil.UnmapSlice(rxQueueMem)
+	})
 	// Setup the rxQueue with offsets into allocated memory.
-	rxQueue := RXQueue{
+	cb.RX = RXQueue{
 		mem:  rxQueueMem,
 		mask: opts.NDescriptors - 1,
 	}
-	rxQueue.init(off, opts)
+	cb.RX.init(off, opts)
+
+	// Allocate space for the TX queue.
+	txQueueMem, err := memutil.MapSlice(
+		0,
+		uintptr(off.Tx.Desc+uint64(opts.NDescriptors)*sizeOfTXQueueDesc()),
+		unix.PROT_READ|unix.PROT_WRITE,
+		unix.MAP_SHARED|unix.MAP_POPULATE,
+		uintptr(sockfd),
+		unix.XDP_PGOFF_TX_RING,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to mmap tx queue: %v", err)
+	}
+	cleanup.Add(func() {
+		memutil.UnmapSlice(txQueueMem)
+	})
+	// Setup the txQueue with offsets into allocated memory.
+	cb.TX = TXQueue{
+		sockfd:         uint32(sockfd),
+		mem:            txQueueMem,
+		mask:           opts.NDescriptors - 1,
+		cachedConsumer: opts.NDescriptors,
+	}
+	cb.TX.init(off, opts)
 
 	addr := unix.SockaddrXDP{
 		// XDP_USE_NEED_WAKEUP lets the driver sleep if there is no
@@ -220,8 +299,9 @@ func ReadOnlyFromSocket(sockfd int, ifaceIdx, queueID uint32, opts ReadOnlySocke
 		SharedUmemFD: 0,
 	}
 	if err := unix.Bind(sockfd, &addr); err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to bind with addr %+v: %v", addr, err)
+		return nil, fmt.Errorf("failed to bind with addr %+v: %v", addr, err)
 	}
 
-	return &umem, &fillQueue, &rxQueue, nil
+	cleanup.Release()
+	return &cb, nil
 }

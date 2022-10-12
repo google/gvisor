@@ -18,23 +18,27 @@
 package xdp
 
 import (
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 )
 
-// The FillQueue is how a process tells the kernel which buffers are available
-// to be filled by incoming packets.
+// The TXQueue is how a process tells the kernel which buffers are available to
+// be sent via the NIC.
 //
-// FillQueue is not thread-safe and requires external synchronization
-type FillQueue struct {
+// TXQueue is not thread-safe and requires external synchronization
+type TXQueue struct {
+	// sockfd is the underlying AF_XDP socket.
+	sockfd uint32
+
 	// mem is the mmap'd area shared with the kernel. Many other fields of
 	// this struct point into mem.
 	mem []byte
 
-	// ring is the actual ring buffer. It is a list of frame addresses
-	// ready for incoming packets.
+	// ring is the actual ring buffer. It is a list of XDP descriptors
+	// pointing to ready-to-transmit packets.
 	//
 	// len(ring) must be a power of 2.
-	ring []uint64
+	ring []unix.XDPDesc
 
 	// mask is used whenever indexing into ring. It is always len(ring)-1.
 	// It prevents index out of bounds errors while allowing the producer
@@ -67,55 +71,46 @@ type FillQueue struct {
 	cachedConsumer uint32
 }
 
-// free returns the number of free descriptors in the fill queue.
-func (fq *FillQueue) free(toReserve uint32) uint32 {
+// Reserve reserves descriptors in the queue. If toReserve descriptors cannot
+// be reserved, none are reserved.
+//
+// +checklocks:umem.mu
+func (tq *TXQueue) Reserve(umem *UMEM, toReserve uint32) (nReserved, index uint32) {
+	if umem.nFreeFrames < toReserve || tq.free(toReserve) < toReserve {
+		return 0, 0
+	}
+	idx := tq.cachedProducer
+	tq.cachedProducer += toReserve
+	return toReserve, idx
+}
+
+// free returns the number of free descriptors in the TX queue.
+func (tq *TXQueue) free(toReserve uint32) uint32 {
 	// Try to find free descriptors without incurring an atomic operation.
 	//
-	// cachedConsumer is always len(fq.ring) larger than the real consumer
+	// cachedConsumer is always len(tq.ring) larger than the real consumer
 	// value. This lets us, in the common case, compute the number of free
-	// descriptors simply via fq.cachedConsumer - fq.cachedProducer without
-	// also adding len(fq.ring).
-	if available := fq.cachedConsumer - fq.cachedProducer; available >= toReserve {
+	// descriptors simply via tq.cachedConsumer - tq.cachedProducer without
+	// also addign len(tq.ring).
+	if available := tq.cachedConsumer - tq.cachedProducer; available >= toReserve {
 		return available
 	}
 
 	// If we didn't already have enough descriptors available, check
 	// whether the kernel has returned some to us.
-	fq.cachedConsumer = fq.consumer.Load()
-	fq.cachedConsumer += uint32(len(fq.ring))
-	return fq.cachedConsumer - fq.cachedProducer
+	tq.cachedConsumer = tq.consumer.Load()
+	tq.cachedConsumer += uint32(len(tq.ring))
+	return tq.cachedConsumer - tq.cachedProducer
 }
 
 // Notify updates the producer such that it is visible to the kernel.
-func (fq *FillQueue) Notify() {
-	fq.producer.Store(fq.cachedProducer)
+func (tq *TXQueue) Notify() {
+	tq.producer.Store(tq.cachedProducer)
+	tq.kick()
 }
 
-// Set sets the fill queue's descriptor at index to addr.
-func (fq *FillQueue) Set(index uint32, addr uint64) {
+// Set sets the TX queue's descriptor at index to addr.
+func (tq *TXQueue) Set(index uint32, desc unix.XDPDesc) {
 	// Use mask to avoid overflowing and loop back around the ring.
-	fq.ring[index&fq.mask] = addr
-}
-
-// FillAll posts as many empty buffers as possible for the kernel to fill, then
-// notifies the kernel.
-//
-// +checklocks:umem.mu
-func (fq *FillQueue) FillAll(umem *UMEM) {
-	// Figure out how many buffers and queue slots are available.
-	available := fq.free(umem.nFreeFrames)
-	if available == 0 {
-		return
-	}
-	if available > umem.nFreeFrames {
-		available = umem.nFreeFrames
-	}
-
-	// Fill the queue as much as possible and notify ther kernel.
-	index := fq.cachedProducer
-	fq.cachedProducer += available
-	for i := uint32(0); i < available; i++ {
-		fq.Set(index+i, umem.AllocFrame())
-	}
-	fq.Notify()
+	tq.ring[index&tq.mask] = desc
 }

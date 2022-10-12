@@ -344,7 +344,6 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		mac := tcpip.LinkAddress(link.LinkAddress)
 		linkEP, err := xdp.New(&xdp.Options{
 			FD:                fd,
-			MTU:               uint32(link.MTU),
 			Address:           mac,
 			TXChecksumOffload: link.TXChecksumOffload,
 			RXChecksumOffload: link.RXChecksumOffload,

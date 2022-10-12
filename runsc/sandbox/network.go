@@ -253,7 +253,6 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 			args.XDPLinks = append(args.XDPLinks, boot.XDPLink{
 				Name:              iface.Name,
 				InterfaceIndex:    iface.Index,
-				MTU:               iface.MTU,
 				Routes:            routes,
 				TXChecksumOffload: conf.TXChecksumOffload,
 				RXChecksumOffload: conf.RXChecksumOffload,
