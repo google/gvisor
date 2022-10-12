@@ -18,24 +18,23 @@
 package xdp
 
 import (
-	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 )
 
-// The RXQueue is how the kernel tells a process which buffers are full with
-// incoming packets.
+// The CompletionQueue is how the kernel tells a process which buffers have
+// been transmitted and can be reused.
 //
-// RXQueue is not thread-safe and requires external synchronization
-type RXQueue struct {
+// CompletionQueue is not thread-safe and requires external synchronization
+type CompletionQueue struct {
 	// mem is the mmap'd area shared with the kernel. Many other fields of
 	// this struct point into mem.
 	mem []byte
 
-	// ring is the actual ring buffer. It is a list of XDP descriptors
-	// pointing to incoming packets.
+	// ring is the actual ring buffer. It is a list of frame addresses
+	// ready to be reused.
 	//
 	// len(ring) must be a power of 2.
-	ring []unix.XDPDesc
+	ring []uint64
 
 	// mask is used whenever indexing into ring. It is always len(ring)-1.
 	// It prevents index out of bounds errors while allowing the producer
@@ -66,40 +65,55 @@ type RXQueue struct {
 	cachedConsumer uint32
 }
 
-// Peek returns the number of packets available to read as well as the index at
-// which they start. Peek will only return a packet once, so callers must
-// process any received packets.
-func (rq *RXQueue) Peek() (nReceived, index uint32) {
+// Peek returns the number of buffers available to reuse as well as the index
+// at which they start. Peek will only return a buffer once, so callers must
+// process any received buffers.
+func (cq *CompletionQueue) Peek() (nAvailable, index uint32) {
 	// Get the number of available buffers and update cachedConsumer to
 	// reflect that we're going to consume them.
-	entries := rq.free()
-	index = rq.cachedConsumer
-	rq.cachedConsumer += entries
+	entries := cq.free()
+	index = cq.cachedConsumer
+	cq.cachedConsumer += entries
 	return entries, index
 }
 
-func (rq *RXQueue) free() uint32 {
+func (cq *CompletionQueue) free() uint32 {
 	// Return any buffers we know about without incurring an atomic
 	// operation if possible.
-	entries := rq.cachedProducer - rq.cachedConsumer
-	// If we're not aware of any RX'd packets, refresh the producer pointer
-	// to see whether the kernel enqueued anything.
+	entries := cq.cachedProducer - cq.cachedConsumer
+	// If we're not aware of any completed packets, refresh the producer
+	// pointer to see whether the kernel enqueued anything.
 	if entries == 0 {
-		rq.cachedProducer = rq.producer.Load()
-		entries = rq.cachedProducer - rq.cachedConsumer
+		cq.cachedProducer = cq.producer.Load()
+		entries = cq.cachedProducer - cq.cachedConsumer
 	}
 	return entries
 }
 
 // Release notifies the kernel that we have consumed nDone packets.
-func (rq *RXQueue) Release(nDone uint32) {
+func (cq *CompletionQueue) Release(nDone uint32) {
 	// We don't have to use an atomic add because only we update this; the
 	// kernel just reads it.
-	rq.consumer.Store(rq.consumer.RacyLoad() + nDone)
+	cq.consumer.Store(cq.consumer.RacyLoad() + nDone)
 }
 
 // Get gets the descriptor at index.
-func (rq *RXQueue) Get(index uint32) unix.XDPDesc {
+func (cq *CompletionQueue) Get(index uint32) uint64 {
 	// Use mask to avoid overflowing and loop back around the ring.
-	return rq.ring[index&rq.mask]
+	return cq.ring[index&cq.mask]
+}
+
+// FreeAll dequeues as many buffers as possible from the queue and returns them
+// to the UMEM.
+//
+// +checklocks:umem.mu
+func (cq *CompletionQueue) FreeAll(umem *UMEM) {
+	available, index := cq.Peek()
+	if available < 1 {
+		return
+	}
+	for i := uint32(0); i < available; i++ {
+		umem.FreeFrame(cq.Get(index + i))
+	}
+	cq.Release(available)
 }
