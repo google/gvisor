@@ -35,7 +35,7 @@ const (
 
 var pkPool = sync.Pool{
 	New: func() interface{} {
-		return &PacketBuffer{}
+		return &packetBuffer{}
 	},
 }
 
@@ -59,9 +59,14 @@ type PacketBufferOptions struct {
 }
 
 // PacketBufferPtr is a pointer to a PacketBuffer.
-type PacketBufferPtr = *PacketBuffer
+//
+// +stateify savable
+type PacketBufferPtr struct {
+	// packetBuffer is the underlying packet buffer.
+	*packetBuffer
+}
 
-// A PacketBuffer contains all the data of a network packet.
+// A packetBuffer contains all the data of a network packet.
 //
 // As a PacketBuffer traverses up the stack, it may be necessary to pass it to
 // multiple endpoints.
@@ -103,7 +108,7 @@ type PacketBufferPtr = *PacketBuffer
 // starting offset of each header in `buf`.
 //
 // +stateify savable
-type PacketBuffer struct {
+type packetBuffer struct {
 	_ sync.NoCopy
 
 	packetBufferRefs
@@ -173,7 +178,7 @@ type PacketBuffer struct {
 
 // NewPacketBuffer creates a new PacketBuffer with opts.
 func NewPacketBuffer(opts PacketBufferOptions) PacketBufferPtr {
-	pk := pkPool.Get().(PacketBufferPtr)
+	pk := pkPool.Get().(*packetBuffer)
 	pk.reset()
 	if opts.ReserveHeaderBytes != 0 {
 		v := bufferv2.NewViewSize(opts.ReserveHeaderBytes)
@@ -186,31 +191,36 @@ func NewPacketBuffer(opts PacketBufferOptions) PacketBufferPtr {
 	pk.NetworkPacketInfo.IsForwardedPacket = opts.IsForwardedPacket
 	pk.onRelease = opts.OnRelease
 	pk.InitRefs()
-	return pk
+	return PacketBufferPtr{
+		packetBuffer: pk,
+	}
 }
 
 // IncRef increments the PacketBuffer's refcount.
 func (pk PacketBufferPtr) IncRef() PacketBufferPtr {
 	pk.packetBufferRefs.IncRef()
-	return pk
+	return PacketBufferPtr{
+		packetBuffer: pk.packetBuffer,
+	}
 }
 
 // DecRef decrements the PacketBuffer's refcount. If the refcount is
 // decremented to zero, the PacketBuffer is returned to the PacketBuffer
 // pool.
-func (pk PacketBufferPtr) DecRef() {
+func (pk *PacketBufferPtr) DecRef() {
 	pk.packetBufferRefs.DecRef(func() {
 		if pk.onRelease != nil {
 			pk.onRelease()
 		}
 
 		pk.buf.Release()
-		pkPool.Put(pk)
+		pkPool.Put(pk.packetBuffer)
 	})
+	pk.packetBuffer = nil
 }
 
-func (pk PacketBufferPtr) reset() {
-	*pk = PacketBuffer{}
+func (pk *packetBuffer) reset() {
+	*pk = packetBuffer{}
 }
 
 // ReservedHeaderBytes returns the number of bytes initially reserved for
@@ -364,7 +374,7 @@ func (pk PacketBufferPtr) headerView(typ headerType) bufferv2.View {
 // Clone makes a semi-deep copy of pk. The underlying packet payload is
 // shared. Hence, no modifications is done to underlying packet payload.
 func (pk PacketBufferPtr) Clone() PacketBufferPtr {
-	newPk := pkPool.Get().(PacketBufferPtr)
+	newPk := pkPool.Get().(*packetBuffer)
 	newPk.reset()
 	newPk.buf = pk.buf.Clone()
 	newPk.reserved = pk.reserved
@@ -384,7 +394,9 @@ func (pk PacketBufferPtr) Clone() PacketBufferPtr {
 	newPk.NetworkPacketInfo = pk.NetworkPacketInfo
 	newPk.tuple = pk.tuple
 	newPk.InitRefs()
-	return newPk
+	return PacketBufferPtr{
+		packetBuffer: newPk,
+	}
 }
 
 // ReserveHeaderBytes prepends reserved space for headers at the front
@@ -417,14 +429,16 @@ func (pk PacketBufferPtr) Network() header.Network {
 // See PacketBuffer.Data for details about how a packet buffer holds an inbound
 // packet.
 func (pk PacketBufferPtr) CloneToInbound() PacketBufferPtr {
-	newPk := pkPool.Get().(PacketBufferPtr)
+	newPk := pkPool.Get().(*packetBuffer)
 	newPk.reset()
 	newPk.buf = pk.buf.Clone()
 	newPk.InitRefs()
 	// Treat unfilled header portion as reserved.
 	newPk.reserved = pk.AvailableHeaderBytes()
 	newPk.tuple = pk.tuple
-	return newPk
+	return PacketBufferPtr{
+		packetBuffer: newPk,
+	}
 }
 
 // DeepCopyForForwarding creates a deep copy of the packet buffer for
@@ -462,7 +476,7 @@ func (pk PacketBufferPtr) DeepCopyForForwarding(reservedHeaderBytes int) PacketB
 
 // IsNil returns whether the pointer is logically nil.
 func (pk PacketBufferPtr) IsNil() bool {
-	return pk == nil
+	return pk.packetBuffer == nil
 }
 
 // headerInfo stores metadata about a header in a packet.
