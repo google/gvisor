@@ -5,7 +5,6 @@ package(licenses = ["notice"])
 go_library(
     name = "xdp",
     srcs = [
-        "dispatcher.go",
         "endpoint.go",
     ],
     visibility = ["//visibility:public"],
@@ -14,6 +13,7 @@ go_library(
         "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
+        "//pkg/tcpip/link/qdisc/fifo",
         "//pkg/tcpip/link/rawfile",
         "//pkg/tcpip/link/stopfd",
         "//pkg/tcpip/stack",

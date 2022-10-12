@@ -53,6 +53,14 @@ func sizeOfRXQueueDesc() uint64 {
 	return uint64(unsafe.Sizeof(unix.XDPDesc{}))
 }
 
+func sizeOfCompletionQueueDesc() uint64 {
+	return uint64(unsafe.Sizeof(uint64(0)))
+}
+
+func sizeOfTXQueueDesc() uint64 {
+	return uint64(unsafe.Sizeof(unix.XDPDesc{}))
+}
+
 func (fq *FillQueue) init(off unix.XDPMmapOffsets, opts ReadOnlySocketOpts) {
 	fillQueueRingHdr := (*reflect.SliceHeader)(unsafe.Pointer(&fq.ring))
 	fillQueueRingHdr.Data = uintptr(unsafe.Pointer(&fq.mem[off.Fr.Desc]))
@@ -75,4 +83,41 @@ func (rq *RXQueue) init(off unix.XDPMmapOffsets, opts ReadOnlySocketOpts) {
 	// so better safe than sorry.
 	rq.cachedProducer = rq.producer.Load()
 	rq.cachedConsumer = rq.consumer.Load()
+}
+
+func (cq *CompletionQueue) init(off unix.XDPMmapOffsets, opts ReadOnlySocketOpts) {
+	completionQueueRingHdr := (*reflect.SliceHeader)(unsafe.Pointer(&cq.ring))
+	completionQueueRingHdr.Data = uintptr(unsafe.Pointer(&cq.mem[off.Cr.Desc]))
+	completionQueueRingHdr.Len = int(opts.NDescriptors)
+	completionQueueRingHdr.Cap = completionQueueRingHdr.Len
+	cq.producer = (*atomicbitops.Uint32)(unsafe.Pointer(&cq.mem[off.Cr.Producer]))
+	cq.consumer = (*atomicbitops.Uint32)(unsafe.Pointer(&cq.mem[off.Cr.Consumer]))
+	cq.flags = (*atomicbitops.Uint32)(unsafe.Pointer(&cq.mem[off.Cr.Flags]))
+	// These probably don't have to be atomic, but we're only loading once
+	// so better safe than sorry.
+	cq.cachedProducer = cq.producer.Load()
+	cq.cachedConsumer = cq.consumer.Load()
+}
+
+func (tq *TXQueue) init(off unix.XDPMmapOffsets, opts ReadOnlySocketOpts) {
+	txQueueRingHdr := (*reflect.SliceHeader)(unsafe.Pointer(&tq.ring))
+	txQueueRingHdr.Data = uintptr(unsafe.Pointer(&tq.mem[off.Tx.Desc]))
+	txQueueRingHdr.Len = int(opts.NDescriptors)
+	txQueueRingHdr.Cap = txQueueRingHdr.Len
+	tq.producer = (*atomicbitops.Uint32)(unsafe.Pointer(&tq.mem[off.Tx.Producer]))
+	tq.consumer = (*atomicbitops.Uint32)(unsafe.Pointer(&tq.mem[off.Tx.Consumer]))
+	tq.flags = (*atomicbitops.Uint32)(unsafe.Pointer(&tq.mem[off.Tx.Flags]))
+}
+
+// kick notifies the kernel that there are packets to transmit.
+func (tq *TXQueue) kick() error {
+	if tq.flags.RacyLoad()&unix.XDP_RING_NEED_WAKEUP == 0 {
+		return nil
+	}
+
+	var msg unix.Msghdr
+	if _, _, errno := unix.Syscall6(unix.SYS_SENDMSG, uintptr(tq.sockfd), uintptr(unsafe.Pointer(&msg)), unix.MSG_DONTWAIT|unix.MSG_NOSIGNAL, 0, 0, 0); errno != 0 {
+		return fmt.Errorf("failed to kick TX queue via sendmsg: errno %d", errno)
+	}
+	return nil
 }
