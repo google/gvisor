@@ -284,7 +284,7 @@ TEST_P(IPUnboundSocketTest, SmallTOSOptionSize) {
     EXPECT_EQ(get_sz, expect_sz);
     // Account for partial copies by getsockopt, retrieve the lower
     // bits specified by get_sz, while comparing against expect_tos.
-    EXPECT_EQ(get & ~(~0 << (get_sz * 8)), expect_tos);
+    EXPECT_EQ(get & ~(~static_cast<uint>(0) << (get_sz * 8)), expect_tos);
   }
 }
 
