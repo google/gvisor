@@ -89,9 +89,9 @@ DOCKER_RUN_OPTIONS += --rm
 DOCKER_RUN_OPTIONS += --user $(UID):$(GID)
 DOCKER_RUN_OPTIONS += --entrypoint ""
 DOCKER_RUN_OPTIONS += --init
-DOCKER_RUN_OPTIONS += -v "$(shell realpath -m $(BAZEL_CACHE)):$(BAZEL_CACHE):shared"
+DOCKER_RUN_OPTIONS += -v "$(shell realpath -m $(BAZEL_CACHE)):$(BAZEL_CACHE)"
 DOCKER_RUN_OPTIONS += -v "$(shell realpath -m $(GCLOUD_CONFIG)):$(GCLOUD_CONFIG)"
-DOCKER_RUN_OPTIONS += -v "/tmp:/tmp:shared"
+DOCKER_RUN_OPTIONS += -v "/tmp:/tmp"
 DOCKER_EXEC_OPTIONS := --user $(UID):$(GID)
 DOCKER_EXEC_OPTIONS += --interactive
 ifeq (true,$(shell test -t 1 && echo true))
