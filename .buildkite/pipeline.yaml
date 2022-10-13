@@ -313,8 +313,8 @@ steps:
       <<: *ubuntu_agents
       cgroup: "v2"
   - <<: *common
-    label: ":docker: Containerd 1.5.4 tests (cgroupv1)"
-    command: make containerd-test-1.5.4
+    label: ":docker: Containerd 1.5.11 tests (cgroupv1)"
+    command: make containerd-test-1.5.11
     agents:
       <<: *platform_specific_agents
       <<: *ubuntu_agents
@@ -322,22 +322,22 @@ steps:
   - <<: *common
     # See above: not truly a source test.
     <<: *source_test
-    label: ":docker: Containerd 1.5.4 tests (cgroupv2)"
-    command: make containerd-test-1.5.4
+    label: ":docker: Containerd 1.5.11 tests (cgroupv2)"
+    command: make containerd-test-1.5.11
     agents:
       <<: *ubuntu_agents
       cgroup: "v2"
   - <<: *common
-    label: ":docker: Containerd 1.6.0-rc.4 tests (cgroupv1)"
-    command: make containerd-test-1.6.0-rc.4
+    label: ":docker: Containerd 1.6.2 tests (cgroupv1)"
+    command: make containerd-test-1.6.2
     agents:
       <<: *platform_specific_agents
       <<: *ubuntu_agents
       cgroup: "v1"
   - <<: *common
     <<: *source_test
-    label: ":docker: Containerd 1.6.0-rc.4 tests (cgroupv2)"
-    command: make containerd-test-1.6.0-rc.4
+    label: ":docker: Containerd 1.6.2 tests (cgroupv2)"
+    command: make containerd-test-1.6.2
     agents:
       <<: *ubuntu_agents
       cgroup: "v2"

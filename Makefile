@@ -340,8 +340,8 @@ containerd-tests-min: containerd-test-1.4.12
 ##
 containerd-tests:
 containerd-tests: containerd-test-1.4.12
-containerd-tests: containerd-test-1.5.9
-containerd-tests: containerd-test-1.6.0
+containerd-tests: containerd-test-1.5.11
+containerd-tests: containerd-test-1.6.2
 
 ##
 ## Benchmarks.
