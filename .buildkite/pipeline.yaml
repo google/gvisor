@@ -450,7 +450,7 @@ steps:
   # For rand(read|write) fio benchmarks, running 15s does not overwhelm the system for tmpfs mounts.
   - <<: *benchmarks
     label: ":cd: FIO benchmarks (randread/randwrite)"
-    command: make -i benchmark-platforms BENCHMARKS_SUITE=fio BENCHMARKS_TARGETS=test/benchmarks/fs:fio_test BENCHMARKS_FILTER=Fio/operation\.rand BENCHMARKS_OPTIONS=--test.benchtime=15s
+    command: make -i benchmark-platforms BENCHMARKS_SUITE=fio BENCHMARKS_TARGETS=test/benchmarks/fs:fio_test BENCHMARKS_FILTER=Fio/operation\.rand BENCHMARKS_OPTIONS=--test.benchtime=1000x
   - <<: *benchmarks
     label: ":cd: Ruby CI/CD benchmarks"
     command: make -i benchmark-platforms BENCHMARKS_SUITE=fio BENCHMARKS_TARGETS=test/benchmarks/fs:rubydev_test BENCHMARKS_OPTIONS=-test.benchtime=1ns
