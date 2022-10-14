@@ -1119,6 +1119,8 @@ TEST_P(TCPSocketPairTest, SpliceToPipe) {
 
 #include <sys/sendfile.h>
 
+#include <memory>
+
 TEST_P(TCPSocketPairTest, SendfileFromRegularFileSucceeds) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
   const TempPath in_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
@@ -1214,7 +1216,7 @@ TEST_P(TCPSocketPairTest, TCPResetDuringClose) {
   constexpr int kThreadCount = 100;
   std::unique_ptr<ScopedThread> instances[kThreadCount];
   for (int i = 0; i < kThreadCount; i++) {
-    instances[i] = absl::make_unique<ScopedThread>([&]() {
+    instances[i] = std::make_unique<ScopedThread>([&]() {
       auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
       ScopedThread t([&]() {

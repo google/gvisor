@@ -17,6 +17,7 @@
 #include <sys/types.h>
 #include <sys/uio.h>
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -199,7 +200,7 @@ TEST(Preadv2Test, TestInvalidOffset) {
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDONLY | O_DIRECT));
 
-  auto iov = absl::make_unique<struct iovec[]>(1);
+  auto iov = std::make_unique<struct iovec[]>(1);
   iov[0].iov_base = nullptr;
   iov[0].iov_len = 0;
 
@@ -217,7 +218,7 @@ TEST(Preadv2Test, TestUnreadableFile) {
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_WRONLY));
 
-  auto iov = absl::make_unique<struct iovec[]>(1);
+  auto iov = std::make_unique<struct iovec[]>(1);
   iov[0].iov_base = nullptr;
   iov[0].iov_len = 0;
 
@@ -234,7 +235,7 @@ TEST(Preadv2Test, Preadv2WithOpath) {
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_PATH));
 
-  auto iov = absl::make_unique<struct iovec[]>(1);
+  auto iov = std::make_unique<struct iovec[]>(1);
   iov[0].iov_base = nullptr;
   iov[0].iov_len = 0;
 
@@ -252,7 +253,7 @@ TEST(Preadv2Test, TestUnseekableFileInvalid) {
 
   ASSERT_THAT(pipe(pipe_fds), SyscallSucceeds());
 
-  auto iov = absl::make_unique<struct iovec[]>(1);
+  auto iov = std::make_unique<struct iovec[]>(1);
   iov[0].iov_base = nullptr;
   iov[0].iov_len = 0;
 
@@ -277,7 +278,7 @@ TEST(Preadv2Test, TestUnseekableFileValid) {
               SyscallSucceedsWithValue(content.size()));
 
   std::vector<char> buf(content.size());
-  auto iov = absl::make_unique<struct iovec[]>(1);
+  auto iov = std::make_unique<struct iovec[]>(1);
   iov[0].iov_base = buf.data();
   iov[0].iov_len = buf.size();
 

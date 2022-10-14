@@ -270,7 +270,7 @@ TEST_P(PrivateAndSharedFutexTest, WakeAll) {
   std::vector<std::unique_ptr<ScopedThread>> threads;
   threads.reserve(kThreads);
   for (int i = 0; i < kThreads; i++) {
-    threads.push_back(absl::make_unique<ScopedThread>([&] {
+    threads.push_back(std::make_unique<ScopedThread>([&] {
       EXPECT_THAT(futex_wait(IsPrivate(), &a, kInitialValue),
                   SyscallSucceeds());
     }));
@@ -302,7 +302,7 @@ TEST_P(PrivateAndSharedFutexTest, WakeSome) {
     errs.push_back(0);
   }
   for (int i = 0; i < kThreads; i++) {
-    threads.push_back(absl::make_unique<ScopedThread>([&, i] {
+    threads.push_back(std::make_unique<ScopedThread>([&, i] {
       rets[i] =
           futex_wait(IsPrivate(), &a, kInitialValue, kIneffectiveWakeTimeout);
       errs[i] = errno;
@@ -669,7 +669,7 @@ TEST_P(PrivateAndSharedFutexTest, PIConcurrency) {
 
   std::unique_ptr<ScopedThread> threads[100];
   for (size_t i = 0; i < ABSL_ARRAYSIZE(threads); ++i) {
-    threads[i] = absl::make_unique<ScopedThread>([is_priv, &a] {
+    threads[i] = std::make_unique<ScopedThread>([is_priv, &a] {
       for (size_t j = 0; j < 10; ++j) {
         ASSERT_THAT(futex_lock_pi(is_priv, &a), SyscallSucceeds());
         EXPECT_EQ(a.load() & FUTEX_TID_MASK, gettid());
@@ -725,7 +725,7 @@ TEST_P(PrivateAndSharedFutexTest, PITryLockConcurrency) {
 
   std::unique_ptr<ScopedThread> threads[10];
   for (size_t i = 0; i < ABSL_ARRAYSIZE(threads); ++i) {
-    threads[i] = absl::make_unique<ScopedThread>([is_priv, &a] {
+    threads[i] = std::make_unique<ScopedThread>([is_priv, &a] {
       for (size_t j = 0; j < 10;) {
         if (futex_trylock_pi(is_priv, &a) == 0) {
           ++j;

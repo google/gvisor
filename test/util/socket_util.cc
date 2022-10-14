@@ -43,8 +43,8 @@ Creator<SocketPair> SyscallSocketPairCreator(int domain, int type,
     int pair[2];
     RETURN_ERROR_IF_SYSCALL_FAIL(socketpair(domain, type, protocol, pair));
     MaybeSave();  // Save on successful creation.
-    return absl::make_unique<FDSocketPair>(FileDescriptor(pair[0]),
-                                           FileDescriptor(pair[1]));
+    return std::make_unique<FDSocketPair>(FileDescriptor(pair[0]),
+                                          FileDescriptor(pair[1]));
   };
 }
 
@@ -54,7 +54,7 @@ Creator<FileDescriptor> SyscallSocketCreator(int domain, int type,
     int fd = 0;
     RETURN_ERROR_IF_SYSCALL_FAIL(fd = socket(domain, type, protocol));
     MaybeSave();  // Save on successful creation.
-    return absl::make_unique<FileDescriptor>(fd);
+    return std::make_unique<FileDescriptor>(fd);
   };
 }
 
@@ -128,7 +128,7 @@ Creator<SocketPair> AcceptBindSocketPairCreator(bool abstract, int domain,
     // accepted is before connected to destruct connected before accepted.
     // Destructors for nonstatic member objects are called in the reverse order
     // in which they appear in the class declaration.
-    return absl::make_unique<AddrFDSocketPair>(
+    return std::make_unique<AddrFDSocketPair>(
         std::move(accepted), std::move(connected), bind_addr, extra_addr);
   };
 }
@@ -188,7 +188,7 @@ Creator<SocketPair> BidirectionalBindSocketPairCreator(bool abstract,
       MaybeSave();  // Successful unlink.
     }
 
-    return absl::make_unique<FDSocketPair>(std::move(sock1), std::move(sock2));
+    return std::make_unique<FDSocketPair>(std::move(sock1), std::move(sock2));
   };
 }
 
@@ -242,7 +242,7 @@ Creator<SocketPair> SocketpairGoferSocketPairCreator(int domain, int type,
       RETURN_ERROR_IF_SYSCALL_FAIL(close(sock));
     }
 
-    return absl::make_unique<FDSocketPair>(std::move(sock1), std::move(sock2));
+    return std::make_unique<FDSocketPair>(std::move(sock1), std::move(sock2));
   };
 }
 
@@ -268,7 +268,7 @@ Creator<SocketPair> SocketpairGoferFileSocketPairCreator(int flags) {
       sock2.reset(sock2_fd);
     }
 
-    return absl::make_unique<FDSocketPair>(std::move(sock1), std::move(sock2));
+    return std::make_unique<FDSocketPair>(std::move(sock1), std::move(sock2));
   };
 }
 
@@ -284,8 +284,8 @@ Creator<SocketPair> UnboundSocketPairCreator(bool abstract, int domain,
     MaybeSave();  // Successful socket creation.
     ASSIGN_OR_RETURN_ERRNO(auto sock2, Socket(domain, type, protocol));
     MaybeSave();  // Successful socket creation.
-    return absl::make_unique<AddrFDSocketPair>(std::move(sock1),
-                                               std::move(sock2), addr1, addr2);
+    return std::make_unique<AddrFDSocketPair>(std::move(sock1),
+                                              std::move(sock2), addr1, addr2);
   };
 }
 
@@ -382,7 +382,7 @@ CreateTCPConnectAcceptSocketPair(int bound, FileDescriptor connected, int type,
 
   T extra_addr = {};
   LocalhostAddr(&extra_addr, dual_stack);
-  return absl::make_unique<AddrFDSocketPair>(
+  return std::make_unique<AddrFDSocketPair>(
       std::move(connected), std::move(accepted), bind_addr, extra_addr);
 }
 
@@ -485,8 +485,8 @@ PosixErrorOr<std::unique_ptr<AddrFDSocketPair>> CreateUDPBoundSocketPair(
   ASSIGN_OR_RETURN_ERRNO(T addr1, BindIP<T>(sock1.get(), dual_stack));
   ASSIGN_OR_RETURN_ERRNO(T addr2, BindIP<T>(sock2.get(), dual_stack));
 
-  return absl::make_unique<AddrFDSocketPair>(std::move(sock1), std::move(sock2),
-                                             addr1, addr2);
+  return std::make_unique<AddrFDSocketPair>(std::move(sock1), std::move(sock2),
+                                            addr1, addr2);
 }
 
 template <typename T>
@@ -538,7 +538,7 @@ Creator<SocketPair> UDPUnboundSocketPairCreator(int domain, int type,
     ASSIGN_OR_RETURN_ERRNO(auto sock2, Socket(domain, type, protocol));
     MaybeSave();  // Successful socket creation.
 
-    return absl::make_unique<FDSocketPair>(std::move(sock1), std::move(sock2));
+    return std::make_unique<FDSocketPair>(std::move(sock1), std::move(sock2));
   };
 }
 
@@ -549,7 +549,7 @@ SocketPairKind Reversed(SocketPairKind const& base) {
       base.protocol,
       [creator]() -> PosixErrorOr<std::unique_ptr<ReversedSocketPair>> {
         ASSIGN_OR_RETURN_ERRNO(auto creator_value, creator());
-        return absl::make_unique<ReversedSocketPair>(std::move(creator_value));
+        return std::make_unique<ReversedSocketPair>(std::move(creator_value));
       }};
 }
 
@@ -560,7 +560,7 @@ Creator<FileDescriptor> UnboundSocketCreator(int domain, int type,
     RETURN_ERROR_IF_SYSCALL_FAIL(sock = socket(domain, type, protocol));
     MaybeSave();  // Successful socket creation.
 
-    return absl::make_unique<FileDescriptor>(sock);
+    return std::make_unique<FileDescriptor>(sock);
   };
 }
 

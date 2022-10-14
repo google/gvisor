@@ -16,6 +16,8 @@
 #include <sys/resource.h>
 #include <unistd.h>
 
+#include <memory>
+
 #include "gtest/gtest.h"
 #include "absl/memory/memory.h"
 #include "test/util/eventfd_util.h"
@@ -125,7 +127,7 @@ TEST(DupTest, Rlimit) {
     if (new_fd == -1) {
       break;
     }
-    auto f = absl::make_unique<FileDescriptor>(new_fd);
+    auto f = std::make_unique<FileDescriptor>(new_fd);
     EXPECT_LT(new_fd, kFDLimit);
     EXPECT_GT(new_fd, prev_fd);
     // Check that all fds in (prev_fd, new_fd) are used.

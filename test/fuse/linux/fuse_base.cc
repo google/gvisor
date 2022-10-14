@@ -24,6 +24,8 @@
 #include <sys/uio.h>
 #include <unistd.h>
 
+#include <memory>
+
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/strings/str_format.h"
@@ -261,7 +263,7 @@ void FuseTest::ServerFuseLoop() {
 void FuseTest::SetUpFuseServer(const struct fuse_init_out* payload) {
   ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, 0, sock_), SyscallSucceeds());
 
-  fuse_server_ = absl::make_unique<ScopedThread>([this, payload]() {
+  fuse_server_ = std::make_unique<ScopedThread>([this, payload]() {
     // Begin child thread, i.e. the FUSE server.
     ServerCompleteWith(ServerConsumeFuseInit(payload).ok());
     ServerFuseLoop();
