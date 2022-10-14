@@ -213,6 +213,9 @@ type Kernel struct {
 	// cpuClock is mutable, and is accessed using atomic memory operations.
 	cpuClock atomicbitops.Uint64
 
+	// cpuClockTickTimer drives increments of cpuClock.
+	cpuClockTickTimer *time.Timer `state:"nosave"`
+
 	// cpuClockMu is used to make increments of cpuClock, and updates of timers
 	// based on cpuClock, atomic.
 	cpuClockMu cpuClockMutex `state:"nosave"`
@@ -1130,6 +1133,7 @@ func (k *Kernel) Start() error {
 	}
 
 	k.started = true
+	k.cpuClockTickTimer = time.NewTimer(linux.ClockTick)
 	k.runningTasksMu.Lock()
 	k.cpuClockTickerRunning = true
 	k.runningTasksMu.Unlock()
@@ -1250,11 +1254,51 @@ func (k *Kernel) incRunningTasks() {
 			return
 		}
 
-		// Transition from 0 -> 1. Synchronize with other transitions and timer.
+		// Transition from 0 -> 1.
 		k.runningTasksMu.Lock()
-		if k.runningTasks.Add(1) == 1 {
+		if k.runningTasks.Load() != 0 {
+			// Raced with another transition and lost.
+			k.runningTasks.Add(1)
+			k.runningTasksMu.Unlock()
+			return
+		}
+		if !k.cpuClockTickerRunning {
+			select {
+			case tickTime := <-k.cpuClockTickTimer.C:
+				// Rearm the timer since we consumed the wakeup. Estimate how much time
+				// remains on the current tick so that periodic workloads interact with
+				// the (periodic) CPU clock ticker in the same way that they would
+				// without the optimization of putting the ticker to sleep.
+				missedNS := time.Since(tickTime).Nanoseconds()
+				missedTicks := missedNS / linux.ClockTick.Nanoseconds()
+				thisTickNS := missedNS - missedTicks*linux.ClockTick.Nanoseconds()
+				k.cpuClockTickTimer.Reset(time.Duration(linux.ClockTick.Nanoseconds() - thisTickNS))
+				// Increment k.cpuClock on the CPU clock ticker goroutine's behalf.
+				// (Whole missed ticks don't matter, and adding them to k.cpuClock will
+				// just confuse the watchdog.) At the time the tick occurred, all task
+				// goroutines were asleep, so there's nothing else to do. This ensures
+				// that our caller (Task.accountTaskGoroutineLeave()) records an
+				// updated k.cpuClock in Task.gosched.Timestamp, so that it's correctly
+				// accounted as having resumed execution in the sentry during this tick
+				// instead of at the end of the previous one.
+				k.cpuClock.Add(1)
+			default:
+			}
+			// We are transitioning from idle to active. Set k.cpuClockTickerRunning
+			// = true here so that if we transition to idle and then active again
+			// before the CPU clock ticker goroutine has a chance to run, the first
+			// call to k.incRunningTasks() at the end of that cycle does not try to
+			// steal k.cpuClockTickTimer.C again, as this would allow workloads that
+			// rapidly cycle between idle and active to starve the CPU clock ticker
+			// of chances to observe task goroutines in a running state and account
+			// their CPU usage.
+			k.cpuClockTickerRunning = true
 			k.runningTasksCond.Signal()
 		}
+		// This store must happen after the increment of k.cpuClock above to ensure
+		// that concurrent calls to Task.accountTaskGoroutineLeave() also observe
+		// the updated k.cpuClock.
+		k.runningTasks.Store(1)
 		k.runningTasksMu.Unlock()
 		return
 	}

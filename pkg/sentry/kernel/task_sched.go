@@ -336,37 +336,30 @@ func (tg *ThreadGroup) CPUClock() ktime.Clock {
 }
 
 func (k *Kernel) runCPUClockTicker() {
-	tickTimer := time.NewTimer(linux.ClockTick)
 	rng := rand.New(rand.NewSource(rand.Int63()))
 	var tgs []*ThreadGroup
 
 	for {
-		// Wait for the next CPU clock tick.
-		wokenEarly := false
-		select {
-		case <-tickTimer.C:
-			tickTimer.Reset(linux.ClockTick)
-		case <-k.cpuClockTickerWakeCh:
-			// Wake up to check if we need to stop with cpuClockTickerRunning =
-			// false, but then continue waiting for the next CPU clock tick.
-			wokenEarly = true
-		}
-
 		// Stop the CPU clock while nothing is running.
 		if k.runningTasks.Load() == 0 {
 			k.runningTasksMu.Lock()
 			if k.runningTasks.Load() == 0 {
 				k.cpuClockTickerRunning = false
 				k.cpuClockTickerStopCond.Broadcast()
-				for k.runningTasks.Load() == 0 {
-					k.runningTasksCond.Wait()
-				}
-				k.cpuClockTickerRunning = true
+				k.runningTasksCond.Wait()
+				// k.cpuClockTickerRunning was set to true by our waker
+				// (Kernel.incRunningTasks()). For reasons described there, we must
+				// process at least one CPU clock tick between calls to
+				// k.runningTasksCond.Wait().
 			}
 			k.runningTasksMu.Unlock()
 		}
 
-		if wokenEarly {
+		// Wait for the next CPU clock tick.
+		select {
+		case <-k.cpuClockTickTimer.C:
+			k.cpuClockTickTimer.Reset(linux.ClockTick)
+		case <-k.cpuClockTickerWakeCh:
 			continue
 		}
 
