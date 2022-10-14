@@ -1420,7 +1420,7 @@ TEST_P(SocketInetReusePortTest, TcpPortReuseMultiThread) {
   DisableSave ds;
 
   for (int i = 0; i < kThreadCount; i++) {
-    listen_thread[i] = absl::make_unique<ScopedThread>(
+    listen_thread[i] = std::make_unique<ScopedThread>(
         [&listener_fds, &accept_counts, i, &connects_received]() {
           do {
             auto fd = Accept(listener_fds[i].get(), nullptr, nullptr);
@@ -1527,7 +1527,7 @@ TEST_P(SocketInetReusePortTest, UdpPortReuseMultiThread) {
   DisableSave ds;  // Too expensive.
 
   for (int i = 0; i < kThreadCount; i++) {
-    receiver_thread[i] = absl::make_unique<ScopedThread>(
+    receiver_thread[i] = std::make_unique<ScopedThread>(
         [&listener_fds, &packets_per_socket, i, &packets_received]() {
           do {
             struct sockaddr_storage addr = {};

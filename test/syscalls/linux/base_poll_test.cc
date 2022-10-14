@@ -19,6 +19,8 @@
 #include <syscall.h>
 #include <unistd.h>
 
+#include <memory>
+
 #include "gtest/gtest.h"
 #include "absl/memory/memory.h"
 #include "absl/time/clock.h"
@@ -51,7 +53,7 @@ void BasePollTest::SetTimer(absl::Duration duration) {
   ClearTimer();
 
   // Create a new timer thread.
-  timer_ = absl::make_unique<TimerThread>(absl::Now() + duration, tgid, tid);
+  timer_ = std::make_unique<TimerThread>(absl::Now() + duration, tgid, tid);
 }
 
 bool BasePollTest::TimerFired() const { return timer_fired; }

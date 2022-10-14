@@ -19,6 +19,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <memory>
+
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/memory/memory.h"
@@ -325,7 +327,7 @@ TEST_F(OpenTest, AppendConcurrentWrite) {
   // Start kThreadCount threads which will write concurrently into the same
   // file.
   for (int i = 0; i < kThreadCount; i++) {
-    threads[i] = absl::make_unique<ScopedThread>([filename]() {
+    threads[i] = std::make_unique<ScopedThread>([filename]() {
       const FileDescriptor fd =
           ASSERT_NO_ERRNO_AND_VALUE(Open(filename, O_RDWR | O_APPEND));
 

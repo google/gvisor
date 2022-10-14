@@ -20,6 +20,7 @@
 #include <sys/un.h>
 
 #include <cstdio>
+#include <memory>
 
 #include "gtest/gtest.h"
 #include "absl/memory/memory.h"
@@ -1014,10 +1015,10 @@ TEST_P(IPv4UDPUnboundSocketTest, TestTwoSocketsJoinSameMulticastGroup) {
 // and both will receive data on it.
 TEST_P(IPv4UDPUnboundSocketTest, TestMcastReceptionOnTwoSockets) {
   std::unique_ptr<SocketPair> socket_pairs[2] = {
-      absl::make_unique<FDSocketPair>(ASSERT_NO_ERRNO_AND_VALUE(NewSocket()),
-                                      ASSERT_NO_ERRNO_AND_VALUE(NewSocket())),
-      absl::make_unique<FDSocketPair>(ASSERT_NO_ERRNO_AND_VALUE(NewSocket()),
-                                      ASSERT_NO_ERRNO_AND_VALUE(NewSocket()))};
+      std::make_unique<FDSocketPair>(ASSERT_NO_ERRNO_AND_VALUE(NewSocket()),
+                                     ASSERT_NO_ERRNO_AND_VALUE(NewSocket())),
+      std::make_unique<FDSocketPair>(ASSERT_NO_ERRNO_AND_VALUE(NewSocket()),
+                                     ASSERT_NO_ERRNO_AND_VALUE(NewSocket()))};
 
   ip_mreq iface = {}, group = {};
   iface.imr_interface.s_addr = htonl(INADDR_LOOPBACK);
@@ -1087,10 +1088,10 @@ TEST_P(IPv4UDPUnboundSocketTest, TestMcastReceptionOnTwoSockets) {
 // both memberships have been dropped.
 TEST_P(IPv4UDPUnboundSocketTest, TestMcastReceptionWhenDroppingMemberships) {
   std::unique_ptr<SocketPair> socket_pairs[2] = {
-      absl::make_unique<FDSocketPair>(ASSERT_NO_ERRNO_AND_VALUE(NewSocket()),
-                                      ASSERT_NO_ERRNO_AND_VALUE(NewSocket())),
-      absl::make_unique<FDSocketPair>(ASSERT_NO_ERRNO_AND_VALUE(NewSocket()),
-                                      ASSERT_NO_ERRNO_AND_VALUE(NewSocket()))};
+      std::make_unique<FDSocketPair>(ASSERT_NO_ERRNO_AND_VALUE(NewSocket()),
+                                     ASSERT_NO_ERRNO_AND_VALUE(NewSocket())),
+      std::make_unique<FDSocketPair>(ASSERT_NO_ERRNO_AND_VALUE(NewSocket()),
+                                     ASSERT_NO_ERRNO_AND_VALUE(NewSocket()))};
 
   ip_mreq iface = {}, group = {};
   iface.imr_interface.s_addr = htonl(INADDR_LOOPBACK);

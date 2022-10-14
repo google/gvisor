@@ -15,6 +15,8 @@
 #include <errno.h>
 #include <sys/syscall.h>
 
+#include <memory>
+
 #include "gtest/gtest.h"
 #include "absl/memory/memory.h"
 #include "test/util/cleanup.h"
@@ -198,7 +200,7 @@ TEST(MempolicyTest, QueryAvailableNodes) {
 
 TEST(MempolicyTest, GetMempolicyQueryNodeForAddress) {
   uint64_t dummy_stack_address;
-  auto dummy_heap_address = absl::make_unique<uint64_t>();
+  auto dummy_heap_address = std::make_unique<uint64_t>();
   int mode;
 
   for (auto ptr : {&dummy_stack_address, dummy_heap_address.get()}) {

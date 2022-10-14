@@ -139,7 +139,7 @@ TEST_P(BindToDeviceDistributionTest, Tcp) {
       listener_fds.size());
 
   for (size_t i = 0; i < listener_fds.size(); i++) {
-    listen_threads[i] = absl::make_unique<ScopedThread>(
+    listen_threads[i] = std::make_unique<ScopedThread>(
         [&listener_fds, &accept_counts, &connects_received, i,
          kConnectAttempts]() {
           do {
@@ -262,7 +262,7 @@ TEST_P(BindToDeviceDistributionTest, Udp) {
       listener_fds.size());
 
   for (size_t i = 0; i < listener_fds.size(); i++) {
-    receiver_threads[i] = absl::make_unique<ScopedThread>(
+    receiver_threads[i] = std::make_unique<ScopedThread>(
         [&listener_fds, &packets_per_socket, &packets_received, i]() {
           do {
             struct sockaddr_storage addr = {};
