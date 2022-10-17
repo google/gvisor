@@ -153,6 +153,7 @@ APT {
       Architectures "${arches[@]}";
       Suite "${suite}";
       Components "main";
+      Origin "Google";
     };
   };
 };
