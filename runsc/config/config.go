@@ -225,9 +225,6 @@ type Config struct {
 	// Enable lisafs.
 	Lisafs bool `flag:"lisafs"`
 
-	// Enables FUSE usage.
-	FUSE bool `flag:"fuse"`
-
 	// Allows overriding of flags in OCI annotations.
 	AllowFlagOverride bool `flag:"allow-flag-override"`
 

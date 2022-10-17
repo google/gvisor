@@ -51,7 +51,6 @@ var (
 	useTmpfs           = flag.Bool("use-tmpfs", false, "mounts tmpfs for /tmp")
 	fileAccess         = flag.String("file-access", "exclusive", "mounts root in exclusive or shared mode")
 	overlay            = flag.Bool("overlay", false, "wrap filesystem mounts with writable tmpfs overlay")
-	fuse               = flag.Bool("fuse", false, "enable FUSE")
 	container          = flag.Bool("container", false, "run tests in their own namespaces (user ns, network ns, etc), pretending to be root. Implicitly enabled if network=host, or if using network namespaces")
 	setupContainerPath = flag.String("setup-container", "", "path to setup_container binary (for use with --container)")
 	trace              = flag.Bool("trace", false, "enables all trace points")
@@ -205,9 +204,6 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 	}
 	if *overlay {
 		args = append(args, "-overlay2=all:/tmp")
-	}
-	if *fuse {
-		args = append(args, "-fuse")
 	}
 	if *debug {
 		args = append(args, "-debug", "-log-packets=true")
@@ -432,16 +428,10 @@ func runTestCaseRunsc(testBin string, tc *gtest.TestCase, args []string, t *test
 	const (
 		platformVar = "TEST_ON_GVISOR"
 		networkVar  = "GVISOR_NETWORK"
-		fuseVar     = "FUSE_ENABLED"
 	)
 	env := append(os.Environ(), platformVar+"="+*platform, networkVar+"="+*network)
 	if *platformSupport != "" {
 		env = append(env, fmt.Sprintf("%s=%s", platformSupportEnvVar, *platformSupport))
-	}
-	if *fuse {
-		env = append(env, fuseVar+"=TRUE")
-	} else {
-		env = append(env, fuseVar+"=FALSE")
 	}
 
 	// Remove shard env variables so that the gunit binary does not try to
