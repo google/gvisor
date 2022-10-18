@@ -743,9 +743,13 @@ func (fs *filesystem) Release(ctx context.Context) {
 	if !fs.iopts.LeakConnection {
 		// Close the connection to the server. This implicitly clunks all fids.
 		if fs.opts.lisaEnabled {
-			fs.clientLisa.Close()
+			if fs.clientLisa != nil {
+				fs.clientLisa.Close()
+			}
 		} else {
-			fs.client.Close()
+			if fs.client != nil {
+				fs.client.Close()
+			}
 		}
 	}
 
