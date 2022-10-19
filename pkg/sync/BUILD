@@ -42,7 +42,6 @@ go_test(
     size = "small",
     srcs = [
         "gate_test.go",
-        "mutex_test.go",
         "rwmutex_test.go",
         "seqcount_test.go",
     ],
