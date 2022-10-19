@@ -965,14 +965,14 @@ TEST_P(UdpSocketTest, ZerolengthWriteAllowed) {
   SKIP_IF(IsRunningWithHostinet());
 
   ASSERT_NO_ERRNO(BindLoopback());
-  // Connect to loopback:bind_addr_+1.
+
+  // Bind `sock_` to loopback.
   struct sockaddr_storage addr_storage = InetLoopbackAddr();
   struct sockaddr* addr = AsSockAddr(&addr_storage);
-  SetPort(&addr_storage, *Port(&bind_addr_storage_) + 1);
-  ASSERT_THAT(connect(bind_.get(), addr, addrlen_), SyscallSucceeds());
+  ASSERT_NO_ERRNO(BindSocket(sock_.get(), addr));
 
-  // Bind sock to loopback:bind_addr_+1.
-  ASSERT_THAT(bind(sock_.get(), addr, addrlen_), SyscallSucceeds());
+  // Connect `bind_` to `sock_`.
+  ASSERT_THAT(connect(bind_.get(), addr, addrlen_), SyscallSucceeds());
 
   char buf[3];
   // Send zero length packet from bind_ to sock_.
@@ -994,14 +994,13 @@ TEST_P(UdpSocketTest, ZerolengthWriteAllowedNonBlockRead) {
 
   ASSERT_NO_ERRNO(BindLoopback());
 
-  // Connect to loopback:bind_addr_port+1.
+  // Bind `sock_` to loopback.
   struct sockaddr_storage addr_storage = InetLoopbackAddr();
   struct sockaddr* addr = AsSockAddr(&addr_storage);
-  SetPort(&addr_storage, *Port(&bind_addr_storage_) + 1);
-  ASSERT_THAT(connect(bind_.get(), addr, addrlen_), SyscallSucceeds());
+  ASSERT_NO_ERRNO(BindSocket(sock_.get(), addr));
 
-  // Bind sock to loopback:bind_addr_port+1.
-  ASSERT_THAT(bind(sock_.get(), addr, addrlen_), SyscallSucceeds());
+  // Connect `bind_` to `sock_`.
+  ASSERT_THAT(connect(bind_.get(), addr, addrlen_), SyscallSucceeds());
 
   // Set sock to non-blocking.
   int opts = 0;
@@ -1045,14 +1044,13 @@ TEST_P(UdpSocketTest, SendAndReceiveNotConnected) {
 TEST_P(UdpSocketTest, SendAndReceiveConnected) {
   ASSERT_NO_ERRNO(BindLoopback());
 
-  // Connect to loopback:bind_addr_port+1.
+  // Bind `sock_` to loopback.
   struct sockaddr_storage addr_storage = InetLoopbackAddr();
   struct sockaddr* addr = AsSockAddr(&addr_storage);
-  SetPort(&addr_storage, *Port(&bind_addr_storage_) + 1);
-  ASSERT_THAT(connect(bind_.get(), addr, addrlen_), SyscallSucceeds());
+  ASSERT_NO_ERRNO(BindSocket(sock_.get(), addr));
 
-  // Bind sock to loopback:bind_addr_port+1.
-  ASSERT_THAT(bind(sock_.get(), addr, addrlen_), SyscallSucceeds());
+  // Connect `bind_` to `sock_`.
+  ASSERT_THAT(connect(bind_.get(), addr, addrlen_), SyscallSucceeds());
 
   // Send some data from sock to bind_.
   char buf[512];
@@ -1071,17 +1069,13 @@ TEST_P(UdpSocketTest, SendAndReceiveConnected) {
 TEST_P(UdpSocketTest, ReceiveFromNotConnected) {
   ASSERT_NO_ERRNO(BindLoopback());
 
-  // Connect to loopback:bind_addr_port+1.
+  // Bind `sock_` to loopback.
   struct sockaddr_storage addr_storage = InetLoopbackAddr();
   struct sockaddr* addr = AsSockAddr(&addr_storage);
-  SetPort(&addr_storage, *Port(&bind_addr_storage_) + 1);
-  ASSERT_THAT(connect(bind_.get(), addr, addrlen_), SyscallSucceeds());
+  ASSERT_NO_ERRNO(BindSocket(sock_.get(), addr));
 
-  // Bind sock to loopback:bind_addr_port+2.
-  struct sockaddr_storage addr2_storage = InetLoopbackAddr();
-  struct sockaddr* addr2 = AsSockAddr(&addr2_storage);
-  SetPort(&addr2_storage, *Port(&bind_addr_storage_) + 2);
-  ASSERT_THAT(bind(sock_.get(), addr2, addrlen_), SyscallSucceeds());
+  // Connect `bind_` to itself.
+  ASSERT_THAT(connect(bind_.get(), bind_addr_, addrlen_), SyscallSucceeds());
 
   // Send some data from sock to bind_.
   char buf[512];
@@ -1090,18 +1084,17 @@ TEST_P(UdpSocketTest, ReceiveFromNotConnected) {
 
   // Check that the data isn't received because it was sent from a different
   // address than we're connected.
-  EXPECT_THAT(recv(sock_.get(), buf, sizeof(buf), MSG_DONTWAIT),
+  EXPECT_THAT(recv(bind_.get(), buf, sizeof(buf), MSG_DONTWAIT),
               SyscallFailsWithErrno(EWOULDBLOCK));
 }
 
 TEST_P(UdpSocketTest, ReceiveBeforeConnect) {
   ASSERT_NO_ERRNO(BindLoopback());
 
-  // Bind sock to loopback:bind_addr_port+2.
-  struct sockaddr_storage addr2_storage = InetLoopbackAddr();
-  struct sockaddr* addr2 = AsSockAddr(&addr2_storage);
-  SetPort(&addr2_storage, *Port(&bind_addr_storage_) + 2);
-  ASSERT_THAT(bind(sock_.get(), addr2, addrlen_), SyscallSucceeds());
+  // Bind `sock_` to loopback.
+  struct sockaddr_storage addr_storage = InetLoopbackAddr();
+  struct sockaddr* addr = AsSockAddr(&addr_storage);
+  ASSERT_NO_ERRNO(BindSocket(sock_.get(), addr));
 
   // Send some data from sock to bind_.
   char buf[512];
@@ -1113,11 +1106,8 @@ TEST_P(UdpSocketTest, ReceiveBeforeConnect) {
   // Wait for the data to arrive.
   ASSERT_NO_FATAL_FAILURE(BlockUntilPollin(bind_.get()));
 
-  // Connect to loopback:bind_addr_port+1.
-  struct sockaddr_storage addr_storage = InetLoopbackAddr();
-  struct sockaddr* addr = AsSockAddr(&addr_storage);
-  SetPort(&addr_storage, *Port(&bind_addr_storage_) + 1);
-  ASSERT_THAT(connect(bind_.get(), addr, addrlen_), SyscallSucceeds());
+  // Connect `bind_` to itself.
+  ASSERT_THAT(connect(bind_.get(), bind_addr_, addrlen_), SyscallSucceeds());
 
   // Receive the data. It works because it was sent before the connect.
   char received[sizeof(buf)];
@@ -1137,14 +1127,13 @@ TEST_P(UdpSocketTest, ReceiveBeforeConnect) {
 TEST_P(UdpSocketTest, ReceiveFrom) {
   ASSERT_NO_ERRNO(BindLoopback());
 
-  // Connect to loopback:bind_addr_port+1.
+  // Bind `sock_` to loopback.
   struct sockaddr_storage addr_storage = InetLoopbackAddr();
   struct sockaddr* addr = AsSockAddr(&addr_storage);
-  SetPort(&addr_storage, *Port(&bind_addr_storage_) + 1);
-  ASSERT_THAT(connect(bind_.get(), addr, addrlen_), SyscallSucceeds());
+  ASSERT_NO_ERRNO(BindSocket(sock_.get(), addr));
 
-  // Bind sock to loopback:bind_addr_port+1.
-  ASSERT_THAT(bind(sock_.get(), addr, addrlen_), SyscallSucceeds());
+  // Connect `bind_` to `sock_`.
+  ASSERT_THAT(connect(bind_.get(), addr, addrlen_), SyscallSucceeds());
 
   // Send some data from sock to bind_.
   char buf[512];
@@ -1180,14 +1169,15 @@ TEST_P(UdpSocketTest, Accept) {
 TEST_P(UdpSocketTest, ReadShutdownNonblockPendingData) {
   ASSERT_NO_ERRNO(BindLoopback());
 
-  // Connect to loopback:bind_addr_port+1.
+  // Bind `sock_` to loopback.
   struct sockaddr_storage addr_storage = InetLoopbackAddr();
   struct sockaddr* addr = AsSockAddr(&addr_storage);
-  SetPort(&addr_storage, *Port(&bind_addr_storage_) + 1);
+  ASSERT_NO_ERRNO(BindSocket(sock_.get(), addr));
+
+  // Connect `bind_` to `sock_`.
   ASSERT_THAT(connect(bind_.get(), addr, addrlen_), SyscallSucceeds());
 
-  // Bind to loopback:bind_addr_port+1 and connect to bind_addr_.
-  ASSERT_THAT(bind(sock_.get(), addr, addrlen_), SyscallSucceeds());
+  // Connect `sock_` to `bind_addr_`.
   ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
 
   // Verify that we get EWOULDBLOCK when there is nothing to read.
