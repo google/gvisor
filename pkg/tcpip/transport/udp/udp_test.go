@@ -754,7 +754,7 @@ func TestV4WriteOnV6Only(t *testing.T) {
 		c.CreateEndpointForFlow(context.UnicastV6Only, udp.ProtocolNumber)
 
 		// Write to V4 mapped address.
-		testWriteOpSequenceFails(c, context.UnicastV4in6, writeOpSequence, &tcpip.ErrNoRoute{})
+		testWriteOpSequenceFails(c, context.UnicastV4in6, writeOpSequence, &tcpip.ErrHostUnreachable{})
 	}
 }
 

@@ -95,7 +95,7 @@ func (*fakeTransportEndpoint) Read(io.Writer, tcpip.ReadOptions) (tcpip.ReadResu
 
 func (f *fakeTransportEndpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcpip.Error) {
 	if len(f.route.RemoteAddress()) == 0 {
-		return 0, &tcpip.ErrNoRoute{}
+		return 0, &tcpip.ErrHostUnreachable{}
 	}
 
 	v := make([]byte, p.Len())
@@ -146,7 +146,7 @@ func (f *fakeTransportEndpoint) Connect(addr tcpip.FullAddress) tcpip.Error {
 	// Find the route.
 	r, err := f.proto.stack.FindRoute(addr.NIC, "", addr.Addr, fakeNetNumber, false /* multicastLoop */)
 	if err != nil {
-		return &tcpip.ErrNoRoute{}
+		return &tcpip.ErrHostUnreachable{}
 	}
 
 	// Try to register so that we can start receiving packets.

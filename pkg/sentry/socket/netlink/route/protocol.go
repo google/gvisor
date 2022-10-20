@@ -335,7 +335,7 @@ func fillRoute(routes []inet.Route, addr []byte) (inet.Route, *syserr.Error) {
 		idx = idxDef
 	}
 	if idx == -1 {
-		return inet.Route{}, syserr.ErrNoRoute
+		return inet.Route{}, syserr.ErrHostUnreachable
 	}
 
 	route := routes[idx]

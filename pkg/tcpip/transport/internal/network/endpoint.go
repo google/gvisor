@@ -447,7 +447,7 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 				// interface (usually when using link-local addresses), make sure the
 				// interface matches the specified local interface.
 				if nicID != 0 && nicID != pktInfoNICID {
-					return WriteContext{}, &tcpip.ErrNoRoute{}
+					return WriteContext{}, &tcpip.ErrHostUnreachable{}
 				}
 
 				// If a local address is not specified, then we need to make sure the
@@ -459,7 +459,7 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 					//
 					// The bound interface is usually only set for link-local addresses.
 					if info.BindNICID != 0 && info.BindNICID != pktInfoNICID {
-						return WriteContext{}, &tcpip.ErrNoRoute{}
+						return WriteContext{}, &tcpip.ErrHostUnreachable{}
 					}
 					if len(info.ID.LocalAddress) != 0 && e.stack.CheckLocalAddress(pktInfoNICID, header.IPv6ProtocolNumber, info.ID.LocalAddress) == 0 {
 						return WriteContext{}, &tcpip.ErrBadLocalAddress{}
@@ -483,7 +483,7 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 		} else {
 			if info.BindNICID != 0 {
 				if nicID != 0 && nicID != info.BindNICID {
-					return WriteContext{}, &tcpip.ErrNoRoute{}
+					return WriteContext{}, &tcpip.ErrHostUnreachable{}
 				}
 
 				nicID = info.BindNICID

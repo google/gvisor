@@ -849,8 +849,8 @@ func testRoute(t *testing.T, s *stack.Stack, nic tcpip.NICID, srcAddr, dstAddr, 
 
 func testNoRoute(t *testing.T, s *stack.Stack, nic tcpip.NICID, srcAddr, dstAddr tcpip.Address) {
 	_, err := s.FindRoute(nic, srcAddr, dstAddr, fakeNetNumber, false /* multicastLoop */)
-	if _, ok := err.(*tcpip.ErrNoRoute); !ok {
-		t.Fatalf("FindRoute returned unexpected error, got = %v, want = %s", err, &tcpip.ErrNoRoute{})
+	if _, ok := err.(*tcpip.ErrHostUnreachable); !ok {
+		t.Fatalf("FindRoute returned unexpected error, got = %v, want = %s", err, &tcpip.ErrHostUnreachable{})
 	}
 }
 
@@ -1378,7 +1378,7 @@ func TestAddressRemoval(t *testing.T) {
 		t.Fatal("RemoveAddress failed:", err)
 	}
 	testFailingRecv(t, fakeNet, localAddrByte, ep, buf)
-	testFailingSendTo(t, s, remoteAddr, nil, &tcpip.ErrNoRoute{})
+	testFailingSendTo(t, s, remoteAddr, nil, &tcpip.ErrHostUnreachable{})
 
 	// Check that removing the same address fails.
 	err := s.RemoveAddress(1, localAddr)
@@ -1438,7 +1438,7 @@ func TestAddressRemovalWithRouteHeld(t *testing.T) {
 	}
 	testFailingRecv(t, fakeNet, localAddrByte, ep, buf)
 	testFailingSend(t, r, nil, &tcpip.ErrInvalidEndpointState{})
-	testFailingSendTo(t, s, remoteAddr, nil, &tcpip.ErrNoRoute{})
+	testFailingSendTo(t, s, remoteAddr, nil, &tcpip.ErrHostUnreachable{})
 
 	// Check that removing the same address fails.
 	{
@@ -1539,7 +1539,7 @@ func TestEndpointExpiration(t *testing.T) {
 					// FIXME(b/139841518):Spoofing doesn't work if there is no primary address.
 					// testSendTo(t, s, remoteAddr, ep, nil)
 				} else {
-					testFailingSendTo(t, s, remoteAddr, nil, &tcpip.ErrNoRoute{})
+					testFailingSendTo(t, s, remoteAddr, nil, &tcpip.ErrHostUnreachable{})
 				}
 
 				// 2. Add Address, everything should work.
@@ -1574,7 +1574,7 @@ func TestEndpointExpiration(t *testing.T) {
 					// FIXME(b/139841518):Spoofing doesn't work if there is no primary address.
 					// testSendTo(t, s, remoteAddr, ep, nil)
 				} else {
-					testFailingSendTo(t, s, remoteAddr, nil, &tcpip.ErrNoRoute{})
+					testFailingSendTo(t, s, remoteAddr, nil, &tcpip.ErrHostUnreachable{})
 				}
 
 				// 4. Add Address back, everything should work again.
@@ -1614,7 +1614,7 @@ func TestEndpointExpiration(t *testing.T) {
 					testSendTo(t, s, remoteAddr, ep, nil)
 				} else {
 					testFailingSend(t, r, nil, &tcpip.ErrInvalidEndpointState{})
-					testFailingSendTo(t, s, remoteAddr, nil, &tcpip.ErrNoRoute{})
+					testFailingSendTo(t, s, remoteAddr, nil, &tcpip.ErrHostUnreachable{})
 				}
 
 				// 7. Add Address back, everything should work again.
@@ -1650,7 +1650,7 @@ func TestEndpointExpiration(t *testing.T) {
 					// FIXME(b/139841518):Spoofing doesn't work if there is no primary address.
 					// testSendTo(t, s, remoteAddr, ep, nil)
 				} else {
-					testFailingSendTo(t, s, remoteAddr, nil, &tcpip.ErrNoRoute{})
+					testFailingSendTo(t, s, remoteAddr, nil, &tcpip.ErrHostUnreachable{})
 				}
 			})
 		}
@@ -1693,8 +1693,8 @@ func TestPromiscuousMode(t *testing.T) {
 
 	// Check that we can't get a route as there is no local address.
 	_, err := s.FindRoute(0, "", "\x02", fakeNetNumber, false /* multicastLoop */)
-	if _, ok := err.(*tcpip.ErrNoRoute); !ok {
-		t.Fatalf("FindRoute returned unexpected error: got = %v, want = %s", err, &tcpip.ErrNoRoute{})
+	if _, ok := err.(*tcpip.ErrHostUnreachable); !ok {
+		t.Fatalf("FindRoute returned unexpected error: got = %v, want = %s", err, &tcpip.ErrHostUnreachable{})
 	}
 
 	// Set promiscuous mode to false, then check that packet can't be
@@ -1914,7 +1914,7 @@ func TestSpoofingNoAddress(t *testing.T) {
 		t.Errorf("FindRoute succeeded with route %+v when it should have failed", r)
 	}
 	// Sending a packet fails.
-	testFailingSendTo(t, s, dstAddr, nil, &tcpip.ErrNoRoute{})
+	testFailingSendTo(t, s, dstAddr, nil, &tcpip.ErrHostUnreachable{})
 
 	// With address spoofing enabled, FindRoute permits any address to be used
 	// as the source.
@@ -2123,7 +2123,7 @@ func TestMulticastOrIPv6LinkLocalNeedsNoRoute(t *testing.T) {
 
 			var want tcpip.Error = &tcpip.ErrNetworkUnreachable{}
 			if tc.routeNeeded {
-				want = &tcpip.ErrNoRoute{}
+				want = &tcpip.ErrHostUnreachable{}
 			}
 
 			// If there is no endpoint, it won't work.
@@ -2144,8 +2144,8 @@ func TestMulticastOrIPv6LinkLocalNeedsNoRoute(t *testing.T) {
 
 			if r, err := s.FindRoute(1, anyAddr, tc.address, fakeNetNumber, false /* multicastLoop */); tc.routeNeeded {
 				// Route table is empty but we need a route, this should cause an error.
-				if _, ok := err.(*tcpip.ErrNoRoute); !ok {
-					t.Fatalf("got FindRoute(1, %v, %v, %v) = %v, want = %v", anyAddr, tc.address, fakeNetNumber, err, &tcpip.ErrNoRoute{})
+				if _, ok := err.(*tcpip.ErrHostUnreachable); !ok {
+					t.Fatalf("got FindRoute(1, %v, %v, %v) = %v, want = %v", anyAddr, tc.address, fakeNetNumber, err, &tcpip.ErrHostUnreachable{})
 				}
 			} else {
 				if err != nil {
@@ -4521,7 +4521,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			forwardingEnabled:     false,
 			addrNIC:               nicID1,
 			localAddrWithPrefix:   fakeNetCfg.nic2AddrWithPrefix,
-			findRouteErr:          &tcpip.ErrNoRoute{},
+			findRouteErr:          &tcpip.ErrHostUnreachable{},
 			dependentOnForwarding: false,
 		},
 		{
@@ -4530,7 +4530,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			forwardingEnabled:     true,
 			addrNIC:               nicID1,
 			localAddrWithPrefix:   fakeNetCfg.nic2AddrWithPrefix,
-			findRouteErr:          &tcpip.ErrNoRoute{},
+			findRouteErr:          &tcpip.ErrHostUnreachable{},
 			dependentOnForwarding: false,
 		},
 		{
@@ -4539,7 +4539,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			forwardingEnabled:     false,
 			addrNIC:               nicID1,
 			localAddrWithPrefix:   fakeNetCfg.nic1AddrWithPrefix,
-			findRouteErr:          &tcpip.ErrNoRoute{},
+			findRouteErr:          &tcpip.ErrHostUnreachable{},
 			dependentOnForwarding: false,
 		},
 		{
@@ -4575,7 +4575,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			forwardingEnabled:     false,
 			addrNIC:               nicID2,
 			localAddrWithPrefix:   fakeNetCfg.nic1AddrWithPrefix,
-			findRouteErr:          &tcpip.ErrNoRoute{},
+			findRouteErr:          &tcpip.ErrHostUnreachable{},
 			dependentOnForwarding: false,
 		},
 		{
@@ -4584,7 +4584,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			forwardingEnabled:     true,
 			addrNIC:               nicID2,
 			localAddrWithPrefix:   fakeNetCfg.nic1AddrWithPrefix,
-			findRouteErr:          &tcpip.ErrNoRoute{},
+			findRouteErr:          &tcpip.ErrHostUnreachable{},
 			dependentOnForwarding: false,
 		},
 		{
@@ -4608,7 +4608,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			netCfg:                fakeNetCfg,
 			forwardingEnabled:     false,
 			localAddrWithPrefix:   fakeNetCfg.nic1AddrWithPrefix,
-			findRouteErr:          &tcpip.ErrNoRoute{},
+			findRouteErr:          &tcpip.ErrHostUnreachable{},
 			dependentOnForwarding: false,
 		},
 		{
@@ -4624,7 +4624,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			netCfg:                ipv6LinkLocalNIC1WithGlobalRemote,
 			forwardingEnabled:     false,
 			addrNIC:               nicID1,
-			findRouteErr:          &tcpip.ErrNoRoute{},
+			findRouteErr:          &tcpip.ErrHostUnreachable{},
 			dependentOnForwarding: false,
 		},
 		{
@@ -4632,7 +4632,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			netCfg:                ipv6LinkLocalNIC1WithGlobalRemote,
 			forwardingEnabled:     true,
 			addrNIC:               nicID1,
-			findRouteErr:          &tcpip.ErrNoRoute{},
+			findRouteErr:          &tcpip.ErrHostUnreachable{},
 			dependentOnForwarding: false,
 		},
 		{
@@ -4640,7 +4640,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			netCfg:                ipv6LinkLocalNIC1WithGlobalRemote,
 			forwardingEnabled:     false,
 			localAddrWithPrefix:   ipv6LinkLocalNIC1WithGlobalRemote.nic1AddrWithPrefix,
-			findRouteErr:          &tcpip.ErrNoRoute{},
+			findRouteErr:          &tcpip.ErrHostUnreachable{},
 			dependentOnForwarding: false,
 		},
 		{
@@ -4648,7 +4648,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			netCfg:                ipv6LinkLocalNIC1WithGlobalRemote,
 			forwardingEnabled:     true,
 			localAddrWithPrefix:   ipv6LinkLocalNIC1WithGlobalRemote.nic1AddrWithPrefix,
-			findRouteErr:          &tcpip.ErrNoRoute{},
+			findRouteErr:          &tcpip.ErrHostUnreachable{},
 			dependentOnForwarding: false,
 		},
 		{

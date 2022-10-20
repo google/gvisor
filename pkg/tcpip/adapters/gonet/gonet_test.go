@@ -737,11 +737,11 @@ func TestTCPDialError(t *testing.T) {
 
 	switch _, err := DialTCP(s, addr, ipv4.ProtocolNumber); err := err.(type) {
 	case *net.OpError:
-		if err.Err.Error() != (&tcpip.ErrNoRoute{}).String() {
-			t.Errorf("got DialTCP() = %s, want = %s", err, &tcpip.ErrNoRoute{})
+		if err.Err.Error() != (&tcpip.ErrHostUnreachable{}).String() {
+			t.Errorf("got DialTCP() = %s, want = %s", err, &tcpip.ErrHostUnreachable{})
 		}
 	default:
-		t.Errorf("got DialTCP(...) = %v, want %s", err, &tcpip.ErrNoRoute{})
+		t.Errorf("got DialTCP(...) = %v, want %s", err, &tcpip.ErrHostUnreachable{})
 	}
 }
 

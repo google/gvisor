@@ -221,7 +221,7 @@ func (c *Context) CheckEndpointWriteStats(incr uint64, want *tcpip.TransportEndp
 		want.WriteErrors.WriteClosed.IncrementBy(incr)
 	case *tcpip.ErrInvalidEndpointState:
 		want.WriteErrors.InvalidEndpointState.IncrementBy(incr)
-	case *tcpip.ErrNoRoute, *tcpip.ErrBroadcastDisabled, *tcpip.ErrNetworkUnreachable:
+	case *tcpip.ErrHostUnreachable, *tcpip.ErrBroadcastDisabled, *tcpip.ErrNetworkUnreachable:
 		want.SendErrors.NoRoute.IncrementBy(incr)
 	default:
 		want.SendErrors.SendToNetworkFailed.IncrementBy(incr)

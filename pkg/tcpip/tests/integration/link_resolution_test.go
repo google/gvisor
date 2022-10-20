@@ -246,9 +246,9 @@ func TestTCPLinkResolutionFailure(t *testing.T) {
 			name:             "IPv4 without resolvable remote",
 			netProto:         ipv4.ProtocolNumber,
 			remoteAddr:       utils.Ipv4Addr3.AddressWithPrefix.Address,
-			expectedWriteErr: &tcpip.ErrNoRoute{},
+			expectedWriteErr: &tcpip.ErrHostUnreachable{},
 			sockError: tcpip.SockError{
-				Err: &tcpip.ErrNoRoute{},
+				Err: &tcpip.ErrHostUnreachable{},
 				Dst: tcpip.FullAddress{
 					NIC:  host1NICID,
 					Addr: utils.Ipv4Addr3.AddressWithPrefix.Address,
@@ -271,9 +271,9 @@ func TestTCPLinkResolutionFailure(t *testing.T) {
 			name:             "IPv6 without resolvable remote",
 			netProto:         ipv6.ProtocolNumber,
 			remoteAddr:       utils.Ipv6Addr3.AddressWithPrefix.Address,
-			expectedWriteErr: &tcpip.ErrNoRoute{},
+			expectedWriteErr: &tcpip.ErrHostUnreachable{},
 			sockError: tcpip.SockError{
-				Err: &tcpip.ErrNoRoute{},
+				Err: &tcpip.ErrHostUnreachable{},
 				Dst: tcpip.FullAddress{
 					NIC:  host1NICID,
 					Addr: utils.Ipv6Addr3.AddressWithPrefix.Address,

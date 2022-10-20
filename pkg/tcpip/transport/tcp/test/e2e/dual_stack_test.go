@@ -42,7 +42,7 @@ func TestV4MappedConnectOnV6Only(t *testing.T) {
 
 	// Start connection attempt, it must fail.
 	err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestV4MappedAddr, Port: context.TestPort})
-	if d := cmp.Diff(&tcpip.ErrNoRoute{}, err); d != "" {
+	if d := cmp.Diff(&tcpip.ErrHostUnreachable{}, err); d != "" {
 		t.Fatalf("c.EP.Connect(...) mismatch (-want +got):\n%s", d)
 	}
 }
