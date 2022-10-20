@@ -380,19 +380,19 @@ func (*ErrNoPortAvailable) IgnoreStats() bool {
 }
 func (*ErrNoPortAvailable) String() string { return "no ports are available" }
 
-// ErrNoRoute indicates the operation is not able to find a route to the
-// destination.
+// ErrHostUnreachable indicates that a destination host could not be
+// reached.
 //
 // +stateify savable
-type ErrNoRoute struct{}
+type ErrHostUnreachable struct{}
 
-func (*ErrNoRoute) isError() {}
+func (*ErrHostUnreachable) isError() {}
 
 // IgnoreStats implements Error.
-func (*ErrNoRoute) IgnoreStats() bool {
+func (*ErrHostUnreachable) IgnoreStats() bool {
 	return false
 }
-func (*ErrNoRoute) String() string { return "no route" }
+func (*ErrHostUnreachable) String() string { return "no route to host" }
 
 // ErrNoSuchFile is used to indicate that ENOENT should be returned the to
 // calling application.

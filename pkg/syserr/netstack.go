@@ -74,8 +74,8 @@ func TranslateNetstackError(err tcpip.Error) *Error {
 		return ErrDuplicateNICID
 	case *tcpip.ErrDuplicateAddress:
 		return ErrDuplicateAddress
-	case *tcpip.ErrNoRoute:
-		return ErrNoRoute
+	case *tcpip.ErrHostUnreachable:
+		return ErrHostUnreachable
 	case *tcpip.ErrAlreadyBound:
 		return ErrAlreadyBound
 	case *tcpip.ErrInvalidEndpointState:

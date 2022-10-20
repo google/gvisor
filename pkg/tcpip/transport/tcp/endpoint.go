@@ -2385,7 +2385,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool) tcpip.Error {
 		}
 
 		if nicID != 0 && nicID != e.boundNICID {
-			return &tcpip.ErrNoRoute{}
+			return &tcpip.ErrHostUnreachable{}
 		}
 
 		nicID = e.boundNICID
@@ -2906,7 +2906,7 @@ func (e *endpoint) HandleError(transErr stack.TransportError, pkt stack.PacketBu
 	case stack.PacketTooBigTransportError:
 		handlePacketTooBig(transErr.Info())
 	case stack.DestinationHostUnreachableTransportError:
-		e.onICMPError(&tcpip.ErrNoRoute{}, transErr, pkt)
+		e.onICMPError(&tcpip.ErrHostUnreachable{}, transErr, pkt)
 	case stack.DestinationNetworkUnreachableTransportError:
 		e.onICMPError(&tcpip.ErrNetworkUnreachable{}, transErr, pkt)
 	}

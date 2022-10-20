@@ -58,12 +58,12 @@ func (*ErrLinkLocalDestinationAddress) isForwardingError() {}
 
 func (*ErrLinkLocalDestinationAddress) String() string { return "link local destination address" }
 
-// ErrNoRoute indicates that a route for the received packet couldn't be found.
-type ErrNoRoute struct{}
+// ErrHostUnreachable indicates that the destinatino host could not be reached.
+type ErrHostUnreachable struct{}
 
-func (*ErrNoRoute) isForwardingError() {}
+func (*ErrHostUnreachable) isForwardingError() {}
 
-func (*ErrNoRoute) String() string { return "no route" }
+func (*ErrHostUnreachable) String() string { return "no route to host" }
 
 // ErrMessageTooLong indicates the packet was too big for the outgoing MTU.
 //

@@ -210,7 +210,7 @@ var (
 	ErrTimedOut                   = newWithHost("connection timed out", errno.ETIMEDOUT, unix.ETIMEDOUT)
 	ErrConnectionRefused          = newWithHost("connection refused", errno.ECONNREFUSED, unix.ECONNREFUSED)
 	ErrHostDown                   = newWithHost("host is down", errno.EHOSTDOWN, unix.EHOSTDOWN)
-	ErrNoRoute                    = newWithHost("no route to host", errno.EHOSTUNREACH, unix.EHOSTUNREACH)
+	ErrHostUnreachable            = newWithHost("no route to host", errno.EHOSTUNREACH, unix.EHOSTUNREACH)
 	ErrAlreadyInProgress          = newWithHost("operation already in progress", errno.EALREADY, unix.EALREADY)
 	ErrInProgress                 = newWithHost("operation now in progress", errno.EINPROGRESS, unix.EINPROGRESS)
 	ErrStaleFileHandle            = newWithHost("stale file handle", errno.ESTALE, unix.ESTALE)

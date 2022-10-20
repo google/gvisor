@@ -552,25 +552,25 @@ func (e *ErrNoPortAvailable) afterLoad() {}
 func (e *ErrNoPortAvailable) StateLoad(stateSourceObject state.Source) {
 }
 
-func (e *ErrNoRoute) StateTypeName() string {
-	return "pkg/tcpip.ErrNoRoute"
+func (e *ErrHostUnreachable) StateTypeName() string {
+	return "pkg/tcpip.ErrHostUnreachable"
 }
 
-func (e *ErrNoRoute) StateFields() []string {
+func (e *ErrHostUnreachable) StateFields() []string {
 	return []string{}
 }
 
-func (e *ErrNoRoute) beforeSave() {}
+func (e *ErrHostUnreachable) beforeSave() {}
 
 // +checklocksignore
-func (e *ErrNoRoute) StateSave(stateSinkObject state.Sink) {
+func (e *ErrHostUnreachable) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
-func (e *ErrNoRoute) afterLoad() {}
+func (e *ErrHostUnreachable) afterLoad() {}
 
 // +checklocksignore
-func (e *ErrNoRoute) StateLoad(stateSourceObject state.Source) {
+func (e *ErrHostUnreachable) StateLoad(stateSourceObject state.Source) {
 }
 
 func (e *ErrNoSuchFile) StateTypeName() string {
@@ -1654,7 +1654,7 @@ func init() {
 	state.Register((*ErrNetworkUnreachable)(nil))
 	state.Register((*ErrNoBufferSpace)(nil))
 	state.Register((*ErrNoPortAvailable)(nil))
-	state.Register((*ErrNoRoute)(nil))
+	state.Register((*ErrHostUnreachable)(nil))
 	state.Register((*ErrNoSuchFile)(nil))
 	state.Register((*ErrNotConnected)(nil))
 	state.Register((*ErrNotPermitted)(nil))

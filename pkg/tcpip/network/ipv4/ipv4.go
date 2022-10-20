@@ -744,12 +744,14 @@ func (e *endpoint) forwardUnicastPacket(pkt stack.PacketBufferPtr) ip.Forwarding
 	r, err := stk.FindRoute(0, "", dstAddr, ProtocolNumber, false /* multicastLoop */)
 	switch err.(type) {
 	case nil:
-	case *tcpip.ErrNoRoute, *tcpip.ErrNetworkUnreachable:
+	// TODO(https://gvisor.dev/issues/8105): We should not observe ErrHostUnreachable from route
+	// lookups.
+	case *tcpip.ErrHostUnreachable, *tcpip.ErrNetworkUnreachable:
 		// We return the original error rather than the result of returning
 		// the ICMP packet because the original error is more relevant to
 		// the caller.
 		_ = e.protocol.returnError(&icmpReasonNetworkUnreachable{}, pkt, false /* deliveredLocally */)
-		return &ip.ErrNoRoute{}
+		return &ip.ErrHostUnreachable{}
 	default:
 		return &ip.ErrOther{Err: err}
 	}
@@ -918,7 +920,7 @@ func (e *endpoint) forwardMulticastPacket(h header.IPv4, pkt stack.PacketBufferP
 	default:
 		panic(fmt.Sprintf("unexpected GetRouteResultState: %s", result.GetRouteResultState))
 	}
-	return &ip.ErrNoRoute{}
+	return &ip.ErrHostUnreachable{}
 }
 
 func (e *endpoint) updateOptionsForForwarding(pkt stack.PacketBufferPtr) ip.ForwardingError {
@@ -1009,7 +1011,7 @@ func (e *endpoint) forwardMulticastPacketForOutgoingInterface(pkt stack.PacketBu
 	if route == nil {
 		// Failed to convert to a stack.Route. This likely means that the outgoing
 		// endpoint no longer exists.
-		return &ip.ErrNoRoute{}
+		return &ip.ErrHostUnreachable{}
 	}
 	defer route.Release()
 
@@ -1105,7 +1107,7 @@ func (e *endpoint) handleForwardingError(err ip.ForwardingError) {
 		stats.Forwarding.LinkLocalDestination.Increment()
 	case *ip.ErrTTLExceeded:
 		stats.Forwarding.ExhaustedTTL.Increment()
-	case *ip.ErrNoRoute:
+	case *ip.ErrHostUnreachable:
 		stats.Forwarding.Unrouteable.Increment()
 	case *ip.ErrParameterProblem:
 		stats.MalformedPacketsReceived.Increment()
@@ -1583,7 +1585,7 @@ func (p *protocol) RemoveMulticastRoute(addresses stack.UnicastSourceAndMulticas
 	}
 
 	if removed := p.multicastRouteTable.RemoveInstalledRoute(addresses); !removed {
-		return &tcpip.ErrNoRoute{}
+		return &tcpip.ErrHostUnreachable{}
 	}
 
 	return nil
@@ -1627,7 +1629,7 @@ func (p *protocol) MulticastRouteLastUsedTime(addresses stack.UnicastSourceAndMu
 	timestamp, found := p.multicastRouteTable.GetLastUsedTimestamp(addresses)
 
 	if !found {
-		return tcpip.MonotonicTime{}, &tcpip.ErrNoRoute{}
+		return tcpip.MonotonicTime{}, &tcpip.ErrHostUnreachable{}
 	}
 
 	return timestamp, nil

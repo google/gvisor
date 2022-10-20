@@ -306,7 +306,7 @@ func (t *TransportEndpointInfo) AddrNetProtoLocked(addr tcpip.FullAddress, v6onl
 	case netProto == t.NetProto:
 	case netProto == header.IPv4ProtocolNumber && t.NetProto == header.IPv6ProtocolNumber:
 		if v6only {
-			return tcpip.FullAddress{}, 0, &tcpip.ErrNoRoute{}
+			return tcpip.FullAddress{}, 0, &tcpip.ErrHostUnreachable{}
 		}
 	default:
 		return tcpip.FullAddress{}, 0, &tcpip.ErrInvalidEndpointState{}
@@ -1384,7 +1384,8 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 				}
 			}
 
-			return nil, &tcpip.ErrNoRoute{}
+			// TODO(https://gvisor.dev/issues/8105): This should be ErrNetworkUnreachable.
+			return nil, &tcpip.ErrHostUnreachable{}
 		}
 
 		if id == 0 {
@@ -1404,11 +1405,13 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 	}
 
 	if needRoute {
-		return nil, &tcpip.ErrNoRoute{}
+		// TODO(https://gvisor.dev/issues/8105): This should be ErrNetworkUnreachable.
+		return nil, &tcpip.ErrHostUnreachable{}
 	}
 	if header.IsV6LoopbackAddress(remoteAddr) {
 		return nil, &tcpip.ErrBadLocalAddress{}
 	}
+	// TODO(https://gvisor.dev/issues/8105): This should be ErrNetworkUnreachable.
 	return nil, &tcpip.ErrNetworkUnreachable{}
 }
 

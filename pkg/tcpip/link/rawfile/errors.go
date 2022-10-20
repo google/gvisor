@@ -34,7 +34,7 @@ func TranslateErrno(e unix.Errno) tcpip.Error {
 	case unix.EEXIST:
 		return &tcpip.ErrDuplicateAddress{}
 	case unix.ENETUNREACH:
-		return &tcpip.ErrNoRoute{}
+		return &tcpip.ErrHostUnreachable{}
 	case unix.EINVAL:
 		return &tcpip.ErrInvalidEndpointState{}
 	case unix.EALREADY:
