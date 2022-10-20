@@ -157,6 +157,7 @@ func (fd *tunFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.Wri
 		return 0, unix.EMSGSIZE
 	}
 	data := bufferv2.NewView(int(src.NumBytes()))
+	defer data.Release()
 	if _, err := io.CopyN(data, src.Reader(ctx), src.NumBytes()); err != nil {
 		return 0, err
 	}
