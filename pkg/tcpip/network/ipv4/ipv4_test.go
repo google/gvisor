@@ -118,8 +118,8 @@ func TestExcludeBroadcast(t *testing.T) {
 		// Cannot connect using a broadcast address as the source.
 		{
 			err := ep.Connect(randomAddr)
-			if _, ok := err.(*tcpip.ErrNoRoute); !ok {
-				t.Errorf("got ep.Connect(...) = %v, want = %v", err, &tcpip.ErrNoRoute{})
+			if _, ok := err.(*tcpip.ErrHostUnreachable); !ok {
+				t.Errorf("got ep.Connect(...) = %v, want = %v", err, &tcpip.ErrHostUnreachable{})
 			}
 		}
 

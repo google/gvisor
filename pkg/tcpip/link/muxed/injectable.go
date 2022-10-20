@@ -93,7 +93,7 @@ func (m *InjectableEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcp
 	for _, pkt := range pkts.AsSlice() {
 		endpoint, ok := m.routes[pkt.EgressRoute.RemoteAddress]
 		if !ok {
-			return i, &tcpip.ErrNoRoute{}
+			return i, &tcpip.ErrHostUnreachable{}
 		}
 
 		var tmpPkts stack.PacketBufferList
@@ -115,7 +115,7 @@ func (m *InjectableEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcp
 func (m *InjectableEndpoint) InjectOutbound(dest tcpip.Address, packet *bufferv2.View) tcpip.Error {
 	endpoint, ok := m.routes[dest]
 	if !ok {
-		return &tcpip.ErrNoRoute{}
+		return &tcpip.ErrHostUnreachable{}
 	}
 	return endpoint.InjectOutbound(dest, packet)
 }

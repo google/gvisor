@@ -587,7 +587,7 @@ func TestMulticastRouteLastUsedTime(t *testing.T) {
 			name:    "no matching route",
 			srcAddr: remoteUnicastAddr,
 			dstAddr: otherMulticastAddr,
-			wantErr: &tcpip.ErrNoRoute{},
+			wantErr: &tcpip.ErrHostUnreachable{},
 		},
 		{
 			name:    "multicast source",
@@ -745,7 +745,7 @@ func TestRemoveMulticastRoute(t *testing.T) {
 			name:    "no matching route",
 			srcAddr: remoteUnicastAddr,
 			dstAddr: otherMulticastAddr,
-			wantErr: &tcpip.ErrNoRoute{},
+			wantErr: &tcpip.ErrHostUnreachable{},
 		},
 		{
 			name:    "multicast source",

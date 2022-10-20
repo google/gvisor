@@ -188,7 +188,7 @@ func TestConnectICMPError(t *testing.T) {
 
 	for {
 		if err := wep.LastErrorLocked(); err != nil {
-			if d := cmp.Diff(&tcpip.ErrNoRoute{}, err); d != "" {
+			if d := cmp.Diff(&tcpip.ErrHostUnreachable{}, err); d != "" {
 				t.Errorf("ep.LastErrorLocked() mismatch (-want +got):\n%s", d)
 			}
 			break
@@ -261,7 +261,7 @@ func TestActiveFailedConnectionAttemptIncrement(t *testing.T) {
 
 	{
 		err := c.EP.Connect(tcpip.FullAddress{NIC: 2, Addr: context.TestAddr, Port: context.TestPort})
-		if d := cmp.Diff(&tcpip.ErrNoRoute{}, err); d != "" {
+		if d := cmp.Diff(&tcpip.ErrHostUnreachable{}, err); d != "" {
 			t.Errorf("c.EP.Connect(...) mismatch (-want +got):\n%s", d)
 		}
 	}
