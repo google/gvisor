@@ -117,8 +117,14 @@ func (c *cgroupV2) createCgroupPaths() (bool, error) {
 		// enable all known controllers for subtree
 		if i < len(elements)-1 {
 			if err := writeFile(filepath.Join(current, subtreeControl), []byte(val), 0700); err != nil {
-				return false, err
+				// try write one by one
+				ctrls := strings.Split(val, " ")
+				for _, ctrl := range ctrls {
+					_ = writeFile(filepath.Join(current, subtreeControl), []byte(ctrl), 0700)
+				}
 			}
+			// Some controllers might not be enabled when rootless or containerized,
+			// but we don't catch the error here. (Caught in setXXX() functions.)
 		}
 	}
 	return created, nil

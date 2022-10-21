@@ -120,14 +120,19 @@ func setValue(path, name, data string) error {
 // writeFile is similar to ioutil.WriteFile() but doesn't create the file if it
 // doesn't exist.
 func writeFile(path string, data []byte, perm os.FileMode) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, perm)
+	f, err := os.OpenFile(path, os.O_WRONLY, perm)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-
-	_, err = f.Write(data)
-	return err
+	for {
+		_, err = f.Write(data)
+		if errors.Is(err, unix.EINTR) {
+			log.Warningf("interrupted while writing %s to %s", data, f.Name())
+			continue
+		}
+		return err
+	}
 }
 
 func getValue(path, name string) (string, error) {
