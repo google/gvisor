@@ -139,6 +139,7 @@ func (n *netTunFileOperations) Write(ctx context.Context, file *fs.File, src use
 		return 0, unix.EINVAL
 	}
 	data := bufferv2.NewView(int(src.NumBytes()))
+	defer data.Release()
 	if _, err := io.CopyN(data, src.Reader(ctx), src.NumBytes()); err != nil {
 		return 0, err
 	}

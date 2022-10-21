@@ -201,7 +201,10 @@ func (d *Device) Write(data *bufferv2.View) (int64, error) {
 			// Ignore bad packet.
 			return dataLen, nil
 		}
-		pktInfoHdr = PacketInfoHeader(data.AsSlice()[:PacketInfoHeaderSize])
+		pktInfoHdrView := data.Clone()
+		defer pktInfoHdrView.Release()
+		pktInfoHdrView.CapLength(PacketInfoHeaderSize)
+		pktInfoHdr = PacketInfoHeader(pktInfoHdrView.AsSlice())
 		data.TrimFront(PacketInfoHeaderSize)
 	}
 
@@ -212,7 +215,10 @@ func (d *Device) Write(data *bufferv2.View) (int64, error) {
 			// Ignore bad packet.
 			return dataLen, nil
 		}
-		ethHdr = header.Ethernet(data.AsSlice()[:header.EthernetMinimumSize])
+		ethHdrView := data.Clone()
+		defer ethHdrView.Release()
+		ethHdrView.CapLength(header.EthernetMinimumSize)
+		ethHdr = header.Ethernet(ethHdrView.AsSlice())
 		data.TrimFront(header.EthernetMinimumSize)
 	}
 
@@ -236,7 +242,7 @@ func (d *Device) Write(data *bufferv2.View) (int64, error) {
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: len(ethHdr),
-		Payload:            bufferv2.MakeWithView(data),
+		Payload:            bufferv2.MakeWithView(data.Clone()),
 	})
 	defer pkt.DecRef()
 	copy(pkt.LinkHeader().Push(len(ethHdr)), ethHdr)
