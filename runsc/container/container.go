@@ -1365,7 +1365,10 @@ func (c *Container) donateGoferProfileFDs(conf *config.Config, donations *donati
 func cgroupInstall(conf *config.Config, cg cgroup.Cgroup, res *specs.LinuxResources) (cgroup.Cgroup, error) {
 	if err := cg.Install(res); err != nil {
 		switch {
-		case (errors.Is(err, unix.EACCES) || errors.Is(err, unix.EROFS)) && conf.Rootless:
+		// TODO(gvisor.dev/issue/8111): EBUSY may occur in standard or
+		// rootless mode. We can ignore it in rootless mode since we
+		// don't require cgroups.
+		case (errors.Is(err, unix.EACCES) || errors.Is(err, unix.EROFS) || errors.Is(err, unix.EBUSY)) && conf.Rootless:
 			log.Warningf("Skipping cgroup configuration in rootless mode: %v", err)
 			return nil, nil
 		default:
