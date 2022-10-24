@@ -80,6 +80,16 @@ doc(
     permalink = "/blog/2022/08/01/threat-detection/",
 )
 
+doc(
+    name = "buffer_pooling",
+    src = "2022-10-24-buffer-pooling.md",
+    authors = [
+        "lucasmanning",
+    ],
+    layout = "post",
+    permalink = "/blog/2022/10/24/buffer-pooling/",
+)
+
 docs(
     name = "posts",
     deps = [

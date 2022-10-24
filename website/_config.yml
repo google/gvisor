@@ -25,6 +25,10 @@ defaults:
       layout: default
 analytics: "UA-150193582-1"
 authors:
+  lucasmanning:
+    name: Lucas Manning
+    email: lucasmanning@google.com
+    url: https://twitter.com/lucassmanning
   jsprad:
     name: Jeremiah Spradlin
     email: jsprad@google.com
