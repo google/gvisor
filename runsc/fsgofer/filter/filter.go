@@ -24,8 +24,9 @@ import (
 
 // Options are seccomp filter related options.
 type Options struct {
-	UDSEnabled     bool
-	ProfileEnabled bool
+	UDSOpenEnabled   bool
+	UDSCreateEnabled bool
+	ProfileEnabled   bool
 }
 
 // Install installs seccomp filters.
@@ -37,9 +38,15 @@ func Install(opt Options) error {
 		s.Merge(profileFilters)
 	}
 
-	if opt.UDSEnabled {
+	if opt.UDSOpenEnabled || opt.UDSCreateEnabled {
 		report("host UDS enabled: syscall filters less restrictive!")
-		s.Merge(udsSyscalls)
+		s.Merge(udsCommonSyscalls)
+		if opt.UDSOpenEnabled {
+			s.Merge(udsOpenSyscalls)
+		}
+		if opt.UDSCreateEnabled {
+			s.Merge(udsCreateSyscalls)
+		}
 	}
 
 	// Set of additional filters used by -race and -msan. Returns empty

@@ -212,11 +212,7 @@ var allowedSyscalls = seccomp.SyscallRules{
 	unix.SYS_WRITE:     {},
 }
 
-var udsSyscalls = seccomp.SyscallRules{
-	unix.SYS_ACCEPT4: {},
-	unix.SYS_BIND:    {},
-	unix.SYS_CONNECT: {},
-	unix.SYS_LISTEN:  {},
+var udsCommonSyscalls = seccomp.SyscallRules{
 	unix.SYS_SOCKET: []seccomp.Rule{
 		{
 			seccomp.EqualTo(unix.AF_UNIX),
@@ -234,6 +230,16 @@ var udsSyscalls = seccomp.SyscallRules{
 			seccomp.EqualTo(0),
 		},
 	},
+}
+
+var udsOpenSyscalls = seccomp.SyscallRules{
+	unix.SYS_CONNECT: {},
+}
+
+var udsCreateSyscalls = seccomp.SyscallRules{
+	unix.SYS_ACCEPT4: {},
+	unix.SYS_BIND:    {},
+	unix.SYS_LISTEN:  {},
 }
 
 var xattrSyscalls = seccomp.SyscallRules{
