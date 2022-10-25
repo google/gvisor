@@ -340,3 +340,19 @@ func TestFirstOne(t *testing.T) {
 		}
 	}
 }
+
+func TestGrow(t *testing.T) {
+	bitmap := New(uint32(64))
+	bitmap.FlipRange(0, 64)
+	bitmap.Grow(64)
+
+	want := make([]uint32, 64)
+	for i := 0; i < 128; i++ {
+		if i < 64 {
+			want[i] = uint32(i)
+		}
+	}
+	if !reflect.DeepEqual(bitmap.ToSlice(), want) {
+		t.Errorf("Grow() got: %v, want: %v", bitmap.ToSlice(), want)
+	}
+}
