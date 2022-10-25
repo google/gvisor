@@ -18,7 +18,9 @@
 #include <unistd.h>
 
 #include "absl/strings/numbers.h"
+#include "absl/strings/str_join.h"
 #include "absl/strings/str_split.h"
+#include "absl/types/span.h"
 
 namespace gvisor {
 namespace testing {
@@ -103,11 +105,11 @@ PosixErrorOr<std::vector<ProcMountInfoEntry>> ProcSelfMountInfoEntriesFrom(
     ProcMountInfoEntry entry;
     std::vector<std::string> fields =
         absl::StrSplit(line, absl::ByChar(' '), absl::AllowEmpty());
-    if (fields.size() < 10 || fields.size() > 11) {
+    if (fields.size() < 10 || fields.size() > 13) {
       return PosixError(
-          EINVAL, absl::StrFormat(
-                      "Unexpected number of tokens, got %d, content: <<%s>>",
-                      fields.size(), content));
+          EINVAL,
+          absl::StrFormat("Unexpected number of tokens, got %d, line: <<%s>>",
+                          fields.size(), line));
     }
 
     ASSIGN_OR_RETURN_ERRNO(entry.id, Atoi<uint64_t>(fields[0]));
@@ -129,12 +131,14 @@ PosixErrorOr<std::vector<ProcMountInfoEntry>> ProcSelfMountInfoEntriesFrom(
     entry.mount_point = fields[4];
     entry.mount_opts = fields[5];
 
-    // The optional field (fields[6]) may or may not be present. We know based
-    // on the total number of tokens.
+    // The optional field (fields[6]) may or may not be present and can have up
+    // to 3 elements. We know based on the total number of tokens.
     int off = -1;
-    if (fields.size() == 11) {
-      entry.optional = fields[6];
-      off = 0;
+    if (fields.size() > 10) {
+      int num_optional_tags = fields.size() - 10;
+      entry.optional = absl::StrJoin(
+          absl::MakeSpan(fields).subspan(6, num_optional_tags), " ");
+      off += num_optional_tags;
     }
     // Field 7 is the optional field terminator char '-'.
     entry.fstype = fields[8 + off];

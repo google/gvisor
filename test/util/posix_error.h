@@ -64,6 +64,7 @@ class ABSL_MUST_USE_RESULT PosixError {
 
  private:
   int errno_ = 0;
+  // std::string is not async-signal-safe. We must use a c string instead.
   char msg_[1024] = {};
 };
 

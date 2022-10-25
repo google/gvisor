@@ -39,6 +39,13 @@ TEST(ParseMounts, MountInfo) {
 2007 8844 0:278 / /mnt rw,noexec - tmpfs  rw,mode=123,uid=268601820,gid=5000
 )proc"));
   EXPECT_EQ(entries.size(), 3);
+
+  entries = ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntriesFrom(
+      R"proc(22 28 0:20 / /sys rw,relatime shared:7 master:20 - sysfs sysfs rw
+23 28 0:21 / /proc rw,relatime shared:14 master:20 propagate_from:1 - proc proc rw
+2007 8844 0:278 / /mnt rw,noexec - tmpfs  rw,mode=123,uid=268601820,gid=5000
+)proc"));
+  EXPECT_EQ(entries.size(), 3);
 }
 
 }  // namespace
