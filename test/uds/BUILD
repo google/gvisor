@@ -10,6 +10,7 @@ go_library(
     testonly = 1,
     srcs = ["uds.go"],
     deps = [
+        "//pkg/cleanup",
         "//pkg/log",
         "//pkg/unet",
         "@org_golang_x_sys//unix:go_default_library",

@@ -141,6 +141,10 @@ func TestInvalidFlags(t *testing.T) {
 			name:  "host-uds",
 			error: "invalid host UDS",
 		},
+		{
+			name:  "host-fifo",
+			error: "invalid host fifo",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			testFlags := flag.NewFlagSet("test", flag.ContinueOnError)

@@ -555,6 +555,20 @@ cc_binary(
 )
 
 cc_binary(
+    name = "pipe_external_test",
+    testonly = 1,
+    srcs = ["pipe_external.cc"],
+    linkstatic = 1,
+    deps = [
+        "//test/util:file_descriptor",
+        "//test/util:fs_util",
+        gtest,
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
     name = "creat_test",
     testonly = 1,
     srcs = ["creat.cc"],

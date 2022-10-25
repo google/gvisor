@@ -83,6 +83,9 @@ type Config struct {
 	// DO NOT call it directly, use GetHostComm() instead.
 	HostUDS HostUDS `flag:"host-uds"`
 
+	// HostFifo controls permission to access host FIFO (or named pipes).
+	HostFifo HostFifo `flag:"host-fifo"`
+
 	// Network indicates what type of network to use.
 	Network NetworkType `flag:"network"`
 
@@ -532,4 +535,54 @@ func (g HostUDS) AllowOpen() bool {
 // AllowCreate returns true if it can create UDS in the host.
 func (g HostUDS) AllowCreate() bool {
 	return g&HostUDSCreate != 0
+}
+
+// HostFifo tells how much of the host FIFO (or named pipes) the file system has
+// access to.
+type HostFifo int
+
+const (
+	// HostFifoNone doesn't allow FIFO from the host to be manipulated.
+	HostFifoNone HostFifo = 0x0
+
+	// HostFifoOpen allows FIFOs from the host to be opened.
+	HostFifoOpen HostFifo = 0x1
+)
+
+func hostFifoPtr(v HostFifo) *HostFifo {
+	return &v
+}
+
+// Set implements flag.Value.
+func (g *HostFifo) Set(v string) error {
+	switch v {
+	case "", "none":
+		*g = HostFifoNone
+	case "open":
+		*g = HostFifoOpen
+	default:
+		return fmt.Errorf("invalid host fifo type %q", v)
+	}
+	return nil
+}
+
+// Get implements flag.Value.
+func (g *HostFifo) Get() interface{} {
+	return *g
+}
+
+// String implements flag.Value.
+func (g HostFifo) String() string {
+	if g == HostFifoNone {
+		return "none"
+	}
+	if g == HostFifoOpen {
+		return "open"
+	}
+	panic(fmt.Sprintf("Invalid host fifo type %d", g))
+}
+
+// AllowOpen returns true if it can consume FIFOs from the host.
+func (g HostFifo) AllowOpen() bool {
+	return g&HostFifoOpen != 0
 }

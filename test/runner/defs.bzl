@@ -68,7 +68,7 @@ def _syscall_test(
         network = "none",
         file_access = "exclusive",
         overlay = False,
-        add_uds_tree = False,
+        add_host_communication = False,
         lisafs = True,
         fuse = False,
         container = None,
@@ -138,7 +138,7 @@ def _syscall_test(
         "--use-tmpfs=" + str(use_tmpfs),
         "--file-access=" + file_access,
         "--overlay=" + str(overlay),
-        "--add-uds-tree=" + str(add_uds_tree),
+        "--add-host-communication=" + str(add_host_communication),
         "--lisafs=" + str(lisafs),
         "--fuse=" + str(fuse),
         "--strace=" + str(debug),
@@ -170,7 +170,7 @@ def syscall_test(
         test,
         use_tmpfs = False,
         add_overlay = False,
-        add_uds_tree = False,
+        add_host_communication = False,
         add_hostinet = False,
         one_sandbox = True,
         fuse = False,
@@ -185,8 +185,9 @@ def syscall_test(
       test: the test target.
       use_tmpfs: use tmpfs in the defined tests.
       add_overlay: add an overlay test.
-      add_uds_tree: add a UDS test.
+      add_host_communication: setup UDS and pipe external communication for tests.
       add_hostinet: add a hostinet test.
+      one_sandbox: runs each unit test in a new sandbox instance.
       fuse: enable FUSE support.
       allow_native: generate a native test variant.
       debug: enable debug output.
@@ -203,7 +204,7 @@ def syscall_test(
             test = test,
             platform = "native",
             use_tmpfs = False,
-            add_uds_tree = add_uds_tree,
+            add_host_communication = add_host_communication,
             tags = tags,
             debug = debug,
             container = container,
@@ -216,7 +217,7 @@ def syscall_test(
             test = test,
             platform = platform,
             use_tmpfs = use_tmpfs,
-            add_uds_tree = add_uds_tree,
+            add_host_communication = add_host_communication,
             tags = platform_tags + tags,
             fuse = fuse,
             debug = debug,
@@ -230,7 +231,7 @@ def syscall_test(
         test = test,
         platform = default_platform,
         use_tmpfs = use_tmpfs,
-        add_uds_tree = add_uds_tree,
+        add_host_communication = add_host_communication,
         tags = platforms[default_platform] + tags,
         debug = debug,
         fuse = fuse,
@@ -244,7 +245,7 @@ def syscall_test(
             test = test,
             platform = default_platform,
             use_tmpfs = use_tmpfs,
-            add_uds_tree = add_uds_tree,
+            add_host_communication = add_host_communication,
             tags = platforms.get(default_platform, []) + tags,
             debug = debug,
             fuse = fuse,
@@ -259,7 +260,7 @@ def syscall_test(
             platform = default_platform,
             use_tmpfs = use_tmpfs,
             network = "host",
-            add_uds_tree = add_uds_tree,
+            add_host_communication = add_host_communication,
             tags = platforms.get(default_platform, []) + tags,
             debug = debug,
             fuse = fuse,
@@ -273,7 +274,7 @@ def syscall_test(
             test = test,
             platform = default_platform,
             use_tmpfs = use_tmpfs,
-            add_uds_tree = add_uds_tree,
+            add_host_communication = add_host_communication,
             tags = platforms.get(default_platform, []) + tags,
             debug = debug,
             container = container,
