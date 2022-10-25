@@ -673,7 +673,7 @@ func isSockTypeSupported(sockType uint32) bool {
 
 // Connect implements lisafs.ControlFDImpl.Connect.
 func (fd *controlFDLisa) Connect(sockType uint32) (int, error) {
-	if !fd.Conn().ServerImpl().(*LisafsServer).config.HostUDS {
+	if !fd.Conn().ServerImpl().(*LisafsServer).config.HostUDS.AllowOpen() {
 		return -1, unix.EPERM
 	}
 
@@ -699,7 +699,7 @@ func (fd *controlFDLisa) Connect(sockType uint32) (int, error) {
 
 // BindAt implements lisafs.ControlFDImpl.BindAt.
 func (fd *controlFDLisa) BindAt(name string, sockType uint32, mode linux.FileMode, uid lisafs.UID, gid lisafs.GID) (*lisafs.ControlFD, linux.Statx, *lisafs.BoundSocketFD, int, error) {
-	if !fd.Conn().ServerImpl().(*LisafsServer).config.HostUDS {
+	if !fd.Conn().ServerImpl().(*LisafsServer).config.HostUDS.AllowCreate() {
 		return nil, linux.Statx{}, nil, -1, unix.EPERM
 	}
 

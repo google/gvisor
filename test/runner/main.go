@@ -218,7 +218,7 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		args = append(args, "-strace")
 	}
 	if *addUDSTree {
-		args = append(args, "-fsgofer-host-uds")
+		args = append(args, "-host-uds=all")
 	}
 	if *leakCheck {
 		args = append(args, "-ref-leak-mode=log-names")

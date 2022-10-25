@@ -137,6 +137,10 @@ func TestInvalidFlags(t *testing.T) {
 			name:  "ref-leak-mode",
 			error: "invalid ref leak mode",
 		},
+		{
+			name:  "host-uds",
+			error: "invalid host UDS",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
@@ -168,6 +172,30 @@ func TestValidationFail(t *testing.T) {
 				"num-network-channels": "-1",
 			},
 			error: "num_network_channels must be > 0",
+		},
+		{
+			name: "fsgofer-host-uds+comm:open",
+			flags: map[string]string{
+				"fsgofer-host-uds": "true",
+				"host-uds":         "open",
+			},
+			error: "fsgofer-host-uds has been replaced with host-uds flag",
+		},
+		{
+			name: "fsgofer-host-uds+comm:create",
+			flags: map[string]string{
+				"fsgofer-host-uds": "true",
+				"host-uds":         "create",
+			},
+			error: "fsgofer-host-uds has been replaced with host-uds flag",
+		},
+		{
+			name: "fsgofer-host-uds+comm:all",
+			flags: map[string]string{
+				"fsgofer-host-uds": "true",
+				"host-uds":         "all",
+			},
+			error: "fsgofer-host-uds has been replaced with host-uds flag",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
