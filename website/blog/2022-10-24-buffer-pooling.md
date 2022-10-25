@@ -1,5 +1,4 @@
-\# How we Eliminated 99% of gVisor Networking Memory Allocations with Enhanced
-Buffer Pooling
+# How we Eliminated 99% of gVisor Networking Memory Allocations with Enhanced Buffer Pooling
 
 In an
 [earlier blog post](https://gvisor.dev/blog/2020/04/02/gvisor-networking-security/)
