@@ -37,6 +37,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/runsc/config"
 )
 
 const (
@@ -62,9 +63,8 @@ type Config struct {
 	// PanicOnWrite panics on attempts to write to RO mounts.
 	PanicOnWrite bool
 
-	// HostUDS signals whether the gofer can create and connect to host
-	// unix domain sockets.
-	HostUDS bool
+	// HostUDS signals whether the gofer can connect to host unix domain sockets.
+	HostUDS config.HostUDS
 }
 
 type attachPoint struct {
@@ -315,13 +315,13 @@ func openAnyFile(pathDebug string, fn func(mode int) (*fd.FD, error)) (*fd.FD, b
 	return nil, false, extractErrno(err)
 }
 
-func checkSupportedFileType(mode uint32, permitSocket bool) error {
+func checkSupportedFileType(mode uint32, hostComm config.HostUDS) error {
 	switch mode & unix.S_IFMT {
 	case unix.S_IFREG, unix.S_IFDIR, unix.S_IFLNK:
 		return nil
 
 	case unix.S_IFSOCK:
-		if !permitSocket {
+		if !hostComm.AllowOpen() {
 			return unix.EPERM
 		}
 		return nil
@@ -1110,76 +1110,12 @@ func (l *localFile) Flush() error {
 
 // Bind implements p9.File.
 func (l *localFile) Bind(sockType uint32, sockName string, uid p9.UID, gid p9.GID) (p9.File, p9.QID, p9.AttrMask, p9.Attr, error) {
-	if !l.attachPoint.conf.HostUDS {
-		// Bind on host UDS is not allowed. As per mknod(2), which is invoked as
-		// part of bind(2), if "the filesystem containing pathname does not support
-		// the type of node requested." then EPERM must be returned.
-		return nil, p9.QID{}, p9.AttrMask{}, p9.Attr{}, unix.EPERM
-	}
-
-	// Create socket only for supported types.
-	if !isSockTypeSupported(sockType) {
-		return nil, p9.QID{}, p9.AttrMask{}, p9.Attr{}, unix.ENXIO
-	}
-	sock, err := unix.Socket(unix.AF_UNIX, int(sockType), 0)
-	if err != nil {
-		return nil, p9.QID{}, p9.AttrMask{}, p9.Attr{}, extractErrno(err)
-	}
-
-	// Because there is no "bindat" syscall in Linux, we must create an
-	// absolute path to the socket we are creating. But go through /proc/self/fd
-	// to avoid host path walk of the entire host path. It also helps avoid the
-	// UNIX_PATH_MAX bytes limit on the path, in case path is too long.
-	sockPath := filepath.Join("/proc/self/fd", strconv.Itoa(l.file.FD()), sockName)
-
-	// Revert operations on error paths.
-	didBind := false
-	cu := cleanup.Make(func() {
-		_ = unix.Close(sock)
-		if didBind {
-			if err := unix.Unlinkat(l.file.FD(), sockName, 0); err != nil {
-				log.Warningf("error unlinking file %q after failure: %v", sockPath, err)
-			}
-		}
-	})
-	defer cu.Clean()
-
-	// socket FD must be non blocking because RPC operations like Accept on this
-	// socket must be non blocking.
-	if err := unix.SetNonblock(sock, true); err != nil {
-		return nil, p9.QID{}, p9.AttrMask{}, p9.Attr{}, extractErrno(err)
-	}
-
-	// Bind at the given path which should create the socket file.
-	if err := unix.Bind(sock, &unix.SockaddrUnix{Name: sockPath}); err != nil {
-		return nil, p9.QID{}, p9.AttrMask{}, p9.Attr{}, extractErrno(err)
-	}
-	didBind = true
-
-	// Open socket to change ownership.
-	tempSockFD, err := fd.OpenAt(l.file, sockName, unix.O_PATH|openFlags, 0)
-	if err != nil {
-		return nil, p9.QID{}, p9.AttrMask{}, p9.Attr{}, extractErrno(err)
-	}
-	defer tempSockFD.Close()
-
-	if _, err = setOwnerIfNeeded(tempSockFD.FD(), uid, gid); err != nil {
-		return nil, p9.QID{}, p9.AttrMask{}, p9.Attr{}, extractErrno(err)
-	}
-
-	// Generate file for this socket by walking on it.
-	qid, sockF, valid, attr, err := l.WalkGetAttr([]string{sockName})
-	if err != nil {
-		return nil, p9.QID{}, p9.AttrMask{}, p9.Attr{}, err
-	}
-
-	cu.Release()
-	return &socketLocalFile{localFile: sockF.(*localFile), sock: sock}, qid[0], valid, attr, nil
+	return nil, p9.QID{}, p9.AttrMask{}, p9.Attr{}, unix.EPERM
 }
 
 // Connect implements p9.File.
 func (l *localFile) Connect(socketType p9.SocketType) (*fd.FD, error) {
-	if !l.attachPoint.conf.HostUDS {
+	if !l.attachPoint.conf.HostUDS.AllowOpen() {
 		return nil, unix.ECONNREFUSED
 	}
 
@@ -1331,23 +1267,4 @@ func (l *localFile) MultiGetAttr(names []string) ([]p9.FullStat, error) {
 		parent = child
 	}
 	return stats, nil
-}
-
-// socketLocalFile is an extension of localFile which is only created via Bind
-// and additionally implements Listen and Accept. It also tracks the lifecycle
-// of the socket FD created by socket(2) in addition to the FD opened on the
-// socket file itself.
-type socketLocalFile struct {
-	*localFile
-	sock int
-}
-
-// Close implements p9.File.
-func (l *socketLocalFile) Close() error {
-	err := l.localFile.Close()
-	err2 := unix.Close(l.sock)
-	if err != nil {
-		return err
-	}
-	return err2
 }

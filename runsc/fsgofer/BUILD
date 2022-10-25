@@ -23,6 +23,7 @@ go_library(
         "//pkg/p9",
         "//pkg/sync",
         "//pkg/syserr",
+        "//runsc/config",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

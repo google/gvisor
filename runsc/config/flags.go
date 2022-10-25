@@ -79,7 +79,9 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Var(fileAccessTypePtr(FileAccessExclusive), "file-access", "specifies which filesystem validation to use for the root mount: exclusive (default), shared.")
 	flagSet.Var(fileAccessTypePtr(FileAccessShared), "file-access-mounts", "specifies which filesystem validation to use for volumes other than the root mount: shared (default), exclusive.")
 	flagSet.Bool("overlay", false, "wrap filesystem mounts with writable overlay. All modifications are stored in memory inside the sandbox.")
-	flagSet.Bool("fsgofer-host-uds", false, "allow the gofer to mount Unix Domain Sockets.")
+	flagSet.Bool("fsgofer-host-uds", false, "DEPRECATED: use host-uds=all")
+	flagSet.Var(hostUDSPtr(0), "host-uds", "controls permission to access host Unix-domain sockets. Values: none|open|create|all, default: none")
+
 	flagSet.Bool("vfs2", true, "DEPRECATED: this flag has no effect.")
 	flagSet.Bool("fuse", false, "TEST ONLY; use while FUSE in VFSv2 is landing. This allows the use of the new experimental FUSE filesystem.")
 	flagSet.Bool("lisafs", true, "Enables lisafs protocol instead of 9P.")

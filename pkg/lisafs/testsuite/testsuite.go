@@ -64,7 +64,7 @@ func RunAllLocalFSTests(t *testing.T, tester Tester) {
 // TestFunc describes the signature of a test method.
 type TestFunc func(context.Context, *testing.T, Tester, lisafs.ClientFD)
 
-var localFSTests map[string]TestFunc = map[string]TestFunc{
+var localFSTests = map[string]TestFunc{
 	"Stat":            testStat,
 	"RegularFileIO":   testRegularFileIO,
 	"RegularFileOpen": testRegularFileOpen,

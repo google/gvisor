@@ -227,8 +227,9 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 
 	// Initialize filters.
 	opts := filter.Options{
-		UDSEnabled:     conf.FSGoferHostUDS,
-		ProfileEnabled: len(profileOpts) > 0,
+		UDSOpenEnabled:   conf.GetHostUDS().AllowOpen(),
+		UDSCreateEnabled: conf.GetHostUDS().AllowCreate(),
+		ProfileEnabled:   len(profileOpts) > 0,
 	}
 	if err := filter.Install(opts); err != nil {
 		util.Fatalf("installing seccomp filters: %v", err)
@@ -258,7 +259,7 @@ func (g *Gofer) serveLisafs(spec *specs.Spec, conf *config.Config, root string) 
 	server := fsgofer.NewLisafsServer(fsgofer.Config{
 		// These are global options. Ignore readonly configuration, that is set on
 		// a per connection basis.
-		HostUDS: conf.FSGoferHostUDS,
+		HostUDS: conf.GetHostUDS(),
 	})
 
 	// Start with root mount, then add any other additional mount as needed.
@@ -318,7 +319,7 @@ func (g *Gofer) serve9P(spec *specs.Spec, conf *config.Config, root string) subc
 	ats := make([]p9.Attacher, 0, len(spec.Mounts)+1)
 	ap, err := fsgofer.NewAttachPoint("/", fsgofer.Config{
 		ROMount: spec.Root.Readonly || conf.Overlay,
-		HostUDS: conf.FSGoferHostUDS,
+		HostUDS: conf.GetHostUDS(),
 	})
 	if err != nil {
 		util.Fatalf("creating attach point: %v", err)
@@ -331,7 +332,7 @@ func (g *Gofer) serve9P(spec *specs.Spec, conf *config.Config, root string) subc
 		if specutils.IsGoferMount(m) {
 			cfg := fsgofer.Config{
 				ROMount: isReadonlyMount(m.Options) || conf.Overlay,
-				HostUDS: conf.FSGoferHostUDS,
+				HostUDS: conf.GetHostUDS(),
 			}
 			ap, err := fsgofer.NewAttachPoint(m.Destination, cfg)
 			if err != nil {

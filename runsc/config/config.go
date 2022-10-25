@@ -76,9 +76,12 @@ type Config struct {
 	// Overlay is whether to wrap the root filesystem in an overlay.
 	Overlay bool `flag:"overlay"`
 
-	// FSGoferHostUDS enables the gofer to create and connect to host unix
-	// domain sockets.
+	// FSGoferHostUDS is deprecated: use host-uds=all.
 	FSGoferHostUDS bool `flag:"fsgofer-host-uds"`
+
+	// HostUDS controls permission to access host Unix-domain sockets.
+	// DO NOT call it directly, use GetHostComm() instead.
+	HostUDS HostUDS `flag:"host-uds"`
 
 	// Network indicates what type of network to use.
 	Network NetworkType `flag:"network"`
@@ -283,7 +286,24 @@ func (c *Config) validate() error {
 	if c.ProfileMutex != "" && !c.ProfileEnable {
 		return fmt.Errorf("profile-mutex flag requires enabling profiling with profile flag")
 	}
+	if c.FSGoferHostUDS && c.HostUDS != HostUDSNone {
+		// Deprecated flag was used together with flag that replaced it.
+		return fmt.Errorf("fsgofer-host-uds has been replaced with host-uds flag")
+	}
 	return nil
+}
+
+// GetHostUDS returns the FS gofer communication that is allowed, taking into
+// consideration all flags what affect the result.
+func (c *Config) GetHostUDS() HostUDS {
+	if c.FSGoferHostUDS {
+		if c.HostUDS != HostUDSNone {
+			panic(fmt.Sprintf("HostUDS cannot be set when --fsgofer-host-uds=true"))
+		}
+		// Using deprecated flag, honor it to avoid breaking users.
+		return HostUDSOpen
+	}
+	return c.HostUDS
 }
 
 // FileAccessType tells how the filesystem is accessed.
@@ -441,4 +461,75 @@ func leakModePtr(v refs.LeakMode) *refs.LeakMode {
 
 func watchdogActionPtr(v watchdog.Action) *watchdog.Action {
 	return &v
+}
+
+// HostUDS tells how much of the host UDS the file system has access to.
+type HostUDS int
+
+const (
+	// HostUDSNone doesn't allows UDS from the host to be manipulated.
+	HostUDSNone HostUDS = 0x0
+
+	// HostUDSOpen allows UDS from the host to be opened, e.g. connect(2).
+	HostUDSOpen HostUDS = 0x1
+
+	// HostUDSCreate allows UDS from the host to be created, e.g. bind(2).
+	HostUDSCreate HostUDS = 0x2
+
+	// HostUDSAll allows all form of communication with the host through UDS.
+	HostUDSAll = HostUDSOpen | HostUDSCreate
+)
+
+func hostUDSPtr(v HostUDS) *HostUDS {
+	return &v
+}
+
+// Set implements flag.Value.
+func (g *HostUDS) Set(v string) error {
+	switch v {
+	case "", "none":
+		*g = HostUDSNone
+	case "open":
+		*g = HostUDSOpen
+	case "create":
+		*g = HostUDSCreate
+	case "all":
+		*g = HostUDSAll
+	default:
+		return fmt.Errorf("invalid host UDS type %q", v)
+	}
+	return nil
+}
+
+// Get implements flag.Value.
+func (g *HostUDS) Get() interface{} {
+	return *g
+}
+
+// String implements flag.Value.
+func (g HostUDS) String() string {
+	// Note: the order of operations is important given that HostUDS is a bitmap.
+	if g == HostUDSNone {
+		return "none"
+	}
+	if g == HostUDSAll {
+		return "all"
+	}
+	if g == HostUDSOpen {
+		return "open"
+	}
+	if g == HostUDSCreate {
+		return "create"
+	}
+	panic(fmt.Sprintf("Invalid host UDS type %d", g))
+}
+
+// AllowOpen returns true if it can consume UDS from the host.
+func (g HostUDS) AllowOpen() bool {
+	return g&HostUDSOpen != 0
+}
+
+// AllowCreate returns true if it can create UDS in the host.
+func (g HostUDS) AllowCreate() bool {
+	return g&HostUDSCreate != 0
 }
