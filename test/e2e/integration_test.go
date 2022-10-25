@@ -30,7 +30,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -39,7 +38,6 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types/mount"
-	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
@@ -997,29 +995,5 @@ func TestNonSearchableWorkingDirectory(t *testing.T) {
 	}
 	if wantErrorMsg := "Permission denied"; !strings.Contains(got, wantErrorMsg) {
 		t.Errorf("ls error message not found, want: %q, got: %q", wantErrorMsg, got)
-	}
-}
-
-func TestPipeMountFails(t *testing.T) {
-	ctx := context.Background()
-	d := dockerutil.MakeContainer(ctx, t)
-	defer d.CleanUp(ctx)
-
-	fifoPath := path.Join(testutil.TmpDir(), "fifo")
-	if err := unix.Mkfifo(fifoPath, 0666); err != nil {
-		t.Fatalf("Mkfifo(%q) failed: %v", fifoPath, err)
-	}
-	opts := dockerutil.RunOpts{
-		Image: "basic/alpine",
-		Mounts: []mount.Mount{
-			{
-				Type:   mount.TypeBind,
-				Source: fifoPath,
-				Target: "/foo",
-			},
-		},
-	}
-	if _, err := d.Run(ctx, opts, "ls"); err == nil {
-		t.Errorf("docker run succeded, but mounting a named pipe should not work")
 	}
 }

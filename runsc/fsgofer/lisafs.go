@@ -70,7 +70,7 @@ func (s *LisafsServer) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*lis
 		return nil, linux.Statx{}, err
 	}
 
-	if err := checkSupportedFileType(uint32(stat.Mode), s.config.HostUDS); err != nil {
+	if err := checkSupportedFileType(uint32(stat.Mode), &s.config); err != nil {
 		log.Warningf("Mount: checkSupportedFileType() failed for file %q with mode %o: %v", mountPath, stat.Mode, err)
 		return nil, linux.Statx{}, err
 	}
@@ -341,7 +341,7 @@ func (fd *controlFDLisa) Walk(name string) (*lisafs.ControlFD, linux.Statx, erro
 		return nil, linux.Statx{}, err
 	}
 
-	if err := checkSupportedFileType(uint32(stat.Mode), fd.Conn().ServerImpl().(*LisafsServer).config.HostUDS); err != nil {
+	if err := checkSupportedFileType(uint32(stat.Mode), &fd.Conn().ServerImpl().(*LisafsServer).config); err != nil {
 		_ = unix.Close(childHostFD)
 		log.Warningf("Walk: checkSupportedFileType() failed for %q with mode %o: %v", name, stat.Mode, err)
 		return nil, linux.Statx{}, err
@@ -396,7 +396,7 @@ func (fd *controlFDLisa) WalkStat(path lisafs.StringArray, recordStat func(linux
 		if err != nil {
 			return err
 		}
-		if err := checkSupportedFileType(uint32(stat.Mode), server.config.HostUDS); err != nil {
+		if err := checkSupportedFileType(uint32(stat.Mode), &server.config); err != nil {
 			log.Warningf("WalkStat: checkSupportedFileType() failed for file %q with mode %o while walking path %+v: %v", name, stat.Mode, path, err)
 			return err
 		}
@@ -422,13 +422,20 @@ func (fd *controlFDLisa) Open(flags uint32) (*lisafs.OpenFD, int, error) {
 	openFD := fd.newOpenFDLisa(newHostFD, flags)
 
 	hostOpenFD := -1
-	if fd.IsRegular() {
-		// Donate FD for regular files only. Since FD donation is a destructive
-		// operation, we should duplicate the to-be-donated FD. Eat the error if
-		// one occurs, it is better to have an FD without a host FD, than failing
-		// the Open attempt.
-		if dupFD, err := unix.Dup(openFD.hostFD); err == nil {
-			hostOpenFD = dupFD
+	switch fd.FileType() {
+	case unix.S_IFREG:
+		// Best effort to donate file to the Sentry (for performance only).
+		hostOpenFD, _ = unix.Dup(openFD.hostFD)
+
+	case unix.S_IFIFO:
+		// Character devices and pipes can block indefinitely during reads/writes,
+		// which is not allowed for gofer operations. Ensure that it donates an FD
+		// back to the caller, so it can wait on the FD when reads/writes return
+		// EWOULDBLOCK.
+		var err error
+		hostOpenFD, err = unix.Dup(openFD.hostFD)
+		if err != nil {
+			return nil, 0, err
 		}
 	}
 

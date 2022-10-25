@@ -259,7 +259,8 @@ func (g *Gofer) serveLisafs(spec *specs.Spec, conf *config.Config, root string) 
 	server := fsgofer.NewLisafsServer(fsgofer.Config{
 		// These are global options. Ignore readonly configuration, that is set on
 		// a per connection basis.
-		HostUDS: conf.GetHostUDS(),
+		HostUDS:  conf.GetHostUDS(),
+		HostFifo: conf.HostFifo,
 	})
 
 	// Start with root mount, then add any other additional mount as needed.
@@ -318,8 +319,9 @@ func (g *Gofer) serve9P(spec *specs.Spec, conf *config.Config, root string) subc
 	// Start with root mount, then add any other additional mount as needed.
 	ats := make([]p9.Attacher, 0, len(spec.Mounts)+1)
 	ap, err := fsgofer.NewAttachPoint("/", fsgofer.Config{
-		ROMount: spec.Root.Readonly || conf.Overlay,
-		HostUDS: conf.GetHostUDS(),
+		ROMount:  spec.Root.Readonly || conf.Overlay,
+		HostUDS:  conf.GetHostUDS(),
+		HostFifo: conf.HostFifo,
 	})
 	if err != nil {
 		util.Fatalf("creating attach point: %v", err)
@@ -331,8 +333,9 @@ func (g *Gofer) serve9P(spec *specs.Spec, conf *config.Config, root string) subc
 	for _, m := range spec.Mounts {
 		if specutils.IsGoferMount(m) {
 			cfg := fsgofer.Config{
-				ROMount: isReadonlyMount(m.Options) || conf.Overlay,
-				HostUDS: conf.GetHostUDS(),
+				ROMount:  isReadonlyMount(m.Options) || conf.Overlay,
+				HostUDS:  conf.GetHostUDS(),
+				HostFifo: conf.HostFifo,
 			}
 			ap, err := fsgofer.NewAttachPoint(m.Destination, cfg)
 			if err != nil {

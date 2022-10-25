@@ -57,7 +57,7 @@ var (
 	setupContainerPath = flag.String("setup-container", "", "path to setup_container binary (for use with --container)")
 	trace              = flag.Bool("trace", false, "enables all trace points")
 
-	addUDSTree = flag.Bool("add-uds-tree", false, "expose a tree of UDS utilities for use in tests")
+	addUDSTree = flag.Bool("add-host-communication", false, "expose a tree of UDS and pipe utilities to test communication with the host")
 	// TODO(gvisor.dev/issue/4572): properly support leak checking for runsc, and
 	// set to true as the default for the test runner.
 	leakCheck = flag.Bool("leak-check", false, "check for reference leaks")
@@ -218,7 +218,7 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		args = append(args, "-strace")
 	}
 	if *addUDSTree {
-		args = append(args, "-host-uds=all")
+		args = append(args, "-host-uds=all", "-host-fifo=open")
 	}
 	if *leakCheck {
 		args = append(args, "-ref-leak-mode=log-names")
@@ -328,8 +328,9 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 	return err
 }
 
-// setupUDSTree updates the spec to expose a UDS tree for gofer socket testing.
-func setupUDSTree(spec *specs.Spec) (cleanup func(), err error) {
+// setupHostCommTree updates the spec to expose a UDS and pipe files tree for
+// testing communication with the host.
+func setupHostCommTree(spec *specs.Spec) (cleanup func(), err error) {
 	socketDir, cleanup, err := uds.CreateSocketTree("/tmp")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create socket tree: %v", err)
@@ -367,6 +368,16 @@ func setupUDSTree(spec *specs.Spec) (cleanup func(), err error) {
 	spec.Mounts = append(spec.Mounts, specs.Mount{
 		Destination: "/tmp/sockets-attach/dgram/null",
 		Source:      filepath.Join(socketDir, "dgram/null"),
+		Type:        "bind",
+	})
+	spec.Mounts = append(spec.Mounts, specs.Mount{
+		Destination: "/tmp/sockets-attach/pipe/in",
+		Source:      filepath.Join(socketDir, "pipe/in"),
+		Type:        "bind",
+	})
+	spec.Mounts = append(spec.Mounts, specs.Mount{
+		Destination: "/tmp/sockets-attach/pipe/out",
+		Source:      filepath.Join(socketDir, "pipe/out"),
 		Type:        "bind",
 	})
 
@@ -467,7 +478,7 @@ func runTestCaseRunsc(testBin string, tc *gtest.TestCase, args []string, t *test
 	spec.Process.Env = env
 
 	if *addUDSTree {
-		cleanup, err := setupUDSTree(spec)
+		cleanup, err := setupHostCommTree(spec)
 		if err != nil {
 			t.Fatalf("error creating UDS tree: %v", err)
 		}
