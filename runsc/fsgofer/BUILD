@@ -53,5 +53,6 @@ go_test(
         "//pkg/lisafs",
         "//pkg/lisafs/testsuite",
         "//pkg/log",
+        "//runsc/config",
     ],
 )

@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/lisafs/testsuite"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/fsgofer"
 )
 
@@ -38,7 +39,7 @@ type tester struct{}
 
 // NewServer implements testsuite.Tester.NewServer.
 func (tester) NewServer(t *testing.T) *lisafs.Server {
-	return &fsgofer.NewLisafsServer(fsgofer.Config{}).Server
+	return &fsgofer.NewLisafsServer(fsgofer.Config{HostUDS: config.HostUDSCreate}).Server
 }
 
 // LinkSupported implements testsuite.Tester.LinkSupported.
