@@ -80,7 +80,8 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Var(fileAccessTypePtr(FileAccessShared), "file-access-mounts", "specifies which filesystem validation to use for volumes other than the root mount: shared (default), exclusive.")
 	flagSet.Bool("overlay", false, "wrap filesystem mounts with writable overlay. All modifications are stored in memory inside the sandbox.")
 	flagSet.Bool("fsgofer-host-uds", false, "DEPRECATED: use host-uds=all")
-	flagSet.Var(hostUDSPtr(0), "host-uds", "controls permission to access host Unix-domain sockets. Values: none|open|create|all, default: none")
+	flagSet.Var(hostUDSPtr(HostUDSNone), "host-uds", "controls permission to access host Unix-domain sockets. Values: none|open|create|all, default: none")
+	flagSet.Var(hostFifoPtr(HostFifoNone), "host-fifo", "controls permission to access host FIFOs (or named pipes). Values: none|open, default: none")
 
 	flagSet.Bool("vfs2", true, "DEPRECATED: this flag has no effect.")
 	flagSet.Bool("fuse", false, "TEST ONLY; use while FUSE in VFSv2 is landing. This allows the use of the new experimental FUSE filesystem.")
