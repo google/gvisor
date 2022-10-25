@@ -50,6 +50,22 @@ func (b *Bitmap) IsEmpty() bool {
 	return b.numOnes == 0
 }
 
+// Size returns the total number of bits in the bitmap.
+func (b *Bitmap) Size() int {
+	return len(b.bitBlock) * 64
+}
+
+// Grow grows the bitmap by at least toGrow bits.
+func (b *Bitmap) Grow(toGrow uint32) error {
+	newbitBlockSize := uint32(len(b.bitBlock)) + ((toGrow + 63) / 64)
+	if newbitBlockSize > MaxBitEntryLimit/8 {
+		return fmt.Errorf("requested bitmap size %d too large", newbitBlockSize*64)
+	}
+	bits := make([]uint64, (toGrow+63)/64)
+	b.bitBlock = append(b.bitBlock, bits...)
+	return nil
+}
+
 // Minimum return the smallest value in the Bitmap.
 func (b *Bitmap) Minimum() uint32 {
 	for i := 0; i < len(b.bitBlock); i++ {

@@ -336,7 +336,9 @@ func (vfs *VirtualFilesystem) forgetDeadMountpoint(ctx context.Context, d *Dentr
 	vfs.mountMu.Lock()
 	vfs.mounts.seq.BeginWrite()
 	for mnt := range vfs.mountpoints[d] {
-		vdsToDecRef, mountsToDecRef = vfs.umountRecursiveLocked(mnt, &umountRecursiveOptions{}, vdsToDecRef, mountsToDecRef)
+		vds, mounts := vfs.umountAtRecursiveLocked(ctx, VirtualDentry{mnt, d}, &umountRecursiveOptions{})
+		vdsToDecRef = append(vdsToDecRef, vds...)
+		mountsToDecRef = append(mountsToDecRef, mounts...)
 	}
 	vfs.mounts.seq.EndWrite()
 	vfs.mountMu.Unlock()

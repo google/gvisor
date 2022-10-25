@@ -1169,6 +1169,10 @@ func (mnt *Mount) StateFields() []string {
 		"ns",
 		"refs",
 		"children",
+		"propType",
+		"sharedList",
+		"sharedEntry",
+		"groupID",
 		"umounted",
 		"writers",
 	}
@@ -1190,8 +1194,12 @@ func (mnt *Mount) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &mnt.ns)
 	stateSinkObject.Save(7, &mnt.refs)
 	stateSinkObject.Save(8, &mnt.children)
-	stateSinkObject.Save(9, &mnt.umounted)
-	stateSinkObject.Save(10, &mnt.writers)
+	stateSinkObject.Save(9, &mnt.propType)
+	stateSinkObject.Save(10, &mnt.sharedList)
+	stateSinkObject.Save(11, &mnt.sharedEntry)
+	stateSinkObject.Save(12, &mnt.groupID)
+	stateSinkObject.Save(13, &mnt.umounted)
+	stateSinkObject.Save(14, &mnt.writers)
 }
 
 // +checklocksignore
@@ -1204,8 +1212,12 @@ func (mnt *Mount) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(6, &mnt.ns)
 	stateSourceObject.Load(7, &mnt.refs)
 	stateSourceObject.Load(8, &mnt.children)
-	stateSourceObject.Load(9, &mnt.umounted)
-	stateSourceObject.Load(10, &mnt.writers)
+	stateSourceObject.Load(9, &mnt.propType)
+	stateSourceObject.Load(10, &mnt.sharedList)
+	stateSourceObject.Load(11, &mnt.sharedEntry)
+	stateSourceObject.Load(12, &mnt.groupID)
+	stateSourceObject.Load(13, &mnt.umounted)
+	stateSourceObject.Load(14, &mnt.writers)
 	stateSourceObject.LoadValue(5, new(VirtualDentry), func(y interface{}) { mnt.loadKey(y.(VirtualDentry)) })
 	stateSourceObject.AfterLoad(mnt.afterLoad)
 }
@@ -1891,6 +1903,62 @@ func (r *resolveAbsSymlinkError) afterLoad() {}
 func (r *resolveAbsSymlinkError) StateLoad(stateSourceObject state.Source) {
 }
 
+func (l *sharedList) StateTypeName() string {
+	return "pkg/sentry/vfs.sharedList"
+}
+
+func (l *sharedList) StateFields() []string {
+	return []string{
+		"head",
+		"tail",
+	}
+}
+
+func (l *sharedList) beforeSave() {}
+
+// +checklocksignore
+func (l *sharedList) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.head)
+	stateSinkObject.Save(1, &l.tail)
+}
+
+func (l *sharedList) afterLoad() {}
+
+// +checklocksignore
+func (l *sharedList) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.head)
+	stateSourceObject.Load(1, &l.tail)
+}
+
+func (e *sharedEntry) StateTypeName() string {
+	return "pkg/sentry/vfs.sharedEntry"
+}
+
+func (e *sharedEntry) StateFields() []string {
+	return []string{
+		"next",
+		"prev",
+	}
+}
+
+func (e *sharedEntry) beforeSave() {}
+
+// +checklocksignore
+func (e *sharedEntry) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.next)
+	stateSinkObject.Save(1, &e.prev)
+}
+
+func (e *sharedEntry) afterLoad() {}
+
+// +checklocksignore
+func (e *sharedEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.next)
+	stateSourceObject.Load(1, &e.prev)
+}
+
 func (vfs *VirtualFilesystem) StateTypeName() string {
 	return "pkg/sentry/vfs.VirtualFilesystem"
 }
@@ -1906,6 +1974,7 @@ func (vfs *VirtualFilesystem) StateFields() []string {
 		"anonBlockDevMinor",
 		"fsTypes",
 		"filesystems",
+		"groupIDBitmap",
 	}
 }
 
@@ -1925,6 +1994,7 @@ func (vfs *VirtualFilesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &vfs.anonBlockDevMinor)
 	stateSinkObject.Save(7, &vfs.fsTypes)
 	stateSinkObject.Save(8, &vfs.filesystems)
+	stateSinkObject.Save(9, &vfs.groupIDBitmap)
 }
 
 func (vfs *VirtualFilesystem) afterLoad() {}
@@ -1939,6 +2009,7 @@ func (vfs *VirtualFilesystem) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(6, &vfs.anonBlockDevMinor)
 	stateSourceObject.Load(7, &vfs.fsTypes)
 	stateSourceObject.Load(8, &vfs.filesystems)
+	stateSourceObject.Load(9, &vfs.groupIDBitmap)
 	stateSourceObject.LoadValue(0, new([]*Mount), func(y interface{}) { vfs.loadMounts(y.([]*Mount)) })
 }
 
@@ -2070,6 +2141,8 @@ func init() {
 	state.Register((*resolveMountRootOrJumpError)(nil))
 	state.Register((*resolveMountPointError)(nil))
 	state.Register((*resolveAbsSymlinkError)(nil))
+	state.Register((*sharedList)(nil))
+	state.Register((*sharedEntry)(nil))
 	state.Register((*VirtualFilesystem)(nil))
 	state.Register((*PathOperation)(nil))
 	state.Register((*VirtualDentry)(nil))
