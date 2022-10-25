@@ -16,6 +16,7 @@ package vfs2
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -32,39 +33,6 @@ func Mount(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	flags := args[3].Uint64()
 	dataAddr := args[4].Pointer()
 
-	// For null-terminated strings related to mount(2), Linux copies in at most
-	// a page worth of data. See fs/namespace.c:copy_mount_string().
-	fsType, err := t.CopyInString(typeAddr, hostarch.PageSize)
-	if err != nil {
-		return 0, nil, err
-	}
-	source, err := t.CopyInString(sourceAddr, hostarch.PageSize)
-	if err != nil {
-		return 0, nil, err
-	}
-
-	targetPath, err := copyInPath(t, targetAddr)
-	if err != nil {
-		return 0, nil, err
-	}
-
-	data := ""
-	if dataAddr != 0 {
-		// In Linux, a full page is always copied in regardless of null
-		// character placement, and the address is passed to each file system.
-		// Most file systems always treat this data as a string, though, and so
-		// do all of the ones we implement.
-		data, err = t.CopyInString(dataAddr, hostarch.PageSize)
-		if err != nil {
-			return 0, nil, err
-		}
-	}
-
-	// Ignore magic value that was required before Linux 2.4.
-	if flags&linux.MS_MGC_MSK == linux.MS_MGC_VAL {
-		flags = flags &^ linux.MS_MGC_MSK
-	}
-
 	// Must have CAP_SYS_ADMIN in the current mount namespace's associated user
 	// namespace.
 	creds := t.Credentials()
@@ -72,38 +40,29 @@ func Mount(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		return 0, nil, linuxerr.EPERM
 	}
 
-	const unsupportedOps = linux.MS_REMOUNT | linux.MS_SHARED | linux.MS_PRIVATE |
-		linux.MS_SLAVE | linux.MS_UNBINDABLE | linux.MS_MOVE
+	// Ignore magic value that was required before Linux 2.4.
+	if flags&linux.MS_MGC_MSK == linux.MS_MGC_VAL {
+		flags = flags &^ linux.MS_MGC_MSK
+	}
 
-	// Silently allow MS_NOSUID, since we don't implement set-id bits
-	// anyway.
-	const unsupportedFlags = linux.MS_NODIRATIME | linux.MS_STRICTATIME
+	// Silently allow MS_NOSUID, since we don't implement set-id bits anyway.
+	const unsupported = linux.MS_REMOUNT | linux.MS_SLAVE |
+		linux.MS_UNBINDABLE | linux.MS_MOVE | linux.MS_REC | linux.MS_NODIRATIME |
+		linux.MS_STRICTATIME
 
 	// Linux just allows passing any flags to mount(2) - it won't fail when
 	// unknown or unsupported flags are passed. Since we don't implement
 	// everything, we fail explicitly on flags that are unimplemented.
-	if flags&(unsupportedOps|unsupportedFlags) != 0 {
+	if flags&(unsupported) != 0 {
 		return 0, nil, linuxerr.EINVAL
 	}
 
-	var opts vfs.MountOptions
-	if flags&linux.MS_NOATIME == linux.MS_NOATIME {
-		opts.Flags.NoATime = true
+	// For null-terminated strings related to mount(2), Linux copies in at most
+	// a page worth of data. See fs/namespace.c:copy_mount_string().
+	targetPath, err := copyInPath(t, targetAddr)
+	if err != nil {
+		return 0, nil, err
 	}
-	if flags&linux.MS_NOEXEC == linux.MS_NOEXEC {
-		opts.Flags.NoExec = true
-	}
-	if flags&linux.MS_NODEV == linux.MS_NODEV {
-		opts.Flags.NoDev = true
-	}
-	if flags&linux.MS_NOSUID == linux.MS_NOSUID {
-		opts.Flags.NoSUID = true
-	}
-	if flags&linux.MS_RDONLY == linux.MS_RDONLY {
-		opts.ReadOnly = true
-	}
-	opts.GetFilesystemOptions.Data = data
-
 	target, err := getTaskPathOperation(t, linux.AT_FDCWD, targetPath, disallowEmptyPath, nofollowFinalSymlink)
 	if err != nil {
 		return 0, nil, err
@@ -123,9 +82,56 @@ func Mount(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		}
 		defer sourceTpop.Release(t)
 		_, err = t.Kernel().VFS().BindAt(t, creds, &sourceTpop.pop, &target.pop)
-	} else {
-		_, err = t.Kernel().VFS().MountAt(t, creds, source, &target.pop, fsType, &opts)
+		return 0, nil, err
 	}
+	const propagationFlags = linux.MS_SHARED | linux.MS_PRIVATE | linux.MS_SLAVE | linux.MS_UNBINDABLE
+	if propFlag := flags & propagationFlags; propFlag != 0 {
+		// Check if flags is a power of 2. If not then more than one flag is set.
+		if !bits.IsPowerOfTwo64(propFlag) {
+			return 0, nil, linuxerr.EINVAL
+		}
+		propType := vfs.PropagationTypeFromLinux(propFlag)
+		return 0, nil, t.Kernel().VFS().SetMountPropagation(t, creds, &target.pop, propType)
+	}
+
+	// Only copy in source, fstype, and data if we are doing a normal mount.
+	source, err := t.CopyInString(sourceAddr, hostarch.PageSize)
+	if err != nil {
+		return 0, nil, err
+	}
+	fsType, err := t.CopyInString(typeAddr, hostarch.PageSize)
+	if err != nil {
+		return 0, nil, err
+	}
+	data := ""
+	if dataAddr != 0 {
+		// In Linux, a full page is always copied in regardless of null
+		// character placement, and the address is passed to each file system.
+		// Most file systems always treat this data as a string, though, and so
+		// do all of the ones we implement.
+		data, err = t.CopyInString(dataAddr, hostarch.PageSize)
+		if err != nil {
+			return 0, nil, err
+		}
+	}
+	var opts vfs.MountOptions
+	if flags&linux.MS_NOATIME == linux.MS_NOATIME {
+		opts.Flags.NoATime = true
+	}
+	if flags&linux.MS_NOEXEC == linux.MS_NOEXEC {
+		opts.Flags.NoExec = true
+	}
+	if flags&linux.MS_NODEV == linux.MS_NODEV {
+		opts.Flags.NoDev = true
+	}
+	if flags&linux.MS_NOSUID == linux.MS_NOSUID {
+		opts.Flags.NoSUID = true
+	}
+	if flags&linux.MS_RDONLY == linux.MS_RDONLY {
+		opts.ReadOnly = true
+	}
+	opts.GetFilesystemOptions.Data = data
+	_, err = t.Kernel().VFS().MountAt(t, creds, source, &target.pop, fsType, &opts)
 	return 0, nil, err
 }
 

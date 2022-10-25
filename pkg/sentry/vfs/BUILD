@@ -52,6 +52,19 @@ go_template_instance(
 )
 
 go_template_instance(
+    name = "shared_list",
+    out = "shared_list.go",
+    package = "vfs",
+    prefix = "shared",
+    template = "//pkg/ilist:generic_list",
+    types = {
+        "Element": "*Mount",
+        "Linker": "*sharedEntry",
+        "ElementMapper": "sharedMapper",
+    },
+)
+
+go_template_instance(
     name = "event_list",
     out = "event_list.go",
     package = "vfs",
@@ -129,6 +142,7 @@ go_library(
         "permissions.go",
         "resolving_path.go",
         "save_restore.go",
+        "shared_list.go",
         "vfs.go",
         "virtual_filesystem_mutex.go",
     ],
@@ -136,6 +150,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
+        "//pkg/bitmap",
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/fd",
