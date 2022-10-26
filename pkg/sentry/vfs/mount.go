@@ -465,9 +465,9 @@ func (vfs *VirtualFilesystem) connectMountAt(ctx context.Context, mnt *Mount, vd
 	return nil
 }
 
-// SetMountPropagation changes the propagation type of the mount pointed to by
+// SetMountPropagationAt changes the propagation type of the mount pointed to by
 // pop.
-func (vfs *VirtualFilesystem) SetMountPropagation(ctx context.Context, creds *auth.Credentials, pop *PathOperation, propType PropagationType) error {
+func (vfs *VirtualFilesystem) SetMountPropagationAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, propType PropagationType) error {
 	vd, err := vfs.GetDentryAt(ctx, creds, pop, &GetDentryOptions{})
 	if err != nil {
 		return err
@@ -484,10 +484,14 @@ func (vfs *VirtualFilesystem) SetMountPropagation(ctx context.Context, creds *au
 	} else if vd.dentry != vd.mount.root {
 		return linuxerr.EINVAL
 	}
+	vfs.SetMountPropagation(vd.mount, propType)
+	return nil
+}
 
+// SetMountPropagation changes the propagation type of the mount.
+func (vfs *VirtualFilesystem) SetMountPropagation(mnt *Mount, propType PropagationType) {
 	vfs.mountMu.Lock()
 	defer vfs.mountMu.Unlock()
-	mnt := vd.mount
 	if propType != mnt.propType {
 		switch propType {
 		case Shared, Private:
@@ -497,7 +501,16 @@ func (vfs *VirtualFilesystem) SetMountPropagation(ctx context.Context, creds *au
 		}
 	}
 	mnt.propType = propType
-	return nil
+}
+
+// CloneMount returns a new mount with the same fs and root. If mnt's
+// propagation type is shared the new mount is automatically made a peer of mnt.
+func (vfs *VirtualFilesystem) CloneMount(mnt *Mount) *Mount {
+	vfs.mountMu.Lock()
+	defer vfs.mountMu.Unlock()
+	clone := vfs.cloneMount(mnt, mnt.root)
+	vfs.addPeer(mnt, clone)
+	return clone
 }
 
 // cloneMount returns a new mount with mnt.fs as the filesystem and root as the

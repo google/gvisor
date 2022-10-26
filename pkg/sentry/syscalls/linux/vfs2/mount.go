@@ -91,7 +91,7 @@ func Mount(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			return 0, nil, linuxerr.EINVAL
 		}
 		propType := vfs.PropagationTypeFromLinux(propFlag)
-		return 0, nil, t.Kernel().VFS().SetMountPropagation(t, creds, &target.pop, propType)
+		return 0, nil, t.Kernel().VFS().SetMountPropagationAt(t, creds, &target.pop, propType)
 	}
 
 	// Only copy in source, fstype, and data if we are doing a normal mount.
