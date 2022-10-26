@@ -263,6 +263,7 @@ cc_library(
     hdrs = ["signal_util.h"],
     deps = [
         ":cleanup",
+        ":file_descriptor",
         ":posix_error",
         ":test_util",
         gtest,

@@ -16,6 +16,7 @@
 #include <signal.h>
 #include <sys/epoll.h>
 #include <sys/mman.h>
+#include <sys/signalfd.h>
 #include <sys/types.h>
 #include <syscall.h>
 #include <unistd.h>
@@ -1494,6 +1495,19 @@ TEST_F(FcntlSignalTest, SetSigDefault) {
   EXPECT_EQ(sig.num, SIGIO);
   EXPECT_EQ(sig.info.si_signo, SIGIO);
   // siginfo contents is undefined in this case.
+}
+
+TEST_F(FcntlSignalTest, SignalFD) {
+  // Create the signalfd.
+  sigset_t mask;
+  sigemptyset(&mask);
+  sigaddset(&mask, SIGIO);
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NewSignalFD(&mask, 0));
+  const auto signal_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(RegisterSignalHandler(SIGIO));
+  RegisterFD(fd.get(), 0);
+  int tid = syscall(SYS_gettid);
+  syscall(SYS_tkill, tid, SIGIO);
 }
 
 TEST_F(FcntlSignalTest, SetSigCustom) {
