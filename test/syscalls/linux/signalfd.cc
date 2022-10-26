@@ -42,16 +42,6 @@ constexpr int kSigno = SIGUSR1;
 constexpr int kSignoMax = 64;  // SIGRTMAX
 constexpr int kSignoAlt = SIGUSR2;
 
-// Returns a new signalfd.
-inline PosixErrorOr<FileDescriptor> NewSignalFD(sigset_t* mask, int flags = 0) {
-  int fd = signalfd(-1, mask, flags);
-  MaybeSave();
-  if (fd < 0) {
-    return PosixError(errno, "signalfd");
-  }
-  return FileDescriptor(fd);
-}
-
 class SignalfdTest : public ::testing::TestWithParam<int> {};
 
 TEST_P(SignalfdTest, Basic) {
