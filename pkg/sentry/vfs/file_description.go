@@ -196,7 +196,7 @@ func (fd *FileDescription) DecRef(ctx context.Context) {
 		fd.vd.DecRef(ctx)
 		fd.flagsMu.Lock()
 		if fd.statusFlags.RacyLoad()&linux.O_ASYNC != 0 && fd.asyncHandler != nil {
-			fd.asyncHandler.Unregister(fd)
+			fd.impl.UnregisterFileAsyncHandler(fd)
 		}
 		fd.asyncHandler = nil
 		fd.flagsMu.Unlock()
@@ -280,11 +280,11 @@ func (fd *FileDescription) SetStatusFlags(ctx context.Context, creds *auth.Crede
 		// Use fd.statusFlags instead of oldFlags, which may have become outdated,
 		// to avoid double registering/unregistering.
 		if fd.statusFlags.RacyLoad()&linux.O_ASYNC == 0 && flags&linux.O_ASYNC != 0 {
-			if err := fd.asyncHandler.Register(fd); err != nil {
+			if err := fd.impl.RegisterFileAsyncHandler(fd); err != nil {
 				return err
 			}
 		} else if fd.statusFlags.RacyLoad()&linux.O_ASYNC != 0 && flags&linux.O_ASYNC == 0 {
-			fd.asyncHandler.Unregister(fd)
+			fd.impl.UnregisterFileAsyncHandler(fd)
 		}
 	}
 	fd.statusFlags.Store((oldFlags &^ settableFlags) | (flags & settableFlags))
@@ -474,6 +474,9 @@ type FileDescriptionImpl interface {
 
 	// TestPOSIX returns information about whether the specified lock can be held, in the style of the F_GETLK fcntl.
 	TestPOSIX(ctx context.Context, uid lock.UniqueID, t lock.LockType, r lock.LockRange) (linux.Flock, error)
+
+	RegisterFileAsyncHandler(fd *FileDescription) error
+	UnregisterFileAsyncHandler(fd *FileDescription)
 }
 
 // Dirent holds the information contained in struct linux_dirent64.

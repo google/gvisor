@@ -16,6 +16,7 @@ func (sfd *SignalFileDescription) StateFields() []string {
 		"FileDescriptionDefaultImpl",
 		"DentryMetadataFileDescriptionImpl",
 		"NoLockFD",
+		"NoAsyncEventFD",
 		"target",
 		"queue",
 		"entry",
@@ -31,9 +32,10 @@ func (sfd *SignalFileDescription) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &sfd.FileDescriptionDefaultImpl)
 	stateSinkObject.Save(2, &sfd.DentryMetadataFileDescriptionImpl)
 	stateSinkObject.Save(3, &sfd.NoLockFD)
-	stateSinkObject.Save(4, &sfd.target)
-	stateSinkObject.Save(5, &sfd.queue)
-	stateSinkObject.Save(6, &sfd.entry)
+	stateSinkObject.Save(4, &sfd.NoAsyncEventFD)
+	stateSinkObject.Save(5, &sfd.target)
+	stateSinkObject.Save(6, &sfd.queue)
+	stateSinkObject.Save(7, &sfd.entry)
 }
 
 func (sfd *SignalFileDescription) afterLoad() {}
@@ -44,9 +46,10 @@ func (sfd *SignalFileDescription) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &sfd.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &sfd.DentryMetadataFileDescriptionImpl)
 	stateSourceObject.Load(3, &sfd.NoLockFD)
-	stateSourceObject.Load(4, &sfd.target)
-	stateSourceObject.Load(5, &sfd.queue)
-	stateSourceObject.Load(6, &sfd.entry)
+	stateSourceObject.Load(4, &sfd.NoAsyncEventFD)
+	stateSourceObject.Load(5, &sfd.target)
+	stateSourceObject.Load(6, &sfd.queue)
+	stateSourceObject.Load(7, &sfd.entry)
 }
 
 func init() {

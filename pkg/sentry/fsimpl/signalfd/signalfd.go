@@ -34,6 +34,7 @@ type SignalFileDescription struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
+	vfs.NoAsyncEventFD
 
 	// target is the original signal target task.
 	//
@@ -154,4 +155,14 @@ func (sfd *SignalFileDescription) Epollable() bool {
 // Release implements vfs.FileDescriptionImpl.Release.
 func (sfd *SignalFileDescription) Release(context.Context) {
 	sfd.target.SignalUnregister(&sfd.entry)
+}
+
+// RegisterFileAsyncHandler implements vfs.FileDescriptionImpl.RegisterFileAsyncHandler.
+func (sfd *SignalFileDescription) RegisterFileAsyncHandler(fd *vfs.FileDescription) error {
+	return sfd.NoAsyncEventFD.RegisterFileAsyncHandler(fd)
+}
+
+// UnregisterFileAsyncHandler implements vfs.FileDescriptionImpl.UnregisterFileAsyncHandler.
+func (sfd *SignalFileDescription) UnregisterFileAsyncHandler(fd *vfs.FileDescription) {
+	sfd.NoAsyncEventFD.UnregisterFileAsyncHandler(fd)
 }

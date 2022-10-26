@@ -172,6 +172,16 @@ func (FileDescriptionDefaultImpl) RemoveXattr(ctx context.Context, name string) 
 	return linuxerr.ENOTSUP
 }
 
+// RegisterFileAsyncHandler implements FileDescriptionImpl.RegisterFileAsyncHandler.
+func (FileDescriptionDefaultImpl) RegisterFileAsyncHandler(fd *FileDescription) error {
+	return fd.asyncHandler.Register(fd)
+}
+
+// UnregisterFileAsyncHandler implements FileDescriptionImpl.UnregisterFileAsyncHandler.
+func (FileDescriptionDefaultImpl) UnregisterFileAsyncHandler(fd *FileDescription) {
+	fd.asyncHandler.Unregister(fd)
+}
+
 // DirectoryFileDescriptionDefaultImpl may be embedded by implementations of
 // FileDescriptionImpl that always represent directories to obtain
 // implementations of non-directory I/O methods that return EISDIR.
@@ -464,6 +474,18 @@ func (fd *LockFD) UnlockPOSIX(ctx context.Context, uid fslock.UniqueID, r fslock
 // TestPOSIX implements FileDescriptionImpl.TestPOSIX.
 func (fd *LockFD) TestPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, r fslock.LockRange) (linux.Flock, error) {
 	return fd.locks.TestPOSIX(ctx, uid, t, r)
+}
+
+// NoAsyncEventFD implements [Un]RegisterFileAsyncHandler of FileDescriptionImpl.
+type NoAsyncEventFD struct{}
+
+// RegisterFileAsyncHandler implements FileDescriptionImpl.RegisterFileAsyncHandler.
+func (NoAsyncEventFD) RegisterFileAsyncHandler(fd *FileDescription) error {
+	return nil
+}
+
+// UnregisterFileAsyncHandler implements FileDescriptionImpl.UnregisterFileAsyncHandler.
+func (NoAsyncEventFD) UnregisterFileAsyncHandler(fd *FileDescription) {
 }
 
 // NoLockFD implements Lock*/Unlock* portion of FileDescriptionImpl interface
