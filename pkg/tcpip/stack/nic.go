@@ -201,7 +201,7 @@ func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *nic
 		}
 	}
 
-	nic.gro.init()
+	nic.gro.init(opts.GROTimeout)
 	nic.NetworkLinkEndpoint.Attach(nic)
 
 	return nic
