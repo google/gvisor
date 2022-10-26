@@ -18,7 +18,7 @@ sandbox networking workloads. In this blog we will show how we crafted a cure
 for Netstack’s allocation addiction, reducing them by 99%, while also increasing
 gVisor networking throughput by 30+%.
 
-![Figure 1](/assets/images/2022-10-24-buffer-pooling-figure1.png "Buffer pooling results.")
+![Figure 1](/assets/images/2022-10-24-buffer-pooling-figure1.png "Buffer pooling results."){:width="100%"}
 
 ## A Waste Management Problem
 
@@ -101,7 +101,7 @@ reference-counted structure that’s allocated from a pool and holds data in a
 byte slice. There are several `Chunk` pools, each of which allocates chunks with
 different sized byte slices. These sizes start at 64 and double until 64k.
 
-![Figure 2](/assets/images/2022-10-24-buffer-pooling-figure2.png "bufferv2 implementation diagram.")
+![Figure 2](/assets/images/2022-10-24-buffer-pooling-figure2.png "bufferv2 implementation diagram."){:width="100%"}
 
 The design of bufferv2 has a few key advantages over simpler object pooling:
 
