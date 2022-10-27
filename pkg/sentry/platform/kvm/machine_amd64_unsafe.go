@@ -87,6 +87,29 @@ func (c *vCPU) setTSCFreq(freq uintptr) error {
 	return nil
 }
 
+// setTSCOffset sets the TSC offset to zero.
+func (c *vCPU) setTSCOffset() error {
+	offset := uint64(0)
+	da := struct {
+		flags uint32
+		group uint32
+		attr  uint64
+		addr  unsafe.Pointer
+	}{
+		group: _KVM_VCPU_TSC_CTRL,
+		attr:  _KVM_VCPU_TSC_OFFSET,
+		addr:  unsafe.Pointer(&offset),
+	}
+	if _, _, errno := unix.RawSyscall(
+		unix.SYS_IOCTL,
+		uintptr(c.fd),
+		_KVM_SET_DEVICE_ATTR,
+		uintptr(unsafe.Pointer(&da))); errno != 0 {
+		return fmt.Errorf("error setting tsc offset: %v", errno)
+	}
+	return nil
+}
+
 // setTSC sets the TSC value.
 func (c *vCPU) setTSC(value uint64) error {
 	const _MSR_IA32_TSC = 0x00000010

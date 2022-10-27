@@ -71,6 +71,7 @@ go_library(
         "kvm_arm64.go",
         "kvm_arm64_unsafe.go",
         "kvm_const.go",
+        "kvm_const_amd64.go",
         "kvm_const_arm64.go",
         "machine.go",
         "machine_amd64.go",
