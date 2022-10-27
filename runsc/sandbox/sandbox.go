@@ -151,9 +151,9 @@ type Args struct {
 	// UserLog is the filename to send user-visible logs to. It may be empty.
 	UserLog string
 
-	// IOFiles is the list of files that connect to a 9P endpoint for the mounts
-	// points using Gofers. They must be in the same order as mounts appear in
-	// the spec.
+	// IOFiles is the list of files that connect to a gofer endpoint for the
+	// mounts points using Gofers. They must be in the same order as mounts
+	// appear in the spec.
 	IOFiles []*os.File
 
 	// MountsFile is a file container mount information from the spec. It's
