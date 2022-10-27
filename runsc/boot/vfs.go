@@ -412,7 +412,7 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, conf *confi
 	// Configure the gofer dentry cache size.
 	gofer.SetDentryCacheSize(conf.DCache)
 
-	log.Infof("Mounting root over 9P, ioFD: %d", fd)
+	log.Infof("Mounting root with gofer, ioFD: %d", fd)
 	opts := &vfs.MountOptions{
 		ReadOnly: c.root.Readonly,
 		GetFilesystemOptions: vfs.GetFilesystemOptions{
@@ -709,7 +709,7 @@ func (c *containerMounter) getMountNameAndOptions(conf *config.Config, m *mountA
 		if m.fd == 0 {
 			// Check that an FD was provided to fails fast. Technically FD=0 is valid,
 			// but unlikely to be correct in this context.
-			return "", nil, false, fmt.Errorf("9P mount requires a connection FD")
+			return "", nil, false, fmt.Errorf("gofer mount requires a connection FD")
 		}
 		data = goferMountData(m.fd, c.getMountAccessType(conf, m.mount), conf.Lisafs)
 		internalData = gofer.InternalFilesystemOptions{
