@@ -371,7 +371,7 @@ func (vfs *VirtualFilesystem) preparePropagationTree(mnt *Mount, vd VirtualDentr
 			dentry: vd.dentry,
 		}
 		peerVd.IncRef()
-		clone := vfs.cloneMount(mnt, mnt.root)
+		clone := vfs.cloneMount(mnt, mnt.root, nil)
 		tree[clone] = peerVd
 		newPeerGroup = append(newPeerGroup, clone)
 	}
@@ -391,8 +391,10 @@ func (vfs *VirtualFilesystem) commitPropagationTree(ctx context.Context, tree ma
 	vfs.mounts.seq.BeginWrite()
 	for mnt, vd := range tree {
 		vd.dentry.mu.Lock()
-		mntns := vd.mount.ns
-		vfs.connectLocked(mnt, vd, mntns)
+		// If mnt isn't connected yet, skip connecting during propagation.
+		if mntns := vd.mount.ns; mntns != nil {
+			vfs.connectLocked(mnt, vd, mntns)
+		}
 		vd.dentry.mu.Unlock()
 		mnt.DecRef(ctx)
 	}
@@ -503,12 +505,14 @@ func (vfs *VirtualFilesystem) SetMountPropagation(mnt *Mount, propType Propagati
 	mnt.propType = propType
 }
 
-// CloneMount returns a new mount with the same fs and root. If mnt's
-// propagation type is shared the new mount is automatically made a peer of mnt.
-func (vfs *VirtualFilesystem) CloneMount(mnt *Mount) *Mount {
+// CloneMountAt returns a new mount with the same fs, specified root and
+// mount options. If mnt's propagation type is shared the new mount is
+// automatically made a peer of mnt. If mount options are nil, mnt's
+// options are copied.
+func (vfs *VirtualFilesystem) CloneMountAt(mnt *Mount, root *Dentry, mopts *MountOptions) *Mount {
 	vfs.mountMu.Lock()
 	defer vfs.mountMu.Unlock()
-	clone := vfs.cloneMount(mnt, mnt.root)
+	clone := vfs.cloneMount(mnt, root, mopts)
 	vfs.addPeer(mnt, clone)
 	return clone
 }
@@ -518,12 +522,15 @@ func (vfs *VirtualFilesystem) CloneMount(mnt *Mount) *Mount {
 //
 // +checklocks:vfs.mountMu
 // +checklocksalias:mnt.vfs.mountMu=vfs.mountMu
-func (vfs *VirtualFilesystem) cloneMount(mnt *Mount, root *Dentry) *Mount {
-	opts := MountOptions{
-		Flags:    mnt.Flags,
-		ReadOnly: mnt.ReadOnly(),
+func (vfs *VirtualFilesystem) cloneMount(mnt *Mount, root *Dentry, mopts *MountOptions) *Mount {
+	opts := mopts
+	if opts == nil {
+		opts = &MountOptions{
+			Flags:    mnt.Flags,
+			ReadOnly: mnt.ReadOnly(),
+		}
 	}
-	return vfs.NewDisconnectedMount(mnt.fs, root, &opts)
+	return vfs.NewDisconnectedMount(mnt.fs, root, opts)
 }
 
 // BindAt creates a clone of the source path's parent mount and mounts it at
@@ -544,7 +551,7 @@ func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credential
 
 	vfs.mountMu.Lock()
 	defer vfs.mountMu.Unlock()
-	clone := vfs.cloneMount(sourceVd.mount, sourceVd.dentry)
+	clone := vfs.cloneMount(sourceVd.mount, sourceVd.dentry, nil)
 	defer clone.DecRef(ctx)
 	tree := vfs.preparePropagationTree(clone, targetVd)
 	if sourceVd.mount.propType == Shared {
