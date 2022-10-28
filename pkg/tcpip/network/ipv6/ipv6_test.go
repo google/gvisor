@@ -26,6 +26,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
@@ -1109,6 +1110,28 @@ type fragmentData struct {
 	data    []byte
 }
 
+func udpGen(payload []byte, multiplier uint8, src, dst tcpip.Address) []byte {
+	payloadLen := len(payload)
+	for i := 0; i < payloadLen; i++ {
+		payload[i] = uint8(i) * multiplier
+	}
+
+	udpLength := header.UDPMinimumSize + payloadLen
+
+	hdr := prependable.New(udpLength)
+	u := header.UDP(hdr.Prepend(udpLength))
+	u.Encode(&header.UDPFields{
+		SrcPort: 5555,
+		DstPort: 80,
+		Length:  uint16(udpLength),
+	})
+	copy(u.Payload(), payload)
+	sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, src, dst, uint16(udpLength))
+	sum = checksum.Checksum(payload, sum)
+	u.SetChecksum(^u.CalculateChecksum(sum))
+	return hdr.View()
+}
+
 func TestReceiveIPv6Fragments(t *testing.T) {
 	const (
 		udpPayload1Length = 256
@@ -1123,28 +1146,6 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 		// uses 8 byte routing extension headers for most sub tests.
 		routingExtHdrLen = 8
 	)
-
-	udpGen := func(payload []byte, multiplier uint8, src, dst tcpip.Address) []byte {
-		payloadLen := len(payload)
-		for i := 0; i < payloadLen; i++ {
-			payload[i] = uint8(i) * multiplier
-		}
-
-		udpLength := header.UDPMinimumSize + payloadLen
-
-		hdr := prependable.New(udpLength)
-		u := header.UDP(hdr.Prepend(udpLength))
-		u.Encode(&header.UDPFields{
-			SrcPort: 5555,
-			DstPort: 80,
-			Length:  uint16(udpLength),
-		})
-		copy(u.Payload(), payload)
-		sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, src, dst, uint16(udpLength))
-		sum = checksum.Checksum(payload, sum)
-		u.SetChecksum(^u.CalculateChecksum(sum))
-		return hdr.View()
-	}
 
 	var udpPayload1Addr1ToAddr2Buf [udpPayload1Length]byte
 	udpPayload1Addr1ToAddr2 := udpPayload1Addr1ToAddr2Buf[:]
@@ -1933,6 +1934,124 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 				t.Fatalf("(last) got Read = (%v, %v), want = (_, %s)", res, err, &tcpip.ErrWouldBlock{})
 			}
 		})
+	}
+}
+
+func TestConcurrentFragmentWrites(t *testing.T) {
+	const udpPayload1Length = 256
+	const udpPayload2Length = 128
+	var udpPayload1Addr1ToAddr2Buf [udpPayload1Length]byte
+	udpPayload1Addr1ToAddr2 := udpPayload1Addr1ToAddr2Buf[:]
+	ipv6Payload1Addr1ToAddr2 := udpGen(udpPayload1Addr1ToAddr2, 1, addr1, addr2)
+
+	var udpPayload2Addr1ToAddr2Buf [udpPayload2Length]byte
+	udpPayload2Addr1ToAddr2 := udpPayload2Addr1ToAddr2Buf[:]
+	ipv6Payload2Addr1ToAddr2 := udpGen(udpPayload2Addr1ToAddr2, 2, addr1, addr2)
+
+	fragments := []fragmentData{
+		{
+			srcAddr: addr1,
+			dstAddr: addr2,
+			nextHdr: fragmentExtHdrID,
+			data: append(
+				// Fragment extension header.
+				//
+				// Fragment offset = 0, More = true, ID = 1
+				[]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1},
+				ipv6Payload1Addr1ToAddr2[:64]...,
+			),
+		},
+		{
+			srcAddr: addr1,
+			dstAddr: addr2,
+			nextHdr: fragmentExtHdrID,
+			data: append(
+				// Fragment extension header.
+				//
+				// Fragment offset = 0, More = true, ID = 2
+				[]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 2},
+				ipv6Payload2Addr1ToAddr2[:32]...,
+			),
+		},
+		{
+			srcAddr: addr1,
+			dstAddr: addr2,
+			nextHdr: fragmentExtHdrID,
+			data: append(
+				// Fragment extension header.
+				//
+				// Fragment offset = 8, More = false, ID = 1
+				[]byte{uint8(header.UDPProtocolNumber), 0, 0, 64, 0, 0, 0, 1},
+				ipv6Payload1Addr1ToAddr2[64:]...,
+			),
+		},
+	}
+
+	c := newTestContext()
+	defer c.cleanup()
+	s := c.s
+
+	e := channel.New(0, header.IPv6MinimumMTU, linkAddr1)
+	defer e.Close()
+	if err := s.CreateNIC(nicID, e); err != nil {
+		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+	}
+	protocolAddr := tcpip.ProtocolAddress{
+		Protocol:          ProtocolNumber,
+		AddressWithPrefix: addr2.WithPrefix(),
+	}
+	if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
+	}
+
+	wq := waiter.Queue{}
+	we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+	wq.EventRegister(&we)
+	defer wq.EventUnregister(&we)
+	defer close(ch)
+	ep, err := s.NewEndpoint(udp.ProtocolNumber, ProtocolNumber, &wq)
+	if err != nil {
+		t.Fatalf("NewEndpoint(%d, %d, _): %s", udp.ProtocolNumber, ProtocolNumber, err)
+	}
+	defer ep.Close()
+
+	bindAddr := tcpip.FullAddress{Addr: addr2, Port: 80}
+	if err := ep.Bind(bindAddr); err != nil {
+		t.Fatalf("Bind(%+v): %s", bindAddr, err)
+	}
+
+	var wg sync.WaitGroup
+	defer wg.Wait()
+	for i := 0; i < 3; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 10; i++ {
+				for _, f := range fragments {
+					hdr := prependable.New(header.IPv6MinimumSize)
+
+					// Serialize IPv6 fixed header.
+					ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+					ip.Encode(&header.IPv6Fields{
+						PayloadLength: uint16(len(f.data)),
+						// We're lying about transport protocol here so that we can generate
+						// raw extension headers for the tests.
+						TransportProtocol: tcpip.TransportProtocolNumber(f.nextHdr),
+						HopLimit:          255,
+						SrcAddr:           f.srcAddr,
+						DstAddr:           f.dstAddr,
+					})
+
+					buf := bufferv2.MakeWithData(hdr.View())
+					buf.Append(bufferv2.NewViewWithData(f.data))
+					pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+						Payload: buf,
+					})
+					e.InjectInbound(ProtocolNumber, pkt)
+					pkt.DecRef()
+				}
+			}
+		}()
 	}
 }
 
