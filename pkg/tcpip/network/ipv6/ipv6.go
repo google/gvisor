@@ -1046,11 +1046,13 @@ func (e *endpoint) HandlePacket(pkt stack.PacketBufferPtr) {
 		return
 	}
 
-	h, ok := e.protocol.parseAndValidate(pkt)
+	hView, ok := e.protocol.parseAndValidate(pkt)
 	if !ok {
 		stats.MalformedPacketsReceived.Increment()
 		return
 	}
+	defer hView.Release()
+	h := header.IPv6(hView.AsSlice())
 
 	if !e.nic.IsLoopback() {
 		if !e.protocol.options.AllowExternalLoopbackTraffic {
@@ -1101,11 +1103,13 @@ func (e *endpoint) handleLocalPacket(pkt stack.PacketBufferPtr, canSkipRXChecksu
 	defer pkt.DecRef()
 	pkt.RXTransportChecksumValidated = canSkipRXChecksum
 
-	h, ok := e.protocol.parseAndValidate(pkt)
+	hView, ok := e.protocol.parseAndValidate(pkt)
 	if !ok {
 		stats.MalformedPacketsReceived.Increment()
 		return
 	}
+	defer hView.Release()
+	h := header.IPv6(hView.AsSlice())
 
 	e.handleValidatedPacket(h, pkt, e.nic.Name() /* inNICName */)
 }
@@ -2537,19 +2541,22 @@ func (p *protocol) forwardPendingMulticastPacket(pkt stack.PacketBufferPtr, inst
 func (*protocol) Wait() {}
 
 // parseAndValidate parses the packet (including its transport layer header) and
-// returns the parsed IP header.
+// returns a view containing the parsed IP header. The caller is responsible
+// for releasing the returned View.
 //
 // Returns true if the IP header was successfully parsed.
-func (p *protocol) parseAndValidate(pkt stack.PacketBufferPtr) (header.IPv6, bool) {
+func (p *protocol) parseAndValidate(pkt stack.PacketBufferPtr) (*bufferv2.View, bool) {
 	transProtoNum, hasTransportHdr, ok := p.Parse(pkt)
 	if !ok {
 		return nil, false
 	}
 
-	h := header.IPv6(pkt.NetworkHeader().Slice())
+	hView := pkt.NetworkHeader().View()
+	h := header.IPv6(hView.AsSlice())
 	// Do not include the link header's size when calculating the size of the IP
 	// packet.
 	if !h.IsValid(pkt.Size() - len(pkt.LinkHeader().Slice())) {
+		hView.Release()
 		return nil, false
 	}
 
@@ -2557,7 +2564,7 @@ func (p *protocol) parseAndValidate(pkt stack.PacketBufferPtr) (header.IPv6, boo
 		p.parseTransport(pkt, transProtoNum)
 	}
 
-	return h, true
+	return hView, true
 }
 
 func (p *protocol) parseTransport(pkt stack.PacketBufferPtr, transProtoNum tcpip.TransportProtocolNumber) {
