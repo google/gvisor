@@ -116,9 +116,9 @@ type IOUringParams struct {
 //
 // +marshal
 type IOUringCqe struct {
-	userData uint64
-	res      int32
-	flags    uint32
+	UserData uint64
+	Res      int32
+	Flags    uint32
 }
 
 // IOUring implements io_uring struct.
@@ -128,9 +128,9 @@ type IOUringCqe struct {
 type IOUring struct {
 	// Both head and tail should be cacheline aligned. And we assume that
 	// cacheline size is 64 bytes.
-	head uint32
+	Head uint32
 	_    [60]byte
-	tail uint32
+	Tail uint32
 	_    [60]byte
 }
 
@@ -140,14 +140,37 @@ type IOUring struct {
 //
 // +marshal
 type IORings struct {
-	sq, cq                       IOUring
-	sqRingMask, cqRingMask       uint32
-	sqRingEntries, cqRingEntries uint32
+	Sq, Cq                       IOUring
+	SqRingMask, CqRingMask       uint32
+	SqRingEntries, CqRingEntries uint32
 	sqDropped                    uint32
 	sqFlags                      int32
 	cqFlags                      uint32
-	cqOverflow                   uint32
+	CqOverflow                   uint32
 	_                            [32]byte // Padding so cqes is cacheline aligned
 	// Linux has an additional field struct io_uring_cqe cqes[], which represents
 	// a dynamic array. We don't include it here in order to enable marshalling.
+}
+
+// IOUringSqe implements io_uring_sqe struct.
+// This struct represents IO submission data structure (Submission Queue Entry). As we don't yet
+// support IORING_SETUP_SQE128 flag, its size is 64 bytes with no extra padding at the end.
+// See include/uapi/linux/io_uring.h.
+//
+// +marshal
+type IOUringSqe struct {
+	Opcode              uint8
+	Flags               uint8
+	ioPrio              uint16
+	fd                  int32
+	offOrAddrOrCmdOp    uint64
+	addrOrSpliceOff     uint64
+	len                 uint32
+	specialFlags        uint32
+	UserData            uint64
+	bufIndexOrGroup     uint16
+	personality         uint16
+	spliceFDOrFileIndex int32
+	addr3               uint64
+	_                   uint64
 }
