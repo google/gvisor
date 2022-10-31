@@ -62,6 +62,7 @@ cc_library(
 cc_library(
     name = "io_uring_util",
     testonly = 1,
+    srcs = ["io_uring_util.cc"],
     hdrs = ["io_uring_util.h"],
     deps = [
         ":file_descriptor",

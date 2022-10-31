@@ -17,10 +17,10 @@ package linux
 // PreComputedIOSqRingOffsets returns precomputed values for IOSqRingOffsets.
 func PreComputedIOSqRingOffsets() IOSqRingOffsets {
 	return IOSqRingOffsets{
-		Head: {{ .IORings.sq.Offset }} + {{ .IOUring.head.Offset }},
-		Tail: {{ .IORings.sq.Offset }} + {{ .IOUring.tail.Offset }},
-		RingMask: {{ .IORings.sqRingMask.Offset }},
-		RingEntries: {{ .IORings.sqRingEntries.Offset }},
+		Head: {{ .IORings.Sq.Offset }} + {{ .IOUring.Head.Offset }},
+		Tail: {{ .IORings.Sq.Offset }} + {{ .IOUring.Tail.Offset }},
+		RingMask: {{ .IORings.SqRingMask.Offset }},
+		RingEntries: {{ .IORings.SqRingEntries.Offset }},
 		Flags: {{ .IORings.sqFlags.Offset }},
 		Dropped: {{ .IORings.sqDropped.Offset }},
 	}
@@ -29,11 +29,11 @@ func PreComputedIOSqRingOffsets() IOSqRingOffsets {
 // PreComputedIOCqRingOffsets returns precomputed values for IOCqRingOffsets.
 func PreComputedIOCqRingOffsets() IOCqRingOffsets {
 	return IOCqRingOffsets {
-		Head: {{ .IORings.cq.Offset }} + {{ .IOUring.head.Offset }},
-		Tail: {{ .IORings.cq.Offset }} + {{ .IOUring.tail.Offset }},
-		RingMask: {{ .IORings.cqRingMask.Offset }},
-		RingEntries: {{ .IORings.cqRingEntries.Offset }},
-		Overflow: {{ .IORings.cqOverflow.Offset }},
+		Head: {{ .IORings.Cq.Offset }} + {{ .IOUring.Head.Offset }},
+		Tail: {{ .IORings.Cq.Offset }} + {{ .IOUring.Tail.Offset }},
+		RingMask: {{ .IORings.CqRingMask.Offset }},
+		RingEntries: {{ .IORings.CqRingEntries.Offset }},
+		Overflow: {{ .IORings.CqOverflow.Offset }},
 		Flags: {{ .IORings.cqFlags.Offset }},
 	}
 }
