@@ -179,6 +179,17 @@ func (mnt *Mount) Options() MountOptions {
 	}
 }
 
+func (mnt *Mount) generateOptionalTags() string {
+	mnt.vfs.mountMu.Lock()
+	defer mnt.vfs.mountMu.Unlock()
+	// TODO(b/249777195): Support MS_SLAVE and MS_UNBINDABLE propagation types.
+	var optional string
+	if mnt.propType == Shared {
+		optional = fmt.Sprintf("shared:%d", mnt.groupID)
+	}
+	return optional
+}
+
 // addPeer adds oth to mnt's peer group. Both will have the same groupID
 // and sharedList. vfs.mountMu must be locked.
 //
@@ -1326,7 +1337,7 @@ func (vfs *VirtualFilesystem) GenerateProcMountInfo(ctx context.Context, taskRoo
 		if path == "" {
 			// Either an error occurred, or path is not reachable
 			// from root.
-			break
+			continue
 		}
 		// Stat the mount root to get the major/minor device numbers.
 		pop := &PathOperation{
@@ -1337,7 +1348,7 @@ func (vfs *VirtualFilesystem) GenerateProcMountInfo(ctx context.Context, taskRoo
 		if err != nil {
 			// Well that's not good. Ignore this mount.
 			ctx.Warningf("VFS.GenerateProcMountInfo: failed to stat mount root %+v: %v", mnt.root, err)
-			break
+			continue
 		}
 
 		// Format:
@@ -1385,9 +1396,7 @@ func (vfs *VirtualFilesystem) GenerateProcMountInfo(ctx context.Context, taskRoo
 		fmt.Fprintf(buf, "%s ", opts)
 
 		// (7) Optional fields: zero or more fields of the form "tag[:value]".
-		if mnt.propType == Shared {
-			fmt.Fprintf(buf, "shared:%d ", mnt.groupID)
-		}
+		fmt.Fprintf(buf, "%s ", mnt.generateOptionalTags())
 		// (8) Separator: the end of the optional fields is marked by a single hyphen.
 		fmt.Fprintf(buf, "- ")
 
