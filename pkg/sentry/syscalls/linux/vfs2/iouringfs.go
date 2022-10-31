@@ -17,6 +17,7 @@ package vfs2
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/iouringfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -42,7 +43,7 @@ func IOUringSetup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 	}
 
 	// List of currently supported flags in our IO_URING implementation.
-	const supportedFlags = linux.IORING_SETUP_IOPOLL
+	const supportedFlags = 0 // Currently support none
 
 	// Since we don't implement everything, we fail explicitly on flags that are unimplemented.
 	if params.Flags|supportedFlags != supportedFlags {
@@ -53,7 +54,8 @@ func IOUringSetup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 	iouringfd, err := iouringfs.New(t, vfsObj, entries, &params)
 
 	if err != nil {
-		return 0, nil, err
+		// return 0, nil, err
+		return 0, nil, linuxerr.EPERM
 	}
 	defer iouringfd.DecRef(t)
 
@@ -71,4 +73,49 @@ func IOUringSetup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 	}
 
 	return uintptr(fd), nil, nil
+}
+
+// IOUringEnter implements linux syscall io_uring_enter(2).
+func IOUringEnter(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	fd := int32(args[0].Int())
+	toSubmit := uint32(args[1].Uint())
+	minComplete := uint32(args[2].Uint())
+	flags := uint32(args[3].Uint())
+	sigSet := args[4].Pointer()
+
+	ret := -1
+
+	// List of currently supported flags for io_uring_enter(2).
+	const supportedFlags = 0 // Currently support none
+
+	// Since we don't implement everything, we fail explicitly on flags that are unimplemented.
+	if flags|supportedFlags != supportedFlags {
+		return uintptr(ret), nil, linuxerr.EINVAL
+	}
+
+	// Currently don't support replacing an existing signal mask.
+	if sigSet != hostarch.Addr(0) {
+		return uintptr(ret), nil, linuxerr.EFAULT
+	}
+
+	// If a user requested to submit zero SQEs, then we don't process any and return right away.
+	if toSubmit == 0 {
+		return uintptr(ret), nil, nil
+	}
+
+	file := t.GetFileVFS2(fd)
+	if file == nil {
+		return uintptr(ret), nil, linuxerr.EBADF
+	}
+	defer file.DecRef(t)
+	iouringfd, ok := file.Impl().(*iouringfs.FileDescription)
+	if !ok {
+		return uintptr(ret), nil, linuxerr.EBADF
+	}
+	ret, err := iouringfd.ProcessSubmissions(toSubmit, minComplete, flags)
+	if err != nil {
+		return uintptr(ret), nil, err
+	}
+
+	return uintptr(ret), nil, nil
 }

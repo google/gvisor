@@ -13,16 +13,25 @@
 // limitations under the License.
 
 // Package iouringfs provides a filesystem implementation for IO_URING basing
-// it on anonfs.
+// it on anonfs. Currently, we don't support neither IOPOLL nor SQPOLL modes.
+// Thus, user needs to set up IO_URING first with io_uring_setup(2) syscall and
+// then issue submission request using io_uring_enter(2).
+//
+// Another important note, as of now, we don't support deferred CQE. In other
+// words, the size of the backlogged set of CQE is zero. Whenever, completion
+// queue ring buffer is full, we drop the subsequent completion queue entries.
 package iouringfs
 
 import (
 	"fmt"
+	"sync"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
@@ -33,7 +42,7 @@ import (
 // It is based on io_rings struct. See io_uring/io_uring.c.
 //
 // +stateify savable
-type fileDescription struct {
+type FileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
@@ -41,9 +50,16 @@ type fileDescription struct {
 
 	rbmf  ringsBufferFile
 	sqemf sqEntriesFile
+
+	// mu protects the fields below.
+	mu sync.Mutex `state:"nosave"`
+
+	ioRings *safemem.BlockSeq
+	sqes    *safemem.BlockSeq
+	cqes    *safemem.BlockSeq
 }
 
-var _ vfs.FileDescriptionImpl = (*fileDescription)(nil)
+var _ vfs.FileDescriptionImpl = (*FileDescription)(nil)
 
 func roundUpPowerOfTwo(n uint32) (uint32, bool) {
 	if n > (1 << 31) {
@@ -98,15 +114,14 @@ func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, entries uint32, par
 	}
 
 	// Allocate enough space to store the given number of submission queue entries.
-	sqEntriesSize := uint64(numSqEntries * 64)
+	sqEntriesSize := uint64(numSqEntries * uint32((*linux.IOUringSqe)(nil).SizeBytes()))
 	sqEntriesSize = uint64(hostarch.Addr(sqEntriesSize).MustRoundUp())
-
 	sqefr, err := mfp.MemoryFile().Allocate(sqEntriesSize, pgalloc.AllocOpts{Kind: usage.Anonymous})
 	if err != nil {
 		return nil, linuxerr.ENOMEM
 	}
 
-	iouringfd := &fileDescription{
+	iouringfd := &FileDescription{
 		rbmf: ringsBufferFile{
 			mf: mfp.MemoryFile(),
 			fr: rbfr,
@@ -152,15 +167,135 @@ func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, entries uint32, par
 	// Set features supported by the current IO_URING implementation.
 	params.Features = linux.IORING_FEAT_SINGLE_MMAP
 
+	if err := iouringfd.populateIORings(params); err != nil {
+		return nil, err
+	}
+
+	if err := iouringfd.cacheSqesMapping(); err != nil {
+		return nil, err
+	}
+	if err := iouringfd.cacheCqesMapping(); err != nil {
+		return nil, err
+	}
+
 	return &iouringfd.vfsfd, nil
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *fileDescription) Release(context.Context) {
+func (fd *FileDescription) Release(context.Context) {
+	fd.rbmf.mf.DecRef(fd.rbmf.fr)
+	fd.sqemf.mf.DecRef(fd.sqemf.fr)
+}
+
+// unmarshalIORings handles unmarshalling IORings struct considering that there could be more than
+// one block in the BlockSeq.
+func unmarshalIORings(ioRings *linux.IORings, bs *safemem.BlockSeq) error {
+	if bs.NumBlocks() == 1 && !bs.Head().NeedSafecopy() {
+		ioRings.UnmarshalBytes(bs.Head().TakeFirst((*linux.IORings)(nil).SizeBytes()).ToSlice())
+
+		return nil
+	}
+
+	buf := make([]byte, (*linux.IORings)(nil).SizeBytes())
+	cp, cperr := safemem.CopySeq(safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf)), *bs)
+	if cp == 0 {
+		return cperr
+	}
+	ioRings.UnmarshalBytes(buf)
+
+	return nil
+}
+
+// marshalIORings handles marshalling IORings struct considering that there could be more than one
+// BlockSeq.
+func marshalIORings(ioRings *linux.IORings, bs *safemem.BlockSeq) error {
+	if bs.NumBlocks() == 1 && !bs.Head().NeedSafecopy() {
+		ioRings.MarshalBytes(bs.Head().TakeFirst((*linux.IORings)(nil).SizeBytes()).ToSlice())
+	}
+
+	buf := make([]byte, (*linux.IORings)(nil).SizeBytes())
+	ioRings.MarshalBytes(buf)
+	cp, cperr := safemem.CopySeq(*bs, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf)))
+	if cp == 0 {
+		return cperr
+	}
+
+	return nil
+}
+
+// unmarshalSqe handles unmarshalling SQE struct considering that there could be more than one block
+// in the BlockSeq.
+func unmarshalSqe(sqe *linux.IOUringSqe, sqes *safemem.BlockSeq, sqHead uint32) error {
+	sqeSize := uint32((*linux.IOUringSqe)(nil).SizeBytes())
+	if sqes.NumBlocks() == 1 && !sqes.Head().NeedSafecopy() {
+		sqe.UnmarshalBytes(sqes.Head().ToSlice()[sqHead*sqeSize : (sqHead+1)*sqeSize])
+
+		return nil
+	}
+
+	buf := make([]byte, sqes.NumBytes())
+	cp, cperr := safemem.CopySeq(safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf[sqHead*sqeSize:(sqHead+1)*sqeSize])), *sqes)
+	if cp == 0 {
+		return cperr
+	}
+	sqe.UnmarshalBytes(buf)
+
+	return nil
+}
+
+// populateIORings populates IORings struct backed by the allocated memory.
+func (fd *FileDescription) populateIORings(params *linux.IOUringParams) error {
+	bs, err := fd.rbmf.mf.MapInternal(fd.rbmf.fr, hostarch.ReadWrite)
+	if err != nil {
+		return err
+	}
+
+	fd.ioRings = &bs
+
+	var ioRings linux.IORings
+	if err = unmarshalIORings(&ioRings, &bs); err != nil {
+		return err
+	}
+
+	ioRings.SqRingMask = params.SqEntries - 1
+	ioRings.CqRingMask = params.CqEntries - 1
+	ioRings.SqRingEntries = params.SqEntries
+	ioRings.CqRingEntries = params.CqEntries
+
+	if err = marshalIORings(&ioRings, &bs); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// cacheSqesMapping caches the beginning of an area for the SQEs backed by the allocated memory.
+func (fd *FileDescription) cacheSqesMapping() error {
+	bs, err := fd.sqemf.mf.MapInternal(fd.sqemf.fr, hostarch.ReadWrite)
+	if err != nil {
+		return err
+	}
+	fd.sqes = &bs
+
+	return nil
+}
+
+// cacheCqesMapping caches the beginning of an area for the CQEs backed by the allocated memory.
+func (fd *FileDescription) cacheCqesMapping() error {
+	bs := *fd.ioRings
+	cqesOffset := uint64(hostarch.Addr((*linux.IORings)(nil).SizeBytes()))
+	cqesOffset, ok := hostarch.CacheLineRoundUp(cqesOffset)
+	if !ok {
+		return linuxerr.EOVERFLOW
+	}
+	bs = bs.DropFirst(int(cqesOffset))
+	fd.cqes = &bs
+
+	return nil
 }
 
 // ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
-func (fd *fileDescription) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
+func (fd *FileDescription) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
 	var mf memmap.Mappable
 	switch opts.Offset {
 	case linux.IORING_OFF_SQ_RING, linux.IORING_OFF_CQ_RING:
@@ -171,7 +306,113 @@ func (fd *fileDescription) ConfigureMMap(ctx context.Context, opts *memmap.MMapO
 		return linuxerr.EINVAL
 	}
 
+	opts.Offset = 0
+
 	return vfs.GenericConfigureMMap(&fd.vfsfd, mf, opts)
+}
+
+// ProcessSubmissions processes submission requests.
+func (fd *FileDescription) ProcessSubmissions(toSubmit uint32, minComplete uint32, flags uint32) (int, error) {
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
+
+	var ioRings linux.IORings
+	err := fd.getIORings(&ioRings)
+	if err != nil {
+		return -1, err
+	}
+
+	sqes := fd.sqes
+	cqes := fd.cqes
+
+	var sqe linux.IOUringSqe
+	sqHead := atomicbitops.FromUint32(ioRings.Sq.Head)
+	sqTail := atomicbitops.FromUint32(ioRings.Sq.Tail)
+	cqHead := atomicbitops.FromUint32(ioRings.Cq.Head)
+	cqTail := atomicbitops.FromUint32(ioRings.Cq.Tail)
+
+	submitted := uint32(0)
+	for toSubmit > submitted {
+		sqHeadMasked := sqHead.Load() & ioRings.SqRingMask
+		cqTailMasked := cqTail.Load() & ioRings.CqRingMask
+		// This means that the submission queue is empty.
+		if sqHead == sqTail {
+			return int(submitted), nil
+		}
+
+		if err = unmarshalSqe(&sqe, sqes, sqHeadMasked); err != nil {
+			return -1, err
+		}
+
+		cqe, err := fd.ProcessSubmission(&sqe, flags)
+		if err != nil {
+			return -1, err
+		}
+		sqHead.Add(1)
+		if (cqTail.Load()-cqHead.Load())/ioRings.CqRingEntries == 1 {
+			ioRings.CqOverflow++
+		} else {
+			if err = fd.updateCq(cqes, cqe, cqTailMasked); err != nil {
+				return -1, err
+			}
+			cqTail.Add(1)
+		}
+		submitted++
+	}
+	ioRings.Sq.Head = sqHead.Load()
+	ioRings.Cq.Tail = cqTail.Load()
+
+	if err = marshalIORings(&ioRings, fd.ioRings); err != nil {
+		return -1, err
+	}
+
+	return int(submitted), nil
+}
+
+// ProcessSubmission processes a single submission request.
+func (fd *FileDescription) ProcessSubmission(sqe *linux.IOUringSqe, flags uint32) (*linux.IOUringCqe, error) {
+	switch op := sqe.Opcode; op {
+	case 0: // NOP
+		return &linux.IOUringCqe{
+			UserData: sqe.UserData,
+			Res:      0,
+			Flags:    0,
+		}, nil
+	default: // Unsupported operation
+		return &linux.IOUringCqe{
+			UserData: sqe.UserData,
+			Res:      -int32(linuxerr.EINVAL.Errno()),
+			Flags:    0,
+		}, nil
+	}
+}
+
+// updateCq updates a completion queue by adding a given completion queue entry.
+func (fd *FileDescription) updateCq(cqes *safemem.BlockSeq, cqe *linux.IOUringCqe, cqTail uint32) error {
+	cqeSize := uint32((*linux.IOUringCqe)(nil).SizeBytes())
+	if cqes.NumBlocks() == 1 && !cqes.Head().NeedSafecopy() {
+		cqe.MarshalBytes(cqes.Head().ToSlice()[cqTail*cqeSize : (cqTail+1)*cqeSize])
+
+		return nil
+	}
+
+	buf := make([]byte, cqes.NumBytes())
+	cqe.MarshalBytes(buf)
+	cp, cperr := safemem.CopySeq(cqes.DropFirst64(uint64(cqTail*cqeSize)), safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf)))
+	if cp == 0 {
+		return cperr
+	}
+
+	return nil
+}
+
+// getIORings unmarshalls IORings struct backed by the allocated memory.
+func (fd *FileDescription) getIORings(ioRings *linux.IORings) error {
+	if err := unmarshalIORings(ioRings, fd.ioRings); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // sqEntriesFile implements memmap.Mappable for SQ entries.
@@ -196,15 +437,6 @@ func (sqemf *sqEntriesFile) CopyMapping(ctx context.Context, ms memmap.MappingSp
 
 // Translate implements memmap.Mappable.Translate.
 func (sqemf *sqEntriesFile) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
-	expectedAccessType := hostarch.AccessType{
-		Read:    true,
-		Write:   true,
-		Execute: false,
-	}
-	if at != expectedAccessType {
-		return nil, &memmap.BusError{linuxerr.EPERM}
-	}
-
 	if required.End > sqemf.fr.Length() {
 		return nil, &memmap.BusError{linuxerr.EFAULT}
 	}
@@ -250,15 +482,6 @@ func (rbmf *ringsBufferFile) CopyMapping(ctx context.Context, ms memmap.MappingS
 
 // Translate implements memmap.Mappable.Translate.
 func (rbmf *ringsBufferFile) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
-	expectedAccessType := hostarch.AccessType{
-		Read:    true,
-		Write:   true,
-		Execute: false,
-	}
-	if at != expectedAccessType {
-		return nil, &memmap.BusError{linuxerr.EPERM}
-	}
-
 	if required.End > rbmf.fr.Length() {
 		return nil, &memmap.BusError{linuxerr.EFAULT}
 	}

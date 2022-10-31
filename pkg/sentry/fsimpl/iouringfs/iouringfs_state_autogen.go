@@ -6,11 +6,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (fd *fileDescription) StateTypeName() string {
-	return "pkg/sentry/fsimpl/iouringfs.fileDescription"
+func (fd *FileDescription) StateTypeName() string {
+	return "pkg/sentry/fsimpl/iouringfs.FileDescription"
 }
 
-func (fd *fileDescription) StateFields() []string {
+func (fd *FileDescription) StateFields() []string {
 	return []string{
 		"vfsfd",
 		"FileDescriptionDefaultImpl",
@@ -18,13 +18,16 @@ func (fd *fileDescription) StateFields() []string {
 		"NoLockFD",
 		"rbmf",
 		"sqemf",
+		"ioRings",
+		"sqes",
+		"cqes",
 	}
 }
 
-func (fd *fileDescription) beforeSave() {}
+func (fd *FileDescription) beforeSave() {}
 
 // +checklocksignore
-func (fd *fileDescription) StateSave(stateSinkObject state.Sink) {
+func (fd *FileDescription) StateSave(stateSinkObject state.Sink) {
 	fd.beforeSave()
 	stateSinkObject.Save(0, &fd.vfsfd)
 	stateSinkObject.Save(1, &fd.FileDescriptionDefaultImpl)
@@ -32,20 +35,26 @@ func (fd *fileDescription) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &fd.NoLockFD)
 	stateSinkObject.Save(4, &fd.rbmf)
 	stateSinkObject.Save(5, &fd.sqemf)
+	stateSinkObject.Save(6, &fd.ioRings)
+	stateSinkObject.Save(7, &fd.sqes)
+	stateSinkObject.Save(8, &fd.cqes)
 }
 
-func (fd *fileDescription) afterLoad() {}
+func (fd *FileDescription) afterLoad() {}
 
 // +checklocksignore
-func (fd *fileDescription) StateLoad(stateSourceObject state.Source) {
+func (fd *FileDescription) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fd.vfsfd)
 	stateSourceObject.Load(1, &fd.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSourceObject.Load(3, &fd.NoLockFD)
 	stateSourceObject.Load(4, &fd.rbmf)
 	stateSourceObject.Load(5, &fd.sqemf)
+	stateSourceObject.Load(6, &fd.ioRings)
+	stateSourceObject.Load(7, &fd.sqes)
+	stateSourceObject.Load(8, &fd.cqes)
 }
 
 func init() {
-	state.Register((*fileDescription)(nil))
+	state.Register((*FileDescription)(nil))
 }
