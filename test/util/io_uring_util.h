@@ -34,6 +34,7 @@ namespace testing {
 
 // io_uring_setup(2) flags.
 #define IORING_SETUP_SQPOLL (1U << 1)
+#define IORING_SETUP_CQSIZE (1U << 3)
 
 #define IORING_FEAT_SINGLE_MMAP (1U << 0)
 
