@@ -52,6 +52,20 @@ TEST(IOUringTest, ParamsNonZeroResv) {
   ASSERT_THAT(IOUringSetup(1, &params), SyscallFailsWithErrno(EINVAL));
 }
 
+TEST(IOUringTest, ZeroCQEntries) {
+  IOUringParams params;
+  params.cq_entries = 0;
+  params.flags = IORING_SETUP_CQSIZE;
+  ASSERT_THAT(IOUringSetup(1, &params), SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(IOUringTest, ZeroCQEntriesLessThanSQEntries) {
+  IOUringParams params;
+  params.cq_entries = 16;
+  params.flags = IORING_SETUP_CQSIZE;
+  ASSERT_THAT(IOUringSetup(32, &params), SyscallFailsWithErrno(EINVAL));
+}
+
 // Testing that io_uring_setup(2) fails with EINVAL on unsupported flags.
 TEST(IOUringTest, UnsupportedFlags) {
   if (IsRunningOnGvisor()) {
