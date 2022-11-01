@@ -92,10 +92,11 @@ func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, entries uint32, par
 	}
 	var numCqEntries uint32
 	if params.Flags&linux.IORING_SETUP_CQSIZE != 0 {
-		if params.CqEntries > linux.IORING_MAX_CQ_ENTRIES {
+		var ok bool
+		numCqEntries, ok = roundUpPowerOfTwo(params.CqEntries)
+		if !ok || numCqEntries < numSqEntries || numCqEntries > linux.IORING_SETUP_CQSIZE {
 			return nil, linuxerr.EINVAL
 		}
-		numCqEntries = params.CqEntries
 	} else {
 		numCqEntries = 2 * numSqEntries
 	}
