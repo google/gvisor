@@ -133,13 +133,27 @@ func walkParentDirLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry) 
 // Preconditions: filesystem.mu must be locked.
 func resolveLocked(ctx context.Context, rp *vfs.ResolvingPath) (*dentry, error) {
 	d := rp.Start().Impl().(*dentry)
-	for !rp.Done() {
-		next, err := stepLocked(ctx, rp, d)
-		if err != nil {
+
+	if symlink, ok := d.inode.impl.(*symlink); rp.Done() && ok && rp.ShouldFollowSymlink() {
+		// Path with a single component. We don't need to step to the next
+		// component, but still need to resolve any symlinks.
+		//
+		// Symlink traversal updates access time.
+		d.inode.touchAtime(rp.Mount())
+		if err := rp.HandleSymlink(symlink.target); err != nil {
 			return nil, err
 		}
-		d = next
+	} else {
+		// Path with multiple components, walk and resolve as required.
+		for !rp.Done() {
+			next, err := stepLocked(ctx, rp, d)
+			if err != nil {
+				return nil, err
+			}
+			d = next
+		}
 	}
+
 	if rp.MustBeDir() && !d.inode.isDir() {
 		return nil, linuxerr.ENOTDIR
 	}
