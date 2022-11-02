@@ -823,7 +823,7 @@ TEST_P(AllSocketPairTest, RecvTimeoutWaitAll) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   struct timeval tv {
-    .tv_sec = 0, .tv_usec = 200000  // 200ms
+    .tv_sec = 1, .tv_usec = 0
   };
   EXPECT_THAT(setsockopt(sockets->second_fd(), SOL_SOCKET, SO_RCVTIMEO, &tv,
                          sizeof(tv)),
