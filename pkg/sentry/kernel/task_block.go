@@ -189,6 +189,7 @@ func (t *Task) block(C <-chan struct{}, timerChan <-chan struct{}) error {
 // prepareSleep prepares to sleep.
 func (t *Task) prepareSleep() {
 	t.assertTaskGoroutine()
+	t.p.PrepareSleep()
 	t.Deactivate()
 	t.accountTaskGoroutineEnter(TaskGoroutineBlockedInterruptible)
 }
