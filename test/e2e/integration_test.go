@@ -22,6 +22,7 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -995,5 +996,53 @@ func TestNonSearchableWorkingDirectory(t *testing.T) {
 	}
 	if wantErrorMsg := "Permission denied"; !strings.Contains(got, wantErrorMsg) {
 		t.Errorf("ls error message not found, want: %q, got: %q", wantErrorMsg, got)
+	}
+}
+
+func TestCharDevice(t *testing.T) {
+	if testutil.IsRunningWithOverlay() {
+		t.Skip("files are not available outside the sandbox with overlay.")
+	}
+
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "tmp-mount")
+	if err != nil {
+		t.Fatalf("MkdirTemp() failed: %v", err)
+	}
+	defer os.RemoveAll(dir)
+
+	opts := dockerutil.RunOpts{
+		Image: "basic/alpine",
+		Mounts: []mount.Mount{
+			{
+				Type:   mount.TypeBind,
+				Source: "/dev/zero",
+				Target: "/test/zero",
+			},
+			{
+				Type:   mount.TypeBind,
+				Source: dir,
+				Target: "/out",
+			},
+		},
+	}
+
+	const size = 1024 * 1024
+
+	// `docker logs` encodes the string, making it hard to compare. Write the
+	// result to a file that is available to the test.
+	cmd := fmt.Sprintf("head -c %d /test/zero > /out/result", size)
+	if _, err := d.Run(ctx, opts, "sh", "-c", cmd); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "result"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := [size]byte{}; !bytes.Equal(want[:], got) {
+		t.Errorf("Wrong bytes, want: [all zeros], got: %v", got)
 	}
 }

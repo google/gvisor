@@ -427,7 +427,7 @@ func (fd *controlFDLisa) Open(flags uint32) (*lisafs.OpenFD, int, error) {
 		// Best effort to donate file to the Sentry (for performance only).
 		hostOpenFD, _ = unix.Dup(openFD.hostFD)
 
-	case unix.S_IFIFO:
+	case unix.S_IFIFO, unix.S_IFCHR:
 		// Character devices and pipes can block indefinitely during reads/writes,
 		// which is not allowed for gofer operations. Ensure that it donates an FD
 		// back to the caller, so it can wait on the FD when reads/writes return

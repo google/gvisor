@@ -320,7 +320,7 @@ func openAnyFile(pathDebug string, fn func(mode int) (*fd.FD, error)) (*fd.FD, b
 
 func checkSupportedFileType(mode uint32, config *Config) error {
 	switch mode & unix.S_IFMT {
-	case unix.S_IFREG, unix.S_IFDIR, unix.S_IFLNK:
+	case unix.S_IFREG, unix.S_IFDIR, unix.S_IFLNK, unix.S_IFCHR:
 		return nil
 
 	case unix.S_IFSOCK:
@@ -450,7 +450,7 @@ func (l *localFile) Open(flags p9.OpenFlags) (*fd.FD, p9.QID, uint32, error) {
 		// Best effort to donate file to the Sentry (for performance only).
 		fd = newFDMaybe(newFile)
 
-	case unix.S_IFIFO:
+	case unix.S_IFIFO, unix.S_IFCHR:
 		// Character devices and pipes can block indefinitely during reads/writes,
 		// which is not allowed for gofer operations. Ensure that it donates an FD
 		// back to the caller, so it can wait on the FD when reads/writes return
