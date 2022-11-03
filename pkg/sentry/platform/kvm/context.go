@@ -126,3 +126,6 @@ func (c *context) FullStateChanged() {}
 
 // PullFullState implements platform.Context.PullFullState.
 func (c *context) PullFullState(as platform.AddressSpace, ac *arch.Context64) {}
+
+// PrepareSleep implements platform.Context.platform.Context.
+func (*context) PrepareSleep() {}
