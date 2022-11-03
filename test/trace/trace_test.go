@@ -75,8 +75,8 @@ func TestAll(t *testing.T) {
 	cutoffTime = time.Now()
 	cmd := exec.Command(
 		runsc,
-		"--debug", "--alsologtostderr", // Debug logging for troubleshooting
-		"--rootless", "--network=none", // Disable features that we don't care
+		"--debug", "--strace", "--alsologtostderr", // Debug logging for troubleshooting
+		"--rootless", "--network=none", "--TESTONLY-unsafe-nonroot", // Disable features that we don't care
 		"--pod-init-config", cfgFile.Name(),
 		"do", workload)
 	out, err := cmd.CombinedOutput()

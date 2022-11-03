@@ -11,9 +11,6 @@ go_test(
         "//test/trace/workload",
     ],
     library = ":trace",
-    tags = [
-        "local",
-    ],
     deps = [
         "//pkg/sentry/seccheck",
         "//pkg/sentry/seccheck/points:points_go_proto",
