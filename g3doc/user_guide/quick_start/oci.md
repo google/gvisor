@@ -19,8 +19,8 @@ Create a root file system for the container. We will use the Docker
 `hello-world` image as the basis for our container.
 
 ```bash
-mkdir rootfs
-docker export $(docker create hello-world) | tar -xf - -C rootfs
+mkdir --mode=0755 rootfs
+docker export $(docker create hello-world) | sudo tar -xf - -C rootfs --same-owner --same-permissions
 ```
 
 Next, create an specification file called `config.json` that contains our
