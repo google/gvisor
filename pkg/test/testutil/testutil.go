@@ -54,6 +54,8 @@ var (
 	totalPartitions      = flag.Int("total_partitions", IntFromEnv("TOTAL_PARTITIONS", 1), "total number of partitions")
 	isRunningWithHostNet = flag.Bool("hostnet", BoolFromEnv("HOSTNET", false), "whether test is running with hostnet")
 	runscPath            = flag.String("runsc", os.Getenv("RUNTIME"), "path to runsc binary")
+	// Note: flag overlay is already taken by runsc.
+	isRunningWithOverlay = flag.Bool("test-overlay", BoolFromEnv("TEST_OVERLAY", false), "whether test is running with --overlay")
 )
 
 // StringFromEnv returns the value of the named environment variable, or `def` if unset/empty.
@@ -117,6 +119,11 @@ func IsCheckpointSupported() bool {
 // IsRunningWithHostNet returns the relevant command line flag.
 func IsRunningWithHostNet() bool {
 	return *isRunningWithHostNet
+}
+
+// IsRunningWithOverlay returns the relevant command line flag.
+func IsRunningWithOverlay() bool {
+	return *isRunningWithOverlay
 }
 
 // ImageByName mangles the image name used locally. This depends on the image

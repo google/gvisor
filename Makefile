@@ -276,7 +276,7 @@ docker-tests: load-basic $(RUNTIME_BIN)
 
 overlay-tests: load-basic $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),--overlay)
-	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS))
+	@$(call test_runtime,$(RUNTIME),--test_env=TEST_OVERLAY=true $(INTEGRATION_TARGETS))
 .PHONY: overlay-tests
 
 swgso-tests: load-basic $(RUNTIME_BIN)
@@ -286,7 +286,7 @@ swgso-tests: load-basic $(RUNTIME_BIN)
 
 hostnet-tests: load-basic $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),--network=host)
-	@$(call test_runtime,$(RUNTIME),--test_env=CHECKPOINT=false  --test_env=HOSTNET=true $(INTEGRATION_TARGETS))
+	@$(call test_runtime,$(RUNTIME),--test_env=CHECKPOINT=false --test_env=HOSTNET=true $(INTEGRATION_TARGETS))
 .PHONY: hostnet-tests
 
 kvm-tests: load-basic $(RUNTIME_BIN)
