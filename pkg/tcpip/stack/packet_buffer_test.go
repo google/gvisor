@@ -544,6 +544,35 @@ func TestPacketBufferData(t *testing.T) {
 	}
 }
 
+func TestPacketBufferId(t *testing.T) {
+	pk := NewPacketBuffer(PacketBufferOptions{
+		ReserveHeaderBytes: 12,
+	})
+
+	id := pk.ID()
+	// The ID should be stable
+	if idAgain := pk.ID(); idAgain != id {
+		t.Errorf("pk.ID() = %d, want %d", idAgain, id)
+	}
+
+	// Shallow copies have the same ID.
+	pkShallowCopy := pk
+	if shallowCopyID := pkShallowCopy.ID(); shallowCopyID != id {
+		t.Errorf("pkShallowCopy.ID() = %d, want %d", shallowCopyID, id)
+	}
+
+	// Clones have different IDs.
+	pkClone := pk.Clone()
+	if cloneID := pkClone.ID(); cloneID == id {
+		t.Errorf("pkClone.ID() = %d = pk.ID(), but pk = %#v, pkClone = %#v", cloneID, pk, pkClone)
+	}
+
+	pk2 := NewPacketBuffer(PacketBufferOptions{ReserveHeaderBytes: 12})
+	if id2 := pk2.ID(); id2 == id {
+		t.Errorf("pk2.ID() = %d = pk.ID(), but pk = %#v, pk2 = %#v", id2, pk, pk2)
+	}
+}
+
 type packetContents struct {
 	link      []byte
 	network   []byte
