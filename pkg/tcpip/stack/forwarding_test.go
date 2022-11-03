@@ -385,7 +385,9 @@ func fwdTestNetFactory(t *testing.T, proto *fwdTestNetworkProtocol) (*faketime.M
 		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", 2, protocolAddr2, err)
 	}
 
+	s.mu.RLock()
 	nic, ok := s.nics[2]
+	s.mu.RUnlock()
 	if !ok {
 		t.Fatal("NIC 2 does not exist")
 	}

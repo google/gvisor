@@ -90,13 +90,15 @@ type Stack struct {
 	// +checklocks:routeMu
 	routeTable []tcpip.Route
 
-	mu                       sync.RWMutex
+	mu sync.RWMutex
+	// +checklocks:mu
 	nics                     map[tcpip.NICID]*nic
 	defaultForwardingEnabled map[tcpip.NetworkProtocolNumber]struct{}
 
 	// cleanupEndpointsMu protects cleanupEndpoints.
 	cleanupEndpointsMu sync.Mutex
-	cleanupEndpoints   map[TransportEndpoint]struct{}
+	// +checklocks:cleanupEndpointsMu
+	cleanupEndpoints map[TransportEndpoint]struct{}
 
 	*ports.PortManager
 
@@ -920,7 +922,7 @@ func (s *Stack) RemoveNIC(id tcpip.NICID) tcpip.Error {
 
 // removeNICLocked removes NIC and all related routes from the network stack.
 //
-// s.mu must be locked.
+// +checklocks:s.mu
 func (s *Stack) removeNICLocked(id tcpip.NICID) tcpip.Error {
 	nic, ok := s.nics[id]
 	if !ok {
@@ -1150,6 +1152,9 @@ func (s *Stack) getAddressEP(nic *nic, localAddr, remoteAddr tcpip.Address, netP
 //
 // Returns nil if validation fails.
 func (s *Stack) NewRouteForMulticast(nicID tcpip.NICID, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) *Route {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	nic, ok := s.nics[nicID]
 	if !ok || !nic.Enabled() {
 		return nil
@@ -1164,7 +1169,7 @@ func (s *Stack) NewRouteForMulticast(nicID tcpip.NICID, remoteAddr tcpip.Address
 // findLocalRouteFromNICRLocked is like findLocalRouteRLocked but finds a route
 // from the specified NIC.
 //
-// Precondition: s.mu must be read locked.
+// +checklocksread:s.mu
 func (s *Stack) findLocalRouteFromNICRLocked(localAddressNIC *nic, localAddr, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) *Route {
 	localAddressEndpoint := localAddressNIC.getAddressOrCreateTempInner(netProto, localAddr, false /* createTemp */, NeverPrimaryEndpoint)
 	if localAddressEndpoint == nil {
@@ -1217,7 +1222,7 @@ func (s *Stack) findLocalRouteFromNICRLocked(localAddressNIC *nic, localAddr, re
 // A local route is a route to some remote address which the stack owns. That
 // is, a local route is a route where packets never have to leave the stack.
 //
-// Precondition: s.mu must be read locked.
+// +checklocksread:s.mu
 func (s *Stack) findLocalRouteRLocked(localAddressNICID tcpip.NICID, localAddr, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) *Route {
 	if len(localAddr) == 0 {
 		localAddr = remoteAddr
@@ -1425,7 +1430,10 @@ func (s *Stack) CheckNetworkProtocol(protocol tcpip.NetworkProtocolNumber) bool 
 // CheckDuplicateAddress performs duplicate address detection for the address on
 // the specified interface.
 func (s *Stack) CheckDuplicateAddress(nicID tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addr tcpip.Address, h DADCompletionHandler) (DADCheckAddressDisposition, tcpip.Error) {
+	s.mu.RLock()
 	nic, ok := s.nics[nicID]
+	s.mu.RUnlock()
+
 	if !ok {
 		return 0, &tcpip.ErrUnknownNICID{}
 	}
@@ -1795,6 +1803,7 @@ func (s *Stack) UnregisterPacketEndpoint(nicID tcpip.NICID, netProto tcpip.Netwo
 	s.unregisterPacketEndpointLocked(nicID, netProto, ep)
 }
 
+// +checklocks:s.mu
 func (s *Stack) unregisterPacketEndpointLocked(nicID tcpip.NICID, netProto tcpip.NetworkProtocolNumber, ep PacketEndpoint) {
 	// If no NIC is specified, unregister on all devices.
 	if nicID == 0 {
