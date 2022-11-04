@@ -167,7 +167,7 @@ func (r *reassembler) process(first, last uint16, more bool, proto uint8, pkt st
 		return r.holes[i].first < r.holes[j].first
 	})
 
-	resPkt := r.holes[0].pkt.IncRef()
+	resPkt := r.holes[0].pkt.Clone()
 	for i := 1; i < len(r.holes); i++ {
 		stack.MergeFragment(resPkt, r.holes[i].pkt)
 	}
