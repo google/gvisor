@@ -9,6 +9,7 @@ def benchmark_test(name, tags = [], **kwargs):
             # Requires docker and runsc to be configured before the test runs.
             "local",
             "manual",
+            "gvisor_benchmark",
         ],
         **kwargs
     )

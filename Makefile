@@ -347,20 +347,23 @@ containerd-tests: containerd-test-1.6.2
 ## Benchmarks.
 ##
 ## Targets to run benchmarks. See //test/benchmarks for details.
+## You can list all available benchmarks using:
+##   $ bazel query 'attr("tags", ".*gvisor_benchmark.*", //test/benchmarks/...)'
 ##
-##   common arguments:
-##     BENCHMARKS_PROJECT   - BigQuery project to which to send data.
-##     BENCHMARKS_DATASET   - BigQuery dataset to which to send data.
-##     BENCHMARKS_TABLE     - BigQuery table to which to send data.
-##     BENCHMARKS_SUITE     - name of the benchmark suite. See //tools/bigquery/bigquery.go.
-##     BENCHMARKS_UPLOAD    - if true, upload benchmark data from the run.
-##     BENCHMARKS_OFFICIAL  - marks the data as official.
-##     BENCHMARKS_PLATFORMS - if set, only run the benchmarks for this
-##                            space-separated list of platform names.
-##     BENCHMARKS_RUNC      - if true, also benchmark runc performance.
-##     BENCHMARKS_FILTER    - filter to be applied to the test suite.
-##     BENCHMARKS_OPTIONS   - options to be passed to the test.
-##     BENCHMARKS_PROFILE   - profile options to be passed to the test.
+## Common arguments:
+##   BENCHMARKS_PROJECT   - BigQuery project to which to send data.
+##   BENCHMARKS_DATASET   - BigQuery dataset to which to send data.
+##   BENCHMARKS_TABLE     - BigQuery table to which to send data.
+##   BENCHMARKS_SUITE     - name of the benchmark suite. See //tools/bigquery/bigquery.go.
+##   BENCHMARKS_UPLOAD    - if true, upload benchmark data from the run.
+##   BENCHMARKS_OFFICIAL  - marks the data as official.
+##   BENCHMARKS_PLATFORMS - if set, only run the benchmarks for this
+##                          space-separated list of platform names.
+##   BENCHMARKS_RUNC      - if true, also benchmark runc performance.
+##   BENCHMARKS_FILTER    - filter to be applied to the test suite.
+##   BENCHMARKS_OPTIONS   - options to be passed to the test.
+##   BENCHMARKS_PROFILE   - profile options to be passed to the test.
+##                          Set to the empty string to avoid profiling overhead.
 ##
 BENCHMARKS_PROJECT   ?= gvisor-benchmarks
 BENCHMARKS_DATASET   ?= kokoro
