@@ -73,7 +73,7 @@ func runRuby(b *testing.B, hey *tools.Hey) {
 	if err := redis.Spawn(ctx, dockerutil.RunOpts{
 		Image: "benchmarks/redis",
 	}); err != nil {
-		b.Fatalf("failed to spwan redis instance: %v", err)
+		b.Fatalf("failed to spawn redis instance: %v", err)
 	}
 	defer redis.CleanUp(ctx)
 

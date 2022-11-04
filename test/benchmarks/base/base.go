@@ -82,7 +82,7 @@ func RedisInstance(ctx context.Context, b *testing.B, machine harness.Machine) (
 		Image: "benchmarks/redis",
 	}); err != nil {
 		redis.CleanUp(ctx)
-		b.Fatalf("failed to spwan redis instance: %v", err)
+		b.Fatalf("failed to spawn redis instance: %v", err)
 	}
 
 	if out, err := redis.WaitForOutput(ctx, "Ready to accept connections", 3*time.Second); err != nil {
