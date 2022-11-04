@@ -94,7 +94,7 @@ type specialFileFD struct {
 func newSpecialFileFD(h handle, mnt *vfs.Mount, d *dentry, flags uint32) (*specialFileFD, error) {
 	ftype := d.fileType()
 	seekable := ftype == linux.S_IFREG || ftype == linux.S_IFCHR || ftype == linux.S_IFBLK
-	haveQueue := (ftype == linux.S_IFIFO || ftype == linux.S_IFSOCK) && h.fd >= 0
+	haveQueue := (ftype == linux.S_IFIFO || ftype == linux.S_IFSOCK || ftype == linux.S_IFCHR) && h.fd >= 0
 	fd := &specialFileFD{
 		handle:        h,
 		isRegularFile: ftype == linux.S_IFREG,
