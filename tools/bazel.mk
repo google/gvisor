@@ -21,18 +21,20 @@
 ##   container to simplify development. Some options are available to
 ##   control the behavior of this container:
 ##
-##     USER               - The in-container user.
-##     DOCKER_RUN_OPTIONS - Options for the container (default: --privileged, required for tests).
-##     DOCKER_NAME        - The container name (default: gvisor-bazel-HASH).
-##     DOCKER_HOSTNAME    - The container name (default: same as DOCKER_NAME).
-##     DOCKER_PRIVILEGED  - Docker privileged flags (default: --privileged).
-##     PRE_BAZEL_INIT     - If set, run this command with bash outside the Bazel
-##                          server container.
-##     BAZEL_CACHE        - The bazel cache directory (default: detected).
-##     GCLOUD_CONFIG      - The gcloud config directory (detect: detected).
-##     DOCKER_SOCKET      - The Docker socket (default: detected).
-##     DEVICE_FILE        - An optional device file to expose in the container
-##                          (default: no device file is exposed).
+##     USER                - The in-container user.
+##     DOCKER_RUN_OPTIONS  - Options for the container (default: --privileged, required for tests).
+##     DOCKER_NAME         - The container name (default: gvisor-bazel-HASH).
+##     DOCKER_HOSTNAME     - The container name (default: same as DOCKER_NAME).
+##     DOCKER_PRIVILEGED   - Docker privileged flags (default: --privileged).
+##     UNSANDBOXED_RUNTIME - Name of the Docker runtime to use for the
+##                           unsandboxed build container. Defaults to runc.
+##     PRE_BAZEL_INIT      - If set, run this command with bash outside the Bazel
+##                           server container.
+##     BAZEL_CACHE         - The bazel cache directory (default: detected).
+##     GCLOUD_CONFIG       - The gcloud config directory (detect: detected).
+##     DOCKER_SOCKET       - The Docker socket (default: detected).
+##     DEVICE_FILE         - An optional device file to expose in the container
+##                           (default: no device file is exposed).
 ##
 ##   To opt out of these wrappers, set DOCKER_BUILD=false.
 DOCKER_BUILD := true
@@ -55,6 +57,7 @@ BUILDER_HOSTNAME := $(BUILDER_NAME)
 DOCKER_NAME := gvisor-bazel-$(HASH)-$(ARCH)
 DOCKER_HOSTNAME := $(DOCKER_NAME)
 DOCKER_PRIVILEGED := --privileged
+UNSANDBOXED_RUNTIME ?= runc
 BAZEL_CACHE := $(HOME)/.cache/bazel/
 GCLOUD_CONFIG := $(HOME)/.config/gcloud/
 DOCKER_SOCKET := /var/run/docker.sock
@@ -71,7 +74,7 @@ PRE_BAZEL_INIT ?=
 ##     STARTUP_OPTIONS - Startup options passed to Bazel.
 ##
 STARTUP_OPTIONS :=
-BAZEL_OPTIONS   :=
+BAZEL_OPTIONS   ?=
 BAZEL           := bazel $(STARTUP_OPTIONS)
 BASE_OPTIONS    := --color=no --curses=no
 TEST_OPTIONS += $(BASE_OPTIONS) \
@@ -89,6 +92,9 @@ DOCKER_RUN_OPTIONS += --rm
 DOCKER_RUN_OPTIONS += --user $(UID):$(GID)
 DOCKER_RUN_OPTIONS += --entrypoint ""
 DOCKER_RUN_OPTIONS += --init
+ifneq (,$(UNSANDBOXED_RUNTIME))
+DOCKER_RUN_OPTIONS += --runtime=$(UNSANDBOXED_RUNTIME)
+endif
 DOCKER_RUN_OPTIONS += -v "$(shell realpath -m $(BAZEL_CACHE)):$(BAZEL_CACHE)"
 DOCKER_RUN_OPTIONS += -v "$(shell realpath -m $(GCLOUD_CONFIG)):$(GCLOUD_CONFIG)"
 DOCKER_RUN_OPTIONS += -v "/tmp:/tmp"
@@ -214,6 +220,7 @@ bazel-image: load-default ## Ensures that the local builder exists.
 	@docker rm -f $(BUILDER_NAME) 2>/dev/null || true
 	@docker run --user 0:0 --entrypoint "" \
     --name $(BUILDER_NAME) --hostname $(BUILDER_HOSTNAME) \
+    $(shell test -n "$(UNSANDBOXED_RUNTIME)" && echo "--runtime=$(UNSANDBOXED_RUNTIME)") \
     gvisor.dev/images/default \
 	  bash -c "$(GROUPADD_DOCKER) $(USERADD_DOCKER) if test -e /dev/kvm; then chmod a+rw /dev/kvm; fi" >&2
 	@docker commit $(BUILDER_NAME) gvisor.dev/images/builder >&2

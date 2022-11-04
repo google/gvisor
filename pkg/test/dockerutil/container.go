@@ -140,7 +140,11 @@ func MakeContainerWithRuntime(ctx context.Context, logger testutil.Logger, suffi
 //
 // Native containers aren't profiled.
 func MakeNativeContainer(ctx context.Context, logger testutil.Logger) *Container {
-	return makeContainer(ctx, logger, "" /*runtime*/)
+	unsandboxedRuntime := "runc"
+	if override, found := os.LookupEnv("UNSANDBOXED_RUNTIME"); found {
+		unsandboxedRuntime = override
+	}
+	return makeContainer(ctx, logger, unsandboxedRuntime)
 }
 
 // Spawn is analogous to 'docker run -d'.
