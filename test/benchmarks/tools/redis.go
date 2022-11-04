@@ -16,7 +16,6 @@ package tools
 
 import (
 	"fmt"
-	"net"
 	"regexp"
 	"strconv"
 	"testing"
@@ -28,7 +27,7 @@ type Redis struct {
 }
 
 // MakeCmd returns a redis-benchmark client command.
-func (r *Redis) MakeCmd(ip net.IP, port, requests int) []string {
+func (r *Redis) MakeCmd(host string, port, requests int) []string {
 	// There is no -t PING_BULK for redis-benchmark, so adjust the command in that case.
 	// Note that "ping" will run both PING_INLINE and PING_BULK.
 	if r.Operation == "PING_BULK" {
@@ -36,7 +35,7 @@ func (r *Redis) MakeCmd(ip net.IP, port, requests int) []string {
 			"redis-benchmark",
 			"--csv",
 			"-t", "ping",
-			"-h", ip.String(),
+			"-h", host,
 			"-p", fmt.Sprintf("%d", port),
 			"-n", fmt.Sprintf("%d", requests),
 		}
@@ -47,7 +46,7 @@ func (r *Redis) MakeCmd(ip net.IP, port, requests int) []string {
 		"redis-benchmark",
 		"--csv",
 		"-t", r.Operation,
-		"-h", ip.String(),
+		"-h", host,
 		"-p", fmt.Sprintf("%d", port),
 		"-n", fmt.Sprintf("%d", requests),
 	}

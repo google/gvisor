@@ -17,7 +17,6 @@ package base
 
 import (
 	"context"
-	"net"
 	"testing"
 	"time"
 
@@ -48,15 +47,8 @@ func StartServers(ctx context.Context, b *testing.B, args ServerArgs) []*dockeru
 			b.Fatalf("failed to spawn node instance: %v", err)
 		}
 
-		// Get the container IP.
-		servingIP, err := server.FindIP(ctx, false)
-		if err != nil {
-			CleanUpContainers(ctx, servers)
-			b.Fatalf("failed to get ip from server: %v", err)
-		}
-
 		// Wait until the server is up.
-		if err := harness.WaitUntilServing(ctx, args.Machine, servingIP, args.Port); err != nil {
+		if err := harness.WaitUntilContainerServing(ctx, args.Machine, server, args.Port); err != nil {
 			CleanUpContainers(ctx, servers)
 			b.Fatalf("failed to wait for serving")
 		}
@@ -74,7 +66,7 @@ func CleanUpContainers(ctx context.Context, containers []*dockerutil.Container) 
 }
 
 // RedisInstance returns a Redis container and its reachable IP.
-func RedisInstance(ctx context.Context, b *testing.B, machine harness.Machine) (*dockerutil.Container, net.IP) {
+func RedisInstance(ctx context.Context, b *testing.B, machine harness.Machine) *dockerutil.Container {
 	b.Helper()
 	// Spawn a redis instance for the app to use.
 	redis := machine.GetNativeContainer(ctx, b)
@@ -89,10 +81,5 @@ func RedisInstance(ctx context.Context, b *testing.B, machine harness.Machine) (
 		redis.CleanUp(ctx)
 		b.Fatalf("failed to start redis server: %v %s", err, out)
 	}
-	redisIP, err := redis.FindIP(ctx, false)
-	if err != nil {
-		redis.CleanUp(ctx)
-		b.Fatalf("failed to get IP from redis instance: %v", err)
-	}
-	return redis, redisIP
+	return redis
 }

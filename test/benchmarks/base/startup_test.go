@@ -85,7 +85,7 @@ func BenchmarkStartupNode(b *testing.B) {
 	defer machine.CleanUp()
 
 	ctx := context.Background()
-	redis, redisIP := base.RedisInstance(ctx, b, machine)
+	redis := base.RedisInstance(ctx, b, machine)
 	defer redis.CleanUp(ctx)
 	runOpts := dockerutil.RunOpts{
 		Image:   "benchmarks/node",
@@ -93,7 +93,7 @@ func BenchmarkStartupNode(b *testing.B) {
 		Links:   []string{redis.MakeLink("redis")},
 	}
 
-	cmd := []string{"node", "index.js", redisIP.String()}
+	cmd := []string{"node", "index.js", "redis"}
 	runServerWorkload(ctx, b,
 		base.ServerArgs{
 			Machine: machine,
@@ -122,15 +122,9 @@ func runServerWorkload(ctx context.Context, b *testing.B, args base.ServerArgs) 
 				return fmt.Errorf("failed to spawn node instance: %v", err)
 			}
 
-			harness.DebugLog(b, "Finding Container IP")
-			servingIP, err := server.FindIP(ctx, false)
-			if err != nil {
-				return fmt.Errorf("failed to get ip from server: %v", err)
-			}
-
 			// Wait until the Client sees the server as up.
 			harness.DebugLog(b, "Waiting for container to start.")
-			if err := harness.WaitUntilServing(ctx, args.Machine, servingIP, args.Port); err != nil {
+			if err := harness.WaitUntilContainerServing(ctx, args.Machine, server, args.Port); err != nil {
 				return fmt.Errorf("failed to wait for serving: %v", err)
 			}
 			return nil
