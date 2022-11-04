@@ -132,7 +132,7 @@ func BenchmarkSizeNode(b *testing.B) {
 
 	// Make a redis instance for Node to connect.
 	ctx := context.Background()
-	redis, redisIP := base.RedisInstance(ctx, b, machine)
+	redis := base.RedisInstance(ctx, b, machine)
 	defer redis.CleanUp(ctx)
 
 	// DropCaches after redis is created.
@@ -152,7 +152,7 @@ func BenchmarkSizeNode(b *testing.B) {
 		WorkDir: "/usr/src/app",
 		Links:   []string{redis.MakeLink("redis")},
 	}
-	nodeCmd := []string{"node", "index.js", redisIP.String()}
+	nodeCmd := []string{"node", "index.js", "redis"}
 	const port = 8080
 	servers := base.StartServers(ctx, b,
 		base.ServerArgs{

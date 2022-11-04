@@ -102,26 +102,17 @@ func runNode(b *testing.B, hey *tools.Hey) {
 	}
 	defer nodeApp.CleanUp(ctx)
 
-	servingIP, err := serverMachine.IPAddress()
-	if err != nil {
-		b.Fatalf("failed to get ip from server: %v", err)
-	}
-
-	servingPort, err := nodeApp.FindPort(ctx, port)
-	if err != nil {
-		b.Fatalf("failed to port from node instance: %v", err)
-	}
-
 	// Wait until the Client sees the server as up.
-	harness.WaitUntilServing(ctx, clientMachine, servingIP, servingPort)
+	harness.WaitUntilContainerServing(ctx, clientMachine, nodeApp, port)
 
-	heyCmd := hey.MakeCmd(servingIP, servingPort)
+	heyCmd := hey.MakeCmd("node", port)
 
 	// the client should run on Native.
 	b.ResetTimer()
 	client := clientMachine.GetNativeContainer(ctx, b)
 	out, err := client.Run(ctx, dockerutil.RunOpts{
 		Image: "benchmarks/hey",
+		Links: []string{nodeApp.MakeLink("node")},
 	}, heyCmd...)
 	if err != nil {
 		b.Fatalf("hey container failed: %v logs: %s", err, out)

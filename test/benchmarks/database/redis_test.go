@@ -81,17 +81,7 @@ func BenchmarkRedis(b *testing.B) {
 		b.Fatalf("failed to start redis server: %v %s", err, out)
 	}
 
-	ip, err := serverMachine.IPAddress()
-	if err != nil {
-		b.Fatalf("failed to get IP from server: %v", err)
-	}
-
-	serverPort, err := server.FindPort(ctx, port)
-	if err != nil {
-		b.Fatalf("failed to get IP from server: %v", err)
-	}
-
-	if err = harness.WaitUntilServing(ctx, clientMachine, ip, serverPort); err != nil {
+	if err = harness.WaitUntilContainerServing(ctx, clientMachine, server, port); err != nil {
 		b.Fatalf("failed to start redis with: %v", err)
 	}
 	for _, operation := range operations {
@@ -120,7 +110,8 @@ func BenchmarkRedis(b *testing.B) {
 
 				out, err = client.Run(ctx, dockerutil.RunOpts{
 					Image: "benchmarks/redis",
-				}, redis.MakeCmd(ip, serverPort, b.N /*requests*/)...)
+					Links: []string{server.MakeLink("redis")},
+				}, redis.MakeCmd("redis", port, b.N /*requests*/)...)
 			}
 
 			if err != nil {

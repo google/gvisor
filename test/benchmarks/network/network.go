@@ -52,26 +52,15 @@ func runStaticServer(b *testing.B, serverOpts dockerutil.RunOpts, serverCmd []st
 		b.Fatalf("failed to start server: %v", err)
 	}
 
-	// Get its IP.
-	ip, err := serverMachine.IPAddress()
-	if err != nil {
-		b.Fatalf("failed to find server ip: %v", err)
-	}
-
-	// Get the published port.
-	servingPort, err := server.FindPort(ctx, port)
-	if err != nil {
-		b.Fatalf("failed to find server port %d: %v", port, err)
-	}
-
 	// Make sure the server is serving.
-	harness.WaitUntilServing(ctx, clientMachine, ip, servingPort)
+	harness.WaitUntilContainerServing(ctx, clientMachine, server, port)
 
 	// Run the client.
 	b.ResetTimer()
 	out, err := client.Run(ctx, dockerutil.RunOpts{
 		Image: "benchmarks/hey",
-	}, hey.MakeCmd(ip, servingPort)...)
+		Links: []string{server.MakeLink("server")},
+	}, hey.MakeCmd("server", port)...)
 	if err != nil {
 		b.Fatalf("run failed with: %v", err)
 	}

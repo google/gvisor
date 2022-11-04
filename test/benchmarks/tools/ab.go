@@ -16,7 +16,6 @@ package tools
 
 import (
 	"fmt"
-	"net"
 	"regexp"
 	"strconv"
 	"testing"
@@ -31,8 +30,8 @@ type ApacheBench struct {
 }
 
 // MakeCmd makes an ApacheBench command.
-func (a *ApacheBench) MakeCmd(ip net.IP, port int) []string {
-	path := fmt.Sprintf("http://%s:%d/%s", ip, port, a.Doc)
+func (a *ApacheBench) MakeCmd(host string, port int) []string {
+	path := fmt.Sprintf("http://%s:%d/%s", host, port, a.Doc)
 	// See apachebench (ab) for flags.
 	cmd := fmt.Sprintf("ab -n %d -c %d %s", a.Requests, a.Concurrency, path)
 	return []string{"sh", "-c", cmd}
