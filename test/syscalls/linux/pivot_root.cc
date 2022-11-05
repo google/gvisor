@@ -325,8 +325,8 @@ TEST(PivotRootTest, NewRootNotAMountpoint) {
               SyscallSucceeds());
   const std::string mountpoint_path =
       absl::StrCat("/", Basename(mountpoint.path()));
-  auto new_root = ASSERT_NO_ERRNO_AND_VALUE(
-      TempPath::CreateDirIn(mountpoint.path()));
+  auto new_root =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(mountpoint.path()));
   const std::string new_root_path =
       absl::StrCat(mountpoint_path, "/", Basename(new_root.path()));
   auto put_old =
@@ -336,8 +336,9 @@ TEST(PivotRootTest, NewRootNotAMountpoint) {
 
   const auto rest = [&] {
     TEST_CHECK_SUCCESS(chroot(root.path().c_str()));
-    TEST_CHECK_ERRNO(syscall(
-        __NR_pivot_root, new_root_path.c_str(), put_old_path.c_str()), EINVAL);
+    TEST_CHECK_ERRNO(
+        syscall(__NR_pivot_root, new_root_path.c_str(), put_old_path.c_str()),
+        EINVAL);
   };
   EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
 }
@@ -349,16 +350,13 @@ TEST(PivotRootTest, PutOldNotUnderNewRoot) {
   auto root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   EXPECT_THAT(mount("", root.path().c_str(), "tmpfs", 0, "mode=0700"),
               SyscallSucceeds());
-  auto new_root =
-      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(root.path()));
+  auto new_root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(root.path()));
   const std::string new_root_path =
       absl::StrCat("/", Basename(new_root.path()));
   EXPECT_THAT(mount("", new_root.path().c_str(), "tmpfs", 0, "mode=0700"),
               SyscallSucceeds());
-  auto put_old =
-      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(root.path()));
-  const std::string put_old_path =
-      absl::StrCat("/", Basename(put_old.path()));
+  auto put_old = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(root.path()));
+  const std::string put_old_path = absl::StrCat("/", Basename(put_old.path()));
   EXPECT_THAT(mount("", put_old.path().c_str(), "tmpfs", 0, "mode=0700"),
               SyscallSucceeds());
 
@@ -388,8 +386,9 @@ TEST(PivotRootTest, CurrentRootNotAMountPoint) {
 
   const auto rest = [&] {
     TEST_CHECK_SUCCESS(chroot(root.path().c_str()));
-    TEST_CHECK_ERRNO(syscall(
-        __NR_pivot_root, new_root_path.c_str(), put_old_path.c_str()), EINVAL);
+    TEST_CHECK_ERRNO(
+        syscall(__NR_pivot_root, new_root_path.c_str(), put_old_path.c_str()),
+        EINVAL);
   };
   EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
 }
@@ -407,6 +406,94 @@ TEST(PivotRootTest, OnRootFS) {
   const std::string put_old_path = put_old.path();
 
   const auto rest = [&] {
+    TEST_CHECK_ERRNO(
+        syscall(__NR_pivot_root, new_root_path.c_str(), put_old_path.c_str()),
+        EINVAL);
+  };
+  EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
+}
+
+TEST(PivotRootTest, OnSharedNewRootParent) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_CHROOT)));
+
+  auto root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  EXPECT_THAT(mount("", root.path().c_str(), "tmpfs", 0, "mode=0700"),
+              SyscallSucceeds());
+  auto new_root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(root.path()));
+  EXPECT_THAT(mount("", new_root.path().c_str(), "tmpfs", 0, "mode=0700"),
+              SyscallSucceeds());
+  const std::string new_root_path = JoinPath("/", Basename(new_root.path()));
+  auto put_old =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(new_root.path()));
+  const std::string put_old_path =
+      JoinPath(new_root_path, "/", Basename(put_old.path()));
+
+  // Fails because parent has propagation type shared.
+  EXPECT_THAT(mount(nullptr, root.path().c_str(), nullptr, MS_SHARED, nullptr),
+              SyscallSucceeds());
+  const auto rest = [&] {
+    TEST_CHECK_SUCCESS(chroot(root.path().c_str()));
+    TEST_CHECK_ERRNO(
+        syscall(__NR_pivot_root, new_root_path.c_str(), put_old_path.c_str()),
+        EINVAL);
+  };
+  EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
+}
+
+TEST(PivotRootTest, OnSharedNewRoot) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_CHROOT)));
+
+  auto root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  EXPECT_THAT(mount("", root.path().c_str(), "tmpfs", 0, "mode=0700"),
+              SyscallSucceeds());
+  auto new_root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(root.path()));
+  EXPECT_THAT(mount("", new_root.path().c_str(), "tmpfs", 0, "mode=0700"),
+              SyscallSucceeds());
+  const std::string new_root_path = JoinPath("/", Basename(new_root.path()));
+  auto put_old =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(new_root.path()));
+  const std::string put_old_path =
+      JoinPath(new_root_path, "/", Basename(put_old.path()));
+
+  // Fails because new_root has propagation type shared.
+  EXPECT_THAT(
+      mount(nullptr, new_root.path().c_str(), nullptr, MS_SHARED, nullptr),
+      SyscallSucceeds());
+  const auto rest = [&] {
+    TEST_CHECK_SUCCESS(chroot(root.path().c_str()));
+    TEST_CHECK_ERRNO(
+        syscall(__NR_pivot_root, new_root_path.c_str(), put_old_path.c_str()),
+        EINVAL);
+  };
+  EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
+}
+
+TEST(PivotRootTest, OnSharedPutOldMountpoint) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_CHROOT)));
+
+  auto root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  EXPECT_THAT(mount("", root.path().c_str(), "tmpfs", 0, "mode=0700"),
+              SyscallSucceeds());
+  auto new_root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(root.path()));
+  EXPECT_THAT(mount("", new_root.path().c_str(), "tmpfs", 0, "mode=0700"),
+              SyscallSucceeds());
+  const std::string new_root_path = JoinPath("/", Basename(new_root.path()));
+  auto put_old =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(new_root.path()));
+  const std::string put_old_path =
+      JoinPath(new_root_path, "/", Basename(put_old.path()));
+
+  // Fails because put_old is a mountpoint and has propagation type shared.
+  EXPECT_THAT(mount("", put_old.path().c_str(), "tmpfs", 0, "mode=0700"),
+              SyscallSucceeds());
+  EXPECT_THAT(
+      mount(nullptr, put_old.path().c_str(), nullptr, MS_SHARED, nullptr),
+      SyscallSucceeds());
+  const auto rest = [&] {
+    TEST_CHECK_SUCCESS(chroot(root.path().c_str()));
     TEST_CHECK_ERRNO(
         syscall(__NR_pivot_root, new_root_path.c_str(), put_old_path.c_str()),
         EINVAL);
