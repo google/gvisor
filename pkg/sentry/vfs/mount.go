@@ -1121,11 +1121,20 @@ retry:
 	if rootVd.mount.ns != ns || newRootVd.mount.ns != ns {
 		return linuxerr.EINVAL
 	}
-	// TODO(gvisor.dev/issues/221): Update this function to disallow
-	// pivot_root-ing new_root/put_old mounts with MS_SHARED propagation once it
-	// is implemented in gVisor.
 
 	vfs.mountMu.Lock()
+	// Either the mount point at new_root, or the parent mount of that mount
+	// point, has propagation type MS_SHARED.
+	if newRootParent := newRootVd.mount.parent(); newRootVd.mount.propType == Shared || newRootParent.propType == Shared {
+		vfs.mountMu.Unlock()
+		return linuxerr.EINVAL
+	}
+	// put_old is a mount point and has the propagation type MS_SHARED.
+	if putOldVd.mount.root == putOldVd.dentry && putOldVd.mount.propType == Shared {
+		vfs.mountMu.Unlock()
+		return linuxerr.EINVAL
+	}
+
 	if !vfs.mounts.seq.BeginWriteOk(epoch) {
 		// Checks above raced with a mount change.
 		vfs.mountMu.Unlock()
