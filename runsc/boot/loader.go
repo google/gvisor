@@ -238,7 +238,6 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("setting up memory usage: %w", err)
 	}
 
-	kernel.VFS2Enabled = true
 	kernel.FUSEEnabled = args.Conf.FUSE
 	kernel.LISAFSEnabled = args.Conf.Lisafs
 	bufferv2.PoolingEnabled = args.Conf.BufferPooling
@@ -823,7 +822,7 @@ func (l *Loader) createContainerProcess(root bool, cid string, info *containerIn
 	}
 
 	// Add the HOME environment variable if it is not already set.
-	info.procArgs.Envv, err = user.MaybeAddExecUserHomeVFS2(ctx, info.procArgs.MountNamespaceVFS2,
+	info.procArgs.Envv, err = user.MaybeAddExecUserHome(ctx, info.procArgs.MountNamespace,
 		info.procArgs.Credentials.RealKUID, info.procArgs.Envv)
 	if err != nil {
 		return nil, nil, err
@@ -966,8 +965,8 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 	// Get the container MountNamespace from the Task. Try to acquire ref may fail
 	// in case it raced with task exit.
 	// task.MountNamespaceVFS2() does not take a ref, so we must do so ourselves.
-	args.MountNamespaceVFS2 = tg.Leader().MountNamespaceVFS2()
-	if args.MountNamespaceVFS2 == nil || !args.MountNamespaceVFS2.TryIncRef() {
+	args.MountNamespace = tg.Leader().MountNamespaceVFS2()
+	if args.MountNamespace == nil || !args.MountNamespace.TryIncRef() {
 		return 0, fmt.Errorf("container %q has stopped", args.ContainerID)
 	}
 
@@ -977,9 +976,9 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 	}
 
 	// Add the HOME environment variable if it is not already set.
-	ctx := vfs.WithRoot(l.k.SupervisorContext(), args.MountNamespaceVFS2.Root())
-	defer args.MountNamespaceVFS2.DecRef(ctx)
-	args.Envv, err = user.MaybeAddExecUserHomeVFS2(ctx, args.MountNamespaceVFS2, args.KUID, args.Envv)
+	ctx := vfs.WithRoot(l.k.SupervisorContext(), args.MountNamespace.Root())
+	defer args.MountNamespace.DecRef(ctx)
+	args.Envv, err = user.MaybeAddExecUserHome(ctx, args.MountNamespace, args.KUID, args.Envv)
 	if err != nil {
 		return 0, err
 	}
@@ -992,7 +991,7 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 
 	// Start the process.
 	proc := control.Proc{Kernel: l.k}
-	newTG, tgid, _, ttyFile, err := control.ExecAsync(&proc, args)
+	newTG, tgid, ttyFile, err := control.ExecAsync(&proc, args)
 	if err != nil {
 		return 0, err
 	}
@@ -1370,7 +1369,7 @@ func createFDTable(ctx context.Context, console bool, stdioFDs []*fd.FD, user sp
 
 	k := kernel.KernelFromContext(ctx)
 	fdTable := k.NewFDTable()
-	_, ttyFile, err := fdimport.Import(ctx, fdTable, console, auth.KUID(user.UID), auth.KGID(user.GID), fdMap)
+	ttyFile, err := fdimport.Import(ctx, fdTable, console, auth.KUID(user.UID), auth.KGID(user.GID), fdMap)
 	if err != nil {
 		fdTable.DecRef(ctx)
 		return nil, nil, err

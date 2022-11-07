@@ -285,8 +285,8 @@ func (*runExitMain) execute(t *Task) taskRunState {
 	t.LeaveCgroups()
 
 	t.mu.Lock()
-	mntns := t.mountNamespaceVFS2
-	t.mountNamespaceVFS2 = nil
+	mntns := t.mountNamespace
+	t.mountNamespace = nil
 	ipcns := t.ipcns
 	netns := t.NetworkNamespace()
 	t.mu.Unlock()

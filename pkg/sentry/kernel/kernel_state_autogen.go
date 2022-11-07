@@ -1389,7 +1389,7 @@ func (t *Task) StateFields() []string {
 		"utsns",
 		"ipcns",
 		"abstractSockets",
-		"mountNamespaceVFS2",
+		"mountNamespace",
 		"parentDeathSignal",
 		"syscallFilters",
 		"cleartid",
@@ -1468,7 +1468,7 @@ func (t *Task) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(44, &t.utsns)
 	stateSinkObject.Save(45, &t.ipcns)
 	stateSinkObject.Save(46, &t.abstractSockets)
-	stateSinkObject.Save(47, &t.mountNamespaceVFS2)
+	stateSinkObject.Save(47, &t.mountNamespace)
 	stateSinkObject.Save(48, &t.parentDeathSignal)
 	stateSinkObject.Save(50, &t.cleartid)
 	stateSinkObject.Save(51, &t.allowedCPUMask)
@@ -1536,7 +1536,7 @@ func (t *Task) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(44, &t.utsns)
 	stateSourceObject.Load(45, &t.ipcns)
 	stateSourceObject.Load(46, &t.abstractSockets)
-	stateSourceObject.Load(47, &t.mountNamespaceVFS2)
+	stateSourceObject.Load(47, &t.mountNamespace)
 	stateSourceObject.Load(48, &t.parentDeathSignal)
 	stateSourceObject.Load(50, &t.cleartid)
 	stateSourceObject.Load(51, &t.allowedCPUMask)
