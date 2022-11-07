@@ -151,6 +151,39 @@ func path(t *kernel.Task, addr hostarch.Addr) string {
 }
 
 func fd(t *kernel.Task, fd int32) string {
+	if kernel.VFS2Enabled {
+		return fdVFS2(t, fd)
+	}
+
+	root := t.FSContext().RootDirectory()
+	if root != nil {
+		defer root.DecRef(t)
+	}
+
+	if fd == linux.AT_FDCWD {
+		wd := t.FSContext().WorkingDirectory()
+		var name string
+		if wd != nil {
+			defer wd.DecRef(t)
+			name, _ = wd.FullName(root)
+		} else {
+			name = "(unknown cwd)"
+		}
+		return fmt.Sprintf("AT_FDCWD %s", name)
+	}
+
+	file := t.GetFile(fd)
+	if file == nil {
+		// Cast FD to uint64 to avoid printing negative hex.
+		return fmt.Sprintf("%#x (bad FD)", uint64(fd))
+	}
+	defer file.DecRef(t)
+
+	name, _ := file.Dirent.FullName(root)
+	return fmt.Sprintf("%#x %s", fd, name)
+}
+
+func fdVFS2(t *kernel.Task, fd int32) string {
 	root := t.FSContext().RootDirectoryVFS2()
 	defer root.DecRef(t)
 

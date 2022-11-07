@@ -21,50 +21,43 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/fspath"
-	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/contexttest"
-	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // createEtcPasswd creates /etc/passwd with the given contents and mode. If
 // mode is empty, then no file will be created. If mode is not a regular file
 // mode, then contents is ignored.
-func createEtcPasswd(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, root vfs.VirtualDentry, contents string, mode linux.FileMode) error {
-	pop := vfs.PathOperation{
-		Root:  root,
-		Start: root,
-		Path:  fspath.Parse("etc"),
+func createEtcPasswd(ctx context.Context, root *fs.Dirent, contents string, mode linux.FileMode) error {
+	if err := root.CreateDirectory(ctx, root, "etc", fs.FilePermsFromMode(0755)); err != nil {
+		return err
 	}
-	if err := vfsObj.MkdirAt(ctx, creds, &pop, &vfs.MkdirOptions{
-		Mode: 0755,
-	}); err != nil {
-		return fmt.Errorf("failed to create directory etc: %v", err)
+	etc, err := root.Walk(ctx, root, "etc")
+	if err != nil {
+		return err
 	}
-
-	pop = vfs.PathOperation{
-		Root:  root,
-		Start: root,
-		Path:  fspath.Parse("etc/passwd"),
-	}
+	defer etc.DecRef(ctx)
 	switch mode.FileType() {
 	case 0:
 		// Don't create anything.
 		return nil
 	case linux.S_IFREG:
-		fd, err := vfsObj.OpenAt(ctx, creds, &pop, &vfs.OpenOptions{Flags: linux.O_CREAT | linux.O_WRONLY, Mode: mode})
+		passwd, err := etc.Create(ctx, root, "passwd", fs.FileFlags{Write: true}, fs.FilePermsFromMode(mode))
 		if err != nil {
 			return err
 		}
-		defer fd.DecRef(ctx)
-		_, err = fd.Write(ctx, usermem.BytesIOSequence([]byte(contents)), vfs.WriteOptions{})
-		return err
+		defer passwd.DecRef(ctx)
+		if _, err := passwd.Writev(ctx, usermem.BytesIOSequence([]byte(contents))); err != nil {
+			return err
+		}
+		return nil
 	case linux.S_IFDIR:
-		return vfsObj.MkdirAt(ctx, creds, &pop, &vfs.MkdirOptions{Mode: mode})
+		return etc.CreateDirectory(ctx, root, "passwd", fs.FilePermsFromMode(mode))
 	case linux.S_IFIFO:
-		return vfsObj.MknodAt(ctx, creds, &pop, &vfs.MknodOptions{Mode: mode})
+		return etc.CreateFifo(ctx, root, "passwd", fs.FilePermsFromMode(mode))
 	default:
 		return fmt.Errorf("unknown file type %x", mode.FileType())
 	}
@@ -110,26 +103,22 @@ func TestGetExecUserHome(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			ctx := contexttest.Context(t)
-			creds := auth.CredentialsFromContext(ctx)
-
-			// Create VFS.
-			vfsObj := vfs.VirtualFilesystem{}
-			if err := vfsObj.Init(ctx); err != nil {
-				t.Fatalf("VFS init: %v", err)
-			}
-			vfsObj.MustRegisterFilesystemType("tmpfs", tmpfs.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
-				AllowUserMount: true,
-			})
-			mns, err := vfsObj.NewMountNamespace(ctx, creds, "", "tmpfs", &vfs.MountOptions{})
+			msrc := fs.NewPseudoMountSource(ctx)
+			rootInode, err := tmpfs.NewDir(ctx, nil, fs.RootOwner, fs.FilePermsFromMode(0777), msrc, nil /* parent */)
 			if err != nil {
-				t.Fatalf("failed to create tmpfs root mount: %v", err)
+				t.Fatalf("tmpfs.NewDir failed: %v", err)
+			}
+
+			mns, err := fs.NewMountNamespace(ctx, rootInode)
+			if err != nil {
+				t.Fatalf("NewMountNamespace failed: %v", err)
 			}
 			defer mns.DecRef(ctx)
 			root := mns.Root()
-			root.IncRef()
 			defer root.DecRef(ctx)
+			ctx = fs.WithRoot(ctx, root)
 
-			if err := createEtcPasswd(ctx, &vfsObj, creds, root, tc.passwdContents, tc.passwdMode); err != nil {
+			if err := createEtcPasswd(ctx, root, tc.passwdContents, tc.passwdMode); err != nil {
 				t.Fatalf("createEtcPasswd failed: %v", err)
 			}
 

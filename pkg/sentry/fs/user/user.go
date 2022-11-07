@@ -26,22 +26,82 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 type fileReader struct {
+	// Ctx is the context for the file reader.
+	Ctx context.Context
+
+	// File is the file to read from.
+	File *fs.File
+}
+
+// Read implements io.Reader.Read.
+func (r *fileReader) Read(buf []byte) (int, error) {
+	n, err := r.File.Readv(r.Ctx, usermem.BytesIOSequence(buf))
+	return int(n), err
+}
+
+// getExecUserHome returns the home directory of the executing user read from
+// /etc/passwd as read from the container filesystem.
+func getExecUserHome(ctx context.Context, rootMns *fs.MountNamespace, uid auth.KUID) (string, error) {
+	// The default user home directory to return if no user matching the user
+	// if found in the /etc/passwd found in the image.
+	const defaultHome = "/"
+
+	// Open the /etc/passwd file from the dirent via the root mount namespace.
+	mnsRoot := rootMns.Root()
+	maxTraversals := uint(linux.MaxSymlinkTraversals)
+	dirent, err := rootMns.FindInode(ctx, mnsRoot, nil, "/etc/passwd", &maxTraversals)
+	if err != nil {
+		// NOTE: Ignore errors opening the passwd file. If the passwd file
+		// doesn't exist we will return the default home directory.
+		return defaultHome, nil
+	}
+	defer dirent.DecRef(ctx)
+
+	// Check read permissions on the file.
+	if err := dirent.Inode.CheckPermission(ctx, fs.PermMask{Read: true}); err != nil {
+		// NOTE: Ignore permissions errors here and return default root dir.
+		return defaultHome, nil
+	}
+
+	// Only open regular files. We don't open other files like named pipes as
+	// they may block and might present some attack surface to the container.
+	// Note that runc does not seem to do this kind of checking.
+	if !fs.IsRegular(dirent.Inode.StableAttr) {
+		return defaultHome, nil
+	}
+
+	f, err := dirent.Inode.GetFile(ctx, dirent, fs.FileFlags{Read: true, Directory: false})
+	if err != nil {
+		return "", err
+	}
+	defer f.DecRef(ctx)
+
+	r := &fileReader{
+		Ctx:  ctx,
+		File: f,
+	}
+
+	return findHomeInPasswd(uint32(uid), r, defaultHome)
+}
+
+type fileReaderVFS2 struct {
 	ctx context.Context
 	fd  *vfs.FileDescription
 }
 
-func (r *fileReader) Read(buf []byte) (int, error) {
+func (r *fileReaderVFS2) Read(buf []byte) (int, error) {
 	n, err := r.fd.Read(r.ctx, usermem.BytesIOSequence(buf), vfs.ReadOptions{})
 	return int(n), err
 }
 
-func getExecUserHome(ctx context.Context, mns *vfs.MountNamespace, uid auth.KUID) (string, error) {
+func getExecUserHomeVFS2(ctx context.Context, mns *vfs.MountNamespace, uid auth.KUID) (string, error) {
 	const defaultHome = "/"
 
 	root := mns.Root()
@@ -56,24 +116,17 @@ func getExecUserHome(ctx context.Context, mns *vfs.MountNamespace, uid auth.KUID
 		Path:  fspath.Parse("/etc/passwd"),
 	}
 
-	stat, err := root.Mount().Filesystem().VirtualFilesystem().StatAt(ctx, creds, target, &vfs.StatOptions{Mask: linux.STATX_TYPE})
-	if err != nil {
-		return defaultHome, nil
-	}
-	if stat.Mask&linux.STATX_TYPE == 0 || stat.Mode&linux.FileTypeMask != linux.ModeRegular {
-		return defaultHome, nil
-	}
-
 	opts := &vfs.OpenOptions{
 		Flags: linux.O_RDONLY,
 	}
+
 	fd, err := root.Mount().Filesystem().VirtualFilesystem().OpenAt(ctx, creds, target, opts)
 	if err != nil {
 		return defaultHome, nil
 	}
 	defer fd.DecRef(ctx)
 
-	r := &fileReader{
+	r := &fileReaderVFS2{
 		ctx: ctx,
 		fd:  fd,
 	}
@@ -86,10 +139,10 @@ func getExecUserHome(ctx context.Context, mns *vfs.MountNamespace, uid auth.KUID
 	return homeDir, nil
 }
 
-// MaybeAddExecUserHome returns a new slice with the HOME environment
-// variable set if the slice does not already contain it, otherwise it returns
-// the original slice unmodified.
-func MaybeAddExecUserHome(ctx context.Context, vmns *vfs.MountNamespace, uid auth.KUID, envv []string) ([]string, error) {
+// MaybeAddExecUserHome returns a new slice with the HOME enviroment variable
+// set if the slice does not already contain it, otherwise it returns the
+// original slice unmodified.
+func MaybeAddExecUserHome(ctx context.Context, mns *fs.MountNamespace, uid auth.KUID, envv []string) ([]string, error) {
 	// Check if the envv already contains HOME.
 	for _, env := range envv {
 		if strings.HasPrefix(env, "HOME=") {
@@ -101,7 +154,30 @@ func MaybeAddExecUserHome(ctx context.Context, vmns *vfs.MountNamespace, uid aut
 	// Read /etc/passwd for the user's HOME directory and set the HOME
 	// environment variable as required by POSIX if it is not overridden by
 	// the user.
-	homeDir, err := getExecUserHome(ctx, vmns, uid)
+	homeDir, err := getExecUserHome(ctx, mns, uid)
+	if err != nil {
+		return nil, fmt.Errorf("error reading exec user: %v", err)
+	}
+
+	return append(envv, "HOME="+homeDir), nil
+}
+
+// MaybeAddExecUserHomeVFS2 returns a new slice with the HOME enviroment
+// variable set if the slice does not already contain it, otherwise it returns
+// the original slice unmodified.
+func MaybeAddExecUserHomeVFS2(ctx context.Context, vmns *vfs.MountNamespace, uid auth.KUID, envv []string) ([]string, error) {
+	// Check if the envv already contains HOME.
+	for _, env := range envv {
+		if strings.HasPrefix(env, "HOME=") {
+			// We have it. Return the original slice unmodified.
+			return envv, nil
+		}
+	}
+
+	// Read /etc/passwd for the user's HOME directory and set the HOME
+	// environment variable as required by POSIX if it is not overridden by
+	// the user.
+	homeDir, err := getExecUserHomeVFS2(ctx, vmns, uid)
 	if err != nil {
 		return nil, fmt.Errorf("error reading exec user: %v", err)
 	}

@@ -246,7 +246,7 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 	for i, appFD := range args.DonatedFDs {
 		fdMap[appFD] = hostFDs[i]
 	}
-	if _, err := fdimport.Import(ctx, fdTable, false, args.KUID, args.KGID, fdMap); err != nil {
+	if _, _, err := fdimport.Import(ctx, fdTable, false, args.KUID, args.KGID, fdMap); err != nil {
 		return fmt.Errorf("error importing host files: %w", err)
 	}
 	initArgs.FDTable = fdTable
@@ -258,9 +258,9 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 		l.mu.RUnlock()
 		return fmt.Errorf("mount namespace is nil for %s", initArgs.ContainerID)
 	}
-	initArgs.MountNamespace = mntns
+	initArgs.MountNamespaceVFS2 = mntns
 	l.mu.RUnlock()
-	initArgs.MountNamespace.IncRef()
+	initArgs.MountNamespaceVFS2.IncRef()
 
 	if args.ResolveBinaryPath {
 		resolved, err := user.ResolveExecutablePath(ctx, &initArgs)
@@ -271,7 +271,7 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 	}
 
 	if args.ResolveHome {
-		envVars, err := user.MaybeAddExecUserHome(ctx, initArgs.MountNamespace, creds.RealKUID, initArgs.Envv)
+		envVars, err := user.MaybeAddExecUserHomeVFS2(ctx, initArgs.MountNamespaceVFS2, creds.RealKUID, initArgs.Envv)
 		if err != nil {
 			return fmt.Errorf("failed to get user home dir: %w", err)
 		}

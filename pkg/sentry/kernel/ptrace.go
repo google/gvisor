@@ -123,6 +123,11 @@ func (t *Task) CanTrace(target *Task, attach bool) bool {
 		return false
 	}
 
+	// YAMA only supported for vfs2.
+	if !VFS2Enabled {
+		return true
+	}
+
 	if t.k.YAMAPtraceScope.Load() == linux.YAMA_SCOPE_RELATIONAL {
 		t.tg.pidns.owner.mu.RLock()
 		defer t.tg.pidns.owner.mu.RUnlock()
@@ -142,6 +147,11 @@ func (t *Task) canTraceLocked(target *Task, attach bool) bool {
 
 	if !t.canTraceStandard(target, attach) {
 		return false
+	}
+
+	// YAMA only supported for vfs2.
+	if !VFS2Enabled {
+		return true
 	}
 
 	if t.k.YAMAPtraceScope.Load() == linux.YAMA_SCOPE_RELATIONAL {

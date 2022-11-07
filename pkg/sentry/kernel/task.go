@@ -447,10 +447,10 @@ type Task struct {
 	// abstractSockets is protected by mu.
 	abstractSockets *AbstractSocketNamespace
 
-	// mountNamespace is the task's mount namespace.
+	// mountNamespaceVFS2 is the task's mount namespace.
 	//
 	// It is protected by mu. It is owned by the task goroutine.
-	mountNamespace *vfs.MountNamespace
+	mountNamespaceVFS2 *vfs.MountNamespace
 
 	// parentDeathSignal is sent to this task's thread group when its parent exits.
 	//
@@ -705,9 +705,19 @@ func (t *Task) SyscallRestartBlock() SyscallRestartBlock {
 // Preconditions: The caller must be running on the task goroutine, or t.mu
 // must be locked.
 func (t *Task) IsChrooted() bool {
-	realRoot := t.mountNamespace.Root()
-	root := t.fsContext.RootDirectoryVFS2()
-	defer root.DecRef(t)
+	if VFS2Enabled {
+		realRoot := t.mountNamespaceVFS2.Root()
+		root := t.fsContext.RootDirectoryVFS2()
+		defer root.DecRef(t)
+		return root != realRoot
+	}
+
+	realRoot := t.tg.mounts.Root()
+	defer realRoot.DecRef(t)
+	root := t.fsContext.RootDirectory()
+	if root != nil {
+		defer root.DecRef(t)
+	}
 	return root != realRoot
 }
 
@@ -829,7 +839,7 @@ func (t *Task) MountNamespace() *fs.MountNamespace {
 func (t *Task) MountNamespaceVFS2() *vfs.MountNamespace {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.mountNamespace
+	return t.mountNamespaceVFS2
 }
 
 // AbstractSockets returns t's AbstractSocketNamespace.

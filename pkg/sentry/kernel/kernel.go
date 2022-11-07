@@ -49,6 +49,7 @@ import (
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
+	oldtimerfd "gvisor.dev/gvisor/pkg/sentry/fs/timerfd"
 	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/pipefs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sockfs"
@@ -77,6 +78,12 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
+
+// VFS2Enabled is set to true when VFS2 is enabled. Added as a global to allow
+// easy access everywhere.
+//
+// TODO(gvisor.dev/issue/1624): Remove when VFS1 is no longer used.
+var VFS2Enabled = false
 
 // LISAFSEnabled is set to true when lisafs protocol is enabled. Added as a
 // global to allow easy access everywhere.
@@ -435,42 +442,44 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	k.YAMAPtraceScope = atomicbitops.FromInt32(linux.YAMA_SCOPE_RELATIONAL)
 	k.userCountersMap = make(map[auth.KUID]*userCounters)
 
-	ctx := k.SupervisorContext()
-	if err := k.vfs.Init(ctx); err != nil {
-		return fmt.Errorf("failed to initialize VFS: %v", err)
+	if VFS2Enabled {
+		ctx := k.SupervisorContext()
+		if err := k.vfs.Init(ctx); err != nil {
+			return fmt.Errorf("failed to initialize VFS: %v", err)
+		}
+
+		err := k.rootIPCNamespace.InitPosixQueues(ctx, &k.vfs, auth.CredentialsFromContext(ctx))
+		if err != nil {
+			return fmt.Errorf("failed to create mqfs filesystem: %v", err)
+		}
+
+		pipeFilesystem, err := pipefs.NewFilesystem(&k.vfs)
+		if err != nil {
+			return fmt.Errorf("failed to create pipefs filesystem: %v", err)
+		}
+		defer pipeFilesystem.DecRef(ctx)
+		pipeMount := k.vfs.NewDisconnectedMount(pipeFilesystem, nil, &vfs.MountOptions{})
+		k.pipeMount = pipeMount
+
+		tmpfsFilesystem, tmpfsRoot, err := tmpfs.NewFilesystem(ctx, &k.vfs, auth.NewRootCredentials(k.rootUserNamespace))
+		if err != nil {
+			return fmt.Errorf("failed to create tmpfs filesystem: %v", err)
+		}
+		defer tmpfsFilesystem.DecRef(ctx)
+		defer tmpfsRoot.DecRef(ctx)
+		k.shmMount = k.vfs.NewDisconnectedMount(tmpfsFilesystem, tmpfsRoot, &vfs.MountOptions{})
+
+		socketFilesystem, err := sockfs.NewFilesystem(&k.vfs)
+		if err != nil {
+			return fmt.Errorf("failed to create sockfs filesystem: %v", err)
+		}
+		defer socketFilesystem.DecRef(ctx)
+		k.socketMount = k.vfs.NewDisconnectedMount(socketFilesystem, nil, &vfs.MountOptions{})
+
+		k.socketsVFS2 = make(map[*vfs.FileDescription]*SocketRecord)
+
+		k.cgroupRegistry = newCgroupRegistry()
 	}
-
-	err := k.rootIPCNamespace.InitPosixQueues(ctx, &k.vfs, auth.CredentialsFromContext(ctx))
-	if err != nil {
-		return fmt.Errorf("failed to create mqfs filesystem: %v", err)
-	}
-
-	pipeFilesystem, err := pipefs.NewFilesystem(&k.vfs)
-	if err != nil {
-		return fmt.Errorf("failed to create pipefs filesystem: %v", err)
-	}
-	defer pipeFilesystem.DecRef(ctx)
-	pipeMount := k.vfs.NewDisconnectedMount(pipeFilesystem, nil, &vfs.MountOptions{})
-	k.pipeMount = pipeMount
-
-	tmpfsFilesystem, tmpfsRoot, err := tmpfs.NewFilesystem(ctx, &k.vfs, auth.NewRootCredentials(k.rootUserNamespace))
-	if err != nil {
-		return fmt.Errorf("failed to create tmpfs filesystem: %v", err)
-	}
-	defer tmpfsFilesystem.DecRef(ctx)
-	defer tmpfsRoot.DecRef(ctx)
-	k.shmMount = k.vfs.NewDisconnectedMount(tmpfsFilesystem, tmpfsRoot, &vfs.MountOptions{})
-
-	socketFilesystem, err := sockfs.NewFilesystem(&k.vfs)
-	if err != nil {
-		return fmt.Errorf("failed to create sockfs filesystem: %v", err)
-	}
-	defer socketFilesystem.DecRef(ctx)
-	k.socketMount = k.vfs.NewDisconnectedMount(socketFilesystem, nil, &vfs.MountOptions{})
-
-	k.socketsVFS2 = make(map[*vfs.FileDescription]*SocketRecord)
-
-	k.cgroupRegistry = newCgroupRegistry()
 	return nil
 }
 
@@ -492,16 +501,50 @@ func (k *Kernel) SaveTo(ctx context.Context, w wire.Writer) error {
 	k.mf.StartEvictions()
 	k.mf.WaitForEvictions()
 
-	// Discard unsavable mappings, such as those for host file descriptors.
-	if err := k.invalidateUnsavableMappings(ctx); err != nil {
-		return fmt.Errorf("failed to invalidate unsavable mappings: %v", err)
-	}
+	if VFS2Enabled {
+		// Discard unsavable mappings, such as those for host file descriptors.
+		if err := k.invalidateUnsavableMappings(ctx); err != nil {
+			return fmt.Errorf("failed to invalidate unsavable mappings: %v", err)
+		}
 
-	// Prepare filesystems for saving. This must be done after
-	// invalidateUnsavableMappings(), since dropping memory mappings may
-	// affect filesystem state (e.g. page cache reference counts).
-	if err := k.vfs.PrepareSave(ctx); err != nil {
-		return err
+		// Prepare filesystems for saving. This must be done after
+		// invalidateUnsavableMappings(), since dropping memory mappings may
+		// affect filesystem state (e.g. page cache reference counts).
+		if err := k.vfs.PrepareSave(ctx); err != nil {
+			return err
+		}
+	} else {
+		// Flush cached file writes to backing storage. This must come after
+		// MemoryFile eviction since eviction may cause file writes.
+		if err := k.flushWritesToFiles(ctx); err != nil {
+			return err
+		}
+
+		// Clear the dirent cache before saving because Dirents must be Loaded in a
+		// particular order (parents before children), and Loading dirents from a cache
+		// breaks that order.
+		if err := k.flushMountSourceRefs(ctx); err != nil {
+			return err
+		}
+
+		// Ensure that all inode and mount release operations have completed.
+		fs.AsyncBarrier()
+
+		// Once all fs work has completed (flushed references have all been released),
+		// reset mount mappings. This allows individual mounts to save how inodes map
+		// to filesystem resources. Without this, fs.Inodes cannot be restored.
+		fs.SaveInodeMappings()
+
+		// Discard unsavable mappings, such as those for host file descriptors.
+		// This must be done after waiting for "asynchronous fs work", which
+		// includes async I/O that may touch application memory.
+		//
+		// TODO(gvisor.dev/issue/1624): This rationale is believed to be
+		// obsolete since AIO callbacks are now waited-for by Kernel.Pause(),
+		// but this order is conservatively retained for VFS1.
+		if err := k.invalidateUnsavableMappings(ctx); err != nil {
+			return fmt.Errorf("failed to invalidate unsavable mappings: %v", err)
+		}
 	}
 
 	// Save the CPUID FeatureSet before the rest of the kernel so we can
@@ -703,8 +746,17 @@ func (k *Kernel) LoadFrom(ctx context.Context, r wire.Reader, timeReady chan str
 		net.Resume()
 	}
 
-	if err := k.vfs.CompleteRestore(ctx, vfsOpts); err != nil {
-		return err
+	if VFS2Enabled {
+		if err := k.vfs.CompleteRestore(ctx, vfsOpts); err != nil {
+			return err
+		}
+	} else {
+		// Ensure that all pending asynchronous work is complete:
+		//   - namedpipe opening
+		//   - inode file opening
+		if err := fs.AsyncErrorBarrier(); err != nil {
+			return err
+		}
 	}
 
 	tcpip.AsyncLoading.Wait()
@@ -791,7 +843,14 @@ type CreateProcessArgs struct {
 	//
 	// Anyone setting MountNamespace must donate a reference (i.e.
 	// increment it).
-	MountNamespace *vfs.MountNamespace
+	MountNamespace *fs.MountNamespace
+
+	// MountNamespaceVFS2 optionally contains the mount namespace for this
+	// process. If nil, the init process's mount namespace is used.
+	//
+	// Anyone setting MountNamespaceVFS2 must donate a reference (i.e.
+	// increment it).
+	MountNamespaceVFS2 *vfs.MountNamespace
 
 	// ContainerID is the container that the process belongs to.
 	ContainerID string
@@ -830,11 +889,17 @@ func (ctx *createProcessContext) Value(key interface{}) interface{} {
 		return ipcns
 	case auth.CtxCredentials:
 		return ctx.args.Credentials
+	case fs.CtxRoot:
+		if ctx.args.MountNamespace != nil {
+			// MountNamespace.Root() will take a reference on the root dirent for us.
+			return ctx.args.MountNamespace.Root()
+		}
+		return nil
 	case vfs.CtxRoot:
-		if ctx.args.MountNamespace == nil {
+		if ctx.args.MountNamespaceVFS2 == nil {
 			return nil
 		}
-		root := ctx.args.MountNamespace.Root()
+		root := ctx.args.MountNamespaceVFS2.Root()
 		root.IncRef()
 		return root
 	case vfs.CtxMountNamespace:
@@ -888,47 +953,86 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 	log.Infof("EXEC: %v", args.Argv)
 
 	ctx := args.NewContext(k)
-	mntns := args.MountNamespace
-	if mntns == nil {
-		if k.globalInit == nil {
-			return nil, 0, fmt.Errorf("mount namespace is nil")
-		}
-		// Add a reference to the namespace, which is transferred to the new process.
-		mntns = k.globalInit.Leader().MountNamespaceVFS2()
-		mntns.IncRef()
-	}
-	// Get the root directory from the MountNamespace.
-	root := mntns.Root()
-	root.IncRef()
-	defer root.DecRef(ctx)
 
-	// Grab the working directory.
-	wd := root // Default.
-	if args.WorkingDirectory != "" {
-		pop := vfs.PathOperation{
-			Root:               root,
-			Start:              wd,
-			Path:               fspath.Parse(args.WorkingDirectory),
-			FollowFinalSymlink: true,
-		}
-		// NOTE(b/236028361): Do not set CheckSearchable flag to true.
-		// Application is allowed to start with a working directory that it can
-		// not access/search. This is consistent with Docker and VFS1. Runc
-		// explicitly allows for this in 6ce2d63a5db6 ("libct/init_linux: retry
-		// chdir to fix EPERM"). As described in the commit, runc unintentionally
-		// allowed this behavior in a couple of releases and applications started
-		// relying on it. So they decided to allow it for backward compatibility.
-		var err error
-		wd, err = k.VFS().GetDentryAt(ctx, args.Credentials, &pop, &vfs.GetDentryOptions{})
-		if err != nil {
-			return nil, 0, fmt.Errorf("failed to find initial working directory %q: %v", args.WorkingDirectory, err)
-		}
-		defer wd.DecRef(ctx)
-	}
-	opener := fsbridge.NewVFSLookup(mntns, root, wd)
-	fsContext := NewFSContext(root, wd, args.Umask)
+	var (
+		opener    fsbridge.Lookup
+		fsContext *FSContext
+		mntns     *fs.MountNamespace
+		mntnsVFS2 *vfs.MountNamespace
+	)
 
-	tg := k.NewThreadGroup(nil, args.PIDNamespace, NewSignalHandlers(), linux.SIGCHLD, args.Limits)
+	if VFS2Enabled {
+		mntnsVFS2 = args.MountNamespaceVFS2
+		if mntnsVFS2 == nil {
+			if k.globalInit == nil {
+				return nil, 0, fmt.Errorf("mount namespace is nil")
+			}
+			// Add a reference to the namespace, which is transferred to the new process.
+			mntnsVFS2 = k.globalInit.Leader().MountNamespaceVFS2()
+			mntnsVFS2.IncRef()
+		}
+		// Get the root directory from the MountNamespace.
+		root := mntnsVFS2.Root()
+		root.IncRef()
+		defer root.DecRef(ctx)
+
+		// Grab the working directory.
+		wd := root // Default.
+		if args.WorkingDirectory != "" {
+			pop := vfs.PathOperation{
+				Root:               root,
+				Start:              wd,
+				Path:               fspath.Parse(args.WorkingDirectory),
+				FollowFinalSymlink: true,
+			}
+			// NOTE(b/236028361): Do not set CheckSearchable flag to true.
+			// Application is allowed to start with a working directory that it can
+			// not access/search. This is consistent with Docker and VFS1. Runc
+			// explicitly allows for this in 6ce2d63a5db6 ("libct/init_linux: retry
+			// chdir to fix EPERM"). As described in the commit, runc unintentionally
+			// allowed this behavior in a couple of releases and applications started
+			// relying on it. So they decided to allow it for backward compatibility.
+			var err error
+			wd, err = k.VFS().GetDentryAt(ctx, args.Credentials, &pop, &vfs.GetDentryOptions{})
+			if err != nil {
+				return nil, 0, fmt.Errorf("failed to find initial working directory %q: %v", args.WorkingDirectory, err)
+			}
+			defer wd.DecRef(ctx)
+		}
+		opener = fsbridge.NewVFSLookup(mntnsVFS2, root, wd)
+		fsContext = NewFSContextVFS2(root, wd, args.Umask)
+
+	} else {
+		mntns = args.MountNamespace
+		if mntns == nil {
+			if k.globalInit == nil {
+				return nil, 0, fmt.Errorf("mount namespace is nil")
+			}
+			mntns = k.GlobalInit().Leader().MountNamespace()
+			mntns.IncRef()
+		}
+		// Get the root directory from the MountNamespace.
+		root := mntns.Root()
+		// The call to newFSContext below will take a reference on root, so we
+		// don't need to hold this one.
+		defer root.DecRef(ctx)
+
+		// Grab the working directory.
+		remainingTraversals := args.MaxSymlinkTraversals
+		wd := root // Default.
+		if args.WorkingDirectory != "" {
+			var err error
+			wd, err = mntns.FindInode(ctx, root, nil, args.WorkingDirectory, &remainingTraversals)
+			if err != nil {
+				return nil, 0, fmt.Errorf("failed to find initial working directory %q: %v", args.WorkingDirectory, err)
+			}
+			defer wd.DecRef(ctx)
+		}
+		opener = fsbridge.NewFSLookup(mntns, root, wd)
+		fsContext = newFSContext(root, wd, args.Umask)
+	}
+
+	tg := k.NewThreadGroup(mntns, args.PIDNamespace, NewSignalHandlers(), linux.SIGCHLD, args.Limits)
 	cu := cleanup.Make(func() {
 		tg.Release(ctx)
 	})
@@ -990,7 +1094,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		UTSNamespace:            args.UTSNamespace,
 		IPCNamespace:            args.IPCNamespace,
 		AbstractSocketNamespace: args.AbstractSocketNamespace,
-		MountNamespace:          mntns,
+		MountNamespaceVFS2:      mntnsVFS2,
 		ContainerID:             args.ContainerID,
 		UserCounters:            k.GetUserCounters(args.Credentials.RealKUID),
 	}
@@ -1089,8 +1193,14 @@ func (k *Kernel) pauseTimeLocked(ctx context.Context) {
 		// but ktime.Timer.Pause is idempotent so this is harmless.
 		if t.fdTable != nil {
 			t.fdTable.forEach(ctx, func(_ int32, file *fs.File, fd *vfs.FileDescription, _ FDFlags) {
-				if tfd, ok := fd.Impl().(*timerfd.TimerFileDescription); ok {
-					tfd.PauseTimer()
+				if VFS2Enabled {
+					if tfd, ok := fd.Impl().(*timerfd.TimerFileDescription); ok {
+						tfd.PauseTimer()
+					}
+				} else {
+					if tfd, ok := file.FileOperations.(*oldtimerfd.TimerOperations); ok {
+						tfd.PauseTimer()
+					}
 				}
 			})
 		}
@@ -1119,8 +1229,14 @@ func (k *Kernel) resumeTimeLocked(ctx context.Context) {
 		}
 		if t.fdTable != nil {
 			t.fdTable.forEach(ctx, func(_ int32, file *fs.File, fd *vfs.FileDescription, _ FDFlags) {
-				if tfd, ok := fd.Impl().(*timerfd.TimerFileDescription); ok {
-					tfd.ResumeTimer()
+				if VFS2Enabled {
+					if tfd, ok := fd.Impl().(*timerfd.TimerFileDescription); ok {
+						tfd.ResumeTimer()
+					}
+				} else {
+					if tfd, ok := file.FileOperations.(*oldtimerfd.TimerOperations); ok {
+						tfd.ResumeTimer()
+					}
 				}
 			})
 		}
@@ -1562,8 +1678,14 @@ func (k *Kernel) DeleteSocketVFS2(sock *vfs.FileDescription) {
 func (k *Kernel) ListSockets() []*SocketRecord {
 	k.extMu.Lock()
 	var socks []*SocketRecord
-	for _, s := range k.socketsVFS2 {
-		socks = append(socks, s)
+	if VFS2Enabled {
+		for _, s := range k.socketsVFS2 {
+			socks = append(socks, s)
+		}
+	} else {
+		for s := k.sockets.Front(); s != nil; s = s.Next() {
+			socks = append(socks, &s.SocketRecord)
+		}
 	}
 	k.extMu.Unlock()
 	return socks
@@ -1725,11 +1847,13 @@ func (k *Kernel) CgroupRegistry() *CgroupRegistry {
 // initialized, e.g. after k.Start() has been called.
 func (k *Kernel) Release() {
 	ctx := k.SupervisorContext()
-	k.hostMount.DecRef(ctx)
-	k.pipeMount.DecRef(ctx)
-	k.shmMount.DecRef(ctx)
-	k.socketMount.DecRef(ctx)
-	k.vfs.Release(ctx)
+	if VFS2Enabled {
+		k.hostMount.DecRef(ctx)
+		k.pipeMount.DecRef(ctx)
+		k.shmMount.DecRef(ctx)
+		k.socketMount.DecRef(ctx)
+		k.vfs.Release(ctx)
+	}
 	k.timekeeper.Destroy()
 	k.vdso.Release(ctx)
 	k.RootNetworkNamespace().DecRef()

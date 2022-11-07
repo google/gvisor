@@ -105,8 +105,8 @@ func (t *Task) contextValue(key interface{}, isTaskGoroutine bool) interface{} {
 			t.mu.Lock()
 			defer t.mu.Unlock()
 		}
-		t.mountNamespace.IncRef()
-		return t.mountNamespace
+		t.mountNamespaceVFS2.IncRef()
+		return t.mountNamespaceVFS2
 	case fs.CtxDirentCacheLimiter:
 		return t.k.DirentCacheLimiter
 	case inet.CtxStack:

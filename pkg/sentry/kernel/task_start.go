@@ -85,8 +85,8 @@ type TaskConfig struct {
 	// AbstractSocketNamespace is the AbstractSocketNamespace of the new task.
 	AbstractSocketNamespace *AbstractSocketNamespace
 
-	// MountNamespace is the MountNamespace of the new task.
-	MountNamespace *vfs.MountNamespace
+	// MountNamespaceVFS2 is the MountNamespace of the new task.
+	MountNamespaceVFS2 *vfs.MountNamespace
 
 	// RSeqAddr is a pointer to the the userspace linux.RSeq structure.
 	RSeqAddr hostarch.Addr
@@ -116,8 +116,8 @@ func (ts *TaskSet) NewTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		cfg.FDTable.DecRef(ctx)
 		cfg.IPCNamespace.DecRef(ctx)
 		cfg.NetworkNamespace.DecRef()
-		if cfg.MountNamespace != nil {
-			cfg.MountNamespace.DecRef(ctx)
+		if cfg.MountNamespaceVFS2 != nil {
+			cfg.MountNamespaceVFS2.DecRef(ctx)
 		}
 	}
 	if err := cfg.UserCounters.incRLimitNProc(ctx); err != nil {
@@ -145,29 +145,29 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 			parent:   cfg.Parent,
 			children: make(map[*Task]struct{}),
 		},
-		runState:        (*runApp)(nil),
-		interruptChan:   make(chan struct{}, 1),
-		signalMask:      atomicbitops.FromUint64(uint64(cfg.SignalMask)),
-		signalStack:     linux.SignalStack{Flags: linux.SS_DISABLE},
-		image:           *image,
-		fsContext:       cfg.FSContext,
-		fdTable:         cfg.FDTable,
-		k:               cfg.Kernel,
-		ptraceTracees:   make(map[*Task]struct{}),
-		allowedCPUMask:  cfg.AllowedCPUMask.Copy(),
-		ioUsage:         &usage.IO{},
-		niceness:        cfg.Niceness,
-		utsns:           cfg.UTSNamespace,
-		ipcns:           cfg.IPCNamespace,
-		abstractSockets: cfg.AbstractSocketNamespace,
-		mountNamespace:  cfg.MountNamespace,
-		rseqCPU:         -1,
-		rseqAddr:        cfg.RSeqAddr,
-		rseqSignature:   cfg.RSeqSignature,
-		futexWaiter:     futex.NewWaiter(),
-		containerID:     cfg.ContainerID,
-		cgroups:         make(map[Cgroup]struct{}),
-		userCounters:    cfg.UserCounters,
+		runState:           (*runApp)(nil),
+		interruptChan:      make(chan struct{}, 1),
+		signalMask:         atomicbitops.FromUint64(uint64(cfg.SignalMask)),
+		signalStack:        linux.SignalStack{Flags: linux.SS_DISABLE},
+		image:              *image,
+		fsContext:          cfg.FSContext,
+		fdTable:            cfg.FDTable,
+		k:                  cfg.Kernel,
+		ptraceTracees:      make(map[*Task]struct{}),
+		allowedCPUMask:     cfg.AllowedCPUMask.Copy(),
+		ioUsage:            &usage.IO{},
+		niceness:           cfg.Niceness,
+		utsns:              cfg.UTSNamespace,
+		ipcns:              cfg.IPCNamespace,
+		abstractSockets:    cfg.AbstractSocketNamespace,
+		mountNamespaceVFS2: cfg.MountNamespaceVFS2,
+		rseqCPU:            -1,
+		rseqAddr:           cfg.RSeqAddr,
+		rseqSignature:      cfg.RSeqSignature,
+		futexWaiter:        futex.NewWaiter(),
+		containerID:        cfg.ContainerID,
+		cgroups:            make(map[Cgroup]struct{}),
+		userCounters:       cfg.UserCounters,
 	}
 	t.netns.Store(cfg.NetworkNamespace)
 	t.creds.Store(cfg.Credentials)
@@ -238,8 +238,10 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		t.parent.children[t] = struct{}{}
 	}
 
-	// srcT may be nil, in which case we default to root cgroups.
-	t.EnterInitialCgroups(srcT)
+	if VFS2Enabled {
+		// srcT may be nil, in which case we default to root cgroups.
+		t.EnterInitialCgroups(srcT)
+	}
 
 	if tg.leader == nil {
 		// New thread group.

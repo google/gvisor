@@ -34,6 +34,8 @@ go_library(
         "//pkg/fspath",
         "//pkg/log",
         "//pkg/sentry/fdimport",
+        "//pkg/sentry/fs",
+        "//pkg/sentry/fs/host",
         "//pkg/sentry/fs/user",
         "//pkg/sentry/fsimpl/host",
         "//pkg/sentry/fsmetric",

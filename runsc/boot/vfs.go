@@ -162,7 +162,7 @@ func setupContainerVFS(ctx context.Context, conf *config.Config, mntr *container
 	if err != nil {
 		return fmt.Errorf("failed to setupFS: %w", err)
 	}
-	procArgs.MountNamespace = mns
+	procArgs.MountNamespaceVFS2 = mns
 
 	// Resolve the executable path from working dir and environment.
 	resolved, err := user.ResolveExecutablePath(ctx, procArgs)
@@ -373,7 +373,7 @@ func (c *containerMounter) mountAll(conf *config.Config, procArgs *kernel.Create
 	if err != nil {
 		return nil, fmt.Errorf("creating mount namespace: %w", err)
 	}
-	rootProcArgs.MountNamespace = mns
+	rootProcArgs.MountNamespaceVFS2 = mns
 
 	root := mns.Root()
 	root.IncRef()

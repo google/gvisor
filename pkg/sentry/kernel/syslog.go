@@ -104,11 +104,13 @@ func (s *syslog) Log() []byte {
 		s.msg = append(s.msg, []byte(fmt.Sprintf(format, time, selectMessage()))...)
 	}
 
-	time += rand.Float64() / 2
-	s.msg = append(s.msg, []byte(fmt.Sprintf(format, time, "Setting up VFS..."))...)
-	if FUSEEnabled {
+	if VFS2Enabled {
 		time += rand.Float64() / 2
-		s.msg = append(s.msg, []byte(fmt.Sprintf(format, time, "Setting up FUSE..."))...)
+		s.msg = append(s.msg, []byte(fmt.Sprintf(format, time, "Setting up VFS2..."))...)
+		if FUSEEnabled {
+			time += rand.Float64() / 2
+			s.msg = append(s.msg, []byte(fmt.Sprintf(format, time, "Setting up FUSE..."))...)
+		}
 	}
 
 	time += rand.Float64() / 2

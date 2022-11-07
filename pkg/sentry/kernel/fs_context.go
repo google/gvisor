@@ -54,8 +54,21 @@ type FSContext struct {
 	umask uint
 }
 
-// NewFSContext returns a new filesystem context.
-func NewFSContext(root, cwd vfs.VirtualDentry, umask uint) *FSContext {
+// newFSContext returns a new filesystem context.
+func newFSContext(root, cwd *fs.Dirent, umask uint) *FSContext {
+	root.IncRef()
+	cwd.IncRef()
+	f := FSContext{
+		root:  root,
+		cwd:   cwd,
+		umask: umask,
+	}
+	f.InitRefs()
+	return &f
+}
+
+// NewFSContextVFS2 returns a new filesystem context.
+func NewFSContextVFS2(root, cwd vfs.VirtualDentry, umask uint) *FSContext {
 	root.IncRef()
 	cwd.IncRef()
 	f := FSContext{
@@ -82,10 +95,17 @@ func (f *FSContext) DecRef(ctx context.Context) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 
-		f.rootVFS2.DecRef(ctx)
-		f.rootVFS2 = vfs.VirtualDentry{}
-		f.cwdVFS2.DecRef(ctx)
-		f.cwdVFS2 = vfs.VirtualDentry{}
+		if VFS2Enabled {
+			f.rootVFS2.DecRef(ctx)
+			f.rootVFS2 = vfs.VirtualDentry{}
+			f.cwdVFS2.DecRef(ctx)
+			f.cwdVFS2 = vfs.VirtualDentry{}
+		} else {
+			f.root.DecRef(ctx)
+			f.root = nil
+			f.cwd.DecRef(ctx)
+			f.cwd = nil
+		}
 	})
 }
 
@@ -96,11 +116,19 @@ func (f *FSContext) Fork() *FSContext {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	if !f.cwdVFS2.Ok() {
-		panic("FSContext.Fork() called after destroy")
+	if VFS2Enabled {
+		if !f.cwdVFS2.Ok() {
+			panic("FSContext.Fork() called after destroy")
+		}
+		f.cwdVFS2.IncRef()
+		f.rootVFS2.IncRef()
+	} else {
+		if f.cwd == nil {
+			panic("FSContext.Fork() called after destroy")
+		}
+		f.cwd.IncRef()
+		f.root.IncRef()
 	}
-	f.cwdVFS2.IncRef()
-	f.rootVFS2.IncRef()
 
 	ctx := &FSContext{
 		cwd:      f.cwd,
