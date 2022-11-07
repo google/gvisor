@@ -26,10 +26,8 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
-	"gvisor.dev/gvisor/pkg/sentry/fs/host"
 	"gvisor.dev/gvisor/pkg/sentry/fs/user"
-	hostvfs2 "gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
@@ -63,13 +61,7 @@ type ExecArgs struct {
 	// A reference on MountNamespace must be held for the lifetime of the
 	// ExecArgs. If MountNamespace is nil, it will default to the init
 	// process's MountNamespace.
-	MountNamespace *fs.MountNamespace
-
-	// MountNamespaceVFS2 is the mount namespace to execute the new process in.
-	// A reference on MountNamespace must be held for the lifetime of the
-	// ExecArgs. If MountNamespace is nil, it will default to the init
-	// process's MountNamespace.
-	MountNamespaceVFS2 *vfs.MountNamespace
+	MountNamespace *vfs.MountNamespace
 
 	// WorkingDirectory defines the working directory for the new process.
 	WorkingDirectory string `json:"wd"`
@@ -119,7 +111,7 @@ func (args ExecArgs) String() string {
 
 // Exec runs a new task.
 func (proc *Proc) Exec(args *ExecArgs, waitStatus *uint32) error {
-	newTG, _, _, _, err := proc.execAsync(args)
+	newTG, _, _, err := proc.execAsync(args)
 	if err != nil {
 		return err
 	}
@@ -132,14 +124,14 @@ func (proc *Proc) Exec(args *ExecArgs, waitStatus *uint32) error {
 
 // ExecAsync runs a new task, but doesn't wait for it to finish. It is defined
 // as a function rather than a method to avoid exposing execAsync as an RPC.
-func ExecAsync(proc *Proc, args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadID, *host.TTYFileOperations, *hostvfs2.TTYFileDescription, error) {
+func ExecAsync(proc *Proc, args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadID, *host.TTYFileDescription, error) {
 	return proc.execAsync(args)
 }
 
 // execAsync runs a new task, but doesn't wait for it to finish. It returns the
 // newly created thread group and its PID. If the stdio FDs are TTYs, then a
 // TTYFileOperations that wraps the TTY is also returned.
-func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadID, *host.TTYFileOperations, *hostvfs2.TTYFileDescription, error) {
+func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadID, *host.TTYFileDescription, error) {
 	// Import file descriptors.
 	fdTable := proc.Kernel.NewFDTable()
 
@@ -164,7 +156,6 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		Envv:                    args.Envv,
 		WorkingDirectory:        args.WorkingDirectory,
 		MountNamespace:          args.MountNamespace,
-		MountNamespaceVFS2:      args.MountNamespaceVFS2,
 		Credentials:             creds,
 		FDTable:                 fdTable,
 		Umask:                   0022,
@@ -177,46 +168,30 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		PIDNamespace:            pidns,
 	}
 	if initArgs.MountNamespace != nil {
-		// initArgs must hold a reference on MountNamespace, which will
-		// be donated to the new process in CreateProcess.
-		initArgs.MountNamespace.IncRef()
-	}
-	if initArgs.MountNamespaceVFS2 != nil {
 		// initArgs must hold a reference on MountNamespaceVFS2, which will
 		// be donated to the new process in CreateProcess.
-		initArgs.MountNamespaceVFS2.IncRef()
+		initArgs.MountNamespace.IncRef()
 	}
 	ctx := initArgs.NewContext(proc.Kernel)
 	defer fdTable.DecRef(ctx)
 
-	if kernel.VFS2Enabled {
-		// Get the full path to the filename from the PATH env variable.
-		if initArgs.MountNamespaceVFS2 == nil {
-			// Set initArgs so that 'ctx' returns the namespace.
-			//
-			// Add a reference to the namespace, which is transferred to the new process.
-			initArgs.MountNamespaceVFS2 = proc.Kernel.GlobalInit().Leader().MountNamespaceVFS2()
-			initArgs.MountNamespaceVFS2.IncRef()
-		}
-	} else {
-		if initArgs.MountNamespace == nil {
-			// Set initArgs so that 'ctx' returns the namespace.
-			initArgs.MountNamespace = proc.Kernel.GlobalInit().Leader().MountNamespace()
-
-			// initArgs must hold a reference on MountNamespace, which will
-			// be donated to the new process in CreateProcess.
-			initArgs.MountNamespace.IncRef()
-		}
+	// Get the full path to the filename from the PATH env variable.
+	if initArgs.MountNamespace == nil {
+		// Set initArgs so that 'ctx' returns the namespace.
+		//
+		// Add a reference to the namespace, which is transferred to the new process.
+		initArgs.MountNamespace = proc.Kernel.GlobalInit().Leader().MountNamespaceVFS2()
+		initArgs.MountNamespace.IncRef()
 	}
 	resolved, err := user.ResolveExecutablePath(ctx, &initArgs)
 	if err != nil {
-		return nil, 0, nil, nil, err
+		return nil, 0, nil, err
 	}
 	initArgs.Filename = resolved
 
 	fds, err := fd.NewFromFiles(args.Files)
 	if err != nil {
-		return nil, 0, nil, nil, fmt.Errorf("duplicating payload files: %w", err)
+		return nil, 0, nil, fmt.Errorf("duplicating payload files: %w", err)
 	}
 	defer func() {
 		for _, fd := range fds {
@@ -227,28 +202,25 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 	for appFD, hostFD := range fds {
 		fdMap[appFD] = hostFD
 	}
-	ttyFile, ttyFileVFS2, err := fdimport.Import(ctx, fdTable, args.StdioIsPty, args.KUID, args.KGID, fdMap)
+	ttyFile, err := fdimport.Import(ctx, fdTable, args.StdioIsPty, args.KUID, args.KGID, fdMap)
 	if err != nil {
-		return nil, 0, nil, nil, err
+		return nil, 0, nil, err
 	}
 
 	tg, tid, err := proc.Kernel.CreateProcess(initArgs)
 	if err != nil {
-		return nil, 0, nil, nil, err
+		return nil, 0, nil, err
 	}
 
 	// Set the foreground process group on the TTY before starting the process.
-	switch {
-	case ttyFile != nil:
+	if ttyFile != nil {
 		ttyFile.InitForegroundProcessGroup(tg.ProcessGroup())
-	case ttyFileVFS2 != nil:
-		ttyFileVFS2.InitForegroundProcessGroup(tg.ProcessGroup())
 	}
 
 	// Start the newly created process.
 	proc.Kernel.StartProcess(tg)
 
-	return tg, tid, ttyFile, ttyFileVFS2, nil
+	return tg, tid, ttyFile, nil
 }
 
 // PsArgs is the set of arguments to ps.

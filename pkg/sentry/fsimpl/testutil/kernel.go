@@ -63,7 +63,6 @@ func Boot() (*kernel.Kernel, error) {
 		return nil, fmt.Errorf("creating platform: %v", err)
 	}
 
-	kernel.VFS2Enabled = true
 	k := &kernel.Kernel{
 		Platform: plat,
 	}
@@ -142,8 +141,8 @@ func CreateTask(ctx context.Context, name string, tc *kernel.ThreadGroup, mntns 
 		UTSNamespace:            kernel.UTSNamespaceFromContext(ctx),
 		IPCNamespace:            kernel.IPCNamespaceFromContext(ctx),
 		AbstractSocketNamespace: kernel.NewAbstractSocketNamespace(),
-		MountNamespaceVFS2:      mntns,
-		FSContext:               kernel.NewFSContextVFS2(root, cwd, 0022),
+		MountNamespace:          mntns,
+		FSContext:               kernel.NewFSContext(root, cwd, 0022),
 		FDTable:                 k.NewFDTable(),
 		UserCounters:            k.GetUserCounters(creds.RealKUID),
 	}

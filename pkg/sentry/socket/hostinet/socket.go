@@ -319,31 +319,17 @@ func (s *socketOpsCommon) Accept(t *kernel.Task, peerRequested bool, flags int, 
 		kfd  int32
 		kerr error
 	)
-	if kernel.VFS2Enabled {
-		f, err := newVFS2Socket(t, s.family, s.stype, s.protocol, fd, uint32(flags&unix.SOCK_NONBLOCK))
-		if err != nil {
-			_ = unix.Close(fd)
-			return 0, nil, 0, err
-		}
-		defer f.DecRef(t)
-
-		kfd, kerr = t.NewFDFromVFS2(0, f, kernel.FDFlags{
-			CloseOnExec: flags&unix.SOCK_CLOEXEC != 0,
-		})
-		t.Kernel().RecordSocketVFS2(f)
-	} else {
-		f, err := newSocketFile(t, s.family, s.stype, s.protocol, fd, flags&unix.SOCK_NONBLOCK != 0)
-		if err != nil {
-			_ = unix.Close(fd)
-			return 0, nil, 0, err
-		}
-		defer f.DecRef(t)
-
-		kfd, kerr = t.NewFDFrom(0, f, kernel.FDFlags{
-			CloseOnExec: flags&unix.SOCK_CLOEXEC != 0,
-		})
-		t.Kernel().RecordSocket(f)
+	f, err := newVFS2Socket(t, s.family, s.stype, s.protocol, fd, uint32(flags&unix.SOCK_NONBLOCK))
+	if err != nil {
+		_ = unix.Close(fd)
+		return 0, nil, 0, err
 	}
+	defer f.DecRef(t)
+
+	kfd, kerr = t.NewFDFromVFS2(0, f, kernel.FDFlags{
+		CloseOnExec: flags&unix.SOCK_CLOEXEC != 0,
+	})
+	t.Kernel().RecordSocketVFS2(f)
 
 	return kfd, peerAddr, peerAddrlen, syserr.FromError(kerr)
 }

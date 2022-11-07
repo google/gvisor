@@ -103,9 +103,7 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	ipcns := t.IPCNamespace()
 	if args.Flags&linux.CLONE_NEWIPC != 0 {
 		ipcns = NewIPCNamespace(userns)
-		if VFS2Enabled {
-			ipcns.InitPosixQueues(t, t.k.VFS(), creds)
-		}
+		ipcns.InitPosixQueues(t, t.k.VFS(), creds)
 	} else {
 		ipcns.IncRef()
 	}
@@ -125,11 +123,11 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	})
 
 	// TODO(b/63601033): Implement CLONE_NEWNS.
-	mntnsVFS2 := t.mountNamespaceVFS2
-	if mntnsVFS2 != nil {
-		mntnsVFS2.IncRef()
+	mntns := t.mountNamespace
+	if mntns != nil {
+		mntns.IncRef()
 		cu.Add(func() {
-			mntnsVFS2.DecRef(t)
+			mntns.DecRef(t)
 		})
 	}
 
@@ -210,7 +208,7 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 		UTSNamespace:            utsns,
 		IPCNamespace:            ipcns,
 		AbstractSocketNamespace: t.abstractSockets,
-		MountNamespaceVFS2:      mntnsVFS2,
+		MountNamespace:          mntns,
 		RSeqAddr:                rseqAddr,
 		RSeqSignature:           rseqSignature,
 		ContainerID:             t.ContainerID(),
@@ -487,9 +485,7 @@ func (t *Task) Unshare(flags int32) error {
 		// namespace"
 		oldIPCNS = t.ipcns
 		t.ipcns = NewIPCNamespace(creds.UserNamespace)
-		if VFS2Enabled {
-			t.ipcns.InitPosixQueues(t, t.k.VFS(), creds)
-		}
+		t.ipcns.InitPosixQueues(t, t.k.VFS(), creds)
 	}
 	var oldFDTable *FDTable
 	if flags&linux.CLONE_FILES != 0 {
