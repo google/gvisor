@@ -712,19 +712,11 @@ func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte, width uint)
 	}
 
 	if len(fds) > 0 {
-		if kernel.VFS2Enabled {
-			rights, err := NewSCMRightsVFS2(t, fds)
-			if err != nil {
-				return socket.ControlMessages{}, err
-			}
-			cmsgs.Unix.Rights = rights
-		} else {
-			rights, err := NewSCMRights(t, fds)
-			if err != nil {
-				return socket.ControlMessages{}, err
-			}
-			cmsgs.Unix.Rights = rights
+		rights, err := NewSCMRightsVFS2(t, fds)
+		if err != nil {
+			return socket.ControlMessages{}, err
 		}
+		cmsgs.Unix.Rights = rights
 	}
 
 	return cmsgs, nil

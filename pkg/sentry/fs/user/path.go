@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -66,65 +65,14 @@ func ResolveExecutablePath(ctx context.Context, args *kernel.CreateProcessArgs) 
 
 	// Otherwise, We must lookup the name in the paths.
 	paths := getPath(args.Envv)
-	if kernel.VFS2Enabled {
-		f, err := resolveVFS2(ctx, args.Credentials, args.MountNamespaceVFS2, paths, name)
-		if err != nil {
-			return "", &ExecutableResolveError{fmt.Errorf("error finding executable %q in PATH %v: %v", name, paths, err)}
-		}
-		return f, nil
-	}
-
-	f, err := resolve(ctx, args.MountNamespace, paths, name)
+	f, err := resolve(ctx, args.Credentials, args.MountNamespace, paths, name)
 	if err != nil {
 		return "", &ExecutableResolveError{fmt.Errorf("error finding executable %q in PATH %v: %v", name, paths, err)}
 	}
 	return f, nil
 }
 
-func resolve(ctx context.Context, mns *fs.MountNamespace, paths []string, name string) (string, error) {
-	root := fs.RootFromContext(ctx)
-	if root == nil {
-		// Caller has no root. Don't bother traversing anything.
-		return "", linuxerr.ENOENT
-	}
-	defer root.DecRef(ctx)
-	for _, p := range paths {
-		if !path.IsAbs(p) {
-			// Relative paths aren't safe, no one should be using them.
-			log.Warningf("Skipping relative path %q in $PATH", p)
-			continue
-		}
-
-		binPath := path.Join(p, name)
-		traversals := uint(linux.MaxSymlinkTraversals)
-		d, err := mns.FindInode(ctx, root, nil, binPath, &traversals)
-		if linuxerr.Equals(linuxerr.ENOENT, err) || linuxerr.Equals(linuxerr.EACCES, err) {
-			// Didn't find it here.
-			continue
-		}
-		if err != nil {
-			return "", err
-		}
-		defer d.DecRef(ctx)
-
-		// Check that it is a regular file.
-		if !fs.IsRegular(d.Inode.StableAttr) {
-			continue
-		}
-
-		// Check whether we can read and execute the found file.
-		if err := d.Inode.CheckPermission(ctx, fs.PermMask{Read: true, Execute: true}); err != nil {
-			log.Infof("Found executable at %q, but user cannot execute it: %v", binPath, err)
-			continue
-		}
-		return path.Join("/", p, name), nil
-	}
-
-	// Couldn't find it.
-	return "", linuxerr.ENOENT
-}
-
-func resolveVFS2(ctx context.Context, creds *auth.Credentials, mns *vfs.MountNamespace, paths []string, name string) (string, error) {
+func resolve(ctx context.Context, creds *auth.Credentials, mns *vfs.MountNamespace, paths []string, name string) (string, error) {
 	root := mns.Root()
 	root.IncRef()
 	defer root.DecRef(ctx)

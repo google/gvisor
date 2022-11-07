@@ -385,48 +385,26 @@ func extractEndpoint(t *kernel.Task, sockaddr []byte) (transport.BoundEndpoint, 
 		return ep, nil
 	}
 
-	if kernel.VFS2Enabled {
-		p := fspath.Parse(path)
-		root := t.FSContext().RootDirectoryVFS2()
-		start := root
-		relPath := !p.Absolute
-		if relPath {
-			start = t.FSContext().WorkingDirectoryVFS2()
-		}
-		pop := vfs.PathOperation{
-			Root:               root,
-			Start:              start,
-			Path:               p,
-			FollowFinalSymlink: true,
-		}
-		ep, e := t.Kernel().VFS().BoundEndpointAt(t, t.Credentials(), &pop, &vfs.BoundEndpointOptions{path})
-		root.DecRef(t)
-		if relPath {
-			start.DecRef(t)
-		}
-		if e != nil {
-			return nil, syserr.FromError(e)
-		}
-		return ep, nil
+	p := fspath.Parse(path)
+	root := t.FSContext().RootDirectoryVFS2()
+	start := root
+	relPath := !p.Absolute
+	if relPath {
+		start = t.FSContext().WorkingDirectoryVFS2()
 	}
-
-	// Find the node in the filesystem.
-	root := t.FSContext().RootDirectory()
-	cwd := t.FSContext().WorkingDirectory()
-	remainingTraversals := uint(fs.DefaultTraversalLimit)
-	d, e := t.MountNamespace().FindInode(t, root, cwd, path, &remainingTraversals)
-	cwd.DecRef(t)
+	pop := vfs.PathOperation{
+		Root:               root,
+		Start:              start,
+		Path:               p,
+		FollowFinalSymlink: true,
+	}
+	ep, e := t.Kernel().VFS().BoundEndpointAt(t, t.Credentials(), &pop, &vfs.BoundEndpointOptions{path})
 	root.DecRef(t)
+	if relPath {
+		start.DecRef(t)
+	}
 	if e != nil {
 		return nil, syserr.FromError(e)
-	}
-
-	// Extract the endpoint if one is there.
-	ep := d.Inode.BoundEndpoint(path)
-	d.DecRef(t)
-	if ep == nil {
-		// No socket!
-		return nil, syserr.ErrConnectionRefused
 	}
 	return ep, nil
 }
