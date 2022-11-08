@@ -43,6 +43,7 @@ go_library(
     srcs = [
         "addressable_endpoint_state.go",
         "conntrack.go",
+        "gro.go",
         "headertype_string.go",
         "hook_string.go",
         "icmp_rate_limit.go",
