@@ -43,6 +43,8 @@ java/nio/channels/etc/PrintSupportedOptions.java,,
 java/nio/channels/spi/SelectorProvider/inheritedChannel/InheritedChannelTest.java,,Broken test
 java/nio/channels/unixdomain/SocketOptions.java,,
 java/rmi/transport/checkLeaseInfoLeak/CheckLeaseLeak.java,,Broken test
+java/security/cert/CertPathBuilder/targetConstraints/BuildEEBasicConstraints.java,,Broken test
+java/security/cert/pkix/policyChanges/TestPolicy.java,,Broken test
 java/util/ResourceBundle/Control/MissingResourceCauseTestRun.java,,Broken test
 java/util/concurrent/locks/Lock/TimedAcquireLeak.java,,
 java/util/logging/LogManager/Configuration/updateConfiguration/SimpleUpdateConfigWithInputStreamTest.java,,Broken test
