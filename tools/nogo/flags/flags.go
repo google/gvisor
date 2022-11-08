@@ -83,7 +83,7 @@ func (s *StringList) Set(value string) error {
 }
 
 // Get implements flag.Value.Get.
-func (s *StringList) Get() interface{} {
+func (s *StringList) Get() any {
 	return *s
 }
 
@@ -100,7 +100,7 @@ func (s *StringMap) String() string {
 }
 
 // Get implements flag.Value.Get.
-func (s *StringMap) Get() interface{} {
+func (s *StringMap) Get() any {
 	return *s
 }
 

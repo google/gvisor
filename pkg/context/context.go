@@ -186,7 +186,7 @@ func Background() Context {
 
 // WithValue returns a copy of parent in which the value associated with key is
 // val.
-func WithValue(parent Context, key, val interface{}) Context {
+func WithValue(parent Context, key, val any) Context {
 	return &withValue{
 		Context: parent,
 		key:     key,
@@ -196,12 +196,12 @@ func WithValue(parent Context, key, val interface{}) Context {
 
 type withValue struct {
 	Context
-	key interface{}
-	val interface{}
+	key any
+	val any
 }
 
 // Value implements Context.Value.
-func (ctx *withValue) Value(key interface{}) interface{} {
+func (ctx *withValue) Value(key any) any {
 	if key == ctx.key {
 		return ctx.val
 	}

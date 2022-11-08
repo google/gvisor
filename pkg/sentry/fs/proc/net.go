@@ -255,7 +255,7 @@ var snmp = []snmpLine{
 	},
 }
 
-func toSlice(a interface{}) []uint64 {
+func toSlice(a any) []uint64 {
 	v := reflect.Indirect(reflect.ValueOf(a))
 	return v.Slice(0, v.Len()).Interface().([]uint64)
 }
@@ -272,7 +272,7 @@ func sprintSlice(s []uint64) string {
 // net/core/net-procfs.c:dev_seq_show.
 func (n *netSnmp) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
 	contents := make([]string, 0, len(snmp)*2)
-	types := []interface{}{
+	types := []any{
 		&inet.StatSNMPIP{},
 		&inet.StatSNMPICMP{},
 		nil, // TODO(gvisor.dev/issue/628): Support IcmpMsg stats.

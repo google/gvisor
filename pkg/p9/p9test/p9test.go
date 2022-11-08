@@ -87,7 +87,7 @@ func (m *Mock) RemoveChild(name string) {
 }
 
 // Matches implements gomock.Matcher.Matches.
-func (m *Mock) Matches(x interface{}) bool {
+func (m *Mock) Matches(x any) bool {
 	if om, ok := x.(*Mock); ok {
 		return m.QID.Path == om.QID.Path
 	}

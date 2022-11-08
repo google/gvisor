@@ -21,7 +21,7 @@ import (
 
 func TestSizes(t *testing.T) {
 	testCases := []struct {
-		typ     interface{}
+		typ     any
 		defined uintptr
 	}{
 		{IPTEntry{}, SizeOfIPTEntry},

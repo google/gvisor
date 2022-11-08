@@ -53,7 +53,7 @@ func (u *Usage) SetFlags(f *flag.FlagSet) {
 }
 
 // Execute implements subcommands.Command.Execute.
-func (u *Usage) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (u *Usage) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() < 1 {
 		f.Usage()
 		return subcommands.ExitUsageError

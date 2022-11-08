@@ -59,7 +59,7 @@ func (*filesystem) Flags() fs.FilesystemFlags {
 }
 
 // Mount returns the root of a procfs that can be positioned in the vfs.
-func (f *filesystem) Mount(ctx context.Context, device string, flags fs.MountSourceFlags, data string, cgroupsInt interface{}) (*fs.Inode, error) {
+func (f *filesystem) Mount(ctx context.Context, device string, flags fs.MountSourceFlags, data string, cgroupsInt any) (*fs.Inode, error) {
 	// device is always ignored.
 
 	// Parse generic comma-separated key=value options, this file system expects them.

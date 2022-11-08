@@ -83,7 +83,7 @@ func (pc *passContext) addForce(pos token.Pos) {
 }
 
 // maybeFail checks a potential failure against a specific failure map.
-func (pc *passContext) maybeFail(pos token.Pos, fmtStr string, args ...interface{}) {
+func (pc *passContext) maybeFail(pos token.Pos, fmtStr string, args ...any) {
 	if fd, ok := pc.failures[pc.positionKey(pos)]; ok {
 		fd.seen++
 		return

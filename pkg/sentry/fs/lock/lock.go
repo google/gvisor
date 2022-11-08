@@ -65,7 +65,7 @@ import (
 type LockType int
 
 // UniqueID is a unique identifier of the holder of a regional file lock.
-type UniqueID interface{}
+type UniqueID any
 
 const (
 	// ReadLock describes a POSIX regional file lock to be taken

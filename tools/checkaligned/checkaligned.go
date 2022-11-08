@@ -59,7 +59,7 @@ var blocklist = []string{
 	"SwapUint32",
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	// Check for the "// +checkalignedignore" escape hatch.
 	for _, file := range pass.Files {
 		if file.Doc == nil {

@@ -48,7 +48,7 @@ func (*metadata) Usage() string {
 func (*metadata) SetFlags(*flag.FlagSet) {}
 
 // Execute implements subcommands.Command.
-func (l *metadata) Execute(context.Context, *flag.FlagSet, ...interface{}) subcommands.ExitStatus {
+func (l *metadata) Execute(context.Context, *flag.FlagSet, ...any) subcommands.ExitStatus {
 	// Sort to keep related points together.
 	points := make([]seccheck.PointDesc, 0, len(seccheck.Points))
 	for _, pt := range seccheck.Points {

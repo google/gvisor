@@ -85,7 +85,7 @@ func (t *Task) executeSyscall(sysno uintptr, args arch.SyscallArguments) (rval u
 
 	fe := s.FeatureEnable.Word(sysno)
 
-	var straceContext interface{}
+	var straceContext any
 	if bits.IsAnyOn32(fe, StraceEnableBits) {
 		straceContext = s.Stracer.SyscallEnter(t, sysno, args, fe)
 	}

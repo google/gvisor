@@ -1028,7 +1028,7 @@ type stackHandler struct {
 }
 
 // Option implements tcpip.StackHandler.
-func (h *stackHandler) Option(option interface{}) tcpip.Error {
+func (h *stackHandler) Option(option any) tcpip.Error {
 	panic("unimplemented")
 }
 

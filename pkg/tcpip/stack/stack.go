@@ -790,7 +790,7 @@ func (s *Stack) NewPacketEndpoint(cooked bool, netProto tcpip.NetworkProtocolNum
 }
 
 // NICContext is an opaque pointer used to store client-supplied NIC metadata.
-type NICContext interface{}
+type NICContext any
 
 // NICOptions specifies the configuration of a NIC as it is being created.
 // The zero value creates an enabled, unnamed NIC.

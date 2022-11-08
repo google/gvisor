@@ -60,7 +60,7 @@ func (s *Statefile) SetFlags(f *flag.FlagSet) {
 }
 
 // Execute implements subcommands.Command.Execute.
-func (s *Statefile) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (s *Statefile) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	// Check arguments.
 	if s.list && s.get != "" {
 		util.Fatalf("error: can't specify -list and -get simultaneously.")

@@ -67,7 +67,7 @@ func (c *saveCmd) SetFlags(f *flag.FlagSet) {
 }
 
 // Execute implements subcommands.Command.
-func (c *saveCmd) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (c *saveCmd) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() > 0 {
 		fmt.Fprintf(os.Stderr, "unexpected argument: %s\n", f.Args())
 		return subcommands.ExitUsageError
@@ -130,7 +130,7 @@ func (c *replayCmd) SetFlags(f *flag.FlagSet) {
 }
 
 // Execute implements subcommands.Command.
-func (c *replayCmd) Execute(_ context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+func (c *replayCmd) Execute(_ context.Context, f *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	if f.NArg() > 0 {
 		fmt.Fprintf(os.Stderr, "unexpected argument: %s\n", f.Args())
 		return subcommands.ExitUsageError

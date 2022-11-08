@@ -102,8 +102,8 @@ func equalLayer(x, y Layer) bool {
 		return true
 	}
 	// opt ignores comparison pairs where either of the inputs is a nil.
-	opt := cmp.FilterValues(func(x, y interface{}) bool {
-		for _, l := range []interface{}{x, y} {
+	opt := cmp.FilterValues(func(x, y any) bool {
+		for _, l := range []any{x, y} {
 			v := reflect.ValueOf(l)
 			if (v.Kind() == reflect.Ptr || v.Kind() == reflect.Slice) && v.IsNil() {
 				return true

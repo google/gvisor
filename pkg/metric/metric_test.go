@@ -796,7 +796,7 @@ func TestBucketerPanics(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			var recovered interface{}
+			var recovered any
 			func() {
 				defer func() {
 					recovered = recover()

@@ -353,7 +353,7 @@ func main() {
 						emitField(name)
 					}
 					emitLoadValue := func(name, typName string) {
-						fmt.Fprintf(outputFile, "	stateSourceObject.LoadValue(%d, new(%s), func(y interface{}) { %s.load%s(y.(%s)) })\n", fields[name], typName, recv, camelCased(name), typName)
+						fmt.Fprintf(outputFile, "	stateSourceObject.LoadValue(%d, new(%s), func(y any) { %s.load%s(y.(%s)) })\n", fields[name], typName, recv, camelCased(name), typName)
 					}
 					emitLoad := func(name string) {
 						fmt.Fprintf(outputFile, "	stateSourceObject.Load(%d, &%s.%s)\n", fields[name], recv, name)

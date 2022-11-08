@@ -65,7 +65,7 @@ var _ seccheck.Sink = (*remote)(nil)
 // setupSink starts the connection to the remote process and returns a file that
 // can be used to communicate with it. The caller is responsible to close to
 // file.
-func setupSink(config map[string]interface{}) (*os.File, error) {
+func setupSink(config map[string]any) (*os.File, error) {
 	addrOpaque, ok := config["endpoint"]
 	if !ok {
 		return nil, fmt.Errorf("endpoint not present in configuration")
@@ -133,7 +133,7 @@ func setup(path string) (*os.File, error) {
 	return f, nil
 }
 
-func parseDuration(config map[string]interface{}, name string) (bool, time.Duration, error) {
+func parseDuration(config map[string]any, name string) (bool, time.Duration, error) {
 	opaque, ok := config[name]
 	if !ok {
 		return false, 0, nil
@@ -150,7 +150,7 @@ func parseDuration(config map[string]interface{}, name string) (bool, time.Durat
 }
 
 // new creates a new Remote sink.
-func new(config map[string]interface{}, endpoint *fd.FD) (seccheck.Sink, error) {
+func new(config map[string]any, endpoint *fd.FD) (seccheck.Sink, error) {
 	if endpoint == nil {
 		return nil, fmt.Errorf("remote sink requires an endpoint")
 	}

@@ -127,7 +127,7 @@ func (a *Accessor) wrapContext(ctx context.Context) *accessorContext {
 }
 
 // Value implements context.Context.Value.
-func (ac *accessorContext) Value(key interface{}) interface{} {
+func (ac *accessorContext) Value(key any) any {
 	switch key {
 	case vfs.CtxMountNamespace:
 		ac.a.mntns.IncRef()

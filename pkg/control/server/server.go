@@ -124,7 +124,7 @@ func (s *Server) serve() {
 }
 
 // Register registers a specific control interface with the server.
-func (s *Server) Register(obj interface{}) {
+func (s *Server) Register(obj any) {
 	s.server.Register(obj)
 }
 

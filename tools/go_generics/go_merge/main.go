@@ -33,7 +33,7 @@ var (
 	output = flag.String("o", "", "output `file`")
 )
 
-func fatalf(s string, args ...interface{}) {
+func fatalf(s string, args ...any) {
 	fmt.Fprintf(os.Stderr, s, args...)
 	os.Exit(1)
 }

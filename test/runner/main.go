@@ -508,7 +508,7 @@ func filterEnv(env, exclude []string) []string {
 	return out
 }
 
-func fatalf(s string, args ...interface{}) {
+func fatalf(s string, args ...any) {
 	fmt.Fprintf(os.Stderr, s+"\n", args...)
 	os.Exit(1)
 }

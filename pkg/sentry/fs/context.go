@@ -127,7 +127,7 @@ func WithRoot(ctx context.Context, root *Dirent) context.Context {
 }
 
 // Value implements Context.Value.
-func (rc rootContext) Value(key interface{}) interface{} {
+func (rc rootContext) Value(key any) any {
 	switch key {
 	case CtxRoot:
 		rc.root.IncRef()

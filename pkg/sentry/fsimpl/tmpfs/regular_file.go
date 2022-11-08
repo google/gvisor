@@ -568,7 +568,7 @@ type regularFileReadWriter struct {
 }
 
 var regularFileReadWriterPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return &regularFileReadWriter{}
 	},
 }

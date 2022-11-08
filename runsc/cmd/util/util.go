@@ -47,7 +47,7 @@ func (i *Writer) Write(data []byte) (n int, err error) {
 }
 
 // Infof writes message to log and stdout.
-func Infof(format string, args ...interface{}) {
+func Infof(format string, args ...any) {
 	log.Infof(format, args)
 	fmt.Printf(format+"\n", args)
 }
@@ -57,7 +57,7 @@ func Infof(format string, args ...interface{}) {
 // methods:
 //
 //	return Errorf("Danger! Danger!")
-func Errorf(format string, args ...interface{}) subcommands.ExitStatus {
+func Errorf(format string, args ...any) subcommands.ExitStatus {
 	// If runsc is being invoked by docker or cri-o, then we might not have
 	// access to stderr, so we log a serious-looking warning in addition to
 	// writing to stderr.
@@ -81,7 +81,7 @@ func Errorf(format string, args ...interface{}) subcommands.ExitStatus {
 }
 
 // Fatalf logs the same way as Errorf() does, plus *exits* the process.
-func Fatalf(format string, args ...interface{}) {
+func Fatalf(format string, args ...any) {
 	Errorf(format, args...)
 	// Return an error that is unlikely to be used by the application.
 	os.Exit(128)

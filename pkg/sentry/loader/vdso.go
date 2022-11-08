@@ -42,7 +42,7 @@ type fileContext struct {
 	context.Context
 }
 
-func (f *fileContext) Value(key interface{}) interface{} {
+func (f *fileContext) Value(key any) any {
 	switch key {
 	case uniqueid.CtxGlobalUniqueID:
 		return uint64(0)

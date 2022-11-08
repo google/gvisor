@@ -31,7 +31,7 @@ const enableLogging = false
 
 // T is the type of the reference counted object. It is only used to customize
 // debug output when leak checking.
-type T interface{}
+type T any
 
 // obj is used to customize logging. Note that we use a pointer to T so that
 // we do not copy the entire object when passed as a format parameter.

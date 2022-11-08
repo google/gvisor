@@ -190,7 +190,7 @@ func BenchmarkSleeperMultiNotifyWaitAck(b *testing.B) {
 	// The sleep package doesn't provide sync.Pool allocation of Wakers;
 	// we do for a fairer comparison.
 	wakerPool := sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return &sleep.Waker{}
 		},
 	}
@@ -229,7 +229,7 @@ func BenchmarkSleeperTempNotifyWaitAck(b *testing.B) {
 	// The sleep package doesn't provide sync.Pool allocation of Sleepers;
 	// we do for a fairer comparison.
 	sleeperPool := sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return &sleep.Sleeper{}
 		},
 	}

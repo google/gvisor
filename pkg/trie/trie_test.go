@@ -28,7 +28,7 @@ type Entry struct {
 
 func collectPrefixes(tr *Trie, key string) []Entry {
 	arr := make([]Entry, 0)
-	tr.FindPrefixes(key, func(p string, v interface{}) bool {
+	tr.FindPrefixes(key, func(p string, v any) bool {
 		arr = append(arr, Entry{Key: p, Value: v.(string)})
 		return true
 	})
@@ -37,7 +37,7 @@ func collectPrefixes(tr *Trie, key string) []Entry {
 
 func collectSuffixes(tr *Trie, key string) []Entry {
 	arr := make([]Entry, 0)
-	tr.FindSuffixes(key, func(p string, v interface{}) bool {
+	tr.FindSuffixes(key, func(p string, v any) bool {
 		arr = append(arr, Entry{Key: p, Value: v.(string)})
 		return true
 	})

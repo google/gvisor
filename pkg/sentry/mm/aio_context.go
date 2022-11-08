@@ -95,7 +95,7 @@ func (a *aioManager) lookupAIOContext(id uint64) (*AIOContext, bool) {
 //
 // +stateify savable
 type ioResult struct {
-	data interface{}
+	data any
 	ioEntry
 }
 
@@ -160,7 +160,7 @@ func (ctx *AIOContext) Prepare() error {
 
 // PopRequest pops a completed request if available, this function does not do
 // any blocking. Returns false if no request is available.
-func (ctx *AIOContext) PopRequest() (interface{}, bool) {
+func (ctx *AIOContext) PopRequest() (any, bool) {
 	ctx.mu.Lock()
 	defer ctx.mu.Unlock()
 
@@ -179,7 +179,7 @@ func (ctx *AIOContext) PopRequest() (interface{}, bool) {
 
 // FinishRequest finishes a pending request. It queues up the data
 // and notifies listeners.
-func (ctx *AIOContext) FinishRequest(data interface{}) {
+func (ctx *AIOContext) FinishRequest(data any) {
 	ctx.mu.Lock()
 	defer ctx.mu.Unlock()
 

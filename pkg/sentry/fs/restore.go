@@ -45,7 +45,7 @@ type MountArgs struct {
 	DataString string
 
 	// DataObj corresponds to the data interface argument of Mount.
-	DataObj interface{}
+	DataObj any
 }
 
 // restoreEnv holds the fs package global RestoreEnvironment.

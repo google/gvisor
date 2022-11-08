@@ -38,18 +38,18 @@ func TestSize(t *testing.T) {
 func TestPanic(t *testing.T) {
 	tests := []struct {
 		name string
-		f    func([]byte, binary.ByteOrder, interface{})
-		data interface{}
+		f    func([]byte, binary.ByteOrder, any)
+		data any
 		want string
 	}{
 		{"Unmarshal int", Unmarshal, 5, "invalid type: int"},
 		{"Unmarshal []int", Unmarshal, []int{5}, "invalid type: int"},
-		{"Marshal int", func(_ []byte, bo binary.ByteOrder, d interface{}) { Marshal(nil, bo, d) }, 5, "invalid type: int"},
-		{"Marshal int[]", func(_ []byte, bo binary.ByteOrder, d interface{}) { Marshal(nil, bo, d) }, []int{5}, "invalid type: int"},
+		{"Marshal int", func(_ []byte, bo binary.ByteOrder, d any) { Marshal(nil, bo, d) }, 5, "invalid type: int"},
+		{"Marshal int[]", func(_ []byte, bo binary.ByteOrder, d any) { Marshal(nil, bo, d) }, []int{5}, "invalid type: int"},
 		{"Unmarshal short buffer", Unmarshal, newInt32(5), "runtime error: index out of range"},
-		{"Unmarshal long buffer", func(_ []byte, bo binary.ByteOrder, d interface{}) { Unmarshal(make([]byte, 50), bo, d) }, newInt32(5), "buffer too long by 46 bytes"},
-		{"marshal int", func(_ []byte, bo binary.ByteOrder, d interface{}) { marshal(nil, bo, reflect.ValueOf(d)) }, 5, "invalid type: int"},
-		{"Size int", func(_ []byte, _ binary.ByteOrder, d interface{}) { Size(d) }, 5, "invalid type: int"},
+		{"Unmarshal long buffer", func(_ []byte, bo binary.ByteOrder, d any) { Unmarshal(make([]byte, 50), bo, d) }, newInt32(5), "buffer too long by 46 bytes"},
+		{"marshal int", func(_ []byte, bo binary.ByteOrder, d any) { marshal(nil, bo, reflect.ValueOf(d)) }, 5, "invalid type: int"},
+		{"Size int", func(_ []byte, _ binary.ByteOrder, d any) { Size(d) }, 5, "invalid type: int"},
 	}
 
 	for _, test := range tests {

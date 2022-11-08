@@ -57,7 +57,7 @@ EXAMPLE:
 func (r *ReadControl) SetFlags(f *flag.FlagSet) {}
 
 // Execute implements subcommands.Command.Execute.
-func (r *ReadControl) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (r *ReadControl) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() < 4 {
 		f.Usage()
 		return subcommands.ExitUsageError

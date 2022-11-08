@@ -86,7 +86,7 @@ func (w *watcherV2) run(ctx context.Context) {
 }
 
 // Add cgroups.Cgroup to the epoll monitor
-func (w *watcherV2) add(id string, cgx interface{}) error {
+func (w *watcherV2) add(id string, cgx any) error {
 	cg, ok := cgx.(*cgroupsv2.Manager)
 	if !ok {
 		return fmt.Errorf("expected *cgroupsv2.Manager, got: %T", cgx)

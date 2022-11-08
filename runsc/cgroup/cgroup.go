@@ -429,7 +429,7 @@ type cgroupJSONSystemd struct {
 }
 
 type cgroupJSONUnknown struct {
-	Cgroup interface{} `json:"cgroupunknown"`
+	Cgroup any `json:"cgroupunknown"`
 }
 
 // UnmarshalJSON implements json.Unmarshaler.UnmarshalJSON

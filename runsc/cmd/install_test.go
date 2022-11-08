@@ -37,7 +37,7 @@ func (r *runtimeDef) MarshalJSON() ([]byte, error) {
 }
 
 func (r *runtimeDef) UnmarshalJSON(data []byte) error {
-	var dat map[string]interface{}
+	var dat map[string]any
 	if err := json.Unmarshal(data, &dat); err != nil {
 		return err
 	}
@@ -50,7 +50,7 @@ func (r *runtimeDef) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-var defaultInput = map[string]interface{}{
+var defaultInput = map[string]any{
 	"runtimes": map[string]*runtimeDef{
 		"runtime1": &runtimeDef{
 			path:        "runtime1_path",
@@ -73,8 +73,8 @@ func TestInstall(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		i      *Install
-		input  map[string]interface{}
-		output map[string]interface{}
+		input  map[string]any
+		output map[string]any
 	}{
 		{
 			name: "clobber",
@@ -87,7 +87,7 @@ func TestInstall(t *testing.T) {
 				runtimeArgs:    []string{"new", "cool", "args"},
 			},
 			input: defaultInput,
-			output: map[string]interface{}{
+			output: map[string]any{
 				"runtimes": map[string]*runtimeDef{
 					"runtime1": &runtimeDef{
 						path:        "runtime1_path",
@@ -117,7 +117,7 @@ func TestInstall(t *testing.T) {
 				runtimeArgs:    []string{"new", "cool", "args"},
 			},
 			input: defaultInput,
-			output: map[string]interface{}{
+			output: map[string]any{
 				"runtimes": map[string]*runtimeDef{
 					"runtime1": &runtimeDef{
 						path:        "runtime1_path",
@@ -145,7 +145,7 @@ func TestInstall(t *testing.T) {
 				runtimeArgs:    []string{"new", "cool", "args"},
 			},
 			input: defaultInput,
-			output: map[string]interface{}{
+			output: map[string]any{
 				"runtimes": map[string]*runtimeDef{
 					"runtime1": &runtimeDef{
 						path:        "runtime1_path",
@@ -176,7 +176,7 @@ func TestInstall(t *testing.T) {
 			}
 
 			got := []byte{}
-			mockWrite := func(c map[string]interface{}, _ string) error {
+			mockWrite := func(c map[string]any, _ string) error {
 				res, err := json.MarshalIndent(c, "", "  ")
 				if err != nil {
 					return err
@@ -210,8 +210,8 @@ func TestUninstall(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		u       *Uninstall
-		input   map[string]interface{}
-		output  map[string]interface{}
+		input   map[string]any
+		output  map[string]any
 		wantErr bool
 	}{
 		{
@@ -220,7 +220,7 @@ func TestUninstall(t *testing.T) {
 				Runtime: "other runtime",
 			},
 			input: defaultInput,
-			output: map[string]interface{}{
+			output: map[string]any{
 				"runtimes": map[string]*runtimeDef{
 					"runtime1": &runtimeDef{
 						path:        "runtime1_path",
@@ -249,7 +249,7 @@ func TestUninstall(t *testing.T) {
 			}
 
 			got := []byte{}
-			mockWrite := func(c map[string]interface{}, _ string) error {
+			mockWrite := func(c map[string]any, _ string) error {
 				res, err := json.MarshalIndent(c, "", "  ")
 				if err != nil {
 					return err

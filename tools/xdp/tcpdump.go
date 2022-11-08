@@ -64,7 +64,7 @@ func (pc *TcpdumpCommand) SetFlags(fs *flag.FlagSet) {
 }
 
 // Execute implements subcommands.Command.Execute.
-func (pc *TcpdumpCommand) Execute(context.Context, *flag.FlagSet, ...interface{}) subcommands.ExitStatus {
+func (pc *TcpdumpCommand) Execute(context.Context, *flag.FlagSet, ...any) subcommands.ExitStatus {
 	if err := pc.execute(); err != nil {
 		fmt.Printf("%v", err)
 		return subcommands.ExitFailure

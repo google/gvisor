@@ -60,7 +60,7 @@ func Context(tb testing.TB) context.Context {
 		mf:          mf,
 		platform:    p,
 		creds:       auth.NewAnonymousCredentials(),
-		otherValues: make(map[interface{}]interface{}),
+		otherValues: make(map[any]any),
 	}
 }
 
@@ -72,7 +72,7 @@ type TestContext struct {
 	mf          *pgalloc.MemoryFile
 	platform    platform.Platform
 	creds       *auth.Credentials
-	otherValues map[interface{}]interface{}
+	otherValues map[any]any
 }
 
 // globalUniqueID tracks incremental unique identifiers for tests.
@@ -103,12 +103,12 @@ func (*hostClock) Now() ktime.Time {
 
 // RegisterValue registers additional values with this test context. Useful for
 // providing values from external packages that contexttest can't depend on.
-func (t *TestContext) RegisterValue(key, value interface{}) {
+func (t *TestContext) RegisterValue(key, value any) {
 	t.otherValues[key] = value
 }
 
 // Value implements context.Context.
-func (t *TestContext) Value(key interface{}) interface{} {
+func (t *TestContext) Value(key any) any {
 	switch key {
 	case auth.CtxCredentials:
 		return t.creds
@@ -158,7 +158,7 @@ type limitContext struct {
 }
 
 // Value implements context.Context.
-func (lc limitContext) Value(key interface{}) interface{} {
+func (lc limitContext) Value(key any) any {
 	switch key {
 	case limits.CtxLimits:
 		return lc.l

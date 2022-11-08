@@ -37,7 +37,7 @@ import (
 const enableLogging = false
 
 // nflog logs messages related to the writing and reading of iptables.
-func nflog(format string, args ...interface{}) {
+func nflog(format string, args ...any) {
 	if enableLogging && log.IsLogging(log.Debug) {
 		log.Debugf("netfilter: "+format, args...)
 	}

@@ -527,7 +527,7 @@ func CmsgsSpace(t *kernel.Task, cmsgs socket.ControlMessages) int {
 // are used when sending a messages. We should fail with EINVAL when we find a
 // non-sendable control messages (such as IP_RECVERR). And the function should
 // be renamed to reflect that.
-func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte, width uint) (socket.ControlMessages, error) {
+func Parse(t *kernel.Task, socketOrEndpoint any, buf []byte, width uint) (socket.ControlMessages, error) {
 	var (
 		cmsgs socket.ControlMessages
 		fds   []primitive.Int32
@@ -722,7 +722,7 @@ func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte, width uint)
 	return cmsgs, nil
 }
 
-func makeCreds(t *kernel.Task, socketOrEndpoint interface{}) SCMCredentials {
+func makeCreds(t *kernel.Task, socketOrEndpoint any) SCMCredentials {
 	if t == nil || socketOrEndpoint == nil {
 		return nil
 	}
@@ -744,7 +744,7 @@ func MakeCreds(t *kernel.Task) SCMCredentials {
 // LINT.IfChange
 
 // New creates default control messages if needed.
-func New(t *kernel.Task, socketOrEndpoint interface{}, rights SCMRights) transport.ControlMessages {
+func New(t *kernel.Task, socketOrEndpoint any, rights SCMRights) transport.ControlMessages {
 	return transport.ControlMessages{
 		Credentials: makeCreds(t, socketOrEndpoint),
 		Rights:      rights,

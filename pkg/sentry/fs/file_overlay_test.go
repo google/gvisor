@@ -181,7 +181,7 @@ type rootContext struct {
 }
 
 // Value implements context.Context.
-func (r *rootContext) Value(key interface{}) interface{} {
+func (r *rootContext) Value(key any) any {
 	switch key {
 	case fs.CtxRoot:
 		r.root.IncRef()

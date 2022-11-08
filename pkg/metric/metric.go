@@ -842,7 +842,7 @@ func (m *metricSet) Values() metricValues {
 	m.mu.Unlock()
 
 	vals := metricValues{
-		uint64Metrics:            make(map[string]interface{}, len(m.uint64Metrics)),
+		uint64Metrics:            make(map[string]any, len(m.uint64Metrics)),
 		distributionMetrics:      make(map[string][][]uint64, len(m.distributionMetrics)),
 		distributionTotalSamples: make(map[string][]uint64, len(m.distributionMetrics)),
 		stages:                   stages,
@@ -894,7 +894,7 @@ type metricValues struct {
 	// uint64Metrics is a map of uint64 metrics,
 	// with key as metric name. Value can be either uint64, or map[string]uint64
 	// to support metrics with one field.
-	uint64Metrics map[string]interface{}
+	uint64Metrics map[string]any
 
 	// distributionMetrics is a map of distribution metrics.
 	// The first key level is the metric name.

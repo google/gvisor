@@ -417,13 +417,13 @@ func getLine(f *os.File, prefix string, withHeader bool) string {
 	return ""
 }
 
-func toSlice(i interface{}) []uint64 {
+func toSlice(i any) []uint64 {
 	v := reflect.Indirect(reflect.ValueOf(i))
 	return v.Slice(0, v.Len()).Interface().([]uint64)
 }
 
 // Statistics implements inet.Stack.Statistics.
-func (s *Stack) Statistics(stat interface{}, arg string) error {
+func (s *Stack) Statistics(stat any, arg string) error {
 	var (
 		snmpTCP   bool
 		rawLine   string

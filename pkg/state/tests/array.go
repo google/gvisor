@@ -16,20 +16,20 @@ package tests
 
 // +stateify savable
 type arrayContainer struct {
-	v [1]interface{}
+	v [1]any
 }
 
 // +stateify savable
 type arrayPtrContainer struct {
-	v *[1]interface{}
+	v *[1]any
 }
 
 // +stateify savable
 type sliceContainer struct {
-	v []interface{}
+	v []any
 }
 
 // +stateify savable
 type slicePtrContainer struct {
-	v *[]interface{}
+	v *[]any
 }

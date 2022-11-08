@@ -38,7 +38,7 @@ type Serializer interface {
 // item is used for serialiation.
 type item struct {
 	Key   string
-	Value interface{}
+	Value any
 }
 
 // writeItems is an implementation of Serialize.
@@ -257,12 +257,12 @@ func (b *Bundle) Package(pkg *types.Package) (*Package, error) {
 }
 
 // Resolved is a human-readable fact format.
-type Resolved map[string]interface{}
+type Resolved map[string]any
 
 // addRecursively adds a entry to a map recursively.
 //
 // Precondition: len(names) > 0.
-func (r Resolved) addRecursively(names []string, value interface{}) {
+func (r Resolved) addRecursively(names []string, value any) {
 	start := r
 	for i := 0; i < len(names)-1; i++ {
 		m, ok := start[names[i]]

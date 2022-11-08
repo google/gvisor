@@ -18,7 +18,7 @@ package trie
 
 // Visitor accepts a prefix string and an associated value, and returns true iff searching should
 // continue deeper into the Trie. It is used by FindMatching().
-type Visitor func(prefix string, value interface{}) bool
+type Visitor func(prefix string, value any) bool
 
 // Trie stores data at given strings in tree structure, for linear-time retrieval.
 // Call New() to obtain a valid Trie.
@@ -33,7 +33,7 @@ func New() *Trie {
 }
 
 type node struct {
-	value    interface{}
+	value    any
 	children map[rune]*node
 }
 
@@ -59,7 +59,7 @@ func (t *Trie) FindPrefixes(key string, f Visitor) {
 	}
 }
 
-func (t *Trie) updateNode(n *node, newValue interface{}) {
+func (t *Trie) updateNode(n *node, newValue any) {
 	if n.value != nil {
 		t.size--
 	}
@@ -70,7 +70,7 @@ func (t *Trie) updateNode(n *node, newValue interface{}) {
 }
 
 // SetValue associates the specified key with the given value, replacing any existing value.
-func (t *Trie) SetValue(key string, value interface{}) {
+func (t *Trie) SetValue(key string, value any) {
 	cur := t.root
 	for _, r := range key {
 		next, ok := cur.children[r]

@@ -292,14 +292,14 @@ func addIOProps(props []systemdDbus.Property, name string, devs []specs.LinuxThr
 	return props
 }
 
-func (c *cgroupSystemd) addProp(name string, value interface{}) {
+func (c *cgroupSystemd) addProp(name string, value any) {
 	if value == nil {
 		return
 	}
 	c.properties = append(c.properties, newProp(name, value))
 }
 
-func newProp(name string, units interface{}) systemdDbus.Property {
+func newProp(name string, units any) systemdDbus.Property {
 	return systemdDbus.Property{
 		Name:  name,
 		Value: dbus.MakeVariant(units),

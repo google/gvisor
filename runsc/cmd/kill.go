@@ -56,7 +56,7 @@ func (k *Kill) SetFlags(f *flag.FlagSet) {
 }
 
 // Execute implements subcommands.Command.Execute.
-func (k *Kill) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (k *Kill) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() == 0 || f.NArg() > 2 {
 		f.Usage()
 		return subcommands.ExitUsageError

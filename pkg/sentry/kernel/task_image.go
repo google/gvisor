@@ -30,7 +30,7 @@ import (
 var errNoSyscalls = syserr.New("no syscall table found", errno.ENOEXEC)
 
 // Auxmap contains miscellaneous data for the task.
-type Auxmap map[string]interface{}
+type Auxmap map[string]any
 
 // TaskImage is the subset of a task's data that is provided by the loader.
 //

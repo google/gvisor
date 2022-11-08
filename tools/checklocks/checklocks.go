@@ -128,7 +128,7 @@ func (pc *passContext) forAllFunctions(fn func(fn *ast.FuncDecl)) {
 }
 
 // run is the main entrypoint.
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	pc := &passContext{
 		pass:       pass,
 		failures:   make(map[positionKey]*failData),

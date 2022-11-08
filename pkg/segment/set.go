@@ -31,10 +31,10 @@ import (
 type Key uint64
 
 // Range is a required type parameter equivalent to Range<Key>.
-type Range interface{}
+type Range any
 
 // Value is a required type parameter.
-type Value interface{}
+type Value any
 
 // trackGaps is an optional parameter.
 //

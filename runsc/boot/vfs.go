@@ -681,7 +681,7 @@ func (c *containerMounter) getMountNameAndOptions(conf *config.Config, m *mountA
 	useOverlay := false
 	var (
 		data         []string
-		internalData interface{}
+		internalData any
 	)
 
 	// Find filesystem name and FS specific data field.

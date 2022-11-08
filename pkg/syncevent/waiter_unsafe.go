@@ -174,7 +174,7 @@ func (w *Waiter) NotifyPending() {
 }
 
 var waiterPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		w := &Waiter{}
 		w.Init()
 		return w

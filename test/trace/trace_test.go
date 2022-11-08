@@ -53,7 +53,7 @@ func TestAll(t *testing.T) {
 	}
 	builder.AddSink(seccheck.SinkConfig{
 		Name: "remote",
-		Config: map[string]interface{}{
+		Config: map[string]any{
 			"endpoint": server.Endpoint,
 		},
 	})

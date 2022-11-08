@@ -37,7 +37,7 @@ func TestConfigFile(t *testing.T) {
 
 	for _, tc := range []struct {
 		name string
-		json interface{}
+		json any
 		want seccheck.SessionConfig
 		err  string
 	}{

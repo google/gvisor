@@ -180,7 +180,7 @@ func (tbd *typeDecodeDatabase) LookupType(id typeID) reflect.Type {
 		typ, ok = primitiveTypeDatabase[name]
 		if !ok && name == interfaceType {
 			// Matches the built-in interface type.
-			var i interface{}
+			var i any
 			return reflect.TypeOf(&i).Elem()
 		}
 		if !ok {

@@ -711,7 +711,7 @@ func parseSynSegmentOptions(s *segment) header.TCPSynOptions {
 }
 
 var optionPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return &[maxOptionSize]byte{}
 	},
 }

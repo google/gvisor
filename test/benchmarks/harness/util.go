@@ -52,7 +52,7 @@ func DropCaches(machine Machine) error {
 }
 
 // DebugLog prints debug messages if the debug flag is set.
-func DebugLog(b *testing.B, msg string, args ...interface{}) {
+func DebugLog(b *testing.B, msg string, args ...any) {
 	b.Helper()
 	if *debug {
 		b.Logf(msg, args...)
