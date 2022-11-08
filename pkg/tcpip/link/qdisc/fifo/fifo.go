@@ -62,7 +62,7 @@ type queueDispatcher struct {
 	closeWaker     sleep.Waker
 }
 
-// New creates a new fifo queuing discipline  with the n queues with maximum
+// New creates a new fifo queuing discipline with the n queues with maximum
 // capacity of queueLen.
 //
 // +checklocksignore: we don't have to hold locks during initialization.
