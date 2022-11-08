@@ -14,9 +14,9 @@ RUN apt-get update && apt-get install -y \
 # Proctor expects this to be in /root/jdk.
 WORKDIR /root
 RUN set -ex \
- && curl -fsSL --retry 10 -o /tmp/jdk.tar.gz https://github.com/openjdk/jdk17u/archive/refs/tags/jdk-17.0.2-ga.tar.gz \
+ && curl -fsSL --retry 10 -o /tmp/jdk.tar.gz https://github.com/openjdk/jdk17u/archive/refs/tags/jdk-17.0.5-ga.tar.gz \
  && tar -zxzf /tmp/jdk.tar.gz \
- && mv jdk17u-jdk-17.0.2-ga /root/jdk \
+ && mv jdk17u-jdk-17.0.5-ga /root/jdk \
  && rm -f /tmp/jdk.tar.gz
 
 # Install jtreg and add to PATH.
