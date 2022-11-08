@@ -816,7 +816,7 @@ type createProcessContext struct {
 }
 
 // Value implements context.Context.Value.
-func (ctx *createProcessContext) Value(key interface{}) interface{} {
+func (ctx *createProcessContext) Value(key any) any {
 	switch key {
 	case CtxKernel:
 		return ctx.kernel
@@ -1592,7 +1592,7 @@ func (*Kernel) Err() error {
 }
 
 // Value implements context.Context.
-func (ctx *supervisorContext) Value(key interface{}) interface{} {
+func (ctx *supervisorContext) Value(key any) any {
 	switch key {
 	case CtxCanTrace:
 		// The supervisor context can trace anything. (None of

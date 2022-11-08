@@ -48,7 +48,7 @@ func (p *icmpPacket) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(3, &p.data)
 	stateSourceObject.Load(5, &p.tosOrTClass)
 	stateSourceObject.Load(6, &p.ttlOrHopLimit)
-	stateSourceObject.LoadValue(4, new(int64), func(y interface{}) { p.loadReceivedAt(y.(int64)) })
+	stateSourceObject.LoadValue(4, new(int64), func(y any) { p.loadReceivedAt(y.(int64)) })
 }
 
 func (e *endpoint) StateTypeName() string {

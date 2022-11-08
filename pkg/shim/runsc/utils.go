@@ -22,7 +22,7 @@ import (
 )
 
 var bytesBufferPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return bytes.NewBuffer(nil)
 	},
 }

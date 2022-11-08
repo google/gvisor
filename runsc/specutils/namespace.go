@@ -170,7 +170,7 @@ func StartInNS(cmd *exec.Cmd, nss []specs.LinuxNamespace) error {
 			// we can't destroy the current system thread, because
 			// a child process is execited with Pdeathsig.
 			log.Debugf("Block the current system thread due to: %s", err)
-			c := make(chan interface{})
+			c := make(chan any)
 			<-c
 		}
 	}()

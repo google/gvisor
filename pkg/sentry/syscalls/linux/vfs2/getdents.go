@@ -89,7 +89,7 @@ type getdentsCallback struct {
 }
 
 var getdentsCallbackPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return &getdentsCallback{}
 	},
 }

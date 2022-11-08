@@ -33,7 +33,7 @@ func (w *WeakRef) afterLoad() {}
 // +checklocksignore
 func (w *WeakRef) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &w.user)
-	stateSourceObject.LoadValue(0, new(savedReference), func(y interface{}) { w.loadObj(y.(savedReference)) })
+	stateSourceObject.LoadValue(0, new(savedReference), func(y any) { w.loadObj(y.(savedReference)) })
 }
 
 func (r *AtomicRefCount) StateTypeName() string {

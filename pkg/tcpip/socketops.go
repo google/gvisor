@@ -116,7 +116,7 @@ func (*DefaultSocketOptionsHandler) OnSetReceiveBufferSize(v, oldSz int64) (newS
 // implemented by the stack.
 type StackHandler interface {
 	// Option allows retrieving stack wide options.
-	Option(option interface{}) Error
+	Option(option any) Error
 
 	// TransportProtocolOption allows retrieving individual protocol level
 	// option values.

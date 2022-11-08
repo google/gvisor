@@ -52,7 +52,7 @@ func (*Task) Err() error {
 // Value implements context.Context.Value.
 //
 // Preconditions: The caller must be running on the task goroutine.
-func (t *Task) Value(key interface{}) interface{} {
+func (t *Task) Value(key any) any {
 	// This function is very hot; skip this check outside of +race builds.
 	if sync.RaceEnabled {
 		t.assertTaskGoroutine()
@@ -60,7 +60,7 @@ func (t *Task) Value(key interface{}) interface{} {
 	return t.contextValue(key, true /* isTaskGoroutine */)
 }
 
-func (t *Task) contextValue(key interface{}, isTaskGoroutine bool) interface{} {
+func (t *Task) contextValue(key any, isTaskGoroutine bool) any {
 	switch key {
 	case CtxCanTrace:
 		return t.CanTrace
@@ -154,7 +154,7 @@ type taskAsyncContext struct {
 }
 
 // Value implements context.Context.Value.
-func (t *taskAsyncContext) Value(key interface{}) interface{} {
+func (t *taskAsyncContext) Value(key any) any {
 	return t.fallbackTask.contextValue(key, false /* isTaskGoroutine */)
 }
 

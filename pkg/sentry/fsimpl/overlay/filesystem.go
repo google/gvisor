@@ -53,7 +53,7 @@ func (fs *filesystem) Sync(ctx context.Context) error {
 }
 
 var dentrySlicePool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		ds := make([]*dentry, 0, 4) // arbitrary non-zero initial capacity
 		return &ds
 	},

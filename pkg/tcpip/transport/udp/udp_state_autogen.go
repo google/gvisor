@@ -54,7 +54,7 @@ func (p *udpPacket) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(5, &p.pkt)
 	stateSourceObject.Load(7, &p.tosOrTClass)
 	stateSourceObject.Load(8, &p.ttlOrHopLimit)
-	stateSourceObject.LoadValue(6, new(int64), func(y interface{}) { p.loadReceivedAt(y.(int64)) })
+	stateSourceObject.LoadValue(6, new(int64), func(y any) { p.loadReceivedAt(y.(int64)) })
 }
 
 func (e *endpoint) StateTypeName() string {

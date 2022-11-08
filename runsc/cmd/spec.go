@@ -180,7 +180,7 @@ func (s *Spec) SetFlags(f *flag.FlagSet) {
 }
 
 // Execute implements subcommands.Command.Execute.
-func (s *Spec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (s *Spec) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	// Grab the arguments.
 	containerArgs := f.Args()
 	if len(containerArgs) == 0 {

@@ -105,7 +105,7 @@ func (a maskedEqual) String() (s string) {
 // MaskedEqual specifies a value that matches the input after the input is
 // masked (bitwise &) against the given mask. Can be used to verify that input
 // only includes certain approved flags.
-func MaskedEqual(mask, value uintptr) interface{} {
+func MaskedEqual(mask, value uintptr) any {
 	return maskedEqual{
 		mask:  mask,
 		value: value,
@@ -119,7 +119,7 @@ func MaskedEqual(mask, value uintptr) interface{} {
 //	rule := Rule {
 //		EqualTo(linux.ARCH_GET_FS | linux.ARCH_SET_FS), // arg0
 //	}
-type Rule [7]interface{} // 6 arguments + RIP
+type Rule [7]any // 6 arguments + RIP
 
 // RuleIP indicates what rules in the Rule array have to be applied to
 // instruction pointer.

@@ -41,7 +41,7 @@ func (e *connectionedEndpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &e.idGenerator)
 	stateSourceObject.Load(3, &e.stype)
 	stateSourceObject.Load(5, &e.boundSocketFD)
-	stateSourceObject.LoadValue(4, new([]*connectionedEndpoint), func(y interface{}) { e.loadAcceptedChan(y.([]*connectionedEndpoint)) })
+	stateSourceObject.LoadValue(4, new([]*connectionedEndpoint), func(y any) { e.loadAcceptedChan(y.([]*connectionedEndpoint)) })
 	stateSourceObject.AfterLoad(e.afterLoad)
 }
 

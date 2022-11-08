@@ -47,7 +47,7 @@ var pid = os.Getpid()
 //	file             The file name
 //	line             The line number
 //	msg              The user-supplied message
-func (g GoogleEmitter) Emit(depth int, level Level, timestamp time.Time, format string, args ...interface{}) {
+func (g GoogleEmitter) Emit(depth int, level Level, timestamp time.Time, format string, args ...any) {
 	// Log level.
 	prefix := byte('?')
 	switch level {

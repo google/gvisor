@@ -33,7 +33,7 @@ func (p *machineAtomicPtr) afterLoad() {}
 
 // +checklocksignore
 func (p *machineAtomicPtr) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*machine), func(y interface{}) { p.loadPtr(y.(*machine)) })
+	stateSourceObject.LoadValue(0, new(*machine), func(y any) { p.loadPtr(y.(*machine)) })
 }
 
 func init() {

@@ -123,7 +123,7 @@ func IoGetevents(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 	// Loop over all requests.
 	for count := int32(0); count < events; count++ {
 		// Get a request, per semantics.
-		var v interface{}
+		var v any
 		if count >= minEvents {
 			var ok bool
 			v, ok = ctx.PopRequest()
@@ -160,7 +160,7 @@ func IoGetevents(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 	return uintptr(events), nil, nil
 }
 
-func waitForRequest(ctx *mm.AIOContext, t *kernel.Task, haveDeadline bool, deadline ktime.Time) (interface{}, error) {
+func waitForRequest(ctx *mm.AIOContext, t *kernel.Task, haveDeadline bool, deadline ktime.Time) (any, error) {
 	for {
 		if v, ok := ctx.PopRequest(); ok {
 			// Request was readily available. Just return it.

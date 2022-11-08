@@ -30,7 +30,7 @@ func (p *NamespaceAtomicPtr) afterLoad() {}
 
 // +checklocksignore
 func (p *NamespaceAtomicPtr) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*Namespace), func(y interface{}) { p.loadPtr(y.(*Namespace)) })
+	stateSourceObject.LoadValue(0, new(*Namespace), func(y any) { p.loadPtr(y.(*Namespace)) })
 }
 
 func init() {

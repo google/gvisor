@@ -33,7 +33,7 @@ func (b *Buffer) afterLoad() {}
 // +checklocksignore
 func (b *Buffer) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &b.size)
-	stateSourceObject.LoadValue(0, new([]byte), func(y interface{}) { b.loadData(y.([]byte)) })
+	stateSourceObject.LoadValue(0, new([]byte), func(y any) { b.loadData(y.([]byte)) })
 }
 
 func (c *chunk) StateTypeName() string {

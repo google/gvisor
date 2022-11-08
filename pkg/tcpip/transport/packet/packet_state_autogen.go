@@ -42,7 +42,7 @@ func (p *packet) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &p.data)
 	stateSourceObject.Load(3, &p.senderAddr)
 	stateSourceObject.Load(4, &p.packetInfo)
-	stateSourceObject.LoadValue(2, new(int64), func(y interface{}) { p.loadReceivedAt(y.(int64)) })
+	stateSourceObject.LoadValue(2, new(int64), func(y any) { p.loadReceivedAt(y.(int64)) })
 }
 
 func (ep *endpoint) StateTypeName() string {

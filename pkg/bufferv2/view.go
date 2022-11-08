@@ -26,7 +26,7 @@ import (
 const ReadSize = 512
 
 var viewPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return &View{}
 	},
 }

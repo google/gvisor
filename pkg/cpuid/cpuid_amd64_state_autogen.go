@@ -33,7 +33,7 @@ func (fs *FeatureSet) afterLoad() {}
 
 // +checklocksignore
 func (fs *FeatureSet) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(Static), func(y interface{}) { fs.loadFunction(y.(Static)) })
+	stateSourceObject.LoadValue(0, new(Static), func(y any) { fs.loadFunction(y.(Static)) })
 }
 
 func (i *In) StateTypeName() string {

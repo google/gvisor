@@ -36,7 +36,7 @@ func (a *acceptQueue) afterLoad() {}
 func (a *acceptQueue) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &a.pendingEndpoints)
 	stateSourceObject.Load(2, &a.capacity)
-	stateSourceObject.LoadValue(0, new([]*endpoint), func(y interface{}) { a.loadEndpoints(y.([]*endpoint)) })
+	stateSourceObject.LoadValue(0, new([]*endpoint), func(y any) { a.loadEndpoints(y.([]*endpoint)) })
 }
 
 func (h *handshake) StateTypeName() string {
@@ -492,7 +492,7 @@ func (e *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(48, &e.owner)
 	stateSourceObject.Load(49, &e.ops)
 	stateSourceObject.Load(50, &e.lastOutOfWindowAckTime)
-	stateSourceObject.LoadValue(11, new(EndpointState), func(y interface{}) { e.loadState(y.(EndpointState)) })
+	stateSourceObject.LoadValue(11, new(EndpointState), func(y any) { e.loadState(y.(EndpointState)) })
 	stateSourceObject.AfterLoad(e.afterLoad)
 }
 
@@ -800,7 +800,7 @@ func (s *segment) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(17, &s.acked)
 	stateSourceObject.Load(18, &s.dataMemSize)
 	stateSourceObject.Load(19, &s.lost)
-	stateSourceObject.LoadValue(12, new([]byte), func(y interface{}) { s.loadOptions(y.([]byte)) })
+	stateSourceObject.LoadValue(12, new([]byte), func(y any) { s.loadOptions(y.([]byte)) })
 }
 
 func (q *segmentQueue) StateTypeName() string {

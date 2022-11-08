@@ -30,7 +30,7 @@ func (p *AtomicPtrCredentials) afterLoad() {}
 
 // +checklocksignore
 func (p *AtomicPtrCredentials) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*Credentials), func(y interface{}) { p.loadPtr(y.(*Credentials)) })
+	stateSourceObject.LoadValue(0, new(*Credentials), func(y any) { p.loadPtr(y.(*Credentials)) })
 }
 
 func init() {

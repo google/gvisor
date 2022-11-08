@@ -250,7 +250,7 @@ func (f *FDTable) afterLoad() {}
 func (f *FDTable) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.FDTableRefs)
 	stateSourceObject.Load(1, &f.k)
-	stateSourceObject.LoadValue(2, new(map[int32]descriptor), func(y interface{}) { f.loadDescriptorTable(y.(map[int32]descriptor)) })
+	stateSourceObject.LoadValue(2, new(map[int32]descriptor), func(y any) { f.loadDescriptorTable(y.(map[int32]descriptor)) })
 }
 
 func (r *FDTableRefs) StateTypeName() string {
@@ -569,8 +569,8 @@ func (k *Kernel) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(35, &k.YAMAPtraceScope)
 	stateSourceObject.Load(36, &k.cgroupRegistry)
 	stateSourceObject.Load(37, &k.userCountersMap)
-	stateSourceObject.LoadValue(21, new([]tcpip.Endpoint), func(y interface{}) { k.loadDanglingEndpoints(y.([]tcpip.Endpoint)) })
-	stateSourceObject.LoadValue(25, new(*device.Registry), func(y interface{}) { k.loadDeviceRegistry(y.(*device.Registry)) })
+	stateSourceObject.LoadValue(21, new([]tcpip.Endpoint), func(y any) { k.loadDanglingEndpoints(y.([]tcpip.Endpoint)) })
+	stateSourceObject.LoadValue(25, new(*device.Registry), func(y any) { k.loadDeviceRegistry(y.(*device.Registry)) })
 }
 
 func (s *SocketRecord) StateTypeName() string {
@@ -659,7 +659,7 @@ func (p *pendingSignals) afterLoad() {}
 
 // +checklocksignore
 func (p *pendingSignals) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]savedPendingSignal), func(y interface{}) { p.loadSignals(y.([]savedPendingSignal)) })
+	stateSourceObject.LoadValue(0, new([]savedPendingSignal), func(y any) { p.loadSignals(y.([]savedPendingSignal)) })
 }
 
 func (p *pendingSignalQueue) StateTypeName() string {
@@ -1554,8 +1554,8 @@ func (t *Task) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(63, &t.kcov)
 	stateSourceObject.Load(64, &t.cgroups)
 	stateSourceObject.Load(65, &t.userCounters)
-	stateSourceObject.LoadValue(32, new(*Task), func(y interface{}) { t.loadPtraceTracer(y.(*Task)) })
-	stateSourceObject.LoadValue(49, new([]bpf.Program), func(y interface{}) { t.loadSyscallFilters(y.([]bpf.Program)) })
+	stateSourceObject.LoadValue(32, new(*Task), func(y any) { t.loadPtraceTracer(y.(*Task)) })
+	stateSourceObject.LoadValue(49, new([]bpf.Program), func(y any) { t.loadSyscallFilters(y.([]bpf.Program)) })
 	stateSourceObject.AfterLoad(t.afterLoad)
 }
 
@@ -1778,7 +1778,7 @@ func (image *TaskImage) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &image.Arch)
 	stateSourceObject.Load(2, &image.MemoryManager)
 	stateSourceObject.Load(3, &image.fu)
-	stateSourceObject.LoadValue(4, new(syscallTableInfo), func(y interface{}) { image.loadSt(y.(syscallTableInfo)) })
+	stateSourceObject.LoadValue(4, new(syscallTableInfo), func(y any) { image.loadSt(y.(syscallTableInfo)) })
 }
 
 func (l *taskList) StateTypeName() string {
@@ -2215,7 +2215,7 @@ func (tg *ThreadGroup) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(30, &tg.mounts)
 	stateSourceObject.Load(31, &tg.tty)
 	stateSourceObject.Load(32, &tg.oomScoreAdj)
-	stateSourceObject.LoadValue(29, new(*OldRSeqCriticalRegion), func(y interface{}) { tg.loadOldRSeqCritical(y.(*OldRSeqCriticalRegion)) })
+	stateSourceObject.LoadValue(29, new(*OldRSeqCriticalRegion), func(y any) { tg.loadOldRSeqCritical(y.(*OldRSeqCriticalRegion)) })
 }
 
 func (l *itimerRealListener) StateTypeName() string {

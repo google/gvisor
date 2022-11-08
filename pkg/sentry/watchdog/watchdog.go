@@ -104,7 +104,7 @@ func (a *Action) Set(v string) error {
 }
 
 // Get implements flag.Value.
-func (a *Action) Get() interface{} {
+func (a *Action) Get() any {
 	return *a
 }
 

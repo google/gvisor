@@ -30,7 +30,7 @@ func (s *DirtySet) afterLoad() {}
 
 // +checklocksignore
 func (s *DirtySet) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*DirtySegmentDataSlices), func(y interface{}) { s.loadRoot(y.(*DirtySegmentDataSlices)) })
+	stateSourceObject.LoadValue(0, new(*DirtySegmentDataSlices), func(y any) { s.loadRoot(y.(*DirtySegmentDataSlices)) })
 }
 
 func (n *Dirtynode) StateTypeName() string {
@@ -134,7 +134,7 @@ func (s *FileRangeSet) afterLoad() {}
 
 // +checklocksignore
 func (s *FileRangeSet) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*FileRangeSegmentDataSlices), func(y interface{}) { s.loadRoot(y.(*FileRangeSegmentDataSlices)) })
+	stateSourceObject.LoadValue(0, new(*FileRangeSegmentDataSlices), func(y any) { s.loadRoot(y.(*FileRangeSegmentDataSlices)) })
 }
 
 func (n *FileRangenode) StateTypeName() string {
@@ -238,7 +238,7 @@ func (s *FrameRefSet) afterLoad() {}
 
 // +checklocksignore
 func (s *FrameRefSet) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*FrameRefSegmentDataSlices), func(y interface{}) { s.loadRoot(y.(*FrameRefSegmentDataSlices)) })
+	stateSourceObject.LoadValue(0, new(*FrameRefSegmentDataSlices), func(y any) { s.loadRoot(y.(*FrameRefSegmentDataSlices)) })
 }
 
 func (n *FrameRefnode) StateTypeName() string {

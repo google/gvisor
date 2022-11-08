@@ -47,7 +47,7 @@ func (*Platforms) Usage() string {
 func (*Platforms) SetFlags(f *flag.FlagSet) {}
 
 // Execute implements subcommands.Command.Execute.
-func (*Platforms) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (*Platforms) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	for _, p := range platform.List() {
 		fmt.Fprintf(os.Stdout, "%s\n", p)
 	}

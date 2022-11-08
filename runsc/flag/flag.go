@@ -46,6 +46,6 @@ var (
 const ContinueOnError = flag.ContinueOnError
 
 // Get returns the flag's underlying object.
-func Get(v flag.Value) interface{} {
+func Get(v flag.Value) any {
 	return v.(flag.Getter).Get()
 }

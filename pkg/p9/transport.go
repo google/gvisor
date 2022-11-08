@@ -64,7 +64,7 @@ const (
 )
 
 var dataPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		// These buffers are used for decoding without a payload.
 		// We need to return a pointer to avoid unnecessary allocations
 		// (see https://staticcheck.io/docs/checks#SA6002).

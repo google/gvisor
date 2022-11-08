@@ -272,10 +272,10 @@ type Stracer interface {
 	// SyscallEnter is called on syscall entry.
 	//
 	// The returned private data is passed to SyscallExit.
-	SyscallEnter(t *Task, sysno uintptr, args arch.SyscallArguments, flags uint32) interface{}
+	SyscallEnter(t *Task, sysno uintptr, args arch.SyscallArguments, flags uint32) any
 
 	// SyscallExit is called on syscall exit.
-	SyscallExit(context interface{}, t *Task, sysno, rval uintptr, err error)
+	SyscallExit(context any, t *Task, sysno, rval uintptr, err error)
 }
 
 // SyscallTable is a lookup table of system calls.

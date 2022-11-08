@@ -508,7 +508,7 @@ type accessContext struct {
 }
 
 // Value implements context.Context.
-func (ac accessContext) Value(key interface{}) interface{} {
+func (ac accessContext) Value(key any) any {
 	switch key {
 	case auth.CtxCredentials:
 		return ac.creds

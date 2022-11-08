@@ -690,7 +690,7 @@ func (fd *DynamicBytesFileDescriptionImpl) StateLoad(stateSourceObject state.Sou
 	stateSourceObject.Load(1, &fd.data)
 	stateSourceObject.Load(3, &fd.off)
 	stateSourceObject.Load(4, &fd.lastRead)
-	stateSourceObject.LoadValue(2, new([]byte), func(y interface{}) { fd.loadBuf(y.([]byte)) })
+	stateSourceObject.LoadValue(2, new([]byte), func(y any) { fd.loadBuf(y.([]byte)) })
 }
 
 func (fd *LockFD) StateTypeName() string {
@@ -1218,7 +1218,7 @@ func (mnt *Mount) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(12, &mnt.groupID)
 	stateSourceObject.Load(13, &mnt.umounted)
 	stateSourceObject.Load(14, &mnt.writers)
-	stateSourceObject.LoadValue(5, new(VirtualDentry), func(y interface{}) { mnt.loadKey(y.(VirtualDentry)) })
+	stateSourceObject.LoadValue(5, new(VirtualDentry), func(y any) { mnt.loadKey(y.(VirtualDentry)) })
 	stateSourceObject.AfterLoad(mnt.afterLoad)
 }
 
@@ -2010,7 +2010,7 @@ func (vfs *VirtualFilesystem) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(7, &vfs.fsTypes)
 	stateSourceObject.Load(8, &vfs.filesystems)
 	stateSourceObject.Load(9, &vfs.groupIDBitmap)
-	stateSourceObject.LoadValue(0, new([]*Mount), func(y interface{}) { vfs.loadMounts(y.([]*Mount)) })
+	stateSourceObject.LoadValue(0, new([]*Mount), func(y any) { vfs.loadMounts(y.([]*Mount)) })
 }
 
 func (p *PathOperation) StateTypeName() string {

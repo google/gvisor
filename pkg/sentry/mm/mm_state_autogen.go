@@ -171,7 +171,7 @@ func (s *fileRefcountSet) afterLoad() {}
 
 // +checklocksignore
 func (s *fileRefcountSet) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*fileRefcountSegmentDataSlices), func(y interface{}) { s.loadRoot(y.(*fileRefcountSegmentDataSlices)) })
+	stateSourceObject.LoadValue(0, new(*fileRefcountSegmentDataSlices), func(y any) { s.loadRoot(y.(*fileRefcountSegmentDataSlices)) })
 }
 
 func (n *fileRefcountnode) StateTypeName() string {
@@ -455,7 +455,7 @@ func (v *vma) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(7, &v.id)
 	stateSourceObject.Load(8, &v.hint)
 	stateSourceObject.Load(9, &v.lastFault)
-	stateSourceObject.LoadValue(2, new(int), func(y interface{}) { v.loadRealPerms(y.(int)) })
+	stateSourceObject.LoadValue(2, new(int), func(y any) { v.loadRealPerms(y.(int)) })
 }
 
 func (p *pma) StateTypeName() string {
@@ -547,7 +547,7 @@ func (s *pmaSet) afterLoad() {}
 
 // +checklocksignore
 func (s *pmaSet) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*pmaSegmentDataSlices), func(y interface{}) { s.loadRoot(y.(*pmaSegmentDataSlices)) })
+	stateSourceObject.LoadValue(0, new(*pmaSegmentDataSlices), func(y any) { s.loadRoot(y.(*pmaSegmentDataSlices)) })
 }
 
 func (n *pmanode) StateTypeName() string {
@@ -709,7 +709,7 @@ func (s *vmaSet) afterLoad() {}
 
 // +checklocksignore
 func (s *vmaSet) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*vmaSegmentDataSlices), func(y interface{}) { s.loadRoot(y.(*vmaSegmentDataSlices)) })
+	stateSourceObject.LoadValue(0, new(*vmaSegmentDataSlices), func(y any) { s.loadRoot(y.(*vmaSegmentDataSlices)) })
 }
 
 func (n *vmanode) StateTypeName() string {

@@ -58,7 +58,7 @@ func (s *evictableRangeSet) afterLoad() {}
 
 // +checklocksignore
 func (s *evictableRangeSet) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*evictableRangeSegmentDataSlices), func(y interface{}) { s.loadRoot(y.(*evictableRangeSegmentDataSlices)) })
+	stateSourceObject.LoadValue(0, new(*evictableRangeSegmentDataSlices), func(y any) { s.loadRoot(y.(*evictableRangeSegmentDataSlices)) })
 }
 
 func (n *evictableRangenode) StateTypeName() string {
@@ -193,7 +193,7 @@ func (s *reclaimSet) afterLoad() {}
 
 // +checklocksignore
 func (s *reclaimSet) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*reclaimSegmentDataSlices), func(y interface{}) { s.loadRoot(y.(*reclaimSegmentDataSlices)) })
+	stateSourceObject.LoadValue(0, new(*reclaimSegmentDataSlices), func(y any) { s.loadRoot(y.(*reclaimSegmentDataSlices)) })
 }
 
 func (n *reclaimnode) StateTypeName() string {
@@ -297,7 +297,7 @@ func (s *usageSet) afterLoad() {}
 
 // +checklocksignore
 func (s *usageSet) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*usageSegmentDataSlices), func(y interface{}) { s.loadRoot(y.(*usageSegmentDataSlices)) })
+	stateSourceObject.LoadValue(0, new(*usageSegmentDataSlices), func(y any) { s.loadRoot(y.(*usageSegmentDataSlices)) })
 }
 
 func (n *usagenode) StateTypeName() string {

@@ -53,7 +53,7 @@ var chunkPools [numPools]sync.Pool
 func init() {
 	for i := 0; i < numPools; i++ {
 		chunkSize := baseChunkSize * (1 << i)
-		chunkPools[i].New = func() interface{} {
+		chunkPools[i].New = func() any {
 			return &chunk{
 				data: make([]byte, chunkSize),
 			}

@@ -74,7 +74,7 @@ func (m *Mitigate) SetFlags(f *flag.FlagSet) {
 }
 
 // Execute implements subcommands.Command.Execute.
-func (m *Mitigate) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (m *Mitigate) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if runtime.GOARCH == "arm64" || runtime.GOARCH == "arm" {
 		log.Warningf("As ARM is not affected by MDS, mitigate does not support ARM machines.")
 		// Set reverse flag so that we still perform post mitigate operations. mitigate reverse is a noop in this case.

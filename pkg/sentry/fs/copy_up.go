@@ -339,7 +339,7 @@ func cleanupUpper(ctx context.Context, parent *Inode, name string, copyUpErr err
 // copyUpBuffers is a buffer pool for copying file content. The buffer
 // size is the same used by io.Copy.
 var copyUpBuffers = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		b := make([]byte, 8*hostarch.PageSize)
 		return &b
 	},

@@ -32,7 +32,7 @@ import (
 )
 
 // SeqHandle is a helper handle to seek in the file.
-type SeqHandle interface{}
+type SeqHandle any
 
 // SeqData holds the data for one unit in the file.
 //

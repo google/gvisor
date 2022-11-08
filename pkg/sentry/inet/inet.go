@@ -74,7 +74,7 @@ type Stack interface {
 	SetTCPRecovery(recovery TCPLossRecovery) error
 
 	// Statistics reports stack statistics.
-	Statistics(stat interface{}, arg string) error
+	Statistics(stat any, arg string) error
 
 	// RouteTable returns the network stack's route table.
 	RouteTable() []Route

@@ -142,7 +142,7 @@ func (s *LockSet) afterLoad() {}
 
 // +checklocksignore
 func (s *LockSet) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*LockSegmentDataSlices), func(y interface{}) { s.loadRoot(y.(*LockSegmentDataSlices)) })
+	stateSourceObject.LoadValue(0, new(*LockSegmentDataSlices), func(y any) { s.loadRoot(y.(*LockSegmentDataSlices)) })
 }
 
 func (n *Locknode) StateTypeName() string {

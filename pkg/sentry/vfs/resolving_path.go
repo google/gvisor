@@ -107,7 +107,7 @@ func (resolveAbsSymlinkError) Error() string {
 }
 
 var resolvingPathPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return &ResolvingPath{}
 	},
 }

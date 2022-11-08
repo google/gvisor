@@ -42,7 +42,7 @@ const (
 
 // context represents context.Context.
 type context interface {
-	Value(key interface{}) interface{}
+	Value(key any) any
 }
 
 // FromContext returns the FeatureSet from the context, if available.

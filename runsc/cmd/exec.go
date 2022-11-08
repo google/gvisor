@@ -105,7 +105,7 @@ func (ex *Exec) SetFlags(f *flag.FlagSet) {
 
 // Execute implements subcommands.Command.Execute. It starts a process in an
 // already created container.
-func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	conf := args[0].(*config.Config)
 	e, id, err := ex.parseArgs(f, conf.EnableRaw)
 	if err != nil {
@@ -414,7 +414,7 @@ func (ss *stringSlice) String() string {
 }
 
 // Get implements flag.Value.Get.
-func (ss *stringSlice) Get() interface{} {
+func (ss *stringSlice) Get() any {
 	return ss
 }
 
@@ -435,7 +435,7 @@ func (u *user) String() string {
 	return fmt.Sprintf("%+v", *u)
 }
 
-func (u *user) Get() interface{} {
+func (u *user) Get() any {
 	return u
 }
 

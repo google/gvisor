@@ -33,7 +33,7 @@ type K8sJSONEmitter struct {
 }
 
 // Emit implements Emitter.Emit.
-func (e K8sJSONEmitter) Emit(_ int, level Level, timestamp time.Time, format string, v ...interface{}) {
+func (e K8sJSONEmitter) Emit(_ int, level Level, timestamp time.Time, format string, v ...any) {
 	j := k8sJSONLog{
 		Log:   fmt.Sprintf(format, v...),
 		Level: level,

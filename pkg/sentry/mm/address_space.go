@@ -79,7 +79,7 @@ func (mm *MemoryManager) Activate(ctx context.Context) error {
 		// Get a new address space. We must force unmapping by passing nil to
 		// NewAddressSpace if requested. (As in the nil interface object, not a
 		// typed nil.)
-		mappingsID := (interface{})(mm)
+		mappingsID := (any)(mm)
 		if mm.unmapAllOnActivate {
 			mappingsID = nil
 		}

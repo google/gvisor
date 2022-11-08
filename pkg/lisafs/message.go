@@ -52,7 +52,7 @@ import (
 //
 // String() implementations must ensure that the message struct doesn't escape.
 // For instance, directly passing the struct to fmt.Sprintf() escapes it
-// because of the implicit conversion to interface{}.
+// because of the implicit conversion to any.
 
 type marshalFunc func([]byte) []byte
 type unmarshalFunc func([]byte) ([]byte, bool)

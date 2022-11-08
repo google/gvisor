@@ -37,7 +37,7 @@ type null struct {
 
 var _ seccheck.Sink = (*null)(nil)
 
-func new(_ map[string]interface{}, _ *fd.FD) (seccheck.Sink, error) {
+func new(_ map[string]any, _ *fd.FD) (seccheck.Sink, error) {
 	return &null{}, nil
 }
 

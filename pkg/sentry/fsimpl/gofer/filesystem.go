@@ -117,11 +117,11 @@ const MaxFilenameLen = (1 << 16) - 1
 
 // dentrySlicePool is a pool of *[]*dentry used to store dentries for which
 // dentry.checkCachingLocked() must be called. The pool holds pointers to
-// slices because Go lacks generics, so sync.Pool operates on interface{}, so
+// slices because Go lacks generics, so sync.Pool operates on any, so
 // every call to (what should be) sync.Pool<[]*dentry>.Put() allocates a copy
 // of the slice header on the heap.
 var dentrySlicePool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		ds := make([]*dentry, 0, 4) // arbitrary non-zero initial capacity
 		return &ds
 	},
@@ -1878,7 +1878,7 @@ func (fs *filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDe
 
 type mopt struct {
 	key   string
-	value interface{}
+	value any
 }
 
 func (m mopt) String() string {

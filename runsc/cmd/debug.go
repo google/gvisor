@@ -85,7 +85,7 @@ func (d *Debug) SetFlags(f *flag.FlagSet) {
 }
 
 // Execute implements subcommands.Command.Execute.
-func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	var c *container.Container
 	conf := args[0].(*config.Config)
 

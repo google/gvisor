@@ -96,7 +96,7 @@ func (conn *connection) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(20, &conn.bigWrites)
 	stateSourceObject.Load(21, &conn.dontMask)
 	stateSourceObject.Load(22, &conn.noOpen)
-	stateSourceObject.LoadValue(3, new(bool), func(y interface{}) { conn.loadInitializedChan(y.(bool)) })
+	stateSourceObject.LoadValue(3, new(bool), func(y any) { conn.loadInitializedChan(y.(bool)) })
 }
 
 func (f *fuseDevice) StateTypeName() string {
@@ -183,7 +183,7 @@ func (fd *DeviceFD) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(11, &fd.writeBuf)
 	stateSourceObject.Load(12, &fd.writeCursorFR)
 	stateSourceObject.Load(13, &fd.conn)
-	stateSourceObject.LoadValue(5, new(int), func(y interface{}) { fd.loadFullQueueCh(y.(int)) })
+	stateSourceObject.LoadValue(5, new(int), func(y any) { fd.loadFullQueueCh(y.(int)) })
 }
 
 func (fsType *FilesystemType) StateTypeName() string {

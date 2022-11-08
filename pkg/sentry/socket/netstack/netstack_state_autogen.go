@@ -82,7 +82,7 @@ func (s *socketOpsCommon) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(6, &s.sockOptTimestamp)
 	stateSourceObject.Load(7, &s.timestampValid)
 	stateSourceObject.Load(9, &s.sockOptInq)
-	stateSourceObject.LoadValue(8, new(int64), func(y interface{}) { s.loadTimestamp(y.(int64)) })
+	stateSourceObject.LoadValue(8, new(int64), func(y any) { s.loadTimestamp(y.(int64)) })
 }
 
 func (s *SocketVFS2) StateTypeName() string {

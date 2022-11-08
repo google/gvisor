@@ -62,7 +62,7 @@ type JSONEmitter struct {
 }
 
 // Emit implements Emitter.Emit.
-func (e JSONEmitter) Emit(_ int, level Level, timestamp time.Time, format string, v ...interface{}) {
+func (e JSONEmitter) Emit(_ int, level Level, timestamp time.Time, format string, v ...any) {
 	j := jsonLog{
 		Msg:   fmt.Sprintf(format, v...),
 		Level: level,

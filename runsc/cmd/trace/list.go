@@ -48,7 +48,7 @@ func (*list) Usage() string {
 func (*list) SetFlags(*flag.FlagSet) {}
 
 // Execute implements subcommands.Command.
-func (l *list) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (l *list) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() != 1 {
 		f.Usage()
 		return subcommands.ExitUsageError

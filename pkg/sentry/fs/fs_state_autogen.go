@@ -349,7 +349,7 @@ func (d *Dirent) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(4, &d.parent)
 	stateSourceObject.Load(5, &d.deleted)
 	stateSourceObject.Load(6, &d.mounted)
-	stateSourceObject.LoadValue(7, new(map[string]*Dirent), func(y interface{}) { d.loadChildren(y.(map[string]*Dirent)) })
+	stateSourceObject.LoadValue(7, new(map[string]*Dirent), func(y any) { d.loadChildren(y.(map[string]*Dirent)) })
 	stateSourceObject.AfterLoad(d.afterLoad)
 }
 

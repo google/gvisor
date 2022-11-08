@@ -61,7 +61,7 @@ type response struct {
 }
 
 var responsePool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return &response{
 			done: make(chan error, 1),
 		}

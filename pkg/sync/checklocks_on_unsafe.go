@@ -87,7 +87,7 @@ func noteUnlock(l unsafe.Pointer) {
 
 func dumpLocks() string {
 	var s strings.Builder
-	locksHeld.Range(func(key, value interface{}) bool {
+	locksHeld.Range(func(key, value any) bool {
 		goid := key.(int64)
 		locks := value.(*gLocks)
 

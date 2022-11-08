@@ -60,7 +60,7 @@ func (wt *Wait) SetFlags(f *flag.FlagSet) {
 
 // Execute implements subcommands.Command.Execute. It waits for a process in a
 // container to exit before returning.
-func (wt *Wait) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (wt *Wait) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() != 1 {
 		f.Usage()
 		return subcommands.ExitUsageError

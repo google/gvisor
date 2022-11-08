@@ -30,7 +30,7 @@ func (s *MappingSet) afterLoad() {}
 
 // +checklocksignore
 func (s *MappingSet) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*MappingSegmentDataSlices), func(y interface{}) { s.loadRoot(y.(*MappingSegmentDataSlices)) })
+	stateSourceObject.LoadValue(0, new(*MappingSegmentDataSlices), func(y any) { s.loadRoot(y.(*MappingSegmentDataSlices)) })
 }
 
 func (n *Mappingnode) StateTypeName() string {

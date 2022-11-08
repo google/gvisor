@@ -81,7 +81,7 @@ func (e *epoller) run(ctx context.Context) {
 	}
 }
 
-func (e *epoller) add(id string, cgx interface{}) error {
+func (e *epoller) add(id string, cgx any) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	cg, ok := cgx.(cgroups.Cgroup)

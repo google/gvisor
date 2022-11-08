@@ -48,7 +48,7 @@ type GetFilesystemOptions struct {
 	// InternalData holds opaque FilesystemType-specific data. There is
 	// intentionally no way for applications to specify InternalData; if it is
 	// not nil, the call to GetFilesystem originates from within the sentry.
-	InternalData interface{}
+	InternalData any
 }
 
 // +stateify savable

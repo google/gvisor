@@ -30,7 +30,7 @@ func (p *AtomicPtrBucket) afterLoad() {}
 
 // +checklocksignore
 func (p *AtomicPtrBucket) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*bucket), func(y interface{}) { p.loadPtr(y.(*bucket)) })
+	stateSourceObject.LoadValue(0, new(*bucket), func(y any) { p.loadPtr(y.(*bucket)) })
 }
 
 func init() {

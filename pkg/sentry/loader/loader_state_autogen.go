@@ -42,7 +42,7 @@ func (v *VDSO) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &v.vdso)
 	stateSourceObject.Load(2, &v.os)
 	stateSourceObject.Load(3, &v.arch)
-	stateSourceObject.LoadValue(4, new([]elfProgHeader), func(y interface{}) { v.loadPhdrs(y.([]elfProgHeader)) })
+	stateSourceObject.LoadValue(4, new([]elfProgHeader), func(y any) { v.loadPhdrs(y.([]elfProgHeader)) })
 }
 
 func (e *elfProgHeader) StateTypeName() string {
