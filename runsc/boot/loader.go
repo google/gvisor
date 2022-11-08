@@ -27,7 +27,6 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
-	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/coverage"
 	"gvisor.dev/gvisor/pkg/cpuid"
@@ -240,7 +239,6 @@ func New(args Args) (*Loader, error) {
 
 	kernel.FUSEEnabled = args.Conf.FUSE
 	kernel.LISAFSEnabled = args.Conf.Lisafs
-	bufferv2.PoolingEnabled = args.Conf.BufferPooling
 	vfs2.Override()
 
 	// Make host FDs stable between invocations. Host FDs must map to the exact
