@@ -454,7 +454,7 @@ func (pk *packetBuffer) StateFields() []string {
 		"dnatDone",
 		"PktType",
 		"NICID",
-		"RXTransportChecksumValidated",
+		"RXChecksumValidated",
 		"NetworkPacketInfo",
 		"tuple",
 	}
@@ -481,7 +481,7 @@ func (pk *packetBuffer) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(13, &pk.dnatDone)
 	stateSinkObject.Save(14, &pk.PktType)
 	stateSinkObject.Save(15, &pk.NICID)
-	stateSinkObject.Save(16, &pk.RXTransportChecksumValidated)
+	stateSinkObject.Save(16, &pk.RXChecksumValidated)
 	stateSinkObject.Save(17, &pk.NetworkPacketInfo)
 	stateSinkObject.Save(18, &pk.tuple)
 }
@@ -506,7 +506,7 @@ func (pk *packetBuffer) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(13, &pk.dnatDone)
 	stateSourceObject.Load(14, &pk.PktType)
 	stateSourceObject.Load(15, &pk.NICID)
-	stateSourceObject.Load(16, &pk.RXTransportChecksumValidated)
+	stateSourceObject.Load(16, &pk.RXChecksumValidated)
 	stateSourceObject.Load(17, &pk.NetworkPacketInfo)
 	stateSourceObject.Load(18, &pk.tuple)
 }

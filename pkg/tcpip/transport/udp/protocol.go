@@ -87,7 +87,7 @@ func (p *protocol) HandleUnknownDestinationPacket(id stack.TransportEndpointID, 
 		pkt.NetworkProtocolNumber,
 		netHdr.SourceAddress(),
 		netHdr.DestinationAddress(),
-		pkt.RXTransportChecksumValidated)
+		pkt.RXChecksumValidated)
 	if !lengthValid {
 		p.stack.Stats().UDP.MalformedPacketsReceived.Increment()
 		return stack.UnknownDestinationPacketMalformed

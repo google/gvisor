@@ -101,7 +101,7 @@ func newIncomingSegment(id stack.TransportEndpointID, clock tcpip.Clock, pkt sta
 		uint16(pkt.Data().Size()),
 		netHdr.SourceAddress(),
 		netHdr.DestinationAddress(),
-		pkt.RXTransportChecksumValidated)
+		pkt.RXChecksumValidated)
 	if !ok {
 		return nil, fmt.Errorf("header data offset does not respect size constraints: %d < offset < %d, got offset=%d", header.TCPMinimumSize, len(hdr), hdr.DataOffset())
 	}
@@ -119,7 +119,7 @@ func newIncomingSegment(id stack.TransportEndpointID, clock tcpip.Clock, pkt sta
 	s.pkt = pkt.IncRef()
 	s.csumValid = csumValid
 
-	if !s.pkt.RXTransportChecksumValidated {
+	if !s.pkt.RXChecksumValidated {
 		s.csum = csum
 	}
 	return s, nil
