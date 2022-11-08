@@ -21,12 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
-// PoolingEnabled is set to true when pooling is enabled. Added as a
-// global to allow easy access.
-//
-// TODO(b/236996271): Remove once buffer pooling experiment complete.
-var PoolingEnabled = true
-
 const (
 	// This is log2(baseChunkSize). This number is used to calculate which pool
 	// to use for a payload size by right shifting the payload size by this
@@ -86,7 +80,7 @@ type chunk struct {
 
 func newChunk(size int) *chunk {
 	var c *chunk
-	if !PoolingEnabled || size > MaxChunkSize {
+	if size > MaxChunkSize {
 		c = &chunk{
 			data: make([]byte, size),
 		}
@@ -102,7 +96,7 @@ func newChunk(size int) *chunk {
 }
 
 func (c *chunk) destroy() {
-	if !PoolingEnabled || len(c.data) > MaxChunkSize {
+	if len(c.data) > MaxChunkSize {
 		c.data = nil
 		return
 	}
