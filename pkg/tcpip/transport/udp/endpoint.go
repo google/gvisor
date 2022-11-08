@@ -913,7 +913,7 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt stack.PacketBu
 		pkt.NetworkProtocolNumber,
 		netHdr.SourceAddress(),
 		netHdr.DestinationAddress(),
-		pkt.RXTransportChecksumValidated)
+		pkt.RXChecksumValidated)
 	if !lengthValid {
 		// Malformed packet.
 		e.stack.Stats().UDP.MalformedPacketsReceived.Increment()

@@ -530,7 +530,7 @@ func (ct *ConnTrack) getConnAndUpdate(pkt PacketBufferPtr, skipChecksumValidatio
 				uint16(pkt.Data().Size()),
 				tid.srcAddr,
 				tid.dstAddr,
-				pkt.RXTransportChecksumValidated || skipChecksumValidation)
+				pkt.RXChecksumValidated || skipChecksumValidation)
 			if !csumValid || !ok {
 				return nil
 			}
@@ -542,7 +542,7 @@ func (ct *ConnTrack) getConnAndUpdate(pkt PacketBufferPtr, skipChecksumValidatio
 				pkt.NetworkProtocolNumber,
 				tid.srcAddr,
 				tid.dstAddr,
-				pkt.RXTransportChecksumValidated || skipChecksumValidation)
+				pkt.RXChecksumValidated || skipChecksumValidation)
 			if !lengthValid || !csumValid {
 				return nil
 			}

@@ -835,7 +835,7 @@ func (e *endpoint) handleLocalPacket(pkt stack.PacketBufferPtr, canSkipRXChecksu
 
 	pkt = pkt.CloneToInbound()
 	defer pkt.DecRef()
-	pkt.RXTransportChecksumValidated = canSkipRXChecksum
+	pkt.RXChecksumValidated = canSkipRXChecksum
 
 	h, ok := e.protocol.parseAndValidate(pkt)
 	if !ok {
@@ -1705,7 +1705,7 @@ func (p *protocol) parseAndValidate(pkt stack.PacketBufferPtr) (header.IPv4, boo
 		return nil, false
 	}
 
-	if !h.IsChecksumValid() {
+	if !pkt.RXChecksumValidated && !h.IsChecksumValid() {
 		return nil, false
 	}
 
