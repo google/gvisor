@@ -53,6 +53,8 @@ namespace testing {
 
 namespace {
 
+constexpr size_t kIcmpTimeout = 2000;
+
 // Fixture for tests parameterized by the address family to use (AF_INET and
 // AF_INET6) when creating sockets.
 class UdpSocketTest : public ::testing::TestWithParam<int> {
@@ -395,9 +397,9 @@ TEST_P(UdpSocketTest, ConnectWriteToInvalidPort) {
               SyscallSucceedsWithValue(sizeof(buf)));
 
   // Poll to make sure we get the ICMP error back.
-  constexpr int kTimeout = 1000;
   struct pollfd pfd = {sock_.get(), POLLERR, 0};
-  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
+  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, kIcmpTimeout),
+              SyscallSucceedsWithValue(1));
 
   // Now verify that we got an ICMP error back of ECONNREFUSED.
   int err;
@@ -799,10 +801,10 @@ TEST_P(UdpSocketTest, ConnectAndSendNoReceiver) {
   EXPECT_THAT(send(sock_.get(), buf, sizeof(buf), 0),
               SyscallSucceedsWithValue(sizeof(buf)));
 
-  constexpr int kTimeout = 1000;
   // Poll to make sure we get the ICMP error back before issuing more writes.
   struct pollfd pfd = {sock_.get(), POLLERR, 0};
-  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
+  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, kIcmpTimeout),
+              SyscallSucceedsWithValue(1));
 
   // Next write should fail with ECONNREFUSED due to the ICMP error generated in
   // response to the previous write.
@@ -814,7 +816,8 @@ TEST_P(UdpSocketTest, ConnectAndSendNoReceiver) {
   ASSERT_THAT(send(sock_.get(), buf, sizeof(buf), 0), SyscallSucceeds());
 
   // Poll to make sure we get the ICMP error back before issuing more writes.
-  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
+  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, kIcmpTimeout),
+              SyscallSucceedsWithValue(1));
 
   // Next write should fail with ECONNREFUSED due to the ICMP error generated in
   // response to the previous write.
