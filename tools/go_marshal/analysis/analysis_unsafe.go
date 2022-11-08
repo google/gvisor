@@ -47,7 +47,7 @@ import (
 // pointers to active go objects (pointer fields aren't allowed in ABI
 // structs anyways), or we'd be violating the go runtime contract and
 // the GC may malfunction.
-func RandomizeValue(x interface{}) {
+func RandomizeValue(x any) {
 	v := reflect.Indirect(reflect.ValueOf(x))
 	if !v.CanSet() {
 		panic("RandomizeType() called with an unaddressable value. You probably need to pass a pointer to the argument")

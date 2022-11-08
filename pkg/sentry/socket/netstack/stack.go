@@ -280,7 +280,7 @@ func (s *Stack) SetTCPRecovery(recovery inet.TCPLossRecovery) error {
 }
 
 // Statistics implements inet.Stack.Statistics.
-func (s *Stack) Statistics(stat interface{}, arg string) error {
+func (s *Stack) Statistics(stat any, arg string) error {
 	switch stats := stat.(type) {
 	case *inet.StatDev:
 		for _, ni := range s.Stack.NICInfo() {

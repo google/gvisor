@@ -266,7 +266,7 @@ func (f testDeps) CoordinateFuzzing(time.Duration, int64, time.Duration, int64, 
 }
 func (f testDeps) RunFuzzWorker(func(corpusEntry) error) error              { return nil }
 func (f testDeps) ReadCorpus(string, []reflect.Type) ([]corpusEntry, error) { return nil, nil }
-func (f testDeps) CheckCorpus([]interface{}, []reflect.Type) error          { return nil }
+func (f testDeps) CheckCorpus([]any, []reflect.Type) error                  { return nil }
 func (f testDeps) ResetCoverage()                                           {}
 func (f testDeps) SnapshotCoverage()                                        {}
 
@@ -275,7 +275,7 @@ type corpusEntry = struct {
 	Parent     string
 	Path       string
 	Data       []byte
-	Values     []interface{}
+	Values     []any
 	Generation int
 	IsSeed     bool
 }

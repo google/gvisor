@@ -35,8 +35,8 @@ import (
 var dummyFPState = fpu.NewState()
 
 type testHarness interface {
-	Errorf(format string, args ...interface{})
-	Fatalf(format string, args ...interface{})
+	Errorf(format string, args ...any)
+	Fatalf(format string, args ...any)
 }
 
 func kvmTest(t testHarness, setup func(*KVM), fn func(*vCPU) bool) {

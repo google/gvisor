@@ -237,7 +237,7 @@ func filterProperties(got []systemdDbus.Property, want []systemdDbus.Property) [
 	if want == nil {
 		return nil
 	}
-	filterMap := map[string]interface{}{}
+	filterMap := map[string]any{}
 	for _, prop := range want {
 		filterMap[prop.Name] = nil
 	}

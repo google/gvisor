@@ -388,7 +388,7 @@ func (i *importer) checkPackage(path string, srcs []string) (*types.Package, Fin
 		resultsMu sync.RWMutex // protects results & errs, findings.
 		factsMu   sync.RWMutex // protects facts.
 		ready     = make(map[*analysis.Analyzer]*sync.WaitGroup)
-		results   = make(map[*analysis.Analyzer]interface{})
+		results   = make(map[*analysis.Analyzer]any)
 		errs      = make(map[*analysis.Analyzer]error)
 		findings  = make(FindingSet, 0)
 	)
@@ -541,7 +541,7 @@ func (i *importer) checkPackage(path string, srcs []string) (*types.Package, Fin
 			// specific analyzers. The only panic that can happen
 			// is while resultsMu is held as a read-only lock.
 			var (
-				result interface{}
+				result any
 				err    error
 			)
 			defer func() {

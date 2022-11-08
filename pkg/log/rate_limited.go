@@ -25,19 +25,19 @@ type rateLimitedLogger struct {
 	limit  *rate.Limiter
 }
 
-func (rl *rateLimitedLogger) Debugf(format string, v ...interface{}) {
+func (rl *rateLimitedLogger) Debugf(format string, v ...any) {
 	if rl.limit.Allow() {
 		rl.logger.Debugf(format, v...)
 	}
 }
 
-func (rl *rateLimitedLogger) Infof(format string, v ...interface{}) {
+func (rl *rateLimitedLogger) Infof(format string, v ...any) {
 	if rl.limit.Allow() {
 		rl.logger.Infof(format, v...)
 	}
 }
 
-func (rl *rateLimitedLogger) Warningf(format string, v ...interface{}) {
+func (rl *rateLimitedLogger) Warningf(format string, v ...any) {
 	if rl.limit.Allow() {
 		rl.logger.Warningf(format, v...)
 	}

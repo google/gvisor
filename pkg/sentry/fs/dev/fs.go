@@ -57,7 +57,7 @@ func (*filesystem) Flags() fs.FilesystemFlags {
 }
 
 // Mount returns a devtmpfs root that can be positioned in the vfs.
-func (f *filesystem) Mount(ctx context.Context, device string, flags fs.MountSourceFlags, data string, _ interface{}) (*fs.Inode, error) {
+func (f *filesystem) Mount(ctx context.Context, device string, flags fs.MountSourceFlags, data string, _ any) (*fs.Inode, error) {
 	// devtmpfs backed by ramfs ignores bad options. See fs/ramfs/inode.c:ramfs_parse_options.
 	//  -> we should consider parsing the mode and backing devtmpfs by this.
 	return New(ctx, fs.NewNonCachingMountSource(ctx, f, flags)), nil

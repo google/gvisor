@@ -129,7 +129,7 @@ func walkScope(pass *analysis.Pass, scope *types.Scope) {
 	}
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	// Export all facts.
 	walkScope(pass, pass.Pkg.Scope())
 	return nil, nil

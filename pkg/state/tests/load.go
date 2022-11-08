@@ -16,7 +16,7 @@ package tests
 
 // +stateify savable
 type genericContainer struct {
-	v interface{}
+	v any
 }
 
 // +stateify savable

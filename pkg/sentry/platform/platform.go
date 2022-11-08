@@ -89,7 +89,7 @@ type Platform interface {
 	//
 	// In general, this blocking behavior only occurs when
 	// CooperativelySchedulesAddressSpace (above) returns false.
-	NewAddressSpace(mappingsID interface{}) (AddressSpace, <-chan struct{}, error)
+	NewAddressSpace(mappingsID any) (AddressSpace, <-chan struct{}, error)
 
 	// NewContext returns a new execution context.
 	NewContext(context.Context) Context

@@ -62,7 +62,7 @@ func closeOutput(w io.Writer) {
 }
 
 // failure exits with the given failure message.
-func failure(fmtStr string, v ...interface{}) subcommands.ExitStatus {
+func failure(fmtStr string, v ...any) subcommands.ExitStatus {
 	fmt.Fprintf(os.Stderr, fmtStr+"\n", v...)
 	return subcommands.ExitFailure
 }
@@ -179,7 +179,7 @@ func (c *Check) SetFlags(fs *flag.FlagSet) {
 }
 
 // Execute implements subcommands.Command.Execute.
-func (c *Check) Execute(ctx context.Context, fs *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (c *Check) Execute(ctx context.Context, fs *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if c.Package == "" {
 		c.Package = "main" // Default, no imports.
 	}
@@ -230,7 +230,7 @@ func (b *Bundle) SetFlags(fs *flag.FlagSet) {
 }
 
 // Execute implements subcommands.Command.Execute.
-func (b *Bundle) Execute(ctx context.Context, fs *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (b *Bundle) Execute(ctx context.Context, fs *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	// Perform the analysis.
 	if err := b.execute(func() (check.FindingSet, facts.Serializer, error) {
 		// Discover the correct common root.
@@ -286,7 +286,7 @@ func (s *Stdlib) SetFlags(fs *flag.FlagSet) {
 }
 
 // Execute implements subcommands.Command.Execute.
-func (s *Stdlib) Execute(ctx context.Context, fs *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (s *Stdlib) Execute(ctx context.Context, fs *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if fs.NArg() != 0 {
 		return subcommands.ExitUsageError // Need no arguments.
 	}
@@ -398,7 +398,7 @@ func loadConfigs(filenames []string) (*config.Config, error) {
 }
 
 // Execute implements subcommands.Command.Execute.
-func (f *Filter) Execute(ctx context.Context, fs *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (f *Filter) Execute(ctx context.Context, fs *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	// Open and merge all configuations.
 	config, err := loadConfigs(f.Configs)
 	if err != nil {
@@ -492,7 +492,7 @@ func (r *Render) SetFlags(fs *flag.FlagSet) {
 }
 
 // Execute implements subcommands.Command.Execute.
-func (r *Render) Execute(ctx context.Context, fs *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (r *Render) Execute(ctx context.Context, fs *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	// Open the output file.
 	output, err := openOutput(r.Output, os.Stdout)
 	if err != nil {

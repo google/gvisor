@@ -147,7 +147,7 @@ func abortAt(p token.Position, msg string) {
 }
 
 // debugf conditionally prints a debug message.
-func debugf(f string, a ...interface{}) {
+func debugf(f string, a ...any) {
 	if debugEnabled() {
 		fmt.Printf(f, a...)
 	}
@@ -155,7 +155,7 @@ func debugf(f string, a ...interface{}) {
 
 // debugfAt conditionally prints a debug message with a reference to a position
 // in the input source.
-func debugfAt(p token.Position, f string, a ...interface{}) {
+func debugfAt(p token.Position, f string, a ...any) {
 	if debugEnabled() {
 		fmt.Printf("%s:\n  %s", p, fmt.Sprintf(f, a...))
 	}
@@ -178,7 +178,7 @@ func debugfAt(p token.Position, f string, a ...interface{}) {
 //
 // Calling emit with a single argument that is not a string will result in a
 // panic, as the caller's intent is ambiguous.
-func emit(out io.Writer, indent int, a ...interface{}) {
+func emit(out io.Writer, indent int, a ...any) {
 	const spacesPerIndentLevel = 4
 
 	if len(a) < 1 {
@@ -245,11 +245,11 @@ func (b *sourceBuffer) decIndent() {
 	b.indent--
 }
 
-func (b *sourceBuffer) emit(a ...interface{}) {
+func (b *sourceBuffer) emit(a ...any) {
 	emit(&b.b, b.indent, a...)
 }
 
-func (b *sourceBuffer) emitNoIndent(a ...interface{}) {
+func (b *sourceBuffer) emitNoIndent(a ...any) {
 	emit(&b.b, 0 /*indent*/, a...)
 }
 

@@ -140,7 +140,7 @@ func (s *Shell) logIO(prefix string, b []byte, err error) {
 }
 
 // logf logs something to both standard logging and the test log, if provided.
-func (s *Shell) logf(prefix, format string, values ...interface{}) {
+func (s *Shell) logf(prefix, format string, values ...any) {
 	if s.logger != nil {
 		s.logger.Logf("[%s] %s", prefix, fmt.Sprintf(format, values...))
 	}

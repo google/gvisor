@@ -147,7 +147,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 
 // Execute implements subcommands.Command.Execute.  It starts a sandbox in a
 // waiting state.
-func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if b.specFD == -1 || b.controllerFD == -1 || b.startSyncFD == -1 || f.NArg() != 1 {
 		f.Usage()
 		return subcommands.ExitUsageError

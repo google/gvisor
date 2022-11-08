@@ -138,7 +138,7 @@ type functionGuardResolver interface {
 	// resolveStatic is used to resolve a guard during static analysis,
 	// e.g. based on static annotations applied to a method. The function's
 	// ssa object is available, as well as the return value.
-	resolveStatic(pc *passContext, ls *lockState, fn *ssa.Function, rv interface{}) resolvedValue
+	resolveStatic(pc *passContext, ls *lockState, fn *ssa.Function, rv any) resolvedValue
 
 	// resolveCall is used to resolve a guard during a call. The ssa
 	// return value is available from the instruction context where the
@@ -191,7 +191,7 @@ func (g *globalGuard) resolveCommon(pc *passContext, ls *lockState) resolvedValu
 }
 
 // resolveStatic implements functionGuardResolver.resolveStatic.
-func (g *globalGuard) resolveStatic(pc *passContext, ls *lockState, _ *ssa.Function, v interface{}) resolvedValue {
+func (g *globalGuard) resolveStatic(pc *passContext, ls *lockState, _ *ssa.Function, v any) resolvedValue {
 	return g.resolveCommon(pc, ls)
 }
 
@@ -227,7 +227,7 @@ type parameterGuard struct {
 }
 
 // resolveStatic implements functionGuardResolver.resolveStatic.
-func (p *parameterGuard) resolveStatic(_ *passContext, _ *lockState, fn *ssa.Function, _ interface{}) resolvedValue {
+func (p *parameterGuard) resolveStatic(_ *passContext, _ *lockState, fn *ssa.Function, _ any) resolvedValue {
 	return makeResolvedValue(fn.Params[p.Index], p.FieldList)
 }
 
@@ -250,7 +250,7 @@ type returnGuard struct {
 }
 
 // resolveCommon implements resolution for both cases.
-func (r *returnGuard) resolveCommon(rv interface{}) resolvedValue {
+func (r *returnGuard) resolveCommon(rv any) resolvedValue {
 	if rv == nil {
 		// For defers and other objects, this may be nil. This is
 		// handled in state.go in the actual lock checking logic. This
@@ -286,7 +286,7 @@ func (r *returnGuard) resolveCommon(rv interface{}) resolvedValue {
 }
 
 // resolveStatic implements functionGuardResolver.resolveStatic.
-func (r *returnGuard) resolveStatic(_ *passContext, _ *lockState, _ *ssa.Function, rv interface{}) resolvedValue {
+func (r *returnGuard) resolveStatic(_ *passContext, _ *lockState, _ *ssa.Function, rv any) resolvedValue {
 	return r.resolveCommon(rv)
 }
 

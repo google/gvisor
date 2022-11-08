@@ -59,7 +59,7 @@ type authContext struct {
 }
 
 // Value implements context.Context.
-func (ac *authContext) Value(key interface{}) interface{} {
+func (ac *authContext) Value(key any) any {
 	switch key {
 	case CtxCredentials:
 		return ac.creds

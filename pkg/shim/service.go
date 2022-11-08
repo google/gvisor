@@ -62,7 +62,7 @@ import (
 var (
 	empty   = &types.Empty{}
 	bufPool = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			buffer := make([]byte, 32<<10)
 			return &buffer
 		},
@@ -85,7 +85,7 @@ type oomPoller interface {
 	io.Closer
 	// add adds `cg` cgroup to oom poller. `cg` is cgroups.Cgroup in v1 and
 	// `cgroupsv2.Manager` in v2
-	add(id string, cg interface{}) error
+	add(id string, cg any) error
 	// run monitors oom event and notifies the shim about them
 	run(ctx context.Context)
 }
@@ -113,7 +113,7 @@ func New(ctx context.Context, id string, publisher shim.Publisher, cancel func()
 	s := &service{
 		id:             id,
 		processes:      make(map[string]process.Process),
-		events:         make(chan interface{}, 128),
+		events:         make(chan any, 128),
 		ec:             proc.ExitCh,
 		oomPoller:      ep,
 		cancel:         cancel,
@@ -160,7 +160,7 @@ type service struct {
 	// processes maps ExecId to processes running through exec.
 	processes map[string]process.Process
 
-	events chan interface{}
+	events chan any
 
 	// platform handles operations related to the console.
 	platform stdio.Platform
@@ -502,7 +502,7 @@ func (s *service) create(ctx context.Context, r *taskAPI.CreateTaskRequest) (*ta
 	pid := process.Pid()
 	if pid > 0 {
 		var (
-			cg  interface{}
+			cg  any
 			err error
 		)
 		if cgroups.Mode() == cgroups.Unified {
@@ -1041,7 +1041,7 @@ func (s *service) getProcess(execID string) (process.Process, error) {
 	return p, nil
 }
 
-func getTopic(e interface{}) string {
+func getTopic(e any) string {
 	switch e.(type) {
 	case *events.TaskCreate:
 		return runtime.TaskCreateEventTopic

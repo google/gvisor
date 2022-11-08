@@ -672,7 +672,7 @@ type syscallContext struct {
 
 // SyscallEnter implements kernel.Stracer.SyscallEnter. It logs the syscall
 // entry trace.
-func (s SyscallMap) SyscallEnter(t *kernel.Task, sysno uintptr, args arch.SyscallArguments, flags uint32) interface{} {
+func (s SyscallMap) SyscallEnter(t *kernel.Task, sysno uintptr, args arch.SyscallArguments, flags uint32) any {
 	info, ok := s[sysno]
 	if !ok {
 		info = SyscallInfo{
@@ -701,7 +701,7 @@ func (s SyscallMap) SyscallEnter(t *kernel.Task, sysno uintptr, args arch.Syscal
 
 // SyscallExit implements kernel.Stracer.SyscallExit. It logs the syscall
 // exit trace.
-func (s SyscallMap) SyscallExit(context interface{}, t *kernel.Task, sysno, rval uintptr, err error) {
+func (s SyscallMap) SyscallExit(context any, t *kernel.Task, sysno, rval uintptr, err error) {
 	errno := kernel.ExtractErrno(err, int(sysno))
 	c := context.(*syscallContext)
 

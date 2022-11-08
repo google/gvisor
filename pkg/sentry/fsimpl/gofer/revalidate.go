@@ -348,7 +348,7 @@ func (fs *filesystem) revalidateHelper(ctx context.Context, vfsObj *vfs.VirtualF
 // revalidateStatePool caches revalidateState instances to save array
 // allocations for dentries and names.
 var revalidateStatePool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return &revalidateState{}
 	},
 }

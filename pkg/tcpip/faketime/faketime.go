@@ -354,11 +354,11 @@ func (h timeHeap) Swap(i, j int) {
 	h[i], h[j] = h[j], h[i]
 }
 
-func (h *timeHeap) Push(x interface{}) {
+func (h *timeHeap) Push(x any) {
 	*h = append(*h, x.(time.Time))
 }
 
-func (h *timeHeap) Pop() interface{} {
+func (h *timeHeap) Pop() any {
 	last := (*h)[len(*h)-1]
 	*h = (*h)[:len(*h)-1]
 	return last

@@ -450,12 +450,12 @@ type inode struct {
 	// Inotify watches for this inode.
 	watches vfs.Watches
 
-	impl interface{} // immutable
+	impl any // immutable
 }
 
 const maxLinks = math.MaxUint32
 
-func (i *inode) init(impl interface{}, fs *filesystem, kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, parentDir *directory) {
+func (i *inode) init(impl any, fs *filesystem, kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, parentDir *directory) {
 	if mode.FileType() == 0 {
 		panic("file type is required in FileMode")
 	}

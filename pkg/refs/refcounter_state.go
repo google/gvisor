@@ -16,7 +16,7 @@ package refs
 
 // +stateify savable
 type savedReference struct {
-	obj interface{}
+	obj any
 }
 
 func (w *WeakRef) saveObj() savedReference {

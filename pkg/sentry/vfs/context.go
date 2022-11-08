@@ -46,7 +46,7 @@ type mountNamespaceContext struct {
 }
 
 // Value implements Context.Value.
-func (mc mountNamespaceContext) Value(key interface{}) interface{} {
+func (mc mountNamespaceContext) Value(key any) any {
 	switch key {
 	case CtxMountNamespace:
 		mc.mntns.IncRef()
@@ -88,7 +88,7 @@ func WithRoot(ctx context.Context, root VirtualDentry) context.Context {
 }
 
 // Value implements Context.Value.
-func (rc rootContext) Value(key interface{}) interface{} {
+func (rc rootContext) Value(key any) any {
 	switch key {
 	case CtxRoot:
 		rc.root.IncRef()

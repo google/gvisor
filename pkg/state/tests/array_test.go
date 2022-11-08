@@ -19,7 +19,7 @@ import (
 	"testing"
 )
 
-var allArrayPrimitives = []interface{}{
+var allArrayPrimitives = []any{
 	[1]bool{},
 	[1]bool{true},
 	[2]bool{false, true},
@@ -71,12 +71,12 @@ func TestArrayPrimitives(t *testing.T) {
 
 func TestSlices(t *testing.T) {
 	var allSlices = flatten(
-		filter(allArrayPrimitives, func(o interface{}) (interface{}, bool) {
+		filter(allArrayPrimitives, func(o any) (any, bool) {
 			v := reflect.New(reflect.TypeOf(o)).Elem()
 			v.Set(reflect.ValueOf(o))
 			return v.Slice(0, v.Len()).Interface(), true
 		}),
-		filter(allArrayPrimitives, func(o interface{}) (interface{}, bool) {
+		filter(allArrayPrimitives, func(o any) (any, bool) {
 			v := reflect.New(reflect.TypeOf(o)).Elem()
 			v.Set(reflect.ValueOf(o))
 			if v.Len() == 0 {
@@ -85,7 +85,7 @@ func TestSlices(t *testing.T) {
 			}
 			return v.Slice(1, v.Len()).Interface(), true
 		}),
-		filter(allArrayPrimitives, func(o interface{}) (interface{}, bool) {
+		filter(allArrayPrimitives, func(o any) (any, bool) {
 			v := reflect.New(reflect.TypeOf(o)).Elem()
 			v.Set(reflect.ValueOf(o))
 			if v.Len() == 0 {
@@ -103,11 +103,11 @@ func TestSlices(t *testing.T) {
 
 func TestArrayContainers(t *testing.T) {
 	var (
-		emptyArray [1]interface{}
-		fullArray  [1]interface{}
+		emptyArray [1]any
+		fullArray  [1]any
 	)
 	fullArray[0] = &emptyArray
-	runTestCases(t, false, "", []interface{}{
+	runTestCases(t, false, "", []any{
 		arrayContainer{v: emptyArray},
 		arrayContainer{v: fullArray},
 		arrayPtrContainer{v: nil},
@@ -118,11 +118,11 @@ func TestArrayContainers(t *testing.T) {
 
 func TestSliceContainers(t *testing.T) {
 	var (
-		nilSlice   []interface{}
-		emptySlice = make([]interface{}, 0)
-		fullSlice  = []interface{}{nil}
+		nilSlice   []any
+		emptySlice = make([]any, 0)
+		fullSlice  = []any{nil}
 	)
-	runTestCases(t, false, "", []interface{}{
+	runTestCases(t, false, "", []any{
 		sliceContainer{v: nilSlice},
 		sliceContainer{v: emptySlice},
 		sliceContainer{v: fullSlice},

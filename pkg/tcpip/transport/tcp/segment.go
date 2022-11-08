@@ -41,7 +41,7 @@ const (
 )
 
 var segmentPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return &segment{}
 	},
 }

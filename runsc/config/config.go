@@ -347,7 +347,7 @@ func (f *FileAccessType) Set(v string) error {
 }
 
 // Get implements flag.Value.
-func (f *FileAccessType) Get() interface{} {
+func (f *FileAccessType) Get() any {
 	return *f
 }
 
@@ -396,7 +396,7 @@ func (n *NetworkType) Set(v string) error {
 }
 
 // Get implements flag.Value.
-func (n *NetworkType) Get() interface{} {
+func (n *NetworkType) Get() any {
 	return *n
 }
 
@@ -443,7 +443,7 @@ func (q *QueueingDiscipline) Set(v string) error {
 }
 
 // Get implements flag.Value.
-func (q *QueueingDiscipline) Get() interface{} {
+func (q *QueueingDiscipline) Get() any {
 	return *q
 }
 
@@ -505,7 +505,7 @@ func (g *HostUDS) Set(v string) error {
 }
 
 // Get implements flag.Value.
-func (g *HostUDS) Get() interface{} {
+func (g *HostUDS) Get() any {
 	return *g
 }
 
@@ -567,7 +567,7 @@ func (g *HostFifo) Set(v string) error {
 }
 
 // Get implements flag.Value.
-func (g *HostFifo) Get() interface{} {
+func (g *HostFifo) Get() any {
 	return *g
 }
 

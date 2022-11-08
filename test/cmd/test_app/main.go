@@ -82,7 +82,7 @@ func (c *uds) SetFlags(f *flag.FlagSet) {
 }
 
 // Execute implements subcommands.Command.Execute.
-func (c *uds) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (c *uds) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if c.fileName == "" || c.socketPath == "" {
 		log.Fatalf("Flags cannot be empty, given: fileName: %q, socketPath: %q", c.fileName, c.socketPath)
 		return subcommands.ExitFailure
@@ -159,7 +159,7 @@ func (c *taskTree) SetFlags(f *flag.FlagSet) {
 }
 
 // Execute implements subcommands.Command.
-func (c *taskTree) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (c *taskTree) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if c.depth == 0 {
 		log.Printf("Child sleeping, PID: %d\n", os.Getpid())
 		for {
@@ -227,7 +227,7 @@ func (c *forkBomb) SetFlags(f *flag.FlagSet) {
 }
 
 // Execute implements subcommands.Command.
-func (c *forkBomb) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (c *forkBomb) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	time.Sleep(c.delay)
 
 	cmd := exec.Command("/proc/self/exe", c.Name())
@@ -260,7 +260,7 @@ func (*reaper) Usage() string {
 func (*reaper) SetFlags(*flag.FlagSet) {}
 
 // Execute implements subcommands.Command.
-func (c *reaper) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (c *reaper) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	stop := testutil.StartReaper()
 	defer stop()
 	select {}
@@ -291,7 +291,7 @@ func (s *syscall) SetFlags(f *flag.FlagSet) {
 }
 
 // Execute implements subcommands.Command.
-func (s *syscall) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (s *syscall) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if _, _, errno := sys.Syscall(uintptr(s.sysno), 0, 0, 0); errno != 0 {
 		fmt.Printf("syscall(%d, 0, 0...) failed: %v\n", s.sysno, errno)
 	} else {
@@ -327,7 +327,7 @@ func (c *capability) SetFlags(f *flag.FlagSet) {
 }
 
 // Execute implements subcommands.Command.
-func (c *capability) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (c *capability) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if c.enabled == 0 && c.disabled == 0 {
 		fmt.Println("One of the flags must be set")
 		return subcommands.ExitUsageError
@@ -383,7 +383,7 @@ func (*ptyRunner) Usage() string {
 func (*ptyRunner) SetFlags(f *flag.FlagSet) {}
 
 // Execute implements subcommands.Command.
-func (*ptyRunner) Execute(_ context.Context, fs *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+func (*ptyRunner) Execute(_ context.Context, fs *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	c := exec.Command(fs.Args()[0], fs.Args()[1:]...)
 	f, err := pty.Start(c)
 	if err != nil {

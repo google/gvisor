@@ -54,7 +54,7 @@ func (pc *DropCommand) SetFlags(fs *flag.FlagSet) {
 }
 
 // Execute implements subcommands.Command.Execute.
-func (pc *DropCommand) Execute(context.Context, *flag.FlagSet, ...interface{}) subcommands.ExitStatus {
+func (pc *DropCommand) Execute(context.Context, *flag.FlagSet, ...any) subcommands.ExitStatus {
 	if err := runBasicProgram(dropProgram, pc.device, pc.deviceIndex); err != nil {
 		log.Printf("%v", err)
 		return subcommands.ExitFailure

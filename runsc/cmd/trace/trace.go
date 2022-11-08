@@ -53,7 +53,7 @@ func (*Trace) Usage() string {
 func (*Trace) SetFlags(f *flag.FlagSet) {}
 
 // Execute implements subcommands.Command.
-func (*Trace) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (*Trace) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	return createCommander(f).Execute(ctx, args...)
 }
 

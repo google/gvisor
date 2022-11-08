@@ -176,7 +176,7 @@ type objdumpAnalyzer struct {
 }
 
 // Run implements nogo.binaryAnalyzer.Run.
-func (ob *objdumpAnalyzer) Run(pass *analysis.Pass, binary io.Reader) (interface{}, error) {
+func (ob *objdumpAnalyzer) Run(pass *analysis.Pass, binary io.Reader) (any, error) {
 	return run(pass, binary)
 }
 
@@ -652,7 +652,7 @@ func findReasons(pass *analysis.Pass, fdecl *ast.FuncDecl) ([]EscapeReason, bool
 }
 
 // run performs the analysis.
-func run(pass *analysis.Pass, binary io.Reader) (interface{}, error) {
+func run(pass *analysis.Pass, binary io.Reader) (any, error) {
 	calls, callsErr := loadObjdump(binary)
 	if callsErr != nil {
 		// Note that if this analysis fails, then we don't actually

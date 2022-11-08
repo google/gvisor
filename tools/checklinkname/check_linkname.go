@@ -208,7 +208,7 @@ func checkOneRemote(pass *analysis.Pass, sym, wantSig string) {
 	}
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	// First, check if any remote symbols are in this package.
 	p, ok := knownLinknames[pass.Pkg.Path()]
 	if ok {

@@ -39,7 +39,7 @@ func (*filesystem) Name() string {
 }
 
 // Mount returns an error. Mounting hostfs is not allowed.
-func (*filesystem) Mount(ctx context.Context, device string, flags fs.MountSourceFlags, data string, dataObj interface{}) (*fs.Inode, error) {
+func (*filesystem) Mount(ctx context.Context, device string, flags fs.MountSourceFlags, data string, dataObj any) (*fs.Inode, error) {
 	return nil, linuxerr.EPERM
 }
 

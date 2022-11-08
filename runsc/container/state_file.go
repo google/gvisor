@@ -307,7 +307,7 @@ func (s *StateFile) unlockOrDie() {
 // saveLocked saves 'v' to the state file.
 //
 // Preconditions: lock() must been called before.
-func (s *StateFile) saveLocked(v interface{}) error {
+func (s *StateFile) saveLocked(v any) error {
 	if !s.flock.Locked() {
 		panic("saveLocked called without lock held")
 	}
@@ -322,7 +322,7 @@ func (s *StateFile) saveLocked(v interface{}) error {
 	return nil
 }
 
-func (s *StateFile) load(v interface{}) error {
+func (s *StateFile) load(v any) error {
 	if err := s.lock(); err != nil {
 		return err
 	}

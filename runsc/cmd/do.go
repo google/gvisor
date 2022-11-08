@@ -82,7 +82,7 @@ func (is *idMapSlice) String() string {
 }
 
 // Get implements flag.Value.Get.
-func (is *idMapSlice) Get() interface{} {
+func (is *idMapSlice) Get() any {
 	return is
 }
 
@@ -124,7 +124,7 @@ func (c *Do) SetFlags(f *flag.FlagSet) {
 }
 
 // Execute implements subcommands.Command.Execute.
-func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if len(f.Args()) == 0 {
 		f.Usage()
 		return subcommands.ExitUsageError
@@ -211,7 +211,7 @@ func addNamespace(spec *specs.Spec, ns specs.LinuxNamespace) {
 	spec.Linux.Namespaces = append(spec.Linux.Namespaces, ns)
 }
 
-func (c *Do) notifyUser(format string, v ...interface{}) {
+func (c *Do) notifyUser(format string, v ...any) {
 	if !c.quiet {
 		fmt.Printf(format+"\n", v...)
 	}

@@ -81,7 +81,7 @@ type WeakRef struct {
 
 // weakRefPool is a pool of weak references to avoid allocations on the hot path.
 var weakRefPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return &WeakRef{}
 	},
 }
@@ -262,7 +262,7 @@ func (l *LeakMode) Set(v string) error {
 }
 
 // Get implements flag.Value.
-func (l *LeakMode) Get() interface{} {
+func (l *LeakMode) Get() any {
 	return *l
 }
 

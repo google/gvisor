@@ -50,7 +50,7 @@ type dummyClockContext struct {
 }
 
 // Value implements context.Context
-func (d *dummyClockContext) Value(key interface{}) interface{} {
+func (d *dummyClockContext) Value(key any) any {
 	switch key {
 	case time.CtxRealtimeClock:
 		return &dummyClock{}

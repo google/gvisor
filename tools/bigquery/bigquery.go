@@ -48,7 +48,7 @@ func (s *Suite) String() string {
 }
 
 // writeLine writes a line of text to the given string builder with a prefix.
-func writeLine(sb *strings.Builder, prefix string, format string, values ...interface{}) {
+func writeLine(sb *strings.Builder, prefix string, format string, values ...any) {
 	if prefix != "" {
 		sb.WriteString(prefix)
 	}

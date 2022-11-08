@@ -79,7 +79,7 @@ func (k *Kernel) NewKcov() *Kcov {
 }
 
 var coveragePool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return make([]byte, 0)
 	},
 }

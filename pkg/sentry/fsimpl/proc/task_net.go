@@ -650,7 +650,7 @@ var snmp = []snmpLine{
 	},
 }
 
-func toSlice(a interface{}) []uint64 {
+func toSlice(a any) []uint64 {
 	v := reflect.Indirect(reflect.ValueOf(a))
 	return v.Slice(0, v.Len()).Interface().([]uint64)
 }
@@ -665,7 +665,7 @@ func sprintSlice(s []uint64) string {
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (d *netSnmpData) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	types := []interface{}{
+	types := []any{
 		&inet.StatSNMPIP{},
 		&inet.StatSNMPICMP{},
 		nil, // TODO(gvisor.dev/issue/628): Support IcmpMsg stats.

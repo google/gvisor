@@ -49,7 +49,7 @@ func (*State) Usage() string {
 func (*State) SetFlags(*flag.FlagSet) {}
 
 // Execute implements subcommands.Command.Execute.
-func (*State) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (*State) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() != 1 {
 		f.Usage()
 		return subcommands.ExitUsageError

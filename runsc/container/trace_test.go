@@ -36,7 +36,7 @@ import (
 func remoteSinkConfig(endpoint string) seccheck.SinkConfig {
 	return seccheck.SinkConfig{
 		Name: "remote",
-		Config: map[string]interface{}{
+		Config: map[string]any{
 			"endpoint": endpoint,
 		},
 	}

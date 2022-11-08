@@ -36,12 +36,12 @@ func (h *segmentHeap) Swap(i, j int) {
 }
 
 // Push adds x as the last element of h.
-func (h *segmentHeap) Push(x interface{}) {
+func (h *segmentHeap) Push(x any) {
 	*h = append(*h, x.(*segment))
 }
 
 // Pop removes the last element of h and returns it.
-func (h *segmentHeap) Pop() interface{} {
+func (h *segmentHeap) Pop() any {
 	old := *h
 	n := len(old)
 	x := old[n-1]

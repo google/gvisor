@@ -115,11 +115,11 @@ type SinkDesc struct {
 	// allow the sink to do whatever is necessary to set it up. If it returns a
 	// file, this file is donated to the sandbox and passed to the sink when New
 	// is called. config is an opaque json object passed to the sink.
-	Setup func(config map[string]interface{}) (*os.File, error)
+	Setup func(config map[string]any) (*os.File, error)
 	// New creates a new sink. config is an opaque json object passed to the sink.
 	// endpoing is a file descriptor to the file returned in Setup. It's set to -1
 	// if Setup returned nil.
-	New func(config map[string]interface{}, endpoint *fd.FD) (Sink, error)
+	New func(config map[string]any, endpoint *fd.FD) (Sink, error)
 }
 
 // RegisterSink registers a new sink to make it discoverable.

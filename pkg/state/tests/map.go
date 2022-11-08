@@ -16,12 +16,12 @@ package tests
 
 // +stateify savable
 type mapContainer struct {
-	v map[int]interface{}
+	v map[int]any
 }
 
 // +stateify savable
 type mapPtrContainer struct {
-	v *map[int]interface{}
+	v *map[int]any
 }
 
 // +stateify savable

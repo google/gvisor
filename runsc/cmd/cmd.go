@@ -35,7 +35,7 @@ func (i *intFlags) String() string {
 }
 
 // Get implements flag.Value.
-func (i *intFlags) Get() interface{} {
+func (i *intFlags) Get() any {
 	return i
 }
 

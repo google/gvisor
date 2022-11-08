@@ -159,7 +159,7 @@ func TmpDir() string {
 // This is designed to be implemented by *testing.T.
 type Logger interface {
 	Name() string
-	Logf(fmt string, args ...interface{})
+	Logf(fmt string, args ...any)
 }
 
 // DefaultLogger logs using the log package.
@@ -171,7 +171,7 @@ func (d DefaultLogger) Name() string {
 }
 
 // Logf implements Logger.Logf.
-func (d DefaultLogger) Logf(fmt string, args ...interface{}) {
+func (d DefaultLogger) Logf(fmt string, args ...any) {
 	log.Printf(fmt, args...)
 }
 
@@ -188,7 +188,7 @@ func (m multiLogger) Name() string {
 }
 
 // Logf implements Logger.Logf.
-func (m multiLogger) Logf(fmt string, args ...interface{}) {
+func (m multiLogger) Logf(fmt string, args ...any) {
 	for _, l := range m {
 		l.Logf(fmt, args...)
 	}

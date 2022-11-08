@@ -62,27 +62,27 @@ func TestFloat(t *testing.T) {
 const onlyDouble float64 = 1.0000000000000002
 
 func TestFloatTruncation(t *testing.T) {
-	runTestCases(t, true, "pass", []interface{}{
+	runTestCases(t, true, "pass", []any{
 		truncatingFloat32{save: onlyDouble},
 	})
-	runTestCases(t, false, "fail", []interface{}{
+	runTestCases(t, false, "fail", []any{
 		truncatingFloat32{save: 1.0},
 	})
 }
 
-var safeComplex64s = combine(safeFloat32s, safeFloat32s, func(i, j interface{}) interface{} {
+var safeComplex64s = combine(safeFloat32s, safeFloat32s, func(i, j any) any {
 	return complex(i.(float32), j.(float32))
 })
 
-var allComplex64s = combine(allFloat32s, allFloat32s, func(i, j interface{}) interface{} {
+var allComplex64s = combine(allFloat32s, allFloat32s, func(i, j any) any {
 	return complex(i.(float32), j.(float32))
 })
 
-var safeComplex128s = combine(safeFloat64s, safeFloat64s, func(i, j interface{}) interface{} {
+var safeComplex128s = combine(safeFloat64s, safeFloat64s, func(i, j any) any {
 	return complex(i.(float64), j.(float64))
 })
 
-var allComplex128s = combine(allFloat64s, allFloat64s, func(i, j interface{}) interface{} {
+var allComplex128s = combine(allFloat64s, allFloat64s, func(i, j any) any {
 	return complex(i.(float64), j.(float64))
 })
 
@@ -107,12 +107,12 @@ func TestComplex(t *testing.T) {
 }
 
 func TestComplexTruncation(t *testing.T) {
-	runTestCases(t, true, "pass", []interface{}{
+	runTestCases(t, true, "pass", []any{
 		truncatingComplex64{save: complex(onlyDouble, onlyDouble)},
 		truncatingComplex64{save: complex(1.0, onlyDouble)},
 		truncatingComplex64{save: complex(onlyDouble, 1.0)},
 	})
-	runTestCases(t, false, "fail", []interface{}{
+	runTestCases(t, false, "fail", []any{
 		truncatingComplex64{save: complex(1.0, 1.0)},
 	})
 }

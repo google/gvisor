@@ -132,7 +132,7 @@ func Admit(writer http.ResponseWriter, req *http.Request) {
 	sendResponse(writer, review)
 }
 
-func sendResponse(writer http.ResponseWriter, response interface{}) {
+func sendResponse(writer http.ResponseWriter, response any) {
 	b, err := json.Marshal(response)
 	if err != nil {
 		log.Warningf("Failed with error (%v) to marshal response: %+v", err, response)
@@ -198,7 +198,7 @@ func updatePod(pod *v1.Pod) {
 	}
 }
 
-func createPatch(old []byte, newObj interface{}) ([]byte, error) {
+func createPatch(old []byte, newObj any) ([]byte, error) {
 	new, err := json.Marshal(newObj)
 	if err != nil {
 		return nil, err

@@ -193,7 +193,7 @@ func TestPipeRequest(t *testing.T) {
 		desc string
 
 		// request to execute.
-		context interface{}
+		context any
 
 		// flags determines whether to use the read or write end
 		// of the pipe, for this test it can only be Read or Write.

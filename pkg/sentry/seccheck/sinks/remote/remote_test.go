@@ -231,13 +231,13 @@ func TestExample(t *testing.T) {
 func TestConfig(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
-		config map[string]interface{}
+		config map[string]any
 		want   *remote
 		err    string
 	}{
 		{
 			name:   "default",
-			config: map[string]interface{}{},
+			config: map[string]any{},
 			want: &remote{
 				retries:        0,
 				initialBackoff: 25 * time.Microsecond,
@@ -246,7 +246,7 @@ func TestConfig(t *testing.T) {
 		},
 		{
 			name: "all",
-			config: map[string]interface{}{
+			config: map[string]any{
 				"retries":     float64(10),
 				"backoff":     "1s",
 				"backoff_max": "10s",
@@ -259,28 +259,28 @@ func TestConfig(t *testing.T) {
 		},
 		{
 			name: "bad-retries",
-			config: map[string]interface{}{
+			config: map[string]any{
 				"retries": "10",
 			},
 			err: "retries",
 		},
 		{
 			name: "bad-backoff",
-			config: map[string]interface{}{
+			config: map[string]any{
 				"backoff": "wrong",
 			},
 			err: "invalid duration",
 		},
 		{
 			name: "bad-backoff-max",
-			config: map[string]interface{}{
+			config: map[string]any{
 				"backoff_max": 10,
 			},
 			err: "is not an string",
 		},
 		{
 			name: "bad-invalid-backoffs",
-			config: map[string]interface{}{
+			config: map[string]any{
 				"retries":     float64(10),
 				"backoff":     "10s",
 				"backoff_max": "1s",

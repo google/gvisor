@@ -61,7 +61,7 @@ import (
 // operation to run an analyzer with the object binary data.
 type binaryAnalyzer interface {
 	// Run runs the analyzer with the given binary data.
-	Run(*analysis.Pass, io.Reader) (interface{}, error)
+	Run(*analysis.Pass, io.Reader) (any, error)
 }
 
 // analyzer is a simple analysis.Analyzer interface.

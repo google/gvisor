@@ -139,7 +139,7 @@ func (s *TestStack) SetTCPRecovery(recovery TCPLossRecovery) error {
 }
 
 // Statistics implements Stack.
-func (s *TestStack) Statistics(stat interface{}, arg string) error {
+func (s *TestStack) Statistics(stat any, arg string) error {
 	return nil
 }
 

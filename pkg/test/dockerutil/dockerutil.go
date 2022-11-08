@@ -131,7 +131,7 @@ func UsingSystemdCgroup() (bool, error) {
 		return false, err
 	}
 	// Unmarshal the configuration.
-	c := make(map[string]interface{})
+	c := make(map[string]any)
 	if err := json.Unmarshal(configBytes, &c); err != nil {
 		return false, err
 	}
@@ -141,7 +141,7 @@ func UsingSystemdCgroup() (bool, error) {
 		// No exec-opts. Default is true on cgroupv2, false otherwise.
 		return cgroup.IsOnlyV2(), nil
 	}
-	eos, ok := e.([]interface{})
+	eos, ok := e.([]any)
 	if !ok {
 		// The exec opts are not an array.
 		return false, fmt.Errorf("unexpected format: %+v", eos)
@@ -154,7 +154,7 @@ func UsingSystemdCgroup() (bool, error) {
 	return false, nil
 }
 
-func runtimeMap() (map[string]interface{}, error) {
+func runtimeMap() (map[string]any, error) {
 	// Read the configuration data; the file must exist.
 	configBytes, err := ioutil.ReadFile(*config)
 	if err != nil {
@@ -162,7 +162,7 @@ func runtimeMap() (map[string]interface{}, error) {
 	}
 
 	// Unmarshal the configuration.
-	c := make(map[string]interface{})
+	c := make(map[string]any)
 	if err := json.Unmarshal(configBytes, &c); err != nil {
 		return nil, err
 	}
@@ -172,7 +172,7 @@ func runtimeMap() (map[string]interface{}, error) {
 	if !ok {
 		return nil, fmt.Errorf("no runtimes declared: %v", c)
 	}
-	rs, ok := r.(map[string]interface{})
+	rs, ok := r.(map[string]any)
 	if !ok {
 		// The runtimes are not a map.
 		return nil, fmt.Errorf("unexpected format: %v", rs)
@@ -182,7 +182,7 @@ func runtimeMap() (map[string]interface{}, error) {
 		// The expected runtime is not declared.
 		return nil, fmt.Errorf("runtime %q not found: %v", *runtime, rs)
 	}
-	rs, ok = r.(map[string]interface{})
+	rs, ok = r.(map[string]any)
 	if !ok {
 		// The runtime is not a map.
 		return nil, fmt.Errorf("unexpected format: %v", r)

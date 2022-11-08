@@ -106,7 +106,7 @@ func (g *Gofer) SetFlags(f *flag.FlagSet) {
 }
 
 // Execute implements subcommands.Command.
-func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if g.bundleDir == "" || len(g.ioFDs) < 1 || g.specFD < 0 {
 		f.Usage()
 		return subcommands.ExitUsageError

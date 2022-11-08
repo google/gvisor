@@ -48,7 +48,7 @@ func (r *Resume) SetFlags(*flag.FlagSet) {
 }
 
 // Execute implements subcommands.Command.Execute.
-func (r *Resume) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (r *Resume) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() != 1 {
 		f.Usage()
 		return subcommands.ExitUsageError
