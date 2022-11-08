@@ -111,18 +111,12 @@ syscall_test(
     add_host_communication = True,
     one_sandbox = False,
     test = "//test/syscalls/linux:connect_external_test",
-    # Shared mode tests replace /tmp which hides the files created for
-    # add_host_communication. use_tmpfs makes shared mode be skipped.
-    use_tmpfs = True,
 )
 
 syscall_test(
     add_host_communication = True,
     one_sandbox = False,
     test = "//test/syscalls/linux:pipe_external_test",
-    # Shared mode tests replace /tmp which hides the files created for
-    # add_host_communication. use_tmpfs makes shared mode be skipped.
-    use_tmpfs = True,
 )
 
 syscall_test(

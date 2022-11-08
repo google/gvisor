@@ -330,8 +330,8 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 
 // setupHostCommTree updates the spec to expose a UDS and pipe files tree for
 // testing communication with the host.
-func setupHostCommTree(spec *specs.Spec) (cleanup func(), err error) {
-	socketDir, cleanup, err := uds.CreateSocketTree("/tmp")
+func setupHostCommTree(spec *specs.Spec, tmpDir string) (cleanup func(), err error) {
+	socketDir, cleanup, err := uds.CreateSocketTree(tmpDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create socket tree: %v", err)
 	}
@@ -478,7 +478,7 @@ func runTestCaseRunsc(testBin string, tc *gtest.TestCase, args []string, t *test
 	spec.Process.Env = env
 
 	if *addUDSTree {
-		cleanup, err := setupHostCommTree(spec)
+		cleanup, err := setupHostCommTree(spec, testutil.TmpDir())
 		if err != nil {
 			t.Fatalf("error creating UDS tree: %v", err)
 		}
