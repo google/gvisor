@@ -19,13 +19,27 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/fd"
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 )
+
+func init() {
+	RegisterSink(SinkDesc{
+		Name: "test-sink",
+		New:  newTestSink,
+	})
+}
 
 type testSink struct {
 	SinkDefaults
 
 	onClone func(ctx context.Context, fields FieldSet, info *pb.CloneInfo) error
+}
+
+var _ Sink = (*testSink)(nil)
+
+func newTestSink(_ map[string]any, _ *fd.FD) (Sink, error) {
+	return &testSink{}, nil
 }
 
 // Name implements Sink.Name.

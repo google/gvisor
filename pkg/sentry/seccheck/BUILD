@@ -45,12 +45,14 @@ go_test(
     name = "seccheck_test",
     size = "small",
     srcs = [
+        "config_test.go",
         "metadata_test.go",
         "seccheck_test.go",
     ],
     library = ":seccheck",
     deps = [
         "//pkg/context",
+        "//pkg/fd",
         "//pkg/sentry/seccheck/points:points_go_proto",
     ],
 )
