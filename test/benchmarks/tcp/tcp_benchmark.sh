@@ -43,7 +43,7 @@ latency_variation=1     # +/- 1ms is a relatively low amount of jitter.
 loss=0.1                # 0.1% loss is non-zero, but not extremely high.
 duplicate=0.1           # 0.1% means duplicates are 1/10x as frequent as losses.
 duration=30             # 30s is enough time to consistent results (experimentally).
-helper_dir=$(dirname $0)
+helper_dir="$(dirname "$0")"
 netstack_opts=
 disable_linux_gso=
 disable_linux_gro=
@@ -51,11 +51,11 @@ num_client_threads=1
 
 # Check for netem support.
 lsmod_output=$(lsmod | grep sch_netem)
-if [ "$?" != "0" ]; then
+if [[ "$?" != "0" ]]; then
   echo "warning: sch_netem may not be installed." >&2
 fi
 
-while [ $# -gt 0 ]; do
+while [[ $# -gt 0 ]]; do
   case "$1" in
     --client)
       client=true
@@ -90,7 +90,7 @@ while [ $# -gt 0 ]; do
       ;;
     --mtu)
       shift
-      [ "$#" -le 0 ] && echo "no mtu provided" && exit 1
+      [[ "$#" -le 0 ]] && echo "no mtu provided" && exit 1
       mtu=$1
       ;;
     --sack)
@@ -107,27 +107,27 @@ while [ $# -gt 0 ]; do
       ;;
     --duration)
       shift
-      [ "$#" -le 0 ] && echo "no duration provided" && exit 1
+      [[ "$#" -le 0 ]] && echo "no duration provided" && exit 1
       duration=$1
       ;;
     --latency)
       shift
-      [ "$#" -le 0 ] && echo "no latency provided" && exit 1
+      [[ "$#" -le 0 ]] && echo "no latency provided" && exit 1
       latency=$1
       ;;
     --latency-variation)
       shift
-      [ "$#" -le 0 ] && echo "no latency variation provided" && exit 1
+      [[ "$#" -le 0 ]] && echo "no latency variation provided" && exit 1
       latency_variation=$1
       ;;
     --loss)
       shift
-      [ "$#" -le 0 ] && echo "no loss probability provided" && exit 1
+      [[ "$#" -le 0 ]] && echo "no loss probability provided" && exit 1
       loss=$1
       ;;
     --duplicate)
       shift
-      [ "$#" -le 0 ] && echo "no duplicate provided" && exit 1
+      [[ "$#" -le 0 ]] && echo "no duplicate provided" && exit 1
       duplicate=$1
       ;;
     --cpuprofile)
@@ -172,7 +172,7 @@ while [ $# -gt 0 ]; do
       ;;
     --helpers)
       shift
-      [ "$#" -le 0 ] && echo "no helper dir provided" && exit 1
+      [[ "$#" -le 0 ]] && echo "no helper dir provided" && exit 1
       helper_dir=$1
       ;;
     *)
@@ -206,29 +206,29 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-if [ ${verbose} == "true" ]; then
+if [[ ${verbose} == "true" ]]; then
   set -x
 fi
 
 # Latency needs to be halved, since it's applied on both ways.
-half_latency=$(echo ${latency}/2 | bc -l | awk '{printf "%1.2f", $0}')
-half_loss=$(echo ${loss}/2 | bc -l | awk '{printf "%1.6f", $0}')
-half_duplicate=$(echo ${duplicate}/2 | bc -l | awk '{printf "%1.6f", $0}')
-helper_dir=${helper_dir#$(pwd)/} # Use relative paths.
-proxy_binary=${helper_dir}/tcp_proxy
-nsjoin_binary=${helper_dir}/nsjoin
+half_latency=$(echo "${latency}"/2 | bc -l | awk '{printf "%1.2f", $0}')
+half_loss=$(echo "${loss}"/2 | bc -l | awk '{printf "%1.6f", $0}')
+half_duplicate=$(echo "${duplicate}"/2 | bc -l | awk '{printf "%1.6f", $0}')
+helper_dir="${helper_dir#$(pwd)/}" # Use relative paths.
+proxy_binary="${helper_dir}/tcp_proxy"
+nsjoin_binary="${helper_dir}/nsjoin"
 
-if [ ! -e ${proxy_binary} ]; then
+if [[ ! -e ${proxy_binary} ]]; then
   echo "Could not locate ${proxy_binary}, please make sure you've built the binary"
   exit 1
 fi
 
-if [ ! -e ${nsjoin_binary} ]; then
+if [[ ! -e ${nsjoin_binary} ]]; then
   echo "Could not locate ${nsjoin_binary}, please make sure you've built the binary"
   exit 1
 fi
 
-if [ $(echo ${latency_variation} | awk '{printf "%1.2f", $0}') != "0.00" ]; then
+if [[ "$(echo "${latency_variation}" | awk '{printf "%1.2f", $0}')" != "0.00" ]]; then
   # As long as there's some jitter, then we use the paretonormal distribution.
   # This will preserve the minimum RTT, but add a realistic amount of jitter to
   # the connection and cause re-ordering, etc. The regular pareto distribution
@@ -262,18 +262,18 @@ fi
 
 # Specify loss and duplicate parameters only if they are non-zero
 loss_opt=""
-if [ "$(echo $half_loss | bc -q)" != "0" ]; then
+if [[ "$(echo "$half_loss" | bc -q)" != "0" ]]; then
   loss_opt="loss random ${half_loss}%"
 fi
 duplicate_opt=""
-if [ "$(echo $half_duplicate | bc -q)" != "0" ]; then
+if [[ "$(echo "$half_duplicate" | bc -q)" != "0" ]]; then
   duplicate_opt="duplicate ${half_duplicate}%"
 fi
 
 exec unshare -U -m -n -r -f -p --mount-proc /bin/bash << EOF
 set -e -m
 
-if [ ${verbose} == "true" ]; then
+if [[ ${verbose} == "true" ]]; then
   set -x
 fi
 
@@ -352,7 +352,7 @@ fi
 # Add client and server addresses, and bring everything up.
 ${nsjoin_binary} /tmp/client.netns ip addr add ${client_addr}/${mask} dev client.0
 ${nsjoin_binary} /tmp/server.netns ip addr add ${server_addr}/${mask} dev server.0
-if [ "${disable_linux_gso}" == "1" ]; then
+if [[ "${disable_linux_gso}" == "1" ]]; then
   ${nsjoin_binary} /tmp/client.netns ethtool -K client.0 tso off
   ${nsjoin_binary} /tmp/client.netns ethtool -K client.0 gso off
   ${nsjoin_binary} /tmp/client.netns ethtool -K client.0 gro off
@@ -360,7 +360,7 @@ if [ "${disable_linux_gso}" == "1" ]; then
   ${nsjoin_binary} /tmp/server.netns ethtool -K server.0 gso off
   ${nsjoin_binary} /tmp/server.netns ethtool -K server.0 gro off
 fi
-if [ "${disable_linux_gro}" == "1" ]; then
+if [[ "${disable_linux_gro}" == "1" ]]; then
   ${nsjoin_binary} /tmp/client.netns ethtool -K client.0 gro off
   ${nsjoin_binary} /tmp/server.netns ethtool -K server.0 gro off
 fi
