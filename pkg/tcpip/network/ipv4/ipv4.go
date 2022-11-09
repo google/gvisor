@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -697,7 +698,9 @@ func (e *endpoint) forwardPacketWithRoute(route *stack.Route, pkt stack.PacketBu
 
 // forwardUnicastPacket attempts to forward a packet to its final destination.
 func (e *endpoint) forwardUnicastPacket(pkt stack.PacketBufferPtr) ip.ForwardingError {
-	h := header.IPv4(pkt.NetworkHeader().Slice())
+	hView := pkt.NetworkHeader().View()
+	defer hView.Release()
+	h := header.IPv4(hView.AsSlice())
 
 	dstAddr := h.DestinationAddress()
 
@@ -782,11 +785,13 @@ func (e *endpoint) HandlePacket(pkt stack.PacketBufferPtr) {
 		return
 	}
 
-	h, ok := e.protocol.parseAndValidate(pkt)
+	hView, ok := e.protocol.parseAndValidate(pkt)
 	if !ok {
 		stats.MalformedPacketsReceived.Increment()
 		return
 	}
+	h := header.IPv4(hView.AsSlice())
+	defer hView.Release()
 
 	if !e.nic.IsLoopback() {
 		if !e.protocol.options.AllowExternalLoopbackTraffic {
@@ -837,11 +842,13 @@ func (e *endpoint) handleLocalPacket(pkt stack.PacketBufferPtr, canSkipRXChecksu
 	defer pkt.DecRef()
 	pkt.RXChecksumValidated = canSkipRXChecksum
 
-	h, ok := e.protocol.parseAndValidate(pkt)
+	hView, ok := e.protocol.parseAndValidate(pkt)
 	if !ok {
 		stats.MalformedPacketsReceived.Increment()
 		return
 	}
+	h := header.IPv4(hView.AsSlice())
+	defer hView.Release()
 
 	e.handleValidatedPacket(h, pkt, e.nic.Name() /* inNICName */)
 }
@@ -1692,7 +1699,7 @@ func (p *protocol) isSubnetLocalBroadcastAddress(addr tcpip.Address) bool {
 // returns the parsed IP header.
 //
 // Returns true if the IP header was successfully parsed.
-func (p *protocol) parseAndValidate(pkt stack.PacketBufferPtr) (header.IPv4, bool) {
+func (p *protocol) parseAndValidate(pkt stack.PacketBufferPtr) (*bufferv2.View, bool) {
 	transProtoNum, hasTransportHdr, ok := p.Parse(pkt)
 	if !ok {
 		return nil, false
@@ -1713,7 +1720,7 @@ func (p *protocol) parseAndValidate(pkt stack.PacketBufferPtr) (header.IPv4, boo
 		p.parseTransport(pkt, transProtoNum)
 	}
 
-	return h, true
+	return pkt.NetworkHeader().View(), true
 }
 
 func (p *protocol) parseTransport(pkt stack.PacketBufferPtr, transProtoNum tcpip.TransportProtocolNumber) {
