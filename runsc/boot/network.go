@@ -20,6 +20,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/hostos"
@@ -96,6 +97,7 @@ type FDBasedLink struct {
 	Routes            []Route
 	GSOMaxSize        uint32
 	GvisorGSOEnabled  bool
+	GvisorGROTimeout  time.Duration
 	TXChecksumOffload bool
 	RXChecksumOffload bool
 	LinkAddress       net.HardwareAddr
@@ -291,8 +293,9 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 
 			log.Infof("Enabling interface %q with id %d on addresses %+v (%v) w/ %d channels", link.Name, nicID, link.Addresses, mac, link.NumChannels)
 			opts := stack.NICOptions{
-				Name:  link.Name,
-				QDisc: qDisc,
+				Name:       link.Name,
+				QDisc:      qDisc,
+				GROTimeout: link.GvisorGROTimeout,
 			}
 			if err := n.createNICWithAddrs(nicID, sniffEP, opts, link.Addresses); err != nil {
 				return err
