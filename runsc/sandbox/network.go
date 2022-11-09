@@ -300,6 +300,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 				link.GSOMaxSize = stack.GvisorGSOMaxSize
 				link.GvisorGSOEnabled = true
 			}
+			link.GvisorGROTimeout = conf.GvisorGROTimeout
 
 			args.FDBasedLinks = append(args.FDBasedLinks, link)
 		}

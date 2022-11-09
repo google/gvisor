@@ -837,6 +837,9 @@ type NICOptions struct {
 
 	// QDisc is the queue discipline to use for this NIC.
 	QDisc QueueingDiscipline
+
+	// GROTimeout specifies the GRO timeout. Zero bypasses GRO.
+	GROTimeout time.Duration
 }
 
 // CreateNICWithOptions creates a NIC with the provided id, LinkEndpoint, and
