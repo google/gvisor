@@ -19,6 +19,7 @@ go_library(
     srcs = [
         "dir_refs.go",
         "kcov.go",
+        "net.go",
         "sys.go",
     ],
     visibility = ["//pkg/sentry:internal"],
@@ -33,6 +34,7 @@ go_library(
         "//pkg/refsvfs2",
         "//pkg/sentry/arch",
         "//pkg/sentry/fsimpl/kernfs",
+        "//pkg/sentry/inet",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/memmap",

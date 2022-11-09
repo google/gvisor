@@ -108,12 +108,14 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 	classSub := map[string]kernfs.Inode{
 		"power_supply": fs.newDir(ctx, creds, defaultSysDirMode, nil),
+		"net":          fs.newDir(ctx, creds, defaultSysDirMode, fs.newNetDir(ctx, creds, defaultSysDirMode)),
 	}
 	devicesSub := map[string]kernfs.Inode{
 		"system": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
 			"cpu": cpuDir(ctx, fs, creds),
 		}),
 	}
+
 	productName := ""
 	if opts.InternalData != nil {
 		data := opts.InternalData.(*InternalData)
