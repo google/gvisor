@@ -17,6 +17,7 @@ package inet
 import (
 	"bytes"
 	"fmt"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -181,6 +182,18 @@ func (*TestStack) PortRange() (uint16, uint16) {
 
 // SetPortRange implements Stack.
 func (*TestStack) SetPortRange(start uint16, end uint16) error {
+	// No-op.
+	return nil
+}
+
+// GROTimeout implements Stack.
+func (*TestStack) GROTimeout(NICID int32) (time.Duration, error) {
+	// No-op.
+	return 0, nil
+}
+
+// SetGROTimeout implements Stack.
+func (*TestStack) SetGROTimeout(NICID int32, timeout time.Duration) error {
 	// No-op.
 	return nil
 }
