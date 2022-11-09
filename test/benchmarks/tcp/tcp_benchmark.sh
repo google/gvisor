@@ -47,6 +47,7 @@ helper_dir="$(dirname "$0")"
 netstack_opts=
 disable_linux_gso=
 disable_linux_gro=
+gro=0
 num_client_threads=1
 
 # Check for netem support.
@@ -156,6 +157,11 @@ while [[ $# -gt 0 ]]; do
     --disable-linux-gro)
       disable_linux_gro=1
       ;;
+    --gro)
+      shift
+      [[ "$#" -le 0 ]] && echo "no GRO timeout provided" && exit 1
+      gro=$1
+      ;;
     --ipv6)
       client_addr=fd::1
       client_proxy_addr=fd::2
@@ -176,6 +182,8 @@ while [[ $# -gt 0 ]]; do
       helper_dir=$1
       ;;
     *)
+      echo "unknown option: $1"
+      echo ""
       echo "usage: $0 [options]"
       echo "options:"
       echo " --help                show this message"
@@ -197,6 +205,7 @@ while [[ $# -gt 0 ]]; do
       echo " --num-client-threads  number of parallel client threads to run"
       echo " --disable-linux-gso   disable segmentation offload (TSO, GSO, GRO) in the Linux network stack"
       echo " --disable-linux-gro   disable GRO in the Linux network stack"
+      echo " --gro                 set gVisor GRO timeout"
       echo " --ipv6                use ipv6 for benchmarks"
       echo ""
       echo "The output will of the script will be:"
@@ -246,7 +255,7 @@ if ${client}; then
   # and forward traffic using netstack.
   client_args="${proxy_binary} ${netstack_opts} -port ${proxy_port} -client \\
       -mtu ${mtu} -iface client.0 -addr ${client_proxy_addr} -mask ${mask} \\
-      -forward ${full_server_proxy_addr} -gso=${gso} -swgso=${swgso}"
+      -forward ${full_server_proxy_addr} -gso=${gso} -swgso=${swgso} --gro=${gro}"
 fi
 
 # Server proxy that will listen on the proxy port and forward to the server's
@@ -257,7 +266,7 @@ if ${server}; then
   # iperf server using netstack.
   server_args="${proxy_binary} ${netstack_opts} -port ${proxy_port} -server \\
       -mtu ${mtu} -iface server.0 -addr ${server_proxy_addr} -mask ${mask} \\
-      -forward ${full_server_addr} -gso=${gso} -swgso=${swgso}"
+      -forward ${full_server_addr} -gso=${gso} -swgso=${swgso} --gro=${gro}"
 fi
 
 # Specify loss and duplicate parameters only if they are non-zero
@@ -355,10 +364,8 @@ ${nsjoin_binary} /tmp/server.netns ip addr add ${server_addr}/${mask} dev server
 if [[ "${disable_linux_gso}" == "1" ]]; then
   ${nsjoin_binary} /tmp/client.netns ethtool -K client.0 tso off
   ${nsjoin_binary} /tmp/client.netns ethtool -K client.0 gso off
-  ${nsjoin_binary} /tmp/client.netns ethtool -K client.0 gro off
   ${nsjoin_binary} /tmp/server.netns ethtool -K server.0 tso off
   ${nsjoin_binary} /tmp/server.netns ethtool -K server.0 gso off
-  ${nsjoin_binary} /tmp/server.netns ethtool -K server.0 gro off
 fi
 if [[ "${disable_linux_gro}" == "1" ]]; then
   ${nsjoin_binary} /tmp/client.netns ethtool -K client.0 gro off
