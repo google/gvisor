@@ -19,6 +19,7 @@ package config
 
 import (
 	"fmt"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
@@ -103,6 +104,10 @@ type Config struct {
 	// GvisorGSO indicates that gVisor segmentation offload is enabled. The flag
 	// retains its old name of "software" GSO for API consistency.
 	GvisorGSO bool `flag:"software-gso"`
+
+	// GvisorGROTimeout sets gVisor's generic receive offload timeout. Zero
+	// bypasses GRO.
+	GvisorGROTimeout time.Duration `flag:"gvisor-gro"`
 
 	// TXChecksumOffload indicates that TX Checksum Offload is enabled.
 	TXChecksumOffload bool `flag:"tx-checksum-offload"`

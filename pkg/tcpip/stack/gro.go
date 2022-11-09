@@ -30,10 +30,11 @@ type groDispatcher struct {
 	stop chan struct{}
 }
 
-func (gd *groDispatcher) init() {
+func (gd *groDispatcher) init(interval time.Duration) {
+	gd.intervalNS.Store(interval.Nanoseconds())
 	gd.newInterval = make(chan struct{}, 1)
 	gd.stop = make(chan struct{})
-	gd.start(0)
+	gd.start(interval)
 }
 
 // start spawns a goroutine that flushes the GRO periodically based on the
