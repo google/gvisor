@@ -652,6 +652,23 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 		}
 	}
 
+	umountTree := []*Mount{vd.mount}
+	parent, mountpoint := vd.mount.parent(), vd.mount.point()
+	if parent.propType == Shared {
+		for peer := parent.sharedList.Front(); peer != nil; peer = peer.sharedEntry.Next() {
+			if peer == parent {
+				continue
+			}
+			umountMnt := vfs.mounts.Lookup(peer, mountpoint)
+			// From https://www.kernel.org/doc/Documentation/filesystems/sharedsubtree.txt:
+			// If any peer has some child mounts, then that mount is not unmounted,
+			// but all other mounts are unmounted.
+			if umountMnt != nil && len(umountMnt.children) == 0 {
+				umountTree = append(umountTree, umountMnt)
+			}
+		}
+	}
+
 	// TODO(gvisor.dev/issue/1035): Linux special-cases umount of the caller's
 	// root, which we don't implement yet (we'll just fail it since the caller
 	// holds a reference on it).
@@ -674,10 +691,16 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 			return linuxerr.EBUSY
 		}
 	}
-	vdsToDecRef, mountsToDecRef := vfs.umountAtRecursiveLocked(ctx, vd, &umountRecursiveOptions{
-		eager:               opts.Flags&linux.MNT_DETACH == 0,
-		disconnectHierarchy: true,
-	})
+	var (
+		vdsToDecRef    []VirtualDentry
+		mountsToDecRef []*Mount
+	)
+	for _, mnt := range umountTree {
+		vdsToDecRef, mountsToDecRef = vfs.umountRecursiveLocked(mnt, &umountRecursiveOptions{
+			eager:               opts.Flags&linux.MNT_DETACH == 0,
+			disconnectHierarchy: true,
+		}, vdsToDecRef, mountsToDecRef)
+	}
 	vfs.mounts.seq.EndWrite()
 	vfs.mountMu.Unlock()
 	for _, vd := range vdsToDecRef {
@@ -687,45 +710,6 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 		m.DecRef(ctx)
 	}
 	return nil
-}
-
-// umountAtRecursiveLocked marks the mount located at vd and its decendendents
-// as umounted and does the same for mounts at the same dentry in peers of
-// vd.mount's parent.
-//
-// Preconditions:
-//   - vd is a mountpoint.
-//   - vfs.mountMu must be locked.
-//   - vfs.mounts.seq must be in a writer critical section.
-//
-// +checklocks:vfs.mountMu
-func (vfs *VirtualFilesystem) umountAtRecursiveLocked(ctx context.Context, vd VirtualDentry, opts *umountRecursiveOptions) ([]VirtualDentry, []*Mount) {
-	parent, mountpoint := vd.mount.parent(), vd.mount.point()
-	vdsToDecRef, mountsToDecRef := vfs.umountRecursiveLocked(vd.mount, opts, nil, nil)
-	if parent != nil && parent.propType == Shared {
-		for peer := parent.sharedList.Front(); peer != nil; peer = peer.sharedEntry.Next() {
-			if peer == parent {
-				continue
-			}
-
-			vfs.mounts.seq.EndWrite()
-			mnt := vfs.mounts.Lookup(peer, mountpoint)
-			vfs.mounts.seq.BeginWrite()
-			if mnt == nil {
-				continue
-			}
-
-			// From https://www.kernel.org/doc/Documentation/filesystems/sharedsubtree.txt:
-			// If any peer has some child mounts, then that mount is not unmounted,
-			// but all other mounts are unmounted.
-			if len(mnt.children) != 0 {
-				continue
-			}
-
-			vdsToDecRef, mountsToDecRef = vfs.umountRecursiveLocked(mnt, opts, vdsToDecRef, mountsToDecRef)
-		}
-	}
-	return vdsToDecRef, mountsToDecRef
 }
 
 // +stateify savable
@@ -934,9 +918,9 @@ func (mntns *MountNamespace) DecRef(ctx context.Context) {
 	mntns.MountNamespaceRefs.DecRef(func() {
 		vfs.mountMu.Lock()
 		vfs.mounts.seq.BeginWrite()
-		vdsToDecRef, mountsToDecRef := vfs.umountAtRecursiveLocked(ctx, mntns.Root(), &umountRecursiveOptions{
+		vdsToDecRef, mountsToDecRef := vfs.umountRecursiveLocked(mntns.root, &umountRecursiveOptions{
 			disconnectHierarchy: true,
-		})
+		}, nil, nil)
 		vfs.mounts.seq.EndWrite()
 		vfs.mountMu.Unlock()
 		for _, vd := range vdsToDecRef {
