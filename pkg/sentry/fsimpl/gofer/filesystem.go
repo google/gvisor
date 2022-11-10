@@ -1898,7 +1898,6 @@ func (fs *filesystem) MountOptions() string {
 		{moptDfltUID, fs.opts.dfltuid},
 		{moptDfltGID, fs.opts.dfltgid},
 		{moptMsize, fs.opts.msize},
-		{moptVersion, fs.opts.version},
 	}
 
 	switch fs.opts.interop {
@@ -1923,7 +1922,11 @@ func (fs *filesystem) MountOptions() string {
 		optsKV = append(optsKV, mopt{moptOverlayfsStaleRead, nil})
 	}
 	if fs.opts.lisaEnabled {
+		// LISAFS does not have a protocol level version number. Simply add
+		// `lisafs` in the opts to indicate that we are using LISAFS.
 		optsKV = append(optsKV, mopt{moptLisafs, nil})
+	} else {
+		optsKV = append(optsKV, mopt{moptVersion, fs.opts.version9P})
 	}
 
 	opts := make([]string, 0, len(optsKV))
