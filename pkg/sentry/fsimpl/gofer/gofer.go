@@ -212,13 +212,13 @@ type filesystem struct {
 // +stateify savable
 type filesystemOptions struct {
 	// "Standard" 9P options.
-	fd      int
-	aname   string
-	interop InteropMode // derived from the "cache" mount option
-	dfltuid auth.KUID
-	dfltgid auth.KGID
-	msize   uint32
-	version string
+	fd        int
+	aname     string
+	interop   InteropMode // derived from the "cache" mount option
+	dfltuid   auth.KUID
+	dfltgid   auth.KGID
+	msize     uint32
+	version9P string
 
 	// If forcePageCache is true, host FDs may not be used for application
 	// memory mappings even if available; instead, the client must perform its
@@ -438,13 +438,6 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		fsopts.msize = uint32(msize)
 	}
 
-	// Parse the 9P protocol version.
-	fsopts.version = p9.HighestVersionString()
-	if version, ok := mopts[moptVersion]; ok {
-		delete(mopts, moptVersion)
-		fsopts.version = version
-	}
-
 	// Handle simple flags.
 	if _, ok := mopts[moptForcePageCache]; ok {
 		delete(mopts, moptForcePageCache)
@@ -464,6 +457,14 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		if err != nil {
 			ctx.Warningf("gofer.FilesystemType.GetFilesystem: invalid lisafs option: %s", lisafs)
 			return nil, nil, linuxerr.EINVAL
+		}
+	}
+	if !fsopts.lisaEnabled {
+		// Parse the 9P protocol version.
+		fsopts.version9P = p9.HighestVersionString()
+		if version, ok := mopts[moptVersion]; ok {
+			delete(mopts, moptVersion)
+			fsopts.version9P = version
 		}
 	}
 	// fsopts.regularFilesUseSpecialFileFD can only be enabled by specifying
@@ -673,7 +674,7 @@ func (fs *filesystem) dial(ctx context.Context) error {
 
 	// Perform version negotiation with the server.
 	ctx.UninterruptibleSleepStart(false)
-	client, err := p9.NewClient(conn, fs.opts.msize, fs.opts.version)
+	client, err := p9.NewClient(conn, fs.opts.msize, fs.opts.version9P)
 	ctx.UninterruptibleSleepFinish(false)
 	if err != nil {
 		conn.Close()

@@ -221,7 +221,7 @@ func (f *filesystemOptions) StateFields() []string {
 		"dfltuid",
 		"dfltgid",
 		"msize",
-		"version",
+		"version9P",
 		"forcePageCache",
 		"limitHostFDTranslation",
 		"overlayfsStaleRead",
@@ -241,7 +241,7 @@ func (f *filesystemOptions) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &f.dfltuid)
 	stateSinkObject.Save(4, &f.dfltgid)
 	stateSinkObject.Save(5, &f.msize)
-	stateSinkObject.Save(6, &f.version)
+	stateSinkObject.Save(6, &f.version9P)
 	stateSinkObject.Save(7, &f.forcePageCache)
 	stateSinkObject.Save(8, &f.limitHostFDTranslation)
 	stateSinkObject.Save(9, &f.overlayfsStaleRead)
@@ -259,7 +259,7 @@ func (f *filesystemOptions) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(3, &f.dfltuid)
 	stateSourceObject.Load(4, &f.dfltgid)
 	stateSourceObject.Load(5, &f.msize)
-	stateSourceObject.Load(6, &f.version)
+	stateSourceObject.Load(6, &f.version9P)
 	stateSourceObject.Load(7, &f.forcePageCache)
 	stateSourceObject.Load(8, &f.limitHostFDTranslation)
 	stateSourceObject.Load(9, &f.overlayfsStaleRead)
