@@ -46,6 +46,15 @@ func (m *machine) initArchState() error {
 		return errno
 	}
 
+	// Initialize all vCPUs to minimize kvm ioctl-s allowed by seccomp filters.
+	m.mu.Lock()
+	for i := 0; i < m.maxVCPUs; i++ {
+		m.createVCPU(i)
+	}
+	m.mu.Unlock()
+
+	c := m.Get()
+	defer m.Put(c)
 	// Enable CPUID faulting, if possible. Note that this also serves as a
 	// basic platform sanity tests, since we will enter guest mode for the
 	// first time here. The recovery is necessary, since if we fail to read
@@ -57,15 +66,6 @@ func (m *machine) initArchState() error {
 		debug.SetPanicOnFault(old)
 	}()
 
-	// Initialize all vCPUs to minimize kvm ioctl-s allowed by seccomp filters.
-	m.mu.Lock()
-	for i := 0; i < m.maxVCPUs; i++ {
-		m.createVCPU(i)
-	}
-	m.mu.Unlock()
-
-	c := m.Get()
-	defer m.Put(c)
 	bluepill(c)
 	ring0.SetCPUIDFaulting(true)
 
@@ -201,6 +201,17 @@ func scaledTSC(rawFreq uintptr) int64 {
 
 // setSystemTime sets the vCPU to the system time.
 func (c *vCPU) setSystemTime() error {
+	// Attempt to set the offset directly. This is supported as of Linux 5.16,
+	// or commit 828ca89628bfcb1b8f27535025f69dd00eb55207.
+	if err := c.setTSCOffset(); err == nil {
+		return err
+	}
+
+	// If tsc scaling is not supported, fallback to legacy mode.
+	if !c.machine.tscControl {
+		return c.setSystemTimeLegacy()
+	}
+
 	// First, scale down the clock frequency to the lowest value allowed by
 	// the API itself.  How low we can go depends on the underlying
 	// hardware, but it is typically ~1/2^48 for Intel, ~1/2^32 for AMD.
@@ -212,11 +223,6 @@ func (c *vCPU) setSystemTime() error {
 	// capabilities as it is emulated in KVM. We don't actually use this
 	// capability, but it means that this method should be robust to
 	// different hardware configurations.
-
-	// if tsc scaling is not supported, fallback to legacy mode
-	if !c.machine.tscControl {
-		return c.setSystemTimeLegacy()
-	}
 	rawFreq, err := c.getTSCFreq()
 	if err != nil {
 		return c.setSystemTimeLegacy()

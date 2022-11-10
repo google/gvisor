@@ -41,6 +41,7 @@ const (
 	_KVM_SET_SIGNAL_MASK        = 0x4004ae8b
 	_KVM_GET_VCPU_EVENTS        = 0x8040ae9f
 	_KVM_SET_VCPU_EVENTS        = 0x4040aea0
+	_KVM_SET_DEVICE_ATTR        = 0x4018aee1
 )
 
 // KVM exit reasons.
