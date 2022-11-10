@@ -68,6 +68,8 @@ cc_library(
         ":file_descriptor",
         ":posix_error",
         ":save_util",
+        "//test/util:temp_path",
+        "//test/util:test_util",
     ],
 )
 
