@@ -654,7 +654,7 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 
 	umountTree := []*Mount{vd.mount}
 	parent, mountpoint := vd.mount.parent(), vd.mount.point()
-	if parent.propType == Shared {
+	if parent != nil && parent.propType == Shared {
 		for peer := parent.sharedList.Front(); peer != nil; peer = peer.sharedEntry.Next() {
 			if peer == parent {
 				continue
