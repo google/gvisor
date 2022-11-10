@@ -32,10 +32,12 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // FileDescription implements vfs.FileDescriptionImpl for file-based IO_URING.
@@ -313,7 +315,7 @@ func (fd *FileDescription) ConfigureMMap(ctx context.Context, opts *memmap.MMapO
 }
 
 // ProcessSubmissions processes submission requests.
-func (fd *FileDescription) ProcessSubmissions(toSubmit uint32, minComplete uint32, flags uint32) (int, error) {
+func (fd *FileDescription) ProcessSubmissions(t *kernel.Task, toSubmit uint32, minComplete uint32, flags uint32) (int, error) {
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
 
@@ -345,10 +347,7 @@ func (fd *FileDescription) ProcessSubmissions(toSubmit uint32, minComplete uint3
 			return -1, err
 		}
 
-		cqe, err := fd.ProcessSubmission(&sqe, flags)
-		if err != nil {
-			return -1, err
-		}
+		cqe := fd.ProcessSubmission(t, &sqe, flags)
 		sqHead.Add(1)
 		if (cqTail.Load()-cqHead.Load())/ioRings.CqRingEntries == 1 {
 			ioRings.CqOverflow++
@@ -371,21 +370,75 @@ func (fd *FileDescription) ProcessSubmissions(toSubmit uint32, minComplete uint3
 }
 
 // ProcessSubmission processes a single submission request.
-func (fd *FileDescription) ProcessSubmission(sqe *linux.IOUringSqe, flags uint32) (*linux.IOUringCqe, error) {
+func (fd *FileDescription) ProcessSubmission(t *kernel.Task, sqe *linux.IOUringSqe, flags uint32) *linux.IOUringCqe {
+	var (
+		cqeErr   error
+		cqeFlags uint32
+		retValue int32
+	)
+
 	switch op := sqe.Opcode; op {
-	case 0: // NOP
-		return &linux.IOUringCqe{
-			UserData: sqe.UserData,
-			Res:      0,
-			Flags:    0,
-		}, nil
+	case linux.IORING_OP_NOP:
+		// For the NOP operation, we don't do anything special.
+	case linux.IORING_OP_READV:
+		retValue, cqeErr = fd.handleReadv(t, sqe, flags)
 	default: // Unsupported operation
-		return &linux.IOUringCqe{
-			UserData: sqe.UserData,
-			Res:      -int32(linuxerr.EINVAL.Errno()),
-			Flags:    0,
-		}, nil
+		retValue = -int32(linuxerr.EINVAL.Errno())
 	}
+
+	if cqeErr != nil {
+		retValue = -int32(kernel.ExtractErrno(cqeErr, -1))
+	}
+
+	return &linux.IOUringCqe{
+		UserData: sqe.UserData,
+		Res:      retValue,
+		Flags:    cqeFlags,
+	}
+}
+
+// handleReadv handles IORING_OP_READV.
+func (fd *FileDescription) handleReadv(t *kernel.Task, sqe *linux.IOUringSqe, flags uint32) (int32, error) {
+	// Check that a file descriptor is valid.
+	if sqe.Fd < 0 {
+		return 0, linuxerr.EBADF
+	}
+	// Currently we don't support any flags for the SQEs.
+	if sqe.Flags != 0 {
+		return 0, linuxerr.EINVAL
+	}
+	// If the file is not seekable then offset must be zero. And currently, we don't support them.
+	if sqe.OffOrAddrOrCmdOp != 0 {
+		return 0, linuxerr.EINVAL
+	}
+	// ioprio should not be set for the READV operation.
+	if sqe.IoPrio != 0 {
+		return 0, linuxerr.EINVAL
+	}
+	// buf_index should not be set for the READV operation.
+	if sqe.BufIndexOrGroup != 0 {
+		return 0, linuxerr.EINVAL
+	}
+
+	// AddressSpaceActive is set to true as we are doing this from the task goroutine.And this is a
+	// case as we currently don't support neither IOPOLL nor SQPOLL modes.
+	dst, err := t.IovecsIOSequence(hostarch.Addr(sqe.AddrOrSpliceOff), int(sqe.Len), usermem.IOOpts{
+		AddressSpaceActive: true,
+	})
+	if err != nil {
+		return 0, err
+	}
+	file := t.GetFileVFS2(sqe.Fd)
+	if file == nil {
+		return 0, linuxerr.EBADF
+	}
+	defer file.DecRef(t)
+	n, err := file.PRead(t, dst, 0, vfs.ReadOptions{})
+	if err != nil {
+		return 0, err
+	}
+
+	return int32(n), nil
 }
 
 // updateCq updates a completion queue by adding a given completion queue entry.
