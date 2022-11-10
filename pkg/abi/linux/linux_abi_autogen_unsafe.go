@@ -6878,21 +6878,21 @@ func (i *IOUringSqe) MarshalBytes(dst []byte) []byte {
     dst = dst[1:]
     dst[0] = byte(i.Flags)
     dst = dst[1:]
-    hostarch.ByteOrder.PutUint16(dst[:2], uint16(i.ioPrio))
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(i.IoPrio))
     dst = dst[2:]
-    hostarch.ByteOrder.PutUint32(dst[:4], uint32(i.fd))
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(i.Fd))
     dst = dst[4:]
-    hostarch.ByteOrder.PutUint64(dst[:8], uint64(i.offOrAddrOrCmdOp))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(i.OffOrAddrOrCmdOp))
     dst = dst[8:]
-    hostarch.ByteOrder.PutUint64(dst[:8], uint64(i.addrOrSpliceOff))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(i.AddrOrSpliceOff))
     dst = dst[8:]
-    hostarch.ByteOrder.PutUint32(dst[:4], uint32(i.len))
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(i.Len))
     dst = dst[4:]
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(i.specialFlags))
     dst = dst[4:]
     hostarch.ByteOrder.PutUint64(dst[:8], uint64(i.UserData))
     dst = dst[8:]
-    hostarch.ByteOrder.PutUint16(dst[:2], uint16(i.bufIndexOrGroup))
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(i.BufIndexOrGroup))
     dst = dst[2:]
     hostarch.ByteOrder.PutUint16(dst[:2], uint16(i.personality))
     dst = dst[2:]
@@ -6911,21 +6911,21 @@ func (i *IOUringSqe) UnmarshalBytes(src []byte) []byte {
     src = src[1:]
     i.Flags = uint8(src[0])
     src = src[1:]
-    i.ioPrio = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    i.IoPrio = uint16(hostarch.ByteOrder.Uint16(src[:2]))
     src = src[2:]
-    i.fd = int32(hostarch.ByteOrder.Uint32(src[:4]))
+    i.Fd = int32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
-    i.offOrAddrOrCmdOp = uint64(hostarch.ByteOrder.Uint64(src[:8]))
+    i.OffOrAddrOrCmdOp = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    i.addrOrSpliceOff = uint64(hostarch.ByteOrder.Uint64(src[:8]))
+    i.AddrOrSpliceOff = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    i.len = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    i.Len = uint32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
     i.specialFlags = uint32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
     i.UserData = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    i.bufIndexOrGroup = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    i.BufIndexOrGroup = uint16(hostarch.ByteOrder.Uint16(src[:2]))
     src = src[2:]
     i.personality = uint16(hostarch.ByteOrder.Uint16(src[:2]))
     src = src[2:]
