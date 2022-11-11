@@ -18,6 +18,7 @@
 package kvm
 
 import (
+	"fmt"
 	"runtime"
 
 	"golang.org/x/sys/unix"
@@ -65,7 +66,7 @@ func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
 // physical regions form them.
 func archPhysicalRegions(physicalRegions []physicalRegion) []physicalRegion {
 	rdRegions := []virtualRegion{}
-	applyVirtualRegions(func(vr virtualRegion) {
+	if err := applyVirtualRegions(func(vr virtualRegion) {
 		if excludeVirtualRegion(vr) {
 			return // skip region.
 		}
@@ -74,7 +75,9 @@ func archPhysicalRegions(physicalRegions []physicalRegion) []physicalRegion {
 		if !vr.accessType.Write && vr.accessType.Read {
 			rdRegions = append(rdRegions, vr)
 		}
-	})
+	}); err != nil {
+		panic(fmt.Sprintf("error parsing /proc/self/maps: %v", err))
+	}
 
 	// Add an unreachable region.
 	rdRegions = append(rdRegions, virtualRegion{
