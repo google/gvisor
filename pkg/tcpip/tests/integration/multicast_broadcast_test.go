@@ -817,11 +817,16 @@ func TestMismatchedMulticastAddressAndProtocol(t *testing.T) {
 		InterfaceAddr: utils.Ipv4Addr.Address,
 	}
 
-	// Add membership should succeed when the interface index is specified,
+	// Add/remove membership should succeed when the interface index is specified,
 	// even if a bad interface address is specified.
 	addOpt := tcpip.AddMembershipOption(memOpt)
 	expErr := &tcpip.ErrInvalidOptionValue{}
 	if err := ep.SetSockOpt(&addOpt); err != expErr {
+		t.Fatalf("ep.SetSockOpt(&%#v): want %q, got %q", addOpt, expErr, err)
+	}
+
+	removeOpt := tcpip.RemoveMembershipOption(memOpt)
+	if err := ep.SetSockOpt(&removeOpt); err != expErr {
 		t.Fatalf("ep.SetSockOpt(&%#v): want %q, got %q", addOpt, expErr, err)
 	}
 }
