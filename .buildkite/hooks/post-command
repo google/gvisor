@@ -54,8 +54,12 @@ rm -rf "${profile_output}"
 # Clean the bazel cache, if there's failure.
 if test "${BUILDKITE_COMMAND_EXIT_STATUS}" -ne "0"; then
   set -x
-  if [ -d "/tmp/${BUILDKITE_JOB_ID}/" ]; then
-      tar -czf "/tmp/${BUILDKITE_JOB_ID}.tar.gz" -C /tmp/ "${BUILDKITE_JOB_ID}"
+  # LINT.IfChange
+  runtime="buildkite_runtime_${BUILDKITE_BRANCH}-${BUILDKITE_BUILD_ID}"
+  runtime="$(echo "$runtime" | sed -r 's~[^-_a-z0-9]+~_~g')"
+  # LINT.ThenChange(pre-command)
+  if [ -d "/tmp/${runtime}/" ]; then
+      tar -czf "/tmp/${BUILDKITE_JOB_ID}.tar.gz" -C /tmp/ "${runtime}"
       buildkite-agent artifact upload "/tmp/${BUILDKITE_JOB_ID}.tar.gz"
   fi
   # Attempt to clear the cache and shut down.
