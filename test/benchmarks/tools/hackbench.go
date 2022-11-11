@@ -43,7 +43,7 @@ func (s *Hackbench) MakeCmd(b *testing.B) []string {
 		cmd = append(cmd, "--process")
 	}
 	// loops
-	cmd = append(cmd, "--loops=1000")
+	cmd = append(cmd, fmt.Sprintf("--loops=%d", b.N))
 	return cmd
 }
 
@@ -55,6 +55,7 @@ func (s *Hackbench) Report(b *testing.B, output string) {
 		b.Fatalf("parsing result from %s failed: %v", output, err)
 	}
 	ReportCustomMetric(b, result, "execution_time" /*metric name*/, "s" /*unit*/)
+	ReportCustomMetric(b, result/float64(b.N), "execution_time_per_loop" /*metric name*/, "s" /*unit*/)
 }
 
 var hackbenchRegexp = regexp.MustCompile(`Time:\s*(\d*.?\d*)\n`)
