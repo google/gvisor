@@ -445,7 +445,7 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *linux.SignalInfo)
 func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
 	// Map all the executable regions so that all the entry functions
 	// are mapped in the upper half.
-	applyVirtualRegions(func(vr virtualRegion) {
+	if err := applyVirtualRegions(func(vr virtualRegion) {
 		if excludeVirtualRegion(vr) || vr.filename == "[vsyscall]" {
 			return
 		}
@@ -462,7 +462,9 @@ func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
 				pagetables.MapOpts{AccessType: hostarch.Execute, Global: true},
 				physical)
 		}
-	})
+	}); err != nil {
+		panic(fmt.Sprintf("error parsing /proc/self/maps: %v", err))
+	}
 	for start, end := range m.kernel.EntryRegions() {
 		regionLen := end - start
 		physical, length, ok := translateToPhysical(start)
