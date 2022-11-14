@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package vfs2
+package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"

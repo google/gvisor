@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,142 +15,200 @@
 package linux
 
 import (
+	"math"
+	"time"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/epoll"
-	"gvisor.dev/gvisor/pkg/sentry/syscalls"
+	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// LINT.IfChange
+var sizeofEpollEvent = (*linux.EpollEvent)(nil).SizeBytes()
 
-// EpollCreate1 implements the epoll_create1(2) linux syscall.
+// EpollCreate1 implements Linux syscall epoll_create1(2).
 func EpollCreate1(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	flags := args[0].Int()
-	if flags & ^linux.EPOLL_CLOEXEC != 0 {
+	if flags&^linux.EPOLL_CLOEXEC != 0 {
 		return 0, nil, linuxerr.EINVAL
 	}
 
-	closeOnExec := flags&linux.EPOLL_CLOEXEC != 0
-	fd, err := syscalls.CreateEpoll(t, closeOnExec)
+	file, err := t.Kernel().VFS().NewEpollInstanceFD(t)
 	if err != nil {
 		return 0, nil, err
 	}
+	defer file.DecRef(t)
 
+	fd, err := t.NewFDFromVFS2(0, file, kernel.FDFlags{
+		CloseOnExec: flags&linux.EPOLL_CLOEXEC != 0,
+	})
+	if err != nil {
+		return 0, nil, err
+	}
 	return uintptr(fd), nil, nil
 }
 
-// EpollCreate implements the epoll_create(2) linux syscall.
+// EpollCreate implements Linux syscall epoll_create(2).
 func EpollCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	size := args[0].Int()
 
+	// "Since Linux 2.6.8, the size argument is ignored, but must be greater
+	// than zero" - epoll_create(2)
 	if size <= 0 {
 		return 0, nil, linuxerr.EINVAL
 	}
 
-	fd, err := syscalls.CreateEpoll(t, false)
+	file, err := t.Kernel().VFS().NewEpollInstanceFD(t)
 	if err != nil {
 		return 0, nil, err
 	}
+	defer file.DecRef(t)
 
+	fd, err := t.NewFDFromVFS2(0, file, kernel.FDFlags{})
+	if err != nil {
+		return 0, nil, err
+	}
 	return uintptr(fd), nil, nil
 }
 
-// EpollCtl implements the epoll_ctl(2) linux syscall.
+// EpollCtl implements Linux syscall epoll_ctl(2).
 func EpollCtl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	epfd := args[0].Int()
 	op := args[1].Int()
 	fd := args[2].Int()
 	eventAddr := args[3].Pointer()
 
-	// Capture the event state if needed.
-	flags := epoll.EntryFlags(0)
-	mask := waiter.EventMask(0)
-	var data [2]int32
-	if op != linux.EPOLL_CTL_DEL {
-		var e linux.EpollEvent
-		if _, err := e.CopyIn(t, eventAddr); err != nil {
-			return 0, nil, err
-		}
-
-		if e.Events&linux.EPOLLONESHOT != 0 {
-			flags |= epoll.OneShot
-		}
-
-		if e.Events&linux.EPOLLET != 0 {
-			flags |= epoll.EdgeTriggered
-		}
-
-		mask = waiter.EventMaskFromLinux(e.Events)
-		data = e.Data
+	epfile := t.GetFileVFS2(epfd)
+	if epfile == nil {
+		return 0, nil, linuxerr.EBADF
+	}
+	defer epfile.DecRef(t)
+	ep, ok := epfile.Impl().(*vfs.EpollInstance)
+	if !ok {
+		return 0, nil, linuxerr.EINVAL
+	}
+	file := t.GetFileVFS2(fd)
+	if file == nil {
+		return 0, nil, linuxerr.EBADF
+	}
+	defer file.DecRef(t)
+	if epfile == file {
+		return 0, nil, linuxerr.EINVAL
 	}
 
-	// Perform the requested operations.
+	var event linux.EpollEvent
 	switch op {
 	case linux.EPOLL_CTL_ADD:
-		// See fs/eventpoll.c.
-		mask |= waiter.EventHUp | waiter.EventErr
-		return 0, nil, syscalls.AddEpoll(t, epfd, fd, flags, mask, data)
+		if _, err := event.CopyIn(t, eventAddr); err != nil {
+			return 0, nil, err
+		}
+		return 0, nil, ep.AddInterest(file, fd, event)
 	case linux.EPOLL_CTL_DEL:
-		return 0, nil, syscalls.RemoveEpoll(t, epfd, fd)
+		return 0, nil, ep.DeleteInterest(file, fd)
 	case linux.EPOLL_CTL_MOD:
-		// Same as EPOLL_CTL_ADD.
-		mask |= waiter.EventHUp | waiter.EventErr
-		return 0, nil, syscalls.UpdateEpoll(t, epfd, fd, flags, mask, data)
+		if _, err := event.CopyIn(t, eventAddr); err != nil {
+			return 0, nil, err
+		}
+		return 0, nil, ep.ModifyInterest(file, fd, event)
 	default:
 		return 0, nil, linuxerr.EINVAL
 	}
 }
 
-func waitEpoll(t *kernel.Task, fd int32, eventsAddr hostarch.Addr, max int, timeoutInNanos int64) (uintptr, *kernel.SyscallControl, error) {
-	r, err := syscalls.WaitEpoll(t, fd, max, timeoutInNanos)
-	if err != nil {
-		return 0, nil, linuxerr.ConvertIntr(err, linuxerr.EINTR)
+func waitEpoll(t *kernel.Task, epfd int32, eventsAddr hostarch.Addr, maxEvents int, timeoutInNanos int64) (uintptr, *kernel.SyscallControl, error) {
+	var _EP_MAX_EVENTS = math.MaxInt32 / sizeofEpollEvent // Linux: fs/eventpoll.c:EP_MAX_EVENTS
+	if maxEvents <= 0 || maxEvents > _EP_MAX_EVENTS {
+		return 0, nil, linuxerr.EINVAL
 	}
 
-	if len(r) != 0 {
-		if _, err := linux.CopyEpollEventSliceOut(t, eventsAddr, r); err != nil {
+	epfile := t.GetFileVFS2(epfd)
+	if epfile == nil {
+		return 0, nil, linuxerr.EBADF
+	}
+	defer epfile.DecRef(t)
+	ep, ok := epfile.Impl().(*vfs.EpollInstance)
+	if !ok {
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	// Allocate space for a few events on the stack for the common case in
+	// which we don't have too many events.
+	var (
+		eventsArr    [16]linux.EpollEvent
+		ch           chan struct{}
+		haveDeadline bool
+		deadline     ktime.Time
+	)
+	for {
+		events := ep.ReadEvents(eventsArr[:0], maxEvents)
+		if len(events) != 0 {
+			copiedBytes, err := linux.CopyEpollEventSliceOut(t, eventsAddr, events)
+			copiedEvents := copiedBytes / sizeofEpollEvent // rounded down
+			if copiedEvents != 0 {
+				return uintptr(copiedEvents), nil, nil
+			}
 			return 0, nil, err
+		}
+		if timeoutInNanos == 0 {
+			return 0, nil, nil
+		}
+		// In the first iteration of this loop, register with the epoll
+		// instance for readability events, but then immediately continue the
+		// loop since we need to retry ReadEvents() before blocking. In all
+		// subsequent iterations, block until events are available, the timeout
+		// expires, or an interrupt arrives.
+		if ch == nil {
+			var w waiter.Entry
+			w, ch = waiter.NewChannelEntry(waiter.ReadableEvents)
+			if err := epfile.EventRegister(&w); err != nil {
+				return 0, nil, err
+			}
+			defer epfile.EventUnregister(&w)
+		} else {
+			// Set up the timer if a timeout was specified.
+			if timeoutInNanos > 0 && !haveDeadline {
+				timeoutDur := time.Duration(timeoutInNanos) * time.Nanosecond
+				deadline = t.Kernel().MonotonicClock().Now().Add(timeoutDur)
+				haveDeadline = true
+			}
+			if err := t.BlockWithDeadline(ch, haveDeadline, deadline); err != nil {
+				if linuxerr.Equals(linuxerr.ETIMEDOUT, err) {
+					err = nil
+				}
+				return 0, nil, err
+			}
 		}
 	}
 
-	return uintptr(len(r)), nil, nil
-
 }
 
-// EpollWait implements the epoll_wait(2) linux syscall.
+// EpollWait implements Linux syscall epoll_wait(2).
 func EpollWait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	epfd := args[0].Int()
 	eventsAddr := args[1].Pointer()
 	maxEvents := int(args[2].Int())
-	// Convert milliseconds to nanoseconds.
 	timeoutInNanos := int64(args[3].Int()) * 1000000
+
 	return waitEpoll(t, epfd, eventsAddr, maxEvents, timeoutInNanos)
 }
 
-// EpollPwait implements the epoll_pwait(2) linux syscall.
+// EpollPwait implements Linux syscall epoll_pwait(2).
 func EpollPwait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	maskAddr := args[4].Pointer()
 	maskSize := uint(args[5].Uint())
 
-	if maskAddr != 0 {
-		mask, err := CopyInSigSet(t, maskAddr, maskSize)
-		if err != nil {
-			return 0, nil, err
-		}
-
-		oldmask := t.SignalMask()
-		t.SetSignalMask(mask)
-		t.SetSavedSignalMask(oldmask)
+	if err := setTempSignalSet(t, maskAddr, maskSize); err != nil {
+		return 0, nil, err
 	}
 
 	return EpollWait(t, args)
 }
 
-// EpollPwait2 implements the epoll_pwait(2) linux syscall.
+// EpollPwait2 implements Linux syscall epoll_pwait(2).
 func EpollPwait2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	epfd := args[0].Int()
 	eventsAddr := args[1].Pointer()
@@ -162,26 +220,16 @@ func EpollPwait2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 
 	var timeoutInNanos int64 = -1
 	if haveTimeout {
-		timeout, err := copyTimespecIn(t, timeoutPtr)
-		if err != nil {
+		var timeout linux.Timespec
+		if _, err := timeout.CopyIn(t, timeoutPtr); err != nil {
 			return 0, nil, err
 		}
 		timeoutInNanos = timeout.ToNsec()
-
 	}
 
-	if maskAddr != 0 {
-		mask, err := CopyInSigSet(t, maskAddr, maskSize)
-		if err != nil {
-			return 0, nil, err
-		}
-
-		oldmask := t.SignalMask()
-		t.SetSignalMask(mask)
-		t.SetSavedSignalMask(oldmask)
+	if err := setTempSignalSet(t, maskAddr, maskSize); err != nil {
+		return 0, nil, err
 	}
 
 	return waitEpoll(t, epfd, eventsAddr, maxEvents, timeoutInNanos)
 }
-
-// LINT.ThenChange(vfs2/epoll.go)

@@ -98,8 +98,8 @@ func copyTimespecInToDuration(t *kernel.Task, timespecAddr hostarch.Addr) (time.
 	// Use a negative Duration to indicate "no timeout".
 	timeout := time.Duration(-1)
 	if timespecAddr != 0 {
-		timespec, err := copyTimespecIn(t, timespecAddr)
-		if err != nil {
+		var timespec linux.Timespec
+		if _, err := timespec.CopyIn(t, timespecAddr); err != nil {
 			return 0, err
 		}
 		if !timespec.Valid() {

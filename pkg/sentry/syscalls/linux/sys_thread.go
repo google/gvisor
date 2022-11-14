@@ -15,18 +15,18 @@
 package linux
 
 import (
-	"path"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/sched"
 	"gvisor.dev/gvisor/pkg/sentry/loader"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -65,30 +65,31 @@ func Gettid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 // Execve implements linux syscall execve(2).
 func Execve(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	filenameAddr := args[0].Pointer()
+	pathnameAddr := args[0].Pointer()
 	argvAddr := args[1].Pointer()
 	envvAddr := args[2].Pointer()
-
-	return execveat(t, linux.AT_FDCWD, filenameAddr, argvAddr, envvAddr, 0)
+	return execveat(t, linux.AT_FDCWD, pathnameAddr, argvAddr, envvAddr, 0 /* flags */)
 }
 
 // Execveat implements linux syscall execveat(2).
 func Execveat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	dirFD := args[0].Int()
+	dirfd := args[0].Int()
 	pathnameAddr := args[1].Pointer()
 	argvAddr := args[2].Pointer()
 	envvAddr := args[3].Pointer()
 	flags := args[4].Int()
-
-	return execveat(t, dirFD, pathnameAddr, argvAddr, envvAddr, flags)
+	return execveat(t, dirfd, pathnameAddr, argvAddr, envvAddr, flags)
 }
 
-func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr hostarch.Addr, flags int32) (uintptr, *kernel.SyscallControl, error) {
+func execveat(t *kernel.Task, dirfd int32, pathnameAddr, argvAddr, envvAddr hostarch.Addr, flags int32) (uintptr, *kernel.SyscallControl, error) {
+	if flags&^(linux.AT_EMPTY_PATH|linux.AT_SYMLINK_NOFOLLOW) != 0 {
+		return 0, nil, linuxerr.EINVAL
+	}
+
 	pathname, err := t.CopyInString(pathnameAddr, linux.PATH_MAX)
 	if err != nil {
 		return 0, nil, err
 	}
-
 	var argv, envv []string
 	if argvAddr != 0 {
 		var err error
@@ -105,64 +106,59 @@ func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr host
 		}
 	}
 
-	if flags&^(linux.AT_EMPTY_PATH|linux.AT_SYMLINK_NOFOLLOW) != 0 {
-		return 0, nil, linuxerr.EINVAL
-	}
-	atEmptyPath := flags&linux.AT_EMPTY_PATH != 0
-	if !atEmptyPath && len(pathname) == 0 {
-		return 0, nil, linuxerr.ENOENT
-	}
-	resolveFinal := flags&linux.AT_SYMLINK_NOFOLLOW == 0
-
-	root := t.FSContext().RootDirectory()
+	root := t.FSContext().RootDirectoryVFS2()
 	defer root.DecRef(t)
-
-	var wd *fs.Dirent
 	var executable fsbridge.File
-	var closeOnExec bool
-	if dirFD == linux.AT_FDCWD || path.IsAbs(pathname) {
-		// Even if the pathname is absolute, we may still need the wd
-		// for interpreter scripts if the path of the interpreter is
-		// relative.
-		wd = t.FSContext().WorkingDirectory()
-	} else {
-		// Need to extract the given FD.
-		f, fdFlags := t.FDTable().Get(dirFD)
-		if f == nil {
+	defer func() {
+		if executable != nil {
+			executable.DecRef(t)
+		}
+	}()
+	closeOnExec := false
+	if path := fspath.Parse(pathname); dirfd != linux.AT_FDCWD && !path.Absolute {
+		// We must open the executable ourselves since dirfd is used as the
+		// starting point while resolving path, but the task working directory
+		// is used as the starting point while resolving interpreters (Linux:
+		// fs/binfmt_script.c:load_script() => fs/exec.c:open_exec() =>
+		// do_open_execat(fd=AT_FDCWD)), and the loader package is currently
+		// incapable of handling this correctly.
+		if !path.HasComponents() && flags&linux.AT_EMPTY_PATH == 0 {
+			return 0, nil, linuxerr.ENOENT
+		}
+		dirfile, dirfileFlags := t.FDTable().GetVFS2(dirfd)
+		if dirfile == nil {
 			return 0, nil, linuxerr.EBADF
 		}
-		defer f.DecRef(t)
-		closeOnExec = fdFlags.CloseOnExec
-
-		if atEmptyPath && len(pathname) == 0 {
-			// TODO(gvisor.dev/issue/160): Linux requires only execute permission,
-			// not read. However, our backing filesystems may prevent us from reading
-			// the file without read permission. Additionally, a task with a
-			// non-readable executable has additional constraints on access via
-			// ptrace and procfs.
-			if err := f.Dirent.Inode.CheckPermission(t, fs.PermMask{Read: true, Execute: true}); err != nil {
-				return 0, nil, err
-			}
-			executable = fsbridge.NewFSFile(f)
-			pathname = executable.PathnameWithDeleted(t)
-		} else {
-			wd = f.Dirent
-			wd.IncRef()
-			if !fs.IsDir(wd.Inode.StableAttr) {
-				return 0, nil, linuxerr.ENOTDIR
-			}
+		start := dirfile.VirtualDentry()
+		start.IncRef()
+		dirfile.DecRef(t)
+		closeOnExec = dirfileFlags.CloseOnExec
+		file, err := t.Kernel().VFS().OpenAt(t, t.Credentials(), &vfs.PathOperation{
+			Root:               root,
+			Start:              start,
+			Path:               path,
+			FollowFinalSymlink: flags&linux.AT_SYMLINK_NOFOLLOW == 0,
+		}, &vfs.OpenOptions{
+			Flags:    linux.O_RDONLY,
+			FileExec: true,
+		})
+		start.DecRef(t)
+		if err != nil {
+			return 0, nil, err
 		}
-	}
-	if wd != nil {
-		defer wd.DecRef(t)
+		executable = fsbridge.NewVFSFile(file)
+		pathname = executable.PathnameWithDeleted(t)
 	}
 
 	// Load the new TaskImage.
+	mntns := t.MountNamespaceVFS2()
+	wd := t.FSContext().WorkingDirectoryVFS2()
+	defer wd.DecRef(t)
 	remainingTraversals := uint(linux.MaxSymlinkTraversals)
 	loadArgs := loader.LoadArgs{
-		Opener:              fsbridge.NewFSLookup(t.MountNamespace(), root, wd),
+		Opener:              fsbridge.NewVFSLookup(mntns, root, wd),
 		RemainingTraversals: &remainingTraversals,
-		ResolveFinal:        resolveFinal,
+		ResolveFinal:        flags&linux.AT_SYMLINK_NOFOLLOW == 0,
 		Filename:            pathname,
 		File:                executable,
 		CloseOnExec:         closeOnExec,
@@ -170,13 +166,26 @@ func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr host
 		Envv:                envv,
 		Features:            t.Kernel().FeatureSet(),
 	}
+	if seccheck.Global.Enabled(seccheck.PointExecve) {
+		// Retain the first executable file that is opened (which may open
+		// multiple executable files while resolving interpreter scripts).
+		if executable == nil {
+			loadArgs.AfterOpen = func(f fsbridge.File) {
+				if executable == nil {
+					f.IncRef()
+					executable = f
+					pathname = executable.PathnameWithDeleted(t)
+				}
+			}
+		}
+	}
 
 	image, se := t.Kernel().LoadTaskImage(t, loadArgs)
 	if se != nil {
 		return 0, nil, se.ToError()
 	}
 
-	ctrl, err := t.Execve(image, argv, envv, nil, "")
+	ctrl, err := t.Execve(image, argv, envv, executable, pathname)
 	return 0, ctrl, err
 }
 

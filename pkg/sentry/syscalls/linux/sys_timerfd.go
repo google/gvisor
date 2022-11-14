@@ -18,8 +18,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
-	"gvisor.dev/gvisor/pkg/sentry/fs/timerfd"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/timerfd"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 )
@@ -33,28 +32,35 @@ func TimerfdCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 		return 0, nil, linuxerr.EINVAL
 	}
 
-	var c ktime.Clock
+	// Timerfds aren't writable per se (their implementation of Write just
+	// returns EINVAL), but they are "opened for writing", which is necessary
+	// to actually reach said implementation of Write.
+	fileFlags := uint32(linux.O_RDWR)
+	if flags&linux.TFD_NONBLOCK != 0 {
+		fileFlags |= linux.O_NONBLOCK
+	}
+
+	var clock ktime.Clock
 	switch clockID {
 	case linux.CLOCK_REALTIME:
-		c = t.Kernel().RealtimeClock()
+		clock = t.Kernel().RealtimeClock()
 	case linux.CLOCK_MONOTONIC, linux.CLOCK_BOOTTIME:
-		c = t.Kernel().MonotonicClock()
+		clock = t.Kernel().MonotonicClock()
 	default:
 		return 0, nil, linuxerr.EINVAL
 	}
-	f := timerfd.NewFile(t, c)
-	defer f.DecRef(t)
-	f.SetFlags(fs.SettableFileFlags{
-		NonBlocking: flags&linux.TFD_NONBLOCK != 0,
-	})
-
-	fd, err := t.NewFDFrom(0, f, kernel.FDFlags{
+	vfsObj := t.Kernel().VFS()
+	file, err := timerfd.New(t, vfsObj, clock, fileFlags)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer file.DecRef(t)
+	fd, err := t.NewFDFromVFS2(0, file, kernel.FDFlags{
 		CloseOnExec: flags&linux.TFD_CLOEXEC != 0,
 	})
 	if err != nil {
 		return 0, nil, err
 	}
-
 	return uintptr(fd), nil, nil
 }
 
@@ -69,13 +75,13 @@ func TimerfdSettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 		return 0, nil, linuxerr.EINVAL
 	}
 
-	f := t.GetFile(fd)
-	if f == nil {
+	file := t.GetFileVFS2(fd)
+	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
-	defer f.DecRef(t)
+	defer file.DecRef(t)
 
-	tf, ok := f.FileOperations.(*timerfd.TimerOperations)
+	tfd, ok := file.Impl().(*timerfd.TimerFileDescription)
 	if !ok {
 		return 0, nil, linuxerr.EINVAL
 	}
@@ -84,11 +90,11 @@ func TimerfdSettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 	if _, err := newVal.CopyIn(t, newValAddr); err != nil {
 		return 0, nil, err
 	}
-	newS, err := ktime.SettingFromItimerspec(newVal, flags&linux.TFD_TIMER_ABSTIME != 0, tf.Clock())
+	newS, err := ktime.SettingFromItimerspec(newVal, flags&linux.TFD_TIMER_ABSTIME != 0, tfd.Clock())
 	if err != nil {
 		return 0, nil, err
 	}
-	tm, oldS := tf.SetTime(newS)
+	tm, oldS := tfd.SetTime(newS)
 	if oldValAddr != 0 {
 		oldVal := ktime.ItimerspecFromSetting(tm, oldS)
 		if _, err := oldVal.CopyOut(t, oldValAddr); err != nil {
@@ -103,18 +109,18 @@ func TimerfdGettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 	fd := args[0].Int()
 	curValAddr := args[1].Pointer()
 
-	f := t.GetFile(fd)
-	if f == nil {
+	file := t.GetFileVFS2(fd)
+	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
-	defer f.DecRef(t)
+	defer file.DecRef(t)
 
-	tf, ok := f.FileOperations.(*timerfd.TimerOperations)
+	tfd, ok := file.Impl().(*timerfd.TimerFileDescription)
 	if !ok {
 		return 0, nil, linuxerr.EINVAL
 	}
 
-	tm, s := tf.GetTime()
+	tm, s := tfd.GetTime()
 	curVal := ktime.ItimerspecFromSetting(tm, s)
 	_, err := curVal.CopyOut(t, curValAddr)
 	return 0, nil, err

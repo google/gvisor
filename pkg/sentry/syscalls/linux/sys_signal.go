@@ -22,9 +22,8 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/signalfd"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/signalfd"
 )
 
 // "For a process to have permission to send a signal it must
@@ -532,15 +531,15 @@ func sharedSignalfd(t *kernel.Task, fd int32, sigset hostarch.Addr, sigsetsize u
 	//
 	// The spec indicates that this should adjust the mask.
 	if fd != -1 {
-		file := t.GetFile(fd)
+		file := t.GetFileVFS2(fd)
 		if file == nil {
 			return 0, nil, linuxerr.EBADF
 		}
 		defer file.DecRef(t)
 
 		// Is this a signalfd?
-		if s, ok := file.FileOperations.(*signalfd.SignalOperations); ok {
-			s.SetMask(mask)
+		if sfd, ok := file.Impl().(*signalfd.SignalFileDescription); ok {
+			sfd.SetMask(mask)
 			return 0, nil, nil
 		}
 
@@ -548,20 +547,21 @@ func sharedSignalfd(t *kernel.Task, fd int32, sigset hostarch.Addr, sigsetsize u
 		return 0, nil, linuxerr.EINVAL
 	}
 
+	fileFlags := uint32(linux.O_RDWR)
+	if flags&linux.SFD_NONBLOCK != 0 {
+		fileFlags |= linux.O_NONBLOCK
+	}
+
 	// Create a new file.
-	file, err := signalfd.New(t, mask)
+	vfsObj := t.Kernel().VFS()
+	file, err := signalfd.New(vfsObj, t, mask, fileFlags)
 	if err != nil {
 		return 0, nil, err
 	}
 	defer file.DecRef(t)
 
-	// Set appropriate flags.
-	file.SetFlags(fs.SettableFileFlags{
-		NonBlocking: flags&linux.SFD_NONBLOCK != 0,
-	})
-
 	// Create a new descriptor.
-	fd, err = t.NewFDFrom(0, file, kernel.FDFlags{
+	fd, err = t.NewFDFromVFS2(0, file, kernel.FDFlags{
 		CloseOnExec: flags&linux.SFD_CLOEXEC != 0,
 	})
 	if err != nil {
