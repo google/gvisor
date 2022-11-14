@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,20 +15,23 @@
 package linux
 
 import (
+	"fmt"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// fileCap is the maximum allowable files for poll & select.
+// fileCap is the maximum allowable files for poll & select. This has no
+// equivalent in Linux; it exists in gVisor since allocation failure in Go is
+// unrecoverable.
 const fileCap = 1024 * 1024
 
 // Masks for "readable", "writable", and "exceptional" events as defined by
@@ -47,9 +50,9 @@ const (
 	selectExceptEvents = linux.POLLPRI
 )
 
-// pollState tracks the associated file descriptor and waiter of a PollFD.
+// pollState tracks the associated file description and waiter of a PollFD.
 type pollState struct {
-	file   *fs.File
+	file   *vfs.FileDescription
 	waiter waiter.Entry
 }
 
@@ -57,16 +60,16 @@ type pollState struct {
 // stored in pfd.FD. If a channel is passed in, the waiter entry in "state" is
 // used to register with the file for event notifications, and a reference to
 // the file is stored in "state".
-func initReadiness(t *kernel.Task, pfd *linux.PollFD, state *pollState, ch chan struct{}) {
+func initReadiness(t *kernel.Task, pfd *linux.PollFD, state *pollState, ch chan struct{}) error {
 	if pfd.FD < 0 {
 		pfd.REvents = 0
-		return
+		return nil
 	}
 
-	file := t.GetFile(pfd.FD)
+	file := t.GetFileVFS2(pfd.FD)
 	if file == nil {
 		pfd.REvents = linux.POLLNVAL
-		return
+		return nil
 	}
 
 	if ch == nil {
@@ -74,11 +77,14 @@ func initReadiness(t *kernel.Task, pfd *linux.PollFD, state *pollState, ch chan 
 	} else {
 		state.file = file
 		state.waiter.Init(waiter.ChannelNotifier(ch), waiter.EventMaskFromLinux(uint32(pfd.Events)))
-		file.EventRegister(&state.waiter)
+		if err := file.EventRegister(&state.waiter); err != nil {
+			return err
+		}
 	}
 
 	r := file.Readiness(waiter.EventMaskFromLinux(uint32(pfd.Events)))
 	pfd.REvents = int16(r.ToLinux()) & pfd.Events
+	return nil
 }
 
 // releaseState releases all the pollState in "state".
@@ -110,7 +116,9 @@ func pollBlock(t *kernel.Task, pfd []linux.PollFD, timeout time.Duration) (time.
 	defer releaseState(t, state)
 	n := uintptr(0)
 	for i := range pfd {
-		initReadiness(t, &pfd[i], &state[i], ch)
+		if err := initReadiness(t, &pfd[i], &state[i], ch); err != nil {
+			return timeout, 0, err
+		}
 		if pfd[i].REvents != 0 {
 			n++
 			ch = nil
@@ -121,12 +129,12 @@ func pollBlock(t *kernel.Task, pfd []linux.PollFD, timeout time.Duration) (time.
 		return timeout, n, nil
 	}
 
-	forever := timeout < 0
+	haveTimeout := timeout >= 0
 
 	for n == 0 {
 		var err error
 		// Wait for a notification.
-		timeout, err = t.BlockWithTimeout(ch, !forever, timeout)
+		timeout, err = t.BlockWithTimeout(ch, haveTimeout, timeout)
 		if err != nil {
 			if linuxerr.Equals(linuxerr.ETIMEDOUT, err) {
 				err = nil
@@ -262,7 +270,7 @@ func doSelect(t *kernel.Task, nfds int, readFDs, writeFDs, exceptFDs hostarch.Ad
 				// immediately to ensure we don't leak. Note, another thread
 				// might be about to close fd. This is racy, but that's
 				// OK. Linux is racy in the same way.
-				file := t.GetFile(fd)
+				file := t.GetFileVFS2(fd)
 				if file == nil {
 					return 0, linuxerr.EBADF
 				}
@@ -371,7 +379,8 @@ func copyOutTimespecRemaining(t *kernel.Task, startNs ktime.Time, timeout time.D
 	}
 	remaining := timeoutRemaining(t, startNs, timeout)
 	tsRemaining := linux.NsecToTimespec(remaining.Nanoseconds())
-	return copyTimespecOut(t, timespecAddr, &tsRemaining)
+	_, err := tsRemaining.CopyOut(t, timespecAddr)
+	return err
 }
 
 // copyOutTimevalRemaining copies the time remaining in timeout to timevalAddr.
@@ -383,7 +392,8 @@ func copyOutTimevalRemaining(t *kernel.Task, startNs ktime.Time, timeout time.Du
 	}
 	remaining := timeoutRemaining(t, startNs, timeout)
 	tvRemaining := linux.NsecToTimeval(remaining.Nanoseconds())
-	return copyTimevalOut(t, timevalAddr, &tvRemaining)
+	_, err := tvRemaining.CopyOut(t, timevalAddr)
+	return err
 }
 
 // pollRestartBlock encapsulates the state required to restart poll(2) via
@@ -442,15 +452,8 @@ func Ppoll(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		startNs = t.Kernel().MonotonicClock().Now()
 	}
 
-	if maskAddr != 0 {
-		mask, err := CopyInSigSet(t, maskAddr, maskSize)
-		if err != nil {
-			return 0, nil, err
-		}
-
-		oldmask := t.SignalMask()
-		t.SetSignalMask(mask)
-		t.SetSavedSignalMask(oldmask)
+	if err := setTempSignalSet(t, maskAddr, maskSize); err != nil {
+		return 0, nil, err
 	}
 
 	_, n, err := doPoll(t, pfdAddr, nfds, timeout)
@@ -480,8 +483,8 @@ func Select(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	// Use a negative Duration to indicate "no timeout".
 	timeout := time.Duration(-1)
 	if timevalAddr != 0 {
-		timeval, err := copyTimevalIn(t, timevalAddr)
-		if err != nil {
+		var timeval linux.Timeval
+		if _, err := timeval.CopyIn(t, timevalAddr); err != nil {
 			return 0, nil, err
 		}
 		if timeval.Sec < 0 || timeval.Usec < 0 {
@@ -497,6 +500,12 @@ func Select(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		err = linuxerr.ERESTARTNOHAND
 	}
 	return n, nil, err
+}
+
+// +marshal
+type sigSetWithSize struct {
+	sigsetAddr   uint64
+	sizeofSigset uint64
 }
 
 // Pselect implements linux syscall pselect(2).
@@ -519,19 +528,15 @@ func Pselect(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	}
 
 	if maskWithSizeAddr != 0 {
-		maskAddr, size, err := copyInSigSetWithSize(t, maskWithSizeAddr)
-		if err != nil {
+		if t.Arch().Width() != 8 {
+			panic(fmt.Sprintf("unsupported sizeof(void*): %d", t.Arch().Width()))
+		}
+		var maskStruct sigSetWithSize
+		if _, err := maskStruct.CopyIn(t, maskWithSizeAddr); err != nil {
 			return 0, nil, err
 		}
-
-		if maskAddr != 0 {
-			mask, err := CopyInSigSet(t, maskAddr, size)
-			if err != nil {
-				return 0, nil, err
-			}
-			oldmask := t.SignalMask()
-			t.SetSignalMask(mask)
-			t.SetSavedSignalMask(oldmask)
+		if err := setTempSignalSet(t, hostarch.Addr(maskStruct.sigsetAddr), uint(maskStruct.sizeofSigset)); err != nil {
+			return 0, nil, err
 		}
 	}
 
@@ -542,4 +547,22 @@ func Pselect(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 		err = linuxerr.ERESTARTNOHAND
 	}
 	return n, nil, err
+}
+
+func setTempSignalSet(t *kernel.Task, maskAddr hostarch.Addr, maskSize uint) error {
+	if maskAddr == 0 {
+		return nil
+	}
+	if maskSize != linux.SignalSetSize {
+		return linuxerr.EINVAL
+	}
+	var mask linux.SignalSet
+	if _, err := mask.CopyIn(t, maskAddr); err != nil {
+		return err
+	}
+	mask &^= kernel.UnblockableSignals
+	oldmask := t.SignalMask()
+	t.SetSignalMask(mask)
+	t.SetSavedSignalMask(oldmask)
+	return nil
 }

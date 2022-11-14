@@ -19,28 +19,29 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
 
-// LINT.IfChange
-
-func statFromAttrs(t *kernel.Task, sattr fs.StableAttr, uattr fs.UnstableAttr) linux.Stat {
-	return linux.Stat{
-		Dev:     sattr.DeviceID,
-		Ino:     sattr.InodeID,
-		Nlink:   uattr.Links,
-		Mode:    sattr.Type.LinuxType() | uint32(uattr.Perms.LinuxMode()),
-		UID:     uint32(uattr.Owner.UID.In(t.UserNamespace()).OrOverflow()),
-		GID:     uint32(uattr.Owner.GID.In(t.UserNamespace()).OrOverflow()),
-		Rdev:    uint64(linux.MakeDeviceID(sattr.DeviceFileMajor, sattr.DeviceFileMinor)),
-		Size:    uattr.Size,
-		Blksize: sattr.BlockSize,
-		Blocks:  uattr.Usage / 512,
-		ATime:   uattr.AccessTime.Timespec(),
-		MTime:   uattr.ModificationTime.Timespec(),
-		CTime:   uattr.StatusChangeTime.Timespec(),
+// This takes both input and output as pointer arguments to avoid copying large
+// structs.
+func convertStatxToUserStat(t *kernel.Task, statx *linux.Statx, stat *linux.Stat) {
+	// Linux just copies fields from struct kstat without regard to struct
+	// kstat::result_mask (fs/stat.c:cp_new_stat()), so we do too.
+	userns := t.UserNamespace()
+	*stat = linux.Stat{
+		Dev:     uint64(linux.MakeDeviceID(uint16(statx.DevMajor), statx.DevMinor)),
+		Ino:     statx.Ino,
+		Nlink:   uint64(statx.Nlink),
+		Mode:    uint32(statx.Mode),
+		UID:     uint32(auth.KUID(statx.UID).In(userns).OrOverflow()),
+		GID:     uint32(auth.KGID(statx.GID).In(userns).OrOverflow()),
+		Rdev:    uint64(linux.MakeDeviceID(uint16(statx.RdevMajor), statx.RdevMinor)),
+		Size:    int64(statx.Size),
+		Blksize: int64(statx.Blksize),
+		Blocks:  int64(statx.Blocks),
+		ATime:   timespecFromStatxTimestamp(statx.Atime),
+		MTime:   timespecFromStatxTimestamp(statx.Mtime),
+		CTime:   timespecFromStatxTimestamp(statx.Ctime),
 	}
 }
-
-// LINT.ThenChange(vfs2/stat_amd64.go)

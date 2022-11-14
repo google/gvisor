@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,275 +16,259 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
-// LINT.IfChange
-
-// Stat implements linux syscall stat(2).
+// Stat implements Linux syscall stat(2).
 func Stat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	addr := args[0].Pointer()
+	pathAddr := args[0].Pointer()
 	statAddr := args[1].Pointer()
-
-	path, dirPath, err := copyInPath(t, addr, false /* allowEmpty */)
-	if err != nil {
-		return 0, nil, err
-	}
-
-	return 0, nil, fileOpOn(t, linux.AT_FDCWD, path, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
-		return stat(t, d, dirPath, statAddr)
-	})
+	return 0, nil, fstatat(t, linux.AT_FDCWD, pathAddr, statAddr, 0 /* flags */)
 }
 
-// Fstatat implements linux syscall newfstatat, i.e. fstatat(2).
-func Fstatat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	fd := args[0].Int()
-	addr := args[1].Pointer()
+// Lstat implements Linux syscall lstat(2).
+func Lstat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	pathAddr := args[0].Pointer()
+	statAddr := args[1].Pointer()
+	return 0, nil, fstatat(t, linux.AT_FDCWD, pathAddr, statAddr, linux.AT_SYMLINK_NOFOLLOW)
+}
+
+// Newfstatat implements Linux syscall newfstatat, which backs fstatat(2).
+func Newfstatat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	dirfd := args[0].Int()
+	pathAddr := args[1].Pointer()
 	statAddr := args[2].Pointer()
 	flags := args[3].Int()
+	return 0, nil, fstatat(t, dirfd, pathAddr, statAddr, flags)
+}
 
-	path, dirPath, err := copyInPath(t, addr, flags&linux.AT_EMPTY_PATH != 0)
-	if err != nil {
-		return 0, nil, err
+func fstatat(t *kernel.Task, dirfd int32, pathAddr, statAddr hostarch.Addr, flags int32) error {
+	if flags&^(linux.AT_EMPTY_PATH|linux.AT_SYMLINK_NOFOLLOW) != 0 {
+		return linuxerr.EINVAL
 	}
 
-	if path == "" {
-		// Annoying. What's wrong with fstat?
-		file := t.GetFile(fd)
-		if file == nil {
-			return 0, nil, linuxerr.EBADF
+	opts := vfs.StatOptions{
+		Mask: linux.STATX_BASIC_STATS,
+	}
+
+	path, err := copyInPath(t, pathAddr)
+	if err != nil {
+		return err
+	}
+
+	root := t.FSContext().RootDirectoryVFS2()
+	defer root.DecRef(t)
+	start := root
+	if !path.Absolute {
+		if !path.HasComponents() && flags&linux.AT_EMPTY_PATH == 0 {
+			return linuxerr.ENOENT
 		}
-		defer file.DecRef(t)
-
-		return 0, nil, fstat(t, file, statAddr)
+		if dirfd == linux.AT_FDCWD {
+			start = t.FSContext().WorkingDirectoryVFS2()
+			defer start.DecRef(t)
+		} else {
+			dirfile := t.GetFileVFS2(dirfd)
+			if dirfile == nil {
+				return linuxerr.EBADF
+			}
+			if !path.HasComponents() {
+				// Use FileDescription.Stat() instead of
+				// VirtualFilesystem.StatAt() for fstatat(fd, ""), since the
+				// former may be able to use opened file state to expedite the
+				// Stat.
+				statx, err := dirfile.Stat(t, opts)
+				dirfile.DecRef(t)
+				if err != nil {
+					return err
+				}
+				var stat linux.Stat
+				convertStatxToUserStat(t, &statx, &stat)
+				_, err = stat.CopyOut(t, statAddr)
+				return err
+			}
+			start = dirfile.VirtualDentry()
+			start.IncRef()
+			defer start.DecRef(t)
+			dirfile.DecRef(t)
+		}
 	}
 
-	// If the path ends in a slash (i.e. dirPath is true) or if AT_SYMLINK_NOFOLLOW is unset,
-	// then we must resolve the final component.
-	resolve := dirPath || flags&linux.AT_SYMLINK_NOFOLLOW == 0
-
-	return 0, nil, fileOpOn(t, fd, path, resolve, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
-		return stat(t, d, dirPath, statAddr)
-	})
-}
-
-// Lstat implements linux syscall lstat(2).
-func Lstat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	addr := args[0].Pointer()
-	statAddr := args[1].Pointer()
-
-	path, dirPath, err := copyInPath(t, addr, false /* allowEmpty */)
+	statx, err := t.Kernel().VFS().StatAt(t, t.Credentials(), &vfs.PathOperation{
+		Root:               root,
+		Start:              start,
+		Path:               path,
+		FollowFinalSymlink: flags&linux.AT_SYMLINK_NOFOLLOW == 0,
+	}, &opts)
 	if err != nil {
-		return 0, nil, err
+		return err
 	}
-
-	// If the path ends in a slash (i.e. dirPath is true), then we *do*
-	// want to resolve the final component.
-	resolve := dirPath
-
-	return 0, nil, fileOpOn(t, linux.AT_FDCWD, path, resolve, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
-		return stat(t, d, dirPath, statAddr)
-	})
+	var stat linux.Stat
+	convertStatxToUserStat(t, &statx, &stat)
+	_, err = stat.CopyOut(t, statAddr)
+	return err
 }
 
-// Fstat implements linux syscall fstat(2).
+func timespecFromStatxTimestamp(sxts linux.StatxTimestamp) linux.Timespec {
+	return linux.Timespec{
+		Sec:  sxts.Sec,
+		Nsec: int64(sxts.Nsec),
+	}
+}
+
+// Fstat implements Linux syscall fstat(2).
 func Fstat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	statAddr := args[1].Pointer()
 
-	file := t.GetFile(fd)
+	file := t.GetFileVFS2(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
-	return 0, nil, fstat(t, file, statAddr)
-}
-
-// stat implements stat from the given *fs.Dirent.
-func stat(t *kernel.Task, d *fs.Dirent, dirPath bool, statAddr hostarch.Addr) error {
-	if dirPath && !fs.IsDir(d.Inode.StableAttr) {
-		return linuxerr.ENOTDIR
-	}
-	uattr, err := d.Inode.UnstableAttr(t)
+	statx, err := file.Stat(t, vfs.StatOptions{
+		Mask: linux.STATX_BASIC_STATS,
+	})
 	if err != nil {
-		return err
+		return 0, nil, err
 	}
-	s := statFromAttrs(t, d.Inode.StableAttr, uattr)
-	_, err = s.CopyOut(t, statAddr)
-	return err
+	var stat linux.Stat
+	convertStatxToUserStat(t, &statx, &stat)
+	_, err = stat.CopyOut(t, statAddr)
+	return 0, nil, err
 }
 
-// fstat implements fstat for the given *fs.File.
-func fstat(t *kernel.Task, f *fs.File, statAddr hostarch.Addr) error {
-	uattr, err := f.UnstableAttr(t)
-	if err != nil {
-		return err
-	}
-	s := statFromAttrs(t, f.Dirent.Inode.StableAttr, uattr)
-	_, err = s.CopyOut(t, statAddr)
-	return err
-}
-
-// Statx implements linux syscall statx(2).
+// Statx implements Linux syscall statx(2).
 func Statx(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	fd := args[0].Int()
+	dirfd := args[0].Int()
 	pathAddr := args[1].Pointer()
 	flags := args[2].Int()
 	mask := args[3].Uint()
 	statxAddr := args[4].Pointer()
 
+	if flags&^(linux.AT_EMPTY_PATH|linux.AT_SYMLINK_NOFOLLOW|linux.AT_STATX_SYNC_TYPE) != 0 {
+		return 0, nil, linuxerr.EINVAL
+	}
+	// Make sure that only one sync type option is set.
+	syncType := uint32(flags & linux.AT_STATX_SYNC_TYPE)
+	if syncType != 0 && !bits.IsPowerOfTwo32(syncType) {
+		return 0, nil, linuxerr.EINVAL
+	}
 	if mask&linux.STATX__RESERVED != 0 {
 		return 0, nil, linuxerr.EINVAL
 	}
-	if flags&^(linux.AT_SYMLINK_NOFOLLOW|linux.AT_EMPTY_PATH|linux.AT_STATX_SYNC_TYPE) != 0 {
-		return 0, nil, linuxerr.EINVAL
-	}
-	if flags&linux.AT_STATX_SYNC_TYPE == linux.AT_STATX_SYNC_TYPE {
-		return 0, nil, linuxerr.EINVAL
+
+	opts := vfs.StatOptions{
+		Mask: mask,
+		Sync: uint32(flags & linux.AT_STATX_SYNC_TYPE),
 	}
 
-	path, dirPath, err := copyInPath(t, pathAddr, flags&linux.AT_EMPTY_PATH != 0)
+	path, err := copyInPath(t, pathAddr)
 	if err != nil {
 		return 0, nil, err
 	}
 
-	if path == "" {
-		file := t.GetFile(fd)
-		if file == nil {
-			return 0, nil, linuxerr.EBADF
+	root := t.FSContext().RootDirectoryVFS2()
+	defer root.DecRef(t)
+	start := root
+	if !path.Absolute {
+		if !path.HasComponents() && flags&linux.AT_EMPTY_PATH == 0 {
+			return 0, nil, linuxerr.ENOENT
 		}
-		defer file.DecRef(t)
-		uattr, err := file.UnstableAttr(t)
-		if err != nil {
-			return 0, nil, err
+		if dirfd == linux.AT_FDCWD {
+			start = t.FSContext().WorkingDirectoryVFS2()
+			defer start.DecRef(t)
+		} else {
+			dirfile := t.GetFileVFS2(dirfd)
+			if dirfile == nil {
+				return 0, nil, linuxerr.EBADF
+			}
+			if !path.HasComponents() {
+				// Use FileDescription.Stat() instead of
+				// VirtualFilesystem.StatAt() for statx(fd, ""), since the
+				// former may be able to use opened file state to expedite the
+				// Stat.
+				statx, err := dirfile.Stat(t, opts)
+				dirfile.DecRef(t)
+				if err != nil {
+					return 0, nil, err
+				}
+				userifyStatx(t, &statx)
+				_, err = statx.CopyOut(t, statxAddr)
+				return 0, nil, err
+			}
+			start = dirfile.VirtualDentry()
+			start.IncRef()
+			defer start.DecRef(t)
+			dirfile.DecRef(t)
 		}
-		return 0, nil, statx(t, file.Dirent.Inode.StableAttr, uattr, statxAddr)
 	}
 
-	resolve := dirPath || flags&linux.AT_SYMLINK_NOFOLLOW == 0
-
-	return 0, nil, fileOpOn(t, fd, path, resolve, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
-		if dirPath && !fs.IsDir(d.Inode.StableAttr) {
-			return linuxerr.ENOTDIR
-		}
-		uattr, err := d.Inode.UnstableAttr(t)
-		if err != nil {
-			return err
-		}
-		return statx(t, d.Inode.StableAttr, uattr, statxAddr)
-	})
-}
-
-func statx(t *kernel.Task, sattr fs.StableAttr, uattr fs.UnstableAttr, statxAddr hostarch.Addr) error {
-	// "[T]he kernel may return fields that weren't requested and may fail to
-	// return fields that were requested, depending on what the backing
-	// filesystem supports.
-	// [...]
-	// A filesystem may also fill in fields that the caller didn't ask for
-	// if it has values for them available and the information is available
-	// at no extra cost. If this happens, the corresponding bits will be
-	// set in stx_mask." -- statx(2)
-	//
-	// We fill in all the values we have (which currently does not include
-	// btime, see b/135608823), regardless of what the user asked for. The
-	// STATX_BASIC_STATS mask indicates that all fields are present except
-	// for btime.
-
-	devMajor, devMinor := linux.DecodeDeviceID(uint32(sattr.DeviceID))
-	s := linux.Statx{
-		// TODO(b/135608823): Support btime, and then change this to
-		// STATX_ALL to indicate presence of btime.
-		Mask: linux.STATX_BASIC_STATS,
-
-		// No attributes, and none supported.
-		Attributes:     0,
-		AttributesMask: 0,
-
-		Blksize:   uint32(sattr.BlockSize),
-		Nlink:     uint32(uattr.Links),
-		UID:       uint32(uattr.Owner.UID.In(t.UserNamespace()).OrOverflow()),
-		GID:       uint32(uattr.Owner.GID.In(t.UserNamespace()).OrOverflow()),
-		Mode:      uint16(sattr.Type.LinuxType()) | uint16(uattr.Perms.LinuxMode()),
-		Ino:       sattr.InodeID,
-		Size:      uint64(uattr.Size),
-		Blocks:    uint64(uattr.Usage) / 512,
-		Atime:     uattr.AccessTime.StatxTimestamp(),
-		Ctime:     uattr.StatusChangeTime.StatxTimestamp(),
-		Mtime:     uattr.ModificationTime.StatxTimestamp(),
-		RdevMajor: uint32(sattr.DeviceFileMajor),
-		RdevMinor: sattr.DeviceFileMinor,
-		DevMajor:  uint32(devMajor),
-		DevMinor:  devMinor,
+	statx, err := t.Kernel().VFS().StatAt(t, t.Credentials(), &vfs.PathOperation{
+		Root:               root,
+		Start:              start,
+		Path:               path,
+		FollowFinalSymlink: flags&linux.AT_SYMLINK_NOFOLLOW == 0,
+	}, &opts)
+	if err != nil {
+		return 0, nil, err
 	}
-	_, err := s.CopyOut(t, statxAddr)
-	return err
+	userifyStatx(t, &statx)
+	_, err = statx.CopyOut(t, statxAddr)
+	return 0, nil, err
 }
 
-// Statfs implements linux syscall statfs(2).
+func userifyStatx(t *kernel.Task, statx *linux.Statx) {
+	userns := t.UserNamespace()
+	statx.UID = uint32(auth.KUID(statx.UID).In(userns).OrOverflow())
+	statx.GID = uint32(auth.KGID(statx.GID).In(userns).OrOverflow())
+}
+
+// Statfs implements Linux syscall statfs(2).
 func Statfs(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	addr := args[0].Pointer()
-	statfsAddr := args[1].Pointer()
+	pathAddr := args[0].Pointer()
+	bufAddr := args[1].Pointer()
 
-	path, _, err := copyInPath(t, addr, false /* allowEmpty */)
+	path, err := copyInPath(t, pathAddr)
 	if err != nil {
 		return 0, nil, err
 	}
+	tpop, err := getTaskPathOperation(t, linux.AT_FDCWD, path, disallowEmptyPath, followFinalSymlink)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer tpop.Release(t)
 
-	return 0, nil, fileOpOn(t, linux.AT_FDCWD, path, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
-		return statfsImpl(t, d, statfsAddr)
-	})
+	statfs, err := t.Kernel().VFS().StatFSAt(t, t.Credentials(), &tpop.pop)
+	if err != nil {
+		return 0, nil, err
+	}
+	_, err = statfs.CopyOut(t, bufAddr)
+	return 0, nil, err
 }
 
-// Fstatfs implements linux syscall fstatfs(2).
+// Fstatfs implements Linux syscall fstatfs(2).
 func Fstatfs(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
-	statfsAddr := args[1].Pointer()
+	bufAddr := args[1].Pointer()
 
-	file := t.GetFile(fd)
-	if file == nil {
-		return 0, nil, linuxerr.EBADF
-	}
-	defer file.DecRef(t)
-
-	return 0, nil, statfsImpl(t, file.Dirent, statfsAddr)
-}
-
-// statfsImpl implements the linux syscall statfs and fstatfs based on a Dirent,
-// copying the statfs structure out to addr on success, otherwise an error is
-// returned.
-func statfsImpl(t *kernel.Task, d *fs.Dirent, addr hostarch.Addr) error {
-	info, err := d.Inode.StatFS(t)
+	tpop, err := getTaskPathOperation(t, fd, fspath.Path{}, allowEmptyPath, nofollowFinalSymlink)
 	if err != nil {
-		return err
+		return 0, nil, err
 	}
-	// Construct the statfs structure and copy it out.
-	statfs := linux.Statfs{
-		Type: info.Type,
-		// Treat block size and fragment size as the same, as
-		// most consumers of this structure will expect one
-		// or the other to be filled in.
-		BlockSize: d.Inode.StableAttr.BlockSize,
-		Blocks:    info.TotalBlocks,
-		// We don't have the concept of reserved blocks, so
-		// report blocks free the same as available blocks.
-		// This is a normal thing for filesystems, to do, see
-		// udf, hugetlbfs, tmpfs, among others.
-		BlocksFree:      info.FreeBlocks,
-		BlocksAvailable: info.FreeBlocks,
-		Files:           info.TotalFiles,
-		FilesFree:       info.FreeFiles,
-		// Same as Linux for simple_statfs, see fs/libfs.c.
-		NameLength:   linux.NAME_MAX,
-		FragmentSize: d.Inode.StableAttr.BlockSize,
-		// Leave other fields 0 like simple_statfs does.
-	}
-	_, err = statfs.CopyOut(t, addr)
-	return err
-}
+	defer tpop.Release(t)
 
-// LINT.ThenChange(vfs2/stat.go)
+	statfs, err := t.Kernel().VFS().StatFSAt(t, t.Credentials(), &tpop.pop)
+	if err != nil {
+		return 0, nil, err
+	}
+	_, err = statfs.CopyOut(t, bufAddr)
+	return 0, nil, err
+}

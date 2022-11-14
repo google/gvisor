@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/metric"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -40,11 +39,11 @@ func incrementPartialResultMetric() {
 	metric.WeirdnessMetric.Increment("partial_result")
 }
 
-// HandleIOErrorVFS2 handles special error cases for partial results. For some
+// HandleIOError handles special error cases for partial results. For some
 // errors, we may consume the error and return only the partial read/write.
 //
 // op and f are used only for panics.
-func HandleIOErrorVFS2(ctx context.Context, partialResult bool, ioerr, intr error, op string, f *vfs.FileDescription) error {
+func HandleIOError(ctx context.Context, partialResult bool, ioerr, intr error, op string, f *vfs.FileDescription) error {
 	known, err := handleIOErrorImpl(ctx, partialResult, ioerr, intr, op)
 	if err != nil {
 		return err
@@ -55,24 +54,6 @@ func HandleIOErrorVFS2(ctx context.Context, partialResult bool, ioerr, intr erro
 		root := vfs.RootFromContext(ctx)
 		name, _ := fs.PathnameWithDeleted(ctx, root, f.VirtualDentry())
 		log.Traceback("Invalid request partialResult %v and err (type %T) %v for %s operation on %q", partialResult, ioerr, ioerr, op, name)
-		partialResultOnce.Do(incrementPartialResultMetric)
-	}
-	return nil
-}
-
-// handleIOError handles special error cases for partial results. For some
-// errors, we may consume the error and return only the partial read/write.
-//
-// op and f are used only for panics.
-func handleIOError(ctx context.Context, partialResult bool, ioerr, intr error, op string, f *fs.File) error {
-	known, err := handleIOErrorImpl(ctx, partialResult, ioerr, intr, op)
-	if err != nil {
-		return err
-	}
-	if !known {
-		// An unknown error is encountered with a partial read/write.
-		name, _ := f.Dirent.FullName(nil /* ignore chroot */)
-		log.Traceback("Invalid request partialResult %v and err (type %T) %v for %s operation on %q, %T", partialResult, ioerr, ioerr, op, name, f.FileOperations)
 		partialResultOnce.Do(incrementPartialResultMetric)
 	}
 	return nil
