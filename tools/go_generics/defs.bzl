@@ -51,7 +51,7 @@ go_template = rule(
         "opt_types": attr.string_list(doc = "the list of generic types in the template that can but aren't required to be specified"),
         "consts": attr.string_list(doc = "the list of constants in the template that are required to be specified"),
         "opt_consts": attr.string_list(doc = "the list of constants in the template that can but aren't required to be specified"),
-        "_tool": attr.label(executable = True, cfg = "host", default = Label("//tools/go_generics/go_merge")),
+        "_tool": attr.label(executable = True, cfg = "exec", default = Label("//tools/go_generics/go_merge")),
     },
 )
 
@@ -124,6 +124,6 @@ go_template_instance = rule(
         "anon": attr.bool(doc = "whether anoymous fields should be processed", mandatory = False, default = False),
         "package": attr.string(doc = "the package for the generated source file", mandatory = False),
         "out": attr.output(doc = "output file", mandatory = True),
-        "_tool": attr.label(executable = True, cfg = "host", default = Label("//tools/go_generics")),
+        "_tool": attr.label(executable = True, cfg = "exec", default = Label("//tools/go_generics")),
     },
 )
