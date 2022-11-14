@@ -488,5 +488,5 @@ steps:
     label: ":gear: Syscall benchmarks"
     command: make -i benchmark-platforms BENCHMARKS_SUITE=syscall BENCHMARKS_TARGETS=test/benchmarks/base:syscallbench_test
   - <<: *benchmarks
-    label: ":gear: Syscall benchmarks"
+    label: ":thread: hackbench benchmarks"
     command: make -i benchmark-platforms BENCHMARKS_SUITE=hackbench BENCHMARKS_TARGETS=test/benchmarks/base:hackbench_test
