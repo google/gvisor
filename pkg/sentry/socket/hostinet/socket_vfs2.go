@@ -124,7 +124,7 @@ func (s *socketVFS2) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.
 	reader := hostfd.GetReadWriterAt(int32(s.fd), -1, opts.Flags)
 	n, err := dst.CopyOutFrom(ctx, reader)
 	hostfd.PutReadWriterAt(reader)
-	return int64(n), err
+	return int64(n), translateIOSyscallError(err)
 }
 
 // PWrite implements vfs.FileDescriptionImpl.
