@@ -114,9 +114,6 @@ TEST_P(GoferStreamSeqpacketTest, NonListening) {
 
 // Bind to a socket, then Listen and Accept.
 TEST_P(GoferStreamSeqpacketTest, BindListenAccept) {
-  // Binding to host socket requires LisaFS.
-  SKIP_IF(IsRunningOnGvisor() && !IsLisafsEnabled());
-
   std::string env;
   ProtocolSocket proto;
   std::tie(env, proto) = GetParam();
