@@ -39,7 +39,7 @@ _packetdrill_test = rule(
     attrs = {
         "_test_runner": attr.label(
             executable = True,
-            cfg = "host",
+            cfg = "exec",
             allow_files = True,
             default = "packetdrill_test.sh",
         ),

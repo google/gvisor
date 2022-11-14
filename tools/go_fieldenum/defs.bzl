@@ -24,6 +24,6 @@ go_fieldenum = rule(
         "srcs": attr.label_list(doc = "input source files", mandatory = True, allow_files = True),
         "package": attr.string(doc = "the package for the generated source file", mandatory = True),
         "out": attr.output(doc = "output file", mandatory = True),
-        "_tool": attr.label(executable = True, cfg = "host", default = Label("//tools/go_fieldenum:fieldenum")),
+        "_tool": attr.label(executable = True, cfg = "exec", default = Label("//tools/go_fieldenum:fieldenum")),
     },
 )

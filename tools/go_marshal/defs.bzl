@@ -45,7 +45,7 @@ go_marshal = rule(
         "imports": attr.string_list(mandatory = False),
         "package": attr.string(mandatory = True),
         "debug": attr.bool(doc = "enable debugging output from the go_marshal tool"),
-        "_tool": attr.label(executable = True, cfg = "host", default = Label("//tools/go_marshal:go_marshal")),
+        "_tool": attr.label(executable = True, cfg = "exec", default = Label("//tools/go_marshal:go_marshal")),
     },
     outputs = {
         "lib": "%{name}_unsafe.go",

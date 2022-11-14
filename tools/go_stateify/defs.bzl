@@ -52,7 +52,7 @@ for statified types.
         ),
         "_tool": attr.label(
             executable = True,
-            cfg = "host",
+            cfg = "exec",
             default = Label("//tools/go_stateify:stateify"),
         ),
         "_statepkg": attr.string(default = "gvisor.dev/gvisor/pkg/state"),
