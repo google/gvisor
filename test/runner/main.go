@@ -345,41 +345,27 @@ func setupHostCommTree(spec *specs.Spec) (cleanup func(), err error) {
 
 	// Individial attach points for each socket to test mounts that attach
 	// directly to the sockets.
-	spec.Mounts = append(spec.Mounts, specs.Mount{
-		Destination: "/tmp/sockets-attach/stream/echo",
-		Source:      filepath.Join(socketDir, "stream/echo"),
-		Type:        "bind",
-	})
-	spec.Mounts = append(spec.Mounts, specs.Mount{
-		Destination: "/tmp/sockets-attach/stream/nonlistening",
-		Source:      filepath.Join(socketDir, "stream/nonlistening"),
-		Type:        "bind",
-	})
-	spec.Mounts = append(spec.Mounts, specs.Mount{
-		Destination: "/tmp/sockets-attach/seqpacket/echo",
-		Source:      filepath.Join(socketDir, "seqpacket/echo"),
-		Type:        "bind",
-	})
-	spec.Mounts = append(spec.Mounts, specs.Mount{
-		Destination: "/tmp/sockets-attach/seqpacket/nonlistening",
-		Source:      filepath.Join(socketDir, "seqpacket/nonlistening"),
-		Type:        "bind",
-	})
+	for _, protocol := range []string{"stream", "seqpacket"} {
+		for _, name := range []string{"echo", "nonlistening"} {
+			spec.Mounts = append(spec.Mounts, specs.Mount{
+				Destination: filepath.Join("/tmp/sockets-attach", protocol, name),
+				Source:      filepath.Join(socketDir, protocol, name),
+				Type:        "bind",
+			})
+		}
+	}
 	spec.Mounts = append(spec.Mounts, specs.Mount{
 		Destination: "/tmp/sockets-attach/dgram/null",
 		Source:      filepath.Join(socketDir, "dgram/null"),
 		Type:        "bind",
 	})
-	spec.Mounts = append(spec.Mounts, specs.Mount{
-		Destination: "/tmp/sockets-attach/pipe/in",
-		Source:      filepath.Join(socketDir, "pipe/in"),
-		Type:        "bind",
-	})
-	spec.Mounts = append(spec.Mounts, specs.Mount{
-		Destination: "/tmp/sockets-attach/pipe/out",
-		Source:      filepath.Join(socketDir, "pipe/out"),
-		Type:        "bind",
-	})
+	for _, name := range []string{"in", "out"} {
+		spec.Mounts = append(spec.Mounts, specs.Mount{
+			Destination: filepath.Join("/tmp/sockets-attach/pipe", name),
+			Source:      filepath.Join(socketDir, "pipe", name),
+			Type:        "bind",
+		})
+	}
 
 	spec.Process.Env = append(spec.Process.Env, "TEST_UDS_TREE=/tmp/sockets")
 	spec.Process.Env = append(spec.Process.Env, "TEST_UDS_ATTACH_TREE=/tmp/sockets-attach")
