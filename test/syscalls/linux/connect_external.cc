@@ -19,6 +19,7 @@
 #include <sys/types.h>
 #include <sys/un.h>
 
+#include <cstring>
 #include <string>
 #include <tuple>
 
@@ -114,11 +115,15 @@ TEST_P(GoferStreamSeqpacketTest, NonListening) {
 // Bind to a socket, then Listen and Accept.
 TEST_P(GoferStreamSeqpacketTest, BindListenAccept) {
   // Binding to host socket requires LisaFS.
-  SKIP_IF(!IsLisafsEnabled());
+  SKIP_IF(IsRunningOnGvisor() && !IsLisafsEnabled());
 
   std::string env;
   ProtocolSocket proto;
   std::tie(env, proto) = GetParam();
+
+  // Do not parametrize this test with attach tree variant. This test creates a
+  // new UDS via bind(2). It is not possible to bind mount a non-existing file.
+  SKIP_IF(!strcmp("TEST_UDS_ATTACH_TREE", env.c_str()));
 
   char* val = getenv(env.c_str());
   ASSERT_NE(val, nullptr);
@@ -127,8 +132,7 @@ TEST_P(GoferStreamSeqpacketTest, BindListenAccept) {
   FileDescriptor sock =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, proto.protocol, 0));
 
-  std::string socket_path =
-      JoinPath("/tmp/sockets", proto.name, "created-in-sandbox");
+  std::string socket_path = JoinPath(root, proto.name, "created-in-sandbox");
 
   struct sockaddr_un addr = {};
   addr.sun_family = AF_UNIX;
@@ -137,17 +141,13 @@ TEST_P(GoferStreamSeqpacketTest, BindListenAccept) {
   ASSERT_THAT(
       bind(sock.get(), reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)),
       SyscallSucceeds());
+  ASSERT_THAT(listen(sock.get(), 1), SyscallSucceeds());
 
   // Bind again on that socket with a diff address should fail.
   std::string socket_path2 = socket_path + "-fail";
   struct sockaddr_un addr2 = {};
   addr2.sun_family = AF_UNIX;
   memcpy(addr2.sun_path, socket_path2.c_str(), socket_path2.length());
-  ASSERT_THAT(bind(sock.get(), reinterpret_cast<struct sockaddr*>(&addr2),
-                   sizeof(addr2)),
-              SyscallFailsWithErrno(EINVAL));
-
-  ASSERT_THAT(listen(sock.get(), 1), SyscallSucceeds());
   ASSERT_THAT(bind(sock.get(), reinterpret_cast<struct sockaddr*>(&addr2),
                    sizeof(addr2)),
               SyscallFailsWithErrno(EINVAL));
