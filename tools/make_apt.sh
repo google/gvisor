@@ -33,8 +33,8 @@ shift; shift; shift # For "$@" below.
 export DEBIAN_FRONTEND=noninteractive
 function apt_install() {
   while true; do
-    sudo apt-get update &&
-      sudo apt-get install -y "$@" &&
+    sudo -E apt-get update &&
+      sudo -E apt-get install -y "$@" &&
       true
     result="${?}"
     case $result in
