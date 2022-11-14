@@ -69,7 +69,6 @@ def _syscall_test(
         file_access = "exclusive",
         overlay = False,
         add_host_communication = False,
-        lisafs = True,
         fuse = False,
         container = None,
         one_sandbox = True,
@@ -85,8 +84,6 @@ def _syscall_test(
         name += "_overlay"
     if fuse:
         name += "_fuse"
-    if not lisafs:
-        name += "_p9"
     if network != "none":
         name += "_" + network + "net"
 
@@ -139,7 +136,6 @@ def _syscall_test(
         "--file-access=" + file_access,
         "--overlay=" + str(overlay),
         "--add-host-communication=" + str(add_host_communication),
-        "--lisafs=" + str(lisafs),
         "--fuse=" + str(fuse),
         "--strace=" + str(debug),
         "--debug=" + str(debug),
@@ -226,20 +222,6 @@ def syscall_test(
             **kwargs
         )
 
-    # Generate a P9 variant with the default platform.
-    _syscall_test(
-        test = test,
-        platform = default_platform,
-        use_tmpfs = use_tmpfs,
-        add_host_communication = add_host_communication,
-        tags = platforms[default_platform] + tags,
-        debug = debug,
-        fuse = fuse,
-        container = container,
-        one_sandbox = one_sandbox,
-        lisafs = False,
-        **kwargs
-    )
     if add_overlay:
         _syscall_test(
             test = test,
