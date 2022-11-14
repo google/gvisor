@@ -5,7 +5,6 @@ package(licenses = ["notice"])
 go_library(
     name = "syscalls",
     srcs = [
-        "epoll.go",
         "syscalls.go",
     ],
     visibility = ["//:sandbox"],
@@ -14,8 +13,5 @@ go_library(
         "//pkg/errors/linuxerr",
         "//pkg/sentry/arch",
         "//pkg/sentry/kernel",
-        "//pkg/sentry/kernel/epoll",
-        "//pkg/sentry/kernel/time",
-        "//pkg/waiter",
     ],
 )

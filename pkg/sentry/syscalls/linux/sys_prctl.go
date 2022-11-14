@@ -21,11 +21,11 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
 // Prctl implements linux syscall prctl(2).
@@ -125,19 +125,23 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		case linux.PR_SET_MM_EXE_FILE:
 			fd := args[2].Int()
 
-			file := t.GetFile(fd)
+			file := t.GetFileVFS2(fd)
 			if file == nil {
 				return 0, nil, linuxerr.EBADF
 			}
 			defer file.DecRef(t)
 
 			// They trying to set exe to a non-file?
-			if !fs.IsFile(file.Dirent.Inode.StableAttr) {
+			stat, err := file.Stat(t, vfs.StatOptions{Mask: linux.STATX_TYPE})
+			if err != nil {
+				return 0, nil, err
+			}
+			if stat.Mask&linux.STATX_TYPE == 0 || stat.Mode&linux.FileTypeMask != linux.ModeRegular {
 				return 0, nil, linuxerr.EBADF
 			}
 
 			// Set the underlying executable.
-			t.MemoryManager().SetExecutable(t, fsbridge.NewFSFile(file))
+			t.MemoryManager().SetExecutable(t, fsbridge.NewVFSFile(file))
 
 		case linux.PR_SET_MM_AUXV,
 			linux.PR_SET_MM_START_CODE,

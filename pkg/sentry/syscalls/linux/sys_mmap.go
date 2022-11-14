@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
@@ -35,9 +36,7 @@ func Brk(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 	return uintptr(addr), nil, nil
 }
 
-// LINT.IfChange
-
-// Mmap implements linux syscall mmap(2).
+// Mmap implements Linux syscall mmap(2).
 func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	prot := args[2].Int()
 	flags := args[3].Int()
@@ -81,19 +80,18 @@ func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 
 	if !anon {
 		// Convert the passed FD to a file reference.
-		file := t.GetFile(fd)
+		file := t.GetFileVFS2(fd)
 		if file == nil {
 			return 0, nil, linuxerr.EBADF
 		}
 		defer file.DecRef(t)
 
-		flags := file.Flags()
 		// mmap unconditionally requires that the FD is readable.
-		if !flags.Read {
+		if !file.IsReadable() {
 			return 0, nil, linuxerr.EACCES
 		}
 		// MAP_SHARED requires that the FD be writable for PROT_WRITE.
-		if shared && !flags.Write {
+		if shared && !file.IsWritable() {
 			opts.MaxPerms.Write = false
 		}
 
@@ -101,21 +99,21 @@ func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 			return 0, nil, err
 		}
 	} else if shared {
-		// Back shared anonymous mappings with a special mappable.
+		// Back shared anonymous mappings with an anonymous tmpfs file.
 		opts.Offset = 0
-		m, err := mm.NewSharedAnonMappable(opts.Length, t.Kernel())
+		file, err := tmpfs.NewZeroFile(t, t.Credentials(), t.Kernel().ShmMount(), opts.Length)
 		if err != nil {
 			return 0, nil, err
 		}
-		opts.MappingIdentity = m // transfers ownership of m to opts
-		opts.Mappable = m
+		defer file.DecRef(t)
+		if err := file.ConfigureMMap(t, &opts); err != nil {
+			return 0, nil, err
+		}
 	}
 
 	rv, err := t.MemoryManager().MMap(t, opts)
 	return uintptr(rv), nil, err
 }
-
-// LINT.ThenChange(vfs2/mmap.go)
 
 // Munmap implements linux syscall munmap(2).
 func Munmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
