@@ -7,7 +7,7 @@ require (
 	github.com/bazelbuild/rules_go v0.30.0
 	github.com/cenkalti/backoff v1.1.1-0.20190506075156-2146c9339422
 	github.com/containerd/cgroups v1.0.1
-	github.com/containerd/console v1.0.1
+	github.com/containerd/console v1.0.3
 	github.com/containerd/containerd v1.4.12
 	github.com/containerd/fifo v1.0.0
 	github.com/containerd/go-runc v1.0.0
@@ -22,10 +22,10 @@ require (
 	github.com/mohae/deepcopy v0.0.0-20170308212314-bb9b5e7adda9
 	github.com/opencontainers/runtime-spec v1.0.3-0.20211123151946-c2389c3cb60a
 	github.com/sirupsen/logrus v1.8.1
-	github.com/syndtr/gocapability v0.0.0-20180916011248-d98352740cb2
-	github.com/vishvananda/netlink v1.0.1-0.20190930145447-2ec5bdc52b86
+	github.com/syndtr/gocapability v0.0.0-20200815063812-42c35b437635
+	github.com/vishvananda/netlink v1.1.0
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
-	golang.org/x/sys v0.0.0-20211019181941-9d821ace8654
+	golang.org/x/sys v0.0.0-20211116061358-0a5406a5449c
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0
 	google.golang.org/grpc v1.42.0-dev.0.20211020220737-f00baa6c3c84
 	google.golang.org/protobuf v1.27.1
@@ -37,12 +37,15 @@ require (
 require (
 	github.com/Microsoft/go-winio v0.5.1 // indirect
 	github.com/Microsoft/hcsshim v0.8.14 // indirect
-	github.com/cilium/ebpf v0.4.0 // indirect
+	github.com/checkpoint-restore/go-criu/v5 v5.3.0 // indirect
+	github.com/cilium/ebpf v0.7.0 // indirect
 	github.com/containerd/continuity v0.2.1 // indirect
 	github.com/containerd/ttrpc v1.0.2 // indirect
+	github.com/cpuguy83/go-md2man/v2 v2.0.0 // indirect
+	github.com/cyphar/filepath-securejoin v0.2.3 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/docker/go-units v0.4.0 // indirect
-	github.com/godbus/dbus/v5 v5.0.4 // indirect
+	github.com/godbus/dbus/v5 v5.0.6 // indirect
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/google/go-cmp v0.5.6 // indirect
@@ -51,11 +54,18 @@ require (
 	github.com/hashicorp/errwrap v1.0.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.0 // indirect
 	github.com/json-iterator/go v1.1.7 // indirect
+	github.com/moby/sys/mountinfo v0.5.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.1 // indirect
+	github.com/mrunalp/fileutils v0.5.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
-	github.com/opencontainers/runc v1.0.0-rc90 // indirect
+	github.com/opencontainers/runc v1.1.2 // indirect
+	github.com/opencontainers/selinux v1.10.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	github.com/russross/blackfriday/v2 v2.0.1 // indirect
+	github.com/seccomp/libseccomp-golang v0.9.2-0.20210429002308-3879420cc921 // indirect
+	github.com/shurcooL/sanitized_anchor_name v1.0.0 // indirect
+	github.com/urfave/cli v1.22.2 // indirect
 	github.com/vishvananda/netns v0.0.0-20211101163701-50045581ed74 // indirect
 	github.com/yuin/goldmark v1.4.1 // indirect
 	go.opencensus.io v0.23.0 // indirect
