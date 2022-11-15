@@ -381,7 +381,7 @@ func (f *FDTable) NewFDsVFS2(ctx context.Context, minFD int32, files []*vfs.File
 		if lim.Cur != limits.Infinity {
 			end = int32(lim.Cur)
 		}
-		if minFD >= end {
+		if minFD+int32(len(files)) > end {
 			return nil, unix.EMFILE
 		}
 	}
@@ -539,8 +539,8 @@ func (f *FDTable) SetFlagsForRange(ctx context.Context, startFd int32, endFd int
 
 	for fd, err := f.fdBitmap.FirstOne(uint32(startFd)); err == nil && fd <= uint32(endFd); fd, err = f.fdBitmap.FirstOne(fd + 1) {
 		fdI32 := int32(fd)
-		file, _, _ := f.get(fdI32)
-		f.set(ctx, fdI32, file, flags)
+		fd, _, _ := f.getVFS2(fdI32)
+		f.setVFS2(ctx, fdI32, fd, flags)
 	}
 
 	return nil
