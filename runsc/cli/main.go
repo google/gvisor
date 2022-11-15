@@ -102,6 +102,7 @@ func Main(version string) {
 	const internalGroup = "internal use only"
 	subcommands.Register(new(cmd.Boot), internalGroup)
 	subcommands.Register(new(cmd.Gofer), internalGroup)
+	subcommands.Register(new(cmd.Umount), internalGroup)
 
 	// Register with the main command line.
 	config.RegisterFlags(flag.CommandLine)

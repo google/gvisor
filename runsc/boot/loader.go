@@ -124,6 +124,9 @@ type Loader struct {
 	// should be called when a sandbox is destroyed.
 	stopProfiling func()
 
+	// PreSeccompCallback is called right before installing seccomp filters.
+	PreSeccompCallback func()
+
 	// restore is set to true if we are restoring a container.
 	restore bool
 
@@ -543,6 +546,9 @@ func createMemoryFile() (*pgalloc.MemoryFile, error) {
 
 // installSeccompFilters installs sandbox seccomp filters with the host.
 func (l *Loader) installSeccompFilters() error {
+	if l.PreSeccompCallback != nil {
+		l.PreSeccompCallback()
+	}
 	if l.root.conf.DisableSeccomp {
 		filter.Report("syscall filter is DISABLED. Running in less secure mode.")
 	} else {

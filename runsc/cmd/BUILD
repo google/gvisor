@@ -37,6 +37,7 @@ go_library(
         "statefile.go",
         "symbolize.go",
         "syscalls.go",
+        "umount_unsafe.go",
         "usage.go",
         "wait.go",
         "write_control.go",
@@ -45,6 +46,7 @@ go_library(
         "//runsc:__subpackages__",
     ],
     deps = [
+        "//pkg/abi/linux",
         "//pkg/coretag",
         "//pkg/coverage",
         "//pkg/log",
