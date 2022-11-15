@@ -383,7 +383,7 @@ func (s *socketOpsCommon) GetSockOpt(t *kernel.Task, level int, name int, optVal
 		}
 	case linux.SOL_SOCKET:
 		switch name {
-		case linux.SO_ERROR, linux.SO_KEEPALIVE, linux.SO_SNDBUF, linux.SO_RCVBUF, linux.SO_REUSEADDR, linux.SO_TIMESTAMP:
+		case linux.SO_BROADCAST, linux.SO_ERROR, linux.SO_KEEPALIVE, linux.SO_SNDBUF, linux.SO_RCVBUF, linux.SO_REUSEADDR, linux.SO_TIMESTAMP:
 			optlen = sizeofInt32
 		case linux.SO_LINGER:
 			optlen = unix.SizeofLinger
@@ -448,7 +448,7 @@ func (s *socketOpsCommon) SetSockOpt(t *kernel.Task, level int, name int, opt []
 		}
 	case linux.SOL_SOCKET:
 		switch name {
-		case linux.SO_SNDBUF, linux.SO_RCVBUF, linux.SO_REUSEADDR, linux.SO_TIMESTAMP:
+		case linux.SO_BROADCAST, linux.SO_SNDBUF, linux.SO_RCVBUF, linux.SO_REUSEADDR, linux.SO_TIMESTAMP:
 			optlen = sizeofInt32
 		}
 	case linux.SOL_TCP:
