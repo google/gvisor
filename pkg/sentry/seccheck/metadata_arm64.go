@@ -24,6 +24,48 @@ func init() {
 			Name: "fd_path",
 		},
 	})
+	addSyscallPoint(64, "write", []FieldDesc{
+		{
+			ID:   FieldSyscallPath,
+			Name: "fd_path",
+		},
+	})
+	addSyscallPoint(65, "readv", []FieldDesc{
+		{
+			ID:   FieldSyscallPath,
+			Name: "fd_path",
+		},
+	})
+	addSyscallPoint(66, "writev", []FieldDesc{
+		{
+			ID:   FieldSyscallPath,
+			Name: "fd_path",
+		},
+	})
+	addSyscallPoint(67, "pread64", []FieldDesc{
+		{
+			ID:   FieldSyscallPath,
+			Name: "fd_path",
+		},
+	})
+	addSyscallPoint(68, "pwrite64", []FieldDesc{
+		{
+			ID:   FieldSyscallPath,
+			Name: "fd_path",
+		},
+	})
+	addSyscallPoint(69, "preadv", []FieldDesc{
+		{
+			ID:   FieldSyscallPath,
+			Name: "fd_path",
+		},
+	})
+	addSyscallPoint(70, "pwritev", []FieldDesc{
+		{
+			ID:   FieldSyscallPath,
+			Name: "fd_path",
+		},
+	})
 	addSyscallPoint(57, "close", []FieldDesc{
 		{
 			ID:   FieldSyscallPath,
@@ -145,6 +187,18 @@ func init() {
 		},
 	})
 	addSyscallPoint(199, "socketpair", nil)
+	addSyscallPoint(286, "preadv2", []FieldDesc{
+		{
+			ID:   FieldSyscallPath,
+			Name: "fd_path",
+		},
+	})
+	addSyscallPoint(287, "pwritev2", []FieldDesc{
+		{
+			ID:   FieldSyscallPath,
+			Name: "fd_path",
+		},
+	})
 
 	const lastSyscallInTable = 441
 	for i := 0; i <= lastSyscallInTable; i++ {
