@@ -102,6 +102,11 @@ PosixError Cgroup::PollControlFileForChangeAfter(
 
   body();
 
+  // The loop below iterates quickly and results in too many save-restore
+  // cycles. This can prevent tasks from being scheduled and incurring the
+  // resource usage this function is often waiting for, resulting in timeouts.
+  const DisableSave ds;
+
   while (true) {
     ASSIGN_OR_RETURN_ERRNO(const int64_t current_value,
                            ReadIntegerControlFile(name));
