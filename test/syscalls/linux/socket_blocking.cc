@@ -32,6 +32,30 @@
 namespace gvisor {
 namespace testing {
 
+TEST_P(BlockingSocketPairTest, ReadBlocks) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  char sent_data[100];
+  RandomizeBuffer(sent_data, sizeof(sent_data));
+
+  constexpr auto kDuration = absl::Milliseconds(200);
+  auto before = Now(CLOCK_MONOTONIC);
+
+  const ScopedThread t([&]() {
+    absl::SleepFor(kDuration);
+    ASSERT_THAT(write(sockets->first_fd(), sent_data, sizeof(sent_data)),
+                SyscallSucceedsWithValue(sizeof(sent_data)));
+  });
+
+  char received_data[sizeof(sent_data)] = {};
+  ASSERT_THAT(RetryEINTR(read)(sockets->second_fd(), received_data,
+                               sizeof(received_data)),
+              SyscallSucceedsWithValue(sizeof(received_data)));
+
+  auto after = Now(CLOCK_MONOTONIC);
+  EXPECT_GE(after - before, kDuration);
+}
+
 TEST_P(BlockingSocketPairTest, RecvBlocks) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 

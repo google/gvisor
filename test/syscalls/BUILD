@@ -807,10 +807,12 @@ syscall_test(
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_blocking_local_test",
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_blocking_ip_test",
 )
 
@@ -825,6 +827,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_stream_blocking_local_test",
 )
 

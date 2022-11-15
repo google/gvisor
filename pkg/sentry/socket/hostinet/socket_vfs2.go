@@ -124,7 +124,10 @@ func (s *socketVFS2) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.
 	reader := hostfd.GetReadWriterAt(int32(s.fd), -1, opts.Flags)
 	n, err := dst.CopyOutFrom(ctx, reader)
 	hostfd.PutReadWriterAt(reader)
-	return int64(n), err
+	if err != nil {
+		return int64(n), translateIOSyscallError(err)
+	}
+	return int64(n), nil
 }
 
 // PWrite implements vfs.FileDescriptionImpl.
@@ -143,7 +146,10 @@ func (s *socketVFS2) Write(ctx context.Context, src usermem.IOSequence, opts vfs
 	writer := hostfd.GetReadWriterAt(int32(s.fd), -1, opts.Flags)
 	n, err := src.CopyInTo(ctx, writer)
 	hostfd.PutReadWriterAt(writer)
-	return int64(n), err
+	if err != nil {
+		return int64(n), translateIOSyscallError(err)
+	}
+	return int64(n), nil
 }
 
 type socketProviderVFS2 struct {
