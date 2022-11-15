@@ -26,16 +26,17 @@ import (
 	"time"
 
 	"github.com/containerd/console"
+
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/mount"
 	"github.com/containerd/containerd/pkg/process"
 	"github.com/containerd/containerd/pkg/stdio"
+
 	"github.com/containerd/fifo"
 	runc "github.com/containerd/go-runc"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
-
 	"gvisor.dev/gvisor/pkg/shim/runsc"
 )
 
