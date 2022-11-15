@@ -115,12 +115,88 @@ void runSocket() {
   }
 }
 
+void runReadWrite() {
+  const std::string path = "read-write.txt";
+  auto fd_or = Open(path, O_RDWR | O_CREAT, 0644);
+  if (!fd_or.ok()) {
+    err(1, "open(O_CREAT): %s", fd_or.error().ToString().c_str());
+  }
+  auto cleaup = absl::MakeCleanup([path] { unlink(path.c_str()); });
+
+  auto fd = std::move(fd_or.ValueOrDie());
+
+  // Test different flavors of write.
+  char msg[] = "hello world";
+  if (WriteFd(fd.get(), msg, ABSL_ARRAYSIZE(msg)) < 0) {
+    err(1, "write");
+  }
+  if (PwriteFd(fd.get(), msg, ABSL_ARRAYSIZE(msg), 10) < 0) {
+    err(1, "pwrite");
+  }
+
+  struct iovec write_vecs[] = {
+      {
+          .iov_base = msg,
+          .iov_len = ABSL_ARRAYSIZE(msg),
+      },
+      {
+          .iov_base = msg,
+          .iov_len = ABSL_ARRAYSIZE(msg) / 2,
+      },
+  };
+  if (writev(fd.get(), write_vecs, ABSL_ARRAYSIZE(write_vecs)) < 0) {
+    err(1, "writev");
+  }
+  if (pwritev(fd.get(), write_vecs, ABSL_ARRAYSIZE(write_vecs), 10) < 0) {
+    err(1, "pwritev");
+  }
+  if (pwritev2(fd.get(), write_vecs, ABSL_ARRAYSIZE(write_vecs), 10,
+               RWF_HIPRI) < 0) {
+    err(1, "pwritev2");
+  }
+
+  // Rewind the file and test different flavors of read.
+  if (lseek(fd.get(), 0, SEEK_SET) < 0) {
+    err(1, "seek(0)");
+  }
+  char buf[1024];
+  if (ReadFd(fd.get(), buf, ABSL_ARRAYSIZE(buf)) < 0) {
+    err(1, "read");
+  }
+  if (PreadFd(fd.get(), buf, ABSL_ARRAYSIZE(buf), 20) < 0) {
+    err(1, "read");
+  }
+
+  // Reuse same buffer, since it's not using the result anyways.
+  struct iovec read_vecs[] = {
+      {
+          .iov_base = buf,
+          .iov_len = ABSL_ARRAYSIZE(msg),
+      },
+      {
+          .iov_base = buf,
+          .iov_len = ABSL_ARRAYSIZE(msg) / 2,
+      },
+  };
+  if (readv(fd.get(), read_vecs, ABSL_ARRAYSIZE(read_vecs)) < 0) {
+    err(1, "writev");
+  }
+  if (preadv(fd.get(), read_vecs, ABSL_ARRAYSIZE(read_vecs), 20) < 0) {
+    err(1, "pwritev");
+  }
+  if (preadv2(fd.get(), read_vecs, ABSL_ARRAYSIZE(read_vecs), 20, RWF_HIPRI) <
+      0) {
+    err(1, "pwritev2");
+  }
+}
+
 }  // namespace testing
 }  // namespace gvisor
 
 int main(int argc, char** argv) {
   ::gvisor::testing::runForkExecve();
   ::gvisor::testing::runSocket();
+  ::gvisor::testing::runReadWrite();
 
   return 0;
 }

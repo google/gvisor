@@ -131,5 +131,6 @@ enum MessageType {
   MESSAGE_SYSCALL_INOTIFY_ADD_WATCH = 31;
   MESSAGE_SYSCALL_INOTIFY_RM_WATCH = 32;
   MESSAGE_SYSCALL_SOCKETPAIR = 33;
+  MESSAGE_SYSCALL_WRITE = 34;
 }
 // LINT.ThenChange(../../../../examples/seccheck/server.cc)

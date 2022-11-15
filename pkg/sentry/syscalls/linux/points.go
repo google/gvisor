@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 func newExitMaybe(info kernel.SyscallInfo) *pb.Exit {
@@ -56,6 +57,14 @@ func getFilePath(t *kernel.Task, fd int32) string {
 		return fmt.Sprintf("[err: %v]", err)
 	}
 	return path
+}
+
+func getIovecSize(t *kernel.Task, addr hostarch.Addr, iovcnt int) uint64 {
+	dst, err := t.IovecsIOSequence(addr, iovcnt, usermem.IOOpts{AddressSpaceActive: true})
+	if err != nil {
+		return 0
+	}
+	return uint64(dst.NumBytes())
 }
 
 // PointOpen converts open(2) syscall to proto.
@@ -165,6 +174,173 @@ func PointRead(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData
 	p.Exit = newExitMaybe(info)
 
 	return p, pb.MessageType_MESSAGE_SYSCALL_READ
+}
+
+// PointPread64 converts pread64(2) syscall to proto.
+func PointPread64(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	p := &pb.Read{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Fd:          int64(info.Args[0].Int()),
+		Count:       uint64(info.Args[2].SizeT()),
+		HasOffset:   true,
+		Offset:      info.Args[3].Int64(),
+	}
+	if fields.Local.Contains(seccheck.FieldSyscallPath) {
+		p.FdPath = getFilePath(t, int32(p.Fd))
+	}
+
+	p.Exit = newExitMaybe(info)
+
+	return p, pb.MessageType_MESSAGE_SYSCALL_READ
+}
+
+// PointReadv converts readv(2) syscall to proto.
+func PointReadv(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	p := &pb.Read{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Fd:          int64(info.Args[0].Int()),
+		Count:       getIovecSize(t, info.Args[1].Pointer(), int(info.Args[2].Int())),
+	}
+	if fields.Local.Contains(seccheck.FieldSyscallPath) {
+		p.FdPath = getFilePath(t, int32(p.Fd))
+	}
+
+	p.Exit = newExitMaybe(info)
+
+	return p, pb.MessageType_MESSAGE_SYSCALL_READ
+}
+
+// PointPreadv converts preadv(2) syscall to proto.
+func PointPreadv(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	p := &pb.Read{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Fd:          int64(info.Args[0].Int()),
+		Count:       getIovecSize(t, info.Args[1].Pointer(), int(info.Args[2].Int())),
+		HasOffset:   true,
+		Offset:      info.Args[3].Int64(),
+	}
+	if fields.Local.Contains(seccheck.FieldSyscallPath) {
+		p.FdPath = getFilePath(t, int32(p.Fd))
+	}
+
+	p.Exit = newExitMaybe(info)
+
+	return p, pb.MessageType_MESSAGE_SYSCALL_READ
+}
+
+// PointPreadv2 converts preadv2(2) syscall to proto.
+func PointPreadv2(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	p := &pb.Read{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Fd:          int64(info.Args[0].Int()),
+		Count:       getIovecSize(t, info.Args[1].Pointer(), int(info.Args[2].Int())),
+		HasOffset:   true,
+		Offset:      info.Args[3].Int64(),
+		Flags:       info.Args[5].Uint(),
+	}
+	if fields.Local.Contains(seccheck.FieldSyscallPath) {
+		p.FdPath = getFilePath(t, int32(p.Fd))
+	}
+
+	p.Exit = newExitMaybe(info)
+
+	return p, pb.MessageType_MESSAGE_SYSCALL_READ
+}
+
+// PointWrite converts write(2) syscall to proto.
+func PointWrite(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	p := &pb.Write{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Fd:          int64(info.Args[0].Int()),
+		Count:       uint64(info.Args[2].SizeT()),
+	}
+	if fields.Local.Contains(seccheck.FieldSyscallPath) {
+		p.FdPath = getFilePath(t, int32(p.Fd))
+	}
+
+	p.Exit = newExitMaybe(info)
+
+	return p, pb.MessageType_MESSAGE_SYSCALL_WRITE
+}
+
+// PointPwrite64 converts pwrite64(2) syscall to proto.
+func PointPwrite64(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	p := &pb.Write{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Fd:          int64(info.Args[0].Int()),
+		Count:       uint64(info.Args[2].SizeT()),
+		HasOffset:   true,
+		Offset:      info.Args[3].Int64(),
+	}
+	if fields.Local.Contains(seccheck.FieldSyscallPath) {
+		p.FdPath = getFilePath(t, int32(p.Fd))
+	}
+
+	p.Exit = newExitMaybe(info)
+
+	return p, pb.MessageType_MESSAGE_SYSCALL_WRITE
+}
+
+// PointWritev converts writev(2) syscall to proto.
+func PointWritev(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	p := &pb.Write{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Fd:          int64(info.Args[0].Int()),
+		Count:       getIovecSize(t, info.Args[1].Pointer(), int(info.Args[2].Int())),
+	}
+	if fields.Local.Contains(seccheck.FieldSyscallPath) {
+		p.FdPath = getFilePath(t, int32(p.Fd))
+	}
+
+	p.Exit = newExitMaybe(info)
+
+	return p, pb.MessageType_MESSAGE_SYSCALL_WRITE
+}
+
+// PointPwritev converts pwritev(2) syscall to proto.
+func PointPwritev(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	p := &pb.Write{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Fd:          int64(info.Args[0].Int()),
+		Count:       getIovecSize(t, info.Args[1].Pointer(), int(info.Args[2].Int())),
+		HasOffset:   true,
+		Offset:      info.Args[3].Int64(),
+	}
+	if fields.Local.Contains(seccheck.FieldSyscallPath) {
+		p.FdPath = getFilePath(t, int32(p.Fd))
+	}
+
+	p.Exit = newExitMaybe(info)
+
+	return p, pb.MessageType_MESSAGE_SYSCALL_WRITE
+}
+
+// PointPwritev2 converts pwritev2(2) syscall to proto.
+func PointPwritev2(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	p := &pb.Write{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Fd:          int64(info.Args[0].Int()),
+		Count:       getIovecSize(t, info.Args[1].Pointer(), int(info.Args[2].Int())),
+		HasOffset:   true,
+		Offset:      info.Args[3].Int64(),
+		Flags:       info.Args[5].Uint(),
+	}
+	if fields.Local.Contains(seccheck.FieldSyscallPath) {
+		p.FdPath = getFilePath(t, int32(p.Fd))
+	}
+
+	p.Exit = newExitMaybe(info)
+
+	return p, pb.MessageType_MESSAGE_SYSCALL_WRITE
 }
 
 // PointSocket converts socket(2) syscall to proto.
