@@ -778,8 +778,8 @@ func AddSeals(fd *vfs.FileDescription, val uint32) error {
 	rf := f.inode().impl.(*regularFile)
 	rf.mapsMu.Lock()
 	defer rf.mapsMu.Unlock()
-	rf.dataMu.RLock()
-	defer rf.dataMu.RUnlock()
+	rf.dataMu.Lock()
+	defer rf.dataMu.Unlock()
 
 	if rf.seals&linux.F_SEAL_SEAL != 0 {
 		// Seal applied which prevents addition of any new seals.
