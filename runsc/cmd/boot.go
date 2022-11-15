@@ -16,8 +16,10 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"runtime/debug"
 	"strings"
 
@@ -101,6 +103,10 @@ type Boot struct {
 
 	// FDs for profile data.
 	profileFDs profile.FDArgs
+
+	// procMountSyncFD is a file descriptor that has to be closed when the
+	// procfs mount isn't needed anymore.
+	procMountSyncFD int
 }
 
 // Name implements subcommands.Command.Name.
@@ -125,6 +131,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&b.setUpRoot, "setup-root", false, "if true, set up an empty root for the process")
 	f.BoolVar(&b.pidns, "pidns", false, "if true, the sandbox is in its own PID namespace")
 	f.IntVar(&b.cpuNum, "cpu-num", 0, "number of CPUs to create inside the sandbox")
+	f.IntVar(&b.procMountSyncFD, "proc-mount-sync-fd", -1, "file descriptor that has to be closed when /proc isn't needed")
 	f.Uint64Var(&b.totalMem, "total-memory", 0, "sets the initial amount of total memory to report back to the container")
 	f.BoolVar(&b.attached, "attached", false, "if attached is true, kills the sandbox process when the parent process terminates")
 	f.StringVar(&b.productName, "product-name", "", "value to show in /sys/devices/virtual/dmi/id/product_name")
@@ -183,9 +190,24 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		}
 
 		if !b.applyCaps && !conf.Rootless {
+			// /proc is umounted from a forked process, because the
+			// current one is going to re-execute itself without
+			// capabilities.
+			cmd, w := b.execProcUmounter()
+			defer w.Close()
+			defer cmd.Wait()
+			if b.procMountSyncFD != -1 {
+				panic("procMountSyncFD is set")
+			}
+			b.procMountSyncFD = int(w.Fd())
+
 			// Remove --apply-caps arg to call myself. It has already been done.
 			args := b.prepareArgs("setup-root")
 
+			// Clear FD_CLOEXEC.
+			if _, _, errno := unix.RawSyscall(unix.SYS_FCNTL, w.Fd(), unix.F_SETFD, 0); errno != 0 {
+				util.Fatalf("error clearing CLOEXEC: %v", errno)
+			}
 			// Note that we've already read the spec from the spec FD, and
 			// we will read it again after the exec call. This works
 			// because the ReadSpecFromFile function seeks to the beginning
@@ -303,6 +325,28 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	// Fatalf exits the process and doesn't run defers.
 	// 'l' must be destroyed explicitly after this point!
 
+	if b.procMountSyncFD != -1 {
+		l.PreSeccompCallback = func() {
+			syncFile := os.NewFile(uintptr(b.procMountSyncFD), "sync file")
+			buf := make([]byte, 1)
+			if w, err := syncFile.Write(buf); err != nil || w != 1 {
+				util.Fatalf("unable to write into the proc umounter descriptor: %v", err)
+			}
+			syncFile.Close()
+
+			var waitStatus unix.WaitStatus
+			if _, err := unix.Wait4(0, &waitStatus, 0, nil); err != nil {
+				util.Fatalf("error waiting for the proc umounter process: %v", err)
+			}
+			if !waitStatus.Exited() || waitStatus.ExitStatus() != 0 {
+				util.Fatalf("the proc umounter process failed: %v", waitStatus)
+			}
+			if err := unix.Access("/proc/self", unix.F_OK); err != unix.ENOENT {
+				util.Fatalf("/proc is still accessible")
+			}
+		}
+	}
+
 	// Notify the parent process the sandbox has booted (and that the controller
 	// is up).
 	startSyncFile := os.NewFile(uintptr(b.startSyncFD), "start-sync file")
@@ -348,6 +392,9 @@ func (b *Boot) prepareArgs(exclude ...string) []string {
 				// process terminates.
 				args = append(args, "--attached")
 			}
+			if b.procMountSyncFD != -1 {
+				args = append(args, fmt.Sprintf("--proc-mount-sync-fd=%d", b.procMountSyncFD))
+			}
 			if len(b.productName) > 0 {
 				args = append(args, "--product-name", b.productName)
 			}
@@ -355,4 +402,25 @@ func (b *Boot) prepareArgs(exclude ...string) []string {
 	skip:
 	}
 	return args
+}
+
+// execProcUmounter execute a child process that umounts /proc when the sks[1]
+// socket is closed.
+func (b *Boot) execProcUmounter() (*exec.Cmd, *os.File) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		util.Fatalf("error creating a pipe: %v", err)
+	}
+	defer r.Close()
+
+	cmd := exec.Command(specutils.ExePath)
+	cmd.Args = append(cmd.Args, "umount", "--sync-fd=3", "/proc")
+	cmd.ExtraFiles = append(cmd.ExtraFiles, r)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		util.Fatalf("error executing umounter: %v", err)
+	}
+	return cmd, w
 }
