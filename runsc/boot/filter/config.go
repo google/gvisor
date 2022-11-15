@@ -444,6 +444,11 @@ func hostInetFilters() seccomp.SyscallRules {
 			{
 				seccomp.MatchAny{},
 				seccomp.EqualTo(unix.SOL_SOCKET),
+				seccomp.EqualTo(unix.SO_BROADCAST),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SOL_SOCKET),
 				seccomp.EqualTo(unix.SO_ERROR),
 			},
 			{
@@ -542,6 +547,13 @@ func hostInetFilters() seccomp.SyscallRules {
 		unix.SYS_SENDMSG:  {},
 		unix.SYS_SENDTO:   {},
 		unix.SYS_SETSOCKOPT: []seccomp.Rule{
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SOL_SOCKET),
+				seccomp.EqualTo(unix.SO_BROADCAST),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(4),
+			},
 			{
 				seccomp.MatchAny{},
 				seccomp.EqualTo(unix.SOL_SOCKET),
