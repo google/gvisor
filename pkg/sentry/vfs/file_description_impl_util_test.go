@@ -76,6 +76,7 @@ func (d *storeData) Write(ctx context.Context, _ *FileDescription, src usermem.I
 type testFD struct {
 	fileDescription
 	DynamicBytesFileDescriptionImpl
+	DentryMetadataFileDescriptionImpl
 
 	data DynamicBytesSource
 }
@@ -91,18 +92,6 @@ func newTestFD(ctx context.Context, vfsObj *VirtualFilesystem, statusFlags uint3
 
 // Release implements FileDescriptionImpl.Release.
 func (fd *testFD) Release(context.Context) {
-}
-
-// SetStatusFlags implements FileDescriptionImpl.SetStatusFlags.
-// Stat implements FileDescriptionImpl.Stat.
-func (fd *testFD) Stat(ctx context.Context, opts StatOptions) (linux.Statx, error) {
-	// Note that Statx.Mask == 0 in the return value.
-	return linux.Statx{}, nil
-}
-
-// SetStat implements FileDescriptionImpl.SetStat.
-func (fd *testFD) SetStat(ctx context.Context, opts SetStatOptions) error {
-	return linuxerr.EPERM
 }
 
 func TestGenCountFD(t *testing.T) {
