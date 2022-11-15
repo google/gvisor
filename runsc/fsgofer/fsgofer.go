@@ -48,6 +48,9 @@ const (
 	openFlags = unix.O_NOFOLLOW | unix.O_CLOEXEC
 
 	allowedOpenFlags = unix.O_TRUNC
+
+	// UNIX_PATH_MAX as defined in include/uapi/linux/un.h.
+	unixPathMax = 108
 )
 
 // join is equivalent to path.Join() but skips path.Clean() which is expensive.
@@ -1148,6 +1151,14 @@ func (l *localFile) Connect(socketType p9.SocketType) (*fd.FD, error) {
 		return nil, unix.ECONNREFUSED
 	}
 
+	// TODO(gvisor.dev/issue/1003): Due to different app vs replacement
+	// mappings, the app path may have fit in the sockaddr, but we can't
+	// fit f.path in our sockaddr. We'd need to redirect through a shorter
+	// path in order to actually connect to this socket.
+	if len(l.hostPath) >= unixPathMax {
+		return nil, unix.ECONNREFUSED
+	}
+
 	stype, ok := socketType.ToLinux()
 	if !ok {
 		return nil, unix.ENXIO
@@ -1163,10 +1174,7 @@ func (l *localFile) Connect(socketType p9.SocketType) (*fd.FD, error) {
 		return nil, err
 	}
 
-	// Use /proc/self/fd to refer to the socket file. This is faster and more
-	// secure because it avoids the host path walk. It also helps avoid the
-	// UNIX_PATH_MAX bytes limit on the path, in case path is too long.
-	sa := unix.SockaddrUnix{Name: filepath.Join("/proc/self/fd", strconv.Itoa(l.file.FD()))}
+	sa := unix.SockaddrUnix{Name: l.hostPath}
 	if err := unix.Connect(f, &sa); err != nil {
 		_ = unix.Close(f)
 		return nil, err
