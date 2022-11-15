@@ -36,13 +36,14 @@ import (
 type LisafsServer struct {
 	lisafs.Server
 	config Config
+	root   string
 }
 
 var _ lisafs.ServerImpl = (*LisafsServer)(nil)
 
 // NewLisafsServer initializes a new lisafs server for fsgofer.
-func NewLisafsServer(config Config) *LisafsServer {
-	s := &LisafsServer{config: config}
+func NewLisafsServer(config Config, root string) *LisafsServer {
+	s := &LisafsServer{config: config, root: root}
 	s.Server.Init(s, lisafs.ServerOpts{
 		WalkStatSupported: true,
 		SetAttrOnDeleted:  true,
@@ -51,9 +52,13 @@ func NewLisafsServer(config Config) *LisafsServer {
 	return s
 }
 
+func (s *LisafsServer) hostPath(node *lisafs.Node) string {
+	return filepath.Join(s.root, node.FilePath())
+}
+
 // Mount implements lisafs.ServerImpl.Mount.
 func (s *LisafsServer) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*lisafs.ControlFD, linux.Statx, error) {
-	mountPath := mountNode.FilePath()
+	mountPath := s.hostPath(mountNode)
 	rootHostFD, err := tryOpen(func(flags int) (int, error) {
 		return unix.Open(mountPath, flags, 0)
 	})
@@ -177,7 +182,7 @@ func (fd *controlFDLisa) getWritableFD() (int, error) {
 		return int(writableFD), nil
 	}
 
-	writableFD, err := unix.Openat(int(procSelfFD.FD()), strconv.Itoa(fd.hostFD), (unix.O_WRONLY|openFlags)&^unix.O_NOFOLLOW, 0)
+	writableFD, err := unix.Open(filepath.Join("/proc/self/fd", strconv.Itoa(fd.hostFD)), (unix.O_WRONLY|openFlags)&^unix.O_NOFOLLOW, 0)
 	if err != nil {
 		return -1, err
 	}
@@ -195,6 +200,10 @@ func (fd *controlFDLisa) FD() *lisafs.ControlFD {
 		return nil
 	}
 	return &fd.ControlFD
+}
+
+func (fd *controlFDLisa) server() *LisafsServer {
+	return fd.Conn().ServerImpl().(*LisafsServer)
 }
 
 // Close implements lisafs.ControlFDImpl.Close.
@@ -221,7 +230,7 @@ func (fd *controlFDLisa) SetStat(stat lisafs.SetStatReq) (failureMask uint32, fa
 		if fd.IsSocket() {
 			// fchmod(2) on socket files created via bind(2) fails. We need to
 			// fchmodat(2) it from its parent.
-			sockPath := fd.Node().FilePath()
+			sockPath := fd.server().hostPath(fd.Node())
 			parent, err := unix.Open(path.Dir(sockPath), openFlags|unix.O_PATH, 0)
 			if err == nil {
 				// Note that AT_SYMLINK_NOFOLLOW flag is not currently supported.
@@ -235,7 +244,7 @@ func (fd *controlFDLisa) SetStat(stat lisafs.SetStatReq) (failureMask uint32, fa
 			}
 		} else {
 			if err := unix.Fchmod(fd.hostFD, stat.Mode&^unix.S_IFMT); err != nil {
-				log.Warningf("SetStat fchmod failed %q, err: %v", fd.Node().FilePath(), err)
+				log.Warningf("SetStat fchmod failed %q, err: %v", fd.server().hostPath(fd.Node()), err)
 				failureMask |= unix.STATX_MODE
 				failureErr = err
 			}
@@ -249,7 +258,7 @@ func (fd *controlFDLisa) SetStat(stat lisafs.SetStatReq) (failureMask uint32, fa
 			err = unix.Ftruncate(writableFD, int64(stat.Size))
 		}
 		if err != nil {
-			log.Warningf("SetStat ftruncate failed %q, err: %v", fd.Node().FilePath(), err)
+			log.Warningf("SetStat ftruncate failed %q, err: %v", fd.server().hostPath(fd.Node()), err)
 			failureMask |= unix.STATX_SIZE
 			failureErr = err
 		}
@@ -273,7 +282,7 @@ func (fd *controlFDLisa) SetStat(stat lisafs.SetStatReq) (failureMask uint32, fa
 			// utimensat operates different that other syscalls. To operate on a
 			// symlink it *requires* AT_SYMLINK_NOFOLLOW with dirFD and a non-empty
 			// name. We need the parent FD.
-			symlinkPath := fd.Node().FilePath()
+			symlinkPath := fd.server().hostPath(fd.Node())
 			parent, err := unix.Open(path.Dir(symlinkPath), openFlags|unix.O_PATH, 0)
 			if err == nil {
 				err = utimensat(parent, path.Base(symlinkPath), utimes, unix.AT_SYMLINK_NOFOLLOW)
@@ -291,14 +300,14 @@ func (fd *controlFDLisa) SetStat(stat lisafs.SetStatReq) (failureMask uint32, fa
 				if writableFD, err := fd.getWritableFD(); err == nil {
 					hostFD = writableFD
 				} else {
-					log.Warningf("SetStat getWritableFD failed %q, err: %v", fd.Node().FilePath(), err)
+					log.Warningf("SetStat getWritableFD failed %q, err: %v", fd.server().hostPath(fd.Node()), err)
 				}
 			}
 			// Directories and regular files can operate directly on the fd
 			// using empty name.
 			err := utimensat(hostFD, "", utimes, 0)
 			if err != nil {
-				log.Warningf("SetStat utimens failed %q, err: %v", fd.Node().FilePath(), err)
+				log.Warningf("SetStat utimens failed %q, err: %v", fd.server().hostPath(fd.Node()), err)
 				failureMask |= (stat.Mask & (unix.STATX_ATIME | unix.STATX_MTIME))
 				failureErr = err
 			}
@@ -317,7 +326,7 @@ func (fd *controlFDLisa) SetStat(stat lisafs.SetStatReq) (failureMask uint32, fa
 			gid = int(stat.GID)
 		}
 		if err := unix.Fchownat(fd.hostFD, "", uid, gid, unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW); err != nil {
-			log.Warningf("SetStat fchown failed %q, err: %v", fd.Node().FilePath(), err)
+			log.Warningf("SetStat fchown failed %q, err: %v", fd.server().hostPath(fd.Node()), err)
 			failureMask |= stat.Mask & (unix.STATX_UID | unix.STATX_GID)
 			failureErr = err
 		}
@@ -341,7 +350,7 @@ func (fd *controlFDLisa) Walk(name string) (*lisafs.ControlFD, linux.Statx, erro
 		return nil, linux.Statx{}, err
 	}
 
-	if err := checkSupportedFileType(uint32(stat.Mode), &fd.Conn().ServerImpl().(*LisafsServer).config); err != nil {
+	if err := checkSupportedFileType(uint32(stat.Mode), &fd.server().config); err != nil {
 		_ = unix.Close(childHostFD)
 		log.Warningf("Walk: checkSupportedFileType() failed for %q with mode %o: %v", name, stat.Mode, err)
 		return nil, linux.Statx{}, err
@@ -378,7 +387,7 @@ func (fd *controlFDLisa) WalkStat(path lisafs.StringArray, recordStat func(linux
 	if fd.IsSymlink() {
 		return nil
 	}
-	server := fd.Conn().ServerImpl().(*LisafsServer)
+	server := fd.server()
 	for _, name := range path {
 		curFD, err := unix.Openat(curDirFD, name, unix.O_PATH|openFlags, 0)
 		if err == unix.ENOENT {
@@ -415,7 +424,7 @@ func (fd *controlFDLisa) WalkStat(path lisafs.StringArray, recordStat func(linux
 // Open implements lisafs.ControlFDImpl.Open.
 func (fd *controlFDLisa) Open(flags uint32) (*lisafs.OpenFD, int, error) {
 	flags |= openFlags
-	newHostFD, err := unix.Openat(int(procSelfFD.FD()), strconv.Itoa(fd.hostFD), int(flags)&^unix.O_NOFOLLOW, 0)
+	newHostFD, err := unix.Open(filepath.Join("/proc/self/fd", strconv.Itoa(fd.hostFD)), int(flags)&^unix.O_NOFOLLOW, 0)
 	if err != nil {
 		return nil, -1, err
 	}
@@ -453,7 +462,7 @@ func (fd *controlFDLisa) OpenCreate(mode linux.FileMode, uid lisafs.UID, gid lis
 	cu := cleanup.Make(func() {
 		// Best effort attempt to remove the file in case of failure.
 		if err := unix.Unlinkat(fd.hostFD, name, 0); err != nil {
-			log.Warningf("error unlinking file %q after failure: %v", path.Join(fd.Node().FilePath(), name), err)
+			log.Warningf("error unlinking file %q after failure: %v", path.Join(fd.server().hostPath(fd.Node()), name), err)
 		}
 		unix.Close(childHostFD)
 	})
@@ -472,7 +481,7 @@ func (fd *controlFDLisa) OpenCreate(mode linux.FileMode, uid lisafs.UID, gid lis
 
 	// Now open an FD to the newly created file with the flags requested by the client.
 	flags |= openFlags
-	newHostFD, err := unix.Openat(int(procSelfFD.FD()), strconv.Itoa(childHostFD), int(flags)&^unix.O_NOFOLLOW, 0)
+	newHostFD, err := unix.Open(filepath.Join("/proc/self/fd", strconv.Itoa(childHostFD)), int(flags)&^unix.O_NOFOLLOW, 0)
 	if err != nil {
 		return nil, linux.Statx{}, nil, -1, err
 	}
@@ -501,7 +510,7 @@ func (fd *controlFDLisa) Mkdir(mode linux.FileMode, uid lisafs.UID, gid lisafs.G
 	cu := cleanup.Make(func() {
 		// Best effort attempt to remove the dir in case of failure.
 		if err := unix.Unlinkat(fd.hostFD, name, unix.AT_REMOVEDIR); err != nil {
-			log.Warningf("error unlinking dir %q after failure: %v", path.Join(fd.Node().FilePath(), name), err)
+			log.Warningf("error unlinking dir %q after failure: %v", path.Join(fd.server().hostPath(fd.Node()), name), err)
 		}
 	})
 	defer cu.Clean()
@@ -544,7 +553,7 @@ func (fd *controlFDLisa) Mknod(mode linux.FileMode, uid lisafs.UID, gid lisafs.G
 	cu := cleanup.Make(func() {
 		// Best effort attempt to remove the file in case of failure.
 		if err := unix.Unlinkat(fd.hostFD, name, 0); err != nil {
-			log.Warningf("error unlinking file %q after failure: %v", path.Join(fd.Node().FilePath(), name), err)
+			log.Warningf("error unlinking file %q after failure: %v", path.Join(fd.server().hostPath(fd.Node()), name), err)
 		}
 	})
 	defer cu.Clean()
@@ -580,7 +589,7 @@ func (fd *controlFDLisa) Symlink(name string, target string, uid lisafs.UID, gid
 	cu := cleanup.Make(func() {
 		// Best effort attempt to remove the symlink in case of failure.
 		if err := unix.Unlinkat(fd.hostFD, name, 0); err != nil {
-			log.Warningf("error unlinking file %q after failure: %v", path.Join(fd.Node().FilePath(), name), err)
+			log.Warningf("error unlinking file %q after failure: %v", path.Join(fd.server().hostPath(fd.Node()), name), err)
 		}
 	})
 	defer cu.Clean()
@@ -613,7 +622,7 @@ func (fd *controlFDLisa) Link(dir lisafs.ControlFDImpl, name string) (*lisafs.Co
 	cu := cleanup.Make(func() {
 		// Best effort attempt to remove the hard link in case of failure.
 		if err := unix.Unlinkat(dirFD.hostFD, name, 0); err != nil {
-			log.Warningf("error unlinking file %q after failure: %v", path.Join(dirFD.Node().FilePath(), name), err)
+			log.Warningf("error unlinking file %q after failure: %v", path.Join(fd.server().hostPath(fd.Node()), name), err)
 		}
 	})
 	defer cu.Clean()
@@ -680,7 +689,7 @@ func isSockTypeSupported(sockType uint32) bool {
 
 // Connect implements lisafs.ControlFDImpl.Connect.
 func (fd *controlFDLisa) Connect(sockType uint32) (int, error) {
-	if !fd.Conn().ServerImpl().(*LisafsServer).config.HostUDS.AllowOpen() {
+	if !fd.server().config.HostUDS.AllowOpen() {
 		return -1, unix.EPERM
 	}
 
@@ -706,7 +715,7 @@ func (fd *controlFDLisa) Connect(sockType uint32) (int, error) {
 
 // BindAt implements lisafs.ControlFDImpl.BindAt.
 func (fd *controlFDLisa) BindAt(name string, sockType uint32, mode linux.FileMode, uid lisafs.UID, gid lisafs.GID) (*lisafs.ControlFD, linux.Statx, *lisafs.BoundSocketFD, int, error) {
-	if !fd.Conn().ServerImpl().(*LisafsServer).config.HostUDS.AllowCreate() {
+	if !fd.server().config.HostUDS.AllowCreate() {
 		return nil, linux.Statx{}, nil, -1, unix.EPERM
 	}
 
@@ -928,7 +937,8 @@ func (fd *openFDLisa) Getdent64(count uint32, seek0 bool, recordDirent func(lisa
 			// additional syscall per dirent. Live with it.
 			stat, err := statAt(fd.hostFD, name)
 			if err != nil {
-				log.Warningf("Getdent64: skipping file %q with failed stat, err: %v", path.Join(fd.ControlFD().FD().Node().FilePath(), name), err)
+				cfd := fd.ControlFD().(*controlFDLisa)
+				log.Warningf("Getdent64: skipping file %q with failed stat, err: %v", path.Join(cfd.server().hostPath(cfd.Node()), name), err)
 				return true
 			}
 			dirent.DevMinor = primitive.Uint32(unix.Minor(stat.Dev))

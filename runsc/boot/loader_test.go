@@ -37,9 +37,6 @@ import (
 func init() {
 	log.SetLevel(log.Debug)
 	rand.Seed(time.Now().UnixNano())
-	if err := fsgofer.OpenProcSelfFD(); err != nil {
-		panic(err)
-	}
 }
 
 func testConfig() *config.Config {
@@ -86,7 +83,7 @@ func startGofer(root string) (int, func(), error) {
 		unix.Close(goferEnd)
 		return 0, nil, fmt.Errorf("error creating server on FD %d: %v", goferEnd, err)
 	}
-	server := fsgofer.NewLisafsServer(fsgofer.Config{})
+	server := fsgofer.NewLisafsServer(fsgofer.Config{}, root)
 	c, err := server.CreateConnection(socket, root, true /* readonly */)
 	if err != nil {
 		return 0, nil, err

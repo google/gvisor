@@ -29,9 +29,6 @@ import (
 
 func init() {
 	log.SetLevel(log.Debug)
-	if err := fsgofer.OpenProcSelfFD(); err != nil {
-		panic(err)
-	}
 }
 
 // tester implements testsuite.Tester.
@@ -39,7 +36,7 @@ type tester struct{}
 
 // NewServer implements testsuite.Tester.NewServer.
 func (tester) NewServer(t *testing.T) *lisafs.Server {
-	return &fsgofer.NewLisafsServer(fsgofer.Config{HostUDS: config.HostUDSCreate}).Server
+	return &fsgofer.NewLisafsServer(fsgofer.Config{HostUDS: config.HostUDSCreate}, "/").Server
 }
 
 // LinkSupported implements testsuite.Tester.LinkSupported.

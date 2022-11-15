@@ -243,21 +243,8 @@ type localFile struct {
 	lastDirentOffset uint64
 }
 
-var procSelfFD *fd.FD
-
-// OpenProcSelfFD opens the /proc/self/fd directory, which will be used to
-// reopen file descriptors.
-func OpenProcSelfFD() error {
-	d, err := unix.Open("/proc/self/fd", unix.O_RDONLY|unix.O_DIRECTORY, 0)
-	if err != nil {
-		return fmt.Errorf("error opening /proc/self/fd: %v", err)
-	}
-	procSelfFD = fd.New(d)
-	return nil
-}
-
 func reopenProcFd(f *fd.FD, mode int) (*fd.FD, error) {
-	d, err := unix.Openat(int(procSelfFD.FD()), strconv.Itoa(f.FD()), mode&^unix.O_NOFOLLOW, 0)
+	d, err := unix.Open(filepath.Join("/proc/self/fd", strconv.Itoa(f.FD())), mode&^unix.O_NOFOLLOW, 0)
 	if err != nil {
 		return nil, err
 	}

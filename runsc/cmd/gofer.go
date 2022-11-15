@@ -213,13 +213,6 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	// modes exactly as sent by the sandbox, which will have applied its own umask.
 	unix.Umask(0)
 
-	if err := fsgofer.OpenProcSelfFD(); err != nil {
-		util.Fatalf("failed to open /proc/self/fd: %v", err)
-	}
-
-	if err := unix.Chroot(root); err != nil {
-		util.Fatalf("failed to chroot to %q: %v", root, err)
-	}
 	if err := unix.Chdir("/"); err != nil {
 		util.Fatalf("changing working dir: %v", err)
 	}
@@ -261,7 +254,7 @@ func (g *Gofer) serveLisafs(spec *specs.Spec, conf *config.Config, root string) 
 		// a per connection basis.
 		HostUDS:  conf.GetHostUDS(),
 		HostFifo: conf.HostFifo,
-	})
+	}, root)
 
 	// Start with root mount, then add any other additional mount as needed.
 	cfgs = append(cfgs, connectionConfig{
