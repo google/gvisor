@@ -108,6 +108,7 @@ func matchPoints(t *testing.T, msgs []test.Message) {
 		pb.MessageType_MESSAGE_SYSCALL_RAW:               {checker: checkSyscallRaw},
 		pb.MessageType_MESSAGE_SYSCALL_READ:              {checker: checkSyscallRead},
 		pb.MessageType_MESSAGE_SYSCALL_SOCKET:            {checker: checkSyscallSocket},
+		pb.MessageType_MESSAGE_SYSCALL_WRITE:             {checker: checkSyscallWrite},
 
 		// TODO(gvisor.dev/issue/4805): Add validation for these messages.
 		pb.MessageType_MESSAGE_SYSCALL_ACCEPT:    {checker: checkTODO},
@@ -291,7 +292,44 @@ func checkSyscallRead(msg test.Message) error {
 	}
 	if p.Fd < 0 {
 		// Although negative FD is possible, it doesn't happen in the test.
-		return fmt.Errorf("reading negative FD: %d", p.Fd)
+		return fmt.Errorf("read negative FD: %d", p.Fd)
+	}
+	if p.HasOffset {
+		// Workload always uses 20 for read offsets (account for partial reads).
+		if lower, upper := int64(20), int64(120); p.Offset < lower && p.Offset > upper {
+			return fmt.Errorf("invalid offset, want: [%d, %d], got: %d", lower, upper, p.Offset)
+		}
+	} else if p.Offset != 0 {
+		return fmt.Errorf("offset should be 0: %+v", &p)
+	}
+	if p.Flags != 0 && p.Flags != unix.RWF_HIPRI {
+		return fmt.Errorf("invalid flag value, want: 0 || RWF_HIPRI, got: %+x", p.Flags)
+	}
+	return nil
+}
+
+func checkSyscallWrite(msg test.Message) error {
+	p := pb.Write{}
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	if err := checkContextData(p.ContextData); err != nil {
+		return err
+	}
+	if p.Fd < 0 {
+		// Although negative FD is possible, it doesn't happen in the test.
+		return fmt.Errorf("write negative FD: %d", p.Fd)
+	}
+	if p.HasOffset {
+		// Workload always uses 10 for write offsets (account for partial writes).
+		if lower, upper := int64(10), int64(110); p.Offset < lower && p.Offset > upper {
+			return fmt.Errorf("invalid offset, want: [%d, %d], got: %d", lower, upper, p.Offset)
+		}
+	} else if p.Offset != 0 {
+		return fmt.Errorf("offset should be 0: %+v", &p)
+	}
+	if p.Flags != 0 && p.Flags != unix.RWF_HIPRI {
+		return fmt.Errorf("invalid flag value, want: 0 || RWF_HIPRI, got: %+x", p.Flags)
 	}
 	return nil
 }

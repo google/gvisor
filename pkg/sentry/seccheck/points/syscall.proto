@@ -61,6 +61,21 @@ message Read {
   int64 fd = 4;
   string fd_path = 5;
   uint64 count = 6;
+  bool has_offset = 7;
+  int64 offset = 8;
+  uint32 flags = 9;
+}
+
+message Write {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int64 fd = 4;
+  string fd_path = 5;
+  uint64 count = 6;
+  bool has_offset = 7;
+  int64 offset = 8;
+  uint32 flags = 9;
 }
 
 message Connect {
@@ -267,7 +282,7 @@ message InotifyInit {
   int32 flags = 4;
 }
 
-message InotifyAddWatch{
+message InotifyAddWatch {
   gvisor.common.ContextData context_data = 1;
   Exit exit = 2;
   uint64 sysno = 3;
