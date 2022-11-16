@@ -23,7 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
-	"gvisor.dev/gvisor/pkg/sentry/fs/lock"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/lock"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 )

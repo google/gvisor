@@ -56,7 +56,7 @@ import (
 	refs_vfs1 "gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
-	fslock "gvisor.dev/gvisor/pkg/sentry/fs/lock"
+	fslock "gvisor.dev/gvisor/pkg/sentry/fsimpl/lock"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"

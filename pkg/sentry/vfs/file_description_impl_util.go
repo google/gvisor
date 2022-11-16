@@ -23,7 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	fslock "gvisor.dev/gvisor/pkg/sentry/fs/lock"
+	fslock "gvisor.dev/gvisor/pkg/sentry/fsimpl/lock"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/usermem"

@@ -102,7 +102,7 @@ go_library(
         "//pkg/refs",
         "//pkg/refsvfs2",
         "//pkg/sentry/arch",
-        "//pkg/sentry/fs/lock",
+        "//pkg/sentry/fsimpl/lock",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/memmap",
         "//pkg/sentry/socket/unix/transport",

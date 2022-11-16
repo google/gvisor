@@ -164,7 +164,7 @@ go_library(
         "//pkg/safemem",
         "//pkg/sentry/arch",
         "//pkg/sentry/fs",
-        "//pkg/sentry/fs/lock",
+        "//pkg/sentry/fsimpl/lock",
         "//pkg/sentry/fsmetric",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/time",

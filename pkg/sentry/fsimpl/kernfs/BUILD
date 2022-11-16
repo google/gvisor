@@ -130,7 +130,7 @@ go_library(
         "//pkg/refsvfs2",
         "//pkg/safemem",
         "//pkg/sentry/fs/fsutil",
-        "//pkg/sentry/fs/lock",
+        "//pkg/sentry/fsimpl/lock",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/memmap",

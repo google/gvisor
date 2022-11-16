@@ -182,7 +182,6 @@ go_library(
         "//pkg/safecopy",
         "//pkg/safemem",
         "//pkg/sentry/arch",
-        "//pkg/sentry/fs/proc/seqfile",
         "//pkg/sentry/fsbridge",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/futex",
