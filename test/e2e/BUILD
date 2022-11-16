@@ -43,6 +43,7 @@ go_test(
         "//pkg/test/dockerutil",
         "//pkg/test/testutil",
         "@com_github_docker_docker//api/types/mount:go_default_library",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 

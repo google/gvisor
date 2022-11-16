@@ -268,9 +268,9 @@ INTEGRATION_TARGETS := //test/image:image_test //test/e2e:integration_test
 
 docker-tests: load-basic $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),) # Clear flags.
-	# Used by TestRlimitNoFile.
-	@$(call install_runtime,$(RUNTIME)-fdlimit,--fdlimit=2000)
-	@$(call install_runtime,$(RUNTIME)-dcache,--fdlimit=2000 --dcache=100)
+	@$(call install_runtime,$(RUNTIME)-fdlimit,--fdlimit=2000) # Used by TestRlimitNoFile.
+	@$(call install_runtime,$(RUNTIME)-dcache,--fdlimit=2000 --dcache=100) # Used by TestDentryCacheLimit.
+	@$(call install_runtime,$(RUNTIME)-host-uds,--host-uds=all) # Used by TestHostSocketConnect.
 	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS) //test/e2e:integration_runtime_test)
 .PHONY: docker-tests
 
