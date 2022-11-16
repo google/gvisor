@@ -7,7 +7,7 @@ import (
 )
 
 func (o *OwnerInfo) StateTypeName() string {
-	return "pkg/sentry/fs/lock.OwnerInfo"
+	return "pkg/sentry/fsimpl/lock.OwnerInfo"
 }
 
 func (o *OwnerInfo) StateFields() []string {
@@ -32,7 +32,7 @@ func (o *OwnerInfo) StateLoad(stateSourceObject state.Source) {
 }
 
 func (l *Lock) StateTypeName() string {
-	return "pkg/sentry/fs/lock.Lock"
+	return "pkg/sentry/fsimpl/lock.Lock"
 }
 
 func (l *Lock) StateFields() []string {
@@ -63,7 +63,7 @@ func (l *Lock) StateLoad(stateSourceObject state.Source) {
 }
 
 func (l *Locks) StateTypeName() string {
-	return "pkg/sentry/fs/lock.Locks"
+	return "pkg/sentry/fsimpl/lock.Locks"
 }
 
 func (l *Locks) StateFields() []string {
@@ -91,7 +91,7 @@ func (l *Locks) StateLoad(stateSourceObject state.Source) {
 }
 
 func (r *LockRange) StateTypeName() string {
-	return "pkg/sentry/fs/lock.LockRange"
+	return "pkg/sentry/fsimpl/lock.LockRange"
 }
 
 func (r *LockRange) StateFields() []string {
@@ -119,7 +119,7 @@ func (r *LockRange) StateLoad(stateSourceObject state.Source) {
 }
 
 func (s *LockSet) StateTypeName() string {
-	return "pkg/sentry/fs/lock.LockSet"
+	return "pkg/sentry/fsimpl/lock.LockSet"
 }
 
 func (s *LockSet) StateFields() []string {
@@ -146,7 +146,7 @@ func (s *LockSet) StateLoad(stateSourceObject state.Source) {
 }
 
 func (n *Locknode) StateTypeName() string {
-	return "pkg/sentry/fs/lock.Locknode"
+	return "pkg/sentry/fsimpl/lock.Locknode"
 }
 
 func (n *Locknode) StateFields() []string {
@@ -192,7 +192,7 @@ func (n *Locknode) StateLoad(stateSourceObject state.Source) {
 }
 
 func (l *LockSegmentDataSlices) StateTypeName() string {
-	return "pkg/sentry/fs/lock.LockSegmentDataSlices"
+	return "pkg/sentry/fsimpl/lock.LockSegmentDataSlices"
 }
 
 func (l *LockSegmentDataSlices) StateFields() []string {
