@@ -38,9 +38,21 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "address_state_refs",
+    out = "address_state_refs.go",
+    package = "stack",
+    prefix = "addressState",
+    template = "//pkg/refsvfs2:refs_template",
+    types = {
+        "T": "addressState",
+    },
+)
+
 go_library(
     name = "stack",
     srcs = [
+        "address_state_refs.go",
         "addressable_endpoint_state.go",
         "conntrack.go",
         "gro.go",
