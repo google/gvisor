@@ -25,12 +25,17 @@ import (
 	"context"
 	"flag"
 	"io/ioutil"
+	"net"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/docker/docker/api/types/mount"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
@@ -114,4 +119,62 @@ func TestDentryCacheLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("docker failed: %v, %s", err, got)
 	}
+}
+
+// NOTE(gvisor.dev/issue/8126): Regression test.
+func TestHostSocketConnect(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainerWithRuntime(ctx, t, "-host-uds")
+	defer d.CleanUp(ctx)
+
+	tmpDir := testutil.TmpDir()
+	tmpDirFD, err := unix.Open(tmpDir, unix.O_PATH, 0)
+	if err != nil {
+		t.Fatalf("open error: %v", err)
+	}
+	defer unix.Close(tmpDirFD)
+	// Use /proc/self/fd to generate path to avoid EINVAL on large path.
+	l, err := net.Listen("unix", filepath.Join("/proc/self/fd", strconv.Itoa(tmpDirFD), "test.sock"))
+	if err != nil {
+		t.Fatalf("listen error: %v", err)
+	}
+	defer l.Close()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		conn, err := l.Accept()
+		if err != nil {
+			t.Errorf("accept error: %v", err)
+			return
+		}
+
+		conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+		var buf [5]byte
+		if _, err := conn.Read(buf[:]); err != nil {
+			t.Errorf("read error: %v", err)
+			return
+		}
+
+		if want := "Hello"; string(buf[:]) != want {
+			t.Errorf("expected %s, got %v", want, string(buf[:]))
+		}
+	}()
+
+	opts := dockerutil.RunOpts{
+		Image:   "basic/integrationtest",
+		WorkDir: "/root",
+		Mounts: []mount.Mount{
+			{
+				Type:   mount.TypeBind,
+				Source: filepath.Join(tmpDir, "test.sock"),
+				Target: "/test.sock",
+			},
+		},
+	}
+	if _, err := d.Run(ctx, opts, "./host_connect", "/test.sock"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	wg.Wait()
 }
