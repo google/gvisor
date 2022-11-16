@@ -59,7 +59,6 @@ steps:
     command: make smoke-tests
     agents:
       arch: "amd64"
-  - wait
   - <<: *common
     <<: *source_test
     label: ":fire: Smoke tests (ARM64)"
