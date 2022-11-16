@@ -24,7 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	pb "gvisor.dev/gvisor/pkg/sentry/control/control_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
-	"gvisor.dev/gvisor/pkg/sentry/fs/user"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/user"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/limits"

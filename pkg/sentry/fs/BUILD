@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools:defs.bzl", "go_library")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 load("//pkg/sync/locking:locking.bzl", "declare_mutex")
 
@@ -60,7 +60,7 @@ go_library(
         "//pkg/secio",
         "//pkg/sentry/arch",
         "//pkg/sentry/device",
-        "//pkg/sentry/fs/lock",
+        "//pkg/sentry/fsimpl/lock",
         "//pkg/sentry/fsmetric",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/time",
@@ -122,43 +122,4 @@ declare_mutex(
     out = "inotify_mutex.go",
     package = "fs",
     prefix = "inotify",
-)
-
-go_test(
-    name = "fs_x_test",
-    size = "small",
-    srcs = [
-        "copy_up_test.go",
-        "file_overlay_test.go",
-        "inode_overlay_test.go",
-        "mounts_test.go",
-    ],
-    deps = [
-        ":fs",
-        "//pkg/context",
-        "//pkg/errors/linuxerr",
-        "//pkg/sentry/fs/fsutil",
-        "//pkg/sentry/fs/ramfs",
-        "//pkg/sentry/fs/tmpfs",
-        "//pkg/sentry/kernel/contexttest",
-        "//pkg/sync",
-        "//pkg/usermem",
-    ],
-)
-
-go_test(
-    name = "fs_test",
-    size = "small",
-    srcs = [
-        "dirent_cache_test.go",
-        "dirent_refs_test.go",
-        "mount_test.go",
-        "path_test.go",
-    ],
-    library = ":fs",
-    deps = [
-        "//pkg/context",
-        "//pkg/sentry/contexttest",
-        "@org_golang_x_sys//unix:go_default_library",
-    ],
 )
