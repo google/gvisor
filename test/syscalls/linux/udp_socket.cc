@@ -1228,10 +1228,10 @@ TEST_P(UdpSocketTest, ReadShutdownSameSocketResetsShutdownState) {
   // Connect the socket, then try to shutdown again.
   ASSERT_NO_ERRNO(BindLoopback());
 
-  // Connect to loopback:bind_addr_port+1.
+  // Connect `bind_` to itself since we know the port number is valid.
   struct sockaddr_storage addr_storage = InetLoopbackAddr();
   struct sockaddr* addr = AsSockAddr(&addr_storage);
-  SetPort(&addr_storage, *Port(&bind_addr_storage_) + 1);
+  SetPort(&addr_storage, *Port(&bind_addr_storage_));
   ASSERT_THAT(connect(bind_.get(), addr, addrlen_), SyscallSucceeds());
 
   EXPECT_THAT(recv(bind_.get(), received, sizeof(received), MSG_DONTWAIT),
