@@ -447,6 +447,49 @@ TEST(IOUringTest, InvalidOpCodeTest) {
   io_uring->store_cq_head(cq_head + 1);
 }
 
+// Tests that filling the shared memory region with garbage data doesn't cause a
+// kernel panic.
+TEST(IOUringTest, CorruptRingHeader) {
+  const int kEntries = 64;
+
+  IOUringParams params;
+  FileDescriptor iouringfd =
+      ASSERT_NO_ERRNO_AND_VALUE(NewIOUringFD(kEntries, params));
+
+  int sring_sz = params.sq_off.array + params.sq_entries * sizeof(unsigned);
+  int cring_sz = params.cq_off.cqes + params.cq_entries * sizeof(IOUringCqe);
+  int sqes_sz = params.sq_entries * sizeof(IOUringSqe);
+
+  void *sq_ptr =
+      mmap(0, sring_sz, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE,
+           iouringfd.get(), IORING_OFF_SQ_RING);
+
+  void *cq_ptr =
+      mmap(0, cring_sz, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE,
+           iouringfd.get(), IORING_OFF_CQ_RING);
+
+  void *sqe_ptr =
+      mmap(0, sqes_sz, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE,
+           iouringfd.get(), IORING_OFF_SQES);
+
+  EXPECT_NE(sq_ptr, MAP_FAILED);
+  EXPECT_NE(cq_ptr, MAP_FAILED);
+  EXPECT_NE(sqe_ptr, MAP_FAILED);
+
+  // Corrupt all the buffers.
+  memset(sq_ptr, 0xff, sring_sz);
+  memset(cq_ptr, 0xff, cring_sz);
+  memset(sqe_ptr, 0xff, sqes_sz);
+
+  IOUringEnter(iouringfd.get(), 1, 0, IORING_ENTER_GETEVENTS, nullptr);
+
+  // If kernel hasn't panicked, the test succeeds.
+
+  EXPECT_THAT(munmap(sq_ptr, sring_sz), SyscallSucceeds());
+  EXPECT_THAT(munmap(cq_ptr, cring_sz), SyscallSucceeds());
+  EXPECT_THAT(munmap(sqe_ptr, sizeof(IOUringSqe)), SyscallSucceeds());
+}
+
 // Testing that io_uring_enter(2) successfully consumes submission and SQE ring
 // buffers wrap around.
 TEST(IOUringTest, SQERingBuffersWrapAroundTest) {
