@@ -24,6 +24,7 @@ package iouringfs
 
 import (
 	"fmt"
+	"io"
 	"sync"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -382,6 +383,11 @@ func (fd *FileDescription) ProcessSubmission(t *kernel.Task, sqe *linux.IOUringS
 		// For the NOP operation, we don't do anything special.
 	case linux.IORING_OP_READV:
 		retValue, cqeErr = fd.handleReadv(t, sqe, flags)
+		if cqeErr == io.EOF {
+			// Don't raise EOF as errno, error translation will fail. Short
+			// reads aren't failures.
+			cqeErr = nil
+		}
 	default: // Unsupported operation
 		retValue = -int32(linuxerr.EINVAL.Errno())
 	}

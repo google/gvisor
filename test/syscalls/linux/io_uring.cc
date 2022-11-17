@@ -692,6 +692,58 @@ TEST(IOUringTest, SingleREADVTest) {
   io_uring->store_cq_head(cq_head + 1);
 }
 
+// Tests that IORING_OP_READV handles EOF on an empty file correctly.
+TEST(IOUringTest, ReadvEmptyFile) {
+  struct io_uring_params params;
+  std::unique_ptr<IOUring> io_uring =
+      ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(1, params));
+
+  uint32_t sq_head = io_uring->load_sq_head();
+
+  std::string file_name = NewTempAbsPath();
+  ASSERT_NO_ERRNO(CreateWithContents(file_name, "", 0666));
+
+  FileDescriptor filefd = ASSERT_NO_ERRNO_AND_VALUE(Open(file_name, O_RDONLY));
+  ASSERT_GE(filefd.get(), 0);
+
+  unsigned *sq_array = io_uring->get_sq_array();
+  struct io_uring_sqe *sqe = io_uring->get_sqes();
+
+  struct iovec iov;
+  iov.iov_len = 0;
+  void *buf;
+  ASSERT_THAT(posix_memalign(&buf, BLOCK_SZ, BLOCK_SZ), SyscallSucceeds());
+  iov.iov_base = buf;
+
+  sqe->flags = 0;
+  sqe->fd = filefd.get();
+  sqe->opcode = IORING_OP_READV;
+  sqe->addr = reinterpret_cast<uint64_t>(&iov);
+  sqe->len = 1;
+  sqe->off = 0;
+  sqe->user_data = reinterpret_cast<uint64_t>(&iov);
+  sq_array[0] = 0;
+
+  uint32_t sq_tail = io_uring->load_sq_tail();
+  io_uring->store_sq_tail(sq_tail + 1);
+
+  int ret = io_uring->Enter(1, 1, 0, nullptr);
+  ASSERT_EQ(ret, 1);
+
+  struct io_uring_cqe *cqe = io_uring->get_cqes();
+
+  sq_head = io_uring->load_sq_head();
+  ASSERT_EQ(sq_head, 1);
+
+  uint32_t cq_tail = io_uring->load_cq_tail();
+  ASSERT_EQ(cq_tail, 1);
+
+  ASSERT_EQ(cqe->res, 0);  // 0 length read, EOF.
+
+  uint32_t cq_head = io_uring->load_cq_head();
+  io_uring->store_cq_head(cq_head + 1);
+}
+
 // Testing that io_uring_enter(2) successfully handles three READV operations
 // from three different files submitted through a single invocation.
 TEST(IOUringTest, ThreeREADVSingleEnterTest) {
