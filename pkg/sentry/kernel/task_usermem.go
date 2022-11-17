@@ -347,16 +347,28 @@ func (cc *taskCopyContext) CopyScratchBuffer(size int) []byte {
 }
 
 func (cc *taskCopyContext) getMemoryManager() (*mm.MemoryManager, error) {
-	cc.t.mu.Lock()
 	tmm := cc.t.MemoryManager()
-	cc.t.mu.Unlock()
+	if tmm == nil {
+		return nil, linuxerr.ESRCH
+	}
 	if !tmm.IncUsers() {
 		return nil, linuxerr.EFAULT
 	}
 	return tmm, nil
 }
 
+// WithTaskMutexLocked runs the given function with the task's mutex locked.
+func (cc *taskCopyContext) WithTaskMutexLocked(fn func() error) error {
+	cc.t.mu.Lock()
+	defer cc.t.mu.Unlock()
+	return fn()
+}
+
 // CopyInBytes implements marshal.CopyContext.CopyInBytes.
+//
+// Preconditions: Same as usermem.IO.CopyIn, plus:
+//   - The caller must be running on the task goroutine or hold the cc.t.mu
+//   - t's AddressSpace must be active.
 func (cc *taskCopyContext) CopyInBytes(addr hostarch.Addr, dst []byte) (int, error) {
 	tmm, err := cc.getMemoryManager()
 	if err != nil {
@@ -367,6 +379,10 @@ func (cc *taskCopyContext) CopyInBytes(addr hostarch.Addr, dst []byte) (int, err
 }
 
 // CopyOutBytes implements marshal.CopyContext.CopyOutBytes.
+//
+// Preconditions: Same as usermem.IO.CopyOut, plus:
+//   - The caller must be running on the task goroutine or hold the cc.t.mu
+//   - t's AddressSpace must be active.
 func (cc *taskCopyContext) CopyOutBytes(addr hostarch.Addr, src []byte) (int, error) {
 	tmm, err := cc.getMemoryManager()
 	if err != nil {
@@ -378,11 +394,19 @@ func (cc *taskCopyContext) CopyOutBytes(addr hostarch.Addr, src []byte) (int, er
 
 // CopyOutIovecs converts src to an array of struct iovecs and copies it to the
 // memory mapped at addr for Task.
+//
+// Preconditions: Same as usermem.IO.CopyOut, plus:
+//   - The caller must be running on the task goroutine or hold the cc.t.mu
+//   - t's AddressSpace must be active.
 func (cc *taskCopyContext) CopyOutIovecs(addr hostarch.Addr, src hostarch.AddrRangeSeq) error {
 	return copyOutIovecs(cc, cc.t, addr, src)
 }
 
 // CopyInIovecs copies in IoVecs for taskCopyContext.
+//
+// Preconditions: Same as usermem.IO.CopyIn, plus:
+//   - The caller must be running on the task goroutine or hold the cc.t.mu
+//   - t's AddressSpace must be active.
 func (cc *taskCopyContext) CopyInIovecs(addr hostarch.Addr, numIovecs int) ([]hostarch.AddrRange, error) {
 	return copyInIovecs(cc, cc.t, addr, numIovecs)
 }

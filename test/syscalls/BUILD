@@ -1087,7 +1087,5 @@ syscall_test(
 
 syscall_test(
     size = "small",
-    # TODO(b/245647342): These tests are flaky on native.
-    allow_native = False,
     test = "//test/syscalls/linux:process_vm_read_write",
 )

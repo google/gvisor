@@ -37,6 +37,7 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
 #include "test/util/linux_capability_util.h"
+#include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/test_util.h"
@@ -302,7 +303,7 @@ TEST(ProcessVMInvalidTest, ProcessNoExist) {
               SyscallFailsWithErrno(::testing::AnyOf(ESRCH, EFAULT)));
 }
 
-TEST(ProcessVMInvalidTest, InvalidLength) {
+TEST(ProcessVMInvalidTest, GreaterThanIOV_MAX) {
   SKIP_IF(ProcessVMCallsNotSupported());
   std::string contents = "3263827";
   struct iovec iov;
@@ -315,35 +316,25 @@ TEST(ProcessVMInvalidTest, InvalidLength) {
     child_iov.iov_len = contents.size();
 
     pid_t parent = getppid();
-    TEST_CHECK_ERRNO(process_vm_readv(parent, &child_iov, contents.length(),
-                                      iov_addr, -1, 0),
-                     EFAULT);
-    TEST_CHECK_ERRNO(process_vm_writev(parent, &child_iov, contents.length(),
-                                       iov_addr, -1, 0),
-                     EFAULT);
+    TEST_CHECK_MSG(-1 == process_vm_readv(parent, &child_iov, 1, iov_addr,
+                                          IOV_MAX + 1, 0) &&
+                       errno == EINVAL,
+                   "read remote_process_over_IOV_MAX");
 
-    TEST_CHECK_ERRNO(process_vm_readv(parent, &child_iov, -1, iov_addr,
-                                      contents.length(), 0),
-                     EINVAL);
+    TEST_CHECK_MSG(-1 == process_vm_writev(parent, &child_iov, 1, iov_addr,
+                                           IOV_MAX + 3, 0) &&
+                       errno == EINVAL,
+                   "write remote process over IOV_MAX");
 
-    TEST_CHECK_ERRNO(process_vm_writev(parent, &child_iov, -1, iov_addr,
-                                       contents.length(), 0),
-                     EINVAL);
-    TEST_CHECK_ERRNO(process_vm_readv(parent, &child_iov, contents.length(),
-                                      iov_addr, IOV_MAX + 1, 0),
-                     EFAULT);
+    TEST_CHECK_MSG(-1 == process_vm_readv(parent, &child_iov, IOV_MAX + 2,
+                                          iov_addr, 1, 0) &&
+                       errno == EINVAL,
+                   "read local process over IOV_MAX");
 
-    TEST_CHECK_ERRNO(process_vm_writev(parent, &child_iov, contents.length(),
-                                       iov_addr, IOV_MAX + 1, 0),
-                     EFAULT);
-
-    TEST_CHECK_ERRNO(process_vm_readv(parent, &child_iov, IOV_MAX + 2, iov_addr,
-                                      contents.length(), 0),
-                     EINVAL);
-
-    TEST_CHECK_ERRNO(process_vm_writev(parent, &child_iov, IOV_MAX + 8,
-                                       iov_addr, contents.length(), 0),
-                     EINVAL);
+    TEST_CHECK_MSG(-1 == process_vm_writev(parent, &child_iov, IOV_MAX + 8,
+                                           iov_addr, 1, 0) &&
+                       errno == EINVAL,
+                   "write local process over IOV_MAX");
   };
   EXPECT_THAT(InForkedProcess(fn), IsPosixErrorOkAndHolds(0));
 }
@@ -398,6 +389,5 @@ TEST(ProcessVMTest, WriteToZombie) {
               SyscallFailsWithErrno(ESRCH));
 }
 }  // namespace
-
 }  // namespace testing
 }  // namespace gvisor
