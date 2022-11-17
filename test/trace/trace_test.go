@@ -109,6 +109,9 @@ func matchPoints(t *testing.T, msgs []test.Message) {
 		pb.MessageType_MESSAGE_SYSCALL_READ:              {checker: checkSyscallRead},
 		pb.MessageType_MESSAGE_SYSCALL_SOCKET:            {checker: checkSyscallSocket},
 		pb.MessageType_MESSAGE_SYSCALL_WRITE:             {checker: checkSyscallWrite},
+		pb.MessageType_MESSAGE_SYSCALL_CHDIR:             {checker: checkSyscallChdir},
+		pb.MessageType_MESSAGE_SYSCALL_SETID:             {checker: checkSyscallSetid},
+		pb.MessageType_MESSAGE_SYSCALL_SETRESID:          {checker: checkSyscallSetresid},
 
 		// TODO(gvisor.dev/issue/4805): Add validation for these messages.
 		pb.MessageType_MESSAGE_SYSCALL_ACCEPT:    {checker: checkTODO},
@@ -479,6 +482,61 @@ func checkSyscallSocket(msg test.Message) error {
 	if want := int32(0); want != p.Protocol {
 		return fmt.Errorf("wrong Protocol, want: %v, got: %v", want, p.Protocol)
 	}
+
+	return nil
+}
+
+func checkSyscallSetid(msg test.Message) error {
+	p := pb.Setid{}
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	if err := checkContextData(p.ContextData); err != nil {
+		return err
+	}
+	if p.Id != 0 {
+		return fmt.Errorf(" invalid id: %d", p.Id)
+	}
+
+	return nil
+}
+
+func checkSyscallSetresid(msg test.Message) error {
+	p := pb.Setresid{}
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	if err := checkContextData(p.ContextData); err != nil {
+		return err
+	}
+	if p.GetRid() != 0 {
+		return fmt.Errorf(" Invalid RID: %d", p.Rid)
+	}
+	if p.GetEid() != 0 {
+		return fmt.Errorf(" Invalid EID: %d", p.Eid)
+	}
+	if p.GetSid() != 0 {
+		return fmt.Errorf(" Invalid SID: %d", p.Sid)
+	}
+
+	return nil
+}
+
+func checkSyscallChdir(msg test.Message) error {
+	p := pb.Chdir{}
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	if err := checkContextData(p.ContextData); err != nil {
+		return err
+	}
+	if p.Fd < 3 && p.Fd != unix.AT_FDCWD { // Constant used for all file-related syscalls.
+		return fmt.Errorf("invalid FD: %d", p.Fd)
+	}
+	if want := "trace_test.abc"; !strings.Contains(p.Pathname, want) {
+		return fmt.Errorf("wrong Pathname, got: %q, want: %q", p.Pathname, want)
+	}
+
 	return nil
 }
 
