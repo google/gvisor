@@ -303,6 +303,11 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 	if l.containerMap == nil {
 		l.containerMap = make(map[string]*Container)
 	}
+
+	if _, ok := l.containerMap[initArgs.ContainerID]; ok {
+		return fmt.Errorf("container id: %v already exists", initArgs.ContainerID)
+	}
+
 	l.containerMap[initArgs.ContainerID] = c
 	l.mu.Unlock()
 
