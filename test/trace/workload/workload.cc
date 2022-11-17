@@ -13,9 +13,15 @@
 // limitations under the License.
 
 #include <err.h>
+#include <fcntl.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/un.h>
+#include <unistd.h>
+
+#include <iostream>
+#include <ostream>
 
 #include "absl/cleanup/cleanup.h"
 #include "absl/strings/str_cat.h"
@@ -39,7 +45,6 @@ void runForkExecve() {
   auto kill_or_error = ForkAndExecveat(root.get(), "/bin/true", argv, envv, 0,
                                        nullptr, &child, &execve_errno);
   ASSERT_EQ(0, execve_errno);
-
   // Don't kill child, just wait for gracefully exit.
   kill_or_error.ValueOrDie().Release();
   RetryEINTR(waitpid)(child, nullptr, 0);
@@ -190,6 +195,72 @@ void runReadWrite() {
   }
 }
 
+void runChdir() {
+  const auto pathname = "trace_test.abc";
+  static constexpr mode_t kDefaultDirMode = 0755;
+  int path_or_error = mkdir(pathname, kDefaultDirMode);
+  if (path_or_error != 0) {
+    err(1, "mkdir");
+  }
+  int res = chdir(pathname);
+  if (res != 0) {
+    err(1, "chdir");
+  }
+  rmdir(pathname);
+}
+
+void runFchdir() {
+  const auto pathname = "trace_test.abc";
+  static constexpr mode_t kDefaultDirMode = 0755;
+  int path_or_error = mkdir(pathname, kDefaultDirMode);
+  if (path_or_error != 0) {
+    err(1, "mkdir");
+  }
+  int fd = open(pathname, O_DIRECTORY | O_RDONLY);
+  int res = fchdir(fd);
+  if (res != 0) {
+    err(1, "fchdir");
+  }
+  rmdir(pathname);
+  close(fd);
+}
+
+void runSetgid() {
+  auto get = setgid(0);
+  if (get != 0) {
+    err(1, "setgid");
+  }
+}
+
+void runSetuid() {
+  auto get = setuid(0);
+  if (get != 0) {
+    err(1, "setuid");
+  }
+}
+
+void runSetsid() {
+  auto get = setsid();
+  // Operation is not permitted so we get an error.
+  if (get != -1) {
+    err(1, "setsid");
+  }
+}
+
+void runSetresuid() {
+  auto get = setresuid(0, 0, 0);
+  if (get != 0) {
+    err(1, "setresuid");
+  }
+}
+
+void runSetresgid() {
+  auto get = setresgid(0, 0, 0);
+  if (get != 0) {
+    err(1, "setresgid");
+  }
+}
+
 }  // namespace testing
 }  // namespace gvisor
 
@@ -197,6 +268,12 @@ int main(int argc, char** argv) {
   ::gvisor::testing::runForkExecve();
   ::gvisor::testing::runSocket();
   ::gvisor::testing::runReadWrite();
-
+  ::gvisor::testing::runChdir();
+  ::gvisor::testing::runFchdir();
+  ::gvisor::testing::runSetgid();
+  ::gvisor::testing::runSetuid();
+  ::gvisor::testing::runSetsid();
+  ::gvisor::testing::runSetresuid();
+  ::gvisor::testing::runSetresgid();
   return 0;
 }

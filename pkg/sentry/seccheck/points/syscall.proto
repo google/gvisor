@@ -121,9 +121,9 @@ message Setresid {
   gvisor.common.ContextData context_data = 1;
   Exit exit = 2;
   uint64 sysno = 3;
-  uint32 rgid = 4;
-  uint32 egid = 5;
-  uint32 sgid = 6;
+  uint32 rid = 4;
+  uint32 eid = 5;
+  uint32 sid = 6;
 }
 
 message Setid {

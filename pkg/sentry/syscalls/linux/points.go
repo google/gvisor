@@ -512,9 +512,9 @@ func pointSetresidHelper(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.C
 	p := &pb.Setresid{
 		ContextData: cxtData,
 		Sysno:       uint64(info.Sysno),
-		Rgid:        info.Args[0].Uint(),
-		Egid:        info.Args[1].Uint(),
-		Sgid:        info.Args[2].Uint(),
+		Rid:         info.Args[0].Uint(),
+		Eid:         info.Args[1].Uint(),
+		Sid:         info.Args[2].Uint(),
 	}
 
 	p.Exit = newExitMaybe(info)
