@@ -4,13 +4,18 @@ licenses(["notice"])
 
 go_library(
     name = "iouringfs",
-    srcs = ["iouringfs.go"],
+    srcs = [
+        "buffer.go",
+        "iouringfs.go",
+        "iouringfs_unsafe.go",
+    ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
         "//pkg/context",
         "//pkg/errors/linuxerr",
+        "//pkg/gohacks",
         "//pkg/hostarch",
         "//pkg/safemem",
         "//pkg/sentry/kernel",
@@ -27,4 +32,5 @@ go_test(
     size = "small",
     srcs = ["iouringfs_test.go"],
     library = ":iouringfs",
+    deps = ["//pkg/hostarch"],
 )
