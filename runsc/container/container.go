@@ -218,10 +218,10 @@ func New(conf *config.Config, args Args) (*Container, error) {
 
 	// Lock the container metadata file to prevent concurrent creations of
 	// containers with the same id.
-	if err := c.Saver.lockForNew(); err != nil {
+	if err := c.Saver.LockForNew(); err != nil {
 		return nil, fmt.Errorf("cannot lock container metadata file: %w", err)
 	}
-	defer c.Saver.unlockOrDie()
+	defer c.Saver.UnlockOrDie()
 
 	// If the metadata annotations indicate that this container should be started
 	// in an existing sandbox, we must do so. These are the possible metadata
@@ -370,7 +370,7 @@ func (c *Container) Start(conf *config.Config) error {
 	if err := c.Saver.lock(); err != nil {
 		return err
 	}
-	unlock := cleanup.Make(c.Saver.unlockOrDie)
+	unlock := cleanup.Make(c.Saver.UnlockOrDie)
 	defer unlock.Clean()
 
 	if err := c.requireStatus("start", Created); err != nil {
@@ -454,7 +454,7 @@ func (c *Container) Restore(spec *specs.Spec, conf *config.Config, restoreFile s
 	if err := c.Saver.lock(); err != nil {
 		return err
 	}
-	defer c.Saver.unlockOrDie()
+	defer c.Saver.UnlockOrDie()
 
 	if err := c.requireStatus("restore", Created); err != nil {
 		return err
@@ -640,7 +640,7 @@ func (c *Container) Pause() error {
 	if err := c.Saver.lock(); err != nil {
 		return err
 	}
-	defer c.Saver.unlockOrDie()
+	defer c.Saver.UnlockOrDie()
 
 	if c.Status != Created && c.Status != Running {
 		return fmt.Errorf("cannot pause container %q in state %v", c.ID, c.Status)
@@ -660,7 +660,7 @@ func (c *Container) Resume() error {
 	if err := c.Saver.lock(); err != nil {
 		return err
 	}
-	defer c.Saver.unlockOrDie()
+	defer c.Saver.UnlockOrDie()
 
 	if c.Status != Paused {
 		return fmt.Errorf("cannot resume container %q in state %v", c.ID, c.Status)
@@ -702,7 +702,7 @@ func (c *Container) Destroy() error {
 		return err
 	}
 	defer func() {
-		c.Saver.unlockOrDie()
+		c.Saver.UnlockOrDie()
 		_ = c.Saver.close()
 	}()
 
@@ -724,7 +724,7 @@ func (c *Container) Destroy() error {
 		errs = append(errs, err.Error())
 	}
 
-	if err := c.Saver.destroy(); err != nil {
+	if err := c.Saver.Destroy(); err != nil {
 		err = fmt.Errorf("deleting container state files: %v", err)
 		log.Warningf("%v", err)
 		errs = append(errs, err.Error())
@@ -768,7 +768,7 @@ func (c *Container) Destroy() error {
 // Precondition: container must be locked with container.lock().
 func (c *Container) saveLocked() error {
 	log.Debugf("Save container, cid: %s", c.ID)
-	if err := c.Saver.saveLocked(c); err != nil {
+	if err := c.Saver.SaveLocked(c); err != nil {
 		return fmt.Errorf("saving container metadata: %v", err)
 	}
 	return nil
