@@ -42,16 +42,14 @@ func processVMRW(t *kernel.Task, args arch.SyscallArguments, isWrite bool) (uint
 	flags := args[5].Int()
 
 	switch {
-	case flags != 0:
+	case flags != 0 ||
+		liovcnt < 0 ||
+		riovcnt < 0 ||
+		liovcnt > linux.UIO_MAXIOV ||
+		riovcnt > linux.UIO_MAXIOV:
 		return 0, nil, linuxerr.EINVAL
-	case liovcnt < 0 || liovcnt > linux.UIO_MAXIOV:
-		return 0, nil, linuxerr.EINVAL
-	case riovcnt < 0 || riovcnt > linux.UIO_MAXIOV:
-		return 0, nil, linuxerr.EFAULT
 	case lvec == 0 || rvec == 0:
 		return 0, nil, linuxerr.EFAULT
-	case riovcnt > linux.UIO_MAXIOV || liovcnt > linux.UIO_MAXIOV:
-		return 0, nil, linuxerr.EINVAL
 	case liovcnt == 0 || riovcnt == 0:
 		return 0, nil, nil
 	}
@@ -78,66 +76,79 @@ func doProcessVMReadWrite(rProcess, wProcess *kernel.Task, rAddr, wAddr hostarch
 	rCtx := rProcess.CopyContext(rProcess, usermem.IOOpts{})
 	wCtx := wProcess.CopyContext(wProcess, usermem.IOOpts{})
 
-	rIovecs, err := rCtx.CopyInIovecs(rAddr, rIovecCount)
-	if err != nil {
-		return 0, nil, err
-	}
-	wIovecs, err := wCtx.CopyInIovecs(wAddr, wIovecCount)
-	if err != nil {
-		return 0, nil, err
-	}
-
-	bufSize := 0
-	for _, rIovec := range rIovecs {
-		if int(rIovec.Length()) > bufSize {
-			bufSize = int(rIovec.Length())
-		}
-	}
-
-	buf := rCtx.CopyScratchBuffer(bufSize)
-	wCount := 0
-	for _, rIovec := range rIovecs {
-		if len(wIovecs) <= 0 {
-			break
-		}
-
-		buf = buf[0:int(rIovec.Length())]
-		bytes, err := rCtx.CopyInBytes(rIovec.Start, buf)
-		if linuxerr.Equals(linuxerr.EFAULT, err) {
-			return uintptr(wCount), nil, nil
-		}
+	var wCount int
+	doProcessVMReadWriteLocked := func() error {
+		rIovecs, err := rCtx.CopyInIovecs(rAddr, rIovecCount)
 		if err != nil {
-			return uintptr(wCount), nil, err
+			return err
 		}
-		if bytes != int(rIovec.Length()) {
-			return uintptr(wCount), nil, nil
+		wIovecs, err := wCtx.CopyInIovecs(wAddr, wIovecCount)
+		if err != nil {
+			return err
 		}
-		start := 0
-		for bytes > start && 0 < len(wIovecs) {
-			writeLength := int(wIovecs[0].Length())
-			if writeLength > (bytes - start) {
-				writeLength = bytes - start
+
+		bufSize := 0
+		for _, rIovec := range rIovecs {
+			if int(rIovec.Length()) > bufSize {
+				bufSize = int(rIovec.Length())
 			}
-			out, err := wCtx.CopyOutBytes(wIovecs[0].Start, buf[start:writeLength+start])
-			wCount += out
-			start += out
+		}
+
+		buf := rCtx.CopyScratchBuffer(bufSize)
+		for _, rIovec := range rIovecs {
+			if len(wIovecs) <= 0 {
+				break
+			}
+
+			buf = buf[0:int(rIovec.Length())]
+			bytes, err := rCtx.CopyInBytes(rIovec.Start, buf)
 			if linuxerr.Equals(linuxerr.EFAULT, err) {
-				return uintptr(wCount), nil, nil
+				return nil
 			}
 			if err != nil {
-				return uintptr(wCount), nil, err
+				return err
 			}
-			if out != writeLength {
-				return uintptr(wCount), nil, nil
+			if bytes != int(rIovec.Length()) {
+				return nil
 			}
-			wIovecs[0].Start += hostarch.Addr(out)
-			if !wIovecs[0].WellFormed() {
-				return uintptr(wCount), nil, err
-			}
-			if wIovecs[0].Length() == 0 {
-				wIovecs = wIovecs[1:]
+			start := 0
+			for bytes > start && 0 < len(wIovecs) {
+				writeLength := int(wIovecs[0].Length())
+				if writeLength > (bytes - start) {
+					writeLength = bytes - start
+				}
+				out, err := wCtx.CopyOutBytes(wIovecs[0].Start, buf[start:writeLength+start])
+				wCount += out
+				start += out
+				if linuxerr.Equals(linuxerr.EFAULT, err) {
+					return nil
+				}
+				if err != nil {
+					return err
+				}
+				if out != writeLength {
+					return nil
+				}
+				wIovecs[0].Start += hostarch.Addr(out)
+				if !wIovecs[0].WellFormed() {
+					return err
+				}
+				if wIovecs[0].Length() == 0 {
+					wIovecs = wIovecs[1:]
+				}
 			}
 		}
+		return nil
 	}
-	return uintptr(wCount), nil, nil
+
+	err := rCtx.WithTaskMutexLocked(func() error {
+		if rProcess.ThreadGroup().Leader() != wProcess.ThreadGroup().Leader() {
+			return wCtx.WithTaskMutexLocked(func() error {
+				return doProcessVMReadWriteLocked()
+			})
+		}
+		return doProcessVMReadWriteLocked()
+	})
+
+	return uintptr(wCount), nil, err
 }
