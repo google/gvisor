@@ -19,8 +19,9 @@ func (fd *FileDescription) StateFields() []string {
 		"rbmf",
 		"sqemf",
 		"ioRings",
-		"sqes",
-		"cqes",
+		"ioRingsBuf",
+		"sqesBuf",
+		"cqesBuf",
 	}
 }
 
@@ -36,8 +37,9 @@ func (fd *FileDescription) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &fd.rbmf)
 	stateSinkObject.Save(5, &fd.sqemf)
 	stateSinkObject.Save(6, &fd.ioRings)
-	stateSinkObject.Save(7, &fd.sqes)
-	stateSinkObject.Save(8, &fd.cqes)
+	stateSinkObject.Save(7, &fd.ioRingsBuf)
+	stateSinkObject.Save(8, &fd.sqesBuf)
+	stateSinkObject.Save(9, &fd.cqesBuf)
 }
 
 func (fd *FileDescription) afterLoad() {}
@@ -51,8 +53,9 @@ func (fd *FileDescription) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(4, &fd.rbmf)
 	stateSourceObject.Load(5, &fd.sqemf)
 	stateSourceObject.Load(6, &fd.ioRings)
-	stateSourceObject.Load(7, &fd.sqes)
-	stateSourceObject.Load(8, &fd.cqes)
+	stateSourceObject.Load(7, &fd.ioRingsBuf)
+	stateSourceObject.Load(8, &fd.sqesBuf)
+	stateSourceObject.Load(9, &fd.cqesBuf)
 }
 
 func init() {

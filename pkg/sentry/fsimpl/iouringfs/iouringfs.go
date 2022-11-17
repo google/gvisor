@@ -28,7 +28,6 @@ import (
 	"sync"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -57,9 +56,11 @@ type FileDescription struct {
 	// mu protects the fields below.
 	mu sync.Mutex `state:"nosave"`
 
-	ioRings *safemem.BlockSeq
-	sqes    *safemem.BlockSeq
-	cqes    *safemem.BlockSeq
+	ioRings linux.IORings
+
+	ioRingsBuf sharedBuffer
+	sqesBuf    sharedBuffer
+	cqesBuf    sharedBuffer
 }
 
 var _ vfs.FileDescriptionImpl = (*FileDescription)(nil)
@@ -171,14 +172,24 @@ func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, entries uint32, par
 	// Set features supported by the current IO_URING implementation.
 	params.Features = linux.IORING_FEAT_SINGLE_MMAP
 
-	if err := iouringfd.populateIORings(params); err != nil {
+	// Map all shared buffers.
+	if err := iouringfd.mapSharedBuffers(); err != nil {
 		return nil, err
 	}
 
-	if err := iouringfd.cacheSqesMapping(); err != nil {
+	// Initialize IORings struct from params.
+	iouringfd.ioRings.SqRingMask = params.SqEntries - 1
+	iouringfd.ioRings.CqRingMask = params.CqEntries - 1
+	iouringfd.ioRings.SqRingEntries = params.SqEntries
+	iouringfd.ioRings.CqRingEntries = params.CqEntries
+
+	// Write IORings out to shared buffer.
+	view, err := iouringfd.ioRingsBuf.view(iouringfd.ioRings.SizeBytes())
+	if err != nil {
 		return nil, err
 	}
-	if err := iouringfd.cacheCqesMapping(); err != nil {
+	iouringfd.ioRings.MarshalUnsafe(view)
+	if _, err := iouringfd.ioRingsBuf.writeback(iouringfd.ioRings.SizeBytes()); err != nil {
 		return nil, err
 	}
 
@@ -191,111 +202,34 @@ func (fd *FileDescription) Release(context.Context) {
 	fd.sqemf.mf.DecRef(fd.sqemf.fr)
 }
 
-// unmarshalIORings handles unmarshalling IORings struct considering that there could be more than
-// one block in the BlockSeq.
-func unmarshalIORings(ioRings *linux.IORings, bs *safemem.BlockSeq) error {
-	if bs.NumBlocks() == 1 && !bs.Head().NeedSafecopy() {
-		ioRings.UnmarshalBytes(bs.Head().TakeFirst((*linux.IORings)(nil).SizeBytes()).ToSlice())
-
-		return nil
-	}
-
-	buf := make([]byte, (*linux.IORings)(nil).SizeBytes())
-	cp, cperr := safemem.CopySeq(safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf)), *bs)
-	if cp == 0 {
-		return cperr
-	}
-	ioRings.UnmarshalBytes(buf)
-
-	return nil
-}
-
-// marshalIORings handles marshalling IORings struct considering that there could be more than one
-// BlockSeq.
-func marshalIORings(ioRings *linux.IORings, bs *safemem.BlockSeq) error {
-	if bs.NumBlocks() == 1 && !bs.Head().NeedSafecopy() {
-		ioRings.MarshalBytes(bs.Head().TakeFirst((*linux.IORings)(nil).SizeBytes()).ToSlice())
-	}
-
-	buf := make([]byte, (*linux.IORings)(nil).SizeBytes())
-	ioRings.MarshalBytes(buf)
-	cp, cperr := safemem.CopySeq(*bs, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf)))
-	if cp == 0 {
-		return cperr
-	}
-
-	return nil
-}
-
-// unmarshalSqe handles unmarshalling SQE struct considering that there could be more than one block
-// in the BlockSeq.
-func unmarshalSqe(sqe *linux.IOUringSqe, sqes *safemem.BlockSeq, sqHead uint32) error {
-	sqeSize := uint32((*linux.IOUringSqe)(nil).SizeBytes())
-	if sqes.NumBlocks() == 1 && !sqes.Head().NeedSafecopy() {
-		sqe.UnmarshalBytes(sqes.Head().ToSlice()[sqHead*sqeSize : (sqHead+1)*sqeSize])
-
-		return nil
-	}
-
-	buf := make([]byte, sqes.NumBytes())
-	cp, cperr := safemem.CopySeq(safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf[sqHead*sqeSize:(sqHead+1)*sqeSize])), *sqes)
-	if cp == 0 {
-		return cperr
-	}
-	sqe.UnmarshalBytes(buf)
-
-	return nil
-}
-
-// populateIORings populates IORings struct backed by the allocated memory.
-func (fd *FileDescription) populateIORings(params *linux.IOUringParams) error {
-	bs, err := fd.rbmf.mf.MapInternal(fd.rbmf.fr, hostarch.ReadWrite)
+// mapSharedBuffers caches internal mappings for the ring's shared memory
+// regions.
+func (fd *FileDescription) mapSharedBuffers() error {
+	// Mapping for the IORings header struct.
+	rb, err := fd.rbmf.mf.MapInternal(fd.rbmf.fr, hostarch.ReadWrite)
 	if err != nil {
 		return err
 	}
+	fd.ioRingsBuf.init(rb)
 
-	fd.ioRings = &bs
-
-	var ioRings linux.IORings
-	if err = unmarshalIORings(&ioRings, &bs); err != nil {
-		return err
-	}
-
-	ioRings.SqRingMask = params.SqEntries - 1
-	ioRings.CqRingMask = params.CqEntries - 1
-	ioRings.SqRingEntries = params.SqEntries
-	ioRings.CqRingEntries = params.CqEntries
-
-	if err = marshalIORings(&ioRings, &bs); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// cacheSqesMapping caches the beginning of an area for the SQEs backed by the allocated memory.
-func (fd *FileDescription) cacheSqesMapping() error {
-	bs, err := fd.sqemf.mf.MapInternal(fd.sqemf.fr, hostarch.ReadWrite)
-	if err != nil {
-		return err
-	}
-	fd.sqes = &bs
-
-	return nil
-}
-
-// cacheCqesMapping caches the beginning of an area for the CQEs backed by the allocated memory.
-func (fd *FileDescription) cacheCqesMapping() error {
-	bs := *fd.ioRings
-	cqesOffset := uint64(hostarch.Addr((*linux.IORings)(nil).SizeBytes()))
+	// Mapping for the CQEs array. This is contiguous to the header struct.
+	cqesOffset := uint64(fd.ioRings.SizeBytes())
 	cqesOffset, ok := hostarch.CacheLineRoundUp(cqesOffset)
 	if !ok {
 		return linuxerr.EOVERFLOW
 	}
-	bs = bs.DropFirst(int(cqesOffset))
-	fd.cqes = &bs
+	cqes := rb.DropFirst(int(cqesOffset))
+	fd.cqesBuf.init(cqes)
+
+	// Mapping for the SQEs array.
+	sqes, err := fd.sqemf.mf.MapInternal(fd.sqemf.fr, hostarch.ReadWrite)
+	if err != nil {
+		return err
+	}
+	fd.sqesBuf.init(sqes)
 
 	return nil
+
 }
 
 // ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
@@ -320,51 +254,102 @@ func (fd *FileDescription) ProcessSubmissions(t *kernel.Task, toSubmit uint32, m
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
 
-	var ioRings linux.IORings
-	err := fd.getIORings(&ioRings)
-	if err != nil {
-		return -1, err
-	}
-
-	sqes := fd.sqes
-	cqes := fd.cqes
-
+	var err error
 	var sqe linux.IOUringSqe
-	sqHead := atomicbitops.FromUint32(ioRings.Sq.Head)
-	sqTail := atomicbitops.FromUint32(ioRings.Sq.Tail)
-	cqHead := atomicbitops.FromUint32(ioRings.Cq.Head)
-	cqTail := atomicbitops.FromUint32(ioRings.Cq.Tail)
 
+	sqOff := linux.PreComputedIOSqRingOffsets()
+	cqOff := linux.PreComputedIOCqRingOffsets()
+	sqArraySize := sqe.SizeBytes() * int(fd.ioRings.SqRingEntries)
+	cqArraySize := (*linux.IOUringCqe)(nil).SizeBytes() * int(fd.ioRings.CqRingEntries)
+
+	// Fetch all buffers initially.
+	fetchRB := true
+	fetchSQA := true
+	fetchCQA := true
+
+	var view, sqaView, cqaView []byte
 	submitted := uint32(0)
+
 	for toSubmit > submitted {
-		sqHeadMasked := sqHead.Load() & ioRings.SqRingMask
-		cqTailMasked := cqTail.Load() & ioRings.CqRingMask
-		// This means that the submission queue is empty.
+		if fetchRB {
+			view, err = fd.ioRingsBuf.view(fd.ioRings.SizeBytes())
+			if err != nil {
+				return -1, err
+			}
+		}
+
+		// Note: The kernel uses sqHead as a cursor and writes cqTail. Userspace
+		// uses cqHead as a cursor and writes sqTail.
+
+		sqHeadPtr := atomicUint32AtOffset(view, int(sqOff.Head))
+		sqTailPtr := atomicUint32AtOffset(view, int(sqOff.Tail))
+		cqHeadPtr := atomicUint32AtOffset(view, int(cqOff.Head))
+		cqTailPtr := atomicUint32AtOffset(view, int(cqOff.Tail))
+		overflowPtr := atomicUint32AtOffset(view, int(cqOff.Overflow))
+
+		// Load the pointers once, so we work with a stable value. Particularly,
+		// usersapce can update the SQ tail at any time.
+		sqHead := sqHeadPtr.Load()
+		sqTail := sqTailPtr.Load()
+
+		// Is the submission queue is empty?
 		if sqHead == sqTail {
 			return int(submitted), nil
 		}
 
-		if err = unmarshalSqe(&sqe, sqes, sqHeadMasked); err != nil {
+		// We have at least one pending sqe, unmarshal the first from the
+		// submission queue.
+		if fetchSQA {
+			sqaView, err = fd.sqesBuf.view(sqArraySize)
+			if err != nil {
+				return -1, err
+			}
+		}
+		sqaOff := int(sqHead&fd.ioRings.SqRingMask) * sqe.SizeBytes()
+		sqe.UnmarshalUnsafe(sqaView[sqaOff : sqaOff+sqe.SizeBytes()])
+		fetchSQA = fd.sqesBuf.drop()
+
+		// Dispatch request from unmarshalled entry.
+		cqe := fd.ProcessSubmission(t, &sqe, flags)
+
+		// Advance sq head.
+		sqHeadPtr.Add(1)
+
+		// Load once so we have stable values. Particularly, userspace can
+		// update the CQ head at any time.
+		cqHead := cqHeadPtr.Load()
+		cqTail := cqTailPtr.Load()
+
+		// Marshal response to completion queue.
+		if (cqTail - cqHead) >= fd.ioRings.CqRingEntries {
+			// CQ ring full.
+			fd.ioRings.CqOverflow++
+			overflowPtr.Store(fd.ioRings.CqOverflow)
+		} else {
+			// Have room in CQ, marshal CQE.
+			if fetchCQA {
+				cqaView, err = fd.cqesBuf.view(cqArraySize)
+				if err != nil {
+					return -1, err
+				}
+			}
+			cqaOff := int(cqTail&fd.ioRings.CqRingMask) * cqe.SizeBytes()
+			cqe.MarshalUnsafe(cqaView[cqaOff : cqaOff+cqe.SizeBytes()])
+			fetchCQA, err = fd.cqesBuf.writebackWindow(cqaOff, cqe.SizeBytes())
+			if err != nil {
+				return -1, err
+			}
+
+			// Advance cq tail.
+			cqTailPtr.Add(1)
+		}
+
+		fetchRB, err = fd.ioRingsBuf.writeback(fd.ioRings.SizeBytes())
+		if err != nil {
 			return -1, err
 		}
 
-		cqe := fd.ProcessSubmission(t, &sqe, flags)
-		sqHead.Add(1)
-		if (cqTail.Load()-cqHead.Load())/ioRings.CqRingEntries == 1 {
-			ioRings.CqOverflow++
-		} else {
-			if err = fd.updateCq(cqes, cqe, cqTailMasked); err != nil {
-				return -1, err
-			}
-			cqTail.Add(1)
-		}
 		submitted++
-	}
-	ioRings.Sq.Head = sqHead.Load()
-	ioRings.Cq.Tail = cqTail.Load()
-
-	if err = marshalIORings(&ioRings, fd.ioRings); err != nil {
-		return -1, err
 	}
 
 	return int(submitted), nil
@@ -461,15 +446,6 @@ func (fd *FileDescription) updateCq(cqes *safemem.BlockSeq, cqe *linux.IOUringCq
 	cp, cperr := safemem.CopySeq(cqes.DropFirst64(uint64(cqTail*cqeSize)), safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf)))
 	if cp == 0 {
 		return cperr
-	}
-
-	return nil
-}
-
-// getIORings unmarshalls IORings struct backed by the allocated memory.
-func (fd *FileDescription) getIORings(ioRings *linux.IORings) error {
-	if err := unmarshalIORings(ioRings, fd.ioRings); err != nil {
-		return err
 	}
 
 	return nil
