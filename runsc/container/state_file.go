@@ -263,20 +263,20 @@ func (s *StateFile) lock() error {
 	return nil
 }
 
-// lockForNew acquires the lock and checks if the state file doesn't exist. This
+// LockForNew acquires the lock and checks if the state file doesn't exist. This
 // is done to ensure that more than one creation didn't race to create
 // containers with the same ID.
-func (s *StateFile) lockForNew() error {
+func (s *StateFile) LockForNew() error {
 	if err := s.lock(); err != nil {
 		return err
 	}
 
 	// Checks if the container already exists by looking for the metadata file.
 	if _, err := os.Stat(s.statePath()); err == nil {
-		s.unlockOrDie()
+		s.UnlockOrDie()
 		return fmt.Errorf("container already exists")
 	} else if !os.IsNotExist(err) {
-		s.unlockOrDie()
+		s.UnlockOrDie()
 		return fmt.Errorf("looking for existing container: %v", err)
 	}
 	return nil
@@ -295,7 +295,8 @@ func (s *StateFile) unlock() error {
 	return nil
 }
 
-func (s *StateFile) unlockOrDie() {
+// UnlockOrDie is the same as unlock() but panics in case of failure.
+func (s *StateFile) UnlockOrDie() {
 	if !s.flock.Locked() {
 		panic("unlock called without lock held")
 	}
@@ -304,10 +305,10 @@ func (s *StateFile) unlockOrDie() {
 	}
 }
 
-// saveLocked saves 'v' to the state file.
+// SaveLocked saves 'v' to the state file.
 //
 // Preconditions: lock() must been called before.
-func (s *StateFile) saveLocked(v any) error {
+func (s *StateFile) SaveLocked(v any) error {
 	if !s.flock.Locked() {
 		panic("saveLocked called without lock held")
 	}
@@ -326,7 +327,7 @@ func (s *StateFile) load(v any) error {
 	if err := s.lock(); err != nil {
 		return err
 	}
-	defer s.unlockOrDie()
+	defer s.UnlockOrDie()
 
 	metaBytes, err := ioutil.ReadFile(s.statePath())
 	if err != nil {
@@ -361,10 +362,10 @@ func (s *StateFile) lockPath() string {
 	return buildPath(s.RootDir, s.ID, "lock")
 }
 
-// destroy deletes all state created by the stateFile. It may be called with the
+// Destroy deletes all state created by the stateFile. It may be called with the
 // lock file held. In that case, the lock file must still be unlocked and
 // properly closed after destroy returns.
-func (s *StateFile) destroy() error {
+func (s *StateFile) Destroy() error {
 	if err := os.Remove(s.statePath()); err != nil && !os.IsNotExist(err) {
 		return err
 	}
