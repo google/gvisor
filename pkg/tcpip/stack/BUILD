@@ -38,12 +38,25 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "gro_packet_list",
+    out = "gro_packet_list.go",
+    package = "stack",
+    prefix = "groPacket",
+    template = "//pkg/ilist:generic_list",
+    types = {
+        "Element": "*groPacket",
+        "Linker": "*groPacket",
+    },
+)
+
 go_library(
     name = "stack",
     srcs = [
         "addressable_endpoint_state.go",
         "conntrack.go",
         "gro.go",
+        "gro_packet_list.go",
         "headertype_string.go",
         "hook_string.go",
         "icmp_rate_limit.go",
@@ -139,6 +152,7 @@ go_test(
     srcs = [
         "conntrack_test.go",
         "forwarding_test.go",
+        "gro_test.go",
         "iptables_test.go",
         "neighbor_cache_test.go",
         "neighbor_entry_test.go",
