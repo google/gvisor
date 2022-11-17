@@ -739,7 +739,7 @@ func (n *nic) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt Pac
 
 	pkt.RXChecksumValidated = n.NetworkLinkEndpoint.Capabilities()&CapabilityRXChecksumOffload != 0
 
-	n.gro.dispatch(pkt, networkEndpoint)
+	n.gro.dispatch(pkt, protocol, networkEndpoint, n.NetworkLinkEndpoint.MTU())
 }
 
 func (n *nic) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt PacketBufferPtr, incoming bool) {

@@ -678,6 +678,12 @@ func (d PacketData) Checksum() uint16 {
 	return d.pk.buf.Checksum(d.pk.dataOffset())
 }
 
+// ChecksumAtOffset returns a checksum over the data payload of the packet
+// starting from offset.
+func (d PacketData) ChecksumAtOffset(offset int) uint16 {
+	return d.pk.buf.Checksum(offset)
+}
+
 // Range represents a contiguous subportion of a PacketBuffer.
 type Range struct {
 	pk     PacketBufferPtr
