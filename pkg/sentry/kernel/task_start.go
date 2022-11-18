@@ -176,7 +176,11 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 	// We don't construct t.blockingTimer until Task.run(); see that function
 	// for justification.
 
-	var cu cleanup.Cleanup
+	var (
+		cg      Cgroup
+		charged bool
+		cu      cleanup.Cleanup
+	)
 	defer cu.Clean()
 
 	// Reserve cgroup PIDs controller charge. This is either commited when the
@@ -187,22 +191,16 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 	// we skip charging the pids controller, as non-userspace task creation
 	// bypasses pid limits.
 	if srcT != nil {
-		var (
-			charged bool
-			err     error
-			hid     uint32
-		)
-		if charged, hid, err = srcT.ChargeFor(t, CgroupControllerPIDs, CgroupResourcePID, 1); err != nil {
+		var err error
+		if charged, cg, err = srcT.ChargeFor(t, CgroupControllerPIDs, CgroupResourcePID, 1); err != nil {
 			return nil, err
 		}
 		if charged {
 			cu.Add(func() {
-				// Since ts.mu was dropped after the corresponding charge, the
-				// hierarchy referenced by hid may no longer exist. If so, this
-				// uncharge will be a no-op.
-				if _, _, err := srcT.ChargeForOnHierarchy(t, hid, CgroupControllerPIDs, CgroupResourcePID, -1); err != nil {
+				if err := cg.Charge(t, cg.Dentry, CgroupControllerPIDs, CgroupResourcePID, -1); err != nil {
 					panic(fmt.Sprintf("Failed to clean up PIDs charge on task creation failure: %v", err))
 				}
+				cg.DecRef(ctx) // Ref from ChargeFor.
 			})
 		}
 	}
@@ -241,6 +239,11 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 	// srcT may be nil, in which case we default to root cgroups.
 	t.EnterInitialCgroups(srcT)
 
+	cu.Release()
+	if charged {
+		cg.decRef() // Ref from ChargeFor.
+	}
+
 	if tg.leader == nil {
 		// New thread group.
 		tg.leader = t
@@ -272,7 +275,6 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 	// other pieces to be initialized as the task is used the context.
 	t.p = cfg.Kernel.Platform.NewContext(t.AsyncContext())
 
-	cu.Release()
 	return t, nil
 }
 
