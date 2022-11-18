@@ -14,18 +14,22 @@
 
 #include <err.h>
 #include <fcntl.h>
+#include <sys/eventfd.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/un.h>
 #include <unistd.h>
 
+#include <csignal>
 #include <iostream>
 #include <ostream>
 
 #include "absl/cleanup/cleanup.h"
 #include "absl/strings/str_cat.h"
 #include "absl/time/clock.h"
+#include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
@@ -261,6 +265,199 @@ void runSetresgid() {
   }
 }
 
+void runChroot() {
+  const auto pathname = "trace_test.abc";
+  static constexpr mode_t kDefaultDirMode = 0755;
+  int path_or_error = mkdir(pathname, kDefaultDirMode);
+  if (path_or_error != 0) {
+    err(1, "mkdir");
+  }
+  if (chroot(pathname)) {
+    err(1, "chroot");
+  }
+}
+void runDup() {
+  const auto pathname = "trace_test.abc";
+  static constexpr mode_t kDefaultDirMode = 0755;
+  int path_or_error = mkdir(pathname, kDefaultDirMode);
+  if (path_or_error != 0) {
+    err(1, "mkdir");
+  }
+  int fd = open(pathname, O_DIRECTORY | O_RDONLY);
+  if (fd < 0) {
+    err(1, "open");
+  }
+  int res = dup(fd);
+  if (res < 0) {
+    err(1, "dup");
+  }
+  rmdir(pathname);
+}
+
+void runDup2() {
+  const auto pathname = "trace_test.abc";
+  static constexpr mode_t kDefaultDirMode = 0755;
+  int path_or_error = mkdir(pathname, kDefaultDirMode);
+  if (path_or_error != 0) {
+    err(1, "mkdir");
+  }
+  int oldfd = open(pathname, O_DIRECTORY | O_RDONLY);
+  if (oldfd < 0) {
+    err(1, "open");
+  }
+  int newfd = open(pathname, O_DIRECTORY | O_RDONLY);
+  if (newfd < 0) {
+    err(1, "open");
+  }
+  int res = dup2(oldfd, newfd);
+  if (res != newfd) {
+    err(1, "dup2");
+  }
+  rmdir(pathname);
+}
+
+void runDup3() {
+  const auto pathname = "trace_test.abc";
+  static constexpr mode_t kDefaultDirMode = 0755;
+  int path_or_error = mkdir(pathname, kDefaultDirMode);
+  if (path_or_error != 0) {
+    err(1, "mkdir");
+  }
+  int oldfd = open(pathname, O_DIRECTORY | O_RDONLY);
+  if (oldfd < 0) {
+    err(1, "open");
+  }
+  int newfd = open(pathname, O_DIRECTORY | O_RDONLY);
+  if (newfd < 0) {
+    err(1, "open");
+  }
+  int res = dup3(oldfd, newfd, O_CLOEXEC);
+  if (res != newfd) {
+    err(1, "dup3");
+  }
+  rmdir(pathname);
+}
+
+void runPrlimit64() {
+  struct rlimit setlim;
+  setlim.rlim_cur = 0;
+  setlim.rlim_max = RLIM_INFINITY;
+  int res = prlimit(0, RLIMIT_DATA, &setlim, nullptr);
+  if (res != 0) {
+    err(1, "prlimit64");
+  }
+}
+
+void runEventfd() {
+  int res = eventfd(0, EFD_NONBLOCK);
+  if (res < 0) {
+    err(1, "eventfd");
+  }
+}
+
+void runEventfd2() {
+  int res = Eventdfd2Setup(0, EFD_NONBLOCK);
+  if (res < 0) {
+    err(1, "eventfd2");
+  }
+}
+
+void runBind() {
+  auto path = absl::StrCat(std::string("\0", 1), "trace_test.abc");
+
+  struct sockaddr_un addr;
+  addr.sun_family = AF_UNIX;
+  strncpy(addr.sun_path, path.c_str(), path.size() + 1);
+
+  int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (fd < 0) {
+    err(1, "socket");
+  }
+  auto sock_closer = absl::MakeCleanup([fd] { close(fd); });
+
+  if (bind(fd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr))) {
+    err(1, "bind");
+  }
+}
+
+void runAccept() {
+  auto path = absl::StrCat(std::string("\0", 1), "trace_test.abc");
+
+  struct sockaddr_un addr;
+  addr.sun_family = AF_UNIX;
+  strncpy(addr.sun_path, path.c_str(), path.size() + 1);
+
+  int server = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (server < 0) {
+    err(1, "socket");
+  }
+  auto sock_closer = absl::MakeCleanup([server] { close(server); });
+
+  if (bind(server, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
+    err(1, "bind");
+  }
+
+  if (listen(server, 5) < 0) {
+    err(1, "listen");
+  }
+
+  int client = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (client < 0) {
+    err(1, "socket");
+  }
+  auto client_closer = absl::MakeCleanup([client] { close(client); });
+
+  if (connect(client, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) <
+      0) {
+    err(1, "connect");
+  }
+
+  int fd = RetryEINTR(accept)(server, nullptr, nullptr);
+  if (fd < 0) {
+    err(1, "accept");
+  }
+  close(fd);
+}
+
+void runAccept4() {
+  auto path = absl::StrCat(std::string("\0", 1), "trace_test.abc");
+
+  struct sockaddr_un addr;
+  addr.sun_family = AF_UNIX;
+  strncpy(addr.sun_path, path.c_str(), path.size() + 1);
+
+  int server = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (server < 0) {
+    err(1, "socket");
+  }
+  auto sock_closer = absl::MakeCleanup([server] { close(server); });
+
+  if (bind(server, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
+    err(1, "bind");
+  }
+
+  if (listen(server, 5) < 0) {
+    err(1, "listen");
+  }
+
+  int client = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (client < 0) {
+    err(1, "socket");
+  }
+  auto client_closer = absl::MakeCleanup([client] { close(client); });
+
+  if (connect(client, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) <
+      0) {
+    err(1, "connect");
+  }
+
+  int fd = RetryEINTR(accept4)(server, nullptr, nullptr, SOCK_CLOEXEC);
+  if (fd < 0) {
+    err(1, "accept4");
+  }
+  close(fd);
+}
+
 }  // namespace testing
 }  // namespace gvisor
 
@@ -275,5 +472,16 @@ int main(int argc, char** argv) {
   ::gvisor::testing::runSetsid();
   ::gvisor::testing::runSetresuid();
   ::gvisor::testing::runSetresgid();
+  ::gvisor::testing::runDup();
+  ::gvisor::testing::runDup2();
+  ::gvisor::testing::runDup3();
+  ::gvisor::testing::runPrlimit64();
+  ::gvisor::testing::runEventfd();
+  ::gvisor::testing::runEventfd2();
+  ::gvisor::testing::runBind();
+  ::gvisor::testing::runAccept();
+  ::gvisor::testing::runAccept4();
+  // Run chroot at the end since it changes the root for all other tests.
+  ::gvisor::testing::runChroot();
   return 0;
 }

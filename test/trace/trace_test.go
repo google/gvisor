@@ -75,7 +75,7 @@ func TestAll(t *testing.T) {
 	cutoffTime = time.Now()
 	cmd := exec.Command(
 		runsc,
-		"--debug", "--strace", "--alsologtostderr", // Debug logging for troubleshooting
+		"--debug", "--alsologtostderr", // Debug logging for troubleshooting
 		"--rootless", "--network=none", "--TESTONLY-unsafe-nonroot", // Disable features that we don't care
 		"--pod-init-config", cfgFile.Name(),
 		"do", workload)
@@ -112,14 +112,16 @@ func matchPoints(t *testing.T, msgs []test.Message) {
 		pb.MessageType_MESSAGE_SYSCALL_CHDIR:             {checker: checkSyscallChdir},
 		pb.MessageType_MESSAGE_SYSCALL_SETID:             {checker: checkSyscallSetid},
 		pb.MessageType_MESSAGE_SYSCALL_SETRESID:          {checker: checkSyscallSetresid},
+		pb.MessageType_MESSAGE_SYSCALL_CHROOT:            {checker: checkSyscallChroot},
+		pb.MessageType_MESSAGE_SYSCALL_DUP:               {checker: checkSyscallDup},
+		pb.MessageType_MESSAGE_SYSCALL_PRLIMIT64:         {checker: checkSyscallPrlimit64},
+		pb.MessageType_MESSAGE_SYSCALL_EVENTFD:           {checker: checkSyscallEventfd},
+		pb.MessageType_MESSAGE_SYSCALL_BIND:              {checker: checkSyscallBind},
+		pb.MessageType_MESSAGE_SYSCALL_ACCEPT:            {checker: checkSyscallAccept},
 
 		// TODO(gvisor.dev/issue/4805): Add validation for these messages.
-		pb.MessageType_MESSAGE_SYSCALL_ACCEPT:    {checker: checkTODO},
-		pb.MessageType_MESSAGE_SYSCALL_BIND:      {checker: checkTODO},
-		pb.MessageType_MESSAGE_SYSCALL_CLONE:     {checker: checkTODO},
-		pb.MessageType_MESSAGE_SYSCALL_DUP:       {checker: checkTODO},
-		pb.MessageType_MESSAGE_SYSCALL_PIPE:      {checker: checkTODO},
-		pb.MessageType_MESSAGE_SYSCALL_PRLIMIT64: {checker: checkTODO},
+		pb.MessageType_MESSAGE_SYSCALL_CLONE: {checker: checkTODO},
+		pb.MessageType_MESSAGE_SYSCALL_PIPE:  {checker: checkTODO},
 	}
 	for _, msg := range msgs {
 		t.Logf("Processing message type %v", msg.MsgType)
@@ -535,6 +537,117 @@ func checkSyscallChdir(msg test.Message) error {
 	}
 	if want := "trace_test.abc"; !strings.Contains(p.Pathname, want) {
 		return fmt.Errorf("wrong Pathname, got: %q, want: %q", p.Pathname, want)
+	}
+
+	return nil
+}
+
+func checkSyscallDup(msg test.Message) error {
+	p := pb.Dup{}
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	if err := checkContextData(p.ContextData); err != nil {
+		return err
+	}
+	if p.OldFd < 0 {
+		return fmt.Errorf("invalid FD: %d", p.OldFd)
+	}
+	if p.NewFd < 0 {
+		return fmt.Errorf("invalid FD: %d", p.NewFd)
+	}
+	if p.Flags != unix.O_CLOEXEC && p.Flags != 0 {
+		return fmt.Errorf("invalid flag got: %v", p.Flags)
+	}
+
+	return nil
+}
+
+func checkSyscallPrlimit64(msg test.Message) error {
+	p := pb.Prlimit{}
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	if err := checkContextData(p.ContextData); err != nil {
+		return err
+	}
+	if p.Pid < 0 {
+		return fmt.Errorf("invalid PID: %d", p.Pid)
+	}
+	return nil
+}
+
+func checkSyscallEventfd(msg test.Message) error {
+	p := pb.Eventfd{}
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	if err := checkContextData(p.ContextData); err != nil {
+		return err
+	}
+	if p.Val < 0 {
+		return fmt.Errorf("invalid PID: %d", p.Val)
+	}
+	if p.Flags != unix.EFD_NONBLOCK && p.Flags != 0 {
+		return fmt.Errorf("invalid Flag got: %d, ", p.Flags)
+	}
+
+	return nil
+}
+
+func checkSyscallBind(msg test.Message) error {
+	p := pb.Bind{}
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	if err := checkContextData(p.ContextData); err != nil {
+		return err
+	}
+	if p.Fd < 0 {
+		return fmt.Errorf("invalid FD: %d", p.Fd)
+	}
+	if p.FdPath == " " {
+		return fmt.Errorf("invalid Path: %v", p.FdPath)
+	}
+	if len(p.Address) == 0 {
+		return fmt.Errorf("invalid address: %d", p.Address)
+	}
+	return nil
+}
+
+func checkSyscallAccept(msg test.Message) error {
+	p := pb.Accept{}
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	if err := checkContextData(p.ContextData); err != nil {
+		return err
+	}
+	if p.Fd < 0 {
+		return fmt.Errorf("invalid FD: %d", p.Fd)
+	}
+	if p.FdPath == "" {
+		return fmt.Errorf("invalid Path: %v", p.FdPath)
+	}
+	if len(p.Address) != 0 {
+		return fmt.Errorf("invalid address: %d, %v", p.Address, p.Sysno)
+	}
+	if p.Flags != 0 && p.Flags != unix.SOCK_CLOEXEC {
+		return fmt.Errorf("invalid flag got: %d", p.Flags)
+	}
+	return nil
+}
+
+func checkSyscallChroot(msg test.Message) error {
+	p := pb.Chroot{}
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	if err := checkContextData(p.ContextData); err != nil {
+		return err
+	}
+	if want := "trace_test.abc"; !strings.Contains(p.Pathname, want) {
+		return fmt.Errorf("wrong Pathname, want: %q, got: %q", want, p.Pathname)
 	}
 
 	return nil

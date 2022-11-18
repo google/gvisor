@@ -10,6 +10,7 @@ cc_binary(
     ],
     visibility = ["//test/trace:__pkg__"],
     deps = [
+        "//test/util:eventfd_util",
         "//test/util:file_descriptor",
         "//test/util:multiprocess_util",
         "//test/util:posix_error",
