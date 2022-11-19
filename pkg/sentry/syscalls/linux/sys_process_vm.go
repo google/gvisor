@@ -23,6 +23,15 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
+type vmReadWriteOp int
+
+const (
+	localReader vmReadWriteOp = iota
+	localWriter
+	remoteReader
+	remoteWriter
+)
+
 // ProcessVMReadv implements process_vm_readv(2).
 func ProcessVMReadv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return processVMRW(t, args, false /*isWrite*/)
@@ -64,20 +73,30 @@ func processVMRW(t *kernel.Task, args arch.SyscallArguments, isWrite bool) (uint
 	}
 	remoteProcess := remoteThreadGroup.Leader()
 
+	isRemote := localProcess == remoteProcess
+
 	// For the write case, we read from the local process and write to the remote process.
 	if isWrite {
-		return doProcessVMReadWrite(localProcess, remoteProcess, lvec, rvec, liovcnt, riovcnt)
+		op := localReader
+		if isRemote {
+			op = remoteReader
+		}
+		return doProcessVMReadWrite(localProcess, remoteProcess, lvec, rvec, liovcnt, riovcnt, op)
 	}
 	// For the read case, we read from the remote process and write to the local process.
-	return doProcessVMReadWrite(remoteProcess, localProcess, rvec, lvec, riovcnt, liovcnt)
+	op := localWriter
+	if isRemote {
+		op = remoteWriter
+	}
+	return doProcessVMReadWrite(remoteProcess, localProcess, rvec, lvec, riovcnt, liovcnt, op)
 }
 
-func doProcessVMReadWrite(rProcess, wProcess *kernel.Task, rAddr, wAddr hostarch.Addr, rIovecCount, wIovecCount int) (uintptr, *kernel.SyscallControl, error) {
+func doProcessVMReadWrite(rProcess, wProcess *kernel.Task, rAddr, wAddr hostarch.Addr, rIovecCount, wIovecCount int, op vmReadWriteOp) (uintptr, *kernel.SyscallControl, error) {
 	rCtx := rProcess.CopyContext(rProcess, usermem.IOOpts{})
 	wCtx := wProcess.CopyContext(wProcess, usermem.IOOpts{})
 
 	var wCount int
-	doProcessVMReadWriteLocked := func() error {
+	doProcessVMReadWriteMaybeLocked := func() error {
 		rIovecs, err := rCtx.CopyInIovecs(rAddr, rIovecCount)
 		if err != nil {
 			return err
@@ -141,14 +160,21 @@ func doProcessVMReadWrite(rProcess, wProcess *kernel.Task, rAddr, wAddr hostarch
 		return nil
 	}
 
-	err := rCtx.WithTaskMutexLocked(func() error {
-		if rProcess.ThreadGroup().Leader() != wProcess.ThreadGroup().Leader() {
-			return wCtx.WithTaskMutexLocked(func() error {
-				return doProcessVMReadWriteLocked()
-			})
-		}
-		return doProcessVMReadWriteLocked()
-	})
+	var err error
+
+	switch op {
+	case remoteReader:
+		err = rCtx.WithTaskMutexLocked(doProcessVMReadWriteMaybeLocked)
+	case remoteWriter:
+		err = wCtx.WithTaskMutexLocked(doProcessVMReadWriteMaybeLocked)
+
+	case localReader, localWriter:
+		// in the case of local reads/writes, we don't have to lock the task mutex, because we are
+		// running on the top of the task's goroutine already.
+		err = doProcessVMReadWriteMaybeLocked()
+	default:
+		panic("unsupported operation passed")
+	}
 
 	return uintptr(wCount), nil, err
 }
