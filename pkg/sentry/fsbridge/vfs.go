@@ -108,7 +108,7 @@ type vfsLookup struct {
 
 var _ Lookup = (*vfsLookup)(nil)
 
-// NewVFSLookup creates a new Lookup using VFS2.
+// NewVFSLookup creates a new Lookup.
 func NewVFSLookup(mntns *vfs.MountNamespace, root, workingDir vfs.VirtualDentry) Lookup {
 	return &vfsLookup{
 		mntns:      mntns,
@@ -119,7 +119,7 @@ func NewVFSLookup(mntns *vfs.MountNamespace, root, workingDir vfs.VirtualDentry)
 
 // OpenPath implements Lookup.
 //
-// remainingTraversals is not configurable in VFS2, all callers are using the
+// remainingTraversals is not configurable, all callers are using the
 // default anyways.
 func (l *vfsLookup) OpenPath(ctx context.Context, pathname string, opts vfs.OpenOptions, _ *uint, resolveFinal bool) (File, error) {
 	vfsObj := l.root.Mount().Filesystem().VirtualFilesystem()

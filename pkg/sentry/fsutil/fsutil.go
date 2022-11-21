@@ -12,23 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package fs
-
-import "fmt"
-
-// beforeSave is invoked by stateify.
-func (f *File) beforeSave() {
-	f.saving = true
-	if f.flags.Async && f.async != nil {
-		f.async.Unregister(f)
-	}
-}
-
-// afterLoad is invoked by stateify.
-func (f *File) afterLoad() {
-	if f.flags.Async && f.async != nil {
-		if err := f.async.Register(f); err != nil {
-			panic(fmt.Sprint("async.Register:", err))
-		}
-	}
-}
+// Package fsutil provides utilities for implementing vfs.FileDescriptionImpl
+// and vfs.FilesystemImpl.
+package fsutil

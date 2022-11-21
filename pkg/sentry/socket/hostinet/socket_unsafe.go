@@ -230,7 +230,7 @@ func getsockopt(fd int, level, name int, opt []byte) ([]byte, error) {
 }
 
 // GetSockName implements socket.Socket.GetSockName.
-func (s *socketOpsCommon) GetSockName(t *kernel.Task) (linux.SockAddr, uint32, *syserr.Error) {
+func (s *Socket) GetSockName(t *kernel.Task) (linux.SockAddr, uint32, *syserr.Error) {
 	addr := make([]byte, sizeofSockaddr)
 	addrlen := uint32(len(addr))
 	_, _, errno := unix.Syscall(unix.SYS_GETSOCKNAME, uintptr(s.fd), uintptr(unsafe.Pointer(&addr[0])), uintptr(unsafe.Pointer(&addrlen)))
@@ -241,7 +241,7 @@ func (s *socketOpsCommon) GetSockName(t *kernel.Task) (linux.SockAddr, uint32, *
 }
 
 // GetPeerName implements socket.Socket.GetPeerName.
-func (s *socketOpsCommon) GetPeerName(t *kernel.Task) (linux.SockAddr, uint32, *syserr.Error) {
+func (s *Socket) GetPeerName(t *kernel.Task) (linux.SockAddr, uint32, *syserr.Error) {
 	addr := make([]byte, sizeofSockaddr)
 	addrlen := uint32(len(addr))
 	_, _, errno := unix.Syscall(unix.SYS_GETPEERNAME, uintptr(s.fd), uintptr(unsafe.Pointer(&addr[0])), uintptr(unsafe.Pointer(&addrlen)))

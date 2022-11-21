@@ -36,7 +36,7 @@ func Mount(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	// Must have CAP_SYS_ADMIN in the current mount namespace's associated user
 	// namespace.
 	creds := t.Credentials()
-	if !creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, t.MountNamespaceVFS2().Owner) {
+	if !creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, t.MountNamespace().Owner) {
 		return 0, nil, linuxerr.EPERM
 	}
 
@@ -145,7 +145,7 @@ func Umount2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	//
 	// Currently, this is always the init task's user namespace.
 	creds := t.Credentials()
-	if !creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, t.MountNamespaceVFS2().Owner) {
+	if !creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, t.MountNamespace().Owner) {
 		return 0, nil, linuxerr.EPERM
 	}
 

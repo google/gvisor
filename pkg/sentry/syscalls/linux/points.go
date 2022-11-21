@@ -45,13 +45,13 @@ func getFilePath(t *kernel.Task, fd int32) string {
 	if fdt == nil {
 		return "[err: no FD table]"
 	}
-	file, _ := fdt.GetVFS2(fd)
+	file, _ := fdt.Get(fd)
 	if file == nil {
 		return "[err: FD not found]"
 	}
 	defer file.DecRef(t)
 
-	root := t.MountNamespaceVFS2().Root()
+	root := t.MountNamespace().Root()
 	path, err := t.Kernel().VFS().PathnameWithDeleted(t, root, file.VirtualDentry())
 	if err != nil {
 		return fmt.Sprintf("[err: %v]", err)

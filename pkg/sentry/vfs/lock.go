@@ -23,7 +23,7 @@ import (
 
 // FileLocks supports POSIX and BSD style locks, which correspond to fcntl(2)
 // and flock(2) respectively in Linux. It can be embedded into various file
-// implementations for VFS2 that support locking.
+// implementations that support locking.
 //
 // Note that in Linux these two types of locks are _not_ cooperative, because
 // race and deadlock conditions make merging them prohibitive. We do the same

@@ -21,8 +21,8 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
 // Key is a user-provided identifier for IPC objects.
@@ -46,14 +46,20 @@ type Object struct {
 	// Key is a user-provided identifier for the IPC object. Immutable.
 	Key Key
 
-	// Creator is the user who created the IPC object. Immutable.
-	Creator fs.FileOwner
+	// CreatorUID is the UID of user who created the IPC object. Immutable.
+	CreatorUID auth.KUID
 
-	// Owner is the current owner of the IPC object.
-	Owner fs.FileOwner
+	// CreatorGID is the GID of user who created the IPC object. Immutable.
+	CreatorGID auth.KGID
 
-	// Perms is the access permissions the IPC object.
-	Perms fs.FilePermissions
+	// OwnerUID is the UID of the current owner of the IPC object. Immutable.
+	OwnerUID auth.KUID
+
+	// OwnerGID is the GID of the current owner of the IPC object. Immutable.
+	OwnerGID auth.KGID
+
+	// Mode is the access permissions the IPC object.
+	Mode linux.FileMode
 }
 
 // Mechanism represents a SysV mechanism that holds an IPC object. It can also
@@ -77,20 +83,22 @@ type Mechanism interface {
 // NewObject returns a new, initialized ipc.Object. The newly returned object
 // doesn't have a valid ID. When the object is registered, the registry assigns
 // it a new unique ID.
-func NewObject(un *auth.UserNamespace, key Key, creator, owner fs.FileOwner, perms fs.FilePermissions) *Object {
+func NewObject(un *auth.UserNamespace, key Key, creator, owner *auth.Credentials, mode linux.FileMode) *Object {
 	return &Object{
-		UserNS:  un,
-		Key:     key,
-		Creator: creator,
-		Owner:   owner,
-		Perms:   perms,
+		UserNS:     un,
+		Key:        key,
+		CreatorUID: creator.EffectiveKUID,
+		CreatorGID: creator.EffectiveKGID,
+		OwnerUID:   owner.EffectiveKUID,
+		OwnerGID:   owner.EffectiveKGID,
+		Mode:       mode,
 	}
 }
 
 // CheckOwnership verifies whether an IPC object may be accessed using creds as
 // an owner. See ipc/util.c:ipcctl_obtain_check() in Linux.
 func (o *Object) CheckOwnership(creds *auth.Credentials) bool {
-	if o.Owner.UID == creds.EffectiveKUID || o.Creator.UID == creds.EffectiveKUID {
+	if o.OwnerUID == creds.EffectiveKUID || o.CreatorUID == creds.EffectiveKUID {
 		return true
 	}
 
@@ -102,15 +110,15 @@ func (o *Object) CheckOwnership(creds *auth.Credentials) bool {
 
 // CheckPermissions verifies whether an IPC object is accessible using creds for
 // access described by req. See ipc/util.c:ipcperms() in Linux.
-func (o *Object) CheckPermissions(creds *auth.Credentials, req fs.PermMask) bool {
-	p := o.Perms.Other
-	if o.Owner.UID == creds.EffectiveKUID {
-		p = o.Perms.User
-	} else if creds.InGroup(o.Owner.GID) {
-		p = o.Perms.Group
+func (o *Object) CheckPermissions(creds *auth.Credentials, req vfs.AccessTypes) bool {
+	perms := uint16(o.Mode.Permissions())
+	if o.OwnerUID == creds.EffectiveKUID {
+		perms >>= 6
+	} else if creds.InGroup(o.OwnerGID) {
+		perms >>= 3
 	}
 
-	if p.SupersetOf(req) {
+	if uint16(req)&perms == uint16(req) {
 		return true
 	}
 	return creds.HasCapabilityIn(linux.CAP_IPC_OWNER, o.UserNS)
@@ -142,9 +150,9 @@ func (o *Object) Set(ctx context.Context, perm *linux.IPCPerm) error {
 	// always 0 for the underlying inode.
 	mode := linux.FileMode(perm.Mode & 0x1ff)
 
-	o.Perms = fs.FilePermsFromMode(mode)
-	o.Owner.UID = uid
-	o.Owner.GID = gid
+	o.Mode = mode
+	o.OwnerUID = uid
+	o.OwnerGID = gid
 
 	return nil
 }

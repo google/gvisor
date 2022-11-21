@@ -36,7 +36,7 @@ func getTaskFD(t *kernel.Task, fd int32) (*vfs.FileDescription, kernel.FDFlags) 
 	)
 	t.WithMuLocked(func(t *kernel.Task) {
 		if fdt := t.FDTable(); fdt != nil {
-			file, flags = fdt.GetVFS2(fd)
+			file, flags = fdt.Get(fd)
 		}
 	})
 	return file, flags

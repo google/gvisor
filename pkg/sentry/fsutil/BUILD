@@ -59,7 +59,6 @@ go_library(
     srcs = [
         "dirty_set.go",
         "dirty_set_impl.go",
-        "file.go",
         "file_range_set.go",
         "file_range_set_impl.go",
         "frame_ref_set.go",
@@ -68,9 +67,6 @@ go_library(
         "host_file_mapper.go",
         "host_file_mapper_state.go",
         "host_file_mapper_unsafe.go",
-        "host_mappable.go",
-        "inode.go",
-        "inode_cached.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
@@ -82,7 +78,6 @@ go_library(
         "//pkg/safemem",
         "//pkg/sentry/arch",
         "//pkg/sentry/device",
-        "//pkg/sentry/fs",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/memmap",
         "//pkg/sentry/pgalloc",
@@ -101,18 +96,10 @@ go_test(
     size = "small",
     srcs = [
         "dirty_set_test.go",
-        "inode_cached_test.go",
     ],
     library = ":fsutil",
     deps = [
-        "//pkg/context",
-        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
-        "//pkg/safemem",
-        "//pkg/sentry/contexttest",
-        "//pkg/sentry/fs",
-        "//pkg/sentry/kernel/time",
         "//pkg/sentry/memmap",
-        "//pkg/usermem",
     ],
 )

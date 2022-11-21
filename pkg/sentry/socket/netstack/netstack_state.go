@@ -18,13 +18,13 @@ import (
 	"time"
 )
 
-func (s *socketOpsCommon) saveTimestamp() int64 {
+func (s *Socket) saveTimestamp() int64 {
 	s.readMu.Lock()
 	defer s.readMu.Unlock()
 	return s.timestamp.UnixNano()
 }
 
-func (s *socketOpsCommon) loadTimestamp(nsec int64) {
+func (s *Socket) loadTimestamp(nsec int64) {
 	s.readMu.Lock()
 	defer s.readMu.Unlock()
 	s.timestamp = time.Unix(0, nsec)

@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -182,7 +181,7 @@ func (r *Registry) FindOrCreate(ctx context.Context, opts OpenOpts, mode linux.F
 		return nil, linuxerr.ENOENT
 	}
 
-	q, err := r.newQueueLocked(auth.CredentialsFromContext(ctx), fs.FileOwnerFromContext(ctx), fs.FilePermsFromMode(mode), attr)
+	q, err := r.newQueueLocked(auth.CredentialsFromContext(ctx), mode, attr)
 	if err != nil {
 		return nil, err
 	}
@@ -192,11 +191,12 @@ func (r *Registry) FindOrCreate(ctx context.Context, opts OpenOpts, mode linux.F
 // newQueueLocked creates a new queue using the given attributes. If attr is nil
 // return a queue with default values, otherwise use attr to create a new queue,
 // and return an error if attributes are invalid.
-func (r *Registry) newQueueLocked(creds *auth.Credentials, owner fs.FileOwner, perms fs.FilePermissions, attr *linux.MqAttr) (*Queue, error) {
+func (r *Registry) newQueueLocked(creds *auth.Credentials, mode linux.FileMode, attr *linux.MqAttr) (*Queue, error) {
 	if attr == nil {
 		return &Queue{
-			owner:           owner,
-			perms:           perms,
+			ownerUID:        creds.EffectiveKUID,
+			ownerGID:        creds.EffectiveKGID,
+			mode:            mode,
 			maxMessageCount: int64(maxMsgDefault),
 			maxMessageSize:  uint64(msgSizeDefault),
 		}, nil
@@ -219,8 +219,9 @@ func (r *Registry) newQueueLocked(creds *auth.Credentials, owner fs.FileOwner, p
 	}
 
 	return &Queue{
-		owner:           owner,
-		perms:           perms,
+		ownerUID:        creds.EffectiveKUID,
+		ownerGID:        creds.EffectiveKGID,
+		mode:            mode,
 		maxMessageCount: attr.MqMaxmsg,
 		maxMessageSize:  uint64(attr.MqMsgsize),
 	}, nil
@@ -254,11 +255,14 @@ func (r *Registry) Impl() RegistryImpl {
 //
 // +stateify savable
 type Queue struct {
-	// owner is the registry's owner. Immutable.
-	owner fs.FileOwner
+	// ownerUID is the registry's owner's UID. Immutable.
+	ownerUID auth.KUID
 
-	// perms is the registry's access permissions. Immutable.
-	perms fs.FilePermissions
+	// ownerGID is the registry's owner's GID. Immutable.
+	ownerGID auth.KGID
+
+	// mode is the registry's access permissions. Immutable.
+	mode linux.FileMode
 
 	// mu protects all the fields below.
 	mu sync.Mutex `state:"nosave"`
@@ -434,12 +438,13 @@ func (q *Queue) EventUnregister(e *waiter.Entry) {
 
 // HasPermissions returns true if the given credentials meet the access
 // permissions required by the queue.
-func (q *Queue) HasPermissions(creds *auth.Credentials, req fs.PermMask) bool {
-	p := q.perms.Other
-	if q.owner.UID == creds.EffectiveKUID {
-		p = q.perms.User
-	} else if creds.InGroup(q.owner.GID) {
-		p = q.perms.Group
+func (q *Queue) HasPermissions(creds *auth.Credentials, req vfs.AccessTypes) bool {
+	perms := uint16(q.mode.Permissions())
+	if q.ownerUID == creds.EffectiveKUID {
+		perms >>= 6
+	} else if creds.InGroup(q.ownerGID) {
+		perms >>= 3
 	}
-	return p.SupersetOf(req)
+
+	return uint16(req)&perms == uint16(req)
 }

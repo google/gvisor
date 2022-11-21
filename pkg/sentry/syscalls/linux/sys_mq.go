@@ -58,7 +58,7 @@ func MqOpen(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		return 0, nil, err
 	}
 
-	fd, err := t.NewFDFromVFS2(0, queue, kernel.FDFlags{
+	fd, err := t.NewFDFrom(0, queue, kernel.FDFlags{
 		CloseOnExec: flag&linux.O_CLOEXEC != 0,
 	})
 	if err != nil {

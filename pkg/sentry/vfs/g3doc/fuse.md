@@ -36,16 +36,16 @@ implementation of this protocol.
 
 ## FUSE in the Sentry
 
-The sentry's FUSE client targets VFS2 and has the following components:
+The sentry's FUSE client has the following components:
 
 -   An implementation of `/dev/fuse`.
 
--   A VFS2 filesystem for mapping syscalls to FUSE ops. Since we're targeting
-    VFS2, one point of contention may be the lack of inodes in VFS2. We can
-    tentatively implement a kernfs-based filesystem to bridge the gap in APIs.
-    The kernfs base functionality can serve the role of the Linux inode cache
-    and, the filesystem can map VFS2 syscalls to kernfs inode operations; see
-    the `kernfs.Inode` interface.
+-   A filesystem for mapping syscalls to FUSE ops. One point of contention may
+    be the lack of inodes in the VFS layer. We can tentatively implement a
+    kernfs-based filesystem to bridge the gap in APIs. The kernfs base
+    functionality can serve the role of the Linux inode cache and, the
+    filesystem can map syscalls to kernfs inode operations; see the
+    `kernfs.Inode` interface.
 
 The FUSE protocol lends itself well to marshaling with `go_marshal`. The various
 request and response packets can be defined in the ABI package and converted to
@@ -148,7 +148,7 @@ FUSE. We describe the design and ways to improve it here:
 
 ##### Basic FUSE Read
 
-The vfs2 expects implementations of `vfs.FileDescriptionImpl.Read()` and
+The VFS expects implementations of `vfs.FileDescriptionImpl.Read()` and
 `vfs.FileDescriptionImpl.PRead()`. When a syscall is made, it will eventually
 reach our implementation of those interface functions located at
 `pkg/sentry/fsimpl/fuse/regular_file.go` for regular files.
@@ -175,7 +175,7 @@ so.
 
 ##### Basic FUSE Write
 
-The vfs2 invokes implementations of `vfs.FileDescriptionImpl.Write()` and
+The VFS invokes implementations of `vfs.FileDescriptionImpl.Write()` and
 `vfs.FileDescriptionImpl.PWrite()` on the regular file descriptor of FUSE when a
 user makes write(2) and pwrite(2) syscall.
 

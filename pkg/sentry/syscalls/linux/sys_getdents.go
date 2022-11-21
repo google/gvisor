@@ -48,7 +48,7 @@ func getdents(t *kernel.Task, args arch.SyscallArguments, isGetdents64 bool) (ui
 		return 0, nil, linuxerr.EINVAL
 	}
 
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}

@@ -163,7 +163,6 @@ go_library(
         "//pkg/refsvfs2",
         "//pkg/safemem",
         "//pkg/sentry/arch",
-        "//pkg/sentry/fs",
         "//pkg/sentry/fsimpl/lock",
         "//pkg/sentry/fsmetric",
         "//pkg/sentry/kernel/auth",

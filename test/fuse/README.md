@@ -1,7 +1,7 @@
 # gVisor FUSE Test Suite
 
 This is an integration test suite for fuse(4) filesystem. It runs under gVisor
-sandbox container with VFS2 and FUSE function enabled.
+sandbox container with FUSE function enabled.
 
 This document describes the framework of FUSE integration test, how to use it,
 and the guidelines that should be followed when adding new testing features.

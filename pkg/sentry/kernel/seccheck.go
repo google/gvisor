@@ -49,9 +49,9 @@ func LoadSeccheckDataLocked(t *Task, mask seccheck.FieldMask, info *pb.ContextDa
 		info.ContainerId = t.tg.leader.ContainerID()
 	}
 	if mask.Contains(seccheck.FieldCtxtCwd) {
-		if root := t.FSContext().RootDirectoryVFS2(); root.Ok() {
+		if root := t.FSContext().RootDirectory(); root.Ok() {
 			defer root.DecRef(t)
-			if wd := t.FSContext().WorkingDirectoryVFS2(); wd.Ok() {
+			if wd := t.FSContext().WorkingDirectory(); wd.Ok() {
 				defer wd.DecRef(t)
 				vfsObj := root.Mount().Filesystem().VirtualFilesystem()
 				info.Cwd, _ = vfsObj.PathnameWithDeleted(t, root, wd)

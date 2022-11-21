@@ -7,21 +7,10 @@ go_template_instance(
     name = "socket_refs",
     out = "socket_refs.go",
     package = "unix",
-    prefix = "socketOperations",
+    prefix = "socket",
     template = "//pkg/refsvfs2:refs_template",
     types = {
-        "T": "SocketOperations",
-    },
-)
-
-go_template_instance(
-    name = "socket_vfs2_refs",
-    out = "socket_vfs2_refs.go",
-    package = "unix",
-    prefix = "socketVFS2",
-    template = "//pkg/refsvfs2:refs_template",
-    types = {
-        "T": "SocketVFS2",
+        "T": "Socket",
     },
 )
 
@@ -31,9 +20,7 @@ go_library(
         "device.go",
         "io.go",
         "socket_refs.go",
-        "socket_vfs2_refs.go",
         "unix.go",
-        "unix_vfs2.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
@@ -50,10 +37,9 @@ go_library(
         "//pkg/safemem",
         "//pkg/sentry/arch",
         "//pkg/sentry/device",
-        "//pkg/sentry/fs",
-        "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/fsimpl/lock",
         "//pkg/sentry/fsimpl/sockfs",
+        "//pkg/sentry/fsutil",
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/time",

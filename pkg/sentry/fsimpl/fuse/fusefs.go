@@ -133,7 +133,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		log.Warningf("%s.GetFilesystem: couldn't get kernel task from context", fsType.Name())
 		return nil, nil, linuxerr.EINVAL
 	}
-	fuseFDGeneric := kernelTask.GetFileVFS2(int32(deviceDescriptor))
+	fuseFDGeneric := kernelTask.GetFile(int32(deviceDescriptor))
 	if fuseFDGeneric == nil {
 		return nil, nil, linuxerr.EINVAL
 	}

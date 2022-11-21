@@ -25,9 +25,8 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
-	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
+	"gvisor.dev/gvisor/pkg/sentry/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
@@ -210,8 +209,8 @@ func (rf *regularFile) truncateLocked(newSize uint64) (bool, error) {
 	rf.dataMu.Unlock()
 
 	// Invalidate past translations of truncated pages.
-	oldpgend := fs.OffsetPageEnd(int64(oldSize))
-	newpgend := fs.OffsetPageEnd(int64(newSize))
+	oldpgend := offsetPageEnd(int64(oldSize))
+	newpgend := offsetPageEnd(int64(newSize))
 	if newpgend < oldpgend {
 		rf.mapsMu.Lock()
 		rf.mappings.Invalidate(memmap.MappableRange{newpgend, oldpgend}, memmap.InvalidateOpts{
@@ -289,7 +288,7 @@ func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.
 
 	// Constrain translations to f.attr.Size (rounded up) to prevent
 	// translation to pages that may be concurrently truncated.
-	pgend := fs.OffsetPageEnd(int64(rf.size.RacyLoad()))
+	pgend := offsetPageEnd(int64(rf.size.RacyLoad()))
 	var beyondEOF bool
 	if required.End > pgend {
 		if required.Start >= pgend {
@@ -556,6 +555,17 @@ func (fd *regularFileFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpt
 	file := fd.inode().impl.(*regularFile)
 	opts.SentryOwnedContent = true
 	return vfs.GenericConfigureMMap(&fd.vfsfd, file, opts)
+}
+
+// offsetPageEnd returns the file offset rounded up to the nearest
+// page boundary. offsetPageEnd panics if rounding up causes overflow,
+// which shouldn't be possible given that offset is an int64.
+func offsetPageEnd(offset int64) uint64 {
+	end, ok := hostarch.Addr(offset).RoundUp()
+	if !ok {
+		panic("impossible overflow")
+	}
+	return uint64(end)
 }
 
 // regularFileReadWriter implements safemem.Reader and Safemem.Writer.

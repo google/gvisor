@@ -63,7 +63,7 @@ func fstatat(t *kernel.Task, dirfd int32, pathAddr, statAddr hostarch.Addr, flag
 		return err
 	}
 
-	root := t.FSContext().RootDirectoryVFS2()
+	root := t.FSContext().RootDirectory()
 	defer root.DecRef(t)
 	start := root
 	if !path.Absolute {
@@ -71,10 +71,10 @@ func fstatat(t *kernel.Task, dirfd int32, pathAddr, statAddr hostarch.Addr, flag
 			return linuxerr.ENOENT
 		}
 		if dirfd == linux.AT_FDCWD {
-			start = t.FSContext().WorkingDirectoryVFS2()
+			start = t.FSContext().WorkingDirectory()
 			defer start.DecRef(t)
 		} else {
-			dirfile := t.GetFileVFS2(dirfd)
+			dirfile := t.GetFile(dirfd)
 			if dirfile == nil {
 				return linuxerr.EBADF
 			}
@@ -127,7 +127,7 @@ func Fstat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	fd := args[0].Int()
 	statAddr := args[1].Pointer()
 
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
@@ -175,7 +175,7 @@ func Statx(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		return 0, nil, err
 	}
 
-	root := t.FSContext().RootDirectoryVFS2()
+	root := t.FSContext().RootDirectory()
 	defer root.DecRef(t)
 	start := root
 	if !path.Absolute {
@@ -183,10 +183,10 @@ func Statx(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			return 0, nil, linuxerr.ENOENT
 		}
 		if dirfd == linux.AT_FDCWD {
-			start = t.FSContext().WorkingDirectoryVFS2()
+			start = t.FSContext().WorkingDirectory()
 			defer start.DecRef(t)
 		} else {
-			dirfile := t.GetFileVFS2(dirfd)
+			dirfile := t.GetFile(dirfd)
 			if dirfile == nil {
 				return 0, nil, linuxerr.EBADF
 			}

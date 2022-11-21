@@ -43,7 +43,7 @@ func EpollCreate1(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 	}
 	defer file.DecRef(t)
 
-	fd, err := t.NewFDFromVFS2(0, file, kernel.FDFlags{
+	fd, err := t.NewFDFrom(0, file, kernel.FDFlags{
 		CloseOnExec: flags&linux.EPOLL_CLOEXEC != 0,
 	})
 	if err != nil {
@@ -68,7 +68,7 @@ func EpollCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 	}
 	defer file.DecRef(t)
 
-	fd, err := t.NewFDFromVFS2(0, file, kernel.FDFlags{})
+	fd, err := t.NewFDFrom(0, file, kernel.FDFlags{})
 	if err != nil {
 		return 0, nil, err
 	}
@@ -82,7 +82,7 @@ func EpollCtl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	fd := args[2].Int()
 	eventAddr := args[3].Pointer()
 
-	epfile := t.GetFileVFS2(epfd)
+	epfile := t.GetFile(epfd)
 	if epfile == nil {
 		return 0, nil, linuxerr.EBADF
 	}
@@ -91,7 +91,7 @@ func EpollCtl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	if !ok {
 		return 0, nil, linuxerr.EINVAL
 	}
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
@@ -125,7 +125,7 @@ func waitEpoll(t *kernel.Task, epfd int32, eventsAddr hostarch.Addr, maxEvents i
 		return 0, nil, linuxerr.EINVAL
 	}
 
-	epfile := t.GetFileVFS2(epfd)
+	epfile := t.GetFile(epfd)
 	if epfile == nil {
 		return 0, nil, linuxerr.EBADF
 	}
