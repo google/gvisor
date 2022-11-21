@@ -180,7 +180,7 @@ func Socket(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	}
 
 	// Create the new socket.
-	s, e := socket.NewVFS2(t, domain, linux.SockType(stype&0xf), protocol)
+	s, e := socket.New(t, domain, linux.SockType(stype&0xf), protocol)
 	if e != nil {
 		return 0, nil, e.ToError()
 	}
@@ -190,7 +190,7 @@ func Socket(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		return 0, nil, err
 	}
 
-	fd, err := t.NewFDFromVFS2(0, s, kernel.FDFlags{
+	fd, err := t.NewFDFrom(0, s, kernel.FDFlags{
 		CloseOnExec: stype&linux.SOCK_CLOEXEC != 0,
 	})
 	if err != nil {
@@ -213,7 +213,7 @@ func SocketPair(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	}
 
 	// Create the socket pair.
-	s1, s2, e := socket.PairVFS2(t, domain, linux.SockType(stype&0xf), protocol)
+	s1, s2, e := socket.Pair(t, domain, linux.SockType(stype&0xf), protocol)
 	if e != nil {
 		return 0, nil, e.ToError()
 	}
@@ -233,14 +233,14 @@ func SocketPair(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	flags := kernel.FDFlags{
 		CloseOnExec: stype&linux.SOCK_CLOEXEC != 0,
 	}
-	fds, err := t.NewFDsVFS2(0, []*vfs.FileDescription{s1, s2}, flags)
+	fds, err := t.NewFDs(0, []*vfs.FileDescription{s1, s2}, flags)
 	if err != nil {
 		return 0, nil, err
 	}
 
 	if _, err := primitive.CopyInt32SliceOut(t, addr, fds); err != nil {
 		for _, fd := range fds {
-			if _, file := t.FDTable().Remove(t, fd); file != nil {
+			if file := t.FDTable().Remove(t, fd); file != nil {
 				file.DecRef(t)
 			}
 		}
@@ -257,14 +257,14 @@ func Connect(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	addrlen := args[2].Uint()
 
 	// Get socket from the file descriptor.
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Extract the socket.
-	s, ok := file.Impl().(socket.SocketVFS2)
+	s, ok := file.Impl().(socket.Socket)
 	if !ok {
 		return 0, nil, linuxerr.ENOTSOCK
 	}
@@ -288,14 +288,14 @@ func accept(t *kernel.Task, fd int32, addr hostarch.Addr, addrLen hostarch.Addr,
 	}
 
 	// Get socket from the file descriptor.
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Extract the socket.
-	s, ok := file.Impl().(socket.SocketVFS2)
+	s, ok := file.Impl().(socket.Socket)
 	if !ok {
 		return 0, linuxerr.ENOTSOCK
 	}
@@ -347,14 +347,14 @@ func Bind(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 	addrlen := args[2].Uint()
 
 	// Get socket from the file descriptor.
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Extract the socket.
-	s, ok := file.Impl().(socket.SocketVFS2)
+	s, ok := file.Impl().(socket.Socket)
 	if !ok {
 		return 0, nil, linuxerr.ENOTSOCK
 	}
@@ -374,14 +374,14 @@ func Listen(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	backlog := args[1].Uint()
 
 	// Get socket from the file descriptor.
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Extract the socket.
-	s, ok := file.Impl().(socket.SocketVFS2)
+	s, ok := file.Impl().(socket.Socket)
 	if !ok {
 		return 0, nil, linuxerr.ENOTSOCK
 	}
@@ -412,14 +412,14 @@ func Shutdown(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	how := args[1].Int()
 
 	// Get socket from the file descriptor.
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Extract the socket.
-	s, ok := file.Impl().(socket.SocketVFS2)
+	s, ok := file.Impl().(socket.Socket)
 	if !ok {
 		return 0, nil, linuxerr.ENOTSOCK
 	}
@@ -443,14 +443,14 @@ func GetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	optLenAddr := args[4].Pointer()
 
 	// Get socket from the file descriptor.
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Extract the socket.
-	s, ok := file.Impl().(socket.SocketVFS2)
+	s, ok := file.Impl().(socket.Socket)
 	if !ok {
 		return 0, nil, linuxerr.ENOTSOCK
 	}
@@ -485,7 +485,7 @@ func GetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 
 // getSockOpt tries to handle common socket options, or dispatches to a specific
 // socket implementation.
-func getSockOpt(t *kernel.Task, s socket.SocketVFS2, level, name int, optValAddr hostarch.Addr, len int) (marshal.Marshallable, *syserr.Error) {
+func getSockOpt(t *kernel.Task, s socket.Socket, level, name int, optValAddr hostarch.Addr, len int) (marshal.Marshallable, *syserr.Error) {
 	if level == linux.SOL_SOCKET {
 		switch name {
 		case linux.SO_TYPE, linux.SO_DOMAIN, linux.SO_PROTOCOL:
@@ -524,14 +524,14 @@ func SetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	optLen := args[4].Int()
 
 	// Get socket from the file descriptor.
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Extract the socket.
-	s, ok := file.Impl().(socket.SocketVFS2)
+	s, ok := file.Impl().(socket.Socket)
 	if !ok {
 		return 0, nil, linuxerr.ENOTSOCK
 	}
@@ -562,14 +562,14 @@ func GetSockName(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 	addrlen := args[2].Pointer()
 
 	// Get socket from the file descriptor.
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Extract the socket.
-	s, ok := file.Impl().(socket.SocketVFS2)
+	s, ok := file.Impl().(socket.Socket)
 	if !ok {
 		return 0, nil, linuxerr.ENOTSOCK
 	}
@@ -590,14 +590,14 @@ func GetPeerName(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 	addrlen := args[2].Pointer()
 
 	// Get socket from the file descriptor.
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Extract the socket.
-	s, ok := file.Impl().(socket.SocketVFS2)
+	s, ok := file.Impl().(socket.Socket)
 	if !ok {
 		return 0, nil, linuxerr.ENOTSOCK
 	}
@@ -623,14 +623,14 @@ func RecvMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	}
 
 	// Get socket from the file descriptor.
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Extract the socket.
-	s, ok := file.Impl().(socket.SocketVFS2)
+	s, ok := file.Impl().(socket.Socket)
 	if !ok {
 		return 0, nil, linuxerr.ENOTSOCK
 	}
@@ -680,14 +680,14 @@ func RecvMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	}
 
 	// Get socket from the file descriptor.
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Extract the socket.
-	s, ok := file.Impl().(socket.SocketVFS2)
+	s, ok := file.Impl().(socket.Socket)
 	if !ok {
 		return 0, nil, linuxerr.ENOTSOCK
 	}
@@ -748,15 +748,15 @@ func RecvMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	return uintptr(count), nil, nil
 }
 
-func getSCMRightsVFS2(t *kernel.Task, rights transport.RightsControlMessage) control.SCMRightsVFS2 {
+func getSCMRights(t *kernel.Task, rights transport.RightsControlMessage) control.SCMRights {
 	switch v := rights.(type) {
-	case control.SCMRightsVFS2:
+	case control.SCMRights:
 		return v
 	case *transport.SCMRights:
-		rf := control.RightsFilesVFS2(fdsToHostFiles(t, v.FDs))
+		rf := control.RightsFiles(fdsToHostFiles(t, v.FDs))
 		return &rf
 	default:
-		panic(fmt.Sprintf("rights of type %T must be *transport.SCMRights or implement SCMRightsVFS2", rights))
+		panic(fmt.Sprintf("rights of type %T must be *transport.SCMRights or implement SCMRights", rights))
 	}
 }
 
@@ -790,7 +790,7 @@ func fdsToHostFiles(ctx context.Context, fds []int) []*vfs.FileDescription {
 	return files
 }
 
-func recvSingleMsg(t *kernel.Task, s socket.SocketVFS2, msgPtr hostarch.Addr, flags int32, haveDeadline bool, deadline ktime.Time) (uintptr, error) {
+func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr hostarch.Addr, flags int32, haveDeadline bool, deadline ktime.Time) (uintptr, error) {
 	// Capture the message header and io vectors.
 	var msg MessageHeader64
 	if _, err := msg.CopyIn(t, msgPtr); err != nil {
@@ -846,8 +846,8 @@ func recvSingleMsg(t *kernel.Task, s socket.SocketVFS2, msgPtr hostarch.Addr, fl
 	}
 
 	if cms.Unix.Rights != nil {
-		cms.Unix.Rights = getSCMRightsVFS2(t, cms.Unix.Rights)
-		controlData, mflags = control.PackRightsVFS2(t, cms.Unix.Rights.(control.SCMRightsVFS2), flags&linux.MSG_CMSG_CLOEXEC != 0, controlData, mflags)
+		cms.Unix.Rights = getSCMRights(t, cms.Unix.Rights)
+		controlData, mflags = control.PackRights(t, cms.Unix.Rights.(control.SCMRights), flags&linux.MSG_CMSG_CLOEXEC != 0, controlData, mflags)
 	}
 
 	// Copy the address to the caller.
@@ -888,14 +888,14 @@ func recvFrom(t *kernel.Task, fd int32, bufPtr hostarch.Addr, bufLen uint64, fla
 	}
 
 	// Get socket from the file descriptor.
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Extract the socket.
-	s, ok := file.Impl().(socket.SocketVFS2)
+	s, ok := file.Impl().(socket.Socket)
 	if !ok {
 		return 0, linuxerr.ENOTSOCK
 	}
@@ -961,14 +961,14 @@ func SendMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	}
 
 	// Get socket from the file descriptor.
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Extract the socket.
-	s, ok := file.Impl().(socket.SocketVFS2)
+	s, ok := file.Impl().(socket.Socket)
 	if !ok {
 		return 0, nil, linuxerr.ENOTSOCK
 	}
@@ -1003,14 +1003,14 @@ func SendMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	}
 
 	// Get socket from the file descriptor.
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Extract the socket.
-	s, ok := file.Impl().(socket.SocketVFS2)
+	s, ok := file.Impl().(socket.Socket)
 	if !ok {
 		return 0, nil, linuxerr.ENOTSOCK
 	}
@@ -1053,7 +1053,7 @@ func SendMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	return uintptr(count), nil, nil
 }
 
-func sendSingleMsg(t *kernel.Task, s socket.SocketVFS2, file *vfs.FileDescription, msgPtr hostarch.Addr, flags int32) (uintptr, error) {
+func sendSingleMsg(t *kernel.Task, s socket.Socket, file *vfs.FileDescription, msgPtr hostarch.Addr, flags int32) (uintptr, error) {
 	// Capture the message header.
 	var msg MessageHeader64
 	if _, err := msg.CopyIn(t, msgPtr); err != nil {
@@ -1127,14 +1127,14 @@ func sendTo(t *kernel.Task, fd int32, bufPtr hostarch.Addr, bufLen uint64, flags
 	}
 
 	// Get socket from the file descriptor.
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Extract the socket.
-	s, ok := file.Impl().(socket.SocketVFS2)
+	s, ok := file.Impl().(socket.Socket)
 	if !ok {
 		return 0, linuxerr.ENOTSOCK
 	}
@@ -1170,7 +1170,7 @@ func sendTo(t *kernel.Task, fd int32, bufPtr hostarch.Addr, bufLen uint64, flags
 	}
 
 	// Call the syscall implementation.
-	n, e := s.SendMsg(t, src, to, int(flags), haveDeadline, deadline, socket.ControlMessages{Unix: control.New(t, s, nil)})
+	n, e := s.SendMsg(t, src, to, int(flags), haveDeadline, deadline, socket.ControlMessages{Unix: control.New(t, s)})
 	return uintptr(n), HandleIOError(t, n != 0, e.ToError(), linuxerr.ERESTARTSYS, "sendto", file)
 }
 

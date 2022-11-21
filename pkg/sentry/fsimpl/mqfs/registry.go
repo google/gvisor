@@ -18,7 +18,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/mq"
@@ -157,15 +156,15 @@ func (r *RegistryImpl) newFD(q *mq.Queue, inode *queueInode, access mq.AccessTyp
 }
 
 // perm returns a permission mask created using given flags.
-func perm(access mq.AccessType) fs.PermMask {
+func perm(access mq.AccessType) vfs.AccessTypes {
 	switch access {
 	case mq.ReadWrite:
-		return fs.PermMask{Read: true, Write: true}
+		return vfs.MayRead | vfs.MayWrite
 	case mq.WriteOnly:
-		return fs.PermMask{Write: true}
+		return vfs.MayWrite
 	case mq.ReadOnly:
-		return fs.PermMask{Read: true}
+		return vfs.MayRead
 	default:
-		return fs.PermMask{} // Can't happen, see NewView.
+		return 0 // Can't happen, see NewView.
 	}
 }

@@ -19,8 +19,8 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
 // Registry is similar to Object, but for registries. It represent an abstract
@@ -63,7 +63,7 @@ func (r *Registry) Find(ctx context.Context, key Key, mode linux.FileMode, creat
 
 		obj := mech.Object()
 		creds := auth.CredentialsFromContext(ctx)
-		if !obj.CheckPermissions(creds, fs.PermsFromMode(mode)) {
+		if !obj.CheckPermissions(creds, vfs.AccessTypes(mode&linux.ModeOtherAll)) {
 			// The [calling process / user] does not have permission to access
 			// the set, and does not have the CAP_IPC_OWNER capability in the
 			// user namespace that governs its IPC namespace.

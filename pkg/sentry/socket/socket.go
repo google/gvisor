@@ -28,9 +28,6 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
-	"gvisor.dev/gvisor/pkg/sentry/device"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
-	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
@@ -220,25 +217,11 @@ func (c *ControlMessages) Release(ctx context.Context) {
 	c.Unix.Release(ctx)
 }
 
-// Socket is an interface combining fs.FileOperations and SocketOps,
-// representing a VFS1 socket file.
-type Socket interface {
-	fs.FileOperations
-	SocketOps
-}
-
-// SocketVFS2 is an interface combining vfs.FileDescription and SocketOps,
-// representing a VFS2 socket file.
-type SocketVFS2 interface {
-	vfs.FileDescriptionImpl
-	SocketOps
-}
-
-// SocketOps is the interface containing socket syscalls used by the syscall
+// Socket is an interface containing socket syscalls used by the syscall
 // layer to redirect them to the appropriate implementation.
-//
-// It is implemented by both Socket and SocketVFS2.
-type SocketOps interface {
+type Socket interface {
+	vfs.FileDescriptionImpl
+
 	// Connect implements the connect(2) linux unix.
 	Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr.Error
 
@@ -317,20 +300,20 @@ type SocketOps interface {
 	Type() (family int, skType linux.SockType, protocol int)
 }
 
-// Provider is the interface implemented by providers of sockets for specific
-// address families (e.g., AF_INET).
+// Provider is the interface implemented by providers of sockets for
+// specific address families (e.g., AF_INET).
 type Provider interface {
 	// Socket creates a new socket.
 	//
 	// If a nil Socket _and_ a nil error is returned, it means that the
 	// protocol is not supported. A non-nil error should only be returned
 	// if the protocol is supported, but an error occurs during creation.
-	Socket(t *kernel.Task, stype linux.SockType, protocol int) (*fs.File, *syserr.Error)
+	Socket(t *kernel.Task, stype linux.SockType, protocol int) (*vfs.FileDescription, *syserr.Error)
 
 	// Pair creates a pair of connected sockets.
 	//
 	// See Socket for error information.
-	Pair(t *kernel.Task, stype linux.SockType, protocol int) (*fs.File, *fs.File, *syserr.Error)
+	Pair(t *kernel.Task, stype linux.SockType, protocol int) (*vfs.FileDescription, *vfs.FileDescription, *syserr.Error)
 }
 
 // families holds a map of all known address families and their providers.
@@ -346,7 +329,7 @@ func RegisterProvider(family int, provider Provider) {
 }
 
 // New creates a new socket with the given family, type and protocol.
-func New(t *kernel.Task, family int, stype linux.SockType, protocol int) (*fs.File, *syserr.Error) {
+func New(t *kernel.Task, family int, stype linux.SockType, protocol int) (*vfs.FileDescription, *syserr.Error) {
 	for _, p := range families[family] {
 		s, err := p.Socket(t, stype, protocol)
 		if err != nil {
@@ -363,7 +346,7 @@ func New(t *kernel.Task, family int, stype linux.SockType, protocol int) (*fs.Fi
 
 // Pair creates a new connected socket pair with the given family, type and
 // protocol.
-func Pair(t *kernel.Task, family int, stype linux.SockType, protocol int) (*fs.File, *fs.File, *syserr.Error) {
+func Pair(t *kernel.Task, family int, stype linux.SockType, protocol int) (*vfs.FileDescription, *vfs.FileDescription, *syserr.Error) {
 	providers, ok := families[family]
 	if !ok {
 		return nil, nil, syserr.ErrAddressFamilyNotSupported
@@ -378,93 +361,6 @@ func Pair(t *kernel.Task, family int, stype linux.SockType, protocol int) (*fs.F
 			k := t.Kernel()
 			k.RecordSocket(s1)
 			k.RecordSocket(s2)
-			return s1, s2, nil
-		}
-	}
-
-	return nil, nil, syserr.ErrSocketNotSupported
-}
-
-// NewDirent returns a sockfs fs.Dirent that resides on device d.
-func NewDirent(ctx context.Context, d *device.Device) *fs.Dirent {
-	ino := d.NextIno()
-	iops := &fsutil.SimpleFileInode{
-		InodeSimpleAttributes: fsutil.NewInodeSimpleAttributes(ctx, fs.FileOwnerFromContext(ctx), fs.FilePermissions{
-			User: fs.PermMask{Read: true, Write: true},
-		}, linux.SOCKFS_MAGIC),
-	}
-	inode := fs.NewInode(ctx, iops, fs.NewPseudoMountSource(ctx), fs.StableAttr{
-		Type:      fs.Socket,
-		DeviceID:  d.DeviceID(),
-		InodeID:   ino,
-		BlockSize: hostarch.PageSize,
-	})
-
-	// Dirent name matches net/socket.c:sockfs_dname.
-	return fs.NewDirent(ctx, inode, fmt.Sprintf("socket:[%d]", ino))
-}
-
-// ProviderVFS2 is the vfs2 interface implemented by providers of sockets for
-// specific address families (e.g., AF_INET).
-type ProviderVFS2 interface {
-	// Socket creates a new socket.
-	//
-	// If a nil Socket _and_ a nil error is returned, it means that the
-	// protocol is not supported. A non-nil error should only be returned
-	// if the protocol is supported, but an error occurs during creation.
-	Socket(t *kernel.Task, stype linux.SockType, protocol int) (*vfs.FileDescription, *syserr.Error)
-
-	// Pair creates a pair of connected sockets.
-	//
-	// See Socket for error information.
-	Pair(t *kernel.Task, stype linux.SockType, protocol int) (*vfs.FileDescription, *vfs.FileDescription, *syserr.Error)
-}
-
-// familiesVFS2 holds a map of all known address families and their providers.
-var familiesVFS2 = make(map[int][]ProviderVFS2)
-
-// RegisterProviderVFS2 registers the provider of a given address family so that
-// sockets of that type can be created via socket() and/or socketpair()
-// syscalls.
-//
-// This should only be called during the initialization of the address family.
-func RegisterProviderVFS2(family int, provider ProviderVFS2) {
-	familiesVFS2[family] = append(familiesVFS2[family], provider)
-}
-
-// NewVFS2 creates a new socket with the given family, type and protocol.
-func NewVFS2(t *kernel.Task, family int, stype linux.SockType, protocol int) (*vfs.FileDescription, *syserr.Error) {
-	for _, p := range familiesVFS2[family] {
-		s, err := p.Socket(t, stype, protocol)
-		if err != nil {
-			return nil, err
-		}
-		if s != nil {
-			t.Kernel().RecordSocketVFS2(s)
-			return s, nil
-		}
-	}
-
-	return nil, syserr.ErrAddressFamilyNotSupported
-}
-
-// PairVFS2 creates a new connected socket pair with the given family, type and
-// protocol.
-func PairVFS2(t *kernel.Task, family int, stype linux.SockType, protocol int) (*vfs.FileDescription, *vfs.FileDescription, *syserr.Error) {
-	providers, ok := familiesVFS2[family]
-	if !ok {
-		return nil, nil, syserr.ErrAddressFamilyNotSupported
-	}
-
-	for _, p := range providers {
-		s1, s2, err := p.Pair(t, stype, protocol)
-		if err != nil {
-			return nil, nil, err
-		}
-		if s1 != nil && s2 != nil {
-			k := t.Kernel()
-			k.RecordSocketVFS2(s1)
-			k.RecordSocketVFS2(s2)
 			return s1, s2, nil
 		}
 	}

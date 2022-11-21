@@ -966,8 +966,8 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 
 	// Get the container MountNamespace from the Task. Try to acquire ref may fail
 	// in case it raced with task exit.
-	// task.MountNamespaceVFS2() does not take a ref, so we must do so ourselves.
-	args.MountNamespace = tg.Leader().MountNamespaceVFS2()
+	// task.MountNamespace() does not take a ref, so we must do so ourselves.
+	args.MountNamespace = tg.Leader().MountNamespace()
 	if args.MountNamespace == nil || !args.MountNamespace.TryIncRef() {
 		return 0, fmt.Errorf("container %q has stopped", args.ContainerID)
 	}

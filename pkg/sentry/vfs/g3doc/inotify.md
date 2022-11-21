@@ -7,7 +7,7 @@ that create inotify instances (inotify_init/inotify_init1) and add/remove
 watches on files to an instance (inotify_add_watch/inotify_rm_watch). Events are
 generated from various places in the sentry, including the syscall layer, the
 vfs layer, the process fd table, and within each filesystem implementation. This
-document outlines the implementation details of inotify in VFS2.
+document outlines the implementation details of inotify.
 
 ## Inotify Objects
 
@@ -75,10 +75,10 @@ ordering of filesystem locks.
 
 In Linux, watches reside on inodes at the virtual filesystem layer. As a result,
 all hard links and file descriptions on a single file will all share the same
-watch set. In VFS2, there is no common inode structure across filesystem types
-(some may not even have inodes), so we have to plumb inotify support through
-each specific filesystem implementation. Some of the technical considerations
-are outlined below.
+watch set. There is no common inode structure across filesystem types (some may
+not even have inodes), so we have to plumb inotify support through each specific
+filesystem implementation. Some of the technical considerations are outlined
+below.
 
 ### Tmpfs
 

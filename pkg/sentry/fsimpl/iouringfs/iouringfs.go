@@ -419,7 +419,7 @@ func (fd *FileDescription) handleReadv(t *kernel.Task, sqe *linux.IOUringSqe, fl
 	if err != nil {
 		return 0, err
 	}
-	file := t.GetFileVFS2(sqe.Fd)
+	file := t.GetFile(sqe.Fd)
 	if file == nil {
 		return 0, linuxerr.EBADF
 	}

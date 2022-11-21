@@ -127,18 +127,6 @@ go_template_instance(
 )
 
 go_template_instance(
-    name = "socket_list",
-    out = "socket_list.go",
-    package = "kernel",
-    prefix = "socket",
-    template = "//pkg/ilist:generic_list",
-    types = {
-        "Element": "*SocketRecordVFS1",
-        "Linker": "*SocketRecordVFS1",
-    },
-)
-
-go_template_instance(
     name = "fd_table_refs",
     out = "fd_table_refs.go",
     package = "kernel",
@@ -242,7 +230,6 @@ go_library(
         "signal.go",
         "signal_handlers.go",
         "signal_handlers_mutex.go",
-        "socket_list.go",
         "syscalls.go",
         "syscalls_state.go",
         "syslog.go",
@@ -318,7 +305,6 @@ go_library(
         "//pkg/secio",
         "//pkg/sentry/arch",
         "//pkg/sentry/device",
-        "//pkg/sentry/fs",
         "//pkg/sentry/fsbridge",
         "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/fsimpl/lock",

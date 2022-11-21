@@ -89,9 +89,7 @@ func TestSysRootContainsExpectedEntries(t *testing.T) {
 }
 
 func TestCgroupMountpointExists(t *testing.T) {
-	// Note: The mountpoint is only created if cgroups are available. This is
-	// the VFS2 implementation of sysfs and the test runs with VFS2 enabled, so
-	// we expect to see the mount point unconditionally.
+	// Note: The mountpoint is only created if cgroups are available.
 	s := newTestSystem(t)
 	defer s.Destroy()
 	pop := s.PathOpAtRoot("/fs")

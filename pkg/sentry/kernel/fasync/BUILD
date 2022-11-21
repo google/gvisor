@@ -9,7 +9,6 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/errors/linuxerr",
-        "//pkg/sentry/fs",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/vfs",

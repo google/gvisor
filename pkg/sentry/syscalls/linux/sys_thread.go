@@ -106,7 +106,7 @@ func execveat(t *kernel.Task, dirfd int32, pathnameAddr, argvAddr, envvAddr host
 		}
 	}
 
-	root := t.FSContext().RootDirectoryVFS2()
+	root := t.FSContext().RootDirectory()
 	defer root.DecRef(t)
 	var executable fsbridge.File
 	defer func() {
@@ -125,7 +125,7 @@ func execveat(t *kernel.Task, dirfd int32, pathnameAddr, argvAddr, envvAddr host
 		if !path.HasComponents() && flags&linux.AT_EMPTY_PATH == 0 {
 			return 0, nil, linuxerr.ENOENT
 		}
-		dirfile, dirfileFlags := t.FDTable().GetVFS2(dirfd)
+		dirfile, dirfileFlags := t.FDTable().Get(dirfd)
 		if dirfile == nil {
 			return 0, nil, linuxerr.EBADF
 		}
@@ -151,8 +151,8 @@ func execveat(t *kernel.Task, dirfd int32, pathnameAddr, argvAddr, envvAddr host
 	}
 
 	// Load the new TaskImage.
-	mntns := t.MountNamespaceVFS2()
-	wd := t.FSContext().WorkingDirectoryVFS2()
+	mntns := t.MountNamespace()
+	wd := t.FSContext().WorkingDirectory()
 	defer wd.DecRef(t)
 	remainingTraversals := uint(linux.MaxSymlinkTraversals)
 	loadArgs := loader.LoadArgs{

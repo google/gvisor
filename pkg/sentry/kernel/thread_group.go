@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
@@ -241,14 +240,6 @@ type ThreadGroup struct {
 	// oldRSeqCritical is the thread group's old rseq critical region.
 	oldRSeqCritical atomic.Value `state:".(*OldRSeqCriticalRegion)"`
 
-	// mounts is the thread group's mount namespace. This does not really
-	// correspond to a "mount namespace" in Linux, but is more like a
-	// complete VFS that need not be shared between processes. See the
-	// comment in mounts.go  for more information.
-	//
-	// mounts is immutable.
-	mounts *fs.MountNamespace
-
 	// tty is the thread group's controlling terminal. If nil, there is no
 	// controlling terminal.
 	//
@@ -265,7 +256,7 @@ type ThreadGroup struct {
 // thread group leader will send its parent terminationSignal when it exits.
 // The new thread group isn't visible to the system until a task has been
 // created inside of it by a successful call to TaskSet.NewTask.
-func (k *Kernel) NewThreadGroup(mntns *fs.MountNamespace, pidns *PIDNamespace, sh *SignalHandlers, terminationSignal linux.Signal, limits *limits.LimitSet) *ThreadGroup {
+func (k *Kernel) NewThreadGroup(pidns *PIDNamespace, sh *SignalHandlers, terminationSignal linux.Signal, limits *limits.LimitSet) *ThreadGroup {
 	tg := &ThreadGroup{
 		threadGroupNode: threadGroupNode{
 			pidns: pidns,
@@ -274,7 +265,6 @@ func (k *Kernel) NewThreadGroup(mntns *fs.MountNamespace, pidns *PIDNamespace, s
 		terminationSignal: terminationSignal,
 		ioUsage:           &usage.IO{},
 		limits:            limits,
-		mounts:            mntns,
 	}
 	tg.itimerRealTimer = ktime.NewTimer(k.timekeeper.monotonicClock, &itimerRealListener{tg: tg})
 	tg.timers = make(map[linux.TimerID]*IntervalTimer)
@@ -321,9 +311,6 @@ func (tg *ThreadGroup) Release(ctx context.Context) {
 	tg.pidns.owner.mu.Unlock()
 	for _, it := range its {
 		it.DestroyTimer()
-	}
-	if tg.mounts != nil {
-		tg.mounts.DecRef(ctx)
 	}
 }
 

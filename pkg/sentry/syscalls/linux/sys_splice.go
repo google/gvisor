@@ -54,12 +54,12 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	}
 
 	// Get file descriptions.
-	inFile := t.GetFileVFS2(inFD)
+	inFile := t.GetFile(inFD)
 	if inFile == nil {
 		return 0, nil, linuxerr.EBADF
 	}
 	defer inFile.DecRef(t)
-	outFile := t.GetFileVFS2(outFD)
+	outFile := t.GetFile(outFD)
 	if outFile == nil {
 		return 0, nil, linuxerr.EBADF
 	}
@@ -200,12 +200,12 @@ func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 	}
 
 	// Get file descriptions.
-	inFile := t.GetFileVFS2(inFD)
+	inFile := t.GetFile(inFD)
 	if inFile == nil {
 		return 0, nil, linuxerr.EBADF
 	}
 	defer inFile.DecRef(t)
-	outFile := t.GetFileVFS2(outFD)
+	outFile := t.GetFile(outFD)
 	if outFile == nil {
 		return 0, nil, linuxerr.EBADF
 	}
@@ -273,7 +273,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	offsetAddr := args[2].Pointer()
 	count := int64(args[3].SizeT())
 
-	inFile := t.GetFileVFS2(inFD)
+	inFile := t.GetFile(inFD)
 	if inFile == nil {
 		return 0, nil, linuxerr.EBADF
 	}
@@ -282,7 +282,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		return 0, nil, linuxerr.EBADF
 	}
 
-	outFile := t.GetFileVFS2(outFD)
+	outFile := t.GetFile(outFD)
 	if outFile == nil {
 		return 0, nil, linuxerr.EBADF
 	}

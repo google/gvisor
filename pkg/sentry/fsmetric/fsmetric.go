@@ -12,11 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package fsmetric defines filesystem metrics that are used by both VFS1 and
-// VFS2.
-//
-// TODO(gvisor.dev/issue/1624): Once VFS1 is deleted, inline these metrics into
-// VFS2.
+// Package fsmetric defines filesystem metrics.
 package fsmetric
 
 import (

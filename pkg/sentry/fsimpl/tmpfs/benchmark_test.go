@@ -21,12 +21,9 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -51,43 +48,7 @@ const (
 	filename       = "gvisor_test_temp_0_1557494568"
 )
 
-// This is copied from syscalls/linux/sys_file.go, with the dependency on
-// kernel.Task stripped out.
-func fileOpOn(ctx context.Context, mntns *fs.MountNamespace, root, wd *fs.Dirent, dirFD int32, path string, resolve bool, fn func(root *fs.Dirent, d *fs.Dirent) error) error {
-	var (
-		d   *fs.Dirent // The file.
-		rel *fs.Dirent // The relative directory for search (if required.)
-		err error
-	)
-
-	// Extract the working directory (maybe).
-	if len(path) > 0 && path[0] == '/' {
-		// Absolute path; rel can be nil.
-	} else if dirFD == linux.AT_FDCWD {
-		// Need to reference the working directory.
-		rel = wd
-	} else {
-		// Need to extract the given FD.
-		return linuxerr.EBADF
-	}
-
-	// Lookup the node.
-	remainingTraversals := uint(linux.MaxSymlinkTraversals)
-	if resolve {
-		d, err = mntns.FindInode(ctx, root, rel, path, &remainingTraversals)
-	} else {
-		d, err = mntns.FindLink(ctx, root, rel, path, &remainingTraversals)
-	}
-	if err != nil {
-		return err
-	}
-
-	err = fn(root, d)
-	d.DecRef(ctx)
-	return err
-}
-
-func BenchmarkVFS2TmpfsStat(b *testing.B) {
+func BenchmarkTmpfsStat(b *testing.B) {
 	for _, depth := range depths {
 		b.Run(fmt.Sprintf("%d", depth), func(b *testing.B) {
 			ctx := contexttest.Context(b)
@@ -179,7 +140,7 @@ func BenchmarkVFS2TmpfsStat(b *testing.B) {
 	}
 }
 
-func BenchmarkVFS2TmpfsMountStat(b *testing.B) {
+func BenchmarkTmpfsMountStat(b *testing.B) {
 	for _, depth := range depths {
 		b.Run(fmt.Sprintf("%d", depth), func(b *testing.B) {
 			ctx := contexttest.Context(b)
@@ -298,7 +259,6 @@ func BenchmarkVFS2TmpfsMountStat(b *testing.B) {
 }
 
 func init() {
-	// Turn off reference leak checking for a fair comparison between vfs1 and
-	// vfs2.
+	// Turn off reference leak checking for a benchmarking.
 	refs.SetLeakMode(refs.NoLeakChecking)
 }

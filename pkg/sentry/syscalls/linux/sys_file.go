@@ -118,7 +118,7 @@ func openat(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr, flags uint32, m
 	}
 	defer file.DecRef(t)
 
-	fd, err := t.NewFDFromVFS2(0, file, kernel.FDFlags{
+	fd, err := t.NewFDFrom(0, file, kernel.FDFlags{
 		CloseOnExec: flags&linux.O_CLOEXEC != 0,
 	})
 	return uintptr(fd), nil, err
@@ -202,7 +202,7 @@ func accessAt(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr, mode uint, fl
 func Ioctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
@@ -215,13 +215,13 @@ func Ioctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	// Handle ioctls that apply to all FDs.
 	switch args[1].Int() {
 	case linux.FIONCLEX:
-		t.FDTable().SetFlagsVFS2(t, fd, kernel.FDFlags{
+		t.FDTable().SetFlags(t, fd, kernel.FDFlags{
 			CloseOnExec: false,
 		})
 		return 0, nil, nil
 
 	case linux.FIOCLEX:
-		t.FDTable().SetFlagsVFS2(t, fd, kernel.FDFlags{
+		t.FDTable().SetFlags(t, fd, kernel.FDFlags{
 			CloseOnExec: true,
 		})
 		return 0, nil, nil
@@ -292,8 +292,8 @@ func Getcwd(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	addr := args[0].Pointer()
 	size := args[1].SizeT()
 
-	root := t.FSContext().RootDirectoryVFS2()
-	wd := t.FSContext().WorkingDirectoryVFS2()
+	root := t.FSContext().RootDirectory()
+	wd := t.FSContext().WorkingDirectory()
 	s, err := t.Kernel().VFS().PathnameForGetcwd(t, root, wd)
 	root.DecRef(t)
 	wd.DecRef(t)
@@ -339,7 +339,7 @@ func Chdir(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	if err != nil {
 		return 0, nil, err
 	}
-	t.FSContext().SetWorkingDirectoryVFS2(t, vd)
+	t.FSContext().SetWorkingDirectory(t, vd)
 	vd.DecRef(t)
 	return 0, nil, nil
 }
@@ -360,7 +360,7 @@ func Fchdir(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	if err != nil {
 		return 0, nil, err
 	}
-	t.FSContext().SetWorkingDirectoryVFS2(t, vd)
+	t.FSContext().SetWorkingDirectory(t, vd)
 	vd.DecRef(t)
 	return 0, nil, nil
 }
@@ -389,7 +389,7 @@ func Chroot(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	if err != nil {
 		return 0, nil, err
 	}
-	t.FSContext().SetRootDirectoryVFS2(t, vd)
+	t.FSContext().SetRootDirectory(t, vd)
 	vd.DecRef(t)
 	return 0, nil, nil
 }
@@ -422,7 +422,7 @@ func PivotRoot(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	}
 	defer putOldTpop.Release(t)
 
-	oldRootVd := t.FSContext().RootDirectoryVFS2()
+	oldRootVd := t.FSContext().RootDirectory()
 	defer oldRootVd.DecRef(t)
 	newRootVd, err := t.Kernel().VFS().GetDentryAt(t, t.Credentials(), &newRootTpop.pop, &vfs.GetDentryOptions{
 		CheckSearchable: true,
@@ -446,7 +446,7 @@ func Close(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	// Note that Remove provides a reference on the file that we may use to
 	// flush. It is still active until we drop the final reference below
 	// (and other reference-holding operations complete).
-	_, file := t.FDTable().Remove(t, fd)
+	file := t.FDTable().Remove(t, fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
@@ -489,14 +489,14 @@ func CloseRange(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 		flagToApply := kernel.FDFlags{
 			CloseOnExec: true,
 		}
-		t.FDTable().SetFlagsForRangeVFS2(t.AsyncContext(), int32(first), int32(last), flagToApply)
+		t.FDTable().SetFlagsForRange(t.AsyncContext(), int32(first), int32(last), flagToApply)
 		return 0, nil, nil
 	}
 
 	fdTable := t.FDTable()
 	fd := int32(first)
 	for {
-		fd, _, file := fdTable.RemoveNextInRange(t, fd, int32(last))
+		fd, file := fdTable.RemoveNextInRange(t, fd, int32(last))
 		if file == nil {
 			break
 		}
@@ -514,13 +514,13 @@ func CloseRange(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 func Dup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
-	newFD, err := t.NewFDFromVFS2(0, file, kernel.FDFlags{})
+	newFD, err := t.NewFDFrom(0, file, kernel.FDFlags{})
 	if err != nil {
 		return 0, nil, linuxerr.EMFILE
 	}
@@ -534,7 +534,7 @@ func Dup2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 
 	if oldfd == newfd {
 		// As long as oldfd is valid, dup2() does nothing and returns newfd.
-		file := t.GetFileVFS2(oldfd)
+		file := t.GetFile(oldfd)
 		if file == nil {
 			return 0, nil, linuxerr.EBADF
 		}
@@ -563,13 +563,13 @@ func dup3(t *kernel.Task, oldfd, newfd int32, flags uint32) (uintptr, *kernel.Sy
 		return 0, nil, linuxerr.EINVAL
 	}
 
-	file := t.GetFileVFS2(oldfd)
+	file := t.GetFile(oldfd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
-	err := t.NewFDAtVFS2(newfd, file, kernel.FDFlags{
+	err := t.NewFDAt(newfd, file, kernel.FDFlags{
 		CloseOnExec: flags&linux.O_CLOEXEC != 0,
 	})
 	if err != nil {
@@ -583,7 +583,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	fd := args[0].Int()
 	cmd := args[1].Int()
 
-	file, flags := t.FDTable().GetVFS2(fd)
+	file, flags := t.FDTable().Get(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
@@ -601,7 +601,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	switch cmd {
 	case linux.F_DUPFD, linux.F_DUPFD_CLOEXEC:
 		minfd := args[2].Int()
-		fd, err := t.NewFDFromVFS2(minfd, file, kernel.FDFlags{
+		fd, err := t.NewFDFrom(minfd, file, kernel.FDFlags{
 			CloseOnExec: cmd == linux.F_DUPFD_CLOEXEC,
 		})
 		if err != nil {
@@ -612,7 +612,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		return uintptr(flags.ToLinuxFDFlags()), nil, nil
 	case linux.F_SETFD:
 		flags := args[2].Uint()
-		err := t.FDTable().SetFlagsVFS2(t, fd, kernel.FDFlags{
+		err := t.FDTable().SetFlags(t, fd, kernel.FDFlags{
 			CloseOnExec: flags&linux.FD_CLOEXEC != 0,
 		})
 		return 0, nil, err
@@ -694,7 +694,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		}
 		return uintptr(a.(*fasync.FileAsync).Signal()), nil, nil
 	case linux.F_SETSIG:
-		a, err := file.SetAsyncHandler(fasync.NewVFS2(int(fd)))
+		a, err := file.SetAsyncHandler(fasync.New(int(fd)))
 		if err != nil {
 			return 0, nil, err
 		}
@@ -742,7 +742,7 @@ func setAsyncOwner(t *kernel.Task, fd int, file *vfs.FileDescription, ownerType,
 		return linuxerr.EINVAL
 	}
 
-	a, err := file.SetAsyncHandler(fasync.NewVFS2(fd))
+	a, err := file.SetAsyncHandler(fasync.New(fd))
 	if err != nil {
 		return err
 	}
@@ -867,7 +867,7 @@ func Fadvise64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 		return 0, nil, linuxerr.EINVAL
 	}
 
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
@@ -1115,7 +1115,7 @@ func Unlinkat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 }
 
 func setstatat(t *kernel.Task, dirfd int32, path fspath.Path, shouldAllowEmptyPath shouldAllowEmptyPath, shouldFollowFinalSymlink shouldFollowFinalSymlink, opts *vfs.SetStatOptions) error {
-	root := t.FSContext().RootDirectoryVFS2()
+	root := t.FSContext().RootDirectory()
 	defer root.DecRef(t)
 	start := root
 	if !path.Absolute {
@@ -1123,10 +1123,10 @@ func setstatat(t *kernel.Task, dirfd int32, path fspath.Path, shouldAllowEmptyPa
 			return linuxerr.ENOENT
 		}
 		if dirfd == linux.AT_FDCWD {
-			start = t.FSContext().WorkingDirectoryVFS2()
+			start = t.FSContext().WorkingDirectory()
 			defer start.DecRef(t)
 		} else {
-			dirfile := t.GetFileVFS2(dirfd)
+			dirfile := t.GetFile(dirfd)
 			if dirfile == nil {
 				return linuxerr.EBADF
 			}
@@ -1194,7 +1194,7 @@ func Ftruncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 		return 0, nil, linuxerr.EINVAL
 	}
 
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
@@ -1291,7 +1291,7 @@ func Fchown(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	owner := args[1].Int()
 	group := args[2].Int()
 
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
@@ -1340,7 +1340,7 @@ func Fchmod(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	fd := args[0].Int()
 	mode := args[1].ModeT()
 
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
@@ -1588,7 +1588,7 @@ func Fallocate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	offset := args[2].Int64()
 	length := args[3].Int64()
 
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
@@ -1625,7 +1625,7 @@ func Flock(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	fd := args[0].Int()
 	operation := args[1].Int()
 
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		// flock(2): EBADF fd is not an open file descriptor.
 		return 0, nil, linuxerr.EBADF
@@ -1687,7 +1687,7 @@ func MemfdCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 	}
 	defer file.DecRef(t)
 
-	fd, err := t.NewFDFromVFS2(0, file, kernel.FDFlags{
+	fd, err := t.NewFDFrom(0, file, kernel.FDFlags{
 		CloseOnExec: cloExec,
 	})
 	if err != nil {

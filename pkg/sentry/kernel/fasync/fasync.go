@@ -18,7 +18,6 @@ package fasync
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -41,17 +40,9 @@ var bandTable = map[waiter.EventMask]int64{
 	waiter.EventHUp: linux.EPOLLHUP | linux.EPOLLERR,
 }
 
-// New returns a function that creates a new fs.FileAsync with the given file
-// descriptor.
-func New(fd int) func() fs.FileAsync {
-	return func() fs.FileAsync {
-		return &FileAsync{fd: fd}
-	}
-}
-
-// NewVFS2 returns a function that creates a new vfs.FileAsync with the given
+// New returns a function that creates a new vfs.FileAsync with the given
 // file descriptor.
-func NewVFS2(fd int) func() vfs.FileAsync {
+func New(fd int) func() vfs.FileAsync {
 	return func() vfs.FileAsync {
 		return &FileAsync{fd: fd}
 	}

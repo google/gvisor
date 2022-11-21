@@ -176,14 +176,11 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	rseqAddr := hostarch.Addr(0)
 	rseqSignature := uint32(0)
 	if args.Flags&linux.CLONE_THREAD == 0 {
-		if tg.mounts != nil {
-			tg.mounts.IncRef()
-		}
 		sh := t.tg.signalHandlers
 		if args.Flags&linux.CLONE_SIGHAND == 0 {
 			sh = sh.Fork()
 		}
-		tg = t.k.NewThreadGroup(tg.mounts, pidns, sh, linux.Signal(args.ExitSignal), tg.limits.GetCopy())
+		tg = t.k.NewThreadGroup(pidns, sh, linux.Signal(args.ExitSignal), tg.limits.GetCopy())
 		tg.oomScoreAdj = atomicbitops.FromInt32(t.tg.oomScoreAdj.Load())
 		rseqAddr = t.rseqAddr
 		rseqSignature = t.rseqSignature

@@ -44,7 +44,7 @@ func Eventfd2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	}
 	defer eventfd.DecRef(t)
 
-	fd, err := t.NewFDFromVFS2(0, eventfd, kernel.FDFlags{
+	fd, err := t.NewFDFrom(0, eventfd, kernel.FDFlags{
 		CloseOnExec: flags&linux.EFD_CLOEXEC != 0,
 	})
 	if err != nil {

@@ -206,17 +206,17 @@ var _ dynamicInode = (*netUnixData)(nil)
 func (n *netUnixData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	buf.WriteString("Num       RefCount Protocol Flags    Type St Inode Path\n")
 	for _, se := range n.kernel.ListSockets() {
-		s := se.SockVFS2
+		s := se.Sock
 		if !s.TryIncRef() {
 			// Racing with socket destruction, this is ok.
 			continue
 		}
-		if family, _, _ := s.Impl().(socket.SocketVFS2).Type(); family != linux.AF_UNIX {
+		if family, _, _ := s.Impl().(socket.Socket).Type(); family != linux.AF_UNIX {
 			s.DecRef(ctx)
 			// Not a unix socket.
 			continue
 		}
-		sops := s.Impl().(*unix.SocketVFS2)
+		sops := s.Impl().(*unix.Socket)
 
 		addr, err := sops.Endpoint().GetLocalAddress()
 		if err != nil {
@@ -263,13 +263,13 @@ func (n *netUnixData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		//
 		// For now, we always redact this pointer.
 		fmt.Fprintf(buf, "%#016p: %08X %08X %08X %04X %02X %8d",
-			(*unix.SocketOperations)(nil), // Num, pointer to kernel socket struct.
-			s.ReadRefs()-1,                // RefCount, don't count our own ref.
-			0,                             // Protocol, always 0 for UDS.
-			sockFlags,                     // Flags.
-			sops.Endpoint().Type(),        // Type.
-			sops.State(),                  // State.
-			ino,                           // Inode.
+			(*unix.Socket)(nil),    // Num, pointer to kernel socket struct.
+			s.ReadRefs()-1,         // RefCount, don't count our own ref.
+			0,                      // Protocol, always 0 for UDS.
+			sockFlags,              // Flags.
+			sops.Endpoint().Type(), // Type.
+			sops.State(),           // State.
+			ino,                    // Inode.
 		)
 
 		// Path
@@ -351,12 +351,12 @@ func commonGenerateTCP(ctx context.Context, buf *bytes.Buffer, k *kernel.Kernel,
 	t := kernel.TaskFromContext(ctx)
 
 	for _, se := range k.ListSockets() {
-		s := se.SockVFS2
+		s := se.Sock
 		if !s.TryIncRef() {
 			// Racing with socket destruction, this is ok.
 			continue
 		}
-		sops, ok := s.Impl().(socket.SocketVFS2)
+		sops, ok := s.Impl().(socket.Socket)
 		if !ok {
 			panic(fmt.Sprintf("Found non-socket file in socket table: %+v", s))
 		}
@@ -516,12 +516,12 @@ func (d *netUDPData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	buf.WriteString("  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode ref pointer drops             \n")
 
 	for _, se := range d.kernel.ListSockets() {
-		s := se.SockVFS2
+		s := se.Sock
 		if !s.TryIncRef() {
 			// Racing with socket destruction, this is ok.
 			continue
 		}
-		sops, ok := s.Impl().(socket.SocketVFS2)
+		sops, ok := s.Impl().(socket.Socket)
 		if !ok {
 			panic(fmt.Sprintf("Found non-socket file in socket table: %+v", s))
 		}

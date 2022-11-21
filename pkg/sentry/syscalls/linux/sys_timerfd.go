@@ -55,7 +55,7 @@ func TimerfdCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 		return 0, nil, err
 	}
 	defer file.DecRef(t)
-	fd, err := t.NewFDFromVFS2(0, file, kernel.FDFlags{
+	fd, err := t.NewFDFrom(0, file, kernel.FDFlags{
 		CloseOnExec: flags&linux.TFD_CLOEXEC != 0,
 	})
 	if err != nil {
@@ -75,7 +75,7 @@ func TimerfdSettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 		return 0, nil, linuxerr.EINVAL
 	}
 
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
@@ -109,7 +109,7 @@ func TimerfdGettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 	fd := args[0].Int()
 	curValAddr := args[1].Pointer()
 
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}

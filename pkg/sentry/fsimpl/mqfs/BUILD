@@ -30,7 +30,6 @@ go_library(
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/refsvfs2",
-        "//pkg/sentry/fs",
         "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/ipc",

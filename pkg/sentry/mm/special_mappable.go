@@ -20,7 +20,6 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
-	"gvisor.dev/gvisor/pkg/sentry/usage"
 )
 
 // SpecialMappable implements memmap.MappingIdentity and memmap.Mappable with
@@ -131,28 +130,4 @@ func (m *SpecialMappable) FileRange() memmap.FileRange {
 // Length returns the length of the SpecialMappable.
 func (m *SpecialMappable) Length() uint64 {
 	return m.fr.Length()
-}
-
-// NewSharedAnonMappable returns a SpecialMappable that implements the
-// semantics of mmap(MAP_SHARED|MAP_ANONYMOUS) and mappings of /dev/zero.
-//
-// TODO(gvisor.dev/issue/1624): Linux uses an ephemeral file created by
-// mm/shmem.c:shmem_zero_setup(), and VFS2 does something analogous. VFS1 uses
-// a SpecialMappable instead, incorrectly getting device and inode IDs of zero
-// and causing memory for shared anonymous mappings to be allocated up-front
-// instead of on first touch; this is to avoid exacerbating the fs.MountSource
-// leak (b/143656263). Delete this function along with VFS1.
-func NewSharedAnonMappable(length uint64, mfp pgalloc.MemoryFileProvider) (*SpecialMappable, error) {
-	if length == 0 {
-		return nil, linuxerr.EINVAL
-	}
-	alignedLen, ok := hostarch.Addr(length).RoundUp()
-	if !ok {
-		return nil, linuxerr.EINVAL
-	}
-	fr, err := mfp.MemoryFile().Allocate(uint64(alignedLen), pgalloc.AllocOpts{Kind: usage.Anonymous})
-	if err != nil {
-		return nil, err
-	}
-	return NewSpecialMappable("/dev/zero (deleted)", mfp, fr), nil
 }
