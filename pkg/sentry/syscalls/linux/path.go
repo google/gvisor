@@ -37,7 +37,7 @@ type taskPathOperation struct {
 }
 
 func getTaskPathOperation(t *kernel.Task, dirfd int32, path fspath.Path, shouldAllowEmptyPath shouldAllowEmptyPath, shouldFollowFinalSymlink shouldFollowFinalSymlink) (taskPathOperation, error) {
-	root := t.FSContext().RootDirectoryVFS2()
+	root := t.FSContext().RootDirectory()
 	start := root
 	haveStartRef := false
 	if !path.Absolute {
@@ -46,10 +46,10 @@ func getTaskPathOperation(t *kernel.Task, dirfd int32, path fspath.Path, shouldA
 			return taskPathOperation{}, linuxerr.ENOENT
 		}
 		if dirfd == linux.AT_FDCWD {
-			start = t.FSContext().WorkingDirectoryVFS2()
+			start = t.FSContext().WorkingDirectory()
 			haveStartRef = true
 		} else {
-			dirfile := t.GetFileVFS2(dirfd)
+			dirfile := t.GetFile(dirfd)
 			if dirfile == nil {
 				root.DecRef(t)
 				return taskPathOperation{}, linuxerr.EBADF

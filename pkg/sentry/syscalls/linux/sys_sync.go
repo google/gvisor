@@ -30,7 +30,7 @@ func Sync(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 func Syncfs(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
@@ -47,7 +47,7 @@ func Syncfs(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 func Fsync(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
@@ -77,7 +77,7 @@ func SyncFileRange(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 		return 0, nil, linuxerr.EINVAL
 	}
 
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}

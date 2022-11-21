@@ -27,11 +27,11 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
 // SCMCredentials represents a SCM_CREDENTIALS socket control message.
@@ -42,111 +42,6 @@ type SCMCredentials interface {
 	// and gid.
 	Credentials(t *kernel.Task) (kernel.ThreadID, auth.UID, auth.GID)
 }
-
-// LINT.IfChange
-
-// SCMRights represents a SCM_RIGHTS socket control message.
-type SCMRights interface {
-	transport.RightsControlMessage
-
-	// Files returns up to max RightsFiles.
-	//
-	// Returned files are consumed and ownership is transferred to the caller.
-	// Subsequent calls to Files will return the next files.
-	Files(ctx context.Context, max int) (rf RightsFiles, truncated bool)
-}
-
-// RightsFiles represents a SCM_RIGHTS socket control message. A reference is
-// maintained for each fs.File and is release either when an FD is created or
-// when the Release method is called.
-//
-// +stateify savable
-type RightsFiles []*fs.File
-
-// NewSCMRights creates a new SCM_RIGHTS socket control message representation
-// using local sentry FDs.
-func NewSCMRights(t *kernel.Task, fds []primitive.Int32) (SCMRights, error) {
-	files := make(RightsFiles, 0, len(fds))
-	for _, fd := range fds {
-		file := t.GetFile(int32(fd))
-		if file == nil {
-			files.Release(t)
-			return nil, linuxerr.EBADF
-		}
-		files = append(files, file)
-	}
-	return &files, nil
-}
-
-// Files implements SCMRights.Files.
-func (fs *RightsFiles) Files(_ context.Context, max int) (RightsFiles, bool) {
-	n := max
-	var trunc bool
-	if l := len(*fs); n > l {
-		n = l
-	} else if n < l {
-		trunc = true
-	}
-	rf := (*fs)[:n]
-	*fs = (*fs)[n:]
-	return rf, trunc
-}
-
-// Clone implements transport.RightsControlMessage.Clone.
-func (fs *RightsFiles) Clone() transport.RightsControlMessage {
-	nfs := append(RightsFiles(nil), *fs...)
-	for _, nf := range nfs {
-		nf.IncRef()
-	}
-	return &nfs
-}
-
-// Release implements transport.RightsControlMessage.Release.
-func (fs *RightsFiles) Release(ctx context.Context) {
-	for _, f := range *fs {
-		f.DecRef(ctx)
-	}
-	*fs = nil
-}
-
-// rightsFDs gets up to the specified maximum number of FDs.
-func rightsFDs(t *kernel.Task, rights SCMRights, cloexec bool, max int) ([]int32, bool) {
-	files, trunc := rights.Files(t, max)
-	fds := make([]int32, 0, len(files))
-	for i := 0; i < max && len(files) > 0; i++ {
-		fd, err := t.NewFDFrom(0, files[0], kernel.FDFlags{
-			CloseOnExec: cloexec,
-		})
-		files[0].DecRef(t)
-		files = files[1:]
-		if err != nil {
-			t.Warningf("Error inserting FD: %v", err)
-			// This is what Linux does.
-			break
-		}
-
-		fds = append(fds, fd)
-	}
-	return fds, trunc
-}
-
-// PackRights packs as many FDs as will fit into the unused capacity of buf.
-func PackRights(t *kernel.Task, rights SCMRights, cloexec bool, buf []byte, flags int) ([]byte, int) {
-	maxFDs := (cap(buf) - len(buf) - linux.SizeOfControlMessageHeader) / 4
-	// Linux does not return any FDs if none fit.
-	if maxFDs <= 0 {
-		flags |= linux.MSG_CTRUNC
-		return buf, flags
-	}
-	fds, trunc := rightsFDs(t, rights, cloexec, maxFDs)
-	if trunc {
-		flags |= linux.MSG_CTRUNC
-	}
-	align := t.Arch().Width()
-	return putCmsg(buf, flags, linux.SCM_RIGHTS, align, fds)
-}
-
-// LINT.ThenChange(./control_vfs2.go)
 
 // scmCredentials represents an SCM_CREDENTIALS socket control message.
 //
@@ -712,7 +607,7 @@ func Parse(t *kernel.Task, socketOrEndpoint any, buf []byte, width uint) (socket
 	}
 
 	if len(fds) > 0 {
-		rights, err := NewSCMRightsVFS2(t, fds)
+		rights, err := NewSCMRights(t, fds)
 		if err != nil {
 			return socket.ControlMessages{}, err
 		}
@@ -741,14 +636,112 @@ func MakeCreds(t *kernel.Task) SCMCredentials {
 	return &scmCredentials{t, tcred.EffectiveKUID, tcred.EffectiveKGID}
 }
 
-// LINT.IfChange
-
 // New creates default control messages if needed.
-func New(t *kernel.Task, socketOrEndpoint any, rights SCMRights) transport.ControlMessages {
+func New(t *kernel.Task, socketOrEndpoint any) transport.ControlMessages {
 	return transport.ControlMessages{
 		Credentials: makeCreds(t, socketOrEndpoint),
-		Rights:      rights,
 	}
 }
 
-// LINT.ThenChange(./control_vfs2.go)
+// SCMRights represents a SCM_RIGHTS socket control message.
+//
+// +stateify savable
+type SCMRights interface {
+	transport.RightsControlMessage
+
+	// Files returns up to max RightsFiles.
+	//
+	// Returned files are consumed and ownership is transferred to the caller.
+	// Subsequent calls to Files will return the next files.
+	Files(ctx context.Context, max int) (rf RightsFiles, truncated bool)
+}
+
+// RightsFiles represents a SCM_RIGHTS socket control message. A reference
+// is maintained for each vfs.FileDescription and is release either when an FD
+// is created or when the Release method is called.
+//
+// +stateify savable
+type RightsFiles []*vfs.FileDescription
+
+// NewSCMRights creates a new SCM_RIGHTS socket control message
+// representation using local sentry FDs.
+func NewSCMRights(t *kernel.Task, fds []primitive.Int32) (SCMRights, error) {
+	files := make(RightsFiles, 0, len(fds))
+	for _, fd := range fds {
+		file := t.GetFile(int32(fd))
+		if file == nil {
+			files.Release(t)
+			return nil, linuxerr.EBADF
+		}
+		files = append(files, file)
+	}
+	return &files, nil
+}
+
+// Files implements SCMRights.Files.
+func (fs *RightsFiles) Files(ctx context.Context, max int) (RightsFiles, bool) {
+	n := max
+	var trunc bool
+	if l := len(*fs); n > l {
+		n = l
+	} else if n < l {
+		trunc = true
+	}
+	rf := (*fs)[:n]
+	*fs = (*fs)[n:]
+	return rf, trunc
+}
+
+// Clone implements transport.RightsControlMessage.Clone.
+func (fs *RightsFiles) Clone() transport.RightsControlMessage {
+	nfs := append(RightsFiles(nil), *fs...)
+	for _, nf := range nfs {
+		nf.IncRef()
+	}
+	return &nfs
+}
+
+// Release implements transport.RightsControlMessage.Release.
+func (fs *RightsFiles) Release(ctx context.Context) {
+	for _, f := range *fs {
+		f.DecRef(ctx)
+	}
+	*fs = nil
+}
+
+// rightsFDs gets up to the specified maximum number of FDs.
+func rightsFDs(t *kernel.Task, rights SCMRights, cloexec bool, max int) ([]int32, bool) {
+	files, trunc := rights.Files(t, max)
+	fds := make([]int32, 0, len(files))
+	for i := 0; i < max && len(files) > 0; i++ {
+		fd, err := t.NewFDFrom(0, files[0], kernel.FDFlags{
+			CloseOnExec: cloexec,
+		})
+		files[0].DecRef(t)
+		files = files[1:]
+		if err != nil {
+			t.Warningf("Error inserting FD: %v", err)
+			// This is what Linux does.
+			break
+		}
+
+		fds = append(fds, int32(fd))
+	}
+	return fds, trunc
+}
+
+// PackRights packs as many FDs as will fit into the unused capacity of buf.
+func PackRights(t *kernel.Task, rights SCMRights, cloexec bool, buf []byte, flags int) ([]byte, int) {
+	maxFDs := (cap(buf) - len(buf) - linux.SizeOfControlMessageHeader) / 4
+	// Linux does not return any FDs if none fit.
+	if maxFDs <= 0 {
+		flags |= linux.MSG_CTRUNC
+		return buf, flags
+	}
+	fds, trunc := rightsFDs(t, rights, cloexec, maxFDs)
+	if trunc {
+		flags |= linux.MSG_CTRUNC
+	}
+	align := t.Arch().Width()
+	return putCmsg(buf, flags, linux.SCM_RIGHTS, align, fds)
+}

@@ -20,7 +20,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/cpuid"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/ipc"
@@ -88,18 +87,12 @@ func (t *Task) contextValue(key any, isTaskGoroutine bool) any {
 		return t.creds.Load()
 	case auth.CtxThreadGroupID:
 		return int32(t.tg.ID())
-	case fs.CtxRoot:
-		if !isTaskGoroutine {
-			t.mu.Lock()
-			defer t.mu.Unlock()
-		}
-		return t.fsContext.RootDirectory()
 	case vfs.CtxRoot:
 		if !isTaskGoroutine {
 			t.mu.Lock()
 			defer t.mu.Unlock()
 		}
-		return t.fsContext.RootDirectoryVFS2()
+		return t.fsContext.RootDirectory()
 	case vfs.CtxMountNamespace:
 		if !isTaskGoroutine {
 			t.mu.Lock()
@@ -107,8 +100,6 @@ func (t *Task) contextValue(key any, isTaskGoroutine bool) any {
 		}
 		t.mountNamespace.IncRef()
 		return t.mountNamespace
-	case fs.CtxDirentCacheLimiter:
-		return t.k.DirentCacheLimiter
 	case inet.CtxStack:
 		return t.NetworkContext()
 	case ktime.CtxRealtimeClock:

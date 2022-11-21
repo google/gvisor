@@ -281,7 +281,7 @@ func submitCallback(t *kernel.Task, id uint64, cb *linux.IOCallback, cbAddr host
 		return linuxerr.EINVAL
 	}
 
-	fd := t.GetFileVFS2(cb.FD)
+	fd := t.GetFile(cb.FD)
 	if fd == nil {
 		return linuxerr.EBADF
 	}
@@ -290,7 +290,7 @@ func submitCallback(t *kernel.Task, id uint64, cb *linux.IOCallback, cbAddr host
 	// Was there an eventFD? Extract it.
 	var eventFD *vfs.FileDescription
 	if cb.Flags&linux.IOCB_FLAG_RESFD != 0 {
-		eventFD = t.GetFileVFS2(cb.ResFD)
+		eventFD = t.GetFile(cb.ResFD)
 		if eventFD == nil {
 			return linuxerr.EBADF
 		}

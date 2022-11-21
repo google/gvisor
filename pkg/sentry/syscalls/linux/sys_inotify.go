@@ -37,7 +37,7 @@ func InotifyInit1(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 	}
 	defer ino.DecRef(t)
 
-	fd, err := t.NewFDFromVFS2(0, ino, kernel.FDFlags{
+	fd, err := t.NewFDFrom(0, ino, kernel.FDFlags{
 		CloseOnExec: flags&linux.IN_CLOEXEC != 0,
 	})
 
@@ -57,7 +57,7 @@ func InotifyInit(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 // fdToInotify resolves an fd to an inotify object. If successful, the file will
 // have an extra ref and the caller is responsible for releasing the ref.
 func fdToInotify(t *kernel.Task, fd int32) (*vfs.Inotify, *vfs.FileDescription, error) {
-	f := t.GetFileVFS2(fd)
+	f := t.GetFile(fd)
 	if f == nil {
 		// Invalid fd.
 		return nil, nil, linuxerr.EBADF

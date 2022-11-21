@@ -6,14 +6,6 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (fs *RightsFiles) StateTypeName() string {
-	return "pkg/sentry/socket/control.RightsFiles"
-}
-
-func (fs *RightsFiles) StateFields() []string {
-	return nil
-}
-
 func (c *scmCredentials) StateTypeName() string {
 	return "pkg/sentry/socket/control.scmCredentials"
 }
@@ -45,16 +37,15 @@ func (c *scmCredentials) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &c.kgid)
 }
 
-func (fs *RightsFilesVFS2) StateTypeName() string {
-	return "pkg/sentry/socket/control.RightsFilesVFS2"
+func (fs *RightsFiles) StateTypeName() string {
+	return "pkg/sentry/socket/control.RightsFiles"
 }
 
-func (fs *RightsFilesVFS2) StateFields() []string {
+func (fs *RightsFiles) StateFields() []string {
 	return nil
 }
 
 func init() {
-	state.Register((*RightsFiles)(nil))
 	state.Register((*scmCredentials)(nil))
-	state.Register((*RightsFilesVFS2)(nil))
+	state.Register((*RightsFiles)(nil))
 }

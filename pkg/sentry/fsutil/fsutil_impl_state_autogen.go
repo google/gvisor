@@ -7,7 +7,7 @@ import (
 )
 
 func (s *DirtySet) StateTypeName() string {
-	return "pkg/sentry/fs/fsutil.DirtySet"
+	return "pkg/sentry/fsutil.DirtySet"
 }
 
 func (s *DirtySet) StateFields() []string {
@@ -34,7 +34,7 @@ func (s *DirtySet) StateLoad(stateSourceObject state.Source) {
 }
 
 func (n *Dirtynode) StateTypeName() string {
-	return "pkg/sentry/fs/fsutil.Dirtynode"
+	return "pkg/sentry/fsutil.Dirtynode"
 }
 
 func (n *Dirtynode) StateFields() []string {
@@ -80,7 +80,7 @@ func (n *Dirtynode) StateLoad(stateSourceObject state.Source) {
 }
 
 func (d *DirtySegmentDataSlices) StateTypeName() string {
-	return "pkg/sentry/fs/fsutil.DirtySegmentDataSlices"
+	return "pkg/sentry/fsutil.DirtySegmentDataSlices"
 }
 
 func (d *DirtySegmentDataSlices) StateFields() []string {
@@ -111,7 +111,7 @@ func (d *DirtySegmentDataSlices) StateLoad(stateSourceObject state.Source) {
 }
 
 func (s *FileRangeSet) StateTypeName() string {
-	return "pkg/sentry/fs/fsutil.FileRangeSet"
+	return "pkg/sentry/fsutil.FileRangeSet"
 }
 
 func (s *FileRangeSet) StateFields() []string {
@@ -138,7 +138,7 @@ func (s *FileRangeSet) StateLoad(stateSourceObject state.Source) {
 }
 
 func (n *FileRangenode) StateTypeName() string {
-	return "pkg/sentry/fs/fsutil.FileRangenode"
+	return "pkg/sentry/fsutil.FileRangenode"
 }
 
 func (n *FileRangenode) StateFields() []string {
@@ -184,7 +184,7 @@ func (n *FileRangenode) StateLoad(stateSourceObject state.Source) {
 }
 
 func (f *FileRangeSegmentDataSlices) StateTypeName() string {
-	return "pkg/sentry/fs/fsutil.FileRangeSegmentDataSlices"
+	return "pkg/sentry/fsutil.FileRangeSegmentDataSlices"
 }
 
 func (f *FileRangeSegmentDataSlices) StateFields() []string {
@@ -215,7 +215,7 @@ func (f *FileRangeSegmentDataSlices) StateLoad(stateSourceObject state.Source) {
 }
 
 func (s *FrameRefSet) StateTypeName() string {
-	return "pkg/sentry/fs/fsutil.FrameRefSet"
+	return "pkg/sentry/fsutil.FrameRefSet"
 }
 
 func (s *FrameRefSet) StateFields() []string {
@@ -242,7 +242,7 @@ func (s *FrameRefSet) StateLoad(stateSourceObject state.Source) {
 }
 
 func (n *FrameRefnode) StateTypeName() string {
-	return "pkg/sentry/fs/fsutil.FrameRefnode"
+	return "pkg/sentry/fsutil.FrameRefnode"
 }
 
 func (n *FrameRefnode) StateFields() []string {
@@ -288,7 +288,7 @@ func (n *FrameRefnode) StateLoad(stateSourceObject state.Source) {
 }
 
 func (f *FrameRefSegmentDataSlices) StateTypeName() string {
-	return "pkg/sentry/fs/fsutil.FrameRefSegmentDataSlices"
+	return "pkg/sentry/fsutil.FrameRefSegmentDataSlices"
 }
 
 func (f *FrameRefSegmentDataSlices) StateFields() []string {

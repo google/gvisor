@@ -49,7 +49,7 @@ func pipe2(t *kernel.Task, addr hostarch.Addr, flags int32) error {
 	defer r.DecRef(t)
 	defer w.DecRef(t)
 
-	fds, err := t.NewFDsVFS2(0, []*vfs.FileDescription{r, w}, kernel.FDFlags{
+	fds, err := t.NewFDs(0, []*vfs.FileDescription{r, w}, kernel.FDFlags{
 		CloseOnExec: flags&linux.O_CLOEXEC != 0,
 	})
 	if err != nil {
@@ -57,7 +57,7 @@ func pipe2(t *kernel.Task, addr hostarch.Addr, flags int32) error {
 	}
 	if _, err := primitive.CopyInt32SliceOut(t, addr, fds); err != nil {
 		for _, fd := range fds {
-			if _, file := t.FDTable().Remove(t, fd); file != nil {
+			if file := t.FDTable().Remove(t, fd); file != nil {
 				file.DecRef(t)
 			}
 		}

@@ -15,7 +15,7 @@
 // Package kernfs provides the tools to implement inode-based filesystems.
 // Kernfs has two main features:
 //
-//  1. The Inode interface, which maps VFS2's path-based filesystem operations to
+//  1. The Inode interface, which maps VFS's path-based filesystem operations to
 //     specific filesystem nodes. Kernfs uses the Inode interface to provide a
 //     blanket implementation for the vfs.FilesystemImpl. Kernfs also serves as
 //     the synchronization mechanism for all filesystem operations by holding a

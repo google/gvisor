@@ -14,6 +14,7 @@
 
 // Package fsbridge provides common interfaces to bridge between VFS1 and VFS2
 // files.
+// TODO(gvisor.dev/issue/1624): Delete this package.
 package fsbridge
 
 import (

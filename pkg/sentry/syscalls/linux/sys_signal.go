@@ -531,7 +531,7 @@ func sharedSignalfd(t *kernel.Task, fd int32, sigset hostarch.Addr, sigsetsize u
 	//
 	// The spec indicates that this should adjust the mask.
 	if fd != -1 {
-		file := t.GetFileVFS2(fd)
+		file := t.GetFile(fd)
 		if file == nil {
 			return 0, nil, linuxerr.EBADF
 		}
@@ -561,7 +561,7 @@ func sharedSignalfd(t *kernel.Task, fd int32, sigset hostarch.Addr, sigsetsize u
 	defer file.DecRef(t)
 
 	// Create a new descriptor.
-	fd, err = t.NewFDFromVFS2(0, file, kernel.FDFlags{
+	fd, err = t.NewFDFrom(0, file, kernel.FDFlags{
 		CloseOnExec: flags&linux.SFD_CLOEXEC != 0,
 	})
 	if err != nil {

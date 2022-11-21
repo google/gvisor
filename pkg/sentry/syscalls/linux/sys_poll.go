@@ -66,7 +66,7 @@ func initReadiness(t *kernel.Task, pfd *linux.PollFD, state *pollState, ch chan 
 		return nil
 	}
 
-	file := t.GetFileVFS2(pfd.FD)
+	file := t.GetFile(pfd.FD)
 	if file == nil {
 		pfd.REvents = linux.POLLNVAL
 		return nil
@@ -270,7 +270,7 @@ func doSelect(t *kernel.Task, nfds int, readFDs, writeFDs, exceptFDs hostarch.Ad
 				// immediately to ensure we don't leak. Note, another thread
 				// might be about to close fd. This is racy, but that's
 				// OK. Linux is racy in the same way.
-				file := t.GetFileVFS2(fd)
+				file := t.GetFile(fd)
 				if file == nil {
 					return 0, linuxerr.EBADF
 				}

@@ -1024,7 +1024,7 @@ func (s *cwdSymlink) Getlink(ctx context.Context, _ *vfs.Mount) (vfs.VirtualDent
 	if err := checkTaskState(s.task); err != nil {
 		return vfs.VirtualDentry{}, "", err
 	}
-	cwd := s.task.FSContext().WorkingDirectoryVFS2()
+	cwd := s.task.FSContext().WorkingDirectory()
 	if !cwd.Ok() {
 		// It could have raced with process deletion.
 		return vfs.VirtualDentry{}, "", linuxerr.ESRCH
@@ -1085,7 +1085,7 @@ func (s *rootSymlink) Getlink(ctx context.Context, _ *vfs.Mount) (vfs.VirtualDen
 	if err := checkTaskState(s.task); err != nil {
 		return vfs.VirtualDentry{}, "", err
 	}
-	root := s.task.FSContext().RootDirectoryVFS2()
+	root := s.task.FSContext().RootDirectory()
 	if !root.Ok() {
 		// It could have raced with process deletion.
 		return vfs.VirtualDentry{}, "", linuxerr.ESRCH
@@ -1116,7 +1116,7 @@ func (i *mountInfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		// The task has been destroyed. Nothing to show here.
 		return nil
 	}
-	rootDir := fsctx.RootDirectoryVFS2()
+	rootDir := fsctx.RootDirectory()
 	if !rootDir.Ok() {
 		// Root has been destroyed. Don't try to read mounts.
 		return nil
@@ -1148,7 +1148,7 @@ func (i *mountsData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		// The task has been destroyed. Nothing to show here.
 		return nil
 	}
-	rootDir := fsctx.RootDirectoryVFS2()
+	rootDir := fsctx.RootDirectory()
 	if !rootDir.Ok() {
 		// Root has been destroyed. Don't try to read mounts.
 		return nil

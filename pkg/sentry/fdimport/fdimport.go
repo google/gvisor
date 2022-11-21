@@ -81,7 +81,7 @@ func Import(ctx context.Context, fdTable *kernel.FDTable, console bool, uid auth
 			hostFD.Release() // FD is transfered to host FD.
 		}
 
-		if err := fdTable.NewFDAtVFS2(ctx, int32(appFD), appFile, kernel.FDFlags{}); err != nil {
+		if err := fdTable.NewFDAt(ctx, int32(appFD), appFile, kernel.FDFlags{}); err != nil {
 			return nil, err
 		}
 	}

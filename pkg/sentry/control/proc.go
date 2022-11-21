@@ -168,7 +168,7 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		PIDNamespace:            pidns,
 	}
 	if initArgs.MountNamespace != nil {
-		// initArgs must hold a reference on MountNamespaceVFS2, which will
+		// initArgs must hold a reference on MountNamespace, which will
 		// be donated to the new process in CreateProcess.
 		initArgs.MountNamespace.IncRef()
 	}
@@ -180,7 +180,7 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		// Set initArgs so that 'ctx' returns the namespace.
 		//
 		// Add a reference to the namespace, which is transferred to the new process.
-		initArgs.MountNamespace = proc.Kernel.GlobalInit().Leader().MountNamespaceVFS2()
+		initArgs.MountNamespace = proc.Kernel.GlobalInit().Leader().MountNamespace()
 		initArgs.MountNamespace.IncRef()
 	}
 	resolved, err := user.ResolveExecutablePath(ctx, &initArgs)

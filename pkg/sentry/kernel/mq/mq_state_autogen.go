@@ -96,8 +96,9 @@ func (q *Queue) StateTypeName() string {
 
 func (q *Queue) StateFields() []string {
 	return []string{
-		"owner",
-		"perms",
+		"ownerUID",
+		"ownerGID",
+		"mode",
 		"queue",
 		"messages",
 		"subscriber",
@@ -113,30 +114,32 @@ func (q *Queue) beforeSave() {}
 // +checklocksignore
 func (q *Queue) StateSave(stateSinkObject state.Sink) {
 	q.beforeSave()
-	stateSinkObject.Save(0, &q.owner)
-	stateSinkObject.Save(1, &q.perms)
-	stateSinkObject.Save(2, &q.queue)
-	stateSinkObject.Save(3, &q.messages)
-	stateSinkObject.Save(4, &q.subscriber)
-	stateSinkObject.Save(5, &q.messageCount)
-	stateSinkObject.Save(6, &q.maxMessageCount)
-	stateSinkObject.Save(7, &q.maxMessageSize)
-	stateSinkObject.Save(8, &q.byteCount)
+	stateSinkObject.Save(0, &q.ownerUID)
+	stateSinkObject.Save(1, &q.ownerGID)
+	stateSinkObject.Save(2, &q.mode)
+	stateSinkObject.Save(3, &q.queue)
+	stateSinkObject.Save(4, &q.messages)
+	stateSinkObject.Save(5, &q.subscriber)
+	stateSinkObject.Save(6, &q.messageCount)
+	stateSinkObject.Save(7, &q.maxMessageCount)
+	stateSinkObject.Save(8, &q.maxMessageSize)
+	stateSinkObject.Save(9, &q.byteCount)
 }
 
 func (q *Queue) afterLoad() {}
 
 // +checklocksignore
 func (q *Queue) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &q.owner)
-	stateSourceObject.Load(1, &q.perms)
-	stateSourceObject.Load(2, &q.queue)
-	stateSourceObject.Load(3, &q.messages)
-	stateSourceObject.Load(4, &q.subscriber)
-	stateSourceObject.Load(5, &q.messageCount)
-	stateSourceObject.Load(6, &q.maxMessageCount)
-	stateSourceObject.Load(7, &q.maxMessageSize)
-	stateSourceObject.Load(8, &q.byteCount)
+	stateSourceObject.Load(0, &q.ownerUID)
+	stateSourceObject.Load(1, &q.ownerGID)
+	stateSourceObject.Load(2, &q.mode)
+	stateSourceObject.Load(3, &q.queue)
+	stateSourceObject.Load(4, &q.messages)
+	stateSourceObject.Load(5, &q.subscriber)
+	stateSourceObject.Load(6, &q.messageCount)
+	stateSourceObject.Load(7, &q.maxMessageCount)
+	stateSourceObject.Load(8, &q.maxMessageSize)
+	stateSourceObject.Load(9, &q.byteCount)
 }
 
 func (m *Message) StateTypeName() string {

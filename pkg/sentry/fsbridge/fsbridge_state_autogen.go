@@ -6,62 +6,6 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (f *fsFile) StateTypeName() string {
-	return "pkg/sentry/fsbridge.fsFile"
-}
-
-func (f *fsFile) StateFields() []string {
-	return []string{
-		"file",
-	}
-}
-
-func (f *fsFile) beforeSave() {}
-
-// +checklocksignore
-func (f *fsFile) StateSave(stateSinkObject state.Sink) {
-	f.beforeSave()
-	stateSinkObject.Save(0, &f.file)
-}
-
-func (f *fsFile) afterLoad() {}
-
-// +checklocksignore
-func (f *fsFile) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &f.file)
-}
-
-func (l *fsLookup) StateTypeName() string {
-	return "pkg/sentry/fsbridge.fsLookup"
-}
-
-func (l *fsLookup) StateFields() []string {
-	return []string{
-		"mntns",
-		"root",
-		"workingDir",
-	}
-}
-
-func (l *fsLookup) beforeSave() {}
-
-// +checklocksignore
-func (l *fsLookup) StateSave(stateSinkObject state.Sink) {
-	l.beforeSave()
-	stateSinkObject.Save(0, &l.mntns)
-	stateSinkObject.Save(1, &l.root)
-	stateSinkObject.Save(2, &l.workingDir)
-}
-
-func (l *fsLookup) afterLoad() {}
-
-// +checklocksignore
-func (l *fsLookup) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &l.mntns)
-	stateSourceObject.Load(1, &l.root)
-	stateSourceObject.Load(2, &l.workingDir)
-}
-
 func (f *VFSFile) StateTypeName() string {
 	return "pkg/sentry/fsbridge.VFSFile"
 }
@@ -119,8 +63,6 @@ func (l *vfsLookup) StateLoad(stateSourceObject state.Source) {
 }
 
 func init() {
-	state.Register((*fsFile)(nil))
-	state.Register((*fsLookup)(nil))
 	state.Register((*VFSFile)(nil))
 	state.Register((*vfsLookup)(nil))
 }

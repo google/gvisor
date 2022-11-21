@@ -357,7 +357,7 @@ func (c *containerMounter) getMountAccessType(conf *config.Config, mount *specs.
 }
 
 func (c *containerMounter) mountAll(conf *config.Config, procArgs *kernel.CreateProcessArgs) (*vfs.MountNamespace, error) {
-	log.Infof("Configuring container's file system with VFS2")
+	log.Infof("Configuring container's file system")
 
 	// Create context with root credentials to mount the filesystem (the current
 	// user may not be privileged enough).

@@ -28,12 +28,13 @@ import (
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
-	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sockfs"
+	"gvisor.dev/gvisor/pkg/sentry/hostfd"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/control"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -51,94 +52,122 @@ const (
 	maxControlLen = 1024
 )
 
-// LINT.IfChange
+// Socket implements socket.Socket (and by extension, vfs.FileDescriptionImpl)
+// for host sockets.
+//
+// +stateify savable
+type Socket struct {
+	vfsfd vfs.FileDescription
+	vfs.FileDescriptionDefaultImpl
+	vfs.LockFD
+	// We store metadata for hostinet sockets internally. Technically, we should
+	// access metadata (e.g. through stat, chmod) on the host for correctness,
+	// but this is not very useful for inet socket fds, which do not belong to a
+	// concrete file anyway.
+	vfs.DentryMetadataFileDescriptionImpl
+	socket.SendReceiveTimeout
 
-// socketOperations implements fs.FileOperations and socket.Socket for a socket
-// implemented using a host socket.
-type socketOperations struct {
-	fsutil.FilePipeSeek             `state:"nosave"`
-	fsutil.FileNotDirReaddir        `state:"nosave"`
-	fsutil.FileNoFsync              `state:"nosave"`
-	fsutil.FileNoMMap               `state:"nosave"`
-	fsutil.FileNoSplice             `state:"nosave"`
-	fsutil.FileNoopFlush            `state:"nosave"`
-	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
+	family   int            // Read-only.
+	stype    linux.SockType // Read-only.
+	protocol int            // Read-only.
+	queue    waiter.Queue
 
-	socketOpsCommon
+	// fd is the host socket fd. It must have O_NONBLOCK, so that operations
+	// will return EWOULDBLOCK instead of blocking on the host. This allows us to
+	// handle blocking behavior independently in the sentry.
+	fd int
 }
 
-var _ = socket.Socket(&socketOperations{})
+var _ = socket.Socket(&Socket{})
 
-func newSocketFile(ctx context.Context, family int, stype linux.SockType, protocol int, fd int, nonblock bool) (*fs.File, *syserr.Error) {
-	s := &socketOperations{
-		socketOpsCommon: socketOpsCommon{
-			family:   family,
-			stype:    stype,
-			protocol: protocol,
-			fd:       fd,
-		},
+func newSocket(t *kernel.Task, family int, stype linux.SockType, protocol int, fd int, flags uint32) (*vfs.FileDescription, *syserr.Error) {
+	mnt := t.Kernel().SocketMount()
+	d := sockfs.NewDentry(t, mnt)
+	defer d.DecRef(t)
+
+	s := &Socket{
+		family:   family,
+		stype:    stype,
+		protocol: protocol,
+		fd:       fd,
 	}
+	s.LockFD.Init(&vfs.FileLocks{})
 	if err := fdnotifier.AddFD(int32(fd), &s.queue); err != nil {
 		return nil, syserr.FromError(err)
 	}
-	dirent := socket.NewDirent(ctx, socketDevice)
-	defer dirent.DecRef(ctx)
-	return fs.NewFile(ctx, dirent, fs.FileFlags{NonBlocking: nonblock, Read: true, Write: true, NonSeekable: true}, s), nil
+	vfsfd := &s.vfsfd
+	if err := vfsfd.Init(s, linux.O_RDWR|(flags&linux.O_NONBLOCK), mnt, d, &vfs.FileDescriptionOptions{
+		DenyPRead:         true,
+		DenyPWrite:        true,
+		UseDentryMetadata: true,
+	}); err != nil {
+		fdnotifier.RemoveFD(int32(s.fd))
+		return nil, syserr.FromError(err)
+	}
+	return vfsfd, nil
 }
 
-// Ioctl implements fs.FileOperations.Ioctl.
-func (s *socketOperations) Ioctl(ctx context.Context, _ *fs.File, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
-	return ioctl(ctx, s.fd, io, args)
+// Release implements vfs.FileDescriptionImpl.Release.
+func (s *Socket) Release(ctx context.Context) {
+	kernel.KernelFromContext(ctx).DeleteSocket(&s.vfsfd)
+	fdnotifier.RemoveFD(int32(s.fd))
+	_ = unix.Close(s.fd)
 }
 
-// Read implements fs.FileOperations.Read.
-func (s *socketOperations) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequence, _ int64) (int64, error) {
-	n, err := dst.CopyOutFrom(ctx, safemem.ReaderFunc(func(dsts safemem.BlockSeq) (uint64, error) {
-		// Refuse to do anything if any part of dst.Addrs was unusable.
-		if uint64(dst.NumBytes()) != dsts.NumBytes() {
-			return 0, nil
-		}
-		if dsts.IsEmpty() {
-			return 0, nil
-		}
-		if dsts.NumBlocks() == 1 {
-			// Skip allocating []unix.Iovec.
-			n, err := unix.Read(s.fd, dsts.Head().ToSlice())
-			if err != nil {
-				return 0, translateIOSyscallError(err)
-			}
-			return uint64(n), nil
-		}
-		return readv(s.fd, safemem.IovecsFromBlockSeq(dsts))
-	}))
-	return n, err
+// Epollable implements FileDescriptionImpl.Epollable.
+func (s *Socket) Epollable() bool {
+	return true
 }
 
-// Write implements fs.FileOperations.Write.
-func (s *socketOperations) Write(ctx context.Context, _ *fs.File, src usermem.IOSequence, _ int64) (int64, error) {
-	n, err := src.CopyInTo(ctx, safemem.WriterFunc(func(srcs safemem.BlockSeq) (uint64, error) {
-		// Refuse to do anything if any part of src.Addrs was unusable.
-		if uint64(src.NumBytes()) != srcs.NumBytes() {
-			return 0, nil
-		}
-		if srcs.IsEmpty() {
-			return 0, nil
-		}
-		if srcs.NumBlocks() == 1 {
-			// Skip allocating []unix.Iovec.
-			n, err := unix.Write(s.fd, srcs.Head().ToSlice())
-			if err != nil {
-				return 0, translateIOSyscallError(err)
-			}
-			return uint64(n), nil
-		}
-		return writev(s.fd, safemem.IovecsFromBlockSeq(srcs))
-	}))
-	return n, err
+// Ioctl implements vfs.FileDescriptionImpl.
+func (s *Socket) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+	return ioctl(ctx, s.fd, uio, args)
+}
+
+// PRead implements vfs.FileDescriptionImpl.PRead.
+func (s *Socket) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
+	return 0, linuxerr.ESPIPE
+}
+
+// Read implements vfs.FileDescriptionImpl.
+func (s *Socket) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
+	// All flags other than RWF_NOWAIT should be ignored.
+	// TODO(gvisor.dev/issue/2601): Support RWF_NOWAIT.
+	if opts.Flags != 0 {
+		return 0, linuxerr.EOPNOTSUPP
+	}
+
+	reader := hostfd.GetReadWriterAt(int32(s.fd), -1, opts.Flags)
+	n, err := dst.CopyOutFrom(ctx, reader)
+	hostfd.PutReadWriterAt(reader)
+	return int64(n), err
+}
+
+// PWrite implements vfs.FileDescriptionImpl.
+func (s *Socket) PWrite(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
+	return 0, linuxerr.ESPIPE
+}
+
+// Write implements vfs.FileDescriptionImpl.
+func (s *Socket) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
+	// All flags other than RWF_NOWAIT should be ignored.
+	// TODO(gvisor.dev/issue/2601): Support RWF_NOWAIT.
+	if opts.Flags != 0 {
+		return 0, linuxerr.EOPNOTSUPP
+	}
+
+	writer := hostfd.GetReadWriterAt(int32(s.fd), -1, opts.Flags)
+	n, err := src.CopyInTo(ctx, writer)
+	hostfd.PutReadWriterAt(writer)
+	return int64(n), err
+}
+
+type socketProvider struct {
+	family int
 }
 
 // Socket implements socket.Provider.Socket.
-func (p *socketProvider) Socket(t *kernel.Task, stypeflags linux.SockType, protocol int) (*fs.File, *syserr.Error) {
+func (p *socketProvider) Socket(t *kernel.Task, stypeflags linux.SockType, protocol int) (*vfs.FileDescription, *syserr.Error) {
 	// Check that we are using the host network stack.
 	stack := t.NetworkContext()
 	if stack == nil {
@@ -176,47 +205,22 @@ func (p *socketProvider) Socket(t *kernel.Task, stypeflags linux.SockType, proto
 	if err != nil {
 		return nil, syserr.FromError(err)
 	}
-	return newSocketFile(t, p.family, stype, protocol, fd, stypeflags&unix.SOCK_NONBLOCK != 0)
+	return newSocket(t, p.family, stype, protocol, fd, uint32(stypeflags&unix.SOCK_NONBLOCK))
 }
 
 // Pair implements socket.Provider.Pair.
-func (p *socketProvider) Pair(*kernel.Task, linux.SockType, int) (*fs.File, *fs.File, *syserr.Error) {
+func (p *socketProvider) Pair(t *kernel.Task, stype linux.SockType, protocol int) (*vfs.FileDescription, *vfs.FileDescription, *syserr.Error) {
 	// Not supported by AF_INET/AF_INET6.
 	return nil, nil, nil
 }
 
-// LINT.ThenChange(./socket_vfs2.go)
-
-// socketOpsCommon contains the socket operations common to VFS1 and VFS2.
-//
-// +stateify savable
-type socketOpsCommon struct {
-	socket.SendReceiveTimeout
-
-	family   int            // Read-only.
-	stype    linux.SockType // Read-only.
-	protocol int            // Read-only.
-	queue    waiter.Queue
-
-	// fd is the host socket fd. It must have O_NONBLOCK, so that operations
-	// will return EWOULDBLOCK instead of blocking on the host. This allows us to
-	// handle blocking behavior independently in the sentry.
-	fd int
-}
-
-// Release implements fs.FileOperations.Release.
-func (s *socketOpsCommon) Release(context.Context) {
-	fdnotifier.RemoveFD(int32(s.fd))
-	_ = unix.Close(s.fd)
-}
-
 // Readiness implements waiter.Waitable.Readiness.
-func (s *socketOpsCommon) Readiness(mask waiter.EventMask) waiter.EventMask {
+func (s *Socket) Readiness(mask waiter.EventMask) waiter.EventMask {
 	return fdnotifier.NonBlockingPoll(int32(s.fd), mask)
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (s *socketOpsCommon) EventRegister(e *waiter.Entry) error {
+func (s *Socket) EventRegister(e *waiter.Entry) error {
 	s.queue.EventRegister(e)
 	if err := fdnotifier.UpdateFD(int32(s.fd)); err != nil {
 		s.queue.EventUnregister(e)
@@ -226,7 +230,7 @@ func (s *socketOpsCommon) EventRegister(e *waiter.Entry) error {
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
-func (s *socketOpsCommon) EventUnregister(e *waiter.Entry) {
+func (s *Socket) EventUnregister(e *waiter.Entry) {
 	s.queue.EventUnregister(e)
 	if err := fdnotifier.UpdateFD(int32(s.fd)); err != nil {
 		panic(err)
@@ -234,7 +238,7 @@ func (s *socketOpsCommon) EventUnregister(e *waiter.Entry) {
 }
 
 // Connect implements socket.Socket.Connect.
-func (s *socketOpsCommon) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr.Error {
+func (s *Socket) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr.Error {
 	if len(sockaddr) > sizeofSockaddr {
 		sockaddr = sockaddr[:sizeofSockaddr]
 	}
@@ -275,7 +279,7 @@ func (s *socketOpsCommon) Connect(t *kernel.Task, sockaddr []byte, blocking bool
 }
 
 // Accept implements socket.Socket.Accept.
-func (s *socketOpsCommon) Accept(t *kernel.Task, peerRequested bool, flags int, blocking bool) (int32, linux.SockAddr, uint32, *syserr.Error) {
+func (s *Socket) Accept(t *kernel.Task, peerRequested bool, flags int, blocking bool) (int32, linux.SockAddr, uint32, *syserr.Error) {
 	var peerAddr linux.SockAddr
 	var peerAddrBuf []byte
 	var peerAddrlen uint32
@@ -319,23 +323,23 @@ func (s *socketOpsCommon) Accept(t *kernel.Task, peerRequested bool, flags int, 
 		kfd  int32
 		kerr error
 	)
-	f, err := newVFS2Socket(t, s.family, s.stype, s.protocol, fd, uint32(flags&unix.SOCK_NONBLOCK))
+	f, err := newSocket(t, s.family, s.stype, s.protocol, fd, uint32(flags&unix.SOCK_NONBLOCK))
 	if err != nil {
 		_ = unix.Close(fd)
 		return 0, nil, 0, err
 	}
 	defer f.DecRef(t)
 
-	kfd, kerr = t.NewFDFromVFS2(0, f, kernel.FDFlags{
+	kfd, kerr = t.NewFDFrom(0, f, kernel.FDFlags{
 		CloseOnExec: flags&unix.SOCK_CLOEXEC != 0,
 	})
-	t.Kernel().RecordSocketVFS2(f)
+	t.Kernel().RecordSocket(f)
 
 	return kfd, peerAddr, peerAddrlen, syserr.FromError(kerr)
 }
 
 // Bind implements socket.Socket.Bind.
-func (s *socketOpsCommon) Bind(_ *kernel.Task, sockaddr []byte) *syserr.Error {
+func (s *Socket) Bind(_ *kernel.Task, sockaddr []byte) *syserr.Error {
 	if len(sockaddr) > sizeofSockaddr {
 		sockaddr = sockaddr[:sizeofSockaddr]
 	}
@@ -348,12 +352,12 @@ func (s *socketOpsCommon) Bind(_ *kernel.Task, sockaddr []byte) *syserr.Error {
 }
 
 // Listen implements socket.Socket.Listen.
-func (s *socketOpsCommon) Listen(_ *kernel.Task, backlog int) *syserr.Error {
+func (s *Socket) Listen(_ *kernel.Task, backlog int) *syserr.Error {
 	return syserr.FromError(unix.Listen(s.fd, backlog))
 }
 
 // Shutdown implements socket.Socket.Shutdown.
-func (s *socketOpsCommon) Shutdown(_ *kernel.Task, how int) *syserr.Error {
+func (s *Socket) Shutdown(_ *kernel.Task, how int) *syserr.Error {
 	switch how {
 	case unix.SHUT_RD, unix.SHUT_WR, unix.SHUT_RDWR:
 		return syserr.FromError(unix.Shutdown(s.fd, how))
@@ -363,7 +367,7 @@ func (s *socketOpsCommon) Shutdown(_ *kernel.Task, how int) *syserr.Error {
 }
 
 // GetSockOpt implements socket.Socket.GetSockOpt.
-func (s *socketOpsCommon) GetSockOpt(t *kernel.Task, level int, name int, optValAddr hostarch.Addr, outLen int) (marshal.Marshallable, *syserr.Error) {
+func (s *Socket) GetSockOpt(t *kernel.Task, level int, name int, optValAddr hostarch.Addr, outLen int) (marshal.Marshallable, *syserr.Error) {
 	if outLen < 0 {
 		return nil, syserr.ErrInvalidArgument
 	}
@@ -432,7 +436,7 @@ func (s *socketOpsCommon) GetSockOpt(t *kernel.Task, level int, name int, optVal
 }
 
 // SetSockOpt implements socket.Socket.SetSockOpt.
-func (s *socketOpsCommon) SetSockOpt(t *kernel.Task, level int, name int, opt []byte) *syserr.Error {
+func (s *Socket) SetSockOpt(t *kernel.Task, level int, name int, opt []byte) *syserr.Error {
 	// Only allow known and safe options.
 	optlen := setSockOptLen(t, level, name)
 	switch level {
@@ -477,7 +481,7 @@ func (s *socketOpsCommon) SetSockOpt(t *kernel.Task, level int, name int, opt []
 	return nil
 }
 
-func (s *socketOpsCommon) recvMsgFromHost(iovs []unix.Iovec, flags int, senderRequested bool, controlLen uint64) (uint64, int, []byte, []byte, error) {
+func (s *Socket) recvMsgFromHost(iovs []unix.Iovec, flags int, senderRequested bool, controlLen uint64) (uint64, int, []byte, []byte, error) {
 	// We always do a non-blocking recv*().
 	sysflags := flags | unix.MSG_DONTWAIT
 
@@ -509,7 +513,7 @@ func (s *socketOpsCommon) recvMsgFromHost(iovs []unix.Iovec, flags int, senderRe
 }
 
 // RecvMsg implements socket.Socket.RecvMsg.
-func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlLen uint64) (int, int, linux.SockAddr, uint32, socket.ControlMessages, *syserr.Error) {
+func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlLen uint64) (int, int, linux.SockAddr, uint32, socket.ControlMessages, *syserr.Error) {
 	// Only allow known and safe flags.
 	if flags&^(unix.MSG_DONTWAIT|unix.MSG_PEEK|unix.MSG_TRUNC|unix.MSG_ERRQUEUE) != 0 {
 		return 0, 0, nil, 0, socket.ControlMessages{}, syserr.ErrInvalidArgument
@@ -671,7 +675,7 @@ func parseUnixControlMessages(unixControlMessages []unix.SocketControlMessage) s
 }
 
 // SendMsg implements socket.Socket.SendMsg.
-func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, haveDeadline bool, deadline ktime.Time, controlMessages socket.ControlMessages) (int, *syserr.Error) {
+func (s *Socket) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, haveDeadline bool, deadline ktime.Time, controlMessages socket.ControlMessages) (int, *syserr.Error) {
 	// Only allow known and safe flags.
 	if flags&^(unix.MSG_DONTWAIT|unix.MSG_EOR|unix.MSG_FASTOPEN|unix.MSG_MORE|unix.MSG_NOSIGNAL) != 0 {
 		return 0, syserr.ErrInvalidArgument
@@ -771,7 +775,7 @@ func translateIOSyscallError(err error) error {
 }
 
 // State implements socket.Socket.State.
-func (s *socketOpsCommon) State() uint32 {
+func (s *Socket) State() uint32 {
 	info := linux.TCPInfo{}
 	buf := make([]byte, linux.SizeOfTCPInfo)
 	var err error
@@ -795,17 +799,12 @@ func (s *socketOpsCommon) State() uint32 {
 }
 
 // Type implements socket.Socket.Type.
-func (s *socketOpsCommon) Type() (family int, skType linux.SockType, protocol int) {
+func (s *Socket) Type() (family int, skType linux.SockType, protocol int) {
 	return s.family, s.stype, s.protocol
-}
-
-type socketProvider struct {
-	family int
 }
 
 func init() {
 	for _, family := range []int{unix.AF_INET, unix.AF_INET6} {
 		socket.RegisterProvider(family, &socketProvider{family})
-		socket.RegisterProviderVFS2(family, &socketProviderVFS2{family})
 	}
 }

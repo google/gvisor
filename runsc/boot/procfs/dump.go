@@ -147,7 +147,7 @@ func getMetadataArray(ctx context.Context, pid kernel.ThreadID, mm *mm.MemoryMan
 }
 
 func getCWD(ctx context.Context, t *kernel.Task, pid kernel.ThreadID) string {
-	cwdDentry := t.FSContext().WorkingDirectoryVFS2()
+	cwdDentry := t.FSContext().WorkingDirectory()
 	if !cwdDentry.Ok() {
 		log.Warningf("No CWD dentry found for PID %s", pid)
 		return ""
@@ -185,7 +185,7 @@ func getFDs(ctx context.Context, t *kernel.Task, pid kernel.ThreadID) []FDInfo {
 			fdNos := fdTable.GetFDs(ctx)
 			fds = make([]fdInfo, 0, len(fdNos))
 			for _, fd := range fdNos {
-				file, _ := fdTable.GetVFS2(fd)
+				file, _ := fdTable.Get(fd)
 				if file != nil {
 					fds = append(fds, fdInfo{fd: file, no: fd})
 				}
@@ -215,8 +215,8 @@ func getFDs(ctx context.Context, t *kernel.Task, pid kernel.ThreadID) []FDInfo {
 }
 
 func getRoot(t *kernel.Task, pid kernel.ThreadID) string {
-	realRoot := t.MountNamespaceVFS2().Root()
-	root := t.FSContext().RootDirectoryVFS2()
+	realRoot := t.MountNamespace().Root()
+	root := t.FSContext().RootDirectory()
 	defer root.DecRef(t)
 	path, err := t.Kernel().VFS().PathnameWithDeleted(t, realRoot, root)
 	if err != nil {

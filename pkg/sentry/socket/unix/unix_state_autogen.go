@@ -6,89 +6,42 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (r *socketOperationsRefs) StateTypeName() string {
-	return "pkg/sentry/socket/unix.socketOperationsRefs"
+func (r *socketRefs) StateTypeName() string {
+	return "pkg/sentry/socket/unix.socketRefs"
 }
 
-func (r *socketOperationsRefs) StateFields() []string {
+func (r *socketRefs) StateFields() []string {
 	return []string{
 		"refCount",
 	}
 }
 
-func (r *socketOperationsRefs) beforeSave() {}
+func (r *socketRefs) beforeSave() {}
 
 // +checklocksignore
-func (r *socketOperationsRefs) StateSave(stateSinkObject state.Sink) {
+func (r *socketRefs) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.refCount)
 }
 
 // +checklocksignore
-func (r *socketOperationsRefs) StateLoad(stateSourceObject state.Source) {
+func (r *socketRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
 	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
-func (r *socketVFS2Refs) StateTypeName() string {
-	return "pkg/sentry/socket/unix.socketVFS2Refs"
+func (s *Socket) StateTypeName() string {
+	return "pkg/sentry/socket/unix.Socket"
 }
 
-func (r *socketVFS2Refs) StateFields() []string {
+func (s *Socket) StateFields() []string {
 	return []string{
-		"refCount",
-	}
-}
-
-func (r *socketVFS2Refs) beforeSave() {}
-
-// +checklocksignore
-func (r *socketVFS2Refs) StateSave(stateSinkObject state.Sink) {
-	r.beforeSave()
-	stateSinkObject.Save(0, &r.refCount)
-}
-
-// +checklocksignore
-func (r *socketVFS2Refs) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(r.afterLoad)
-}
-
-func (s *SocketOperations) StateTypeName() string {
-	return "pkg/sentry/socket/unix.SocketOperations"
-}
-
-func (s *SocketOperations) StateFields() []string {
-	return []string{
-		"socketOperationsRefs",
-		"socketOpsCommon",
-	}
-}
-
-func (s *SocketOperations) beforeSave() {}
-
-// +checklocksignore
-func (s *SocketOperations) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.Save(0, &s.socketOperationsRefs)
-	stateSinkObject.Save(1, &s.socketOpsCommon)
-}
-
-func (s *SocketOperations) afterLoad() {}
-
-// +checklocksignore
-func (s *SocketOperations) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.socketOperationsRefs)
-	stateSourceObject.Load(1, &s.socketOpsCommon)
-}
-
-func (s *socketOpsCommon) StateTypeName() string {
-	return "pkg/sentry/socket/unix.socketOpsCommon"
-}
-
-func (s *socketOpsCommon) StateFields() []string {
-	return []string{
+		"vfsfd",
+		"FileDescriptionDefaultImpl",
+		"DentryMetadataFileDescriptionImpl",
+		"LockFD",
 		"SendReceiveTimeout",
+		"socketRefs",
 		"ep",
 		"stype",
 		"abstractName",
@@ -96,73 +49,62 @@ func (s *socketOpsCommon) StateFields() []string {
 	}
 }
 
+func (s *Socket) beforeSave() {}
+
+// +checklocksignore
+func (s *Socket) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.vfsfd)
+	stateSinkObject.Save(1, &s.FileDescriptionDefaultImpl)
+	stateSinkObject.Save(2, &s.DentryMetadataFileDescriptionImpl)
+	stateSinkObject.Save(3, &s.LockFD)
+	stateSinkObject.Save(4, &s.SendReceiveTimeout)
+	stateSinkObject.Save(5, &s.socketRefs)
+	stateSinkObject.Save(6, &s.ep)
+	stateSinkObject.Save(7, &s.stype)
+	stateSinkObject.Save(8, &s.abstractName)
+	stateSinkObject.Save(9, &s.abstractNamespace)
+}
+
+func (s *Socket) afterLoad() {}
+
+// +checklocksignore
+func (s *Socket) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.vfsfd)
+	stateSourceObject.Load(1, &s.FileDescriptionDefaultImpl)
+	stateSourceObject.Load(2, &s.DentryMetadataFileDescriptionImpl)
+	stateSourceObject.Load(3, &s.LockFD)
+	stateSourceObject.Load(4, &s.SendReceiveTimeout)
+	stateSourceObject.Load(5, &s.socketRefs)
+	stateSourceObject.Load(6, &s.ep)
+	stateSourceObject.Load(7, &s.stype)
+	stateSourceObject.Load(8, &s.abstractName)
+	stateSourceObject.Load(9, &s.abstractNamespace)
+}
+
+func (s *socketOpsCommon) StateTypeName() string {
+	return "pkg/sentry/socket/unix.socketOpsCommon"
+}
+
+func (s *socketOpsCommon) StateFields() []string {
+	return []string{}
+}
+
 func (s *socketOpsCommon) beforeSave() {}
 
 // +checklocksignore
 func (s *socketOpsCommon) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	stateSinkObject.Save(0, &s.SendReceiveTimeout)
-	stateSinkObject.Save(1, &s.ep)
-	stateSinkObject.Save(2, &s.stype)
-	stateSinkObject.Save(3, &s.abstractName)
-	stateSinkObject.Save(4, &s.abstractNamespace)
 }
 
 func (s *socketOpsCommon) afterLoad() {}
 
 // +checklocksignore
 func (s *socketOpsCommon) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.SendReceiveTimeout)
-	stateSourceObject.Load(1, &s.ep)
-	stateSourceObject.Load(2, &s.stype)
-	stateSourceObject.Load(3, &s.abstractName)
-	stateSourceObject.Load(4, &s.abstractNamespace)
-}
-
-func (s *SocketVFS2) StateTypeName() string {
-	return "pkg/sentry/socket/unix.SocketVFS2"
-}
-
-func (s *SocketVFS2) StateFields() []string {
-	return []string{
-		"vfsfd",
-		"FileDescriptionDefaultImpl",
-		"DentryMetadataFileDescriptionImpl",
-		"LockFD",
-		"socketVFS2Refs",
-		"socketOpsCommon",
-	}
-}
-
-func (s *SocketVFS2) beforeSave() {}
-
-// +checklocksignore
-func (s *SocketVFS2) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.Save(0, &s.vfsfd)
-	stateSinkObject.Save(1, &s.FileDescriptionDefaultImpl)
-	stateSinkObject.Save(2, &s.DentryMetadataFileDescriptionImpl)
-	stateSinkObject.Save(3, &s.LockFD)
-	stateSinkObject.Save(4, &s.socketVFS2Refs)
-	stateSinkObject.Save(5, &s.socketOpsCommon)
-}
-
-func (s *SocketVFS2) afterLoad() {}
-
-// +checklocksignore
-func (s *SocketVFS2) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.vfsfd)
-	stateSourceObject.Load(1, &s.FileDescriptionDefaultImpl)
-	stateSourceObject.Load(2, &s.DentryMetadataFileDescriptionImpl)
-	stateSourceObject.Load(3, &s.LockFD)
-	stateSourceObject.Load(4, &s.socketVFS2Refs)
-	stateSourceObject.Load(5, &s.socketOpsCommon)
 }
 
 func init() {
-	state.Register((*socketOperationsRefs)(nil))
-	state.Register((*socketVFS2Refs)(nil))
-	state.Register((*SocketOperations)(nil))
+	state.Register((*socketRefs)(nil))
+	state.Register((*Socket)(nil))
 	state.Register((*socketOpsCommon)(nil))
-	state.Register((*SocketVFS2)(nil))
 }

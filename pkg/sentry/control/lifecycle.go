@@ -251,7 +251,6 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 	}
 	initArgs.FDTable = fdTable
 
-	// VFS2 is supported in multi-container mode by default.
 	l.mu.RLock()
 	mntns, ok := l.MountNamespacesMap[initArgs.ContainerID]
 	if !ok {

@@ -39,7 +39,7 @@ func Read(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 	addr := args[1].Pointer()
 	size := args[2].SizeT()
 
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
@@ -70,7 +70,7 @@ func Readv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	addr := args[1].Pointer()
 	iovcnt := int(args[2].Int())
 
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
@@ -139,7 +139,7 @@ func Pread64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	size := args[2].SizeT()
 	offset := args[3].Int64()
 
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
@@ -176,7 +176,7 @@ func Preadv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	iovcnt := int(args[2].Int())
 	offset := args[3].Int64()
 
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
@@ -214,7 +214,7 @@ func Preadv2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	offset := args[3].Int64()
 	flags := args[5].Int()
 
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
@@ -293,7 +293,7 @@ func Write(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	addr := args[1].Pointer()
 	size := args[2].SizeT()
 
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
@@ -324,7 +324,7 @@ func Writev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	addr := args[1].Pointer()
 	iovcnt := int(args[2].Int())
 
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
@@ -392,7 +392,7 @@ func Pwrite64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	size := args[2].SizeT()
 	offset := args[3].Int64()
 
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
@@ -429,7 +429,7 @@ func Pwritev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	iovcnt := int(args[2].Int())
 	offset := args[3].Int64()
 
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
@@ -467,7 +467,7 @@ func Pwritev2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	offset := args[3].Int64()
 	flags := args[5].Int()
 
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
@@ -546,7 +546,7 @@ func blockPolicy(t *kernel.Task, file *vfs.FileDescription) (allowBlock bool, de
 		return false, ktime.Time{}, false
 	}
 	// Sockets support read/write timeouts.
-	if s, ok := file.Impl().(socket.SocketVFS2); ok {
+	if s, ok := file.Impl().(socket.Socket); ok {
 		dl := s.RecvTimeout()
 		if dl < 0 {
 			return false, ktime.Time{}, false
@@ -564,7 +564,7 @@ func Lseek(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	offset := args[1].Int64()
 	whence := args[2].Int()
 
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
@@ -580,7 +580,7 @@ func Readahead(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	offset := args[1].Int64()
 	size := args[2].SizeT()
 
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}

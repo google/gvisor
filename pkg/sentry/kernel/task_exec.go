@@ -67,7 +67,6 @@ package kernel
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
@@ -220,7 +219,7 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 	oldFDTable.DecRef(t)
 
 	// Remove FDs with the CloseOnExec flag set.
-	t.fdTable.RemoveIf(t, func(_ *fs.File, _ *vfs.FileDescription, flags FDFlags) bool {
+	t.fdTable.RemoveIf(t, func(_ *vfs.FileDescription, flags FDFlags) bool {
 		return flags.CloseOnExec
 	})
 

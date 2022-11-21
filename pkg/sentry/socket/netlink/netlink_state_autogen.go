@@ -12,31 +12,10 @@ func (s *Socket) StateTypeName() string {
 
 func (s *Socket) StateFields() []string {
 	return []string{
-		"socketOpsCommon",
-	}
-}
-
-func (s *Socket) beforeSave() {}
-
-// +checklocksignore
-func (s *Socket) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.Save(0, &s.socketOpsCommon)
-}
-
-func (s *Socket) afterLoad() {}
-
-// +checklocksignore
-func (s *Socket) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.socketOpsCommon)
-}
-
-func (s *socketOpsCommon) StateTypeName() string {
-	return "pkg/sentry/socket/netlink.socketOpsCommon"
-}
-
-func (s *socketOpsCommon) StateFields() []string {
-	return []string{
+		"vfsfd",
+		"FileDescriptionDefaultImpl",
+		"DentryMetadataFileDescriptionImpl",
+		"LockFD",
 		"SendReceiveTimeout",
 		"ports",
 		"protocol",
@@ -50,37 +29,45 @@ func (s *socketOpsCommon) StateFields() []string {
 	}
 }
 
-func (s *socketOpsCommon) beforeSave() {}
+func (s *Socket) beforeSave() {}
 
 // +checklocksignore
-func (s *socketOpsCommon) StateSave(stateSinkObject state.Sink) {
+func (s *Socket) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	stateSinkObject.Save(0, &s.SendReceiveTimeout)
-	stateSinkObject.Save(1, &s.ports)
-	stateSinkObject.Save(2, &s.protocol)
-	stateSinkObject.Save(3, &s.skType)
-	stateSinkObject.Save(4, &s.ep)
-	stateSinkObject.Save(5, &s.connection)
-	stateSinkObject.Save(6, &s.bound)
-	stateSinkObject.Save(7, &s.portID)
-	stateSinkObject.Save(8, &s.sendBufferSize)
-	stateSinkObject.Save(9, &s.filter)
+	stateSinkObject.Save(0, &s.vfsfd)
+	stateSinkObject.Save(1, &s.FileDescriptionDefaultImpl)
+	stateSinkObject.Save(2, &s.DentryMetadataFileDescriptionImpl)
+	stateSinkObject.Save(3, &s.LockFD)
+	stateSinkObject.Save(4, &s.SendReceiveTimeout)
+	stateSinkObject.Save(5, &s.ports)
+	stateSinkObject.Save(6, &s.protocol)
+	stateSinkObject.Save(7, &s.skType)
+	stateSinkObject.Save(8, &s.ep)
+	stateSinkObject.Save(9, &s.connection)
+	stateSinkObject.Save(10, &s.bound)
+	stateSinkObject.Save(11, &s.portID)
+	stateSinkObject.Save(12, &s.sendBufferSize)
+	stateSinkObject.Save(13, &s.filter)
 }
 
-func (s *socketOpsCommon) afterLoad() {}
+func (s *Socket) afterLoad() {}
 
 // +checklocksignore
-func (s *socketOpsCommon) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.SendReceiveTimeout)
-	stateSourceObject.Load(1, &s.ports)
-	stateSourceObject.Load(2, &s.protocol)
-	stateSourceObject.Load(3, &s.skType)
-	stateSourceObject.Load(4, &s.ep)
-	stateSourceObject.Load(5, &s.connection)
-	stateSourceObject.Load(6, &s.bound)
-	stateSourceObject.Load(7, &s.portID)
-	stateSourceObject.Load(8, &s.sendBufferSize)
-	stateSourceObject.Load(9, &s.filter)
+func (s *Socket) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.vfsfd)
+	stateSourceObject.Load(1, &s.FileDescriptionDefaultImpl)
+	stateSourceObject.Load(2, &s.DentryMetadataFileDescriptionImpl)
+	stateSourceObject.Load(3, &s.LockFD)
+	stateSourceObject.Load(4, &s.SendReceiveTimeout)
+	stateSourceObject.Load(5, &s.ports)
+	stateSourceObject.Load(6, &s.protocol)
+	stateSourceObject.Load(7, &s.skType)
+	stateSourceObject.Load(8, &s.ep)
+	stateSourceObject.Load(9, &s.connection)
+	stateSourceObject.Load(10, &s.bound)
+	stateSourceObject.Load(11, &s.portID)
+	stateSourceObject.Load(12, &s.sendBufferSize)
+	stateSourceObject.Load(13, &s.filter)
 }
 
 func (k *kernelSCM) StateTypeName() string {
@@ -104,46 +91,7 @@ func (k *kernelSCM) afterLoad() {}
 func (k *kernelSCM) StateLoad(stateSourceObject state.Source) {
 }
 
-func (s *SocketVFS2) StateTypeName() string {
-	return "pkg/sentry/socket/netlink.SocketVFS2"
-}
-
-func (s *SocketVFS2) StateFields() []string {
-	return []string{
-		"vfsfd",
-		"FileDescriptionDefaultImpl",
-		"DentryMetadataFileDescriptionImpl",
-		"LockFD",
-		"socketOpsCommon",
-	}
-}
-
-func (s *SocketVFS2) beforeSave() {}
-
-// +checklocksignore
-func (s *SocketVFS2) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.Save(0, &s.vfsfd)
-	stateSinkObject.Save(1, &s.FileDescriptionDefaultImpl)
-	stateSinkObject.Save(2, &s.DentryMetadataFileDescriptionImpl)
-	stateSinkObject.Save(3, &s.LockFD)
-	stateSinkObject.Save(4, &s.socketOpsCommon)
-}
-
-func (s *SocketVFS2) afterLoad() {}
-
-// +checklocksignore
-func (s *SocketVFS2) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.vfsfd)
-	stateSourceObject.Load(1, &s.FileDescriptionDefaultImpl)
-	stateSourceObject.Load(2, &s.DentryMetadataFileDescriptionImpl)
-	stateSourceObject.Load(3, &s.LockFD)
-	stateSourceObject.Load(4, &s.socketOpsCommon)
-}
-
 func init() {
 	state.Register((*Socket)(nil))
-	state.Register((*socketOpsCommon)(nil))
 	state.Register((*kernelSCM)(nil))
-	state.Register((*SocketVFS2)(nil))
 }

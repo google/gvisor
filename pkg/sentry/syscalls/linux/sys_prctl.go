@@ -125,7 +125,7 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		case linux.PR_SET_MM_EXE_FILE:
 			fd := args[2].Int()
 
-			file := t.GetFileVFS2(fd)
+			file := t.GetFile(fd)
 			if file == nil {
 				return 0, nil, linuxerr.EBADF
 			}

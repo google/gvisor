@@ -6,34 +6,6 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (i *inodeOperations) StateTypeName() string {
-	return "pkg/sentry/kernel/pipe.inodeOperations"
-}
-
-func (i *inodeOperations) StateFields() []string {
-	return []string{
-		"InodeSimpleAttributes",
-		"p",
-	}
-}
-
-func (i *inodeOperations) beforeSave() {}
-
-// +checklocksignore
-func (i *inodeOperations) StateSave(stateSinkObject state.Sink) {
-	i.beforeSave()
-	stateSinkObject.Save(0, &i.InodeSimpleAttributes)
-	stateSinkObject.Save(1, &i.p)
-}
-
-func (i *inodeOperations) afterLoad() {}
-
-// +checklocksignore
-func (i *inodeOperations) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &i.InodeSimpleAttributes)
-	stateSourceObject.Load(1, &i.p)
-}
-
 func (p *Pipe) StateTypeName() string {
 	return "pkg/sentry/kernel/pipe.Pipe"
 }
@@ -86,56 +58,6 @@ func (p *Pipe) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(9, &p.max)
 	stateSourceObject.Load(10, &p.hadWriter)
 	stateSourceObject.AfterLoad(p.afterLoad)
-}
-
-func (r *Reader) StateTypeName() string {
-	return "pkg/sentry/kernel/pipe.Reader"
-}
-
-func (r *Reader) StateFields() []string {
-	return []string{
-		"ReaderWriter",
-	}
-}
-
-func (r *Reader) beforeSave() {}
-
-// +checklocksignore
-func (r *Reader) StateSave(stateSinkObject state.Sink) {
-	r.beforeSave()
-	stateSinkObject.Save(0, &r.ReaderWriter)
-}
-
-func (r *Reader) afterLoad() {}
-
-// +checklocksignore
-func (r *Reader) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &r.ReaderWriter)
-}
-
-func (rw *ReaderWriter) StateTypeName() string {
-	return "pkg/sentry/kernel/pipe.ReaderWriter"
-}
-
-func (rw *ReaderWriter) StateFields() []string {
-	return []string{
-		"Pipe",
-	}
-}
-
-func (rw *ReaderWriter) beforeSave() {}
-
-// +checklocksignore
-func (rw *ReaderWriter) StateSave(stateSinkObject state.Sink) {
-	rw.beforeSave()
-	stateSinkObject.Save(0, &rw.Pipe)
-}
-
-func (rw *ReaderWriter) afterLoad() {}
-
-// +checklocksignore
-func (rw *ReaderWriter) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &rw.Pipe)
 }
 
 func (vp *VFSPipe) StateTypeName() string {
@@ -200,37 +122,8 @@ func (fd *VFSPipeFD) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(4, &fd.pipe)
 }
 
-func (w *Writer) StateTypeName() string {
-	return "pkg/sentry/kernel/pipe.Writer"
-}
-
-func (w *Writer) StateFields() []string {
-	return []string{
-		"ReaderWriter",
-	}
-}
-
-func (w *Writer) beforeSave() {}
-
-// +checklocksignore
-func (w *Writer) StateSave(stateSinkObject state.Sink) {
-	w.beforeSave()
-	stateSinkObject.Save(0, &w.ReaderWriter)
-}
-
-func (w *Writer) afterLoad() {}
-
-// +checklocksignore
-func (w *Writer) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &w.ReaderWriter)
-}
-
 func init() {
-	state.Register((*inodeOperations)(nil))
 	state.Register((*Pipe)(nil))
-	state.Register((*Reader)(nil))
-	state.Register((*ReaderWriter)(nil))
 	state.Register((*VFSPipe)(nil))
 	state.Register((*VFSPipeFD)(nil))
-	state.Register((*Writer)(nil))
 }

@@ -80,7 +80,7 @@ func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 
 	if !anon {
 		// Convert the passed FD to a file reference.
-		file := t.GetFileVFS2(fd)
+		file := t.GetFile(fd)
 		if file == nil {
 			return 0, nil, linuxerr.EBADF
 		}

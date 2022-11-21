@@ -196,7 +196,6 @@ func (d *descriptor) StateTypeName() string {
 func (d *descriptor) StateFields() []string {
 	return []string{
 		"file",
-		"fileVFS2",
 		"flags",
 	}
 }
@@ -207,8 +206,7 @@ func (d *descriptor) beforeSave() {}
 func (d *descriptor) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
 	stateSinkObject.Save(0, &d.file)
-	stateSinkObject.Save(1, &d.fileVFS2)
-	stateSinkObject.Save(2, &d.flags)
+	stateSinkObject.Save(1, &d.flags)
 }
 
 func (d *descriptor) afterLoad() {}
@@ -216,8 +214,7 @@ func (d *descriptor) afterLoad() {}
 // +checklocksignore
 func (d *descriptor) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.file)
-	stateSourceObject.Load(1, &d.fileVFS2)
-	stateSourceObject.Load(2, &d.flags)
+	stateSourceObject.Load(1, &d.flags)
 }
 
 func (f *FDTable) StateTypeName() string {
@@ -285,9 +282,7 @@ func (f *FSContext) StateFields() []string {
 	return []string{
 		"FSContextRefs",
 		"root",
-		"rootVFS2",
 		"cwd",
-		"cwdVFS2",
 		"umask",
 	}
 }
@@ -299,10 +294,8 @@ func (f *FSContext) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 	stateSinkObject.Save(0, &f.FSContextRefs)
 	stateSinkObject.Save(1, &f.root)
-	stateSinkObject.Save(2, &f.rootVFS2)
-	stateSinkObject.Save(3, &f.cwd)
-	stateSinkObject.Save(4, &f.cwdVFS2)
-	stateSinkObject.Save(5, &f.umask)
+	stateSinkObject.Save(2, &f.cwd)
+	stateSinkObject.Save(3, &f.umask)
 }
 
 func (f *FSContext) afterLoad() {}
@@ -311,10 +304,8 @@ func (f *FSContext) afterLoad() {}
 func (f *FSContext) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.FSContextRefs)
 	stateSourceObject.Load(1, &f.root)
-	stateSourceObject.Load(2, &f.rootVFS2)
-	stateSourceObject.Load(3, &f.cwd)
-	stateSourceObject.Load(4, &f.cwdVFS2)
-	stateSourceObject.Load(5, &f.umask)
+	stateSourceObject.Load(2, &f.cwd)
+	stateSourceObject.Load(3, &f.umask)
 }
 
 func (r *FSContextRefs) StateTypeName() string {
@@ -462,10 +453,8 @@ func (k *Kernel) StateFields() []string {
 		"netlinkPorts",
 		"danglingEndpoints",
 		"sockets",
-		"socketsVFS2",
 		"nextSocketRecord",
 		"deviceRegistry",
-		"DirentCacheLimiter",
 		"SpecialOpts",
 		"vfs",
 		"hostMount",
@@ -490,7 +479,7 @@ func (k *Kernel) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.SaveValue(21, danglingEndpointsValue)
 	var deviceRegistryValue *device.Registry
 	deviceRegistryValue = k.saveDeviceRegistry()
-	stateSinkObject.SaveValue(25, deviceRegistryValue)
+	stateSinkObject.SaveValue(24, deviceRegistryValue)
 	stateSinkObject.Save(0, &k.featureSet)
 	stateSinkObject.Save(1, &k.timekeeper)
 	stateSinkObject.Save(2, &k.tasks)
@@ -513,20 +502,18 @@ func (k *Kernel) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(19, &k.nextInotifyCookie)
 	stateSinkObject.Save(20, &k.netlinkPorts)
 	stateSinkObject.Save(22, &k.sockets)
-	stateSinkObject.Save(23, &k.socketsVFS2)
-	stateSinkObject.Save(24, &k.nextSocketRecord)
-	stateSinkObject.Save(26, &k.DirentCacheLimiter)
-	stateSinkObject.Save(27, &k.SpecialOpts)
-	stateSinkObject.Save(28, &k.vfs)
-	stateSinkObject.Save(29, &k.hostMount)
-	stateSinkObject.Save(30, &k.pipeMount)
-	stateSinkObject.Save(31, &k.shmMount)
-	stateSinkObject.Save(32, &k.socketMount)
-	stateSinkObject.Save(33, &k.SleepForAddressSpaceActivation)
-	stateSinkObject.Save(34, &k.ptraceExceptions)
-	stateSinkObject.Save(35, &k.YAMAPtraceScope)
-	stateSinkObject.Save(36, &k.cgroupRegistry)
-	stateSinkObject.Save(37, &k.userCountersMap)
+	stateSinkObject.Save(23, &k.nextSocketRecord)
+	stateSinkObject.Save(25, &k.SpecialOpts)
+	stateSinkObject.Save(26, &k.vfs)
+	stateSinkObject.Save(27, &k.hostMount)
+	stateSinkObject.Save(28, &k.pipeMount)
+	stateSinkObject.Save(29, &k.shmMount)
+	stateSinkObject.Save(30, &k.socketMount)
+	stateSinkObject.Save(31, &k.SleepForAddressSpaceActivation)
+	stateSinkObject.Save(32, &k.ptraceExceptions)
+	stateSinkObject.Save(33, &k.YAMAPtraceScope)
+	stateSinkObject.Save(34, &k.cgroupRegistry)
+	stateSinkObject.Save(35, &k.userCountersMap)
 }
 
 func (k *Kernel) afterLoad() {}
@@ -555,22 +542,20 @@ func (k *Kernel) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(19, &k.nextInotifyCookie)
 	stateSourceObject.Load(20, &k.netlinkPorts)
 	stateSourceObject.Load(22, &k.sockets)
-	stateSourceObject.Load(23, &k.socketsVFS2)
-	stateSourceObject.Load(24, &k.nextSocketRecord)
-	stateSourceObject.Load(26, &k.DirentCacheLimiter)
-	stateSourceObject.Load(27, &k.SpecialOpts)
-	stateSourceObject.Load(28, &k.vfs)
-	stateSourceObject.Load(29, &k.hostMount)
-	stateSourceObject.Load(30, &k.pipeMount)
-	stateSourceObject.Load(31, &k.shmMount)
-	stateSourceObject.Load(32, &k.socketMount)
-	stateSourceObject.Load(33, &k.SleepForAddressSpaceActivation)
-	stateSourceObject.Load(34, &k.ptraceExceptions)
-	stateSourceObject.Load(35, &k.YAMAPtraceScope)
-	stateSourceObject.Load(36, &k.cgroupRegistry)
-	stateSourceObject.Load(37, &k.userCountersMap)
+	stateSourceObject.Load(23, &k.nextSocketRecord)
+	stateSourceObject.Load(25, &k.SpecialOpts)
+	stateSourceObject.Load(26, &k.vfs)
+	stateSourceObject.Load(27, &k.hostMount)
+	stateSourceObject.Load(28, &k.pipeMount)
+	stateSourceObject.Load(29, &k.shmMount)
+	stateSourceObject.Load(30, &k.socketMount)
+	stateSourceObject.Load(31, &k.SleepForAddressSpaceActivation)
+	stateSourceObject.Load(32, &k.ptraceExceptions)
+	stateSourceObject.Load(33, &k.YAMAPtraceScope)
+	stateSourceObject.Load(34, &k.cgroupRegistry)
+	stateSourceObject.Load(35, &k.userCountersMap)
 	stateSourceObject.LoadValue(21, new([]tcpip.Endpoint), func(y any) { k.loadDanglingEndpoints(y.([]tcpip.Endpoint)) })
-	stateSourceObject.LoadValue(25, new(*device.Registry), func(y any) { k.loadDeviceRegistry(y.(*device.Registry)) })
+	stateSourceObject.LoadValue(24, new(*device.Registry), func(y any) { k.loadDeviceRegistry(y.(*device.Registry)) })
 }
 
 func (s *SocketRecord) StateTypeName() string {
@@ -581,7 +566,6 @@ func (s *SocketRecord) StateFields() []string {
 	return []string{
 		"k",
 		"Sock",
-		"SockVFS2",
 		"ID",
 	}
 }
@@ -593,8 +577,7 @@ func (s *SocketRecord) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.k)
 	stateSinkObject.Save(1, &s.Sock)
-	stateSinkObject.Save(2, &s.SockVFS2)
-	stateSinkObject.Save(3, &s.ID)
+	stateSinkObject.Save(2, &s.ID)
 }
 
 func (s *SocketRecord) afterLoad() {}
@@ -603,36 +586,7 @@ func (s *SocketRecord) afterLoad() {}
 func (s *SocketRecord) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.k)
 	stateSourceObject.Load(1, &s.Sock)
-	stateSourceObject.Load(2, &s.SockVFS2)
-	stateSourceObject.Load(3, &s.ID)
-}
-
-func (s *SocketRecordVFS1) StateTypeName() string {
-	return "pkg/sentry/kernel.SocketRecordVFS1"
-}
-
-func (s *SocketRecordVFS1) StateFields() []string {
-	return []string{
-		"socketEntry",
-		"SocketRecord",
-	}
-}
-
-func (s *SocketRecordVFS1) beforeSave() {}
-
-// +checklocksignore
-func (s *SocketRecordVFS1) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.Save(0, &s.socketEntry)
-	stateSinkObject.Save(1, &s.SocketRecord)
-}
-
-func (s *SocketRecordVFS1) afterLoad() {}
-
-// +checklocksignore
-func (s *SocketRecordVFS1) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.socketEntry)
-	stateSourceObject.Load(1, &s.SocketRecord)
+	stateSourceObject.Load(2, &s.ID)
 }
 
 func (p *pendingSignals) StateTypeName() string {
@@ -1225,62 +1179,6 @@ func (sh *SignalHandlers) afterLoad() {}
 // +checklocksignore
 func (sh *SignalHandlers) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &sh.actions)
-}
-
-func (l *socketList) StateTypeName() string {
-	return "pkg/sentry/kernel.socketList"
-}
-
-func (l *socketList) StateFields() []string {
-	return []string{
-		"head",
-		"tail",
-	}
-}
-
-func (l *socketList) beforeSave() {}
-
-// +checklocksignore
-func (l *socketList) StateSave(stateSinkObject state.Sink) {
-	l.beforeSave()
-	stateSinkObject.Save(0, &l.head)
-	stateSinkObject.Save(1, &l.tail)
-}
-
-func (l *socketList) afterLoad() {}
-
-// +checklocksignore
-func (l *socketList) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &l.head)
-	stateSourceObject.Load(1, &l.tail)
-}
-
-func (e *socketEntry) StateTypeName() string {
-	return "pkg/sentry/kernel.socketEntry"
-}
-
-func (e *socketEntry) StateFields() []string {
-	return []string{
-		"next",
-		"prev",
-	}
-}
-
-func (e *socketEntry) beforeSave() {}
-
-// +checklocksignore
-func (e *socketEntry) StateSave(stateSinkObject state.Sink) {
-	e.beforeSave()
-	stateSinkObject.Save(0, &e.next)
-	stateSinkObject.Save(1, &e.prev)
-}
-
-func (e *socketEntry) afterLoad() {}
-
-// +checklocksignore
-func (e *socketEntry) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &e.next)
-	stateSourceObject.Load(1, &e.prev)
 }
 
 func (s *syscallTableInfo) StateTypeName() string {
@@ -2131,7 +2029,6 @@ func (tg *ThreadGroup) StateFields() []string {
 		"processGroup",
 		"execed",
 		"oldRSeqCritical",
-		"mounts",
 		"tty",
 		"oomScoreAdj",
 	}
@@ -2174,9 +2071,8 @@ func (tg *ThreadGroup) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(26, &tg.limits)
 	stateSinkObject.Save(27, &tg.processGroup)
 	stateSinkObject.Save(28, &tg.execed)
-	stateSinkObject.Save(30, &tg.mounts)
-	stateSinkObject.Save(31, &tg.tty)
-	stateSinkObject.Save(32, &tg.oomScoreAdj)
+	stateSinkObject.Save(30, &tg.tty)
+	stateSinkObject.Save(31, &tg.oomScoreAdj)
 }
 
 func (tg *ThreadGroup) afterLoad() {}
@@ -2212,9 +2108,8 @@ func (tg *ThreadGroup) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(26, &tg.limits)
 	stateSourceObject.Load(27, &tg.processGroup)
 	stateSourceObject.Load(28, &tg.execed)
-	stateSourceObject.Load(30, &tg.mounts)
-	stateSourceObject.Load(31, &tg.tty)
-	stateSourceObject.Load(32, &tg.oomScoreAdj)
+	stateSourceObject.Load(30, &tg.tty)
+	stateSourceObject.Load(31, &tg.oomScoreAdj)
 	stateSourceObject.LoadValue(29, new(*OldRSeqCriticalRegion), func(y any) { tg.loadOldRSeqCritical(y.(*OldRSeqCriticalRegion)) })
 }
 
@@ -2593,7 +2488,6 @@ func init() {
 	state.Register((*userCounters)(nil))
 	state.Register((*Kernel)(nil))
 	state.Register((*SocketRecord)(nil))
-	state.Register((*SocketRecordVFS1)(nil))
 	state.Register((*pendingSignals)(nil))
 	state.Register((*pendingSignalQueue)(nil))
 	state.Register((*pendingSignal)(nil))
@@ -2613,8 +2507,6 @@ func init() {
 	state.Register((*Session)(nil))
 	state.Register((*ProcessGroup)(nil))
 	state.Register((*SignalHandlers)(nil))
-	state.Register((*socketList)(nil))
-	state.Register((*socketEntry)(nil))
 	state.Register((*syscallTableInfo)(nil))
 	state.Register((*syslog)(nil))
 	state.Register((*Task)(nil))

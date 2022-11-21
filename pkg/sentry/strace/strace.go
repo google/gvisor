@@ -151,19 +151,19 @@ func path(t *kernel.Task, addr hostarch.Addr) string {
 }
 
 func fd(t *kernel.Task, fd int32) string {
-	root := t.FSContext().RootDirectoryVFS2()
+	root := t.FSContext().RootDirectory()
 	defer root.DecRef(t)
 
 	vfsObj := root.Mount().Filesystem().VirtualFilesystem()
 	if fd == linux.AT_FDCWD {
-		wd := t.FSContext().WorkingDirectoryVFS2()
+		wd := t.FSContext().WorkingDirectory()
 		defer wd.DecRef(t)
 
 		name, _ := vfsObj.PathnameWithDeleted(t, root, wd)
 		return fmt.Sprintf("AT_FDCWD %s", name)
 	}
 
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		// Cast FD to uint64 to avoid printing negative hex.
 		return fmt.Sprintf("%#x (bad FD)", uint64(fd))

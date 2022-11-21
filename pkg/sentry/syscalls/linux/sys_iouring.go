@@ -59,7 +59,7 @@ func IOUringSetup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 	}
 	defer iouringfd.DecRef(t)
 
-	fd, err := t.NewFDFromVFS2(0, iouringfd, kernel.FDFlags{
+	fd, err := t.NewFDFrom(0, iouringfd, kernel.FDFlags{
 		// O_CLOEXEC is always set up. See io_uring/io_uring.c:io_uring_install_fd().
 		CloseOnExec: true,
 	})
@@ -103,7 +103,7 @@ func IOUringEnter(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 		return uintptr(ret), nil, nil
 	}
 
-	file := t.GetFileVFS2(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return uintptr(ret), nil, linuxerr.EBADF
 	}
