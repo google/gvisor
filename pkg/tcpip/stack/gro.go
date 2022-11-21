@@ -295,6 +295,7 @@ func (gd *groDispatcher) dispatch(pkt PacketBufferPtr, netProto tcpip.NetworkPro
 	if flushGROPkt {
 		// Flush the existing GRO packet.
 		ep.HandlePacket(groPkt.pkt)
+		groPkt.pkt.DecRef()
 		bucket.removeOne(groPkt)
 		groPkt = nil
 	} else if groPkt != nil {
@@ -325,6 +326,7 @@ func (gd *groDispatcher) dispatch(pkt PacketBufferPtr, netProto tcpip.NetworkPro
 	case flush && groPkt != nil:
 		// A merge occurred and we need to flush groPkt.
 		ep.HandlePacket(groPkt.pkt)
+		groPkt.pkt.DecRef()
 		bucket.removeOne(groPkt)
 	case flush && groPkt == nil:
 		// No merge occurred and the incoming packet needs to be flushed.
@@ -333,7 +335,9 @@ func (gd *groDispatcher) dispatch(pkt PacketBufferPtr, netProto tcpip.NetworkPro
 		// New flow and we don't need to flush. Insert pkt into GRO.
 		if bucket.full() {
 			// Head is always the oldest packet
-			ep.HandlePacket(bucket.removeOldest())
+			oldPkt := bucket.removeOldest()
+			ep.HandlePacket(oldPkt)
+			oldPkt.DecRef()
 		}
 		bucket.insert(pkt.IncRef(), ipHdr, tcpHdr, ep)
 	}
@@ -420,6 +424,7 @@ func (gd *groDispatcher) flush() {
 		for groPkt := bucket.packets.Front(); groPkt != nil; groPkt = groPkt.Next() {
 			if groPkt.created.Before(oldTime) {
 				groPkt.ep.HandlePacket(groPkt.pkt)
+				groPkt.pkt.DecRef()
 				bucket.removeOne(groPkt)
 			} else {
 				// Packets are ordered by age, so we can move
@@ -438,6 +443,7 @@ func (gd *groDispatcher) flushAll() {
 		bucket := &gd.buckets[i]
 		for groPkt := bucket.packets.Front(); groPkt != nil; groPkt = groPkt.Next() {
 			groPkt.ep.HandlePacket(groPkt.pkt)
+			groPkt.pkt.DecRef()
 			bucket.removeOne(groPkt)
 		}
 	}
