@@ -471,7 +471,7 @@ TEST(SendFileTest, SendToNotARegularFile) {
       ASSERT_NO_ERRNO_AND_VALUE(Open(out_file.path(), O_WRONLY));
 
   // Receive an error since a directory is not a regular file.
-  EXPECT_THAT(sendfile(outf.get(), inf.get(), nullptr, 0),
+  EXPECT_THAT(sendfile(outf.get(), inf.get(), nullptr, 1),
               SyscallFailsWithErrno(EINVAL));
 }
 
