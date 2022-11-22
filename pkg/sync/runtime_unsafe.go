@@ -74,7 +74,7 @@ func Goready(gp uintptr, traceskip int, wakep bool) {
 	}
 	goready(gp, traceskip)
 	if supportsWakeSuppression && !wakep {
-		preGoReadyWakeSuppression()
+		postGoReadyWakeSuppression()
 	}
 }
 
