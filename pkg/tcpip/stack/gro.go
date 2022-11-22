@@ -50,24 +50,33 @@ const (
 
 // A groBucket holds packets that are undergoing GRO.
 type groBucket struct {
+	// mu protects the fields of a bucket.
+	mu sync.Mutex
+
 	// count is the number of packets in the bucket.
+	// +checklocks:mu
 	count int
 
 	// packets is the linked list of packets.
+	// +checklocks:mu
 	packets groPacketList
 
 	// packetsPrealloc and allocIdxs are used to preallocate and reuse
 	// groPacket structs and avoid allocation.
+	// +checklocks:mu
 	packetsPrealloc [groBucketSize]groPacket
 
+	// +checklocks:mu
 	allocIdxs [groBucketSize]int
 }
 
+// +checklocks:gb.mu
 func (gb *groBucket) full() bool {
 	return gb.count == groBucketSize
 }
 
 // insert inserts pkt into the bucket.
+// +checklocks:gb.mu
 func (gb *groBucket) insert(pkt PacketBufferPtr, ipHdr header.IPv4, tcpHdr header.TCP, ep NetworkEndpoint) {
 	groPkt := &gb.packetsPrealloc[gb.allocIdxs[gb.count]]
 	*groPkt = groPacket{
@@ -83,6 +92,7 @@ func (gb *groBucket) insert(pkt PacketBufferPtr, ipHdr header.IPv4, tcpHdr heade
 
 // removeOldest removes the oldest packet from gb and returns the contained
 // PacketBufferPtr. gb must not be empty.
+// +checklocks:gb.mu
 func (gb *groBucket) removeOldest() PacketBufferPtr {
 	pkt := gb.packets.Front()
 	gb.packets.Remove(pkt)
@@ -94,11 +104,66 @@ func (gb *groBucket) removeOldest() PacketBufferPtr {
 }
 
 // removeOne removes a packet from gb. It also resets pkt to its zero value.
+// +checklocks:gb.mu
 func (gb *groBucket) removeOne(pkt *groPacket) {
 	gb.packets.Remove(pkt)
 	gb.count--
 	gb.allocIdxs[gb.count] = pkt.idx
 	*pkt = groPacket{}
+}
+
+// findGROPacket returns the groPkt that matches ipHdr and tcpHdr, or nil if
+// none exists. It also returns whether the groPkt should be flushed based on
+// differences between the two headers.
+// +checklocks:gb.mu
+func (gb *groBucket) findGROPacket(ipHdr header.IPv4, tcpHdr header.TCP) (*groPacket, bool) {
+	for groPkt := gb.packets.Front(); groPkt != nil; groPkt = groPkt.Next() {
+		// Do the addresses match?
+		if ipHdr.SourceAddress() != groPkt.ipHdr.SourceAddress() || ipHdr.DestinationAddress() != groPkt.ipHdr.DestinationAddress() {
+			continue
+		}
+
+		// Do the ports match?
+		if tcpHdr.SourcePort() != groPkt.tcpHdr.SourcePort() || tcpHdr.DestinationPort() != groPkt.tcpHdr.DestinationPort() {
+			continue
+		}
+
+		// We've found a packet of the same flow.
+
+		// IP checks.
+		TOS, _ := ipHdr.TOS()
+		groTOS, _ := groPkt.ipHdr.TOS()
+		if ipHdr.TTL() != groPkt.ipHdr.TTL() || TOS != groTOS {
+			return groPkt, true
+		}
+
+		// TCP checks.
+		flags := tcpHdr.Flags()
+		groPktFlags := groPkt.tcpHdr.Flags()
+		dataOff := tcpHdr.DataOffset()
+		if flags&header.TCPFlagCwr != 0 || // Is congestion control occurring?
+			(flags^groPktFlags)&^(header.TCPFlagCwr|header.TCPFlagFin|header.TCPFlagPsh) != 0 || // Do the flags differ besides CRW, FIN, and PSH?
+			tcpHdr.AckNumber() != groPkt.tcpHdr.AckNumber() || // Do the ACKs match?
+			dataOff != groPkt.tcpHdr.DataOffset() || // Are the TCP headers the same length?
+			groPkt.tcpHdr.SequenceNumber()+uint32(groPkt.payloadSize()) != tcpHdr.SequenceNumber() { // Does the incoming packet match the expected sequence number?
+			return groPkt, true
+		}
+		// The options, including timestamps, must be identical.
+		for i := header.TCPMinimumSize; i < int(dataOff); i++ {
+			if tcpHdr[i] != groPkt.tcpHdr[i] {
+				return groPkt, true
+			}
+		}
+
+		// There's an upper limit on coalesced packet size.
+		if int(ipHdr.TotalLength())-header.IPv4MinimumSize-int(dataOff)+groPkt.pkt.Data().Size() >= groMaxPacketSize {
+			return groPkt, true
+		}
+
+		return groPkt, false
+	}
+
+	return nil, false
 }
 
 // A groPacket is packet undergoing GRO. It may be several packets coalesced
@@ -142,26 +207,22 @@ type groDispatcher struct {
 	// stop instructs the GRO dispatcher goroutine to stop.
 	stop chan struct{}
 
-	// mu protects the buckets.
-	// TODO(b/256037250): This should be per-bucket.
-	mu sync.Mutex
-	// +checklocks:mu
 	buckets [groNBuckets]groBucket
 }
 
 func (gd *groDispatcher) init(interval time.Duration) {
-	gd.mu.Lock()
-	defer gd.mu.Unlock()
-
 	gd.intervalNS.Store(interval.Nanoseconds())
 	gd.newInterval = make(chan struct{}, 1)
 	gd.stop = make(chan struct{})
 
 	for i := range gd.buckets {
-		for j := range gd.buckets[i].packetsPrealloc {
-			gd.buckets[i].allocIdxs[j] = j
-			gd.buckets[i].packetsPrealloc[j].idx = j
+		bucket := &gd.buckets[i]
+		bucket.mu.Lock()
+		for j := range bucket.packetsPrealloc {
+			bucket.allocIdxs[j] = j
+			bucket.packetsPrealloc[j].idx = j
 		}
+		bucket.mu.Unlock()
 	}
 
 	gd.start(interval)
@@ -284,19 +345,21 @@ func (gd *groDispatcher) dispatch(pkt PacketBufferPtr, netProto tcpip.NetworkPro
 	}
 
 	// Now we can get the bucket for the packet.
-	gd.mu.Lock()
-	defer gd.mu.Unlock()
-
 	bucket := &gd.buckets[gd.bucketForPacket(ipHdr, tcpHdr)&groNBucketsMask]
-	groPkt, flushGROPkt := findGROPacket(bucket, ipHdr, tcpHdr)
+	bucket.mu.Lock()
+	groPkt, flushGROPkt := bucket.findGROPacket(ipHdr, tcpHdr)
 
 	// Flush groPkt or merge the packets.
 	flags := tcpHdr.Flags()
 	if flushGROPkt {
-		// Flush the existing GRO packet.
-		ep.HandlePacket(groPkt.pkt)
-		groPkt.pkt.DecRef()
+		// Flush the existing GRO packet. Don't hold bucket.mu while
+		// processing the packet.
+		pkt := groPkt.pkt
 		bucket.removeOne(groPkt)
+		bucket.mu.Unlock()
+		ep.HandlePacket(pkt)
+		pkt.DecRef()
+		bucket.mu.Lock()
 		groPkt = nil
 	} else if groPkt != nil {
 		// Merge pkt in to GRO packet.
@@ -325,75 +388,32 @@ func (gd *groDispatcher) dispatch(pkt PacketBufferPtr, netProto tcpip.NetworkPro
 	switch {
 	case flush && groPkt != nil:
 		// A merge occurred and we need to flush groPkt.
-		ep.HandlePacket(groPkt.pkt)
-		groPkt.pkt.DecRef()
+		pkt := groPkt.pkt
 		bucket.removeOne(groPkt)
+		bucket.mu.Unlock()
+		ep.HandlePacket(pkt)
+		pkt.DecRef()
 	case flush && groPkt == nil:
 		// No merge occurred and the incoming packet needs to be flushed.
+		bucket.mu.Unlock()
 		ep.HandlePacket(pkt)
 	case !flush && groPkt == nil:
 		// New flow and we don't need to flush. Insert pkt into GRO.
 		if bucket.full() {
 			// Head is always the oldest packet
-			oldPkt := bucket.removeOldest()
-			ep.HandlePacket(oldPkt)
-			oldPkt.DecRef()
+			toFlush := bucket.removeOldest()
+			bucket.insert(pkt.IncRef(), ipHdr, tcpHdr, ep)
+			bucket.mu.Unlock()
+			ep.HandlePacket(toFlush)
+			toFlush.DecRef()
+		} else {
+			bucket.insert(pkt.IncRef(), ipHdr, tcpHdr, ep)
+			bucket.mu.Unlock()
 		}
-		bucket.insert(pkt.IncRef(), ipHdr, tcpHdr, ep)
+	default:
+		// A merge occurred and we don't need to flush anything.
+		bucket.mu.Unlock()
 	}
-}
-
-// findGROPacket returns the groPkt that matches ipHdr and tcpHdr, or nil if
-// none exists. It also returns whether the groPkt should be flushed based on
-// differences between the two headers.
-func findGROPacket(bucket *groBucket, ipHdr header.IPv4, tcpHdr header.TCP) (*groPacket, bool) {
-	for groPkt := bucket.packets.Front(); groPkt != nil; groPkt = groPkt.Next() {
-		// Do the addresses match?
-		if ipHdr.SourceAddress() != groPkt.ipHdr.SourceAddress() || ipHdr.DestinationAddress() != groPkt.ipHdr.DestinationAddress() {
-			continue
-		}
-
-		// Do the ports match?
-		if tcpHdr.SourcePort() != groPkt.tcpHdr.SourcePort() || tcpHdr.DestinationPort() != groPkt.tcpHdr.DestinationPort() {
-			continue
-		}
-
-		// We've found a packet of the same flow.
-
-		// IP checks.
-		TOS, _ := ipHdr.TOS()
-		groTOS, _ := groPkt.ipHdr.TOS()
-		if ipHdr.TTL() != groPkt.ipHdr.TTL() || TOS != groTOS {
-			return groPkt, true
-		}
-
-		// TCP checks.
-		flags := tcpHdr.Flags()
-		groPktFlags := groPkt.tcpHdr.Flags()
-		dataOff := tcpHdr.DataOffset()
-		if flags&header.TCPFlagCwr != 0 || // Is congestion control occurring?
-			(flags^groPktFlags)&^(header.TCPFlagCwr|header.TCPFlagFin|header.TCPFlagPsh) != 0 || // Do the flags differ besides CRW, FIN, and PSH?
-			tcpHdr.AckNumber() != groPkt.tcpHdr.AckNumber() || // Do the ACKs match?
-			dataOff != groPkt.tcpHdr.DataOffset() || // Are the TCP headers the same length?
-			groPkt.tcpHdr.SequenceNumber()+uint32(groPkt.payloadSize()) != tcpHdr.SequenceNumber() { // Does the incoming packet match the expected sequence number?
-			return groPkt, true
-		}
-		// The options, including timestamps, must be identical.
-		for i := header.TCPMinimumSize; i < int(dataOff); i++ {
-			if tcpHdr[i] != groPkt.tcpHdr[i] {
-				return groPkt, true
-			}
-		}
-
-		// There's an upper limit on coalesced packet size.
-		if int(ipHdr.TotalLength())-header.IPv4MinimumSize-int(dataOff)+groPkt.pkt.Data().Size() >= groMaxPacketSize {
-			return groPkt, true
-		}
-
-		return groPkt, false
-	}
-
-	return nil, false
 }
 
 func (gd *groDispatcher) bucketForPacket(ipHdr header.IPv4, tcpHdr header.TCP) int {
@@ -414,17 +434,27 @@ func (gd *groDispatcher) bucketForPacket(ipHdr header.IPv4, tcpHdr header.TCP) i
 // flush sends any packets older than interval up the stack.
 func (gd *groDispatcher) flush() {
 	interval := gd.intervalNS.Load()
-	oldTime := time.Now().Add(-time.Duration(interval) * time.Nanosecond)
+	old := time.Now().Add(-time.Duration(interval) * time.Nanosecond)
+	gd.flushSince(old)
+}
 
-	gd.mu.Lock()
-	defer gd.mu.Unlock()
+func (gd *groDispatcher) flushSince(old time.Time) {
+	type pair struct {
+		pkt PacketBufferPtr
+		ep  NetworkEndpoint
+	}
 
 	for i := range gd.buckets {
+		// Put packets in a slice so we don't have to hold bucket.mu
+		// when we call HandlePacket.
+		var pairsBacking [groNBuckets]pair
+		pairs := pairsBacking[:0]
+
 		bucket := &gd.buckets[i]
+		bucket.mu.Lock()
 		for groPkt := bucket.packets.Front(); groPkt != nil; groPkt = groPkt.Next() {
-			if groPkt.created.Before(oldTime) {
-				groPkt.ep.HandlePacket(groPkt.pkt)
-				groPkt.pkt.DecRef()
+			if groPkt.created.Before(old) {
+				pairs = append(pairs, pair{groPkt.pkt, groPkt.ep})
 				bucket.removeOne(groPkt)
 			} else {
 				// Packets are ordered by age, so we can move
@@ -432,51 +462,45 @@ func (gd *groDispatcher) flush() {
 				break
 			}
 		}
+		bucket.mu.Unlock()
+
+		for _, pair := range pairs {
+			pair.ep.HandlePacket(pair.pkt)
+			pair.pkt.DecRef()
+		}
 	}
 }
 
 func (gd *groDispatcher) flushAll() {
-	gd.mu.Lock()
-	defer gd.mu.Unlock()
-
-	for i := range gd.buckets {
-		bucket := &gd.buckets[i]
-		for groPkt := bucket.packets.Front(); groPkt != nil; groPkt = groPkt.Next() {
-			groPkt.ep.HandlePacket(groPkt.pkt)
-			groPkt.pkt.DecRef()
-			bucket.removeOne(groPkt)
-		}
-	}
-
+	gd.flushSince(time.Now())
 }
 
 // close stops the GRO goroutine and releases any held packets.
 func (gd *groDispatcher) close() {
 	gd.stop <- struct{}{}
 
-	gd.mu.Lock()
-	defer gd.mu.Unlock()
-
 	for i := range gd.buckets {
 		bucket := &gd.buckets[i]
+		bucket.mu.Lock()
 		for groPkt := bucket.packets.Front(); groPkt != nil; groPkt = groPkt.Next() {
 			groPkt.pkt.DecRef()
 		}
+		bucket.mu.Unlock()
 	}
 }
 
 // String implements fmt.Stringer.
 func (gd *groDispatcher) String() string {
-	gd.mu.Lock()
-	defer gd.mu.Unlock()
-
 	ret := "GRO state: \n"
-	for i, bucket := range gd.buckets {
+	for i := range gd.buckets {
+		bucket := &gd.buckets[i]
+		bucket.mu.Lock()
 		ret += fmt.Sprintf("bucket %d: %d packets: ", i, bucket.count)
 		for groPkt := bucket.packets.Front(); groPkt != nil; groPkt = groPkt.Next() {
 			ret += fmt.Sprintf("%s (%d), ", groPkt.created, groPkt.pkt.Data().Size())
 		}
 		ret += "\n"
+		bucket.mu.Unlock()
 	}
 	return ret
 }
