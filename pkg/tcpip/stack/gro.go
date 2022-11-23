@@ -80,11 +80,13 @@ func (gb *groBucket) full() bool {
 func (gb *groBucket) insert(pkt PacketBufferPtr, ipHdr header.IPv4, tcpHdr header.TCP, ep NetworkEndpoint) {
 	groPkt := &gb.packetsPrealloc[gb.allocIdxs[gb.count]]
 	*groPkt = groPacket{
-		pkt:     pkt,
-		created: time.Now(),
-		ep:      ep,
-		ipHdr:   ipHdr,
-		tcpHdr:  tcpHdr,
+		pkt:           pkt,
+		created:       time.Now(),
+		ep:            ep,
+		ipHdr:         ipHdr,
+		tcpHdr:        tcpHdr,
+		initialLength: ipHdr.TotalLength(),
+		idx:           groPkt.idx,
 	}
 	gb.count++
 	gb.packets.PushBack(groPkt)
@@ -99,7 +101,7 @@ func (gb *groBucket) removeOldest() PacketBufferPtr {
 	gb.count--
 	gb.allocIdxs[gb.count] = pkt.idx
 	ret := pkt.pkt
-	*pkt = groPacket{}
+	pkt.reset()
 	return ret
 }
 
@@ -109,7 +111,7 @@ func (gb *groBucket) removeOne(pkt *groPacket) {
 	gb.packets.Remove(pkt)
 	gb.count--
 	gb.allocIdxs[gb.count] = pkt.idx
-	*pkt = groPacket{}
+	pkt.reset()
 }
 
 // findGROPacket returns the groPkt that matches ipHdr and tcpHdr, or nil if
@@ -187,9 +189,22 @@ type groPacket struct {
 	// ep is the endpoint to which the packet will be sent after GRO.
 	ep NetworkEndpoint
 
+	// initialLength is the length of the first packet in the flow. It is
+	// used as a best-effort guess at MSS: senders will send MSS-sized
+	// packets until they run out of data, so we coalesce as long as
+	// packets are the same size.
+	initialLength uint16
+
 	// idx is the groPacket's index in its bucket packetsPrealloc. It is
 	// immutable.
 	idx int
+}
+
+// reset resets all mutable fields of the groPacket.
+func (pk *groPacket) reset() {
+	*pk = groPacket{
+		idx: pk.idx,
+	}
 }
 
 // payloadSize is the payload size of the coalesced packet, which does not
@@ -271,7 +286,7 @@ func (gd *groDispatcher) setInterval(interval time.Duration) {
 }
 
 // dispatch sends pkt up the stack after it undergoes GRO coalescing.
-func (gd *groDispatcher) dispatch(pkt PacketBufferPtr, netProto tcpip.NetworkProtocolNumber, ep NetworkEndpoint, mtu uint32) {
+func (gd *groDispatcher) dispatch(pkt PacketBufferPtr, netProto tcpip.NetworkProtocolNumber, ep NetworkEndpoint) {
 	// If GRO is disabled simply pass the packet along.
 	if gd.intervalNS.Load() == 0 {
 		ep.HandlePacket(pkt)
@@ -375,15 +390,18 @@ func (gd *groDispatcher) dispatch(pkt PacketBufferPtr, netProto tcpip.NetworkPro
 		pkt = PacketBufferPtr{}
 	}
 
-	// Flush if the packet isn't MSS-sized or if certain flags are set. The
-	// reason for checking MSS equality is:
-	// - If the packet is smaller than the MSS, this is likely the end of
-	//   some message. Peers will send MSS-sized packets until they have
+	// Flush if the packet isn't the same size as the previous packets or
+	// if certain flags are set. The reason for checking size equality is:
+	// - If the packet is smaller than the others, this is likely the end
+	//   of some message. Peers will send MSS-sized packets until they have
 	//   insufficient data to do so.
-	// - If the packet is larger than MSS, this packet is either malformed,
-	//   a local GSO packet, or has already been handled by host GRO.
-	// TODO(b/256037250): Use MSS instead of MTU.
-	flush := uint32(ipHdr.TotalLength()) != mtu || header.TCPFlags(flags)&(header.TCPFlagUrg|header.TCPFlagPsh|header.TCPFlagRst|header.TCPFlagSyn|header.TCPFlagFin) != 0
+	// - If the packet is larger than the others, this packet is either
+	//   malformed, a local GSO packet, or has already been handled by host
+	//   GRO.
+	flush := header.TCPFlags(flags)&(header.TCPFlagUrg|header.TCPFlagPsh|header.TCPFlagRst|header.TCPFlagSyn|header.TCPFlagFin) != 0
+	if groPkt != nil {
+		flush = flush || ipHdr.TotalLength() != groPkt.initialLength
+	}
 
 	switch {
 	case flush && groPkt != nil:
