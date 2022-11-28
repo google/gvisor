@@ -485,8 +485,6 @@ func (r *AtomicRefCount) dropWeakRef(w *WeakRef) {
 //	A: TryIncRef [speculative increase => sees non-negative references]
 //	B: DecRef [real decrease]
 //	A: TryIncRef [transform speculative to real]
-//
-//go:nosplit
 func (r *AtomicRefCount) DecRefWithDestructor(ctx context.Context, destroy func(context.Context)) {
 	switch v := r.refCount.Add(-1); {
 	case v < -1:
@@ -522,8 +520,6 @@ func (r *AtomicRefCount) DecRefWithDestructor(ctx context.Context, destroy func(
 }
 
 // DecRef decrements this object's reference count.
-//
-//go:nosplit
 func (r *AtomicRefCount) DecRef(ctx context.Context) {
 	r.DecRefWithDestructor(ctx, nil)
 }
