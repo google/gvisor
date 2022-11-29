@@ -35,6 +35,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/strings/match.h"
+#include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
@@ -820,6 +821,46 @@ TEST(MountTest, BindToSelf) {
     }
   }
   ASSERT_TRUE(found);
+}
+
+TEST(MountTest, MaxMounts) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const parent = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  ASSERT_THAT(mount("", parent.path().c_str(), "tmpfs", 0, ""),
+              SyscallSucceeds());
+  auto const dir =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(parent.path()));
+  ASSERT_THAT(
+      mount(dir.path().c_str(), dir.path().c_str(), nullptr, MS_BIND, nullptr),
+      SyscallSucceeds());
+  ASSERT_THAT(mount("", dir.path().c_str(), "", MS_SHARED, ""),
+              SyscallSucceeds());
+
+  // Each bind mount doubles the number of mounts in the peer group. The number
+  // of binds we can do before failing is log2(max_mounts-num_current_mounts).
+  int mount_max = 10000;
+  bool mount_max_exists =
+      ASSERT_NO_ERRNO_AND_VALUE(Exists("/proc/sys/fs/mount-max"));
+  if (mount_max_exists) {
+    std::string mount_max_string;
+    ASSERT_NO_ERRNO(GetContents("/proc/sys/fs/mount-max", &mount_max_string));
+    ASSERT_TRUE(absl::SimpleAtoi(mount_max_string, &mount_max));
+  }
+
+  const std::vector<ProcMountInfoEntry> mounts =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
+  int num_binds = static_cast<int>(std::log2(mount_max - mounts.size()));
+
+  for (int i = 0; i < num_binds; i++) {
+    ASSERT_THAT(mount(dir.path().c_str(), dir.path().c_str(), nullptr, MS_BIND,
+                      nullptr),
+                SyscallSucceeds());
+  }
+  ASSERT_THAT(
+      mount(dir.path().c_str(), dir.path().c_str(), nullptr, MS_BIND, nullptr),
+      SyscallFailsWithErrno(ENOSPC));
+  umount2(parent.path().c_str(), MNT_DETACH);
 }
 
 // Tests that it is possible to make a shared mount.

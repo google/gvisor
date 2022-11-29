@@ -151,6 +151,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
         "//pkg/bitmap",
+        "//pkg/cleanup",
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/fd",
