@@ -22,8 +22,7 @@ declare_mutex(
     name = "endpoint_mutex",
     out = "endpoint_mutex.go",
     nested_lock_names = [
-        "e",
-        "ce",
+        "higherID",
     ],
     package = "transport",
     prefix = "endpoint",
