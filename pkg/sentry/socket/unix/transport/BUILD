@@ -1,39 +1,32 @@
 load("//tools:defs.bzl", "go_library")
+load("//pkg/sync/locking:locking.bzl", "declare_mutex")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(licenses = ["notice"])
 
-go_template_instance(
+declare_mutex(
     name = "queue_mutex",
     out = "queue_mutex.go",
     package = "transport",
     prefix = "queue",
-    substrs = {
-        "genericMark": "unixQueue",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
 )
 
-go_template_instance(
+declare_mutex(
     name = "stream_queue_receiver_mutex",
     out = "stream_queue_receiver_mutex.go",
     package = "transport",
     prefix = "streamQueueReceiver",
-    substrs = {
-        "genericMark": "streamQueueReceiver",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
 )
 
-go_template_instance(
+declare_mutex(
     name = "endpoint_mutex",
     out = "endpoint_mutex.go",
+    nested_lock_names = [
+        "e",
+        "ce",
+    ],
     package = "transport",
     prefix = "endpoint",
-    substrs = {
-        "genericMark": "unixEndpoint",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
 )
 
 go_template_instance(

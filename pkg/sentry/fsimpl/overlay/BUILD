@@ -7,6 +7,11 @@ licenses(["notice"])
 declare_mutex(
     name = "dir_mutex",
     out = "dir_mutex.go",
+    nested_lock_names = [
+        "new",
+        "replaced",
+        "child",
+    ],
     package = "overlay",
     prefix = "dir",
 )

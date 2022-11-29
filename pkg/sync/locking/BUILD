@@ -11,9 +11,7 @@ go_library(
     name = "locking",
     srcs = [
         "atomicptrmap_ancestors_unsafe.go",
-        "atomicptrmap_class_unsafe.go",
         "atomicptrmap_goroutine_unsafe.go",
-        "atomicptrmap_subclass_unsafe.go",
         "lockdep.go",
         "lockdep_norace.go",
         "locking.go",
@@ -38,36 +36,6 @@ go_template_instance(
     types = {
         "Key": "int64",
         "Value": "goroutineLocks",
-    },
-)
-
-go_template_instance(
-    name = "atomicptrmap_class",
-    out = "atomicptrmap_class_unsafe.go",
-    imports = {
-        "reflect": "reflect",
-    },
-    package = "locking",
-    prefix = "class",
-    template = "//pkg/sync/atomicptrmap:generic_atomicptrmap",
-    types = {
-        "Key": "*MutexClass",
-        "Value": "reflect.Type",
-    },
-)
-
-go_template_instance(
-    name = "atomicptrmap_subclass",
-    out = "atomicptrmap_subclass_unsafe.go",
-    imports = {
-        "reflect": "reflect",
-    },
-    package = "locking",
-    prefix = "subclass",
-    template = "//pkg/sync/atomicptrmap:generic_atomicptrmap",
-    types = {
-        "Key": "uint32",
-        "Value": "MutexClass",
     },
 )
 
@@ -101,6 +69,10 @@ go_template(
 declare_mutex(
     name = "mutex_test",
     out = "mutex_test.go",
+    nested_lock_names = [
+        "m2",
+        "m3",
+    ],
     package = "locking_test",
     prefix = "test",
 )

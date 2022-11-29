@@ -38,6 +38,7 @@ import (
 	"io"
 	stdlog "log"
 	"os"
+	"regexp"
 	"runtime"
 	"sync/atomic"
 	"time"
@@ -323,6 +324,22 @@ func Stacks(all bool) []byte {
 	}
 	trace = append(trace, []byte("\n\n...<too large, truncated>")...)
 	return trace
+}
+
+// stackRegexp matches one level within a stack trace.
+var stackRegexp = regexp.MustCompile("(?m)^\\S+\\(.*\\)$\\r?\\n^\\t\\S+:\\d+.*$\\r?\\n")
+
+// LocalStack returns the local goroutine stack, excluding the top N entries.
+// LocalStack's own entry is excluded by default and does not need to be counted in excludeTopN.
+func LocalStack(excludeTopN int) []byte {
+	replaceNext := excludeTopN + 1
+	return stackRegexp.ReplaceAllFunc(Stacks(false), func(s []byte) []byte {
+		if replaceNext > 0 {
+			replaceNext--
+			return nil
+		}
+		return s
+	})
 }
 
 // Traceback logs the given message and dumps a stacktrace of the current

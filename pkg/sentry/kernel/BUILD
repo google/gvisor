@@ -28,6 +28,7 @@ declare_rwmutex(
 declare_mutex(
     name = "task_mutex",
     out = "task_mutex.go",
+    nested_lock_names = ["child"],
     package = "kernel",
     prefix = "task",
 )
@@ -56,6 +57,7 @@ declare_mutex(
 declare_mutex(
     name = "signal_handlers_mutex",
     out = "signal_handlers_mutex.go",
+    nested_lock_names = ["tg"],
     package = "kernel",
     prefix = "signalHandlers",
 )

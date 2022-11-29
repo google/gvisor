@@ -27,16 +27,16 @@ type goroutineLocks map[*MutexClass]bool
 type MutexClass struct{}
 
 // NewMutexClass is no-op without the lockdep tag.
-func NewMutexClass(t reflect.Type) *MutexClass {
+func NewMutexClass(reflect.Type, []string) *MutexClass {
 	return nil
 }
 
 // AddGLock is no-op without the lockdep tag.
 //
 //go:inline
-func AddGLock(class *MutexClass, subclass uint32) {}
+func AddGLock(*MutexClass, int) {}
 
 // DelGLock is no-op without the lockdep tag.
 //
 //go:inline
-func DelGLock(class *MutexClass, subclass uint32) {}
+func DelGLock(*MutexClass, int) {}
