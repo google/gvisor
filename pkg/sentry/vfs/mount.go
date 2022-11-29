@@ -23,6 +23,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
@@ -46,6 +47,11 @@ const (
 	Child
 	// Unbindable represents the unbindable propagation type.
 	Unbindable
+
+	// MountMax is the maximum number of mounts allowed. In Linux this can be
+	// configured by the user at /proc/sys/fs/mount-max, but the default is
+	// 100,000. We set the gVisor limit to 10,000.
+	MountMax = 10000
 )
 
 // PropagationTypeFromLinux returns the PropagationType corresponding to a
@@ -273,6 +279,9 @@ type MountNamespace struct {
 	// VFS.PrepareDeleteDentry() and VFS.PrepareRemoveDentry() operate
 	// correctly on unreferenced MountNamespaces.
 	mountpoints map[*Dentry]uint32
+
+	// mounts is the total number of mounts in this mount namespace.
+	mounts uint32
 }
 
 // NewMountNamespace returns a new mount namespace with a root filesystem
@@ -349,11 +358,20 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 	vfs.mountMu.Lock()
 	defer vfs.mountMu.Unlock()
 	tree := vfs.preparePropagationTree(mnt, vd)
+
+	cleanup := cleanup.Make(func() {
+		vfs.abortPropagationTree(ctx, tree) // +checklocksforce
+	})
+	defer cleanup.Clean()
+	// Check if the new mount + all the propagation mounts puts us over the max.
+	if uint32(len(tree)+1)+vd.mount.ns.mounts > MountMax {
+		return linuxerr.ENOSPC
+	}
 	if err := vfs.connectMountAt(ctx, mnt, vd); err != nil {
-		vfs.abortPropagationTree(ctx, tree)
 		return err
 	}
 	vfs.commitPropagationTree(ctx, tree)
+	cleanup.Release()
 	return nil
 }
 
@@ -572,12 +590,21 @@ func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credential
 			vfs.mergePeerGroup(sourceVd.mount, clone)
 		}
 	}
+	cleanup := cleanup.Make(func() {
+		// Checklocks doesn't work with anon functions.
+		vfs.setPropagation(clone, Private)  // +checklocksforce
+		vfs.abortPropagationTree(ctx, tree) // +checklocksforce
+		targetVd.DecRef(ctx)
+	})
+	defer cleanup.Clean()
+	if uint32(1+len(tree))+targetVd.mount.ns.mounts > MountMax {
+		return nil, linuxerr.ENOSPC
+	}
 	if err := vfs.connectMountAt(ctx, clone, targetVd); err != nil {
-		vfs.setPropagation(clone, Private)
-		vfs.abortPropagationTree(ctx, tree)
 		return nil, err
 	}
 	vfs.commitPropagationTree(ctx, tree)
+	cleanup.Release()
 	return clone, nil
 }
 
@@ -795,6 +822,7 @@ func (vfs *VirtualFilesystem) connectLocked(mnt *Mount, vd VirtualDentry, mntns 
 	vd.dentry.mounts.Add(1)
 	mnt.ns = mntns
 	mntns.mountpoints[vd.dentry]++
+	mntns.mounts++
 	vfs.mounts.insertSeqed(mnt)
 	vfsmpmounts, ok := vfs.mountpoints[vd.dentry]
 	if !ok {
@@ -817,11 +845,18 @@ func (vfs *VirtualFilesystem) disconnectLocked(mnt *Mount) VirtualDentry {
 		if vd.mount != nil {
 			panic("VFS.disconnectLocked called on disconnected mount")
 		}
+		if mnt.ns.mountpoints[vd.dentry] == 0 {
+			panic("VFS.disconnectLocked called on dentry with zero mountpoints.")
+		}
+		if mnt.ns.mounts == 0 {
+			panic("VFS.disconnectLocked called on namespace with zero mounts.")
+		}
 	}
 	mnt.loadKey(VirtualDentry{})
 	delete(vd.mount.children, mnt)
 	vd.dentry.mounts.Add(math.MaxUint32) // -1
 	mnt.ns.mountpoints[vd.dentry]--
+	mnt.ns.mounts--
 	if mnt.ns.mountpoints[vd.dentry] == 0 {
 		delete(mnt.ns.mountpoints, vd.dentry)
 	}

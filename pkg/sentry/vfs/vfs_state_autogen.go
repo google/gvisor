@@ -1232,6 +1232,7 @@ func (mntns *MountNamespace) StateFields() []string {
 		"Owner",
 		"root",
 		"mountpoints",
+		"mounts",
 	}
 }
 
@@ -1244,6 +1245,7 @@ func (mntns *MountNamespace) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &mntns.Owner)
 	stateSinkObject.Save(2, &mntns.root)
 	stateSinkObject.Save(3, &mntns.mountpoints)
+	stateSinkObject.Save(4, &mntns.mounts)
 }
 
 func (mntns *MountNamespace) afterLoad() {}
@@ -1254,6 +1256,7 @@ func (mntns *MountNamespace) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &mntns.Owner)
 	stateSourceObject.Load(2, &mntns.root)
 	stateSourceObject.Load(3, &mntns.mountpoints)
+	stateSourceObject.Load(4, &mntns.mounts)
 }
 
 func (u *umountRecursiveOptions) StateTypeName() string {
