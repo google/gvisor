@@ -81,8 +81,8 @@ gazelle_dependencies()
 go_repository(
     name = "org_golang_x_tools",
     importpath = "golang.org/x/tools",
-    sum = "h1:j9KsMiaP1c3B0OTQGth0/k+miLGTgLsAFUCrF2vLcF8=",
-    version = "v0.1.9",
+    sum = "h1:SrNbZl6ECOS1qFzgTdQfWXZM9XBkiA6tkFrH9YSTPHM=",
+    version = "v0.3.0",
 )
 
 go_repository(
@@ -100,10 +100,17 @@ go_repository(
 )
 
 go_repository(
+    name = "com_github_burntsushi_toml",
+    importpath = "github.com/BurntSushi/toml",
+    sum = "h1:9F2/+DoOYIOksmaJFPw1tGFy1eDnIJXg+UHjuD8lTak=",
+    version = "v1.2.1",
+)
+
+go_repository(
     name = "co_honnef_go_tools",
     importpath = "honnef.co/go/tools",
-    sum = "h1:MNh1AVMyVX23VUHE2O27jm6lNj3vjO5DexS4A1xvnzk=",
-    version = "v0.2.2",
+    sum = "h1:oDx7VAwstgpYpb3wv0oxiZlxY+foCpRAwY7Vk6XpAgA=",
+    version = "v0.3.3",
 )
 
 go_repository(
@@ -116,9 +123,9 @@ go_repository(
 # Load C++ rules.
 http_archive(
     name = "rules_cc",
-    urls = ["https://github.com/bazelbuild/rules_cc/releases/download/0.0.4/rules_cc-0.0.4.tar.gz"],
     sha256 = "af6cc82d87db94585bceeda2561cb8a9d55ad435318ccb4ddfee18a43580fb5d",
     strip_prefix = "rules_cc-0.0.4",
+    urls = ["https://github.com/bazelbuild/rules_cc/releases/download/0.0.4/rules_cc-0.0.4.tar.gz"],
 )
 
 # Load C++ cross-compilation toolchains.
@@ -435,13 +442,6 @@ go_repository(
 )
 
 go_repository(
-    name = "com_github_pelletier_go_toml",
-    importpath = "github.com/pelletier/go-toml",
-    sum = "h1:T5zMGML61Wp+FlcbWjRDT7yAxhJNAiPPLOFECq181zc=",
-    version = "v1.2.0",
-)
-
-go_repository(
     name = "com_github_prometheus_client_golang",
     importpath = "github.com/prometheus/client_golang",
     sum = "h1:9iH4JKXLzFbOAdtqv/a+j8aewx2Y8lAjAydhbaScPF8=",
@@ -638,13 +638,13 @@ http_archive(
 
 # Load C++ grpc rules.
 http_archive(
-  patch_args = ["-p1"],
-  patches = ["//tools:grpc_extra_deps.patch"],
     name = "com_github_grpc_grpc",
-    sha256 = "fb1ed98eb3555877d55eb2b948caca44bc8601c6704896594de81558639709ef",
-    strip_prefix = "grpc-1.50.1",
+    patch_args = ["-p1"],
+    patches = ["//tools:grpc_extra_deps.patch"],
+    sha256 = "b55696fb249669744de3e71acc54a9382bea0dce7cd5ba379b356b12b82d4229",
+    strip_prefix = "grpc-1.51.1",
     urls = [
-        "https://github.com/grpc/grpc/archive/v1.50.1.tar.gz",
+        "https://github.com/grpc/grpc/archive/v1.51.1.tar.gz",
     ],
 )
 
@@ -989,13 +989,6 @@ go_repository(
 )
 
 go_repository(
-    name = "com_github_burntsushi_toml",
-    importpath = "github.com/BurntSushi/toml",
-    sum = "h1:WXkYYl6Yr3qBf1K79EBnL4mak0OimBfB0XUf9Vl28OQ=",
-    version = "v0.3.1",
-)
-
-go_repository(
     name = "com_github_census_instrumentation_opencensus_proto",
     importpath = "github.com/census-instrumentation/opencensus-proto",
     sum = "h1:glEXhBS5PSLLv4IXzLA5yPRVX4bilULVyxxbrfOtDAk=",
@@ -1284,10 +1277,10 @@ go_repository(
 )
 
 go_repository(
-    name = "org_golang_x_exp",
-    importpath = "golang.org/x/exp",
-    sum = "h1:QE6XYQK6naiK1EPAe1g/ILLxN5RBoH5xkJk3CqlMI/Y=",
-    version = "v0.0.0-20200224162631-6cc2880d07d6",
+    name = "org_golang_x_exp_typeparams",
+    importpath = "golang.org/x/exp/typeparams",
+    sum = "h1:HLMZVag1HHlHs3TLOQ9+wAeKt5tp1ri1khLdhYjBcFw=",
+    version = "v0.0.0-20221126150942-6ab00d035af9",
 )
 
 go_repository(
