@@ -548,10 +548,8 @@ func (ct *ConnTrack) getConnAndUpdate(pkt PacketBufferPtr, skipChecksumValidatio
 			}
 		}
 
-		bktID := ct.bucket(tid)
-
 		ct.mu.RLock()
-		bkt := &ct.buckets[bktID]
+		bkt := &ct.buckets[ct.bucket(tid)]
 		ct.mu.RUnlock()
 
 		now := ct.clock.NowMonotonic()
@@ -603,10 +601,8 @@ func (ct *ConnTrack) getConnAndUpdate(pkt PacketBufferPtr, skipChecksumValidatio
 }
 
 func (ct *ConnTrack) connForTID(tid tupleID) *tuple {
-	bktID := ct.bucket(tid)
-
 	ct.mu.RLock()
-	bkt := &ct.buckets[bktID]
+	bkt := &ct.buckets[ct.bucket(tid)]
 	ct.mu.RUnlock()
 
 	return bkt.connForTID(tid, ct.clock.NowMonotonic())
@@ -635,7 +631,7 @@ func (ct *ConnTrack) finalize(cn *conn) finalizeResult {
 
 	{
 		tid := cn.reply.tupleID
-		id := ct.bucket(tid)
+		id := ct.bucketWithTableLength(tid, len(buckets))
 
 		bkt := &buckets[id]
 		bkt.mu.Lock()
@@ -663,7 +659,7 @@ func (ct *ConnTrack) finalize(cn *conn) finalizeResult {
 	// better.
 
 	tid := cn.original.tupleID
-	id := ct.bucket(tid)
+	id := ct.bucketWithTableLength(tid, len(buckets))
 	bkt := &buckets[id]
 	bkt.mu.Lock()
 	defer bkt.mu.Unlock()
@@ -978,7 +974,12 @@ func (cn *conn) handlePacket(pkt PacketBufferPtr, hook Hook, rt *Route) bool {
 }
 
 // bucket gets the conntrack bucket for a tupleID.
+// +checklocksread:ct.mu
 func (ct *ConnTrack) bucket(id tupleID) int {
+	return ct.bucketWithTableLength(id, len(ct.buckets))
+}
+
+func (ct *ConnTrack) bucketWithTableLength(id tupleID, tableLength int) int {
 	h := jenkins.Sum32(ct.seed)
 	h.Write([]byte(id.srcAddr))
 	h.Write([]byte(id.dstAddr))
@@ -991,9 +992,7 @@ func (ct *ConnTrack) bucket(id tupleID) int {
 	h.Write([]byte(shortBuf))
 	binary.LittleEndian.PutUint16(shortBuf, uint16(id.netProto))
 	h.Write([]byte(shortBuf))
-	ct.mu.RLock()
-	defer ct.mu.RUnlock()
-	return int(h.Sum32()) % len(ct.buckets)
+	return int(h.Sum32()) % tableLength
 }
 
 // reapUnused deletes timed out entries from the conntrack map. The rules for
