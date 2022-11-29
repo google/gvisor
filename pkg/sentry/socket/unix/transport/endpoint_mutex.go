@@ -25,8 +25,7 @@ type endpointlockNameIndex int
 
 // DO NOT REMOVE: The following function automatically replaced with lock index constants.
 const (
-	endpointLockE  = endpointlockNameIndex(0)
-	endpointLockCe = endpointlockNameIndex(1)
+	endpointLockHigherid = endpointlockNameIndex(0)
 )
 const ()
 
@@ -59,7 +58,7 @@ func (m *endpointMutex) NestedUnlock(i endpointlockNameIndex) {
 }
 
 // DO NOT REMOVE: The following function is automatically replaced.
-func endpointinitLockNames() { endpointlockNames = []string{"e", "ce"} }
+func endpointinitLockNames() { endpointlockNames = []string{"higherID"} }
 
 func init() {
 	endpointinitLockNames()
