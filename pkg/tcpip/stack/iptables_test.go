@@ -147,8 +147,10 @@ func TestNATedConnectionReap(t *testing.T) {
 	}
 	replyTID := invertedReplyTID.reply()
 
+	iptables.connections.mu.RLock()
 	originalBktID := iptables.connections.bucket(originalTID)
 	replyBktID := iptables.connections.bucket(replyTID)
+	iptables.connections.mu.RUnlock()
 
 	// This test depends on the original and reply tuples mapping to different
 	// buckets.
