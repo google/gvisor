@@ -28,8 +28,8 @@ import (
 type locker interface {
 	Lock()
 	Unlock()
-	NestedLock()
-	NestedUnlock()
+	NestedLock(endpointlockNameIndex)
+	NestedUnlock(endpointlockNameIndex)
 }
 
 // A ConnectingEndpoint is a connectioned unix endpoint that is attempting to
@@ -288,27 +288,27 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 	// Do a dance to safely acquire locks on both endpoints.
 	if e.id < ce.ID() {
 		e.Lock()
-		ce.NestedLock()
+		ce.NestedLock(endpointLockCe)
 	} else {
 		ce.Lock()
-		e.NestedLock()
+		e.NestedLock(endpointLockE)
 	}
 
 	// Check connecting state.
 	if ce.Connected() {
-		e.NestedUnlock()
+		e.NestedUnlock(endpointLockE)
 		ce.Unlock()
 		return syserr.ErrAlreadyConnected
 	}
 	if ce.ListeningLocked() {
-		e.NestedUnlock()
+		e.NestedUnlock(endpointLockE)
 		ce.Unlock()
 		return syserr.ErrInvalidEndpointState
 	}
 
 	// Check bound state.
 	if !e.ListeningLocked() {
-		e.NestedUnlock()
+		e.NestedUnlock(endpointLockE)
 		ce.Unlock()
 		return syserr.ErrConnectionRefused
 	}
@@ -359,7 +359,7 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 		}
 
 		// Notify can deadlock if we are holding these locks.
-		e.NestedUnlock()
+		e.NestedUnlock(endpointLockE)
 		ce.Unlock()
 
 		// Notify on both ends.
@@ -369,7 +369,7 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 		return nil
 	default:
 		// Busy; return EAGAIN per spec.
-		e.NestedUnlock()
+		e.NestedUnlock(endpointLockE)
 		ce.Unlock()
 		ne.Close(ctx)
 		return syserr.ErrTryAgain

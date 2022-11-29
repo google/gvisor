@@ -12,17 +12,30 @@ type filesystemRWMutex struct {
 	mu sync.RWMutex
 }
 
+// lockNames is a list of user-friendly lock names.
+// Populated in init.
+var filesystemlockNames []string
+
+// lockNameIndex is used as an index passed to NestedLock and NestedUnlock,
+// refering to an index within lockNames.
+// Values are specified using the "consts" field of go_template_instance.
+type filesystemlockNameIndex int
+
+// DO NOT REMOVE: The following function automatically replaced with lock index constants.
+// LOCK_NAME_INDEX_CONSTANTS
+const ()
+
 // Lock locks m.
 // +checklocksignore
 func (m *filesystemRWMutex) Lock() {
-	locking.AddGLock(filesystemprefixIndex, 0)
+	locking.AddGLock(filesystemprefixIndex, -1)
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
-func (m *filesystemRWMutex) NestedLock() {
-	locking.AddGLock(filesystemprefixIndex, 1)
+func (m *filesystemRWMutex) NestedLock(i filesystemlockNameIndex) {
+	locking.AddGLock(filesystemprefixIndex, int(i))
 	m.mu.Lock()
 }
 
@@ -30,20 +43,20 @@ func (m *filesystemRWMutex) NestedLock() {
 // +checklocksignore
 func (m *filesystemRWMutex) Unlock() {
 	m.mu.Unlock()
-	locking.DelGLock(filesystemprefixIndex, 0)
+	locking.DelGLock(filesystemprefixIndex, -1)
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
-func (m *filesystemRWMutex) NestedUnlock() {
+func (m *filesystemRWMutex) NestedUnlock(i filesystemlockNameIndex) {
 	m.mu.Unlock()
-	locking.DelGLock(filesystemprefixIndex, 1)
+	locking.DelGLock(filesystemprefixIndex, int(i))
 }
 
 // RLock locks m for reading.
 // +checklocksignore
 func (m *filesystemRWMutex) RLock() {
-	locking.AddGLock(filesystemprefixIndex, 0)
+	locking.AddGLock(filesystemprefixIndex, -1)
 	m.mu.RLock()
 }
 
@@ -51,7 +64,7 @@ func (m *filesystemRWMutex) RLock() {
 // +checklocksignore
 func (m *filesystemRWMutex) RUnlock() {
 	m.mu.RUnlock()
-	locking.DelGLock(filesystemprefixIndex, 0)
+	locking.DelGLock(filesystemprefixIndex, -1)
 }
 
 // RLockBypass locks m for reading without executing the validator.
@@ -74,6 +87,10 @@ func (m *filesystemRWMutex) DowngradeLock() {
 
 var filesystemprefixIndex *locking.MutexClass
 
+// DO NOT REMOVE: The following function is automatically replaced.
+func filesysteminitLockNames() {}
+
 func init() {
-	filesystemprefixIndex = locking.NewMutexClass(reflect.TypeOf(filesystemRWMutex{}))
+	filesysteminitLockNames()
+	filesystemprefixIndex = locking.NewMutexClass(reflect.TypeOf(filesystemRWMutex{}), filesystemlockNames)
 }

@@ -12,17 +12,30 @@ type renameRWMutex struct {
 	mu sync.RWMutex
 }
 
+// lockNames is a list of user-friendly lock names.
+// Populated in init.
+var renamelockNames []string
+
+// lockNameIndex is used as an index passed to NestedLock and NestedUnlock,
+// refering to an index within lockNames.
+// Values are specified using the "consts" field of go_template_instance.
+type renamelockNameIndex int
+
+// DO NOT REMOVE: The following function automatically replaced with lock index constants.
+// LOCK_NAME_INDEX_CONSTANTS
+const ()
+
 // Lock locks m.
 // +checklocksignore
 func (m *renameRWMutex) Lock() {
-	locking.AddGLock(renameprefixIndex, 0)
+	locking.AddGLock(renameprefixIndex, -1)
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
-func (m *renameRWMutex) NestedLock() {
-	locking.AddGLock(renameprefixIndex, 1)
+func (m *renameRWMutex) NestedLock(i renamelockNameIndex) {
+	locking.AddGLock(renameprefixIndex, int(i))
 	m.mu.Lock()
 }
 
@@ -30,20 +43,20 @@ func (m *renameRWMutex) NestedLock() {
 // +checklocksignore
 func (m *renameRWMutex) Unlock() {
 	m.mu.Unlock()
-	locking.DelGLock(renameprefixIndex, 0)
+	locking.DelGLock(renameprefixIndex, -1)
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
-func (m *renameRWMutex) NestedUnlock() {
+func (m *renameRWMutex) NestedUnlock(i renamelockNameIndex) {
 	m.mu.Unlock()
-	locking.DelGLock(renameprefixIndex, 1)
+	locking.DelGLock(renameprefixIndex, int(i))
 }
 
 // RLock locks m for reading.
 // +checklocksignore
 func (m *renameRWMutex) RLock() {
-	locking.AddGLock(renameprefixIndex, 0)
+	locking.AddGLock(renameprefixIndex, -1)
 	m.mu.RLock()
 }
 
@@ -51,7 +64,7 @@ func (m *renameRWMutex) RLock() {
 // +checklocksignore
 func (m *renameRWMutex) RUnlock() {
 	m.mu.RUnlock()
-	locking.DelGLock(renameprefixIndex, 0)
+	locking.DelGLock(renameprefixIndex, -1)
 }
 
 // RLockBypass locks m for reading without executing the validator.
@@ -74,6 +87,10 @@ func (m *renameRWMutex) DowngradeLock() {
 
 var renameprefixIndex *locking.MutexClass
 
+// DO NOT REMOVE: The following function is automatically replaced.
+func renameinitLockNames() {}
+
 func init() {
-	renameprefixIndex = locking.NewMutexClass(reflect.TypeOf(renameRWMutex{}))
+	renameinitLockNames()
+	renameprefixIndex = locking.NewMutexClass(reflect.TypeOf(renameRWMutex{}), renamelockNames)
 }

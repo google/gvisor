@@ -12,36 +12,53 @@ type iterMutex struct {
 	mu sync.Mutex
 }
 
+var iterprefixIndex *locking.MutexClass
+
+// lockNames is a list of user-friendly lock names.
+// Populated in init.
+var iterlockNames []string
+
+// lockNameIndex is used as an index passed to NestedLock and NestedUnlock,
+// refering to an index within lockNames.
+// Values are specified using the "consts" field of go_template_instance.
+type iterlockNameIndex int
+
+// DO NOT REMOVE: The following function automatically replaced with lock index constants.
+// LOCK_NAME_INDEX_CONSTANTS
+const ()
+
 // Lock locks m.
 // +checklocksignore
 func (m *iterMutex) Lock() {
-	locking.AddGLock(iterprefixIndex, 0)
+	locking.AddGLock(iterprefixIndex, -1)
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
-func (m *iterMutex) NestedLock() {
-	locking.AddGLock(iterprefixIndex, 1)
+func (m *iterMutex) NestedLock(i iterlockNameIndex) {
+	locking.AddGLock(iterprefixIndex, int(i))
 	m.mu.Lock()
 }
 
 // Unlock unlocks m.
 // +checklocksignore
 func (m *iterMutex) Unlock() {
-	locking.DelGLock(iterprefixIndex, 0)
+	locking.DelGLock(iterprefixIndex, -1)
 	m.mu.Unlock()
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
-func (m *iterMutex) NestedUnlock() {
-	locking.DelGLock(iterprefixIndex, 1)
+func (m *iterMutex) NestedUnlock(i iterlockNameIndex) {
+	locking.DelGLock(iterprefixIndex, int(i))
 	m.mu.Unlock()
 }
 
-var iterprefixIndex *locking.MutexClass
+// DO NOT REMOVE: The following function is automatically replaced.
+func iterinitLockNames() {}
 
 func init() {
-	iterprefixIndex = locking.NewMutexClass(reflect.TypeOf(iterMutex{}))
+	iterinitLockNames()
+	iterprefixIndex = locking.NewMutexClass(reflect.TypeOf(iterMutex{}), iterlockNames)
 }

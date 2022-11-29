@@ -202,11 +202,11 @@ func (pg *ProcessGroup) handleOrphan() {
 		if tg.processGroup != pg {
 			return
 		}
-		tg.signalHandlers.mu.NestedLock()
+		tg.signalHandlers.mu.NestedLock(signalHandlersLockTg)
 		if tg.groupStopComplete {
 			hasStopped = true
 		}
-		tg.signalHandlers.mu.NestedUnlock()
+		tg.signalHandlers.mu.NestedUnlock(signalHandlersLockTg)
 	})
 	if !hasStopped {
 		return
@@ -217,10 +217,10 @@ func (pg *ProcessGroup) handleOrphan() {
 		if tg.processGroup != pg {
 			return
 		}
-		tg.signalHandlers.mu.NestedLock()
+		tg.signalHandlers.mu.NestedLock(signalHandlersLockTg)
 		tg.leader.sendSignalLocked(SignalInfoPriv(linux.SIGHUP), true /* group */)
 		tg.leader.sendSignalLocked(SignalInfoPriv(linux.SIGCONT), true /* group */)
-		tg.signalHandlers.mu.NestedUnlock()
+		tg.signalHandlers.mu.NestedUnlock(signalHandlersLockTg)
 	})
 
 	return

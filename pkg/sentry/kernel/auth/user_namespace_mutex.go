@@ -12,36 +12,55 @@ type userNamespaceMutex struct {
 	mu sync.Mutex
 }
 
+var userNamespaceprefixIndex *locking.MutexClass
+
+// lockNames is a list of user-friendly lock names.
+// Populated in init.
+var userNamespacelockNames []string
+
+// lockNameIndex is used as an index passed to NestedLock and NestedUnlock,
+// refering to an index within lockNames.
+// Values are specified using the "consts" field of go_template_instance.
+type userNamespacelockNameIndex int
+
+// DO NOT REMOVE: The following function automatically replaced with lock index constants.
+const (
+	userNamespaceLockNs = userNamespacelockNameIndex(0)
+)
+const ()
+
 // Lock locks m.
 // +checklocksignore
 func (m *userNamespaceMutex) Lock() {
-	locking.AddGLock(userNamespaceuserNamespaceIndex, 0)
+	locking.AddGLock(userNamespaceprefixIndex, -1)
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
-func (m *userNamespaceMutex) NestedLock() {
-	locking.AddGLock(userNamespaceuserNamespaceIndex, 1)
+func (m *userNamespaceMutex) NestedLock(i userNamespacelockNameIndex) {
+	locking.AddGLock(userNamespaceprefixIndex, int(i))
 	m.mu.Lock()
 }
 
 // Unlock unlocks m.
 // +checklocksignore
 func (m *userNamespaceMutex) Unlock() {
-	locking.DelGLock(userNamespaceuserNamespaceIndex, 0)
+	locking.DelGLock(userNamespaceprefixIndex, -1)
 	m.mu.Unlock()
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
-func (m *userNamespaceMutex) NestedUnlock() {
-	locking.DelGLock(userNamespaceuserNamespaceIndex, 1)
+func (m *userNamespaceMutex) NestedUnlock(i userNamespacelockNameIndex) {
+	locking.DelGLock(userNamespaceprefixIndex, int(i))
 	m.mu.Unlock()
 }
 
-var userNamespaceuserNamespaceIndex *locking.MutexClass
+// DO NOT REMOVE: The following function is automatically replaced.
+func userNamespaceinitLockNames() { userNamespacelockNames = []string{"ns"} }
 
 func init() {
-	userNamespaceuserNamespaceIndex = locking.NewMutexClass(reflect.TypeOf(userNamespaceMutex{}))
+	userNamespaceinitLockNames()
+	userNamespaceprefixIndex = locking.NewMutexClass(reflect.TypeOf(userNamespaceMutex{}), userNamespacelockNames)
 }

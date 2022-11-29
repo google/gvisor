@@ -12,36 +12,53 @@ type runningTasksMutex struct {
 	mu sync.Mutex
 }
 
+var runningTasksprefixIndex *locking.MutexClass
+
+// lockNames is a list of user-friendly lock names.
+// Populated in init.
+var runningTaskslockNames []string
+
+// lockNameIndex is used as an index passed to NestedLock and NestedUnlock,
+// refering to an index within lockNames.
+// Values are specified using the "consts" field of go_template_instance.
+type runningTaskslockNameIndex int
+
+// DO NOT REMOVE: The following function automatically replaced with lock index constants.
+// LOCK_NAME_INDEX_CONSTANTS
+const ()
+
 // Lock locks m.
 // +checklocksignore
 func (m *runningTasksMutex) Lock() {
-	locking.AddGLock(runningTasksprefixIndex, 0)
+	locking.AddGLock(runningTasksprefixIndex, -1)
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
-func (m *runningTasksMutex) NestedLock() {
-	locking.AddGLock(runningTasksprefixIndex, 1)
+func (m *runningTasksMutex) NestedLock(i runningTaskslockNameIndex) {
+	locking.AddGLock(runningTasksprefixIndex, int(i))
 	m.mu.Lock()
 }
 
 // Unlock unlocks m.
 // +checklocksignore
 func (m *runningTasksMutex) Unlock() {
-	locking.DelGLock(runningTasksprefixIndex, 0)
+	locking.DelGLock(runningTasksprefixIndex, -1)
 	m.mu.Unlock()
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
-func (m *runningTasksMutex) NestedUnlock() {
-	locking.DelGLock(runningTasksprefixIndex, 1)
+func (m *runningTasksMutex) NestedUnlock(i runningTaskslockNameIndex) {
+	locking.DelGLock(runningTasksprefixIndex, int(i))
 	m.mu.Unlock()
 }
 
-var runningTasksprefixIndex *locking.MutexClass
+// DO NOT REMOVE: The following function is automatically replaced.
+func runningTasksinitLockNames() {}
 
 func init() {
-	runningTasksprefixIndex = locking.NewMutexClass(reflect.TypeOf(runningTasksMutex{}))
+	runningTasksinitLockNames()
+	runningTasksprefixIndex = locking.NewMutexClass(reflect.TypeOf(runningTasksMutex{}), runningTaskslockNames)
 }

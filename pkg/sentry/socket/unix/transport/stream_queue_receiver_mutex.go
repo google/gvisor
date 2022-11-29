@@ -12,36 +12,53 @@ type streamQueueReceiverMutex struct {
 	mu sync.Mutex
 }
 
+var streamQueueReceiverprefixIndex *locking.MutexClass
+
+// lockNames is a list of user-friendly lock names.
+// Populated in init.
+var streamQueueReceiverlockNames []string
+
+// lockNameIndex is used as an index passed to NestedLock and NestedUnlock,
+// refering to an index within lockNames.
+// Values are specified using the "consts" field of go_template_instance.
+type streamQueueReceiverlockNameIndex int
+
+// DO NOT REMOVE: The following function automatically replaced with lock index constants.
+// LOCK_NAME_INDEX_CONSTANTS
+const ()
+
 // Lock locks m.
 // +checklocksignore
 func (m *streamQueueReceiverMutex) Lock() {
-	locking.AddGLock(streamQueueReceiverstreamQueueReceiverIndex, 0)
+	locking.AddGLock(streamQueueReceiverprefixIndex, -1)
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
-func (m *streamQueueReceiverMutex) NestedLock() {
-	locking.AddGLock(streamQueueReceiverstreamQueueReceiverIndex, 1)
+func (m *streamQueueReceiverMutex) NestedLock(i streamQueueReceiverlockNameIndex) {
+	locking.AddGLock(streamQueueReceiverprefixIndex, int(i))
 	m.mu.Lock()
 }
 
 // Unlock unlocks m.
 // +checklocksignore
 func (m *streamQueueReceiverMutex) Unlock() {
-	locking.DelGLock(streamQueueReceiverstreamQueueReceiverIndex, 0)
+	locking.DelGLock(streamQueueReceiverprefixIndex, -1)
 	m.mu.Unlock()
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
-func (m *streamQueueReceiverMutex) NestedUnlock() {
-	locking.DelGLock(streamQueueReceiverstreamQueueReceiverIndex, 1)
+func (m *streamQueueReceiverMutex) NestedUnlock(i streamQueueReceiverlockNameIndex) {
+	locking.DelGLock(streamQueueReceiverprefixIndex, int(i))
 	m.mu.Unlock()
 }
 
-var streamQueueReceiverstreamQueueReceiverIndex *locking.MutexClass
+// DO NOT REMOVE: The following function is automatically replaced.
+func streamQueueReceiverinitLockNames() {}
 
 func init() {
-	streamQueueReceiverstreamQueueReceiverIndex = locking.NewMutexClass(reflect.TypeOf(streamQueueReceiverMutex{}))
+	streamQueueReceiverinitLockNames()
+	streamQueueReceiverprefixIndex = locking.NewMutexClass(reflect.TypeOf(streamQueueReceiverMutex{}), streamQueueReceiverlockNames)
 }

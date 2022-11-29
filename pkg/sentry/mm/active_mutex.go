@@ -12,17 +12,32 @@ type activeRWMutex struct {
 	mu sync.RWMutex
 }
 
+// lockNames is a list of user-friendly lock names.
+// Populated in init.
+var activelockNames []string
+
+// lockNameIndex is used as an index passed to NestedLock and NestedUnlock,
+// refering to an index within lockNames.
+// Values are specified using the "consts" field of go_template_instance.
+type activelockNameIndex int
+
+// DO NOT REMOVE: The following function automatically replaced with lock index constants.
+const (
+	activeLockForked = activelockNameIndex(0)
+)
+const ()
+
 // Lock locks m.
 // +checklocksignore
 func (m *activeRWMutex) Lock() {
-	locking.AddGLock(activeprefixIndex, 0)
+	locking.AddGLock(activeprefixIndex, -1)
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
-func (m *activeRWMutex) NestedLock() {
-	locking.AddGLock(activeprefixIndex, 1)
+func (m *activeRWMutex) NestedLock(i activelockNameIndex) {
+	locking.AddGLock(activeprefixIndex, int(i))
 	m.mu.Lock()
 }
 
@@ -30,20 +45,20 @@ func (m *activeRWMutex) NestedLock() {
 // +checklocksignore
 func (m *activeRWMutex) Unlock() {
 	m.mu.Unlock()
-	locking.DelGLock(activeprefixIndex, 0)
+	locking.DelGLock(activeprefixIndex, -1)
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
-func (m *activeRWMutex) NestedUnlock() {
+func (m *activeRWMutex) NestedUnlock(i activelockNameIndex) {
 	m.mu.Unlock()
-	locking.DelGLock(activeprefixIndex, 1)
+	locking.DelGLock(activeprefixIndex, int(i))
 }
 
 // RLock locks m for reading.
 // +checklocksignore
 func (m *activeRWMutex) RLock() {
-	locking.AddGLock(activeprefixIndex, 0)
+	locking.AddGLock(activeprefixIndex, -1)
 	m.mu.RLock()
 }
 
@@ -51,7 +66,7 @@ func (m *activeRWMutex) RLock() {
 // +checklocksignore
 func (m *activeRWMutex) RUnlock() {
 	m.mu.RUnlock()
-	locking.DelGLock(activeprefixIndex, 0)
+	locking.DelGLock(activeprefixIndex, -1)
 }
 
 // RLockBypass locks m for reading without executing the validator.
@@ -74,6 +89,10 @@ func (m *activeRWMutex) DowngradeLock() {
 
 var activeprefixIndex *locking.MutexClass
 
+// DO NOT REMOVE: The following function is automatically replaced.
+func activeinitLockNames() { activelockNames = []string{"forked"} }
+
 func init() {
-	activeprefixIndex = locking.NewMutexClass(reflect.TypeOf(activeRWMutex{}))
+	activeinitLockNames()
+	activeprefixIndex = locking.NewMutexClass(reflect.TypeOf(activeRWMutex{}), activelockNames)
 }

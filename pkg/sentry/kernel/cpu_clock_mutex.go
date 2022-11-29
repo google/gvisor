@@ -12,36 +12,53 @@ type cpuClockMutex struct {
 	mu sync.Mutex
 }
 
+var cpuClockprefixIndex *locking.MutexClass
+
+// lockNames is a list of user-friendly lock names.
+// Populated in init.
+var cpuClocklockNames []string
+
+// lockNameIndex is used as an index passed to NestedLock and NestedUnlock,
+// refering to an index within lockNames.
+// Values are specified using the "consts" field of go_template_instance.
+type cpuClocklockNameIndex int
+
+// DO NOT REMOVE: The following function automatically replaced with lock index constants.
+// LOCK_NAME_INDEX_CONSTANTS
+const ()
+
 // Lock locks m.
 // +checklocksignore
 func (m *cpuClockMutex) Lock() {
-	locking.AddGLock(cpuClockprefixIndex, 0)
+	locking.AddGLock(cpuClockprefixIndex, -1)
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
-func (m *cpuClockMutex) NestedLock() {
-	locking.AddGLock(cpuClockprefixIndex, 1)
+func (m *cpuClockMutex) NestedLock(i cpuClocklockNameIndex) {
+	locking.AddGLock(cpuClockprefixIndex, int(i))
 	m.mu.Lock()
 }
 
 // Unlock unlocks m.
 // +checklocksignore
 func (m *cpuClockMutex) Unlock() {
-	locking.DelGLock(cpuClockprefixIndex, 0)
+	locking.DelGLock(cpuClockprefixIndex, -1)
 	m.mu.Unlock()
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
-func (m *cpuClockMutex) NestedUnlock() {
-	locking.DelGLock(cpuClockprefixIndex, 1)
+func (m *cpuClockMutex) NestedUnlock(i cpuClocklockNameIndex) {
+	locking.DelGLock(cpuClockprefixIndex, int(i))
 	m.mu.Unlock()
 }
 
-var cpuClockprefixIndex *locking.MutexClass
+// DO NOT REMOVE: The following function is automatically replaced.
+func cpuClockinitLockNames() {}
 
 func init() {
-	cpuClockprefixIndex = locking.NewMutexClass(reflect.TypeOf(cpuClockMutex{}))
+	cpuClockinitLockNames()
+	cpuClockprefixIndex = locking.NewMutexClass(reflect.TypeOf(cpuClockMutex{}), cpuClocklockNames)
 }
