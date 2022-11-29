@@ -1084,8 +1084,3 @@ syscall_test(
     size = "small",
     test = "//test/syscalls/linux:close_range_test",
 )
-
-syscall_test(
-    size = "small",
-    test = "//test/syscalls/linux:process_vm_read_write",
-)
