@@ -28,6 +28,7 @@ declare_rwmutex(
 declare_rwmutex(
     name = "active_mutex",
     out = "active_mutex.go",
+    nested_lock_names = ["forked"],
     package = "mm",
     prefix = "active",
 )

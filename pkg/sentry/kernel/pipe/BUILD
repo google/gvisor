@@ -1,39 +1,28 @@
 load("//tools:defs.bzl", "go_library", "go_test")
-load("//tools/go_generics:defs.bzl", "go_template_instance")
+load("//pkg/sync/locking:locking.bzl", "declare_mutex")
 
 package(licenses = ["notice"])
 
-go_template_instance(
+declare_mutex(
     name = "vfs_mutex",
     out = "vfs_mutex.go",
     package = "pipe",
     prefix = "vfs",
-    substrs = {
-        "genericMark": "vfs",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
 )
 
-go_template_instance(
+declare_mutex(
     name = "pipe_mutex",
     out = "pipe_mutex.go",
+    nested_lock_names = ["pipe"],
     package = "pipe",
     prefix = "pipe",
-    substrs = {
-        "genericMark": "pipe",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
 )
 
-go_template_instance(
+declare_mutex(
     name = "inode_mutex",
     out = "inode_mutex.go",
     package = "pipe",
     prefix = "inode",
-    substrs = {
-        "genericMark": "inode",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
 )
 
 go_library(

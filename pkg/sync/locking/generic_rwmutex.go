@@ -26,17 +26,30 @@ type RWMutex struct {
 	mu sync.RWMutex
 }
 
+// lockNames is a list of user-friendly lock names.
+// Populated in init.
+var lockNames []string
+
+// lockNameIndex is used as an index passed to NestedLock and NestedUnlock,
+// refering to an index within lockNames.
+// Values are specified using the "consts" field of go_template_instance.
+type lockNameIndex int
+
+// DO NOT REMOVE: The following function automatically replaced with lock index constants.
+// LOCK_NAME_INDEX_CONSTANTS
+const ()
+
 // Lock locks m.
 // +checklocksignore
 func (m *RWMutex) Lock() {
-	locking.AddGLock(genericMarkIndex, 0)
+	locking.AddGLock(genericMarkIndex, -1)
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
-func (m *RWMutex) NestedLock() {
-	locking.AddGLock(genericMarkIndex, 1)
+func (m *RWMutex) NestedLock(i lockNameIndex) {
+	locking.AddGLock(genericMarkIndex, int(i))
 	m.mu.Lock()
 }
 
@@ -44,20 +57,20 @@ func (m *RWMutex) NestedLock() {
 // +checklocksignore
 func (m *RWMutex) Unlock() {
 	m.mu.Unlock()
-	locking.DelGLock(genericMarkIndex, 0)
+	locking.DelGLock(genericMarkIndex, -1)
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
-func (m *RWMutex) NestedUnlock() {
+func (m *RWMutex) NestedUnlock(i lockNameIndex) {
 	m.mu.Unlock()
-	locking.DelGLock(genericMarkIndex, 1)
+	locking.DelGLock(genericMarkIndex, int(i))
 }
 
 // RLock locks m for reading.
 // +checklocksignore
 func (m *RWMutex) RLock() {
-	locking.AddGLock(genericMarkIndex, 0)
+	locking.AddGLock(genericMarkIndex, -1)
 	m.mu.RLock()
 }
 
@@ -65,7 +78,7 @@ func (m *RWMutex) RLock() {
 // +checklocksignore
 func (m *RWMutex) RUnlock() {
 	m.mu.RUnlock()
-	locking.DelGLock(genericMarkIndex, 0)
+	locking.DelGLock(genericMarkIndex, -1)
 }
 
 // RLockBypass locks m for reading without executing the validator.
@@ -88,6 +101,10 @@ func (m *RWMutex) DowngradeLock() {
 
 var genericMarkIndex *locking.MutexClass
 
+// DO NOT REMOVE: The following function is automatically replaced.
+func initLockNames() {}
+
 func init() {
-	genericMarkIndex = locking.NewMutexClass(reflect.TypeOf(RWMutex{}))
+	initLockNames()
+	genericMarkIndex = locking.NewMutexClass(reflect.TypeOf(RWMutex{}), lockNames)
 }

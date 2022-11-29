@@ -26,36 +26,53 @@ type Mutex struct {
 	mu sync.Mutex
 }
 
+var genericMarkIndex *locking.MutexClass
+
+// lockNames is a list of user-friendly lock names.
+// Populated in init.
+var lockNames []string
+
+// lockNameIndex is used as an index passed to NestedLock and NestedUnlock,
+// refering to an index within lockNames.
+// Values are specified using the "consts" field of go_template_instance.
+type lockNameIndex int
+
+// DO NOT REMOVE: The following function automatically replaced with lock index constants.
+// LOCK_NAME_INDEX_CONSTANTS
+const ()
+
 // Lock locks m.
 // +checklocksignore
 func (m *Mutex) Lock() {
-	locking.AddGLock(genericMarkIndex, 0)
+	locking.AddGLock(genericMarkIndex, -1)
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
-func (m *Mutex) NestedLock() {
-	locking.AddGLock(genericMarkIndex, 1)
+func (m *Mutex) NestedLock(i lockNameIndex) {
+	locking.AddGLock(genericMarkIndex, int(i))
 	m.mu.Lock()
 }
 
 // Unlock unlocks m.
 // +checklocksignore
 func (m *Mutex) Unlock() {
-	locking.DelGLock(genericMarkIndex, 0)
+	locking.DelGLock(genericMarkIndex, -1)
 	m.mu.Unlock()
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
-func (m *Mutex) NestedUnlock() {
-	locking.DelGLock(genericMarkIndex, 1)
+func (m *Mutex) NestedUnlock(i lockNameIndex) {
+	locking.DelGLock(genericMarkIndex, int(i))
 	m.mu.Unlock()
 }
 
-var genericMarkIndex *locking.MutexClass
+// DO NOT REMOVE: The following function is automatically replaced.
+func initLockNames() {}
 
 func init() {
-	genericMarkIndex = locking.NewMutexClass(reflect.TypeOf(Mutex{}))
+	initLockNames()
+	genericMarkIndex = locking.NewMutexClass(reflect.TypeOf(Mutex{}), lockNames)
 }

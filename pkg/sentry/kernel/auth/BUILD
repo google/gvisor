@@ -1,5 +1,6 @@
 load("//tools:defs.bzl", "go_library")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
+load("//pkg/sync/locking:locking.bzl", "declare_mutex")
 
 package(licenses = ["notice"])
 
@@ -42,15 +43,12 @@ go_template_instance(
     },
 )
 
-go_template_instance(
+declare_mutex(
     name = "user_namespace_mutex",
     out = "user_namespace_mutex.go",
+    nested_lock_names = ["ns"],
     package = "auth",
     prefix = "userNamespace",
-    substrs = {
-        "genericMark": "userNamespace",
-    },
-    template = "//pkg/sync/locking:generic_mutex",
 )
 
 go_library(

@@ -107,17 +107,18 @@ import (
 )
 
 var (
-	input       = flag.String("i", "", "input `file`")
-	output      = flag.String("o", "", "output `file`")
-	suffix      = flag.String("suffix", "", "`suffix` to add to each global symbol")
-	prefix      = flag.String("prefix", "", "`prefix` to add to each global symbol")
-	packageName = flag.String("p", "main", "output package `name`")
-	printAST    = flag.Bool("ast", false, "prints the AST")
-	processAnon = flag.Bool("anon", false, "process anonymous fields")
-	types       = make(mapValue)
-	consts      = make(mapValue)
-	imports     = make(mapValue)
-	substr      = make(mapValue)
+	input        = flag.String("i", "", "input `file`")
+	output       = flag.String("o", "", "output `file`")
+	suffix       = flag.String("suffix", "", "`suffix` to add to each global symbol")
+	prefix       = flag.String("prefix", "", "`prefix` to add to each global symbol")
+	packageName  = flag.String("p", "main", "output package `name`")
+	printAST     = flag.Bool("ast", false, "prints the AST")
+	processAnon  = flag.Bool("anon", false, "process anonymous fields")
+	types        = make(mapValue)
+	consts       = make(mapValue)
+	imports      = make(mapValue)
+	inputSubstr  = make(mapValue)
+	outputSubstr = make(mapValue)
 )
 
 // mapValue implements flag.Value. We use a mapValue flag instead of a regular
@@ -166,7 +167,8 @@ func main() {
 	flag.Var(types, "t", "rename type A to B when `A=B` is passed in. Multiple such mappings are allowed.")
 	flag.Var(consts, "c", "reassign constant A to value B when `A=B` is passed in. Multiple such mappings are allowed.")
 	flag.Var(imports, "import", "specifies the import libraries to use when types are not local. `name=path` specifies that 'name', used in types as name.type, refers to the package living in 'path'.")
-	flag.Var(substr, "s", "replace sub-string A with B when `A=B` is passed in. Multiple such mappings are allowed.")
+	flag.Var(inputSubstr, "in-substr", "replace input sub-string A with B when `A=B` is passed in. Multiple such mappings are allowed.")
+	flag.Var(outputSubstr, "out-substr", "replace output sub-string A with B when `A=B` is passed in. Multiple such mappings are allowed.")
 	flag.Parse()
 
 	if *input == "" || *output == "" {
@@ -176,7 +178,15 @@ func main() {
 
 	// Parse the input file.
 	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, *input, nil, parser.ParseComments|parser.DeclarationErrors|parser.SpuriousErrors)
+	inputBytes, err := os.ReadFile(*input)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	}
+	for old, new := range inputSubstr {
+		inputBytes = bytes.ReplaceAll(inputBytes, []byte(old), []byte(new))
+	}
+	f, err := parser.ParseFile(fset, *input, inputBytes, parser.ParseComments|parser.DeclarationErrors|parser.SpuriousErrors)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
@@ -282,7 +292,7 @@ func main() {
 	}
 
 	byteBuf := buf.Bytes()
-	for old, new := range substr {
+	for old, new := range outputSubstr {
 		byteBuf = bytes.ReplaceAll(byteBuf, []byte(old), []byte(new))
 	}
 

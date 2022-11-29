@@ -87,9 +87,9 @@ func TestReverseNested(t *testing.T) {
 	m1 := testMutex{}
 	m2 := testMutex{}
 	m1.Lock()
-	m2.NestedLock()
+	m2.NestedLock(testLockM2)
 	m1.Unlock()
-	m2.NestedUnlock()
+	m2.NestedUnlock(testLockM2)
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -97,24 +97,63 @@ func TestReverseNested(t *testing.T) {
 		}
 	}()
 
-	m2.NestedLock()
+	m2.NestedLock(testLockM2)
 	m1.Lock()
-	m1.NestedUnlock()
+	m1.NestedUnlock(testLockM2)
 	m2.Unlock()
+
+	t.Error("The reverse lock order hasn't been detected")
+}
+
+func TestReverseNestedDeeper(t *testing.T) {
+	m1 := testMutex{}
+	m2 := testMutex{}
+	m3 := testMutex{}
+	m1.Lock()
+	m2.NestedLock(testLockM2)
+	m3.NestedLock(testLockM3)
+	m1.Unlock()
+	m3.NestedUnlock(testLockM3)
+	m2.NestedUnlock(testLockM2)
+
+	m1.Lock()
+	m2.NestedLock(testLockM2)
+	m3.NestedLock(testLockM3)
+	m1.Unlock()
+	m2.NestedUnlock(testLockM2)
+	m3.NestedUnlock(testLockM3)
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Logf("Got expected panic: %s", r)
+		}
+	}()
+
+	m2.NestedLock(testLockM2)
+	m3.NestedLock(testLockM3)
+	m1.Lock()
+	m1.Unlock()
+	m3.NestedUnlock(testLockM3)
+	m2.NestedUnlock(testLockM2)
 
 	t.Error("The reverse lock order hasn't been detected")
 }
 
 func TestUnknownLock(t *testing.T) {
 	m1 := testMutex{}
-	m2 := test2RWMutex{}
+	m2 := testMutex{}
+
 	m1.Lock()
-	m2.Lock()
+	m2.NestedLock(testLockM2)
+	m2.NestedUnlock(testLockM2)
+	m1.Unlock()
+
 	defer func() {
 		if r := recover(); r != nil {
 			t.Logf("Got expected panic: %s", r)
 		}
 	}()
-	m2.NestedUnlock()
+	m1.Lock()
+	m2.NestedUnlock(testLockM2)
 	t.Error("An unknown lock has not been detected.")
 }

@@ -404,7 +404,7 @@ func spliceOrTee(ctx context.Context, dst, src *VFSPipeFD, count int64, removeFr
 		return 0, linuxerr.EINVAL
 	}
 
-	lockTwoPipes(dst.pipe, src.pipe)
+	firstLocked, secondLocked := lockTwoPipes(dst.pipe, src.pipe)
 	n, err := dst.pipe.writeLocked(count, func(dsts safemem.BlockSeq) (uint64, error) {
 		n, err := src.pipe.peekLocked(int64(dsts.NumBytes()), func(srcs safemem.BlockSeq) (uint64, error) {
 			return safemem.CopySeq(dsts, srcs)
@@ -414,8 +414,8 @@ func spliceOrTee(ctx context.Context, dst, src *VFSPipeFD, count int64, removeFr
 		}
 		return uint64(n), err
 	})
-	dst.pipe.mu.Unlock()
-	src.pipe.mu.NestedUnlock()
+	secondLocked.mu.NestedUnlock(pipeLockPipe)
+	firstLocked.mu.Unlock()
 
 	if n > 0 {
 		dst.pipe.queue.Notify(waiter.ReadableEvents)
