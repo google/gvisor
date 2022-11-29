@@ -26,10 +26,9 @@ import (
 type vmReadWriteOp int
 
 const (
-	localReader vmReadWriteOp = iota
-	localWriter
-	remoteReader
-	remoteWriter
+	localReadLocalWrite vmReadWriteOp = iota
+	remoteReadLocalWrite
+	localReadRemoteWrite
 )
 
 // ProcessVMReadv implements process_vm_readv(2).
@@ -76,17 +75,16 @@ func processVMRW(t *kernel.Task, args arch.SyscallArguments, isWrite bool) (uint
 	isRemote := localProcess == remoteProcess
 
 	// For the write case, we read from the local process and write to the remote process.
+	op := localReadLocalWrite
 	if isWrite {
-		op := localReader
 		if isRemote {
-			op = remoteReader
+			op = remoteReadLocalWrite
 		}
 		return doProcessVMReadWrite(localProcess, remoteProcess, lvec, rvec, liovcnt, riovcnt, op)
 	}
 	// For the read case, we read from the remote process and write to the local process.
-	op := localWriter
 	if isRemote {
-		op = remoteWriter
+		op = localReadRemoteWrite
 	}
 	return doProcessVMReadWrite(remoteProcess, localProcess, rvec, lvec, riovcnt, liovcnt, op)
 }
@@ -113,7 +111,16 @@ func doProcessVMReadWrite(rProcess, wProcess *kernel.Task, rAddr, wAddr hostarch
 			}
 		}
 
-		buf := rCtx.CopyScratchBuffer(bufSize)
+		var buf []byte
+		// We need to copy the called task's scratch buffer so we don't get a data race. If we are
+		// reading a remote process's memory, then we are on the writer's task goroutine, so use
+		// the write context's scratch buffer.
+		if op == remoteReadLocalWrite {
+			buf = wCtx.CopyScratchBuffer(bufSize)
+		} else {
+			buf = rCtx.CopyScratchBuffer(bufSize)
+		}
+
 		for _, rIovec := range rIovecs {
 			if len(wIovecs) <= 0 {
 				break
@@ -163,12 +170,12 @@ func doProcessVMReadWrite(rProcess, wProcess *kernel.Task, rAddr, wAddr hostarch
 	var err error
 
 	switch op {
-	case remoteReader:
+	case remoteReadLocalWrite:
 		err = rCtx.WithTaskMutexLocked(doProcessVMReadWriteMaybeLocked)
-	case remoteWriter:
+	case localReadRemoteWrite:
 		err = wCtx.WithTaskMutexLocked(doProcessVMReadWriteMaybeLocked)
 
-	case localReader, localWriter:
+	case localReadLocalWrite:
 		// in the case of local reads/writes, we don't have to lock the task mutex, because we are
 		// running on the top of the task's goroutine already.
 		err = doProcessVMReadWriteMaybeLocked()
