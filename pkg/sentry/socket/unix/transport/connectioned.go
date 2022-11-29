@@ -288,27 +288,27 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 	// Do a dance to safely acquire locks on both endpoints.
 	if e.id < ce.ID() {
 		e.Lock()
-		ce.NestedLock(endpointLockCe)
+		ce.NestedLock(endpointLockHigherid)
 	} else {
 		ce.Lock()
-		e.NestedLock(endpointLockE)
+		e.NestedLock(endpointLockHigherid)
 	}
 
 	// Check connecting state.
 	if ce.Connected() {
-		e.NestedUnlock(endpointLockE)
+		e.NestedUnlock(endpointLockHigherid)
 		ce.Unlock()
 		return syserr.ErrAlreadyConnected
 	}
 	if ce.ListeningLocked() {
-		e.NestedUnlock(endpointLockE)
+		e.NestedUnlock(endpointLockHigherid)
 		ce.Unlock()
 		return syserr.ErrInvalidEndpointState
 	}
 
 	// Check bound state.
 	if !e.ListeningLocked() {
-		e.NestedUnlock(endpointLockE)
+		e.NestedUnlock(endpointLockHigherid)
 		ce.Unlock()
 		return syserr.ErrConnectionRefused
 	}
@@ -359,7 +359,7 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 		}
 
 		// Notify can deadlock if we are holding these locks.
-		e.NestedUnlock(endpointLockE)
+		e.NestedUnlock(endpointLockHigherid)
 		ce.Unlock()
 
 		// Notify on both ends.
@@ -369,7 +369,7 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 		return nil
 	default:
 		// Busy; return EAGAIN per spec.
-		e.NestedUnlock(endpointLockE)
+		e.NestedUnlock(endpointLockHigherid)
 		ce.Unlock()
 		ne.Close(ctx)
 		return syserr.ErrTryAgain
