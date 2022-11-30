@@ -275,6 +275,7 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 	defer cleanup.Clean()
 	// Check if the new mount + all the propagation mounts puts us over the max.
 	if uint32(len(tree)+1)+vd.mount.ns.mounts > MountMax {
+		vd.DecRef(ctx)
 		return linuxerr.ENOSPC
 	}
 	if err := vfs.connectMountAt(ctx, mnt, vd); err != nil {
@@ -399,10 +400,10 @@ func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credential
 		// Checklocks doesn't work with anon functions.
 		vfs.setPropagation(clone, Private)  // +checklocksforce
 		vfs.abortPropagationTree(ctx, tree) // +checklocksforce
-		targetVd.DecRef(ctx)
 	})
 	defer cleanup.Clean()
 	if uint32(1+len(tree))+targetVd.mount.ns.mounts > MountMax {
+		targetVd.DecRef(ctx)
 		return nil, linuxerr.ENOSPC
 	}
 	if err := vfs.connectMountAt(ctx, clone, targetVd); err != nil {
