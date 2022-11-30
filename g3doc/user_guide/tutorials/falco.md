@@ -4,11 +4,16 @@
 
 ## Installation
 
+This section explains the steps required to install Falco+gVisor integration
+depending your environment.
+
+### Docker
+
 First, install [gVisor](/docs/user_guide/install/) and
 [Falco](https://falco.org/docs/getting-started/installation/) on the machine.
 Run `runsc --version` and check that `runsc version release-20220704.0` or newer
 is reported. Run `falco --version` and check that `Falco version` reports
-`0.32.1` or higher.
+`0.33.1` or higher.
 
 Once both are installed, you can configure gVisor to connect to Falco whenever a
 new sandbox is started. The first command below generates a configuration file
@@ -19,25 +24,8 @@ Docker runtime pointing it to the configuration file we just generated:
 
 ```shell
 falco --gvisor-generate-config | sudo tee /etc/falco/pod-init.json
-# Edit /etc/falco/pod-init.json, see note below.
 sudo runsc install --runtime=runsc-falco -- --pod-init-config=/etc/falco/pod-init.json
 sudo systemctl restart docker
-```
-
-> **Note:** Between steps 1 and 2 above, edit the `pod-init.json` file to add
-> `ignore_setup_error` to the sink options (this will be fixed in the next Falco
-> release). The file will look like this:
-
-```json
-      "sinks" : [
-         {
-            "config" : {
-               "endpoint" : "/tmp/gvisor.sock"
-            },
-            "name" : "remote",
-            "ignore_setup_error": true   <== ADD THIS LINE
-         }
-      ]
 ```
 
 gVisor is now configured. Next, let's start Falco and tell it to enable gVisor
@@ -67,6 +55,29 @@ Falco events that are processed by the rules you have defined. If you used the
 command above, the configuration files are defined in
 `/etc/falco/faco_rules.yaml` and `/etc/falco/faco_rules.local.yaml` (where you
 can add your own rules).
+
+### Kubernetes
+
+If you are using Kubernetes, the steps above must be done on every node that has
+gVisor enabled. Luckily, this can be done for you automatically using
+[Falco's Helm chart](https://github.com/falcosecurity/charts/blob/master/falco/README.md).
+You can find more details, like available options, in the
+[*About gVisor*](https://github.com/falcosecurity/charts/blob/master/falco/README.md#about-gvisor)
+section.
+
+Here is a quick example using
+[GKE Sandbox](https://cloud.google.com/kubernetes-engine/docs/concepts/sandbox-pods),
+which already pre-configures gVisor for you. You can use any version that is
+equal or higher than 1.24.4-gke.1800:
+
+```shell
+gcloud container clusters create my-cluster --release-channel=rapid --cluster-version=1.25
+gcloud container node-pools create gvisor --sandbox=type=gvisor --cluster=my-cluster
+gcloud container clusters get-credentials my-cluster
+helm install falco-gvisor falcosecurity/falco \
+  -f https://raw.githubusercontent.com/falcosecurity/charts/master/falco/values-gvisor-gke.yaml \
+  --namespace falco-gvisor --create-namespace
+```
 
 ## Triggering Falco Events
 
