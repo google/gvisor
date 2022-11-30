@@ -137,6 +137,7 @@ http_archive(
 load("@coral_crosstool//:configure.bzl", "cc_crosstool")
 
 cc_crosstool(name = "crosstool")
+register_toolchains("//:cc_toolchain_k8", "//:cc_toolchain_aarch64")
 
 # Load protobuf dependencies.
 http_archive(
