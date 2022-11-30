@@ -46,6 +46,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -322,6 +323,10 @@ type containerMounter struct {
 	// fds is the list of FDs to be dispensed for mounts that require it.
 	fds fdDispenser
 
+	// overlayFilestore is the memory file that will back the overlay mount's
+	// upper tmpfs layer.
+	overlayFilestore *pgalloc.MemoryFile
+
 	k *kernel.Kernel
 
 	hints *podMountHints
@@ -333,12 +338,13 @@ type containerMounter struct {
 
 func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *podMountHints, productName string) *containerMounter {
 	return &containerMounter{
-		root:        info.spec.Root,
-		mounts:      compileMounts(info.spec, info.conf),
-		fds:         fdDispenser{fds: info.goferFDs},
-		k:           k,
-		hints:       hints,
-		productName: productName,
+		root:             info.spec.Root,
+		mounts:           compileMounts(info.spec, info.conf),
+		fds:              fdDispenser{fds: info.goferFDs},
+		overlayFilestore: info.overlayFilestore,
+		k:                k,
+		hints:            hints,
+		productName:      productName,
 	}
 }
 
@@ -425,7 +431,7 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, conf *confi
 	}
 
 	fsName := gofer.Name
-	if conf.Overlay && !c.root.Readonly {
+	if conf.GetOverlay2().RootMount && !c.root.Readonly {
 		log.Infof("Adding overlay on top of root")
 		var err error
 		var cleanup func()
@@ -488,6 +494,7 @@ func (c *containerMounter) configureOverlay(ctx context.Context, creds *auth.Cre
 	// Upper is a tmpfs mount to keep all modifications inside the sandbox.
 	upperOpts.GetFilesystemOptions.InternalData = tmpfs.FilesystemOpts{
 		RootFileType: uint16(rootType),
+		Filestore:    c.overlayFilestore,
 	}
 	upper, err := c.k.VFS().MountDisconnected(ctx, creds, "" /* source */, tmpfs.Name, &upperOpts)
 	if err != nil {
@@ -717,7 +724,7 @@ func (c *containerMounter) getMountNameAndOptions(conf *config.Config, m *mountA
 		}
 
 		// If configured, add overlay to all writable mounts.
-		useOverlay = conf.Overlay && !parseMountOptions(m.mount.Options).ReadOnly
+		useOverlay = conf.GetOverlay2().SubMounts && !parseMountOptions(m.mount.Options).ReadOnly
 
 	case cgroupfs.Name:
 		var err error

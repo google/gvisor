@@ -145,8 +145,10 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommand
 		return util.Errorf("Error to retrieve hostname: %v", err)
 	}
 
-	// Map the entire host file system, optionally using an overlay.
-	conf.Overlay = c.overlay
+	// If c.overlay is set, then forcefully enable overlay.
+	if overlay2 := conf.GetOverlay2(); c.overlay && !overlay2.Enabled() {
+		conf.Overlay = true
+	}
 	absRoot, err := resolvePath(c.root)
 	if err != nil {
 		return util.Errorf("Error resolving root: %v", err)

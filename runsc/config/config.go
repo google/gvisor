@@ -19,6 +19,7 @@ package config
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/refs"
@@ -74,14 +75,19 @@ type Config struct {
 	// FileAccessMounts indicates how non-root volumes are accessed.
 	FileAccessMounts FileAccessType `flag:"file-access-mounts"`
 
-	// Overlay is whether to wrap the root filesystem in an overlay.
+	// Overlay is whether to wrap all mounts in an overlay. The upper tmpfs layer
+	// will be backed by application memory.
 	Overlay bool `flag:"overlay"`
+
+	// Overlay2 holds configuration about wrapping mounts in overlayfs.
+	// DO NOT call it directly, use GetOverlay2() instead.
+	Overlay2 Overlay2 `flag:"overlay2"`
 
 	// FSGoferHostUDS is deprecated: use host-uds=all.
 	FSGoferHostUDS bool `flag:"fsgofer-host-uds"`
 
 	// HostUDS controls permission to access host Unix-domain sockets.
-	// DO NOT call it directly, use GetHostComm() instead.
+	// DO NOT call it directly, use GetHostUDS() instead.
 	HostUDS HostUDS `flag:"host-uds"`
 
 	// HostFifo controls permission to access host FIFO (or named pipes).
@@ -273,7 +279,11 @@ type Config struct {
 }
 
 func (c *Config) validate() error {
-	if c.FileAccess == FileAccessShared && c.Overlay {
+	if c.Overlay && c.Overlay2.Enabled() {
+		// Deprecated flag was used together with flag that replaced it.
+		return fmt.Errorf("overlay flag has been replaced with overlay2 flag")
+	}
+	if overlay2 := c.GetOverlay2(); c.FileAccess == FileAccessShared && overlay2.Enabled() {
 		return fmt.Errorf("overlay flag is incompatible with shared file access")
 	}
 	if c.NumNetworkChannels <= 0 {
@@ -312,6 +322,19 @@ func (c *Config) GetHostUDS() HostUDS {
 		return HostUDSOpen
 	}
 	return c.HostUDS
+}
+
+// GetOverlay2 returns the overlay configuration, taking into consideration all
+// flags that affect the result.
+func (c *Config) GetOverlay2() Overlay2 {
+	if c.Overlay {
+		if c.Overlay2.Enabled() {
+			panic(fmt.Sprintf("Overlay2 cannot be set when --overlay=true"))
+		}
+		// Using deprecated flag, honor it to avoid breaking users.
+		return Overlay2{RootMount: true, SubMounts: true, FilestoreDir: ""}
+	}
+	return c.Overlay2
 }
 
 // FileAccessType tells how the filesystem is accessed.
@@ -590,4 +613,81 @@ func (g HostFifo) String() string {
 // AllowOpen returns true if it can consume FIFOs from the host.
 func (g HostFifo) AllowOpen() bool {
 	return g&HostFifoOpen != 0
+}
+
+// Overlay2 holds the configuration for setting up overlay filesystems for the
+// container.
+type Overlay2 struct {
+	RootMount    bool
+	SubMounts    bool
+	FilestoreDir string
+}
+
+func defaultOverlay2() *Overlay2 {
+	return &Overlay2{}
+}
+
+// Set implements flag.Value.
+func (o *Overlay2) Set(v string) error {
+	if v == "none" {
+		// Defaults are correct.
+		return nil
+	}
+	vs := strings.Split(v, ":")
+	if len(vs) != 2 {
+		return fmt.Errorf("expected format is --overlay2={mount}:{medium}, got %q", v)
+	}
+
+	switch mount := vs[0]; mount {
+	case "root":
+		o.RootMount = true
+	case "all":
+		o.RootMount = true
+		o.SubMounts = true
+	default:
+		return fmt.Errorf("unexpected mount specifier for --overlay2: %q", mount)
+	}
+
+	switch medium := vs[1]; medium {
+	case "memory":
+		o.FilestoreDir = ""
+	default:
+		o.FilestoreDir = medium
+	}
+	return nil
+}
+
+// Get implements flag.Value.
+func (o *Overlay2) Get() any {
+	return *o
+}
+
+// String implements flag.Value.
+func (o Overlay2) String() string {
+	if !o.RootMount && !o.SubMounts {
+		return "none"
+	}
+	res := ""
+	switch {
+	case o.RootMount && o.SubMounts:
+		res = "all"
+	case o.RootMount:
+		res = "root"
+	default:
+		panic("invalid state of subMounts = true and rootMount = false")
+	}
+
+	res += ":"
+	switch o.FilestoreDir {
+	case "":
+		res += "memory"
+	default:
+		res += o.FilestoreDir
+	}
+	return res
+}
+
+// Enabled returns true if overlay option is enabled for any mounts.
+func (o *Overlay2) Enabled() bool {
+	return o.RootMount || o.SubMounts
 }

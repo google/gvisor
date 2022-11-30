@@ -1353,6 +1353,11 @@ func (f *MemoryFile) startEvictionGoroutineLocked(user EvictableMemoryUser, info
 	}()
 }
 
+// MemoryFile implements MemoryFileProvider.MemoryFile.
+func (f *MemoryFile) MemoryFile() *MemoryFile {
+	return f
+}
+
 // WaitForEvictions blocks until f is no longer evicting any evictable
 // allocations.
 func (f *MemoryFile) WaitForEvictions() {
