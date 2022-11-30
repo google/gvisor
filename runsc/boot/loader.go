@@ -101,6 +101,10 @@ type containerInfo struct {
 
 	// goferFDs are the FDs that attach the sandbox to the gofers.
 	goferFDs []*fd.FD
+
+	// overlayFilestore is the memory file that will back the overlay mount's
+	// upper tmpfs layer.
+	overlayFilestore *pgalloc.MemoryFile
 }
 
 // Loader keeps state needed to start the kernel and run the container.
@@ -200,6 +204,9 @@ type Args struct {
 	// StdioFDs is the stdio for the application. The Loader takes ownership of
 	// these FDs and may close them at any time.
 	StdioFDs []int
+	// OverlayFilestoreFD is the host FD to a regular file which will be used to
+	// back the overlay mount's upper tmpfs layer.
+	OverlayFilestoreFD int
 	// NumCPU is the number of CPUs to create inside the sandbox.
 	NumCPU int
 	// TotalMem is the initial amount of total memory to report back to the
@@ -267,6 +274,14 @@ func New(args Args) (*Loader, error) {
 	}
 	for _, goferFD := range args.GoferFDs {
 		info.goferFDs = append(info.goferFDs, fd.New(goferFD))
+	}
+	if args.OverlayFilestoreFD >= 0 {
+		f := os.NewFile(uintptr(args.OverlayFilestoreFD), "overlay-filestore")
+		mf, err := pgalloc.NewMemoryFile(f, pgalloc.MemoryFileOpts{})
+		if err != nil {
+			return nil, fmt.Errorf("tmpfs.FilesystemType.GetFilesystem: failed to create memory file from host file: %w", err)
+		}
+		info.overlayFilestore = mf
 	}
 
 	// Create kernel and platform.
@@ -513,6 +528,9 @@ func (l *Loader) Destroy() {
 	for _, f := range l.root.goferFDs {
 		_ = f.Close()
 	}
+	if l.root.overlayFilestore != nil {
+		l.root.overlayFilestore.Destroy()
+	}
 
 	l.stopProfiling()
 }
@@ -747,6 +765,9 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 		conf:     conf,
 		spec:     spec,
 		goferFDs: goferFDs,
+		// Note that K8s starts all containers in a pod (root and subcontainers)
+		// with the same config. So overlayFilestore can be copied.
+		overlayFilestore: l.root.overlayFilestore,
 	}
 	info.procArgs, err = createProcessArgs(cid, spec, creds, l.k, pidns)
 	if err != nil {

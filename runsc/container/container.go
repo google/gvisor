@@ -256,6 +256,10 @@ func New(conf *config.Config, args Args) (*Container, error) {
 			}
 		}
 		c.CompatCgroup = cgroup.CgroupJSON{Cgroup: subCgroup}
+		overlayFilestoreFile, err := createOverlayFilestore(conf.GetOverlay2())
+		if err != nil {
+			return nil, err
+		}
 		if err := runInCgroup(parentCgroup, func() error {
 			ioFiles, specFile, err := c.createGoferProcess(args.Spec, conf, args.BundleDir, args.Attached)
 			if err != nil {
@@ -265,15 +269,16 @@ func New(conf *config.Config, args Args) (*Container, error) {
 			// Start a new sandbox for this container. Any errors after this point
 			// must destroy the container.
 			sandArgs := &sandbox.Args{
-				ID:            sandboxID,
-				Spec:          args.Spec,
-				BundleDir:     args.BundleDir,
-				ConsoleSocket: args.ConsoleSocket,
-				UserLog:       args.UserLog,
-				IOFiles:       ioFiles,
-				MountsFile:    specFile,
-				Cgroup:        parentCgroup,
-				Attached:      args.Attached,
+				ID:                   sandboxID,
+				Spec:                 args.Spec,
+				BundleDir:            args.BundleDir,
+				ConsoleSocket:        args.ConsoleSocket,
+				UserLog:              args.UserLog,
+				IOFiles:              ioFiles,
+				MountsFile:           specFile,
+				Cgroup:               parentCgroup,
+				Attached:             args.Attached,
+				OverlayFilestoreFile: overlayFilestoreFile,
 			}
 			sand, err := sandbox.New(conf, sandArgs)
 			if err != nil {
@@ -761,6 +766,28 @@ func (c *Container) Destroy() error {
 		return nil
 	}
 	return fmt.Errorf(strings.Join(errs, "\n"))
+}
+
+func createOverlayFilestore(overlay2 config.Overlay2) (*os.File, error) {
+	if overlay2.FilestoreDir == "" {
+		return nil, nil
+	}
+	fileInfo, err := os.Stat(overlay2.FilestoreDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat overlay filestore directory %q: %v", overlay2.FilestoreDir, err)
+	}
+	if !fileInfo.IsDir() {
+		return nil, fmt.Errorf("overlay2 flag should specify an existing directory")
+	}
+	// Create an unnamed temporary file in filestore directory using
+	// O_TMPFILE. This file will be deleted when the container exits.
+	// Also specify O_EXCL to prevent this file from being linked into the
+	// filesystem. See open(2) man page's section for O_TMPFILE for details.
+	unnamedTmpFD, err := unix.Open(overlay2.FilestoreDir, unix.O_TMPFILE|unix.O_RDWR|unix.O_EXCL, 0666)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create an unnamed temporary file inside %q", overlay2.FilestoreDir)
+	}
+	return os.NewFile(uintptr(unnamedTmpFD), "overlay-filestore"), nil
 }
 
 // saveLocked saves the container metadata to a file.

@@ -178,7 +178,7 @@ func TestValidationFail(t *testing.T) {
 			error: "num_network_channels must be > 0",
 		},
 		{
-			name: "fsgofer-host-uds+comm:open",
+			name: "fsgofer-host-uds+host-uds:open",
 			flags: map[string]string{
 				"fsgofer-host-uds": "true",
 				"host-uds":         "open",
@@ -186,7 +186,7 @@ func TestValidationFail(t *testing.T) {
 			error: "fsgofer-host-uds has been replaced with host-uds flag",
 		},
 		{
-			name: "fsgofer-host-uds+comm:create",
+			name: "fsgofer-host-uds+host-uds:create",
 			flags: map[string]string{
 				"fsgofer-host-uds": "true",
 				"host-uds":         "create",
@@ -194,12 +194,28 @@ func TestValidationFail(t *testing.T) {
 			error: "fsgofer-host-uds has been replaced with host-uds flag",
 		},
 		{
-			name: "fsgofer-host-uds+comm:all",
+			name: "fsgofer-host-uds+host-uds:all",
 			flags: map[string]string{
 				"fsgofer-host-uds": "true",
 				"host-uds":         "all",
 			},
 			error: "fsgofer-host-uds has been replaced with host-uds flag",
+		},
+		{
+			name: "overlay+overlay2:root",
+			flags: map[string]string{
+				"overlay":  "true",
+				"overlay2": "root:memory",
+			},
+			error: "overlay flag has been replaced with overlay2 flag",
+		},
+		{
+			name: "overlay+overlay2:all",
+			flags: map[string]string{
+				"overlay":  "true",
+				"overlay2": "all:memory",
+			},
+			error: "overlay flag has been replaced with overlay2 flag",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

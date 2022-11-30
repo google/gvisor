@@ -55,7 +55,7 @@ var (
 	isRunningWithHostNet = flag.Bool("hostnet", BoolFromEnv("HOSTNET", false), "whether test is running with hostnet")
 	runscPath            = flag.String("runsc", os.Getenv("RUNTIME"), "path to runsc binary")
 	// Note: flag overlay is already taken by runsc.
-	isRunningWithOverlay = flag.Bool("test-overlay", BoolFromEnv("TEST_OVERLAY", false), "whether test is running with --overlay")
+	isRunningWithOverlay = flag.Bool("test-overlay", BoolFromEnv("TEST_OVERLAY", false), "whether test is running with --overlay2")
 )
 
 // StringFromEnv returns the value of the named environment variable, or `def` if unset/empty.
