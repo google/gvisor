@@ -84,7 +84,7 @@ var LISAFSEnabled = false
 
 // FUSEEnabled is set to true when FUSE is enabled. Added as a global to allow
 // easy access everywhere. To be removed once FUSE is completed.
-var FUSEEnabled = false
+var FUSEEnabled = true
 
 // userCounters is a set of user counters.
 //
