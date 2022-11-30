@@ -161,14 +161,23 @@ func (c *pidsController) Leave(t *kernel.Task) {
 
 // PrepareMigrate implements controller.PrepareMigrate.
 func (c *pidsController) PrepareMigrate(t *kernel.Task, src controller) error {
+	srcC := src.(*pidsController)
+	srcC.mu.Lock()
+	defer srcC.mu.Unlock()
+
+	if _, ok := srcC.pendingPool[t]; ok {
+		// Migrating task isn't fully initialized, return transient failure.
+		return linuxerr.EAGAIN
+	}
+
 	return nil
 }
 
 // CommitMigrate implements controller.CommitMigrate.
 //
-// Migrations can cause a cgroup to exceed its limit. Migration can only be
-// called for tasks with committed charges, as it is not possible to migrate a
-// task prior to Enter.
+// Migrations can cause a cgroup to exceed its limit. CommitMigrate can only be
+// called for tasks with committed charges, PrepareMigrate will deny migrations
+// prior to Enter.
 func (c *pidsController) CommitMigrate(t *kernel.Task, src controller) {
 	// Note: The charge is allowed to exceed max on migration. The charge may
 	// not exceed max when incurred due to a fork/clone, which will call
