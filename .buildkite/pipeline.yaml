@@ -67,6 +67,8 @@ steps:
       arch: "arm64"
   - <<: *common
     <<: *source_test
+    env:
+      GLIBC_TUNABLES: glibc.pthread.rseq=0
     label: ":fire: Smoke race tests"
     command: make smoke-race-tests
 
