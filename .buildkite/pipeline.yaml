@@ -145,9 +145,9 @@ steps:
     <<: *source_test
     label: ":ship: Release tests"
     commands:
-      - make BAZEL_OPTIONS=--config=x86_64 artifacts/x86_64
-      - make BAZEL_OPTIONS=--config=aarch64 artifacts/aarch64
-      - make release
+      - "make BAZEL_OPTIONS='--config=x86_64  --toolchain_resolution_debug=@bazel_tools//tools/cpp:toolchain_type' artifacts/x86_64"
+      - "make BAZEL_OPTIONS='--config=aarch64 --toolchain_resolution_debug=@bazel_tools//tools/cpp:toolchain_type' artifacts/aarch64"
+      - "make release"
     agents:
       arch: "amd64"
 
