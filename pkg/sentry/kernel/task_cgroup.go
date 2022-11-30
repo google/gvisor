@@ -89,6 +89,7 @@ func (t *Task) enterCgroupIfNotYetLocked(c Cgroup) {
 
 // LeaveCgroups removes t out from all its cgroups.
 func (t *Task) LeaveCgroups() {
+	t.tg.pidns.owner.mu.Lock() // Prevent migration.
 	t.mu.Lock()
 	cgs := t.cgroups
 	t.cgroups = nil
@@ -96,6 +97,8 @@ func (t *Task) LeaveCgroups() {
 		c.Leave(t)
 	}
 	t.mu.Unlock()
+	t.tg.pidns.owner.mu.Unlock()
+
 	for c := range cgs {
 		c.decRef()
 	}
@@ -229,33 +232,24 @@ func (t *Task) GenerateProcTaskCgroup(buf *bytes.Buffer) {
 }
 
 // +checklocks:t.mu
-func (t *Task) chargeLocked(target *Task, ctl CgroupControllerType, res CgroupResourceType, value int64) (bool, uint32, error) {
+func (t *Task) chargeLocked(target *Task, ctl CgroupControllerType, res CgroupResourceType, value int64) (bool, Cgroup, error) {
 	// Due to the uniqueness of controllers on hierarchies, at most one cgroup
 	// in t.cgroups will match.
 	for c := range t.cgroups {
 		err := c.Charge(target, c.Dentry, ctl, res, value)
-		return err == nil, c.HierarchyID(), err
+		if err == nil {
+			c.IncRef()
+		}
+		return err == nil, c, err
 	}
-	return false, InvalidCgroupHierarchyID, nil
+	return false, Cgroup{}, nil
 }
 
-// ChargeFor charges t's cgroup on behalf of some other task.
-func (t *Task) ChargeFor(other *Task, ctl CgroupControllerType, res CgroupResourceType, value int64) (bool, uint32, error) {
+// ChargeFor charges t's cgroup on behalf of some other task. Returns
+// the cgroup that's charged if any. Returned cgroup has an extra ref
+// that's transferred to the caller.
+func (t *Task) ChargeFor(other *Task, ctl CgroupControllerType, res CgroupResourceType, value int64) (bool, Cgroup, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.chargeLocked(other, ctl, res, value)
-}
-
-// ChargeForOnHierarchy is like ChargeFor, but only charges a cgroup with the
-// matching hierarhcyID. This can be useful when reversing a charge across
-// potential hierachy changes.
-func (t *Task) ChargeForOnHierarchy(other *Task, hierarhcyID uint32, ctl CgroupControllerType, res CgroupResourceType, value int64) (bool, uint32, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	for c := range t.cgroups {
-		if c.HierarchyID() == hierarhcyID {
-			return t.chargeLocked(other, ctl, res, value)
-		}
-	}
-	return false, InvalidCgroupHierarchyID, nil
 }
