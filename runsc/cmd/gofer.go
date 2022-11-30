@@ -262,12 +262,13 @@ func (g *Gofer) serveLisafs(spec *specs.Spec, conf *config.Config, root string) 
 		HostUDS:  conf.GetHostUDS(),
 		HostFifo: conf.HostFifo,
 	})
+	overlay2 := conf.GetOverlay2()
 
 	// Start with root mount, then add any other additional mount as needed.
 	cfgs = append(cfgs, connectionConfig{
 		sock:      newSocket(g.ioFDs[0]),
 		mountPath: "/", // fsgofer process is always chroot()ed. So serve root.
-		readonly:  spec.Root.Readonly || conf.Overlay,
+		readonly:  spec.Root.Readonly || overlay2.RootMount,
 	})
 	log.Infof("Serving %q mapped to %q on FD %d (ro: %t)", "/", root, g.ioFDs[0], cfgs[0].readonly)
 
@@ -287,7 +288,7 @@ func (g *Gofer) serveLisafs(spec *specs.Spec, conf *config.Config, root string) 
 		cfgs = append(cfgs, connectionConfig{
 			sock:      newSocket(g.ioFDs[mountIdx]),
 			mountPath: m.Destination,
-			readonly:  isReadonlyMount(m.Options) || conf.Overlay,
+			readonly:  isReadonlyMount(m.Options) || overlay2.SubMounts,
 		})
 
 		log.Infof("Serving %q mapped on FD %d (ro: %t)", m.Destination, g.ioFDs[mountIdx], cfgs[mountIdx].readonly)
@@ -317,9 +318,10 @@ func (g *Gofer) serveLisafs(spec *specs.Spec, conf *config.Config, root string) 
 
 func (g *Gofer) serve9P(spec *specs.Spec, conf *config.Config, root string) subcommands.ExitStatus {
 	// Start with root mount, then add any other additional mount as needed.
+	overlay2 := conf.GetOverlay2()
 	ats := make([]p9.Attacher, 0, len(spec.Mounts)+1)
 	ap, err := fsgofer.NewAttachPoint("/", fsgofer.Config{
-		ROMount:  spec.Root.Readonly || conf.Overlay,
+		ROMount:  spec.Root.Readonly || overlay2.RootMount,
 		HostUDS:  conf.GetHostUDS(),
 		HostFifo: conf.HostFifo,
 	})
@@ -333,7 +335,7 @@ func (g *Gofer) serve9P(spec *specs.Spec, conf *config.Config, root string) subc
 	for _, m := range spec.Mounts {
 		if specutils.IsGoferMount(m) {
 			cfg := fsgofer.Config{
-				ROMount:  isReadonlyMount(m.Options) || conf.Overlay,
+				ROMount:  isReadonlyMount(m.Options) || overlay2.SubMounts,
 				HostUDS:  conf.GetHostUDS(),
 				HostFifo: conf.HostFifo,
 			}
@@ -480,7 +482,7 @@ func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 	}
 
 	// Check if root needs to be remounted as readonly.
-	if spec.Root.Readonly || conf.Overlay {
+	if spec.Root.Readonly || conf.GetOverlay2().RootMount {
 		// If root is a mount point but not read-only, we can change mount options
 		// to make it read-only for extra safety.
 		log.Infof("Remounting root as readonly: %q", root)
@@ -516,7 +518,7 @@ func setupMounts(conf *config.Config, mounts []specs.Mount, root, procPath strin
 		}
 
 		flags := specutils.OptionsToFlags(m.Options) | unix.MS_BIND
-		if conf.Overlay {
+		if conf.GetOverlay2().SubMounts {
 			// Force mount read-only if writes are not going to be sent to it.
 			flags |= unix.MS_RDONLY
 		}

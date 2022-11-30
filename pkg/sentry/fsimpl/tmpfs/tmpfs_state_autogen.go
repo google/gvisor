@@ -432,6 +432,7 @@ func (f *FilesystemOpts) StateFields() []string {
 		"FilesystemType",
 		"Usage",
 		"MaxFilenameLen",
+		"Filestore",
 	}
 }
 
@@ -445,6 +446,7 @@ func (f *FilesystemOpts) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &f.FilesystemType)
 	stateSinkObject.Save(3, &f.Usage)
 	stateSinkObject.Save(4, &f.MaxFilenameLen)
+	stateSinkObject.Save(5, &f.Filestore)
 }
 
 func (f *FilesystemOpts) afterLoad() {}
@@ -456,6 +458,7 @@ func (f *FilesystemOpts) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &f.FilesystemType)
 	stateSourceObject.Load(3, &f.Usage)
 	stateSourceObject.Load(4, &f.MaxFilenameLen)
+	stateSourceObject.Load(5, &f.Filestore)
 }
 
 func (d *dentry) StateTypeName() string {
