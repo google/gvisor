@@ -145,6 +145,28 @@ go_path(
     ],
 )
 
+# CC toolchain targets for cross-compilation.
+# Required to be explicitly specified in bazel >= 5.
+toolchain(
+    name = "cc_toolchain_k8",
+    target_compatible_with = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+    toolchain = "@crosstool//:cc-compiler-k8",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)
+
+toolchain(
+    name = "cc_toolchain_aarch64",
+    target_compatible_with = [
+        "@platforms//os:linux",
+        "@platforms//cpu:aarch64",
+    ],
+    toolchain = "@crosstool//:cc-compiler-aarch64",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)
+
 # gazelle is a set of build tools.
 #
 # To update the WORKSPACE from go.mod, use:
