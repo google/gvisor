@@ -140,6 +140,7 @@ go_library(
         "options.go",
         "pathname.go",
         "permissions.go",
+        "propagation.go",
         "resolving_path.go",
         "save_restore.go",
         "shared_list.go",
