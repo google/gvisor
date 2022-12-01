@@ -47,7 +47,6 @@ import (
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/pipefs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sockfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/timerfd"
@@ -660,7 +659,7 @@ type CreateProcessArgs struct {
 	// File is a passed host FD pointing to a file to load as the init binary.
 	//
 	// This is checked if and only if Filename is "".
-	File fsbridge.File
+	File *vfs.FileDescription
 
 	// Argvv is a list of arguments.
 	Argv []string
@@ -839,7 +838,6 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		}
 		defer wd.DecRef(ctx)
 	}
-	opener := fsbridge.NewVFSLookup(mntns, root, wd)
 	fsContext := NewFSContext(root, wd, args.Umask)
 
 	tg := k.NewThreadGroup(args.PIDNamespace, NewSignalHandlers(), linux.SIGCHLD, args.Limits)
@@ -856,7 +854,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		args.File = nil
 	case args.File != nil:
 		// If File is set, take the File provided directly.
-		args.Filename = args.File.PathnameWithDeleted(ctx)
+		args.Filename = args.File.MappedName(ctx)
 	default:
 		// Otherwise look at Argv and see if the first argument is a valid path.
 		if len(args.Argv) == 0 {
@@ -871,7 +869,8 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 	// Create a fresh task context.
 	remainingTraversals := args.MaxSymlinkTraversals
 	loadArgs := loader.LoadArgs{
-		Opener:              opener,
+		Root:                root,
+		WorkingDir:          wd,
 		RemainingTraversals: &remainingTraversals,
 		ResolveFinal:        true,
 		Filename:            args.Filename,

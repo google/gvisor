@@ -905,6 +905,22 @@ func (fd *FileDescription) ComputeLockRange(ctx context.Context, start uint64, l
 	return lock.ComputeRange(int64(start), int64(length), off)
 }
 
+// ReadFull read all contents from the file.
+func (fd *FileDescription) ReadFull(ctx context.Context, dst usermem.IOSequence, offset int64) (int64, error) {
+	var total int64
+	for dst.NumBytes() > 0 {
+		n, err := fd.PRead(ctx, dst, offset+total, ReadOptions{})
+		total += n
+		if err == io.EOF && total != 0 {
+			return total, io.ErrUnexpectedEOF
+		} else if err != nil {
+			return total, err
+		}
+		dst = dst.DropFirst64(n)
+	}
+	return total, nil
+}
+
 // A FileAsync sends signals to its owner when w is ready for IO. This is only
 // implemented by pkg/sentry/fasync:FileAsync, but we unfortunately need this
 // interface to avoid circular dependencies.

@@ -306,7 +306,6 @@ go_library(
         "//pkg/secio",
         "//pkg/sentry/arch",
         "//pkg/sentry/device",
-        "//pkg/sentry/fsbridge",
         "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/fsimpl/lock",
         "//pkg/sentry/fsimpl/mqfs",

@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/memutil"
-	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -128,7 +127,7 @@ func CreateTask(ctx context.Context, name string, tc *kernel.ThreadGroup, mntns 
 		return nil, err
 	}
 	m := mm.NewMemoryManager(k, k, k.SleepForAddressSpaceActivation)
-	m.SetExecutable(ctx, fsbridge.NewVFSFile(exe))
+	m.SetExecutable(ctx, exe)
 
 	creds := auth.CredentialsFromContext(ctx)
 	config := &kernel.TaskConfig{

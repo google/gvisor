@@ -87,7 +87,6 @@ go_library(
         "//pkg/log",
         "//pkg/refs",
         "//pkg/safemem",
-        "//pkg/sentry/fsbridge",
         "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/fsimpl/lock",
         "//pkg/sentry/inet",
