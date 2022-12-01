@@ -12,17 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <bits/types/struct_itimerspec.h>
 #include <err.h>
 #include <fcntl.h>
+#include <sched.h>
+#include <stdlib.h>
 #include <sys/eventfd.h>
+#include <sys/inotify.h>
+#include <sys/mman.h>
 #include <sys/resource.h>
+#include <sys/signalfd.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/timerfd.h>
 #include <sys/types.h>
 #include <sys/un.h>
 #include <unistd.h>
 
 #include <csignal>
+#include <cstdio>
 #include <iostream>
 #include <ostream>
 
@@ -31,6 +39,7 @@
 #include "absl/time/clock.h"
 #include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/memory_util.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/test_util.h"
@@ -82,7 +91,6 @@ void runSocket() {
   if (pid < 0) {
     // Fork error.
     err(1, "fork");
-
   } else if (pid == 0) {
     // Child.
     close(parent_sock);  // ensure it's not mistakely used in child.
@@ -458,6 +466,202 @@ void runAccept4() {
   close(fd);
 }
 
+void runSignalfd4() {
+  sigset_t mask;
+  sigemptyset(&mask);
+  int res = signalfd(-1, &mask, SFD_CLOEXEC | SFD_NONBLOCK);
+  if (res < 0) {
+    err(1, "signalfd4");
+  }
+}
+
+void runFcntl() {
+  const auto pathname = "trace_test.abc";
+  static constexpr mode_t kDefaultDirMode = 0755;
+  int path_or_error = mkdir(pathname, kDefaultDirMode);
+  if (path_or_error != 0) {
+    err(1, "mkdir");
+  }
+  int fd = open(pathname, O_DIRECTORY | O_RDONLY);
+  if (fd < 0) {
+    err(1, "open");
+  }
+  auto fd_closer = absl::MakeCleanup([fd] { close(fd); });
+
+  int res = fcntl(fd, F_GETFL);
+  if (res < 0) {
+    err(1, "fcntl");
+  }
+  rmdir(pathname);
+}
+
+void runPipe() {
+  int fd[2];
+  int res = pipe(fd);
+  if (res < 0) {
+    err(1, "pipe");
+  }
+  close(fd[0]);
+  close(fd[1]);
+}
+
+void runPipe2() {
+  int fd[2];
+  int res = pipe2(fd, O_CLOEXEC);
+  if (res < 0) {
+    err(1, "pipe2");
+  }
+  close(fd[0]);
+  close(fd[1]);
+}
+
+void runTimerfdCreate() {
+  int fd = timerfd_create(CLOCK_REALTIME, 0);
+  if (fd < 0) {
+    err(1, "timerfd_create");
+  }
+  close(fd);
+}
+
+void runTimerfdSettime() {
+  int fd = timerfd_create(CLOCK_REALTIME, 0);
+  if (fd < 0) {
+    err(1, "timerfd_create");
+  }
+  auto fd_closer = absl::MakeCleanup([fd] { close(fd); });
+
+  constexpr auto kInitial = absl::Milliseconds(10);
+  constexpr auto kInterval = absl::Milliseconds(25);
+  const itimerspec val = {absl::ToTimespec(kInitial),
+                          absl::ToTimespec(kInterval)};
+  int res = timerfd_settime(fd, TFD_TIMER_ABSTIME, &val, 0);
+  if (res < 0) {
+    err(1, "timerfd_settime");
+  }
+}
+
+void runTimerfdGettime() {
+  int fd = timerfd_create(CLOCK_REALTIME, 0);
+  if (fd < 0) {
+    err(1, "timerfd_create");
+  }
+  auto fd_closer = absl::MakeCleanup([fd] { close(fd); });
+
+  itimerspec val;
+  int res = timerfd_gettime(fd, &val);
+  if (res < 0) {
+    err(1, "timerfd_gettime");
+  }
+}
+// signalfd(2), fork(2), and vfork(2) system calls are not supported in arm
+// architecture.
+#ifdef __x86_64__
+void runFork() {
+  pid_t pid = syscall(__NR_fork);
+  if (pid < 0) {
+    err(1, "fork");
+  } else if (pid == 0) {
+    exit(0);
+  }
+  RetryEINTR(waitpid)(pid, nullptr, 0);
+}
+
+void runVfork() {
+  pid_t pid = vfork();
+  if (pid < 0) {
+    err(1, "vfork");
+  } else if (pid == 0) {
+    _exit(0);
+  }
+  RetryEINTR(waitpid)(pid, nullptr, 0);
+}
+
+void runSignalfd() {
+  sigset_t mask;
+  sigemptyset(&mask);
+  constexpr int kSizeofKernelSigset = 8;
+  int res = syscall(__NR_signalfd, -1, &mask, kSizeofKernelSigset);
+  if (res < 0) {
+    err(1, "signalfd");
+  }
+}
+#endif
+
+void runClone() {
+  Mapping child_stack = ASSERT_NO_ERRNO_AND_VALUE(
+      MmapAnon(kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));
+  int child_pid;
+  child_pid = clone(
+      +[](void*) { return 0; },
+      reinterpret_cast<void*>(child_stack.addr() + kPageSize),
+      SIGCHLD | CLONE_VFORK | CLONE_FILES, nullptr);
+
+  if (child_pid < 0) {
+    err(1, "clone");
+  }
+  RetryEINTR(waitpid)(child_pid, nullptr, 0);
+}
+
+void runInotifyInit() {
+  int fd = inotify_init();
+  if (fd < 0) {
+    err(1, "inotify_init");
+  }
+  close(fd);
+}
+
+void runInotifyInit1() {
+  int fd = inotify_init1(IN_NONBLOCK);
+  if (fd < 0) {
+    err(1, "inotify_init1");
+  }
+  close(fd);
+}
+
+void runInotifyAddWatch() {
+  const auto pathname = "timer_trace_test.abc";
+  static constexpr mode_t kDefaultDirMode = 0755;
+  int path_or_error = mkdir(pathname, kDefaultDirMode);
+  if (path_or_error != 0) {
+    err(1, "mkdir");
+  }
+  int fd = inotify_init1(IN_NONBLOCK);
+  if (fd < 0) {
+    err(1, "inotify_init1");
+  }
+  auto fd_closer = absl::MakeCleanup([fd] { close(fd); });
+
+  int res = inotify_add_watch(fd, pathname, IN_NONBLOCK);
+  if (res < 0) {
+    err(1, "inotify_add_watch");
+  }
+  rmdir(pathname);
+}
+
+void runInotifyRmWatch() {
+  const auto pathname = "timer_trace_test.abc";
+  static constexpr mode_t kDefaultDirMode = 0755;
+  int path_or_error = mkdir(pathname, kDefaultDirMode);
+  if (path_or_error != 0) {
+    err(1, "mkdir");
+  }
+  int fd = inotify_init1(IN_NONBLOCK);
+  if (fd < 0) {
+    err(1, "inotify_init1");
+  }
+  auto fd_closer = absl::MakeCleanup([fd] { close(fd); });
+
+  int wd = inotify_add_watch(fd, pathname, IN_NONBLOCK);
+  if (wd < 0) {
+    err(1, "inotify_add_watch");
+  }
+  int res = inotify_rm_watch(fd, wd);
+  if (res < 0) {
+    err(1, "inotify_rm_watch");
+  }
+  rmdir(pathname);
+}
+
 }  // namespace testing
 }  // namespace gvisor
 
@@ -481,6 +685,25 @@ int main(int argc, char** argv) {
   ::gvisor::testing::runBind();
   ::gvisor::testing::runAccept();
   ::gvisor::testing::runAccept4();
+  ::gvisor::testing::runSignalfd4();
+  ::gvisor::testing::runFcntl();
+  ::gvisor::testing::runPipe();
+  ::gvisor::testing::runPipe2();
+  ::gvisor::testing::runTimerfdCreate();
+  ::gvisor::testing::runTimerfdSettime();
+  ::gvisor::testing::runTimerfdGettime();
+  ::gvisor::testing::runClone();
+  ::gvisor::testing::runInotifyInit();
+  ::gvisor::testing::runInotifyInit1();
+  ::gvisor::testing::runInotifyAddWatch();
+  ::gvisor::testing::runInotifyRmWatch();
+// signalfd(2), fork(2), and vfork(2) system calls are not supported in arm
+// architecture.
+#ifdef __x86_64__
+  ::gvisor::testing::runSignalfd();
+  ::gvisor::testing::runFork();
+  ::gvisor::testing::runVfork();
+#endif
   // Run chroot at the end since it changes the root for all other tests.
   ::gvisor::testing::runChroot();
   return 0;

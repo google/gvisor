@@ -4,8 +4,11 @@ package(licenses = ["notice"])
 
 go_test(
     name = "trace_test",
-    size = "small",
-    srcs = ["trace_test.go"],
+    srcs = [
+        "trace_amd64_test.go",
+        "trace_arm64_test.go",
+        "trace_test.go",
+    ],
     data = [
         "//runsc",
         "//test/trace/workload",
