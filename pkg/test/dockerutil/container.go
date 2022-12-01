@@ -231,7 +231,7 @@ func (c *Container) create(ctx context.Context, profileImage string, conf *conta
 		// unmodified "basic/alpine" image name. This should be easy to grok.
 		c.profileInit(profileImage)
 	}
-	cont, err := c.client.ContainerCreate(ctx, conf, hostconf, nil, c.Name)
+	cont, err := c.client.ContainerCreate(ctx, conf, hostconf, nil, nil, c.Name)
 	if err != nil {
 		return err
 	}
