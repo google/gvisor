@@ -49,8 +49,8 @@ constexpr uint64_t kMagicConstant = 0x0102030405060708;
 #define SYS_epoll_pwait2 441
 #endif
 
-int epoll_pwait2(int fd, struct epoll_event* events, int maxevents,
-                 const struct timespec* timeout, const sigset_t* sigset) {
+int test_epoll_pwait2(int fd, struct epoll_event* events, int maxevents,
+                      const struct timespec* timeout, const sigset_t* sigset) {
   return syscall(SYS_epoll_pwait2, fd, events, maxevents, timeout, sigset);
 }
 
@@ -183,8 +183,8 @@ TEST(EpollTest, EpollPwait2Timeout) {
   // The syscall returns immediately when timeout is zero,
   // even if no events are available.
   SKIP_IF(!IsRunningOnGvisor() &&
-          epoll_pwait2(epollfd.get(), result, kFDsPerEpoll, &timeout, nullptr) <
-              0 &&
+          test_epoll_pwait2(epollfd.get(), result, kFDsPerEpoll, &timeout,
+                            nullptr) < 0 &&
           errno == ENOSYS);
 
   {
@@ -192,8 +192,8 @@ TEST(EpollTest, EpollPwait2Timeout) {
     EXPECT_THAT(clock_gettime(CLOCK_MONOTONIC, &begin), SyscallSucceeds());
 
     timeout.tv_nsec = kTimeoutNs;
-    ASSERT_THAT(RetryEINTR(epoll_pwait2)(epollfd.get(), result, kFDsPerEpoll,
-                                         &timeout, nullptr),
+    ASSERT_THAT(RetryEINTR(test_epoll_pwait2)(epollfd.get(), result,
+                                              kFDsPerEpoll, &timeout, nullptr),
                 SyscallSucceedsWithValue(0));
     EXPECT_THAT(clock_gettime(CLOCK_MONOTONIC, &end), SyscallSucceeds());
   }
