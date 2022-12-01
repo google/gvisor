@@ -25,7 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/p9"
-	"gvisor.dev/gvisor/pkg/refsvfs2"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
@@ -132,7 +132,7 @@ func (d *dentry) createSyntheticChildLocked(opts *createSyntheticOpts) {
 		mmapFD:    atomicbitops.FromInt32(-1),
 		nlink:     atomicbitops.FromUint32(2),
 	}
-	refsvfs2.Register(child)
+	refs.Register(child)
 	switch opts.mode.FileType() {
 	case linux.S_IFDIR:
 		// Nothing else needs to be done.

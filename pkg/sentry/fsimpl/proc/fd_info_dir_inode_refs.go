@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
-	"gvisor.dev/gvisor/pkg/refsvfs2"
+	"gvisor.dev/gvisor/pkg/refs"
 )
 
 // enableLogging indicates whether reference-related events should be logged (with
@@ -44,20 +44,20 @@ type fdInfoDirInodeRefs struct {
 // checking.
 func (r *fdInfoDirInodeRefs) InitRefs() {
 	r.refCount.Store(1)
-	refsvfs2.Register(r)
+	refs.Register(r)
 }
 
-// RefType implements refsvfs2.CheckedObject.RefType.
+// RefType implements refs.CheckedObject.RefType.
 func (r *fdInfoDirInodeRefs) RefType() string {
 	return fmt.Sprintf("%T", fdInfoDirInodeobj)[1:]
 }
 
-// LeakMessage implements refsvfs2.CheckedObject.LeakMessage.
+// LeakMessage implements refs.CheckedObject.LeakMessage.
 func (r *fdInfoDirInodeRefs) LeakMessage() string {
 	return fmt.Sprintf("[%s %p] reference count of %d instead of 0", r.RefType(), r, r.ReadRefs())
 }
 
-// LogRefs implements refsvfs2.CheckedObject.LogRefs.
+// LogRefs implements refs.CheckedObject.LogRefs.
 func (r *fdInfoDirInodeRefs) LogRefs() bool {
 	return fdInfoDirInodeenableLogging
 }
@@ -74,7 +74,7 @@ func (r *fdInfoDirInodeRefs) ReadRefs() int64 {
 func (r *fdInfoDirInodeRefs) IncRef() {
 	v := r.refCount.Add(1)
 	if fdInfoDirInodeenableLogging {
-		refsvfs2.LogIncRef(r, v)
+		refs.LogIncRef(r, v)
 	}
 	if v <= 1 {
 		panic(fmt.Sprintf("Incrementing non-positive count %p on %s", r, r.RefType()))
@@ -98,7 +98,7 @@ func (r *fdInfoDirInodeRefs) TryIncRef() bool {
 
 	v := r.refCount.Add(-speculativeRef + 1)
 	if fdInfoDirInodeenableLogging {
-		refsvfs2.LogTryIncRef(r, v)
+		refs.LogTryIncRef(r, v)
 	}
 	return true
 }
@@ -118,14 +118,14 @@ func (r *fdInfoDirInodeRefs) TryIncRef() bool {
 func (r *fdInfoDirInodeRefs) DecRef(destroy func()) {
 	v := r.refCount.Add(-1)
 	if fdInfoDirInodeenableLogging {
-		refsvfs2.LogDecRef(r, v)
+		refs.LogDecRef(r, v)
 	}
 	switch {
 	case v < 0:
 		panic(fmt.Sprintf("Decrementing non-positive ref count %p, owned by %s", r, r.RefType()))
 
 	case v == 0:
-		refsvfs2.Unregister(r)
+		refs.Unregister(r)
 
 		if destroy != nil {
 			destroy()
@@ -135,6 +135,6 @@ func (r *fdInfoDirInodeRefs) DecRef(destroy func()) {
 
 func (r *fdInfoDirInodeRefs) afterLoad() {
 	if r.ReadRefs() > 0 {
-		refsvfs2.Register(r)
+		refs.Register(r)
 	}
 }

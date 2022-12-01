@@ -15,13 +15,13 @@
 package kernfs
 
 import (
-	"gvisor.dev/gvisor/pkg/refsvfs2"
+	"gvisor.dev/gvisor/pkg/refs"
 )
 
 // afterLoad is invoked by stateify.
 func (d *Dentry) afterLoad() {
 	if d.refs.Load() >= 0 {
-		refsvfs2.Register(d)
+		refs.Register(d)
 	}
 }
 
