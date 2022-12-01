@@ -164,14 +164,6 @@ func (l *Locks) LockRegion(ctx context.Context, uid UniqueID, ownerPID int32, t 
 	}
 }
 
-// LockRegionVFS1 is a wrapper around LockRegion for VFS1, which does not implement
-// F_GETLK (and does not care about storing PIDs as a result).
-//
-// TODO(gvisor.dev/issue/1624): Delete.
-func (l *Locks) LockRegionVFS1(ctx context.Context, uid UniqueID, t LockType, r LockRange, block bool) error {
-	return l.LockRegion(ctx, uid, 0 /* ownerPID */, t, r, block)
-}
-
 // Readiness always returns zero.
 func (l *Locks) Readiness(waiter.EventMask) waiter.EventMask {
 	return 0

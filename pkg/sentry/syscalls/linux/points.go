@@ -691,7 +691,7 @@ func signalfdHelper(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.Contex
 	}
 	sigset := info.Args[1].Pointer()
 	sigsetsize := info.Args[2].SizeT()
-	mask, err := CopyInSigSet(t, sigset, sigsetsize)
+	mask, err := copyInSigSet(t, sigset, sigsetsize)
 	if err == nil { // if NO error
 		p.Sigset = uint64(mask)
 		p.Sigset = uint64(mask)
