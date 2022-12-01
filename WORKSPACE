@@ -88,8 +88,8 @@ go_repository(
 go_repository(
     name = "org_golang_x_sys",
     importpath = "golang.org/x/sys",
-    sum = "h1:BXxu8t6QN0G1uff4bzZzSkpsax8+ALqTGUtz08QrV00=",
-    version = "v0.0.0-20220224120231-95c6836cb0e7",
+    sum = "h1:ljd4t30dBnAvMZaQCevtY0xLLD0A+bRZXbgLMLU1F/A=",
+    version = "v0.2.0",
 )
 
 go_repository(
