@@ -118,10 +118,9 @@ type multicastMembership struct {
 // Init initializes the endpoint.
 func (e *Endpoint) Init(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, ops *tcpip.SocketOptions, waiterQueue *waiter.Queue) {
 	e.mu.Lock()
-	memberships := e.multicastMemberships
-	e.mu.Unlock()
-	if memberships != nil {
-		panic(fmt.Sprintf("endpoint is already initialized; got e.multicastMemberships = %#v, want = nil", memberships))
+	defer e.mu.Unlock()
+	if e.multicastMemberships != nil {
+		panic(fmt.Sprintf("endpoint is already initialized; got e.multicastMemberships = %#v, want = nil", e.multicastMemberships))
 	}
 
 	switch netProto {
@@ -130,27 +129,24 @@ func (e *Endpoint) Init(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, tr
 		panic(fmt.Sprintf("invalid protocol number = %d", netProto))
 	}
 
-	*e = Endpoint{
-		stack:       s,
-		ops:         ops,
-		netProto:    netProto,
-		transProto:  transProto,
-		waiterQueue: waiterQueue,
-
-		info: stack.TransportEndpointInfo{
-			NetProto:   netProto,
-			TransProto: transProto,
-		},
-		effectiveNetProto: netProto,
-		ipv4TTL:           tcpip.UseDefaultIPv4TTL,
-		ipv6HopLimit:      tcpip.UseDefaultIPv6HopLimit,
-		// Linux defaults to TTL=1.
-		multicastTTL:         1,
-		multicastMemberships: make(map[multicastMembership]struct{}),
+	e.stack = s
+	e.ops = ops
+	e.netProto = netProto
+	e.transProto = transProto
+	e.waiterQueue = waiterQueue
+	e.infoMu.Lock()
+	e.info = stack.TransportEndpointInfo{
+		NetProto:   netProto,
+		TransProto: transProto,
 	}
+	e.infoMu.Unlock()
+	e.effectiveNetProto = netProto
+	e.ipv4TTL = tcpip.UseDefaultIPv4TTL
+	e.ipv6HopLimit = tcpip.UseDefaultIPv6HopLimit
 
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	// Linux defaults to TTL=1.
+	e.multicastTTL = 1
+	e.multicastMemberships = make(map[multicastMembership]struct{})
 	e.setEndpointState(transport.DatagramEndpointStateInitial)
 }
 
