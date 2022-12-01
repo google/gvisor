@@ -65,9 +65,6 @@ type Filter func(test string) bool
 // defered functions before exiting. It returns an exit code that should be
 // passed to os.Exit.
 func RunTests(lang, image string, filter Filter, batchSize int, timeout time.Duration, proctorSettings ProctorSettings) int {
-	// TODO(gvisor.dev/issue/1624): Remove those tests from all exclude lists
-	// that only fail with VFS1.
-
 	// Construct the shared docker instance.
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, testutil.DefaultLogger(lang))
