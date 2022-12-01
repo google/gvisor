@@ -21,13 +21,9 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 )
 
-// CopyInSigSet copies in a sigset_t, checks its size, and ensures that KILL and
+// copyInSigSet copies in a sigset_t, checks its size, and ensures that KILL and
 // STOP are clear.
-//
-// TODO(gvisor.dev/issue/1624): This is only exported because
-// syscalls/vfs2/signal.go depends on it. Once vfs1 is deleted and the vfs2
-// syscalls are moved into this package, then they can be unexported.
-func CopyInSigSet(t *kernel.Task, sigSetAddr hostarch.Addr, size uint) (linux.SignalSet, error) {
+func copyInSigSet(t *kernel.Task, sigSetAddr hostarch.Addr, size uint) (linux.SignalSet, error) {
 	if size != linux.SignalSetSize {
 		return 0, linuxerr.EINVAL
 	}
