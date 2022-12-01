@@ -34,6 +34,11 @@ import (
 
 var cutoffTime time.Time
 
+type checkers struct {
+	checker func(test.Message) error
+	count   int
+}
+
 // TestAll enabled all trace points in the system with all optional and context
 // fields enabled. Then it runs a workload that will trigger those points and
 // run some basic validation over the points generated.
@@ -87,15 +92,15 @@ func TestAll(t *testing.T) {
 
 	// Wait until the sandbox disconnects to ensure all points were gathered.
 	server.WaitForNoClients()
-	matchPoints(t, server.GetPoints())
+
+	matchers := matchPoints(t, server.GetPoints())
+	extraMatchers(t, server.GetPoints(), matchers)
+	validatePoints(t, server.GetPoints(), matchers)
 }
 
-func matchPoints(t *testing.T, msgs []test.Message) {
+func matchPoints(t *testing.T, msgs []test.Message) map[pb.MessageType]*checkers {
 	// Register functions that verify each available point.
-	matchers := map[pb.MessageType]*struct {
-		checker func(test.Message) error
-		count   int
-	}{
+	matchers := map[pb.MessageType]*checkers{
 		pb.MessageType_MESSAGE_CONTAINER_START:           {checker: checkContainerStart},
 		pb.MessageType_MESSAGE_SENTRY_CLONE:              {checker: checkSentryClone},
 		pb.MessageType_MESSAGE_SENTRY_EXEC:               {checker: checkSentryExec},
@@ -116,13 +121,23 @@ func matchPoints(t *testing.T, msgs []test.Message) {
 		pb.MessageType_MESSAGE_SYSCALL_DUP:               {checker: checkSyscallDup},
 		pb.MessageType_MESSAGE_SYSCALL_PRLIMIT64:         {checker: checkSyscallPrlimit64},
 		pb.MessageType_MESSAGE_SYSCALL_EVENTFD:           {checker: checkSyscallEventfd},
+		pb.MessageType_MESSAGE_SYSCALL_SIGNALFD:          {checker: checkSyscallSignalfd},
 		pb.MessageType_MESSAGE_SYSCALL_BIND:              {checker: checkSyscallBind},
 		pb.MessageType_MESSAGE_SYSCALL_ACCEPT:            {checker: checkSyscallAccept},
-
-		// TODO(gvisor.dev/issue/4805): Add validation for these messages.
-		pb.MessageType_MESSAGE_SYSCALL_CLONE: {checker: checkTODO},
-		pb.MessageType_MESSAGE_SYSCALL_PIPE:  {checker: checkTODO},
+		pb.MessageType_MESSAGE_SYSCALL_FCNTL:             {checker: checkSyscallFcntl},
+		pb.MessageType_MESSAGE_SYSCALL_PIPE:              {checker: checkSyscallPipe},
+		pb.MessageType_MESSAGE_SYSCALL_TIMERFD_CREATE:    {checker: checkSyscallTimerfdCreate},
+		pb.MessageType_MESSAGE_SYSCALL_TIMERFD_SETTIME:   {checker: checkSyscallTimerfdSettime},
+		pb.MessageType_MESSAGE_SYSCALL_TIMERFD_GETTIME:   {checker: checkSyscallTimerfdGettime},
+		pb.MessageType_MESSAGE_SYSCALL_INOTIFY_INIT:      {checker: checkSyscallInotifyInit},
+		pb.MessageType_MESSAGE_SYSCALL_INOTIFY_ADD_WATCH: {checker: checkSyscallInotifyInitAddWatch},
+		pb.MessageType_MESSAGE_SYSCALL_INOTIFY_RM_WATCH:  {checker: checkSyscallInotifyInitRmWatch},
+		pb.MessageType_MESSAGE_SYSCALL_CLONE:             {checker: checkSyscallClone},
 	}
+	return matchers
+}
+
+func validatePoints(t *testing.T, msgs []test.Message, matchers map[pb.MessageType]*checkers) {
 	for _, msg := range msgs {
 		t.Logf("Processing message type %v", msg.MsgType)
 		if handler := matchers[msg.MsgType]; handler == nil {
@@ -147,7 +162,7 @@ func matchPoints(t *testing.T, msgs []test.Message) {
 
 func checkTimeNs(ns int64) error {
 	if ns <= int64(cutoffTime.Nanosecond()) {
-		return fmt.Errorf("time should not be less than %d (%v), got: %d (%v)", cutoffTime.Nanosecond(), cutoffTime, ns, time.Unix(0, ns))
+		return fmt.Errorf("time: got: %d (%v), should not be less than %d (%v)", ns, time.Unix(0, ns), cutoffTime.Nanosecond(), cutoffTime)
 	}
 	return nil
 }
@@ -497,7 +512,7 @@ func checkSyscallSetid(msg test.Message) error {
 		return err
 	}
 	if p.Id != 0 {
-		return fmt.Errorf(" invalid id: %d", p.Id)
+		return fmt.Errorf("invalid id: %d", p.Id)
 	}
 
 	return nil
@@ -512,13 +527,13 @@ func checkSyscallSetresid(msg test.Message) error {
 		return err
 	}
 	if p.GetRid() != 0 {
-		return fmt.Errorf(" Invalid RID: %d", p.Rid)
+		return fmt.Errorf("invalid rid: %d", p.Rid)
 	}
 	if p.GetEid() != 0 {
-		return fmt.Errorf(" Invalid EID: %d", p.Eid)
+		return fmt.Errorf("invalid eid: %d", p.Eid)
 	}
 	if p.GetSid() != 0 {
-		return fmt.Errorf(" Invalid SID: %d", p.Sid)
+		return fmt.Errorf("invalid sid: %d", p.Sid)
 	}
 
 	return nil
@@ -551,10 +566,10 @@ func checkSyscallDup(msg test.Message) error {
 		return err
 	}
 	if p.OldFd < 0 {
-		return fmt.Errorf("invalid FD: %d", p.OldFd)
+		return fmt.Errorf("invalid fd: %d", p.OldFd)
 	}
 	if p.NewFd < 0 {
-		return fmt.Errorf("invalid FD: %d", p.NewFd)
+		return fmt.Errorf("invalid fd: %d", p.NewFd)
 	}
 	if p.Flags != unix.O_CLOEXEC && p.Flags != 0 {
 		return fmt.Errorf("invalid flag got: %v", p.Flags)
@@ -572,7 +587,7 @@ func checkSyscallPrlimit64(msg test.Message) error {
 		return err
 	}
 	if p.Pid < 0 {
-		return fmt.Errorf("invalid PID: %d", p.Pid)
+		return fmt.Errorf("invalid pid: %d", p.Pid)
 	}
 	return nil
 }
@@ -586,10 +601,10 @@ func checkSyscallEventfd(msg test.Message) error {
 		return err
 	}
 	if p.Val < 0 {
-		return fmt.Errorf("invalid PID: %d", p.Val)
+		return fmt.Errorf("invalid pid: %d", p.Val)
 	}
 	if p.Flags != unix.EFD_NONBLOCK && p.Flags != 0 {
-		return fmt.Errorf("invalid Flag got: %d, ", p.Flags)
+		return fmt.Errorf("invalid flag got: %d, ", p.Flags)
 	}
 
 	return nil
@@ -604,10 +619,10 @@ func checkSyscallBind(msg test.Message) error {
 		return err
 	}
 	if p.Fd < 0 {
-		return fmt.Errorf("invalid FD: %d", p.Fd)
+		return fmt.Errorf("invalid fd: %d", p.Fd)
 	}
 	if p.FdPath == " " {
-		return fmt.Errorf("invalid Path: %v", p.FdPath)
+		return fmt.Errorf("invalid path: %v", p.FdPath)
 	}
 	if len(p.Address) == 0 {
 		return fmt.Errorf("invalid address: %d", p.Address)
@@ -624,10 +639,10 @@ func checkSyscallAccept(msg test.Message) error {
 		return err
 	}
 	if p.Fd < 0 {
-		return fmt.Errorf("invalid FD: %d", p.Fd)
+		return fmt.Errorf("invalid fd: %d", p.Fd)
 	}
 	if p.FdPath == "" {
-		return fmt.Errorf("invalid Path: %v", p.FdPath)
+		return fmt.Errorf("invalid path: %v", p.FdPath)
 	}
 	if len(p.Address) != 0 {
 		return fmt.Errorf("invalid address: %d, %v", p.Address, p.Sysno)
@@ -647,12 +662,203 @@ func checkSyscallChroot(msg test.Message) error {
 		return err
 	}
 	if want := "trace_test.abc"; !strings.Contains(p.Pathname, want) {
-		return fmt.Errorf("wrong Pathname, want: %q, got: %q", want, p.Pathname)
+		return fmt.Errorf("wrong pathname, want: %q, got: %q", want, p.Pathname)
 	}
 
 	return nil
 }
 
-func checkTODO(_ test.Message) error {
+func checkSyscallFcntl(msg test.Message) error {
+	p := pb.Fcntl{}
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	if err := checkContextData(p.ContextData); err != nil {
+		return err
+	}
+	if p.Fd < 0 {
+		return fmt.Errorf("invalid fd: %d", p.Fd)
+	}
+	if p.Cmd != unix.F_GETFL {
+		return fmt.Errorf("invalid cmd:  got: %v, want: F_GETFL", p.Cmd)
+	}
+	return nil
+}
+
+func checkSyscallPipe(msg test.Message) error {
+	p := pb.Pipe{}
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	if err := checkContextData(p.ContextData); err != nil {
+		return err
+	}
+	if p.Reader < 0 {
+		return fmt.Errorf("invalid reader fd: %d", p.Reader)
+	}
+	if p.Writer < 0 {
+		return fmt.Errorf("invalid writer fd: %d", p.Writer)
+	}
+	if p.Flags != unix.O_CLOEXEC && p.Flags != 0 {
+		return fmt.Errorf("invalid flag got: %v", p.Flags)
+	}
+	return nil
+}
+
+func checkSyscallSignalfd(msg test.Message) error {
+	p := pb.Signalfd{}
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	if err := checkContextData(p.ContextData); err != nil {
+		return err
+	}
+	if p.Fd != -1 {
+		return fmt.Errorf("invalid fd: %d", p.Fd)
+	}
+	if p.Sigset != 0 && p.Sigset != uint64(unix.SIGILL) {
+		return fmt.Errorf("invalid signal got: %v", p.Sigset)
+	}
+	return checkSyscallSignalfdFlags(p.Flags)
+}
+
+func checkSyscallTimerfdCreate(msg test.Message) error {
+	p := pb.TimerfdCreate{}
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	if err := checkContextData(p.ContextData); err != nil {
+		return err
+	}
+	if p.ClockId != unix.CLOCK_REALTIME {
+		return fmt.Errorf("invalid clockid: %d", p.ClockId)
+	}
+	if p.Flags != 0 {
+		return fmt.Errorf("invalid flag got: %v", p.Flags)
+	}
+	return nil
+}
+
+func checkSyscallTimerfdSettime(msg test.Message) error {
+	p := pb.TimerfdSetTime{}
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	if err := checkContextData(p.ContextData); err != nil {
+		return err
+	}
+	if p.Fd < 0 {
+		return fmt.Errorf("invalid clockid: %d", p.Fd)
+	}
+	if p.FdPath == "" {
+		return fmt.Errorf("invalid path: %q", p.FdPath)
+	}
+	if p.Flags != unix.TFD_TIMER_ABSTIME {
+		return fmt.Errorf("invalid flag got: %v", p.Flags)
+	}
+	if p.OldValue != nil {
+		return fmt.Errorf("invalid oldvalue: %v", p.OldValue.String())
+	}
+	if p.NewValue == nil {
+		return fmt.Errorf("invalid oldvalue: %v", p.OldValue.String())
+	}
+	return nil
+}
+
+func checkSyscallTimerfdGettime(msg test.Message) error {
+	p := pb.TimerfdGetTime{}
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	if err := checkContextData(p.ContextData); err != nil {
+		return err
+	}
+	if p.Fd < 0 {
+		return fmt.Errorf("invalid clockid: %d", p.Fd)
+	}
+	if p.FdPath == "" {
+		return fmt.Errorf("invalid path: %q", p.FdPath)
+	}
+	if p.CurValue == nil {
+		return fmt.Errorf("invalid oldvalue: %v", p.CurValue.String())
+	}
+	return nil
+}
+
+func checkSyscallClone(msg test.Message) error {
+	p := pb.Clone{}
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	if err := checkContextData(p.ContextData); err != nil {
+		return err
+	}
+	// Flags used by default in system calls that use clone(2) in the underying.
+	rawFlags := unix.CLONE_CHILD_CLEARTID | unix.CLONE_CHILD_SETTID | uint64(unix.SIGCHLD)
+	// Flags used for clone(2) syscall in workload.cc
+	cloneFlags := uint64(unix.SIGCHLD) | unix.CLONE_VFORK | unix.CLONE_FILES
+	if p.Flags != uint64(rawFlags) && p.Flags != cloneFlags {
+		return fmt.Errorf("invalid flag got: %v", p.Flags)
+	}
+	if (p.Flags == uint64(rawFlags) && p.Stack != 0) || (p.Flags == cloneFlags && p.Stack == 0) {
+		return fmt.Errorf("invalid stack got: %v", p.Stack)
+	}
+	return nil
+}
+
+func checkSyscallInotifyInit(msg test.Message) error {
+	p := pb.InotifyInit{}
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	if err := checkContextData(p.ContextData); err != nil {
+		return err
+	}
+	if !(p.Flags == 0 || p.Flags == unix.IN_NONBLOCK) {
+		return fmt.Errorf("invalid flag got: %v", p.Flags)
+	}
+	return nil
+}
+
+func checkSyscallInotifyInitAddWatch(msg test.Message) error {
+	p := pb.InotifyAddWatch{}
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	if err := checkContextData(p.ContextData); err != nil {
+		return err
+	}
+	if p.Fd < 0 {
+		return fmt.Errorf("invalid fd: %d", p.Fd)
+	}
+	if p.FdPath == "" {
+		return fmt.Errorf("invalid path: %v", p.FdPath)
+	}
+	if want := "timer_trace_test.abc"; !strings.Contains(p.Pathname, want) {
+		return fmt.Errorf("wrong pathname, got: %q, want: %q", p.Pathname, want)
+	}
+	if want := unix.IN_NONBLOCK; want != int(p.Mask) {
+		return fmt.Errorf("invalid mask: want: %v, got:%v", want, p.Mask)
+	}
+	return nil
+}
+
+func checkSyscallInotifyInitRmWatch(msg test.Message) error {
+	p := pb.InotifyRmWatch{}
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	if err := checkContextData(p.ContextData); err != nil {
+		return err
+	}
+	if p.Fd < 0 {
+		return fmt.Errorf("invalid fd: %d", p.Fd)
+	}
+	if p.FdPath == "" {
+		return fmt.Errorf("invalid path: %q", p.FdPath)
+	}
+	if p.Wd < 0 {
+		return fmt.Errorf("invalid wd: %d", p.Wd)
+	}
 	return nil
 }
