@@ -19,7 +19,6 @@ go_test(
     deps = [
         ":tcpconntrack",
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/tcpip/header",
     ],
 )

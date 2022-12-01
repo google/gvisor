@@ -18,7 +18,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/refsvfs2"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -38,7 +38,7 @@ func (f FDID) Ok() bool {
 
 // genericFD can represent any type of FD.
 type genericFD interface {
-	refsvfs2.RefCounter
+	refs.RefCounter
 }
 
 // A ControlFD is the gateway to the backing filesystem tree node. It is an
@@ -84,9 +84,9 @@ type ControlFD struct {
 
 var _ genericFD = (*ControlFD)(nil)
 
-// DecRef implements refsvfs2.RefCounter.DecRef. Note that the context
+// DecRef implements refs.RefCounter.DecRef. Note that the context
 // parameter should never be used. It exists solely to comply with the
-// refsvfs2.RefCounter interface.
+// refs.RefCounter interface.
 func (fd *ControlFD) DecRef(context.Context) {
 	fd.controlFDRefs.DecRef(func() {
 		fd.conn.server.renameMu.RLock()
@@ -254,9 +254,9 @@ func (fd *OpenFD) ControlFD() ControlFDImpl {
 	return fd.controlFD.impl
 }
 
-// DecRef implements refsvfs2.RefCounter.DecRef. Note that the context
+// DecRef implements refs.RefCounter.DecRef. Note that the context
 // parameter should never be used. It exists solely to comply with the
-// refsvfs2.RefCounter interface.
+// refs.RefCounter interface.
 func (fd *OpenFD) DecRef(context.Context) {
 	fd.openFDRefs.DecRef(func() {
 		fd.controlFD.openFDsMu.Lock()
@@ -311,9 +311,9 @@ func (fd *BoundSocketFD) ControlFD() ControlFDImpl {
 	return fd.controlFD.impl
 }
 
-// DecRef implements refsvfs2.RefCounter.DecRef. Note that the context
+// DecRef implements refs.RefCounter.DecRef. Note that the context
 // parameter should never be used. It exists solely to comply with the
-// refsvfs2.RefCounter interface.
+// refs.RefCounter interface.
 func (fd *BoundSocketFD) DecRef(context.Context) {
 	fd.boundSocketFDRefs.DecRef(func() {
 		fd.controlFD.DecRef(nil) // Drop the ref on the control FD.

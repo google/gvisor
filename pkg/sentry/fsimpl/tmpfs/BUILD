@@ -32,7 +32,7 @@ go_template_instance(
     out = "inode_refs.go",
     package = "tmpfs",
     prefix = "inode",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "inode",
     },
@@ -96,7 +96,6 @@ go_library(
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/safemem",
         "//pkg/sentry/arch",
         "//pkg/sentry/fsimpl/lock",

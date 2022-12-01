@@ -8,7 +8,7 @@ go_template_instance(
     out = "socket_refs.go",
     package = "unix",
     prefix = "socket",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "Socket",
     },
@@ -33,7 +33,6 @@ go_library(
         "//pkg/log",
         "//pkg/marshal",
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/safemem",
         "//pkg/sentry/arch",
         "//pkg/sentry/device",

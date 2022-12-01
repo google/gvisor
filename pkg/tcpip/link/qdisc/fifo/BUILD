@@ -26,7 +26,6 @@ go_test(
         ":fifo",
         "//pkg/bufferv2",
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/stack",

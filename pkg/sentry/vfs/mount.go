@@ -26,7 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/refsvfs2"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
 
@@ -135,7 +135,7 @@ func newMount(vfs *VirtualFilesystem, fs *Filesystem, root *Dentry, mntns *Mount
 	if opts.ReadOnly {
 		mnt.setReadOnlyLocked(true)
 	}
-	refsvfs2.Register(mnt)
+	refs.Register(mnt)
 	return mnt
 }
 
@@ -688,7 +688,7 @@ func (mnt *Mount) tryIncMountedRef() bool {
 		}
 		if mnt.refs.CompareAndSwap(r, r+1) {
 			if mnt.LogRefs() {
-				refsvfs2.LogTryIncRef(mnt, r+1)
+				refs.LogTryIncRef(mnt, r+1)
 			}
 			return true
 		}
@@ -701,7 +701,7 @@ func (mnt *Mount) IncRef() {
 	// the eager-unmount bit.
 	r := mnt.refs.Add(1)
 	if mnt.LogRefs() {
-		refsvfs2.LogIncRef(mnt, r)
+		refs.LogIncRef(mnt, r)
 	}
 }
 
@@ -709,10 +709,10 @@ func (mnt *Mount) IncRef() {
 func (mnt *Mount) DecRef(ctx context.Context) {
 	r := mnt.refs.Add(-1)
 	if mnt.LogRefs() {
-		refsvfs2.LogDecRef(mnt, r)
+		refs.LogDecRef(mnt, r)
 	}
 	if r&^math.MinInt64 == 0 { // mask out MSB
-		refsvfs2.Unregister(mnt)
+		refs.Unregister(mnt)
 		mnt.destroy(ctx)
 	}
 }
@@ -735,17 +735,17 @@ func (mnt *Mount) destroy(ctx context.Context) {
 	}
 }
 
-// RefType implements refsvfs2.CheckedObject.Type.
+// RefType implements refs.CheckedObject.Type.
 func (mnt *Mount) RefType() string {
 	return "vfs.Mount"
 }
 
-// LeakMessage implements refsvfs2.CheckedObject.LeakMessage.
+// LeakMessage implements refs.CheckedObject.LeakMessage.
 func (mnt *Mount) LeakMessage() string {
 	return fmt.Sprintf("[vfs.Mount %p] reference count of %d instead of 0", mnt, mnt.refs.Load())
 }
 
-// LogRefs implements refsvfs2.CheckedObject.LogRefs.
+// LogRefs implements refs.CheckedObject.LogRefs.
 //
 // This should only be set to true for debugging purposes, as it can generate an
 // extremely large amount of output and drastically degrade performance.

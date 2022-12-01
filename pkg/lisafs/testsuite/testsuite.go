@@ -31,7 +31,6 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/refs"
-	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/unet"
 )
 
@@ -120,7 +119,7 @@ func RunTest(t *testing.T, tester Tester, testName string, testFn TestFunc, moun
 	// Release server resources and check for leaks. Note that leak check must
 	// happen before c.Close() because server cleans up resources on shutdown.
 	server.Destroy()
-	refsvfs2.DoRepeatedLeakCheck()
+	refs.DoRepeatedLeakCheck()
 
 	c.Close() // This should trigger client and server shutdown.
 	server.Wait()

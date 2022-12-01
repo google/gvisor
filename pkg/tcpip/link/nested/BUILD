@@ -24,7 +24,6 @@ go_test(
     ],
     deps = [
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/nested",

@@ -42,7 +42,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
-	"gvisor.dev/gvisor/pkg/refsvfs2"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -527,7 +527,7 @@ func (fs *filesystem) newDentry() *dentry {
 	}
 	d.lowerVDs = d.inlineLowerVDs[:0]
 	d.vfsd.Init(d)
-	refsvfs2.Register(d)
+	refs.Register(d)
 	return d
 }
 
@@ -537,7 +537,7 @@ func (d *dentry) IncRef() {
 	// d.checkDropLocked().
 	r := d.refs.Add(1)
 	if d.LogRefs() {
-		refsvfs2.LogIncRef(d, r)
+		refs.LogIncRef(d, r)
 	}
 }
 
@@ -550,7 +550,7 @@ func (d *dentry) TryIncRef() bool {
 		}
 		if d.refs.CompareAndSwap(r, r+1) {
 			if d.LogRefs() {
-				refsvfs2.LogTryIncRef(d, r+1)
+				refs.LogTryIncRef(d, r+1)
 			}
 			return true
 		}
@@ -561,7 +561,7 @@ func (d *dentry) TryIncRef() bool {
 func (d *dentry) DecRef(ctx context.Context) {
 	r := d.refs.Add(-1)
 	if d.LogRefs() {
-		refsvfs2.LogDecRef(d, r)
+		refs.LogDecRef(d, r)
 	}
 	if r == 0 {
 		d.fs.renameMu.Lock()
@@ -575,7 +575,7 @@ func (d *dentry) DecRef(ctx context.Context) {
 func (d *dentry) decRefLocked(ctx context.Context) {
 	r := d.refs.Add(-1)
 	if d.LogRefs() {
-		refsvfs2.LogDecRef(d, r)
+		refs.LogDecRef(d, r)
 	}
 	if r == 0 {
 		d.checkDropLocked(ctx)
@@ -645,20 +645,20 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 		// locking d.fs.renameMu.
 		d.parent.decRefLocked(ctx)
 	}
-	refsvfs2.Unregister(d)
+	refs.Unregister(d)
 }
 
-// RefType implements refsvfs2.CheckedObject.Type.
+// RefType implements refs.CheckedObject.Type.
 func (d *dentry) RefType() string {
 	return "overlay.dentry"
 }
 
-// LeakMessage implements refsvfs2.CheckedObject.LeakMessage.
+// LeakMessage implements refs.CheckedObject.LeakMessage.
 func (d *dentry) LeakMessage() string {
 	return fmt.Sprintf("[overlay.dentry %p] reference count of %d instead of -1", d, d.refs.Load())
 }
 
-// LogRefs implements refsvfs2.CheckedObject.LogRefs.
+// LogRefs implements refs.CheckedObject.LogRefs.
 //
 // This should only be set to true for debugging purposes, as it can generate an
 // extremely large amount of output and drastically degrade performance.

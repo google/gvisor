@@ -66,7 +66,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
-	"gvisor.dev/gvisor/pkg/refsvfs2"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -85,7 +85,7 @@ type Filesystem struct {
 	// deferredDecRefs is a list of dentries waiting to be DecRef()ed. This is
 	// used to defer dentry destruction until mu can be acquired for
 	// writing. Protected by deferredDecRefsMu.
-	deferredDecRefs []refsvfs2.RefCounter
+	deferredDecRefs []refs.RefCounter
 
 	// mu synchronizes the lifetime of Dentries on this filesystem. Holding it
 	// for reading guarantees continued existence of any resolved dentries, but
@@ -135,7 +135,7 @@ type Filesystem struct {
 // deferDecRef defers dropping a dentry ref until the next call to
 // processDeferredDecRefs{,Locked}. See comment on Filesystem.mu.
 // This may be called while Filesystem.mu or Dentry.dirMu is locked.
-func (fs *Filesystem) deferDecRef(d refsvfs2.RefCounter) {
+func (fs *Filesystem) deferDecRef(d refs.RefCounter) {
 	fs.deferredDecRefsMu.Lock()
 	fs.deferredDecRefs = append(fs.deferredDecRefs, d)
 	fs.deferredDecRefsMu.Unlock()
@@ -256,7 +256,7 @@ func (d *Dentry) IncRef() {
 	// d.cacheLocked().
 	r := d.refs.Add(1)
 	if d.LogRefs() {
-		refsvfs2.LogIncRef(d, r)
+		refs.LogIncRef(d, r)
 	}
 }
 
@@ -269,7 +269,7 @@ func (d *Dentry) TryIncRef() bool {
 		}
 		if d.refs.CompareAndSwap(r, r+1) {
 			if d.LogRefs() {
-				refsvfs2.LogTryIncRef(d, r+1)
+				refs.LogTryIncRef(d, r+1)
 			}
 			return true
 		}
@@ -280,7 +280,7 @@ func (d *Dentry) TryIncRef() bool {
 func (d *Dentry) DecRef(ctx context.Context) {
 	r := d.refs.Add(-1)
 	if d.LogRefs() {
-		refsvfs2.LogDecRef(d, r)
+		refs.LogDecRef(d, r)
 	}
 	if r == 0 {
 		d.fs.mu.Lock()
@@ -294,7 +294,7 @@ func (d *Dentry) DecRef(ctx context.Context) {
 func (d *Dentry) decRefLocked(ctx context.Context) {
 	r := d.refs.Add(-1)
 	if d.LogRefs() {
-		refsvfs2.LogDecRef(d, r)
+		refs.LogDecRef(d, r)
 	}
 	if r == 0 {
 		d.cacheLocked(ctx)
@@ -415,8 +415,7 @@ func (d *Dentry) evictLocked(ctx context.Context) {
 //     by path traversal.
 //   - d.vfsd.IsDead() is true.
 func (d *Dentry) destroyLocked(ctx context.Context) {
-	refs := d.refs.Load()
-	switch refs {
+	switch refs := d.refs.Load(); refs {
 	case 0:
 		// Mark the dentry destroyed.
 		d.refs.Store(-1)
@@ -432,20 +431,20 @@ func (d *Dentry) destroyLocked(ctx context.Context) {
 		d.parent.decRefLocked(ctx)
 	}
 
-	refsvfs2.Unregister(d)
+	refs.Unregister(d)
 }
 
-// RefType implements refsvfs2.CheckedObject.Type.
+// RefType implements refs.CheckedObject.Type.
 func (d *Dentry) RefType() string {
 	return "kernfs.Dentry"
 }
 
-// LeakMessage implements refsvfs2.CheckedObject.LeakMessage.
+// LeakMessage implements refs.CheckedObject.LeakMessage.
 func (d *Dentry) LeakMessage() string {
 	return fmt.Sprintf("[kernfs.Dentry %p] reference count of %d instead of -1", d, d.refs.Load())
 }
 
-// LogRefs implements refsvfs2.CheckedObject.LogRefs.
+// LogRefs implements refs.CheckedObject.LogRefs.
 //
 // This should only be set to true for debugging purposes, as it can generate an
 // extremely large amount of output and drastically degrade performance.
@@ -483,7 +482,7 @@ func (d *Dentry) Init(fs *Filesystem, inode Inode) {
 	if ftype == linux.ModeSymlink {
 		d.flags = atomicbitops.FromUint32(d.flags.RacyLoad() | dflagsIsSymlink)
 	}
-	refsvfs2.Register(d)
+	refs.Register(d)
 }
 
 // VFSDentry returns the generic vfs dentry for this kernfs dentry.

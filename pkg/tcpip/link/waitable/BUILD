@@ -24,7 +24,6 @@ go_test(
     library = ":waitable",
     deps = [
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",

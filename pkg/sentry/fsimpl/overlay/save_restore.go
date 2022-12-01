@@ -15,11 +15,11 @@
 package overlay
 
 import (
-	"gvisor.dev/gvisor/pkg/refsvfs2"
+	"gvisor.dev/gvisor/pkg/refs"
 )
 
 func (d *dentry) afterLoad() {
 	if d.refs.Load() != -1 {
-		refsvfs2.Register(d)
+		refs.Register(d)
 	}
 }

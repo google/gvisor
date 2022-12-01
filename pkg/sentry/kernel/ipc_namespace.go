@@ -98,7 +98,7 @@ func (i *IPCNamespace) PosixQueues() *mq.Registry {
 	return i.posixQueues
 }
 
-// DecRef implements refsvfs2.RefCounter.DecRef.
+// DecRef implements refs.RefCounter.DecRef.
 func (i *IPCNamespace) DecRef(ctx context.Context) {
 	i.IPCNamespaceRefs.DecRef(func() {
 		i.shms.Release(ctx)

@@ -45,7 +45,7 @@ go_template_instance(
     out = "queue_refs.go",
     package = "transport",
     prefix = "queue",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "queue",
     },
@@ -56,7 +56,7 @@ go_template_instance(
     out = "host_connected_endpoint_refs.go",
     package = "transport",
     prefix = "HostConnectedEndpoint",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "HostConnectedEndpoint",
     },
@@ -93,7 +93,6 @@ go_library(
         "//pkg/ilist",
         "//pkg/log",
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/sentry/hostfd",
         "//pkg/sentry/inet",
         "//pkg/sentry/uniqueid",

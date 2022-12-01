@@ -24,7 +24,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/time/rate"
 	"gvisor.dev/gvisor/pkg/bufferv2"
-	"gvisor.dev/gvisor/pkg/refsvfs2"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
@@ -222,7 +222,7 @@ func (c *testContext) cleanup() {
 	// does not guarantee that all packets will reach refcount zero until
 	// after an asynchronous followup from neighborEntry.notifyCompletionLocked().
 	c.clock.RunImmediatelyScheduledJobs()
-	refsvfs2.DoRepeatedLeakCheck()
+	refs.DoRepeatedLeakCheck()
 }
 
 func TestICMPCounts(t *testing.T) {

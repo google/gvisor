@@ -49,7 +49,6 @@ go_test(
     deps = [
         ":icmp",
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/tcpip",
         "//pkg/tcpip/checker",
         "//pkg/tcpip/checksum",

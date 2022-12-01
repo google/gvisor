@@ -22,7 +22,6 @@ go_test(
     deps = [
         "//pkg/bufferv2",
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/tcpip",
         "//pkg/tcpip/faketime",
         "//pkg/tcpip/stack",
@@ -40,7 +39,6 @@ go_test(
         ":multicast",
         "//pkg/bufferv2",
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/tcpip",
         "//pkg/tcpip/faketime",
         "//pkg/tcpip/stack",

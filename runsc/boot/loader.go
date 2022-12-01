@@ -35,7 +35,6 @@ import (
 	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/refs"
-	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
@@ -1048,7 +1047,7 @@ func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {
 	// sandbox is killed by a signal after the ContMgrWait request is completed.
 	if l.root.procArgs.ContainerID == cid {
 		// All sentry-created resources should have been released at this point.
-		refsvfs2.DoLeakCheck()
+		refs.DoLeakCheck()
 		_ = coverage.Report()
 	}
 	return nil

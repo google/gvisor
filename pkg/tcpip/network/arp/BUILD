@@ -28,7 +28,6 @@ go_test(
         ":arp",
         "//pkg/bufferv2",
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/tcpip",
         "//pkg/tcpip/faketime",
         "//pkg/tcpip/header",
@@ -49,7 +48,6 @@ go_test(
     library = ":arp",
     deps = [
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/tcpip",
         "//pkg/tcpip/stack",
         "//pkg/tcpip/testutil",

@@ -20,7 +20,6 @@ go_test(
     deps = [
         ":packetsocket",
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",

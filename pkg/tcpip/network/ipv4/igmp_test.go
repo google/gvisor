@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/bufferv2"
-	"gvisor.dev/gvisor/pkg/refsvfs2"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
@@ -75,7 +75,7 @@ func (ctx igmpTestContext) cleanup() {
 	ctx.s.Close()
 	ctx.s.Wait()
 	ctx.ep.Close()
-	refsvfs2.DoRepeatedLeakCheck()
+	refs.DoRepeatedLeakCheck()
 }
 
 func newIGMPTestContext(t *testing.T, igmpEnabled bool) igmpTestContext {

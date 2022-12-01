@@ -20,7 +20,7 @@ go_template_instance(
     out = "tcp_segment_refs.go",
     package = "tcp",
     prefix = "segment",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "segment",
     },
@@ -74,7 +74,7 @@ go_library(
         "//pkg/bufferv2",
         "//pkg/log",
         "//pkg/rand",
-        "//pkg/refsvfs2",
+        "//pkg/refs",
         "//pkg/sleep",
         "//pkg/sync",
         "//pkg/tcpip",
@@ -104,7 +104,6 @@ go_test(
     deps = [
         "//pkg/bufferv2",
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/sleep",
         "//pkg/tcpip/faketime",
         "//pkg/tcpip/stack",
