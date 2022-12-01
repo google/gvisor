@@ -80,15 +80,17 @@ done
 
 set -euo pipefail
 
-# Remove all Docker runtimes that may be installed.
-num_docker_runtimes="$(jq \
-    '(if has("runtimes") then .runtimes else {} end) | length' \
-    < /etc/docker/daemon.json)"
-if [[ "$num_docker_runtimes" -gt 0 ]]; then
-  cat /etc/docker/daemon.json | jq 'del(.runtimes)' \
-    | sudo tee /etc/docker/daemon.json.tmp
-  sudo mv /etc/docker/daemon.json.tmp /etc/docker/daemon.json
-  bash -c "$DOCKER_RELOAD_COMMAND"
+if [[ "${BUILDKITE_PIPELINE_INSTALL_RUNTIME:-}" == "true" ]]; then
+  # Remove all Docker runtimes that may be installed.
+  num_docker_runtimes="$(jq \
+      '(if has("runtimes") then .runtimes else {} end) | length' \
+      < /etc/docker/daemon.json)"
+  if [[ "$num_docker_runtimes" -gt 0 ]]; then
+    cat /etc/docker/daemon.json | jq 'del(.runtimes)' \
+      | sudo tee /etc/docker/daemon.json.tmp
+    sudo mv /etc/docker/daemon.json.tmp /etc/docker/daemon.json
+    bash -c "$DOCKER_RELOAD_COMMAND"
+  fi
 fi
 
 # Cleanup temporary directory where STAGED_BINARIES may have been extracted.
