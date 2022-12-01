@@ -253,6 +253,6 @@ func (t *Task) traceExecEvent(image *TaskImage) {
 
 	// traceExecEvent function may be called before the task goroutine
 	// starts, so we must use the async context.
-	name := file.PathnameWithDeleted(t.AsyncContext())
+	name := file.MappedName(t.AsyncContext())
 	trace.Logf(t.traceContext, traceCategory, "exec: %s", name)
 }

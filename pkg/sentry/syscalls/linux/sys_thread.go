@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/sched"
 	"gvisor.dev/gvisor/pkg/sentry/loader"
@@ -108,7 +107,7 @@ func execveat(t *kernel.Task, dirfd int32, pathnameAddr, argvAddr, envvAddr host
 
 	root := t.FSContext().RootDirectory()
 	defer root.DecRef(t)
-	var executable fsbridge.File
+	var executable *vfs.FileDescription
 	defer func() {
 		if executable != nil {
 			executable.DecRef(t)
@@ -146,17 +145,17 @@ func execveat(t *kernel.Task, dirfd int32, pathnameAddr, argvAddr, envvAddr host
 		if err != nil {
 			return 0, nil, err
 		}
-		executable = fsbridge.NewVFSFile(file)
-		pathname = executable.PathnameWithDeleted(t)
+		executable = file
+		pathname = executable.MappedName(t)
 	}
 
 	// Load the new TaskImage.
-	mntns := t.MountNamespace()
 	wd := t.FSContext().WorkingDirectory()
 	defer wd.DecRef(t)
 	remainingTraversals := uint(linux.MaxSymlinkTraversals)
 	loadArgs := loader.LoadArgs{
-		Opener:              fsbridge.NewVFSLookup(mntns, root, wd),
+		Root:                root,
+		WorkingDir:          wd,
 		RemainingTraversals: &remainingTraversals,
 		ResolveFinal:        flags&linux.AT_SYMLINK_NOFOLLOW == 0,
 		Filename:            pathname,
@@ -170,11 +169,11 @@ func execveat(t *kernel.Task, dirfd int32, pathnameAddr, argvAddr, envvAddr host
 		// Retain the first executable file that is opened (which may open
 		// multiple executable files while resolving interpreter scripts).
 		if executable == nil {
-			loadArgs.AfterOpen = func(f fsbridge.File) {
+			loadArgs.AfterOpen = func(f *vfs.FileDescription) {
 				if executable == nil {
 					f.IncRef()
 					executable = f
-					pathname = executable.PathnameWithDeleted(t)
+					pathname = executable.MappedName(t)
 				}
 			}
 		}

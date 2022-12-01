@@ -18,7 +18,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
 // Dumpability describes if and how core dumps should be created.
@@ -129,7 +129,7 @@ func (mm *MemoryManager) SetAuxv(auxv arch.Auxv) {
 //
 // An additional reference will be taken in the case of a non-nil executable,
 // which must be released by the caller.
-func (mm *MemoryManager) Executable() fsbridge.File {
+func (mm *MemoryManager) Executable() *vfs.FileDescription {
 	mm.metadataMu.Lock()
 	defer mm.metadataMu.Unlock()
 
@@ -144,15 +144,15 @@ func (mm *MemoryManager) Executable() fsbridge.File {
 // SetExecutable sets the executable.
 //
 // This takes a reference on d.
-func (mm *MemoryManager) SetExecutable(ctx context.Context, file fsbridge.File) {
+func (mm *MemoryManager) SetExecutable(ctx context.Context, fd *vfs.FileDescription) {
 	mm.metadataMu.Lock()
 
 	// Grab a new reference.
-	file.IncRef()
+	fd.IncRef()
 
 	// Set the executable.
 	orig := mm.executable
-	mm.executable = file
+	mm.executable = fd
 
 	mm.metadataMu.Unlock()
 
