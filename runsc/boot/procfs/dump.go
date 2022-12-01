@@ -131,7 +131,7 @@ func getExecutablePath(ctx context.Context, pid kernel.ThreadID, mm *mm.MemoryMa
 	}
 	defer exec.DecRef(ctx)
 
-	return exec.PathnameWithDeleted(ctx)
+	return exec.MappedName(ctx)
 }
 
 func getMetadataArray(ctx context.Context, pid kernel.ThreadID, mm *mm.MemoryManager, metaType proc.MetadataType) []string {

@@ -28,10 +28,10 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -238,7 +238,7 @@ func parseHeader(ctx context.Context, f fullReader) (elfInfo, error) {
 
 // mapSegment maps a phdr into the Task. offset is the offset to apply to
 // phdr.Vaddr.
-func mapSegment(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, phdr *elf.ProgHeader, offset hostarch.Addr) error {
+func mapSegment(ctx context.Context, m *mm.MemoryManager, fd *vfs.FileDescription, phdr *elf.ProgHeader, offset hostarch.Addr) error {
 	// We must make a page-aligned mapping.
 	adjust := hostarch.Addr(phdr.Vaddr).PageOffset()
 
@@ -286,7 +286,7 @@ func mapSegment(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, phdr 
 				mopts.MappingIdentity.DecRef(ctx)
 			}
 		}()
-		if err := f.ConfigureMMap(ctx, &mopts); err != nil {
+		if err := fd.ConfigureMMap(ctx, &mopts); err != nil {
 			ctx.Infof("File is not memory-mappable: %v", err)
 			return err
 		}
@@ -405,7 +405,7 @@ type loadedELF struct {
 // It does not load the ELF interpreter, or return any auxv entries.
 //
 // Preconditions: f is an ELF file.
-func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, info elfInfo, sharedLoadOffset hostarch.Addr) (loadedELF, error) {
+func loadParsedELF(ctx context.Context, m *mm.MemoryManager, fd *vfs.FileDescription, info elfInfo, sharedLoadOffset hostarch.Addr) (loadedELF, error) {
 	first := true
 	var start, end hostarch.Addr
 	var interpreter string
@@ -445,7 +445,7 @@ func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, in
 			}
 
 			path := make([]byte, phdr.Filesz)
-			_, err := f.ReadFull(ctx, usermem.BytesIOSequence(path), int64(phdr.Off))
+			_, err := fd.ReadFull(ctx, usermem.BytesIOSequence(path), int64(phdr.Off))
 			if err != nil {
 				// If an interpreter was specified, it should exist.
 				ctx.Infof("Error reading PT_INTERP path: %v", err)
@@ -542,7 +542,7 @@ func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, in
 				continue
 			}
 
-			if err := mapSegment(ctx, m, f, &phdr, offset); err != nil {
+			if err := mapSegment(ctx, m, fd, &phdr, offset); err != nil {
 				ctx.Infof("Failed to map PT_LOAD segment: %+v", phdr)
 				return loadedELF{}, err
 			}
@@ -580,8 +580,8 @@ func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, in
 // Preconditions:
 //   - f is an ELF file.
 //   - f is the first ELF loaded into m.
-func loadInitialELF(ctx context.Context, m *mm.MemoryManager, fs cpuid.FeatureSet, f fsbridge.File) (loadedELF, *arch.Context64, error) {
-	info, err := parseHeader(ctx, f)
+func loadInitialELF(ctx context.Context, m *mm.MemoryManager, fs cpuid.FeatureSet, fd *vfs.FileDescription) (loadedELF, *arch.Context64, error) {
+	info, err := parseHeader(ctx, fd)
 	if err != nil {
 		ctx.Infof("Failed to parse initial ELF: %v", err)
 		return loadedELF{}, nil, err
@@ -606,7 +606,7 @@ func loadInitialELF(ctx context.Context, m *mm.MemoryManager, fs cpuid.FeatureSe
 	// PIELoadAddress tries to move the ELF out of the way of the default
 	// mmap base to ensure that the initial brk has sufficient space to
 	// grow.
-	le, err := loadParsedELF(ctx, m, f, info, ac.PIELoadAddress(l))
+	le, err := loadParsedELF(ctx, m, fd, info, ac.PIELoadAddress(l))
 	return le, ac, err
 }
 
@@ -617,8 +617,8 @@ func loadInitialELF(ctx context.Context, m *mm.MemoryManager, fs cpuid.FeatureSe
 // It does not return any auxv entries.
 //
 // Preconditions: f is an ELF file.
-func loadInterpreterELF(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, initial loadedELF) (loadedELF, error) {
-	info, err := parseHeader(ctx, f)
+func loadInterpreterELF(ctx context.Context, m *mm.MemoryManager, fd *vfs.FileDescription, initial loadedELF) (loadedELF, error) {
+	info, err := parseHeader(ctx, fd)
 	if err != nil {
 		if linuxerr.Equals(linuxerr.ENOEXEC, err) {
 			// Bad interpreter.
@@ -638,7 +638,7 @@ func loadInterpreterELF(ctx context.Context, m *mm.MemoryManager, f fsbridge.Fil
 
 	// The interpreter is not given a load offset, as its location does not
 	// affect brk.
-	return loadParsedELF(ctx, m, f, info, 0)
+	return loadParsedELF(ctx, m, fd, info, 0)
 }
 
 // loadELF loads args.File into the Task address space.
