@@ -11,7 +11,7 @@ go_template_instance(
     out = "control_fd_refs.go",
     package = "lisafs",
     prefix = "controlFD",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "ControlFD",
     },
@@ -22,7 +22,7 @@ go_template_instance(
     out = "open_fd_refs.go",
     package = "lisafs",
     prefix = "openFD",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "OpenFD",
     },
@@ -33,7 +33,7 @@ go_template_instance(
     out = "bound_socket_fd_refs.go",
     package = "lisafs",
     prefix = "boundSocketFD",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "BoundSocketFD",
     },
@@ -44,7 +44,7 @@ go_template_instance(
     out = "node_fd_refs.go",
     package = "lisafs",
     prefix = "node",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "Node",
     },
@@ -110,7 +110,7 @@ go_library(
         "//pkg/log",
         "//pkg/marshal/primitive",
         "//pkg/p9",
-        "//pkg/refsvfs2",
+        "//pkg/refs",
         "//pkg/sync",
         "//pkg/unet",
         "@org_golang_x_sys//unix:go_default_library",

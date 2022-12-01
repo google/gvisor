@@ -13,7 +13,6 @@ go_library(
         "//pkg/coverage",
         "//pkg/log",
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/sentry/platform",
         "//runsc/cmd",
         "//runsc/cmd/trace",

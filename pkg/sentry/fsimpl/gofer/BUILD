@@ -75,7 +75,6 @@ go_library(
         "//pkg/metric",
         "//pkg/p9",
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/safemem",
         "//pkg/sentry/fsimpl/host",
         "//pkg/sentry/fsimpl/lock",

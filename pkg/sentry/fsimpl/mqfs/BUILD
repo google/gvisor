@@ -8,7 +8,7 @@ go_template_instance(
     out = "root_inode_refs.go",
     package = "mqfs",
     prefix = "rootInode",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "rootInode",
     },
@@ -29,7 +29,7 @@ go_library(
         "//pkg/atomicbitops",
         "//pkg/context",
         "//pkg/errors/linuxerr",
-        "//pkg/refsvfs2",
+        "//pkg/refs",
         "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/ipc",

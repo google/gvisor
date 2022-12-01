@@ -122,7 +122,7 @@ go_template_instance(
     out = "aio_mappable_refs.go",
     package = "mm",
     prefix = "aioMappable",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "aioMappable",
     },
@@ -133,7 +133,7 @@ go_template_instance(
     out = "special_mappable_refs.go",
     package = "mm",
     prefix = "SpecialMappable",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "SpecialMappable",
     },
@@ -179,7 +179,6 @@ go_library(
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/safecopy",
         "//pkg/safemem",
         "//pkg/sentry/arch",

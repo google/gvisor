@@ -26,7 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/p9"
-	"gvisor.dev/gvisor/pkg/refsvfs2"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
@@ -153,7 +153,7 @@ func (d *dentry) afterLoad() {
 	d.writeFD = atomicbitops.FromInt32(-1)
 	d.mmapFD = atomicbitops.FromInt32(-1)
 	if d.refs.Load() != -1 {
-		refsvfs2.Register(d)
+		refs.Register(d)
 	}
 }
 

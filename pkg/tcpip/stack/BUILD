@@ -32,7 +32,7 @@ go_template_instance(
     out = "packet_buffer_refs.go",
     package = "stack",
     prefix = "packetBuffer",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "packetBuffer",
     },
@@ -92,7 +92,7 @@ go_library(
         "//pkg/ilist",
         "//pkg/log",
         "//pkg/rand",
-        "//pkg/refsvfs2",
+        "//pkg/refs",
         "//pkg/sleep",
         "//pkg/sync",
         "//pkg/tcpip",

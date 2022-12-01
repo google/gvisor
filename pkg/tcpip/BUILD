@@ -60,7 +60,6 @@ deps_test(
         "//pkg/pool",
         "//pkg/rand",
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/sleep",
         "//pkg/state",
         "//pkg/state/wire",

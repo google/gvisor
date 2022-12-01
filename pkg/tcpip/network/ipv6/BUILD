@@ -41,7 +41,6 @@ go_test(
     deps = [
         "//pkg/bufferv2",
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/checker",
@@ -71,7 +70,6 @@ go_test(
         ":ipv6",
         "//pkg/bufferv2",
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/tcpip",
         "//pkg/tcpip/checker",
         "//pkg/tcpip/faketime",

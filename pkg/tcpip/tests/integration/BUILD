@@ -182,7 +182,6 @@ go_test(
     srcs = ["multicast_forward_test.go"],
     deps = [
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/tcpip",
         "//pkg/tcpip/checker",
         "//pkg/tcpip/faketime",

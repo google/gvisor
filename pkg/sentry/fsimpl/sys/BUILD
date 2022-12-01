@@ -8,7 +8,7 @@ go_template_instance(
     out = "dir_refs.go",
     package = "sys",
     prefix = "dir",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "dir",
     },
@@ -31,7 +31,6 @@ go_library(
         "//pkg/errors/linuxerr",
         "//pkg/log",
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/sentry/arch",
         "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/inet",

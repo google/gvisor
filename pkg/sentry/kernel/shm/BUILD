@@ -11,7 +11,7 @@ go_template_instance(
     },
     package = "shm",
     prefix = "Shm",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "Shm",
     },
@@ -33,7 +33,6 @@ go_library(
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/sentry/device",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/ipc",

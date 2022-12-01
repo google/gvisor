@@ -42,7 +42,6 @@ go_test(
     deps = [
         "//pkg/bufferv2",
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
@@ -61,7 +60,6 @@ go_test(
         ":sharedmem",
         "//pkg/log",
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/tcpip",
         "//pkg/tcpip/adapters/gonet",
         "//pkg/tcpip/header",

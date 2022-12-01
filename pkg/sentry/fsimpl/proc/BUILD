@@ -8,7 +8,7 @@ go_template_instance(
     out = "fd_dir_inode_refs.go",
     package = "proc",
     prefix = "fdDirInode",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "fdDirInode",
     },
@@ -19,7 +19,7 @@ go_template_instance(
     out = "fd_info_dir_inode_refs.go",
     package = "proc",
     prefix = "fdInfoDirInode",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "fdInfoDirInode",
     },
@@ -30,7 +30,7 @@ go_template_instance(
     out = "subtasks_inode_refs.go",
     package = "proc",
     prefix = "subtasksInode",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "subtasksInode",
     },
@@ -41,7 +41,7 @@ go_template_instance(
     out = "task_inode_refs.go",
     package = "proc",
     prefix = "taskInode",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "taskInode",
     },
@@ -52,7 +52,7 @@ go_template_instance(
     out = "tasks_inode_refs.go",
     package = "proc",
     prefix = "tasksInode",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "tasksInode",
     },
@@ -86,7 +86,6 @@ go_library(
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/safemem",
         "//pkg/sentry/fsbridge",
         "//pkg/sentry/fsimpl/kernfs",

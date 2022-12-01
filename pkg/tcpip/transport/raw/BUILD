@@ -47,7 +47,6 @@ go_test(
     srcs = ["raw_test.go"],
     deps = [
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/tcpip",
         "//pkg/tcpip/checker",
         "//pkg/tcpip/header",

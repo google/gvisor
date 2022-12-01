@@ -53,8 +53,7 @@ import (
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/p9"
-	refs_vfs1 "gvisor.dev/gvisor/pkg/refs"
-	"gvisor.dev/gvisor/pkg/refsvfs2"
+	"gvisor.dev/gvisor/pkg/refs"
 	fslock "gvisor.dev/gvisor/pkg/sentry/fsimpl/lock"
 	"gvisor.dev/gvisor/pkg/sentry/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -730,7 +729,7 @@ func (fs *filesystem) Release(ctx context.Context) {
 	// have released all external resources above rather than relying on dentry
 	// destructors. fs.root may be nil if creating the client or initializing the
 	// root dentry failed in GetFilesystem.
-	if refs_vfs1.GetLeakMode() != refs_vfs1.NoLeakChecking && fs.root != nil {
+	if refs.GetLeakMode() != refs.NoLeakChecking && fs.root != nil {
 		fs.renameMu.Lock()
 		fs.root.releaseSyntheticRecursiveLocked(ctx)
 		fs.evictAllCachedDentriesLocked(ctx)
@@ -1112,7 +1111,7 @@ func (fs *filesystem) newDentry(ctx context.Context, file p9file, qid p9.QID, ma
 		}
 	}
 	d.vfsd.Init(d)
-	refsvfs2.Register(d)
+	refs.Register(d)
 	fs.syncMu.Lock()
 	fs.syncableDentries.PushBack(&d.syncableListEntry)
 	fs.syncMu.Unlock()
@@ -1187,7 +1186,7 @@ func (fs *filesystem) newDentryLisa(ctx context.Context, ino *lisafs.Inode) (*de
 		}
 	}
 	d.vfsd.Init(d)
-	refsvfs2.Register(d)
+	refs.Register(d)
 	fs.syncMu.Lock()
 	fs.syncableDentries.PushBack(&d.syncableListEntry)
 	fs.syncMu.Unlock()
@@ -1813,7 +1812,7 @@ func (d *dentry) IncRef() {
 	// d.checkCachingLocked().
 	r := d.refs.Add(1)
 	if d.LogRefs() {
-		refsvfs2.LogIncRef(d, r)
+		refs.LogIncRef(d, r)
 	}
 }
 
@@ -1826,7 +1825,7 @@ func (d *dentry) TryIncRef() bool {
 		}
 		if d.refs.CompareAndSwap(r, r+1) {
 			if d.LogRefs() {
-				refsvfs2.LogTryIncRef(d, r+1)
+				refs.LogTryIncRef(d, r+1)
 			}
 			return true
 		}
@@ -1846,7 +1845,7 @@ func (d *dentry) DecRef(ctx context.Context) {
 func (d *dentry) decRefNoCaching() int64 {
 	r := d.refs.Add(-1)
 	if d.LogRefs() {
-		refsvfs2.LogDecRef(d, r)
+		refs.LogDecRef(d, r)
 	}
 	if r < 0 {
 		panic("gofer.dentry.decRefNoCaching() called without holding a reference")
@@ -1854,17 +1853,17 @@ func (d *dentry) decRefNoCaching() int64 {
 	return r
 }
 
-// RefType implements refsvfs2.CheckedObject.Type.
+// RefType implements refs.CheckedObject.Type.
 func (d *dentry) RefType() string {
 	return "gofer.dentry"
 }
 
-// LeakMessage implements refsvfs2.CheckedObject.LeakMessage.
+// LeakMessage implements refs.CheckedObject.LeakMessage.
 func (d *dentry) LeakMessage() string {
 	return fmt.Sprintf("[gofer.dentry %p] reference count of %d instead of -1", d, d.refs.Load())
 }
 
-// LogRefs implements refsvfs2.CheckedObject.LogRefs.
+// LogRefs implements refs.CheckedObject.LogRefs.
 //
 // This should only be set to true for debugging purposes, as it can generate an
 // extremely large amount of output and drastically degrade performance.
@@ -2222,7 +2221,7 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 	if d.parent != nil && d.parent.decRefNoCaching() == 0 {
 		d.parent.checkCachingLocked(ctx, true /* renameMuWriteLocked */)
 	}
-	refsvfs2.Unregister(d)
+	refs.Unregister(d)
 }
 
 func (d *dentry) isDeleted() bool {

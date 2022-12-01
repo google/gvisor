@@ -105,7 +105,6 @@ go_library(
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/sentry/arch",
         "//pkg/sentry/fsimpl/lock",
         "//pkg/sentry/kernel/auth",

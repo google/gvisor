@@ -101,9 +101,9 @@ type Node struct {
 	dynamicChildren map[string]*Node
 }
 
-// DecRef implements refsvfs2.RefCounter.DecRef. Note that the context
+// DecRef implements refs.RefCounter.DecRef. Note that the context
 // parameter should never be used. It exists solely to comply with the
-// refsvfs2.RefCounter interface.
+// refs.RefCounter interface.
 //
 // Precondition: server's rename mutex must be at least read locked.
 func (n *Node) DecRef(context.Context) {
