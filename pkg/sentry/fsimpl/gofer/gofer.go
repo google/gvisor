@@ -95,7 +95,45 @@ const (
 	cacheRemoteRevalidating  = "remote_revalidating"
 )
 
-const defaultMaxCachedDentries = 1000
+const (
+	defaultMaxCachedDentries  = 1000
+	maxCachedNegativeChildren = 1000
+)
+
+// stringFixedCache is a fixed sized cache, once initialized,
+// its size never changes.
+//
+// +stateify savable
+type stringFixedCache struct {
+	// namesList stores negative names with fifo list.
+	// name stored in namesList only means it used to be negative
+	// at the moment you pushed it to the list.
+	namesList stringList
+	size      uint64
+}
+
+func (cache *stringFixedCache) isInited() bool {
+	return cache.size != 0
+}
+
+func (cache *stringFixedCache) init(size uint64) {
+	elements := make([]stringListElem, size)
+	for i := uint64(0); i < size; i++ {
+		cache.namesList.PushFront(&elements[i])
+	}
+	cache.size = size
+}
+
+// Update will push name to the front of the list,
+// and pop the tail value.
+func (cache *stringFixedCache) add(name string) string {
+	tail := cache.namesList.Back()
+	victimName := tail.str
+	tail.str = name
+	cache.namesList.Remove(tail)
+	cache.namesList.PushFront(tail)
+	return victimName
+}
 
 // +stateify savable
 type dentryCache struct {
@@ -879,6 +917,13 @@ type dentry struct {
 	// children is protected by dirMu.
 	children map[string]*dentry
 
+	// If this dentry represents a directory, negativeChildrenCache cache
+	// names of negative children, negativeChildrenCache is protected by dirMu.
+	negativeChildrenCache stringFixedCache
+	// If this dentry represents a directory, negativeChildren is the number
+	// of negative child, negativeChildren is protected by dirMu.
+	negativeChildren int
+
 	// If this dentry represents a directory, syntheticChildren is the number
 	// of child dentries for which dentry.isSynthetic() == true.
 	// syntheticChildren is protected by dirMu.
@@ -1014,6 +1059,13 @@ type dentry struct {
 	// same underlying file (see the gofer filesystem section fo vfs/inotify.md for
 	// a more in-depth discussion on this matter).
 	watches vfs.Watches
+}
+
+// +stateify savable
+type stringListElem struct {
+	// str is the string that this elem represents.
+	str string
+	stringEntry
 }
 
 // +stateify savable
