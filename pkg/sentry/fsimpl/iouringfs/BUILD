@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "buffer.go",
         "iouringfs.go",
+        "iouringfs_state.go",
         "iouringfs_unsafe.go",
     ],
     visibility = ["//pkg/sentry:internal"],
