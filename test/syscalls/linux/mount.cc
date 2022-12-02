@@ -1397,6 +1397,26 @@ TEST(MountTest, BindParentToChild) {
   ASSERT_EQ(opt2, opt3);
 }
 
+TEST(MountTest, MountInfoHasRoot) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  auto const parent = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", parent.path(), "tmpfs", 0, "mode=0123", 0));
+  auto const child =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(parent.path()));
+  auto const bind_mount = Mount(child.path(), child.path(), "", MS_BIND, "", 0);
+  std::vector<ProcMountInfoEntry> mounts =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
+  for (const auto& e : mounts) {
+    if (e.mount_point == child.path()) {
+      ASSERT_EQ(e.root, JoinPath("/", Basename(child.path())));
+    }
+    if (e.mount_point == parent.path()) {
+      ASSERT_EQ(e.root, "/");
+    }
+  }
+}
+
 }  // namespace
 
 }  // namespace testing
