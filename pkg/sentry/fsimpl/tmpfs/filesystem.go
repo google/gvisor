@@ -920,7 +920,7 @@ func (fs *filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDe
 		if mnt == vfsroot.Mount() && &d.vfsd == vfsroot.Dentry() {
 			return vfs.PrependPathAtVFSRootError{}
 		}
-		if &d.vfsd == mnt.Root() {
+		if mnt != nil && &d.vfsd == mnt.Root() {
 			return nil
 		}
 		if d.parent == nil {
