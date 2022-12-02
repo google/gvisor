@@ -1161,16 +1161,27 @@ func (vfs *VirtualFilesystem) GenerateProcMountInfo(ctx context.Context, taskRoo
 			mount:  mnt,
 			dentry: mnt.root,
 		}
-		path, err := vfs.PathnameReachable(ctx, taskRootDir, mntRootVD)
+		pathFromRoot, err := vfs.PathnameReachable(ctx, taskRootDir, mntRootVD)
 		if err != nil {
 			// For some reason we didn't get a path. Log a warning
 			// and run with empty path.
 			ctx.Warningf("VFS.GenerateProcMountInfo: error getting pathname for mount root %+v: %v", mnt.root, err)
-			path = ""
+			continue
 		}
-		if path == "" {
-			// Either an error occurred, or path is not reachable
-			// from root.
+		if pathFromRoot == "" {
+			// The path is not reachable from root.
+			continue
+		}
+		var pathFromFS string
+		pathFromFS, err = vfs.PathnameInFilesystem(ctx, mntRootVD)
+		if err != nil {
+			// For some reason we didn't get a path. Log a warning
+			// and run with empty path.
+			ctx.Warningf("VFS.GenerateProcMountInfo: error getting pathname for mount root %+v: %v", mnt.root, err)
+			continue
+		}
+		if pathFromFS == "" {
+			// The path is not reachable from root.
 			continue
 		}
 		// Stat the mount root to get the major/minor device numbers.
@@ -1208,13 +1219,10 @@ func (vfs *VirtualFilesystem) GenerateProcMountInfo(ctx context.Context, taskRoo
 
 		// (4) Root: the pathname of the directory in the filesystem
 		// which forms the root of this mount.
-		//
-		// NOTE(b/78135857): This will always be "/" until we implement
-		// bind mounts.
-		fmt.Fprintf(buf, "/ ")
+		fmt.Fprintf(buf, "%s ", manglePath(pathFromFS))
 
 		// (5) Mount point (relative to process root).
-		fmt.Fprintf(buf, "%s ", manglePath(path))
+		fmt.Fprintf(buf, "%s ", manglePath(pathFromRoot))
 
 		// (6) Mount options.
 		opts := "rw"
@@ -1241,7 +1249,7 @@ func (vfs *VirtualFilesystem) GenerateProcMountInfo(ctx context.Context, taskRoo
 		fmt.Fprintf(buf, "none ")
 
 		// (11) Superblock options, and final newline.
-		fmt.Fprintf(buf, "%s\n", superBlockOpts(path, mnt))
+		fmt.Fprintf(buf, "%s\n", superBlockOpts(pathFromRoot, mnt))
 	}
 }
 
