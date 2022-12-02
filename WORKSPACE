@@ -146,10 +146,10 @@ register_toolchains("//:cc_toolchain_k8", "//:cc_toolchain_aarch64")
 # Load protobuf dependencies.
 http_archive(
     name = "rules_proto",
-    sha256 = "80d3a4ec17354cccc898bfe32118edd934f851b03029d63ef3fc7c8663a7415c",
-    strip_prefix = "rules_proto-5.3.0-21.5",
+    sha256 = "c4ebe86f6b8d13ca5a10fdff4008d24788b3c6dd17e141a6f8ac381ff40c4585",
+    strip_prefix = "rules_proto-b5e5fc85f70cf6bbef66c69b679c86168ad1bea6",
     urls = [
-        "https://github.com/bazelbuild/rules_proto/archive/refs/tags/5.3.0-21.5.tar.gz",
+        "https://github.com/bazelbuild/rules_proto/archive/b5e5fc85f70cf6bbef66c69b679c86168ad1bea6.tar.gz",
     ],
 )
 
