@@ -25,11 +25,12 @@ import (
 )
 
 func queryInterfaceFeatures(interfaces map[int32]*inet.Interface) error {
-	fd, err := unix.Socket(unix.AF_INET6, unix.SOCK_STREAM, 0)
+	fd, err := queryFD()
 	if err != nil {
 		return err
 	}
 	defer unix.Close(fd)
+
 	for idx, nic := range interfaces {
 		var ifr linux.IFReq
 		copy(ifr.IFName[:], nic.Name)
@@ -84,4 +85,17 @@ func queryInterfaceFeatures(interfaces map[int32]*inet.Interface) error {
 		runtime.KeepAlive(b)
 	}
 	return nil
+}
+
+func queryFD() (int, error) {
+	// Try both AF_INET and AF_INET6 in case only one is supported.
+	var fd int
+	var err error
+	for _, family := range []int{unix.AF_INET6, unix.AF_INET} {
+		fd, err = unix.Socket(family, unix.SOCK_STREAM, 0)
+		if err == nil {
+			return fd, err
+		}
+	}
+	return fd, err
 }
