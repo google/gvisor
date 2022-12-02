@@ -18,14 +18,13 @@ func (fd *FileDescription) StateFields() []string {
 		"NoLockFD",
 		"rbmf",
 		"sqemf",
+		"running",
 		"ioRings",
 		"ioRingsBuf",
 		"sqesBuf",
 		"cqesBuf",
 	}
 }
-
-func (fd *FileDescription) beforeSave() {}
 
 // +checklocksignore
 func (fd *FileDescription) StateSave(stateSinkObject state.Sink) {
@@ -36,13 +35,12 @@ func (fd *FileDescription) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &fd.NoLockFD)
 	stateSinkObject.Save(4, &fd.rbmf)
 	stateSinkObject.Save(5, &fd.sqemf)
-	stateSinkObject.Save(6, &fd.ioRings)
-	stateSinkObject.Save(7, &fd.ioRingsBuf)
-	stateSinkObject.Save(8, &fd.sqesBuf)
-	stateSinkObject.Save(9, &fd.cqesBuf)
+	stateSinkObject.Save(6, &fd.running)
+	stateSinkObject.Save(7, &fd.ioRings)
+	stateSinkObject.Save(8, &fd.ioRingsBuf)
+	stateSinkObject.Save(9, &fd.sqesBuf)
+	stateSinkObject.Save(10, &fd.cqesBuf)
 }
-
-func (fd *FileDescription) afterLoad() {}
 
 // +checklocksignore
 func (fd *FileDescription) StateLoad(stateSourceObject state.Source) {
@@ -52,10 +50,12 @@ func (fd *FileDescription) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(3, &fd.NoLockFD)
 	stateSourceObject.Load(4, &fd.rbmf)
 	stateSourceObject.Load(5, &fd.sqemf)
-	stateSourceObject.Load(6, &fd.ioRings)
-	stateSourceObject.Load(7, &fd.ioRingsBuf)
-	stateSourceObject.Load(8, &fd.sqesBuf)
-	stateSourceObject.Load(9, &fd.cqesBuf)
+	stateSourceObject.Load(6, &fd.running)
+	stateSourceObject.Load(7, &fd.ioRings)
+	stateSourceObject.Load(8, &fd.ioRingsBuf)
+	stateSourceObject.Load(9, &fd.sqesBuf)
+	stateSourceObject.Load(10, &fd.cqesBuf)
+	stateSourceObject.AfterLoad(fd.afterLoad)
 }
 
 func init() {

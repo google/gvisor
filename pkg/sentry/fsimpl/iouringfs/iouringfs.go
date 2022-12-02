@@ -25,9 +25,9 @@ package iouringfs
 import (
 	"fmt"
 	"io"
-	"sync"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -53,8 +53,12 @@ type FileDescription struct {
 	rbmf  ringsBufferFile
 	sqemf sqEntriesFile
 
-	// mu protects the fields below.
-	mu sync.Mutex `state:"nosave"`
+	// running indicates whether the submission queue is currently being
+	// processed. This is either 0 for not running, or 1 for running.
+	running atomicbitops.Uint32
+	// runC is used to wake up serialized task goroutines waiting for any
+	// concurrent processors of the submisison queue.
+	runC chan struct{} `state:"nosave"`
 
 	ioRings linux.IORings
 
@@ -135,6 +139,8 @@ func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, entries uint32, par
 			mf: mfp.MemoryFile(),
 			fr: sqefr,
 		},
+		// See ProcessSubmissions for why the capacity is 1.
+		runC: make(chan struct{}, 1),
 	}
 
 	// iouringfd is always set up with read/write mode.
@@ -249,10 +255,70 @@ func (fd *FileDescription) ConfigureMMap(ctx context.Context, opts *memmap.MMapO
 	return vfs.GenericConfigureMMap(&fd.vfsfd, mf, opts)
 }
 
-// ProcessSubmissions processes submission requests.
+// ProcessSubmissions processes the submission queue. Concurrent calls to
+// ProcessSubmissions serialize, yielding task goroutines with Task.Block since
+// processing can take a long time.
 func (fd *FileDescription) ProcessSubmissions(t *kernel.Task, toSubmit uint32, minComplete uint32, flags uint32) (int, error) {
-	fd.mu.Lock()
-	defer fd.mu.Unlock()
+	// We use a combination of fd.running and fd.runC to serialize concurrent
+	// callers to ProcessSubmissions. runC has a capacity of 1. The protocol
+	// works as follows:
+	//
+	// * Becoming the active task
+	//
+	// On entry to ProcessSubmissions, we try to transition running from 0 to
+	// 1. If there is already an active task, this will fail and we'll go to
+	// sleep with Task.Block(). If we succeed, we're the active task.
+	//
+	// * Sleep, Wakeup
+	//
+	// If we had to sleep, on wakeup we try to transition running to 1 again as
+	// we could still be racing with other tasks. Note that if multiple tasks
+	// are sleeping, only one will wake up since only one will successfully
+	// receive from runC. However we could still race with a new caller of
+	// ProcessSubmissions that hasn't gone to sleep yet. Only one waiting task
+	// will succeed and become the active task, the rest will go to sleep.
+	//
+	// runC needs to be buffered to avoid a race between checking running and
+	// going back to sleep. With an unbuffered channel, we could miss a wakeup
+	// like this:
+	//
+	// Task B (entering, sleeping)                        | Task A (active, releasing)
+	// ---------------------------------------------------+-------------------------
+	//                                                    | fd.running.Store(0)
+	// for !fd.running.CompareAndSwap(0, 1) { // Succeess |
+	//                                                    | nonblockingSend(runC) // Missed!
+	//     t.Block(fd.runC) // Will block forever         |
+	// }
+	//
+	// Task A's send would have to be non-blocking, as there may not be a
+	// concurrent Task B.
+	//
+	// A side-effect of using a buffered channel is the first task that needs to
+	// sleep may wake up once immediately due to a previously queued
+	// wakeup. This isn't a problem, as it'll immediately try to transition
+	// running to 1, likely fail again and go back to sleep. Task.Block has a
+	// fast path if runC already has a queued message so this won't result in a
+	// task state change.
+	//
+	// * Release
+	//
+	// When the active task is done, it releases the critical section by setting
+	// running = 0, then doing a non-blocking send on runC. The send needs to be
+	// non-blocking, as there may not be a concurrent sleeper.
+	for !fd.running.CompareAndSwap(0, 1) {
+		t.Block(fd.runC)
+	}
+	// We successfully set fd.running, so we're the active task now.
+	defer func() {
+		// Unblock any potentially waiting tasks.
+		if !fd.running.CompareAndSwap(1, 0) {
+			panic(fmt.Sprintf("iouringfs.FileDescription.ProcessSubmissions: active task encountered invalid fd.running state %v", fd.running.Load()))
+		}
+		select {
+		case fd.runC <- struct{}{}:
+		default:
+		}
+	}()
 
 	var err error
 	var sqe linux.IOUringSqe
