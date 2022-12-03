@@ -19,7 +19,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
-	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -177,11 +176,9 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 	// for justification.
 
 	var (
-		cg      Cgroup
-		charged bool
-		cu      cleanup.Cleanup
+		cg                 Cgroup
+		charged, committed bool
 	)
-	defer cu.Clean()
 
 	// Reserve cgroup PIDs controller charge. This is either commited when the
 	// new task enters the cgroup below, or rolled back on failure.
@@ -196,12 +193,16 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 			return nil, err
 		}
 		if charged {
-			cu.Add(func() {
-				if err := cg.Charge(t, cg.Dentry, CgroupControllerPIDs, CgroupResourcePID, -1); err != nil {
-					panic(fmt.Sprintf("Failed to clean up PIDs charge on task creation failure: %v", err))
+			defer func() {
+				if !committed {
+					if err := cg.Charge(t, cg.Dentry, CgroupControllerPIDs, CgroupResourcePID, -1); err != nil {
+						panic(fmt.Sprintf("Failed to clean up PIDs charge on task creation failure: %v", err))
+					}
 				}
-				cg.DecRef(ctx) // Ref from ChargeFor.
-			})
+				// Ref from ChargeFor. Note that we need to drop this outside of
+				// TaskSet.mu critical sections.
+				cg.DecRef(ctx)
+			}()
 		}
 	}
 
@@ -238,11 +239,7 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 
 	// srcT may be nil, in which case we default to root cgroups.
 	t.EnterInitialCgroups(srcT)
-
-	cu.Release()
-	if charged {
-		cg.decRef() // Ref from ChargeFor.
-	}
+	committed = true
 
 	if tg.leader == nil {
 		// New thread group.
