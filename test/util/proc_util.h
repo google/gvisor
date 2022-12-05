@@ -23,6 +23,7 @@
 #include "gtest/gtest.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+#include "absl/types/optional.h"
 #include "test/util/fs_util.h"
 #include "test/util/posix_error.h"
 
@@ -44,6 +45,39 @@ struct ProcMapsEntry {
   std::string filename;
 };
 
+struct ProcSmapsEntry {
+  ProcMapsEntry maps_entry;
+
+  // These fields should always exist, as they were included in e070ad49f311
+  // "[PATCH] add /proc/pid/smaps".
+  size_t size_kb;
+  size_t rss_kb;
+  size_t shared_clean_kb;
+  size_t shared_dirty_kb;
+  size_t private_clean_kb;
+  size_t private_dirty_kb;
+
+  // These fields were added later and may not be present.
+  absl::optional<size_t> pss_kb;
+  absl::optional<size_t> referenced_kb;
+  absl::optional<size_t> anonymous_kb;
+  absl::optional<size_t> anon_huge_pages_kb;
+  absl::optional<size_t> shared_hugetlb_kb;
+  absl::optional<size_t> private_hugetlb_kb;
+  absl::optional<size_t> swap_kb;
+  absl::optional<size_t> swap_pss_kb;
+  absl::optional<size_t> kernel_page_size_kb;
+  absl::optional<size_t> mmu_page_size_kb;
+  absl::optional<size_t> locked_kb;
+
+  // Caution: "Note that there is no guarantee that every flag and associated
+  // mnemonic will be present in all further kernel releases. Things get
+  // changed, the flags may be vanished or the reverse -- new added." - Linux
+  // Documentation/filesystems/proc.txt, on VmFlags. Avoid checking for any
+  // flags that are not extremely well-established.
+  absl::optional<std::vector<std::string>> vm_flags;
+};
+
 // Parses a ProcMaps line or returns an error.
 PosixErrorOr<ProcMapsEntry> ParseProcMapsLine(absl::string_view line);
 PosixErrorOr<std::vector<ProcMapsEntry>> ParseProcMaps(
@@ -51,6 +85,23 @@ PosixErrorOr<std::vector<ProcMapsEntry>> ParseProcMaps(
 
 // Returns true if vsyscall (emmulation or not) is enabled.
 PosixErrorOr<bool> IsVsyscallEnabled();
+
+// Parses /proc/pid/smaps type entries
+PosixErrorOr<std::vector<ProcSmapsEntry>> ParseProcSmaps(absl::string_view);
+// Reads and parses /proc/self/smaps
+PosixErrorOr<std::vector<ProcSmapsEntry>> ReadProcSelfSmaps();
+// Reads and parses /proc/pid/smaps
+PosixErrorOr<std::vector<ProcSmapsEntry>> ReadProcSmaps(pid_t);
+
+// Returns the unique entry in entries containing the given address.
+PosixErrorOr<ProcSmapsEntry> FindUniqueSmapsEntry(
+    std::vector<ProcSmapsEntry> const&, uintptr_t);
+
+// Check if stack has nh flag.
+bool StackTHPDisabled(std::vector<ProcSmapsEntry>);
+
+// Returns true if THP is disabled for current process.
+bool IsTHPDisabled();
 
 // Printer for ProcMapsEntry.
 inline std::ostream& operator<<(std::ostream& os, const ProcMapsEntry& entry) {
