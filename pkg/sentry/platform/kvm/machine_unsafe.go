@@ -26,6 +26,7 @@ import (
 	"math"
 	"runtime"
 	"sync/atomic"
+	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -55,7 +56,8 @@ func (m *machine) setMemoryRegion(slot int, physical, length, virtual uintptr, f
 	}
 
 	// Set the region.
-	_, _, errno := unix.RawSyscall(
+	// Note: syscall.RawSyscall is used to fit the nosplit stack limit.
+	_, _, errno := syscall.RawSyscall(
 		unix.SYS_IOCTL,
 		uintptr(m.fd),
 		_KVM_SET_USER_MEMORY_REGION,
