@@ -16,6 +16,7 @@ package boot
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -74,12 +75,43 @@ func (s shareType) String() string {
 	}
 }
 
-// podMountHints contains a collection of mountHints for the pod.
-type podMountHints struct {
-	mounts map[string]*mountHint
+type backendType int
+
+const (
+	memory backendType = iota
+
+	file
+)
+
+func parseBackend(val string) (backendType, error) {
+	switch val {
+	case "memory":
+		return memory, nil
+	case "file":
+		return file, nil
+	default:
+		return 0, fmt.Errorf("invalid backend value %q", val)
+	}
 }
 
-func newPodMountHints(spec *specs.Spec) (*podMountHints, error) {
+func (b backendType) String() string {
+	switch b {
+	case memory:
+		return "memory"
+	case file:
+		return "file"
+	default:
+		return fmt.Sprintf("invalid backend value %d", b)
+	}
+}
+
+// podMountHints contains a collection of mountHints for the pod.
+type podMountHints struct {
+	mounts         map[string]*mountHint
+	fileBackMounts []*mountHint
+}
+
+func newPodMountHints(spec *specs.Spec, volumeBackFDsLen int) (*podMountHints, error) {
 	mnts := make(map[string]*mountHint)
 	for k, v := range spec.Annotations {
 		// Look for 'dev.gvisor.spec.mount' annotations and parse them.
@@ -105,6 +137,7 @@ func newPodMountHints(spec *specs.Spec) (*podMountHints, error) {
 	}
 
 	// Validate all hints after done parsing.
+	var fileBackMnts []*mountHint
 	for name, m := range mnts {
 		log.Infof("Mount annotation found, name: %s, source: %q, type: %s, share: %v", name, m.mount.Source, m.mount.Type, m.share)
 		if m.share == invalid {
@@ -116,7 +149,9 @@ func newPodMountHints(spec *specs.Spec) (*podMountHints, error) {
 		if len(m.mount.Type) == 0 {
 			return nil, fmt.Errorf("type field for %q has not been set", m.name)
 		}
-
+		if m.isFileBackendTmpfs() {
+			fileBackMnts = append(fileBackMnts, m)
+		}
 		// Check for duplicate mount sources.
 		for name2, m2 := range mnts {
 			if name != name2 && m.mount.Source == m2.mount.Source {
@@ -125,16 +160,27 @@ func newPodMountHints(spec *specs.Spec) (*podMountHints, error) {
 		}
 	}
 
-	return &podMountHints{mounts: mnts}, nil
+	// Sort by volume names.
+	sort.Slice(fileBackMnts, func(i, j int) bool {
+		return fileBackMnts[i].name < fileBackMnts[j].name
+	})
+	if len(fileBackMnts) != volumeBackFDsLen {
+		return nil, fmt.Errorf("length of mounts %d is not equal to volume back fds: %d", len(fileBackMnts), volumeBackFDsLen)
+	}
+	return &podMountHints{
+		mounts:         mnts,
+		fileBackMounts: fileBackMnts,
+	}, nil
 }
 
 // mountHint represents extra information about mounts that are provided via
 // annotations. They can override mount type, and provide sharing information
 // so that mounts can be correctly shared inside the pod.
 type mountHint struct {
-	name  string
-	share shareType
-	mount specs.Mount
+	name    string
+	share   shareType
+	backend backendType
+	mount   specs.Mount
 
 	// vfsMount is the master mount for the volume. For mounts with 'pod' share
 	// the master volume is bind mounted inside the containers.
@@ -156,6 +202,12 @@ func (m *mountHint) setField(key, val string) error {
 			return err
 		}
 		m.share = share
+	case "backend":
+		backend, err := parseBackend(val)
+		if err != nil {
+			return err
+		}
+		m.backend = backend
 	case "options":
 		return m.setOptions(val)
 	default:
@@ -185,6 +237,10 @@ func (m *mountHint) setOptions(val string) error {
 
 func (m *mountHint) isSupported() bool {
 	return m.mount.Type == tmpfs.Name && m.share == pod
+}
+
+func (m *mountHint) isFileBackendTmpfs() bool {
+	return m.mount.Type == tmpfs.Name && m.backend == file
 }
 
 // checkCompatible verifies that shared mount is compatible with master.

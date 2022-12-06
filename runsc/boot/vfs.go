@@ -327,6 +327,9 @@ type containerMounter struct {
 	// upper tmpfs layer.
 	overlayFilestore *pgalloc.MemoryFile
 
+	// volumeBackMemFiles is the list of memory files that will back the tmpfs of volume mount.
+	volumeBackMemFiles []*pgalloc.MemoryFile
+
 	k *kernel.Kernel
 
 	hints *podMountHints
@@ -338,13 +341,14 @@ type containerMounter struct {
 
 func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *podMountHints, productName string) *containerMounter {
 	return &containerMounter{
-		root:             info.spec.Root,
-		mounts:           compileMounts(info.spec, info.conf),
-		fds:              fdDispenser{fds: info.goferFDs},
-		overlayFilestore: info.overlayFilestore,
-		k:                k,
-		hints:            hints,
-		productName:      productName,
+		root:               info.spec.Root,
+		mounts:             compileMounts(info.spec, info.conf),
+		fds:                fdDispenser{fds: info.goferFDs},
+		overlayFilestore:   info.overlayFilestore,
+		volumeBackMemFiles: info.volumeBackMemFiles,
+		k:                  k,
+		hints:              hints,
+		productName:        productName,
 	}
 }
 
@@ -898,6 +902,17 @@ func (c *containerMounter) mountSharedMaster(ctx context.Context, conf *config.C
 		}
 		defer cleanup()
 		fsName = overlay.Name
+	}
+
+	for i, m := range c.hints.fileBackMounts {
+		if hint.name != m.name {
+			continue
+		}
+		tmpfsOpts := tmpfs.FilesystemOpts{
+			Filestore: c.volumeBackMemFiles[i],
+		}
+		opts.GetFilesystemOptions.InternalData = tmpfsOpts
+		log.Infof("Using file %s as backend for tmpfs mount %s with source %s ", tmpfsOpts.Filestore.File().Name(), hint.name, mntFD.mount.Source)
 	}
 
 	return c.k.VFS().MountDisconnected(ctx, creds, "", fsName, opts)

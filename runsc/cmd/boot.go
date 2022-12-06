@@ -60,6 +60,9 @@ type Boot struct {
 	// overlay's upper tmpfs mount for all containers.
 	overlayFilestoreFD int
 
+	// VolumeBackFDs is the list of host FDs that will back the tmpfs of volume mount.
+	VolumeBackFDs intFlags
+
 	// stdioFDs are the fds for stdin, stdout, and stderr. They must be
 	// provided in that order.
 	stdioFDs intFlags
@@ -147,6 +150,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.Var(&b.ioFDs, "io-fds", "list of FDs to connect gofer clients. They must follow this order: root first, then mounts as defined in the spec")
 	f.Var(&b.stdioFDs, "stdio-fds", "list of FDs containing sandbox stdin, stdout, and stderr in that order")
 	f.IntVar(&b.overlayFilestoreFD, "overlay-filestore-fd", -1, "FD to a regular file which will be used to back the overlay's tmpfs upper mount.")
+	f.Var(&b.VolumeBackFDs, "volume-backend-fds", "list of FDs that will back the tmpfs of volume mount.")
 	f.IntVar(&b.userLogFD, "user-log-fd", 0, "file descriptor to write user logs to. 0 means no logging.")
 	f.IntVar(&b.startSyncFD, "start-sync-fd", -1, "required FD to used to synchronize sandbox startup")
 	f.IntVar(&b.mountsFD, "mounts-fd", -1, "mountsFD is the file descriptor to read list of mounts after they have been resolved (direct paths, no symlinks).")
@@ -315,6 +319,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		GoferFDs:           b.ioFDs.GetArray(),
 		StdioFDs:           b.stdioFDs.GetArray(),
 		OverlayFilestoreFD: b.overlayFilestoreFD,
+		VolumeBackFDs:      b.VolumeBackFDs,
 		NumCPU:             b.cpuNum,
 		TotalMem:           b.totalMem,
 		UserLogFD:          b.userLogFD,
