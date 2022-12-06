@@ -118,6 +118,10 @@ func UpdateVolumeAnnotations(s *specs.Spec) (bool, error) {
 		volume := volumeName(k)
 		if uid != "" {
 			// This is a sandbox.
+			if _, ok := s.Annotations[volumeSourceKey(volume)]; ok {
+				// SourceKey exists means this is a hostpath, no need to update.
+				continue
+			}
 			path, err := volumePath(volume, uid)
 			if err != nil {
 				return false, fmt.Errorf("get volume path for %q: %w", volume, err)
@@ -126,6 +130,7 @@ func UpdateVolumeAnnotations(s *specs.Spec) (bool, error) {
 			updated = true
 		} else {
 			// This is a container.
+			hostPathSrc, yesHostPathKey := s.Annotations[volumeSourceKey(volume)]
 			for i := range s.Mounts {
 				// An error is returned for sandbox if source annotation is not
 				// successfully applied, so it is guaranteed that the source annotation
@@ -136,7 +141,9 @@ func UpdateVolumeAnnotations(s *specs.Spec) (bool, error) {
 				//
 				// TODO: Pass podUID down to shim for containers to do more accurate
 				// matching.
-				if yes, _ := isVolumePath(volume, s.Mounts[i].Source); yes {
+				yesVolume, _ := isVolumePath(volume, s.Mounts[i].Source)
+				yesHostPath := yesHostPathKey && s.Mounts[i].Source == hostPathSrc
+				if yesVolume || yesHostPath {
 					// Container mount type must match the sandbox's mount type.
 					changeMountType(&s.Mounts[i], v)
 					updated = true

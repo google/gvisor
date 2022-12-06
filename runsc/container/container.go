@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -260,6 +261,10 @@ func New(conf *config.Config, args Args) (*Container, error) {
 		if err != nil {
 			return nil, err
 		}
+		backFiles, err := prepareBackendFiles(c.Spec)
+		if err != nil {
+			return nil, fmt.Errorf("failed to prepare backend files: %v", err)
+		}
 		if err := runInCgroup(parentCgroup, func() error {
 			ioFiles, specFile, err := c.createGoferProcess(args.Spec, conf, args.BundleDir, args.Attached)
 			if err != nil {
@@ -279,6 +284,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 				Cgroup:               parentCgroup,
 				Attached:             args.Attached,
 				OverlayFilestoreFile: overlayFilestoreFile,
+				VolumeBackFiles:      backFiles,
 			}
 			sand, err := sandbox.New(conf, sandArgs)
 			if err != nil {
@@ -1400,4 +1406,92 @@ func cgroupInstall(conf *config.Config, cg cgroup.Cgroup, res *specs.LinuxResour
 		}
 	}
 	return cg, nil
+}
+
+// MountPrefix is the annotation prefix for mount hints.
+const MountPrefix = "dev.gvisor.spec.mount."
+
+type fileBackend struct {
+	name   string
+	source string
+	file   bool
+	tmpfs  bool
+}
+
+type volumeFile struct {
+	file       *os.File
+	volumeName string
+}
+
+func prepareBackendFiles(spec *specs.Spec) ([]*os.File, error) {
+	var volumeFiles []*volumeFile
+	backends := make(map[string]*fileBackend)
+	for k, v := range spec.Annotations {
+		// Look for 'dev.gvisor.spec.mount' annotations and parse them.
+		if strings.HasPrefix(k, MountPrefix) {
+			// Remove the prefix and split the rest.
+			parts := strings.Split(k[len(MountPrefix):], ".")
+			if len(parts) != 2 {
+				return nil, fmt.Errorf("invalid mount annotation: %s=%s", k, v)
+			}
+			name := parts[0]
+			if len(name) == 0 {
+				return nil, fmt.Errorf("invalid mount name: %s", name)
+			}
+			back := backends[name]
+			if back == nil {
+				back = &fileBackend{
+					name: name,
+				}
+				backends[name] = back
+			}
+			if parts[1] == "backend" && v == "file" {
+				back.file = true
+			}
+			if parts[1] == "type" && v == "tmpfs" {
+				back.tmpfs = true
+			}
+			if parts[1] == "source" {
+				back.source = v
+			}
+		}
+	}
+	for k, v := range backends {
+		if v.tmpfs && v.file {
+			if v.source == "" {
+				return nil, fmt.Errorf("invalid mount source for mount %s", k)
+			}
+			fileInfo, err := os.Stat(v.source)
+			if err != nil {
+				return nil, fmt.Errorf("failed to stat volume source directory %q: %v", v.source, err)
+			}
+			if !fileInfo.IsDir() {
+				return nil, fmt.Errorf("file backend volume source %q should be an existing directory", v.source)
+			}
+
+			// Create backend file in the mount source directory
+			// which is either kubelet volumes path or hostpath.
+			unnamedTmpFD, err := unix.Open(v.source, unix.O_TMPFILE|unix.O_RDWR|unix.O_EXCL, 0666)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create an unnamed temporary file inside %q", v.source)
+			}
+			f := os.NewFile(uintptr(unnamedTmpFD), fmt.Sprintf("volume-%s-backend", k))
+			log.Infof("Using %s as the backend file of volume %s", f.Name(), k)
+			volumeFiles = append(volumeFiles, &volumeFile{
+				volumeName: k,
+				file:       f,
+			})
+		}
+	}
+
+	// Sort the files by volume name so that we can keep the same order
+	// for subcommands parsing annotations.
+	sort.Slice(volumeFiles, func(i, j int) bool {
+		return volumeFiles[i].volumeName < volumeFiles[j].volumeName
+	})
+	var files []*os.File
+	for _, vFile := range volumeFiles {
+		files = append(files, vFile.file)
+	}
+	return files, nil
 }

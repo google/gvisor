@@ -104,6 +104,9 @@ type containerInfo struct {
 	// overlayFilestore is the memory file that will back the overlay mount's
 	// upper tmpfs layer.
 	overlayFilestore *pgalloc.MemoryFile
+
+	// volumeBackMemFiles is the list of memory files that will back the tmpfs of volume mount.
+	volumeBackMemFiles []*pgalloc.MemoryFile
 }
 
 // Loader keeps state needed to start the kernel and run the container.
@@ -206,6 +209,8 @@ type Args struct {
 	// OverlayFilestoreFD is the host FD to a regular file which will be used to
 	// back the overlay mount's upper tmpfs layer.
 	OverlayFilestoreFD int
+	// VolumeBackFDs is the list of host FDs that will back the tmpfs of volume mount.
+	VolumeBackFDs []int
 	// NumCPU is the number of CPUs to create inside the sandbox.
 	NumCPU int
 	// TotalMem is the initial amount of total memory to report back to the
@@ -281,6 +286,14 @@ func New(args Args) (*Loader, error) {
 			return nil, fmt.Errorf("tmpfs.FilesystemType.GetFilesystem: failed to create memory file from host file: %w", err)
 		}
 		info.overlayFilestore = mf
+	}
+	for i, backFD := range args.VolumeBackFDs {
+		f := os.NewFile(uintptr(backFD), fmt.Sprintf("backend-file.%d", i))
+		mf, err := pgalloc.NewMemoryFile(f, pgalloc.MemoryFileOpts{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create memory file from host file: %w", err)
+		}
+		info.volumeBackMemFiles = append(info.volumeBackMemFiles, mf)
 	}
 
 	// Create kernel and platform.
@@ -400,7 +413,7 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("initializing compat logs: %w", err)
 	}
 
-	mountHints, err := newPodMountHints(args.Spec)
+	mountHints, err := newPodMountHints(args.Spec, len(args.VolumeBackFDs))
 	if err != nil {
 		return nil, fmt.Errorf("creating pod mount hints: %w", err)
 	}
@@ -529,6 +542,9 @@ func (l *Loader) Destroy() {
 	}
 	if l.root.overlayFilestore != nil {
 		l.root.overlayFilestore.Destroy()
+	}
+	for _, mf := range l.root.volumeBackMemFiles {
+		mf.Destroy()
 	}
 
 	l.stopProfiling()
@@ -766,7 +782,8 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 		goferFDs: goferFDs,
 		// Note that K8s starts all containers in a pod (root and subcontainers)
 		// with the same config. So overlayFilestore can be copied.
-		overlayFilestore: l.root.overlayFilestore,
+		overlayFilestore:   l.root.overlayFilestore,
+		volumeBackMemFiles: l.root.volumeBackMemFiles,
 	}
 	info.procArgs, err = createProcessArgs(cid, spec, creds, l.k, pidns)
 	if err != nil {
