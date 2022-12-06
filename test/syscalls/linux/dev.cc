@@ -154,10 +154,6 @@ TEST(DevTest, TTYExists) {
 }
 
 TEST(DevTest, OpenDevFuse) {
-  // Note(gvisor.dev/issue/3076) This won't work in the sentry until the new
-  // device registration is complete.
-  SKIP_IF(IsRunningOnGvisor() || !IsFUSEEnabled());
-
   ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/fuse", O_RDONLY));
 }
 

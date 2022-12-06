@@ -122,10 +122,8 @@ func registerFilesystems(k *kernel.Kernel) error {
 		}
 	}
 
-	if kernel.FUSEEnabled {
-		if err := fuse.Register(vfsObj); err != nil {
-			return fmt.Errorf("registering fusedev: %w", err)
-		}
+	if err := fuse.Register(vfsObj); err != nil {
+		return fmt.Errorf("registering fusedev: %w", err)
 	}
 
 	a, err := devtmpfs.NewAccessor(ctx, vfsObj, creds, devtmpfs.Name)
@@ -149,10 +147,8 @@ func registerFilesystems(k *kernel.Kernel) error {
 		}
 	}
 
-	if kernel.FUSEEnabled {
-		if err := fuse.CreateDevtmpfsFile(ctx, a); err != nil {
-			return fmt.Errorf("creating fusedev devtmpfs files: %w", err)
-		}
+	if err := fuse.CreateDevtmpfsFile(ctx, a); err != nil {
+		return fmt.Errorf("creating fusedev devtmpfs files: %w", err)
 	}
 
 	return nil

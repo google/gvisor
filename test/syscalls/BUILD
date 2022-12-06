@@ -131,7 +131,7 @@ syscall_test(
 )
 
 syscall_test(
-    fuse = "True",
+    allow_native = False,
     test = "//test/syscalls/linux:dev_test",
 )
 

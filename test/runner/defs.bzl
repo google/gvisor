@@ -69,7 +69,6 @@ def _syscall_test(
         file_access = "exclusive",
         overlay = False,
         add_host_communication = False,
-        fuse = False,
         container = None,
         one_sandbox = True,
         **kwargs):
@@ -82,8 +81,6 @@ def _syscall_test(
         name += "_shared"
     if overlay:
         name += "_overlay"
-    if fuse:
-        name += "_fuse"
     if network != "none":
         name += "_" + network + "net"
 
@@ -136,7 +133,6 @@ def _syscall_test(
         "--file-access=" + file_access,
         "--overlay=" + str(overlay),
         "--add-host-communication=" + str(add_host_communication),
-        "--fuse=" + str(fuse),
         "--strace=" + str(debug),
         "--debug=" + str(debug),
         "--container=" + str(container),
@@ -169,7 +165,6 @@ def syscall_test(
         add_host_communication = False,
         add_hostinet = False,
         one_sandbox = True,
-        fuse = False,
         allow_native = True,
         debug = True,
         container = None,
@@ -184,7 +179,6 @@ def syscall_test(
       add_host_communication: setup UDS and pipe external communication for tests.
       add_hostinet: add a hostinet test.
       one_sandbox: runs each unit test in a new sandbox instance.
-      fuse: enable FUSE support.
       allow_native: generate a native test variant.
       debug: enable debug output.
       container: Run the test in a container. If None, determined from other information.
@@ -194,8 +188,7 @@ def syscall_test(
     if not tags:
         tags = []
 
-    if not fuse and allow_native:
-        # Generate a native test if fuse is not required and if it is allowed.
+    if allow_native:
         _syscall_test(
             test = test,
             platform = "native",
@@ -215,7 +208,6 @@ def syscall_test(
             use_tmpfs = use_tmpfs,
             add_host_communication = add_host_communication,
             tags = platform_tags + tags,
-            fuse = fuse,
             debug = debug,
             container = container,
             one_sandbox = one_sandbox,
@@ -230,7 +222,6 @@ def syscall_test(
             add_host_communication = add_host_communication,
             tags = platforms.get(default_platform, []) + tags,
             debug = debug,
-            fuse = fuse,
             container = container,
             one_sandbox = one_sandbox,
             overlay = True,
@@ -245,7 +236,6 @@ def syscall_test(
             add_host_communication = add_host_communication,
             tags = platforms.get(default_platform, []) + tags,
             debug = debug,
-            fuse = fuse,
             container = container,
             one_sandbox = one_sandbox,
             **kwargs
@@ -262,6 +252,5 @@ def syscall_test(
             container = container,
             one_sandbox = one_sandbox,
             file_access = "shared",
-            fuse = fuse,
             **kwargs
         )
