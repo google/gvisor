@@ -738,6 +738,10 @@ TEST_P(PrivateAndSharedFutexTest, PITryLockConcurrency) {
   }
 }
 
+// Robust mutex tests are disabled on Android because Bionic (Android's libc)
+// doesn't support robust pthread mutexes.
+#ifndef __ANDROID__
+
 int get_robust_list(int pid, struct robust_list_head** head_ptr,
                     size_t* len_ptr) {
   return syscall(__NR_get_robust_list, pid, head_ptr, len_ptr);
@@ -828,6 +832,8 @@ TEST(RobustFutexTest, PthreadMutexAttr) {
     EXPECT_EQ(pthread_mutex_unlock(&mtxs[i]), 0);
   }
 }
+
+#endif  // __ANDROID__
 
 }  // namespace
 }  // namespace testing
