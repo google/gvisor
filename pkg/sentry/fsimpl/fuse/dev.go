@@ -36,10 +36,6 @@ type fuseDevice struct{}
 
 // Open implements vfs.Device.Open.
 func (fuseDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	if !kernel.FUSEEnabled {
-		return nil, linuxerr.ENOENT
-	}
-
 	var fd DeviceFD
 	if err := fd.vfsfd.Init(&fd, opts.Flags, mnt, vfsd, &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
