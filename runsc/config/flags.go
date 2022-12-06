@@ -85,7 +85,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Var(hostFifoPtr(HostFifoNone), "host-fifo", "controls permission to access host FIFOs (or named pipes). Values: none|open, default: none")
 
 	flagSet.Bool("vfs2", true, "DEPRECATED: this flag has no effect.")
-	flagSet.Bool("fuse", false, "TEST ONLY; use while FUSE in VFSv2 is landing. This allows the use of the new experimental FUSE filesystem.")
+	flagSet.Bool("fuse", true, "DEPRECATED: this flag has no effect.")
 	flagSet.Bool("lisafs", true, "Enables lisafs protocol instead of 9P.")
 	flagSet.Bool("cgroupfs", false, "Automatically mount cgroupfs.")
 	flagSet.Bool("ignore-cgroups", false, "don't configure cgroups.")

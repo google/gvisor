@@ -162,7 +162,6 @@ dev: $(RUNTIME_BIN) ## Installs a set of local runtimes. Requires sudo.
 	@$(call configure_noreload,$(RUNTIME),--net-raw)
 	@$(call configure_noreload,$(RUNTIME)-d,--net-raw --debug --strace --log-packets)
 	@$(call configure_noreload,$(RUNTIME)-p,--net-raw --profile)
-	@$(call configure_noreload,$(RUNTIME)-fuse-d,--net-raw --debug --strace --log-packets --fuse)
 	@$(call configure_noreload,$(RUNTIME)-cgroup-d,--net-raw --debug --strace --log-packets --cgroupfs)
 	@$(call configure_noreload,$(RUNTIME)-systemd-d,--net-raw --debug --strace --log-packets --systemd-cgroup)
 	@$(call reload_docker)

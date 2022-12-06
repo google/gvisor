@@ -81,10 +81,6 @@ import (
 // TODO(gvisor.dev/issue/7911): Remove when 9P is deleted.
 var LISAFSEnabled = false
 
-// FUSEEnabled is set to true when FUSE is enabled. Added as a global to allow
-// easy access everywhere. To be removed once FUSE is completed.
-var FUSEEnabled = false
-
 // userCounters is a set of user counters.
 //
 // +stateify savable

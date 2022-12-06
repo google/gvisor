@@ -245,7 +245,6 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("setting up memory usage: %w", err)
 	}
 
-	kernel.FUSEEnabled = args.Conf.FUSE
 	kernel.LISAFSEnabled = args.Conf.Lisafs
 
 	// Make host FDs stable between invocations. Host FDs must map to the exact
