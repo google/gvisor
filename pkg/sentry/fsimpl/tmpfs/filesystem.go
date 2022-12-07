@@ -971,21 +971,22 @@ func (fs *filesystem) accountPagesPartial(pagesInc uint64) uint64 {
 		return pagesInc
 	}
 
-	// Need to acquire fs.pagesUsedMu for fs.pagesUsed.
-	fs.pagesUsedMu.Lock()
-	defer fs.pagesUsedMu.Unlock()
-	if fs.maxSizeInPages <= fs.pagesUsed {
-		return 0
-	}
+	for {
+		pagesUsed := fs.pagesUsed.Load()
+		if fs.maxSizeInPages <= pagesUsed {
+			return 0
+		}
 
-	pagesFree := fs.maxSizeInPages - fs.pagesUsed
-	if pagesFree < pagesInc {
-		fs.pagesUsed += pagesFree
-		return pagesFree
-	}
+		pagesFree := fs.maxSizeInPages - pagesUsed
+		toInc := pagesInc
+		if pagesFree < pagesInc {
+			toInc = pagesFree
+		}
 
-	fs.pagesUsed += pagesInc
-	return pagesInc
+		if fs.pagesUsed.CompareAndSwap(pagesUsed, pagesUsed+toInc) {
+			return toInc
+		}
+	}
 }
 
 // accountPages increases the pagesUsed in filesystem struct if tmpfs
@@ -996,20 +997,21 @@ func (fs *filesystem) accountPages(pagesInc uint64) bool {
 		return true // No accounting needed.
 	}
 
-	// Need to acquire fs.pagesUsedMu for fs.pagesUsed.
-	fs.pagesUsedMu.Lock()
-	defer fs.pagesUsedMu.Unlock()
-	if fs.maxSizeInPages <= fs.pagesUsed {
-		return false
-	}
+	for {
+		pagesUsed := fs.pagesUsed.Load()
+		if fs.maxSizeInPages <= pagesUsed {
+			return false
+		}
 
-	pagesFree := fs.maxSizeInPages - fs.pagesUsed
-	if pagesFree < pagesInc {
-		return false
-	}
+		pagesFree := fs.maxSizeInPages - pagesUsed
+		if pagesFree < pagesInc {
+			return false
+		}
 
-	fs.pagesUsed += pagesInc
-	return true
+		if fs.pagesUsed.CompareAndSwap(pagesUsed, pagesUsed+pagesInc) {
+			return true
+		}
+	}
 }
 
 // unaccountPages decreases the pagesUsed in filesystem struct if tmpfs
@@ -1018,11 +1020,14 @@ func (fs *filesystem) unaccountPages(pagesDec uint64) {
 	if fs.maxSizeInPages == 0 || pagesDec == 0 {
 		return
 	}
-	// Need to acquire fs.pagesUsedMu for fs.pagesUsed.
-	fs.pagesUsedMu.Lock()
-	defer fs.pagesUsedMu.Unlock()
-	if fs.pagesUsed < pagesDec {
-		panic(fmt.Sprintf("Deallocating more pages than allocated: fs.pagesUsed = %d, pagesDec = %d", fs.pagesUsed, pagesDec))
+
+	for {
+		pagesUsed := fs.pagesUsed.Load()
+		if pagesUsed < pagesDec {
+			panic(fmt.Sprintf("Deallocating more pages than allocated: fs.pagesUsed = %d, pagesDec = %d", pagesUsed, pagesDec))
+		}
+		if fs.pagesUsed.CompareAndSwap(pagesUsed, pagesUsed-pagesDec) {
+			break
+		}
 	}
-	fs.pagesUsed -= pagesDec
 }
