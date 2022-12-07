@@ -140,6 +140,61 @@ func (x *ControlConfig) GetAllowedControls() []ControlConfig_Endpoint {
 	return nil
 }
 
+type ContainerStartedEvent struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Started     bool   `protobuf:"varint,1,opt,name=started,proto3" json:"started,omitempty"`
+	ContainerId string `protobuf:"bytes,2,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+}
+
+func (x *ContainerStartedEvent) Reset() {
+	*x = ContainerStartedEvent{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_pkg_sentry_control_control_proto_msgTypes[1]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *ContainerStartedEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ContainerStartedEvent) ProtoMessage() {}
+
+func (x *ContainerStartedEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_sentry_control_control_proto_msgTypes[1]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ContainerStartedEvent.ProtoReflect.Descriptor instead.
+func (*ContainerStartedEvent) Descriptor() ([]byte, []int) {
+	return file_pkg_sentry_control_control_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ContainerStartedEvent) GetStarted() bool {
+	if x != nil {
+		return x.Started
+	}
+	return false
+}
+
+func (x *ContainerStartedEvent) GetContainerId() string {
+	if x != nil {
+		return x.ContainerId
+	}
+	return ""
+}
+
 type ContainerExitEvent struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -152,7 +207,7 @@ type ContainerExitEvent struct {
 func (x *ContainerExitEvent) Reset() {
 	*x = ContainerExitEvent{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_sentry_control_control_proto_msgTypes[1]
+		mi := &file_pkg_sentry_control_control_proto_msgTypes[2]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -165,7 +220,7 @@ func (x *ContainerExitEvent) String() string {
 func (*ContainerExitEvent) ProtoMessage() {}
 
 func (x *ContainerExitEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_sentry_control_control_proto_msgTypes[1]
+	mi := &file_pkg_sentry_control_control_proto_msgTypes[2]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -178,7 +233,7 @@ func (x *ContainerExitEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ContainerExitEvent.ProtoReflect.Descriptor instead.
 func (*ContainerExitEvent) Descriptor() ([]byte, []int) {
-	return file_pkg_sentry_control_control_proto_rawDescGZIP(), []int{1}
+	return file_pkg_sentry_control_control_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *ContainerExitEvent) GetContainerId() string {
@@ -215,13 +270,18 @@ var file_pkg_sentry_control_control_proto_rawDesc = []byte{
 	0x0a, 0x05, 0x55, 0x53, 0x41, 0x47, 0x45, 0x10, 0x06, 0x12, 0x08, 0x0a, 0x04, 0x50, 0x52, 0x4f,
 	0x43, 0x10, 0x07, 0x12, 0x09, 0x0a, 0x05, 0x53, 0x54, 0x41, 0x54, 0x45, 0x10, 0x08, 0x12, 0x09,
 	0x0a, 0x05, 0x44, 0x45, 0x42, 0x55, 0x47, 0x10, 0x09, 0x12, 0x0b, 0x0a, 0x07, 0x43, 0x47, 0x52,
-	0x4f, 0x55, 0x50, 0x53, 0x10, 0x0a, 0x22, 0x58, 0x0a, 0x12, 0x43, 0x6f, 0x6e, 0x74, 0x61, 0x69,
-	0x6e, 0x65, 0x72, 0x45, 0x78, 0x69, 0x74, 0x45, 0x76, 0x65, 0x6e, 0x74, 0x12, 0x21, 0x0a, 0x0c,
-	0x63, 0x6f, 0x6e, 0x74, 0x61, 0x69, 0x6e, 0x65, 0x72, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01,
-	0x28, 0x09, 0x52, 0x0b, 0x63, 0x6f, 0x6e, 0x74, 0x61, 0x69, 0x6e, 0x65, 0x72, 0x49, 0x64, 0x12,
-	0x1f, 0x0a, 0x0b, 0x65, 0x78, 0x69, 0x74, 0x5f, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x18, 0x02,
-	0x20, 0x01, 0x28, 0x0d, 0x52, 0x0a, 0x65, 0x78, 0x69, 0x74, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73,
-	0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x4f, 0x55, 0x50, 0x53, 0x10, 0x0a, 0x22, 0x54, 0x0a, 0x15, 0x43, 0x6f, 0x6e, 0x74, 0x61, 0x69,
+	0x6e, 0x65, 0x72, 0x53, 0x74, 0x61, 0x72, 0x74, 0x65, 0x64, 0x45, 0x76, 0x65, 0x6e, 0x74, 0x12,
+	0x18, 0x0a, 0x07, 0x73, 0x74, 0x61, 0x72, 0x74, 0x65, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x08,
+	0x52, 0x07, 0x73, 0x74, 0x61, 0x72, 0x74, 0x65, 0x64, 0x12, 0x21, 0x0a, 0x0c, 0x63, 0x6f, 0x6e,
+	0x74, 0x61, 0x69, 0x6e, 0x65, 0x72, 0x5f, 0x69, 0x64, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52,
+	0x0b, 0x63, 0x6f, 0x6e, 0x74, 0x61, 0x69, 0x6e, 0x65, 0x72, 0x49, 0x64, 0x22, 0x58, 0x0a, 0x12,
+	0x43, 0x6f, 0x6e, 0x74, 0x61, 0x69, 0x6e, 0x65, 0x72, 0x45, 0x78, 0x69, 0x74, 0x45, 0x76, 0x65,
+	0x6e, 0x74, 0x12, 0x21, 0x0a, 0x0c, 0x63, 0x6f, 0x6e, 0x74, 0x61, 0x69, 0x6e, 0x65, 0x72, 0x5f,
+	0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0b, 0x63, 0x6f, 0x6e, 0x74, 0x61, 0x69,
+	0x6e, 0x65, 0x72, 0x49, 0x64, 0x12, 0x1f, 0x0a, 0x0b, 0x65, 0x78, 0x69, 0x74, 0x5f, 0x73, 0x74,
+	0x61, 0x74, 0x75, 0x73, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x0a, 0x65, 0x78, 0x69, 0x74,
+	0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -237,11 +297,12 @@ func file_pkg_sentry_control_control_proto_rawDescGZIP() []byte {
 }
 
 var file_pkg_sentry_control_control_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_pkg_sentry_control_control_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_pkg_sentry_control_control_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_pkg_sentry_control_control_proto_goTypes = []interface{}{
-	(ControlConfig_Endpoint)(0), // 0: gvisor.ControlConfig.Endpoint
-	(*ControlConfig)(nil),       // 1: gvisor.ControlConfig
-	(*ContainerExitEvent)(nil),  // 2: gvisor.ContainerExitEvent
+	(ControlConfig_Endpoint)(0),   // 0: gvisor.ControlConfig.Endpoint
+	(*ControlConfig)(nil),         // 1: gvisor.ControlConfig
+	(*ContainerStartedEvent)(nil), // 2: gvisor.ContainerStartedEvent
+	(*ContainerExitEvent)(nil),    // 3: gvisor.ContainerExitEvent
 }
 var file_pkg_sentry_control_control_proto_depIdxs = []int32{
 	0, // 0: gvisor.ControlConfig.allowed_controls:type_name -> gvisor.ControlConfig.Endpoint
@@ -271,6 +332,18 @@ func file_pkg_sentry_control_control_proto_init() {
 			}
 		}
 		file_pkg_sentry_control_control_proto_msgTypes[1].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*ContainerStartedEvent); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_pkg_sentry_control_control_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*ContainerExitEvent); i {
 			case 0:
 				return &v.state
@@ -289,7 +362,7 @@ func file_pkg_sentry_control_control_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_pkg_sentry_control_control_proto_rawDesc,
 			NumEnums:      1,
-			NumMessages:   2,
+			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
