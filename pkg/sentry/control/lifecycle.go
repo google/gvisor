@@ -313,6 +313,10 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 	// Start the newly created process.
 	l.Kernel.StartProcess(tg)
 	log.Infof("Started the new container %v ", initArgs.ContainerID)
+	eventchannel.LogEmit(&pb.ContainerStartedEvent{
+		Started:     true,
+		ContainerId: initArgs.ContainerID,
+	})
 
 	if err := l.updateContainerState(initArgs.ContainerID, stateRunning); err != nil {
 		// Sanity check: shouldn't fail to update the state at this point.
