@@ -244,7 +244,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 		if args.Spec.Linux.CgroupsPath == "" && !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 			args.Spec.Linux.CgroupsPath = "/" + args.ID
 		}
-		var subCgroup, parentCgroup cgroup.Cgroup
+		var subCgroup, parentCgroup, containerCgroup cgroup.Cgroup
 		if !conf.IgnoreCgroups {
 			var err error
 
@@ -254,13 +254,20 @@ func New(conf *config.Config, args Args) (*Container, error) {
 			if err != nil {
 				return nil, fmt.Errorf("cannot set up cgroup for root: %w", err)
 			}
+			// Join the child cgroup when using cgroupfs. Joining non leaf-node
+			// cgroups is illegal in Linux and will return EBUSY.
+			if subCgroup != nil && !conf.SystemdCgroup {
+				containerCgroup = subCgroup
+			} else {
+				containerCgroup = parentCgroup
+			}
 		}
 		c.CompatCgroup = cgroup.CgroupJSON{Cgroup: subCgroup}
 		overlayFilestoreFile, err := createOverlayFilestore(conf.GetOverlay2())
 		if err != nil {
 			return nil, err
 		}
-		if err := runInCgroup(parentCgroup, func() error {
+		if err := runInCgroup(containerCgroup, func() error {
 			ioFiles, specFile, err := c.createGoferProcess(args.Spec, conf, args.BundleDir, args.Attached)
 			if err != nil {
 				return fmt.Errorf("cannot create gofer process: %w", err)
