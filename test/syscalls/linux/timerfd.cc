@@ -204,6 +204,19 @@ TEST_P(TimerfdTest, SetAbsoluteTime) {
   EXPECT_EQ(1, val);
 }
 
+TEST_P(TimerfdTest, SetToPastExpiresEventually) {
+  auto const tfd = ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(GetParam(), 0));
+  struct itimerspec its = {};
+  its.it_value.tv_nsec = 1;
+  ASSERT_THAT(timerfd_settime(tfd.get(), TFD_TIMER_ABSTIME, &its, nullptr),
+              SyscallSucceeds());
+
+  uint64_t val = 0;
+  ASSERT_THAT(ReadFd(tfd.get(), &val, sizeof(uint64_t)),
+              SyscallSucceedsWithValue(sizeof(uint64_t)));
+  ASSERT_EQ(val, 1);
+}
+
 TEST_P(TimerfdTest, IllegalSeek) {
   auto const tfd = ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(GetParam(), 0));
   EXPECT_THAT(lseek(tfd.get(), 0, SEEK_SET), SyscallFailsWithErrno(ESPIPE));
