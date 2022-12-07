@@ -336,7 +336,7 @@ func (l *Lifecycle) reap(containerID string, tg *kernel.ThreadGroup) {
 	if err := l.updateContainerState(containerID, stateStopped); err != nil {
 		panic(err)
 	}
-	eventchannel.Emit(&pb.ContainerExitEvent{
+	eventchannel.LogEmit(&pb.ContainerExitEvent{
 		ContainerId: containerID,
 		ExitStatus:  uint32(tg.ExitStatus()),
 	})
@@ -392,6 +392,10 @@ func (l *Lifecycle) GetExitStatus(args *ContainerArgs, status *uint32) error {
 	}
 
 	*status = uint32(c.tg.ExitStatus())
+	eventchannel.LogEmit(&pb.ContainerExitEvent{
+		ContainerId: args.ContainerID,
+		ExitStatus:  *status,
+	})
 	return nil
 }
 
@@ -423,7 +427,7 @@ func (l *Lifecycle) Reap(args *ContainerArgs, _ *struct{}) error {
 		// the actual stop is called. This may be a duplicate event, but is
 		// necessary in case the reap goroutine transitions the container to the
 		// stop state before the caller starts observing the event channel.
-		eventchannel.Emit(&pb.ContainerExitEvent{
+		eventchannel.LogEmit(&pb.ContainerExitEvent{
 			ContainerId: args.ContainerID,
 			ExitStatus:  uint32(c.tg.ExitStatus()),
 		})
