@@ -223,6 +223,7 @@ type groDispatcher struct {
 	stop chan struct{}
 
 	buckets [groNBuckets]groBucket
+	wg      sync.WaitGroup
 }
 
 func (gd *groDispatcher) init(interval time.Duration) {
@@ -246,7 +247,11 @@ func (gd *groDispatcher) init(interval time.Duration) {
 // start spawns a goroutine that flushes the GRO periodically based on the
 // interval.
 func (gd *groDispatcher) start(interval time.Duration) {
+	gd.wg.Add(1)
+
 	go func(interval time.Duration) {
+		defer gd.wg.Done()
+
 		var ch <-chan time.Time
 		if interval == 0 {
 			// Never run.
@@ -496,6 +501,7 @@ func (gd *groDispatcher) flushAll() {
 // close stops the GRO goroutine and releases any held packets.
 func (gd *groDispatcher) close() {
 	gd.stop <- struct{}{}
+	gd.wg.Wait()
 
 	for i := range gd.buckets {
 		bucket := &gd.buckets[i]
