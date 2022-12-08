@@ -191,10 +191,22 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "address_state_refs",
+    out = "address_state_refs.go",
+    package = "stack",
+    prefix = "addressState",
+    template = "//pkg/refs:refs_template",
+    types = {
+        "T": "addressState",
+    },
+)
+
 go_library(
     name = "stack",
     srcs = [
         "address_state_mutex.go",
+        "address_state_refs.go",
         "addressable_endpoint_state.go",
         "addressable_endpoint_state_mutex.go",
         "bucket_mutex.go",
