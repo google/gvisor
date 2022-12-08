@@ -64,6 +64,7 @@ deps_test(
         "//pkg/state",
         "//pkg/state/wire",
         "//pkg/sync",
+        "//pkg/sync/locking",
         "//pkg/waiter",
         "//pkg/xdp",
 

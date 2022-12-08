@@ -17,7 +17,6 @@ package stack
 import (
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/hash/jenkins"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -32,7 +31,7 @@ type protocolIDs struct {
 // transportEndpoints manages all endpoints of a given protocol. It has its own
 // mutex so as to reduce interference between protocols.
 type transportEndpoints struct {
-	mu sync.RWMutex
+	mu transportEndpointsRWMutex
 	// +checklocks:mu
 	endpoints map[TransportEndpointID]*endpointsByNIC
 	// rawEndpoints contains endpoints for raw sockets, which receive all
@@ -138,7 +137,7 @@ type endpointsByNIC struct {
 	// seed is a random secret for a jenkins hash.
 	seed uint32
 
-	mu sync.RWMutex
+	mu endpointsByNICRWMutex
 	// +checklocks:mu
 	endpoints map[tcpip.NICID]*multiPortEndpoint
 }
@@ -346,7 +345,7 @@ type multiPortEndpoint struct {
 
 	flags ports.FlagCounter
 
-	mu sync.RWMutex `state:"nosave"`
+	mu multiPortEndpointRWMutex `state:"nosave"`
 	// endpoints stores the transport endpoints in the order in which they
 	// were bound. This is required for UDP SO_REUSEADDR.
 	//

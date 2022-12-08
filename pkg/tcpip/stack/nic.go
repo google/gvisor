@@ -19,7 +19,6 @@ import (
 	"reflect"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -59,7 +58,7 @@ type nic struct {
 	linkResQueue packetsPendingLinkResolution
 
 	// mu protects annotated fields below.
-	mu sync.RWMutex
+	mu nicRWMutex
 
 	// +checklocks:mu
 	spoofing bool
@@ -68,7 +67,7 @@ type nic struct {
 	promiscuous bool
 
 	// packetEPsMu protects annotated fields below.
-	packetEPsMu sync.RWMutex
+	packetEPsMu packetEPsRWMutex
 
 	// eps is protected by the mutex, but the values contained in it are not.
 	//
@@ -90,7 +89,7 @@ func makeNICStats(global tcpip.NICStats) sharedStats {
 }
 
 type packetEndpointList struct {
-	mu sync.RWMutex
+	mu packetEndpointListRWMutex
 
 	// eps is protected by mu, but the contained PacketEndpoint values are not.
 	//
