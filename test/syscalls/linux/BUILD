@@ -3799,6 +3799,7 @@ cc_binary(
         "//test/util:file_descriptor",
         "@com_google_absl//absl/strings",
         gtest,
+        "//test/util:fs_util",
         "//test/util:posix_error",
         "//test/util:temp_path",
         "//test/util:test_main",

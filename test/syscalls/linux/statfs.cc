@@ -19,6 +19,7 @@
 
 #include "gtest/gtest.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/fs_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
@@ -87,6 +88,24 @@ TEST(FstatfsTest, InternalDevShm) {
   // This assumes that /dev/shm is tmpfs.
   // Note: We could be an overlay on some configurations.
   EXPECT_TRUE(st.f_type == TMPFS_MAGIC || st.f_type == OVERLAYFS_SUPER_MAGIC);
+}
+
+// Tests that the number of blocks free in the filesystem, as reported by
+// statfs(2) updates appropriately when pages are allocated.
+TEST(FstatfsTest, BlocksFree) {
+  const std::string file_path = NewTempAbsPath();
+  const std::string dir = std::string(Dirname(file_path));
+  struct statfs st_before;
+  EXPECT_THAT(statfs(dir.c_str(), &st_before), SyscallSucceeds());
+  // Only test for tmpfs. Passthru gofer does not expose host filesystem
+  // statfs(2) results. It always returns 0 for blocks free.
+  SKIP_IF(st_before.f_type != TMPFS_MAGIC);
+
+  ASSERT_NO_ERRNO(CreateWithContents(file_path, "abcd"));
+  struct statfs st_after;
+  EXPECT_THAT(statfs(dir.c_str(), &st_after), SyscallSucceeds());
+  EXPECT_GT(st_before.f_bfree, st_after.f_bfree);
+  EXPECT_GT(st_before.f_bavail, st_after.f_bavail);
 }
 
 }  // namespace
