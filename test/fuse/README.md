@@ -107,19 +107,16 @@ complete a command and when the server awaits the next instruction.
 
 ## Running the tests
 
-Based on syscall tests, FUSE tests generate targets only with vfs2 and fuse
-enabled. The corresponding targets end in `_fuse`.
-
 For example, to run fuse test in `stat_test.cc`:
 
 ```bash
-$ bazel test //test/fuse:stat_test_runsc_ptrace_vfs2_fuse
+$ bazel test //test/fuse:stat_test_runsc_ptrace
 ```
 
 Test all targets tagged with fuse:
 
 ```bash
-$ bazel test --test_tag_filters=fuse //test/fuse/...
+$ bazel test //test/fuse/...
 ```
 
 ## Writing a new FUSE test
