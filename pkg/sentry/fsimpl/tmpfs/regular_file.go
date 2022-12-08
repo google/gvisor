@@ -300,13 +300,13 @@ func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.
 	if optional.End > pgend {
 		optional.End = pgend
 	}
-	pagesReqd := rf.data.PagesToFill(required, optional)
-	if !rf.inode.fs.accountPages(pagesReqd) {
-		// If we can not accommodate pagesReqd pages, then retry with just
+	pagesToFill := rf.data.PagesToFill(required, optional)
+	if !rf.inode.fs.accountPages(pagesToFill) {
+		// If we can not accommodate pagesToFill pages, then retry with just
 		// the required range. Because optional may be larger than required.
 		// Only error out if even the required range can not be allocated for.
-		pagesReqd = rf.data.PagesToFill(required, required)
-		if !rf.inode.fs.accountPages(pagesReqd) {
+		pagesToFill = rf.data.PagesToFill(required, required)
+		if !rf.inode.fs.accountPages(pagesToFill) {
 			return nil, &memmap.BusError{linuxerr.ENOSPC}
 		}
 		optional = required
@@ -315,7 +315,9 @@ func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.
 		// Newly-allocated pages are zeroed, so we don't need to do anything.
 		return dsts.NumBytes(), nil
 	})
-	rf.inode.fs.checkFillAllocation(pagesReqd, pagesAlloced)
+	// rf.data.Fill() may fail mid-way. We still want to account any pages that
+	// were allocated, irrespective of an error.
+	rf.inode.fs.adjustPageAcct(pagesToFill, pagesAlloced)
 
 	var ts []memmap.Translation
 	var translatedEnd uint64
@@ -383,8 +385,8 @@ func (fd *regularFileFD) Allocate(ctx context.Context, mode, offset, length uint
 		return linuxerr.EFBIG
 	}
 	required := memmap.MappableRange{Start: uint64(pgstartaddr), End: uint64(pgendaddr)}
-	pagesReqd := f.data.PagesToFill(required, required)
-	if !f.inode.fs.accountPages(pagesReqd) {
+	pagesToFill := f.data.PagesToFill(required, required)
+	if !f.inode.fs.accountPages(pagesToFill) {
 		return linuxerr.ENOSPC
 	}
 	// Pass populate = true here despite the fact that we don't touch these pages
@@ -394,11 +396,12 @@ func (fd *regularFileFD) Allocate(ctx context.Context, mode, offset, length uint
 		// Newly-allocated pages are zeroed, so we don't need to do anything.
 		return dsts.NumBytes(), nil
 	})
+	// f.data.Fill() may fail mid-way. We still want to account any pages that
+	// were allocated, irrespective of an error.
+	f.inode.fs.adjustPageAcct(pagesToFill, pagesAlloced)
 	if err != nil && err != io.EOF {
-		f.inode.fs.unaccountPages(pagesReqd)
 		return err
 	}
-	f.inode.fs.checkFillAllocation(pagesReqd, pagesAlloced)
 
 	oldSize := f.size.Load()
 	if oldSize >= newSize {
@@ -719,9 +722,9 @@ func (rw *regularFileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64,
 		case gap.Ok():
 			// Allocate memory for the write.
 			gapMR := gap.Range().Intersect(pgMR)
-			pagesReqd := gapMR.Length() / hostarch.PageSize
-			pagesAlloced := rw.file.inode.fs.accountPagesPartial(pagesReqd)
-			if pagesAlloced == 0 {
+			pagesToFill := gapMR.Length() / hostarch.PageSize
+			pagesReserved := rw.file.inode.fs.accountPagesPartial(pagesToFill)
+			if pagesReserved == 0 {
 				if done == 0 {
 					retErr = linuxerr.ENOSPC
 					goto exitLoop
@@ -729,11 +732,11 @@ func (rw *regularFileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64,
 				retErr = nil
 				goto exitLoop
 			}
-			gapMR.End = gapMR.Start + (hostarch.PageSize * pagesAlloced)
+			gapMR.End = gapMR.Start + (hostarch.PageSize * pagesReserved)
 			fr, err := rw.file.memFile.Allocate(gapMR.Length(), pgalloc.AllocOpts{Kind: rw.file.memoryUsageKind})
 			if err != nil {
 				retErr = err
-				rw.file.inode.fs.unaccountPages(pagesAlloced)
+				rw.file.inode.fs.unaccountPages(pagesReserved)
 				goto exitLoop
 			}
 
