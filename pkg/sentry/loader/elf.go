@@ -90,14 +90,8 @@ type elfInfo struct {
 	sharedObject bool
 }
 
-// fullReader interface extracts the ReadFull method from fsbridge.File so that
-// client code does not need to define an entire fsbridge.File when only read
-// functionality is needed.
-//
-// TODO(gvisor.dev/issue/1035): Once VFS2 ships, rewrite this to wrap
-// vfs.FileDescription's PRead/Read instead.
 type fullReader interface {
-	// ReadFull is the same as fsbridge.File.ReadFull.
+	// ReadFull is the same as vfs.FileDescription.ReadFull.
 	ReadFull(ctx context.Context, dst usermem.IOSequence, offset int64) (int64, error)
 }
 
