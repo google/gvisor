@@ -949,13 +949,14 @@ func (fs *filesystem) MountOptions() string {
 	return fs.mopts
 }
 
-// checkFillAllocation checks if pages allocated by Fill() and PagesToFill()
-// are consistent.
-func (fs *filesystem) checkFillAllocation(pagesReqd, pagesAlloced uint64) {
-	if pagesReqd < pagesAlloced {
-		panic(fmt.Sprintf("More pages were allocated by Fill() than PagesToFill() had reported: pagesReqd=%d, pagesAlloced=%d", pagesReqd, pagesAlloced))
+// adjustPageAcct adjusts the accounting done against filesystem size limit in
+// case there is any discrepency between the number of pages reserved vs the
+// number of pages actually allocated.
+func (fs *filesystem) adjustPageAcct(reserved, alloced uint64) {
+	if reserved < alloced {
+		panic(fmt.Sprintf("More pages were allocated than the pages reserved: reserved=%d, alloced=%d", reserved, alloced))
 	}
-	if pagesDiff := pagesReqd - pagesAlloced; pagesDiff > 0 {
+	if pagesDiff := reserved - alloced; pagesDiff > 0 {
 		fs.unaccountPages(pagesDiff)
 	}
 }
