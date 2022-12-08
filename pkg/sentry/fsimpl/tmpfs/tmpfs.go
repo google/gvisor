@@ -202,8 +202,16 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		}
 		rootKGID = kgid
 	}
+	// In Linux, the default size limit is set to 50% of physical RAM. Such a
+	// default is not suitable in gVisor, because we don't want to reveal the
+	// host's RAM size. If Linux tmpfs is mounted with no size option, then
+	// statfs(2) returns f_blocks == f_bfree == f_bavail == 0.
+	// However, many applications treat this as having a size limit
+	// of 0. To work around these, set a very large but non-zero default size
+	// limit, chosen to ensure that BlockSize * Blocks does not overflow int64
+	// (which applications may also handle incorrectly).
+	maxSizeInPages := uint64(math.MaxInt64 / hostarch.PageSize)
 	maxSizeStr, ok := mopts["size"]
-	var maxSizeInPages uint64
 	if ok {
 		delete(mopts, "size")
 		maxSizeInBytes, err := parseSize(maxSizeStr)
@@ -313,27 +321,11 @@ func (fs *filesystem) statFS() linux.Statfs {
 		NameLength:   linux.NAME_MAX,
 	}
 
-	// tmpfs supports configurable size limits.
-	// In Linux, if tmpfs is mounted with size option,
-	// we return the block sizes as set by the user.
-	if fs.maxSizeInPages > 0 {
-		// If size is set for tmpfs return set values.
-		st.Blocks = fs.maxSizeInPages
-		pagesUsed := fs.pagesUsed.Load()
-		st.BlocksFree = fs.maxSizeInPages - pagesUsed
-		st.BlocksAvailable = fs.maxSizeInPages - pagesUsed
-		return st
-	}
-	// In Linux, if tmpfs is mounted with no size option,
-	// such a tmpfs mount will return
-	// f_blocks == f_bfree == f_bavail == 0 from statfs(2).
-	// However, many applications treat this as having a size limit
-	// of 0. To work around this, claim to have a very large but non-zero size,
-	// chosen to ensure that BlockSize * Blocks does not overflow int64 (which
-	// applications may also handle incorrectly).
-	st.Blocks = math.MaxInt64 / hostarch.PageSize
-	st.BlocksFree = math.MaxInt64 / hostarch.PageSize
-	st.BlocksAvailable = math.MaxInt64 / hostarch.PageSize
+	// If size is set for tmpfs return set values.
+	st.Blocks = fs.maxSizeInPages
+	pagesUsed := fs.pagesUsed.Load()
+	st.BlocksFree = fs.maxSizeInPages - pagesUsed
+	st.BlocksAvailable = fs.maxSizeInPages - pagesUsed
 	return st
 }
 

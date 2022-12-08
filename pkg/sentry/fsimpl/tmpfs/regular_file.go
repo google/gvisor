@@ -300,28 +300,22 @@ func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.
 	if optional.End > pgend {
 		optional.End = pgend
 	}
-	var pagesReqd uint64
-	if rf.inode.fs.maxSizeInPages > 0 {
-		pagesReqd = rf.data.PagesToFill(required, optional)
+	pagesReqd := rf.data.PagesToFill(required, optional)
+	if !rf.inode.fs.accountPages(pagesReqd) {
+		// If we can not accommodate pagesReqd pages, then retry with just
+		// the required range. Because optional may be larger than required.
+		// Only error out if even the required range can not be allocated for.
+		pagesReqd = rf.data.PagesToFill(required, required)
 		if !rf.inode.fs.accountPages(pagesReqd) {
-			// If we can not accommodate pagesReqd pages, then retry with just
-			// the required range. Because optional may be larger than required.
-			// Only error out if even the required range can not be allocated for.
-			pagesReqd = rf.data.PagesToFill(required, required)
-			if !rf.inode.fs.accountPages(pagesReqd) {
-				return nil, &memmap.BusError{linuxerr.ENOSPC}
-			}
-			optional = required
+			return nil, &memmap.BusError{linuxerr.ENOSPC}
 		}
+		optional = required
 	}
 	pagesAlloced, cerr := rf.data.Fill(ctx, required, optional, rf.size.RacyLoad(), rf.memFile, rf.memoryUsageKind, false /* populate */, func(_ context.Context, dsts safemem.BlockSeq, _ uint64) (uint64, error) {
 		// Newly-allocated pages are zeroed, so we don't need to do anything.
 		return dsts.NumBytes(), nil
 	})
-
-	if rf.inode.fs.maxSizeInPages > 0 {
-		rf.inode.fs.checkFillAllocation(pagesReqd, pagesAlloced)
-	}
+	rf.inode.fs.checkFillAllocation(pagesReqd, pagesAlloced)
 
 	var ts []memmap.Translation
 	var translatedEnd uint64
@@ -389,12 +383,9 @@ func (fd *regularFileFD) Allocate(ctx context.Context, mode, offset, length uint
 		return linuxerr.EFBIG
 	}
 	required := memmap.MappableRange{Start: uint64(pgstartaddr), End: uint64(pgendaddr)}
-	var pagesReqd uint64
-	if f.inode.fs.maxSizeInPages > 0 {
-		pagesReqd = f.data.PagesToFill(required, required)
-		if !f.inode.fs.accountPages(pagesReqd) {
-			return linuxerr.ENOSPC
-		}
+	pagesReqd := f.data.PagesToFill(required, required)
+	if !f.inode.fs.accountPages(pagesReqd) {
+		return linuxerr.ENOSPC
 	}
 	// Pass populate = true here despite the fact that we don't touch these pages
 	// both for consistency with the expected behavior of fallocate(2) and in
@@ -404,15 +395,10 @@ func (fd *regularFileFD) Allocate(ctx context.Context, mode, offset, length uint
 		return dsts.NumBytes(), nil
 	})
 	if err != nil && err != io.EOF {
-		if f.inode.fs.maxSizeInPages > 0 {
-			f.inode.fs.unaccountPages(pagesReqd)
-		}
+		f.inode.fs.unaccountPages(pagesReqd)
 		return err
 	}
-
-	if f.inode.fs.maxSizeInPages > 0 {
-		f.inode.fs.checkFillAllocation(pagesReqd, pagesAlloced)
-	}
+	f.inode.fs.checkFillAllocation(pagesReqd, pagesAlloced)
 
 	oldSize := f.size.Load()
 	if oldSize >= newSize {
