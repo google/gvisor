@@ -80,6 +80,17 @@ func (s *Stack) Interfaces() map[int32]inet.Interface {
 // RemoveInterface implements inet.Stack.RemoveInterface.
 func (s *Stack) RemoveInterface(idx int32) error {
 	nic := tcpip.NICID(idx)
+
+	nicInfo, ok := s.Stack.NICInfo()[nic]
+	if !ok {
+		return syserr.ErrUnknownNICID.ToError()
+	}
+
+	// Don't allow removing the loopback interface.
+	if nicInfo.Flags.Loopback {
+		return syserr.ErrNotSupported.ToError()
+	}
+
 	return syserr.TranslateNetstackError(s.Stack.RemoveNIC(nic)).ToError()
 }
 

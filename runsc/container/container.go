@@ -255,8 +255,8 @@ func New(conf *config.Config, args Args) (*Container, error) {
 				return nil, fmt.Errorf("cannot set up cgroup for root: %w", err)
 			}
 			// Join the child cgroup when using cgroupfs. Joining non leaf-node
-			// cgroups is illegal in Linux and will return EBUSY.
-			if subCgroup != nil && !conf.SystemdCgroup {
+			// cgroups is illegal in cgroupsv2 and will return EBUSY.
+			if subCgroup != nil && !conf.SystemdCgroup && cgroup.IsOnlyV2() {
 				containerCgroup = subCgroup
 			} else {
 				containerCgroup = parentCgroup
