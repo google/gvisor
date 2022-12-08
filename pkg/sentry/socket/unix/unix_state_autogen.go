@@ -82,29 +82,7 @@ func (s *Socket) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(9, &s.abstractNamespace)
 }
 
-func (s *socketOpsCommon) StateTypeName() string {
-	return "pkg/sentry/socket/unix.socketOpsCommon"
-}
-
-func (s *socketOpsCommon) StateFields() []string {
-	return []string{}
-}
-
-func (s *socketOpsCommon) beforeSave() {}
-
-// +checklocksignore
-func (s *socketOpsCommon) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-}
-
-func (s *socketOpsCommon) afterLoad() {}
-
-// +checklocksignore
-func (s *socketOpsCommon) StateLoad(stateSourceObject state.Source) {
-}
-
 func init() {
 	state.Register((*socketRefs)(nil))
 	state.Register((*Socket)(nil))
-	state.Register((*socketOpsCommon)(nil))
 }

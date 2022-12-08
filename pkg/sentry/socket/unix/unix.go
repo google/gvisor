@@ -417,12 +417,6 @@ func (*provider) Pair(t *kernel.Task, stype linux.SockType, protocol int) (*vfs.
 	return s1, s2, nil
 }
 
-// socketOpsCommon contains the socket operations common to VFS1 and VFS2.
-//
-// +stateify savable
-type socketOpsCommon struct {
-}
-
 func (s *Socket) isPacket() bool {
 	switch s.stype {
 	case linux.SOCK_DGRAM, linux.SOCK_SEQPACKET:
