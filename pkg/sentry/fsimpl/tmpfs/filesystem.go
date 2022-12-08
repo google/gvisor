@@ -967,7 +967,7 @@ func (fs *filesystem) checkFillAllocation(pagesReqd, pagesAlloced uint64) {
 // The returned value is guaranteed to be <= pagesInc. If the size mount option is
 // not set, then pagesInc will be returned.
 func (fs *filesystem) accountPagesPartial(pagesInc uint64) uint64 {
-	if fs.maxSizeInPages == 0 || pagesInc == 0 {
+	if pagesInc == 0 {
 		return pagesInc
 	}
 
@@ -993,7 +993,7 @@ func (fs *filesystem) accountPagesPartial(pagesInc uint64) uint64 {
 // is mounted with size option. We return a false when the maxSizeInPages
 // has been exhausted and no more allocation can be done.
 func (fs *filesystem) accountPages(pagesInc uint64) bool {
-	if fs.maxSizeInPages == 0 || pagesInc == 0 {
+	if pagesInc == 0 {
 		return true // No accounting needed.
 	}
 
@@ -1017,7 +1017,7 @@ func (fs *filesystem) accountPages(pagesInc uint64) bool {
 // unaccountPages decreases the pagesUsed in filesystem struct if tmpfs
 // is mounted with size option.
 func (fs *filesystem) unaccountPages(pagesDec uint64) {
-	if fs.maxSizeInPages == 0 || pagesDec == 0 {
+	if pagesDec == 0 {
 		return
 	}
 
