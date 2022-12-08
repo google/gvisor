@@ -222,7 +222,7 @@ func (a *AddressableEndpointState) addAndAcquireAddressLocked(addr tcpip.Address
 		}
 
 		addrState.mu.RLock()
-		if addrState.refs == 0 {
+		if addrState.refs.ReadRefs() == 0 {
 			panic(fmt.Sprintf("found an address that should have been released (ref count == 0); address = %s", addrState.addr))
 		}
 		isPermanent := addrState.kind.IsPermanent()
@@ -256,6 +256,7 @@ func (a *AddressableEndpointState) addAndAcquireAddressLocked(addr tcpip.Address
 				break
 			}
 		}
+		addrState.refs.IncRef()
 	} else {
 		addrState = &addressState{
 			addressableEndpointState: a,
@@ -265,6 +266,7 @@ func (a *AddressableEndpointState) addAndAcquireAddressLocked(addr tcpip.Address
 			// results in allocations on every call.
 			subnet: addr.Subnet(),
 		}
+		addrState.refs.InitRefs()
 		a.endpoints[addr.Address] = addrState
 		// We never promote an address to temporary - it can only be added as such.
 		// If we are actually adding a permanent address, it is promoted below.
@@ -286,11 +288,9 @@ func (a *AddressableEndpointState) addAndAcquireAddressLocked(addr tcpip.Address
 		}
 
 		// Primary addresses are biased by 1.
-		addrState.refs++
+		addrState.refs.IncRef()
 		addrState.kind = kind
 	}
-	// Acquire the address before returning it.
-	addrState.refs++
 	addrState.configType = properties.ConfigType
 	lifetimes := properties.Lifetimes
 	lifetimes.sanitize()
@@ -383,19 +383,16 @@ func (a *AddressableEndpointState) decAddressRef(addrState *addressState) {
 //
 // +checklocks:a.mu
 func (a *AddressableEndpointState) decAddressRefLocked(addrState *addressState) {
-	addrState.mu.Lock()
-	defer addrState.mu.Unlock()
+	destroy := false
+	addrState.refs.DecRef(func() {
+		destroy = true
+	})
 
-	if addrState.refs == 0 {
-		panic(fmt.Sprintf("attempted to decrease ref count for AddressEndpoint w/ addr = %s when it is already released", addrState.addr))
-	}
-
-	addrState.refs--
-
-	if addrState.refs != 0 {
+	if !destroy {
 		return
 	}
-
+	addrState.mu.Lock()
+	defer addrState.mu.Unlock()
 	// A non-expired permanent address must not have its reference count dropped
 	// to 0.
 	if addrState.kind.IsPermanent() {
@@ -687,6 +684,12 @@ func (a *AddressableEndpointState) Cleanup() {
 	}
 }
 
+// LeakCheckDisabled suppress reference leak warnings.
+// FIXME(b/261201456): Re-enable after fixing the bug.
+func (obj *addressStateRefs) LeakCheckDisabled() bool {
+	return true
+}
+
 var _ AddressEndpoint = (*addressState)(nil)
 
 // addressState holds state for an address.
@@ -700,9 +703,8 @@ type addressState struct {
 	//
 	// AddressableEndpointState.mu
 	//   addressState.mu
-	mu addressStateRWMutex
-	// checklocks:mu
-	refs uint32
+	mu   addressStateRWMutex
+	refs addressStateRefs
 	// checklocks:mu
 	kind AddressKind
 	// checklocks:mu
@@ -787,14 +789,7 @@ func (a *addressState) IsAssigned(allowExpired bool) bool {
 
 // IncRef implements AddressEndpoint.
 func (a *addressState) IncRef() bool {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.refs == 0 {
-		return false
-	}
-
-	a.refs++
-	return true
+	return a.refs.TryIncRef()
 }
 
 // DecRef implements AddressEndpoint.
@@ -808,13 +803,9 @@ func (a *addressState) DecRef() {
 // Panics if the ref count is less than 2 after acquiring the lock in this
 // function.
 func (a *addressState) decRefMustNotFree() {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	if a.refs < 2 {
-		panic(fmt.Sprintf("cannot decrease addressState %s ref count %d without freeing the endpoint", a.addr, a.refs))
-	}
-	a.refs--
+	a.refs.DecRef(func() {
+		panic(fmt.Sprintf("cannot decrease addressState %s without freeing the endpoint", a.addr))
+	})
 }
 
 // ConfigType implements AddressEndpoint.
