@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"strings"
 
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -85,7 +84,7 @@ type IPTables struct {
 
 	reaper tcpip.Timer
 
-	mu sync.RWMutex
+	mu ipTablesRWMutex
 	// v4Tables and v6tables map tableIDs to tables. They hold builtin
 	// tables only, not user tables.
 	//

@@ -32,7 +32,6 @@ import (
 	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/log"
 	cryptorand "gvisor.dev/gvisor/pkg/rand"
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/ports"
@@ -85,18 +84,18 @@ type Stack struct {
 	stats tcpip.Stats
 
 	// routeMu protects annotated fields below.
-	routeMu sync.RWMutex
+	routeMu routeStackRWMutex
 
 	// +checklocks:routeMu
 	routeTable []tcpip.Route
 
-	mu sync.RWMutex
+	mu stackRWMutex
 	// +checklocks:mu
 	nics                     map[tcpip.NICID]*nic
 	defaultForwardingEnabled map[tcpip.NetworkProtocolNumber]struct{}
 
 	// cleanupEndpointsMu protects cleanupEndpoints.
-	cleanupEndpointsMu sync.Mutex
+	cleanupEndpointsMu cleanupEndpointsMutex
 	// +checklocks:cleanupEndpointsMu
 	cleanupEndpoints map[TransportEndpoint]struct{}
 

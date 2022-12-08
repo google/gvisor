@@ -17,7 +17,6 @@ package stack
 import (
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
@@ -38,7 +37,7 @@ type AddressableEndpointState struct {
 	//
 	// AddressableEndpointState.mu
 	//   addressState.mu
-	mu sync.RWMutex
+	mu addressableEndpointStateRWMutex
 	// +checklocks:mu
 	endpoints map[tcpip.Address]*addressState
 	// +checklocks:mu
@@ -701,7 +700,7 @@ type addressState struct {
 	//
 	// AddressableEndpointState.mu
 	//   addressState.mu
-	mu sync.RWMutex
+	mu addressStateRWMutex
 	// checklocks:mu
 	refs uint32
 	// checklocks:mu
