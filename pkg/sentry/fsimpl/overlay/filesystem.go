@@ -161,6 +161,9 @@ afterSymlink:
 		rp.Advance()
 		return d.parent, d.parent.topLookupLayer(), nil
 	}
+	if uint64(len(name)) > fs.maxFilenameLen {
+		return nil, lookupLayerNone, linuxerr.ENAMETOOLONG
+	}
 	child, topLookupLayer, err := fs.getChildLocked(ctx, d, name, ds)
 	if err != nil {
 		return nil, topLookupLayer, err
@@ -503,6 +506,9 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, ct 
 	name := rp.Component()
 	if name == "." || name == ".." {
 		return linuxerr.EEXIST
+	}
+	if uint64(len(name)) > fs.maxFilenameLen {
+		return linuxerr.ENAMETOOLONG
 	}
 	if parent.vfsd.IsDead() {
 		return linuxerr.ENOENT
@@ -1089,6 +1095,9 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			return linuxerr.EEXIST
 		}
 		return linuxerr.EBUSY
+	}
+	if uint64(len(newName)) > fs.maxFilenameLen {
+		return linuxerr.ENAMETOOLONG
 	}
 	// Do not check for newName length, since different filesystem
 	// implementations impose different name limits. upperfs.RenameAt() will fail

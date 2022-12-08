@@ -24,6 +24,7 @@ package integration
 import (
 	"context"
 	"flag"
+	"fmt"
 	"io/ioutil"
 	"net"
 	"os"
@@ -177,4 +178,21 @@ func TestHostSocketConnect(t *testing.T) {
 		t.Fatalf("docker run failed: %v", err)
 	}
 	wg.Wait()
+}
+
+func TestOverlayNameTooLong(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainerWithRuntime(ctx, t, "-overlay")
+	defer d.CleanUp(ctx)
+
+	opts := dockerutil.RunOpts{
+		Image:   "basic/integrationtest",
+		WorkDir: "/root",
+	}
+	longName := strings.Repeat("a", unix.NAME_MAX+1)
+	if got, err := d.Run(ctx, opts, "bash", "-c", fmt.Sprintf("stat %s || true", longName)); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	} else if want := "File name too long"; !strings.Contains(got, want) {
+		t.Errorf("container output %q does not contain %q", got, want)
+	}
 }

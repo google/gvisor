@@ -125,6 +125,9 @@ type filesystem struct {
 	// lastDirIno is the last inode number assigned to a directory. lastDirIno
 	// is protected by dirInoCacheMu.
 	lastDirIno uint64
+
+	// MaxFilenameLen is the maximum filename length allowed by the overlayfs.
+	maxFilenameLen uint64
 }
 
 // +stateify savable
@@ -264,8 +267,22 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		dirDevMinor:    dirDevMinor,
 		lowerDevMinors: make(map[layerDevNumber]uint32),
 		dirInoCache:    make(map[layerDevNoAndIno]uint64),
+		maxFilenameLen: linux.NAME_MAX,
 	}
 	fs.vfsfs.Init(vfsObj, &fstype, fs)
+
+	// Configure max filename length. Similar to what Linux does in
+	// fs/overlayfs/super.c:ovl_fill_super() -> ... -> ovl_check_namelen().
+	if fsopts.UpperRoot.Ok() {
+		if err := fs.updateMaxNameLen(ctx, creds, vfsObj, fs.opts.UpperRoot); err != nil {
+			ctx.Debugf("overlay.FilesystemType.GetFilesystem: failed to StatFSAt on upper layer root: %v", err)
+		}
+	}
+	for _, lowerRoot := range fsopts.LowerRoots {
+		if err := fs.updateMaxNameLen(ctx, creds, vfsObj, lowerRoot); err != nil {
+			ctx.Debugf("overlay.FilesystemType.GetFilesystem: failed to StatFSAt on lower layer root: %v", err)
+		}
+	}
 
 	// Construct the root dentry.
 	root := fs.newDentry()
@@ -366,6 +383,21 @@ func (fs *filesystem) Release(ctx context.Context) {
 	for _, lowerRoot := range fs.opts.LowerRoots {
 		lowerRoot.DecRef(ctx)
 	}
+}
+
+// updateMaxNameLen is analogous to fs/overlayfs/super.c:ovl_check_namelen().
+func (fs *filesystem) updateMaxNameLen(ctx context.Context, creds *auth.Credentials, vfsObj *vfs.VirtualFilesystem, vd vfs.VirtualDentry) error {
+	statfs, err := vfsObj.StatFSAt(ctx, creds, &vfs.PathOperation{
+		Root:  vd,
+		Start: vd,
+	})
+	if err != nil {
+		return err
+	}
+	if statfs.NameLength > fs.maxFilenameLen {
+		fs.maxFilenameLen = statfs.NameLength
+	}
+	return nil
 }
 
 func (fs *filesystem) statFS(ctx context.Context) (linux.Statfs, error) {
