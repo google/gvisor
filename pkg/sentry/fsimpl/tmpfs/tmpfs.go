@@ -92,10 +92,8 @@ type filesystem struct {
 	// This field is immutable.
 	maxSizeInPages uint64
 
-	// pagesUsed is the pages used out of the tmpfs size.
-	// pagesUsed is protected by pagesUsedMu.
-	pagesUsedMu pagesUsedMutex `state:"nosave"`
-	pagesUsed   uint64
+	// pagesUsed is the number of pages used by this filesystem.
+	pagesUsed atomicbitops.Uint64
 }
 
 // Name implements vfs.FilesystemType.Name.
@@ -321,10 +319,9 @@ func (fs *filesystem) statFS() linux.Statfs {
 	if fs.maxSizeInPages > 0 {
 		// If size is set for tmpfs return set values.
 		st.Blocks = fs.maxSizeInPages
-		fs.pagesUsedMu.Lock()
-		defer fs.pagesUsedMu.Unlock()
-		st.BlocksFree = fs.maxSizeInPages - fs.pagesUsed
-		st.BlocksAvailable = fs.maxSizeInPages - fs.pagesUsed
+		pagesUsed := fs.pagesUsed.Load()
+		st.BlocksFree = fs.maxSizeInPages - pagesUsed
+		st.BlocksAvailable = fs.maxSizeInPages - pagesUsed
 		return st
 	}
 	// In Linux, if tmpfs is mounted with no size option,
