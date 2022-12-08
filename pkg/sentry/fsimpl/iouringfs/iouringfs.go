@@ -337,6 +337,12 @@ func (fd *FileDescription) ProcessSubmissions(t *kernel.Task, toSubmit uint32, m
 	submitted := uint32(0)
 
 	for toSubmit > submitted {
+		// This loop can take a long time to process, so periodically check for
+		// interrupts. This also pets the watchdog.
+		if t.Interrupted() {
+			return -1, linuxerr.EINTR
+		}
+
 		if fetchRB {
 			view, err = fd.ioRingsBuf.view(fd.ioRings.SizeBytes())
 			if err != nil {
