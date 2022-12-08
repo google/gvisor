@@ -112,6 +112,7 @@ func (s *LisafsServer) SupportedMessages() []lisafs.MID {
 		lisafs.BindAt,
 		lisafs.Listen,
 		lisafs.Accept,
+		lisafs.RenameAt2,
 	}
 }
 
@@ -770,9 +771,9 @@ func (fd *controlFDLisa) Unlink(name string, flags uint32) error {
 	return unix.Unlinkat(fd.hostFD, name, int(flags))
 }
 
-// RenameAt implements lisafs.ControlFDImpl.RenameAt.
-func (fd *controlFDLisa) RenameAt(oldName string, newDir lisafs.ControlFDImpl, newName string) error {
-	return renameat(fd.hostFD, oldName, newDir.(*controlFDLisa).hostFD, newName)
+// RenameAt2 implements lisafs.ControlFDImpl.RenameAt.
+func (fd *controlFDLisa) RenameAt2(oldName string, newDir lisafs.ControlFDImpl, newName string, flags uint32) error {
+	return renameat2(fd.hostFD, oldName, newDir.(*controlFDLisa).hostFD, newName, flags)
 }
 
 // Renamed implements lisafs.ControlFDImpl.Renamed.

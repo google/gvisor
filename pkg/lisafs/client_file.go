@@ -488,20 +488,35 @@ func (f *ClientFD) UnlinkAt(ctx context.Context, name string, flags uint32) erro
 	return err
 }
 
-// RenameAt makes the RenameAt RPC which renames oldName inside directory f to
+// RenameAt makes the RenameAt or RenameAt2 RPC which renames oldName inside directory f to
 // newDirFD directory with name newName.
-func (f *ClientFD) RenameAt(ctx context.Context, oldName string, newDirFD FDID, newName string) error {
-	req := RenameAtReq{
-		OldDir:  f.fd,
-		OldName: SizedString(oldName),
-		NewDir:  newDirFD,
-		NewName: SizedString(newName),
+func (f *ClientFD) RenameAt(ctx context.Context, oldName string, newDirFD FDID, newName string, flags uint32) error {
+	if f.client.IsSupported(RenameAt2) {
+		req := RenameAtReq2{
+			OldDir:  f.fd,
+			OldName: SizedString(oldName),
+			NewDir:  newDirFD,
+			NewName: SizedString(newName),
+			Flags:   primitive.Uint32(flags),
+		}
+		var resp RenameAtResp
+		ctx.UninterruptibleSleepStart(false)
+		err := f.client.SndRcvMessage(RenameAt2, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, nil, req.String, resp.String)
+		ctx.UninterruptibleSleepFinish(false)
+		return err
+	} else {
+		req := RenameAtReq{
+			OldDir:  f.fd,
+			OldName: SizedString(oldName),
+			NewDir:  newDirFD,
+			NewName: SizedString(newName),
+		}
+		var resp RenameAtResp
+		ctx.UninterruptibleSleepStart(false)
+		err := f.client.SndRcvMessage(RenameAt, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, nil, req.String, resp.String)
+		ctx.UninterruptibleSleepFinish(false)
+		return err
 	}
-	var resp RenameAtResp
-	ctx.UninterruptibleSleepStart(false)
-	err := f.client.SndRcvMessage(RenameAt, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, nil, req.String, resp.String)
-	ctx.UninterruptibleSleepFinish(false)
-	return err
 }
 
 // Getdents64 makes the Getdents64 RPC.

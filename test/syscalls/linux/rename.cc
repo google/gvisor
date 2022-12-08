@@ -28,6 +28,7 @@
 #include "test/util/test_util.h"
 
 using ::testing::AnyOf;
+using ::testing::Matches;
 
 namespace gvisor {
 namespace testing {
@@ -478,6 +479,10 @@ TEST(RenameTest, SysfsDirectoryToSelf) {
 #define RENAME_NOREPLACE (1 << 0)
 #endif  // RENAME_NOREPLACE
 
+#ifndef RENAME_EXCHANGE
+#define RENAME_EXCHANGE (1 << 1)
+#endif  // RENAME_EXCHANGE
+
 int renameat2(int olddirfd, const char* oldpath, int newdirfd,
               const char* newpath, unsigned int flags) {
   return syscall(SYS_renameat2, olddirfd, oldpath, newdirfd, newpath, flags);
@@ -516,6 +521,121 @@ TEST(Renameat2Test, NoReplaceDot) {
       renameat2(AT_FDCWD, d1.path().c_str(), AT_FDCWD,
                 absl::StrCat(d2.path(), "/.").c_str(), RENAME_NOREPLACE),
       SyscallFailsWithErrno(AnyOf(ENOSYS, EINVAL, EEXIST)));
+}
+
+TEST(Renameat2Test, ExchangeFilesSuccess) {
+  // TODO: other fsimpl: tmpfs, overlayfs
+  std::string parents[1] = {GetAbsoluteTestTmpdir()};
+  for (unsigned int i = 0; i < 1; i++) {
+    auto d1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(parents[i]));
+    auto d2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(parents[i]));
+    auto f1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+        d1.path(), "first", TempPath::kDefaultFileMode));
+    auto f2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+        d2.path(), "second", TempPath::kDefaultFileMode));
+    // renameat2 may fail with ENOSYS (if the syscall is unsupported) or EINVAL
+    // (if flags are unsupported), or succeed (if RENAME_EXCHANGE is operating
+    // correctly).
+    auto rename_result =
+      renameat2(AT_FDCWD, f1.path().c_str(), AT_FDCWD, f2.path().c_str(),
+                RENAME_EXCHANGE);
+    EXPECT_THAT(rename_result,
+          AnyOf(SyscallFailsWithErrno(AnyOf(ENOSYS, EINVAL)), SyscallSucceeds()));
+    // whether it failed or succeeded both files should still exist
+    EXPECT_THAT(Exists(f1.path()), IsPosixErrorOkAndHolds(true));
+    EXPECT_THAT(Exists(f2.path()), IsPosixErrorOkAndHolds(true));
+
+    if (Matches(SyscallSucceeds())(rename_result)) {
+      // files contents should exchange
+      std::string f2_contents;
+      ASSERT_NO_ERRNO(GetContents(f2.path(), &f2_contents));
+      EXPECT_EQ("first", f2_contents);
+      std::string f1_contents;
+      ASSERT_NO_ERRNO(GetContents(f1.path(), &f1_contents));
+      EXPECT_EQ("second", f1_contents);
+    } else {
+      // files contents should stay the same
+      std::string f2_contents;
+      ASSERT_NO_ERRNO(GetContents(f2.path(), &f2_contents));
+      EXPECT_EQ("second", f2_contents);
+      std::string f1_contents;
+      ASSERT_NO_ERRNO(GetContents(f1.path(), &f1_contents));
+      EXPECT_EQ("first", f1_contents);
+    }
+  }
+}
+
+TEST(Renameat2Test, ExchangeDirsSuccess) {
+  // TODO: other fsimpl: tmpfs, overlayfs
+  std::string parents[1] = {GetAbsoluteTestTmpdir()};
+  for (unsigned int i = 0; i < 1; i++) {
+    auto d1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(parents[i]));
+    auto d2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(parents[i]));
+    auto f1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+        d1.path(), "first", TempPath::kDefaultFileMode));
+    auto f2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+        d2.path(), "second", TempPath::kDefaultFileMode));
+    // renameat2 may fail with ENOSYS (if the syscall is unsupported) or EINVAL
+    // (if flags are unsupported), or succeed (if RENAME_EXCHANGE is operating
+    // correctly).
+    auto rename_result =
+      renameat2(AT_FDCWD, d1.path().c_str(), AT_FDCWD, d2.path().c_str(),
+                RENAME_EXCHANGE);
+    EXPECT_THAT(rename_result,
+          AnyOf(SyscallFailsWithErrno(AnyOf(ENOSYS, EINVAL)), SyscallSucceeds()));
+    // whether it failed or succeeded both directories should still exist
+    EXPECT_THAT(Exists(d1.path()), IsPosixErrorOkAndHolds(true));
+    EXPECT_THAT(Exists(d2.path()), IsPosixErrorOkAndHolds(true));
+
+    if (Matches(SyscallSucceeds())(rename_result)) {
+      // directories should have exchanged files
+      f1.release();
+      f2.release();
+      EXPECT_THAT(Exists(JoinPath(d1.path(), Basename(f2.path()))),
+                  IsPosixErrorOkAndHolds(true));
+      EXPECT_THAT(Exists(JoinPath(d2.path(), Basename(f1.path()))),
+                  IsPosixErrorOkAndHolds(true));
+    } else {
+      // files in directories should stay the same
+      EXPECT_THAT(Exists(f1.path()), IsPosixErrorOkAndHolds(true));
+      EXPECT_THAT(Exists(f2.path()), IsPosixErrorOkAndHolds(true));
+    }
+  }
+}
+
+TEST(Renameat2Test, ExchangeNotBothExist) {
+  // TODO: other fsimpl: tmpfs, overlayfs
+  std::string parents[1] = {GetAbsoluteTestTmpdir()};
+  for (unsigned int i = 0; i < 1; i++) {
+    auto d1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(parents[i]));
+    std::string const newpath = NewTempAbsPathInDir(parents[i]);
+    // renameat2 may fail with ENOSYS (if the syscall is unsupported) or EINVAL
+    // (if flags are unsupported), or fail with ENOENT (if RENAME_EXCHANGE is
+    // operating correctly).
+    EXPECT_THAT(
+          renameat2(AT_FDCWD, d1.path().c_str(), AT_FDCWD, newpath.c_str(),
+                    RENAME_EXCHANGE),
+          SyscallFailsWithErrno(AnyOf(ENOSYS, EINVAL, ENOENT)));
+    EXPECT_THAT(
+          renameat2(AT_FDCWD, newpath.c_str(), AT_FDCWD, d1.path().c_str(),
+                    RENAME_EXCHANGE),
+          SyscallFailsWithErrno(AnyOf(ENOSYS, EINVAL, ENOENT)));
+  }
+}
+
+TEST(Renameat2Test, ExchangeNoReplace) {
+  // TODO: other fsimpl: tmpfs, overlayfs
+  std::string parents[1] = {GetAbsoluteTestTmpdir()};
+  for (unsigned int i = 0; i < 1; i++) {
+    auto d1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(parents[i]));
+    auto d2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(parents[i]));
+    // renameat2 may fail with ENOSYS (if the syscall is unsupported) or EINVAL
+    // (if flags are unsupported or both flags are specified)
+    EXPECT_THAT(
+          renameat2(AT_FDCWD, d1.path().c_str(), AT_FDCWD, d2.path().c_str(),
+                    RENAME_EXCHANGE|RENAME_NOREPLACE),
+          SyscallFailsWithErrno(AnyOf(ENOSYS, EINVAL)));
+  }
 }
 
 }  // namespace

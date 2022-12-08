@@ -849,7 +849,7 @@ func (l *localFile) RenameAt(oldName string, directory p9.File, newName string) 
 	}
 
 	newParent := directory.(*localFile)
-	if err := renameat(l.file.FD(), oldName, newParent.file.FD(), newName); err != nil {
+	if err := renameat2(l.file.FD(), oldName, newParent.file.FD(), newName, 0); err != nil {
 		return extractErrno(err)
 	}
 	return nil

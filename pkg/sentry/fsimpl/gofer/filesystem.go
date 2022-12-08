@@ -1448,13 +1448,25 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		return err
 	}
 
-	if opts.Flags&^linux.RENAME_NOREPLACE != 0 {
-		return linuxerr.EINVAL
-	}
-	if fs.opts.interop == InteropModeShared && opts.Flags&linux.RENAME_NOREPLACE != 0 {
-		// Requires 9P support to synchronize with other remote filesystem
-		// users.
-		return linuxerr.EINVAL
+	if fs.opts.lisaEnabled && fs.clientLisa.IsSupported(lisafs.RenameAt2) {
+		// for now only RENAME_NOREPLACE and RENAME_EXCHANGE are supported
+		if opts.Flags&^(linux.RENAME_NOREPLACE|linux.RENAME_EXCHANGE) != 0 {
+			return linuxerr.EINVAL
+		}
+		// cannot specify both RENAME_NOREPLACE and RENAME_EXCHANGE
+		if opts.Flags&(linux.RENAME_NOREPLACE|linux.RENAME_EXCHANGE) == (linux.RENAME_NOREPLACE | linux.RENAME_EXCHANGE) {
+			return linuxerr.EINVAL
+		}
+	} else {
+		// only RENAME_NOREPLACE is supported for older clients
+		if opts.Flags&^linux.RENAME_NOREPLACE != 0 {
+			return linuxerr.EINVAL
+		}
+		if fs.opts.interop == InteropModeShared && opts.Flags != 0 {
+			// Requires 9P support to synchronize with other remote filesystem
+			// users.
+			return linuxerr.EINVAL
+		}
 	}
 
 	newName := rp.Component()
@@ -1516,7 +1528,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			}
 		}
 	} else {
-		if opts.MustBeDir || rp.MustBeDir() {
+		if (opts.MustBeDir || rp.MustBeDir()) && opts.Flags&linux.RENAME_EXCHANGE != 0 {
 			return linuxerr.ENOTDIR
 		}
 	}
@@ -1553,6 +1565,10 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 				return linuxerr.ENOTDIR
 			}
 		}
+	} else {
+		if opts.Flags&linux.RENAME_EXCHANGE != 0 {
+			return linuxerr.ENOENT
+		}
 	}
 
 	if oldParent == newParent && oldName == newName {
@@ -1567,7 +1583,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	// Update the remote filesystem.
 	if !renamed.isSynthetic() {
 		if fs.opts.lisaEnabled {
-			err = oldParent.controlFDLisa.RenameAt(ctx, oldName, newParent.controlFDLisa.ID(), newName)
+			err = oldParent.controlFDLisa.RenameAt(ctx, oldName, newParent.controlFDLisa.ID(), newName, opts.Flags)
 		} else {
 			err = renamed.file.rename(ctx, newParent.file, newName)
 		}
@@ -1575,7 +1591,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			vfsObj.AbortRenameDentry(&renamed.vfsd, replacedVFSD)
 			return err
 		}
-	} else if replaced != nil && !replaced.isSynthetic() {
+	} else if replaced != nil && !replaced.isSynthetic() && opts.Flags&linux.RENAME_EXCHANGE == 0 {
 		// We are replacing an existing real file with a synthetic one, so we
 		// need to unlink the former.
 		flags := uint32(0)
@@ -1594,56 +1610,98 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	}
 
 	// Update the dentry tree.
-	vfsObj.CommitRenameReplaceDentry(ctx, &renamed.vfsd, replacedVFSD)
-	if replaced != nil {
-		replaced.setDeleted()
-		if replaced.isSynthetic() {
-			newParent.syntheticChildren--
-			replaced.decRefNoCaching()
+	if opts.Flags&linux.RENAME_EXCHANGE != 0 {
+		vfsObj.CommitRenameExchangeDentry(&renamed.vfsd, replacedVFSD)
+		if replaced != nil {
+			if replaced.isSynthetic() && !renamed.isSynthetic() {
+				newParent.syntheticChildren--
+				oldParent.syntheticChildren++
+			} else if !replaced.isSynthetic() && renamed.isSynthetic() {
+				newParent.syntheticChildren++
+				oldParent.syntheticChildren--
+			}
+			ds = appendDentry(ds, replaced)
+			ds = appendDentry(ds, renamed)
 		}
-		ds = appendDentry(ds, replaced)
-	}
-	oldParent.cacheNegativeLookupLocked(oldName)
-	// We don't use newParent.cacheNewChildLocked() since we don't want to mess
-	// with reference counts and queue oldParent for checkCachingLocked if the
-	// parent isn't actually changing.
-	if oldParent != newParent {
-		oldParent.decRefNoCaching()
-		newParent.IncRef()
-		ds = appendDentry(ds, newParent)
-		ds = appendDentry(ds, oldParent)
-		if renamed.isSynthetic() {
-			oldParent.syntheticChildren--
-			newParent.syntheticChildren++
+		if oldParent != newParent {
+			ds = appendDentry(ds, newParent)
+			ds = appendDentry(ds, oldParent)
+			renamed.parent = newParent
+			replaced.parent = oldParent
 		}
-		renamed.parent = newParent
-	}
-	renamed.name = newName
-	if newParent.children == nil {
-		newParent.children = make(map[string]*dentry)
-	}
-	newParent.children[newName] = renamed
+		renamed.name = newName
+		replaced.name = oldName
+		newParent.children[newName] = renamed
+		oldParent.children[oldName] = replaced
 
-	// Update metadata.
-	if renamed.cachedMetadataAuthoritative() {
-		renamed.touchCtime()
-	}
-	if oldParent.cachedMetadataAuthoritative() {
-		oldParent.clearDirentsLocked()
-		oldParent.touchCMtime()
-		if renamed.isDir() {
-			oldParent.decLinks()
+		if renamed.cachedMetadataAuthoritative() {
+			renamed.touchCtime()
 		}
-	}
-	if newParent.cachedMetadataAuthoritative() {
-		newParent.clearDirentsLocked()
-		newParent.touchCMtime()
-		if renamed.isDir() && (replaced == nil || !replaced.isDir()) {
-			// Increase the link count if we did not replace another directory.
-			newParent.incLinks()
+		if replaced.cachedMetadataAuthoritative() {
+			replaced.touchCtime()
 		}
+		if oldParent.cachedMetadataAuthoritative() {
+			oldParent.clearDirentsLocked()
+			oldParent.touchCMtime()
+		}
+		if newParent.cachedMetadataAuthoritative() {
+			newParent.clearDirentsLocked()
+			newParent.touchCMtime()
+		}
+		vfs.InotifyRename(ctx, &renamed.watches, &oldParent.watches, &newParent.watches, oldName, newName, renamed.isDir())
+		vfs.InotifyRename(ctx, &replaced.watches, &newParent.watches, &oldParent.watches, newName, oldName, replaced.isDir())
+	} else {
+		vfsObj.CommitRenameReplaceDentry(ctx, &renamed.vfsd, replacedVFSD)
+		if replaced != nil {
+			replaced.setDeleted()
+			if replaced.isSynthetic() {
+				newParent.syntheticChildren--
+				replaced.decRefNoCaching()
+			}
+			ds = appendDentry(ds, replaced)
+		}
+		oldParent.cacheNegativeLookupLocked(oldName)
+		// We don't use newParent.cacheNewChildLocked() since we don't want to mess
+		// with reference counts and queue oldParent for checkCachingLocked if the
+		// parent isn't actually changing.
+		if oldParent != newParent {
+			oldParent.decRefNoCaching()
+			newParent.IncRef()
+			ds = appendDentry(ds, newParent)
+			ds = appendDentry(ds, oldParent)
+			if renamed.isSynthetic() {
+				oldParent.syntheticChildren--
+				newParent.syntheticChildren++
+			}
+			renamed.parent = newParent
+		}
+		renamed.name = newName
+		if newParent.children == nil {
+			newParent.children = make(map[string]*dentry)
+		}
+		newParent.children[newName] = renamed
+
+		// Update metadata.
+		if renamed.cachedMetadataAuthoritative() {
+			renamed.touchCtime()
+		}
+		if oldParent.cachedMetadataAuthoritative() {
+			oldParent.clearDirentsLocked()
+			oldParent.touchCMtime()
+			if renamed.isDir() {
+				oldParent.decLinks()
+			}
+		}
+		if newParent.cachedMetadataAuthoritative() {
+			newParent.clearDirentsLocked()
+			newParent.touchCMtime()
+			if renamed.isDir() && (replaced == nil || !replaced.isDir()) {
+				// Increase the link count if we did not replace another directory.
+				newParent.incLinks()
+			}
+		}
+		vfs.InotifyRename(ctx, &renamed.watches, &oldParent.watches, &newParent.watches, oldName, newName, renamed.isDir())
 	}
-	vfs.InotifyRename(ctx, &renamed.watches, &oldParent.watches, &newParent.watches, oldName, newName, renamed.isDir())
 	return nil
 }
 

@@ -78,6 +78,7 @@ var handlers = [...]RPCHandler{
 	BindAt:       BindAtHandler,
 	Listen:       ListenHandler,
 	Accept:       AcceptHandler,
+	RenameAt2:    RenameAtHandler2,
 }
 
 // ErrorHandler handles Error message.
@@ -1283,7 +1284,7 @@ func RenameAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint3
 		}
 
 		// Attempt the actual rename.
-		if err := oldDir.impl.RenameAt(oldName, newDir.impl, newName); err != nil {
+		if err := oldDir.impl.RenameAt2(oldName, newDir.impl, newName, 0); err != nil {
 			return err
 		}
 
@@ -1315,6 +1316,102 @@ func RenameAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint3
 			newDir.node.insertChildLocked(newName, renamed)
 			newDir.node.childrenMu.Unlock()
 
+			// Now update all FDs under the subtree rooted at renamed.
+			notifyRenameRecursive(renamed)
+		}
+		return nil
+	})
+}
+
+// RenameAtHandler2 handles the RenameAt2 RPC.
+func RenameAtHandler2(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
+	if c.readonly {
+		return 0, unix.EROFS
+	}
+	var req RenameAtReq2
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
+
+	oldName := string(req.OldName)
+	if err := checkSafeName(oldName); err != nil {
+		return 0, err
+	}
+	newName := string(req.NewName)
+	if err := checkSafeName(newName); err != nil {
+		return 0, err
+	}
+
+	oldDir, err := c.lookupControlFD(req.OldDir)
+	if err != nil {
+		return 0, err
+	}
+	defer oldDir.DecRef(nil)
+	newDir, err := c.lookupControlFD(req.NewDir)
+	if err != nil {
+		return 0, err
+	}
+	defer newDir.DecRef(nil)
+	flags := uint32(req.Flags)
+
+	if !oldDir.IsDir() || !newDir.IsDir() {
+		return 0, unix.ENOTDIR
+	}
+
+	// Hold RenameMu for writing during rename, this is important.
+	return 0, oldDir.safelyGlobal(func() error {
+		if oldDir.node.isDeleted() || newDir.node.isDeleted() {
+			return unix.EINVAL
+		}
+
+		if oldDir.node == newDir.node && oldName == newName {
+			// Nothing to do.
+			return nil
+		}
+
+		// Attempt the actual rename.
+		if err := oldDir.impl.RenameAt2(oldName, newDir.impl, newName, flags); err != nil {
+			return err
+		}
+
+		// Successful, so update the node tree. Note that since we have global
+		// concurrency guarantee here, the node tree can not be modified
+		// concurrently in any way.
+
+		// First see if a file was deleted by being replaced by the rename. If so,
+		// detach it from node tree and mark it as deleted.
+		newDir.node.childrenMu.Lock()
+		replaced := newDir.node.removeChildLocked(newName)
+		newDir.node.childrenMu.Unlock()
+		if replaced != nil && flags&linux.RENAME_EXCHANGE == 0 {
+			replaced.opMu.Lock()
+			replaced.markDeletedRecursive()
+			replaced.opMu.Unlock()
+		}
+
+		// Now move the renamed node to the right position.
+		oldDir.node.childrenMu.Lock()
+		renamed := oldDir.node.removeChildLocked(oldName)
+		oldDir.node.childrenMu.Unlock()
+		if renamed != nil {
+			renamed.parent.DecRef(nil)
+			renamed.parent = newDir.node
+			renamed.parent.IncRef()
+			renamed.name = newName
+			newDir.node.childrenMu.Lock()
+			newDir.node.insertChildLocked(newName, renamed)
+			newDir.node.childrenMu.Unlock()
+
+			if replaced != nil && flags&linux.RENAME_EXCHANGE != 0 {
+				replaced.parent.DecRef(nil)
+				replaced.parent = oldDir.node
+				replaced.parent.IncRef()
+				replaced.name = oldName
+				oldDir.node.childrenMu.Lock()
+				oldDir.node.insertChildLocked(oldName, replaced)
+				oldDir.node.childrenMu.Unlock()
+				notifyRenameRecursive(replaced)
+			}
 			// Now update all FDs under the subtree rooted at renamed.
 			notifyRenameRecursive(renamed)
 		}

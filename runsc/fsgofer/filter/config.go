@@ -169,6 +169,7 @@ var allowedSyscalls = seccomp.SyscallRules{
 		},
 	},
 	unix.SYS_RENAMEAT:        {},
+	unix.SYS_RENAMEAT2:       {},
 	unix.SYS_RESTART_SYSCALL: {},
 	// May be used by the runtime during panic().
 	unix.SYS_RT_SIGACTION:   {},

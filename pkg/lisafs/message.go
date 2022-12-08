@@ -172,6 +172,9 @@ const (
 
 	// Accept is analogous to accept4(2).
 	Accept MID = 31
+
+	// RenameAt2 is loosely analogous to renameat2(2).
+	RenameAt2 MID = 32
 )
 
 const (
@@ -1487,6 +1490,55 @@ func (r *RenameAtReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
 	if srcRemain, ok = r.NewName.CheckedUnmarshal(srcRemain); !ok {
 		return src, false
 	}
+	return srcRemain, true
+}
+
+// RenameAtReq2 is used to make RenameAt2 requests. Note that the request takes in
+// the to-be-renamed file's FD instead of oldDir and oldName like renameat2(2).
+type RenameAtReq2 struct {
+	OldDir  FDID
+	NewDir  FDID
+	OldName SizedString
+	NewName SizedString
+	Flags   primitive.Uint32
+}
+
+// String implements fmt.Stringer.String.
+func (r *RenameAtReq2) String() string {
+	return fmt.Sprintf("RenameAtReq{OldDir: %d, NewDir: %d, OldName: %s, NewName: %s, Flags: 0x%02x}", r.OldDir, r.NewDir, r.OldName, r.NewName, r.Flags)
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (r *RenameAtReq2) SizeBytes() int {
+	return r.OldDir.SizeBytes() + r.NewDir.SizeBytes() + r.OldName.SizeBytes() + r.NewName.SizeBytes() + r.Flags.SizeBytes()
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (r *RenameAtReq2) MarshalBytes(dst []byte) []byte {
+	dst = r.OldDir.MarshalUnsafe(dst)
+	dst = r.NewDir.MarshalUnsafe(dst)
+	dst = r.OldName.MarshalBytes(dst)
+	dst = r.NewName.MarshalBytes(dst)
+	return r.Flags.MarshalUnsafe(dst)
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (r *RenameAtReq2) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	r.OldName = ""
+	r.NewName = ""
+	if r.SizeBytes() > len(src) {
+		return src, false
+	}
+	srcRemain := r.OldDir.UnmarshalUnsafe(src)
+	srcRemain = r.NewDir.UnmarshalUnsafe(srcRemain)
+	var ok bool
+	if srcRemain, ok = r.OldName.CheckedUnmarshal(srcRemain); !ok {
+		return src, false
+	}
+	if srcRemain, ok = r.NewName.CheckedUnmarshal(srcRemain); !ok {
+		return src, false
+	}
+	srcRemain = r.Flags.UnmarshalUnsafe(srcRemain)
 	return srcRemain, true
 }
 

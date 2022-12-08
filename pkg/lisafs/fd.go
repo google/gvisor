@@ -501,13 +501,13 @@ type ControlFDImpl interface {
 	// On the server, UnlinkAt has a write concurrency guarantee.
 	Unlink(name string, flags uint32) error
 
-	// RenameAt renames a given file to a new name in a potentially new directory.
+	// RenameAt2 renames a given file to a new name in a potentially new directory.
 	//
 	// oldName must be a name relative to this file, which must be a directory.
 	// newName is a name relative to newDir.
 	//
-	// On the server, RenameAt has a global concurrency guarantee.
-	RenameAt(oldName string, newDir ControlFDImpl, newName string) error
+	// On the server, RenameAt2 has a global concurrency guarantee.
+	RenameAt2(oldName string, newDir ControlFDImpl, newName string, flags uint32) error
 
 	// Renamed is called to notify the FD implementation that the file has been
 	// renamed. FD implementation may update its state accordingly.

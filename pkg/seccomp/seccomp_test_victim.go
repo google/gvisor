@@ -76,6 +76,7 @@ func main() {
 		unix.SYS_READV:           {},
 		unix.SYS_RECVMSG:         {},
 		unix.SYS_RENAMEAT:        {},
+		unix.SYS_RENAMEAT2:       {},
 		unix.SYS_RESTART_SYSCALL: {},
 		unix.SYS_RT_SIGACTION:    {},
 		unix.SYS_RT_SIGPROCMASK:  {},

@@ -552,7 +552,7 @@ func testRename(ctx context.Context, t *testing.T, tester Tester, root lisafs.Cl
 	defer closeFD(ctx, t, tempDir)
 
 	// Move tempFile into tempDir.
-	if err := root.RenameAt(ctx, name, tempDir.ID(), "movedFile"); err != nil {
+	if err := root.RenameAt(ctx, name, tempDir.ID(), "movedFile", 0); err != nil {
 		t.Fatalf("rename failed: %v", err)
 	}
 
