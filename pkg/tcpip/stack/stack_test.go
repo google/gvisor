@@ -966,19 +966,16 @@ func TestRemoveUnknownNIC(t *testing.T) {
 
 func TestRemoveNIC(t *testing.T) {
 	for _, tt := range []struct {
-		name      string
-		linkep    stack.LinkEndpoint
-		expectErr tcpip.Error
+		name   string
+		linkep stack.LinkEndpoint
 	}{
 		{
-			name:      "loopback",
-			linkep:    loopback.New(),
-			expectErr: &tcpip.ErrNotSupported{},
+			name:   "loopback",
+			linkep: loopback.New(),
 		},
 		{
-			name:      "channel",
-			linkep:    channel.New(0, defaultMTU, ""),
-			expectErr: nil,
+			name:   "channel",
+			linkep: channel.New(0, defaultMTU, ""),
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1006,16 +1003,14 @@ func TestRemoveNIC(t *testing.T) {
 
 			// Removing a NIC should remove it from NICInfo and e should be detached from
 			// the NetworkDispatcher.
-			if got, want := s.RemoveNIC(nicID), tt.expectErr; got != want {
-				t.Fatalf("got s.RemoveNIC(%d) = %s, want %s", nicID, got, want)
+			if err := s.RemoveNIC(nicID); err != nil {
+				t.Fatalf("s.RemoveNIC(%d): %s", nicID, err)
 			}
-			if tt.expectErr == nil {
-				if nicInfo, ok := s.NICInfo()[nicID]; ok {
-					t.Errorf("got unexpected NICInfo entry for deleted NIC %d = %+v", nicID, nicInfo)
-				}
-				if e.isAttached() {
-					t.Error("link endpoint for removed NIC still attached to a network dispatcher")
-				}
+			if nicInfo, ok := s.NICInfo()[nicID]; ok {
+				t.Errorf("got unexpected NICInfo entry for deleted NIC %d = %+v", nicID, nicInfo)
+			}
+			if e.isAttached() {
+				t.Error("link endpoint for removed NIC still attached to a network dispatcher")
 			}
 		})
 	}
