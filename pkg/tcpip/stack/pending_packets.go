@@ -17,7 +17,6 @@ package stack
 import (
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
@@ -40,7 +39,7 @@ type packetsPendingLinkResolution struct {
 	nic *nic
 
 	mu struct {
-		sync.Mutex
+		packetsPendingLinkResolutionMutex
 
 		// The packets to send once the resolver completes.
 		//

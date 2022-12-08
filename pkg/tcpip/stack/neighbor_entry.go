@@ -16,7 +16,6 @@ package stack
 
 import (
 	"fmt"
-	"sync"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -97,7 +96,7 @@ type neighborEntry struct {
 	nudState *NUDState
 
 	mu struct {
-		sync.RWMutex
+		neighborEntryRWMutex
 
 		neigh NeighborEntry
 

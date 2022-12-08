@@ -17,7 +17,6 @@ package stack
 import (
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
@@ -48,7 +47,7 @@ type neighborCache struct {
 	linkRes LinkAddressResolver
 
 	mu struct {
-		sync.RWMutex
+		neighborCacheRWMutex
 
 		cache   map[tcpip.Address]*neighborEntry
 		dynamic struct {
