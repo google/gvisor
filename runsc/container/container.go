@@ -786,15 +786,19 @@ func createOverlayFilestore(overlay2 config.Overlay2) (*os.File, error) {
 	if !fileInfo.IsDir() {
 		return nil, fmt.Errorf("overlay2 flag should specify an existing directory")
 	}
-	// Create an unnamed temporary file in filestore directory using
-	// O_TMPFILE. This file will be deleted when the container exits.
-	// Also specify O_EXCL to prevent this file from being linked into the
-	// filesystem. See open(2) man page's section for O_TMPFILE for details.
-	unnamedTmpFD, err := unix.Open(overlay2.FilestoreDir, unix.O_TMPFILE|unix.O_RDWR|unix.O_EXCL, 0666)
+	// Create an unnamed temporary file in filestore directory which will be
+	// deleted when the last FD on it is closed. We don't use O_TMPFILE because
+	// it is not supported on all filesystems. So we simulate it by creating a
+	// named file and then immediately unlinking it while keeping an FD on it.
+	// This file will be deleted when the container exits.
+	filestoreFile, err := os.CreateTemp(overlay2.FilestoreDir, "runsc-overlay-filestore-*")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create an unnamed temporary file inside %q", overlay2.FilestoreDir)
+		return nil, fmt.Errorf("failed to create a temporary file inside %q: %v", overlay2.FilestoreDir, err)
 	}
-	return os.NewFile(uintptr(unnamedTmpFD), "overlay-filestore"), nil
+	if err := unix.Unlink(filestoreFile.Name()); err != nil {
+		return nil, fmt.Errorf("failed to unlink temporary file %q: %v", filestoreFile.Name(), err)
+	}
+	return filestoreFile, nil
 }
 
 // saveLocked saves the container metadata to a file.
