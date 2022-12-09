@@ -271,7 +271,6 @@ func (a *AddressableEndpointState) addAndAcquireAddressLocked(addr tcpip.Address
 		// We never promote an address to temporary - it can only be added as such.
 		// If we are actually adding a permanent address, it is promoted below.
 		addrState.kind = Temporary
-		addrState.disp = properties.Disp
 	}
 
 	// At this point we have an address we are either promoting from an expired or
@@ -295,6 +294,7 @@ func (a *AddressableEndpointState) addAndAcquireAddressLocked(addr tcpip.Address
 	lifetimes := properties.Lifetimes
 	lifetimes.sanitize()
 	addrState.lifetimes = lifetimes
+	addrState.disp = properties.Disp
 
 	if attemptAddToPrimary {
 		switch properties.PEB {
