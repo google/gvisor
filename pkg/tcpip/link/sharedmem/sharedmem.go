@@ -259,6 +259,10 @@ func (e *endpoint) Wait() {
 // Attach implements stack.LinkEndpoint.Attach. It launches the goroutine that
 // reads packets from the rx queue.
 func (e *endpoint) Attach(dispatcher stack.NetworkDispatcher) {
+	if dispatcher == nil {
+		e.Close()
+		return
+	}
 	e.mu.Lock()
 	if !e.workerStarted && e.stopRequested.Load() == 0 {
 		e.workerStarted = true

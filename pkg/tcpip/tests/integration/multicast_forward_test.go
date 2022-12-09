@@ -420,7 +420,7 @@ func TestAddMulticastRoute(t *testing.T) {
 				s := stack.New(stack.Options{
 					NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
 				})
-				defer s.Close()
+				defer s.Destroy()
 
 				endpoints := make(map[tcpip.NICID]*channel.Endpoint)
 				for nicID, addrType := range endpointConfigs {
@@ -550,7 +550,7 @@ func TestEnableMulticastForwardingE(t *testing.T) {
 					NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
 					TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 				})
-				defer s.Close()
+				defer s.Destroy()
 
 				for _, wantResult := range test.wantResult {
 					alreadyEnabled, err := s.EnableMulticastForwardingForProtocol(protocol, test.eventDispatcher)
@@ -641,7 +641,7 @@ func TestMulticastRouteLastUsedTime(t *testing.T) {
 					TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 					Clock:              clock,
 				})
-				defer s.Close()
+				defer s.Destroy()
 
 				if _, err := s.EnableMulticastForwardingForProtocol(protocol, &fakeMulticastEventDispatcher{}); err != nil {
 					t.Fatalf("s.EnableMulticastForwardingForProtocol(%d, _): (_, %s)", protocol, err)
@@ -797,7 +797,7 @@ func TestRemoveMulticastRoute(t *testing.T) {
 					NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
 					TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 				})
-				defer s.Close()
+				defer s.Destroy()
 
 				if _, err := s.EnableMulticastForwardingForProtocol(protocol, &fakeMulticastEventDispatcher{}); err != nil {
 					t.Fatalf("s.EnableMulticastForwardingForProtocol(%d, _): (_, %s)", protocol, err)
@@ -1039,7 +1039,7 @@ func TestMulticastForwarding(t *testing.T) {
 					NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
 					TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 				})
-				defer s.Close()
+				defer s.Destroy()
 
 				eventDispatcher, ok := eventDispatchers[protocol]
 				if !ok {

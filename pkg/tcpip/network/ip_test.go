@@ -637,6 +637,7 @@ func TestIPv4Send(t *testing.T) {
 	if err != nil {
 		t.Fatalf("could not find route: %v", err)
 	}
+	defer r.Release()
 	if err := ep.WritePacket(r, stack.NetworkHeaderParams{
 		Protocol: 123,
 		TTL:      123,
@@ -1091,6 +1092,7 @@ func TestIPv6Send(t *testing.T) {
 	if err != nil {
 		t.Fatalf("could not find route: %v", err)
 	}
+	defer r.Release()
 	if err := ep.WritePacket(r, stack.NetworkHeaderParams{
 		Protocol: 123,
 		TTL:      123,

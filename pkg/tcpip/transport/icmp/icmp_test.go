@@ -97,6 +97,7 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 		TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol4},
 		HandleLocal:        true,
 	})
+	defer s.Destroy()
 
 	// Add two NICs, both with default routes on the same subnet. The first NIC
 	// added will be the default NIC for that subnet.

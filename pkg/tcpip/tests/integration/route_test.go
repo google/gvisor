@@ -179,6 +179,7 @@ func TestLocalPing(t *testing.T) {
 						TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol4, icmp.NewProtocol6},
 						HandleLocal:        true,
 					})
+					defer s.Destroy()
 					e := test.linkEndpoint()
 					if err := s.CreateNIC(nicID, e); err != nil {
 						t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
@@ -301,6 +302,7 @@ func TestLocalUDP(t *testing.T) {
 					}
 
 					s := stack.New(stackOpts)
+					defer s.Destroy()
 					ep := channel.New(1, header.IPv6MinimumMTU, "")
 
 					if err := s.CreateNIC(nicID, ep); err != nil {

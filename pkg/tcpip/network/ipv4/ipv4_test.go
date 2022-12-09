@@ -2117,6 +2117,7 @@ func TestFragmentationWritePacket(t *testing.T) {
 			ep := iptestutil.NewMockLinkEndpoint(ft.mtu, nil, math.MaxInt32)
 			defer ep.Close()
 			r := buildRoute(t, ctx, ep)
+			defer r.Release()
 			pkt := iptestutil.MakeRandPkt(ft.transportHeaderLength, extraHeaderReserve+header.IPv4MinimumSize, []int{ft.payloadSize}, header.IPv4ProtocolNumber)
 			defer pkt.DecRef()
 			source := pkt.Clone()
@@ -2220,6 +2221,7 @@ func TestFragmentationErrors(t *testing.T) {
 			ep := iptestutil.NewMockLinkEndpoint(ft.mtu, ft.mockError, ft.allowPackets)
 			defer ep.Close()
 			r := buildRoute(t, ctx, ep)
+			defer r.Release()
 			pkt := iptestutil.MakeRandPkt(ft.transportHeaderLength, extraHeaderReserve+header.IPv4MinimumSize, []int{ft.payloadSize}, header.IPv4ProtocolNumber)
 			defer pkt.DecRef()
 			err := r.WritePacket(stack.NetworkHeaderParams{
@@ -3429,6 +3431,7 @@ func TestWriteStats(t *testing.T) {
 			ep := iptestutil.NewMockLinkEndpoint(header.IPv4MinimumMTU, &tcpip.ErrInvalidEndpointState{}, test.allowPackets)
 			defer ep.Close()
 			rt := buildRoute(t, ctx, ep)
+			defer rt.Release()
 
 			test.setup(t, rt.Stack())
 			nWritten := 0

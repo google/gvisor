@@ -353,7 +353,10 @@ var _ tcpip.EndpointWithPreflight = (*endpoint)(nil)
 // is specified, binds the endpoint to that address.
 func (e *endpoint) Preflight(opts tcpip.WriteOptions) tcpip.Error {
 	var r bytes.Reader
-	_, err := e.prepareForWrite(&r, opts)
+	udpInfo, err := e.prepareForWrite(&r, opts)
+	if err == nil {
+		udpInfo.ctx.Release()
+	}
 	return err
 }
 

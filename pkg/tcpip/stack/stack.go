@@ -1764,6 +1764,12 @@ func (s *Stack) Wait() {
 	}
 }
 
+// Destroy destroys the stack with all endpoints.
+func (s *Stack) Destroy() {
+	s.Close()
+	s.Wait()
+}
+
 // Pause pauses any protocol level background workers.
 func (s *Stack) Pause() {
 	for _, p := range s.transportProtocols {

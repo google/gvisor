@@ -2586,6 +2586,7 @@ func TestWriteStats(t *testing.T) {
 			defer ep.Close()
 
 			rt := buildRoute(t, c, ep)
+			defer rt.Release()
 			test.setup(t, rt.Stack())
 
 			nWritten := 0
@@ -2794,6 +2795,7 @@ func TestFragmentationWritePacket(t *testing.T) {
 			defer ep.Close()
 
 			r := buildRoute(t, c, ep)
+			defer r.Release()
 			err := r.WritePacket(stack.NetworkHeaderParams{
 				Protocol: tcp.ProtocolNumber,
 				TTL:      ttl,
@@ -2896,6 +2898,7 @@ func TestFragmentationErrors(t *testing.T) {
 			defer ep.Close()
 
 			r := buildRoute(t, c, ep)
+			defer r.Release()
 			err := r.WritePacket(stack.NetworkHeaderParams{
 				Protocol: tcp.ProtocolNumber,
 				TTL:      ttl,

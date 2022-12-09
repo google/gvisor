@@ -285,6 +285,7 @@ func TestCloseWithoutConnect(t *testing.T) {
 	}
 
 	c.EP.Close()
+	c.EP = nil
 
 	if got := c.Stack().Stats().TCP.CurrentConnected.Value(); got != 0 {
 		t.Errorf("got stats.TCP.CurrentConnected.Value() = %d, want = 0", got)
@@ -1576,6 +1577,7 @@ func TestListenerReadinessOnEvent(t *testing.T) {
 		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
 	})
+	defer s.Destroy()
 	{
 		ep := loopback.New()
 		if testing.Verbose() {
@@ -2428,6 +2430,7 @@ func TestSmallReceiveBufferReadiness(t *testing.T) {
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
 		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
 	})
+	defer s.Destroy()
 
 	ep := loopback.New()
 	if testing.Verbose() {
@@ -5322,6 +5325,7 @@ func TestDefaultBufferSizes(t *testing.T) {
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
 		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
 	})
+	defer s.Destroy()
 
 	// Check the default values.
 	ep, err := s.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &waiter.Queue{})
@@ -5385,6 +5389,7 @@ func TestBindToDeviceOption(t *testing.T) {
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
 		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol}})
 
+	defer s.Destroy()
 	ep, err := s.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &waiter.Queue{})
 	if err != nil {
 		t.Fatalf("NewEndpoint failed; %s", err)
@@ -5485,6 +5490,7 @@ func TestSelfConnect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer s.Destroy()
 
 	var wq waiter.Queue
 	ep, err := s.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &wq)
@@ -5589,6 +5595,7 @@ func TestConnectAvoidsBoundPorts(t *testing.T) {
 											if err != nil {
 												t.Fatal(err)
 											}
+											defer s.Destroy()
 
 											var wq waiter.Queue
 											var eps []tcpip.Endpoint
@@ -8862,6 +8869,7 @@ func TestHandshakeRTT(t *testing.T) {
 func TestSetRTO(t *testing.T) {
 	c := context.New(t, e2e.DefaultMTU)
 	minRTO, maxRTO := tcpRTOMinMax(t, c)
+	c.Cleanup()
 	for _, tt := range []struct {
 		name   string
 		RTO    time.Duration
@@ -8890,6 +8898,7 @@ func TestSetRTO(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			c := context.New(t, e2e.DefaultMTU)
+			defer c.Cleanup()
 			var opt tcpip.SettableTransportProtocolOption
 			if tt.minRTO > 0 {
 				min := tcpip.TCPMinRTOOption(tt.minRTO)

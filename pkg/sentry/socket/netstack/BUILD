@@ -26,6 +26,7 @@ go_library(
         "//pkg/marshal",
         "//pkg/marshal/primitive",
         "//pkg/metric",
+        "//pkg/refs",
         "//pkg/sentry/arch",
         "//pkg/sentry/device",
         "//pkg/sentry/fsimpl/sockfs",

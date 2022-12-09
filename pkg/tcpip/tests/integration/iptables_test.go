@@ -331,6 +331,7 @@ func TestIPTablesStatsForInput(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			s, e := test.setupStack(t)
+			defer s.Destroy()
 			test.setupFilter(t, s)
 			e.InjectInbound(test.proto, test.genPacket())
 
@@ -588,6 +589,7 @@ func TestIPTableWritePackets(t *testing.T) {
 				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
 				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 			})
+			defer s.Destroy()
 			e := channelEndpoint{
 				Endpoint: channel.New(4, header.IPv6MinimumMTU, linkAddr),
 				t:        t,
@@ -843,6 +845,7 @@ func TestForwardingHook(t *testing.T) {
 					s := stack.New(stack.Options{
 						NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
 					})
+					defer s.Destroy()
 
 					subTest.setupFilter(t, s, test.netProto)
 
@@ -1062,6 +1065,7 @@ func TestFilteringEchoPacketsWithLocalForwarding(t *testing.T) {
 					s := stack.New(stack.Options{
 						NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
 					})
+					defer s.Destroy()
 
 					subTest.setupFilter(t, s, test.netProto)
 
@@ -1523,6 +1527,7 @@ func TestNATEcho(t *testing.T) {
 								NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
 								TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol4, icmp.NewProtocol6},
 							})
+							defer s.Destroy()
 
 							ep1 := channel.New(1, header.IPv6MinimumMTU, "")
 							ep2 := channel.New(1, header.IPv6MinimumMTU, "")
@@ -1904,8 +1909,11 @@ func TestNAT(t *testing.T) {
 							}
 
 							host1Stack := stack.New(stackOpts)
+							defer host1Stack.Destroy()
 							routerStack := stack.New(stackOpts)
+							defer routerStack.Destroy()
 							host2Stack := stack.New(stackOpts)
+							defer host2Stack.Destroy()
 							utils.SetupRoutedStacks(t, host1Stack, routerStack, host2Stack)
 
 							epsAndAddrs := test.epAndAddrs(t, host1Stack, routerStack, host2Stack, subTest.proto)
@@ -2455,6 +2463,7 @@ func TestNATICMPError(t *testing.T) {
 										NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
 										TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol, tcp.NewProtocol},
 									})
+									defer s.Destroy()
 
 									ep1 := channel.New(1, header.IPv6MinimumMTU, "")
 									ep2 := channel.New(1, header.IPv6MinimumMTU, "")
@@ -2833,6 +2842,7 @@ func TestSNATHandlePortOrIdentConflicts(t *testing.T) {
 												NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
 												TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol, tcp.NewProtocol},
 											})
+											defer s.Destroy()
 
 											ep1 := channel.New(1, header.IPv6MinimumMTU, "")
 											ep2 := channel.New(1, header.IPv6MinimumMTU, "")
@@ -2941,6 +2951,7 @@ func TestLocallyRoutedPackets(t *testing.T) {
 				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
 				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 			})
+			defer s.Destroy()
 
 			if err := s.CreateNIC(nicID, loopback.New()); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
@@ -3274,6 +3285,7 @@ func TestRejectWith(t *testing.T) {
 								NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
 								TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol, tcp.NewProtocol},
 							})
+							defer s.Destroy()
 
 							ep1 := channel.New(1, header.IPv6MinimumMTU, "")
 							ep2 := channel.New(1, header.IPv6MinimumMTU, "")

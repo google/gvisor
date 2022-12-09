@@ -235,8 +235,11 @@ func TestForwarding(t *testing.T) {
 					}
 
 					host1Stack := stack.New(stackOpts)
+					defer host1Stack.Destroy()
 					routerStack := stack.New(stackOpts)
+					defer routerStack.Destroy()
 					host2Stack := stack.New(stackOpts)
+					defer host2Stack.Destroy()
 					utils.SetupRoutedStacks(t, host1Stack, routerStack, host2Stack)
 
 					epsAndAddrs := test.epAndAddrs(t, host1Stack, routerStack, host2Stack, subTest.proto)

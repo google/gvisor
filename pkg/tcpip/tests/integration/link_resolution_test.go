@@ -160,7 +160,9 @@ func TestPing(t *testing.T) {
 				TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol4, icmp.NewProtocol6},
 			}
 
-			host1Stack, _ := setupStack(t, stackOpts, host1NICID, host2NICID)
+			host1Stack, host2Stack := setupStack(t, stackOpts, host1NICID, host2NICID)
+			defer host1Stack.Destroy()
+			defer host2Stack.Destroy()
 
 			var wq waiter.Queue
 			we, waiterCH := waiter.NewChannelEntry(waiter.ReadableEvents)
@@ -304,6 +306,8 @@ func TestTCPLinkResolutionFailure(t *testing.T) {
 			}
 
 			host1Stack, host2Stack := setupStack(t, stackOpts, host1NICID, host2NICID)
+			defer host1Stack.Destroy()
+			defer host2Stack.Destroy()
 
 			var listenerWQ waiter.Queue
 			listenerEP, err := host2Stack.NewEndpoint(tcp.ProtocolNumber, test.netProto, &listenerWQ)
@@ -571,6 +575,7 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 				TransportProtocols: []stack.TransportProtocolFactory{test.transportProtocol},
 				Clock:              clock,
 			})
+			defer s.Destroy()
 
 			// Set up endpoint through which we will receive packets.
 			incomingEndpoint := channel.New(1, test.mtu, "")
@@ -724,7 +729,9 @@ func TestGetLinkAddress(t *testing.T) {
 				Clock:            clock,
 			}
 
-			host1Stack, _ := setupStack(t, stackOpts, host1NICID, host2NICID)
+			host1Stack, host2Stack := setupStack(t, stackOpts, host1NICID, host2NICID)
+			defer host1Stack.Destroy()
+			defer host2Stack.Destroy()
 
 			ch := make(chan stack.LinkResolutionResult, 1)
 			err := host1Stack.GetLinkAddress(host1NICID, test.remoteAddr, test.localAddr, test.netProto, func(r stack.LinkResolutionResult) {
@@ -833,7 +840,9 @@ func TestRouteResolvedFields(t *testing.T) {
 				Clock:            clock,
 			}
 
-			host1Stack, _ := setupStack(t, stackOpts, host1NICID, host2NICID)
+			host1Stack, host2Stack := setupStack(t, stackOpts, host1NICID, host2NICID)
+			defer host1Stack.Destroy()
+			defer host2Stack.Destroy()
 			r, err := host1Stack.FindRoute(host1NICID, test.localAddr, test.remoteAddr, test.netProto, false /* multicastLoop */)
 			if err != nil {
 				t.Fatalf("host1Stack.FindRoute(%d, %s, %s, %d, false): %s", host1NICID, test.localAddr, test.remoteAddr, test.netProto, err)
@@ -935,6 +944,8 @@ func TestWritePacketsLinkResolution(t *testing.T) {
 			}
 
 			host1Stack, host2Stack := setupStack(t, stackOpts, host1NICID, host2NICID)
+			defer host1Stack.Destroy()
+			defer host2Stack.Destroy()
 
 			var serverWQ waiter.Queue
 			serverWE, serverCH := waiter.NewChannelEntry(waiter.ReadableEvents)
@@ -1333,8 +1344,11 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 			host1StackOpts.NUDDisp = &nudDisp
 
 			host1Stack := stack.New(host1StackOpts)
+			defer host1Stack.Destroy()
 			routerStack := stack.New(stackOpts)
+			defer routerStack.Destroy()
 			host2Stack := stack.New(stackOpts)
+			defer host2Stack.Destroy()
 			utils.SetupRoutedStacks(t, host1Stack, routerStack, host2Stack)
 
 			// Add a reachable dynamic entry to our neighbor table for the remote.
@@ -1592,7 +1606,9 @@ func TestDAD(t *testing.T) {
 				},
 			}
 
-			host1Stack, _ := setupStack(t, stackOpts, utils.Host1NICID, utils.Host2NICID)
+			host1Stack, host2Stack := setupStack(t, stackOpts, utils.Host1NICID, utils.Host2NICID)
+			defer host1Stack.Destroy()
+			defer host2Stack.Destroy()
 
 			// DAD should be disabled by default.
 			if res, err := host1Stack.CheckDuplicateAddress(utils.Host1NICID, test.netProto, test.remoteAddr, func(r stack.DADResult) {
@@ -1753,6 +1769,8 @@ func TestUpdateCachedNeighborEntry(t *testing.T) {
 
 	host1Stack := stack.New(stackOpts)
 	host2Stack := stack.New(stackOpts)
+	defer host1Stack.Destroy()
+	defer host2Stack.Destroy()
 
 	host1Pipe, host2Pipe := pipe.New(utils.LinkAddr1, utils.LinkAddr2, maxFrameSize)
 

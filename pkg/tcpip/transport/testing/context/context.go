@@ -156,6 +156,8 @@ func (c *Context) Cleanup() {
 	if c.EP != nil {
 		c.EP.Close()
 	}
+	c.Stack.Destroy()
+	c.Stack = nil
 	refs.DoRepeatedLeakCheck()
 }
 
