@@ -60,3 +60,47 @@ func TestAddressableEndpointStateCleanup(t *testing.T) {
 		t.Fatalf("got s.AcquireAssignedAddress(%s, false, NeverPrimaryEndpoint) = %s, want = nil", addr.Address, ep.AddressWithPrefix())
 	}
 }
+
+func TestAddressDispatcherExpiredToAssigned(t *testing.T) {
+	var networkEp fakeNetworkEndpoint
+	if err := networkEp.Enable(); err != nil {
+		t.Fatalf("ep.Enable(): %s", err)
+	}
+
+	var s stack.AddressableEndpointState
+	s.Init(&networkEp, stack.AddressableEndpointStateOptions{HiddenWhileDisabled: false})
+
+	addr := tcpip.AddressWithPrefix{
+		Address:   "\x01",
+		PrefixLen: 8,
+	}
+
+	ep, err := s.AddAndAcquirePermanentAddress(addr, stack.AddressProperties{})
+	if err != nil {
+		t.Fatalf("s.AddAndAcquirePermanentAddress(%s, {}): %s", addr, err)
+	}
+	defer ep.DecRef()
+	if !ep.IncRef() {
+		t.Fatalf("failed to increase ref count of address endpoint")
+	}
+
+	if err := s.RemovePermanentEndpoint(ep, stack.AddressRemovalManualAction); err != nil {
+		ep.DecRef()
+		t.Fatalf("s.RemovePermanentEndpoint(ep, stack.AddressRemovalManualAction): %s", err)
+	}
+
+	addrDisp := &addressDispatcher{
+		changedCh: make(chan addressChangedEvent, 1),
+		removedCh: make(chan stack.AddressRemovalReason, 1),
+		addr:      addr,
+	}
+	properties := stack.AddressProperties{Disp: addrDisp}
+	readdedEp, err := s.AddAndAcquirePermanentAddress(addr, properties)
+	if err != nil {
+		t.Fatalf("s.AddAndAcquirePermanentAddress(%s, %+v): %s", addr, properties, err)
+	}
+	defer readdedEp.DecRef()
+	if err := addrDisp.expectChanged(stack.AddressLifetimes{}, stack.AddressAssigned); err != nil {
+		t.Fatalf("expect to observe address added: %s", err)
+	}
+}
