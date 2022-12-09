@@ -648,6 +648,7 @@ func (e *Endpoint) ConnectAndThen(addr tcpip.FullAddress, f func(netProto tcpip.
 	}
 
 	if err := f(r.NetProto(), info.ID, id); err != nil {
+		r.Release()
 		return err
 	}
 

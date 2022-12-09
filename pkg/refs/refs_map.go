@@ -145,7 +145,11 @@ type leakCheckDisabled interface {
 	LeakCheckDisabled() bool
 }
 
+// CleanupSync is used to wait for async cleanup actions.
+var CleanupSync sync.WaitGroup
+
 func doLeakCheck() {
+	CleanupSync.Wait()
 	liveObjectsMu.Lock()
 	defer liveObjectsMu.Unlock()
 	leaked := len(liveObjects)

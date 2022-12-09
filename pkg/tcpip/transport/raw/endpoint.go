@@ -345,6 +345,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 	if err != nil {
 		return 0, err
 	}
+	defer ctx.Release()
 
 	if p.Len() > int(ctx.MTU()) {
 		return 0, &tcpip.ErrMessageTooLong{}

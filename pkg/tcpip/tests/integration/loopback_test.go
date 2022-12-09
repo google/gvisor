@@ -85,6 +85,7 @@ func TestInitialLoopbackAddresses(t *testing.T) {
 			},
 		})},
 	})
+	defer s.Destroy()
 
 	if err := s.CreateNIC(nicID, loopback.New()); err != nil {
 		t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
@@ -193,6 +194,7 @@ func TestLoopbackAcceptAllInSubnetUDP(t *testing.T) {
 				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
 				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 			})
+			defer s.Destroy()
 			if err := s.CreateNIC(nicID, loopback.New()); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
 			}
@@ -288,6 +290,7 @@ func TestLoopbackSubnetLifetimeBoundToAddr(t *testing.T) {
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol},
 	})
+	defer s.Destroy()
 	if err := s.CreateNIC(nicID, loopback.New()); err != nil {
 		t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
 	}
@@ -429,6 +432,7 @@ func TestLoopbackAcceptAllInSubnetTCP(t *testing.T) {
 				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
 				TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
 			})
+			defer s.Destroy()
 			if err := s.CreateNIC(nicID, loopback.New()); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
 			}
@@ -690,6 +694,7 @@ func TestExternalLoopbackTraffic(t *testing.T) {
 				},
 				TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol4, icmp.NewProtocol6},
 			})
+			defer s.Destroy()
 			e := channel.New(1, header.IPv6MinimumMTU, "")
 			if err := s.CreateNIC(nicID1, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", nicID1, err)

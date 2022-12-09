@@ -93,9 +93,9 @@ type testContext struct {
 
 func (ctx *testContext) cleanup() {
 	ctx.localServerListener.Close()
-	ctx.localStack.Close()
+	ctx.localStack.Destroy()
 	ctx.remoteServerListener.Close()
-	ctx.remoteStack.Close()
+	ctx.remoteStack.Destroy()
 	ctx.wg.Wait()
 }
 
@@ -120,7 +120,6 @@ func newTestContext(t *testing.T) *testContext {
 		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
 		HandleLocal:        true,
 	})
-
 	remoteStack := stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
 		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},

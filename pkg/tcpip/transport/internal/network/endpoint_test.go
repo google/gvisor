@@ -122,6 +122,7 @@ func TestEndpointStateTransitions(t *testing.T) {
 				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 				Clock:              &faketime.NullClock{},
 			})
+			defer s.Destroy()
 			e := channel.New(1, header.IPv6MinimumMTU, "")
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
@@ -271,6 +272,7 @@ func TestBindNICID(t *testing.T) {
 						TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 						Clock:              &faketime.NullClock{},
 					})
+					defer s.Destroy()
 					if err := s.CreateNIC(nicID, loopback.New()); err != nil {
 						t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
 					}
