@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -41,6 +42,11 @@ type Stack struct {
 // Destroy implements inet.Stack.Destroy.
 func (s *Stack) Destroy() {
 	s.Stack.Close()
+	refs.CleanupSync.Add(1)
+	go func() {
+		s.Stack.Wait()
+		refs.CleanupSync.Done()
+	}()
 }
 
 // SupportsIPv6 implements Stack.SupportsIPv6.

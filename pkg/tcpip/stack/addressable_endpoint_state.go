@@ -684,12 +684,6 @@ func (a *AddressableEndpointState) Cleanup() {
 	}
 }
 
-// LeakCheckDisabled suppress reference leak warnings.
-// FIXME(b/261201456): Re-enable after fixing the bug.
-func (obj *addressStateRefs) LeakCheckDisabled() bool {
-	return true
-}
-
 var _ AddressEndpoint = (*addressState)(nil)
 
 // addressState holds state for an address.
