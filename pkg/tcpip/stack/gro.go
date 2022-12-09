@@ -213,23 +213,26 @@ func (pk *groPacket) payloadSize() uint16 {
 	return pk.ipHdr.TotalLength() - header.IPv4MinimumSize - uint16(pk.tcpHdr.DataOffset())
 }
 
+// Values held in groDispatcher.flushTimerState.
+const (
+	flushTimerUnset = iota
+	flushTimerSet
+	flushTimerClosed
+)
+
 // groDispatcher coalesces incoming packets to increase throughput.
 type groDispatcher struct {
-	// newInterval notifies about changes to the interval.
-	newInterval chan struct{}
 	// intervalNS is the interval in nanoseconds.
 	intervalNS atomicbitops.Int64
-	// stop instructs the GRO dispatcher goroutine to stop.
-	stop chan struct{}
 
 	buckets [groNBuckets]groBucket
-	wg      sync.WaitGroup
+
+	flushTimerState atomicbitops.Int32
+	flushTimer      *time.Timer
 }
 
 func (gd *groDispatcher) init(interval time.Duration) {
 	gd.intervalNS.Store(interval.Nanoseconds())
-	gd.newInterval = make(chan struct{}, 1)
-	gd.stop = make(chan struct{})
 
 	for i := range gd.buckets {
 		bucket := &gd.buckets[i]
@@ -241,44 +244,25 @@ func (gd *groDispatcher) init(interval time.Duration) {
 		bucket.mu.Unlock()
 	}
 
-	gd.start(interval)
-}
-
-// start spawns a goroutine that flushes the GRO periodically based on the
-// interval.
-func (gd *groDispatcher) start(interval time.Duration) {
-	gd.wg.Add(1)
-
-	go func(interval time.Duration) {
-		defer gd.wg.Done()
-
-		var ch <-chan time.Time
-		if interval == 0 {
-			// Never run.
-			ch = make(<-chan time.Time)
-		} else {
-			ticker := time.NewTicker(interval)
-			ch = ticker.C
+	// Create a timer to fire far from now and cancel it immediately.
+	//
+	// The timer will be reset when there is a need for it to fire.
+	gd.flushTimer = time.AfterFunc(time.Hour, func() {
+		if !gd.flushTimerState.CompareAndSwap(flushTimerSet, flushTimerUnset) {
+			// Timer was unset or GRO is closed, do nothing further.
+			return
 		}
-		for {
-			select {
-			case <-gd.newInterval:
-				interval = time.Duration(gd.intervalNS.Load()) * time.Nanosecond
-				if interval == 0 {
-					// Never run. Flush any existing GRO packets.
-					gd.flushAll()
-					ch = make(<-chan time.Time)
-				} else {
-					ticker := time.NewTicker(interval)
-					ch = ticker.C
-				}
-			case <-ch:
-				gd.flush()
-			case <-gd.stop:
-				return
-			}
+
+		if interval := gd.getInterval(); interval == 0 {
+			gd.flushAll()
+		} else if gd.flush() && gd.flushTimerState.CompareAndSwap(flushTimerUnset, flushTimerSet) {
+			// Only reset the timer if we have more packets and the timer was
+			// previously unset. If we have no packets left, the timer is already set
+			// or GRO is being closed, do not reset the timer.
+			gd.flushTimer.Reset(interval)
 		}
-	}(interval)
+	})
+	gd.flushTimer.Stop()
 }
 
 func (gd *groDispatcher) getInterval() time.Duration {
@@ -287,13 +271,18 @@ func (gd *groDispatcher) getInterval() time.Duration {
 
 func (gd *groDispatcher) setInterval(interval time.Duration) {
 	gd.intervalNS.Store(interval.Nanoseconds())
-	gd.newInterval <- struct{}{}
+
+	if gd.flushTimerState.Load() == flushTimerSet {
+		// Timer was previously set, reset it.
+		gd.flushTimer.Reset(interval)
+	}
 }
 
 // dispatch sends pkt up the stack after it undergoes GRO coalescing.
 func (gd *groDispatcher) dispatch(pkt PacketBufferPtr, netProto tcpip.NetworkProtocolNumber, ep NetworkEndpoint) {
 	// If GRO is disabled simply pass the packet along.
-	if gd.intervalNS.Load() == 0 {
+	interval := gd.getInterval()
+	if interval == 0 {
 		ep.HandlePacket(pkt)
 		return
 	}
@@ -437,6 +426,11 @@ func (gd *groDispatcher) dispatch(pkt PacketBufferPtr, netProto tcpip.NetworkPro
 		// A merge occurred and we don't need to flush anything.
 		bucket.mu.Unlock()
 	}
+
+	// Schedule a timer if we never had one set before.
+	if gd.flushTimerState.CompareAndSwap(flushTimerUnset, flushTimerSet) {
+		gd.flushTimer.Reset(interval)
+	}
 }
 
 func (gd *groDispatcher) bucketForPacket(ipHdr header.IPv4, tcpHdr header.TCP) int {
@@ -455,17 +449,25 @@ func (gd *groDispatcher) bucketForPacket(ipHdr header.IPv4, tcpHdr header.TCP) i
 }
 
 // flush sends any packets older than interval up the stack.
-func (gd *groDispatcher) flush() {
+//
+// Returns true iff packets remain.
+func (gd *groDispatcher) flush() bool {
 	interval := gd.intervalNS.Load()
 	old := time.Now().Add(-time.Duration(interval) * time.Nanosecond)
-	gd.flushSince(old)
+	return gd.flushSinceOrEqualTo(old)
 }
 
-func (gd *groDispatcher) flushSince(old time.Time) {
+// flushSinceOrEqualTo sends any packets older than or equal to the specified
+// time.
+//
+// Returns true iff packets remain.
+func (gd *groDispatcher) flushSinceOrEqualTo(old time.Time) bool {
 	type pair struct {
 		pkt PacketBufferPtr
 		ep  NetworkEndpoint
 	}
+
+	hasMore := false
 
 	for i := range gd.buckets {
 		// Put packets in a slice so we don't have to hold bucket.mu
@@ -476,13 +478,14 @@ func (gd *groDispatcher) flushSince(old time.Time) {
 		bucket := &gd.buckets[i]
 		bucket.mu.Lock()
 		for groPkt := bucket.packets.Front(); groPkt != nil; groPkt = groPkt.Next() {
-			if groPkt.created.Before(old) {
-				pairs = append(pairs, pair{groPkt.pkt, groPkt.ep})
-				bucket.removeOne(groPkt)
-			} else {
+			if groPkt.created.After(old) {
 				// Packets are ordered by age, so we can move
 				// on once we find one that's too new.
+				hasMore = true
 				break
+			} else {
+				pairs = append(pairs, pair{groPkt.pkt, groPkt.ep})
+				bucket.removeOne(groPkt)
 			}
 		}
 		bucket.mu.Unlock()
@@ -492,16 +495,21 @@ func (gd *groDispatcher) flushSince(old time.Time) {
 			pair.pkt.DecRef()
 		}
 	}
+
+	return hasMore
 }
 
 func (gd *groDispatcher) flushAll() {
-	gd.flushSince(time.Now())
+	if gd.flushSinceOrEqualTo(time.Now()) {
+		panic("packets unexpectedly remain after flushing all")
+	}
 }
 
 // close stops the GRO goroutine and releases any held packets.
 func (gd *groDispatcher) close() {
-	gd.stop <- struct{}{}
-	gd.wg.Wait()
+	gd.flushTimer.Stop()
+	// Prevent the timer from being scheduled again.
+	gd.flushTimerState.Store(flushTimerClosed)
 
 	for i := range gd.buckets {
 		bucket := &gd.buckets[i]
