@@ -792,7 +792,7 @@ func createOverlayFilestore(overlay2 config.Overlay2) (*os.File, error) {
 	// filesystem. See open(2) man page's section for O_TMPFILE for details.
 	unnamedTmpFD, err := unix.Open(overlay2.FilestoreDir, unix.O_TMPFILE|unix.O_RDWR|unix.O_EXCL, 0666)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create an unnamed temporary file inside %q", overlay2.FilestoreDir)
+		return nil, fmt.Errorf("failed to create an unnamed temporary file inside %q: %v", overlay2.FilestoreDir, err)
 	}
 	return os.NewFile(uintptr(unnamedTmpFD), "overlay-filestore"), nil
 }
