@@ -24,6 +24,17 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
+// NullTimer implements a timer that never fires.
+type NullTimer struct{}
+
+var _ tcpip.Timer = (*NullTimer)(nil)
+
+// Stop implements tcpip.Timer.
+func (*NullTimer) Stop() bool { return true }
+
+// Reset implements tcpip.Timer.
+func (*NullTimer) Reset(time.Duration) {}
+
 // NullClock implements a clock that never advances.
 type NullClock struct{}
 
@@ -41,7 +52,7 @@ func (*NullClock) NowMonotonic() tcpip.MonotonicTime {
 
 // AfterFunc implements tcpip.Clock.AfterFunc.
 func (*NullClock) AfterFunc(time.Duration, func()) tcpip.Timer {
-	return nil
+	return &NullTimer{}
 }
 
 type notificationChannels struct {
