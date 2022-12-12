@@ -34,10 +34,10 @@ func (d *dentry) collectWhiteoutsForRmdirLocked(ctx context.Context) (map[string
 	var readdirErr error
 	whiteouts := make(map[string]bool)
 	var maybeWhiteouts []string
-	d.iterLayers(func(layerVD vfs.VirtualDentry, isUpper bool) bool {
+	d.iterLayers(func(ld layerDentry, isUpper bool) bool {
 		layerFD, err := vfsObj.OpenAt(ctx, d.fs.creds, &vfs.PathOperation{
-			Root:  layerVD,
-			Start: layerVD,
+			Root:  ld.vd,
+			Start: ld.vd,
 		}, &vfs.OpenOptions{
 			Flags: linux.O_RDONLY | linux.O_DIRECTORY,
 		})
@@ -75,8 +75,8 @@ func (d *dentry) collectWhiteoutsForRmdirLocked(ctx context.Context) (map[string
 
 		for _, maybeWhiteoutName := range maybeWhiteouts {
 			stat, err := vfsObj.StatAt(ctx, d.fs.creds, &vfs.PathOperation{
-				Root:  layerVD,
-				Start: layerVD,
+				Root:  ld.vd,
+				Start: ld.vd,
 				Path:  fspath.Parse(maybeWhiteoutName),
 			}, &vfs.StatOptions{})
 			if err != nil {
@@ -144,6 +144,11 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 	return d.getDirentsLocked(ctx)
 }
 
+type direntInfo struct {
+	dirent  vfs.Dirent
+	merging bool
+}
+
 // Preconditions:
 //   - filesystem.renameMu must be locked.
 //   - d.dirMu must be locked.
@@ -172,12 +177,12 @@ func (d *dentry) getDirentsLocked(ctx context.Context) ([]vfs.Dirent, error) {
 	// Merge dirents from all layers comprising this directory.
 	vfsObj := d.fs.vfsfs.VirtualFilesystem()
 	var readdirErr error
-	prevDirents := make(map[string]struct{})
+	prevDirents := make(map[string]direntInfo)
 	var maybeWhiteouts []vfs.Dirent
-	d.iterLayers(func(layerVD vfs.VirtualDentry, isUpper bool) bool {
+	d.iterLayers(func(ld layerDentry, isUpper bool) bool {
 		layerFD, err := vfsObj.OpenAt(ctx, d.fs.creds, &vfs.PathOperation{
-			Root:  layerVD,
-			Start: layerVD,
+			Root:  ld.vd,
+			Start: ld.vd,
 		}, &vfs.OpenOptions{
 			Flags: linux.O_RDONLY | linux.O_DIRECTORY,
 		})
@@ -194,20 +199,35 @@ func (d *dentry) getDirentsLocked(ctx context.Context) ([]vfs.Dirent, error) {
 			if dirent.Name == "." || dirent.Name == ".." {
 				return nil
 			}
-			if _, ok := prevDirents[dirent.Name]; ok {
-				// This file is hidden by, or merged with, another file with
-				// the same name in a previous layer.
+			if dirent.Type == linux.DT_DIR {
+				// Re-calculate directory inode number using the lowest layer's
+				// device IDs.
+				dirent.Ino = d.fs.newDirIno(ld.realDevMajor, ld.realDevMinor, dirent.Ino)
+			}
+			if di, ok := prevDirents[dirent.Name]; ok {
+				if di.dirent.Type != linux.DT_DIR || !di.merging {
+					// This file is hidden by another file with the same name in a previous
+					// layer.
+					return nil
+				}
+				// We are still merging this directory from lower layers.
+				if dirent.Type == linux.DT_DIR {
+					di.dirent.Ino = dirent.Ino
+				} else {
+					// Can only merge with directories. Any further directories with the
+					// same name from lower layers can not merge.
+					di.merging = false
+				}
+				prevDirents[dirent.Name] = di
 				return nil
 			}
-			prevDirents[dirent.Name] = struct{}{}
+			prevDirents[dirent.Name] = direntInfo{dirent, true}
 			if dirent.Type == linux.DT_CHR {
 				// We can't determine if this file is a whiteout while holding
 				// locks held by layerFD.IterDirents().
 				maybeWhiteouts = append(maybeWhiteouts, dirent)
 				return nil
 			}
-			dirent.NextOff = int64(len(dirents) + 1)
-			dirents = append(dirents, dirent)
 			return nil
 		}))
 		if err != nil {
@@ -217,8 +237,8 @@ func (d *dentry) getDirentsLocked(ctx context.Context) ([]vfs.Dirent, error) {
 
 		for _, dirent := range maybeWhiteouts {
 			stat, err := vfsObj.StatAt(ctx, d.fs.creds, &vfs.PathOperation{
-				Root:  layerVD,
-				Start: layerVD,
+				Root:  ld.vd,
+				Start: ld.vd,
 				Path:  fspath.Parse(dirent.Name),
 			}, &vfs.StatOptions{})
 			if err != nil {
@@ -236,6 +256,15 @@ func (d *dentry) getDirentsLocked(ctx context.Context) ([]vfs.Dirent, error) {
 	})
 	if readdirErr != nil {
 		return nil, readdirErr
+	}
+
+	for _, di := range prevDirents {
+		if di.dirent.Type == linux.DT_CHR {
+			// This dirent is part of maybeWhiteouts. Handled above.
+			continue
+		}
+		di.dirent.NextOff = int64(len(dirents) + 1)
+		dirents = append(dirents, di.dirent)
 	}
 
 	// Cache dirents for future directoryFDs.
@@ -283,8 +312,8 @@ func (fd *directoryFD) Sync(ctx context.Context) error {
 	}
 	vfsObj := d.fs.vfsfs.VirtualFilesystem()
 	pop := vfs.PathOperation{
-		Root:  d.upperVD,
-		Start: d.upperVD,
+		Root:  d.upper.vd,
+		Start: d.upper.vd,
 	}
 	upperFD, err := vfsObj.OpenAt(ctx, d.fs.creds, &pop, &vfs.OpenOptions{Flags: linux.O_RDONLY | linux.O_DIRECTORY})
 	if err != nil {

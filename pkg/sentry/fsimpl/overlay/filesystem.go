@@ -215,10 +215,10 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 	var lookupErr error
 
 	vfsObj := fs.vfsfs.VirtualFilesystem()
-	parent.iterLayers(func(parentVD vfs.VirtualDentry, isUpper bool) bool {
+	parent.iterLayers(func(parentLD layerDentry, isUpper bool) bool {
 		childVD, err := vfsObj.GetDentryAt(ctx, fs.creds, &vfs.PathOperation{
-			Root:  parentVD,
-			Start: parentVD,
+			Root:  parentLD.vd,
+			Start: parentLD.vd,
 			Path:  childPath,
 		}, &vfs.GetDentryOptions{})
 		if linuxerr.Equals(linuxerr.ENOENT, err) || linuxerr.Equals(linuxerr.ENAMETOOLONG, err) {
@@ -272,11 +272,16 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 
 		// Update child to include this layer.
 		childVD.IncRef()
+		ld := layerDentry{
+			vd:           childVD,
+			realDevMinor: stat.DevMinor,
+			realDevMajor: stat.DevMajor,
+		}
 		if isUpper {
-			child.upperVD = childVD
+			child.upper = ld
 			child.copiedUp = atomicbitops.FromUint32(1)
 		} else {
-			child.lowerVDs = append(child.lowerVDs, childVD)
+			child.lowerDs = append(child.lowerDs, ld)
 		}
 		if topLookupLayer == lookupLayerNone {
 			if isUpper {
@@ -334,7 +339,7 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 		child.ino.Store(fs.newDirIno(child.devMajor.RacyLoad(), child.devMinor.RacyLoad(), child.ino.RacyLoad()))
 		child.devMajor = atomicbitops.FromUint32(linux.UNNAMED_MAJOR)
 		child.devMinor = atomicbitops.FromUint32(fs.dirDevMinor)
-	} else if !child.upperVD.Ok() {
+	} else if !child.upper.vd.Ok() {
 		childDevMinor, err := fs.getLowerDevMinor(child.devMajor.RacyLoad(), child.devMinor.RacyLoad())
 		if err != nil {
 			ctx.Infof("overlay.filesystem.lookupLocked: failed to map lower layer device number (%d, %d) to an overlay-specific device number: %v", child.devMajor.RacyLoad(), child.devMinor.RacyLoad(), err)
@@ -362,10 +367,10 @@ func (fs *filesystem) lookupLayerLocked(ctx context.Context, parent *dentry, nam
 	lookupLayer := lookupLayerNone
 	var lookupErr error
 
-	parent.iterLayers(func(parentVD vfs.VirtualDentry, isUpper bool) bool {
+	parent.iterLayers(func(parentLD layerDentry, isUpper bool) bool {
 		stat, err := fs.vfsfs.VirtualFilesystem().StatAt(ctx, fs.creds, &vfs.PathOperation{
-			Root:  parentVD,
-			Start: parentVD,
+			Root:  parentLD.vd,
+			Start: parentLD.vd,
 			Path:  childPath,
 		}, &vfs.StatOptions{
 			Mask: linux.STATX_TYPE,
@@ -598,7 +603,7 @@ func (fs *filesystem) AccessAt(ctx context.Context, rp *vfs.ResolvingPath, creds
 	if rp.Mount().ReadOnly() {
 		return linuxerr.EROFS
 	}
-	if !d.upperVD.Ok() && !d.canBeCopiedUp() {
+	if !d.upper.vd.Ok() && !d.canBeCopiedUp() {
 		// A lower layer file that can not be copied up, can not be written to.
 		// Error out here. Don't give the application false hopes.
 		return linuxerr.EACCES
@@ -675,8 +680,8 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 		}
 		vfsObj := fs.vfsfs.VirtualFilesystem()
 		newpop := vfs.PathOperation{
-			Root:  parent.upperVD,
-			Start: parent.upperVD,
+			Root:  parent.upper.vd,
+			Start: parent.upper.vd,
 			Path:  fspath.Parse(childName),
 		}
 		if haveUpperWhiteout {
@@ -685,8 +690,8 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 			}
 		}
 		if err := vfsObj.LinkAt(ctx, fs.creds, &vfs.PathOperation{
-			Root:  old.upperVD,
-			Start: old.upperVD,
+			Root:  old.upper.vd,
+			Start: old.upper.vd,
 		}, &newpop); err != nil {
 			if haveUpperWhiteout {
 				fs.cleanupRecreateWhiteout(ctx, vfsObj, &newpop)
@@ -722,8 +727,8 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 	return fs.doCreateAt(ctx, rp, ct, func(parent *dentry, childName string, haveUpperWhiteout bool) error {
 		vfsObj := fs.vfsfs.VirtualFilesystem()
 		pop := vfs.PathOperation{
-			Root:  parent.upperVD,
-			Start: parent.upperVD,
+			Root:  parent.upper.vd,
+			Start: parent.upper.vd,
 			Path:  fspath.Parse(childName),
 		}
 		if haveUpperWhiteout {
@@ -777,8 +782,8 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		}
 		vfsObj := fs.vfsfs.VirtualFilesystem()
 		pop := vfs.PathOperation{
-			Root:  parent.upperVD,
-			Start: parent.upperVD,
+			Root:  parent.upper.vd,
+			Start: parent.upper.vd,
 			Path:  fspath.Parse(childName),
 		}
 		if haveUpperWhiteout {
@@ -992,8 +997,8 @@ func (fs *filesystem) createAndOpenLocked(ctx context.Context, rp *vfs.Resolving
 	vfsObj := fs.vfsfs.VirtualFilesystem()
 	childName := rp.Component()
 	pop := vfs.PathOperation{
-		Root:  parent.upperVD,
-		Start: parent.upperVD,
+		Root:  parent.upper.vd,
+		Start: parent.upper.vd,
 		Path:  fspath.Parse(childName),
 	}
 	// Unlink the whiteout if it exists.
@@ -1224,8 +1229,8 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	}
 
 	newpop := vfs.PathOperation{
-		Root:  newParent.upperVD,
-		Start: newParent.upperVD,
+		Root:  newParent.upper.vd,
+		Start: newParent.upper.vd,
 		Path:  fspath.Parse(newName),
 	}
 
@@ -1239,8 +1244,8 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 				continue
 			}
 			if err := fs.createWhiteout(ctx, vfsObj, &vfs.PathOperation{
-				Root:  replaced.upperVD,
-				Start: replaced.upperVD,
+				Root:  replaced.upper.vd,
+				Start: replaced.upper.vd,
 				Path:  fspath.Parse(whiteoutName),
 			}); err != nil && !linuxerr.Equals(linuxerr.EEXIST, err) {
 				panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to recreate deleted whiteout after RenameAt failure: %v", err))
@@ -1256,8 +1261,8 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 					continue
 				}
 				if err := vfsObj.UnlinkAt(ctx, fs.creds, &vfs.PathOperation{
-					Root:  replaced.upperVD,
-					Start: replaced.upperVD,
+					Root:  replaced.upper.vd,
+					Start: replaced.upper.vd,
 					Path:  fspath.Parse(whiteoutName),
 				}); err != nil {
 					vfsObj.AbortRenameDentry(&renamed.vfsd, replacedVFSD)
@@ -1281,8 +1286,8 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	// upper filesystem, but this is already the case for virtually all other
 	// overlay filesystem operations too.
 	oldpop := vfs.PathOperation{
-		Root:  oldParent.upperVD,
-		Start: oldParent.upperVD,
+		Root:  oldParent.upper.vd,
+		Start: oldParent.upper.vd,
 		Path:  fspath.Parse(oldName),
 	}
 	if err := vfsObj.RenameAt(ctx, creds, &oldpop, &newpop, &opts); err != nil {
@@ -1300,8 +1305,8 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		// Lower dentries of replaced are not reachable from the overlay anymore.
 		// NOTE(b/237573779): Ask lower filesystem to release resources for this
 		// dentry whenever possible to reduce resource usage.
-		for _, replaceLower := range replaced.lowerVDs {
-			replaceLower.Dentry().MarkEvictable()
+		for _, replaceLower := range replaced.lowerDs {
+			replaceLower.vd.Dentry().MarkEvictable()
 		}
 		ds = appendDentry(ds, replaced)
 	}
@@ -1398,13 +1403,13 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	}
 
 	pop := vfs.PathOperation{
-		Root:  parent.upperVD,
-		Start: parent.upperVD,
+		Root:  parent.upper.vd,
+		Start: parent.upper.vd,
 		Path:  fspath.Parse(name),
 	}
-	if child.upperVD.Ok() {
+	if child.upper.vd.Ok() {
 		cleanupRecreateWhiteouts := func() {
-			if !child.upperVD.Ok() {
+			if !child.upper.vd.Ok() {
 				return
 			}
 			for whiteoutName, whiteoutUpper := range whiteouts {
@@ -1412,8 +1417,8 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 					continue
 				}
 				if err := fs.createWhiteout(ctx, vfsObj, &vfs.PathOperation{
-					Root:  child.upperVD,
-					Start: child.upperVD,
+					Root:  child.upper.vd,
+					Start: child.upper.vd,
 					Path:  fspath.Parse(whiteoutName),
 				}); err != nil && !linuxerr.Equals(linuxerr.EEXIST, err) {
 					panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to recreate deleted whiteout after RmdirAt failure: %v", err))
@@ -1426,8 +1431,8 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 				continue
 			}
 			if err := vfsObj.UnlinkAt(ctx, fs.creds, &vfs.PathOperation{
-				Root:  child.upperVD,
-				Start: child.upperVD,
+				Root:  child.upper.vd,
+				Start: child.upper.vd,
 				Path:  fspath.Parse(whiteoutName),
 			}); err != nil {
 				vfsObj.AbortDeleteDentry(&child.vfsd)
@@ -1444,7 +1449,7 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	}
 	if err := fs.createWhiteout(ctx, vfsObj, &pop); err != nil {
 		vfsObj.AbortDeleteDentry(&child.vfsd)
-		if child.upperVD.Ok() {
+		if child.upper.vd.Ok() {
 			// Don't attempt to recover from this: the original directory is
 			// already gone, so any dentries representing it are invalid, and
 			// creating a new directory won't undo that.
@@ -1500,8 +1505,8 @@ func (d *dentry) setStatLocked(ctx context.Context, rp *vfs.ResolvingPath, opts 
 	d.copyMu.Lock()
 	defer d.copyMu.Unlock()
 	if err := d.fs.vfsfs.VirtualFilesystem().SetStatAt(ctx, d.fs.creds, &vfs.PathOperation{
-		Root:  d.upperVD,
-		Start: d.upperVD,
+		Root:  d.upper.vd,
+		Start: d.upper.vd,
 	}, &opts); err != nil {
 		return err
 	}
@@ -1554,8 +1559,8 @@ func (fs *filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, targ
 	return fs.doCreateAt(ctx, rp, createNonDirectory, func(parent *dentry, childName string, haveUpperWhiteout bool) error {
 		vfsObj := fs.vfsfs.VirtualFilesystem()
 		pop := vfs.PathOperation{
-			Root:  parent.upperVD,
-			Start: parent.upperVD,
+			Root:  parent.upper.vd,
+			Start: parent.upper.vd,
 			Path:  fspath.Parse(childName),
 		}
 		if haveUpperWhiteout {
@@ -1645,8 +1650,8 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	}
 
 	pop := vfs.PathOperation{
-		Root:  parent.upperVD,
-		Start: parent.upperVD,
+		Root:  parent.upper.vd,
+		Start: parent.upper.vd,
 		Path:  fspath.Parse(name),
 	}
 	if childLayer == lookupLayerUpper {
@@ -1670,8 +1675,8 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 		// Once a whiteout is created, non-directory dentries on the lower layers
 		// are no longer reachable from the overlayfs. Ask filesystems to release
 		// their resources whenever possible.
-		for _, lowerDentry := range child.lowerVDs {
-			lowerDentry.Dentry().MarkEvictable()
+		for _, lowerDentry := range child.lowerDs {
+			lowerDentry.vd.Dentry().MarkEvictable()
 		}
 	}
 	ds = appendDentry(ds, child)
@@ -1789,7 +1794,7 @@ func (fs *filesystem) setXattrLocked(ctx context.Context, d *dentry, mnt *vfs.Mo
 		return err
 	}
 	vfsObj := d.fs.vfsfs.VirtualFilesystem()
-	return vfsObj.SetXattrAt(ctx, fs.creds, &vfs.PathOperation{Root: d.upperVD, Start: d.upperVD}, opts)
+	return vfsObj.SetXattrAt(ctx, fs.creds, &vfs.PathOperation{Root: d.upper.vd, Start: d.upper.vd}, opts)
 }
 
 // RemoveXattrAt implements vfs.FilesystemImpl.RemoveXattrAt.
@@ -1833,7 +1838,7 @@ func (fs *filesystem) removeXattrLocked(ctx context.Context, d *dentry, mnt *vfs
 		return err
 	}
 	vfsObj := d.fs.vfsfs.VirtualFilesystem()
-	return vfsObj.RemoveXattrAt(ctx, fs.creds, &vfs.PathOperation{Root: d.upperVD, Start: d.upperVD}, name)
+	return vfsObj.RemoveXattrAt(ctx, fs.creds, &vfs.PathOperation{Root: d.upper.vd, Start: d.upper.vd}, name)
 }
 
 // PrependPath implements vfs.FilesystemImpl.PrependPath.

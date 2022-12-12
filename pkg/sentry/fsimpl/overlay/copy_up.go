@@ -43,7 +43,7 @@ func (d *dentry) canBeCopiedUp() bool {
 	}
 }
 
-// copyUpLocked ensures that d exists on the upper layer, i.e. d.upperVD.Ok().
+// copyUpLocked ensures that d exists on the upper layer, i.e. d.upper.vd.Ok().
 //
 // Preconditions: filesystem.renameMu must be locked.
 func (d *dentry) copyUpLocked(ctx context.Context) error {
@@ -75,7 +75,7 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 
 	d.copyMu.Lock()
 	defer d.copyMu.Unlock()
-	if d.upperVD.Ok() {
+	if d.upper.vd.Ok() {
 		// Raced with another call to d.copyUpLocked().
 		return nil
 	}
@@ -87,8 +87,8 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 	// Obtain settable timestamps from the lower layer.
 	vfsObj := d.fs.vfsfs.VirtualFilesystem()
 	oldpop := vfs.PathOperation{
-		Root:  d.lowerVDs[0],
-		Start: d.lowerVDs[0],
+		Root:  d.lowerDs[0].vd,
+		Start: d.lowerDs[0].vd,
 	}
 	const timestampsMask = linux.STATX_ATIME | linux.STATX_MTIME
 	oldStat, err := vfsObj.StatAt(ctx, d.fs.creds, &oldpop, &vfs.StatOptions{
@@ -101,8 +101,8 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 	// Perform copy-up.
 	ftype := d.mode.Load() & linux.S_IFMT
 	newpop := vfs.PathOperation{
-		Root:  d.parent.upperVD,
-		Start: d.parent.upperVD,
+		Root:  d.parent.upper.vd,
+		Start: d.parent.upper.vd,
 		Path:  fspath.Parse(d.name),
 	}
 	// Used during copy-up of memory-mapped regular files.
@@ -117,9 +117,9 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 		if err != nil {
 			panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to delete upper layer file after copy-up error: %v", err))
 		}
-		if d.upperVD.Ok() {
-			d.upperVD.DecRef(ctx)
-			d.upperVD = vfs.VirtualDentry{}
+		if d.upper.vd.Ok() {
+			d.upper.vd.DecRef(ctx)
+			d.upper.vd = vfs.VirtualDentry{}
 		}
 	}
 	switch ftype {
@@ -176,8 +176,8 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 			cleanupUndoCopyUp()
 			return err
 		}
-		d.upperVD = newFD.VirtualDentry()
-		d.upperVD.IncRef()
+		d.upper.vd = newFD.VirtualDentry()
+		d.upper.vd.IncRef()
 
 	case linux.S_IFDIR:
 		if err := vfsObj.MkdirAt(ctx, d.fs.creds, &newpop, &vfs.MkdirOptions{
@@ -205,7 +205,7 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 			cleanupUndoCopyUp()
 			return err
 		}
-		d.upperVD = upperVD
+		d.upper.vd = upperVD
 
 	case linux.S_IFLNK:
 		target, err := vfsObj.ReadlinkAt(ctx, d.fs.creds, &oldpop)
@@ -234,7 +234,7 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 			cleanupUndoCopyUp()
 			return err
 		}
-		d.upperVD = upperVD
+		d.upper.vd = upperVD
 
 	case linux.S_IFBLK, linux.S_IFCHR:
 		if err := vfsObj.MknodAt(ctx, d.fs.creds, &newpop, &vfs.MknodOptions{
@@ -263,7 +263,7 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 			cleanupUndoCopyUp()
 			return err
 		}
-		d.upperVD = upperVD
+		d.upper.vd = upperVD
 
 	default:
 		// Should have rejected this at the beginning of this function?
@@ -275,23 +275,25 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 		return err
 	}
 
+	upperStat, err := vfsObj.StatAt(ctx, d.fs.creds, &vfs.PathOperation{
+		Root:  d.upper.vd,
+		Start: d.upper.vd,
+	}, &vfs.StatOptions{
+		Mask: linux.STATX_INO,
+	})
+	if err != nil {
+		cleanupUndoCopyUp()
+		return err
+	}
+	if upperStat.Mask&linux.STATX_INO == 0 {
+		cleanupUndoCopyUp()
+		return linuxerr.EREMOTE
+	}
+	d.upper.realDevMinor = upperStat.DevMinor
+	d.upper.realDevMajor = upperStat.DevMajor
 	// Update the dentry's device and inode numbers (except for directories,
 	// for which these remain overlay-assigned).
 	if ftype != linux.S_IFDIR {
-		upperStat, err := vfsObj.StatAt(ctx, d.fs.creds, &vfs.PathOperation{
-			Root:  d.upperVD,
-			Start: d.upperVD,
-		}, &vfs.StatOptions{
-			Mask: linux.STATX_INO,
-		})
-		if err != nil {
-			cleanupUndoCopyUp()
-			return err
-		}
-		if upperStat.Mask&linux.STATX_INO == 0 {
-			cleanupUndoCopyUp()
-			return linuxerr.EREMOTE
-		}
 		d.devMajor.Store(upperStat.DevMajor)
 		d.devMinor.Store(upperStat.DevMinor)
 		d.ino.Store(upperStat.Ino)
@@ -299,8 +301,8 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 		// Lower level dentries for non-directories are no longer accessible from
 		// the overlayfs anymore after copyup. Ask filesystems to release their
 		// resources whenever possible.
-		for _, lowerDentry := range d.lowerVDs {
-			lowerDentry.Dentry().MarkEvictable()
+		for _, lowerDentry := range d.lowerDs {
+			lowerDentry.vd.Dentry().MarkEvictable()
 		}
 	}
 
@@ -370,8 +372,8 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 // Preconditions: d.copyMu must be locked for writing.
 func (d *dentry) copyXattrsLocked(ctx context.Context) error {
 	vfsObj := d.fs.vfsfs.VirtualFilesystem()
-	lowerPop := &vfs.PathOperation{Root: d.lowerVDs[0], Start: d.lowerVDs[0]}
-	upperPop := &vfs.PathOperation{Root: d.upperVD, Start: d.upperVD}
+	lowerPop := &vfs.PathOperation{Root: d.lowerDs[0].vd, Start: d.lowerDs[0].vd}
+	upperPop := &vfs.PathOperation{Root: d.upper.vd, Start: d.upper.vd}
 
 	lowerXattrs, err := vfsObj.ListXattrAt(ctx, d.fs.creds, lowerPop, 0)
 	if err != nil {

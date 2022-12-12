@@ -288,13 +288,24 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	root := fs.newDentry()
 	root.refs = atomicbitops.FromInt64(1)
 	if fs.opts.UpperRoot.Ok() {
-		fs.opts.UpperRoot.IncRef()
+		root.upper, err = newLayerDentry(ctx, vfsObj, creds, fs.opts.UpperRoot)
+		if err != nil {
+			root.destroyLocked(ctx)
+			fs.vfsfs.DecRef(ctx)
+			return nil, nil, err
+		}
+		root.upper.vd.IncRef()
 		root.copiedUp = atomicbitops.FromUint32(1)
-		root.upperVD = fs.opts.UpperRoot
 	}
 	for _, lowerRoot := range fs.opts.LowerRoots {
-		lowerRoot.IncRef()
-		root.lowerVDs = append(root.lowerVDs, lowerRoot)
+		ld, err := newLayerDentry(ctx, vfsObj, creds, lowerRoot)
+		if err != nil {
+			root.destroyLocked(ctx)
+			fs.vfsfs.DecRef(ctx)
+			return nil, nil, err
+		}
+		ld.vd.IncRef()
+		root.lowerDs = append(root.lowerDs, ld)
 	}
 	rootTopVD := root.topLayer()
 	// Get metadata from the topmost layer. See fs.lookupLocked().
@@ -330,7 +341,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		// For root dir, it is okay to use top most level's stat to compute inode
 		// number because we don't allow copy ups on root dentries.
 		root.ino.Store(fs.newDirIno(rootStat.DevMajor, rootStat.DevMinor, rootStat.Ino))
-	} else if !root.upperVD.Ok() {
+	} else if !root.upper.vd.Ok() {
 		root.devMajor = atomicbitops.FromUint32(linux.UNNAMED_MAJOR)
 		rootDevMinor, err := fs.getLowerDevMinor(rootStat.DevMajor, rootStat.DevMinor)
 		if err != nil {
@@ -368,6 +379,19 @@ func clonePrivateMount(vfsObj *vfs.VirtualFilesystem, vd vfs.VirtualDentry, forc
 	d := vd.Dentry()
 	d.IncRef()
 	return vfs.MakeVirtualDentry(newmnt, d), nil
+}
+
+func newLayerDentry(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, vd vfs.VirtualDentry) (layerDentry, error) {
+	stat, err := vfsObj.StatAt(ctx, creds, &vfs.PathOperation{
+		Root:  vd,
+		Start: vd,
+	}, &vfs.StatOptions{
+		Mask: linux.STATX_INO,
+	})
+	if err != nil {
+		return layerDentry{}, err
+	}
+	return layerDentry{vd: vd, realDevMinor: stat.DevMinor, realDevMajor: stat.DevMajor}, nil
 }
 
 // Release implements vfs.FilesystemImpl.Release.
@@ -451,6 +475,12 @@ func (fs *filesystem) getLowerDevMinor(layerMajor, layerMinor uint32) (uint32, e
 	return minor, nil
 }
 
+type layerDentry struct {
+	vd           vfs.VirtualDentry
+	realDevMinor uint32
+	realDevMajor uint32
+}
+
 // dentry implements vfs.DentryImpl.
 //
 // +stateify savable
@@ -470,7 +500,7 @@ type dentry struct {
 	uid  atomicbitops.Uint32
 	gid  atomicbitops.Uint32
 
-	// copiedUp is 1 if this dentry has been copied-up (i.e. upperVD.Ok()) and
+	// copiedUp is 1 if this dentry has been copied-up (i.e. upper.vd.Ok()) and
 	// 0 otherwise.
 	copiedUp atomicbitops.Uint32
 
@@ -490,19 +520,19 @@ type dentry struct {
 	children map[string]*dentry
 	dirents  []vfs.Dirent
 
-	// upperVD and lowerVDs are the files from the overlay filesystem's layers
+	// upper and lower are the files from the overlay filesystem's layers
 	// that comprise the file on the overlay filesystem.
 	//
-	// If !upperVD.Ok(), it can transition to a valid vfs.VirtualDentry (i.e.
+	// If !upper.vd.Ok(), it can transition to a valid vfs.VirtualDentry (i.e.
 	// be copied up) with copyMu locked for writing; otherwise, it is
 	// immutable. lowerVDs is always immutable.
-	copyMu   sync.RWMutex `state:"nosave"`
-	upperVD  vfs.VirtualDentry
-	lowerVDs []vfs.VirtualDentry
+	copyMu  sync.RWMutex `state:"nosave"`
+	upper   layerDentry
+	lowerDs []layerDentry
 
-	// inlineLowerVDs backs lowerVDs in the common case where len(lowerVDs) <=
+	// inlineLowerDs backs lowerVDs in the common case where len(lowerVDs) <=
 	// len(inlineLowerVDs).
-	inlineLowerVDs [1]vfs.VirtualDentry
+	inlineLowerDs [1]layerDentry
 
 	// devMajor, devMinor, and ino are the device major/minor and inode numbers
 	// used by this dentry. These fields are protected by copyMu.
@@ -557,7 +587,7 @@ func (fs *filesystem) newDentry() *dentry {
 	d := &dentry{
 		fs: fs,
 	}
-	d.lowerVDs = d.inlineLowerVDs[:0]
+	d.lowerDs = d.inlineLowerDs[:0]
 	d.vfsd.Init(d)
 	refs.Register(d)
 	return d
@@ -658,11 +688,11 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 		panic("overlay.dentry.destroyLocked() called with references on the dentry")
 	}
 
-	if d.upperVD.Ok() {
-		d.upperVD.DecRef(ctx)
+	if d.upper.vd.Ok() {
+		d.upper.vd.DecRef(ctx)
 	}
-	for _, lowerVD := range d.lowerVDs {
-		lowerVD.DecRef(ctx)
+	for _, lowerD := range d.lowerDs {
+		lowerD.vd.DecRef(ctx)
 	}
 
 	d.watches.HandleDeletion(ctx)
@@ -733,14 +763,14 @@ func (d *dentry) OnZeroWatches(ctx context.Context) {
 
 // iterLayers invokes yield on each layer comprising d, from top to bottom. If
 // any call to yield returns false, iterLayer stops iteration.
-func (d *dentry) iterLayers(yield func(vd vfs.VirtualDentry, isUpper bool) bool) {
+func (d *dentry) iterLayers(yield func(ld layerDentry, isUpper bool) bool) {
 	if d.isCopiedUp() {
-		if !yield(d.upperVD, true) {
+		if !yield(d.upper, true) {
 			return
 		}
 	}
-	for _, lowerVD := range d.lowerVDs {
-		if !yield(lowerVD, false) {
+	for _, lowerD := range d.lowerDs {
+		if !yield(lowerD, false) {
 			return
 		}
 	}
@@ -748,9 +778,9 @@ func (d *dentry) iterLayers(yield func(vd vfs.VirtualDentry, isUpper bool) bool)
 
 func (d *dentry) topLayerInfo() (vd vfs.VirtualDentry, isUpper bool) {
 	if d.isCopiedUp() {
-		return d.upperVD, true
+		return d.upper.vd, true
 	}
-	return d.lowerVDs[0], false
+	return d.lowerDs[0].vd, false
 }
 
 func (d *dentry) topLayer() vfs.VirtualDentry {
@@ -759,7 +789,7 @@ func (d *dentry) topLayer() vfs.VirtualDentry {
 }
 
 func (d *dentry) topLookupLayer() lookupLayer {
-	if d.upperVD.Ok() {
+	if d.upper.vd.Ok() {
 		return lookupLayerUpper
 	}
 	return lookupLayerLower
