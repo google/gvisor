@@ -800,7 +800,7 @@ func TestEntryReachableToReachableClearsRouterWhenConfirmationWithoutRouter(t *t
 	if got, want := e.mu.isRouter, false; got != want {
 		t.Errorf("got e.mu.isRouter = %t, want = %t", got, want)
 	}
-	ipv6EP := e.cache.nic.networkEndpoints[header.IPv6ProtocolNumber].(*testIPv6Endpoint)
+	ipv6EP := e.cache.nic.getNetworkEndpoint(header.IPv6ProtocolNumber).(*testIPv6Endpoint)
 	if ipv6EP.invalidatedRtr != e.mu.neigh.Addr {
 		t.Errorf("got ipv6EP.invalidatedRtr = %s, want = %s", ipv6EP.invalidatedRtr, e.mu.neigh.Addr)
 	}

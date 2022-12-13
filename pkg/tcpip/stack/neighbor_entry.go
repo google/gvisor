@@ -569,8 +569,8 @@ func (e *neighborEntry) handleConfirmationLocked(linkAddr tcpip.LinkAddress, fla
 			//
 			// TODO(gvisor.dev/issue/4085): Remove the special casing we do for IPv6
 			// here.
-			ep, ok := e.cache.nic.networkEndpoints[header.IPv6ProtocolNumber]
-			if !ok {
+			ep := e.cache.nic.getNetworkEndpoint(header.IPv6ProtocolNumber)
+			if ep == nil {
 				panic(fmt.Sprintf("have a neighbor entry for an IPv6 router but no IPv6 network endpoint"))
 			}
 
