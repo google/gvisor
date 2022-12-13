@@ -49,6 +49,7 @@ type nic struct {
 
 	// The network endpoints themselves may be modified by calling the interface's
 	// methods, but the map reference and entries must be constant.
+	// +checklocks:mu
 	networkEndpoints          map[tcpip.NetworkProtocolNumber]NetworkEndpoint
 	linkAddrResolvers         map[tcpip.NetworkProtocolNumber]*linkResolver
 	duplicateAddressDetectors map[tcpip.NetworkProtocolNumber]DuplicateAddressDetector
@@ -207,6 +208,8 @@ func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *nic
 }
 
 func (n *nic) getNetworkEndpoint(proto tcpip.NetworkProtocolNumber) NetworkEndpoint {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
 	return n.networkEndpoints[proto]
 }
 
@@ -227,15 +230,15 @@ func (n *nic) setEnabled(v bool) bool {
 // It undoes the work done by enable.
 func (n *nic) disable() {
 	n.mu.Lock()
+	defer n.mu.Unlock()
 	n.disableLocked()
-	n.mu.Unlock()
 }
 
 // disableLocked disables n.
 //
 // It undoes the work done by enable.
 //
-// n MUST be locked.
+// +checklocks:n.mu
 func (n *nic) disableLocked() {
 	if !n.Enabled() {
 		return
@@ -406,8 +409,8 @@ func (n *nic) Spoofing() bool {
 // primaryAddress returns an address that can be used to communicate with
 // remoteAddr.
 func (n *nic) primaryEndpoint(protocol tcpip.NetworkProtocolNumber, remoteAddr tcpip.Address) AssignableAddressEndpoint {
-	ep, ok := n.networkEndpoints[protocol]
-	if !ok {
+	ep := n.getNetworkEndpoint(protocol)
+	if ep == nil {
 		return nil
 	}
 
@@ -473,8 +476,8 @@ func (n *nic) getAddressOrCreateTemp(protocol tcpip.NetworkProtocolNumber, addre
 // getAddressOrCreateTempInner is like getAddressEpOrCreateTemp except a boolean
 // is passed to indicate whether or not we should generate temporary endpoints.
 func (n *nic) getAddressOrCreateTempInner(protocol tcpip.NetworkProtocolNumber, address tcpip.Address, createTemp bool, peb PrimaryEndpointBehavior) AssignableAddressEndpoint {
-	ep, ok := n.networkEndpoints[protocol]
-	if !ok {
+	ep := n.getNetworkEndpoint(protocol)
+	if ep == nil {
 		return nil
 	}
 
@@ -489,8 +492,8 @@ func (n *nic) getAddressOrCreateTempInner(protocol tcpip.NetworkProtocolNumber, 
 // addAddress adds a new address to n, so that it starts accepting packets
 // targeted at the given address (and network protocol).
 func (n *nic) addAddress(protocolAddress tcpip.ProtocolAddress, properties AddressProperties) tcpip.Error {
-	ep, ok := n.networkEndpoints[protocolAddress.Protocol]
-	if !ok {
+	ep := n.getNetworkEndpoint(protocolAddress.Protocol)
+	if ep == nil {
 		return &tcpip.ErrUnknownProtocol{}
 	}
 
@@ -510,6 +513,8 @@ func (n *nic) addAddress(protocolAddress tcpip.ProtocolAddress, properties Addre
 // allPermanentAddresses returns all permanent addresses associated with
 // this NIC.
 func (n *nic) allPermanentAddresses() []tcpip.ProtocolAddress {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
 	var addrs []tcpip.ProtocolAddress
 	for p, ep := range n.networkEndpoints {
 		addressableEndpoint, ok := ep.(AddressableEndpoint)
@@ -526,6 +531,8 @@ func (n *nic) allPermanentAddresses() []tcpip.ProtocolAddress {
 
 // primaryAddresses returns the primary addresses associated with this NIC.
 func (n *nic) primaryAddresses() []tcpip.ProtocolAddress {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
 	var addrs []tcpip.ProtocolAddress
 	for p, ep := range n.networkEndpoints {
 		addressableEndpoint, ok := ep.(AddressableEndpoint)
@@ -542,8 +549,8 @@ func (n *nic) primaryAddresses() []tcpip.ProtocolAddress {
 
 // PrimaryAddress implements NetworkInterface.
 func (n *nic) PrimaryAddress(proto tcpip.NetworkProtocolNumber) (tcpip.AddressWithPrefix, tcpip.Error) {
-	ep, ok := n.networkEndpoints[proto]
-	if !ok {
+	ep := n.getNetworkEndpoint(proto)
+	if ep == nil {
 		return tcpip.AddressWithPrefix{}, &tcpip.ErrUnknownProtocol{}
 	}
 
@@ -557,6 +564,8 @@ func (n *nic) PrimaryAddress(proto tcpip.NetworkProtocolNumber) (tcpip.AddressWi
 
 // removeAddress removes an address from n.
 func (n *nic) removeAddress(addr tcpip.Address) tcpip.Error {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
 	for _, ep := range n.networkEndpoints {
 		addressableEndpoint, ok := ep.(AddressableEndpoint)
 		if !ok {
@@ -575,6 +584,8 @@ func (n *nic) removeAddress(addr tcpip.Address) tcpip.Error {
 }
 
 func (n *nic) setAddressLifetimes(addr tcpip.Address, lifetimes AddressLifetimes) tcpip.Error {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
 	for _, ep := range n.networkEndpoints {
 		ep, ok := ep.(AddressableEndpoint)
 		if !ok {
@@ -652,8 +663,8 @@ func (n *nic) joinGroup(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address
 	// as an MLD packet's source address must be a link-local address as
 	// outlined in RFC 3810 section 5.
 
-	ep, ok := n.networkEndpoints[protocol]
-	if !ok {
+	ep := n.getNetworkEndpoint(protocol)
+	if ep == nil {
 		return &tcpip.ErrNotSupported{}
 	}
 
@@ -668,8 +679,8 @@ func (n *nic) joinGroup(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address
 // leaveGroup decrements the count for the given multicast address, and when it
 // reaches zero removes the endpoint for this address.
 func (n *nic) leaveGroup(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) tcpip.Error {
-	ep, ok := n.networkEndpoints[protocol]
-	if !ok {
+	ep := n.getNetworkEndpoint(protocol)
+	if ep == nil {
 		return &tcpip.ErrNotSupported{}
 	}
 
@@ -683,6 +694,8 @@ func (n *nic) leaveGroup(protocol tcpip.NetworkProtocolNumber, addr tcpip.Addres
 
 // isInGroup returns true if n has joined the multicast group addr.
 func (n *nic) isInGroup(addr tcpip.Address) bool {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
 	for _, ep := range n.networkEndpoints {
 		gep, ok := ep.(GroupAddressableEndpoint)
 		if !ok {
@@ -712,8 +725,8 @@ func (n *nic) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt Pac
 	n.stats.rx.packets.Increment()
 	n.stats.rx.bytes.IncrementBy(uint64(pkt.Data().Size()))
 
-	networkEndpoint, ok := n.networkEndpoints[protocol]
-	if !ok {
+	networkEndpoint := n.getNetworkEndpoint(protocol)
+	if networkEndpoint == nil {
 		n.stats.unknownL3ProtocolRcvdPacketCounts.Increment(uint64(protocol))
 		return
 	}
