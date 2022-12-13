@@ -227,7 +227,7 @@ func (s *Sleeper) nextWaker(block, wakepOrSleep bool) *Waker {
 	s.localList = w.next
 
 	// Do we need to wake a P?
-	if wakepOrSleep {
+	if sync.HaveNMSpinning && wakepOrSleep {
 		sync.Wakep()
 	}
 
@@ -352,7 +352,13 @@ func (s *Sleeper) enqueueAssertedWaker(w *Waker, wakep bool) {
 	case 0, preparingG:
 	default:
 		// We managed to get a G. Wake it up.
-		sync.Goready(g, 0, wakep)
+		if sync.HaveNMSpinning && wakep {
+			sync.IncNMSpinning()
+		}
+		sync.Goready(g, 0)
+		if sync.HaveNMSpinning && wakep {
+			sync.DecNMSpinning()
+		}
 	}
 }
 

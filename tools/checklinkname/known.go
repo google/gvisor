@@ -73,14 +73,14 @@ var knownLinknames = map[string]map[string]linknameSignatures{
 		"memmove": {
 			local: "func(to unsafe.Pointer, from unsafe.Pointer, n uintptr)",
 		},
+		"nanotime": {
+			local: "func() int64",
+		},
 		"throw": {
 			local: "func(s string)",
 		},
 		"wakep": {
 			local: "func()",
-		},
-		"nanotime": {
-			local: "func() int64",
 		},
 	},
 	"sync": {
@@ -88,6 +88,12 @@ var knownLinknames = map[string]map[string]linknameSignatures{
 			local: "func(i int) bool",
 		},
 		"runtime_doSpin": {
+			local: "func()",
+		},
+		"runtime_procPin": {
+			local: "func() int",
+		},
+		"runtime_procUnpin": {
 			local: "func()",
 		},
 		"runtime_Semacquire": {

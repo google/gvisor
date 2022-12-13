@@ -22,9 +22,28 @@ import (
 	"unsafe"
 )
 
-// Goyield is runtime.goyield, which is similar to runtime.Gosched but only
-// yields the processor to other goroutines already on the processor's
-// runqueue.
+// YieldToGoPreemption yields the caller's P if it has been preempted by the Go
+// runtime.
+//
+// YieldToGoPreemption is used when invoking long-running syscalls using
+// RawSyscall in a tight loop; in this case, the Go runtime will send
+// preemption signals, but the signal handler won't inject a call to
+// runtime.goyield() and the preempted goroutine might not check for preemption
+// within the loop, requiring explicit calls to YieldToGoPreemption when the
+// syscall returns EINTR.
+//
+//go:noinline
+func YieldToGoPreemption() {
+	// All we need is a stack split check.
+	yieldToGoPreemption2()
+}
+
+//go:noinline
+func yieldToGoPreemption2() {
+}
+
+// Goyield is runtime.goyield, which is similar to runtime.Gosched but enqueues
+// the caller on its current P's runqueue rather than the global runqueue.
 //
 //go:nosplit
 func Goyield() {
@@ -36,47 +55,31 @@ func Goyield() {
 // is called. unlockf and its callees must be nosplit and norace, since stack
 // splitting and race context are not available where it is called.
 //
-//go:nosplit
-func Gopark(unlockf func(uintptr, unsafe.Pointer) bool, lock unsafe.Pointer, reason uint8, traceEv byte, traceskip int) {
-	gopark(unlockf, lock, reason, traceEv, traceskip)
-}
-
-//go:linkname gopark runtime.gopark
-func gopark(unlockf func(uintptr, unsafe.Pointer) bool, lock unsafe.Pointer, reason uint8, traceEv byte, traceskip int)
-
-//go:linkname wakep runtime.wakep
-func wakep()
-
-// Wakep is runtime.wakep.
-//
-//go:nosplit
-func Wakep() {
-	// This is only supported if we can suppress the wakep called
-	// from  Goready below, which is in certain architectures only.
-	if supportsWakeSuppression {
-		wakep()
-	}
-}
-
-//go:linkname goready runtime.goready
-func goready(gp uintptr, traceskip int)
+//go:linkname Gopark runtime.gopark
+func Gopark(unlockf func(uintptr, unsafe.Pointer) bool, lock unsafe.Pointer, reason uint8, traceEv byte, traceskip int)
 
 // Goready is runtime.goready.
 //
-// The additional wakep argument controls whether a new thread will be kicked to
-// execute the P. This should be true in most circumstances. However, if the
-// current thread is about to sleep, then this can be false for efficiency.
+//go:linkname Goready runtime.goready
+func Goready(gp uintptr, traceskip int)
+
+// Wakep is runtime.wakep.
 //
-//go:nosplit
-func Goready(gp uintptr, traceskip int, wakep bool) {
-	if supportsWakeSuppression && !wakep {
-		preGoReadyWakeSuppression()
-	}
-	goready(gp, traceskip)
-	if supportsWakeSuppression && !wakep {
-		postGoReadyWakeSuppression()
-	}
-}
+//go:linkname Wakep runtime.wakep
+func Wakep()
+
+// ProcPin is runtime.procPin. It disables Go runtime preemption and returns
+// the caller's P's ID. Blocking in Go while runtime preemption is disabled is
+// not permitted. The caller must call ProcUnpin to re-enable preemption.
+//
+//go:linkname ProcPin sync.runtime_procPin
+func ProcPin() int
+
+// ProcUnpin is runtime.procUnpin. It ends the effect of a previous call to
+// ProcPin.
+//
+//go:linkname ProcUnpin sync.runtime_procUnpin
+func ProcUnpin()
 
 // Rand32 returns a non-cryptographically-secure random uint32.
 func Rand32() uint32 {

@@ -8,7 +8,16 @@
 
 package sync
 
-const supportsWakeSuppression = false
+// HaveNMSpinning is true if the IncNMSpinning and DecNMSpinning functions are
+// implemented. Calls to these functions panic if HaveNMSpinning is false.
+const HaveNMSpinning = false
 
-func preGoReadyWakeSuppression()  {} // Never called.
-func postGoReadyWakeSuppression() {} // Never called.
+// IncNMSpinning is unimplemented.
+func IncNMSpinning() {
+	panic("unimplemented")
+}
+
+// DecNMSpinning is unimplemented.
+func DecNMSpinning() {
+	panic("unimplemented")
+}

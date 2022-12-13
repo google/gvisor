@@ -111,7 +111,7 @@ func (g *Gate) leaveClosed() {
 		return
 	}
 	if g := atomic.SwapUintptr(&g.closingG, 0); g > preparingG {
-		goready(g, 0)
+		Goready(g, 0)
 	}
 }
 
@@ -141,7 +141,7 @@ func (g *Gate) Close() {
 		return
 	}
 	// WaitReasonSemacquire/TraceEvGoBlockSync are consistent with WaitGroup.
-	gopark(gateCommit, gohacks.Noescape(unsafe.Pointer(&g.closingG)), WaitReasonSemacquire, TraceEvGoBlockSync, 0)
+	Gopark(gateCommit, gohacks.Noescape(unsafe.Pointer(&g.closingG)), WaitReasonSemacquire, TraceEvGoBlockSync, 0)
 }
 
 //go:norace
