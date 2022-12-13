@@ -316,9 +316,6 @@ cc_binary(
     testonly = 1,
     srcs = ["bad.cc"],
     linkstatic = 1,
-    visibility = [
-        "//:sandbox",
-    ],
     deps = [
         gtest,
         "//test/util:test_main",
