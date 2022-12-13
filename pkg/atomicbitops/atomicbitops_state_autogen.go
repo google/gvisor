@@ -6,3 +6,36 @@
 // +build !arm64
 
 package atomicbitops
+
+import (
+	"gvisor.dev/gvisor/pkg/state"
+)
+
+func (b *Bool) StateTypeName() string {
+	return "pkg/atomicbitops.Bool"
+}
+
+func (b *Bool) StateFields() []string {
+	return []string{
+		"Uint32",
+	}
+}
+
+func (b *Bool) beforeSave() {}
+
+// +checklocksignore
+func (b *Bool) StateSave(stateSinkObject state.Sink) {
+	b.beforeSave()
+	stateSinkObject.Save(0, &b.Uint32)
+}
+
+func (b *Bool) afterLoad() {}
+
+// +checklocksignore
+func (b *Bool) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &b.Uint32)
+}
+
+func init() {
+	state.Register((*Bool)(nil))
+}

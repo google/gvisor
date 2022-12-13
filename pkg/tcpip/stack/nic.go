@@ -44,27 +44,27 @@ type nic struct {
 
 	stats sharedStats
 
+	// mu protects annotated fields below.
+	mu nicRWMutex
+
 	// The network endpoints themselves may be modified by calling the interface's
 	// methods, but the map reference and entries must be constant.
 	networkEndpoints          map[tcpip.NetworkProtocolNumber]NetworkEndpoint
 	linkAddrResolvers         map[tcpip.NetworkProtocolNumber]*linkResolver
 	duplicateAddressDetectors map[tcpip.NetworkProtocolNumber]DuplicateAddressDetector
 
-	// enabled is set to 1 when the NIC is enabled and 0 when it is disabled.
-	enabled atomicbitops.Uint32
+	// enabled indicates whether the NIC is enabled.
+	enabled atomicbitops.Bool
+
+	// spoofing indicates whether the NIC is spoofing.
+	spoofing atomicbitops.Bool
+
+	// promiscuous indicates whether the NIC is promiscuous.
+	promiscuous atomicbitops.Bool
 
 	// linkResQueue holds packets that are waiting for link resolution to
 	// complete.
 	linkResQueue packetsPendingLinkResolution
-
-	// mu protects annotated fields below.
-	mu nicRWMutex
-
-	// +checklocks:mu
-	spoofing bool
-
-	// +checklocks:mu
-	promiscuous bool
 
 	// packetEPsMu protects annotated fields below.
 	packetEPsMu packetEPsRWMutex
@@ -212,17 +212,14 @@ func (n *nic) getNetworkEndpoint(proto tcpip.NetworkProtocolNumber) NetworkEndpo
 
 // Enabled implements NetworkInterface.
 func (n *nic) Enabled() bool {
-	return n.enabled.Load() == 1
+	return n.enabled.Load()
 }
 
 // setEnabled sets the enabled status for the NIC.
 //
 // Returns true if the enabled status was updated.
 func (n *nic) setEnabled(v bool) bool {
-	if v {
-		return n.enabled.Swap(1) == 0
-	}
-	return n.enabled.Swap(0) == 1
+	return n.enabled.Swap(v) != v
 }
 
 // disable disables n.
@@ -322,17 +319,12 @@ func (n *nic) remove() tcpip.Error {
 
 // setPromiscuousMode enables or disables promiscuous mode.
 func (n *nic) setPromiscuousMode(enable bool) {
-	n.mu.Lock()
-	n.promiscuous = enable
-	n.mu.Unlock()
+	n.promiscuous.Store(enable)
 }
 
 // Promiscuous implements NetworkInterface.
 func (n *nic) Promiscuous() bool {
-	n.mu.RLock()
-	rv := n.promiscuous
-	n.mu.RUnlock()
-	return rv
+	return n.promiscuous.Load()
 }
 
 // IsLoopback implements NetworkInterface.
@@ -403,16 +395,12 @@ func (n *nic) writeRawPacket(pkt PacketBufferPtr) tcpip.Error {
 
 // setSpoofing enables or disables address spoofing.
 func (n *nic) setSpoofing(enable bool) {
-	n.mu.Lock()
-	n.spoofing = enable
-	n.mu.Unlock()
+	n.spoofing.Store(enable)
 }
 
 // Spoofing implements NetworkInterface.
 func (n *nic) Spoofing() bool {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
-	return n.spoofing
+	return n.spoofing.Load()
 }
 
 // primaryAddress returns an address that can be used to communicate with
@@ -428,11 +416,7 @@ func (n *nic) primaryEndpoint(protocol tcpip.NetworkProtocolNumber, remoteAddr t
 		return nil
 	}
 
-	n.mu.RLock()
-	spoofing := n.spoofing
-	n.mu.RUnlock()
-
-	return addressableEndpoint.AcquireOutgoingPrimaryAddress(remoteAddr, spoofing)
+	return addressableEndpoint.AcquireOutgoingPrimaryAddress(remoteAddr, n.Spoofing())
 }
 
 type getAddressBehaviour int
@@ -476,15 +460,13 @@ func (n *nic) findEndpoint(protocol tcpip.NetworkProtocolNumber, address tcpip.A
 // If the address is the IPv4 broadcast address for an endpoint's network, that
 // endpoint will be returned.
 func (n *nic) getAddressOrCreateTemp(protocol tcpip.NetworkProtocolNumber, address tcpip.Address, peb PrimaryEndpointBehavior, tempRef getAddressBehaviour) AssignableAddressEndpoint {
-	n.mu.RLock()
 	var spoofingOrPromiscuous bool
 	switch tempRef {
 	case spoofing:
-		spoofingOrPromiscuous = n.spoofing
+		spoofingOrPromiscuous = n.Spoofing()
 	case promiscuous:
-		spoofingOrPromiscuous = n.promiscuous
+		spoofingOrPromiscuous = n.Promiscuous()
 	}
-	n.mu.RUnlock()
 	return n.getAddressOrCreateTempInner(protocol, address, spoofingOrPromiscuous, peb)
 }
 
@@ -961,10 +943,7 @@ func (n *nic) unregisterPacketEndpoint(netProto tcpip.NetworkProtocolNumber, ep 
 // packet. It requires the endpoint to not be marked expired (i.e., its address
 // has been removed) unless the NIC is in spoofing mode, or temporary.
 func (n *nic) isValidForOutgoing(ep AssignableAddressEndpoint) bool {
-	n.mu.RLock()
-	spoofing := n.spoofing
-	n.mu.RUnlock()
-	return n.Enabled() && ep.IsAssigned(spoofing)
+	return n.Enabled() && ep.IsAssigned(n.Spoofing())
 }
 
 // HandleNeighborProbe implements NetworkInterface.
