@@ -539,12 +539,13 @@ type limitsData struct {
 }
 
 func (d *limitsData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	taskLimits := d.task.Limits()
 	// formatting matches the kernel output from linux/fs/proc/base.c:proc_pid_limits()
 	fmt.Fprintf(buf, "Limit                     Soft Limit           Hard Limit           Units     \n")
 	for _, lt := range limits.AllLimitTypes {
 		fmt.Fprintf(buf, "%-25s ", lt.Name())
 
-		l := d.task.Limits().Get(lt)
+		l := taskLimits.Get(lt)
 		if l.Cur == limits.Infinity {
 			fmt.Fprintf(buf, "%-20s ", "unlimited")
 		} else {
