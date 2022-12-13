@@ -406,9 +406,6 @@ func (r *Route) resolvedFields(afterResolve func(ResolvedFieldsResult)) (RouteIn
 	}
 	afterResolveFields := fields
 	entry, ch, err := r.linkRes.neigh.entry(r.nextHop(), linkAddressResolutionRequestLocalAddr, func(lrr LinkResolutionResult) {
-		if lrr.Err != nil {
-			r.setCachedNeighborEntry(nil)
-		}
 		if afterResolve != nil {
 			if lrr.Err == nil {
 				afterResolveFields.RemoteLinkAddress = lrr.LinkAddress
