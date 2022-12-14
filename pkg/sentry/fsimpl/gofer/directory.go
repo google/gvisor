@@ -70,6 +70,9 @@ func (d *dentry) cacheNewChildLocked(child *dentry, name string) {
 	child.name = name
 	if d.children == nil {
 		d.children = make(map[string]*dentry)
+	} else if c, ok := d.children[name]; ok && c == nil {
+		// This child will not be negative, decrease count of negativeChildren.
+		d.negativeChildren--
 	}
 	d.children[name] = child
 }
@@ -77,6 +80,7 @@ func (d *dentry) cacheNewChildLocked(child *dentry, name string) {
 // Preconditions:
 //   - d.dirMu must be locked.
 //   - d.isDir().
+//   - name is not already a negative entry.
 func (d *dentry) cacheNegativeLookupLocked(name string) {
 	// Don't cache negative lookups if InteropModeShared is in effect (since
 	// this makes remote lookup unavoidable), or if d.isSynthetic() (in which
@@ -90,6 +94,26 @@ func (d *dentry) cacheNegativeLookupLocked(name string) {
 		d.children = make(map[string]*dentry)
 	}
 	d.children[name] = nil
+	d.negativeChildren++
+
+	if !d.negativeChildrenCache.isInited() {
+		// Initializing cache with all negative children name at the first time
+		// that negativeChildren increase upto max.
+		if d.negativeChildren >= maxCachedNegativeChildren {
+			d.negativeChildrenCache.init(maxCachedNegativeChildren)
+			for childName, child := range d.children {
+				if child == nil {
+					d.negativeChildrenCache.add(childName)
+				}
+			}
+		}
+	} else if victim := d.negativeChildrenCache.add(name); victim != "" {
+		// If victim is a negative entry in d.children, delete it.
+		if child, ok := d.children[victim]; ok && child == nil {
+			delete(d.children, victim)
+			d.negativeChildren--
+		}
+	}
 }
 
 type createSyntheticOpts struct {
