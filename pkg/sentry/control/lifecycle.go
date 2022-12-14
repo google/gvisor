@@ -17,7 +17,9 @@ package control
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/eventchannel"
 	"gvisor.dev/gvisor/pkg/fd"
@@ -183,6 +185,11 @@ func (l *Lifecycle) updateContainerState(containerID string, newState containerS
 
 // StartContainer will start a new container in the sandbox.
 func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
+	timeRequested := time.Now()
+	timeRequestReceived := &timestamppb.Timestamp{
+		Seconds: timeRequested.Unix(),
+		Nanos:   int32(timeRequested.Nanosecond()),
+	}
 	log.Infof("StartContainer: %v", args)
 	if len(args.Files) != len(args.DonatedFDs) {
 		return fmt.Errorf("FilePayload.Files and DonatedFDs must have same number of elements (%d != %d)", len(args.Files), len(args.DonatedFDs))
@@ -313,16 +320,23 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 	// Start the newly created process.
 	l.Kernel.StartProcess(tg)
 	log.Infof("Started the new container %v ", initArgs.ContainerID)
-	eventchannel.LogEmit(&pb.ContainerStartedEvent{
-		Started:     true,
-		ContainerId: initArgs.ContainerID,
-	})
 
 	if err := l.updateContainerState(initArgs.ContainerID, stateRunning); err != nil {
 		// Sanity check: shouldn't fail to update the state at this point.
 		panic(fmt.Sprintf("Failed to set running state: %v", err))
 
 	}
+
+	timeRequestCompleted := time.Now()
+	eventchannel.LogEmit(&pb.ContainerStartedEvent{
+		Started:         true,
+		ContainerId:     initArgs.ContainerID,
+		RequestReceived: timeRequestReceived,
+		RequestCompleted: &timestamppb.Timestamp{
+			Seconds: timeRequestCompleted.Unix(),
+			Nanos:   int32(timeRequestCompleted.Nanosecond()),
+		},
+	})
 
 	// TODO(b/251490950): reap thread needs to synchronize with Save, so the
 	// container state update doesn't race with state serialization.

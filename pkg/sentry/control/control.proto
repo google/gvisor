@@ -16,6 +16,8 @@ syntax = "proto3";
 
 package gvisor;
 
+import "google/protobuf/timestamp.proto";
+
 // ControlConfig configures the permission of controls.
 message ControlConfig {
   // Names for individual control URPC service objects.
@@ -41,9 +43,13 @@ message ControlConfig {
 }
 
 // ContainerStartedEvent is emitted when a container starts.
+// It also keeps a track of the time elapsed when a container
+// start request is received and the container actually starts.
 message ContainerStartedEvent {
   bool started = 1;
   string container_id = 2;
+  google.protobuf.Timestamp request_received = 3;
+  google.protobuf.Timestamp request_completed = 4;
 }
 
 // ContainerExitEvent is emitted when a container's init task exits. Duplicate
