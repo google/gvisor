@@ -331,5 +331,158 @@ bool IsTHPDisabled() {
   return StackTHPDisabled(maps.ValueOrDie());
 }
 
+PosixErrorOr<ProcLimitsEntry> ParseProcLimitsLine(absl::string_view line) {
+    ProcLimitsEntry limits_entry = {};
+
+    std::vector<std::string> parts =
+        absl::StrSplit(line.substr(25), ' ', absl::SkipWhitespace());
+
+    // should have 3 parts (soft, hard, units)
+    // the name is ignored since the whole line is space separated and
+    // the name has spaces in but not a consistent number of spaces per
+    // name (e.g. 'Max cpu time' vs 'Max processes')
+    // however, since units are optional, ignore them as well
+    if (parts.size() < 2 || parts.size() > 3) {
+        return PosixError(EINVAL, absl::StrCat("Invalid line: ", line));
+    }
+
+    // parse the limit type
+    auto limitType = line.substr(0,25);
+    if (absl::StrContains(limitType, "cpu time")) {
+        limits_entry.limit_type = LimitType::CPU;
+    } else if (absl::StrContains(limitType, "file size")) {
+        limits_entry.limit_type = LimitType::FileSize;
+    } else if (absl::StrContains(limitType, "data size")) {
+        limits_entry.limit_type = LimitType::Data;
+    } else if (absl::StrContains(limitType, "stack size")) {
+        limits_entry.limit_type = LimitType::Stack;
+    } else if (absl::StrContains(limitType, "core file size")) {
+        limits_entry.limit_type = LimitType::Core;
+    } else if (absl::StrContains(limitType, "resident set")) {
+        limits_entry.limit_type = LimitType::RSS;
+    } else if (absl::StrContains(limitType, "processes")) {
+        limits_entry.limit_type = LimitType::ProcessCount;
+    } else if (absl::StrContains(limitType, "open files")) {
+        limits_entry.limit_type = LimitType::NumberOfFiles;
+    } else if (absl::StrContains(limitType, "locked memory")) {
+        limits_entry.limit_type = LimitType::MemoryLocked;
+    } else if (absl::StrContains(limitType, "address space")) {
+        limits_entry.limit_type = LimitType::AS;
+    } else if (absl::StrContains(limitType, "file locks")) {
+        limits_entry.limit_type = LimitType::Locks;
+    } else if (absl::StrContains(limitType, "pending signals")) {
+        limits_entry.limit_type = LimitType::SignalsPending;
+    } else if (absl::StrContains(limitType, "msgqueue size")) {
+        limits_entry.limit_type = LimitType::MessageQueueBytes;
+    } else if (absl::StrContains(limitType, "nice priority")) {
+        limits_entry.limit_type = LimitType::Nice;
+    } else if (absl::StrContains(limitType, "realtime priority")) {
+        limits_entry.limit_type = LimitType::RealTimePriority;
+    } else if (absl::StrContains(limitType, "realtime timeout")) {
+        limits_entry.limit_type = LimitType::Rttime;
+    } else {
+        return PosixError(EINVAL, absl::StrCat("Invalid limit type: ", limitType));
+    }
+
+    // parse soft limit
+    if (parts[0] == "unlimited") {
+        limits_entry.cur_limit = ~0ULL;
+    } else {
+        ASSIGN_OR_RETURN_ERRNO(limits_entry.cur_limit, Atoi<uint64_t>(parts[0]));
+    }
+
+    // parse hard limit
+    if (parts[1] == "unlimited") {
+        limits_entry.max_limit = ~0ULL;
+    } else {
+        ASSIGN_OR_RETURN_ERRNO(limits_entry.max_limit, Atoi<uint64_t>(parts[1]));
+    }
+
+    // ignore units
+
+    return limits_entry;
+}
+
+PosixErrorOr<std::vector<ProcLimitsEntry>> ParseProcLimits(
+    absl::string_view contents) {
+  std::vector<ProcLimitsEntry> entries;
+  std::vector<std::string> lines = absl::StrSplit(contents, '\n', absl::SkipEmpty());
+  // skip first line (headers)
+  for (size_t i = 1U; i < lines.size(); ++i) {
+    std::cout << "line: " << lines[i] << std::endl;
+    ASSIGN_OR_RETURN_ERRNO(auto entry, ParseProcLimitsLine(lines[i]));
+    entries.push_back(entry);
+  }
+  return entries;
+}
+
+std::ostream& operator<<(std::ostream& os, const ProcLimitsEntry& entry) {
+  std::string str = "Max ";
+
+  switch (entry.limit_type) {
+    case LimitType::CPU: absl::StrAppend(&str, absl::StrFormat("%-25s ", "cpu time")); break;
+    case LimitType::FileSize: absl::StrAppend(&str, absl::StrFormat("%-25s ", "file size")); break;
+    case LimitType::Data: absl::StrAppend(&str, absl::StrFormat("%-25s ", "data size")); break;
+    case LimitType::Stack: absl::StrAppend(&str, absl::StrFormat("%-25s ", "stack size")); break;
+    case LimitType::Core: absl::StrAppend(&str, absl::StrFormat("%-25s ", "core file size")); break;
+    case LimitType::RSS: absl::StrAppend(&str, absl::StrFormat("%-25s ", "resident set")); break;
+    case LimitType::ProcessCount: absl::StrAppend(&str, absl::StrFormat("%-25s ", "processes")); break;
+    case LimitType::NumberOfFiles: absl::StrAppend(&str, absl::StrFormat("%-25s ", "open files")); break;
+    case LimitType::MemoryLocked: absl::StrAppend(&str, absl::StrFormat("%-25s ", "locked memory")); break;
+    case LimitType::AS: absl::StrAppend(&str, absl::StrFormat("%-25s ", "address space")); break;
+    case LimitType::Locks: absl::StrAppend(&str, absl::StrFormat("%-25s ", "file locks")); break;
+    case LimitType::SignalsPending: absl::StrAppend(&str, absl::StrFormat("%-25s ", "pending signals")); break;
+    case LimitType::MessageQueueBytes: absl::StrAppend(&str, absl::StrFormat("%-25s ", "msgqueue size")); break;
+    case LimitType::Nice: absl::StrAppend(&str, absl::StrFormat("%-25s ", "nice priority")); break;
+    case LimitType::RealTimePriority: absl::StrAppend(&str, absl::StrFormat("%-25s ", "realtime priority")); break;
+    case LimitType::Rttime: absl::StrAppend(&str, absl::StrFormat("%-25s ", "realtime timeout")); break;
+  }
+
+  if (entry.cur_limit == ~0ULL) {
+    absl::StrAppend(&str, absl::StrFormat("%-20s ", "unlimited"));
+  } else {
+    absl::StrAppend(&str, absl::StrFormat("%-20d ", entry.cur_limit));
+  }
+
+  if (entry.max_limit == ~0ULL) {
+    absl::StrAppend(&str, absl::StrFormat("%-20s ", "unlimited"));
+  } else {
+    absl::StrAppend(&str, absl::StrFormat("%-20d ", entry.max_limit));
+  }
+
+  switch (entry.limit_type) {
+    case LimitType::CPU: absl::StrAppend(&str, absl::StrFormat("%-10s", "seconds")); break;
+    case LimitType::FileSize: absl::StrAppend(&str, absl::StrFormat("%-10s ", "bytes")); break;
+    case LimitType::Data: absl::StrAppend(&str, absl::StrFormat("%-10s ", "bytes")); break;
+    case LimitType::Stack: absl::StrAppend(&str, absl::StrFormat("%-10s ", "bytes")); break;
+    case LimitType::Core: absl::StrAppend(&str, absl::StrFormat("%-10s ", "bytes")); break;
+    case LimitType::RSS: absl::StrAppend(&str, absl::StrFormat("%-10s ", "bytes")); break;
+    case LimitType::ProcessCount: absl::StrAppend(&str, absl::StrFormat("%-10s ", "processes")); break;
+    case LimitType::NumberOfFiles: absl::StrAppend(&str, absl::StrFormat("%-10s ", "files")); break;
+    case LimitType::MemoryLocked: absl::StrAppend(&str, absl::StrFormat("%-10s ", "bytes")); break;
+    case LimitType::AS: absl::StrAppend(&str, absl::StrFormat("%-10s ", "bytes")); break;
+    case LimitType::Locks: absl::StrAppend(&str, absl::StrFormat("%-10s ", "locks")); break;
+    case LimitType::SignalsPending: absl::StrAppend(&str, absl::StrFormat("%-10s ", "signals")); break;
+    case LimitType::MessageQueueBytes: absl::StrAppend(&str, absl::StrFormat("%-10s ", "bytes")); break;
+    case LimitType::Nice: absl::StrAppend(&str, absl::StrFormat("%-10s ", "")); break;
+    case LimitType::RealTimePriority: absl::StrAppend(&str, absl::StrFormat("%-10s ", "")); break;
+    case LimitType::Rttime: absl::StrAppend(&str, absl::StrFormat("%-10s ", "us")); break;
+  }
+
+  os << str;
+  return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const std::vector<ProcLimitsEntry>& vec) {
+  os << "Limit                     Soft Limit           Hard Limit           Units     \n";
+  for (unsigned int i = 0; i < vec.size(); i++) {
+    os << vec[i];
+    if (i != vec.size() - 1) {
+      os << "\n";
+    }
+  }
+  return os;
+}
+
 }  // namespace testing
 }  // namespace gvisor

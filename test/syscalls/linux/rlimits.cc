@@ -21,8 +21,14 @@
 #include <unistd.h>
 
 #include <climits>
+#include <algorithm>
+#include <string>
+#include <vector>
 
+#include "absl/strings/numbers.h"
+#include "absl/strings/str_split.h"
 #include "test/util/capability_util.h"
+#include "test/util/proc_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
@@ -30,6 +36,21 @@ namespace gvisor {
 namespace testing {
 
 namespace {
+
+PosixErrorOr<ProcLimitsEntry> GetProcLimitEntryByType(LimitType limit_type) {
+  ASSIGN_OR_RETURN_ERRNO(std::string proc_self_limits,
+                         GetContents("/proc/self/limits"));
+  ASSIGN_OR_RETURN_ERRNO(auto entries, ParseProcLimits(proc_self_limits));
+  auto it =
+    std::find_if(entries.begin(), entries.end(),
+                 [limit_type](const ProcLimitsEntry& v) {
+                  return v.limit_type == limit_type;
+                 });
+  if (it == entries.end()) {
+    return PosixError(ENOENT, "limit type not found");
+  }
+  return *it;
+}
 
 TEST(RlimitTest, SetRlimitHigher) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_RESOURCE)));
@@ -42,6 +63,12 @@ TEST(RlimitTest, SetRlimitHigher) {
   rl.rlim_cur--;
   rl.rlim_max--;
   ASSERT_THAT(setrlimit(RLIMIT_NOFILE, &rl), SyscallSucceeds());
+
+  // Now verify we can read the changed values via /proc/self/limits
+  const ProcLimitsEntry limit_entry =
+    ASSERT_NO_ERRNO_AND_VALUE(GetProcLimitEntryByType(LimitType::NumberOfFiles));
+  EXPECT_EQ(rl.rlim_cur, limit_entry.cur_limit);
+  EXPECT_EQ(rl.rlim_max, limit_entry.max_limit);
 
   rl.rlim_max++;
   EXPECT_THAT(setrlimit(RLIMIT_NOFILE, &rl), SyscallSucceeds());
