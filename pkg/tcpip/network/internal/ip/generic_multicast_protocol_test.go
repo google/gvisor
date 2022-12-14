@@ -774,7 +774,7 @@ func TestQueuedPackets(t *testing.T) {
 	}
 
 	// When we fail to send the initial set of reports, incoming reports should
-	// not affect a newly joined group's reports from being sent.
+	// prevent a newly joined group's reports from being sent.
 	mgp.setQueuePackets(true)
 	mgp.joinGroup(addr2)
 	if diff := mgp.check([]tcpip.Address{addr2} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
@@ -784,25 +784,14 @@ func TestQueuedPackets(t *testing.T) {
 	// Attempting to send queued reports while still unable to send reports should
 	// not change the host state.
 	mgp.sendQueuedReports()
-	if diff := mgp.check([]tcpip.Address{addr2} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
 		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
-	// Mock being able to successfully send the report.
+	// Should not have any packets queued.
 	mgp.setQueuePackets(false)
-	mgp.sendQueuedReports()
-	if diff := mgp.check([]tcpip.Address{addr2} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
-		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
-	}
-	// The delayed report (sent after the initial report) should now be sent.
-	clock.Advance(maxUnsolicitedReportDelay)
-	if diff := mgp.check([]tcpip.Address{addr2} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
-		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
-	}
-
-	// Should not have anything else to send.
 	mgp.sendQueuedReports()
 	clock.Advance(time.Hour)
 	if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
-		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 }
