@@ -6,6 +6,9 @@ proto_library(
     name = "control",
     srcs = ["control.proto"],
     visibility = ["//visibility:public"],
+    deps = [
+        "@com_google_protobuf//:timestamp_proto",
+    ],
 )
 
 go_library(
@@ -50,6 +53,7 @@ go_library(
         "//pkg/tcpip/link/sniffer",
         "//pkg/urpc",
         "//pkg/usermem",
+        "@org_golang_google_protobuf//types/known/timestamppb",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
