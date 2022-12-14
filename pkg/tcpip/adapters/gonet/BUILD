@@ -7,6 +7,7 @@ go_library(
     srcs = ["gonet.go"],
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/log",
         "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/stack",

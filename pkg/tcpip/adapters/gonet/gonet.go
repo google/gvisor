@@ -24,6 +24,7 @@ import (
 	"net"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -453,6 +454,7 @@ func (c *TCPConn) LocalAddr() net.Addr {
 func (c *TCPConn) RemoteAddr() net.Addr {
 	a, err := c.ep.GetRemoteAddress()
 	if err != nil {
+		log.Warningf("ep.GetRemoteAddress() failed: %v", err)
 		return nil
 	}
 	return fullToTCPAddr(a)
@@ -621,6 +623,7 @@ func (c *UDPConn) newRemoteOpError(op string, remote net.Addr, err error) *net.O
 func (c *UDPConn) RemoteAddr() net.Addr {
 	a, err := c.ep.GetRemoteAddress()
 	if err != nil {
+		log.Warningf("ep.GetRemoteAddress() failed: %v", err)
 		return nil
 	}
 	return fullToUDPAddr(a)
