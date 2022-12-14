@@ -29,8 +29,6 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/p9"
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
@@ -235,10 +233,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		util.Fatalf("installing seccomp filters: %v", err)
 	}
 
-	if conf.Lisafs {
-		return g.serveLisafs(spec, conf, root)
-	}
-	return g.serve9P(spec, conf, root)
+	return g.serve(spec, conf, root)
 }
 
 func newSocket(ioFD int) *unet.Socket {
@@ -249,7 +244,7 @@ func newSocket(ioFD int) *unet.Socket {
 	return socket
 }
 
-func (g *Gofer) serveLisafs(spec *specs.Spec, conf *config.Config, root string) subcommands.ExitStatus {
+func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string) subcommands.ExitStatus {
 	type connectionConfig struct {
 		sock      *unet.Socket
 		mountPath string
@@ -310,70 +305,6 @@ func (g *Gofer) serveLisafs(spec *specs.Spec, conf *config.Config, root string) 
 	server.Wait()
 	server.Destroy()
 	log.Infof("All lisafs servers exited.")
-	if g.stopProfiling != nil {
-		g.stopProfiling()
-	}
-	return subcommands.ExitSuccess
-}
-
-func (g *Gofer) serve9P(spec *specs.Spec, conf *config.Config, root string) subcommands.ExitStatus {
-	// Start with root mount, then add any other additional mount as needed.
-	overlay2 := conf.GetOverlay2()
-	ats := make([]p9.Attacher, 0, len(spec.Mounts)+1)
-	ap, err := fsgofer.NewAttachPoint("/", fsgofer.Config{
-		ROMount:  spec.Root.Readonly || overlay2.RootMount,
-		HostUDS:  conf.GetHostUDS(),
-		HostFifo: conf.HostFifo,
-	})
-	if err != nil {
-		util.Fatalf("creating attach point: %v", err)
-	}
-	ats = append(ats, ap)
-	log.Infof("Serving %q mapped to %q on FD %d (ro: %t)", "/", root, g.ioFDs[0], spec.Root.Readonly)
-
-	mountIdx := 1 // first one is the root
-	for _, m := range spec.Mounts {
-		if specutils.IsGoferMount(m) {
-			cfg := fsgofer.Config{
-				ROMount:  isReadonlyMount(m.Options) || overlay2.SubMounts,
-				HostUDS:  conf.GetHostUDS(),
-				HostFifo: conf.HostFifo,
-			}
-			ap, err := fsgofer.NewAttachPoint(m.Destination, cfg)
-			if err != nil {
-				util.Fatalf("creating attach point: %v", err)
-			}
-			ats = append(ats, ap)
-
-			if mountIdx >= len(g.ioFDs) {
-				util.Fatalf("no FD found for mount. Did you forget --io-fd? mount: %d, %v", len(g.ioFDs), m)
-			}
-			log.Infof("Serving %q mapped on FD %d (ro: %t)", m.Destination, g.ioFDs[mountIdx], cfg.ROMount)
-			mountIdx++
-		}
-	}
-	if mountIdx != len(g.ioFDs) {
-		util.Fatalf("too many FDs passed for mounts. mounts: %d, FDs: %d", mountIdx, len(g.ioFDs))
-	}
-
-	// Run the loops and wait for all to exit.
-	var wg sync.WaitGroup
-	for i, ioFD := range g.ioFDs {
-		wg.Add(1)
-		go func(ioFD int, at p9.Attacher) {
-			socket, err := unet.NewSocket(ioFD)
-			if err != nil {
-				util.Fatalf("creating server on FD %d: %v", ioFD, err)
-			}
-			s := p9.NewServer(at)
-			if err := s.Handle(socket); err != nil {
-				util.Fatalf("P9 server returned error. Gofer is shutting down. FD: %d, err: %v", ioFD, err)
-			}
-			wg.Done()
-		}(ioFD, ats[i])
-	}
-	wg.Wait()
-	log.Infof("All 9P servers exited.")
 	if g.stopProfiling != nil {
 		g.stopProfiling()
 	}
