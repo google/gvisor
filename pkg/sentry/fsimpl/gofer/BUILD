@@ -4,6 +4,18 @@ load("//tools/go_generics:defs.bzl", "go_template_instance")
 licenses(["notice"])
 
 go_template_instance(
+    name = "string_list",
+    out = "string_list.go",
+    package = "gofer",
+    prefix = "string",
+    template = "//pkg/ilist:generic_list",
+    types = {
+        "Element": "*stringListElem",
+        "Linker": "*stringListElem",
+    },
+)
+
+go_template_instance(
     name = "dentry_list",
     out = "dentry_list.go",
     package = "gofer",
@@ -55,6 +67,7 @@ go_library(
         "socket.go",
         "special_fd_list.go",
         "special_file.go",
+        "string_list.go",
         "symlink.go",
         "time.go",
     ],

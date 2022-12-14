@@ -586,6 +586,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 		if child, ok := parent.children[name]; ok && child == nil {
 			// Delete the now-stale negative dentry.
 			delete(parent.children, name)
+			parent.negativeChildren--
 		}
 		parent.touchCMtime()
 		parent.clearDirentsLocked()
@@ -1604,25 +1605,16 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		ds = appendDentry(ds, replaced)
 	}
 	oldParent.cacheNegativeLookupLocked(oldName)
-	// We don't use newParent.cacheNewChildLocked() since we don't want to mess
-	// with reference counts and queue oldParent for checkCachingLocked if the
-	// parent isn't actually changing.
+	if renamed.isSynthetic() {
+		oldParent.syntheticChildren--
+		newParent.syntheticChildren++
+	}
+	newParent.cacheNewChildLocked(renamed, newName)
+	oldParent.decRefNoCaching()
 	if oldParent != newParent {
-		oldParent.decRefNoCaching()
-		newParent.IncRef()
 		ds = appendDentry(ds, newParent)
 		ds = appendDentry(ds, oldParent)
-		if renamed.isSynthetic() {
-			oldParent.syntheticChildren--
-			newParent.syntheticChildren++
-		}
-		renamed.parent = newParent
 	}
-	renamed.name = newName
-	if newParent.children == nil {
-		newParent.children = make(map[string]*dentry)
-	}
-	newParent.children[newName] = renamed
 
 	// Update metadata.
 	if renamed.cachedMetadataAuthoritative() {
