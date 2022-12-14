@@ -86,7 +86,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 
 	flagSet.Bool("vfs2", true, "DEPRECATED: this flag has no effect.")
 	flagSet.Bool("fuse", true, "DEPRECATED: this flag has no effect.")
-	flagSet.Bool("lisafs", true, "Enables lisafs protocol instead of 9P.")
+	flagSet.Bool("lisafs", true, "DEPRECATED: this flag has no effect.")
 	flagSet.Bool("cgroupfs", false, "Automatically mount cgroupfs.")
 	flagSet.Bool("ignore-cgroups", false, "don't configure cgroups.")
 	flagSet.Int("fdlimit", -1, "Specifies a limit on the number of host file descriptors that can be open. Applies separately to the sentry and gofer. Note: each file in the sandbox holds more than one host FD open.")

@@ -222,9 +222,6 @@ type Config struct {
 	// E.g. 0.2 CPU quota will result in 1, and 1.9 in 2.
 	CPUNumFromQuota bool `flag:"cpu-num-from-quota"`
 
-	// Enable lisafs.
-	Lisafs bool `flag:"lisafs"`
-
 	// Allows overriding of flags in OCI annotations.
 	AllowFlagOverride bool `flag:"allow-flag-override"`
 

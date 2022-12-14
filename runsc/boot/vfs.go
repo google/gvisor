@@ -253,7 +253,7 @@ func compileMounts(spec *specs.Spec, conf *config.Config) []specs.Mount {
 }
 
 // goferMountData creates a slice of gofer mount data.
-func goferMountData(fd int, fa config.FileAccessType, lisafs bool) []string {
+func goferMountData(fd int, fa config.FileAccessType) []string {
 	opts := []string{
 		"trans=fd",
 		"rfdno=" + strconv.Itoa(fd),
@@ -262,9 +262,7 @@ func goferMountData(fd int, fa config.FileAccessType, lisafs bool) []string {
 	if fa == config.FileAccessShared {
 		opts = append(opts, "cache=remote_revalidating")
 	}
-	if lisafs {
-		opts = append(opts, "lisafs=true")
-	}
+	opts = append(opts, "lisafs=true")
 	return opts
 }
 
@@ -404,7 +402,7 @@ func (c *containerMounter) mountAll(conf *config.Config, procArgs *kernel.Create
 // createMountNamespace creates the container's root mount and namespace.
 func (c *containerMounter) createMountNamespace(ctx context.Context, conf *config.Config, creds *auth.Credentials) (*vfs.MountNamespace, error) {
 	fd := c.fds.remove()
-	data := goferMountData(fd, conf.FileAccess, conf.Lisafs)
+	data := goferMountData(fd, conf.FileAccess)
 
 	// We can't check for overlayfs here because sandbox is chroot'ed and gofer
 	// can only send mount options for specs.Mounts (specs.Root is missing
@@ -714,7 +712,7 @@ func (c *containerMounter) getMountNameAndOptions(conf *config.Config, m *mountA
 			// but unlikely to be correct in this context.
 			return "", nil, false, fmt.Errorf("gofer mount requires a connection FD")
 		}
-		data = goferMountData(m.fd, c.getMountAccessType(conf, m.mount), conf.Lisafs)
+		data = goferMountData(m.fd, c.getMountAccessType(conf, m.mount))
 		internalData = gofer.InternalFilesystemOptions{
 			UniqueID: m.mount.Destination,
 		}

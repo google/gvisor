@@ -75,12 +75,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
-// LISAFSEnabled is set to true when lisafs protocol is enabled. Added as a
-// global to allow easy access everywhere.
-//
-// TODO(gvisor.dev/issue/7911): Remove when 9P is deleted.
-var LISAFSEnabled = false
-
 // userCounters is a set of user counters.
 //
 // +stateify savable
