@@ -245,8 +245,6 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("setting up memory usage: %w", err)
 	}
 
-	kernel.LISAFSEnabled = args.Conf.Lisafs
-
 	// Make host FDs stable between invocations. Host FDs must map to the exact
 	// same number when the sandbox is restored. Otherwise the wrong FD will be
 	// used.
