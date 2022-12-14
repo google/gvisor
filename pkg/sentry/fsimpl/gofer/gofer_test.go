@@ -65,3 +65,25 @@ func TestDestroyIdempotent(t *testing.T) {
 	child.checkCachingLocked(ctx, true /* renameMuWriteLocked */)
 	child.checkCachingLocked(ctx, true /* renameMuWriteLocked */)
 }
+
+func TestStringFixedCache(t *testing.T) {
+	names := []string{"a", "b", "c"}
+	cache := stringFixedCache{}
+
+	cache.init(uint64(len(names)))
+	if inited := cache.isInited(); !inited {
+		t.Fatalf("cache.isInited(): %v, want: true", inited)
+	}
+	for _, s := range names {
+		victim := cache.add(s)
+		if victim != "" {
+			t.Fatalf("cache.add(): %v, want: \"\"", victim)
+		}
+	}
+	for _, s := range names {
+		victim := cache.add("something")
+		if victim != s {
+			t.Fatalf("cache.add(): %v, want: %v", victim, s)
+		}
+	}
+}
