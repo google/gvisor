@@ -664,6 +664,13 @@ TEST_P(PipeTest, Streaming) {
   }
 }
 
+TEST_P(PipeTest, ZeroSize) {
+  SKIP_IF(!CreateBlocking());
+
+  ASSERT_THAT(write(wfd_.get(), nullptr, 0), SyscallSucceedsWithValue(0));
+  ASSERT_THAT(read(rfd_.get(), nullptr, 0), SyscallSucceedsWithValue(0));
+}
+
 std::string PipeCreatorName(::testing::TestParamInfo<PipeCreator> info) {
   return info.param.name_;  // Use the name specified.
 }
