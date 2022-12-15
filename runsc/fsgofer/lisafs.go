@@ -12,9 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package fsgofer provides a lisafs server implementation which gives access
+// to local files.
 package fsgofer
 
 import (
+	"fmt"
 	"io"
 	"math"
 	"os"
@@ -30,7 +33,43 @@ import (
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
+	"gvisor.dev/gvisor/runsc/config"
 )
+
+const (
+	openFlags = unix.O_NOFOLLOW | unix.O_CLOEXEC
+
+	// UNIX_PATH_MAX as defined in include/uapi/linux/un.h.
+	unixPathMax = 108
+)
+
+// Config sets configuration options for each attach point.
+type Config struct {
+	// ROMount is set to true if this is a readonly mount.
+	ROMount bool
+
+	// PanicOnWrite panics on attempts to write to RO mounts.
+	PanicOnWrite bool
+
+	// HostUDS signals whether the gofer can connect to host unix domain sockets.
+	HostUDS config.HostUDS
+
+	// HostFifo signals whether the gofer can connect to host FIFOs.
+	HostFifo config.HostFifo
+}
+
+var procSelfFD *rwfd.FD
+
+// OpenProcSelfFD opens the /proc/self/fd directory, which will be used to
+// reopen file descriptors.
+func OpenProcSelfFD() error {
+	d, err := unix.Open("/proc/self/fd", unix.O_RDONLY|unix.O_DIRECTORY, 0)
+	if err != nil {
+		return fmt.Errorf("error opening /proc/self/fd: %v", err)
+	}
+	procSelfFD = rwfd.New(d)
+	return nil
+}
 
 // LisafsServer implements lisafs.ServerImpl for fsgofer.
 type LisafsServer struct {
@@ -1057,4 +1096,63 @@ func fstatTo(hostFD int) (linux.Statx, error) {
 			Nsec: uint32(stat.Ctim.Nsec),
 		},
 	}, nil
+}
+
+func checkSupportedFileType(mode uint32, config *Config) error {
+	switch mode & unix.S_IFMT {
+	case unix.S_IFREG, unix.S_IFDIR, unix.S_IFLNK, unix.S_IFCHR:
+		return nil
+
+	case unix.S_IFSOCK:
+		if !config.HostUDS.AllowOpen() {
+			return unix.EPERM
+		}
+		return nil
+
+	case unix.S_IFIFO:
+		if !config.HostFifo.AllowOpen() {
+			return unix.EPERM
+		}
+		return nil
+
+	default:
+		return unix.EPERM
+	}
+}
+
+// extractErrno tries to determine the errno.
+func extractErrno(err error) unix.Errno {
+	if err == nil {
+		// This should never happen. The likely result will be that
+		// some user gets the frustrating "error: SUCCESS" message.
+		log.Warningf("extractErrno called with nil error!")
+		return 0
+	}
+
+	switch err {
+	case os.ErrNotExist:
+		return unix.ENOENT
+	case os.ErrExist:
+		return unix.EEXIST
+	case os.ErrPermission:
+		return unix.EACCES
+	case os.ErrInvalid:
+		return unix.EINVAL
+	}
+
+	// See if it's an errno or a common wrapped error.
+	switch e := err.(type) {
+	case unix.Errno:
+		return e
+	case *os.PathError:
+		return extractErrno(e.Err)
+	case *os.LinkError:
+		return extractErrno(e.Err)
+	case *os.SyscallError:
+		return extractErrno(e.Err)
+	}
+
+	// Fall back to EIO.
+	log.Debugf("Unknown error: %v, defaulting to EIO", err)
+	return unix.EIO
 }

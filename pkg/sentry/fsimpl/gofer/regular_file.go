@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/metric"
-	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
 	"gvisor.dev/gvisor/pkg/sentry/fsutil"
@@ -97,16 +96,10 @@ func (fd *regularFileFD) OnClose(ctx context.Context) error {
 	}
 	d.handleMu.RLock()
 	defer d.handleMu.RUnlock()
-	if d.fs.opts.lisaEnabled {
-		if !d.writeFDLisa.Ok() {
-			return nil
-		}
-		return d.writeFDLisa.Flush(ctx)
-	}
-	if d.writeFile.isNil() {
+	if !d.writeFDLisa.Ok() {
 		return nil
 	}
-	return d.writeFile.flush(ctx)
+	return d.writeFDLisa.Flush(ctx)
 }
 
 // Allocate implements vfs.FileDescriptionImpl.Allocate.
@@ -115,10 +108,7 @@ func (fd *regularFileFD) Allocate(ctx context.Context, mode, offset, length uint
 	return d.doAllocate(ctx, offset, length, func() error {
 		d.handleMu.RLock()
 		defer d.handleMu.RUnlock()
-		if d.fs.opts.lisaEnabled {
-			return d.writeFDLisa.Allocate(ctx, mode, offset, length)
-		}
-		return d.writeFile.allocate(ctx, p9.ToAllocateMode(mode), offset, length)
+		return d.writeFDLisa.Allocate(ctx, mode, offset, length)
 	})
 }
 
@@ -290,19 +280,13 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 		// changes to the host.
 		if newMode := vfs.ClearSUIDAndSGID(oldMode); newMode != oldMode {
 			d.mode.Store(newMode)
-			if d.fs.opts.lisaEnabled {
-				stat := linux.Statx{Mask: linux.STATX_MODE, Mode: uint16(newMode)}
-				failureMask, failureErr, err := d.controlFDLisa.SetStat(ctx, &stat)
-				if err != nil {
-					return 0, offset, err
-				}
-				if failureMask != 0 {
-					return 0, offset, failureErr
-				}
-			} else {
-				if err := d.file.setAttr(ctx, p9.SetAttrMask{Permissions: true}, p9.SetAttr{Permissions: p9.FileMode(newMode)}); err != nil {
-					return 0, offset, err
-				}
+			stat := linux.Statx{Mask: linux.STATX_MODE, Mode: uint16(newMode)}
+			failureMask, failureErr, err := d.controlFDLisa.SetStat(ctx, &stat)
+			if err != nil {
+				return 0, offset, err
+			}
+			if failureMask != 0 {
+				return 0, offset, failureErr
 			}
 		}
 	}
@@ -665,7 +649,7 @@ func regularFileSeekLocked(ctx context.Context, d *dentry, fdOffset, offset int6
 	case linux.SEEK_END, linux.SEEK_DATA, linux.SEEK_HOLE:
 		// Ensure file size is up to date.
 		if !d.cachedMetadataAuthoritative() {
-			if err := d.updateFromGetattr(ctx); err != nil {
+			if err := d.updateMetadata(ctx, nil); err != nil {
 				return 0, err
 			}
 		}

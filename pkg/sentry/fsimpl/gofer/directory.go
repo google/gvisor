@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
@@ -43,12 +42,12 @@ func (d *dentry) isDir() bool {
 //   - d.isDir().
 //   - child must be a newly-created dentry that has never had a parent.
 func (d *dentry) insertCreatedChildLocked(ctx context.Context, childIno *lisafs.Inode, childName string, updateChild func(child *dentry), ds **[]*dentry) error {
-	child, err := d.fs.newDentryLisa(ctx, childIno)
+	child, err := d.fs.newDentry(ctx, childIno)
 	if err != nil {
 		if err := d.controlFDLisa.UnlinkAt(ctx, childName, 0 /* flags */); err != nil {
-			log.Warningf("failed to clean up created child %s after newDentryLisa() failed: %v", childName, err)
+			log.Warningf("failed to clean up created child %s after newDentry() failed: %v", childName, err)
 		}
-		d.fs.clientLisa.CloseFD(ctx, childIno.ControlFD, false /* flush */)
+		d.fs.client.CloseFD(ctx, childIno.ControlFD, false /* flush */)
 		return err
 	}
 	d.cacheNewChildLocked(child, childName)
@@ -275,7 +274,6 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 			// duplicate entries for synthetic children.
 			realChildren = make(map[string]struct{})
 		}
-		off := uint64(0)
 		const count = 64 * 1024 // for consistency with the vfs1 client
 		d.handleMu.RLock()
 		if !d.isReadFileOk() {
@@ -288,77 +286,40 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 		// directory entries.
 		shouldSeek0 := true
 		for {
-			if d.fs.opts.lisaEnabled {
-				countLisa := int32(count)
-				if shouldSeek0 {
-					// See lisafs.Getdents64Req.Count.
-					countLisa = -countLisa
-					shouldSeek0 = false
+			countLisa := int32(count)
+			if shouldSeek0 {
+				// See lisafs.Getdents64Req.Count.
+				countLisa = -countLisa
+				shouldSeek0 = false
+			}
+			direntsLisa, err := d.readFDLisa.Getdents64(ctx, countLisa)
+			if err != nil {
+				d.handleMu.RUnlock()
+				return nil, err
+			}
+			if len(direntsLisa) == 0 {
+				d.handleMu.RUnlock()
+				break
+			}
+			for i := range direntsLisa {
+				name := string(direntsLisa[i].Name)
+				if name == "." || name == ".." {
+					continue
 				}
-				lisafsDs, err := d.readFDLisa.Getdents64(ctx, countLisa)
-				if err != nil {
-					d.handleMu.RUnlock()
-					return nil, err
+				dirent := vfs.Dirent{
+					Name: name,
+					Ino: d.fs.inoFromKey(inoKey{
+						ino:      uint64(direntsLisa[i].Ino),
+						devMinor: uint32(direntsLisa[i].DevMinor),
+						devMajor: uint32(direntsLisa[i].DevMajor),
+					}),
+					NextOff: int64(len(dirents) + 1),
+					Type:    uint8(direntsLisa[i].Type),
 				}
-				if len(lisafsDs) == 0 {
-					d.handleMu.RUnlock()
-					break
+				dirents = append(dirents, dirent)
+				if realChildren != nil {
+					realChildren[name] = struct{}{}
 				}
-				for i := range lisafsDs {
-					name := string(lisafsDs[i].Name)
-					if name == "." || name == ".." {
-						continue
-					}
-					dirent := vfs.Dirent{
-						Name: name,
-						Ino: d.fs.inoFromKey(inoKey{
-							ino:      uint64(lisafsDs[i].Ino),
-							devMinor: uint32(lisafsDs[i].DevMinor),
-							devMajor: uint32(lisafsDs[i].DevMajor),
-						}),
-						NextOff: int64(len(dirents) + 1),
-						Type:    uint8(lisafsDs[i].Type),
-					}
-					dirents = append(dirents, dirent)
-					if realChildren != nil {
-						realChildren[name] = struct{}{}
-					}
-				}
-			} else {
-				p9ds, err := d.readFile.readdir(ctx, off, count)
-				if err != nil {
-					d.handleMu.RUnlock()
-					return nil, err
-				}
-				if len(p9ds) == 0 {
-					d.handleMu.RUnlock()
-					break
-				}
-				for _, p9d := range p9ds {
-					if p9d.Name == "." || p9d.Name == ".." {
-						continue
-					}
-					dirent := vfs.Dirent{
-						Name:    p9d.Name,
-						Ino:     d.fs.inoFromQIDPath(p9d.QID.Path),
-						NextOff: int64(len(dirents) + 1),
-					}
-					// p9 does not expose 9P2000.U's DMDEVICE, DMNAMEDPIPE, or
-					// DMSOCKET.
-					switch p9d.Type {
-					case p9.TypeSymlink:
-						dirent.Type = linux.DT_LNK
-					case p9.TypeDir:
-						dirent.Type = linux.DT_DIR
-					default:
-						dirent.Type = linux.DT_REG
-					}
-					dirents = append(dirents, dirent)
-					if realChildren != nil {
-						realChildren[p9d.Name] = struct{}{}
-					}
-				}
-				off = p9ds[len(p9ds)-1].Offset
 			}
 		}
 	}

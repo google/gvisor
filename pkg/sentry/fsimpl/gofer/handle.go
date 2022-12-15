@@ -19,61 +19,22 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/hostfd"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // handle represents a remote "open file descriptor", consisting of an opened
-// fid (p9.File) and optionally a host file descriptor.
-//
-// If lisafs is being used, fdLisa points to an open file on the server.
+// lisafs FD and optionally a host file descriptor.
 //
 // These are explicitly not savable.
 type handle struct {
 	fdLisa lisafs.ClientFD
-	file   p9file
 	fd     int32 // -1 if unavailable
 }
 
 // Preconditions: read || write.
-func openHandle(ctx context.Context, file p9file, read, write, trunc bool) (handle, error) {
-	_, newfile, err := file.walk(ctx, nil)
-	if err != nil {
-		return handle{fd: -1}, err
-	}
-	flags := p9.ReadOnly
-	switch {
-	case read && !write:
-		flags = p9.ReadOnly
-	case !read && write:
-		flags = p9.WriteOnly
-	case read && write:
-		flags = p9.ReadWrite
-	default:
-		log.Debugf("openHandle called with read = write = false. Falling back to read only FD.")
-	}
-	if trunc {
-		flags |= p9.OpenTruncate
-	}
-	fdobj, _, _, err := newfile.open(ctx, flags)
-	if err != nil {
-		newfile.close(ctx)
-		return handle{fd: -1}, err
-	}
-	fd := int32(-1)
-	if fdobj != nil {
-		fd = int32(fdobj.Release())
-	}
-	return handle{
-		file: newfile,
-		fd:   fd,
-	}, nil
-}
-
-// Preconditions: read || write.
-func openHandleLisa(ctx context.Context, fdLisa lisafs.ClientFD, read, write, trunc bool) (handle, error) {
+func openHandle(ctx context.Context, fdLisa lisafs.ClientFD, read, write, trunc bool) (handle, error) {
 	flags := uint32(unix.O_RDONLY)
 	switch {
 	case read && write:
@@ -83,7 +44,7 @@ func openHandleLisa(ctx context.Context, fdLisa lisafs.ClientFD, read, write, tr
 	case write:
 		flags = unix.O_WRONLY
 	default:
-		log.Debugf("openHandleLisa called with read = write = false. Falling back to read only FD.")
+		log.Debugf("openHandle called with read = write = false. Falling back to read only FD.")
 	}
 	if trunc {
 		flags |= unix.O_TRUNC
@@ -100,19 +61,11 @@ func openHandleLisa(ctx context.Context, fdLisa lisafs.ClientFD, read, write, tr
 }
 
 func (h *handle) isOpen() bool {
-	if h.fdLisa.Client() != nil {
-		return h.fdLisa.Ok()
-	}
-	return !h.file.isNil()
+	return h.fdLisa.Ok()
 }
 
 func (h *handle) close(ctx context.Context) {
-	if h.fdLisa.Client() != nil {
-		h.fdLisa.Close(ctx, true /* flush */)
-	} else {
-		h.file.close(ctx)
-		h.file = p9file{}
-	}
+	h.fdLisa.Close(ctx, true /* flush */)
 	if h.fd >= 0 {
 		unix.Close(int(h.fd))
 		h.fd = -1
@@ -177,30 +130,14 @@ func putHandleReadWriter(rw *handleReadWriter) {
 
 // Read implements io.Reader.Read.
 func (rw *handleReadWriter) Read(dst []byte) (int, error) {
-	var (
-		n   uint64
-		err error
-	)
-	if rw.h.fdLisa.Client() != nil {
-		n, err = rw.h.fdLisa.Read(rw.ctx, dst, rw.off)
-	} else {
-		n, err = rw.h.file.readAt(rw.ctx, dst, rw.off)
-	}
+	n, err := rw.h.fdLisa.Read(rw.ctx, dst, rw.off)
 	rw.off += n
 	return int(n), err
 }
 
 // Write implements io.Writer.Write.
 func (rw *handleReadWriter) Write(src []byte) (int, error) {
-	var (
-		n   uint64
-		err error
-	)
-	if rw.h.fdLisa.Client() != nil {
-		n, err = rw.h.fdLisa.Write(rw.ctx, src, rw.off)
-	} else {
-		n, err = rw.h.file.writeAt(rw.ctx, src, rw.off)
-	}
+	n, err := rw.h.fdLisa.Write(rw.ctx, src, rw.off)
 	rw.off += n
 	return int(n), err
 }
