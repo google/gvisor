@@ -83,11 +83,18 @@ func (s *sockCommunicator) PayloadBuf(size uint32) []byte {
 
 // SndRcvMessage implements Communicator.SndRcvMessage.
 func (s *sockCommunicator) SndRcvMessage(m MID, payloadLen uint32, wantFDs uint8) (MID, uint32, error) {
+	// Map the transport errors to EIO, but also log the real error.
 	if err := s.sndPrepopulatedMsg(m, payloadLen, nil); err != nil {
-		return 0, 0, err
+		log.Warningf("socketCommunicator.SndRcvMessage: sndPrepopulatedMsg failed: %v", err)
+		return 0, 0, unix.EIO
 	}
 
-	return s.rcvMsg(wantFDs)
+	respM, respPayloadLen, err := s.rcvMsg(wantFDs)
+	if err != nil {
+		log.Warningf("socketCommunicator.SndRcvMessage: rcvMsg failed: %v", err)
+		return 0, 0, unix.EIO
+	}
+	return respM, respPayloadLen, nil
 }
 
 // String implements fmt.Stringer.String.
