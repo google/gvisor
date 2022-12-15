@@ -533,6 +533,10 @@ type dentry struct {
 	//
 	//	- isMappable is non-zero iff wrappedMappable is non-nil. isMappable is
 	//		accessed using atomic memory operations.
+	//
+	//	- wrappedMappable is protected by mapsMu and dataMu. In addition,
+	//	  it has to be immutable if copyMu is taken for write.
+	//        copyUpMaybeSyntheticMountpointLocked relies on this behavior.
 	mapsMu          mapsMutex `state:"nosave"`
 	lowerMappings   memmap.MappingSet
 	dataMu          dataRWMutex `state:"nosave"`
