@@ -20,6 +20,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"runtime"
 	"runtime/debug"
 	"strings"
 
@@ -222,9 +223,10 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		}
 	}
 
-	// Get the spec from the specFD.
+	// Get the spec from the specFD. We *must* keep this os.File alive past
+	// the call setCapsAndCallSelf, otherwise the FD will be closed and the
+	// child process cannot read it
 	specFile := os.NewFile(uintptr(b.specFD), "spec file")
-	defer specFile.Close()
 	spec, err := specutils.ReadSpecFromFile(b.bundleDir, specFile, conf)
 	if err != nil {
 		util.Fatalf("reading spec: %v", err)
@@ -258,7 +260,17 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		// because the ReadSpecFromFile function seeks to the beginning
 		// of the file before reading.
 		util.Fatalf("setCapsAndCallSelf(%v, %v): %v", args, caps, setCapsAndCallSelf(args, caps))
+
+		// This prevents the specFile finalizer from running and closed
+		// the specFD, which we have passed to ourselves when
+		// re-execing.
+		runtime.KeepAlive(specFile)
 		panic("unreachable")
+	}
+
+	// Close specFile to avoid exposing it to the sandbox.
+	if err := specFile.Close(); err != nil {
+		util.Fatalf("closing specFile: %v", err)
 	}
 
 	// At this point we won't re-execute, so it's safe to limit via rlimits. Any
