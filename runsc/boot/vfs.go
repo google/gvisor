@@ -262,7 +262,6 @@ func goferMountData(fd int, fa config.FileAccessType) []string {
 	if fa == config.FileAccessShared {
 		opts = append(opts, "cache=remote_revalidating")
 	}
-	opts = append(opts, "lisafs=true")
 	return opts
 }
 
