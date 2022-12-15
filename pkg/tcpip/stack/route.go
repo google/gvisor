@@ -327,8 +327,8 @@ func (r *Route) HasSaveRestoreCapability() bool {
 	return r.outgoingNIC.NetworkLinkEndpoint.Capabilities()&CapabilitySaveRestore != 0
 }
 
-// HasDisconncetOkCapability returns true if the route supports disconnecting.
-func (r *Route) HasDisconncetOkCapability() bool {
+// HasDisconnectOkCapability returns true if the route supports disconnecting.
+func (r *Route) HasDisconnectOkCapability() bool {
 	return r.outgoingNIC.NetworkLinkEndpoint.Capabilities()&CapabilityDisconnectOk != 0
 }
 
