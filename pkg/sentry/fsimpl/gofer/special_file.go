@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/metric"
-	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
 	"gvisor.dev/gvisor/pkg/sentry/fsutil"
@@ -151,10 +150,7 @@ func (fd *specialFileFD) OnClose(ctx context.Context) error {
 	if !fd.vfsfd.IsWritable() {
 		return nil
 	}
-	if fs := fd.filesystem(); fs.opts.lisaEnabled {
-		return fd.handle.fdLisa.Flush(ctx)
-	}
-	return fd.handle.file.flush(ctx)
+	return fd.handle.fdLisa.Flush(ctx)
 }
 
 // Readiness implements waiter.Waitable.Readiness.
@@ -202,10 +198,7 @@ func (fd *specialFileFD) Allocate(ctx context.Context, mode, offset, length uint
 	if fd.isRegularFile {
 		d := fd.dentry()
 		return d.doAllocate(ctx, offset, length, func() error {
-			if d.fs.opts.lisaEnabled {
-				return fd.handle.fdLisa.Allocate(ctx, mode, offset, length)
-			}
-			return fd.handle.file.allocate(ctx, p9.ToAllocateMode(mode), offset, length)
+			return fd.handle.fdLisa.Allocate(ctx, mode, offset, length)
 		})
 	}
 	return fd.FileDescriptionDefaultImpl.Allocate(ctx, mode, offset, length)
@@ -311,7 +304,7 @@ func (fd *specialFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 		// size is updated. There is a possible race here if size is modified
 		// externally after metadata cache is updated.
 		if fd.vfsfd.StatusFlags()&linux.O_APPEND != 0 && !d.cachedMetadataAuthoritative() {
-			if err := d.updateFromGetattr(ctx); err != nil {
+			if err := d.updateMetadata(ctx, nil); err != nil {
 				return 0, offset, err
 			}
 		}
@@ -435,10 +428,7 @@ func (fd *specialFileFD) sync(ctx context.Context, forFilesystemSync bool) error
 			ctx.UninterruptibleSleepFinish(false)
 			return err
 		}
-		if fs := fd.filesystem(); fs.opts.lisaEnabled {
-			return fd.handle.fdLisa.Sync(ctx)
-		}
-		return fd.handle.file.fsync(ctx)
+		return fd.handle.fdLisa.Sync(ctx)
 	}()
 	if err != nil {
 		if !forFilesystemSync {

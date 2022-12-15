@@ -19,7 +19,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -94,38 +93,17 @@ func (e *endpoint) UnidirectionalConnect(ctx context.Context) (transport.Connect
 }
 
 func (e *endpoint) newConnectedEndpoint(ctx context.Context, sockType linux.SockType, queue *waiter.Queue) (*transport.SCMConnectedEndpoint, *syserr.Error) {
-	if e.dentry.fs.opts.lisaEnabled {
-		hostSockFD, err := e.dentry.controlFDLisa.Connect(ctx, sockType)
-		if err != nil {
-			return nil, syserr.ErrConnectionRefused
-		}
-
-		c, serr := transport.NewSCMEndpoint(hostSockFD, queue, e.path)
-		if serr != nil {
-			unix.Close(hostSockFD)
-			log.Warningf("Gofer returned invalid host socket for BidirectionalConnect; file %+v sockType %d: %v", e.dentry.file, sockType, serr)
-			return nil, serr
-		}
-		return c, nil
-	}
-
-	flags, ok := p9.SocketTypeFromLinux(sockType)
-	if !ok {
-		return nil, syserr.ErrConnectionRefused
-	}
-	hostFile, err := e.dentry.file.connect(ctx, flags)
+	hostSockFD, err := e.dentry.controlFDLisa.Connect(ctx, sockType)
 	if err != nil {
 		return nil, syserr.ErrConnectionRefused
 	}
 
-	c, serr := transport.NewSCMEndpoint(hostFile.FD(), queue, e.path)
+	c, serr := transport.NewSCMEndpoint(hostSockFD, queue, e.path)
 	if serr != nil {
-		hostFile.Close()
-		log.Warningf("Gofer returned invalid host socket for BidirectionalConnect; file %+v sockType %d: %v", e.dentry.file, sockType, serr)
+		unix.Close(hostSockFD)
+		log.Warningf("NewSCMEndpoint failed: path=%q, err=%v", e.path, serr)
 		return nil, serr
 	}
-	// Ownership has been transferred to c.
-	hostFile.Release()
 	return c, nil
 }
 

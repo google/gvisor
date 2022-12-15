@@ -27,7 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/lisafs"
-	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -55,37 +54,12 @@ func (fs *filesystem) Sync(ctx context.Context) error {
 	// regardless.
 	var retErr error
 
-	if fs.opts.lisaEnabled {
-		// Note that lisafs is capable of batching FSync RPCs. However, we can not
-		// batch all the FDIDs to be synced from ds and sffds. Because the error
-		// handling varies based on file type. FSync errors are only considered for
-		// regular file FDIDs that were opened for writing. We could do individual
-		// RPCs for such FDIDs and batch the rest, but it increases code complexity
-		// substantially. We could implement it in the future if need be.
-
-		// Sync syncable dentries.
-		for _, d := range ds {
-			if err := d.syncCachedFile(ctx, true /* forFilesystemSync */); err != nil {
-				ctx.Infof("gofer.filesystem.Sync: dentry.syncCachedFile failed: %v", err)
-				if retErr == nil {
-					retErr = err
-				}
-			}
-		}
-
-		// Sync special files, which may be writable but do not use dentry shared
-		// handles (so they won't be synced by the above).
-		for _, sffd := range sffds {
-			if err := sffd.sync(ctx, true /* forFilesystemSync */); err != nil {
-				ctx.Infof("gofer.filesystem.Sync: specialFileFD.sync failed: %v", err)
-				if retErr == nil {
-					retErr = err
-				}
-			}
-		}
-
-		return retErr
-	}
+	// Note that lisafs is capable of batching FSync RPCs. However, we can not
+	// batch all the FDIDs to be synced from ds and sffds. Because the error
+	// handling varies based on file type. FSync errors are only considered for
+	// regular file FDIDs that were opened for writing. We could do individual
+	// RPCs for such FDIDs and batch the rest, but it increases code complexity
+	// substantially. We could implement it in the future if need be.
 
 	// Sync syncable dentries.
 	for _, d := range ds {
@@ -229,13 +203,7 @@ func (fs *filesystem) stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *
 		rp.Advance()
 		return d.parent, false, nil
 	}
-	var child *dentry
-	var err error
-	if fs.opts.lisaEnabled {
-		child, err = fs.getChildAndWalkPathLocked(ctx, d, rp, ds)
-	} else {
-		child, err = fs.getChildLocked(ctx, d, name, ds)
-	}
+	child, err := fs.getChildAndWalkPathLocked(ctx, d, rp, ds)
 	if err != nil {
 		return nil, false, err
 	}
@@ -257,7 +225,6 @@ func (fs *filesystem) stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *
 }
 
 // Preconditions:
-//   - fs.opts.lisaEnabled.
 //   - fs.renameMu must be locked.
 //   - parent.dirMu must be locked.
 //   - parent.isDir().
@@ -320,13 +287,13 @@ func (fs *filesystem) getChildAndWalkPathLocked(ctx context.Context, parent *den
 	var dentryCreationErr error
 	for i := range inodes {
 		if dentryCreationErr != nil {
-			fs.clientLisa.CloseFD(ctx, inodes[i].ControlFD, false /* flush */)
+			fs.client.CloseFD(ctx, inodes[i].ControlFD, false /* flush */)
 			continue
 		}
 
-		child, err := fs.newDentryLisa(ctx, &inodes[i])
+		child, err := fs.newDentry(ctx, &inodes[i])
 		if err != nil {
-			fs.clientLisa.CloseFD(ctx, inodes[i].ControlFD, false /* flush */)
+			fs.client.CloseFD(ctx, inodes[i].ControlFD, false /* flush */)
 			dentryCreationErr = err
 			continue
 		}
@@ -383,35 +350,18 @@ func (fs *filesystem) getChildLocked(ctx context.Context, parent *dentry, name s
 		}
 	}
 
-	var child *dentry
-	if fs.opts.lisaEnabled {
-		childInode, err := parent.controlFDLisa.Walk(ctx, name)
-		if err != nil {
-			if linuxerr.Equals(linuxerr.ENOENT, err) {
-				parent.cacheNegativeLookupLocked(name)
-			}
-			return nil, err
+	childInode, err := parent.controlFDLisa.Walk(ctx, name)
+	if err != nil {
+		if linuxerr.Equals(linuxerr.ENOENT, err) {
+			parent.cacheNegativeLookupLocked(name)
 		}
-		// Create a new dentry representing the file.
-		child, err = fs.newDentryLisa(ctx, &childInode)
-		if err != nil {
-			fs.clientLisa.CloseFD(ctx, childInode.ControlFD, false /* flush */)
-			return nil, err
-		}
-	} else {
-		qid, file, attrMask, attr, err := parent.file.walkGetAttrOne(ctx, name)
-		if err != nil {
-			if linuxerr.Equals(linuxerr.ENOENT, err) {
-				parent.cacheNegativeLookupLocked(name)
-			}
-			return nil, err
-		}
-		// Create a new dentry representing the file.
-		child, err = fs.newDentry(ctx, file, qid, attrMask, &attr)
-		if err != nil {
-			file.close(ctx)
-			return nil, err
-		}
+		return nil, err
+	}
+	// Create a new dentry representing the file.
+	child, err := fs.newDentry(ctx, &childInode)
+	if err != nil {
+		fs.client.CloseFD(ctx, childInode.ControlFD, false /* flush */)
+		return nil, err
 	}
 	parent.cacheNewChildLocked(child, name)
 	appendNewChildDentry(ds, parent, child)
@@ -736,12 +686,7 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 			return linuxerr.ENOENT
 		}
 	} else if child == nil || !child.isSynthetic() {
-		if fs.opts.lisaEnabled {
-			err = parent.controlFDLisa.UnlinkAt(ctx, name, flags)
-		} else {
-			err = parent.file.unlinkAt(ctx, name, flags)
-		}
-		if err != nil {
+		if err := parent.controlFDLisa.UnlinkAt(ctx, name, flags); err != nil {
 			if child != nil {
 				vfsObj.AbortDeleteDentry(&child.vfsd) // +checklocksforce: see above.
 			}
@@ -859,14 +804,11 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 		if d.nlink.Load() == math.MaxUint32 {
 			return linuxerr.EMLINK
 		}
-		if fs.opts.lisaEnabled {
-			linkInode, err := parent.controlFDLisa.LinkAt(ctx, d.controlFDLisa.ID(), childName)
-			if err != nil {
-				return err
-			}
-			return parent.insertCreatedChildLocked(ctx, &linkInode, childName, nil, ds)
+		linkInode, err := parent.controlFDLisa.LinkAt(ctx, d.controlFDLisa.ID(), childName)
+		if err != nil {
+			return err
 		}
-		return parent.file.link(ctx, d.file, childName)
+		return parent.insertCreatedChildLocked(ctx, &linkInode, childName, nil, ds)
 	}, nil)
 
 	if err == nil {
@@ -888,19 +830,11 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 			kgid = auth.KGID(parent.gid.Load())
 			mode |= linux.S_ISGID
 		}
-		var err error
-		if fs.opts.lisaEnabled {
-			var childDirInode lisafs.Inode
-			childDirInode, err = parent.controlFDLisa.MkdirAt(ctx, name, mode, lisafs.UID(creds.EffectiveKUID), lisafs.GID(kgid))
-			if err == nil {
-				if err = parent.insertCreatedChildLocked(ctx, &childDirInode, name, nil, ds); err != nil {
-					return err
-				}
-			}
-		} else {
-			_, err = parent.file.mkdir(ctx, name, p9.FileMode(mode), (p9.UID)(creds.EffectiveKUID), p9.GID(kgid))
-		}
+		childDirInode, err := parent.controlFDLisa.MkdirAt(ctx, name, mode, lisafs.UID(creds.EffectiveKUID), lisafs.GID(kgid))
 		if err == nil {
+			if err = parent.insertCreatedChildLocked(ctx, &childDirInode, name, nil, ds); err != nil {
+				return err
+			}
 			if fs.opts.interop != InteropModeShared {
 				parent.incLinks()
 			}
@@ -942,13 +876,7 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.MknodOptions) error {
 	return fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, name string, ds **[]*dentry) error {
 		creds := rp.Credentials()
-		var err error
-		if fs.opts.lisaEnabled {
-			err = parent.mknodLisaLocked(ctx, name, creds, opts, ds)
-		} else {
-			_, err = parent.file.mknod(ctx, name, (p9.FileMode)(opts.Mode), opts.DevMajor, opts.DevMinor, (p9.UID)(creds.EffectiveKUID), (p9.GID)(creds.EffectiveKGID))
-		}
-		if err == nil {
+		if err := parent.mknodLocked(ctx, name, creds, opts, ds); err == nil {
 			return nil
 		} else if !linuxerr.Equals(linuxerr.EPERM, err) {
 			return err
@@ -958,7 +886,7 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		// to creating a synthetic one, i.e. one that is kept entirely in memory.
 
 		// Check that we're not overriding an existing file with a synthetic one.
-		_, _, err = fs.stepLocked(ctx, rp, parent, false, ds)
+		_, _, err := fs.stepLocked(ctx, rp, parent, false, ds)
 		switch {
 		case err == nil:
 			// Step succeeded, another file exists.
@@ -1029,7 +957,7 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		}
 		if !start.cachedMetadataAuthoritative() {
 			// Refresh dentry's attributes before opening.
-			if err := start.updateFromGetattr(ctx); err != nil {
+			if err := start.updateMetadata(ctx, nil); err != nil {
 				return nil, err
 			}
 		}
@@ -1198,37 +1126,20 @@ func (d *dentry) openSocketByConnecting(ctx context.Context, opts *vfs.OpenOptio
 	if opts.Flags&linux.O_DIRECT != 0 {
 		return nil, linuxerr.EINVAL
 	}
-	if d.fs.opts.lisaEnabled {
-		// Note that special value of linux.SockType = 0 is interpreted by lisafs
-		// as "do not care about the socket type". Analogous to p9.AnonymousSocket.
-		sockFD, err := d.controlFDLisa.Connect(ctx, 0 /* sockType */)
-		if err != nil {
-			return nil, err
-		}
-		fd, err := host.NewFD(ctx, kernel.KernelFromContext(ctx).HostMount(), sockFD, &host.NewFDOptions{
-			HaveFlags: true,
-			Flags:     opts.Flags,
-		})
-		if err != nil {
-			unix.Close(sockFD)
-			return nil, err
-		}
-		return fd, nil
-	}
-	fdObj, err := d.file.connect(ctx, p9.AnonymousSocket)
+	// Note that special value of linux.SockType = 0 is interpreted by lisafs
+	// as "do not care about the socket type". Analogous to p9.AnonymousSocket.
+	sockFD, err := d.controlFDLisa.Connect(ctx, 0 /* sockType */)
 	if err != nil {
 		return nil, err
 	}
-	fd, err := host.NewFD(ctx, kernel.KernelFromContext(ctx).HostMount(), fdObj.FD(), &host.NewFDOptions{
+	fd, err := host.NewFD(ctx, kernel.KernelFromContext(ctx).HostMount(), sockFD, &host.NewFDOptions{
 		HaveFlags: true,
 		Flags:     opts.Flags,
 	})
 	if err != nil {
-		fdObj.Close()
+		unix.Close(sockFD)
 		return nil, err
 	}
-	// Ownership has been transferred to fd.
-	fdObj.Release()
 	return fd, nil
 }
 
@@ -1247,13 +1158,7 @@ func (d *dentry) openSpecialFile(ctx context.Context, mnt *vfs.Mount, opts *vfs.
 	// since closed its end.
 	isBlockingOpenOfNamedPipe := d.fileType() == linux.S_IFIFO && opts.Flags&linux.O_NONBLOCK == 0
 retry:
-	var h handle
-	var err error
-	if d.fs.opts.lisaEnabled {
-		h, err = openHandleLisa(ctx, d.controlFDLisa, ats.MayRead(), ats.MayWrite(), opts.Flags&linux.O_TRUNC != 0)
-	} else {
-		h, err = openHandle(ctx, d.file, ats.MayRead(), ats.MayWrite(), opts.Flags&linux.O_TRUNC != 0)
-	}
+	h, err := openHandle(ctx, d.controlFDLisa, ats.MayRead(), ats.MayWrite(), opts.Flags&linux.O_TRUNC != 0)
 	if err != nil {
 		if isBlockingOpenOfNamedPipe && ats == vfs.MayWrite && linuxerr.Equals(linuxerr.ENXIO, err) {
 			// An attempt to open a named pipe with O_WRONLY|O_NONBLOCK fails
@@ -1306,87 +1211,34 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 		kgid = auth.KGID(d.gid.Load())
 	}
 
-	var child *dentry
-	var openP9File p9file
-	openLisaFD := lisafs.InvalidFDID
-	openHostFD := int32(-1)
-	if d.fs.opts.lisaEnabled {
-		ino, openFD, hostFD, err := d.controlFDLisa.OpenCreateAt(ctx, name, opts.Flags&linux.O_ACCMODE, opts.Mode, lisafs.UID(creds.EffectiveKUID), lisafs.GID(kgid))
-		if err != nil {
-			return nil, err
-		}
-		openHostFD = int32(hostFD)
-		openLisaFD = openFD
+	ino, openFD, hostFD, err := d.controlFDLisa.OpenCreateAt(ctx, name, opts.Flags&linux.O_ACCMODE, opts.Mode, lisafs.UID(creds.EffectiveKUID), lisafs.GID(kgid))
+	if err != nil {
+		return nil, err
+	}
 
-		child, err = d.fs.newDentryLisa(ctx, &ino)
-		if err != nil {
-			d.fs.clientLisa.CloseFD(ctx, ino.ControlFD, false /* flush */)
-			d.fs.clientLisa.CloseFD(ctx, openFD, false /* flush */)
-			if hostFD >= 0 {
-				unix.Close(hostFD)
-			}
-			return nil, err
+	child, err := d.fs.newDentry(ctx, &ino)
+	if err != nil {
+		d.fs.client.CloseFD(ctx, ino.ControlFD, false /* flush */)
+		d.fs.client.CloseFD(ctx, openFD, false /* flush */)
+		if hostFD >= 0 {
+			unix.Close(hostFD)
 		}
-	} else {
-		// 9P2000.L's lcreate takes a fid representing the parent directory, and
-		// converts it into an open fid representing the created file, so we need
-		// to duplicate the directory fid first.
-		_, dirfile, err := d.file.walk(ctx, nil)
-		if err != nil {
-			return nil, err
-		}
-		// We only want the access mode for creating the file.
-		createFlags := p9.OpenFlags(opts.Flags) & p9.OpenFlagsModeMask
-
-		fdobj, openFile, createQID, _, err := dirfile.create(ctx, name, createFlags, p9.FileMode(opts.Mode), (p9.UID)(creds.EffectiveKUID), p9.GID(kgid))
-		if err != nil {
-			dirfile.close(ctx)
-			return nil, err
-		}
-		// Then we need to walk to the file we just created to get a non-open fid
-		// representing it, and to get its metadata. This must use d.file since, as
-		// explained above, dirfile was invalidated by dirfile.Create().
-		_, nonOpenFile, attrMask, attr, err := d.file.walkGetAttrOne(ctx, name)
-		if err != nil {
-			openFile.close(ctx)
-			if fdobj != nil {
-				fdobj.Close()
-			}
-			return nil, err
-		}
-
-		// Construct the new dentry.
-		child, err = d.fs.newDentry(ctx, nonOpenFile, createQID, attrMask, &attr)
-		if err != nil {
-			nonOpenFile.close(ctx)
-			openFile.close(ctx)
-			if fdobj != nil {
-				fdobj.Close()
-			}
-			return nil, err
-		}
-
-		if fdobj != nil {
-			openHostFD = int32(fdobj.Release())
-		}
-		openP9File = openFile
+		return nil, err
 	}
 	// Incorporate the fid that was opened by lcreate.
 	useRegularFileFD := child.fileType() == linux.S_IFREG && !d.fs.opts.regularFilesUseSpecialFileFD
 	if useRegularFileFD {
 		child.handleMu.Lock()
 		if vfs.MayReadFileWithOpenFlags(opts.Flags) {
-			child.readFile = openP9File
-			child.readFDLisa = d.fs.clientLisa.NewFD(openLisaFD)
-			if openHostFD != -1 {
-				child.readFD = atomicbitops.FromInt32(openHostFD)
-				child.mmapFD = atomicbitops.FromInt32(openHostFD)
+			child.readFDLisa = d.fs.client.NewFD(openFD)
+			if hostFD != -1 {
+				child.readFD = atomicbitops.FromInt32(int32(hostFD))
+				child.mmapFD = atomicbitops.FromInt32(int32(hostFD))
 			}
 		}
 		if vfs.MayWriteFileWithOpenFlags(opts.Flags) {
-			child.writeFile = openP9File
-			child.writeFDLisa = d.fs.clientLisa.NewFD(openLisaFD)
-			child.writeFD = atomicbitops.FromInt32(openHostFD)
+			child.writeFDLisa = d.fs.client.NewFD(openFD)
+			child.writeFD = atomicbitops.FromInt32(int32(hostFD))
 		}
 		child.handleMu.Unlock()
 	}
@@ -1408,9 +1260,8 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 		childVFSFD = &fd.vfsfd
 	} else {
 		h := handle{
-			file:   openP9File,
-			fdLisa: d.fs.clientLisa.NewFD(openLisaFD),
-			fd:     openHostFD,
+			fdLisa: d.fs.client.NewFD(openFD),
+			fd:     int32(hostFD),
 		}
 		fd, err := newSpecialFileFD(h, mnt, child, opts.Flags)
 		if err != nil {
@@ -1479,7 +1330,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 
 	oldParent := oldParentVD.Dentry().Impl().(*dentry)
 	if !oldParent.cachedMetadataAuthoritative() {
-		if err := oldParent.updateFromGetattr(ctx); err != nil {
+		if err := oldParent.updateMetadata(ctx, nil); err != nil {
 			return err
 		}
 	}
@@ -1567,12 +1418,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 
 	// Update the remote filesystem.
 	if !renamed.isSynthetic() {
-		if fs.opts.lisaEnabled {
-			err = oldParent.controlFDLisa.RenameAt(ctx, oldName, newParent.controlFDLisa.ID(), newName)
-		} else {
-			err = renamed.file.rename(ctx, newParent.file, newName)
-		}
-		if err != nil {
+		if err := oldParent.controlFDLisa.RenameAt(ctx, oldName, newParent.controlFDLisa.ID(), newName); err != nil {
 			vfsObj.AbortRenameDentry(&renamed.vfsd, replacedVFSD)
 			return err
 		}
@@ -1583,12 +1429,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		if replaced.isDir() {
 			flags = linux.AT_REMOVEDIR
 		}
-		if fs.opts.lisaEnabled {
-			err = newParent.controlFDLisa.UnlinkAt(ctx, newName, flags)
-		} else {
-			err = newParent.file.unlinkAt(ctx, newName, flags)
-		}
-		if err != nil {
+		if err := newParent.controlFDLisa.UnlinkAt(ctx, newName, flags); err != nil {
 			vfsObj.AbortRenameDentry(&renamed.vfsd, replacedVFSD)
 			return err
 		}
@@ -1695,50 +1536,26 @@ func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linu
 	for d.isSynthetic() {
 		d = d.parent
 	}
-	if fs.opts.lisaEnabled {
-		var statFS lisafs.StatFS
-		if err := d.controlFDLisa.StatFSTo(ctx, &statFS); err != nil {
-			return linux.Statfs{}, err
-		}
-		if statFS.NameLength == 0 || statFS.NameLength > MaxFilenameLen {
-			statFS.NameLength = MaxFilenameLen
-		}
-		return linux.Statfs{
-			// This is primarily for distinguishing a gofer file system in
-			// tests. Testing is important, so instead of defining
-			// something completely random, use a standard value.
-			Type:            linux.V9FS_MAGIC,
-			BlockSize:       statFS.BlockSize,
-			FragmentSize:    statFS.BlockSize,
-			Blocks:          statFS.Blocks,
-			BlocksFree:      statFS.BlocksFree,
-			BlocksAvailable: statFS.BlocksAvailable,
-			Files:           statFS.Files,
-			FilesFree:       statFS.FilesFree,
-			NameLength:      statFS.NameLength,
-		}, nil
-	}
-	fsstat, err := d.file.statFS(ctx)
-	if err != nil {
+	var statFS lisafs.StatFS
+	if err := d.controlFDLisa.StatFSTo(ctx, &statFS); err != nil {
 		return linux.Statfs{}, err
 	}
-	nameLen := uint64(fsstat.NameLength)
-	if nameLen == 0 || nameLen > MaxFilenameLen {
-		nameLen = MaxFilenameLen
+	if statFS.NameLength == 0 || statFS.NameLength > MaxFilenameLen {
+		statFS.NameLength = MaxFilenameLen
 	}
 	return linux.Statfs{
 		// This is primarily for distinguishing a gofer file system in
 		// tests. Testing is important, so instead of defining
 		// something completely random, use a standard value.
 		Type:            linux.V9FS_MAGIC,
-		BlockSize:       int64(fsstat.BlockSize),
-		FragmentSize:    int64(fsstat.BlockSize),
-		Blocks:          fsstat.Blocks,
-		BlocksFree:      fsstat.BlocksFree,
-		BlocksAvailable: fsstat.BlocksAvailable,
-		Files:           fsstat.Files,
-		FilesFree:       fsstat.FilesFree,
-		NameLength:      nameLen,
+		BlockSize:       statFS.BlockSize,
+		FragmentSize:    statFS.BlockSize,
+		Blocks:          statFS.Blocks,
+		BlocksFree:      statFS.BlocksFree,
+		BlocksAvailable: statFS.BlocksAvailable,
+		Files:           statFS.Files,
+		FilesFree:       statFS.FilesFree,
+		NameLength:      statFS.NameLength,
 	}, nil
 }
 
@@ -1746,22 +1563,18 @@ func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linu
 func (fs *filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, target string) error {
 	return fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, name string, ds **[]*dentry) error {
 		creds := rp.Credentials()
-		if fs.opts.lisaEnabled {
-			symlinkInode, err := parent.controlFDLisa.SymlinkAt(ctx, name, target, lisafs.UID(creds.EffectiveKUID), lisafs.GID(creds.EffectiveKGID))
-			if err != nil {
-				return err
-			}
-			return parent.insertCreatedChildLocked(ctx, &symlinkInode, name, func(child *dentry) {
-				if fs.opts.interop != InteropModeShared {
-					// lisafs caches the symlink target on creation. In practice, this
-					// helps avoid a lot of ReadLink RPCs.
-					child.haveTarget = true
-					child.target = target
-				}
-			}, ds)
+		symlinkInode, err := parent.controlFDLisa.SymlinkAt(ctx, name, target, lisafs.UID(creds.EffectiveKUID), lisafs.GID(creds.EffectiveKGID))
+		if err != nil {
+			return err
 		}
-		_, err := parent.file.symlink(ctx, target, name, (p9.UID)(creds.EffectiveKUID), (p9.GID)(creds.EffectiveKGID))
-		return err
+		return parent.insertCreatedChildLocked(ctx, &symlinkInode, name, func(child *dentry) {
+			if fs.opts.interop != InteropModeShared {
+				// Cache the symlink target on creation. In practice, this
+				// helps avoid a lot of ReadLink RPCs.
+				child.haveTarget = true
+				child.target = target
+			}
+		}, ds)
 	}, nil)
 }
 
@@ -1889,7 +1702,6 @@ func (fs *filesystem) MountOptions() string {
 		{moptAname, fs.opts.aname},
 		{moptDfltUID, fs.opts.dfltuid},
 		{moptDfltGID, fs.opts.dfltgid},
-		{moptMsize, fs.opts.msize},
 	}
 
 	switch fs.opts.interop {
@@ -1912,13 +1724,6 @@ func (fs *filesystem) MountOptions() string {
 	}
 	if fs.opts.overlayfsStaleRead {
 		optsKV = append(optsKV, mopt{moptOverlayfsStaleRead, nil})
-	}
-	if fs.opts.lisaEnabled {
-		// LISAFS does not have a protocol level version number. Simply add
-		// `lisafs` in the opts to indicate that we are using LISAFS.
-		optsKV = append(optsKV, mopt{moptLisafs, nil})
-	} else {
-		optsKV = append(optsKV, mopt{moptVersion, fs.opts.version9P})
 	}
 
 	opts := make([]string, 0, len(optsKV))
