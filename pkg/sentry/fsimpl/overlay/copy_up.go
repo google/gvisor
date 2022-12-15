@@ -144,8 +144,6 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 			cleanupUndoCopyUp()
 			return err
 		}
-		d.mapsMu.Lock()
-		defer d.mapsMu.Unlock()
 		if d.wrappedMappable != nil {
 			// We may have memory mappings of the file on the lower layer.
 			// Switch to mapping the file on the upper layer instead.
@@ -305,8 +303,8 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 	}
 
 	if mmapOpts != nil && mmapOpts.Mappable != nil {
-		// Note that if mmapOpts != nil, then d.mapsMu is locked for writing
-		// (from the S_IFREG path above).
+		d.mapsMu.Lock()
+		defer d.mapsMu.Unlock()
 
 		// Propagate mappings of d to the new Mappable. Remember which mappings
 		// we added so we can remove them on failure.
