@@ -74,7 +74,7 @@ func (ch *channel) SndRcvMessage(m MID, payloadLen uint32, wantFDs uint8) (MID, 
 		// This channel is now unusable.
 		ch.dead = true
 		// Map the transport errors to EIO, but also log the real error.
-		log.Warningf("lisafs.sndRcvMessage: flipcall.Endpoint.SendRecv: %v", err)
+		log.Warningf("channel.SndRcvMessage: flipcall.Endpoint.SendRecv failed: %v", err)
 		return 0, 0, unix.EIO
 	}
 
