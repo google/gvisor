@@ -299,7 +299,6 @@ func (n *nic) enable() tcpip.Error {
 // stack.
 func (n *nic) remove() tcpip.Error {
 	n.mu.Lock()
-	defer n.mu.Unlock()
 
 	n.disableLocked()
 
@@ -307,10 +306,13 @@ func (n *nic) remove() tcpip.Error {
 		ep.Close()
 	}
 
+	n.mu.Unlock()
+
 	// Shutdown GRO.
 	n.gro.close()
 
-	// drain and drop any packets pending link resolution.
+	// Drain and drop any packets pending link resolution.
+	// We must not hold n.mu here.
 	n.linkResQueue.cancel()
 
 	// Prevent packets from going down to the link before shutting the link down.
