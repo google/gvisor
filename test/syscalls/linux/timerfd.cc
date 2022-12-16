@@ -276,6 +276,25 @@ TEST(TimerfdClockRealtimeTest, ClockRealtime) {
   EXPECT_EQ(1, val);
 }
 
+// Same as the above ClockRealtime test but expresses the input as an absolute
+// time value rather than an interval.
+TEST(TimerfdClockRealtimeTest, ClockAbsoluteRealtime) {
+  constexpr int kDelaySecs = 1;
+
+  struct itimerspec its = {};
+  ASSERT_EQ(0, clock_gettime(CLOCK_REALTIME, &its.it_value));
+  its.it_value.tv_sec += kDelaySecs;
+
+  auto const tfd = ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(CLOCK_REALTIME, 0));
+  ASSERT_THAT(timerfd_settime(tfd.get(), TFD_TIMER_ABSTIME, &its, nullptr),
+              SyscallSucceeds());
+
+  uint64_t val = 0;
+  ASSERT_THAT(ReadFd(tfd.get(), &val, sizeof(uint64_t)),
+              SyscallSucceedsWithValue(sizeof(uint64_t)));
+  EXPECT_EQ(1, val);
+}
+
 }  // namespace
 
 }  // namespace testing
