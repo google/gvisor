@@ -22,7 +22,9 @@ var bucketlockNames []string
 type bucketlockNameIndex int
 
 // DO NOT REMOVE: The following function automatically replaced with lock index constants.
-// LOCK_NAME_INDEX_CONSTANTS
+const (
+	bucketLockOthertuple = bucketlockNameIndex(0)
+)
 const ()
 
 // Lock locks m.
@@ -88,7 +90,7 @@ func (m *bucketRWMutex) DowngradeLock() {
 var bucketprefixIndex *locking.MutexClass
 
 // DO NOT REMOVE: The following function is automatically replaced.
-func bucketinitLockNames() {}
+func bucketinitLockNames() { bucketlockNames = []string{"otherTuple"} }
 
 func init() {
 	bucketinitLockNames()

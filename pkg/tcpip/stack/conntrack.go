@@ -1097,9 +1097,9 @@ func (ct *ConnTrack) reapTupleLocked(reapingTuple *tuple, bktID int, bkt *bucket
 		bkt.tuples.Remove(otherTuple)
 	} else {
 		otherTupleBkt := &ct.buckets[otherTupleBktID]
-		otherTupleBkt.mu.Lock()
+		otherTupleBkt.mu.NestedLock(bucketLockOthertuple)
 		otherTupleBkt.tuples.Remove(otherTuple)
-		otherTupleBkt.mu.Unlock()
+		otherTupleBkt.mu.NestedUnlock(bucketLockOthertuple)
 	}
 
 	return true
