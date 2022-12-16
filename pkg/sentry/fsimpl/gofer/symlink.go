@@ -24,24 +24,22 @@ func (d *dentry) isSymlink() bool {
 	return d.fileType() == linux.S_IFLNK
 }
 
-// Precondition: d.isSymlink().
+// Precondition:
+//   - d.isSymlink().
+//   - if !d.cachedMetadataAuthoritative(), d has been revalidated.
 func (d *dentry) readlink(ctx context.Context, mnt *vfs.Mount) (string, error) {
 	if d.fs.opts.interop != InteropModeShared {
 		d.touchAtime(mnt)
-		d.dataMu.Lock()
-		if d.haveTarget {
-			target := d.target
-			d.dataMu.Unlock()
-			return target, nil
-		}
+	}
+	d.dataMu.Lock()
+	defer d.dataMu.Unlock()
+	if d.haveTarget {
+		return d.target, nil
 	}
 	target, err := d.controlFDLisa.ReadLinkAt(ctx)
-	if d.fs.opts.interop != InteropModeShared {
-		if err == nil {
-			d.haveTarget = true
-			d.target = target
-		}
-		d.dataMu.Unlock() // +checklocksforce: guaranteed locked from above.
+	if err == nil {
+		d.haveTarget = true
+		d.target = target
 	}
 	return target, err
 }

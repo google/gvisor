@@ -1568,12 +1568,10 @@ func (fs *filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, targ
 			return err
 		}
 		return parent.insertCreatedChildLocked(ctx, &symlinkInode, name, func(child *dentry) {
-			if fs.opts.interop != InteropModeShared {
-				// Cache the symlink target on creation. In practice, this
-				// helps avoid a lot of ReadLink RPCs.
-				child.haveTarget = true
-				child.target = target
-			}
+			// Cache the symlink target on creation. In practice, this
+			// helps avoid a lot of ReadLink RPCs.
+			child.haveTarget = true
+			child.target = target
 		}, ds)
 	}, nil)
 }

@@ -910,9 +910,8 @@ type dentry struct {
 	// pf implements platform.File for mappings of hostFD.
 	pf dentryPlatformFile
 
-	// If this dentry represents a symbolic link, InteropModeShared is not in
-	// effect, and haveTarget is true, target is the symlink target. haveTarget
-	// and target are protected by dataMu.
+	// If this dentry represents a symbolic link and haveTarget is true, target
+	// is the symlink target. haveTarget and target are protected by dataMu.
 	haveTarget bool
 	target     string
 
