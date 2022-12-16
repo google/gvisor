@@ -112,6 +112,7 @@ declare_rwmutex(
 declare_rwmutex(
     name = "bucket_mutex",
     out = "bucket_mutex.go",
+    nested_lock_names = ["otherTuple"],
     package = "stack",
     prefix = "bucket",
 )
