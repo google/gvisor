@@ -172,17 +172,22 @@ func (m *mockMulticastGroupProtocol) ShouldPerformProtocol(groupAddress tcpip.Ad
 	return groupAddress != m.skipProtocolAddress
 }
 
-func (m *mockMulticastGroupProtocol) check(sendReportGroupAddresses []tcpip.Address, sendLeaveGroupAddresses []tcpip.Address) string {
+type checkFields struct {
+	sendReportGroupAddresses []tcpip.Address
+	sendLeaveGroupAddresses  []tcpip.Address
+}
+
+func (m *mockMulticastGroupProtocol) check(fields checkFields) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	sendReportGroupAddrCount := make(map[tcpip.Address]int)
-	for _, a := range sendReportGroupAddresses {
+	for _, a := range fields.sendReportGroupAddresses {
 		sendReportGroupAddrCount[a] = 1
 	}
 
 	sendLeaveGroupAddrCount := make(map[tcpip.Address]int)
-	for _, a := range sendLeaveGroupAddresses {
+	for _, a := range fields.sendLeaveGroupAddresses {
 		sendLeaveGroupAddrCount[a] = 1
 	}
 
@@ -246,20 +251,20 @@ func TestJoinGroup(t *testing.T) {
 			// a random interval between 0 and the maximum unsolicited report delay.
 			mgp.joinGroup(test.addr)
 			if test.shouldSendReports {
-				if diff := mgp.check([]tcpip.Address{test.addr} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+				if diff := mgp.check(checkFields{sendReportGroupAddresses: []tcpip.Address{test.addr}}); diff != "" {
 					t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 				}
 
 				// Generic multicast protocol timers are expected to take the job mutex.
 				clock.Advance(maxUnsolicitedReportDelay)
-				if diff := mgp.check([]tcpip.Address{test.addr} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+				if diff := mgp.check(checkFields{sendReportGroupAddresses: []tcpip.Address{test.addr}}); diff != "" {
 					t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 				}
 			}
 
 			// Should have no more messages to send.
 			clock.Advance(time.Hour)
-			if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+			if diff := mgp.check(checkFields{}); diff != "" {
 				t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 		})
@@ -297,7 +302,7 @@ func TestLeaveGroup(t *testing.T) {
 
 			mgp.joinGroup(test.addr)
 			if test.shouldSendMessages {
-				if diff := mgp.check([]tcpip.Address{test.addr} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+				if diff := mgp.check(checkFields{sendReportGroupAddresses: []tcpip.Address{test.addr}}); diff != "" {
 					t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 				}
 			}
@@ -311,7 +316,7 @@ func TestLeaveGroup(t *testing.T) {
 				}
 			}
 			if test.shouldSendMessages {
-				if diff := mgp.check(nil /* sendReportGroupAddresses */, []tcpip.Address{test.addr} /* sendLeaveGroupAddresses */); diff != "" {
+				if diff := mgp.check(checkFields{sendLeaveGroupAddresses: []tcpip.Address{test.addr}}); diff != "" {
 					t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 				}
 			}
@@ -320,7 +325,7 @@ func TestLeaveGroup(t *testing.T) {
 			//
 			// Generic multicast protocol timers are expected to take the job mutex.
 			clock.Advance(time.Hour)
-			if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+			if diff := mgp.check(checkFields{}); diff != "" {
 				t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 		})
@@ -372,15 +377,15 @@ func TestHandleReport(t *testing.T) {
 			})
 
 			mgp.joinGroup(addr1)
-			if diff := mgp.check([]tcpip.Address{addr1} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+			if diff := mgp.check(checkFields{sendReportGroupAddresses: []tcpip.Address{addr1}}); diff != "" {
 				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 			mgp.joinGroup(addr2)
-			if diff := mgp.check([]tcpip.Address{addr2} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+			if diff := mgp.check(checkFields{sendReportGroupAddresses: []tcpip.Address{addr2}}); diff != "" {
 				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 			mgp.joinGroup(addr3)
-			if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+			if diff := mgp.check(checkFields{}); diff != "" {
 				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 
@@ -390,14 +395,14 @@ func TestHandleReport(t *testing.T) {
 			if len(test.expectReportsFor) != 0 {
 				// Generic multicast protocol timers are expected to take the job mutex.
 				clock.Advance(maxUnsolicitedReportDelay)
-				if diff := mgp.check(test.expectReportsFor /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+				if diff := mgp.check(checkFields{sendReportGroupAddresses: test.expectReportsFor}); diff != "" {
 					t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 				}
 			}
 
 			// Should have no more messages to send.
 			clock.Advance(time.Hour)
-			if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+			if diff := mgp.check(checkFields{}); diff != "" {
 				t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 		})
@@ -461,15 +466,15 @@ func TestHandleQuery(t *testing.T) {
 			})
 
 			mgp.joinGroup(addr1)
-			if diff := mgp.check([]tcpip.Address{addr1} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+			if diff := mgp.check(checkFields{sendReportGroupAddresses: []tcpip.Address{addr1}}); diff != "" {
 				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 			mgp.joinGroup(addr2)
-			if diff := mgp.check([]tcpip.Address{addr2} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+			if diff := mgp.check(checkFields{sendReportGroupAddresses: []tcpip.Address{addr2}}); diff != "" {
 				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 			mgp.joinGroup(addr3)
-			if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+			if diff := mgp.check(checkFields{}); diff != "" {
 				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 
@@ -477,20 +482,20 @@ func TestHandleQuery(t *testing.T) {
 			// to some time within the new max response delay.
 			mgp.handleQuery(test.queryAddr, test.maxDelay)
 			clock.Advance(test.maxDelay)
-			if diff := mgp.check(test.expectQueriedReportsFor /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+			if diff := mgp.check(checkFields{sendReportGroupAddresses: test.expectQueriedReportsFor}); diff != "" {
 				t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 
 			// The groups that were not affected by the query should still send a
 			// report after the max unsolicited report delay.
 			clock.Advance(maxUnsolicitedReportDelay)
-			if diff := mgp.check(test.expectDelayedReportsFor /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+			if diff := mgp.check(checkFields{sendReportGroupAddresses: test.expectDelayedReportsFor}); diff != "" {
 				t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 
 			// Should have no more messages to send.
 			clock.Advance(time.Hour)
-			if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+			if diff := mgp.check(checkFields{}); diff != "" {
 				t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 		})
@@ -513,14 +518,14 @@ func TestJoinCount(t *testing.T) {
 		t.Fatalf("got mgp.isLocallyJoined(%s) = false, want = true", addr1)
 	}
 	// Only the first join should trigger a report to be sent.
-	if diff := mgp.check([]tcpip.Address{addr1} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{sendReportGroupAddresses: []tcpip.Address{addr1}}); diff != "" {
 		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 	mgp.joinGroup(addr1)
 	if !mgp.isLocallyJoined(addr1) {
 		t.Errorf("got mgp.isLocallyJoined(%s) = false, want = true", addr1)
 	}
-	if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{}); diff != "" {
 		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 	if t.Failed() {
@@ -535,7 +540,7 @@ func TestJoinCount(t *testing.T) {
 		t.Errorf("got mgp.isLocallyJoined(%s) = false, want = true", addr1)
 	}
 	// A leave report should only be sent once the join count reaches 0.
-	if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{}); diff != "" {
 		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 	if t.Failed() {
@@ -549,7 +554,7 @@ func TestJoinCount(t *testing.T) {
 	if mgp.isLocallyJoined(addr1) {
 		t.Errorf("got mgp.isLocallyJoined(%s) = true, want = false", addr1)
 	}
-	if diff := mgp.check(nil /* sendReportGroupAddresses */, []tcpip.Address{addr1} /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{sendLeaveGroupAddresses: []tcpip.Address{addr1}}); diff != "" {
 		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 	if t.Failed() {
@@ -564,7 +569,7 @@ func TestJoinCount(t *testing.T) {
 	if mgp.isLocallyJoined(addr1) {
 		t.Errorf("got mgp.isLocallyJoined(%s) = true, want = false", addr1)
 	}
-	if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{}); diff != "" {
 		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 
@@ -572,7 +577,7 @@ func TestJoinCount(t *testing.T) {
 	//
 	// Generic multicast protocol timers are expected to take the job mutex.
 	clock.Advance(time.Hour)
-	if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{}); diff != "" {
 		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -588,27 +593,27 @@ func TestMakeAllNonMemberAndInitialize(t *testing.T) {
 	})
 
 	mgp.joinGroup(addr1)
-	if diff := mgp.check([]tcpip.Address{addr1} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{sendReportGroupAddresses: []tcpip.Address{addr1}}); diff != "" {
 		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 	mgp.joinGroup(addr2)
-	if diff := mgp.check([]tcpip.Address{addr2} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{sendReportGroupAddresses: []tcpip.Address{addr2}}); diff != "" {
 		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 	mgp.joinGroup(addr3)
-	if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{}); diff != "" {
 		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 
 	// Should send the leave reports for each but still consider them locally
 	// joined.
 	mgp.makeAllNonMember()
-	if diff := mgp.check(nil /* sendReportGroupAddresses */, []tcpip.Address{addr1, addr2} /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{sendLeaveGroupAddresses: []tcpip.Address{addr1, addr2}}); diff != "" {
 		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 	// Generic multicast protocol timers are expected to take the job mutex.
 	clock.Advance(time.Hour)
-	if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{}); diff != "" {
 		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 	for _, group := range []tcpip.Address{addr1, addr2, addr3} {
@@ -619,17 +624,17 @@ func TestMakeAllNonMemberAndInitialize(t *testing.T) {
 
 	// Should send the initial set of unsolcited reports.
 	mgp.initializeGroups()
-	if diff := mgp.check([]tcpip.Address{addr1, addr2} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{sendReportGroupAddresses: []tcpip.Address{addr1, addr2}}); diff != "" {
 		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 	clock.Advance(maxUnsolicitedReportDelay)
-	if diff := mgp.check([]tcpip.Address{addr1, addr2} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{sendReportGroupAddresses: []tcpip.Address{addr1, addr2}}); diff != "" {
 		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 
 	// Should have no more messages to send.
 	clock.Advance(time.Hour)
-	if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{}); diff != "" {
 		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -652,14 +657,14 @@ func TestGroupStateNonMember(t *testing.T) {
 	if !mgp.isLocallyJoined(addr1) {
 		t.Fatalf("got mgp.isLocallyJoined(%s) = false, want = true", addr1)
 	}
-	if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{}); diff != "" {
 		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 	mgp.joinGroup(addr2)
 	if !mgp.isLocallyJoined(addr1) {
 		t.Fatalf("got mgp.isLocallyJoined(%s) = false, want = true", addr2)
 	}
-	if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{}); diff != "" {
 		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 
@@ -667,7 +672,7 @@ func TestGroupStateNonMember(t *testing.T) {
 	mgp.handleQuery(addr1, time.Nanosecond)
 	// Generic multicast protocol timers are expected to take the job mutex.
 	clock.Advance(time.Nanosecond)
-	if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{}); diff != "" {
 		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 
@@ -678,12 +683,12 @@ func TestGroupStateNonMember(t *testing.T) {
 	if mgp.isLocallyJoined(addr1) {
 		t.Errorf("got mgp.isLocallyJoined(%s) = true, want = false", addr2)
 	}
-	if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{}); diff != "" {
 		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 
 	clock.Advance(time.Hour)
-	if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{}); diff != "" {
 		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -701,34 +706,34 @@ func TestQueuedPackets(t *testing.T) {
 	// send the packet.
 	mgp.setQueuePackets(true)
 	mgp.joinGroup(addr1)
-	if diff := mgp.check([]tcpip.Address{addr1} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{sendReportGroupAddresses: []tcpip.Address{addr1}}); diff != "" {
 		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 
 	// The delayed report timer should have been cancelled since we did not send
 	// the initial report earlier.
 	clock.Advance(time.Hour)
-	if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{}); diff != "" {
 		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 
 	// Mock being able to successfully send the report.
 	mgp.setQueuePackets(false)
 	mgp.sendQueuedReports()
-	if diff := mgp.check([]tcpip.Address{addr1} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{sendReportGroupAddresses: []tcpip.Address{addr1}}); diff != "" {
 		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 
 	// The delayed report (sent after the initial report) should now be sent.
 	clock.Advance(maxUnsolicitedReportDelay)
-	if diff := mgp.check([]tcpip.Address{addr1} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{sendReportGroupAddresses: []tcpip.Address{addr1}}); diff != "" {
 		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 
 	// Should not have anything else to send (we should be idle).
 	mgp.sendQueuedReports()
 	clock.Advance(time.Hour)
-	if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{}); diff != "" {
 		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 
@@ -736,7 +741,7 @@ func TestQueuedPackets(t *testing.T) {
 	mgp.setQueuePackets(true)
 	mgp.handleQuery(addr1, time.Nanosecond)
 	clock.Advance(time.Nanosecond)
-	if diff := mgp.check([]tcpip.Address{addr1} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{sendReportGroupAddresses: []tcpip.Address{addr1}}); diff != "" {
 		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 
@@ -744,14 +749,14 @@ func TestQueuedPackets(t *testing.T) {
 	// send.
 	mgp.setQueuePackets(false)
 	mgp.sendQueuedReports()
-	if diff := mgp.check([]tcpip.Address{addr1} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{sendReportGroupAddresses: []tcpip.Address{addr1}}); diff != "" {
 		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 
 	// Should not have anything else to send.
 	mgp.sendQueuedReports()
 	clock.Advance(time.Hour)
-	if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{}); diff != "" {
 		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 
@@ -759,7 +764,7 @@ func TestQueuedPackets(t *testing.T) {
 	mgp.setQueuePackets(true)
 	mgp.handleQuery(addr1, time.Nanosecond)
 	clock.Advance(time.Nanosecond)
-	if diff := mgp.check([]tcpip.Address{addr1} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{sendReportGroupAddresses: []tcpip.Address{addr1}}); diff != "" {
 		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 
@@ -769,7 +774,7 @@ func TestQueuedPackets(t *testing.T) {
 	mgp.handleReport(addr1)
 	mgp.sendQueuedReports()
 	clock.Advance(time.Hour)
-	if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{}); diff != "" {
 		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 
@@ -777,21 +782,21 @@ func TestQueuedPackets(t *testing.T) {
 	// prevent a newly joined group's reports from being sent.
 	mgp.setQueuePackets(true)
 	mgp.joinGroup(addr2)
-	if diff := mgp.check([]tcpip.Address{addr2} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{sendReportGroupAddresses: []tcpip.Address{addr2}}); diff != "" {
 		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 	mgp.handleReport(addr2)
 	// Attempting to send queued reports while still unable to send reports should
 	// not change the host state.
 	mgp.sendQueuedReports()
-	if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{}); diff != "" {
 		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 	// Should not have any packets queued.
 	mgp.setQueuePackets(false)
 	mgp.sendQueuedReports()
 	clock.Advance(time.Hour)
-	if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+	if diff := mgp.check(checkFields{}); diff != "" {
 		t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 }
