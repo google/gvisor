@@ -84,6 +84,21 @@ const (
 	// DestinationNetworkUnreachableTransportError indicates that the destination
 	// network was unreachable.
 	DestinationNetworkUnreachableTransportError
+
+	// DestinationProtoUnreachableTransportError indicates that the destination
+	// protocol was unreachable.
+	DestinationProtoUnreachableTransportError
+
+	// SourceRouteFailedTransportError indicates that the source route failed.
+	SourceRouteFailedTransportError
+
+	// SourceHostIsolatedTransportError indicates that the source machine is not
+	// on the network.
+	SourceHostIsolatedTransportError
+
+	// DestinationHostDownTransportError indicates that the destination host is
+	// down.
+	DestinationHostDownTransportError
 )
 
 // TransportError is a marker interface for errors that may be handled by the

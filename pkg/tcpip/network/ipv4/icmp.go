@@ -68,6 +68,28 @@ func (*icmpv4DestinationHostUnreachableSockError) Kind() stack.TransportErrorKin
 	return stack.DestinationHostUnreachableTransportError
 }
 
+var _ stack.TransportError = (*icmpv4DestinationNetUnreachableSockError)(nil)
+
+// icmpv4DestinationNetUnreachableSockError is an ICMPv4 Destination Net
+// Unreachable error.
+//
+// It indicates that a packet was not able to reach the destination network.
+//
+// +stateify savable
+type icmpv4DestinationNetUnreachableSockError struct {
+	icmpv4DestinationUnreachableSockError
+}
+
+// Code implements tcpip.SockErrorCause.
+func (*icmpv4DestinationNetUnreachableSockError) Code() uint8 {
+	return uint8(header.ICMPv4NetUnreachable)
+}
+
+// Kind implements stack.TransportError.
+func (*icmpv4DestinationNetUnreachableSockError) Kind() stack.TransportErrorKind {
+	return stack.DestinationNetworkUnreachableTransportError
+}
+
 var _ stack.TransportError = (*icmpv4DestinationPortUnreachableSockError)(nil)
 
 // icmpv4DestinationPortUnreachableSockError is an ICMPv4 Destination Port
@@ -89,6 +111,89 @@ func (*icmpv4DestinationPortUnreachableSockError) Code() uint8 {
 // Kind implements stack.TransportError.
 func (*icmpv4DestinationPortUnreachableSockError) Kind() stack.TransportErrorKind {
 	return stack.DestinationPortUnreachableTransportError
+}
+
+var _ stack.TransportError = (*icmpv4DestinationProtoUnreachableSockError)(nil)
+
+// icmpv4DestinationProtoUnreachableSockError is an ICMPv4 Destination Protocol
+// Unreachable error.
+//
+// It indicates that a packet reached the destination host, but the transport
+// protocol was not reachable
+//
+// +stateify savable
+type icmpv4DestinationProtoUnreachableSockError struct {
+	icmpv4DestinationUnreachableSockError
+}
+
+// Code implements tcpip.SockErrorCause.
+func (*icmpv4DestinationProtoUnreachableSockError) Code() uint8 {
+	return uint8(header.ICMPv4ProtoUnreachable)
+}
+
+// Kind implements stack.TransportError.
+func (*icmpv4DestinationProtoUnreachableSockError) Kind() stack.TransportErrorKind {
+	return stack.DestinationProtoUnreachableTransportError
+}
+
+var _ stack.TransportError = (*icmpv4SourceRouteFailedSockError)(nil)
+
+// icmpv4SourceRouteFailedSockError is an ICMPv4 Destination Unreachable error
+// due to source route failed.
+//
+// +stateify savable
+type icmpv4SourceRouteFailedSockError struct {
+	icmpv4DestinationUnreachableSockError
+}
+
+// Code implements tcpip.SockErrorCause.
+func (*icmpv4SourceRouteFailedSockError) Code() uint8 {
+	return uint8(header.ICMPv4SourceRouteFailed)
+}
+
+// Kind implements stack.TransportError.
+func (*icmpv4SourceRouteFailedSockError) Kind() stack.TransportErrorKind {
+	return stack.SourceRouteFailedTransportError
+}
+
+var _ stack.TransportError = (*icmpv4SourceHostIsolatedSockError)(nil)
+
+// icmpv4SourceHostIsolatedSockError is an ICMPv4 Destination Unreachable error
+// due to source host isolated (not on the network).
+//
+// +stateify savable
+type icmpv4SourceHostIsolatedSockError struct {
+	icmpv4DestinationUnreachableSockError
+}
+
+// Code implements tcpip.SockErrorCause.
+func (*icmpv4SourceHostIsolatedSockError) Code() uint8 {
+	return uint8(header.ICMPv4SourceHostIsolated)
+}
+
+// Kind implements stack.TransportError.
+func (*icmpv4SourceHostIsolatedSockError) Kind() stack.TransportErrorKind {
+	return stack.SourceHostIsolatedTransportError
+}
+
+var _ stack.TransportError = (*icmpv4DestinationHostUnknownSockError)(nil)
+
+// icmpv4DestinationHostUnknownSockError is an ICMPv4 Destination Unreachable
+// error due to destination host unknown/down.
+//
+// +stateify savable
+type icmpv4DestinationHostUnknownSockError struct {
+	icmpv4DestinationUnreachableSockError
+}
+
+// Code implements tcpip.SockErrorCause.
+func (*icmpv4DestinationHostUnknownSockError) Code() uint8 {
+	return uint8(header.ICMPv4DestinationHostUnknown)
+}
+
+// Kind implements stack.TransportError.
+func (*icmpv4DestinationHostUnknownSockError) Kind() stack.TransportErrorKind {
+	return stack.DestinationHostDownTransportError
 }
 
 var _ stack.TransportError = (*icmpv4FragmentationNeededSockError)(nil)
@@ -362,7 +467,17 @@ func (e *endpoint) handleICMP(pkt stack.PacketBufferPtr) {
 		mtu := h.MTU()
 		code := h.Code()
 		switch code {
-		case header.ICMPv4HostUnreachable:
+		case header.ICMPv4NetUnreachable,
+			header.ICMPv4DestinationNetworkUnknown,
+			header.ICMPv4NetUnreachableForTos,
+			header.ICMPv4NetProhibited:
+			e.handleControl(&icmpv4DestinationNetUnreachableSockError{}, pkt)
+		case header.ICMPv4HostUnreachable,
+			header.ICMPv4HostProhibited,
+			header.ICMPv4AdminProhibited,
+			header.ICMPv4HostUnreachableForTos,
+			header.ICMPv4HostPrecedenceViolation,
+			header.ICMPv4PrecedenceCutInEffect:
 			e.handleControl(&icmpv4DestinationHostUnreachableSockError{}, pkt)
 		case header.ICMPv4PortUnreachable:
 			e.handleControl(&icmpv4DestinationPortUnreachableSockError{}, pkt)
@@ -372,6 +487,14 @@ func (e *endpoint) handleICMP(pkt stack.PacketBufferPtr) {
 				networkMTU = 0
 			}
 			e.handleControl(&icmpv4FragmentationNeededSockError{mtu: networkMTU}, pkt)
+		case header.ICMPv4ProtoUnreachable:
+			e.handleControl(&icmpv4DestinationProtoUnreachableSockError{}, pkt)
+		case header.ICMPv4SourceRouteFailed:
+			e.handleControl(&icmpv4SourceRouteFailedSockError{}, pkt)
+		case header.ICMPv4SourceHostIsolated:
+			e.handleControl(&icmpv4SourceHostIsolatedSockError{}, pkt)
+		case header.ICMPv4DestinationHostUnknown:
+			e.handleControl(&icmpv4DestinationHostUnknownSockError{}, pkt)
 		}
 	case header.ICMPv4SrcQuench:
 		received.srcQuench.Increment()
