@@ -33,43 +33,131 @@ func init() {
 // an ICMP destination unreachable message is sent in response to the inital
 // SYN.
 func TestTCPSynSentUnreachable(t *testing.T) {
-	// Create the DUT and connection.
-	dut := testbench.NewDUT(t)
-	clientFD, clientPort := dut.CreateBoundSocket(t, unix.SOCK_STREAM|unix.SOCK_NONBLOCK, unix.IPPROTO_TCP, dut.Net.RemoteIPv4)
-	port := uint16(9001)
-	conn := dut.Net.NewTCPIPv4(t, testbench.TCP{SrcPort: &port, DstPort: &clientPort}, testbench.TCP{SrcPort: &clientPort, DstPort: &port})
-	defer conn.Close(t)
+	for _, tt := range []struct {
+		desc      string
+		code      header.ICMPv4Code
+		wantErrno unix.Errno
+	}{
+		{desc: "net_unreachable", code: header.ICMPv4NetUnreachable, wantErrno: unix.ENETUNREACH},
+		{desc: "host_unreachable", code: header.ICMPv4HostUnreachable, wantErrno: unix.EHOSTUNREACH},
+		{desc: "proto_unreachable", code: header.ICMPv4ProtoUnreachable, wantErrno: unix.ENOPROTOOPT},
+		{desc: "port_unreachable", code: header.ICMPv4PortUnreachable, wantErrno: unix.ECONNREFUSED},
+		{desc: "source_route_failed", code: header.ICMPv4SourceRouteFailed, wantErrno: unix.EOPNOTSUPP},
+		{desc: "dest_net_unknown", code: header.ICMPv4DestinationNetworkUnknown, wantErrno: unix.ENETUNREACH},
+		{desc: "dest_host_unknown", code: header.ICMPv4DestinationHostUnknown, wantErrno: unix.EHOSTDOWN},
+		{desc: "src_host_isolated", code: header.ICMPv4SourceHostIsolated, wantErrno: unix.ENONET},
+		{desc: "net_prohibited", code: header.ICMPv4NetProhibited, wantErrno: unix.ENETUNREACH},
+		{desc: "host_prohibited", code: header.ICMPv4HostProhibited, wantErrno: unix.EHOSTUNREACH},
+		{desc: "net_unreachable_tos", code: header.ICMPv4NetUnreachableForTos, wantErrno: unix.ENETUNREACH},
+		{desc: "host_unreachable_tos", code: header.ICMPv4HostUnreachableForTos, wantErrno: unix.EHOSTUNREACH},
+		{desc: "admin_prohibited", code: header.ICMPv4AdminProhibited, wantErrno: unix.EHOSTUNREACH},
+		{desc: "precedence_violation", code: header.ICMPv4HostPrecedenceViolation, wantErrno: unix.EHOSTUNREACH},
+		{desc: "precedence_cut", code: header.ICMPv4PrecedenceCutInEffect, wantErrno: unix.EHOSTUNREACH},
+	} {
+		t.Run(tt.desc, func(t *testing.T) {
+			// Create the DUT and connection.
+			dut := testbench.NewDUT(t)
+			clientFD, clientPort := dut.CreateBoundSocket(t, unix.SOCK_STREAM|unix.SOCK_NONBLOCK, unix.IPPROTO_TCP, dut.Net.RemoteIPv4)
+			port := uint16(9001)
+			conn := dut.Net.NewTCPIPv4(t, testbench.TCP{SrcPort: &port, DstPort: &clientPort}, testbench.TCP{SrcPort: &clientPort, DstPort: &port})
+			defer conn.Close(t)
 
-	// Bring the DUT to SYN-SENT state with a non-blocking connect.
-	sa := unix.SockaddrInet4{Port: int(port)}
-	copy(sa.Addr[:], dut.Net.LocalIPv4)
-	if _, err := dut.ConnectWithErrno(context.Background(), t, clientFD, &sa); err != unix.EINPROGRESS {
-		t.Errorf("got connect() = %v, want EINPROGRESS", err)
+			sa := unix.SockaddrInet4{Port: int(port)}
+			copy(sa.Addr[:], dut.Net.LocalIPv4)
+			// Bring the DUT to SYN-SENT state with a non-blocking connect.
+			if _, err := dut.ConnectWithErrno(context.Background(), t, clientFD, &sa); err != unix.EINPROGRESS {
+				t.Errorf("got connect() = %v, want EINPROGRESS", err)
+			}
+
+			// Get the SYN.
+			tcp, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn)}, time.Second)
+			if err != nil {
+				t.Fatalf("expected SYN: %s", err)
+			}
+
+			// Send a host unreachable message.
+			icmpPayload := testbench.Layers{tcp.Prev(), tcp}
+			bytes, err := icmpPayload.ToBytes()
+			if err != nil {
+				t.Fatalf("got icmpPayload.ToBytes() = (_, %s), want = (_, nil)", err)
+			}
+
+			layers := conn.CreateFrame(t, nil)
+			layers[len(layers)-1] = &testbench.ICMPv4{
+				Type:    testbench.ICMPv4Type(header.ICMPv4DstUnreachable),
+				Code:    testbench.ICMPv4Code(tt.code),
+				Payload: bytes,
+			}
+			conn.SendFrameStateless(t, layers)
+
+			if err := getConnectError(t, &dut, clientFD); err != tt.wantErrno {
+				t.Errorf("got connect() = %s(%d), want %s(%d)", err, err, tt.wantErrno, tt.wantErrno)
+			}
+		})
 	}
+}
 
-	// Get the SYN.
-	tcp, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn)}, time.Second)
-	if err != nil {
-		t.Fatalf("expected SYN: %s", err)
-	}
+func TestTCPEstablishedUnreachable(t *testing.T) {
+	for _, tt := range []struct {
+		desc      string
+		code      header.ICMPv4Code
+		wantErrno unix.Errno
+	}{
+		{desc: "net_unreachable", code: header.ICMPv4NetUnreachable, wantErrno: unix.ENETUNREACH},
+		{desc: "host_unreachable", code: header.ICMPv4HostUnreachable, wantErrno: unix.EHOSTUNREACH},
+		{desc: "proto_unreachable", code: header.ICMPv4ProtoUnreachable, wantErrno: unix.ENOPROTOOPT},
+		{desc: "port_unreachable", code: header.ICMPv4PortUnreachable, wantErrno: unix.ECONNREFUSED},
+		{desc: "source_route_failed", code: header.ICMPv4SourceRouteFailed, wantErrno: unix.EOPNOTSUPP},
+		{desc: "dest_net_unknown", code: header.ICMPv4DestinationNetworkUnknown, wantErrno: unix.ENETUNREACH},
+		{desc: "dest_host_unknown", code: header.ICMPv4DestinationHostUnknown, wantErrno: unix.EHOSTDOWN},
+		{desc: "src_host_isolated", code: header.ICMPv4SourceHostIsolated, wantErrno: unix.ENONET},
+		{desc: "net_prohibited", code: header.ICMPv4NetProhibited, wantErrno: unix.ENETUNREACH},
+		{desc: "host_prohibited", code: header.ICMPv4HostProhibited, wantErrno: unix.EHOSTUNREACH},
+		{desc: "net_unreachable_tos", code: header.ICMPv4NetUnreachableForTos, wantErrno: unix.ENETUNREACH},
+		{desc: "host_unreachable_tos", code: header.ICMPv4HostUnreachableForTos, wantErrno: unix.EHOSTUNREACH},
+		{desc: "admin_prohibited", code: header.ICMPv4AdminProhibited, wantErrno: unix.EHOSTUNREACH},
+		{desc: "precedence_violation", code: header.ICMPv4HostPrecedenceViolation, wantErrno: unix.EHOSTUNREACH},
+		{desc: "precedence_cut", code: header.ICMPv4PrecedenceCutInEffect, wantErrno: unix.EHOSTUNREACH},
+	} {
+		t.Run(tt.desc, func(t *testing.T) {
+			dut := testbench.NewDUT(t)
+			listenerFd, listenerPort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
+			defer dut.Close(t, listenerFd)
+			conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &listenerPort}, testbench.TCP{SrcPort: &listenerPort})
+			defer conn.Close(t)
+			conn.Connect(t)
+			acceptedFd, addr := dut.Accept(t, listenerFd)
+			_ = addr
 
-	// Send a host unreachable message.
-	icmpPayload := testbench.Layers{tcp.Prev(), tcp}
-	bytes, err := icmpPayload.ToBytes()
-	if err != nil {
-		t.Fatalf("got icmpPayload.ToBytes() = (_, %s), want = (_, nil)", err)
-	}
+			dut.SetSockOptInt(t, acceptedFd, unix.IPPROTO_TCP, unix.TCP_USER_TIMEOUT, 50)
+			dut.Send(t, acceptedFd, []byte("Hello"), 0)
 
-	layers := conn.CreateFrame(t, nil)
-	layers[len(layers)-1] = &testbench.ICMPv4{
-		Type:    testbench.ICMPv4Type(header.ICMPv4DstUnreachable),
-		Code:    testbench.ICMPv4Code(header.ICMPv4HostUnreachable),
-		Payload: bytes,
-	}
-	conn.SendFrameStateless(t, layers)
+			if received, err := conn.ExpectData(t, &testbench.TCP{}, &testbench.Payload{Bytes: []byte("Hello")}, time.Second); err != nil {
+				t.Fatalf("Expected data from DUT, got none: %s", err)
+			} else {
+				// Send a host unreachable message.
+				icmpPayload := received[len(received)-3 : len(received)-1]
+				bytes, err := icmpPayload.ToBytes()
+				if err != nil {
+					t.Fatalf("got icmpPayload.ToBytes() = (_, %s), want = (_, nil)", err)
+				}
 
-	if err := getConnectError(t, &dut, clientFD); err != unix.EHOSTUNREACH {
-		t.Errorf("got connect() = %v, want EHOSTUNREACH", err)
+				layers := conn.CreateFrame(t, nil)
+				layers[len(layers)-1] = &testbench.ICMPv4{
+					Type:    testbench.ICMPv4Type(header.ICMPv4DstUnreachable),
+					Code:    testbench.ICMPv4Code(tt.code),
+					Payload: bytes,
+				}
+				conn.SendFrameStateless(t, layers)
+			}
+
+			dut.Send(t, acceptedFd, []byte("Hello"), 0)
+
+			time.Sleep(500 * time.Millisecond)
+			if _, err := dut.SendWithErrno(context.Background(), t, acceptedFd, []byte("Hello"), 0); err != tt.wantErrno {
+				t.Fatalf("got send() = %s(%d), want %s(%d)", err, err, tt.wantErrno, tt.wantErrno)
+			}
+		})
 	}
 }
 

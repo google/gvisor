@@ -2909,6 +2909,16 @@ func (e *endpoint) HandleError(transErr stack.TransportError, pkt stack.PacketBu
 		e.onICMPError(&tcpip.ErrHostUnreachable{}, transErr, pkt)
 	case stack.DestinationNetworkUnreachableTransportError:
 		e.onICMPError(&tcpip.ErrNetworkUnreachable{}, transErr, pkt)
+	case stack.DestinationPortUnreachableTransportError:
+		e.onICMPError(&tcpip.ErrConnectionRefused{}, transErr, pkt)
+	case stack.DestinationProtoUnreachableTransportError:
+		e.onICMPError(&tcpip.ErrUnknownProtocolOption{}, transErr, pkt)
+	case stack.SourceRouteFailedTransportError:
+		e.onICMPError(&tcpip.ErrNotSupported{}, transErr, pkt)
+	case stack.SourceHostIsolatedTransportError:
+		e.onICMPError(&tcpip.ErrNoNet{}, transErr, pkt)
+	case stack.DestinationHostDownTransportError:
+		e.onICMPError(&tcpip.ErrHostDown{}, transErr, pkt)
 	}
 }
 

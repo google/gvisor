@@ -54,6 +54,7 @@ var (
 	ErrInvalidPortRange             = New((&tcpip.ErrInvalidPortRange{}).String(), errno.EINVAL)
 	ErrMulticastInputCannotBeOutput = New((&tcpip.ErrMulticastInputCannotBeOutput{}).String(), errno.EINVAL)
 	ErrMissingRequiredFields        = New((&tcpip.ErrMissingRequiredFields{}).String(), errno.EINVAL)
+	ErrNoNet                        = New((&tcpip.ErrNoNet{}).String(), errno.ENONET)
 )
 
 // TranslateNetstackError converts an error from the tcpip package to a sentry
@@ -76,6 +77,10 @@ func TranslateNetstackError(err tcpip.Error) *Error {
 		return ErrDuplicateAddress
 	case *tcpip.ErrHostUnreachable:
 		return ErrHostUnreachable
+	case *tcpip.ErrHostDown:
+		return ErrHostDown
+	case *tcpip.ErrNoNet:
+		return ErrNoNet
 	case *tcpip.ErrAlreadyBound:
 		return ErrAlreadyBound
 	case *tcpip.ErrInvalidEndpointState:
