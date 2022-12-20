@@ -85,7 +85,7 @@ const (
 	ENODATA
 	ETIME
 	ENOSR
-	_ // Skip for ENOENT = ENONET.
+	ENONET
 	ENOPKG
 	EREMOTE
 	ENOLINK
@@ -161,7 +161,6 @@ const (
 const (
 	EWOULDBLOCK = EAGAIN
 	EDEADLOCK   = EDEADLK
-	ENONET      = ENOENT
 )
 
 // errnos for internal errors.

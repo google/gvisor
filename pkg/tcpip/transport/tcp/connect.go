@@ -128,9 +128,15 @@ func maybeFailTimerHandler(e *endpoint, f func() tcpip.Error) func() {
 		e.mu.Lock()
 		if err := f(); err != nil {
 			e.lastErrorMu.Lock()
+			// If the handler timed out and we have a lastError recorded (maybe due
+			// to an ICMP message received), promote it to be the hard error.
+			if _, isTimeout := err.(*tcpip.ErrTimeout); e.lastError != nil && isTimeout {
+				e.hardError = e.lastError
+			} else {
+				e.hardError = err
+			}
 			e.lastError = err
 			e.lastErrorMu.Unlock()
-			e.hardError = err
 			e.cleanupLocked()
 			e.setEndpointState(StateError)
 			e.mu.Unlock()
