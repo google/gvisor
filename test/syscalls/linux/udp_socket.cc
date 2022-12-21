@@ -585,7 +585,7 @@ TEST_P(UdpSocketTest, DisconnectAfterBind) {
   // Bind to the next port above bind_.
   struct sockaddr_storage addr_storage = InetLoopbackAddr();
   struct sockaddr* addr = AsSockAddr(&addr_storage);
-  SetPort(&addr_storage, *Port(&bind_addr_storage_) + 1);
+  SetPort(&addr_storage, *Port(&bind_addr_storage_) - 1);
   ASSERT_NO_ERRNO(BindSocket(sock_.get(), addr));
 
   // Connect the socket.
@@ -676,7 +676,7 @@ TEST_P(UdpSocketTest, BindToAnyConnnectToLocalhost) {
 
   struct sockaddr_storage addr_storage = InetLoopbackAddr();
   struct sockaddr* addr = AsSockAddr(&addr_storage);
-  SetPort(&addr_storage, *Port(&bind_addr_storage_) + 1);
+  SetPort(&addr_storage, *Port(&bind_addr_storage_) - 1);
   socklen_t addrlen = sizeof(addr);
 
   // Connect the socket.
@@ -703,7 +703,7 @@ TEST_P(UdpSocketTest, DisconnectAfterBindToAny) {
 
   struct sockaddr_storage any_storage = InetAnyAddr();
   struct sockaddr* any = AsSockAddr(&any_storage);
-  SetPort(&any_storage, *Port(&bind_addr_storage_) + 1);
+  SetPort(&any_storage, *Port(&bind_addr_storage_) - 1);
 
   ASSERT_NO_ERRNO(BindSocket(sock_.get(), any));
 
@@ -731,7 +731,7 @@ TEST_P(UdpSocketTest, Disconnect) {
 
   struct sockaddr_storage any_storage = InetAnyAddr();
   struct sockaddr* any = AsSockAddr(&any_storage);
-  SetPort(&any_storage, *Port(&bind_addr_storage_) + 1);
+  SetPort(&any_storage, *Port(&bind_addr_storage_) - 1);
   ASSERT_NO_ERRNO(BindSocket(sock_.get(), any));
 
   for (int i = 0; i < 2; i++) {
@@ -777,7 +777,7 @@ TEST_P(UdpSocketTest, SendToAddressOtherThanConnected) {
 
   struct sockaddr_storage addr_storage = InetAnyAddr();
   struct sockaddr* addr = AsSockAddr(&addr_storage);
-  SetPort(&addr_storage, *Port(&bind_addr_storage_) + 1);
+  SetPort(&addr_storage, *Port(&bind_addr_storage_) - 1);
 
   ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
 
