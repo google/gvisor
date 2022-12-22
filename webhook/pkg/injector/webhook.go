@@ -16,6 +16,7 @@
 package injector
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -83,7 +84,7 @@ func CreateConfiguration(clientset kubeclientset.Interface, selector *metav1.Lab
 		},
 	}
 	log.Infof("Creating MutatingWebhookConfiguration %q", config.Name)
-	if _, err := clientset.AdmissionregistrationV1beta1().MutatingWebhookConfigurations().Create(config); err != nil {
+	if _, err := clientset.AdmissionregistrationV1beta1().MutatingWebhookConfigurations().Create(context.TODO(), config, metav1.CreateOptions{}); err != nil {
 		if !apierrors.IsAlreadyExists(err) {
 			return fmt.Errorf("failed to create MutatingWebhookConfiguration %q: %s", config.Name, err)
 		}
