@@ -24,6 +24,10 @@ message MetricMetadata {
   // (e.g., /foo/count).
   string name = 1;
 
+  // prometheus_name is the unique name of the metric in Prometheus format
+  // (e.g. foo_count).
+  string prometheus_name = 9;
+
   // description is a human-readable description of the metric.
   string description = 2;
 

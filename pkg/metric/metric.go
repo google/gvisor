@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -27,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/eventchannel"
 	"gvisor.dev/gvisor/pkg/log"
 	pb "gvisor.dev/gvisor/pkg/metric/metric_go_proto"
+	"gvisor.dev/gvisor/pkg/prometheus"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -164,6 +166,9 @@ func Disable() error {
 type customUint64Metric struct {
 	// metadata describes the metric. It is immutable.
 	metadata *pb.MetricMetadata
+
+	// prometheusMetric describes the metric in Prometheus format. It is immutable.
+	prometheusMetric *prometheus.Metric
 
 	// value returns the current value of the metric for the given set of
 	// fields. It takes a variadic number of field values as argument.
@@ -327,6 +332,12 @@ func (m fieldMapper) keyToMultiField(key int) []string {
 	return fields
 }
 
+// nameToPrometheusName transforms a path-style metric name (/foo/bar) into a Prometheus-style
+// metric name (foo_bar).
+func nameToPrometheusName(name string) string {
+	return strings.ReplaceAll(strings.TrimPrefix(name, "/"), "/", "_")
+}
+
 // RegisterCustomUint64Metric registers a metric with the given name.
 //
 // Register must only be called at init and will return and error if called
@@ -348,14 +359,25 @@ func RegisterCustomUint64Metric(name string, cumulative, sync bool, units pb.Met
 		return ErrNameInUse
 	}
 
+	promType := prometheus.TypeGauge
+	if cumulative {
+		promType = prometheus.TypeCounter
+	}
+
 	allMetrics.uint64Metrics[name] = customUint64Metric{
 		metadata: &pb.MetricMetadata{
-			Name:        name,
-			Description: description,
-			Cumulative:  cumulative,
-			Sync:        sync,
-			Type:        pb.MetricMetadata_TYPE_UINT64,
-			Units:       units,
+			Name:           name,
+			PrometheusName: nameToPrometheusName(name),
+			Description:    description,
+			Cumulative:     cumulative,
+			Sync:           sync,
+			Type:           pb.MetricMetadata_TYPE_UINT64,
+			Units:          units,
+		},
+		prometheusMetric: &prometheus.Metric{
+			Name: nameToPrometheusName(name),
+			Help: description,
+			Type: promType,
 		},
 		value: value,
 	}
@@ -600,15 +622,18 @@ type DistributionMetric struct {
 	// and we call whichever one is in use in AddSample.
 	exponentialBucketer *ExponentialBucketer
 
-	// metadata is the metadata about this metric.
+	// metadata is the metadata about this metric. It is immutable.
 	metadata *pb.MetricMetadata
+
+	// prometheusMetric describes the metric in Prometheus format. It is immutable.
+	prometheusMetric *prometheus.Metric
 
 	// fieldsToKey converts a multi-dimensional fields to a single string to use
 	// as key for `samples`.
 	fieldsToKey fieldMapper
 
 	// samples is the number of samples that fell within each bucket.
-	// It is mapped by the concatenation of the fields, using fieldsToKey.
+	// It is mapped by the concatenation of the fields using `fieldsToKey`.
 	// The value is a list of bucket sample counts, with the 0-th being the
 	// "underflow bucket", i.e. the bucket of samples which cannot fall into
 	// any bucket that the bucketer supports.
@@ -617,6 +642,10 @@ type DistributionMetric struct {
 	// The last value is the number of samples that fell into the bucketer's
 	// last (i.e. infinite) bucket.
 	samples [][]atomicbitops.Uint64
+
+	// sampleSum is the sum of samples.
+	// It is mapped by the concatenation of the fields using `fieldsToKey`.
+	sampleSum []atomicbitops.Int64
 }
 
 // NewDistributionMetric creates and registers a new distribution metric.
@@ -656,8 +685,10 @@ func NewDistributionMetric(name string, sync bool, bucketer Bucketer, unit pb.Me
 		exponentialBucketer: exponentialBucketer,
 		fieldsToKey:         fieldsToKey,
 		samples:             samples,
+		sampleSum:           make([]atomicbitops.Int64, fieldsToKey.numKeys()),
 		metadata: &pb.MetricMetadata{
 			Name:                          name,
+			PrometheusName:                nameToPrometheusName(name),
 			Description:                   description,
 			Cumulative:                    false,
 			Sync:                          sync,
@@ -665,6 +696,11 @@ func NewDistributionMetric(name string, sync bool, bucketer Bucketer, unit pb.Me
 			Units:                         unit,
 			Fields:                        protoFields,
 			DistributionBucketLowerBounds: lowerBounds,
+		},
+		prometheusMetric: &prometheus.Metric{
+			Name: nameToPrometheusName(name),
+			Type: prometheus.TypeHistogram,
+			Help: description,
 		},
 	}
 	return allMetrics.distributionMetrics[name], nil
@@ -696,6 +732,7 @@ func (d *DistributionMetric) AddSample(sample int64, fields ...string) {
 func (d *DistributionMetric) addSampleByKey(sample int64, key int) {
 	bucket := d.exponentialBucketer.BucketIndex(sample)
 	d.samples[key][bucket+1].Add(1)
+	d.sampleSum[key].Add(sample)
 }
 
 // Minimum number of buckets for NewDurationBucket.
@@ -845,6 +882,7 @@ func (m *metricSet) Values() metricValues {
 		uint64Metrics:            make(map[string]any, len(m.uint64Metrics)),
 		distributionMetrics:      make(map[string][][]uint64, len(m.distributionMetrics)),
 		distributionTotalSamples: make(map[string][]uint64, len(m.distributionMetrics)),
+		distributionSampleSum:    make(map[string][]int64, len(m.distributionMetrics)),
 		stages:                   stages,
 	}
 	for k, v := range m.uint64Metrics {
@@ -866,6 +904,7 @@ func (m *metricSet) Values() metricValues {
 	for name, metric := range m.distributionMetrics {
 		fieldKeysToValues := make([][]uint64, len(metric.samples))
 		fieldKeysToTotalSamples := make([]uint64, len(metric.samples))
+		fieldKeysToSampleSum := make([]int64, len(metric.samples))
 		for fieldKey, samples := range metric.samples {
 			samplesSnapshot := snapshotDistribution(samples)
 			totalSamples := uint64(0)
@@ -877,14 +916,17 @@ func (m *metricSet) Values() metricValues {
 				// the maps for this fieldKey as nil. This lessens the memory cost
 				// of distributions with unused field combinations.
 				fieldKeysToTotalSamples[fieldKey] = 0
+				fieldKeysToSampleSum[fieldKey] = 0
 				fieldKeysToValues[fieldKey] = nil
 			} else {
 				fieldKeysToTotalSamples[fieldKey] = totalSamples
+				fieldKeysToSampleSum[fieldKey] = metric.sampleSum[fieldKey].Load()
 				fieldKeysToValues[fieldKey] = samplesSnapshot
 			}
 		}
 		vals.distributionMetrics[name] = fieldKeysToValues
 		vals.distributionTotalSamples[name] = fieldKeysToTotalSamples
+		vals.distributionSampleSum[name] = fieldKeysToSampleSum
 	}
 	return vals
 }
@@ -911,6 +953,10 @@ type metricValues struct {
 	// iterate over all the buckets individually, so that distributions with
 	// no new samples are not retransmitted.
 	distributionTotalSamples map[string][]uint64
+
+	// distributionSampleSum is the sum of samples for each distribution metric
+	// and field values.
+	distributionSampleSum map[string][]int64
 
 	// Information on when initialization stages were reached. Does not include
 	// the currently-ongoing stage, if any.
@@ -1050,6 +1096,64 @@ func EmitMetricUpdate() {
 	if err := eventchannel.Emit(&m); err != nil {
 		log.Warningf("Unable to emit metrics: %s", err)
 	}
+}
+
+// GetSnapshot returns a Prometheus snapshot of the metric data.
+func GetSnapshot() *prometheus.Snapshot {
+	values := allMetrics.Values()
+	snapshot := prometheus.NewSnapshot()
+	for k, v := range values.uint64Metrics {
+		m := allMetrics.uint64Metrics[k]
+		switch t := v.(type) {
+		case uint64:
+			snapshot.Add(prometheus.NewIntData(m.prometheusMetric, int64(t)))
+		case map[string]uint64:
+			for fieldValue, metricValue := range t {
+				snapshot.Add(prometheus.LabeledIntData(m.prometheusMetric, map[string]string{
+					// uint64 metrics currently only support at most one field name.
+					m.metadata.Fields[0].GetFieldName(): fieldValue,
+				}, int64(metricValue)))
+			}
+		}
+	}
+	for k, dists := range values.distributionTotalSamples {
+		m := allMetrics.distributionMetrics[k]
+		distributionSamples := values.distributionMetrics[k]
+		numFiniteBuckets := m.exponentialBucketer.NumFiniteBuckets()
+		sampleSums := values.distributionSampleSum[k]
+		for fieldKey := range dists {
+			var labels map[string]string
+			if numFields := m.fieldsToKey.numKeys(); numFields > 0 {
+				labels = make(map[string]string, numFields)
+				for fieldIndex, field := range m.fieldsToKey.keyToMultiField(fieldKey) {
+					labels[m.metadata.Fields[fieldIndex].GetFieldName()] = field
+				}
+			}
+			currentSamples := distributionSamples[fieldKey]
+			buckets := make([]prometheus.Bucket, numFiniteBuckets+2)
+			for b := 0; b < numFiniteBuckets+2; b++ {
+				var upperBound prometheus.Number
+				if b == numFiniteBuckets+1 {
+					upperBound = prometheus.Number{Float: math.Inf(1)} // Overflow bucket.
+				} else {
+					upperBound = prometheus.Number{Int: m.exponentialBucketer.LowerBound(b + 1)}
+				}
+				buckets[b] = prometheus.Bucket{
+					Samples:    currentSamples[b],
+					UpperBound: upperBound,
+				}
+			}
+			snapshot.Add(&prometheus.Data{
+				Metric: m.prometheusMetric,
+				Labels: labels,
+				HistogramValue: &prometheus.Histogram{
+					Total:   prometheus.Number{Int: sampleSums[fieldKey]},
+					Buckets: buckets,
+				},
+			})
+		}
+	}
+	return snapshot
 }
 
 // StartStage should be called when an initialization stage is started.
