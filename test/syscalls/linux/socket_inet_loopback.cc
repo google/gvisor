@@ -494,7 +494,7 @@ TEST_P(SocketInetLoopbackTest, TCPInfoState) {
       .fd = conn_fd.get(),
       .events = POLLIN | POLLRDHUP,
   };
-  constexpr int kTimeout = 10000;
+  constexpr int kTimeout = 2000;
   int n = poll(&pfd, 1, kTimeout);
   ASSERT_GE(n, 0) << strerror(errno);
   ASSERT_EQ(n, 1);
@@ -551,7 +551,7 @@ void TestHangupDuringConnect(const SocketInetTestParam& param,
     struct pollfd pfd = {
         .fd = client.get(),
     };
-    constexpr int kTimeout = 10000;
+    constexpr int kTimeout = 2000;
     int n = poll(&pfd, 1, kTimeout);
     ASSERT_GE(n, 0) << strerror(errno);
     ASSERT_EQ(n, 1);
@@ -574,7 +574,7 @@ TEST_P(SocketInetLoopbackTest, TCPListenShutdownDuringConnect) {
 
 void TestListenHangupConnectingRead(const SocketInetTestParam& param,
                                     void (*hangup)(FileDescriptor&)) {
-  constexpr int kTimeout = 10000;
+  constexpr int kTimeout = 2000;
 
   TestAddress const& listener = param.listener;
   TestAddress const& connector = param.connector;
@@ -943,7 +943,7 @@ TEST_P(SocketInetLoopbackTest, TCPBacklogAcceptAll) {
   }
 
   auto accept_connection = [&]() {
-    constexpr int kTimeout = 10000;
+    constexpr int kTimeout = 2000;
     pollfd pfd = {
         .fd = listen_fd.get(),
         .events = POLLIN,
@@ -973,7 +973,7 @@ TEST_P(SocketInetLoopbackTest, TCPBacklogAcceptAll) {
   // re-send that ACK, to address that case).
   for (std::size_t i = 0; i < std::size(waiting_clients); i++) {
     SCOPED_TRACE(absl::StrCat("waiting clients i=", i));
-    constexpr int kTimeout = 10000;
+    constexpr int kTimeout = 2000;
     pollfd pfd = {
         .fd = waiting_clients[i].get(),
         .events = POLLOUT,
@@ -1170,7 +1170,7 @@ TEST_P(SocketInetLoopbackTest, TCPAcceptAfterReset) {
   ASSERT_EQ(addrlen, listener.addr_len);
 
   // Wait for accept_fd to process the RST.
-  constexpr int kTimeout = 10000;
+  constexpr int kTimeout = 2000;
   pollfd pfd = {
       .fd = accept_fd.get(),
       .events = POLLIN,
