@@ -113,11 +113,12 @@ func TestInitialize(t *testing.T) {
 		case "/distrib":
 			foundDistrib = true
 			want := &pb.MetricMetadata{
-				Name:        "/distrib",
-				Type:        pb.MetricMetadata_TYPE_DISTRIBUTION,
-				Units:       pb.MetricMetadata_UNITS_NANOSECONDS,
-				Description: distribDescription,
-				Sync:        true,
+				Name:           "/distrib",
+				PrometheusName: "distrib",
+				Type:           pb.MetricMetadata_TYPE_DISTRIBUTION,
+				Units:          pb.MetricMetadata_UNITS_NANOSECONDS,
+				Description:    distribDescription,
+				Sync:           true,
 				Fields: []*pb.MetricMetadata_Field{
 					{FieldName: "field1", AllowedValues: []string{"foo", "bar"}},
 					{FieldName: "field2", AllowedValues: []string{"baz", "quux"}},

@@ -18,6 +18,7 @@ go_library(
         "//pkg/eventchannel",
         "//pkg/gohacks",
         "//pkg/log",
+        "//pkg/prometheus",
         "//pkg/sync",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
