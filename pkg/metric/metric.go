@@ -156,7 +156,7 @@ func Disable() error {
 
 	m := pb.MetricRegistration{}
 	if err := eventchannel.Emit(&m); err != nil {
-		return fmt.Errorf("unable to emit metric disable event: %w", err)
+		return fmt.Errorf("unable to emit empty metric registration event (metrics disabled): %w", err)
 	}
 
 	initialized = true
@@ -942,9 +942,12 @@ type metricValues struct {
 	// The first key level is the metric name.
 	// The second key level is an index ID corresponding to the combination of
 	// field values. The index is decoded to field strings using keyToMultiField.
-	// The value is the number of samples in each bucket of the distribution,
-	// with the first (0-th) element being the underflow bucket and the last
-	// element being the "infinite" (overflow) bucket.
+	// The slice value is the number of samples in each bucket of the
+	// distribution, with the first (0-th) element being the underflow bucket
+	// and the last element being the "infinite" (overflow) bucket.
+	// The slice value may also be nil for field combinations with no samples.
+	// This saves memory by avoiding storing anything for unused field
+	// combinations.
 	distributionMetrics map[string][][]uint64
 
 	// distributionTotalSamples is the total number of samples for each
@@ -1136,10 +1139,14 @@ func GetSnapshot() *prometheus.Snapshot {
 				if b == numFiniteBuckets+1 {
 					upperBound = prometheus.Number{Float: math.Inf(1)} // Overflow bucket.
 				} else {
-					upperBound = prometheus.Number{Int: m.exponentialBucketer.LowerBound(b + 1)}
+					upperBound = prometheus.Number{Int: m.exponentialBucketer.LowerBound(b)}
+				}
+				samples := uint64(0)
+				if currentSamples != nil {
+					samples = currentSamples[b]
 				}
 				buckets[b] = prometheus.Bucket{
-					Samples:    currentSamples[b],
+					Samples:    samples,
 					UpperBound: upperBound,
 				}
 			}
