@@ -38,6 +38,7 @@ go_library(
         "//pkg/fspath",
         "//pkg/log",
         "//pkg/metric",
+        "//pkg/metric:metric_go_proto",
         "//pkg/prometheus",
         "//pkg/sentry/fdimport",
         "//pkg/sentry/fsimpl/host",

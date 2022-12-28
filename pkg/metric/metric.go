@@ -135,12 +135,25 @@ func Initialize() error {
 	for _, s := range allStages {
 		m.Stages = append(m.Stages, string(s))
 	}
+	allMetrics.registration = &m
 	if err := eventchannel.Emit(&m); err != nil {
 		return fmt.Errorf("unable to emit metric initialize event: %w", err)
 	}
 
 	initialized = true
 	return nil
+}
+
+// GetMetricRegistration returns the metric registration data for all registered metrics.
+// Must be called after Initialize().
+func GetMetricRegistration() (*pb.MetricRegistration, error) {
+	if !initialized {
+		return nil, errors.New("metric.GetMetricRegistration called before metric.Initialize")
+	}
+	if allMetrics.registration == nil {
+		return nil, errors.New("metrics are disabled")
+	}
+	return allMetrics.registration, nil
 }
 
 // Disable sends an empty metric registration event over the event channel,
@@ -846,6 +859,9 @@ func (s stageTiming) inProgress() bool {
 
 // metricSet holds metric data.
 type metricSet struct {
+	// Metric registration data for all the metrics below.
+	registration *pb.MetricRegistration
+
 	// Map of uint64 metrics.
 	uint64Metrics map[string]customUint64Metric
 
