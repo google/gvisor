@@ -23,6 +23,7 @@ go_library(
         "//pkg/control/server",
         "//pkg/coverage",
         "//pkg/log",
+        "//pkg/prometheus",
         "//pkg/sentry/control",
         "//pkg/sentry/platform",
         "//pkg/sentry/seccheck",

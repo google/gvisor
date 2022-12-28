@@ -129,6 +129,11 @@ const (
 	UsageReduce  = "Usage.Reduce"
 )
 
+// Metrics related commands (see metrics.go).
+const (
+	MetricsExport = "Metrics.Export"
+)
+
 // Commands for interacting with cgroupfs within the sandbox.
 const (
 	CgroupsReadControlFiles  = "Cgroups.ReadControlFiles"
@@ -173,6 +178,7 @@ func newController(fd int, l *Loader) (*controller, error) {
 	ctrl.srv.Register(&control.Proc{Kernel: l.k})
 	ctrl.srv.Register(&control.State{Kernel: l.k})
 	ctrl.srv.Register(&control.Usage{Kernel: l.k})
+	ctrl.srv.Register(&control.Metrics{})
 	ctrl.srv.Register(&debug{})
 
 	if eps, ok := l.k.RootNetworkNamespace().Stack().(*netstack.Stack); ok {
