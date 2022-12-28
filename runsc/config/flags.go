@@ -51,6 +51,9 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("allow-flag-override", false, "allow OCI annotations (dev.gvisor.flag.<name>) to override flags for debugging.")
 	flagSet.String("traceback", "system", "golang runtime's traceback level")
 
+	// Metrics flags.
+	flagSet.String("metric-exporter-prefix", "runsc_", "prefix for all metric names, following Prometheus exporter convention")
+
 	// Debugging flags: strace related
 	flagSet.Bool("strace", false, "enable strace.")
 	flagSet.String("strace-syscalls", "", "comma-separated list of syscalls to trace. If --strace is true and this list is empty, then all syscalls will be traced.")

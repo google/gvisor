@@ -39,6 +39,7 @@ import (
 	"gvisor.dev/gvisor/pkg/control/server"
 	"gvisor.dev/gvisor/pkg/coverage"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/prometheus"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
@@ -1176,6 +1177,20 @@ func (s *Sandbox) Reduce(wait bool) error {
 	return conn.Call(boot.UsageReduce, &control.UsageReduceOpts{
 		Wait: wait,
 	}, nil)
+}
+
+// ExportMetrics writes Prometheus-formatted metrics data to the given io.Writer.
+func (s *Sandbox) ExportMetrics() (*prometheus.Snapshot, error) {
+	conn, err := s.sandboxConnect()
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	data := &control.MetricsExportData{}
+	if err = conn.Call(boot.MetricsExport, &control.MetricsExportOpts{}, data); err != nil {
+		return nil, err
+	}
+	return data.Snapshot, nil
 }
 
 // IsRunning returns true if the sandbox or gofer process is running.

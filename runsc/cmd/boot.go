@@ -29,6 +29,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/coretag"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cmd/util"
@@ -364,6 +365,12 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			}
 		}
 	}
+
+	// Prepare metrics.
+	// This needs to happen after the kernel is initialized (such that all metrics are registered)
+	// but before the start-sync file is notified, as the parent process needs to query for
+	// registered metrics prior to sending the start signal.
+	metric.Initialize()
 
 	// Notify the parent process the sandbox has booted (and that the controller
 	// is up).

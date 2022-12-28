@@ -139,6 +139,11 @@ type Config struct {
 	// If unset, a sane platform-specific default will be used.
 	PlatformDevicePath string `flag:"platform_device_path"`
 
+	// MetricExporterPrefix is added as prefix to all metric names.
+	// It is used to follow Prometheus's exporter convention, whereby all metric names should be
+	// prefixed by a name meaningfully identifying the software exporting the metric.
+	MetricExporterPrefix string `flag:"metric-exporter-prefix"`
+
 	// Strace indicates that strace should be enabled.
 	Strace bool `flag:"strace"`
 
