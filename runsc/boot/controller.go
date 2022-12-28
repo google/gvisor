@@ -131,7 +131,8 @@ const (
 
 // Metrics related commands (see metrics.go).
 const (
-	MetricsExport = "Metrics.Export"
+	MetricsGetRegistered = "Metrics.GetRegisteredMetrics"
+	MetricsExport        = "Metrics.Export"
 )
 
 // Commands for interacting with cgroupfs within the sandbox.
