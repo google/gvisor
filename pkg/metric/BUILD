@@ -43,7 +43,9 @@ go_test(
     deps = [
         ":metric_go_proto",
         "//pkg/eventchannel",
+        "//pkg/prometheus",
         "//pkg/sync",
+        "@com_github_prometheus_common//expfmt",
         "@org_golang_google_protobuf//proto:go_default_library",
     ],
 )
