@@ -283,7 +283,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 				UserLog:              args.UserLog,
 				IOFiles:              ioFiles,
 				MountsFile:           specFile,
-				Cgroup:               parentCgroup,
+				Cgroup:               containerCgroup,
 				Attached:             args.Attached,
 				OverlayFilestoreFile: overlayFilestoreFile,
 			}
