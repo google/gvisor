@@ -385,11 +385,14 @@ TEST_P(UdpSocketTest, ConnectWriteToInvalidPort) {
   ASSERT_THAT(getsockname(s.get(), addr, &addrlen), SyscallSucceeds());
   EXPECT_EQ(addrlen, addrlen_);
   EXPECT_NE(*Port(&addr_storage), 0);
-  ASSERT_THAT(close(s.release()), SyscallSucceeds());
-
-  // Now connect to the port that we just released. This should generate an
-  // ECONNREFUSED error.
+  // Connect to the same address. This won't send data yet but will ensure that
+  // the local port chosen for the connecting socket is different from the
+  // remote port, since it is still in use.
   ASSERT_THAT(connect(sock_.get(), addr, addrlen_), SyscallSucceeds());
+
+  // Now free the destination port and then send a packet to it. This should
+  // generate an ECONNREFUSED error.
+  ASSERT_THAT(close(s.release()), SyscallSucceeds());
   char buf[512];
   RandomizeBuffer(buf, sizeof(buf));
   // Send from sock_ to an unbound port.
