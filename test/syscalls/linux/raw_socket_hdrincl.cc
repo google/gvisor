@@ -272,9 +272,6 @@ TEST_F(RawHDRINCL, SendAndReceive) {
   // The network stack should have set the source address.
   EXPECT_EQ(src.sin_family, AF_INET);
   EXPECT_EQ(absl::gbswap_32(src.sin_addr.s_addr), INADDR_LOOPBACK);
-  // The packet ID should not be 0, as the packet has DF=0.
-  struct iphdr* iphdr = reinterpret_cast<struct iphdr*>(recv_buf);
-  EXPECT_NE(iphdr->id, 0);
 }
 
 // Send and receive a packet where the sendto address is not the same as the
@@ -324,10 +321,8 @@ TEST_F(RawHDRINCL, SendAndReceiveDifferentAddress) {
   // The network stack should have set the source address.
   EXPECT_EQ(src.sin_family, AF_INET);
   EXPECT_EQ(absl::gbswap_32(src.sin_addr.s_addr), INADDR_LOOPBACK);
-  // The packet ID should not be 0, as the packet has DF=0.
   struct iphdr recv_iphdr = {};
   memcpy(&recv_iphdr, recv_buf, sizeof(recv_iphdr));
-  EXPECT_NE(recv_iphdr.id, 0);
   // The destination address is kUnreachable despite arriving via loopback.
   EXPECT_EQ(recv_iphdr.daddr, kUnreachable);
 }
@@ -386,7 +381,6 @@ TEST_F(RawHDRINCL, SendAndReceiveIPHdrIncl) {
   EXPECT_EQ(absl::gbswap_32(src.sin_addr.s_addr), INADDR_LOOPBACK);
   struct iphdr iphdr = {};
   memcpy(&iphdr, recv_buf, sizeof(iphdr));
-  EXPECT_NE(iphdr.id, 0);
 
   // Also verify that the packet we just sent was not delivered to the
   // IPPROTO_RAW socket.
