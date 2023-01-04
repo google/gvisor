@@ -96,6 +96,19 @@ type Number struct {
 	Int int64 `json:"int,omitempty"`
 }
 
+// IsInteger returns whether this number contains an integer value.
+// This is defined as either having the `Float` part set to zero (in which case the `Int` part takes
+// precedence), or having `Float` be a value equal to its own rounding and not a special float.
+func (n *Number) IsInteger() bool {
+	if n.Float == 0 {
+		return true
+	}
+	if math.IsNaN(n.Float) || n.Float == math.Inf(-1) || n.Float == math.Inf(1) {
+		return false
+	}
+	return math.Round(n.Float) == n.Float
+}
+
 // String returns a string representation of this number.
 func (n *Number) String() string {
 	var s strings.Builder
@@ -103,6 +116,26 @@ func (n *Number) String() string {
 		panic(err)
 	}
 	return s.String()
+}
+
+// SameType returns true if `n` and `other` are either both floating-point or both integers.
+// If a `Number` is zero, it is considered of the same type as any other zero `Number`.
+func (n *Number) SameType(other *Number) bool {
+	// Within `n` and `other`, at least one of `Int` or `Float` must be set to zero.
+	// Therefore, this verifies that there is at least one shared zero between the two.
+	return n.Float == other.Float || n.Int == other.Int
+}
+
+// GreaterThan returns true if n > other.
+// Precondition: n.SameType(other) is true. Panics otherwise.
+func (n *Number) GreaterThan(other *Number) bool {
+	if !n.SameType(other) {
+		panic("tried to compare two numbers of different types")
+	}
+	if n.IsInteger() {
+		return n.Int > other.Int
+	}
+	return n.Float > other.Float
 }
 
 // writeTo writes the number to the given writer.
