@@ -651,3 +651,50 @@ func TestSnapshotToPrometheus(t *testing.T) {
 		})
 	}
 }
+
+func MultipleSnapshotsSameWriter(t *testing.T) {
+	testStart := time.Now()
+	snapshot1 := newSnapshotAt(testStart).Add(fooInt.int(3))
+	snapshot2 := newSnapshotAt(testStart.Add(3 * time.Minute)).Add(fooInt.int(5))
+	sharedOptions := ExportOptions{
+		MetricsWritten: map[string]bool{},
+	}
+	var buf bytes.Buffer
+	snapshot1.WriteTo(&buf, sharedOptions)
+	snapshot2.WriteTo(&buf, sharedOptions)
+	gotData, err := (&expfmt.TextParser{}).TextToMetricFamilies(&buf)
+	if err != nil {
+		t.Fatalf("cannot parse data written from snapshots: %v", err)
+	}
+	if len(gotData) != 1 || gotData[fooInt.PB.GetPrometheusName()] == nil {
+		t.Fatalf("unexpected data: %v", gotData)
+	}
+	got := reflectProto(gotData[fooInt.PB.GetPrometheusName()])
+	var wantBuf bytes.Buffer
+	wantBuf.WriteString(fmt.Sprintf(`
+		# HELP foo_int An integer about foo
+		# TYPE foo_int gauge
+		foo_int 3 %d
+		foo_int 4 %d
+	`, testStart.UnixMilli(), testStart.Add(3*time.Minute).UnixMilli()))
+	wantData, err := (&expfmt.TextParser{}).TextToMetricFamilies(&wantBuf)
+	if err != nil {
+		t.Fatalf("cannot parse refernce data: %v", err)
+	}
+	if len(wantData) != 1 || wantData[fooInt.PB.GetPrometheusName()] == nil {
+		t.Fatalf("unexpected reference data: %v", gotData)
+	}
+	want := reflectProto(gotData[fooInt.PB.GetPrometheusName()])
+	if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
+		multiLineFormatter := &prototext.MarshalOptions{Multiline: true, Indent: "  ", EmitUnknown: true}
+		wantText, err := multiLineFormatter.Marshal(want)
+		if err != nil {
+			t.Fatalf("cannot marshal reference data: %v", err)
+		}
+		gotText, err := multiLineFormatter.Marshal(got)
+		if err != nil {
+			t.Fatalf("cannot marshal snapshot data: %v", err)
+		}
+		t.Errorf("Snapshot data did not produce the same data as the reference data.\n\nReference data:\n\n%v\n\nSnapshot data:\n\n%v\n\nDiff:\n\n%v\n\n", string(wantText), string(gotText), diff)
+	}
+}

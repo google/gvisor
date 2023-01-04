@@ -203,17 +203,26 @@ type ExportOptions struct {
 
 	// ExtraLabels is added as labels for all metric values.
 	ExtraLabels map[string]string
+
+	// MetricsWritten memoizes written metric preambles (help/type comments) by metric name.
+	// If specified, this map can be used to avoid duplicate preambles across multiple snapshots.
+	// Note that this map is modified in-place during the writing process.
+	MetricsWritten map[string]bool
 }
 
-// writeMetricPreambleTo writes the metric name to w. It may also write the help and type comments
-// of the metric, if they haven't been written to w yet, as tracked by metricsWritten.
-func (d *Data) writeMetricPreambleTo(w io.Writer, options ExportOptions, metricsWritten map[string]bool) error {
+// writeMetricPreambleTo writes the metric name to w. It may also write unwritten help and type
+// comments  of the metric, if they haven't been written to w yet.
+func (d *Data) writeMetricPreambleTo(w io.Writer, options ExportOptions) error {
 	// Metric header, if we haven't printed it yet.
-	if !metricsWritten[d.Metric.Name] {
+	if !options.MetricsWritten[d.Metric.Name] {
+		// Extra newline before each preamble for aesthetic reasons.
+		if _, err := io.WriteString(w, "\n"); err != nil {
+			return err
+		}
 		if err := d.Metric.writeHeaderTo(w, options); err != nil {
 			return err
 		}
-		metricsWritten[d.Metric.Name] = true
+		options.MetricsWritten[d.Metric.Name] = true
 	}
 
 	// Metric name.
@@ -302,8 +311,8 @@ func (d *Data) writeLabelsTo(w io.Writer, extraLabels map[string]string, leLabel
 }
 
 // writeMetricLine writes a single line with a single number (val) to w.
-func (d *Data) writeMetricLine(w io.Writer, metricSuffix string, val *Number, when time.Time, options ExportOptions, leLabel *Number, metricsWritten map[string]bool) error {
-	if err := d.writeMetricPreambleTo(w, options, metricsWritten); err != nil {
+func (d *Data) writeMetricLine(w io.Writer, metricSuffix string, val *Number, when time.Time, options ExportOptions, leLabel *Number) error {
+	if err := d.writeMetricPreambleTo(w, options); err != nil {
 		return err
 	}
 	if metricSuffix != "" {
@@ -326,13 +335,13 @@ func (d *Data) writeMetricLine(w io.Writer, metricSuffix string, val *Number, wh
 	return nil
 }
 
-// writeTo writes the Data to the given writer, in Prometheus format.
-func (d *Data) writeTo(w io.Writer, when time.Time, options ExportOptions, metricsWritten map[string]bool) error {
+// writeTo writes the Data to the given writer in Prometheus format.
+func (d *Data) writeTo(w io.Writer, when time.Time, options ExportOptions) error {
 	switch d.Metric.Type {
 	case TypeUntyped, TypeGauge, TypeCounter:
-		return d.writeMetricLine(w, "", d.Number, when, options, nil, metricsWritten)
+		return d.writeMetricLine(w, "", d.Number, when, options, nil)
 	case TypeHistogram:
-		// Write an empty line before and after histograms, to make them easier to distinguish from
+		// Write an empty line before and after histograms to easily distinguish them from
 		// other metric lines.
 		if _, err := io.WriteString(w, "\n"); err != nil {
 			return err
@@ -342,15 +351,15 @@ func (d *Data) writeTo(w io.Writer, when time.Time, options ExportOptions, metri
 		for _, bucket := range d.HistogramValue.Buckets {
 			numSamples += bucket.Samples
 			samples.Int = int64(numSamples) // Prometheus distribution bucket counts are cumulative.
-			if err := d.writeMetricLine(w, "_bucket", &samples, when, options, &bucket.UpperBound, metricsWritten); err != nil {
+			if err := d.writeMetricLine(w, "_bucket", &samples, when, options, &bucket.UpperBound); err != nil {
 				return err
 			}
 		}
-		if err := d.writeMetricLine(w, "_sum", &d.HistogramValue.Total, when, options, nil, metricsWritten); err != nil {
+		if err := d.writeMetricLine(w, "_sum", &d.HistogramValue.Total, when, options, nil); err != nil {
 			return err
 		}
 		samples.Int = int64(numSamples)
-		if err := d.writeMetricLine(w, "_count", &samples, when, options, nil, metricsWritten); err != nil {
+		if err := d.writeMetricLine(w, "_count", &samples, when, options, nil); err != nil {
 			return err
 		}
 		// Empty line after the histogram.
@@ -425,16 +434,18 @@ func (s *Snapshot) WriteTo(w io.Writer, options ExportOptions) (int, error) {
 			}
 		}
 	}
+	if options.MetricsWritten == nil {
+		options.MetricsWritten = make(map[string]bool)
+	}
 	if _, err := io.WriteString(cw, fmt.Sprintf("# Metric snapshot containing %d data points taken at: %v\n", len(s.Data), s.When)); err != nil {
 		return cw.Written(), err
 	}
-	metricsWritten := make(map[string]bool)
 	for _, d := range s.Data {
-		if err := d.writeTo(cw, s.When, options, metricsWritten); err != nil {
+		if err := d.writeTo(cw, s.When, options); err != nil {
 			return cw.Written(), err
 		}
 	}
-	if _, err := io.WriteString(cw, fmt.Sprintf("# End of metric snapshot taken at: %v\n\n", s.When)); err != nil {
+	if _, err := io.WriteString(cw, fmt.Sprintf("\n# End of metric snapshot taken at: %v\n\n", s.When)); err != nil {
 		return cw.Written(), err
 	}
 	if err := cw.w.Flush(); err != nil {
