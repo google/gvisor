@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -54,7 +55,7 @@ type Metric struct {
 }
 
 // writeHeaderTo writes the metric comment header to the given writer.
-func (m *Metric) writeHeaderTo(w io.Writer, options ExportOptions) error {
+func (m *Metric) writeHeaderTo(w io.Writer, options SnapshotExportOptions) error {
 	if m.Help != "" {
 		// Prometheus metric description escape rules: Only backslashes and line breaks need escaping.
 		if _, err := io.WriteString(w, fmt.Sprintf("# HELP %s%s %s\n", options.ExporterPrefix, m.Name, strings.ReplaceAll(strings.ReplaceAll(m.Help, "\\", "\\\\"), "\n", "\\n"))); err != nil {
@@ -231,23 +232,29 @@ type ExportOptions struct {
 	// CommentHeader is prepended as a comment before any metric data is exported.
 	CommentHeader string
 
-	// ExporterPrefix is prepended to all metric names.
-	ExporterPrefix string
-
-	// ExtraLabels is added as labels for all metric values.
-	ExtraLabels map[string]string
-
-	// MetricsWritten memoizes written metric preambles (help/type comments) by metric name.
+	// MetricsWritten memoizes written metric preambles (help/type comments)
+	// by metric name.
 	// If specified, this map can be used to avoid duplicate preambles across multiple snapshots.
 	// Note that this map is modified in-place during the writing process.
 	MetricsWritten map[string]bool
 }
 
-// writeMetricPreambleTo writes the metric name to w. It may also write unwritten help and type
-// comments  of the metric, if they haven't been written to w yet.
-func (d *Data) writeMetricPreambleTo(w io.Writer, options ExportOptions) error {
+// SnapshotExportOptions contains options that control how metric data is exported for an
+// individual Snapshot.
+type SnapshotExportOptions struct {
+	// ExporterPrefix is prepended to all metric names.
+	ExporterPrefix string
+
+	// ExtraLabels is added as labels for all metric values.
+	ExtraLabels map[string]string
+}
+
+// writeMetricPreambleTo writes the metric name to the io.Writer. It may also
+// write unwritten help and type comments of the metric if they haven't been
+// written to the io.Writer yet.
+func (d *Data) writeMetricPreambleTo(w io.Writer, options SnapshotExportOptions, metricsWritten map[string]bool) error {
 	// Metric header, if we haven't printed it yet.
-	if !options.MetricsWritten[d.Metric.Name] {
+	if !metricsWritten[d.Metric.Name] {
 		// Extra newline before each preamble for aesthetic reasons.
 		if _, err := io.WriteString(w, "\n"); err != nil {
 			return err
@@ -255,7 +262,7 @@ func (d *Data) writeMetricPreambleTo(w io.Writer, options ExportOptions) error {
 		if err := d.Metric.writeHeaderTo(w, options); err != nil {
 			return err
 		}
-		options.MetricsWritten[d.Metric.Name] = true
+		metricsWritten[d.Metric.Name] = true
 	}
 
 	// Metric name.
@@ -344,8 +351,8 @@ func (d *Data) writeLabelsTo(w io.Writer, extraLabels map[string]string, leLabel
 }
 
 // writeMetricLine writes a single line with a single number (val) to w.
-func (d *Data) writeMetricLine(w io.Writer, metricSuffix string, val *Number, when time.Time, options ExportOptions, leLabel *Number) error {
-	if err := d.writeMetricPreambleTo(w, options); err != nil {
+func (d *Data) writeMetricLine(w io.Writer, metricSuffix string, val *Number, when time.Time, options SnapshotExportOptions, leLabel *Number, metricsWritten map[string]bool) error {
+	if err := d.writeMetricPreambleTo(w, options, metricsWritten); err != nil {
 		return err
 	}
 	if metricSuffix != "" {
@@ -369,10 +376,10 @@ func (d *Data) writeMetricLine(w io.Writer, metricSuffix string, val *Number, wh
 }
 
 // writeTo writes the Data to the given writer in Prometheus format.
-func (d *Data) writeTo(w io.Writer, when time.Time, options ExportOptions) error {
+func (d *Data) writeTo(w io.Writer, when time.Time, options SnapshotExportOptions, metricsWritten map[string]bool) error {
 	switch d.Metric.Type {
 	case TypeUntyped, TypeGauge, TypeCounter:
-		return d.writeMetricLine(w, "", d.Number, when, options, nil)
+		return d.writeMetricLine(w, "", d.Number, when, options, nil, metricsWritten)
 	case TypeHistogram:
 		// Write an empty line before and after histograms to easily distinguish them from
 		// other metric lines.
@@ -384,15 +391,15 @@ func (d *Data) writeTo(w io.Writer, when time.Time, options ExportOptions) error
 		for _, bucket := range d.HistogramValue.Buckets {
 			numSamples += bucket.Samples
 			samples.Int = int64(numSamples) // Prometheus distribution bucket counts are cumulative.
-			if err := d.writeMetricLine(w, "_bucket", &samples, when, options, &bucket.UpperBound); err != nil {
+			if err := d.writeMetricLine(w, "_bucket", &samples, when, options, &bucket.UpperBound, metricsWritten); err != nil {
 				return err
 			}
 		}
-		if err := d.writeMetricLine(w, "_sum", &d.HistogramValue.Total, when, options, nil); err != nil {
+		if err := d.writeMetricLine(w, "_sum", &d.HistogramValue.Total, when, options, nil, metricsWritten); err != nil {
 			return err
 		}
 		samples.Int = int64(numSamples)
-		if err := d.writeMetricLine(w, "_count", &samples, when, options, nil); err != nil {
+		if err := d.writeMetricLine(w, "_count", &samples, when, options, nil, metricsWritten); err != nil {
 			return err
 		}
 		// Empty line after the histogram.
@@ -448,11 +455,30 @@ func (w *countingWriter) Written() int {
 	return w.written - w.w.Buffered()
 }
 
-// WriteTo writes the data to the given writer, in Prometheus format.
+// writeSingleMetric writes the data to the given writer in Prometheus format.
 // It returns the number of bytes written.
-func (s *Snapshot) WriteTo(w io.Writer, options ExportOptions) (int, error) {
-	// Add wrapping to the buffer. Note that bufio is smart enough to not wrap buffered writers within
-	// buffered writers, so if the caller passes in a buffered writer, this won't double-buffer.
+func (s *Snapshot) writeSingleMetric(w io.Writer, options SnapshotExportOptions, metricName string, metricsWritten map[string]bool) error {
+	if !strings.HasPrefix(metricName, options.ExporterPrefix) {
+		return nil
+	}
+	wantMetricName := strings.TrimPrefix(metricName, options.ExporterPrefix)
+	for _, d := range s.Data {
+		if d.Metric.Name != wantMetricName {
+			continue
+		}
+		if err := d.writeTo(w, s.When, options, metricsWritten); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Write writes one or more snapshots to the writer.
+// This ensures same-name metrics across different snapshots are printed together, per spec.
+func Write(w io.Writer, options ExportOptions, snapshotsToOptions map[*Snapshot]SnapshotExportOptions) (int, error) {
+	if len(snapshotsToOptions) == 0 {
+		return 0, nil
+	}
 	cw := &countingWriter{w: bufio.NewWriter(w)}
 	if options.CommentHeader != "" {
 		for _, commentLine := range strings.Split(options.CommentHeader, "\n") {
@@ -467,18 +493,53 @@ func (s *Snapshot) WriteTo(w io.Writer, options ExportOptions) (int, error) {
 			}
 		}
 	}
+	snapshots := make([]*Snapshot, 0, len(snapshotsToOptions))
+	for snapshot := range snapshotsToOptions {
+		snapshots = append(snapshots, snapshot)
+	}
+	switch len(snapshots) {
+	case 1: // Single-snapshot case.
+		if _, err := io.WriteString(cw, fmt.Sprintf("# Writing data from snapshot containing %d data points taken at %v.\n", len(snapshots[0].Data), snapshots[0].When)); err != nil {
+			return cw.Written(), err
+		}
+	default: // Multi-snapshot case.
+		// Provide a consistent ordering of snapshots.
+		sort.Slice(snapshots, func(i, j int) bool {
+			return reflect.ValueOf(snapshots[i]).Pointer() < reflect.ValueOf(snapshots[j]).Pointer()
+		})
+		if _, err := io.WriteString(cw, fmt.Sprintf("# Writing data from %d snapshots:\n", len(snapshots))); err != nil {
+			return cw.Written(), err
+		}
+		for _, snapshot := range snapshots {
+			if _, err := io.WriteString(cw, fmt.Sprintf("#   - Snapshot with %d data points taken at %v: %v\n", len(snapshot.Data), snapshot.When, snapshotsToOptions[snapshot].ExtraLabels)); err != nil {
+				return cw.Written(), err
+			}
+		}
+	}
+	if _, err := io.WriteString(cw, "\n"); err != nil {
+		return cw.Written(), err
+	}
 	if options.MetricsWritten == nil {
 		options.MetricsWritten = make(map[string]bool)
 	}
-	if _, err := io.WriteString(cw, fmt.Sprintf("# Metric snapshot containing %d data points taken at: %v\n", len(s.Data), s.When)); err != nil {
-		return cw.Written(), err
-	}
-	for _, d := range s.Data {
-		if err := d.writeTo(cw, s.When, options); err != nil {
-			return cw.Written(), err
+	metricNamesMap := make(map[string]bool, len(options.MetricsWritten))
+	metricNames := make([]string, 0, len(options.MetricsWritten))
+	for _, snapshot := range snapshots {
+		for _, data := range snapshot.Data {
+			metricName := snapshotsToOptions[snapshot].ExporterPrefix + data.Metric.Name
+			if !metricNamesMap[metricName] {
+				metricNamesMap[metricName] = true
+				metricNames = append(metricNames, metricName)
+			}
 		}
 	}
-	if _, err := io.WriteString(cw, fmt.Sprintf("\n# End of metric snapshot taken at: %v\n\n", s.When)); err != nil {
+	sort.Strings(metricNames)
+	for _, metricName := range metricNames {
+		for _, snapshot := range snapshots {
+			snapshot.writeSingleMetric(cw, snapshotsToOptions[snapshot], metricName, options.MetricsWritten)
+		}
+	}
+	if _, err := io.WriteString(cw, "\n# End of metric data.\n"); err != nil {
 		return cw.Written(), err
 	}
 	if err := cw.w.Flush(); err != nil {

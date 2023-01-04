@@ -18,11 +18,13 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+	"unicode"
 
 	v1proto "github.com/golang/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
@@ -973,8 +975,11 @@ func TestSnapshotToPrometheus(t *testing.T) {
 		// Snapshot will be rendered as Prometheus and compared against WantData.
 		Snapshot *Snapshot
 
-		// ExportOptions dictates the options used during Snapshot rendering.
+		// ExportOptions dictates the options used during overall rendering.
 		ExportOptions ExportOptions
+
+		// SnapshotExportOptions dictates the options used during Snapshot rendering.
+		SnapshotExportOptions SnapshotExportOptions
 
 		// WantFail, if true, indicates that the test is expected to fail when
 		// rendering or parsing the snapshot data.
@@ -1063,7 +1068,9 @@ func TestSnapshotToPrometheus(t *testing.T) {
 			Name:     "simple integer with export options",
 			Snapshot: newSnapshot().Add(fooInt.int(3)),
 			ExportOptions: ExportOptions{
-				CommentHeader:  "Some header",
+				CommentHeader: "Some header",
+			},
+			SnapshotExportOptions: SnapshotExportOptions{
 				ExporterPrefix: "some_prefix_",
 				ExtraLabels: map[string]string{
 					"field3": "val3a",
@@ -1081,7 +1088,7 @@ func TestSnapshotToPrometheus(t *testing.T) {
 				fooInt.fieldVal(field1, "val1a").fieldVal(field2, "val2a").int(3),
 				fooInt.fieldVal(field2, "val2b").fieldVal(field1, "val1b").int(7),
 			),
-			ExportOptions: ExportOptions{
+			SnapshotExportOptions: SnapshotExportOptions{
 				ExtraLabels: map[string]string{
 					"field3": "val3a",
 				},
@@ -1099,7 +1106,7 @@ func TestSnapshotToPrometheus(t *testing.T) {
 				fooInt.fieldVal(field1, "val1a").fieldVal(field2, "val2a").int(3),
 				fooInt.fieldVal(field2, "val2b").fieldVal(field1, "val1b").int(7),
 			),
-			ExportOptions: ExportOptions{
+			SnapshotExportOptions: SnapshotExportOptions{
 				ExtraLabels: map[string]string{
 					"field2": "val2c",
 					"field3": "val3a",
@@ -1192,7 +1199,9 @@ func TestSnapshotToPrometheus(t *testing.T) {
 				fooDist.fieldVal(field1, "val1b").dist(3, 5, 3),
 			),
 			ExportOptions: ExportOptions{
-				CommentHeader:  "Some header",
+				CommentHeader: "Some header",
+			},
+			SnapshotExportOptions: SnapshotExportOptions{
 				ExporterPrefix: "some_prefix_",
 				ExtraLabels:    map[string]string{"field2": "val2a"},
 			},
@@ -1221,7 +1230,8 @@ func TestSnapshotToPrometheus(t *testing.T) {
 		t.Run(test.Name, func(t *testing.T) {
 			// Render and parse snapshot data.
 			var buf bytes.Buffer
-			if _, err := test.Snapshot.WriteTo(&buf, test.ExportOptions); err != nil {
+			snapshotToOptions := map[*Snapshot]SnapshotExportOptions{test.Snapshot: test.SnapshotExportOptions}
+			if _, err := Write(&buf, test.ExportOptions, snapshotToOptions); err != nil {
 				if test.WantFail {
 					return
 				}
@@ -1241,7 +1251,7 @@ func TestSnapshotToPrometheus(t *testing.T) {
 
 			// Verify that the data is consistent (i.e. verify that it's not based on random map ordering)
 			var buf2 bytes.Buffer
-			if _, err := test.Snapshot.WriteTo(&buf2, test.ExportOptions); err != nil {
+			if _, err := Write(&buf2, test.ExportOptions, snapshotToOptions); err != nil {
 				if test.WantFail {
 					return
 				}
@@ -1257,7 +1267,7 @@ func TestSnapshotToPrometheus(t *testing.T) {
 			var shortWriter shortWriter
 			for writeLength := 0; writeLength < len(gotMetricsRaw); writeLength++ {
 				shortWriter.Reset(writeLength)
-				if _, err := test.Snapshot.WriteTo(&shortWriter, test.ExportOptions); err == nil {
+				if _, err := Write(&shortWriter, test.ExportOptions, snapshotToOptions); err == nil {
 					t.Fatalf("snapshot data unexpectedly succeeded being written to short writer (length %d): %v", writeLength, shortWriter.String())
 				}
 				if shortWriter.size != writeLength {
@@ -1333,39 +1343,38 @@ func TestSnapshotToPrometheus(t *testing.T) {
 	}
 }
 
-func MultipleSnapshotsSameWriter(t *testing.T) {
+func TestWriteMultipleSnapshots(t *testing.T) {
 	testStart := time.Now()
 	snapshot1 := newSnapshotAt(testStart).Add(fooInt.int(3))
 	snapshot2 := newSnapshotAt(testStart.Add(3 * time.Minute)).Add(fooInt.int(5))
-	sharedOptions := ExportOptions{
-		MetricsWritten: map[string]bool{},
-	}
 	var buf bytes.Buffer
-	snapshot1.WriteTo(&buf, sharedOptions)
-	snapshot2.WriteTo(&buf, sharedOptions)
+	Write(&buf, ExportOptions{CommentHeader: "A header\non two lines"}, map[*Snapshot]SnapshotExportOptions{
+		snapshot1: {ExporterPrefix: "export_"},
+		snapshot2: {ExporterPrefix: "export_"},
+	})
 	gotData, err := (&expfmt.TextParser{}).TextToMetricFamilies(&buf)
 	if err != nil {
 		t.Fatalf("cannot parse data written from snapshots: %v", err)
 	}
-	if len(gotData) != 1 || gotData[fooInt.PB.GetPrometheusName()] == nil {
+	if len(gotData) != 1 || gotData["export_"+fooInt.PB.GetPrometheusName()] == nil {
 		t.Fatalf("unexpected data: %v", gotData)
 	}
-	got := reflectProto(gotData[fooInt.PB.GetPrometheusName()])
+	got := reflectProto(gotData["export_"+fooInt.PB.GetPrometheusName()])
 	var wantBuf bytes.Buffer
-	wantBuf.WriteString(fmt.Sprintf(`
-		# HELP foo_int An integer about foo
-		# TYPE foo_int gauge
-		foo_int 3 %d
-		foo_int 4 %d
+	io.WriteString(&wantBuf, fmt.Sprintf(`
+		# HELP export_foo_int An integer about foo
+		# TYPE export_foo_int gauge
+		export_foo_int 3 %d
+		export_foo_int 5 %d
 	`, testStart.UnixMilli(), testStart.Add(3*time.Minute).UnixMilli()))
 	wantData, err := (&expfmt.TextParser{}).TextToMetricFamilies(&wantBuf)
 	if err != nil {
-		t.Fatalf("cannot parse refernce data: %v", err)
+		t.Fatalf("cannot parse reference data: %v", err)
 	}
-	if len(wantData) != 1 || wantData[fooInt.PB.GetPrometheusName()] == nil {
+	if len(wantData) != 1 || wantData["export_"+fooInt.PB.GetPrometheusName()] == nil {
 		t.Fatalf("unexpected reference data: %v", gotData)
 	}
-	want := reflectProto(gotData[fooInt.PB.GetPrometheusName()])
+	want := reflectProto(wantData["export_"+fooInt.PB.GetPrometheusName()])
 	if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
 		multiLineFormatter := &prototext.MarshalOptions{Multiline: true, Indent: "  ", EmitUnknown: true}
 		wantText, err := multiLineFormatter.Marshal(want)
@@ -1377,5 +1386,76 @@ func MultipleSnapshotsSameWriter(t *testing.T) {
 			t.Fatalf("cannot marshal snapshot data: %v", err)
 		}
 		t.Errorf("Snapshot data did not produce the same data as the reference data.\n\nReference data:\n\n%v\n\nSnapshot data:\n\n%v\n\nDiff:\n\n%v\n\n", string(wantText), string(gotText), diff)
+	}
+}
+
+func TestGroupSameNameMetrics(t *testing.T) {
+	snapshot1 := NewSnapshot().Add(
+		fooCounter.int(3),
+		fooInt.int(3),
+		fooDist.dist(0, 1),
+	)
+	snapshot2 := NewSnapshot().Add(
+		fooDist.dist(1, 2),
+		fooCounter.int(2),
+	)
+	snapshot3 := NewSnapshot().Add(
+		fooDist.dist(1, 2),
+		fooCounter.int(2),
+	)
+	var buf bytes.Buffer
+	_, err := Write(&buf, ExportOptions{}, map[*Snapshot]SnapshotExportOptions{
+		snapshot1: {ExporterPrefix: "my_little_prefix_", ExtraLabels: map[string]string{"snap": "1"}},
+		snapshot2: {ExporterPrefix: "my_little_prefix_", ExtraLabels: map[string]string{"snap": "2"}},
+		snapshot3: {ExporterPrefix: "not_the_same_prefix_", ExtraLabels: map[string]string{"snap": "1"}},
+	})
+	if err != nil {
+		t.Fatalf("Cannot write snapshot data: %v", err)
+	}
+	rawData := buf.String() // Capture the data written.
+
+	// Make sure the data written does parse.
+	// We don't use this result here because the Prometheus library is more permissive than this test.
+	if _, err := (&expfmt.TextParser{}).TextToMetricFamilies(&buf); err != nil {
+		t.Fatalf("cannot parse data written from snapshots: %v", err)
+	}
+
+	// Verify that we see all metrics, and that each time we see a new one, it's one we haven't seen
+	// before.
+	seenMetrics := map[string]bool{}
+	var lastMetric string
+	for lineNumber, line := range strings.Split(rawData, "\n") {
+		t.Logf("Line %d: %q", lineNumber+1, line)
+		if strings.TrimSpace(line) == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		strippedMetricName := strings.TrimLeftFunc(line, func(r rune) bool {
+			return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_'
+		})
+		if len(strippedMetricName) == 0 {
+			t.Fatalf("invalid line: %q", line)
+		}
+		if strippedMetricName[0] != '{' && strippedMetricName[0] != ' ' {
+			t.Fatalf("invalid line: %q", line)
+		}
+		metricName := line[:len(line)-len(strippedMetricName)]
+		for _, distribSuffix := range []string{"_sum", "_count", "_bucket"} {
+			metricName = strings.TrimSuffix(metricName, distribSuffix)
+		}
+		if lastMetric != "" && lastMetric != metricName && seenMetrics[metricName] {
+			t.Fatalf("line %q: got already-seen metric name %q yet it is not the last metric (%s)", line, metricName, lastMetric)
+		}
+		lastMetric = metricName
+		seenMetrics[metricName] = true
+	}
+	wantSeenMetrics := map[string]bool{
+		fmt.Sprintf("my_little_prefix_%s", fooCounter.PB.GetPrometheusName()):    true,
+		fmt.Sprintf("my_little_prefix_%s", fooInt.PB.GetPrometheusName()):        true,
+		fmt.Sprintf("my_little_prefix_%s", fooDist.PB.GetPrometheusName()):       true,
+		fmt.Sprintf("not_the_same_prefix_%s", fooCounter.PB.GetPrometheusName()): true,
+		fmt.Sprintf("not_the_same_prefix_%s", fooDist.PB.GetPrometheusName()):    true,
+	}
+	if !cmp.Equal(seenMetrics, wantSeenMetrics) {
+		t.Errorf("Seen metrics: %v\nWant metrics: %v", seenMetrics, wantSeenMetrics)
 	}
 }
