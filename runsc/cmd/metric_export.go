@@ -15,7 +15,6 @@
 package cmd
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"os"
@@ -70,20 +69,16 @@ func (m *MetricExport) Execute(ctx context.Context, f *flag.FlagSet, args ...any
 	if err != nil {
 		util.Fatalf("ExportMetrics failed: %v", err)
 	}
-	bufWriter := bufio.NewWriter(os.Stdout)
-	written, err := snapshot.WriteTo(bufWriter, prometheus.ExportOptions{
-		CommentHeader:  fmt.Sprintf("Command-line export for sandbox %s owning container %s", cont.Sandbox.ID, id),
-		ExporterPrefix: conf.MetricExporterPrefix,
-		ExtraLabels: map[string]string{
-			"sandbox":   cont.Sandbox.ID,
-			"container": cont.ID,
+	written, err := prometheus.Write(os.Stdout, prometheus.ExportOptions{
+		CommentHeader: fmt.Sprintf("Command-line export for sandbox %s", cont.Sandbox.ID),
+	}, map[*prometheus.Snapshot]prometheus.SnapshotExportOptions{
+		snapshot: {
+			ExporterPrefix: conf.MetricExporterPrefix,
+			ExtraLabels:    map[string]string{"sandbox": cont.Sandbox.ID},
 		},
 	})
 	if err != nil {
 		util.Fatalf("Cannot write metrics to stdout: %v", err)
-	}
-	if err = bufWriter.Flush(); err != nil {
-		util.Fatalf("Cannot flush metrics to stdout: %v", err)
 	}
 	util.Infof("Wrote %d bytes of Prometheus metric data to stdout", written)
 

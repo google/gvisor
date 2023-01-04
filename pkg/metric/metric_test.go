@@ -43,7 +43,9 @@ const (
 func verifyPrometheusParsing(t *testing.T) {
 	t.Helper()
 	var buf bytes.Buffer
-	if _, err := GetSnapshot().WriteTo(&buf, prometheus.ExportOptions{}); err != nil {
+	if _, err := prometheus.Write(&buf, prometheus.ExportOptions{}, map[*prometheus.Snapshot]prometheus.SnapshotExportOptions{
+		GetSnapshot(): prometheus.SnapshotExportOptions{},
+	}); err != nil {
 		t.Errorf("failed to get Prometheus snapshot: %v", err)
 	} else if _, err := (&expfmt.TextParser{}).TextToMetricFamilies(&buf); err != nil {
 		t.Errorf("failed to parse Prometheus output: %v", err)
