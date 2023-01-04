@@ -48,9 +48,18 @@ var operations []string = []string{
 	"MSET",
 }
 
-// BenchmarkRedis runs redis-benchmark against a redis instance and reports
+// BenchmarkAllRedisOperations runs redis-benchmark against a redis instance and reports
 // data in queries per second. Each is reported by named operation (e.g. LPUSH).
+func BenchmarkAllRedisOperations(b *testing.B) {
+	doBenchmarkRedis(b, operations)
+}
+
+// BenchmarkRedisDashboard runs a subset of redis benchmarks for the performance dashboard.
 func BenchmarkRedis(b *testing.B) {
+	doBenchmarkRedis(b, []string{"SET", "LPUSH", "LRANGE_100"})
+}
+
+func doBenchmarkRedis(b *testing.B, ops []string) {
 	clientMachine, err := harness.GetMachine()
 	if err != nil {
 		b.Fatalf("failed to get machine: %v", err)
@@ -84,7 +93,7 @@ func BenchmarkRedis(b *testing.B) {
 	if err = harness.WaitUntilContainerServing(ctx, clientMachine, server, port); err != nil {
 		b.Fatalf("failed to start redis with: %v", err)
 	}
-	for _, operation := range operations {
+	for _, operation := range ops {
 		param := tools.Parameter{
 			Name:  "operation",
 			Value: operation,
