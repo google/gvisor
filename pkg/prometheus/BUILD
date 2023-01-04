@@ -6,12 +6,15 @@ go_library(
     name = "prometheus",
     srcs = [
         "prometheus.go",
+        "prometheus_verify.go",
     ],
     visibility = ["//:sandbox"],
+    deps = ["//pkg/metric:metric_go_proto"],
 )
 
 go_test(
     name = "prometheus_test",
+    size = "small",
     srcs = ["prometheus_test.go"],
     library = ":prometheus",
     deps = [
