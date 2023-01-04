@@ -1739,6 +1739,10 @@ type IPForwardingStats struct {
 	// were dropped due to insufficent buffer space in the pending packet queue.
 	NoMulticastPendingQueueBufferSpace *StatCounter
 
+	// OutgoingDeviceNoBufferSpace is the number of packets that were dropped due
+	// to insufficient space in the outgoing device.
+	OutgoingDeviceNoBufferSpace *StatCounter
+
 	// Errors is the number of IP packets received which could not be
 	// successfully forwarded.
 	Errors *StatCounter
