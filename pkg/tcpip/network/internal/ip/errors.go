@@ -34,6 +34,14 @@ func (*ErrTTLExceeded) isForwardingError() {}
 
 func (*ErrTTLExceeded) String() string { return "ttl exceeded" }
 
+// ErrOutgoingDeviceNoBufferSpace indicates that the outgoing device does not
+// have enough space to hold a buffer.
+type ErrOutgoingDeviceNoBufferSpace struct{}
+
+func (*ErrOutgoingDeviceNoBufferSpace) isForwardingError() {}
+
+func (*ErrOutgoingDeviceNoBufferSpace) String() string { return "no device buffer space" }
+
 // ErrParameterProblem indicates the received packet had a problem with an IP
 // parameter.
 type ErrParameterProblem struct{}
