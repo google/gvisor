@@ -23,8 +23,8 @@ def proto_library(name, has_services = None, **kwargs):
 
 def select_arch(amd64 = "amd64", arm64 = "arm64", default = None, **kwargs):
     values = {
-        "@bazel_tools//src/conditions:linux_x86_64": amd64,
-        "@bazel_tools//src/conditions:linux_aarch64": arm64,
+        "//tools/bazeldefs:amd64": amd64,
+        "//tools/bazeldefs:arm64": arm64,
     }
     if default:
         values["//conditions:default"] = default

@@ -36,10 +36,6 @@ genrule(
           # VDSO has no hooks to handle failures.
           "-fno-stack-protector " +
           vdso_linker_option +
-          select_arch(
-              amd64 = "-m64 ",
-              arm64 = "",
-          ) +
           "-shared " +
           "-nostdlib " +
           "-Wl,-soname=linux-vdso.so.1 " +
