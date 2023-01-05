@@ -246,6 +246,9 @@ func (app *runApp) execute(t *Task) taskRunState {
 	if clearSinglestep {
 		t.Arch().ClearSingleStep()
 	}
+	if t.hasTracer() {
+		t.p.PullFullState(t.MemoryManager().AddressSpace(), t.Arch())
+	}
 
 	switch err {
 	case nil:
