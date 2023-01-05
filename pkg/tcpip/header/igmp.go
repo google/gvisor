@@ -94,6 +94,8 @@ const (
 	// IGMPLeaveGroup indicates that the message type is a Leave Group
 	// notification message.
 	IGMPLeaveGroup IGMPType = 0x17
+	// IGMPv3MembershipReport indicates that the message type is a IGMPv3 report.
+	IGMPv3MembershipReport IGMPType = 0x22
 )
 
 // Type is the IGMP type field.
