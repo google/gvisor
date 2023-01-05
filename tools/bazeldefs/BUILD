@@ -24,21 +24,13 @@ bzl_library(
 )
 
 config_setting(
-    name = "linux_arm64_cross",
-    values = {
-        "cpu": "aarch64",
-        "host_cpu": "k8",
-    },
-    visibility = ["//visibility:private"],
+    name = "amd64",
+    values = {"cpu": "k8"},
 )
 
 config_setting(
-    name = "linux_amd64_cross",
-    values = {
-        "cpu": "k8",
-        "host_cpu": "aarch64",
-    },
-    visibility = ["//visibility:private"],
+    name = "arm64",
+    values = {"cpu": "aarch64"},
 )
 
 genrule(
