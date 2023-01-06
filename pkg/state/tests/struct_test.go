@@ -98,3 +98,9 @@ func TestEmbeddedPointers(t *testing.T) {
 		system{&ofv.inner, &ofv},
 	})
 }
+
+func TestMultiNameFields(t *testing.T) {
+	runTestCases(t, false, "multi-name-field", []any{
+		multiName{b: "foo", c: "bar", x: 10, y: 20, z: -30},
+	})
+}

@@ -99,7 +99,7 @@ type scanFunctions struct {
 // skipped if nil.
 //
 // Fields tagged nosave are skipped.
-func scanFields(ss *ast.StructType, prefix string, fn scanFunctions) {
+func scanFields(ss *ast.StructType, fn scanFunctions) {
 	if ss.Fields.List == nil {
 		// No fields.
 		return
@@ -107,55 +107,60 @@ func scanFields(ss *ast.StructType, prefix string, fn scanFunctions) {
 
 	// Scan all fields.
 	for _, field := range ss.Fields.List {
-		// Calculate the name.
-		name := ""
-		if field.Names != nil {
-			// It's a named field; override.
-			name = field.Names[0].Name
-		} else {
+		if field.Names == nil {
 			// Anonymous types can't be embedded, so we don't need
 			// to worry about providing a useful name here.
-			name, _ = resolveTypeName(field.Type)
-		}
-
-		// Skip _ fields.
-		if name == "_" {
+			name, _ := resolveTypeName(field.Type)
+			scanField(name, field, fn)
 			continue
 		}
 
-		// Is this a anonymous struct? If yes, then continue the
-		// recursion with the given prefix. We don't pay attention to
-		// any tags on the top-level struct field.
-		tag := extractStateTag(field.Tag)
-		if anon, ok := field.Type.(*ast.StructType); ok && tag == "" {
-			scanFields(anon, name+".", fn)
-			continue
+		// Iterate over potentially multiple fields defined on the same line.
+		for _, nameI := range field.Names {
+			name := nameI.Name
+			// Skip _ fields.
+			if name == "_" {
+				continue
+			}
+			scanField(name, field, fn)
+		}
+	}
+}
+
+// scanField scans a single struct field with a resolved name.
+func scanField(name string, field *ast.Field, fn scanFunctions) {
+	// Is this a anonymous struct? If yes, then continue the
+	// recursion with the given prefix. We don't pay attention to
+	// any tags on the top-level struct field.
+	tag := extractStateTag(field.Tag)
+	if anon, ok := field.Type.(*ast.StructType); ok && tag == "" {
+		scanFields(anon, fn)
+		return
+	}
+
+	switch tag {
+	case "zerovalue":
+		if fn.zerovalue != nil {
+			fn.zerovalue(name)
 		}
 
-		switch tag {
-		case "zerovalue":
-			if fn.zerovalue != nil {
-				fn.zerovalue(name)
-			}
+	case "":
+		if fn.normal != nil {
+			fn.normal(name)
+		}
 
-		case "":
-			if fn.normal != nil {
-				fn.normal(name)
-			}
+	case "wait":
+		if fn.wait != nil {
+			fn.wait(name)
+		}
 
-		case "wait":
-			if fn.wait != nil {
-				fn.wait(name)
-			}
+	case "manual", "nosave", "ignore":
+		// Do nothing.
 
-		case "manual", "nosave", "ignore":
-			// Do nothing.
-
-		default:
-			if strings.HasPrefix(tag, ".(") && strings.HasSuffix(tag, ")") {
-				if fn.value != nil {
-					fn.value(name, tag[2:len(tag)-1])
-				}
+	default:
+		if strings.HasPrefix(tag, ".(") && strings.HasSuffix(tag, ")") {
+			if fn.value != nil {
+				fn.value(name, tag[2:len(tag)-1])
 			}
 		}
 	}
@@ -385,7 +390,7 @@ func main() {
 					// Generate the fields method.
 					fmt.Fprintf(outputFile, "func (%s *%s) StateFields() []string {\n", recv, ts.Name.Name)
 					fmt.Fprintf(outputFile, "	return []string{\n")
-					scanFields(x, "", scanFunctions{
+					scanFields(x, scanFunctions{
 						normal: emitField,
 						wait:   emitField,
 						value:  emitFieldValue,
@@ -414,9 +419,9 @@ func main() {
 						fmt.Fprintf(outputFile, "// +checklocksignore\n")
 						fmt.Fprintf(outputFile, "func (%s *%s) StateSave(stateSinkObject %sSink) {\n", recv, ts.Name.Name, statePrefix)
 						fmt.Fprintf(outputFile, "	%s.beforeSave()\n", recv)
-						scanFields(x, "", scanFunctions{zerovalue: emitZeroCheck})
-						scanFields(x, "", scanFunctions{value: emitSaveValue})
-						scanFields(x, "", scanFunctions{normal: emitSave, wait: emitSave})
+						scanFields(x, scanFunctions{zerovalue: emitZeroCheck})
+						scanFields(x, scanFunctions{value: emitSaveValue})
+						scanFields(x, scanFunctions{normal: emitSave, wait: emitSave})
 						fmt.Fprintf(outputFile, "}\n\n")
 					}
 
@@ -436,8 +441,8 @@ func main() {
 					if generateSaverLoader {
 						fmt.Fprintf(outputFile, "// +checklocksignore\n")
 						fmt.Fprintf(outputFile, "func (%s *%s) StateLoad(stateSourceObject %sSource) {\n", recv, ts.Name.Name, statePrefix)
-						scanFields(x, "", scanFunctions{normal: emitLoad, wait: emitLoadWait})
-						scanFields(x, "", scanFunctions{value: emitLoadValue})
+						scanFields(x, scanFunctions{normal: emitLoad, wait: emitLoadWait})
+						scanFields(x, scanFunctions{value: emitLoadValue})
 						if hasAfterLoad {
 							// The call to afterLoad is made conditionally, because when
 							// AfterLoad is called, the object encodes a dependency on

@@ -98,3 +98,10 @@ type system3 struct {
 	v2 any
 	v3 any
 }
+
+// +stateify savable
+type multiName struct {
+	_, b, c string
+	x, y    int64
+	z       int32
+}
