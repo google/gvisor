@@ -42,12 +42,19 @@ const (
 // However, it does not verify that the data that was parsed actually matches the metric data.
 func verifyPrometheusParsing(t *testing.T) {
 	t.Helper()
+	snapshot, err := GetSnapshot()
+	if err != nil {
+		t.Errorf("failed to get Prometheus snapshot: %v", err)
+		return
+	}
 	var buf bytes.Buffer
 	if _, err := prometheus.Write(&buf, prometheus.ExportOptions{}, map[*prometheus.Snapshot]prometheus.SnapshotExportOptions{
-		GetSnapshot(): prometheus.SnapshotExportOptions{},
+		snapshot: prometheus.SnapshotExportOptions{},
 	}); err != nil {
 		t.Errorf("failed to get Prometheus snapshot: %v", err)
-	} else if _, err := (&expfmt.TextParser{}).TextToMetricFamilies(&buf); err != nil {
+		return
+	}
+	if _, err := (&expfmt.TextParser{}).TextToMetricFamilies(&buf); err != nil {
 		t.Errorf("failed to parse Prometheus output: %v", err)
 	}
 }
