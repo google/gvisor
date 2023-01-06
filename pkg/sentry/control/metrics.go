@@ -55,6 +55,10 @@ type MetricsExportData struct {
 
 // Export export metrics data into MetricsExportData.
 func (u *Metrics) Export(_ *MetricsExportOpts, out *MetricsExportData) error {
-	out.Snapshot = metric.GetSnapshot()
+	snapshot, err := metric.GetSnapshot()
+	if err != nil {
+		return err
+	}
+	out.Snapshot = snapshot
 	return nil
 }

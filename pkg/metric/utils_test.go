@@ -51,7 +51,7 @@ func init() {
 }
 
 func resetTest() {
-	initialized = false
+	initialized.Store(false)
 	allMetrics = makeMetricSet()
 	emitter.Reset()
 }
