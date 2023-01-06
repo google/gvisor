@@ -771,8 +771,18 @@ TEST_P(TcpSocketTest, Tiocinq) {
     ASSERT_THAT(read, SyscallSucceeds());
     size -= read;
 
+    // The remaining data should end up in the receive queue.
+    constexpr absl::Duration kSleepFor = absl::Milliseconds(10);
     int inq = 0;
-    ASSERT_THAT(ioctl(accepted_.get(), TIOCINQ, &inq), SyscallSucceeds());
+    for (const auto start = absl::Now();
+         absl::Now() <= start + absl::Milliseconds(kTimeoutMillis);) {
+      ASSERT_THAT(ioctl(accepted_.get(), TIOCINQ, &inq), SyscallSucceeds());
+      if (size == inq) {
+        break;
+      }
+      absl::SleepFor(kSleepFor);
+    }
+
     ASSERT_EQ(inq, size);
   }
 }
