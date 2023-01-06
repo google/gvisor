@@ -39,9 +39,22 @@ func (*NullClock) NowMonotonic() tcpip.MonotonicTime {
 	return tcpip.MonotonicTime{}
 }
 
+// nullTimer implements a timer that never fires.
+type nullTimer struct{}
+
+var _ tcpip.Timer = (*nullTimer)(nil)
+
+// Stop implements tcpip.Timer.
+func (*nullTimer) Stop() bool {
+	return true
+}
+
+// Reset implements tcpip.Timer.
+func (*nullTimer) Reset(time.Duration) {}
+
 // AfterFunc implements tcpip.Clock.AfterFunc.
 func (*NullClock) AfterFunc(time.Duration, func()) tcpip.Timer {
-	return nil
+	return &nullTimer{}
 }
 
 type notificationChannels struct {
