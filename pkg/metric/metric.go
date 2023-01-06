@@ -108,7 +108,7 @@ type Uint64Metric struct {
 var (
 	// initialized indicates that all metrics are registered. allMetrics is
 	// immutable once initialized is true.
-	initialized bool
+	initialized atomicbitops.Bool
 
 	// allMetrics are the registered metrics.
 	allMetrics = makeMetricSet()
@@ -120,7 +120,7 @@ var (
 //   - All metrics are registered.
 //   - Initialize/Disable has not been called.
 func Initialize() error {
-	if initialized {
+	if initialized.Load() {
 		return errors.New("metric.Initialize called after metric.Initialize or metric.Disable")
 	}
 
@@ -140,15 +140,21 @@ func Initialize() error {
 		return fmt.Errorf("unable to emit metric initialize event: %w", err)
 	}
 
-	initialized = true
+	if initialized.Swap(true) {
+		return errors.New("raced with another call to metric.Initialize or metric.Disable")
+	}
 	return nil
 }
 
+// ErrNotYetInitialized is returned by GetMetricRegistration if metrics are not yet initialized.
+var ErrNotYetInitialized = errors.New("metrics are not yet initialized")
+
 // GetMetricRegistration returns the metric registration data for all registered metrics.
 // Must be called after Initialize().
+// Returns ErrNotYetInitialized if metrics are not yet initialized.
 func GetMetricRegistration() (*pb.MetricRegistration, error) {
-	if !initialized {
-		return nil, errors.New("metric.GetMetricRegistration called before metric.Initialize")
+	if !initialized.Load() {
+		return nil, ErrNotYetInitialized
 	}
 	if allMetrics.registration == nil {
 		return nil, errors.New("metrics are disabled")
@@ -163,7 +169,7 @@ func GetMetricRegistration() (*pb.MetricRegistration, error) {
 //   - All metrics are registered.
 //   - Initialize/Disable has not been called.
 func Disable() error {
-	if initialized {
+	if initialized.Load() {
 		return errors.New("metric.Disable called after metric.Initialize or metric.Disable")
 	}
 
@@ -172,7 +178,9 @@ func Disable() error {
 		return fmt.Errorf("unable to emit empty metric registration event (metrics disabled): %w", err)
 	}
 
-	initialized = true
+	if initialized.Swap(true) {
+		return errors.New("raced with another call to metric.Initialize or metric.Disable")
+	}
 	return nil
 }
 
@@ -361,7 +369,7 @@ func nameToPrometheusName(name string) string {
 //   - Initialize/Disable have not been called.
 //   - value is expected to accept exactly len(fields) arguments.
 func RegisterCustomUint64Metric(name string, cumulative, sync bool, units pb.MetricMetadata_Units, description string, value func(...string) uint64, fields ...Field) error {
-	if initialized {
+	if initialized.Load() {
 		return ErrInitializationDone
 	}
 
@@ -663,7 +671,7 @@ type DistributionMetric struct {
 
 // NewDistributionMetric creates and registers a new distribution metric.
 func NewDistributionMetric(name string, sync bool, bucketer Bucketer, unit pb.MetricMetadata_Units, description string, fields ...Field) (*DistributionMetric, error) {
-	if initialized {
+	if initialized.Load() {
 		return nil, ErrInitializationDone
 	}
 	if _, ok := allMetrics.uint64Metrics[name]; ok {
@@ -1118,7 +1126,11 @@ func EmitMetricUpdate() {
 }
 
 // GetSnapshot returns a Prometheus snapshot of the metric data.
-func GetSnapshot() *prometheus.Snapshot {
+// Returns ErrNotYetInitialized if metrics have not yet been initialized.
+func GetSnapshot() (*prometheus.Snapshot, error) {
+	if !initialized.Load() {
+		return nil, ErrNotYetInitialized
+	}
 	values := allMetrics.Values()
 	snapshot := prometheus.NewSnapshot()
 	for k, v := range values.uint64Metrics {
@@ -1176,7 +1188,7 @@ func GetSnapshot() *prometheus.Snapshot {
 			})
 		}
 	}
-	return snapshot
+	return snapshot, nil
 }
 
 // StartStage should be called when an initialization stage is started.
