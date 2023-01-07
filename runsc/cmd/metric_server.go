@@ -67,9 +67,10 @@ const (
 // servedSandbox is a sandbox that we serve metrics from.
 // A single metrics server will export data about multiple sandboxes.
 type servedSandbox struct {
-	rootContainerID container.FullID
-	rootDir         string
-	extraLabels     map[string]string
+	rootContainerID  container.FullID
+	rootDir          string
+	metricServerAddr string
+	extraLabels      map[string]string
 
 	// mu protects the fields below.
 	mu sync.Mutex
@@ -108,7 +109,15 @@ func (s *servedSandbox) load() (*sandbox.Sandbox, *prometheus.Verifier, error) {
 		if err != nil {
 			return nil, nil, err
 		}
+		sandboxMetricAddr := strings.ReplaceAll(cont.Sandbox.MetricServerAddress, "%RUNTIME_ROOT%", s.rootDir)
+		if sandboxMetricAddr == "" {
+			return nil, nil, errors.New("sandbox did not request instrumentation")
+		}
+		if sandboxMetricAddr != s.metricServerAddr {
+			return nil, nil, fmt.Errorf("sandbox requested instrumentation by a metric server running at a different address (sandbox wants %q, this metric server serves %q)", sandboxMetricAddr, s.metricServerAddr)
+		}
 		// Update label data as read from the state file.
+		// Do not store empty labels.
 		authoritativeLabels := cont.Sandbox.PrometheusLabels()
 		for _, label := range []string{sandbox.SandboxIDLabel, sandbox.PodNameLabel, sandbox.NamespaceLabel} {
 			s.extraLabels[label] = authoritativeLabels[label]
@@ -166,6 +175,7 @@ func queryMetrics(ctx context.Context, sand *sandbox.Sandbox, verifier *promethe
 // MetricServer implements subcommands.Command for the "metric-server" command.
 type MetricServer struct {
 	rootDir        string
+	address        string
 	exporterPrefix string
 	startTime      time.Time
 	rand           *rand.Rand
@@ -187,6 +197,11 @@ type MetricServer struct {
 
 	// sandboxes is the list of sandboxes we serve metrics for.
 	sandboxes map[container.FullID]*servedSandbox
+
+	// lastStateFileStat maps container full IDs to the last observed stat() of their state file.
+	// This is used to monitor for sandboxes in the background. If a sandbox's state file matches this
+	// info, we can assume that the last background scan already looked at it.
+	lastStateFileStat map[container.FullID]os.FileInfo
 
 	// numSandboxes counts the number of sandboxes that have ever been registered on this server.
 	// Used to distinguish between the case where this metrics serve has sat there doing nothing
@@ -223,9 +238,40 @@ func (*MetricServer) Usage() string {
 // SetFlags implements subcommands.Command.SetFlags.
 func (m *MetricServer) SetFlags(f *flag.FlagSet) {}
 
-// purgeSandboxesLocked removes sandboxes that are no longer running from m.sandboxes.
+// sufficientlyEqualStats returns whether the given FileInfo's are sufficiently
+// equal to assume the file they represent has not changed between the time
+// each FileInfo was obtained.
+func sufficientlyEqualStats(s1, s2 os.FileInfo) bool {
+	if !s1.ModTime().Equal(s2.ModTime()) {
+		return false
+	}
+	if s1.Size() != s2.Size() {
+		return false
+	}
+	statT1, ok1 := s1.Sys().(*syscall.Stat_t)
+	statT2, ok2 := s2.Sys().(*syscall.Stat_t)
+	if ok1 != ok2 {
+		return false
+	}
+	if ok1 && ok2 {
+		if statT1.Dev != statT2.Dev {
+			return false
+		}
+		if statT1.Ino != statT2.Ino {
+			return false
+		}
+	}
+	return true
+}
+
+// refreshSandboxesLocked removes sandboxes that are no longer running from m.sandboxes, and
+// adds sandboxes found in the root directory that do request instrumentation.
 // Preconditions: m.mu is locked.
-func (m *MetricServer) purgeSandboxesLocked() {
+func (m *MetricServer) refreshSandboxesLocked() {
+	if m.shuttingDown {
+		// Do nothing to avoid log spam.
+		return
+	}
 	sandboxIDs, err := container.ListSandboxes(m.rootDir)
 	if err != nil {
 		log.Warningf("Cannot list containers in root directory %s, it has likely gone away: %v.", m.rootDir, err)
@@ -246,6 +292,86 @@ func (m *MetricServer) purgeSandboxesLocked() {
 			log.Warningf("Sandbox %s cannot be loaded, deleting it: %v", sandboxID, err)
 			delete(m.sandboxes, sandboxID)
 		}
+	}
+	newSandboxIDs := make(map[container.FullID]bool, len(sandboxIDs))
+	for _, sid := range sandboxIDs {
+		if _, found := m.sandboxes[sid]; found {
+			continue
+		}
+		newSandboxIDs[sid] = true
+	}
+	for sid := range m.lastStateFileStat {
+		if _, found := newSandboxIDs[sid]; !found {
+			delete(m.lastStateFileStat, sid)
+		}
+	}
+	for sid := range newSandboxIDs {
+		stateFile := container.StateFile{
+			RootDir: m.rootDir,
+			ID:      sid,
+		}
+		stat, err := stateFile.Stat()
+		if err != nil {
+			log.Warningf("Failed to stat() container state file for sandbox %q: %v", sid, err)
+			continue
+		}
+		if existing, found := m.lastStateFileStat[sid]; found {
+			// We already tried to stat this sandbox but decided not to pick it up.
+			// Check if the state file changed since. If it didn't, we don't want to
+			// try again.
+			if sufficientlyEqualStats(existing, stat) {
+				continue
+			}
+			log.Infof("State file for sandbox %q has changed since we last looked at it; will try to reload it.", sid)
+			delete(m.lastStateFileStat, sid)
+		}
+		// If we get here, we either haven't seen this sandbox before, or we saw it
+		// and it has disappeared (which means it is new in this iteration), or we
+		// saw it before but its state file changed. Either way, we want to try
+		// loading it and see if it wants instrumentation.
+		cont, err := container.Load(m.rootDir, sid, container.LoadOpts{
+			Exact:         true,
+			SkipCheck:     true,
+			TryLock:       container.TryAcquire,
+			RootContainer: true,
+		})
+		if err != nil {
+			if err == container.ErrStateFileLocked {
+				// This error is OK and shouldn't generate log spam. The sandbox is probably in the middle
+				// of being created.
+				continue
+			}
+			log.Warningf("Cannot load state file for sandbox %q: %v", sid, err)
+			continue
+		}
+		// This is redundant with one of the checks performed below in servedSandbox.load(), but this
+		// avoids log spam for the non-error case of sandboxes that didn't request instrumentation.
+		sandboxMetricAddr := strings.ReplaceAll(cont.Sandbox.MetricServerAddress, "%RUNTIME_ROOT%", m.rootDir)
+		if sandboxMetricAddr != m.address {
+			m.lastStateFileStat[sid] = stat
+			continue
+		}
+		m.numSandboxes++
+		served := &servedSandbox{
+			rootContainerID:  sid,
+			rootDir:          m.rootDir,
+			metricServerAddr: m.address,
+			extraLabels: map[string]string{
+				sandbox.SandboxIDLabel: sid.SandboxID,
+				iterationIDLabel:       fmt.Sprintf("%d", m.rand.Uint64()),
+			},
+		}
+		// Best-effort attempt to load the state file instantly.
+		// This may legitimately fail if it is locked, e.g. during sandbox startup.
+		// If it fails for any other reason, then the sandbox went away between the time we listed the
+		// sandboxes and now, so just delete it.
+		if _, _, err := served.load(); err != nil && err != container.ErrStateFileLocked {
+			log.Warningf("Sandbox %q cannot be loaded, ignoring it: %v", sid, err)
+			m.lastStateFileStat[sid] = stat
+			continue
+		}
+		m.sandboxes[sid] = served
+		log.Infof("Registered new sandbox found in root directory: %q", sid)
 	}
 }
 
@@ -309,7 +435,7 @@ func (m *MetricServer) serveMetrics(w http.ResponseWriter, req *http.Request) ht
 	ctx, ctxCancel := context.WithTimeout(req.Context(), metricsExportTimeout)
 	defer ctxCancel()
 	m.mu.Lock()
-	m.purgeSandboxesLocked()
+	m.refreshSandboxesLocked()
 
 	numGoroutines := exportParallelGoroutines
 	numSandboxes := len(m.sandboxes)
@@ -543,6 +669,23 @@ func logRequest(f func(w http.ResponseWriter, req *http.Request) httpResult) fun
 	}
 }
 
+// verify is one iteration of verifyLoop.
+// It runs in a loop in the background which checks all sandboxes for liveness, tries to load
+// their metadata if that hasn't been loaded yet, and tries to pick up new sandboxes that
+// failed to register for whatever reason.
+func (m *MetricServer) verify(ctx context.Context) {
+	_, err := container.ListSandboxes(m.rootDir)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err != nil {
+		log.Warningf("Cannot list sandboxes in root directory %s, it has likely gone away: %v. Server shutting down.", m.rootDir, err)
+		m.shutdownLocked(ctx)
+		return
+	}
+	m.refreshSandboxesLocked()
+}
+
+// verifyLoop runs in the background and periodically calls verify.
 func (m *MetricServer) verifyLoop(ctx context.Context) {
 	ticker := time.NewTicker(verifyLoopInterval)
 	defer ticker.Stop()
@@ -557,17 +700,7 @@ func (m *MetricServer) verifyLoop(ctx context.Context) {
 			m.mu.Unlock()
 			return
 		case <-ticker.C:
-			_, listErr := container.ListSandboxes(m.rootDir)
-			func() {
-				m.mu.Lock()
-				defer m.mu.Unlock()
-				if listErr != nil {
-					log.Warningf("Cannot list sandboxes in root directory %s, it has likely gone away: %v. Server shutting down.", m.rootDir, listErr)
-					m.shutdownLocked(ctx)
-					return
-				}
-				m.purgeSandboxesLocked()
-			}()
+			m.verify(ctx)
 		}
 	}
 }
@@ -601,7 +734,9 @@ func (m *MetricServer) Execute(ctx context.Context, f *flag.FlagSet, args ...any
 		log.Infof("Metric server address replaced %RUNTIME_ROOT%: %q -> %q", conf.MetricServer, newAddr)
 		conf.MetricServer = newAddr
 	}
+	m.address = conf.MetricServer
 	m.sandboxes = make(map[container.FullID]*servedSandbox)
+	m.lastStateFileStat = make(map[container.FullID]os.FileInfo)
 
 	var listener net.Listener
 	var listenErr error
