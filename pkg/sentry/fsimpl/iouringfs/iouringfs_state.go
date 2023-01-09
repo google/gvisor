@@ -23,8 +23,7 @@ func (fd *FileDescription) beforeSave() {
 
 // afterLoad is invoked by stateify.
 func (fd *FileDescription) afterLoad() {
+	// Remap shared buffers.
+	fd.remap = true
 	fd.runC = make(chan struct{}, 1)
-	// Wake up any potential sleepers from before the Save. The Pause for Save
-	// ensured there were no active tasks at save time.
-	fd.runC <- struct{}{}
 }

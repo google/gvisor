@@ -56,6 +56,7 @@ var (
 	trace              = flag.Bool("trace", false, "enables all trace points")
 
 	addUDSTree = flag.Bool("add-host-communication", false, "expose a tree of UDS and pipe utilities to test communication with the host")
+	ioUring    = flag.Bool("iouring", false, "Enables IO_URING API for asynchronous I/O")
 	// TODO(gvisor.dev/issue/4572): properly support leak checking for runsc, and
 	// set to true as the default for the test runner.
 	leakCheck = flag.Bool("leak-check", false, "check for reference leaks")
@@ -198,6 +199,7 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		"-TESTONLY-allow-packet-endpoint-write=true",
 		"-net-raw=true",
 		fmt.Sprintf("-panic-signal=%d", unix.SIGTERM),
+		fmt.Sprintf("-iouring=%t", *ioUring),
 		"-watchdog-action=panic",
 		"-platform", *platform,
 		"-file-access", *fileAccess,
@@ -428,10 +430,16 @@ func runTestCaseRunsc(testBin string, tc *gtest.TestCase, args []string, t *test
 	const (
 		platformVar = "TEST_ON_GVISOR"
 		networkVar  = "GVISOR_NETWORK"
+		ioUringVar  = "IOURING_ENABLED"
 	)
 	env := append(os.Environ(), platformVar+"="+*platform, networkVar+"="+*network)
 	if *platformSupport != "" {
 		env = append(env, fmt.Sprintf("%s=%s", platformSupportEnvVar, *platformSupport))
+	}
+	if *ioUring {
+		env = append(env, ioUringVar+"=TRUE")
+	} else {
+		env = append(env, ioUringVar+"=FALSE")
 	}
 
 	// Remove shard env variables so that the gunit binary does not try to

@@ -75,6 +75,10 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
+// IOUringEnabled is set to true when IO_URING is enabled. Added as a global to
+// allow easy access everywhere.
+var IOUringEnabled = false
+
 // userCounters is a set of user counters.
 //
 // +stateify savable

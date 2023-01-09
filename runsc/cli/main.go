@@ -229,6 +229,7 @@ func Main(version string) {
 	log.Infof("\t\tOverlay: Root=%t, SubMounts=%t, FilestoreDir=%q", overlay2.RootMount, overlay2.SubMounts, overlay2.FilestoreDir)
 	log.Infof("\t\tNetwork: %v, logging: %t", conf.Network, conf.LogPackets)
 	log.Infof("\t\tStrace: %t, max size: %d, syscalls: %s", conf.Strace, conf.StraceLogSize, conf.StraceSyscalls)
+	log.Infof("\t\tIOURING: %t", conf.IOUring)
 	log.Infof("\t\tDebug: %v", conf.Debug)
 	log.Infof("\t\tSystemd: %v", conf.SystemdCgroup)
 	log.Infof("***************************")

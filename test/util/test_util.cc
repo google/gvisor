@@ -41,6 +41,7 @@ namespace gvisor {
 namespace testing {
 
 constexpr char kGvisorNetwork[] = "GVISOR_NETWORK";
+constexpr char kIOUringEnabled[] = "IOURING_ENABLED";
 
 bool IsRunningOnGvisor() { return GvisorPlatform() != Platform::kNative; }
 
@@ -56,6 +57,11 @@ const std::string GvisorPlatform() {
 bool IsRunningWithHostinet() {
   const char* env = getenv(kGvisorNetwork);
   return env && strcmp(env, "host") == 0;
+}
+
+bool IsIOUringEnabled() {
+  const char* env = getenv(kIOUringEnabled);
+  return env && strcmp(env, "TRUE") == 0;
 }
 
 // Inline cpuid instruction.  Preserve %ebx/%rbx register. In PIC compilations
