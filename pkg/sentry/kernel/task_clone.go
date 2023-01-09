@@ -310,7 +310,10 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 
 func getCloneSeccheckInfo(t, nt *Task, flags uint64) (seccheck.FieldSet, *pb.CloneInfo) {
 	fields := seccheck.Global.GetFieldSet(seccheck.PointClone)
-
+	var cwd string
+	if fields.Context.Contains(seccheck.FieldCtxtCwd) {
+		cwd = getTaskCurrentWorkingDirectory(t)
+	}
 	t.k.tasks.mu.RLock()
 	defer t.k.tasks.mu.RUnlock()
 	info := &pb.CloneInfo{
@@ -322,7 +325,7 @@ func getCloneSeccheckInfo(t, nt *Task, flags uint64) (seccheck.FieldSet, *pb.Clo
 
 	if !fields.Context.Empty() {
 		info.ContextData = &pb.ContextData{}
-		LoadSeccheckDataLocked(t, fields.Context, info.ContextData)
+		LoadSeccheckDataLocked(t, fields.Context, info.ContextData, cwd)
 	}
 
 	return fields, info

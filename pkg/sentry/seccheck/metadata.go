@@ -243,9 +243,42 @@ func init() {
 		ContextFields: defaultContextFields,
 	})
 	registerPoint(PointDesc{
-		ID:            PointExitNotifyParent,
-		Name:          "sentry/exit_notify_parent",
-		ContextFields: defaultContextFields,
+		ID:   PointExitNotifyParent,
+		Name: "sentry/exit_notify_parent",
+		ContextFields: []FieldDesc{
+			{
+				ID:   FieldCtxtTime,
+				Name: "time",
+			},
+			{
+				ID:   FieldCtxtThreadID,
+				Name: "thread_id",
+			},
+			{
+				ID:   FieldCtxtThreadStartTime,
+				Name: "task_start_time",
+			},
+			{
+				ID:   FieldCtxtThreadGroupID,
+				Name: "group_id",
+			},
+			{
+				ID:   FieldCtxtThreadGroupStartTime,
+				Name: "thread_group_start_time",
+			},
+			{
+				ID:   FieldCtxtContainerID,
+				Name: "container_id",
+			},
+			{
+				ID:   FieldCtxtCredentials,
+				Name: "credentials",
+			},
+			{
+				ID:   FieldCtxtProcessName,
+				Name: "process_name",
+			},
+		},
 	})
 	registerPoint(PointDesc{
 		ID:            PointTaskExit,
