@@ -25,6 +25,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <cerrno>
 #include <cstddef>
 #include <cstdint>
 
@@ -40,6 +41,24 @@ namespace gvisor {
 namespace testing {
 
 namespace {
+
+bool IOUringAvailable() {
+  if (IsRunningOnGvisor()) {
+    return true;
+  }
+
+  // io_uring is relatively new and may not be available on all kernels. Probe
+  // using an intentionally invalid call to io_uring_enter.
+  errno = 0;
+  int rc = syscall(__NR_io_uring_enter, -1, 1, 1, 0, nullptr);
+  if (rc != -1) {
+    // How did this succeed?
+    std::cerr << "Probe io_uring_enter(2) with invalid FD somehow succeeded..."
+              << std::endl;
+    return false;
+  }
+  return errno != ENOSYS;
+}
 
 // IOVecContainsString checks that a tuple argument of (struct iovec *, int)
 // corresponding to an iovec array and its length, contains data that matches
@@ -74,12 +93,16 @@ MATCHER_P(IOVecContainsString, str, "") {
 
 // Testing that io_uring_setup(2) successfully returns a valid file descriptor.
 TEST(IOUringTest, ValidFD) {
+  SKIP_IF(!IOUringAvailable());
+
   IOUringParams params;
   FileDescriptor iouringfd = ASSERT_NO_ERRNO_AND_VALUE(NewIOUringFD(1, params));
 }
 
 // Testing that io_uring_setup(2) fails with EINVAL on non-zero params.
 TEST(IOUringTest, ParamsNonZeroResv) {
+  SKIP_IF(!IOUringAvailable());
+
   IOUringParams params;
   memset(&params, 0, sizeof(params));
   params.resv[1] = 1;
@@ -87,6 +110,8 @@ TEST(IOUringTest, ParamsNonZeroResv) {
 }
 
 TEST(IOUringTest, ZeroCQEntries) {
+  SKIP_IF(!IOUringAvailable());
+
   IOUringParams params;
   params.cq_entries = 0;
   params.flags = IORING_SETUP_CQSIZE;
@@ -94,6 +119,8 @@ TEST(IOUringTest, ZeroCQEntries) {
 }
 
 TEST(IOUringTest, ZeroCQEntriesLessThanSQEntries) {
+  SKIP_IF(!IOUringAvailable());
+
   IOUringParams params;
   params.cq_entries = 16;
   params.flags = IORING_SETUP_CQSIZE;
@@ -102,17 +129,20 @@ TEST(IOUringTest, ZeroCQEntriesLessThanSQEntries) {
 
 // Testing that io_uring_setup(2) fails with EINVAL on unsupported flags.
 TEST(IOUringTest, UnsupportedFlags) {
-  if (IsRunningOnGvisor()) {
-    IOUringParams params;
-    memset(&params, 0, sizeof(params));
-    params.flags |= IORING_SETUP_SQPOLL;
-    ASSERT_THAT(IOUringSetup(1, &params), SyscallFailsWithErrno(EINVAL));
-  }
+  // Gvisor only test, since linux supports all flags.
+  SKIP_IF(!IsRunningOnGvisor());
+
+  IOUringParams params;
+  memset(&params, 0, sizeof(params));
+  params.flags |= IORING_SETUP_SQPOLL;
+  ASSERT_THAT(IOUringSetup(1, &params), SyscallFailsWithErrno(EINVAL));
 }
 
 // Testing that both mmap and munmap calls succeed and subsequent access to
 // unmapped memory results in SIGSEGV.
 TEST(IOUringTest, MMapMUnMapWork) {
+  SKIP_IF(!IOUringAvailable());
+
   IOUringParams params;
   FileDescriptor iouringfd = ASSERT_NO_ERRNO_AND_VALUE(NewIOUringFD(1, params));
 
@@ -140,6 +170,8 @@ TEST(IOUringTest, MMapMUnMapWork) {
 
 // Testing that both mmap fails with EINVAL when an invalid offset is passed.
 TEST(IOUringTest, MMapWrongOffset) {
+  SKIP_IF(!IOUringAvailable());
+
   IOUringParams params;
   FileDescriptor iouringfd = ASSERT_NO_ERRNO_AND_VALUE(NewIOUringFD(1, params));
 
@@ -154,6 +186,8 @@ TEST(IOUringTest, MMapWrongOffset) {
 // Testing that mmap() handles all three IO_URING-specific offsets and that
 // returned addresses are page aligned.
 TEST(IOUringTest, MMapOffsets) {
+  SKIP_IF(!IOUringAvailable());
+
   IOUringParams params;
   FileDescriptor iouringfd = ASSERT_NO_ERRNO_AND_VALUE(NewIOUringFD(1, params));
 
@@ -188,37 +222,38 @@ TEST(IOUringTest, MMapOffsets) {
 
 // Testing that IOUringParams are populated with correct values.
 TEST(IOUringTest, ReturnedParamsValues) {
-  if (IsRunningOnGvisor()) {
-    IOUringParams params;
-    FileDescriptor iouringfd =
-        ASSERT_NO_ERRNO_AND_VALUE(NewIOUringFD(1, params));
+  SKIP_IF(!IsRunningOnGvisor());
 
-    EXPECT_EQ(params.sq_entries, 1);
-    EXPECT_EQ(params.cq_entries, 2);
+  IOUringParams params;
+  FileDescriptor iouringfd = ASSERT_NO_ERRNO_AND_VALUE(NewIOUringFD(1, params));
 
-    EXPECT_EQ(params.sq_off.head, 0);
-    EXPECT_EQ(params.sq_off.tail, 64);
-    EXPECT_EQ(params.sq_off.ring_mask, 256);
-    EXPECT_EQ(params.sq_off.ring_entries, 264);
-    EXPECT_EQ(params.sq_off.flags, 276);
-    EXPECT_EQ(params.sq_off.dropped, 272);
-    EXPECT_EQ(params.sq_off.array, 384);
+  EXPECT_EQ(params.sq_entries, 1);
+  EXPECT_EQ(params.cq_entries, 2);
 
-    EXPECT_EQ(params.cq_off.head, 128);
-    EXPECT_EQ(params.cq_off.tail, 192);
-    EXPECT_EQ(params.cq_off.ring_mask, 260);
-    EXPECT_EQ(params.cq_off.ring_entries, 268);
-    EXPECT_EQ(params.cq_off.overflow, 284);
-    EXPECT_EQ(params.cq_off.cqes, 320);
-    EXPECT_EQ(params.cq_off.flags, 280);
+  EXPECT_EQ(params.sq_off.head, 0);
+  EXPECT_EQ(params.sq_off.tail, 64);
+  EXPECT_EQ(params.sq_off.ring_mask, 256);
+  EXPECT_EQ(params.sq_off.ring_entries, 264);
+  EXPECT_EQ(params.sq_off.flags, 276);
+  EXPECT_EQ(params.sq_off.dropped, 272);
+  EXPECT_EQ(params.sq_off.array, 384);
 
-    // gVisor should support IORING_FEAT_SINGLE_MMAP.
-    EXPECT_NE((params.features & IORING_FEAT_SINGLE_MMAP), 0);
-  }
+  EXPECT_EQ(params.cq_off.head, 128);
+  EXPECT_EQ(params.cq_off.tail, 192);
+  EXPECT_EQ(params.cq_off.ring_mask, 260);
+  EXPECT_EQ(params.cq_off.ring_entries, 268);
+  EXPECT_EQ(params.cq_off.overflow, 284);
+  EXPECT_EQ(params.cq_off.cqes, 320);
+  EXPECT_EQ(params.cq_off.flags, 280);
+
+  // gVisor should support IORING_FEAT_SINGLE_MMAP.
+  EXPECT_NE((params.features & IORING_FEAT_SINGLE_MMAP), 0);
 }
 
 // Testing that offset of SQE indices array is cacheline aligned.
 TEST(IOUringTest, SqeIndexArrayCacheAligned) {
+  SKIP_IF(!IOUringAvailable());
+
   IOUringParams params;
   for (uint32_t i = 1; i < 10; ++i) {
     FileDescriptor iouringfd =
@@ -229,9 +264,14 @@ TEST(IOUringTest, SqeIndexArrayCacheAligned) {
 
 // Testing that io_uring_enter(2) successfully handles a single NOP operation.
 TEST(IOUringTest, SingleNOPTest) {
+  SKIP_IF(!IOUringAvailable());
+
   IOUringParams params;
   std::unique_ptr<IOUring> io_uring =
       ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(1, params));
+
+  ASSERT_EQ(params.sq_entries, 1);
+  ASSERT_EQ(params.cq_entries, 2);
 
   uint32_t sq_head = io_uring->load_sq_head();
   ASSERT_EQ(sq_head, 0);
@@ -263,6 +303,8 @@ TEST(IOUringTest, SingleNOPTest) {
 
 // Testing that io_uring_enter(2) successfully queueing NOP operations.
 TEST(IOUringTest, QueueingNOPTest) {
+  SKIP_IF(!IOUringAvailable());
+
   IOUringParams params;
   std::unique_ptr<IOUring> io_uring =
       ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(4, params));
@@ -323,6 +365,8 @@ TEST(IOUringTest, QueueingNOPTest) {
 
 // Testing that io_uring_enter(2) successfully multiple NOP operations.
 TEST(IOUringTest, MultipleNOPTest) {
+  SKIP_IF(!IOUringAvailable());
+
   IOUringParams params;
   std::unique_ptr<IOUring> io_uring =
       ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(4, params));
@@ -367,6 +411,8 @@ TEST(IOUringTest, MultipleNOPTest) {
 // Testing that io_uring_enter(2) successfully handles multiple threads
 // submitting NOP operations.
 TEST(IOUringTest, MultiThreadedNOPTest) {
+  SKIP_IF(!IOUringAvailable());
+
   IOUringParams params;
   std::unique_ptr<IOUring> io_uring =
       ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(4, params));
@@ -415,6 +461,8 @@ TEST(IOUringTest, MultiThreadedNOPTest) {
 // Testing that io_uring_enter(2) successfully consumes submission with an
 // invalid opcode and returned CQE contains EINVAL in its result field.
 TEST(IOUringTest, InvalidOpCodeTest) {
+  SKIP_IF(!IOUringAvailable());
+
   IOUringParams params;
   std::unique_ptr<IOUring> io_uring =
       ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(1, params));
@@ -450,6 +498,8 @@ TEST(IOUringTest, InvalidOpCodeTest) {
 // Tests that filling the shared memory region with garbage data doesn't cause a
 // kernel panic.
 TEST(IOUringTest, CorruptRingHeader) {
+  SKIP_IF(!IOUringAvailable());
+
   const int kEntries = 64;
 
   IOUringParams params;
@@ -493,6 +543,8 @@ TEST(IOUringTest, CorruptRingHeader) {
 // Testing that io_uring_enter(2) successfully consumes submission and SQE ring
 // buffers wrap around.
 TEST(IOUringTest, SQERingBuffersWrapAroundTest) {
+  SKIP_IF(!IOUringAvailable());
+
   IOUringParams params;
   std::unique_ptr<IOUring> io_uring =
       ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(4, params));
@@ -560,114 +612,116 @@ TEST(IOUringTest, SQERingBuffersWrapAroundTest) {
 // Testing that io_uring_enter(2) fails with EFAULT when non-null sigset_t has
 // been passed as we currently don't support replacing signal mask.
 TEST(IOUringTest, NonNullSigsetTest) {
-  if (IsRunningOnGvisor()) {
-    IOUringParams params;
-    std::unique_ptr<IOUring> io_uring =
-        ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(1, params));
+  SKIP_IF(!IsRunningOnGvisor());
 
-    uint32_t sq_head = io_uring->load_sq_head();
-    ASSERT_EQ(sq_head, 0);
+  IOUringParams params;
+  std::unique_ptr<IOUring> io_uring =
+      ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(1, params));
 
-    IOUringSqe *sqe = io_uring->get_sqes();
-    sqe->opcode = IORING_OP_NOP;
-    sqe->user_data = 42;
+  uint32_t sq_head = io_uring->load_sq_head();
+  ASSERT_EQ(sq_head, 0);
 
-    uint32_t sq_tail = io_uring->load_sq_tail();
-    io_uring->store_sq_tail(sq_tail + 1);
+  IOUringSqe *sqe = io_uring->get_sqes();
+  sqe->opcode = IORING_OP_NOP;
+  sqe->user_data = 42;
 
-    sigset_t non_null_sigset;
-    EXPECT_THAT(io_uring->Enter(1, 1, IORING_ENTER_GETEVENTS, &non_null_sigset),
-                SyscallFailsWithErrno(EFAULT));
-  }
+  uint32_t sq_tail = io_uring->load_sq_tail();
+  io_uring->store_sq_tail(sq_tail + 1);
+
+  sigset_t non_null_sigset;
+  EXPECT_THAT(io_uring->Enter(1, 1, IORING_ENTER_GETEVENTS, &non_null_sigset),
+              SyscallFailsWithErrno(EFAULT));
 }
 
 // Testing that completion queue overflow counter is incremented when the
 // completion queue is not drained by the user and completion queue entries are
 // not overwritten.
 TEST(IOUringTest, OverflowCQTest) {
-  if (IsRunningOnGvisor()) {
-    IOUringParams params;
-    std::unique_ptr<IOUring> io_uring =
-        ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(4, params));
+  // Gvisor's completion queue overflow behaviour is different from Linux.
+  SKIP_IF(!IsRunningOnGvisor());
 
-    uint32_t sq_head = io_uring->load_sq_head();
-    ASSERT_EQ(sq_head, 0);
+  IOUringParams params;
+  std::unique_ptr<IOUring> io_uring =
+      ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(4, params));
 
-    unsigned *sq_array = io_uring->get_sq_array();
-    unsigned index = 0;
-    IOUringSqe *sqe = io_uring->get_sqes();
-    IOUringCqe *cqe = io_uring->get_cqes();
+  uint32_t sq_head = io_uring->load_sq_head();
+  ASSERT_EQ(sq_head, 0);
 
-    for (size_t submission_round = 0; submission_round < 2;
-         ++submission_round) {
-      for (size_t i = 0; i < 4; ++i) {
-        sqe[i].opcode = IORING_OP_NOP;
-        sqe[i].user_data = 42 + i + submission_round;
-        index = i & io_uring->get_sq_mask();
-        sq_array[index] = index;
-      }
+  unsigned *sq_array = io_uring->get_sq_array();
+  unsigned index = 0;
+  IOUringSqe *sqe = io_uring->get_sqes();
+  IOUringCqe *cqe = io_uring->get_cqes();
 
-      uint32_t sq_tail = io_uring->load_sq_tail();
-      ASSERT_EQ(sq_tail, 4 * submission_round);
-      io_uring->store_sq_tail(sq_tail + 4);
-
-      int ret = io_uring->Enter(4, 4, IORING_ENTER_GETEVENTS, nullptr);
-      ASSERT_EQ(ret, 4);
-
-      sq_head = io_uring->load_sq_head();
-      ASSERT_EQ(sq_head, 4 * (submission_round + 1));
-
-      uint32_t dropped = io_uring->load_sq_dropped();
-      ASSERT_EQ(dropped, 0);
-
-      uint32_t cq_overflow_counter = io_uring->load_cq_overflow();
-      ASSERT_EQ(cq_overflow_counter, 0);
-
-      uint32_t cq_tail = io_uring->load_cq_tail();
-      ASSERT_EQ(cq_tail, 4 * (submission_round + 1));
-
-      for (size_t i = 0; i < 4; ++i) {
-        ASSERT_EQ(cqe[i + 4 * submission_round].res, 0);
-        ASSERT_EQ(cqe[i + 4 * submission_round].user_data,
-                  42 + i + submission_round);
-      }
-    }
-
-    for (size_t i = 0; i < 2; ++i) {
+  for (size_t submission_round = 0; submission_round < 2; ++submission_round) {
+    for (size_t i = 0; i < 4; ++i) {
       sqe[i].opcode = IORING_OP_NOP;
-      sqe[i].user_data = 52 + i;
+      sqe[i].user_data = 42 + i + submission_round;
       index = i & io_uring->get_sq_mask();
       sq_array[index] = index;
     }
 
     uint32_t sq_tail = io_uring->load_sq_tail();
-    ASSERT_EQ(sq_tail, 8);
-    io_uring->store_sq_tail(sq_tail + 2);
+    ASSERT_EQ(sq_tail, 4 * submission_round);
+    io_uring->store_sq_tail(sq_tail + 4);
 
-    int ret = io_uring->Enter(2, 2, IORING_ENTER_GETEVENTS, nullptr);
-    ASSERT_EQ(ret, 2);
+    int ret = io_uring->Enter(4, 4, IORING_ENTER_GETEVENTS, nullptr);
+    ASSERT_EQ(ret, 4);
 
     sq_head = io_uring->load_sq_head();
-    ASSERT_EQ(sq_head, 10);
-
-    uint32_t cq_tail = io_uring->load_cq_tail();
-    ASSERT_EQ(cq_tail, 8);
-
-    ASSERT_EQ(cqe[0].res, 0);
-    ASSERT_EQ(cqe[0].user_data, 42);
-    ASSERT_EQ(cqe[1].res, 0);
-    ASSERT_EQ(cqe[1].user_data, 43);
+    ASSERT_EQ(sq_head, 4 * (submission_round + 1));
 
     uint32_t dropped = io_uring->load_sq_dropped();
     ASSERT_EQ(dropped, 0);
 
     uint32_t cq_overflow_counter = io_uring->load_cq_overflow();
-    ASSERT_EQ(cq_overflow_counter, 2);
+    ASSERT_EQ(cq_overflow_counter, 0);
+
+    uint32_t cq_tail = io_uring->load_cq_tail();
+    ASSERT_EQ(cq_tail, 4 * (submission_round + 1));
+
+    for (size_t i = 0; i < 4; ++i) {
+      ASSERT_EQ(cqe[i + 4 * submission_round].res, 0);
+      ASSERT_EQ(cqe[i + 4 * submission_round].user_data,
+                42 + i + submission_round);
+    }
   }
+
+  for (size_t i = 0; i < 2; ++i) {
+    sqe[i].opcode = IORING_OP_NOP;
+    sqe[i].user_data = 52 + i;
+    index = i & io_uring->get_sq_mask();
+    sq_array[index] = index;
+  }
+
+  uint32_t sq_tail = io_uring->load_sq_tail();
+  ASSERT_EQ(sq_tail, 8);
+  io_uring->store_sq_tail(sq_tail + 2);
+
+  int ret = io_uring->Enter(2, 2, IORING_ENTER_GETEVENTS, nullptr);
+  ASSERT_EQ(ret, 2);
+
+  sq_head = io_uring->load_sq_head();
+  ASSERT_EQ(sq_head, 10);
+
+  uint32_t cq_tail = io_uring->load_cq_tail();
+  ASSERT_EQ(cq_tail, 8);
+
+  ASSERT_EQ(cqe[0].res, 0);
+  ASSERT_EQ(cqe[0].user_data, 42);
+  ASSERT_EQ(cqe[1].res, 0);
+  ASSERT_EQ(cqe[1].user_data, 43);
+
+  uint32_t dropped = io_uring->load_sq_dropped();
+  ASSERT_EQ(dropped, 0);
+
+  uint32_t cq_overflow_counter = io_uring->load_cq_overflow();
+  ASSERT_EQ(cq_overflow_counter, 2);
 }
 
 // Testing that io_uring_enter(2) successfully handles single READV operation.
 TEST(IOUringTest, SingleREADVTest) {
+  SKIP_IF(!IOUringAvailable());
+
   struct io_uring_params params;
   std::unique_ptr<IOUring> io_uring =
       ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(1, params));
@@ -737,6 +791,8 @@ TEST(IOUringTest, SingleREADVTest) {
 
 // Tests that IORING_OP_READV handles EOF on an empty file correctly.
 TEST(IOUringTest, ReadvEmptyFile) {
+  SKIP_IF(!IOUringAvailable());
+
   struct io_uring_params params;
   std::unique_ptr<IOUring> io_uring =
       ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(1, params));
@@ -790,6 +846,8 @@ TEST(IOUringTest, ReadvEmptyFile) {
 // Testing that io_uring_enter(2) successfully handles three READV operations
 // from three different files submitted through a single invocation.
 TEST(IOUringTest, ThreeREADVSingleEnterTest) {
+  SKIP_IF(!IOUringAvailable());
+
   struct io_uring_params params;
   std::unique_ptr<IOUring> io_uring =
       ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(4, params));
@@ -881,6 +939,8 @@ TEST(IOUringTest, ThreeREADVSingleEnterTest) {
 // Testing that io_uring_enter(2) successfully handles READV operation, which is
 // racing with deletion of the same file.
 TEST(IOUringTest, READVRaceWithDeleteTest) {
+  SKIP_IF(!IOUringAvailable());
+
   struct io_uring_params params;
   std::unique_ptr<IOUring> io_uring =
       ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(2, params));
@@ -986,6 +1046,8 @@ TEST(IOUringTest, READVRaceWithDeleteTest) {
 // Testing that io_uring_enter(2) successfully handles single READV operation
 // with short read situation.
 TEST(IOUringTest, ShortReadREADVTest) {
+  SKIP_IF(!IOUringAvailable());
+
   struct io_uring_params params;
   std::unique_ptr<IOUring> io_uring =
       ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(1, params));
@@ -1058,6 +1120,8 @@ TEST(IOUringTest, ShortReadREADVTest) {
 // Testing that io_uring_enter(2) successfully handles single READV operation
 // when there file does not have read permissions.
 TEST(IOUringTest, NoReadPermissionsREADVTest) {
+  SKIP_IF(!IOUringAvailable());
+
   struct io_uring_params params;
   std::unique_ptr<IOUring> io_uring =
       ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(1, params));
@@ -1132,6 +1196,8 @@ class IOUringSqeFieldsTest : public ::testing::Test,
 // Testing that io_uring_enter(2) successfully handles single READV operation
 // and returns EINVAL error in the CQE when either ioprio or buf_index is set.
 TEST_P(IOUringSqeFieldsTest, READVWithInvalidSqeFieldValue) {
+  SKIP_IF(!IOUringAvailable());
+
   const SqeFieldsUT p = GetParam();
 
   struct io_uring_params params;

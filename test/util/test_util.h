@@ -224,6 +224,7 @@ constexpr char kFuchsia[] = "fuchsia";
 bool IsRunningOnGvisor();
 const std::string GvisorPlatform();
 bool IsRunningWithHostinet();
+bool IsIOUringEnabled();
 
 #ifdef __linux__
 void SetupGvisorDeathTest();

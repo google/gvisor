@@ -262,6 +262,10 @@ type Config struct {
 	// used.
 	DCache int `flag:"dcache"`
 
+	// IOUring enables support for the IO_URING API calls to perform
+	// asynchronous I/O operations.
+	IOUring bool `flag:"iouring"`
+
 	// TestOnlyAllowRunAsCurrentUserWithoutChroot should only be used in
 	// tests. It allows runsc to start the sandbox process as the current
 	// user, and without chrooting the sandbox process. This can be
