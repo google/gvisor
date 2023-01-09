@@ -16,13 +16,12 @@ func (fd *FileDescription) StateFields() []string {
 		"FileDescriptionDefaultImpl",
 		"DentryMetadataFileDescriptionImpl",
 		"NoLockFD",
+		"mfp",
 		"rbmf",
 		"sqemf",
 		"running",
 		"ioRings",
-		"ioRingsBuf",
-		"sqesBuf",
-		"cqesBuf",
+		"remap",
 	}
 }
 
@@ -33,13 +32,12 @@ func (fd *FileDescription) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &fd.FileDescriptionDefaultImpl)
 	stateSinkObject.Save(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSinkObject.Save(3, &fd.NoLockFD)
-	stateSinkObject.Save(4, &fd.rbmf)
-	stateSinkObject.Save(5, &fd.sqemf)
-	stateSinkObject.Save(6, &fd.running)
-	stateSinkObject.Save(7, &fd.ioRings)
-	stateSinkObject.Save(8, &fd.ioRingsBuf)
-	stateSinkObject.Save(9, &fd.sqesBuf)
-	stateSinkObject.Save(10, &fd.cqesBuf)
+	stateSinkObject.Save(4, &fd.mfp)
+	stateSinkObject.Save(5, &fd.rbmf)
+	stateSinkObject.Save(6, &fd.sqemf)
+	stateSinkObject.Save(7, &fd.running)
+	stateSinkObject.Save(8, &fd.ioRings)
+	stateSinkObject.Save(9, &fd.remap)
 }
 
 // +checklocksignore
@@ -48,16 +46,67 @@ func (fd *FileDescription) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &fd.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSourceObject.Load(3, &fd.NoLockFD)
-	stateSourceObject.Load(4, &fd.rbmf)
-	stateSourceObject.Load(5, &fd.sqemf)
-	stateSourceObject.Load(6, &fd.running)
-	stateSourceObject.Load(7, &fd.ioRings)
-	stateSourceObject.Load(8, &fd.ioRingsBuf)
-	stateSourceObject.Load(9, &fd.sqesBuf)
-	stateSourceObject.Load(10, &fd.cqesBuf)
+	stateSourceObject.Load(4, &fd.mfp)
+	stateSourceObject.Load(5, &fd.rbmf)
+	stateSourceObject.Load(6, &fd.sqemf)
+	stateSourceObject.Load(7, &fd.running)
+	stateSourceObject.Load(8, &fd.ioRings)
+	stateSourceObject.Load(9, &fd.remap)
 	stateSourceObject.AfterLoad(fd.afterLoad)
+}
+
+func (sqemf *sqEntriesFile) StateTypeName() string {
+	return "pkg/sentry/fsimpl/iouringfs.sqEntriesFile"
+}
+
+func (sqemf *sqEntriesFile) StateFields() []string {
+	return []string{
+		"fr",
+	}
+}
+
+func (sqemf *sqEntriesFile) beforeSave() {}
+
+// +checklocksignore
+func (sqemf *sqEntriesFile) StateSave(stateSinkObject state.Sink) {
+	sqemf.beforeSave()
+	stateSinkObject.Save(0, &sqemf.fr)
+}
+
+func (sqemf *sqEntriesFile) afterLoad() {}
+
+// +checklocksignore
+func (sqemf *sqEntriesFile) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &sqemf.fr)
+}
+
+func (rbmf *ringsBufferFile) StateTypeName() string {
+	return "pkg/sentry/fsimpl/iouringfs.ringsBufferFile"
+}
+
+func (rbmf *ringsBufferFile) StateFields() []string {
+	return []string{
+		"fr",
+	}
+}
+
+func (rbmf *ringsBufferFile) beforeSave() {}
+
+// +checklocksignore
+func (rbmf *ringsBufferFile) StateSave(stateSinkObject state.Sink) {
+	rbmf.beforeSave()
+	stateSinkObject.Save(0, &rbmf.fr)
+}
+
+func (rbmf *ringsBufferFile) afterLoad() {}
+
+// +checklocksignore
+func (rbmf *ringsBufferFile) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &rbmf.fr)
 }
 
 func init() {
 	state.Register((*FileDescription)(nil))
+	state.Register((*sqEntriesFile)(nil))
+	state.Register((*ringsBufferFile)(nil))
 }

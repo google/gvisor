@@ -74,6 +74,178 @@ func (b *BPFInstruction) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(3, &b.K)
 }
 
+func (i *IOUringCqe) StateTypeName() string {
+	return "pkg/abi/linux.IOUringCqe"
+}
+
+func (i *IOUringCqe) StateFields() []string {
+	return []string{
+		"UserData",
+		"Res",
+		"Flags",
+	}
+}
+
+func (i *IOUringCqe) beforeSave() {}
+
+// +checklocksignore
+func (i *IOUringCqe) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.UserData)
+	stateSinkObject.Save(1, &i.Res)
+	stateSinkObject.Save(2, &i.Flags)
+}
+
+func (i *IOUringCqe) afterLoad() {}
+
+// +checklocksignore
+func (i *IOUringCqe) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.UserData)
+	stateSourceObject.Load(1, &i.Res)
+	stateSourceObject.Load(2, &i.Flags)
+}
+
+func (i *IOUring) StateTypeName() string {
+	return "pkg/abi/linux.IOUring"
+}
+
+func (i *IOUring) StateFields() []string {
+	return []string{
+		"Head",
+		"Tail",
+	}
+}
+
+func (i *IOUring) beforeSave() {}
+
+// +checklocksignore
+func (i *IOUring) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.Head)
+	stateSinkObject.Save(1, &i.Tail)
+}
+
+func (i *IOUring) afterLoad() {}
+
+// +checklocksignore
+func (i *IOUring) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.Head)
+	stateSourceObject.Load(1, &i.Tail)
+}
+
+func (i *IORings) StateTypeName() string {
+	return "pkg/abi/linux.IORings"
+}
+
+func (i *IORings) StateFields() []string {
+	return []string{
+		"Sq",
+		"Cq",
+		"SqRingMask",
+		"CqRingMask",
+		"SqRingEntries",
+		"CqRingEntries",
+		"sqDropped",
+		"sqFlags",
+		"cqFlags",
+		"CqOverflow",
+	}
+}
+
+func (i *IORings) beforeSave() {}
+
+// +checklocksignore
+func (i *IORings) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.Sq)
+	stateSinkObject.Save(1, &i.Cq)
+	stateSinkObject.Save(2, &i.SqRingMask)
+	stateSinkObject.Save(3, &i.CqRingMask)
+	stateSinkObject.Save(4, &i.SqRingEntries)
+	stateSinkObject.Save(5, &i.CqRingEntries)
+	stateSinkObject.Save(6, &i.sqDropped)
+	stateSinkObject.Save(7, &i.sqFlags)
+	stateSinkObject.Save(8, &i.cqFlags)
+	stateSinkObject.Save(9, &i.CqOverflow)
+}
+
+func (i *IORings) afterLoad() {}
+
+// +checklocksignore
+func (i *IORings) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.Sq)
+	stateSourceObject.Load(1, &i.Cq)
+	stateSourceObject.Load(2, &i.SqRingMask)
+	stateSourceObject.Load(3, &i.CqRingMask)
+	stateSourceObject.Load(4, &i.SqRingEntries)
+	stateSourceObject.Load(5, &i.CqRingEntries)
+	stateSourceObject.Load(6, &i.sqDropped)
+	stateSourceObject.Load(7, &i.sqFlags)
+	stateSourceObject.Load(8, &i.cqFlags)
+	stateSourceObject.Load(9, &i.CqOverflow)
+}
+
+func (i *IOUringSqe) StateTypeName() string {
+	return "pkg/abi/linux.IOUringSqe"
+}
+
+func (i *IOUringSqe) StateFields() []string {
+	return []string{
+		"Opcode",
+		"Flags",
+		"IoPrio",
+		"Fd",
+		"OffOrAddrOrCmdOp",
+		"AddrOrSpliceOff",
+		"Len",
+		"specialFlags",
+		"UserData",
+		"BufIndexOrGroup",
+		"personality",
+		"spliceFDOrFileIndex",
+		"addr3",
+	}
+}
+
+func (i *IOUringSqe) beforeSave() {}
+
+// +checklocksignore
+func (i *IOUringSqe) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.Opcode)
+	stateSinkObject.Save(1, &i.Flags)
+	stateSinkObject.Save(2, &i.IoPrio)
+	stateSinkObject.Save(3, &i.Fd)
+	stateSinkObject.Save(4, &i.OffOrAddrOrCmdOp)
+	stateSinkObject.Save(5, &i.AddrOrSpliceOff)
+	stateSinkObject.Save(6, &i.Len)
+	stateSinkObject.Save(7, &i.specialFlags)
+	stateSinkObject.Save(8, &i.UserData)
+	stateSinkObject.Save(9, &i.BufIndexOrGroup)
+	stateSinkObject.Save(10, &i.personality)
+	stateSinkObject.Save(11, &i.spliceFDOrFileIndex)
+	stateSinkObject.Save(12, &i.addr3)
+}
+
+func (i *IOUringSqe) afterLoad() {}
+
+// +checklocksignore
+func (i *IOUringSqe) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.Opcode)
+	stateSourceObject.Load(1, &i.Flags)
+	stateSourceObject.Load(2, &i.IoPrio)
+	stateSourceObject.Load(3, &i.Fd)
+	stateSourceObject.Load(4, &i.OffOrAddrOrCmdOp)
+	stateSourceObject.Load(5, &i.AddrOrSpliceOff)
+	stateSourceObject.Load(6, &i.Len)
+	stateSourceObject.Load(7, &i.specialFlags)
+	stateSourceObject.Load(8, &i.UserData)
+	stateSourceObject.Load(9, &i.BufIndexOrGroup)
+	stateSourceObject.Load(10, &i.personality)
+	stateSourceObject.Load(11, &i.spliceFDOrFileIndex)
+	stateSourceObject.Load(12, &i.addr3)
+}
+
 func (s *SigAction) StateTypeName() string {
 	return "pkg/abi/linux.SigAction"
 }
@@ -334,6 +506,10 @@ func (w *WindowSize) StateLoad(stateSourceObject state.Source) {
 func init() {
 	state.Register((*IOEvent)(nil))
 	state.Register((*BPFInstruction)(nil))
+	state.Register((*IOUringCqe)(nil))
+	state.Register((*IOUring)(nil))
+	state.Register((*IORings)(nil))
+	state.Register((*IOUringSqe)(nil))
 	state.Register((*SigAction)(nil))
 	state.Register((*SignalStack)(nil))
 	state.Register((*SignalInfo)(nil))

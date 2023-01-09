@@ -126,6 +126,7 @@ type IOUringParams struct {
 // See struct io_uring_cqe in include/uapi/linux/io_uring.h.
 //
 // +marshal
+// +stateify savable
 type IOUringCqe struct {
 	UserData uint64
 	Res      int32
@@ -136,6 +137,7 @@ type IOUringCqe struct {
 // See struct io_uring in io_uring/io_uring.c.
 //
 // +marshal
+// +stateify savable
 type IOUring struct {
 	// Both head and tail should be cacheline aligned. And we assume that
 	// cacheline size is 64 bytes.
@@ -150,15 +152,19 @@ type IOUring struct {
 // See struct io_rings in io_uring/io_uring.c.
 //
 // +marshal
+// +stateify savable
 type IORings struct {
-	Sq, Cq                       IOUring
-	SqRingMask, CqRingMask       uint32
-	SqRingEntries, CqRingEntries uint32
-	sqDropped                    uint32
-	sqFlags                      int32
-	cqFlags                      uint32
-	CqOverflow                   uint32
-	_                            [32]byte // Padding so cqes is cacheline aligned
+	Sq            IOUring
+	Cq            IOUring
+	SqRingMask    uint32
+	CqRingMask    uint32
+	SqRingEntries uint32
+	CqRingEntries uint32
+	sqDropped     uint32
+	sqFlags       int32
+	cqFlags       uint32
+	CqOverflow    uint32
+	_             [32]byte // Padding so cqes is cacheline aligned
 	// Linux has an additional field struct io_uring_cqe cqes[], which represents
 	// a dynamic array. We don't include it here in order to enable marshalling.
 }
@@ -169,6 +175,7 @@ type IORings struct {
 // See include/uapi/linux/io_uring.h.
 //
 // +marshal
+// +stateify savable
 type IOUringSqe struct {
 	Opcode              uint8
 	Flags               uint8
