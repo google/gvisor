@@ -1888,3 +1888,10 @@ go_repository(
     sum = "h1:LhYJRs+L4fBtjZUfuSZIKGeVu0QRy8e5Xi7D17UxZ74=",
     version = "v1.2.0",
 )
+
+go_repository(
+    name = "com_github_hanwen_go_fuse_v2",
+    importpath = "github.com/hanwen/go-fuse/v2",
+    sum = "h1:fOTuYWxywhaliwMobGTP/6NUCgGdal6pCpuch4MHCnU=",
+    version = "v2.1.1-0.20220627082937-d01fda7edf17",
+)
