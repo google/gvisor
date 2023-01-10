@@ -92,6 +92,10 @@ const (
 
 	// ContMgrProcfsDump dumps sandbox procfs state.
 	ContMgrProcfsDump = "containerManager.ProcfsDump"
+
+	// CongMgrOverlayFileUsage returns the current usage (bytes) of the overlay
+	// filestore.
+	CongMgrOverlayFileUsage = "containerManager.OverlayFileUsage"
 )
 
 const (
@@ -628,5 +632,20 @@ func (cm *containerManager) ProcfsDump(_ *struct{}, out *[]procfs.ProcessProcfsD
 		}
 		*out = append(*out, procDump)
 	}
+	return nil
+}
+
+// OverlayFileUsage returns the current usage (bytes) of the overlay filestore.
+func (cm *containerManager) OverlayFileUsage(_ *struct{}, out *uint64) error {
+	*out = 0
+	if cm.l.root.overlayFilestore == nil {
+		return nil
+	}
+
+	usage, err := cm.l.root.overlayFilestore.TotalUsage()
+	if err != nil {
+		return err
+	}
+	*out = usage
 	return nil
 }
