@@ -509,7 +509,7 @@ steps:
     command: make -i benchmark-platforms BENCHMARKS_SUITE=sysbench BENCHMARKS_TARGETS=test/benchmarks/base:sysbench_test
   - <<: *benchmarks
     label: ":tensorflow: TensorFlow benchmarks"
-    command: make -i benchmark-platforms BENCHMARKS_SUITE=tensorflow BENCHMARKS_TARGETS=test/benchmarks/ml:tensorflow_test BENCHMARKS_OPTIONS=-test.benchtime=1ns
+    command: make -i benchmark-platforms BENCHMARKS_SUITE=tensorflow BENCHMARKS_TARGETS=test/benchmarks/ml:tensorflow_test BENCHMARKS_FILTER=BenchmarkTensorflowDashboard
   - <<: *benchmarks
     label: ":gear: Syscall benchmarks"
     command: make -i benchmark-platforms BENCHMARKS_SUITE=syscall BENCHMARKS_TARGETS=test/benchmarks/base:syscallbench_test
