@@ -503,7 +503,7 @@ func withSavedNetNS(f func() error) error {
 		return err
 	}
 	defer func() {
-		// Resotre the namespace when we return from f.
+		// Restore the namespace when we return from f.
 		if err := unix.Setns(saved, unix.CLONE_NEWNET); err != nil {
 			panic(fmt.Sprintf("setns(%d, CLONE_NEWNET) = %s", saved, err))
 		}
