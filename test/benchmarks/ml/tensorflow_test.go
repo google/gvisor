@@ -23,32 +23,42 @@ import (
 	"gvisor.dev/gvisor/test/benchmarks/tools"
 )
 
+func BenchmarkTensorflowDashboard(b *testing.B) {
+	workloads := map[string]string{
+		"ConvolutionalNetwork": "3_NeuralNetworks/convolutional_network.py",
+		"LogisticRegression":   "2_BasicModels/logistic_regression.py",
+		"NeuralNetwork":        "3_NeuralNetworks/neural_network.py",
+	}
+	doTensorflowTest(b, workloads)
+}
+
 // BenchmarkTensorflow runs workloads from a TensorFlow tutorial.
 // See: https://github.com/aymericdamien/TensorFlow-Examples
 func BenchmarkTensorflow(b *testing.B) {
-	workloads := []struct {
-		name, file string
-	}{
-		{"GradientDecisionTree", "2_BasicModels/gradient_boosted_decision_tree.py"},
-		{"Kmeans", "2_BasicModels/kmeans.py"},
-		{"LogisticRegression", "2_BasicModels/logistic_regression.py"},
-		{"NearestNeighbor", "2_BasicModels/nearest_neighbor.py"},
-		{"RandomForest", "2_BasicModels/random_forest.py"},
-		{"ConvolutionalNetwork", "3_NeuralNetworks/convolutional_network.py"},
-		{"MultilayerPerceptron", "3_NeuralNetworks/multilayer_perceptron.py"},
-		{"NeuralNetwork", "3_NeuralNetworks/neural_network.py"},
+	workloads := map[string]string{
+		"GradientDecisionTree": "2_BasicModels/gradient_boosted_decision_tree.py",
+		"Kmeans":               "2_BasicModels/kmeans.py",
+		"LogisticRegression":   "2_BasicModels/logistic_regression.py",
+		"NearestNeighbor":      "2_BasicModels/nearest_neighbor.py",
+		"RandomForest":         "2_BasicModels/random_forest.py",
+		"ConvolutionalNetwork": "3_NeuralNetworks/convolutional_network.py",
+		"MultilayerPerceptron": "3_NeuralNetworks/multilayer_perceptron.py",
+		"NeuralNetwork":        "3_NeuralNetworks/neural_network.py",
 	}
+	doTensorflowTest(b, workloads)
+}
 
+func doTensorflowTest(b *testing.B, workloads map[string]string) {
 	machine, err := harness.GetMachine()
 	if err != nil {
 		b.Fatalf("failed to get machine: %v", err)
 	}
 	defer machine.CleanUp()
 
-	for _, workload := range workloads {
+	for name, file := range workloads {
 		runName, err := tools.ParametersToName(tools.Parameter{
 			Name:  "operation",
-			Value: workload.name,
+			Value: name,
 		})
 		if err != nil {
 			b.Fatalf("Failed to parse param: %v", err)
@@ -73,7 +83,7 @@ func BenchmarkTensorflow(b *testing.B) {
 					Image:   "benchmarks/tensorflow",
 					Env:     []string{"PYTHONPATH=$PYTHONPATH:/TensorFlow-Examples/examples"},
 					WorkDir: "/TensorFlow-Examples/examples",
-				}, "python", workload.file); err != nil {
+				}, "python", file); err != nil {
 					b.Errorf("failed to run container: %v logs: %s", err, out)
 				}
 				b.StopTimer()
